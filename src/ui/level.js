@@ -18,8 +18,10 @@ export const LEVELS = {
     hint: '권장값으로 바로 시작',
     // 목록에 띄울 것. 나머지는 쳐도 먹지만 안 보인다.
     show: [
-      'help', 'code', 'plan', 'ask',
-      'model', 'scan', 'undo', 'clear', 'sessions', 'cost', 'level', 'exit',
+      'help', 'work', 'auto', 'code', 'plan', 'ask',
+      // ctx 를 초보 목록에 넣는다. 컨텍스트가 작게 잡히면 "왜 파일을 조금만 읽지"
+      // 가 되는데, 초보일수록 그 원인을 못 찾는다. 명령 하나로 끝나는 문제다.
+      'model', 'ctx', 'scan', 'undo', 'clear', 'sessions', 'cost', 'level', 'exit',
     ],
     // 첫 실행에서 훑어 추천까지 해 준다
     autoScan: true,

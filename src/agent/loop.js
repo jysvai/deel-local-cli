@@ -68,10 +68,10 @@ export async function* run(session, ctx, userText, { signal = null } = {}) {
   const tools = toolSchemas(null, {
     hasSkills: (session.skills?.length ?? 0) > 0,
     web: session.web !== false && !isOffline(),   // 오프라인이면 웹 도구는 아예 안 보여 준다
-    work: session.work,                           // 작업 모드가 쓰는 것만 (modes.js)
+    work: session.effectiveWork(),                // 작업 모드가 쓰는 것만 (modes.js)
   });
   // 모드마다 생각의 배분과 걸음 수가 다르다. 사용자가 따로 정했으면 그걸 존중한다.
-  const 모드 = workMode(session.work);
+  const 모드 = workMode(session.effectiveWork());
   const effort = session.effortSet ? session.effort : (모드.effort ?? session.effort);
   const think = session.thinkSet ? session.think : (모드.think ?? session.think);
   const maxSteps = session.stepsSet ? session.maxSteps : (모드.steps ?? session.maxSteps);

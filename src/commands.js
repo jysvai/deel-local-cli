@@ -13,7 +13,7 @@ import { spin } from './ui/spinner.js';
 import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable } from './agent/effort.js';
 import { scanLocal, toProfiles } from './backend/scan.js';
 import { list as listSessions } from './agent/store.js';
-import { MODES as WORK_MODES, ORDER as WORK_ORDER, normalize as normWork, get as getWork, canWrite } from './agent/modes.js';
+import { MODES as WORK_MODES, ORDER as WORK_ORDER, DEFAULT as WORK_DEFAULT, normalize as normWork, get as getWork, canWrite } from './agent/modes.js';
 import { LEVELS, ORDER as LEVEL_ORDER, DEFAULT as LEVEL_DEFAULT, normalize as normLevel, shows as levelShows } from './ui/level.js';
 const MODES = {
   auto: '자율 — 전부 알아서. 되돌리기가 안전망',
@@ -25,11 +25,15 @@ export const COMMANDS = {
   help:    { desc: '명령 목록' },
   clear:   { desc: '대화 비우기' },
   context: { desc: '컨텍스트 사용량 보기' },
+  ctx:     { desc: '컨텍스트 길이 — 모델에 맞춰 다시 재거나 직접 지정', arg: '[auto|숫자|640k]' },
   compact: { desc: '오래된 대화 줄이기' },
   model:   { desc: '연결·모델 바꾸기 (이름 일부 · list · models)', arg: '[이름|list|models]' },
   think:   { desc: '추론 강도 (off/low/medium/high/max)', arg: '<수준>' },
   mode:    { desc: '승인 정책 — 얼마나 물어보나 (auto/confirm/strict)', arg: '<모드>' },
-  work:    { desc: '작업 모드 — 무슨 일을 하는 중인가', arg: '[모드]' },
+  work:    { desc: '작업 모드 — 무슨 일을 하는 중인가 (종합이면 저절로)', arg: '[모드]' },
+  // 이름이 /mode auto 와 겹쳐 보이므로 설명에서 못을 박는다.
+  // /mode auto 는 '얼마나 물어보나', /auto 는 '무슨 일을 하는 중인가' 다.
+  auto:    { desc: '작업 모드 → 종합 (요청에 따라 저절로 옮겨 감. /mode 와 다름)' },
   code:    { desc: '작업 모드 → 코드 (고치고 만든다)' },
   plan:    { desc: '작업 모드 → 계획 (먼저 계획만)' },
   architect:{ desc: '작업 모드 → 설계 (구조를 짠다)' },
@@ -92,6 +96,8 @@ export async function handle(line, session, ctx) {
       return { handled: true };
 
     case 'context': return showContext(session), { handled: true };
+
+    case 'ctx': return await ctxLength(session, arg), { handled: true };
 
     case 'compact': {
       const s = spin('앞선 대화를 요약해 접는 중…');
@@ -206,6 +212,7 @@ export async function handle(line, session, ctx) {
     }
 
     case 'work':
+    case 'auto':
     case 'code': case 'plan': case 'architect':
     case 'debug': case 'ask': case 'orchestrator': {
       const 원하는 = name === 'work' ? normWork(arg) : name;
@@ -218,11 +225,19 @@ export async function handle(line, session, ctx) {
         return { handled: true };
       }
       session.work = 골라진;
+      // 사람이 직접 골랐다. 저절로 골라 둔 것이 있으면 지운다 —
+      // 안 지우면 이번 한마디는 여전히 옛 모드로 돌아 "왜 안 바뀌지" 가 된다.
+      session.routed = null;
       const w = getWork(골라진);
       say('');
       say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}  ${c.gray(w.hint)}`);
       say(`  ${c.gray('도구')}    ${canWrite(골라진) ? c.yellow('읽기 + 파일 바꾸기') : c.green('읽기만 — 파일을 못 바꿉니다')}`);
       say(`  ${c.gray('생각')}    ${c.white(w.think ?? session.think)}${c.gray('·')}${c.magenta(w.effort)}   ${c.gray('최대 ' + w.steps + '걸음')}`);
+      if (골라진 === 'auto') {
+        say(`  ${c.gray('앞으로는 한마디마다 알맞은 모드로 저절로 옮겨 갑니다.')}`);
+      } else {
+        say(`  ${c.gray('직접 고르셨으므로 저절로 바뀌지 않습니다. 다시 맡기려면')} ${c.cyan('/work 종합')}`);
+      }
       say('');
       return { handled: true };
     }
@@ -572,11 +587,121 @@ function showContext(session) {
   say('');
 }
 
+/**
+ * 컨텍스트 길이를 보고·다시 재고·직접 지정한다.
+ *
+ *   /ctx            지금 값과 어디서 나온 값인지
+ *   /ctx auto       서버에 다시 물어 모델에 맞춘다
+ *   /ctx 655360     직접 지정 (640k · 128k · 1m 도 받는다 — k 는 1024)
+ *
+ * 왜 필요한가: 이 숫자 하나가 프로그램 전체 크기를 정한다. 서버가 안 알려주면
+ * 32,768 로 깔고 앉는데, 요즘 로컬 모델은 262,144 · 655,360 이 흔하다.
+ * 그 상태로 쓰면 모델이 가진 것의 5% 만 쓰는 셈이다.
+ *
+ * 고른 값은 프로필에 남긴다 — 다음에 켤 때도 그대로여야 한다.
+ */
+async function ctxLength(session, arg = '') {
+  const { probeCtx, parseSize, fmtSize } = await import('./backend/ctxsize.js');
+  const 말 = String(arg ?? '').trim().toLowerCase();
+  const 지금 = session.conn.ctx ?? 0;
+
+  const 남기기 = (값, 어디서) => {
+    session.conn.ctx = 값;
+    const cfg = load();
+    const prof = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
+    if (prof) { prof.ctx = 값; save(cfg); }
+    const b = session.breakdown();
+    say(`  ${mark.ok} 컨텍스트 ${c.bold(값.toLocaleString())} 토큰 ${c.gray(`(${fmtSize(값)}) — ${어디서}`)}`);
+    say(`     ${c.gray('지금 찬 양')} ${c.white(b.used.toLocaleString())} ${c.gray('· 남음')} ${c.white(b.left.toLocaleString())}`);
+    if (prof) say(`     ${c.gray('프로필에 저장했습니다. 다음에 켤 때도 이 값입니다.')}`);
+    say('');
+  };
+
+  // 0) 답 길이 상한 — 컨텍스트와는 다른 축이다.
+  //
+  // 컨텍스트가 655k 여도 '한 번에 뱉을 수 있는 답' 은 대개 훨씬 작다(기본 16,384).
+  // 모델 한계보다 큰 max_tokens 를 보내면 아예 거부하는 게이트웨이가 있어서 그렇게 뒀다.
+  // 큰 모델을 쓰면 여기서 올릴 수 있다.
+  if (/^(out|답|출력)\b/.test(말)) {
+    const 값 = parseSize(말.replace(/^(out|답|출력)\s*/, ''));
+    const cfg = load();
+    const prof = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
+    if (!값) {
+      say(`  ${c.gray('한 번에 받을 답 길이 상한')}  ${c.white((session.conn.maxTokens ?? 16384).toLocaleString())} ${c.gray('토큰')}`);
+      say(`  ${c.gray('올리려면')} ${c.cyan('/ctx out 32k')} ${c.gray('— 모델이 못 내는 값을 넣으면 서버가 거절합니다.')}`);
+      say('');
+      return;
+    }
+    session.conn.maxTokens = 값;
+    if (prof) { prof.maxTokens = 값; try { save(cfg); } catch {} }
+    say(`  ${mark.ok} 답 길이 상한 ${c.bold(값.toLocaleString())} 토큰 ${c.gray('— 컨텍스트와는 다른 축입니다')}`);
+    say('');
+    return;
+  }
+
+  // 1) 직접 지정
+  if (말 && 말 !== 'auto' && 말 !== '자동' && 말 !== '다시') {
+    const 값 = parseSize(말);
+    if (!값) {
+      say(`  ${mark.no} 숫자를 못 읽었습니다: ${c.white(arg)}`);
+      say(`     ${c.gray('이렇게 쓰세요 —')} ${c.cyan('/ctx 655360')}  ${c.cyan('/ctx 640k')}  ${c.cyan('/ctx 128k')}  ${c.cyan('/ctx auto')}`);
+      say(`     ${c.gray('k 는 1024 입니다. 655,360 은 640k 이지 655k 가 아닙니다 — 헷갈리면 그냥 숫자로 쓰세요.')}`);
+      say('');
+      return;
+    }
+    남기기(값, '직접 지정');
+    say(`  ${c.gray('서버가 실제로 올려 둔 길이보다 크게 잡으면 긴 대화에서 거절당합니다.')}`);
+    say(`  ${c.gray('서버 쪽에서 올린 다음 맞추는 게 안전합니다 —')} ${c.cyan('/ctx auto')} ${c.gray('로 다시 잽니다.')}`);
+    say('');
+    return;
+  }
+
+  // 2) 다시 재기
+  if (말) {
+    const s = spin('모델에 걸린 길이를 서버에 묻는 중…');
+    let r;
+    try { r = await probeCtx(session.conn); }
+    catch (err) { s.stop(`  ${mark.no} 못 물어봤습니다 — ${c.gray(String(err?.message ?? err))}`); say(''); return; }
+    s.stop('');
+    if (!r.value) {
+      say(`  ${mark.warn} 서버가 컨텍스트 길이를 안 알려줍니다.`);
+      for (const t of r.tried) say(`     ${c.gray(pad(t.label, 20))} ${c.gray(t.ok ? '응답함(값 없음)' : `${t.status || '연결 실패'}`)}`);
+      say(`     ${c.gray('직접 넣어 주세요 —')} ${c.cyan('/ctx 655360')}`);
+      say('');
+      return;
+    }
+    남기기(r.value, `${r.source ?? '서버'}에서 읽음`);
+    if (r.max && r.loaded && r.max > r.loaded) {
+      say(`  ${c.yellow('이 모델은')} ${c.bold(r.max.toLocaleString())} ${c.yellow('까지 되는데 지금')} ${c.bold(r.loaded.toLocaleString())} ${c.yellow('로 올려 두셨습니다.')}`);
+      say(`     ${c.gray('서버(LM Studio 등)에서 컨텍스트를 더 올려 다시 올린 뒤')} ${c.cyan('/ctx auto')} ${c.gray('를 하시면 그만큼 씁니다.')}`);
+      say('');
+    }
+    return;
+  }
+
+  // 3) 그냥 보기
+  const b = session.breakdown();
+  say('');
+  rule('컨텍스트 길이', 70);
+  say(`  ${c.bold(session.conn.model)}`);
+  say(`  ${c.gray('지금 잡은 길이')}   ${c.white(지금.toLocaleString())} ${c.gray('토큰 (' + fmtSize(지금) + ')')}`);
+  say(`  ${c.gray('찬 양')}           ${c.white(b.used.toLocaleString())} ${c.gray('· 남음 ' + b.left.toLocaleString())}`);
+  say('');
+  say(`  ${c.gray('이 값 하나가 프로그램 전체 크기를 정합니다 — 한 번에 읽힐 수 있는 파일 수,')}`);
+  say(`  ${c.gray('대화가 접히는 시점, 한 번에 쓸 수 있는 답 길이가 모두 여기서 나옵니다.')}`);
+  say('');
+  say(`  ${c.cyan('/ctx auto')}      ${c.gray('서버에 다시 물어 모델에 맞춥니다')}`);
+  say(`  ${c.cyan('/ctx 655360')}    ${c.gray('직접 지정 (640k · 128k · 1m 도 됩니다 — k 는 1024)')}`);
+  say(`  ${c.cyan('/ctx out 32k')}   ${c.gray('한 번에 받을 답 길이 상한 (지금 ' + (session.conn.maxTokens ?? 16384).toLocaleString() + ') — 다른 축입니다')}`);
+  say('');
+}
+
 /** 지금 연결을 이 프로필로 갈아끼운다. 대화는 그대로 둔다. */
 function 연결적용(session, p) {
   Object.assign(session.conn, {
     kind: p.kind, base: p.baseUrl, auth: p.auth, key: resolveKey(p), model: p.model,
-    ctx: p.ctx, streaming: p.streaming, tools: p.tools, json: p.json, think: p.think,
+    ctx: p.ctx, maxTokens: p.maxTokens ?? null,
+    streaming: p.streaming, tools: p.tools, json: p.json, think: p.think,
   });
   // 자물쇠도 같이 옮긴다. 이걸 빼먹으면 옛 주소가 열린 채로 남고 새 주소는 막혀
   // 다음 한마디에서 바로 "허용되지 않은 주소" 가 난다.
@@ -639,7 +764,7 @@ async function switchModel(session, ctx, arg = '') {
     // 등록된 것에 없으면, 지금 서버가 내주는 모델 중에 있는지 본다.
     const 있는것 = await 서버모델들(session.conn);
     const 맞는것 = (있는것 ?? []).filter((m) => m.toLowerCase().includes(말.toLowerCase()));
-    if (맞는것.length === 1) return 모델만바꾸기(session, cfg, 맞는것[0]);
+    if (맞는것.length === 1) return await 모델만바꾸기(session, cfg, 맞는것[0]);
     if (맞는것.length > 1) {
       say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 모델이 여럿입니다.')}`);
       for (const m of 맞는것.slice(0, 12)) say(`    ${c.cyan(m)}`);
@@ -690,7 +815,7 @@ function 골라적용(session, cfg, p) {
  * 등록된 연결이 아니어도 된다 — 서버가 내준다면 쓸 수 있어야 한다.
  * 다음에도 쓰도록 프로필로 남겨 둔다. 그래야 /model 목록에서 다시 보인다.
  */
-function 모델만바꾸기(session, cfg, 모델) {
+async function 모델만바꾸기(session, cfg, 모델) {
   const 지금 = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
   const 이미 = cfg.profiles.find((p) => p.baseUrl === session.conn.base && p.model === 모델);
   const p = 이미 ?? {
@@ -699,12 +824,42 @@ function 모델만바꾸기(session, cfg, 모델) {
     name: `${(지금?.name ?? '연결').split(' · ')[0]} · ${모델}`,
     baseUrl: session.conn.base,
     model: 모델,
+    // 컨텍스트 길이는 물려받지 않는다. 모델마다 다르다 —
+    // 32k 짜리에서 655k 짜리로 옮겼는데 32k 로 깔고 앉으면 새 모델의 5% 만 쓴다.
+    // 반대로 큰 데서 작은 데로 옮기면 긴 대화에서 서버가 거절한다. 아래에서 다시 잰다.
+    ctx: null,
   };
   if (!이미) { try { save(upsert(cfg, p)); } catch { /* 못 남겨도 이번 세션에는 바뀐다 */ } }
   else { cfg.active = p.id; try { save(cfg); } catch {} }
   연결적용(session, p);
   say(`  ${mark.ok} 모델을 ${c.bold(모델)} 로 바꿨습니다. ${c.gray('서버는 그대로입니다.')}`);
+  await 길이맞추기(session, cfg, p);
   say('');
+}
+
+/**
+ * 바뀐 모델에 맞춰 컨텍스트 길이를 다시 잰다.
+ *
+ * 모델을 바꾸는 순간은 이미 서버와 이야기하는 중이라 한 번 더 물어봐도 티가 안 난다.
+ * 여기서 안 재면 새 모델을 옛 모델의 길이로 쓰게 된다 — 화면에는 아무 표시도 안 나고
+ * 그냥 조용히 작아진다. 그런 고장이 가장 늦게 발견된다.
+ */
+async function 길이맞추기(session, cfg, prof) {
+  const { probeCtx, fmtSize, 기본값 } = await import('./backend/ctxsize.js');
+  let r = null;
+  try { r = await probeCtx(session.conn, { timeout: 8000 }); } catch { /* 못 물어보면 아래에서 기본값 */ }
+  const 값 = r?.value ?? prof.ctx ?? 기본값;
+  session.conn.ctx = 값;
+  if (prof) {
+    prof.ctx = 값;
+    try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+  }
+  say(`     ${c.gray('컨텍스트')} ${c.white(값.toLocaleString())} ${c.gray('토큰 (' + fmtSize(값) + ') — ' + (r?.source ? r.source + '에서 읽음' : '서버가 안 알려줘 기본값'))}`);
+  if (r?.max && r?.loaded && r.max > r.loaded) {
+    say(`     ${c.yellow('이 모델은 ' + r.max.toLocaleString() + ' 까지 됩니다.')} ${c.gray('서버에서 더 올린 뒤')} ${c.cyan('/ctx auto')}`);
+  } else if (!r?.value) {
+    say(`     ${c.gray('맞지 않으면')} ${c.cyan('/ctx 655360')} ${c.gray('처럼 직접 지정하세요.')}`);
+  }
 }
 
 function 연결목록(cfg, session) {
@@ -756,7 +911,7 @@ async function 서버모델고르기(session, ctx, cfg) {
     say('');
     return;
   }
-  모델만바꾸기(session, cfg, 고른것);
+  await 모델만바꾸기(session, cfg, 고른것);
 }
 
 const INIT_TEMPLATE = `# DEEL.md
@@ -784,7 +939,7 @@ function showWork(session) {
   rule('작업 모드', 70);
   for (const k of WORK_ORDER) {
     const w = WORK_MODES[k];
-    const 지금 = k === (normWork(session.work) ?? 'code');
+    const 지금 = k === (normWork(session.work) ?? WORK_DEFAULT);
     const 표 = 지금 ? c.hgreen('●') : c.gray('·');
     const 이름 = 지금 ? c.bold(c.white(pad(w.name, 8))) : c.gray(pad(w.name, 8));
     say(`  ${표} ${c.hcyan(w.glyph)} ${이름}${c.gray(pad(w.en, 14))}${c.gray(w.hint)}`);

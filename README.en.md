@@ -210,13 +210,15 @@ Names follow Claude Code / Codex conventions.
 |---|---|
 | `/help` | Command list |
 | `/context` | What is consuming the context window |
+| `/ctx [auto\|number]` | Context **length** — re-read it off the model, or set it yourself |
 | `/compact` | Summarise and fold older turns |
 | `/clear` | Clear the conversation (keeps link and rules) |
 | `/model` | Switch connection / model |
 | `/think <level\|profile>` | `off·low·medium·high·max` or `even·save·deep` |
 | `/mode <mode>` | Approval policy — how much it asks (`auto` · `confirm` · `strict`) |
 | `/work [mode]` | Work mode — what kind of work you are doing |
-| `/code` `/plan` `/architect` `/debug` `/ask` `/orchestrator` | Switch work mode directly |
+| `/auto` | Hand the wheel back — it picks the mode from what you type |
+| `/code` `/plan` `/architect` `/debug` `/ask` `/orchestrator` | Switch work mode directly (pins it) |
 | `/level [level]` | How much to show (`쉬움` simple · `개발자` developer) |
 | `/undo [turns]` | Revert file changes |
 | `/tools` | Available tools |
@@ -265,6 +267,7 @@ Cycle with `Shift+Tab`, or type the name.
 
 | Mode | For | Can edit files | Reasoning |
 |---|---|---|---|
+| `/auto` ◎ Auto | **Default.** Reads your message and switches for you | Yes | Normal (`save`) |
 | `/code` ◆ Code | Writing and fixing | Yes | Normal (`save`) |
 | `/plan` ☰ Plan | Planning first | **No** | Deep (`deep`·high) |
 | `/architect` ◈ Architect | Shaping structure | **No** | Deep (`deep`·high) |
@@ -278,10 +281,52 @@ It is not asked politely not to edit — models forget requests. A tool that isn
 Don't confuse this with `/mode`. They are separate axes:
 
 - `/mode` — **how much it asks you** (auto · confirm · strict)
-- `/work` — **what kind of work you are doing** (the six above)
+- `/work` — **what kind of work you are doing** (the seven above)
 
 If you have explicitly set `/think` or `/mode`, your choice wins. A work mode never
 overrides something a person chose.
+
+### Switching by itself (Auto mode)
+
+You start in **Auto**. Nothing has been decided about what kind of work is coming.
+Every turn, deel reads what you typed, picks the mode that fits, and works in it.
+
+```
+❯ why won't the login go through?
+
+  ◉ Debug   because your message contained "why won't", "won't"
+  Not what you wanted? Type /code to pin a mode yourself.
+```
+
+Switching brings **the whole mode** with it — its working protocol, its tool set, its
+reasoning settings. It isn't a label saying "debug mode": the model is actually walked
+through symptom → reproduce → hypothesis → evidence, and in Plan mode `Write` and `Edit`
+are not handed over at all.
+
+| When you say | It goes to |
+|---|---|
+| why won't · error · fails · crashes · what's causing | ◉ Debug |
+| plan · roadmap · what order · let's map it out first | ☰ Plan |
+| design · architecture · how should this be structured · how to split | ◈ Architect |
+| what is · explain · how does it work · difference between | ◇ Ask |
+| all of · everything · one by one · to the end · unify | ❋ Orchestrator |
+| fix · add · implement · rename · delete | ◆ Code |
+
+**When it's close, it doesn't switch.** "ok", "go on", "that thing from earlier" leave you
+in Auto. So does a near-tie between first and second place — a wrong switch into a read-only
+mode leaves you blocked without knowing *why*. Read-only modes (Plan, Architect, Ask)
+therefore carry a higher bar: "explain this and fix it" routes to Code, not Ask.
+
+A switch lasts **one turn only.** The next message is judged fresh.
+A `~` in the status line means it switched by itself; no `~` means you chose it.
+
+```
+◎ Auto         ← waiting
+~◉ Debug       ← this turn only, chosen for you
+◉ Debug        ← you typed /debug. It stays.
+```
+
+Choosing a mode yourself **pins** it. `/auto` (or `/work auto`) hands the wheel back.
 
 ---
 
@@ -511,6 +556,52 @@ $ /think
 | `save` (default) | Hard on the first decision only |
 | `deep` | Everything one notch up — for hard work |
 
+### Context length is read off the model
+
+This one number sizes the whole program: how many files fit in one read, when the
+conversation gets folded, how long a single reply may be — **all of it comes from here.**
+
+So deel asks the server on every launch rather than trusting the saved value. The same
+model name can be loaded at a different length each time, and if that difference never
+reaches the screen there is no way to notice. **It just quietly gets smaller.**
+
+```
+ │ Model    qwen3-coder  (640k tokens)                     │
+ ╰─────────────────────────────────────────────────────────╯
+ ✓ Context adjusted 32,768 → 655,360 (read from LM Studio)
+```
+
+Every server puts this number under a different name in a different place, so deel checks
+all of them.
+
+| Server | Where it reads |
+|---|---|
+| LM Studio | `/api/v0/models` — `max_context_length`, `loaded_context_length` |
+| llama.cpp | `/props` — `n_ctx` |
+| vLLM | `/v1/models` — `max_model_len` |
+| Ollama | `/api/show` — `<model>.context_length` |
+| Other OpenAI-compatible | `/v1/models/<model>` — `context_window`, `context_length`, `max_input_tokens`, `max_position_embeddings` (found even when nested) |
+
+**Model maximum and loaded length are not the same thing.** LM Studio will happily load a
+655,360-capable model at 8,192. Trusting the maximum there gets your requests rejected. So
+the **loaded length is what deel uses**, and the maximum is reported separately.
+
+```
+ ⚠ This model goes up to 655,360 — raise it on the server, then /ctx auto
+```
+
+| Command | What it does |
+|---|---|
+| `/ctx` | Current length and remaining room |
+| `/ctx auto` | Ask the server again and match the model |
+| `/ctx 655360` | Set it yourself (`640k`, `128k`, `1m` also work) |
+| `/ctx out 32k` | Cap on a **single reply** — a different axis from context |
+| `deel --ctx 655360` | Start at this value (skips the lookup) |
+
+**`k` means 1024 here.** Context lengths are all powers of two, so that is the only base
+that lines up: 655,360 is `640k`, not `655k`; 131,072 is `128k`, not `131k`. The display and
+`/ctx` use the same unit, so typing back what you see gives you the same number.
+
 **Caps are not fixed numbers.** They are computed from the model's context window and how
 much of it is currently used — the profile decides what share of the remaining room a stage gets.
 
@@ -687,6 +778,8 @@ Auth style is detected automatically: `Authorization: Bearer` → `x-api-key` �
 ```bash
 deel --root <folder>     Working scope. Defaults to the current folder
 deel --mode <mode>       auto (default) / confirm / strict
+deel --work <mode>       auto (default) / code / plan / architect / debug / ask / orchestrator
+deel --level <level>     쉬움 (simple) / 개발자 (developer)
 deel --think <level>     off / low / medium (default) / high / max
 deel --effort <profile>  even / save (default) / deep
 deel --offline           Nothing leaves this machine

@@ -7,6 +7,7 @@ import { chatLoop } from '../src/repl.js';
 import { packSelf, audit, reviewSheet } from '../src/pack/selfpack.js';
 import { runScan } from '../src/backend/scanui.js';
 import { closeConnections } from '../src/backend/http.js';
+import { parseSize } from '../src/backend/ctxsize.js';
 import { runSessions } from '../src/agent/sessionui.js';
 
 const MIN_NODE = 20;
@@ -86,8 +87,9 @@ function help() {
   say('');
   say(`    ${c.gray('--root <폴더>')}      작업 범위. 기본은 지금 폴더`);
   say(`    ${c.gray('--mode <모드>')}      auto(기본) / confirm / strict`);
-  say(`    ${c.gray('--work <모드>')}      code(기본) / plan / architect / debug / ask / orchestrator`);
+  say(`    ${c.gray('--work <모드>')}      auto(기본·종합) / code / plan / architect / debug / ask / orchestrator`);
   say(`    ${c.gray('--level <수준>')}     쉬움(기본) / 개발자`);
+  say(`    ${c.gray('--ctx <길이>')}       컨텍스트 길이 직접 지정 (655360 · 640k · 128k). 없으면 서버에 맞춤`);
   say(`    ${c.gray('--think <수준>')}     off / low / medium(기본) / high / max`);
   say(`    ${c.gray('--effort <배분>')}    even(균일) / save(절약, 기본) / deep(깊게)`);
   say(`    ${c.gray('--offline')}          이 컴퓨터 밖으로는 아무것도 안 보냄 (자물쇠)`);
@@ -124,6 +126,7 @@ async function main() {
         mode: flags.mode ? String(flags.mode) : undefined,
         work: flags.work ? String(flags.work) : undefined,
         level: flags.level ? String(flags.level) : undefined,
+        ctx: flags.ctx ? parseSize(String(flags.ctx)) : undefined,
         think: flags.think ? String(flags.think) : undefined,
         effort: flags.effort ? String(flags.effort) : undefined,
         offline: flags.offline === true || flags.offline === 'true',

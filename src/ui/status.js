@@ -31,9 +31,13 @@ export const SEGMENTS = {
   work: {
     desc: '작업 모드',
     make: (s) => {
-      const w = workMode(s.work);
-      const 잠김 = !canWrite(s.work);
-      return `${c.hcyan(w.glyph)} ${잠김 ? c.green(w.name) : c.white(w.name)}${잠김 ? c.green(' 읽기만') : ''}`;
+      const 지금 = s.effectiveWork ? s.effectiveWork() : s.work;
+      const w = workMode(지금);
+      const 잠김 = !canWrite(지금);
+      // 저절로 옮겨 간 것인지 사람이 고른 것인지 구분해서 보여준다.
+      // 이게 없으면 "왜 갑자기 읽기만 되지" 를 알 길이 없다.
+      const 저절로 = s.routed ? c.gray('~') : '';
+      return `${c.hcyan(w.glyph)} ${저절로}${잠김 ? c.green(w.name) : c.white(w.name)}${잠김 ? c.green(' 읽기만') : ''}`;
     },
   },
 
@@ -83,12 +87,18 @@ function base(p) {
   return parts[parts.length - 1] ?? '~';
 }
 
-// 12345 → 12.3k.  상태줄은 자리가 없다.
+// 12345 → 12.1k.  상태줄은 자리가 없다.
+//
+// 1000 이 아니라 1024 로 나눈다. 컨텍스트 길이는 죄다 2의 거듭제곱이라
+// 1000 으로 나누면 131,072 가 '131k' 로 나온다 — 아무도 그렇게 안 부른다.
+// 1024 로 나눠야 128k · 32k · 640k 처럼 실제로 부르는 이름이 나온다.
+// 무엇보다 /ctx 가 받는 단위와 같아야 한다. 화면에 655k 라고 띄워 놓고
+// 655k 를 치면 다른 값이 되는 게 가장 나쁘다.
 function short(n) {
   const v = Number(n) || 0;
-  if (v < 1000) return String(v);
-  if (v < 1000000) return (v / 1000).toFixed(v < 10000 ? 1 : 0) + 'k';
-  return (v / 1000000).toFixed(1) + 'M';
+  if (v < 1024) return String(v);
+  if (v < 1024 * 1024) return (v / 1024).toFixed(v < 10240 ? 1 : 0) + 'k';
+  return (v / (1024 * 1024)).toFixed(1) + 'M';
 }
 
 /**

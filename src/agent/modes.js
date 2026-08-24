@@ -18,6 +18,36 @@ const 계획 = ['TodoWrite'];
 const 쓰기 = ['Write', 'Edit', 'Bash'];
 
 export const MODES = {
+  // 처음에는 여기서 시작한다.
+  //
+  // 무슨 일을 시킬지 미리 정해 두고 켜는 사람은 드물다. 그래서 기본은 '종합' 이고,
+  // 한마디를 할 때마다 그 말이 무슨 일인지 보고 알맞은 모드로 저절로 옮겨 간다
+  // (agent/route.js). 애매하면 안 옮기고 여기 그대로 둔다.
+  //
+  // 사용자가 /plan 처럼 직접 고르면 저절로 옮기는 것은 멈춘다. 사람이 고른 것을
+  // 뒤집지 않는다. 다시 맡기려면 /work 종합 이다.
+  auto: {
+    id: 'auto',
+    name: '종합',
+    en: 'Auto',
+    glyph: '◎',
+    hint: '요청에 따라 알맞은 모드로',
+    tools: [...읽기, ...계획, ...쓰기],
+    effort: 'save',
+    think: null,
+    steps: 24,
+    say: [
+      '지금은 **종합** 모드다. 무슨 일이 올지 정해져 있지 않다.',
+      '',
+      '- 시키는 일이 무엇인지 먼저 가늠하고, 그에 맞는 방식으로 해라.',
+      '  고치는 일이면 읽고 나서 고치고, 원인을 찾는 일이면 확인부터 하고,',
+      '  설명하는 일이면 근거를 파일에서 대라.',
+      '- 큰 일이면 TodoWrite 로 쪼개 적고 하나씩 해라.',
+      '- 확인할 수 있는 것은 확인해라. 확인 못 한 것을 됐다고 하지 마라.',
+      '- 시키지 않은 일을 벌이지 마라.',
+    ].join('\n'),
+  },
+
   code: {
     id: 'code',
     name: '코드',
@@ -174,8 +204,8 @@ export const MODES = {
   },
 };
 
-export const ORDER = ['code', 'plan', 'architect', 'debug', 'ask', 'orchestrator'];
-export const DEFAULT = 'code';
+export const ORDER = ['auto', 'code', 'plan', 'architect', 'debug', 'ask', 'orchestrator'];
+export const DEFAULT = 'auto';
 
 /** 이름을 관대하게 받는다. 한글·영문·줄임말 다 통한다. */
 export function normalize(v) {
@@ -183,6 +213,7 @@ export function normalize(v) {
   if (!s) return null;
   if (MODES[s]) return s;
   const 별명 = {
+    '종합': 'auto', '자동': 'auto', '기본': 'auto', 'auto': 'auto', '맡김': 'auto',
     '코드': 'code', 'c': 'code',
     '계획': 'plan', '플랜': 'plan', 'p': 'plan',
     '설계': 'architect', '아키': 'architect', 'arch': 'architect', 'a': 'architect',

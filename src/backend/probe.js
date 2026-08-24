@@ -5,6 +5,7 @@
 //   warn 되긴 하는데 조건이 붙음
 //   skip 앞 검사가 실패해 확인 불가
 import { req, headersFor, serverMessage } from './http.js';
+import { probeCtx } from './ctxsize.js';
 
 const READ_TOOL = {
   type: 'function',
@@ -330,26 +331,26 @@ export async function probe(conn, onStep = () => {}) {
   facts.think = differs;
 
   // 8. 컨텍스트 길이 — 파일을 몇 개까지 한 번에 읽힐 수 있느냐.
-  let ctx = null;
-  let ctxNote = '';
-  if (shape === 'ollama') {
-    const show = await req(`${base}/api/show`, { method: 'POST', headers: H(), body: { model }, timeout: 20000 });
-    const info = show.json?.model_info ?? {};
-    const k = Object.keys(info).find((x) => /context_length/.test(x));
-    if (k) { ctx = info[k]; ctxNote = '모델 정보에서 읽음'; }
-  } else {
-    const m = await req(`${base}/models/${encodeURIComponent(model)}`, { headers: H(), timeout: 15000 });
-    ctx = m.json?.context_window ?? m.json?.max_context_length ?? m.json?.context_length ?? null;
-    if (ctx) ctxNote = '모델 정보에서 읽음';
-  }
+  //
+  // 한 자리만 보지 않는다. 서버마다 이름도 자리도 다르다 (ctxsize.js 참고).
+  // 여기서 작게 잡으면 프로그램 전체가 작아진다 — 답 길이 상한까지 이 값에서 나온다.
+  const 길이 = await probeCtx({ kind: shape, base, auth, key, model });
+  const ctx = 길이.value;
   add({
     id: 'ctx',
     label: '컨텍스트 길이',
     status: ctx ? 'ok' : 'warn',
-    detail: ctx ? `${ctx.toLocaleString()} 토큰 (${ctxNote})` : '서버가 알려주지 않음 — 설정에서 직접 지정합니다',
+    detail: ctx
+      ? `${ctx.toLocaleString()} 토큰 (${길이.source ?? '모델 정보'}에서 읽음)`
+        + (길이.max && 길이.loaded && 길이.max > 길이.loaded
+          ? ` · 이 모델은 ${길이.max.toLocaleString()} 까지 되는데 지금 ${길이.loaded.toLocaleString()} 로 올려 두셨습니다`
+          : '')
+      : '서버가 알려주지 않음 — /ctx 로 직접 지정하세요',
     ms: 0,
   });
   facts.ctx = ctx;
+  facts.ctxMax = 길이.max ?? null;
+  facts.ctxLoaded = 길이.loaded ?? null;
 
   return { facts, results };
 }

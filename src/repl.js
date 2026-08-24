@@ -5,17 +5,20 @@ import { statusLine, headerLines, contextWarning } from './ui/status.js';
 import { STAGES } from './agent/effort.js';
 import { handle } from './commands.js';
 import { next as nextWork, get as getWork, canWrite } from './agent/modes.js';
+import { route } from './agent/route.js';
 import { run } from './agent/loop.js';
 import { Session } from './agent/session.js';
 import { makeScope } from './safety/guard.js';
 import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
-import { activeProfile, load, resolveKey } from './config.js';
+import { activeProfile, load, resolveKey, save as saveCfg } from './config.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
 import { askHidden } from './ui/prompt.js';
+import { spin } from './ui/spinner.js';
 import { explain } from './ui/level.js';
+import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 
 // 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
 const TOOL_GLYPH = {
@@ -63,7 +66,13 @@ export async function chatLoop(opts = {}) {
   const conn = {
     kind: prof.kind, base: prof.baseUrl, auth: prof.auth,
     key: resolveKey(prof), model: prof.model,
-    ctx: prof.ctx ?? 32768, streaming: prof.streaming ?? false,
+    // 컨텍스트 길이. 순서가 곧 우선순위다 —
+    //   deel --ctx 655360  >  프로필에 저장된 값  >  기본값
+    // 기본값으로 떨어졌다는 것은 '아직 못 쟀다' 는 뜻이다. 아래에서 그렇다고 말해 준다.
+    ctx: opts.ctx ?? prof.ctx ?? CTX_DEFAULT,
+    // 답 길이 상한. 컨텍스트와 다른 축이다 — 없으면 effort.js 의 울타리를 쓴다.
+    maxTokens: prof.maxTokens ?? null,
+    streaming: prof.streaming ?? false,
     tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
   };
 
@@ -198,12 +207,48 @@ export async function chatLoop(opts = {}) {
     },
   };
 
+  // ── 컨텍스트 길이를 모델에서 긁어온다 ─────────────────────────────────
+  //
+  // 켤 때마다 서버에 물어본다. 저장된 값을 그대로 믿지 않는다 —
+  // 같은 이름의 모델이라도 서버에서 몇 k 로 올렸는지가 그때그때 다르고,
+  // 그 차이를 화면에 못 보면 조용히 작아진 채로 쓰게 된다.
+  //
+  // --ctx 로 직접 주신 값이 있으면 안 건드린다. 사람이 고른 것을 뒤집지 않는다.
+  const 길이알림 = [];   // 잘 된 소식
+  const 길이경고 = [];   // 손을 봐야 하는 것
+  if (opts.ctx == null) {
+    // 이 컴퓨터 안의 서버면 눈 깜짝할 새다. 사내 게이트웨이는 몇 초 걸릴 수 있어
+    // 무슨 일이 일어나는 중인지 알려 준다 — 멈춘 것처럼 보이면 안 된다.
+    const s = spin('모델에 걸린 컨텍스트 길이를 확인하는 중…');
+    let r = null;
+    try { r = await probeCtx(conn, { timeout: 6000 }); } catch { /* 못 물어보면 아래에서 처리 */ }
+    s.stop('');
+    if (r?.value) {
+      const 전 = conn.ctx;
+      conn.ctx = r.value;
+      // 알아낸 값은 프로필에 남긴다. 다음에 켤 때 화면이 곧바로 맞게 뜬다.
+      if (prof.ctx !== r.value) {
+        prof.ctx = r.value;
+        try { const cfg2 = load(); const t = cfg2.profiles.find((p) => p.id === prof.id); if (t) { t.ctx = r.value; saveCfg(cfg2); } } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+      }
+      if (전 !== r.value) 길이알림.push(`컨텍스트를 ${전.toLocaleString()} ${c.gray('→')} ${c.white(r.value.toLocaleString())} 로 맞췄습니다 ${c.gray('(' + (r.source ?? '서버') + '에서 읽음)')}`);
+      if (r.max && r.loaded && r.max > r.loaded) {
+        길이경고.push(`이 모델은 ${c.white(r.max.toLocaleString())} 까지 됩니다 — 서버에서 더 올린 뒤 ${c.cyan('/ctx auto')}`);
+      }
+    } else if (prof.ctx == null) {
+      길이경고.push(`컨텍스트를 서버가 안 알려줍니다 — 우선 ${CTX_DEFAULT.toLocaleString()} 으로 잡았습니다. ${c.cyan('/ctx 655360')} 처럼 직접 지정하세요`);
+    }
+  }
+
   // ── 머리말 ────────────────────────────────────────────────────────────
   say('');
   for (const l of box(headerLines(session, found), { tone: c.gray })) say('  ' + l);
   const warn = [];
   if (!conn.tools) warn.push('도구 호출이 확인되지 않았습니다 — deel diagnose 로 점검하세요');
   if (!conn.streaming) warn.push('스트리밍이 없어 응답이 한 번에 나옵니다');
+  warn.push(...길이경고);
+  // 잘 된 것은 경고 표시를 달지 않는다. ⚠ 가 붙으면 뭘 고쳐야 하나 싶어진다.
+  for (const l of 길이알림) say(`  ${mark.ok} ${c.gray(l)}`);
   for (const w of warn) say(`  ${mark.warn} ${c.gray(w)}`);
   say(`  ${c.gray('/help 명령 목록')}   ${c.gray('/think 추론 강도')}   ${c.gray('Ctrl+C 중단·끝내기')}`);
 
@@ -246,6 +291,24 @@ export async function chatLoop(opts = {}) {
     if (cmd.exit) break;
     if (cmd.handled) continue;
     const toSend = cmd.text ?? text;   // 슬래시 명령이면 펼쳐진 내용을 보낸다
+
+    // 종합 모드면 이 한마디가 무슨 일인지 보고 알맞은 모드로 옮긴다.
+    //
+    // 기본 모드는 안 건드린다 — 다음 한마디는 다시 처음부터 고른다.
+    // 사용자가 직접 고른 모드가 있으면 여기 안 들어온다. 사람이 고른 것을 뒤집지 않는다.
+    session.routed = null;
+    if (session.work === 'auto') {
+      const 골라진 = route(toSend);
+      if (골라진.mode) {
+        session.routed = 골라진.mode;
+        const w = getWork(골라진.mode);
+        say('');
+        say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}`
+          + `  ${c.gray('말 속에 ' + 골라진.why + ' 가 있어서')}`
+          + (canWrite(골라진.mode) ? '' : `  ${c.green('· 파일은 안 바꿉니다')}`));
+        say(`  ${c.gray('다르면')} ${c.cyan('/code')} ${c.gray('처럼 직접 고르세요. 그때부터는 안 바뀝니다.')}`);
+      }
+    }
 
     say('');
     const started = Date.now();

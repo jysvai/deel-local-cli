@@ -31,6 +31,8 @@ const FILES = [
   'abort.test.js',
   'parallel.test.js',
   'modes.test.js',
+  'route.test.js',
+  'ctxsize.test.js',
   'encoding.test.js',
   'commands.test.js',
   'xlsx.test.js',

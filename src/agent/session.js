@@ -32,6 +32,9 @@ export class Session {
     this.root = root;
     this.mode = mode;        // 승인 정책 — 얼마나 물어보나 (auto/confirm/strict)
     this.work = work ?? WORK_DEFAULT;   // 작업 모드 — 무슨 일을 하는 중인가 (modes.js)
+    // 이번 한마디에만 쓸 모드. 종합 모드일 때 요청을 보고 골라 넣는다 (agent/route.js).
+    // 기본 모드(this.work)는 안 건드린다 — 다음 한마디는 다시 처음부터 고른다.
+    this.routed = null;
     // 사용자 수준 — 화면에 무엇을 내놓을지만 정한다. 안전 장치는 안 바꾼다 (ui/level.js)
     this.level = normLevel(level) ?? LEVEL_DEFAULT;
     this.think = think;      // 기준 강도
@@ -60,12 +63,23 @@ export class Session {
     return null;
   }
 
+  /**
+   * 지금 이 순간 실제로 쓰는 작업 모드.
+   *
+   * 종합 모드에서는 한마디마다 골라 넣은 것(routed)이 있고, 그때는 그것이 답이다.
+   * 직접 고른 모드가 있으면 routed 는 비어 있으므로 기본 모드가 그대로 답이 된다.
+   * 도구·추론·프롬프트가 전부 이 값을 봐야 한다. 하나라도 빠뜨리면 어긋난다.
+   */
+  effectiveWork() {
+    return this.routed ?? this.work;
+  }
+
   systemPrompt() {
     const parts = [BASE_RULES];
     parts.push(`\n작업 폴더: ${this.root}\n이 폴더 밖의 파일은 읽지도 쓰지도 못한다.`);
 
     // 지금 무슨 일을 하는 중인지. 도구 목록도 이 모드에 맞춰 이미 걸러져 있다.
-    const w = workMode(this.work);
+    const w = workMode(this.effectiveWork());
     parts.push(`\n--- 지금 모드: ${w.name} (${w.en}) ---\n${w.say}`);
     if (this.rules) parts.push(`\n--- ${this.rules.name} (사용자 규칙, 위 원칙보다 우선) ---\n${this.rules.text}`);
     const listed = this.listedSkills();

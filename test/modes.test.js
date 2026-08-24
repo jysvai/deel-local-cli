@@ -175,12 +175,15 @@ await new Promise((r) => setImmediate(r));
     const m = MODES[k];
     const 줄수 = m.say.split('\n').length;
     check(`${m.name}: 한 줄 안내가 아니라 절차다`, 줄수 >= 5, `${줄수}줄`);
-    check(`${m.name}: 무슨 일인지 먼저 못 박는다`, /지금 하는 일은/.test(m.say), m.say.split('\n')[0]);
+    // 첫 줄이 '지금 무슨 일을 하는 중인지' 를 못 박아야 한다.
+    // 모델은 프롬프트 앞머리를 가장 잘 따른다 — 여기서 흐리면 뒤가 다 흐려진다.
+    check(`${m.name}: 무슨 일인지 먼저 못 박는다`, /^지금/.test(m.say), m.say.split('\n')[0]);
   }
 
-  // 모드마다 절차가 실제로 달라야 한다. 같은 말을 여섯 번 쓰면 모드가 아니다.
+  // 모드마다 절차가 실제로 달라야 한다. 같은 말을 여러 번 쓰면 모드가 아니다.
   const 말들 = ORDER.map((k) => MODES[k].say);
-  check('여섯 모드의 절차가 서로 다르다', new Set(말들).size === 6, `서로 다른 것 ${new Set(말들).size}개`);
+  check('모든 모드의 절차가 서로 다르다', new Set(말들).size === ORDER.length,
+    `모드 ${ORDER.length}개 중 서로 다른 것 ${new Set(말들).size}개`);
 
   // 각 모드가 그 일에 필요한 것을 실제로 말하는가
   const 있어야할것 = {
