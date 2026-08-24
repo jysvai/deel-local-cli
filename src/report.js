@@ -64,12 +64,26 @@ export function verdict(facts, results) {
   return { level, notes };
 }
 
-const VERDICT_STYLE = {
-  ready:   { tag: c.green('  준비됨  '), line: '이 연결로 deel 를 돌릴 수 있습니다.' },
-  limited: { tag: c.yellow(' 제한적 '), line: '돌아가긴 합니다. 편집 신뢰성 보강이 필요합니다.' },
-  blocked: { tag: c.red('  막힘  '),  line: '핵심 기능이 막혀 있습니다. 아래를 먼저 해결해야 합니다.' },
-  stop:    { tag: c.red(' 연결실패 '), line: '연결 자체가 되지 않았습니다.' },
+// 판정 이름은 한 군데서만 정한다.
+//
+// 예전에는 화면용 tag 만 한국어였고, 파일로 떨어지는 보고서에는 `판정: ready`
+// 처럼 영어 키가 그대로 찍혔다. 그 파일은 사내 심사자가 읽으라고 만든 것이라
+// 가장 중요한 한 줄이 영어로 나가고 있었다.
+const VERDICT_NAME = {
+  ready: '준비됨', limited: '제한적', blocked: '막힘', stop: '연결실패',
 };
+
+const VERDICT_STYLE = {
+  ready:   { tag: c.green(`  ${VERDICT_NAME.ready}  `), line: '이 연결로 deel 를 돌릴 수 있습니다.' },
+  limited: { tag: c.yellow(` ${VERDICT_NAME.limited} `), line: '돌아가긴 합니다. 편집 신뢰성 보강이 필요합니다.' },
+  blocked: { tag: c.red(`  ${VERDICT_NAME.blocked}  `),  line: '핵심 기능이 막혀 있습니다. 아래를 먼저 해결해야 합니다.' },
+  stop:    { tag: c.red(` ${VERDICT_NAME.stop} `), line: '연결 자체가 되지 않았습니다.' },
+};
+
+/** 판정을 사람 말로. 모르는 값이면 그대로 돌려준다 — 지어내지 않는다. */
+export function verdictName(level) {
+  return VERDICT_NAME[level] ?? String(level ?? '');
+}
 
 export function renderVerdict(v) {
   const s = VERDICT_STYLE[v.level];
@@ -105,7 +119,7 @@ export function plainReport(facts, results, v) {
     const time = ' '.repeat(Math.max(0, 9 - t.length)) + t;
     lines.push(`  ${label} ${state} ${time}  ${r.detail}`);
   }
-  lines.push('-'.repeat(70), '', `판정: ${v.level}`, '');
+  lines.push('-'.repeat(70), '', `판정: ${verdictName(v.level)}  (${v.level})`, `        ${VERDICT_STYLE[v.level]?.line ?? ''}`, '');
   for (const n of v.notes) lines.push(`  - ${n}`);
   lines.push('');
   return lines.join('\n');

@@ -87,7 +87,10 @@ export class Session {
       parts.push(
         '\n--- 쓸 수 있는 스킬 ---\n' +
         '필요한 것이 있으면 Skill 도구로 이름을 불러 본문을 받아라. 없으면 그냥 진행해라.\n' +
-        listed.map((s) => `- ${s.name}: ${s.description.slice(0, this.maxSkillDesc)}`).join('\n')
+        // 설명이 없는 스킬이 섞일 수 있다 — 남의 폴더에서 오는 파일이라
+        // 앞머리(frontmatter)가 빠지곤 한다. 여기서 터지면 시스템 프롬프트를
+        // 못 만들어 **매 턴** 죽는다. 목록 명령 하나가 아니라 대화 전체가 막힌다.
+        listed.map((s) => `- ${s.name}: ${String(s.description ?? '').slice(0, this.maxSkillDesc)}`).join('\n')
       );
       const rest = this.skills.filter((s) => s.enabled).length - listed.length;
       if (rest > 0) parts.push(`(그 밖에 ${rest}개가 더 있으나 자리가 모자라 안 실었다.)`);
@@ -121,7 +124,7 @@ export class Session {
     const rules = this.rules ? estimateTokens(this.rules.text) : 0;
     const listed = this.listedSkills();
     const skills = listed.length
-      ? estimateTokens(listed.map((s) => `${s.name}: ${s.description.slice(0, this.maxSkillDesc)}`).join('\n'))
+      ? estimateTokens(listed.map((s) => `${s.name}: ${String(s.description ?? '').slice(0, this.maxSkillDesc)}`).join('\n'))
       : 0;
 
     let history = 0;

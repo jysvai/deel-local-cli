@@ -59,6 +59,12 @@ export const cursor = {
 // 한글·한자·가나는 터미널에서 두 칸을 차지한다. 표 정렬이 이걸 모르면 어긋난다.
 export function width(str) {
   let w = 0;
+  // 없는 값은 빈 글자로 본다.
+  //
+  // String(null) 은 'null' 이라 폭이 4 로 나온다. 그러면 상태줄이 네 칸씩
+  // 어긋나고, 화면에는 'null' 이라는 글자가 그대로 찍힌다. 모델 이름이나
+  // 곁말은 없을 수 있는 값이라 실제로 여기로 들어온다.
+  if (str === null || str === undefined) return 0;
   for (const ch of String(str).replace(/\x1b\[[0-9;]*m/g, '')) {
     const cp = ch.codePointAt(0);
     if (
@@ -124,7 +130,13 @@ export function bar(used, total, cells = 32) {
 
 // 상태줄용 얇은 막대.
 export function gauge(ratio, cells = 10) {
-  const r = Math.min(1, Math.max(0, ratio));
+  // 숫자가 아니면 0 으로 본다.
+  //
+  // Math.min/max 는 NaN 을 그대로 흘린다. 그러면 repeat(NaN) 이 빈 글자가 되어
+  // 막대가 통째로 사라지고, 그만큼 상태줄이 밀린다. 컨텍스트 총량이 0 일 때
+  // used/total 이 실제로 NaN 이 된다 — 새 연결에서 드물게 나온다.
+  const n = Number(ratio);
+  const r = Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
   const filled = Math.round(r * cells);
   const tone = r > 0.85 ? c.hred : r > 0.6 ? c.hyellow : c.hgreen;
   return tone('▰'.repeat(filled)) + c.gray('▱'.repeat(cells - filled));

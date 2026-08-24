@@ -27,7 +27,16 @@ async function tryOpenAI(base, key) {
       }
     }
     // 401/403 이면 규격은 맞고 인증만 틀린 것 — 다음 방식으로 계속.
-    if (r.status && ![401, 403, 0, 404].includes(r.status)) {
+    //
+    // 그 밖의 오류(500 등)는 '규격은 맞는데 서버가 지금 화가 난 것' 으로 본다.
+    // 그래야 서버가 한 말을 사람에게 그대로 보여 줄 수 있다.
+    //
+    // 단, **200 인데 JSON 이 아니면 여기 해당하지 않는다.** 사내 프록시가
+    // 로그인 페이지를 200 으로 내주는 일이 흔한데, 예전에는 그걸 "OpenAI 호환
+    // 서버 · 모델 0개" 로 잡았다. 그러면 사람은 모델이 안 올라온 줄 알고
+    // 엉뚱한 데를 파게 된다 — 실제로는 인증 페이지에 막힌 것이다.
+    const 성공인데JSON아님 = r.status >= 200 && r.status < 300 && !r.json;
+    if (r.status && !성공인데JSON아님 && ![401, 403, 0, 404].includes(r.status)) {
       return { kind: 'openai', base, auth: style.id, models: [], ms: r.ms, warn: serverMessage(r) };
     }
   }

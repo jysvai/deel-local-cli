@@ -215,13 +215,20 @@ export async function handle(line, session, ctx) {
     case 'auto':
     case 'code': case 'plan': case 'architect':
     case 'debug': case 'ask': case 'orchestrator': {
-      const 원하는 = name === 'work' ? normWork(arg) : name;
-      if (name === 'work' && !원하는) { showWork(session); return { handled: true }; }
-      const 골라진 = normWork(원하는);
+      // 인자 없이 /work 만 치면 지금 모드와 고를 수 있는 것을 보여 준다.
+      if (name === 'work' && !arg.trim()) { showWork(session); return { handled: true }; }
+
+      const 골라진 = normWork(name === 'work' ? arg : name);
       if (!골라진) {
+        // 오타에는 목록만 보여 주면 안 된다.
+        //
+        // 예전에는 /work 오타 가 조용히 목록으로 빠졌다. 그러면 사람은 자기가
+        // 친 말이 틀렸다는 걸 모른 채 '왜 안 바뀌지' 만 하게 된다. 못 알아들었다는
+        // 말을 먼저 하고, 그 다음에 쓸 수 있는 것을 보여 준다.
         say(`  ${mark.warn} 그런 모드는 없습니다: ${c.white(arg)}`);
         say(`  ${c.gray('쓸 수 있는 것:')} ${WORK_ORDER.map((k) => c.cyan(WORK_MODES[k].name)).join(c.gray(' · '))}`);
         say('');
+        showWork(session);
         return { handled: true };
       }
       session.work = 골라진;
@@ -432,6 +439,10 @@ function showSkills(session, arg) {
     return;
   }
 
+  // 스킬은 남의 폴더·플러그인에서 온다. 앞머리(frontmatter)가 빠진 파일이 섞이면
+  // 이름이나 설명이 없다. 그걸 그대로 만지면 목록 하나 보려다 대화가 끝난다.
+  const 낮게 = (v) => String(v ?? '').toLowerCase();
+
   const q = arg.trim();
   if (q === 'all') {
     all.forEach((s) => { s.enabled = true; });
@@ -450,7 +461,7 @@ function showSkills(session, arg) {
     const term = q.slice(3).trim().toLowerCase();
     let n = 0;
     for (const s of all) {
-      s.enabled = s.name.toLowerCase().includes(term) || s.description.toLowerCase().includes(term);
+      s.enabled = 낮게(s.name).includes(term) || 낮게(s.description).includes(term);
       if (s.enabled) n++;
     }
     say(`  ${mark.ok} "${term}" 에 걸리는 ${n}개만 올립니다.`);
@@ -459,14 +470,17 @@ function showSkills(session, arg) {
   }
 
   const hits = q
-    ? all.filter((s) => s.name.toLowerCase().includes(q.toLowerCase()) || s.description.toLowerCase().includes(q.toLowerCase()))
+    ? all.filter((s) => 낮게(s.name).includes(q.toLowerCase()) || 낮게(s.description).includes(q.toLowerCase()))
     : session.listedSkills();
 
   say('');
   rule(q ? `스킬 검색: ${q}` : '지금 올라간 스킬', 74);
   for (const s of hits.slice(0, 30)) {
     const tag = s.enabled ? c.green('●') : c.gray('○');
-    say(`  ${tag} ${c.cyan(pad(s.name, 32))} ${c.gray(s.description.slice(0, 60))}`);
+    // 설명이 없을 수 있다. 스킬은 남의 폴더·플러그인에서 오는 것이라
+    // 앞머리(frontmatter)가 빠진 파일이 섞인다. 여기서 터지면 목록 하나 보려다
+    // 대화가 통째로 끝난다 — 화면 그리기는 무슨 일이 있어도 안 죽어야 한다.
+    say(`  ${tag} ${c.cyan(pad(s.name, 32))} ${c.gray(String(s.description ?? '').slice(0, 60))}`);
   }
   if (hits.length > 30) say(`  ${c.gray(`… 그 밖에 ${hits.length - 30}개`)}`);
   say('');

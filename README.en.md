@@ -813,11 +813,12 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 ## Development
 
 ```bash
-npm test        Full suite (254 checks)
-npm run verify  Import + network checks only
-npm run bench   Edit success rate
-npm run demo    See what the UI actually looks like
-npm run check   Syntax check every file
+npm test          Full suite (1,066 checks)
+npm run coverage  Which lines the tests actually execute
+npm run verify    Import + network checks only
+npm run bench     Edit success rate
+npm run demo      See what the UI actually looks like
+npm run check     Syntax check every file
 ```
 
 Tests run against a **fake gateway**, so the loop, streaming, tool execution, undo and compaction
@@ -834,16 +835,44 @@ so one run tells you everything.
 |---|---|---|
 | `smoke` | 20 | Tools, scope, undo, audit log |
 | `loop` | 16 | Agent loop, streaming, tool calls |
+| `guard` | 24 | **What it refuses to do** — denied edits, unknown tools, repeated mutations, out-of-scope writes |
 | `network` | 30 | Nothing escapes the configured address |
 | `web` | 25 | Web reads stay read-only |
 | `abort` | 16 | Ctrl+C leaves the conversation valid |
 | `parallel` | 23 | Read-only tools run together; checklists |
+| `cli` | 75 | **Spawns the real `deel`** and drives it to completion |
+| `setup` | 42 | First-run wizard, driven through a fake TTY |
+| `detect` | 66 | Identifying shape and auth from one address |
+| `modes` · `route` | 89 · 33 | Work modes; auto-switching from Auto |
+| `ctxsize` | 43 | Reading context length off the model |
+| `commands` · `commands-more` | 128 · 62 | Every slash command |
+| `ui` · `ui2` | 60 · 40 | Password masking, CJK width, status line, session list, Excel→text |
+| `encoding` · `xlsx` | 68 · 72 | Legacy-encoding detection; Excel reading |
 | `compact` | 21 | Summary folding, pairing intact, graceful fallback |
 | `store` | 34 | Session persistence, resume, crash recovery |
-| `scan` | 19 | Distinguishing multiple runtimes |
+| `scan` | 29 | Distinguishing multiple runtimes |
 | `plugins` | 38 | Plugin fetch/pack, ZIP/TAR |
 | `no-bundle` | 12 | Nothing foreign in the published package; test-file hygiene |
 | `edit-bench` | 20 cases | Edit success rate |
+
+### Coverage
+
+```bash
+npm run coverage                           Summary
+node test/coverage.mjs --file src/repl.js  One file in detail
+node test/coverage.mjs --json              Machine-readable
+```
+
+Zero dependencies rules out c8 and nyc, so this reads Node's own
+`NODE_V8_COVERAGE` instead — nothing new to get through an import review. It picks up
+child processes too, so the `cli` suite that spawns `deel` counts like everything else.
+
+Currently **92% overall** (4,979 of 5,412 lines). Two files are deliberately left short.
+
+| File | Now | Why it stops there |
+|---|---|---|
+| `tools/excel.js` | 67% | The password path needs Excel installed and a genuinely encrypted file. Faking it would produce a test that only *looks* like it passes |
+| `plugins/manage.js` | 79% | The GitHub download path. **Tests not reaching the network** matters more. Folder installs are covered |
 
 ---
 
