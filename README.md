@@ -620,7 +620,7 @@ deel --resume <id>       골라서 이어하기
 ## 개발
 
 ```bash
-npm test        전체 검증 (253항목)
+npm test        전체 검증 (254항목)
 npm run verify  반입·통신 검증만
 npm run bench   편집 성공률 측정
 npm run demo    화면이 어떻게 보이는지 실제로 돌려 보기
@@ -643,7 +643,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 | `store` | 34 | 대화 저장·이어하기·중간에 죽어도 복구 |
 | `scan` | 19 | 여러 런타임을 구분해 찾는가 |
 | `plugins` | 38 | 플러그인 받기·묶기·ZIP/TAR |
-| `no-bundle` | 11 | 배포 묶음에 남의 것이 안 섞였는가 |
+| `no-bundle` | 12 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
 | `edit-bench` | 20건 | 편집 성공률 |
 
 ### 폴더 구조

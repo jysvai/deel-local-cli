@@ -598,7 +598,7 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 ## Development
 
 ```bash
-npm test        Full suite (253 checks)
+npm test        Full suite (254 checks)
 npm run verify  Import + network checks only
 npm run bench   Edit success rate
 npm run demo    See what the UI actually looks like
@@ -621,7 +621,7 @@ are verified deterministically without any model. ZIP output is cross-checked wi
 | `store` | 34 | Session persistence, resume, crash recovery |
 | `scan` | 19 | Distinguishing multiple runtimes |
 | `plugins` | 38 | Plugin fetch/pack, ZIP/TAR |
-| `no-bundle` | 11 | Nothing foreign in the published package |
+| `no-bundle` | 12 | Nothing foreign in the published package; test-file hygiene |
 | `edit-bench` | 20 cases | Edit success rate |
 
 ---

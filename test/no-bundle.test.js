@@ -4,7 +4,7 @@
 //  npm install 로그에 다른 패키지 이름이 뜨면 "얘가 딸려왔나?" 하고 놀라게 된다.
 //  실제로 한 번 그랬다. 그래서 사람 기억 대신 테스트가 지키게 한다.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -83,6 +83,31 @@ check('빈 PC 에서 스킬 0개', r.skills.length === 0, `${r.skills.length}개
 check('빈 PC 에서 플러그인 0개', r.plugins.length === 0, `${r.plugins.length}개 나옴`);
 check('빈 PC 에서 명령 0개', r.commands.length === 0, `${r.commands.length}개 나옴`);
 rmSync(빈PC, { recursive: true, force: true });
+
+// --- 검사 파일 자체의 위생 ------------------------------------------------
+//
+// 서버를 띄운 검사가 process.exit() 로 끝나면, 아직 닫히는 중인 핸들이 남은 채
+// 프로세스가 끊겨 윈도우 libuv 가 죽는다.
+//   Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), src\win\async.c
+// 검사는 전부 통과했는데 종료코드만 1 이 되므로, 화면만 봐서는 초록으로 보이고
+// CI 만 빨간불이 된다. 실제로 한 번 그렇게 놓쳤다. 그래서 구조로 막는다.
+{
+  // 주석은 걷어내고 본다. 안 그러면 이 규칙을 설명하는 주석 자체가 걸린다 —
+  // 실제로 처음 쓸 때 그렇게 걸렸다.
+  const 코드만 = (src) => src
+    .split('\n')
+    .filter((l) => { const t = l.trim(); return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*'); })
+    .join('\n');
+
+  const 걸린것 = [];
+  for (const f of readdirSync(join(repo, 'test')).filter((x) => x.endsWith('.js'))) {
+    const src = 코드만(readFileSync(join(repo, 'test', f), 'utf8'));
+    if (!/createServer\s*\(/.test(src)) continue;             // 서버를 안 띄우면 상관없다
+    if (/process\.exit\s*\(/.test(src)) 걸린것.push(f);
+  }
+  check('서버를 띄운 검사는 process.exit() 를 안 쓴다', 걸린것.length === 0,
+    걸린것.length ? `${걸린것.join(', ')} — process.exitCode 로 바꾸세요` : '');
+}
 
 // --- 결과 ---------------------------------------------------------------
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

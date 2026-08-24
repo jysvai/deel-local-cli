@@ -165,6 +165,15 @@ console.log('  ' + '─'.repeat(64));
 console.log(`  통과 ${pass.length} · 실패 ${fail.length}`);
 console.log('');
 
+// 서버를 띄운 뒤에는 process.exit() 를 쓰지 않는다.
+//
+// 아직 닫히는 중인 핸들이 남은 채로 프로세스를 끊으면 윈도우 libuv 가
+//   Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), src\win\async.c
+// 로 죽는다. 검사를 다 통과해 놓고도 종료코드가 1 이 되어, npm test 의
+// && 사슬이 여기서 끊긴다. 붙어 있던 연결을 먼저 끊고, 닫힘이 한 바퀴
+// 돌 틈을 준 다음, 종료코드만 정해 놓고 자연스럽게 끝나게 둔다.
+server.closeAllConnections?.();
 server.close();
+await new Promise((r) => setImmediate(r));
 rmSync(root, { recursive: true, force: true });
-process.exit(fail.length ? 1 : 0);
+process.exitCode = fail.length ? 1 : 0;

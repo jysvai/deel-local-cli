@@ -94,8 +94,11 @@ check('그 서버에는 한 건도 안 닿음', !hits.some((h) => String(h).star
 check('닿은 곳 기록이 남음', contacted().length === 1 && contacted()[0].local,
   JSON.stringify(contacted()));
 
+server.closeAllConnections?.();
+other.closeAllConnections?.();
 server.close();
 other.close();
+await new Promise((r) => setImmediate(r));
 
 // ── 7. 문이 정말 하나뿐인가 ─────────────────────────────────────────────
 // http.js 말고 다른 데서 fetch 를 직접 부르면 자물쇠를 지나지 않는다.
@@ -156,4 +159,5 @@ console.log('\n바깥으로 새는지 검사  ' + D + '(소스가 정해진 자�
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
-process.exit(fail.length ? 1 : 0);
+// 서버를 띄운 검사는 process.exit() 를 쓰지 않는다 — loop.test.js 의 설명 참고.
+process.exitCode = fail.length ? 1 : 0;
