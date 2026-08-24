@@ -9,6 +9,7 @@ import { findMatch, applySpans, reindent, TIER_LABELS } from './edit-match.js';
 import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
 import { TODO_TOOL } from './todo.js';
+import { allow as allowedIn } from '../agent/modes.js';
 
 const MAX_READ_LINES = 2000;
 const MAX_OUT = 30000;
@@ -305,12 +306,17 @@ export const TOOLS = {
 
 // 모델에게 넘길 도구 정의 목록.
 // 스킬이 없으면 Skill 도구는 빼서 자리를 아낀다.
-export function toolSchemas(names = null, { hasSkills = false, web = true } = {}) {
-  const list = names ?? Object.keys(TOOLS).filter((n) => {
+export function toolSchemas(names = null, { hasSkills = false, web = true, work = null } = {}) {
+  let list = names ?? Object.keys(TOOLS).filter((n) => {
     if (n === 'Skill') return hasSkills;
     if (n === 'WebFetch') return web;
     return true;
   });
+  // 작업 모드가 정해져 있으면 그 모드가 쓰는 것만 남긴다.
+  //
+  // 설계·계획·묻기 모드에서 파일을 바꾸면 안 된다고 프롬프트로 부탁할 수도 있다.
+  // 그런데 모델은 부탁을 잊는다. 목록에서 아예 빼면 잊을 것이 없다.
+  if (work) list = allowedIn(work, list);
   return list.map((n) => ({ type: 'function', function: TOOLS[n].schema }));
 }
 

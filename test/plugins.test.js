@@ -4,13 +4,14 @@
 // tar 는 진짜 tar 가 만든 걸 읽히고, zip 은 진짜 unzip 으로 열어 본다.
 // 사내 PC 에서 압축을 푸는 건 내 코드가 아니라 윈도우 탐색기이기 때문이다.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, cpSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { untargz, stripTop } from '../src/pack/tar.js';
 import { makeZip, crc32 } from '../src/pack/zip.js';
 import { parseSpec, install, list, remove, pack, pluginsDir } from '../src/plugins/manage.js';
 import { discover } from '../src/skills/discover.js';
+import { copyDir } from '../src/tools/fsutil.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -122,6 +123,7 @@ mkdirSync(join(받은폴더, 'commands'), { recursive: true });
 writeFileSync(join(받은폴더, 'commands', '결재.md'), '결재 올려줘: $ARGUMENTS\n', 'utf8');
 writeFileSync(join(받은폴더, 'hook.js'), 'console.log("실행 스크립트")\n', 'utf8');
 
+trace('4a-install직전');
 const 설치 = await install(받은폴더, { home });
 check('폴더에서 설치됨', !설치.error, 설치.error ?? '');
 check('manifest 이름을 씀', 설치.name === 'sabun-kit', String(설치.name));
@@ -136,9 +138,12 @@ if (설치.path) {
 const 빈폴더 = join(sand, '빈것');
 mkdirSync(join(빈폴더, 'docs'), { recursive: true });
 writeFileSync(join(빈폴더, 'docs', 'a.md'), 'x', 'utf8');
+trace('4b-빈폴더install직전');
 check('스킬 없는 폴더는 거절', !!(await install(빈폴더, { home })).error);
+trace('4c-엉뚱주소직전');
 check('엉뚱한 주소도 거절', !!(await install('말도안되는값!!', { home })).error);
 
+trace('4d-list직전');
 const 목록2 = list({ home });
 check('목록에 뜸', 목록2.length === 1 && 목록2[0].name === 'sabun-kit');
 check('목록에 라이선스 표시', 목록2[0].license === 'MIT');
@@ -146,14 +151,12 @@ check('목록에 라이선스 표시', 목록2[0].license === 'MIT');
 trace('5-반입묶음');
 // ── 5. 반입 묶음 ────────────────────────────────────────────────────────
 const 반입 = join(sand, '반입.zip');
-trace('5a-pack직전');
 const 묶음 = pack(반입, { home });
 check('반입 묶음 만들어짐', !묶음.error && existsSync(반입), 묶음.error ?? '');
 check('실행 스크립트는 뺌', 묶음.skipped >= 1, `${묶음.skipped}개 제외`);
 
 if (!묶음.error && unzipOk) {
   const 푼곳 = join(sand, '반입푼것');
-trace('5b-unzip직전');
   sh('unzip', ['-qq', '-o', 반입, '-d', 푼곳]);
   check('안내문이 같이 들어감', existsSync(join(푼곳, '사용안내.txt')));
   check('스킬이 들어감', existsSync(join(푼곳, 'sabun-kit', 'skills', '품의서', 'SKILL.md')));
@@ -164,10 +167,8 @@ trace('5b-unzip직전');
   // 푼 그대로 다른 PC 의 ~/.deel/plugins 가 되는가 — 이게 반입의 최종 관문
   const 새PC = join(sand, '새PC');
   mkdirSync(join(새PC, '.deel'), { recursive: true });
-trace('5c-cpSync직전');
-  cpSync(푼곳, join(새PC, '.deel', 'plugins'), { recursive: true });
+  copyDir(푼곳, join(새PC, '.deel', 'plugins'));
   rmSync(join(새PC, '.deel', 'plugins', '사용안내.txt'), { force: true });
-trace('5d-discover직전');
   const 새PC결과 = discover(join(새PC, 'proj'), { home: 새PC });
   check('오프라인 PC 가 그대로 인식',
     새PC결과.skills.length === 2 && 새PC결과.commands.length === 1,

@@ -7,11 +7,12 @@ import { homedir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
 import {
   existsSync, mkdirSync, writeFileSync, readFileSync, rmSync,
-  readdirSync, statSync, cpSync,
+  readdirSync, statSync,
 } from 'node:fs';
 import { untargz, stripTop } from '../pack/tar.js';
 import { makeZip } from '../pack/zip.js';
 import { allowTemporarily, checkUrl, isOffline } from '../safety/network.js';
+import { copyDir } from '../tools/fsutil.js';
 
 export const pluginsDir = (home = homedir()) => join(home, '.deel', 'plugins');
 
@@ -143,7 +144,7 @@ export async function install(spec, { home = homedir(), onStep } = {}) {
     onStep?.('폴더 복사');
     rmSync(tmp, { recursive: true, force: true });
     mkdirSync(dirname(tmp), { recursive: true });
-    cpSync(asPath, tmp, { recursive: true });
+    copyDir(asPath, tmp);
     rmSync(join(tmp, '.git'), { recursive: true, force: true });
     got = { how: '폴더', from: asPath };
   } else {
@@ -163,7 +164,7 @@ export async function install(spec, { home = homedir(), onStep } = {}) {
 
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dirname(dest), { recursive: true });
-  cpSync(tmp, dest, { recursive: true });
+  copyDir(tmp, dest);
   rmSync(tmp, { recursive: true, force: true });
 
   // 어디서 왔는지 남긴다 — 나중에 반입 심사에서 출처를 물어본다.

@@ -6,6 +6,7 @@ import { isMutating } from '../safety/guard.js';
 import { effortFor, tokensFor, fullCap, wasCut } from './effort.js';
 import { compact, shouldCompact } from './compact.js';
 import { isOffline } from '../safety/network.js';
+import { get as workMode } from './modes.js';
 
 // think 값을 규격에 맞게. 'off' 는 사고를 끈다.
 function thinkFor(conn, level) {
@@ -67,19 +68,25 @@ export async function* run(session, ctx, userText, { signal = null } = {}) {
   const tools = toolSchemas(null, {
     hasSkills: (session.skills?.length ?? 0) > 0,
     web: session.web !== false && !isOffline(),   // 오프라인이면 웹 도구는 아예 안 보여 준다
+    work: session.work,                           // 작업 모드가 쓰는 것만 (modes.js)
   });
+  // 모드마다 생각의 배분과 걸음 수가 다르다. 사용자가 따로 정했으면 그걸 존중한다.
+  const 모드 = workMode(session.work);
+  const effort = session.effortSet ? session.effort : (모드.effort ?? session.effort);
+  const think = session.thinkSet ? session.think : (모드.think ?? session.think);
+  const maxSteps = session.stepsSet ? session.maxSteps : (모드.steps ?? session.maxSteps);
   const attempted = new Set();   // 같은 변경성 명령을 두 번 실행하지 않기 위한 기록
   let steps = 0;
   let lastToolFailed = false;    // 직전 단계에서 도구가 오류를 냈나 → 다음 판단은 세게
 
-  while (steps < session.maxSteps) {
+  while (steps < maxSteps) {
     steps++;
     // 단계마다 필요한 생각의 양이 다르다. effort.js 가 그 배분을 갖고 있다.
     const stage = steps === 1 ? 'plan' : lastToolFailed ? 'fix' : 'work';
-    const level = effortFor(session.think, session.effort, stage);
+    const level = effortFor(think, effort, stage);
     // 상한은 모델 컨텍스트와 지금 찬 양에서 계산한다. 고정 숫자가 아니다.
     const room = { ctx: conn.ctx ?? 0, used: session.breakdown().used, max: conn.maxTokens ?? null };
-    const cap = tokensFor(session.effort, stage, room);
+    const cap = tokensFor(effort, stage, room);
     yield { type: 'stage', stage, level, cap, step: steps };
 
     const ask = (maxTokens, think) => ({

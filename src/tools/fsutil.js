@@ -1,6 +1,35 @@
 // 파일 훑기와 glob 매칭. 외부 패키지 없이 직접 구현한다.
-import { readdirSync, statSync, readFileSync } from 'node:fs';
+import { readdirSync, statSync, readFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+
+/**
+ * 폴더를 통째로 옮겨 담는다.
+ *
+ * fs.cpSync 를 안 쓰는 이유가 둘이다.
+ *
+ *  1) Node 가 실험 기능으로 표시한 API 다. 판마다 동작이 다르고, 윈도우에서
+ *     프로세스가 통째로 죽는 것을 실제로 겪었다 — 검사가 아무 말도 없이
+ *     0xC0000409 로 끝났다. 배포되는 코드가 실험 API 에 매달려 있으면 안 된다.
+ *
+ *  2) cpSync 는 심볼릭 링크를 따라간다. 남이 준 플러그인 폴더에 바깥을 가리키는
+ *     링크가 하나 있으면 그것까지 딸려 들어온다. 여기서는 링크를 건너뛴다 —
+ *     플러그인은 제 폴더 안의 글 파일이면 충분하다.
+ *
+ * 하는 일이 뻔해서 읽으면 다 보인다. 그게 이 프로젝트가 원하는 것이다.
+ */
+export function copyDir(from, to, { skipped = [] } = {}) {
+  mkdirSync(to, { recursive: true });
+  for (const e of readdirSync(from, { withFileTypes: true })) {
+    const s = join(from, e.name);
+    const d = join(to, e.name);
+    if (e.isSymbolicLink()) { skipped.push(s); continue; }
+    if (e.isDirectory()) copyDir(s, d, { skipped });
+    else if (e.isFile()) copyFileSync(s, d);
+    // 그 밖(장치·소켓 같은 것)은 건너뛴다. 플러그인에 있을 이유가 없다.
+    else skipped.push(s);
+  }
+  return { skipped };
+}
 
 export const SKIP_DIRS = new Set([
   'node_modules', '.git', '.deel', '.svn', '.hg', 'dist', 'build',

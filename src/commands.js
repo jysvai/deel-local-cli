@@ -13,6 +13,7 @@ import { spin } from './ui/spinner.js';
 import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable } from './agent/effort.js';
 import { scanLocal, toProfiles } from './backend/scan.js';
 import { list as listSessions } from './agent/store.js';
+import { MODES as WORK_MODES, ORDER as WORK_ORDER, normalize as normWork, get as getWork, canWrite } from './agent/modes.js';
 const MODES = {
   auto: '자율 — 전부 알아서. 되돌리기가 안전망',
   confirm: '확인 — 되돌릴 수 없는 것만 물어봄',
@@ -26,7 +27,14 @@ export const COMMANDS = {
   compact: { desc: '오래된 대화 줄이기' },
   model:   { desc: '모델·연결 바꾸기' },
   think:   { desc: '추론 강도 (off/low/medium/high/max)', arg: '<수준>' },
-  mode:    { desc: '실행 모드 (auto/confirm/strict)', arg: '<모드>' },
+  mode:    { desc: '승인 정책 — 얼마나 물어보나 (auto/confirm/strict)', arg: '<모드>' },
+  work:    { desc: '작업 모드 — 무슨 일을 하는 중인가', arg: '[모드]' },
+  code:    { desc: '작업 모드 → 코드 (고치고 만든다)' },
+  plan:    { desc: '작업 모드 → 계획 (먼저 계획만)' },
+  architect:{ desc: '작업 모드 → 설계 (구조를 짠다)' },
+  debug:   { desc: '작업 모드 → 디버그 (원인을 찾는다)' },
+  ask:     { desc: '작업 모드 → 묻기 (설명만)' },
+  orchestrator: { desc: '작업 모드 → 총괄 (큰 일을 쪼개서)' },
   undo:    { desc: '직전 작업 되돌리기', arg: '[턴수]' },
   tools:   { desc: '쓸 수 있는 도구 보기' },
   skills:  { desc: '스킬 보기·검색·골라 올리기', arg: '[검색어|all|off]' },
@@ -166,6 +174,28 @@ export async function handle(line, session, ctx) {
         k.think ? c.green('추론') : c.gray('추론'),
       ].join(c.gray(' · '));
       say(`  ${c.gray(pad('지원', 10))} ${caps}`);
+      say('');
+      return { handled: true };
+    }
+
+    case 'work':
+    case 'code': case 'plan': case 'architect':
+    case 'debug': case 'ask': case 'orchestrator': {
+      const 원하는 = cmd === 'work' ? normWork(arg) : cmd;
+      if (cmd === 'work' && !원하는) { showWork(session); return { handled: true }; }
+      const 골라진 = normWork(원하는);
+      if (!골라진) {
+        say(`  ${mark.warn} 그런 모드는 없습니다: ${c.white(arg)}`);
+        say(`  ${c.gray('쓸 수 있는 것:')} ${WORK_ORDER.map((k) => c.cyan(WORK_MODES[k].name)).join(c.gray(' · '))}`);
+        say('');
+        return { handled: true };
+      }
+      session.work = 골라진;
+      const w = getWork(골라진);
+      say('');
+      say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}  ${c.gray(w.hint)}`);
+      say(`  ${c.gray('도구')}    ${canWrite(골라진) ? c.yellow('읽기 + 파일 바꾸기') : c.green('읽기만 — 파일을 못 바꿉니다')}`);
+      say(`  ${c.gray('생각')}    ${c.white(w.think ?? session.think)}${c.gray('·')}${c.magenta(w.effort)}   ${c.gray('최대 ' + w.steps + '걸음')}`);
       say('');
       return { handled: true };
     }
@@ -517,3 +547,20 @@ const INIT_TEMPLATE = `# DEEL.md
 - 고치기 전에 관련 파일을 먼저 읽는다
 - (프로젝트에 맞는 규칙을 적으세요)
 `;
+
+// /work 를 인자 없이 부르면 지금 모드와 고를 수 있는 것들을 보여 준다.
+function showWork(session) {
+  rule('작업 모드', 70);
+  for (const k of WORK_ORDER) {
+    const w = WORK_MODES[k];
+    const 지금 = k === (normWork(session.work) ?? 'code');
+    const 표 = 지금 ? c.hgreen('●') : c.gray('·');
+    const 이름 = 지금 ? c.bold(c.white(pad(w.name, 8))) : c.gray(pad(w.name, 8));
+    say(`  ${표} ${c.hcyan(w.glyph)} ${이름}${c.gray(pad(w.en, 14))}${c.gray(w.hint)}`);
+    say(`        ${canWrite(k) ? c.gray('파일 바꿈') : c.green('읽기만')}${c.gray('  ·  생각 ' + (w.think ?? '그대로') + '·' + w.effort + '  ·  최대 ' + w.steps + '걸음')}`);
+  }
+  say('');
+  say(`  ${c.gray('바꾸려면')} ${c.cyan('/plan')} ${c.cyan('/code')} ${c.cyan('/debug')} ${c.gray('…  또는')} ${c.cyan('Shift+Tab')} ${c.gray('으로 차례로')}`);
+  say(`  ${c.gray('이건 승인 정책(')}${c.cyan('/mode')}${c.gray(')과 다른 축입니다 — 무엇을 하느냐 / 얼마나 물어보냐.')}`);
+  say('');
+}
