@@ -42,16 +42,20 @@ const d = (s) => (C ? `\x1b[90m${s}\x1b[0m` : s);
 function runOne(file) {
   return new Promise((done) => {
     const t0 = Date.now();
+    // 표준오류는 잡지 않고 그대로 물려준다.
+    //
+    // 파이프로 받으면 abort() 로 죽을 때 메시지를 잃는다. 윈도우에서 파이프
+    // 쓰기는 비동기라, 죽는 순간 아직 안 나간 것이 버려지기 때문이다.
+    // 죽는 이유가 적힌 바로 그 줄이 사라진다 — 실제로 그것 때문에 원인을
+    // 한 바퀴 더 돌아 찾았다. 요약에 못 실어도 화면에는 남는 편이 낫다.
     const kid = spawn(process.execPath, [join(here, file)], {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'inherit'],
       env: { ...process.env, FORCE_COLOR: C ? '1' : '' },
     });
 
     let out = '';
-    let err = '';
+    const err = '';
     kid.stdout.on('data', (b) => { out += b; process.stdout.write(b); });
-    // stderr 도 화면에 그대로 보낸다. 조용히 죽는 경우를 놓치지 않기 위해서다.
-    kid.stderr.on('data', (b) => { err += b; process.stderr.write(b); });
 
     kid.on('close', (code, signal) => {
       // 숫자를 세어 둔다. 없으면 없는 대로 둔다 — 세는 게 목적이 아니다.
