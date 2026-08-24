@@ -11,6 +11,7 @@ import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
 import { TODO_TOOL } from './todo.js';
 import { allow as allowedIn } from '../agent/modes.js';
+import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 
 const MAX_READ_LINES = 2000;
 const MAX_OUT = 30000;
@@ -20,11 +21,43 @@ function clip(s, n = MAX_OUT) {
   return t.length > n ? t.slice(0, n) + `\n… (${t.length - n}자 잘림)` : t;
 }
 
+// 엑셀 파일에 쓰려 할 때 하는 말. 왜 안 되는지와, 그럼 어떻게 하는지를 같이 준다.
+function 엑셀은못고침(보인이름) {
+  return `엑셀 파일은 이 도구로 고칠 수 없습니다: ${보인이름}\n`
+    + '  읽기만 됩니다 (CSV 로 바꿔서 보여줍니다). 서식·수식·차트가 든 파일을\n'
+    + '  CSV 로 왕복시키면 반드시 뭔가 잃기 때문입니다.\n'
+    + '  값을 바꿔야 한다면 CSV 로 따로 내보내 작업하거나, 엑셀에서 직접 고치세요.';
+}
+
+/**
+ * 엑셀 파일을 표로 읽어 돌려준다.
+ *
+ * 되돌려 쓰지 않으므로 ctx.enc 에 인코딩을 적지 않는다 — 적어 두면 나중에
+ * Edit 이 '이 파일 고칠 수 있다' 고 오해한다. ctx.seen 에도 안 넣는 이유가 같다.
+ * 엑셀 파일은 이 도구로 고치는 물건이 아니다.
+ */
+async function 엑셀읽기(abs, args, ctx) {
+  const r = await readExcel(abs, { askPassword: ctx.askPassword ?? null });
+  if (!r.ok) return { error: r.error };
+
+  const { text, 잘림 } = excelText(r.sheets);
+  const 말 = [...(r.notes ?? []), ...잘림];
+  return {
+    content: clip(
+      `${text}\n\n(엑셀 파일을 CSV 로 바꿔서 보여준 것입니다. 이 파일은 Edit/Write 로 고칠 수 없습니다.)`
+      + (말.length ? `\n(${말.join(' · ')})` : ''),
+    ),
+    summary: excelSummary(r.sheets, r.how) + (잘림.length ? ` · 일부만` : ''),
+  };
+}
+
 export const TOOLS = {
   Read: {
     schema: {
       name: 'Read',
-      description: '파일 하나를 읽는다. 줄 번호가 붙어 돌아온다. 고치기 전에는 반드시 먼저 읽어야 한다.',
+      description: '파일 하나를 읽는다. 줄 번호가 붙어 돌아온다. 고치기 전에는 반드시 먼저 읽어야 한다.'
+        + ' 엑셀 파일(.xlsx/.xlsm/.xls)도 그대로 읽을 수 있다 — 시트별 CSV 로 바꿔서 돌려준다.'
+        + ' 사용자에게 CSV 로 내보내 달라고 할 필요가 없다. 다만 엑셀 파일은 읽기만 되고 고칠 수는 없다.',
       parameters: {
         type: 'object',
         properties: {
@@ -39,6 +72,11 @@ export const TOOLS = {
       const abs = ctx.scope.resolve(args.file_path);
       if (!existsSync(abs)) return { error: `파일이 없습니다: ${args.file_path}` };
       if (statSync(abs).isDirectory()) return { error: `폴더입니다. Glob 을 쓰세요: ${args.file_path}` };
+
+      // 엑셀 파일은 글이 아니라 압축 꾸러미다. 그냥 읽으면 '바이너리' 로 끝난다.
+      // 여기서 표로 바꿔 돌려준다 — 사람이 손으로 CSV 로 내보낼 일이 없게.
+      if (isExcelPath(abs)) return 엑셀읽기(abs, args, ctx);
+
       const 읽음 = readTextFull(abs);
       // 무엇으로 읽었는지 기억해 둔다. 나중에 고칠 때 같은 것으로 되돌려 써야 한다.
       // 안 그러면 사내 CP949 문서가 한 번 고치는 것만으로 UTF-8 이 되어 버린다.
@@ -76,6 +114,9 @@ export const TOOLS = {
     run(args, ctx) {
       const abs = ctx.scope.resolve(args.file_path);
       if (typeof args.content !== 'string') return { error: 'content 가 문자열이 아닙니다' };
+      // 엑셀 파일을 통째로 덮어쓰면 xlsx 가 아니라 그냥 글 파일이 된다.
+      // 열리지도 않는 파일이 되고, 원본은 이미 없다. 아예 막는다.
+      if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
       ctx.history.snapshot(abs, 'Write');
       mkdirSync(dirname(abs), { recursive: true });
       const existed = existsSync(abs);
@@ -121,6 +162,9 @@ export const TOOLS = {
     run(args, ctx) {
       const abs = ctx.scope.resolve(args.file_path);
       if (!existsSync(abs)) return { error: `파일이 없습니다: ${args.file_path}` };
+      // 엑셀 파일은 Read 로 읽히긴 하지만 고칠 수 있는 물건이 아니다.
+      // '먼저 Read 로 읽어야 합니다' 라고만 하면 이미 읽은 쪽은 계속 헛돈다.
+      if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
       if (!ctx.seen.has(abs)) return { error: `먼저 Read 로 읽어야 합니다: ${args.file_path}` };
       if (args.old_string === args.new_string) return { error: 'old_string 과 new_string 이 같습니다' };
 

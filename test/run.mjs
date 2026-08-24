@@ -33,6 +33,7 @@ const FILES = [
   'modes.test.js',
   'encoding.test.js',
   'commands.test.js',
+  'xlsx.test.js',
   'compact.test.js',
   'store.test.js',
   'scan.test.js',

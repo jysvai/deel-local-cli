@@ -14,6 +14,7 @@ import { activeProfile, load, resolveKey } from './config.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
+import { askHidden } from './ui/prompt.js';
 
 // 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
 const TOOL_GLYPH = {
@@ -163,6 +164,13 @@ export async function chatLoop(opts = {}) {
     skills: found.skills,
     loadedSkills: new Set(),
     ask,
+    // 암호는 여기서만 받는다. 받은 값은 도구가 쓰고 버린다 —
+    // 설정에도, 세션 기록에도, 감사기록에도, 명령줄에도 안 남는다.
+    askPassword: async (label) => {
+      if (closed) return null;
+      const pw = await askHidden(rl, label, nextLine);
+      return pw === null || pw === '' ? null : pw;
+    },
     confirm: async (name, args) => {
       say('');
       say(`  ${c.yellow('?')} ${toolLabel(name, args)}`);

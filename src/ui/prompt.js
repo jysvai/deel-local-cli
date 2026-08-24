@@ -51,6 +51,40 @@ export function ask(label, { mask = false, def = '' } = {}) {
   });
 }
 
+/**
+ * REPL 안에서 암호를 받는다. 화면에 안 찍히게.
+ *
+ * REPL 은 readline 이 stdin 을 쥐고 있어서 위의 ask 를 그대로 못 쓴다.
+ * readline 이 되비추는 자리를 잠깐 가로채서 ● 로 바꾼다. 못 가로채면
+ * 아예 아무것도 안 찍는다 — 화면에 암호가 보이느니 안 보이고 치는 편이 낫다.
+ *
+ * @param {import('node:readline').Interface} rl
+ * @param {string} label 물어볼 말
+ * @param {() => Promise<string|null>} nextLine 한 줄 받아오는 함수 (REPL 의 큐)
+ */
+export async function askHidden(rl, label, nextLine) {
+  process.stdout.write(`  ${c.gray('›')} ${label} `);
+
+  const 원래 = typeof rl?._writeToOutput === 'function' ? rl._writeToOutput : null;
+  if (원래) {
+    rl._writeToOutput = function (s) {
+      // 줄바꿈·지우기 같은 제어는 그대로 두고, 글자만 가린다.
+      if (/^[\r\n]+$/.test(s) || s.startsWith('\x1b')) return 원래.call(this, s);
+      this.output.write(c.gray('●'.repeat([...s].length)));
+    };
+  } else {
+    process.stdout.write(c.gray('(입력해도 화면에 안 보입니다) '));
+  }
+
+  try {
+    const a = await nextLine();
+    return a === null ? null : a.trim();
+  } finally {
+    if (원래) rl._writeToOutput = 원래;
+    say('');
+  }
+}
+
 // 목록에서 번호로 고르기.
 // REPL 안에서는 readline 이 stdin 을 쥐고 있으므로 ask 를 갈아끼워 쓴다.
 export async function pick(label, items, { def = 0, ask: askFn = ask } = {}) {
