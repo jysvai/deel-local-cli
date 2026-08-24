@@ -27,6 +27,7 @@ const FILES = [
   'web.test.js',
   'abort.test.js',
   'parallel.test.js',
+  'modes.test.js',
   'compact.test.js',
   'store.test.js',
   'scan.test.js',
@@ -122,7 +123,10 @@ for (const x of 진) {
   if (x.steps?.length) {
     console.log(d(`     지나온 자리: ${x.steps.join(' → ')}`));
     if (!x.steps.includes('끝-정상종료')) {
-      console.log(r(`     '${x.steps.at(-1)}' 를 지나고 그 다음에서 죽었습니다.`));
+      // 자리표는 구간에 '들어갈 때' 찍힌다. 그러니 마지막 자리표가 죽은 구간이다.
+      // 전에 이걸 '그 다음 구간' 으로 읽어 엉뚱한 데를 파느라 한 바퀴 헛돌았다.
+      console.log(r(`     ↑ 마지막 자리표가 죽은 구간입니다 — '${x.steps.at(-1)}' 안에서 죽었습니다.`));
+      console.log(d(`     (자리표는 구간에 들어갈 때 찍힙니다. 다음 자리표에 못 닿았다는 뜻입니다.)`));
     }
   }
   if (x.quiet) {

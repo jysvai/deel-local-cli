@@ -1,9 +1,10 @@
 // 대화 화면. 루프가 보내는 이벤트를 Claude Code 풍으로 그린다.
-import { createInterface } from 'node:readline';
+import { createInterface, emitKeypressEvents } from 'node:readline';
 import { c, say, mark, cursor, box, clip, cols } from './ui/ansi.js';
 import { statusLine, headerLines, contextWarning } from './ui/status.js';
 import { STAGES } from './agent/effort.js';
 import { handle } from './commands.js';
+import { next as nextWork, get as getWork, canWrite } from './agent/modes.js';
 import { run } from './agent/loop.js';
 import { Session } from './agent/session.js';
 import { makeScope } from './safety/guard.js';
@@ -121,6 +122,23 @@ export async function chatLoop(opts = {}) {
     closed = true;
     if (waiter) { const w = waiter; waiter = null; w(null); }
   });
+
+  // Shift+Tab 으로 작업 모드를 차례로 돌린다.
+  //
+  // 터미널일 때만 한다. 파이프로 넣을 때 키를 가로채면 입력이 깨진다 —
+  // 검사와 데모가 그렇게 돌아간다.
+  if (process.stdin.isTTY) {
+    emitKeypressEvents(process.stdin, rl);
+    process.stdin.on('keypress', (_ch, key) => {
+      if (!key || key.name !== 'tab' || !key.shift) return;
+      session.work = nextWork(session.work);
+      const w = getWork(session.work);
+      cursor.clearLine();
+      say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}  ${c.gray(w.hint)}`
+        + (canWrite(session.work) ? '' : `  ${c.green('· 파일을 못 바꿉니다')}`));
+      prompt();
+    });
+  }
 
   const nextLine = () => {
     if (queue.length) return Promise.resolve(queue.shift());

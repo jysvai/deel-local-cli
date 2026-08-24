@@ -4,6 +4,7 @@
 // 화면 그리기는 ansi.js 만 쓴다. 반입 심사에 새로 설명할 것이 늘지 않게 하려는 뜻이다.
 import { c, gauge, width, clip, cols, mark } from './ansi.js';
 import { PROFILES } from '../agent/effort.js';
+import { get as workMode, canWrite } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
 
 // 한 조각씩 따로 만든다. 좁은 화면에서는 뒤에서부터 떨군다.
@@ -22,6 +23,17 @@ export const SEGMENTS = {
       const pct = Math.round(r * 100);
       const tone = r > 0.85 ? c.hred : r > 0.6 ? c.hyellow : c.gray;
       return `${gauge(r, 10)} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + short(b.total))}`;
+    },
+  },
+
+  // 지금 무슨 일을 하는 중인가. 파일을 못 바꾸는 모드면 자물쇠를 같이 그린다 —
+  // 계획만 세우는 중인지 실제로 고치는 중인지 한눈에 보여야 한다.
+  work: {
+    desc: '작업 모드',
+    make: (s) => {
+      const w = workMode(s.work);
+      const 잠김 = !canWrite(s.work);
+      return `${c.hcyan(w.glyph)} ${잠김 ? c.green(w.name) : c.white(w.name)}${잠김 ? c.green(' 읽기만') : ''}`;
     },
   },
 
@@ -64,7 +76,7 @@ export const SEGMENTS = {
   },
 };
 
-export const DEFAULT_SEGMENTS = ['dir', 'model', 'ctx', 'think', 'mode', 'tok'];
+export const DEFAULT_SEGMENTS = ['dir', 'model', 'ctx', 'work', 'think', 'mode', 'tok'];
 
 function base(p) {
   const parts = String(p ?? '').split(/[\\/]/).filter(Boolean);

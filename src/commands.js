@@ -94,6 +94,7 @@ export async function handle(line, session, ctx) {
       const asProfile = normalizeProfile(arg);
       if (asProfile) {
         session.effort = asProfile;
+        session.effortSet = true;   // 사용자가 직접 정했다 — 작업 모드보다 우선한다
         say(`  ${mark.ok} 배분 ${c.bold(PROFILES[asProfile].name)} ${c.gray('— ' + PROFILES[asProfile].desc)}`);
         showThink(session);
         return { handled: true };
@@ -103,6 +104,7 @@ export async function handle(line, session, ctx) {
         return { handled: true };
       }
       session.think = arg;
+      session.thinkSet = true;      // 사용자가 직접 정했다 — 작업 모드보다 우선한다
       say(`  ${mark.ok} 추론 강도 ${c.bold(arg)}`);
       if (!session.conn.think && arg !== 'off') {
         say(`     ${c.yellow('이 연결은 모델 층 조절이 안 먹습니다.')} ${c.gray('루프 층(도구 호출 상한)으로만 조절됩니다.')}`);
