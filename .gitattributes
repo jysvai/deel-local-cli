@@ -1,0 +1,9 @@
+# 줄바꿈은 저장소에서도 받는 쪽에서도 항상 LF.
+# 윈도우 기본값(autocrlf)을 그냥 두면 bin/deel.js 의 shebang 이
+# "#!/usr/bin/env node\r" 가 되어 리눅스·맥에서 실행이 안 된다.
+* text=auto eol=lf
+
+*.js   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
