@@ -609,6 +609,12 @@ Tests run against a **fake gateway**, so the loop, streaming, tool execution, un
 are verified deterministically without any model. ZIP output is cross-checked with the real
 `unzip`; the TAR reader is fed archives produced by the real `tar`.
 
+`npm test` runs each file separately and reports **per-file exit codes**, because the exit code
+— not the pass marks on screen — is what CI reads, and the two can disagree: a file can pass
+every check and still die on the way out, leaving the screen green and the exit code 1. That
+happened once on Windows and cost a lot of time. The runner does not stop at the first failure,
+so one run tells you everything.
+
 | Suite | Checks | Covers |
 |---|---|---|
 | `smoke` | 20 | Tools, scope, undo, audit log |

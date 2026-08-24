@@ -42,7 +42,7 @@
     "setup": "node bin/deel.js setup",
     "diagnose": "node bin/deel.js diagnose",
     "chat": "node bin/deel.js",
-    "test": "node test/smoke.js && node test/loop.test.js && node test/network.test.js && node test/web.test.js && node test/abort.test.js && node test/parallel.test.js && node test/compact.test.js && node test/store.test.js && node test/scan.test.js && node test/plugins.test.js && node test/no-bundle.test.js && node test/edit-bench.js",
+    "test": "node test/run.mjs",
     "verify": "node test/no-bundle.test.js && node test/network.test.js && node test/web.test.js",
     "bench": "node test/edit-bench.js",
     "demo": "node test/demo.js",
