@@ -146,12 +146,14 @@ check('목록에 라이선스 표시', 목록2[0].license === 'MIT');
 trace('5-반입묶음');
 // ── 5. 반입 묶음 ────────────────────────────────────────────────────────
 const 반입 = join(sand, '반입.zip');
+trace('5a-pack직전');
 const 묶음 = pack(반입, { home });
 check('반입 묶음 만들어짐', !묶음.error && existsSync(반입), 묶음.error ?? '');
 check('실행 스크립트는 뺌', 묶음.skipped >= 1, `${묶음.skipped}개 제외`);
 
 if (!묶음.error && unzipOk) {
   const 푼곳 = join(sand, '반입푼것');
+trace('5b-unzip직전');
   sh('unzip', ['-qq', '-o', 반입, '-d', 푼곳]);
   check('안내문이 같이 들어감', existsSync(join(푼곳, '사용안내.txt')));
   check('스킬이 들어감', existsSync(join(푼곳, 'sabun-kit', 'skills', '품의서', 'SKILL.md')));
@@ -162,8 +164,10 @@ if (!묶음.error && unzipOk) {
   // 푼 그대로 다른 PC 의 ~/.deel/plugins 가 되는가 — 이게 반입의 최종 관문
   const 새PC = join(sand, '새PC');
   mkdirSync(join(새PC, '.deel'), { recursive: true });
+trace('5c-cpSync직전');
   cpSync(푼곳, join(새PC, '.deel', 'plugins'), { recursive: true });
   rmSync(join(새PC, '.deel', 'plugins', '사용안내.txt'), { force: true });
+trace('5d-discover직전');
   const 새PC결과 = discover(join(새PC, 'proj'), { home: 새PC });
   check('오프라인 PC 가 그대로 인식',
     새PC결과.skills.length === 2 && 새PC결과.commands.length === 1,

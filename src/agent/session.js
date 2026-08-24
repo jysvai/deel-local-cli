@@ -1,6 +1,7 @@
 // 대화 상태와 컨텍스트 셈. /context 가 보여주는 숫자가 여기서 나온다.
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { get as workMode, DEFAULT as WORK_DEFAULT } from './modes.js';
 
 // 토큰 추정 — 정확한 토크나이저 없이 대략만 센다.
 // 한글은 글자당 약 1토큰, 영문·코드는 약 4글자당 1토큰으로 본다.
@@ -25,10 +26,11 @@ const BASE_RULES = `너는 deel 다. 사용자의 작업 폴더 안에서 코드
 - 사용자에게 답할 때는 한국어로, 짧게. 코드를 통째로 붙여넣지 말고 무엇이 달라졌는지 말한다.`;
 
 export class Session {
-  constructor(conn, { root, mode = 'auto', think = 'medium', effort = 'save', web = true, maxSteps = 24 } = {}) {
+  constructor(conn, { root, mode = 'auto', work = null, think = 'medium', effort = 'save', web = true, maxSteps = 24 } = {}) {
     this.conn = conn;
     this.root = root;
-    this.mode = mode;
+    this.mode = mode;        // 승인 정책 — 얼마나 물어보나 (auto/confirm/strict)
+    this.work = work ?? WORK_DEFAULT;   // 작업 모드 — 무슨 일을 하는 중인가 (modes.js)
     this.think = think;      // 기준 강도
     this.effort = effort;    // 그 강도를 단계별로 어떻게 나눌지 (effort.js)
     this.web = web;          // 웹 읽기 도구를 줄지 (오프라인이면 무조건 안 준다)
@@ -58,6 +60,10 @@ export class Session {
   systemPrompt() {
     const parts = [BASE_RULES];
     parts.push(`\n작업 폴더: ${this.root}\n이 폴더 밖의 파일은 읽지도 쓰지도 못한다.`);
+
+    // 지금 무슨 일을 하는 중인지. 도구 목록도 이 모드에 맞춰 이미 걸러져 있다.
+    const w = workMode(this.work);
+    parts.push(`\n--- 지금 모드: ${w.name} (${w.en}) ---\n${w.say}`);
     if (this.rules) parts.push(`\n--- ${this.rules.name} (사용자 규칙, 위 원칙보다 우선) ---\n${this.rules.text}`);
     const listed = this.listedSkills();
     if (listed.length) {
