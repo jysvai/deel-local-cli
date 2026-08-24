@@ -98,6 +98,11 @@ console.log('');
 // 통과를 다 찍고도 종료코드가 0 이 아닌 경우가 있다. 그 구분을 눈에 띄게 적는다.
 for (const x of 진) {
   console.log(r(`  ✗ ${x.file} — 종료코드 ${x.signal ?? x.code}`));
+  // 0xC0000409. 윈도우가 abort() 를 이 숫자로 알린다. 그냥 보면 무슨 뜻인지 모른다.
+  if (x.code === 3221226505) {
+    console.log(d('     0xC0000409 — 윈도우 abort() 입니다. 검사가 틀린 게 아니라'));
+    console.log(d('     끝낼 때 남은 핸들 때문에 죽었습니다. process.exit() 를 쓰고 있지 않은지 보세요.'));
+  }
   if (x.quiet) {
     console.log(d('     아무것도 못 찍고 죽었습니다 — 파일을 읽다가 터진 쪽입니다.'));
   } else if ((x.failed ?? 0) === 0) {

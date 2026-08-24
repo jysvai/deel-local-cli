@@ -176,4 +176,4 @@ console.log('\n플러그인 받기·묶기 검사  ' + D + '(zip 은 진짜 unzi
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
-process.exit(fail.length ? 1 : 0);
+process.exitCode = fail.length ? 1 : 0;

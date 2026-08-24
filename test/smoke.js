@@ -126,4 +126,4 @@ console.log(`  통과 ${pass.length} · 실패 ${fail.length}`);
 console.log('');
 
 rmSync(root, { recursive: true, force: true });
-process.exit(fail.length ? 1 : 0);
+process.exitCode = fail.length ? 1 : 0;

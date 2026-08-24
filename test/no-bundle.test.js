@@ -3,7 +3,7 @@
 // 이 파일이 있는 이유:
 //  npm install 로그에 다른 패키지 이름이 뜨면 "얘가 딸려왔나?" 하고 놀라게 된다.
 //  실제로 한 번 그랬다. 그래서 사람 기억 대신 테스트가 지키게 한다.
-import { execFileSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { readFileSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,8 +35,11 @@ check('설치 때 자동 실행 스크립트 없음', live.length === 0, live.jo
 // 3) npm 이 실제로 담는 파일 목록을 받아 본다. 짐작이 아니라 npm 이 부는 답이다.
 let shipped = [];
 try {
-  const out = execFileSync('npm', ['pack', '--dry-run', '--json'],
-    { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' });
+  // 윈도우에서 npm 은 npm.cmd 라 셸을 거쳐야 한다. 그런데 셸을 쓰면서 인자를
+  // 따로 넘기면 Node 22 부터 경고한다 — 인자를 escape 없이 이어 붙이기 때문이다.
+  // 여기서는 명령이 통째로 상수라 붙일 것이 없다. 그래서 처음부터 한 문장으로 준다.
+  const out = execSync('npm pack --dry-run --json',
+    { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   shipped = JSON.parse(out)[0].files.map((f) => f.path.replaceAll('\\', '/'));
 } catch (err) {
   check('npm pack 목록 확보', false, String(err.message).slice(0, 80));
@@ -86,26 +89,38 @@ rmSync(빈PC, { recursive: true, force: true });
 
 // --- 검사 파일 자체의 위생 ------------------------------------------------
 //
-// 서버를 띄운 검사가 process.exit() 로 끝나면, 아직 닫히는 중인 핸들이 남은 채
-// 프로세스가 끊겨 윈도우 libuv 가 죽는다.
-//   Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), src\win\async.c
-// 검사는 전부 통과했는데 종료코드만 1 이 되므로, 화면만 봐서는 초록으로 보이고
-// CI 만 빨간불이 된다. 실제로 한 번 그렇게 놓쳤다. 그래서 구조로 막는다.
+// 검사 파일은 process.exit() 를 쓰지 않는다. process.exitCode 만 정하고
+// 자연스럽게 끝나게 둔다. 이유가 둘이다.
+//
+//  1) 아직 닫히는 중인 핸들이 남은 채로 프로세스를 끊으면 윈도우 libuv 가
+//     abort() 로 죽는다. 종료코드 3221226505(0xC0000409) 가 그것이다.
+//     서버뿐 아니라 execFileSync 같은 자식 프로세스도 핸들을 남긴다.
+//     처음엔 서버를 띄운 파일만 막았다가 plugins.test.js 를 놓쳤다.
+//
+//  2) 윈도우에서 표준출력이 파이프면 쓰기가 비동기다. process.exit() 는
+//     아직 안 나간 것을 버린다 — 38개를 다 통과해 찍었는데 화면에는 한 줄도
+//     안 남는다. 실제로 그래서 어느 파일이 죽었는지 한참 못 찾았다.
+//
+// 검사는 전부 통과했는데 종료코드만 1 이 되면 화면은 초록으로 보이고 CI 만
+// 빨간불이 된다. 사람 기억으로 지킬 수 있는 규칙이 아니라서 구조로 막는다.
 {
-  // 주석은 걷어내고 본다. 안 그러면 이 규칙을 설명하는 주석 자체가 걸린다 —
-  // 실제로 처음 쓸 때 그렇게 걸렸다.
-  const 코드만 = (src) => src
-    .split('\n')
-    .filter((l) => { const t = l.trim(); return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*'); })
-    .join('\n');
+  // 줄 맨 앞에 오는 것만 호출로 본다.
+  //
+  // 이 검사는 자기 자신도 훑는다. 그래서 '어디든 나오면 걸린다' 로 하면
+  // 규칙을 설명하는 주석, 규칙을 어겼다고 알려주는 안내 문구, 심지어 찾는 데
+  // 쓰는 정규식까지 전부 자기가 자기를 잡는다. 셋 다 실제로 걸렸다.
+  //
+  // 진짜 호출은 언제나 줄 맨 앞에 오는 문장이다. 주석·문구·정규식은 줄
+  // 가운데에 있다. 그 차이로 가른다.
+  // (`if (x) process.exit(1)` 처럼 한 줄에 붙여 쓰면 못 잡는다. 이 저장소는
+  //  그렇게 쓰지 않으므로 그 값은 안 치른다.)
+  const 호출 = /^[ \t]*process\.exit[ \t]*\(/m;
 
   const 걸린것 = [];
-  for (const f of readdirSync(join(repo, 'test')).filter((x) => x.endsWith('.js'))) {
-    const src = 코드만(readFileSync(join(repo, 'test', f), 'utf8'));
-    if (!/createServer\s*\(/.test(src)) continue;             // 서버를 안 띄우면 상관없다
-    if (/process\.exit\s*\(/.test(src)) 걸린것.push(f);
+  for (const f of readdirSync(join(repo, 'test')).filter((x) => /\.m?js$/.test(x))) {
+    if (호출.test(readFileSync(join(repo, 'test', f), 'utf8'))) 걸린것.push(f);
   }
-  check('서버를 띄운 검사는 process.exit() 를 안 쓴다', 걸린것.length === 0,
+  check('검사 파일은 process.exit() 를 안 쓴다', 걸린것.length === 0,
     걸린것.length ? `${걸린것.join(', ')} — process.exitCode 로 바꾸세요` : '');
 }
 
@@ -117,4 +132,4 @@ for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패`);
 if (shipped.length) console.log(`  ${D}담긴 파일 ${shipped.length}개 — 전부 bin/ · src/ · 문서${X}`);
 console.log('');
-process.exit(fail.length ? 1 : 0);
+process.exitCode = fail.length ? 1 : 0;

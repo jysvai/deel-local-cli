@@ -216,4 +216,4 @@ console.log('');
 
 rmSync(root, { recursive: true, force: true });
 const bad = (newFixed < shouldFix) || falsePositive > 0;
-process.exit(bad ? 1 : 0);
+process.exitCode = bad ? 1 : 0;
