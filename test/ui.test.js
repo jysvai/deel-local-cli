@@ -185,6 +185,21 @@ trace('5-되돌리기이력');
 
   check('처음에는 크기가 0', h.size() === 0, String(h.size()));
 
+  // 턴 번호는 반드시 달라야 한다.
+  //
+  // 예전에는 Date.now() 를 그대로 썼다. 빠른 기계에서는 여러 턴이 같은
+  // 밀리초에 들어가 하나로 뭉치고, 그러면 /undo 한 번이 두 턴을 되돌린다 —
+  // 시키지 않은 것까지 되돌아간다. 리눅스 CI 에서 실제로 이렇게 됐다.
+  // 그래서 일부러 쉬지 않고 연달아 부른다. 느리게 부르면 이 결함이 안 보인다.
+  {
+    const 잠깐 = new History(mkdtempSync(join(tmpdir(), 'deel-ui-turn-')));
+    const 번호들 = [];
+    for (let i = 0; i < 50; i++) 번호들.push(잠깐.nextTurn());
+    check('턴 번호가 겹치지 않는다', new Set(번호들).size === 50,
+      `50번 불러 서로 다른 것 ${new Set(번호들).size}개`);
+    check('턴 번호가 늘어나기만 한다', 번호들.every((v, i) => i === 0 || v > 번호들[i - 1]), '');
+  }
+
   const 파일 = join(root, '가.txt');
   for (let i = 0; i < 5; i++) {
     h.nextTurn();

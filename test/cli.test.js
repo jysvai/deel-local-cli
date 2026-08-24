@@ -157,8 +157,9 @@ function 띄우기(인자 = [], { 입력 = [], 제한 = 25000, 폴더 = work, en
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let out = ''; let err = ''; let 끝남 = false;
-    kid.stdout.on('data', (b) => { out += b; });
-    kid.stderr.on('data', (b) => { err += b; });
+    let 마지막출력 = Date.now();
+    kid.stdout.on('data', (b) => { out += b; 마지막출력 = Date.now(); });
+    kid.stderr.on('data', (b) => { err += b; 마지막출력 = Date.now(); });
 
     const 시계 = setTimeout(() => {
       if (끝남) return;
@@ -166,11 +167,32 @@ function 띄우기(인자 = [], { 입력 = [], 제한 = 25000, 폴더 = work, en
       done({ code: null, out, err, 시간초과: true });
     }, 제한);
 
+    // 한 줄씩 넣되, '시간' 이 아니라 '저쪽이 입력을 기다리는지' 를 보고 넣는다.
+    //
+    // 처음에는 550ms 씩 쉬며 밀어 넣었다. 그랬더니 CI 여섯 자리 중 넷이
+    // 빨간불이 났다 — 느린 기계에서는 아직 준비되기 전에 줄이 들어가고,
+    // 두 줄이 한 덩어리로 붙는다. 기계가 바뀔 때마다 됐다 안 됐다 하는
+    // 검사는 실패보다 나쁘다.
+    //
+    // '❯ 가 몇 개 떴나' 로도 세어 봤는데 그것도 틀렸다. 승인을 물어보는 자리
+    // ("실행할까요? (y/n)") 는 ❯ 를 안 찍는다. 그래서 y/n 을 넣을 차례에
+    // 오지 않을 ❯ 를 기다리며 서 있었다 — 검사가 13초에서 93초로 늘었다.
+    //
+    // 프롬프트 모양을 맞히려 들지 말고, 출력이 멎었는지만 본다.
+    // 무엇을 물어보든 물어본 뒤에는 조용해진다.
+    const 조용해질때까지 = async () => {
+      for (let t = 0; t < 400 && !끝남; t++) {
+        if (out.length && Date.now() - 마지막출력 > 180) return;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
     (async () => {
       for (const 줄 of 입력) {
         if (끝남) break;
+        await 조용해질때까지();
+        if (끝남) break;
         kid.stdin.write(줄 + '\n');
-        await new Promise((r) => setTimeout(r, 550));
+        마지막출력 = Date.now();   // 방금 넣었으니 잠깐은 시끄러운 것으로 친다
       }
       if (!끝남) kid.stdin.end();
     })();

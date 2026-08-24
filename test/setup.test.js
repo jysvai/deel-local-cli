@@ -40,17 +40,28 @@ function 되돌리기() {
 }
 
 // 화면은 삼키고, 물어보는 사이사이에 대답을 넣어 준다.
+//
+// 대답은 '시간을 재서' 가 아니라 '물음이 화면에 뜬 것을 보고' 넣는다.
+// 시간으로 맞추면 느린 기계에서 두 대답이 한 덩어리로 붙어 들어가고,
+// 빠른 기계에서는 물음보다 먼저 도착한다. 둘 다 됐다 안 됐다 하는 검사가 된다 —
+// 실제로 CI 여섯 자리 중 넷이 그렇게 빨간불이 났다.
 async function 대화(대답들, fn) {
   const 원래 = process.stdout.write.bind(process.stdout);
   let 모인것 = '';
   process.stdout.write = (chunk) => { 모인것 += chunk; return true; };
   const 입력 = 가짜입력();
+
+  // prompt.js 의 ask 는 물어볼 때마다 '›' 를 찍는다. 그 개수가 곧 몇 번 물었나다.
+  const 물은횟수 = () => (모인것.match(/›/g) ?? []).length;
+  const 기다리기 = async (몇번째) => {
+    for (let i = 0; i < 400 && 물은횟수() < 몇번째; i++) await new Promise((r) => setTimeout(r, 10));
+  };
+
   try {
     const p = fn();
-    // 물어볼 때마다 한 줄씩. 앞의 물음이 자리를 잡을 시간을 조금 준다.
-    for (const 답 of 대답들) {
-      await new Promise((r) => setTimeout(r, 30));
-      입력.write(답 + '\r');
+    for (let i = 0; i < 대답들.length; i++) {
+      await 기다리기(i + 1);       // i+1 번째 물음이 뜰 때까지
+      입력.write(대답들[i] + '\r');
     }
     const v = await p;
     return { v, out: 모인것 };

@@ -30,11 +30,23 @@ export function ask(label, { mask = false, def = '' } = {}) {
   process.stdout.write(prefix + (def ? c.gray(`[${def}] `) : ''));
   let buf = '';
   return readKeys((ch, done) => {
-    for (const ch1 of ch) {
+    // 글자 단위로 훑되 자리를 기억한다. 엔터에서 멈출 때 '남은 것' 을 알아야 해서다.
+    const 글자들 = [...ch];
+    for (let i = 0; i < 글자들.length; i++) {
+      const ch1 = 글자들[i];
       const code = ch1.charCodeAt(0);
       if (code === 3) { say(''); process.exit(130); }            // Ctrl+C
       if (code === 13 || code === 10) {                          // Enter
         say('');
+        // 한 덩어리에 여러 줄이 실려 올 수 있다 — 붙여넣기, 파이프 입력, 느린 터미널.
+        // 예전에는 엔터를 만나면 그 덩어리의 나머지를 그냥 버렸다. 그러면 이어서
+        // 물어보는 쪽이 아무것도 못 받고 멈춘 것처럼 보인다. 무엇이 사라졌는지도
+        // 화면에 안 남아서, 사람은 자기가 안 친 줄 안다.
+        // 그래서 되돌려 놓는다 — 다음에 읽는 쪽이 받아 간다.
+        let 다음 = i + 1;
+        if (code === 13 && 글자들[다음] === '\n') 다음++;         // CRLF 는 한 번으로 친다
+        const 남은것 = 글자들.slice(다음).join('');
+        if (남은것) { try { process.stdin.unshift(남은것); } catch { /* 못 돌려놔도 이 줄은 살린다 */ } }
         return done(buf.length ? buf : def);
       }
       if (code === 127 || code === 8) {                          // Backspace
