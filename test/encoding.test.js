@@ -6,7 +6,7 @@
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { encode, decode, detect, isUtf8, bomOf, looksBinary, label, LEGACY } from '../src/tools/encoding.js';
+import { encode, decode, detect, isUtf8, bomOf, looksBinary, label, LEGACY, consoleCodepage } from '../src/tools/encoding.js';
 import { readTextFull } from '../src/tools/fsutil.js';
 import { runTool } from '../src/tools/index.js';
 import { makeScope } from '../src/safety/guard.js';
@@ -71,6 +71,33 @@ check('UTF-8 이면 확신함', detect(Buffer.from('한글', 'utf8')).sure === t
 check('아니면 짐작이라고 말함', detect(encode('한글', 'euc-kr').buf, { fallback: 'euc-kr' }).sure === false);
 check('아는 인코딩 목록이 있다', LEGACY.length >= 5 && LEGACY.every((x) => x.id && x.cp));
 
+// ── 6-2. 컴퓨터 설정이 달라도 같은 답이 나와야 한다 ─────────────────────
+//
+// 전에는 'UTF-8 이 아니면 이 컴퓨터 기본 코드페이지' 였다. 한국 윈도우에서만
+// 맞는 코드였고, 그래서 우분투·미국 윈도우 CI 에서 여섯 갈래가 전부 죽었다.
+// 여기서 그 상황을 그대로 만들어 본다 — system 을 넣어 다른 컴퓨터인 척 시킨다.
+{
+  const 문장 = {
+    'euc-kr': '품의서 결재 요청드립니다.\n금액: 1,200,000원\n비고: 긴급\n',
+    'shift_jis': 'お世話になっております。よろしくお願いいたします。\n',
+    'gbk': '这是一个简体中文的测试文档。\n',
+    'big5': '這是一個繁體中文的測試文件。\n',
+    'windows-1252': 'Über die Straße, dépôt général\n',
+  };
+  // 우분투(UTF-8), 미국 윈도우(1252), 한국 윈도우(949), 일본 윈도우(932)
+  for (const 척 of ['windows-1252', 'euc-kr', 'shift_jis', 'gbk']) {
+    for (const [정답, 글] of Object.entries(문장)) {
+      const r = decode(encode(글, 정답).buf, { system: 척 });
+      check(`${label(척)} 컴퓨터에서도 ${label(정답)} 를 맞힘`,
+        r.encoding === 정답 && r.text === 글, `${r.encoding} — ${r.why}`);
+    }
+  }
+  // 짐작은 짐작이라고 말한다. 확신한다고 하면 부르는 쪽이 방심한다.
+  check('짐작은 확신이라고 말하지 않음', decode(encode('품의서', 'euc-kr').buf).sure === false);
+  // 근거를 남긴다 — 왜 그렇게 골랐는지 물어볼 수 있어야 한다.
+  check('왜 그렇게 골랐는지 말함', /짐작|힌트|말이 안 됨/.test(detect(encode('품의서 결재', 'euc-kr').buf).why ?? ''));
+}
+
 // ── 7. 도구를 통해 실제로 ───────────────────────────────────────────────
 const root = mkdtempSync(join(tmpdir(), 'deel-enc-'));
 const ctx = { scope: makeScope(root), history: new History(root), audit: new Audit(root), seen: new Set() };
@@ -125,8 +152,24 @@ writeFileSync(join(root, '보통문서.md'), '# 안내\nUTF-8 문서\n', 'utf8')
 }
 
 {
-  const r = await runTool('Bash', { command: 'echo 한글 출력' }, ctx);
-  check('명령 출력의 한글이 안 깨짐', r.content.includes('한글'), JSON.stringify(r.content.trim().slice(0, 30)));
+  // 명령 출력이 바이트로 들어와 제대로 풀리는지.
+  //
+  // 한글로 보려면 운영체제 쪽 조건이 맞아야 한다. 미국 윈도우 명령창은
+  // 코드페이지가 437 이라 echo 가 한글을 **애초에 못 내보낸다**. 그건 이
+  // 코드의 잘못이 아니라 그 컴퓨터의 한계다. CI 러너가 그렇다.
+  // 그래서 둘로 나눈다 — 항상 되어야 하는 것과, 될 수 있을 때만 보는 것.
+  const a = await runTool('Bash', { command: 'echo hello-encoding' }, ctx);
+  check('명령 출력을 바이트로 받아 푼다', a.content.includes('hello-encoding'), JSON.stringify(a.content.trim().slice(0, 40)));
+
+  const 한글가능 = process.platform !== 'win32' || [949, 65001].includes(consoleCodepage());
+  const b = await runTool('Bash', { command: 'echo 한글 출력' }, ctx);
+  if (한글가능) {
+    check('명령 출력의 한글이 안 깨짐', b.content.includes('한글'), JSON.stringify(b.content.trim().slice(0, 30)));
+  } else {
+    // 그래도 뭔가는 나와야 한다. 조용히 건너뛰면 고장을 못 본다.
+    check(`한글 못 내보내는 콘솔(${consoleCodepage()})에서도 죽지는 않음`,
+      typeof b.content === 'string' && b.content.length > 0, JSON.stringify(b.content.trim().slice(0, 30)));
+  }
 }
 
 rmSync(root, { recursive: true, force: true });

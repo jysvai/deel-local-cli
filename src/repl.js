@@ -72,6 +72,8 @@ export async function chatLoop(opts = {}) {
   const session = new Session(conn, {
     root,
     mode: opts.mode ?? 'auto',
+    // 수준은 설정에 남는다. 한 번 고르면 다음에 켤 때도 그대로다.
+    level: opts.level ?? cfg.level ?? null,
     think: opts.think ?? 'medium',
     effort: opts.effort ?? 'save',
     maxSteps: opts.maxSteps ?? 24,

@@ -13,12 +13,15 @@
 //   그래서 전부 돌리고, 파일별 종료코드를 따로 적는다. '통과 표시' 가 아니라
 //   '종료코드' 가 CI 가 보는 값이기 때문이다.
 import { spawn } from 'node:child_process';
-import { readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// 검사들이 쓸 가짜 설정 폴더. 진짜 ~/.deel 을 건드리지 못하게 한다.
+const 설정집 = mkdtempSync(join(tmpdir(), 'deel-test-home-'));
 
 const FILES = [
   'smoke.js',
@@ -29,6 +32,7 @@ const FILES = [
   'parallel.test.js',
   'modes.test.js',
   'encoding.test.js',
+  'commands.test.js',
   'compact.test.js',
   'store.test.js',
   'scan.test.js',
@@ -59,7 +63,13 @@ function runOne(file) {
 
     const kid = spawn(process.execPath, [join(here, file)], {
       stdio: ['ignore', 'pipe', 'inherit'],
-      env: { ...process.env, FORCE_COLOR: C ? '1' : '', DEEL_TRACE: 자취 },
+      // 설정 폴더를 임시 자리로 돌린다.
+      //
+      // 검사가 사람의 ~/.deel/config.json 을 바꾼 적이 실제로 있다. /level 이
+      // 고른 값을 설정에 남기는데, 그게 진짜 설정이었다. 파일마다 조심하는
+      // 것보다 여기서 한 번 막는 편이 확실하다 — 앞으로 검사를 새로 넣는
+      // 사람이 이걸 몰라도 안전하다.
+      env: { ...process.env, FORCE_COLOR: C ? '1' : '', DEEL_TRACE: 자취, DEEL_HOME: 설정집 },
     });
 
     let out = '';
@@ -142,5 +152,7 @@ for (const x of 진) {
   }
   console.log('');
 }
+
+try { rmSync(설정집, { recursive: true, force: true }); } catch { /* 임시 폴더다 */ }
 
 process.exitCode = 진.length ? 1 : 0;

@@ -1,15 +1,28 @@
 // 연결 프로필 저장/읽기.  ~/.deel/config.json  (프로젝트 폴더의 .deel/config.json 이 우선)
 import { homedir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
 
-const USER_DIR = join(homedir(), '.deel');
-const PROJECT_DIR = join(process.cwd(), '.deel');
+// 설정이 놓이는 자리.
+//
+// DEEL_HOME 을 주면 그 폴더를 쓴다. 두 군데서 필요했다 —
+//   1) 사내에서 USB·공유폴더에 통째로 넣어 쓰는 휴대용 설치.
+//      집 폴더가 로밍 프로필이면 설정이 엉뚱한 데로 따라다닌다.
+//   2) 검사. 예전에는 검사가 진짜 설정 파일에 값을 써 버렸다.
+//      실제로 /level 검사가 사용자 설정을 바꾼 것을 보고 이걸 넣었다.
+//
+// 모듈을 읽을 때가 아니라 쓸 때마다 본다. 그래야 부르는 쪽에서 언제 정하든 먹는다.
+function userDir() {
+  return process.env.DEEL_HOME ? resolve(process.env.DEEL_HOME) : join(homedir(), '.deel');
+}
+function projectDir() {
+  return join(process.cwd(), '.deel');
+}
 
 export function configPath() {
-  const local = join(PROJECT_DIR, 'config.json');
+  const local = join(projectDir(), 'config.json');
   if (existsSync(local)) return local;
-  return join(USER_DIR, 'config.json');
+  return join(userDir(), 'config.json');
 }
 
 const EMPTY = { version: 1, active: null, profiles: [] };
@@ -26,7 +39,7 @@ export function load() {
 }
 
 export function save(cfg, { toProject = false } = {}) {
-  const dir = toProject ? PROJECT_DIR : USER_DIR;
+  const dir = toProject ? projectDir() : userDir();
   const p = join(dir, 'config.json');
   mkdirSync(dir, { recursive: true });
   writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n', 'utf8');

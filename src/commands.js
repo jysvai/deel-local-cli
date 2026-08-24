@@ -14,6 +14,7 @@ import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTabl
 import { scanLocal, toProfiles } from './backend/scan.js';
 import { list as listSessions } from './agent/store.js';
 import { MODES as WORK_MODES, ORDER as WORK_ORDER, normalize as normWork, get as getWork, canWrite } from './agent/modes.js';
+import { LEVELS, ORDER as LEVEL_ORDER, DEFAULT as LEVEL_DEFAULT, normalize as normLevel, shows as levelShows } from './ui/level.js';
 const MODES = {
   auto: '자율 — 전부 알아서. 되돌리기가 안전망',
   confirm: '확인 — 되돌릴 수 없는 것만 물어봄',
@@ -43,6 +44,7 @@ export const COMMANDS = {
   status:  { desc: '연결 상태' },
   scan:    { desc: '이 PC 의 로컬 모델 서버 훑기', arg: '[save]' },
   sessions:{ desc: '이 폴더의 지난 대화 목록' },
+  level:   { desc: '사용자 수준 (쉬움/개발자)', arg: '[수준]' },
   init:    { desc: 'DEEL.md 규칙 파일 만들기' },
   exit:    { desc: '끝내기' },
   quit:    { desc: '끝내기' },
@@ -56,7 +58,8 @@ export async function handle(line, session, ctx) {
   const arg = rest.join(' ');
 
   switch (name) {
-    case 'help': return help(), { handled: true };
+    case 'help': return help(session), { handled: true };
+    case 'level': return showLevel(session, arg), { handled: true };
     case 'exit':
     case 'quit': return { handled: true, exit: true };
 
@@ -183,8 +186,8 @@ export async function handle(line, session, ctx) {
     case 'work':
     case 'code': case 'plan': case 'architect':
     case 'debug': case 'ask': case 'orchestrator': {
-      const 원하는 = cmd === 'work' ? normWork(arg) : cmd;
-      if (cmd === 'work' && !원하는) { showWork(session); return { handled: true }; }
+      const 원하는 = name === 'work' ? normWork(arg) : name;
+      if (name === 'work' && !원하는) { showWork(session); return { handled: true }; }
       const 골라진 = normWork(원하는);
       if (!골라진) {
         say(`  ${mark.warn} 그런 모드는 없습니다: ${c.white(arg)}`);
@@ -445,15 +448,61 @@ function showSkills(session, arg) {
   say('');
 }
 
-function help() {
+function help(session) {
+  const level = session?.level ?? LEVEL_DEFAULT;
+  const 쉬움 = !levelShows(level, '__전부__');   // 개발자면 show 가 null 이라 전부 참
   say('');
-  rule('명령', 70);
+  rule(쉬움 ? '명령 (자주 쓰는 것)' : '명령', 70);
+  let 감춘수 = 0;
   for (const [n, m] of Object.entries(COMMANDS)) {
     if (n === 'quit') continue;
+    if (!levelShows(level, n)) { 감춘수++; continue; }
     say(`  ${c.cyan(pad('/' + n + (m.arg ? ' ' + m.arg : ''), 22))} ${c.gray(m.desc)}`);
   }
   say('');
+  // 감춘 것은 '못 쓰는 것' 이 아니다. 그 말을 분명히 해 둔다.
+  if (감춘수) {
+    say(`  ${c.gray(`이 밖에 ${감춘수}개가 더 있습니다 — 쳐 넣으면 그대로 먹습니다.`)}`);
+    say(`  ${c.gray('전부 보려면')} ${c.cyan('/level 개발자')}`);
+    say('');
+  }
   say(`  ${c.gray('그 밖의 입력은 모델에게 보냅니다. 빈 줄에서 Ctrl+C 로 끝냅니다.')}`);
+  say('');
+}
+
+// /level — 수준 보기·바꾸기. 설정 파일에 남겨 다음에도 그대로 쓴다.
+function showLevel(session, arg) {
+  if (!arg) {
+    rule('사용자 수준', 70);
+    for (const k of LEVEL_ORDER) {
+      const lv = LEVELS[k];
+      const 지금 = k === (normLevel(session.level) ?? LEVEL_DEFAULT);
+      say(`  ${지금 ? c.hgreen('●') : c.gray('·')} ${지금 ? c.bold(c.white(pad(lv.name, 10))) : c.gray(pad(lv.name, 10))}${c.gray(lv.hint)}`);
+    }
+    say('');
+    say(`  ${c.gray('안전 장치는 두 수준이 똑같습니다 — 되돌리기·작업 범위·위험 명령 차단.')}`);
+    say(`  ${c.gray('수준은 무엇을 보여줄지만 정합니다.')}`);
+    say('');
+    say(`  ${c.gray('바꾸려면')} ${c.cyan('/level 쉬움')} ${c.gray('또는')} ${c.cyan('/level 개발자')}`);
+    say('');
+    return;
+  }
+  const 골라진 = normLevel(arg);
+  if (!골라진) {
+    say(`  ${mark.warn} 그런 수준은 없습니다: ${c.white(arg)}  ${c.gray('(쉬움 · 개발자)')}`);
+    say('');
+    return;
+  }
+  session.level = 골라진;
+  try {
+    const cfg = load();
+    cfg.level = 골라진;
+    save(cfg);
+  } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+  const lv = LEVELS[골라진];
+  say('');
+  say(`  ${mark.ok} ${c.bold(lv.name)} ${c.gray('— ' + lv.hint)}`);
+  say(`  ${c.gray('안전 장치는 그대로입니다.')}`);
   say('');
 }
 
