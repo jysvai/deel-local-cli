@@ -28,6 +28,7 @@ const FILES = [
   'abort.test.js',
   'parallel.test.js',
   'modes.test.js',
+  'encoding.test.js',
   'compact.test.js',
   'store.test.js',
   'scan.test.js',

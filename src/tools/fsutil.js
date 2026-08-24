@@ -1,6 +1,7 @@
 // 파일 훑기와 glob 매칭. 외부 패키지 없이 직접 구현한다.
 import { readdirSync, statSync, readFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { decode, looksBinary } from './encoding.js';
 
 /**
  * 폴더를 통째로 옮겨 담는다.
@@ -108,12 +109,25 @@ export function isText(path) {
   } catch { return false; }
 }
 
-export function readText(path) {
+/**
+ * 글 파일을 읽는다. 무엇으로 쓰여 있든 알아보고 읽는다.
+ *
+ * 두 번째 값으로 '무엇으로 읽었는지' 를 같이 준다. 부르는 쪽이 그걸 기억해 뒀다가
+ * 되돌려 쓸 때 같은 인코딩으로 넣어야 한다. 안 그러면 사내 CP949 문서를 한 번
+ * 고치는 것만으로 UTF-8 로 바뀌어 버린다.
+ */
+export function readTextFull(path) {
   const buf = readFileSync(path);
-  if (buf.subarray(0, 8000).includes(0)) {
+  if (looksBinary(buf)) {
     const err = new Error('바이너리 파일입니다 — 텍스트로 읽을 수 없습니다');
     err.binary = true;
     throw err;
   }
-  return buf.toString('utf8');
+  const r = decode(buf);
+  return { text: r.text, encoding: r.encoding, sure: r.sure, bom: r.bom ?? 0 };
+}
+
+/** 글만 필요할 때. 예전 부르던 자리를 그대로 두기 위해 남긴다. */
+export function readText(path) {
+  return readTextFull(path).text;
 }

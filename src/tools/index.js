@@ -3,7 +3,8 @@
 import { writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { execFile } from 'node:child_process';
-import { globToRegex, walk, readText, SKIP_DIRS } from './fsutil.js';
+import { globToRegex, walk, readText, readTextFull, SKIP_DIRS } from './fsutil.js';
+import { encode, label as encLabel, decode as decodeBytes, consoleCodepage } from './encoding.js';
 import { checkCommand } from '../safety/guard.js';
 import { findMatch, applySpans, reindent, TIER_LABELS } from './edit-match.js';
 import { loadSkill } from '../skills/discover.js';
@@ -38,7 +39,12 @@ export const TOOLS = {
       const abs = ctx.scope.resolve(args.file_path);
       if (!existsSync(abs)) return { error: `파일이 없습니다: ${args.file_path}` };
       if (statSync(abs).isDirectory()) return { error: `폴더입니다. Glob 을 쓰세요: ${args.file_path}` };
-      const text = readText(abs);
+      const 읽음 = readTextFull(abs);
+      // 무엇으로 읽었는지 기억해 둔다. 나중에 고칠 때 같은 것으로 되돌려 써야 한다.
+      // 안 그러면 사내 CP949 문서가 한 번 고치는 것만으로 UTF-8 이 되어 버린다.
+      ctx.enc = ctx.enc ?? new Map();
+      ctx.enc.set(abs, 읽음.encoding);
+      const text = 읽음.text;
       const lines = text.split('\n');
       const start = Math.max(0, (args.offset ?? 1) - 1);
       const count = Math.min(args.limit ?? MAX_READ_LINES, MAX_READ_LINES);
@@ -46,7 +52,11 @@ export const TOOLS = {
       const body = slice.map((l, i) => `${String(start + i + 1).padStart(6)}\t${l}`).join('\n');
       const more = lines.length > start + count ? `\n… 전체 ${lines.length}줄 중 ${start + count}줄까지` : '';
       ctx.seen.add(abs);
-      return { content: clip(body + more), summary: `${lines.length}줄` };
+      const 별난인코딩 = 읽음.encoding !== 'utf-8';
+      return {
+        content: clip(body + more),
+        summary: `${lines.length}줄` + (별난인코딩 ? ` · ${encLabel(읽음.encoding)}` : ''),
+      };
     },
   },
 
@@ -69,10 +79,27 @@ export const TOOLS = {
       ctx.history.snapshot(abs, 'Write');
       mkdirSync(dirname(abs), { recursive: true });
       const existed = existsSync(abs);
-      writeFileSync(abs, args.content, 'utf8');
+
+      // 원래 있던 파일이면 그 파일이 쓰던 인코딩으로 되돌려 쓴다.
+      // 새 파일이면 UTF-8 이다 — 요즘 만드는 파일까지 옛 인코딩으로 둘 이유가 없다.
+      const 원래 = existed ? (ctx.enc?.get(abs) ?? 'utf-8') : 'utf-8';
+      const 만든것 = encode(args.content, 원래);
+      if (만든것.lost.length) {
+        return {
+          error: `이 파일은 ${encLabel(원래)} 로 되어 있는데, 그 인코딩에 없는 글자가 있습니다: `
+               + `${만든것.lost.slice(0, 8).join(' ')}\n`
+               + `  그대로 쓰면 그 글자들이 뭉개집니다. 해당 글자를 빼거나, 파일을 UTF-8 로 바꿔도 되는지 사용자에게 물어보세요.`,
+        };
+      }
+      writeFileSync(abs, 만든것.buf);
       ctx.seen.add(abs);
       const n = args.content.split('\n').length;
-      return { content: `${existed ? '덮어씀' : '새로 만듦'}: ${ctx.scope.show(abs)} (${n}줄)`, summary: `${n}줄`, changed: abs };
+      const 표기 = 원래 !== 'utf-8' ? ` · ${encLabel(원래)}` : '';
+      return {
+        content: `${existed ? '덮어씀' : '새로 만듦'}: ${ctx.scope.show(abs)} (${n}줄${표기})`,
+        summary: `${n}줄${표기}`,
+        changed: abs,
+      };
     },
   },
 
@@ -97,7 +124,8 @@ export const TOOLS = {
       if (!ctx.seen.has(abs)) return { error: `먼저 Read 로 읽어야 합니다: ${args.file_path}` };
       if (args.old_string === args.new_string) return { error: 'old_string 과 new_string 이 같습니다' };
 
-      const text = readText(abs);
+      const 읽음 = readTextFull(abs);
+      const text = 읽음.text;
       const m = findMatch(text, args.old_string, { replaceAll: !!args.replace_all });
 
       if (!m.ok) {
@@ -113,13 +141,24 @@ export const TOOLS = {
       ctx.history.snapshot(abs, 'Edit');
       const next = applySpans(text, m.spans, (matched) =>
         m.tier === 'exact' ? args.new_string : reindent(args.new_string, matched, args.old_string));
-      writeFileSync(abs, next, 'utf8');
+
+      // 읽은 그 인코딩으로 되돌려 쓴다.
+      const 만든것 = encode(next, 읽음.encoding);
+      if (만든것.lost.length) {
+        return {
+          error: `이 파일은 ${encLabel(읽음.encoding)} 로 되어 있는데, 그 인코딩에 없는 글자를 넣으려 합니다: `
+               + `${만든것.lost.slice(0, 8).join(' ')}\n`
+               + `  그대로 쓰면 그 글자들이 뭉개집니다. 다른 표현을 쓰거나, 파일을 UTF-8 로 바꿔도 되는지 사용자에게 물어보세요.`,
+        };
+      }
+      writeFileSync(abs, 만든것.buf);
 
       const n = m.spans.length;
       const how = m.tier === 'exact' ? '' : ` · ${TIER_LABELS[m.tier]}`;
+      const 표기 = 읽음.encoding !== 'utf-8' ? ` · ${encLabel(읽음.encoding)}` : '';
       return {
-        content: `고침: ${ctx.scope.show(abs)} (${n}군데${how})`,
-        summary: `${n}군데${how}`,
+        content: `고침: ${ctx.scope.show(abs)} (${n}군데${how}${표기})`,
+        summary: `${n}군데${how}${표기}`,
         changed: abs,
         tier: m.tier,
       };
@@ -277,13 +316,26 @@ export const TOOLS = {
         : { file: '/bin/sh', args: ['-c', cmd] };
 
       return new Promise((done) => {
+        // 출력은 글자가 아니라 바이트로 받는다.
+        //
+        // 윈도우 명령창은 UTF-8 이 아니다. 한국어 윈도우는 CP949 로 뱉는다.
+        // 이걸 utf8 이라고 하고 받으면 한글이 통째로 깨진다 — '파싱 성공' 이
+        // '�Ľ� ����' 이 된다. 바이트로 받아 이 컴퓨터가 쓰는 것으로 해독한다.
         execFile(shell.file, shell.args, {
           cwd: ctx.scope.root,
           timeout: args.timeout ?? 120000,
           maxBuffer: 8 * 1024 * 1024,
           windowsHide: true,
-          encoding: 'utf8',
-        }, (err, stdout, stderr) => {
+          encoding: 'buffer',
+        }, (err, stdoutBuf, stderrBuf) => {
+          const 콘솔 = consoleCodepage() === 65001 ? 'utf-8' : null;
+          const 풀기 = (b) => {
+            if (!b || !b.length) return '';
+            // UTF-8 로 말이 되면 UTF-8 이다. 아니면 이 컴퓨터 콘솔 인코딩으로 본다.
+            return decodeBytes(Buffer.from(b), { fallback: 콘솔 }).text;
+          };
+          const stdout = 풀기(stdoutBuf);
+          const stderr = 풀기(stderrBuf);
           const out = [stdout, stderr].filter(Boolean).join('\n').trim();
           if (err && err.killed) return done({ error: `시간 초과로 중단됨 (${args.timeout ?? 120000}ms)`, content: clip(out) });
           const code = err?.code ?? 0;
