@@ -13,6 +13,8 @@
 //   그래서 전부 돌리고, 파일별 종료코드를 따로 적는다. '통과 표시' 가 아니라
 //   '종료코드' 가 CI 가 보는 값이기 때문이다.
 import { spawn } from 'node:child_process';
+import { readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -48,9 +50,14 @@ function runOne(file) {
     // 쓰기는 비동기라, 죽는 순간 아직 안 나간 것이 버려지기 때문이다.
     // 죽는 이유가 적힌 바로 그 줄이 사라진다 — 실제로 그것 때문에 원인을
     // 한 바퀴 더 돌아 찾았다. 요약에 못 실어도 화면에는 남는 편이 낫다.
+    // abort 로 죽으면 화면에 아직 안 나간 글이 전부 사라진다. 그래서 진행 자리를
+    // 디스크에 따로 적게 한다. 죽은 뒤에도 남는 유일한 단서다.
+    const 자취 = join(tmpdir(), `deel-trace-${process.pid}-${file}.txt`);
+    try { rmSync(자취, { force: true }); } catch { /* 없으면 그만 */ }
+
     const kid = spawn(process.execPath, [join(here, file)], {
       stdio: ['ignore', 'pipe', 'inherit'],
-      env: { ...process.env, FORCE_COLOR: C ? '1' : '' },
+      env: { ...process.env, FORCE_COLOR: C ? '1' : '', DEEL_TRACE: 자취 },
     });
 
     let out = '';
@@ -60,6 +67,9 @@ function runOne(file) {
     kid.on('close', (code, signal) => {
       // 숫자를 세어 둔다. 없으면 없는 대로 둔다 — 세는 게 목적이 아니다.
       const m = out.match(/(\d+)개 통과 · (\d+)개 실패|통과 (\d+) · 실패 (\d+)/);
+      let steps = [];
+      try { steps = readFileSync(자취, 'utf8').split('\n').filter(Boolean); } catch { /* 없을 수 있다 */ }
+      try { rmSync(자취, { force: true }); } catch { /* 그만 */ }
       done({
         file,
         code: code ?? null,
@@ -69,6 +79,7 @@ function runOne(file) {
         failed: m ? Number(m[2] ?? m[4]) : null,
         quiet: out.trim().length === 0,
         err: err.trim(),
+        steps,
       });
     });
   });
@@ -106,6 +117,13 @@ for (const x of 진) {
   if (x.code === 3221226505) {
     console.log(d('     0xC0000409 — 윈도우 abort() 입니다. 검사가 틀린 게 아니라'));
     console.log(d('     끝낼 때 남은 핸들 때문에 죽었습니다. process.exit() 를 쓰고 있지 않은지 보세요.'));
+  }
+  // 화면에 아무것도 안 남아도 이건 남는다. 어디까지 갔는지 알려주는 유일한 단서다.
+  if (x.steps?.length) {
+    console.log(d(`     지나온 자리: ${x.steps.join(' → ')}`));
+    if (!x.steps.includes('끝-정상종료')) {
+      console.log(r(`     '${x.steps.at(-1)}' 를 지나고 그 다음에서 죽었습니다.`));
+    }
   }
   if (x.quiet) {
     console.log(d('     아무것도 못 찍고 죽었습니다 — 파일을 읽다가 터진 쪽입니다.'));

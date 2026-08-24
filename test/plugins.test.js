@@ -11,6 +11,7 @@ import { untargz, stripTop } from '../src/pack/tar.js';
 import { makeZip, crc32 } from '../src/pack/zip.js';
 import { parseSpec, install, list, remove, pack, pluginsDir } from '../src/plugins/manage.js';
 import { discover } from '../src/skills/discover.js';
+import { trace } from './trace.mjs';
 
 const pass = [];
 const fail = [];
@@ -20,6 +21,7 @@ const sand = mkdtempSync(join(tmpdir(), 'deel-plug-'));
 const sh = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, { encoding: 'buffer', stdio: ['ignore', 'pipe', 'pipe'], ...opts });
 
+trace('1-주소해석');
 // ── 1. 주소 해석 ────────────────────────────────────────────────────────
 check('owner/repo', parseSpec('affaan-m/ECC')?.url === 'https://github.com/affaan-m/ECC.git');
 check('전체 URL', parseSpec('https://github.com/a/b')?.repo === 'b');
@@ -27,6 +29,7 @@ check('.git 꼬리 제거', parseSpec('https://github.com/a/b.git')?.repo === 'b
 check('#가지 지정', parseSpec('a/b#dev')?.ref === 'dev');
 check('엉뚱한 값 거절', parseSpec('그냥말') === null);
 
+trace('2-TAR읽기');
 // ── 2. TAR 읽기 — 진짜 tar 가 만든 묶음을 읽는다 ────────────────────────
 const src = join(sand, 'tarsrc');
 const 긴경로 = '아주/깊은/폴더/구조/를/만들어/이름/길이/백자/넘기기/위한/경로';
@@ -69,6 +72,7 @@ const 안벗김 = stripTop([
 ]);
 check('최상위가 여럿이면 안 벗김', 안벗김[0].name === 'a/1.md');
 
+trace('3-ZIP쓰기');
 // ── 3. ZIP 쓰기 — 진짜 unzip 으로 열어 본다 ─────────────────────────────
 const 큰내용 = Buffer.from('되풀이되는 글자'.repeat(500), 'utf8');            // 압축이 먹는 것
 const 랜덤 = Buffer.from(Array.from({ length: 64 }, (_, i) => (i * 37 + 11) % 256)); // 압축이 안 먹는 것
@@ -102,6 +106,7 @@ if (unzipOk) {
 check('CRC32 표준값 (0xCBF43926)', crc32(Buffer.from('123456789')) === 0xcbf43926,
   '0x' + crc32(Buffer.from('123456789')).toString(16));
 
+trace('4-폴더설치');
 // ── 4. 폴더에서 설치 (오프라인 기기의 길) ───────────────────────────────
 const home = join(sand, 'home');
 const 받은폴더 = join(sand, '받은플러그인');
@@ -138,6 +143,7 @@ const 목록2 = list({ home });
 check('목록에 뜸', 목록2.length === 1 && 목록2[0].name === 'sabun-kit');
 check('목록에 라이선스 표시', 목록2[0].license === 'MIT');
 
+trace('5-반입묶음');
 // ── 5. 반입 묶음 ────────────────────────────────────────────────────────
 const 반입 = join(sand, '반입.zip');
 const 묶음 = pack(반입, { home });
@@ -164,6 +170,7 @@ if (!묶음.error && unzipOk) {
     `스킬 ${새PC결과.skills.length}개 · 명령 ${새PC결과.commands.length}개`);
 }
 
+trace('6-삭제');
 // ── 6. 삭제 ─────────────────────────────────────────────────────────────
 check('없는 것 삭제하면 오류', !!remove('없는놈', { home }).error);
 check('삭제됨', remove('sabun-kit', { home }).removed === 'sabun-kit');
@@ -176,4 +183,5 @@ console.log('\n플러그인 받기·묶기 검사  ' + D + '(zip 은 진짜 unzi
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
+trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;
