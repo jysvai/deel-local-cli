@@ -163,6 +163,40 @@ trace('3-효과확인');
   check('쉬움에서도 감춘 명령이 그대로 먹는다', c2.ok && 쉬움.think === 'high', 쉬움.think);
 }
 
+// 오류를 수준에 맞게 바꿔 주는 부분.
+//
+// 가장 중요한 것은 '원인을 지우지 않는다' 다. 쉽게 바꿔 주는 것까지는 좋은데
+// 원래 문구를 없애면, 막혔을 때 물어볼 것조차 없어진다.
+{
+  const { explain } = await import('../src/ui/level.js');
+
+  const 사례 = [
+    ['connect ECONNREFUSED 127.0.0.1:11434', /모델이 안 켜져/],
+    ['허용되지 않은 주소입니다: https://example.com', /막힌 게 정상/],
+    ['작업 범위 밖입니다: C:\\other\\x.txt', /시작한 폴더 바깥/],
+    ['먼저 Read 로 읽어야 합니다: a.js', /먼저 읽게 되어 있습니다/],
+    ['401 Unauthorized', /열쇠|API 키/],
+    ['request timeout after 120000ms', /제때 답하지 않았습니다/],
+  ];
+  for (const [원래, 기대] of 사례) {
+    const r = explain('쉬움', 원래);
+    check(`쉬움: ${원래.slice(0, 24)}… 를 쉬운 말로`, r.plain && 기대.test(r.text), r.text.split('\n')[0]);
+    check(`쉬움: 원래 문구를 안 지운다`, r.detail === 원래, r.detail ?? '없음');
+  }
+
+  // 모르는 오류는 손대지 않는다. 아무 말이나 지어내는 것보다 낫다.
+  {
+    const r = explain('쉬움', '알 수 없는 무언가가 터졌습니다 XYZ');
+    check('모르는 오류는 그대로 둔다', !r.plain && r.text === '알 수 없는 무언가가 터졌습니다 XYZ', r.text);
+  }
+
+  // 개발자 수준은 손대지 않는다.
+  for (const [원래] of 사례) {
+    const r = explain('개발자', 원래);
+    check(`개발자: ${원래.slice(0, 20)}… 는 그대로`, !r.plain && r.text === 원래, r.text);
+  }
+}
+
 // /init 은 파일을 만든다. 만들어졌는지 본다.
 check('/init 이 DEEL.md 를 만든다', existsSync(join(root, 'DEEL.md')));
 

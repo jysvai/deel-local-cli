@@ -47,7 +47,10 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 - [Where your data can go](#where-your-data-can-go)
 - [Multiple local runtimes](#multiple-local-runtimes)
 - [Slash commands](#slash-commands)
+- [Work modes](#work-modes)
+- [Simple vs developer](#simple-vs-developer)
 - [Tools](#tools)
+- [Korean text and Excel](#korean-text-and-excel)
 - [Skills and plugins](#skills-and-plugins)
 - [Reasoning effort](#reasoning-effort)
 - [Auto-compaction](#auto-compaction)
@@ -211,7 +214,10 @@ Names follow Claude Code / Codex conventions.
 | `/clear` | Clear the conversation (keeps link and rules) |
 | `/model` | Switch connection / model |
 | `/think <level\|profile>` | `off·low·medium·high·max` or `even·save·deep` |
-| `/mode <mode>` | `auto` · `confirm` · `strict` |
+| `/mode <mode>` | Approval policy — how much it asks (`auto` · `confirm` · `strict`) |
+| `/work [mode]` | Work mode — what kind of work you are doing |
+| `/code` `/plan` `/architect` `/debug` `/ask` `/orchestrator` | Switch work mode directly |
+| `/level [level]` | How much to show (`쉬움` simple · `개발자` developer) |
 | `/undo [turns]` | Revert file changes |
 | `/tools` | Available tools |
 | `/skills [query\|all\|off]` | Browse, search, load skills |
@@ -252,13 +258,61 @@ Pressing Ctrl+C again on an empty line quits.
 
 ---
 
+## Work modes
+
+What you are working on changes **which tools the model is given and how hard it thinks.**
+Cycle with `Shift+Tab`, or type the name.
+
+| Mode | For | Can edit files | Reasoning |
+|---|---|---|---|
+| `/code` ◆ Code | Writing and fixing | Yes | Normal (`save`) |
+| `/plan` ☰ Plan | Planning first | **No** | Deep (`deep`·high) |
+| `/architect` ◈ Architect | Shaping structure | **No** | Deep (`deep`·high) |
+| `/debug` ◉ Debug | Finding causes | Yes | Deep, more steps (32) |
+| `/ask` ◇ Ask | Explaining only | **No** | Shallow (`low`) |
+| `/orchestrator` ❋ Orchestrator | Breaking up large work | Yes | Many steps (40) |
+
+In read-only modes, `Write`, `Edit` and `Bash` are **never sent to the model at all.**
+It is not asked politely not to edit — models forget requests. A tool that isn't there can't be used.
+
+Don't confuse this with `/mode`. They are separate axes:
+
+- `/mode` — **how much it asks you** (auto · confirm · strict)
+- `/work` — **what kind of work you are doing** (the six above)
+
+If you have explicitly set `/think` or `/mode`, your choice wins. A work mode never
+overrides something a person chose.
+
+---
+
+## Simple vs developer
+
+Twenty commands on first launch means nothing gets chosen. Locking features away means
+hitting a wall later. So only **what is shown** differs.
+
+| | Simple (`쉬움`, default) | Developer (`개발자`) |
+|---|---|---|
+| `/help` listing | Common commands only | Everything |
+| Error messages | What to do about it | The original text |
+| Safety | **Identical** | **Identical** |
+
+`/level 개발자` is saved to config and persists across sessions.
+
+Two things matter here:
+
+- **Hidden commands still work.** `/think high` works in simple mode. It just isn't listed.
+- **Beginners do not get fewer safeguards.** Undo, workspace scope and dangerous-command
+  blocking are identical. A beginner needs the undo more, not less.
+
+---
+
 ## Tools
 
 Names and arguments match Claude Code, so skills written for that convention work unchanged.
 
 | Tool | What it does |
 |---|---|
-| `Read` | Read a file (line numbers, `offset`/`limit`) |
+| `Read` | Read a file (line numbers, `offset`/`limit`, **Excel as CSV**) |
 | `Write` | Write / overwrite a file |
 | `Edit` | Replace an exact string (`replace_all` supported) |
 | `Glob` | Find files by name pattern |
@@ -317,6 +371,74 @@ Measured with `npm run bench`:
 | Staged relaxation | **100%** | **0** |
 
 On failure it points at the closest line in the file.
+
+---
+
+## Korean text and Excel
+
+### Encoding — written back the way it was read
+
+Corporate documents are often not UTF-8. Files saved by old Windows Notepad in a legacy
+codepage (CP949 in Korea, CP932 in Japan, GBK in China) are still around. Reading one as
+UTF-8 garbles it completely: `한글` becomes `�ѱ�`.
+
+Writing is the dangerous part. Read it garbled, save it as UTF-8, and the original is gone.
+So there is one rule: **write it back in the encoding it was read in.**
+
+Which encoding that is comes from **the file's contents, not the machine's settings.**
+Each candidate is decoded strictly, then scored on whether the result looks like real text
+written in that encoding. So the same CP949 document reads identically on Ubuntu, on a US
+Windows machine, and on a Korean one.
+
+```
+› Read report.txt
+└ 4 lines · CP949
+```
+
+If you try to insert a character that encoding **cannot hold**, it refuses instead of saving.
+
+```
+› Edit report.txt   note → note 🚀
+└ This file is CP949, and you are inserting a character that encoding does not have: 🚀
+```
+
+Silently substituting question marks would be worse than not writing at all.
+Newly created files are UTF-8.
+
+Command output is handled the same way. A Windows console is not UTF-8, so taking `Bash`
+output as utf8 garbles non-ASCII text. It is collected as bytes and decoded afterwards.
+
+### Excel — read as CSV
+
+An Excel file is a compressed archive, not text, so normally you get "this is a binary file"
+and somebody has to export a CSV by hand. `Read` just does it.
+
+```
+› Read report.xlsx
+└ 3 sheets · 128 rows · unpacked directly
+```
+
+- **Still zero dependencies.** An xlsx is a zip full of XML, so Node's built-in `zlib` is enough.
+- Every sheet is returned. Hidden sheets too, marked as hidden.
+- Dates come back as dates, not serial numbers — the cell format is read to decide.
+- Formulas come back as **computed values**, and error values like `#REF!` are not dropped.
+
+**Password-protected files and legacy `.xls`** are handed to Excel itself; those cannot be
+unpacked directly. You are asked for the password at that point.
+
+The password is **not stored anywhere**:
+
+- not in the config file
+- not in the session log
+- not in the audit log
+- not as a command-line argument (other people can see your command lines)
+
+The only path out is the child process's stdin, and a test asserts that this stays true.
+Extracted intermediate files are deleted after use.
+
+> **Excel files are read-only here.** `Edit` and `Write` refuse them, and say why and what
+> to do instead. Round-tripping a file with formatting, formulas and charts through CSV
+> always loses something. Better not to write than to write knowing you'll lose data.
 
 ---
 

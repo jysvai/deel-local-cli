@@ -15,6 +15,7 @@ import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
 import { askHidden } from './ui/prompt.js';
+import { explain } from './ui/level.js';
 
 // 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
 const TOOL_GLYPH = {
@@ -154,6 +155,22 @@ export async function chatLoop(opts = {}) {
     const a = await nextLine();
     if (a === null) return o.def ?? '';
     return a.trim() || o.def || '';
+  };
+
+  /**
+   * 오류를 이 사람 수준에 맞게 보여준다.
+   *
+   * 쉬움 수준에서는 무엇을 하면 되는지를 앞에 놓고, 원래 문구는 회색으로 뒤에 남긴다.
+   * 원인을 지우지 않는 것이 중요하다 — 지우면 물어볼 수도 없게 된다.
+   * 개발자 수준에서는 원래 문구 그대로다.
+   */
+  const 오류보이기 = (message) => {
+    const r = explain(session.level, message);
+    if (!r.plain) { say(`  ${c.red('✗')} ${String(message)}`); return; }
+    const [머리, ...나머지] = r.text.split('\n');
+    say(`  ${c.red('✗')} ${머리}`);
+    for (const l of 나머지) say(`  ${l}`);
+    if (r.detail) say(`  ${c.gray(`(원래 문구: ${clip(String(r.detail).split('\n')[0], 90)})`)}`);
   };
 
   const ctx = {
@@ -353,7 +370,7 @@ export async function chatLoop(opts = {}) {
           case 'error':
             clearThinking();
             say('');
-            say(`  ${c.red('✗')} ${ev.text}`);
+            오류보이기(ev.text);
             break;
 
           case 'done':
@@ -365,7 +382,7 @@ export async function chatLoop(opts = {}) {
     } catch (err) {
       clearThinking();
       say('');
-      say(`  ${c.red('✗')} ${err.message}`);
+      오류보이기(err.message);
     }
     turn = null;
     interrupted = false;   // 중단은 '끝내기' 의사가 아니다. 종료 카운트를 되돌린다.
