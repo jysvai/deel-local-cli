@@ -109,11 +109,11 @@ check('쪼개진 도구 인자를 이어 붙였다', editEv?.args?.new_string ==
 
 // 게이트웨이에 보낸 요청 모양
 const first = seenBodies[0];
-// 파일 도구 6종 + 웹 읽기. 스킬이 없는 세션이라 Skill 은 빠진다.
-check('도구 정의 7종을 보냈다', first?.tools?.length === 7, `${first?.tools?.length}개`);
+// 파일 도구 6종 + 웹 읽기 + 할 일 목록. 스킬이 없는 세션이라 Skill 은 빠진다.
+check('도구 정의 8종을 보냈다', first?.tools?.length === 8, `${first?.tools?.length}개`);
 check('도구 이름이 Claude Code 와 같다',
   JSON.stringify(first?.tools?.map((t) => t.function.name))
-    === JSON.stringify(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch']),
+    === JSON.stringify(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch', 'TodoWrite']),
   JSON.stringify(first?.tools?.map((t) => t.function.name)));
 check('시스템 프롬프트를 보냈다', first?.messages?.[0]?.role === 'system');
 

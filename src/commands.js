@@ -5,12 +5,14 @@ import { c, say, rule, pad, bar, mark, width, clip } from './ui/ansi.js';
 import { compact } from './agent/compact.js';
 import { allowEndpoint } from './safety/network.js';
 import { pick } from './ui/prompt.js';
-import { load, save, resolveKey } from './config.js';
+import { load, save, resolveKey, upsert } from './config.js';
 import { TOOLS } from './tools/index.js';
 import { loadCommand, discover } from './skills/discover.js';
 import { install, list, remove, pack } from './plugins/manage.js';
 import { spin } from './ui/spinner.js';
 import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable } from './agent/effort.js';
+import { scanLocal, toProfiles } from './backend/scan.js';
+import { list as listSessions } from './agent/store.js';
 const MODES = {
   auto: '자율 — 전부 알아서. 되돌리기가 안전망',
   confirm: '확인 — 되돌릴 수 없는 것만 물어봄',
@@ -31,6 +33,8 @@ export const COMMANDS = {
   plugin:  { desc: '플러그인 목록·설치·삭제·반입묶음', arg: '[install|remove|pack]' },
   cost:    { desc: '이번 세션 사용량' },
   status:  { desc: '연결 상태' },
+  scan:    { desc: '이 PC 의 로컬 모델 서버 훑기', arg: '[save]' },
+  sessions:{ desc: '이 폴더의 지난 대화 목록' },
   init:    { desc: 'DEEL.md 규칙 파일 만들기' },
   exit:    { desc: '끝내기' },
   quit:    { desc: '끝내기' },
@@ -162,6 +166,53 @@ export async function handle(line, session, ctx) {
         k.think ? c.green('추론') : c.gray('추론'),
       ].join(c.gray(' · '));
       say(`  ${c.gray(pad('지원', 10))} ${caps}`);
+      say('');
+      return { handled: true };
+    }
+
+    case 'scan': {
+      const s2 = spin('이 PC 의 로컬 서버를 찾는 중…');
+      const found = await scanLocal({ timeout: 1500 });
+      s2.stop(`  ${found.length ? mark.ok : mark.warn} ${found.length}곳 찾음`);
+      if (!found.length) {
+        say(`  ${c.gray('떠 있는 로컬 서버가 없습니다. 다른 포트라면')} ${c.cyan('deel scan --ports ...')}`);
+        say('');
+        return { handled: true };
+      }
+      for (const f of found) {
+        say(`  ${c.hcyan('◆')} ${c.bold(pad(f.runtime, 12))}${c.gray(pad(`${f.host}:${f.port}`, 22))}${c.gray(`모델 ${f.models.length}개`)}`);
+        for (const m of f.models.slice(0, 6)) say(`      ${c.gray('·')} ${clip(m.id, 44)}`);
+        if (f.models.length > 6) say(`      ${c.gray(`… 그 밖에 ${f.models.length - 6}개`)}`);
+      }
+      say('');
+      if (arg === 'save') {
+        const cfg2 = load();
+        const ps = toProfiles(found, cfg2.profiles);
+        for (const x of ps) upsert(cfg2, x);
+        save(cfg2);
+        say(`  ${mark.ok} ${ps.length}개 등록했습니다. ${c.cyan('/model')} 로 고르세요.`);
+      } else {
+        say(`  ${c.gray('등록하려면')} ${c.cyan('/scan save')}   ${c.gray('고르려면')} ${c.cyan('/model')}`);
+      }
+      say('');
+      return { handled: true };
+    }
+
+    case 'sessions': {
+      const rows = listSessions(session.root, { limit: 12 });
+      rule('이 폴더의 지난 대화', 70);
+      if (!rows.length) {
+        say(`  ${c.gray('아직 없습니다. 지금 이 대화가 첫 번째입니다.')}`);
+        say('');
+        return { handled: true };
+      }
+      for (const [i, r] of rows.entries()) {
+        say(`  ${i === 0 ? c.hgreen('●') : c.gray('·')} ${c.bold(pad(r.id, 17))}${c.gray(pad(`${r.turns}턴`, 6, 'right'))}  ${c.gray(clip(r.model, 22))}`);
+        say(`      ${c.gray(clip(r.first, 66))}`);
+      }
+      say('');
+      say(`  ${c.gray('이어하려면 나갔다가')} ${c.cyan('deel --continue')} ${c.gray('또는')} ${c.cyan(`deel --resume ${rows[0].id}`)}`);
+      say(`  ${c.gray('지금 대화는 나가지 않아도 계속 저장되고 있습니다.')}`);
       say('');
       return { handled: true };
     }

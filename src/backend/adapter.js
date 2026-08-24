@@ -1,6 +1,6 @@
 // 규격 차이(OpenAI 호환 / Ollama)를 여기 한 곳에서만 흡수한다.
 // 진단(probe)과 에이전트 루프가 같은 함수를 쓴다.
-import { req, headersFor, serverMessage } from './http.js';
+import { req, headersFor, serverMessage, Aborted } from './http.js';
 
 export function endpoint(shape) {
   return shape === 'ollama' ? '/api/chat' : '/chat/completions';
@@ -88,6 +88,7 @@ export async function chat(conn, opts) {
     headers: headersFor(conn.auth, conn.key ?? ''),
     body,
     timeout: opts.timeout ?? 300000,
+    signal: opts.signal ?? null,
   });
   if (!r.ok) throw new Error(serverMessage(r));
   return extractMessage(conn.kind, r.json);
@@ -102,6 +103,7 @@ export async function* chatStream(conn, opts) {
     body,
     timeout: opts.timeout ?? 300000,
     stream: true,
+    signal: opts.signal ?? null,
   });
   if (!r.ok || !r.res?.body) throw new Error(r.error ?? `HTTP ${r.status}`);
 
@@ -111,7 +113,15 @@ export async function* chatStream(conn, opts) {
   let buf = '';
 
   while (true) {
-    const { done, value } = await reader.read();
+    // 사용자가 끊었으면 흘러오는 것을 더 받지 않는다. 읽던 연결도 닫는다.
+    if (opts.signal?.aborted) {
+      try { await reader.cancel(); } catch {}
+      throw new Aborted();
+    }
+    let done;
+    let value;
+    try { ({ done, value } = await reader.read()); }
+    catch (err) { if (opts.signal?.aborted) throw new Aborted(); throw err; }
     if (done) break;
     buf += dec.decode(value, { stream: true });
 

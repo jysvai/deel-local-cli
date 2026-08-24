@@ -160,7 +160,7 @@ The destination is printed at the top of every session:
 Nothing is collected or transmitted. No telemetry, no usage stats, no crash reporting.
 Conversation history, undo snapshots and config live only in `.deel/` inside your working folder.
 
-> Verified by 54 checks in `npm test` (network + web), including bringing up a real server and
+> Verified by 55 checks in `npm test` (network + web), including bringing up a real server and
 > confirming that **not a single request reaches it** when it is not allow-listed.
 
 ---
@@ -218,10 +218,37 @@ Names follow Claude Code / Codex conventions.
 | `/plugin [install\|remove\|pack]` | Manage plugins |
 | `/cost` | Session usage |
 | `/status` | Connection status |
+| `/scan [save]` | Sweep this machine for local model servers (`save` registers them) |
+| `/sessions` | Past conversations in this folder |
 | `/init` | Create a `DEEL.md` rules file |
 | `/exit` | Quit |
 
 Discovered plugin commands are invoked as `/<plugin>:<name>`, with `$ARGUMENTS` substituted.
+
+`/scan` and `/sessions` work without leaving the session. If you just started another local
+server or loaded a different model, `/scan save` then `/model` switches over without losing
+the conversation.
+
+### Interrupting
+
+Press **Ctrl+C** to stop the model mid-answer when it is heading the wrong way.
+
+```
+❯ rewrite the whole test suite
+  ◧ Read  test/smoke.js
+  ◧ Read  test/loop.test.js
+^C
+  ⚠ Stopped (after step 2)
+
+❯ ▊
+```
+
+The conversation stays valid. If the model had announced tool calls, each unanswered one is
+filled with a `stopped by user` result so the call/result pairing holds — a conversation with
+broken pairing is rejected with HTTP 400 on the next request, which would waste the whole
+session. Tools already running finish; **tools not yet started never run.**
+
+Pressing Ctrl+C again on an empty line quits.
 
 ---
 
@@ -239,6 +266,38 @@ Names and arguments match Claude Code, so skills written for that convention wor
 | `Bash` | Run a command |
 | `Skill` | Expand a skill body (shown to the model only when skills exist) |
 | `WebFetch` | Read a web page (read-only; hidden under `--offline`) |
+| `TodoWrite` | Checklist — breaks long work into steps and shows progress |
+
+### Checklists
+
+Keeps the model from losing its place on multi-step work. The list is redrawn whenever the
+model updates it.
+
+```
+  ☰ Todo  1/3 done  ← just finished 1
+
+    ✓ unify log format
+    ▶ fix the tests
+    ☐ update the docs
+```
+
+Only one item may be **in progress** at a time; setting two is refused. Holding several at
+once is how nothing gets finished.
+
+### Read-only tools run together
+
+When the model asks for three `Read` calls at once, all three run **concurrently** — sweeping
+five files costs about what reading one costs.
+
+```
+  ◧ Read  src/a.js    ◧ Read  src/b.js    ◧ Read  src/c.js     together
+```
+
+Only `Read`, `Glob`, `Grep`, `Skill` and `WebFetch` are eligible. `Write`, `Edit` and `Bash`
+always run one at a time — two concurrent writes to one file scramble the undo snapshot
+order, and `Bash` can do anything. Results come back **in the order the model asked for
+them**, even when they finish out of order; shuffled results confuse the model about which
+result belongs to which call.
 
 ### Edits survive small mistakes
 
@@ -409,6 +468,7 @@ does not ask.
 | **Scope** | Outside the starting folder is refused, even if the model insists |
 | **Blocked commands** | Only irreversible ones (disk format, recursive delete, `--force` push) |
 | **No re-run** | A mutating command is never retried after failure |
+| **Interrupt** | Ctrl+C stops mid-answer and leaves the conversation valid |
 | **Audit log** | Everything recorded in `.deel/audit.jsonl` |
 
 | Mode | Asks when |
@@ -416,6 +476,10 @@ does not ask.
 | `auto` (default) | Never — undo is the safety net |
 | `confirm` | Irreversible commands only |
 | `strict` | All file changes and commands |
+
+Undo history stores whole file contents, so repeated edits to large files add up. Past 32MB
+it keeps the **most recent 50 turns** and drops the rest. What you just did is always
+undoable; `/status` shows how large the history currently is.
 
 ---
 
@@ -534,7 +598,7 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 ## Development
 
 ```bash
-npm test        Full suite (219 checks)
+npm test        Full suite (253 checks)
 npm run verify  Import + network checks only
 npm run bench   Edit success rate
 npm run demo    See what the UI actually looks like
@@ -549,8 +613,10 @@ are verified deterministically without any model. ZIP output is cross-checked wi
 |---|---|---|
 | `smoke` | 20 | Tools, scope, undo, audit log |
 | `loop` | 16 | Agent loop, streaming, tool calls |
-| `network` | 29 | Nothing escapes the configured address |
+| `network` | 30 | Nothing escapes the configured address |
 | `web` | 25 | Web reads stay read-only |
+| `abort` | 16 | Ctrl+C leaves the conversation valid |
+| `parallel` | 23 | Read-only tools run together; checklists |
 | `compact` | 21 | Summary folding, pairing intact, graceful fallback |
 | `store` | 34 | Session persistence, resume, crash recovery |
 | `scan` | 19 | Distinguishing multiple runtimes |

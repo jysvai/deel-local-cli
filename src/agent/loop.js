@@ -13,12 +13,57 @@ function thinkFor(conn, level) {
   return level;
 }
 
-export async function* run(session, ctx, userText) {
+// 아무것도 안 바꾸는 도구들. 이것들만 동시에 돌린다.
+//
+// 왜 이것만인가:
+//   Read 세 개를 동시에 하는 것은 안전하다 — 서로 안 건드린다.
+//   Write·Edit 을 동시에 돌리면 같은 파일을 두 갈래로 고칠 수 있고,
+//   되돌리기 스냅샷 순서도 뒤엉킨다. Bash 는 무슨 짓을 할지 알 수 없다.
+//   그래서 '읽기만 하는 것' 이라고 확실한 도구만 묶는다.
+const 읽기전용 = new Set(['Read', 'Glob', 'Grep', 'Skill', 'WebFetch']);
+
+/**
+ * 호출 목록을 '같이 돌려도 되는 덩어리' 로 자른다.
+ * 읽기 전용이 이어지면 한 덩어리, 그 밖의 것은 하나씩 따로.
+ */
+export function 묶기(calls) {
+  const out = [];
+  for (const call of calls) {
+    const 안전 = 읽기전용.has(call.name);
+    const 끝 = out.at(-1);
+    if (안전 && 끝?.parallel) 끝.calls.push(call);
+    else out.push({ parallel: 안전, calls: [call] });
+  }
+  return out;
+}
+
+export async function* run(session, ctx, userText, { signal = null } = {}) {
   session.push({ role: 'user', content: userText });
   ctx.audit.turn(userText);
   ctx.history.nextTurn();
 
   const conn = session.conn;
+
+  /**
+   * 중단하고 나갈 때 대화를 성한 상태로 남긴다.
+   *
+   * 모델이 도구를 부르겠다고 해 놓고 결과가 안 들어간 채로 끝나면, 다음에 이어할 때
+   * 그 배열을 그대로 보낼 수 없다 — 서버가 400 을 낸다. 그래서 부른 만큼
+   * '중단됨' 결과를 채워 짝을 맞춘다.
+   */
+  const 짝맞추기 = () => {
+    const last = session.messages.at(-1);
+    const calls = last?.tool_calls ?? [];
+    if (!calls.length) return;
+    const 이미 = session.messages.filter((m) => m.role === 'tool').length;
+    for (const t of calls) {
+      session.push(toolMessage(conn.kind, {
+        callId: t.id ?? `call_${이미 + 1}`,
+        name: t.function?.name ?? t.name ?? '?',
+        content: '사용자가 중단했습니다. 실행하지 않았습니다.',
+      }));
+    }
+  };
   const tools = toolSchemas(null, {
     hasSkills: (session.skills?.length ?? 0) > 0,
     web: session.web !== false && !isOffline(),   // 오프라인이면 웹 도구는 아예 안 보여 준다
@@ -42,6 +87,7 @@ export async function* run(session, ctx, userText) {
       tools,
       think: thinkFor(conn, think),
       maxTokens,
+      signal,
     });
 
     let msg;
@@ -71,6 +117,11 @@ export async function* run(session, ctx, userText) {
         yield* askModel(full, level);
       }
     } catch (err) {
+      if (err?.name === 'Aborted' || signal?.aborted) {
+        짝맞추기();
+        yield { type: 'aborted', steps };
+        return;
+      }
       yield { type: 'error', text: err.message };
       return;
     }
@@ -86,65 +137,99 @@ export async function* run(session, ctx, userText) {
       return;
     }
 
-    // 도구를 순서대로 실행한다.
+    // 도구를 돌린다. 읽기만 하는 것들이 이어지면 한꺼번에, 나머지는 하나씩.
     lastToolFailed = false;
-    for (const call of msg.toolCalls) {
-      if (!TOOLS[call.name]) {
-        lastToolFailed = true;
-        session.push(toolMessage(conn.kind, {
-          callId: call.id, name: call.name,
-          content: `모르는 도구입니다. 쓸 수 있는 것: ${Object.keys(TOOLS).join(', ')}`,
-        }));
-        yield { type: 'tool', name: call.name, args: call.args, result: { error: '모르는 도구' } };
+    const 거절 = (call, note) => {
+      lastToolFailed = true;
+      session.push(toolMessage(conn.kind, { callId: call.id, name: call.name, content: note }));
+    };
+
+    for (const 덩어리 of 묶기(msg.toolCalls)) {
+      // 돌리는 중에 끊었다면, 남은 것은 실행하지 않고 결과 자리만 채운다.
+      // 자리를 비우면 짝이 깨져 다음에 이어할 수 없다.
+      if (signal?.aborted) {
+        for (const call of 덩어리.calls) {
+          session.push(toolMessage(conn.kind, {
+            callId: call.id, name: call.name,
+            content: '사용자가 중단했습니다. 실행하지 않았습니다.',
+          }));
+        }
         continue;
       }
 
-      // 변경성 명령은 실패해도 다시 실행하지 않는다 — 두 번 돌면 사고다.
-      if (call.name === 'Bash' && isMutating(call.args?.command)) {
-        const key = String(call.args.command).trim();
-        if (attempted.has(key)) {
-          lastToolFailed = true;
-          const note = '같은 변경성 명령을 다시 실행하지 않습니다. 두 번 실행되면 사고가 납니다.';
-          session.push(toolMessage(conn.kind, { callId: call.id, name: call.name, content: note }));
-          yield { type: 'tool', name: call.name, args: call.args, result: { error: note } };
+      // 먼저 하나씩 걸러 낸다 — 물어보는 것도 여기서. 실제 실행은 통과한 것만.
+      const 실행할것 = [];
+      for (const call of 덩어리.calls) {
+        if (!TOOLS[call.name]) {
+          거절(call, `모르는 도구입니다. 쓸 수 있는 것: ${Object.keys(TOOLS).join(', ')}`);
+          yield { type: 'tool', name: call.name, args: call.args, result: { error: '모르는 도구' } };
           continue;
         }
-        attempted.add(key);
-      }
 
-      // 모드에 따라 물어본다. 기본(auto)은 안 묻고 되돌리기로 대응한다.
-      const needsOk = session.mode === 'strict'
-        ? ['Write', 'Edit', 'Bash'].includes(call.name)
-        : session.mode === 'confirm'
-          ? (call.name === 'Bash' && isMutating(call.args?.command))
-          : false;
-      if (needsOk && ctx.confirm) {
-        const ok = await ctx.confirm(call.name, call.args);
-        if (!ok) {
-          lastToolFailed = true;
-          const note = '사용자가 거부했습니다. 다른 방법을 찾거나 이유를 물어보세요.';
-          session.push(toolMessage(conn.kind, { callId: call.id, name: call.name, content: note }));
-          yield { type: 'tool', name: call.name, args: call.args, result: { error: '거부됨' } };
-          continue;
+        // 변경성 명령은 실패해도 다시 실행하지 않는다 — 두 번 돌면 사고다.
+        if (call.name === 'Bash' && isMutating(call.args?.command)) {
+          const key = String(call.args.command).trim();
+          if (attempted.has(key)) {
+            const note = '같은 변경성 명령을 다시 실행하지 않습니다. 두 번 실행되면 사고가 납니다.';
+            거절(call, note);
+            yield { type: 'tool', name: call.name, args: call.args, result: { error: note } };
+            continue;
+          }
+          attempted.add(key);
         }
+
+        // 모드에 따라 물어본다. 기본(auto)은 안 묻고 되돌리기로 대응한다.
+        const needsOk = session.mode === 'strict'
+          ? ['Write', 'Edit', 'Bash'].includes(call.name)
+          : session.mode === 'confirm'
+            ? (call.name === 'Bash' && isMutating(call.args?.command))
+            : false;
+        if (needsOk && ctx.confirm) {
+          const ok = await ctx.confirm(call.name, call.args);
+          if (!ok) {
+            거절(call, '사용자가 거부했습니다. 다른 방법을 찾거나 이유를 물어보세요.');
+            yield { type: 'tool', name: call.name, args: call.args, result: { error: '거부됨' } };
+            continue;
+          }
+        }
+        실행할것.push(call);
       }
+      if (!실행할것.length) continue;
 
-      yield { type: 'tool_start', name: call.name, args: call.args };
-      const t0 = Date.now();
-      const result = await runTool(call.name, call.args, ctx);
-      const ms = Date.now() - t0;
-      session.usage.ms += ms;
+      // 여럿을 같이 돌릴 때는 '시작' 을 따로 알리지 않는다.
+      // 화면에서 이름 셋이 먼저 뜨고 결과 셋이 뒤에 몰려 붙으면, 어느 결과가
+      // 어느 파일 것인지 읽을 수 없다. 그럴 때는 끝난 것부터 이름과 결과를 함께 그린다.
+      const 함께 = 실행할것.length > 1;
+      if (!함께) yield { type: 'tool_start', name: 실행할것[0].name, args: 실행할것[0].args };
+      else yield { type: 'tools_start', names: 실행할것.map((x) => x.name), count: 실행할것.length };
 
-      if (result.error) lastToolFailed = true;
-      if (call.name === 'Read' && result.content) session.noteRead(call.args.file_path, result.content);
+      const 한개 = async (call) => {
+        const t0 = Date.now();
+        let result;
+        try { result = await runTool(call.name, call.args, ctx); }
+        catch (err) { result = { error: String(err?.message ?? err) }; }
+        return { call, result, ms: Date.now() - t0 };
+      };
 
-      session.push(toolMessage(conn.kind, {
-        callId: call.id,
-        name: call.name,
-        content: result.error ? `오류: ${result.error}` : result.content ?? '',
-      }));
-      yield { type: 'tool', name: call.name, args: call.args, result, ms };
+      // 여럿이면 동시에. 읽기만 하는 것들이라 서로 방해하지 않는다.
+      const 결과들 = 함께
+        ? await Promise.all(실행할것.map(한개))
+        : [await 한개(실행할것[0])];
+
+      for (const { call, result, ms } of 결과들) {
+        session.usage.ms += ms;
+        if (result.error) lastToolFailed = true;
+        if (call.name === 'Read' && result.content) session.noteRead(call.args.file_path, result.content);
+        session.push(toolMessage(conn.kind, {
+          callId: call.id,
+          name: call.name,
+          content: result.error ? `오류: ${result.error}` : result.content ?? '',
+        }));
+        yield { type: 'tool', name: call.name, args: call.args, result, ms, parallel: 함께 };
+      }
     }
+
+    if (signal?.aborted) { yield { type: 'aborted', steps }; return; }
 
     // 컨텍스트가 차오르면 오래된 대화를 '요약해서' 접는다. 그냥 자르면 하던 일을 잊는다.
     if (shouldCompact(session)) {

@@ -24,6 +24,7 @@ const TOOL_GLYPH = {
   Bash: c.hcyan('▶'),
   Skill: c.hmagenta('✦'),
   WebFetch: c.hblue('◍'),
+  TodoWrite: c.hyellow('☰'),
 };
 
 // 도구 호출을 한 줄로 요약 — Read(src/a.js) 처럼.
@@ -31,9 +32,12 @@ function toolLabel(name, args) {
   const a = args ?? {};
   const first =
     a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ??
-    (a.command ? String(a.command).replace(/\s+/g, ' ').slice(0, 52) : '') ?? '';
+    (a.command ? String(a.command).replace(/\s+/g, ' ').slice(0, 52) : null) ??
+    // 할 일 목록은 보여줄 경로가 없다. 빈 괄호를 띄우느니 개수를 적는다.
+    (Array.isArray(a.todos) ? `${a.todos.length}건` : null) ?? '';
   const g = TOOL_GLYPH[name] ?? c.cyan('⏺');
-  return `${g} ${c.bold(name)}${c.gray('(')}${c.gray(clip(String(first), 56))}${c.gray(')')}`;
+  const 안 = clip(String(first ?? ''), 56);
+  return `${g} ${c.bold(name)}${안 ? `${c.gray('(')}${c.gray(안)}${c.gray(')')}` : ''}`;
 }
 
 function toolResultLine(result, ms) {
@@ -154,7 +158,7 @@ export async function chatLoop(opts = {}) {
   if (!conn.tools) warn.push('도구 호출이 확인되지 않았습니다 — deel diagnose 로 점검하세요');
   if (!conn.streaming) warn.push('스트리밍이 없어 응답이 한 번에 나옵니다');
   for (const w of warn) say(`  ${mark.warn} ${c.gray(w)}`);
-  say(`  ${c.gray('/help 명령 목록')}   ${c.gray('/think 추론 강도')}   ${c.gray('Ctrl+C 끝내기')}`);
+  say(`  ${c.gray('/help 명령 목록')}   ${c.gray('/think 추론 강도')}   ${c.gray('Ctrl+C 중단·끝내기')}`);
 
   // 입력 자리. 위에 상태줄을 한 줄 깔고 그 아래에 커서를 둔다.
   const prompt = () => {
@@ -165,8 +169,17 @@ export async function chatLoop(opts = {}) {
     process.stdout.write(` ${c.hcyan('❯')} `);
   };
 
+  // Ctrl+C 는 상황에 따라 뜻이 다르다.
+  //   모델이 답하는 중  → 그 답을 끊는다 (프로그램은 살아 있다)
+  //   입력을 기다리는 중 → 한 번은 경고, 두 번이면 끝낸다
+  // 느린 로컬 모델이 엉뚱한 답을 길게 뽑기 시작했을 때 끝까지 기다리지 않아도 된다.
   let interrupted = false;
+  let turn = null;              // 지금 도는 턴의 AbortController
   rl.on('SIGINT', () => {
+    if (turn && !turn.signal.aborted) {
+      turn.abort();
+      return;                   // 화면 정리는 루프 쪽 'aborted' 이벤트가 한다
+    }
     if (interrupted) { rl.close(); return; }
     interrupted = true;
     say('');
@@ -205,8 +218,9 @@ export async function chatLoop(opts = {}) {
 
     const clearThinking = () => { if (thinkingShown) { cursor.clearLine(); thinkingShown = false; } };
 
+    turn = new AbortController();
     try {
-      for await (const ev of run(session, ctx, toSend)) {
+      for await (const ev of run(session, ctx, toSend, { signal: turn.signal })) {
         switch (ev.type) {
           // 어느 단계를 어떤 강도로 도는지 — 추론 강도 조절이 실제로 먹는지 눈으로 보인다.
           case 'stage':
@@ -245,9 +259,27 @@ export async function chatLoop(opts = {}) {
             say(`  ${toolLabel(ev.name, ev.args)}`);
             break;
 
+          // 여럿을 같이 돌린다 — 한 줄로 알리고, 이름은 결과와 붙여서 그린다.
+          case 'tools_start':
+            clearThinking();
+            if (streamed) { say(''); streamed = false; }
+            say('');
+            say(`  ${c.gray(`${ev.count}개를 함께 돌립니다`)} ${c.gray('·')} ${c.gray(ev.names.join(' '))}`);
+            break;
+
           case 'tool':
             tools++;
-            say(`    ${toolResultLine(ev.result, ev.ms ?? 0)}`);
+            // 같이 돈 것은 이름을 다시 적어 준다. 안 그러면 어느 결과인지 모른다.
+            if (ev.parallel) say(`  ${toolLabel(ev.name, ev.args)}`);
+            if (ev.name === 'TodoWrite' && ev.result?.todos) {
+              for (const t of ev.result.todos) {
+                const 표 = t.state === 'done' ? c.green('☑') : t.state === 'doing' ? c.hyellow('▶') : c.gray('☐');
+                const 글 = t.state === 'done' ? c.gray(t.text) : t.state === 'doing' ? c.white(t.text) : c.gray(t.text);
+                say(`    ${표} ${clip(글, 74)}`);
+              }
+            } else {
+              say(`    ${toolResultLine(ev.result, ev.ms ?? 0)}`);
+            }
             flush();   // 도구가 하나 끝날 때마다 적어 둔다
             break;
 
@@ -283,6 +315,13 @@ export async function chatLoop(opts = {}) {
             say(`  ${mark.warn} 도구 호출 ${ev.steps}회에서 멈췄습니다. ${c.gray('이어서 하려면 다시 말씀하세요.')}`);
             break;
 
+          case 'aborted':
+            clearThinking();
+            if (streamed) { say(''); streamed = false; }
+            say('');
+            say(`  ${c.yellow('⊘')} ${c.gray('중단했습니다. 여기까지는 대화에 남아 있으니 이어서 말씀하세요.')}`);
+            break;
+
           case 'error':
             clearThinking();
             say('');
@@ -300,7 +339,9 @@ export async function chatLoop(opts = {}) {
       say('');
       say(`  ${c.red('✗')} ${err.message}`);
     }
-    flush();   // 오류로 끝났어도 여기까지는 남긴다
+    turn = null;
+    interrupted = false;   // 중단은 '끝내기' 의사가 아니다. 종료 카운트를 되돌린다.
+    flush();               // 오류로 끝났어도 여기까지는 남긴다
 
     // ── 꼬리말 — 이번 턴만의 숫자 ────────────────────────────────────────
     const secs = ((Date.now() - started) / 1000).toFixed(1);

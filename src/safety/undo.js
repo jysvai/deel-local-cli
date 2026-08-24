@@ -1,7 +1,11 @@
 // 되돌리기. 승인 프롬프트를 안 쓰는 대신 이게 안전망이다.
 // 파일을 고치기 전에 항상 이전 내용을 떠 놓고, /undo 로 턴 단위로 되돌린다.
 import { join } from 'node:path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, readdirSync, statSync } from 'node:fs';
+
+// 되돌리기 이력은 파일 내용을 통째로 담는다. 이만큼 커지면 오래된 턴을 버린다.
+const MAX_BYTES = 32 * 1024 * 1024;
+const KEEP_TURNS = 50;
 
 export class History {
   constructor(root) {
@@ -22,7 +26,48 @@ export class History {
     const before = existsSync(absPath) ? safeRead(absPath) : null;
     const rec = { turn: this.turn, at: new Date().toISOString(), path: absPath, before, label };
     appendFileSync(this.file, JSON.stringify(rec) + '\n', 'utf8');
+    this.#maybePrune();
     return rec;
+  }
+
+  /**
+   * 이력이 끝없이 자라는 것을 막는다.
+   *
+   * 스냅샷은 파일 내용을 통째로 담는다. 큰 파일을 여러 번 고치면 금방 수십 MB 가 된다.
+   * 그런데 아무 때나 자르면 안 된다 — 방금 한 일을 못 되돌리게 되면 안전망이 아니다.
+   * 그래서 최근 KEEP_TURNS 개 턴은 무조건 남기고, 그보다 오래된 것만 버린다.
+   *
+   * 매번 확인하면 파일을 계속 다시 읽게 되므로, 커졌을 때만 본다.
+   */
+  #maybePrune() {
+    this.#writes = (this.#writes ?? 0) + 1;
+    if (this.#writes % 20 !== 0) return;
+    try {
+      if (statSync(this.file).size < MAX_BYTES) return;
+    } catch { return; }
+    this.prune();
+  }
+
+  #writes = 0;
+
+  /** 최근 keep 개 턴만 남기고 자른다. 버린 줄 수를 돌려준다. */
+  prune({ keep = KEEP_TURNS } = {}) {
+    const recs = this.all();
+    const turns = this.turns();
+    if (turns.length <= keep) return 0;
+    const 남길턴 = new Set(turns.slice(-keep));
+    const 남길것 = recs.filter((r) => 남길턴.has(r.turn));
+    const 버린수 = recs.length - 남길것.length;
+    if (!버린수) return 0;
+    try {
+      writeFileSync(this.file, 남길것.map((r) => JSON.stringify(r)).join('\n') + (남길것.length ? '\n' : ''), 'utf8');
+    } catch { return 0; }
+    return 버린수;
+  }
+
+  /** 지금 이력이 얼마나 되나. /status 에서 보여 준다. */
+  size() {
+    try { return statSync(this.file).size; } catch { return 0; }
   }
 
   all() {

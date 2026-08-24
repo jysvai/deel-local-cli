@@ -8,6 +8,7 @@ import { checkCommand } from '../safety/guard.js';
 import { findMatch, applySpans, reindent, TIER_LABELS } from './edit-match.js';
 import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
+import { TODO_TOOL } from './todo.js';
 
 const MAX_READ_LINES = 2000;
 const MAX_OUT = 30000;
@@ -297,6 +298,9 @@ export const TOOLS = {
 
   // 웹 읽기는 '데이터가 나가는 길' 과 분리돼 있다 — webfetch.js 머리말 참고.
   WebFetch: WEB_FETCH_TOOL,
+
+  // 긴 작업에서 시킨 것을 빠뜨리지 않게 붙잡아 두는 목록.
+  TodoWrite: TODO_TOOL,
 };
 
 // 모델에게 넘길 도구 정의 목록.

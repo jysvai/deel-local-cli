@@ -6,11 +6,34 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let turn = 0;
+const todos = (list) => ({ toolCall: { name: 'TodoWrite', args: { todos: list } } });
+
 const script = [
+  // 1) 짧은 일 — 찾고, 읽고, 고친다
   { toolCall: { name: 'Grep', args: { pattern: 'console\.log', output_mode: 'files_with_matches' } } },
   { toolCall: { name: 'Read', args: { file_path: 'src/runner.js' } } },
   { toolCall: { name: 'Edit', args: { file_path: 'src/runner.js', old_string: 'console.log("start " + id)', new_string: 'log.info("start", { id })' } } },
   { text: '로그 호출을 logger 형식으로 통일했습니다. runner.js 한 군데를 고쳤습니다.' },
+
+  // 2) 긴 일 — 할 일을 적어 두고, 읽기는 한꺼번에 돌린다
+  todos([
+    { text: '지금 코드 훑기', state: 'doing' },
+    { text: 'logger 로 바꾸기', state: 'todo' },
+    { text: '문서 손보기', state: 'todo' },
+  ]),
+  {
+    toolCalls: [
+      { name: 'Read', args: { file_path: 'src/runner.js' } },
+      { name: 'Read', args: { file_path: 'src/util.js' } },
+      { name: 'Read', args: { file_path: 'src/db.js' } },
+    ],
+  },
+  todos([
+    { text: '지금 코드 훑기', state: 'done' },
+    { text: 'logger 로 바꾸기', state: 'doing' },
+    { text: '문서 손보기', state: 'todo' },
+  ]),
+  { text: '세 파일을 한꺼번에 읽었습니다. 이제 바꾸기로 넘어갑니다.' },
 ];
 
 function sse(res, chunks) {
@@ -29,10 +52,20 @@ const server = createServer((req, res) => {
       return res.end(JSON.stringify({ data: [{ id: 'sec-llm-01' }] }));
     }
     const step = script[turn++] ?? { text: '끝났습니다.' };
-    if (step.toolCall) {
-      const a = JSON.stringify(step.toolCall.args);
+    // 한 번에 여러 개를 부르는 경우도 있다 — 읽기 도구는 그걸 동시에 돌린다.
+    const calls = step.toolCalls ?? (step.toolCall ? [step.toolCall] : null);
+    if (calls) {
       return sse(res, [
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c' + turn, function: { name: step.toolCall.name, arguments: a } }] } }] },
+        {
+          choices: [{
+            delta: {
+              tool_calls: calls.map((t, i) => ({
+                index: i, id: `c${turn}_${i}`,
+                function: { name: t.name, arguments: JSON.stringify(t.args) },
+              })),
+            },
+          }],
+        },
         { choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 900, completion_tokens: 40 } },
       ]);
     }
@@ -51,6 +84,7 @@ const work = mkdtempSync(join(tmpdir(), 'deel-demo-'));
 mkdirSync(join(work, 'src'), { recursive: true });
 writeFileSync(join(work, 'src', 'runner.js'), 'function run(id) {\n  console.log("start " + id)\n  return go(id)\n}\n', 'utf8');
 writeFileSync(join(work, 'src', 'util.js'), 'export const noop = () => {}\n', 'utf8');
+writeFileSync(join(work, 'src', 'db.js'), 'export function open(url) {\n  console.log("db " + url)\n  return connect(url)\n}\n', 'utf8');
 mkdirSync(join(work, '.deel'), { recursive: true });
 writeFileSync(join(work, '.deel', 'config.json'), JSON.stringify({
   version: 1, active: 'gw',
@@ -65,6 +99,8 @@ const input = [
   '이 폴더에서 로그 형식 통일해줘',
   '/context',
   '/undo',
+  'src 전체를 logger 로 바꿔줘',   // 할 일 목록 + 읽기 동시 실행
+  '/sessions',
   '/cost',
   '/exit',
 ].join('\n') + '\n';

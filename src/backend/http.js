@@ -18,15 +18,19 @@ export function headersFor(authStyle, key, extra = {}) {
   return h;
 }
 
-export async function req(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false } = {}) {
+export async function req(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false, signal = null } = {}) {
   const started = Date.now();
   try {
     checkUrl(url);   // 허용된 자리가 아니면 여기서 끝난다. 본문은 만들어지지도 않는다.
+    // 시간 초과와 '사용자가 Ctrl+C' 를 둘 다 듣는다. 둘 중 먼저 오는 쪽이 끊는다.
+    const sig = signal
+      ? (AbortSignal.any ? AbortSignal.any([AbortSignal.timeout(timeout), signal]) : signal)
+      : AbortSignal.timeout(timeout);
     const res = await fetch(url, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeout),
+      signal: sig,
       redirect: 'follow',
     });
     const ms = Date.now() - started;
@@ -40,8 +44,15 @@ export async function req(url, { method = 'GET', headers = {}, body, timeout = 2
     const ms = Date.now() - started;
     // 막힌 것은 통신 실패와 다르다. 조용히 넘기면 자물쇠가 있는지도 모른다.
     if (err instanceof NetBlocked) throw err;
+    // 사용자가 끊은 것도 실패가 아니다. 오류 화면을 띄우면 안 된다.
+    if (signal?.aborted) throw new Aborted();
     return { ok: false, status: 0, error: normalizeError(err), ms };
   }
+}
+
+// 사용자가 Ctrl+C 로 끊었다는 뜻. 통신 오류와 구분하려고 따로 둔다.
+export class Aborted extends Error {
+  constructor() { super('사용자가 중단했습니다'); this.name = 'Aborted'; }
 }
 
 function normalizeError(err) {
