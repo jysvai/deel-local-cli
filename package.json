@@ -1,0 +1,52 @@
+{
+  "name": "deel-local-cli",
+  "version": "0.5.0",
+  "description": "로컬 모델·사내 게이트웨이 전용 코딩 에이전트 CLI — 외부 의존성 0개 / Zero-dependency coding agent CLI for local LLMs and private gateways",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "deel": "./bin/deel.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "cli",
+    "coding-agent",
+    "local-llm",
+    "ollama",
+    "lm-studio",
+    "openai-compatible",
+    "offline",
+    "air-gapped",
+    "zero-dependency",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jysvai/deel-local-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jysvai/deel-local-cli/issues"
+  },
+  "homepage": "https://github.com/jysvai/deel-local-cli#readme",
+  "scripts": {
+    "start": "node bin/deel.js",
+    "setup": "node bin/deel.js setup",
+    "diagnose": "node bin/deel.js diagnose",
+    "chat": "node bin/deel.js",
+    "test": "node test/smoke.js && node test/loop.test.js && node test/edit-bench.js",
+    "bench": "node test/edit-bench.js",
+    "demo": "node test/demo.js",
+    "check": "node --check bin/deel.js && node --check src/repl.js && node --check src/commands.js && node --check src/agent/loop.js && node --check src/agent/session.js && node --check src/backend/adapter.js && node --check src/tools/index.js && node --check src/tools/fsutil.js && node --check src/tools/edit-match.js && node --check src/skills/discover.js && node --check src/safety/guard.js && node --check src/safety/undo.js && node --check src/safety/audit.js && node --check src/setup.js && node --check src/report.js && node --check src/config.js && node --check src/backend/probe.js && node --check src/backend/detect.js && node --check src/backend/http.js && node --check src/ui/ansi.js && node --check src/ui/prompt.js && node --check src/ui/spinner.js && echo OK"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,0 +1,27 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22, 24]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # 의존성이 0개라 설치 단계가 없다. 그것 자체를 확인한다.
+      - name: no dependencies
+        run: node -e "const p=require('./package.json');const n=Object.keys({...p.dependencies,...p.devDependencies}).length;if(n){console.error('의존성이 생겼습니다:',n);process.exit(1)}console.log('dependencies: 0 OK')"
+      - name: syntax
+        run: npm run check
+      - name: test
+        run: npm test
