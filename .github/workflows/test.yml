@@ -19,8 +19,21 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       # 의존성이 0개라 설치 단계가 없다. 그것 자체를 확인한다.
+      #
+      # run 값은 반드시 블록 스칼라(|)로 쓴다. 한 줄로 쓰면 명령 안의
+      # 콜론+공백을 YAML 이 키 구분자로 읽어 워크플로 전체가 파싱에 실패한다.
+      # 그러면 작업이 하나도 안 돌고 실행이 0초 만에 실패로 끝난다.
+      # 윈도우 러너의 기본 셸은 PowerShell 이다. 여러 줄 따옴표를 셸마다
+      # 다르게 읽으므로 이 단계만 bash 로 못을 박는다.
       - name: no dependencies
-        run: node -e "const p=require('./package.json');const n=Object.keys({...p.dependencies,...p.devDependencies}).length;if(n){console.error('의존성이 생겼습니다:',n);process.exit(1)}console.log('dependencies: 0 OK')"
+        shell: bash
+        run: |
+          node -e "
+            const p = require('./package.json');
+            const n = Object.keys({ ...p.dependencies, ...p.devDependencies });
+            if (n.length) { console.error('의존성이 생겼습니다:', n.join(', ')); process.exit(1); }
+            console.log('dependencies 0 - OK');
+          "
       - name: syntax
         run: npm run check
       - name: test
