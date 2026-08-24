@@ -57,7 +57,7 @@ export function verdict(facts, results) {
   if (get('json') !== 'ok') notes.push('구조적 출력이 약합니다 — 편집 형식을 프롬프트로 강제하고 검사를 붙입니다.');
   if (get('stream') !== 'ok') notes.push('스트리밍이 없습니다 — 화면은 스피너로 대체하고 기능은 동일하게 갑니다.');
   if (get('system') === 'warn') notes.push('시스템 지시를 약하게 따릅니다 — 스킬을 적게, 짧게 올려야 합니다.');
-  if (get('think') === 'ok') notes.push('추론 강도가 모델 층에서 먹습니다 — /think 로 바로 조절됩니다.');
+  if (get('think') === 'ok') notes.push('추론 강도가 모델 층에서 적용됩니다 — /think 로 바로 조절됩니다.');
   else notes.push('추론 강도는 루프 층(계획 강제·도구 호출 상한·자기검증 횟수)으로 조절합니다.');
   if (!facts.ctx) notes.push('컨텍스트 길이를 서버가 안 알려줍니다 — 설정에서 직접 넣어야 합니다.');
 

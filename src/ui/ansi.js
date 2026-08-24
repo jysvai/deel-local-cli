@@ -5,6 +5,15 @@ const ON = (process.stdout.isTTY || process.env.FORCE_COLOR === '1') && process.
 
 const E = (n) => (s) => (ON ? `\x1b[${n}m${s}\x1b[0m` : String(s));
 
+// 흐린 글자의 밝기. 256색을 못 쓰는 옛 콘솔이면 90 으로 되돌린다.
+function GRAY() {
+  const 뜻 = String(process.env.DEEL_CONTRAST ?? '').toLowerCase();
+  if (뜻 === 'low') return 90;
+  const 옛콘솔 = process.env.TERM === 'dumb';
+  if (옛콘솔) return 뜻 === 'high' ? 37 : 90;
+  return 뜻 === 'high' ? '38;5;252' : '38;5;245';
+}
+
 export const c = {
   dim: E(2),
   bold: E(1),
@@ -17,7 +26,16 @@ export const c = {
   magenta: E(35),
   cyan: E(36),
   white: E(37),
-  gray: E(90),
+  // 흐린 글자.
+  //
+  // 예전에는 90(밝은 검정)이었는데, 배경이 어두우면 배경에 묻히고 밝으면
+  // 더 안 보인다. 실제로 "연한 글자가 잘 안 보인다" 는 말을 들었다.
+  // 그래서 어느 배경에서도 읽히는 중간 회색을 기본으로 쓴다.
+  //
+  // 눈에 맞게 바꿀 수 있다:
+  //   DEEL_CONTRAST=high  더 밝게 (밝은 배경이나 눈이 피로할 때)
+  //   DEEL_CONTRAST=low   예전처럼 흐리게
+  gray: E(GRAY()),
   // 밝은 계열 — 어두운 배경에서 본문과 구분이 필요할 때
   hred: E(91),
   hgreen: E(92),

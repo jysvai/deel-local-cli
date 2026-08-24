@@ -6,6 +6,7 @@ import { runSetup, runDiagnose, showStatus, banner } from '../src/setup.js';
 import { chatLoop } from '../src/repl.js';
 import { packSelf, audit, reviewSheet } from '../src/pack/selfpack.js';
 import { runScan } from '../src/backend/scanui.js';
+import { closeConnections } from '../src/backend/http.js';
 import { runSessions } from '../src/agent/sessionui.js';
 
 const MIN_NODE = 20;
@@ -85,6 +86,8 @@ function help() {
   say('');
   say(`    ${c.gray('--root <폴더>')}      작업 범위. 기본은 지금 폴더`);
   say(`    ${c.gray('--mode <모드>')}      auto(기본) / confirm / strict`);
+  say(`    ${c.gray('--work <모드>')}      code(기본) / plan / architect / debug / ask / orchestrator`);
+  say(`    ${c.gray('--level <수준>')}     쉬움(기본) / 개발자`);
   say(`    ${c.gray('--think <수준>')}     off / low / medium(기본) / high / max`);
   say(`    ${c.gray('--effort <배분>')}    even(균일) / save(절약, 기본) / deep(깊게)`);
   say(`    ${c.gray('--offline')}          이 컴퓨터 밖으로는 아무것도 안 보냄 (자물쇠)`);
@@ -119,6 +122,8 @@ async function main() {
       return chatLoop({
         root: flags.root ? String(flags.root) : undefined,
         mode: flags.mode ? String(flags.mode) : undefined,
+        work: flags.work ? String(flags.work) : undefined,
+        level: flags.level ? String(flags.level) : undefined,
         think: flags.think ? String(flags.think) : undefined,
         effort: flags.effort ? String(flags.effort) : undefined,
         offline: flags.offline === true || flags.offline === 'true',
@@ -149,12 +154,30 @@ async function main() {
   }
 }
 
+/**
+ * 끝낸다.
+ *
+ * process.exit() 을 바로 부르면 안 된다. fetch 가 살려 둔 소켓이 닫히는 중일 때
+ * 끊으면 윈도우에서 libuv 가 abort 한다 — 화면에는 정상으로 보이는데 종료코드가
+ * 3221226505 로 나온다. `deel scan` 이 실제로 그랬다.
+ *
+ * 그래서 연결을 먼저 닫고, 종료코드만 정해 두고 이벤트 루프가 저절로 비기를
+ * 기다린다. 그래도 안 비면(무언가 물고 있으면) 잠깐 뒤에 확실히 끝낸다.
+ * 그 타이머는 unref 라서, 정상적으로 끝나는 길을 막지 않는다.
+ */
+async function 끝내기(code) {
+  process.exitCode = code;
+  await closeConnections();
+  const 마지막수단 = setTimeout(() => process.exit(code), 400);
+  마지막수단.unref();
+}
+
 main()
-  .then((code) => process.exit(code ?? 0))
-  .catch((err) => {
+  .then((code) => 끝내기(code ?? 0))
+  .catch(async (err) => {
     say('');
     say(`  ${c.red('오류')} ${err?.message ?? err}`);
     if (process.env.DEEL_DEBUG) say(c.gray(err?.stack ?? ''));
     say('');
-    process.exit(1);
+    await 끝내기(1);
   });

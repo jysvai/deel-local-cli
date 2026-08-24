@@ -146,7 +146,7 @@ export async function probe(conn, onStep = () => {}) {
     label: '시스템 메시지',
     status: sys.ok ? (sysHit ? 'ok' : 'warn') : 'no',
     detail: sys.ok
-      ? sysHit ? '지시를 따름' : '전달은 되나 모델이 잘 안 따름 — 규칙·스킬이 약하게 먹습니다'
+      ? sysHit ? '지시를 따름' : '전달은 되나 모델이 잘 안 따름 — 규칙·스킬이 약하게 적용됩니다'
       : serverMessage(sys),
     ms: sys.ms,
   });

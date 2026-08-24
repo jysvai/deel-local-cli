@@ -26,7 +26,7 @@ export const COMMANDS = {
   clear:   { desc: '대화 비우기' },
   context: { desc: '컨텍스트 사용량 보기' },
   compact: { desc: '오래된 대화 줄이기' },
-  model:   { desc: '모델·연결 바꾸기' },
+  model:   { desc: '연결·모델 바꾸기 (이름 일부 · list · models)', arg: '[이름|list|models]' },
   think:   { desc: '추론 강도 (off/low/medium/high/max)', arg: '<수준>' },
   mode:    { desc: '승인 정책 — 얼마나 물어보나 (auto/confirm/strict)', arg: '<모드>' },
   work:    { desc: '작업 모드 — 무슨 일을 하는 중인가', arg: '[모드]' },
@@ -50,9 +50,31 @@ export const COMMANDS = {
   quit:    { desc: '끝내기' },
 };
 
+/**
+ * 이 줄이 명령이 아니라 '경로' 인가.
+ *
+ * 슬래시로 시작한다고 다 명령은 아니다. `/usr/local/bin` 이나 `/mnt/d/일감`
+ * 같은 것을 치면 그동안은 통째로 명령으로 먹혀서 "모르는 명령" 만 나오고
+ * 모델에게 닿지도 않았다. 경로를 아예 못 적는 셈이었다.
+ *
+ * 가르는 기준은 간단하다 — 명령 이름에는 슬래시가 없다.
+ * 플러그인 명령도 `/플러그인:이름` 이라 콜론을 쓰지 슬래시를 안 쓴다.
+ * 그러니 첫 낱말 안에 슬래시가 또 있으면 그건 경로다.
+ */
+function 경로처럼보이나(line) {
+  const 첫낱말 = line.slice(1).split(/\s+/)[0] ?? '';
+  if (첫낱말.includes('/') || 첫낱말.includes('\\')) return true;
+  // `/tmp` 처럼 슬래시가 하나뿐이어도, 실제로 있는 자리면 경로로 본다.
+  if (첫낱말 && !COMMANDS[첫낱말.toLowerCase()]) {
+    try { if (existsSync(line.slice(1).trim())) return true; } catch { /* 못 보면 아닌 걸로 */ }
+  }
+  return false;
+}
+
 // 반환: { handled, exit? }  handled=false 면 모델에게 보낸다.
 export async function handle(line, session, ctx) {
   if (!line.startsWith('/')) return { handled: false };
+  if (경로처럼보이나(line)) return { handled: false };
   const [raw, ...rest] = line.slice(1).trim().split(/\s+/);
   const name = raw.toLowerCase();
   const arg = rest.join(' ');
@@ -91,7 +113,7 @@ export async function handle(line, session, ctx) {
       return { handled: true };
     }
 
-    case 'model': return await switchModel(session, ctx), { handled: true };
+    case 'model': return await switchModel(session, ctx, arg), { handled: true };
 
     case 'think': {
       const asProfile = normalizeProfile(arg);
@@ -110,7 +132,7 @@ export async function handle(line, session, ctx) {
       session.thinkSet = true;      // 사용자가 직접 정했다 — 작업 모드보다 우선한다
       say(`  ${mark.ok} 추론 강도 ${c.bold(arg)}`);
       if (!session.conn.think && arg !== 'off') {
-        say(`     ${c.yellow('이 연결은 모델 층 조절이 안 먹습니다.')} ${c.gray('루프 층(도구 호출 상한)으로만 조절됩니다.')}`);
+        say(`     ${c.yellow('이 연결은 모델 층 조절이 적용되지 않습니다.')} ${c.gray('루프 층(도구 호출 상한)으로만 조절됩니다.')}`);
       }
       showThink(session);
       return { handled: true };
@@ -399,7 +421,7 @@ function showSkills(session, arg) {
   if (q === 'all') {
     all.forEach((s) => { s.enabled = true; });
     session.maxSkillsListed = Math.min(all.length, 200);
-    say(`  ${mark.ok} 전부 올립니다 (${session.listedSkills().length}개). ${c.yellow('컨텍스트를 많이 먹습니다 — /context 로 확인하세요.')}`);
+    say(`  ${mark.ok} 전부 올립니다 (${session.listedSkills().length}개). ${c.yellow('컨텍스트를 많이 차지합니다 — /context 로 확인하세요.')}`);
     say('');
     return;
   }
@@ -462,7 +484,7 @@ function help(session) {
   say('');
   // 감춘 것은 '못 쓰는 것' 이 아니다. 그 말을 분명히 해 둔다.
   if (감춘수) {
-    say(`  ${c.gray(`이 밖에 ${감춘수}개가 더 있습니다 — 쳐 넣으면 그대로 먹습니다.`)}`);
+    say(`  ${c.gray(`이 밖에 ${감춘수}개가 더 있습니다 — 직접 입력하면 그대로 실행됩니다.`)}`);
     say(`  ${c.gray('전부 보려면')} ${c.cyan('/level 개발자')}`);
     say('');
   }
@@ -525,7 +547,7 @@ function showThink(session) {
   say(`  ${c.gray('배분')}  ${Object.entries(PROFILES).map(([k, v]) => `${k}(${v.name})`).join(' · ')}   ${c.gray('예')} ${c.cyan('/think save')}`);
   if (!session.conn.think && session.think !== 'off') {
     say('');
-    say(`  ${c.yellow('이 연결은 모델 층 강도 조절이 안 먹습니다.')} ${c.gray('출력 상한만 단계별로 적용됩니다.')}`);
+    say(`  ${c.yellow('이 연결은 모델 층 강도 조절이 적용되지 않습니다.')} ${c.gray('출력 상한만 단계별로 적용됩니다.')}`);
   }
   say('');
 }
@@ -550,24 +572,8 @@ function showContext(session) {
   say('');
 }
 
-async function switchModel(session, ctx) {
-  const cfg = load();
-  if (cfg.profiles.length <= 1 && !cfg.profiles.length) {
-    say(`  ${c.gray('저장된 연결이 없습니다.')} ${c.cyan('deel setup')}`);
-    say('');
-    return;
-  }
-  const items = cfg.profiles.map((p) => ({
-    label: `${pad(p.name, 18)} ${c.gray(p.model)}`,
-    note: p.id === cfg.active ? '지금' : '',
-  }));
-  const i = await pick('연결 고르기', items, {
-    def: cfg.profiles.findIndex((p) => p.id === cfg.active),
-    ask: ctx?.ask,
-  });
-  const p = cfg.profiles[i];
-  cfg.active = p.id;
-  save(cfg);
+/** 지금 연결을 이 프로필로 갈아끼운다. 대화는 그대로 둔다. */
+function 연결적용(session, p) {
   Object.assign(session.conn, {
     kind: p.kind, base: p.baseUrl, auth: p.auth, key: resolveKey(p), model: p.model,
     ctx: p.ctx, streaming: p.streaming, tools: p.tools, json: p.json, think: p.think,
@@ -575,8 +581,182 @@ async function switchModel(session, ctx) {
   // 자물쇠도 같이 옮긴다. 이걸 빼먹으면 옛 주소가 열린 채로 남고 새 주소는 막혀
   // 다음 한마디에서 바로 "허용되지 않은 주소" 가 난다.
   allowEndpoint(p.baseUrl);
+}
+
+/**
+ * 지금 붙어 있는 서버가 내주는 모델 목록.
+ *
+ * 저장된 프로필에는 등록할 때 고른 모델 하나만 있다. 그런데 서버 한 대가
+ * 모델을 여럿 내주는 경우가 대부분이다 — 특히 프록시나 게이트웨이가 그렇다.
+ * 그래서 서버에 직접 물어본다. 자리를 새로 여는 게 아니라 이미 열린 자리다.
+ */
+async function 서버모델들(conn) {
+  const { req, headersFor } = await import('./backend/http.js');
+  if (conn.kind === 'ollama') {
+    const r = await req(`${conn.base.replace(/\/v1\/?$/, '')}/api/tags`, { timeout: 4000 });
+    return (r.json?.models ?? []).map((m) => m.name ?? m.model).filter(Boolean);
+  }
+  const r = await req(`${conn.base.replace(/\/$/, '')}/models`, {
+    headers: headersFor(conn.auth ?? 'none', conn.key), timeout: 4000,
+  });
+  if (!r.ok) return null;
+  const list = r.json?.data ?? r.json?.models ?? [];
+  return Array.isArray(list)
+    ? list.map((m) => (typeof m === 'string' ? m : m.id ?? m.name ?? m.model)).filter(Boolean)
+    : null;
+}
+
+/**
+ * /model — 연결·모델 바꾸기.
+ *
+ *   /model            골라 바꾸기 (연결 목록 + '이 서버의 다른 모델')
+ *   /model <이름>     바로 바꾸기. 연결 이름이든 모델 이름이든 일부만 쳐도 된다
+ *   /model list       무엇이 등록돼 있는지만 보기
+ *   /model models     지금 서버가 내주는 모델을 물어보기
+ */
+async function switchModel(session, ctx, arg = '') {
+  const cfg = load();
+  if (!cfg.profiles.length) {
+    say(`  ${c.gray('저장된 연결이 없습니다.')} ${c.cyan('deel setup')} ${c.gray('또는')} ${c.cyan('deel scan --save')}`);
+    say('');
+    return;
+  }
+  const 말 = arg.trim();
+
+  if (말 === 'list' || 말 === '목록') return 연결목록(cfg, session);
+  if (말 === 'models' || 말 === '모델') return await 서버모델고르기(session, ctx, cfg);
+
+  // 이름으로 바로 바꾸기 — 메뉴를 안 거친다.
+  if (말) {
+    const 찾은 = 이름으로찾기(cfg.profiles, 말);
+    if (찾은.length === 1) return 골라적용(session, cfg, 찾은[0]);
+    if (찾은.length > 1) {
+      say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 것이 여럿입니다.')}`);
+      for (const p of 찾은.slice(0, 12)) say(`    ${c.cyan(p.name)}  ${c.gray(p.model)}`);
+      say('');
+      return;
+    }
+    // 등록된 것에 없으면, 지금 서버가 내주는 모델 중에 있는지 본다.
+    const 있는것 = await 서버모델들(session.conn);
+    const 맞는것 = (있는것 ?? []).filter((m) => m.toLowerCase().includes(말.toLowerCase()));
+    if (맞는것.length === 1) return 모델만바꾸기(session, cfg, 맞는것[0]);
+    if (맞는것.length > 1) {
+      say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 모델이 여럿입니다.')}`);
+      for (const m of 맞는것.slice(0, 12)) say(`    ${c.cyan(m)}`);
+      say('');
+      return;
+    }
+    say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 연결도 모델도 없습니다.')}`);
+    say(`  ${c.gray('무엇이 있는지 보려면')} ${c.cyan('/model list')}${c.gray(', 서버에 물어보려면')} ${c.cyan('/model models')}`);
+    say('');
+    return;
+  }
+
+  // 인자 없이 — 골라 바꾸기. 물어볼 수 없는 자리면 목록만 보여준다.
+  if (!ctx?.ask) return 연결목록(cfg, session);
+
+  const items = cfg.profiles.map((p) => ({
+    label: `${pad(p.name, 22)} ${c.gray(p.model)}`,
+    note: p.id === cfg.active ? '지금' : '',
+  }));
+  items.push({ label: c.cyan('이 서버의 다른 모델 고르기'), note: '서버에 물어봅니다' });
+
+  const i = await pick('연결·모델 고르기', items, {
+    def: Math.max(0, cfg.profiles.findIndex((p) => p.id === cfg.active)),
+    ask: ctx?.ask,
+  });
+  if (i === cfg.profiles.length) return await 서버모델고르기(session, ctx, cfg);
+  return 골라적용(session, cfg, cfg.profiles[i]);
+}
+
+function 이름으로찾기(profiles, 말) {
+  const q = 말.toLowerCase();
+  const 정확 = profiles.filter((p) => p.name.toLowerCase() === q || p.model.toLowerCase() === q || p.id.toLowerCase() === q);
+  if (정확.length) return 정확;
+  return profiles.filter((p) => `${p.name} ${p.model} ${p.id}`.toLowerCase().includes(q));
+}
+
+function 골라적용(session, cfg, p) {
+  cfg.active = p.id;
+  try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 바뀐다 */ }
+  연결적용(session, p);
   say(`  ${mark.ok} ${c.bold(p.name)} ${c.gray(p.model)} 로 바꿨습니다. 대화는 이어집니다.`);
   say('');
+}
+
+/**
+ * 같은 서버에서 모델만 바꾼다.
+ *
+ * 등록된 연결이 아니어도 된다 — 서버가 내준다면 쓸 수 있어야 한다.
+ * 다음에도 쓰도록 프로필로 남겨 둔다. 그래야 /model 목록에서 다시 보인다.
+ */
+function 모델만바꾸기(session, cfg, 모델) {
+  const 지금 = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
+  const 이미 = cfg.profiles.find((p) => p.baseUrl === session.conn.base && p.model === 모델);
+  const p = 이미 ?? {
+    ...지금,
+    id: `${(지금?.id ?? 'conn').replace(/-[^-]*$/, '')}-${String(모델).replace(/[^a-zA-Z0-9._-]+/g, '-')}`.slice(0, 60).toLowerCase(),
+    name: `${(지금?.name ?? '연결').split(' · ')[0]} · ${모델}`,
+    baseUrl: session.conn.base,
+    model: 모델,
+  };
+  if (!이미) { try { save(upsert(cfg, p)); } catch { /* 못 남겨도 이번 세션에는 바뀐다 */ } }
+  else { cfg.active = p.id; try { save(cfg); } catch {} }
+  연결적용(session, p);
+  say(`  ${mark.ok} 모델을 ${c.bold(모델)} 로 바꿨습니다. ${c.gray('서버는 그대로입니다.')}`);
+  say('');
+}
+
+function 연결목록(cfg, session) {
+  rule('등록된 연결', 70);
+  for (const p of cfg.profiles) {
+    const 지금 = p.id === cfg.active;
+    say(`  ${지금 ? c.hgreen('●') : c.gray('·')} ${지금 ? c.bold(c.white(pad(p.name, 26))) : pad(p.name, 26)}${c.gray(p.model)}`);
+    say(`      ${c.gray(p.baseUrl)}`);
+  }
+  say('');
+  say(`  ${c.gray('바꾸려면')} ${c.cyan('/model <이름 일부>')}${c.gray(' — 연결 이름이든 모델 이름이든 됩니다.')}`);
+  say(`  ${c.gray('이 서버가 내주는 다른 모델을 보려면')} ${c.cyan('/model models')}`);
+  say('');
+}
+
+async function 서버모델고르기(session, ctx, cfg) {
+  const s = spin('서버에 모델 목록을 물어보는 중…');
+  let 있는것;
+  try { 있는것 = await 서버모델들(session.conn); } catch { 있는것 = null; }
+  s.stop('');
+  if (!있는것 || !있는것.length) {
+    say(`  ${mark.warn} 이 서버는 모델 목록을 내주지 않습니다.`);
+    say(`  ${c.gray('목록이 없는 게이트웨이도 있습니다. 그때는')} ${c.cyan('deel setup')} ${c.gray('에서 모델 이름을 직접 넣으세요.')}`);
+    say('');
+    return;
+  }
+  // 물어볼 수 없는 자리면 목록만 보여주고 끝낸다.
+  //
+  // 여기서 그냥 pick 을 부르면 표준입력을 붙잡고 영영 안 끝난다.
+  // 파이프로 넣거나 검사에서 돌릴 때가 그렇다 — 멈춘 것처럼 보이고 끊는 수밖에 없다.
+  if (!ctx?.ask) {
+    rule(`이 서버의 모델 (${있는것.length}개)`, 70);
+    for (const m of 있는것) say(`  ${m === session.conn.model ? c.hgreen('●') : c.gray('·')} ${m === session.conn.model ? c.bold(m) : m}`);
+    say('');
+    say(`  ${c.gray('바꾸려면')} ${c.cyan('/model <이름 일부>')}`);
+    say('');
+    return;
+  }
+
+  const i = await pick(`이 서버의 모델 (${있는것.length}개)`, 있는것.map((m) => ({
+    label: m, note: m === session.conn.model ? '지금' : '',
+  })), {
+    def: Math.max(0, 있는것.indexOf(session.conn.model)),
+    ask: ctx.ask,
+  });
+  const 고른것 = 있는것[i];
+  if (고른것 === session.conn.model) {
+    say(`  ${c.gray('그대로 둡니다.')}`);
+    say('');
+    return;
+  }
+  모델만바꾸기(session, cfg, 고른것);
 }
 
 const INIT_TEMPLATE = `# DEEL.md

@@ -163,6 +163,73 @@ const 보낸강도 = (b) => b?.reasoning_effort ?? b?.think;
 server.closeAllConnections?.();
 server.close();
 await new Promise((r) => setImmediate(r));
+// ── 모드가 '이름표' 가 아니라 '일하는 방식' 인가 ────────────────────────
+//
+// 도구를 빼고 추론을 올리는 것만으로는 모드가 아니다. 그건 설정이다.
+// 계획 모드로 바꾸면 계획하는 절차가, 디버그 모드로 바꾸면 원인 찾는 절차가
+// 실제로 모델에게 가야 한다. 안 가면 모드를 바꾼 보람이 없다.
+{
+  const { MODES, ORDER } = await import('../src/agent/modes.js');
+
+  for (const k of ORDER) {
+    const m = MODES[k];
+    const 줄수 = m.say.split('\n').length;
+    check(`${m.name}: 한 줄 안내가 아니라 절차다`, 줄수 >= 5, `${줄수}줄`);
+    check(`${m.name}: 무슨 일인지 먼저 못 박는다`, /지금 하는 일은/.test(m.say), m.say.split('\n')[0]);
+  }
+
+  // 모드마다 절차가 실제로 달라야 한다. 같은 말을 여섯 번 쓰면 모드가 아니다.
+  const 말들 = ORDER.map((k) => MODES[k].say);
+  check('여섯 모드의 절차가 서로 다르다', new Set(말들).size === 6, `서로 다른 것 ${new Set(말들).size}개`);
+
+  // 각 모드가 그 일에 필요한 것을 실제로 말하는가
+  const 있어야할것 = {
+    plan: [/TodoWrite/, /이대로 진행할까요/, /위험/],
+    architect: [/선택지/, /의존/, /관례/],
+    debug: [/재현/, /가설/, /증거/],
+    code: [/먼저 Read 로 읽/, /관례/, /확인 못 했/],
+    ask: [/줄 번호/, /모르면 모른다/],
+    orchestrator: [/TodoWrite/, /하나만 진행 중/, /못 한 것/],
+  };
+  for (const [k, 규칙들] of Object.entries(있어야할것)) {
+    for (const re of 규칙들) {
+      check(`${MODES[k].name}: ${re.source} 를 말한다`, re.test(MODES[k].say), '');
+    }
+  }
+
+  // 읽기만 하는 모드는 '못 바꾼다' 는 사실을 말로도 알려 줘야 한다.
+  // 도구를 빼는 것만으로는 모델이 왜 안 되는지 몰라 헛되이 시도한다.
+  for (const k of ['plan', 'architect']) {
+    check(`${MODES[k].name}: 파일을 못 바꾼다고 말해 준다`,
+      /파일을 바꾸는 도구는 주어지지 않았다/.test(MODES[k].say), '');
+  }
+
+  // 실제로 시스템 프롬프트에 실리는가 — 여기까지 와야 모델이 본다.
+  const { Session } = await import('../src/agent/session.js');
+  const conn = { kind: 'openai', base: 'http://127.0.0.1:1/v1', auth: 'none', key: null, model: 'x', ctx: 32768 };
+  for (const k of ORDER) {
+    const s = new Session(conn, { root, work: k });
+    const sys = s.systemPrompt();
+    const 첫줄 = MODES[k].say.split('\n')[0];
+    check(`${MODES[k].name}: 절차가 시스템 프롬프트에 실린다`, sys.includes(첫줄), 첫줄.slice(0, 30));
+    check(`${MODES[k].name}: 어느 모드인지도 같이 실린다`, sys.includes(`지금 모드: ${MODES[k].name}`), '');
+  }
+
+  // 모드를 바꾸면 다음 요청부터 바로 달라져야 한다. 세션을 새로 만들 필요가 없다.
+  {
+    const s = new Session(conn, { root, work: 'code' });
+    const 전 = s.systemPrompt();
+    s.work = 'debug';
+    const 후 = s.systemPrompt();
+    check('모드를 바꾸면 프롬프트가 즉시 바뀐다', 전 !== 후 && 후.includes('원인 찾기'), '');
+    check('바꾸기 전 모드의 절차는 빠진다', !후.includes(MODES.code.say.split('\n')[0]), '');
+  }
+
+  // 절차가 길어지면 컨텍스트를 먹는다. 얼마나 먹는지 눈에 보이게 둔다.
+  const 가장긴것 = Math.max(...말들.map((x) => x.length));
+  check('절차가 지나치게 길지 않다', 가장긴것 < 1500, `가장 긴 것 ${가장긴것}자`);
+}
+
 rmSync(root, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

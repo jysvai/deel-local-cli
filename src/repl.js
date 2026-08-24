@@ -74,6 +74,8 @@ export async function chatLoop(opts = {}) {
   const session = new Session(conn, {
     root,
     mode: opts.mode ?? 'auto',
+    // 처음부터 원하는 모드로 시작할 수 있다 — deel --work plan
+    work: opts.work ?? null,
     // 수준은 설정에 남는다. 한 번 고르면 다음에 켤 때도 그대로다.
     level: opts.level ?? cfg.level ?? null,
     think: opts.think ?? 'medium',

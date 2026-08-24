@@ -7,7 +7,7 @@
 //
 //   그래서 '이 파일은 파싱된다' 가 아니라 '이 명령은 눌리면 끝까지 간다' 를 본다.
 //   case 하나를 새로 넣을 때마다 여기 목록에 한 줄 늘리면 된다.
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -66,6 +66,7 @@ const 누를것 = [
   '/work', '/code', '/plan', '/architect', '/debug', '/ask', '/orchestrator',
   '/work 설계', '/work 없는모드',
   '/tools', '/cost', '/status', '/sessions', '/skills', '/skills 없을만한검색어',
+  '/model', '/model list',
   '/undo 0',
   '/init',
   '/clear',
@@ -74,7 +75,6 @@ const 누를것 = [
 
 // 일부러 안 누르는 것과 그 이유. 조용히 빼면 '다 됐다' 로 읽힌다.
 const 건너뜀 = [
-  ['/model', '골라 넣는 화면이라 stdin 을 붙잡는다'],
   ['/scan', '이 PC 포트를 훑는다 — scan.test.js 가 따로 본다'],
   ['/plugin', '설치·삭제라 파일을 만든다 — plugins.test.js 가 따로 본다'],
   ['/exit', '끝내라는 뜻이라 누를 수 없다'],
@@ -92,6 +92,46 @@ for (const line of 누를것) {
   }
   // 모르는 명령도 여기서 끝난다 — 모델에게 흘려보내지 않고 모른다고 말한다.
   check(`${line} 이 끝까지 간다`, r.v?.handled === true, `handled=${r.v?.handled}`);
+}
+
+// 슬래시로 시작한다고 다 명령은 아니다.
+//
+// `/usr/local/bin` 같은 경로를 치면 통째로 명령으로 먹혀서 모델에게 닿지도
+// 않았다. 경로를 아예 못 적는 셈이었다. 이제는 그냥 말로 넘긴다.
+{
+  const 경로들 = [
+    '/usr/local/bin/node 이거 봐줘',
+    '/mnt/d/일감/보고서.txt 읽어줘',
+    '/c/Users/공용/문서',
+    '/home/user/.config',
+    '/var/log/app.log 마지막 20줄',
+    '/작업/한글 폴더/파일.md',
+  ];
+  for (const line of 경로들) {
+    const s = 새세션();
+    const r = await 조용히(() => handle(line, s, ctx));
+    check(`경로를 명령으로 안 먹는다: ${line.split(' ')[0]}`,
+      r.ok && r.v?.handled === false, `handled=${r.v?.handled} · ${r.out.trim().split('\n')[0] ?? ''}`);
+  }
+
+  // 그렇다고 진짜 명령이 안 먹으면 안 된다.
+  for (const line of ['/help', '/plan', '/level 개발자', '/think high']) {
+    const s = 새세션();
+    const r = await 조용히(() => handle(line, s, ctx));
+    check(`명령은 그대로 명령: ${line}`, r.ok && r.v?.handled === true, `handled=${r.v?.handled}`);
+  }
+
+  // 플러그인 명령은 콜론을 쓴다. 슬래시가 없으니 경로로 오해하면 안 된다.
+  {
+    const 명령파일 = join(root, 'hello.md');
+    writeFileSync(명령파일, '---\nname: hello\n---\n안녕이라고 답하세요: $ARGUMENTS\n', 'utf8');
+    const s = 새세션();
+    s.commands = [{ name: 'myplug:hello', source: '(검사)', path: 명령파일 }];
+    const r = await 조용히(() => handle('/myplug:hello 반가워', s, ctx));
+    check('플러그인 명령은 경로로 안 본다', r.ok && r.v?.handled === false, `handled=${r.v?.handled}`);
+    check('플러그인 명령 본문이 모델로 간다', /안녕이라고 답하세요/.test(r.v?.text ?? ''), r.v?.text ?? '없음');
+    check('$ARGUMENTS 가 채워진다', /반가워/.test(r.v?.text ?? ''), r.v?.text ?? '');
+  }
 }
 
 // 모르는 명령을 조용히 삼키면 오타를 눈치 못 챈다.
@@ -195,6 +235,98 @@ trace('3-효과확인');
     const r = explain('개발자', 원래);
     check(`개발자: ${원래.slice(0, 20)}… 는 그대로`, !r.plain && r.text === 원래, r.text);
   }
+}
+
+// ── /model 로 연결·모델 바꾸기 ──────────────────────────────────────────
+//
+// 저장된 연결 하나에는 모델도 하나만 적혀 있다. 그런데 서버 한 대가 모델을
+// 여럿 내주는 경우가 대부분이다 — 프록시나 게이트웨이가 특히 그렇다.
+// 그동안은 서버는 그대로 두고 모델만 바꿀 방법이 없었다.
+{
+  const { createServer } = await import('node:http');
+  const { save, load } = await import('../src/config.js');
+  const { resetAll } = await import('../src/safety/network.js').catch(() => ({}));
+
+  const srv = createServer((req, res) => {
+    if (req.url === '/v1/models') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ data: [{ id: 'gw-qwen-32b' }, { id: 'gw-llama-70b' }, { id: 'gw-small-3b' }] }));
+    }
+    res.writeHead(404); res.end('{}');
+  });
+  const port = await new Promise((r) => srv.listen(0, '127.0.0.1', () => r(srv.address().port)));
+  const base = `http://127.0.0.1:${port}/v1`;
+
+  const 프로필 = (id, name, model) => ({
+    id, name, kind: 'openai', baseUrl: base, auth: 'none', model,
+    apiKey: '', ctx: 32768, streaming: false, tools: false, json: false, think: false, local: true,
+  });
+  // 통째로 덮어쓰지 않는다. 앞에서 /level 이 남긴 값까지 날아간다 —
+  // 실제 설정 파일도 연결 말고 다른 것을 같이 담고 있기 때문이다.
+  save({
+    ...load(),
+    active: 'gw-a',
+    profiles: [프로필('gw-a', '사내 프록시 · gw-qwen-32b', 'gw-qwen-32b'), 프로필('local-b', '로컬 · small', 'gw-small-3b')],
+  });
+
+  const 세션 = () => {
+    const s = 새세션();
+    const cfg = load();
+    const p = cfg.profiles[0];
+    Object.assign(s.conn, { kind: p.kind, base: p.baseUrl, auth: p.auth, key: null, model: p.model, ctx: p.ctx });
+    return s;
+  };
+
+  {
+    const s = 세션();
+    const r = await 조용히(() => handle('/model list', s, ctx));
+    check('/model list 가 등록된 것을 보여준다', r.ok && /사내 프록시/.test(r.out) && /로컬 · small/.test(r.out), r.out.trim().split('\n')[1] ?? '');
+    check('/model list 는 아무것도 안 바꾼다', s.conn.model === 'gw-qwen-32b', s.conn.model);
+  }
+
+  {
+    // 이름 일부만 쳐도 바뀌어야 한다. 매번 메뉴를 거치면 쓰기 번거롭다.
+    const s = 세션();
+    const r = await 조용히(() => handle('/model 로컬', s, ctx));
+    check('/model <이름 일부> 로 바로 바꾼다', r.ok && s.conn.model === 'gw-small-3b', `${s.conn.model} · ${r.out.trim().split('\n')[0] ?? ''}`);
+  }
+
+  {
+    // 등록 안 된 모델이라도, 서버가 내주면 쓸 수 있어야 한다.
+    const s = 세션();
+    const r = await 조용히(() => handle('/model gw-llama-70b', s, ctx));
+    check('등록 안 된 모델도 서버에 있으면 바꾼다', r.ok && s.conn.model === 'gw-llama-70b', `${s.conn.model} · ${r.out.trim().split('\n')[0] ?? ''}`);
+    check('서버 주소는 그대로다', s.conn.base === base, s.conn.base);
+    const cfg2 = load();
+    check('다음에도 쓰도록 남겨 둔다', cfg2.profiles.some((p) => p.model === 'gw-llama-70b'), cfg2.profiles.map((p) => p.model).join(', '));
+  }
+
+  {
+    // 없는 것을 조용히 넘기면 오타를 눈치 못 챈다.
+    const s = 세션();
+    const r = await 조용히(() => handle('/model 없는모델이름xyz', s, ctx));
+    check('없는 것은 없다고 말한다', /맞는 연결도 모델도 없습니다/.test(r.out), r.out.trim().split('\n')[0] ?? '');
+    check('없으면 안 바꾼다', s.conn.model === 'gw-qwen-32b', s.conn.model);
+  }
+
+  {
+    // 여럿에 걸리면 골라 달라고 해야 한다. 마음대로 하나를 고르면 안 된다.
+    const s = 세션();
+    const r = await 조용히(() => handle('/model gw-', s, ctx));
+    check('여럿에 걸리면 골라 달라고 한다', /여럿입니다/.test(r.out), r.out.trim().split('\n')[0] ?? '');
+    check('고르기 전에는 안 바꾼다', s.conn.model === 'gw-qwen-32b', s.conn.model);
+  }
+
+  {
+    // 서버가 내주는 목록을 물어보는 길
+    const s = 세션();
+    const r = await 조용히(() => handle('/model models', s, ctx));
+    check('/model models 가 서버에 물어본다', /gw-llama-70b/.test(r.out) || /모델 목록을 내주지 않습니다/.test(r.out), r.out.trim().split('\n').slice(0, 3).join(' / '));
+  }
+
+  srv.closeAllConnections?.();
+  srv.close();
+  await new Promise((r) => setImmediate(r));
 }
 
 // /init 은 파일을 만든다. 만들어졌는지 본다.

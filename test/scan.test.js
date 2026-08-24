@@ -50,7 +50,9 @@ const llamaPort = await 서버((url) => {
 });
 
 resetNet();
-const found = await scanLocal({ ports: [ollamaPort, lmsPort, llamaPort], timeout: 2500 });
+// listening:false — 이 검사는 띄운 세 대만 봐야 한다. 이 PC 에 떠 있는 다른 것이
+// 끼어들면 결과가 컴퓨터마다 달라진다. 훑기 자체는 아래에서 따로 본다.
+const found = await scanLocal({ ports: [ollamaPort, lmsPort, llamaPort], timeout: 2500, listening: false });
 
 check('세 대를 모두 찾음', found.length === 3, `${found.length}대`);
 
@@ -89,6 +91,55 @@ const 되쓴 = 다시.find((p) => p.model === 'qwen2.5-coder:7b');
 check('기존 프로필 id 를 지킴', 되쓴?.id === 'my-ollama', 되쓴?.id);
 check('기존 키를 안 날림', 되쓴?.apiKey === 'keep-me');
 check('기존에 확인해 둔 능력을 안 날림', 되쓴?.tools === true && 되쓴?.ctx === 40960);
+
+// ── 알려지지 않은 자리의 서버도 찾는가 ──────────────────────────────────
+//
+// 알려진 포트 13곳만 두드리면 직접 세운 프록시나 사내 게이트웨이를 못 찾는다.
+// 그런 것들은 아무 포트나 쓰고, /v1 이 아닌 앞머리를 쓰기도 한다.
+// 그래서 이 컴퓨터에서 실제로 듣고 있는 자리도 같이 본다.
+{
+  resetNet();
+  // /v1/models 는 없고 /api/v1/models 만 있는 서버 — 프록시에 흔한 모양
+  const 프록시 = createServer((req, res) => {
+    if (req.url === '/api/v1/models') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ data: [{ id: 'gw-qwen-32b' }, { id: 'gw-llama-70b' }] }));
+    }
+    res.writeHead(404); res.end('nope');
+  });
+  servers.push(프록시);
+  const 프록시포트 = await new Promise((r) => 프록시.listen(0, '127.0.0.1', () => r(프록시.address().port)));
+
+  const t0 = Date.now();
+  // ports 로 알려주지 않는다. 스스로 찾아야 한다.
+  const 훑음 = await scanLocal({ timeout: 1200 });
+  const 걸린시간 = Date.now() - t0;
+
+  const 잡힘 = 훑음.find((f) => f.port === 프록시포트);
+  check('안 알려준 자리의 서버를 찾아낸다', !!잡힘, `자리 ${훑음.훑은자리}곳 훑음`);
+  check('/v1 이 아닌 앞머리도 찾는다', 잡힘?.base?.endsWith('/api/v1'), 잡힘?.base ?? '없음');
+  check('모델 목록까지 가져온다', 잡힘?.models?.length === 2, (잡힘?.models ?? []).map((m) => m.id).join(', '));
+  check('무엇인지 이름을 붙인다', typeof 잡힘?.runtime === 'string' && 잡힘.runtime.length > 0, 잡힘?.runtime ?? '');
+
+  // HTTP 로 답하지 않는 자리에서 시간 초과를 기다리면 훑기가 몇 분이 된다.
+  // 실제로 이 PC 에는 파일 공유·RPC 같은 자리가 여럿 열려 있다.
+  check('열린 자리가 많아도 빨리 끝난다', 걸린시간 < 20000, `${(걸린시간 / 1000).toFixed(1)}초 · ${훑음.훑은자리}곳`);
+  check('안 본 자리가 있으면 알려준다', Array.isArray(훑음.안본자리), String(훑음.안본자리?.length ?? '없음'));
+
+  // 끄고 싶을 때 끌 수 있어야 한다.
+  resetNet();
+  const 안훑음 = await scanLocal({ ports: [], timeout: 800, listening: false });
+  check('listening:false 면 안 훑는다', !안훑음.some((f) => f.port === 프록시포트), `${안훑음.length}대 찾음`);
+}
+
+// 듣고 있는 포트를 실제로 알아내는가
+{
+  const { listeningPorts } = await import('../src/backend/scan.js');
+  const p = listeningPorts();
+  check('듣고 있는 포트를 알아낸다', Array.isArray(p) && p.length > 0, `${p.length}개`);
+  check('포트 번호가 말이 된다', p.every((x) => Number.isInteger(x) && x > 0 && x < 65536), p.slice(0, 6).join(', '));
+  check('정렬되어 있다', p.every((x, i) => i === 0 || p[i - 1] <= x), '');
+}
 
 // ── 훑기가 자물쇠를 원래대로 돌려놓는가 ─────────────────────────────────
 const { allowed } = await import('../src/safety/network.js');
