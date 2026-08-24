@@ -10,6 +10,7 @@ import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
 import { run } from '../src/agent/loop.js';
+import { allowEndpoint } from '../src/safety/network.js';
 
 const pass = [];
 const fail = [];
@@ -63,6 +64,8 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 const base = `http://127.0.0.1:${port}/v1`;
+// 자물쇠에 이 자리를 등록한다. 안 하면 요청이 나가기 전에 막힌다 — 그게 정상 동작이다.
+allowEndpoint(base);
 
 // ── 준비 ───────────────────────────────────────────────────────────
 const root = mkdtempSync(join(tmpdir(), 'deel-loop-'));
@@ -106,9 +109,11 @@ check('쪼개진 도구 인자를 이어 붙였다', editEv?.args?.new_string ==
 
 // 게이트웨이에 보낸 요청 모양
 const first = seenBodies[0];
-check('도구 정의 6종을 보냈다', first?.tools?.length === 6, `${first?.tools?.length}개`);
+// 파일 도구 6종 + 웹 읽기. 스킬이 없는 세션이라 Skill 은 빠진다.
+check('도구 정의 7종을 보냈다', first?.tools?.length === 7, `${first?.tools?.length}개`);
 check('도구 이름이 Claude Code 와 같다',
-  JSON.stringify(first?.tools?.map((t) => t.function.name)) === JSON.stringify(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash']),
+  JSON.stringify(first?.tools?.map((t) => t.function.name))
+    === JSON.stringify(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch']),
   JSON.stringify(first?.tools?.map((t) => t.function.name)));
 check('시스템 프롬프트를 보냈다', first?.messages?.[0]?.role === 'system');
 

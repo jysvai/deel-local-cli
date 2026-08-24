@@ -1,13 +1,15 @@
 // 슬래시 명령. 이름은 Claude Code / Codex 관례에 맞춘다.
 import { writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { c, say, rule, pad, bar, mark, width } from './ui/ansi.js';
+import { c, say, rule, pad, bar, mark, width, clip } from './ui/ansi.js';
+import { compact } from './agent/compact.js';
 import { pick } from './ui/prompt.js';
 import { load, save, resolveKey } from './config.js';
 import { TOOLS } from './tools/index.js';
-import { loadCommand } from './skills/discover.js';
-
-const THINK_LEVELS = ['off', 'low', 'medium', 'high', 'max'];
+import { loadCommand, discover } from './skills/discover.js';
+import { install, list, remove, pack } from './plugins/manage.js';
+import { spin } from './ui/spinner.js';
+import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable } from './agent/effort.js';
 const MODES = {
   auto: '자율 — 전부 알아서. 되돌리기가 안전망',
   confirm: '확인 — 되돌릴 수 없는 것만 물어봄',
@@ -25,6 +27,7 @@ export const COMMANDS = {
   undo:    { desc: '직전 작업 되돌리기', arg: '[턴수]' },
   tools:   { desc: '쓸 수 있는 도구 보기' },
   skills:  { desc: '스킬 보기·검색·골라 올리기', arg: '[검색어|all|off]' },
+  plugin:  { desc: '플러그인 목록·설치·삭제·반입묶음', arg: '[install|remove|pack]' },
   cost:    { desc: '이번 세션 사용량' },
   status:  { desc: '연결 상태' },
   init:    { desc: 'DEEL.md 규칙 파일 만들기' },
@@ -53,10 +56,21 @@ export async function handle(line, session, ctx) {
     case 'context': return showContext(session), { handled: true };
 
     case 'compact': {
-      const n = session.trim();
-      say(n
-        ? `  ${mark.ok} 오래된 대화 ${n}개를 줄였습니다.`
-        : `  ${c.gray('줄일 만큼 쌓이지 않았습니다.')}`);
+      const s = spin('앞선 대화를 요약해 접는 중…');
+      const r = await compact(session);
+      if (!r.ok) {
+        s.stop(`  ${c.gray(r.why ?? '접지 못했습니다.')}`);
+        say('');
+        return { handled: true };
+      }
+      const 줄인 = r.before - r.after;
+      s.stop(`  ${mark.ok} 대화 ${r.folded}개를 요약으로 접었습니다.`);
+      say(`     ${c.gray(r.before.toLocaleString())} ${c.gray('→')} ${c.white(r.after.toLocaleString())} ${c.gray('토큰')}  ${c.green(`${Math.round((줄인 / Math.max(1, r.before)) * 100)}% 줄어듦`)}`);
+      if (r.fallback) say(`     ${c.yellow('요약을 못 받아 그냥 줄였습니다.')}`);
+      else if (r.summary) {
+        say('');
+        for (const line of r.summary.split('\n').slice(0, 14)) say(`     ${c.gray(clip(line, 76))}`);
+      }
       say('');
       return { handled: true };
     }
@@ -64,10 +78,15 @@ export async function handle(line, session, ctx) {
     case 'model': return await switchModel(session, ctx), { handled: true };
 
     case 'think': {
+      const asProfile = normalizeProfile(arg);
+      if (asProfile) {
+        session.effort = asProfile;
+        say(`  ${mark.ok} 배분 ${c.bold(PROFILES[asProfile].name)} ${c.gray('— ' + PROFILES[asProfile].desc)}`);
+        showThink(session);
+        return { handled: true };
+      }
       if (!THINK_LEVELS.includes(arg)) {
-        say(`  ${c.gray('지금')} ${c.bold(session.think)}   ${c.gray('고를 수 있는 값:')} ${THINK_LEVELS.join(' · ')}`);
-        say(`  ${c.gray('예')} /think high`);
-        say('');
+        showThink(session);
         return { handled: true };
       }
       session.think = arg;
@@ -75,7 +94,7 @@ export async function handle(line, session, ctx) {
       if (!session.conn.think && arg !== 'off') {
         say(`     ${c.yellow('이 연결은 모델 층 조절이 안 먹습니다.')} ${c.gray('루프 층(도구 호출 상한)으로만 조절됩니다.')}`);
       }
-      say('');
+      showThink(session);
       return { handled: true };
     }
 
@@ -162,6 +181,9 @@ export async function handle(line, session, ctx) {
 
     case 'skills': return showSkills(session, arg), { handled: true };
 
+    case 'plugin':
+    case 'plugins': return await doPlugin(session, arg), { handled: true };
+
     default: {
       // 이 PC 에서 찾은 슬래시 명령인지 본다. 있으면 그 내용을 모델에게 보낸다.
       const found = (session.commands ?? []).find((x) => x.name === raw)
@@ -183,6 +205,97 @@ export async function handle(line, session, ctx) {
       return { handled: true };
     }
   }
+}
+
+async function doPlugin(session, arg) {
+  const [sub = '', ...rest] = arg.trim().split(/\s+/);
+  const param = rest.join(' ').trim();
+
+  // 설치·삭제 뒤에는 다시 훑어 이번 대화에 바로 반영한다.
+  const rescan = () => {
+    const f = discover(session.root);
+    session.skills = f.skills;
+    session.commands = f.commands;
+    session.plugins = f.plugins;
+    return f;
+  };
+
+  if (sub === 'install' || sub === 'add') {
+    if (!param) {
+      say(`  ${c.gray('예')} /plugin install affaan-m/ECC`);
+      say(`  ${c.gray('  ')} /plugin install owner/repo#가지이름`);
+      say('');
+      return;
+    }
+    say('');
+    const s = spin(`${param} 받는 중...`);
+    const r = await install(param, { onStep: (m) => {} });
+    if (r.error) {
+      s.stop(`  ${mark.no} ${c.red(r.error.split('\n')[0])}`);
+      for (const line of r.error.split('\n').slice(1)) say(`     ${c.gray(line.trim())}`);
+      say(`     ${c.gray('오프라인이면 zip 을 ~/.deel/plugins/ 에 직접 풀면 됩니다.')}`);
+      say('');
+      return;
+    }
+    s.stop(`  ${mark.ok} ${c.bold(r.name)}${r.version ? ' ' + c.gray(r.version) : ''} ${c.gray(`(${r.license ?? '라이선스 미상'})`)}`);
+    say(`     ${c.gray('스킬')} ${r.skills}개  ${c.gray('명령')} ${r.commands}개  ${c.gray(`· ${r.how} 로 받음`)}`);
+    if (r.hooks) say(`     ${mark.warn} ${c.yellow(`실행 스크립트 ${r.hooks}개는 쓰지 않습니다`)} ${c.gray('(hook 미지원 · 반입 심사 대상)')}`);
+    const f = rescan();
+    say(`     ${c.gray(`이제 스킬 ${f.skills.length}개 · 명령 ${f.commands.length}개`)}`);
+    say('');
+    return;
+  }
+
+  if (sub === 'remove' || sub === 'rm' || sub === 'uninstall') {
+    if (!param) { say(`  ${c.gray('예')} /plugin remove ecc`); say(''); return; }
+    const r = remove(param);
+    if (r.error) { say(`  ${mark.no} ${c.red(r.error)}`); say(''); return; }
+    const f = rescan();
+    say(`  ${mark.ok} ${c.bold(r.removed)} 지웠습니다. ${c.gray(`이제 스킬 ${f.skills.length}개`)}`);
+    say('');
+    return;
+  }
+
+  if (sub === 'pack') {
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const out = param || join(session.root, `deel-plugins-${stamp}.zip`);
+    const r = pack(out, { only: null });
+    if (r.error) { say(`  ${mark.no} ${c.red(r.error)}`); say(''); return; }
+    say('');
+    say(`  ${mark.ok} ${c.cyan(r.out)}`);
+    say(`     ${c.gray('플러그인')} ${r.plugins.length}개 ${c.gray('· 파일')} ${r.files}개 ${c.gray('·')} ${(r.bytes / 1024).toFixed(0)}KB`);
+    if (r.skipped) say(`     ${c.gray(`실행 스크립트 ${r.skipped}개는 뺐습니다`)}`);
+    say('');
+    rule('담긴 것', 74);
+    for (const p of r.plugins) {
+      say(`  ${c.cyan(pad(p.name, 22))} ${c.gray(pad(p.version || '-', 9))} ${c.gray(pad(p.license || '미상', 14))} ${c.gray(`스킬 ${p.skills} · 명령 ${p.commands}`)}`);
+    }
+    say('');
+    say(`  ${c.gray('오프라인 기기의')} ~/.deel/plugins/ ${c.gray('에 풀면 바로 인식됩니다. 설치 명령은 필요 없습니다.')}`);
+    say(`  ${c.gray('묶음 안에 라이선스 표가 담긴 사용안내.txt 가 함께 들어 있습니다.')}`);
+    say('');
+    return;
+  }
+
+  // 인자 없으면 목록
+  const items = list();
+  if (!items.length) {
+    say('');
+    say(`  ${c.gray('설치된 플러그인이 없습니다.')}`);
+    say(`  ${c.gray('받기')}  /plugin install owner/repo`);
+    say(`  ${c.gray('직접')}  ~/.deel/plugins/ 에 폴더를 풀어 넣어도 됩니다`);
+    say('');
+    return;
+  }
+  say('');
+  rule('플러그인', 74);
+  for (const p of items) {
+    say(`  ${c.cyan(pad(p.name, 22))} ${c.gray(pad(p.version || '-', 9))} ${c.gray(pad(p.license || '미상', 14))} ${c.gray(`스킬 ${p.skills} · 명령 ${p.commands}`)}`);
+    say(`    ${c.gray(p.from)}`);
+  }
+  say('');
+  say(`  ${c.gray('/plugin install <owner/repo>   /plugin remove <이름>   /plugin pack [파일]')}`);
+  say('');
 }
 
 function showSkills(session, arg) {
@@ -257,6 +370,28 @@ function help() {
   }
   say('');
   say(`  ${c.gray('그 밖의 입력은 모델에게 보냅니다. 빈 줄에서 Ctrl+C 로 끝냅니다.')}`);
+  say('');
+}
+
+// 추론 강도는 값 하나가 아니라 '단계별 배분' 이다. 그 배분을 눈에 보이게 그린다.
+function showThink(session) {
+  const t = effortTable(session.think, session.effort);
+  say('');
+  rule('추론 강도', 70);
+  say(`  기준 ${c.bold(session.think)}   배분 ${c.bold(t.name)}   ${c.gray(t.desc)}`);
+  say('');
+  say(`  ${c.gray(pad('단계', 12) + pad('강도', 10) + pad('출력상한', 10) + '언제')}`);
+  for (const r of t.rows) {
+    const 화살 = r.moved > 0 ? c.yellow('↑') : r.moved < 0 ? c.cyan('↓') : c.gray('·');
+    say(`  ${pad(r.label, 12)}${화살} ${pad(r.level, 8)}${pad(r.cap.toLocaleString(), 10, 'right')}  ${c.gray(r.why)}`);
+  }
+  say('');
+  say(`  ${c.gray('강도')}  ${THINK_LEVELS.join(' · ')}            ${c.gray('예')} ${c.cyan('/think high')}`);
+  say(`  ${c.gray('배분')}  ${Object.entries(PROFILES).map(([k, v]) => `${k}(${v.name})`).join(' · ')}   ${c.gray('예')} ${c.cyan('/think save')}`);
+  if (!session.conn.think && session.think !== 'off') {
+    say('');
+    say(`  ${c.yellow('이 연결은 모델 층 강도 조절이 안 먹습니다.')} ${c.gray('출력 상한만 단계별로 적용됩니다.')}`);
+  }
   say('');
 }
 

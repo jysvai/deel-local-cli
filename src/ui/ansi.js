@@ -1,4 +1,4 @@
-// 화면 출력 기본기 — 색, 커서, 폭 계산. 외부 의존성 없음.
+// 화면 출력 기본기 — 색, 커서, 폭 계산, 상자. 외부 의존성 없음.
 
 // 파이프로 넘길 때도 색을 보고 싶으면 FORCE_COLOR=1
 const ON = (process.stdout.isTTY || process.env.FORCE_COLOR === '1') && process.env.NO_COLOR === undefined;
@@ -8,15 +8,27 @@ const E = (n) => (s) => (ON ? `\x1b[${n}m${s}\x1b[0m` : String(s));
 export const c = {
   dim: E(2),
   bold: E(1),
+  italic: E(3),
+  under: E(4),
   red: E(31),
   green: E(32),
   yellow: E(33),
   blue: E(34),
   magenta: E(35),
   cyan: E(36),
+  white: E(37),
   gray: E(90),
+  // 밝은 계열 — 어두운 배경에서 본문과 구분이 필요할 때
+  hred: E(91),
+  hgreen: E(92),
+  hyellow: E(93),
+  hblue: E(94),
+  hmagenta: E(95),
+  hcyan: E(96),
   bgRed: E(41),
   bgGreen: E(42),
+  bgBlue: E(44),
+  bgGray: E(100),
 };
 
 export const cursor = {
@@ -48,8 +60,31 @@ export function width(str) {
 
 export function pad(str, target, align = 'left') {
   const gap = Math.max(0, target - width(str));
-  return align === 'right' ? ' '.repeat(gap) + str : str + ' '.repeat(gap);
+  if (align === 'right') return ' '.repeat(gap) + str;
+  if (align === 'center') {
+    const l = Math.floor(gap / 2);
+    return ' '.repeat(l) + str + ' '.repeat(gap - l);
+  }
+  return str + ' '.repeat(gap);
 }
+
+// 색 코드를 건드리지 않고 보이는 폭 기준으로 자른다.
+export function clip(str, max, tail = '…') {
+  if (width(str) <= max) return str;
+  let out = '';
+  let w = 0;
+  const budget = max - width(tail);
+  for (const ch of String(str)) {
+    const cw = width(ch);
+    if (w + cw > budget) break;
+    out += ch;
+    w += cw;
+  }
+  return out + tail;
+}
+
+// 터미널 가로 폭. 파이프로 넘어가면 알 수 없으니 넉넉히 잡는다.
+export const cols = () => process.stdout.columns || 100;
 
 export const say = (s = '') => process.stdout.write(s + '\n');
 
@@ -59,11 +94,43 @@ export function rule(label = '', total = 64) {
   say(c.gray(left + '─'.repeat(Math.max(0, total - width(left)))));
 }
 
+// 채움 막대. 반쪽 칸까지 써서 좁은 폭에서도 눈금이 보인다.
 export function bar(used, total, cells = 32) {
   const ratio = total > 0 ? Math.min(1, used / total) : 0;
-  const filled = Math.round(ratio * cells);
+  const exact = ratio * cells;
+  const full = Math.floor(exact);
+  const half = exact - full >= 0.5 && full < cells;
   const tone = ratio > 0.85 ? c.red : ratio > 0.6 ? c.yellow : c.green;
-  return tone('█'.repeat(filled)) + c.gray('░'.repeat(cells - filled));
+  return tone('█'.repeat(full) + (half ? '▌' : '')) + c.gray('░'.repeat(cells - full - (half ? 1 : 0)));
+}
+
+// 상태줄용 얇은 막대.
+export function gauge(ratio, cells = 10) {
+  const r = Math.min(1, Math.max(0, ratio));
+  const filled = Math.round(r * cells);
+  const tone = r > 0.85 ? c.hred : r > 0.6 ? c.hyellow : c.hgreen;
+  return tone('▰'.repeat(filled)) + c.gray('▱'.repeat(cells - filled));
+}
+
+const BOX = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
+
+/**
+ * 둥근 모서리 상자. 안쪽 폭은 가장 긴 줄에 맞춘다.
+ * @param {string[]} lines  색이 들어 있어도 폭 계산은 맞는다.
+ */
+export function box(lines, { title = '', pad: gap = 1, tone = c.gray, max = cols() - 4 } = {}) {
+  const body = lines.map((l) => clip(l, max - gap * 2 - 2));
+  const inner = Math.max(
+    width(title) + 2,
+    ...body.map((l) => width(l)),
+  ) + gap * 2;
+  const top = title
+    ? BOX.tl + BOX.h + ' ' + title + ' ' + BOX.h.repeat(Math.max(0, inner - width(title) - 3)) + BOX.tr
+    : BOX.tl + BOX.h.repeat(inner) + BOX.tr;
+  const out = [tone(top)];
+  for (const l of body) out.push(tone(BOX.v) + ' '.repeat(gap) + pad(l, inner - gap * 2) + ' '.repeat(gap) + tone(BOX.v));
+  out.push(tone(BOX.bl + BOX.h.repeat(inner) + BOX.br));
+  return out;
 }
 
 export const mark = {
@@ -72,4 +139,11 @@ export const mark = {
   warn: c.yellow('⚠'),
   dot: c.cyan('⏺'),
   arrow: c.gray('›'),
+  think: c.magenta('✻'),
+  run: c.hcyan('▶'),
+  bar: c.gray('▏'),
+  tree: c.gray('└'),
+  branch: c.gray('├'),
 };
+
+export const COLOR_ON = ON;

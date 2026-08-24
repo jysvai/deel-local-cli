@@ -1,7 +1,9 @@
 // 대화 화면. 루프가 보내는 이벤트를 Claude Code 풍으로 그린다.
 import { createInterface } from 'node:readline';
-import { c, say, mark, cursor, width } from './ui/ansi.js';
-import { handle, COMMANDS } from './commands.js';
+import { c, say, mark, cursor, box, clip, cols } from './ui/ansi.js';
+import { statusLine, headerLines, contextWarning } from './ui/status.js';
+import { STAGES } from './agent/effort.js';
+import { handle } from './commands.js';
 import { run } from './agent/loop.js';
 import { Session } from './agent/session.js';
 import { makeScope } from './safety/guard.js';
@@ -9,21 +11,34 @@ import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
 import { activeProfile, load, resolveKey } from './config.js';
 import { discover } from './skills/discover.js';
+import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
+
+// 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
+const TOOL_GLYPH = {
+  Read: c.blue('◧'),
+  Write: c.green('◆'),
+  Edit: c.yellow('◈'),
+  Glob: c.magenta('❋'),
+  Grep: c.magenta('❊'),
+  Bash: c.hcyan('▶'),
+  Skill: c.hmagenta('✦'),
+  WebFetch: c.hblue('◍'),
+};
 
 // 도구 호출을 한 줄로 요약 — Read(src/a.js) 처럼.
 function toolLabel(name, args) {
   const a = args ?? {};
   const first =
-    a.file_path ?? a.pattern ?? a.path ??
-    (a.command ? String(a.command).slice(0, 48) : '') ?? '';
-  return `${name}(${c.gray(String(first))})`;
+    a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ??
+    (a.command ? String(a.command).replace(/\s+/g, ' ').slice(0, 52) : '') ?? '';
+  const g = TOOL_GLYPH[name] ?? c.cyan('⏺');
+  return `${g} ${c.bold(name)}${c.gray('(')}${c.gray(clip(String(first), 56))}${c.gray(')')}`;
 }
 
 function toolResultLine(result, ms) {
-  if (result?.error) return `${c.red('└')} ${c.red(String(result.error).split('\n')[0])}`;
-  const s = result?.summary ?? '완료';
-  const t = ms > 1000 ? c.gray(` ${(ms / 1000).toFixed(1)}초`) : '';
-  return `${c.gray('└')} ${c.gray(s)}${t}`;
+  const t = ms > 700 ? c.gray(`  ${(ms / 1000).toFixed(1)}초`) : '';
+  if (result?.error) return `${c.red('└')} ${c.red(clip(String(result.error).split('\n')[0], 80))}${t}`;
+  return `${c.gray('└')} ${c.gray(clip(result?.summary ?? '완료', 80))}${t}`;
 }
 
 export async function chatLoop(opts = {}) {
@@ -44,10 +59,15 @@ export async function chatLoop(opts = {}) {
     tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
   };
 
+  // 이 자리 하나만 연다. 다른 어디로도 나가지 못한다.
+  allowEndpoint(conn.base);
+  if (opts.offline ?? prof.offline) setOffline(true);
+
   const session = new Session(conn, {
     root,
     mode: opts.mode ?? 'auto',
     think: opts.think ?? 'medium',
+    effort: opts.effort ?? 'save',
     maxSteps: opts.maxSteps ?? 24,
   });
 
@@ -66,7 +86,7 @@ export async function chatLoop(opts = {}) {
   const echo = !process.stdin.isTTY;   // 파이프·기록용일 때는 입력을 되비춘다
 
   rl.on('line', (l) => {
-    if (echo) say(l);
+    if (echo) say(c.gray(l));
     if (waiter) { const w = waiter; waiter = null; w(l); }
     else queue.push(l);
   });
@@ -104,18 +124,23 @@ export async function chatLoop(opts = {}) {
     },
   };
 
-  // 머리말
+  // ── 머리말 ────────────────────────────────────────────────────────────
   say('');
-  say(`  ${c.cyan('deel')}  ${c.gray(prof.model)}  ${c.gray('·')}  ${c.gray(ctx.scope.root)}`);
+  for (const l of box(headerLines(session, found), { tone: c.gray })) say('  ' + l);
   const warn = [];
-  if (!conn.tools) warn.push('도구 호출 미확인');
-  if (!conn.streaming) warn.push('스트리밍 없음');
-  if (warn.length) say(`  ${c.yellow('⚠')} ${c.gray(warn.join(' · '))}`);
-  if (found.skills.length || found.commands.length) {
-    say(`  ${c.gray(`스킬 ${found.skills.length}개 · 명령 ${found.commands.length}개 찾음`)}${found.plugins.length ? c.gray(` (플러그인 ${found.plugins.length}개)`) : ''}`);
-  }
-  say(`  ${c.gray('/help 로 명령 목록.  Ctrl+C 로 끝냅니다.')}`);
-  say('');
+  if (!conn.tools) warn.push('도구 호출이 확인되지 않았습니다 — deel diagnose 로 점검하세요');
+  if (!conn.streaming) warn.push('스트리밍이 없어 응답이 한 번에 나옵니다');
+  for (const w of warn) say(`  ${mark.warn} ${c.gray(w)}`);
+  say(`  ${c.gray('/help 명령 목록')}   ${c.gray('/think 추론 강도')}   ${c.gray('Ctrl+C 끝내기')}`);
+
+  // 입력 자리. 위에 상태줄을 한 줄 깔고 그 아래에 커서를 둔다.
+  const prompt = () => {
+    say('');
+    say(statusLine(session));
+    const w = contextWarning(session);
+    if (w) say(` ${w}`);
+    process.stdout.write(` ${c.hcyan('❯')} `);
+  };
 
   let interrupted = false;
   rl.on('SIGINT', () => {
@@ -123,11 +148,11 @@ export async function chatLoop(opts = {}) {
     interrupted = true;
     say('');
     say(`  ${c.gray('한 번 더 Ctrl+C 를 누르면 끝냅니다.')}`);
-    process.stdout.write(`\n${c.cyan('›')} `);
+    prompt();
   });
 
   for (;;) {
-    process.stdout.write(`\n${c.cyan('›')} `);
+    prompt();
     const line = await nextLine();
     if (line === null) break;          // 입력이 끝났다 (파이프 종료 / Ctrl+D)
     interrupted = false;
@@ -141,38 +166,53 @@ export async function chatLoop(opts = {}) {
 
     say('');
     const started = Date.now();
+    const before = { in: session.usage.in, out: session.usage.out };
     let tools = 0;
     let thinkChars = 0;
     let streamed = false;
     let thinkingShown = false;
+    let stage = null;
+
+    const clearThinking = () => { if (thinkingShown) { cursor.clearLine(); thinkingShown = false; } };
 
     try {
       for await (const ev of run(session, ctx, toSend)) {
         switch (ev.type) {
+          // 어느 단계를 어떤 강도로 도는지 — 추론 강도 조절이 실제로 먹는지 눈으로 보인다.
+          case 'stage':
+            stage = ev;
+            thinkChars = 0;
+            break;
+
+          case 'retry':
+            clearThinking();
+            say(`  ${c.yellow('↻')} ${c.gray(`${ev.why} — 상한을 ${ev.from} → ${ev.to} 로 올려 다시 부릅니다`)}`);
+            break;
+
           case 'waiting':
-            process.stdout.write(`  ${c.gray('생각 중…')}\r`);
+            process.stdout.write(`  ${c.gray(stageTag(stage) + ' 생각 중…')}\r`);
             break;
 
           case 'thinking':
             thinkChars += ev.text.length;
             if (process.stdout.isTTY) {
               cursor.clearLine();
-              process.stdout.write(`  ${c.magenta('✻')} ${c.gray(`생각 중… ${thinkChars}자`)}`);
+              process.stdout.write(`  ${mark.think} ${c.gray(stageTag(stage))} ${c.gray(`생각 중… ${thinkChars.toLocaleString()}자`)}`);
               thinkingShown = true;
             }
             break;
 
           case 'content':
-            if (thinkingShown) { cursor.clearLine(); thinkingShown = false; }
+            clearThinking();
             if (!streamed) { streamed = true; process.stdout.write('  '); }
             process.stdout.write(ev.text.replace(/\n/g, '\n  '));
             break;
 
           case 'tool_start':
-            if (thinkingShown) { cursor.clearLine(); thinkingShown = false; }
+            clearThinking();
             if (streamed) { say(''); streamed = false; }
             say('');
-            say(`  ${c.cyan('⏺')} ${toolLabel(ev.name, ev.args)}`);
+            say(`  ${toolLabel(ev.name, ev.args)}`);
             break;
 
           case 'tool':
@@ -184,39 +224,70 @@ export async function chatLoop(opts = {}) {
             say(`  ${c.gray(`(컨텍스트가 차서 오래된 대화 ${ev.dropped}개를 줄였습니다)`)}`);
             break;
 
+          case 'compacting':
+            clearThinking();
+            process.stdout.write(`  ${c.gray('컨텍스트가 찼습니다 — 앞선 대화를 요약해 접는 중…')}\r`);
+            break;
+
+          case 'compacted': {
+            if (process.stdout.isTTY) cursor.clearLine();
+            const 줄인 = ev.before - ev.after;
+            say(`  ${c.cyan('◱')} ${c.gray(`대화 ${ev.folded}개를 요약으로 접었습니다 — `)}` +
+                `${c.gray(ev.before.toLocaleString())} ${c.gray('→')} ${c.white(ev.after.toLocaleString())} ${c.gray('토큰')} ` +
+                `${c.green(`(${Math.round((줄인 / Math.max(1, ev.before)) * 100)}% 줄어듦)`)}`);
+            if (ev.fallback) say(`     ${c.yellow('요약을 못 받아 그냥 줄였습니다.')}`);
+            break;
+          }
+
+          case 'compact_failed':
+            if (process.stdout.isTTY) cursor.clearLine();
+            say(`  ${c.gray(`(접지 못했습니다: ${ev.why})`)}`);
+            break;
+
           case 'limit':
             say('');
-            say(`  ${c.yellow('⚠')} 도구 호출 ${ev.steps}회에서 멈췄습니다. ${c.gray('이어서 하려면 다시 말씀하세요.')}`);
+            say(`  ${mark.warn} 도구 호출 ${ev.steps}회에서 멈췄습니다. ${c.gray('이어서 하려면 다시 말씀하세요.')}`);
             break;
 
           case 'error':
-            if (thinkingShown) cursor.clearLine();
+            clearThinking();
             say('');
             say(`  ${c.red('✗')} ${ev.text}`);
             break;
 
           case 'done':
+            clearThinking();
             if (streamed) say('');
             break;
         }
       }
     } catch (err) {
+      clearThinking();
       say('');
       say(`  ${c.red('✗')} ${err.message}`);
     }
 
-    // 꼬리말 — 이번 턴 요약
+    // ── 꼬리말 — 이번 턴만의 숫자 ────────────────────────────────────────
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     const bits = [`${secs}초`];
     if (tools) bits.push(`도구 ${tools}회`);
-    if (session.usage.out) bits.push(`${session.usage.out.toLocaleString()}토큰`);
+    const dIn = session.usage.in - before.in;
+    const dOut = session.usage.out - before.out;
+    if (dIn || dOut) bits.push(`↑${dIn.toLocaleString()} ↓${dOut.toLocaleString()}`);
     say('');
-    say(`  ${c.gray('─ ' + bits.join(' · '))}`);
+    say(`  ${c.gray('─'.repeat(2))} ${c.gray(bits.join(c.gray(' · ')))}`);
   }
 
   rl.close();
   say('');
-  say(`  ${c.gray('끝냅니다.')} ${c.gray(`도구 시간 ${(session.usage.ms / 1000).toFixed(1)}초 · 모델 호출 ${session.usage.calls}회`)}`);
+  say(`  ${c.gray('끝냅니다.')} ${c.gray(`모델 호출 ${session.usage.calls}회 · 도구 시간 ${(session.usage.ms / 1000).toFixed(1)}초 · ↑${session.usage.in.toLocaleString()} ↓${session.usage.out.toLocaleString()}`)}`);
   say('');
   return 0;
+}
+
+// "첫 판단·high" 처럼 지금 도는 단계를 짧게.
+function stageTag(ev) {
+  if (!ev) return '';
+  const label = STAGES[ev.stage]?.label ?? ev.stage;
+  return `${label}·${ev.level}`;
 }

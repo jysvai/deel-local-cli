@@ -25,11 +25,13 @@ const BASE_RULES = `너는 deel 다. 사용자의 작업 폴더 안에서 코드
 - 사용자에게 답할 때는 한국어로, 짧게. 코드를 통째로 붙여넣지 말고 무엇이 달라졌는지 말한다.`;
 
 export class Session {
-  constructor(conn, { root, mode = 'auto', think = 'medium', maxSteps = 24 } = {}) {
+  constructor(conn, { root, mode = 'auto', think = 'medium', effort = 'save', web = true, maxSteps = 24 } = {}) {
     this.conn = conn;
     this.root = root;
     this.mode = mode;
-    this.think = think;
+    this.think = think;      // 기준 강도
+    this.effort = effort;    // 그 강도를 단계별로 어떻게 나눌지 (effort.js)
+    this.web = web;          // 웹 읽기 도구를 줄지 (오프라인이면 무조건 안 준다)
     this.maxSteps = maxSteps;
     this.messages = [];
     this.filesRead = new Map();   // 경로 → 추정 토큰

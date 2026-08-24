@@ -1,4 +1,8 @@
-// HTTP 한 겹. 시간 제한과 오류 정규화만 담당한다.
+// HTTP 한 겹. 시간 제한과 오류 정규화, 그리고 나가도 되는 곳인지 확인한다.
+//
+// 이 파일이 프로그램에서 바깥으로 나가는 유일한 문이다.
+// 나가기 전에 반드시 safety/network.js 의 문지기에게 물어본다.
+import { checkUrl, NetBlocked } from '../safety/network.js';
 
 export const AUTH_STYLES = [
   { id: 'bearer', label: 'Authorization: Bearer', apply: (h, k) => { h['Authorization'] = `Bearer ${k}`; } },
@@ -17,6 +21,7 @@ export function headersFor(authStyle, key, extra = {}) {
 export async function req(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false } = {}) {
   const started = Date.now();
   try {
+    checkUrl(url);   // 허용된 자리가 아니면 여기서 끝난다. 본문은 만들어지지도 않는다.
     const res = await fetch(url, {
       method,
       headers,
@@ -33,6 +38,8 @@ export async function req(url, { method = 'GET', headers = {}, body, timeout = 2
     return { ok: res.ok, status: res.status, json, text, ms, headers: res.headers };
   } catch (err) {
     const ms = Date.now() - started;
+    // 막힌 것은 통신 실패와 다르다. 조용히 넘기면 자물쇠가 있는지도 모른다.
+    if (err instanceof NetBlocked) throw err;
     return { ok: false, status: 0, error: normalizeError(err), ms };
   }
 }

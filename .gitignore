@@ -1,4 +1,11 @@
 node_modules/
+
+# 대화 기록·되돌리기 이력·연결 설정(키 포함). 절대 올라가면 안 된다.
 .deel/
+.deel
 *.log
 report*.txt
+
+# 반입용으로 만든 묶음 — 내 소스와 스킬이 들어 있다
+*.zip
+deel-반입*.zip

@@ -6,6 +6,7 @@ import { detect } from './backend/detect.js';
 import { probe } from './backend/probe.js';
 import { renderHeader, renderLine, verdict, renderVerdict, plainReport } from './report.js';
 import { load, save, upsert, slug, resolveKey, activeProfile, configPath } from './config.js';
+import { allowEndpoint } from './safety/network.js';
 import { writeFileSync } from 'node:fs';
 
 export function banner() {
@@ -17,6 +18,8 @@ export function banner() {
 // 주소와 키를 받아 연결을 찾아낸다. 실패하면 null.
 async function connect(url, key) {
   const s = spin(`${url} 확인 중...`);
+  // 사용자가 방금 적어 넣은 주소다. 확인하는 동안만 문을 연다.
+  allowEndpoint(/^https?:\/\//i.test(url) ? url : 'http://' + url);
   const found = await detect(url, key);
   if (!found.kind) {
     s.stop(`  ${mark.no} ${c.red('연결 실패')}`);
@@ -51,6 +54,7 @@ async function chooseModel(found) {
 
 // 진단을 돌리고 결과를 화면에 그린다.
 export async function runProbe(conn, { out = null } = {}) {
+  allowEndpoint(conn.base);   // 진단도 이 주소 하나로만 나간다
   renderHeader({ shape: conn.kind, base: conn.base, auth: conn.auth, model: conn.model });
   const { facts, results } = await probe(conn, renderLine);
   const v = verdict(facts, results);
