@@ -15,27 +15,41 @@ export const STAGES = {
   fix: { label: '막혔을 때', why: '직전 도구가 오류를 냄' },
 };
 
-// shift = 기준 강도에서 몇 칸 올리고 내릴지.  cap = 그 단계의 출력 토큰 상한.
+// shift = 기준 강도에서 몇 칸 올리고 내릴지.
+// share = 남은 컨텍스트 중 이 단계의 출력에 내줄 비율.
+//
+// 출력 상한을 숫자로 못 박으면 안 된다. 컨텍스트 4k 짜리 모델에 4096 을 주면
+// 입력 자리가 하나도 안 남고, 200k 짜리 모델에는 턱없이 모자란다.
+// 그래서 '남은 자리의 몇 %' 로 정하고, 아래위로만 울타리를 친다.
 export const PROFILES = {
   even: {
     name: '균일',
     desc: '모든 단계 같은 강도 — 예측 가능한 대신 느립니다',
     shift: { plan: 0, work: 0, fix: 0 },
-    cap: { plan: 4096, work: 4096, fix: 4096 },
+    share: { plan: 0.30, work: 0.30, fix: 0.30 },
   },
   save: {
     name: '절약',
     desc: '첫 판단만 세게, 이어가기는 얕게 — 대개 이게 낫습니다',
     shift: { plan: 0, work: -1, fix: +1 },
-    cap: { plan: 4096, work: 2048, fix: 4096 },
+    share: { plan: 0.30, work: 0.15, fix: 0.30 },
   },
   deep: {
     name: '깊게',
     desc: '전 단계 한 칸씩 위로 — 어려운 일에만',
     shift: { plan: +1, work: 0, fix: +1 },
-    cap: { plan: 6144, work: 4096, fix: 6144 },
+    share: { plan: 0.45, work: 0.30, fix: 0.45 },
   },
 };
+
+// 울타리.
+// 아래: 이보다 작으면 도구 호출 한 개도 못 뱉는다. 생각을 많이 하는 모델은 더 필요하다.
+// 위:   이 이상은 어떤 모델도 한 번에 잘 안 낸다. 실수로 큰 값을 보내 튕기는 것도 막는다.
+export const MIN_CAP = 512;
+// 컨텍스트가 128k 라도 '한 번에 낼 수 있는 출력' 은 대개 훨씬 작다.
+// 모델 한계보다 큰 max_tokens 를 보내면 그냥 거부하는 게이트웨이가 있어서
+// 안전한 선에서 멈춘다. 더 필요하면 프로필에 maxTokens 를 적어 올릴 수 있다.
+export const MAX_CAP = 16384;
 
 const ALIAS = { 균일: 'even', 절약: 'save', 깊게: 'deep', uniform: 'even', thrifty: 'save' };
 
@@ -61,9 +75,38 @@ export function effortFor(base, profileKey, stage) {
   return shiftLevel(base, p.shift[stage] ?? 0);
 }
 
-export function tokensFor(profileKey, stage) {
+/**
+ * 이번 호출에 내줄 출력 토큰 상한.
+ *
+ * 모델마다 다르다. 컨텍스트가 얼마인지, 지금 얼마나 차 있는지에 따라 남는 자리가 다르고
+ * 그 남는 자리 안에서만 답을 받을 수 있다. 고정 숫자를 쓰면 작은 모델에서는 입력이 밀리고
+ * 큰 모델에서는 답이 잘린다.
+ *
+ * @param {object} o
+ * @param {number} o.ctx   모델 컨텍스트 (conn.ctx)
+ * @param {number} o.used  지금 쓰고 있는 양 (session.breakdown().used)
+ * @param {number} o.max   사용자가 프로필에 직접 적어 둔 상한이 있으면 그것을 넘지 않는다
+ */
+export function tokensFor(profileKey, stage, { ctx = 0, used = 0, max = null } = {}) {
   const p = PROFILES[normalizeProfile(profileKey) ?? 'save'];
-  return p.cap[stage] ?? 4096;
+  const share = p.share[stage] ?? 0.3;
+
+  // 컨텍스트를 모르면(진단 전) 보수적으로 잡는다.
+  const room = ctx > 0 ? Math.max(0, ctx - used) : 4096;
+
+  let cap = Math.floor(room * share);
+  // 남은 자리의 절반을 넘겨 주지 않는다. 답이 길어져도 다음 턴이 들어갈 자리는 남겨야 한다.
+  cap = Math.min(cap, Math.floor(room / 2));
+  cap = Math.min(cap, max ?? MAX_CAP, MAX_CAP);
+  cap = Math.max(cap, MIN_CAP);
+  // 남은 자리 자체가 바닥이면 울타리 아래라도 남은 만큼만 준다.
+  return room > 0 ? Math.min(cap, Math.max(MIN_CAP, room)) : MIN_CAP;
+}
+
+/** 잘렸을 때 풀어 줄 최대 상한 — 남은 자리를 거의 다 내준다. */
+export function fullCap({ ctx = 0, used = 0, max = null } = {}) {
+  const room = ctx > 0 ? Math.max(0, ctx - used) : 4096;
+  return Math.max(MIN_CAP, Math.min(Math.floor(room * 0.8), max ?? MAX_CAP, MAX_CAP));
 }
 
 // 잘린 응답인가. 잘린 채로 넘어가면 도구 호출이 반토막 나서 조용히 실패한다.
@@ -72,20 +115,24 @@ export function wasCut(msg) {
   return s === 'length' || s === 'max_tokens' || s === 'MAX_TOKENS';
 }
 
-// 화면에 보여줄 표.
-export function table(base, profileKey) {
+// 화면에 보여줄 표. 상한은 지금 붙어 있는 모델 기준으로 계산해서 보여준다 —
+// 모델을 바꾸면 이 숫자도 같이 바뀐다.
+export function table(base, profileKey, room = {}) {
   const key = normalizeProfile(profileKey) ?? 'save';
   const p = PROFILES[key];
   return {
     key,
     name: p.name,
     desc: p.desc,
+    ctx: room.ctx ?? 0,
+    used: room.used ?? 0,
     rows: Object.entries(STAGES).map(([stage, s]) => ({
       stage,
       label: s.label,
       why: s.why,
       level: effortFor(base, key, stage),
-      cap: p.cap[stage],
+      cap: tokensFor(key, stage, room),
+      share: p.share[stage],
       moved: p.shift[stage],
     })),
   };

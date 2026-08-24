@@ -51,6 +51,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 - [Skills and plugins](#skills-and-plugins)
 - [Reasoning effort](#reasoning-effort)
 - [Auto-compaction](#auto-compaction)
+- [Resuming a conversation](#resuming-a-conversation)
 - [Safety](#safety)
 - [Corporate review package](#corporate-review-package)
 - [Configuration](#configuration)
@@ -329,7 +330,21 @@ $ /think
 | `save` (default) | Hard on the first decision only |
 | `deep` | Everything one notch up — for hard work |
 
-If a saved token cap truncates a reply, **that step alone is retried with the cap lifted.**
+**Caps are not fixed numbers.** They are computed from the model's context window and how
+much of it is currently used — the profile decides what share of the remaining room a stage gets.
+
+| Model | First call | Continuing | Stuck |
+|---|---|---|---|
+| 2k local | 554 | 512 | 554 |
+| 8k local | 2,007 | 1,003 | 2,007 |
+| 40k (qwen3) | 11,688 | 5,844 | 11,688 |
+| 128k gateway | 16,384 | 16,384 | 16,384 |
+| 128k, 80% full | 7,680 | 3,840 | 7,680 |
+
+Caps shrink as the context fills. Handing a 4k model a 4,096-token cap would leave no room for input.
+Raise the ceiling with `maxTokens` in the profile if you need more.
+
+If a saved cap truncates a reply, **that step alone is retried with the cap lifted.**
 A truncated reply means a half-written tool call, which fails silently.
 
 ---
@@ -348,6 +363,38 @@ The summary keeps goal / done / learned / decided / remaining. The cut point is 
 If the summary request fails, it falls back to plain trimming rather than stopping.
 
 `/compact` folds on demand.
+
+---
+
+## Resuming a conversation
+
+Close the terminal by accident, or reboot, and the conversation is still there.
+Messages are written to `.deel/sessions/` **as each one completes**, so a crash
+loses at most the message in flight.
+
+```
+$ deel sessions
+
+── conversations in this folder ────────────────────────────────
+  ● 20260824-090200  just now    1 turn   devstral-small-2507
+      fix the failing test
+  · 20260824-084500  2h ago      2 turns  qwen2.5-coder:7b
+      switch src/a.js logging to the logger
+```
+
+| Command | What it does |
+|---|---|
+| `deel --continue` | Resume the most recent conversation in this folder |
+| `deel --resume <id>` | Resume a specific one |
+| `deel sessions` | List what is stored |
+| `deel sessions --rm <id>` | Delete one |
+
+The format is `jsonl` — one message per line — so a power cut costs only the last line.
+Resumed history keeps tool calls paired with their results, so work continues immediately.
+Conversations older than 30 days and outside the most recent 30 are pruned automatically.
+
+Everything lives in `.deel/sessions/` inside the working folder, and `.gitignore`
+covers `.deel/` so it never reaches a repository.
 
 ---
 
@@ -457,6 +504,8 @@ deel --mode <mode>       auto (default) / confirm / strict
 deel --think <level>     off / low / medium (default) / high / max
 deel --effort <profile>  even / save (default) / deep
 deel --offline           Nothing leaves this machine
+deel --continue          Resume the most recent conversation
+deel --resume <id>       Resume a specific one
 ```
 
 ### Project rules
@@ -485,7 +534,7 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 ## Development
 
 ```bash
-npm test        Full suite (184 checks)
+npm test        Full suite (219 checks)
 npm run verify  Import + network checks only
 npm run bench   Edit success rate
 npm run demo    See what the UI actually looks like
@@ -503,6 +552,7 @@ are verified deterministically without any model. ZIP output is cross-checked wi
 | `network` | 29 | Nothing escapes the configured address |
 | `web` | 25 | Web reads stay read-only |
 | `compact` | 21 | Summary folding, pairing intact, graceful fallback |
+| `store` | 34 | Session persistence, resume, crash recovery |
 | `scan` | 19 | Distinguishing multiple runtimes |
 | `plugins` | 38 | Plugin fetch/pack, ZIP/TAR |
 | `no-bundle` | 11 | Nothing foreign in the published package |

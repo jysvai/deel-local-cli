@@ -3,7 +3,7 @@
 import { chat, chatStream, assistantMessage, toolMessage } from '../backend/adapter.js';
 import { toolSchemas, runTool, TOOLS } from '../tools/index.js';
 import { isMutating } from '../safety/guard.js';
-import { effortFor, tokensFor, wasCut } from './effort.js';
+import { effortFor, tokensFor, fullCap, wasCut } from './effort.js';
 import { compact, shouldCompact } from './compact.js';
 import { isOffline } from '../safety/network.js';
 
@@ -32,7 +32,9 @@ export async function* run(session, ctx, userText) {
     // 단계마다 필요한 생각의 양이 다르다. effort.js 가 그 배분을 갖고 있다.
     const stage = steps === 1 ? 'plan' : lastToolFailed ? 'fix' : 'work';
     const level = effortFor(session.think, session.effort, stage);
-    const cap = tokensFor(session.effort, stage);
+    // 상한은 모델 컨텍스트와 지금 찬 양에서 계산한다. 고정 숫자가 아니다.
+    const room = { ctx: conn.ctx ?? 0, used: session.breakdown().used, max: conn.maxTokens ?? null };
+    const cap = tokensFor(session.effort, stage, room);
     yield { type: 'stage', stage, level, cap, step: steps };
 
     const ask = (maxTokens, think) => ({
@@ -63,9 +65,10 @@ export async function* run(session, ctx, userText) {
       // 아낀 상한 때문에 대답이 잘렸다면, 그 단계만 상한을 풀어 한 번 다시 부른다.
       // 잘린 채로 넘어가면 도구 호출이 반토막 나서 조용히 실패한다 —
       // 생각을 많이 하는 모델에서 특히 잘 생긴다.
-      if (wasCut(msg) && cap < 4096) {
-        yield { type: 'retry', why: '대답이 상한에서 잘렸습니다', from: cap, to: 4096 };
-        yield* askModel(4096, level);
+      const full = fullCap(room);
+      if (wasCut(msg) && cap < full) {
+        yield { type: 'retry', why: '대답이 상한에서 잘렸습니다', from: cap, to: full };
+        yield* askModel(full, level);
       }
     } catch (err) {
       yield { type: 'error', text: err.message };

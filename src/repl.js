@@ -12,6 +12,7 @@ import { Audit } from './safety/audit.js';
 import { activeProfile, load, resolveKey } from './config.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
+import { Store, latest, prune } from './agent/store.js';
 
 // 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
 const TOOL_GLYPH = {
@@ -70,6 +71,28 @@ export async function chatLoop(opts = {}) {
     effort: opts.effort ?? 'save',
     maxSteps: opts.maxSteps ?? 24,
   });
+
+  // ── 대화 이어하기 ─────────────────────────────────────────────────────
+  // 껐다 켜도 이어지도록, 메시지가 오갈 때마다 .deel/sessions/ 에 바로 적는다.
+  let store = null;
+  if (opts.sessionId || opts.continue) {
+    const target = opts.sessionId ?? latest(root)?.id;
+    if (!target) {
+      say('');
+      say(`  ${c.gray('이어할 대화가 없습니다. 새로 시작합니다.')}`);
+    } else {
+      store = new Store(root, target);
+      const { messages } = store.load();
+      if (messages.length) {
+        session.messages = messages;
+        say('');
+        say(`  ${mark.ok} ${c.bold(target)} ${c.gray(`— 메시지 ${messages.length}개를 이어 받았습니다.`)}`);
+      }
+    }
+  }
+  if (!store) store = new Store(root);
+  store.begin({ model: conn.model, base: conn.base, root });
+  try { prune(root); } catch {}
 
   // 이 PC 에 있는 스킬·명령·플러그인을 찾아 붙인다. 품고 다니지 않는다.
   const found = discover(root);
@@ -167,6 +190,13 @@ export async function chatLoop(opts = {}) {
     say('');
     const started = Date.now();
     const before = { in: session.usage.in, out: session.usage.out };
+
+    // 어디까지 적었는지. 도중에 죽어도 여기까지는 남아 있게 자주 흘려 보낸다.
+    let saved = session.messages.length;
+    const flush = () => {
+      for (const m of session.messages.slice(saved)) store.append(m);
+      saved = session.messages.length;
+    };
     let tools = 0;
     let thinkChars = 0;
     let streamed = false;
@@ -218,6 +248,7 @@ export async function chatLoop(opts = {}) {
           case 'tool':
             tools++;
             say(`    ${toolResultLine(ev.result, ev.ms ?? 0)}`);
+            flush();   // 도구가 하나 끝날 때마다 적어 둔다
             break;
 
           case 'trimmed':
@@ -236,6 +267,9 @@ export async function chatLoop(opts = {}) {
                 `${c.gray(ev.before.toLocaleString())} ${c.gray('→')} ${c.white(ev.after.toLocaleString())} ${c.gray('토큰')} ` +
                 `${c.green(`(${Math.round((줄인 / Math.max(1, ev.before)) * 100)}% 줄어듦)`)}`);
             if (ev.fallback) say(`     ${c.yellow('요약을 못 받아 그냥 줄였습니다.')}`);
+            // 접히면 이력이 통째로 바뀐다. 덧붙이기로는 못 맞추니 새로 적는다.
+            store.replace(session.messages, `압축 — ${ev.folded}개를 요약으로`);
+            saved = session.messages.length;
             break;
           }
 
@@ -266,6 +300,7 @@ export async function chatLoop(opts = {}) {
       say('');
       say(`  ${c.red('✗')} ${err.message}`);
     }
+    flush();   // 오류로 끝났어도 여기까지는 남긴다
 
     // ── 꼬리말 — 이번 턴만의 숫자 ────────────────────────────────────────
     const secs = ((Date.now() - started) / 1000).toFixed(1);

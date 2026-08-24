@@ -121,6 +121,17 @@ for (const f of SRC) {
 }
 check('자물쇠를 건너뛰는 fetch 없음', 직접fetch.length === 0, 직접fetch.join(', '));
 
+// 연결을 바꾸는 자리는 자물쇠도 같이 옮겨야 한다.
+// 한 번 빠뜨렸다 — /model 로 갈아탄 뒤 옛 주소가 열린 채 새 주소가 막혔다.
+const 갈아타는곳 = ['src/commands.js', 'src/repl.js', 'src/setup.js'];
+const 안옮김 = [];
+for (const f of 갈아타는곳) {
+  const text = readFileSync(join(repo, f), 'utf8');
+  const 바꾼다 = /session\.conn,|conn\.base\s*=|Object\.assign\(session\.conn/.test(text);
+  if (바꾼다 && !/allowEndpoint\s*\(/.test(text)) 안옮김.push(f);
+}
+check('연결을 바꾸면 자물쇠도 옮김', 안옮김.length === 0, 안옮김.join(', '));
+
 // ── 8. 몰래 보내는 코드가 없나 ──────────────────────────────────────────
 const 의심 = [];
 for (const f of SRC) {

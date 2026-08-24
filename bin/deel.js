@@ -6,6 +6,7 @@ import { runSetup, runDiagnose, showStatus, banner } from '../src/setup.js';
 import { chatLoop } from '../src/repl.js';
 import { packSelf, audit, reviewSheet } from '../src/pack/selfpack.js';
 import { runScan } from '../src/backend/scanui.js';
+import { runSessions } from '../src/agent/sessionui.js';
 
 const MIN_NODE = 20;
 
@@ -61,6 +62,7 @@ function help() {
   say('');
   say(`    ${c.cyan('deel')}                        대화 시작 (이 폴더에서)`);
   say(`    ${c.cyan('deel scan')}                   이 PC 에 떠 있는 로컬 서버 전부 찾기`);
+  say(`    ${c.cyan('deel sessions')}               이 폴더에 남아 있는 대화 목록`);
   say(`    ${c.cyan('deel setup')}                  연결 설정 (주소·키·모델)`);
   say(`    ${c.cyan('deel status')}                 연결 상태 보기`);
   say(`    ${c.cyan('deel diagnose')}               저장된 연결로 진단 다시 돌리기`);
@@ -86,6 +88,8 @@ function help() {
   say(`    ${c.gray('--think <수준>')}     off / low / medium(기본) / high / max`);
   say(`    ${c.gray('--effort <배분>')}    even(균일) / save(절약, 기본) / deep(깊게)`);
   say(`    ${c.gray('--offline')}          이 컴퓨터 밖으로는 아무것도 안 보냄 (자물쇠)`);
+  say(`    ${c.gray('--continue')}         이 폴더에서 가장 최근 대화 이어하기`);
+  say(`    ${c.gray('--resume <id>')}      골라서 이어하기 (deel sessions 로 id 확인)`);
   say('');
   say(`  ${c.bold('진단 직접 지정')} ${c.gray('— 설정을 남기지 않고 확인만 할 때')}`);
   say('');
@@ -118,6 +122,8 @@ async function main() {
         think: flags.think ? String(flags.think) : undefined,
         effort: flags.effort ? String(flags.effort) : undefined,
         offline: flags.offline === true || flags.offline === 'true',
+        continue: flags.continue === true || flags.c === true,
+        sessionId: typeof flags.resume === 'string' ? flags.resume : (flags.resume === true ? null : undefined),
       });
     case 'status':
       return showStatus();
@@ -132,6 +138,9 @@ async function main() {
       return runAudit();
     case 'scan':
       return runScan(flags);
+    case 'sessions':
+    case 'ls':
+      return runSessions(flags);
     default:
       say('');
       say(`  ${c.red('모르는 명령')} ${c.bold(cmd)}`);

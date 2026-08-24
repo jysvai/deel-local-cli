@@ -3,6 +3,7 @@ import { writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { c, say, rule, pad, bar, mark, width, clip } from './ui/ansi.js';
 import { compact } from './agent/compact.js';
+import { allowEndpoint } from './safety/network.js';
 import { pick } from './ui/prompt.js';
 import { load, save, resolveKey } from './config.js';
 import { TOOLS } from './tools/index.js';
@@ -375,10 +376,12 @@ function help() {
 
 // 추론 강도는 값 하나가 아니라 '단계별 배분' 이다. 그 배분을 눈에 보이게 그린다.
 function showThink(session) {
-  const t = effortTable(session.think, session.effort);
+  const b = session.breakdown();
+  const t = effortTable(session.think, session.effort, { ctx: b.total, used: b.used, max: session.conn.maxTokens ?? null });
   say('');
   rule('추론 강도', 70);
   say(`  기준 ${c.bold(session.think)}   배분 ${c.bold(t.name)}   ${c.gray(t.desc)}`);
+  say(`  ${c.gray('상한은 이 모델 기준으로 계산합니다 — 컨텍스트')} ${c.white(t.ctx.toLocaleString())}${c.gray(', 지금 찬 양')} ${c.white(t.used.toLocaleString())}`);
   say('');
   say(`  ${c.gray(pad('단계', 12) + pad('강도', 10) + pad('출력상한', 10) + '언제')}`);
   for (const r of t.rows) {
@@ -437,6 +440,9 @@ async function switchModel(session, ctx) {
     kind: p.kind, base: p.baseUrl, auth: p.auth, key: resolveKey(p), model: p.model,
     ctx: p.ctx, streaming: p.streaming, tools: p.tools, json: p.json, think: p.think,
   });
+  // 자물쇠도 같이 옮긴다. 이걸 빼먹으면 옛 주소가 열린 채로 남고 새 주소는 막혀
+  // 다음 한마디에서 바로 "허용되지 않은 주소" 가 난다.
+  allowEndpoint(p.baseUrl);
   say(`  ${mark.ok} ${c.bold(p.name)} ${c.gray(p.model)} 로 바꿨습니다. 대화는 이어집니다.`);
   say('');
 }
