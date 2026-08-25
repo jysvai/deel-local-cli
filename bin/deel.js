@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // deel 진입점. 외부 의존성 없음 — Node 표준 기능만 씁니다.
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { c, say, mark, rule } from '../src/ui/ansi.js';
 import { runSetup, runDiagnose, showStatus, banner } from '../src/setup.js';
 import { chatLoop } from '../src/repl.js';
@@ -12,6 +13,23 @@ import { parseSize } from '../src/backend/ctxsize.js';
 import { runSessions } from '../src/agent/sessionui.js';
 
 const MIN_NODE = 20;
+
+/**
+ * 지금 판 번호.
+ *
+ * package.json 에서 읽는다. 코드에 따로 적어 두면 올릴 때 한쪽만 고치는 날이
+ * 반드시 온다 — 그러면 화면이 거짓말을 하기 시작한다. 못 읽으면 못 읽었다고
+ * 말한다. 모르는 값을 그럴듯한 숫자로 지어내지 않는다.
+ */
+function 판번호() {
+  const 뒤 = `(Node ${process.versions.node} · ${process.platform})`;
+  try {
+    const j = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    return `  deel ${j.version}  ${뒤}`;
+  } catch {
+    return `  deel (판 번호를 못 읽었습니다)  ${뒤}`;
+  }
+}
 
 // 사내 반입용 묶음 만들기.
 function runPack(flags) {
@@ -47,7 +65,7 @@ function runAudit() {
 // 실제로 이랬다 — deel run --json "검사 돌려줘" 를 쳤더니 --json 이 뒤의 말을
 // 통째로 삼켰다. 시킬 말이 사라졌으니 "무엇을 시킬지 적어 주세요" 가 떴는데,
 // 화면만 보면 왜 그런지 알 길이 없다. 깃발을 앞에 두는 것은 아주 흔한 습관이다.
-const BOOL = new Set(['help', 'offline', 'continue', 'json', 'quiet', 'yes', 'no-tui', 'tui']);
+const BOOL = new Set(['help', 'version', 'offline', 'continue', 'json', 'quiet', 'yes', 'no-tui', 'tui']);
 
 function parse(argv) {
   const flags = {};
@@ -55,6 +73,8 @@ function parse(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-h') { flags.help = true; continue; }
+    // -v 도 받는다. 판 번호를 묻는 방법이 도구마다 달라서 셋 다 되게 둔다.
+    if (a === '-v' || a === '-V') { flags.version = true; continue; }
     if (a.startsWith('--')) {
       const [k, inline] = a.slice(2).split('=');
       if (inline !== undefined) flags[k] = inline;
@@ -77,6 +97,7 @@ function help() {
   say(`    ${c.cyan('deel setup')}                  연결 설정 (주소·키·모델)`);
   say(`    ${c.cyan('deel status')}                 연결 상태 보기`);
   say(`    ${c.cyan('deel diagnose')}               저장된 연결로 진단 다시 돌리기`);
+  say(`    ${c.cyan('deel --version')}              판 번호 ${c.gray('(-v 도 됩니다)')}`);
   say('');
   say(`  ${c.bold('여러 로컬을 같이 쓸 때')}`);
   say('');
@@ -139,6 +160,17 @@ async function main() {
   }
 
   const { cmd, args, flags } = parse(process.argv.slice(2));
+
+  /*
+   * 판 번호.
+   *
+   * 연결이 없어도 답해야 한다. `deel --version` 은 "이게 깔려 있나, 무슨 판인가"
+   * 를 묻는 것이지 일을 시키는 것이 아닌데, 전에는 설정이 없다는 말이 먼저 나와서
+   * 깔린 것 자체가 아닌 줄 알았다. 사내에 반입한 판을 확인할 때 제일 먼저 치는
+   * 명령이기도 하다.
+   */
+  if (flags.version || cmd === 'version') { say(판번호()); return 0; }
+
   if (flags.help || cmd === 'help') { help(); return 0; }
 
   switch (cmd) {

@@ -261,6 +261,13 @@ export function contextWarning(session) {
 /**
  * 켤 때 한 번 그리는 머리말 상자 안쪽 줄들.
  */
+/** 머리말 모델 줄에 붙는 급 표시. 못 매기면 아무것도 안 붙는다. */
+function 급머리말(session) {
+  if (typeof session.급 !== 'function') return '';
+  const g = session.급();
+  return c.gray(` · 급 ${g.급}${g.짐작 ? ' 짐작' : ''}`);
+}
+
 export function headerLines(session, found) {
   const conn = session.conn;
   const 능력 = [
@@ -281,7 +288,16 @@ export function headerLines(session, found) {
   const lines = [
     `${c.hcyan(c.bold('deel'))}  ${c.gray(conn.kind === 'ollama' ? 'Ollama 규격' : 'OpenAI 호환 규격')}`,
     '',
-    `${c.gray('모델')}    ${c.white(conn.model)}  ${c.gray('(' + short(conn.ctx) + ' 토큰)')}`,
+    /*
+     * 모델 줄에 급을 같이 적는다.
+     *
+     * 창 크기(토큰)와 급은 다른 축인데, 켤 때 이 둘을 나란히 보지 않으면
+     * 나중에 상태줄의 `◈ 작음?` 이 무슨 뜻인지 알 길이 없다. 여기서 한 번
+     * 같이 읽고 나면 그 다음부터는 글자만 봐도 안다.
+     * 짐작이면 그렇다고 적는다 — 알아낸 사실과 같은 낯으로 내밀면 안 된다.
+     */
+    `${c.gray('모델')}    ${c.white(conn.model)}  ${c.gray('(' + short(conn.ctx) + ' 토큰')}`
+      + `${급머리말(session)}${c.gray(')')}`,
     `${c.gray('보냄')}    ${목적지}  ${c.gray('← 여기 말고는 어디로도 안 갑니다')}`,
     `${c.gray('연결')}    ${능력}`,
     `${c.gray('폴더')}    ${c.white(clip(session.root, 56))}`,

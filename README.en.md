@@ -203,6 +203,85 @@ $ deel scan
 
 Switch with `/model` mid-conversation — **the conversation carries over.**
 
+### It adapts to whatever model is attached
+
+If you move between models, any number tuned for one of them is wrong for all the others.
+So **no number is hardcoded.**
+
+There are two axes. They are easy to confuse, so they have separate commands.
+
+| | What it measures | Command |
+|---|---|---|
+| **Window size** | how much it can hold | `/ctx` |
+| **Model grade** | how much it can do on its own | `/grade` |
+
+They do not move together. A 3B model with a 128k window exists; so does a very good model
+with 32k. Treat them as one axis and you hold one back while overrunning the other.
+
+**Derived from window size** (`src/agent/budget.js`):
+
+| | 8k | 32k | 131k | 655k |
+|---|---|---|---|---|
+| Steps per turn (code) | 16 | 48 | 192 | 200 |
+| `Read` lines | 200 | 384 | 1,536 | 4,000 |
+| `Glob` results | 50 | 192 | 768 | 1,000 |
+| `Outline` lines | 120 | 480 | 1,920 | 2,500 |
+| `WebFetch` chars | 4,000 | 12,800 | 51,200 | 120,000 |
+| Subtask summary | 400 | 1,600 | 4,000 | 4,000 |
+
+**Derived from model grade** (`src/agent/grade.js`):
+
+| | small | medium | large |
+|---|---|---|---|
+| Files per `Write` | 3 | 6 | 12 |
+| Split-writing threshold | 200 lines | 400 lines | 800 lines |
+| Spell out the procedure | yes | yes | **no — give the goal** |
+| Require verification | yes | yes | **yes** (grade-independent) |
+
+The grade is decided like this:
+
+1. **First guess from the name.** `qwen2.5-coder-7b` -> small, `llama-3.3-70b` -> large.
+   Version numbers (`2.5`) and quantisation tags (`q4_k_m`) are not read as sizes.
+   A name that says nothing means **medium**, not small — a corporate gateway is exactly
+   that case, and the models behind one are usually big. Guessing small holds them back.
+2. **Corrected by what actually happened.** Truncated tool arguments, empty answers,
+   failed edits and repeats are counted. A model labelled 70B that truncates every step is
+   dropped to **small**; a 7B that runs ten clean steps is raised one level. The name is a
+   guess; what happened is a fact.
+3. **You win if you say so.** `/grade large`, and `/grade auto` hands it back.
+
+The status line shows `◈ small?`. The question mark means **still a guess** — a guess is
+not presented with the same face as something measured.
+
+The grade only changes **how much hand-holding you get**. Working scope, approval mode,
+undo and the audit log are identical at every grade. There is no "it is a good model, so
+skip verification" — that is exactly how a good model's mistake goes unnoticed.
+
+### Small windows get a smaller fixed share
+
+The system prompt and the tool definitions go out **in full on every request**. Compaction
+(`/compact`) cannot shrink them. Once that share passes half the window there is no room
+left however well you fold, and it looks like "the model suddenly got stupid".
+
+Adding three tools (`Outline`, `Verify`, `Task`) pushed it to **49%** at 8k. Dropping a
+tool would have fixed it — and would have made small models capable of different things,
+which is the thing to avoid. The descriptions were trimmed to the window instead.
+
+| | 8k | 16k | 32k+ |
+|---|---|---|---|
+| Base rules | short form | short form | full |
+| Mode description | short form | short form | full |
+| Tool descriptions | 90 chars | 140 chars | 220 / full |
+| Obvious param descriptions | dropped | kept | kept |
+| **Fixed share** | **2,475 tokens (30%)** | 2,928 (18%) | 4,303 (3%) |
+
+**Tool names and arguments are untouched.** What is possible is identical in every window;
+what disappears is only the argument for *why* to use a tool. Large windows keep it,
+because that argument earns its keep — those two sentences are what make a model call
+`Outline` before `Read`.
+
+A test pins these numbers (`test/compact.test.js`).
+
 ---
 
 ## Slash commands
@@ -214,6 +293,7 @@ Names follow Claude Code / Codex conventions.
 | `/help` | Command list |
 | `/context` | What is consuming the context window |
 | `/ctx [auto\|number]` | Context **length** — re-read it off the model, or set it yourself |
+| `/grade [small\|medium\|large\|auto]` | Model **grade** — how much it does on its own. A different axis from `/ctx` |
 | `/out [number\|auto]` | Cap on a **single reply** — raise it when large files get cut |
 | `/compact` | Summarise and fold older turns |
 | `/clear` | Clear the conversation (keeps link and rules) |
@@ -595,10 +675,95 @@ Names and arguments match Claude Code, so skills written for that convention wor
 | `Recall` | Search **past conversations** — the model digs up "that thing last time" itself |
 | `Remember` | One line that outlives the session — known from the start next time |
 | `TodoWrite` | Checklist — breaks long work into steps and shows progress |
+| `Outline` | See a folder's **skeleton only** — tens of times cheaper than reading it whole |
+| `Verify` | Check that what was built **actually works** |
+| `Task` | Run one chunk of a big job in a **separate context** |
 
-Only **three** tools here are not in Claude Code — `Append`, `Recall`, `Remember`. Each
-tool costs roughly 150 tokens of schema on **every request**, so a test stops you every
-time the list grows (`test/loop.test.js`).
+Six tools here are not in Claude Code — `Append`, `Recall`, `Remember`, `Outline`,
+`Verify`, `Task`. Each tool costs 150-400 tokens of schema on **every request**, so a
+test stops you every time the list grows (`test/loop.test.js`). The last three earned
+their cost; here is why.
+
+### Seeing a project's shape cheaply — `Outline`
+
+There used to be only two ways to understand someone else's code. `Glob` gives you paths;
+`Read` pulls a whole file into the window. **The middle was missing.**
+
+So the model started editing without knowing what lived where, and re-created functions
+that already existed somewhere else. It had not seen them — which is different from not
+knowing.
+
+```
+❉ Outline(src/ui)   12 files · 122 places
+
+src/ui/screen.js  (304 lines)
+     46  fn     상자쓸까
+     65  class  LineScreen
+     92  method 줄
+    198  class  BoxScreen
+```
+
+Reading that folder whole costs **25,612 tokens**; `Outline` costs **857** — 30x cheaper.
+An 8k model can see the shape of a whole project.
+
+It reads js/ts, py, java/kotlin, go, rust, c#, md, html, css, sh and json. Regex, not a
+parser (zero dependencies). So it **says what it could not read** — dropping those
+silently makes the model believe the file does not exist, and rebuild config that is
+already there.
+
+### Checking what was built — `Verify`
+
+The end of a turn used to say:
+
+```
+  ✓ index.html · 410 lines · 18.2KB
+```
+
+That proves the file **exists**, not that it **works**. An unclosed `<div>`, a
+`src="app.js"` pointing at nothing, a JS file one bracket short — all green.
+
+What can be run gets run (`node --check`, `py_compile`); what cannot gets read (HTML tag
+pairing, missing references, CSS braces, JSON).
+
+```
+⏺ Verify   1 broken · 3 checked
+```
+
+And the part that matters most — **what could not be checked is reported as such.**
+
+Arbitrary commands are **not** run here. That path has to be `Bash` alone: the approval
+gate and the safety checks live only there, so running commands from here would break the
+strict-mode promise in exactly this one spot. It tells you `npm test` exists instead.
+
+### Splitting big work off — `Task`
+
+Building eight files in one window means all eight files pile up in that window. On a 32k
+model it fills around the third or fourth, and once it fills, earlier turns get folded
+away. From then on the model has forgotten what it was building — **no error appears, the
+result just gets worse.** That was the root of "build me a dashboard" ending as a plan.
+
+`Task` runs that chunk in a **fresh conversation** and returns only a summary.
+
+```
+⌥ subtask  build the page skeleton   separate conversation · max 8 steps
+ │  ◆ Write(index.html +1)  2 files · 24 lines
+✓ subtask  build the page skeleton   done · 2 files · 2 steps
+```
+
+Peak conversation size while building the same four files (system prompt excluded):
+
+| | Peak |
+|---|---|
+| All in one window | 4,181 chars |
+| Split with `Task` | **2,113 chars** |
+
+The left column keeps growing with each file; the right one does not.
+
+**Every guard still applies.** A subtask runs inside the same working folder, follows the
+same approval mode, is undone **together with** its parent by one `/undo`, and lands in
+the audit log. There is no path for a subtask to edit files under a read-only mode
+(architect, plan, ask) — that is blocked both at the mode level and in the tool list.
+Nesting stops at two levels.
 
 ### Finding past conversations, and remembering decisions
 

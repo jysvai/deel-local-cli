@@ -221,6 +221,26 @@ trace('1-도움말');
 
   const h3 = await 띄우기(['-h']);
   check('-h 도 같다', h3.code === 0 && /사용법/.test(h3.out), `code=${h3.code}`);
+
+  /*
+   * 판 번호는 **연결이 없어도** 나와야 한다.
+   *
+   * `deel --version` 은 "이게 깔려 있나, 무슨 판인가" 를 묻는 것이지 일을 시키는
+   * 것이 아니다. 전에는 설정이 없다는 말이 먼저 나와서, 깔린 것 자체가 아닌 줄
+   * 알았다. 사내에 반입한 판을 확인할 때 제일 먼저 치는 명령이라 그러면 안 된다.
+   * (이 검사는 설정이 빈 임시 폴더에서 돈다 — 그래서 이 자리가 실제로 재진다.)
+   */
+  const pkg = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'));
+  for (const 꼴 of [['--version'], ['-v'], ['version']]) {
+    const v = await 띄우기(꼴);
+    check(`${꼴[0]} 가 판 번호를 말한다`,
+      v.code === 0 && v.out.includes(pkg.version), `code=${v.code} · ${v.out.trim().slice(0, 40)}`);
+  }
+  const v1 = await 띄우기(['--version']);
+  check('--version 에 Node 판과 OS 도 같이 적는다', /Node \d+\./.test(v1.out) && /win32|darwin|linux/.test(v1.out),
+    v1.out.trim());
+  check('--version 이 연결 없다는 말을 먼저 내지 않는다', !/저장된 연결이 없습니다/.test(v1.out),
+    v1.out.trim().slice(0, 60));
 }
 
 {

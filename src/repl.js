@@ -40,14 +40,23 @@ const TOOL_GLYPH = {
   Skill: c.hmagenta('✦'),
   WebFetch: c.hblue('◍'),
   TodoWrite: c.hyellow('☰'),
+  Outline: c.hmagenta('❉'),   // 뼈대 — 찾기(❋❊)와 한 무리라 비슷한 글자로
+  Verify: c.hgreen('✓'),      // 확인 — 결과가 초록·빨강으로 갈리는 유일한 도구
+  Task: c.hmagenta('⌥'),      // 하위 작업 — 여닫는 줄과 같은 글자를 쓴다
 };
 
 // 도구 호출을 한 줄로 요약 — Read(src/a.js) 처럼.
 function toolLabel(name, args) {
   const a = args ?? {};
   const first =
-    a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ??
+    a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.목적 ??
     (a.command ? String(a.command).replace(/\s+/g, ' ').slice(0, 52) : null) ??
+    // 한 번에 여러 파일을 쓸 때. 빈 괄호를 띄우면 화면만 보고는 무엇을
+    // 만들었는지 알 수 없다 — 첫 파일과 개수를 적는다.
+    (Array.isArray(a.files) && a.files.length
+      ? `${a.files[0]?.file_path ?? '?'}${a.files.length > 1 ? ` 외 ${a.files.length - 1}개` : ''}`
+      : null) ??
+    (Array.isArray(a.paths) && a.paths.length ? `${a.paths.length}개` : null) ??
     // 할 일 목록은 보여줄 경로가 없다. 빈 괄호를 띄우느니 개수를 적는다.
     (Array.isArray(a.todos) ? `${a.todos.length}건` : null) ?? '';
   const g = TOOL_GLYPH[name] ?? c.cyan('⏺');
@@ -58,6 +67,23 @@ function toolLabel(name, args) {
 function toolResultLine(result, ms) {
   const t = ms > 700 ? c.gray(`  ${(ms / 1000).toFixed(1)}초`) : '';
   if (result?.error) return `${c.red('└')} ${c.red(clip(String(result.error).split('\n')[0], 80))}${t}`;
+
+  /*
+   * 확인 결과는 색으로 갈라 준다.
+   *
+   * `확인 3개 · 못 확인 2개` 를 회색 한 줄로 적으면 탈이 났는지가 눈에 안 들어온다.
+   * 결과가 초록/빨강으로 갈리는 도구는 이것뿐이라 여기서만 따로 그린다 —
+   * 그 갈림이 이 도구를 넣은 이유이기도 하다.
+   */
+  if (typeof result?.탈 === 'number') {
+    const 조각 = [];
+    if (result.탈) 조각.push(c.red(`탈 ${result.탈}개`));
+    if (result.확인됨) 조각.push(c.green(`확인 ${result.확인됨}개`));
+    if (result.못확인) 조각.push(c.yellow(`못 확인 ${result.못확인}개`));
+    return `${result.탈 ? c.red('└') : c.gray('└')} `
+      + `${조각.join(c.gray(' · ')) || c.gray('확인할 것이 없었습니다')}${t}`;
+  }
+
   // 고친 자리는 몇 줄이 늘고 줄었는지를 요약 옆에 붙인다.
   const 셈 = result?.diff ? ` ${shortStat(result.diff)}` : '';
   return `${c.gray('└')} ${c.gray(clip(result?.summary ?? '완료', 80))}${셈}${t}`;
@@ -812,7 +838,7 @@ export async function chatLoop(opts = {}) {
           case 'task_start':
             clearThinking();
             if (streamed) { say(''); streamed = false; }
-            화면.일바꿈('하위');
+            화면.일바꿈('하위', clip(ev.목적, 24));
             say('');
             say(`  ${c.hmagenta('⌥')} ${c.bold('하위 작업')} ${c.white(clip(ev.목적, 60))}`
               + ` ${c.gray(`· ${getWork(ev.모드).name} · 최대 ${ev.steps}걸음`)}`);

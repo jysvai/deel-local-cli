@@ -56,8 +56,14 @@ async function 표준입력읽기() {
 // 도구 한 줄 요약. 화면 그림이 아니라 로그에 남을 글이라 색을 아낀다.
 function 도구줄(name, args) {
   const a = args ?? {};
-  const 첫 = a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ??
+  const 첫 = a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.목적 ??
     (a.command ? String(a.command).replace(/\s+/g, ' ') : null) ??
+    // 한 번에 여러 파일을 쓴 경우. 기록에 빈 괄호만 남으면 나중에 이 줄로는
+    // 무엇을 만들었는지 알 수 없다 — `deel run` 의 출력은 곧 근거로 쓰인다.
+    (Array.isArray(a.files) && a.files.length
+      ? `${a.files[0]?.file_path ?? '?'}${a.files.length > 1 ? ` 외 ${a.files.length - 1}개` : ''}`
+      : null) ??
+    (Array.isArray(a.paths) && a.paths.length ? `${a.paths.length}개` : null) ??
     (Array.isArray(a.todos) ? `${a.todos.length}건` : '');
   const 안 = clip(String(첫 ?? ''), 48);
   return `${name}${안 ? `(${안})` : ''}`;
@@ -250,9 +256,20 @@ export async function runOnce(opts = {}) {
 
         case 'tool': {
           tools++;
+          /*
+           * 실패는 실패로 보여야 한다.
+           *
+           * 전에는 `error` 만 빨갛게 칠했다. 그런데 탈이 났는데 error 는 없는
+           * 도구가 있다 — Bash 는 종료코드 3 을, Verify 는 `탈 2개` 를 요약에
+           * 담아 돌려준다. 그것들이 회색으로 찍히면, 나중에 이 기록을 읽는
+           * 사람 눈에는 성공과 구별되지 않는다. `deel run` 의 출력은 곧
+           * 근거로 쓰이는 물건이라 그 구별이 사라지면 안 된다.
+           */
           const 결과 = ev.result?.error
             ? c.red(clip(String(ev.result.error).split('\n')[0], 70))
-            : c.gray(clip(ev.result?.summary ?? '완료', 70));
+            : ev.result?.failed
+              ? c.yellow(clip(ev.result?.summary ?? '실패', 70))
+              : c.gray(clip(ev.result?.summary ?? '완료', 70));
           // 하위 작업 안쪽이면 한 단 들여 그린다. 안 그러면 하위가 만진 파일이
           // 부모가 만진 것과 똑같이 찍혀서, 기록으로 읽을 때 구분이 안 된다.
           곁(`${안쪽(ev)}  ${c.cyan('⏺')} ${c.bold(도구줄(ev.name, ev.args))}  ${결과}`);
