@@ -23,7 +23,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
  │ This PC  337 skills · 127 commands · 42 plugins              │
  ╰──────────────────────────────────────────────────────────────╯
 
- ▏myproject ▏qwen2.5-coder:7b ▏▰▰▱▱▱▱▱▱▱▱ 22% 28k/128k ▏◇ medium·save ▏auto
+ ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱▱▱ 22% 28k/128k ▏ ◎ 종합 · ◇ medium·절약 · auto
  ❯ unify the logging style
 
   ❊ Grep(console.log)
@@ -33,7 +33,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
   ◈ Edit(src/runner.js)
     └ 1 spot
 
-  Unified log calls to the logger format. One change in runner.js.
+  ▌ Unified log calls to the logger format. One change in runner.js.
 
   ── 4.2s · 3 tools · ↑3,900 ↓180
 ```
@@ -211,16 +211,20 @@ Names follow Claude Code / Codex conventions.
 | `/help` | Command list |
 | `/context` | What is consuming the context window |
 | `/ctx [auto\|number]` | Context **length** — re-read it off the model, or set it yourself |
+| `/out [number\|auto]` | Cap on a **single reply** — raise it when large files get cut |
 | `/compact` | Summarise and fold older turns |
 | `/clear` | Clear the conversation (keeps link and rules) |
 | `/model` | Switch connection / model |
-| `/think <level\|profile>` | `off·low·medium·high·max` or `even·save·deep` |
+| `/think <level>` | Reasoning level (`off·low·medium·high·max`) |
+| `/think 배분 <profile>` | Per-stage profile (`even·save·deep`) |
+| `/think 자세히` | Stage table — which stage runs at which level and cap |
 | `/mode <mode>` | Approval policy — how much it asks (`auto` · `confirm` · `strict`) |
 | `/work [mode]` | Work mode — what kind of work you are doing |
 | `/auto` | Hand the wheel back — it picks the mode from what you type |
 | `/code` `/plan` `/architect` `/debug` `/ask` `/orchestrator` | Switch work mode directly (pins it) |
 | `/level [level]` | How much to show (`쉬움` simple · `개발자` developer) |
 | `/undo [turns]` | Revert file changes |
+| `/diff [file]` | Files changed this session, and the changed lines |
 | `/tools` | Available tools |
 | `/skills [query\|all\|off]` | Browse, search, load skills |
 | `/plugin [install\|remove\|pack]` | Manage plugins |
@@ -236,6 +240,43 @@ Discovered plugin commands are invoked as `/<plugin>:<name>`, with `$ARGUMENTS` 
 `/scan` and `/sessions` work without leaving the session. If you just started another local
 server or loaded a different model, `/scan save` then `/model` switches over without losing
 the conversation.
+
+### Attaching a file with `@`
+
+Write `@` followed by a path and that file is sent along with your message.
+
+```
+❯ @src/a.js why is this slow?
+  ◧ attached src/a.js
+```
+
+That removes **one round-trip** — the one where the model has to call `Read` itself. Local
+models are weak at tool calling and that round-trip often misfires: it calls the wrong path,
+or skips the call and invents the contents. You already know which file it is; there is no
+reason to make the model go looking.
+
+The hard part is not attaching. It is **not mistaking something else for a file.**
+Things starting with `@` are everywhere.
+
+| What you type | What happens |
+|---|---|
+| `@src/a.js` | Attached — only when the path actually exists |
+| `yunseok@gmail.com` | Not a mention at all. A letter before the `@` means it is an address |
+| `@media` · `@dataclass` · `@scope/pkg` | Left alone — no such path exists |
+| `@src/` (a directory) | A listing of what is inside is attached |
+| `@"draft report.txt"` | Quote names containing spaces |
+| Outside the working scope | Refused, and the refusal is printed |
+| A CP949 corporate document | Decoded by content and attached correctly |
+
+There is one rule: **attach only when the path really exists.** Otherwise the text is left
+exactly as typed, silently — it probably wasn't a mention.
+
+Attachments are capped at **25% of the context length** (20,000 tokens at most). Anything larger is attached from the
+top only, and a truncated file is **not marked as already read.** Marking it read would let the
+model edit a part it never saw. Only a fully attached file lets it skip `Read`.
+
+Every attachment is announced on screen. Text the user did not type is now in the conversation;
+not showing it would also leave them wondering where the context went.
 
 ### Interrupting
 
@@ -359,6 +400,7 @@ Names and arguments match Claude Code, so skills written for that convention wor
 |---|---|
 | `Read` | Read a file (line numbers, `offset`/`limit`, **Excel as CSV**) |
 | `Write` | Write / overwrite a file |
+| `Append` | Append to the end of a file — **how large files get written in pieces** |
 | `Edit` | Replace an exact string (`replace_all` supported) |
 | `Glob` | Find files by name pattern |
 | `Grep` | Regex search file contents |
@@ -366,6 +408,33 @@ Names and arguments match Claude Code, so skills written for that convention wor
 | `Skill` | Expand a skill body (shown to the model only when skills exist) |
 | `WebFetch` | Read a web page (read-only; hidden under `--offline`) |
 | `TodoWrite` | Checklist — breaks long work into steps and shows progress |
+
+`Append` is the only tool here that Claude Code does not have. There is a reason.
+
+### Large files are written in pieces — `Append`
+
+A model with a 4k output cap still has to be able to write a 2,000-line file, eight pieces at
+a time. Stitching with `Edit` does not work in practice — HTML repeats anchors like `</div>`,
+so the match comes back as "found in several places", and a longer anchor eats the tokens that
+should have gone into the body.
+
+`Write` to create, `Append` to continue. Encoding follows `Write` (CP949 for corporate
+documents, the BOM on a `.csv` is preserved). The undo snapshot is taken **only on the first
+`Append`** — eight appends must not leave eight copies in the history, or there is no single
+point to revert to.
+
+```
+  ⏺ Write(dashboard.html)
+    └ ⚠ wrote only as far as it arrived — 632 lines
+  ↻ the reply hit the cap — retrying with 9,984 → 16,384
+  ⏺ Append(dashboard.html)
+    └ +567 lines · 1,199 total
+
+  ✓ dashboard.html · 1,199 lines · 97.7KB
+```
+
+That last line matters. If the file does not exist and the model says "created it", you would
+believe it. **The real file is measured at the end of the turn.**
 
 ### Checklists
 
@@ -417,6 +486,65 @@ Measured with `npm run bench`:
 
 On failure it points at the closest line in the file.
 
+### It shows you what it changed
+
+`auto` mode edits without asking. That is the speed of this tool — but if all that reaches the
+screen is `1 spot`, you move on without knowing what happened. Undo is the safety net, and
+**you cannot decide whether to undo something you never saw.** So every `Edit` and `Write` is
+followed by the changed lines themselves.
+
+```
+  ◈ Edit(src/runner.js)
+    └ 1 spot +1 −2
+
+      11 const id = job.id;
+    -    console.log("start: " + id);
+    -    console.log("  opts " + JSON.stringify(opts));
+    + 12 logger.info('start', { id, opts });
+      13 return run(job);
+```
+
+The `+1 −2` next to the summary is how many lines were added and removed.
+
+- **Removed lines carry no line number.** They no longer exist in the file. Printing the old
+  number put it directly under a context line's new number — two different files' numbering in
+  one column. Line 8 really did appear twice on screen.
+- If only the line endings changed (CRLF/LF), it says so. Otherwise every visually identical
+  line shows as changed and the real edit is impossible to find.
+- Large files are compared after trimming the identical head and tail. If it is still too big,
+  exact matching is abandoned for "this whole block changed" — a rough answer now beats an
+  exact one later.
+
+How many lines are shown depends on the level. Forty lines at someone's first launch means none get read.
+
+| | Simple | Developer |
+|---|---|---|
+| After a tool call | 14 lines | 40 lines |
+| `/diff <file>` | 60 lines | 200 lines |
+
+### `/diff` — everything changed this session
+
+Those lines scroll away. `/diff` collects every file touched this session onto one page.
+
+```
+$ /diff
+
+── files changed this session ─────────────────────────────
+  src/runner.js                     +12     −7   3×
+  src/logger.js                     +40     −0
+  ──────────────────────────────────────────────────────────
+  2 files                            +52     −7
+
+  /diff <file> for detail, /undo to revert
+```
+
+`/diff <file>` compares **the state at the start of the session against now.** Even after
+three edits, what you want to know is "what is different from before I asked", not what the
+last edit did. That original state comes from the earliest undo snapshot.
+
+`/diff` is **in the simple level's command list.** As long as `auto` edits without asking,
+a beginner needs a way to see what changed more than anyone.
+
 ---
 
 ## Korean text and Excel
@@ -452,6 +580,12 @@ Newly created files are UTF-8.
 
 Command output is handled the same way. A Windows console is not UTF-8, so taking `Bash`
 output as utf8 garbles non-ASCII text. It is collected as bytes and decoded afterwards.
+
+**Undo snapshots are stored as bytes too.** They used to be stored as UTF-8 text, so undoing
+a CP949 file brought back `가나다` (bytes `b0a1 b3aa b4d9`) as six U+FFFD characters — **the
+safety net itself destroyed the original bytes.** Now every snapshot is round-tripped through
+UTF-8 first; anything that does not come back identical is stored as base64 and restored
+byte-exact.
 
 ### Excel — read as CSV
 
@@ -539,15 +673,14 @@ with a licence table — ready to hand to a security reviewer.
 One answer means several model calls, and **each needs a different amount of thinking.**
 All-high is slow; all-low wanders off.
 
+The default is **one line**. What you want to know is how hard it is thinking right now,
+not a stage table.
+
 ```
 $ /think
 
-  Base medium   Profile save   Hard on the first decision, light while continuing
-
-  Stage         Effort    Cap     When
-  first call    · medium   4,096  deciding what to do
-  continuing    ↓ low      2,048  reading a tool result, picking the next step
-  stuck         ↑ high     4,096  the previous tool errored
+  추론 강도  medium   (첫 판단 medium · 이어가기 low · 막혔을 때 high)
+  더 세게 /think high   더 빠르게 /think low
 ```
 
 | Profile | Character |
@@ -555,6 +688,31 @@ $ /think
 | `even` | Same effort everywhere — predictable, slower |
 | `save` (default) | Hard on the first decision only |
 | `deep` | Everything one notch up — for hard work |
+
+Set the profile with `/think 배분 절약`. **Level and profile are different axes, so the
+commands were split** — `/think high` and `/think save` used to set different things under
+one name, which made the screen unreadable.
+
+The stage table moved to `/think 자세히` (the default at developer level).
+
+```
+$ /think 자세히
+
+  추론 강도  medium   (첫 판단 medium · 이어가기 low · 막혔을 때 high)
+  배분      절약   첫 판단만 세게, 이어가기는 얕게 — 대개 이게 낫습니다
+
+  단계        강도      출력상한  언제
+  첫 판단     · medium      15,549  무엇을 할지 정하는 자리
+  이어가기    ↓ low         13,605  도구 결과를 읽고 다음 한 수
+  막혔을 때   ↑ high        16,384  직전 도구가 오류를 냄
+
+  출력 상한은 16,384 (모르는 값이라 기본값) 안에서 나눕니다 — /out
+  컨텍스트 40,960 · 지금 찬 양 2,087
+```
+
+That second-to-last line exists for a reason: **when all three caps are equal, it is the
+only thing that says whether that is correct.** A low known cap makes them equal, and that
+is fine. For a while all three read `16,384` always — which meant the table said nothing.
 
 ### Context length is read off the model
 
@@ -595,29 +753,99 @@ the **loaded length is what deel uses**, and the maximum is reported separately.
 | `/ctx` | Current length and remaining room |
 | `/ctx auto` | Ask the server again and match the model |
 | `/ctx 655360` | Set it yourself (`640k`, `128k`, `1m` also work) |
-| `/ctx out 32k` | Cap on a **single reply** — a different axis from context |
+| `/ctx 자세히` | Which endpoints were probed and what each returned — how to see why a lookup failed |
 | `deel --ctx 655360` | Start at this value (skips the lookup) |
 
 **`k` means 1024 here.** Context lengths are all powers of two, so that is the only base
 that lines up: 655,360 is `640k`, not `655k`; 131,072 is `128k`, not `131k`. The display and
 `/ctx` use the same unit, so typing back what you see gives you the same number.
 
+### Reply length cap — `/out`
+
+Context (how much can be held) and the **output cap** (how much can come back at once) are
+different numbers. Treating them as one makes it impossible to understand why a large file
+never gets written — the context is roomy while the reply is being cut.
+
+| Command | What it does |
+|---|---|
+| `/out` | Current cap and **where it came from** (set by you / discovered / default) |
+| `/out 32k` | Set it yourself (`k` is 1024). Saved to the profile |
+| `/out auto` | Drop your value and go back to the discovered one, or the default |
+| `deel --max-tokens 65536` | Start at this value |
+
+The old name `/ctx out 32k` still works.
+
 **Caps are not fixed numbers.** They are computed from the model's context window and how
 much of it is currently used — the profile decides what share of the remaining room a stage gets.
 
-| Model | First call | Continuing | Stuck |
-|---|---|---|---|
-| 2k local | 554 | 512 | 554 |
-| 8k local | 2,007 | 1,003 | 2,007 |
-| 40k (qwen3) | 11,688 | 5,844 | 11,688 |
-| 128k gateway | 16,384 | 16,384 | 16,384 |
-| 128k, 80% full | 7,680 | 3,840 | 7,680 |
+| Model | First call | Continuing | Stuck | Retry after truncation |
+|---|---|---|---|---|
+| 2k local | 819 | 716 | 921 | 1,638 |
+| 8k local | 3,276 | 2,867 | 3,686 | 6,553 |
+| 40k (qwen3) | 16,384 | 14,336 | 16,384 | 16,384 |
+| 128k gateway | 16,384 | 16,384 | 16,384 | 16,384 |
+| 128k, 80% full | 10,485 | 9,174 | 11,796 | 16,384 |
+| 640k with `/out 65536` | 65,536 | 65,536 | 65,536 | 65,536 |
 
 Caps shrink as the context fills. Handing a 4k model a 4,096-token cap would leave no room for input.
-Raise the ceiling with `maxTokens` in the profile if you need more.
 
-If a saved cap truncates a reply, **that step alone is retried with the cap lifted.**
-A truncated reply means a half-written tool call, which fails silently.
+The last row is the point: **a known cap overrides the 16,384 default.** For a while it did
+not — the third argument of `Math.min(cap, max ?? 16384, 16384)` clamped it right back, so a
+configured cap could only be lowered, never raised. Meanwhile the comment, the README, and the
+on-screen help all said it could be raised. A documented escape hatch that is welded shut is
+the worst kind.
+
+If a cap truncates a reply, **the call is retried with the cap lifted** — and the thinking
+level drops one notch, because reasoning tokens eat the same budget first. Without that, more
+headroom just buys more thinking. A truncated reply means a half-written tool call, which fails silently.
+
+**When the server refuses, it is read for the answer.**
+
+```
+This model's maximum context length is 8192 tokens, however you requested 41003
+```
+
+The number is extracted, applied, and the call is retried. You never see the failure.
+No spec knowledge is needed, so **this works against servers we have never seen.**
+
+### Truncated tool calls
+
+This actually happened. A user asked for a dashboard; the model tried to put an entire HTML
+document into `Write`'s arguments, hit the output token limit, and the arguments JSON arrived
+cut off mid-string.
+
+The old code quietly turned that unparseable JSON into `{_raw: "..."}` and handed it to the
+tool. The tool answered `path is empty` — **a message with nothing to do with the real cause.**
+The model had not omitted the path, so there was nothing to fix; it retried identically, and
+was truncated again.
+
+```
+  ◆ Write(dashboard.html)
+    └ path is empty          ← nine identical times
+
+  ── 71s · 13 tool calls · context filled and auto-compacted · no file produced
+```
+
+One silently swallowed value produced all of that. What happens now:
+
+| | Now |
+|---|---|
+| Unparseable arguments | **Marked as truncated**, not swallowed. Never passed to the tool |
+| The model is told | Exactly what happened, and to stop resending the whole thing — write a short skeleton first, then **build it up with `Edit`** |
+| The truncated payload | Never re-injected into the conversation — it is half a payload and it costs context |
+| Detecting truncation | Even when the gateway reports `finish_reason: "stop"`, **broken arguments are themselves proof it was cut.** No model writes half a JSON object on purpose |
+| Three identical failures | The turn stops, with a suggestion to split the request |
+
+```
+  ⊘ Stopped — it is spinning in the same place.
+    the same tool call keeps getting truncated
+    What you asked for in one go is larger than the model's output cap. Try splitting it —
+    e.g. "just the skeleton first" → "now add the table" → "now add the chart"
+```
+
+**A step limit (`maxSteps`) cannot catch this.** It cannot tell a long healthy task from a
+spinning one. What is counted here is not steps but **how many times the same tool failed for
+the same reason.**
 
 ---
 
@@ -678,10 +906,13 @@ does not ask.
 | Mechanism | Detail |
 |---|---|
 | **Undo** | Snapshot before every write. `/undo` restores per turn |
+| **Change display** | The changed lines are shown on every edit; `/diff` for the whole session |
 | **Scope** | Outside the starting folder is refused, even if the model insists |
 | **Blocked commands** | Only irreversible ones (disk format, recursive delete, `--force` push) |
 | **No re-run** | A mutating command is never retried after failure |
 | **Interrupt** | Ctrl+C stops mid-answer and leaves the conversation valid |
+| **Spin guard** | Three identical failures stop the turn, with the reason |
+| **Not read** | Other tools' private stores, and deel's own logs and config (the key), are refused |
 | **Audit log** | Everything recorded in `.deel/audit.jsonl` |
 
 | Mode | Asks when |
@@ -693,6 +924,43 @@ does not ask.
 Undo history stores whole file contents, so repeated edits to large files add up. Past 32MB
 it keeps the **most recent 50 turns** and drops the rest. What you just did is always
 undoable; `/status` shows how large the history currently is.
+
+### What it will not read
+
+Walking a folder turns up things that are not project files: the private stores other coding
+tools keep — past conversations, command history, caches, and keys. They have nothing to do
+with the task, but once they appear in a listing the model reads them first.
+
+```
+  ◧ Read(~/.deel/audit.jsonl)      77 lines
+  ◧ Read(~/.claude/history.jsonl)  35 lines
+```
+
+The audit log is **this program's own record of what it just did.** Reading it back into the
+conversation makes the model chase its own shadow. It has nothing to do with what was asked,
+and it fills the context.
+
+The config file is worse. `.deel/config.json` holds the gateway **API key.** Reading it puts
+that key into the conversation, sends it to the model, and writes it into the on-disk session
+log. It hands the key to the very service the key is for.
+
+| Refused | Why |
+|---|---|
+| `.deel/config.json` | Contains the gateway key |
+| `.deel/audit.jsonl` · `.deel/sessions` · `.deel/history` | deel's own records — chasing its own shadow |
+| `.claude` `.codex` `.cursor` `.gemini` `.aider` `.continue` `.cline` `.roo` `.kilocode` `.windsurf` `.opencode` `.zed` `.trae` `.augment` `.qodo` `.tabnine` `.cody` `.sourcegraph` `.copilot` `.amazonq` `.junie` `.codeium` `.goose` `.crush` `.gptme` `.openhands` `.devin` | Other tools' private stores |
+| File-style leftovers like `.aider.chat.history.md` | Same reason |
+
+Writing is blocked too, not just reading. Blocking only reads would still let the agent
+overwrite another tool's settings, and overwriting `.deel/config.json` destroys the connection.
+
+**It blocks, it does not hide** — the refusal says exactly why. New tools keep appearing;
+when a name is missing from the list, **adding it is one line.**
+
+That list lives in **exactly one place in the source.** The directory walker (`SKIP_DIRS`) and
+the read guard look at the same set. They used to be two copies, and two copies means the day
+comes when only one of them learns a new name — a folder that is skipped while walking but
+readable if you name it directly, which is very hard to explain.
 
 ---
 
@@ -780,6 +1048,8 @@ deel --root <folder>     Working scope. Defaults to the current folder
 deel --mode <mode>       auto (default) / confirm / strict
 deel --work <mode>       auto (default) / code / plan / architect / debug / ask / orchestrator
 deel --level <level>     쉬움 (simple) / 개발자 (developer)
+deel --ctx <length>      Set the context length yourself (655360 · 640k · 128k)
+deel --max-tokens <len>  Cap on a single reply (32k) — same value as /out
 deel --think <level>     off / low / medium (default) / high / max
 deel --effort <profile>  even / save (default) / deep
 deel --offline           Nothing leaves this machine
@@ -805,7 +1075,9 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 | 401 / 403 | Wrong key or auth header style (four are tried automatically) |
 | `address not permitted` | The lock did its job — pick a connection with `/model` |
 | Tool calls don't work | Run `deel diagnose`. Small models (1B–3B) often can't |
-| Empty replies | A heavy-reasoning model — try `/think low` |
+| Empty replies | The server ignores streaming. deel retries once, then turns streaming off for the session |
+| Large files cut off mid-write | Check `/out` and raise it — the cap may be sitting at the 16,384 default because it could not be discovered |
+| Only `HTTP 400` shows | The server's own message is shown verbatim. If it is a length problem the number is read and applied automatically |
 | `deel scan` finds nothing | Server is off or on another port — use `--ports` |
 
 ---
@@ -813,7 +1085,7 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 ## Development
 
 ```bash
-npm test          Full suite (1,066 checks)
+npm test          Full suite (1,519 checks)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
