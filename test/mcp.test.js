@@ -11,12 +11,13 @@
 //      — 자식 프로세스가 어디로 나가는지 우리는 못 막는다
 //   4) 우리 환경변수(게이트웨이 열쇠)를 안 넘기는가
 //   5) 도구가 우리 것과 안 섞이는가
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   설정읽기, 다붙이기, MCP서버, 도구이름, 이름풀기, 도구정의, 도구최대,
 } from '../src/backend/mcp.js';
+import { VERSION } from '../src/version.js';
 import { toolSchemas, runTool } from '../src/tools/index.js';
 import { Audit } from '../src/safety/audit.js';
 import { makeScope } from '../src/safety/guard.js';
@@ -38,7 +39,9 @@ trace('1-스텁서버만들기');
  * 모드를 인자로 받아 못된 서버 흉내도 낸다.
  */
 const 서버본문 = `
+import { writeFileSync as 적기 } from 'node:fs';
 const 모드 = process.argv[2] ?? 'normal';
+const 인사자리 = process.argv[3] ?? null;
 // 아무 답도 안 하고 살아만 있는 서버. 여기서 return 해야 진짜로 벙어리가 된다 —
 // 아래 stdin 처리까지 흘러가면 멀쩡히 답해 버린다.
 if (모드 === 'silent') { setInterval(() => {}, 1000); }
@@ -55,10 +58,14 @@ process.stdin.on('data', (d) => {
     const 줄 = 찌꺼기.slice(0, i); 찌꺼기 = 찌꺼기.slice(i + 1);
     if (!줄.trim()) continue;
     let j; try { j = JSON.parse(줄); } catch { continue; }
-    if (j.method === 'initialize') 답(j.id, {
-      protocolVersion: '2024-11-05', capabilities: { tools: {} },
-      serverInfo: { name: '스텁MCP', version: '1.0.0' },
-    });
+    if (j.method === 'initialize') {
+      // 우리가 무엇이라고 인사했는지 적어 둔다. 검사가 그걸 읽는다.
+      if (인사자리) { try { 적기(인사자리, JSON.stringify(j.params)); } catch {} }
+      답(j.id, {
+        protocolVersion: '2024-11-05', capabilities: { tools: {} },
+        serverInfo: { name: '스텁MCP', version: '9.9.9' },
+      });
+    }
     else if (j.method === 'tools/list') {
       const 몇개 = 모드 === 'many' ? 40 : 2;
       const tools = [];
@@ -84,7 +91,8 @@ const 서버파일 = join(root, 'stub-mcp.mjs');
 writeFileSync(서버파일, 서버본문, 'utf8');
 
 const 설정쓰기 = (표) => writeFileSync(join(root, '.deel', 'mcp.json'), JSON.stringify(표, null, 2), 'utf8');
-const 서버설정 = (모드 = 'normal') => ({ command: process.execPath, args: [서버파일, 모드] });
+const 인사파일 = join(root, '인사.json');
+const 서버설정 = (모드 = 'normal') => ({ command: process.execPath, args: [서버파일, 모드, 인사파일] });
 
 trace('2-설정읽기');
 
@@ -272,9 +280,37 @@ trace('6-도구목록에섞기');
   check('죽은 서버를 부르면 바로 오류', /죽었습니다/.test(결과.error ?? ''), JSON.stringify(결과));
 }
 
+trace('7-판번호');
+
+// ── 남의 서버에 우리 판 번호를 제대로 대는가 ────────────────────────────
+//
+// 이걸 검사로 못 박는 이유는 규격 때문이 아니라 **어긋나기 때문**이다.
+// 전에는 mcp.js 가 '0.9.0' 을 직접 적어 들고 있었다. package.json 을 올려도
+// 그건 안 올라가고, 아무 데서도 안 터지고, 남의 서버 기록에만 옛 번호가 남는다.
+// 판 번호는 한 곳에서만 읽는다(src/version.js) — 그 약속을 여기서 지킨다.
+{
+  설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
+  const r = await 다붙이기(root, { timeout: 2500 });
+
+  const 인사 = JSON.parse(readFileSync(인사파일, 'utf8'));
+  const 진짜판 = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+
+  check('우리 이름을 댄다', 인사.clientInfo?.name === 'deel', JSON.stringify(인사.clientInfo));
+  check('판 번호가 package.json 과 같다', 인사.clientInfo?.version === 진짜판,
+    `${인사.clientInfo?.version} vs ${진짜판}`);
+  check('판 번호를 못 읽어 0.0.0 으로 떨어지지 않았다', VERSION !== '0.0.0', VERSION);
+  check('규격 판은 우리가 아는 것으로 댄다', 인사.protocolVersion === '2024-11-05', 인사.protocolVersion);
+
+  // 서버가 대는 판은 서버 것이다 — 우리 것과 섞이면 안 된다.
+  check('서버가 댄 판은 서버 것으로 둔다', r.서버들[0]?.정보?.version === '9.9.9',
+    JSON.stringify(r.서버들[0]?.정보));
+
+  for (const s of r.서버들) s.닫기();
+}
+
 try { rmSync(root, { recursive: true, force: true }); } catch { /* 자식이 아직 놓지 않았다 */ }
 
-trace('7-끝');
+trace('8-끝');
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n밖에서 붙인 도구(MCP) 검사  ${D}(진짜 자식 프로세스를 띄워서)${X}\n`);

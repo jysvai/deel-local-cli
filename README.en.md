@@ -1226,7 +1226,7 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 ## Development
 
 ```bash
-npm test          Full suite (1,740 checks)
+npm test          Full suite (1,745 checks)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate

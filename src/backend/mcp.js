@@ -26,6 +26,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { VERSION } from '../version.js';
 
 // 붙는 데 이만큼 넘게 걸리면 포기한다. 시작이 느려지면 안 쓰게 된다.
 export const 붙기제한 = 8000;
@@ -118,7 +119,7 @@ export class MCP서버 {
       const r = await this.보내고기다리기('initialize', {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        clientInfo: { name: 'deel', version: '0.9.0' },
+        clientInfo: { name: 'deel', version: VERSION },
       }, timeout);
       this.정보 = r?.serverInfo ?? null;
       this.알림('notifications/initialized', {});
