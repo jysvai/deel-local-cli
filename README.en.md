@@ -20,10 +20,12 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
  │ Sends to this machine 127.0.0.1:11434  ← nowhere else        │
  │ Link     streaming · tools · reasoning control               │
  │ Folder   C:\work\myproject                                   │
+ │ Approval ⏵⏵ 자동 승인  — nothing is asked; /undo is the net   │
+ │          Shift+Tab to change  ·  Tab completes a / command   │
  │ This PC  337 skills · 127 commands · 42 plugins              │
  ╰──────────────────────────────────────────────────────────────╯
 
- ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱▱▱ 22% 28k/128k ▏ ◎ 종합 · ◇ medium·절약 · auto
+ ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱▱▱ 22% 28k/128k ▏ ◎ 종합 · ◇ medium·절약 · ⏵⏵ 자동
  ❯ unify the logging style
 
   ❊ Grep(console.log)
@@ -245,6 +247,18 @@ Discovered plugin commands are invoked as `/<plugin>:<name>`, with `$ARGUMENTS` 
 server or loaded a different model, `/scan save` then `/model` switches over without losing
 the conversation.
 
+**Without typing**
+
+| Key | What it does |
+|---|---|
+| `Tab` | Completes the `/` command you are typing. Candidates appear under the box as you type |
+| `Shift+Tab` | Approval policy (`⏵⏵ auto` → `⏵ risky only` → `⏸ everything`) |
+| `Ctrl+O` | Work mode (`종합` → `코드` → `계획` → …) |
+| `↑` `↓` | Input history |
+| `Ctrl+C` | Stops the answer in progress; twice on an empty line quits |
+
+Korean IME composition, paste, `Ctrl+A/E` and backspace all keep working.
+
 ### Attaching a file with `@`
 
 Write `@` followed by a path and that file is sent along with your message.
@@ -411,7 +425,7 @@ the bottom.** Only the box is erased and redrawn — nothing above it is touched
 
   ── 4.2s · 3 tools · ↑3,900 ↓180
 
- ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱ 22% ▏ ◎ 종합 · ◇ medium · auto
+ ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱ 22% ▏ ◎ 종합 · ◇ medium · ⏵⏵ 자동
  ╭─────────────────────────────────────────────────────────────────────────────╮
  │ ❯ also shrink the aggregate helpers                                         │
  ╰─────────────────────────────────────────────────────────────────────────────╯
@@ -439,6 +453,46 @@ editor is how you break IME input first.
 > the same symptom if one is missed. So the design went the other way: let the conversation
 > flow, manage only the box. ([`test/box.test.js`](test/box.test.js) spawns a child that
 > pretends to be a terminal, so this one cannot ship again.)
+
+---
+
+### You don't have to type the whole command
+
+There are over thirty commands. The only person who has them memorised is the one who
+wrote them, and even he gets as far as `/mem…` and stops to wonder whether it was `memory`
+or `memo`. If the only recourse at that point is typing `/help` and scanning thirty lines,
+that isn't a command, it's a quiz.
+
+So they show up **while you type.**
+
+```
+ ╭─────────────────────────────────────────────────────────────────────────────╮
+ │ ❯ /mo                                                                       │
+ ╰─────────────────────────────────────────────────────────────────────────────╯
+   › /model [이름|list|models]   연결·모델 바꾸기 (이름 일부 · list · models)
+     /mode <모드>                승인 정책 — 얼마나 물어보나
+     /memory [지우기 <번호>|…]   대화가 끝나도 남는 기억 — 보기·지우기
+```
+
+`Tab` fills it in: all the way if only one matches, otherwise **only as far as they all
+agree** (`/mo` + Tab → `/mode`). It doesn't pick one for you, because deleting the wrong
+guess costs more than typing the rest. Commands that take an argument get a trailing space
+so you can keep going.
+
+Prefix matches come first and **substring matches follow** — typos cluster in the first
+character, so `/emo` still surfaces `/memory`. The moment you type a space (`/mode auto`)
+the list folds away: the command is already decided.
+
+The list sits **below** the box. Putting it inside would push what you are typing upward,
+so you could no longer see it.
+
+> No up/down selection. That would have to take over **input history** (up arrow), which
+> is used far more often. What is needed here isn't picking, it's recognising — and once
+> you recognise it, one `Tab` is enough.
+>
+> Commands hidden at the `쉬움` level still surface when you type their prefix. Hidden is
+> not the same as unavailable — someone who knows `/recall` should not be told it doesn't
+> exist because of a display setting.
 
 ---
 
@@ -495,6 +549,22 @@ readable at a glance. It sits on the right of the status line at all times.
 
 `/mode` on its own lists all three and marks the current one with ●. The startup header
 spells it out in a sentence, so the glyph is enough from then on.
+
+**`Shift+Tab` cycles it without typing.** Each press moves one step and leaves a line
+saying where it went. Whatever you were typing stays put.
+
+```
+  ⏵ 위험만 확인  되돌릴 수 없는 명령만 물어봅니다. 파일은 안 묻고 고칩니다
+  자동 승인 → 위험만 확인 · Shift+Tab 으로 계속 바꿉니다
+```
+
+The cycle runs **loose → strict** (auto → risky only → everything → auto). A mistaken
+press only makes it ask more; it never drops you into "changes files unasked" in one hit.
+
+> That key used to cycle the work mode (`종합`, `코드`, …). The swap is about **who
+> reaches for it more often.** Work mode follows your request on its own, while approval
+> policy is what you want to change mid-task when a particular job deserves a look.
+> Work mode moved to `Ctrl+O`; `/work` still does the same thing.
 
 > It used to be the bare word `auto`. Next to `종합` and `medium·절약` it looked like just
 > another mode, and nothing on screen said that one of them meant **files change without
