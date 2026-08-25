@@ -47,7 +47,7 @@ function runAudit() {
 // 실제로 이랬다 — deel run --json "검사 돌려줘" 를 쳤더니 --json 이 뒤의 말을
 // 통째로 삼켰다. 시킬 말이 사라졌으니 "무엇을 시킬지 적어 주세요" 가 떴는데,
 // 화면만 보면 왜 그런지 알 길이 없다. 깃발을 앞에 두는 것은 아주 흔한 습관이다.
-const BOOL = new Set(['help', 'offline', 'continue', 'json', 'quiet', 'yes']);
+const BOOL = new Set(['help', 'offline', 'continue', 'json', 'quiet', 'yes', 'no-tui', 'tui']);
 
 function parse(argv) {
   const flags = {};
@@ -102,6 +102,7 @@ function help() {
   say(`    ${c.gray('--max-tokens <길이>')} 한 번에 받을 답 길이 상한 (32k). 큰 파일이 잘리면 올린다 — /out 과 같은 값`);
   say(`    ${c.gray('--think <수준>')}     off / low / medium(기본) / high / max`);
   say(`    ${c.gray('--effort <배분>')}    even(균일) / save(절약, 기본) / deep(깊게)`);
+  say(`    ${c.gray('--no-tui')}           전체화면 대신 줄 화면으로 (파이프·기록·좁은 터미널)`);
   say(`    ${c.gray('--offline')}          이 컴퓨터 밖으로는 아무것도 안 보냄 (자물쇠)`);
   say(`    ${c.gray('--continue')}         이 폴더에서 가장 최근 대화 이어하기`);
   say(`    ${c.gray('--resume <id>')}      골라서 이어하기 (deel sessions 로 id 확인)`);
@@ -172,6 +173,10 @@ async function main() {
         maxTokens: flags['max-tokens'] ? parseSize(String(flags['max-tokens'])) : undefined,
         think: flags.think ? String(flags.think) : undefined,
         effort: flags.effort ? String(flags.effort) : undefined,
+        // 전체화면을 쓸지. 안 주면 null — 그러면 화면 쪽이 상황을 보고 정한다.
+        //   --no-tui  줄 화면으로 (파이프·기록·좁은 터미널·문제가 생겼을 때)
+        //   --tui     터미널이면 무조건 전체화면으로
+        tui: flags['no-tui'] === true ? false : (flags.tui === true ? true : null),
         offline: flags.offline === true || flags.offline === 'true',
         continue: flags.continue === true || flags.c === true,
         sessionId: typeof flags.resume === 'string' ? flags.resume : (flags.resume === true ? null : undefined),

@@ -2,8 +2,9 @@
 import { createInterface, emitKeypressEvents } from 'node:readline';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { c, say, mark, cursor, box, clip, cols } from './ui/ansi.js';
-import { statusLine, headerLines, contextWarning } from './ui/status.js';
+import { c, say as 바로쓰기, mark, clip } from './ui/ansi.js';
+import { headerLines } from './ui/status.js';
+import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
 import { handle } from './commands.js';
 import { next as nextWork, get as getWork, canWrite } from './agent/modes.js';
@@ -18,7 +19,6 @@ import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
 import { askHidden } from './ui/prompt.js';
-import { spin } from './ui/spinner.js';
 import { explain } from './ui/level.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { renderDiff, shortStat } from './ui/diff.js';
@@ -67,12 +67,29 @@ const 답표시 = c.hcyan('▌');
 export async function chatLoop(opts = {}) {
   const cfg = load();
   const prof = activeProfile(cfg);
+  // 연결이 없으면 화면을 세우기 전에 끝난다. 전체화면은 터미널을 통째로
+  // 바꿔치기하므로, 세웠다가 바로 나가면 이 안내가 화면과 함께 사라진다.
   if (!prof) {
-    say('');
-    say(`  ${mark.warn} 저장된 연결이 없습니다. ${c.cyan('deel setup')} 을 먼저 실행하세요.`);
-    say('');
+    바로쓰기('');
+    바로쓰기(`  ${mark.warn} 저장된 연결이 없습니다. ${c.cyan('deel setup')} 을 먼저 실행하세요.`);
+    바로쓰기('');
     return 1;
   }
+
+  /*
+   * 여기서부터 화면에 나가는 것은 전부 `화면` 을 거친다.
+   *
+   * `say` 를 지역 이름으로 다시 묶은 이유: 이 함수 안에 출력이 79군데 있었다.
+   * 이름을 60번 바꿔 적으면 그중 한둘은 반드시 어긋나고, 어긋난 자리는
+   * 화면에서만 티가 난다. 이름은 그대로 두고 **가는 곳만** 바꾼다.
+   * 그러면 갈라내기가 옳은지를 지금 있는 검사들이 그대로 재 준다 —
+   * 글자 하나라도 달라지면 검사가 잡는다.
+   *
+   * 이 파일 밖으로 나가는 이름이 아니다. 화면을 세우기 전에 쓰는 자리는
+   * 위처럼 `바로쓰기` 를 쓴다.
+   */
+  const 화면 = await 화면고르기({ tui: opts.tui });
+  const say = (s = '') => 화면.줄(s);
 
   const root = opts.root ? opts.root : process.cwd();
   const conn = {
@@ -161,7 +178,7 @@ export async function chatLoop(opts = {}) {
       if (!key || key.name !== 'tab' || !key.shift) return;
       session.work = nextWork(session.work);
       const w = getWork(session.work);
-      cursor.clearLine();
+      화면.입력지움();
       say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}  ${c.gray(w.hint)}`
         + (canWrite(session.work) ? '' : `  ${c.green('· 파일을 못 바꿉니다')}`));
       prompt();
@@ -175,7 +192,7 @@ export async function chatLoop(opts = {}) {
   };
 
   const ask = async (label, o = {}) => {
-    process.stdout.write(`  ${c.gray('›')} ${label} ${o.def ? c.gray(`[${o.def}] `) : ''}`);
+    화면.붙임(`  ${c.gray('›')} ${label} ${o.def ? c.gray(`[${o.def}] `) : ''}`);
     const a = await nextLine();
     if (a === null) return o.def ?? '';
     return a.trim() || o.def || '';
@@ -257,10 +274,10 @@ export async function chatLoop(opts = {}) {
   if (opts.ctx == null) {
     // 이 컴퓨터 안의 서버면 눈 깜짝할 새다. 사내 게이트웨이는 몇 초 걸릴 수 있어
     // 무슨 일이 일어나는 중인지 알려 준다 — 멈춘 것처럼 보이면 안 된다.
-    const s = spin('모델에 걸린 컨텍스트 길이를 확인하는 중…');
+    화면.돌리기('모델에 걸린 컨텍스트 길이를 확인하는 중…');
     let r = null;
     try { r = await probeCtx(conn, { timeout: 6000 }); } catch { /* 못 물어보면 아래에서 처리 */ }
-    s.stop('');
+    화면.돌림멈춤('');
     if (r?.value) {
       const 전 = conn.ctx;
       conn.ctx = r.value;
@@ -279,8 +296,7 @@ export async function chatLoop(opts = {}) {
   }
 
   // ── 머리말 ────────────────────────────────────────────────────────────
-  say('');
-  for (const l of box(headerLines(session, found), { tone: c.gray })) say('  ' + l);
+  화면.머리말(headerLines(session, found));
   const warn = [];
   // 홈 폴더에서 켠 경우. 작업 범위가 집 전체가 된다.
   //
@@ -305,14 +321,9 @@ export async function chatLoop(opts = {}) {
   for (const w of warn) say(`  ${mark.warn} ${c.gray(w)}`);
   say(`  ${c.gray('/help 명령 목록')}   ${c.gray('/think 추론 강도')}   ${c.gray('Ctrl+C 중단·끝내기')}`);
 
-  // 입력 자리. 위에 상태줄을 한 줄 깔고 그 아래에 커서를 둔다.
-  const prompt = () => {
-    say('');
-    say(statusLine(session));
-    const w = contextWarning(session);
-    if (w) say(` ${w}`);
-    process.stdout.write(` ${c.hcyan('❯')} `);
-  };
+  // 입력 자리. 어떻게 생겼는지는 화면 쪽이 정한다 —
+  // 줄화면은 상태줄을 깔고 그 아래 ❯ 를, 전체화면은 아래 칸에 상자를 그린다.
+  const prompt = () => 화면.입력자리(session);
 
   // Ctrl+C 는 상황에 따라 뜻이 다르다.
   //   모델이 답하는 중  → 그 답을 끊는다 (프로그램은 살아 있다)
@@ -399,10 +410,10 @@ export async function chatLoop(opts = {}) {
     let thinkingShown = false;
     let stage = null;
     // 접는 중 표시. 끝나거나 다른 글을 찍기 전에 반드시 멈춰야 한다.
-    let 접는중 = null;
-    const 접기멈춤 = () => { if (접는중) { 접는중.stop(); 접는중 = null; } };
+    let 접는중 = false;
+    const 접기멈춤 = () => { if (접는중) { 화면.돌림멈춤(); 접는중 = false; } };
 
-    const clearThinking = () => { if (thinkingShown) { cursor.clearLine(); thinkingShown = false; } };
+    const clearThinking = () => { 화면.임시지움(); thinkingShown = false; };
     // 단계 꼬리표 — 붙을 때만 뒤에 한 칸을 같이 붙인다. 쉬움 수준에서는 빈 글자라
     // '생각 중…' 앞에 빈칸 두 개가 뜨는 일이 없다.
     const 꼬리표 = (ev) => { const t = stageTag(ev, session.level); return t ? t + ' ' : ''; };
@@ -427,7 +438,7 @@ export async function chatLoop(opts = {}) {
             break;
 
           case 'waiting':
-            process.stdout.write(`  ${c.gray(꼬리표(stage) + '생각 중…')}\r`);
+            화면.기다림(c.gray(꼬리표(stage) + '생각 중…'));
             // 지워야 할 줄이 화면에 있다고 표시해 둔다.
             //
             // 전에는 이 표시를 안 세웠다. \r 로 커서만 앞으로 보내 놓고 지우지는
@@ -438,11 +449,8 @@ export async function chatLoop(opts = {}) {
 
           case 'thinking':
             thinkChars += ev.text.length;
-            if (process.stdout.isTTY) {
-              cursor.clearLine();
-              process.stdout.write(`  ${mark.think} ${c.gray(꼬리표(stage))}${c.gray(`생각 중… ${thinkChars.toLocaleString()}자`)}`);
-              thinkingShown = true;
-            }
+            화면.생각(`${mark.think} ${c.gray(꼬리표(stage))}${c.gray(`생각 중… ${thinkChars.toLocaleString()}자`)}`);
+            if (process.stdout.isTTY) thinkingShown = true;
             break;
 
           /*
@@ -457,8 +465,8 @@ export async function chatLoop(opts = {}) {
            */
           case 'content':
             clearThinking();
-            if (!streamed) { streamed = true; process.stdout.write(`  ${답표시} `); }
-            process.stdout.write(ev.text.replace(/\n/g, `\n  ${답표시} `));
+            if (!streamed) { streamed = true; 화면.붙임(`  ${답표시} `); }
+            화면.붙임(ev.text.replace(/\n/g, `\n  ${답표시} `));
             break;
 
           case 'tool_start':
@@ -491,6 +499,12 @@ export async function chatLoop(opts = {}) {
                 const 글 = t.state === 'done' ? c.gray(t.text) : t.state === 'doing' ? c.white(t.text) : c.gray(t.text);
                 say(`    ${표} ${clip(글, 74)}`);
               }
+              // 전체화면이면 오른쪽 칸에도 세워 둔다. 흘러가 버리지 않게 —
+              // 긴 일에서 '어디까지 했나' 는 늘 보여야 하는 정보다.
+              화면.할일칸(ev.result.todos.map((t) => {
+                const 표 = t.state === 'done' ? c.green('☑') : t.state === 'doing' ? c.hyellow('▶') : c.gray('☐');
+                return `${표} ${t.state === 'doing' ? c.white(t.text) : c.gray(t.text)}`;
+              }));
             } else {
               say(`    ${toolResultLine(ev.result, ev.ms ?? 0)}`);
               // 파일을 고쳤으면 무엇이 바뀌었는지 바로 보여 준다.
@@ -503,6 +517,11 @@ export async function chatLoop(opts = {}) {
                 // 엉뚱한 자리를 가리킨다 — 목록에 ../../.. 가 찍힌다.
                 session.noteChange(ev.result.changed ?? ev.args?.file_path, ev.result.diff);
                 for (const l of renderDiff(ev.result.diff, { maxLines: DIFF_LINES[session.level] ?? 20 })) say(l);
+                // 오른쪽 칸에 '이번 대화에서 뭘 건드렸나' 를 세워 둔다.
+                화면.파일칸([...session.changes].map(([p, d]) => {
+                  const 이름 = ctx?.scope ? ctx.scope.show(p) : p;
+                  return `${c.white(이름)} ${c.green('+' + d.added)}${c.red('-' + d.removed)}`;
+                }));
               }
             }
             flush();   // 도구가 하나 끝날 때마다 적어 둔다
@@ -523,12 +542,12 @@ export async function chatLoop(opts = {}) {
            */
           case 'compacting':
             clearThinking();
-            접는중 = spin('컨텍스트가 찼습니다 — 앞선 대화를 요약해 접는 중…');
+            화면.돌리기('컨텍스트가 찼습니다 — 앞선 대화를 요약해 접는 중…');
+            접는중 = true;
             break;
 
           case 'compacted': {
             접기멈춤();
-            if (process.stdout.isTTY) cursor.clearLine();
             const 줄인 = ev.before - ev.after;
             say(`  ${c.cyan('◱')} ${c.gray(`대화 ${ev.folded}개를 요약으로 접었습니다 — `)}` +
                 `${c.gray(ev.before.toLocaleString())} ${c.gray('→')} ${c.white(ev.after.toLocaleString())} ${c.gray('토큰')} ` +
@@ -543,7 +562,7 @@ export async function chatLoop(opts = {}) {
           // 서버가 거절하면서 알려 준 한계를 받아 적었다. 실패로 보이면 안 된다 —
           // 사용자 눈에는 잠깐 멈췄다가 그냥 잘 되는 것으로 보여야 맞다.
           case 'learned':
-            if (process.stdout.isTTY) cursor.clearLine();
+            clearThinking();
             say(`  ${c.cyan('◎')} ${c.gray(
               ev.what === 'ctx'
                 ? `서버가 알려 준 컨텍스트 한계 ${ev.limit.toLocaleString()} 으로 맞추고 다시 부릅니다`
@@ -556,7 +575,6 @@ export async function chatLoop(opts = {}) {
 
           case 'compact_failed':
             접기멈춤();
-            if (process.stdout.isTTY) cursor.clearLine();
             say(`  ${c.gray(`(접지 못했습니다: ${ev.why})`)}`);
             break;
 
@@ -636,9 +654,12 @@ export async function chatLoop(opts = {}) {
   }
 
   rl.close();
+  // 끝맺음은 화면을 접기 **전에** 그린다. 전체화면은 close() 에서 터미널을
+  // 원래대로 되돌리는데, 그 뒤에 찍으면 되돌아간 화면에 뜬금없이 한 줄이 남는다.
   say('');
   say(`  ${c.gray('끝냅니다.')} ${c.gray(`모델 호출 ${session.usage.calls}회 · 도구 시간 ${(session.usage.ms / 1000).toFixed(1)}초 · ↑${session.usage.in.toLocaleString()} ↓${session.usage.out.toLocaleString()}`)}`);
   say('');
+  화면.close();
   return 0;
 }
 

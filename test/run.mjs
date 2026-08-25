@@ -37,6 +37,7 @@ const FILES = [
   'oneshot.test.js',
   'detect.test.js',
   'ui.test.js',
+  'tui.test.js',
   'diff.test.js',
   'mention.test.js',
   'truncated.test.js',
