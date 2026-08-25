@@ -143,30 +143,53 @@ function firstAsk(messages) {
 /**
  * 이 폴더에 남아 있는 대화 목록. 최근 것이 위로.
  */
-export function list(root, { limit = 20 } = {}) {
+/**
+ * 지난 대화 목록.
+ *
+ * **먼저 정렬하고 나서 필요한 것만 읽는다.** 순서가 중요하다.
+ *
+ * 전에는 폴더에 있는 파일을 **전부 열어서** 한 줄씩 JSON 으로 풀고, 그 다음에
+ * 정렬해서 20개만 남겼다. 몇 주 쓰면 수십 MB 를 매번 읽는 셈이다. 그리고 이건
+ * 켤 때마다 돈다(repl 이 prune 을 부른다) — 머리글도 안 뜬 채로 몇 초씩 멈춰
+ * 있어서, 사용자 눈에는 프로그램이 죽은 것처럼 보인다.
+ *
+ * 정렬에 필요한 것은 파일 시각뿐이고, 그건 안 열어도 안다.
+ *
+ * @param {object} o
+ * @param {boolean} o.속까지  false 면 파일을 안 열고 시각·크기만 본다 (prune 용)
+ */
+export function list(root, { limit = 20, 속까지 = true } = {}) {
   const dir = sessionsDir(root);
   if (!existsSync(dir)) return [];
-  const out = [];
+
+  // 1) 시각만 모은다. 파일을 열지 않는다.
+  const 후보 = [];
   for (const name of readdirSync(dir)) {
     if (!name.endsWith('.jsonl')) continue;
-    const id = name.slice(0, -6);
     const file = join(dir, name);
     let st;
     try { st = statSync(file); } catch { continue; }
-    const { meta, messages } = new Store(root, id).load();
-    if (!messages.length) continue;
+    후보.push({ id: name.slice(0, -6), file, at: st.mtime, bytes: st.size });
+  }
+  후보.sort((a, b) => b.at - a.at);
+
+  if (!속까지) return 후보.slice(0, limit);
+
+  // 2) 앞에서부터 필요한 개수만 실제로 읽는다.
+  const out = [];
+  for (const c of 후보) {
+    if (out.length >= limit) break;
+    const { meta, messages } = new Store(root, c.id).load();
+    if (!messages.length) continue;      // 빈 파일은 목록에 안 올린다
     out.push({
-      id,
-      file,
-      at: st.mtime,
-      bytes: st.size,
+      ...c,
       model: meta?.model ?? '?',
       turns: messages.filter((m) => m.role === 'user').length,
       messages: messages.length,
       first: firstAsk(messages),
     });
   }
-  return out.sort((a, b) => b.at - a.at).slice(0, limit);
+  return out;
 }
 
 export function remove(root, id) {
@@ -186,7 +209,9 @@ export function latest(root) {
  * 최근 keep 개는 무조건 남기고, 그보다 오래되고 days 를 넘긴 것만 지운다.
  */
 export function prune(root, { keep = 30, days = 30 } = {}) {
-  const all = list(root, { limit: 1000 });
+  // 지울지 말지는 파일 시각만 보면 안다. 내용은 필요 없다 —
+  // 여기서 전부 읽던 것이 켤 때 몇 초씩 멈추던 원인이었다.
+  const all = list(root, { limit: 1000, 속까지: false });
   const 자를것 = all.slice(keep).filter((s) => (Date.now() - s.at.getTime()) > days * 86400000);
   for (const s of 자를것) { try { rmSync(s.file, { force: true }); } catch {} }
   return 자를것.length;

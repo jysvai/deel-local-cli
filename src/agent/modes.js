@@ -15,7 +15,9 @@ const 읽기 = ['Read', 'Glob', 'Grep', 'WebFetch', 'Skill'];
 // 계획을 적는 도구. 파일을 안 건드리므로 읽기 전용 모드에서도 준다.
 const 계획 = ['TodoWrite'];
 // 바꾸는 도구.
-const 쓰기 = ['Write', 'Edit', 'Bash'];
+// Append 는 Write 와 짝이다 — 출력 상한이 작은 모델이 큰 파일을 나눠 쓰는 길이다.
+// Write 를 주는 자리에는 반드시 같이 준다. 하나만 주면 나눠 쓸 방법이 없어진다.
+const 쓰기 = ['Write', 'Append', 'Edit', 'Bash'];
 
 export const MODES = {
   // 처음에는 여기서 시작한다.

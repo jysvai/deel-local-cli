@@ -8,7 +8,7 @@
 //   2) 요약도 모델이 만든다. 그 요청이 실패하면 프로그램이 멈추면 안 된다 —
 //      실패하면 옛 방식(그냥 자르기)으로 물러선다.
 import { chat } from '../backend/adapter.js';
-import { estimateTokens } from './session.js';
+import { estimateTokens, safeCut, safeHead } from './session.js';
 
 // 몇 %에서 접기 시작할지. 접고 나서 다시 금방 차면 아무 소용이 없으니 넉넉히 비운다.
 export const COMPACT_AT = 0.8;
@@ -33,27 +33,10 @@ const 요약지시 = `지금까지의 대화를 다음 형식으로 요약하세
 ## 남은 일
 아직 안 한 것.`;
 
-/**
- * 도구 호출과 결과가 갈라지지 않는 자리를 찾는다.
- * i 번째부터 남긴다고 할 때, 안전한 i 로 옮겨 준다.
- */
-export function safeCut(messages, i) {
-  let k = Math.max(0, Math.min(i, messages.length));
-  // tool 결과로 시작하면 그 앞의 assistant(tool_calls) 가 없어 규격이 깨진다. 앞으로 당긴다.
-  while (k > 0 && messages[k]?.role === 'tool') k--;
-  return k;
-}
-
-/**
- * 머리 쪽 자르는 자리.
- * 머리가 '결과를 기다리는 도구 호출' 로 끝나면 그 결과가 접혀 없어져 짝이 깨진다.
- * 그런 assistant 는 머리에서 뺀다 — 접히는 쪽에 같이 넘긴다.
- */
-export function safeHead(messages, k) {
-  let h = Math.max(0, Math.min(k, messages.length));
-  while (h > 0 && messages[h - 1]?.tool_calls?.length) h--;
-  return h;
-}
+// 자르는 자리를 찾는 두 함수는 session.js 에 있다. 접기와 그냥 줄이기(trim)가
+// **같은 잣대**를 써야 하기 때문이다 — 한쪽만 짝을 맞추면 물러서는 순간 대화가 망가진다.
+// 쓰던 자리가 있으니 이름은 그대로 내보낸다.
+export { safeCut, safeHead } from './session.js';
 
 /** 접을 구간과 남길 구간을 나눈다. */
 export function split(messages, { keepHead = KEEP_HEAD, tailRatio = KEEP_TAIL_RATIO } = {}) {
@@ -89,7 +72,7 @@ function transcript(msgs) {
  * 실제로 접는다.
  * @returns {{ok:boolean, folded:number, before:number, after:number, summary?:string, why?:string}}
  */
-export async function compact(session, { auto = false } = {}) {
+export async function compact(session, { auto = false, signal = null } = {}) {
   const before = session.breakdown().used;
   const parts = split(session.messages);
   if (!parts) return { ok: false, why: '접을 만큼 쌓이지 않았습니다', folded: 0, before, after: before };
@@ -104,9 +87,19 @@ export async function compact(session, { auto = false } = {}) {
       ],
       maxTokens: 1200,
       think: session.conn.kind === 'ollama' ? false : 'low',   // 요약에 깊은 사고는 필요 없다
+      // 사용자가 Ctrl+C 를 누르면 이것도 멈춰야 한다. 안 받으면 답하는 도중
+      // 화면이 멈춰 있고 아무 키도 안 먹는 것처럼 보인다.
+      signal,
+      // 요약 하나에 5분을 기다릴 이유가 없다. 그만한 서버면 그냥 줄이는 편이 빠르다.
+      timeout: 60000,
     });
     summary = (r.content ?? '').trim();
   } catch (err) {
+    // 사용자가 끊은 것은 실패가 아니다. 대화를 건드리지 않고 그대로 둔다 —
+    // 여기서 물러서기(trim)까지 해 버리면, 끊었는데 대화가 줄어 있게 된다.
+    if (err?.name === 'Aborted' || signal?.aborted) {
+      return { ok: false, aborted: true, why: '중단했습니다', folded: 0, before, after: before };
+    }
     summary = null;
   }
 

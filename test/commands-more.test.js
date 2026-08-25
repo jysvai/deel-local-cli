@@ -321,9 +321,21 @@ trace('9-컨텍스트갈래');
   const s = 새세션();
   const ctx = 새ctx();
 
+  // 답 길이 상한은 이제 /out 이 본자리다. 컨텍스트와 다른 축이라 명령을 갈랐다.
+  // 옛 이름(/ctx out)도 그대로 받는다 — 쓰던 사람의 손버릇을 깨지 않는다.
+  const r0 = await 조용히(() => handle('/out', s, ctx));
+  check('/out 이 지금 상한을 보여 준다', /한 번에 받을 답 길이/.test(r0.out), 색빼기(r0.out).trim().slice(0, 60));
+  check('/out 은 컨텍스트와 다른 축이라고 알려 준다', /다른 축/.test(r0.out), 색빼기(r0.out).slice(0, 200));
+
   const r1 = await 조용히(() => handle('/ctx out', s, ctx));
-  check('/ctx out 만 치면 지금 상한을 보여 준다', /답 길이 상한/.test(r1.out), 색빼기(r1.out).trim().slice(0, 60));
+  check('옛 이름 /ctx out 도 그대로 받는다', /한 번에 받을 답 길이/.test(r1.out), 색빼기(r1.out).trim().slice(0, 60));
   check('/ctx out 만으로는 안 바뀐다', s.conn.maxTokens == null, String(s.conn.maxTokens));
+
+  // 올린 값이 실제로 남는가. 전에는 저장은 되는데 먹지 않았다(effort.js 의 클램프).
+  await 조용히(() => handle('/out 40k', s, ctx));
+  check('/out 으로 올리면 실제로 올라간다', s.conn.maxTokens === 40960, String(s.conn.maxTokens));
+  await 조용히(() => handle('/out auto', s, ctx));
+  check('/out auto 로 직접 정한 값을 지운다', s.conn.maxTokens == null, String(s.conn.maxTokens));
 
   // 서버가 길이를 안 알려 줄 때. 지어내면 안 된다.
   const r2 = await 조용히(() => handle('/ctx auto', s, ctx));

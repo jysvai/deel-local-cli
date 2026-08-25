@@ -12,6 +12,22 @@
 //   · 오프라인이면 아예 거절.
 //   · 받은 것은 글자만 뽑고 길이를 자른다.
 import { allowTemporarily, isOffline, isLocalHost } from '../safety/network.js';
+import { decode as decodeBytes } from './encoding.js';
+
+/**
+ * 받아 온 바이트를 글로. 머리글에 적힌 인코딩이 있으면 그것부터 믿는다.
+ *
+ * 파일을 읽을 때 쓰는 것과 같은 판단기(encoding.js)를 쓴다. 두 자리에 서로 다른
+ * 잣대를 두면, 같은 CP949 글이 파일로는 읽히고 웹으로는 깨지는 상태가 된다.
+ */
+function 웹글읽기(buf, 머리글) {
+  if (머리글 && !/^utf-?8$/.test(머리글)) {
+    try { return new TextDecoder(머리글, { fatal: false }).decode(buf); }
+    catch { /* 이 Node 가 모르는 이름이면 아래에서 알아서 본다 */ }
+  }
+  // euc-kr 인 페이지를 위해 힌트를 준다. 내용이 분명하면 내용이 이긴다.
+  return decodeBytes(buf, { fallback: 'euc-kr' }).text;
+}
 
 export const 방문기록 = [];
 
@@ -74,8 +90,28 @@ export async function webFetch(args, { allowPrivate = false } = {}) {
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length > MAX_BYTES) return { error: `너무 큽니다 (${(buf.length / 1024 / 1024).toFixed(1)}MB).` };
 
-    let text = buf.toString('utf8');
+    /*
+     * 무엇으로 쓰여 있는지 알아보고 읽는다.
+     *
+     * 전에는 무조건 UTF-8 이었다. 사내 위키·공공기관 페이지는 아직 EUC-KR 이
+     * 흔한데, 그걸 UTF-8 로 읽으면 한글이 통째로 깨진다. 그 깨진 글이 그대로
+     * 모델에게 가고, 모델은 깨진 채로 요약한다 — 사용자는 왜 엉뚱한 답이
+     * 나오는지 알 수 없다. 파일을 읽을 때는 이미 알아보고 읽는데(encoding.js)
+     * 웹만 안 하고 있었다.
+     *
+     * 머리글(charset)이 있으면 그게 답이다. 없으면 내용을 보고 짐작한다.
+     */
+    const 머리글 = /charset=["']?([\w-]+)/i.exec(type)?.[1]?.toLowerCase() ?? null;
+    let text = 웹글읽기(buf, 머리글);
     if (/html/.test(type)) text = 태그벗기기(text);
+    // <meta charset> 이 머리글과 다르게 적혀 있는 페이지가 있다. 깨졌으면 그걸 믿고 다시 읽는다.
+    if (!머리글 && text.includes('�')) {
+      const meta = /<meta[^>]+charset=["']?([\w-]+)/i.exec(buf.toString('latin1').slice(0, 2000))?.[1]?.toLowerCase();
+      if (meta) {
+        text = 웹글읽기(buf, meta);
+        if (/html/.test(type)) text = 태그벗기기(text);
+      }
+    }
     const cut = text.length > max;
     if (cut) text = text.slice(0, max);
 
