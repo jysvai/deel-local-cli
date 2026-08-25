@@ -85,6 +85,60 @@ async function 띄우기(줄들, { 상자 = true } = {}) {
   return { 날것: out, 글: out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '') };
 }
 
+/**
+ * deel 을 상자 모드로 띄워 놓고 키를 눌러 본다.
+ *
+ * 줄을 통째로 넣는 띄우기() 와 다르다. 여기서는 **키 하나하나**를 보내고
+ * 그때마다 상자에 무엇이 그려졌는지 읽는다 — 방향키·백스페이스·이력은
+ * 줄 단위로는 잴 수가 없다.
+ */
+async function 키눌러보기(단계들) {
+  const root = mkdtempSync(join(tmpdir(), 'deel-key-'));
+  const home = mkdtempSync(join(tmpdir(), 'deel-key-home-'));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자',
+    profiles: [{
+      id: 'stub', name: '스텁 연결', kind: 'openai', baseUrl: 'http://127.0.0.1:1/v1',
+      auth: 'none', apiKey: '', model: '스텁모델', ctx: 32768, streaming: false, tools: true,
+    }],
+  }), 'utf8');
+
+  const kid = spawn(process.execPath, [
+    '--import', `file:///${앞선것.replace(/\\/g, '/')}`,
+    join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline', '--ctx', '32768',
+  ], { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, DEEL_HOME: home, FORCE_COLOR: '1' } });
+
+  let out = '';
+  kid.stdout.on('data', (b) => { out += b; });
+  kid.stderr.on('data', (b) => { out += b; });
+  let 끝남 = false;
+  const 닫힘 = new Promise((r) => kid.on('close', () => { 끝남 = true; r(); }));
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // 마지막으로 그려진 상자 안쪽 글. 제어문자를 벗기고 테두리를 떼어 낸다.
+  const 지금글 = () => {
+    const 줄들 = out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').split('\n').filter((l) => /│ [❯…] /.test(l));
+    return (줄들.at(-1) ?? '').replace(/^.*│ [❯…] /, '').replace(/ *│.*$/, '');
+  };
+
+  await 자기(1800);
+  const 결과 = [];
+  for (const 단계 of 단계들) {
+    out = '';
+    for (const k of 단계.키) { if (!끝남) { try { kid.stdin.write(k); } catch {} } await 자기(110); }
+    await 자기(320);
+    const 본것 = 지금글();
+    결과.push({ ...단계, 본것, 맞나: 본것 === 단계.기대 });
+  }
+
+  if (!끝남) { try { kid.stdin.write('\n/exit\n'); } catch {} }
+  await Promise.race([닫힘, 자기(2500)]);
+  if (!끝남) { kid.kill(); await Promise.race([닫힘, 자기(1500)]); }
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+  return 결과;
+}
+
 trace('2-슬래시가보이는가');
 
 // ── 여기가 이 파일의 존재 이유다 ────────────────────────────────────────
@@ -113,7 +167,41 @@ trace('2-슬래시가보이는가');
   check('딴 화면을 안 쓴다', !/\x1b\[\?1049/.test(r.날것), '');
 }
 
-trace('3-줄모드와같은가');
+trace('3-키를눌러본다');
+
+// ── 치는 감촉 ───────────────────────────────────────────────────────────
+//
+// 상자는 readline 이 들고 있는 글을 그린다. 그 사이가 어긋나면 화면과 실제
+// 입력이 갈라지고, 그건 **사람이 친 것과 다른 글이 보내지는** 것이다.
+//
+// 터미널이 보내는 바이트를 그대로 흘려 넣어 잰다. 한글은 두 칸이라 커서 자리가
+// 제일 잘 틀리고, 백스페이스가 바이트 단위로 지워지면 글자가 깨진다.
+{
+  const BS = '\x7f';
+  const 왼 = '\x1b[D'; const 오른 = '\x1b[C'; const 위 = '\x1b[A';
+  const 맨앞 = '\x01'; const 맨끝 = '\x05';   // Ctrl+A / Ctrl+E
+
+  const r = await 키눌러보기([
+    { 이름: '한글을 한 글자씩 친다', 키: ['집', '계', ' ', '함', '수'], 기대: '집계 함수' },
+    // 한글 한 글자는 UTF-8 로 세 바이트다. 바이트로 지우면 글자가 깨진다.
+    { 이름: '백스페이스가 한 글자를 지운다', 키: [BS], 기대: '집계 함' },
+    { 이름: '이어서 두 번 더 지운다', 키: [BS, BS], 기대: '집계' },
+    { 이름: '영문을 이어 친다', 키: [' ', 'l', 'o', 'g'], 기대: '집계 log' },
+    { 이름: '왼쪽 방향키로 가서 끼워 넣는다', 키: [왼, 왼, 왼, 'X'], 기대: '집계 Xlog' },
+    { 이름: '오른쪽으로 가서 지운다', 키: [오른, BS], 기대: '집계 Xog' },
+    { 이름: 'Ctrl+A 로 맨 앞에 간다', 키: [맨앞, '앞'], 기대: '앞집계 Xog' },
+    { 이름: 'Ctrl+E 로 맨 끝에 간다', 키: [맨끝, '끝'], 기대: '앞집계 Xog끝' },
+    { 이름: '통째로 지운다', 키: Array(20).fill(BS), 기대: '' },
+    { 이름: '보내고 나면 상자가 빈다', 키: ['다시 쳐 봅니다\n'], 기대: '' },
+    { 이름: '위 방향키로 지난 입력을 되살린다', 키: [위], 기대: '다시 쳐 봅니다' },
+  ]);
+
+  for (const x of r) {
+    check(x.이름, x.맞나, x.맞나 ? '' : `본 것 ${JSON.stringify(x.본것)} · 바란 것 ${JSON.stringify(x.기대)}`);
+  }
+}
+
+trace('4-줄모드와같은가');
 
 // ── --no-tui 와 내용이 같아야 한다 ──────────────────────────────────────
 //
@@ -140,7 +228,7 @@ trace('3-줄모드와같은가');
   check('줄 모드는 딴 화면도 안 쓴다', !/\x1b\[\?1049/.test(줄.날것), '');
 }
 
-trace('4-끝');
+trace('5-끝');
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n입력 상자 띄워 보기  ${D}(터미널인 척해야만 밟히는 자리)${X}\n`);
