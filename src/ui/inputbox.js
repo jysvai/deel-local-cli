@@ -33,10 +33,11 @@
  * 2) 그릴 것을 값으로 내놓는다(프레임). 검사는 파이프로 도니 화면을 못 본다 —
  *    값으로 내놓아야 한 칸도 안 어긋나는지 잴 수 있다.
  */
-import { c, width, cursor } from './ansi.js';
+import { c, width, cursor, clip } from './ansi.js';
 import { statusLine, contextWarning } from './status.js';
 import { 접어쓰기 } from './wrap.js';
 import { 문구고르기, 돌림틀, 걸린시간, 느긋해질때, 문구주기 } from './working.js';
+import { 최대추천 } from './complete.js';
 
 const 줄끝지움 = '\x1b[K';
 const 위로 = (n) => (n > 0 ? `\x1b[${n}A` : '');
@@ -58,10 +59,11 @@ export const 안쪽최대 = 8;
  * @param {string} o.상태    상태줄 (없으면 안 그린다)
  * @param {string} o.경고    컨텍스트 경고 (없으면 안 그린다)
  * @param {string} o.곁말    상자 아래 흐린 한 줄 (도움말 등)
+ * @param {object[]} o.추천  자동완성 후보 [{이름, 설명, 인자}]
  * @returns {{줄들: string[], 커서: {위: number, 열: number}}}
  *   커서.위 = 마지막 줄에서 몇 줄 위인가, 커서.열 = 1부터 세는 칸
  */
-export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상태 = '', 경고 = '', 곁말 = '', 일감 = null } = {}) {
+export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상태 = '', 경고 = '', 곁말 = '', 일감 = null, 추천 = [] } = {}) {
   const 칸 = Math.max(20, 폭);
   const 안쪽 = Math.max(4, 칸 - 앞머리 - 2);   // 오른쪽 ' │' 두 칸
   const 줄들 = [];
@@ -116,6 +118,41 @@ export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상
     줄들.push(` ${c.gray('│')} ${표} ${한줄}${' '.repeat(Math.max(0, 남))} ${c.gray('│')}`);
   }
   줄들.push(c.gray(` ╰${가로}╯`));
+
+  /*
+   * 자동완성 추천은 상자 **아래**에 놓는다.
+   *
+   * 안에 넣으면 치던 글이 밀려 올라가서, 무엇을 치고 있었는지가 안 보인다.
+   * 아래에 두면 목록이 몇 줄이든 치던 자리는 늘 같은 데 있다.
+   */
+  let 추천줄수 = 0;
+  if (추천?.length) {
+    const 보일것 = 추천.slice(0, 최대추천);
+    // 이름은 상자 안 글자와 같은 자리(6칸째)에서 시작한다 — 눈이 안 흔들린다.
+    const 이름들 = 보일것.map((x) => `/${x.이름}${x.인자 ? ` ${x.인자}` : ''}`);
+    // 이름칸이 넓어지면 설명이 그만큼 잘린다. 제일 긴 이름 하나 때문에 설명이
+    // 다 사라지는 일이 없게 위쪽을 막아 둔다.
+    const 이름폭 = Math.min(Math.max(...이름들.map(width)), Math.max(12, Math.floor(칸 * 0.38)));
+    const 설명폭 = 칸 - 앞머리 - 이름폭 - 3;
+
+    for (const [i, x] of 보일것.entries()) {
+      // 첫째 것만 밝게. Tab 을 누르면 대개 이것으로 채워진다.
+      const 표 = i === 0 ? c.hcyan('›') : ' ';
+      const 칠 = i === 0 ? c.white : c.gray;
+      const 이름 = clip(이름들[i], 이름폭);
+      const 벌림 = ' '.repeat(Math.max(1, 이름폭 - width(이름) + 2));
+      // 좁은 터미널에서는 설명을 버린다. 이름이 본문이다.
+      const 설명 = 설명폭 >= 8 ? c.gray(clip(x.설명 ?? '', 설명폭)) : '';
+      줄들.push(`   ${표} ${칠(이름)}${설명 ? 벌림 + 설명 : ''}`);
+    }
+
+    추천줄수 = 보일것.length;
+    if (추천.length > 보일것.length) {
+      줄들.push(`     ${c.gray(`그 밖에 ${추천.length - 보일것.length}개 더`)}`);
+      추천줄수 += 1;
+    }
+  }
+
   if (곁말) 줄들.push(` ${c.gray(곁말)}`);
 
   /*
@@ -132,7 +169,8 @@ export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상
   const 숨긴줄 = 안쪽줄.length - 보일줄.length;
   const 커서줄 = Math.min(Math.max(0, 앞줄들.length - 1 - 숨긴줄), 보일줄.length - 1);
 
-  const 아래 = (곁말 ? 1 : 0) + 1;                      // 곁말 + 닫는 테두리
+  // 커서 아래에 몇 줄이 더 있나 — 닫는 테두리 + 추천 목록 + 곁말.
+  const 아래 = 1 + 추천줄수 + (곁말 ? 1 : 0);
   const 위 = 아래 + (보일줄.length - 1 - 커서줄);
   // 1부터 세는 칸. 앞머리(5칸) 다음이 6칸째다 — 거기가 첫 글자 자리다.
   const 열 = Math.min(앞머리 + 1 + width(앞줄들.at(-1) ?? ''), 칸 - 1);
@@ -234,8 +272,10 @@ export class InputBox {
    * @param {object} session  상태줄을 그리는 데 쓴다
    * @param {string} 글       readline 이 들고 있는 글
    * @param {number} 커서     그 안에서의 커서 위치
+   * @param {object} 일감     일하는 중이면 그 상태
+   * @param {object[]} 추천   자동완성 후보
    */
-  그리기(session, 글 = '', 커서자리 = null, 일감 = null) {
+  그리기(session, 글 = '', 커서자리 = null, 일감 = null, 추천 = []) {
     this.session = session ?? this.session;
     this.지우기();
 
@@ -247,6 +287,7 @@ export class InputBox {
       경고: this.session ? (contextWarning(this.session) ?? '') : '',
       곁말: this.곁말,
       일감,
+      추천,
     });
 
     cursor.hide();
