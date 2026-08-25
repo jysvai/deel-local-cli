@@ -1248,7 +1248,7 @@ deel --no-tui            입력 상자를 끄고 줄 화면으로 (아래 참고
 ## 개발
 
 ```bash
-npm test          전체 검증 (1,785항목)
+npm test          전체 검증 (1,787항목)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
