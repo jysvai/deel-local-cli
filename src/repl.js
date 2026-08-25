@@ -124,7 +124,7 @@ export async function chatLoop(opts = {}) {
     level: opts.level ?? cfg.level ?? null,
     think: opts.think ?? 'medium',
     effort: opts.effort ?? 'save',
-    maxSteps: opts.maxSteps ?? 24,
+    maxSteps: opts.maxSteps ?? null,   // null 이면 작업 모드가 정한다
   });
 
   // ── 대화 이어하기 ─────────────────────────────────────────────────────
@@ -228,11 +228,20 @@ export async function chatLoop(opts = {}) {
       if (묻는중 !== null) {
         // 되묻는 자리: 답을 그 줄에 남긴 채 줄만 넘긴다.
         process.stdout.write(`\r\x1b[2K${묻는중}${c.white(l)}\n`);
-      } else {
+      } else if (입력기다림) {
         // 상자를 걷어내고, 사람이 보낸 글을 대화에 남긴다. 안 남기면 스크롤을
         // 올렸을 때 답만 있고 무엇을 물었는지가 없다.
         화면.입력지움();
         if (l.trim()) say(` ${c.hcyan('❯')} ${c.white(l)}`);
+      } else if (l.trim()) {
+        /*
+         * 일하는 도중에 미리 쳐 둔 것.
+         *
+         * 여기서 대화에 `❯ …` 를 찍으면 **이미 보낸 것처럼** 보인다. 실제로는
+         * 지금 일이 끝난 뒤에 나가므로, 그때 가서 찍는다(아래 for 문). 지금은
+         * 상자에 몇 건이 밀려 있는지만 세어 준다.
+         */
+        화면.대기갱신('', queue.length + 1);
       }
     }
     if (waiter) { const w = waiter; waiter = null; w(l); }
@@ -332,7 +341,6 @@ export async function chatLoop(opts = {}) {
         });
         return;
       }
-      if (!입력기다림) return;
       /*
        * 여러 키가 한꺼번에 들어와도 **한 번만** 그린다.
        *
@@ -344,7 +352,22 @@ export async function chatLoop(opts = {}) {
       그릴예정 = true;
       setImmediate(() => {
         그릴예정 = false;
-        if (입력기다림) 화면.입력갱신(session, rl.line ?? '', rl.cursor ?? 0, 지금추천(rl.line ?? ''));
+        if (입력기다림) {
+          화면.입력갱신(session, rl.line ?? '', rl.cursor ?? 0, 지금추천(rl.line ?? ''));
+        } else {
+          /*
+           * 일하는 도중에 치고 있는 글.
+           *
+           * readline 은 이미 이걸 받아 두고 있었다 — 화면에 안 보였을 뿐이다.
+           * 그래서 사람은 "작업 중에는 못 친다" 고 생각하고 끝나기를 지켜본다.
+           * 몇 분짜리 턴에서 그 시간이 통째로 버려진다. 새로 받는 게 아니라
+           * **이미 받고 있던 것을 보여 주기만** 한다.
+           *
+           * 답이 흘러나오는 동안(줄 중간)에는 그려도 답 줄을 덮으므로,
+           * 상자 쪽에서 알아서 넘긴다. 글은 그대로 살아 있다.
+           */
+          화면.대기갱신(rl.line ?? '', queue.length);
+        }
       });
     });
   }
@@ -415,6 +438,9 @@ export async function chatLoop(opts = {}) {
 
   const ctx = {
     scope: makeScope(root),
+    // 도구가 한 번에 돌려줄 양을 이 값에서 뽑는다 (agent/budget.js).
+    // /model 로 갈아타면 conn 이 통째로 바뀌므로 그때마다 다시 읽는다.
+    get 모델컨텍스트() { return conn.ctx ?? null; },
     history: new History(root),
     audit: new Audit(root),
     seen: new Set(),
@@ -465,6 +491,21 @@ export async function chatLoop(opts = {}) {
       if (전 !== r.value) 길이알림.push(`컨텍스트를 ${전.toLocaleString()} ${c.gray('→')} ${c.white(r.value.toLocaleString())} 로 맞췄습니다 ${c.gray('(' + (r.source ?? '서버') + '에서 읽음)')}`);
       if (r.max && r.loaded && r.max > r.loaded) {
         길이경고.push(`이 모델은 ${c.white(r.max.toLocaleString())} 까지 됩니다 — 서버에서 더 올린 뒤 ${c.cyan('/ctx auto')}`);
+      }
+      /*
+       * '모델이 낼 수 있는 최대' 와 '서버가 실제로 올려 둔 길이' 는 다르다.
+       *
+       * 모델 카드에는 131,072 라고 적혀 있는데 서버는 8,192 만 올려 둔 경우가
+       * 흔하다. 그런데 우리는 둘 중 아는 것을 그냥 썼다. 그러면 16배를 보내고
+       * **조용히 잘린다** — 오류도 안 나고, 모델이 앞부분을 잊을 뿐이라
+       * 사람은 "모델이 멍청해졌다" 고만 느낀다. 확신에 찬 오답이 제일 나쁘다.
+       *
+       * 이제는 거절당하면 그 문장에서 배워 스스로 맞춘다(backend/learn.js).
+       * 그래도 처음부터 그렇다고 말해 두는 편이 낫다.
+       */
+      if (!r.loaded && r.max) {
+        길이경고.push(`${c.white(r.max.toLocaleString())} 은 ${c.bold('모델이 낼 수 있는 최대')}입니다 — 서버가 실제로 올린 길이는 안 알려 줍니다.`
+          + `\n     너무 길면 서버가 알려 주는 값으로 저절로 맞춥니다. 아는 값이 있으면 ${c.cyan('/ctx 8192')} 처럼 직접 정하세요`);
       }
     } else if (prof.ctx == null) {
       길이경고.push(`컨텍스트를 서버가 안 알려줍니다 — 우선 ${CTX_DEFAULT.toLocaleString()} 으로 잡았습니다. ${c.cyan('/ctx 655360')} 처럼 직접 지정하세요`);
@@ -546,12 +587,19 @@ export async function chatLoop(opts = {}) {
   for (;;) {
     prompt();
     입력기다림 = true;
+    // 줄이 이미 쌓여 있으면 그건 **일하는 동안 미리 쳐 둔 것**이다.
+    // 그때는 대화에 안 찍었으니(찍으면 이미 보낸 것처럼 보인다) 지금 찍는다.
+    const 예약이었나 = queue.length > 0;
     const line = await nextLine();
     입력기다림 = false;
     if (line === null) break;          // 입력이 끝났다 (파이프 종료 / Ctrl+D)
     interrupted = false;
     const text = line.trim();
     if (!text) continue;
+    if (예약이었나 && 상자쓰나) {
+      화면.입력지움();
+      say(` ${c.hcyan('❯')} ${c.white(text)}  ${c.gray('(미리 쳐 둔 것)')}`);
+    }
 
     const cmd = await handle(text, session, ctx);
     if (cmd.exit) break;
@@ -785,6 +833,16 @@ export async function chatLoop(opts = {}) {
           case 'limit':
             say('');
             say(`  ${mark.warn} 도구 호출 ${ev.steps}회에서 멈췄습니다. ${c.gray('이어서 하려면 다시 말씀하세요.')}`);
+            // 무엇이 안 끝났는지 그 자리에 적는다. 위로 스크롤해 도구 줄을
+            // 세어 보게 하면, 이어서 시킬 때 무엇을 시켜야 할지 알 수 없다.
+            if (ev.남은할일?.length) {
+              say('');
+              say(`  ${c.gray('안 끝난 것')}`);
+              for (const t of ev.남은할일.slice(0, 8)) {
+                say(`    ${t.state === 'doing' ? c.hyellow('▶') : c.gray('☐')} ${c.white(clip(t.text, 70))}`);
+              }
+              if (ev.남은할일.length > 8) say(`    ${c.gray(`… 그 밖에 ${ev.남은할일.length - 8}개`)}`);
+            }
             만든파일보이기(ev.files);
             break;
 
