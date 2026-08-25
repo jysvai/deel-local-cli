@@ -10,7 +10,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeScope } from '../src/safety/guard.js';
+import { makeScope, checkPaths } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
@@ -226,6 +226,45 @@ trace('5-작업범위');
     (session.messages ?? []).some((m) => m.role === 'tool' && /범위|바깥|밖/.test(String(m.content))),
     (session.messages ?? []).filter((m) => m.role === 'tool').map((m) => String(m.content).slice(0, 40)).join(' | '));
   check('막혀도 대화는 이어진다', ev.some((e) => e.type === 'done'), '');
+}
+
+trace('5b-Bash로우회');
+
+// ── Bash 로 울타리를 넘어가지 못하는가 ──────────────────────────────────
+//
+// Read 는 .deel/config.json 을 막는다. 게이트웨이 열쇠가 그 안에 있어서다.
+// 그런데 Bash 로는 `type .deel\config.json` 한 줄이면 그냥 읽혔다.
+// 한쪽 문만 잠그면 잠근 뜻이 없다 — 읽힌 열쇠는 대화에 실려 게이트웨이로
+// 나가고, 세션 기록으로 디스크에도 남는다.
+{
+  const { ctx } = 새것();
+  const 막히나 = (cmd) => {
+    try { checkPaths(cmd, ctx.scope); return null; }
+    catch (e) { return e.message; }
+  };
+
+  check('Bash 로 제 설정 파일을 못 읽는다', /열쇠/.test(막히나('type .deel\\config.json') ?? ''), 막히나('type .deel\\config.json')?.split('\n')[0]);
+  check('빗금 방향이 달라도 막힌다', 막히나('cat .deel/config.json') !== null, 막히나('cat .deel/config.json')?.split('\n')[0]);
+  check('감사기록도 Bash 로 못 읽는다', 막히나('cat .deel/audit.jsonl') !== null, 막히나('cat .deel/audit.jsonl')?.split('\n')[0]);
+  check('남의 도구 살림도 막힌다', /다른 코딩 도구/.test(막히나('cat .codex/history.jsonl') ?? ''), 막히나('cat .codex/history.jsonl')?.split('\n')[0]);
+  check('작업 폴더 밖은 못 읽는다', /범위 밖/.test(막히나('cat ../../비밀.txt') ?? ''), 막히나('cat ../../비밀.txt')?.split('\n')[0]);
+  check('절대경로로도 못 나간다', /범위 밖/.test(막히나(`cat ${join(tmpdir(), '남의것.txt')}`) ?? ''), '절대경로');
+  check('~ 를 풀어서 본다', /범위 밖/.test(막히나('cat ~/.aws/credentials') ?? ''), 막히나('cat ~/.aws/credentials')?.split('\n')[0]);
+  check('내보내는 자리도 본다', /범위 밖/.test(막히나('echo x > ../밖.txt') ?? ''), 막히나('echo x > ../밖.txt')?.split('\n')[0]);
+
+  // 그런데 평범한 명령까지 막으면 도구가 쓸모없어진다. 이쪽이 더 흔하다.
+  const 통과 = [
+    'npm test',
+    'node src/cli.js --help',
+    'git log --oneline -5',
+    "sed -n '1,5p' src/agent/loop.js",
+    "grep -r 'TODO' src/",
+    'node scripts/build.js dist/out.js',
+    'curl https://example.com/a/b',
+    'echo "결과" > out/report.txt',
+    'npm run build -- --out ./dist',
+  ];
+  for (const c of 통과) check(`평범한 명령은 그대로 돈다: ${c}`, 막히나(c) === null, 막히나(c)?.split('\n')[0] ?? '');
 }
 
 trace('6-읽기전용모드');

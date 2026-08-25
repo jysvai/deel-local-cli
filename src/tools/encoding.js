@@ -246,7 +246,20 @@ export function consoleCodepage() {
   return _cp;
 }
 
-/** 바이트를 글로. 무엇으로 읽었는지도 같이 돌려준다. */
+/**
+ * 바이트를 글로. 무엇으로 읽었는지도 같이 돌려준다.
+ *
+ * 돌려주는 encoding 은 **되돌려 쓸 때 그대로 넣을 이름**이다. 읽을 때 쓴 해독기
+ * 이름이 아니다. 이 둘이 갈리는 자리가 UTF-8 BOM 이다.
+ *
+ * BOM 있는 UTF-8 파일도 해독기는 그냥 'utf-8' 이면 된다 — 앞 3바이트를 잘라내고
+ * 넘기니까. 그런데 그 이름을 그대로 돌려주면 되돌려 쓸 때 BOM 이 없어진다.
+ * 한 글자 고쳤을 뿐인데 엑셀에서 CSV 한글이 깨지고, .ps1 이 오작동한다.
+ * 화면의 /diff 에는 의도한 변경만 보이니 원인을 연결할 방법이 없다.
+ *
+ * encode() 에는 'utf-8-bom' 을 받는 자리가 처음부터 있었다. 다만 그 이름을
+ * 만들어 주는 곳이 없어서 한 번도 안 불렸다 — 끊어져 있던 길을 여기서 잇는다.
+ */
 export function decode(buf, { fallback = null, system = null } = {}) {
   const found = detect(buf, { fallback, system });
   const body = found.bom ? buf.subarray(found.bom) : buf;
@@ -257,7 +270,8 @@ export function decode(buf, { fallback = null, system = null } = {}) {
     text = body.toString('utf8');
     return { text, encoding: 'utf-8', sure: false, why: `${found.id} 를 이 Node 가 모름` };
   }
-  return { text, encoding: found.id, sure: found.sure, why: found.why, bom: found.bom ?? 0 };
+  const 되돌릴이름 = found.id === 'utf-8' && found.bom ? 'utf-8-bom' : found.id;
+  return { text, encoding: 되돌릴이름, sure: found.sure, why: found.why, bom: found.bom ?? 0 };
 }
 
 // ── 되돌려 쓰기 ─────────────────────────────────────────────────────────
@@ -306,6 +320,14 @@ export function encode(text, encoding = 'utf-8') {
     return { buf: Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from(text, 'utf8')]), lost: [] };
   }
   if (id === 'utf-16le') return { buf: Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from(text, 'utf16le')]), lost: [] };
+  if (id === 'utf-16be') {
+    // Node 는 utf16be 로 쓸 줄 모른다. LE 로 쓰고 두 바이트씩 뒤집으면 그게 BE 다.
+    // 없으면 아래 역표 만들기로 떨어지고, 그건 실패해서 조용히 UTF-8 이 된다 —
+    // 한 글자 고쳤을 뿐인데 파일 전체가 다른 인코딩이 되는 자리라 여기서 막는다.
+    const le = Buffer.from(text, 'utf16le');
+    for (let i = 0; i + 1 < le.length; i += 2) { const t = le[i]; le[i] = le[i + 1]; le[i + 1] = t; }
+    return { buf: Buffer.concat([Buffer.from([0xFE, 0xFF]), le]), lost: [] };
+  }
 
   let map;
   try { map = reverseTable(id); }

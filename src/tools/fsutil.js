@@ -32,10 +32,80 @@ export function copyDir(from, to, { skipped = [] } = {}) {
   return { skipped };
 }
 
+/**
+ * 다른 코딩 도구들이 제 살림을 넣어 두는 자리.
+ *
+ * 프로젝트 파일이 아니라 그 도구의 기록이다 — 지난 대화, 명령 이력, 캐시,
+ * 그리고 열쇠. 이 작업과 아무 상관이 없는데 훑을 때 걸려 나오면 모델이
+ * 그것부터 읽는다. 실제로 .claude/history.jsonl 을 읽어 컨텍스트를 채운 적이 있다.
+ *
+ * **목록은 여기 한 곳에만 둔다.** 전에는 훑는 쪽과 읽기 막는 쪽에 따로 적어
+ * 놨는데, 그러면 한쪽에만 새 이름을 넣는 날이 반드시 온다. 훑을 때는 안 걸리는데
+ * 이름을 대면 읽히는, 설명하기 어려운 상태가 된다.
+ *
+ * 새 도구는 계속 나온다. 여기 없는 이름이 보이면 그냥 한 줄 더하면 된다.
+ */
+export const 남의도구살림 = new Set([
+  '.claude', '.codex', '.cursor', '.gemini', '.aider', '.continue', '.cline',
+  '.roo', '.kilocode', '.windsurf', '.opencode', '.zed', '.trae', '.augment',
+  '.qodo', '.tabnine', '.cody', '.sourcegraph', '.copilot', '.amazonq', '.junie',
+  '.codeium', '.goose', '.crush', '.gptme', '.openhands', '.devin',
+]);
+
+// .aider.chat.history.md 처럼 폴더가 아니라 파일로 흘리는 것들도 있다.
+export const 남의도구파일 = /^\.(aider|copilot|continue|cline|codeium|windsurf)[.-]/i;
+
 export const SKIP_DIRS = new Set([
   'node_modules', '.git', '.deel', '.svn', '.hg', 'dist', 'build',
   '.next', '.nuxt', '.cache', '__pycache__', '.venv', 'venv', 'target',
+  ...남의도구살림,
 ]);
+
+/**
+ * 이 파일이 '읽어 봐야 도움이 안 되는 살림' 인가.
+ *
+ * 왜 막나:
+ *   실제로 이런 일이 있었다 —
+ *     ◧ Read(~/.deel/audit.jsonl)      77줄
+ *     ◧ Read(~/.claude/history.jsonl)  35줄
+ *   감사기록은 이 프로그램이 방금 무엇을 했는지 적어 둔 것이다. 그걸 다시 읽어
+ *   대화에 넣으면 모델이 제 그림자를 좇는다. 사용자가 시킨 일과는 아무 상관이
+ *   없고, 컨텍스트만 찬다.
+ *
+ *   설정 파일은 더 나쁘다. 게이트웨이 열쇠(apiKey)가 그 안에 있다.
+ *   읽는 순간 그 열쇠가 대화에 실려 모델로 나가고, 세션 기록으로 디스크에도 남는다.
+ *   열쇠를 그 열쇠의 주인에게 보내는 셈이다.
+ *
+ * 막는 것이지 숨기는 것이 아니다 — 왜 안 되는지 그대로 말해 준다.
+ * @returns {string|null} 막을 이유. 막을 것이 아니면 null.
+ */
+export function 내부살림(abs) {
+  const 조각 = String(abs ?? '').replace(/\\/g, '/').split('/');
+  const 이름 = 조각[조각.length - 1] ?? '';
+  const i = 조각.lastIndexOf('.deel');
+  if (i >= 0) {
+    const 안 = 조각.slice(i + 1);
+    if (안[0] === 'config.json') {
+      return 'deel 자신의 설정 파일입니다. 게이트웨이 열쇠가 들어 있어 읽지 않습니다.'
+        + ' 연결 상태가 궁금하면 사용자에게 /status 를 쳐 보라고 하세요.';
+    }
+    if (['audit.jsonl', 'sessions', 'history'].includes(안[0])) {
+      return 'deel 자신의 기록입니다(무엇을 했는지 적어 둔 것). 지금 하는 일에 도움이 안 되고'
+        + ' 컨텍스트만 차서 읽지 않습니다. 필요한 것은 대화에 이미 다 있습니다.';
+    }
+  }
+  // 남의 도구 살림. 목록은 남의도구살림 한 곳에만 있다 — 훑는 쪽과 같은 것을 본다.
+  const 걸린것 = 조각.find((seg) => 남의도구살림.has(seg)) ?? (남의도구파일.test(이름) ? 이름 : null);
+  if (걸린것) {
+    return `${걸린것} 은 다른 코딩 도구가 제 기록을 넣어 두는 자리입니다.`
+      + ' 지난 대화·명령 이력·열쇠 같은 것이라 이 작업과 상관이 없고, 읽으면 컨텍스트만 찹니다.'
+      + ' 정말 그 안의 내용이 필요하면 사용자에게 직접 물어보세요.';
+  }
+  if (이름 === 'audit.jsonl') {
+    return 'deel 자신의 기록입니다. 읽어도 지금 하는 일에 도움이 안 됩니다.';
+  }
+  return null;
+}
 
 // glob 을 정규식으로. **  *  ?  {a,b}  [abc] 를 지원한다.
 export function globToRegex(pattern) {
