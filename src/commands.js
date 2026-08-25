@@ -15,6 +15,8 @@ import { scanLocal, toProfiles } from './backend/scan.js';
 import { list as listSessions } from './agent/store.js';
 import { MODES as WORK_MODES, ORDER as WORK_ORDER, DEFAULT as WORK_DEFAULT, normalize as normWork, get as getWork, canWrite } from './agent/modes.js';
 import { LEVELS, ORDER as LEVEL_ORDER, DEFAULT as LEVEL_DEFAULT, normalize as normLevel, shows as levelShows } from './ui/level.js';
+import { diffLines, renderDiff, shortStat } from './ui/diff.js';
+import { readTextFull } from './tools/fsutil.js';
 const MODES = {
   auto: '자율 — 전부 알아서. 되돌리기가 안전망',
   confirm: '확인 — 되돌릴 수 없는 것만 물어봄',
@@ -26,6 +28,7 @@ export const COMMANDS = {
   clear:   { desc: '대화 비우기' },
   context: { desc: '컨텍스트 사용량 보기' },
   ctx:     { desc: '컨텍스트 길이 — 모델에 맞춰 다시 재거나 직접 지정', arg: '[auto|숫자|640k]' },
+  out:     { desc: '한 번에 받을 답 길이 상한 — 큰 파일이 잘리면 여기를 올린다', arg: '[숫자|32k|auto]' },
   compact: { desc: '오래된 대화 줄이기' },
   model:   { desc: '연결·모델 바꾸기 (이름 일부 · list · models)', arg: '[이름|list|models]' },
   think:   { desc: '추론 강도 (off/low/medium/high/max)', arg: '<수준>' },
@@ -41,6 +44,7 @@ export const COMMANDS = {
   ask:     { desc: '작업 모드 → 묻기 (설명만)' },
   orchestrator: { desc: '작업 모드 → 총괄 (큰 일을 쪼개서)' },
   undo:    { desc: '직전 작업 되돌리기', arg: '[턴수]' },
+  diff:    { desc: '이번 대화에서 바뀐 파일 · 바뀐 자리 보기', arg: '[파일]' },
   tools:   { desc: '쓸 수 있는 도구 보기' },
   skills:  { desc: '스킬 보기·검색·골라 올리기', arg: '[검색어|all|off]' },
   plugin:  { desc: '플러그인 목록·설치·삭제·반입묶음', arg: '[install|remove|pack]' },
@@ -99,6 +103,10 @@ export async function handle(line, session, ctx) {
 
     case 'ctx': return await ctxLength(session, arg), { handled: true };
 
+    // 한 번에 받을 답 길이. 컨텍스트(/ctx)와는 다른 축이라 명령을 따로 둔다 —
+    // /ctx out 안에 숨겨 두니 아무도 못 찾았고, 정작 큰 파일이 안 만들어지는 원인이었다.
+    case 'out': case '출력': return await 출력상한(session, arg), { handled: true };
+
     case 'compact': {
       const s = spin('앞선 대화를 요약해 접는 중…');
       const r = await compact(session);
@@ -121,23 +129,67 @@ export async function handle(line, session, ctx) {
 
     case 'model': return await switchModel(session, ctx, arg), { handled: true };
 
+    /*
+     * /think — '얼마나 생각하나' 하나만 정한다.
+     *
+     * 전에는 한 명령이 두 축을 맡았다. `/think high` 는 강도(5단계)를 정하고
+     * `/think save` 는 배분(3가지)을 정했다 — 같은 이름으로 다른 것을 정하니
+     * 화면을 봐도 지금 무엇이 무엇인지 읽히지 않았다. 게다가 부를 때마다
+     * 단계표가 통째로 펼쳐졌고, 그 표의 '출력상한' 칸 세 줄은 늘 같은 값이었다.
+     *
+     * 그래서 갈랐다.
+     *   /think high      강도
+     *   /think 배분 절약  단계별 배분
+     *   /think 자세히     단계표
+     *   /out             출력 상한 (아예 다른 축이라 명령을 따로 뺐다)
+     *
+     * 옛 이름(/think save)도 그대로 받는다. 쓰던 사람의 손버릇을 깨지 않는다.
+     */
     case 'think': {
-      const asProfile = normalizeProfile(arg);
+      const 말 = String(arg ?? '').trim();
+      // 낱말 끝을 \b 로 잡으면 안 된다. \b 는 \w(=[A-Za-z0-9_])를 기준으로 하는데
+      // 한글은 \w 가 아니다 — '배분 절약' 의 '분' 과 공백은 **둘 다 비낱말**이라
+      // 그 사이에 경계가 없다. 그래서 `/^배분\b/` 는 영영 안 맞았고,
+      // /think 배분 … 은 통째로 죽은 명령이었다(영어 prof 만 먹혔다).
+      // 공백이나 줄 끝으로 직접 끊는다.
+      const 배분말 = /^(배분|profile|prof)(\s|$)/.test(말) ? 말.replace(/^(배분|profile|prof)\s*/, '') : null;
+
+      if (배분말 !== null) {
+        const p = normalizeProfile(배분말);
+        if (!p) {
+          say(`  ${c.gray('배분')}  ${Object.entries(PROFILES).map(([k, v]) => `${k}(${v.name})`).join(' · ')}`);
+          say(`  ${c.gray('예')} ${c.cyan('/think 배분 절약')}`);
+          say('');
+          return { handled: true };
+        }
+        session.effort = p;
+        session.effortSet = true;   // 사용자가 직접 정했다 — 작업 모드보다 우선한다
+        say(`  ${mark.ok} 배분 ${c.bold(PROFILES[p].name)} ${c.gray('— ' + PROFILES[p].desc)}`);
+        showThink(session);
+        return { handled: true };
+      }
+
+      if (/^(자세히|detail|-v)$/.test(말)) { showThink(session, { 자세히: true }); return { handled: true }; }
+
+      // 옛 이름 — /think save 처럼 배분 이름을 바로 친 경우.
+      const asProfile = normalizeProfile(말);
       if (asProfile) {
         session.effort = asProfile;
-        session.effortSet = true;   // 사용자가 직접 정했다 — 작업 모드보다 우선한다
+        session.effortSet = true;
         say(`  ${mark.ok} 배분 ${c.bold(PROFILES[asProfile].name)} ${c.gray('— ' + PROFILES[asProfile].desc)}`);
+        say(`     ${c.gray('이제')} ${c.cyan('/think 배분 ' + PROFILES[asProfile].name)} ${c.gray('로도 됩니다 — 강도와 헷갈리지 않게 갈랐습니다.')}`);
         showThink(session);
         return { handled: true };
       }
-      if (!THINK_LEVELS.includes(arg)) {
+
+      if (!THINK_LEVELS.includes(말)) {
         showThink(session);
         return { handled: true };
       }
-      session.think = arg;
+      session.think = 말;
       session.thinkSet = true;      // 사용자가 직접 정했다 — 작업 모드보다 우선한다
-      say(`  ${mark.ok} 추론 강도 ${c.bold(arg)}`);
-      if (!session.conn.think && arg !== 'off') {
+      say(`  ${mark.ok} 추론 강도 ${c.bold(말)}`);
+      if (!session.conn.think && 말 !== 'off') {
         say(`     ${c.yellow('이 연결은 모델 층 조절이 적용되지 않습니다.')} ${c.gray('루프 층(도구 호출 상한)으로만 조절됩니다.')}`);
       }
       showThink(session);
@@ -170,6 +222,8 @@ export async function handle(line, session, ctx) {
       say('');
       return { handled: true };
     }
+
+    case 'diff': return 바뀐것보기(session, ctx, arg), { handled: true };
 
     case 'tools': {
       rule('도구', 70);
@@ -558,24 +612,50 @@ function showLevel(session, arg) {
 }
 
 // 추론 강도는 값 하나가 아니라 '단계별 배분' 이다. 그 배분을 눈에 보이게 그린다.
-function showThink(session) {
+/**
+ * 지금 추론 강도가 어떻게 되어 있는지.
+ *
+ * 기본은 **한 줄**이다. 사람이 알고 싶은 것은 '지금 얼마나 생각하나' 이지
+ * 단계별 표가 아니다. 표는 /think 자세히 로 뺐다.
+ *
+ * 쉬움 수준에서는 배분 이야기를 아예 안 꺼낸다 — 고를 일이 없는 사람에게
+ * 고르는 법을 보여 주면 그것부터 걱정하게 된다.
+ */
+function showThink(session, { 자세히 = false } = {}) {
   const b = session.breakdown();
-  const t = effortTable(session.think, session.effort, { ctx: b.total, used: b.used, max: session.conn.maxTokens ?? null });
+  const 아는상한 = session.conn.maxTokens ?? session.conn.maxOut ?? null;
+  const t = effortTable(session.think, session.effort, { ctx: b.total, used: b.used, max: 아는상한 });
+  const 개발자 = session.level === '개발자';
+  const 단계 = t.rows.map((r) => `${r.label} ${r.level}`).join(c.gray(' · '));
+
   say('');
-  rule('추론 강도', 70);
-  say(`  기준 ${c.bold(session.think)}   배분 ${c.bold(t.name)}   ${c.gray(t.desc)}`);
-  say(`  ${c.gray('상한은 이 모델 기준으로 계산합니다 — 컨텍스트')} ${c.white(t.ctx.toLocaleString())}${c.gray(', 지금 찬 양')} ${c.white(t.used.toLocaleString())}`);
-  say('');
-  say(`  ${c.gray(pad('단계', 12) + pad('강도', 10) + pad('출력상한', 10) + '언제')}`);
-  for (const r of t.rows) {
-    const 화살 = r.moved > 0 ? c.yellow('↑') : r.moved < 0 ? c.cyan('↓') : c.gray('·');
-    say(`  ${pad(r.label, 12)}${화살} ${pad(r.level, 8)}${pad(r.cap.toLocaleString(), 10, 'right')}  ${c.gray(r.why)}`);
-  }
-  say('');
-  say(`  ${c.gray('강도')}  ${THINK_LEVELS.join(' · ')}            ${c.gray('예')} ${c.cyan('/think high')}`);
-  say(`  ${c.gray('배분')}  ${Object.entries(PROFILES).map(([k, v]) => `${k}(${v.name})`).join(' · ')}   ${c.gray('예')} ${c.cyan('/think save')}`);
-  if (!session.conn.think && session.think !== 'off') {
+  say(`  ${c.gray('추론 강도')}  ${c.bold(session.think)}   ${c.gray(`(${단계})`)}`);
+  if (개발자 || 자세히) say(`  ${c.gray('배분')}      ${c.bold(t.name)}   ${c.gray(t.desc)}`);
+
+  if (자세히) {
     say('');
+    say(`  ${c.gray(pad('단계', 12) + pad('강도', 10) + pad('출력상한', 10) + '언제')}`);
+    for (const r of t.rows) {
+      const 화살 = r.moved > 0 ? c.yellow('↑') : r.moved < 0 ? c.cyan('↓') : c.gray('·');
+      say(`  ${pad(r.label, 12)}${화살} ${pad(r.level, 8)}${pad(r.cap.toLocaleString(), 10, 'right')}  ${c.gray(r.why)}`);
+    }
+    say('');
+    // 상한이 어디서 왔는지 밝힌다. 세 줄이 같은 값일 때 그게 고장인지 아닌지
+    // 이 한 줄로 갈린다 — 아는 상한이 낮으면 셋이 같아지는 것이 맞다.
+    say(`  ${c.gray('출력 상한은')} ${c.white((아는상한 ?? 16384).toLocaleString())} ${c.gray(
+      session.conn.maxTokens ? '(직접 정하신 값)' : session.conn.maxOut ? '(서버에서 알아낸 값)' : '(모르는 값이라 기본값)',
+    )}${c.gray(' 안에서 나눕니다 —')} ${c.cyan('/out')}`);
+    say(`  ${c.gray('컨텍스트')} ${c.white(t.ctx.toLocaleString())}${c.gray(' · 지금 찬 양 ')}${c.white(t.used.toLocaleString())}`);
+    say('');
+    say(`  ${c.gray('강도')}  ${THINK_LEVELS.join(' · ')}   ${c.gray('예')} ${c.cyan('/think high')}`);
+    say(`  ${c.gray('배분')}  ${Object.entries(PROFILES).map(([k, v]) => `${k}(${v.name})`).join(' · ')}   ${c.gray('예')} ${c.cyan('/think 배분 절약')}`);
+  } else if (개발자) {
+    say(`  ${c.gray('강도')} ${c.cyan('/think high')}   ${c.gray('배분')} ${c.cyan('/think 배분 절약')}   ${c.gray('자세히')} ${c.cyan('/think 자세히')}`);
+  } else {
+    say(`  ${c.gray('더 세게')} ${c.cyan('/think high')}   ${c.gray('더 빠르게')} ${c.cyan('/think low')}`);
+  }
+
+  if (!session.conn.think && session.think !== 'off') {
     say(`  ${c.yellow('이 연결은 모델 층 강도 조절이 적용되지 않습니다.')} ${c.gray('출력 상한만 단계별로 적용됩니다.')}`);
   }
   say('');
@@ -598,6 +678,149 @@ function showContext(session) {
   say('');
   say(`  ${c.gray('/compact 대화 줄이기   /clear 통째로 비우기')}`);
   say(`  ${c.gray('숫자는 추정입니다 — 정확한 토크나이저를 쓰지 않습니다.')}`);
+  say('');
+}
+
+/**
+ * 이번 대화에서 무엇이 바뀌었는지 보여 준다.
+ *
+ *   /diff           바뀐 파일 목록과 늘고 준 줄 수
+ *   /diff src/a.js  그 파일이 처음과 지금 사이에 어떻게 달라졌는지
+ *
+ * 파일 하나를 볼 때는 이번 대화의 '맨 처음' 모습과 견준다. 세 번 고쳤어도
+ * 사람이 알고 싶은 것은 '내가 시키기 전과 지금이 뭐가 다른가' 이지
+ * 마지막 한 번이 아니다. 되돌리기 이력이 그 맨 처음 모습을 들고 있다.
+ */
+function 바뀐것보기(session, ctx, arg = '') {
+  const 말 = String(arg ?? '').trim();
+  say('');
+
+  if (!말) {
+    const 목록 = [...session.changes.entries()];
+    if (!목록.length) {
+      say(`  ${c.gray('이번 대화에서 바뀐 파일이 없습니다.')}`);
+      say(`  ${c.gray('파일을 고치고 나면 여기에 무엇이 얼마나 바뀌었는지 모입니다.')}`);
+      say('');
+      return;
+    }
+    rule('이번 대화에서 바뀐 파일', 70);
+    let a = 0;
+    let r = 0;
+    for (const [p, v] of 목록) {
+      a += v.added;
+      r += v.removed;
+      const 몇번 = v.times > 1 ? c.gray(`  ${v.times}번`) : '';
+      say(`  ${pad(clip(ctx.scope.show(p), 46), 46)} ${c.hgreen(pad(`+${v.added}`, 6, 'right'))} ${c.hred(pad(`−${v.removed}`, 6, 'right'))}${몇번}`);
+    }
+    say(`  ${c.gray('─'.repeat(60))}`);
+    say(`  ${pad(`${목록.length}개 파일`, 46)} ${c.hgreen(pad(`+${a}`, 6, 'right'))} ${c.hred(pad(`−${r}`, 6, 'right'))}`);
+    say('');
+    say(`  ${c.gray('한 파일을 자세히 보려면')} ${c.cyan('/diff <파일>')}${c.gray(', 되돌리려면')} ${c.cyan('/undo')}`);
+    say('');
+    return;
+  }
+
+  let abs;
+  try { abs = ctx.scope.resolve(말); }
+  catch (err) { say(`  ${mark.warn} ${err.message}`); say(''); return; }
+
+  // 이번 대화에서 이 파일을 처음 건드리기 직전의 모습.
+  const 처음 = ctx.history.all().find((x) => x.path === abs);
+  if (!처음) {
+    say(`  ${c.gray('이번 대화에서 안 바꾼 파일입니다:')} ${ctx.scope.show(abs)}`);
+    say(`  ${c.gray('바뀐 것들을 보려면')} ${c.cyan('/diff')}`);
+    say('');
+    return;
+  }
+
+  const 옛것 = 처음.before === null ? null
+    : (처음.enc === 'b64' ? Buffer.from(처음.before, 'base64').toString('utf8') : 처음.before);
+  let 지금 = null;
+  if (existsSync(abs)) {
+    try { 지금 = readTextFull(abs).text; }
+    catch (err) { say(`  ${mark.warn} 지금 내용을 못 읽습니다: ${err.message}`); say(''); return; }
+  }
+
+  const d = diffLines(옛것, 지금);
+  rule(ctx.scope.show(abs), 70);
+  if (!d.changed) {
+    say(`  ${c.gray('고쳤다가 되돌아와서, 처음과 지금이 같습니다.')}`);
+    say('');
+    return;
+  }
+  if (d.isNew) say(`  ${c.gray('이번 대화에서 새로 만든 파일입니다.')}`);
+  if (d.isGone) say(`  ${c.gray('이번 대화에서 없어진 파일입니다.')}`);
+  say(`  ${shortStat(d)}`);
+  say('');
+  for (const l of renderDiff(d, { maxLines: session.level === '개발자' ? 200 : 60 })) say(l);
+  say('');
+  say(`  ${c.gray('되돌리려면')} ${c.cyan('/undo')}`);
+  say('');
+}
+
+/**
+ * 한 번에 받을 답 길이 상한.
+ *
+ *   /out            지금 값과 어디서 나온 값인지
+ *   /out 32k        직접 지정
+ *   /out auto       모른다고 두고 안전한 기본값으로 (16,384)
+ *
+ * 왜 따로 있나:
+ *   컨텍스트(/ctx)와 다른 축이다. 컨텍스트가 655k 여도 '한 번에 뱉을 수 있는 답'
+ *   은 대개 훨씬 작다. 그 두 값이 하나인 줄 알면 큰 파일이 왜 안 만들어지는지
+ *   영영 알 수 없다 — 컨텍스트는 넉넉한데 답이 잘리기 때문이다.
+ *
+ *   전에는 이 기능이 /ctx out 안에 숨어 있었고, 게다가 **먹지도 않았다**
+ *   (effort.js 의 클램프가 다시 조였다). 있는데 안 먹는 것이 가장 나쁘다 —
+ *   문서에 적혀 있으니 사람이 그걸 믿고 쓴다.
+ */
+async function 출력상한(session, arg = '') {
+  const { parseSize } = await import('./backend/ctxsize.js');
+  const 말 = String(arg ?? '').trim().toLowerCase();
+  const cfg = load();
+  const prof = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
+  const 알아낸것 = session.conn.maxOut ?? null;
+
+  if (말 === 'auto' || 말 === '자동') {
+    session.conn.maxTokens = null;
+    if (prof) { delete prof.maxTokens; try { save(cfg); } catch {} }
+    say(`  ${mark.ok} 직접 정한 값을 지웠습니다.`);
+    say(`     ${c.gray(알아낸것 ? `서버에서 알아낸 ${알아낸것.toLocaleString()} 토큰을 씁니다.` : '모르는 값이라 16,384 토큰으로 갑니다.')}`);
+    say('');
+    return;
+  }
+
+  if (말) {
+    const 값 = parseSize(말);
+    if (!값) {
+      say(`  ${mark.no} 숫자를 못 읽었습니다: ${c.white(arg)}`);
+      say(`     ${c.gray('이렇게 쓰세요 —')} ${c.cyan('/out 32k')}  ${c.cyan('/out 65536')}  ${c.cyan('/out auto')}`);
+      say('');
+      return;
+    }
+    session.conn.maxTokens = 값;
+    if (prof) { prof.maxTokens = 값; try { save(cfg); } catch {} }
+    say(`  ${mark.ok} 답 길이 상한 ${c.bold(값.toLocaleString())} 토큰`);
+    say(`     ${c.gray('모델이 못 내는 값을 넣으면 서버가 거절합니다. 거절당하면')} ${c.cyan('/out auto')} ${c.gray('로 되돌리세요.')}`);
+    say('');
+    return;
+  }
+
+  const 쓰는값 = session.conn.maxTokens ?? 알아낸것 ?? 16384;
+  const 어디서 = session.conn.maxTokens ? '직접 정하신 값'
+    : 알아낸것 ? '서버에서 알아낸 값'
+      : '모르는 값이라 안전한 기본값';
+  say('');
+  rule('한 번에 받을 답 길이', 70);
+  say(`  ${c.gray('지금 상한')}     ${c.white(쓰는값.toLocaleString())} ${c.gray(`토큰 — ${어디서}`)}`);
+  say(`  ${c.gray('컨텍스트')}      ${c.white((session.conn.ctx ?? 0).toLocaleString())} ${c.gray('토큰')} ${c.gray('(다른 축입니다 — /ctx)')}`);
+  say('');
+  say(`  ${c.gray('이 값이 한 번에 만들 수 있는 파일 크기를 정합니다.')}`);
+  say(`  ${c.gray('1,000줄짜리 HTML 이 대략 12,000~18,000 토큰입니다.')}`);
+  say(`  ${c.gray('여기서 잘려도 받은 데까지는 파일에 쓰고 이어 붙입니다 — 다만 몇 번 더 오갑니다.')}`);
+  say('');
+  say(`  ${c.cyan('/out 32k')}      ${c.gray('직접 지정 (k 는 1024)')}`);
+  say(`  ${c.cyan('/out auto')}     ${c.gray('직접 정한 값을 지우고 알아낸 값/기본값으로')}`);
   say('');
 }
 
@@ -631,30 +854,13 @@ async function ctxLength(session, arg = '') {
     say('');
   };
 
-  // 0) 답 길이 상한 — 컨텍스트와는 다른 축이다.
-  //
-  // 컨텍스트가 655k 여도 '한 번에 뱉을 수 있는 답' 은 대개 훨씬 작다(기본 16,384).
-  // 모델 한계보다 큰 max_tokens 를 보내면 아예 거부하는 게이트웨이가 있어서 그렇게 뒀다.
-  // 큰 모델을 쓰면 여기서 올릴 수 있다.
-  if (/^(out|답|출력)\b/.test(말)) {
-    const 값 = parseSize(말.replace(/^(out|답|출력)\s*/, ''));
-    const cfg = load();
-    const prof = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
-    if (!값) {
-      say(`  ${c.gray('한 번에 받을 답 길이 상한')}  ${c.white((session.conn.maxTokens ?? 16384).toLocaleString())} ${c.gray('토큰')}`);
-      say(`  ${c.gray('올리려면')} ${c.cyan('/ctx out 32k')} ${c.gray('— 모델이 못 내는 값을 넣으면 서버가 거절합니다.')}`);
-      say('');
-      return;
-    }
-    session.conn.maxTokens = 값;
-    if (prof) { prof.maxTokens = 값; try { save(cfg); } catch {} }
-    say(`  ${mark.ok} 답 길이 상한 ${c.bold(값.toLocaleString())} 토큰 ${c.gray('— 컨텍스트와는 다른 축입니다')}`);
-    say('');
-    return;
-  }
+  // 0) 답 길이 상한 — 이제 /out 이 본자리다. 여기서는 그리로 넘긴다.
+  //    \b 가 아니라 공백·줄 끝으로 끊는다. 한글은 \w 가 아니라서
+  //    `/^답\b/` 는 '답 32k' 에도 '답' 에도 안 맞는다(위 '배분' 과 같은 함정).
+  if (/^(out|답|출력)(\s|$)/.test(말)) return await 출력상한(session, 말.replace(/^(out|답|출력)\s*/, ''));
 
   // 1) 직접 지정
-  if (말 && 말 !== 'auto' && 말 !== '자동' && 말 !== '다시') {
+  if (말 && !['auto', '자동', '다시', '자세히', 'detail', '-v'].includes(말)) {
     const 값 = parseSize(말);
     if (!값) {
       say(`  ${mark.no} 숫자를 못 읽었습니다: ${c.white(arg)}`);
@@ -670,17 +876,44 @@ async function ctxLength(session, arg = '') {
     return;
   }
 
-  // 2) 다시 재기
+  // 2) 다시 재기 (auto · 다시 · 자세히)
   if (말) {
+    const 자세히 = /자세히|detail|-v/.test(말);
     const s = spin('모델에 걸린 길이를 서버에 묻는 중…');
     let r;
     try { r = await probeCtx(session.conn); }
     catch (err) { s.stop(`  ${mark.no} 못 물어봤습니다 — ${c.gray(String(err?.message ?? err))}`); say(''); return; }
     s.stop('');
+
+    // 어디를 두드렸고 무엇이 나왔는지. 값이 이상할 때 사람이 원인을 짚을 수 있어야 한다.
+    if (자세히) {
+      say('');
+      say(`  ${c.gray('두드린 자리')}`);
+      for (const t of r.tried) {
+        const 표 = t.ok ? c.green('응답함') : c.gray(`${t.status || '연결 실패'}`);
+        say(`     ${c.gray(pad(t.label, 20))} ${표}  ${c.gray(clip(t.url, 60))}`);
+      }
+      say('');
+      say(`  ${c.gray('읽어 낸 값')}`);
+      say(`     ${c.gray(pad('모델 최대', 20))} ${r.max ? c.white(r.max.toLocaleString()) : c.gray('못 찾음')}`
+        + (r.maxKey ? c.gray(`  ← ${r.maxKey}`) : ''));
+      say(`     ${c.gray(pad('지금 올린 길이', 20))} ${r.loaded ? c.white(r.loaded.toLocaleString()) : c.gray('못 찾음')}`
+        + (r.loadedKey ? c.gray(`  ← ${r.loadedKey}`) : ''));
+      say(`     ${c.gray(pad('답 길이 상한', 20))} ${r.out ? c.white(r.out.toLocaleString()) : c.gray('못 찾음')}`
+        + (r.outSource ? c.gray(`  ← ${r.outSource}`) : ''));
+      say('');
+    }
+
+    // 답 길이 상한도 같이 알아냈으면 받아 둔다. 사람이 정한 값은 안 덮는다.
+    if (r.out) session.conn.maxOut = r.out;
+
     if (!r.value) {
-      say(`  ${mark.warn} 서버가 컨텍스트 길이를 안 알려줍니다.`);
-      for (const t of r.tried) say(`     ${c.gray(pad(t.label, 20))} ${c.gray(t.ok ? '응답함(값 없음)' : `${t.status || '연결 실패'}`)}`);
-      say(`     ${c.gray('직접 넣어 주세요 —')} ${c.cyan('/ctx 655360')}`);
+      // 못 알아낸 것을 아는 척하지 않는다. 조용히 32,768 로 깔고 앉으면
+      // 655k 모델을 5% 만 쓰거나, 8k 서버에 128k 를 보내 조용히 잘린다.
+      say(`  ${mark.warn} 서버가 컨텍스트 길이를 안 알려줍니다. ${c.gray(r.why ?? '')}`);
+      if (!자세히) for (const t of r.tried) say(`     ${c.gray(pad(t.label, 20))} ${c.gray(t.ok ? '응답함(값 없음)' : `${t.status || '연결 실패'}`)}`);
+      say(`     ${c.gray(`지금은 ${(session.conn.ctx ?? 0).toLocaleString()} 으로 잡혀 있습니다 — 이건 알아낸 값이 아니라 기본값입니다.`)}`);
+      say(`     ${c.gray('직접 넣어 주세요 —')} ${c.cyan('/ctx 655360')}   ${c.gray('어디를 두드렸는지 보려면')} ${c.cyan('/ctx 자세히')}`);
       say('');
       return;
     }
@@ -706,7 +939,7 @@ async function ctxLength(session, arg = '') {
   say('');
   say(`  ${c.cyan('/ctx auto')}      ${c.gray('서버에 다시 물어 모델에 맞춥니다')}`);
   say(`  ${c.cyan('/ctx 655360')}    ${c.gray('직접 지정 (640k · 128k · 1m 도 됩니다 — k 는 1024)')}`);
-  say(`  ${c.cyan('/ctx out 32k')}   ${c.gray('한 번에 받을 답 길이 상한 (지금 ' + (session.conn.maxTokens ?? 16384).toLocaleString() + ') — 다른 축입니다')}`);
+  say(`  ${c.cyan('/out 32k')}      ${c.gray('한 번에 받을 답 길이 상한 (지금 ' + (session.conn.maxTokens ?? session.conn.maxOut ?? 16384).toLocaleString() + ') — 다른 축입니다')}`);
   say('');
 }
 

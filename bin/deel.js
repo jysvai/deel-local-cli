@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { c, say, mark, rule } from '../src/ui/ansi.js';
 import { runSetup, runDiagnose, showStatus, banner } from '../src/setup.js';
 import { chatLoop } from '../src/repl.js';
+import { runOnce } from '../src/oneshot.js';
 import { packSelf, audit, reviewSheet } from '../src/pack/selfpack.js';
 import { runScan } from '../src/backend/scanui.js';
 import { closeConnections } from '../src/backend/http.js';
@@ -41,6 +42,13 @@ function runAudit() {
   return 0;
 }
 
+// 값을 안 받는 깃발. 뒤에 오는 낱말을 제 값으로 삼키지 않게 여기 적어 둔다.
+//
+// 실제로 이랬다 — deel run --json "검사 돌려줘" 를 쳤더니 --json 이 뒤의 말을
+// 통째로 삼켰다. 시킬 말이 사라졌으니 "무엇을 시킬지 적어 주세요" 가 떴는데,
+// 화면만 보면 왜 그런지 알 길이 없다. 깃발을 앞에 두는 것은 아주 흔한 습관이다.
+const BOOL = new Set(['help', 'offline', 'continue', 'json', 'quiet', 'yes']);
+
 function parse(argv) {
   const flags = {};
   const args = [];
@@ -50,7 +58,7 @@ function parse(argv) {
     if (a.startsWith('--')) {
       const [k, inline] = a.slice(2).split('=');
       if (inline !== undefined) flags[k] = inline;
-      else if (argv[i + 1] && !argv[i + 1].startsWith('-')) flags[k] = argv[++i];
+      else if (!BOOL.has(k) && argv[i + 1] && !argv[i + 1].startsWith('-')) flags[k] = argv[++i];
       else flags[k] = true;
     } else args.push(a);
   }
@@ -63,6 +71,7 @@ function help() {
   say(`  ${c.bold('사용법')}`);
   say('');
   say(`    ${c.cyan('deel')}                        대화 시작 (이 폴더에서)`);
+  say(`    ${c.cyan('deel run "<시킬 말>"')}        한 번만 돌고 끝내기 (스크립트·배치용)`);
   say(`    ${c.cyan('deel scan')}                   이 PC 에 떠 있는 로컬 서버 전부 찾기`);
   say(`    ${c.cyan('deel sessions')}               이 폴더에 남아 있는 대화 목록`);
   say(`    ${c.cyan('deel setup')}                  연결 설정 (주소·키·모델)`);
@@ -90,11 +99,24 @@ function help() {
   say(`    ${c.gray('--work <모드>')}      auto(기본·종합) / code / plan / architect / debug / ask / orchestrator`);
   say(`    ${c.gray('--level <수준>')}     쉬움(기본) / 개발자`);
   say(`    ${c.gray('--ctx <길이>')}       컨텍스트 길이 직접 지정 (655360 · 640k · 128k). 없으면 서버에 맞춤`);
+  say(`    ${c.gray('--max-tokens <길이>')} 한 번에 받을 답 길이 상한 (32k). 큰 파일이 잘리면 올린다 — /out 과 같은 값`);
   say(`    ${c.gray('--think <수준>')}     off / low / medium(기본) / high / max`);
   say(`    ${c.gray('--effort <배분>')}    even(균일) / save(절약, 기본) / deep(깊게)`);
   say(`    ${c.gray('--offline')}          이 컴퓨터 밖으로는 아무것도 안 보냄 (자물쇠)`);
   say(`    ${c.gray('--continue')}         이 폴더에서 가장 최근 대화 이어하기`);
   say(`    ${c.gray('--resume <id>')}      골라서 이어하기 (deel sessions 로 id 확인)`);
+  say('');
+  say(`  ${c.bold('한 번만 돌리기')} ${c.gray('— 스크립트·배치에서 부를 때')}`);
+  say('');
+  say(`    ${c.cyan('deel run "검사 돌리고 실패한 것만 알려줘"')}`);
+  say(`    ${c.cyan('echo "..." | deel run')}      ${c.gray('시킬 말을 표준입력으로 넣어도 됩니다')}`);
+  say(`    ${c.gray('deel -p "..." 도 같습니다.')} ${c.gray('위 대화 시작 옵션을 그대로 씁니다.')}`);
+  say('');
+  say(`    ${c.gray('--json')}             결과를 JSON 한 덩이로 (답·도구 횟수·토큰·끝난 까닭)`);
+  say(`    ${c.gray('--quiet')}            도구가 무엇을 했는지 안 적음 (오류는 그래도 적음)`);
+  say(`    ${c.gray('--yes')}              승인이 필요한 것도 그냥 실행. ${c.yellow('기본은 거부입니다')}`);
+  say(`    ${c.gray('답은 표준출력, 도구 기록은 표준오류로 나갑니다 — 파이프로 넘겨도 답만 넘어갑니다.')}`);
+  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단')}`);
   say('');
   say(`  ${c.bold('진단 직접 지정')} ${c.gray('— 설정을 남기지 않고 확인만 할 때')}`);
   say('');
@@ -115,10 +137,30 @@ async function main() {
     process.exit(1);
   }
 
-  const { cmd, flags } = parse(process.argv.slice(2));
+  const { cmd, args, flags } = parse(process.argv.slice(2));
   if (flags.help || cmd === 'help') { help(); return 0; }
 
   switch (cmd) {
+    // 한 번만 돌고 끝난다. 스크립트·배치에서 부르는 자리다.
+    //
+    // -p 는 다른 도구들이 쓰는 이름에 맞춘 것이다. 깃발처럼 생겼지만 명령이라,
+    // deel -p "..." 처럼 치면 그대로 여기로 온다.
+    case 'run':
+    case '-p':
+      return runOnce({
+        prompt: args.join(' '),
+        root: flags.root ? String(flags.root) : undefined,
+        mode: flags.mode ? String(flags.mode) : undefined,
+        work: flags.work ? String(flags.work) : undefined,
+        ctx: flags.ctx ? parseSize(String(flags.ctx)) : undefined,
+        maxTokens: flags['max-tokens'] ? parseSize(String(flags['max-tokens'])) : undefined,
+        think: flags.think ? String(flags.think) : undefined,
+        effort: flags.effort ? String(flags.effort) : undefined,
+        offline: flags.offline === true || flags.offline === 'true',
+        yes: flags.yes === true || flags.yes === 'true',
+        json: flags.json === true || flags.json === 'true',
+        quiet: flags.quiet === true || flags.quiet === 'true',
+      });
     case '':
     case 'chat':
       return chatLoop({
@@ -127,6 +169,7 @@ async function main() {
         work: flags.work ? String(flags.work) : undefined,
         level: flags.level ? String(flags.level) : undefined,
         ctx: flags.ctx ? parseSize(String(flags.ctx)) : undefined,
+        maxTokens: flags['max-tokens'] ? parseSize(String(flags['max-tokens'])) : undefined,
         think: flags.think ? String(flags.think) : undefined,
         effort: flags.effort ? String(flags.effort) : undefined,
         offline: flags.offline === true || flags.offline === 'true',

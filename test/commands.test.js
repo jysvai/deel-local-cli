@@ -62,6 +62,8 @@ const 누를것 = [
   '/help', '/level', '/level 개발자', '/level 쉬움', '/level 없는수준',
   '/context', '/compact',
   '/think', '/think high', '/think 없는값',
+  '/think 자세히', '/think 배분', '/think 배분 절약', '/think 배분 없는배분', '/think save',
+  '/out', '/out 32k', '/out auto', '/out 숫자아님',
   '/mode', '/mode strict', '/mode auto', '/mode 없는값',
   '/work', '/code', '/plan', '/architect', '/debug', '/ask', '/orchestrator',
   '/work 설계', '/work 없는모드',
@@ -173,6 +175,146 @@ trace('3-효과확인');
   check('/think 를 직접 골랐다고 표시한다', s.thinkSet === true, String(s.thinkSet));
   const s2 = 새세션();
   check('안 고르면 표시가 안 붙는다', !s2.thinkSet, String(s2.thinkSet));
+}
+
+// ── /think 교통정리 ─────────────────────────────────────────────────────
+//
+// 전에는 한 명령이 두 축을 맡았다. `/think high` 는 강도(5단계)를,
+// `/think save` 는 배분(3가지)을 정했다 — 같은 이름으로 다른 것을 정한다.
+// 게다가 부를 때마다 단계표가 통째로 펼쳐졌고, 그 표의 '출력상한' 세 줄은
+// 늘 같은 값이었다. 읽는 화면이 아니라 세어야 하는 화면이었다.
+//
+// 그래서 여기서 보는 것은 '무엇이 보이나' 보다 **'무엇이 안 보이나'** 다.
+// 기본 화면에 표가 다시 기어들어오면 이 검사가 잡는다.
+{
+  const 색빼기 = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, '');
+
+  // 1) 기본은 한 줄
+  const s = 새세션();
+  const 글 = 색빼기((await 조용히(() => handle('/think', s, ctx))).out);
+  check('/think 기본이 강도를 한 줄로 말한다', /추론 강도\s+medium/.test(글), 글.trim().split('\n')[0] ?? '');
+  check('/think 기본이 단계별 배분을 괄호로 붙인다',
+    /\(첫 판단 \w+ · 이어가기 \w+ · 막혔을 때 \w+\)/.test(글), 글.trim());
+  check('/think 기본은 단계표를 안 펼친다', !/출력상한/.test(글), 글.trim());
+  check('쉬움 수준에는 배분 이야기를 안 꺼낸다', !/배분/.test(글), 글.trim());
+  check('/think 기본이 짧다', 글.trim().split('\n').length <= 3, String(글.trim().split('\n').length));
+
+  // 2) 개발자 수준에서는 배분이 한 줄 더 붙는다 — 그래도 표는 아니다
+  const 개 = new Session(conn, { root, level: '개발자', think: 'medium', effort: 'save' });
+  const 글개 = 색빼기((await 조용히(() => handle('/think', 개, ctx))).out);
+  check('개발자 수준에는 배분을 같이 보여 준다', /배분\s+절약/.test(글개), 글개.trim());
+  check('개발자 수준에서도 단계표는 안 펼친다', !/출력상한/.test(글개), 글개.trim());
+
+  // 3) 자세히 — 여기서만 표가 나온다
+  const s2 = 새세션();
+  const 글2 = 색빼기((await 조용히(() => handle('/think 자세히', s2, ctx))).out);
+  check('/think 자세히 가 단계표를 펼친다', /단계\s+강도\s+출력상한\s+언제/.test(글2), 글2.trim().slice(0, 90));
+  check('/think 자세히 가 세 단계를 다 그린다',
+    /첫 판단/.test(글2) && /이어가기/.test(글2) && /막혔을 때/.test(글2), '');
+  // 세 줄이 같은 값일 때 그게 고장인지 아닌지는 이 한 줄로 갈린다.
+  // (아는 상한이 낮으면 셋이 같아지는 것이 **맞다** — 그걸 말해 줘야 한다.)
+  check('/think 자세히 가 상한이 어디서 왔는지 밝힌다',
+    /출력 상한은\s+[\d,]+\s+\(.+?\) 안에서 나눕니다/.test(글2), 글2.trim().slice(-300));
+  check('/think 자세히 가 출력 상한은 /out 으로 넘긴다', /\/out/.test(글2), '');
+
+  // 4) 배분은 따로 — 강도와 헷갈리지 않게
+  const s3 = 새세션();
+  await 조용히(() => handle('/think 배분 절약', s3, ctx));
+  check('/think 배분 이 배분을 바꾼다', s3.effort === 'save', s3.effort);
+  await 조용히(() => handle('/think 배분 깊게', s3, ctx));
+  check('/think 배분 이 한글 이름을 받는다', s3.effort === 'deep', s3.effort);
+  check('/think 배분 을 직접 골랐다고 표시한다', s3.effortSet === true, String(s3.effortSet));
+  const 강도전 = s3.think;
+  await 조용히(() => handle('/think 배분 even', s3, ctx));
+  check('배분을 바꿔도 강도는 그대로', s3.think === 강도전, `${강도전} → ${s3.think}`);
+
+  const s4 = 새세션();
+  const 글4 = 색빼기((await 조용히(() => handle('/think 배분 없는배분', s4, ctx))).out);
+  check('모르는 배분이면 고를 것을 보여 준다', /균일|절약|깊게/.test(글4), 글4.trim());
+  check('모르는 배분은 안 바꾼다', s4.effort === 'save', s4.effort);
+
+  // 5) 강도를 바꿔도 배분은 그대로 — 두 축이 진짜로 갈렸는지
+  const s5 = 새세션();
+  await 조용히(() => handle('/think 배분 깊게', s5, ctx));
+  await 조용히(() => handle('/think low', s5, ctx));
+  check('강도를 바꿔도 배분은 그대로', s5.effort === 'deep' && s5.think === 'low', `${s5.effort}/${s5.think}`);
+
+  // 6) 옛 이름도 그대로 받는다 — 쓰던 사람의 손버릇을 깨지 않는다
+  const s6 = 새세션();
+  const 글6 = 색빼기((await 조용히(() => handle('/think deep', s6, ctx))).out);
+  check('옛 이름 /think deep 도 배분으로 받는다', s6.effort === 'deep', s6.effort);
+  check('옛 이름을 받으면 새 이름을 알려 준다', /\/think 배분/.test(글6), 글6.trim().slice(0, 200));
+}
+
+// ── /out — 출력 상한은 아예 다른 축이라 명령을 따로 뺐다 ─────────────────
+//
+// 컨텍스트(한 번에 담아 둘 수 있는 양)와 출력 상한(한 번에 낼 수 있는 양)은
+// 다른 숫자다. 그 둘이 하나인 줄 알면 큰 파일이 왜 안 만들어지는지 영영 모른다.
+//
+// 그리고 전에는 이 값이 **먹지도 않았다** — effort.js 의 세 번째 클램프가
+// 다시 조여서 올릴 수가 없었다. 있는데 안 먹는 것이 가장 나쁘다.
+{
+  const 색빼기 = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, '');
+
+  const s = 새세션();
+  const 글 = 색빼기((await 조용히(() => handle('/out', s, ctx))).out);
+  check('/out 이 지금 상한을 보여 준다', /지금 상한\s+[\d,]+/.test(글), 글.trim().slice(0, 120));
+  check('/out 이 컨텍스트와 다른 축이라고 말한다', /다른 축/.test(글), '');
+  check('/out 이 어디서 온 값인지 밝힌다', /직접 정하신 값|서버에서 알아낸 값|기본값/.test(글), '');
+
+  const s2 = 새세션();
+  await 조용히(() => handle('/out 32k', s2, ctx));
+  check('/out 32k 가 실제로 값을 바꾼다', s2.conn.maxTokens === 32768, String(s2.conn.maxTokens));
+
+  // 진짜로 먹는가 — 화면 글자가 아니라 요청에 실리는 숫자를 본다.
+  {
+    const { tokensFor } = await import('../src/agent/effort.js');
+    const 방 = { ctx: 262144, used: 4000, max: s2.conn.maxTokens };
+    const 준값 = tokensFor('save', 'plan', 방);
+    const 기본 = tokensFor('save', 'plan', { ...방, max: null });
+    check('/out 으로 올린 값이 상한 계산까지 간다', 준값 > 기본, `${준값} vs ${기본}`);
+  }
+
+  await 조용히(() => handle('/out auto', s2, ctx));
+  check('/out auto 가 직접 정한 값을 지운다', s2.conn.maxTokens == null, String(s2.conn.maxTokens));
+
+  // 옛 자리(/ctx out)도 그대로 통해야 한다 — 문서·안내에 적혀 있던 이름이다.
+  // 한글 별칭('답'·'출력')은 \b 함정 때문에 안 통하고 있었다: '출력 32k' 가
+  // 컨텍스트 길이로 넘어가 "숫자를 못 읽었습니다" 로 끝났다.
+  for (const 줄 of ['/ctx out 32k', '/ctx 출력 32k', '/ctx 답 32k']) {
+    const s = 새세션();
+    const r = await 조용히(() => handle(줄, s, ctx));
+    check(`${줄} 가 출력 상한으로 간다`, s.conn.maxTokens === 32768,
+      `${s.conn.maxTokens} · ${색빼기(r.out).trim().split('\n')[0] ?? ''}`);
+  }
+
+  // conn 은 한 프로세스에 하나뿐이라 세션끼리 같은 것을 본다(그게 맞다).
+  // 앞 검사가 올려 둔 값을 지우고 시작해야 '안 바꾼다' 를 볼 수 있다.
+  conn.maxTokens = null;
+  const s3 = 새세션();
+  const 글3 = 색빼기((await 조용히(() => handle('/out 숫자아님', s3, ctx))).out);
+  check('/out 이 못 읽는 값을 말해 준다', /못 읽었습니다/.test(글3), 글3.trim());
+  check('못 읽으면 안 바꾼다', s3.conn.maxTokens == null, String(s3.conn.maxTokens));
+
+  // 고른 값은 프로필에 남아야 한다 — 다음에 켤 때도 그대로여야 한다.
+  {
+    // 프로필이 하나도 없으면 남길 자리가 없다(그게 맞다). 하나 만들어 놓고 본다.
+    const p = join(설정집, 'config.json');
+    const 밑 = existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : { version: 1, profiles: [] };
+    밑.profiles = [{ id: '검사프로필', name: '검사', kind: 'openai', baseUrl: conn.base, model: conn.model }];
+    밑.active = '검사프로필';
+    writeFileSync(p, JSON.stringify(밑, null, 2), 'utf8');
+
+    const s4 = 새세션();
+    await 조용히(() => handle('/out 65536', s4, ctx));
+    const j = existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null;
+    const prof = j?.profiles?.find((x) => x.id === j.active) ?? j?.profiles?.[0] ?? null;
+    check('/out 이 프로필에 남는다', prof?.maxTokens === 65536, JSON.stringify(prof?.maxTokens));
+    await 조용히(() => handle('/out auto', s4, ctx));
+    const j2 = JSON.parse(readFileSync(p, 'utf8'));
+    const prof2 = j2?.profiles?.find((x) => x.id === j2.active) ?? j2?.profiles?.[0] ?? null;
+    check('/out auto 가 프로필에서도 지운다', prof2 && prof2.maxTokens === undefined, JSON.stringify(prof2?.maxTokens));
+  }
 }
 
 {

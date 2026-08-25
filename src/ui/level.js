@@ -21,7 +21,9 @@ export const LEVELS = {
       'help', 'work', 'auto', 'code', 'plan', 'ask',
       // ctx 를 초보 목록에 넣는다. 컨텍스트가 작게 잡히면 "왜 파일을 조금만 읽지"
       // 가 되는데, 초보일수록 그 원인을 못 찾는다. 명령 하나로 끝나는 문제다.
-      'model', 'ctx', 'scan', 'undo', 'clear', 'sessions', 'cost', 'level', 'exit',
+      // diff 는 초보에게 특히 필요하다. auto 모드는 안 물어보고 고치니,
+      // '무엇이 바뀌었나' 를 볼 통로가 없으면 되돌릴지 말지도 못 정한다.
+      'model', 'ctx', 'scan', 'diff', 'undo', 'clear', 'sessions', 'cost', 'level', 'exit',
     ],
     // 첫 실행에서 훑어 추천까지 해 준다
     autoScan: true,

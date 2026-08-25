@@ -52,7 +52,20 @@ const llamaPort = await 서버((url) => {
 resetNet();
 // listening:false — 이 검사는 띄운 세 대만 봐야 한다. 이 PC 에 떠 있는 다른 것이
 // 끼어들면 결과가 컴퓨터마다 달라진다. 훑기 자체는 아래에서 따로 본다.
-const found = await scanLocal({ ports: [ollamaPort, lmsPort, llamaPort], timeout: 2500, listening: false });
+const 내포트 = [ollamaPort, lmsPort, llamaPort];
+const 훑은것 = await scanLocal({ ports: 내포트, timeout: 2500, listening: false });
+
+/*
+ * `ports` 는 **더 볼 자리**이지 볼 자리 전부가 아니다 — 알려진 자리(11434 · 1234 ·
+ * 8080 …)는 언제나 같이 본다. `deel scan --ports 9000` 이 그렇게 동작해야 하고
+ * README 에도 '추가로 볼 포트' 라고 적혀 있다.
+ *
+ * 그래서 이 검사는 **내가 띄운 세 대만** 골라 놓고 본다. 전에는 안 그랬고,
+ * 이 PC 에서 LM Studio 가 1234 를 잡고 있던 날 네 대가 잡혀 무너졌다 —
+ * 검사가 사람 컴퓨터에 무엇이 떠 있느냐에 따라 달라지면 안 된다.
+ * (겸사겸사 검사가 남의 서버를 두드리지도 않게 된다.)
+ */
+const found = 훑은것.filter((f) => 내포트.includes(f.port));
 
 check('세 대를 모두 찾음', found.length === 3, `${found.length}대`);
 
@@ -72,8 +85,12 @@ check('LM Studio 는 추정이 아님', l?.guessed === false);
 
 check('llama.cpp 를 /props 로 알아봄', c3?.runtime === 'llama.cpp', c3?.runtime);
 
-check('빈 포트는 안 잡음', !found.some((f) => ![ollamaPort, lmsPort, llamaPort].includes(f.port)),
-  found.map((f) => f.port).join(', '));
+// 알려준 세 자리는 하나도 안 빠뜨렸고, 그 밖에 잡힌 것은 전부 이 PC 에 진짜로
+// 떠 있는 서버다(아무 답도 없는 자리를 '찾았다' 고 하지는 않는다).
+check('알려준 자리를 하나도 안 빠뜨림', 내포트.every((p) => 훑은것.some((f) => f.port === p)),
+  훑은것.map((f) => f.port).join(', '));
+check('찾았다는 것은 전부 답을 한 자리', 훑은것.every((f) => f.base && (f.models?.length ?? 0) >= 0),
+  훑은것.map((f) => `${f.port}:${f.runtime}`).join(', '));
 
 // ── 프로필로 바꾸기 ─────────────────────────────────────────────────────
 const profiles = toProfiles(found);

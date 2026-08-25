@@ -12,7 +12,11 @@ import { askHidden, pick } from '../src/ui/prompt.js';
 import { spin } from '../src/ui/spinner.js';
 import { History } from '../src/safety/undo.js';
 import { c, width, clip, pad, bar, gauge, box, rule, mark } from '../src/ui/ansi.js';
+import { statusLine, SEGMENT_GROUPS, DEFAULT_SEGMENTS } from '../src/ui/status.js';
+import { Session } from '../src/agent/session.js';
 import { trace } from './trace.mjs';
+
+const 색빼기 = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, '');
 
 const pass = [];
 const fail = [];
@@ -176,6 +180,99 @@ trace('4-화면계산');
   check('상자에 위아래 테두리가 있다', /╭/.test(줄들[0]) && /╰/.test(줄들[줄들.length - 1]), '');
 }
 
+trace('4.5-상태줄');
+
+// ── 상태줄 세 덩이 ───────────────────────────────────────────────────────
+//
+// 전에는 칸 여섯 개가 같은 굵기의 막대로 나란히 서 있었다.
+//   ▏폴더 ▏모델 ▏게이지 ▏◎ 종합 ▏◇ medium·절약 ▏auto
+// 뒤의 셋은 셋 다 '모드' 처럼 생겨서, 무엇이 무엇인지 읽으려면 멈춰서 세어야 했다.
+//
+// 세 덩이로 묶었다 — **어디서 · 얼마나 찼나 · 어떻게 도나**.
+// 덩이 사이만 굵은 칸막이, 덩이 안은 가운뎃점. 눈이 세 번만 멈춘다.
+//
+// 이 검사가 보는 것은 색이 아니라 **구조**다. 조각을 하나 더 끼워 넣다가
+// 덩이 경계가 무너지면(다시 여섯 칸이 되면) 여기서 잡힌다.
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-status-'));
+  const conn = {
+    kind: 'openai', base: 'http://127.0.0.1:1/v1', auth: 'none', key: null,
+    model: '스텁모델', ctx: 32768, streaming: false, tools: true, json: false, think: false,
+  };
+  const s = new Session(conn, { root: 방, mode: 'auto', think: 'medium', effort: 'save' });
+
+  const 좋은덩이 = (줄) => 줄.split('▏').slice(1).length;      // 맨 앞 칸막이는 여는 표시다
+
+  const 줄 = 색빼기(statusLine(s, { max: 200 }));
+  const 덩이 = 줄.split('▏').slice(1).map((x) => x.trim());
+  check('상태줄이 세 덩이다', 덩이.length === 3, `${덩이.length}덩이 · ${줄.trim()}`);
+  check('첫 덩이는 어디서 — 폴더·모델', /스텁모델/.test(덩이[0]) && 덩이[0].includes('·'), 덩이[0]);
+  check('둘째 덩이는 얼마나 찼나 — 게이지', /%/.test(덩이[1]), 덩이[1]);
+  check('셋째 덩이는 어떻게 도나 — 작업·강도·승인', /auto/.test(덩이[2]) && /medium/.test(덩이[2]), 덩이[2]);
+  check('덩이 안은 가운뎃점으로 잇는다', 덩이[2].split(' · ').length === 3, JSON.stringify(덩이[2].split(' · ')));
+
+  // 주고받은 것이 생기면 네 번째 덩이가 붙는다. 없을 때 빈 칸막이가 서면 안 된다.
+  check('안 주고받았으면 토큰 덩이가 없다', !/↑/.test(줄), 줄.trim());
+  s.usage.in = 1200; s.usage.out = 340;
+  const 줄2 = 색빼기(statusLine(s, { max: 200 }));
+  check('주고받으면 토큰 덩이가 붙는다', 줄2.split('▏').slice(1).length === 4 && /↑/.test(줄2), 줄2.trim());
+  check('빈 덩이로 칸막이만 서지 않는다', !/▏\s*▏/.test(줄2), 줄2.trim());
+  s.usage.in = 0; s.usage.out = 0;
+
+  // 좁으면 뒤에서부터 떨군다. 폴더·모델은 마지막까지 남아야 한다 —
+  // '어디에 무엇으로' 를 모르면 나머지 숫자는 아무 뜻이 없다.
+  // 떨구기 전에 먼저 줄여 본다.
+  //
+  // 곧바로 뒤에서부터 떨구면, 80칸 터미널에서 모델 이름이 조금만 길어도
+  // '어떻게 도나' 덩이가 통째로 사라졌다 — 세 덩이로 묶어 놓고 정작
+  // 세 번째를 못 보는 화면이 된다. 덜 급한 자리(정확한 토큰 수·배분 이름)를
+  // 접으면 대개 다시 들어간다.
+  {
+    // 폴더는 흔한 짧은 이름, 모델은 사내 게이트웨이에서 실제로 쓰는 긴 이름.
+    const 긴모델 = { ...s, root: 'C:/Users/x/Desktop/Local', conn: { ...conn, model: 'databricks-gpt-5-6-luna' } };
+    긴모델.breakdown = () => s.breakdown();
+    긴모델.effectiveWork = () => s.work;
+    const 좁아도 = 색빼기(statusLine(긴모델, { max: 78 }));
+    check('80칸에서도 세 덩이가 다 남는다', 좋은덩이(좁아도) === 3, 좁아도.trim());
+    check('좁으면 정확한 토큰 수를 접는다', !/\/32k/.test(좁아도) && /%/.test(좁아도), 좁아도.trim());
+    check('좁으면 배분 이름을 접고 강도는 남긴다',
+      /medium/.test(좁아도) && !/절약/.test(좁아도), 좁아도.trim());
+    check('접은 줄도 폭을 안 넘는다', width(좁아도) <= 78, `${width(좁아도)}칸`);
+    // 넓으면 접지 않는다 — 접힌 채로 굳으면 정확한 숫자를 영영 못 본다.
+    const 넓게 = 색빼기(statusLine(긴모델, { max: 200 }));
+    check('넓으면 안 접는다', /\/32k/.test(넓게) && /절약/.test(넓게), 넓게.trim());
+  }
+
+  const 좁게 = 색빼기(statusLine(s, { max: 48 }));
+  check('좁으면 뒤 덩이를 떨군다', 좁게.split('▏').slice(1).length < 3, 좁게.trim());
+  check('좁아도 한 줄을 넘지 않는다', width(좁게) <= 48, `${width(좁게)}칸 · ${좁게}`);
+  check('좁아도 폴더·모델은 남는다', /스텁모델/.test(좁게), 좁게);
+
+  // 폴더 이름을 길게 지어도 이 조각 하나가 줄을 넘기면 안 된다.
+  {
+    const 긴방 = { ...s, root: join(방, '아주아주긴한글폴더이름을이렇게짓는사람도있다') };
+    긴방.breakdown = () => s.breakdown();
+    긴방.effectiveWork = () => s.work;
+    const 긴줄 = 색빼기(statusLine(긴방, { max: 100 }));
+    check('폴더 이름이 길어도 줄이 안 넘친다', width(긴줄) <= 100, `${width(긴줄)}칸 · ${긴줄.trim()}`);
+    check('길면 잘렸다고 표시한다', /…/.test(긴줄), 긴줄.trim());
+  }
+
+  // 계획 모드는 파일을 못 고친다. 그 자물쇠가 상태줄에 보여야 한다 —
+  // 안 보이면 "왜 안 고쳐지지" 를 알 길이 없다.
+  s.work = 'plan';
+  check('읽기만 하는 모드는 그렇다고 적는다', /읽기만/.test(색빼기(statusLine(s, { max: 200 }))),
+    색빼기(statusLine(s, { max: 200 })).trim());
+
+  // 옛 방식(설정으로 조각 이름을 직접 준 경우)도 그대로 돌아야 한다.
+  const 옛 = 색빼기(statusLine(s, { segments: ['model', 'mode'], max: 200 }));
+  check('조각을 직접 주면 그대로 한 줄', 옛.split('▏').slice(1).length === 2, 옛.trim());
+  check('기본 조각 목록은 덩이를 펼친 것', DEFAULT_SEGMENTS.join() === SEGMENT_GROUPS.flat().join(),
+    DEFAULT_SEGMENTS.join());
+
+  rmSync(방, { recursive: true, force: true });
+}
+
 trace('5-되돌리기이력');
 
 // ── 되돌리기 이력이 무한정 커지지 않는가 ────────────────────────────────
@@ -231,6 +328,41 @@ trace('5-되돌리기이력');
   const 기록 = h.all();
   check('바이너리는 이력에 안 담는다', !기록.some((x) => String(x.path).endsWith('그림.bin') && x.before !== null),
     JSON.stringify(기록.filter((x) => String(x.path).endsWith('그림.bin')).map((x) => typeof x.before)));
+
+  // ── 되돌리면 원래 바이트가 그대로 돌아와야 한다 ──────────────────────
+  //
+  // 예전에는 이력에 글자만 담았다 — 읽을 때도 쓸 때도 UTF-8 로 못 박아서.
+  // 사내 파일은 CP949 가 흔한데, 그러면 '가나다' 를 떠 놨다가 되돌릴 때
+  // U+FFFD 여섯 개로 돌려놓는다. 원래 바이트는 그 순간 없어진다.
+  //
+  // 되돌리기는 이 프로그램의 안전망이다. 안전망이 파일을 망가뜨리면
+  // 그냥 결함이 아니라 안 고쳤을 때보다 나쁜 상태가 된다.
+  {
+    const 방 = mkdtempSync(join(tmpdir(), 'deel-ui-cp949-'));
+    const hh = new History(방);
+    const 파일 = join(방, '한글.txt');
+    const 원래 = Buffer.from([0xB0, 0xA1, 0xB3, 0xAA, 0xB4, 0xD9]);   // CP949 '가나다'
+    writeFileSync(파일, 원래);
+    hh.nextTurn();
+    hh.snapshot(파일, 'Edit');
+    writeFileSync(파일, Buffer.from('통째로 바뀜', 'utf8'));
+    hh.undo(1);
+    check('CP949 파일을 바이트까지 그대로 되돌린다', 원래.equals(readFileSync(파일)),
+      `${readFileSync(파일).toString('hex')} (원래 ${원래.toString('hex')})`);
+
+    // UTF-8 파일은 예전처럼 글자로 담는다 — 이력이 쓸데없이 커지면 안 된다.
+    const 보통 = join(방, '보통.txt');
+    writeFileSync(보통, '가나다\n', 'utf8');
+    hh.nextTurn();
+    hh.snapshot(보통, 'Edit');
+    const 방금 = hh.all().at(-1);
+    check('UTF-8 은 글자 그대로 담는다', 방금.before === '가나다\n' && !방금.enc, JSON.stringify(방금.before));
+    writeFileSync(보통, '망침', 'utf8');
+    hh.undo(1);
+    check('UTF-8 파일도 그대로 되돌린다', readFileSync(보통, 'utf8') === '가나다\n', readFileSync(보통, 'utf8'));
+
+    rmSync(방, { recursive: true, force: true });
+  }
 
   // 깨진 줄이 섞여도 나머지는 읽어야 한다. 도중에 죽으면 실제로 이렇게 된다.
   const 이력파일 = h.file;

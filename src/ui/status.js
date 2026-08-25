@@ -10,19 +10,22 @@ import { isLocalHost, isOffline } from '../safety/network.js';
 // 한 조각씩 따로 만든다. 좁은 화면에서는 뒤에서부터 떨군다.
 // 순서 = 중요도 순. 앞쪽이 끝까지 살아남는다.
 export const SEGMENTS = {
-  dir: { desc: '작업 폴더', make: (s) => c.gray(base(s.root)) },
+  // 폴더 이름은 사람이 짓는다 — 한글로 길게 짓기도 한다. 안 자르면
+  // 이 조각 하나가 상태줄을 통째로 넘겨 줄이 접힌다(모델 이름은 이미 자르고 있었다).
+  dir: { desc: '작업 폴더', make: (s) => c.gray(clip(base(s.root), 20)) },
 
   model: { desc: '모델 이름', make: (s) => c.hcyan(clip(s.conn.model, 24)) },
 
   ctx: {
     desc: '컨텍스트 사용량',
     make: (s) => {
-      const b = s.breakdown();
-      // 넘칠 수는 있지만 화면에 219% 라고 적으면 고장난 것처럼 보인다. 100 에서 멈춘다.
-      const r = Math.min(1, b.total > 0 ? b.used / b.total : 0);
-      const pct = Math.round(r * 100);
-      const tone = r > 0.85 ? c.hred : r > 0.6 ? c.hyellow : c.gray;
+      const { r, pct, tone, b } = 참값(s);
       return `${gauge(r, 10)} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + short(b.total))}`;
+    },
+    // 자리가 모자라면 정확한 숫자를 접는다. 게이지와 %가 이미 같은 말을 하고 있다.
+    short: (s) => {
+      const { r, pct, tone } = 참값(s);
+      return `${gauge(r, 10)} ${tone(pct + '%')}`;
     },
   },
 
@@ -47,6 +50,8 @@ export const SEGMENTS = {
       const p = PROFILES[s.effort] ?? PROFILES.save;
       return `${c.gray('◇')} ${c.white(s.think)}${c.gray('·')}${c.magenta(p.name)}`;
     },
+    // 배분은 강도보다 덜 급하다. 좁으면 강도만 남긴다.
+    short: (s) => `${c.gray('◇')} ${c.white(s.think)}`,
   },
 
   mode: {
@@ -80,7 +85,36 @@ export const SEGMENTS = {
   },
 };
 
-export const DEFAULT_SEGMENTS = ['dir', 'model', 'ctx', 'work', 'think', 'mode', 'tok'];
+/**
+ * 상태줄에 무엇을, 어떤 순서로.
+ *
+ * 전에는 칸 여섯 개가 같은 굵기의 막대로 나란히 서 있었다.
+ *   ▏폴더 ▏모델 ▏게이지 ▏◎ 종합 ▏◇ medium·절약 ▏auto
+ * 뒤의 셋은 셋 다 '모드' 처럼 생겨서, 무엇이 무엇인지 읽으려면 멈춰서 세어야 했다.
+ *
+ * 세 덩이로 묶는다 — **어디서(폴더·모델) · 얼마나 찼나(게이지) · 어떻게 도나(모드)**.
+ * 덩이 사이만 굵은 칸막이(▏)로 가르고, 덩이 안은 가운뎃점으로 잇는다.
+ * 그러면 눈이 세 번만 멈춘다.
+ */
+export const SEGMENT_GROUPS = [
+  ['dir', 'model'],
+  ['ctx'],
+  ['work', 'think', 'mode'],
+  ['tok'],
+];
+
+// 옛 이름. 조각 이름을 직접 넘기던 자리(검사·설정)가 그대로 돌게 남긴다.
+export const DEFAULT_SEGMENTS = SEGMENT_GROUPS.flat();
+
+// 컨텍스트 게이지가 쓰는 숫자. 자세한 꼴과 짧은 꼴이 같은 값을 봐야 한다.
+function 참값(s) {
+  const b = s.breakdown();
+  // 넘칠 수는 있지만 화면에 219% 라고 적으면 고장난 것처럼 보인다. 100 에서 멈춘다.
+  const r = Math.min(1, b.total > 0 ? b.used / b.total : 0);
+  const pct = Math.round(r * 100);
+  const tone = r > 0.85 ? c.hred : r > 0.6 ? c.hyellow : c.gray;
+  return { b, r, pct, tone };
+}
 
 function base(p) {
   const parts = String(p ?? '').split(/[\\/]/).filter(Boolean);
@@ -105,16 +139,46 @@ function short(n) {
  * 상태줄 한 줄을 만든다. 폭이 모자라면 덜 중요한 조각부터 뺀다.
  * @param {import('../agent/session.js').Session} session
  */
-export function statusLine(session, { segments = DEFAULT_SEGMENTS, max = cols() - 2 } = {}) {
-  const sep = ` ${c.gray('▏')} `;
-  let parts = segments
-    .map((k) => SEGMENTS[k]?.make(session))
-    .filter((x) => x != null && x !== '');
+export function statusLine(session, { segments = null, max = cols() - 2 } = {}) {
+  const 칸막이 = ` ${c.gray('▏')} `;
+  const 안쪽 = c.gray(' · ');
 
-  // 뒤에서부터 떨궈 폭을 맞춘다. 앞쪽(폴더·모델·컨텍스트)이 마지막까지 남는다.
-  while (parts.length > 1 && width(parts.join(sep)) + 2 > max) parts.pop();
+  // 설정으로 조각 이름을 직접 준 경우에는 그대로 한 줄로 잇는다(옛 방식).
+  const 덩이들 = segments
+    ? segments.map((k) => [k])
+    : SEGMENT_GROUPS;
 
-  return ` ${c.gray('▏')}${parts.join(sep)}`;
+  const 그리기 = (짧게) => 덩이들
+    .map((그룹) => 그룹
+      .map((k) => {
+        const seg = SEGMENTS[k];
+        if (!seg) return null;
+        return 짧게 && seg.short ? seg.short(session) : seg.make(session);
+      })
+      .filter((x) => x != null && x !== '')
+      .join(안쪽))
+    .filter((x) => x !== '');
+
+  const 맞나 = (ps) => width(ps.join(칸막이)) + 2 <= max;
+
+  /*
+   * 떨구기 전에 **먼저 줄여 본다.**
+   *
+   * 처음엔 곧바로 뒤에서부터 떨궜다. 그러면 80칸 터미널에서 모델 이름이 조금만
+   * 길어도 '어떻게 도나'(모드·강도·승인) 덩이가 통째로 사라졌다 — 세 덩이로
+   * 묶어 놓고 정작 세 번째를 못 보는 화면이 된 것이다.
+   *
+   * 컨텍스트의 '20k/32k' 는 게이지·%와 같은 말을 하고, 배분 이름은 강도보다
+   * 덜 급하다. 그 둘을 접으면 대개 다시 들어간다. 정보를 통째로 잃는 것보다
+   * 덜 급한 자리를 접는 편이 낫다.
+   */
+  let parts = 그리기(false);
+  if (!맞나(parts)) parts = 그리기(true);
+
+  // 그래도 모자라면 뒤에서부터 떨군다. 앞쪽(폴더·모델·컨텍스트)이 마지막까지 남는다.
+  while (parts.length > 1 && !맞나(parts)) parts.pop();
+
+  return ` ${c.gray('▏')}${parts.join(칸막이)}`;
 }
 
 // 컨텍스트가 위험하면 한마디 붙인다. 상태줄만 보고 넘기지 않도록.
