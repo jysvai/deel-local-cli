@@ -102,7 +102,7 @@ function help() {
   say(`    ${c.gray('--max-tokens <길이>')} 한 번에 받을 답 길이 상한 (32k). 큰 파일이 잘리면 올린다 — /out 과 같은 값`);
   say(`    ${c.gray('--think <수준>')}     off / low / medium(기본) / high / max`);
   say(`    ${c.gray('--effort <배분>')}    even(균일) / save(절약, 기본) / deep(깊게)`);
-  say(`    ${c.gray('--no-tui')}           전체화면 대신 줄 화면으로 (파이프·기록·좁은 터미널)`);
+  say(`    ${c.gray('--no-tui')}           입력 상자 없이 줄 화면으로 (파이프·기록·좁은 터미널)`);
   say(`    ${c.gray('--offline')}          이 컴퓨터 밖으로는 아무것도 안 보냄 (자물쇠)`);
   say(`    ${c.gray('--continue')}         이 폴더에서 가장 최근 대화 이어하기`);
   say(`    ${c.gray('--resume <id>')}      골라서 이어하기 (deel sessions 로 id 확인)`);
@@ -173,9 +173,9 @@ async function main() {
         maxTokens: flags['max-tokens'] ? parseSize(String(flags['max-tokens'])) : undefined,
         think: flags.think ? String(flags.think) : undefined,
         effort: flags.effort ? String(flags.effort) : undefined,
-        // 전체화면을 쓸지. 안 주면 null — 그러면 화면 쪽이 상황을 보고 정한다.
-        //   --no-tui  줄 화면으로 (파이프·기록·좁은 터미널·문제가 생겼을 때)
-        //   --tui     터미널이면 무조건 전체화면으로
+        // 입력 상자를 쓸지. 안 주면 null — 그러면 화면 쪽이 상황을 보고 정한다.
+        //   --no-tui  입력 상자 없이 줄 화면으로 (파이프·기록·좁은 터미널)
+        //   --tui     터미널이면 무조건 입력 상자를 켠다
         tui: flags['no-tui'] === true ? false : (flags.tui === true ? true : null),
         offline: flags.offline === true || flags.offline === 'true',
         continue: flags.continue === true || flags.c === true,

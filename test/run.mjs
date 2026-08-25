@@ -38,6 +38,7 @@ const FILES = [
   'detect.test.js',
   'ui.test.js',
   'tui.test.js',
+  'box.test.js',
   'diff.test.js',
   'mention.test.js',
   'truncated.test.js',

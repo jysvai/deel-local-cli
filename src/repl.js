@@ -69,8 +69,8 @@ const 답표시 = c.hcyan('▌');
 export async function chatLoop(opts = {}) {
   const cfg = load();
   const prof = activeProfile(cfg);
-  // 연결이 없으면 화면을 세우기 전에 끝난다. 전체화면은 터미널을 통째로
-  // 바꿔치기하므로, 세웠다가 바로 나가면 이 안내가 화면과 함께 사라진다.
+  // 연결이 없으면 화면을 세우기 전에 끝난다. 세운 뒤에 나가면 상자를
+  // 그렸다 지우는 제어문자가 이 안내 사이에 끼어 화면이 지저분해진다.
   if (!prof) {
     바로쓰기('');
     바로쓰기(`  ${mark.warn} 저장된 연결이 없습니다. ${c.cyan('deel setup')} 을 먼저 실행하세요.`);
@@ -169,7 +169,33 @@ export async function chatLoop(opts = {}) {
   // 지난 대화에서 정해 둔 것을 들고 시작한다.
   session.memory = 기억토막(root);
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout, historySize: 200 });
+  /*
+   * 입력 상자를 쓸 때는 readline 이 스스로 되비추지 못하게 한다.
+   *
+   * readline 은 자기가 아는 커서 자리를 기준으로 지우고 다시 그린다. 그런데
+   * 그 자리는 우리가 그린 상자 테두리 안이 아니라 줄 맨 앞이다. 그대로 두면
+   * 백스페이스가 테두리를 갉아먹고, 긴 글이 접힐 때 상자가 무너진다.
+   *
+   * 그래서 되비추는 일만 뺏는다. 어디까지나 **되비추기만** 이다 — 한글 조합,
+   * 붙여넣기, 위아래 이력, Ctrl+A/E, 백스페이스는 전부 readline 이 그대로
+   * 맡는다. 우리는 readline 이 들고 있는 글(rl.line)을 상자 안에 그릴 뿐이다.
+   * 줄 편집을 직접 짜기 시작하면 한글 입력기부터 깨진다.
+   */
+  const 상자쓰나 = 화면.kind === 'box';
+  // 사람이 지금 입력을 기다리는 중인가. 도구가 도는 동안 키를 눌러도
+  // 상자를 다시 그리면 안 된다 — 그 자리는 이미 대화가 흘러가고 있다.
+  let 입력기다림 = false;
+  // 되묻는 중이면 그 앞머리. 상자 대신 한 줄로 되비춘다.
+  let 묻는중 = null;
+  // 이번 틱에 다시 그리기로 이미 잡아 뒀나 (붙여넣기로 키가 쏟아질 때)
+  let 그릴예정 = false;
+  const 먹통 = { write() { return true; }, end() {}, on() {}, once() {}, emit() {}, removeListener() {} };
+  const rl = createInterface({
+    input: process.stdin,
+    output: 상자쓰나 ? 먹통 : process.stdout,
+    terminal: 상자쓰나 ? true : undefined,
+    historySize: 200,
+  });
 
   // 입력을 큐로 받는다. rl.question 을 겹쳐 쓰면 파이프로 넣을 때 닫혀 버린다.
   const queue = [];
@@ -179,6 +205,17 @@ export async function chatLoop(opts = {}) {
 
   rl.on('line', (l) => {
     if (echo) say(c.gray(l));
+    if (상자쓰나) {
+      if (묻는중 !== null) {
+        // 되묻는 자리: 답을 그 줄에 남긴 채 줄만 넘긴다.
+        process.stdout.write(`\r\x1b[2K${묻는중}${c.white(l)}\n`);
+      } else {
+        // 상자를 걷어내고, 사람이 보낸 글을 대화에 남긴다. 안 남기면 스크롤을
+        // 올렸을 때 답만 있고 무엇을 물었는지가 없다.
+        화면.입력지움();
+        if (l.trim()) say(` ${c.hcyan('❯')} ${c.white(l)}`);
+      }
+    }
     if (waiter) { const w = waiter; waiter = null; w(l); }
     else queue.push(l);
   });
@@ -194,13 +231,47 @@ export async function chatLoop(opts = {}) {
   if (process.stdin.isTTY) {
     emitKeypressEvents(process.stdin, rl);
     process.stdin.on('keypress', (_ch, key) => {
-      if (!key || key.name !== 'tab' || !key.shift) return;
-      session.work = nextWork(session.work);
-      const w = getWork(session.work);
-      화면.입력지움();
-      say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}  ${c.gray(w.hint)}`
-        + (canWrite(session.work) ? '' : `  ${c.green('· 파일을 못 바꿉니다')}`));
-      prompt();
+      if (key && key.name === 'tab' && key.shift) {
+        session.work = nextWork(session.work);
+        const w = getWork(session.work);
+        화면.입력지움();
+        say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}  ${c.gray(w.hint)}`
+          + (canWrite(session.work) ? '' : `  ${c.green('· 파일을 못 바꿉니다')}`));
+        prompt();
+        return;
+      }
+      /*
+       * 친 것을 상자 안에 그린다.
+       *
+       * readline 이 이 키를 처리하고 rl.line 을 고친 **뒤에** 그려야 하는데,
+       * keypress 는 그 전에 온다. 그래서 한 틱 미룬다. 안 미루면 늘 한 글자
+       * 뒤처진 글이 보인다 — 치는 사람 눈에는 마지막 글자가 안 찍히는 것으로
+       * 보이고, 그게 제일 못 미더운 화면이다.
+       */
+      if (!상자쓰나) return;
+      if (key && key.name === 'return') return;   // 줄이 끝나는 것은 'line' 이 맡는다
+      if (묻는중 !== null) {
+        const 앞 = 묻는중;
+        setImmediate(() => {
+          if (묻는중 === null) return;
+          process.stdout.write(`\r\x1b[2K${앞}${c.white(rl.line ?? '')}`);
+        });
+        return;
+      }
+      if (!입력기다림) return;
+      /*
+       * 여러 키가 한꺼번에 들어와도 **한 번만** 그린다.
+       *
+       * 붙여넣기는 글자 수만큼 키가 쏟아진다. 스무 줄짜리를 붙이면 상자를
+       * 수백 번 다시 그리게 되고, 화면이 눈에 띄게 떨린다. 어차피 마지막
+       * 한 번이 지금 상태이므로, 이번 틱에 이미 잡아 뒀으면 그냥 넘긴다.
+       */
+      if (그릴예정) return;
+      그릴예정 = true;
+      setImmediate(() => {
+        그릴예정 = false;
+        if (입력기다림) 화면.입력갱신(session, rl.line ?? '', rl.cursor ?? 0);
+      });
     });
   }
 
@@ -211,10 +282,20 @@ export async function chatLoop(opts = {}) {
   };
 
   const ask = async (label, o = {}) => {
-    화면.붙임(`  ${c.gray('›')} ${label} ${o.def ? c.gray(`[${o.def}] `) : ''}`);
-    const a = await nextLine();
-    if (a === null) return o.def ?? '';
-    return a.trim() || o.def || '';
+    const 앞 = `  ${c.gray('›')} ${label} ${o.def ? c.gray(`[${o.def}] `) : ''}`;
+    화면.붙임(앞);
+    /*
+     * 되묻는 자리는 상자를 안 쓴다 — '실행할까요? (y/n)' 에 테두리를 두르면
+     * 대화의 흐름이 끊긴다. 대신 되비추는 일은 우리가 맡아야 한다.
+     * 상자 모드에서는 readline 의 되비추기를 꺼 놨기 때문이다. 안 해 주면
+     * y 를 쳐도 화면에 아무것도 안 나타난다 — 먹은 건지 안 먹은 건지 모른다.
+     */
+    묻는중 = 상자쓰나 ? 앞 : null;
+    try {
+      const a = await nextLine();
+      if (a === null) return o.def ?? '';
+      return a.trim() || o.def || '';
+    } finally { 묻는중 = null; }
   };
 
   /**
@@ -357,7 +438,7 @@ export async function chatLoop(opts = {}) {
   say(`  ${c.gray('/help 명령 목록')}   ${c.gray('/think 추론 강도')}   ${c.gray('Ctrl+C 중단·끝내기')}`);
 
   // 입력 자리. 어떻게 생겼는지는 화면 쪽이 정한다 —
-  // 줄화면은 상태줄을 깔고 그 아래 ❯ 를, 전체화면은 아래 칸에 상자를 그린다.
+  // 줄화면은 상태줄을 깔고 그 아래 ❯ 를, 상자화면은 테두리를 두른 칸을 그린다.
   const prompt = () => 화면.입력자리(session);
 
   // Ctrl+C 는 상황에 따라 뜻이 다르다.
@@ -380,7 +461,9 @@ export async function chatLoop(opts = {}) {
 
   for (;;) {
     prompt();
+    입력기다림 = true;
     const line = await nextLine();
+    입력기다림 = false;
     if (line === null) break;          // 입력이 끝났다 (파이프 종료 / Ctrl+D)
     interrupted = false;
     const text = line.trim();
@@ -495,7 +578,7 @@ export async function chatLoop(opts = {}) {
            * 같아서, 화면을 훑을 때 '모델이 뭐라고 했는지' 를 눈으로 못 찾았다.
            * 도구 이름·결과·바뀐 자리가 줄줄이 지나간 끝에 답이 섞여 있었다.
            *
-           * 세로줄 하나면 된다. 전체화면 UI 로 갈 이유가 없다 —
+           * 세로줄 하나면 된다. 칸을 나눠 그리는 화면으로 갈 이유가 없다 —
            * 파이프로 넘기거나 기록으로 남길 때도 그대로 읽힌다.
            */
           case 'content':
@@ -534,12 +617,6 @@ export async function chatLoop(opts = {}) {
                 const 글 = t.state === 'done' ? c.gray(t.text) : t.state === 'doing' ? c.white(t.text) : c.gray(t.text);
                 say(`    ${표} ${clip(글, 74)}`);
               }
-              // 전체화면이면 오른쪽 칸에도 세워 둔다. 흘러가 버리지 않게 —
-              // 긴 일에서 '어디까지 했나' 는 늘 보여야 하는 정보다.
-              화면.할일칸(ev.result.todos.map((t) => {
-                const 표 = t.state === 'done' ? c.green('☑') : t.state === 'doing' ? c.hyellow('▶') : c.gray('☐');
-                return `${표} ${t.state === 'doing' ? c.white(t.text) : c.gray(t.text)}`;
-              }));
             } else {
               say(`    ${toolResultLine(ev.result, ev.ms ?? 0)}`);
               // 파일을 고쳤으면 무엇이 바뀌었는지 바로 보여 준다.
@@ -552,11 +629,6 @@ export async function chatLoop(opts = {}) {
                 // 엉뚱한 자리를 가리킨다 — 목록에 ../../.. 가 찍힌다.
                 session.noteChange(ev.result.changed ?? ev.args?.file_path, ev.result.diff);
                 for (const l of renderDiff(ev.result.diff, { maxLines: DIFF_LINES[session.level] ?? 20 })) say(l);
-                // 오른쪽 칸에 '이번 대화에서 뭘 건드렸나' 를 세워 둔다.
-                화면.파일칸([...session.changes].map(([p, d]) => {
-                  const 이름 = ctx?.scope ? ctx.scope.show(p) : p;
-                  return `${c.white(이름)} ${c.green('+' + d.added)}${c.red('-' + d.removed)}`;
-                }));
               }
             }
             flush();   // 도구가 하나 끝날 때마다 적어 둔다
@@ -692,8 +764,8 @@ export async function chatLoop(opts = {}) {
   // 띄운 남의 프로세스는 반드시 거둔다. 안 거두면 deel 을 껐는데도
   // 그 서버가 계속 돌고 있게 된다 — 사람 눈에는 안 보이는 채로.
   for (const s of mcp붙임.서버들) s.닫기();
-  // 끝맺음은 화면을 접기 **전에** 그린다. 전체화면은 close() 에서 터미널을
-  // 원래대로 되돌리는데, 그 뒤에 찍으면 되돌아간 화면에 뜬금없이 한 줄이 남는다.
+  // 끝맺음은 화면을 접기 **전에** 그린다. close() 가 상자를 걷어내므로,
+  // 그 뒤에 찍으면 걷어낸 자리에 뜬금없이 한 줄이 남는다.
   say('');
   say(`  ${c.gray('끝냅니다.')} ${c.gray(`모델 호출 ${session.usage.calls}회 · 도구 시간 ${(session.usage.ms / 1000).toFixed(1)}초 · ↑${session.usage.in.toLocaleString()} ↓${session.usage.out.toLocaleString()}`)}`);
   say('');

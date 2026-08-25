@@ -3,7 +3,7 @@
  *
  * 왜 이 파일이 생겼나:
  *   repl.js 안에 say()·process.stdout.write 가 79군데 흩어져 있었다. 그 상태로는
- *   전체화면 화면(TUI)을 얹을 수가 없다 — 어디로 무엇이 나가는지 한 군데서 못 잡으니
+ *   화면을 하나 더 얹을 수가 없다 — 어디로 무엇이 나가는지 한 군데서 못 잡으니
  *   두 화면이 같은 코드를 나눠 쓰려다 결국 둘 다 어중간해진다.
  *
  *   그래서 '무엇을 그린다' 와 '어떻게 그린다' 를 가른다. repl.js 는 이제
@@ -11,33 +11,46 @@
  *   칸에 담아 다시 그릴지는 여기서 정한다.
  *
  * 두 가지 구현이 있다:
- *   줄화면(LineScreen)  지금까지의 그 화면. 위에서 아래로 흘러간다.
- *                       파이프·기록·CI·`deel run`·검사가 전부 이것을 읽는다.
- *   전체화면(TuiScreen) ui/tui.js. 사람이 터미널 앞에 앉아 있을 때만.
+ *   줄화면(LineScreen)   지금까지의 그 화면. 위에서 아래로 흘러간다.
+ *                        파이프·기록·CI·`deel run`·검사가 전부 이것을 읽는다.
+ *   상자화면(BoxScreen)  ui/inputbox.js. 사람이 터미널 앞에 앉아 있을 때만.
+ *                        **대화는 똑같이 흘려보내고** 맨 아래 입력 상자만
+ *                        우리가 지우고 다시 그린다.
  *
- * **줄화면을 없애지 않는 것이 핵심이다.** 전체화면은 터미널을 통째로 점유하고
- * 커서를 옮겨 가며 다시 그린다. 그 출력을 파일로 넘기면 제어문자 덩어리가 되고,
- * CI 로그에서는 읽을 수가 없다. 그래서 두 벌을 갖고 상황에 따라 고른다.
+ * ── 한 번 틀렸던 길 ─────────────────────────────────────────────────────
+ *
+ * 처음에는 터미널을 통째로 빌려(대체 화면) 대화 칸·파일 칸·할 일 칸을 나눠
+ * 그렸다. 보기에는 그럴듯했는데 **슬래시 명령이 전부 먹통**이 됐다.
+ * commands.js 를 비롯한 여섯 모듈이 화면 객체를 안 거치고 stdout 에 바로 쓰는데,
+ * 전체화면은 매번 자기 버퍼에서 화면을 다시 그리므로 그 글이 찍히자마자
+ * 덮여 사라졌다. 명령이 안 도는 게 아니라 결과가 안 보이는 것이라 더 나빴다.
+ *
+ * 고치려면 stdout 에 쓰는 자리를 전부 화면 객체로 꿰야 하는데, 지금 여섯 곳이고
+ * 앞으로 늘 것이며, 하나라도 빠뜨리면 같은 증상이 조용히 돌아온다. 그래서
+ * 대화는 그냥 흘려보내기로 했다. 그러면 stdout 에 쓰는 모든 코드가 손 안 대고
+ * 그대로 맞다. 스크롤·복사·`| tee` 도 그대로다.
  */
 import { c, say, cursor, box, cols } from './ansi.js';
 import { statusLine, contextWarning } from './status.js';
 import { spin } from './spinner.js';
 
 /**
- * 지금 이 자리에서 전체화면을 써도 되는가.
+ * 지금 이 자리에서 입력 상자를 써도 되는가.
  *
- * 셋 다 맞아야 한다. 하나라도 아니면 줄화면이다 —
- * 애매하면 줄화면이 맞다. 잘못 켜면 사용자 화면이 깨지지만,
- * 잘못 안 켜면 그냥 지금까지의 화면일 뿐이다.
+ * 하나라도 아니면 줄화면이다 — 애매하면 줄화면이 맞다. 잘못 켜면 사용자
+ * 화면이 깨지지만, 잘못 안 켜면 그냥 지금까지의 화면일 뿐이다.
+ *
+ * 상자는 커서를 위로 올려 가며 자기가 그린 줄을 지운다. 그 앞자리가
+ * 터미널이 아니면(파이프·기록) 제어문자가 그대로 글에 섞인다.
  */
-export function 전체화면쓸까({ tui = null } = {}) {
+export function 상자쓸까({ tui = null } = {}) {
   if (tui === false) return false;              // deel --no-tui
   if (!process.stdout.isTTY) return false;      // 파이프·기록·CI
   if (!process.stdin.isTTY) return false;       // 입력이 파이프로 들어옴 (검사·데모)
   if (process.env.TERM === 'dumb') return false;
   if (process.env.CI) return false;
-  // 창이 너무 작으면 칸을 나눌 자리가 없다. 억지로 나누면 글자가 겹친다.
-  if ((process.stdout.columns ?? 0) < 60 || (process.stdout.rows ?? 0) < 16) return false;
+  // 너무 좁으면 상자 안에 남는 자리가 없다. 테두리만 남고 글이 안 보인다.
+  if ((process.stdout.columns ?? 0) < 40) return false;
   if (tui === true) return true;
   return true;
 }
@@ -96,7 +109,7 @@ export class LineScreen {
    *
    * Shift+Tab 으로 작업 모드를 돌릴 때처럼, 입력을 기다리는 도중에 화면에
    * 한 줄을 끼워 넣어야 하는 자리가 있다. 안 지우면 `❯ ` 뒤에 새 글이 붙는다.
-   * 전체화면에서는 입력이 제 칸에 따로 있어서 지울 것이 없다.
+   * 상자화면에서는 상자를 통째로 걷어낸다(BoxScreen 이 갈아 끼운다).
    */
   입력지움() { cursor.clearLine(); }
 
@@ -134,13 +147,8 @@ export class LineScreen {
     process.stdout.write(` ${c.hcyan('❯')} `);
   }
 
-  /** 오른쪽 칸에 들어갈 것들. 줄화면에는 오른쪽 칸이 없다. */
-  파일칸() { /* 줄화면은 안 그린다 */ }
-
-  할일칸() { /* 할 일은 나올 때마다 줄로 흘려보낸다 (repl.js 가 그린다) */ }
-
-  /** 창 크기가 바뀌었다. 줄화면은 다시 그릴 것이 없다. */
-  다시그림() { }
+  /** 사람이 치는 중인 글이 바뀌었다. 줄화면은 readline 이 알아서 되비춘다. */
+  입력갱신() { }
 
   close() {
     this.돌림멈춤();
@@ -149,21 +157,58 @@ export class LineScreen {
 }
 
 /**
+ * 대화는 그대로 흘려보내고, 맨 아래 입력 상자만 우리가 관리하는 화면.
+ *
+ * LineScreen 을 그대로 물려받는다 — 대화가 나가는 길이 **한 글자도 다르면
+ * 안 되기** 때문이다. 다르면 검사가 읽는 화면과 사람이 보는 화면이 갈라진다.
+ * 여기서 갈아 끼우는 것은 입력 자리 세 가지뿐이다.
+ */
+export class BoxScreen extends LineScreen {
+  constructor(상자) {
+    super();
+    this.kind = 'box';
+    this.상자 = 상자;
+  }
+
+  // 대화 한 줄이 나가기 전에 상자를 걷어낸다. 안 걷으면 새 글이 상자 위에
+  // 겹쳐 찍히고, 지울 때 대화까지 같이 지워진다.
+  줄(s = '') { this.상자.지우기(); super.줄(s); }
+  붙임(s) { this.상자.지우기(); super.붙임(s); }
+
+  /** 입력 자리 = 상태줄 + 상자. 커서는 상자 안에 놓인다. */
+  입력자리(session) {
+    this.임시지움();
+    say('');
+    this.상자.그리기(session, '', 0);
+  }
+
+  /** 사람이 치는 중인 글이 바뀌었다 (repl.js 의 keypress 가 부른다). */
+  입력갱신(session, 글, 커서) { this.상자.그리기(session, 글, 커서); }
+
+  입력지움() { this.상자.지우기(); }
+
+  close() {
+    this.상자.지우기();
+    super.close();
+  }
+}
+
+/**
  * 상황에 맞는 화면을 하나 고른다.
  *
- * 전체화면 쪽은 필요할 때만 읽어 들인다. 줄화면으로 돌 때 tui.js 를
+ * 상자 쪽은 필요할 때만 읽어 들인다. 줄화면으로 돌 때 inputbox.js 를
  * 파싱조차 안 하게 하려는 것이다 — `deel run` 이 조금이라도 빨리 시작해야 한다.
  */
 export async function 화면고르기(opts = {}) {
-  if (!전체화면쓸까(opts)) return new LineScreen();
+  if (!상자쓸까(opts)) return new LineScreen();
   try {
-    const { TuiScreen } = await import('./tui.js');
-    return new TuiScreen(opts);
+    const { InputBox } = await import('./inputbox.js');
+    return new BoxScreen(new InputBox());
   } catch (e) {
-    // 전체화면을 못 세우면 조용히 줄화면으로 간다. 화면 하나 때문에
+    // 상자를 못 세우면 조용히 줄화면으로 간다. 화면 하나 때문에
     // 프로그램이 안 뜨는 일은 없어야 한다.
     const s = new LineScreen();
-    s.줄(`  ${c.gray(`전체화면을 못 켰습니다 — 줄 화면으로 갑니다. (${e.message})`)}`);
+    s.줄(`  ${c.gray(`입력 상자를 못 켰습니다 — 줄 화면으로 갑니다. (${e.message})`)}`);
     return s;
   }
 }

@@ -394,51 +394,51 @@ Two things matter here:
 - **Beginners do not get fewer safeguards.** Undo, workspace scope and dangerous-command
   blocking are identical. A beginner needs the undo more, not less.
 
-### Two screens
+### The input box
 
-Launched in a terminal, deel runs **full-screen**: conversation on the left, files changed
-this session at the top right, todos below them, with a status line and an input box pinned
-at the bottom.
+Launched in a terminal, **the conversation scrolls normally and an input box is pinned at
+the bottom.** Only the box is erased and redrawn — nothing above it is touched.
 
 ```
-┌ 대화 ─────────────────────────────────────────────┬ 바뀐 파일 ───────────────┐
-│   ❊ Grep(console.log)                             │ src/runner.js +3-1       │
-│     └ 3 files · 11 hits                           │ src/index.js +1-1        │
-│                                                   │ src/ui/log.js +12-0      │
-│   ◈ Edit(src/runner.js)                           ├ 할 일 ───────────────────│
-│     └ 1 spot +3-1                                 │ ☑ find log calls         │
-│     - 12 console.log('시작', 이름)                │ ☑ unify runner.js        │
-│     + 12 logger.info({ 단계: '시작', 이름 })      │ ▶ unify index.js         │
-│                                                   │ ☐ update docs            │
-│   ▌ Unified log calls to the logger format.       │                          │
-│                                                   │                          │
-│   ── 4.2s · 3 tools · ↑3,900 ↓180                 │                          │
-└───────────────────────────────────────────────────┴──────────────────────────┘
- ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱ 22% ▏ ◎ 종합 · ◇ medium · auto ▏ ↑3.8k ↓180
+  ❊ Grep(console.log)
+    └ 3 files · 11 hits
+  ◈ Edit(src/runner.js)
+    └ 1 spot +3-1
+    - 12 console.log('시작', 이름)
+    + 12 logger.info({ 단계: '시작', 이름 })
+
+  ▌ Unified log calls to the logger format. One change in runner.js.
+
+  ── 4.2s · 3 tools · ↑3,900 ↓180
+
+ ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱ 22% ▏ ◎ 종합 · ◇ medium · auto
  ╭─────────────────────────────────────────────────────────────────────────────╮
- │ ❯                                                                           │
+ │ ❯ also shrink the aggregate helpers                                         │
  ╰─────────────────────────────────────────────────────────────────────────────╯
 ```
 
+Terminal scrollback, selection and `Ctrl+F` all keep working, because the conversation is
+never trapped inside a pane of ours. Long input grows the box to as many lines as it needs.
+
 **It switches itself off where it would do harm.** Piped or redirected output, `CI` set,
-`TERM=dumb`, or a window under 60×16 all fall back to the **scrolling view** without asking —
-`deel … | tee log.txt` must not become a pile of escape codes. Passing `--tui` does not
-override a pipe.
+`TERM=dumb`, or a window under 40 columns: no box, no asking. `deel … | tee log.txt` must
+not become a pile of escape codes. Passing `--tui` does not override a pipe, and `--no-tui`
+turns it off at any time.
 
-| | Full-screen | Scrolling (`--no-tui`) |
-|---|---|---|
-| When | Launched in a terminal | Pipes, CI, small windows, `--no-tui` |
-| Files changed / todos | Always visible on the right (≥96 cols) | Printed inline as they happen |
-| Earlier output | Wrapped and paged inside the frame | Your terminal's own scrollback |
-| On exit | **Replays the conversation into scrollback** | Already there |
-| For keeping a log | Not this one | This one |
+Line editing stays entirely with Node's readline — Korean IME composition, paste, history,
+Ctrl+A/E, backspace. We only *draw* the string readline is holding. Hand-rolling a line
+editor is how you break IME input first.
 
-Full-screen uses the alternate screen buffer, like vim. Exiting would otherwise erase the whole
-conversation, so the recent lines are reprinted into the real screen on the way out. Whether it
-exits on Ctrl+C or dies on an uncaught error, **the terminal is always restored.**
-
-If the full-screen view cannot be set up — an unusual terminal, anything at all — it falls back
-to the scrolling view and says why in one line. **No program should fail to start over a screen.**
+> **A path taken and abandoned** — the first version borrowed the whole terminal (an
+> alternate screen, like vim) and split it into conversation, changed-files and todo panes.
+> It looked the part, and **every slash command went dead.** Six modules including
+> `commands.js` write straight to the terminal rather than through the screen object, and a
+> full repaint erased their output the instant it appeared. Not "the command didn't run" —
+> "you can't see that it ran", which is worse. Fixing it would mean threading every one of
+> those six through the screen object, plus every one added later, with a silent return of
+> the same symptom if one is missed. So the design went the other way: let the conversation
+> flow, manage only the box. ([`test/box.test.js`](test/box.test.js) spawns a child that
+> pretends to be a terminal, so this one cannot ship again.)
 
 ---
 
@@ -1195,7 +1195,7 @@ deel --effort <profile>  even / save (default) / deep
 deel --offline           Nothing leaves this machine
 deel --continue          Resume the most recent conversation
 deel --resume <id>       Resume a specific one
-deel --no-tui            Turn the full-screen view off; use the scrolling view (see below)
+deel --no-tui            Turn the input box off; plain scrolling view (see below)
 ```
 
 ### Project rules
@@ -1226,7 +1226,7 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 ## Development
 
 ```bash
-npm test          Full suite (1,745 checks)
+npm test          Full suite (1,774 checks)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1280,7 +1280,7 @@ Zero dependencies rules out c8 and nyc, so this reads Node's own
 `NODE_V8_COVERAGE` instead — nothing new to get through an import review. It picks up
 child processes too, so the `cli` suite that spawns `deel` counts like everything else.
 
-Currently **92% overall** (6,960 of 7,570 lines). Three files are deliberately left short.
+Currently **92% overall** (6,911 of 7,496 lines). Three files are deliberately left short.
 
 | File | Now | Why it stops there |
 |---|---|---|
