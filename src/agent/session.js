@@ -20,15 +20,21 @@ export function estimateTokens(text) {
 
 const BASE_RULES = `너는 deel 다. 사용자의 작업 폴더 안에서 코드를 읽고 고치는 도구다.
 
-원칙:
-- 추측하지 말고 도구로 확인한다. 파일을 고치기 전에는 반드시 Read 로 읽는다.
+시킨 일을 **끝까지 해낸다.** 계획만 세우고 멈추지 않는다.
+
+- 바로 시작한다. 없는 파일·폴더는 만든다. 그게 시킨 일의 일부다.
+- 되묻는 것은 **도구로도 못 알아낼 때뿐**이다. 정할 수 있으면 정하고 무엇으로 정했는지 말한다.
+- 여러 파일을 만들고 나눠 담아야 하는 일이면 그렇게 한다. 하나만 건드려 놓고 멈추지 마라.
+- 다 했으면 확인한다. 돌려 보고 안 되면 고친다. 확인 못 했으면 "확인 못 했다" 고 말한다.
+
+지키는 것:
+- 추측하지 말고 도구로 확인한다. 있는 파일을 고치기 전에는 반드시 Read 로 읽는다.
 - Edit 의 old_string 은 공백과 들여쓰기까지 파일과 정확히 같아야 한다. 짧게 자르지 말고 앞뒤로 넉넉히 포함한다.
-- 한 번에 하나씩 고치고, 고친 뒤에는 무엇을 왜 고쳤는지 한 줄로 말한다.
 - 큰 파일은 한 번에 다 담지 않는다. 앞부분 300줄쯤을 Write 로 만들고, 나머지는 Append 를
   여러 번 불러 끝까지 이어 붙인다. Append 는 Read 없이 바로 쓸 수 있다.
   이어 붙일 때 앞부분을 다시 보내지 않는다 — 그러면 또 같은 자리에서 잘린다.
 - 같은 도구를 같은 인자로 다시 부르지 않는다. 결과는 같다. 본 것은 기억하고 다음으로 넘어간다.
-- 사용자가 볼 범위를 좁혀 말하면 그대로 따른다. 시키지 않은 폴더를 뒤지지 않는다.
+- 사용자가 볼 범위를 못 박아 말하면 그 범위를 지킨다. 안 그러면 필요한 만큼 찾아본다.
 - 명령 실행이 필요하면 Bash 를 쓴다. 되돌릴 수 없는 명령은 막히니 다른 방법을 찾는다.
 - 사용자에게 답할 때는 한국어로, 짧게. 코드를 통째로 붙여넣지 말고 무엇이 달라졌는지 말한다.
 
@@ -41,7 +47,7 @@ const BASE_RULES = `너는 deel 다. 사용자의 작업 폴더 안에서 코드
   쓰던 스킬에서 틀린 데를 찾으면 그 파일을 고친다.`;
 
 export class Session {
-  constructor(conn, { root, mode = 'auto', work = null, level = null, think = 'medium', effort = 'save', web = true, maxSteps = 24 } = {}) {
+  constructor(conn, { root, mode = 'auto', work = null, level = null, think = 'medium', effort = 'save', web = true, maxSteps = null } = {}) {
     this.conn = conn;
     this.root = root;
     this.mode = mode;        // 승인 정책 — 얼마나 물어보나 (auto/confirm/strict)
@@ -54,7 +60,18 @@ export class Session {
     this.think = think;      // 기준 강도
     this.effort = effort;    // 그 강도를 단계별로 어떻게 나눌지 (effort.js)
     this.web = web;          // 웹 읽기 도구를 줄지 (오프라인이면 무조건 안 준다)
-    this.maxSteps = maxSteps;
+    /*
+     * 걸음 수 상한.
+     *
+     * 보통은 **작업 모드가 정한다** — 묻기는 8, 코드는 60, 총괄은 100 처럼
+     * 일의 성격에 맞는 값이 다르기 때문이다. 여기 값은 부를 때 직접 준 경우에만
+     * 이긴다(loop.js 가 stepsSet 을 본다).
+     *
+     * 전에는 stepsSet 을 아무 데서도 안 넣어서, 직접 준 값이 **조용히 무시**됐다.
+     * 부르는 쪽에서는 4를 줬는데 60을 도는 식이라, 검사에서야 겨우 드러났다.
+     */
+    this.stepsSet = maxSteps != null;
+    this.maxSteps = maxSteps ?? 24;
     this.messages = [];
     this.filesRead = new Map();   // 경로 → 추정 토큰
     this.changes = new Map();     // 경로 → {added, removed, times}. /diff 가 본다

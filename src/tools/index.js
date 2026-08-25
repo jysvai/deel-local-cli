@@ -14,11 +14,19 @@ import { allow as allowedIn } from '../agent/modes.js';
 import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { diffLines } from '../ui/diff.js';
+import { 읽을줄수, 찾을개수, 찾을줄수 } from '../agent/budget.js';
 
-const MAX_READ_LINES = 2000;
+/*
+ * 한 번에 돌려줄 양은 **모델에 맞춰** 정한다 (agent/budget.js).
+ *
+ * 전에는 못 박혀 있었다 — Read 2,000줄, Glob 200개, Grep 250줄. 그 값이 맞는
+ * 모델은 하나도 없다. 8k 짜리에는 한 번으로 창을 넘기는 양이고, 655k 짜리에는
+ * 있는 자리의 1%도 안 쓰는 양이다. 같은 숫자가 한쪽에선 너무 크고 다른 쪽에선
+ * 너무 작으면, 숫자를 잘못 고른 게 아니라 고정한 것 자체가 틀린 것이다.
+ *
+ * ctx.모델컨텍스트 가 없으면(검사·일회성 호출) budget.js 가 알아서 기본값을 쓴다.
+ */
 const MAX_OUT = 30000;
-// Glob 이 한 번에 돌려줄 최대 개수. 넘으면 잘랐다고 말해 준다.
-const GLOB_MAX = 200;
 // Grep 이 열어 볼 파일 크기 상한. 이보다 크면 글 파일이라도 안 본다 —
 // 한 파일에서 몇십 초를 쓰면 그동안 화면이 멈춘 것처럼 보인다.
 const GREP_MAX_FILE = 2 * 1024 * 1024;
@@ -170,7 +178,8 @@ export const TOOLS = {
       const text = 읽음.text;
       const lines = text.split('\n');
       const start = Math.max(0, (args.offset ?? 1) - 1);
-      const count = Math.min(args.limit ?? MAX_READ_LINES, MAX_READ_LINES);
+      const 줄상한 = 읽을줄수(ctx.모델컨텍스트);
+      const count = Math.min(args.limit ?? 줄상한, 줄상한);
       const slice = lines.slice(start, start + count);
       const body = slice.map((l, i) => `${String(start + i + 1).padStart(6)}\t${l}`).join('\n');
       const more = lines.length > start + count ? `\n… 전체 ${lines.length}줄 중 ${start + count}줄까지` : '';
@@ -397,7 +406,7 @@ export const TOOLS = {
       const 맞는것 = walk(root)
         .filter((f) => re.test(f.rel) || re.test(f.rel.split('/').pop()))
         .sort((a, b) => b.mtime - a.mtime);
-      const files = 맞는것.slice(0, GLOB_MAX);
+      const files = 맞는것.slice(0, 찾을개수(ctx.모델컨텍스트));
       if (!files.length) return { content: `찾은 파일 없음: ${args.pattern}`, summary: '0개' };
       // 잘랐으면 잘랐다고 말한다. 전에는 '200개' 라고만 해서, 모델이 그게 전부인 줄
       // 알고 "전부 확인했습니다" 로 답을 맺었다. 실제로는 1,400개 중 200개였다.
@@ -445,7 +454,7 @@ export const TOOLS = {
       }
 
       const mode = args.output_mode ?? 'files_with_matches';
-      const limit = args.head_limit ?? 250;
+      const limit = args.head_limit ?? 찾을줄수(ctx.모델컨텍스트);
       const hitFiles = [];
       const lines = [];
       let total = 0;

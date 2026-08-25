@@ -7,6 +7,7 @@ import { effortFor, tokensFor, fullCap, wasCut, shiftLevel } from './effort.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
 import { compact, shouldCompact } from './compact.js';
+import { 걸음수 } from './budget.js';
 import { isOffline } from '../safety/network.js';
 import { get as workMode } from './modes.js';
 
@@ -177,7 +178,14 @@ export async function* run(session, ctx, userText, { signal = null } = {}) {
   const 모드 = workMode(session.effectiveWork());
   const effort = session.effortSet ? session.effort : (모드.effort ?? session.effort);
   const think = session.thinkSet ? session.think : (모드.think ?? session.think);
-  const maxSteps = session.stepsSet ? session.maxSteps : (모드.steps ?? session.maxSteps);
+  /*
+   * 걸음 수 상한은 **모델에 맞춰** 정한다 (budget.js).
+   *
+   * 전에는 모드마다 숫자가 박혀 있었다(코드 24회). 그 값이 맞는 모델은 하나도
+   * 없다 — 8k 모델에는 너무 크고, 655k 모델은 여유가 96% 남았는데도 만들다
+   * 만 채로 끊겼다. 사람이 직접 준 값이 있으면 그것이 먼저다.
+   */
+  const maxSteps = session.stepsSet ? session.maxSteps : 걸음수(모드.id, conn.ctx);
   const attempted = new Set();   // 같은 변경성 명령을 두 번 실행하지 않기 위한 기록
   let steps = 0;
   let lastToolFailed = false;    // 직전 단계에서 도구가 오류를 냈나 → 다음 판단은 세게
@@ -570,5 +578,14 @@ export async function* run(session, ctx, userText, { signal = null } = {}) {
     }
   }
 
-  yield { type: 'limit', steps, files: 마무리() };
+  /*
+   * 걸음을 다 썼다.
+   *
+   * 전에는 `도구 호출 24회에서 멈췄습니다` 한 줄이 전부였다. 무엇이 끝났고
+   * 무엇이 안 끝났는지는 사람이 위로 스크롤해 도구 줄을 세어 봐야 알았다.
+   * 할 일 목록을 이미 들고 있으니 그걸 그대로 보여 준다 — "이어서 해줘" 라고
+   * 할 때 무엇을 이어야 하는지가 화면에 있어야 한다.
+   */
+  const 남은할일 = (ctx.todos ?? []).filter((x) => x.state !== 'done');
+  yield { type: 'limit', steps, files: 마무리(), 남은할일 };
 }

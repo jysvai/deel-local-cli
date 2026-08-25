@@ -134,7 +134,7 @@ export async function runOnce(opts = {}) {
     work: opts.work ?? null,
     think: opts.think ?? 'medium',
     effort: opts.effort ?? 'save',
-    maxSteps: opts.maxSteps ?? 24,
+    maxSteps: opts.maxSteps ?? null,   // null 이면 작업 모드가 정한다
   });
 
   const found = discover(root);
@@ -154,6 +154,9 @@ export async function runOnce(opts = {}) {
   const 자동승인 = opts.yes === true;
   const ctx = {
     scope: makeScope(root),
+    // 도구가 한 번에 돌려줄 양을 이 값에서 뽑는다 (agent/budget.js).
+    // /model 로 갈아타면 conn 이 통째로 바뀌므로 그때마다 다시 읽는다.
+    get 모델컨텍스트() { return conn.ctx ?? null; },
     history: new History(root),
     audit: new Audit(root),
     seen: new Set(),
