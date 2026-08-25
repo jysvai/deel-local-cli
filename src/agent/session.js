@@ -1,9 +1,10 @@
 // 대화 상태와 컨텍스트 셈. /context 가 보여주는 숫자가 여기서 나온다.
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { get as workMode, DEFAULT as WORK_DEFAULT } from './modes.js';
+import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './modes.js';
 import { toolSchemas } from '../tools/index.js';
 import { normalize as normLevel, DEFAULT as LEVEL_DEFAULT } from '../ui/level.js';
+import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
 
 // 토큰 추정 — 정확한 토크나이저 없이 대략만 센다.
 // 한글은 글자당 약 1토큰, 영문·코드는 약 4글자당 1토큰으로 본다.
@@ -46,6 +47,42 @@ const BASE_RULES = `너는 deel 다. 사용자의 작업 폴더 안에서 코드
   앞머리에 name 과 description 을 넣고(--- 로 감싼다) 아래에 순서를 적는다.
   쓰던 스킬에서 틀린 데를 찾으면 그 파일을 고친다.`;
 
+/*
+ * 작은 창을 위한 짧은 판.
+ *
+ * 같은 규칙이다 — 빠진 것은 없고, 설득하는 문장만 없다. 8k 모델에서 위의 긴
+ * 판은 창의 13% 를 먹는데, 그 자리는 대화가 써야 하는 자리다.
+ *
+ * 짧게 쓰되 **더 못 박아** 쓴다. 작은 모델이 못하는 것이 '긴 글을 끝까지
+ * 따라가기' 라서, 짧고 단정적인 쪽이 오히려 잘 지켜진다. (grade.js 도 같은
+ * 생각으로 되어 있다 — 거기는 급, 여기는 창 크기라는 점만 다르다.)
+ */
+const BASE_RULES_짧게 = `너는 deel 다. 사용자의 작업 폴더에서 코드를 읽고 고친다.
+
+시킨 일을 끝까지 해낸다. 계획만 내고 멈추지 마라.
+- 바로 시작한다. 없는 파일·폴더는 만든다.
+- 도구로 알아낼 수 있으면 되묻지 말고 정한다. 무엇으로 정했는지는 말한다.
+- 파일이 여럿이면 다 만든다. 하나만 하고 멈추지 마라.
+- 끝내기 전에 Verify 로 확인한다. 확인 못 했으면 "확인 못 했다" 고 말한다.
+
+- 고칠 파일은 먼저 Read 한다.
+- Edit 의 old_string 은 공백까지 파일과 똑같아야 한다. 앞뒤를 넉넉히 넣어라.
+- 긴 파일은 Write 로 앞부분만, 나머지는 Append 로 잇는다. 앞부분을 다시 보내지 마라.
+- 같은 도구를 같은 인자로 또 부르지 마라. 결과는 같다.
+- 답은 한국어로 짧게. 코드를 통째로 붙여넣지 마라.
+- 사용자가 정한 규칙은 Remember 로 한 줄 남긴다. "저번에" 라고 하면 Recall 로 찾는다.`;
+
+/**
+ * 이 창 크기에 맞는 기본 규칙.
+ *
+ * 24k 를 경계로 삼는다. 그 아래에서는 긴 판이 창의 10% 를 넘어가기 시작한다 —
+ * 도구 정의(budget.js 의 설명길이)가 줄어드는 자리와 같은 경계다. 두 개가
+ * 같이 움직여야 '작은 창에서는 고정 몫을 줄인다' 가 한 가지 결정이 된다.
+ */
+function 기본규칙(ctx) {
+  return Number(ctx) > 0 && Number(ctx) < 24000 ? BASE_RULES_짧게 : BASE_RULES;
+}
+
 export class Session {
   constructor(conn, { root, mode = 'auto', work = null, level = null, think = 'medium', effort = 'save', web = true, maxSteps = null } = {}) {
     this.conn = conn;
@@ -81,6 +118,17 @@ export class Session {
     this.maxSkillsListed = 40;    // 프롬프트에 올릴 최대 개수
     this.maxSkillDesc = 140;      // 설명 한 줄 최대 길이
     this.usage = { in: 0, out: 0, calls: 0, ms: 0 };
+    /*
+     * 지금 붙은 모델이 얼마나 하는가 (agent/grade.js).
+     *
+     * 창 크기와는 다른 축이다. 창은 '얼마나 담나', 급은 '얼마나 알아서 하나'.
+     * 128k 짜리 3B 모델과 32k 짜리 좋은 모델을 같은 값으로 다루면 둘 다 손해다.
+     *
+     * 처음에는 이름으로 짐작하고, 대화가 돌수록 **실제로 본 것**으로 고쳐 잡는다.
+     * 사람이 /grade 로 정하면 그것이 이긴다.
+     */
+    this.본것 = new 지켜본것();
+    this.급정한것 = null;
     this.startedAt = Date.now();
     this.rules = this.#loadRules();
   }
@@ -106,13 +154,30 @@ export class Session {
     return this.routed ?? this.work;
   }
 
+  /** 지금 매겨진 모델 급. 화면과 프롬프트가 같은 것을 봐야 한다. */
+  급() { return 매김(this.conn, this.본것, this.급정한것); }
+
+  /** 이 급에서 쓸 손잡이 값들 (한 번에 만들 파일 수 같은 것). */
+  급값() { return 급값(this.급().급); }
+
   systemPrompt() {
-    const parts = [BASE_RULES];
+    const parts = [기본규칙(this.conn?.ctx)];
     parts.push(`\n작업 폴더: ${this.root}\n이 폴더 밖의 파일은 읽지도 쓰지도 못한다.`);
 
     // 지금 무슨 일을 하는 중인지. 도구 목록도 이 모드에 맞춰 이미 걸러져 있다.
     const w = workMode(this.effectiveWork());
-    parts.push(`\n--- 지금 모드: ${w.name} (${w.en}) ---\n${w.say}`);
+    // 창이 좁으면 짧은 판을 쓴다 (modes.js 의 말()). 규칙은 같고 설득하는 문장만 빠진다.
+    parts.push(`\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`);
+    /*
+     * 모델 급에 맞춘 한 문단 (grade.js).
+     *
+     * 큰 모델에는 아무것도 안 붙는다 — 이미 아는 것을 다시 읽느라 자리만 먹는다.
+     * 작은 모델에만, 짧게, 못 박아서 붙는다. 그 급이 못하는 것이 바로
+     * '긴 글을 끝까지 따라가기' 라서, 길게 쓰면 오히려 나빠진다.
+     */
+    const 급글 = 급말(this.급().급);
+    if (급글) parts.push(`\n${급글}`);
+
     if (this.rules) parts.push(`\n--- ${this.rules.name} (사용자 규칙, 위 원칙보다 우선) ---\n${this.rules.text}`);
 
     /*
@@ -191,8 +256,8 @@ export class Session {
    *   · 지금 모드 문구 — modes.js 의 say. 모드마다 수백 토큰이다.
    */
   breakdown() {
-    const sys = estimateTokens(BASE_RULES) + estimateTokens(`작업 폴더: ${this.root}`)
-      + estimateTokens(workMode(this.effectiveWork()).say ?? '');
+    const sys = estimateTokens(기본규칙(this.conn?.ctx)) + estimateTokens(`작업 폴더: ${this.root}`)
+      + estimateTokens(모드말(this.effectiveWork(), this.conn?.ctx) ?? '');
     const rules = this.rules ? estimateTokens(this.rules.text) : 0;
     const listed = this.listedSkills();
     const skills = listed.length
@@ -239,7 +304,9 @@ export class Session {
   #도구토큰() {
     // 밖에서 붙인 도구 수까지 열쇠에 넣는다. 서버가 붙고 떨어지면 값이 달라진다.
     const mcp수 = (this.mcp ?? []).reduce((n, s) => n + (s.도구?.length ?? 0), 0);
-    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${this.web !== false ? 'web' : ''}|mcp${mcp수}`;
+    // 창 크기도 열쇠에 넣는다. 설명을 창에 맞춰 줄여 싣기 때문에(budget.js),
+    // /ctx 로 창을 다시 잡으면 이 값도 달라져야 한다. 안 넣으면 옛 값이 남는다.
+    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${this.web !== false ? 'web' : ''}|mcp${mcp수}|c${this.conn?.ctx ?? 0}`;
     if (this.#도구잰것.has(열쇠)) return this.#도구잰것.get(열쇠);
     let n = 0;
     try {
@@ -248,6 +315,10 @@ export class Session {
         web: this.web !== false,
         work: this.effectiveWork(),
         mcp: this.mcp ?? null,
+        // 실제로 나가는 것과 **같은 것**을 재야 한다. 안 넘기면 안 줄인 것을
+        // 재게 되고, 그러면 /context 가 실제보다 크게 말한다 — 그 값으로
+        // effort.js 가 출력 상한을 잡으므로 답이 이유 없이 짧아진다.
+        ctx: this.conn?.ctx ?? null,
       });
       n = estimateTokens(JSON.stringify(list));
     } catch { n = 0; }

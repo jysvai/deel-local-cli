@@ -780,6 +780,23 @@ export async function chatLoop(opts = {}) {
                 // 엉뚱한 자리를 가리킨다 — 목록에 ../../.. 가 찍힌다.
                 session.noteChange(ev.result.changed ?? ev.args?.file_path, ev.result.diff);
                 for (const l of renderDiff(ev.result.diff, { maxLines: DIFF_LINES[session.level] ?? 20 })) say(l);
+              } else if (ev.result?.여럿?.length) {
+                /*
+                 * 한 번에 여러 개를 만들었다.
+                 *
+                 * 여기서는 바뀐 자리를 안 그린다. 새 파일 다섯 개의 diff 는
+                 * 곧 그 파일 전체라, 화면이 수백 줄로 밀려 올라간다 —
+                 * 그러면 무엇이 만들어졌는지가 오히려 안 보인다.
+                 * 파일마다 한 줄씩만 적고, 자세한 것은 /diff 가 맡는다.
+                 */
+                for (const f of ev.result.여럿) {
+                  if (f.ok) {
+                    session.noteChange(f.path, f.diff);
+                    say(`      ${c.green('✓')} ${c.white(f.보인이름)} ${c.gray(`· ${f.lines}줄`)}`);
+                  } else {
+                    say(`      ${c.red('✗')} ${c.white(f.보인이름 ?? '(경로 없음)')} ${c.gray(`— ${clip(String(f.error), 60)}`)}`);
+                  }
+                }
               }
             }
             flush();   // 도구가 하나 끝날 때마다 적어 둔다

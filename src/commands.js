@@ -29,6 +29,7 @@ export const COMMANDS = {
   context: { desc: '컨텍스트 사용량 보기' },
   ctx:     { desc: '컨텍스트 길이 — 모델에 맞춰 다시 재거나 직접 지정', arg: '[auto|숫자|640k]' },
   out:     { desc: '한 번에 받을 답 길이 상한 — 큰 파일이 잘리면 여기를 올린다', arg: '[숫자|32k|auto]' },
+  grade:   { desc: '모델 급 — 얼마나 알아서 하나. 창 크기와는 다른 축', arg: '[작음|보통|큼|auto]' },
   compact: { desc: '오래된 대화 줄이기' },
   model:   { desc: '연결·모델 바꾸기 (이름 일부 · list · models)', arg: '[이름|list|models]' },
   think:   { desc: '추론 강도 (off/low/medium/high/max)', arg: '<수준>' },
@@ -105,6 +106,10 @@ export async function handle(line, session, ctx) {
     case 'context': return showContext(session), { handled: true };
 
     case 'ctx': return await ctxLength(session, arg), { handled: true };
+
+    // 모델 급. /ctx 와 헷갈리기 쉬워 설명에서 못을 박는다 —
+    // /ctx 는 '얼마나 담나', /grade 는 '얼마나 알아서 하나' 다.
+    case 'grade': case '급': return 모델급(session, arg), { handled: true };
 
     // 한 번에 받을 답 길이. 컨텍스트(/ctx)와는 다른 축이라 명령을 따로 둔다 —
     // /ctx out 안에 숨겨 두니 아무도 못 찾았고, 정작 큰 파일이 안 만들어지는 원인이었다.
@@ -1040,6 +1045,74 @@ async function 출력상한(session, arg = '') {
   say(`  ${c.cyan('/out 32k')}      ${c.gray('직접 지정 (k 는 1024)')}`);
   say(`  ${c.cyan('/out auto')}     ${c.gray('직접 정한 값을 지우고 알아낸 값/기본값으로')}`);
   say('');
+}
+
+/**
+ * /grade — 모델 급.
+ *
+ * `/ctx` 와는 **다른 축**이다. 헷갈리기 쉬워서 화면에서도 나란히 보여 준다.
+ *   /ctx    얼마나 담나        (창 크기)
+ *   /grade  얼마나 알아서 하나 (능력)
+ *
+ * 창이 128k 인 3B 모델이 있고, 창이 32k 인 아주 좋은 모델도 있다. 둘을 같은
+ * 값으로 다루면 하나는 붙들려 있고 하나는 놓쳐진다.
+ *
+ * 평소에는 안 건드려도 된다 — 이름으로 짐작하고, 대화가 돌수록 실제로 본 것
+ * (인자 잘림·빈 답·편집 실패·되풀이)으로 고쳐 잡는다. 여기서 정하면 그것이
+ * 이기고, `auto` 로 되돌리면 다시 스스로 잡는다.
+ */
+function 모델급(session, arg = '') {
+  const 값 = String(arg ?? '').trim().toLowerCase();
+  const 별명 = {
+    '작음': '작음', 'small': '작음', 's': '작음', '작': '작음',
+    '보통': '보통', 'medium': '보통', 'm': '보통', '중': '보통',
+    '큼': '큼', 'large': '큼', 'l': '큼', 'big': '큼', '대': '큼',
+  };
+
+  if (값 === 'auto' || 값 === '자동') {
+    session.급정한것 = null;
+    const g = session.급();
+    say('');
+    say(`  ${c.cyan('◈')} 모델 급을 다시 ${c.bold('스스로 잡게')} 했습니다 — 지금은 ${c.white(g.급)}`);
+    say(`     ${c.gray(g.왜)}`);
+    return;
+  }
+
+  if (값 && 별명[값]) {
+    session.급정한것 = 별명[값];
+    const v = session.급값();
+    say('');
+    say(`  ${c.cyan('◈')} 모델 급을 ${c.bold(별명[값])} 으로 정했습니다.`);
+    say(`     ${c.gray(`한 번에 만들 파일 ${v.한번에쓸파일}개 · ${v.나눠쓰기줄}줄 넘으면 나눠 쓰기`)}`);
+    say(`     ${c.gray('/grade auto 로 되돌리면 다시 스스로 잡습니다.')}`);
+    return;
+  }
+
+  // 인자가 없으면 지금 상태를 보여 준다.
+  const g = session.급();
+  const v = session.급값();
+  const 본 = session.본것;
+  say('');
+  say(`  ${c.bold('모델 급')}  ${c.hcyan(g.급)}${g.짐작 ? c.gray('  (짐작)') : ''}`);
+  say(`     ${c.gray(g.왜)}`);
+  say('');
+  say(`  ${c.gray('이 급에서 쓰는 값')}`);
+  say(`     ${c.gray('한 번에 만들 파일')}   ${c.white(String(v.한번에쓸파일))}개`);
+  say(`     ${c.gray('나눠 쓰기 기준')}     ${c.white(String(v.나눠쓰기줄))}줄`);
+  say(`     ${c.gray('절차를 못 박나')}     ${v.절차를못박나 ? c.white('예') : c.gray('아니오 — 목표만 준다')}`);
+  say(`     ${c.gray('하위 작업 권함')}     ${v.하위작업권함 ? c.white('예') : c.gray('아니오')}`);
+  if (본 && 본.걸음) {
+    say('');
+    say(`  ${c.gray('이번 대화에서 실제로 본 것')} ${c.gray(`(${본.걸음}걸음)`)}`);
+    const 줄 = [
+      ['인자 잘림', 본.잘린인자], ['빈 답', 본.빈답],
+      ['편집 실패', 본.편집실패], ['되풀이', 본.되풀이], ['도구 성공', 본.도구성공],
+    ];
+    say('     ' + 줄.map(([이름, n]) => `${c.gray(이름)} ${n ? c.white(String(n)) : c.gray('0')}`).join(c.gray('  ·  ')));
+  }
+  say('');
+  say(`  ${c.gray('/ctx 와는 다른 축입니다 — /ctx 는 얼마나 담나, /grade 는 얼마나 알아서 하나.')}`);
+  say(`  ${c.gray('직접 정하려면 /grade 작음|보통|큼 · 되돌리려면 /grade auto')}`);
 }
 
 /**

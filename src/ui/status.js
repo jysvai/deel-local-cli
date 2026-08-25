@@ -30,6 +30,28 @@ export const SEGMENTS = {
     short: (s) => c.hcyan(clip(s.conn.model, 14)),
   },
 
+  /*
+   * 모델 급 — 얼마나 알아서 하나 (agent/grade.js).
+   *
+   * 컨텍스트 게이지 바로 옆에 둔다. 그 둘이 다른 축이라는 것이 화면에서
+   * 나란히 보여야 한다 — 창이 128k 인데 급이 '작음' 인 경우가 실제로 있고,
+   * 그때 "왜 이렇게 조심스럽게 하지" 의 답이 이 한 글자다.
+   *
+   * 짐작일 때는 흐리게 그린다. 정한 것과 짐작한 것을 같은 색으로 보여주면,
+   * 사람은 프로그램이 확인한 사실이라고 읽는다.
+   */
+  grade: {
+    desc: '모델 급 (얼마나 알아서 하나)',
+    make: (s) => {
+      const g = 볼만한급(s);
+      return g ? (g.짐작 ? c.gray(`◈ ${g.급}?`) : c.white(`◈ ${g.급}`)) : '';
+    },
+    short: (s) => {
+      const g = 볼만한급(s);
+      return g ? (g.짐작 ? c.gray(`◈${g.급[0]}?`) : c.white(`◈${g.급[0]}`)) : '';
+    },
+  },
+
   ctx: {
     desc: '컨텍스트 사용량',
     make: (s) => {
@@ -117,13 +139,30 @@ export const SEGMENTS = {
  */
 export const SEGMENT_GROUPS = [
   ['dir', 'model'],
-  ['ctx'],
+  ['ctx', 'grade'],
   ['work', 'think', 'mode'],
   ['tok'],
 ];
 
 // 옛 이름. 조각 이름을 직접 넘기던 자리(검사·설정)가 그대로 돌게 남긴다.
 export const DEFAULT_SEGMENTS = SEGMENT_GROUPS.flat();
+
+/**
+ * 이 급을 화면에 낼 값어치가 있나.
+ *
+ * '보통' 을 짐작으로 잡은 것은 **아무것도 못 알아낸 상태**다. 사내 게이트웨이가
+ * 그렇고, 그건 기본값이지 알아낸 사실이 아니다. 그걸 상태줄에 적으면 자리만
+ * 먹고, 좁은 터미널에서는 그 한 조각 때문에 승인 방식이 밀려 사라진다 —
+ * 내 파일이 안 물어보고 바뀌는지가 화면에서 없어지는 것이라 훨씬 비싸다.
+ *
+ * 알아낸 것이 있거나(짐작이 아님) 기본이 아닌 급일 때만 낸다.
+ */
+function 볼만한급(s) {
+  if (typeof s.급 !== 'function') return null;
+  const g = s.급();
+  if (g.급 === '보통' && g.짐작) return null;
+  return g;
+}
 
 // 컨텍스트 게이지가 쓰는 숫자. 자세한 꼴과 짧은 꼴이 같은 값을 봐야 한다.
 function 참값(s) {
@@ -167,9 +206,10 @@ export function statusLine(session, { segments = null, max = cols() - 2 } = {}) 
     ? segments.map((k) => [k])
     : SEGMENT_GROUPS;
 
-  const 그리기 = (짧게) => 덩이들
+  const 그리기 = (짧게, 뺄것 = null) => 덩이들
     .map((그룹) => 그룹
       .map((k) => {
+        if (뺄것?.has(k)) return null;
         const seg = SEGMENTS[k];
         if (!seg) return null;
         return 짧게 && seg.short ? seg.short(session) : seg.make(session);
@@ -194,7 +234,16 @@ export function statusLine(session, { segments = null, max = cols() - 2 } = {}) 
   let parts = 그리기(false);
   if (!맞나(parts)) parts = 그리기(true);
 
-  // 그래도 모자라면 뒤에서부터 떨군다. 앞쪽(폴더·모델·컨텍스트)이 마지막까지 남는다.
+  /*
+   * 그래도 모자라면 **급부터** 접는다.
+   *
+   * 뒤에서부터 떨구면 승인 방식이 먼저 사라진다. 모델 급은 알아 두면 좋은
+   * 것이고, 승인 방식은 지금 봐야 하는 것이다 — 내 파일이 안 물어보고 바뀌는지가
+   * 거기 적혀 있다. 둘 중 하나를 접어야 하면 언제나 이쪽이다.
+   */
+  if (!맞나(parts) && !segments) parts = 그리기(true, new Set(['grade']));
+
+  // 여전히 모자라면 뒤에서부터 떨군다. 앞쪽(폴더·모델·컨텍스트)이 마지막까지 남는다.
   while (parts.length > 1 && !맞나(parts)) parts.pop();
 
   return ` ${c.gray('▏')}${parts.join(칸막이)}`;

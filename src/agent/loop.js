@@ -194,6 +194,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
     work: session.effectiveWork(),                // 작업 모드가 쓰는 것만 (modes.js)
     // 밖에서 붙인 도구(MCP). 붙은 것이 없으면 아무것도 안 는다.
     mcp: ctx.mcp ?? null,
+    // 창이 좁으면 도구 설명을 줄여 싣는다 (budget.js 의 설명길이).
+    // 도구를 빼는 게 아니라 설명만 줄이므로 할 수 있는 일은 안 달라진다.
+    ctx: conn.ctx ?? null,
   });
 
   /*
@@ -229,6 +232,14 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
 
   while (steps < maxSteps) {
     steps++;
+    /*
+     * 이 모델이 실제로 어떻게 하고 있는지 센다 (agent/grade.js).
+     *
+     * 이름에 70B 라고 적혀 있어도 걸음마다 인자가 잘리면 그건 붙들어 줘야
+     * 하는 상태다. 이름은 첫 어림일 뿐이고, 여기서 세는 것이 진짜 근거다.
+     * 세기만 한다 — 판단은 grade.js 가 하고, 프롬프트는 다음 걸음부터 달라진다.
+     */
+    session.본것?.걸음셈();
     // 단계마다 필요한 생각의 양이 다르다. effort.js 가 그 배분을 갖고 있다.
     const stage = steps === 1 ? 'plan' : lastToolFailed ? 'fix' : 'work';
     const level = effortFor(think, effort, stage);
@@ -320,6 +331,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
         }
       }
       if (빈답인가(msg)) {
+        session.본것?.본것('빈답');
         yield {
           type: 'error',
           text: '서버가 빈 답을 보냈습니다.\n'
@@ -425,6 +437,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
         // 도구는 '경로가 비었다' 같은, 원인과 상관없는 말을 하게 되고
         // 모델은 고칠 게 없다고 보고 똑같이 다시 시도한다. 그래서 끝없이 돈다.
         if (call.argsBroken) {
+          session.본것?.본것('잘린인자');
           // ── 버리기 전에, 건질 수 있는지 먼저 본다 ──────────────────────
           //
           // 잘린 JSON 안에는 이미 받아 놓은 내용이 들어 있다. 경로도 대개 온전하다.
@@ -681,6 +694,16 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
 
       for (const { call, result, ms } of 결과들) {
         session.usage.ms += ms;
+        /*
+         * 이 모델이 실제로 어떻게 하고 있는지 (agent/grade.js).
+         *
+         * Edit 실패는 '파일에 있는 글을 그대로 옮겨 적는' 능력을 그대로 잰다 —
+         * 작은 모델이 제일 자주 걸리는 자리다. 여기서 세어 두면 다음 걸음의
+         * 프롬프트가 "Read 한 바로 다음 걸음에 고쳐라" 로 바뀐다.
+         */
+        if (call.name === 'Edit' && result.error) session.본것?.본것('편집실패');
+        else if (!result.error) session.본것?.본것('도구성공');
+
         if (result.error) {
           lastToolFailed = true;
           // 같은 도구가 같은 이유로 계속 실패하면 헛돌고 있는 것이다.
@@ -691,6 +714,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
         if (call.name === 'Read' && result.content) session.noteRead(call.args.file_path, result.content);
         // 실제로 파일이 바뀐 것만 적는다. 턴 끝에 이 목록을 디스크와 견준다.
         if (result.changed) 손댄파일.add(result.changed);
+        // 한 번에 여러 개를 쓴 경우. changed 하나만 보면 나머지가 조용히 빠져서,
+        // 턴 끝에 "만들어졌다" 고 확인해 주는 파일이 넷 중 하나만 나온다.
+        for (const f of result.여럿 ?? []) if (f.ok && f.path) 손댄파일.add(f.path);
 
         // 앞에서 똑같이 부른 적이 있고 결과도 같으면, 결과를 다시 싣지 않는다.
         let 실을것 = result.error ? `오류: ${result.error}` : result.content ?? '';
@@ -698,6 +724,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
           const 서명 = 서명만들기(call);
           const 앞것 = 부른것.get(서명);
           if (앞것 !== undefined && 앞것 === 실을것) {
+            session.본것?.본것('되풀이');
             const n = (막힘.get(`반복|${서명}`) ?? 0) + 1;
             막힘.set(`반복|${서명}`, n);
             실을것 = `앞에서 부른 ${call.name} 과 인자도 결과도 같습니다. 결과는 그대로라 다시 싣지 않습니다.`

@@ -11,11 +11,13 @@ import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
 import { TODO_TOOL } from './todo.js';
 import { TASK_TOOL } from './task.js';
+import { OUTLINE_TOOL } from './outline.js';
+import { VERIFY_TOOL } from './verify.js';
 import { allow as allowedIn } from '../agent/modes.js';
 import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { diffLines } from '../ui/diff.js';
-import { 읽을줄수, 찾을개수, 찾을줄수 } from '../agent/budget.js';
+import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
 
 /*
  * 한 번에 돌려줄 양은 **모델에 맞춰** 정한다 (agent/budget.js).
@@ -142,6 +144,107 @@ async function 엑셀읽기(abs, args, ctx) {
   };
 }
 
+
+/**
+ * 파일 하나를 쓴다 — Write 의 알맹이.
+ *
+ * 되돌리기 스냅샷을 **여기서** 뜬다. 여러 개를 쓸 때도 파일마다 한 번씩 뜨는
+ * 것이 중요하다. 한 덩이로 뜨면 `/undo` 가 전부-아니면-전무가 되어, 넷 중
+ * 하나만 잘못 만들었을 때 나머지 셋까지 날려야 한다.
+ */
+function 한파일쓰기(args, ctx) {
+  const abs = ctx.scope.resolve(args.file_path);
+    if (typeof args.content !== 'string') return { error: 'content 가 문자열이 아닙니다' };
+    // 읽기만 막고 쓰기를 열어 두면 남의 도구 살림을 덮어쓸 수 있다.
+    // 제 설정(.deel/config.json)을 덮어쓰면 연결이 통째로 날아간다.
+    const 못쓰는이유 = 내부살림(abs);
+    if (못쓰는이유) return { error: 못쓰는이유 };
+    // 엑셀 파일을 통째로 덮어쓰면 xlsx 가 아니라 그냥 글 파일이 된다.
+    // 열리지도 않는 파일이 되고, 원본은 이미 없다. 아예 막는다.
+    if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
+    // 엑셀만 막아서는 모자란다. hwp·pdf·png·zip 도 똑같이 그 순간 끝난다.
+    // 게다가 이런 파일은 되돌리기가 내용을 떠 놓지 못하는 종류라 되살릴 길이 없다.
+    // 확장자로 고르지 않고 실제 내용으로 본다 — 사내 파일은 확장자가 제각각이다.
+    const 바이너리막기 = 바이너리인가(abs);
+    if (바이너리막기) return { error: 바이너리막기 };
+    ctx.history.snapshot(abs, 'Write');
+    const existed = existsSync(abs);
+    // 덮어쓰기 전 내용. 바뀐 자리를 보여주려면 지금 떠 놔야 한다.
+    // 읽다 터지는 파일(바이너리 등)이면 그냥 없던 셈 친다 — 쓰는 것 자체는 막지 않는다.
+    let 이전 = null;
+    if (existed) { try { 이전 = readTextFull(abs).text; } catch { 이전 = null; } }
+    mkdirSync(dirname(abs), { recursive: true });
+
+    // 원래 있던 파일이면 그 파일이 쓰던 인코딩으로 되돌려 쓴다.
+    // 새 파일이면 UTF-8 이다 — 요즘 만드는 파일까지 옛 인코딩으로 둘 이유가 없다.
+    const 원래 = existed ? (ctx.enc?.get(abs) ?? 'utf-8') : 'utf-8';
+    const 만든것 = encode(args.content, 원래);
+    if (만든것.lost.length) {
+      return {
+        error: `이 파일은 ${encLabel(원래)} 로 되어 있는데, 그 인코딩에 없는 글자가 있습니다: `
+             + `${만든것.lost.slice(0, 8).join(' ')}\n`
+             + `  그대로 쓰면 그 글자들이 뭉개집니다. 해당 글자를 빼거나, 파일을 UTF-8 로 바꿔도 되는지 사용자에게 물어보세요.`,
+      };
+    }
+    writeFileSync(abs, 만든것.buf);
+    ctx.seen.add(abs);
+    const n = args.content.split('\n').length;
+    const 표기 = 원래 !== 'utf-8' ? ` · ${encLabel(원래)}` : '';
+    return {
+      content: `${existed ? '덮어씀' : '새로 만듦'}: ${ctx.scope.show(abs)} (${n}줄${표기})`,
+      summary: `${n}줄${표기}`,
+      changed: abs,
+      diff: 바뀐자리(이전, args.content),
+    };
+}
+
+/**
+ * 여러 파일을 한 번에.
+ *
+ * 하나가 실패해도 나머지는 간다. 첫 실패에서 통째로 멈추면 모델은 무엇이 되고
+ * 무엇이 안 됐는지 모른 채 여덟 개를 처음부터 다시 보낸다 — 왕복을 줄이려던
+ * 것이 오히려 늘어난다. 그래서 **한 줄씩 다 적어** 돌려준다.
+ */
+function 여러파일쓰기(목록, ctx) {
+  const 결과 = [];
+  for (const x of 목록) {
+    if (typeof x.file_path !== 'string' || !x.file_path) {
+      결과.push({ path: null, ok: false, error: 'file_path 가 없습니다' });
+      continue;
+    }
+    let r;
+    try { r = 한파일쓰기(x, ctx); }
+    catch (err) { r = { error: String(err?.message ?? err) }; }
+    결과.push(r.error
+      ? { path: x.file_path, 보인이름: x.file_path, ok: false, error: r.error }
+      : {
+        path: r.changed,
+        보인이름: ctx.scope.show(r.changed),
+        ok: true,
+        lines: String(x.content ?? '').split('\n').length,
+        diff: r.diff,
+      });
+  }
+
+  const 된것 = 결과.filter((r) => r.ok);
+  const 안된것 = 결과.filter((r) => !r.ok);
+  const 줄들 = 결과.map((r) => (r.ok
+    ? `  ✓ ${r.보인이름} (${r.lines}줄)`
+    : `  ✗ ${r.보인이름} — ${String(r.error).split('\n')[0]}`));
+
+  return {
+    content: `${된것.length}개 만들었습니다${안된것.length ? `, ${안된것.length}개 실패` : ''}.\n`
+      + 줄들.join('\n')
+      + (안된것.length ? '\n\n실패한 것만 다시 보내세요. 된 것은 다시 안 보내도 됩니다.' : ''),
+    summary: `${된것.length}개 · ${된것.reduce((a, r) => a + (r.lines ?? 0), 0)}줄`
+      + (안된것.length ? ` · ${안된것.length}개 실패` : ''),
+    // 화면과 루프가 파일별로 처리하도록 그대로 넘긴다. changed 는 안 넣는다 —
+    // 넣으면 그 한 개만 세어지고 나머지가 조용히 빠진다.
+    여럿: 결과,
+    error: 된것.length ? undefined : (안된것[0]?.error ?? '아무것도 못 만들었습니다'),
+  };
+}
+
 export const TOOLS = {
   Read: {
     schema: {
@@ -196,60 +299,45 @@ export const TOOLS = {
   Write: {
     schema: {
       name: 'Write',
-      description: '파일을 새로 쓰거나 통째로 덮어쓴다. 일부만 고칠 때는 Edit 을 쓴다.',
+      description: '파일을 새로 쓰거나 통째로 덮어쓴다. 일부만 고칠 때는 Edit 을 쓴다.'
+        + ' **여러 파일을 한 번에 만들 수 있다** — files 에 배열로 넣으면 된다.'
+        + ' 폴더 구조를 처음 잡을 때는 그렇게 해라. 한 개씩 부르면 파일 수만큼 모델을'
+        + ' 다시 불러야 해서, 여덟 개짜리 뼈대에 몇 분이 그냥 간다.',
       parameters: {
         type: 'object',
         properties: {
-          file_path: { type: 'string', description: '쓸 파일 경로' },
-          content: { type: 'string', description: '파일 전체 내용' },
+          file_path: { type: 'string', description: '쓸 파일 경로 (한 개일 때)' },
+          content: { type: 'string', description: '파일 전체 내용 (한 개일 때)' },
+          files: {
+            type: 'array',
+            description: '여러 개를 한 번에 만들 때. 이걸 쓰면 file_path·content 는 안 쓴다.',
+            items: {
+              type: 'object',
+              properties: {
+                file_path: { type: 'string', description: '쓸 파일 경로' },
+                content: { type: 'string', description: '파일 전체 내용' },
+              },
+              required: ['file_path', 'content'],
+            },
+          },
         },
-        required: ['file_path', 'content'],
+        required: [],
       },
     },
+    /*
+     * 갈래만 정한다. 알맹이는 아래 한파일쓰기() 에 있다.
+     *
+     * 한 개일 때의 결과 모양은 **한 글자도 안 바꾼다.** 그 모양을 보고 있는
+     * 자리가 여럿이다 — loop.js 의 잘린 것 살려쓰기, repl.js 의 바뀐 자리 그리기,
+     * 되돌리기 스냅샷. 여러 개는 그것과 다른 모양(여럿)으로 따로 돌려준다.
+     */
     run(args, ctx) {
-      const abs = ctx.scope.resolve(args.file_path);
-      if (typeof args.content !== 'string') return { error: 'content 가 문자열이 아닙니다' };
-      // 읽기만 막고 쓰기를 열어 두면 남의 도구 살림을 덮어쓸 수 있다.
-      // 제 설정(.deel/config.json)을 덮어쓰면 연결이 통째로 날아간다.
-      const 못쓰는이유 = 내부살림(abs);
-      if (못쓰는이유) return { error: 못쓰는이유 };
-      // 엑셀 파일을 통째로 덮어쓰면 xlsx 가 아니라 그냥 글 파일이 된다.
-      // 열리지도 않는 파일이 되고, 원본은 이미 없다. 아예 막는다.
-      if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
-      // 엑셀만 막아서는 모자란다. hwp·pdf·png·zip 도 똑같이 그 순간 끝난다.
-      // 게다가 이런 파일은 되돌리기가 내용을 떠 놓지 못하는 종류라 되살릴 길이 없다.
-      // 확장자로 고르지 않고 실제 내용으로 본다 — 사내 파일은 확장자가 제각각이다.
-      const 바이너리막기 = 바이너리인가(abs);
-      if (바이너리막기) return { error: 바이너리막기 };
-      ctx.history.snapshot(abs, 'Write');
-      const existed = existsSync(abs);
-      // 덮어쓰기 전 내용. 바뀐 자리를 보여주려면 지금 떠 놔야 한다.
-      // 읽다 터지는 파일(바이너리 등)이면 그냥 없던 셈 친다 — 쓰는 것 자체는 막지 않는다.
-      let 이전 = null;
-      if (existed) { try { 이전 = readTextFull(abs).text; } catch { 이전 = null; } }
-      mkdirSync(dirname(abs), { recursive: true });
-
-      // 원래 있던 파일이면 그 파일이 쓰던 인코딩으로 되돌려 쓴다.
-      // 새 파일이면 UTF-8 이다 — 요즘 만드는 파일까지 옛 인코딩으로 둘 이유가 없다.
-      const 원래 = existed ? (ctx.enc?.get(abs) ?? 'utf-8') : 'utf-8';
-      const 만든것 = encode(args.content, 원래);
-      if (만든것.lost.length) {
-        return {
-          error: `이 파일은 ${encLabel(원래)} 로 되어 있는데, 그 인코딩에 없는 글자가 있습니다: `
-               + `${만든것.lost.slice(0, 8).join(' ')}\n`
-               + `  그대로 쓰면 그 글자들이 뭉개집니다. 해당 글자를 빼거나, 파일을 UTF-8 로 바꿔도 되는지 사용자에게 물어보세요.`,
-        };
+      const 목록 = Array.isArray(args.files) ? args.files.filter((x) => x && typeof x === 'object') : [];
+      if (목록.length) return 여러파일쓰기(목록, ctx);
+      if (typeof args.file_path !== 'string' || !args.file_path) {
+        return { error: 'file_path 가 없습니다. 한 개면 file_path·content 를, 여러 개면 files 배열을 주세요.' };
       }
-      writeFileSync(abs, 만든것.buf);
-      ctx.seen.add(abs);
-      const n = args.content.split('\n').length;
-      const 표기 = 원래 !== 'utf-8' ? ` · ${encLabel(원래)}` : '';
-      return {
-        content: `${existed ? '덮어씀' : '새로 만듦'}: ${ctx.scope.show(abs)} (${n}줄${표기})`,
-        summary: `${n}줄${표기}`,
-        changed: abs,
-        diff: 바뀐자리(이전, args.content),
-      };
+      return 한파일쓰기(args, ctx);
     },
   },
 
@@ -805,13 +893,66 @@ export const TOOLS = {
 
   TodoWrite: TODO_TOOL,
 
+  // 만든 것이 진짜 되는지. 끝맺기 전에 오는 자리다 — verify.js 머리말 참고.
+  Verify: VERIFY_TOOL,
+
+  // 프로젝트 뼈대만 싸게 보기. Read 앞에 오는 자리다 — outline.js 머리말 참고.
+  Outline: OUTLINE_TOOL,
+
   // 하위 작업. 실행은 loop.js 가 가로채서 한다 — task.js 머리말 참고.
   Task: TASK_TOOL,
 };
 
+/**
+ * 도구 설명을 창 크기에 맞게 줄인다.
+ *
+ * 문장 단위로 자른다. 글자 수로 뚝 자르면 "…파일을 통째로 Read 하는 것보다"
+ * 처럼 말이 끊긴 채로 모델에게 간다 — 그건 안 준 것만 못하다.
+ * 첫 문장은 무슨 일이 있어도 남긴다. 그게 이 도구가 무엇인지다.
+ *
+ * 인자 설명도 같이 줄인다. 괄호로 붙인 보충(`(한 개일 때)`)이 먼저 떨어진다.
+ */
+const 뻔한인자 = new Set(['file_path', 'content', 'pattern', 'path', 'command', 'text', 'name']);
+
+export function 설명줄이기(schema, 한도) {
+  if (!Number.isFinite(한도)) return schema;
+
+  const 자르기 = (글, 몫) => {
+    const s = String(글 ?? '');
+    if (s.length <= 몫) return s;
+    // 한국어 문장은 '다.' 로 끝난다. 영문 마침표도 같이 본다.
+    const 조각 = s.split(/(?<=다\.|[.!?])\s+/);
+    let 모은것 = 조각[0] ?? s;
+    for (const 다음 of 조각.slice(1)) {
+      if ((모은것 + ' ' + 다음).length > 몫) break;
+      모은것 += ' ' + 다음;
+    }
+    return 모은것;
+  };
+
+  const p = schema.parameters ?? {};
+  const 인자몫 = Math.max(24, Math.round(한도 / 3));
+  const 새속성 = {};
+  for (const [이름, 값] of Object.entries(p.properties ?? {})) {
+    // 이름만 봐도 아는 인자는 아주 좁은 창에서 설명을 통째로 뺀다.
+    // `file_path` 가 무엇인지 설명하는 데 토큰을 쓰는 것은, 8k 모델에서는
+    // 그 토큰만큼 대화를 잘라먹는 것과 같다. 헷갈릴 만한 것(offset·files·
+    // replace_all·목적·할일)은 그대로 둔다 — 거기서 틀리면 일이 안 된다.
+    if (한도 <= 100 && 뻔한인자.has(이름)) { 새속성[이름] = { type: 값.type }; continue; }
+    새속성[이름] = 값?.description
+      ? { ...값, description: 자르기(String(값.description).replace(/\s*\([^)]*\)\s*$/, ''), 인자몫) }
+      : 값;
+  }
+  return {
+    ...schema,
+    description: 자르기(schema.description, 한도),
+    parameters: { ...p, properties: 새속성 },
+  };
+}
+
 // 모델에게 넘길 도구 정의 목록.
 // 스킬이 없으면 Skill 도구는 빼서 자리를 아낀다.
-export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null } = {}) {
+export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null } = {}) {
   let list = names ?? Object.keys(TOOLS).filter((n) => {
     if (n === 'Skill') return hasSkills;
     if (n === 'WebFetch') return web;
@@ -822,7 +963,15 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
   // 설계·계획·묻기 모드에서 파일을 바꾸면 안 된다고 프롬프트로 부탁할 수도 있다.
   // 그런데 모델은 부탁을 잊는다. 목록에서 아예 빼면 잊을 것이 없다.
   if (work) list = allowedIn(work, list);
-  const 우리것 = list.map((n) => ({ type: 'function', function: TOOLS[n].schema }));
+  /*
+   * 창이 좁으면 설명을 줄여 싣는다 (budget.js 의 설명길이).
+   *
+   * 도구를 빼지는 않는다. 빼면 작은 모델만 할 수 있는 일이 달라져서
+   * "환경마다 다르게 동작" 하게 되는데, 그건 이 프로그램이 피하려는 것이다.
+   * 이름과 인자는 그대로 남으므로 할 수 있는 일은 똑같다.
+   */
+  const 한도 = 설명길이(ctx);
+  const 우리것 = list.map((n) => ({ type: 'function', function: 설명줄이기(TOOLS[n].schema, 한도) }));
 
   /*
    * 밖에서 붙인 도구(MCP)를 뒤에 붙인다.

@@ -214,7 +214,10 @@ await new Promise((r) => setImmediate(r));
     plan: [/TodoWrite/, /이대로 진행할까요/, /위험/],
     architect: [/선택지/, /의존/, /관례/],
     debug: [/재현/, /가설/, /증거/],
-    code: [/먼저 Read 로 읽/, /관례/, /확인 못 했/],
+    // 구현 모드는 도구 넷을 제 자리에서 쓰게 시켜야 한다. 하나라도 빠지면
+    // 그 자리에서 예전 방식으로 돌아간다 — 통째로 Read 하거나, 한 파일씩
+    // 만들거나, 확인 없이 "다 됐습니다" 로 끝맺는다.
+    code: [/먼저 Read/, /관례/, /확인 못 했/, /Outline/, /Verify/, /files 배열/],
     ask: [/줄 번호/, /모르면 모른다/],
     orchestrator: [/TodoWrite/, /하나만 진행 중/, /못 한 것/],
   };
