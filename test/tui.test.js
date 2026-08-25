@@ -9,7 +9,7 @@
 //   여기서 보는 것은 '예쁜가' 가 아니라 **'한 칸도 안 어긋나는가'** 다.
 //   테두리가 한 칸 밀린 것은 사람 눈으로는 못 보고, 실제 터미널에서는
 //   줄이 접혀 화면 전체가 무너진다.
-import { width } from '../src/ui/ansi.js';
+import { c, width } from '../src/ui/ansi.js';
 import { 전체화면쓸까, LineScreen } from '../src/ui/screen.js';
 import { trace } from './trace.mjs';
 
@@ -268,7 +268,133 @@ trace('5-나갈때');
     `${process.listenerCount('exit')} / ${process.listenerCount('uncaughtException')}`);
 }
 
-trace('6-끝');
+trace('6-고를때');
+
+// ── 화면을 못 세우면 조용히 줄화면으로 가는가 ───────────────────────────
+//
+// 여기가 안 되면 증상이 최악이다 — 터미널이 조금 유별나다는 이유로
+// **프로그램이 아예 안 뜬다.** 화면은 겉이지 일이 아니다. 못 세우면
+// 못 세웠다고 한 줄 말하고 줄화면으로 계속 가야 한다.
+{
+  const { 화면고르기 } = await import('../src/ui/screen.js');
+  const 원래 = {
+    out: process.stdout.isTTY, in: process.stdin.isTTY,
+    cols: process.stdout.columns, rows: process.stdout.rows,
+    term: process.env.TERM, ci: process.env.CI,
+  };
+  const 터미널인척 = (켬) => {
+    Object.defineProperty(process.stdout, 'isTTY', { value: 켬, configurable: true });
+    Object.defineProperty(process.stdin, 'isTTY', { value: 켬, configurable: true });
+    Object.defineProperty(process.stdout, 'columns', { value: 100, configurable: true });
+    Object.defineProperty(process.stdout, 'rows', { value: 30, configurable: true });
+    delete process.env.TERM; delete process.env.CI;
+  };
+
+  터미널인척(false);
+  const 줄 = await 화면고르기({ tui: null });
+  check('파이프면 줄화면을 준다', 줄.kind === 'line', 줄.kind);
+
+  // 전체화면을 세우다 터지게 만든다. 첫 쓰기(대체화면 진입)에서 한 번만 터뜨리고,
+  // 그 뒤 쓰기는 삼킨다 — 삼키지 않으면 되돌아간 줄화면이 안내를 찍다가
+  // 같은 곳에서 또 터져서, 무엇이 catch 를 통과했는지 알 수 없게 된다.
+  터미널인척(true);
+  const 진짜쓰기 = process.stdout.write.bind(process.stdout);
+  const 앞선것 = { exit: process.listenerCount('exit'), 크기: process.stdout.listenerCount('resize') };
+  let 삼킨것 = '';
+  let 한번만 = true;
+  process.stdout.write = (b) => {
+    if (한번만) { 한번만 = false; throw new Error('가짜 터미널 고장'); }
+    삼킨것 += b;
+    return true;
+  };
+  let 되돌아간것 = null;
+  try { 되돌아간것 = await 화면고르기({ tui: null }); } finally { process.stdout.write = 진짜쓰기; }
+
+  check('전체화면이 터져도 안 죽는다', 되돌아간것 !== null && 되돌아간것.kind === 'line',
+    되돌아간것?.kind ?? 'null');
+  check('왜 줄화면으로 갔는지 말해 준다', /전체화면을 못 켰습니다/.test(삼킨것), 삼킨것.trim().slice(0, 60));
+  check('터진 까닭도 같이 말한다', /가짜 터미널 고장/.test(삼킨것), 삼킨것.trim().slice(0, 80));
+  // 반쯤 세워진 전체화면이 걸어 둔 것을 남기면, 나중에 엉뚱한 때에
+  // 대체화면을 빠져나가는 제어문자가 나가 사람 화면이 튄다.
+  check('반쯤 세워진 것이 남기지 않는다',
+    process.listenerCount('exit') === 앞선것.exit && process.stdout.listenerCount('resize') === 앞선것.크기,
+    `${process.listenerCount('exit')} / ${process.stdout.listenerCount('resize')}`);
+
+  // 되돌린다.
+  Object.defineProperty(process.stdout, 'isTTY', { value: 원래.out, configurable: true });
+  Object.defineProperty(process.stdin, 'isTTY', { value: 원래.in, configurable: true });
+  Object.defineProperty(process.stdout, 'columns', { value: 원래.cols, configurable: true });
+  Object.defineProperty(process.stdout, 'rows', { value: 원래.rows, configurable: true });
+  if (원래.term !== undefined) process.env.TERM = 원래.term;
+  if (원래.ci !== undefined) process.env.CI = 원래.ci;
+}
+
+trace('7-줄화면의임시글');
+
+// ── 줄화면도 지울 것은 지우는가 ─────────────────────────────────────────
+//
+// '생각 중…' 이 안 지워진 채 답이 뒤에 붙는 화면을 없애려고 넣은 자리다.
+// 터미널일 때만 지운다 — 파이프에서 지우기 제어문자를 뱉으면 기록이 더러워진다.
+{
+  const s = new LineScreen();
+  const 진짜쓰기 = process.stdout.write.bind(process.stdout);
+  const 잡기 = () => { let v = ''; process.stdout.write = (b) => { v += b; return true; }; return () => v; };
+
+  /*
+   * 지우기 제어문자를 낼지는 ansi.js 가 **불러올 때** 한 번 정한다
+   * (isTTY 이거나 FORCE_COLOR=1). 나중에 isTTY 를 흉내 내도 그건 안 바뀐다.
+   *
+   * 그래서 여기서는 '늘 지운다' 가 아니라 **'색을 쓰는 자리에서만 지운다'**
+   * 를 잰다. 색을 끈 자리에 지우기 문자가 나가면 기록 파일이 더러워지고,
+   * 켠 자리에서 안 나가면 '생각 중…' 이 답 앞에 남는다 — 둘 다 실제로 겪었다.
+   */
+  const 제어켜짐 = c.gray('가') !== '가';
+
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+  let 본것 = 잡기();
+  s.생각('첫 판단·medium 생각 중…');
+  const 생각글 = 본것();
+  process.stdout.write = 진짜쓰기;
+  check('터미널이면 생각 중을 찍는다', /생각 중…/.test(생각글), JSON.stringify(생각글));
+  check(제어켜짐 ? '찍기 전에 줄을 지운다' : '색을 껐으면 지우기 문자를 안 낸다',
+    제어켜짐 ? 생각글.includes('\x1b[2K\r') : !생각글.includes('\x1b['),
+    JSON.stringify(생각글));
+  check('지울 것이 있다고 적어 둔다', s.임시중 === true);
+
+  본것 = 잡기();
+  s.임시지움();
+  process.stdout.write = 진짜쓰기;
+  check('지우면 지울 것이 없어진다', s.임시중 === false);
+
+  본것 = 잡기();
+  s.입력지움();
+  const 입력글 = 본것();
+  process.stdout.write = 진짜쓰기;
+  check(제어켜짐 ? '치던 입력 줄도 지운다' : '색을 껐으면 입력 줄도 안 건드린다',
+    제어켜짐 ? 입력글.includes('\x1b[2K\r') : 입력글 === '',
+    JSON.stringify(입력글));
+
+  // 파이프에서는 아무것도 안 나가야 한다.
+  Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
+  본것 = 잡기();
+  s.생각('안 보여야 한다');
+  const 파이프글 = 본것();
+  process.stdout.write = 진짜쓰기;
+  check('파이프면 생각 중을 안 찍는다', 파이프글 === '', JSON.stringify(파이프글));
+  check('파이프면 지울 것도 안 남긴다', s.임시중 === false);
+
+  // 줄화면은 창이 바뀌어도 다시 그릴 것이 없다. 불러도 안 터져야 한다.
+  본것 = 잡기();
+  s.다시그림();
+  s.다시그림({ 입력중이어도: true });
+  const 바뀜글 = 본것();
+  process.stdout.write = 진짜쓰기;
+  check('창이 바뀌어도 줄화면은 아무것도 안 한다', 바뀜글 === '', JSON.stringify(바뀜글));
+
+  Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
+}
+
+trace('8-끝');
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n전체화면 검사  ${D}(검사가 파이프로 도니 화면을 값으로 재 본다)${X}\n`);
