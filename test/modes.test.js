@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MODES, ORDER, normalize, get, next, canWrite, allow } from '../src/agent/modes.js';
+import { 걸음수 } from '../src/agent/budget.js';
 import { toolSchemas } from '../src/tools/index.js';
 import { Session } from '../src/agent/session.js';
 import { run } from '../src/agent/loop.js';
@@ -74,9 +75,32 @@ check('allow 는 있는 것 중에서만 고른다',
 // ── 4. 모드가 생각의 배분과 걸음 수를 실제로 바꾼다 ─────────────────────
 check('계획은 깊게', get('plan').effort === 'deep');
 check('코드는 아껴서', get('code').effort === 'save');
-check('디버그는 걸음이 넉넉', get('debug').steps > get('ask').steps,
-  `${get('debug').steps} vs ${get('ask').steps}`);
-check('총괄이 가장 넉넉', get('orchestrator').steps === Math.max(...ORDER.map((k) => MODES[k].steps)));
+/*
+ * 걸음 수는 모드에 안 박혀 있다 — **모델 크기에서 나온다** (agent/budget.js).
+ *
+ * 전에는 모드마다 숫자가 있었다(코드 24회). 그 값이 맞는 모델은 하나도 없다.
+ * 8k 짜리에는 너무 크고, 655k 짜리는 여유가 96% 남았는데도 만들다 만 채로
+ * 끊겼다. 그래서 모드는 '성격' 만 갖고, 실제 숫자는 컨텍스트에서 뽑는다.
+ */
+check('모드에 걸음 수를 박아 두지 않는다', ORDER.every((k) => MODES[k].steps === undefined),
+  ORDER.filter((k) => MODES[k].steps !== undefined).join(','));
+
+for (const ctx of [8192, 32768, 655360]) {
+  check(`${ctx} — 디버그가 묻기보다 넉넉`, 걸음수('debug', ctx) > 걸음수('ask', ctx),
+    `${걸음수('debug', ctx)} vs ${걸음수('ask', ctx)}`);
+  check(`${ctx} — 총괄이 가장 넉넉`,
+    걸음수('orchestrator', ctx) === Math.max(...ORDER.map((k) => 걸음수(k, ctx))),
+    String(걸음수('orchestrator', ctx)));
+}
+
+// 큰 모델이면 더 오래 돈다. 이게 이 절의 핵심이다.
+check('컨텍스트가 크면 걸음도 는다', 걸음수('code', 655360) > 걸음수('code', 8192) * 5,
+  `8k ${걸음수('code', 8192)}걸음 → 655k ${걸음수('code', 655360)}걸음`);
+// 그래도 끝없이 늘지는 않는다 — 마지막 울타리는 있어야 한다.
+check('아무리 커도 울타리는 있다', 걸음수('code', 100_000_000) <= 200,
+  String(걸음수('code', 100_000_000)));
+// 컨텍스트를 못 알아냈어도 돌기는 돌아야 한다.
+check('컨텍스트를 몰라도 값이 나온다', 걸음수('code', null) >= 16, String(걸음수('code', null)));
 
 // ── 5. 진짜 루프에서 확인 ───────────────────────────────────────────────
 // 가짜 게이트웨이가 받은 요청을 그대로 들여다본다. 프롬프트가 아니라

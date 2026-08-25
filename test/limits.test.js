@@ -134,6 +134,28 @@ trace('6-서버에게배우기');
       { kind: 'out', limit: 8192 }],
     ['요청이 최대 컨텍스트 32768 을 넘었습니다',
       { kind: 'ctx', limit: 32768 }],
+
+    /*
+     * ── 로컬 호스팅 서버들 ─────────────────────────────────────────────
+     *
+     * 여기가 실제로 아팠던 자리다. 위의 OpenAI 문장만 읽을 줄 알았고,
+     * 정작 로컬에서 많이 쓰는 서버들은 **하나도 못 읽었다.**
+     *
+     *   TGI · llama.cpp   → 아무것도 못 배우고 답도 못 받음
+     *   vLLM · KoboldCpp  → 8,192 인데 20,501(그냥 절반)로 틀리게 배움
+     *
+     * 서버가 정답을 그대로 말해 주는데 그걸 못 읽고 있었던 것이다.
+     */
+    ['Requested tokens (41003) exceed context window of 8192',
+      { kind: 'ctx', limit: 8192 }],                                  // vLLM
+    ['input length 41003 exceeds maximum 8192',
+      { kind: 'ctx', limit: 8192, asked: 41003 }],                    // TGI
+    ['the number of tokens to keep from the initial prompt is greater than n_ctx (8192)',
+      { kind: 'ctx', limit: 8192 }],                                  // llama.cpp
+    ['context the overflows: 41003 > 8192',
+      { kind: 'ctx', limit: 8192, asked: 41003 }],                    // llama.cpp
+    ['Prompt is too long: 41003 > 8192 tokens',
+      { kind: 'ctx', limit: 8192, asked: 41003 }],                    // KoboldCpp
   ];
   for (const [문장, 나올것] of 표) {
     const r = 배울것(문장);
@@ -147,11 +169,36 @@ trace('6-서버에게배우기');
     'Invalid API key provided',
     'model not found: qwen3',
     'Internal server error',
+    // 숫자가 둘 이상 들어 있는데 길이와 상관없는 것들. 모르는 서버용 마지막 수가
+    // 여기서 숫자를 집어 오면, 멀쩡한 컨텍스트를 엉뚱한 값으로 줄여 버린다.
+    'CUDA out of memory. Tried to allocate 2048 MiB (GPU 0; 24576 MiB total)',
+    'rate limited, retry after 30 seconds (limit 60 per minute)',
+    'HTTP 503 upstream connect error, 2 of 3 backends unhealthy',
     '',
     null,
   ]) {
     check(`안 배운다: ${String(아닌것).slice(0, 30) || '(빈 문장)'}`, 배울것(아닌것) === null, JSON.stringify(배울것(아닌것)));
   }
+
+  /*
+   * 출력 한계를 컨텍스트 한계로 잘못 배우면 안 된다.
+   *
+   * 모르는 서버용 마지막 수(숫자 둘 중 작은 쪽)를 표보다 **먼저** 두면 이게
+   * 깨진다. `max_tokens is too large: 200000 … at most 16384` 에서 16384 를
+   * 집어 컨텍스트를 16,384 로 줄여 버린다. 창은 멀쩡한데 창을 줄이는 것이다.
+   */
+  for (const [문장, 갈래] of [
+    ['max_tokens is too large: 200000. This model supports at most 16384 completion tokens', 'out'],
+    ['max_completion_tokens must be less than or equal to 8192, got 32000', 'out'],
+    ['Requested tokens (41003) exceed context window of 8192', 'ctx'],
+  ]) {
+    check(`갈래를 안 헷갈린다 (${갈래}): ${문장.slice(0, 34)}…`,
+      배울것(문장)?.kind === 갈래, JSON.stringify(배울것(문장)));
+  }
+
+  // 한계와 요청이 같으면 무엇을 집은 건지 알 수 없다. 그때는 안 배운다.
+  check('숫자가 하나뿐이면 짐작 안 한다', 배울것('too long: 8192 > 8192') === null,
+    JSON.stringify(배울것('too long: 8192 > 8192')));
 
   // 숫자를 못 뽑아도 '길어서' 인 것은 알아야 한다. 그때는 줄여서 다시 해 본다.
   check('숫자가 없어도 길이 문제인 줄은 안다',

@@ -202,6 +202,69 @@ async function 한턴돌리기() {
   return { 날것: out, 글: out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '') };
 }
 
+/**
+ * 답이 **토막토막** 흘러나오는 한 턴.
+ *
+ * 한턴돌리기() 와 나눠 두는 이유: 저기는 답을 한 번에 주므로 줄 중간에
+ * 멈춰 있는 구간이 거의 없다. 여기서 잡으려는 결함은 정확히 그 구간에서만
+ * 난다 — 토막 사이에 돌아가는 표시의 시계(90ms)가 끼어들어야 한다.
+ * 그래서 토막마다 넉넉히 쉰다.
+ */
+async function 흘려보내기(줄들) {
+  const root = mkdtempSync(join(tmpdir(), 'deel-stream-'));
+  const home = mkdtempSync(join(tmpdir(), 'deel-stream-home-'));
+
+  const srv = createServer((req, res) => {
+    let b = '';
+    req.on('data', (chunk) => { b += chunk; });
+    req.on('end', async () => {
+      if (!req.url.startsWith('/v1/chat')) {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify({ data: [] }));
+      }
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      for (const 토막 of 줄들) {
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 토막 } }] })}\n\n`);
+        await new Promise((r) => setTimeout(r, 200));   // 시계가 반드시 끼도록
+      }
+      res.write(`data: ${JSON.stringify({ choices: [{ finish_reason: 'stop', delta: {} }] })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자',
+    profiles: [{
+      id: 'stub', name: '스텁', kind: 'openai', baseUrl: `http://127.0.0.1:${srv.address().port}/v1`,
+      auth: 'none', apiKey: '', model: '스텁모델', ctx: 32768, streaming: true, tools: true,
+    }],
+  }), 'utf8');
+
+  const kid = spawn(process.execPath, ['--import', `file:///${앞선것.replace(/\\/g, '/')}`,
+    join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline', '--ctx', '32768'],
+    { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, DEEL_HOME: home, FORCE_COLOR: '1' } });
+
+  let out = '';
+  kid.stdout.on('data', (b) => { out += b; });
+  kid.stderr.on('data', (b) => { out += b; });
+  let 끝남 = false;
+  const 닫힘 = new Promise((r) => kid.on('close', () => { 끝남 = true; r(); }));
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  await 자기(1800);
+  if (!끝남) kid.stdin.write('계획 짜줘\n');
+  await 자기(600 + 줄들.length * 200 + 1200);
+  if (!끝남) { try { kid.stdin.write('/exit\n'); } catch {} }
+  await Promise.race([닫힘, 자기(2500)]);
+  if (!끝남) { kid.kill(); await Promise.race([닫힘, 자기(1500)]); }
+  srv.close();
+
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+  return { 날것: out, 글: out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '') };
+}
+
 trace('2-슬래시가보이는가');
 
 // ── 여기가 이 파일의 존재 이유다 ────────────────────────────────────────
@@ -360,6 +423,67 @@ trace('3.2-탭과승인모드');
   const 컨트롤오 = r.at(-1).찍힌것;
   check('Ctrl+O 가 작업 모드를 바꾼다', /코드 \(Code\)|고치고 만든다/.test(컨트롤오),
     (컨트롤오.match(/.*Code.*/) ?? [''])[0].trim().slice(0, 60));
+}
+
+trace('3.4-답줄에상자가얹히면안된다');
+
+// ── 답이 잘려 보이던 결함 ───────────────────────────────────────────────
+//
+// 실제로 사용자가 겪은 화면이다:
+//
+//   표**
+//   세부 화면 요구사항은 아직 확정이 필요하다.
+//   는다.
+//   C.
+//
+// `**계획표**` 가 `표**` 만 남았다. 글자가 안 온 게 아니라 **지워진** 것이다.
+// 답 토막이 줄 중간까지 쓰인 사이에 돌아가는 표시가 제 시계(90ms)로 상자를
+// 그 줄에 얹어 그렸고, 다음 지우기가 `\r` + `\x1b[K` 로 그 줄을 통째로
+// 지우면서 답까지 같이 지웠다.
+//
+// 파이프에서는 지워지는 대신 **한 줄에 같이 찍힌다.** 그걸 잡는다.
+{
+  const 답 = [
+    '**계획표**', '\n',
+    '세부 화면 요구사항은 아직 확정이 필요하다.', '\n',
+    '**지금 상태**', '\n',
+    '아직 템플릿 상태다.', '\n',
+    '5. **위험**', '\n',
+    '막히면 공식 거래소 API로 전환한다.', '\n',
+  ];
+  const r = await 흘려보내기(답);
+  const 줄들 = r.글.split('\n');
+
+  // 답 글자가 하나도 안 없어졌는가.
+  const 먹힌것 = 답.filter((t) => t !== '\n' && !r.글.includes(t));
+  check('흘러나온 답이 한 토막도 안 없어진다', 먹힌것.length === 0, 먹힌것.join(' / '));
+
+  /*
+   * 여기가 이 절의 핵심이다.
+   *
+   * "글자가 다 있다" 로는 부족하다 — 진짜 터미널에서 지워지는 것은 **같은
+   * 줄에 얹혔기 때문**이므로, 얹혔는지를 봐야 한다. 파이프에서는 얹힌 것이
+   * 한 줄 안에 나란히 찍혀 그대로 보인다.
+   */
+  const 얹힌줄 = 줄들.filter((l) => /▌/.test(l) && /▏|╭|╰/.test(l));
+  check('상태줄·상자가 답 줄에 안 얹힌다', 얹힌줄.length === 0,
+    얹힌줄.map((l) => l.trim().slice(0, 70)).join(' ⏎ '));
+
+  // 돌아가는 표시도 마찬가지다.
+  const 돌림얹힘 = 줄들.filter((l) => /▌/.test(l) && /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] [^\n]*중…/.test(l));
+  check('돌아가는 표시도 답 줄에 안 얹힌다', 돌림얹힘.length === 0,
+    돌림얹힘.map((l) => l.trim().slice(0, 70)).join(' ⏎ '));
+
+  // 답 줄은 전부 ▌ 로 시작해야 한다. 중간에 끊겨 다시 시작한 줄이 있으면
+  // 사람 눈에는 그게 '앞이 잘린 줄' 이다.
+  const 표시없는답 = 답.filter((t) => t !== '\n').filter((t) => {
+    const i = 줄들.findIndex((l) => l.includes(t));
+    return i >= 0 && !/▌/.test(줄들[i]);
+  });
+  check('답은 모든 줄이 ▌ 로 시작한다', 표시없는답.length === 0, 표시없는답.join(' / '));
+
+  // 답이 끝나면 상자가 다시 서야 한다 — 여기서 안 서면 화면 아래가 빈다.
+  check('답이 끝나면 상자가 다시 선다', /│ ❯ /.test(r.글.slice(r.글.lastIndexOf('전환한다'))), '');
 }
 
 trace('3.5-일하는동안상자가살아있는가');

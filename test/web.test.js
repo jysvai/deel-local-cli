@@ -9,6 +9,9 @@ import { createServer } from 'node:http';
 import { webFetch, 방문기록 } from '../src/tools/webfetch.js';
 import { allowEndpoint, allowed, resetNet, setOffline } from '../src/safety/network.js';
 import { toolSchemas } from '../src/tools/index.js';
+// 이제 상한이 모델 크기에서 나온다. 검사도 그 값을 물어봐서 쓴다 —
+// 숫자를 여기 다시 박으면 규칙이 바뀔 때 검사만 조용히 틀린 말을 하게 된다.
+import { 웹글자수 } from '../src/agent/budget.js';
 
 const pass = [];
 const fail = [];
@@ -35,10 +38,54 @@ const server = createServer((req, res) => {
       return res.end(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
     }
     if (req.url === '/404') { res.writeHead(404); return res.end('nope'); }
+
+    // ── 잠시 뒤 되는 오류들 ─────────────────────────────────────────────
+    // 처음 두 번은 429, 세 번째는 준다. 진짜 API 가 이렇게 군다.
+    if (req.url === '/rate') {
+      if (몇번429 > 0) {
+        몇번429--;
+        res.writeHead(429, { 'Retry-After': '1', 'Content-Type': 'application/json' });
+        return res.end('{"error":"rate limited"}');
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end('{"ok":true}');
+    }
+    if (req.url === '/always429') {
+      res.writeHead(429, { 'Content-Type': 'text/plain' });
+      return res.end('slow down');
+    }
+    if (req.url === '/403') { res.writeHead(403); return res.end('no'); }
+
+    // ── 보기 좋게 들여쓴 JSON ───────────────────────────────────────────
+    // 진짜 API 가 흔히 이렇게 준다. 그 공백이 절반 가까이를 먹는다.
+    if (req.url === '/prettyjson') {
+      const 것 = Array.from({ length: 400 }, (_, i) => ({ id: `코인${i}`, 이름: `이름${i}`, 거래량: i * 1000 }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify(것, null, 2));
+    }
+    if (req.url === '/hugejson') {
+      const 것 = Array.from({ length: 4000 }, (_, i) => ({ id: `코인${i}`, 이름: `아주아주긴이름${i}` }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify(것, null, 2));
+    }
+
+    // 같은 집에 동시에 몇 번 두드려졌나.
+    if (req.url.startsWith('/slow')) {
+      동시++; 최대동시 = Math.max(최대동시, 동시);
+      return setTimeout(() => {
+        동시--;
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('ok');
+      }, 80);
+    }
+
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('ok');
   });
 });
+let 몇번429 = 2;
+let 동시 = 0;
+let 최대동시 = 0;
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 
@@ -107,6 +154,102 @@ await webFetch({ url: `http://127.0.0.1:${port}/page` }, { allowPrivate: true })
 check('웹을 읽어도 모델 자리 하나만 열려 있음',
   allowed().length === 1 && allowed()[0] === 'http://127.0.0.1:9999', allowed().join(', '));
 check('다녀온 곳이 기록에 남음', 방문기록.length > 0, `${방문기록.length}건`);
+
+// ── 6. 한 집을 한꺼번에 두드리지 않는다 ────────────────────────────────
+//
+// 모델은 도구를 한꺼번에 부른다(`5개를 함께 돌립니다`). 그 다섯이 전부 같은
+// API 면 상대 쪽에서는 한순간에 다섯 번 두드려진 것으로 보이고, 그래서
+// 429 가 돌아온다. 실제로 CoinGecko 에서 그렇게 됐다.
+{
+  최대동시 = 0;
+  const 것들 = await Promise.all([1, 2, 3, 4, 5]
+    .map((i) => webFetch({ url: `http://127.0.0.1:${port}/slow${i}` }, { allowPrivate: true })));
+  check('같은 집은 한 번에 하나씩 두드린다', 최대동시 === 1, `최대 ${최대동시}회 동시`);
+  check('그래도 다섯 다 받아 온다', 것들.every((r) => r.content), 것들.filter((r) => r.error).length + '개 실패');
+}
+
+// ── 7. 429 는 오류가 아니라 '천천히 해라' 다 ───────────────────────────
+//
+// 전에는 `HTTP 429` 한 줄로 끝냈다. 모델은 그 자료를 영영 못 받고, 사람은
+// 왜 못 받았는지 모른다. 쉬었다 다시 부르면 대개 된다.
+{
+  몇번429 = 2;
+  const r = await webFetch({ url: `http://127.0.0.1:${port}/rate` }, { allowPrivate: true });
+  check('429 면 쉬었다 다시 불러 받아 낸다', !r.error && /ok/.test(r.content ?? ''), r.error ?? r.summary);
+
+  const r2 = await webFetch({ url: `http://127.0.0.1:${port}/always429` }, { allowPrivate: true });
+  check('끝까지 429 면 오류로 알린다', !!r2.error, '');
+  // 번호만 던지면 모델도 사람도 할 수 있는 게 없다. 무엇을 하면 되는지 말한다.
+  check('무엇을 하면 되는지 같이 말한다', /하나씩|잠시 뒤/.test(r2.error ?? ''), String(r2.error).split('\n')[1] ?? '');
+  check('몇 초를 쉬어 봤는지 말한다', /\d+초/.test(r2.error ?? ''), String(r2.error).split('\n')[1] ?? '');
+
+  const r3 = await webFetch({ url: `http://127.0.0.1:${port}/403` }, { allowPrivate: true });
+  check('403 은 다시 안 부르고 왜인지 말한다', /키|로그인/.test(r3.error ?? ''), String(r3.error).split('\n')[1] ?? '');
+  const r4 = await webFetch({ url: `http://127.0.0.1:${port}/404` }, { allowPrivate: true });
+  check('404 도 무엇을 하라고 말한다', /주소를 다시/.test(r4.error ?? ''), String(r4.error).replace(/\n/g, ' '));
+}
+
+// ── 8. 얼마나 가져올지는 모델 크기에서 나온다 ──────────────────────────
+//
+// 숫자를 여기 다시 박지 않는다. 박으면 규칙이 바뀔 때 검사만 조용히 틀린 말을
+// 하게 된다. budget.js 에 물어보고, 그 값대로 움직이는지를 본다.
+{
+  const 작은것 = 웹글자수(8192);
+  const 큰것 = 웹글자수(655360);
+  check('작은 모델에는 적게 준다', 작은것 < 10000, `${작은것.toLocaleString()}자`);
+  check('큰 모델에는 많이 준다', 큰것 > 작은것 * 10, `${큰것.toLocaleString()}자`);
+
+  // 8k 모델에 한글 12,000자를 부으면 그 한 번으로 창이 넘친다. 안 넘겨야 한다.
+  const r0 = await webFetch({ url: `http://127.0.0.1:${port}/big` }, { allowPrivate: true, 모델컨텍스트: 8192 });
+  const 받은0 = parseInt((r0.summary.match(/([\d,]+)자/) ?? [])[1]?.replace(/,/g, '') ?? '0', 10);
+  check('8k 모델이면 작게 잘라 준다', 받은0 === 작은것, `${받은0.toLocaleString()}자`);
+  check('그 양이 8k 의 절반을 안 넘는다', 받은0 < 8192 / 2, `${받은0}자 vs 창 8192`);
+
+  // 같은 자료라도 큰 모델이면 더 준다.
+  const r1 = await webFetch({ url: `http://127.0.0.1:${port}/big` }, { allowPrivate: true, 모델컨텍스트: 655360 });
+  const 받은1 = parseInt((r1.summary.match(/([\d,]+)자/) ?? [])[1]?.replace(/,/g, '') ?? '0', 10);
+  check('큰 모델이면 안 자르고 다 준다', 받은1 === 60000 && !/잘림/.test(r1.summary), r1.summary);
+}
+
+// ── 9. JSON 을 글자 수로 자르면 JSON 이 아니게 된다 ────────────────────
+//
+// 이게 조용해서 제일 나쁘다. 모델은 `{"a":1,"b":[{"c"` 같은 것을 받고 아무것도
+// 못 하는데, 화면에는 `12,800자` 라고만 떠서 사람은 자료를 받은 줄 안다.
+{
+  // 눌러야만 들어가는 크기를 고른다 — 안 누르면 25,669자, 누르면 16,068자다.
+  // 넉넉한 창을 주면 애초에 안 눌러도 들어가서, 누르는지를 못 잰다.
+  const 창 = 51200;                     // → 상한 20,000자
+  const r = await webFetch({ url: `http://127.0.0.1:${port}/prettyjson` }, { allowPrivate: true, 모델컨텍스트: 창 });
+  const 본문 = (r.content ?? '').split('─'.repeat(60) + '\n')[1] ?? '';
+  let 읽히나 = false;
+  try { JSON.parse(본문); 읽히나 = true; } catch {}
+  check('들여쓴 JSON 은 눌러 담아 안 자른다', 읽히나, r.summary);
+  check('눌러 담았다고 말해 준다', /눌러 담음/.test(r.summary ?? ''), r.summary);
+  check('눌렀으면 잘림이 안 뜬다', !/잘림/.test(r.summary ?? ''), r.summary);
+
+  const r2 = await webFetch({ url: `http://127.0.0.1:${port}/hugejson` }, { allowPrivate: true, 모델컨텍스트: 창 });
+  check('눌러도 넘치면 잘렸다고 말한다', /잘림/.test(r2.summary ?? ''), r2.summary);
+  // 여기가 핵심이다 — 잘린 JSON 은 못 읽는다는 것을 분명히 말해야 한다.
+  check('잘린 JSON 은 못 읽는다고 말한다', /읽을 수 없습니다/.test(r2.content ?? ''), '');
+  check('무엇을 하면 되는지 말한다', /범위를 좁혀|max_chars/.test(r2.content ?? ''), '');
+  // 전에는 바이트에서 글자를 빼서, 한글이면 7배 부풀려 말했다.
+  const 남은것 = /(\d[\d,]*)자가 더 있습니다/.exec(r2.content ?? '')?.[1];
+  const 받은것 = parseInt((r2.summary.match(/([\d,]+)자 중/) ?? [])[1]?.replace(/,/g, '') ?? '0', 10);
+  check('얼마나 잘렸는지 사실대로 말한다',
+    남은것 && Math.abs(parseInt(남은것.replace(/,/g, ''), 10) - (받은것 - 웹글자수(창))) < 2,
+    `남았다는 것 ${남은것} · 실제 ${(받은것 - 웹글자수(창)).toLocaleString()}`);
+}
+
+// ── 10. 글자로 세는 자리는 글자로 세야 한다 ────────────────────────────
+{
+  // 한글 60,000자 = UTF-8 로 180,000바이트. 바이트로 세면 세 배로 말하게 된다.
+  const 창 = 32768;
+  const r = await webFetch({ url: `http://127.0.0.1:${port}/big` }, { allowPrivate: true, 모델컨텍스트: 창 });
+  const 남은것 = /(\d[\d,]*)자는 잘렸습니다/.exec(r.content ?? '')?.[1];
+  const 맞는값 = (60000 - 웹글자수(창)).toLocaleString();
+  check('한글도 글자 수로 말한다', 남은것 === 맞는값,
+    `${남은것} (${맞는값} 이어야 한다 — 바이트로 세면 세 배가 된다)`);
+}
 
 server.closeAllConnections?.();
 server.close();
