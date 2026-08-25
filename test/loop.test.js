@@ -109,11 +109,14 @@ check('쪼개진 도구 인자를 이어 붙였다', editEv?.args?.new_string ==
 
 // 게이트웨이에 보낸 요청 모양
 const first = seenBodies[0];
-// 파일 도구 6종 + 웹 읽기 + 할 일 목록. 스킬이 없는 세션이라 Skill 은 빠진다.
-check('도구 정의 8종을 보냈다', first?.tools?.length === 8, `${first?.tools?.length}개`);
-check('도구 이름이 Claude Code 와 같다',
+// 파일 도구 7종 + 웹 읽기 + 할 일 목록. 스킬이 없는 세션이라 Skill 은 빠진다.
+check('도구 정의 9종을 보냈다', first?.tools?.length === 9, `${first?.tools?.length}개`);
+// Append 는 Claude Code 에 없는 것을 하나 더 붙인 것이다.
+// 출력 상한이 작은 로컬 모델이 큰 파일을 나눠 쓰는 유일한 길이라 뺄 수 없다 —
+// Edit 으로 잇는 방법은 앵커가 겹쳐 막힌다(HTML 의 </div> 가 그렇다).
+check('도구 이름이 Claude Code 와 같다 (Append 만 더 있다)',
   JSON.stringify(first?.tools?.map((t) => t.function.name))
-    === JSON.stringify(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch', 'TodoWrite']),
+    === JSON.stringify(['Read', 'Write', 'Append', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch', 'TodoWrite']),
   JSON.stringify(first?.tools?.map((t) => t.function.name)));
 check('시스템 프롬프트를 보냈다', first?.messages?.[0]?.role === 'system');
 
@@ -147,12 +150,27 @@ const outside = ev2.find((e) => e.type === 'tool');
 check('모델이 시켜도 범위 밖은 거부', /작업 범위 밖/.test(outside?.result?.error ?? ''), outside?.result?.error ?? '');
 
 // 도구 호출 상한
+//
+// 매번 '다른' 것을 부르게 한다. 똑같은 것을 되풀이하면 걸음 수 상한에 닿기 전에
+// 반복 감지가 먼저 잡기 때문이다 — 그게 옳지만, 여기서 재려는 것은 그게 아니다.
+// 잘 되고 있는 긴 작업이 상한에서 멈추는지를 본다.
 turn = 0;
-script = Array.from({ length: 30 }, () => ({ toolCall: { name: 'Glob', args: { pattern: '**/*' } } }));
+script = Array.from({ length: 30 }, (_, i) => ({ toolCall: { name: 'Glob', args: { pattern: `**/*${i}*` } } }));
 const s3 = new Session(conn, { root, mode: 'auto', think: 'off', maxSteps: 4 });
 const ev3 = [];
 for await (const ev of run(s3, ctx, '계속 찾아줘')) ev3.push(ev);
 check('도구 호출 상한에서 멈춘다', ev3.some((e) => e.type === 'limit'), `${ev3.filter((e) => e.type === 'tool').length}회 실행`);
+
+// 반대쪽: 똑같은 것만 되풀이하면 상한을 기다리지 않고 먼저 끊는다.
+turn = 0;
+script = Array.from({ length: 30 }, () => ({ toolCall: { name: 'Glob', args: { pattern: '**/*' } } }));
+const s4 = new Session(conn, { root, mode: 'auto', think: 'off', maxSteps: 24 });
+const ev4 = [];
+for await (const ev of run(s4, ctx, '계속 같은 것만 찾아줘')) ev4.push(ev);
+check('같은 것만 되풀이하면 먼저 끊는다', ev4.some((e) => e.type === 'stuck'),
+  `${ev4.filter((e) => e.type === 'tool').length}회 실행 · ${ev4.map((e) => e.type).at(-1)}`);
+check('상한(24회)까지 안 간다', ev4.filter((e) => e.type === 'tool').length <= 6,
+  `${ev4.filter((e) => e.type === 'tool').length}회`);
 
 // ── 결과 ───────────────────────────────────────────────────────────
 const W = (s, n) => s + ' '.repeat(Math.max(0, n - [...s].reduce((a, ch) => a + (ch.codePointAt(0) > 0x1100 ? 2 : 1), 0)));

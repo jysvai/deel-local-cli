@@ -21,34 +21,56 @@ export const STAGES = {
 // 출력 상한을 숫자로 못 박으면 안 된다. 컨텍스트 4k 짜리 모델에 4096 을 주면
 // 입력 자리가 하나도 안 남고, 200k 짜리 모델에는 턱없이 모자란다.
 // 그래서 '남은 자리의 몇 %' 로 정하고, 아래위로만 울타리를 친다.
+//
+// share 를 왜 넉넉히 잡나 — 여기서 한 번 잘못 알고 있었다:
+//   상한은 '쓸 예산' 이 아니라 '넘지 못하는 선' 이다. 상한을 작게 잡아도 모델이
+//   짧게 답하면 토큰은 그만큼만 나간다. 아끼는 효과가 없다. 반대로 답이 그 선에
+//   닿으면 **말이 중간에서 끊긴다.** 즉 share 를 조이면 아끼는 게 아니라 자르는 것이다.
+//
+//   실제로 그래서 파일이 안 만들어졌다. 이어가기(work) 가 0.15 였는데, 파일을 쓰는
+//   호출은 대개 이 단계에서 나온다. 32k 모델에서 4,600 토큰 — 1,000줄짜리 HTML 은
+//   그 세 배가 필요하다. 매번 같은 자리에서 잘렸다.
+//
+//   다음 턴이 들어갈 자리는 아래 tokensFor 의 room/2 가 이미 지킨다. 그러니 여기서
+//   또 조일 이유가 없다. 단계별 차이는 남겨 두되, 어느 단계든 한 번은 쓸 만큼 준다.
 export const PROFILES = {
   even: {
     name: '균일',
     desc: '모든 단계 같은 강도 — 예측 가능한 대신 느립니다',
     shift: { plan: 0, work: 0, fix: 0 },
-    share: { plan: 0.30, work: 0.30, fix: 0.30 },
+    share: { plan: 0.40, work: 0.40, fix: 0.40 },
   },
   save: {
     name: '절약',
     desc: '첫 판단만 세게, 이어가기는 얕게 — 대개 이게 낫습니다',
     shift: { plan: 0, work: -1, fix: +1 },
-    share: { plan: 0.30, work: 0.15, fix: 0.30 },
+    share: { plan: 0.40, work: 0.35, fix: 0.45 },
   },
   deep: {
     name: '깊게',
     desc: '전 단계 한 칸씩 위로 — 어려운 일에만',
     shift: { plan: +1, work: 0, fix: +1 },
-    share: { plan: 0.45, work: 0.30, fix: 0.45 },
+    share: { plan: 0.50, work: 0.45, fix: 0.50 },
   },
 };
 
 // 울타리.
 // 아래: 이보다 작으면 도구 호출 한 개도 못 뱉는다. 생각을 많이 하는 모델은 더 필요하다.
-// 위:   이 이상은 어떤 모델도 한 번에 잘 안 낸다. 실수로 큰 값을 보내 튕기는 것도 막는다.
 export const MIN_CAP = 512;
-// 컨텍스트가 128k 라도 '한 번에 낼 수 있는 출력' 은 대개 훨씬 작다.
-// 모델 한계보다 큰 max_tokens 를 보내면 그냥 거부하는 게이트웨이가 있어서
-// 안전한 선에서 멈춘다. 더 필요하면 프로필에 maxTokens 를 적어 올릴 수 있다.
+/**
+ * 출력 상한을 **모를 때** 쓰는 값.
+ *
+ * 컨텍스트가 128k 라도 '한 번에 낼 수 있는 출력' 은 대개 훨씬 작다. 모델 한계보다
+ * 큰 max_tokens 를 보내면 그냥 거부하는 게이트웨이가 있어서, 모르면 이 선에 선다.
+ *
+ * **아는 값이 있으면 이 값은 비켜선다.** 전에는 그게 안 됐다 —
+ *   Math.min(cap, max ?? MAX_CAP, MAX_CAP)
+ * 세 번째 인자가 무조건 다시 조여서, 사용자가 적어 둔 max 는 낮출 수만 있고
+ * 올릴 수는 없었다. /ctx out 200k 를 해도 16,384 였다. 그런데 주석도 README 도
+ * /ctx 안내도 셋 다 '올릴 수 있다' 고 말했다. 문서에 적힌 탈출구가 막혀 있었던 것이다.
+ *
+ * 아는 값은 두 곳에서 온다 — 사용자가 정한 것(/out)과 서버에서 알아낸 것(backend/ctxsize).
+ */
 export const MAX_CAP = 16384;
 
 const ALIAS = { 균일: 'even', 절약: 'save', 깊게: 'deep', uniform: 'even', thrifty: 'save' };
@@ -97,7 +119,8 @@ export function tokensFor(profileKey, stage, { ctx = 0, used = 0, max = null } =
   let cap = Math.floor(room * share);
   // 남은 자리의 절반을 넘겨 주지 않는다. 답이 길어져도 다음 턴이 들어갈 자리는 남겨야 한다.
   cap = Math.min(cap, Math.floor(room / 2));
-  cap = Math.min(cap, max ?? MAX_CAP, MAX_CAP);
+  // 아는 상한이 있으면 그것을 따른다. 모를 때만 MAX_CAP 에 선다.
+  cap = Math.min(cap, max ?? MAX_CAP);
   cap = Math.max(cap, MIN_CAP);
   // 남은 자리 자체가 바닥이면 울타리 아래라도 남은 만큼만 준다.
   return room > 0 ? Math.min(cap, Math.max(MIN_CAP, room)) : MIN_CAP;
@@ -106,13 +129,23 @@ export function tokensFor(profileKey, stage, { ctx = 0, used = 0, max = null } =
 /** 잘렸을 때 풀어 줄 최대 상한 — 남은 자리를 거의 다 내준다. */
 export function fullCap({ ctx = 0, used = 0, max = null } = {}) {
   const room = ctx > 0 ? Math.max(0, ctx - used) : 4096;
-  return Math.max(MIN_CAP, Math.min(Math.floor(room * 0.8), max ?? MAX_CAP, MAX_CAP));
+  return Math.max(MIN_CAP, Math.min(Math.floor(room * 0.8), max ?? MAX_CAP));
 }
 
-// 잘린 응답인가. 잘린 채로 넘어가면 도구 호출이 반토막 나서 조용히 실패한다.
+/**
+ * 잘린 응답인가. 잘린 채로 넘어가면 도구 호출이 반토막 나서 조용히 실패한다.
+ *
+ * finish_reason 만 보면 안 된다. 사내 게이트웨이나 중계 서버는 잘라 놓고도
+ * 'stop' 이라고 하는 경우가 실제로 있다. 그러면 상한을 올려 다시 부를 기회를
+ * 놓친 채 반토막 호출이 그냥 지나간다.
+ *
+ * 그런데 인자 JSON 이 깨진 것 자체가 잘렸다는 증거다 — 모델은 반쪽짜리 JSON 을
+ * 일부러 만들지 않는다. 그래서 말을 안 해 줘도 이걸 보고 안다.
+ */
 export function wasCut(msg) {
   const s = String(msg?.stopped ?? '');
-  return s === 'length' || s === 'max_tokens' || s === 'MAX_TOKENS';
+  if (s === 'length' || s === 'max_tokens' || s === 'MAX_TOKENS') return true;
+  return (msg?.toolCalls ?? []).some((t) => t?.argsBroken);
 }
 
 // 화면에 보여줄 표. 상한은 지금 붙어 있는 모델 기준으로 계산해서 보여준다 —
