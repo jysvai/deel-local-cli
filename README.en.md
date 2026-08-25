@@ -265,7 +265,7 @@ Things starting with `@` are everywhere.
 | What you type | What happens |
 |---|---|
 | `@src/a.js` | Attached — only when the path actually exists |
-| `yunseok@gmail.com` | Not a mention at all. A letter before the `@` means it is an address |
+| `hong@example.com` | Not a mention at all. A letter before the `@` means it is an address |
 | `@media` · `@dataclass` · `@scope/pkg` | Left alone — no such path exists |
 | `@src/` (a directory) | A listing of what is inside is attached |
 | `@"draft report.txt"` | Quote names containing spaces |

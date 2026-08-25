@@ -32,7 +32,7 @@ export function findMentions(text) {
   const out = [];
   for (let i = 0; i < s.length; i++) {
     if (s[i] !== '@') continue;
-    // 앞이 글자면 지목이 아니다 — yunseok@gmail.com 의 @ 가 여기서 걸러진다.
+    // 앞이 글자면 지목이 아니다 — hong@example.com 의 @ 가 여기서 걸러진다.
     const 앞 = i > 0 ? s[i - 1] : ' ';
     if (!/[\s(\[{'"]/.test(앞)) continue;
 

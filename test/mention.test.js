@@ -39,8 +39,8 @@ trace('1-찾기');
   check('맨 앞의 @ 를 찾는다', findMentions('@src/a.js 봐줘').length === 1, '');
   check('가운데 것도 찾는다', findMentions('이거 @src/a.js 어때').length === 1, '');
   check('여럿도 찾는다', findMentions('@src/a.js 와 @src/b.js').length === 2, '');
-  check('이메일은 안 잡는다', findMentions('yunseok@gmail.com 로 보내줘').length === 0,
-    JSON.stringify(findMentions('yunseok@gmail.com 로 보내줘')));
+  check('이메일은 안 잡는다', findMentions('hong@example.com 로 보내줘').length === 0,
+    JSON.stringify(findMentions('hong@example.com 로 보내줘')));
   check('@ 뒤가 비면 안 잡는다', findMentions('값이 @ 이다').length === 0, '');
   check('따옴표로 묶으면 통째로 잡는다', findMentions('@"한글 이름.txt" 읽어')[0]?.path === '한글 이름.txt',
     JSON.stringify(findMentions('@"한글 이름.txt" 읽어')));
@@ -73,7 +73,7 @@ trace('3-아닌것');
 
 // ── 파일이 아닌 @ 는 건드리지 않는다 ────────────────────────────────────
 {
-  const 원래 = 'yunseok@gmail.com 으로 보내고 @media 도 손봐줘';
+  const 원래 = 'hong@example.com 으로 보내고 @media 도 손봐줘';
   const r = 붙임(원래);
   check('이메일·@media 는 그냥 둔다', r.text === 원래, r.text);
   check('붙인 게 없다', r.attached.length === 0, '');
