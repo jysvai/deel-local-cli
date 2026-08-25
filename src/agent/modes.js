@@ -236,7 +236,7 @@ export function get(id) {
   return MODES[normalize(id) ?? DEFAULT];
 }
 
-/** Shift+Tab 으로 돌릴 때 다음 모드. */
+/** Ctrl+O 로 돌릴 때 다음 모드. (Shift+Tab 은 승인 방식이 가져갔다) */
 export function next(id) {
   const i = ORDER.indexOf(normalize(id) ?? DEFAULT);
   return ORDER[(i + 1) % ORDER.length];

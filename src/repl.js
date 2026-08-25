@@ -6,7 +6,7 @@ import { c, say as 바로쓰기, mark, clip } from './ui/ansi.js';
 import { headerLines } from './ui/status.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
-import { handle } from './commands.js';
+import { handle, COMMANDS } from './commands.js';
 import { next as nextWork, get as getWork, canWrite } from './agent/modes.js';
 import { route } from './agent/route.js';
 import { run } from './agent/loop.js';
@@ -19,7 +19,9 @@ import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
 import { askHidden } from './ui/prompt.js';
-import { explain } from './ui/level.js';
+import { explain, shows as levelShows } from './ui/level.js';
+import { 고르기 as 승인고르기, 다음 as 승인다음 } from './ui/approve.js';
+import { 추천, 채울글 } from './ui/complete.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { renderDiff, shortStat } from './ui/diff.js';
 import { expand as expandMentions } from './agent/mention.js';
@@ -196,6 +198,22 @@ export async function chatLoop(opts = {}) {
     output: 상자쓰나 ? 먹통 : process.stdout,
     terminal: 상자쓰나 ? true : undefined,
     historySize: 200,
+    /*
+     * 빈 완성기. 아무것도 안 내놓지만 **달아 둬야** 한다.
+     *
+     * 네 가지를 실제로 눌러 보고 정했다.
+     *
+     *   완성기 없음   Tab → 줄에 리터럴 탭이 박힌다 (`/hel` + Tab → `/hel\t`).
+     *                 그 글이 그대로 모델에게 간다. 검사 6개가 여기서 빨개진다.
+     *   진짜 완성기   readline 이 자기 방식으로 줄을 고쳐 버린다. 우리가 그린
+     *                 상자와 어긋나고, 후보가 있는 줄에서 Shift+Tab 을 누르면
+     *                 승인 방식만 바뀌어야 하는데 글까지 바뀐다.
+     *   빈 완성기     Tab 도 Shift+Tab 도 줄을 안 건드린다. ← 이것
+     *
+     * 그래서 readline 에게서는 '줄을 안 건드림' 만 받고, 무엇을 채울지는 우리가
+     * rl.write 로 직접 정한다. rl.write 는 공개 API 라 한글도 안 깨진다.
+     */
+    completer: 상자쓰나 ? (line) => [[], line] : undefined,
   });
 
   // 입력을 큐로 받는다. rl.question 을 겹쳐 쓰면 파이프로 넣을 때 닫혀 버린다.
@@ -225,20 +243,75 @@ export async function chatLoop(opts = {}) {
     if (waiter) { const w = waiter; waiter = null; w(null); }
   });
 
-  // Shift+Tab 으로 작업 모드를 차례로 돌린다.
-  //
-  // 터미널일 때만 한다. 파이프로 넣을 때 키를 가로채면 입력이 깨진다 —
-  // 검사와 데모가 그렇게 돌아간다.
+  /*
+   * 지금 치고 있는 글에 맞는 명령들.
+   *
+   * 수준에 따라 감춘 명령이 있다(쉬움에서는 자주 쓰는 것만 보인다). 그런데
+   * **감춘 것이 못 쓰는 것은 아니다** — 치면 그대로 돌아간다. 그래서 보이는
+   * 것 중에 맞는 게 없으면 감춘 것까지 뒤진다. `/recall` 을 아는 사람이
+   * 쉬움 수준이라는 이유로 "그런 명령 없다" 는 화면을 보면 안 된다.
+   */
+  const 지금추천 = (글) => {
+    const 보이는것 = Object.keys(COMMANDS).filter((n) => n !== 'quit' && levelShows(session.level, n));
+    const 것 = 추천(글, COMMANDS, 보이는것);
+    if (것.length) return 것;
+    return 추천(글, COMMANDS, Object.keys(COMMANDS).filter((n) => n !== 'quit'));
+  };
+
+  /*
+   * 키를 가로챈다 — 터미널일 때만.
+   *
+   * 파이프로 넣을 때 가로채면 입력이 깨진다. 검사와 데모가 그렇게 돌아간다.
+   *
+   * ── Shift+Tab 은 무엇을 돌려야 하나 ──────────────────────────────────
+   *
+   * 전에는 **작업 모드**(종합/코드/계획…)를 돌렸다. 바꾼다. Shift+Tab 은
+   * **승인 방식**을 돌린다 — 안 묻고 고칠지, 매번 물을지.
+   *
+   * 두 가지가 이 자리를 놓고 다퉜는데, 자주 눌러야 하는 쪽이 이겨야 한다.
+   * 작업 모드는 요청을 보고 저절로 옮겨 가므로 사람이 손댈 일이 드물다.
+   * 반면 승인 방식은 "이번 건 좀 봐야겠다" 싶을 때 **일하는 도중에** 바꾸고
+   * 싶어진다. 그리고 이건 안전 설정이라, 손이 기억하는 자리에 있어야 한다.
+   * 다른 도구(Claude Code)도 같은 키에 같은 것을 둔다.
+   *
+   * 작업 모드는 Ctrl+O 로 옮겼다. `/work` 도 그대로 된다.
+   */
   if (process.stdin.isTTY) {
     emitKeypressEvents(process.stdin, rl);
     process.stdin.on('keypress', (_ch, key) => {
+      // Shift+Tab — 승인 방식 (자동 → 위험만 → 모두)
       if (key && key.name === 'tab' && key.shift) {
+        const 앞 = 승인고르기(session.mode);
+        session.mode = 승인다음(session.mode);
+        const 뒤 = 승인고르기(session.mode);
+        화면.입력지움();
+        say(`  ${뒤.색(뒤.글자)} ${c.bold(뒤.색(뒤.이름))}  ${c.gray(뒤.한줄)}`);
+        say(`  ${c.gray(`${앞.이름} → ${뒤.이름} · Shift+Tab 으로 계속 바꿉니다`)}`);
+        prompt();
+        return;
+      }
+      // Ctrl+O — 작업 모드 (종합/코드/계획/설계/디버그/묻기/총괄)
+      if (key && key.ctrl && key.name === 'o') {
         session.work = nextWork(session.work);
         const w = getWork(session.work);
         화면.입력지움();
         say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}  ${c.gray(w.hint)}`
           + (canWrite(session.work) ? '' : `  ${c.green('· 파일을 못 바꿉니다')}`));
         prompt();
+        return;
+      }
+      /*
+       * Tab — 치던 슬래시 명령을 채운다.
+       *
+       * 하나만 맞으면 끝까지, 여럿이면 다 같이 가진 앞부분까지. 목록에서
+       * 위아래로 고르게 하지 않는다 — 그러면 지난 입력 이력(위 화살표)을
+       * 뺏어야 하는데, 그건 훨씬 자주 쓰는 기능이다.
+       */
+      if (key && key.name === 'tab' && !key.shift && 상자쓰나 && 입력기다림 && 묻는중 === null) {
+        const 채울 = 채울글(rl.line ?? '', 지금추천(rl.line ?? ''));
+        if (채울) rl.write(채울);
+        // 채울 게 없어도 그리기는 한다 — 후보 목록이 그대로 남아 있어야 한다.
+        화면.입력갱신(session, rl.line ?? '', rl.cursor ?? 0, 지금추천(rl.line ?? ''));
         return;
       }
       /*
@@ -271,7 +344,7 @@ export async function chatLoop(opts = {}) {
       그릴예정 = true;
       setImmediate(() => {
         그릴예정 = false;
-        if (입력기다림) 화면.입력갱신(session, rl.line ?? '', rl.cursor ?? 0);
+        if (입력기다림) 화면.입력갱신(session, rl.line ?? '', rl.cursor ?? 0, 지금추천(rl.line ?? ''));
       });
     });
   }
@@ -438,9 +511,19 @@ export async function chatLoop(opts = {}) {
   for (const w of warn) say(`  ${mark.warn} ${c.gray(w)}`);
   say(`  ${c.gray('/help 명령 목록')}   ${c.gray('/think 추론 강도')}   ${c.gray('Ctrl+C 중단·끝내기')}`);
 
-  // 입력 자리. 어떻게 생겼는지는 화면 쪽이 정한다 —
-  // 줄화면은 상태줄을 깔고 그 아래 ❯ 를, 상자화면은 테두리를 두른 칸을 그린다.
-  const prompt = () => 화면.입력자리(session);
+  /*
+   * 입력 자리. 어떻게 생겼는지는 화면 쪽이 정한다 —
+   * 줄화면은 상태줄을 깔고 그 아래 ❯ 를, 상자화면은 테두리를 두른 칸을 그린다.
+   *
+   * 치던 글은 되살린다. Shift+Tab 이나 Ctrl+C 처럼 **입력 도중에** 한 줄을
+   * 끼워 넣고 다시 그리는 자리가 있는데, 그때 빈 칸을 그리면 치던 글이
+   * 사라진 것처럼 보인다. 실제로는 readline 이 그대로 들고 있어서 Enter 를
+   * 치면 멀쩡히 보내진다 — 화면만 거짓말을 하는 셈이라 더 나쁘다.
+   */
+  const prompt = () => {
+    const 글 = 상자쓰나 && 입력기다림 ? (rl.line ?? '') : '';
+    화면.입력자리(session, 글, 글 ? (rl.cursor ?? 0) : 0, 글 ? 지금추천(글) : []);
+  };
 
   // Ctrl+C 는 상황에 따라 뜻이 다르다.
   //   모델이 답하는 중  → 그 답을 끊는다 (프로그램은 살아 있다)

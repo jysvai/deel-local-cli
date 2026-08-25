@@ -218,6 +218,7 @@ export async function handle(line, session, ctx) {
         }
         say('');
         say(`  ${c.gray('지금은')} ${승인표시(session.mode)} ${c.gray('입니다. 상태줄 오른쪽에도 늘 떠 있습니다.')}`);
+        say(`  ${c.gray('치지 않고 바꾸려면')} ${c.cyan('Shift+Tab')} ${c.gray('— 누를 때마다 차례로 돕니다.')}`);
         say('');
         return { handled: true };
       }
@@ -1410,7 +1411,7 @@ function showWork(session) {
     say(`        ${canWrite(k) ? c.gray('파일 바꿈') : c.green('읽기만')}${c.gray('  ·  생각 ' + (w.think ?? '그대로') + '·' + w.effort + '  ·  최대 ' + w.steps + '걸음')}`);
   }
   say('');
-  say(`  ${c.gray('바꾸려면')} ${c.cyan('/plan')} ${c.cyan('/code')} ${c.cyan('/debug')} ${c.gray('…  또는')} ${c.cyan('Shift+Tab')} ${c.gray('으로 차례로')}`);
+  say(`  ${c.gray('바꾸려면')} ${c.cyan('/plan')} ${c.cyan('/code')} ${c.cyan('/debug')} ${c.gray('…  또는')} ${c.cyan('Ctrl+O')} ${c.gray('로 차례로')}`);
   say(`  ${c.gray('이건 승인 정책(')}${c.cyan('/mode')}${c.gray(')과 다른 축입니다 — 무엇을 하느냐 / 얼마나 물어보냐.')}`);
   say('');
 }

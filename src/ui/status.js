@@ -239,6 +239,7 @@ export function headerLines(session, found) {
     // 켤 때 한 번은 사람 말로 알려 준다. 상태줄의 `⏵⏵ 자동 승인` 이 무슨
     // 뜻인지 여기서 한 번 읽고 나면 그 다음부터는 글자만 봐도 안다.
     `${c.gray('승인')}    ${승인표시(session.mode)}  ${c.gray('— ' + 승인고르기(session.mode).한줄)}`,
+    `${c.gray('        Shift+Tab')} ${c.gray('으로 바꿉니다  ·  ')}${c.gray('Tab 은 치던 / 명령을 채웁니다')}`,
   ];
   if (found.skills.length || found.commands.length) {
     lines.push(`${c.gray('이 PC')}   ${c.white(`스킬 ${found.skills.length}`)}${c.gray(' · ')}${c.white(`명령 ${found.commands.length}`)}${c.gray(' · ')}${c.white(`플러그인 ${found.plugins.length}`)}`);
