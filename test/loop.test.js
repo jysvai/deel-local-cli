@@ -109,9 +109,9 @@ check('쪼개진 도구 인자를 이어 붙였다', editEv?.args?.new_string ==
 
 // 게이트웨이에 보낸 요청 모양
 const first = seenBodies[0];
-// 파일 도구 7종 + 웹 읽기 + 지난 대화 찾기 + 기억하기 + 할 일 목록.
+// 파일 도구 7종 + 웹 읽기 + 지난 대화 찾기 + 기억하기 + 할 일 목록 + 하위 작업.
 // 스킬이 없는 세션이라 Skill 은 빠진다.
-check('도구 정의 11종을 보냈다', first?.tools?.length === 11, `${first?.tools?.length}개`);
+check('도구 정의 12종을 보냈다', first?.tools?.length === 12, `${first?.tools?.length}개`);
 /*
  * Claude Code 의 이름을 그대로 쓰되 **둘만** 더 있다. 늘릴 때마다 여기가 걸리게
  * 해 둔 이유: 도구 하나가 스키마로 150토큰쯤 먹는다. 매 요청마다 나가는 값이라
@@ -123,12 +123,18 @@ check('도구 정의 11종을 보냈다', first?.tools?.length === 11, `${first?
  *             "저번에 정한 대로" 에 모델이 할 수 있는 게 되묻는 것뿐이다.
  *   Remember  대화가 끝나도 남길 것. 지금 막 정한 것을 남길지 판단할 수 있는 것은
  *             그 자리에 있는 모델뿐이다 — 사람에게 맡기면 아무도 안 적는다.
+ *   Task      큰 일의 한 덩이를 **따로 떨어진 창**에서 돌린다 (tools/task.js).
+ *             이건 값이 비싸다 — 스키마만 395토큰으로, 이 표에서 제일 크다.
+ *             그런데도 넣은 이유는, 이게 없으면 파일 여덟 개짜리 일이 8k·32k
+ *             모델에서 **아예 안 끝나기** 때문이다. 파일 내용이 한 창에 다
+ *             쌓여서 서너 개째에 앞엣말이 접혀 나간다. 자리를 아끼려고 안 주면
+ *             아낀 자리로 할 수 있는 일이 없어진다.
  *
  * 밖에서 붙인 도구(MCP)는 여기 안 나온다. 붙인 서버가 있을 때만 뒤에 더해진다.
  */
-check('도구 이름이 Claude Code 와 같다 (Append · Recall · Remember 만 더 있다)',
+check('도구 이름이 Claude Code 와 같다 (Append · Recall · Remember · Task 만 더 있다)',
   JSON.stringify(first?.tools?.map((t) => t.function.name))
-    === JSON.stringify(['Read', 'Write', 'Append', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch', 'Recall', 'Remember', 'TodoWrite']),
+    === JSON.stringify(['Read', 'Write', 'Append', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch', 'Recall', 'Remember', 'TodoWrite', 'Task']),
   JSON.stringify(first?.tools?.map((t) => t.function.name)));
 check('시스템 프롬프트를 보냈다', first?.messages?.[0]?.role === 'system');
 

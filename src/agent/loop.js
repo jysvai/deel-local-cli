@@ -7,7 +7,9 @@ import { effortFor, tokensFor, fullCap, wasCut, shiftLevel } from './effort.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
 import { compact, shouldCompact } from './compact.js';
-import { 걸음수 } from './budget.js';
+import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
+import { Session } from './session.js';
+import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
 import { isOffline } from '../safety/network.js';
 import { get as workMode } from './modes.js';
 
@@ -54,10 +56,17 @@ export function 묶기(calls) {
   return out;
 }
 
-export async function* run(session, ctx, userText, { signal = null } = {}) {
+export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 } = {}) {
   session.push({ role: 'user', content: userText });
-  ctx.audit.turn(userText);
-  ctx.history.nextTurn();
+  ctx.audit.turn(깊이 ? `[하위작업 ${깊이}겹] ${userText}` : userText);
+  /*
+   * 되돌리기 턴은 **부모만** 연다.
+   *
+   * 하위 작업이 제 턴을 열면 `/undo` 한 번이 하위가 만든 것만 되돌리고
+   * 부모가 만든 것은 남긴다 — 반쪽만 되돌아간 폴더가 된다. 사람 눈에는
+   * 한 번 시킨 일이니 한 번에 되돌아가야 맞다.
+   */
+  if (!깊이) ctx.history.nextTurn();
 
   /*
    * 중단 신호를 도구도 볼 수 있게 여기 걸어 둔다.
@@ -92,7 +101,7 @@ export async function* run(session, ctx, userText, { signal = null } = {}) {
     // 파일 하나가 아니라 **그 파일** 을 센다. 이름만 세면 서로 다른 파일 세 개를
     // 고치다 실패한 것이 한 덩어리로 뭉쳐 턴이 죽는다. 다섯 군데 중 두 군데만
     // 고쳐 놓고 '헛돌고 있어 멈췄습니다' 가 되는 것이 그 모습이다.
-    const 어디 = call.args?.file_path ?? call.args?.path ?? call.args?.pattern ?? call.args?.command ?? '';
+    const 어디 = call.args?.file_path ?? call.args?.path ?? call.args?.pattern ?? call.args?.command ?? call.args?.목적 ?? '';
     const 서명 = `${call.name}|${이유}|${String(어디).slice(0, 200)}`;
     const n = (막힘.get(서명) ?? 0) + 1;
     막힘.set(서명, n);
@@ -167,13 +176,41 @@ export async function* run(session, ctx, userText, { signal = null } = {}) {
       }));
     }
   };
-  const tools = toolSchemas(null, {
+  /*
+   * 이 턴에 모델에게 보여 줄 도구.
+   *
+   * 하위 작업이면 `도구제한` 이 차 있다 — **부모가 가졌던 것** 이다. 그것을
+   * 그대로 넘기면 toolSchemas 가 거기에 다시 하위의 작업 모드를 걸러 얹으므로,
+   * 하위가 가질 수 있는 것은 언제나 부모가 가졌던 것의 부분집합이 된다.
+   *
+   * 이게 없으면 구멍이 하나 생긴다. 설계 모드는 "파일을 안 바꾼다" 는 약속인데,
+   * 하위가 제 모드를 code 로 골라 버리면 그 약속이 하위에서 깨진다. 화면에는
+   * 여전히 설계 모드라고 떠 있는 채로 파일이 바뀐다. task.js 의 하위모드() 가
+   * 모드 쪽에서 한 겹 막고, 여기가 도구 쪽에서 한 겹 더 막는다.
+   */
+  const tools = toolSchemas(session.도구제한 ?? null, {
     hasSkills: (session.skills?.length ?? 0) > 0,
     web: session.web !== false && !isOffline(),   // 오프라인이면 웹 도구는 아예 안 보여 준다
     work: session.effectiveWork(),                // 작업 모드가 쓰는 것만 (modes.js)
     // 밖에서 붙인 도구(MCP). 붙은 것이 없으면 아무것도 안 는다.
     mcp: ctx.mcp ?? null,
   });
+
+  /*
+   * 하위 작업에게 물려줄 도구 이름들.
+   *
+   * MCP 도구는 뺀다. toolSchemas 는 이름을 받으면 TOOLS 표에서 찾는데, MCP
+   * 이름은 그 표에 없어서 undefined 를 읽다 죽는다. MCP 는 이름 목록이 아니라
+   * ctx.mcp 로 따로 넘어가므로 하위도 그 길로 똑같이 받는다.
+   */
+  const 내도구 = tools.map((t) => t.function.name).filter((n) => !n.startsWith('mcp__'));
+  /*
+   * 깊이 상한. 부모(0) → 하위(1) → 하위의 하위(2) 까지다.
+   *
+   * 상한에 닿으면 목록에서 Task 를 뺀다. "더 쪼개지 마라" 고 부탁하지 않는다 —
+   * 모델은 부탁을 잊고, 잊으면 하위가 하위를 끝없이 낳는다.
+   */
+  const 자식도구 = 깊이 + 1 >= 최대깊이 ? 내도구.filter((n) => n !== 'Task') : 내도구;
   // 모드마다 생각의 배분과 걸음 수가 다르다. 사용자가 따로 정했으면 그걸 존중한다.
   const 모드 = workMode(session.effectiveWork());
   const effort = session.effortSet ? session.effort : (모드.effort ?? session.effort);
@@ -498,6 +535,129 @@ export async function* run(session, ctx, userText, { signal = null } = {}) {
         실행할것.push(call);
       }
       if (!실행할것.length) continue;
+
+      /*
+       * ── 하위 작업 ─────────────────────────────────────────────────────
+       *
+       * 여기서 가로챈다. 평범한 도구 경로(runTool)로 보내면 안 된다.
+       *
+       * 도구는 `{content, summary}` 만 돌려줄 뿐 이벤트를 못 흘린다. 하위
+       * 작업은 몇 분씩 도는 일이라, 그 길로 보내면 그동안 화면이 완전히
+       * 죽는다 — 사람은 멈춘 건지 도는 건지 알 수 없어 Ctrl+C 를 누른다.
+       * 그래서 여기서 직접 돌리고, 하위 루프의 이벤트를 깊이만 붙여 그대로
+       * 위로 올려보낸다. 화면은 그걸 한 단 들여 그린다 (ui/screen.js).
+       *
+       * Task 는 읽기전용이 아니므로 묶기()가 언제나 혼자 한 덩어리로 낸다.
+       */
+      if (실행할것.length === 1 && 실행할것[0].name === 'Task') {
+        const call = 실행할것[0];
+        const 목적 = String(call.args?.목적 ?? call.args?.purpose ?? '').trim() || '이름 없는 작업';
+        const 할일 = String(call.args?.할일 ?? call.args?.task ?? '').trim();
+
+        // 할 일이 비면 하위는 아무것도 모른 채로 시작한다. 하위는 이 대화를
+        // 못 보므로, 여기서 통과시키면 걸음만 태우고 빈손으로 돌아온다.
+        if (!할일) {
+          const note = '할일 이 비어 있습니다. 하위 작업은 지금 대화를 볼 수 없으니,'
+            + ' 필요한 배경·정한 것·파일 경로와 "무엇이 끝나면 다 된 것인지" 를 할일 에 다 적어 주세요.';
+          거절(call, note);
+          if (막힘셈(call, '할일 비었음')) 멈출까 = '하위 작업을 할 일 없이 계속 부르고 있습니다';
+          yield { type: 'tool', name: 'Task', args: call.args, result: { error: '할일이 비었습니다' }, showLabel: true };
+          continue;
+        }
+
+        const 자식모드 = 하위모드(call.args?.모드 ?? call.args?.mode, 모드.id);
+        const 자식 = new Session(conn, {
+          root: session.root,
+          // 승인 방식은 그대로 물려준다. 하위가 승인을 우회하면 strict 가 거짓말이 된다.
+          mode: session.mode,
+          work: 자식모드,
+          level: session.level,
+          think: session.think,
+          effort: session.effort,
+          web: session.web,
+          // 부모보다 적게 준다 (budget.js). 사람이 직접 정한 값이 있으면 그 절반.
+          maxSteps: session.stepsSet
+            ? Math.max(4, Math.floor(session.maxSteps / 2))
+            : 하위걸음수(자식모드, conn.ctx),
+        });
+        // 스킬·명령·기억은 부모가 켤 때 한 번 찾아 든 것이다. 하위도 같은 것을 본다.
+        자식.skills = session.skills;
+        자식.commands = session.commands;
+        자식.plugins = session.plugins;
+        자식.memory = session.memory;
+        자식.도구제한 = 자식도구;
+
+        /*
+         * 여닫는 줄에는 깊이를 안 붙인다.
+         *
+         * 이벤트가 들고 다니는 깊이는 **그 이벤트를 낸 자리 기준**이고, 위로
+         * 한 겹 올라갈 때마다 1씩 붙어 절대 깊이가 된다. 그런데 이 줄은 하위가
+         * 낸 것이 아니라 **하위를 떼어 주는 쪽**이 내는 경계선이다. 여기서
+         * 미리 +1 을 해 두면 두 겹째에서 1이 두 번 붙어 3이 된다.
+         * 경계선은 부모 자리에 그어야 어디부터가 떼어 낸 일인지 보인다.
+         */
+        yield { type: 'task_start', 목적, 모드: 자식모드, steps: 자식.maxSteps };
+        ctx.audit.tool('Task', { 목적, 모드: 자식모드 }, { summary: `하위 작업 시작 (${깊이 + 1}겹)` });
+
+        let 끝 = null;
+        try {
+          /*
+           * ctx 를 **그대로** 넘긴다. 새로 만들면 안 된다.
+           *
+           * scope 를 새로 만들면 "이 폴더 밖은 못 건드린다" 가 하위에서 거짓이
+           * 되고, history 를 새로 만들면 하위가 고친 파일이 `/undo` 에 안 잡히며,
+           * audit 을 새로 만들면 하위가 한 일이 감사기록에서 통째로 사라진다.
+           * 셋 다 "자율 실행을 사내에 설득할 때 근거가 되는" 것들이다.
+           */
+          for await (const ev of run(자식, ctx, 할일, { signal, 깊이: 깊이 + 1 })) {
+            // 하위의 '끝' 은 부모의 끝이 아니다. 여기서 삼키고 요약으로 바꾼다 —
+            // 그대로 올리면 화면이 이번 턴이 다 끝난 줄 알고 입력 상자를 세운다.
+            if (ev.type === 'done' || ev.type === 'limit' || ev.type === 'stuck' || ev.type === 'aborted') {
+              끝 = ev;
+              break;
+            }
+            yield { ...ev, depth: (ev.depth ?? 0) + 1 };
+          }
+        } catch (err) {
+          // 하위가 터져도 부모 턴은 살린다. 무엇 때문에 터졌는지는 요약에 실린다.
+          끝 = { type: 'stuck', why: String(err?.message ?? err), steps: 0, files: [] };
+        }
+
+        /*
+         * 하위가 건드린 파일은 부모의 것이기도 하다. 턴 끝 목록에 같이 올린다.
+         *
+         * `/diff` 쪽은 따로 안 챙겨도 된다 — 하위의 도구 이벤트를 그대로 위로
+         * 올려보내므로, repl.js 의 도구 처리가 부모 세션에 그대로 적어 넣는다.
+         * 여기서 또 합치면 같은 변경이 두 번 세어진다.
+         */
+        for (const f of 끝?.files ?? []) if (f?.path) 손댄파일.add(f.path);
+        // 하위가 쓴 토큰·시간도 이번 턴의 셈에 들어가야 한다. 안 그러면 /context 가 거짓말을 한다.
+        session.usage.in += 자식.usage.in;
+        session.usage.out += 자식.usage.out;
+        session.usage.calls += 자식.usage.calls;
+        session.usage.ms += 자식.usage.ms;
+
+        const 글 = 하위요약({
+          목적, 모드: 자식모드, 끝,
+          글자수: 요약길이(conn.ctx),
+          보인이름: (경로) => ctx.scope?.show?.(경로) ?? 경로,
+        });
+        session.push(toolMessage(conn.kind, { callId: call.id, name: 'Task', content: 글 }));
+        ctx.audit.tool('Task', { 목적 }, { summary: 글.slice(0, 300) });
+        yield { type: 'task_done', 목적, 모드: 자식모드, 끝 };
+
+        // 사용자가 중단했으면 부모도 여기서 멈춘다. 하위만 끊고 이어가면
+        // 무엇이 중단된 것인지 알 수 없는 화면이 된다.
+        if (끝?.type === 'aborted') { yield { type: 'aborted', steps, kept: true }; return; }
+        if (끝?.type !== 'done') {
+          lastToolFailed = true;
+          // 하위가 계속 못 끝내면 부모가 같은 덩이를 또 떼어 준다. 그건 헛도는 것이다.
+          if (막힘셈(call, `하위 ${끝?.type ?? '실패'}`)) {
+            멈출까 = `하위 작업 "${목적}" 이 계속 끝을 못 봅니다`;
+          }
+        }
+        continue;
+      }
 
       // 여럿을 같이 돌릴 때는 '시작' 을 따로 알리지 않는다.
       // 화면에서 이름 셋이 먼저 뜨고 결과 셋이 뒤에 몰려 붙으면, 어느 결과가

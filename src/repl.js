@@ -679,6 +679,13 @@ export async function chatLoop(opts = {}) {
     화면.일시작(session, '생각');
     try {
       for await (const ev of run(session, ctx, 보낼글, { signal: turn.signal })) {
+        /*
+         * 하위 작업 안쪽에서 온 것이면 한 단 들여 그린다.
+         *
+         * 여기 한 줄이 아래 switch 의 say() 예순 곳을 다 덮는다. 각 자리마다
+         * 들여쓰기를 붙이면 새 이벤트를 더할 때마다 하나씩 빠뜨리게 된다.
+         */
+        화면.들여쓰기(ev.depth ?? 0);
         switch (ev.type) {
           // 어느 단계를 어떤 강도로 도는지 — 추론 강도 조절이 실제로 먹는지 눈으로 보인다.
           case 'stage':
@@ -777,6 +784,40 @@ export async function chatLoop(opts = {}) {
             }
             flush();   // 도구가 하나 끝날 때마다 적어 둔다
             break;
+
+          /*
+           * 하위 작업을 떼어 냈다.
+           *
+           * 이 줄이 없으면 하위가 부른 도구들이 부모 것과 뒤섞여 찍힌다 —
+           * 사람은 부모가 파일 열두 개를 읽은 줄로 본다. 여기와 아래 task_done
+           * 이 그 구간의 여닫는 괄호다.
+           */
+          case 'task_start':
+            clearThinking();
+            if (streamed) { say(''); streamed = false; }
+            화면.일바꿈('하위');
+            say('');
+            say(`  ${c.hmagenta('⌥')} ${c.bold('하위 작업')} ${c.white(clip(ev.목적, 60))}`
+              + ` ${c.gray(`· ${getWork(ev.모드).name} · 최대 ${ev.steps}걸음`)}`);
+            say(`  ${c.gray('여기서부터는 따로 떨어진 대화입니다 — 결과 요약만 위로 올라옵니다.')}`);
+            break;
+
+          case 'task_done': {
+            clearThinking();
+            if (streamed) { say(''); streamed = false; }
+            const 끝 = ev.끝 ?? {};
+            const 잘됨 = 끝.type === 'done';
+            const 왜 = { done: '끝냈습니다', limit: '걸음 수를 다 써서 멈췄습니다 — 다 못 했습니다',
+              stuck: '헛돌아서 스스로 멈췄습니다 — 다 못 했습니다',
+              aborted: '중단했습니다' }[끝.type] ?? '끝난 이유를 알 수 없습니다';
+            say('');
+            say(`  ${잘됨 ? c.green('✓') : c.yellow('⚠')} ${c.gray('하위 작업')} ${c.white(clip(ev.목적, 50))}`
+              + ` ${c.gray(`— ${왜}`)} ${c.gray(`(${끝.steps ?? 0}걸음)`)}`);
+            // 무엇이 실제로 생겼는지는 하위가 한 말이 아니라 디스크가 말한다.
+            만든파일보이기(끝.files);
+            if (끝.why) say(`  ${c.gray(`막힌 데: ${clip(끝.why, 80)}`)}`);
+            break;
+          }
 
           case 'trimmed':
             say(`  ${c.gray(`(컨텍스트가 차서 오래된 대화 ${ev.dropped}개를 줄였습니다)`)}`);

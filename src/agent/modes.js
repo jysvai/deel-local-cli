@@ -24,6 +24,19 @@ const 계획 = ['TodoWrite', 'Remember'];
 // Append 는 Write 와 짝이다 — 출력 상한이 작은 모델이 큰 파일을 나눠 쓰는 길이다.
 // Write 를 주는 자리에는 반드시 같이 준다. 하나만 주면 나눠 쓸 방법이 없어진다.
 const 쓰기 = ['Write', 'Append', 'Edit', 'Bash'];
+/*
+ * 일을 쪼개는 도구.
+ *
+ * 파일을 바꾸는 모드에만 준다. 읽기만 하는 모드(설계·계획·묻기)는 한 창 안에서
+ * 답을 내는 것이 일이고, 거기에 하위 작업을 얹으면 얻는 것보다 도구 정의로
+ * 나가는 자리가 더 아깝다.
+ *
+ * 안전 쪽으로도 그렇다. 하위 작업은 제 모드를 스스로 고르는데, 읽기 전용
+ * 모드에 이걸 쥐여 주면 "파일을 안 바꾼다" 는 약속을 하위가 깨고 나갈 길이
+ * 하나 생긴다. 그 길은 loop.js 와 task.js 에서 두 겹으로 막아 두었지만,
+ * 애초에 안 주는 것이 제일 확실하다.
+ */
+const 쪼개기 = ['Task'];
 
 export const MODES = {
   // 처음에는 여기서 시작한다.
@@ -40,7 +53,7 @@ export const MODES = {
     en: 'Auto',
     glyph: '◎',
     hint: '요청에 따라 알맞은 모드로',
-    tools: [...읽기, ...계획, ...쓰기],
+    tools: [...읽기, ...계획, ...쓰기, ...쪼개기],
     effort: 'save',
     think: null,
     say: [
@@ -61,7 +74,7 @@ export const MODES = {
     en: 'Code',
     glyph: '◆',
     hint: '고치고 만든다',
-    tools: [...읽기, ...계획, ...쓰기],
+    tools: [...읽기, ...계획, ...쓰기, ...쪼개기],
     effort: 'save',            // 첫 판단만 세게, 이어가기는 얕게
     think: null,               // 사용자가 정한 값을 그대로 쓴다
 
@@ -132,7 +145,7 @@ export const MODES = {
     en: 'Debug',
     glyph: '◉',
     hint: '원인을 찾는다',
-    tools: [...읽기, ...계획, ...쓰기],
+    tools: [...읽기, ...계획, ...쓰기, ...쪼개기],
     effort: 'deep',
     think: 'high',
     say: [
@@ -188,7 +201,7 @@ export const MODES = {
     en: 'Orchestrator',
     glyph: '❋',
     hint: '큰 일을 쪼개서 끝까지',
-    tools: [...읽기, ...계획, ...쓰기],
+    tools: [...읽기, ...계획, ...쓰기, ...쪼개기],
     effort: 'save',
     think: null,
     say: [

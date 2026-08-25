@@ -10,6 +10,7 @@ import { findMatch, applySpans, reindent, TIER_LABELS } from './edit-match.js';
 import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
 import { TODO_TOOL } from './todo.js';
+import { TASK_TOOL } from './task.js';
 import { allow as allowedIn } from '../agent/modes.js';
 import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
@@ -803,6 +804,9 @@ export const TOOLS = {
   },
 
   TodoWrite: TODO_TOOL,
+
+  // 하위 작업. 실행은 loop.js 가 가로채서 한다 — task.js 머리말 참고.
+  Task: TASK_TOOL,
 };
 
 // 모델에게 넘길 도구 정의 목록.

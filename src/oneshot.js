@@ -232,6 +232,9 @@ export async function runOnce(opts = {}) {
   let 답 = null;
 
   try {
+    // 하위 작업 안쪽에서 온 이벤트는 그 겹만큼 들여 쓴다.
+    const 안쪽 = (ev) => (ev.depth ? '  '.repeat(ev.depth) : '');
+
     for await (const ev of run(session, ctx, 보낼글, { signal: turn.signal })) {
       switch (ev.type) {
         case 'stage':
@@ -250,7 +253,30 @@ export async function runOnce(opts = {}) {
           const 결과 = ev.result?.error
             ? c.red(clip(String(ev.result.error).split('\n')[0], 70))
             : c.gray(clip(ev.result?.summary ?? '완료', 70));
-          곁(`  ${c.cyan('⏺')} ${c.bold(도구줄(ev.name, ev.args))}  ${결과}`);
+          // 하위 작업 안쪽이면 한 단 들여 그린다. 안 그러면 하위가 만진 파일이
+          // 부모가 만진 것과 똑같이 찍혀서, 기록으로 읽을 때 구분이 안 된다.
+          곁(`${안쪽(ev)}  ${c.cyan('⏺')} ${c.bold(도구줄(ev.name, ev.args))}  ${결과}`);
+          break;
+        }
+
+        /*
+         * 하위 작업의 여닫는 줄.
+         *
+         * `deel run` 은 잡·CI 에서 돌고 그 기록이 나중에 근거가 된다. 하위가
+         * 무엇을 맡았고 끝냈는지 안 남으면, 파일 넷이 어디서 나왔는지를
+         * 기록만 보고는 알 수 없다.
+         */
+        case 'task_start':
+          곁(`${안쪽(ev)}  ${c.magenta('⌥')} ${c.bold('하위 작업')} ${clip(ev.목적, 60)}`
+            + `  ${c.gray(`따로 떨어진 대화 · 최대 ${ev.steps}걸음`)}`);
+          break;
+
+        case 'task_done': {
+          const 끝 = ev.끝 ?? {};
+          const 잘됨 = 끝.type === 'done';
+          const 셈 = (끝.files ?? []).filter((f) => !f.dir && !f.missing).length;
+          곁(`${안쪽(ev)}  ${잘됨 ? c.green('✓') : c.yellow('⚠')} ${c.gray('하위 작업')} ${clip(ev.목적, 50)}`
+            + `  ${c.gray(잘됨 ? `끝냄 · 파일 ${셈}개 · ${끝.steps ?? 0}걸음` : `다 못 했습니다 (${끝.type}) · ${끝.steps ?? 0}걸음`)}`);
           break;
         }
 

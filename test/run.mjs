@@ -26,6 +26,7 @@ const 설정집 = mkdtempSync(join(tmpdir(), 'deel-test-home-'));
 const FILES = [
   'smoke.js',
   'loop.test.js',
+  'task.test.js',
   'network.test.js',
   'web.test.js',
   'abort.test.js',
