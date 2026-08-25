@@ -224,11 +224,20 @@ trace('3-요청모양');
 
   // 인자가 깨진 JSON 이면 터지지 말고 원문을 들고 넘어가야 한다.
   // 작은 모델은 실제로 반쪽짜리 JSON 을 자주 뱉는다. 여기서 터지면 대화가 끝난다.
+  //
+  // 다만 원문을 args 안에 넣으면 안 된다. 예전에는 { _raw: '...' } 로 넣어
+  // 도구에 그대로 넘겼는데, 도구는 file_path 가 없으니 "경로가 비었습니다" 라고
+  // 답했다 — 원인과 상관없는 말이다. 모델은 고칠 게 없다고 보고 똑같이 다시
+  // 시도했고, 그렇게 끝없이 돌았다. 그러니 '안 터진다' 로는 모자라고,
+  // **깨졌다는 사실이 밖에서 보여야** 한다.
   const 깨짐 = extractMessage('openai', {
     choices: [{ message: { role: 'assistant', tool_calls: [{ id: 'c', function: { name: 'Read', arguments: '{"path":' } }] } }],
   });
   check('깨진 인자에도 안 터진다', 깨짐.toolCalls?.length === 1, JSON.stringify(깨짐.toolCalls));
-  check('깨진 인자는 원문을 남긴다', typeof 깨짐.toolCalls?.[0]?.args?._raw === 'string', JSON.stringify(깨짐.toolCalls?.[0]?.args));
+  check('깨졌다고 표시한다', 깨짐.toolCalls?.[0]?.argsBroken === true, JSON.stringify(깨짐.toolCalls?.[0]));
+  check('깨진 인자는 원문을 남긴다', typeof 깨짐.toolCalls?.[0]?.rawArgs === 'string', JSON.stringify(깨짐.toolCalls?.[0]?.rawArgs));
+  check('깨진 것을 인자인 척 넘기지 않는다', Object.keys(깨짐.toolCalls?.[0]?.args ?? {}).length === 0,
+    JSON.stringify(깨짐.toolCalls?.[0]?.args));
 
   // id 를 안 주는 서버가 있다. 없으면 지어내야 짝을 맞출 수 있다.
   const 아이디없음 = extractMessage('openai', {

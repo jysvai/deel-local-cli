@@ -129,13 +129,109 @@ const 상황들 = [
   },
 ];
 
+상황들.push(
+  {
+    이름: '★ 답 길이 상한도 같이 긁는다',
+    handler: (url) => (url === '/v1/models/qwen'
+      ? { id: 'qwen', context_window: 200000, max_output_tokens: 32768 }
+      : null),
+    기대: { value: 200000, out: 32768 },
+    왜: '컨텍스트만 보고 답 길이를 안 보면, 자리는 넉넉한데 답이 잘린다. 큰 파일이 안 만들어지는 이유가 이것이다.',
+  },
+  {
+    이름: '답 길이를 max_completion_tokens 로 주는 서버',
+    handler: (url) => (url === '/v1/models/qwen'
+      ? { id: 'qwen', max_input_tokens: 128000, max_completion_tokens: 16384 }
+      : null),
+    기대: { value: 128000, out: 16384 },
+  },
+  {
+    이름: 'TGI — /info 의 max_total_tokens 계열',
+    handler: (url) => (url === '/info'
+      ? { model_id: 'qwen', max_input_tokens: 32000, max_total_tokens: 34000 }
+      : null),
+    기대: { value: 32000, max: 32000 },
+  },
+  {
+    이름: '★ 글자 덩어리 안의 값도 읽는다 (llama.cpp /props)',
+    handler: (url) => (url === '/props'
+      ? { default_generation_settings: 'n_ctx = 8192\nn_predict = 2048\nmodel = qwen.gguf' }
+      : null),
+    기대: { value: 8192, max: 8192, loaded: 8192, out: 2048 },
+    왜: 'JSON 으로 안 주고 글로 주는 서버가 있다. 객체로 올 때와 똑같이 찾아야 한다.',
+  },
+);
+
 for (const 상황 of 상황들) {
   const { srv, port } = await 띄우기(상황.handler);
   const base = `http://127.0.0.1:${port}/v1`;
   allowEndpoint(base);
   const r = await probeCtx({ kind: 'openai', base, auth: 'none', key: '', model: 'qwen' }, { timeout: 4000 });
   const 맞나 = Object.entries(상황.기대).every(([k, v]) => r[k] === v);
-  check(상황.이름, 맞나, 맞나 ? (상황.왜 ?? '') : `받은 것 value=${r.value} max=${r.max} loaded=${r.loaded}`);
+  check(상황.이름, 맞나, 맞나 ? (상황.왜 ?? '') : `받은 것 value=${r.value} max=${r.max} loaded=${r.loaded} out=${r.out}`);
+  srv.close();
+}
+
+trace('2b-Ollama글자덩어리');
+
+// ── Ollama: 진짜 올린 길이는 글자 덩어리 안에 있다 ──────────────────────
+//
+// 실측한 실패 그대로다.
+//   /api/show → 모델 최대 131,072 · '올린 길이' 도 131,072
+//               그런데 서버는 num_ctx 8192 만 받는다
+//               진짜 값은 parameters 라는 글자 덩어리 안에 있어 못 봤다
+//
+// 그대로 믿으면 **확신에 찬 오답**이 된다 — 화면에는 "131,072 · 서버에서 읽음" 이
+// 뜨고, 긴 대화에서 조용히 앞부분이 잘려 나간다. 오류도 안 난다.
+{
+  const { srv, port } = await 띄우기((url) => (url === '/api/show'
+    ? {
+      model_info: {
+        'general.architecture': 'qwen3',
+        'qwen3.context_length': 131072,
+        'qwen3.embedding_length': 4096,
+      },
+      // Ollama 가 실제로 이렇게 준다 — 값이 아니라 글 한 덩어리다.
+      parameters: 'num_ctx                        8192\nstop                           "<|im_end|>"\ntemperature                    0.6',
+      details: { family: 'qwen3', parameter_size: '8.2B' },
+    }
+    : null));
+  const base = `http://127.0.0.1:${port}`;
+  allowEndpoint(base);
+  const r = await probeCtx({ kind: 'ollama', base, auth: 'none', key: '', model: 'qwen3' }, { timeout: 4000 });
+
+  check('★ 글자 덩어리 속 num_ctx 를 찾아낸다', r.loaded === 8192, `loaded=${r.loaded}`);
+  check('★ 실제로 쓸 값은 올린 길이다', r.value === 8192, `value=${r.value} (131072 이면 조용히 잘린다)`);
+  check('모델 최대는 따로 알려 준다', r.max === 131072, `max=${r.max}`);
+  check('어디서 찾았는지 남긴다', /num_ctx/.test(String(r.loadedKey)), String(r.loadedKey));
+  srv.close();
+}
+
+{
+  // parameters 에 num_ctx 가 없으면 — 올린 길이를 모르는 것이다.
+  // 그때 context_length 를 '올린 길이' 로 둔갑시키면 안 된다.
+  const { srv, port } = await 띄우기((url) => (url === '/api/show'
+    ? { model_info: { 'qwen3.context_length': 131072 }, parameters: 'temperature 0.6' }
+    : null));
+  const base = `http://127.0.0.1:${port}`;
+  allowEndpoint(base);
+  const r = await probeCtx({ kind: 'ollama', base, auth: 'none', key: '', model: 'qwen3' }, { timeout: 4000 });
+  check('올린 길이를 모르면 모른다고 한다', r.loaded === null, `loaded=${r.loaded}`);
+  check('그래도 모델 최대는 쓴다', r.value === 131072 && r.max === 131072, `value=${r.value}`);
+  srv.close();
+}
+
+trace('2c-못알아냈을때');
+
+// ── 못 알아냈으면 왜 못 알아냈는지 말해 준다 ────────────────────────────
+{
+  const { srv, port } = await 띄우기(() => null);
+  const base = `http://127.0.0.1:${port}/v1`;
+  allowEndpoint(base);
+  const r = await probeCtx({ kind: 'openai', base, auth: 'none', key: '', model: 'qwen' }, { timeout: 3000 });
+  check('못 알아내면 value 가 null 이다', r.value === null, String(r.value));
+  check('왜 못 알아냈는지 말해 준다', typeof r.why === 'string' && r.why.length > 0, String(r.why));
+  check('두드린 자리를 남긴다', r.tried.length >= 4, `${r.tried.length}곳`);
   srv.close();
 }
 
