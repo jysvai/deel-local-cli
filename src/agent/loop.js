@@ -170,6 +170,8 @@ export async function* run(session, ctx, userText, { signal = null } = {}) {
     hasSkills: (session.skills?.length ?? 0) > 0,
     web: session.web !== false && !isOffline(),   // 오프라인이면 웹 도구는 아예 안 보여 준다
     work: session.effectiveWork(),                // 작업 모드가 쓰는 것만 (modes.js)
+    // 밖에서 붙인 도구(MCP). 붙은 것이 없으면 아무것도 안 는다.
+    mcp: ctx.mcp ?? null,
   });
   // 모드마다 생각의 배분과 걸음 수가 다르다. 사용자가 따로 정했으면 그걸 존중한다.
   const 모드 = workMode(session.effectiveWork());

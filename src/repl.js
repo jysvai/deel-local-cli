@@ -23,6 +23,8 @@ import { explain } from './ui/level.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { renderDiff, shortStat } from './ui/diff.js';
 import { expand as expandMentions } from './agent/mention.js';
+import { 다붙이기 } from './backend/mcp.js';
+import { 프롬프트토막 as 기억토막, 읽기 as 기억읽기 } from './agent/memory.js';
 
 // 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
 const TOOL_GLYPH = {
@@ -144,11 +146,28 @@ export async function chatLoop(opts = {}) {
   store.begin({ model: conn.model, base: conn.base, root });
   try { prune(root); } catch {}
 
+  /*
+   * 밖에서 붙인 도구(MCP) 서버를 띄운다.
+   *
+   * 기본은 꺼져 있다 — .deel/mcp.json 에 사람이 직접 적어야만 뜬다. 남의
+   * 프로그램을 띄우는 일이라, 이 프로젝트가 존재하는 이유('미승인 SW 반입 금지')
+   * 와 정면으로 부딪히기 때문이다. 자물쇠(--offline)가 걸려 있으면 아예 안 띄운다.
+   */
+  const mcp붙임 = await 다붙이기(root, {
+    offline: isOffline(),
+    audit: new Audit(root),
+  });
+
   // 이 PC 에 있는 스킬·명령·플러그인을 찾아 붙인다. 품고 다니지 않는다.
   const found = discover(root);
   session.skills = found.skills;
   session.commands = found.commands;
   session.plugins = found.plugins;
+  // 세션도 알아야 한다 — 밖에서 붙인 도구도 스키마가 매 요청에 실린다.
+  // 안 세면 컨텍스트가 그만큼 조용히 줄어든다.
+  session.mcp = mcp붙임.서버들;
+  // 지난 대화에서 정해 둔 것을 들고 시작한다.
+  session.memory = 기억토막(root);
 
   const rl = createInterface({ input: process.stdin, output: process.stdout, historySize: 200 });
 
@@ -244,6 +263,8 @@ export async function chatLoop(opts = {}) {
     history: new History(root),
     audit: new Audit(root),
     seen: new Set(),
+    // 붙은 MCP 서버. 도구를 부를 때 여기서 찾는다.
+    mcp: mcp붙임.서버들,
     skills: found.skills,
     loadedSkills: new Set(),
     ask,
@@ -313,6 +334,20 @@ export async function chatLoop(opts = {}) {
   if (같은폴더(root, homedir())) {
     warn.push('홈 폴더에서 켰습니다 — 작업 범위가 집 전체입니다. 일할 폴더로 옮겨 다시 켜는 편이 빠르고 안전합니다');
   }
+  // 밖에서 붙인 도구는 **붙었다고 반드시 말한다.** 남의 프로그램이 이 컴퓨터에서
+  // 돌고 있다는 사실을 조용히 넘기면 안 된다 — 그게 이 도구가 심사를 통과한 근거다.
+  // 기억을 들고 시작한다는 것을 반드시 말한다. 조용히 실으면 사람은 왜 모델이
+  // 안 알려준 것을 아는지 모른다 — 그게 불안하다.
+  {
+    const 기억 = 기억읽기(root);
+    if (기억.줄들.length) 길이알림.push(`지난 대화에서 정한 것 ${기억.줄들.length}개를 들고 시작합니다 — ${c.cyan('/memory')}`);
+  }
+  if (mcp붙임.서버들.length) {
+    const 도구수 = mcp붙임.서버들.reduce((n, s) => n + s.도구.length, 0);
+    길이알림.push(`밖에서 붙인 도구 ${도구수}개 ${c.gray(`(서버 ${mcp붙임.서버들.length}대: ${mcp붙임.서버들.map((s) => s.이름).join(' · ')})`)} — ${c.cyan('/mcp')}`);
+  }
+  // 안 뜬 것은 조용히 빠지면 안 된다. "왜 그 도구가 없지" 를 영영 알 수 없다.
+  for (const m of mcp붙임.못한것) warn.push(`MCP ${c.white(m.이름)} 을 못 붙였습니다 — ${m.왜}`);
   if (!conn.tools) warn.push('도구 호출이 확인되지 않았습니다 — deel diagnose 로 점검하세요');
   if (!conn.streaming) warn.push('스트리밍이 없어 응답이 한 번에 나옵니다');
   warn.push(...길이경고);
@@ -654,6 +689,9 @@ export async function chatLoop(opts = {}) {
   }
 
   rl.close();
+  // 띄운 남의 프로세스는 반드시 거둔다. 안 거두면 deel 을 껐는데도
+  // 그 서버가 계속 돌고 있게 된다 — 사람 눈에는 안 보이는 채로.
+  for (const s of mcp붙임.서버들) s.닫기();
   // 끝맺음은 화면을 접기 **전에** 그린다. 전체화면은 close() 에서 터미널을
   // 원래대로 되돌리는데, 그 뒤에 찍으면 되돌아간 화면에 뜬금없이 한 줄이 남는다.
   say('');

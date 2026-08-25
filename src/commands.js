@@ -52,6 +52,9 @@ export const COMMANDS = {
   status:  { desc: '연결 상태' },
   scan:    { desc: '이 PC 의 로컬 모델 서버 훑기', arg: '[save]' },
   sessions:{ desc: '이 폴더의 지난 대화 목록' },
+  recall:  { desc: '지난 대화에서 찾기 — 목록 말고 내용으로', arg: '<찾을 말>' },
+  mcp:     { desc: '밖에서 붙인 도구(MCP) 서버 보기' },
+  memory:  { desc: '대화가 끝나도 남는 기억 — 보기·지우기', arg: '[지우기 <번호>|비우기|<적을 말>]' },
   level:   { desc: '사용자 수준 (쉬움/개발자)', arg: '[수준]' },
   init:    { desc: 'DEEL.md 규칙 파일 만들기' },
   exit:    { desc: '끝내기' },
@@ -327,6 +330,167 @@ export async function handle(line, session, ctx) {
       } else {
         say(`  ${c.gray('등록하려면')} ${c.cyan('/scan save')}   ${c.gray('고르려면')} ${c.cyan('/model')}`);
       }
+      say('');
+      return { handled: true };
+    }
+
+    /*
+     * /recall — 지난 대화에서 **내용으로** 찾는다.
+     *
+     * /sessions 는 목록만 보여 준다. 언제 무슨 모델로 몇 턴 했는지는 알겠는데
+     * "저번에 그 인코딩 문제 어떻게 풀었더라" 는 못 찾는다. 기록이 있는데
+     * 못 찾으면 없는 것과 같다.
+     */
+    case 'recall': {
+      const 말 = String(arg ?? '').trim();
+      if (!말) {
+        say(`  ${c.gray('찾을 말을 적어 주세요 —')} ${c.cyan('/recall CP949 인코딩')}`);
+        say(`  ${c.gray('낱말 두세 개가 가장 잘 맞습니다. 조사는 붙어 있어도 됩니다.')}`);
+        say('');
+        return { handled: true };
+      }
+      const { 찾기 } = await import('./agent/recall.js');
+      const r = 찾기(session.root, 말, { limit: 10 });
+
+      rule(`지난 대화에서 "${clip(말, 30)}"`, 70);
+      if (!r.낱말.length) {
+        say(`  ${mark.no} 찾을 낱말이 없습니다 ${c.gray('— 두 글자 이상으로 적어 주세요.')}`);
+        say('');
+        return { handled: true };
+      }
+      if (!r.맞은것.length) {
+        // 못 찾은 것과 안 찾아본 것을 구분해서 말한다.
+        say(r.예산초과
+          ? `  ${mark.warn} 지난 대화 ${r.전체파일}개 중 ${r.본파일}개까지만 뒤졌습니다 ${c.gray('(양이 많아 멈췄습니다)')}`
+          : `  ${c.gray(`지난 대화 ${r.본파일}개를 다 뒤졌지만 없습니다.`)}`);
+        say(`  ${c.gray('찾은 낱말:')} ${c.white(r.낱말.join(' · '))}`);
+        say('');
+        return { handled: true };
+      }
+
+      for (const h of r.맞은것) {
+        const 날 = h.언제 instanceof Date ? h.언제.toISOString().slice(0, 16).replace('T', ' ') : '';
+        const 색 = h.role === 'user' ? c.hcyan : h.role === 'assistant' ? c.white : c.gray;
+        say(`  ${c.gray(pad(날, 17))} ${색(pad(h.누구, 7))} ${c.gray(h.세션)}`);
+        say(`      ${강조(h.토막, r.낱말)}`);
+      }
+      say('');
+      say(`  ${c.gray(`${r.전체맞음}건 중 ${r.맞은것.length}건 · 대화 ${r.본파일}개를 뒤졌습니다`)}`
+        + (r.예산초과 ? `  ${c.yellow(`(${r.전체파일}개 중 ${r.본파일}개까지만)`)}` : ''));
+      say(`  ${c.gray('그 대화를 이어하려면')} ${c.cyan('deel --resume ' + r.맞은것[0].세션)}`);
+      say('');
+      return { handled: true };
+    }
+
+    /*
+     * /mcp — 밖에서 붙인 도구 서버.
+     *
+     * 여기서 제일 중요한 줄은 도구 목록이 아니라 **경고**다. MCP 서버는 남의
+     * 프로그램이고 우리 작업 범위를 안 지킨다. 화면 어디에도 그 말이 없으면
+     * 사람은 우리 도구와 똑같이 안전한 줄 안다.
+     */
+    /*
+     * /memory — 대화가 끝나도 남는 것.
+     *
+     * 사람이 반드시 **볼 수 있고 지울 수 있어야** 한다. 모델이 잘못 적은 줄은
+     * 매 요청마다 실려 나가면서 계속 틀리게 만든다. 틀린 기억은 없느니만 못하다.
+     */
+    case 'memory': {
+      const M = await import('./agent/memory.js');
+      const 말 = String(arg ?? '').trim();
+
+      if (/^(비우기|clear|지우기전부)$/.test(말)) {
+        M.비우기(session.root);
+        session.memory = M.프롬프트토막(session.root);
+        say(`  ${mark.ok} 기억을 비웠습니다.`);
+        say('');
+        return { handled: true };
+      }
+
+      const 지움 = /^(지우기|잊어|forget|rm)\s+(\d+)$/.exec(말);
+      if (지움) {
+        const r = M.지우기(session.root, 지움[2]);
+        if (!r.ok) say(`  ${mark.no} ${r.why}`);
+        else {
+          session.memory = M.프롬프트토막(session.root);
+          say(`  ${mark.ok} 잊었습니다: ${c.gray(clip(r.뺀것, 60))}`);
+        }
+        say('');
+        return { handled: true };
+      }
+
+      // 그 밖의 말은 '이걸 기억해라' 로 본다. 모델을 안 거치고 바로 적는 길이다.
+      if (말) {
+        const r = M.더하기(session.root, 말);
+        if (!r.ok) say(`  ${mark.warn} ${r.why}`);
+        else {
+          session.memory = M.프롬프트토막(session.root);
+          say(`  ${mark.ok} 기억했습니다 ${c.gray(`(${r.줄수}줄)`)}`);
+          if (r.넘침) say(`     ${c.gray('자리가 차서 오래된 것을 뺐습니다.')}`);
+        }
+        say('');
+        return { handled: true };
+      }
+
+      const 기억 = M.읽기(session.root);
+      rule('기억 — 대화가 끝나도 남는 것', 70);
+      if (!기억.줄들.length) {
+        say(`  ${c.gray('아직 없습니다.')}`);
+        say('');
+        say(`  ${c.gray('모델이 스스로 적기도 하고, 직접 적으셔도 됩니다 —')}`);
+        say(`  ${c.cyan('/memory 사내 문서는 CP949 로 읽고 CP949 로 되돌려 쓴다')}`);
+        say('');
+        return { handled: true };
+      }
+      for (const [i, l] of 기억.줄들.entries()) {
+        say(`  ${c.gray(String(i + 1).padStart(2))}  ${c.white(clip(l, 82))}`);
+      }
+      const 글자 = 기억.줄들.join('\n').length;
+      say('');
+      say(`  ${c.gray(`${기억.줄들.length}줄 · 약 ${Math.round(글자 / 3).toLocaleString()}토큰이 매 요청마다 함께 나갑니다`)}`);
+      say(`  ${c.gray('파일')} ${c.white(기억.자리)} ${c.gray('— 직접 고치셔도 됩니다')}`);
+      say(`  ${c.cyan('/memory 지우기 3')}   ${c.cyan('/memory 비우기')}`);
+      say('');
+      return { handled: true };
+    }
+
+    case 'mcp': {
+      const { 설정읽기, 설정자리, 도구최대 } = await import('./backend/mcp.js');
+      const 붙은것 = session.mcp ?? [];
+      rule('밖에서 붙인 도구 (MCP)', 70);
+
+      if (!붙은것.length) {
+        const 설정 = 설정읽기(session.root);
+        if (설정.오류) say(`  ${mark.no} ${설정.오류}`);
+        else if (!설정.있음) {
+          say(`  ${c.gray('붙인 것이 없습니다.')} ${c.gray('설정 파일이 없습니다 —')} ${c.white(설정자리(session.root))}`);
+        } else if (!설정.서버들.length) {
+          say(`  ${c.gray('설정은 있는데 띄울 서버가 없습니다.')} ${c.gray(설정자리(session.root))}`);
+        } else {
+          say(`  ${mark.warn} 설정에 ${설정.서버들.length}대가 적혀 있는데 하나도 안 붙었습니다.`);
+          say(`     ${c.gray('오프라인 잠금 중이거나, 켤 때 못 떴습니다. 머리말의 경고를 보세요.')}`);
+        }
+        say('');
+        say(`  ${c.gray('붙이려면')} ${c.white('.deel/mcp.json')} ${c.gray('에 이렇게 적습니다 —')}`);
+        say(`  ${c.gray('{ "mcpServers": { "사내위키": { "command": "node", "args": ["wiki-mcp.js"] } } }')}`);
+        say('');
+        say(`  ${c.yellow('※')} ${c.gray('MCP 서버는 남의 프로그램입니다. 사내 반입 심사를 따로 받으셔야 합니다.')}`);
+        say('');
+        return { handled: true };
+      }
+
+      for (const s of 붙은것) {
+        const 상태 = s.살아있나() ? c.green('●') : c.red('○');
+        const 이름들 = s.도구.map((t) => t.name);
+        say(`  ${상태} ${c.bold(s.이름)}  ${c.gray(s.정보?.name ? `${s.정보.name} ${s.정보.version ?? ''}` : s.설정.command)}`);
+        say(`      ${c.gray('도구 ' + s.도구.length + '개')}  ${c.gray(clip(이름들.join(' · '), 60))}`);
+        if (s.잘림) say(`      ${mark.warn} ${c.gray(`${s.잘림}개는 뺐습니다 — 한 서버에 ${도구최대}개까지만 받습니다(컨텍스트가 줄어듭니다)`)}`);
+        if (!s.살아있나()) say(`      ${c.red(s.죽음 ?? '죽었습니다')}`);
+      }
+      say('');
+      say(`  ${c.gray('모델에게는')} ${c.white('mcp__<서버>__<도구>')} ${c.gray('라는 이름으로 보입니다.')}`);
+      say(`  ${c.yellow('※')} ${c.gray('이 도구들은 남의 프로그램이 돌립니다 —')} ${c.white('작업 범위(' + session.root + ') 를 안 지킵니다.')}`);
+      say(`  ${c.gray('  무엇을 불렀는지는')} ${c.white('.deel/audit.jsonl')} ${c.gray('에 남습니다.')}`);
       say('');
       return { handled: true };
     }
@@ -609,6 +773,35 @@ function showLevel(session, arg) {
   say(`  ${mark.ok} ${c.bold(lv.name)} ${c.gray('— ' + lv.hint)}`);
   say(`  ${c.gray('안전 장치는 그대로입니다.')}`);
   say('');
+}
+
+/**
+ * 찾은 낱말에 색을 입힌다.
+ *
+ * 토막만 보여 주면 **왜 이게 걸렸는지** 안 보인다. 특히 조사를 떼고 찾기
+ * 때문에("인코딩을" 로 "인코딩" 을 찾는다) 눈으로는 안 맞는 것처럼 보이는
+ * 경우가 있다. 맞은 자리를 칠해 주면 그 의심이 사라진다.
+ */
+function 강조(글, 낱말들) {
+  let 조각 = [{ 글, 맞음: false }];
+  for (const w of 낱말들) {
+    const 다음 = [];
+    for (const p of 조각) {
+      if (p.맞음) { 다음.push(p); continue; }
+      const 낮은 = p.글.toLowerCase();
+      let i = 0;
+      let 자리 = 낮은.indexOf(w);
+      while (자리 >= 0) {
+        if (자리 > i) 다음.push({ 글: p.글.slice(i, 자리), 맞음: false });
+        다음.push({ 글: p.글.slice(자리, 자리 + w.length), 맞음: true });
+        i = 자리 + w.length;
+        자리 = 낮은.indexOf(w, i);
+      }
+      if (i < p.글.length) 다음.push({ 글: p.글.slice(i), 맞음: false });
+    }
+    조각 = 다음;
+  }
+  return 조각.map((p) => (p.맞음 ? c.hyellow(p.글) : c.gray(p.글))).join('');
 }
 
 // 추론 강도는 값 하나가 아니라 '단계별 배분' 이다. 그 배분을 눈에 보이게 그린다.

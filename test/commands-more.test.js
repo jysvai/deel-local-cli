@@ -368,7 +368,143 @@ trace('10-모델고르기');
   check('/model models 가 서버에 물어본다', /가모델|나모델|다른것/.test(r5.out), 색빼기(r5.out).trim().slice(0, 80));
 }
 
-trace('11-치움');
+trace('11-지난대화찾기');
+
+// ── /recall ─────────────────────────────────────────────────────────────
+//
+// 여기서 제일 중요한 것은 '찾았다' 가 아니라 **'못 찾은 것과 안 찾아본 것을
+// 가르는가'** 다. 둘이 섞이면 사람은 "그런 적 없구나" 로 읽고, 실제로는
+// 기록 어딘가에 있는 답을 다시 묻게 된다.
+{
+  const s = 새세션();
+  const ctx = 새ctx();
+  const dir = join(root, '.deel', 'sessions');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, '20260810-090000.jsonl'), [
+    JSON.stringify({ t: 'meta', at: '2026-08-10T09:00:00.000Z', model: '스텁모델' }),
+    JSON.stringify({ role: 'user', content: '사내 문서가 한글로 깨져서 열려요' }),
+    JSON.stringify({ role: 'assistant', content: 'CP949 인코딩입니다. 읽을 때 재서 그대로 되돌려 쓰면 안 깨집니다.' }),
+  ].join('\n') + '\n', 'utf8');
+
+  const r0 = await 조용히(() => handle('/recall', s, ctx));
+  check('/recall 만 치면 어떻게 쓰는지 알려 준다', /찾을 말을 적어/.test(색빼기(r0.out)),
+    색빼기(r0.out).trim().slice(0, 40));
+
+  // 조사가 붙은 채로 쳐도 찾아야 한다. 한국어로 치면 대개 이렇게 친다.
+  const r1 = await 조용히(() => handle('/recall 인코딩을', s, ctx));
+  const 본문 = 색빼기(r1.out);
+  check('/recall 이 지난 대화를 찾는다', /CP949/.test(본문), 본문.trim().slice(0, 80));
+  check('언제·누가 한 말인지 같이 보여 준다', /2026-08-10/.test(본문) && /나|모델/.test(본문),
+    본문.trim().slice(0, 120));
+  check('그 대화를 이어하는 길도 알려 준다', /--resume 20260810-090000/.test(본문),
+    본문.trim().split('\n').at(-1));
+
+  // 없는 것은 없다고 해야 한다 — 몇 개를 뒤졌는지까지 같이.
+  const r2 = await 조용히(() => handle('/recall 존재하지않는말뭉치', s, ctx));
+  check('없으면 몇 개를 뒤졌는지까지 말한다', /다 뒤졌지만 없습니다/.test(색빼기(r2.out)),
+    색빼기(r2.out).trim().slice(0, 60));
+
+  // 한 글자는 아무 데나 걸린다. 찾는 시늉만 하느니 못 찾는다고 하는 편이 낫다.
+  const r3 = await 조용히(() => handle('/recall 그', s, ctx));
+  check('한 글자면 찾을 낱말이 없다고 한다', /찾을 낱말이 없습니다/.test(색빼기(r3.out)),
+    색빼기(r3.out).trim().slice(0, 40));
+
+  rmSync(dir, { recursive: true, force: true });
+}
+
+trace('12-기억');
+
+// ── /memory ─────────────────────────────────────────────────────────────
+//
+// 기억은 매 요청마다 실려 나간다. 그래서 '적히는가' 만큼 **'사람이 보고
+// 지울 수 있는가'** 가 중요하다. 틀린 기억은 없느니만 못하다.
+{
+  const s = 새세션();
+  const ctx = 새ctx();
+  const M = await import('../src/agent/memory.js');
+  M.비우기(root);
+  s.memory = M.프롬프트토막(root);
+
+  const r0 = await 조용히(() => handle('/memory', s, ctx));
+  check('빈 기억은 비었다고 하고 예를 든다', /아직 없습니다/.test(색빼기(r0.out)) && /CP949/.test(색빼기(r0.out)),
+    색빼기(r0.out).trim().slice(0, 60));
+
+  const r1 = await 조용히(() => handle('/memory 사내 문서는 CP949 로 읽고 되돌려 쓴다', s, ctx));
+  check('/memory <말> 이 바로 적는다', /기억했습니다/.test(색빼기(r1.out)), 색빼기(r1.out).trim().slice(0, 40));
+  check('적은 것이 파일에 남는다', M.읽기(root).줄들.some((l) => /CP949/.test(l)), M.읽기(root).줄들.join('|'));
+  // 여기가 핵심이다 — 세션이 그 자리에서 물고 가야 이번 대화부터 먹는다.
+  check('이번 대화부터 바로 먹는다', /CP949/.test(s.systemPrompt()), '');
+
+  await 조용히(() => handle('/memory 검증 포트로 7080 은 쓰지 않는다', s, ctx));
+  const r2 = await 조용히(() => handle('/memory', s, ctx));
+  check('목록에 번호를 붙여 보여 준다', /1 {2}사내 문서/.test(색빼기(r2.out)) && / 2 {2}검증 포트/.test(색빼기(r2.out)),
+    색빼기(r2.out).trim().slice(0, 100));
+  // 얼마를 무는지 안 보이면 사람은 계속 쌓는다.
+  check('매 요청마다 드는 값을 알려 준다', /토큰이 매 요청마다 함께 나갑니다/.test(색빼기(r2.out)),
+    색빼기(r2.out).trim().slice(-120));
+  check('파일 자리를 알려 준다 (직접 고치라고)', /직접 고치셔도 됩니다/.test(색빼기(r2.out)), '');
+
+  const r3 = await 조용히(() => handle('/memory 지우기 1', s, ctx));
+  check('번호로 지운다', /잊었습니다/.test(색빼기(r3.out)), 색빼기(r3.out).trim().slice(0, 50));
+  check('지운 것은 프롬프트에서도 빠진다', !/CP949/.test(s.systemPrompt()), '');
+  check('나머지는 남는다', /7080/.test(s.systemPrompt()), '');
+
+  const r4 = await 조용히(() => handle('/memory 지우기 99', s, ctx));
+  check('없는 번호는 말해 준다', /번호/.test(색빼기(r4.out)), 색빼기(r4.out).trim().slice(0, 50));
+
+  const r5 = await 조용히(() => handle('/memory 비우기', s, ctx));
+  check('통째로 비운다', /비웠습니다/.test(색빼기(r5.out)) && M.읽기(root).줄들.length === 0, '');
+  check('비우면 프롬프트에서도 사라진다', !/7080/.test(s.systemPrompt()), '');
+}
+
+trace('13-밖에서붙인도구');
+
+// ── /mcp ────────────────────────────────────────────────────────────────
+//
+// 이 화면에서 제일 중요한 줄은 도구 목록이 아니라 **경고**다. MCP 서버는
+// 남의 프로그램이고 우리 작업 범위를 안 지킨다. 그 말이 화면에 없으면
+// 사람은 우리 도구와 똑같이 안전한 줄 안다.
+{
+  const s = 새세션();
+  const ctx = 새ctx();
+
+  const r0 = await 조용히(() => handle('/mcp', s, ctx));
+  const 없을때 = 색빼기(r0.out);
+  check('안 붙였으면 없다고 하고 설정 자리를 알려 준다',
+    /붙인 것이 없습니다/.test(없을때) && /mcp\.json/.test(없을때), 없을때.trim().slice(0, 100));
+  check('안 붙였을 때도 반입 심사를 말한다', /반입 심사/.test(없을때), 없을때.trim().slice(-80));
+
+  // 붙은 것이 있는 화면. 진짜 서버를 띄우는 것은 mcp.test.js 가 하고,
+  // 여기서는 **화면에 무엇이 적히는가**만 본다.
+  s.mcp = [{
+    이름: '사내위키',
+    설정: { command: 'node', args: ['wiki-mcp.js'] },
+    정보: { name: 'wiki-mcp', version: '1.2.0' },
+    도구: [{ name: '문서찾기' }, { name: '문서읽기' }],
+    잘림: 3,
+    죽음: null,
+    살아있나: () => true,
+  }];
+  const r1 = await 조용히(() => handle('/mcp', s, ctx));
+  const 붙었을때 = 색빼기(r1.out);
+  check('붙은 서버와 도구를 보여 준다',
+    /사내위키/.test(붙었을때) && /문서찾기 · 문서읽기/.test(붙었을때), 붙었을때.trim().slice(0, 120));
+  check('뺀 도구가 있으면 몇 개인지 말한다', /3개는 뺐습니다/.test(붙었을때), 붙었을때.trim().slice(0, 200));
+  check('모델에게 보이는 이름을 알려 준다', /mcp__<서버>__<도구>/.test(붙었을때), '');
+  // 이 두 줄이 이 화면의 존재 이유다.
+  check('작업 범위를 안 지킨다고 못 박는다', /작업 범위\(.*\) 를 안 지킵니다/.test(붙었을때),
+    붙었을때.trim().split('\n').slice(-3).join(' / '));
+  check('무엇을 불렀는지 어디에 남는지 알려 준다', /audit\.jsonl/.test(붙었을때), '');
+
+  s.mcp = [{
+    이름: '죽은것', 설정: { command: 'node', args: [] }, 정보: null,
+    도구: [], 잘림: 0, 죽음: '켤 때 못 떴습니다 (ENOENT)', 살아있나: () => false,
+  }];
+  const r2 = await 조용히(() => handle('/mcp', s, ctx));
+  check('죽은 서버는 왜 죽었는지 적는다', /ENOENT/.test(색빼기(r2.out)), 색빼기(r2.out).trim().slice(0, 120));
+}
+
+trace('14-치움');
 srv.close();
 resetNet();
 rmSync(home, { recursive: true, force: true });

@@ -11,6 +11,7 @@ import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
 import { TODO_TOOL } from './todo.js';
 import { allow as allowedIn } from '../agent/modes.js';
+import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { diffLines } from '../ui/diff.js';
 
@@ -693,12 +694,111 @@ export const TOOLS = {
   WebFetch: WEB_FETCH_TOOL,
 
   // 긴 작업에서 시킨 것을 빠뜨리지 않게 붙잡아 두는 목록.
+  /*
+   * 지난 대화 찾기.
+   *
+   * 왜 도구로도 주나: 사람만 쓰는 /recall 로 두면 **모델이 스스로 못 찾는다.**
+   * "저번에 정한 대로 해줘" 같은 말에 모델이 할 수 있는 게 되묻는 것뿐이 된다.
+   * 도구로 주면 스스로 지난 대화를 뒤져 그때 정한 것을 갖고 온다 —
+   * 대화를 남기는 일이 그제서야 값을 한다.
+   *
+   * 이 폴더의 기록만 본다. 작업 범위 밖은 애초에 읽을 수 없다.
+   */
+  Recall: {
+    schema: {
+      name: 'Recall',
+      description: '이 폴더의 지난 대화에서 찾는다. "저번에" 처럼 앞선 대화를 가리키면 되묻지 말고 이걸 쓴다.'
+        + ' 파일 내용을 찾는 것이 아니다 — 파일은 Grep 이다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '찾을 말. 낱말 두세 개 (예: "CP949 인코딩")' },
+          limit: { type: 'number', description: '가져올 개수 (기본 8)' },
+          tools: { type: 'boolean', description: '도구 결과까지 뒤질지 (기본 false)' },
+        },
+        required: ['query'],
+      },
+    },
+    async run(args, ctx) {
+      const { 찾기 } = await import('../agent/recall.js');
+      const q = String(args.query ?? '').trim();
+      if (!q) return { error: 'query 가 비었습니다' };
+
+      const r = 찾기(ctx.scope.root, q, {
+        limit: Math.min(20, Math.max(1, Number(args.limit) || 8)),
+        도구결과까지: args.tools === true,
+      });
+
+      if (!r.맞은것.length) {
+        // 못 찾은 것과 안 찾아본 것은 다르다. 예산에 걸려 멈췄으면 그렇다고 말한다 —
+        // 안 그러면 모델이 "그런 대화 없었습니다" 라고 단정한다.
+        const 왜 = r.예산초과
+          ? `지난 대화 ${r.전체파일}개 중 ${r.본파일}개까지만 뒤졌습니다(양이 많아 멈춤). 못 찾았습니다`
+          : `지난 대화 ${r.본파일}개를 다 뒤졌지만 없습니다`;
+        return { summary: `${왜}: ${q}`, hits: [], searched: r.본파일, total: r.전체파일, partial: r.예산초과 };
+      }
+
+      const 줄들 = r.맞은것.map((h) => {
+        const 날 = h.언제 instanceof Date ? h.언제.toISOString().slice(0, 16).replace('T', ' ') : '';
+        return `[${h.세션} · ${날} · ${h.누구}] ${h.토막}`;
+      });
+      return {
+        summary: `지난 대화에서 ${r.전체맞음}건 중 ${r.맞은것.length}건`
+          + (r.예산초과 ? ` (${r.전체파일}개 중 ${r.본파일}개만 뒤짐)` : ''),
+        hits: r.맞은것.map((h) => ({ session: h.세션, when: h.언제, who: h.누구, text: h.토막 })),
+        text: 줄들.join('\n'),
+        searched: r.본파일,
+        total: r.전체파일,
+        partial: r.예산초과,
+      };
+    },
+  },
+
+  /*
+   * 기억하기.
+   *
+   * 왜 도구인가: 사람이 /memory 로 적게 하면 아무도 안 적는다. 지금 막 정한
+   * 것을 기억할지 말지 판단할 수 있는 것은 그 자리에 있는 모델뿐이다.
+   *
+   * 왜 짧게 쓰라고 못을 박나: 여기 적힌 것은 **매 요청마다** 통째로 나간다.
+   * 모델은 그걸 모르고 파일 내용을 통째로 넣으려 든다. 그러면 기억이
+   * 컨텍스트를 먹어 정작 일할 자리가 줄어든다.
+   */
+  Remember: {
+    schema: {
+      name: 'Remember',
+      description: '대화가 끝나도 남길 것을 한 줄로 적는다. 사용자가 정한 규칙·약속·되풀이하면 안 되는 실수.'
+        + ' 이번 일에서만 쓰는 것이나 파일을 읽으면 아는 것은 안 적는다.'
+        + ' 이 글은 앞으로 모든 요청에 실린다 — 한 문장으로.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: '한 줄 (예: "사내 문서는 CP949 로 읽고 CP949 로 되돌려 쓴다")' },
+        },
+        required: ['text'],
+      },
+    },
+    async run(args, ctx) {
+      const { 더하기 } = await import('../agent/memory.js');
+      const r = 더하기(ctx.scope.root, args.text);
+      if (!r.ok) return { summary: r.why, remembered: false };
+      return {
+        summary: `기억했습니다 (${r.줄수}줄)` + (r.넘침 ? ' · 자리가 차서 오래된 것을 뺐습니다' : ''),
+        remembered: true,
+        line: r.줄,
+        // 화면에 무엇을 적었는지 보여 주려고 같이 넘긴다. 사람이 못 보면
+        // 틀린 기억이 조용히 쌓인다 — 그게 제일 나쁘다.
+        content: r.줄,
+      };
+    },
+  },
+
   TodoWrite: TODO_TOOL,
 };
 
 // 모델에게 넘길 도구 정의 목록.
 // 스킬이 없으면 Skill 도구는 빼서 자리를 아낀다.
-export function toolSchemas(names = null, { hasSkills = false, web = true, work = null } = {}) {
+export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null } = {}) {
   let list = names ?? Object.keys(TOOLS).filter((n) => {
     if (n === 'Skill') return hasSkills;
     if (n === 'WebFetch') return web;
@@ -709,10 +809,27 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
   // 설계·계획·묻기 모드에서 파일을 바꾸면 안 된다고 프롬프트로 부탁할 수도 있다.
   // 그런데 모델은 부탁을 잊는다. 목록에서 아예 빼면 잊을 것이 없다.
   if (work) list = allowedIn(work, list);
-  return list.map((n) => ({ type: 'function', function: TOOLS[n].schema }));
+  const 우리것 = list.map((n) => ({ type: 'function', function: TOOLS[n].schema }));
+
+  /*
+   * 밖에서 붙인 도구(MCP)를 뒤에 붙인다.
+   *
+   * 읽기만 하는 모드(설계·계획·묻기)에서는 안 준다. MCP 서버가 무엇을 하는지
+   * 우리는 모른다 — 이름이 search 여도 파일을 쓸 수 있다. 파일을 안 바꾸기로
+   * 한 모드에서 '모르는 것' 을 쥐여 주면 그 약속이 약속이 아니게 된다.
+   */
+  if (mcp?.length && (!work || allowedIn(work, ['Write']).length)) 우리것.push(...도구정의(mcp));
+  return 우리것;
 }
 
 export async function runTool(name, args, ctx) {
+  // 밖에서 붙인 도구(MCP)는 이름 앞머리로 갈린다.
+  //
+  // 여기서 먼저 갈라야 하는 이유: MCP 서버는 우리 scope 를 안 지킨다.
+  // 남의 프로세스라 파일을 제 마음대로 읽고 쓸 수 있다. 우리 도구인 척
+  // 섞이면 "이 폴더 밖은 못 건드린다" 는 말이 거짓이 된다.
+  if (name.startsWith('mcp__')) return await runMcpTool(name, args, ctx);
+
   const t = TOOLS[name];
   if (!t) return { error: `모르는 도구: ${name}` };
   try {
@@ -724,4 +841,35 @@ export async function runTool(name, args, ctx) {
     ctx.audit.tool(name, args, r);
     return r;
   }
+}
+
+/**
+ * MCP 서버가 준 도구를 부른다.
+ *
+ * 실패해도 턴을 죽이지 않는다. 남의 프로그램이라 언제든 죽을 수 있고, 그때마다
+ * 대화가 끝나 버리면 쓸 수가 없다. 오류를 **결과로** 돌려주면 모델이 그걸 읽고
+ * 다른 길을 찾는다.
+ *
+ * 감사기록에는 우리 도구와 똑같이 남긴다 — 오히려 이쪽이 더 남아야 한다.
+ * 남의 프로그램이 무엇을 했는지가 반입 심사에서 물어볼 바로 그것이다.
+ */
+async function runMcpTool(name, args, ctx) {
+  const 갈린것 = 이름풀기(name);
+  const r = await (async () => {
+    if (!갈린것) return { error: `${name} 은 MCP 도구 이름 꼴이 아닙니다` };
+    const 서버 = (ctx.mcp ?? []).find((s) => s.이름 === 갈린것.서버);
+    if (!서버) return { error: `${갈린것.서버} 서버가 붙어 있지 않습니다 — /mcp 로 확인하세요` };
+    if (!서버.살아있나()) return { error: `${갈린것.서버} 서버가 죽었습니다: ${서버.죽음 ?? '이유 모름'}` };
+    try {
+      const out = await 서버.부르기(갈린것.도구, args);
+      if (out.isError) return { error: out.text || '도구가 오류를 냈습니다' };
+      const 글 = out.text ?? '';
+      const 줄 = 글 ? 글.split(/\r?\n/).length : 0;
+      return { summary: 글 ? `${줄}줄 · ${글.length.toLocaleString()}자` : '빈 답', content: clip(글) };
+    } catch (e) {
+      return { error: e.message };
+    }
+  })();
+  ctx.audit.tool(name, args, r);
+  return r;
 }

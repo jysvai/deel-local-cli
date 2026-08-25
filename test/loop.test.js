@@ -109,14 +109,26 @@ check('쪼개진 도구 인자를 이어 붙였다', editEv?.args?.new_string ==
 
 // 게이트웨이에 보낸 요청 모양
 const first = seenBodies[0];
-// 파일 도구 7종 + 웹 읽기 + 할 일 목록. 스킬이 없는 세션이라 Skill 은 빠진다.
-check('도구 정의 9종을 보냈다', first?.tools?.length === 9, `${first?.tools?.length}개`);
-// Append 는 Claude Code 에 없는 것을 하나 더 붙인 것이다.
-// 출력 상한이 작은 로컬 모델이 큰 파일을 나눠 쓰는 유일한 길이라 뺄 수 없다 —
-// Edit 으로 잇는 방법은 앵커가 겹쳐 막힌다(HTML 의 </div> 가 그렇다).
-check('도구 이름이 Claude Code 와 같다 (Append 만 더 있다)',
+// 파일 도구 7종 + 웹 읽기 + 지난 대화 찾기 + 기억하기 + 할 일 목록.
+// 스킬이 없는 세션이라 Skill 은 빠진다.
+check('도구 정의 11종을 보냈다', first?.tools?.length === 11, `${first?.tools?.length}개`);
+/*
+ * Claude Code 의 이름을 그대로 쓰되 **둘만** 더 있다. 늘릴 때마다 여기가 걸리게
+ * 해 둔 이유: 도구 하나가 스키마로 150토큰쯤 먹는다. 매 요청마다 나가는 값이라
+ * 슬그머니 늘면 컨텍스트가 조용히 줄어든다. 더할 값어치가 있는지 여기서 한 번 멈춘다.
+ *
+ *   Append    출력 상한이 작은 로컬 모델이 큰 파일을 나눠 쓰는 유일한 길.
+ *             Edit 으로 잇는 방법은 앵커가 겹쳐 막힌다(HTML 의 </div> 가 그렇다).
+ *   Recall    지난 대화를 모델이 **스스로** 뒤진다. 사람만 쓰는 명령으로 두면
+ *             "저번에 정한 대로" 에 모델이 할 수 있는 게 되묻는 것뿐이다.
+ *   Remember  대화가 끝나도 남길 것. 지금 막 정한 것을 남길지 판단할 수 있는 것은
+ *             그 자리에 있는 모델뿐이다 — 사람에게 맡기면 아무도 안 적는다.
+ *
+ * 밖에서 붙인 도구(MCP)는 여기 안 나온다. 붙인 서버가 있을 때만 뒤에 더해진다.
+ */
+check('도구 이름이 Claude Code 와 같다 (Append · Recall · Remember 만 더 있다)',
   JSON.stringify(first?.tools?.map((t) => t.function.name))
-    === JSON.stringify(['Read', 'Write', 'Append', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch', 'TodoWrite']),
+    === JSON.stringify(['Read', 'Write', 'Append', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch', 'Recall', 'Remember', 'TodoWrite']),
   JSON.stringify(first?.tools?.map((t) => t.function.name)));
 check('시스템 프롬프트를 보냈다', first?.messages?.[0]?.role === 'system');
 

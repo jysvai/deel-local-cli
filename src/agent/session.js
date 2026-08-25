@@ -30,7 +30,15 @@ const BASE_RULES = `너는 deel 다. 사용자의 작업 폴더 안에서 코드
 - 같은 도구를 같은 인자로 다시 부르지 않는다. 결과는 같다. 본 것은 기억하고 다음으로 넘어간다.
 - 사용자가 볼 범위를 좁혀 말하면 그대로 따른다. 시키지 않은 폴더를 뒤지지 않는다.
 - 명령 실행이 필요하면 Bash 를 쓴다. 되돌릴 수 없는 명령은 막히니 다른 방법을 찾는다.
-- 사용자에게 답할 때는 한국어로, 짧게. 코드를 통째로 붙여넣지 말고 무엇이 달라졌는지 말한다.`;
+- 사용자에게 답할 때는 한국어로, 짧게. 코드를 통째로 붙여넣지 말고 무엇이 달라졌는지 말한다.
+
+다음에도 쓸 것은 남긴다:
+- 사용자가 규칙을 정하거나 하지 말라고 하면 Remember 로 한 줄 남긴다. 그 글은 앞으로
+  모든 요청에 실리니 한 문장으로. 이번 일에서만 쓰는 것은 안 남긴다.
+- "저번에"·"전에 정한 대로" 처럼 앞선 대화를 가리키면 되묻기 전에 Recall 로 찾는다.
+- 또 하게 될 절차를 끝냈으면 .deel/skills/<이름>/SKILL.md 로 적어 둔다.
+  앞머리에 name 과 description 을 넣고(--- 로 감싼다) 아래에 순서를 적는다.
+  쓰던 스킬에서 틀린 데를 찾으면 그 파일을 고친다.`;
 
 export class Session {
   constructor(conn, { root, mode = 'auto', work = null, level = null, think = 'medium', effort = 'save', web = true, maxSteps = 24 } = {}) {
@@ -89,6 +97,19 @@ export class Session {
     const w = workMode(this.effectiveWork());
     parts.push(`\n--- 지금 모드: ${w.name} (${w.en}) ---\n${w.say}`);
     if (this.rules) parts.push(`\n--- ${this.rules.name} (사용자 규칙, 위 원칙보다 우선) ---\n${this.rules.text}`);
+
+    /*
+     * 지난 대화에서 정한 것.
+     *
+     * 이건 '찾으면 나오는' 것이 아니라 **처음부터 들어가 있어야** 하는 것이다.
+     * "우리 문서는 CP949 다" 를 매번 다시 설명하게 하면 두 번째부터 짜증이 나고
+     * 세 번째부터는 그냥 안 쓴다.
+     *
+     * 켤 때 한 번 읽어 들고 있는다. 매 턴 파일을 읽으면 긴 대화에서 그 횟수가
+     * 수십 번이 되고, 그 사이 사람이 파일을 고쳐 놓으면 대화 도중에 규칙이
+     * 바뀌는 셈이 된다 — 무엇 때문에 답이 달라졌는지 알 길이 없어진다.
+     */
+    if (this.memory) parts.push(this.memory);
     const listed = this.listedSkills();
     if (listed.length) {
       parts.push(
@@ -148,7 +169,7 @@ export class Session {
    * 그만큼 몰래 나간다** — 다 찼는데 안 찼다고 알고 있는 상태가 된다.
    *
    * 전에는 두 가지를 안 셌다.
-   *   · 도구 스키마 JSON — 도구 9종의 설명과 인자 정의. 약 1,400토큰이다.
+   *   · 도구 스키마 JSON — 도구 11종의 설명과 인자 정의. 약 1,800토큰이다.
    *     매 요청에 통째로 들어가는데 어느 칸에도 안 잡혔다.
    *   · 지금 모드 문구 — modes.js 의 say. 모드마다 수백 토큰이다.
    */
@@ -172,9 +193,15 @@ export class Session {
     // 도구 정의도 매 요청에 실려 나간다. 세는 값이라기보다 '이미 나간 값' 이다.
     const 도구 = this.#도구토큰();
 
+    // 기억도 매 요청에 통째로 나간다. 안 세면 '남은 자리' 가 그만큼 뻥튀기되고,
+    // effort.js 가 그 값으로 출력 상한을 잡으므로 답이 조용히 잘리기 시작한다.
+    const 기억 = this.memory ? estimateTokens(this.memory) : 0;
+    const 기억줄 = this.memory ? this.memory.split('\n').filter((l) => l.startsWith('- ')).length : 0;
+
     const rows = [
       { label: '시스템 프롬프트', n: sys },
       { label: this.rules ? `규칙 (${this.rules.name})` : '규칙 (없음)', n: rules },
+      { label: `기억 (${기억줄}줄)`, n: 기억 },
       { label: `스킬 목록 (${listed.length}/${this.skills.length}개)`, n: skills },
       { label: '도구 정의', n: 도구 },
       { label: '대화 이력', n: history },
@@ -193,7 +220,9 @@ export class Session {
    */
   #도구잰것 = new Map();
   #도구토큰() {
-    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${this.web !== false ? 'web' : ''}`;
+    // 밖에서 붙인 도구 수까지 열쇠에 넣는다. 서버가 붙고 떨어지면 값이 달라진다.
+    const mcp수 = (this.mcp ?? []).reduce((n, s) => n + (s.도구?.length ?? 0), 0);
+    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${this.web !== false ? 'web' : ''}|mcp${mcp수}`;
     if (this.#도구잰것.has(열쇠)) return this.#도구잰것.get(열쇠);
     let n = 0;
     try {
@@ -201,6 +230,7 @@ export class Session {
         hasSkills: (this.skills?.length ?? 0) > 0,
         web: this.web !== false,
         work: this.effectiveWork(),
+        mcp: this.mcp ?? null,
       });
       n = estimateTokens(JSON.stringify(list));
     } catch { n = 0; }
