@@ -55,6 +55,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 - [Reasoning effort](#reasoning-effort)
 - [Auto-compaction](#auto-compaction)
 - [Resuming a conversation](#resuming-a-conversation)
+- [Attaching tools from outside (MCP)](#attaching-tools-from-outside-mcp)
 - [Safety](#safety)
 - [Corporate review package](#corporate-review-package)
 - [Configuration](#configuration)
@@ -232,6 +233,9 @@ Names follow Claude Code / Codex conventions.
 | `/status` | Connection status |
 | `/scan [save]` | Sweep this machine for local model servers (`save` registers them) |
 | `/sessions` | Past conversations in this folder |
+| `/recall <text>` | Search past conversations **by content** |
+| `/memory` | What persists across sessions — view, add, delete |
+| `/mcp` | Externally attached tools (MCP servers) |
 | `/init` | Create a `DEEL.md` rules file |
 | `/exit` | Quit |
 
@@ -390,6 +394,52 @@ Two things matter here:
 - **Beginners do not get fewer safeguards.** Undo, workspace scope and dangerous-command
   blocking are identical. A beginner needs the undo more, not less.
 
+### Two screens
+
+Launched in a terminal, deel runs **full-screen**: conversation on the left, files changed
+this session at the top right, todos below them, with a status line and an input box pinned
+at the bottom.
+
+```
+┌ 대화 ─────────────────────────────────────────────┬ 바뀐 파일 ───────────────┐
+│   ❊ Grep(console.log)                             │ src/runner.js +3-1       │
+│     └ 3 files · 11 hits                           │ src/index.js +1-1        │
+│                                                   │ src/ui/log.js +12-0      │
+│   ◈ Edit(src/runner.js)                           ├ 할 일 ───────────────────│
+│     └ 1 spot +3-1                                 │ ☑ find log calls         │
+│     - 12 console.log('시작', 이름)                │ ☑ unify runner.js        │
+│     + 12 logger.info({ 단계: '시작', 이름 })      │ ▶ unify index.js         │
+│                                                   │ ☐ update docs            │
+│   ▌ Unified log calls to the logger format.       │                          │
+│                                                   │                          │
+│   ── 4.2s · 3 tools · ↑3,900 ↓180                 │                          │
+└───────────────────────────────────────────────────┴──────────────────────────┘
+ ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱ 22% ▏ ◎ 종합 · ◇ medium · auto ▏ ↑3.8k ↓180
+ ╭─────────────────────────────────────────────────────────────────────────────╮
+ │ ❯                                                                           │
+ ╰─────────────────────────────────────────────────────────────────────────────╯
+```
+
+**It switches itself off where it would do harm.** Piped or redirected output, `CI` set,
+`TERM=dumb`, or a window under 60×16 all fall back to the **scrolling view** without asking —
+`deel … | tee log.txt` must not become a pile of escape codes. Passing `--tui` does not
+override a pipe.
+
+| | Full-screen | Scrolling (`--no-tui`) |
+|---|---|---|
+| When | Launched in a terminal | Pipes, CI, small windows, `--no-tui` |
+| Files changed / todos | Always visible on the right (≥96 cols) | Printed inline as they happen |
+| Earlier output | Wrapped and paged inside the frame | Your terminal's own scrollback |
+| On exit | **Replays the conversation into scrollback** | Already there |
+| For keeping a log | Not this one | This one |
+
+Full-screen uses the alternate screen buffer, like vim. Exiting would otherwise erase the whole
+conversation, so the recent lines are reprinted into the real screen on the way out. Whether it
+exits on Ctrl+C or dies on an uncaught error, **the terminal is always restored.**
+
+If the full-screen view cannot be set up — an unusual terminal, anything at all — it falls back
+to the scrolling view and says why in one line. **No program should fail to start over a screen.**
+
 ---
 
 ## Tools
@@ -407,9 +457,62 @@ Names and arguments match Claude Code, so skills written for that convention wor
 | `Bash` | Run a command |
 | `Skill` | Expand a skill body (shown to the model only when skills exist) |
 | `WebFetch` | Read a web page (read-only; hidden under `--offline`) |
+| `Recall` | Search **past conversations** — the model digs up "that thing last time" itself |
+| `Remember` | One line that outlives the session — known from the start next time |
 | `TodoWrite` | Checklist — breaks long work into steps and shows progress |
 
-`Append` is the only tool here that Claude Code does not have. There is a reason.
+Only **three** tools here are not in Claude Code — `Append`, `Recall`, `Remember`. Each
+tool costs roughly 150 tokens of schema on **every request**, so a test stops you every
+time the list grows (`test/loop.test.js`).
+
+### Finding past conversations, and remembering decisions
+
+deel writes every conversation to `.deel/sessions/*.jsonl`. Until now all you could do was
+list them — **a record you cannot search is the same as no record.**
+
+```
+$ /recall 인코딩을 어떻게
+
+  2026-08-01 10:15  모델    20260801-101500
+      CP949 인코딩 문제입니다. 읽을 때 인코딩을 재서 그대로 되돌려 쓰도록…
+```
+
+Korean particles are handled: `인코딩을` also matches `인코딩`. A morphological analyser is
+out of the question (zero dependencies), so particle-looking tails are stripped and **both**
+forms are searched. No index is built — an index inevitably goes stale, and **a stale index is
+worse than none** ("not found" reads as "never happened"). Instead every search reports how
+much it read and what it could not.
+
+`Recall` is also a **tool**. Left as a human-only command, "do it the way we decided last
+time" leaves the model nothing to do but ask again.
+
+**Memory (`/memory`) is a different thing.** Recall has to be *searched*; memory is *already
+there*. Things you cannot re-explain every session go here.
+
+```
+$ /memory
+
+   1  사내 문서는 CP949 로 읽고 CP949 로 되돌려 쓴다
+   2  검증할 때 7080 포트는 쓰지 않는다
+
+  2줄 · 약 30토큰이 매 요청마다 함께 나갑니다
+  파일 .deel/memory.md — 직접 고치셔도 됩니다
+```
+
+`.deel/memory.md` is **prose a human edits**, not a database. That matters: a line the model
+got wrong ships on every request and keeps being wrong. **A wrong memory is worse than none.**
+So `/memory 지우기 2` deletes one.
+
+Because it ships on every request it is bounded: 400 chars per line, 60 lines, 6,000 chars
+total. Overflow drops the oldest and says so. `/context` shows its line count and tokens.
+
+### Repeatable procedures become skills
+
+When a multi-step job finishes and it is something that will come up again, the model writes
+the procedure to `.deel/skills/<name>/SKILL.md`. Next session it appears in the skill list;
+when it turns out to be wrong somewhere, the model edits that file.
+
+No new tool needed — the existing `Write` writes it and the existing skill sweep reads it.
 
 ### Large files are written in pieces — `Append`
 
@@ -898,6 +1001,43 @@ covers `.deel/` so it never reaches a repository.
 
 ---
 
+## Attaching tools from outside (MCP)
+
+A corporate wiki search, an issue tracker, a DB query tool — if a team publishes one as an MCP
+server, deel uses it as a tool **without a code change**.
+
+Configure in `.deel/mcp.json`. A Claude Code config can be copied over verbatim:
+
+```json
+{ "mcpServers": { "wiki": { "command": "node", "args": ["wiki-mcp.js"] } } }
+```
+
+The model sees it as `mcp__wiki__search`. `/mcp` shows what is attached.
+
+**Dependencies stay at zero.** The stdio transport is nothing but newline-delimited JSON-RPC
+2.0 over a child process's stdin/stdout, so `child_process` and `JSON` cover it. No SDK.
+
+### But this is somebody else's program
+
+This project exists because unapproved software is blocked. Turning on MCP carelessly would
+tear down that line with our own hands. So:
+
+| | |
+|---|---|
+| **Off by default** | Nothing runs unless it is in `.deel/mcp.json` |
+| **Never under `--offline`** | We cannot police where a child process connects. **We do not claim to block what we cannot block** |
+| **Outside the working scope** | MCP servers do not honour our fence. The `/mcp` screen says so |
+| **Audited** | What was launched and what was called, in `.deel/audit.jsonl` |
+| **No key passthrough** | Our environment is not forwarded wholesale — a `DEEL_*` gateway key in someone else's process goes somewhere we cannot see |
+| **Not in read-only modes** | A tool named "search" can still write files. Handing an unknown to plan/architect mode would make that promise meaningless |
+| **24 tools per server** | Schemas ship on every request. Past that they are dropped, and **the drop is reported** |
+
+One server crashing, hanging, or talking nonsense does not affect the others. Failures are not
+swallowed — the reason appears in the header, because a silent drop leaves "why is that tool
+missing?" unanswerable.
+
+---
+
 ## Safety
 
 Instead of approval prompts, the design makes things **reversible**. The default `auto` mode
@@ -1055,6 +1195,7 @@ deel --effort <profile>  even / save (default) / deep
 deel --offline           Nothing leaves this machine
 deel --continue          Resume the most recent conversation
 deel --resume <id>       Resume a specific one
+deel --no-tui            Turn the full-screen view off; use the scrolling view (see below)
 ```
 
 ### Project rules
@@ -1085,7 +1226,7 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 ## Development
 
 ```bash
-npm test          Full suite (1,519 checks)
+npm test          Full suite (1,740 checks)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1139,11 +1280,12 @@ Zero dependencies rules out c8 and nyc, so this reads Node's own
 `NODE_V8_COVERAGE` instead — nothing new to get through an import review. It picks up
 child processes too, so the `cli` suite that spawns `deel` counts like everything else.
 
-Currently **92% overall** (4,979 of 5,412 lines). Two files are deliberately left short.
+Currently **92% overall** (6,960 of 7,570 lines). Three files are deliberately left short.
 
 | File | Now | Why it stops there |
 |---|---|---|
 | `tools/excel.js` | 67% | The password path needs Excel installed and a genuinely encrypted file. Faking it would produce a test that only *looks* like it passes |
+| `repl.js` | 77% | The keypress paths — Shift+Tab, Ctrl+C, password entry, paste. Reaching them needs a pty, and a pty is a dependency. What the screen *prints* is measured instead, as a value (`ui` and `tui` suites) |
 | `plugins/manage.js` | 79% | The GitHub download path. **Tests not reaching the network** matters more. Folder installs are covered |
 
 ---
