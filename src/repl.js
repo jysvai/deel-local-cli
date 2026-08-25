@@ -25,6 +25,7 @@ import { renderDiff, shortStat } from './ui/diff.js';
 import { expand as expandMentions } from './agent/mention.js';
 import { 다붙이기 } from './backend/mcp.js';
 import { 프롬프트토막 as 기억토막, 읽기 as 기억읽기 } from './agent/memory.js';
+import { 갈래고르기 } from './ui/working.js';
 
 // 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
 const TOOL_GLYPH = {
@@ -537,6 +538,14 @@ export async function chatLoop(opts = {}) {
     const 꼬리표 = (ev) => { const t = stageTag(ev, session.level); return t ? t + ' ' : ''; };
 
     turn = new AbortController();
+    /*
+     * 상자를 '일하는 중' 으로 바꾼다.
+     *
+     * 로컬 모델은 느리다 — 한 걸음에 수십 초가 걸린다. 그 동안 화면 아래가
+     * 텅 비어 있으면 사람은 멈춘 줄 알고 Ctrl+C 를 누른다. 다 되어 가던 일이
+     * 그렇게 날아간다. 테두리를 그대로 두고 안엣것만 바꾸는 이유다.
+     */
+    화면.일시작(session, '생각');
     try {
       for await (const ev of run(session, ctx, 보낼글, { signal: turn.signal })) {
         switch (ev.type) {
@@ -583,13 +592,16 @@ export async function chatLoop(opts = {}) {
            */
           case 'content':
             clearThinking();
-            if (!streamed) { streamed = true; 화면.붙임(`  ${답표시} `); }
+            if (!streamed) { streamed = true; 화면.일바꿈('답'); 화면.붙임(`  ${답표시} `); }
             화면.붙임(ev.text.replace(/\n/g, `\n  ${답표시} `));
             break;
 
           case 'tool_start':
             clearThinking();
             if (streamed) { say(''); streamed = false; }
+            // 문구를 지금 하는 일에 맞춘다. 아무 말이나 돌려 대면 두 번째부터
+            // 아무도 안 읽고, 그때부터는 화면이 조용한 것과 같아진다.
+            화면.일바꿈(갈래고르기(ev.name));
             say('');
             say(`  ${toolLabel(ev.name, ev.args)}`);
             break;
@@ -598,6 +610,7 @@ export async function chatLoop(opts = {}) {
           case 'tools_start':
             clearThinking();
             if (streamed) { say(''); streamed = false; }
+            화면.일바꿈(갈래고르기(ev.names?.[0]));
             say('');
             say(`  ${c.gray(`${ev.count}개를 함께 돌립니다`)} ${c.gray('·')} ${c.gray(ev.names.join(' '))}`);
             break;
@@ -648,6 +661,7 @@ export async function chatLoop(opts = {}) {
            * (Ctrl+C 로 멈출 수도 있다 — 그건 compact.js 쪽에서 받는다.)
            */
           case 'compacting':
+            화면.일바꿈('접기');
             clearThinking();
             화면.돌리기('컨텍스트가 찼습니다 — 앞선 대화를 요약해 접는 중…');
             접는중 = true;
@@ -745,6 +759,9 @@ export async function chatLoop(opts = {}) {
       오류보이기(err.message);
     }
     접기멈춤();
+    // 어떻게 끝났든 일하는 표시는 반드시 걷는다. 오류로 빠져나온 길에서
+    // 안 걷으면 돌아가는 표시가 화면에 붙박이로 남고, 시계도 계속 돈다.
+    화면.일끝();
     turn = null;
     interrupted = false;   // 중단은 '끝내기' 의사가 아니다. 종료 카운트를 되돌린다.
     flush();               // 오류로 끝났어도 여기까지는 남긴다

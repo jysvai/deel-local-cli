@@ -17,6 +17,7 @@
 //
 // 확인하는 것은 하나다 — **사람이 친 명령의 결과가 화면에 남아 있는가.**
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -139,6 +140,65 @@ async function 키눌러보기(단계들) {
   return 결과;
 }
 
+/**
+ * 진짜 한 턴을 돌린다 — 도구를 두 번 부르고 파일을 고치고 답까지.
+ *
+ * 스텁 모델을 세워 놓고, 답하기 전에 잠깐 뜸을 들이게 한다. 그래야 '일하는
+ * 중' 표시가 실제로 화면에 뜨는 구간이 생긴다 — 즉시 답하면 그 구간이 없다.
+ */
+async function 한턴돌리기() {
+  const root = mkdtempSync(join(tmpdir(), 'deel-turn-'));
+  const home = mkdtempSync(join(tmpdir(), 'deel-turn-home-'));
+  writeFileSync(join(root, '집계.py'), 'def total(xs):\n    s = 0\n    for x in xs:\n        s += x\n    return s\n', 'utf8');
+
+  let 차례 = 0;
+  const srv = createServer((req, res) => {
+    let b = '';
+    req.on('data', (chunk) => { b += chunk; });
+    req.on('end', () => setTimeout(() => {
+      const 통 = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (!req.url.startsWith('/v1/chat')) return 통({ data: [] });
+      차례 += 1;
+      if (차례 === 1) return 통({ choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: '', tool_calls: [{ id: 't1', type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: '집계.py' }) } }] } }], usage: { prompt_tokens: 100, completion_tokens: 20 } });
+      if (차례 === 2) return 통({ choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: '', tool_calls: [{ id: 't2', type: 'function', function: { name: 'Edit', arguments: JSON.stringify({ file_path: '집계.py', old_string: '    s = 0\n    for x in xs:\n        s += x\n    return s', new_string: '    return sum(xs)' }) } }] } }], usage: { prompt_tokens: 200, completion_tokens: 30 } });
+      return 통({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '합계를 sum 으로 줄였습니다.' } }], usage: { prompt_tokens: 300, completion_tokens: 40 } });
+    }, 900));
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const port = srv.address().port;
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자',
+    profiles: [{
+      id: 'stub', name: '스텁', kind: 'openai', baseUrl: `http://127.0.0.1:${port}/v1`,
+      auth: 'none', apiKey: '', model: '스텁모델', ctx: 32768, streaming: false, tools: true,
+    }],
+  }), 'utf8');
+
+  const kid = spawn(process.execPath, [
+    '--import', `file:///${앞선것.replace(/\\/g, '/')}`,
+    join(뿌리, 'bin', 'deel.js'), '--root', root, '--ctx', '32768',
+  ], { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, DEEL_HOME: home, FORCE_COLOR: '1' } });
+
+  let out = '';
+  kid.stdout.on('data', (b) => { out += b; });
+  kid.stderr.on('data', (b) => { out += b; });
+  let 끝남 = false;
+  const 닫힘 = new Promise((r) => kid.on('close', () => { 끝남 = true; r(); }));
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  await 자기(1800);
+  kid.stdin.write('집계 함수 좀 줄여줘\n');
+  await 자기(6000);
+  if (!끝남) { try { kid.stdin.write('/exit\n'); } catch {} }
+  await Promise.race([닫힘, 자기(2500)]);
+  if (!끝남) { kid.kill(); await Promise.race([닫힘, 자기(1500)]); }
+  srv.close();
+
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+  return { 날것: out, 글: out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '') };
+}
+
 trace('2-슬래시가보이는가');
 
 // ── 여기가 이 파일의 존재 이유다 ────────────────────────────────────────
@@ -226,6 +286,50 @@ trace('3-키를눌러본다');
   for (const x of r) {
     check(x.이름, x.맞나, x.맞나 ? '' : `본 것 ${JSON.stringify(x.본것)} · 바란 것 ${JSON.stringify(x.기대)}`);
   }
+}
+
+trace('3.5-일하는동안상자가살아있는가');
+
+// ── 작업 중에 화면 아래가 비면 안 된다 ──────────────────────────────────
+//
+// 이 검사가 잡으려는 것: 첫 도구 결과가 찍히는 순간 상자가 사라지고, 일이
+// 끝날 때까지 화면 아래가 텅 빈 채로 남는 것. 로컬 모델은 한 걸음에 수십
+// 초가 걸리므로 그 동안 사람은 멈춘 줄 알고 Ctrl+C 를 누른다.
+{
+  const r = await 한턴돌리기();
+
+  check('일하는 중 상자가 뜬다', /│ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /.test(r.글),
+    (r.글.match(/│ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] .*/) ?? [''])[0].slice(0, 50));
+  check('중단하는 법을 같이 알려 준다', /Ctrl\+C 중단/.test(r.글), '');
+  check('걸린 시간이 뜬다', /│ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] [^│]*\d+초/.test(r.글), '');
+
+  /*
+   * 문구가 **지금 하는 일**을 따라가는가.
+   *
+   * 아무 말이나 돌려 대면 두 번째부터 아무도 안 읽고, 그때부터는 화면이
+   * 조용한 것과 같아진다. 이 턴은 Read → Edit → 답 순서로 도니 문구도
+   * 그 순서로 바뀌어야 한다.
+   */
+  const 말들 = [...new Set([...r.글.matchAll(/│ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] ([^…│]+)…/g)].map((m) => m[1].trim()))];
+  check('생각하는 중이라고 한다', 말들.some((t) => /머리|궁리|수 읽|따져|생각/.test(t)), 말들.join(' → '));
+  check('파일을 읽을 때 읽는다고 한다', 말들.some((t) => /들여다|훑|뒤지|단서/.test(t)), 말들.join(' → '));
+  check('고칠 때 고친다고 한다', 말들.some((t) => /짜는|고쳐|손보|옮기/.test(t)), 말들.join(' → '));
+  check('답할 때 답한다고 한다', 말들.some((t) => /답 쓰|정리해서/.test(t)), 말들.join(' → '));
+  check('문구가 하나로 안 굳는다', 말들.length >= 3, 말들.join(' → '));
+
+  // 도구 결과가 찍힌 **뒤에도** 상자가 다시 서야 한다. 이게 없으면
+  // 첫 결과부터 화면 아래가 빈다 — 정확히 '밋밋해 보인다' 는 그 상태다.
+  const 결과뒤 = r.글.slice(r.글.indexOf('└ '));
+  check('도구 결과 뒤에도 상자가 다시 선다', /╭/.test(결과뒤) && /│ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(결과뒤),
+    결과뒤.split('\n').slice(1, 4).join(' / ').slice(0, 90));
+
+  // 일이 끝나면 반드시 걷어야 한다. 안 걷으면 돌아가는 표시가 붙박이로 남는다.
+  const 끝난뒤 = r.글.slice(r.글.lastIndexOf('끝냅니다'));
+  check('끝나면 돌아가는 표시가 안 남는다', !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(끝난뒤), 끝난뒤.trim().slice(0, 60));
+
+  // 승인 방식이 늘 보여야 한다. 내 파일이 물어보고 바뀌는지 아닌지다.
+  check('상태줄에 승인 방식이 사람 말로 뜬다', /⏵⏵ 자동/.test(r.글),
+    (r.글.match(/▏[^\n]*자동[^\n]*/) ?? [''])[0].slice(0, 70));
 }
 
 trace('4-줄모드와같은가');

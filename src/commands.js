@@ -199,15 +199,39 @@ export async function handle(line, session, ctx) {
       return { handled: true };
     }
 
+    /*
+     * /mode — 무엇을 물어보고 무엇을 그냥 할지.
+     *
+     * 목록을 그릴 때 **지금 것을 표시로 찍는다.** 전에는 '지금 auto' 라고 한 줄
+     * 적고 아래에 셋을 나란히 늘어놨는데, 그러면 어느 것이 켜져 있는지 두 군데를
+     * 견줘 봐야 안다. 내 파일이 물어보고 바뀌는지 아닌지는 흘깃 봐서 알아야 한다.
+     */
     case 'mode': {
+      const { 승인, 차례: 승인차례, 표시: 승인표시 } = await import('./ui/approve.js');
       if (!MODES[arg]) {
-        say(`  ${c.gray('지금')} ${c.bold(session.mode)}`);
-        for (const [k, v] of Object.entries(MODES)) say(`    ${c.cyan(pad(k, 9))} ${c.gray(v)}`);
+        rule('승인 방식 — 무엇을 물어볼까', 70);
+        for (const k of 승인차례) {
+          const 지금 = k === session.mode;
+          const m = 승인[k];
+          say(`  ${지금 ? c.hgreen('●') : c.gray('○')} ${승인표시(k)}${c.gray(pad('', Math.max(1, 14 - width(m.이름))))}`
+            + `${c.gray(pad('/mode ' + k, 15))} ${지금 ? c.white(m.한줄) : c.gray(m.한줄)}`);
+        }
+        say('');
+        say(`  ${c.gray('지금은')} ${승인표시(session.mode)} ${c.gray('입니다. 상태줄 오른쪽에도 늘 떠 있습니다.')}`);
         say('');
         return { handled: true };
       }
+      const 앞 = session.mode;
       session.mode = arg;
-      say(`  ${mark.ok} 실행 모드 ${c.bold(arg)} ${c.gray('— ' + MODES[arg])}`);
+      const m = 승인[arg];
+      say('');
+      say(`  ${mark.ok} ${승인표시(앞)} ${c.gray('→')} ${승인표시(arg)}`);
+      say(`     ${c.gray(m.한줄)}`);
+      // 안 묻는 쪽으로 옮길 때만 안전망을 짚어 준다. 반대로 갈 때는 안 짚는다 —
+      // 조심하는 쪽으로 가는 사람에게 경고를 붙일 이유가 없다.
+      if (arg === 'auto' && 앞 !== 'auto') {
+        say(`     ${c.gray('되돌리려면')} ${c.cyan('/undo')}${c.gray(', 무엇이 바뀌었는지는')} ${c.cyan('/diff')}`);
+      }
       say('');
       return { handled: true };
     }

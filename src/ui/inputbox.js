@@ -36,9 +36,12 @@
 import { c, width, cursor } from './ansi.js';
 import { statusLine, contextWarning } from './status.js';
 import { 접어쓰기 } from './wrap.js';
+import { 문구고르기, 돌림틀, 걸린시간, 느긋해질때, 문구주기 } from './working.js';
 
 const 줄끝지움 = '\x1b[K';
 const 위로 = (n) => (n > 0 ? `\x1b[${n}A` : '');
+// 돌아가는 표시를 한 칸 넘기는 주기. 사람 눈에 부드럽고, 다시 그리는 값은 싸다.
+const 돌림주기 = 90;
 
 // 상자 안쪽 왼쪽에 붙는 것: ' ' + '│' + ' ' + '❯' + ' ' → 5칸
 const 앞머리 = 5;
@@ -58,7 +61,7 @@ export const 안쪽최대 = 8;
  * @returns {{줄들: string[], 커서: {위: number, 열: number}}}
  *   커서.위 = 마지막 줄에서 몇 줄 위인가, 커서.열 = 1부터 세는 칸
  */
-export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상태 = '', 경고 = '', 곁말 = '' } = {}) {
+export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상태 = '', 경고 = '', 곁말 = '', 일감 = null } = {}) {
   const 칸 = Math.max(20, 폭);
   const 안쪽 = Math.max(4, 칸 - 앞머리 - 2);   // 오른쪽 ' │' 두 칸
   const 줄들 = [];
@@ -68,6 +71,36 @@ export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상
 
   const 가로 = '─'.repeat(칸 - 3);
   줄들.push(c.gray(` ╭${가로}╮`));
+
+  /*
+   * 일하는 중.
+   *
+   * 상자를 없애고 대신 한 줄을 흘려보내는 길도 있었다. 그런데 그러면 일할 때만
+   * 화면 아래가 텅 비어, 사람이 보기에 **프로그램이 다른 것으로 바뀐 것처럼**
+   * 보인다. 테두리를 그대로 두고 안엣것만 바꾼다 — 같은 자리에서 같은 상자가
+   * 계속 살아 있는 편이 '돌아가는 중' 이라는 신호로 훨씬 낫다.
+   */
+  if (일감) {
+    /*
+     * 여기서 쓸 수 있는 칸은 평소보다 **두 칸 넓다.**
+     *
+     * 평소에는 왼쪽에 `❯ ` 가 붙지만(앞머리 5칸) 일하는 중에는 돌아가는 표시가
+     * 본문 안에 들어가므로 그 두 칸이 본문 몫이 된다. 이걸 안 더하면 테두리가
+     * 딱 두 칸 짧아진다 — 눈으로는 거의 안 보이는데 실제 터미널에서는 줄이
+     * 어긋나 보인다.
+     */
+    const 일안쪽 = 안쪽 + 2;
+    const 왼쪽 = `${c.hcyan(일감.돌림 ?? '⠋')} ${c.white(일감.말 ?? '')}${c.gray('…')}`;
+    const 오른쪽 = c.gray(일감.곁 ?? '');
+    const 남 = 일안쪽 - width(왼쪽) - width(오른쪽);
+    // 자리가 모자라면 오른쪽(걸린 시간·중단 안내)을 버린다. 왼쪽이 본문이다.
+    const 안 = 남 >= 2 ? `${왼쪽}${' '.repeat(남)}${오른쪽}` : 왼쪽;
+    줄들.push(` ${c.gray('│')} ${안}${' '.repeat(Math.max(0, 일안쪽 - width(안)))} ${c.gray('│')}`);
+    줄들.push(c.gray(` ╰${가로}╯`));
+    if (곁말) 줄들.push(` ${c.gray(곁말)}`);
+    // 일하는 중에는 커서를 안 보여 준다 — 칠 자리가 아니다.
+    return { 줄들, 커서: { 위: (곁말 ? 1 : 0), 열: 1 } };
+  }
 
   /*
    * 긴 입력은 접는다. 자르면 사람이 친 글이 안 보이는데, 안 보이는 채로
@@ -128,6 +161,56 @@ export class InputBox {
     this.커서위 = 0;
     this.session = null;
     this.곁말 = '';
+
+    // 일하는 중 상태. null 이면 평소(입력 기다리는 중)다.
+    this.일감 = null;
+    this.박자 = null;      // 돌아가는 표시를 돌리는 시계
+    this.틱 = 0;
+  }
+
+  /**
+   * 일하기 시작. 상자 안엣것이 입력칸에서 '돌아가는 중' 으로 바뀐다.
+   *
+   * 스스로 다시 그리는 시계를 단다. 모델이 30초를 말없이 생각할 때 우리 쪽에서
+   * 아무 일도 안 일어나면 표시가 얼어붙는데, 그건 멈춘 것과 화면상 구분이 안 된다.
+   */
+  일시작(session, 갈래 = '기본') {
+    this.session = session ?? this.session;
+    this.일감 = { 갈래, 시작: Date.now(), 곁정보: '' };
+    this.틱 = 0;
+    this.일그리기();
+    if (this.박자) clearInterval(this.박자);
+    this.박자 = setInterval(() => { this.틱 += 1; this.일그리기(); }, 돌림주기);
+    // 이 시계 때문에 프로그램이 안 끝나면 안 된다. 끝맺음이 걸려 버린다.
+    if (typeof this.박자.unref === 'function') this.박자.unref();
+  }
+
+  /** 하는 일이 바뀌었다 (파일 읽기 → 코드 고치기 처럼). */
+  일바꿈(갈래, 곁정보 = null) {
+    if (!this.일감) return;
+    // 갈래가 바뀌면 문구를 그 자리에서 갈아 준다. 4초를 기다리면 이미 다음
+    // 일로 넘어가 있어서, 화면이 늘 한 걸음 늦은 말을 하게 된다.
+    if (갈래 && 갈래 !== this.일감.갈래) { this.일감.갈래 = 갈래; this.틱 = 0; }
+    if (곁정보 !== null) this.일감.곁정보 = 곁정보;
+    this.일그리기();
+  }
+
+  일끝() {
+    if (this.박자) { clearInterval(this.박자); this.박자 = null; }
+    this.일감 = null;
+    this.지우기();
+  }
+
+  일그리기() {
+    if (!this.일감) return;
+    const 지난 = Date.now() - this.일감.시작;
+    const 갈래 = 지난 >= 느긋해질때 ? '느긋' : this.일감.갈래;
+    const 회차 = Math.floor((this.틱 * 돌림주기) / 문구주기);
+    this.그리기(this.session, '', 0, {
+      돌림: 돌림틀[this.틱 % 돌림틀.length],
+      말: 문구고르기(갈래, 회차),
+      곁: [걸린시간(지난), this.일감.곁정보, 'Ctrl+C 중단'].filter(Boolean).join(' · '),
+    });
   }
 
   /** 상자를 지운다. 위쪽 대화는 안 건드린다. */
@@ -152,7 +235,7 @@ export class InputBox {
    * @param {string} 글       readline 이 들고 있는 글
    * @param {number} 커서     그 안에서의 커서 위치
    */
-  그리기(session, 글 = '', 커서자리 = null) {
+  그리기(session, 글 = '', 커서자리 = null, 일감 = null) {
     this.session = session ?? this.session;
     this.지우기();
 
@@ -163,6 +246,7 @@ export class InputBox {
       상태: this.session ? statusLine(this.session) : '',
       경고: this.session ? (contextWarning(this.session) ?? '') : '',
       곁말: this.곁말,
+      일감,
     });
 
     cursor.hide();

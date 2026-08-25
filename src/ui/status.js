@@ -6,6 +6,7 @@ import { c, gauge, width, clip, cols, mark } from './ansi.js';
 import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
+import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
 
 // 한 조각씩 따로 만든다. 좁은 화면에서는 뒤에서부터 떨군다.
 // 순서 = 중요도 순. 앞쪽이 끝까지 살아남는다.
@@ -14,7 +15,20 @@ export const SEGMENTS = {
   // 이 조각 하나가 상태줄을 통째로 넘겨 줄이 접힌다(모델 이름은 이미 자르고 있었다).
   dir: { desc: '작업 폴더', make: (s) => c.gray(clip(base(s.root), 20)) },
 
-  model: { desc: '모델 이름', make: (s) => c.hcyan(clip(s.conn.model, 24)) },
+  /*
+   * 모델 이름.
+   *
+   * 좁을 때 더 줄인다. 사내 게이트웨이 이름은 `databricks-gpt-5-6-luna` 처럼
+   * 스물세 칸을 그냥 먹는데, 자리가 없을 때 이것 하나 때문에 **셋째 덩이가
+   * 통째로 떨어져 나간다** — 승인 방식이 화면에서 사라진다는 뜻이다.
+   * 무엇으로 돌고 있는지는 이미 알고 있다. 내 파일이 안 물어보고 바뀌는지는
+   * 지금 봐야 안다. 둘 중 하나를 접어야 하면 이쪽이다.
+   */
+  model: {
+    desc: '모델 이름',
+    make: (s) => c.hcyan(clip(s.conn.model, 24)),
+    short: (s) => c.hcyan(clip(s.conn.model, 14)),
+  },
 
   ctx: {
     desc: '컨텍스트 사용량',
@@ -54,12 +68,17 @@ export const SEGMENTS = {
     short: (s) => `${c.gray('◇')} ${c.white(s.think)}`,
   },
 
+  /*
+   * 승인 방식 — 내 파일이 물어보고 바뀌는가, 안 물어보고 바뀌는가.
+   *
+   * 전에는 `auto` 라는 영문 한 낱말이었다. 옆에 `종합`·`medium·절약` 이 나란히
+   * 있으니 셋 다 그냥 '모드' 로 보였고, 그중 하나가 **묻지 않고 파일을 고친다**
+   * 는 뜻이라는 것은 화면 어디에도 없었다. 이건 꾸미기가 아니라 안전 표시다.
+   */
   mode: {
-    desc: '실행 모드',
-    make: (s) => {
-      const tone = s.mode === 'auto' ? c.hyellow : s.mode === 'strict' ? c.hgreen : c.white;
-      return tone(s.mode);
-    },
+    desc: '승인 방식',
+    make: (s) => 승인표시(s.mode),
+    short: (s) => 승인표시(s.mode, { 짧게: true }),
   },
 
   tok: {
@@ -217,6 +236,9 @@ export function headerLines(session, found) {
     `${c.gray('보냄')}    ${목적지}  ${c.gray('← 여기 말고는 어디로도 안 갑니다')}`,
     `${c.gray('연결')}    ${능력}`,
     `${c.gray('폴더')}    ${c.white(clip(session.root, 56))}`,
+    // 켤 때 한 번은 사람 말로 알려 준다. 상태줄의 `⏵⏵ 자동 승인` 이 무슨
+    // 뜻인지 여기서 한 번 읽고 나면 그 다음부터는 글자만 봐도 안다.
+    `${c.gray('승인')}    ${승인표시(session.mode)}  ${c.gray('— ' + 승인고르기(session.mode).한줄)}`,
   ];
   if (found.skills.length || found.commands.length) {
     lines.push(`${c.gray('이 PC')}   ${c.white(`스킬 ${found.skills.length}`)}${c.gray(' · ')}${c.white(`명령 ${found.commands.length}`)}${c.gray(' · ')}${c.white(`플러그인 ${found.plugins.length}`)}`);

@@ -442,6 +442,71 @@ editor is how you break IME input first.
 
 ---
 
+### The box stays while it works
+
+Local models are slow. A single step can take tens of seconds, and if the bottom of the
+screen goes blank for that long, **people assume it hung and hit Ctrl+C** — losing work that
+was nearly done. So the border stays and only the contents change.
+
+```
+  ◧ Read(집계.py)
+    └ 6 lines
+
+ ▏myproject · qwen2.5-coder:7b ▏ ▰▱▱▱▱▱▱▱▱▱ 2% ▏ ◎ 종합 · ◇ medium · ⏵⏵ 자동 ▏ ↑3.8k ↓180
+ ╭─────────────────────────────────────────────────────────────────────────────╮
+ │ ⠹ 파일 들여다보는 중…                    12초 · 생각 1,240자 · Ctrl+C 중단 │
+ ╰─────────────────────────────────────────────────────────────────────────────╯
+```
+
+The phrase tracks **what is actually happening**. This is not decoration: a message that
+cycles at random stops being read after the second time, and from then on it is worth no
+more than a blank screen. One turn reads like this:
+
+```
+머리 굴리는 중        →  파일 들여다보는 중  →  코드 짜는 중   →  답 쓰는 중
+(turning it over)       (looking at files)     (writing code)    (writing the answer)
+```
+
+| Activity | Phrases |
+|---|---|
+| Thinking | 머리 굴리는 중 · 어떻게 할지 궁리하는 중 · 수 읽는 중 · 따져 보는 중 |
+| `Read` `Grep` `Glob` | 파일 들여다보는 중 · 코드 훑는 중 · 어디 있나 뒤지는 중 · 단서 찾는 중 |
+| `Write` `Edit` `Append` | 코드 짜는 중 · 고쳐 넣는 중 · 손보는 중 · 한 줄씩 옮기는 중 |
+| `Bash` | 명령 돌리는 중 · 터미널 두드리는 중 · 결과 기다리는 중 |
+| `WebFetch` | 문서 찾아보는 중 · 읽어 오는 중 |
+| Answering | 답 쓰는 중 · 정리해서 말하는 중 |
+| **Past 45 seconds** | 아직 하는 중 · 조금만 더 · 생각보다 오래 걸리는 중 |
+
+Within a category the phrase advances every 4 seconds — text frozen for 30 seconds reads as
+hung too. On the right: **elapsed time**, and while the model is reasoning, **how many
+characters of thinking have arrived**. One number that genuinely increases is what turns
+"still alive" from a claim into a fact.
+
+### What gets asked, and what just happens
+
+Whether your files change **with or without being asked** is the one thing that has to be
+readable at a glance. It sits on the right of the status line at all times.
+
+| Indicator | Command | What it asks about |
+|---|---|---|
+| `⏵⏵ 자동 승인` (auto) | `/mode auto` | Nothing is asked. `/undo` is the safety net |
+| `⏵ 위험만 확인` (risky only) | `/mode confirm` | Only irreversible commands. Files change unasked |
+| `⏸ 모두 확인` (everything) | `/mode strict` | Every file change and every command is confirmed first |
+
+`/mode` on its own lists all three and marks the current one with ●. The startup header
+spells it out in a sentence, so the glyph is enough from then on.
+
+> It used to be the bare word `auto`. Next to `종합` and `medium·절약` it looked like just
+> another mode, and nothing on screen said that one of them meant **files change without
+> asking.**
+>
+> That also changed what gets truncated when space runs out. A corporate gateway model name
+> like `databricks-gpt-5-6-luna` eats twenty-three columns, and that alone was pushing the
+> approval indicator off the line entirely. Now **the model name shortens first** — you
+> already know what you are running; whether your files change unasked is what you need now.
+
+---
+
 ## Tools
 
 Names and arguments match Claude Code, so skills written for that convention work unchanged.
@@ -1226,7 +1291,7 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 ## Development
 
 ```bash
-npm test          Full suite (1,787 checks)
+npm test          Full suite (1,832 checks)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1280,7 +1345,7 @@ Zero dependencies rules out c8 and nyc, so this reads Node's own
 `NODE_V8_COVERAGE` instead — nothing new to get through an import review. It picks up
 child processes too, so the `cli` suite that spawns `deel` counts like everything else.
 
-Currently **92% overall** (6,911 of 7,496 lines). Three files are deliberately left short.
+Currently **92% overall** (7,056 of 7,646 lines). Three files are deliberately left short.
 
 | File | Now | Why it stops there |
 |---|---|---|
