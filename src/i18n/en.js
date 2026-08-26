@@ -192,7 +192,7 @@ export const en = {
   'lang.unknown': 'Please say ko or en.',
   'lang.progress': '{언어}: {옮김} of {전체} strings translated. The rest come through in Korean.',
   'lang.partial': 'Not everything is translated yet — untranslated lines show Korean rather than a blank.',
-  'lang.codeStays': 'The code and what deel sends the model are unchanged. Only what you see on screen switches.',
+  'lang.codeStays': 'What the model reads follows too — English costs about 1,400 fewer tokens per request. Code, tool names and argument names stay as they are.',
   'lang.envHint': 'To start in English every time, set DEEL_LANG=en',
 
 

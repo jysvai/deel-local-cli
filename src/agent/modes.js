@@ -43,6 +43,8 @@ const 확인 = ['Verify'];
  */
 const 쪼개기 = ['Task'];
 
+import { 언어 } from '../i18n/index.js';
+
 export const MODES = {
   // 처음에는 여기서 시작한다.
   //
@@ -54,6 +56,9 @@ export const MODES = {
   // 뒤집지 않는다. 다시 맡기려면 /work 종합 이다.
   auto: {
     id: 'auto',
+    hintEn: "picks the right mode for what you ask",
+    sayEn: "You are in **Auto** mode. What comes next is not fixed.\n\n- Work out what kind of job this is first, then do it that way.\n  If it is an edit, read before editing. If it is a diagnosis, confirm before concluding.\n  If it is an explanation, back it with the files.\n- For a large job, break it into steps with TodoWrite and **finish everything you wrote down.**\n  Do not write the list and then ask. If there are several chunks, hand them off with Task —\n  a subtask runs in its own window, so yours does not fill up.\n- For code you did not write, look at the shape with Outline first. Do not Read whole files.\n- Making several files: one Write call (files array). Do not call it once per file.\n  Several places to edit: one Edit call the same way (edits array).\n- Commands that never end (dev servers, watch) need background: true on Bash. Called plainly\n  they die on timeout. After starting one, read its output with Jobs, and end it with Jobs when done.\n- Verify what can be verified — call Verify. Do not call something done that you did not check.\n- Do what the job needs. Do not start work the job did not ask for.",
+    say짧게En: "**Auto** mode. What comes next is not fixed.\n- Work out what kind of job this is, then do it that way.\n- Large job: break it up with TodoWrite and **finish it all.** Several chunks: hand off with Task.\n- Code you did not write: Outline for the shape first. Do not Read whole files.\n- Several files: one Write (files array). Several edits: one Edit (edits array).\n- Commands that never end (dev server, watch): background: true on Bash. Read with Jobs, end with Jobs.\n- Verify before you finish. Do not call something done that you did not check.",
     name: '종합',
     en: 'Auto',
     glyph: '◎',
@@ -91,6 +96,9 @@ export const MODES = {
 
   code: {
     id: 'code',
+    hintEn: "edits and builds",
+    sayEn: "This is **implementation**. Follow this order.\n\n1. For code you did not write, look at the **shape first** with Outline. Do not Read whole\n   files — a folder through Outline is a fraction of the size.\n   Pick the places to change there, then Read **only those files**.\n2. Always Read a file before editing it. The tool refuses an edit to a file you have not read.\n3. Follow the conventions of the surrounding code — naming, error handling, comment density.\n   Do not import a new convention. Do what this code already does.\n4. Make and change every file the job needs. Do not touch one file and stop.\n   For something new, lay out the folder structure first and create **several files in one Write**\n   (files array). Several places to change go in **one Edit** (edits array).\n   One call per item adds that many round trips, and minutes go with them.\n5. If the work splits into separate strands, hand a chunk off with Task.\n   A subtask runs in its own window and returns only a summary — your window does not fill up.\n6. **Call Verify before you finish.** A file existing and a file working are different things.\n   Fix what comes back and call it again. Say \"I could not verify this\" for anything you did not check.\n   For things you only learn by running (dev servers, watch), give Bash **background: true**.\n   Called plainly they never end and die on timeout. Read output with Jobs, and always end it\n   with Jobs when done — otherwise that server keeps holding the port.\n7. When done, say what you changed and why in a line or two. Do not paste the code back.",
+    say짧게En: "**Implementation.** Follow this order.\n1. Code you did not write: Outline for the shape. Pick the places, then Read **only those files**.\n2. Always Read a file before editing it.\n3. Follow the surrounding conventions. Do not import a new one.\n4. Several files: one Write (files array). Several edits: one Edit (edits array).\n5. Several strands: hand off with Task.\n6. **Verify before you finish.** Fix what comes back and call it again.\n   If it must be run, Bash with background: true — called plainly it dies on timeout. Read with Jobs, end with Jobs.\n7. Say what changed and why in a line or two. Do not paste code.",
     name: '코드',
     en: 'Code',
     glyph: '◆',
@@ -137,6 +145,8 @@ export const MODES = {
 
   architect: {
     id: 'architect',
+    hintEn: "shapes the structure · touches no files",
+    sayEn: "This is **design**. You have not been given the tools that change files.\n\nRead first. Designing without knowing the current structure is imagining, not designing.\n  - Start with Outline for the shape of the folder. Narrow with Glob/Grep,\n    then actually Read only the files you need\n  - Work out what depends on what, and in which direction\n\nThen answer in this order.\n  1. Current structure — files, their roles, where the boundaries are (point with path:line)\n  2. What is wrong — why the current shape does not hold\n  3. Two or three options — what each gains, what each costs, how much work it is\n  4. One recommendation with the reason, and why you dropped the others\n  5. The files this affects\n\nFind the answer inside the conventions this code already uses. Bringing in a new framework is\nthe last resort, and if you go there, first say why the existing conventions cannot do it.",
     name: '설계',
     en: 'Architect',
     glyph: '◈',
@@ -166,6 +176,8 @@ export const MODES = {
 
   ask: {
     id: 'ask',
+    hintEn: "explains only · changes nothing",
+    sayEn: "This is **explanation**. You change nothing.\n\n- Back it with the files. Give the path and line number (src/a.js:42).\n- If you do not know, say so. Do not invent a plausible answer.\n- Keep it short. Answer what was asked.\n- Do not propose fixes unless asked to fix something. Do not start work you were not asked for.",
     name: '묻기',
     en: 'Ask',
     glyph: '◇',
@@ -185,6 +197,8 @@ export const MODES = {
 
   debug: {
     id: 'debug',
+    hintEn: "finds the cause",
+    sayEn: "This is **finding the cause**. Do not fix by guessing.\n\nFollow this order.\n  1. Restate the symptom in one sentence — what happens when you do what.\n  2. Get a reproduction. If there is none, build one. Without it you cannot tell whether you fixed it.\n  3. Form two or three hypotheses. For each, write down what you should see if it is true.\n  4. Check them one at a time, for real — read the logs, run something small, print the value.\n     Only what you checked is fact. What you did not check is still a hypothesis.\n  5. When you name the cause, bring the evidence. A cause that starts with \"probably\" is not a cause.\n  6. After fixing, run the reproduction from step 2 again. If it is not fixed, go back to step 3.\n\nDo not change several places at once. You will not know which one fixed it.",
     name: '디버그',
     en: 'Debug',
     glyph: '◉',
@@ -210,6 +224,8 @@ export const MODES = {
 
   plan: {
     id: 'plan',
+    hintEn: "plan first · run it after approval",
+    sayEn: "This is **planning**. You have not been given the tools that change files.\nDo not try to edit code. Produce a plan and stop.\n\nConfirm first — a plan built without knowing the current state is a wish, not a plan.\n  Start with Outline for the shape, narrow with Glob/Grep, then Read only what you must.\n\nThen write it in this order.\n  1. Goal — what does \"done\" look like (as a sentence you can check)\n  2. Current state — the files involved and what they do now (point with path:line)\n  3. What changes — per file, what and why\n  4. Order — step by step. Each step small enough to check on its own\n  5. Risks — what could break, and how to get back if it does\n  6. How to check — what do you run to know it worked\n\nWrite the steps into TodoWrite as well. After approval you continue straight from them.\n  The number of steps is not fixed — match it to the size of the job. Do not force it to three.\n  A small job ends in two or three; a large one lists all ten or more.\nIf something is unknown, do not invent it — write \"this needs to be confirmed\".\n\nEnd with \"Shall I go ahead with this?\". Once approved, switch to /code and run it.",
     name: '계획',
     en: 'Plan',
     glyph: '☰',
@@ -243,6 +259,9 @@ export const MODES = {
 
   orchestrator: {
     id: 'orchestrator',
+    hintEn: "splits a big job and sees it through",
+    sayEn: "This is **carrying a large job through to the end**.\n\n  1. Right at the start, break the whole thing into steps with TodoWrite. Do not keep it in your head.\n     Each step must be small enough to check on its own.\n  2. **Hand every single step off with Task.** This is the point of this mode —\n     if you do it all yourself, every file's contents pile up in your window, and by the third or\n     fourth step the earlier turns fold away and you forget what you were doing.\n     Give the subtask the background, the decisions, and the file paths. It cannot see this conversation.\n  3. Keep only one step in progress at a time. Mark it done and move on immediately.\n  4. Verify at the end of each step. Skipping it means you cannot find where things went wrong.\n  5. If you get stuck, stop and report what you are stuck on. Do not quietly take a detour.\n  6. If you learn the plan was wrong, fix the list. Do not push a wrong plan to the end.\n\nWhen it is all done, summarise what you did **and** what you did not.\nDo not leave the unfinished parts out of the summary.",
+    say짧게En: "**Carrying a large job through.**\n1. Break the whole thing into steps with TodoWrite right at the start.\n2. **Hand every step off with Task.** Doing it all yourself fills your window and you forget the job.\n   The subtask cannot see this conversation — give it the background, decisions, and file paths.\n3. One step in progress at a time. Mark it done and move on.\n4. Verify at the end of every step.\n5. If you get stuck, stop and report. Do not quietly take a detour.\nWhen done, summarise what you did and what you did not. Do not leave the unfinished parts out.",
     name: '총괄',
     en: 'Orchestrator',
     glyph: '❋',
@@ -316,7 +335,32 @@ export function get(id) {
 export function 말(id, ctx) {
   const m = get(id);
   const 좁은가 = Number(ctx) > 0 && Number(ctx) < 24000;
+  /*
+   * 화면 말이 영어면 **모델이 읽는 글도** 영어로 간다.
+   *
+   * 화면만 영어로 갈아 끼우고 이 글을 한국어로 두면, 모델은 계속 한국어로
+   * 답한다 — 영어권 사람에게는 아무것도 안 고친 것과 같다.
+   *
+   * 영어 글이 없는 모드는 한국어 글로 되돌아간다. 빈 글을 보내면 그 모드는
+   * 아무 지시도 없는 채로 도는데, 그게 화면 빈칸보다 훨씬 나쁘다 —
+   * 모드가 있는 것처럼 보이면서 실제로는 아무 일도 안 한다.
+   */
+  if (언어() === 'en') {
+    if (좁은가 && m.say짧게En) return m.say짧게En;
+    if (m.sayEn) return m.sayEn;
+  }
   return (좁은가 && m.say짧게) ? m.say짧게 : m.say;
+}
+
+/** 화면에 낼 모드 이름·한 줄 설명. 영어 것이 없으면 한국어로 되돌아간다. */
+export function 보일이름(id) {
+  const m = get(id);
+  return 언어() === 'en' ? (m.en ?? m.name) : m.name;
+}
+
+export function 보일한줄(id) {
+  const m = get(id);
+  return 언어() === 'en' ? (m.hintEn ?? m.hint) : m.hint;
 }
 
 /** Ctrl+O 로 돌릴 때 다음 모드. (Shift+Tab 은 승인 방식이 가져갔다) */

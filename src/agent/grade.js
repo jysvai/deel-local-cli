@@ -1,3 +1,4 @@
+import { 언어 } from '../i18n/index.js';
 /**
  * 모델 급 — 지금 붙어 있는 모델이 얼마나 하는가.
  *
@@ -194,7 +195,26 @@ export function 값(급) {
 export function 급말(급) {
   const v = 값(급);
   if (급 === '큼') return '';
+  /*
+   * 이 글도 모델이 읽는 것이라 화면 말을 따라간다.
+   *
+   * 안 따라가면 영어로 켠 사람의 작은 모델만 한국어 지시를 받는데, 하필
+   * 그 조합이 제일 흔들리기 쉽다 — 작은 모델은 못 읽는 말이 섞이면 그 줄을
+   * 통째로 흘린다. 지시가 있는 척하면서 실제로는 없는 상태가 된다.
+   */
+  const 영 = 언어() === 'en';
   const 줄 = [];
+  if (영) {
+    줄.push('Sized to this model:');
+    줄.push(`- Create at most ${v.한번에쓸파일} files in one Write call. More than that, split it across calls.`);
+    줄.push(`- For a file over ${v.나눠쓰기줄} lines, Write the first part and Append the rest.`);
+    if (급 === '작음') {
+      줄.push('- One thing per step. Do not call several tools at once.');
+      줄.push('- Edit a file on the **very next step** after you Read it. Do not put anything in between.');
+    }
+    줄.push('- Call Verify before you finish. Fix what comes back and call it again.');
+    return 줄.join('\n');
+  }
   줄.push('이 모델에 맞춘 것:');
   줄.push(`- 파일을 한 번에 만들 때는 ${v.한번에쓸파일}개까지만. 더 있으면 나눠서 여러 번 불러라.`);
   줄.push(`- ${v.나눠쓰기줄}줄이 넘는 파일은 Write 로 앞부분만 만들고 Append 로 이어 붙여라.`);

@@ -19,7 +19,7 @@ import { spin } from './ui/spinner.js';
 import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable } from './agent/effort.js';
 import { scanLocal, toProfiles } from './backend/scan.js';
 import { list as listSessions } from './agent/store.js';
-import { MODES as WORK_MODES, ORDER as WORK_ORDER, DEFAULT as WORK_DEFAULT, normalize as normWork, get as getWork, canWrite } from './agent/modes.js';
+import { MODES as WORK_MODES, ORDER as WORK_ORDER, DEFAULT as WORK_DEFAULT, normalize as normWork, get as getWork, canWrite, 보일이름, 보일한줄 } from './agent/modes.js';
 import { LEVELS, ORDER as LEVEL_ORDER, DEFAULT as LEVEL_DEFAULT, normalize as normLevel, shows as levelShows } from './ui/level.js';
 import { diffLines, renderDiff, shortStat } from './ui/diff.js';
 import { readTextFull } from './tools/fsutil.js';
@@ -622,7 +622,7 @@ export async function handle(line, session, ctx) {
       session.routed = null;
       const w = getWork(골라진);
       say('');
-      say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}  ${c.gray(w.hint)}`);
+      say(`  ${c.hcyan(w.glyph)} ${c.bold(보일이름(w.id))} ${c.gray('(' + w.en + ')')}  ${c.gray(보일한줄(w.id))}`);
       say(`  ${c.gray('도구')}    ${canWrite(골라진) ? c.yellow('읽기 + 파일 바꾸기') : c.green('읽기만 — 파일을 못 바꿉니다')}`);
       say(`  ${c.gray('생각')}    ${c.white(w.think ?? session.think)}${c.gray('·')}${c.magenta(w.effort)}   ${c.gray('최대 ' + w.steps + '걸음')}`);
       if (골라진 === 'auto') {
@@ -2215,8 +2215,9 @@ function showWork(session) {
     const w = WORK_MODES[k];
     const 지금 = k === (normWork(session.work) ?? WORK_DEFAULT);
     const 표 = 지금 ? c.hgreen('●') : c.gray('·');
-    const 이름 = 지금 ? c.bold(c.white(pad(w.name, 8))) : c.gray(pad(w.name, 8));
-    say(`  ${표} ${c.hcyan(w.glyph)} ${이름}${c.gray(pad(w.en, 14))}${c.gray(w.hint)}`);
+    const 보임 = 보일이름(w.id);
+    const 이름 = 지금 ? c.bold(c.white(pad(보임, 8))) : c.gray(pad(보임, 8));
+    say(`  ${표} ${c.hcyan(w.glyph)} ${이름}${c.gray(pad(w.en, 14))}${c.gray(보일한줄(w.id))}`);
     say(`        ${canWrite(k) ? c.gray('파일 바꿈') : c.green('읽기만')}${c.gray('  ·  생각 ' + (w.think ?? '그대로') + '·' + w.effort + '  ·  최대 ' + w.steps + '걸음')}`);
   }
   say('');

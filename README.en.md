@@ -111,7 +111,16 @@ DEEL_LANG=en deel        # this run only
 ```
 
 Untranslated lines come through in Korean rather than as blanks, and `/lang` tells you exactly
-how many are left. What deel sends the model never changes — only the screen.
+how many are left.
+
+What the model reads follows the same switch. Set it to English and the rules, the mode
+instructions, and the tool descriptions all go out in English — so the model answers you in
+English instead of Korean. That side is cheaper, too: the part of the window that ships on every
+single request drops from about 4,900 tokens to about 3,450 — on a 32k model, from 15% of the
+window to 10.5%.
+
+Tool names and argument names stay Korean (`목적`, `할일`, `번호`). Those are identifiers, not
+prose — rename them and the tool stops being called at all.
 
 ### Install
 

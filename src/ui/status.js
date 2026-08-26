@@ -4,7 +4,7 @@
 // 화면 그리기는 ansi.js 만 쓴다. 반입 심사에 새로 설명할 것이 늘지 않게 하려는 뜻이다.
 import { c, gauge, 눈금게이지, width, clip, cols, mark } from './ansi.js';
 import { PROFILES } from '../agent/effort.js';
-import { get as workMode, canWrite } from '../agent/modes.js';
+import { get as workMode, canWrite, 보일이름 } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
 import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
 import { 말, 언어 } from '../i18n/index.js';
@@ -133,7 +133,7 @@ export const SEGMENTS = {
       const 저절로 = s.routed ? c.gray('~') : '';
       // 모드 이름은 표에 영어가 이미 있다(modes.js 의 en). 화면 말이 영어면 그걸 쓴다 —
       // 굳이 i18n 에 같은 말을 또 적어 두면 언젠가 둘이 갈라진다.
-      const 이름 = 언어() === 'en' ? (w.en ?? w.name) : w.name;
+      const 이름 = 보일이름(지금);
       const 잠김말 = 언어() === 'en' ? ' read-only' : ' 읽기만';
       return `${c.hcyan(w.glyph)} ${저절로}${잠김 ? c.green(이름) : c.white(이름)}${잠김 ? c.green(잠김말) : ''}`;
     },

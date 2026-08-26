@@ -10,7 +10,7 @@ import { 언어잡기 } from './i18n/index.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
 import { handle, COMMANDS, 미리보기끄기 } from './commands.js';
-import { next as nextWork, get as getWork, canWrite } from './agent/modes.js';
+import { next as nextWork, get as getWork, canWrite, 보일이름, 보일한줄 } from './agent/modes.js';
 import { route } from './agent/route.js';
 import { run } from './agent/loop.js';
 import { Session, repairToolPairs } from './agent/session.js';
@@ -394,7 +394,7 @@ export async function chatLoop(opts = {}) {
         session.work = nextWork(session.work);
         const w = getWork(session.work);
         화면.입력지움();
-        say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}  ${c.gray(w.hint)}`
+        say(`  ${c.hcyan(w.glyph)} ${c.bold(보일이름(w.id))} ${c.gray('(' + w.en + ')')}  ${c.gray(보일한줄(w.id))}`
           + (canWrite(session.work) ? '' : `  ${c.green('· 파일을 못 바꿉니다')}`));
         prompt();
         return;
@@ -841,7 +841,7 @@ export async function chatLoop(opts = {}) {
         계획승인받나 = 골라진.겹침 === true;
         const w = getWork(골라진.mode);
         say('');
-        say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}`
+        say(`  ${c.hcyan(w.glyph)} ${c.bold(보일이름(w.id))} ${c.gray('(' + w.en + ')')}`
           + `  ${c.gray('말 속에 ' + 골라진.why + ' 가 있어서')}`
           + (canWrite(골라진.mode) ? '' : `  ${c.green('· 파일은 안 바꿉니다')}`));
         // 겹친 요청은 '파일을 안 바꾼다' 로 끝나면 안 된다. 시킨 일의 절반만 한 것이다.
@@ -1119,7 +1119,7 @@ export async function chatLoop(opts = {}) {
             화면.일바꿈('하위', clip(ev.목적, 24));
             say('');
             say(`  ${c.hmagenta('⌥')} ${c.bold('하위 작업')} ${c.white(clip(ev.목적, 60))}`
-              + ` ${c.gray(`· ${getWork(ev.모드).name} · 최대 ${ev.steps}걸음`)}`);
+              + ` ${c.gray(`· ${보일이름(ev.모드)} · 최대 ${ev.steps}걸음`)}`);
             say(`  ${c.gray('여기서부터는 따로 떨어진 대화입니다 — 결과 요약만 위로 올라옵니다.')}`);
             /*
              * 다른 모델에게 떼어 줬으면 여기서 말한다.

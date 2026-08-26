@@ -8,6 +8,7 @@ import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
 import { 지문 } from './project.js';
 import { 프롬프트토막 as 기억토막 } from './memory.js';
 import { 못박기 } from './pins.js';
+import { 언어 } from '../i18n/index.js';
 
 // 토큰 추정 — 정확한 토크나이저 없이 대략만 센다.
 // 한글은 글자당 약 1토큰, 영문·코드는 약 4글자당 1토큰으로 본다.
@@ -75,6 +76,71 @@ const BASE_RULES_짧게 = `너는 deel 다. 사용자의 작업 폴더에서 코
 - 답은 한국어로 짧게. 코드를 통째로 붙여넣지 마라.
 - 사용자가 정한 규칙은 Remember 로 한 줄 남긴다. "저번에" 라고 하면 Recall 로 찾는다.`;
 
+/*
+ * ── 영어판 ──────────────────────────────────────────────────────────────
+ *
+ * /lang en 일 때 **모델이 읽는 글도** 영어로 간다. 화면 말만 바꾸는 1단계와
+ * 여기가 다른 점이고, 다르게 한 데는 두 가지 이유가 있다.
+ *
+ * 1) 안 바꾸면 답이 한국어로 온다. 위 규칙에 "사용자에게 답할 때는 한국어로"
+ *    가 박혀 있어서다. 화면 글자만 영어로 갈아 끼워 놓고 모델은 계속 한국어로
+ *    답하면, 영어권 사람에게는 아무것도 안 고친 것과 같다.
+ *
+ * 2) 토큰이 눈에 띄게 싸다. 한글은 글자당 약 1토큰이고 영문·코드는 약 3.6자당
+ *    1토큰이다(estimateTokens 를 볼 것). 32k 창에서 고정 몫이 15% 를 먹고
+ *    있었는데, 그 몫이 줄면 그만큼 대화가 쓸 자리가 는다. 작은 창에서는
+ *    이게 '파일 한 개를 더 읽을 수 있나' 를 가르는 크기다.
+ *
+ * 규칙 자체는 한 줄도 안 뺐다. 옮기면서 규칙이 느슨해지면 영어로 켠 사람만
+ * 다른 프로그램을 쓰는 셈이 된다 — 특히 "확인 못 했으면 확인 못 했다고 말해라"
+ * 같은 줄은 이 프로그램이 거짓말을 안 하게 하는 자리라 글자 그대로 옮겼다.
+ */
+const BASE_RULES_EN = `You are deel, a tool that reads and edits code inside the user's working folder.
+
+**Finish the job.** Do not stop at a plan.
+
+- Start now. Create missing files and folders — that is part of the job.
+- Ask back **only when no tool can tell you**. If you can decide, decide, and say what you decided it from.
+- If the job needs several files, make them all. Do not touch one and stop.
+- When you are done, check. Run it, and fix it if it fails. If you could not check, say "I could not verify this."
+
+Rules:
+- Do not guess — confirm with a tool. Always Read an existing file before editing it.
+- Edit's old_string must match the file exactly, whitespace and indentation included. Do not trim it short; include plenty of surrounding context.
+- Do not put a large file in one call. Write the first ~300 lines, then call Append repeatedly until the rest is in place.
+  Append needs no Read first. Do not resend the earlier part when appending — it will just get cut at the same place again.
+- Do not call the same tool with the same arguments twice. The result will be the same. Remember what you saw and move on.
+- If the user names the scope to look at, stay inside it. Otherwise look as far as you need.
+- Use Bash when you need to run a command. Commands that cannot be undone are blocked, so find another way.
+- Answer the user in English, briefly. Do not paste whole files back — say what changed.
+
+Keep what will be needed again:
+- When the user sets a rule or tells you not to do something, leave one line with Remember. That line rides on every
+  later request, so keep it to one sentence. Do not record anything that only applies to this one job.
+- When the user points back ("last time", "as we decided"), search with Recall before asking again.
+- When you finish a procedure you will do again, write it to .deel/skills/<name>/SKILL.md.
+  Put name and description in the front matter (fenced with ---) and the steps below. If you find a mistake in a
+  skill you used, fix that file.`;
+
+/*
+ * 작은 창을 위한 짧은 영어판. 위 짧은 판과 같은 생각이다 —
+ * 빠진 규칙은 없고 설득하는 문장만 없다.
+ */
+const BASE_RULES_짧게_EN = `You are deel. You read and edit code in the user's working folder.
+
+Finish the job. Do not stop at a plan.
+- Start now. Create missing files and folders.
+- If a tool can tell you, decide instead of asking. Say what you decided it from.
+- If there are several files, make them all. Do not do one and stop.
+- Verify before you finish. If you could not verify, say so.
+
+- Read a file before you edit it.
+- Edit's old_string must match the file exactly, whitespace included. Include plenty of context.
+- For a long file, Write the first part and Append the rest. Do not resend the earlier part.
+- Do not call the same tool with the same arguments twice. The result will be the same.
+- Answer in English, briefly. Do not paste whole files.
+- Record rules the user sets with Remember. When they say "last time", search with Recall.`;
+
 /**
  * 이 창 크기에 맞는 기본 규칙.
  *
@@ -83,7 +149,9 @@ const BASE_RULES_짧게 = `너는 deel 다. 사용자의 작업 폴더에서 코
  * 같이 움직여야 '작은 창에서는 고정 몫을 줄인다' 가 한 가지 결정이 된다.
  */
 function 기본규칙(ctx) {
-  return Number(ctx) > 0 && Number(ctx) < 24000 ? BASE_RULES_짧게 : BASE_RULES;
+  const 짧게 = Number(ctx) > 0 && Number(ctx) < 24000;
+  if (언어() === 'en') return 짧게 ? BASE_RULES_짧게_EN : BASE_RULES_EN;
+  return 짧게 ? BASE_RULES_짧게 : BASE_RULES;
 }
 
 export class Session {
@@ -204,13 +272,19 @@ export class Session {
   급값() { return 급값(this.급().급); }
 
   systemPrompt() {
+    const 영 = 언어() === 'en';
     const parts = [기본규칙(this.conn?.ctx)];
-    parts.push(`\n작업 폴더: ${this.root}\n이 폴더 밖의 파일은 읽지도 쓰지도 못한다.`);
+    // 범위를 못 박는 줄. 이건 모델이 읽는 글이라 화면 말을 따라간다.
+    parts.push(영
+      ? `\nWorking folder: ${this.root}\nYou can neither read nor write files outside this folder.`
+      : `\n작업 폴더: ${this.root}\n이 폴더 밖의 파일은 읽지도 쓰지도 못한다.`);
 
     // 지금 무슨 일을 하는 중인지. 도구 목록도 이 모드에 맞춰 이미 걸러져 있다.
     const w = workMode(this.effectiveWork());
     // 창이 좁으면 짧은 판을 쓴다 (modes.js 의 말()). 규칙은 같고 설득하는 문장만 빠진다.
-    parts.push(`\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`);
+    parts.push(영
+      ? `\n--- current mode: ${w.en} ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`
+      : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`);
     /*
      * 모델 급에 맞춘 한 문단 (grade.js).
      *
@@ -229,7 +303,13 @@ export class Session {
      */
     if (this.프로젝트) parts.push(this.프로젝트);
 
-    if (this.rules) parts.push(`\n--- ${this.rules.name} (사용자 규칙, 위 원칙보다 우선) ---\n${this.rules.text}`);
+    if (this.rules) {
+      // 사용자 규칙 파일의 **내용은 안 건드린다.** 사람이 쓴 글이고, 그 사람의
+      // 말로 모델에게 가야 한다. 여기서 바뀌는 것은 그것을 소개하는 머리말뿐이다.
+      parts.push(영
+        ? `\n--- ${this.rules.name} (user rules — these win over the principles above) ---\n${this.rules.text}`
+        : `\n--- ${this.rules.name} (사용자 규칙, 위 원칙보다 우선) ---\n${this.rules.text}`);
+    }
 
     /*
      * 지난 대화에서 정한 것.
@@ -255,15 +335,20 @@ export class Session {
     const listed = this.listedSkills();
     if (listed.length) {
       parts.push(
-        '\n--- 쓸 수 있는 스킬 ---\n' +
-        '필요한 것이 있으면 Skill 도구로 이름을 불러 본문을 받아라. 없으면 그냥 진행해라.\n' +
+        (영
+          ? '\n--- skills available ---\nCall the Skill tool with a name to get its body. If none fits, just carry on.\n'
+          : '\n--- 쓸 수 있는 스킬 ---\n필요한 것이 있으면 Skill 도구로 이름을 불러 본문을 받아라. 없으면 그냥 진행해라.\n') +
         // 설명이 없는 스킬이 섞일 수 있다 — 남의 폴더에서 오는 파일이라
         // 앞머리(frontmatter)가 빠지곤 한다. 여기서 터지면 시스템 프롬프트를
         // 못 만들어 **매 턴** 죽는다. 목록 명령 하나가 아니라 대화 전체가 막힌다.
         listed.map((s) => `- ${s.name}: ${String(s.description ?? '').slice(0, this.maxSkillDesc)}`).join('\n')
       );
       const rest = this.skills.filter((s) => s.enabled).length - listed.length;
-      if (rest > 0) parts.push(`(그 밖에 ${rest}개가 더 있으나 자리가 모자라 안 실었다.)`);
+      if (rest > 0) {
+        parts.push(영
+          ? `(${rest} more exist but did not fit.)`
+          : `(그 밖에 ${rest}개가 더 있으나 자리가 모자라 안 실었다.)`);
+      }
     }
     /*
      * 못 박은 것은 **맨 끝**에 붙인다 (agent/pins.js).

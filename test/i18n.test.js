@@ -224,22 +224,34 @@ trace('7-얼마나옮겼나');
 
 trace('8-코드는안바뀐다');
 
-// ── 코드와 모델에게 가는 말은 안 바뀐다 ─────────────────────────────────
+// ── 코드는 안 바뀐다 ────────────────────────────────────────────────────
 //
-// 이건 화면 말만 바꾸는 기능이다. 모델에게 가는 프롬프트까지 영어로 바뀌면
-// 같은 요청에 다른 답이 나오게 되고, 그건 화면 설정이 할 일이 아니다.
+// 이 단계에서 바뀌는 것은 **글**뿐이다. 어느 도구를 주는지, 어느 모드가
+// 파일을 바꿀 수 있는지 같은 판단은 말과 무관해야 한다. 여기가 흔들리면
+// 영어로 켠 사람만 다른 프로그램을 쓰는 셈이 된다.
+//
+// (모델이 읽는 글 자체는 일부러 바뀐다 — prompt.test.js 가 그쪽을 잰다.)
 {
-  const 방 = mkdtempSync(join(tmpdir(), 'deel-i18n-'));
-  const { Session } = await import('../src/agent/session.js');
-  const conn = { kind: 'openai', base: 'http://127.0.0.1:1/v1', model: '검사용', ctx: 32768 };
+  const { MODES, canWrite, allow } = await import('../src/agent/modes.js');
+  const { toolSchemas } = await import('../src/tools/index.js');
 
-  언어정하기('ko');
-  const 한프롬 = new Session(conn, { root: 방 }).systemPrompt();
+  const 이름들 = (l) => {
+    언어정하기(l);
+    return toolSchemas(null, { work: 'code', ctx: 32768 }).map((t) => t.function.name).join(',');
+  };
+  check('주는 도구가 같다', 이름들('ko') === 이름들('en'), 이름들('en'));
+
+  const 쓸수있나표 = (l) => {
+    언어정하기(l);
+    return Object.keys(MODES).map((k) => `${k}:${canWrite(k)}`).join(',');
+  };
+  check('파일을 바꿀 수 있는 모드가 같다', 쓸수있나표('ko') === 쓸수있나표('en'), 쓸수있나표('en'));
+
+  const 허용 = (l) => { 언어정하기(l); return allow('plan', Object.keys(MODES)).join(','); };
+  check('모드별 허용 목록이 같다', 허용('ko') === 허용('en'));
+
   언어정하기('en');
-  const 영프롬 = new Session(conn, { root: 방 }).systemPrompt();
-  check('모델에게 가는 말은 그대로', 한프롬 === 영프롬,
-    한프롬 === 영프롬 ? '' : '프롬프트가 언어에 따라 달라졌습니다');
-  rmSync(방, { recursive: true, force: true });
+  check('모드 id 는 그대로 — 설정에 남는 값이다', MODES.code.id === 'code');
 }
 
 언어정하기(원래언어);

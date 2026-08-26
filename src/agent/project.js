@@ -31,6 +31,7 @@
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { 언어 } from '../i18n/index.js';
 
 // 위쪽에 있어도 사람에게 아무 말도 안 해 주는 것들. 적어 봐야 자리만 먹는다.
 const 안적을것 = new Set([
@@ -150,11 +151,14 @@ export function 지문(root, 창 = null) {
   const 명 = 명령들(root, 갈래, 명령상한);
   // 명령은 제일 값이 크다. 좁은 창에서 무엇 하나를 남긴다면 이것이다 —
   // '이 프로젝트에서 검사를 어떻게 돌리나' 가 여기 다 들어 있다.
-  if (명.length) 줄들.push(`돌릴 수 있는 것: ${명.join(' · ')}`);
+  // 이 토막도 모델이 읽는 글이라 화면 말을 따라간다. 값(명령 이름·파일 이름)은
+  // 그대로 둔다 — 그건 이 폴더에 실제로 있는 것이라 옮길 것이 아니다.
+  const 영 = 언어() === 'en';
+  if (명.length) 줄들.push(`${영 ? 'Runnable here' : '돌릴 수 있는 것'}: ${명.join(' · ')}`);
 
   const w = 위쪽(root, 위쪽상한);
   if (w.목록.length) {
-    줄들.push(`위쪽: ${w.목록.join(' ')}${w.더 ? ` (그 밖에 ${w.더}개)` : ''}`);
+    줄들.push(`${영 ? 'Top level' : '위쪽'}: ${w.목록.join(' ')}${w.더 ? ` (${영 ? `${w.더} more` : `그 밖에 ${w.더}개`})` : ''}`);
   }
 
   if (!줄들.length) return null;
@@ -166,6 +170,8 @@ export function 지문(root, 창 = null) {
    * 모델은 이걸 프로젝트 전체 지도로 여기고 Outline 을 안 부른다 —
    * 그러면 이 토막이 오히려 손해가 된다.
    */
-  줄들.push('위쪽 한 겹만 본 것이다. 안을 알아야 하면 Outline 을 불러라.');
-  return `\n--- 이 폴더 ---\n${줄들.join('\n')}`;
+  줄들.push(영
+    ? 'This is the top level only. Call Outline when you need to know what is inside.'
+    : '위쪽 한 겹만 본 것이다. 안을 알아야 하면 Outline 을 불러라.');
+  return `\n--- ${영 ? 'this folder' : '이 폴더'} ---\n${줄들.join('\n')}`;
 }

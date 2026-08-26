@@ -19,6 +19,8 @@ import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
+import { 도구설명EN } from './desc.en.js';
+import { 언어 } from '../i18n/index.js';
 
 /*
  * 한 번에 돌려줄 양은 **모델에 맞춰** 정한다 (agent/budget.js).
@@ -1209,6 +1211,31 @@ export function 설명줄이기(schema, 한도) {
   };
 }
 
+/**
+ * 도구 설명을 지금 화면 말에 맞춘다.
+ *
+ * 표에 없는 도구·인자는 한글 설명이 그대로 나간다 — 화면 말과 같은 규칙이다.
+ * 빈 설명을 내보내지 않는다. 설명 없는 도구는 모델이 언제 쓰는지 모른 채로
+ * 목록에만 서 있게 되는데, 그건 없는 것보다 나쁘다.
+ */
+function 영어설명(schema, 이름) {
+  if (언어() !== 'en') return schema;
+  const 것 = 도구설명EN[이름];
+  if (!것) return schema;
+
+  const p = schema.parameters ?? {};
+  const 새속성 = {};
+  for (const [인자, 값] of Object.entries(p.properties ?? {})) {
+    const 글 = 것.params?.[인자];
+    새속성[인자] = 글 ? { ...값, description: 글 } : 값;
+  }
+  return {
+    ...schema,
+    description: 것.desc ?? schema.description,
+    parameters: { ...p, properties: 새속성 },
+  };
+}
+
 // 모델에게 넘길 도구 정의 목록.
 // 스킬이 없으면 Skill 도구는 빼서 자리를 아낀다.
 export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null } = {}) {
@@ -1230,7 +1257,20 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
    * 이름과 인자는 그대로 남으므로 할 수 있는 일은 똑같다.
    */
   const 한도 = 설명길이(ctx);
-  const 우리것 = list.map((n) => ({ type: 'function', function: 설명줄이기(TOOLS[n].schema, 한도) }));
+  /*
+   * 화면 말이 영어면 도구 설명도 영어로 갈아 끼운다 (tools/desc.en.js).
+   *
+   * 줄이기 **전에** 갈아 끼운다. 순서가 반대면 한글 설명을 한도에 맞춰 자른
+   * 다음 영어로 통째로 바꾸는 셈이라, 자른 것이 아무 뜻이 없어지고 영어 글은
+   * 한도를 넘긴 채로 실린다.
+   *
+   * 이름과 인자 이름은 안 건드린다 — 그건 식별자다. Task 의 목적·할일처럼
+   * 한글로 된 인자 이름을 바꾸면 그 도구가 아예 안 불린다.
+   */
+  const 우리것 = list.map((n) => ({
+    type: 'function',
+    function: 설명줄이기(영어설명(TOOLS[n].schema, n), 한도),
+  }));
 
   /*
    * 밖에서 붙인 도구(MCP)를 뒤에 붙인다.
