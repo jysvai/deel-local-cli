@@ -2277,6 +2277,68 @@ test/                    tests (excluded from the published package)
 ## Release notes
 
 <details>
+<summary><b>▸ 1.4.0 — deel gets a face, speaks English, and sees meaning</b> · what changed in seven places</summary>
+
+<br>
+
+| | Before | After |
+|---|---|---|
+| `/undo` | rolled back files only — the conversation still believed it happened | rewinds **the conversation too** |
+| Turns that take minutes | you sat watching the screen | a bell and the window title — you can be in another window |
+| Startup · status bar | looked like any other CLI | letters that grow on start, a status bar that names the boundary |
+| English speakers | the screen was all unreadable | `/lang en` — the screen **and what the model reads** |
+| Models per session | one | a different model per chunk — routine work to a small one |
+| Finding a name | `Grep` only — comments and strings mixed in | `Def` / `Refs` — by **meaning**, when a server is installed |
+| A file you just edited | you found out by running it | checked **right after** the edit, that file only |
+
+<br>
+
+#### 1. `/undo` rewinds the conversation
+
+Roll back only the files and the conversation still holds the edit. The model believes it
+just changed that file and builds the next step on top — and nothing on screen says
+otherwise. Now the messages fold back with the files. Folding can orphan a tool call, which
+the server answers with a 400, so the same `repairToolPairs` runs over the result.
+
+#### 2. It tells you when it is done — `/bell`
+
+A local model can take minutes per turn. A bell and the window title say when it finishes.
+The bell is ``, but **not one byte reaches a pipe** — with no TTY it writes nowhere. The
+title ends with ST, not BEL; ending with BEL rings the bell on every title update.
+
+#### 3. A screen that is deel's own
+
+On start, `deel` grows into `deel-local`. The status bar names the boundary you are inside
+with one glyph (`⌂` this folder · `↗` outside · `?` unknown). The animation uses braille and
+box-drawing only — emoji and geometric shapes are East Asian Ambiguous, so their width
+varies per terminal and the line drifts by a column.
+
+#### 4·5. English on screen, and in what the model reads
+
+`/lang en` switches the screen. Untranslated strings come through in Korean rather than as
+blanks, and `/lang` counts honestly how many are left.
+
+But switching only the screen leaves the model answering in Korean — its rules say to. So
+what the model reads switches too (base rules, mode instructions, all sixteen tool
+descriptions). There is a bonus: Korean costs about one token per character and English
+about one per 3.6, so the fixed share of a 32k window dropped from **4,910 to 3,446 tokens.**
+
+Tool names and argument names are **not** translated. Those are identifiers.
+
+#### 6. Several models in one session — `Task`'s `모델`
+
+A large model and a small one, together, on 8GB of RAM. Routine work (formatting, repetitive
+edits, short summaries) goes to the small one; you keep what needs judgement. The subtask's
+endpoint opens through `allowTemporarily` and **always closes in `finally`** — afterwards
+exactly one endpoint is open again.
+
+#### 7. Language servers — `Def`, `Refs`, post-edit diagnostics
+
+See "With a language server, it sees meaning" above. **It installs nothing.**
+
+</details>
+
+<details>
 <summary><b>▸ 1.3.0 — evidence instead of claims, the editor instead of a terminal</b> · what changed in six places</summary>
 
 <br>
