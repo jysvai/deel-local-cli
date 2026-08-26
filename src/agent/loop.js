@@ -11,6 +11,7 @@ import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
 import { Session } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
 import { isOffline } from '../safety/network.js';
+import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴도구 } from '../safety/secrets.js';
 import { get as workMode } from './modes.js';
 
 /**
@@ -777,12 +778,54 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
           }
         }
 
+        /*
+         * ── 비밀 가리기 ─────────────────────────────────────────────────
+         *
+         * 여기가 도구 결과가 대화로 들어가는 **유일한** 자리다. 여기서 막으면
+         * 모델에게도 안 가고 `.deel/sessions/*.jsonl` 에도 안 적힌다. 한 번
+         * 새면 두 벌이 되는 것을 한 곳에서 끊는다.
+         *
+         * 새는 자리는 거의 항상 명령 출력이다 — env · git remote -v · curl -v ·
+         * 검사 실패 로그. 그래서 그런 도구만 가린다.
+         *
+         * 파일에서 읽어 온 글은 **안 가린다.** 가리면 모델이 가려진 글을 보고
+         * 그대로 되돌려 써서, 진짜 열쇠가 있던 자리에 표가 적힌다 — 비밀을
+         * 지키려다 비밀을 지우는 셈이다. 대신 무엇이 들어왔는지 알린다.
+         */
+        const 아는열쇠들 = [conn.key, process.env.DEEL_API_KEY].filter(Boolean);
+        let 비밀 = [];
+        if (가릴도구.has(call.name)) {
+          const 가린 = 가리기(실을것, { 열쇠들: 아는열쇠들 });
+          if (가린.가린것.length) {
+            비밀 = 가린.가린것;
+            실을것 = 가린.글 + 가렸다는말(가린.가린것);
+          }
+        } else if (result.content) {
+          // 안 고치고 보기만 한다. 사람이 알아야 손을 쓸 수 있다.
+          비밀 = 훑기(실을것, { 열쇠들: 아는열쇠들 });
+        }
+        if (비밀.length) {
+          ctx.audit?.write?.('secret', {
+            tool: call.name,
+            가렸나: 가릴도구.has(call.name),
+            무엇: 비밀.map((x) => `${x.종류}×${x.몇번}`).join(' '),
+          });
+        }
+
         session.push(toolMessage(conn.kind, {
           callId: call.id,
           name: call.name,
           content: 실을것,
         }));
-        yield { type: 'tool', name: call.name, args: call.args, result, ms, parallel: 함께 };
+        yield {
+          type: 'tool',
+          name: call.name,
+          args: call.args,
+          result,
+          ms,
+          parallel: 함께,
+          ...(비밀.length ? { 비밀: { 가렸나: 가릴도구.has(call.name), 말: 봤다는말(비밀) } } : {}),
+        };
       }
     }
 

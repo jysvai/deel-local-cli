@@ -11,6 +11,7 @@ import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSy
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeZip } from './zip.js';
+import { sbom, 심사명세 } from './sbom.js';
 
 export const repoRoot = () => join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -213,7 +214,18 @@ export function packSelf(outFile, { root = repoRoot(), at = new Date() } = {}) {
   const stamp = at.toISOString().replace('T', ' ').slice(0, 19);
   const sheet = reviewSheet(a, stamp);
 
-  const entries = [{ name: '반입심사서.txt', data: Buffer.from(sheet, 'utf8'), mtime: at }];
+  /*
+   * 사람이 읽는 것 하나, 기계가 읽는 것 둘.
+   *
+   * 반입 심사는 사람만 보는 절차가 아니다. 보안팀은 SBOM 을 스캐너에 먹여
+   * 취약점 목록을 뽑고, 운영팀은 감사기록 사양을 보고 SIEM 수집 규칙을 짠다.
+   * 사람이 읽는 글은 그 어느 쪽에도 못 들어간다 — 그래서 셋을 다 넣는다.
+   */
+  const entries = [
+    { name: '반입심사서.txt', data: Buffer.from(sheet, 'utf8'), mtime: at },
+    { name: 'sbom.cdx.json', data: Buffer.from(JSON.stringify(sbom(a, { at }), null, 2), 'utf8'), mtime: at },
+    { name: '심사명세.json', data: Buffer.from(JSON.stringify(심사명세(a, { at }), null, 2), 'utf8'), mtime: at },
+  ];
   for (const f of a.files) {
     entries.push({
       name: `deel/${f.path}`,
@@ -234,8 +246,12 @@ export function packSelf(outFile, { root = repoRoot(), at = new Date() } = {}) {
       '  4. 대화를 시작합니다:                  node deel/bin/deel.js',
       '',
       '심사 담당자께',
-      '  같이 담긴 반입심사서.txt 에 의존성·설치 스크립트·네트워크 호출 자리가',
-      '  전부 적혀 있습니다. 파일별 SHA-256 도 있습니다.',
+      '  반입심사서.txt   사람이 읽는 심사 자료. 의존성·설치 스크립트·네트워크',
+      '                   호출 자리·파일별 SHA-256 이 전부 적혀 있습니다.',
+      '  sbom.cdx.json    SBOM (CycloneDX 1.5). 스캐너에 그대로 넣으시면 됩니다.',
+      '  심사명세.json    통신 목록 · 감사기록 사양 · 파일 해시. 기계가 읽는 형식입니다.',
+      '',
+      '  세 파일 모두 소스를 훑어 자동으로 만든 것입니다. 손으로 적은 값이 아닙니다.',
       '',
     ].join('\n'), 'utf8'),
     mtime: at,

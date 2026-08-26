@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // deel 진입점. 외부 의존성 없음 — Node 표준 기능만 씁니다.
 import { join } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { c, say, mark, rule } from '../src/ui/ansi.js';
 import { runSetup, runDiagnose, showStatus, banner } from '../src/setup.js';
 import { chatLoop } from '../src/repl.js';
 import { runOnce } from '../src/oneshot.js';
 import { packSelf, audit, reviewSheet } from '../src/pack/selfpack.js';
+import { sbom, 심사명세, 명세요약 } from '../src/pack/sbom.js';
 import { runScan } from '../src/backend/scanui.js';
 import { closeConnections } from '../src/backend/http.js';
 import { parseSize } from '../src/backend/ctxsize.js';
@@ -48,7 +49,8 @@ function runPack(flags) {
   say(`  ${c.gray('네트워크 호출')}   ${a.calls.net.length}곳 ${c.gray('(설정한 주소로만)')}`);
   say(`  ${c.gray('포트 열기')}       ${a.calls.listen.length === 0 ? c.green('없음') : c.red(a.calls.listen.length + '곳')}`);
   say('');
-  say(`  ${c.gray('안에 반입심사서.txt 가 같이 들어 있습니다 — 그대로 제출하시면 됩니다.')}`);
+  say(`  ${c.gray('안에 반입심사서.txt · sbom.cdx.json · 심사명세.json 이 같이 들어 있습니다.')}`);
+  say(`  ${c.gray('사람이 읽을 것 한 장, 스캐너에 넣을 것 두 장입니다 — 그대로 제출하시면 됩니다.')}`);
   say(`  ${c.gray('내용만 먼저 보시려면')} ${c.cyan('deel audit')}`);
   say('');
   return 0;
@@ -58,6 +60,43 @@ function runPack(flags) {
 function runAudit() {
   say('');
   say(reviewSheet(audit(), new Date().toISOString().replace('T', ' ').slice(0, 19)));
+  return 0;
+}
+
+/*
+ * 기계가 읽는 심사 서류만 따로 뽑기.
+ *
+ * 반입 심사는 사람만 보는 절차가 아니다. 보안팀은 SBOM 을 스캐너에 먹이고,
+ * 운영팀은 감사기록 사양을 보고 수집 규칙을 짠다. zip 을 통째로 만들지 않고
+ * 그 두 장만 필요할 때가 실제로 더 잦다 — 심사 양식에 첨부하는 자리다.
+ */
+function runSbom(flags) {
+  const a = audit();
+  const at = new Date();
+  const 어느것 = String(flags.only ?? '').toLowerCase();
+  const 낼것 = 어느것 === 'sbom' ? sbom(a, { at })
+    : 어느것 === '명세' || 어느것 === 'spec' ? 심사명세(a, { at })
+      : { sbom: sbom(a, { at }), 심사명세: 심사명세(a, { at }) };
+  const 글 = JSON.stringify(낼것, null, 2);
+
+  if (flags.out) {
+    const 자리 = String(flags.out);
+    writeFileSync(자리, 글, 'utf8');
+    say('');
+    say(`  ${mark.ok} ${c.bold(자리)}`);
+    say('');
+    for (const 줄 of 명세요약(심사명세(a, { at })).split('\n')) say(`  ${c.gray(줄)}`);
+    say('');
+    return 0;
+  }
+
+  /*
+   * 표준출력으로 그냥 흘린다.
+   *
+   * `deel sbom > sbom.json` 이나 `deel sbom | jq` 로 쓰는 자리다. 여기에
+   * 안내 글을 섞으면 그 파이프가 통째로 깨진다 — say() 를 쓰지 않는 이유다.
+   */
+  process.stdout.write(글 + '\n');
   return 0;
 }
 
@@ -116,8 +155,11 @@ function help() {
   say('');
   say(`  ${c.bold('사내 반입')}`);
   say('');
-  say(`    ${c.cyan('deel audit')}                  의존성·네트워크 호출 자리 심사서 보기`);
-  say(`    ${c.cyan('deel pack')}                   심사서 + 소스를 zip 하나로 묶기`);
+  say(`    ${c.cyan('deel audit')}                  의존성·네트워크 호출 자리 심사서 ${c.gray('(사람이 읽는 글)')}`);
+  say(`    ${c.cyan('deel sbom')}                   SBOM·통신 목록·감사 사양 ${c.gray('(기계가 읽는 JSON)')}`);
+  say(`    ${c.gray('--out <파일>')}       파일로 적기. 안 주면 표준출력 — ${c.cyan('deel sbom | jq')}`);
+  say(`    ${c.gray('--only sbom|명세')}   한 장만`);
+  say(`    ${c.cyan('deel pack')}                   위 셋 + 소스를 zip 하나로 묶기`);
   say(`    ${c.gray('--out <파일>')}       묶음 파일 이름. 기본은 deel-반입.zip`);
   say('');
   say(`  ${c.bold('대화 시작 옵션')}`);
@@ -249,6 +291,8 @@ async function main() {
       return runPack(flags);
     case 'audit':
       return runAudit();
+    case 'sbom':
+      return runSbom(flags);
     case 'scan':
       return runScan(flags);
     case 'sessions':

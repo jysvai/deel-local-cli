@@ -51,6 +51,8 @@ const FILES = [
   'preview.test.js',
   'setup.test.js',
   'guard.test.js',
+  'secrets.test.js',
+  'sbom.test.js',
   'undo.test.js',
   'bigfile.test.js',
   'limits.test.js',
