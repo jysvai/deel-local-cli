@@ -89,13 +89,50 @@ function normalizeError(err) {
   return m;
 }
 
+// 게이트웨이 앞단 프록시가 자격증명을 받아오다 실패한 것을 알아본다.
+//
+// 사내 게이트웨이는 앞에 프록시를 두고, 프록시가 매번 바깥 명령을 돌려 토큰을 받아 온다.
+// 그 명령이 실패하면 이런 것이 본문에 실려 온다 —
+//
+//   [PROXY ERROR] Command '['databricks', 'auth', 'token', '--host', 'dbc-...',
+//                 '--profile', 'a@b.com', '-o', 'json']' returned non-zero exit status 1.
+//
+// 이걸 그대로 뱉으면 쓸모가 없다. 모델도 deel 도 아니고 **그 PC 의 로그인이 만료된 것**인데,
+// 화면만 보고는 무엇을 해야 할지 알 수가 없다(실제로 겪었다).
+// 그래서 명령·호스트·프로필을 뽑아 칠 것까지 만들어 준다. 못 알아보면 null 이다.
+export function 프록시힌트(말) {
+  const s = String(말 ?? '');
+  if (!/returned non-zero exit status/i.test(s)) return null;
+  // 바깥 따옴표가 대괄호까지 감싸고 있어 그냥 따옴표로 끊으면 짝이 어긋난다. 대괄호 안만 본다.
+  // 단 앞머리의 `[PROXY ERROR]` 도 대괄호라 먼저 걸린다 — 따옴표로 시작하는 것만 골라야 한다.
+  const 인자 = [...(s.match(/\[(\s*'[^\]]*)\]/)?.[1] ?? '').matchAll(/'([^']*)'/g)].map((m) => m[1]);
+  const 도구 = 인자[0] || '외부 명령';
+  const 뒤 = (이름) => { const i = 인자.indexOf(이름); return i >= 0 ? (인자[i + 1] ?? null) : null; };
+
+  if (도구 === 'databricks') {
+    const host = 뒤('--host');
+    const profile = 뒤('--profile');
+    const 다시 = ['databricks auth login',
+      host ? `--host ${/^https?:\/\//.test(host) ? host : `https://${host}`}` : null,
+      profile ? `--profile ${profile}` : null].filter(Boolean).join(' ');
+    return `게이트웨이가 Databricks 토큰을 못 받았습니다 — 모델이 아니라 로그인이 만료된 것입니다.\n`
+      + `그 PC 에서 다시 로그인하세요:  ${다시}`;
+  }
+  return `게이트웨이 앞단 프록시가 '${도구}' 를 돌리다 실패했습니다 — 모델이 아니라 프록시 쪽 문제입니다.`;
+}
+
 // 서버가 준 오류 본문에서 사람이 읽을 문장만 뽑는다.
 export function serverMessage(r) {
   if (r.error) return r.error;
   const j = r.json;
   const cand = j?.error?.message ?? j?.error ?? j?.message ?? j?.detail;
-  if (typeof cand === 'string') return cand;
-  if (cand) return JSON.stringify(cand).slice(0, 200);
-  if (r.text) return String(r.text).replace(/\s+/g, ' ').slice(0, 200);
-  return `HTTP ${r.status}`;
+  let 말;
+  if (typeof cand === 'string') 말 = cand;
+  else if (cand) 말 = JSON.stringify(cand).slice(0, 200);
+  else if (r.text) 말 = String(r.text).replace(/\s+/g, ' ').slice(0, 200);
+  else return `HTTP ${r.status}`;
+  // 알아본 것이 있으면 원문 대신 그것을 앞에 세운다. 원문은 뒤에 한 줄로 남긴다 —
+  // 사내 담당자에게 그대로 보여 줘야 할 때가 있다.
+  const 힌트 = 프록시힌트(말);
+  return 힌트 ? `${힌트}\n원문: ${말.slice(0, 160)}` : 말;
 }

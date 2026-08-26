@@ -9,11 +9,13 @@ import { createServer } from 'node:http';
 import { candidates, detect } from '../src/backend/detect.js';
 import { endpoint, buildBody, extractMessage, assistantMessage, toolMessage } from '../src/backend/adapter.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
+import { serverMessage, 프록시힌트 } from '../src/backend/http.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
 const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
+const 짧게 = (s) => String(s).replace(/\s+/g, ' ').slice(0, 80);
 
 trace('1-주소넓히기');
 
@@ -289,6 +291,47 @@ trace('3-요청모양');
   check('OpenAI 도구 결과는 id 로 짝을 맞춘다', t1.tool_call_id === 'c1' && t1.role === 'tool', JSON.stringify(t1));
   const t2 = toolMessage('ollama', { callId: 'c1', name: 'Read', content: '내용' });
   check('Ollama 도구 결과는 이름으로 짝을 맞춘다', t2.tool_name === 'Read', JSON.stringify(t2));
+}
+
+trace('5-프록시오류');
+// ── 프록시가 자격증명을 못 받았을 때 ────────────────────────────────────
+//
+// 사내 게이트웨이는 앞에 프록시를 두고 매번 바깥 명령으로 토큰을 받아 온다.
+// 그 명령이 실패하면 원문이 그대로 화면에 뜨는데, 그걸로는 무엇을 해야 할지 알 수가 없다.
+// 실제로 겪었다 — 모델도 deel 도 아니고 그 PC 의 Databricks 로그인이 만료된 것이었다.
+{
+  const 진짜 = "[PROXY ERROR] Command '['databricks', 'auth', 'token', '--host', "
+    + "'dbc-1234abcd.cloud.databricks.com', '--profile', 'someone@example.com', "
+    + "'-o', 'json']' returned non-zero exit status 1.";
+
+  const 말 = serverMessage({ status: 500, json: { error: { message: 진짜 } } });
+  check('원인을 사람 말로 바꾼다', 말.includes('로그인이 만료된 것입니다'), 짧게(말));
+  check('칠 명령까지 만들어 준다',
+    말.includes('databricks auth login --host https://dbc-1234abcd.cloud.databricks.com'
+      + ' --profile someone@example.com'), 짧게(말));
+  check('원문도 남긴다 (사내 담당자에게 보여 줘야 한다)', 말.includes('원문: [PROXY ERROR]'));
+
+  // `[PROXY ERROR]` 도 대괄호다. 그게 먼저 걸리면 도구 이름을 '외부 명령' 으로 놓친다.
+  check('앞머리 대괄호에 안 속는다', !말.includes("'외부 명령'"), 짧게(말));
+
+  const 본문만 = serverMessage({ status: 502, text: 진짜 });
+  check('본문이 그냥 글이어도 알아본다', 본문만.includes('로그인이 만료된 것입니다'));
+
+  const 모르는것 = serverMessage({ status: 500,
+    text: "[PROXY ERROR] Command '['gcloud', 'auth', 'print-access-token']' returned non-zero exit status 2." });
+  check('모르는 도구는 이름만 짚고 넘어간다',
+    모르는것.includes("'gcloud'") && 모르는것.includes('프록시 쪽 문제'), 짧게(모르는것));
+
+  // 여기서 멀쩡한 오류까지 건드리면 loop 의 '길이를 배우는' 길이 막힌다.
+  const 평범 = serverMessage({ status: 400, json: { error: { message: 'model not found: x' } } });
+  check('평범한 오류는 그대로 둔다', 평범 === 'model not found: x', 평범);
+  const 길이 = "This model's maximum context length is 8192 tokens";
+  check('길이 초과 문장을 안 건드린다 (배우는 길)',
+    serverMessage({ status: 400, json: { error: { message: 길이 } } }) === 길이);
+
+  check('짝 안 맞는 글에도 안 터진다',
+    프록시힌트("Command '[' returned non-zero exit status 1.") != null
+    && 프록시힌트('그냥 오류') === null);
 }
 
 trace('4-치움');
