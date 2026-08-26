@@ -180,6 +180,26 @@ function 줄수(abs, 인코딩) {
   } catch { return 0; }
 }
 
+/**
+ * 그 줄과 앞뒤 몇 줄. Edit 이 빗나갔을 때 보여 줄 것.
+ *
+ * 줄 번호를 같이 붙인다 — 모델이 "몇 번 줄" 로 세어 다시 잡을 수 있어야 한다.
+ * 한 줄만 보여 주던 것을 넓힐 때, 넓힌 만큼 자리를 먹으니 짧게 자른다.
+ */
+function 둘레(text, 줄번호, 보일줄 = 1) {
+  const 줄들 = String(text ?? '').split('\n');
+  const 가운데 = Math.max(1, Number(줄번호) || 1);
+  const 반 = Math.floor(Math.max(1, 보일줄) / 2);
+  const 처음 = Math.max(1, 가운데 - 반);
+  const 끝 = Math.min(줄들.length, 처음 + Math.max(1, 보일줄) - 1);
+  const out = [];
+  for (let i = 처음; i <= 끝; i++) {
+    const 표 = i === 가운데 ? '→' : ' ';
+    out.push(`  ${표} ${String(i).padStart(5)} | ${줄들[i - 1].slice(0, 120)}`);
+  }
+  return out.join('\n');
+}
+
 function 엑셀은못고침(보인이름) {
   return `엑셀 파일은 이 도구로 고칠 수 없습니다: ${보인이름}\n`
     + '  읽기만 됩니다 (CSV 로 바꿔서 보여줍니다). 서식·수식·차트가 든 파일을\n'
@@ -335,8 +355,16 @@ function 한군데고치기(args, ctx) {
     if (m.reason === 'ambiguous') {
       return { error: `${m.count}군데에서 발견됐습니다 (${TIER_LABELS[m.tier]}). 앞뒤로 더 넓게 잡아 하나만 가리키거나 replace_all 을 쓰세요.` };
     }
+    /*
+     * 비슷한 자리를 몇 줄이나 보여 줄까는 **이 모델을 겪어 본 만큼** 정한다
+     * (agent/card.js). Edit 이 자주 빗나가는 모델에는 한 줄만 보여 줘 봐야
+     * 다음 시도도 빗나간다 — 앞뒤를 같이 보여 주면 옮겨 담을 것이 분명해진다.
+     * 겪은 것이 모자라면 여태처럼 한 줄이다. 자리를 괜히 먹지 않는다.
+     */
+    const 보일줄 = Math.max(1, ctx?.카드?.조정?.빗나갔을때보일줄 ?? 1);
     const hint = m.near
-      ? `\n  파일의 ${m.near.line}번 줄이 가장 비슷합니다:\n    ${m.near.text.trim().slice(0, 120)}\n  이 줄을 그대로 옮겨 담아 다시 시도하세요.`
+      ? `\n  파일의 ${m.near.line}번 줄이 가장 비슷합니다:\n${둘레(text, m.near.line, 보일줄)}`
+        + '\n  이 줄을 그대로 옮겨 담아 다시 시도하세요.'
       : '\n  Read 로 다시 읽어 실제 내용을 확인하세요.';
     return { error: `찾지 못했습니다.${hint}` };
   }

@@ -95,7 +95,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
    * '헛도는 작업' 을 구분하지 못한다. 여기서는 같은 자리를 반복하는 것만 본다.
    */
   const 막힘 = new Map();
-  const MAX_SAME = 3;
+  /*
+   * 몇 번까지 봐 줄까는 **이 모델을 겪어 본 만큼** 정한다 (agent/card.js).
+   *
+   * 되풀이가 버릇인 모델에서는 세 번까지 기다릴 이유가 없다. 되풀이한 만큼
+   * 컨텍스트가 차고 그만큼 요약이 빨리 온다 — 걸음만 태우는 것이 아니다.
+   * 겪은 것이 모자라면 여태 쓰던 3 그대로다.
+   */
+  const 이카드 = ctx?.카드 ?? null;
+  const MAX_SAME = 이카드?.조정?.같은것한계 ?? 3;
   let 멈출까 = null;
   const 막힘셈 = (call, 이유) => {
     // 파일 하나가 아니라 **그 파일** 을 센다. 이름만 세면 서로 다른 파일 세 개를
@@ -248,7 +256,16 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
     // 출력 상한을 아는 값이 둘 있다 — 사용자가 정한 것(/out)과 서버에서 알아낸 것.
     // 사람이 정한 것이 먼저다. 둘 다 없으면 null 이고, 그때만 effort.js 의 MAX_CAP 에 선다.
     const room = { ctx: conn.ctx ?? 0, used: session.breakdown().used, max: conn.maxTokens ?? conn.maxOut ?? null };
-    const cap = tokensFor(effort, stage, room);
+    /*
+     * 이 모델이 인자를 자주 잘라 먹는다면 처음부터 넉넉히 준다 (agent/card.js).
+     *
+     * 지금은 잘린 **뒤에야** 상한을 올려 다시 부른다. 한 번은 반드시 버리는 셈이다.
+     * 잘리는 것이 이 모델의 버릇으로 재어졌다면 그 한 번을 매번 버릴 이유가 없다.
+     * 상한은 최댓값이지 정해진 길이가 아니라서, 짧게 답하는 턴에는 값이 안 든다.
+     */
+    const cap = 이카드?.조정?.상한먼저올리기
+      ? Math.max(tokensFor(effort, stage, room), fullCap(room))
+      : tokensFor(effort, stage, room);
     yield { type: 'stage', stage, level, cap, step: steps };
 
     const ask = (maxTokens, think) => ({

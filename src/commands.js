@@ -32,7 +32,7 @@ export const COMMANDS = {
   out:     { desc: '한 번에 받을 답 길이 상한 — 큰 파일이 잘리면 여기를 올린다', arg: '[숫자|32k|auto]' },
   grade:   { desc: '모델 급 — 얼마나 알아서 하나. 창 크기와는 다른 축', arg: '[작음|보통|큼|auto]' },
   compact: { desc: '오래된 대화 줄이기' },
-  model:   { desc: '연결·모델 바꾸기 (이름 일부 · list · models)', arg: '[이름|list|models]' },
+  model:   { desc: '연결·모델 바꾸기 · `카드` 면 이 모델을 겪어 본 결과', arg: '[이름|list|models|카드]' },
   think:   { desc: '추론 강도 (off/low/medium/high/max)', arg: '<수준>' },
   mode:    { desc: '승인 정책 — 얼마나 물어보나 (auto/confirm/strict)', arg: '<모드>' },
   work:    { desc: '작업 모드 — 무슨 일을 하는 중인가 (종합이면 저절로)', arg: '[모드]' },
@@ -140,7 +140,10 @@ export async function handle(line, session, ctx) {
       return { handled: true };
     }
 
-    case 'model': return await switchModel(session, ctx, arg), { handled: true };
+    case 'model':
+      // `/model 카드` 는 모델을 바꾸는 게 아니라 이 모델을 겪어 본 결과를 본다.
+      if (/^(카드|card)$/i.test(String(arg ?? '').trim())) return 카드명령(session, ctx), { handled: true };
+      return await switchModel(session, ctx, arg), { handled: true };
 
     /*
      * /think — '얼마나 생각하나' 하나만 정한다.
@@ -1079,6 +1082,56 @@ function 갈래명령(session, ctx, arg = '') {
  * 모델이 왜 그렇게 답했는지 알 수 없게 된다 — 여기서 통째로 볼 수 있어야
  * '자동으로 쌓인다' 가 무섭지 않은 말이 된다. 지우는 길도 같이 둔다.
  */
+/**
+ * 모델 카드 — 겪어 본 버릇과, 그 때문에 deel 이 바꾼 것.
+ *
+ * 여기서 중요한 것은 아래쪽 '그래서 바꾼 것' 이다. 위쪽 숫자만 보여 주면
+ * 그냥 통계지만, 무엇이 달라졌는지까지 보여야 사람이 판단할 수 있다 —
+ * "이 모델을 계속 쓸까, 다른 걸 받을까" 가 실제로 묻는 것이다.
+ */
+function 카드명령(session, ctx) {
+  const 장 = ctx?.카드다시?.() ?? ctx?.카드 ?? null;
+  say('');
+  if (!장) {
+    say(`  ${c.gray('이 자리에서는 못 봅니다 — 대화 화면에서만 됩니다.')}`);
+    say('');
+    return;
+  }
+
+  rule('모델 카드', 70);
+  say(`  ${c.bold(장.모델 || '(이름 없음)')}  ${c.gray(`· 같이 걸어 본 걸음 ${장.걸음}`)}`);
+  say('');
+
+  const 줄 = (이름, v) => {
+    if (!v?.n) return;
+    const 센가 = v.율 >= 0.15;
+    const 표 = 센가 ? c.yellow('●') : c.gray('○');
+    say(`    ${표} ${pad(이름, 18)} ${pad(String(v.n), 5, 'right')} ${c.gray(`(${Math.round(v.율 * 100)}%)`)}`);
+  };
+  say(`  ${c.bold('겪어 본 버릇')}`);
+  줄('인자가 잘림', 장.버릇.잘린인자);
+  줄('빈 답', 장.버릇.빈답);
+  줄('편집이 빗나감', 장.버릇.편집실패);
+  줄('같은 것 되풀이', 장.버릇.되풀이);
+  if (!Object.values(장.버릇).some((v) => v.n)) say(`    ${c.gray('아직 걸린 것이 없습니다.')}`);
+  if (장.보정 && Math.abs(장.보정 - 1) > 0.01) {
+    say(`    ${c.gray(pad('토큰 추정 보정', 18))} ${pad(`×${장.보정.toFixed(2)}`, 5, 'right')}`);
+  }
+  say('');
+
+  say(`  ${c.bold('그래서 바꾼 것')}`);
+  if (장.아직모름) {
+    say(`    ${c.gray('아직 판단하지 않습니다 — 몇 걸음 안 걸어 보고 바꾸면 멀쩡한 모델을 붙들어 맵니다.')}`);
+  } else if (!장.왜.length) {
+    say(`    ${c.gray('바꾼 것 없음. 이 모델은 그대로 두어도 괜찮습니다.')}`);
+  } else {
+    for (const w of 장.왜) say(`    ${c.hcyan('→')} ${w}`);
+  }
+  say('');
+  say(`  ${c.gray('이 카드는 프롬프트에 안 실립니다 — deel 이 제 행동을 바꾸는 것이라 모델에게 말할 필요가 없습니다.')}`);
+  say('');
+}
+
 /**
  * 못 박기.
  *

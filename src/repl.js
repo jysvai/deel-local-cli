@@ -20,6 +20,7 @@ import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
 import { Threads } from './agent/threads.js';
 import { 못박기 } from './agent/pins.js';
+import { 카드 } from './agent/card.js';
 import { 배움 } from './agent/evolve.js';
 import { 마크다운 } from './ui/md.js';
 import { askHidden } from './ui/prompt.js';
@@ -544,6 +545,22 @@ export async function chatLoop(opts = {}) {
   if (아는배수) { session.보정 = 아는배수; session.보정잰것 = 1; }
 
   /*
+   * 모델 카드 (agent/card.js).
+   *
+   * 겪어 본 버릇을 **하네스 설정으로** 바꾼다. 프롬프트에 "이렇게 해라" 고 적는
+   * 것과 다르다 — 작은 모델은 그 말을 잘 안 듣는다. 여기서 바꾸는 것은 deel 의
+   * 행동이라 모델의 협조가 필요 없다.
+   *
+   * 턴마다 다시 만든다. 이번 대화에서 겪는 것이 계속 쌓이므로, 켤 때 한 번
+   * 만들어 두면 그 뒤에 알아낸 것이 이번 대화에서는 안 쓰인다.
+   */
+  ctx.카드다시 = () => {
+    ctx.카드 = 카드(conn.model, session.본것, ctx.배움?.현황(conn.model)?.모델);
+    return ctx.카드;
+  };
+  ctx.카드다시();
+
+  /*
    * 대화 갈래. 연결·도구·되돌리기는 같이 쓰고 오간 말만 여러 벌 갖는다.
    * 갈래마다 저장 파일을 따로 열어서, 나중에 `/sessions` 로 각각 찾아갈 수 있다.
    */
@@ -834,6 +851,9 @@ export async function chatLoop(opts = {}) {
      * 그렇게 날아간다. 테두리를 그대로 두고 안엣것만 바꾸는 이유다.
      */
     화면.일시작(session, '생각');
+    // 이번 턴에 쓸 카드를 지금 만든다. 앞 턴에서 겪은 것까지 반영돼야
+    // '겪을수록 나아진다' 가 이번 대화 안에서도 참이 된다.
+    ctx.카드다시?.();
     try {
       for await (const ev of run(session, ctx, 보낼글, { signal: turn.signal })) {
         /*
