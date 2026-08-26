@@ -64,7 +64,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
-- [What changed, release by release](#what-changed-release-by-release)
+- [Release notes](#release-notes)
 
 Each section is open at the summary. Click **▸ More** to unfold the detail behind it.
 
@@ -2014,68 +2014,124 @@ test/                    tests (excluded from the published package)
 
 ---
 
-## What changed, release by release
+## Release notes
 
 <details>
-<summary><b>▸ What changed in which release</b> — newest first</summary>
+<summary><b>▸ 1.2.0 — so the conversation doesn't break</b> · what changed in six places</summary>
 
 <br>
 
-### 1.2.0 — so the conversation doesn't break
+| | Before | After |
+|---|---|---|
+| Resuming | a conversation cut mid-tool-call **would not reopen** | unmatched calls are cleared, then it opens |
+| Counting tokens | it guessed, and stayed wrong | it corrects itself against the server |
+| Making room | summarising arrived at turn 49 | it holds out to turn **102** |
+| Side questions | piled up in the main context | live in their own thread |
+| Yesterday's lesson | vanished when you quit | carries over to the next session |
+| The answer on screen | `**bold**` showed up as characters | it is drawn |
 
-| What | How it changed |
-|---|---|
-| Resume repair | Reopening an older conversation with unmatched tool calls in it made the server return 400 — **the conversation would not open at all.** They are now filtered out first |
-| Token self-calibration | The estimate drifted from what the server actually counted, so deel misjudged the room left. It now corrects itself as you talk, and **picks up where it left off next time** |
-| Folding tool results | Summarising (compact) cannot be undone. Older tool results are folded before it comes to that — **49 turns → 102 turns (2.1×)** |
-| Threads `/thread` | Side work no longer pollutes the main context. The link, undo and audit log stay shared |
-| What it has learned `/learned` | It used to relearn yesterday's lesson today. Only twice-seen facts carry over, **within 220 tokens** |
-| Rendered answers | Headings, lists, code and tables are drawn. Long prose streams raw so it never looks stalled |
+<br>
 
-Tests 2,532 → **2,578**.
+#### 1. A conversation cut mid-tool-call would not reopen
 
-### 1.1.2 — three things you could see
+Close the window or hit <kbd>Ctrl</kbd>+<kbd>C</kbd> while a tool is running and the saved conversation keeps **a call with no result under it**. Reopen it with `--resume` and the server rejects the mismatch with a 400 — the conversation was written down perfectly well, and you still could not carry on.
 
-- Plans always came out as **exactly three steps**, whatever the size of the work
-- The screen blinked on every backspace — it now **overwrites in place** instead of erasing and redrawing
-- The plan-approval test broke only under the test runner (colour codes landing mid-word)
-- The README folds into one readable page; the English edition now mirrors the Korean one
+Now the pairs are checked before it opens. Calls with no result go, results with no parent go, and **whatever the model said stays.**
 
-### 1.1.1
+```
+$ deel --resume 20260826-140217
 
-- Serve what you built, right there — `/preview` (127.0.0.1 only)
-- An animation while it works
-- Seven ways of working carried in the box (built-in skills)
-- Plan mode's **second half, which it promised and never did**
-- When the gateway gets no token, it says what to do about it
-- Tests run once before publishing (`prepublishOnly`)
+  ✓ 20260826-140217 — 메시지 48개를 이어 받았습니다.
+  중단된 도구 호출 2개를 걷어냈습니다 — 그때 하던 일은 다시 시켜 주세요.
+```
 
-### 1.1.0
+#### 2. It misjudged the room left
 
-- Background commands · many places at once · undo for Bash
-- Subtasks — one piece of a big job in **its own separate window** (it does not spend the main context)
-- Outlines · verification · many files at once, and model grade `/grade`
-- Context window size is **read from the model** instead of hard-coded. It also learns from numbers a server leaks when it refuses
+Token counts are estimated from character counts. Mix Korean, code and JSON and that estimate drifts from the truth — so deel folded early with room to spare, or did not fold when there was none and the server refused.
 
-### 1.0.2
+It now **corrects the multiplier against what the server actually reports** with every answer. One line at the foot of `/context`:
 
-- Command suggestions appear as you type. Tab completes · Shift+Tab approval policy · Ctrl+O working mode
-- The input box stays up while it works, so you can **type ahead**
+```
+  서버가 알려 준 실제값에 맞춰 +12% 보정했습니다 (7번 재봄).
+```
 
-### 1.0.1
+The multiplier is kept per model, so **the next session starts from it** instead of measuring again from scratch.
 
-- The 1.0.0 published to npm had a broken screen. The conversation scrolls and **only the input** is boxed
+#### 3. Summarising arrived too early
 
-### 1.0.0
+At 80% of the window, earlier turns get folded into a summary. That **cannot be undone**, and the file contents the reasoning rested on are gone with it.
 
-- Full-screen UI (TUI) · search past conversations `/recall` · external tools (MCP) · memory `/memory`
-- Large files actually get written — reused, appended, measured
-- The places the safety net was eating files — binaries · BOM · out of scope
-- Spinning and stalling — Ctrl+C lands, and folding no longer corrupts the conversation
+There is now a step before it. At 55%, **only older tool results** are folded — the four most recent are left alone, and nothing the model or you said is touched at all.
 
-### 0.x
+```
+  ◲ 오래된 도구 결과 6개를 접었습니다 (2,148 토큰을 비움)
+```
 
-From the first release to 0.9.0 — six working modes · **writing files back in the encoding they were read in** · Excel to CSV (password-protected ones too) · one-shot runs `deel run` · `@file` attachments · auto-compaction · plugins · the network lock.
+What was there is left in its place:
+
+```
+  (접힘) Read(src/runner.js) — 61줄. 자리를 비우려고 내용을 접었습니다. 필요하면 다시 읽으세요.
+```
+
+Measured by streaming the same conversation through: summarising is pushed from **turn 49 to turn 102 — 2.1×**.
+
+#### 4. Side questions polluted the main line
+
+"Just check this one thing" piles into the main context and stays there long after the checking is done.
+
+```
+/thread new 로그확인
+  ⑂ 로그확인 갈래로 왔습니다. 빈 대화입니다
+  본줄기로 돌아가려면 /thread 1
+```
+
+`fork` carries the conversation so far with you. What threads **keep apart is the messages, the token count and the checklist**; what they **share is the connection, undo and the audit log** — a file changed inside a thread still comes back with `/undo`. The `⑂` marker appears in the status line only once there is more than one thread.
+
+#### 5. Yesterday's lesson vanished when you quit
+
+deel could work out that `pnpm` is not on this machine, and lose it the moment you quit. Tomorrow it calls it again, fails again, works around it again.
+
+```
+/learned
+── 겪어 본 것 ──────────────────────────────────────
+
+  이 폴더에서 돌려 본 명령
+    ✓ npm test                 됨 12 · 안 됨 0
+    ✗ pnpm                     됨 0 · 안 됨 3
+
+  이 모델에 대해  qwen2.5-coder:7b
+    같이 걸어 본 걸음             86
+    인자가 잘림                   14  (16%)
+    토큰 추정 보정             ×1.12
+
+  이 중 프롬프트에 실리는 것
+  - 여기서 되는 명령: `npm test`
+  - 이 PC 에서 안 되는 명령(다시 부르지 마라): `pnpm`
+```
+
+**This is not training.** It does not touch the model and it does not hoard conversations — that would only eat context. It counts, and it carries over **only what it has seen twice**, all of it **within 220 tokens**. Something seen once may be a coincidence, and writing a coincidence down as fact sends the model around a road that actually works.
+
+Commands that work live with the folder (`.deel/배운것.json`); the model's habits live in the config folder. So **move the folder and what it learned about the model comes along.** `/learned 지우기` empties it whenever you want.
+
+#### 6. The answer showed up as raw characters
+
+The model speaks Markdown and the screen did not know it, so asterisks, backticks and hashes came through mixed into the prose. You had to re-read it in your head to see what was a heading and what was code.
+
+```
+before                                 after
+▌ ## 고친 것                           ▌ ▍ 고친 것
+▌ **src/runner.js** 의 `console.log`   ▌ src/runner.js 의 console.log
+▌ - [ ] 남은 것: `src/worker.js`       ▌ ☐ 남은 것: src/worker.js
+▌ ```js                                ▌ ┌──────────────── js
+▌ log.info('시작', { id })             ▌ │ log.info('시작', { id })
+▌ |---|---|                            ▌ ┼────────┼─────────┼
+```
+
+Answers arrive in fragments, so a line can only be drawn **once it ends**. But a whole paragraph on one line would leave the screen still for seconds — so once a line grows past the screen width, everything up to there is **streamed raw**. Looking alive comes before looking neat.
+
+<br>
+
+Tests 2,532 → **2,578** · 48/48 files. Earlier releases are in the [tags](https://github.com/jysvai/deel-local-cli/tags).
 
 </details>
 
