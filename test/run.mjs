@@ -46,6 +46,7 @@ const FILES = [
   'mention.test.js',
   'truncated.test.js',
   'ui2.test.js',
+  'motion.test.js',
   'setup.test.js',
   'guard.test.js',
   'undo.test.js',

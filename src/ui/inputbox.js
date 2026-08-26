@@ -36,7 +36,8 @@
 import { c, width, cursor, clip } from './ansi.js';
 import { statusLine, contextWarning } from './status.js';
 import { 접어쓰기 } from './wrap.js';
-import { 문구고르기, 돌림틀, 걸린시간, 느긋해질때, 문구주기 } from './working.js';
+import { 문구고르기, 걸린시간, 느긋해질때, 문구주기 } from './working.js';
+import { 그림고르기 } from './motion.js';
 import { 최대추천 } from './complete.js';
 
 const 줄끝지움 = '\x1b[K';
@@ -317,7 +318,9 @@ export class InputBox {
     const 갈래 = 지난 >= 느긋해질때 ? '느긋' : this.일감.갈래;
     const 회차 = Math.floor((this.틱 * 돌림주기) / 문구주기);
     this.그리기(this.session, '', 0, {
-      돌림: 돌림틀[this.틱 % 돌림틀.length],
+      // 갈래에 맞는 작은 그림. 무엇을 하는 중인지 글자와 그림이 같이 말한다.
+      // DEEL_NO_MOTION=1 이면 예전처럼 한 칸짜리 돌림표가 온다.
+      돌림: 그림고르기(갈래, this.틱),
       말: 문구고르기(갈래, 회차),
       곁: [
         걸린시간(지난),
