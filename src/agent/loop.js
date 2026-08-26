@@ -10,7 +10,8 @@ import { compact, shouldCompact, shouldFold, foldToolResults } from './compact.j
 import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
 import { Session } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
-import { isOffline } from '../safety/network.js';
+import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './models.js';
+import { allowTemporarily, isOffline } from '../safety/network.js';
 import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴도구 } from '../safety/secrets.js';
 import { get as workMode } from './modes.js';
 
@@ -614,7 +615,43 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
         }
 
         const 자식모드 = 하위모드(call.args?.모드 ?? call.args?.mode, 모드.id);
-        const 자식 = new Session(conn, {
+
+        /*
+         * ── 다른 모델에게 떼어 주기 ─────────────────────────────────────
+         *
+         * 안 적으면 지금 쓰는 것 그대로다. 적었으면 **사람이 설정에 적어 둔
+         * 프로필**에서만 찾는다 — 모델이 주소를 지어내면 그 자리로 나갈 뻔하고,
+         * 그건 이 프로그램이 하는 약속을 그 자리에서 깨는 것이다.
+         *
+         * 못 찾으면 조용히 지금 모델로 돌지 않는다. 시킨 쪽은 작은 모델에게
+         * 넘긴 줄 알고 창을 아끼고 있는데 실제로는 큰 모델이 다 받는 셈이라,
+         * 원인을 못 찾는 쪽으로 어긋난다. 무엇이 있는지 적어 되돌려 준다.
+         */
+        let 자식conn = conn;
+        let 자리닫기 = null;
+        let 모델알림 = null;
+        const 부른모델 = String(call.args?.모델 ?? call.args?.model ?? '').trim();
+        if (부른모델) {
+          const 찾음 = 프로필찾기(부른모델);
+          if (!찾음.ok) {
+            const 있는것 = 목록보기().map((x) => x.id).join(' · ') || '(설정에 프로필이 없습니다)';
+            거절(call, `${찾음.why}. 쓸 수 있는 이름: ${있는것}`);
+            yield { type: 'tool', name: 'Task', args: call.args, result: { error: 찾음.why }, showLabel: true };
+            continue;
+          }
+          const 되나 = 쓸수있나(찾음.prof);
+          if (!되나.ok) {
+            거절(call, `${부른모델} 은 지금 못 씁니다 — ${되나.why}`);
+            yield { type: 'tool', name: 'Task', args: call.args, result: { error: 되나.why }, showLabel: true };
+            continue;
+          }
+          자식conn = 연결만들기(찾음.prof);
+          모델알림 = 알릴말(conn, 자식conn);
+          // 그 일이 도는 동안만 연다. 끝나면 반드시 닫는다 — 아래 finally.
+          if (모델알림.다른자리) 자리닫기 = allowTemporarily(자식conn.base);
+        }
+
+        const 자식 = new Session(자식conn, {
           root: session.root,
           // 승인 방식은 그대로 물려준다. 하위가 승인을 우회하면 strict 가 거짓말이 된다.
           mode: session.mode,
@@ -626,7 +663,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
           // 부모보다 적게 준다 (budget.js). 사람이 직접 정한 값이 있으면 그 절반.
           maxSteps: session.stepsSet
             ? Math.max(4, Math.floor(session.maxSteps / 2))
-            : 하위걸음수(자식모드, conn.ctx),
+            // 걸음 수는 **하위가 쓸 창**으로 잰다. 부모 창으로 재면, 작은 모델에게
+            // 떼어 준 일이 제 창보다 큰 걸음 수를 받아 중간에 창이 찬 채로 돈다.
+            : 하위걸음수(자식모드, 자식conn.ctx),
         });
         // 스킬·명령·기억은 부모가 켤 때 한 번 찾아 든 것이다. 하위도 같은 것을 본다.
         자식.skills = session.skills;
@@ -644,8 +683,19 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
          * 미리 +1 을 해 두면 두 겹째에서 1이 두 번 붙어 3이 된다.
          * 경계선은 부모 자리에 그어야 어디부터가 떼어 낸 일인지 보인다.
          */
-        yield { type: 'task_start', 목적, 모드: 자식모드, steps: 자식.maxSteps };
-        ctx.audit.tool('Task', { 목적, 모드: 자식모드 }, { summary: `하위 작업 시작 (${깊이 + 1}겹)` });
+        /*
+         * 다른 모델을 쓰면 **어디로 나가는지까지** 적는다.
+         *
+         * 조용히 여는 것이 제일 나쁘다. 상태줄의 ⌂ 는 이 세션의 연결을 보고
+         * 있어서 하위가 딴 데로 나가는 것을 모른다. 그러니 이 줄과 감사기록이
+         * 그 사실을 남기는 유일한 자리다.
+         */
+        yield {
+          type: 'task_start', 목적, 모드: 자식모드, steps: 자식.maxSteps,
+          모델: 모델알림?.말 ?? null, 밖으로: 모델알림?.밖으로 ?? false,
+        };
+        ctx.audit.tool('Task', { 목적, 모드: 자식모드, 모델: 모델알림?.말 ?? null },
+          { summary: `하위 작업 시작 (${깊이 + 1}겹)${모델알림 ? ` · ${모델알림.말}` : ''}` });
 
         let 끝 = null;
         try {
@@ -669,6 +719,10 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
         } catch (err) {
           // 하위가 터져도 부모 턴은 살린다. 무엇 때문에 터졌는지는 요약에 실린다.
           끝 = { type: 'stuck', why: String(err?.message ?? err), steps: 0, files: [] };
+        } finally {
+          // 잠깐 열어 둔 자리는 무슨 일이 있어도 닫는다. 안 닫으면 그 세션이
+          // 끝날 때까지 그 주소가 열린 채로 남는다 — '한 자리만 연다' 가 깨진다.
+          try { 자리닫기?.(); } catch { /* 닫다 터져도 이번 턴은 이어간다 */ }
         }
 
         /*
@@ -686,13 +740,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
         session.usage.ms += 자식.usage.ms;
 
         const 글 = 하위요약({
-          목적, 모드: 자식모드, 끝,
+          목적, 모드: 자식모드, 끝, 모델: 모델알림?.말 ?? null,
           글자수: 요약길이(conn.ctx),
           보인이름: (경로) => ctx.scope?.show?.(경로) ?? 경로,
         });
         session.push(toolMessage(conn.kind, { callId: call.id, name: 'Task', content: 글 }));
         ctx.audit.tool('Task', { 목적 }, { summary: 글.slice(0, 300) });
-        yield { type: 'task_done', 목적, 모드: 자식모드, 끝 };
+        yield { type: 'task_done', 목적, 모드: 자식모드, 끝, 모델: 모델알림?.말 ?? null };
 
         // 사용자가 중단했으면 부모도 여기서 멈춘다. 하위만 끊고 이어가면
         // 무엇이 중단된 것인지 알 수 없는 화면이 된다.

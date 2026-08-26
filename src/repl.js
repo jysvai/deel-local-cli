@@ -1121,6 +1121,18 @@ export async function chatLoop(opts = {}) {
             say(`  ${c.hmagenta('⌥')} ${c.bold('하위 작업')} ${c.white(clip(ev.목적, 60))}`
               + ` ${c.gray(`· ${getWork(ev.모드).name} · 최대 ${ev.steps}걸음`)}`);
             say(`  ${c.gray('여기서부터는 따로 떨어진 대화입니다 — 결과 요약만 위로 올라옵니다.')}`);
+            /*
+             * 다른 모델에게 떼어 줬으면 여기서 말한다.
+             *
+             * 상태줄의 ⌂ 는 이 세션의 연결을 보고 있어서 하위가 딴 데로
+             * 나가는 것을 모른다. 이 줄이 그 사실을 남기는 유일한 자리다.
+             * 바깥으로 나가면 노랗게 — 그냥 지나칠 수 없게.
+             */
+            if (ev.모델) {
+              say(ev.밖으로
+                ? `  ${c.hyellow('↗')} ${c.hyellow(ev.모델)} ${c.gray('— 이 덩이는 바깥으로 나갑니다')}`
+                : `  ${c.hgreen('⌂')} ${c.gray(`${ev.모델} — 이 컴퓨터 안입니다`)}`);
+            }
             break;
 
           case 'task_done': {
@@ -1133,7 +1145,7 @@ export async function chatLoop(opts = {}) {
               aborted: '중단했습니다' }[끝.type] ?? '끝난 이유를 알 수 없습니다';
             say('');
             say(`  ${잘됨 ? c.green('✓') : c.yellow('⚠')} ${c.gray('하위 작업')} ${c.white(clip(ev.목적, 50))}`
-              + ` ${c.gray(`— ${왜}`)} ${c.gray(`(${끝.steps ?? 0}걸음)`)}`);
+              + ` ${c.gray(`— ${왜}`)} ${c.gray(`(${끝.steps ?? 0}걸음${ev.모델 ? ` · ${ev.모델}` : ''})`)}`);
             // 무엇이 실제로 생겼는지는 하위가 한 말이 아니라 디스크가 말한다.
             만든파일보이기(끝.files);
             if (끝.why) say(`  ${c.gray(`막힌 데: ${clip(끝.why, 80)}`)}`);

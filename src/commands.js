@@ -9,6 +9,9 @@ import { pick } from './ui/prompt.js';
 import { load, save, resolveKey, upsert } from './config.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
 import { 말, 언어, 언어정하기, 언어고르기, 옮긴만큼 } from './i18n/index.js';
+import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
+import { allowTemporarily } from './safety/network.js';
+import { chat } from './backend/adapter.js';
 import { TOOLS } from './tools/index.js';
 import { loadCommand, discover } from './skills/discover.js';
 import { install, list, remove, pack } from './plugins/manage.js';
@@ -83,6 +86,7 @@ const 명령들 = {
   memory: { arg: true },
   level: { arg: true },
   bell: { arg: true },
+  consult: { arg: true },
   lang: { arg: true },
   init: { arg: false },
   exit: { arg: false },
@@ -151,6 +155,135 @@ export async function handle(line, session, ctx) {
      * "298개 중 47개는 아직 한국어" 가 낫다 — 그래야 안 옮긴 자리를 봤을 때
      * 사람이 고장으로 안 읽고, 도와줄 사람도 어디를 도울지 안다.
      */
+    /*
+     * 다른 모델에게 한 번 물어보기.
+     *
+     * ── 왜 따로 두나 ────────────────────────────────────────────────────
+     *
+     * 로컬에서는 모델 하나를 골라도 늘 어딘가 아쉽다. 7B 는 계획을 잘 세우는데
+     * 파일 열 개를 고치다 창이 차고, 1.5B 는 창은 넉넉한데 무엇을 할지를 못
+     * 정한다. 그런데 지금까지는 다른 것에게 물어보려면 /model 로 **갈아타야**
+     * 했고, 갈아타면 하던 대화가 그 모델의 것이 된다 — 한마디 물어보자고
+     * 판을 통째로 옮기는 셈이었다.
+     *
+     * ── 무엇을 보내나 ───────────────────────────────────────────────────
+     *
+     * **친 질문만** 보낸다. 지금 대화를 통째로 딸려 보내지 않는다.
+     *
+     * 이건 편의가 아니라 경계선 문제다. 대화에는 이 폴더의 소스가 통째로
+     * 들어 있는데, 그것이 어느 서버로 가는지는 사람이 정할 일이지 명령 하나가
+     * 조용히 정할 일이 아니다. 필요한 배경은 질문에 적으면 된다.
+     *
+     * 답은 화면에 보여 주고 **대화에도 넣는다.** 안 넣으면 사람이 그 답을
+     * 손으로 옮겨 적어야 하는데, 그러면 이건 다른 창에서 물어보는 것과 다를
+     * 것이 없다. 다만 누가 한 말인지 표를 달아 넣는다 — 지금 쓰는 모델이
+     * 제가 한 말로 착각하면 안 된다.
+     */
+    case 'consult': {
+      const 조각 = String(arg ?? '').trim().split(/\s+/);
+      const 이름 = 조각.shift() ?? '';
+      const 질문 = 조각.join(' ').trim();
+      const 목록 = 목록보기();
+
+      if (!이름) {
+        say('');
+        rule(말('consult.title'), 70);
+        if (!목록.length) {
+          say(`  ${c.gray(말('consult.noProfiles'))}`);
+        } else {
+          for (const p of 목록) {
+            const 표 = p.로컬 ? c.hgreen('⌂') : c.hyellow('↗');
+            say(`  ${표} ${c.cyan(pad(p.id, 16))} ${c.white(pad(p.model, 26))} ${c.gray(p.어디)}${p.지금 ? c.gray(` ${말('consult.current')}`) : ''}`);
+          }
+        }
+        say('');
+        say(`  ${c.gray(말('consult.usage'))}`);
+        say(`  ${c.gray(말('consult.questionOnly'))}`);
+        say('');
+        return { handled: true };
+      }
+
+      const 찾음 = 프로필찾기(이름);
+      if (!찾음.ok) {
+        say(`  ${c.gray(찾음.why)}`);
+        if (찾음.후보.length) say(`  ${c.gray(말('consult.candidates'))} ${찾음.후보.map((p) => c.cyan(p.id)).join(c.gray(' · '))}`);
+        else if (목록.length) say(`  ${c.gray(말('consult.have'))} ${목록.map((p) => c.cyan(p.id)).join(c.gray(' · '))}`);
+        say('');
+        return { handled: true };
+      }
+      const 되나 = 쓸수있나(찾음.prof);
+      if (!되나.ok) { say(`  ${c.yellow('!')} ${c.gray(되나.why)}`); say(''); return { handled: true }; }
+      if (!질문) {
+        say(`  ${c.gray(말('consult.needQuestion', { 이름: 찾음.prof.id }))}`);
+        say('');
+        return { handled: true };
+      }
+
+      const 새conn = 연결만들기(찾음.prof);
+      const 알림 = 알릴말(session.conn, 새conn);
+      say('');
+      say(알림.밖으로
+        ? `  ${c.hyellow('↗')} ${c.hyellow(알림.말)} ${c.gray(말('consult.goesOut'))}`
+        : `  ${c.hgreen('⌂')} ${c.gray(알림.말)}`);
+
+      // 그 한 번 동안만 연다. 끝나면 반드시 닫는다.
+      const 닫기 = 알림.다른자리 ? allowTemporarily(새conn.base) : null;
+      const 돌림 = spin(말('consult.asking', { 모델: 새conn.model }));
+      let 답 = null;
+      let 탈 = null;
+      const 잰때 = Date.now();
+      try {
+        const m = await chat(새conn, {
+          messages: [
+            { role: 'system', content: 말('consult.system') },
+            { role: 'user', content: 질문 },
+          ],
+          temperature: 0.3,
+        });
+        답 = String(m?.content ?? '').trim();
+      } catch (err) {
+        탈 = String(err?.message ?? err);
+      } finally {
+        돌림.stop();
+        try { 닫기?.(); } catch { /* 닫다 터져도 이번 대화는 이어간다 */ }
+      }
+
+      if (탈) {
+        say(`  ${c.yellow('!')} ${c.gray(말('consult.failed', { 왜: clip(탈, 120) }))}`);
+        say('');
+        return { handled: true };
+      }
+      if (!답) {
+        say(`  ${c.gray(말('consult.empty'))}`);
+        say('');
+        return { handled: true };
+      }
+
+      const 초 = ((Date.now() - 잰때) / 1000).toFixed(1);
+      say(`  ${c.gray('─'.repeat(2))} ${c.gray(`${찾음.prof.id} · ${초}초`)}`);
+      say('');
+      for (const l of 답.split('\n')) say(`  ${l}`);
+      say('');
+
+      /*
+       * 대화에 넣을 때 **누가 한 말인지 표를 단다.**
+       *
+       * 안 달면 지금 쓰는 모델이 제가 아까 한 말로 읽는다. 작은 모델이 대충
+       * 답한 것을 제 판단으로 삼아 그 위에 쌓으면, 틀린 자리가 어디서 왔는지
+       * 아무도 못 찾는다.
+       */
+      session.push({
+        role: 'user',
+        content: `[${찾음.prof.id} (${새conn.model}) 에게 따로 물어본 결과다. 네가 한 말이 아니다.]\n`
+          + `물음: ${질문}\n답: ${답}`,
+      });
+      ctx.audit.tool('Consult', { 프로필: 찾음.prof.id, 모델: 새conn.model, 질문: clip(질문, 200) },
+        { summary: `${알림.말} · ${답.length}자` });
+      say(`  ${c.gray(말('consult.added'))}`);
+      say('');
+      return { handled: true };
+    }
+
     case 'lang': {
       const 값 = String(arg ?? '').trim();
       const 이름 = (l) => 말(`lang.${l}`);

@@ -369,6 +369,7 @@ Names follow Claude Code / Codex conventions.
 | `/help` | Command list |
 | `/lang [ko\|en]` | Screen language. Falls back to Korean for anything not translated yet |
 | `/bell [on\|off]` | Ring and set the window title when a turn ends, or when deel needs an answer |
+| `/consult <profile> <question>` | Ask a second model one question. Your current model stays put |
 | `/context` | What is consuming the context window |
 | `/ctx [auto\|number]` | Context **length** — re-read it off the model, or set it yourself |
 | `/grade [small\|medium\|large\|auto]` | Model **grade** — how much it does on its own. A different axis from `/ctx` |
