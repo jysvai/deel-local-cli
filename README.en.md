@@ -99,6 +99,20 @@ deel audit                             # full review sheet
 
 ## Quick start
 
+### The screen speaks English too
+
+deel is written in Korean — the code, the function names, the comments. That part stays.
+What you see on screen does not have to.
+
+```bash
+DEEL_LANG=en deel        # this run only
+/lang en                 # and remember it
+/lang                    # how much is translated so far
+```
+
+Untranslated lines come through in Korean rather than as blanks, and `/lang` tells you exactly
+how many are left. What deel sends the model never changes — only the screen.
+
 ### Install
 
 ```bash
@@ -353,6 +367,8 @@ Names follow Claude Code / Codex conventions.
 | Command | What it does |
 |---|---|
 | `/help` | Command list |
+| `/lang [ko\|en]` | Screen language. Falls back to Korean for anything not translated yet |
+| `/bell [on\|off]` | Ring and set the window title when a turn ends, or when deel needs an answer |
 | `/context` | What is consuming the context window |
 | `/ctx [auto\|number]` | Context **length** — re-read it off the model, or set it yourself |
 | `/grade [small\|medium\|large\|auto]` | Model **grade** — how much it does on its own. A different axis from `/ctx` |

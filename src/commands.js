@@ -8,6 +8,7 @@ import { allowEndpoint } from './safety/network.js';
 import { pick } from './ui/prompt.js';
 import { load, save, resolveKey, upsert } from './config.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
+import { 말, 언어, 언어정하기, 언어고르기, 옮긴만큼 } from './i18n/index.js';
 import { TOOLS } from './tools/index.js';
 import { loadCommand, discover } from './skills/discover.js';
 import { install, list, remove, pack } from './plugins/manage.js';
@@ -26,50 +27,79 @@ const MODES = {
   strict: '엄격 — 파일 변경·명령 전부 물어봄',
 };
 
-export const COMMANDS = {
-  help:    { desc: '명령 목록' },
-  clear:   { desc: '대화 비우기' },
-  context: { desc: '컨텍스트 사용량 보기' },
-  ctx:     { desc: '컨텍스트 길이 — 모델에 맞춰 다시 재거나 직접 지정', arg: '[auto|숫자|640k]' },
-  out:     { desc: '한 번에 받을 답 길이 상한 — 큰 파일이 잘리면 여기를 올린다', arg: '[숫자|32k|auto]' },
-  grade:   { desc: '모델 급 — 얼마나 알아서 하나. 창 크기와는 다른 축', arg: '[작음|보통|큼|auto]' },
-  compact: { desc: '오래된 대화 줄이기' },
-  model:   { desc: '연결·모델 바꾸기 · `카드` 면 이 모델을 겪어 본 결과', arg: '[이름|list|models|카드]' },
-  think:   { desc: '추론 강도 (off/low/medium/high/max)', arg: '<수준>' },
-  mode:    { desc: '승인 정책 — 얼마나 물어보나 (auto/confirm/strict)', arg: '<모드>' },
-  work:    { desc: '작업 모드 — 무슨 일을 하는 중인가 (종합이면 저절로)', arg: '[모드]' },
-  // 이름이 /mode auto 와 겹쳐 보이므로 설명에서 못을 박는다.
-  // /mode auto 는 '얼마나 물어보나', /auto 는 '무슨 일을 하는 중인가' 다.
-  auto:    { desc: '작업 모드 → 종합 (요청에 따라 저절로 옮겨 감. /mode 와 다름)' },
-  code:    { desc: '작업 모드 → 코드 (고치고 만든다)' },
-  plan:    { desc: '작업 모드 → 계획 (먼저 계획만)' },
-  architect:{ desc: '작업 모드 → 설계 (구조를 짠다)' },
-  debug:   { desc: '작업 모드 → 디버그 (원인을 찾는다)' },
-  ask:     { desc: '작업 모드 → 묻기 (설명만)' },
-  orchestrator: { desc: '작업 모드 → 총괄 (큰 일을 쪼개서)' },
-  undo:    { desc: '직전 작업 되돌리기', arg: '[턴수]' },
-  diff:    { desc: '이번 대화에서 바뀐 파일 · 바뀐 자리 보기', arg: '[파일]' },
-  preview: { desc: '만든 웹을 이 자리에서 띄워 본다 — 올릴 필요 없음', arg: '[폴더|off]' },
-  tools:   { desc: '쓸 수 있는 도구 보기' },
-  skills:  { desc: '스킬 보기·검색·골라 올리기', arg: '[검색어|all|off]' },
-  plugin:  { desc: '플러그인 목록·설치·삭제·반입묶음', arg: '[install|remove|pack]' },
-  cost:    { desc: '이번 세션 사용량' },
-  status:  { desc: '연결 상태' },
-  scan:    { desc: '이 PC 의 로컬 모델 서버 훑기', arg: '[save]' },
-  thread:  { desc: '대화 갈래 — 곁가지를 딴 자리에서. 연결·되돌리기는 같이 씀', arg: '[new|fork|close|번호|이름]' },
-  learned: { desc: '쓰면서 저절로 알게 된 것 — 되는 명령·이 모델의 버릇', arg: '[지우기]' },
-  pin:     { desc: '못 박기 — 접거나 요약해도 안 지워지는 말', arg: '[말|지우기 번호|지우기 전부]' },
-  evidence:{ desc: '증거 — 무엇을 바꿨고 무엇이 그걸 증명하나. 안 된 것도 적는다', arg: '[파일]' },
-  sessions:{ desc: '이 폴더의 지난 대화 목록' },
-  recall:  { desc: '지난 대화에서 찾기 — 목록 말고 내용으로', arg: '<찾을 말>' },
-  mcp:     { desc: '밖에서 붙인 도구(MCP) 서버 보기' },
-  memory:  { desc: '대화가 끝나도 남는 기억 — 보기·지우기', arg: '[지우기 <번호>|비우기|<적을 말>]' },
-  level:   { desc: '사용자 수준 (쉬움/개발자)', arg: '[수준]' },
-  bell:    { desc: '다 됐을 때·물어볼 때 종소리와 창 제목 (on/off)', arg: '[on|off]' },
-  init:    { desc: 'DEEL.md 규칙 파일 만들기' },
-  exit:    { desc: '끝내기' },
-  quit:    { desc: '끝내기' },
+/*
+ * 슬래시 명령 목록.
+ *
+ * ── 왜 설명이 여기 없나 ─────────────────────────────────────────────────
+ *
+ * 이름과 인자 유무만 여기 두고, **사람이 읽는 글은 i18n/ko.js 에 있다.**
+ * 명령 이름은 원래부터 영어였는데(help·model·undo…) 그 옆의 설명이 전부
+ * 한글이라, 저장소를 처음 연 영어권 사람은 `/help` 를 쳐 봐도 무엇을 하는
+ * 명령인지 알 수가 없었다. 그래서 설명만 갈아 끼울 수 있게 뺐다.
+ *
+ * desc·arg 를 **게터로** 둔다. 켤 때 한 번 읽어 굳히면 /lang 으로 바꿔도
+ * 목록이 안 따라오고, 그러면 바뀐 것처럼 보이다가 안 바뀐 자리가 남는다.
+ * 볼 때마다 지금 언어로 읽는 편이 어긋날 자리가 없다.
+ *
+ * 없는 열쇠는 열쇠 이름이 그대로 나온다 — 빈칸이 아니다. 명령을 새로 넣고
+ * ko.js 에 적는 것을 빠뜨리면 `cmd.foo.desc` 가 화면에 찍혀서 바로 눈에 띈다.
+ * (검사도 그걸 잡는다.)
+ */
+const 명령들 = {
+  help: { arg: false },
+  clear: { arg: false },
+  context: { arg: false },
+  ctx: { arg: true },
+  out: { arg: true },
+  grade: { arg: true },
+  compact: { arg: false },
+  model: { arg: true },
+  think: { arg: true },
+  mode: { arg: true },
+  work: { arg: true },
+  auto: { arg: false },
+  code: { arg: false },
+  plan: { arg: false },
+  architect: { arg: false },
+  debug: { arg: false },
+  ask: { arg: false },
+  orchestrator: { arg: false },
+  undo: { arg: true },
+  diff: { arg: true },
+  preview: { arg: true },
+  tools: { arg: false },
+  skills: { arg: true },
+  plugin: { arg: true },
+  cost: { arg: false },
+  status: { arg: false },
+  scan: { arg: true },
+  thread: { arg: true },
+  learned: { arg: true },
+  pin: { arg: true },
+  evidence: { arg: true },
+  sessions: { arg: false },
+  recall: { arg: true },
+  mcp: { arg: false },
+  memory: { arg: true },
+  level: { arg: true },
+  bell: { arg: true },
+  lang: { arg: true },
+  init: { arg: false },
+  exit: { arg: false },
+  quit: { arg: false },
 };
+
+/**
+ * 화면에 낼 명령표. desc·arg 는 볼 때마다 지금 언어로 읽는다.
+ *
+ * @type {Record<string, {desc: string, arg?: string}>}
+ */
+export const COMMANDS = Object.fromEntries(Object.entries(명령들).map(([이름, 꼴]) => {
+  const 것 = { get desc() { return 말(`cmd.${이름}.desc`); } };
+  if (꼴.arg) Object.defineProperty(것, 'arg', { get: () => 말(`cmd.${이름}.arg`), enumerable: true });
+  return [이름, 것];
+}));
+
 
 /**
  * 이 줄이 명령이 아니라 '경로' 인가.
@@ -111,6 +141,49 @@ export async function handle(line, session, ctx) {
      * 사람이 있고, 그런 사람은 알림 자체를 못 쓰게 되는 것이 아니라 **그 자리에서
      * 껐다 켤 수 있어야** 한다. 환경변수만 두면 프로그램을 껐다 켜야 한다.
      */
+    /*
+     * 화면 말 — 한국어 / English.
+     *
+     * 코드는 한국어로 둔다. 함수 이름도 변수 이름도 한글이고 그게 이 저장소의
+     * 뜻이다. 바꾸는 것은 **화면에 나가는 말**뿐이다.
+     *
+     * 얼마나 옮겼는지를 숨기지 않고 그대로 적는다. 다 된 척하는 것보다
+     * "298개 중 47개는 아직 한국어" 가 낫다 — 그래야 안 옮긴 자리를 봤을 때
+     * 사람이 고장으로 안 읽고, 도와줄 사람도 어디를 도울지 안다.
+     */
+    case 'lang': {
+      const 값 = String(arg ?? '').trim();
+      const 이름 = (l) => 말(`lang.${l}`);
+      if (!값) {
+        const p = 옮긴만큼();
+        say('');
+        say(`  ${c.gray(말('lang.now', { 이름: 이름(언어()) }))}`);
+        say(`  ${c.gray(말('lang.progress', { 언어: 언어(), 옮김: p.옮김, 전체: p.전체 }))}`);
+        if (p.남음) say(`  ${c.gray(말('lang.partial'))}`);
+        say(`  ${c.gray(말('lang.codeStays'))}`);
+        say(`  ${c.gray(말('lang.howto'))} ${c.cyan('/lang ko')} ${c.gray('·')} ${c.cyan('/lang en')}`);
+        say(`  ${c.gray(말('lang.envHint'))}`);
+        say('');
+        return { handled: true };
+      }
+      if (!언어고르기(값)) {
+        say(`  ${c.gray(말('lang.unknown'))}`);
+        say('');
+        return { handled: true };
+      }
+      언어정하기(값);
+      const cfg = load();
+      cfg.lang = 언어();
+      try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+      const p = 옮긴만큼();
+      say('');
+      say(`  ${mark.ok} ${말('lang.changed', { 이름: 이름(언어()) })}`);
+      say(`     ${c.gray(말('lang.progress', { 언어: 언어(), 옮김: p.옮김, 전체: p.전체 }))}`);
+      if (p.남음) say(`     ${c.gray(말('lang.partial'))}`);
+      say('');
+      return { handled: true };
+    }
+
     case 'bell': {
       const cfg = load();
       const 켜는말 = ['on', '켬', '켜', '켜기', 'y', 'yes', 'ㅇ'];
@@ -118,29 +191,28 @@ export async function handle(line, session, ctx) {
       const 값 = String(arg ?? '').trim().toLowerCase();
       if (!값) {
         const 켜져있나 = cfg.bell !== false;
+        const 상태 = 켜져있나 ? c.hgreen(말('bell.stateOn')) : c.gray(말('bell.stateOff'));
         say('');
-        say(`  ${c.gray('종소리는 지금')} ${켜져있나 ? c.hgreen('켜져') : c.gray('꺼져')} ${c.gray('있습니다.')}`);
-        say(`  ${c.gray(`${알릴만한초}초 넘게 걸린 턴이 끝났을 때, 그리고 무언가 물어볼 때 한 번 울립니다.`)}`);
-        say(`  ${c.gray('창 제목에도 상태가 뜹니다 — 탭 이름만 봐도 도는 중인지 알 수 있게.')}`);
-        say(`  ${c.gray('바꾸려면')} ${c.cyan('/bell on')} ${c.gray('·')} ${c.cyan('/bell off')}`);
-        if (!process.stdout.isTTY && !process.stderr.isTTY) {
-          say(`  ${c.gray('(지금은 터미널이 아니라 소리도 제목도 안 나갑니다 — 파이프를 깨지 않으려고 그렇습니다.)')}`);
-        }
+        say(`  ${c.gray(말('bell.now', { 상태 }))}`);
+        say(`  ${c.gray(말('bell.when', { 초: 알릴만한초 }))}`);
+        say(`  ${c.gray(말('bell.title'))}`);
+        say(`  ${c.gray(말('bell.howto'))} ${c.cyan('/bell on')} ${c.gray('·')} ${c.cyan('/bell off')}`);
+        if (!process.stdout.isTTY && !process.stderr.isTTY) say(`  ${c.gray(말('bell.notATty'))}`);
         say('');
         return { handled: true };
       }
       if (!켜는말.includes(값) && !끄는말.includes(값)) {
-        say(`  ${c.gray('on 이나 off 로 적어 주세요.')}`);
+        say(`  ${c.gray(말('bell.needOnOff'))}`);
         say('');
         return { handled: true };
       }
       cfg.bell = 켜는말.includes(값);
       try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
       say('');
-      say(`  ${mark.ok} ${cfg.bell ? '종소리를 켰습니다.' : '종소리를 껐습니다.'}`);
+      say(`  ${mark.ok} ${말(cfg.bell ? 'bell.turnedOn' : 'bell.turnedOff')}`);
       // 켤 때는 한 번 울려 준다. "켰다는데 소리가 나나?" 를 그 자리에서 확인하게.
-      if (cfg.bell) { 종(); say(`     ${c.gray('방금 한 번 울렸습니다. 안 들렸으면 터미널 설정에서 소리를 확인해 주세요.')}`); }
-      say(`     ${c.gray('이 세션에도 바로 먹습니다.')}`);
+      if (cfg.bell) { 종(); say(`     ${c.gray(말('bell.justRang'))}`); }
+      say(`     ${c.gray(말('bell.appliesNow'))}`);
       say('');
       return { handled: true };
     }
@@ -312,11 +384,11 @@ export async function handle(line, session, ctx) {
       const r = ctx.history.undo(n);
       ctx.audit.undo({ turns: r.turns, files: r.restored.length });
       if (!r.restored.length) {
-        say(`  ${c.gray('되돌릴 것이 없습니다.')}`);
+        say(`  ${c.gray(말('undo.nothing'))}`);
         say('');
         return { handled: true };
       }
-      say(`  ${mark.ok} ${r.turns}개 턴, 파일 ${r.restored.length}개를 되돌렸습니다.`);
+      say(`  ${mark.ok} ${말('undo.done', { turns: r.turns, files: r.restored.length })}`);
       for (const f of r.restored) say(`    ${c.gray(ctx.scope.show(f.path))}  ${c.gray(f.how)}`);
 
       // /diff 가 세던 것에서도 뺀다. 되돌린 파일이 '바뀐 파일' 로 남아 있으면
@@ -328,19 +400,19 @@ export async function handle(line, session, ctx) {
 
       const 되감음 = session.되감기(r.turnIds ?? []);
       if (되감음.걷은것) {
-        say(`    ${c.gray(`대화도 ${되감음.걷은것}개 걷어냈습니다 — 모델이 되돌린 코드를 아직 있는 줄 알면 그 위에 이어 일합니다.`)}`);
-        if (되감음.고친것) say(`    ${c.gray(`(짝 없는 도구 호출 ${되감음.고친것}개도 같이 정리)`)}`);
+        say(`    ${c.gray(말('undo.alsoTalk', { n: 되감음.걷은것 }))}`);
+        if (되감음.고친것) say(`    ${c.gray(말('undo.repaired', { n: 되감음.고친것 }))}`);
         try { ctx?.갈래?.현재store?.()?.replace(session.messages, `되돌리기 — ${r.turns}개 턴`); }
         catch { /* 적어 두지 못해도 이번 대화는 이어진다 */ }
         if (되감음.사람말) {
           const 한줄 = 되감음.사람말.replace(/\s+/g, ' ').trim();
-          say(`    ${c.gray('시켰던 말:')} ${c.cyan(한줄.length > 60 ? `${한줄.slice(0, 60)}…` : 한줄)}`);
+          say(`    ${c.gray(말('undo.saidWas'))} ${c.cyan(한줄.length > 60 ? `${한줄.slice(0, 60)}…` : 한줄)}`);
         }
       } else {
         // 접기·요약이 그 자리를 이미 가져갔을 때다. 파일은 되돌아갔지만 대화는
         // 못 걷었다는 것을 숨기지 않는다 — 숨기면 위의 사고가 그대로 난다.
-        say(`    ${c.gray('대화는 그대로 둡니다 — 그 턴의 말이 이미 접혀 없어졌습니다.')}`);
-        say(`    ${c.gray('모델이 되돌린 것을 아직 있는 줄 알 수 있으니, 이어 시킬 때 한 번 짚어 주세요.')}`);
+        say(`    ${c.gray(말('undo.talkKept'))}`);
+        say(`    ${c.gray(말('undo.talkKeptWhy'))}`);
       }
       say('');
       return { handled: true };
@@ -949,7 +1021,7 @@ function help(session) {
   const level = session?.level ?? LEVEL_DEFAULT;
   const 쉬움 = !levelShows(level, '__전부__');   // 개발자면 show 가 null 이라 전부 참
   say('');
-  rule(쉬움 ? '명령 (자주 쓰는 것)' : '명령', 70);
+  rule(말(쉬움 ? 'help.titleCommon' : 'help.title'), 70);
   let 감춘수 = 0;
   for (const [n, m] of Object.entries(COMMANDS)) {
     if (n === 'quit') continue;
@@ -959,11 +1031,11 @@ function help(session) {
   say('');
   // 감춘 것은 '못 쓰는 것' 이 아니다. 그 말을 분명히 해 둔다.
   if (감춘수) {
-    say(`  ${c.gray(`이 밖에 ${감춘수}개가 더 있습니다 — 직접 입력하면 그대로 실행됩니다.`)}`);
-    say(`  ${c.gray('전부 보려면')} ${c.cyan('/level 개발자')}`);
+    say(`  ${c.gray(말('help.moreHidden', { n: 감춘수 }))}`);
+    say(`  ${c.gray(말('help.showAll'))} ${c.cyan('/level developer')}`);
     say('');
   }
-  say(`  ${c.gray('그 밖의 입력은 모델에게 보냅니다. 빈 줄에서 Ctrl+C 로 끝냅니다.')}`);
+  say(`  ${c.gray(말('help.restGoesToModel'))}`);
   say('');
 }
 

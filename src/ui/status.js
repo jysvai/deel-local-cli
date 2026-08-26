@@ -7,6 +7,7 @@ import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
 import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
+import { 말, 언어 } from '../i18n/index.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
 
 // 한 조각씩 따로 만든다. 좁은 화면에서는 뒤에서부터 떨군다.
@@ -34,7 +35,7 @@ export const SEGMENTS = {
   // ('위험만')으로 접혔다. 안전 표시를 흐리게 만드는 안전 표시는 손해다.
   // 붙여 쓰면 두 칸이고, '어디 폴더에서 · 어디로 나가나' 가 한 덩이로 읽힌다.
   dir: {
-    desc: '작업 폴더 (앞의 ⌂/↗ 는 소스가 어디로 나가나)',
+    get desc() { return 말('seg.dir'); },
     make: (s) => `${경계표(s)} ${c.gray(clip(base(s.root), 20))}`,
     short: (s) => `${경계표(s)} ${c.gray(clip(base(s.root), 12))}`,
   },
@@ -47,7 +48,7 @@ export const SEGMENTS = {
    * 갈래가 둘 이상일 때만 repl 이 session.갈래표 를 채운다(agent/threads.js).
    */
   thread: {
-    desc: '대화 갈래',
+    get desc() { return 말('seg.thread'); },
     make: (s) => (s.갈래표 ? c.hcyan(`⑂ ${clip(s.갈래표, 12)}`) : null),
     short: (s) => (s.갈래표 ? c.hcyan(`⑂ ${clip(s.갈래표, 6)}`) : null),
   },
@@ -62,7 +63,7 @@ export const SEGMENTS = {
    * 지금 봐야 안다. 둘 중 하나를 접어야 하면 이쪽이다.
    */
   model: {
-    desc: '모델 이름',
+    get desc() { return 말('seg.model'); },
     make: (s) => c.hcyan(clip(s.conn.model, 24)),
     short: (s) => c.hcyan(clip(s.conn.model, 14)),
   },
@@ -78,14 +79,19 @@ export const SEGMENTS = {
    * 사람은 프로그램이 확인한 사실이라고 읽는다.
    */
   grade: {
-    desc: '모델 급 (얼마나 알아서 하나)',
+    get desc() { return 말('seg.grade'); },
     make: (s) => {
       const g = 볼만한급(s);
-      return g ? (g.짐작 ? c.gray(`◈ ${g.급}?`) : c.white(`◈ ${g.급}`)) : '';
+      if (!g) return '';
+      const 이름 = 급이름(g.급);
+      return g.짐작 ? c.gray(`◈ ${이름}?`) : c.white(`◈ ${이름}`);
     },
     short: (s) => {
       const g = 볼만한급(s);
-      return g ? (g.짐작 ? c.gray(`◈${g.급[0]}?`) : c.white(`◈${g.급[0]}`)) : '';
+      if (!g) return '';
+      // 첫 글자만. 한글이든 영어든 한 글자면 뜻이 남는다 — 작/보/큼, s/m/l.
+      const 첫 = [...급이름(g.급)][0] ?? '';
+      return g.짐작 ? c.gray(`◈${첫}?`) : c.white(`◈${첫}`);
     },
   },
 
@@ -102,7 +108,7 @@ export const SEGMENTS = {
    * 문턱을 옮겼는데 화면 눈금만 옛 자리에 남으면, 그 눈금은 거짓말이 된다.
    */
   ctx: {
-    desc: '컨텍스트 사용량 (눈금 = 접기·요약 자리)',
+    get desc() { return 말('seg.ctx'); },
     make: (s) => {
       const { r, pct, tone, b } = 참값(s);
       return `${눈금게이지(r, 10, [FOLD_AT, COMPACT_AT])} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + short(b.total))}`;
@@ -117,7 +123,7 @@ export const SEGMENTS = {
   // 지금 무슨 일을 하는 중인가. 파일을 못 바꾸는 모드면 자물쇠를 같이 그린다 —
   // 계획만 세우는 중인지 실제로 고치는 중인지 한눈에 보여야 한다.
   work: {
-    desc: '작업 모드',
+    get desc() { return 말('seg.work'); },
     make: (s) => {
       const 지금 = s.effectiveWork ? s.effectiveWork() : s.work;
       const w = workMode(지금);
@@ -125,12 +131,16 @@ export const SEGMENTS = {
       // 저절로 옮겨 간 것인지 사람이 고른 것인지 구분해서 보여준다.
       // 이게 없으면 "왜 갑자기 읽기만 되지" 를 알 길이 없다.
       const 저절로 = s.routed ? c.gray('~') : '';
-      return `${c.hcyan(w.glyph)} ${저절로}${잠김 ? c.green(w.name) : c.white(w.name)}${잠김 ? c.green(' 읽기만') : ''}`;
+      // 모드 이름은 표에 영어가 이미 있다(modes.js 의 en). 화면 말이 영어면 그걸 쓴다 —
+      // 굳이 i18n 에 같은 말을 또 적어 두면 언젠가 둘이 갈라진다.
+      const 이름 = 언어() === 'en' ? (w.en ?? w.name) : w.name;
+      const 잠김말 = 언어() === 'en' ? ' read-only' : ' 읽기만';
+      return `${c.hcyan(w.glyph)} ${저절로}${잠김 ? c.green(이름) : c.white(이름)}${잠김 ? c.green(잠김말) : ''}`;
     },
   },
 
   think: {
-    desc: '추론 강도·배분',
+    get desc() { return 말('seg.think'); },
     make: (s) => {
       const p = PROFILES[s.effort] ?? PROFILES.save;
       return `${c.gray('◇')} ${c.white(s.think)}${c.gray('·')}${c.magenta(p.name)}`;
@@ -147,13 +157,13 @@ export const SEGMENTS = {
    * 는 뜻이라는 것은 화면 어디에도 없었다. 이건 꾸미기가 아니라 안전 표시다.
    */
   mode: {
-    desc: '승인 방식',
+    get desc() { return 말('seg.mode'); },
     make: (s) => 승인표시(s.mode),
     short: (s) => 승인표시(s.mode, { 짧게: true }),
   },
 
   tok: {
-    desc: '주고받은 토큰',
+    get desc() { return 말('seg.tok'); },
     make: (s) => s.usage.in || s.usage.out
       ? c.gray(`↑${short(s.usage.in)} ↓${short(s.usage.out)}`)
       : null,
@@ -166,7 +176,7 @@ export const SEGMENTS = {
    * 서 있으면 자리만 먹고, 좁은 터미널에서는 그것 때문에 뒤엣것이 떨어져 나간다.
    */
   edits: {
-    desc: '이번 대화에서 바뀐 파일',
+    get desc() { return 말('seg.edits'); },
     make: (s) => (s.changes?.size ? c.white(`✎ ${s.changes.size}`) : null),
   },
 
@@ -178,7 +188,7 @@ export const SEGMENTS = {
    * 화면에 초록 ✓ 가 없으면 아직 아무도 안 돌려 본 것이다.
    */
   verify: {
-    desc: '확인한 것 (Verify)',
+    get desc() { return 말('seg.verify'); },
     make: (s) => {
       const v = s.검증;
       if (!v?.돈횟수) return null;
@@ -196,19 +206,19 @@ export const SEGMENTS = {
    * 이력은 오래되면 잘려 나가므로(undo.js) 이 숫자는 줄어들기도 한다.
    */
   undoable: {
-    desc: '되돌릴 수 있는 턴',
+    get desc() { return 말('seg.undoable'); },
     make: (s) => (s.되돌릴턴 > 0 ? c.gray(`↩ ${s.되돌릴턴}`) : null),
   },
 
-  tools: { desc: '도구 호출 수', make: (s) => (s.usage.calls ? c.gray(`호출 ${s.usage.calls}`) : null) },
+  tools: { get desc() { return 말('seg.tools'); }, make: (s) => (s.usage.calls ? c.gray(`호출 ${s.usage.calls}`) : null) },
 
   skills: {
-    desc: '이 PC 에서 찾은 스킬',
+    get desc() { return 말('seg.skills'); },
     make: (s) => (s.skills?.length ? c.gray(`스킬 ${s.skills.length}`) : null),
   },
 
   time: {
-    desc: '켠 지 얼마나',
+    get desc() { return 말('seg.time'); },
     make: (s) => {
       const ms = Date.now() - s.startedAt;
       return c.gray(ms < 60000 ? `${Math.round(ms / 1000)}초` : `${Math.round(ms / 60000)}분`);
@@ -379,18 +389,28 @@ export function contextWarning(session) {
  * 켤 때 한 번 그리는 머리말 상자 안쪽 줄들.
  */
 /** 머리말 모델 줄에 붙는 급 표시. 못 매기면 아무것도 안 붙는다. */
+/** 급 이름을 화면 말로. 표에는 한글 id 로 들어 있다(agent/grade.js). */
+export function 급이름(급) {
+  const 짝 = { 작음: 'grade.small', 보통: 'grade.medium', 큼: 'grade.large' }[급];
+  return 짝 ? 말(짝) : String(급 ?? '');
+}
+
 function 급머리말(session) {
   if (typeof session.급 !== 'function') return '';
   const g = session.급();
-  return c.gray(` · 급 ${g.급}${g.짐작 ? ' 짐작' : ''}`);
+  return c.gray(말('head.gradeSuffix', {
+    급: 말('head.grade'),
+    급이름: 급이름(g.급),
+    짐작: g.짐작 ? ` ${말('head.guess')}` : '',
+  }));
 }
 
 export function headerLines(session, found) {
   const conn = session.conn;
   const 능력 = [
-    conn.streaming ? c.green('스트리밍') : c.gray('스트리밍 없음'),
-    conn.tools ? c.green('도구') : c.yellow('도구 미확인'),
-    conn.think ? c.green('추론 조절') : c.gray('추론 조절 없음'),
+    conn.streaming ? c.green(말('head.streaming')) : c.gray(말('head.noStreaming')),
+    conn.tools ? c.green(말('head.tools')) : c.yellow(말('head.toolsUnknown')),
+    conn.think ? c.green(말('head.thinkCtl')) : c.gray(말('head.noThinkCtl')),
   ].join(c.gray(' · '));
 
   // 코딩 에이전트는 소스를 통째로 모델에 보낸다. '어디로' 가 가장 중요한 한 줄이다.
@@ -398,12 +418,23 @@ export function headerLines(session, found) {
   try {
     const u = new URL(conn.base);
     const 로컬 = isLocalHost(u.hostname);
-    목적지 = `${로컬 ? c.green('이 컴퓨터 안') : c.yellow('바깥')} ${c.white(u.host)}`
-      + (isOffline() ? c.green('  [오프라인 잠금]') : '');
+    목적지 = `${로컬 ? c.green(말('head.inside')) : c.yellow(말('head.outside'))} ${c.white(u.host)}`
+      + (isOffline() ? c.green(`  ${말('head.offlineLock')}`) : '');
   } catch { 목적지 = c.gray(String(conn.base)); }
 
+  /*
+   * 이름칸 폭을 **말에 맞춰 잰다.**
+   *
+   * 8칸으로 못 박아 두었더니 영어에서 'approval'(8칸)만 한 칸도 못 벌려
+   * 그 줄만 오른쪽으로 밀렸다. 다른 말을 넣을 때마다 이 숫자를 다시 고르게
+   * 하는 대신, 제일 긴 이름에서 뽑는다.
+   */
+  const 이름들 = ['head.model', 'head.send', 'head.conn', 'head.folder', 'head.approve', 'head.thisPC'];
+  const 이름칸 = Math.max(...이름들.map((k) => width(말(k)))) + 2;
+  const 자리 = (글) => `${글}${' '.repeat(Math.max(1, 이름칸 - width(글)))}`;
+  const 빈자리 = ' '.repeat(이름칸);
   const lines = [
-    `${c.hcyan(c.bold('deel'))}  ${c.gray(conn.kind === 'ollama' ? 'Ollama 규격' : 'OpenAI 호환 규격')}`,
+    `${c.hcyan(c.bold('deel'))}  ${c.gray(말(conn.kind === 'ollama' ? 'head.spec.ollama' : 'head.spec.openai'))}`,
     '',
     /*
      * 모델 줄에 급을 같이 적는다.
@@ -413,7 +444,7 @@ export function headerLines(session, found) {
      * 같이 읽고 나면 그 다음부터는 글자만 봐도 안다.
      * 짐작이면 그렇다고 적는다 — 알아낸 사실과 같은 낯으로 내밀면 안 된다.
      */
-    `${c.gray('모델')}    ${c.white(conn.model)}  ${c.gray('(' + short(conn.ctx) + ' 토큰')}`
+    `${c.gray(자리(말('head.model')))}${c.white(conn.model)}  ${c.gray(`(${short(conn.ctx)} ${말('head.tokens')}`)}`
       + `${급머리말(session)}${c.gray(')')}`,
     /*
      * 상태줄 맨 앞의 한 글자가 무슨 뜻인지 여기서 한 번 가르친다.
@@ -422,17 +453,17 @@ export function headerLines(session, found) {
      * 읽고 나면, 그 뒤로는 글자만 봐도 안다. 이 한 글자는 스크롤에 안 밀린다 —
      * 그게 이 머리말 한 줄과 다른 점이고, 이 줄을 넣은 이유다.
      */
-    `${c.gray('보냄')}    ${목적지}  ${c.gray('← 여기 말고는 어디로도 안 갑니다')}`,
-    `${c.gray('        상태줄 맨 앞')} ${c.hgreen('⌂')} ${c.gray('가 이 뜻입니다. 바깥으로 가면')} ${c.hyellow('↗')} ${c.gray('로 바뀝니다.')}`,
-    `${c.gray('연결')}    ${능력}`,
-    `${c.gray('폴더')}    ${c.white(clip(session.root, 56))}`,
+    `${c.gray(자리(말('head.send')))}${목적지}  ${c.gray(말('head.nowhereElse'))}`,
+    `${빈자리}${c.gray(말('head.glyphHint', { 안: c.hgreen('⌂'), 밖: c.hyellow('↗') }))}`,
+    `${c.gray(자리(말('head.conn')))}${능력}`,
+    `${c.gray(자리(말('head.folder')))}${c.white(clip(session.root, 56))}`,
     // 켤 때 한 번은 사람 말로 알려 준다. 상태줄의 `⏵⏵ 자동 승인` 이 무슨
     // 뜻인지 여기서 한 번 읽고 나면 그 다음부터는 글자만 봐도 안다.
-    `${c.gray('승인')}    ${승인표시(session.mode)}  ${c.gray('— ' + 승인고르기(session.mode).한줄)}`,
-    `${c.gray('        Shift+Tab')} ${c.gray('으로 바꿉니다  ·  ')}${c.gray('Tab 은 치던 / 명령을 채웁니다')}`,
+    `${c.gray(자리(말('head.approve')))}${승인표시(session.mode)}  ${c.gray('— ' + 승인고르기(session.mode).한줄)}`,
+    `${빈자리}${c.gray(말('head.shiftTab'))}${c.gray(말('head.shiftTabHint'))}${c.gray(말('head.tabHint'))}`,
   ];
   if (found.skills.length || found.commands.length) {
-    lines.push(`${c.gray('이 PC')}   ${c.white(`스킬 ${found.skills.length}`)}${c.gray(' · ')}${c.white(`명령 ${found.commands.length}`)}${c.gray(' · ')}${c.white(`플러그인 ${found.plugins.length}`)}`);
+    lines.push(`${c.gray(자리(말('head.thisPC')))}${c.white(말('head.skills', { n: found.skills.length }))}${c.gray(' · ')}${c.white(말('head.commands', { n: found.commands.length }))}${c.gray(' · ')}${c.white(말('head.plugins', { n: found.plugins.length }))}`);
   }
   return lines;
 }

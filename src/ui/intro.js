@@ -33,6 +33,7 @@
  * 그대로 섞여 남는다. 로그를 열었더니 `\x1b[2A` 가 널려 있는 꼴이 된다.
  */
 import { c, cursor, width } from './ansi.js';
+import { 말 } from '../i18n/index.js';
 
 const 앞 = 'deel';
 const 꼬리 = '-local';
@@ -166,7 +167,7 @@ export async function 보이기({
 
 /** 곁말은 부르는 쪽이 정한다. 여기 있는 것은 기본값이다. */
 export function 기본곁말(바깥) {
-  return 바깥 ? '바깥으로 나갑니다' : '이 컴퓨터 안에서만';
+  return 말(바깥 ? 'intro.outside' : 'intro.inside');
 }
 
 // 폭 계산이 어긋나지 않는지 부르는 쪽에서 재 볼 수 있게 열어 둔다.

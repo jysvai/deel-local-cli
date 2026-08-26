@@ -6,6 +6,7 @@ import { c, say as 바로쓰기, mark, clip } from './ui/ansi.js';
 import { headerLines } from './ui/status.js';
 import { 종, 창제목, 제목되돌리기, 알릴까, 제목글 } from './ui/notify.js';
 import { 보이기 as 인트로, 기본곁말 } from './ui/intro.js';
+import { 언어잡기 } from './i18n/index.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
 import { handle, COMMANDS, 미리보기끄기 } from './commands.js';
@@ -175,6 +176,15 @@ export async function chatLoop(opts = {}) {
    * 전부 'deel' 이면 어느 탭이 끝난 건지 알 수가 없다. (ui/notify.js)
    */
   const 알림 = { 켬: cfg.bell !== false, 폴더: basename(root) };
+
+  /*
+   * 화면 말을 여기서 한 번 정한다.
+   *
+   * 켤 때 딱 한 번이면 된다 — 그 뒤로는 /lang 이 바꾼다. 환경변수가 설정을
+   * 이긴다. 한 번만 영어로 켜 보려는 사람이 설정을 건드리지 않고
+   * `DEEL_LANG=en deel` 로 할 수 있어야 하기 때문이다. (i18n/index.js)
+   */
+  언어잡기({ cfg });
 
   const session = new Session(conn, {
     root,

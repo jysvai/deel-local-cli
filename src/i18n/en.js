@@ -1,0 +1,208 @@
+/**
+ * English.
+ *
+ * ── What this is, and what it is not ────────────────────────────────────
+ *
+ * deel is a Korean-language tool. The code stays Korean — functions and
+ * variables are named in Korean and that is deliberate. Only what shows up
+ * on screen is translated, and only so that someone who opens the repo can
+ * type `/help` and understand what they are looking at.
+ *
+ * Keys missing here fall back to Korean rather than to a blank. A blank is
+ * read as a bug; Korean is read as "not translated yet", which is the truth.
+ * `/lang` prints how much is done — see 옮긴만큼() in ./index.js.
+ *
+ * ── Wording rules ──────────────────────────────────────────────────────
+ *
+ * Keep the same directness as the Korean. The Korean text says what happens
+ * and what it costs you, not what the feature is called. Translate that,
+ * not the noun.
+ *
+ * Do not translate: command names (they are already English), `DEEL.md`,
+ * `MCP`, `ACP`, and the tool names (Read/Write/Bash/Verify…). Those are
+ * identifiers, and renaming them on screen would make the docs wrong.
+ */
+export const en = {
+  // ── Slash commands ────────────────────────────────────────────────────
+  'cmd.help.desc': 'list commands',
+  'cmd.clear.desc': 'clear the conversation',
+  'cmd.context.desc': 'show context usage',
+  'cmd.ctx.desc': 'context length — re-measure for this model, or set it yourself',
+  'cmd.ctx.arg': '[auto|number|640k]',
+  'cmd.out.desc': 'cap on one reply — raise this if large files come back cut off',
+  'cmd.out.arg': '[number|32k|auto]',
+  'cmd.grade.desc': 'model class — how much it can do on its own. Not the same axis as window size',
+  'cmd.grade.arg': '[small|medium|large|auto]',
+  'cmd.compact.desc': 'shrink older turns',
+  'cmd.model.desc': 'switch connection/model · `card` shows what this model has done here',
+  'cmd.model.arg': '[name|list|models|card]',
+  'cmd.think.desc': 'reasoning effort (off/low/medium/high/max)',
+  'cmd.think.arg': '<level>',
+  'cmd.mode.desc': 'approval policy — how much it asks first (auto/confirm/strict)',
+  'cmd.mode.arg': '<mode>',
+  'cmd.work.desc': 'work mode — what kind of job this is (picked for you in auto)',
+  'cmd.work.arg': '[mode]',
+  'cmd.auto.desc': 'work mode → auto (moves by itself with the request. Not /mode)',
+  'cmd.code.desc': 'work mode → code (edits and builds)',
+  'cmd.plan.desc': 'work mode → plan (plan first, no edits)',
+  'cmd.architect.desc': 'work mode → architect (shapes the structure)',
+  'cmd.debug.desc': 'work mode → debug (finds the cause)',
+  'cmd.ask.desc': 'work mode → ask (explains only)',
+  'cmd.orchestrator.desc': 'work mode → orchestrator (splits a big job up)',
+  'cmd.undo.desc': 'undo the last turn — files and the conversation together',
+  'cmd.undo.arg': '[turns]',
+  'cmd.diff.desc': 'files changed this session, and what changed in them',
+  'cmd.diff.arg': '[file]',
+  'cmd.preview.desc': 'serve what you built, right here — nothing to deploy',
+  'cmd.preview.arg': '[folder|off]',
+  'cmd.tools.desc': 'show the tools available',
+  'cmd.skills.desc': 'browse, search, and load skills',
+  'cmd.skills.arg': '[search|all|off]',
+  'cmd.plugin.desc': 'plugins — list, install, remove, bundle for air-gapped import',
+  'cmd.plugin.arg': '[install|remove|pack]',
+  'cmd.cost.desc': 'usage for this session',
+  'cmd.status.desc': 'connection status',
+  'cmd.scan.desc': 'scan this machine for local model servers',
+  'cmd.scan.arg': '[save]',
+  'cmd.thread.desc': 'threads — take a side track. Connection and undo history stay shared',
+  'cmd.thread.arg': '[new|fork|close|number|name]',
+  'cmd.learned.desc': 'what deel picked up on its own — commands that work here, this model’s habits',
+  'cmd.learned.arg': '[clear]',
+  'cmd.pin.desc': 'pin a line — survives folding and summarising',
+  'cmd.pin.arg': '[text|clear number|clear all]',
+  'cmd.evidence.desc': 'evidence — what changed and what proves it. Says what is unproven too',
+  'cmd.evidence.arg': '[file]',
+  'cmd.sessions.desc': 'past sessions in this folder',
+  'cmd.recall.desc': 'search past sessions — by what was said, not by title',
+  'cmd.recall.arg': '<text>',
+  'cmd.mcp.desc': 'show connected MCP tool servers',
+  'cmd.memory.desc': 'what survives the session — view and clear',
+  'cmd.memory.arg': '[forget <n>|clear|<text to remember>]',
+  'cmd.level.desc': 'user level (beginner/developer)',
+  'cmd.level.arg': '[level]',
+  'cmd.bell.desc': 'bell and window title when a turn ends or deel needs you (on/off)',
+  'cmd.bell.arg': '[on|off]',
+  'cmd.lang.desc': 'screen language — 한국어 / English',
+  'cmd.lang.arg': '[ko|en]',
+  'cmd.init.desc': 'create a DEEL.md rules file',
+  'cmd.exit.desc': 'quit',
+  'cmd.quit.desc': 'quit',
+
+  // ── Startup header ────────────────────────────────────────────────────
+  'head.spec.ollama': 'Ollama API',
+  'head.spec.openai': 'OpenAI-compatible API',
+  'head.model': 'model',
+  'head.tokens': 'tokens',
+  'head.grade': 'class',
+  'head.guess': 'guessed',
+  'head.send': 'sends to',
+  'head.inside': 'this machine',
+  'head.outside': 'outside',
+  'head.offlineLock': '[offline lock]',
+  'head.nowhereElse': '← and nowhere else',
+  'head.glyphHint': 'The {안} at the start of the status bar means this. It becomes {밖} when traffic leaves.',
+  'head.conn': 'link',
+  'head.streaming': 'streaming',
+  'head.noStreaming': 'no streaming',
+  'head.tools': 'tools',
+  'head.toolsUnknown': 'tools unconfirmed',
+  'head.thinkCtl': 'effort control',
+  'head.noThinkCtl': 'no effort control',
+  'head.folder': 'folder',
+  'head.approve': 'approval',
+  'head.shiftTab': 'Shift+Tab',
+  'head.shiftTabHint': ' changes it  ·  ',
+  'head.tabHint': 'Tab completes the / command you are typing',
+  'head.thisPC': 'found',
+  'head.skills': 'skills {n}',
+  'head.commands': 'commands {n}',
+  'head.plugins': 'plugins {n}',
+
+  'grade.small': 'small',
+  'grade.medium': 'medium',
+  'grade.large': 'large',
+  'head.gradeSuffix': ' · {급} {급이름}{짐작}',
+
+  // ── Status bar segments ───────────────────────────────────────────────
+  'seg.dir': 'working folder (the ⌂/↗ in front says where your source goes)',
+  'seg.thread': 'thread',
+  'seg.model': 'model name',
+  'seg.grade': 'model class (how much it does on its own)',
+  'seg.ctx': 'context used (ticks = where folding and summarising kick in)',
+  'seg.work': 'work mode',
+  'seg.think': 'reasoning effort and split',
+  'seg.mode': 'approval policy',
+  'seg.edits': 'files changed this session',
+  'seg.verify': 'what was actually verified',
+  'seg.undoable': 'turns you can still undo',
+  'seg.tok': 'tokens in/out',
+  'seg.tools': 'tool calls',
+  'seg.skills': 'skills found on this machine',
+  'seg.time': 'time since start',
+
+  // ── Startup motion ────────────────────────────────────────────────────
+  'intro.inside': 'stays on this machine',
+  'intro.outside': 'leaves this machine',
+
+  // ── Undo ──────────────────────────────────────────────────────────────
+  'undo.nothing': 'Nothing to undo.',
+  'undo.done': 'Rolled back {turns} turn(s) · {files} file(s) restored.',
+  'undo.alsoTalk': 'Rolled back {n} message(s) too — if the model still thinks the reverted code is there, it keeps building on it.',
+  'undo.repaired': '({n} orphaned tool call(s) cleaned up as well)',
+  'undo.saidWas': 'You had asked:',
+  'undo.talkKept': 'The conversation is left as is — that turn had already been folded away.',
+  'undo.talkKeptWhy': 'The model may still think the reverted work exists, so mention it in your next message.',
+
+  // ── Bell ──────────────────────────────────────────────────────────────
+  'bell.stateOn': 'on',
+  'bell.stateOff': 'off',
+  'bell.now': 'The bell is {상태}.',
+  'bell.when': 'It rings once when a turn takes longer than {초}s, and whenever deel needs an answer from you.',
+  'bell.title': 'The window title shows the state too — you can tell from the tab alone whether it is still working.',
+  'bell.howto': 'To change it',
+  'bell.notATty': '(Not a terminal right now, so no bell and no title — that would corrupt the pipe.)',
+  'bell.needOnOff': 'Please say on or off.',
+  'bell.turnedOn': 'Bell on.',
+  'bell.turnedOff': 'Bell off.',
+  'bell.justRang': 'That was one ring. If you heard nothing, check your terminal’s bell setting.',
+  'bell.appliesNow': 'Applies to this session right away.',
+
+  // ── Screen language ───────────────────────────────────────────────────
+  'lang.now': 'Screen language is {이름}.',
+  'lang.ko': '한국어 (Korean)',
+  'lang.en': 'English',
+  'lang.howto': 'To change it',
+  'lang.changed': 'Screen language is now {이름}.',
+  'lang.unknown': 'Please say ko or en.',
+  'lang.progress': '{언어}: {옮김} of {전체} strings translated. The rest come through in Korean.',
+  'lang.partial': 'Not everything is translated yet — untranslated lines show Korean rather than a blank.',
+  'lang.codeStays': 'The code and what deel sends the model are unchanged. Only what you see on screen switches.',
+  'lang.envHint': 'To start in English every time, set DEEL_LANG=en',
+
+
+  // ── Help, approval policy, user level ─────────────────────────────────
+  'help.titleCommon': 'commands (the ones you will use)',
+  'help.title': 'commands',
+  'help.moreHidden': '{n} more exist — type them and they run just the same.',
+  'help.showAll': 'To see all of them',
+  'help.restGoesToModel': 'Anything else goes to the model. Ctrl+C on an empty line quits.',
+  'approve.auto.name': 'auto-approve',
+  'approve.auto.short': 'auto',
+  'approve.auto.line': 'edits without asking. /undo is the safety net',
+  'approve.confirm.name': 'risky only',
+  'approve.confirm.short': 'risky',
+  'approve.confirm.line': 'asks before commands it cannot take back. Files are edited without asking',
+  'approve.strict.name': 'ask always',
+  'approve.strict.short': 'always',
+  'approve.strict.line': 'asks before every file edit and every command',
+  'level.beginner.name': 'beginner',
+  'level.beginner.hint': 'start on the recommended settings',
+  'level.developer.name': 'developer',
+  'level.developer.hint': 'everything by hand',
+
+  // ── Common ────────────────────────────────────────────────────────────
+  'common.unknownCommand': 'Unknown command',
+  'common.seeHelp': 'Run /help for the list',
+  'common.yes': 'yes',
+  'common.no': 'no',
+};

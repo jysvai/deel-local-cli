@@ -10,12 +10,14 @@
 // 치면 그대로 먹는다. 목록에 안 띄울 뿐이다 — 처음 켠 사람에게 명령 열여덟
 // 개를 들이밀면 아무것도 못 고른다.
 
+import { 말 } from '../i18n/index.js';
+
 export const LEVELS = {
   쉬움: {
     id: '쉬움',
     en: 'beginner',
-    name: '쉬움',
-    hint: '권장값으로 바로 시작',
+    get name() { return 말('level.beginner.name'); },
+    get hint() { return 말('level.beginner.hint'); },
     // 목록에 띄울 것. 나머지는 쳐도 먹지만 안 보인다.
     show: [
       'help', 'work', 'auto', 'code', 'plan', 'ask',
@@ -25,7 +27,9 @@ export const LEVELS = {
       // '무엇이 바뀌었나' 를 볼 통로가 없으면 되돌릴지 말지도 못 정한다.
       // bell 도 초보 목록에 둔다. 로컬 모델은 한 턴이 몇 분씩 걸려서 다들 다른 창으로
       // 가는데, 알림이 있는 줄 모르면 그 몇 분을 화면만 보고 앉아 있게 된다.
-      'model', 'ctx', 'scan', 'diff', 'undo', 'bell', 'clear', 'sessions', 'cost', 'level', 'exit',
+      // lang 은 반드시 초보 목록에 있어야 한다. 화면이 온통 못 읽는 말인 사람에게
+      // '전부 보려면 /level developer' 라고 적어 봐야 그 줄도 못 읽는다.
+      'model', 'ctx', 'scan', 'diff', 'undo', 'bell', 'lang', 'clear', 'sessions', 'cost', 'level', 'exit',
     ],
     // 첫 실행에서 훑어 추천까지 해 준다
     autoScan: true,
@@ -36,8 +40,8 @@ export const LEVELS = {
   개발자: {
     id: '개발자',
     en: 'developer',
-    name: '개발자',
-    hint: '전부 직접 만짐',
+    get name() { return 말('level.developer.name'); },
+    get hint() { return 말('level.developer.hint'); },
     show: null,        // null = 전부
     autoScan: false,
     plainErrors: false,

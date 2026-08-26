@@ -76,6 +76,7 @@ const FILES = [
   'notify.test.js',
   'intro.test.js',
   'statusbar.test.js',
+  'i18n.test.js',
   // 뒤에서 도는 명령. 진짜로 프로세스를 띄우고 죽이므로 다른 것들보다 느리다.
   'jobs.test.js',
   'acp.test.js',
