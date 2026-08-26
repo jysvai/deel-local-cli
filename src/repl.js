@@ -10,14 +10,17 @@ import { handle, COMMANDS, 미리보기끄기 } from './commands.js';
 import { next as nextWork, get as getWork, canWrite } from './agent/modes.js';
 import { route } from './agent/route.js';
 import { run } from './agent/loop.js';
-import { Session } from './agent/session.js';
+import { Session, repairToolPairs } from './agent/session.js';
 import { makeScope } from './safety/guard.js';
 import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
-import { activeProfile, load, resolveKey, save as saveCfg } from './config.js';
+import { activeProfile, load, resolveKey, save as saveCfg, homeDir } from './config.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
+import { Threads } from './agent/threads.js';
+import { 배움 } from './agent/evolve.js';
+import { 마크다운 } from './ui/md.js';
 import { askHidden } from './ui/prompt.js';
 import { explain, shows as levelShows } from './ui/level.js';
 import { 고르기 as 승인고르기, 다음 as 승인다음 } from './ui/approve.js';
@@ -179,11 +182,19 @@ export async function chatLoop(opts = {}) {
       say(`  ${c.gray('이어할 대화가 없습니다. 새로 시작합니다.')}`);
     } else {
       store = new Store(root, target);
-      const { messages } = store.load();
+      const { messages: 적힌것 } = store.load();
+      /*
+       * 도구가 도는 중에 죽었으면 호출만 적히고 결과가 없다. 그대로 보내면
+       * 규격 서버가 400 을 내서 이어받자마자 첫 마디에서 죽는다. 손봐서 받는다.
+       */
+      const { messages, 고친것 } = repairToolPairs(적힌것);
       if (messages.length) {
         session.messages = messages;
         say('');
         say(`  ${mark.ok} ${c.bold(target)} ${c.gray(`— 메시지 ${messages.length}개를 이어 받았습니다.`)}`);
+        if (고친것) {
+          say(`  ${c.gray(`중단된 도구 호출 ${고친것}개를 걷어냈습니다 — 그때 하던 일은 다시 시켜 주세요.`)}`);
+        }
       }
     }
   }
@@ -506,6 +517,26 @@ export async function chatLoop(opts = {}) {
     },
   };
 
+  /*
+   * 겪어 본 것 (agent/evolve.js). 쓸수록 이 PC 에 맞춰 나아지는 자리다.
+   *
+   * 켤 때 두 가지를 받아 온다.
+   *   · 프롬프트에 실을 몇 줄 — 여기서 되는 명령, 이 모델의 버릇
+   *   · 지난번에 알아낸 토큰 배수 — 첫 턴부터 제대로 셈한다
+   *
+   * 둘 다 없으면 아무 일도 안 일어난다. 처음 켠 PC 는 지금과 똑같이 돈다.
+   */
+  ctx.배움 = new 배움(root, homeDir());
+  session.배움요약 = ctx.배움.요약(conn.model);
+  const 아는배수 = ctx.배움.아는보정(conn.model);
+  if (아는배수) { session.보정 = 아는배수; session.보정잰것 = 1; }
+
+  /*
+   * 대화 갈래. 연결·도구·되돌리기는 같이 쓰고 오간 말만 여러 벌 갖는다.
+   * 갈래마다 저장 파일을 따로 열어서, 나중에 `/sessions` 로 각각 찾아갈 수 있다.
+   */
+  ctx.갈래 = new Threads(session, ctx, () => new Store(root).begin({ model: conn.model, base: conn.base, root }), store);
+
   // ── 컨텍스트 길이를 모델에서 긁어온다 ─────────────────────────────────
   //
   // 켤 때마다 서버에 물어본다. 저장된 값을 그대로 믿지 않는다 —
@@ -750,7 +781,7 @@ export async function chatLoop(opts = {}) {
     // 어디까지 적었는지. 도중에 죽어도 여기까지는 남아 있게 자주 흘려 보낸다.
     let saved = session.messages.length;
     const flush = () => {
-      for (const m of session.messages.slice(saved)) store.append(m);
+      for (const m of session.messages.slice(saved)) ctx.갈래.현재store().append(m);
       saved = session.messages.length;
     };
     let tools = 0;
@@ -759,6 +790,18 @@ export async function chatLoop(opts = {}) {
     let 턴탈났나 = false;
     let thinkChars = 0;
     let streamed = false;
+    /*
+     * 답을 그리는 자리. 턴마다 새로 만든다 — 앞 턴의 코드 울타리 상태가
+     * 다음 턴으로 새면 멀쩡한 답이 통째로 코드 블록으로 그려진다.
+     */
+    const 답그림 = new 마크다운({ 폭: (process.stdout.columns || 80) - 6 });
+    // 답 흐름이 끊기는 자리마다 남은 반 줄을 비운다. 안 비우면 마지막 줄이 사라진다.
+    const 답비우기 = () => {
+      for (const 조각 of 답그림.끝()) {
+        if (typeof 조각 === 'string') 화면.붙임(`  ${답표시} ${조각}\n`);
+        else 화면.붙임(조각.이어붙임 + (조각.끝났나 ? '\n' : ''));
+      }
+    };
     let thinkingShown = false;
     let stage = null;
     // 접는 중 표시. 끝나거나 다른 글을 찍기 전에 반드시 멈춰야 한다.
@@ -830,15 +873,28 @@ export async function chatLoop(opts = {}) {
            * 세로줄 하나면 된다. 칸을 나눠 그리는 화면으로 갈 이유가 없다 —
            * 파이프로 넘기거나 기록으로 남길 때도 그대로 읽힌다.
            */
+          /*
+           * 답을 마크다운으로 그린다 (ui/md.js).
+           *
+           * 줄이 끝나야 그릴 수 있다 — `**굵` 까지 왔을 때는 그게 굵은 글씨가
+           * 될지 알 수 없고, 한 번 찍은 글자는 되돌릴 수 없다. 그래서 md 가
+           * 줄 단위로 모았다가 내놓는다. 줄이 화면 폭보다 길어지면 거기까지를
+           * 날것으로 흘려보낸다(md 가 알아서 한다) — 긴 문단에서 몇 초씩
+           * 아무것도 안 나오면 멈춘 것처럼 보이기 때문이다.
+           */
           case 'content':
             clearThinking();
-            if (!streamed) { streamed = true; 화면.일바꿈('답'); 화면.붙임(`  ${답표시} `); }
-            화면.붙임(ev.text.replace(/\n/g, `\n  ${답표시} `));
+            if (!streamed) { streamed = true; 화면.일바꿈('답'); }
+            for (const 조각 of 답그림.넣기(ev.text)) {
+              if (typeof 조각 === 'string') { 화면.붙임(`  ${답표시} ${조각}\n`); continue; }
+              // 아직 안 끝난 긴 줄. 그 줄이 처음 나가는 것이면 세로줄을 앞에 세운다.
+              화면.붙임((조각.첫조각 ? `  ${답표시} ` : '') + 조각.이어붙임 + (조각.끝났나 ? '\n' : ''));
+            }
             break;
 
           case 'tool_start':
             clearThinking();
-            if (streamed) { say(''); streamed = false; }
+            if (streamed) { 답비우기(); say(''); streamed = false; }
             // 문구를 지금 하는 일에 맞춘다. 아무 말이나 돌려 대면 두 번째부터
             // 아무도 안 읽고, 그때부터는 화면이 조용한 것과 같아진다.
             화면.일바꿈(갈래고르기(ev.name));
@@ -849,7 +905,7 @@ export async function chatLoop(opts = {}) {
           // 여럿을 같이 돌린다 — 한 줄로 알리고, 이름은 결과와 붙여서 그린다.
           case 'tools_start':
             clearThinking();
-            if (streamed) { say(''); streamed = false; }
+            if (streamed) { 답비우기(); say(''); streamed = false; }
             화면.일바꿈(갈래고르기(ev.names?.[0]));
             say('');
             say(`  ${c.gray(`${ev.count}개를 함께 돌립니다`)} ${c.gray('·')} ${c.gray(ev.names.join(' '))}`);
@@ -861,7 +917,7 @@ export async function chatLoop(opts = {}) {
             // '시작' 을 안 거쳤다. 그래서 '생각 중…' 줄이 안 지워진 채로 결과가
             // 그 줄 뒤에 가서 붙고, 이름도 없이 "└ 인자가 잘렸습니다" 만 남는다.
             // 무슨 도구가 왜 그랬는지 알 수 없는 화면이 된다.
-            if (ev.showLabel) { clearThinking(); if (streamed) { say(''); streamed = false; } say(''); }
+            if (ev.showLabel) { clearThinking(); if (streamed) { 답비우기(); say(''); streamed = false; } say(''); }
             // 같이 돈 것은 이름을 다시 적어 준다. 안 그러면 어느 결과인지 모른다.
             if (ev.parallel || ev.showLabel) say(`  ${toolLabel(ev.name, ev.args)}`);
             if (ev.name === 'TodoWrite' && ev.result?.todos) {
@@ -936,7 +992,7 @@ export async function chatLoop(opts = {}) {
            */
           case 'task_start':
             clearThinking();
-            if (streamed) { say(''); streamed = false; }
+            if (streamed) { 답비우기(); say(''); streamed = false; }
             화면.일바꿈('하위', clip(ev.목적, 24));
             say('');
             say(`  ${c.hmagenta('⌥')} ${c.bold('하위 작업')} ${c.white(clip(ev.목적, 60))}`
@@ -946,7 +1002,7 @@ export async function chatLoop(opts = {}) {
 
           case 'task_done': {
             clearThinking();
-            if (streamed) { say(''); streamed = false; }
+            if (streamed) { 답비우기(); say(''); streamed = false; }
             const 끝 = ev.끝 ?? {};
             const 잘됨 = 끝.type === 'done';
             const 왜 = { done: '끝냈습니다', limit: '걸음 수를 다 써서 멈췄습니다 — 다 못 했습니다',
@@ -981,6 +1037,16 @@ export async function chatLoop(opts = {}) {
             접는중 = true;
             break;
 
+          /*
+           * 요약 압축보다 먼저 오는 것. 대화는 안 건드리고 옛 도구 결과만 접었다.
+           * 조용히 하면 사람은 어느 파일 내용이 왜 사라졌는지 모른다 — 한 줄로 알린다.
+           */
+          case 'folded':
+            clearThinking();
+            say(`  ${c.cyan('◲')} ${c.gray(`오래된 도구 결과 ${ev.접은것}개를 접었습니다 — `)}`
+              + `${c.white(ev.아낀토큰.toLocaleString())} ${c.gray('토큰을 비웠습니다. 대화는 그대로입니다.')}`);
+            break;
+
           case 'compacted': {
             접기멈춤();
             const 줄인 = ev.before - ev.after;
@@ -989,7 +1055,7 @@ export async function chatLoop(opts = {}) {
                 `${c.green(`(${Math.round((줄인 / Math.max(1, ev.before)) * 100)}% 줄어듦)`)}`);
             if (ev.fallback) say(`     ${c.yellow('요약을 못 받아 그냥 줄였습니다.')}`);
             // 접히면 이력이 통째로 바뀐다. 덧붙이기로는 못 맞추니 새로 적는다.
-            store.replace(session.messages, `압축 — ${ev.folded}개를 요약으로`);
+            ctx.갈래.현재store().replace(session.messages, `압축 — ${ev.folded}개를 요약으로`);
             saved = session.messages.length;
             break;
           }
@@ -1033,7 +1099,7 @@ export async function chatLoop(opts = {}) {
           case 'stuck':
             턴탈났나 = true;
             clearThinking();
-            if (streamed) { say(''); streamed = false; }
+            if (streamed) { 답비우기(); say(''); streamed = false; }
             say('');
             say(`  ${c.yellow('⊘')} ${c.bold('같은 자리에서 헛돌고 있어 멈췄습니다.')}`);
             say(`  ${c.gray(ev.why)}`);
@@ -1055,7 +1121,7 @@ export async function chatLoop(opts = {}) {
           case 'aborted':
             턴탈났나 = true;
             clearThinking();
-            if (streamed) { say(''); streamed = false; }
+            if (streamed) { 답비우기(); say(''); streamed = false; }
             say('');
             // 남았는지 아닌지를 **사실대로** 말한다. 전에는 무조건 '남아 있다' 고 했는데
             // 실제로는 아무것도 안 남는 경우가 있었다. 그러면 "이어서 해줘" 라고 했을 때
@@ -1074,7 +1140,7 @@ export async function chatLoop(opts = {}) {
 
           case 'done':
             clearThinking();
-            if (streamed) say('');
+            if (streamed) { 답비우기(); say(''); }
             만든파일보이기(ev.files);
             break;
         }

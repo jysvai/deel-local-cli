@@ -318,6 +318,10 @@ export async function runOnce(opts = {}) {
           곁(`  ${c.yellow('↻')} ${c.gray(`${ev.why} — 상한을 ${ev.from} → ${ev.to} 로 올려 다시 부릅니다`)}`);
           break;
 
+        case 'folded':
+          곁(`  ${c.cyan('◲')} ${c.gray(`오래된 도구 결과 ${ev.접은것}개를 접었습니다 (${ev.아낀토큰.toLocaleString()} 토큰을 비움)`)}`);
+          break;
+
         case 'compacted':
           곁(`  ${c.cyan('◱')} ${c.gray(`대화 ${ev.folded}개를 요약으로 접었습니다 (${ev.before.toLocaleString()} → ${ev.after.toLocaleString()} 토큰)`)}`);
           break;

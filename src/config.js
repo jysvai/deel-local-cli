@@ -19,6 +19,15 @@ function projectDir() {
   return join(process.cwd(), '.deel');
 }
 
+/**
+ * 이 PC 의 설정 폴더 (`~/.deel` 또는 DEEL_HOME).
+ *
+ * configPath() 와 다르다 — 저쪽은 프로젝트에 설정이 있으면 그쪽을 준다.
+ * 여기는 언제나 **이 PC 것**이다. 모델에 대해 알아낸 것처럼 폴더를 옮겨도
+ * 따라와야 하는 것을 여기 둔다 (agent/evolve.js).
+ */
+export function homeDir() { return userDir(); }
+
 export function configPath() {
   const local = join(projectDir(), 'config.json');
   if (existsSync(local)) return local;

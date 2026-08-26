@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
-import { compact, shouldCompact, split, safeCut, COMPACT_AT } from '../src/agent/compact.js';
+import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, 접힘표 } from '../src/agent/compact.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import { discover } from '../src/skills/discover.js';
 
@@ -244,6 +244,166 @@ await new Promise((r) => setImmediate(r));
     `${지문값}토큰 (빈 폴더 ${작은것.고정} → 이 저장소 ${작은것.고정 + 지문값})`);
 
   rmSync(빈폴더, { recursive: true, force: true });
+}
+
+// ── 요약하기 전에 도구 결과부터 접는가 ─────────────────────────────────
+//
+// 자리를 먹는 것은 대개 사람 말이 아니라 옛날에 읽어 둔 파일이다. 요약 압축은
+// 사람 말과 모델의 판단까지 세 줄로 줄이므로, 그 전에 잃는 것이 적은 쪽부터
+// 비운다.
+//
+// 여기서 재는 것 넷:
+//   1) 짝이 안 깨지는가 — 지우는 게 아니라 내용만 바꾸므로 원래 안 깨져야 한다
+//   2) 최근 것은 남는가 — 방금 읽은 것을 접으면 그 자리에서 다시 읽는다
+//   3) 두 번 돌려도 같은 것을 또 세지 않는가
+//   4) 무엇이었는지는 남는가 — 모델이 다시 읽으려면 경로를 알아야 한다
+{
+  const 호출 = (id, 경로) => ({
+    role: 'assistant', content: null,
+    tool_calls: [{ id, type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: 경로 }) } }],
+  });
+  const 결과 = (id, 글) => ({ role: 'tool', tool_call_id: id, content: 글 });
+  const 긴글 = (n) => 'const x = 1;\n'.repeat(n);
+
+  const s = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
+  s.push({ role: 'user', content: '이 폴더 좀 봐줘' });
+  for (let i = 1; i <= 7; i++) {
+    s.push(호출(`c${i}`, `src/파일${i}.js`));
+    s.push(결과(`c${i}`, 긴글(60)));
+  }
+  s.push({ role: 'user', content: '이제 고쳐줘' });
+
+  /*
+   * 도구 결과 몫으로 잰다. 합계로 재면 시스템 프롬프트·도구 정의 같은 고정 몫이
+   * 섞여서, 잘 접어도 숫자가 조금밖에 안 움직인다 — 접기가 건드릴 수 없는 값이
+   * 분모에 들어 있기 때문이다. 접기가 무슨 일을 했는지는 그 줄에서만 보인다.
+   */
+  const 결과몫 = (x) => x.breakdown().rows.find((r) => r.label.startsWith('도구 결과'))?.n ?? 0;
+  const 접기전 = 결과몫(s);
+  const 전체전 = s.breakdown().used;
+  const r = foldToolResults(s);
+
+  check('오래된 도구 결과가 접힌다', r.접은것 === 3, `${r.접은것}개 (7개 중 최근 4개는 남겨야 함)`);
+  check('도구 결과 몫이 실제로 준다', 결과몫(s) < 접기전 * 0.7,
+    `${접기전.toLocaleString()} → ${결과몫(s).toLocaleString()} 토큰`);
+  check('아낀 토큰을 세어서 알려 준다', r.아낀토큰 > 0 && Math.abs(r.아낀토큰 - (전체전 - s.breakdown().used)) <= 5,
+    `${r.아낀토큰}토큰 · 합계 ${전체전.toLocaleString()} → ${s.breakdown().used.toLocaleString()}`);
+
+  const 결과들 = s.messages.filter((m) => m.role === 'tool');
+  check('최근 4개는 원문 그대로', 결과들.slice(-4).every((m) => !m.content.startsWith(접힘표)));
+  check('접힌 자리에 무엇을 읽었는지가 남는다', /Read\(src\/파일1\.js\)/.test(결과들[0].content),
+    결과들[0].content.slice(0, 60));
+  check('사람 말은 한 글자도 안 건드린다',
+    s.messages[0].content === '이 폴더 좀 봐줘' && s.messages.at(-1).content === '이제 고쳐줘');
+
+  // 지우는 게 아니라 내용만 바꾸므로 짝은 원래 안 깨진다. 그래도 잰다 —
+  // 이게 이 방식을 고른 이유이고, 나중에 '지우는' 쪽으로 바뀌면 여기서 걸린다.
+  let 짝깨짐 = null;
+  s.messages.forEach((m, i) => {
+    if (짝깨짐) return;
+    if (m.role === 'tool' && !s.messages[i - 1]?.tool_calls?.length && s.messages[i - 1]?.role !== 'tool') 짝깨짐 = `${i}번`;
+  });
+  check('접어도 호출·결과 짝이 안 깨진다', 짝깨짐 === null, 짝깨짐 ?? '');
+
+  // 두 번째 부름 — 이미 접은 것을 또 세면 화면에 거짓 숫자가 뜬다.
+  const r2 = foldToolResults(s);
+  check('이미 접은 것은 다시 안 센다', r2.접은것 === 0, `${r2.접은것}개`);
+
+  // 작은 결과는 접어도 자리가 안 준다. 오히려 무엇을 했는지만 잃는다.
+  const t = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
+  for (let i = 1; i <= 8; i++) { t.push(호출(`d${i}`, `a${i}.js`)); t.push(결과(`d${i}`, '1군데 고쳤습니다')); }
+  check('짧은 결과는 안 접는다', foldToolResults(t).접은것 === 0);
+
+  // 언제 접기 시작하나 — 요약 압축(80%)보다 일찍이어야 미루는 뜻이 있다.
+  check('요약 압축보다 먼저 접는다', FOLD_AT < COMPACT_AT, `${FOLD_AT} < ${COMPACT_AT}`);
+  const 빈것 = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
+  check('한가할 때는 안 접는다', shouldFold(빈것) === false);
+
+  /*
+   * 이게 이 기능을 만든 이유다 — **요약 압축을 얼마나 미루는가.**
+   *
+   * 같은 대화를 두 번 돌린다. 한 번은 접지 않고, 한 번은 차오를 때마다 도구
+   * 결과를 접으면서. 요약 압축이 처음 걸리는 턴이 몇 번째인지를 센다.
+   * 미루는 동안 대화는 한 글자도 안 잃는다 — 그게 이 숫자의 뜻이다.
+   */
+  const 굴려보기 = (접나) => {
+    const x = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 16000, kind: 'openai' }, { root: process.cwd() });
+    x.push({ role: 'user', content: '이 폴더 전체를 훑고 로그 형식을 통일해줘' });
+    for (let 턴 = 1; 턴 <= 200; 턴++) {
+      x.push(호출(`t${턴}`, `src/파일${턴}.js`));
+      x.push(결과(`t${턴}`, 긴글(40)));
+      x.push({ role: 'assistant', content: `${턴}번째 파일을 봤습니다.` });
+      x.push({ role: 'user', content: '계속' });
+      if (접나 && shouldFold(x)) foldToolResults(x);
+      if (shouldCompact(x)) return 턴;
+    }
+    return 200;
+  };
+  const 안접고 = 굴려보기(false);
+  const 접고 = 굴려보기(true);
+  check('접으면 요약 압축이 한참 뒤로 밀린다', 접고 >= 안접고 * 2,
+    `요약 압축이 처음 걸리는 턴: ${안접고}턴 → ${접고}턴 (${(접고 / 안접고).toFixed(1)}배)`);
+}
+
+// ── 추정을 실제에 맞춰 가는가 ───────────────────────────────────────────
+//
+// estimateTokens 는 추정이다. 서버는 매 응답에 진짜 값을 실어 주는데 여태
+// /cost 에만 쓰고 버렸다. 안 맞으면 답이 조용히 잘리거나 창을 놀린다.
+//
+// 여기서 재는 것은 '보정을 한다' 가 아니라 **틀린 방향으로 안 간다** 이다.
+// 자기 값을 되먹여 스스로 부풀거나, 서버가 딴 것을 세고 있을 때 따라가면
+// 지금보다 나빠진다.
+{
+  const 만들기 = () => {
+    const s = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' },
+      { root: process.cwd() });
+    // 재기에 충분한 만큼 채운다 (200토큰 아래는 표본이 작아 일부러 안 배운다).
+    for (let i = 0; i < 12; i++) s.push({ role: 'user', content: '로그 형식을 통일해 주세요. '.repeat(20) });
+    return s;
+  };
+
+  const s = 만들기();
+  const 처음 = s.breakdown().used;
+  check('배우기 전에는 추정 그대로', s.보정 === 1 && s.보정잰것 === 0);
+
+  // 서버가 "실제로는 20% 더 많았다" 고 알려 준 셈.
+  s.배운다(Math.round(처음 * 1.2));
+  check('실제값을 받으면 보정이 붙는다', Math.abs(s.보정 - 1.2) < 0.01, `보정 ${s.보정?.toFixed(3)}`);
+  check('보정이 화면 숫자에 먹는다', Math.abs(s.breakdown().used - 처음 * 1.2) / 처음 < 0.02,
+    `${처음} → ${s.breakdown().used}`);
+  check('줄을 더한 값과 합계가 맞는다',
+    s.breakdown().rows.reduce((a, r) => a + r.n, 0) === s.breakdown().used);
+  check('남은 자리도 같이 줄어든다', s.breakdown().left === 32768 - s.breakdown().used);
+
+  // 되먹임 방어 — 같은 실제값을 계속 줘도 보정이 계속 자라면 안 된다.
+  // (견주는 값으로 보정 먹인 추정을 쓰면 매번 1.2배씩 커진다. 실제로 겪기 쉬운 실수다.)
+  const 한번 = s.보정;
+  for (let i = 0; i < 5; i++) s.배운다(Math.round(처음 * 1.2));
+  check('같은 값을 다시 줘도 안 부푼다', Math.abs(s.보정 - 한번) < 0.01, `${한번.toFixed(3)} → ${s.보정.toFixed(3)}`);
+
+  // 못 믿을 값은 안 배운다.
+  const t = 만들기();
+  t.배운다(0); t.배운다(null); t.배운다(-5); t.배운다('몰라');
+  check('실제값을 안 주는 서버에서는 안 배운다', t.보정잰것 === 0 && t.보정 === 1);
+  t.배운다(t.breakdown().used * 9);
+  check('말도 안 되는 값은 안 따라간다', t.보정잰것 === 0, `보정 ${t.보정}`);
+
+  // 표본이 작으면 비율이 튄다.
+  const u = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
+  const 작은지 = u.breakdown().used < 200;
+  if (작은지) {
+    u.배운다(50);
+    check('표본이 작으면 건너뛴다', u.보정잰것 === 0);
+  } else {
+    check('표본이 작으면 건너뛴다', true, '이 저장소에서는 빈 대화도 200토큰이 넘어 못 잼');
+  }
+
+  // 한 번 튄 값에 휘둘리지 않는다 — 두 번째부터는 천천히 따라간다.
+  const v = 만들기();
+  const v처음 = v.breakdown().used;
+  v.배운다(Math.round(v처음 * 1.0));
+  v.배운다(Math.round(v.breakdown().used / v.보정 * 1.5));
+  check('한 번 튄 값을 통째로 안 믿는다', v.보정 > 1.05 && v.보정 < 1.25, `보정 ${v.보정.toFixed(3)}`);
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

@@ -15,6 +15,93 @@ export const COMPACT_AT = 0.8;
 export const KEEP_TAIL_RATIO = 0.3;   // 최근 대화 중 남길 비율
 export const KEEP_HEAD = 2;           // 맨 처음 요청은 언제나 남긴다 (목표가 거기 있다)
 
+/*
+ * ── 그 전에, 도구 결과부터 접는다 ──────────────────────────────────────
+ *
+ * 요약 압축은 잃는 것이 크다. 사람이 한 말도, 모델이 왜 그렇게 정했는지도
+ * 세 줄로 줄어든다. 그런데 자리를 실제로 먹고 있는 것은 대개 그쪽이 아니다.
+ *
+ *   Read 로 600줄짜리 파일을 한 번 열면 32k 창의 15% 가 그 자리에서 사라지고,
+ *   그 사본은 대화가 끝날 때까지 이력에 그대로 눌러앉는다. 이미 다 읽고 고친
+ *   파일인데도 그렇다. 세 번 읽으면 창의 절반이 옛날 파일 내용이다.
+ *
+ * 그래서 80% 에서 통째로 요약하기 전에, 먼저 **오래된 도구 결과만** 한 줄로
+ * 접는다. 사람 말과 모델의 판단은 한 글자도 안 건드린다. 무엇을 읽었는지는
+ * 남기므로 모델은 필요하면 그 파일을 다시 읽으면 된다 — 읽는 값은 싸고,
+ * 하던 일을 잊는 값은 비싸다.
+ *
+ * 최근 것은 안 접는다. 방금 읽은 것을 접으면 그 자리에서 다시 읽게 되고,
+ * 그러면 접은 보람이 없다.
+ */
+export const FOLD_AT = 0.55;      // 이 아래로는 접을 이유가 없다
+export const KEEP_RECENT = 4;     // 최근 도구 결과 이만큼은 원문 그대로 둔다
+export const FOLD_MIN = 300;      // 이보다 작으면 접어도 자리가 안 준다 (글자 수)
+export const 접힘표 = '(접힘)';
+
+/** 인자에서 사람이 알아볼 한 조각만 뽑는다. 경로가 제일 쓸모 있다. */
+function 어디(args) {
+  if (!args || typeof args !== 'object') return '';
+  for (const k of ['file_path', 'path', 'pattern', 'command', 'query', 'url', '목적']) {
+    const v = args[k];
+    if (typeof v === 'string' && v.trim()) return v.trim().replace(/\s+/g, ' ').slice(0, 60);
+  }
+  return '';
+}
+
+export function shouldFold(session, at = FOLD_AT) {
+  const b = session.breakdown();
+  return b.total > 0 && b.used / b.total >= at;
+}
+
+/**
+ * 오래된 도구 결과를 한 줄로 접는다.
+ *
+ * 짝은 안 건드린다 — 메시지를 지우는 게 아니라 **내용만** 바꾸므로 호출과
+ * 결과의 짝이 그대로다. 규격이 깨질 자리가 아예 없다.
+ *
+ * @returns {{접은것: number, 아낀토큰: number}}
+ */
+export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN } = {}) {
+  const ms = session.messages ?? [];
+
+  // 호출 쪽에서 이름과 인자를 가져온다. 결과 메시지에는 그게 안 실려 있다.
+  const 이름표 = new Map();
+  for (const m of ms) {
+    for (const c of m?.tool_calls ?? []) {
+      let args = {};
+      try { args = JSON.parse(c?.function?.arguments ?? '{}'); } catch { /* 못 읽으면 그만 */ }
+      if (c?.id) 이름표.set(c.id, { name: c?.function?.name ?? '도구', args });
+    }
+  }
+
+  const 자리 = [];
+  ms.forEach((m, i) => {
+    if (m?.role !== 'tool') return;
+    const 글 = typeof m.content === 'string' ? m.content : '';
+    if (글.startsWith(접힘표)) return;      // 이미 접은 것
+    자리.push({ i, 글 });
+  });
+
+  const 접을것 = 자리.slice(0, Math.max(0, 자리.length - keep)).filter((x) => x.글.length >= min);
+  let 아낀토큰 = 0;
+
+  for (const { i, 글 } of 접을것) {
+    const m = ms[i];
+    const 아는것 = 이름표.get(m.tool_call_id) ?? { name: m.tool_name ?? '도구', args: {} };
+    const 곳 = 어디(아는것.args);
+    const 줄수 = 글.split('\n').length;
+    const 전 = estimateTokens(글);
+    ms[i] = {
+      ...m,
+      content: `${접힘표} ${아는것.name}${곳 ? `(${곳})` : ''} — ${줄수}줄. `
+        + '자리를 비우려고 내용을 접었습니다. 필요하면 다시 읽으세요.',
+    };
+    아낀토큰 += 전 - estimateTokens(ms[i].content);
+  }
+
+  return { 접은것: 접을것.length, 아낀토큰: Math.max(0, 아낀토큰) };
+}
+
 const 요약지시 = `지금까지의 대화를 다음 형식으로 요약하세요. 이어서 일할 사람이 이것만 보고도 계속할 수 있어야 합니다.
 추측하지 말고 실제로 오간 내용만 쓰세요. 한국어로, 각 항목 3줄 이내로 쓰세요.
 

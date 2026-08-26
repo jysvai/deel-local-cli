@@ -16,6 +16,19 @@ export const SEGMENTS = {
   dir: { desc: '작업 폴더', make: (s) => c.gray(clip(base(s.root), 20)) },
 
   /*
+   * 지금 어느 대화 갈래인가.
+   *
+   * 갈래를 안 쓰면 **아무것도 안 그린다.** 상태줄은 이미 빽빽해서, 안 쓰는
+   * 사람에게까지 한 칸을 더 내주면 좁은 터미널에서 뒤엣것이 떨어져 나간다.
+   * 갈래가 둘 이상일 때만 repl 이 session.갈래표 를 채운다(agent/threads.js).
+   */
+  thread: {
+    desc: '대화 갈래',
+    make: (s) => (s.갈래표 ? c.hcyan(`⑂ ${clip(s.갈래표, 12)}`) : null),
+    short: (s) => (s.갈래표 ? c.hcyan(`⑂ ${clip(s.갈래표, 6)}`) : null),
+  },
+
+  /*
    * 모델 이름.
    *
    * 좁을 때 더 줄인다. 사내 게이트웨이 이름은 `databricks-gpt-5-6-luna` 처럼
@@ -138,7 +151,7 @@ export const SEGMENTS = {
  * 그러면 눈이 세 번만 멈춘다.
  */
 export const SEGMENT_GROUPS = [
-  ['dir', 'model'],
+  ['dir', 'thread', 'model'],
   ['ctx', 'grade'],
   ['work', 'think', 'mode'],
   ['tok'],

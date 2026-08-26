@@ -112,6 +112,12 @@ export class Session {
     this.stepsSet = maxSteps != null;
     this.maxSteps = maxSteps ?? 24;
     this.messages = [];
+    // 추정 × 보정 = 실제. 서버가 알려 주는 진짜 토큰 수로 매 턴 고쳐 나간다.
+    // 1 은 '아직 안 배웠다' 이고, 그때는 추정을 그대로 쓴다. 배운다() 를 볼 것.
+    this.보정 = 1;
+    this.보정잰것 = 0;
+    // 겪어 본 것 요약 (agent/evolve.js). 켤 때 repl 이 채운다.
+    this.배움요약 = null;
     this.filesRead = new Map();   // 경로 → 추정 토큰
     this.changes = new Map();     // 경로 → {added, removed, times}. /diff 가 본다
     this.skills = [];             // 켜질 때 이 PC 에서 찾은 것들
@@ -219,6 +225,15 @@ export class Session {
      * 바뀌는 셈이 된다 — 무엇 때문에 답이 달라졌는지 알 길이 없어진다.
      */
     if (this.memory) parts.push(this.memory);
+    /*
+     * 이 PC·이 폴더에서 겪어 본 것 (agent/evolve.js).
+     *
+     * 기억(memory)은 사람이 적어 주는 것이고, 이건 **겪어서 저절로 쌓인 것**이다.
+     * 여기 한 줄이 헛도는 걸음 서너 개를 없앤다 — 안 되는 명령을 또 부르고,
+     * 잘릴 걸 알면서 큰 Write 를 또 보내는 걸음들이다. 그래서 자리를 내줄 값이 있다.
+     * 상한은 evolve.js 가 못 박는다(220토큰).
+     */
+    if (this.배움요약) parts.push(this.배움요약);
     const listed = this.listedSkills();
     if (listed.length) {
       parts.push(
@@ -282,7 +297,41 @@ export class Session {
    *     매 요청에 통째로 들어가는데 어느 칸에도 안 잡혔다.
    *   · 지금 모드 문구 — modes.js 의 say. 모드마다 수백 토큰이다.
    */
-  breakdown() {
+  /**
+   * 추정을 실제에 맞춰 간다.
+   *
+   * estimateTokens 는 추정이다 — 토크나이저를 안 싣기 때문이다(의존성 0개).
+   * 그런데 서버는 매 응답에 **진짜 값**을 실어 준다(usage.prompt_tokens ·
+   * prompt_eval_count). 여태 그 값은 /cost 에만 쓰고 버렸다.
+   *
+   * 안 맞으면 두 가지가 조용히 나빠진다.
+   *   · 적게 잡으면 — 남은 자리를 넉넉히 보고 답 상한을 크게 잡는다. 답이 잘린다.
+   *   · 많이 잡으면 — 아직 자리가 있는데 접기 시작한다. 창을 놀린다.
+   * 둘 다 화면에는 아무 말도 안 뜬다. 그래서 스스로 재게 한다.
+   *
+   * 조심한 것:
+   *   · 실제값을 안 주는 서버가 있다. 0 이면 아무것도 안 배운다.
+   *   · 표본이 작으면 비율이 튄다. 첫 몇백 토큰짜리 대화는 건너뛴다.
+   *   · 0.5~2배 밖은 안 믿는다. 서버가 딴 것을 세고 있을 수 있다.
+   *   · 되먹임이 겹치지 않게, 비교는 **보정 안 먹인 추정**으로 한다.
+   *
+   * @returns {number|null} 새 보정 배수. 못 배웠으면 null
+   */
+  배운다(실제) {
+    const n = Number(실제);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const 추정 = this.#원추정().used;
+    if (추정 < 200) return null;
+    const 비율 = n / 추정;
+    if (비율 < 0.5 || 비율 > 2) return null;
+    // 첫 번은 그대로 받고, 그 뒤로는 천천히 따라간다. 한 번 튄 값에 안 휘둘린다.
+    this.보정 = this.보정잰것 ? this.보정 + (비율 - this.보정) * 0.3 : 비율;
+    this.보정잰것++;
+    return this.보정;
+  }
+
+  /** 보정을 안 먹인 날 추정. 배운다() 가 견주는 값이다. */
+  #원추정() {
     // 폴더 지문도 매 요청에 통째로 나간다. 시스템 프롬프트 쪽에 같이 센다 —
     // 안 세면 '남은 자리' 가 그만큼 뻥튀기되고, effort.js 가 그 값으로 출력
     // 상한을 잡으므로 답이 조용히 잘리기 시작한다.
@@ -315,6 +364,7 @@ export class Session {
       { label: '시스템 프롬프트', n: sys },
       { label: this.rules ? `규칙 (${this.rules.name})` : '규칙 (없음)', n: rules },
       { label: `기억 (${기억줄}줄)`, n: 기억 },
+      { label: '겪어 본 것', n: this.배움요약 ? estimateTokens(this.배움요약) : 0 },
       { label: `스킬 목록 (${listed.length}/${this.skills.length}개)`, n: skills },
       { label: '도구 정의', n: 도구 },
       { label: '대화 이력', n: history },
@@ -323,6 +373,27 @@ export class Session {
     const used = rows.reduce((a, r) => a + r.n, 0);
     const total = this.conn.ctx ?? 32768;
     return { rows, used, total, left: Math.max(0, total - used) };
+  }
+
+  /**
+   * 화면과 예산이 보는 값. 배운 보정을 먹여서 내놓는다.
+   *
+   * 줄마다 보정을 먹인다 — 합계만 고치면 표의 줄을 더한 값과 합계가 안 맞아서,
+   * 보는 사람이 어느 쪽을 믿어야 할지 모르게 된다.
+   */
+  breakdown() {
+    const 날것 = this.#원추정();
+    if (!(this.보정잰것 > 0) || this.보정 === 1) return 날것;
+    const rows = 날것.rows.map((r) => ({ ...r, n: Math.round(r.n * this.보정) }));
+    const used = rows.reduce((a, r) => a + r.n, 0);
+    return {
+      rows,
+      used,
+      total: 날것.total,
+      left: Math.max(0, 날것.total - used),
+      보정: this.보정,
+      보정잰것: this.보정잰것,
+    };
   }
 
   /**
@@ -407,4 +478,72 @@ export function safeHead(messages, k) {
   let h = Math.max(0, Math.min(k, messages.length));
   while (h > 0 && messages[h - 1]?.tool_calls?.length) h--;
   return h;
+}
+
+/**
+ * 도중에 죽은 대화를 다시 쓸 수 있게 손본다.
+ *
+ * 왜 필요한가:
+ *   store 는 메시지가 오갈 때마다 즉시 적는다(jsonl). 그래서 도구를 **돌리는
+ *   도중에** 죽으면 `assistant(tool_calls)` 만 적히고 그 결과가 없다. 긴 Bash 를
+ *   돌리는 중, 전원이 나가는 중, 창을 닫는 중 — 흔한 자리다.
+ *
+ *   그 이력을 그대로 이어받아 보내면 OpenAI 규격 서버는 400 을 낸다. 호출 뒤에는
+ *   결과가 와야 한다는 규격이다. compact.js 가 safeCut 으로 막고 있는 바로 그
+ *   사고인데, **이어받기 길에는 그 안전망이 없었다.** 이어받자마자 첫 마디에서
+ *   죽으니, 사람 눈에는 '이어하기가 고장 났다' 로 보인다.
+ *
+ * 무엇을 하나:
+ *   결과가 없는 호출을 **지운다.** 가짜 결과를 채우지 않는다 — 안 돌아간 도구를
+ *   돌았다고 적으면 모델이 그 거짓말 위에서 계속한다. 파일을 안 고쳤는데 고친
+ *   줄 알고 다음 단계로 넘어가는 것이 제일 나쁘다.
+ *   호출이 전부 빠졌는데 할 말도 없으면 그 메시지째 지운다.
+ *   짝 없는 결과(앞에 호출이 없는 tool)도 지운다 — 머리가 잘려 나간 이력이다.
+ *
+ * 규격이 둘이라 짝짓는 법도 둘이다 (adapter.js 의 toolMessage):
+ *   OpenAI  { role:'tool', tool_call_id }  → id 로 짝짓는다
+ *   Ollama  { role:'tool', tool_name }     → id 가 없다. 순서로 짝짓는다
+ *
+ * @returns {{messages: object[], 고친것: number}} 고친것 = 걷어낸 호출·결과 수
+ */
+export function repairToolPairs(messages) {
+  const out = [];
+  let 고친것 = 0;
+
+  for (let i = 0; i < (messages?.length ?? 0); i++) {
+    const m = messages[i];
+
+    // 호출 없이 굴러다니는 결과. 앞이 잘려 나간 이력이다.
+    if (m?.role === 'tool') { 고친것++; continue; }
+
+    if (m?.role !== 'assistant' || !m.tool_calls?.length) { out.push(m); continue; }
+
+    // 이 호출에 딸린 결과 묶음 — 바로 뒤에 붙어 있는 tool 들이 전부다.
+    const 결과 = [];
+    let j = i + 1;
+    while (j < messages.length && messages[j]?.role === 'tool') 결과.push(messages[j++]);
+    i = j - 1;   // 결과는 여기서 같이 처리한다
+
+    const 있는id = new Set(결과.map((r) => r?.tool_call_id).filter(Boolean));
+    const 남길호출 = 있는id.size
+      ? m.tool_calls.filter((c) => 있는id.has(c?.id))
+      : m.tool_calls.slice(0, 결과.length);      // id 가 없는 규격 — 순서로 본다
+    const 남길id = new Set(남길호출.map((c) => c?.id).filter(Boolean));
+    const 남길결과 = 있는id.size
+      ? 결과.filter((r) => 남길id.has(r.tool_call_id))
+      : 결과.slice(0, 남길호출.length);
+
+    고친것 += (m.tool_calls.length - 남길호출.length) + (결과.length - 남길결과.length);
+
+    if (남길호출.length) {
+      out.push(남길호출.length === m.tool_calls.length ? m : { ...m, tool_calls: 남길호출 });
+      out.push(...남길결과);
+      continue;
+    }
+    // 남은 호출이 없다. 할 말이라도 있으면 그건 살린다.
+    const 글 = typeof m.content === 'string' ? m.content.trim() : '';
+    if (글) { const { tool_calls: _버림, ...나머지 } = m; out.push(나머지); }
+  }
+
+  return { messages: out, 고친것 };
 }

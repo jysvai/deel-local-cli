@@ -6,7 +6,7 @@ import { isMutating } from '../safety/guard.js';
 import { effortFor, tokensFor, fullCap, wasCut, shiftLevel } from './effort.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
-import { compact, shouldCompact } from './compact.js';
+import { compact, shouldCompact, shouldFold, foldToolResults } from './compact.js';
 import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
 import { Session } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
@@ -240,6 +240,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
      * 세기만 한다 — 판단은 grade.js 가 하고, 프롬프트는 다음 걸음부터 달라진다.
      */
     session.본것?.걸음셈();
+    ctx.배움?.모델본것(conn.model, '걸음');
     // 단계마다 필요한 생각의 양이 다르다. effort.js 가 그 배분을 갖고 있다.
     const stage = steps === 1 ? 'plan' : lastToolFailed ? 'fix' : 'work';
     const level = effortFor(think, effort, stage);
@@ -332,6 +333,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
       }
       if (빈답인가(msg)) {
         session.본것?.본것('빈답');
+        ctx.배움?.모델본것(conn.model, '빈답');
         yield {
           type: 'error',
           text: '서버가 빈 답을 보냈습니다.\n'
@@ -403,6 +405,16 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
     session.usage.out += msg.usage?.out ?? 0;
     session.usage.calls++;
 
+    /*
+     * 방금 보낸 것이 실제로 몇 토큰이었는지 서버가 알려 줬다. 우리 추정과
+     * 견줘서 배운다 — 여기가 유일하게 정답을 아는 자리다.
+     *
+     * 답을 push 하기 **전**이어야 한다. 지금 이력이 곧 방금 보낸 프롬프트다.
+     */
+    const 새보정 = session.배운다?.(msg.usage?.in);
+    // 배운 배수를 디스크에도 남긴다. 다음에 켤 때 이 값으로 시작한다.
+    if (새보정) ctx.배움?.보정본것(conn.model, 새보정);
+
     session.push(assistantMessage(conn.kind, msg));
 
     if (!msg.toolCalls?.length) {
@@ -438,6 +450,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
         // 모델은 고칠 게 없다고 보고 똑같이 다시 시도한다. 그래서 끝없이 돈다.
         if (call.argsBroken) {
           session.본것?.본것('잘린인자');
+          ctx.배움?.모델본것(conn.model, '잘린인자');
           // ── 버리기 전에, 건질 수 있는지 먼저 본다 ──────────────────────
           //
           // 잘린 JSON 안에는 이미 받아 놓은 내용이 들어 있다. 경로도 대개 온전하다.
@@ -704,6 +717,18 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
         if (call.name === 'Edit' && result.error) session.본것?.본것('편집실패');
         else if (!result.error) session.본것?.본것('도구성공');
 
+        /*
+         * 겪은 것을 디스크에도 쌓는다 (agent/evolve.js).
+         *
+         * 위의 지켜본것은 이 대화가 끝나면 사라진다. 그래서 어제 알아낸 것을
+         * 오늘 또 알아내야 했다 — `pnpm` 이 이 PC 에 없다는 걸 매일 다시 겪는다.
+         * 명령의 성패는 이 폴더의 사실이므로 폴더 쪽에 남긴다.
+         */
+        if (call.name === 'Bash' && call.args?.command) {
+          ctx.배움?.명령본것(call.args.command, !result.error, result.error ?? '');
+        }
+        if (call.name === 'Edit' && result.error) ctx.배움?.모델본것(conn.model, '편집실패');
+
         if (result.error) {
           lastToolFailed = true;
           // 같은 도구가 같은 이유로 계속 실패하면 헛돌고 있는 것이다.
@@ -753,6 +778,18 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
       ctx.audit.blocked('같은 자리를 반복해 스스로 멈춤', 멈출까);
       yield { type: 'stuck', why: 멈출까, steps, files: 마무리() };
       return;
+    }
+
+    /*
+     * 요약해서 접기 **전에** 도구 결과부터 접는다.
+     *
+     * 자리를 먹는 것은 대개 사람 말이 아니라 옛날에 읽어 둔 파일이다. 그쪽을
+     * 먼저 비우면 요약 압축을 한참 미룰 수 있고, 미루는 동안 대화는 한 글자도
+     * 안 잃는다. 그래도 차면 아래에서 통째로 요약한다.
+     */
+    if (shouldFold(session)) {
+      const f = foldToolResults(session);
+      if (f.접은것) yield { type: 'folded', ...f };
     }
 
     // 컨텍스트가 차오르면 오래된 대화를 '요약해서' 접는다. 그냥 자르면 하던 일을 잊는다.

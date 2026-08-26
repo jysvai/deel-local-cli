@@ -356,6 +356,8 @@ Names follow Claude Code / Codex conventions.
 | `/out [number\|auto]` | Cap on a **single reply** — raise it when large files get cut |
 | `/compact` | Summarise and fold older turns |
 | `/clear` | Clear the conversation (keeps link and rules) |
+| `/thread [new\|fork\|close\|n]` | Conversation threads — side work in its own context. Link and undo stay shared |
+| `/learned [clear]` | What deel has picked up on its own — commands that work here, this model's habits |
 | `/model` | Switch connection / model |
 | `/think <level>` | Reasoning level (`off·low·medium·high·max`) |
 | `/think 배분 <profile>` | Per-stage profile (`even·save·deep`) |

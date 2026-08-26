@@ -54,6 +54,8 @@ export const COMMANDS = {
   cost:    { desc: '이번 세션 사용량' },
   status:  { desc: '연결 상태' },
   scan:    { desc: '이 PC 의 로컬 모델 서버 훑기', arg: '[save]' },
+  thread:  { desc: '대화 갈래 — 곁가지를 딴 자리에서. 연결·되돌리기는 같이 씀', arg: '[new|fork|close|번호|이름]' },
+  learned: { desc: '쓰면서 저절로 알게 된 것 — 되는 명령·이 모델의 버릇', arg: '[지우기]' },
   sessions:{ desc: '이 폴더의 지난 대화 목록' },
   recall:  { desc: '지난 대화에서 찾기 — 목록 말고 내용으로', arg: '<찾을 말>' },
   mcp:     { desc: '밖에서 붙인 도구(MCP) 서버 보기' },
@@ -530,6 +532,12 @@ export async function handle(line, session, ctx) {
       return { handled: true };
     }
 
+    case 'thread':
+    case '갈래': return 갈래명령(session, ctx, arg), { handled: true };
+
+    case 'learned':
+    case '배움': return 배움명령(session, ctx, arg), { handled: true };
+
     case 'sessions': {
       const rows = listSessions(session.root, { limit: 12 });
       rule('이 폴더의 지난 대화', 70);
@@ -986,6 +994,154 @@ function showThink(session, { 자세히 = false } = {}) {
   say('');
 }
 
+/**
+ * 대화 갈래.
+ *
+ * 여기서 하는 일은 화면과 말뿐이다. 갈래를 들고 있는 것은 agent/threads.js 다.
+ */
+function 갈래명령(session, ctx, arg = '') {
+  const 갈래 = ctx?.갈래;
+  say('');
+  if (!갈래) {
+    // 한 번 돌리고 끝내는 자리(-p)에는 갈래가 없다. 없는 것을 있는 척하지 않는다.
+    say(`  ${c.gray('이 자리에서는 갈래를 못 씁니다 — 대화 화면에서만 됩니다.')}`);
+    say('');
+    return;
+  }
+
+  const 말 = String(arg ?? '').trim();
+  const [머리, ...나머지] = 말.split(/\s+/);
+  const 뒷말 = 나머지.join(' ');
+  const 알림 = (g) => {
+    say(`  ${c.hcyan('⑂')} ${c.bold(g.이름)} ${c.gray('갈래로 왔습니다.')} `
+      + c.gray(session.messages.length ? `오간 말 ${session.messages.length}개` : '빈 대화입니다'));
+  };
+
+  if (/^(new|새|새로)$/i.test(머리 ?? '')) {
+    알림(갈래.새로(뒷말));
+    say(`  ${c.gray('본줄기로 돌아가려면')} ${c.cyan('/thread 1')}`);
+    say('');
+    return;
+  }
+
+  if (/^(fork|갈라|분기)$/i.test(머리 ?? '')) {
+    const g = 갈래.갈라내기(뒷말);
+    say(`  ${c.hcyan('⑂')} ${c.bold(g.이름)} ${c.gray('로 갈라 나왔습니다.')} `
+      + c.gray(`여기까지 오간 말 ${session.messages.length}개를 그대로 물려받았습니다.`));
+    say(`  ${c.gray('여기서 무엇을 하든 본줄기는 그대로입니다.')}`);
+    say('');
+    return;
+  }
+
+  if (/^(close|닫기|끝)$/i.test(머리 ?? '')) {
+    const r = 갈래.닫기(뒷말);
+    if (!r.ok) say(`  ${c.red('못 닫았습니다')} ${c.gray(r.why)}`);
+    else {
+      say(`  ${mark.ok} ${c.gray(`${r.닫은것.이름} 갈래를 닫았습니다. 적어 둔 것은 남아 있습니다 —`)} ${c.cyan('/sessions')}`);
+      알림(r.지금);
+    }
+    say('');
+    return;
+  }
+
+  if (말) {
+    const g = 갈래.옮기기(말);
+    if (!g) {
+      say(`  ${c.red('그런 갈래가 없습니다')} ${c.gray(말)}`);
+      say(`  ${c.gray('/thread 만 치면 목록이 나옵니다.')}`);
+    } else 알림(g);
+    say('');
+    return;
+  }
+
+  // 그냥 /thread — 목록.
+  rule('대화 갈래', 70);
+  for (const r of 갈래.목록()) {
+    const 표 = r.지금 ? c.hcyan('▶') : c.gray(' ');
+    const 이름 = r.지금 ? c.white(r.이름) : c.gray(r.이름);
+    say(`  ${표} ${c.gray(String(r.번호))} ${pad(이름, 24)} ${c.gray(`말 ${String(r.말수).padStart(3)}개`)}`
+      + (r.id ? `  ${c.gray(r.id)}` : ''));
+  }
+  say('');
+  say(`  ${c.gray('/thread new [이름]')}   ${c.gray('빈 갈래로 나간다 — 곁가지 질문을 여기서')}`);
+  say(`  ${c.gray('/thread fork [이름]')}  ${c.gray('지금까지를 물려받아 갈라 나간다')}`);
+  say(`  ${c.gray('/thread <번호>')}       ${c.gray('그 갈래로 옮긴다')}`);
+  say(`  ${c.gray('/thread close')}       ${c.gray('지금 갈래를 닫는다')}`);
+  say('');
+  say(`  ${c.gray('연결·모델·도구·되돌리기는 갈래끼리 같이 씁니다. 오간 말과 토큰만 따로입니다.')}`);
+  say('');
+}
+
+/**
+ * 쓰면서 저절로 알게 된 것.
+ *
+ * 보여 주는 것이 중요하다. 프롬프트에 몰래 들어가는 글이 있으면 사람은
+ * 모델이 왜 그렇게 답했는지 알 수 없게 된다 — 여기서 통째로 볼 수 있어야
+ * '자동으로 쌓인다' 가 무섭지 않은 말이 된다. 지우는 길도 같이 둔다.
+ */
+function 배움명령(session, ctx, arg = '') {
+  const 배움 = ctx?.배움;
+  say('');
+  if (!배움) {
+    say(`  ${c.gray('이 자리에서는 못 봅니다 — 대화 화면에서만 됩니다.')}`);
+    say('');
+    return;
+  }
+
+  if (/^(지우기|clear|forget|비우기)$/i.test(String(arg).trim())) {
+    배움.지우기('전부');
+    session.배움요약 = null;
+    say(`  ${mark.ok} ${c.gray('쌓아 둔 것을 비웠습니다. 다시 겪으면서 새로 쌓습니다.')}`);
+    say('');
+    return;
+  }
+
+  const { 명령, 모델, 모델이름 } = 배움.현황(session.conn.model);
+  rule('겪어 본 것', 70);
+
+  if (!명령.length && !모델) {
+    say(`  ${c.gray('아직 쌓인 것이 없습니다. 명령을 돌리고 대화를 나눌수록 여기가 찹니다.')}`);
+    say('');
+    return;
+  }
+
+  if (명령.length) {
+    say(`  ${c.bold('이 폴더에서 돌려 본 명령')}`);
+    for (const r of 명령.slice(0, 12)) {
+      const 표 = r.no === 0 ? c.green('✓') : r.ok === 0 ? c.red('✗') : c.yellow('~');
+      say(`    ${표} ${pad(r.이름, 24)} ${c.gray(`됨 ${r.ok} · 안 됨 ${r.no}`)}`);
+    }
+    say('');
+  }
+
+  if (모델) {
+    say(`  ${c.bold('이 모델에 대해')} ${c.gray(모델이름)}`);
+    const 걸음 = 모델.걸음 ?? 0;
+    const 줄 = (이름, n) => {
+      if (!n) return;
+      const 비율 = 걸음 ? Math.round((n / 걸음) * 100) : 0;
+      say(`    ${c.gray(pad(이름, 24))} ${pad(String(n), 5, 'right')} ${c.gray(걸음 ? `(${비율}%)` : '')}`);
+    };
+    say(`    ${c.gray(pad('같이 걸어 본 걸음', 24))} ${pad(String(걸음), 5, 'right')}`);
+    줄('인자가 잘림', 모델.잘린인자);
+    줄('빈 답', 모델.빈답);
+    줄('편집이 빗나감', 모델.편집실패);
+    if (모델.보정) say(`    ${c.gray(pad('토큰 추정 보정', 24))} ${pad(`×${모델.보정.toFixed(2)}`, 5, 'right')}`);
+    say('');
+  }
+
+  const 실린것 = 배움.요약(session.conn.model);
+  if (실린것) {
+    say(`  ${c.bold('이 중 프롬프트에 실리는 것')}`);
+    for (const l of 실린것.split('\n').slice(1)) say(`  ${c.gray(l)}`);
+  } else {
+    say(`  ${c.gray('아직 프롬프트에 실을 만큼 확실한 것은 없습니다 — 두 번 이상 겪어야 싣습니다.')}`);
+  }
+  say('');
+  say(`  ${c.gray('지우려면')} ${c.cyan('/learned 지우기')}`);
+  say('');
+}
+
 function showContext(session) {
   const b = session.breakdown();
   say('');
@@ -1002,7 +1158,17 @@ function showContext(session) {
   say(`  ${c.gray(pad('남음', 26))} ${pad(b.left.toLocaleString(), 8, 'right')}`);
   say('');
   say(`  ${c.gray('/compact 대화 줄이기   /clear 통째로 비우기')}`);
-  say(`  ${c.gray('숫자는 추정입니다 — 정확한 토크나이저를 쓰지 않습니다.')}`);
+  /*
+   * 추정이라고만 적어 두면 사람은 얼마나 믿어야 할지 모른다. 서버가 알려 준
+   * 실제값에 맞춰 가고 있으면 그 사실을 적는다 — '추정' 과 '맞춰 본 추정' 은
+   * 믿을 만한 정도가 다르다.
+   */
+  if (b.보정잰것 > 0) {
+    const 차이 = Math.round((b.보정 - 1) * 100);
+    say(`  ${c.gray(`서버가 알려 준 실제값에 맞춰 ${차이 >= 0 ? '+' : ''}${차이}% 보정했습니다 (${b.보정잰것}번 재봄).`)}`);
+  } else {
+    say(`  ${c.gray('숫자는 추정입니다 — 정확한 토크나이저를 쓰지 않습니다.')}`);
+  }
   say('');
 }
 

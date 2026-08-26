@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync, appendFileSync, readFileSync, existsSync, writeFil
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store, list, latest, remove, newId, prune, sessionsDir } from '../src/agent/store.js';
+import { repairToolPairs } from '../src/agent/session.js';
 
 const pass = [];
 const fail = [];
@@ -136,6 +137,76 @@ rmSync(동시, { recursive: true, force: true });
 const id = newId(new Date(2026, 7, 24, 9, 5, 3));
 check('id 가 시간순으로 정렬됨', id === '20260824-090503', id);
 check('id 가 파일 이름으로 안전함', /^[0-9-]+$/.test(id));
+
+// ── 6.5. 도구를 돌리는 도중에 죽은 대화 ─────────────────────────────────
+//
+// store 는 메시지가 오갈 때마다 즉시 적는다. 그래서 도구가 도는 중에 죽으면
+// 호출만 적히고 결과가 없다. 그대로 이어받아 보내면 OpenAI 규격 서버가 400 을
+// 낸다 — 이어받자마자 첫 마디에서 죽으니 '이어하기가 고장 났다' 로 보인다.
+//
+// 여기서 재는 것은 '지웠다' 가 아니라 **다시 보낼 수 있는 모양이 되었는가** 다.
+{
+  const 짝검사 = (ms) => {
+    for (const [i, m] of ms.entries()) {
+      if (m.role === 'tool' && !ms[i - 1]?.tool_calls?.length && ms[i - 1]?.role !== 'tool') return `${i}번 결과 앞에 호출 없음`;
+      if (m.tool_calls?.length) {
+        const 뒤 = ms.slice(i + 1).findIndex((x) => x.role !== 'tool');
+        const 결과수 = 뒤 === -1 ? ms.length - i - 1 : 뒤;
+        if (결과수 < m.tool_calls.length) return `${i}번 호출 ${m.tool_calls.length}개에 결과 ${결과수}개`;
+      }
+    }
+    return null;
+  };
+  const 호출 = (...ids) => ({ role: 'assistant', content: null, tool_calls: ids.map((id) => ({ id, type: 'function', function: { name: 'Read', arguments: '{}' } })) });
+  const 결과 = (id) => ({ role: 'tool', tool_call_id: id, content: '읽었다' });
+
+  // 온전한 것은 한 글자도 안 건드린다. 손보는 코드가 멀쩡한 것을 망가뜨리면 더 나쁘다.
+  const 온전 = [{ role: 'user', content: '해줘' }, 호출('c1'), 결과('c1'), { role: 'assistant', content: '했다' }];
+  const r0 = repairToolPairs(온전);
+  check('온전한 이력은 안 건드린다', r0.고친것 === 0 && r0.messages.length === 4, `고친것 ${r0.고친것}`);
+
+  // 호출 둘 중 하나만 끝났다 — 병렬 읽기 도중에 죽은 모양.
+  const r1 = repairToolPairs([{ role: 'user', content: '해줘' }, 호출('c1', 'c2'), 결과('c1')]);
+  check('결과 없는 호출만 걷어낸다', r1.messages[1]?.tool_calls?.length === 1 && r1.고친것 === 1,
+    `호출 ${r1.messages[1]?.tool_calls?.length}개 · 고친것 ${r1.고친것}`);
+  check('끝난 쪽 결과는 남는다', r1.messages[2]?.tool_call_id === 'c1');
+  check('손본 뒤 다시 보낼 수 있다', 짝검사(r1.messages) === null, 짝검사(r1.messages) ?? '');
+
+  // 결과가 아예 없다. 할 말도 없으면 그 메시지는 남길 이유가 없다.
+  const r2 = repairToolPairs([{ role: 'user', content: '해줘' }, 호출('c1')]);
+  check('결과가 하나도 없으면 호출째 사라진다', r2.messages.length === 1 && r2.messages[0].role === 'user',
+    `${r2.messages.length}개 남음`);
+
+  // 할 말이 있으면 그건 살린다 — 모델이 무슨 생각이었는지가 이어하기의 단서다.
+  const r3 = repairToolPairs([{ role: 'user', content: '해줘' },
+    { ...호출('c1'), content: '먼저 읽어 보겠습니다' }]);
+  check('할 말은 남기고 호출만 떼어 낸다',
+    r3.messages[1]?.content === '먼저 읽어 보겠습니다' && !r3.messages[1]?.tool_calls, JSON.stringify(r3.messages[1]));
+
+  // id 를 안 주는 규격(Ollama)은 순서로 짝짓는다.
+  const 올라마 = [{ role: 'user', content: '해줘' }, 호출('c1', 'c2', 'c3'),
+    { role: 'tool', tool_name: 'Read', content: 'a' }, { role: 'tool', tool_name: 'Read', content: 'b' }];
+  const r4 = repairToolPairs(올라마);
+  check('id 없는 규격은 순서로 짝짓는다', r4.messages[1]?.tool_calls?.length === 2 && r4.고친것 === 1,
+    `호출 ${r4.messages[1]?.tool_calls?.length}개`);
+
+  // 머리가 잘려 결과부터 시작하는 이력.
+  const r5 = repairToolPairs([결과('c9'), { role: 'user', content: '이어서' }]);
+  check('호출 없이 굴러다니는 결과는 버린다', r5.messages.length === 1 && r5.고친것 === 1);
+
+  // 진짜 파일을 거쳐서도 되는가 — 도구가 도는 중에 죽은 대화를 그대로 만든다.
+  const 죽은 = new Store(root, 'test-끊김');
+  죽은.begin({ model: 'm', root });
+  죽은.append({ role: 'user', content: '로그 좀 고쳐줘' });
+  죽은.append(호출('c1', 'c2'));
+  죽은.append(결과('c1'));
+  // 여기서 전원이 나갔다 — c2 의 결과가 없다.
+  const 되살린 = new Store(root, 'test-끊김').load().messages;
+  check('디스크에는 깨진 채로 남아 있다', 짝검사(되살린) !== null, 짝검사(되살린) ?? '안 깨졌다?');
+  const 고친것 = repairToolPairs(되살린);
+  check('이어받을 때 손보면 성해진다', 짝검사(고친것.messages) === null, 짝검사(고친것.messages) ?? '');
+  check('처음 시킨 일은 그대로 있다', 고친것.messages[0]?.content === '로그 좀 고쳐줘');
+}
 
 // ── 7. 없는 폴더에서도 안 죽는다 ────────────────────────────────────────
 const 빈폴더 = mkdtempSync(join(tmpdir(), 'deel-empty-'));
