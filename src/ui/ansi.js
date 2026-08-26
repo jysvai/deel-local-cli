@@ -54,6 +54,12 @@ export const cursor = {
   show: () => ON && process.stdout.write('\x1b[?25h'),
   up: (n = 1) => ON && process.stdout.write(`\x1b[${n}A`),
   clearLine: () => ON && process.stdout.write('\x1b[2K\r'),
+  // 여러 조각을 한 덩이로 묶어 한 번에 내보낼 때 쓰는 글자값.
+  //
+  // 나눠 쓰면 그 사이가 화면에 그대로 보인다. 커서를 숨기기 전에 지우는 글이
+  // 먼저 나가면, 커서가 상자 안을 훑고 지나가는 것이 눈에 띈다.
+  숨김: ON ? '\x1b[?25l' : '',
+  보임: ON ? '\x1b[?25h' : '',
 };
 
 // 한글·한자·가나는 터미널에서 두 칸을 차지한다. 표 정렬이 이걸 모르면 어긋난다.
