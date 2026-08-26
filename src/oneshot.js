@@ -22,7 +22,7 @@ import { allowEndpoint, setOffline } from './safety/network.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { route } from './agent/route.js';
 import { get as getWork } from './agent/modes.js';
-import { 모두끝내기 as 일감모두끝내기 } from './tools/jobs.js';
+import { 모두끝내기 as 일감모두끝내기, 일감인자 } from './tools/jobs.js';
 
 /**
  * 종료코드.
@@ -61,7 +61,8 @@ function 도구줄(name, args) {
     (a.command ? String(a.command).replace(/\s+/g, ' ') : null) ??
     // 뒤에서 도는 명령. 번호가 곧 그 일감의 이름이라, 이게 없으면 기록에
     // `Jobs()` 만 여러 줄 남아 나중에 무엇을 본 것인지 알 수 없다.
-    (a.번호 != null ? `${a.번호}번${a.끝내기 ? ' · 끝내기' : ''}` : null) ??
+    // 이름 고르기는 jobs.js 한 군데에만 둔다 (영문 이름도 받는다).
+    (() => { const g = 일감인자(a); return g.번호 != null ? `${g.번호}번${g.끝내기 ? ' · 끝내기' : ''}` : null; })() ??
     // 한 번에 여러 파일을 쓴 경우. 기록에 빈 괄호만 남으면 나중에 이 줄로는
     // 무엇을 만들었는지 알 수 없다 — `deel run` 의 출력은 곧 근거로 쓰인다.
     (Array.isArray(a.files) && a.files.length

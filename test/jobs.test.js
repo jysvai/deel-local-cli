@@ -567,6 +567,64 @@ trace('9-도구모양');
   비우기();
 }
 
+trace('9-2-영문이름도받는다');
+
+// ── 9-2. 인자 이름을 영어로 보내도 알아듣는가 ──────────────────────────
+//
+// 모델은 한글 인자 이름을 자주 영어로 바꿔 보낸다. 추정이 아니라 이 저장소가
+// 겪은 일이다 — Task 는 이미 `목적 ?? purpose`, `할일 ?? task`, `모드 ?? mode`
+// 로 둘 다 받고 있다 (agent/loop.js). 누군가 겪고 달아 둔 것이다.
+//
+// Jobs 에는 그게 없어서 이렇게 됐다.
+//
+//   Jobs({job: 1})              → 1번 출력이 아니라 **목록**이 돌아온다
+//   Jobs({job: 1, stop: true})  → **목록**이 돌아온다. 서버는 그대로 돈다
+//
+// 두 번째가 나쁘다. 모델은 끄라고 시켰고 **성공처럼 보이는 답**을 받았는데
+// 서버는 계속 포트를 문다. 번호 없이 끝내기만 준 경우는 오류로 막아 뒀지만,
+// 영문 이름으로 오면 끝내기도 undefined 라 그 그물을 그냥 지나간다.
+//
+// 이름을 영문으로 **바꾸는** 것으로는 안 된다. 그러면 이번엔 한글로 보내는
+// 쪽이 같은 구멍에 빠지고, id·number 처럼 안 맞춘 이름은 여전히 샌다.
+// 둘 다 받고, **못 알아들은 것은 못 알아들었다고 말한다.**
+{
+  const r = await 띄우기(부르기(조용한아이), { cwd: 방, 기다림: 0 });
+  const j = 하나(r.번호);
+  j.담기(Buffer.from('영문 이름으로 읽은 줄\n', 'utf8'));
+
+  const a = await JOBS_TOOL.run({ job: r.번호 });
+  check('job 으로 보내도 그 일감을 읽는다', /영문 이름으로 읽은 줄/.test(a.content ?? ''),
+    (a.content ?? '').split('\n').pop());
+  check('목록으로 얼버무리지 않는다', !/^\s+\d+\. /.test(a.content ?? ''), (a.content ?? '').split('\n')[0]);
+
+  j.담기(Buffer.from('그 뒤에 나온 줄\n', 'utf8'));
+  const b = await JOBS_TOOL.run({ job: r.번호, from_start: true });
+  check('from_start 도 알아듣는다', /영문 이름으로 읽은 줄/.test(b.content ?? '') && /그 뒤에 나온 줄/.test(b.content ?? ''),
+    (b.content ?? '').split('\n').length + '줄');
+
+  // 여기가 제일 값진 자리다. 안 끄고 성공처럼 답하면 사람이 원인을 못 찾는다.
+  const c = await JOBS_TOOL.run({ job: r.번호, stop: true });
+  check('stop 으로 보내면 진짜로 끝낸다', /끝냈습니다/.test(c.content ?? ''), c.content ?? c.error);
+  check('정말 목록에서 빠졌다', 목록().length === 0, `${목록().length}개`);
+
+  /*
+   * 아예 모르는 이름만 왔을 때.
+   *
+   * 목록을 돌려주면 그것도 성공한 답으로 보인다. 무엇을 받는지 알려 줘야
+   * 모델이 다음 걸음에서 고쳐 부른다.
+   */
+  const d = await JOBS_TOOL.run({ 일감번호: 1, 죽여: true });
+  check('모르는 인자만 오면 오류로 말한다', !!d.error, d.error ?? `(목록을 줬다: ${d.content})`);
+  check('무엇을 받는지 알려 준다', /번호|job/.test(d.error ?? ''), d.error ?? '');
+  check('무엇이 모르는 것이었는지 적는다', /일감번호/.test(d.error ?? ''), d.error ?? '');
+
+  // 인자 없이 부르는 것은 여전히 '목록 보기' 다. 이걸 오류로 만들면 안 된다.
+  const e = await JOBS_TOOL.run({});
+  check('인자가 아예 없으면 여전히 목록', !e.error, e.error ?? e.content);
+
+  비우기();
+}
+
 trace('10-셸명령');
 
 // ── 10. 셸에 넘기는 방법이 Bash 와 같은가 ──────────────────────────────

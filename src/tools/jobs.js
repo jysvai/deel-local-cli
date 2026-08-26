@@ -489,6 +489,52 @@ process.once('exit', () => { try { 모두끝내기(); } catch { /* 끝나는 중
  *   command 없이 Bash 를 부르거나, 반대로 읽으려다 명령을 또 실행한다.
  *   하는 일이 다르면 도구를 나누는 편이 결국 싸다. 이 스키마는 아주 작다.
  */
+/*
+ * 인자 이름 받이 — 한글 이름과 영문 이름을 **둘 다** 받는다.
+ *
+ * 모델은 한글 인자 이름을 자주 영어로 바꿔 보낸다. 추정이 아니라 이 저장소가
+ * 겪은 일이다 — Task 는 이미 `목적 ?? purpose`, `할일 ?? task`, `모드 ?? mode`
+ * 로 둘 다 받고 있다(agent/loop.js). 누군가 겪고 달아 둔 것이다.
+ *
+ * 여기에는 그게 없어서 `Jobs({job: 1, stop: true})` 가 **목록**을 돌려줬다.
+ * 모델은 끄라고 시켰고 성공처럼 보이는 답을 받았는데 서버는 그대로 포트를
+ * 문다 — 사람은 원인을 못 찾는다. 이 도구에서 제일 나쁜 실패다.
+ *
+ * 이름을 영문으로 **바꾸는** 것으로는 안 된다. 그러면 한글로 보내는 쪽이 같은
+ * 구멍에 빠지고, 안 맞춘 이름(id·number)은 여전히 샌다. 둘 다 받고,
+ * 못 알아들은 것은 못 알아들었다고 말한다.
+ *
+ * **목록은 여기 한 벌뿐이다.** 화면 이름표도 이걸 쓴다(repl.js·oneshot.js).
+ * 두 벌이 되면 한쪽만 고쳐지고, 그때부터 화면과 실제가 어긋난다.
+ */
+const 인자이름 = {
+  번호: ['번호', 'job', 'job_id', 'jobId', 'id', 'number'],
+  끝내기: ['끝내기', 'stop', 'kill'],
+  처음부터: ['처음부터', 'from_start', 'fromStart', 'full'],
+};
+const 아는이름 = new Set(Object.values(인자이름).flat());
+
+/**
+ * 준 인자에서 아는 것만 골라낸다.
+ *
+ * @returns {{번호: number|null, 끝내기: boolean, 처음부터: boolean, 준것: string[], 모르는것: string[]}}
+ */
+export function 일감인자(args) {
+  const 준것 = Object.keys(args ?? {});
+  const 하나씩 = (이름) => {
+    for (const n of 인자이름[이름]) if (args?.[n] != null) return args[n];
+    return null;
+  };
+  const 날번호 = 하나씩('번호');
+  return {
+    번호: 날번호 == null ? null : Number(날번호),
+    끝내기: !!하나씩('끝내기'),
+    처음부터: !!하나씩('처음부터'),
+    준것,
+    모르는것: 준것.filter((k) => !아는이름.has(k)),
+  };
+}
+
 /**
  * 모델에게 건넬 만큼만 남긴다 — **뒤**를 남긴다.
  *
@@ -522,9 +568,9 @@ export const JOBS_TOOL = {
     parameters: {
       type: 'object',
       properties: {
-        번호: { type: 'number', description: '볼 일감 번호. 없으면 목록' },
-        끝내기: { type: 'boolean', description: 'true 면 그 일감을 끝낸다' },
-        처음부터: { type: 'boolean', description: 'true 면 처음부터 다시 읽는다' },
+        번호: { type: 'number', description: '볼 일감 번호 (job). 없으면 목록' },
+        끝내기: { type: 'boolean', description: 'true 면 그 일감을 끝낸다 (stop)' },
+        처음부터: { type: 'boolean', description: 'true 면 처음부터 다시 읽는다 (from_start)' },
       },
       required: [],
     },
@@ -532,7 +578,24 @@ export const JOBS_TOOL = {
   // 끝내기 는 죽는 순간 뱉은 말을 기다렸다 거두므로 비동기다 (끝내기 머리말 참고).
   // runTool 이 await 로 부르니 도구가 비동기여도 된다 (tools/index.js).
   async run(args) {
-    const 번호 = args?.번호 == null ? null : Number(args.번호);
+    const 받은것 = 일감인자(args);
+    /*
+     * 준 것이 있는데 **하나도** 못 알아들었으면 목록으로 얼버무리면 안 된다.
+     *
+     * 목록을 돌려주면 그것도 성공한 답으로 보인다. 끄라고 시킨 모델은
+     * 껐다고 여기고 넘어가는데 서버는 그대로 돈다. 무엇을 받는지 알려 줘야
+     * 다음 걸음에서 고쳐 부른다.
+     *
+     * 인자가 **아예 없는** 것은 그냥 '목록 보기' 다 — 그건 오류가 아니다.
+     */
+    if (받은것.준것.length && 받은것.모르는것.length === 받은것.준것.length) {
+      return {
+        error: `모르는 인자입니다: ${받은것.모르는것.join(', ')}.`
+          + ' Jobs 는 번호(job) · 끝내기(stop) · 처음부터(from_start) 만 받습니다.'
+          + ' 번호 없이 부르면 목록입니다.',
+      };
+    }
+    const 번호 = 받은것.번호;
     // 숫자가 아닌 것을 받으면 NaN 이 되고, 그대로 두면 `NaN번 일감이 없습니다`
     // 라는 말이 모델에게 나간다. 무엇이 잘못됐는지 안 알려 주는 오류다.
     if (번호 != null && !Number.isFinite(번호)) {
@@ -547,7 +610,7 @@ export const JOBS_TOOL = {
        * "서버를 껐습니다" 라고 말하는데 서버는 그대로 돌고 있다.
        * 도구가 시킨 일을 안 했으면 안 했다고 말해야 그 다음이 이어진다.
        */
-      if (args?.끝내기) {
+      if (받은것.끝내기) {
         const 도는것 = 목록().filter((j) => j.상태 === '도는중');
         return {
           error: '끝낼 일감 번호를 주세요. 번호 없이 끝내기만 주면 아무것도 안 끝냅니다.'
@@ -574,7 +637,7 @@ export const JOBS_TOOL = {
       return { content: 줄들.join('\n'), summary: `${ls.length}개`, 일감수: ls.length };
     }
 
-    if (args?.끝내기) {
+    if (받은것.끝내기) {
       const r = await 끝내기(번호);
       if (!r) return { error: `${번호}번 일감이 없습니다. 번호 없이 Jobs 를 불러 목록을 보세요.` };
       if (r.이미) return { content: `${번호}번은 이미 끝나 있었습니다: ${r.명령}`, summary: '이미 끝남' };
@@ -585,7 +648,7 @@ export const JOBS_TOOL = {
       };
     }
 
-    const r = 읽기(번호, { 처음부터: !!args?.처음부터 });
+    const r = 읽기(번호, { 처음부터: 받은것.처음부터 });
     if (!r) return { error: `${번호}번 일감이 없습니다. 번호 없이 Jobs 를 불러 목록을 보세요.` };
     const 머리 = r.상태 === '도는중'
       ? `${번호}번 (도는중 ${r.초}초): ${r.명령}`

@@ -868,6 +868,7 @@ next step while you refresh a server that was never there.
 | Retained | 256KB. Past that the front is dropped and **the drop is stated** |
 | Handed to the model | 4,000 chars. This **must** be a different number from the one above |
 | On stop | Waits for the dying output, and returns only once the process is **actually dead** |
+| Argument names | Korean and English both accepted (`번호`/`job`, `끝내기`/`stop`). Unrecognized ones **are reported** |
 | Count | Eight running. Finished jobs keep the most recent eight, and evictions **are stated** |
 
 Why two different caps: make them equal and every overflow of a `watch` job means
@@ -885,6 +886,20 @@ the exact state this feature exists to prevent.
 Finished jobs are not dropped right away — they are kept so their final output can
 be read. Only the most recent eight survive; otherwise thirty short commands leave
 thirty entries, each holding up to 256KB.
+
+**Argument names are accepted in both Korean and English.** Models frequently
+translate Korean parameter names into English — not a guess, something this repo
+already hit (`Task` accepts both `목적` and `purpose`). `Jobs` did not, which meant:
+
+```
+Jobs({job: 1, stop: true})   ->   a listing comes back. The server keeps running.
+```
+
+The model asked for a stop and **got what looks like a success** while the port
+stays held. So both spellings are accepted, and when nothing is recognized it says
+so rather than falling back to a listing. The name mapping lives in exactly **one**
+place — the on-screen label reads it too. Two copies means the tool works while the
+label shows empty parentheses.
 
 **Killing grandchildren is where this quietly goes wrong.** `npm run dev` descends
 npm → node → vite, and the thing holding the port is at the bottom. Windows has

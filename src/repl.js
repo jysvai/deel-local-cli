@@ -28,7 +28,7 @@ import { expand as expandMentions } from './agent/mention.js';
 import { 다붙이기 } from './backend/mcp.js';
 import { 프롬프트토막 as 기억토막, 읽기 as 기억읽기 } from './agent/memory.js';
 import { 갈래고르기 } from './ui/working.js';
-import { 모두끝내기 as 일감모두끝내기 } from './tools/jobs.js';
+import { 모두끝내기 as 일감모두끝내기, 일감인자 } from './tools/jobs.js';
 
 // 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
 const TOOL_GLYPH = {
@@ -57,7 +57,10 @@ function toolLabel(name, args) {
     // 어느 것을 보고 있는지가 화면에서 사라진다. 서너 개를 띄워 놓고 나면
     // `Jobs` 줄이 여러 개 겹치는데, 그때 구별할 것이 번호뿐이다.
     // 번호 없이 부르는 것(목록 보기)은 그대로 괄호가 없다.
-    (a.번호 != null ? `${a.번호}번${a.끝내기 ? ' · 끝내기' : ''}` : null) ??
+    //
+    // 이름 고르기는 jobs.js 에 맡긴다. 모델이 `job` 으로 보낼 수도 있는데,
+    // 여기서 `a.번호` 만 보면 도구는 제대로 도는데 화면만 빈 괄호가 된다.
+    (() => { const g = 일감인자(a); return g.번호 != null ? `${g.번호}번${g.끝내기 ? ' · 끝내기' : ''}` : null; })() ??
     // 한 번에 여러 파일을 쓸 때. 빈 괄호를 띄우면 화면만 보고는 무엇을
     // 만들었는지 알 수 없다 — 첫 파일과 개수를 적는다.
     (Array.isArray(a.files) && a.files.length
