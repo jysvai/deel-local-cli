@@ -11,6 +11,7 @@ import { runScan } from '../src/backend/scanui.js';
 import { closeConnections } from '../src/backend/http.js';
 import { parseSize } from '../src/backend/ctxsize.js';
 import { runSessions } from '../src/agent/sessionui.js';
+import { acp } from '../src/acp/serve.js';
 
 const MIN_NODE = 20;
 
@@ -106,6 +107,12 @@ function help() {
   say(`    ${c.gray('--host <주소>')}       기본은 127.0.0.1`);
   say(`    ${c.gray('--key <키>')}          키가 필요한 로컬 서버일 때`);
   say(`    ${c.gray('대화 중')} ${c.cyan('/model')} ${c.gray('로 서버·모델을 골라 바꿉니다.')}`);
+  say('');
+  say(`  ${c.bold('에디터 안에서 쓰기')} ${c.gray('— Zed · JetBrains · Neovim · Emacs')}`);
+  say('');
+  say(`    ${c.cyan('deel acp')}                    에디터가 띄우는 자리 (ACP). 사람이 직접 칠 명령은 아닙니다`);
+  say(`    ${c.gray('에디터 설정에 이 명령을 적어 두면 그 안에서 deel 이 돕니다.')}`);
+  say(`    ${c.gray('승인 창·모드 고르개·고친 파일 링크가 에디터 것으로 그려집니다.')}`);
   say('');
   say(`  ${c.bold('사내 반입')}`);
   say('');
@@ -212,6 +219,24 @@ async function main() {
         offline: flags.offline === true || flags.offline === 'true',
         continue: flags.continue === true || flags.c === true,
         sessionId: typeof flags.resume === 'string' ? flags.resume : (flags.resume === true ? null : undefined),
+      });
+    /*
+     * 에디터가 자식 프로세스로 띄우는 자리 (ACP).
+     *
+     * 사람이 직접 칠 명령이 아니다. 쳐도 안 죽고 그냥 기다리는데, 그건 규격이
+     * 그렇게 정한 것이라 맞다 — 에디터가 표준입력으로 말을 걸어 주기를 기다린다.
+     * 왜 아무 반응이 없는지는 표준오류에 적어 둔다.
+     */
+    case 'acp':
+      return acp({
+        root: flags.root ? String(flags.root) : undefined,
+        mode: flags.mode ? String(flags.mode) : undefined,
+        work: flags.work ? String(flags.work) : undefined,
+        ctx: flags.ctx ? parseSize(String(flags.ctx)) : undefined,
+        maxTokens: flags['max-tokens'] ? parseSize(String(flags['max-tokens'])) : undefined,
+        think: flags.think ? String(flags.think) : undefined,
+        effort: flags.effort ? String(flags.effort) : undefined,
+        offline: flags.offline === true || flags.offline === 'true',
       });
     case 'status':
       return showStatus();

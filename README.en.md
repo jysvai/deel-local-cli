@@ -59,6 +59,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 - [Auto-compaction](#auto-compaction)
 - [Resuming a conversation](#resuming-a-conversation)
 - [Attaching tools from outside (MCP)](#attaching-tools-from-outside-mcp)
+- [Inside your editor (ACP)](#inside-your-editor-acp)
 - [Safety](#safety)
 - [Corporate review package](#corporate-review-package)
 - [Configuration](#configuration)
@@ -359,7 +360,10 @@ Names follow Claude Code / Codex conventions.
 | `/clear` | Clear the conversation (keeps link and rules) |
 | `/thread [new\|fork\|close\|n]` | Conversation threads — side work in its own context. Link and undo stay shared |
 | `/learned [clear]` | What deel has picked up on its own — commands that work here, this model's habits |
+| `/pin <text>` | Pin a line — folding and compaction **cannot reach it** |
+| `/evidence [file]` | Evidence — what changed, and what proves it. **What is unproven is listed too** |
 | `/model` | Switch connection / model |
+| `/model 카드` | Model card — what this model has actually done here, and what deel changed because of it |
 | `/think <level>` | Reasoning level (`off·low·medium·high·max`) |
 | `/think 배분 <profile>` | Per-stage profile (`even·save·deep`) |
 | `/think 자세히` | Stage table — which stage runs at which level and cap |
@@ -1643,6 +1647,62 @@ missing?" unanswerable.
 
 ---
 
+## Inside your editor (ACP)
+
+A tool that makes you open one more terminal window stops being used after about two weeks.
+Developers live inside the IDE. So deel speaks **ACP** (Agent Client Protocol) — Zed,
+JetBrains, Neovim and Emacs attach to it **without changing a line on their side**.
+
+One command in your editor's settings:
+
+```
+deel acp
+```
+
+The editor spawns that as a child process and exchanges newline-delimited JSON-RPC 2.0 over
+stdio. It is not a command you type yourself.
+
+**What you get once it is attached:**
+
+| In the editor | From deel |
+|---|---|
+| Streaming reply pane | The model's text and its reasoning |
+| Tool list with icons and status | `Read` is a read, `Edit` is an edit, `Bash` is an execution — **the kind is sent**, not just a name |
+| Clickable file links | The **absolute path** of every file touched |
+| Approval dialog | deel's safety rails, rendered as the editor's own prompt (`allow once` · `always allow` · `reject`) |
+| Mode picker | deel's seven work modes (auto · code · plan · architect · debug · ask · orchestrator) |
+| Stop button | Reaches the turn mid-flight, even while waiting on the model |
+
+**Still zero dependencies.** Same reason as MCP — newline-delimited JSON-RPC 2.0 is the whole
+transport, so no SDK is needed.
+
+<details>
+<summary><b>Details</b> — the places this breaks silently</summary>
+
+This protocol fails quietly. The editor shows "the agent is not responding" and nothing
+anywhere explains why. So these are nailed down by tests (`test/acp.test.js` spawns a real
+process and talks over a real pipe).
+
+| The place | Why it matters |
+|---|---|
+| **Nothing but ACP on stdout** | The spec says `MUST NOT`. deel has dozens of places that print to the screen; one of them firing in this mode breaks the pipe. Rather than guarding each call site, **the pipe itself is swapped out** — so code written later is safe without knowing about this. What gets printed is not dropped, it goes to stderr |
+| **Korean split across chunk boundaries** | Pipes break on bytes, not characters. Decoding each chunk separately turns `안녕` into `안<?>하` — and **the JSON still parses**, so no error is raised. The characters are quietly mangled |
+| **A request with `id: 0`** | ACP clients count from zero. Reading `if (msg.id)` treats the very first `initialize` as a notification and never answers — it hangs the moment it connects |
+| **Cancellation reaching a running turn** | Cancellation always arrives while something is running; that is what cancellation is. Awaiting each incoming line in order means it **never arrives** |
+| **When permission cannot be asked** | It is tempting to just run the tool — otherwise nothing works against a client that has not built the approval dialog yet. But that means "if I can't ask, I do as I please". **It does not** |
+
+**What it does not do yet, stated plainly:**
+
+| | |
+|---|---|
+| `session/load` | Restoring a past conversation means replaying every message as an update. Half-built, the editor opens an empty conversation and the user assumes the history is gone. It reports **`loadSession: false`** |
+| Image / audio attachments | Most local models cannot read them. Rather than dropping them silently, deel tells the model what it could not read |
+| MCP servers passed in by the editor | Not launched. That would mean **deel spawning processes named in the editor's config**. "What does this tool launch?" is the first question in a corporate review, and "whatever the editor says" is not an acceptable answer. Only `.deel/mcp.json`, written by a person, is launched |
+
+</details>
+
+---
+
 ## Safety
 
 Instead of approval prompts, the design makes things **reversible**. The default `auto` mode
@@ -2015,6 +2075,116 @@ test/                    tests (excluded from the published package)
 ---
 
 ## Release notes
+
+<details>
+<summary><b>▸ 1.3.0 — evidence instead of claims, the editor instead of a terminal</b> · what changed in four places</summary>
+
+<br>
+
+| | Before | After |
+|---|---|---|
+| Rules that must hold | **vanished** when folded or summarised | live outside the message list, where folding cannot reach |
+| This model's habits | the prompt **asked** it to behave | the harness changes instead — no cooperation needed |
+| Finishing | "all done" | what changed, and what proves it. **Including what doesn't** |
+| Where you use it | one more terminal window | inside your editor (Zed · JetBrains · Neovim · Emacs) |
+
+<br>
+
+#### 1. Rules that must hold were vanishing into the fold — `/pin`
+
+Long conversations fold and summarise earlier turns to make room. A 2026 measurement found
+**summarisation preserves only about 50% of safety constraints.** If "never touch this
+folder" lands in the missing half, the model is in a state where it was never told. Nothing
+appears on screen.
+
+Pinned lines are **not kept with the messages.** They are appended to the end of the system
+prompt — and since folding and compaction only touch messages, they are structurally out of
+reach. Not carefully preserved: **impossible to remove.**
+
+```
+/pin never touch src/legacy
+
+  ✓ Pinned — 2 now (78 tokens)
+```
+
+Up to 12 lines / 240 tokens. Past that it says so and carries the most recent — dropping
+them quietly would defeat the point of pinning.
+
+#### 2. Observed habits stayed as words — `/model 카드`
+
+deel already watched what the model did. But watching was all it did — it **wrote advice
+into the prompt**: "you keep truncating arguments, use Append." Small models don't follow
+that advice. That is what makes them small models.
+
+Now what it observes becomes **harness settings**. Instead of asking the model, deel changes
+its own behaviour.
+
+| Observed | What changes |
+|---|---|
+| Arguments truncate often (over 15%) | The cap is raised up front — no wasted first call |
+| It repeats itself | Three identical calls tolerated becomes two |
+| Edits miss often | More surrounding lines are shown on a near-miss |
+
+**Nothing changes before 12 steps.** Pinning down a healthy model because of one unlucky
+truncation is worse than not learning at all.
+
+#### 3. Evidence instead of "all done" — `/evidence`
+
+A 2026 survey found **96% of developers don't fully trust AI-written code, while 48% verify
+it every time.** 38% said it is harder to review than human code.
+
+Why harder? Ask a person why they wrote it that way and you get an answer. Agent-written
+code arrives with **one line: "done."** That line cannot be reviewed.
+
+```
+/evidence
+
+  Changed         3 files · +142 −38
+  Ran             5 commands (1 failed)
+  Unproven        1
+
+  ✗ src/worker.js — the last `npm test` failed — an earlier pass
+                    does not prove the current state.
+```
+
+Listing what changed is something `/diff` already does. What only this does is **say that
+the unproven is unproven.** Three things get caught —
+
+- Changed something and ran nothing? Nothing was proven
+- Counting a red test as green means **offering a failing test as evidence**
+- A check run *before* the edit proves nothing about it — "I ran it earlier" is the most
+  common form of self-deception
+
+If the build passed and the tests broke *after* it, the earlier green is not evidence. The
+last thing you ran is red; it cannot have been verified.
+
+`/evidence filename` writes it as markdown under `.deel/증거/`. The screen scrolls away, and
+the review happens later, by someone else.
+
+#### 4. It made you open one more terminal — `deel acp`
+
+Developers live inside the IDE. A tool that makes you switch windows stops being used after
+about two weeks. A build that cleared corporate review and then nobody uses is the saddest
+possible outcome.
+
+deel now speaks **ACP** (Agent Client Protocol). One line — `deel acp` — in your editor's
+settings and Zed, JetBrains, Neovim and Emacs attach **without changing a line on their side**.
+
+The work isn't connecting the pipe; it is **making the editor able to show something**.
+Kind, location and status are all optional in the spec, so a quick implementation omits all
+three — and then every tool is the same grey dot and no changed file is clickable.
+
+Approval flows through too. deel's safety rails render as the editor's own dialog, and
+"always allow" is remembered for that session. Against a client that cannot ask, it
+**does not run** — "if I can't ask, I do as I please" is not an option.
+
+**Still zero dependencies.** Newline-delimited JSON-RPC 2.0 is the whole transport, so no SDK.
+
+<br>
+
+Tests 2,578 → **2,771** · 52/52 files. Earlier releases are on the [tags](https://github.com/jysvai/deel-local-cli/tags) page.
+
+</details>
 
 <details>
 <summary><b>▸ 1.2.0 — so the conversation doesn't break</b> · what changed in six places</summary>
