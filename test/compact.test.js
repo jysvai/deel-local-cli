@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
 import { compact, shouldCompact, split, safeCut, COMPACT_AT } from '../src/agent/compact.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
+import { discover } from '../src/skills/discover.js';
 
 const pass = [];
 const fail = [];
@@ -191,6 +192,32 @@ await new Promise((r) => setImmediate(r));
   // 짧은 기본 규칙). 도구 이름과 인자는 그대로라 할 수 있는 일은 똑같다.
   check('고정 몫이 2,800토큰을 안 넘는다', 작은것.고정 < 2800,
     `${작은것.고정}토큰 (프롬프트를 늘리면 여기가 먼저 빨개진다)`);
+
+  /*
+   * 품고 다니는 스킬까지 얹어서 다시 잰다.
+   *
+   * 위 숫자는 **스킬이 하나도 없는** 세션이다. Session 은 skills = [] 로
+   * 시작하고 repl 이 켜질 때 채우기 때문에, 여기서는 그 몫이 아예 안 잡혔다.
+   * 전에는 그래도 됐다 — 스킬은 그 PC 에 있는 것이라 없을 수도 있었으니까.
+   *
+   * 그런데 이제 여섯 남짓을 패키지에 품고 다닌다(src/skills/builtin).
+   * 늘 실리는 것이 됐으니 **늘 실리는 몫**으로 재야 한다. 안 그러면 이 검사가
+   * 2,713 이라고 말하는데 실제로는 3,000 을 넘는 일이 생긴다 —
+   * 울타리가 있는데 울타리 밖에서 재는 꼴이다.
+   */
+  {
+    const 내장든것 = new Session({ ...conn, ctx: 8192 }, { root: 빈폴더 });
+    내장든것.skills = discover(빈폴더, { home: 빈폴더 }).skills;
+    const 고정 = 내장든것.breakdown().used;
+    const 얹힌것 = 고정 - 작은것.고정;
+    check('품고 다니는 스킬이 몇 개인지 안다', 내장든것.skills.length >= 5,
+      `${내장든것.skills.length}개 · ${내장든것.skills.map((s) => s.name).join(', ')}`);
+    // 설명을 길게 쓰면 여기가 먼저 빨개진다. 설명은 '언제 쓰나' 만 적는다.
+    check('내장 스킬이 얹는 몫이 400토큰을 안 넘는다', 얹힌것 < 400,
+      `${얹힌것}토큰 얹음 (스킬 ${내장든것.skills.length}개)`);
+    check('내장까지 얹어도 8k 에서 절반은 안 넘는다', 고정 / 8192 < 0.5,
+      `${고정}토큰 = ${Math.round((고정 / 8192) * 100)}%`);
+  }
 
   /*
    * 반대쪽도 막아 둔다.

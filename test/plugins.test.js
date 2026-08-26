@@ -217,10 +217,21 @@ if (!묶음.error && 열개) {
   mkdirSync(join(새PC, '.deel'), { recursive: true });
   copyDir(푼곳, join(새PC, '.deel', 'plugins'));
   rmSync(join(새PC, '.deel', 'plugins', '사용안내.txt'), { force: true });
-  const 새PC결과 = discover(join(새PC, 'proj'), { home: 새PC });
+  // 내장(품고 다니는 방법론)은 빼고 센다. 여기서 재려는 것은 **반입한 묶음이
+  // 그대로 살아났는가** 지 deel 이 무엇을 품고 다니는가가 아니다.
+  // 안 빼면 방법론을 하나 더할 때마다 이 검사가 엉뚱하게 빨개진다.
+  const 새PC결과 = discover(join(새PC, 'proj'), { home: 새PC, 내장: false });
   check('오프라인 PC 가 그대로 인식',
     새PC결과.skills.length === 2 && 새PC결과.commands.length === 1,
     `스킬 ${새PC결과.skills.length}개 · 명령 ${새PC결과.commands.length}개`);
+  // 그래도 내장은 같이 보여야 한다 — 반입한 것이 그것을 밀어내면 안 된다.
+  // 개수를 못 박지 않는다. 방법론을 하나 더할 때마다 여기가 엉뚱하게 빨개진다.
+  const 같이 = discover(join(새PC, 'proj'), { home: 새PC });
+  const 반입이름 = 새PC결과.skills.map((s) => s.name);
+  check('반입한 것과 내 방법론이 같이 뜬다',
+    반입이름.every((n) => 같이.skills.some((s) => s.name === n))
+    && 같이.skills.some((s) => s.source === 'builtin'),
+    `${같이.skills.length}개 (반입 ${반입이름.join(', ')} + 내장)`);
 }
 
 trace('6-삭제');

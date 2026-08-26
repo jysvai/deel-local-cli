@@ -1,9 +1,19 @@
 // 스킬·슬래시명령 찾기.
-// deel 는 스킬을 품고 다니지 않는다 — 켜질 때 그 PC 를 훑어 있는 것을 쓴다.
-// Claude Code 와 같은 형식을 읽으므로, 그쪽으로 쓰인 것이 그대로 먹는다.
+// deel 는 그 PC 를 훑어 있는 것을 쓴다. Claude Code 와 같은 형식을 읽으므로,
+// 그쪽으로 쓰인 것이 그대로 먹는다.
+//
+// **다만 일하는 방법 몇 가지는 품고 다닌다(builtin/).**
+// 전에는 하나도 안 품었다. 그런데 사내에서 새로 받은 PC 에는 ~/.claude/skills 도
+// 플러그인도 없다 — 거기서는 방법론이 0개였고, 모델은 매번 제 나름대로 했다.
+// 시킨 것만 겨우 하고 끝나는 얄팍한 결과가 거기서 나온다.
+// 품고 다니는 것은 **가장 낮은 자리**에 둔다. 같은 이름을 사용자가 만들면 그쪽이 이긴다.
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+
+// 이 파일 옆의 builtin/ — 패키지에 같이 실려 나간다(package.json files: src).
+export const 내장자리 = join(dirname(fileURLToPath(import.meta.url)), 'builtin');
 
 // --- YAML 앞머리 읽기 (name, description 만 쓰므로 최소만 구현) -------------
 export function frontmatter(text) {
@@ -155,6 +165,11 @@ export function discover(root, opts = {}) {
   const skills = [];
   const commands = [];
   const plugins = [];
+
+  // 0) 품고 다니는 것 — 제일 먼저 넣어 제일 낮은 자리를 준다.
+  // dedupe 는 나중에 온 것이 이기므로, 사용자·프로젝트가 같은 이름을 만들면 그쪽이 이긴다.
+  // 끄고 싶으면 opts.내장 = false (검사에서 이 여섯을 세지 않으려고 쓴다).
+  if (opts.내장 !== false) skillsIn(내장자리, 'builtin', null, skills, caps.skills);
 
   // 1) 플러그인
   // 같은 플러그인이 cache/ 와 marketplaces/ 양쪽에 있을 수 있다.

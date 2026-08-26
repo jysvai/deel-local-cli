@@ -46,15 +46,32 @@ try {
 }
 
 if (shipped.length) {
-  // 스킬·플러그인은 '설치된 PC' 에서 찾아 쓰는 것이지 담아 가는 것이 아니다.
-  const 이물질 = shipped.filter((p) =>
+  /*
+   * 스킬은 '설치된 PC' 에서 찾아 쓰는 것이지 담아 가는 것이 아니다.
+   *
+   * 딱 하나 예외를 뒀다 — src/skills/builtin/ 의 일하는 방법 몇 가지.
+   * 사내에서 새로 받은 PC 에는 ~/.claude/skills 도 플러그인도 없어서 방법론이
+   * 0개였고, 거기서 얄팍한 결과가 나왔다. 그래서 그것만 품고 다닌다.
+   *
+   * 여기서 지키는 것은 그대로다 — **그 PC 의 스킬이 실려 나가면 안 된다.**
+   * 이 저장소에서 npm pack 을 하는 사람의 ~/.claude 나 남의 플러그인이
+   * 딸려 나가는 것이 원래 무서웠던 일이고, 그건 여전히 0개여야 한다.
+   */
+  const 내것 = (p) => /^src\/skills\/builtin\//.test(p);
+  const 이물질 = shipped.filter((p) => !내것(p) && (
     /SKILL\.md$/i.test(p) ||
     /\.claude-plugin\//.test(p) ||
     // src/skills · src/plugins 는 '찾아 읽는 코드' 라서 통과. 담긴 '내용물'만 잡는다.
     /(^|\/)(skills|commands|agents|plugins|marketplaces)\/.*\.(md|ya?ml|json)$/i.test(p) ||
     /(^|\/)node_modules\//.test(p) ||
-    /\.(zip|tgz|tar\.gz)$/i.test(p));
-  check('담긴 스킬·플러그인 0개', 이물질.length === 0, 이물질.slice(0, 5).join(', '));
+    /\.(zip|tgz|tar\.gz)$/i.test(p)));
+  check('남의 스킬·플러그인은 0개', 이물질.length === 0, 이물질.slice(0, 5).join(', '));
+
+  // 품고 가는 것은 실제로 실려야 한다. 안 실리면 설치한 PC 에서 방법론이 0개가 된다 —
+  // package.json 의 files 에서 src 를 빼거나 .npmignore 를 잘못 쓰면 조용히 그렇게 된다.
+  const 내장들 = shipped.filter((p) => /^src\/skills\/builtin\/.+\/SKILL\.md$/.test(p));
+  check('내 방법론은 제대로 실린다', 내장들.length >= 5,
+    `${내장들.length}개 · ${내장들.map((p) => p.split('/')[3]).slice(0, 8).join(', ')}`);
 
   const 비밀 = shipped.filter((p) => /(^|\/)\.(env|npmrc|credentials)/i.test(p) || /\.deel\//.test(p));
   check('설정·자격 파일 0개', 비밀.length === 0, 비밀.join(', '));
@@ -76,13 +93,23 @@ for (const f of srcFiles) {
 }
 check('바깥 패키지 import 0개', 바깥.length === 0, 바깥.slice(0, 5).join(' · '));
 
-// 5) 아무것도 안 깔린 PC 에서는 스킬이 0개여야 한다.
-//    0개가 아니면 어딘가에 스킬을 품고 다닌다는 뜻이다.
+// 5) 아무것도 안 깔린 PC 에서 무엇이 나오나.
+//
+//    내 방법론만 나와야 하고, 그 밖의 것은 하나도 없어야 한다.
+//    내장을 끄면 0개 — 이게 '남의 것을 품고 다니지 않는다' 의 진짜 증명이다.
 const 빈PC = join(tmpdir(), 'deel-nobundle-home');
 rmSync(빈PC, { recursive: true, force: true });
 mkdirSync(join(빈PC, 'proj'), { recursive: true });
 const r = discover(join(빈PC, 'proj'), { home: 빈PC });
-check('빈 PC 에서 스킬 0개', r.skills.length === 0, `${r.skills.length}개 나옴`);
+check('빈 PC 에서도 방법론은 있다', r.skills.length >= 5,
+  `${r.skills.length}개 · ${r.skills.map((s) => s.name).join(', ')}`);
+check('빈 PC 에서 나온 것은 전부 내가 품은 것', r.skills.every((s) => s.source === 'builtin'),
+  [...new Set(r.skills.map((s) => s.source))].join(', '));
+check('내장을 빼면 0개 — 남의 것은 하나도 안 품는다',
+  discover(join(빈PC, 'proj'), { home: 빈PC, 내장: false }).skills.length === 0);
+check('빈 PC 에서 플러그인·명령은 그대로 0개',
+  r.plugins.length === 0 && r.commands.length === 0,
+  `플러그인 ${r.plugins.length} · 명령 ${r.commands.length}`);
 check('빈 PC 에서 플러그인 0개', r.plugins.length === 0, `${r.plugins.length}개 나옴`);
 check('빈 PC 에서 명령 0개', r.commands.length === 0, `${r.commands.length}개 나옴`);
 rmSync(빈PC, { recursive: true, force: true });

@@ -733,9 +733,9 @@ function showSkills(session, arg) {
   if (hits.length > 30) say(`  ${c.gray(`… 그 밖에 ${hits.length - 30}개`)}`);
   say('');
 
-  const bySource = { project: 0, user: 0, plugin: 0 };
+  const bySource = { project: 0, user: 0, plugin: 0, builtin: 0 };
   for (const s of all) bySource[s.source] = (bySource[s.source] ?? 0) + 1;
-  say(`  ${c.gray('전체')} ${all.length}개  ${c.gray('(프로젝트')} ${bySource.project} ${c.gray('· 사용자')} ${bySource.user} ${c.gray('· 플러그인')} ${bySource.plugin}${c.gray(')')}`);
+  say(`  ${c.gray('전체')} ${all.length}개  ${c.gray('(프로젝트')} ${bySource.project} ${c.gray('· 사용자')} ${bySource.user} ${c.gray('· 플러그인')} ${bySource.plugin} ${c.gray('· 품고 다니는 것')} ${bySource.builtin}${c.gray(')')}`);
   say(`  ${c.gray('프롬프트에 올라간 것')} ${session.listedSkills().length}개 ${c.gray(`(상한 ${session.maxSkillsListed})`)}`);
   if ((session.plugins ?? []).length) {
     say(`  ${c.gray('플러그인')} ${session.plugins.filter((p) => p.skills > 0).map((p) => p.name).slice(0, 8).join(', ')}`);
