@@ -182,6 +182,26 @@ export const ko = {
   'lang.codeStays': '모델이 읽는 글도 같이 따라갑니다 — 영어 쪽이 매 요청 1,400토큰쯤 덜 먹습니다. 코드와 도구·인자 이름은 그대로입니다.',
   'lang.envHint': '켤 때부터 영어로 쓰려면 DEEL_LANG=en',
 
+  'cmd.lsp.desc': '언어 서버 — 무엇이 깔려 있고 Def·Refs 를 쓸 수 있는지',
+  'cmd.lsp.arg': '[on|off]',
+  'lsp.found': '이 PC 에 있는 언어 서버 {수}개',
+  'lsp.none': '이 PC 에는 언어 서버가 없습니다. Grep · Outline 으로 갑니다.',
+  'lsp.thisFolder': '이 폴더의 언어:',
+  'lsp.noneHere': '쓸 수 있는 것 없음',
+  'lsp.fileCount': '{수}개 파일',
+  'lsp.tools': '도구:',
+  'lsp.toolsHidden': '안 보여 줍니다 (서버가 없어서)',
+  'lsp.diag': '고친 뒤 진단:',
+  'lsp.stateOn': '켜짐',
+  'lsp.stateOff': '꺼짐',
+  'lsp.ready': '준비됨',
+  'lsp.starting': '켜는 중',
+  'lsp.diagOn': '고친 뒤 진단을 켰습니다.',
+  'lsp.diagOff': '고친 뒤 진단을 껐습니다. Def · Refs 는 그대로 씁니다.',
+  'lsp.installHint': '깔면 Def · Refs 가 생깁니다:',
+  'lsp.neverInstalls': 'deel 은 아무것도 깔지 않습니다. 위 명령은 사람이 직접 칠 것입니다.',
+  'lsp.howto': '고친 뒤 진단 켜고 끄기:',
+
 
   // ── 도움말 · 승인 방식 · 수준 ─────────────────────────────────────────
   'help.titleCommon': '명령 (자주 쓰는 것)',

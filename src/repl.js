@@ -15,6 +15,8 @@ import { route } from './agent/route.js';
 import { run } from './agent/loop.js';
 import { Session, repairToolPairs } from './agent/session.js';
 import { makeScope } from './safety/guard.js';
+import { 언어서버있나 } from './tools/index.js';
+import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
 import { activeProfile, load, resolveKey, save as saveCfg, homeDir } from './config.js';
@@ -259,6 +261,14 @@ export async function chatLoop(opts = {}) {
   // 세션도 알아야 한다 — 밖에서 붙인 도구도 스키마가 매 요청에 실린다.
   // 안 세면 컨텍스트가 그만큼 조용히 줄어든다.
   session.mcp = mcp붙임.서버들;
+  /*
+   * 이 자리에 언어 서버가 깔려 있나 (Def·Refs 를 목록에 넣을지).
+   *
+   * 여기서 한 번만 잰다. PATH 훑기와 폴더 훑기라 값이 있고, 세션 도중에
+   * 답이 바뀌지 않는다. 아무것도 안 깔아 준다 — 있으면 쓰고 없으면 없는 대로
+   * Grep·Outline 으로 간다 (lsp/servers.js 머리말).
+   */
+  session.lsp = 언어서버있나(root);
   // 지난 대화에서 정해 둔 것을 들고 시작한다.
   // 기억은 Session 이 켤 때 직접 읽는다 (session.js 생성자) — deel run 도 같은 것을 들고 시작하게.
 
@@ -538,6 +548,8 @@ export async function chatLoop(opts = {}) {
     mcp: mcp붙임.서버들,
     skills: found.skills,
     loadedSkills: new Set(),
+    // 고친 뒤 진단을 볼지. /lsp off 로 끈다 (lsp/diag.js).
+    lsp: { 켬: true },
     ask,
     // 암호는 여기서만 받는다. 받은 값은 도구가 쓰고 버린다 —
     // 설정에도, 세션 기록에도, 감사기록에도, 명령줄에도 안 남는다.
@@ -1384,6 +1396,9 @@ export async function chatLoop(opts = {}) {
   // 띄운 남의 프로세스는 반드시 거둔다. 안 거두면 deel 을 껐는데도
   // 그 서버가 계속 돌고 있게 된다 — 사람 눈에는 안 보이는 채로.
   for (const s of mcp붙임.서버들) s.닫기();
+  // 언어 서버도 같이 거둔다. 이건 사람 눈에 안 보이는 채로 메모리를 몇백 MB
+  // 물고 있는 종류라, 남겨 두면 나중에 작업 관리자를 열기 전에는 모른다.
+  언어서버다끄기().catch(() => {});
   // 뒤에서 돌던 명령도 같이 거둔다. 이걸 조용히 하면 안 된다 —
   // 사람은 dev 서버가 아직 떠 있다고 여기고 브라우저를 새로 고치다가
   // "왜 안 되지" 로 시간을 쓴다. 몇 개를 껐는지 말해 준다.

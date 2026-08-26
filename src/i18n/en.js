@@ -195,6 +195,26 @@ export const en = {
   'lang.codeStays': 'What the model reads follows too — English costs about 1,400 fewer tokens per request. Code, tool names and argument names stay as they are.',
   'lang.envHint': 'To start in English every time, set DEEL_LANG=en',
 
+  'cmd.lsp.desc': 'language servers — what is installed, and whether Def/Refs are available',
+  'cmd.lsp.arg': '[on|off]',
+  'lsp.found': '{수} language server(s) on this machine',
+  'lsp.none': 'No language server on this machine. Falling back to Grep and Outline.',
+  'lsp.thisFolder': 'Language of this folder:',
+  'lsp.noneHere': 'none usable',
+  'lsp.fileCount': '{수} files',
+  'lsp.tools': 'Tools:',
+  'lsp.toolsHidden': 'hidden (no server here)',
+  'lsp.diag': 'Diagnostics after an edit:',
+  'lsp.stateOn': 'on',
+  'lsp.stateOff': 'off',
+  'lsp.ready': 'ready',
+  'lsp.starting': 'starting',
+  'lsp.diagOn': 'Diagnostics after an edit are on.',
+  'lsp.diagOff': 'Diagnostics after an edit are off. Def and Refs still work.',
+  'lsp.installHint': 'Install one and Def / Refs appear:',
+  'lsp.neverInstalls': 'deel installs nothing. Those are commands for you to run yourself.',
+  'lsp.howto': 'Turn post-edit diagnostics on or off:',
+
 
   // ── Help, approval policy, user level ─────────────────────────────────
   'help.titleCommon': 'commands (the ones you will use)',

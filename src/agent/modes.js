@@ -13,7 +13,9 @@
 // 읽기만 하는 도구. 무엇을 바꾸지 않는다.
 // Recall 은 지난 대화를 찾는다 — 파일은 안 건드리므로 읽기 쪽이다.
 // 묻기 모드에도 준다: "저번에 이거 어떻게 했더라" 가 딱 묻기 모드의 일이다.
-const 읽기 = ['Read', 'Outline', 'Glob', 'Grep', 'WebFetch', 'Skill', 'Recall'];
+// Def·Refs 도 읽기다 — 아무것도 안 바꾼다. 언어 서버가 없는 자리에서는
+// toolSchemas 가 알아서 빼므로 여기서는 갈래만 정한다.
+const 읽기 = ['Read', 'Outline', 'Glob', 'Grep', 'Def', 'Refs', 'WebFetch', 'Skill', 'Recall'];
 // 계획을 적는 도구. 파일을 안 건드리므로 읽기 전용 모드에서도 준다.
 //
 // Remember 도 여기 있다. 기억은 사용자의 소스를 안 건드리고 .deel/memory.md

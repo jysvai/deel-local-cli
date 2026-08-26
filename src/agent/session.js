@@ -207,6 +207,15 @@ export class Session {
     this.되돌릴턴 = 0;
     this.검증 = { 돈횟수: 0, 확인: 0, 탈: 0 };
     this.skills = [];             // 켜질 때 이 PC 에서 찾은 것들
+    /*
+     * 이 자리에 언어 서버가 있나 (Def·Refs 를 목록에 넣을지).
+     *
+     * 켤 때 repl 이 한 번 재서 넣어 준다. 여기서 직접 안 재는 이유는 폴더를
+     * 훑어야 알 수 있어서다 — 세션은 시험에서도 수없이 만들어지는데, 그때마다
+     * 폴더를 훑으면 시험이 느려지고 그 자리에 뭐가 깔렸는지에 따라 결과가
+     * 달라진다. 기본은 꺼짐이고, 켜 주는 자리가 딱 하나다.
+     */
+    this.lsp = false;
     this.commands = [];
     this.plugins = [];
     this.maxSkillsListed = 40;    // 프롬프트에 올릴 최대 개수
@@ -602,7 +611,7 @@ export class Session {
     const mcp수 = (this.mcp ?? []).reduce((n, s) => n + (s.도구?.length ?? 0), 0);
     // 창 크기도 열쇠에 넣는다. 설명을 창에 맞춰 줄여 싣기 때문에(budget.js),
     // /ctx 로 창을 다시 잡으면 이 값도 달라져야 한다. 안 넣으면 옛 값이 남는다.
-    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${this.web !== false ? 'web' : ''}|mcp${mcp수}|c${this.conn?.ctx ?? 0}`;
+    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${this.web !== false ? 'web' : ''}|${this.lsp ? 'lsp' : ''}|mcp${mcp수}|c${this.conn?.ctx ?? 0}`;
     if (this.#도구잰것.has(열쇠)) return this.#도구잰것.get(열쇠);
     let n = 0;
     try {
@@ -611,6 +620,7 @@ export class Session {
         web: this.web !== false,
         work: this.effectiveWork(),
         mcp: this.mcp ?? null,
+        lsp: this.lsp === true,
         // 실제로 나가는 것과 **같은 것**을 재야 한다. 안 넘기면 안 줄인 것을
         // 재게 되고, 그러면 /context 가 실제보다 크게 말한다 — 그 값으로
         // effort.js 가 출력 상한을 잡으므로 답이 이유 없이 짧아진다.

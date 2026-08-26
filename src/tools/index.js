@@ -1,4 +1,4 @@
-// 도구 6종. 이름과 인자를 Claude Code 와 같게 맞춘다 —
+// 도구. 이름과 인자를 Claude Code 와 같게 맞춘다 —
 // 그래야 그 관례로 쓰인 스킬·명령이 그대로 먹는다.
 import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -14,6 +14,9 @@ import { TODO_TOOL } from './todo.js';
 import { TASK_TOOL } from './task.js';
 import { OUTLINE_TOOL } from './outline.js';
 import { VERIFY_TOOL } from './verify.js';
+import { DEF_TOOL, REFS_TOOL } from './lsp.js';
+import { 편집후진단, 붙이기 as 진단붙이기, 데우기 } from '../lsp/diag.js';
+import { 프로젝트갈래 } from '../lsp/servers.js';
 import { allow as allowedIn } from '../agent/modes.js';
 import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
@@ -1141,6 +1144,16 @@ export const TOOLS = {
 
   // 뒤에서 도는 명령 보기·끝내기. Bash(background) 와 짝이다 — jobs.js 머리말 참고.
   Jobs: JOBS_TOOL,
+
+  /*
+   * 언어 서버에게 묻는 둘. Grep·Outline 을 밀어내지 않고 **더한다** —
+   * tools/lsp.js 머리말 참고.
+   *
+   * 언어 서버가 이 자리에 없으면 toolSchemas 가 목록에서 뺀다. 못 쓰는 도구를
+   * 세워 두면 모델은 그걸 부르고, 실패를 받고, 또 부른다.
+   */
+  Def: DEF_TOOL,
+  Refs: REFS_TOOL,
 };
 
 /**
@@ -1238,12 +1251,22 @@ function 영어설명(schema, 이름) {
 
 // 모델에게 넘길 도구 정의 목록.
 // 스킬이 없으면 Skill 도구는 빼서 자리를 아낀다.
-export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null } = {}) {
+export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null, lsp = false } = {}) {
   let list = names ?? Object.keys(TOOLS).filter((n) => {
     if (n === 'Skill') return hasSkills;
     if (n === 'WebFetch') return web;
+    // 언어 서버가 없는 자리에서는 Def·Refs 를 아예 안 보여 준다.
+    //
+    // 웹 도구를 오프라인에서 숨기는 것과 같은 이유다. 못 쓰는 도구를 목록에
+    // 세워 두면 모델은 그걸 부르고, "없습니다" 를 받고, 또 부른다. 그 왕복이
+    // 도구 설명으로 나가는 자리보다 비싸다.
+    if (n === 'Def' || n === 'Refs') return !!lsp;
     return true;
   });
+  // 이름을 직접 준 경우(하위 작업이 부모 것을 물려받을 때)에도 같은 규칙을 건다.
+  // 부모에게 있던 것이 하위에서 갑자기 못 쓰게 되지는 않지만, 시험·일회성 호출이
+  // 이름을 통째로 넘기는 길이 있어서 여기서 한 겹 더 막는다.
+  if (names && !lsp) list = list.filter((n) => n !== 'Def' && n !== 'Refs');
   // 작업 모드가 정해져 있으면 그 모드가 쓰는 것만 남긴다.
   //
   // 설계·계획·묻기 모드에서 파일을 바꾸면 안 된다고 프롬프트로 부탁할 수도 있다.
@@ -1283,6 +1306,58 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
   return 우리것;
 }
 
+// 파일을 바꾸는 도구들. 이것만 고친 뒤 진단을 본다.
+const 고치는도구 = new Set(['Write', 'Append', 'Edit']);
+// 한 번에 볼 파일 수. 여덟 개를 한꺼번에 만들었다고 여덟 번 기다릴 수는 없다.
+const 진단볼파일 = 3;
+
+/**
+ * 고친 직후에 그 파일이 성한지 본다 — lsp/diag.js 머리말 참고.
+ *
+ * 여기서 절대 죽으면 안 되고, 늦어서도 안 된다. 파일은 이미 고쳐졌다.
+ * 진단은 **덤**이지 이 도구가 성공했는지의 판단 근거가 아니다. 그래서
+ * 통째로 감싸고, 이미 떠 있는 서버가 없으면 아무것도 안 하고 그냥 지나간다.
+ */
+async function 고친뒤진단(name, r, ctx) {
+  try {
+    if (!고치는도구.has(name) || !r || r.error) return r;
+    /*
+     * **부른 쪽이 켠 자리에서만** 한다. 기본은 꺼짐이다.
+     *
+     * 여기서 하는 일은 남의 프로세스를 하나 띄우는 것이다. 그건 띄운 쪽이
+     * 거둘 줄 알아야 한다 — 안 거두면 그 서버가 작업 폴더를 cwd 로 물고 있어서
+     * 윈도우에서는 폴더 이름조차 못 바꾼다. 그래서 끄는 자리를 갖춘 쪽(repl·
+     * oneshot)만 ctx.lsp.켬 을 켠다. 도구를 직접 부르는 자리는 안 켜진다.
+     */
+    if (ctx.lsp?.켬 !== true) return r;
+    const 뿌리 = ctx.scope?.root;
+    if (!뿌리) return r;
+
+    const 바뀐 = r.changed
+      ? [r.changed]
+      : (Array.isArray(r.여럿) ? r.여럿.filter((x) => x?.ok && x.path).map((x) => x.path) : []);
+    const 볼것 = [...new Set(바뀐)].slice(0, 진단볼파일);
+    if (!볼것.length) return r;
+
+    // 처음 고칠 때 뒤에서 하나 데워 둔다. 이번 것은 못 받아도 다음부터 받는다.
+    데우기(뿌리, 볼것[0]);
+
+    const 것들 = await Promise.all(볼것.map((abs) => 편집후진단(뿌리, abs)));
+    let 답 = r;
+    for (let i = 0; i < 볼것.length; i++) {
+      답 = 진단붙이기(답, 것들[i], ctx.scope.show(볼것[i]));
+    }
+    return 답;
+  } catch {
+    return r;   // 진단 보다 터져서 편집이 실패로 보이는 일은 없어야 한다
+  }
+}
+
+/** 이 폴더에서 언어 서버를 쓸 수 있나. repl 이 켤 때 한 번 물어본다. */
+export function 언어서버있나(뿌리) {
+  try { return !!프로젝트갈래(뿌리); } catch { return false; }
+}
+
 export async function runTool(name, args, ctx) {
   // 밖에서 붙인 도구(MCP)는 이름 앞머리로 갈린다.
   //
@@ -1296,7 +1371,7 @@ export async function runTool(name, args, ctx) {
   try {
     const r = await t.run(args ?? {}, ctx);
     ctx.audit.tool(name, args, r);
-    return r;
+    return await 고친뒤진단(name, r, ctx);
   } catch (err) {
     const r = { error: err.message };
     ctx.audit.tool(name, args, r);

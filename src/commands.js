@@ -13,6 +13,8 @@ import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기
 import { allowTemporarily } from './safety/network.js';
 import { chat } from './backend/adapter.js';
 import { TOOLS } from './tools/index.js';
+import { 둘러보기, 프로젝트갈래 } from './lsp/servers.js';
+import { 지금것들 } from './lsp/client.js';
 import { loadCommand, discover } from './skills/discover.js';
 import { install, list, remove, pack } from './plugins/manage.js';
 import { spin } from './ui/spinner.js';
@@ -88,6 +90,7 @@ const 명령들 = {
   bell: { arg: true },
   consult: { arg: true },
   lang: { arg: true },
+  lsp: { arg: true },
   init: { arg: false },
   exit: { arg: false },
   quit: { arg: false },
@@ -313,6 +316,64 @@ export async function handle(line, session, ctx) {
       say(`  ${mark.ok} ${말('lang.changed', { 이름: 이름(언어()) })}`);
       say(`     ${c.gray(말('lang.progress', { 언어: 언어(), 옮김: p.옮김, 전체: p.전체 }))}`);
       if (p.남음) say(`     ${c.gray(말('lang.partial'))}`);
+      say('');
+      return { handled: true };
+    }
+
+    /*
+     * 언어 서버 — 무엇이 깔려 있고, 지금 무엇이 떠 있나.
+     *
+     * 이 화면이 필요한 이유는 하나다. Def·Refs 는 서버가 없으면 **목록에 아예
+     * 안 나온다.** 그러면 사용자 눈에는 "왜 어떤 프로젝트에서는 되고 어떤
+     * 데서는 안 되지" 로 보인다. 여기서 그 까닭과 깔 방법을 대신 말해 준다.
+     *
+     * 대신 **여기서도 안 깔아 준다.** 깔 명령을 글자로 보여 줄 뿐이고,
+     * 칠지 말지는 사람이 정한다 (lsp/servers.js 머리말).
+     */
+    case 'lsp': {
+      const 값 = String(arg ?? '').trim().toLowerCase();
+      if (값 === 'off' || 값 === '끔' || 값 === '꺼') {
+        if (ctx?.lsp) ctx.lsp.켬 = false;
+        say('');
+        say(`  ${mark.ok} ${말('lsp.diagOff')}`);
+        say('');
+        return { handled: true };
+      }
+      if (값 === 'on' || 값 === '켬' || 값 === '켜') {
+        if (ctx?.lsp) ctx.lsp.켬 = true;
+        say('');
+        say(`  ${mark.ok} ${말('lsp.diagOn')}`);
+        say('');
+        return { handled: true };
+      }
+
+      const { 있는것, 없는것 } = 둘러보기();
+      const 뿌리것 = ctx?.scope?.root ? 프로젝트갈래(ctx.scope.root) : null;
+      const 떠있는것 = 지금것들();
+      say('');
+      if (있는것.length) {
+        say(`  ${c.hcyan('◈')} ${c.white(말('lsp.found', { 수: 있는것.length }))}`);
+        for (const it of 있는것) say(`     ${c.hgreen('✓')} ${c.white(it.갈래.padEnd(5))} ${c.gray(it.이름)}`);
+      } else {
+        say(`  ${c.gray(말('lsp.none'))}`);
+      }
+      say('');
+      say(`  ${c.gray(말('lsp.thisFolder'))} ${뿌리것 ? c.hcyan(뿌리것.갈래) + c.gray(` · ${말('lsp.fileCount', { 수: 뿌리것.개수 })}`) : c.gray(말('lsp.noneHere'))}`);
+      say(`  ${c.gray(말('lsp.tools'))} ${session.lsp ? c.hgreen('Def · Refs') : c.gray(말('lsp.toolsHidden'))}`);
+      say(`  ${c.gray(말('lsp.diag'))} ${ctx?.lsp?.켬 === false ? c.gray(말('lsp.stateOff')) : c.hgreen(말('lsp.stateOn'))}`);
+      if (떠있는것.length) {
+        for (const it of 떠있는것) {
+          const 꼴 = it.죽음 ? c.yellow(it.죽음) : (it.준비 ? c.hgreen(말('lsp.ready')) : c.gray(말('lsp.starting')));
+          say(`     ${c.gray('·')} ${c.white(it.이름 ?? it.갈래)} ${꼴}`);
+        }
+      }
+      if (없는것.length && !있는것.length) {
+        say('');
+        say(`  ${c.gray(말('lsp.installHint'))}`);
+        for (const it of 없는것.slice(0, 4)) say(`     ${c.gray(`${it.갈래.padEnd(5)} ${it.깔기}`)}`);
+        say(`  ${c.gray(말('lsp.neverInstalls'))}`);
+      }
+      say(`  ${c.gray(말('lsp.howto'))} ${c.cyan('/lsp on')} ${c.gray('·')} ${c.cyan('/lsp off')}`);
       say('');
       return { handled: true };
     }

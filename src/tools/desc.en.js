@@ -182,6 +182,31 @@ export const 도구설명EN = {
         + ' small model keeps your window from filling. Do the work that needs judgement yourself.',
     },
   },
+  Def: {
+    desc: 'Ask the language server **where a name is defined.** You get the location without reading'
+      + ' the file. Unlike Grep it does not hand you the wrong places — not the same name in a comment,'
+      + ' not the same name in a third-party library, not the same name inside a string.'
+      + ' Call this before touching code you did not write. Once you know where it is, Read only that file.'
+      + ' If the name exists in several places you get the list, and file_path picks one.',
+    params: {
+      name: 'the name to find (function, class, variable)',
+      file_path: 'the file the name is used in. Use it when the same name exists in several places',
+      line: 'line number inside file_path where the name appears (1-based)',
+    },
+  },
+  Refs: {
+    desc: 'Ask the language server for **every place a name is used.** Call it before you rename'
+      + ' something or change a function — this is what tells you how many places have to change together.'
+      + ' Unlike the hundreds of lines Grep gives you, only the places that really use it come back.'
+      + ' Grep still finds comments, config and docs, though: use this for the code and Grep for the rest'
+      + ' when you rename something outright.',
+    params: {
+      name: 'the name to find (function, class, variable)',
+      file_path: 'the file the name is defined in. Use it when the same name exists in several places',
+      line: 'line number inside file_path where the name appears (1-based)',
+      include_declaration: 'include the definition itself. Default false',
+    },
+  },
   Jobs: {
     desc: 'List, read, and end background commands (Bash with background). Called with no number,'
       + ' you get the list. Given a number, you get whatever output arrived since last time.'

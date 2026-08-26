@@ -208,6 +208,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
     work: session.effectiveWork(),                // 작업 모드가 쓰는 것만 (modes.js)
     // 밖에서 붙인 도구(MCP). 붙은 것이 없으면 아무것도 안 는다.
     mcp: ctx.mcp ?? null,
+    // 이 자리에 언어 서버가 있을 때만 Def·Refs 를 보여 준다 (tools/lsp.js).
+    // 없는 자리에서 목록에 세워 두면 모델이 부르고, 실패를 받고, 또 부른다.
+    lsp: session.lsp === true,
     // 창이 좁으면 도구 설명을 줄여 싣는다 (budget.js 의 설명길이).
     // 도구를 빼는 게 아니라 설명만 줄이므로 할 수 있는 일은 안 달라진다.
     ctx: conn.ctx ?? null,

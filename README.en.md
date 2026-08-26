@@ -379,6 +379,7 @@ Names follow Claude Code / Codex conventions.
 | `/lang [ko\|en]` | Screen language. Falls back to Korean for anything not translated yet |
 | `/bell [on\|off]` | Ring and set the window title when a turn ends, or when deel needs an answer |
 | `/consult <profile> <question>` | Ask a second model one question. Your current model stays put |
+| `/lsp [on\|off]` | Language servers — what is installed, and whether `Def`/`Refs` are available. `off` turns post-edit diagnostics off only |
 | `/context` | What is consuming the context window |
 | `/ctx [auto\|number]` | Context **length** — re-read it off the model, or set it yourself |
 | `/grade [small\|medium\|large\|auto]` | Model **grade** — how much it does on its own. A different axis from `/ctx` |
@@ -813,6 +814,8 @@ Names and arguments match Claude Code, so skills written for that convention wor
 | `Verify` | Check that what was built **actually works** |
 | `Task` | Run one chunk of a big job in a **separate context** |
 | `Jobs` | Inspect, read and stop **background commands** — the other half of `Bash`'s `background` |
+| `Def` | **Where a name is defined** — only shown when a language server is installed |
+| `Refs` | **Every place a name is used** — only shown when a language server is installed |
 
 Seven tools here are not in Claude Code — `Append`, `Recall`, `Remember`, `Outline`,
 `Verify`, `Task`, `Jobs`. Each tool costs 150-400 tokens of schema on **every request**,
@@ -820,7 +823,7 @@ so a test stops you every time the list grows (`test/loop.test.js`). The last fo
 their cost; here is why.
 
 <details>
-<summary><b>More</b> — Outline · Verify · Task · Commands that never finish and 9 more</summary>
+<summary><b>More</b> — Outline · Verify · Task · Def · Refs · Commands that never finish and 9 more</summary>
 
 ### Seeing a project's shape cheaply — `Outline`
 
@@ -1211,6 +1214,113 @@ last edit did. That original state comes from the earliest undo snapshot.
 
 `/diff` is **in the simple level's command list.** As long as `auto` edits without asking,
 a beginner needs a way to see what changed more than anyone.
+
+### With a language server, it sees meaning — `Def` and `Refs`
+
+`Grep` finds **text**; a language server knows **meaning**. Grep for `run` and you get the
+`run` in a comment, the `run` in a third-party library, the `run` inside a string. Which of
+those actually call that function is something a person has to open one by one. The model
+cannot afford that, so it edits based on the first few hits, and **the ones it missed only
+surface once you run the thing.**
+
+```
+⏺ Refs(add_up)
+  add_up — used in 3 places · 2 files
+
+  src/use.py (2)
+    4: return add_up(1, 2)
+    9: return add_up(x, x)
+  src/other.py (1)
+    2: value = add_up(9, 9)
+```
+
+`Grep` stays. When you rename something outright you actually need it — a language server
+does not look at comments, config or docs. These two **add to** what was here; they do not
+replace it.
+
+They take a **name**, not a position. LSP asks "this file, this line, this column", but the
+model does not know the column. Finding out means reading the file first, and that throws
+away the whole point of the tool. So it resolves the name through `workspace/symbol` first
+and asks again at that position. When a name exists in several places you get **the list** —
+it does not pick one and pretend.
+
+### It checks the file you just edited
+
+`Verify` stays too. They do different jobs.
+
+| | When | What |
+|---|---|---|
+| `Verify` | Once, before you finish | **Syntax** (`node --check`, `py_compile`) |
+| Post-edit diagnostics | Right after an edit, that file only | **Meaning** (undefined names, wrong types, missing arguments) |
+
+Some things are syntactically fine and still wrong. `node --check` passes all of them.
+
+```
+⏺ Write(pkg/bad.py)
+  3 lines
+  language server — pkg/bad.py: 2 errors
+    line 1 error: Type "Literal['x']" is not assignable to declared type "int"
+    line 2 error: "missing_name" is not defined
+```
+
+Until now that only showed up **once something was run**, and running goes through user
+approval, so it was several steps later. In between, the model treats that file as finished
+and moves to the next one. When the error finally surfaces you have to trace back, and
+tracing back costs more than the fix.
+
+When everything is fine it **says nothing.** A line of "0 errors" after every edit fills the
+window. And not receiving diagnostics is not the same as having none — when nothing came
+back, it says nothing rather than inventing an answer.
+
+### It installs nothing
+
+**deel does not install language servers.** It scans PATH; if one is there it uses it, and
+if not it falls back to `Grep` and `Outline`. This program exists for places where you cannot
+bring in unapproved software, so a tool running `npm i -g` on its own is out of the question.
+
+With no server, `Def` and `Refs` **do not appear in the model's tool list at all** — the same
+way web tools are hidden offline. Leave an unusable tool standing and the model calls it,
+gets "not available", and calls it again. That round trip costs more than the schema does.
+
+`/lsp` shows you what is there.
+
+```
+$ /lsp
+
+  ◈ 2 language server(s) on this machine
+     ✓ ts    typescript-language-server
+     ✓ py    pyright-langserver
+
+  Language of this folder: py · 12 files
+  Tools: Def · Refs
+  Diagnostics after an edit: on
+  Turn post-edit diagnostics on or off: /lsp on · /lsp off
+```
+
+It looks for `ts`, `py`, `go`, `rs`, `java`, `cs`, `cpp`, `rb`, `php` and `lua`. When one is
+missing it prints the install command **as text only.** Whether to run it is your call.
+
+<details>
+<summary>Four things a real server (pyright) taught us</summary>
+
+A stub server alone would have shown green for all of these.
+
+- **Servers spell URIs differently than we do.** We send `file:///C:/…`; pyright answers with
+  `file:///c%3A/…` — lowercase drive letter, percent-encoded colon. Compared as strings they
+  never match. Diagnostics arrive correctly, are not found in our table, and become "nothing
+  came back" — and **saying nothing means the file is sound**, so a broken file gets reported
+  as fine. We compare paths, not URIs.
+- **A server that just started answers empty.** Not because the name is missing but because
+  it has not finished indexing. Asked 0.2s after startup it said no; 0.5s later it said yes.
+  Turning that into "no such name" makes the model create something that already exists. So
+  it asks again a few times, but only while the server is young.
+- **npm installs two names on Windows.** An extension-less sh script and a `.cmd`. Find the
+  first one and the file plainly exists, so it reports "installed" — but Windows cannot run
+  it. Claiming it is there and then failing is the hardest failure to spot.
+- **`cmd /s /c` strips the outer pair of quotes.** Wrap the command once and it breaks
+  entirely, and all you see from the outside is "no language server".
+
+</details>
 
 </details>
 
@@ -2129,7 +2239,7 @@ src/
   backend/scan.js        scanning for local servers
   backend/mcp.js         attaching outside tools (MCP, stdio)
 
-  tools/index.js         15 tools
+  tools/index.js         17 tools
   tools/edit-match.js    staged-relaxation edit matching
   tools/outline.js       a file's shape, cheaply
   tools/verify.js        checking what was built
@@ -2139,6 +2249,12 @@ src/
   tools/webfetch.js      reading the web (read-only)
   tools/encoding.js      writing back in the encoding it was read in
   tools/xlsx.js          Excel → CSV (written here)
+  tools/lsp.js           Def · Refs — asking the language server
+
+  lsp/rpc.js             LSP framing (Content-Length + JSON-RPC, written here)
+  lsp/servers.js         finding installed language servers (installs nothing)
+  lsp/client.js          one server: spawn, talk, time out, clean up
+  lsp/diag.js            is the file you just edited sound?
 
   preview/serve.js       serving what you built (127.0.0.1 only)
   skills/discover.js     finding skills, commands and plugins on the machine

@@ -14,6 +14,7 @@ import { c, mark, clip } from './ui/ansi.js';
 import { run } from './agent/loop.js';
 import { Session } from './agent/session.js';
 import { makeScope } from './safety/guard.js';
+import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
 import { activeProfile, load, resolveKey } from './config.js';
@@ -109,6 +110,10 @@ export async function runOnce(opts = {}) {
      */
     const 껐다 = 일감모두끝내기();
     if (껐다) 곁(`  ${mark.ok} ${c.gray(`뒤에서 돌던 명령 ${껐다}개를 껐습니다.`)}`);
+    // 고친 뒤 진단 때문에 뒤에서 데워진 언어 서버도 같이 거둔다.
+    // 이건 아무 말 없이 한다 — 사용자가 띄우라고 한 적이 없는 것이라,
+    // 껐다는 말부터 하면 "그건 또 뭐냐" 가 된다.
+    언어서버다끄기().catch(() => {});
     if (json) process.stdout.write(JSON.stringify(r) + '\n');
     else if (r.text) process.stdout.write(r.text.endsWith('\n') ? r.text : r.text + '\n');
     return r.code;
@@ -185,6 +190,9 @@ export async function runOnce(opts = {}) {
     seen: new Set(),
     skills: found.skills,
     loadedSkills: new Set(),
+    // 고친 뒤 진단을 볼지 (lsp/diag.js). 아래 내놓기() 에서 반드시 거둔다 —
+    // 안 거두면 배치가 끝나고도 언어 서버가 폴더를 물고 남는다.
+    lsp: { 켬: true },
     // 되물을 사람이 없으니 기본값을 그대로 돌려준다.
     ask: async (_label, o = {}) => o?.def ?? '',
     // 엑셀 암호를 여기서 기다리면 그대로 선다. 없다고 바로 답한다 —
