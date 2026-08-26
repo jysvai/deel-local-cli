@@ -84,6 +84,14 @@ const 죽는아이 = 스크립트('dies.cjs', [
 // 진짜 출력이 섞이면 무엇이 어디서 왔는지 못 가른다.
 const 조용한아이 = 스크립트('quiet.cjs', 'setInterval(() => {}, 1000);\n');
 
+// 뜨자마자 왕창 뱉고 계속 사는 아이. 죽일 때 그 말이 사라지지 않는지 볼 때 쓴다.
+// 300KB 는 OS 파이프 버퍼보다 훨씬 커서, 죽이는 그 순간에도 아직 안 읽힌 것이 남아 있다.
+const 왕창뱉는아이 = 스크립트('gusher.cjs', [
+  "process.stdout.write('x'.repeat(300 * 1024));",
+  "process.stdout.write('\\n[죽기 직전에 남긴 말]\\n');",
+  'setInterval(() => {}, 1000);',
+].join('\n'));
+
 // 잠깐 살다 실패로 끝나는 아이. '떴다가 나중에 죽은 것' 을 본다.
 const 늦게죽는아이 = 스크립트('late.cjs', 'setTimeout(() => process.exit(3), 400);\n');
 
@@ -165,7 +173,7 @@ trace('3-읽기');
   const c = 읽기(r.번호);
   check('새 출력이 없으면 빈 글', c.글 === '', JSON.stringify(c.글));
   // 빈 글도 사실이다. 도구 쪽에서 사람 말로 바꿔 준다.
-  const d = JOBS_TOOL.run({ 번호: r.번호 });
+  const d = await JOBS_TOOL.run({ 번호: r.번호 });
   check('빈 글을 사람 말로 바꿔 준다', /새 출력이 없습니다/.test(d.content), d.content.split('\n').pop());
 
   const e = 읽기(r.번호, { 처음부터: true });
@@ -210,7 +218,7 @@ trace('4-출력상한');
    * 아니다. 그걸 그대로 쓰면 조용히 어긋난 토막을 주게 된다 — 겹쳐 보이는
    * 편이 낫다. 도구 쪽에서 앞이 잘렸다고 적어 주므로 모델도 안다.
    */
-  const b = JOBS_TOOL.run({ 번호: r.번호, 처음부터: true });
+  const b = await JOBS_TOOL.run({ 번호: r.번호, 처음부터: true });
   check('앞이 잘렸다고 적어 준다', /앞부분은 너무 길어 잘렸습니다/.test(b.content), b.content.slice(0, 60));
 
   /*
@@ -245,7 +253,7 @@ trace('4-출력상한');
   check('온전한 새 출력에 잘렸다고 안 한다', d.앞잘림 === false, String(d.앞잘림));
 
   j2.담기(Buffer.from('두 번째 줄\n', 'utf8'));
-  const e = JOBS_TOOL.run({ 번호: r2.번호 });
+  const e = await JOBS_TOOL.run({ 번호: r2.번호 });
   check('사람·모델이 보는 글에도 안 붙는다', !/앞부분은 너무 길어 잘렸습니다/.test(e.content),
     e.content.split('\n').slice(2).join(' / '));
 
@@ -275,7 +283,7 @@ trace('4-출력상한');
    * 달라고 해도 통째로 온다. 그러니 이 자리가 반드시 막혀 있어야 한다.
    * Bash 의 background 쪽은 이미 4,000자로 줄이고 있었는데 여기만 뚫려 있었다.
    */
-  const 큰것 = JOBS_TOOL.run({ 번호: r2.번호, 처음부터: true });
+  const 큰것 = await JOBS_TOOL.run({ 번호: r2.번호, 처음부터: true });
   check('한 번 읽기로 창을 날리지 않는다', 큰것.content.length < 8000, `${큰것.content.length}자`);
   check('줄일 때는 뒤를 남긴다', /두 번째 줄|c{50}/.test(큰것.content), 큰것.content.slice(-40));
   check('줄였다는 사실을 적는다', /줄였습니다|잘렸습니다/.test(큰것.content), 큰것.content.slice(0, 80));
@@ -294,7 +302,7 @@ trace('5-끝내기');
   const r = await 띄우기(부르기(도는아이, 자국), { cwd: 방, 기다림: 250 });
   check('준비: 떴다', r.떴나 === true, JSON.stringify(r).slice(0, 80));
 
-  const k = 끝내기(r.번호);
+  const k = await 끝내기(r.번호);
   check('끝냈다고 말해 준다', k && k.이미 === false, JSON.stringify(k).slice(0, 80));
   check('몇 초 돌았는지 적는다', typeof k.초 === 'number', String(k.초));
   check('목록에서 빠진다', 목록().length === 0, `${목록().length}개`);
@@ -306,8 +314,8 @@ trace('5-끝내기');
   const 다시 = existsSync(자국) ? statSync(자국).size : 0;
   check('프로세스가 진짜 멈춘다', 잰것 === 다시, `${잰것}바이트 → ${다시}바이트`);
 
-  check('없는 번호를 끝내면 없다고 한다', 끝내기(999) === null, String(끝내기(999)));
-  const 없음 = JOBS_TOOL.run({ 번호: 999, 끝내기: true });
+  check('없는 번호를 끝내면 없다고 한다', (await 끝내기(999)) === null, String(await 끝내기(999)));
+  const 없음 = await JOBS_TOOL.run({ 번호: 999, 끝내기: true });
   check('도구는 목록을 보라고 알려 준다', /목록을 보세요/.test(없음.error ?? ''), 없음.error ?? '');
 
   /*
@@ -317,13 +325,53 @@ trace('5-끝내기');
    * "서버를 껐습니다" 라고 말하는데 서버는 그대로 돌고 있다. 도구가
    * 시킨 일을 안 했으면 안 했다고 말해야 그 다음이 이어진다.
    */
-  const 번호없이 = JOBS_TOOL.run({ 끝내기: true });
+  const 번호없이 = await JOBS_TOOL.run({ 끝내기: true });
   check('번호 없이 끝내라고 하면 목록으로 얼버무리지 않는다', !!번호없이.error,
     번호없이.error ?? `(목록을 돌려줬다: ${번호없이.content})`);
 
   // 숫자가 아닌 번호. 그냥 두면 `NaN번 일감이 없습니다` 라는 말이 나간다.
-  const 엉뚱 = JOBS_TOOL.run({ 번호: '첫번째' });
+  const 엉뚱 = await JOBS_TOOL.run({ 번호: '첫번째' });
   check('번호가 숫자가 아니면 그렇게 말한다', /숫자/.test(엉뚱.error ?? ''), 엉뚱.error ?? '');
+
+  비우기();
+}
+
+trace('5-2-죽는말');
+
+// ── 5-2. 죽는 순간 뱉은 말이 사라지지 않는가 ───────────────────────────
+//
+// 죽이라고 말한 그 순간, 파이프에는 아직 안 읽힌 것이 남아 있다. 곧장 파이프를
+// 끊으면 그게 통째로 사라진다 — 그런데 **죽기 직전에 나온 몇 줄이 대개 제일
+// 중요하다.** 서버가 뻗으면서 남긴 스택 트레이스가 거기 있다.
+//
+// 그래서 죽인 뒤 잠깐 기다렸다가 거둔다. 무한정 기다리지는 않는다 —
+// 안 죽는 놈 하나가 그 턴을 통째로 잡아먹으면 안 된다.
+// 여기서 재는 것은 **약속**이지 경합이 아니다.
+//
+// 파이프 안에서 몇 밀리초 사이에 벌어지는 일을 검사로 잡으려 해 봤는데,
+// 잡히지 않았다 — 아이가 첫 글자를 쓰기도 전에 죽어서, 고친 쪽이나 안 고친
+// 쪽이나 똑같이 빈손이 나온다. 못 재는 것을 재는 척하면 그 검사는 나중에
+// 아무나 지워도 되는 것이 된다. 그래서 확정적으로 잴 수 있는 둘만 못 박는다.
+//
+//   1. 죽일 때까지 나온 말을 **빠짐없이** 준다
+//   2. 끝내기가 돌아왔으면 프로세스는 **이미 죽어 있다**
+//
+// 2번이 이 고침의 알맹이다. 전에는 죽이라고 말만 하고 곧장 돌아왔다 —
+// 그러고 목록에서 지웠으니, 안 죽은 놈이 있어도 다시는 가리킬 수 없었다.
+{
+  const r = await 띄우기(부르기(왕창뱉는아이), { cwd: 방, 기다림: 0 });
+  check('준비: 떴다', r.떴나 === true, JSON.stringify(r).slice(0, 60));
+  const kid = 하나(r.번호)?.kid;
+
+  // 아이가 실컷 뱉을 시간을 준다. 띄우기 는 기다림 0 이라 아무것도 안 읽어 갔다.
+  await 쉬기(300);
+
+  const k = await 끝내기(r.번호);
+  check('죽일 때까지 나온 말을 준다', /\[죽기 직전에 남긴 말\]/.test(k?.남은 ?? ''),
+    `${(k?.남은 ?? '').length}자 · 끝: ${JSON.stringify((k?.남은 ?? '').slice(-24))}`);
+  check('끝내기가 돌아왔으면 이미 죽어 있다', kid?.exitCode != null || kid?.signalCode != null,
+    `종료코드 ${kid?.exitCode} · 시그널 ${kid?.signalCode}`);
+  check('목록에서는 빠진다', 목록().length === 0, `${목록().length}개`);
 
   비우기();
 }
@@ -343,12 +391,12 @@ trace('6-이미끝난것');
   check('끝났다고 표시된다', ls[0]?.상태 === '끝남', JSON.stringify(ls[0]));
   check('종료코드가 남는다', ls[0]?.종료코드 === 3, String(ls[0]?.종료코드));
 
-  const t = JOBS_TOOL.run({ 번호: r.번호 });
+  const t = await JOBS_TOOL.run({ 번호: r.번호 });
   check('종료코드 0 이 아니면 실패로 물들인다', t.failed === true, String(t.failed));
   check('무슨 일이 있었는지 한 줄로', /종료코드 3/.test(t.summary + t.content), t.summary);
 
   // 이미 끝난 것을 끝내라고 하면 나무라지 않는다. 치우고 사실만 말한다.
-  const k = JOBS_TOOL.run({ 번호: r.번호, 끝내기: true });
+  const k = await JOBS_TOOL.run({ 번호: r.번호, 끝내기: true });
   check('이미 끝난 것은 이미 끝났다고만 한다', /이미 끝나 있었습니다/.test(k.content ?? ''), k.content ?? k.error);
 
   비우기();
@@ -375,6 +423,59 @@ trace('7-몇개까지');
   const 껐다 = 모두끝내기();
   check('모두끝내기가 몇 개를 껐는지 돌려준다', 껐다 === 최대일감, `${껐다}개`);
   check('다 끄면 목록이 빈다', 목록().length === 0, `${목록().length}개`);
+
+  비우기();
+}
+
+trace('7-2-끝난것치우기');
+
+// ── 7-2. 끝난 일감이 쌓이지 않는가 ─────────────────────────────────────
+//
+// 끝난 일감을 바로 지우면 안 된다 — 마지막 출력을 읽으라고 남겨 두는 것이다.
+// 그런데 안 지우면 짧은 명령 서른 개에 항목 서른 개가 쌓이고, 하나가 최대
+// 256KB 를 들고 있으니 몇 MB 가 된다. 목록을 볼 때마다 그걸 전부 다시 푼다.
+//
+// 그래서 최근 것만 남기고 오래된 것부터 버린다. **버렸으면 버렸다고 적는다** —
+// 안 적으면 모델은 목록에 보이는 것이 전부인 줄 안다.
+{
+  /*
+   * **하나씩** 띄우고 끝나기를 기다린다.
+   *
+   * 한꺼번에 열둘을 띄우면 최대일감(8)에 걸려 넷이 거절당한다 — 그 상한은
+   * '도는 것' 만 세기 때문이다. 여기서 보려는 것은 **끝난 것**이 쌓이는
+   * 자리라, 도는 것은 언제나 하나뿐이어야 한다.
+   *
+   * 뜨자마자 죽는 아이는 못 쓴다. 그건 띄우기() 가 그 자리에서 실패로
+   * 돌려주고 목록에서 빼기 때문이다(2번 단 참고). 그래서 잠깐 살다 끝나게 한다.
+   */
+  const 번호들 = [];
+  for (let i = 0; i < 12; i++) {
+    const 아이 = 스크립트(`late${i}.cjs`, `setTimeout(() => process.exit(0), 60);\n`);
+    const r = await 띄우기(부르기(아이), { cwd: 방, 기다림: 0 });
+    if (r.떴나) 번호들.push(r.번호);
+    await 쉬기(150);   // 제 발로 끝날 시간
+  }
+  check('준비: 12개가 떴다 (상한은 도는 것만 센다)', 번호들.length === 12, `${번호들.length}개`);
+  /*
+   * 마지막 하나가 끝나기를 넉넉히 기다린다.
+   *
+   * 치우기는 'close' 에서 돈다. 아직 도는 것이 있으면 그놈은 안 치워지고
+   * 목록에도 그대로 나와서, 셈이 하나 어긋난 것처럼 보인다. 윈도우는 node
+   * 기동만 80ms 쯤이라 위 150ms 로는 아슬아슬하다.
+   */
+  await 쉬기(500);
+  check('준비: 다 끝났다', 목록().every((j) => j.상태 !== '도는중'),
+    목록().map((j) => `${j.번호}:${j.상태}`).join(' '));
+
+  const ls = 목록();
+  check('끝난 것이 무한정 쌓이지 않는다', ls.length <= 8, `${ls.length}개`);
+  // 남는 것은 최근 여덟이다. 오래된 것부터 버려야 방금 띄운 것을 못 읽는 일이 없다.
+  check('남는 것은 최근 쪽이다',
+    JSON.stringify(ls.map((j) => j.번호).sort((a, b) => a - b)) === JSON.stringify(번호들.slice(-8)),
+    `${ls.map((j) => j.번호).join(',')} · 띄운 것 ${번호들.join(',')}`);
+
+  const t = await JOBS_TOOL.run({});
+  check('치웠다는 사실을 적는다', /지웠습니다/.test(t.content ?? ''), (t.content ?? '').split('\n').pop());
 
   비우기();
 }
@@ -444,7 +545,7 @@ trace('9-도구모양');
 // 도구 정의는 **매 요청마다** 통째로 나간다. 8k 창에서는 스키마 하나가
 // 곧 대화 자리다. Jobs 는 하는 일이 작은 만큼 스키마도 작아야 한다.
 {
-  const 빈것 = JOBS_TOOL.run({});
+  const 빈것 = await JOBS_TOOL.run({});
   check('아무것도 없으면 없다고 말한다', /없습니다/.test(빈것.content), 빈것.content);
 
   const s = JOBS_TOOL.schema;
@@ -458,7 +559,7 @@ trace('9-도구모양');
   check('정리하라는 말이 설명에 있다', /끝날 때 반드시 끝내기/.test(s.description), s.description.slice(-40));
 
   const 목록결과 = await 띄우기(부르기(조용한아이), { cwd: 방, 기다림: 0 });
-  const ls = JOBS_TOOL.run({});
+  const ls = await JOBS_TOOL.run({});
   check('목록에 번호와 명령이 같이 보인다',
     new RegExp(`${목록결과.번호}\\. `).test(ls.content) && /quiet\.cjs/.test(ls.content),
     ls.content);

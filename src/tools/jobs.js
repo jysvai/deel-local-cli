@@ -42,6 +42,24 @@ const 출력상한 = 256 * 1024;
 const 건넬상한 = 4000;
 // 동시에 띄워 둘 수 있는 개수. 이보다 많아지면 사람이 못 따라간다.
 export const 최대일감 = 8;
+/*
+ * **끝난** 일감을 몇 개까지 들고 있나.
+ *
+ * 바로 지우면 안 된다 — 마지막 출력을 읽으라고 남겨 두는 것이다. 그런데
+ * 안 지우면 짧은 명령 서른 개에 항목 서른 개가 쌓이고, 하나가 최대 256KB 를
+ * 들고 있으니 몇 MB 가 된다. 목록을 볼 때마다 그걸 전부 다시 푼다.
+ *
+ * 그래서 최근 것만 남기고 오래된 것부터 버린다. 도는 것은 여기 안 센다 —
+ * 그건 최대일감 이 따로 막는다.
+ */
+const 끝난것상한 = 8;
+/*
+ * 죽인 뒤 남은 말을 얼마나 기다리나.
+ *
+ * 유닉스 쪽 SIGKILL 올려치기(800ms)보다 짧게 잡는다. 여기서 먼저 깨어나
+ * '아직 사나' 를 보고, 살아 있으면 그 자리에서 곧장 끊기 때문이다.
+ */
+const 죽는말기다림 = 700;
 
 /**
  * 명령을 셸에 넘기는 방법.
@@ -96,7 +114,7 @@ export function 띄우기옵션(cwd) {
  * 그래서 동기로 부른다. 여기서 멈추는 몇십 ms 로 '안 죽은 서버' 를 없앤다.
  * test/jobs.test.js 의 '프로세스가 진짜 멈춘다' 가 이 자리를 지킨다.
  */
-function 나무죽이기(kid) {
+function 나무죽이기(kid, { 파이프끊기: 끊을까 = true, 곧장 = false } = {}) {
   if (!kid) return;
   if (process.platform === 'win32' && kid.pid) {
     /*
@@ -119,23 +137,61 @@ function 나무죽이기(kid) {
      * 먼저 곱게 말하고(TERM), 안 들으면 끊는다(KILL). 곧장 KILL 로 가면
      * dev 서버가 임시 파일이나 소켓을 치울 틈이 없다.
      */
-    try { process.kill(-kid.pid, 'SIGTERM'); } catch { /* 무리가 없거나 이미 죽음 */ }
-    try {
-      const 시계 = setTimeout(() => { try { process.kill(-kid.pid, 'SIGKILL'); } catch { /* 죽었다 */ } }, 800);
-      시계.unref?.();
-    } catch { /* 끝나는 중이면 타이머를 못 건다 — 아래 kill 로 간다 */ }
+    if (곧장) {
+      try { process.kill(-kid.pid, 'SIGKILL'); } catch { /* 이미 죽음 */ }
+    } else {
+      try { process.kill(-kid.pid, 'SIGTERM'); } catch { /* 무리가 없거나 이미 죽음 */ }
+      try {
+        const 시계 = setTimeout(() => { try { process.kill(-kid.pid, 'SIGKILL'); } catch { /* 죽었다 */ } }, 800);
+        시계.unref?.();
+      } catch { /* 끝나는 중이면 타이머를 못 건다 — 부르는 쪽이 곧장 으로 다시 온다 */ }
+    }
   }
   try { kid.kill(); } catch { /* 이미 죽음 */ }
-  /*
-   * 파이프를 놓는다.
-   *
-   * 아이가 죽어도 stdout·stderr 를 붙들고 있으면 그 손잡이가 이벤트 루프를
-   * 붙잡는다. unref() 는 프로세스 손잡이만 놓지 파이프는 안 놓는다.
-   * 이걸 빠뜨리면 deel 이 할 일을 다 하고도 안 끝난다 — 사람 눈에는 멈춘 것이다.
-   */
-  try { kid.stdout?.destroy(); } catch { /* 이미 닫힘 */ }
-  try { kid.stderr?.destroy(); } catch { /* 이미 닫힘 */ }
+  if (끊을까) 파이프끊기(kid);
   try { kid.unref(); } catch { /* 없으면 그만 */ }
+}
+
+/**
+ * 파이프를 놓는다.
+ *
+ * 아이가 죽어도 stdout·stderr 를 붙들고 있으면 그 손잡이가 이벤트 루프를
+ * 붙잡는다. unref() 는 프로세스 손잡이만 놓지 파이프는 안 놓는다.
+ * 이걸 빠뜨리면 deel 이 할 일을 다 하고도 안 끝난다 — 사람 눈에는 멈춘 것이다.
+ *
+ * 다만 **죽이자마자 끊으면 안 된다.** 그 순간 파이프에는 아직 안 읽힌 것이
+ * 남아 있고, 죽기 직전에 나온 몇 줄이 대개 제일 중요하다(서버가 뻗으며 남긴
+ * 스택 트레이스가 거기 있다). 그래서 끝내기() 는 잠깐 기다렸다가 이걸 부른다.
+ */
+function 파이프끊기(kid) {
+  try { kid?.stdout?.destroy(); } catch { /* 이미 닫힘 */ }
+  try { kid?.stderr?.destroy(); } catch { /* 이미 닫힘 */ }
+}
+
+/** 아직 살아 있나. 종료코드도 시그널도 없으면 안 죽은 것이다. */
+function 아직사나(kid) {
+  return !!kid && kid.exitCode == null && kid.signalCode == null;
+}
+
+/**
+ * 죽인 뒤, 남은 말이 다 나오기를 잠깐 기다린다.
+ *
+ * 'close' 는 프로세스가 끝나고 **파이프까지 다 비워졌을 때** 온다. 그래서
+ * 이걸 기다리면 죽는 순간 뱉은 것까지 손에 들어온다.
+ *
+ * 무한정 기다리지는 않는다 — 안 죽는 놈 하나가 그 턴을 통째로 잡아먹으면
+ * 안 된다. 그리고 여기 시계는 unref 하지 않는다. 이 기다림이 지금 이벤트
+ * 루프가 살아 있을 유일한 이유일 수 있어서, 놓아 버리면 그대로 끝난다.
+ */
+function 죽는말기다리기(kid, ms) {
+  return new Promise((끝) => {
+    if (!kid || ms <= 0) return 끝();
+    let 됐나 = false;
+    const 마치기 = () => { if (됐나) return; 됐나 = true; clearTimeout(시계); 끝(); };
+    const 시계 = setTimeout(마치기, ms);
+    kid.once('close', 마치기);
+    kid.once('error', 마치기);
+  });
 }
 
 class 일감 {
@@ -158,6 +214,10 @@ class 일감 {
     this.읽은글자 = 0;
     // 한 번 정하면 안 바꾼다. 바뀌면 읽은 자리가 조용히 어긋난다 (전체글 참고).
     this.인코딩 = null;
+    // 담을 때마다 는다. 푼 글을 다시 써도 되는지를 이 숫자로 가른다 —
+    // 바이트 수로 가르면 버린 만큼 다시 담겼을 때 같은 값이 되어 못 알아챈다.
+    this.판 = 0;
+    this.푼것 = null;
     this.kid = null;
   }
 
@@ -165,6 +225,7 @@ class 일감 {
     if (!buf?.length) return;
     this.조각들.push(Buffer.from(buf));
     this.바이트 += buf.length;
+    this.판++;
     if (this.바이트 <= 출력상한) return;
     /*
      * 앞을 버린다.
@@ -198,10 +259,21 @@ class 일감 {
    */
   전체글() {
     if (!this.조각들.length) return '';
+    /*
+     * 안 바뀌었으면 지난번 것을 그대로 준다.
+     *
+     * `목록()` 이 일감마다 이걸 부른다 — 안 읽은 글자 수를 세려고. 그 한 번이
+     * 최대 256KB 를 이어 붙이고 통째로 다시 푸는 일이라, 끝난 것 여덟 개를
+     * 들고 있으면 목록 한 번에 2MB 를 푼다. 모델이 Jobs 를 부를 때마다.
+     */
+    if (this.푼것 && this.푼것.판 === this.판) return this.푼것.글;
     const 다 = Buffer.concat(this.조각들);
     if (this.인코딩) {
-      try { return new TextDecoder(this.인코딩, { fatal: false }).decode(다); }
-      catch { /* 이 Node 가 모르는 이름이면 아래로 내려가 다시 잰다 */ }
+      try {
+        const 글 = new TextDecoder(this.인코딩, { fatal: false }).decode(다);
+        this.푼것 = { 판: this.판, 글 };
+        return 글;
+      } catch { /* 이 Node 가 모르는 이름이면 아래로 내려가 다시 잰다 */ }
     }
     const 콘솔 = consoleCodepage() === 65001 ? 'utf-8' : null;
     try {
@@ -209,6 +281,7 @@ class 일감 {
       // 처음 한 번만 못 박는다. 아직 아무것도 안 쌓였을 때 정하면
       // 표본이 너무 적어 엉뚱하게 잡히므로, 실제로 글이 나온 뒤에 정한다.
       if (r.text) this.인코딩 = r.encoding;
+      this.푼것 = { 판: this.판, 글: r.text };
       return r.text;
     } catch { return 다.toString('utf8'); }
   }
@@ -245,6 +318,27 @@ class 일감 {
 
 const 일감들 = new Map();
 let 다음번호 = 1;
+// 자리를 위해 지운 개수. **지웠으면 지웠다고 말하려고** 센다 —
+// 안 말하면 모델은 목록에 보이는 것이 전부인 줄 안다.
+let 치운것 = 0;
+
+/**
+ * 끝난 일감이 쌓이는 것을 막는다.
+ *
+ * 오래된 것부터 버린다. 번호가 곧 띄운 순서라 그대로 쓴다. 방금 띄운 것을
+ * 못 읽게 되면 안 되므로 **최근 쪽을 남긴다.**
+ */
+function 끝난것치우기() {
+  const 끝난것 = [...일감들.values()].filter((j) => j.상태 !== '도는중').sort((a, b) => a.번호 - b.번호);
+  if (끝난것.length <= 끝난것상한) return;
+  for (const j of 끝난것.slice(0, 끝난것.length - 끝난것상한)) {
+    // 들고 있던 것도 같이 놓는다. 항목만 지우고 조각들을 안 놓으면 아무것도 안 준다.
+    j.조각들 = [];
+    j.푼것 = null;
+    일감들.delete(j.번호);
+    치운것++;
+  }
+}
 
 /**
  * 명령을 뒤에서 띄운다.
@@ -281,6 +375,8 @@ export async function 띄우기(명령, { cwd, 설명 = null, 기다림 = 1500 }
     j.상태 = '끝남';
     j.종료코드 = sig ? null : code;
     j.시그널 = sig ?? null;
+    // 끝난 것이 쌓이지 않게. 도는 것은 최대일감 이 따로 막는다.
+    끝난것치우기();
   });
 
   // 뜨자마자 죽는지 잠깐 지켜본다. 그 몇 줄이 대부분의 답이다.
@@ -334,12 +430,30 @@ export function 읽기(번호, opts) {
   return { ...r, 상태: j.상태, 종료코드: j.종료코드, 시그널: j.시그널, 명령: j.명령, 초: j.산햇수() };
 }
 
-export function 끝내기(번호) {
+/**
+ * 하나를 끝낸다.
+ *
+ * **기다렸다가 거둔다.** 죽이자마자 파이프를 끊으면 그 순간 아직 안 읽힌 것이
+ * 통째로 사라지는데, 하필 그게 제일 중요한 몇 줄이다 — 서버가 뻗으면서 남긴
+ * 스택 트레이스, 왜 죽었는지 적은 마지막 말. `마지막 출력:` 이라고 적어 놓고
+ * 정작 마지막을 안 주면 안 적느니만 못하다.
+ */
+export async function 끝내기(번호) {
   const j = 하나(번호);
   if (!j) return null;
   if (j.상태 !== '도는중') { 일감들.delete(j.번호); return { 이미: true, 명령: j.명령 }; }
   j.상태 = '죽임';
-  나무죽이기(j.kid);
+  나무죽이기(j.kid, { 파이프끊기: false });
+  await 죽는말기다리기(j.kid, 죽는말기다림);
+  /*
+   * 아직 살아 있으면 여기서 끊는다.
+   *
+   * 곧 목록에서 지울 참인데, 지우고 나면 이놈을 가리킬 방법이 없다. 안 죽은
+   * 채로 지우면 영영 못 찾는 프로세스가 하나 남는다 — 이 기능이 없애려던
+   * 바로 그 상태다. 유닉스에서 SIGTERM 을 안 듣는 놈이 여기로 온다.
+   */
+  if (아직사나(j.kid)) 나무죽이기(j.kid, { 파이프끊기: false, 곧장: true });
+  파이프끊기(j.kid);
   const 남은 = j.읽기({});
   일감들.delete(j.번호);
   return { 이미: false, 명령: j.명령, 초: j.산햇수(), 남은: 남은.글 };
@@ -361,7 +475,7 @@ export function 모두끝내기() {
 }
 
 /** 검사에서 판을 깨끗이 하려고 쓴다. */
-export function 비우기() { 모두끝내기(); 다음번호 = 1; }
+export function 비우기() { 모두끝내기(); 다음번호 = 1; 치운것 = 0; }
 
 // 어떤 길로 끝나든 남기지 않는다. repl·oneshot 이 부르는 것과 겹쳐도 무해하다.
 process.once('exit', () => { try { 모두끝내기(); } catch { /* 끝나는 중이라 할 수 있는 게 없다 */ } });
@@ -415,7 +529,9 @@ export const JOBS_TOOL = {
       required: [],
     },
   },
-  run(args) {
+  // 끝내기 는 죽는 순간 뱉은 말을 기다렸다 거두므로 비동기다 (끝내기 머리말 참고).
+  // runTool 이 await 로 부르니 도구가 비동기여도 된다 (tools/index.js).
+  async run(args) {
     const 번호 = args?.번호 == null ? null : Number(args.번호);
     // 숫자가 아닌 것을 받으면 NaN 이 되고, 그대로 두면 `NaN번 일감이 없습니다`
     // 라는 말이 모델에게 나간다. 무엇이 잘못됐는지 안 알려 주는 오류다.
@@ -447,11 +563,19 @@ export const JOBS_TOOL = {
         const 새것 = j.안읽은글자 ? ` · 안 읽은 출력 ${j.안읽은글자}자` : '';
         return `  ${j.번호}. ${j.명령}  — ${상}${새것}`;
       });
+      /*
+       * 자리를 위해 지운 것이 있으면 말한다.
+       *
+       * 안 말하면 모델은 여기 보이는 것이 이 세션에서 띄운 전부인 줄 안다.
+       * 아까 띄운 3번을 찾다가 없으니 "안 띄웠나 보다" 하고 다시 띄운다 —
+       * 그러면 포트가 물려서 안 뜨고, 왜 안 되는지도 모른다.
+       */
+      if (치운것) 줄들.push(`  (오래된 것 ${치운것}개는 자리를 위해 지웠습니다)`);
       return { content: 줄들.join('\n'), summary: `${ls.length}개`, 일감수: ls.length };
     }
 
     if (args?.끝내기) {
-      const r = 끝내기(번호);
+      const r = await 끝내기(번호);
       if (!r) return { error: `${번호}번 일감이 없습니다. 번호 없이 Jobs 를 불러 목록을 보세요.` };
       if (r.이미) return { content: `${번호}번은 이미 끝나 있었습니다: ${r.명령}`, summary: '이미 끝남' };
       return {

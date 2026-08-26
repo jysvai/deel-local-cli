@@ -867,11 +867,24 @@ next step while you refresh a server that was never there.
 | Cleanup | Everything is killed when deel exits — **down to grandchildren**, and it says how many |
 | Retained | 256KB. Past that the front is dropped and **the drop is stated** |
 | Handed to the model | 4,000 chars. This **must** be a different number from the one above |
-| Count | Eight at a time |
+| On stop | Waits for the dying output, and returns only once the process is **actually dead** |
+| Count | Eight running. Finished jobs keep the most recent eight, and evictions **are stated** |
 
 Why two different caps: make them equal and every overflow of a `watch` job means
 one `Jobs` read dumps 256KB into the window. On an 8k model that single read ends
 the window.
+
+**Stopping a job does not close its pipes immediately.** At the moment the kill is
+issued there is still unread data in the pipe, and the last few lines before a
+death are the ones that matter — the stack trace a server leaves on the way down.
+Printing `last output:` and then withholding the last output is worse than not
+printing it. It also waits until the process is **confirmed dead** before dropping
+it from the list: dropping a live one means it can never be named again, which is
+the exact state this feature exists to prevent.
+
+Finished jobs are not dropped right away — they are kept so their final output can
+be read. Only the most recent eight survive; otherwise thirty short commands leave
+thirty entries, each holding up to 256KB.
 
 **Killing grandchildren is where this quietly goes wrong.** `npm run dev` descends
 npm → node → vite, and the thing holding the port is at the bottom. Windows has
