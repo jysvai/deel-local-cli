@@ -125,6 +125,45 @@ for (const cmd of 윈도우로지우기) {
 }
 check('윈도우식 통째 삭제도 막는다', 다막았나, `${윈도우로지우기.length}종`);
 
+// 12-2. 포크 폭탄
+//
+// 껐다 켜면 기계는 돌아온다. 그래서 '되돌릴 수 없는 것만' 이라는 잣대로는
+// 안 걸렸다. 그런데 되돌아오지 않는 것이 하나 있다 — **아직 안 적은 것들.**
+// 기계가 굳으면 열어 둔 것을 저장할 수도, 하던 대화를 끝낼 수도 없다.
+// 이름을 뭘로 짓든 모양은 같다: 제 몸에서 저를 불러 파이프로 물리고 뒤로 보낸다.
+const 포크폭탄 = [
+  ':(){ :|:& };:',
+  ':(){:|:&};:',
+  'bomb(){ bomb|bomb& };bomb',
+  '.(){ .|.& };.',
+  ':() { : | : & }; :',
+  'f(){ f& f& };f',            // 파이프 없이 뒤로만 보내는 변종
+  'bash -c ":(){ :|:& };:"',   // 한 겹 싸도 새면 안 된다
+  'echo hi; :(){ :|:& };:',    // 앞에 다른 명령을 붙여도
+  'perl -e "fork while fork"', // 한 줄짜리 옛 방법
+];
+let 폭탄다막았나 = true;
+for (const cmd of 포크폭탄) {
+  let 막힘 = false;
+  try { checkCommand(cmd); } catch { 막힘 = true; }
+  if (!막힘) { 폭탄다막았나 = false; fail.push({ name: `차단 실패: ${cmd}`, note: '포크 폭탄이 통과했다' }); }
+}
+check('포크 폭탄은 이름을 바꿔도 막는다', 폭탄다막았나, `${포크폭탄.length}종`);
+
+// 평범한 셸 함수까지 막으면 안 된다 — 모양이 비슷해도 저를 안 부른다.
+const 평범한함수 = [
+  'build(){ npm run build; }; build',
+  'log(){ echo "$1" | tee -a out.log; }; log hi',
+  'up(){ docker compose up -d & }; up',       // 안에 up 이 있지만 저를 부르는 게 아니다
+  'deploy(){ deploy_app & }; deploy',         // 이름이 앞머리로 겹칠 뿐이다
+  'watch(){ nodemon & }; watch',
+];
+let 함수는통과 = true;
+for (const cmd of 평범한함수) {
+  try { checkCommand(cmd); } catch { 함수는통과 = false; fail.push({ name: `과잉 차단: ${cmd}`, note: '' }); }
+}
+check('평범한 셸 함수는 그대로 통과', 함수는통과);
+
 // 막되, 평범한 정리 명령까지 막으면 도구가 못 쓰게 된다.
 const 평범한지우기 = ['del build\\out.tmp', 'del /q temp.log', 'rd empty-folder', 'Remove-Item build\\a.txt'];
 let 안막았나 = true;
