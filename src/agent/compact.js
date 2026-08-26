@@ -84,6 +84,12 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN } 
 
   const 접을것 = 자리.slice(0, Math.max(0, 자리.length - keep)).filter((x) => x.글.length >= min);
   let 아낀토큰 = 0;
+  // 무엇을 버렸는지 이름으로 남긴다.
+  //
+  // 조용히 버리면 사람이 모른다 — "아까 그 파일 내용 어디 갔지" 를 스스로 답할
+  // 길이 없다. 접힌 자리에 표시가 남긴 하지만 그건 모델이 보는 쪽이고,
+  // 사람 화면에는 여기서 돌려주는 목록으로 알려 준다.
+  const 접은것들 = [];
 
   for (const { i, 글 } of 접을것) {
     const m = ms[i];
@@ -96,10 +102,12 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN } 
       content: `${접힘표} ${아는것.name}${곳 ? `(${곳})` : ''} — ${줄수}줄. `
         + '자리를 비우려고 내용을 접었습니다. 필요하면 다시 읽으세요.',
     };
-    아낀토큰 += 전 - estimateTokens(ms[i].content);
+    const 아낀것 = 전 - estimateTokens(ms[i].content);
+    아낀토큰 += 아낀것;
+    접은것들.push({ 도구: 아는것.name, 곳, 줄수, 토큰: Math.max(0, 아낀것) });
   }
 
-  return { 접은것: 접을것.length, 아낀토큰: Math.max(0, 아낀토큰) };
+  return { 접은것: 접을것.length, 아낀토큰: Math.max(0, 아낀토큰), 접은것들 };
 }
 
 const 요약지시 = `지금까지의 대화를 다음 형식으로 요약하세요. 이어서 일할 사람이 이것만 보고도 계속할 수 있어야 합니다.

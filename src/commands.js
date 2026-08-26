@@ -56,6 +56,7 @@ export const COMMANDS = {
   scan:    { desc: '이 PC 의 로컬 모델 서버 훑기', arg: '[save]' },
   thread:  { desc: '대화 갈래 — 곁가지를 딴 자리에서. 연결·되돌리기는 같이 씀', arg: '[new|fork|close|번호|이름]' },
   learned: { desc: '쓰면서 저절로 알게 된 것 — 되는 명령·이 모델의 버릇', arg: '[지우기]' },
+  pin:     { desc: '못 박기 — 접거나 요약해도 안 지워지는 말', arg: '[말|지우기 번호|지우기 전부]' },
   sessions:{ desc: '이 폴더의 지난 대화 목록' },
   recall:  { desc: '지난 대화에서 찾기 — 목록 말고 내용으로', arg: '<찾을 말>' },
   mcp:     { desc: '밖에서 붙인 도구(MCP) 서버 보기' },
@@ -537,6 +538,9 @@ export async function handle(line, session, ctx) {
 
     case 'learned':
     case '배움': return 배움명령(session, ctx, arg), { handled: true };
+
+    case 'pin':
+    case '못박기': return 못박기명령(session, ctx, arg), { handled: true };
 
     case 'sessions': {
       const rows = listSessions(session.root, { limit: 12 });
@@ -1075,6 +1079,67 @@ function 갈래명령(session, ctx, arg = '') {
  * 모델이 왜 그렇게 답했는지 알 수 없게 된다 — 여기서 통째로 볼 수 있어야
  * '자동으로 쌓인다' 가 무섭지 않은 말이 된다. 지우는 길도 같이 둔다.
  */
+/**
+ * 못 박기.
+ *
+ * 여기서 하는 일은 화면과 말뿐이다. 들고 있는 것은 agent/pins.js 이고,
+ * 그것이 session 에 붙어 있어서 접기·요약이 닿지 못한다.
+ */
+function 못박기명령(session, ctx, arg = '') {
+  const 못 = session?.못박은것;
+  say('');
+  if (!못) {
+    say(`  ${c.gray('이 자리에서는 못 씁니다 — 대화 화면에서만 됩니다.')}`);
+    say('');
+    return;
+  }
+
+  const 적어두기 = () => { try { ctx?.갈래?.현재store?.()?.못박기목록(못.직렬화()); } catch { /* 못 적어도 대화는 계속된다 */ } };
+  const 말 = String(arg ?? '').trim();
+  const [머리, ...나머지] = 말.split(/\s+/);
+
+  if (/^(지우기|빼기|clear|rm|remove)$/i.test(머리 ?? '')) {
+    const r = 못.지우기(나머지.join(' ') || '전부');
+    if (!r.ok) say(`  ${c.red(r.why)}`);
+    else if (typeof r.뺀것 === 'number') say(`  ${mark.ok} ${c.gray(`못 박아 둔 것 ${r.뺀것}개를 뺐습니다.`)}`);
+    else say(`  ${mark.ok} ${c.gray('뺐습니다 —')} ${r.뺀것}`);
+    적어두기();
+    say('');
+    return;
+  }
+
+  if (말) {
+    const r = 못.더하기(말);
+    if (!r.ok) {
+      say(`  ${c.red(r.why)}`);
+      say('');
+      return;
+    }
+    적어두기();
+    say(`  ${c.hcyan('📌')} ${c.bold(`${r.번호}.`)} ${말}`);
+    say(`  ${c.gray('접거나 요약해도 안 지워집니다. 빼려면')} ${c.cyan(`/pin 지우기 ${r.번호}`)}`);
+    say('');
+    return;
+  }
+
+  const 목록 = 못.목록();
+  rule('못 박은 것', 70);
+  if (!목록.length) {
+    say(`  ${c.gray('아직 없습니다. 대화 내내 지켜야 할 말을 박아 두세요.')}`);
+    say(`  ${c.gray('예:')} ${c.cyan('/pin 운영 DB 는 건드리지 마라')}`);
+    say('');
+    return;
+  }
+  for (const x of 목록) say(`  ${c.hcyan(`${x.번호}.`)} ${x.말}`);
+  say('');
+  const 실린것 = 못.실린것();
+  say(`  ${c.gray(`매 턴 프롬프트에 실립니다 — 지금 ${실린것.개수}개, ${실린것.토큰}토큰.`)}`);
+  if (!실린것.다실렸나) {
+    say(`  ${c.yellow(`자리가 모자라 뒤의 ${목록.length - 실린것.개수}개는 안 실립니다.`)} ${c.gray('짧게 줄이거나 빼세요.')}`);
+  }
+  say('');
+}
+
 function 배움명령(session, ctx, arg = '') {
   const 배움 = ctx?.배움;
   say('');

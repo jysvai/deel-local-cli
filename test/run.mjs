@@ -63,6 +63,7 @@ const FILES = [
   'store.test.js',
   'threads.test.js',
   'evolve.test.js',
+  'pins.test.js',
   'recall.test.js',
   'mcp.test.js',
   'memory.test.js',

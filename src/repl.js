@@ -19,6 +19,7 @@ import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
 import { Threads } from './agent/threads.js';
+import { 못박기 } from './agent/pins.js';
 import { 배움 } from './agent/evolve.js';
 import { 마크다운 } from './ui/md.js';
 import { askHidden } from './ui/prompt.js';
@@ -195,6 +196,17 @@ export async function chatLoop(opts = {}) {
         if (고친것) {
           say(`  ${c.gray(`중단된 도구 호출 ${고친것}개를 걷어냈습니다 — 그때 하던 일은 다시 시켜 주세요.`)}`);
         }
+      }
+      /*
+       * 못 박아 둔 것도 같이 되살린다 (agent/pins.js).
+       *
+       * 이걸 안 되살리면 '접어도 요약해도 안 지워진다' 가 **껐다 켜는 한 번에**
+       * 거짓이 된다. 사람은 이미 말했다고 믿고 있으니 다시 말하지 않는다.
+       */
+      const 박힌것 = store.못박은것읽기();
+      if (박힌것.length) {
+        session.못박은것 = new 못박기(박힌것);
+        say(`  ${c.gray(`못 박아 둔 것 ${session.못박은것.개수()}개도 그대로 이어 받았습니다 —`)} ${c.cyan('/pin')}`);
       }
     }
   }
@@ -1041,11 +1053,25 @@ export async function chatLoop(opts = {}) {
            * 요약 압축보다 먼저 오는 것. 대화는 안 건드리고 옛 도구 결과만 접었다.
            * 조용히 하면 사람은 어느 파일 내용이 왜 사라졌는지 모른다 — 한 줄로 알린다.
            */
-          case 'folded':
+          case 'folded': {
             clearThinking();
             say(`  ${c.cyan('◲')} ${c.gray(`오래된 도구 결과 ${ev.접은것}개를 접었습니다 — `)}`
               + `${c.white(ev.아낀토큰.toLocaleString())} ${c.gray('토큰을 비웠습니다. 대화는 그대로입니다.')}`);
+            /*
+             * 무엇을 접었는지 이름으로 보여 준다.
+             *
+             * 조용히 버리면 "아까 그 파일 내용 어디 갔지" 를 사람이 스스로 답할 수
+             * 없다. 개발자 수준에서만 편다 — 쉬움 수준에서는 숫자 한 줄이면 된다.
+             */
+            const 접은것들 = ev.접은것들 ?? [];
+            if (접은것들.length && session.level !== '쉬움') {
+              const 보일것 = 접은것들.slice(0, 4)
+                .map((x) => `${x.도구}${x.곳 ? `(${x.곳})` : ''}`).join(' · ');
+              const 남은수 = 접은것들.length - Math.min(4, 접은것들.length);
+              say(`    ${c.gray(`${보일것}${남은수 > 0 ? ` 외 ${남은수}개` : ''}`)}`);
+            }
             break;
+          }
 
           case 'compacted': {
             접기멈춤();

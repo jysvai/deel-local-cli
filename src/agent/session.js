@@ -7,6 +7,7 @@ import { normalize as normLevel, DEFAULT as LEVEL_DEFAULT } from '../ui/level.js
 import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
 import { 지문 } from './project.js';
 import { 프롬프트토막 as 기억토막 } from './memory.js';
+import { 못박기 } from './pins.js';
 
 // 토큰 추정 — 정확한 토크나이저 없이 대략만 센다.
 // 한글은 글자당 약 1토큰, 영문·코드는 약 4글자당 1토큰으로 본다.
@@ -118,6 +119,13 @@ export class Session {
     this.보정잰것 = 0;
     // 겪어 본 것 요약 (agent/evolve.js). 켤 때 repl 이 채운다.
     this.배움요약 = null;
+    /*
+     * 못 박은 것 (agent/pins.js).
+     *
+     * 여기에 두는 것이 핵심이다. messages 안에 넣으면 접기와 요약이 언젠가
+     * 가져간다 — 그래서 아예 그 바깥, 시스템 프롬프트 쪽에 둔다.
+     */
+    this.못박은것 = new 못박기();
     this.filesRead = new Map();   // 경로 → 추정 토큰
     this.changes = new Map();     // 경로 → {added, removed, times}. /diff 가 본다
     this.skills = [];             // 켜질 때 이 PC 에서 찾은 것들
@@ -247,6 +255,15 @@ export class Session {
       const rest = this.skills.filter((s) => s.enabled).length - listed.length;
       if (rest > 0) parts.push(`(그 밖에 ${rest}개가 더 있으나 자리가 모자라 안 실었다.)`);
     }
+    /*
+     * 못 박은 것은 **맨 끝**에 붙인다 (agent/pins.js).
+     *
+     * 긴 글의 가운데는 흘려 읽힌다 — 'lost in the middle' 이라 부르는 것이고,
+     * 어느 모델에서나 잰다. 사람이 직접 못 박은 말은 그 가운데에 묻히면 안 되므로
+     * 가장 마지막, 대화 바로 앞에 둔다.
+     */
+    const 못박은글 = this.못박은것?.요약();
+    if (못박은글) parts.push(못박은글);
     return parts.join('\n');
   }
 

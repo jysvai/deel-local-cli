@@ -98,12 +98,43 @@ export class Store {
     this.#write({ t: 'msg', m: msg });
   }
 
+  /**
+   * 못 박은 것을 적어 둔다. 통째로 한 줄 — 마지막 것이 이긴다.
+   *
+   * 메시지와 따로 두는 이유는 pins.js 에 적은 것과 같다. 접기·요약은 메시지를
+   * 손보는데, 못 박은 것은 그 손질에 닿으면 안 된다.
+   */
+  못박기목록(목록) {
+    this.#open();
+    this.#write({ t: 'pins', at: new Date().toISOString(), 목록: 목록 ?? [] });
+  }
+
+  /** 마지막으로 적힌 못 박은 것. 없으면 빈 배열. */
+  못박은것읽기() {
+    if (!existsSync(this.file)) return [];
+    let 마지막 = [];
+    try {
+      for (const line of readFileSync(this.file, 'utf8').split('\n')) {
+        if (!line.includes('"t":"pins"')) continue;
+        try {
+          const j = JSON.parse(line);
+          if (j.t === 'pins' && Array.isArray(j.목록)) 마지막 = j.목록;
+        } catch { /* 깨진 줄은 건너뛴다 */ }
+      }
+    } catch { return []; }
+    return 마지막;
+  }
+
   // 압축이 일어나면 이력이 통째로 바뀐다. 그때는 새로 적는다.
   replace(messages, note = '압축') {
     this.#open();
     const meta = this.readMeta() ?? {};
+    // 여기가 놓치기 쉬운 자리다. 파일을 새로 쓰면서 못 박은 것을 안 옮기면,
+    // '요약해도 안 지워진다' 는 말이 바로 그 요약에서 거짓이 된다.
+    const 못박은것 = this.못박은것읽기();
     const lines = [JSON.stringify({ t: 'meta', at: new Date().toISOString(), ...meta })];
     lines.push(JSON.stringify({ t: 'note', at: new Date().toISOString(), note }));
+    if (못박은것.length) lines.push(JSON.stringify({ t: 'pins', at: new Date().toISOString(), 목록: 못박은것 }));
     for (const m of messages) lines.push(JSON.stringify({ t: 'msg', m }));
     try { writeFileSync(this.file, lines.join('\n') + '\n', 'utf8'); } catch {}
   }

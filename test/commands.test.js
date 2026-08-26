@@ -486,6 +486,43 @@ check('/init 이 DEEL.md 를 만든다', existsSync(join(root, 'DEEL.md')));
     process.env.DEEL_HOME === 설정집 && 설정집.includes('deel-cmd-home-'), process.env.DEEL_HOME ?? '');
 }
 
+trace('3.5-못박기를실제로눌러본다');
+
+// ── /pin 을 실제로 눌러 본다 ────────────────────────────────────────────
+//
+// pins.test.js 는 부품을 잰다. 여기서는 **사람이 치는 그대로** 눌러 본다 —
+// 명령이 세션에 실제로 닿는지, 화면에 무엇이 뜨는지.
+{
+  const s = 새세션();
+
+  const 박기 = await 조용히(() => handle('/pin 운영 DB 는 건드리지 마라', s, ctx));
+  check('/pin 으로 못 박힌다', s.못박은것.개수() === 1, `${s.못박은것.개수()}개`);
+  check('박은 것을 화면에 보여 준다', /운영 DB/.test(박기.out), 박기.out.trim().slice(0, 60));
+  check('빼는 방법을 같이 알려 준다', /\/pin 지우기/.test(박기.out));
+
+  const 프롬프트 = s.systemPrompt();
+  check('박자마자 프롬프트에 실린다', 프롬프트.includes('운영 DB 는 건드리지 마라'));
+  check('프롬프트 맨 끝에 온다 — 가운데는 흘려 읽힌다',
+    프롬프트.lastIndexOf('운영 DB') > 프롬프트.length - 400,
+    `끝에서 ${프롬프트.length - 프롬프트.lastIndexOf('운영 DB')}자`);
+
+  const 목록 = await 조용히(() => handle('/pin', s, ctx));
+  check('인자 없이 치면 목록이 뜬다', /운영 DB/.test(목록.out) && /1\./.test(목록.out));
+  check('자리를 얼마나 먹는지 알려 준다', /토큰/.test(목록.out), 목록.out.trim().slice(-80));
+  check('실리는 개수를 정확히 센다', /지금 1개/.test(목록.out),
+    (목록.out.match(/지금 \d+개/) ?? ['못 찾음'])[0]);
+
+  // /clear 는 대화를 비운다. 못 박은 것까지 비우면 안 된다.
+  await 조용히(() => handle('/clear', s, ctx));
+  check('/clear 로 대화를 비워도 못 박은 것은 남는다', s.못박은것.개수() === 1,
+    `${s.못박은것.개수()}개`);
+  check('비운 뒤에도 프롬프트에 실린다', s.systemPrompt().includes('운영 DB'));
+
+  const 빼기 = await 조용히(() => handle('/pin 지우기 1', s, ctx));
+  check('/pin 지우기 로 뺀다', s.못박은것.개수() === 0, 빼기.out.trim().slice(0, 60));
+  check('뺀 뒤엔 프롬프트에서도 사라진다', !s.systemPrompt().includes('운영 DB'));
+}
+
 // 모든 명령이 목록에 설명을 갖고 있나 — 새로 넣고 빠뜨리기 쉬운 자리다.
 for (const [n, v] of Object.entries(COMMANDS)) {
   check(`/${n} 에 설명이 있다`, typeof v.desc === 'string' && v.desc.length > 0, JSON.stringify(v));
