@@ -65,6 +65,7 @@ const FILES = [
   'evolve.test.js',
   'pins.test.js',
   'card.test.js',
+  'evidence.test.js',
   'recall.test.js',
   'mcp.test.js',
   'memory.test.js',

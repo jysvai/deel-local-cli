@@ -3,6 +3,7 @@ import { writeFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { c, say, rule, pad, bar, mark, width, clip } from './ui/ansi.js';
 import { compact } from './agent/compact.js';
+import { 증거모으기, 증거적기 } from './agent/evidence.js';
 import { allowEndpoint } from './safety/network.js';
 import { pick } from './ui/prompt.js';
 import { load, save, resolveKey, upsert } from './config.js';
@@ -57,6 +58,7 @@ export const COMMANDS = {
   thread:  { desc: '대화 갈래 — 곁가지를 딴 자리에서. 연결·되돌리기는 같이 씀', arg: '[new|fork|close|번호|이름]' },
   learned: { desc: '쓰면서 저절로 알게 된 것 — 되는 명령·이 모델의 버릇', arg: '[지우기]' },
   pin:     { desc: '못 박기 — 접거나 요약해도 안 지워지는 말', arg: '[말|지우기 번호|지우기 전부]' },
+  evidence:{ desc: '증거 — 무엇을 바꿨고 무엇이 그걸 증명하나. 안 된 것도 적는다', arg: '[파일]' },
   sessions:{ desc: '이 폴더의 지난 대화 목록' },
   recall:  { desc: '지난 대화에서 찾기 — 목록 말고 내용으로', arg: '<찾을 말>' },
   mcp:     { desc: '밖에서 붙인 도구(MCP) 서버 보기' },
@@ -544,6 +546,9 @@ export async function handle(line, session, ctx) {
 
     case 'pin':
     case '못박기': return 못박기명령(session, ctx, arg), { handled: true };
+
+    case 'evidence':
+    case '증거': return 증거명령(session, ctx, arg), { handled: true };
 
     case 'sessions': {
       const rows = listSessions(session.root, { limit: 12 });
@@ -1082,6 +1087,70 @@ function 갈래명령(session, ctx, arg = '') {
  * 모델이 왜 그렇게 답했는지 알 수 없게 된다 — 여기서 통째로 볼 수 있어야
  * '자동으로 쌓인다' 가 무섭지 않은 말이 된다. 지우는 길도 같이 둔다.
  */
+/**
+ * 증거 — 「다 됐습니다」 대신 검토할 수 있는 것.
+ *
+ * 화면에서 제일 중요한 것은 맨 아래 '증명 안 된 것' 이다. 바꾼 것을 늘어놓는
+ * 일은 /diff 도 한다. 안 한 것을 말하는 자리는 여기뿐이다.
+ */
+function 증거명령(session, ctx, arg = '') {
+  const e = 증거모으기(session, { audit: ctx?.audit });
+  const 말 = String(arg ?? '').trim();
+  say('');
+  rule('작업 증거', 70);
+
+  if (!e.바꾼것.length && !e.돌린것.length) {
+    say(`  ${c.gray('이번 대화에서 아직 바꾸거나 돌린 것이 없습니다.')}`);
+    say('');
+    return;
+  }
+
+  if (e.바꾼것.length) {
+    say(`  ${c.bold('바꾼 것')} ${c.gray(`— 파일 ${e.셈.파일}개 · +${e.셈.더한줄} / -${e.셈.뺀줄}`)}`);
+    for (const x of e.바꾼것.slice(0, 12)) {
+      const 표 = x.증명 ? c.green('✓') : c.yellow('?');
+      const 뒤 = x.증명 ? c.gray(`← ${x.증명}`) : c.yellow('확인 안 됨');
+      say(`    ${표} ${pad(x.파일, 34)} ${c.gray(`+${x.더한줄} -${x.뺀줄}`)}  ${뒤}`);
+    }
+    if (e.바꾼것.length > 12) say(`    ${c.gray(`… 그 밖에 ${e.바꾼것.length - 12}개`)}`);
+    say('');
+  }
+
+  if (e.돌린것.length) {
+    say(`  ${c.bold('돌린 것')} ${c.gray(`— ${e.셈.돌린것}개${e.셈.실패한것 ? `, 그중 ${e.셈.실패한것}개 실패` : ''}`)}`);
+    for (const x of e.돌린것.slice(-10)) {
+      const 표 = x.됐나 ? c.green('✓') : c.red('✗');
+      say(`    ${표} ${clip(x.무엇 || x.도구, 44)} ${c.gray(clip(x.남긴말 ?? '', 24))}`);
+    }
+    say('');
+  }
+
+  // 여기가 요점이다.
+  if (e.증명안된것.length) {
+    say(`  ${c.yellow('증명 안 된 것')} ${c.gray(`— ${e.증명안된것.length}개`)}`);
+    for (const x of e.증명안된것.slice(0, 8)) {
+      say(`    ${c.yellow('·')} ${c.bold(x.파일)}`);
+      say(`      ${c.gray(x.왜)}`);
+    }
+    say('');
+    say(`  ${c.gray('돌려 볼 것이 있으면 지금 돌리고 다시 보세요.')}`);
+  } else {
+    say(`  ${c.green('증명 안 된 것 없음')} ${c.gray('— 바꾼 것마다 그 뒤에 돌린 확인이 있습니다.')}`);
+  }
+  say('');
+
+  if (/^(파일|file|저장|save)$/i.test(말)) {
+    const 이름 = `${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}`;
+    const 자리 = 증거적기(session.root, e, 이름);
+    if (자리) say(`  ${mark.ok} ${c.gray('남겼습니다 —')} ${c.cyan(자리)}`);
+    else say(`  ${c.gray('파일로 못 남겼습니다. 화면 것만 쓰세요.')}`);
+    say('');
+  } else {
+    say(`  ${c.gray('파일로 남기려면')} ${c.cyan('/evidence 파일')}`);
+    say('');
+  }
+}
+
 /**
  * 모델 카드 — 겪어 본 버릇과, 그 때문에 deel 이 바꾼 것.
  *
