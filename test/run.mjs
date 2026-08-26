@@ -47,6 +47,7 @@ const FILES = [
   'truncated.test.js',
   'ui2.test.js',
   'motion.test.js',
+  'preview.test.js',
   'setup.test.js',
   'guard.test.js',
   'undo.test.js',
@@ -99,7 +100,8 @@ function runOne(file) {
       // 고른 값을 설정에 남기는데, 그게 진짜 설정이었다. 파일마다 조심하는
       // 것보다 여기서 한 번 막는 편이 확실하다 — 앞으로 검사를 새로 넣는
       // 사람이 이걸 몰라도 안전하다.
-      env: { ...process.env, FORCE_COLOR: C ? '1' : '', DEEL_TRACE: 자취, DEEL_HOME: 설정집 },
+      // 미리보기 검사가 진짜 브라우저 창을 띄우면 사람 화면이 난장판이 된다.
+      env: { ...process.env, FORCE_COLOR: C ? '1' : '', DEEL_TRACE: 자취, DEEL_HOME: 설정집, DEEL_NO_OPEN: '1' },
     });
 
     let out = '';

@@ -1,5 +1,5 @@
 // 슬래시 명령. 이름은 Claude Code / Codex 관례에 맞춘다.
-import { writeFileSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { c, say, rule, pad, bar, mark, width, clip } from './ui/ansi.js';
 import { compact } from './agent/compact.js';
@@ -17,6 +17,7 @@ import { MODES as WORK_MODES, ORDER as WORK_ORDER, DEFAULT as WORK_DEFAULT, norm
 import { LEVELS, ORDER as LEVEL_ORDER, DEFAULT as LEVEL_DEFAULT, normalize as normLevel, shows as levelShows } from './ui/level.js';
 import { diffLines, renderDiff, shortStat } from './ui/diff.js';
 import { readTextFull } from './tools/fsutil.js';
+import { 띄우기, 브라우저로 } from './preview/serve.js';
 const MODES = {
   auto: '자율 — 전부 알아서. 되돌리기가 안전망',
   confirm: '확인 — 되돌릴 수 없는 것만 물어봄',
@@ -46,6 +47,7 @@ export const COMMANDS = {
   orchestrator: { desc: '작업 모드 → 총괄 (큰 일을 쪼개서)' },
   undo:    { desc: '직전 작업 되돌리기', arg: '[턴수]' },
   diff:    { desc: '이번 대화에서 바뀐 파일 · 바뀐 자리 보기', arg: '[파일]' },
+  preview: { desc: '만든 웹을 이 자리에서 띄워 본다 — 올릴 필요 없음', arg: '[폴더|off]' },
   tools:   { desc: '쓸 수 있는 도구 보기' },
   skills:  { desc: '스킬 보기·검색·골라 올리기', arg: '[검색어|all|off]' },
   plugin:  { desc: '플러그인 목록·설치·삭제·반입묶음', arg: '[install|remove|pack]' },
@@ -257,6 +259,9 @@ export async function handle(line, session, ctx) {
     }
 
     case 'diff': return 바뀐것보기(session, ctx, arg), { handled: true };
+
+    case 'preview':
+    case 'serve': return await 미리보기(session, ctx, arg), { handled: true };
 
     case 'tools': {
       rule('도구', 70);
@@ -674,6 +679,103 @@ async function doPlugin(session, arg) {
   }
   say('');
   say(`  ${c.gray('/plugin install <owner/repo>   /plugin remove <이름>   /plugin pack [파일]')}`);
+  say('');
+}
+
+/*
+ * 만든 웹을 그 자리에서 띄운다.
+ *
+ * 여기 있는 것은 화면과 말뿐이고, 서버는 preview/serve.js 가 한다.
+ * 한 번에 하나만 띄운다 — 여러 개를 띄워 놓으면 어느 주소가 무엇인지
+ * 아무도 못 외우고, 끌 때도 뭘 껐는지 모른다.
+ */
+let 미리보기중 = null;
+
+/** 켜져 있으면 끈다. 프로그램을 끝낼 때도 이걸 부른다. */
+export async function 미리보기끄기() {
+  if (!미리보기중) return null;
+  const 끈것 = 미리보기중;
+  미리보기중 = null;
+  try { await 끈것.서버.닫기(); } catch { /* 이미 닫혔다 */ }
+  return 끈것;
+}
+
+/** 지금 띄워 둔 것. 상태줄·검사에서 본다. */
+export const 미리보기상태 = () => (미리보기중
+  ? { url: 미리보기중.서버.url, 폴더: 미리보기중.보인이름, 되살아나나: 미리보기중.서버.되살아나나 }
+  : null);
+
+async function 미리보기(session, ctx, arg) {
+  const 말 = String(arg ?? '').trim();
+
+  if (/^(off|끄기|중지|stop)$/i.test(말)) {
+    const 끈것 = await 미리보기끄기();
+    say('');
+    say(끈것 ? `  ${mark.ok} 미리보기를 껐습니다. ${c.gray(끈것.서버.url)}`
+      : `  ${c.gray('띄워 둔 것이 없습니다.')}`);
+    say('');
+    return;
+  }
+
+  // 이미 떠 있는데 또 치면, 주소를 다시 알려 주고 브라우저만 연다.
+  // 여기서 조용히 하나 더 띄우면 포트가 둘이 되고 어느 쪽이 진짜인지 모르게 된다.
+  if (미리보기중 && !말) {
+    say('');
+    say(`  ${c.hgreen('▶')} 이미 띄워 뒀습니다  ${c.cyan(미리보기중.서버.url)} ${c.gray(미리보기중.보인이름)}`);
+    브라우저로(미리보기중.서버.url);
+    say(`  ${c.gray('끄려면')} ${c.cyan('/preview off')}`);
+    say('');
+    return;
+  }
+  // 다른 폴더를 주면 앞엣것은 끄고 새로 띄운다.
+  if (미리보기중) await 미리보기끄기();
+
+  let 뿌리;
+  try {
+    뿌리 = ctx.scope.resolve(말 || '.');
+  } catch (err) {
+    say('');
+    say(`  ${c.red('띄울 수 없습니다')} ${c.gray(err.message)}`);
+    say('');
+    return;
+  }
+
+  if (!existsSync(뿌리)) {
+    say('');
+    say(`  ${c.red('그런 폴더가 없습니다')} ${c.gray(ctx.scope.show(뿌리))}`);
+    say('');
+    return;
+  }
+  // 파일 하나를 줬으면 그 파일이 든 폴더를 띄우고, 브라우저는 그 파일로 연다.
+  let 첫주소 = '';
+  if (!statSync(뿌리).isDirectory()) {
+    첫주소 = encodeURIComponent(뿌리.split(/[\\/]/).pop());
+    뿌리 = join(뿌리, '..');
+    뿌리 = ctx.scope.resolve(뿌리);
+  }
+
+  let 서버;
+  try {
+    서버 = await 띄우기({ 뿌리, scope: ctx.scope });
+  } catch (err) {
+    say('');
+    say(`  ${c.red('못 띄웠습니다')} ${c.gray(err.message)}`);
+    say('');
+    return;
+  }
+  미리보기중 = { 서버, 보인이름: ctx.scope.show(뿌리) };
+
+  const url = 서버.url + 첫주소;
+  say('');
+  say(`  ${c.hgreen('▶')} ${c.bold('띄웠습니다')}  ${c.cyan(url)}`);
+  say(`  ${c.gray('보여 주는 것')} ${c.white(미리보기중.보인이름)}`);
+  say(서버.되살아나나
+    ? `  ${c.gray('파일을 고치면 화면이 저절로 새로 뜹니다.')}`
+    : `  ${c.yellow('⚠')} ${c.gray('이 자리에서는 파일 변화를 못 봅니다 — 브라우저를 손으로 새로 고치세요.')}`);
+  // 어디까지 열리는지 반드시 말한다. '서버를 띄웠다' 는 말은 사람마다 다르게 읽힌다.
+  say(`  ${c.gray('이 컴퓨터에서만 열립니다(127.0.0.1). 다른 PC 에서는 안 보입니다.')}`);
+  say(`  ${c.gray('끄려면')} ${c.cyan('/preview off')}${c.gray('  · deel 을 끝내면 같이 꺼집니다.')}`);
+  브라우저로(url);
   say('');
 }
 

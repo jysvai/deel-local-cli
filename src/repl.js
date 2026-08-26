@@ -6,7 +6,7 @@ import { c, say as 바로쓰기, mark, clip } from './ui/ansi.js';
 import { headerLines } from './ui/status.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
-import { handle, COMMANDS } from './commands.js';
+import { handle, COMMANDS, 미리보기끄기 } from './commands.js';
 import { next as nextWork, get as getWork, canWrite } from './agent/modes.js';
 import { route } from './agent/route.js';
 import { run } from './agent/loop.js';
@@ -1154,6 +1154,12 @@ export async function chatLoop(opts = {}) {
   {
     const 껐다 = 일감모두끝내기();
     if (껐다) say(`  ${mark.ok} ${c.gray(`뒤에서 돌던 명령 ${껐다}개를 같이 껐습니다.`)}`);
+  }
+  // 미리보기 서버도 같은 이유로 거둔다. 안 거두면 포트를 물고 있는 채로 남아,
+  // 다음에 띄운 것과 두 개가 뜬다 — 어느 쪽을 보고 있는지 알 수 없게 된다.
+  {
+    const 껐다 = await 미리보기끄기();
+    if (껐다) say(`  ${mark.ok} ${c.gray(`미리보기를 껐습니다 (${껐다.서버.url}).`)}`);
   }
   // 끝맺음은 화면을 접기 **전에** 그린다. close() 가 상자를 걷어내므로,
   // 그 뒤에 찍으면 걷어낸 자리에 뜬금없이 한 줄이 남는다.
