@@ -34,6 +34,7 @@ const FILES = [
   'parallel.test.js',
   'modes.test.js',
   'route.test.js',
+  'planapprove.test.js',
   'ctxsize.test.js',
   'cli.test.js',
   'oneshot.test.js',

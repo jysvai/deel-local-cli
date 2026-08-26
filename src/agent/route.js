@@ -110,15 +110,66 @@ const 문턱 = {
   ask: 5,
 };
 
+/*
+ * ── 겹친 요청 ───────────────────────────────────────────────────────────
+ *
+ * "계획해주고 만들어줘" 처럼 **계획과 실행이 한 말에 같이** 든 것.
+ *
+ * 이건 위의 점수표로는 못 고른다. '만들어' 가 code 3점 문턱을 그냥 넘어서
+ * 곧장 코드 모드로 가 버리고, 사람이 보자고 한 계획은 안 나온다.
+ * 실제로 겪었다 — "정리해서 만들어줘" 가 계획 한 줄 없이 파일부터 만들었다.
+ *
+ * 반대로 plan 으로 보내면 계획만 내고 멈춘다. 그것도 시킨 일의 절반이다.
+ * 그래서 따로 알아본다. 계획을 내고 → 승인을 받고 → 그대로 실행까지 잇는다.
+ *
+ * 좁게 잡는다. 사용자는 자율 실행을 원했고, 승인 창은 그 결정을 갉아먹는
+ * 쪽이다. '고쳐줘' 한마디에 창이 뜨면 그게 더 나쁘다.
+ * 그래서 **계획말 + 잇는말** 이 앞에 있고 그 **뒤에** 실행말이 와야만 겹침이다.
+ */
+const 계획말 = '계획|플랜|설계|구상|기획|정리|검토|조사|파악|살펴|알아보|분석|로드맵|방향|순서|밑그림|초안';
+// '정리하고' 처럼 잇는 꼴이어야 한다. 그냥 '정리' 하나로는 겹침이 아니다 —
+// "코드 정리해줘" 는 계획이 아니라 그 자체가 할 일이다.
+const 잇는말 = '해\\s*주고|해\\s*놓고|하고\\s*나서|하고서|한\\s*다음|한\\s*뒤|한\\s*후|하고|해서|잡고|짜고|세우고|낸\\s*뒤|낸\\s*다음';
+const 실행말 = /만들어|만들자|만들어라|구현|작성|추가(해|하)|생성|써\s*(줘|주세요)|짜\s*(줘|주세요)|고쳐|세팅|설치|배포/;
+const 계획먼저 = new RegExp(`(${계획말})\\s*(?:을|를)?\\s*(?:${잇는말})`);
+// 영어도 같이 본다 — "plan and then build it" 처럼 붙여 넣는 일이 있다.
+const 영어겹침 = /\b(plan|design|outline|draft)\b[\s\S]{0,60}?\b(?:and|then|,)\s*(?:then\s*)?\b(build|implement|create|write|make|code)\b/i;
+
+/**
+ * 계획과 실행이 한 말에 같이 들었나.
+ *
+ * @returns {{겹침: boolean, why: string}} 겹침이 아니면 why 는 빈 글.
+ */
+export function 겹친요청(text) {
+  const s = String(text ?? '');
+  const 영어 = s.match(영어겹침);
+  if (영어) return { 겹침: true, why: `'${영어[1]}' 과 '${영어[2]}'` };
+
+  const 앞 = s.match(계획먼저);
+  if (!앞) return { 겹침: false, why: '' };
+  // 실행말이 계획말 **뒤에** 와야 한다. "만들고 나서 정리해줘" 는 겹침이 아니다 —
+  // 그건 만드는 일이 먼저고, 계획을 미리 볼 것이 없다.
+  const 뒤 = s.slice(앞.index + 앞[0].length).match(실행말);
+  if (!뒤) return { 겹침: false, why: '' };
+  return { 겹침: true, why: `'${앞[0].trim()}' 뒤에 '${뒤[0].trim()}'` };
+}
+
 /**
  * 이 한마디가 무슨 일인지 고른다.
  *
  * @param {string} text 사용자가 친 말
- * @returns {{ mode: string|null, score: number, why: string, 점수들: object }}
+ * @returns {{ mode: string|null, score: number, why: string, 겹침: boolean, 점수들: object }}
  *          mode 가 null 이면 '모르겠다' 는 뜻이다 — 종합 모드에 그대로 둔다.
+ *          겹침이 true 면 계획을 내고 승인을 받아 실행까지 이어야 한다는 뜻이다.
  */
 export function route(text) {
   const s = String(text ?? '');
+
+  // 겹친 요청은 점수표보다 먼저 본다. 점수표에 맡기면 '만들어' 가 이겨서
+  // 계획을 건너뛴다 — 그게 바로 이 길을 만든 이유다.
+  const 겹 = 겹친요청(s);
+  if (겹.겹침) return { mode: 'plan', score: 0, why: 겹.why, 겹침: true, 점수들: {} };
+
   const 점수들 = {};
   const 근거 = {};
 
@@ -138,19 +189,20 @@ export function route(text) {
   const 순위 = Object.entries(점수들).sort((a, b) => b[1] - a[1]);
   const [으뜸, 점수] = 순위[0] ?? [null, 0];
   if (!으뜸 || 점수 < (문턱[으뜸] ?? 4)) {
-    return { mode: null, score: 점수, why: '무슨 일인지 뚜렷하지 않음', 점수들 };
+    return { mode: null, score: 점수, why: '무슨 일인지 뚜렷하지 않음', 겹침: false, 점수들 };
   }
 
   // 1·2등이 붙으면 고르지 않는다. 반반인 것을 억지로 정하면 절반은 틀린다.
   const 둘째 = 순위[1]?.[1] ?? 0;
   if (점수 - 둘째 < 2 && 둘째 >= (문턱[순위[1][0]] ?? 4)) {
-    return { mode: null, score: 점수, why: `${으뜸} 과 ${순위[1][0]} 가 비슷함`, 점수들 };
+    return { mode: null, score: 점수, why: `${으뜸} 과 ${순위[1][0]} 가 비슷함`, 겹침: false, 점수들 };
   }
 
   return {
     mode: 으뜸,
     score: 점수,
     why: 근거[으뜸].slice(0, 2).map((x) => `'${x}'`).join(', '),
+    겹침: false,
     점수들,
   };
 }

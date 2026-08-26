@@ -22,6 +22,7 @@ import { askHidden } from './ui/prompt.js';
 import { explain, shows as levelShows } from './ui/level.js';
 import { 고르기 as 승인고르기, 다음 as 승인다음 } from './ui/approve.js';
 import { 추천, 채울글 } from './ui/complete.js';
+import { 접어쓰기 } from './ui/wrap.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { renderDiff, shortStat } from './ui/diff.js';
 import { expand as expandMentions } from './agent/mention.js';
@@ -625,21 +626,63 @@ export async function chatLoop(opts = {}) {
     prompt();
   });
 
+  /*
+   * 계획을 승인받은 뒤 **사람이 다시 치지 않아도** 이어서 할 말.
+   *
+   * 전에는 계획 모드가 모델에게 "승인을 받으면 /code 로 바꿔 실행한다" 고
+   * 시켜 놓고, 정작 승인받는 자리도 이어가는 길도 없었다. 사람이 /code 를
+   * 알아서 쳐야 이어졌다 — 모드 설명에는 '승인 뒤 실행' 이라고 적혀 있었는데.
+   * 코드가 안 하는 것을 화면이 약속하고 있었던 셈이다.
+   */
+  let 이어갈것 = null;    // 이어서 보낼 말 (null 이면 사람 입력을 기다린다)
+  let 이어갈모드 = null;  // 그때 쓸 작업 모드. 다시 고르지 않는다.
+
+  /*
+   * 계획을 한 눈에 보여 준다.
+   *
+   * 오른쪽 테두리를 안 그린다. 한글은 두 칸을 먹는데 이모지·기호는 아니어서
+   * 폭을 맞추려다 어긋나면 상자가 깨져 보인다 — 안 그리면 어긋날 것이 없다.
+   */
+  const 계획상자 = (할일) => {
+    const 폭 = Math.max(40, Math.min(88, (process.stdout.columns || 80) - 6));
+    say(`  ${c.hcyan('┌')} ${c.bold('계획')}`);
+    if (!할일.length) {
+      // TodoWrite 를 안 쓴 계획도 있다. 그때 빈 상자를 그리면 계획이 없는 줄 안다.
+      say(`  ${c.hcyan('│')} ${c.gray('단계가 따로 적히지 않았습니다 — 위에 적힌 계획을 봐 주세요.')}`);
+    } else {
+      할일.forEach((t, i) => {
+        const 줄들 = 접어쓰기(String(t.text ?? ''), 폭 - 6);
+        줄들.forEach((줄, j) => {
+          const 앞 = j === 0 ? c.gray(String(i + 1).padStart(2) + '.') : '   ';
+          say(`  ${c.hcyan('│')} ${앞} ${c.white(줄)}`);
+        });
+      });
+    }
+    say(`  ${c.hcyan('└')} ${c.gray(`${할일.length}단계 · ${session.root}`)}`);
+  };
+
   for (;;) {
-    prompt();
-    입력기다림 = true;
-    // 줄이 이미 쌓여 있으면 그건 **일하는 동안 미리 쳐 둔 것**이다.
-    // 그때는 대화에 안 찍었으니(찍으면 이미 보낸 것처럼 보인다) 지금 찍는다.
-    const 예약이었나 = queue.length > 0;
-    const line = await nextLine();
-    입력기다림 = false;
-    if (line === null) break;          // 입력이 끝났다 (파이프 종료 / Ctrl+D)
-    interrupted = false;
-    const text = line.trim();
-    if (!text) continue;
-    if (예약이었나 && 상자쓰나) {
-      화면.입력지움();
-      say(` ${c.hcyan('❯')} ${c.white(text)}  ${c.gray('(미리 쳐 둔 것)')}`);
+    let text;
+    if (이어갈것 !== null) {
+      // 승인받아 이어가는 자리. 사람이 친 것이 아니므로 ❯ 로 찍지 않는다.
+      text = 이어갈것;
+      이어갈것 = null;
+    } else {
+      prompt();
+      입력기다림 = true;
+      // 줄이 이미 쌓여 있으면 그건 **일하는 동안 미리 쳐 둔 것**이다.
+      // 그때는 대화에 안 찍었으니(찍으면 이미 보낸 것처럼 보인다) 지금 찍는다.
+      const 예약이었나 = queue.length > 0;
+      const line = await nextLine();
+      입력기다림 = false;
+      if (line === null) break;        // 입력이 끝났다 (파이프 종료 / Ctrl+D)
+      interrupted = false;
+      text = line.trim();
+      if (!text) continue;
+      if (예약이었나 && 상자쓰나) {
+        화면.입력지움();
+        say(` ${c.hcyan('❯')} ${c.white(text)}  ${c.gray('(미리 쳐 둔 것)')}`);
+      }
     }
 
     const cmd = await handle(text, session, ctx);
@@ -672,16 +715,31 @@ export async function chatLoop(opts = {}) {
     // 기본 모드는 안 건드린다 — 다음 한마디는 다시 처음부터 고른다.
     // 사용자가 직접 고른 모드가 있으면 여기 안 들어온다. 사람이 고른 것을 뒤집지 않는다.
     session.routed = null;
-    if (session.work === 'auto') {
+    // 계획을 내고 승인을 받아야 하는 턴인가. 턴이 끝난 뒤 승인 창을 띄운다.
+    let 계획승인받나 = false;
+    if (이어갈모드) {
+      // 방금 승인받은 계획을 그대로 잇는 자리. 여기서 다시 고르면 안 된다 —
+      // "위 계획대로 진행해라" 에는 '계획' 이 들어 있어서 또 계획 모드로 간다.
+      session.routed = 이어갈모드;
+      이어갈모드 = null;
+    } else if (session.work === 'auto') {
       const 골라진 = route(toSend);
       if (골라진.mode) {
         session.routed = 골라진.mode;
+        계획승인받나 = 골라진.겹침 === true;
         const w = getWork(골라진.mode);
         say('');
         say(`  ${c.hcyan(w.glyph)} ${c.bold(w.name)} ${c.gray('(' + w.en + ')')}`
           + `  ${c.gray('말 속에 ' + 골라진.why + ' 가 있어서')}`
           + (canWrite(골라진.mode) ? '' : `  ${c.green('· 파일은 안 바꿉니다')}`));
-        say(`  ${c.gray('다르면')} ${c.cyan('/code')} ${c.gray('처럼 직접 고르세요. 그때부터는 안 바뀝니다.')}`);
+        // 겹친 요청은 '파일을 안 바꾼다' 로 끝나면 안 된다. 시킨 일의 절반만 한 것이다.
+        // 그래서 여기서 뒷 절반이 온다는 것을 미리 말해 준다.
+        if (계획승인받나) {
+          say(`  ${c.gray('계획과 실행이 같이 있어')} ${c.white('계획부터')} ${c.gray('냅니다.')}`
+            + ` ${c.gray('보시고 승인하면')} ${c.white('그대로 이어서')} ${c.gray('합니다.')}`);
+        } else {
+          say(`  ${c.gray('다르면')} ${c.cyan('/code')} ${c.gray('처럼 직접 고르세요. 그때부터는 안 바뀝니다.')}`);
+        }
       }
     }
 
@@ -696,6 +754,9 @@ export async function chatLoop(opts = {}) {
       saved = session.messages.length;
     };
     let tools = 0;
+    // 이 턴이 탈 없이 끝났나. 끊겼거나 터진 뒤에 승인 창을 띄우면 안 된다 —
+    // 계획이 반만 나온 것을 두고 "이대로 진행할까요?" 를 묻는 꼴이 된다.
+    let 턴탈났나 = false;
     let thinkChars = 0;
     let streamed = false;
     let thinkingShown = false;
@@ -970,6 +1031,7 @@ export async function chatLoop(opts = {}) {
 
           // 같은 자리를 계속 반복하고 있다. 두면 컨텍스트만 차고 아무것도 안 나온다.
           case 'stuck':
+            턴탈났나 = true;
             clearThinking();
             if (streamed) { say(''); streamed = false; }
             say('');
@@ -991,6 +1053,7 @@ export async function chatLoop(opts = {}) {
             break;
 
           case 'aborted':
+            턴탈났나 = true;
             clearThinking();
             if (streamed) { say(''); streamed = false; }
             say('');
@@ -1003,6 +1066,7 @@ export async function chatLoop(opts = {}) {
             break;
 
           case 'error':
+            턴탈났나 = true;
             clearThinking();
             say('');
             오류보이기(ev.text);
@@ -1016,6 +1080,7 @@ export async function chatLoop(opts = {}) {
         }
       }
     } catch (err) {
+      턴탈났나 = true;
       접기멈춤();
       clearThinking();
       say('');
@@ -1038,6 +1103,45 @@ export async function chatLoop(opts = {}) {
     if (dIn || dOut) bits.push(`↑${dIn.toLocaleString()} ↓${dOut.toLocaleString()}`);
     say('');
     say(`  ${c.gray('─'.repeat(2))} ${c.gray(bits.join(c.gray(' · ')))}`);
+
+    /*
+     * ── 계획 승인 ──────────────────────────────────────────────────────
+     *
+     * 겹친 요청("계획해주고 만들어줘")일 때만 온다. 그냥 "고쳐줘" 에는 안 뜬다 —
+     * 이 프로젝트는 승인 게이트 대신 되돌리기로 가기로 했고, 그 결정을
+     * 아무 때나 뜨는 창으로 갉아먹으면 안 된다.
+     *
+     * ⏎ 하나로 진행되는 것이 중요하다. 여기서 뭘 더 치게 하면 사람은
+     * 애초에 계획 같은 걸 안 보려 든다.
+     */
+    if (계획승인받나 && !턴탈났나) {
+      const 할일 = (ctx.todos ?? []).filter((t) => t.state !== 'done');
+      say('');
+      계획상자(할일);
+      say('');
+      const 답 = String(await ask(
+        `이대로 진행할까요? ${c.gray('⏎ 진행 · n 취소 · 그 밖엔 고칠 점')}`,
+        { def: 'y' },
+      )).trim();
+      const 낮춘 = 답.toLowerCase();
+
+      if (['n', 'no', 'ㄴ', '취소', '아니', '아니요', '아니오'].includes(낮춘)) {
+        say(`  ${c.gray('그만뒀습니다. 계획은 위에 남아 있으니 이어서 말씀하셔도 됩니다.')}`);
+      } else if (['y', 'yes', 'ㅇ', 'ㅇㅇ', 'ㄱ', 'ㄱㄱ', '네', '응', '진행', 'ok'].includes(낮춘)) {
+        // 계획을 다시 적으라고 하면 두 번 적는다. 컨텍스트만 먹고 사람은 같은 글을 두 번 본다.
+        이어갈것 = '위 계획을 승인받았다. 계획을 다시 적지 말고 지금부터 그대로 실행해라.'
+          + ' 적어 둔 단계를 하나씩 끝내고, 다 끝나면 무엇을 만들었는지만 짧게 알려라.';
+        이어갈모드 = 'code';
+        say('');
+        say(`  ${c.hgreen('▶')} ${c.gray('계획대로 진행합니다.')}`);
+      } else {
+        // 'e' 를 따로 두지 않는다 — 고칠 점을 바로 치는 것이 한 걸음 짧다.
+        이어갈것 = `계획에서 이걸 고쳐서 **계획만** 다시 내라 (아직 실행하지 마라): ${답}`;
+        이어갈모드 = 'plan';
+        say('');
+        say(`  ${c.hcyan('☰')} ${c.gray('그 점을 반영해 계획을 다시 냅니다.')}`);
+      }
+    }
   }
 
   rl.close();
