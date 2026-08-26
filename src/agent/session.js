@@ -277,8 +277,90 @@ export class Session {
       .slice(0, this.maxSkillsListed);
   }
 
-  push(msg) { this.messages.push(msg); return this; }
-  clear() { this.messages = []; this.filesRead.clear(); return this; }
+  /*
+   * ── 턴이 어디서 시작했는지 ────────────────────────────────────────────
+   *
+   * 되돌리기(/undo)는 파일만 되돌렸다. 대화에는 "src/runner.js 를 고쳤습니다" 가
+   * 그대로 남아 있어서, 되돌린 다음 턴에 모델은 **이미 고쳐 놓은 줄 알고** 그
+   * 위에 이어 일했다 — 없는 코드를 고치려 들고, 없는 함수를 부른다. 사람 눈에는
+   * 모델이 헛소리하는 것으로 보이지만, 사실은 우리가 모델에게 거짓말을 남겨 둔
+   * 것이다. 그러니 파일을 되감을 때 말도 같이 걷어내야 한다.
+   *
+   * 자리를 **숫자로 적어 두지 않는다.** 접기(compact)와 줄이기(trim)가 messages
+   * 를 통째로 갈아 끼우기 때문에, 적어 둔 3번은 다음 순간 엉뚱한 말을 가리킨다.
+   * 잘못된 자리에서 자르는 되돌리기는 안 하느니만 못하다. 그래서 **메시지 객체
+   * 자체**를 들고 있다가 그때그때 indexOf 로 찾는다. 접혀서 사라졌으면 못 찾고,
+   * 못 찾으면 그 턴은 되감을 수 없다고 정직하게 말한다.
+   */
+  #턴표 = [];
+  #다음턴 = null;
+  static #표최대 = 200;
+
+  /** 새 턴을 연다. 바로 다음에 push 되는 말이 이 턴의 첫 말이 된다. */
+  턴시작(턴) {
+    if (턴 == null) return this;
+    // 접혀 없어진 표는 여기서 턴다 — 안 그러면 긴 대화에서 끝없이 쌓인다.
+    this.#턴표 = this.#턴표.filter((x) => this.messages.includes(x.표));
+    if (this.#턴표.length > Session.#표최대) this.#턴표 = this.#턴표.slice(-Session.#표최대);
+    this.#다음턴 = 턴;
+    return this;
+  }
+
+  /** 살아 있는 턴 표시들. 접혀 사라진 것은 빠진다. @returns {{턴:number, 자리:number}[]} */
+  턴자리() {
+    const out = [];
+    for (const x of this.#턴표) {
+      const i = this.messages.indexOf(x.표);
+      if (i >= 0) out.push({ 턴: x.턴, 자리: i });
+    }
+    return out.sort((a, b) => a.자리 - b.자리);
+  }
+
+  /**
+   * 주어진 턴들의 말을 걷어낸다.
+   *
+   * 여러 턴이면 그중 **제일 이른** 자리까지 간다 — 그 뒤는 어차피 되돌린 파일
+   * 위에서 나눈 이야기라 남겨 둘 이유가 없다. 사람이 쳤던 말은 돌려준다,
+   * 다시 치기 쉽게.
+   *
+   * 자르고 나서 repairToolPairs 를 반드시 한 번 돌린다. 도구를 부른 assistant
+   * 만 남고 그 결과가 없으면 그 뒤 모든 요청이 400 으로 튕긴다 — 되돌리기가
+   * 대화를 아예 못 쓰게 만드는 셈이다. 턴 경계는 보통 깨끗하지만, 여기서만은
+   * '보통' 에 기대지 않는다.
+   */
+  되감기(턴들) {
+    const 찾을것 = new Set((Array.isArray(턴들) ? 턴들 : []).filter((t) => t != null));
+    const 빈것 = { 걷은것: 0, 고친것: 0, 사람말: null, 턴: [] };
+    if (!찾을것.size) return 빈것;
+
+    const 표들 = this.턴자리().filter((x) => 찾을것.has(x.턴));
+    if (!표들.length) return 빈것;
+
+    const 자리 = 표들[0].자리;
+    const 첫말 = this.messages[자리];
+    const 사람말 = 첫말?.role === 'user' && typeof 첫말.content === 'string' ? 첫말.content : null;
+
+    const 전 = this.messages.length;
+    const 고침 = repairToolPairs(this.messages.slice(0, 자리));
+    this.messages = 고침.messages;
+    this.#턴표 = this.#턴표.filter((x) => this.messages.includes(x.표));
+    this.#다음턴 = null;
+    return { 걷은것: 전 - this.messages.length, 고친것: 고침.고친것, 사람말, 턴: 표들.map((x) => x.턴) };
+  }
+
+  push(msg) {
+    if (this.#다음턴 != null) { this.#턴표.push({ 턴: this.#다음턴, 표: msg }); this.#다음턴 = null; }
+    this.messages.push(msg);
+    return this;
+  }
+
+  clear() {
+    this.messages = [];
+    this.filesRead.clear();
+    this.#턴표 = [];
+    this.#다음턴 = null;
+    return this;
+  }
 
   noteRead(path, text) { this.filesRead.set(path, estimateTokens(text)); }
 

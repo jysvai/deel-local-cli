@@ -252,15 +252,49 @@ export async function handle(line, session, ctx) {
       return { handled: true };
     }
 
+    /*
+     * 되돌리기 — 파일과 **대화를 같이** 되감는다.
+     *
+     * 전에는 파일만 되돌렸다. 대화에는 "src/runner.js 를 고쳤습니다" 가 그대로
+     * 남아 있어서, 그다음 턴에 모델은 이미 고쳐 놓은 줄 알고 그 위에 이어
+     * 일했다 — 없는 코드를 고치려 들고, 없는 함수를 부른다. 사람 눈에는 모델이
+     * 헛소리하는 것으로 보이지만, 사실은 우리가 모델에게 거짓말을 남겨 둔 것이다.
+     *
+     * 세 군데를 같이 맞춰야 한 벌이 된다 — 오간 말, 적어 둔 파일(--resume 이
+     * 이어 여는 자리), 그리고 /diff 가 세는 '바뀐 파일'. 하나라도 빠지면
+     * 되돌린 것이 다음 순간 되살아난다.
+     */
     case 'undo': {
       const n = Math.max(1, parseInt(arg, 10) || 1);
       const r = ctx.history.undo(n);
       ctx.audit.undo({ turns: r.turns, files: r.restored.length });
       if (!r.restored.length) {
         say(`  ${c.gray('되돌릴 것이 없습니다.')}`);
+        say('');
+        return { handled: true };
+      }
+      say(`  ${mark.ok} ${r.turns}개 턴, 파일 ${r.restored.length}개를 되돌렸습니다.`);
+      for (const f of r.restored) say(`    ${c.gray(ctx.scope.show(f.path))}  ${c.gray(f.how)}`);
+
+      // /diff 가 세던 것에서도 뺀다. 되돌린 파일이 '바뀐 파일' 로 남아 있으면
+      // 사람도 되돌아간 줄 모른다.
+      for (const f of r.restored) if (!f.skipped) session.changes.delete(f.path);
+
+      const 되감음 = session.되감기(r.turnIds ?? []);
+      if (되감음.걷은것) {
+        say(`    ${c.gray(`대화도 ${되감음.걷은것}개 걷어냈습니다 — 모델이 되돌린 코드를 아직 있는 줄 알면 그 위에 이어 일합니다.`)}`);
+        if (되감음.고친것) say(`    ${c.gray(`(짝 없는 도구 호출 ${되감음.고친것}개도 같이 정리)`)}`);
+        try { ctx?.갈래?.현재store?.()?.replace(session.messages, `되돌리기 — ${r.turns}개 턴`); }
+        catch { /* 적어 두지 못해도 이번 대화는 이어진다 */ }
+        if (되감음.사람말) {
+          const 한줄 = 되감음.사람말.replace(/\s+/g, ' ').trim();
+          say(`    ${c.gray('시켰던 말:')} ${c.cyan(한줄.length > 60 ? `${한줄.slice(0, 60)}…` : 한줄)}`);
+        }
       } else {
-        say(`  ${mark.ok} ${r.turns}개 턴, 파일 ${r.restored.length}개를 되돌렸습니다.`);
-        for (const f of r.restored) say(`    ${c.gray(ctx.scope.show(f.path))}  ${c.gray(f.how)}`);
+        // 접기·요약이 그 자리를 이미 가져갔을 때다. 파일은 되돌아갔지만 대화는
+        // 못 걷었다는 것을 숨기지 않는다 — 숨기면 위의 사고가 그대로 난다.
+        say(`    ${c.gray('대화는 그대로 둡니다 — 그 턴의 말이 이미 접혀 없어졌습니다.')}`);
+        say(`    ${c.gray('모델이 되돌린 것을 아직 있는 줄 알 수 있으니, 이어 시킬 때 한 번 짚어 주세요.')}`);
       }
       say('');
       return { handled: true };

@@ -58,16 +58,20 @@ export function 묶기(calls) {
 }
 
 export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 } = {}) {
-  session.push({ role: 'user', content: userText });
-  ctx.audit.turn(깊이 ? `[하위작업 ${깊이}겹] ${userText}` : userText);
   /*
    * 되돌리기 턴은 **부모만** 연다.
    *
    * 하위 작업이 제 턴을 열면 `/undo` 한 번이 하위가 만든 것만 되돌리고
    * 부모가 만든 것은 남긴다 — 반쪽만 되돌아간 폴더가 된다. 사람 눈에는
    * 한 번 시킨 일이니 한 번에 되돌아가야 맞다.
+   *
+   * 턴을 **사람 말을 넣기 전에** 연다. 그래야 그 말 자체가 이 턴의 첫 말로
+   * 표시되고, 되감을 때 시킨 말까지 같이 걷힌다. 시킨 말만 남으면 모델은
+   * 되돌린 일을 또 하려 든다.
    */
-  if (!깊이) ctx.history.nextTurn();
+  if (!깊이) session.턴시작(ctx.history.nextTurn());
+  session.push({ role: 'user', content: userText });
+  ctx.audit.turn(깊이 ? `[하위작업 ${깊이}겹] ${userText}` : userText);
 
   /*
    * 중단 신호를 도구도 볼 수 있게 여기 걸어 둔다.

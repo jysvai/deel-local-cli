@@ -131,11 +131,18 @@ export class History {
     return seen;
   }
 
-  // 최근 n 개 턴을 되돌린다. 되돌린 파일 목록을 반환.
+  /**
+   * 최근 n 개 턴을 되돌린다. 되돌린 파일 목록을 반환.
+   *
+   * turnIds 를 같이 준다 — **어느** 턴을 되돌렸는지 부르는 쪽이 알아야 한다.
+   * 파일만 되돌리고 대화는 그대로 두면, 모델은 지워진 코드가 아직 있는 줄 알고
+   * 그 위에 이어서 일한다. 그 거짓말을 걷어내려면 개수가 아니라 번호가 필요하다.
+   * (session.되감기 를 볼 것.)
+   */
   undo(n = 1) {
     const recs = this.all();
     const turns = this.turns().slice(-n);
-    if (!turns.length) return { restored: [], turns: 0 };
+    if (!turns.length) return { restored: [], turns: 0, turnIds: [] };
 
     const target = recs.filter((r) => turns.includes(r.turn));
     // 같은 파일이 여러 번 바뀌었으면 가장 이른 상태로 되돌려야 한다.
@@ -173,7 +180,7 @@ export class History {
     // 되돌린 기록은 잘라낸다.
     const keep = recs.filter((r) => !turns.includes(r.turn));
     writeFileSync(this.file, keep.map((r) => JSON.stringify(r)).join('\n') + (keep.length ? '\n' : ''), 'utf8');
-    return { restored, turns: turns.length };
+    return { restored, turns: turns.length, turnIds: turns.slice() };
   }
 }
 
