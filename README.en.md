@@ -273,7 +273,11 @@ which is the thing to avoid. The descriptions were trimmed to the window instead
 | Mode description | short form | short form | full |
 | Tool descriptions | 90 chars | 140 chars | 220 / full |
 | Obvious param descriptions | dropped | kept | kept |
-| **Fixed share** | **2,475 tokens (30%)** | 2,928 (18%) | 4,303 (3%) |
+| Descriptions inside array items | dropped | dropped | kept |
+| **Fixed share** | **2,712 tokens (33%)** | 3,290 (21%) | 4,745 (4% at 131k) |
+
+The **folder brief** adds roughly 80 more tokens at 8k (below). That value varies by
+folder, so it is not in the table.
 
 **Tool names and arguments are untouched.** What is possible is identical in every window;
 what disappears is only the argument for *why* to use a tool. Large windows keep it,
@@ -281,6 +285,53 @@ because that argument earns its keep — those two sentences are what make a mod
 `Outline` before `Read`.
 
 A test pins these numbers (`test/compact.test.js`).
+
+### On startup it reads what kind of project this folder is
+
+Started in a folder of someone else's code, the model began knowing nothing. So it
+retraced the same three steps every time — scan the top level, read `package.json`, find
+out how tests are run. **On a local model each step is 20-40 seconds, so two minutes go
+by before the work even starts.**
+
+The worse case is the model *skipping* those three steps. Then it creates files by its
+own conventions without knowing what the project already uses — a `requirements.txt`
+dropped into an npm project.
+
+The answers are all knowable at startup, so they are read once and put in the prompt.
+
+The brief itself is written in Korean, like everything else deel puts on screen — this is
+deel's own folder, wrapped here for width:
+
+```
+--- 이 폴더 ---                         (this folder)
+node 프로젝트 (deel-local-cli) · git main
+돌릴 수 있는 것: npm start · npm test · npm run bench · npm run chat · npm run check ·
+                 npm run coverage · npm run demo · npm run diagnose      (runnable)
+위쪽: bin/ src/ test/ LICENSE README.en.md README.md package.json report.txt   (top level)
+위쪽 한 겹만 본 것이다. 안을 알아야 하면 Outline 을 불러라.
+   (top level only — call Outline to see inside)
+```
+
+**Nothing is invented.** Runnable commands are copied verbatim from `scripts` in
+`package.json`. Advertising a command that does not exist means the model calls it,
+fails, and spends the steps you just saved looking for the real one.
+
+**The last line matters.** What is listed is the top level and `package.json`, nothing
+inside subfolders. Without saying so, the model treats this as a map of the whole project
+and stops calling `Outline` — at which point the brief costs more than it saves.
+
+| Not done | Why |
+|---|---|
+| No `git` subprocess | `.git/HEAD` is read directly. Spawning one freezes startup for seconds on a large repo |
+| No directory walk | Top level **only**. Descending is slow on large repos, and only one line goes in the prompt anyway |
+| Not re-read each turn | Once, at startup. A prompt that changes mid-conversation makes it impossible to tell why an answer changed |
+
+It scales with the window — 10 entries and 4 commands at 8k, 24 and 8 on a large one.
+If only one thing survives a narrow window it is the **commands**. The top-level listing
+can be recovered with one `Glob`; "tests run with `npm test`" requires opening
+`package.json`.
+
+7ms on a folder with 600 files (`test/project.test.js`).
 
 ---
 
@@ -664,12 +715,12 @@ Names and arguments match Claude Code, so skills written for that convention wor
 | Tool | What it does |
 |---|---|
 | `Read` | Read a file (line numbers, `offset`/`limit`, **Excel as CSV**) |
-| `Write` | Write / overwrite a file |
+| `Write` | Write / overwrite a file (**several at once via the `files` array**) |
 | `Append` | Append to the end of a file — **how large files get written in pieces** |
-| `Edit` | Replace an exact string (`replace_all` supported) |
+| `Edit` | Replace an exact string (`replace_all`; **several sites at once via the `edits` array**) |
 | `Glob` | Find files by name pattern |
 | `Grep` | Regex search file contents |
-| `Bash` | Run a command |
+| `Bash` | Run a command (**`background: true` for anything that does not finish**) |
 | `Skill` | Expand a skill body (shown to the model only when skills exist) |
 | `WebFetch` | Read a web page (read-only; hidden under `--offline`) |
 | `Recall` | Search **past conversations** — the model digs up "that thing last time" itself |
@@ -678,10 +729,11 @@ Names and arguments match Claude Code, so skills written for that convention wor
 | `Outline` | See a folder's **skeleton only** — tens of times cheaper than reading it whole |
 | `Verify` | Check that what was built **actually works** |
 | `Task` | Run one chunk of a big job in a **separate context** |
+| `Jobs` | Inspect, read and stop **background commands** — the other half of `Bash`'s `background` |
 
-Six tools here are not in Claude Code — `Append`, `Recall`, `Remember`, `Outline`,
-`Verify`, `Task`. Each tool costs 150-400 tokens of schema on **every request**, so a
-test stops you every time the list grows (`test/loop.test.js`). The last three earned
+Seven tools here are not in Claude Code — `Append`, `Recall`, `Remember`, `Outline`,
+`Verify`, `Task`, `Jobs`. Each tool costs 150-400 tokens of schema on **every request**,
+so a test stops you every time the list grows (`test/loop.test.js`). The last four earned
 their cost; here is why.
 
 ### Seeing a project's shape cheaply — `Outline`
@@ -764,6 +816,104 @@ same approval mode, is undone **together with** its parent by one `/undo`, and l
 the audit log. There is no path for a subtask to edit files under a read-only mode
 (architect, plan, ask) — that is blocked both at the mode level and in the tool list.
 Nesting stops at two levels.
+
+### Commands that never finish — `Bash`'s `background` and `Jobs`
+
+`Bash` only returns once the command **ends**. So anything that does not end could not be
+run — `npm run dev`, `python -m http.server`, `vite`, `npm run watch`. Asking for one used
+to mean waiting 120 seconds and then a kill, leaving one line on screen.
+
+```
+  ▶ Bash(npm run dev)
+    └ 시간 초과로 중단됨 (120000ms)                              2분 0.0초
+       (timed out)
+```
+
+The model concludes the server would not start and gives up, or worse, raises `timeout`
+and calls again — which stalls the whole turn. **There was no way at all to start what
+you built and check it.** `Verify` gets you as far as "the syntax is valid"; whether it
+actually comes up requires bringing it up.
+
+```
+  ▶ Bash(npm run dev)
+    └ 1번으로 띄움          (started as job 1)
+
+  ◈ Edit(src/App.jsx)
+    └ 1군데                 (1 site)
+
+  ◐ Jobs(1번)
+    └ 도는중 · 24초         (running · 24s)
+
+  ◐ Jobs(1번 · 끝내기)
+    └ 끝냄 · 41초           (stopped · 41s)
+```
+
+It starts and **returns immediately**. Output accumulates and `Jobs` reads it.
+
+**Something that did not start is never reported as started.** The job is watched briefly
+after launch, and if it dies in that window it comes back as a failure. The most common
+failure is a port already in use; reporting that as "started" sends the model on to the
+next step while you refresh a server that was never there.
+
+```
+  ▶ Bash(npm run dev)
+    └ 띄우자마자 끝났습니다 (종료코드 1).
+       (exited immediately, exit code 1)
+```
+
+| Guarantee | Detail |
+|---|---|
+| Safety checks | **Identical** to `Bash`. This must not become a back door |
+| Cleanup | Everything is killed when deel exits — **down to grandchildren**, and it says how many |
+| Retained | 256KB. Past that the front is dropped and **the drop is stated** |
+| Handed to the model | 4,000 chars. This **must** be a different number from the one above |
+| Count | Eight at a time |
+
+Why two different caps: make them equal and every overflow of a `watch` job means
+one `Jobs` read dumps 256KB into the window. On an 8k model that single read ends
+the window.
+
+**Killing grandchildren is where this quietly goes wrong.** `npm run dev` descends
+npm → node → vite, and the thing holding the port is at the bottom. Windows has
+`taskkill /t` to walk the tree; Unix has nothing equivalent, so the job is
+**started in its own process group** — after the fact there is no way to name a
+grandchild at all. Skip that and deel says "killed 3" while the server keeps running.
+
+Cleanup is where this quietly goes wrong. Skip it and a process nobody started keeps
+running. Next time you start a dev server you get "port already in use" with **no way to
+find what is holding it**. So `test/jobs.test.js` verifies the process actually died, via
+a file the child keeps appending to.
+
+`deel run` (one-shot mode) does the same. A batch job is hurt worst by missing this — the
+job reports done, the server keeps running, and the next job fails to bind the same port
+with nothing in the log to explain it.
+
+### Several at once — `Write`'s `files`, `Edit`'s `edits`
+
+One round trip is 20-40 seconds on a local model. Creating five files with five `Write`
+calls is two to three minutes of nothing but round trips. So they go in one array.
+
+```
+  ◈ Edit(src/app.js 외 2군데)
+    └ 2개 파일 · 3군데      (2 files · 3 sites)
+      ✓ src/app.js · 2군데
+      ✓ src/style.css · 1군데
+```
+
+**Editing is worth more than writing here.** Creating files happens once; editing happens
+continuously. Six edit sites at six round trips is minutes gone.
+
+| | Guaranteed |
+|---|---|
+| Applied in order | Editing one file twice is common. Each edit re-reads from disk, so later ones see earlier results |
+| One failure | The rest still run. Stopping at the first failure re-adds the round trips this was meant to remove |
+| On failure | "Resend only what failed — **and `Read` the file again first**" |
+| Undo | Still **one turn**. Six sites in one file is one `/undo` |
+| Single-site form | The result shape is byte-for-byte unchanged |
+
+It reports `2 files · 3 sites` rather than a single number. Editing one file at six sites
+is normal, so "3 files" would be false — and once the screen stops matching what you can
+count yourself, you stop trusting the screen.
 
 ### Finding past conversations, and remembering decisions
 
@@ -1345,7 +1495,7 @@ does not ask.
 
 | Mechanism | Detail |
 |---|---|
-| **Undo** | Snapshot before every write. `/undo` restores per turn |
+| **Undo** | Snapshot before every write. `/undo` restores per turn. **Includes moves and deletes done through `Bash`** |
 | **Change display** | The changed lines are shown on every edit; `/diff` for the whole session |
 | **Scope** | Outside the starting folder is refused, even if the model insists |
 | **Blocked commands** | Only irreversible ones (disk format, recursive delete, `--force` push) |
@@ -1364,6 +1514,37 @@ does not ask.
 Undo history stores whole file contents, so repeated edits to large files add up. Past 32MB
 it keeps the **most recent 50 turns** and drops the rest. What you just did is always
 undoable; `/status` shows how large the history currently is.
+
+### Files removed through `Bash` come back too
+
+The safety net covered `Write` and `Edit` only. But a model moving a file reaches for
+`Bash` — `mv old.js new.js`, `rm temp.txt`. The file was gone and `/undo` could do
+nothing about it. It was half a safety net.
+
+Now a mutating command snapshots the files it names beforehand, and **says what it saved,
+right there**.
+
+```
+  ▶ Bash(mv src/old.js src/new.js)
+    └ 성공
+      ↩ src/old.js 는 떠 뒀습니다 — /undo 로 되돌아갑니다
+         (saved src/old.js — /undo restores it)
+```
+
+`mv` and `rm` leave one "success" line on screen. From that line alone there is no way to
+tell whether it is reversible, so people either assume it is and move on, or assume it is
+not and get scared. So the fact is stated.
+
+**What cannot be saved is not hidden.** Shell-expanded wildcards (`rm *.tmp`), deletions
+inside a script, and whole directories are invisible here. In those cases the `↩` line
+simply does not appear — **it never claims "everything is reversible"**. False reassurance
+means people stop checking.
+
+Snapshotting casts a **wider** net than blocking does. The scope guard (`checkPaths`) only
+treats words containing a slash as paths — anything else would block legitimate commands —
+but `del target.txt`, with no slash, is the most common form there is. This is a reading
+site rather than a blocking one, so it scans broadly and saves a file only when one is
+actually there. A wrong guess costs nothing. Up to 24 per command.
 
 ### What it will not read
 
