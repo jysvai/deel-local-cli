@@ -7,6 +7,7 @@ import { 증거모으기, 증거적기 } from './agent/evidence.js';
 import { allowEndpoint } from './safety/network.js';
 import { pick } from './ui/prompt.js';
 import { load, save, resolveKey, upsert } from './config.js';
+import { 종, 알릴만한초 } from './ui/notify.js';
 import { TOOLS } from './tools/index.js';
 import { loadCommand, discover } from './skills/discover.js';
 import { install, list, remove, pack } from './plugins/manage.js';
@@ -64,6 +65,7 @@ export const COMMANDS = {
   mcp:     { desc: '밖에서 붙인 도구(MCP) 서버 보기' },
   memory:  { desc: '대화가 끝나도 남는 기억 — 보기·지우기', arg: '[지우기 <번호>|비우기|<적을 말>]' },
   level:   { desc: '사용자 수준 (쉬움/개발자)', arg: '[수준]' },
+  bell:    { desc: '다 됐을 때·물어볼 때 종소리와 창 제목 (on/off)', arg: '[on|off]' },
   init:    { desc: 'DEEL.md 규칙 파일 만들기' },
   exit:    { desc: '끝내기' },
   quit:    { desc: '끝내기' },
@@ -101,6 +103,47 @@ export async function handle(line, session, ctx) {
   switch (name) {
     case 'help': return help(session), { handled: true };
     case 'level': return showLevel(session, arg), { handled: true };
+
+    /*
+     * 종소리 · 창 제목.
+     *
+     * 끄는 길을 굳이 명령으로 둔 이유가 있다. 사무실에서 소리가 나면 곤란한
+     * 사람이 있고, 그런 사람은 알림 자체를 못 쓰게 되는 것이 아니라 **그 자리에서
+     * 껐다 켤 수 있어야** 한다. 환경변수만 두면 프로그램을 껐다 켜야 한다.
+     */
+    case 'bell': {
+      const cfg = load();
+      const 켜는말 = ['on', '켬', '켜', '켜기', 'y', 'yes', 'ㅇ'];
+      const 끄는말 = ['off', '끔', '꺼', '끄기', 'n', 'no', 'ㄴ'];
+      const 값 = String(arg ?? '').trim().toLowerCase();
+      if (!값) {
+        const 켜져있나 = cfg.bell !== false;
+        say('');
+        say(`  ${c.gray('종소리는 지금')} ${켜져있나 ? c.hgreen('켜져') : c.gray('꺼져')} ${c.gray('있습니다.')}`);
+        say(`  ${c.gray(`${알릴만한초}초 넘게 걸린 턴이 끝났을 때, 그리고 무언가 물어볼 때 한 번 울립니다.`)}`);
+        say(`  ${c.gray('창 제목에도 상태가 뜹니다 — 탭 이름만 봐도 도는 중인지 알 수 있게.')}`);
+        say(`  ${c.gray('바꾸려면')} ${c.cyan('/bell on')} ${c.gray('·')} ${c.cyan('/bell off')}`);
+        if (!process.stdout.isTTY && !process.stderr.isTTY) {
+          say(`  ${c.gray('(지금은 터미널이 아니라 소리도 제목도 안 나갑니다 — 파이프를 깨지 않으려고 그렇습니다.)')}`);
+        }
+        say('');
+        return { handled: true };
+      }
+      if (!켜는말.includes(값) && !끄는말.includes(값)) {
+        say(`  ${c.gray('on 이나 off 로 적어 주세요.')}`);
+        say('');
+        return { handled: true };
+      }
+      cfg.bell = 켜는말.includes(값);
+      try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+      say('');
+      say(`  ${mark.ok} ${cfg.bell ? '종소리를 켰습니다.' : '종소리를 껐습니다.'}`);
+      // 켤 때는 한 번 울려 준다. "켰다는데 소리가 나나?" 를 그 자리에서 확인하게.
+      if (cfg.bell) { 종(); say(`     ${c.gray('방금 한 번 울렸습니다. 안 들렸으면 터미널 설정에서 소리를 확인해 주세요.')}`); }
+      say(`     ${c.gray('이 세션에도 바로 먹습니다.')}`);
+      say('');
+      return { handled: true };
+    }
     case 'exit':
     case 'quit': return { handled: true, exit: true };
 

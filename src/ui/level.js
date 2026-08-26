@@ -23,7 +23,9 @@ export const LEVELS = {
       // 가 되는데, 초보일수록 그 원인을 못 찾는다. 명령 하나로 끝나는 문제다.
       // diff 는 초보에게 특히 필요하다. auto 모드는 안 물어보고 고치니,
       // '무엇이 바뀌었나' 를 볼 통로가 없으면 되돌릴지 말지도 못 정한다.
-      'model', 'ctx', 'scan', 'diff', 'undo', 'clear', 'sessions', 'cost', 'level', 'exit',
+      // bell 도 초보 목록에 둔다. 로컬 모델은 한 턴이 몇 분씩 걸려서 다들 다른 창으로
+      // 가는데, 알림이 있는 줄 모르면 그 몇 분을 화면만 보고 앉아 있게 된다.
+      'model', 'ctx', 'scan', 'diff', 'undo', 'bell', 'clear', 'sessions', 'cost', 'level', 'exit',
     ],
     // 첫 실행에서 훑어 추천까지 해 준다
     autoScan: true,

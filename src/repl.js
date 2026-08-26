@@ -1,9 +1,10 @@
 // 대화 화면. 루프가 보내는 이벤트를 Claude Code 풍으로 그린다.
 import { createInterface, emitKeypressEvents } from 'node:readline';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { resolve, basename } from 'node:path';
 import { c, say as 바로쓰기, mark, clip } from './ui/ansi.js';
 import { headerLines } from './ui/status.js';
+import { 종, 창제목, 제목되돌리기, 알릴까, 제목글 } from './ui/notify.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
 import { handle, COMMANDS, 미리보기끄기 } from './commands.js';
@@ -161,6 +162,18 @@ export async function chatLoop(opts = {}) {
   // 이 자리 하나만 연다. 다른 어디로도 나가지 못한다.
   allowEndpoint(conn.base);
   if (opts.offline ?? prof.offline) setOffline(true);
+
+  /*
+   * ── 끝났을 때 알리기 ─────────────────────────────────────────────────
+   *
+   * 로컬 모델은 느리다. 7B 를 CPU 로 돌리면 한 턴에 2~3분이 예사고, 그동안
+   * 사람은 다른 창으로 간다. 돌아와 보면 5분 전에 끝나 있거나, 더 나쁘게는
+   * "실행할까요?" 에서 3분째 멈춰 서 있다 — 물어본 줄을 몰라서.
+   *
+   * 폴더 이름을 같이 들고 있는다. 창을 여럿 띄워 놓고 쓰는 사람이 많은데
+   * 전부 'deel' 이면 어느 탭이 끝난 건지 알 수가 없다. (ui/notify.js)
+   */
+  const 알림 = { 켬: cfg.bell !== false, 폴더: basename(root) };
 
   const session = new Session(conn, {
     root,
@@ -525,7 +538,15 @@ export async function chatLoop(opts = {}) {
     confirm: async (name, args) => {
       say('');
       say(`  ${c.yellow('?')} ${toolLabel(name, args)}`);
+      /*
+       * 여기서 종을 울린다. 끝난 것은 늦게 알아도 되지만 **막혀 있는 것은**
+       * 기다린 만큼 그대로 손해다 — 다른 창에 가 있는 사이 3분째 이 줄에서
+       * 멈춰 서 있는 일이 실제로 잦다. 시간 문턱도 안 본다, 0초여도 알린다.
+       */
+      if (알릴까({ 물어봄: true, 켬: 알림.켬 })) 종();
+      창제목(제목글('물어봄', { 폴더: 알림.폴더 }));
       const a = (await ask('실행할까요? (y/n)', { def: 'y' })).toLowerCase();
+      창제목(제목글('도는중', { 폴더: 알림.폴더 }));
       return a === 'y' || a === 'yes' || a === 'ㅇ';
     },
   };
@@ -806,6 +827,20 @@ export async function chatLoop(opts = {}) {
     say('');
     const started = Date.now();
     const before = { in: session.usage.in, out: session.usage.out };
+
+    /*
+     * 창 제목에 흐른 시간을 띄운다. 탭 이름만 봐도 도는 중인지 알게 하려는 것이다.
+     *
+     * 화면에 보이는 글자를 건드리지 않는다 — OSC 는 커서를 안 옮기고 아무것도
+     * 안 찍으므로, 한창 그리는 중에 끼어들어도 화면이 깨지지 않는다.
+     * unref 를 거는 이유는, 이 시계 하나 때문에 프로그램이 안 꺼지면 안 되기 때문이다.
+     */
+    창제목(제목글('도는중', { 폴더: 알림.폴더, 초: 0 }));
+    const 제목시계 = setInterval(
+      () => 창제목(제목글('도는중', { 폴더: 알림.폴더, 초: (Date.now() - started) / 1000 })),
+      1000,
+    );
+    제목시계.unref?.();
 
     // 어디까지 적었는지. 도중에 죽어도 여기까지는 남아 있게 자주 흘려 보낸다.
     let saved = session.messages.length;
@@ -1215,6 +1250,14 @@ export async function chatLoop(opts = {}) {
     // 어떻게 끝났든 일하는 표시는 반드시 걷는다. 오류로 빠져나온 길에서
     // 안 걷으면 돌아가는 표시가 화면에 붙박이로 남고, 시계도 계속 돈다.
     화면.일끝();
+    clearInterval(제목시계);
+    /*
+     * 오래 걸린 턴만 알린다. "안녕" 에 1초 만에 답할 때마다 딩 소리가 나면
+     * 사람은 이틀 만에 알림을 꺼 버리고, 그러면 정작 3분짜리 턴도 못 듣는다.
+     * 알림은 아껴 써야 알림이다. (문턱은 ui/notify.js 의 알릴만한초)
+     */
+    if (알릴까({ 걸린밀리초: Date.now() - started, 켬: 알림.켬 })) 종();
+    창제목(제목글(턴탈났나 ? '탈남' : '끝남', { 폴더: 알림.폴더 }));
     turn = null;
     interrupted = false;   // 중단은 '끝내기' 의사가 아니다. 종료 카운트를 되돌린다.
     flush();               // 오류로 끝났어도 여기까지는 남긴다
@@ -1244,6 +1287,9 @@ export async function chatLoop(opts = {}) {
       say('');
       계획상자(할일);
       say('');
+      // 계획을 다 내놓고 사람 답을 기다리는 자리다. 위 confirm 과 같은 이유로 알린다.
+      if (알릴까({ 물어봄: true, 켬: 알림.켬 })) 종();
+      창제목(제목글('물어봄', { 폴더: 알림.폴더 }));
       const 답 = String(await ask(
         `이대로 진행할까요? ${c.gray('⏎ 진행 · n 취소 · 그 밖엔 고칠 점')}`,
         { def: 'y' },
@@ -1270,6 +1316,8 @@ export async function chatLoop(opts = {}) {
   }
 
   rl.close();
+  // 남의 터미널을 우리 이름으로 두고 나가지 않는다. 켤 때 있던 제목으로 돌려놓는다.
+  제목되돌리기();
   // 띄운 남의 프로세스는 반드시 거둔다. 안 거두면 deel 을 껐는데도
   // 그 서버가 계속 돌고 있게 된다 — 사람 눈에는 안 보이는 채로.
   for (const s of mcp붙임.서버들) s.닫기();
