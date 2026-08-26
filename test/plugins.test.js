@@ -22,6 +22,50 @@ const sand = mkdtempSync(join(tmpdir(), 'deel-plug-'));
 const sh = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, { encoding: 'buffer', stdio: ['ignore', 'pipe', 'pipe'], ...opts });
 
+// ── 바깥 도구가 없을 때 ─────────────────────────────────────────────────
+// 없는 도구는 실패가 아니라 '못 잰 것' 이다. 둘을 섞으면 두 번 손해다.
+// 실제로 겪었다: npm 이 prepublishOnly 로 이 검사를 cmd 에서 돌렸는데 그 PATH 에는
+// unzip 이 없다(Git Bash 에만 있다). ENOENT 가 실패 1건으로 잡히고 unzip 에 매달린
+// 11건은 조용히 사라져 27/1 이 됐다 — 발행이 막혔고, 사라진 11건은 아무도 몰랐다.
+// 그래서 (1) 없는 것은 건너뛰되 (2) 건너뛴 것을 반드시 화면에 남기고
+// (3) 윈도우에서는 늘 있는 .NET zip 으로 대신 연다.
+const 윈도우 = process.platform === 'win32';
+const 건너뜀 = [];
+const 없어서 = (err) => err.code === 'ENOENT';
+
+// 윈도우 PowerShell 로 한 줄 실행. 한글 이름이 콘솔 코드페이지(949)로 나가면 깨지므로
+// 나가는 인코딩을 UTF-8 로 못 박는다.
+const ps = (본문) => sh('powershell', ['-NoProfile', '-NonInteractive', '-Command',
+  '$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8;'
+  + "[void][Reflection.Assembly]::LoadWithPartialName('System.IO.Compression.FileSystem');" + 본문,
+]).toString('utf8');
+
+// zip 을 '내가 만든 것이 아닌 것' 으로 연다. 1순위 unzip, 없으면 .NET ZipFile.
+// .NET 쪽이 대타로 못한 것도 아니다 — 사내 PC 에서 실제로 압축을 푸는 건 탐색기이고
+// 탐색기가 쓰는 게 이 구현이다. 이름 목록을 돌려주고, 둘 다 없으면 null.
+function zip열개(zipPath) {
+  try {
+    const 글 = sh('unzip', ['-l', zipPath]).toString('utf8');
+    // unzip -l 의 표: `  길이  날짜  시각  이름`. 꼬리의 '3 files' 줄은 칸이 모자라 안 걸린다.
+    const 이름 = 글.split('\n')
+      .map((l) => l.match(/^\s*\d+\s+\S+\s+\S+\s+(.+)$/)?.[1]?.trim()).filter(Boolean);
+    return { 도구: 'unzip', 이름, 풀기: (z, 대상) => void sh('unzip', ['-qq', '-o', z, '-d', 대상]) };
+  } catch (err) { if (!없어서(err)) throw err; }
+
+  if (윈도우) {
+    try {
+      const 글 = ps(`$z=[IO.Compression.ZipFile]::OpenRead('${zipPath}');`
+        + '$z.Entries|%{$_.FullName};$z.Dispose()');
+      return {
+        도구: '.NET ZipFile(탐색기와 같은 것)',
+        이름: 글.split('\n').map((l) => l.trim()).filter(Boolean),
+        풀기: (z, 대상) => void ps(`[IO.Compression.ZipFile]::ExtractToDirectory('${z}','${대상}')`),
+      };
+    } catch (err) { if (!없어서(err)) throw err; }
+  }
+  return null;
+}
+
 trace('1-주소해석');
 // ── 1. 주소 해석 ────────────────────────────────────────────────────────
 check('owner/repo', parseSpec('affaan-m/ECC')?.url === 'https://github.com/affaan-m/ECC.git');
@@ -46,7 +90,12 @@ writeFileSync(join(src, 'binary.bin'), 이진);
 let tarOk = true;
 try {
   sh('tar', ['-czf', 'real.tar.gz', '-C', 'tarsrc', '.'], { cwd: sand });
-} catch (err) { tarOk = false; check('tar 로 묶기', false, String(err.message).split('\n')[0].slice(0, 70)); }
+} catch (err) {
+  tarOk = false;
+  // tar 자체가 없는 것과, tar 가 돌았는데 우리 묶음을 뱉은 것은 전혀 다른 얘기다.
+  if (없어서(err)) 건너뜀.push('tar 가 없어 TAR 교차확인 4건을 못 쟀다');
+  else check('tar 로 묶기', false, String(err.message).split('\n')[0].slice(0, 70));
+}
 
 if (tarOk) {
   const files = untargz(readFileSync(join(sand, 'real.tar.gz')));
@@ -85,18 +134,17 @@ const zipBuf = makeZip([
 const zipPath = join(sand, 'out.zip');
 writeFileSync(zipPath, zipBuf);
 
-let unzipOk = true;
-let 목록 = '';
-try { 목록 = sh('unzip', ['-l', zipPath]).toString('utf8'); }
-catch (err) { unzipOk = false; check('unzip 으로 열림', false, String(err.message).slice(0, 60)); }
+const 열개 = zip열개(zipPath);
+if (!열개) 건너뜀.push('unzip 도 .NET ZipFile 도 없어 ZIP 교차확인 11건을 못 쟀다');
 
-if (unzipOk) {
-  check('진짜 unzip 이 목록을 읽음', /3 files/.test(목록), 목록.trim().split('\n').pop()?.trim());
-  check('한글 파일 이름 그대로 (UTF-8 플래그)', 목록.includes('사용안내.txt'));
-  check('한글 폴더 경로도 그대로', 목록.includes('품의서'));
+if (열개) {
+  const { 도구, 이름 } = 열개;
+  check(`${도구} 가 목록을 읽음`, 이름.length === 3, `${이름.length}개: ${이름.join(', ')}`);
+  check('한글 파일 이름 그대로 (UTF-8 플래그)', 이름.includes('사용안내.txt'));
+  check('한글 폴더 경로도 그대로', 이름.some((n) => n.includes('품의서')));
 
   const 꺼냄 = join(sand, 'unzipped');
-  sh('unzip', ['-qq', '-o', zipPath, '-d', 꺼냄]);
+  열개.풀기(zipPath, 꺼냄);
   check('압축된 파일 내용 일치',
     Buffer.compare(readFileSync(join(꺼냄, 'sabun', 'skills', '품의서', 'SKILL.md')), 큰내용) === 0);
   check('압축 안 먹는 파일도 일치',
@@ -155,9 +203,9 @@ const 묶음 = pack(반입, { home });
 check('반입 묶음 만들어짐', !묶음.error && existsSync(반입), 묶음.error ?? '');
 check('실행 스크립트는 뺌', 묶음.skipped >= 1, `${묶음.skipped}개 제외`);
 
-if (!묶음.error && unzipOk) {
+if (!묶음.error && 열개) {
   const 푼곳 = join(sand, '반입푼것');
-  sh('unzip', ['-qq', '-o', 반입, '-d', 푼곳]);
+  열개.풀기(반입, 푼곳);
   check('안내문이 같이 들어감', existsSync(join(푼곳, '사용안내.txt')));
   check('스킬이 들어감', existsSync(join(푼곳, 'sabun-kit', 'skills', '품의서', 'SKILL.md')));
   check('hook.js 는 안 들어감', !existsSync(join(푼곳, 'sabun-kit', 'hook.js')));
@@ -184,9 +232,13 @@ check('삭제 뒤 목록 빔', list({ home }).length === 0);
 rmSync(sand, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
-console.log('\n플러그인 받기·묶기 검사  ' + D + '(zip 은 진짜 unzip, tar 는 진짜 tar 로 교차 확인)' + X + '\n');
+const Y = '\x1b[33m';
+console.log('\n플러그인 받기·묶기 검사  ' + D + '(내가 만든 묶음을 바깥 도구로 열어 교차 확인)' + X + '\n');
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
-console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
+// 건너뛴 것을 조용히 넘기지 않는다. 안 보이면 '다 통과' 로 읽힌다.
+for (const s of 건너뜀) console.log(`  ${Y}⚠${X} ${s}`);
+console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패`
+  + (건너뜀.length ? ` · ${Y}${건너뜀.length}건 못 쟀음${X}` : '') + '\n');
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;
