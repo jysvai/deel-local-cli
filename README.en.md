@@ -64,6 +64,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
+- [What changed, release by release](#what-changed-release-by-release)
 
 Each section is open at the summary. Click **▸ More** to unfold the detail behind it.
 
@@ -2008,6 +2009,73 @@ src/
   safety/audit.js        recording what happened, and when
 test/                    tests (excluded from the published package)
 ```
+
+</details>
+
+---
+
+## What changed, release by release
+
+<details>
+<summary><b>▸ What changed in which release</b> — newest first</summary>
+
+<br>
+
+### 1.2.0 — so the conversation doesn't break
+
+| What | How it changed |
+|---|---|
+| Resume repair | Reopening an older conversation with unmatched tool calls in it made the server return 400 — **the conversation would not open at all.** They are now filtered out first |
+| Token self-calibration | The estimate drifted from what the server actually counted, so deel misjudged the room left. It now corrects itself as you talk, and **picks up where it left off next time** |
+| Folding tool results | Summarising (compact) cannot be undone. Older tool results are folded before it comes to that — **49 turns → 102 turns (2.1×)** |
+| Threads `/thread` | Side work no longer pollutes the main context. The link, undo and audit log stay shared |
+| What it has learned `/learned` | It used to relearn yesterday's lesson today. Only twice-seen facts carry over, **within 220 tokens** |
+| Rendered answers | Headings, lists, code and tables are drawn. Long prose streams raw so it never looks stalled |
+
+Tests 2,532 → **2,578**.
+
+### 1.1.2 — three things you could see
+
+- Plans always came out as **exactly three steps**, whatever the size of the work
+- The screen blinked on every backspace — it now **overwrites in place** instead of erasing and redrawing
+- The plan-approval test broke only under the test runner (colour codes landing mid-word)
+- The README folds into one readable page; the English edition now mirrors the Korean one
+
+### 1.1.1
+
+- Serve what you built, right there — `/preview` (127.0.0.1 only)
+- An animation while it works
+- Seven ways of working carried in the box (built-in skills)
+- Plan mode's **second half, which it promised and never did**
+- When the gateway gets no token, it says what to do about it
+- Tests run once before publishing (`prepublishOnly`)
+
+### 1.1.0
+
+- Background commands · many places at once · undo for Bash
+- Subtasks — one piece of a big job in **its own separate window** (it does not spend the main context)
+- Outlines · verification · many files at once, and model grade `/grade`
+- Context window size is **read from the model** instead of hard-coded. It also learns from numbers a server leaks when it refuses
+
+### 1.0.2
+
+- Command suggestions appear as you type. Tab completes · Shift+Tab approval policy · Ctrl+O working mode
+- The input box stays up while it works, so you can **type ahead**
+
+### 1.0.1
+
+- The 1.0.0 published to npm had a broken screen. The conversation scrolls and **only the input** is boxed
+
+### 1.0.0
+
+- Full-screen UI (TUI) · search past conversations `/recall` · external tools (MCP) · memory `/memory`
+- Large files actually get written — reused, appended, measured
+- The places the safety net was eating files — binaries · BOM · out of scope
+- Spinning and stalling — Ctrl+C lands, and folding no longer corrupts the conversation
+
+### 0.x
+
+From the first release to 0.9.0 — six working modes · **writing files back in the encoding they were read in** · Excel to CSV (password-protected ones too) · one-shot runs `deel run` · `@file` attachments · auto-compaction · plugins · the network lock.
 
 </details>
 
