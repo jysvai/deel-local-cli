@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { MODES, ORDER, normalize, get, next, canWrite, allow } from '../src/agent/modes.js';
 import { 걸음수 } from '../src/agent/budget.js';
 import { toolSchemas } from '../src/tools/index.js';
+import { TODO_TOOL } from '../src/tools/todo.js';
 import { Session } from '../src/agent/session.js';
 import { run } from '../src/agent/loop.js';
 import { makeScope } from '../src/safety/guard.js';
@@ -63,6 +64,46 @@ check('계획 모드에 TodoWrite 는 있다',
   toolSchemas(null, { work: 'plan' }).map((t) => t.function.name).includes('TodoWrite'));
 check('묻기 모드에는 TodoWrite 도 없다',
   !toolSchemas(null, { work: 'ask' }).map((t) => t.function.name).includes('TodoWrite'));
+
+/*
+ * ── 계획이 늘 세 단계로 나오던 것 ───────────────────────────────────────
+ *
+ * 도구 설명이 이랬다: "세 단계 이상 걸리는 일이면 먼저 목록을 만들고".
+ * 모델은 이걸 **세 개를 적으라는 말**로 읽는다. 그래서 열 단계짜리 일도
+ * 세 줄로 뭉쳐 나왔다 — 코드가 자른 게 아니라 그렇게 적어 온 것이다.
+ *
+ * 개수는 일의 크기가 정하는 것이고 상한이 없다. 설명에 그렇게 적혀 있는지
+ * 본다. 화면 쪽은 몇 개가 오든 그대로 다 그린다(아래 render 검사).
+ */
+{
+  const 쓴것 = toolSchemas(null, { work: 'plan' }).find((t) => t.function.name === 'TodoWrite').function;
+  const 설명 = 쓴것.description ?? '';
+  check('개수는 일의 크기가 정한다고 적혀 있다', /일의 크기가 정한다/.test(설명), `${설명.length}자`);
+  check('상한이 없다고 말해 준다', /상한도 없다/.test(설명));
+  check('개수 맞추려 뭉치지 말라고 못 박는다', /뭉치지 마라/.test(설명));
+  // 옛 문장이 남아 있으면 모델이 다시 세 개로 읽는다.
+  check('"세 단계 이상" 이라는 말이 남아 있지 않다', !/세 단계 이상/.test(설명));
+  /*
+   * 설명은 창이 좁으면 **뒤에서부터 문장째로 잘린다**. 그래서 규격이 뒤에
+   * 있으면 조용히 사라진다 — 실제로 개수 이야기를 앞에 넣었다가 doing 규칙이
+   * 통째로 밀려 나갔다. 규격이 살아 있는지를 같이 잰다.
+   */
+  check('설명이 늘어도 doing 규칙이 안 밀려난다', /doing 은 한 번에 하나만/.test(설명));
+  // 바깥 설명이 다 잘려 나가는 좁은 창에서도 개수 이야기는 인자 쪽에 남는다.
+  check('인자 설명에도 개수 제한이 없다고 적혀 있다',
+    /개수 제한 없음/.test(쓴것.parameters?.properties?.todos?.description ?? ''),
+    쓴것.parameters?.properties?.todos?.description ?? '');
+}
+
+// 많이 와도 도구가 안 자른다. 자르면 계획의 뒷부분이 조용히 사라진다.
+{
+  const 많은것 = Array.from({ length: 17 }, (_, i) => ({ text: `${i + 1}번째 단계`, state: 'todo' }));
+  const r = TODO_TOOL.run({ todos: 많은것 }, {});
+  const 줄수 = String(r.content ?? '').split('\n').filter((l) => /번째 단계/.test(l)).length;
+  check('17개를 주면 17개가 다 들어간다', r.todos?.length === 17, `${r.todos?.length}개`);
+  check('17개가 다 그려진다', 줄수 === 17, `${줄수}개`);
+  check('마지막 것도 안 잘린다', /17번째 단계/.test(String(r.content ?? '')));
+}
 
 // 없는 것을 만들어 주지는 않는다 — 오프라인이면 웹 도구는 모드와 무관하게 없다
 check('오프라인이면 모드와 무관하게 웹 도구 없음',
