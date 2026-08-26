@@ -25,6 +25,13 @@ const pass = [];
 const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
 
+// 색을 벗겨 놓고 본다.
+//
+// 화면 글에는 색이 섞여 들어온다. `┌ 계획` 처럼 두 글자가 서로 다른 색이면
+// 그 사이에 제어문자가 끼어서, 눈에 보이는 그대로 찾으면 못 찾는다.
+// 검사가 재려는 것은 색이 아니라 무슨 글이 나왔는가이므로 먼저 벗긴다.
+const 벗기기 = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, '');
+
 const 여기 = dirname(fileURLToPath(import.meta.url));
 const 뿌리 = join(여기, '..');
 const 만들파일 = '비전선언문.md';
@@ -127,7 +134,7 @@ async function 띄우기(줄들) {
   if (!끝남) { try { kid.stdin.write('/exit\n'); } catch { /* 이미 닫혔다 */ } }
   // 안 끝나면 검사가 통째로 매달린다. 반드시 시한을 둔다.
   await Promise.race([닫힘, 자기(6000).then(() => kid.kill())]);
-  return { out, root, home };
+  return { out: 벗기기(out), root, home };
 }
 
 trace('2-승인하고진행');
