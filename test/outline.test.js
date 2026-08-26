@@ -283,6 +283,145 @@ export interface 모양 { a: number }
   rmSync(터, { recursive: true, force: true });
 }
 
+// ═══ 4-2. 한 번에 여러 군데 고치기 ═══════════════════════════════════
+//
+// Write 의 files 와 같은 이유로 넣었다. 다만 Edit 쪽이 더 값이 크다 —
+// 파일을 새로 만드는 일은 한 번이지만, **고치는 일은 계속 있다.**
+// 여섯 군데짜리 손질에 왕복이 여섯 번이면 로컬 모델에서 몇 분이 그냥 간다.
+//
+// 여기서 재는 것은 셋이다.
+//   1. 차례로 적용되는가 — 같은 파일을 두 번 고치는 것이 아주 흔하다
+//   2. 하나가 실패해도 나머지가 가는가
+//   3. 한 개일 때의 결과 모양이 한 글자도 안 바뀌었는가
+{
+  const 터 = mkdtempSync(join(tmpdir(), 'deel-edits-'));
+  const ectx = {
+    scope: makeScope(터), history: new History(터), audit: new Audit(터),
+    seen: new Set(), 모델컨텍스트: 32768,
+  };
+  ectx.history.nextTurn();
+
+  const 갑 = join(터, '갑.js');
+  const 을 = join(터, '을.css');
+  writeFileSync(갑, 'const 값 = 1;\nconst 다른값 = 2;\nexport { 값, 다른값 };\n', 'utf8');
+  writeFileSync(을, '.a { color: red; }\n', 'utf8');
+  ectx.seen.add(갑);
+  ectx.seen.add(을);
+
+  const r = TOOLS.Edit.run({
+    edits: [
+      { file_path: '갑.js', old_string: 'const 값 = 1;', new_string: 'const 값 = 10;' },
+      { file_path: '갑.js', old_string: 'const 다른값 = 2;', new_string: 'const 다른값 = 20;' },
+      { file_path: '을.css', old_string: 'color: red', new_string: 'color: blue' },
+    ],
+  }, ectx);
+
+  check('여러 군데를 한 번에 고친다', r.여럿?.length === 3, `${r.여럿?.length}군데`);
+  check('셋 다 됐다', r.여럿.every((x) => x.ok), r.여럿.map((x) => `${x.보인이름}:${x.ok}`).join(' '));
+  check('실제로 내용이 바뀌었다', /값 = 10/.test(readFileSync(갑, 'utf8')) && /다른값 = 20/.test(readFileSync(갑, 'utf8')),
+    readFileSync(갑, 'utf8').split('\n')[0]);
+  check('다른 파일도 같이 고친다', /color: blue/.test(readFileSync(을, 'utf8')), readFileSync(을, 'utf8').trim());
+  /*
+   * 파일 수와 군데 수는 다르다.
+   *
+   * 한 파일을 여섯 군데 고치는 것이 보통이라, '3개 파일' 이라고 적으면
+   * 거짓이 된다. 사람이 화면에서 세는 것과 말이 어긋나기 시작하면
+   * 그때부터는 화면을 안 믿게 된다.
+   */
+  check('파일 수와 군데 수를 갈라 적는다', /2개 파일 · 3군데/.test(r.summary), r.summary);
+
+  /*
+   * 차례로 적용된다.
+   *
+   * 같은 파일의 두 자리를 한꺼번에 계산해서 붙이면 자리가 겹칠 때 조용히
+   * 어긋난다. 매번 디스크에서 다시 읽어 뒤엣것이 앞엣것의 결과를 보게 한다.
+   * 여기서 그걸 재려고 **앞의 고침이 만들어 낸 글**을 뒤에서 찾는다.
+   */
+  const 차례 = TOOLS.Edit.run({
+    edits: [
+      { file_path: '갑.js', old_string: 'const 값 = 10;', new_string: 'const 값 = 100; // 한 번' },
+      { file_path: '갑.js', old_string: '// 한 번', new_string: '// 두 번' },
+    ],
+  }, ectx);
+  check('앞엣것을 뒤엣것이 볼 수 있다 (차례로 적용)', 차례.여럿.every((x) => x.ok),
+    차례.여럿.map((x) => x.error ?? 'ok').join(' | '));
+  check('마지막 것이 남는다', /\/\/ 두 번/.test(readFileSync(갑, 'utf8')), readFileSync(갑, 'utf8').split('\n')[0]);
+
+  /*
+   * 되돌리기는 그대로 한 턴이다.
+   *
+   * 스냅샷은 파일마다 그 턴의 첫 번만 뜬다. 같은 파일을 여섯 군데 고쳐도
+   * /undo 한 번이면 여섯 군데가 다 손대기 전으로 돌아간다 — 사람이 기대하는
+   * 그 모양이다. 군데마다 한 칸씩 쌓이면 /undo 를 여섯 번 눌러야 한다.
+   */
+  ectx.history.nextTurn();
+  TOOLS.Edit.run({
+    edits: [
+      { file_path: '갑.js', old_string: '값 = 100', new_string: '값 = 1000' },
+      { file_path: '갑.js', old_string: '다른값 = 20', new_string: '다른값 = 200' },
+    ],
+  }, ectx);
+  const 이번턴 = ectx.history.all().filter((x) => x.turn === ectx.history.turn);
+  check('같은 파일을 여러 번 고쳐도 되돌리기는 한 칸', 이번턴.length === 1, `${이번턴.length}칸`);
+  const 되돌림 = ectx.history.undo(1);
+  check('한 번 되돌리면 그 턴이 통째로 돌아간다',
+    /값 = 100;/.test(readFileSync(갑, 'utf8')) && /다른값 = 20;/.test(readFileSync(갑, 'utf8')),
+    readFileSync(갑, 'utf8').split('\n').slice(0, 2).join(' / '));
+  check('무엇을 되돌렸는지 말해 준다', (되돌림.restored ?? []).length === 1, JSON.stringify(되돌림.restored?.[0])?.slice(0, 60));
+
+  // 하나가 실패해도 나머지는 간다. 첫 실패에서 멈추면 왕복을 줄이려던 것이 도로 는다.
+  const 섞임 = TOOLS.Edit.run({
+    edits: [
+      { file_path: '갑.js', old_string: '다른값 = 20;', new_string: '다른값 = 21;' },
+      { file_path: '갑.js', old_string: '이런 줄은 파일에 없다', new_string: '아무거나' },
+      { file_path: '을.css', old_string: 'color: blue', new_string: 'color: green' },
+    ],
+  }, ectx);
+  check('하나가 실패해도 나머지는 간다', 섞임.여럿.filter((x) => x.ok).length === 2,
+    섞임.여럿.map((x) => (x.ok ? 'ok' : '✗')).join(' '));
+  check('된 것이 있으면 통째 실패로 안 만든다', !섞임.error, String(섞임.error));
+  check('무엇이 실패했는지 적는다', /✗/.test(섞임.content), 섞임.content.split('\n').find((l) => /✗/.test(l)) ?? '');
+  /*
+   * 실패한 것만 다시 보내라고, 그리고 **다시 Read 하라고** 알려 준다.
+   *
+   * 앞엣것이 이미 파일에 들어갔다. 그 사실을 안 알려 주면 모델은 원래
+   * 들고 있던 글로 old_string 을 다시 잡고, 또 못 찾고, 같은 자리를 맴돈다.
+   */
+  check('실패한 것만 다시 보내라고 한다', /실패한 것만 다시 보내세요/.test(섞임.content), '');
+  check('다시 Read 하라고 알려 준다', /파일을 다시 Read/.test(섞임.content), '');
+
+  const 다실패 = TOOLS.Edit.run({
+    edits: [{ file_path: '갑.js', old_string: '없는 글', new_string: 'x' }],
+  }, ectx);
+  check('하나도 못 고쳤으면 실패로 말한다', !!다실패.error, String(다실패.error).slice(0, 40));
+
+  /*
+   * 한 개일 때의 결과 모양은 한 글자도 안 바뀌어야 한다.
+   * 그 모양을 보고 있는 자리가 셋이다 — loop.js 의 잘린 인자 살려쓰기,
+   * repl.js 의 바뀐 자리 그리기, 되돌리기 스냅샷.
+   */
+  const 하나만 = TOOLS.Edit.run({ file_path: '을.css', old_string: 'color: green', new_string: 'color: black' }, ectx);
+  check('한 개일 때는 예전 모양 그대로', !!하나만.changed && !!하나만.diff && !하나만.여럿,
+    Object.keys(하나만).join(','));
+  check('한 개일 때 요약도 그대로', /1군데/.test(하나만.summary), 하나만.summary);
+  check('한 개일 때 완화 단계도 그대로 붙는다', 'tier' in 하나만, String(하나만.tier));
+
+  const 빈것 = TOOLS.Edit.run({ old_string: 'a', new_string: 'b' }, ectx);
+  check('경로가 없으면 무엇을 줘야 하는지 알려 준다', /edits 배열/.test(빈것.error ?? ''), 빈것.error ?? '');
+
+  // 여럿으로 보내도 안전 규칙은 그대로다. 안 읽은 파일은 못 고친다.
+  const 안읽음 = join(터, '안읽은것.txt');
+  writeFileSync(안읽음, '아무 글\n', 'utf8');
+  const 몰래 = TOOLS.Edit.run({
+    edits: [{ file_path: '안읽은것.txt', old_string: '아무 글', new_string: '바꾼 글' }],
+  }, ectx);
+  check('여럿으로 보내도 안 읽은 파일은 못 고친다', /먼저 Read/.test(몰래.여럿?.[0]?.error ?? ''),
+    몰래.여럿?.[0]?.error ?? '');
+  check('막힌 뒤에도 파일은 그대로', readFileSync(안읽음, 'utf8') === '아무 글\n', readFileSync(안읽음, 'utf8'));
+
+  rmSync(터, { recursive: true, force: true });
+}
+
 // ═══ 5. 모델 급 ══════════════════════════════════════════════════════
 {
   check('이름에서 7b 를 읽는다', 이름에서크기('qwen2.5-coder-7b-instruct') === 7);

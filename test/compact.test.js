@@ -5,6 +5,9 @@
 //            (2) 접은 뒤에도 처음 시킨 일과 요약이 남아 있는가
 //            (3) 요약을 못 받아도 프로그램이 멈추지 않는가
 import { createServer } from 'node:http';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
 import { compact, shouldCompact, split, safeCut, COMPACT_AT } from '../src/agent/compact.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
@@ -150,8 +153,22 @@ await new Promise((r) => setImmediate(r));
 // 그래서 그 몫이 얼마인지를 **숫자로 못 박아 둔다.** 프롬프트에 한 줄 더할
 // 때마다 이 값이 오르고, 작은 모델에서 먼저 티가 난다.
 {
-  const 잰것 = (ctx) => {
-    const s = new Session({ ...conn, ctx }, { root: process.cwd() });
+  /*
+   * **빈 폴더**에서 잰다.
+   *
+   * 전에는 process.cwd() 로 쟀는데, 폴더 지문(agent/project.js)이 생기면서
+   * 그 값이 **이 저장소의 생김새**를 따라 움직이게 됐다. 위쪽에 파일을 하나
+   * 더하거나 package.json 에 스크립트를 하나 넣으면 이 숫자가 오른다 —
+   * 프롬프트를 한 글자도 안 건드렸는데 말이다.
+   *
+   * 그러면 이 검사가 무슨 말을 하는지가 흐려진다. 여기서 재려는 것은
+   * '프롬프트와 도구 정의가 얼마인가' 이지 '이 폴더에 파일이 몇 개인가' 가
+   * 아니다. 그래서 바닥값은 빈 폴더에서 재고, 폴더 지문이 그 위에 얼마를
+   * 얹는지는 바로 아래에서 따로 못 박는다.
+   */
+  const 빈폴더 = mkdtempSync(join(tmpdir(), 'deel-고정몫-'));
+  const 잰것 = (ctx, root = 빈폴더) => {
+    const s = new Session({ ...conn, ctx }, { root });
     const b = s.breakdown();
     return { 고정: b.used, 비율: b.used / ctx };
   };
@@ -185,6 +202,21 @@ await new Promise((r) => setImmediate(r));
   const 큰창고정 = 잰것(131072).고정;
   check('큰 창에서는 설명을 안 줄인다', 큰창고정 > 작은것.고정 * 1.4,
     `8k ${작은것.고정} → 131k ${큰창고정}토큰`);
+
+  /*
+   * 폴더 지문이 그 위에 얼마를 얹는가.
+   *
+   * 이것도 접히지 않는 고정 몫이다. 값을 하기는 한다 — 모델이 켜자마자
+   * 밟던 세 걸음(Glob·package.json·검사 돌리는 법)을 안 밟아도 된다.
+   * 그래도 8k 에서 100토큰이 넘어가면 아껴 준 걸음보다 먹는 자리가 커진다.
+   *
+   * 여기는 **이 저장소 자신**으로 잰다. 실제로 사람이 켜는 자리가 이런 폴더다.
+   */
+  const 지문값 = 잰것(8192, process.cwd()).고정 - 작은것.고정;
+  check('폴더 지문은 8k 에서 150토큰 안쪽', 지문값 > 0 && 지문값 < 150,
+    `${지문값}토큰 (빈 폴더 ${작은것.고정} → 이 저장소 ${작은것.고정 + 지문값})`);
+
+  rmSync(빈폴더, { recursive: true, force: true });
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

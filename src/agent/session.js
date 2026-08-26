@@ -5,6 +5,8 @@ import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './mo
 import { toolSchemas } from '../tools/index.js';
 import { normalize as normLevel, DEFAULT as LEVEL_DEFAULT } from '../ui/level.js';
 import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
+import { 지문 } from './project.js';
+import { 프롬프트토막 as 기억토막 } from './memory.js';
 
 // 토큰 추정 — 정확한 토크나이저 없이 대략만 센다.
 // 한글은 글자당 약 1토큰, 영문·코드는 약 4글자당 1토큰으로 본다.
@@ -131,6 +133,23 @@ export class Session {
     this.급정한것 = null;
     this.startedAt = Date.now();
     this.rules = this.#loadRules();
+    /*
+     * 이 폴더가 무슨 프로젝트인가 (agent/project.js).
+     *
+     * 규칙(DEEL.md)과 같은 자리에서 읽는다 — 켤 때 한 번이다. 매 턴 다시 읽으면
+     * 긴 대화에서 수십 번이 되고, 그 사이 사람이 package.json 을 고쳐 놓으면
+     * 대화 도중에 프롬프트가 바뀐다. 무엇 때문에 답이 달라졌는지 알 길이 없어진다.
+     */
+    this.프로젝트 = 지문(this.root, this.conn?.ctx ?? null);
+    /*
+     * 지난 대화에서 정한 것도 여기서 읽는다.
+     *
+     * 전에는 대화 화면(repl.js)에서만 넣었다. 그래서 `deel run` — 야간 배치로
+     * 도는 쪽 — 에는 기억이 안 실렸다. "우리 문서는 CP949 다" 를 사람이 앉아
+     * 있을 때만 지키고 배치에서는 안 지키는 셈이라, 그게 제일 나쁜 어긋남이다.
+     * 규칙과 같은 자리로 옮겨서 두 길이 같은 것을 들고 시작하게 한다.
+     */
+    this.memory = 기억토막(this.root);
   }
 
   #loadRules() {
@@ -177,6 +196,14 @@ export class Session {
      */
     const 급글 = 급말(this.급().급);
     if (급글) parts.push(`\n${급글}`);
+
+    /*
+     * 이 폴더가 무슨 프로젝트인가 (agent/project.js).
+     *
+     * 규칙보다 **앞에** 둔다. 사용자 규칙은 "이 프로젝트에서는 이렇게 해라" 는
+     * 말이라, 무슨 프로젝트인지를 먼저 읽은 뒤에 와야 말이 이어진다.
+     */
+    if (this.프로젝트) parts.push(this.프로젝트);
 
     if (this.rules) parts.push(`\n--- ${this.rules.name} (사용자 규칙, 위 원칙보다 우선) ---\n${this.rules.text}`);
 
@@ -256,8 +283,12 @@ export class Session {
    *   · 지금 모드 문구 — modes.js 의 say. 모드마다 수백 토큰이다.
    */
   breakdown() {
+    // 폴더 지문도 매 요청에 통째로 나간다. 시스템 프롬프트 쪽에 같이 센다 —
+    // 안 세면 '남은 자리' 가 그만큼 뻥튀기되고, effort.js 가 그 값으로 출력
+    // 상한을 잡으므로 답이 조용히 잘리기 시작한다.
     const sys = estimateTokens(기본규칙(this.conn?.ctx)) + estimateTokens(`작업 폴더: ${this.root}`)
-      + estimateTokens(모드말(this.effectiveWork(), this.conn?.ctx) ?? '');
+      + estimateTokens(모드말(this.effectiveWork(), this.conn?.ctx) ?? '')
+      + estimateTokens(this.프로젝트 ?? '');
     const rules = this.rules ? estimateTokens(this.rules.text) : 0;
     const listed = this.listedSkills();
     const skills = listed.length

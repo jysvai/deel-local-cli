@@ -110,8 +110,9 @@ check('쪼개진 도구 인자를 이어 붙였다', editEv?.args?.new_string ==
 // 게이트웨이에 보낸 요청 모양
 const first = seenBodies[0];
 // 파일 도구 7종 + 웹 읽기 + 지난 대화 찾기 + 기억하기 + 할 일 목록
-// + 확인하기 + 뼈대 보기 + 하위 작업. 스킬이 없는 세션이라 Skill 은 빠진다.
-check('도구 정의 14종을 보냈다', first?.tools?.length === 14, `${first?.tools?.length}개`);
+// + 확인하기 + 뼈대 보기 + 하위 작업 + 뒤에서 도는 명령.
+// 스킬이 없는 세션이라 Skill 은 빠진다.
+check('도구 정의 15종을 보냈다', first?.tools?.length === 15, `${first?.tools?.length}개`);
 /*
  * Claude Code 의 이름을 그대로 쓰되 **둘만** 더 있다. 늘릴 때마다 여기가 걸리게
  * 해 둔 이유: 도구 하나가 스키마로 150토큰쯤 먹는다. 매 요청마다 나가는 값이라
@@ -136,12 +137,18 @@ check('도구 정의 14종을 보냈다', first?.tools?.length === 14, `${first?
  *             쌓여서 서너 개째에 앞엣말이 접혀 나간다. 자리를 아끼려고 안 주면
  *             아낀 자리로 할 수 있는 일이 없어진다.
  *
+ *   Jobs      뒤에서 도는 명령을 보고 끝낸다 (tools/jobs.js). Bash 와 짝이라
+ *             따로 떼어 놓을 수 없다 — background 로 띄워 놓고 읽을 길이 없으면
+ *             띄운 것이 유령이 된다. 대신 스키마를 최대한 작게 잡았다.
+ *             이게 없으면 `npm run dev` 가 120초 뒤 죽는 것으로 끝나서,
+ *             **만든 것을 띄워서 확인하는 길이 아예 없다.**
+ *
  * 밖에서 붙인 도구(MCP)는 여기 안 나온다. 붙인 서버가 있을 때만 뒤에 더해진다.
  */
-check('도구 이름이 Claude Code 와 같다 (Append · Recall · Remember · Verify · Outline · Task 만 더 있다)',
+check('도구 이름이 Claude Code 와 같다 (Append · Recall · Remember · Verify · Outline · Task · Jobs 만 더 있다)',
   JSON.stringify(first?.tools?.map((t) => t.function.name))
     === JSON.stringify(['Read', 'Write', 'Append', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch',
-      'Recall', 'Remember', 'TodoWrite', 'Verify', 'Outline', 'Task']),
+      'Recall', 'Remember', 'TodoWrite', 'Verify', 'Outline', 'Task', 'Jobs']),
   JSON.stringify(first?.tools?.map((t) => t.function.name)));
 check('시스템 프롬프트를 보냈다', first?.messages?.[0]?.role === 'system');
 

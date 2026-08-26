@@ -28,6 +28,7 @@ import { expand as expandMentions } from './agent/mention.js';
 import { 다붙이기 } from './backend/mcp.js';
 import { 프롬프트토막 as 기억토막, 읽기 as 기억읽기 } from './agent/memory.js';
 import { 갈래고르기 } from './ui/working.js';
+import { 모두끝내기 as 일감모두끝내기 } from './tools/jobs.js';
 
 // 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
 const TOOL_GLYPH = {
@@ -43,6 +44,7 @@ const TOOL_GLYPH = {
   Outline: c.hmagenta('❉'),   // 뼈대 — 찾기(❋❊)와 한 무리라 비슷한 글자로
   Verify: c.hgreen('✓'),      // 확인 — 결과가 초록·빨강으로 갈리는 유일한 도구
   Task: c.hmagenta('⌥'),      // 하위 작업 — 여닫는 줄과 같은 글자를 쓴다
+  Jobs: c.hcyan('◐'),         // 뒤에서 도는 것 — Bash(▶)와 한 무리라 같은 색으로
 };
 
 // 도구 호출을 한 줄로 요약 — Read(src/a.js) 처럼.
@@ -51,10 +53,20 @@ function toolLabel(name, args) {
   const first =
     a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.목적 ??
     (a.command ? String(a.command).replace(/\s+/g, ' ').slice(0, 52) : null) ??
+    // 뒤에서 도는 명령. 번호가 곧 그 일감의 이름이다 — 빈 괄호를 띄우면
+    // 어느 것을 보고 있는지가 화면에서 사라진다. 서너 개를 띄워 놓고 나면
+    // `Jobs` 줄이 여러 개 겹치는데, 그때 구별할 것이 번호뿐이다.
+    // 번호 없이 부르는 것(목록 보기)은 그대로 괄호가 없다.
+    (a.번호 != null ? `${a.번호}번${a.끝내기 ? ' · 끝내기' : ''}` : null) ??
     // 한 번에 여러 파일을 쓸 때. 빈 괄호를 띄우면 화면만 보고는 무엇을
     // 만들었는지 알 수 없다 — 첫 파일과 개수를 적는다.
     (Array.isArray(a.files) && a.files.length
       ? `${a.files[0]?.file_path ?? '?'}${a.files.length > 1 ? ` 외 ${a.files.length - 1}개` : ''}`
+      : null) ??
+    // 한 번에 여러 군데를 고칠 때. 파일 수와 군데 수는 다르다 — 한 파일을
+    // 여섯 군데 고치는 것이 보통이라 '외 5개' 라고 적으면 거짓이 된다.
+    (Array.isArray(a.edits) && a.edits.length
+      ? `${a.edits[0]?.file_path ?? '?'}${a.edits.length > 1 ? ` 외 ${a.edits.length - 1}군데` : ''}`
       : null) ??
     (Array.isArray(a.paths) && a.paths.length ? `${a.paths.length}개` : null) ??
     // 할 일 목록은 보여줄 경로가 없다. 빈 괄호를 띄우느니 개수를 적는다.
@@ -196,7 +208,7 @@ export async function chatLoop(opts = {}) {
   // 안 세면 컨텍스트가 그만큼 조용히 줄어든다.
   session.mcp = mcp붙임.서버들;
   // 지난 대화에서 정해 둔 것을 들고 시작한다.
-  session.memory = 기억토막(root);
+  // 기억은 Session 이 켤 때 직접 읽는다 (session.js 생성자) — deel run 도 같은 것을 들고 시작하게.
 
   /*
    * 입력 상자를 쓸 때는 readline 이 스스로 되비추지 못하게 한다.
@@ -796,6 +808,17 @@ export async function chatLoop(opts = {}) {
               }
             } else {
               say(`    ${toolResultLine(ev.result, ev.ms ?? 0)}`);
+              /*
+               * 파일을 바꾸는 명령이었으면, 무엇을 떠 뒀는지 적는다.
+               *
+               * `mv`·`rm` 은 화면에 '성공' 한 줄만 남는다. 그 줄만 보면 되돌릴
+               * 수 있는지 없는지 알 길이 없어서, 사람은 되돌릴 수 있는 줄 알고
+               * 넘어가거나 반대로 못 되돌리는 줄 알고 겁을 낸다. 사실을 적는다.
+               */
+              if (ev.result?.되돌릴것?.length) {
+                const 것들 = ev.result.되돌릴것;
+                say(`      ${c.gray(`↩ ${것들.slice(0, 3).join(' · ')}${것들.length > 3 ? ` 외 ${것들.length - 3}개` : ''} 는 떠 뒀습니다 — /undo 로 되돌아갑니다`)}`);
+              }
               // 파일을 고쳤으면 무엇이 바뀌었는지 바로 보여 준다.
               //
               // auto 모드는 안 물어보고 고친다. 여기서 안 보여주면 사람이
@@ -808,17 +831,29 @@ export async function chatLoop(opts = {}) {
                 for (const l of renderDiff(ev.result.diff, { maxLines: DIFF_LINES[session.level] ?? 20 })) say(l);
               } else if (ev.result?.여럿?.length) {
                 /*
-                 * 한 번에 여러 개를 만들었다.
+                 * 한 번에 여러 개를 만들거나 고쳤다.
                  *
-                 * 여기서는 바뀐 자리를 안 그린다. 새 파일 다섯 개의 diff 는
+                 * Write 는 바뀐 자리를 안 그린다. 새 파일 다섯 개의 diff 는
                  * 곧 그 파일 전체라, 화면이 수백 줄로 밀려 올라간다 —
                  * 그러면 무엇이 만들어졌는지가 오히려 안 보인다.
-                 * 파일마다 한 줄씩만 적고, 자세한 것은 /diff 가 맡는다.
+                 *
+                 * Edit 은 그린다. 고친 자리는 몇 줄뿐이고, 그 몇 줄이야말로
+                 * 사람이 봐야 하는 것이다 — auto 모드는 안 물어보고 고치니까.
+                 * 다만 전체 몫을 한 번 정해 두고 그 안에서만 그린다. 스무 군데를
+                 * 고치면 화면이 밀려 올라가고, 그러면 안 그리느니만 못하다.
                  */
+                let 남은diff = DIFF_LINES[session.level] ?? 20;
                 for (const f of ev.result.여럿) {
                   if (f.ok) {
                     session.noteChange(f.path, f.diff);
-                    say(`      ${c.green('✓')} ${c.white(f.보인이름)} ${c.gray(`· ${f.lines}줄`)}`);
+                    // Write 는 줄 수, Edit 은 군데 수. 없는 쪽을 '· undefined줄' 로 적으면 안 된다.
+                    const 몫 = f.lines != null ? `· ${f.lines}줄` : f.군데 != null ? `· ${f.군데}군데` : '';
+                    say(`      ${c.green('✓')} ${c.white(f.보인이름)} ${c.gray(몫)}`);
+                    if (f.군데 != null && f.diff && 남은diff > 0) {
+                      const 줄들 = renderDiff(f.diff, { maxLines: 남은diff });
+                      for (const l of 줄들) say(l);
+                      남은diff -= 줄들.length;
+                    }
                   } else {
                     say(`      ${c.red('✗')} ${c.white(f.보인이름 ?? '(경로 없음)')} ${c.gray(`— ${clip(String(f.error), 60)}`)}`);
                   }
@@ -1006,6 +1041,13 @@ export async function chatLoop(opts = {}) {
   // 띄운 남의 프로세스는 반드시 거둔다. 안 거두면 deel 을 껐는데도
   // 그 서버가 계속 돌고 있게 된다 — 사람 눈에는 안 보이는 채로.
   for (const s of mcp붙임.서버들) s.닫기();
+  // 뒤에서 돌던 명령도 같이 거둔다. 이걸 조용히 하면 안 된다 —
+  // 사람은 dev 서버가 아직 떠 있다고 여기고 브라우저를 새로 고치다가
+  // "왜 안 되지" 로 시간을 쓴다. 몇 개를 껐는지 말해 준다.
+  {
+    const 껐다 = 일감모두끝내기();
+    if (껐다) say(`  ${mark.ok} ${c.gray(`뒤에서 돌던 명령 ${껐다}개를 같이 껐습니다.`)}`);
+  }
   // 끝맺음은 화면을 접기 **전에** 그린다. close() 가 상자를 걷어내므로,
   // 그 뒤에 찍으면 걷어낸 자리에 뜬금없이 한 줄이 남는다.
   say('');

@@ -85,7 +85,7 @@ export const 문구 = {
 const 도구갈래 = {
   Read: '읽기', Glob: '읽기', Grep: '읽기', Skill: '읽기', Recall: '읽기',
   Write: '쓰기', Edit: '쓰기', Append: '쓰기', Remember: '쓰기', TodoWrite: '쓰기',
-  Bash: '명령',
+  Bash: '명령', Jobs: '명령',
   Task: '하위',
   WebFetch: '웹',
 };

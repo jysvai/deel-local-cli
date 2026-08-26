@@ -5,7 +5,8 @@ import { dirname } from 'node:path';
 import { execFile } from 'node:child_process';
 import { globToRegex, walk, readText, readTextFull, SKIP_DIRS, 내부살림 } from './fsutil.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
-import { checkCommand, checkPaths } from '../safety/guard.js';
+import { checkCommand, checkPaths, isMutating } from '../safety/guard.js';
+import { 띄우기, JOBS_TOOL } from './jobs.js';
 import { findMatch, applySpans, reindent, TIER_LABELS } from './edit-match.js';
 import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
@@ -103,6 +104,70 @@ export function 파일현황(abs) {
     if (st.isDirectory()) return { path: abs, dir: true };
     return { path: abs, bytes: st.size, lines: 줄수(abs, null) };
   } catch { return { path: abs, missing: true }; }
+}
+
+// Bash 한 번에 이만큼까지만 떠 둔다. `rm` 에 파일 이름 백 개를 늘어놓는 일이
+// 없지는 않은데, 그때 백 벌을 뜨면 되돌리기 이력이 그 한 번으로 밀려난다.
+const 스냅샷상한 = 24;
+
+/**
+ * 명령줄에서 **떠 둘 만한** 낱말을 고른다.
+ *
+ * guard.js 의 경로낱말() 을 안 쓴다. 그쪽은 슬래시가 든 것만 경로로 본다 —
+ * 울타리를 지키는 쪽에서는 그게 맞다. 안 걸린 것을 막아 버리면 멀쩡한 명령이
+ * 막히기 때문이다. 그런데 `del 지울것.txt` 처럼 **슬래시 없는 파일 이름**이
+ * 실제로 제일 흔하고, 그것들이 통째로 빠졌다.
+ *
+ * 여기는 막는 자리가 아니라 **읽는** 자리라 반대로 잡는다. 넓게 훑고,
+ * 실제로 그 자리에 파일이 있을 때만 뜬다. 헛다리를 짚어도 손해가 없다 —
+ * 없는 파일은 그냥 넘어간다.
+ */
+function 뜰만한낱말(cmd) {
+  const out = [];
+  const re = /"([^"]*)"|'([^']*)'|[^\s|;&<>()]+/g;
+  let m;
+  while ((m = re.exec(String(cmd)))) {
+    let t = m[1] ?? m[2] ?? m[0];
+    if (!t) continue;
+    if (t.startsWith('-')) continue;                    // 옵션
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) continue;   // 주소
+    t = t.replace(/^[<>]+/, '');
+    // 셸이 푸는 자리표·와일드카드는 여기서 못 편다. 억지로 풀면 엉뚱한
+    // 파일을 뜨게 되므로 그냥 넘긴다 — 대신 못 떴다는 사실이 결과에 남는다.
+    if (!t || /[$%*?]/.test(t)) continue;
+    out.push(t);
+  }
+  return out;
+}
+
+/**
+ * 파일을 바꾸는 Bash 명령이면, 손대기 전 내용을 떠 둔다.
+ *
+ * 여기가 없으면 `mv`·`rm` 으로 사라진 것을 /undo 가 못 살린다. Write·Edit 만
+ * 지키는 안전망은 절반짜리다 — 모델은 파일을 옮길 때 당연히 Bash 를 쓴다.
+ *
+ * **못 뜨는 것이 있다는 사실을 숨기지 않는다.** 셸이 푸는 와일드카드(`rm *.tmp`),
+ * 스크립트 안에서 지우는 것, 폴더 통째는 여기서 안 보인다. 그래서 결과에
+ * '이건 되돌릴 수 있다' 는 말을 붙이지 않고, 뜬 개수만 사실대로 넘긴다.
+ *
+ * @returns {string[]} 떠 둔 파일들의 보인 이름
+ */
+function 바꾸기전스냅샷(cmd, ctx) {
+  if (!isMutating(cmd)) return [];
+  const 뜬것 = [];
+  for (const t of 뜰만한낱말(cmd)) {
+    if (뜬것.length >= 스냅샷상한) break;
+    let abs;
+    // 범위 밖은 어차피 checkPaths 가 이미 막았다. 여기서 터지면 안 된다 —
+    // 뜨는 데 실패했다고 명령 자체를 막으면 안 되는 명령까지 막힌다.
+    try { abs = ctx.scope.resolve(t); } catch { continue; }
+    try {
+      if (!existsSync(abs) || statSync(abs).isDirectory()) continue;
+      ctx.history.snapshot(abs, 'Bash');
+      뜬것.push(ctx.scope.show(abs));
+    } catch { /* 못 뜨면 그냥 넘어간다. 명령은 돌아야 한다 */ }
+  }
+  return 뜬것;
 }
 
 /** 지금 파일이 몇 줄인가. 붙인 뒤 '얼마나 찼는지' 를 사실로 말해 주려고 센다. */
@@ -242,6 +307,125 @@ function 여러파일쓰기(목록, ctx) {
     // 넣으면 그 한 개만 세어지고 나머지가 조용히 빠진다.
     여럿: 결과,
     error: 된것.length ? undefined : (안된것[0]?.error ?? '아무것도 못 만들었습니다'),
+  };
+}
+
+/**
+ * 한 군데를 고친다 — Edit 의 알맹이.
+ *
+ * 결과 모양을 바꾸면 안 된다. changed·diff·tier 를 보고 있는 자리가 셋이다:
+ * loop.js 의 잘린 인자 살려쓰기, repl.js 의 바뀐 자리 그리기, 되돌리기 스냅샷.
+ */
+function 한군데고치기(args, ctx) {
+  const abs = ctx.scope.resolve(args.file_path);
+  if (!existsSync(abs)) return { error: `파일이 없습니다: ${args.file_path}` };
+  const 못고치는이유 = 내부살림(abs);
+  if (못고치는이유) return { error: 못고치는이유 };
+  // 엑셀 파일은 Read 로 읽히긴 하지만 고칠 수 있는 물건이 아니다.
+  // '먼저 Read 로 읽어야 합니다' 라고만 하면 이미 읽은 쪽은 계속 헛돈다.
+  if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
+  if (!ctx.seen.has(abs)) return { error: `먼저 Read 로 읽어야 합니다: ${args.file_path}` };
+  if (args.old_string === args.new_string) return { error: 'old_string 과 new_string 이 같습니다' };
+
+  const 읽음 = readTextFull(abs);
+  const text = 읽음.text;
+  const m = findMatch(text, args.old_string, { replaceAll: !!args.replace_all });
+
+  if (!m.ok) {
+    if (m.reason === 'ambiguous') {
+      return { error: `${m.count}군데에서 발견됐습니다 (${TIER_LABELS[m.tier]}). 앞뒤로 더 넓게 잡아 하나만 가리키거나 replace_all 을 쓰세요.` };
+    }
+    const hint = m.near
+      ? `\n  파일의 ${m.near.line}번 줄이 가장 비슷합니다:\n    ${m.near.text.trim().slice(0, 120)}\n  이 줄을 그대로 옮겨 담아 다시 시도하세요.`
+      : '\n  Read 로 다시 읽어 실제 내용을 확인하세요.';
+    return { error: `찾지 못했습니다.${hint}` };
+  }
+
+  ctx.history.snapshot(abs, 'Edit');
+  const next = applySpans(text, m.spans, (matched) =>
+    m.tier === 'exact' ? args.new_string : reindent(args.new_string, matched, args.old_string));
+
+  // 읽은 그 인코딩으로 되돌려 쓴다.
+  const 만든것 = encode(next, 읽음.encoding);
+  if (만든것.lost.length) {
+    return {
+      error: `이 파일은 ${encLabel(읽음.encoding)} 로 되어 있는데, 그 인코딩에 없는 글자를 넣으려 합니다: `
+           + `${만든것.lost.slice(0, 8).join(' ')}\n`
+           + `  그대로 쓰면 그 글자들이 뭉개집니다. 다른 표현을 쓰거나, 파일을 UTF-8 로 바꿔도 되는지 사용자에게 물어보세요.`,
+    };
+  }
+  writeFileSync(abs, 만든것.buf);
+
+  const n = m.spans.length;
+  const how = m.tier === 'exact' ? '' : ` · ${TIER_LABELS[m.tier]}`;
+  const 표기 = 읽음.encoding !== 'utf-8' ? ` · ${encLabel(읽음.encoding)}` : '';
+  return {
+    content: `고침: ${ctx.scope.show(abs)} (${n}군데${how}${표기})`,
+    summary: `${n}군데${how}${표기}`,
+    changed: abs,
+    tier: m.tier,
+    diff: 바뀐자리(text, next),
+  };
+}
+
+/**
+ * 여러 군데를 한 번에.
+ *
+ * **차례로** 적용한다. 같은 파일을 두 번 고치는 경우가 흔한데, 한군데고치기()가
+ * 매번 디스크에서 다시 읽으므로 뒤엣것은 앞엣것이 반영된 글을 보고 찾는다.
+ * 한꺼번에 계산해서 붙이면 두 자리가 겹칠 때 조용히 어긋난다.
+ *
+ * 되돌리기는 그대로 한 턴이다. 스냅샷은 파일마다 그 턴의 첫 번만 뜨므로
+ * (undo.js snapshot 참고), 같은 파일을 여섯 군데 고쳐도 /undo 한 번이면
+ * 여섯 군데 다 손대기 전으로 돌아간다.
+ *
+ * 하나가 실패해도 나머지는 간다 — 여러파일쓰기() 와 같은 이유다.
+ */
+function 여러군데고치기(목록, ctx) {
+  const 결과 = [];
+  for (const x of 목록) {
+    if (typeof x.file_path !== 'string' || !x.file_path) {
+      결과.push({ path: null, 보인이름: '(경로 없음)', ok: false, error: 'file_path 가 없습니다' });
+      continue;
+    }
+    let r;
+    try { r = 한군데고치기(x, ctx); }
+    catch (err) { r = { error: String(err?.message ?? err) }; }
+    결과.push(r.error
+      ? { path: x.file_path, 보인이름: x.file_path, ok: false, error: r.error }
+      : {
+        path: r.changed,
+        보인이름: ctx.scope.show(r.changed),
+        ok: true,
+        군데: Number(String(r.summary).match(/^(\d+)/)?.[1] ?? 1),
+        tier: r.tier,
+        diff: r.diff,
+      });
+  }
+
+  const 된것 = 결과.filter((r) => r.ok);
+  const 안된것 = 결과.filter((r) => !r.ok);
+  const 줄들 = 결과.map((r) => (r.ok
+    ? `  ✓ ${r.보인이름} (${r.군데}군데)`
+    : `  ✗ ${r.보인이름} — ${String(r.error).split('\n')[0]}`));
+
+  // 어느 파일이 몇 번 고쳐졌는지. 같은 파일을 여러 번 고치는 것이 보통이라
+  // '3개 파일' 이 아니라 '2개 파일 · 5군데' 라고 말해야 사실에 맞는다.
+  const 파일수 = new Set(된것.map((r) => r.path)).size;
+  const 군데수 = 된것.reduce((a, r) => a + (r.군데 ?? 0), 0);
+
+  return {
+    content: `${군데수}군데 고쳤습니다${안된것.length ? `, ${안된것.length}군데 실패` : ''}.\n`
+      + 줄들.join('\n')
+      + (안된것.length
+        ? '\n\n실패한 것만 다시 보내세요. 된 것은 다시 안 보내도 됩니다.'
+          + ' 앞엣것이 이미 반영됐으니 **파일을 다시 Read 해서** 지금 내용을 보고 old_string 을 잡으세요.'
+        : ''),
+    summary: `${파일수}개 파일 · ${군데수}군데` + (안된것.length ? ` · ${안된것.length}개 실패` : ''),
+    // 화면과 루프가 자리별로 처리하도록 그대로 넘긴다. changed 는 안 넣는다 —
+    // 넣으면 그 한 개만 세어지고 나머지가 조용히 빠진다 (여러파일쓰기 와 같다).
+    여럿: 결과,
+    error: 된것.length ? undefined : (안된것[0]?.error ?? '아무것도 못 고쳤습니다'),
   };
 }
 
@@ -411,68 +595,46 @@ export const TOOLS = {
   Edit: {
     schema: {
       name: 'Edit',
-      description: '파일에서 정확히 일치하는 문자열 하나를 바꾼다. 먼저 Read 로 읽어야 한다.',
+      description: '파일에서 정확히 일치하는 문자열을 바꾼다. 먼저 Read 로 읽어야 한다.'
+        + ' **고칠 자리가 여럿이면 edits 배열로 한 번에 보내라** — 파일이 서로 달라도 된다.'
+        + ' 한 군데씩 부르면 자리 수만큼 모델을 다시 불러야 해서, 여섯 군데짜리 손질에 몇 분이 그냥 간다.',
       parameters: {
         type: 'object',
         properties: {
-          file_path: { type: 'string', description: '고칠 파일 경로' },
+          file_path: { type: 'string', description: '고칠 파일 경로 (한 군데일 때)' },
           old_string: { type: 'string', description: '바꿀 대상. 파일에서 유일해야 한다' },
           new_string: { type: 'string', description: '바꿀 내용' },
           replace_all: { type: 'boolean', description: '모두 바꾸려면 true' },
+          edits: {
+            type: 'array',
+            description: '여러 군데를 한 번에. 적은 순서대로 차례로 적용된다. 이걸 쓰면 위 인자는 안 쓴다.',
+            items: {
+              type: 'object',
+              properties: {
+                file_path: { type: 'string', description: '고칠 파일 경로' },
+                old_string: { type: 'string', description: '바꿀 대상' },
+                new_string: { type: 'string', description: '바꿀 내용' },
+                replace_all: { type: 'boolean', description: '모두 바꾸려면 true' },
+              },
+              required: ['file_path', 'old_string', 'new_string'],
+            },
+          },
         },
-        required: ['file_path', 'old_string', 'new_string'],
+        required: [],
       },
     },
+    /*
+     * 갈래만 정한다. Write 와 같은 모양이다 — 한 군데일 때의 결과는 한 글자도
+     * 안 바뀐다. 그 모양을 보고 있는 자리가 여럿이라서다(loop.js 의 살려쓰기,
+     * repl.js 의 바뀐 자리 그리기, 되돌리기 스냅샷).
+     */
     run(args, ctx) {
-      const abs = ctx.scope.resolve(args.file_path);
-      if (!existsSync(abs)) return { error: `파일이 없습니다: ${args.file_path}` };
-      const 못고치는이유 = 내부살림(abs);
-      if (못고치는이유) return { error: 못고치는이유 };
-      // 엑셀 파일은 Read 로 읽히긴 하지만 고칠 수 있는 물건이 아니다.
-      // '먼저 Read 로 읽어야 합니다' 라고만 하면 이미 읽은 쪽은 계속 헛돈다.
-      if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
-      if (!ctx.seen.has(abs)) return { error: `먼저 Read 로 읽어야 합니다: ${args.file_path}` };
-      if (args.old_string === args.new_string) return { error: 'old_string 과 new_string 이 같습니다' };
-
-      const 읽음 = readTextFull(abs);
-      const text = 읽음.text;
-      const m = findMatch(text, args.old_string, { replaceAll: !!args.replace_all });
-
-      if (!m.ok) {
-        if (m.reason === 'ambiguous') {
-          return { error: `${m.count}군데에서 발견됐습니다 (${TIER_LABELS[m.tier]}). 앞뒤로 더 넓게 잡아 하나만 가리키거나 replace_all 을 쓰세요.` };
-        }
-        const hint = m.near
-          ? `\n  파일의 ${m.near.line}번 줄이 가장 비슷합니다:\n    ${m.near.text.trim().slice(0, 120)}\n  이 줄을 그대로 옮겨 담아 다시 시도하세요.`
-          : '\n  Read 로 다시 읽어 실제 내용을 확인하세요.';
-        return { error: `찾지 못했습니다.${hint}` };
+      const 목록 = Array.isArray(args.edits) ? args.edits.filter((x) => x && typeof x === 'object') : [];
+      if (목록.length) return 여러군데고치기(목록, ctx);
+      if (typeof args.file_path !== 'string' || !args.file_path) {
+        return { error: 'file_path 가 없습니다. 한 군데면 file_path·old_string·new_string 을, 여러 군데면 edits 배열을 주세요.' };
       }
-
-      ctx.history.snapshot(abs, 'Edit');
-      const next = applySpans(text, m.spans, (matched) =>
-        m.tier === 'exact' ? args.new_string : reindent(args.new_string, matched, args.old_string));
-
-      // 읽은 그 인코딩으로 되돌려 쓴다.
-      const 만든것 = encode(next, 읽음.encoding);
-      if (만든것.lost.length) {
-        return {
-          error: `이 파일은 ${encLabel(읽음.encoding)} 로 되어 있는데, 그 인코딩에 없는 글자를 넣으려 합니다: `
-               + `${만든것.lost.slice(0, 8).join(' ')}\n`
-               + `  그대로 쓰면 그 글자들이 뭉개집니다. 다른 표현을 쓰거나, 파일을 UTF-8 로 바꿔도 되는지 사용자에게 물어보세요.`,
-        };
-      }
-      writeFileSync(abs, 만든것.buf);
-
-      const n = m.spans.length;
-      const how = m.tier === 'exact' ? '' : ` · ${TIER_LABELS[m.tier]}`;
-      const 표기 = 읽음.encoding !== 'utf-8' ? ` · ${encLabel(읽음.encoding)}` : '';
-      return {
-        content: `고침: ${ctx.scope.show(abs)} (${n}군데${how}${표기})`,
-        summary: `${n}군데${how}${표기}`,
-        changed: abs,
-        tier: m.tier,
-        diff: 바뀐자리(text, next),
-      };
+      return 한군데고치기(args, ctx);
     },
   },
 
@@ -634,13 +796,16 @@ export const TOOLS = {
   Bash: {
     schema: {
       name: 'Bash',
-      description: '명령을 실행한다. 되돌릴 수 없는 명령은 막힌다.',
+      description: '명령을 실행한다. 되돌릴 수 없는 명령은 막힌다.'
+        + ' **끝나지 않는 것(dev 서버·watch)은 background: true 로 띄워라** —'
+        + ' 그냥 부르면 시간 초과로 죽는다. 띄운 뒤에는 Jobs 로 출력을 읽는다.',
       parameters: {
         type: 'object',
         properties: {
           command: { type: 'string', description: '실행할 명령' },
           description: { type: 'string', description: '무엇을 하는 명령인지 한 줄' },
           timeout: { type: 'number', description: '제한 시간(ms). 기본 120000' },
+          background: { type: 'boolean', description: '끝나지 않는 명령이면 true. 바로 돌아오고 Jobs 로 읽는다' },
         },
         required: ['command'],
       },
@@ -654,6 +819,46 @@ export const TOOLS = {
       // 게이트웨이 열쇠가 든 .deel/config.json 이 그런 자리다. guard.js 머리말 참고.
       try { checkPaths(cmd, ctx.scope); }
       catch (err) { ctx.audit.blocked(err.message, cmd); return { error: `막힘 — ${err.message}` }; }
+
+      /*
+       * 파일을 바꾸는 명령이면 손대기 전 내용을 떠 둔다.
+       *
+       * 되돌리기는 Write·Edit 만 지키고 있었다. 그런데 `mv 옛것.js 새것.js` 나
+       * `rm 임시.txt` 는 Bash 로 간다 — 그 순간 파일이 사라지는데 /undo 는
+       * 아무것도 못 한다. 안전망에 난 구멍치고는 큰 편이다.
+       *
+       * 명령줄에 적힌 경로 중 **지금 있는 파일**만 뜬다. 완벽하지는 않다 —
+       * 셸이 풀어 주는 와일드카드(`rm *.tmp`)나 스크립트 안에서 지우는 것은
+       * 여기서 안 보인다. 그래서 '전부 되돌아간다' 고 말하지 않는다.
+       * 그래도 손으로 옮기고 지우는 흔한 자리는 이걸로 덮인다.
+       */
+      const 뜬것 = 바꾸기전스냅샷(cmd, ctx);
+
+      // 끝나지 않는 명령은 뒤에서 띄운다. 여기서 기다리면 그 턴이 통째로 멈춘다.
+      if (args.background === true) {
+        const r = await 띄우기(cmd, { cwd: ctx.scope.root, 설명: args.description ?? null });
+        if (r.error) return { error: r.error };
+        if (!r.떴나) {
+          // 지켜보는 사이에 죽었다. 포트가 물려 있거나 명령이 틀린 경우다.
+          // 이걸 '띄웠습니다' 로 넘기면 모델은 다음 단계로 가고, 사람은 안 뜬
+          // 서버를 찾아다닌다. 실패로 못 박고 나온 말을 그대로 준다.
+          return {
+            error: `띄우자마자 끝났습니다 (${r.시그널 ? `${r.시그널} 시그널` : `종료코드 ${r.종료코드}`}).`
+              + ' 뒤에서 돌 명령이 아니거나, 뜨자마자 탈이 난 것입니다.'
+              + (r.출력?.trim() ? `\n\n나온 말:\n${clip(r.출력, 4000)}` : ''),
+            failed: true,
+          };
+        }
+        return {
+          content: `${r.번호}번으로 띄웠습니다: ${cmd}\n`
+            + (r.출력?.trim() ? `\n${clip(r.출력, 4000)}\n` : '')
+            + `\n계속 돌고 있습니다. 새 출력은 Jobs({번호: ${r.번호}}) 로 읽고, 일이 끝나면 Jobs({번호: ${r.번호}, 끝내기: true}) 로 정리해라.`,
+          summary: `${r.번호}번으로 띄움`,
+          일감번호: r.번호,
+          뒤에서: true,
+          되돌릴것: 뜬것,
+        };
+      }
 
       /*
        * 명령을 셸에 넘기는 방법. 윈도우에서 여기가 조용히 틀려 있었다.
@@ -736,6 +941,8 @@ export const TOOLS = {
             failed: !잘됨,
             exitCode: code,
             signal: 시그널,
+            // 무엇을 떠 뒀는지 화면이 알아야 '되돌릴 수 있다' 를 사실대로 적는다.
+            되돌릴것: 뜬것,
           });
         });
 
@@ -901,6 +1108,9 @@ export const TOOLS = {
 
   // 하위 작업. 실행은 loop.js 가 가로채서 한다 — task.js 머리말 참고.
   Task: TASK_TOOL,
+
+  // 뒤에서 도는 명령 보기·끝내기. Bash(background) 와 짝이다 — jobs.js 머리말 참고.
+  Jobs: JOBS_TOOL,
 };
 
 /**
@@ -939,6 +1149,27 @@ export function 설명줄이기(schema, 한도) {
     // 그 토큰만큼 대화를 잘라먹는 것과 같다. 헷갈릴 만한 것(offset·files·
     // replace_all·목적·할일)은 그대로 둔다 — 거기서 틀리면 일이 안 된다.
     if (한도 <= 100 && 뻔한인자.has(이름)) { 새속성[이름] = { type: 값.type }; continue; }
+    /*
+     * 배열 안쪽 설명은 좁은 창에서 통째로 뺀다.
+     *
+     * files·edits 의 items 는 바깥이 이미 한 말을 되풀이한다 — 바깥에서
+     * "여러 파일을 한 번에" 라고 하고, 안쪽에서 다시 "쓸 파일 경로"·"파일 전체
+     * 내용" 이라고 한다. 이름(file_path·content)만 봐도 아는 것이라, 8k 에서는
+     * 그 되풀이가 곧 대화 자리를 먹는 것과 같다.
+     *
+     * **required 와 type 은 안 건드린다.** 그건 설명이 아니라 규격이라,
+     * 빼면 모델이 무엇을 넣어야 하는지를 실제로 모르게 된다.
+     */
+    if (한도 <= 160 && 값?.type === 'array' && 값.items?.properties) {
+      const 안쪽 = {};
+      for (const [n, v] of Object.entries(값.items.properties)) 안쪽[n] = { type: v.type };
+      새속성[이름] = {
+        ...값,
+        description: 값.description ? 자르기(String(값.description), 인자몫) : undefined,
+        items: { ...값.items, properties: 안쪽 },
+      };
+      continue;
+    }
     새속성[이름] = 값?.description
       ? { ...값, description: 자르기(String(값.description).replace(/\s*\([^)]*\)\s*$/, ''), 인자몫) }
       : 값;

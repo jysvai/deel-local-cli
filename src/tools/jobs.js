@@ -1,0 +1,483 @@
+/*
+ * 뒤에서 계속 도는 명령.
+ *
+ * 왜 필요한가:
+ *   Bash 는 명령이 **끝나야** 결과를 준다. 그래서 끝나지 않는 것을 못 돌린다 —
+ *   `npm run dev`, `python -m http.server`, `vite`, `npm run watch` 가 전부 그렇다.
+ *   전에는 이걸 시키면 120초를 기다렸다가 시간 초과로 죽였다. 화면에는
+ *   `시간 초과로 중단됨` 만 남는다. 모델은 서버를 못 띄운 것으로 알고 포기하거나,
+ *   더 나쁘게는 timeout 을 늘려서 다시 부른다 — 그러면 그 턴이 통째로 멈춘다.
+ *
+ *   만든 것을 **띄워서 확인**하는 것이 바이브코딩의 마지막 한 칸이다.
+ *   Verify 가 "문법은 맞다" 까지 봐 주지만, 진짜로 뜨는지는 띄워 봐야 안다.
+ *
+ * 무엇을 하나:
+ *   명령을 띄우고 **바로 돌아온다.** 출력은 여기에 쌓아 두고, 모델이 Jobs 로
+ *   읽어 간다. 뜨자마자 죽는 경우(포트가 이미 물려 있다 등)가 흔해서, 띄운 직후
+ *   잠깐 기다렸다가 그 사이 나온 것을 같이 준다 — 그 몇 줄이 대부분의 답이다.
+ *
+ * 지키는 선:
+ *   · 안전 검사는 Bash 와 **똑같이** 거친다. 여기가 뒷문이 되면 안 된다.
+ *     (checkCommand·checkPaths 는 부르는 쪽에서 이미 거친다 — index.js 참고)
+ *   · deel 이 끝나면 전부 죽인다. 남겨 두면 사람이 모르는 프로세스가 계속 돈다.
+ *     그건 '내가 안 띄운 서버가 포트를 물고 있는' 상태고, 원인을 못 찾는다.
+ *   · 출력은 상한이 있다. watch 하나가 몇 시간 돌면 몇 GB 가 된다.
+ */
+import { spawn, execFileSync } from 'node:child_process';
+import { decode as decodeBytes, consoleCodepage } from './encoding.js';
+
+// 한 일감이 **들고 있을** 출력 상한. 넘으면 앞을 버리고 뒤를 남긴다 —
+// 오래 도는 것에서 필요한 건 언제나 **방금** 나온 쪽이다.
+const 출력상한 = 256 * 1024;
+/*
+ * 한 번에 **모델에게 건넬** 상한. 위엣것과 다른 값이어야 한다.
+ *
+ * 둘을 같은 값으로 두면 watch 하나가 넘칠 때마다 Jobs 읽기 한 번이 256KB 를
+ * 창에 쏟는다. 8k 모델이면 그 한 번으로 창이 끝나고, 큰 창에서도 대화가
+ * 통째로 밀려 나간다. 게다가 넘친 직후에는 커서가 0 으로 돌아가 있어서
+ * (담기 참고) '새것만' 달라고 해도 통째로 온다 — 그러니 여기가 막혀 있어야 한다.
+ *
+ * Bash 의 background 쪽은 처음부터 4,000자로 줄이고 있었는데 이 길만 뚫려 있었다.
+ */
+const 건넬상한 = 4000;
+// 동시에 띄워 둘 수 있는 개수. 이보다 많아지면 사람이 못 따라간다.
+export const 최대일감 = 8;
+
+/**
+ * 명령을 셸에 넘기는 방법.
+ *
+ * 윈도우에서 여기가 조용히 틀리면 따옴표가 든 명령이 통째로 뭉개진다 —
+ * 출력도 오류도 없이 **종료코드 0** 이다. Bash 쪽과 같은 값을 쓴다.
+ * 한 군데서만 정의하는 것이 중요하다. 두 벌이 되면 한쪽만 고쳐진다.
+ */
+export function 셸명령(cmd) {
+  return process.platform === 'win32'
+    ? { file: process.env.COMSPEC ?? 'cmd.exe', args: ['/d', '/s', '/c', `"${cmd}"`], verbatim: true }
+    : { file: '/bin/sh', args: ['-c', cmd], verbatim: false };
+}
+
+/**
+ * 어떻게 띄우나 — spawn 에 넘길 것들.
+ *
+ * `detached` 가 이 함수가 있는 이유다. 윈도우는 `taskkill /t` 가 프로세스
+ * 나무를 훑어 주지만 유닉스에는 그런 것이 없다. **띄울 때 무리(process group)를
+ * 만들어 두지 않으면 나중에 손자를 가리킬 방법이 아예 없다.**
+ *
+ * `npm run dev` 는 npm → node → vite 로 내려가고, 포트를 무는 것은 맨 아래다.
+ * sh 에 SIGTERM 만 보내면 그 아래가 그대로 남아서 — 사람 눈에 안 보이는 채로 —
+ * 계속 돈다. 나중에 고칠 수 없는 종류라 띄우는 순간에 정해 둔다.
+ *
+ * 윈도우에서는 반대로 무리를 안 만든다. detached 는 거기서 새 콘솔 창을
+ * 띄우는 쪽으로 작동해서, 조용히 돌아야 할 것이 화면에 튀어나온다.
+ */
+export function 띄우기옵션(cwd) {
+  const win = process.platform === 'win32';
+  return {
+    cwd,
+    windowsHide: true,
+    detached: !win,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  };
+}
+
+/**
+ * 프로세스 나무를 통째로 끝낸다. 자식만 죽이면 손자가 남아 포트를 계속 문다.
+ *
+ * 윈도우에서 taskkill 을 **기다린다.** 전에는 execFile(비동기)로 불렀는데,
+ * 그러면 두 가지가 조용히 어긋난다.
+ *
+ *   1. 바로 아래 kid.kill() 이 먼저 돌아 cmd 를 죽인다. 나무의 뿌리가 없어진
+ *      뒤에 taskkill 이 뜨므로 손자 — `npm run dev` 의 진짜 서버 — 를 못 찾고,
+ *      그놈은 그대로 남아 포트를 문다. 죽이라고 말은 했는데 안 죽는다.
+ *   2. process 의 'exit' 에서 부를 때는 **아예 안 돈다.** 그 자리에서는
+ *      비동기 일감이 하나도 실행되지 않는다. 끄려고 걸어 둔 마지막 그물이
+ *      정작 제일 흔한 끝맺음(그냥 종료)에서 통째로 비어 있었던 셈이다.
+ *
+ * 그래서 동기로 부른다. 여기서 멈추는 몇십 ms 로 '안 죽은 서버' 를 없앤다.
+ * test/jobs.test.js 의 '프로세스가 진짜 멈춘다' 가 이 자리를 지킨다.
+ */
+function 나무죽이기(kid) {
+  if (!kid) return;
+  if (process.platform === 'win32' && kid.pid) {
+    /*
+     * 상한을 짧게 잡는다. 여기는 끝날 때도 지나가는 자리라(process 'exit'),
+     * 일감마다 몇 초씩 기다리면 deel 이 멈춘 것처럼 보인다. taskkill 은
+     * 실제로는 수십 ms 면 돌아온다 — 이 값은 그놈이 엉겼을 때의 울타리다.
+     */
+    try {
+      execFileSync('taskkill', ['/pid', String(kid.pid), '/t', '/f'],
+        { windowsHide: true, stdio: 'ignore', timeout: 1500 });
+    } catch { /* 이미 죽었으면 0 이 아닌 값으로 끝난다 — 그건 탈이 아니다 */ }
+  } else if (kid.pid) {
+    /*
+     * 유닉스는 **무리째** 죽인다.
+     *
+     * 음수 pid 는 '그 무리 전부' 라는 뜻이다(띄우기옵션 의 detached 와 짝).
+     * 이걸 안 하고 kid.kill() 만 하면 sh 나 npm 만 죽고 그 아래 vite 가
+     * 포트를 문 채로 남는다 — 무엇이 물고 있는지 못 찾는, 제일 나쁜 자리다.
+     *
+     * 먼저 곱게 말하고(TERM), 안 들으면 끊는다(KILL). 곧장 KILL 로 가면
+     * dev 서버가 임시 파일이나 소켓을 치울 틈이 없다.
+     */
+    try { process.kill(-kid.pid, 'SIGTERM'); } catch { /* 무리가 없거나 이미 죽음 */ }
+    try {
+      const 시계 = setTimeout(() => { try { process.kill(-kid.pid, 'SIGKILL'); } catch { /* 죽었다 */ } }, 800);
+      시계.unref?.();
+    } catch { /* 끝나는 중이면 타이머를 못 건다 — 아래 kill 로 간다 */ }
+  }
+  try { kid.kill(); } catch { /* 이미 죽음 */ }
+  /*
+   * 파이프를 놓는다.
+   *
+   * 아이가 죽어도 stdout·stderr 를 붙들고 있으면 그 손잡이가 이벤트 루프를
+   * 붙잡는다. unref() 는 프로세스 손잡이만 놓지 파이프는 안 놓는다.
+   * 이걸 빠뜨리면 deel 이 할 일을 다 하고도 안 끝난다 — 사람 눈에는 멈춘 것이다.
+   */
+  try { kid.stdout?.destroy(); } catch { /* 이미 닫힘 */ }
+  try { kid.stderr?.destroy(); } catch { /* 이미 닫힘 */ }
+  try { kid.unref(); } catch { /* 없으면 그만 */ }
+}
+
+class 일감 {
+  constructor(번호, 명령, 설명) {
+    this.번호 = 번호;
+    this.명령 = 명령;
+    this.설명 = 설명 ?? null;
+    this.띄운때 = Date.now();
+    this.상태 = '도는중';       // 도는중 | 끝남 | 죽임
+    this.종료코드 = null;
+    this.시그널 = null;
+    this.조각들 = [];
+    this.바이트 = 0;
+    // 이 일감이 앞을 버린 적이 **있다**. 통째로 달라고 할 때의 사실이라,
+    // 한 번 서면 안 내려간다 — 지금 들고 있는 것이 처음부터가 아니라는 뜻이다.
+    this.앞잘림 = false;
+    // 지난번 읽어 간 뒤로 버렸다. **이번에 건네는 토막**에 대한 사실이라,
+    // 한 번 말하면 내린다. 이 둘을 한 칸으로 합치면 안 된다 (읽기() 참고).
+    this.막버렸다 = false;
+    this.읽은글자 = 0;
+    // 한 번 정하면 안 바꾼다. 바뀌면 읽은 자리가 조용히 어긋난다 (전체글 참고).
+    this.인코딩 = null;
+    this.kid = null;
+  }
+
+  담기(buf) {
+    if (!buf?.length) return;
+    this.조각들.push(Buffer.from(buf));
+    this.바이트 += buf.length;
+    if (this.바이트 <= 출력상한) return;
+    /*
+     * 앞을 버린다.
+     *
+     * 버리면 이미 읽은 글자 수가 뜻을 잃는다 — 앞이 사라졌으니 같은 자리가
+     * 아니다. 억지로 맞추려 들면 조용히 어긋난 글을 주게 되므로, 커서를
+     * 0 으로 돌리고 **앞이 잘렸다고 말한다.** 겹쳐 보이는 편이 낫다.
+     */
+    while (this.바이트 > 출력상한 && this.조각들.length > 1) {
+      this.바이트 -= this.조각들.shift().length;
+    }
+    this.앞잘림 = true;
+    this.막버렸다 = true;
+    this.읽은글자 = 0;
+  }
+
+  /*
+   * 쌓인 것을 글로 푼다.
+   *
+   * 조각마다 풀면 여러 바이트짜리 글자가 조각 경계에서 쪼개져 깨진다.
+   * 통째로 이어 붙여 한 번에 푼다.
+   *
+   * **인코딩은 한 번 정하면 안 바꾼다.** 이게 중요하다 — 읽은 자리(읽은글자)를
+   * 글자 수로 세고 있는데, 인코딩이 중간에 바뀌면 같은 앞부분이 다른 글자 수로
+   * 풀린다. 그러면 커서가 가리키던 자리가 조용히 어긋나서, 이미 준 글을 다시
+   * 주거나 새 글을 건너뛴다. 오류도 안 나고 로그에도 안 남는다.
+   *
+   * 실제로 그럴 수 있다. 인코딩 판정은 **버퍼 전체를 보는 어림짐작**이라,
+   * UTF-8 로 잘 풀리던 출력에 UTF-8 이 아닌 바이트가 하나 섞이는 순간
+   * 통째로 CP949 로 다시 읽힌다 — 한글 윈도우 콘솔에서 흔한 일이다.
+   */
+  전체글() {
+    if (!this.조각들.length) return '';
+    const 다 = Buffer.concat(this.조각들);
+    if (this.인코딩) {
+      try { return new TextDecoder(this.인코딩, { fatal: false }).decode(다); }
+      catch { /* 이 Node 가 모르는 이름이면 아래로 내려가 다시 잰다 */ }
+    }
+    const 콘솔 = consoleCodepage() === 65001 ? 'utf-8' : null;
+    try {
+      const r = decodeBytes(다, { fallback: 콘솔 });
+      // 처음 한 번만 못 박는다. 아직 아무것도 안 쌓였을 때 정하면
+      // 표본이 너무 적어 엉뚱하게 잡히므로, 실제로 글이 나온 뒤에 정한다.
+      if (r.text) this.인코딩 = r.encoding;
+      return r.text;
+    } catch { return 다.toString('utf8'); }
+  }
+
+  /**
+   * 지난번 읽은 뒤로 새로 나온 것만. 처음부터를 주면 통째로.
+   *
+   * `앞잘림` 은 **지금 건네는 이 글**에 대한 말이다. 묻는 방식에 따라 답이 다르다.
+   *
+   *   통째로 —  '이 일감은 앞을 버린 적이 있다.' 지금 주는 것이 처음부터가
+   *             아니라는 뜻이라, 버린 적이 있는 한 계속 사실이다.
+   *   새것만 —  '지금 주는 이 토막 **앞에 구멍이 있다.**' 버린 직후 한 번만
+   *             사실이고, 그 뒤에 나온 몇 줄은 멀쩡하다.
+   *
+   * 이 둘을 한 칸으로 합쳐 뒀더니, 한 번 넘친 일감은 **그 뒤로 영원히**
+   * "앞부분이 잘렸습니다" 를 달고 나왔다. 모델은 제가 받은 글에 앞이 빠졌다고
+   * 믿고 처음부터 다시 읽으러 가는데 — 로컬 모델에서 왕복 하나가 20~40초다 —
+   * 그렇게 받아 온 것에도 똑같이 그 말이 붙어 있다. 맴돌기 딱 좋은 자리였다.
+   * test/jobs.test.js 의 '온전한 새 출력에 잘렸다고 안 한다' 가 여기를 지킨다.
+   */
+  읽기({ 처음부터 = false } = {}) {
+    const 글 = this.전체글();
+    const 새것 = 처음부터 ? 글 : 글.slice(Math.min(this.읽은글자, 글.length));
+    this.읽은글자 = 글.length;
+    const 잘림 = 처음부터 ? this.앞잘림 : this.막버렸다;
+    // 통째로 읽어 갔으면 지금 들고 있는 것을 다 본 것이라, '바로 앞에 구멍이
+    // 있다' 는 경고도 같이 내린다. 다음에 또 버리면 그때 다시 선다.
+    this.막버렸다 = false;
+    return { 글: 새것, 앞잘림: 잘림 };
+  }
+
+  산햇수() { return Math.round((Date.now() - this.띄운때) / 1000); }
+}
+
+const 일감들 = new Map();
+let 다음번호 = 1;
+
+/**
+ * 명령을 뒤에서 띄운다.
+ *
+ * @param 기다림 띄운 뒤 몇 ms 를 지켜보나. 그 사이에 죽으면 **띄우기 실패**로
+ *   돌려준다. 포트가 이미 물려 있는 경우가 제일 흔한데, 그때 "떴습니다" 라고
+ *   답하면 모델은 다음 단계로 넘어가고 사용자는 안 뜬 서버를 찾아다닌다.
+ */
+export async function 띄우기(명령, { cwd, 설명 = null, 기다림 = 1500 } = {}) {
+  const 도는것 = [...일감들.values()].filter((j) => j.상태 === '도는중');
+  if (도는것.length >= 최대일감) {
+    return { error: `뒤에서 도는 명령이 이미 ${도는것.length}개입니다. Jobs 로 안 쓰는 것을 끝내고 다시 하세요.` };
+  }
+
+  const j = new 일감(다음번호++, 명령, 설명);
+  const shell = 셸명령(명령);
+  let kid;
+  try {
+    kid = spawn(shell.file, shell.args, {
+      ...띄우기옵션(cwd),
+      windowsVerbatimArguments: shell.verbatim,
+    });
+  } catch (err) {
+    return { error: `띄우지 못했습니다: ${String(err?.message ?? err)}` };
+  }
+  j.kid = kid;
+  일감들.set(j.번호, j);
+
+  kid.stdout?.on('data', (b) => j.담기(b));
+  kid.stderr?.on('data', (b) => j.담기(b));
+  kid.on('error', (err) => { j.담기(Buffer.from(`\n[띄우기 실패: ${err.message}]\n`)); j.상태 = '끝남'; j.종료코드 = -1; });
+  kid.on('close', (code, sig) => {
+    if (j.상태 === '죽임') return;
+    j.상태 = '끝남';
+    j.종료코드 = sig ? null : code;
+    j.시그널 = sig ?? null;
+  });
+
+  // 뜨자마자 죽는지 잠깐 지켜본다. 그 몇 줄이 대부분의 답이다.
+  await 잠깐(j, 기다림);
+
+  const 본것 = j.읽기({ 처음부터: true });
+  if (j.상태 !== '도는중') {
+    일감들.delete(j.번호);
+    return {
+      떴나: false,
+      번호: j.번호,
+      종료코드: j.종료코드,
+      시그널: j.시그널,
+      출력: 본것.글,
+    };
+  }
+  return { 떴나: true, 번호: j.번호, 출력: 본것.글 };
+}
+
+function 잠깐(j, ms) {
+  return new Promise((끝) => {
+    if (ms <= 0) return 끝();
+    let 됐나 = false;
+    const 마치기 = () => { if (됐나) return; 됐나 = true; clearTimeout(시계); 끝(); };
+    const 시계 = setTimeout(마치기, ms);
+    시계.unref?.();
+    j.kid?.once('close', 마치기);
+    j.kid?.once('error', 마치기);
+  });
+}
+
+export function 목록() {
+  return [...일감들.values()].map((j) => ({
+    번호: j.번호,
+    명령: j.명령,
+    설명: j.설명,
+    상태: j.상태,
+    종료코드: j.종료코드,
+    시그널: j.시그널,
+    초: j.산햇수(),
+    안읽은글자: Math.max(0, j.전체글().length - j.읽은글자),
+  }));
+}
+
+export function 하나(번호) { return 일감들.get(Number(번호)) ?? null; }
+
+export function 읽기(번호, opts) {
+  const j = 하나(번호);
+  if (!j) return null;
+  const r = j.읽기(opts);
+  return { ...r, 상태: j.상태, 종료코드: j.종료코드, 시그널: j.시그널, 명령: j.명령, 초: j.산햇수() };
+}
+
+export function 끝내기(번호) {
+  const j = 하나(번호);
+  if (!j) return null;
+  if (j.상태 !== '도는중') { 일감들.delete(j.번호); return { 이미: true, 명령: j.명령 }; }
+  j.상태 = '죽임';
+  나무죽이기(j.kid);
+  const 남은 = j.읽기({});
+  일감들.delete(j.번호);
+  return { 이미: false, 명령: j.명령, 초: j.산햇수(), 남은: 남은.글 };
+}
+
+/**
+ * 전부 끝낸다. deel 을 닫을 때 부른다.
+ *
+ * 이걸 빠뜨리면 사람이 안 띄운 서버가 계속 돈다. 다음에 켜서 `npm run dev` 를
+ * 하면 "포트가 이미 쓰이는 중" 이 뜨는데, 무엇이 물고 있는지 알 길이 없다.
+ */
+export function 모두끝내기() {
+  const n = [...일감들.values()].filter((j) => j.상태 === '도는중').length;
+  for (const j of 일감들.values()) {
+    if (j.상태 === '도는중') { j.상태 = '죽임'; 나무죽이기(j.kid); }
+  }
+  일감들.clear();
+  return n;
+}
+
+/** 검사에서 판을 깨끗이 하려고 쓴다. */
+export function 비우기() { 모두끝내기(); 다음번호 = 1; }
+
+// 어떤 길로 끝나든 남기지 않는다. repl·oneshot 이 부르는 것과 겹쳐도 무해하다.
+process.once('exit', () => { try { 모두끝내기(); } catch { /* 끝나는 중이라 할 수 있는 게 없다 */ } });
+
+/*
+ * ── 도구 ──────────────────────────────────────────────────────────────
+ *
+ * 왜 Bash 안에 인자로 안 넣고 도구를 따로 두나:
+ *   Bash 에 `job`·`kill` 같은 인자를 얹으면 스키마가 "명령을 실행한다" 와
+ *   "일감을 본다" 두 가지를 한꺼번에 말하게 된다. 작은 모델은 그 자리에서
+ *   command 없이 Bash 를 부르거나, 반대로 읽으려다 명령을 또 실행한다.
+ *   하는 일이 다르면 도구를 나누는 편이 결국 싸다. 이 스키마는 아주 작다.
+ */
+/**
+ * 모델에게 건넬 만큼만 남긴다 — **뒤**를 남긴다.
+ *
+ * 오래 도는 것에서 사람이 찾는 것은 언제나 방금 나온 쪽이다. 앞을 남기면
+ * 몇 시간 전 기동 로그를 주게 된다.
+ *
+ * 줄였으면 줄였다고 적는다. 안 적으면 모델은 그게 전부인 줄 알고,
+ * 안 보이는 줄에 답이 있을 때 엉뚱한 결론으로 간다.
+ */
+function 뒤만(글, 한도 = 건넬상한) {
+  const s = String(글 ?? '');
+  if (s.length <= 한도) return { 글: s, 줄임: false };
+  return {
+    글: `(앞 ${s.length - 한도}자는 길어서 줄였습니다 — 뒤쪽만 보여 줍니다)\n${s.slice(-한도)}`,
+    줄임: true,
+  };
+}
+
+/** 끝난 일감을 한 마디로. 시그널로 죽으면 종료코드가 null 이라 따로 말한다. */
+function 끝난말(r) {
+  if (r.시그널) return `${r.시그널} 로 죽음`;
+  return r.종료코드 === 0 ? '끝남' : `종료코드 ${r.종료코드}`;
+}
+
+export const JOBS_TOOL = {
+  schema: {
+    name: 'Jobs',
+    description: '뒤에서 도는 명령(Bash 의 background)을 보고·읽고·끝낸다.'
+      + ' 번호 없이 부르면 목록. 번호를 주면 그동안 새로 나온 출력.'
+      + ' 서버를 띄웠으면 일이 끝날 때 반드시 끝내기로 정리해라.',
+    parameters: {
+      type: 'object',
+      properties: {
+        번호: { type: 'number', description: '볼 일감 번호. 없으면 목록' },
+        끝내기: { type: 'boolean', description: 'true 면 그 일감을 끝낸다' },
+        처음부터: { type: 'boolean', description: 'true 면 처음부터 다시 읽는다' },
+      },
+      required: [],
+    },
+  },
+  run(args) {
+    const 번호 = args?.번호 == null ? null : Number(args.번호);
+    // 숫자가 아닌 것을 받으면 NaN 이 되고, 그대로 두면 `NaN번 일감이 없습니다`
+    // 라는 말이 모델에게 나간다. 무엇이 잘못됐는지 안 알려 주는 오류다.
+    if (번호 != null && !Number.isFinite(번호)) {
+      return { error: `번호는 숫자여야 합니다 (받은 것: ${JSON.stringify(args?.번호)}). 번호 없이 Jobs 를 불러 목록을 보세요.` };
+    }
+
+    if (번호 == null) {
+      /*
+       * 번호 없이 "끝내라" 고 하면 목록으로 얼버무리면 안 된다.
+       *
+       * 목록을 돌려주면 그건 성공한 답으로 보인다. 모델은 정리한 줄 알고
+       * "서버를 껐습니다" 라고 말하는데 서버는 그대로 돌고 있다.
+       * 도구가 시킨 일을 안 했으면 안 했다고 말해야 그 다음이 이어진다.
+       */
+      if (args?.끝내기) {
+        const 도는것 = 목록().filter((j) => j.상태 === '도는중');
+        return {
+          error: '끝낼 일감 번호를 주세요. 번호 없이 끝내기만 주면 아무것도 안 끝냅니다.'
+            + (도는것.length
+              ? ` 지금 도는 것: ${도는것.map((j) => `${j.번호}번(${j.명령})`).join(' · ')}`
+              : ' 지금 도는 것이 없습니다.'),
+        };
+      }
+      const ls = 목록();
+      if (!ls.length) return { content: '뒤에서 도는 명령이 없습니다.', summary: '0개' };
+      const 줄들 = ls.map((j) => {
+        const 상 = j.상태 === '도는중' ? `도는중 ${j.초}초` : j.시그널 ? `${j.시그널} 로 죽음` : `끝남 (종료코드 ${j.종료코드})`;
+        const 새것 = j.안읽은글자 ? ` · 안 읽은 출력 ${j.안읽은글자}자` : '';
+        return `  ${j.번호}. ${j.명령}  — ${상}${새것}`;
+      });
+      return { content: 줄들.join('\n'), summary: `${ls.length}개`, 일감수: ls.length };
+    }
+
+    if (args?.끝내기) {
+      const r = 끝내기(번호);
+      if (!r) return { error: `${번호}번 일감이 없습니다. 번호 없이 Jobs 를 불러 목록을 보세요.` };
+      if (r.이미) return { content: `${번호}번은 이미 끝나 있었습니다: ${r.명령}`, summary: '이미 끝남' };
+      return {
+        content: `${번호}번을 끝냈습니다 (${r.초}초 돌았습니다): ${r.명령}`
+          + (r.남은 ? `\n\n마지막 출력:\n${뒤만(r.남은, 2000).글}` : ''),
+        summary: `끝냄 · ${r.초}초`,
+      };
+    }
+
+    const r = 읽기(번호, { 처음부터: !!args?.처음부터 });
+    if (!r) return { error: `${번호}번 일감이 없습니다. 번호 없이 Jobs 를 불러 목록을 보세요.` };
+    const 머리 = r.상태 === '도는중'
+      ? `${번호}번 (도는중 ${r.초}초): ${r.명령}`
+      : `${번호}번 (${r.시그널 ? `${r.시그널} 로 죽음` : `끝남 · 종료코드 ${r.종료코드}`}): ${r.명령}`;
+    // 새 출력이 없다는 것도 사실이다. 빈 글을 주면 모델은 못 읽은 줄 안다.
+    const 잘라낸 = 뒤만(r.글);
+    const 몸 = r.글.trim()
+      ? (r.앞잘림 ? '(앞부분은 너무 길어 잘렸습니다 — 뒤쪽만 남았습니다)\n' : '') + 잘라낸.글
+      : '(지난번 읽은 뒤로 새 출력이 없습니다)';
+    return {
+      content: `${머리}\n\n${몸}`,
+      summary: (r.상태 === '도는중' ? `도는중 · ${r.초}초` : 끝난말(r))
+        + (잘라낸.줄임 ? ' · 일부만' : ''),
+      // 끝난 일감이 종료코드 0 이 아니면 실패로 물들인다 — Bash 와 같은 규칙이다.
+      // 시그널로 죽은 것도 실패다 — 그때 종료코드는 null 이라 !== 0 으로 잡힌다.
+      failed: r.상태 !== '도는중' && r.종료코드 !== 0,
+    };
+  },
+};

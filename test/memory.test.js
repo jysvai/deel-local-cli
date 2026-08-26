@@ -136,15 +136,25 @@ trace('5-프롬프트에들어가는가');
   check('무엇인지 설명이 붙는다', /지난 대화에서 정한 것/.test(토막), 토막.split('\n')[1] ?? '');
 
   const conn = { kind: 'openai', base: 'http://127.0.0.1:1/v1', auth: 'none', key: null, model: 'm', ctx: 32768, streaming: false, tools: true };
+  /*
+   * Session 이 **스스로** 읽는다 — 밖에서 넣어 주기를 기다리지 않는다.
+   *
+   * 전에는 대화 화면(repl.js)이 넣어 줬다. 그래서 `deel run` 으로 도는 쪽에는
+   * 기억이 통째로 빠져 있었다. "사내 문서는 CP949 다" 를 사람이 앉아 있을 때만
+   * 지키고 야간 배치에서는 안 지키는 셈이라, 이건 빠뜨림이 아니라 어긋남이다.
+   * 그래서 규칙(DEEL.md)과 같은 자리 — 생성자 — 로 옮겼다.
+   */
   const s = new Session(conn, { root });
-  check('기억을 안 넣으면 프롬프트에 없다', !/CP949/.test(s.systemPrompt()));
-  s.memory = 토막;
-  check('넣으면 시스템 프롬프트에 실린다', /CP949/.test(s.systemPrompt()) && /7080/.test(s.systemPrompt()));
+  check('Session 이 켜질 때 기억을 스스로 읽는다', /CP949/.test(s.systemPrompt()) && /7080/.test(s.systemPrompt()),
+    (s.memory ?? '(없음)').slice(0, 60));
 
   // 매 요청마다 나가는 값이므로 컨텍스트 셈에도 들어가야 한다.
-  const 없이 = new Session(conn, { root }).breakdown().used;
+  // 견줄 짝은 '기억이 없는 폴더' 다 — 같은 폴더로 두 번 만들면 둘 다 들고 있어 티가 안 난다.
+  const 빈방 = mkdtempSync(join(tmpdir(), 'deel-mem-빈-'));
+  const 없이 = new Session(conn, { root: 빈방 }).breakdown().used;
   const 함께 = s.breakdown().used;
   check('기억도 컨텍스트로 센다', 함께 > 없이, `${없이} → ${함께}`);
+  rmSync(빈방, { recursive: true, force: true });
 }
 
 trace('6-도구로');

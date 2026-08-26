@@ -22,6 +22,7 @@ import { allowEndpoint, setOffline } from './safety/network.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { route } from './agent/route.js';
 import { get as getWork } from './agent/modes.js';
+import { 모두끝내기 as 일감모두끝내기 } from './tools/jobs.js';
 
 /**
  * 종료코드.
@@ -58,10 +59,16 @@ function 도구줄(name, args) {
   const a = args ?? {};
   const 첫 = a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.목적 ??
     (a.command ? String(a.command).replace(/\s+/g, ' ') : null) ??
+    // 뒤에서 도는 명령. 번호가 곧 그 일감의 이름이라, 이게 없으면 기록에
+    // `Jobs()` 만 여러 줄 남아 나중에 무엇을 본 것인지 알 수 없다.
+    (a.번호 != null ? `${a.번호}번${a.끝내기 ? ' · 끝내기' : ''}` : null) ??
     // 한 번에 여러 파일을 쓴 경우. 기록에 빈 괄호만 남으면 나중에 이 줄로는
     // 무엇을 만들었는지 알 수 없다 — `deel run` 의 출력은 곧 근거로 쓰인다.
     (Array.isArray(a.files) && a.files.length
       ? `${a.files[0]?.file_path ?? '?'}${a.files.length > 1 ? ` 외 ${a.files.length - 1}개` : ''}`
+      : null) ??
+    (Array.isArray(a.edits) && a.edits.length
+      ? `${a.edits[0]?.file_path ?? '?'}${a.edits.length > 1 ? ` 외 ${a.edits.length - 1}군데` : ''}`
       : null) ??
     (Array.isArray(a.paths) && a.paths.length ? `${a.paths.length}개` : null) ??
     (Array.isArray(a.todos) ? `${a.todos.length}건` : '');
@@ -92,6 +99,15 @@ export async function runOnce(opts = {}) {
   const 곁 = (s = '') => { if (!quiet) 삐끗(s); };
 
   const 내놓기 = (r) => {
+    /*
+     * 뒤에서 돌던 명령을 반드시 거둔다.
+     *
+     * 여기가 이 모드의 모든 끝맺음이 지나는 자리다. 배치는 이걸 빠뜨리면
+     * 제일 크게 다친다 — 잡이 끝났다고 표시된 뒤에도 dev 서버가 계속 돌고,
+     * 다음 잡이 같은 포트를 잡으려다 실패한다. 그 원인은 로그 어디에도 없다.
+     */
+    const 껐다 = 일감모두끝내기();
+    if (껐다) 곁(`  ${mark.ok} ${c.gray(`뒤에서 돌던 명령 ${껐다}개를 껐습니다.`)}`);
     if (json) process.stdout.write(JSON.stringify(r) + '\n');
     else if (r.text) process.stdout.write(r.text.endsWith('\n') ? r.text : r.text + '\n');
     return r.code;

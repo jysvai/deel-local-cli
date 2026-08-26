@@ -14,10 +14,13 @@
 //   그러고 /undo 를 누르면 멀쩡한 파일이 지워졌다.
 //
 // 그래서 여기서 재는 것은 하나다 — **되돌리기가 파일을 없애지 않는가.**
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { History } from '../src/safety/undo.js';
+import { makeScope } from '../src/safety/guard.js';
+import { Audit } from '../src/safety/audit.js';
+import { TOOLS } from '../src/tools/index.js';
 import { decode, encode, looksBinary } from '../src/tools/encoding.js';
 import { trace } from './trace.mjs';
 
@@ -162,7 +165,119 @@ trace('7-UTF16BE');
   check('UTF-8 로 슬쩍 바뀌지 않는다', !다시.fellBack, String(다시.fellBack));
 }
 
-trace('8-치움');
+trace('8-Bash로사라진것');
+
+// ── Bash 로 사라진 것도 되돌아가는가 ────────────────────────────────────
+//
+// 안전망이 Write·Edit 만 지키고 있었다. 그런데 모델은 파일을 옮길 때 당연히
+// Bash 를 쓴다 — `mv 옛것.js 새것.js`, `rm 임시.txt`. 그 순간 파일이 사라지는데
+// /undo 는 아무것도 못 했다. 절반짜리 안전망이었던 셈이다.
+//
+// 여기서 재는 것은 둘이다.
+//   1. 흔한 자리가 덮이는가 — 슬래시 없는 파일 이름이 제일 흔하다
+//   2. **못 뜨는 것을 되돌릴 수 있다고 말하지 않는가** — 이쪽이 더 중요하다.
+//      거짓 안심을 주면 사람은 확인 없이 넘어간다.
+//
+// 파일 이름을 영문으로 두는 이유: 명령줄이 cmd.exe 를 거쳐 간다.
+// 콘솔 코드페이지가 949 인 PC 에서 한글 이름을 넘기면 그 자리에서 뭉개진다.
+{
+  const 판 = join(방, 'bash판');
+  mkdirSync(판, { recursive: true });
+  const ctx = { scope: makeScope(판), history: new History(판), audit: new Audit(판), seen: new Set() };
+  const 윈 = process.platform === 'win32';
+  const 지우기 = (f) => (윈 ? `del ${f}` : `rm ${f}`);
+  const 옮기기 = (a, b) => (윈 ? `move ${a} ${b}` : `mv ${a} ${b}`);
+
+  /*
+   * 슬래시 없는 이름을 잡는가.
+   *
+   * guard.js 의 경로낱말() 은 슬래시가 든 것만 경로로 본다 — 막는 쪽에서는
+   * 그게 맞다. 안 걸린 것을 막아 버리면 멀쩡한 명령이 막히기 때문이다.
+   * 그런데 `del 지울것.txt` 처럼 슬래시 없는 이름이 실제로 제일 흔하고,
+   * 그것들이 통째로 빠져 있었다. 뜨는 쪽은 반대로 넓게 잡는다.
+   */
+  ctx.history.nextTurn();
+  const p1 = join(판, 'temp.txt');
+  writeFileSync(p1, '지워질 내용\n', 'utf8');
+  const r1 = await TOOLS.Bash.run({ command: 지우기('temp.txt') }, ctx);
+  check('명령은 그대로 돈다', !r1.error, String(r1.error));
+  check('파일이 실제로 사라졌다', !existsSync(p1), existsSync(p1) ? '남아 있음' : '사라짐');
+  check('슬래시 없는 이름도 떠 둔다', (r1.되돌릴것 ?? []).includes('temp.txt'),
+    JSON.stringify(r1.되돌릴것));
+  const u1 = ctx.history.undo(1);
+  check('되돌리면 파일이 살아난다', existsSync(p1), existsSync(p1) ? '살아남' : '없음');
+  check('내용까지 그대로 살아난다', existsSync(p1) && readFileSync(p1, 'utf8') === '지워질 내용\n',
+    existsSync(p1) ? JSON.stringify(readFileSync(p1, 'utf8')) : '');
+  check('무엇을 되돌렸는지 말해 준다', (u1.restored ?? []).length === 1, JSON.stringify(u1.restored?.[0])?.slice(0, 60));
+
+  // 옮기기도 같다. 옮긴 뒤에는 원래 자리가 비어 있으므로 그 자리를 되살린다.
+  ctx.history.nextTurn();
+  const 원 = join(판, 'old.js');
+  writeFileSync(원, 'const 옛것 = 1;\n', 'utf8');
+  const r2 = await TOOLS.Bash.run({ command: 옮기기('old.js', 'new.js') }, ctx);
+  check('옮기기도 떠 둔다', (r2.되돌릴것 ?? []).includes('old.js'), JSON.stringify(r2.되돌릴것));
+  check('옮겨졌다', existsSync(join(판, 'new.js')) && !existsSync(원), '');
+  ctx.history.undo(1);
+  check('옮긴 것을 되돌리면 원래 자리가 돌아온다', existsSync(원) && readFileSync(원, 'utf8') === 'const 옛것 = 1;\n',
+    existsSync(원) ? '돌아옴' : '없음');
+
+  /*
+   * 안 바꾸는 명령에는 아무것도 안 뜬다.
+   *
+   * 매번 뜨면 되돌리기 이력이 `dir`·`node --version` 같은 것으로 가득 찬다.
+   * 그러면 정작 되돌리고 싶은 것이 열 칸 뒤로 밀려나서 /undo 를 못 쓴다.
+   */
+  ctx.history.nextTurn();
+  writeFileSync(join(판, 'keep.txt'), '그대로\n', 'utf8');
+  const r3 = await TOOLS.Bash.run({ command: 윈 ? 'type keep.txt' : 'cat keep.txt' }, ctx);
+  check('읽기만 하는 명령은 안 뜬다', (r3.되돌릴것 ?? []).length === 0, JSON.stringify(r3.되돌릴것));
+  check('그래도 명령은 돈다', /그대로/.test(r3.content ?? ''), (r3.content ?? '').trim().slice(0, 20));
+
+  /*
+   * 못 뜨는 것을 되돌릴 수 있다고 말하지 않는다.
+   *
+   * 셸이 풀어 주는 와일드카드는 여기서 안 보인다. `rm *.tmp` 가 무엇을
+   * 지울지는 셸만 안다. 억지로 풀면 엉뚱한 파일을 뜨게 되므로 그냥 넘기고,
+   * **뜬 것이 없다는 사실이 결과에 그대로 남는다.** 화면은 그 개수를 보고
+   * '되돌릴 수 있다' 를 적으므로, 여기가 비어 있으면 아무 약속도 안 한다.
+   */
+  ctx.history.nextTurn();
+  writeFileSync(join(판, 'a.tmp'), '1', 'utf8');
+  writeFileSync(join(판, 'b.tmp'), '2', 'utf8');
+  const r4 = await TOOLS.Bash.run({ command: 윈 ? 'del *.tmp' : 'rm *.tmp' }, ctx);
+  check('와일드카드는 못 뜬다고 사실대로', (r4.되돌릴것 ?? []).length === 0, JSON.stringify(r4.되돌릴것));
+  check('그 사실을 숨기려고 명령을 막지는 않는다', !r4.error, String(r4.error));
+
+  // 없는 파일이 적혀 있어도 안 터진다. 헛다리를 짚어도 손해가 없어야 넓게 잡을 수 있다.
+  ctx.history.nextTurn();
+  const r5 = await TOOLS.Bash.run({ command: 지우기('없는파일이다.txt') }, ctx);
+  check('없는 파일은 그냥 넘어간다', (r5.되돌릴것 ?? []).length === 0, JSON.stringify(r5.되돌릴것));
+  check('그것 때문에 터지지 않는다', typeof r5 === 'object' && r5 !== null, '');
+
+  // 폴더는 안 뜬다. 폴더를 통째로 뜨면 큰 폴더 하나에 되돌리기가 몇 GB 가 된다.
+  ctx.history.nextTurn();
+  mkdirSync(join(판, '폴더'), { recursive: true });
+  const r6 = await TOOLS.Bash.run({ command: 옮기기('폴더', '폴더2') }, ctx);
+  check('폴더는 안 뜬다', (r6.되돌릴것 ?? []).length === 0, JSON.stringify(r6.되돌릴것));
+
+  /*
+   * 한 번에 뜨는 개수에 상한이 있다.
+   *
+   * `rm` 에 파일 이름 백 개를 늘어놓는 일이 없지는 않은데, 그때 백 벌을 뜨면
+   * 되돌리기 이력이 그 한 번으로 통째로 밀려난다. 그 앞의 것들을 잃는다.
+   */
+  ctx.history.nextTurn();
+  const 많은것 = [];
+  for (let i = 0; i < 40; i++) {
+    const n = `m${i}.txt`;
+    writeFileSync(join(판, n), String(i), 'utf8');
+    많은것.push(n);
+  }
+  const r7 = await TOOLS.Bash.run({ command: `${윈 ? 'del' : 'rm'} ${많은것.join(' ')}` }, ctx);
+  check('한 번에 뜨는 개수에 상한이 있다', (r7.되돌릴것 ?? []).length === 24, `${(r7.되돌릴것 ?? []).length}개`);
+}
+
+trace('9-치움');
 rmSync(방, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
