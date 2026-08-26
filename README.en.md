@@ -53,6 +53,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 - [Simple vs developer](#simple-vs-developer)
 - [Tools](#tools)
 - [Korean text and Excel](#korean-text-and-excel)
+- [Serving what you built](#serving-what-you-built)
 - [Skills and plugins](#skills-and-plugins)
 - [Reasoning effort](#reasoning-effort)
 - [Auto-compaction](#auto-compaction)
@@ -63,6 +64,8 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
+
+Each section is open at the summary. Click **▸ More** to unfold the detail behind it.
 
 ---
 
@@ -203,6 +206,9 @@ $ deel scan
 
 Switch with `/model` mid-conversation — **the conversation carries over.**
 
+<details>
+<summary><b>More</b> — It adapts to whatever model is attached · Small windows get a smaller fixed share · On startup it reads what kind of project this folder is</summary>
+
 ### It adapts to whatever model is attached
 
 If you move between models, any number tuned for one of them is wrong for all the others.
@@ -333,6 +339,8 @@ can be recovered with one `Glob`; "tests run with `npm test`" requires opening
 
 7ms on a folder with 600 files (`test/project.test.js`).
 
+</details>
+
 ---
 
 ## Slash commands
@@ -359,6 +367,7 @@ Names follow Claude Code / Codex conventions.
 | `/level [level]` | How much to show (`쉬움` simple · `개발자` developer) |
 | `/undo [turns]` | Revert file changes |
 | `/diff [file]` | Files changed this session, and the changed lines |
+| `/preview [folder\|file\|off]` | Serve what you built, right here — a browser opens with it |
 | `/tools` | Available tools |
 | `/skills [query\|all\|off]` | Browse, search, load skills |
 | `/plugin [install\|remove\|pack]` | Manage plugins |
@@ -389,6 +398,9 @@ the conversation.
 | `Ctrl+C` | Stops the answer in progress; twice on an empty line quits |
 
 Korean IME composition, paste, `Ctrl+A/E` and backspace all keep working.
+
+<details>
+<summary><b>More</b> — Attaching a file with @ · Interrupting</summary>
 
 ### Attaching a file with `@`
 
@@ -448,6 +460,8 @@ session. Tools already running finish; **tools not yet started never run.**
 
 Pressing Ctrl+C again on an empty line quits.
 
+</details>
+
 ---
 
 ## Work modes
@@ -475,6 +489,9 @@ Don't confuse this with `/mode`. They are separate axes:
 
 If you have explicitly set `/think` or `/mode`, your choice wins. A work mode never
 overrides something a person chose.
+
+<details>
+<summary><b>More</b> — Switching by itself (Auto mode)</summary>
 
 ### Switching by itself (Auto mode)
 
@@ -518,6 +535,8 @@ A `~` in the status line means it switched by itself; no `~` means you chose it.
 
 Choosing a mode yourself **pins** it. `/auto` (or `/work auto`) hands the wheel back.
 
+</details>
+
 ---
 
 ## Simple vs developer
@@ -538,6 +557,9 @@ Two things matter here:
 - **Hidden commands still work.** `/think high` works in simple mode. It just isn't listed.
 - **Beginners do not get fewer safeguards.** Undo, workspace scope and dangerous-command
   blocking are identical. A beginner needs the undo more, not less.
+
+<details>
+<summary><b>More</b> — The input box · You don't have to type the whole command · The box stays while it works · The picture on the left moves too and 1 more</summary>
 
 ### The input box
 
@@ -652,20 +674,45 @@ more than a blank screen. One turn reads like this:
 (turning it over)       (looking at files)     (writing code)    (writing the answer)
 ```
 
-| Activity | Phrases |
-|---|---|
-| Thinking | 머리 굴리는 중 · 어떻게 할지 궁리하는 중 · 수 읽는 중 · 따져 보는 중 |
-| `Read` `Grep` `Glob` | 파일 들여다보는 중 · 코드 훑는 중 · 어디 있나 뒤지는 중 · 단서 찾는 중 |
-| `Write` `Edit` `Append` | 코드 짜는 중 · 고쳐 넣는 중 · 손보는 중 · 한 줄씩 옮기는 중 |
-| `Bash` | 명령 돌리는 중 · 터미널 두드리는 중 · 결과 기다리는 중 |
-| `WebFetch` | 문서 찾아보는 중 · 읽어 오는 중 |
-| Answering | 답 쓰는 중 · 정리해서 말하는 중 |
-| **Past 45 seconds** | 아직 하는 중 · 조금만 더 · 생각보다 오래 걸리는 중 |
+The phrases are Korean, because the interface is. Here is what each set means:
+
+| Activity | On screen | Roughly |
+|---|---|---|
+| Thinking | 머리 굴리는 중 · 어떻게 할지 궁리하는 중 · 수 읽는 중 · 따져 보는 중 | turning it over · working out how · reading ahead · weighing it up |
+| `Read` `Grep` `Glob` | 파일 들여다보는 중 · 코드 훑는 중 · 어디 있나 뒤지는 중 · 단서 찾는 중 | looking at files · skimming code · hunting for where it is · looking for a clue |
+| `Write` `Edit` `Append` | 코드 짜는 중 · 고쳐 넣는 중 · 손보는 중 · 한 줄씩 옮기는 중 | writing code · patching it in · touching it up · moving it a line at a time |
+| `Bash` | 명령 돌리는 중 · 터미널 두드리는 중 · 결과 기다리는 중 | running a command · at the terminal · waiting on output |
+| `WebFetch` | 문서 찾아보는 중 · 읽어 오는 중 | looking up docs · fetching |
+| Answering | 답 쓰는 중 · 정리해서 말하는 중 | writing the answer · putting it together |
+| **Past 45 seconds** | 아직 하는 중 · 조금만 더 · 생각보다 오래 걸리는 중 | still going · nearly there · taking longer than expected |
 
 Within a category the phrase advances every 4 seconds — text frozen for 30 seconds reads as
 hung too. On the right: **elapsed time**, and while the model is reasoning, **how many
 characters of thinking have arrived**. One number that genuinely increases is what turns
 "still alive" from a claim into a fact.
+
+### The picture on the left moves too
+
+What spins next to the phrase is not a spinner — it is **a small drawing of the work being
+done right now**.
+
+| Doing | One cycle | The picture |
+|---|---|---|
+| Thinking | `⠀⠶⠀` `⠰⣿⠆` `⢾⣿⡷` `⠰⣿⠆` | swells and shrinks |
+| Reading | `⠉⠉⠉` `⠒⠒⠒` `⠤⠤⠤` `⣀⣀⣀` | a scanning line travels down |
+| Writing | `⡼⠭⠧` `⠼⡯⠧` `⠼⠿⡧` `⠼⡭⠧` | **a laptop typing** |
+| Commands | `⠉⠀⠀` `⠉⠈⠀` `⠛⠊⠀` `⠿⠮⠄` | output piles up a line at a time |
+| Answering | `⠉⠀⠀` `⠛⠉⠀` `⠿⠛⠉` `⣿⠿⠛` | text fills up |
+| Web | `⣀⣀⣀` `⣤⣀⣀` `⣶⣤⣀` `⣿⣶⣤` | signal bars grow |
+| Compacting | `⣿⣿⣿` `⣶⣶⣶` `⣤⣤⣤` `⣀⣀⣀` | pressed down into one line |
+| Past 45 seconds | `⠶⠀⠀` `⠰⠆⠀` `⠀⠶⠀` `⠀⠰⠆` | back and forth — "waiting" |
+
+Braille only. One braille cell is **2 wide by 4 dots tall**, so three cells make a 6×4 grid
+that is exactly three columns in any terminal. Emoji and `●` `▪` include glyphs that East
+Asian locales measure as two columns, which knocks the border out of line every 90ms.
+
+If the drawing does not render, or you use a screen reader, `DEEL_NO_MOTION=1` turns it off
+and you get the old single-cell spinner.
 
 ### What gets asked, and what just happens
 
@@ -706,6 +753,8 @@ press only makes it ask more; it never drops you into "changes files unasked" in
 > approval indicator off the line entirely. Now **the model name shortens first** — you
 > already know what you are running; whether your files change unasked is what you need now.
 
+</details>
+
 ---
 
 ## Tools
@@ -735,6 +784,9 @@ Seven tools here are not in Claude Code — `Append`, `Recall`, `Remember`, `Out
 `Verify`, `Task`, `Jobs`. Each tool costs 150-400 tokens of schema on **every request**,
 so a test stops you every time the list grows (`test/loop.test.js`). The last four earned
 their cost; here is why.
+
+<details>
+<summary><b>More</b> — Outline · Verify · Task · Commands that never finish and 9 more</summary>
 
 ### Seeing a project's shape cheaply — `Outline`
 
@@ -1126,9 +1178,17 @@ last edit did. That original state comes from the earliest undo snapshot.
 `/diff` is **in the simple level's command list.** As long as `auto` edits without asking,
 a beginner needs a way to see what changed more than anyone.
 
+</details>
+
 ---
 
 ## Korean text and Excel
+
+**A file saved as CP949 is written back as CP949.** The encoding is never changed.
+Excel (`.xlsx`) is read as CSV — read-only.
+
+<details>
+<summary><b>More</b> — Encoding · Excel</summary>
 
 ### Encoding — written back the way it was read
 
@@ -1200,6 +1260,55 @@ Extracted intermediate files are deleted after use.
 > to do instead. Round-tripping a file with formatting, formulas and charts through CSV
 > always loses something. Better not to write than to write knowing you'll lose data.
 
+</details>
+
+---
+
+## Serving what you built
+
+```
+❯ /preview
+
+  ▶ Serving  http://127.0.0.1:56801/
+  showing .
+  Edit a file and the page reloads by itself.
+  Only this machine can open it (127.0.0.1). No other PC can see it.
+  Stop with /preview off  · it shuts down when deel exits.
+```
+
+A browser opens with it. `/preview <folder>` picks what to serve, `/preview off` stops it.
+
+**This is not the same as double-clicking the file (`file://`).** Under `file://` everything
+below is blocked — and the error only shows up in the console while the page stays blank, so
+you end up suspecting your own code. This is a real HTTP server, so it all works:
+
+| | `file://` | `/preview` |
+|---|---|---|
+| `<script type="module">` · `import` | blocked (CORS) | **works** |
+| `fetch('./data.json')` | blocked | **works** |
+| `new Worker(...)` | blocked | **works** |
+| `WebAssembly.compileStreaming` | blocked (MIME) | **works** |
+| textures · `getImageData` | tainted canvas | **works** |
+| `.glb` / `.gltf` (Three.js) | no MIME type → silently not drawn | **works** |
+
+All seven were run in a real Chrome and confirmed **7/7**.
+
+Apps with a router (React Router and friends) get the first page back when you reload on a
+deep link. Never for requests with an extension (`app.js`) though — returning HTML for a
+missing script dies with `Unexpected token '<'`, which hides the real cause (a typo in a filename).
+
+### It opens exactly as much as it says
+
+Starting a server means opening your disk to somebody else.
+
+- Bound to **`127.0.0.1` only**. `0.0.0.0` is not available at all — on an office network
+  that would let anyone read your source.
+- Port **0** (the kernel hands out a free one). A fixed port steals someone else's.
+- Paths cannot leave the working scope. `../` · `%2e%2e` · double encoding · absolute paths ·
+  null bytes · symlinks — eight of these are held shut by tests.
+- **It only serves.** `POST` · `PUT` · `DELETE` are refused with 405.
+- It shuts down when `deel` exits.
+
 ---
 
 ## Skills and plugins
@@ -1214,6 +1323,9 @@ plugins  ~/.claude/plugins/**   ~/.deel/plugins/**
 ```
 
 Reads the Claude Code format: `SKILL.md` with YAML front matter, `commands/*.md`, `$ARGUMENTS`.
+
+<details>
+<summary><b>More</b> — Loaded in three stages · Fetching plugins · Deliberately not included</summary>
 
 ### Loaded in three stages
 
@@ -1246,6 +1358,8 @@ with a licence table — ready to hand to a security reviewer.
 | hooks | Executable scripts — fails import review, widens the blast radius of autonomy |
 | sub-agents | Doubles model calls against a gateway quota |
 | MCP | A separate protocol; a project of its own |
+
+</details>
 
 ---
 
@@ -1294,6 +1408,9 @@ $ /think 자세히
 That second-to-last line exists for a reason: **when all three caps are equal, it is the
 only thing that says whether that is correct.** A low known cap makes them equal, and that
 is fine. For a while all three read `16,384` always — which meant the table said nothing.
+
+<details>
+<summary><b>More</b> — Context length is read off the model · /out · Truncated tool calls</summary>
 
 ### Context length is read off the model
 
@@ -1428,6 +1545,8 @@ One silently swallowed value produced all of that. What happens now:
 spinning one. What is counted here is not steps but **how many times the same tool failed for
 the same reason.**
 
+</details>
+
 ---
 
 ## Auto-compaction
@@ -1495,6 +1614,9 @@ The model sees it as `mcp__wiki__search`. `/mcp` shows what is attached.
 **Dependencies stay at zero.** The stdio transport is nothing but newline-delimited JSON-RPC
 2.0 over a child process's stdin/stdout, so `child_process` and `JSON` cover it. No SDK.
 
+<details>
+<summary><b>More</b> — But this is somebody else's program</summary>
+
 ### But this is somebody else's program
 
 This project exists because unapproved software is blocked. Turning on MCP carelessly would
@@ -1513,6 +1635,8 @@ tear down that line with our own hands. So:
 One server crashing, hanging, or talking nonsense does not affect the others. Failures are not
 swallowed — the reason appears in the header, because a silent drop leaves "why is that tool
 missing?" unanswerable.
+
+</details>
 
 ---
 
@@ -1542,6 +1666,9 @@ does not ask.
 Undo history stores whole file contents, so repeated edits to large files add up. Past 32MB
 it keeps the **most recent 50 turns** and drops the rest. What you just did is always
 undoable; `/status` shows how large the history currently is.
+
+<details>
+<summary><b>More</b> — Files removed through Bash come back too · What it will not read</summary>
 
 ### Files removed through `Bash` come back too
 
@@ -1611,6 +1738,8 @@ the read guard look at the same set. They used to be two copies, and two copies 
 comes when only one of them learns a new name — a folder that is skipped while walking but
 readable if you name it directly, which is very hard to explain.
 
+</details>
+
 ---
 
 ## Corporate review package
@@ -1641,6 +1770,9 @@ The bundled review sheet contains:
 It is generated by scanning the source, not written by hand — hand-written sheets drift from reality.
 Use `deel audit` to read it without building a zip.
 
+<details>
+<summary><b>More</b> — Diagnosing a corporate gateway</summary>
+
 ### Diagnosing a corporate gateway
 
 ```bash
@@ -1662,11 +1794,16 @@ Hand over `report.txt` alone — plain text, no colour codes.
 
 Verdict is one of **ready · limited · blocked · unreachable**.
 
+</details>
+
 ---
 
 ## Configuration
 
 Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder takes precedence.
+
+<details>
+<summary><b>More</b> — Supported servers · Environment variables · Flags · Project rules</summary>
 
 ### Supported servers
 
@@ -1711,6 +1848,8 @@ deel --no-tui            Turn the input box off; plain scrolling view (see below
 
 If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as project rules.
 `/init` scaffolds one.
+
+</details>
 
 ---
 
@@ -1777,6 +1916,9 @@ so one run tells you everything.
 | `no-bundle` | 12 | Nothing foreign in the published package; test-file hygiene |
 | `edit-bench` | 20 cases | Edit success rate |
 
+<details>
+<summary><b>More</b> — Coverage · Layout</summary>
+
 ### Coverage
 
 ```bash
@@ -1796,6 +1938,76 @@ Currently **92% overall** (7,056 of 7,646 lines). Three files are deliberately l
 | `tools/excel.js` | 67% | The password path needs Excel installed and a genuinely encrypted file. Faking it would produce a test that only *looks* like it passes |
 | `repl.js` | 77% | The keypress paths — Shift+Tab, Ctrl+C, password entry, paste. Reaching them needs a pty, and a pty is a dependency. What the screen *prints* is measured instead, as a value (`ui` and `tui` suites) |
 | `plugins/manage.js` | 79% | The GitHub download path. **Tests not reaching the network** matters more. Folder installs are covered |
+
+### Layout
+
+```
+bin/deel.js              entry point
+src/
+  repl.js                the conversation screen — what a person faces
+  oneshot.js             run once and exit (-p)
+  commands.js            35 slash commands
+  setup.js               first-run connection setup
+  config.js              reading and writing config
+
+  ui/ansi.js             colour · East Asian width
+  ui/screen.js           picking a screen (line mode / box mode)
+  ui/inputbox.js         the box at the bottom — overwrite-in-place, cursor position
+  ui/status.js           status line — model, context, mode, approvals
+  ui/working.js          working phrases — they follow what is happening
+  ui/motion.js           the braille drawing next to the phrase
+  ui/approve.js          approval mode display (auto / risky only / everything)
+  ui/diff.js             showing what changed, where it changed
+  ui/wrap.js             wrapping to width without breaking colour
+  ui/level.js            simple vs developer
+
+  agent/loop.js          the agent loop
+  agent/session.js       conversation state + context accounting
+  agent/modes.js         work modes (auto · code · plan · architect · debug · ask · orchestrator)
+  agent/route.js         picking the mode from what was said
+  agent/effort.js        per-stage reasoning effort
+  agent/budget.js        shares that follow the window — lines read, description length, steps
+  agent/project.js       working out what kind of project this folder is
+  agent/compact.js       summarising compaction
+  agent/store.js         saving and resuming conversations
+  agent/recall.js        searching past conversations (no index, within budget)
+  agent/memory.js        what outlives the conversation
+  agent/mention.js       attaching files with `@`
+
+  backend/http.js        the single HTTP layer (the only door out)
+  backend/detect.js      protocol and auth detection
+  backend/adapter.js     absorbing OpenAI/Ollama differences + streaming parser
+  backend/ctxsize.js     reading context length off the model
+  backend/probe.js       8 diagnostic checks
+  backend/scan.js        scanning for local servers
+  backend/mcp.js         attaching outside tools (MCP, stdio)
+
+  tools/index.js         15 tools
+  tools/edit-match.js    staged-relaxation edit matching
+  tools/outline.js       a file's shape, cheaply
+  tools/verify.js        checking what was built
+  tools/task.js          splitting big work off
+  tools/jobs.js          commands that run in the background
+  tools/todo.js          checklists
+  tools/webfetch.js      reading the web (read-only)
+  tools/encoding.js      writing back in the encoding it was read in
+  tools/xlsx.js          Excel → CSV (written here)
+
+  preview/serve.js       serving what you built (127.0.0.1 only)
+  skills/discover.js     finding skills, commands and plugins on the machine
+  plugins/manage.js      installing, removing and packing plugins
+  pack/zip.js            ZIP writing (written here, keeps non-ASCII names)
+  pack/tar.js            TAR reading (written here)
+  pack/selfpack.js       review dossier + source bundle
+
+  safety/network.js      the lock on the way out
+  safety/guard.js        working scope + dangerous-command blocking
+  safety/undo.js         snapshots and undo
+  safety/audit.js        recording what happened, and when
+test/                    tests (excluded from the published package)
+```
+
+</details>
 
 ---
 

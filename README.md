@@ -54,6 +54,7 @@
 - [쉬움 · 개발자](#쉬움--개발자)
 - [도구](#도구)
 - [한글 문서와 엑셀](#한글-문서와-엑셀)
+- [만든 웹을 그 자리에서 띄웁니다](#만든-웹을-그-자리에서-띄웁니다)
 - [스킬·플러그인](#스킬플러그인)
 - [추론 강도](#추론-강도)
 - [자동 압축](#자동-압축)
@@ -64,6 +65,8 @@
 - [설정](#설정)
 - [문제 해결](#문제-해결)
 - [개발](#개발)
+
+각 절은 요약만 펴 두었습니다. **▸ 자세히** 를 누르면 그 안의 이야기가 펼쳐집니다.
 
 ---
 
@@ -212,6 +215,9 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 
 등록한 뒤에는 대화 중 `/model` 로 갈아탑니다. **대화 내용은 그대로 이어집니다.**
 
+<details>
+<summary><b>자세히</b> — 걸린 모델에 맞춰 스스로 바뀝니다 · 작은 창에서는 고정 몫을 줄입니다 · 켤 때 이 폴더가 무슨 프로젝트인지 읽습니다</summary>
+
 ### 걸린 모델에 맞춰 스스로 바뀝니다
 
 여러 모델을 왔다 갔다 쓰면, 어느 한 모델에 맞춰 박아 둔 숫자는 나머지 전부에서
@@ -354,6 +360,8 @@ node 프로젝트 (deel-local-cli) · git main
 
 파일 600개짜리 폴더에서 7ms 입니다(`test/project.test.js`).
 
+</details>
+
 ---
 
 ## 대화 중 명령
@@ -380,6 +388,7 @@ node 프로젝트 (deel-local-cli) · git main
 | `/level [수준]` | 화면에 무엇을 내놓을지 (`쉬움` · `개발자`) |
 | `/undo [턴수]` | 파일 변경 되돌리기 |
 | `/diff [파일]` | 이번 대화에서 바뀐 파일 · 바뀐 자리 보기 |
+| `/preview [폴더\|파일\|off]` | 만든 웹을 이 자리에서 띄워 보기 — 브라우저가 같이 열립니다 |
 | `/tools` | 쓸 수 있는 도구 |
 | `/skills [검색어\|all\|off]` | 스킬 보기·검색·골라 올리기 |
 | `/plugin [install\|remove\|pack]` | 플러그인 관리 |
@@ -407,6 +416,9 @@ node 프로젝트 (deel-local-cli) · git main
 | `Ctrl+C` | 답하는 중이면 그 답만 끊고, 빈 줄에서 두 번이면 끝냅니다 |
 
 한글 조합·붙여넣기·`Ctrl+A/E`·백스페이스는 전부 그대로 됩니다.
+
+<details>
+<summary><b>자세히</b> — @파일 로 바로 붙이기 · 도중에 멈추기</summary>
 
 ### `@파일` 로 바로 붙이기
 
@@ -467,6 +479,8 @@ node 프로젝트 (deel-local-cli) · git main
 
 발견된 스킬의 명령은 `/<플러그인>:<이름>` 으로 부르고 `$ARGUMENTS` 가 치환됩니다.
 
+</details>
+
 ---
 
 ## 작업 모드
@@ -494,6 +508,9 @@ node 프로젝트 (deel-local-cli) · git main
 
 `/think` 나 `/mode` 를 직접 고른 적이 있으면 그 선택이 우선합니다.
 모드가 사람이 고른 값을 덮어쓰지 않습니다.
+
+<details>
+<summary><b>자세히</b> — 저절로 옮겨 가기 (종합 모드)</summary>
 
 ### 저절로 옮겨 가기 (종합 모드)
 
@@ -537,6 +554,8 @@ node 프로젝트 (deel-local-cli) · git main
 
 직접 고르면 그때부터 **고정** 됩니다. 다시 맡기려면 `/auto` 또는 `/work 종합`.
 
+</details>
+
 ---
 
 ## 쉬움 · 개발자
@@ -557,6 +576,9 @@ node 프로젝트 (deel-local-cli) · git main
 - **감춘 것도 그대로 먹습니다.** 쉬움에서 `/think high` 를 쳐도 됩니다. 목록에 안 띄울 뿐입니다.
 - **초보라고 승인을 덜 받지 않습니다.** 되돌리기·작업 범위·위험 명령 차단은 두 수준이 같습니다.
   초보일수록 되돌릴 수 있어야 합니다.
+
+<details>
+<summary><b>자세히</b> — 입력칸 · 명령은 다 안 쳐도 됩니다 · 일하는 중에는 상자가 그대로 있습니다 · 왼쪽 그림도 같이 움직입니다 외 1개</summary>
 
 ### 입력칸
 
@@ -747,6 +769,8 @@ node 프로젝트 (deel-local-cli) · git main
 > 방식이 화면에서 통째로 사라지고 있었습니다. 지금은 **모델 이름을 먼저 줄입니다** —
 > 무엇으로 도는지는 이미 알지만, 내 파일이 안 물어보고 바뀌는지는 지금 봐야 압니다.
 
+</details>
+
 ---
 
 ## 도구
@@ -777,6 +801,9 @@ Claude Code 에 없는 것은 일곱입니다 — `Append` · `Recall` · `Remem
 그게 **매 요청마다** 나가므로, 늘릴 때마다 검사에서 한 번 멈추게 해 뒀습니다
 (`test/loop.test.js`). 뒤의 넷은 그 값을 치르고도 넣을 만해서 넣은 것들이라,
 아래에 왜인지를 적어 뒀습니다.
+
+<details>
+<summary><b>자세히</b> — Outline · Verify · Task · 끝나지 않는 명령은 뒤에서 외 9개</summary>
 
 ### 프로젝트 모양을 싸게 봅니다 — `Outline`
 
@@ -1190,9 +1217,17 @@ $ /diff
 `/diff` 는 **쉬움 수준의 명령 목록에도 들어 있습니다.** `auto` 가 안 물어보고
 고치는 이상, 초보일수록 '무엇이 바뀌었나' 를 볼 통로가 필요합니다.
 
+</details>
+
 ---
 
 ## 한글 문서와 엑셀
+
+**CP949 로 저장된 파일은 CP949 로 되돌려 씁니다.** 인코딩을 바꾸지 않습니다.
+엑셀(`.xlsx`)은 CSV 로 바꿔서 읽습니다 — 읽기 전용입니다.
+
+<details>
+<summary><b>자세히</b> — 인코딩 · 엑셀</summary>
 
 ### 인코딩 — 읽은 그대로 되돌려 씁니다
 
@@ -1263,6 +1298,8 @@ utf8 로 받으면 한글이 깨집니다. 바이트로 받아서 풉니다.
 > **엑셀 파일은 읽기만 됩니다.** `Edit`·`Write` 로 고치려 하면 막습니다.
 > 서식·수식·차트가 든 파일을 CSV 로 왕복시키면 반드시 뭔가 잃기 때문입니다.
 > 잃는 걸 알면서 쓰느니 안 쓰는 편이 낫습니다.
+
+</details>
 
 ---
 
@@ -1341,6 +1378,9 @@ utf8 로 받으면 한글이 깨집니다. 바이트로 받아서 풉니다.
 
 Claude Code 와 같은 형식(`SKILL.md` + YAML 앞머리, `commands/*.md`, `$ARGUMENTS`)을 읽습니다.
 
+<details>
+<summary><b>자세히</b> — 3단계로 나눠 올립니다 · 플러그인 받아 오기 · 안 넣은 것</summary>
+
 ### 3단계로 나눠 올립니다
 
 전부 올리면 컨텍스트가 죽습니다.
@@ -1373,6 +1413,8 @@ unzip 반입.zip -d ~/.deel/plugins/
 | hooks | 실행 스크립트라 반입 심사에 걸리고, 자율 실행에 사고 경로를 늘립니다 |
 | 서브에이전트 | 모델 호출이 배로 늘어 게이트웨이 할당량을 먹습니다 |
 | MCP | 별도 프로토콜이라 그 자체로 하나의 프로젝트입니다 |
+
+</details>
 
 ---
 
@@ -1420,6 +1462,9 @@ $ /think 자세히
 마지막에서 두 번째 줄이 있는 이유: **세 값이 다 같을 때 그게 고장인지 아닌지**
 이 한 줄로 갈립니다. 아는 상한이 낮으면 셋이 같아지는 것이 맞습니다.
 한동안 이 표는 세 줄이 늘 `16,384` 였고, 그건 표가 뜻이 없다는 뜻이었습니다.
+
+<details>
+<summary><b>자세히</b> — 컨텍스트 길이는 모델에서 긁어옵니다 · /out · 잘린 도구 호출</summary>
 
 ### 컨텍스트 길이는 모델에서 긁어옵니다
 
@@ -1555,6 +1600,8 @@ This model's maximum context length is 8192 tokens, however you requested 41003
 '헛도는 작업' 을 구분하지 못합니다. 여기서 세는 것은 걸음 수가 아니라
 **같은 도구가 같은 이유로 실패한 횟수**입니다.
 
+</details>
+
 ---
 
 ## 자동 압축
@@ -1623,6 +1670,9 @@ deel 은 그걸 **코드를 안 고치고** 도구로 씁니다.
 JSON-RPC 2.0 을 주고받는 것이 전부라, `child_process` 와 `JSON` 이면 됩니다. SDK 가
 필요 없습니다.
 
+<details>
+<summary><b>자세히</b> — 다만 이건 남의 프로그램입니다</summary>
+
 ### 다만 이건 남의 프로그램입니다
 
 이 프로젝트가 존재하는 이유가 '미승인 SW 반입 금지' 인데, MCP 를 아무렇게나 켜면
@@ -1641,6 +1691,8 @@ JSON-RPC 2.0 을 주고받는 것이 전부라, `child_process` 와 `JSON` 이�
 서버 하나가 죽거나·답이 없거나·헛소리를 해도 나머지는 그대로 씁니다. 안 뜬 것은
 조용히 빠지지 않고 머리말에 이유가 뜹니다 — 조용히 빠지면 "왜 그 도구가 없지" 를
 영영 알 수 없습니다.
+
+</details>
 
 ---
 
@@ -1669,6 +1721,9 @@ JSON-RPC 2.0 을 주고받는 것이 전부라, `child_process` 와 `JSON` 이�
 되돌리기 이력은 파일 내용을 통째로 담기 때문에 큰 파일을 여러 번 고치면 금방 커집니다.
 32MB 를 넘으면 **최근 50턴만 남기고** 오래된 것을 버립니다. 방금 한 일은 언제나
 되돌릴 수 있고, 지금 이력이 얼마나 되는지는 `/status` 에서 봅니다.
+
+<details>
+<summary><b>자세히</b> — Bash 로 사라진 것도 되돌아갑니다 · 안 읽는 자리</summary>
 
 ### `Bash` 로 사라진 것도 되돌아갑니다
 
@@ -1736,6 +1791,8 @@ JSON-RPC 2.0 을 주고받는 것이 전부라, `child_process` 와 `JSON` 이�
 반드시 옵니다 — 훑을 때는 안 걸리는데 이름을 대면 읽히는, 설명하기 어려운
 상태가 됩니다.
 
+</details>
+
 ---
 
 ## 사내 반입
@@ -1769,6 +1826,9 @@ zip 안에 들어가는 `반입심사서.txt` 에는 이런 것이 적힙니다.
 손으로 적지 않고 코드가 소스를 훑어서 만듭니다 — 손으로 적으면 언젠가 사실과 어긋납니다.
 묶지 않고 내용만 보려면 `deel audit`.
 
+<details>
+<summary><b>자세히</b> — 사내 게이트웨이 진단</summary>
+
 ### 사내 게이트웨이 진단
 
 압축을 푼 폴더에서:
@@ -1792,11 +1852,16 @@ node bin/deel.js diagnose --url <게이트웨이주소> --key <키> --model <모
 
 판정은 **준비됨 · 제한적 · 막힘 · 연결실패** 넷 중 하나로 나옵니다.
 
+</details>
+
 ---
 
 ## 설정
 
 `~/.deel/config.json` 에 저장됩니다. 프로젝트 폴더에 `.deel/config.json` 이 있으면 그쪽이 우선입니다.
+
+<details>
+<summary><b>자세히</b> — 붙는 서버 · 환경변수 · 실행 옵션 · 프로젝트 규칙</summary>
 
 ### 붙는 서버
 
@@ -1843,6 +1908,8 @@ deel --no-tui            입력 상자를 끄고 줄 화면으로 (아래 참고
 
 작업 폴더에 `DEEL.md` · `CLAUDE.md` · `AGENTS.md` 중 하나가 있으면 읽어서 규칙으로 씁니다.
 `/init` 으로 틀을 만들 수 있습니다.
+
+</details>
 
 ---
 
@@ -1922,6 +1989,9 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 | `no-bundle` | 12 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
 | `edit-bench` | 20건 | 편집 성공률 |
 
+<details>
+<summary><b>자세히</b> — 어디를 밟았는지 · 폴더 구조</summary>
+
 ### 어디를 밟았는지
 
 ```bash
@@ -1947,39 +2017,70 @@ node test/coverage.mjs --json              기계가 읽을 형태로
 ```
 bin/deel.js              진입점
 src/
-  ui/                    색·한글 폭·상자·상태줄·입력
+  repl.js                대화 화면 — 사람이 마주하는 자리
+  oneshot.js             한 번 돌리고 끝내기 (-p)
+  commands.js            / 명령 35종
+  setup.js               처음 켤 때 연결 잡기
+  config.js              설정 읽고 쓰기
+
+  ui/ansi.js             색 · 한글 폭 계산
   ui/screen.js           화면 고르기 (줄 화면 / 상자 화면)
-  ui/inputbox.js         맨 아래 입력 상자 — 그리기·지우기·커서 자리
+  ui/inputbox.js         맨 아래 입력 상자 — 덮어 그리기·커서 자리
+  ui/status.js           상태줄 — 모델·컨텍스트·모드·승인
   ui/working.js          일하는 중 문구 — 지금 하는 일을 따라간다
+  ui/motion.js           문구 옆에서 도는 점자 그림
   ui/approve.js          승인 방식 표시 (자동/위험만/모두)
+  ui/diff.js             고친 자리를 그 자리에서 보여 주기
   ui/wrap.js             색을 지키며 폭에 맞춰 접기
+  ui/level.js            쉬움 · 개발자
+
   agent/loop.js          에이전트 루프
   agent/session.js       대화 상태 + 컨텍스트 셈
+  agent/modes.js         작업 모드 (종합·코드·계획·설계·디버그·묻기·총괄)
+  agent/route.js         말을 보고 알맞은 모드 고르기
   agent/effort.js        단계별 추론 강도 배분
+  agent/budget.js        창 크기에 맞춘 몫 — 읽을 줄·설명 길이·걸음 수
+  agent/project.js       이 폴더가 무슨 프로젝트인지 읽기
   agent/compact.js       요약 압축
   agent/store.js         대화 저장·이어하기
   agent/recall.js        지난 대화 찾기 (색인 없이, 예산 안에서)
   agent/memory.js        대화가 끝나도 남는 것
+  agent/mention.js       `@파일` 붙이기
+
   backend/http.js        HTTP 한 겹 (바깥으로 나가는 유일한 문)
   backend/detect.js      규격·인증 자동 판별
   backend/adapter.js     OpenAI/Ollama 차이 흡수 + 스트리밍 파서
+  backend/ctxsize.js     컨텍스트 길이를 모델에서 긁어오기
   backend/probe.js       진단 검사 8종
   backend/scan.js        로컬 서버 훑기
   backend/mcp.js         밖에서 도구 붙이기 (MCP, stdio)
-  tools/index.js         도구 11종
+
+  tools/index.js         도구 15종
   tools/edit-match.js    단계별 완화 편집 매칭
-  tools/webfetch.js      웹 읽기 (읽기 전용)
+  tools/outline.js       파일 모양만 싸게 보기
+  tools/verify.js        만든 것 확인
+  tools/task.js          큰 일을 떼어 따로 돌리기
+  tools/jobs.js          뒤에서 도는 명령
   tools/todo.js          할 일 목록
+  tools/webfetch.js      웹 읽기 (읽기 전용)
+  tools/encoding.js      읽은 인코딩 그대로 되돌려 쓰기
+  tools/xlsx.js          엑셀 → CSV (직접 구현)
+
+  preview/serve.js       만든 웹 띄우기 (127.0.0.1 에만)
   skills/discover.js     그 PC 의 스킬·명령·플러그인 찾기
   plugins/manage.js      플러그인 설치·삭제·묶기
   pack/zip.js            ZIP 쓰기 (직접 구현, 한글 이름 보존)
   pack/tar.js            TAR 읽기 (직접 구현)
   pack/selfpack.js       반입 심사서 + 소스 묶기
+
   safety/network.js      나가는 자리 자물쇠
   safety/guard.js        작업 범위 + 위험 명령 차단
   safety/undo.js         스냅샷·되돌리기
+  safety/audit.js        무엇을 언제 했는지 남기기
 test/                    검증 (배포 묶음에서 뺀다)
 ```
+
+</details>
 
 ---
 
