@@ -6,7 +6,7 @@
 //   3) 도구를 돌리는 중에 끊으면 남은 도구를 실행하지 않는가
 //   4) 끊은 것을 오류로 취급하지 않는가
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';

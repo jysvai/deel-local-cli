@@ -5,13 +5,13 @@
 //   2) 목록에서 고르기가 엉뚱한 것을 안 고르는가 — 틀리면 다른 모델에 붙는다
 //   3) 진행 표시가 TTY 가 아닐 때 조용한가      — 로그가 스피너 글자로 뒤덮인다
 //   4) 되돌리기 이력이 무한정 커지지 않는가     — 사내 PC 디스크를 먹는다
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { askHidden, pick } from '../src/ui/prompt.js';
 import { spin } from '../src/ui/spinner.js';
 import { History } from '../src/safety/undo.js';
-import { c, width, clip, pad, bar, gauge, box, rule, mark } from '../src/ui/ansi.js';
+import { c, width, clip, pad, bar, gauge, box } from '../src/ui/ansi.js';
 import { statusLine, SEGMENT_GROUPS, DEFAULT_SEGMENTS } from '../src/ui/status.js';
 import { Session } from '../src/agent/session.js';
 import { trace } from './trace.mjs';

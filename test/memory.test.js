@@ -5,7 +5,7 @@
 //   2) 같은 말이 쌓이지 않는가 — 모델은 자기가 방금 적은 것을 기억 못 한다
 //   3) 사람이 **지울 수 있는가** — 틀린 기억은 없느니만 못하다
 //   4) 시스템 프롬프트에 실제로 들어가는가 — 안 들어가면 적는 의미가 없다
-import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { 읽기, 쓰기, 더하기, 지우기, 비우기, 프롬프트토막, 자리, 기억최대, 한줄최대, 줄최대 } from '../src/agent/memory.js';

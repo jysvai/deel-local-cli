@@ -7,7 +7,7 @@
 // 플러그인도 없다 — 거기서는 방법론이 0개였고, 모델은 매번 제 나름대로 했다.
 // 시킨 것만 겨우 하고 끝나는 얄팍한 결과가 거기서 나온다.
 // 품고 다니는 것은 **가장 낮은 자리**에 둔다. 같은 이름을 사용자가 만들면 그쪽이 이긴다.
-import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';

@@ -1,7 +1,7 @@
 // 되돌리기. 승인 프롬프트를 안 쓰는 대신 이게 안전망이다.
 // 파일을 고치기 전에 항상 이전 내용을 떠 놓고, /undo 로 턴 단위로 되돌린다.
 import { join } from 'node:path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, statSync } from 'node:fs';
 import { looksBinary } from '../tools/encoding.js';
 
 // 되돌리기 이력은 파일 내용을 통째로 담는다. 이만큼 커지면 오래된 턴을 버린다.

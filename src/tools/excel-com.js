@@ -17,7 +17,7 @@
 //   2) 엑셀은 바쁘면 호출을 거절한다(0x80010001, 0x800AC472). 잘못된 호출이
 //      아니라 '지금은 말고' 라는 뜻이라, 쉬었다 다시 부르면 된다.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { decode } from './encoding.js';

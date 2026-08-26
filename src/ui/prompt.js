@@ -1,5 +1,5 @@
 // 입력 받기 — 한 줄, 비밀번호(가림), 목록 선택, 예/아니오.
-import { c, say, mark, cursor } from './ansi.js';
+import { c, say } from './ansi.js';
 
 function raw() {
   return process.stdin.isTTY ? process.stdin.setRawMode.bind(process.stdin) : null;

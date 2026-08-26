@@ -3,7 +3,7 @@
 import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { execFile } from 'node:child_process';
-import { globToRegex, walk, readText, readTextFull, SKIP_DIRS, 내부살림 } from './fsutil.js';
+import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsutil.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
 import { checkCommand, checkPaths, isMutating } from '../safety/guard.js';
 import { 띄우기, JOBS_TOOL } from './jobs.js';

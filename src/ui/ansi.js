@@ -181,5 +181,3 @@ export const mark = {
   tree: c.gray('└'),
   branch: c.gray('├'),
 };
-
-export const COLOR_ON = ON;

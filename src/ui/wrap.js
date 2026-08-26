@@ -2,7 +2,7 @@
 //
 // 전에는 전체화면(tui.js)에만 쓰던 것이라 거기 있었다. 전체화면을 걷어내면서
 // 여기로 옮긴다 — 입력 상자가 긴 입력을 접을 때 같은 것이 필요하다.
-import { width, clip } from './ansi.js';
+import { width } from './ansi.js';
 
 /**
  * 색을 유지하면서 폭에 맞춰 접는다.
@@ -58,11 +58,4 @@ export function 접어쓰기(글, 폭) {
   }
   if (지금.trim() !== '' || 줄들.length === 0) 줄들.push(지금 + (색 ? '\x1b[0m' : ''));
   return 줄들;
-}
-
-/** 폭에 맞춰 오른쪽을 공백으로 채운다. 안 채우면 앞 그림이 남는다. */
-export function 채움(글, 폭) {
-  const w = width(글);
-  if (w > 폭) return clip(글, 폭);
-  return 글 + ' '.repeat(폭 - w);
 }

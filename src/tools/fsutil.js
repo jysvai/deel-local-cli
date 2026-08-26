@@ -171,14 +171,6 @@ export function walk(root, { limit = 20000, skipDirs = SKIP_DIRS } = {}) {
   return out;
 }
 
-// 텍스트 파일인지 — 앞부분에 NUL 이 있으면 바이너리로 본다.
-export function isText(path) {
-  try {
-    const fd = readFileSync(path);
-    return !fd.subarray(0, 8000).includes(0);
-  } catch { return false; }
-}
-
 /**
  * 글 파일을 읽는다. 무엇으로 쓰여 있든 알아보고 읽는다.
  *

@@ -16,7 +16,7 @@ import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
 import { activeProfile, load, resolveKey, save as saveCfg, homeDir } from './config.js';
 import { discover } from './skills/discover.js';
-import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
+import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
 import { Threads } from './agent/threads.js';
 import { 배움 } from './agent/evolve.js';
@@ -30,7 +30,7 @@ import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { renderDiff, shortStat } from './ui/diff.js';
 import { expand as expandMentions } from './agent/mention.js';
 import { 다붙이기 } from './backend/mcp.js';
-import { 프롬프트토막 as 기억토막, 읽기 as 기억읽기 } from './agent/memory.js';
+import { 읽기 as 기억읽기 } from './agent/memory.js';
 import { 갈래고르기 } from './ui/working.js';
 import { 모두끝내기 as 일감모두끝내기, 일감인자 } from './tools/jobs.js';
 

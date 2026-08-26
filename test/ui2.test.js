@@ -3,14 +3,13 @@
 // 다 '보여 주기만' 하는 코드라 틀려도 안 죽는다. 그래서 오히려 오래 방치된다.
 // 여기서 틀리면 사람이 잘못된 것을 보고 잘못된 결정을 한다 —
 // 없는 대화를 이어하려 하거나, 도구 호출도 못 하는 모델을 골라 쓰거나.
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSessions } from '../src/agent/sessionui.js';
 import { Store, list as listSessions } from '../src/agent/store.js';
 import { toText, summarize, isExcelPath } from '../src/tools/excel.js';
 import { spin } from '../src/ui/spinner.js';
-import { width } from '../src/ui/ansi.js';
 import { trace } from './trace.mjs';
 
 const pass = [];

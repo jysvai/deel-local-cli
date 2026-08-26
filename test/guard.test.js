@@ -7,7 +7,7 @@
 // 이 자리들의 공통점: 실패해도 대화가 이어져야 한다. 도구 결과 자리를 비우면
 // 짝이 깨져서 다음 턴에 게이트웨이가 통째로 거절한다.
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeScope, checkPaths } from '../src/safety/guard.js';

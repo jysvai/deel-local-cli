@@ -1,6 +1,6 @@
 // 연결 프로필 저장/읽기.  ~/.deel/config.json  (프로젝트 폴더의 .deel/config.json 이 우선)
 import { homedir } from 'node:os';
-import { join, dirname, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
 
 // 설정이 놓이는 자리.

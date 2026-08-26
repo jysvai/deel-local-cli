@@ -1,6 +1,6 @@
 // 첫 실행 마법사 + 진단 실행.
-import { c, say, rule, mark, width } from './ui/ansi.js';
-import { ask, pick, confirm } from './ui/prompt.js';
+import { c, say, rule, mark } from './ui/ansi.js';
+import { ask, pick } from './ui/prompt.js';
 import { spin } from './ui/spinner.js';
 import { detect } from './backend/detect.js';
 import { probe } from './backend/probe.js';

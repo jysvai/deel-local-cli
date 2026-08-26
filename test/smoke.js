@@ -4,7 +4,7 @@
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeScope, checkCommand, ScopeError, BlockedError } from '../src/safety/guard.js';
+import { makeScope, checkCommand, ScopeError } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { runTool } from '../src/tools/index.js';

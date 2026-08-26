@@ -709,10 +709,6 @@ export async function 미리보기끄기() {
 }
 
 /** 지금 띄워 둔 것. 상태줄·검사에서 본다. */
-export const 미리보기상태 = () => (미리보기중
-  ? { url: 미리보기중.서버.url, 폴더: 미리보기중.보인이름, 되살아나나: 미리보기중.서버.되살아나나 }
-  : null);
-
 async function 미리보기(session, ctx, arg) {
   const 말 = String(arg ?? '').trim();
 

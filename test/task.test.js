@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
-import { Session, estimateTokens } from '../src/agent/session.js';
+import { Session } from '../src/agent/session.js';
 import { run } from '../src/agent/loop.js';
 import { allowEndpoint } from '../src/safety/network.js';
 import { 하위모드, 하위요약, 최대깊이 } from '../src/tools/task.js';

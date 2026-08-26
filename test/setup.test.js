@@ -7,7 +7,7 @@
 // 붙는 곳은 이 컴퓨터 안(127.0.0.1)의 임시 스텁뿐이다. 바깥으로는 안 나간다.
 import { createServer } from 'node:http';
 import { PassThrough } from 'node:stream';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ask, confirm, pick } from '../src/ui/prompt.js';

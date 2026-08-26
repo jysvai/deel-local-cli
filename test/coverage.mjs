@@ -28,10 +28,10 @@
 //   그러면 각 바이트마다 '가장 안쪽 구간의 횟수' 가 남는다.
 //   줄 단위로는, 그 줄의 글자 중 하나라도 횟수가 1 이상이면 밟은 줄로 센다.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');

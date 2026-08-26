@@ -5,7 +5,7 @@
 // 통과 기준은 두 가지다:
 //   고쳐야 할 것을 고쳤는가  (성공률)
 //   고치면 안 될 것을 거부했는가  (오탐 0건 ← 이쪽이 더 중요)
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeScope } from '../src/safety/guard.js';

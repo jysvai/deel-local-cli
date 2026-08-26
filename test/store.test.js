@@ -6,7 +6,7 @@
 //   3) 도구 호출과 결과의 짝이 되살릴 때도 안 깨지는가
 //   4) 압축이 일어난 뒤에도 파일이 대화와 맞는가
 //   5) 목록에서 어떤 대화인지 알아볼 수 있는가
-import { mkdtempSync, rmSync, appendFileSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, appendFileSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store, list, latest, remove, newId, prune, sessionsDir } from '../src/agent/store.js';

@@ -5,7 +5,7 @@
 //
 // 부르는 쪽은 어느 갈래인지 몰라도 된다. 다만 암호가 필요할 때는 물어볼 수
 // 있어야 하므로, 물어보는 방법을 받아 온다(askPassword).
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { readXlsx, toCsv, looksXlsx, looksOle } from './xlsx.js';
 import { excelToTables, canUseExcel } from './excel-com.js';

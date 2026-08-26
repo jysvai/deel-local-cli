@@ -30,7 +30,7 @@
  * 대화는 그냥 흘려보내기로 했다. 그러면 stdout 에 쓰는 모든 코드가 손 안 대고
  * 그대로 맞다. 스크롤·복사·`| tee` 도 그대로다.
  */
-import { c, say, cursor, box, cols } from './ansi.js';
+import { c, say, cursor, box } from './ansi.js';
 import { statusLine, contextWarning } from './status.js';
 import { spin } from './spinner.js';
 

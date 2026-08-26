@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  설정읽기, 다붙이기, MCP서버, 도구이름, 이름풀기, 도구정의, 도구최대,
+  설정읽기, 다붙이기, 이름풀기, 도구정의, 도구최대,
 } from '../src/backend/mcp.js';
 import { VERSION } from '../src/version.js';
 import { toolSchemas, runTool } from '../src/tools/index.js';

@@ -2,7 +2,7 @@
 // OpenAI 호환 규격을 흉내내는 가짜 게이트웨이를 띄워, 정해진 도구 호출을 돌려준다.
 // 사내 게이트웨이와 같은 규격이므로 어댑터·스트리밍 파서·루프가 전부 함께 검증된다.
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeScope } from '../src/safety/guard.js';

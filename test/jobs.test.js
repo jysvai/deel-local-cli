@@ -36,7 +36,7 @@
  *   경로를 넘기면 그 자리에서 뭉개진다 — 이 프로젝트가 여기저기서 겪은
  *   그 문제다. 파일 이름만 영문으로 두고, 안에 적는 말은 한국어로 둔다.
  */
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeScope } from '../src/safety/guard.js';

@@ -15,7 +15,7 @@ import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
-import { load, save } from '../src/config.js';
+import { save } from '../src/config.js';
 import { trace } from './trace.mjs';
 
 const pass = [];

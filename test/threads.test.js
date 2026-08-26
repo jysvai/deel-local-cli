@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Threads } from '../src/agent/threads.js';
-import { Store, list as listSessions } from '../src/agent/store.js';
+import { Store } from '../src/agent/store.js';
 import { Session } from '../src/agent/session.js';
 import { statusLine } from '../src/ui/status.js';
 import { trace } from './trace.mjs';
