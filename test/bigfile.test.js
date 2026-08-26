@@ -25,6 +25,7 @@ import { 살린쓰기, partialParse } from '../src/agent/salvage.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import { TOOLS } from '../src/tools/index.js';
 import { encode } from '../src/tools/encoding.js';
+import { findMatch } from '../src/tools/edit-match.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -223,7 +224,33 @@ trace('3-끝까지만들기');
   rmSync(방, { recursive: true, force: true });
 }
 
-trace('4-치움');
+trace('4-큰덩이편집');
+
+// ── 아주 큰 덩이를 old_string 으로 넘겼을 때 ────────────────────────────
+//
+// 모델은 큰 파일을 고칠 때 덩이를 통째로 old_string 에 담아 보낸다. 그런데
+// 정확히 일치하지 않으면 느슨한 단계로 넘어가면서 그 덩이로 정규식을 만든다.
+// 4만 자를 넘으면 정규식이 만들어지기는 하는데 **돌릴 때** 터진다 —
+// new RegExp 를 감싼 try 는 만들 때만 보므로 그 SyntaxError 가 그대로 튀어
+// 나가서, "찾지 못했습니다" 대신 도구가 죽는다.
+//
+// 3,000줄짜리 덩이는 실제로 오는 크기다. 죽는 대신 못 찾았다고 말해야 한다.
+{
+  const 큰덩이 = Array.from({ length: 3000 }, (_, i) => `  const v${i} = f(${i});`).join('\n');
+  let 죽었나 = null;
+  let 답 = null;
+  try { 답 = findMatch('짧은 글 한 줄\n', 큰덩이); } catch (e) { 죽었나 = e; }
+  check('아주 큰 old_string 에서 안 죽는다', !죽었나,
+    죽었나 ? `${죽었나.constructor.name}: ${String(죽었나.message).slice(0, 40)}` : `${큰덩이.length}자`);
+  check('못 찾았으면 못 찾았다고 답한다', !죽었나 && 답?.ok === false, JSON.stringify(답?.reason ?? null));
+
+  // 큰 덩이라도 정확히 있으면 찾아야 한다 — 무조건 포기하는 것으로 고치면 안 된다.
+  let 큰것찾기 = null;
+  try { 큰것찾기 = findMatch(`머리\n${큰덩이}\n꼬리\n`, 큰덩이); } catch (e) { 큰것찾기 = { ok: false, reason: e.constructor.name }; }
+  check('큰 덩이도 그대로 있으면 찾는다', 큰것찾기?.ok === true, JSON.stringify(큰것찾기?.reason ?? 큰것찾기?.tier));
+}
+
+trace('5-치움');
 resetNet();
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

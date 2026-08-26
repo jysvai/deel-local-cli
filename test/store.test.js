@@ -194,6 +194,18 @@ check('id 가 파일 이름으로 안전함', /^[0-9-]+$/.test(id));
   const r5 = repairToolPairs([결과('c9'), { role: 'user', content: '이어서' }]);
   check('호출 없이 굴러다니는 결과는 버린다', r5.messages.length === 1 && r5.고친것 === 1);
 
+  // 적다 만 줄이 섞인 이력.
+  //
+  // 이 함수가 하는 일은 "그대로 보내면 서버가 거절할 것을 걷어내기" 다. 그런데
+  // 빈 자리(null)나 role 이 없는 조각은 그대로 통과시켰다 — 그 한 줄이 그대로
+  // 서버로 나가서 400 이 된다. 손보고도 못 여는 것은 안 손본 것과 같다.
+  const r6 = repairToolPairs([null, { role: 'user', content: '이어서' }, undefined, { content: 'role 이 없음' }, 42]);
+  check('빈 자리·role 없는 조각은 걷어낸다',
+    r6.messages.length === 1 && r6.messages[0].role === 'user',
+    `${r6.messages.length}개 남음: ${JSON.stringify(r6.messages)}`);
+  check('걷어낸 만큼 세어서 알려 준다', r6.고친것 === 4, `고친것 ${r6.고친것}`);
+  check('걷어낸 뒤에는 보낼 수 있는 모양', 짝검사(r6.messages) === null, 짝검사(r6.messages) ?? '');
+
   // 진짜 파일을 거쳐서도 되는가 — 도구가 도는 중에 죽은 대화를 그대로 만든다.
   const 죽은 = new Store(root, 'test-끊김');
   죽은.begin({ model: 'm', root });

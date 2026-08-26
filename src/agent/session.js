@@ -513,8 +513,13 @@ export function repairToolPairs(messages) {
   for (let i = 0; i < (messages?.length ?? 0); i++) {
     const m = messages[i];
 
+    // 적다 만 줄. 도중에 죽으면 JSONL 한 줄이 반만 적히고, 그 자리가 빈 값이나
+    // role 없는 조각으로 읽힌다. 그대로 보내면 서버가 거절한다 — 걷어내는 것이
+    // 이 함수의 일이므로 여기서 같이 턴다.
+    if (!m || typeof m !== 'object' || typeof m.role !== 'string') { 고친것++; continue; }
+
     // 호출 없이 굴러다니는 결과. 앞이 잘려 나간 이력이다.
-    if (m?.role === 'tool') { 고친것++; continue; }
+    if (m.role === 'tool') { 고친것++; continue; }
 
     if (m?.role !== 'assistant' || !m.tool_calls?.length) { out.push(m); continue; }
 

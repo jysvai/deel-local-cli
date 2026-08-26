@@ -46,11 +46,22 @@ function findAll(text, needle, tier) {
   let re;
   try { re = new RegExp(p, 'g'); } catch { return []; }
   const out = [];
-  for (const m of text.matchAll(re)) {
-    if (m[0].length === 0) continue;
-    out.push({ start: m.index, end: m.index + m[0].length });
-    if (out.length > 50) break;   // 너무 많으면 어차피 모호하다
-  }
+  // 만들 때 말고 **돌릴 때** 터지는 것이 있다.
+  //
+  // 모델은 큰 파일을 고칠 때 덩이를 통째로 old_string 에 담아 보낸다. 4만 자쯤
+  // 넘어가면 new RegExp 는 멀쩡히 만들어지는데(패턴만 훑는다) 실제로 돌릴 때
+  // 프로그램 크기 한도에 걸려 SyntaxError 가 난다. 위의 try 는 만들 때만 감싸므로
+  // 그 오류가 그대로 튀어나가서 "찾지 못했습니다" 대신 도구가 죽었다.
+  //
+  // 여기서는 못 찾은 것으로 친다. 정확히 일치하는 경우는 위에서 indexOf 로 이미
+  // 처리했으니, 느슨하게 맞춰 보는 이 길만 포기하는 것이다.
+  try {
+    for (const m of text.matchAll(re)) {
+      if (m[0].length === 0) continue;
+      out.push({ start: m.index, end: m.index + m[0].length });
+      if (out.length > 50) break;   // 너무 많으면 어차피 모호하다
+    }
+  } catch { return []; }
   return out;
 }
 

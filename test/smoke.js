@@ -103,6 +103,36 @@ for (const cmd of safe) {
 }
 check('평범한 명령은 통과', allowed);
 
+// 12-1. 윈도우식으로 통째로 지우는 명령
+//
+// deel 은 윈도우에서 주로 돈다. 그런데 `rm -rf /` 만 막고 그 윈도우 짝은
+// 새어 나갔다. `del /f /s /q C:\` 는 옛 규칙이 **스위치 차례**(첫 스위치가
+// /s 나 /q 여야 했다)와 **끝의 `\*`** 를 둘 다 요구해서 안 걸렸다.
+// 되돌릴 수 없는 것만 막는다는 규칙에 이보다 잘 맞는 명령이 없다.
+const 윈도우로지우기 = [
+  'del /f /s /q C:\\',
+  'del /s /q C:\\',
+  'del /q /s D:\\*',
+  'rd /q /s C:\\',
+  'rmdir /q /s C:\\Users',
+  'Remove-Item -Recurse -Force C:\\',
+];
+let 다막았나 = true;
+for (const cmd of 윈도우로지우기) {
+  let 막힘 = false;
+  try { checkCommand(cmd); } catch { 막힘 = true; }
+  if (!막힘) { 다막았나 = false; fail.push({ name: `차단 실패: ${cmd}`, note: '통째로 지우는 명령이 통과했다' }); }
+}
+check('윈도우식 통째 삭제도 막는다', 다막았나, `${윈도우로지우기.length}종`);
+
+// 막되, 평범한 정리 명령까지 막으면 도구가 못 쓰게 된다.
+const 평범한지우기 = ['del build\\out.tmp', 'del /q temp.log', 'rd empty-folder', 'Remove-Item build\\a.txt'];
+let 안막았나 = true;
+for (const cmd of 평범한지우기) {
+  try { checkCommand(cmd); } catch { 안막았나 = false; fail.push({ name: `과잉 차단: ${cmd}`, note: '' }); }
+}
+check('평범한 지우기는 그대로 통과', 안막았나);
+
 // 13. 되돌리기
 const beforeUndo = readFileSync(join(root, 'src', 'a.js'), 'utf8');
 const u = ctx.history.undo(1);
