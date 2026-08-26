@@ -128,6 +128,16 @@ export class Session {
     this.못박은것 = new 못박기();
     this.filesRead = new Map();   // 경로 → 추정 토큰
     this.changes = new Map();     // 경로 → {added, removed, times}. /diff 가 본다
+    /*
+     * 상태줄이 보는 두 숫자.
+     *
+     * 여기 들고 있는 이유는 **화면을 그릴 때마다 디스크를 읽지 않기 위해서**다.
+     * 상태줄은 사람이 글자 하나 칠 때마다 다시 그려진다. 거기서 되돌리기
+     * 이력 파일을 열면 타이핑이 끊긴다 — 화면 꾸미기가 입력을 느리게 만드는
+     * 것만큼 나쁜 것이 없다. repl 이 턴이 끝날 때 한 번씩 채워 준다.
+     */
+    this.되돌릴턴 = 0;
+    this.검증 = { 돈횟수: 0, 확인: 0, 탈: 0 };
     this.skills = [];             // 켜질 때 이 PC 에서 찾은 것들
     this.commands = [];
     this.plugins = [];

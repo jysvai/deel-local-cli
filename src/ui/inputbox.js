@@ -34,11 +34,23 @@
  *    값으로 내놓아야 한 칸도 안 어긋나는지 잴 수 있다.
  */
 import { c, width, cursor, clip } from './ansi.js';
+import { isLocalHost } from '../safety/network.js';
 import { statusLine, contextWarning } from './status.js';
 import { 접어쓰기 } from './wrap.js';
 import { 문구고르기, 걸린시간, 느긋해질때, 문구주기 } from './working.js';
 import { 그림고르기 } from './motion.js';
 import { 최대추천 } from './complete.js';
+
+/**
+ * 이 연결이 이 컴퓨터 밖으로 나가나.
+ *
+ * 못 읽는 주소면 **거짓**으로 본다. 여기서 애매한 것을 노랗게 칠해 버리면,
+ * 진짜로 밖으로 나갈 때의 노랑이 아무 뜻도 없어진다 — 늘 노란 테두리는
+ * 테두리가 회색인 것과 같다.
+ */
+function 바깥으로가나(session) {
+  try { return !isLocalHost(new URL(session.conn.base).hostname); } catch { return false; }
+}
 
 const 줄끝지움 = '\x1b[K';
 const 위로 = (n) => (n > 0 ? `\x1b[${n}A` : '');
@@ -64,8 +76,23 @@ export const 안쪽최대 = 8;
  * @returns {{줄들: string[], 커서: {위: number, 열: number}}}
  *   커서.위 = 마지막 줄에서 몇 줄 위인가, 커서.열 = 1부터 세는 칸
  */
-export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상태 = '', 경고 = '', 곁말 = '', 일감 = null, 추천 = [] } = {}) {
+export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상태 = '', 경고 = '', 곁말 = '', 일감 = null, 추천 = [], 바깥 = false } = {}) {
   const 칸 = Math.max(20, 폭);
+  /*
+   * ── 테두리가 곧 경계선이다 ───────────────────────────────────────────
+   *
+   * 이 상자는 사람이 글을 치는 자리이자, 그 글이 어디까지 가는지의 울타리다.
+   * 이 컴퓨터 안으로만 갈 때는 늘 보던 회색 테두리 그대로 두고, 바깥
+   * 게이트웨이로 붙어 있을 때만 **노랗게** 그린다.
+   *
+   * 상태줄 글자 한 칸(⌂/↗)으로도 되지 않느냐 싶지만, 그건 좁으면 밀릴 수 있고
+   * 무엇보다 사람이 안 본다. 테두리는 안 볼 수가 없다 — 치는 글을 감싸고 있어서,
+   * 눈이 글자를 따라가는 내내 시야에 들어온다. 칸도 한 칸 안 먹는다.
+   *
+   * 시끄러운 것이 맞고, 그게 뜻이다. 내 소스가 밖으로 나가는 중이라면
+   * 화면이 그만큼은 말해 줘야 한다.
+   */
+  const 테 = 바깥 ? c.hyellow : c.gray;
   const 안쪽 = Math.max(4, 칸 - 앞머리 - 2);   // 오른쪽 ' │' 두 칸
   const 줄들 = [];
 
@@ -73,7 +100,7 @@ export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상
   if (경고) 줄들.push(` ${경고}`);
 
   const 가로 = '─'.repeat(칸 - 3);
-  줄들.push(c.gray(` ╭${가로}╮`));
+  줄들.push(테(` ╭${가로}╮`));
 
   /*
    * 일하는 중.
@@ -98,7 +125,7 @@ export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상
     const 남 = 일안쪽 - width(왼쪽) - width(오른쪽);
     // 자리가 모자라면 오른쪽(걸린 시간·중단 안내)을 버린다. 왼쪽이 본문이다.
     const 안 = 남 >= 2 ? `${왼쪽}${' '.repeat(남)}${오른쪽}` : 왼쪽;
-    줄들.push(` ${c.gray('│')} ${안}${' '.repeat(Math.max(0, 일안쪽 - width(안)))} ${c.gray('│')}`);
+    줄들.push(` ${테('│')} ${안}${' '.repeat(Math.max(0, 일안쪽 - width(안)))} ${테('│')}`);
 
     /*
      * 일하는 도중에 미리 쳐 두는 자리.
@@ -114,11 +141,11 @@ export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상
       const 대기줄들 = 접어쓰기(일감.대기, 안쪽).slice(0, 3);
       for (const [i, 한줄] of 대기줄들.entries()) {
         const 표 = i === 0 ? c.hcyan('❯') : ' ';
-        줄들.push(` ${c.gray('│')} ${표} ${한줄}${' '.repeat(Math.max(0, 안쪽 - width(한줄)))} ${c.gray('│')}`);
+        줄들.push(` ${테('│')} ${표} ${한줄}${' '.repeat(Math.max(0, 안쪽 - width(한줄)))} ${테('│')}`);
       }
     }
 
-    줄들.push(c.gray(` ╰${가로}╯`));
+    줄들.push(테(` ╰${가로}╯`));
     if (일감.대기) 줄들.push(` ${c.gray('Enter 를 치면 지금 일이 끝난 뒤에 보냅니다')}`);
     else if (곁말) 줄들.push(` ${c.gray(곁말)}`);
 
@@ -141,9 +168,9 @@ export function 프레임({ 글 = '', 커서: 커서자리 = null, 폭 = 80, 상
   for (const [i, 한줄] of 보일줄.entries()) {
     const 표 = i === 0 ? (넘침 ? c.gray('…') : c.hcyan('❯')) : ' ';
     const 남 = 안쪽 - width(한줄);
-    줄들.push(` ${c.gray('│')} ${표} ${한줄}${' '.repeat(Math.max(0, 남))} ${c.gray('│')}`);
+    줄들.push(` ${테('│')} ${표} ${한줄}${' '.repeat(Math.max(0, 남))} ${테('│')}`);
   }
-  줄들.push(c.gray(` ╰${가로}╯`));
+  줄들.push(테(` ╰${가로}╯`));
 
   /*
    * 자동완성 추천은 상자 **아래**에 놓는다.
@@ -382,6 +409,9 @@ export class InputBox {
       곁말: this.곁말,
       일감,
       추천,
+      // 테두리 색이 경계선을 말한다. 못 읽는 주소면 평소대로 둔다 —
+      // 애매한 것을 노랗게 칠하면, 진짜로 밖으로 나갈 때의 노랑이 안 먹힌다.
+      바깥: this.session ? 바깥으로가나(this.session) : false,
     });
 
     /*

@@ -322,6 +322,9 @@ export async function handle(line, session, ctx) {
       // /diff 가 세던 것에서도 뺀다. 되돌린 파일이 '바뀐 파일' 로 남아 있으면
       // 사람도 되돌아간 줄 모른다.
       for (const f of r.restored) if (!f.skipped) session.changes.delete(f.path);
+      // 상태줄의 '되돌릴 턴' 도 여기서 줄여 준다. 안 줄이면 방금 되돌린 것을
+      // 아직 되돌릴 수 있는 것처럼 세고 있게 된다.
+      try { session.되돌릴턴 = ctx.history.turns().length; } catch { /* 못 세면 그냥 둔다 */ }
 
       const 되감음 = session.되감기(r.turnIds ?? []);
       if (되감음.걷은것) {

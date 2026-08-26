@@ -148,6 +148,42 @@ export function gauge(ratio, cells = 10) {
   return tone('▰'.repeat(filled)) + c.gray('▱'.repeat(cells - filled));
 }
 
+/**
+ * 눈금이 있는 게이지.
+ *
+ * 게이지가 차는 것은 보이는데 **언제 무슨 일이 나는지**는 안 보였다. 55% 를
+ * 넘으면 오래된 도구 결과를 접기 시작하고, 80% 를 넘으면 대화를 요약한다.
+ * 둘 다 사람 눈에는 갑자기 일어나는 일이라 — 어느 날 갑자기 "앞선 대화를
+ * 줄였습니다" 가 뜨고, 모델이 방금 읽은 파일을 잊는다.
+ *
+ * 그래서 그 자리에 눈금을 미리 그어 둔다. 막대가 다가가는 것이 보이면
+ * 사람이 먼저 손을 쓸 수 있다 — 못 박아 두거나(/pin), 갈래를 새로 파거나.
+ * 지나간 눈금은 안 그린다. 이미 일어난 일을 계속 가리킬 이유가 없고,
+ * 남겨 두면 막대가 눈금에 가려 어디까지 찼는지가 흐려진다.
+ *
+ * @param {number} ratio
+ * @param {number} cells
+ * @param {number[]} 눈금  0~1 사이 자리들
+ */
+export function 눈금게이지(ratio, cells = 10, 눈금 = []) {
+  const n = Number(ratio);
+  const r = Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
+  const filled = Math.round(r * cells);
+  const tone = r > 0.8 ? c.hred : r > 0.55 ? c.hyellow : c.hgreen;
+  const 눈금칸 = new Set(
+    (Array.isArray(눈금) ? 눈금 : [])
+      .map((v) => Math.min(cells - 1, Math.max(0, Math.floor(Number(v) * cells))))
+      .filter((v) => Number.isFinite(v)),
+  );
+  let out = '';
+  for (let i = 0; i < cells; i++) {
+    if (i < filled) out += tone('▰');
+    else if (눈금칸.has(i)) out += c.white('┆');
+    else out += c.gray('▱');
+  }
+  return out;
+}
+
 const BOX = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
 
 /**

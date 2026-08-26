@@ -2,18 +2,42 @@
 //
 // 남의 패키지를 붙이지 않는다. 필요한 숫자는 전부 session 이 이미 갖고 있고,
 // 화면 그리기는 ansi.js 만 쓴다. 반입 심사에 새로 설명할 것이 늘지 않게 하려는 뜻이다.
-import { c, gauge, width, clip, cols, mark } from './ansi.js';
+import { c, gauge, 눈금게이지, width, clip, cols, mark } from './ansi.js';
 import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
+import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
 
 // 한 조각씩 따로 만든다. 좁은 화면에서는 뒤에서부터 떨군다.
 // 순서 = 중요도 순. 앞쪽이 끝까지 살아남는다.
 export const SEGMENTS = {
+  /*
+   * 경계선 — 소스가 어디로 나가는가.
+   *
+   * 이 프로그램이 하는 말이 딱 하나다. **내 소스가 이 컴퓨터 밖으로 안 나간다.**
+   * 그런데 그 말이 켤 때 머리말에 한 번 뜨고는 스크롤에 밀려 사라졌다. 한 시간
+   * 뒤에 /model 로 사내 게이트웨이로 갈아탄 사람은, 화면 어디를 봐도 지금
+   * 소스가 밖으로 나가고 있다는 것을 알 수가 없었다.
+   *
+   * 그래서 한 글자를 상태줄 맨 앞에 박아 둔다. 한 칸이면 좁은 터미널에서도
+   * 안 밀린다 — 이건 밀리면 안 되는 것이다.
+   *   ⌂  이 컴퓨터 안
+   *   ↗  바깥으로 나간다
+   * 무슨 뜻인지는 켤 때 머리말에서 한 번 읽고 나면 그 다음부터는 글자만 봐도 안다.
+   */
   // 폴더 이름은 사람이 짓는다 — 한글로 길게 짓기도 한다. 안 자르면
   // 이 조각 하나가 상태줄을 통째로 넘겨 줄이 접힌다(모델 이름은 이미 자르고 있었다).
-  dir: { desc: '작업 폴더', make: (s) => c.gray(clip(base(s.root), 20)) },
+  //
+  // 경계 글자를 **폴더 앞에 붙여서** 낸다. 따로 조각을 두면 가운뎃점까지
+  // 네 칸을 먹는데, 100칸 터미널에서 그 네 칸 때문에 승인 방식이 짧은 이름
+  // ('위험만')으로 접혔다. 안전 표시를 흐리게 만드는 안전 표시는 손해다.
+  // 붙여 쓰면 두 칸이고, '어디 폴더에서 · 어디로 나가나' 가 한 덩이로 읽힌다.
+  dir: {
+    desc: '작업 폴더 (앞의 ⌂/↗ 는 소스가 어디로 나가나)',
+    make: (s) => `${경계표(s)} ${c.gray(clip(base(s.root), 20))}`,
+    short: (s) => `${경계표(s)} ${c.gray(clip(base(s.root), 12))}`,
+  },
 
   /*
    * 지금 어느 대화 갈래인가.
@@ -65,16 +89,28 @@ export const SEGMENTS = {
     },
   },
 
+  /*
+   * 컨텍스트 사용량.
+   *
+   * 게이지에 **눈금 두 개**를 그어 둔다. 55% 를 넘으면 오래된 도구 결과를 접기
+   * 시작하고, 80% 를 넘으면 대화를 요약한다. 둘 다 사람 눈에는 갑자기 일어나는
+   * 일이라 — 어느 날 갑자기 "앞선 대화를 줄였습니다" 가 뜨고, 모델이 방금 읽은
+   * 파일을 잊는다. 막대가 눈금에 다가가는 것이 보이면 먼저 손을 쓸 수 있다:
+   * 못 박아 두거나(/pin), 갈래를 새로 파거나, 지금 하던 것을 먼저 끝내거나.
+   *
+   * 자리를 코드에 두 번 적지 않는다. compact.js 의 값을 그대로 가져온다 —
+   * 문턱을 옮겼는데 화면 눈금만 옛 자리에 남으면, 그 눈금은 거짓말이 된다.
+   */
   ctx: {
-    desc: '컨텍스트 사용량',
+    desc: '컨텍스트 사용량 (눈금 = 접기·요약 자리)',
     make: (s) => {
       const { r, pct, tone, b } = 참값(s);
-      return `${gauge(r, 10)} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + short(b.total))}`;
+      return `${눈금게이지(r, 10, [FOLD_AT, COMPACT_AT])} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + short(b.total))}`;
     },
     // 자리가 모자라면 정확한 숫자를 접는다. 게이지와 %가 이미 같은 말을 하고 있다.
     short: (s) => {
       const { r, pct, tone } = 참값(s);
-      return `${gauge(r, 10)} ${tone(pct + '%')}`;
+      return `${눈금게이지(r, 10, [FOLD_AT, COMPACT_AT])} ${tone(pct + '%')}`;
     },
   },
 
@@ -123,6 +159,47 @@ export const SEGMENTS = {
       : null,
   },
 
+  /*
+   * 이번 대화에서 **내 폴더에 무슨 일이 있었나** — 다른 축이라 따로 묶는다.
+   *
+   * 셋 다 아무 일도 없으면 아무것도 안 그린다. 갓 켠 화면에 `✎ 0 · ↩ 0` 이
+   * 서 있으면 자리만 먹고, 좁은 터미널에서는 그것 때문에 뒤엣것이 떨어져 나간다.
+   */
+  edits: {
+    desc: '이번 대화에서 바뀐 파일',
+    make: (s) => (s.changes?.size ? c.white(`✎ ${s.changes.size}`) : null),
+  },
+
+  /*
+   * 확인한 것 (Verify).
+   *
+   * 탈이 있으면 빨갛게, 없으면 초록으로. 이게 중요한 이유는 모델이 "다
+   * 됐습니다" 로 답을 맺는 것과 **실제로 돌려 본 것**이 다른 일이기 때문이다.
+   * 화면에 초록 ✓ 가 없으면 아직 아무도 안 돌려 본 것이다.
+   */
+  verify: {
+    desc: '확인한 것 (Verify)',
+    make: (s) => {
+      const v = s.검증;
+      if (!v?.돈횟수) return null;
+      return v.탈 ? c.hred(`✓${v.확인} ✗${v.탈}`) : c.hgreen(`✓${v.확인}`);
+    },
+    short: (s) => (s.검증?.돈횟수 ? (s.검증.탈 ? c.hred(`✗${s.검증.탈}`) : c.hgreen(`✓${s.검증.확인}`)) : null),
+  },
+
+  /*
+   * 되돌릴 수 있는 턴 수.
+   *
+   * 이 프로젝트는 승인 관문 대신 **되돌리기**로 가기로 했다. 그러면 되돌릴
+   * 것이 얼마나 남아 있는지가 안전망의 잔량이다 — 그게 화면 어디에도 없으면
+   * "지금 /undo 를 누르면 어디까지 돌아가나" 를 눌러 봐야만 알 수 있다.
+   * 이력은 오래되면 잘려 나가므로(undo.js) 이 숫자는 줄어들기도 한다.
+   */
+  undoable: {
+    desc: '되돌릴 수 있는 턴',
+    make: (s) => (s.되돌릴턴 > 0 ? c.gray(`↩ ${s.되돌릴턴}`) : null),
+  },
+
   tools: { desc: '도구 호출 수', make: (s) => (s.usage.calls ? c.gray(`호출 ${s.usage.calls}`) : null) },
 
   skills: {
@@ -154,6 +231,8 @@ export const SEGMENT_GROUPS = [
   ['dir', 'thread', 'model'],
   ['ctx', 'grade'],
   ['work', 'think', 'mode'],
+  // 내 폴더에 무슨 일이 있었나. 아무 일도 없으면 이 덩이는 아예 안 선다.
+  ['edits', 'verify', 'undoable'],
   ['tok'],
 ];
 
@@ -183,8 +262,33 @@ function 참값(s) {
   // 넘칠 수는 있지만 화면에 219% 라고 적으면 고장난 것처럼 보인다. 100 에서 멈춘다.
   const r = Math.min(1, b.total > 0 ? b.used / b.total : 0);
   const pct = Math.round(r * 100);
-  const tone = r > 0.85 ? c.hred : r > 0.6 ? c.hyellow : c.gray;
+  /*
+   * %의 색을 게이지와 **같은 자리에서** 바꾼다.
+   *
+   * 전에는 0.6·0.85 로 따로 잡혀 있어서, 62% 에서 숫자만 노래지고 눈금은
+   * 아직 멀쩡했다. 두 개가 다른 말을 하면 사람은 둘 다 안 믿는다.
+   * 이제 접기(55%)·요약(80%) 자리에서 같이 바뀐다 — 색이 바뀌는 그 순간이
+   * 실제로 무슨 일이 나는 순간이다.
+   */
+  const tone = r > COMPACT_AT ? c.hred : r > FOLD_AT ? c.hyellow : c.gray;
   return { b, r, pct, tone };
+}
+
+/**
+ * 경계 한 글자.
+ *
+ * 못 읽는 주소면 아무것도 안 그린다. 여기서 애매하면 **초록을 안 쓴다** —
+ * 초록은 '안 나간다' 는 약속이고, 확인 못 한 것을 확인한 낯으로 내밀면 안 된다.
+ */
+function 경계표(s) {
+  let 로컬 = null;
+  try { 로컬 = isLocalHost(new URL(s.conn.base).hostname); } catch { 로컬 = null; }
+  if (로컬 === null) return c.gray('?');
+  if (!로컬) return c.hyellow('↗');
+  // 오프라인 잠금은 '이 안' 보다 더 센 상태지만 글자는 같게 둔다 — 사람이
+  // 봐야 하는 판단은 '나가나 안 나가나' 하나뿐이고, 그 위에 글자를 하나 더
+  // 얹으면 정작 그 판단이 흐려진다. 잠금 여부는 켤 때 머리말에 적힌다.
+  return c.hgreen('⌂');
 }
 
 function base(p) {
@@ -311,7 +415,15 @@ export function headerLines(session, found) {
      */
     `${c.gray('모델')}    ${c.white(conn.model)}  ${c.gray('(' + short(conn.ctx) + ' 토큰')}`
       + `${급머리말(session)}${c.gray(')')}`,
+    /*
+     * 상태줄 맨 앞의 한 글자가 무슨 뜻인지 여기서 한 번 가르친다.
+     *
+     * 승인 표시(⏵⏵)·급(◈)에 하던 것과 같은 방식이다. 켤 때 한 번 사람 말로
+     * 읽고 나면, 그 뒤로는 글자만 봐도 안다. 이 한 글자는 스크롤에 안 밀린다 —
+     * 그게 이 머리말 한 줄과 다른 점이고, 이 줄을 넣은 이유다.
+     */
     `${c.gray('보냄')}    ${목적지}  ${c.gray('← 여기 말고는 어디로도 안 갑니다')}`,
+    `${c.gray('        상태줄 맨 앞')} ${c.hgreen('⌂')} ${c.gray('가 이 뜻입니다. 바깥으로 가면')} ${c.hyellow('↗')} ${c.gray('로 바뀝니다.')}`,
     `${c.gray('연결')}    ${능력}`,
     `${c.gray('폴더')}    ${c.white(clip(session.root, 56))}`,
     // 켤 때 한 번은 사람 말로 알려 준다. 상태줄의 `⏵⏵ 자동 승인` 이 무슨

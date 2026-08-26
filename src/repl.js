@@ -5,6 +5,7 @@ import { resolve, basename } from 'node:path';
 import { c, say as 바로쓰기, mark, clip } from './ui/ansi.js';
 import { headerLines } from './ui/status.js';
 import { 종, 창제목, 제목되돌리기, 알릴까, 제목글 } from './ui/notify.js';
+import { 보이기 as 인트로, 기본곁말 } from './ui/intro.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
 import { handle, COMMANDS, 미리보기끄기 } from './commands.js';
@@ -17,7 +18,7 @@ import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
 import { activeProfile, load, resolveKey, save as saveCfg, homeDir } from './config.js';
 import { discover } from './skills/discover.js';
-import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
+import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
 import { Threads } from './agent/threads.js';
 import { 못박기 } from './agent/pins.js';
@@ -635,6 +636,26 @@ export async function chatLoop(opts = {}) {
     }
   }
 
+  /*
+   * ── 켤 때 도는 글자 모션 ──────────────────────────────────────────────
+   *
+   * 사람은 `deel` 이라고 치고 들어온다. 그 글자가 그 자리에서 deel-local 로
+   * 자라고, 아래로 선이 그어지며 닫힌다. 꾸미기만은 아니다 — 이 프로그램이
+   * 하는 말이 딱 하나인데(소스가 이 컴퓨터 밖으로 안 나간다) 그 말을 켜는
+   * 첫 1초에 그림으로 한 번 하는 것이다. 바깥 게이트웨이면 같은 선이 노랗게
+   * 그어진다. 그러면 사람이 그 자리에서 안다.
+   *
+   * 여기서 도는 이유는 **연결이 정해진 다음**이라야 색을 제대로 칠하기
+   * 때문이다. 더 일찍 돌면 초록으로 그려 놓고 나중에 바깥이었다고 정정하는
+   * 꼴이 되는데, 그건 안 보여 주느니만 못하다.
+   */
+  {
+    let 바깥 = false;
+    try { 바깥 = !isLocalHost(new URL(conn.base).hostname); } catch { 바깥 = false; }
+    say('');
+    await 인트로({ 바깥, 곁말: 기본곁말(바깥), 쓰기: (t) => process.stdout.write(t) });
+  }
+
   // ── 머리말 ────────────────────────────────────────────────────────────
   화면.머리말(headerLines(session, found));
   const warn = [];
@@ -1015,6 +1036,18 @@ export async function chatLoop(opts = {}) {
                * 수 있는지 없는지 알 길이 없어서, 사람은 되돌릴 수 있는 줄 알고
                * 넘어가거나 반대로 못 되돌리는 줄 알고 겁을 낸다. 사실을 적는다.
                */
+              /*
+               * 확인한 것을 센다. 상태줄이 이 숫자를 본다.
+               *
+               * 모델이 "다 됐습니다" 로 답을 맺는 것과 **실제로 돌려 본 것**은
+               * 다른 일이다. 화면에 초록 ✓ 가 없으면 아직 아무도 안 돌려 본
+               * 것이고, 그 구분이 상태줄에 있어야 사람이 속지 않는다.
+               */
+              if (ev.name === 'Verify' && ev.result) {
+                session.검증.돈횟수 += 1;
+                session.검증.확인 += ev.result.확인됨 ?? 0;
+                session.검증.탈 += ev.result.탈 ?? 0;
+              }
               if (ev.result?.되돌릴것?.length) {
                 const 것들 = ev.result.되돌릴것;
                 say(`      ${c.gray(`↩ ${것들.slice(0, 3).join(' · ')}${것들.length > 3 ? ` 외 ${것들.length - 3}개` : ''} 는 떠 뒀습니다 — /undo 로 되돌아갑니다`)}`);
@@ -1256,6 +1289,14 @@ export async function chatLoop(opts = {}) {
      * 사람은 이틀 만에 알림을 꺼 버리고, 그러면 정작 3분짜리 턴도 못 듣는다.
      * 알림은 아껴 써야 알림이다. (문턱은 ui/notify.js 의 알릴만한초)
      */
+    /*
+     * 되돌릴 수 있는 턴 수를 여기서 한 번 센다.
+     *
+     * 상태줄이 직접 세게 하면 안 된다 — 상태줄은 사람이 글자 하나 칠 때마다
+     * 다시 그려지고, 거기서 이력 파일을 열면 타이핑이 끊긴다. 턴 경계에서
+     * 한 번 세어 두면 화면은 그 숫자만 읽으면 된다.
+     */
+    try { session.되돌릴턴 = ctx.history.turns().length; } catch { /* 못 세면 그냥 둔다 */ }
     if (알릴까({ 걸린밀리초: Date.now() - started, 켬: 알림.켬 })) 종();
     창제목(제목글(턴탈났나 ? '탈남' : '끝남', { 폴더: 알림.폴더 }));
     turn = null;
