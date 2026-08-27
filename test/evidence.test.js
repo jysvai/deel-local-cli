@@ -12,7 +12,7 @@
 //
 // 여기서 재는 것 중 제일 중요한 것은 **증명 안 된 것을 증명 안 됐다고 하는가**
 // 이다. 바꾼 것을 늘어놓는 것은 /diff 도 한다. 안 한 것을 말하는 도구는 없다.
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { 증거모으기, 증거글, 증거적기 } from '../src/agent/evidence.js';

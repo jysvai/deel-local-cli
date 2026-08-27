@@ -15,7 +15,7 @@
  *   · 증거의 정직함이 그대로 온다 — 증명 안 된 것이 빈칸이 아니라 글자로.
  *   · 화면 말을 따라간다 — /lang en 이면 보고서도 영어다.
  */
-import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';

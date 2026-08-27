@@ -81,8 +81,11 @@ const BLOCKED = [
   { re: /\bdel\b[^|;&]*\s\/[sq]\b[^|;&]*(\\\*|\s[a-z]:\\?\s*$)/i, why: '하위 폴더까지 전부 지웁니다' },
   // 파워셸도 같은 일을 한다. 드라이브 뿌리나 집 폴더를 통째로 미는 것만 본다 —
   // 폴더 하나 지우는 평범한 Remove-Item 까지 막으면 도구를 못 쓴다.
+  // 가운데 `(-?[a-z]*\s*)*` 는 양쪽 다 빈 문자열을 허용해서, 안 맞는 긴 입력이
+  // 들어오면 되돌아가는 경우의 수가 기하급수로 늘어난다 — guard 검사 자체가
+  // 멈춰 버린다(ReDoS). 각 겹이 최소 한 글자는 먹게 고쳐서 그 길을 막는다.
   {
-    re: /Remove-Item\b[^|;&]*\s-(Recurse|r)\b[^|;&]*\s(-?[a-z]*\s*)*([a-z]:\\?|~|\$HOME|\$env:USERPROFILE)\s*$/i,
+    re: /Remove-Item\b[^|;&]*\s-(Recurse|r)\b[^|;&]*\s(?:-?[a-z]+\s+)*([a-z]:\\?|~|\$HOME|\$env:USERPROFILE)\s*$/i,
     why: '드라이브나 집 폴더를 통째로 지웁니다',
   },
   { re: /git\s+push\b[^|;&]*--force(?!-with-lease)/i, why: '원격 이력을 덮어씁니다 (--force-with-lease 를 쓰세요)' },

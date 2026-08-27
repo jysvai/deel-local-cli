@@ -188,7 +188,6 @@ const w = (s, n) => {
 };
 const G = (s) => `\x1b[32m${s}\x1b[0m`;
 const R = (s) => `\x1b[31m${s}\x1b[0m`;
-const Y = (s) => `\x1b[33m${s}\x1b[0m`;
 const D = (s) => `\x1b[90m${s}\x1b[0m`;
 
 console.log('');

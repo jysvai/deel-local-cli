@@ -2,7 +2,7 @@
 //
 // 남의 패키지를 붙이지 않는다. 필요한 숫자는 전부 session 이 이미 갖고 있고,
 // 화면 그리기는 ansi.js 만 쓴다. 반입 심사에 새로 설명할 것이 늘지 않게 하려는 뜻이다.
-import { c, gauge, 눈금게이지, width, clip, cols, mark } from './ansi.js';
+import { c, 눈금게이지, width, clip, cols, mark } from './ansi.js';
 import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite, 보일이름 } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';

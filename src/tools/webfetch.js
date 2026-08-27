@@ -91,15 +91,29 @@ function 얼마나쉬라나(머리, 회차) {
 }
 
 function 태그벗기기(html) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
+  let 글 = String(html);
+  // script·style·주석을 겹쳐 쓰거나 안 닫은 모양으로 흘려 보내는 페이지가
+  // 있다 — 정규식 한 번으로는 다 못 걷어 낸다(파서가 아니라서). 더 지울 것이
+  // 없어질 때까지 반복한다. 그래도 이 글은 모델에게 주는 참고용 글일 뿐
+  // 화면에 그리지 않으니, 여기서 다 못 걸러도 실행되는 것은 아니다.
+  for (let i = 0; i < 5; i += 1) {
+    const 전 = 글;
+    글 = 글
+      .replace(/<script[\s\S]*?<\/script\s*>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style\s*>/gi, ' ')
+      .replace(/<!--[\s\S]*?-->/g, ' ');
+    if (글 === 전) break;
+  }
+  return 글
     .replace(/<\/(p|div|section|article|li|tr|h[1-6]|br)>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    // 한 번에 찾아서 한 번에 바꾼다 — 차례로 바꾸면(`&amp;` 를 먼저 `&` 로
+    // 풀고 나서 `&lt;` 를 다시 찾는 식) `&amp;lt;` 처럼 두 겹 씌운 것이
+    // 두 번 풀려서 `<` 로 튀어나온다(글자로 남아야 하는데 태그처럼 보이게 됨).
+    .replace(/&(nbsp|amp|lt|gt|quot|#39);/g, (_, 이름) => ({
+      nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'",
+    }[이름]))
     .replace(/[ \t]+/g, ' ')
     .replace(/\n\s*\n\s*\n+/g, '\n\n')
     .trim();

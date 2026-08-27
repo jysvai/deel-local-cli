@@ -60,11 +60,20 @@ const 되살림 = `
 
 const 안전한경로 = (u) => {
   // %00 이나 널바이트가 섞이면 아래 fs 가 경로를 잘라 읽는다. 통째로 거절한다.
+  // `\` 도 거절한다 — 앞의 `/` 는 지우지만 `\evil.com` 처럼 역슬래시로 시작하면
+  // 남아 있다가, 밑에서 `/${길}/` 로 리다이렉트 주소를 만들 때 일부 브라우저가
+  // `\` 를 `/` 로 봐서 `//evil.com/` 처럼 다른 도메인으로 새는 통로가 된다.
   let p;
   try { p = decodeURIComponent(String(u).split('?')[0].split('#')[0]); } catch { return null; }
-  if (p.includes('\0')) return null;
+  if (p.includes('\0') || p.includes('\\')) return null;
   return p.replace(/^\/+/, '');
 };
+
+/** 이용자 파일 이름을 HTML 안에 그대로 꽂기 전에 씌운다 — 파일 이름에
+ * `<script>` 가 들어 있어도 태그로 안 읽히게. */
+const html씌우기 = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[c]));
 
 /**
  * 폴더 하나를 띄운다.
@@ -294,15 +303,20 @@ function 목록주기(abs, 뿌리, res) {
   let 것들 = [];
   try { 것들 = readdirSync(abs, { withFileTypes: true }); } catch { /* 못 읽으면 빈 채로 */ }
   const 여기 = relative(뿌리, abs).split(sep).join('/');
+  // 파일 이름은 디스크에서 온 것이라 `<script>` 같은 것이 그대로 들어 있을 수
+  // 있다 — 씌우지 않고 꽂으면 그 파일이 있는 폴더를 미리보기로 여는 사람 화면에서
+  // 그대로 실행된다(Stored XSS). href 는 이미 encodeURIComponent 로 씌웠지만
+  // 화면에 보이는 글자는 안 씌웠던 것이 문제였다.
   const 줄 = (e) => {
-    const 이름 = e.name + (e.isDirectory() ? '/' : '');
+    const 이름 = html씌우기(e.name) + (e.isDirectory() ? '/' : '');
     return `<li><a href="${encodeURIComponent(e.name)}${e.isDirectory() ? '/' : ''}">${이름}</a></li>`;
   };
-  const 몸 = `<!doctype html><meta charset="utf-8"><title>${여기 || '/'}</title>`
+  const 여기씌움 = html씌우기(여기);
+  const 몸 = `<!doctype html><meta charset="utf-8"><title>${여기씌움 || '/'}</title>`
     + '<style>body{font:14px/1.7 ui-monospace,monospace;max-width:44rem;margin:3rem auto;padding:0 1rem}'
     + 'h1{font-size:1rem;color:#888;font-weight:400}a{color:#0a7}li{list-style:none}'
     + 'p{color:#999}@media(prefers-color-scheme:dark){body{background:#111;color:#ddd}a{color:#4d9}}</style>'
-    + `<h1>/${여기}</h1>`
+    + `<h1>/${여기씌움}</h1>`
     + (여기 ? '<li><a href="../">../</a></li>' : '')
     + 것들.map(줄).join('')
     + '<p>index.html 이 없어서 목록을 보여 줍니다.</p>';

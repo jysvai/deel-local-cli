@@ -262,7 +262,7 @@ trace('9-도구에붙었나');
   const { makeScope } = await import('../src/safety/guard.js');
   const { History } = await import('../src/safety/undo.js');
   const { Audit } = await import('../src/safety/audit.js');
-  const { mkdtempSync, writeFileSync, rmSync, readFileSync } = await import('node:fs');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const { handle } = await import('../src/commands.js');

@@ -131,7 +131,9 @@ function runOne(file) {
     let 오류fd = null;
     if (오류자리) {
       try { rmSync(오류자리, { force: true }); } catch { /* 없으면 그만 */ }
-      try { 오류fd = openSync(오류자리, 'a'); } catch { 오류fd = null; }
+      // 'wx' 로 연다 — 지운 바로 뒤·여는 바로 앞 그 틈에 같은 이름으로 다른
+      // 무언가(심볼릭 링크 등)가 생겨 있으면 그걸 타지 않고 그냥 실패한다.
+      try { 오류fd = openSync(오류자리, 'wx'); } catch { 오류fd = null; }
     }
 
     const kid = spawn(process.execPath, [join(here, file)], {
