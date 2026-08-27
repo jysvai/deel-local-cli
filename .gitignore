@@ -9,3 +9,6 @@ report*.txt
 # 반입용으로 만든 묶음 — 내 소스와 스킬이 들어 있다
 *.zip
 deel-반입*.zip
+
+# 레딧 초안 — 저장소에 남길 물건이 아니다
+reddit-post.md
