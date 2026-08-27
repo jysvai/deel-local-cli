@@ -6,6 +6,144 @@ What changed in each version, and why
 
 ---
 
+## 1.5.2
+
+**Everything else the adversarial reviews turned up**
+
+1.5.1 pulled out only the three defects that wrecked the screen. This clears the
+rest of what the same reviews (Claude, codex, agy) found. Most of them are places
+where **the screen was lying** — claiming something that could not happen, or
+hiding something that did.
+
+#### 1. The documented "they doze off past 45 seconds" had never once happened
+
+Long-running work was supposed to make the people in the room slump over their
+desks. **Nothing could reach that code.** The doze pose is selected when
+`일감.갈래 === '느긋'`, but the kinds that arrive are only `생각`/`답`/`하위`/
+`접기`/a tool name — never `느긋`. The in-box spinner was measuring elapsed time
+in its own place and never passing it down.
+
+The room now checks the clock itself, and past 45 seconds people actually slump.
+
+The embarrassing part: a test was covering this up by feeding in a hand-built
+`{갈래:'느긋'}` that production never constructs. A test that passes on an input
+which cannot occur is guarding nothing.
+
+#### 2. The 256-colour gate was dead code, and `NO_COLOR` was ignored
+
+The docs promised the office stays off where 256 colour is unavailable. That
+decision was a single check, `TERM !== 'dumb'` — but **the box itself already
+refuses `dumb`.** Inside the box the gate was always true, so it never fired
+once, and a 16-colour console got the office anyway.
+
+`NO_COLOR=1` was not consulted at all. A screen that is nothing but colour was
+being drawn for people who had turned colour off.
+
+It now turns on only when colour support is **positively identified**, and stays
+off when unknown — failing closed costs you a hidden office, failing open spills
+colour codes into your text as literal digits.
+
+#### 3. Emoji were being cut in half
+
+```
+접어쓰기("a😀", 2)  →  ["a\ud83d", "\ude00"]
+```
+
+Text was walked one UTF-16 unit at a time, so a line could wrap **through the
+middle** of a two-unit character. It renders as two replacement characters, and
+every width calculation after it is off.
+
+Wrapping now takes a whole visible cluster at a time. Skin-tone modifiers (👍🏽)
+and ZWJ sequences (👨‍👩‍👧) survive too.
+
+#### 4. Self-healing was counted in keystrokes, not seconds
+
+Sending only changed rows assumes the screen still looks the way we remember. To
+keep the old full-redraw's self-repair, a whole frame goes out every four seconds
+— except it was counted as **45 draws**.
+
+While work is running the box draws every 90ms, so that really was four seconds.
+But **when idle it draws only on a keystroke.** There, four seconds meant "45 more
+keys", and a screen corrupted while you sat still never healed at all. It is on a
+clock now.
+
+#### 5. Resizing the window desynchronised the screen
+
+Nothing anywhere noticed a size change. The moment the width changes the terminal
+reflows rows on its own, while the box keeps moving the cursor by counts taken at
+the old width — landing on the wrong rows and wiping conversation. Nothing repaired
+it until the line count happened to change.
+
+Each draw now compares against the last size and drops the cache when it differs.
+Not using the `resize` event is deliberate: a listener per box needs somewhere to be
+removed (an EventEmitter warning otherwise), and some environments never fire it.
+The moment it costs anything is **the next draw**, so checking there is enough.
+
+Right after shrinking a window the old box may be left above. That is just a mark
+that scrolls away — **better than guessing at rows whose position we no longer know
+and overwriting them.**
+
+#### 6. On short terminals the pinned region overflowed the screen
+
+The 28-row threshold assumed "12 office + 5 box", but the box gets bigger than
+that: long input wrapping to eight rows, plus the completion list and the context
+warning, is 32.
+
+Raising the threshold to 34 would cost the office to people it currently works
+fine for. Instead the office is dropped **for that frame only**, and comes back
+by itself once there is room.
+
+#### 7. Numbers in the room saturated silently
+
+- **Todos**: only five sticky notes, so "ten done" and "ten done, one left"
+  both rendered as five green notes — outstanding work vanished. A yellow note is
+  now always reserved when anything is left.
+- **Model calls**: six and a hundred were both a full row of lit lamps. When it
+  saturates, the last lamp changes colour.
+- **Active workers**: on a narrow screen, two running and three running drew the
+  same picture. The last desk now carries an overflow mark.
+
+#### 8. Subagent desks mimicked the parent's posture
+
+The rule for this screen is that **everything is a real number.** But subagent
+seats were given a copy of the parent's posture — when the parent was typing, a
+subagent that was reading files also typed. The seat *count* was real; the posture
+was invented.
+
+What a subagent is doing does not reach this layer, so those seats now sit in a
+neutral waiting pose. Better to show that we don't know than to make it up.
+
+#### 9. `--no-tui` advertised shortcuts that do nothing there
+
+The header offers `Shift+Tab` and `Alt+Enter`/backtick continuation, all three of
+which live inside the box. On the line screen, through a pipe, or in CI, it was
+**telling people about things that don't work.** Those lines now appear only with
+the box.
+
+#### 10. Performance figures that didn't reproduce were removed
+
+"10 KB/s → 1.6 KB/s, 0.09% of a core" was published. Measured again, those numbers
+did not come back — they swing by several times with terminal width and with
+whatever happens to be animating.
+
+The absolutes are gone; what remains is what the code always guarantees. Rows that
+change per frame average 0.4 out of twelve, and **even on a worst-case frame where
+everything changes, diffing emits the same bytes as a full redraw.** There is no
+case where it loses.
+
+#### 11. Tests now measure the seam
+
+Until now the office was only ever measured on its own. That is why 1.5.0's
+critical defect — 60 columns rendered into a 50-column terminal — passed the
+suite: nothing checked what those rows did **once the box laid them out.**
+
+Rendering now goes through `프레임()` in the tests. The box test's "the border
+survives deletes" was fixed too: it was searching output accumulated since process
+start, so it passed even if the border had vanished from the current screen. It
+now reads the very frame where self-healing runs.
+
+---
+
 ## 1.5.1
 
 **Two of the things 1.5.0 added shipped broken. This fixes them**
@@ -136,13 +274,13 @@ windows, cabinets and empty desks do not.
 So the box now compares row by row and sends only what changed. **That speeds
 things up even if you never turn the office on.**
 
-| | Sent to the terminal |
-|---|---|
-| Old box (whole frame) | 10 KB/s |
-| Current box (changed rows only) | **1.6 KB/s** |
-| With the office on | about 9 KB/s |
+Rows that actually differ between frames: **0.4 out of twelve** on average. Even
+on a worst-case frame where everything changes, diffing emits the same bytes as a
+full redraw, so there is no case where it loses.
 
-Drawing a frame costs 0.08ms — 0.09% of one core at a 90ms tick.
+> A table of KB/s figures used to sit here. It was removed in 1.5.1 — the numbers
+> swing by several times with terminal width and with whatever is animating, and
+> they did not reproduce when measured again.
 
 Comparing rows trusts that the screen is what we think it is, which gives up the
 self-healing that redrawing everything provided. So every four seconds it still

@@ -4,6 +4,39 @@
 // 여기로 옮긴다 — 입력 상자가 긴 입력을 접을 때 같은 것이 필요하다.
 import { width } from './ansi.js';
 
+/*
+ * i 자리에서 **눈에 보이는 한 덩이**를 통째로 떼어 온다.
+ *
+ * 글자를 s[i] 로 한 칸씩 읽으면 UTF-16 코드 단위로 잘린다. 😀 같은 글자는
+ * 두 칸을 차지하므로 하필 그 사이에서 줄이 접히면 반쪽짜리 서로게이트가
+ * 양쪽 줄에 하나씩 남는다 — 접어쓰기("a😀", 2) 가 ["a\ud83d","\ude00"] 를
+ * 내놨다. 화면에는 물음표 두 개로 찍히고, 폭 계산도 그때부터 어긋난다.
+ *
+ * 그래서 코드 포인트로 읽고, 뒤에 붙는 것들(살색 조절·변형 선택자·결합
+ * 부호·ZWJ 로 이어붙인 다음 글자)까지 한 덩이로 본다. 완전한 문자소 분할은
+ * 아니지만 — 그건 표가 있어야 한다 — 실제로 깨지던 자리는 이걸로 다 막힌다.
+ */
+function 한덩이(s, i) {
+  let 끝 = i + String.fromCodePoint(s.codePointAt(i)).length;
+  for (;;) {
+    if (끝 >= s.length) return s.slice(i, 끝);
+    const cp = s.codePointAt(끝);
+    // ZWJ 는 다음 글자까지 끌고 온다 (👨‍👩‍👧 같은 이어붙인 그림글자)
+    if (cp === 0x200d) {
+      const 다음 = 끝 + 1;
+      if (다음 >= s.length) return s.slice(i, 끝);
+      끝 = 다음 + String.fromCodePoint(s.codePointAt(다음)).length;
+      continue;
+    }
+    const 딸린것 = (cp >= 0xfe00 && cp <= 0xfe0f)        // 변형 선택자
+      || (cp >= 0x1f3fb && cp <= 0x1f3ff)               // 살색 조절
+      || (cp >= 0x0300 && cp <= 0x036f)                 // 결합 부호
+      || cp === 0x20e3;                                 // 키캡
+    if (!딸린것) return s.slice(i, 끝);
+    끝 += String.fromCodePoint(cp).length;
+  }
+}
+
 /**
  * 색을 유지하면서 폭에 맞춰 접는다.
  *
@@ -43,6 +76,7 @@ export function 접어쓰기(글, 폭) {
   let 지금 = '';
   let w = 0;
   let 색 = '';                       // 지금 켜져 있는 SGR
+
   for (let i = 0; i < s.length;) {
     // 색 코드는 통째로 옮긴다. 폭에는 안 센다.
     if (s[i] === '\x1b') {
@@ -54,7 +88,7 @@ export function 접어쓰기(글, 폭) {
         continue;
       }
     }
-    const ch = s[i];
+    const ch = 한덩이(s, i);
     const cw = width(ch);
     // 첫 줄은 원래 폭, 접힌 줄부터는 들여쓴 만큼 좁아진다.
     const 한도 = 줄들.length === 0 ? 폭 : 이어폭 + 들여.length;
@@ -65,7 +99,7 @@ export function 접어쓰기(글, 폭) {
     }
     지금 += ch;
     w += cw;
-    i += 1;
+    i += ch.length;
   }
   if (지금.trim() !== '' || 줄들.length === 0) 줄들.push(지금 + (색 ? '\x1b[0m' : ''));
   return 줄들;

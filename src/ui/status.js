@@ -408,7 +408,15 @@ function 급머리말(session) {
   }));
 }
 
-export function headerLines(session, found) {
+/**
+ * 켤 때 한 번 보여 주는 머리말.
+ *
+ * @param {boolean} 상자쓰나 입력 상자를 쓰는 화면인가. Shift+Tab · Alt+Enter ·
+ *   줄 끝 백틱은 전부 상자 안에서만 도는 것이라(repl.js 의 `if (상자쓰나)`),
+ *   줄 화면(`--no-tui`·파이프·CI)에서 이 줄들을 그대로 찍으면 **되지도 않는
+ *   조작법을 알려 주는 셈**이 된다. 안 되는 것을 알려 주는 안내는 없느니만 못하다.
+ */
+export function headerLines(session, found, 상자쓰나 = true) {
   const conn = session.conn;
   const 능력 = [
     conn.streaming ? c.green(말('head.streaming')) : c.gray(말('head.noStreaming')),
@@ -463,9 +471,11 @@ export function headerLines(session, found) {
     // 켤 때 한 번은 사람 말로 알려 준다. 상태줄의 `⏵⏵ 자동 승인` 이 무슨
     // 뜻인지 여기서 한 번 읽고 나면 그 다음부터는 글자만 봐도 안다.
     `${c.gray(자리(말('head.approve')))}${승인표시(session.mode)}  ${c.gray('— ' + 승인고르기(session.mode).한줄)}`,
-    `${빈자리}${c.gray(말('head.shiftTab'))}${c.gray(말('head.shiftTabHint'))}${c.gray(말('head.tabHint'))}`,
-    `${빈자리}${c.gray(말('head.newlineHint'))}`,
   ];
+  if (상자쓰나) {
+    lines.push(`${빈자리}${c.gray(말('head.shiftTab'))}${c.gray(말('head.shiftTabHint'))}${c.gray(말('head.tabHint'))}`);
+    lines.push(`${빈자리}${c.gray(말('head.newlineHint'))}`);
+  }
   if (found.skills.length || found.commands.length) {
     lines.push(`${c.gray(자리(말('head.thisPC')))}${c.white(말('head.skills', { n: found.skills.length }))}${c.gray(' · ')}${c.white(말('head.commands', { n: found.commands.length }))}${c.gray(' · ')}${c.white(말('head.plugins', { n: found.plugins.length }))}`);
   }

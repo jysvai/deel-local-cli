@@ -356,11 +356,22 @@ rows that changed, which speeds things up even if you never turn the office on.
 
 | | Sent to the terminal |
 |---|---|
-| Old box (whole frame every time) | 10 KB/s |
-| Current box (changed rows only) | **1.6 KB/s** |
-| With the office on | about 9 KB/s |
+How much lighter depends on **how many rows actually change between frames.**
+Across the office's twelve rows that number averages **0.4** — walls, windows,
+the filing cabinet and empty desks do not change; only the rows with people in
+them do. `test/office.test.js` measures it.
 
-Drawing a frame costs 0.08ms, which is 0.09% of one core at a 90ms tick.
+| | |
+|---|---|
+| Rows that change per frame | **0.4** out of 12 |
+| Worst case (everything changes) | **byte-identical** to a full redraw |
+
+No absolute throughput figure is published here. It swings by several times with
+terminal width, with whatever happens to be animating, and with the terminal
+itself — measure it once and write it down and it is simply a wrong number from
+then on. What the code always guarantees is stated instead: **diffing can never
+send more bytes than a full redraw.** On a frame where everything changed the two
+emit the same thing; on any other frame it sends less.
 
 ### What gets asked, and what just happens
 

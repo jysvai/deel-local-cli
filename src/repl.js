@@ -763,7 +763,7 @@ export async function chatLoop(opts = {}) {
   }
 
   // ── 머리말 ────────────────────────────────────────────────────────────
-  화면.머리말(headerLines(session, found));
+  화면.머리말(headerLines(session, found, 상자쓰나));
   const warn = [];
   // 홈 폴더에서 켠 경우. 작업 범위가 집 전체가 된다.
   //
