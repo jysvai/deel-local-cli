@@ -36,18 +36,23 @@ export const STAGES = {
 export const PROFILES = {
   even: {
     name: '균일',
+    // 화면 말이 영어일 때 쓰는 이름. modes.js 의 en 과 같은 방식이다 —
+    // i18n 표에 같은 말을 또 적어 두면 언젠가 둘이 갈라진다.
+    en: 'even',
     desc: '모든 단계 같은 강도 — 예측 가능한 대신 느립니다',
     shift: { plan: 0, work: 0, fix: 0 },
     share: { plan: 0.40, work: 0.40, fix: 0.40 },
   },
   save: {
     name: '절약',
+    en: 'save',
     desc: '첫 판단만 세게, 이어가기는 얕게 — 대개 이게 낫습니다',
     shift: { plan: 0, work: -1, fix: +1 },
     share: { plan: 0.40, work: 0.35, fix: 0.45 },
   },
   deep: {
     name: '깊게',
+    en: 'deep',
     desc: '전 단계 한 칸씩 위로 — 어려운 일에만',
     shift: { plan: +1, work: 0, fix: +1 },
     share: { plan: 0.50, work: 0.45, fix: 0.50 },

@@ -40,12 +40,12 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
  │ Sends to this machine 127.0.0.1:11434  ← nowhere else        │
  │ Link     streaming · tools · reasoning control               │
  │ Folder   C:\work\myproject                                   │
- │ Approval ⏵⏵ 자동 승인  — nothing is asked; /undo is the net   │
+ │ Approval ⏵⏵ auto-approve — nothing is asked; /undo is the net│
  │          Shift+Tab to change  ·  Tab completes a / command   │
  │ This PC  337 skills · 127 commands · 42 plugins              │
  ╰──────────────────────────────────────────────────────────────╯
 
- ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱▱▱ 22% 28k/128k ▏ ◎ 종합 · ◇ medium·절약 · ⏵⏵ 자동
+ ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱▱▱ 22% 28k/128k ▏ ◎ Auto · ◇ medium·save · ⏵⏵ auto
  ❯ unify the logging style
 
   ❊ Grep(console.log)

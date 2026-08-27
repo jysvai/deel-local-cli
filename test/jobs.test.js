@@ -531,7 +531,17 @@ trace('8-Bash와붙였을때');
   check('막히는 명령은 background 로도 막힌다', /막힘/.test(막힘1.error ?? ''), 막힘1.error ?? '');
   check('막힌 것은 일감이 안 생긴다', 목록().length === 0, `${목록().length}개`);
 
-  const 막힘2 = await TOOLS.Bash.run({ command: 'type ..\\..\\비밀.txt', background: true }, ctx);
+  /*
+   * 범위 밖 경로는 **그 판의 말**로 적어야 한다.
+   *
+   * `..\..\비밀.txt` 는 윈도우에서만 밖으로 나가는 길이다. 리눅스·맥에서
+   * 역슬래시는 구분자가 아니라 그냥 글자라, 저건 「..\..\비밀.txt」 라는
+   * 이름의 파일 하나이고 범위 안이다 — 안 막히는 것이 맞다.
+   * 그래서 검사가 리눅스에서만 졌다(GitHub Actions 의 ubuntu 세 판 전부).
+   * 막는 쪽(safety/guard.js)은 path.sep 을 쓰므로 원래부터 옳았다.
+   */
+  const 밖으로 = process.platform === 'win32' ? 'type ..\\..\\비밀.txt' : 'cat ../../비밀.txt';
+  const 막힘2 = await TOOLS.Bash.run({ command: 밖으로, background: true }, ctx);
   check('범위 밖 경로도 background 로 못 나간다', /막힘/.test(막힘2.error ?? ''), 막힘2.error ?? '');
   check('그것도 일감이 안 생긴다', 목록().length === 0, `${목록().length}개`);
 

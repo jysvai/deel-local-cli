@@ -102,6 +102,7 @@ trace('2.5-JS가다도나');
     ['/앱/자료.json', /application\/json/, 'fetch 로 읽는 JSON'],
     ['/앱/판.wasm', /application\/wasm/, 'WebAssembly'],
   ];
+  trace('2.5a-형식표');
   for (const [길, 맞나, 왜] of 표) {
     const r = await 받기(길);
     check(`${왜} 형식이 맞다`, r.code === 200 && 맞나.test(r.형식), `${r.code} · ${r.형식}`);
@@ -114,6 +115,7 @@ trace('2.5-JS가다도나');
    * 풀린다. 화면은 희고 오류는 콘솔에만 있다 — 정확히 '안에 있는 js 가
    * 누락되는' 모습이다.
    */
+  trace('2.5b-슬래시없이');
   const 슬래시없이 = await fetch(서버.url.replace(/\/$/, '') + '/앱', { redirect: 'manual' });
   const 간자리 = 슬래시없이.headers.get('location') ?? '';
   check('폴더는 슬래시를 붙여 다시 보낸다',
@@ -123,17 +125,20 @@ trace('2.5-JS가다도나');
   // 미리보기 한 번 켰다가 deel 이 통째로 끝나는 셈이라, 인코딩됐는지를 따로 못 박는다.
   check('되보내는 자리를 ASCII 로 싣는다', /^[\x20-\x7e]*$/.test(간자리), 간자리);
 
+  trace('2.5c-따라가기');
   const 따라간것 = await 받기('/앱/');
   check('그 다음 상대 경로가 제대로 풀린다',
     따라간것.글.includes('./main.js') && (await 받기('/앱/main.js')).code === 200);
 
   // 주소로 화면을 나누는 앱: 안쪽 주소에서 새로고침해도 첫 장이 나와야 한다.
+  trace('2.5d-라우터주소');
   const 안쪽주소 = await 받기('/설정/상세', { headers: { accept: 'text/html' } });
   check('라우터 주소에서 새로고침해도 첫 장이 나온다',
     안쪽주소.code === 200 && 안쪽주소.글.includes('안녕'), String(안쪽주소.code));
 
   // 그런데 없는 스크립트에까지 HTML 을 주면 안 된다. 브라우저가
   // "Unexpected token '<'" 로 죽는데, 그게 진짜 원인(오타)을 완전히 가린다.
+  trace('2.5e-없는스크립트');
   const 없는스크립트 = await 받기('/앱/오타난이름.js', { headers: { accept: '*/*' } });
   check('없는 스크립트는 그냥 404 다 (HTML 로 속이지 않는다)',
     없는스크립트.code === 404, `${없는스크립트.code} · ${없는스크립트.형식}`);

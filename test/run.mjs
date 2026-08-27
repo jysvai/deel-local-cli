@@ -233,6 +233,9 @@ if (process.env.GITHUB_ACTIONS) {
   for (const x of 진) {
     const 몸 = [
       `종료코드 ${x.signal ?? x.code}${x.failed ? ` · 실패 ${x.failed}개` : ''}`,
+      // 어느 판에서 진 것인지 같이 적는다. 판마다 다르게 지는 것이 실제로
+      // 있었고(리눅스만·Node 24 만), 그걸 모르면 못 재현한다.
+      `${process.platform} · node ${process.version}`,
       ...(x.실패줄 ?? []),
       ...(x.steps?.length && !x.steps.includes('끝-정상종료')
         ? [`지나온 자리: ${x.steps.join(' → ')}`, `↑ '${x.steps.at(-1)}' 안에서 죽었습니다.`]

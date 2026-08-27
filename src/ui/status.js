@@ -143,7 +143,10 @@ export const SEGMENTS = {
     get desc() { return 말('seg.think'); },
     make: (s) => {
       const p = PROFILES[s.effort] ?? PROFILES.save;
-      return `${c.gray('◇')} ${c.white(s.think)}${c.gray('·')}${c.magenta(p.name)}`;
+      // 배분 이름도 화면 말을 따라간다. 강도(medium)는 어느 말에서나 같은
+      // 낱말이라, 여기만 한국어로 남으면 `medium·절약` 처럼 반씩 섞인다.
+      const 이름 = 언어() === 'en' ? (p.en ?? p.name) : p.name;
+      return `${c.gray('◇')} ${c.white(s.think)}${c.gray('·')}${c.magenta(이름)}`;
     },
     // 배분은 강도보다 덜 급하다. 좁으면 강도만 남긴다.
     short: (s) => `${c.gray('◇')} ${c.white(s.think)}`,
