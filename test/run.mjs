@@ -13,7 +13,7 @@
 //   그래서 전부 돌리고, 파일별 종료코드를 따로 적는다. '통과 표시' 가 아니라
 //   '종료코드' 가 CI 가 보는 값이기 때문이다.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -114,8 +114,28 @@ function runOne(file) {
     const 자취 = join(tmpdir(), `deel-trace-${process.pid}-${file}.txt`);
     try { rmSync(자취, { force: true }); } catch { /* 없으면 그만 */ }
 
+    /*
+     * 표준오류를 어디로 보낼까.
+     *
+     * 평소에는 그대로 물려준다(inherit) — 파이프로 받으면 abort() 로 죽을 때
+     * 아직 안 나간 것이 버려져서, 죽는 이유가 적힌 바로 그 줄이 사라진다.
+     *
+     * 그런데 CI 에서는 그 화면을 볼 권한이 있어야 읽힌다. 밖에서 보이는 것은
+     * "exit code 1" 뿐이라, 정작 죽는 이유는 아무 데도 안 남는 셈이다.
+     * 그래서 CI 에서만 **파일**로 받는다. 파일은 파이프가 아니라서 abort 로
+     * 죽어도 앞엣것이 남고, 죽은 뒤에 읽어 주석에 실을 수 있다.
+     */
+    const 오류자리 = process.env.GITHUB_ACTIONS
+      ? join(tmpdir(), `deel-err-${process.pid}-${file}.txt`)
+      : null;
+    let 오류fd = null;
+    if (오류자리) {
+      try { rmSync(오류자리, { force: true }); } catch { /* 없으면 그만 */ }
+      try { 오류fd = openSync(오류자리, 'a'); } catch { 오류fd = null; }
+    }
+
     const kid = spawn(process.execPath, [join(here, file)], {
-      stdio: ['ignore', 'pipe', 'inherit'],
+      stdio: ['ignore', 'pipe', 오류fd ?? 'inherit'],
       // 설정 폴더를 임시 자리로 돌린다.
       //
       // 검사가 사람의 ~/.deel/config.json 을 바꾼 적이 실제로 있다. /level 이
@@ -127,7 +147,7 @@ function runOne(file) {
     });
 
     let out = '';
-    const err = '';
+    let err = '';
     kid.stdout.on('data', (b) => { out += b; process.stdout.write(b); });
 
     kid.on('close', (code, signal) => {
@@ -136,6 +156,13 @@ function runOne(file) {
       let steps = [];
       try { steps = readFileSync(자취, 'utf8').split('\n').filter(Boolean); } catch { /* 없을 수 있다 */ }
       try { rmSync(자취, { force: true }); } catch { /* 그만 */ }
+      // 파일로 받아 둔 표준오류를 걷어 온다. abort 로 죽었어도 여기엔 남는다.
+      if (오류자리) {
+        try { closeSync(오류fd); } catch { /* 이미 닫혔다 */ }
+        try { err = readFileSync(오류자리, 'utf8'); } catch { /* 없을 수 있다 */ }
+        try { rmSync(오류자리, { force: true }); } catch { /* 그만 */ }
+        if (err.trim()) process.stderr.write(err);   // 화면에도 그대로 남긴다
+      }
       // 무엇이 틀렸는지도 챙긴다. 숫자만으로는 고칠 수가 없다.
       const 실패줄 = out
         .replace(/\x1b\[[0-9;]*m/g, '')
@@ -240,6 +267,8 @@ if (process.env.GITHUB_ACTIONS) {
       ...(x.steps?.length && !x.steps.includes('끝-정상종료')
         ? [`지나온 자리: ${x.steps.join(' → ')}`, `↑ '${x.steps.at(-1)}' 안에서 죽었습니다.`]
         : []),
+      // 죽은 이유가 적힌 줄. 주석에 실어야 밖에서도 읽힌다.
+      ...(x.err ? ['── 표준오류 ──', ...x.err.split('\n').filter(Boolean).slice(-25)] : []),
     ].join('\n');
     console.log(`::error file=test/${x.file},title=검사 실패::${감싸기(몸)}`);
   }
