@@ -20,6 +20,7 @@ import { 프로젝트갈래 } from '../lsp/servers.js';
 import { allow as allowedIn } from '../agent/modes.js';
 import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
+import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOldHwp, 옛hwp안내, 문서는못고침 } from './docs.js';
 import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
 import { 도구설명EN } from './desc.en.js';
@@ -236,6 +237,28 @@ async function 엑셀읽기(abs, args, ctx) {
 
 
 /**
+ * 문서(hwpx·docx·pptx)를 글로 읽어 돌려준다.
+ *
+ * 엑셀읽기와 같은 규칙 — ctx.seen 에 안 넣는다. 넣으면 Edit 이 '이 파일 고칠
+ * 수 있다' 고 오해한다. 문서는 이 도구로 고치는 물건이 아니다.
+ */
+function 문서읽기(abs, ctx) {
+  const r = readDoc(abs);
+  if (!r.ok) return { error: r.error };
+  const { text, 잘림 } = docText(r.덩이들);
+  return {
+    content: clip(
+      `${text || '(빈 문서입니다 — 글이 없습니다.)'}
+
+(${r.갈래} 문서를 글로 바꿔서 보여준 것입니다. 이 파일은 Edit/Write 로 고칠 수 없습니다.)`
+      + (잘림.length ? `
+(${잘림.join(' · ')})` : ''),
+    ),
+    summary: docSummary(r) + (잘림.length ? ' · 일부만' : ''),
+  };
+}
+
+/**
  * 파일 하나를 쓴다 — Write 의 알맹이.
  *
  * 되돌리기 스냅샷을 **여기서** 뜬다. 여러 개를 쓸 때도 파일마다 한 번씩 뜨는
@@ -252,6 +275,9 @@ function 한파일쓰기(args, ctx) {
     // 엑셀 파일을 통째로 덮어쓰면 xlsx 가 아니라 그냥 글 파일이 된다.
     // 열리지도 않는 파일이 되고, 원본은 이미 없다. 아예 막는다.
     if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
+    // 문서(hwpx·docx·pptx)도 같은 이유로 또렷하게 거절한다. 일반 '바이너리'
+    // 오류로 넘기면 왜 안 되는지가 안 실려서, 모델이 우회로를 찾는다.
+    if (isDocPath(abs)) return { error: 문서는못고침(args.file_path) };
     // 엑셀만 막아서는 모자란다. hwp·pdf·png·zip 도 똑같이 그 순간 끝난다.
     // 게다가 이런 파일은 되돌리기가 내용을 떠 놓지 못하는 종류라 되살릴 길이 없다.
     // 확장자로 고르지 않고 실제 내용으로 본다 — 사내 파일은 확장자가 제각각이다.
@@ -349,6 +375,7 @@ function 한군데고치기(args, ctx) {
   // 엑셀 파일은 Read 로 읽히긴 하지만 고칠 수 있는 물건이 아니다.
   // '먼저 Read 로 읽어야 합니다' 라고만 하면 이미 읽은 쪽은 계속 헛돈다.
   if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
+  if (isDocPath(abs)) return { error: 문서는못고침(args.file_path) };
   if (!ctx.seen.has(abs)) return { error: `먼저 Read 로 읽어야 합니다: ${args.file_path}` };
   if (args.old_string === args.new_string) return { error: 'old_string 과 new_string 이 같습니다' };
 
@@ -468,7 +495,8 @@ export const TOOLS = {
       name: 'Read',
       description: '파일 하나를 읽는다. 줄 번호가 붙어 돌아온다. 고치기 전에는 반드시 먼저 읽어야 한다.'
         + ' 엑셀 파일(.xlsx/.xlsm/.xls)도 그대로 읽을 수 있다 — 시트별 CSV 로 바꿔서 돌려준다.'
-        + ' 사용자에게 CSV 로 내보내 달라고 할 필요가 없다. 다만 엑셀 파일은 읽기만 되고 고칠 수는 없다.',
+        + ' 한글·워드·파워포인트 문서(.hwpx/.docx/.pptx)도 그대로 읽는다 — 글로 바꿔서 돌려준다.'
+        + ' 사용자에게 다른 형식으로 내보내 달라고 할 필요가 없다. 다만 이런 파일들은 읽기만 되고 고칠 수는 없다.',
       parameters: {
         type: 'object',
         properties: {
@@ -490,6 +518,19 @@ export const TOOLS = {
       // 엑셀 파일은 글이 아니라 압축 꾸러미다. 그냥 읽으면 '바이너리' 로 끝난다.
       // 여기서 표로 바꿔 돌려준다 — 사람이 손으로 CSV 로 내보낼 일이 없게.
       if (isExcelPath(abs)) return 엑셀읽기(abs, args, ctx);
+      // hwpx·docx·pptx 도 같다 — 속이 ZIP+XML 이라 글로 바꿔 돌려준다 (docs.js).
+      if (isDocPath(abs)) return 문서읽기(abs, ctx);
+      /*
+       * 구형 hwp 는 '바이너리' 로 끝내지 않는다. 그 오류에는 길이 없어서
+       * 모델이 우회로(새로 쓰기)를 찾는다 — 실제로 그렇게 원본이 죽은 적이
+       * 있다. 여기서는 hwpx 로 저장하면 읽힌다는 길을 같이 준다.
+       */
+      if (abs.toLowerCase().endsWith('.hwp')) {
+        try {
+          const 머리 = readFileSync(abs);
+          if (looksOldHwp(abs, 머리)) return { error: 옛hwp안내(ctx.scope.show(abs)) };
+        } catch { /* 아래 일반 읽기가 제 오류를 낸다 */ }
+      }
 
       const 읽음 = readTextFull(abs);
       // 무엇으로 읽었는지 기억해 둔다. 나중에 고칠 때 같은 것으로 되돌려 써야 한다.

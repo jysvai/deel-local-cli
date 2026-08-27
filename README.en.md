@@ -798,7 +798,7 @@ Names and arguments match Claude Code, so skills written for that convention wor
 
 | Tool | What it does |
 |---|---|
-| `Read` | Read a file (line numbers, `offset`/`limit`, **Excel as CSV**) |
+| `Read` | Read a file (line numbers, `offset`/`limit`, **Excel as CSV, hwpx/docx/pptx as text**) |
 | `Write` | Write / overwrite a file (**several at once via the `files` array**) |
 | `Append` | Append to the end of a file — **how large files get written in pieces** |
 | `Edit` | Replace an exact string (`replace_all`; **several sites at once via the `edits` array**) |
@@ -1371,6 +1371,22 @@ a CP949 file brought back `가나다` (bytes `b0a1 b3aa b4d9`) as six U+FFFD cha
 safety net itself destroyed the original bytes.** Now every snapshot is round-tripped through
 UTF-8 first; anything that does not come back identical is stored as base64 and restored
 byte-exact.
+
+### HWP, Word, PowerPoint — read as text
+
+`.hwpx`, `.docx` and `.pptx` differ only on the outside — inside they are all ZIP + XML
+(hwpx is Hancom's published OWPML spec). So the same in-house zip reader and the small XML
+reader that Excel already uses unpack them, **still with zero dependencies.** Paragraphs come
+out in order, tables come out row by row as `name | value`, slides come out per slide.
+
+Why this matters is one incident: asked to tidy up an HWP file, Read failed with "binary",
+so the model wrote a new file over it — nearly killing the original. A refusal with no path
+forward pushes the model onto a detour. Once reading works, that detour does not exist, and
+**handing the agent a spec document and saying "build this"** finally works.
+
+Editing stays off. Round-tripping a document with formatting, images and forms through plain
+text always loses something. Old-style `.hwp` (OLE) cannot be read — instead deel tells you
+the way out: save it as hwpx in Hancom Office and it reads fine.
 
 ### Excel — read as CSV
 

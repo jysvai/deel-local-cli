@@ -31,8 +31,10 @@
 export const 도구설명EN = {
   Read: {
     desc: 'Read one file. Line numbers come back with it. You must read a file before editing it.'
-      + ' Excel files (.xlsx/.xlsm/.xls) can be read directly too — they come back as CSV per sheet,'
-      + ' so there is no need to ask the user to export anything. Excel files are read-only here, though.',
+      + ' Excel files (.xlsx/.xlsm/.xls) can be read directly too — they come back as CSV per sheet.'
+      + ' Korean HWP, Word and PowerPoint documents (.hwpx/.docx/.pptx) read directly as well —'
+      + ' they come back as plain text. There is no need to ask the user to export anything.'
+      + ' All of these are read-only here, though.',
     params: {
       file_path: 'path of the file to read',
       offset: 'first line (1-based). Only for large files',
