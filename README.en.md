@@ -64,6 +64,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 ## Contents
 
 - [Why this exists](#why-this-exists)
+- [What's different](#whats-different)
 - [Quick start](#quick-start)
 - [Where your data can go](#where-your-data-can-go)
 - [Multiple local runtimes](#multiple-local-runtimes)
@@ -125,6 +126,66 @@ npm view deel-local-cli dependencies   # {}
 npm view deel-local-cli scripts        # no install/postinstall
 deel audit                             # full review sheet
 ```
+
+---
+
+## What's different
+
+A handful of coding agents can talk to a local model. Far fewer were
+**redesigned inside for running locally.** Below are problems that stay
+invisible when a cloud-API-first tool gets pointed at a local one instead,
+and what deel does about each.
+
+**`/undo` rewinds the conversation along with the files**
+Roll back only the files and the model still believes it just made that edit
+— it builds the next step on a premise that no longer holds, and nothing on
+screen says otherwise. deel folds the messages back in lockstep with the
+files. Folding can orphan a tool call, which the server answers with a 400,
+so the same pass repairs the pairing (`repairToolPairs`).
+
+**Fixed the hidden reason local models get slower as a conversation grows**
+Ollama and llama.cpp only reuse computation when a request's prefix exactly
+matches the last one — change one character near the front and everything
+after it, the whole conversation, gets recomputed. A cloud API never pays
+this cost, so cloud-first tools have no reason to care; someone running
+locally feels it compound every turn. deel pushes what can change per turn
+(mode, pins) to the **end** of the prompt and sends Ollama `keep_alive: 60m`
+so the front stays cached. The ordering is enforced by a test
+(`test/cache.test.js`) — it's invisible in the UI, so without a test the next
+feature would land wherever.
+
+**Edits actually succeed on small models**
+Small local models often can't reproduce the exact whitespace of the string
+they're trying to edit. The internal benchmark (`npm run bench`) measured
+20% success for the old exact-match-only approach. The current approach
+(stepped whitespace/indent tolerance) measures **100%** — and both approaches
+land at **0** wrong-location edits. When it's ambiguous, it says so instead
+of guessing.
+
+**Korean models are known before you've ever run them**
+EXAONE, HyperCLOVA X, Kanana, Midm, and Solar get whatever's verifiable from
+public documentation (e.g., whether a model is a reasoning model) applied
+before the first prompt. Other tools meet these models cold, and it takes a
+dozen-plus turns of trial and error before anyone learns their quirks.
+
+**"Done" comes with a receipt, not just a claim**
+`/evidence` and `/export` record what wasn't verified alongside what was —
+because the moment an AI coding tool is most likely to mislead someone is
+exactly the moment it confidently says "done." `/export` is a self-contained
+HTML file with zero outbound links, so it opens anywhere, including an
+air-gapped network.
+
+**MCP and ACP, with no SDK**
+Both the Model Context Protocol and the Agent Client Protocol are just
+newline-delimited JSON-RPC 2.0 over stdio. deel implements both with nothing
+but `child_process` and `JSON` — proof that zero dependencies isn't a
+capability given up, it's a capability that was never needed.
+
+**Compliance paperwork it doesn't hand-write**
+The import-review report, SBOM, and audit spec that `deel pack` produces are
+generated **by scanning the actual source**, not typed by a person.
+Hand-written paperwork eventually drifts from reality, and the moment a
+reviewer catches one drifted claim, they stop trusting the rest of it.
 
 ---
 
