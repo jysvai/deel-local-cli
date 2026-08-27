@@ -233,7 +233,7 @@ $ deel scan
 Switch with `/model` mid-conversation — **the conversation carries over.**
 
 <details>
-<summary><b>More</b> — It adapts to whatever model is attached · Small windows get a smaller fixed share · On startup it reads what kind of project this folder is</summary>
+<summary><b>More</b> — It adapts to whatever model is attached · Korean models are known before they are experienced · Small windows get a smaller fixed share · On startup it reads what kind of project this folder is</summary>
 
 ### It adapts to whatever model is attached
 
@@ -288,6 +288,35 @@ not presented with the same face as something measured.
 The grade only changes **how much hand-holding you get**. Working scope, approval mode,
 undo and the audit log are identical at every grade. There is no "it is a good model, so
 skip verification" — that is exactly how a good model's mistake goes unnoticed.
+
+### Korean models are known before they are experienced
+
+The experience-based card (`/model card`) needs 12 steps before it acts. But some habits
+are known before any step is taken — **a reasoning model's thinking eats the output
+budget, and answers get cut.** That is in the public docs; it does not need twelve steps
+of re-confirmation. So this one thing applies from step one: attach a reasoning model
+and the output cap starts generous.
+
+Half of the built-in name tags (`src/agent/preset.js`) are Korean — **EXAONE ·
+EXAONE Deep (LG) · HyperCLOVA X SEED (Naver) · Kanana (Kakao) · Midm (KT) ·
+Solar (Upstage)** — plus Qwen3, the most common local name. These are the models that
+actually run where this program runs (corporate GPUs), and foreign tools do not know
+these names.
+
+```
+/model card
+
+  ── model card ────────────────────────────────
+  exaone-deep:7.8b  · steps walked together 0
+  ◆ EXAONE Deep (LG) · known model
+    LG's reasoning model. Thinks long on math and code — per its public docs.
+```
+
+There is a line it keeps. **Only what comes from public documentation is written in
+advance** — pretending to have experienced what it has not would make the whole card a
+lie. So the only pre-applied adjustment is the one thing the docs can confirm (reasoning
+or not); every other habit (truncation, repeats, missed edits) is still caught only by
+experience. What was experienced beats this table. Unknown models change nothing.
 
 ### Small windows get a smaller fixed share
 
@@ -2251,6 +2280,7 @@ src/
   ui/banner.js           the large name — a line closes and names the boundary
   ui/approve.js          approval mode display (auto / risky only / everything)
   ui/diff.js             showing what changed, where it changed
+  ui/export.js           conversation → a one-page report (/export)
   ui/wrap.js             wrapping to width without breaking colour
   ui/level.js            simple vs developer
 
@@ -2266,6 +2296,8 @@ src/
   agent/recall.js        searching past conversations (no index, within budget)
   agent/memory.js        what outlives the conversation
   agent/mention.js       attaching files with `@`
+  agent/card.js          experienced habits → harness adjustments (/model card)
+  agent/preset.js        models known before they are experienced — Korean-model name tags
 
   backend/http.js        the single HTTP layer (the only door out)
   backend/detect.js      protocol and auth detection
@@ -2285,6 +2317,7 @@ src/
   tools/webfetch.js      reading the web (read-only)
   tools/encoding.js      writing back in the encoding it was read in
   tools/xlsx.js          Excel → CSV (written here)
+  tools/docs.js          hwpx·docx·pptx → text (written here)
   tools/lsp.js           Def · Refs — asking the language server
 
   lsp/rpc.js             LSP framing (Content-Length + JSON-RPC, written here)
