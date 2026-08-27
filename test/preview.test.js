@@ -35,6 +35,25 @@ mkdirSync(join(사이트, '빈방'), { recursive: true });
 // 띄운 폴더 **밖**. 이게 열리면 안 된다.
 writeFileSync(join(모래밭, '비밀.env'), 'API_KEY=진짜키', 'utf8');
 
+/*
+ * 안엣 JS 를 재는 데 쓸 것들. **서버를 띄우기 전에** 만든다.
+ *
+ * 전에는 그 절 안에서 만들었다. 그런데 되살리기 감시는 watch(뿌리,
+ * {recursive:true}) 이고, 윈도우에서 그건 ReadDirectoryChangesW 다 —
+ * 감시가 도는 중에 하위 폴더를 통째로 새로 만들면 libuv 가 그 자리에서
+ * abort 한다(0xC0000409). 검사 하나가 지는 게 아니라 **프로세스가 사라져서**
+ * 화면에 한 줄도 안 남는다. 윈도우 Node 24 에서만, 그것도 늘은 아니고 가끔.
+ *
+ * 감시가 파일 바뀌는 것을 제대로 보는지는 아래 되살리기 절이 따로 잰다.
+ * 여기서 굳이 감시가 도는 중에 만들 이유가 없다.
+ */
+mkdirSync(join(사이트, '앱'), { recursive: true });
+writeFileSync(join(사이트, '앱', 'main.js'), "import x from './쪽.js'; export default x;", 'utf8');
+writeFileSync(join(사이트, '앱', '쪽.mjs'), 'export default 1;', 'utf8');
+writeFileSync(join(사이트, '앱', '자료.json'), '{"값":1}', 'utf8');
+writeFileSync(join(사이트, '앱', '판.wasm'), Buffer.from([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
+writeFileSync(join(사이트, '앱', 'index.html'), '<!doctype html><body><script type="module" src="./main.js"></script></body>', 'utf8');
+
 const scope = makeScope(모래밭);          // 작업 범위는 모래밭 전체
 const 서버 = await 띄우기({ 뿌리: 사이트, scope });  // 띄운 것은 사이트만
 
@@ -99,12 +118,8 @@ trace('2.5-JS가다도나');
  * 실제로 여기서 거의 다 갈린다.
  */
 {
-  mkdirSync(join(사이트, '앱'), { recursive: true });
-  writeFileSync(join(사이트, '앱', 'main.js'), "import x from './쪽.js'; export default x;", 'utf8');
-  writeFileSync(join(사이트, '앱', '쪽.mjs'), 'export default 1;', 'utf8');
-  writeFileSync(join(사이트, '앱', '자료.json'), '{"값":1}', 'utf8');
-  writeFileSync(join(사이트, '앱', '판.wasm'), Buffer.from([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
-  writeFileSync(join(사이트, '앱', 'index.html'), '<!doctype html><body><script type="module" src="./main.js"></script></body>', 'utf8');
+  // 쓸 것들은 맨 위 차림에서 이미 만들어 뒀다 — 감시가 도는 중에 폴더를
+  // 새로 만들면 윈도우에서 프로세스가 통째로 죽는다. 거기 적어 뒀다.
 
   // 형식이 틀리면 브라우저가 실행 자체를 거부한다. type="module" 은 특히 엄격하다.
   const 표 = [
