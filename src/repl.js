@@ -818,6 +818,8 @@ export async function chatLoop(opts = {}) {
    * 코드가 안 하는 것을 화면이 약속하고 있었던 셈이다.
    */
   let 이어갈것 = null;    // 이어서 보낼 말 (null 이면 사람 입력을 기다린다)
+  // 지금 도는 하위 작업 수. 사무실이 자리를 이만큼 채운다.
+  let 도는하위 = 0;
   let 이어갈모드 = null;  // 그때 쓸 작업 모드. 다시 고르지 않는다.
 
   /*
@@ -1090,6 +1092,9 @@ export async function chatLoop(opts = {}) {
             // 같이 돈 것은 이름을 다시 적어 준다. 안 그러면 어느 결과인지 모른다.
             if (ev.parallel || ev.showLabel) say(`  ${toolLabel(ev.name, ev.args)}`);
             if (ev.name === 'TodoWrite' && ev.result?.todos) {
+              // 사무실 화이트보드도 이걸 본다. 할 일은 세션이 아니라 턴 문맥에
+              // 있어서 상자가 스스로 못 읽는다 — 아는 자리에서 넣어 준다.
+              화면.할일갱신(ev.result.todos);
               for (const t of ev.result.todos) {
                 const 표 = t.state === 'done' ? c.green('☑') : t.state === 'doing' ? c.hyellow('▶') : c.gray('☐');
                 const 글 = t.state === 'done' ? c.gray(t.text) : t.state === 'doing' ? c.white(t.text) : c.gray(t.text);
@@ -1188,6 +1193,9 @@ export async function chatLoop(opts = {}) {
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }
             화면.일바꿈('하위', clip(ev.목적, 24));
+            // 사무실은 도는 하위 작업 수만큼 자리를 채운다.
+            도는하위 += 1;
+            화면.하위갱신(도는하위);
             say('');
             say(`  ${c.hmagenta('⌥')} ${c.bold('하위 작업')} ${c.white(clip(ev.목적, 60))}`
               + ` ${c.gray(`· ${보일이름(ev.모드)} · 최대 ${ev.steps}걸음`)}`);
@@ -1209,6 +1217,8 @@ export async function chatLoop(opts = {}) {
           case 'task_done': {
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }
+            도는하위 = Math.max(0, 도는하위 - 1);
+            화면.하위갱신(도는하위);
             const 끝 = ev.끝 ?? {};
             const 잘됨 = 끝.type === 'done';
             const 왜 = { done: '끝냈습니다', limit: '걸음 수를 다 써서 멈췄습니다 — 다 못 했습니다',
