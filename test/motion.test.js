@@ -12,7 +12,9 @@
 //   3. 갈래 빠짐. working.js 에 갈래를 더하고 여기를 안 더하면 조용히 기본으로
 //      떨어진다. 오류가 안 나서 아무도 모른다.
 //   4. 끌 수 있는가. 점자가 안 나오는 자리·화면 읽기 프로그램이 있다.
-import { 틀, 그림들, 점자로, 그림고르기, 칸수, 가로, 세로 } from '../src/ui/motion.js';
+import {
+  틀, 그림들, 점자로, 그림고르기, 칸수, 가로, 세로, 테마들, 테마, 테마이름,
+} from '../src/ui/motion.js';
 import { 문구 } from '../src/ui/working.js';
 import { width } from '../src/ui/ansi.js';
 import { trace } from './trace.mjs';
@@ -156,6 +158,120 @@ trace('5-끄기');
   check('꺼도 여전히 움직인다', 그림고르기('쓰기', 3) !== 그림고르기('쓰기', 4));
   if (원래 === undefined) delete process.env.DEEL_NO_MOTION; else process.env.DEEL_NO_MOTION = 원래;
   check('되돌리면 다시 그림', [...그림고르기('쓰기', 3)].length === 칸수);
+}
+
+trace('6-테마');
+/*
+ * ── 테마 ────────────────────────────────────────────────────────────────
+ *
+ * 기사·동물은 꾸미기지만, 깨뜨릴 수 있는 것은 기본과 똑같다. 폭이 어긋나면
+ * 테두리가 떨리고, 갈래가 빠지면 조용히 기본으로 떨어진다. 그래서 위에서
+ * 기본에 하던 검사를 **테마마다 그대로** 다시 돌린다. 새 테마를 넣는 사람이
+ * 이 규칙을 몰라도 여기서 걸린다.
+ */
+{
+  const 문구갈래 = Object.keys(문구);
+  const 폭틀림 = [];
+  const 격자틀림 = [];
+  const 점자아닌것 = [];
+  const 갈래빠짐 = [];
+  const 안움직임 = [];
+  const 겹친것 = [];
+  const 느긋안느긋 = [];
+
+  for (const [이름, t] of Object.entries(테마들)) {
+    // 1. 폭 — 한 장이라도 어긋나면 그 순간 상자가 떨린다.
+    for (const [갈래, 장들] of Object.entries(t.틀)) {
+      for (const [i, g] of 장들.entries()) {
+        if (width(g) !== t.칸수 || [...g].length !== t.칸수) {
+          폭틀림.push(`${이름}/${갈래}[${i}] 폭 ${width(g)}·${[...g].length}자`);
+        }
+        for (const ch of g) {
+          const cp = ch.codePointAt(0);
+          if (cp < 0x2800 || cp > 0x28ff) 점자아닌것.push(`${이름}/${갈래}[${i}]`);
+        }
+      }
+    }
+    // 2. 원본 격자 — 한 줄이 짧으면 조용히 꺼진 것으로 채워져 '왜 저기가 비지' 가 된다.
+    for (const [갈래, 장들] of Object.entries(t.그림들)) {
+      for (const [i, g] of 장들.entries()) {
+        if (g.length !== 세로) 격자틀림.push(`${이름}/${갈래}[${i}] ${g.length}줄`);
+        for (const [r, 줄] of g.entries()) {
+          if (줄.length !== t.가로) 격자틀림.push(`${이름}/${갈래}[${i}] ${r}행 ${줄.length}칸`);
+        }
+      }
+    }
+    // 3. 갈래 빠짐·남음 — working.js 의 문구와 짝이 맞아야 한다.
+    for (const k of 문구갈래) if (!t.틀[k]) 갈래빠짐.push(`${이름}/${k} 없음`);
+    for (const k of Object.keys(t.틀)) if (!문구갈래.includes(k)) 갈래빠짐.push(`${이름}/${k} 남음`);
+    // 4. 실제로 움직이나 · 갈래끼리 다른가
+    const 움직임 = [];
+    for (const [갈래, 장들] of Object.entries(t.틀)) {
+      if (new Set(장들).size < 2) 안움직임.push(`${이름}/${갈래}`);
+      움직임.push([갈래, 장들.join('')]);
+    }
+    for (let i = 0; i < 움직임.length; i++) {
+      for (let j = i + 1; j < 움직임.length; j++) {
+        if (움직임[i][1] === 움직임[j][1]) 겹친것.push(`${이름}/${움직임[i][0]}=${움직임[j][0]}`);
+      }
+    }
+    // 5. 느긋이 제일 길어야 한다 — 오래 기다릴 때 빨리 깜빡이면 더 조급해진다.
+    const 남 = Math.max(...Object.entries(t.틀).filter(([k]) => k !== '느긋').map(([, v]) => v.length));
+    if ((t.틀.느긋?.length ?? 0) < 남) 느긋안느긋.push(`${이름} 느긋 ${t.틀.느긋?.length}장 < ${남}장`);
+  }
+
+  check('테마마다 모든 장의 폭이 같다', 폭틀림.length === 0, 폭틀림.slice(0, 3).join(', '));
+  check('테마마다 점자 말고는 안 섞인다', 점자아닌것.length === 0, 점자아닌것.slice(0, 3).join(', '));
+  check('테마마다 격자에 딱 맞는다', 격자틀림.length === 0, 격자틀림.slice(0, 3).join(', '));
+  check('테마마다 갈래가 문구와 짝이 맞는다', 갈래빠짐.length === 0, 갈래빠짐.slice(0, 3).join(', '));
+  check('테마마다 모든 갈래가 움직인다', 안움직임.length === 0, 안움직임.slice(0, 3).join(', '));
+  check('테마마다 갈래끼리 움직임이 다르다', 겹친것.length === 0, 겹친것.slice(0, 3).join(', '));
+  check('테마마다 느긋이 제일 천천히 돈다', 느긋안느긋.length === 0, 느긋안느긋.join(', '));
+
+  // 사람 모양은 세 칸에 넣으면 얼룩이 된다. 넓은 테마가 진짜로 넓은지 잰다.
+  check('기사·동물은 기본보다 넓다',
+    테마들.기사.칸수 > 테마들.기본.칸수 && 테마들.동물.칸수 > 테마들.기본.칸수,
+    `기본 ${테마들.기본.칸수}칸 · 기사 ${테마들.기사.칸수}칸 · 동물 ${테마들.동물.칸수}칸`);
+}
+
+trace('7-테마고르기');
+/*
+ * 고르는 것이 실제로 먹히나. 그리고 **오타 하나로 프로그램이 안 뜨면 안 된다** —
+ * 모르는 이름은 조용히 기본으로 가야 한다.
+ */
+{
+  const 원래 = process.env.DEEL_MOTION;
+  const 재보기 = (v) => {
+    if (v === undefined) delete process.env.DEEL_MOTION; else process.env.DEEL_MOTION = v;
+    return 테마이름();
+  };
+
+  check('안 주면 기본', 재보기(undefined) === '기본');
+  check('한글로 고른다', 재보기('기사') === '기사' && 재보기('동물') === '동물');
+  check('영어로도 고른다', 재보기('knight') === '기사' && 재보기('animal') === '동물');
+  check('대문자도 받는다', 재보기('KNIGHT') === '기사', 재보기('KNIGHT'));
+  check('앞뒤 빈칸도 받는다', 재보기('  기사  ') === '기사');
+  check('모르는 이름은 조용히 기본', 재보기('그런테마없음') === '기본');
+  check('빈 값도 기본', 재보기('') === '기본');
+
+  // 고른 테마가 실제로 화면에 나오나 — 폭이 곧 눈에 보이는 차이다.
+  재보기('기사');
+  const 기사글 = 그림고르기('쓰기', 0);
+  check('기사를 고르면 기사가 나온다', 테마들.기사.틀.쓰기.includes(기사글), 기사글);
+  check('그때 폭도 같이 넓어진다', width(기사글) === 테마들.기사.칸수, `${width(기사글)}칸`);
+
+  재보기(undefined);
+  check('되돌리면 기본 폭', width(그림고르기('쓰기', 0)) === 칸수);
+
+  // 끄기는 테마보다 세다. 점자가 안 나오는 자리에서는 테마가 무슨 소용인가.
+  재보기('기사');
+  const 끈것 = process.env.DEEL_NO_MOTION;
+  process.env.DEEL_NO_MOTION = '1';
+  check('테마를 골라도 끄기가 이긴다', width(그림고르기('쓰기', 3)) === 1, 그림고르기('쓰기', 3));
+  if (끈것 === undefined) delete process.env.DEEL_NO_MOTION; else process.env.DEEL_NO_MOTION = 끈것;
+
+  if (원래 === undefined) delete process.env.DEEL_MOTION; else process.env.DEEL_MOTION = 원래;
+  check('검사가 환경을 안 더럽힌다', 테마이름() === '기본' && 테마() === 테마들.기본);
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

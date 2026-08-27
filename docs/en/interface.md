@@ -275,6 +275,32 @@ Asian locales measure as two columns, which knocks the border out of line every 
 If the drawing does not render, or you use a screen reader, `DEEL_NO_MOTION=1` turns it off
 and you get the old single-cell spinner.
 
+#### Changing the drawing
+
+`DEEL_MOTION` picks a theme. The default is the set above.
+
+| Value | What you get |
+|---|---|
+| (unset) | blobs, bars, scan lines — they tell you what is happening |
+| `knight` (or `기사`) | **A medieval knight.** Swings a sword while writing code, advances behind a shield while reading |
+| `animal` (or `동물`) | **Pixel animals.** They walk, hop, and stretch |
+
+```bash
+DEEL_MOTION=knight deel
+```
+
+The knight and animals use a 12×4 grid (six braille cells) — a figure or a creature drawn
+into 6×4 reads as a smudge. Height cannot grow: the work indicator has to fit inside one
+text row, and making it two rows changes the box height and the whole cursor calculation.
+So they are drawn **in profile, lying along the horizontal**.
+
+Past 45 seconds the knight **collapses and gets back up**, and the animal **lies down to
+sleep**. The point is to stop pretending the wait is nearly over while keeping the screen
+alive.
+
+`DEEL_NO_MOTION=1` beats any theme — where braille does not render, a theme is no help.
+An unrecognized name falls back to the default without complaint.
+
 ### What gets asked, and what just happens
 
 Whether your files change **with or without being asked** is the one thing that has to be

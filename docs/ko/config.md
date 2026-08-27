@@ -33,6 +33,8 @@
 | `HTTPS_PROXY` | 프록시를 거쳐야 할 때 |
 | `DEEL_DEBUG=1` | 자세한 오류 |
 | `NO_COLOR` | 색 끄기 |
+| `DEEL_NO_MOTION=1` | 일하는 중 그림 끄기 (한 칸짜리 돌림표로) |
+| `DEEL_MOTION` | 그 그림 바꾸기 — `기사`(knight) · `동물`(animal). [보기](interface.md#그림을-바꾸고-싶다면) |
 
 ### 실행 옵션
 
