@@ -38,11 +38,22 @@ writeFileSync(join(모래밭, '비밀.env'), 'API_KEY=진짜키', 'utf8');
 const scope = makeScope(모래밭);          // 작업 범위는 모래밭 전체
 const 서버 = await 띄우기({ 뿌리: 사이트, scope });  // 띄운 것은 사이트만
 
+/*
+ * 받아 오고, 몸은 **반드시 비운다.**
+ *
+ * 글이 아닌 것(json·wasm·glb)은 읽을 일이 없다고 그냥 뒀었다. 그런데 안 읽은
+ * 몸은 그 연결이 열린 채로 남고, 나중에 GC 가 걷어 갈 때 소켓 정리와 겹친다.
+ * 윈도우 Node 24 에서 이것 때문에 검사가 0xC0000409(abort) 로 통째로 죽었다 —
+ * 검사 하나가 진 것이 아니라 프로세스가 사라져서, 화면에는 무엇이 틀렸는지
+ * 한 줄도 안 남는다. 다른 판(20·22)에서는 안 죽어서 더 늦게 찾았다.
+ */
 const 받기 = async (길, o = {}) => {
   const r = await fetch(서버.url.replace(/\/$/, '') + 길, o);
-  const 글 = r.headers.get('content-type')?.startsWith('text') || !r.headers.get('content-type')
-    ? await r.text() : '';
-  return { code: r.status, 글, 형식: r.headers.get('content-type') ?? '', r };
+  const 형식 = r.headers.get('content-type') ?? '';
+  let 글 = '';
+  if (!형식 || 형식.startsWith('text')) 글 = await r.text();
+  else await r.arrayBuffer();
+  return { code: r.status, 글, 형식, r };
 };
 
 trace('2-주기');
@@ -117,6 +128,8 @@ trace('2.5-JS가다도나');
    */
   trace('2.5b-슬래시없이');
   const 슬래시없이 = await fetch(서버.url.replace(/\/$/, '') + '/앱', { redirect: 'manual' });
+  // 되보내기의 몸도 비운다 — 받기() 와 같은 이유다(안 읽은 몸은 연결을 쥔다).
+  await 슬래시없이.arrayBuffer();
   const 간자리 = 슬래시없이.headers.get('location') ?? '';
   check('폴더는 슬래시를 붙여 다시 보낸다',
     슬래시없이.status === 301 && decodeURIComponent(간자리) === '/앱/',
@@ -226,6 +239,7 @@ trace('6-끄기');
   try {
     const r = await fetch(서버.url, { signal: AbortSignal.timeout(1200) });
     아직도나 = r.ok;
+    await r.arrayBuffer();
   } catch { 아직도나 = false; }
   check('끄면 더는 안 붙는다', !아직도나);
 }
