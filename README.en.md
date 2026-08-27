@@ -1523,6 +1523,23 @@ with a licence table — ready to hand to a security reviewer.
 
 ---
 
+### The hidden latency of local models — keeping the prefix cache alive
+
+Ollama and llama.cpp reuse computation **only while the request starts the same way as the
+last one.** Change one early character and everything after it — the entire conversation —
+is recomputed. This is the usual hidden reason long local sessions feel slower and slower,
+and it never shows up anywhere, because it is not an error.
+
+deel routes every message to the right mode automatically, and that mode instruction used to
+sit **early** in the prompt — every mode switch broke the whole cache. So the stable parts
+(rules, folder, project fingerprint, user rules, memory, skills) are frozen at the front and
+the per-turn parts (mode, pins) go last. A test pins this order down (`test/cache.test.js`).
+
+Ollama also gets `keep_alive: 60m` — with the 5-minute default, the model unloads while you
+glance at another window, and the first message after you come back recomputes everything.
+Override with `DEEL_KEEP_ALIVE`. If you run llama.cpp directly, `--cache-reuse 256` on the
+server side does the same job.
+
 ## Reasoning effort
 
 One answer means several model calls, and **each needs a different amount of thinking.**

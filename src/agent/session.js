@@ -288,12 +288,6 @@ export class Session {
       ? `\nWorking folder: ${this.root}\nYou can neither read nor write files outside this folder.`
       : `\n작업 폴더: ${this.root}\n이 폴더 밖의 파일은 읽지도 쓰지도 못한다.`);
 
-    // 지금 무슨 일을 하는 중인지. 도구 목록도 이 모드에 맞춰 이미 걸러져 있다.
-    const w = workMode(this.effectiveWork());
-    // 창이 좁으면 짧은 판을 쓴다 (modes.js 의 말()). 규칙은 같고 설득하는 문장만 빠진다.
-    parts.push(영
-      ? `\n--- current mode: ${w.en} ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`
-      : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`);
     /*
      * 모델 급에 맞춘 한 문단 (grade.js).
      *
@@ -360,11 +354,33 @@ export class Session {
       }
     }
     /*
+     * 지금 무슨 일을 하는 중인지 — **일부러 끝쪽에** 둔다.
+     *
+     * 이 절은 이 프롬프트에서 유일하게 **매 턴 바뀔 수 있는** 자리다. 말을
+     * 던질 때마다 알맞은 모드로 저절로 옮겨 가기 때문이다(route.js). 그런데
+     * Ollama·llama.cpp 의 프리픽스 캐시는 앞부분이 지난 요청과 같을 때만
+     * 계산을 재쓴다 — 이 절이 앞쪽에 있으면 모드가 바뀌는 순간 그 뒤 전부,
+     * 시스템 프롬프트 나머지에 대화 전체까지 다시 계산된다. 긴 대화일수록
+     * 매 턴 몇천 토큰이고, 로컬에서는 그게 그대로 몇 초다.
+     *
+     * 그래서 변하지 않는 것들(규칙·폴더·급말·지문·사용자 규칙·기억·스킬)을
+     * 앞에 굳히고 이 절을 뒤로 보냈다. 읽기 쪽으로도 손해가 아니다 — 끝자리는
+     * 가운데보다 오히려 잘 읽힌다(lost in the middle 의 반대편이다).
+     * 이 차례는 test/cache.test.js 가 지킨다.
+     *
+     * 도구 목록도 이 모드에 맞춰 이미 걸러져 있다. 창이 좁으면 짧은 판을
+     * 쓴다 (modes.js 의 말()) — 규칙은 같고 설득하는 문장만 빠진다.
+     */
+    const w = workMode(this.effectiveWork());
+    parts.push(영
+      ? `\n--- current mode: ${w.en} ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`
+      : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`);
+    /*
      * 못 박은 것은 **맨 끝**에 붙인다 (agent/pins.js).
      *
      * 긴 글의 가운데는 흘려 읽힌다 — 'lost in the middle' 이라 부르는 것이고,
      * 어느 모델에서나 잰다. 사람이 직접 못 박은 말은 그 가운데에 묻히면 안 되므로
-     * 가장 마지막, 대화 바로 앞에 둔다.
+     * 가장 마지막, 대화 바로 앞에 둔다. 모드 절보다도 뒤인 것도 그래서다.
      */
     const 못박은글 = this.못박은것?.요약();
     if (못박은글) parts.push(못박은글);

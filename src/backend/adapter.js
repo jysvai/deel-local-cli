@@ -20,6 +20,20 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
      * 지금까지 이 값을 **한 번도 안 보냈다.** 보내면 그 길이로 올려 준다.
      */
     if (ctx) body.options.num_ctx = ctx;
+    /*
+     * 모델을 내리지 말라고 말해 둔다.
+     *
+     * Ollama 는 5분 동안 조용하면 모델을 내린다. 다음 말을 걸면 다시 올리고
+     * **대화 전체를 다시 계산한다** — 프리픽스 캐시가 통째로 사라진 것과 같다.
+     * 로컬 대화는 사람이 생각하고 다른 창을 보다 돌아오는 것이라, 5분 넘게
+     * 조용한 것이 오히려 보통이다. 그 복귀 첫 마디가 제일 오래 걸리는 이유가
+     * 바로 이것이었다.
+     *
+     * -1(영원히)은 안 쓴다. 모델을 갈아탄 뒤에도 이전 모델이 램을 물고 있게
+     * 되는데, 8GB 램에서는 다음 모델이 못 올라온다는 뜻이다. 한 시간이면
+     * 일하는 호흡은 다 덮고, 퇴근하면 놓아 준다. DEEL_KEEP_ALIVE 로 바꾼다.
+     */
+    body.keep_alive = process.env.DEEL_KEEP_ALIVE || '60m';
     if (tools?.length) body.tools = tools;
     if (json) body.format = json;
     if (think !== undefined) body.think = think;

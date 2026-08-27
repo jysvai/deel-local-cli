@@ -81,6 +81,7 @@ const FILES = [
   'i18n.test.js',
   'models.test.js',
   'prompt.test.js',
+  'cache.test.js',
   'lsp.test.js',
   // 뒤에서 도는 명령. 진짜로 프로세스를 띄우고 죽이므로 다른 것들보다 느리다.
   'jobs.test.js',
