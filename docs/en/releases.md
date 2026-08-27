@@ -6,6 +6,95 @@ What changed in each version, and why
 
 ---
 
+## 1.5.0
+
+**Line breaks exist now, the screen got fun, and it came out lighter than before**
+
+#### 1. Line breaks — `Alt+Enter`, or end a line with `` ` ``
+
+There was no way to send several lines as one message. Shift+Enter and
+Ctrl+Enter just submit. That was not user error — no such code existed.
+
+Feeding raw bytes through readline showed why Shift+Enter cannot work: most
+terminals send it as **the same bytes as a plain Enter** (`\r`), and readline
+receives them before we do and ends the line. There is no moment to intercept.
+Escape-prefixed combinations (Alt/Option+Enter) are the exception — while
+readline waits to see what follows the ESC, our handler gets there first.
+
+If your terminal won't send Alt+Enter either, end the line with `` ` `` and
+press Enter. That works anywhere. Backtick rather than backslash is deliberate:
+Windows paths routinely end in `\`, so a pasted path would read as a
+continuation. Only a **single** trailing backtick counts, so a markdown code
+fence (` ``` `) passes through untouched.
+
+#### 2. Themes for the working animation — a knight, and pixel animals
+
+```bash
+DEEL_MOTION=knight
+DEEL_MOTION=animal
+```
+
+The knight swings a sword while code is being written, advances behind a shield
+while reading, and past 45 seconds **collapses from exhaustion and gets back
+up.** The animals walk, hop and stretch, then lie down to sleep on a long wait.
+
+Pretending a long wait is nearly over makes it feel longer; going still reads as
+crashed. Falling over is neither.
+
+The default drawings are untouched. Choose nothing and nothing changes.
+
+#### 3. The office — what is running, drawn as a room
+
+```bash
+DEEL_OFFICE=1 deel
+```
+
+A twelve-row room pins above the input box and comes alive when work starts:
+seats fill, people type, people read, and past 45 seconds they doze off.
+
+**Everything on screen is a real number.** Occupied seats are the work running
+now (the parent plus each subagent), whiteboard notes are todos, cabinet drawers
+are files read, server lights are model calls, and the daylight in the windows
+is how full the context is. What isn't known stays zero — invent one number and
+the whole screen stops being worth trusting.
+
+Off by default, and it stays off below 28 rows (twelve rows of office plus five
+of input box leaves nowhere for the conversation). Turning it on quiets the
+in-box knight or animals back to a plain spinner — both say the same thing, and
+stacked together they just say it twice.
+
+#### 4. And the box got six times lighter
+
+Measuring before adding the office: sending twelve rows every 90ms is 104KB/s.
+But only **one of those twelve rows** actually changes between frames — walls,
+windows, cabinets and empty desks do not.
+
+So the box now compares row by row and sends only what changed. **That speeds
+things up even if you never turn the office on.**
+
+| | Sent to the terminal |
+|---|---|
+| Old box (whole frame) | 10 KB/s |
+| Current box (changed rows only) | **1.6 KB/s** |
+| With the office on | about 9 KB/s |
+
+Drawing a frame costs 0.08ms — 0.09% of one core at a 90ms tick.
+
+Comparing rows trusts that the screen is what we think it is, which gives up the
+self-healing that redrawing everything provided. So every four seconds it still
+redraws in full.
+
+#### 5. A test that passed once and failed the next time on identical code
+
+The box test spawns a real deel and reads the screen, but decided *when* to read
+by **clock** — sleep 1800ms, then look. On a busy machine it hadn't started yet,
+so the test read a blank screen and called everything broken. Fifteen runs of
+identical code produced three failures.
+
+It now waits for **things that happened** instead: the startup signal, the answer
+arriving, the expected text appearing. Three failures in fifteen became zero, and
+because it moves on as soon as the signal lands, it is usually faster.
+
 ## 1.4.3
 
 **The README explains what's different, and the review report gets its missing line**
