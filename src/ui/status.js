@@ -464,6 +464,7 @@ export function headerLines(session, found) {
     // 뜻인지 여기서 한 번 읽고 나면 그 다음부터는 글자만 봐도 안다.
     `${c.gray(자리(말('head.approve')))}${승인표시(session.mode)}  ${c.gray('— ' + 승인고르기(session.mode).한줄)}`,
     `${빈자리}${c.gray(말('head.shiftTab'))}${c.gray(말('head.shiftTabHint'))}${c.gray(말('head.tabHint'))}`,
+    `${빈자리}${c.gray(말('head.newlineHint'))}`,
   ];
   if (found.skills.length || found.commands.length) {
     lines.push(`${c.gray(자리(말('head.thisPC')))}${c.white(말('head.skills', { n: found.skills.length }))}${c.gray(' · ')}${c.white(말('head.commands', { n: found.commands.length }))}${c.gray(' · ')}${c.white(말('head.plugins', { n: found.plugins.length }))}`);

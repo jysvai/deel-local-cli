@@ -322,17 +322,49 @@ export async function chatLoop(opts = {}) {
   let closed = false;
   const echo = !process.stdin.isTTY;   // 파이프·기록용일 때는 입력을 되비춘다
 
+  /*
+   * 줄 끝에 ` (백틱) 을 붙이면 "아직 안 끝났다" 는 뜻이다 — 여러 줄을 한
+   * 메시지로 묶어 보낼 때 쓴다. 확정된 줄은 여기 쌓아 두다가, ` 없이 끝나는
+   * 줄이 오면 그때 \n 으로 이어붙여 한 메시지로 내보낸다.
+   *
+   * 실제 개행을 상자(rl.line) 안에 그대로 넣지는 않는다 — 접어쓰기() 가 \n 을
+   * 못 다뤄서(글자 하나로 세고 폭만 잰다) 그리면 커서 자리와 테두리 줄 수가
+   * 어긋난다. 그래서 물리적으로는 늘 한 줄씩만 치고, 이어붙이기는 밖에서 한다.
+   *
+   * 백슬래시(\) 가 아니라 백틱을 고른 것은 일부러다 — 이 프로그램은 윈도우
+   * 경로(`C:\Users\...`)를 늘 다루는데, 그 끝은 흔히 백슬래시로 끝난다.
+   * 백슬래시를 표로 쓰면 평범한 경로를 붙여넣기만 해도 계속 이어 치는 것으로
+   * 잘못 읽힌다. 백틱은 그럴 일이 없다.
+   */
+  let 이어쓰기줄들 = null;
+
   rl.on('line', (l) => {
     if (echo) say(c.gray(l));
+    let 보낼것 = l;
     if (상자쓰나) {
       if (묻는중 !== null) {
         // 되묻는 자리: 답을 그 줄에 남긴 채 줄만 넘긴다.
         process.stdout.write(`\r\x1b[2K${묻는중}${c.white(l)}\n`);
       } else if (입력기다림) {
+        // 백틱 **하나**로 끝날 때만 이어쓰기다. ``` 로 끝나는 줄은 마크다운
+        // 코드 울타리라 그대로 둬야 한다 — 코딩 도구에 코드를 붙여넣는 것은
+        // 드문 일이 아니고, 거기서 백틱 하나를 떼어먹으면 붙인 코드가 망가진다.
+        if (/(^|[^`])`$/.test(l)) {
+          const 줄 = l.slice(0, -1);
+          const 첫줄 = 이어쓰기줄들 === null;
+          (이어쓰기줄들 ??= []).push(줄);
+          화면.입력지움();
+          say(`${첫줄 ? ` ${c.hcyan('❯')} ` : '   '}${c.white(줄)}`);
+          say(`   ${c.gray('… 다음 줄. 그냥 Enter 로 보냅니다')}`);
+          return;
+        }
         // 상자를 걷어내고, 사람이 보낸 글을 대화에 남긴다. 안 남기면 스크롤을
         // 올렸을 때 답만 있고 무엇을 물었는지가 없다.
+        const 이었나 = 이어쓰기줄들 !== null;
+        보낼것 = 이었나 ? [...이어쓰기줄들, l].join('\n') : l;
+        이어쓰기줄들 = null;
         화면.입력지움();
-        if (l.trim()) say(` ${c.hcyan('❯')} ${c.white(l)}`);
+        if (l.trim() || 이었나) say(`${이었나 ? '   ' : ` ${c.hcyan('❯')} `}${c.white(l)}`);
       } else if (l.trim()) {
         /*
          * 일하는 도중에 미리 쳐 둔 것.
@@ -344,8 +376,8 @@ export async function chatLoop(opts = {}) {
         화면.대기갱신('', queue.length + 1);
       }
     }
-    if (waiter) { const w = waiter; waiter = null; w(l); }
-    else queue.push(l);
+    if (waiter) { const w = waiter; waiter = null; w(보낼것); }
+    else queue.push(보낼것);
   });
   rl.on('close', () => {
     closed = true;
@@ -432,7 +464,33 @@ export async function chatLoop(opts = {}) {
        * 보이고, 그게 제일 못 미더운 화면이다.
        */
       if (!상자쓰나) return;
-      if (key && key.name === 'return') return;   // 줄이 끝나는 것은 'line' 이 맡는다
+      if (key && key.name === 'return') {
+        /*
+         * Alt+Enter(맥은 Option+Enter) 만 여기서 잡을 수 있다 — 나머지는 못 잡는다.
+         *
+         * 평범한 Enter 도, 대부분 터미널에서의 Shift+Enter·Ctrl+Enter 도 여기
+         * 닿기 전에 이미 끝나 있다. readline 도 우리와 같은 keypress 를 듣고
+         * 있는데(이 리스너보다 먼저 등록됐다), 터미널이 그 조합들을 평범한
+         * Enter 와 **똑같은 바이트**(\r, 드물게 \n)로 보내는 한 readline 이
+         * 우리보다 먼저 줄을 끝내 버린다 — 그 뒤에 우리가 뭘 해도 늦다.
+         * (readline 코드를 흉내 내서 직접 확인했다: \r·\n 은 keypress 가
+         * 이 리스너에 닿기도 전에 'line' 이벤트부터 쏜다.)
+         *
+         * ESC 로 시작하는 조합(Alt/Option+Enter)은 다르다 — readline 이 ESC
+         * 뒤에 더 올 것을 기다리는 동안 우리 keypress 가 먼저 온다. 그래서
+         * key.meta 로 여기서 골라낼 수 있다. rl.write('\n') 은 못 쓴다 —
+         * 그것도 내부적으로 줄을 끝내는 처리를 그대로 타 버린다(직접 확인).
+         * 그래서 rl.line·rl.cursor 를 손으로 이어붙인다.
+         */
+        if (key.meta && 입력기다림 && 묻는중 === null) {
+          const 앞 = (rl.line ?? '').slice(0, rl.cursor ?? 0);
+          const 뒤 = (rl.line ?? '').slice(rl.cursor ?? 0);
+          rl.line = `${앞}\n${뒤}`;
+          rl.cursor = 앞.length + 1;
+        } else {
+          return;   // 줄이 끝나는 것은 'line' 이 맡는다
+        }
+      }
       if (묻는중 !== null) {
         const 앞 = 묻는중;
         setImmediate(() => {
@@ -488,6 +546,7 @@ export async function chatLoop(opts = {}) {
      * y 를 쳐도 화면에 아무것도 안 나타난다 — 먹은 건지 안 먹은 건지 모른다.
      */
     묻는중 = 상자쓰나 ? 앞 : null;
+    이어쓰기줄들 = null;   // 되묻는 사이에 걸쳐 있던 미완성 이어쓰기는 버린다
     try {
       const a = await nextLine();
       if (a === null) return o.def ?? '';
