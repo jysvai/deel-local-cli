@@ -15,6 +15,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import http from 'node:http';
 import { 띄우기 } from '../src/preview/serve.js';
 import { makeScope } from '../src/safety/guard.js';
 import { trace } from './trace.mjs';
@@ -58,22 +59,46 @@ const scope = makeScope(모래밭);          // 작업 범위는 모래밭 전�
 const 서버 = await 띄우기({ 뿌리: 사이트, scope });  // 띄운 것은 사이트만
 
 /*
- * 받아 오고, 몸은 **반드시 비운다.**
+ * 받아 오기 — `fetch` 말고 node:http 로 직접 두드린다.
  *
- * 글이 아닌 것(json·wasm·glb)은 읽을 일이 없다고 그냥 뒀었다. 그런데 안 읽은
- * 몸은 그 연결이 열린 채로 남고, 나중에 GC 가 걷어 갈 때 소켓 정리와 겹친다.
- * 윈도우 Node 24 에서 이것 때문에 검사가 0xC0000409(abort) 로 통째로 죽었다 —
- * 검사 하나가 진 것이 아니라 프로세스가 사라져서, 화면에는 무엇이 틀렸는지
- * 한 줄도 안 남는다. 다른 판(20·22)에서는 안 죽어서 더 늦게 찾았다.
+ * fetch(undici)는 연결을 살려 두고 다시 쓴다(keep-alive). 그 자체는 좋은데,
+ * 윈도우 Node 24 에서 이 검사가 그 연결 풀을 밟으면 0xC0000409 로 **프로세스가
+ * 통째로 죽었다.** 검사 하나가 지는 게 아니라 사라지는 것이라, 무엇이
+ * 틀렸는지 화면에 한 줄도 안 남는다. 고칠 때마다 죽는 자리가 한 걸음씩
+ * 뒤로 밀린 것이 실마리였다 — 특정 호출이 아니라 쌓이는 것이 원인이라는 뜻이다.
+ *
+ * 그래서 여기서는 `agent: false` 로 요청마다 새 연결을 열고 바로 닫는다.
+ * 이 검사가 재려는 것은 서버이지 클라이언트가 아니므로, 클라이언트는 제일
+ * 단순한 것이 맞다. 재는 값(상태·헤더·몸)은 그대로다.
  */
-const 받기 = async (길, o = {}) => {
-  const r = await fetch(서버.url.replace(/\/$/, '') + 길, o);
-  const 형식 = r.headers.get('content-type') ?? '';
-  let 글 = '';
-  if (!형식 || 형식.startsWith('text')) 글 = await r.text();
-  else await r.arrayBuffer();
-  return { code: r.status, 글, 형식, r };
-};
+const 받기 = (길, o = {}) => new Promise((done, 탈) => {
+  const u = new URL(서버.url.replace(/\/$/, '') + 길);
+  const q = http.request({
+    hostname: u.hostname,
+    port: u.port,
+    path: u.pathname + u.search,
+    method: o.method ?? 'GET',
+    headers: o.headers ?? {},
+    agent: false,          // 연결을 재쓰지 않는다
+  }, (a) => {
+    let 몸 = '';
+    a.setEncoding('utf8');
+    a.on('data', (b) => { 몸 += b; });
+    a.on('end', () => {
+      const 형식 = a.headers['content-type'] ?? '';
+      done({
+        code: a.statusCode,
+        글: 형식.startsWith('text') || !형식 ? 몸 : '',
+        형식,
+        // fetch 의 Response 처럼 헤더를 물어볼 수 있게 맞춰 둔다.
+        r: { headers: { get: (이름) => a.headers[String(이름).toLowerCase()] ?? null } },
+      });
+    });
+  });
+  q.on('error', 탈);
+  if (o.body) q.write(o.body);
+  q.end();
+});
 
 trace('2-주기');
 // ── 제 일은 하는가 ──────────────────────────────────────────────────────
@@ -142,13 +167,12 @@ trace('2.5-JS가다도나');
    * 누락되는' 모습이다.
    */
   trace('2.5b-슬래시없이');
-  const 슬래시없이 = await fetch(서버.url.replace(/\/$/, '') + '/앱', { redirect: 'manual' });
-  // 되보내기의 몸도 비운다 — 받기() 와 같은 이유다(안 읽은 몸은 연결을 쥔다).
-  await 슬래시없이.arrayBuffer();
-  const 간자리 = 슬래시없이.headers.get('location') ?? '';
+  // node:http 는 되보내기를 따라가지 않는다 — fetch 의 redirect:'manual' 이 필요 없다.
+  const 슬래시없이 = await 받기('/앱');
+  const 간자리 = 슬래시없이.r.headers.get('location') ?? '';
   check('폴더는 슬래시를 붙여 다시 보낸다',
-    슬래시없이.status === 301 && decodeURIComponent(간자리) === '/앱/',
-    `${슬래시없이.status} → ${간자리}`);
+    슬래시없이.code === 301 && decodeURIComponent(간자리) === '/앱/',
+    `${슬래시없이.code} → ${간자리}`);
   // 헤더에 한글을 그대로 실으면 Node 가 ERR_INVALID_CHAR 로 서버를 죽인다.
   // 미리보기 한 번 켰다가 deel 이 통째로 끝나는 셈이라, 인코딩됐는지를 따로 못 박는다.
   check('되보내는 자리를 ASCII 로 싣는다', /^[\x20-\x7e]*$/.test(간자리), 간자리);
@@ -223,16 +247,26 @@ trace('5-되살림');
 // 이유가 절반은 사라진다.
 if (서버.되살아나나) {
   const 전 = 서버.바뀐수();
-  const ac = new AbortController();
-  const 통로 = await fetch(서버.url + '__deel__/살아있나', { signal: ac.signal });
-  check('되살림 통로가 열린다', 통로.ok && /event-stream/.test(통로.headers.get('content-type') ?? ''),
-    통로.headers.get('content-type') ?? '');
+  // SSE 는 끝나지 않는 응답이라 받기() 로는 못 잰다(end 를 안 기다린다).
+  // 머리만 보고 바로 끊는다.
+  const { 응답: 통로, 끊기 } = await new Promise((done, 탈) => {
+    const u = new URL(서버.url + '__deel__/살아있나');
+    const q = http.request({ hostname: u.hostname, port: u.port, path: u.pathname, agent: false }, (a) => {
+      a.resume();   // 흘려보낸다. 안 읽으면 서버 쪽이 막힌다.
+      done({ 응답: a, 끊기: () => q.destroy() });
+    });
+    q.on('error', 탈);
+    q.end();
+  });
+  check('되살림 통로가 열린다',
+    통로.statusCode === 200 && /event-stream/.test(통로.headers['content-type'] ?? ''),
+    통로.headers['content-type'] ?? '');
 
   writeFileSync(join(사이트, 'index.html'), '<!doctype html><html><body><h1>바뀜</h1></body></html>', 'utf8');
   // 저장 한 번에 이벤트가 여러 개 오므로 몰아서 한 번만 알린다 — 그 시간만큼 기다린다.
   await new Promise((r) => setTimeout(r, 700));
   check('파일이 바뀌면 알린다', 서버.바뀐수() > 전, `${전} → ${서버.바뀐수()}`);
-  ac.abort();
+  끊기();
   await new Promise((r) => setTimeout(r, 150));
 
   const 새로 = await 받기('/');
@@ -252,9 +286,8 @@ trace('6-끄기');
   await 서버.닫기();
   let 아직도나 = false;
   try {
-    const r = await fetch(서버.url, { signal: AbortSignal.timeout(1200) });
-    아직도나 = r.ok;
-    await r.arrayBuffer();
+    const r = await 받기('/');
+    아직도나 = r.code === 200;
   } catch { 아직도나 = false; }
   check('끄면 더는 안 붙는다', !아직도나);
 }
