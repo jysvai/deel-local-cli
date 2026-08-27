@@ -46,16 +46,22 @@ jobs:
 
       # 태그와 package.json 이 어긋난 채로 올라가면 되돌릴 수가 없다
       # (npm 은 같은 판을 다시 못 올린다). 그래서 여기서 먼저 막는다.
+      #
+      # 셸 변수 이름은 ASCII 여야 한다. 처음에 한글 이름(판·태그)을 썼다가
+      # "command not found"(exit 127)로 이 단계 자체가 안 돌았다 — bash 는
+      # 로케일과 무관하게 변수 이름에 [a-zA-Z_][a-zA-Z0-9_]* 만 받는다.
+      # 이 프로그램의 house style(식별자는 한글)이 통하는 것은 JS 뿐이고,
+      # 셸에서는 안 통한다.
       - name: tag matches package.json
         shell: bash
         run: |
-          판=$(node -p "require('./package.json').version")
-          태그="${GITHUB_REF_NAME#v}"
-          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$판" != "$태그" ]; then
-            echo "태그 v$태그 와 package.json $판 이 다릅니다." >&2
+          pkg_version=$(node -p "require('./package.json').version")
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$pkg_version" != "$tag_version" ]; then
+            echo "태그 v$tag_version 와 package.json $pkg_version 이 다릅니다." >&2
             exit 1
           fi
-          echo "$판"
+          echo "$pkg_version"
 
       - name: syntax
         run: npm run check
