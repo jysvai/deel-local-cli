@@ -6,6 +6,34 @@ What changed in each version, and why
 
 ---
 
+## 1.4.3
+
+**The README explains what's different, and the review report gets its missing line**
+
+Two pieces of feedback from the Reddit post, addressed.
+
+#### 1. "What's different" at the top of the README
+
+Every section already explained a feature, but nothing said which of them
+don't exist elsewhere, or why. Seven differentiators — `/undo` rewinding the
+conversation, prefix-cache survival, edit-match success going 20%→100%,
+advance knowledge of Korean models, and more — now get a quick-scan table
+up top, with the reasoning spelled out below each.
+
+#### 2. `--offline` blocking MCP is now documented — the code already did it right
+
+Someone asked whether MCP servers get shut off under offline mode too, or
+whether a local-only model still leaves a tool free to make its own network
+calls. The code was already correct: offline doesn't filter MCP requests —
+it never spawns the server process at all, because there's no way to see
+what sockets someone else's binary opens. The gap was that the README never
+said so. The same gap existed in the actual report `deel audit`/`deel pack`
+produces, so that got fixed too, since that's the document that goes to a
+security reviewer.
+
+While fixing it, the "54/55 network+web checks" citation turned out to be
+stale — updated to the real count (76, plus 47 mcp checks = 123).
+
 ## 1.4.2
 
 **1.4.1 shipped before its own security fixes — this corrects that**

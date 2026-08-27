@@ -100,7 +100,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
-| [Release notes](docs/en/releases.md) | [1.4.2](docs/en/releases.md#142) · [1.4.1](docs/en/releases.md#141) · [1.4.0](docs/en/releases.md#140) · [1.3.0](docs/en/releases.md#130) · [1.2.0](docs/en/releases.md#120) |
+| [Release notes](docs/en/releases.md) | [1.4.3](docs/en/releases.md#143) · [1.4.2](docs/en/releases.md#142) · [1.4.1](docs/en/releases.md#141) · [1.4.0](docs/en/releases.md#140) · [1.3.0](docs/en/releases.md#130) · [1.2.0](docs/en/releases.md#120) |
 
 ---
 
@@ -980,7 +980,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[1.4.2](docs/en/releases.md#142)** | 1.4.1 shipped before its own security fixes — this corrects that |
+| **[1.4.3](docs/en/releases.md#143)** | The README explains what's different, and the review report gets its missing line |
+| [1.4.2](docs/en/releases.md#142) | 1.4.1 shipped before its own security fixes — this corrects that |
 | [1.4.1](docs/en/releases.md#141) | No new features, only what was actually found and fixed — Windows abort, ReDoS, XSS |
 | [1.4.0](docs/en/releases.md#140) | deel gets a face, speaks English, and sees meaning — eleven places |
 | [1.3.0](docs/en/releases.md#130) | Evidence instead of claims, the editor instead of a terminal — six places |
