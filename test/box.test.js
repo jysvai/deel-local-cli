@@ -32,6 +32,23 @@ const 여기 = dirname(fileURLToPath(import.meta.url));
 const 뿌리 = join(여기, '..');
 const 앞선것 = join(여기, 'tty-preload.mjs');
 
+/**
+ * 아이에게 넘길 환경. **`CI` 를 뺀다.**
+ *
+ * 상자 화면은 CI 에서 일부러 안 켜진다(ui/screen.js 의 상자쓸까) — 로그로
+ * 흘러가는 자리에서 커서를 올려 지우면 제어문자가 글에 섞이기 때문이다.
+ * 그런데 이 검사가 재는 것이 바로 그 상자다. 부모의 `CI` 를 그대로 물려주면
+ * 아이가 줄화면으로 뜨고, 상자를 찾는 검사가 통째로 무너진다.
+ *
+ * 이걸 안 해서 GitHub Actions 가 첫 판부터 계속 빨갰다. 내 자리에서는
+ * 3,498개가 다 통과하니 보이지도 않았다 — CI 에만 있는 환경변수 하나가
+ * 원인이라, 로그를 열기 전에는 짐작조차 안 됐다.
+ */
+function 아이환경(더할것) {
+  const { CI, ...나머지 } = process.env;
+  return { ...나머지, FORCE_COLOR: '1', ...더할것 };
+}
+
 trace('1-띄우기');
 
 /**
@@ -58,7 +75,7 @@ async function 띄우기(줄들, { 상자 = true } = {}) {
   const kid = spawn(process.execPath, args, {
     cwd: 뿌리,
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, DEEL_HOME: home, FORCE_COLOR: '1' },
+    env: 아이환경({ DEEL_HOME: home }),
   });
 
   let out = '';
@@ -107,7 +124,7 @@ async function 키눌러보기(단계들) {
   const kid = spawn(process.execPath, [
     '--import', `file:///${앞선것.replace(/\\/g, '/')}`,
     join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline', '--ctx', '32768',
-  ], { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, DEEL_HOME: home, FORCE_COLOR: '1' } });
+  ], { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: 아이환경({ DEEL_HOME: home }) });
 
   let out = '';
   kid.stdout.on('data', (b) => { out += b; });
@@ -182,7 +199,7 @@ async function 한턴돌리기() {
   const kid = spawn(process.execPath, [
     '--import', `file:///${앞선것.replace(/\\/g, '/')}`,
     join(뿌리, 'bin', 'deel.js'), '--root', root, '--ctx', '32768',
-  ], { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, DEEL_HOME: home, FORCE_COLOR: '1' } });
+  ], { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: 아이환경({ DEEL_HOME: home }) });
 
   let out = '';
   kid.stdout.on('data', (b) => { out += b; });
@@ -245,7 +262,7 @@ async function 흘려보내기(줄들) {
 
   const kid = spawn(process.execPath, ['--import', `file:///${앞선것.replace(/\\/g, '/')}`,
     join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline', '--ctx', '32768'],
-    { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, DEEL_HOME: home, FORCE_COLOR: '1' } });
+    { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: 아이환경({ DEEL_HOME: home }) });
 
   let out = '';
   kid.stdout.on('data', (b) => { out += b; });
