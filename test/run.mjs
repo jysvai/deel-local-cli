@@ -136,6 +136,14 @@ function runOne(file) {
       let steps = [];
       try { steps = readFileSync(자취, 'utf8').split('\n').filter(Boolean); } catch { /* 없을 수 있다 */ }
       try { rmSync(자취, { force: true }); } catch { /* 그만 */ }
+      // 무엇이 틀렸는지도 챙긴다. 숫자만으로는 고칠 수가 없다.
+      const 실패줄 = out
+        .replace(/\x1b\[[0-9;]*m/g, '')
+        .split('\n')
+        .filter((l) => /^\s*✗/.test(l))
+        .map((l) => l.trim())
+        .slice(0, 20);
+
       done({
         file,
         code: code ?? null,
@@ -146,6 +154,7 @@ function runOne(file) {
         quiet: out.trim().length === 0,
         err: err.trim(),
         steps,
+        실패줄,
       });
     });
   });
@@ -205,6 +214,32 @@ for (const x of 진) {
     for (const line of x.err.split('\n').slice(0, 12)) console.log(d(`     ${line}`));
   }
   console.log('');
+}
+
+/*
+ * CI 에서는 실패를 **주석(annotation)** 으로도 남긴다.
+ *
+ * GitHub 의 실행 기록은 로그를 열 권한이 있어야 읽힌다. 그래서 밖에서는
+ * "exit code 1" 한 줄만 보이고, 무엇이 틀렸는지는 아무 데도 안 남는다.
+ * `::error` 로 찍은 것은 주석이 되어 실행 화면 맨 위와 PR 의 그 줄에 뜨고,
+ * 로그를 안 열어도 보인다.
+ *
+ * 줄바꿈은 그대로 못 넣는다 — 한 줄이 한 주석이라, 안 바꾸면 첫 줄만 남는다.
+ * %25 를 먼저 바꾸는 것이 중요하다. 나중에 바꾸면 우리가 넣은 %0A 의 % 까지
+ * 다시 바뀌어 글자 그대로 %250A 가 찍힌다.
+ */
+if (process.env.GITHUB_ACTIONS) {
+  const 감싸기 = (s) => s.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  for (const x of 진) {
+    const 몸 = [
+      `종료코드 ${x.signal ?? x.code}${x.failed ? ` · 실패 ${x.failed}개` : ''}`,
+      ...(x.실패줄 ?? []),
+      ...(x.steps?.length && !x.steps.includes('끝-정상종료')
+        ? [`지나온 자리: ${x.steps.join(' → ')}`, `↑ '${x.steps.at(-1)}' 안에서 죽었습니다.`]
+        : []),
+    ].join('\n');
+    console.log(`::error file=test/${x.file},title=검사 실패::${감싸기(몸)}`);
+  }
 }
 
 try { rmSync(설정집, { recursive: true, force: true }); } catch { /* 임시 폴더다 */ }
