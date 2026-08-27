@@ -6,6 +6,70 @@ What changed in each version, and why
 
 ---
 
+## 1.5.1
+
+**Two of the things 1.5.0 added shipped broken. This fixes them**
+
+After 1.5.0 went out it went through three adversarial reviews (Claude, codex,
+agy). All three suspected the same code and all three named the wrong cause.
+There were no tests for it — and on screen, both features looked fine.
+
+#### 1. Multi-line messages written with `Alt+Enter` arrived reversed
+
+Typing `hello` → Alt+Enter → `there` sent the model `there\rhello`. With three
+lines the order was fully reversed.
+
+What the box drew was correct the whole time. The corruption happened at the
+moment of sending: readline's history split the newline held inside `rl.line`,
+stacked the pieces backwards, and rejoined them with `\r`.
+
+The fix is to keep newlines out of `rl.line` entirely. The trailing-backtick
+continuation already worked that way, so `Alt+Enter` now uses the same buffer.
+
+#### 2. A trailing backtick swallowed ordinary requests
+
+```
+read `config.json`     never sent — stuck in continuation mode
+echo `date`            closing backtick torn off
+explain `npm test`     never sent
+```
+
+Any line ending in a single backtick counted as a continuation. In a coding
+tool, lines that end in inline code are common. To the person typing, **Enter
+simply stopped working.**
+
+Now it counts as a continuation only when the backtick is **preceded by
+whitespace and is the only backtick on the line.** Inline code has two, so it
+no longer matches.
+
+`Ctrl+C` now discards a pending continuation. Before, there was no way to
+cancel one: once armed, whatever you typed next was glued onto the previous
+line — including `/help`, which then no longer started with `/`, so it was
+sent to the model instead of being run as a command.
+
+#### 3. The office wiped the screen on narrow terminals
+
+The room always uses 60 columns, but the decision to turn it on **checked rows
+and never columns.** On a 50-column terminal the twelve rows folded into
+twenty-four while the box still counted twelve and moved the cursor up by
+twelve. Each frame landed in the wrong place; at 50×40, two hundred frames left
+neither borders nor conversation.
+
+It now stays off below 60 columns, and off when the terminal size is unknown.
+
+The embarrassing part: a test was passing this overflow as *correct* — under
+the name "doesn't blow up even when very narrow". That test is now inverted and
+asserts no row is ever wider than the terminal.
+
+#### 4. The missing tests
+
+These defects survived three reviews because nothing tested them. `newline.test.js`
+is new, and it measures **what gets sent, not what gets drawn.** It also pins down
+why the old approach was wrong, so putting a newline back into `rl.line` fails
+immediately.
+
+---
+
 ## 1.5.0
 
 **Line breaks exist now, the screen got fun, and it came out lighter than before**

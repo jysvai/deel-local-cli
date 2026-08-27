@@ -129,7 +129,7 @@ export const en = {
   'head.shiftTab': 'Shift+Tab',
   'head.shiftTabHint': ' changes it  ·  ',
   'head.tabHint': 'Tab completes the / command you are typing',
-  'head.newlineHint': 'New line: Alt+Enter (if your terminal sends it), or end a line with ` then Enter',
+  'head.newlineHint': 'New line: Alt+Enter (if your terminal sends it), or end a line with space + ` then Enter',
   'head.thisPC': 'found',
   'head.skills': 'skills {n}',
   'head.commands': 'commands {n}',

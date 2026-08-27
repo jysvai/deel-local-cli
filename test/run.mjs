@@ -49,6 +49,7 @@ const FILES = [
   'ui2.test.js',
   'motion.test.js',
   'office.test.js',
+  'newline.test.js',
   'preview.test.js',
   'setup.test.js',
   'guard.test.js',

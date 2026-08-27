@@ -265,8 +265,21 @@ export function 사무실줄들(상태, 폭) {
  *   · 그림을 끈 사람 (DEEL_NO_MOTION) — 화면 읽기 프로그램을 쓰는 자리다
  *   · 화면이 낮은 터미널 — 사무실 12줄 + 상자 5줄이면 대화가 들어갈 자리가
  *     없다. 사무실을 보려고 도구를 못 쓰게 되는 것은 앞뒤가 바뀐 것이다.
+ *   · 화면이 **좁은** 터미널 — 아래 최소폭 참고. 이건 안 지키면 화면이 깨진다.
  */
 export const 최소높이 = 28;
+
+/*
+ * 방은 늘 60칸을 쓴다(가로 = Math.max(60, 폭)). 더 좁게 그리면 책상과 사람이
+ * 뭉개져서 방으로 안 보인다 — 줄여야 할 것은 사람이 아니라 여백인데, 60칸이
+ * 여백을 다 뺀 자리다.
+ *
+ * 그래서 60칸보다 좁은 터미널에서는 **안 켠다**. 켜면 열두 줄이 스물네 줄로
+ * 접히는데 상자는 열두 줄로 세고 그만큼만 커서를 올린다. 어긋난 자리에 다음
+ * 판을 덮어써서 대화가 통째로 지워진다 — 50칸에서 200판을 돌리면 테두리도
+ * 대화도 남지 않는다. 좁으면 그냥 안 보여 주는 편이 낫다.
+ */
+export const 최소폭 = 60;
 
 /**
  * 사람이 켜 달라고 했나 (화면이 되는지는 안 본다).
@@ -280,10 +293,11 @@ export function 켜달라했나() {
   return v === '1' || v === 'on' || v === '켬' || v === '사무실';
 }
 
-export function 켜나(rows = process.stdout.rows) {
+export function 켜나(rows = process.stdout.rows, cols = process.stdout.columns) {
   if (!켜달라했나()) return false;
   if (process.env.DEEL_NO_MOTION) return false;
   if (!색256가능()) return false;
+  if ((cols ?? 0) < 최소폭) return false;
   return (rows ?? 0) >= 최소높이;
 }
 

@@ -332,6 +332,13 @@ are just wallpaper.
 - **Terminal shorter than 28 rows.** Twelve rows of office plus five of input box leaves
   nowhere for the conversation. Being unable to work because you wanted to watch the
   office has it backwards.
+- **Terminal narrower than 60 columns.** The room always uses 60. Drawn any narrower the
+  desks and people mash together and it stops reading as a room; drawn at 60 anyway, the
+  twelve rows fold into twenty-four. The box still counts twelve and moves the cursor up
+  by twelve, so the next frame lands in the wrong place and wipes the screen. Better to
+  not show it at all.
+- **When the terminal size is unknown** (piped output, for instance) — turning it on
+  blind costs more than leaving it off.
 - **`DEEL_NO_MOTION=1`** — that setting exists for screen-reader users.
 - **Terminals without 256 colour** — the colour numbers would leak into the text.
 

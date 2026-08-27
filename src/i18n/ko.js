@@ -116,7 +116,7 @@ export const ko = {
   'head.shiftTab': 'Shift+Tab',
   'head.shiftTabHint': '으로 바꿉니다  ·  ',
   'head.tabHint': 'Tab 은 치던 / 명령을 채웁니다',
-  'head.newlineHint': '줄바꿈: Alt+Enter(터미널이 지원하면) 또는 줄 끝에 ` 를 붙이고 Enter',
+  'head.newlineHint': '줄바꿈: Alt+Enter(터미널이 지원하면) 또는 줄 끝에 빈칸+` 를 붙이고 Enter',
   'head.thisPC': '이 PC',
   'head.skills': '스킬 {n}',
   'head.commands': '명령 {n}',

@@ -121,6 +121,23 @@ const DIFF_LINES = { 쉬움: 14, 개발자: 40 };
 // 모델의 말 앞에 세우는 세로줄. 도구 줄과 눈으로 갈리게 하는 유일한 표시다.
 const 답표시 = c.hcyan('▌');
 
+/**
+ * 줄 끝 백틱이 "이어쓰기" 표시인가.
+ *
+ * 예전에는 백틱 하나로 끝나기만 하면 표시로 봤다. 그런데 코딩 도구에서
+ * "read `config.json`" · "echo `date`" 처럼 **인라인 코드로 끝나는 줄**은
+ * 아주 흔하다. 그 줄들이 전부 안 보내지고, 닫는 백틱까지 뜯긴 채 이어쓰기
+ * 모드에 갇혔다 — 사람 눈에는 Enter 가 그냥 안 먹는 것으로 보인다.
+ *
+ * 그래서 조건을 둘로 좁혔다. 백틱 앞이 **빈칸**이고(또는 백틱만 있는 줄이고),
+ * 그 줄에 백틱이 **그것 하나뿐**일 때만 표시로 본다. 인라인 코드는 백틱이
+ * 둘이라 안 걸리고, ``` 울타리는 앞이 백틱이라 안 걸린다.
+ *
+ * 검사에서 표를 만들어 재려고 밖으로 뺐다.
+ */
+export const 이어쓰기표시 = (l) =>
+  /(^|\s)`$/.test(l) && (String(l).match(/`/g) ?? []).length === 1;
+
 export async function chatLoop(opts = {}) {
   const cfg = load();
   const prof = activeProfile(cfg);
@@ -327,9 +344,12 @@ export async function chatLoop(opts = {}) {
    * 메시지로 묶어 보낼 때 쓴다. 확정된 줄은 여기 쌓아 두다가, ` 없이 끝나는
    * 줄이 오면 그때 \n 으로 이어붙여 한 메시지로 내보낸다.
    *
-   * 실제 개행을 상자(rl.line) 안에 그대로 넣지는 않는다 — 접어쓰기() 가 \n 을
-   * 못 다뤄서(글자 하나로 세고 폭만 잰다) 그리면 커서 자리와 테두리 줄 수가
-   * 어긋난다. 그래서 물리적으로는 늘 한 줄씩만 치고, 이어붙이기는 밖에서 한다.
+   * 실제 개행을 상자(rl.line) 안에 넣어서는 **안 된다**. 화면은 멀쩡히
+   * 그려지지만, Enter 로 보낼 때 readline 의 history 가 그 줄을 \n 에서
+   * 쪼개 거꾸로 쌓고 \r 로 다시 붙여 돌려준다. "안녕\n반가워" 를 보내면
+   * 'line' 이벤트에 오는 값은 "반가워\r안녕" 이다 — 사람이 쓴 순서가
+   * 뒤집혀서 모델에게 간다. historySize 를 0 으로 두면 안 그러니 history 가
+   * 하는 짓이 맞다. 그래서 개행은 rl.line 밖, 여기서만 다룬다.
    *
    * 백슬래시(\) 가 아니라 백틱을 고른 것은 일부러다 — 이 프로그램은 윈도우
    * 경로(`C:\Users\...`)를 늘 다루는데, 그 끝은 흔히 백슬래시로 끝난다.
@@ -337,6 +357,15 @@ export async function chatLoop(opts = {}) {
    * 잘못 읽힌다. 백틱은 그럴 일이 없다.
    */
   let 이어쓰기줄들 = null;
+
+  /** 줄을 쌓아 두고 "다음 줄" 이라고 알린다. 백틱 표시와 Alt+Enter 가 같이 쓴다. */
+  const 줄쌓기 = (줄) => {
+    const 첫줄 = 이어쓰기줄들 === null;
+    (이어쓰기줄들 ??= []).push(줄);
+    화면.입력지움();
+    say(`${첫줄 ? ` ${c.hcyan('❯')} ` : '   '}${c.white(줄)}`);
+    say(`   ${c.gray('… 다음 줄. 그냥 Enter 로 보냅니다 · Ctrl+C 로 취소')}`);
+  };
 
   rl.on('line', (l) => {
     if (echo) say(c.gray(l));
@@ -346,16 +375,9 @@ export async function chatLoop(opts = {}) {
         // 되묻는 자리: 답을 그 줄에 남긴 채 줄만 넘긴다.
         process.stdout.write(`\r\x1b[2K${묻는중}${c.white(l)}\n`);
       } else if (입력기다림) {
-        // 백틱 **하나**로 끝날 때만 이어쓰기다. ``` 로 끝나는 줄은 마크다운
-        // 코드 울타리라 그대로 둬야 한다 — 코딩 도구에 코드를 붙여넣는 것은
-        // 드문 일이 아니고, 거기서 백틱 하나를 떼어먹으면 붙인 코드가 망가진다.
-        if (/(^|[^`])`$/.test(l)) {
-          const 줄 = l.slice(0, -1);
-          const 첫줄 = 이어쓰기줄들 === null;
-          (이어쓰기줄들 ??= []).push(줄);
-          화면.입력지움();
-          say(`${첫줄 ? ` ${c.hcyan('❯')} ` : '   '}${c.white(줄)}`);
-          say(`   ${c.gray('… 다음 줄. 그냥 Enter 로 보냅니다')}`);
+        // 표시 자체와 그 앞 빈칸은 사람이 친 글이 아니라 문법이다. 같이 뗀다.
+        if (이어쓰기표시(l)) {
+          줄쌓기(l.slice(0, -1).replace(/\s+$/, ''));
           return;
         }
         // 상자를 걷어내고, 사람이 보낸 글을 대화에 남긴다. 안 남기면 스크롤을
@@ -480,13 +502,16 @@ export async function chatLoop(opts = {}) {
          * 뒤에 더 올 것을 기다리는 동안 우리 keypress 가 먼저 온다. 그래서
          * key.meta 로 여기서 골라낼 수 있다. rl.write('\n') 은 못 쓴다 —
          * 그것도 내부적으로 줄을 끝내는 처리를 그대로 타 버린다(직접 확인).
-         * 그래서 rl.line·rl.cursor 를 손으로 이어붙인다.
+         *
+         * 커서 앞은 확정해서 쌓고, 뒤는 상자에 남긴다. rl.line 에 \n 을
+         * 넣어 이어붙이지 **않는다** — 그러면 화면은 맞는데 보낼 때
+         * history 가 줄 순서를 뒤집는다(이어쓰기줄들 선언부 참고).
          */
         if (key.meta && 입력기다림 && 묻는중 === null) {
-          const 앞 = (rl.line ?? '').slice(0, rl.cursor ?? 0);
           const 뒤 = (rl.line ?? '').slice(rl.cursor ?? 0);
-          rl.line = `${앞}\n${뒤}`;
-          rl.cursor = 앞.length + 1;
+          줄쌓기((rl.line ?? '').slice(0, rl.cursor ?? 0));
+          rl.line = 뒤;
+          rl.cursor = 0;
         } else {
           return;   // 줄이 끝나는 것은 'line' 이 맡는다
         }
@@ -798,6 +823,17 @@ export async function chatLoop(opts = {}) {
   let interrupted = false;
   let turn = null;              // 지금 도는 턴의 AbortController
   rl.on('SIGINT', () => {
+    /*
+     * 쌓아 둔 줄이 있으면 먼저 버린다. 이게 없으면 이어쓰기를 **취소할 길이
+     * 없다** — 표를 하나 붙여 놓고 마음이 바뀌어도, 다음에 치는 것이 무엇이든
+     * 앞줄에 붙어서 나간다. `/help` 같은 슬래시 명령까지 앞줄에 붙는 순간
+     * 더는 '/' 로 시작하지 않아 명령으로 안 읽히고 모델에게 넘어간다.
+     */
+    if (이어쓰기줄들 !== null) {
+      이어쓰기줄들 = null;
+      say('');
+      say(`  ${c.gray('이어쓰던 것을 버렸습니다.')}`);
+    }
     if (turn && !turn.signal.aborted) {
       turn.abort();
       return;                   // 화면 정리는 루프 쪽 'aborted' 이벤트가 한다
