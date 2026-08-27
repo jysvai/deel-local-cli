@@ -47,6 +47,7 @@
     "diagnose": "node bin/deel.js diagnose",
     "chat": "node bin/deel.js",
     "test": "node test/run.mjs",
+    "docs": "node tools/check-docs.mjs",
     "verify": "node test/no-bundle.test.js && node test/network.test.js && node test/web.test.js",
     "bench": "node test/edit-bench.js",
     "demo": "node test/demo.js",

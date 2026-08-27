@@ -38,3 +38,8 @@ jobs:
         run: npm run check
       - name: test
         run: npm test
+      # README 를 나눈 뒤로 링크가 파일 경계를 넘는다. 끊어져도 아무 데도 안
+      # 찍히고 읽는 사람만 막다른 길에 서므로, 여기서 잡는다. 한 번만 돌면 된다.
+      - name: docs links
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: npm run docs
