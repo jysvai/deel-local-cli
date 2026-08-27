@@ -48,6 +48,7 @@ const FILES = [
   'truncated.test.js',
   'ui2.test.js',
   'motion.test.js',
+  'office.test.js',
   'preview.test.js',
   'setup.test.js',
   'guard.test.js',

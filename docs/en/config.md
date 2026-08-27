@@ -33,6 +33,7 @@ Auth style is detected automatically: `Authorization: Bearer` → `x-api-key` �
 | `NO_COLOR` | Disable colour |
 | `DEEL_NO_MOTION=1` | Turn off the working animation (falls back to a one-cell spinner) |
 | `DEEL_MOTION` | Change that animation — `knight` · `animal`. [See](interface.md#changing-the-drawing) |
+| `DEEL_OFFICE=1` | Pin a twelve-row office above the input box. [See](interface.md#the-office--what-is-running-drawn-as-a-room) |
 
 ### Flags
 

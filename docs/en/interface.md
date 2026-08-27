@@ -301,6 +301,60 @@ alive.
 `DEEL_NO_MOTION=1` beats any theme — where braille does not render, a theme is no help.
 An unrecognized name falls back to the default without complaint.
 
+### The office — what is running, drawn as a room
+
+```bash
+DEEL_OFFICE=1 deel
+```
+
+A twelve-row room pins itself **above** the input box. When work starts it comes alive
+right there: seats fill, people type, people read, and past 45 seconds they doze off.
+
+**One rule holds it together: everything on screen is a real number.**
+Nothing is there for decoration.
+
+| In the room | What it is |
+|---|---|
+| Occupied seats | Work running right now (the parent plus each subagent) |
+| Posture | What that work is — typing (writing), papers (reading), asleep (past 45s) |
+| Whiteboard notes | Todos. Green is done, yellow is outstanding |
+| Filing-cabinet drawers | Files read (one drawer per seven) |
+| Server lights | Model calls made |
+| Daylight in the windows | How full the context is |
+| Paper on a desk | Files edited |
+
+What isn't known stays **zero**. It is never filled in with something plausible — invent
+one number and the whole screen stops being worth trusting, and then those twelve rows
+are just wallpaper.
+
+#### When it stays off
+
+- **Terminal shorter than 28 rows.** Twelve rows of office plus five of input box leaves
+  nowhere for the conversation. Being unable to work because you wanted to watch the
+  office has it backwards.
+- **`DEEL_NO_MOTION=1`** — that setting exists for screen-reader users.
+- **Terminals without 256 colour** — the colour numbers would leak into the text.
+
+Turning the office on quiets the in-box drawing (knight, animals) back to the plain
+spinner. Both say the same thing — a knight swinging a sword means "writing code", and so
+does an office worker at a keyboard. Stacked one above the other they just say it twice.
+
+#### Is it heavy
+
+No — and building it made the box **lighter than it was before.**
+
+A whole frame is over 9KB, but only **one of the twelve rows** actually changes between
+frames (walls, windows, cabinets and empty desks do not). So the box now sends only the
+rows that changed, which speeds things up even if you never turn the office on.
+
+| | Sent to the terminal |
+|---|---|
+| Old box (whole frame every time) | 10 KB/s |
+| Current box (changed rows only) | **1.6 KB/s** |
+| With the office on | about 9 KB/s |
+
+Drawing a frame costs 0.08ms, which is 0.09% of one core at a 90ms tick.
+
 ### What gets asked, and what just happens
 
 Whether your files change **with or without being asked** is the one thing that has to be
