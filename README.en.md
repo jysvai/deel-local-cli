@@ -286,9 +286,18 @@ and never builds one for an address that is not on the allow-list.
      GET only, zero-byte body. Private/loopback addresses refused. Every visit logged.
 
  [C] Plugin fetch ─────── open only while /plugin install runs
+
+ [D] MCP servers ──────── a separate child process, someone else's program
+     Only starts if a human writes it into .deel/mcp.json. Off by default.
 ```
 
-Pass `--offline` and **both B and C are closed** — traffic stays on this machine.
+A, B, and C are requests deel makes itself, so each one can be filtered.
+**D is different** — an MCP server is its own process; there is no way to see
+what sockets it opens from the outside. So under `--offline`, instead of
+filtering its requests, deel **never starts the server at all** — it doesn't
+claim to have blocked what it can't actually see.
+
+Pass `--offline` and **B, C, and D are all closed** — traffic stays on this machine.
 
 ```bash
 deel --offline
@@ -303,8 +312,9 @@ The destination is printed at the top of every session:
 Nothing is collected or transmitted. No telemetry, no usage stats, no crash reporting.
 Conversation history, undo snapshots and config live only in `.deel/` inside your working folder.
 
-> Verified by 55 checks in `npm test` (network + web), including bringing up a real server and
-> confirming that **not a single request reaches it** when it is not allow-listed.
+> Verified by 123 checks in `npm test` (network + web + mcp), including bringing up a real
+> server and confirming that **not a single request reaches it** when it is not allow-listed,
+> and that an MCP server **never starts** under `--offline`.
 
 ---
 

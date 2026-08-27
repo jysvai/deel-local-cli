@@ -164,7 +164,7 @@ export function reviewSheet(a, at) {
   L.push('     설정 파일: ~/.deel/config.json  (또는 환경변수 DEEL_API_KEY)');
   L.push('');
 
-  L.push('3-1. 나가는 길은 두 갈래이고 서로 섞이지 않습니다');
+  L.push('3-1. 나가는 길은 네 갈래이고 서로 섞이지 않습니다');
   L.push(줄());
   L.push('   [A] 모델 게이트웨이 — 소스 코드가 실려 나가는 유일한 길');
   L.push('       · 주소: deel setup 에서 정한 곳 딱 한 자리');
@@ -181,8 +181,14 @@ export function reviewSheet(a, at) {
   L.push('   [C] 플러그인 받기 (github) — 사용자가 /plugin install 을 칠 때만');
   L.push('       · 그 명령이 도는 동안만 열리고 끝나면 닫힙니다.');
   L.push('');
-  L.push('   --offline 으로 켜면 [B] 와 [C] 가 모두 막히고, 이 컴퓨터 안으로만 다닙니다.');
-  L.push('   (검증: npm test 안의 network / web 검사 54항목이 이를 확인합니다)');
+  L.push('   [D] MCP 서버 — 딴 자식 프로세스, 남의 프로그램');
+  L.push('       · .deel/mcp.json 에 사람이 직접 적어야만 뜹니다. 기본은 꺼져 있습니다.');
+  L.push('       · A·B·C 와 달리 이 서버가 안에서 무슨 소켓을 여는지는 코드로 볼 수');
+  L.push('         없습니다. 그래서 요청을 거르는 대신, --offline 이면 서버 자체를');
+  L.push('         아예 띄우지 않습니다.');
+  L.push('');
+  L.push('   --offline 으로 켜면 [B]·[C]·[D] 가 모두 막히고, 이 컴퓨터 안으로만 다닙니다.');
+  L.push('   (검증: npm test 안의 network / web / mcp 검사 123항목이 이를 확인합니다)');
   L.push('');
 
   L.push('4. 스킬·플러그인');
