@@ -15,6 +15,7 @@ import { chat } from './backend/adapter.js';
 import { TOOLS } from './tools/index.js';
 import { 둘러보기, 프로젝트갈래 } from './lsp/servers.js';
 import { 지금것들 } from './lsp/client.js';
+import { 보고서적기 } from './ui/export.js';
 import { loadCommand, discover } from './skills/discover.js';
 import { install, list, remove, pack } from './plugins/manage.js';
 import { spin } from './ui/spinner.js';
@@ -91,6 +92,7 @@ const 명령들 = {
   consult: { arg: true },
   lang: { arg: true },
   lsp: { arg: true },
+  export: { arg: true },
   init: { arg: false },
   exit: { arg: false },
   quit: { arg: false },
@@ -330,6 +332,25 @@ export async function handle(line, session, ctx) {
      * 대신 **여기서도 안 깔아 준다.** 깔 명령을 글자로 보여 줄 뿐이고,
      * 칠지 말지는 사람이 정한다 (lsp/servers.js 머리말).
      */
+    /*
+     * 대화 → 보고서 한 장 (ui/export.js).
+     *
+     * 폐쇄망에는 세션 공유 링크가 없다. 이 자리의 공유는 파일이다 —
+     * 결재는 첨부로 돌고, 보고는 한 장으로 한다.
+     */
+    case 'export': {
+      const 자리 = 보고서적기(ctx.scope.root, session, { scope: ctx.scope, audit: ctx.audit });
+      say('');
+      if (자리) {
+        say(`  ${mark.ok} ${말('export.saved')} ${c.white(ctx.scope.show(자리))}`);
+        say(`     ${c.gray(말('export.openHint'))}`);
+      } else {
+        say(`  ${c.red('✗')} ${말('export.failed')}`);
+      }
+      say('');
+      return { handled: true };
+    }
+
     case 'lsp': {
       const 값 = String(arg ?? '').trim().toLowerCase();
       if (값 === 'off' || 값 === '끔' || 값 === '꺼') {

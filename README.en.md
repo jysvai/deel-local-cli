@@ -379,6 +379,7 @@ Names follow Claude Code / Codex conventions.
 | `/lang [ko\|en]` | Screen language. Falls back to Korean for anything not translated yet |
 | `/bell [on\|off]` | Ring and set the window title when a turn ends, or when deel needs an answer |
 | `/consult <profile> <question>` | Ask a second model one question. Your current model stays put |
+| `/export` | This conversation as a **one-page HTML report** — asked, changed, verified. Self-contained, opens on any network |
 | `/lsp [on\|off]` | Language servers — what is installed, and whether `Def`/`Refs` are available. `off` turns post-edit diagnostics off only |
 | `/context` | What is consuming the context window |
 | `/ctx [auto\|number]` | Context **length** — re-read it off the model, or set it yourself |

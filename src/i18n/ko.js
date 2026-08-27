@@ -202,6 +202,27 @@ export const ko = {
   'lsp.neverInstalls': 'deel 은 아무것도 깔지 않습니다. 위 명령은 사람이 직접 칠 것입니다.',
   'lsp.howto': '고친 뒤 진단 켜고 끄기:',
 
+  'cmd.export.desc': '이 대화를 보고서 한 장(HTML)으로 — 시킨 것·바뀐 것·확인한 것',
+  'cmd.export.arg': '[파일이름]',
+  'export.untitled': '제목 없는 대화',
+  'export.model': '모델',
+  'export.calls': '도구 {수}회',
+  'export.conversation': '오간 말',
+  'export.you': '나',
+  'export.nothing': '오간 말이 없습니다.',
+  'export.changed': '바뀐 파일',
+  'export.file': '파일',
+  'export.times': '몇 번',
+  'export.noChanges': '바뀐 파일이 없습니다.',
+  'export.evidence': '돌려 본 것',
+  'export.nothingRan': '돌린 명령이 없습니다.',
+  'export.unproven': '증명 안 된 것',
+  'export.allProven': '없습니다 — 바꾼 것마다 뒤에 돌린 확인이 있습니다.',
+  'export.footer': 'deel 이 만든 보고서입니다. 바깥으로 나가는 주소가 없어 어느 망에서든 열립니다.',
+  'export.saved': '보고서를 남겼습니다:',
+  'export.openHint': '더블클릭으로 열립니다. 그대로 결재·보고에 첨부하면 됩니다.',
+  'export.failed': '보고서를 못 남겼습니다. 폴더 권한을 확인해 주세요.',
+
 
   // ── 도움말 · 승인 방식 · 수준 ─────────────────────────────────────────
   'help.titleCommon': '명령 (자주 쓰는 것)',
