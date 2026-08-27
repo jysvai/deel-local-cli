@@ -49,6 +49,15 @@ export const c = {
   bgGray: E(100),
 };
 
+/**
+ * 256색 한 칸. 큰 글자(intro.js)의 깊이를 낼 때 쓴다.
+ *
+ * 옛 콘솔(TERM=dumb)은 256색을 모른다. 거기서는 번호가 글에 그대로 찍히므로
+ * 아무 색도 안 입힌다 — 색이 없는 것보다 숫자가 새는 것이 훨씬 나쁘다.
+ */
+export const 색256가능 = () => process.env.TERM !== 'dumb';
+export const 번호색 = (n) => (s) => (ON && 색256가능() ? `[38;5;${n}m${s}[0m` : String(s));
+
 export const cursor = {
   hide: () => ON && process.stdout.write('\x1b[?25l'),
   show: () => ON && process.stdout.write('\x1b[?25h'),

@@ -75,6 +75,7 @@ const FILES = [
   'rewind.test.js',
   'notify.test.js',
   'intro.test.js',
+  'banner.test.js',
   'statusbar.test.js',
   'i18n.test.js',
   'models.test.js',

@@ -2213,6 +2213,8 @@ src/
   ui/status.js           status line — model, context, mode, approvals
   ui/working.js          working phrases — they follow what is happening
   ui/motion.js           the braille drawing next to the phrase
+  ui/intro.js            the startup motion
+  ui/banner.js           the large name — a line closes and names the boundary
   ui/approve.js          approval mode display (auto / risky only / everything)
   ui/diff.js             showing what changed, where it changed
   ui/wrap.js             wrapping to width without breaking colour
@@ -2308,10 +2310,43 @@ title ends with ST, not BEL; ending with BEL rings the bell on every title updat
 
 #### 3. A screen that is deel's own
 
-On start, `deel` grows into `deel-local`. The status bar names the boundary you are inside
-with one glyph (`⌂` this folder · `↗` outside · `?` unknown). The animation uses braille and
-box-drawing only — emoji and geometric shapes are East Asian Ambiguous, so their width
-varies per terminal and the line drifts by a column.
+The name comes up large on start.
+
+```
+            ████                                        ████
+            ████                                        ████
+  ██████████████    ████████████    ████████████        ████
+████        ████  ████        ████  ████        ████    ████
+████        ████  ████████████████  ████████████████    ████
+████        ████  ████              ████                ████
+  ██████████████    ████████████      ████████████        ████████
+╰──────────────────────────────────────────────────────────────╯  ⌂ stays on this machine
+```
+
+**No rainbow.** Modern CLIs open with big letters flowing from blue to pink. It looks good,
+but that colour says nothing. deel says exactly one thing — **your source does not leave this
+machine** — so that space carries the meaning instead.
+
+- A **line closes** under the name. That line is the boundary.
+- Its **colour says how far your source travels**: green `⌂` this machine, yellow `↗` an
+  in-house gateway. It is the **same glyph** the status bar uses, so what you saw on start
+  stays on the line below.
+- The letters brighten left to right — the same direction they arrive in, so it reads as
+  **growing** rather than as a pattern.
+
+The order carries meaning too. The name arrives → a beat of pause → the line closes → **only
+then** does the caption appear. A claim is worth something once the boundary is shut. The
+whole thing takes 0.4s; the person who opens this ten times a day is the one it is timed for.
+
+It does not force the big form into a narrow window. At `68 columns` you get the large name,
+at `36` a single-width one, and below that the old `deel` → `deel-local` motion. Letters that
+wrap are unreadable, and that is worse than drawing nothing — it reads as a broken screen.
+
+**Pipes, CI and logs get one small frame.** An eight-line drawing at the head of a log file is
+just noise to whoever reads it.
+
+The fill is `█` and the rule is `╰─╯`, nothing else. Emoji and geometric shapes are East Asian
+Ambiguous, so their width varies per terminal and the line drifts by a column.
 
 #### 4·5. English on screen, and in what the model reads
 
