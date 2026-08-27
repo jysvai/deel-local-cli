@@ -22,7 +22,7 @@
  *   4. 파일을 **주기만** 한다. PUT·POST·DELETE 는 받지 않는다.
  */
 import { createServer } from 'node:http';
-import { createReadStream, statSync, existsSync, readdirSync, watch } from 'node:fs';
+import { createReadStream, statSync, existsSync, readdirSync, watch, realpathSync } from 'node:fs';
 import { join, extname, relative, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -181,7 +181,24 @@ export function 띄우기({ 뿌리, scope, 되살리기 = true }) {
 
       if (되살리기) {
         try {
-          감시 = watch(뿌리, { recursive: true }, () => {
+          /*
+           * 감시할 자리는 **긴 이름으로 바꿔서** 준다.
+           *
+           * 윈도우가 알려 주는 파일 이름은 긴 이름인데, 우리가 준 자리가 짧은
+           * 이름(`RUNNER~1` 같은 8.3 이름)이거나 정션 너머면 둘이 안 맞는다.
+           * 그때 libuv 는 잡을 수 있는 오류를 내지 않고 **그냥 죽는다** —
+           *
+           *   Assertion failed: !_wcsnicmp(filename, dir, dirlen),
+           *   file src\win\fs-event.c, line 72
+           *
+           * try 로 감싸도 소용없다. assert 는 프로세스를 통째로 끝낸다.
+           * 미리보기 한 번 켰다가 deel 이 사라지는 셈이고, 화면에는 아무
+           * 이유도 안 남는다. GitHub 의 윈도우 러너 임시 폴더가 정확히 그
+           * 모양이라 검사가 거기서만 죽었고, 그 덕에 찾았다.
+           */
+          let 감시자리 = 뿌리;
+          try { 감시자리 = realpathSync.native(뿌리); } catch { /* 못 바꾸면 준 대로 */ }
+          감시 = watch(감시자리, { recursive: true }, () => {
             // 저장 한 번에 이벤트가 여러 개 온다. 몰아서 한 번만 알린다.
             clearTimeout(늦추기);
             늦추기 = setTimeout(알리기, 120);
