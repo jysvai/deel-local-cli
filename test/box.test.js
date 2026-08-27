@@ -57,6 +57,64 @@ trace('1-띄우기');
  * 모델은 안 부른다 — 닿을 수 없는 주소를 준다. 여기서 보는 것은 화면이지
  * 모델이 아니다. 슬래시 명령만으로 충분하다.
  */
+/**
+ * 켜질 때까지 기다린다 — 정해진 시간이 아니라 **켜졌다는 신호**를 본다.
+ *
+ * 전에는 그냥 1800ms 를 잤다. 그런데 이 검사는 진짜 deel 을 띄우는 검사라,
+ * 컴퓨터가 바쁘면(검사 67개가 잇달아 돌 때·다른 것이 같이 돌 때) 그 안에 못
+ * 켜진다. 그러면 아직 아무것도 안 그려진 화면을 읽고 죄다 틀렸다고 한다 —
+ * 고칠 것이 없는데 빨간 검사가 된다. 실제로 이것 때문에 같은 코드가 한 번은
+ * 통과하고 한 번은 실패했다.
+ *
+ * 그래서 시간이 아니라 신호를 기다린다. 상자 모드면 테두리(╭), 줄 모드면
+ * 입력 표시(❯)가 나오는 순간이 '켜졌다' 다. 빨리 켜지면 빨리 넘어가므로
+ * 평소에는 오히려 전보다 빠르다. 정말로 안 켜지면 최대치까지 기다렸다가
+ * 넘어간다 — 거기서 멈춰 버리면 무엇이 틀렸는지도 못 보고 끝난다.
+ *
+ * @param {() => string} 읽기 지금까지 받은 글
+ */
+const 켜질때까지 = async (읽기, 최대 = 20000) => {
+  const 시작 = Date.now();
+  while (Date.now() - 시작 < 최대) {
+    if (/[╭❯]/.test(읽기())) {
+      // 신호가 왔어도 머리말이 다 안 나왔을 수 있다. 조금만 가라앉힌다.
+      await new Promise((r) => setTimeout(r, 150));
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return false;
+};
+
+/**
+ * 바라는 것이 화면에 나올 때까지 기다린다. 켜질때까지() 와 같은 뜻이다 —
+ * **시간이 아니라 일어난 일**을 기다린다.
+ *
+ * 한 턴을 재는 자리에서 특히 중요하다. 스텁 모델이 세 번 불리고 그 사이마다
+ * 900ms 씩 뜸을 들이므로, 바쁜 컴퓨터에서는 정해 둔 시간 안에 마지막 '답 쓰는
+ * 중' 까지 못 간다. 그러면 그 문구가 화면에 안 뜬 채로 끝나서, 멀쩡한 코드가
+ * "답할 때 답한다고 안 한다" 로 잡힌다.
+ *
+ * 넉넉히 기다렸다가 그래도 안 나오면 그냥 넘어간다 — 여기서 멈춰 버리면
+ * 무엇이 틀렸는지 볼 기회조차 없어진다. 판정은 부르는 쪽의 check 가 한다.
+ *
+ * @param {() => string} 읽기 지금까지 받은 글
+ * @param {RegExp} 무늬        이것이 보이면 다 된 것
+ * @param {number} 최대        여기까지만 기다린다
+ * @param {number} 가라앉힘    보이고 나서 더 기다릴 시간(뒤따라올 것이 있을 때)
+ */
+const 나올때까지 = async (읽기, 무늬, 최대 = 20000, 가라앉힘 = 300) => {
+  const 시작 = Date.now();
+  while (Date.now() - 시작 < 최대) {
+    if (무늬.test(읽기())) {
+      await new Promise((r) => setTimeout(r, 가라앉힘));
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return false;
+};
+
 async function 띄우기(줄들, { 상자 = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'deel-box-'));
   const home = mkdtempSync(join(tmpdir(), 'deel-box-home-'));
@@ -91,7 +149,7 @@ async function 띄우기(줄들, { 상자 = true } = {}) {
   const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
   const 넣기 = (l) => { if (!끝남) { try { kid.stdin.write(l + '\n'); } catch { /* 이미 닫혔다 */ } } };
 
-  await 자기(1800);                       // 켜지고 머리말이 나올 때까지
+  await 켜질때까지(() => out);            // 켜지고 머리말이 나올 때까지
   for (const l of 줄들) { 넣기(l); await 자기(700); }
   넣기('/exit');
   await Promise.race([닫힘, 자기(3000)]);
@@ -139,12 +197,25 @@ async function 키눌러보기(단계들) {
     return (줄들.at(-1) ?? '').replace(/^.*│ [❯…] /, '').replace(/ *│.*$/, '');
   };
 
-  await 자기(1800);
+  await 켜질때까지(() => out);
   const 결과 = [];
   for (const 단계 of 단계들) {
     out = '';
     for (const k of 단계.키) { if (!끝남) { try { kid.stdin.write(k); } catch {} } await 자기(110); }
-    await 자기(320);
+    /*
+     * 320ms 를 세고 읽던 자리.
+     *
+     * 상자는 키를 받고 한 틱 뒤에 그린다(repl 의 setImmediate). 바쁜
+     * 컴퓨터에서는 그 한 틱이 320ms 를 넘어서, 아직 안 그려진 화면을 읽고
+     * `본 것 ""` 로 잡힌다 — 고칠 것이 없는데 빨갛다.
+     *
+     * 그래서 바라는 글이 상자에 나타날 때까지 기다린다. 다만 **틀린 것을
+     * 맞다고 만들면 안 되므로** 여기서 판정하지는 않는다. 나오면 곧장
+     * 넘어가고(평소엔 더 빠르다), 안 나오면 기다렸다가 그대로 읽어서
+     * 아래 check 가 있는 그대로 판정하게 둔다.
+     */
+    if (단계.기대) await 나올때까지(() => 지금글(), new RegExp(`^${단계.기대.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), 4000, 60);
+    else await 자기(320);
     const 본것 = 지금글();
     // 상자 안엣것만으로는 못 재는 것이 있다 — Shift+Tab 이 대화에 남기는
     // 한 줄 같은 것. 그 단계에 화면으로 나간 것도 같이 돌려준다.
@@ -208,9 +279,13 @@ async function 한턴돌리기() {
   const 닫힘 = new Promise((r) => kid.on('close', () => { 끝남 = true; r(); }));
   const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  await 자기(1800);
+  await 켜질때까지(() => out);
   kid.stdin.write('집계 함수 좀 줄여줘\n');
-  await 자기(6000);
+  // 6초를 재고 끊던 자리. 스텁이 세 번 불리고 그 사이마다 900ms 를 쉬므로
+  // 바쁜 컴퓨터에서는 6초 안에 답까지 못 간다 — 그러면 '답 쓰는 중' 문구가
+  // 화면에 안 뜬 채로 끝나서 멀쩡한 코드가 빨갛게 잡힌다. 답이 실제로 나올
+  // 때까지 기다린다.
+  await 나올때까지(() => out, /sum 으로 줄였습니다/, 25000, 700);
   if (!끝남) { try { kid.stdin.write('/exit\n'); } catch {} }
   await Promise.race([닫힘, 자기(2500)]);
   if (!끝남) { kid.kill(); await Promise.race([닫힘, 자기(1500)]); }
@@ -271,7 +346,7 @@ async function 흘려보내기(줄들) {
   const 닫힘 = new Promise((r) => kid.on('close', () => { 끝남 = true; r(); }));
   const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  await 자기(1800);
+  await 켜질때까지(() => out);
   if (!끝남) kid.stdin.write('계획 짜줘\n');
   await 자기(600 + 줄들.length * 200 + 1200);
   if (!끝남) { try { kid.stdin.write('/exit\n'); } catch {} }
