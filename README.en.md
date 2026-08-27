@@ -18,7 +18,6 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![npm provenance](https://img.shields.io/badge/npm%20provenance-signed%20on%20GitHub%20Actions-1a7f37?logo=github&logoColor=white)](https://www.npmjs.com/package/deel-local-cli#provenance)
 [![tests](https://img.shields.io/badge/tests-3%2C498%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
