@@ -6,6 +6,18 @@ What changed in each version, and why
 
 ---
 
+## 1.4.2
+
+**1.4.1 shipped before its own security fixes — this corrects that**
+
+Right after fixing the publish-workflow bug (bash couldn't parse Korean
+variable names), 1.4.1 published to npm **before** the security fixes listed
+under 1.4.1 below actually landed in the code. So as of this writing,
+`npm install -g deel-local-cli` at 1.4.1 shipped the ReDoS in guard.js and
+the XSS in the preview server as-is. npm won't let a version publish twice,
+so this release exists to actually carry those fixes. The code is identical
+to what 1.4.1 describes below — install 1.4.2 or later to get it.
+
 ## 1.4.1
 
 **No new features — only things actually found and fixed**

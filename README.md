@@ -100,7 +100,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
+| [릴리스 노트](docs/ko/releases.md) | [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
 
 ---
 
@@ -892,7 +892,8 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[1.4.1](docs/ko/releases.md#141)** | 새 기능 없이, 실제로 찾은 것만 고친다 — 윈도우 abort·ReDoS·XSS |
+| **[1.4.2](docs/ko/releases.md#142)** | 1.4.1 이 보안 수정 전에 나갔다 — 그걸 바로잡는 판 |
+| [1.4.1](docs/ko/releases.md#141) | 새 기능 없이, 실제로 찾은 것만 고친다 — 윈도우 abort·ReDoS·XSS |
 | [1.4.0](docs/ko/releases.md#140) | deel 이 제 얼굴을 갖고, 영어로도 말하고, 뜻까지 본다 — 열한 자리 |
 | [1.3.0](docs/ko/releases.md#130) | 말 대신 증거, 터미널 대신 에디터 — 여섯 자리 |
 | [1.2.0](docs/ko/releases.md#120) | 대화가 끊기지 않게 — 여섯 자리 |
