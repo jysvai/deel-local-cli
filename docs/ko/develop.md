@@ -110,6 +110,28 @@ src/
 test/                    검증 (배포 묶음에서 뺀다)
 ```
 
+## 판 올리기
+
+npm 에는 **손으로 안 올립니다.** 태그를 밀면 GitHub Actions 가 검사를 다 돌리고
+올리면서, "이 판은 이 저장소의 이 커밋에서 나왔다" 는 서명을 붙입니다
+(npm provenance). 받는 사람이 npm 페이지에서 커밋 해시까지 확인할 수 있습니다 —
+사내 심사에서 "받은 묶음이 공개된 그 소스가 맞나" 를 물을 때, 말이 아니라
+링크로 답하는 자리입니다.
+
+```bash
+# package.json 의 판을 올리고 커밋한 뒤
+git tag v1.4.0
+git push origin v1.4.0
+```
+
+태그와 `package.json` 의 판이 다르면 올리기 전에 멈춥니다. npm 은 같은 판을
+다시 못 올리므로, 어긋난 채 나가면 되돌릴 수가 없습니다.
+
+한 번만 해 두어야 하는 것이 있습니다 — npm 에서 **Automation 형 토큰**을 만들어
+저장소 `Settings → Secrets and variables → Actions` 에 `NPM_TOKEN` 으로 넣습니다.
+Automation 토큰은 2FA 를 안 묻는 형이라 CI 에서 쓸 수 있습니다(사람이 손으로
+올릴 때는 그대로 OTP 를 묻습니다).
+
 ---
 
 [← README 로](../../README.md)

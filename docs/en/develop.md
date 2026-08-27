@@ -110,6 +110,27 @@ src/
 test/                    tests (excluded from the published package)
 ```
 
+## Releasing
+
+Releases are **not published by hand.** Push a tag and GitHub Actions runs the full
+test suite, publishes, and attaches a signed statement that this version was built
+from this repository at this commit (npm provenance). Anyone can verify the commit
+hash on the npm page — which is exactly what a corporate review asks for when it
+wants to know whether the tarball matches the published source.
+
+```bash
+# after bumping the version in package.json and committing
+git tag v1.4.0
+git push origin v1.4.0
+```
+
+If the tag and `package.json` disagree, it stops before publishing. npm never lets
+the same version be published twice, so a mismatch that gets out cannot be undone.
+
+One-time setup: create an **Automation token** on npm and add it to the repository
+as `NPM_TOKEN` under `Settings → Secrets and variables → Actions`. Automation tokens
+skip the 2FA prompt so CI can use them (publishing by hand still asks for an OTP).
+
 ---
 
 [← back to README](../../README.en.md)

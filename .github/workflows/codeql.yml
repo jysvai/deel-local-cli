@@ -1,0 +1,37 @@
+name: CodeQL
+
+# 왜 도나: 이 프로그램은 사내 심사를 받으러 가는 물건이다. 심사에서 제일 먼저
+# 묻는 것이 "정적 분석을 돌리나" 인데, 그 답이 사람 말이 아니라 배지와 로그로
+# 있어야 한다. 의존성이 0개라 남의 코드는 검사할 것이 없고, 여기서 걸리는 것은
+# 전부 우리가 쓴 코드다.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 코드가 안 바뀌어도 규칙은 바뀐다. 새 규칙에 지금 코드가 걸리는지
+    # 매주 한 번 다시 본다 (월요일 06:20 UTC).
+    - cron: '20 6 * * 1'
+
+jobs:
+  analyze:
+    name: analyze (javascript)
+    runs-on: ubuntu-latest
+    permissions:
+      # 결과를 Security 탭에 올리는 데 필요한 최소 권한만.
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # 기본 규칙에 보안 규칙을 더한다. 의존성이 없어 분석이 빠르므로
+          # 넓게 보는 쪽이 낫다.
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:javascript-typescript'

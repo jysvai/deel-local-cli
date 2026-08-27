@@ -1,0 +1,68 @@
+name: publish
+
+# ── 왜 손으로 안 올리나 ─────────────────────────────────────────────────
+#
+# 이 프로그램이 파는 것은 "내 소스가 어디로도 안 간다" 는 믿음이다. 그런데
+# 정작 npm 에 올라간 물건이 그 소스에서 나왔다는 것은 지금까지 **내 말뿐**
+# 이었다. 받는 사람 입장에서는 확인할 방법이 없다.
+#
+# npm provenance 는 그 자리를 메운다. GitHub Actions 가 빌드하면서 "이 판은
+# 이 저장소의 이 커밋에서, 이 워크플로로 나왔다" 는 서명을 붙이고, 공개
+# 투명성 로그(Sigstore)에 남긴다. npm 페이지에 커밋 해시까지 뜬다.
+# 사내 심사에서 "받은 tarball 이 공개된 그 소스가 맞나" 를 물으면, 이제
+# 말이 아니라 링크로 답한다.
+#
+# ── 올리는 법 ───────────────────────────────────────────────────────────
+#
+#   1. npm 에서 토큰을 하나 만든다 (Automation 형. 2FA 를 안 묻는 형이라
+#      CI 에서 쓸 수 있다. 사람이 손으로 올릴 때는 지금처럼 OTP 를 묻는다).
+#   2. 이 저장소 Settings → Secrets and variables → Actions 에
+#      `NPM_TOKEN` 으로 넣는다.
+#   3. package.json 의 판을 올리고 커밋한 뒤 태그를 민다.
+#
+#        git tag v1.4.0 && git push origin v1.4.0
+#
+#      태그를 밀면 검사가 다 돌고, 통과해야 올라간다.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # 서명에 쓰는 짧은 수명의 신분증을 받는 권한. 이것이 없으면
+      # --provenance 가 조용히 실패하는 것이 아니라 아예 거절된다.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      # 태그와 package.json 이 어긋난 채로 올라가면 되돌릴 수가 없다
+      # (npm 은 같은 판을 다시 못 올린다). 그래서 여기서 먼저 막는다.
+      - name: tag matches package.json
+        shell: bash
+        run: |
+          판=$(node -p "require('./package.json').version")
+          태그="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$판" != "$태그" ]; then
+            echo "태그 v$태그 와 package.json $판 이 다릅니다." >&2
+            exit 1
+          fi
+          echo "$판"
+
+      - name: syntax
+        run: npm run check
+      - name: test
+        run: npm test
+
+      - name: publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
