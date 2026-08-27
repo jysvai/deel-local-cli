@@ -6,6 +6,49 @@ What changed in each version, and why
 
 ---
 
+## 1.4.1
+
+**No new features — only things actually found and fixed**
+
+Before posting to Reddit, a self-review of the GitHub Security tab turned up a
+few real issues. Below is what got fixed. No new capability shipped.
+
+#### 1. `/preview` could vanish on Windows with zero error output
+
+The recursive folder watcher (`fs.watch(recursive: true)`) hits a libuv
+assertion — and a hard process abort — when the watched path uses a short
+(8.3-style, e.g. `RUNNER~1`) name or crosses a junction. That's a native abort,
+uncatchable by try/catch, so the session just disappeared with nothing on
+screen. Fixed by resolving the path to its canonical long form before
+watching.
+
+#### 2. The regex that blocks dangerous commands could itself hang
+
+The safety guard's pattern for catching `Remove-Item -Recurse ...`-style
+commands had a ReDoS (catastrophic backtracking) shape. A crafted 74-character
+input made the check itself take over 15 seconds — ironic, given it's the
+safety net's own regex. Detection behavior is unchanged; only the pattern
+shape was fixed.
+
+#### 3. Stored XSS in the `/preview` directory listing
+
+The file-listing page shown for a folder with no `index.html` inserted file
+names into HTML without escaping. A file whose name contained `<script>`
+would execute when the folder was opened. The visible text is now escaped
+too.
+
+#### 4. `WebFetch` double-unescaped HTML entities when converting a page to text
+
+Decoding entities one pass at a time (unescape `&amp;` first, then look for
+`&lt;`) meant a doubly-escaped `&amp;lt;` got decoded twice into a literal
+`<`. Fixed to decode in a single pass.
+
+#### 5. README and docs redrawn
+
+The 2,800-line README became an 870-line summary plus ten per-language doc
+pages. Badges, the hero image, and the table of contents were redrawn too —
+that's a how-it-looks story, not a what-changed one, so it's kept brief here.
+
 ## 1.4.0
 
 **deel gets a face, speaks English, and sees meaning**
