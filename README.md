@@ -18,7 +18,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-3%2C848%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-3%2C869%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -101,7 +101,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.5.7](docs/ko/releases.md#157) · [1.5.6](docs/ko/releases.md#156) · [1.5.5](docs/ko/releases.md#155) · [1.5.4](docs/ko/releases.md#154) · [1.5.3](docs/ko/releases.md#153) · [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
+| [릴리스 노트](docs/ko/releases.md) | [1.5.8](docs/ko/releases.md#158) · [1.5.7](docs/ko/releases.md#157) · [1.5.6](docs/ko/releases.md#156) · [1.5.5](docs/ko/releases.md#155) · [1.5.4](docs/ko/releases.md#154) · [1.5.3](docs/ko/releases.md#153) · [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
 
 ---
 
@@ -910,7 +910,7 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (3,848항목)
+npm test          전체 검증 (3,869항목)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -975,6 +975,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
+| **[1.5.8](docs/ko/releases.md#158)** | 5MB 문서를 919줄 중 8줄만 보던 것 · 정규식을 경로로 읽어 명령을 막던 것 |
 | **[1.5.7](docs/ko/releases.md#157)** | 맥 한글 폴더에서 제 파일이 「범위 밖」이던 것 · 붙여넣기 · ESC |
 | **[1.5.6](docs/ko/releases.md#156)** | 막히면 물어본다 — 글로 묻고 턴을 끝내는 대신에 |
 | **[1.5.5](docs/ko/releases.md#155)** | 계획을 세우면 방이 찬다 — 「한 명뿐」은 고정이 아니라 버그였다 |

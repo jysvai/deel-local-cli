@@ -6,6 +6,117 @@ What changed in each version, and why
 
 ---
 
+## 1.5.8
+
+**A 5MB document showed 8 lines out of 919**
+
+A local model asked to edit an internal HTML document.
+
+```
+❉ Outline(*.html)      1 file · 22 spots
+◧ Read(…report.html)   919 lines      ← eleven times
+❊ Grep(제목|쪽나누기|page-break…)   6 hits
+
+▶ Bash(a short script to strip the images out)
+  └ blocked — outside the working scope
+
+⏺ Ask → "What would you like changed in this HTML?"
+▶ subtask … done  135.9s
+```
+
+Eleven reads of the same file, blocked commands, and it ended by asking the
+person what to do. "Roo Code runs the same local model and just does it" — a
+fair complaint, with two causes.
+
+#### 1. That file was 919 lines and 5MB
+
+Internal HTML documents embed their images in the file as base64. The
+line count looks normal while **a single line is megabytes**. The tool-result
+cap is 30,000 characters, so what actually happens — measured on a file built
+the same way:
+
+```
+919-line document · 8.1MB
+→ what the model sees: 8 lines, 99% of it base64.
+```
+
+**Eight lines.** Read it eleven times and you still don't know what the document
+looks like. What the model did next is telling: **it wrote a script to strip the
+base64 out** — it worked out on its own that the file isn't readable until that
+data is gone. And that script was blocked too (see 2 below). With no route left,
+asking was all it had.
+
+Reads now leave the image data out.
+
+```
+918   <img src="data:image/png;base64,…(1.1MB omitted)…">
+
+[7 embedded images (8.0MB) left out. The file is unchanged — a line carrying an
+ omission marker won't match as Edit's old_string.]
+```
+
+Measured on the same file:
+
+```
+8 / 919 lines   →   614 / 919 lines
+8.1MB           →   44KB
+```
+
+**The file is not touched.** Only what gets sent is smaller. Lines without
+images are byte-identical, and the image lines themselves stay where they are —
+you need to know what sat where to edit around it. Small icons (under 200
+characters) pass through untouched.
+
+#### 2. A regex was read as a path, and the command was refused
+
+```
+▶ Bash(a short command with JavaScript in it)
+  └ blocked — outside the working scope: /[\s\S]*?/g     ← a regex
+  └ blocked — outside the working scope: /div        ← a closing tag
+```
+
+The fence pulls path-looking words out of a command line and checks whether they
+leave the folder. But what arrives is a shell command line with **entire
+JavaScript programs inside it**, so every slash in the code looks like a path.
+The first is a regex literal; the second is `</div>` sliced up. Neither has
+anything to do with files, and **the whole command** was refused.
+
+The model has no way to know why, so it retried five or six times with different
+quoting. That accounts for a large share of the minutes a single request took.
+
+Code fragments are no longer read as paths — words with quotes mixed in, words
+starting with `/` that carry regex metacharacters, bare slashes, and
+single-segment paths that don't exist on disk (`/div`). The bar for skipping is
+deliberately narrow: **a path that accidentally reaches outside looks like
+`/Users/someone/thing`, not like a regex.** Globs are still checked —
+`rm /Users/other/*` is a real path and has to keep being caught.
+
+Anything actually leaving the folder is still blocked, and there are checks
+pinning that down.
+
+#### Pasting made the front of the text vanish from the screen
+
+"When I paste, why does part of it disappear?"
+
+What was sent was correct. What stayed **on screen** was not — only the last
+line got printed on send. Earlier lines are stacked and joined later, and a
+paste deliberately prints nothing while stacking (so twenty lines don't scroll
+past). So pasting three lines left only the third on screen, and people assumed
+the rest hadn't gone and pasted again.
+
+What was sent is now what stays. The screen and the model have to match, or
+scrolling back tells you nothing about what you asked for.
+
+#### Numbers
+
+**3,869 checks.** These ones measure **how much is visible**, not whether the
+source says so — counting the lines a model can see in a 919-line document full
+of embedded images, and feeding the exact command from the screen to confirm it
+isn't refused. Putting the old behaviour back and watching the checks go red was
+confirmed too.
+
+---
+
 ## 1.5.7
 
 **Korean folders on macOS made your own files "out of scope"**
@@ -16,8 +127,8 @@ Someone running 1.5.6 sent this screen.
 ❉ Outline(**/*)
   └ 20 files · 801 spots · 17 unreadable
 
-◧ Read(…/AML_ᄎ…)      ← ᄎ  (jamo, split apart)
-◧ Read(…/AML_챗…)      ← 챗 (one letter)
+◧ Read(…/자료_ᄎ…)      ← ᄎ  (jamo, split apart)
+◧ Read(…/자료_챗…)      ← 챗 (one letter)
 
 ❉ Outline(**/*.py)
   └ Outside the working scope: /Users/me/.Trash/Archive 오후 3.05.41

@@ -23,7 +23,7 @@ import { Session } from '../src/agent/session.js';
 import { run } from '../src/agent/loop.js';
 import { 살린쓰기, partialParse } from '../src/agent/salvage.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
-import { TOOLS } from '../src/tools/index.js';
+import { TOOLS, 붙박이그림줄이기 } from '../src/tools/index.js';
 import { encode } from '../src/tools/encoding.js';
 import { findMatch } from '../src/tools/edit-match.js';
 import { trace } from './trace.mjs';
@@ -248,6 +248,62 @@ trace('4-큰덩이편집');
   let 큰것찾기 = null;
   try { 큰것찾기 = findMatch(`머리\n${큰덩이}\n꼬리\n`, 큰덩이); } catch (e) { 큰것찾기 = { ok: false, reason: e.constructor.name }; }
   check('큰 덩이도 그대로 있으면 찾는다', 큰것찾기?.ok === true, JSON.stringify(큰것찾기?.reason ?? 큰것찾기?.tier));
+}
+
+trace('4.5-그림이박힌파일읽기');
+
+/*
+ * ── 919줄인데 5MB 인 파일 ───────────────────────────────────────────────
+ *
+ * 사내 업무용 HTML 은 그림을 파일 안에 base64 로 박아 넣는다. 줄
+ * 수는 멀쩡한데 한 줄이 메가바이트다. 그런 파일을 시켰을 때 실제로 이랬다 —
+ *
+ *   ◧ Read(…문서.html)   919줄     ← 열한 번
+ *   ▶ Bash(node -e "s.replace(/data:image\/…base64,[^\"']+/g,'…')")
+ *     └ 막힘 — 작업 범위 밖입니다
+ *   ⏺ Ask → "어떤 내용을 수정할까요?"
+ *
+ * 모델은 **base64 를 지워야 읽을 수 있다는 것을 스스로 알아냈다.** 그 명령이
+ * 막히니 열한 번을 다시 읽고, 그래도 못 봐서 사람에게 되물었다.
+ *
+ * 여기서 재는 것은 "그림을 뺐나" 가 아니라 **모델이 몇 줄이나 보게 되나** 다.
+ * 그게 이 결함의 크기이자 고쳤는지의 기준이다.
+ */
+{
+  const 그림 = 'A'.repeat(1200000);
+  const 줄들 = [];
+  for (let i = 0; i < 919; i++) {
+    줄들.push(i % 150 === 7
+      ? `    <img src="data:image/png;base64,${그림}">`
+      : `    <div class="section">본문 단락 ${i}</div>`);
+  }
+  const 번호붙이기 = (ls) => ls.map((l, i) => `${String(i + 1).padStart(6)}\t${l}`).join('\n');
+  // Read 가 실어 보내는 상한과 같은 값으로 잰다 (tools/index.js 의 MAX_OUT).
+  const 보이는줄 = (s) => (s.slice(0, 30000).match(/\n/g) ?? []).length + 1;
+
+  const 그대로 = 보이는줄(번호붙이기(줄들));
+  const 줄인것 = 붙박이그림줄이기(줄들);
+  const 줄인뒤 = 보이는줄(번호붙이기(줄인것.줄들));
+
+  check('그림을 안 빼면 문서가 거의 안 보인다', 그대로 < 20, `${그대로}/919줄`);
+  check('그림을 빼면 문서 대부분이 보인다', 줄인뒤 > 500, `${그대로}/919줄 → ${줄인뒤}/919줄`);
+  check('뺀 만큼을 얼마인지 알려 준다', /8\.0MB|8\.1MB/.test(줄인것.알림), 줄인것.알림.slice(0, 70));
+  check('파일이 그대로라는 것과 Edit 주의를 같이 적는다',
+    /파일은 그대로/.test(줄인것.알림) && /old_string/.test(줄인것.알림), 줄인것.알림.slice(0, 90));
+
+  // 뼈대는 한 글자도 안 잃어야 한다. 그림만 빼는 것이지 문서를 줄이는 게 아니다.
+  const 본문줄 = 줄인것.줄들.filter((l) => l.includes('본문 단락'));
+  check('그림이 아닌 줄은 한 글자도 안 건드린다',
+    본문줄.length === 912 && 본문줄.every((l, i) => l === 줄들.filter((x) => x.includes('본문 단락'))[i]),
+    `${본문줄.length}줄`);
+  // 그림 줄도 사라지지 않는다 — 어디에 무엇이 있었는지는 남아야 고칠 수 있다.
+  check('그림 줄 자체는 남는다',
+    줄인것.줄들.filter((l) => l.includes('data:image/png;base64,')).length === 7,
+    `${줄인것.줄들.filter((l) => l.includes('base64')).length}줄`);
+
+  // 작은 그림은 그냥 둔다. 아이콘 하나까지 가리면 오히려 못 알아본다.
+  const 작은것 = 붙박이그림줄이기([`<img src="data:image/gif;base64,${'B'.repeat(80)}">`]);
+  check('작은 그림은 그대로 둔다', 작은것.몇개 === 0, `${작은것.몇개}개 줄임`);
 }
 
 trace('5-치움');

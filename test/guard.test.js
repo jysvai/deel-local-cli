@@ -10,7 +10,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeScope, checkPaths } from '../src/safety/guard.js';
+import { makeScope, checkPaths, 경로낱말 } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
@@ -323,6 +323,73 @@ trace('5b-Bash로우회');
     'npm run build -- --out ./dist',
   ];
   for (const c of 통과) check(`평범한 명령은 그대로 돈다: ${c}`, 막히나(c) === null, 막히나(c)?.split('\n')[0] ?? '');
+
+  /*
+   * ── 코드 안의 슬래시를 경로로 읽지 않는가 ─────────────────────────────
+   *
+   * 여기 오는 것은 셸 명령줄인데, 모델은 그 안에 자바스크립트를 통째로 넣는다.
+   * 그러면 코드 안의 슬래시가 전부 경로로 보인다. 실제 화면에서 이렇게 막혔다 —
+   *
+   *   ▶ Bash(node - <<'NODE' const fs=require('fs'); …)
+   *     └ 막힘 — 작업 범위 밖입니다: /data:image\/[\s\S]*?base64,[^"']+/g,'…'
+   *   ▶ Bash(node -e "…")
+   *     └ 막힘 — 작업 범위 밖입니다: /div
+   *
+   * 정규식 리터럴과 `</div>` 다. 파일과 아무 상관이 없는데 명령 **전체**가
+   * 거절됐고, 모델은 왜 막혔는지 모르니 따옴표만 바꿔 대여섯 번을 다시 했다.
+   * 한 요청이 몇 분씩 늘어난 큰 몫이 이것이었다.
+   */
+  /*
+   * 화면에 찍힌 그 명령을 그대로 재현한다.
+   *
+   * heredoc 이라 코드가 따옴표 **밖**에 있다 — 그래서 줄마다 낱말로 잘리고,
+   * 정규식 조각 하나하나가 경로 후보가 된다. `node -e "…"` 는 따옴표 안이라
+   * 통째로 한 낱말이 되어 이 결함이 안 드러난다. 그래서 여기는 heredoc 이어야 한다.
+   */
+  {
+    const 진짜명령 = [
+      "node - <<'NODE'",
+      "const fs = require('fs');",
+      `const p = '${join(root, 'a.html').replace(/\\/g, '/')}';`,
+      'let s = fs.readFileSync(p, "utf8");',
+      `s = s.replace(/data:image\\/[\\s\\S]*?base64,[^"']+/g, 'data:[omitted]');`,
+      "s = s.replace(/<\\/div>/g, '');",
+      'fs.writeFileSync(p, s);',
+      'NODE',
+    ].join('\n');
+    check('heredoc 안의 정규식·태그로 명령이 안 막힌다', 막히나(진짜명령) === null,
+      막히나(진짜명령)?.split('\n')[0] ?? '');
+    // 그 안에 든 **진짜** 경로는 여전히 뽑아서 본다. 통째로 안 보는 것이 아니다.
+    check('그래도 그 안의 진짜 경로는 본다',
+      경로낱말(진짜명령).some((t) => t.includes('a.html')),
+      JSON.stringify(경로낱말(진짜명령)));
+  }
+
+  const 코드통과 = [
+    ["node -e \"s.replace(/data:image\\/[\\s\\S]*?base64,[^x]+/g,'')\"", '정규식 리터럴'],
+    ['node -e "const h=t.replace(/<\\/div>/g,\'\')"', '닫는 태그가 든 정규식'],
+    ['echo "</div>"', 'HTML 닫는 태그'],
+    ['node -e "if(a/b>c/d){}"', '나눗셈'],
+    ["awk '{print $1/$2}' data.csv", 'awk 식'],
+  ];
+  for (const [c, 뭐] of 코드통과) {
+    check(`코드 조각을 경로로 안 읽는다 (${뭐})`, 막히나(c) === null, 막히나(c)?.split('\n')[0] ?? '');
+  }
+
+  /*
+   * 그렇다고 울타리를 열어 두면 안 된다. 넘기는 것은 **정규식처럼 생긴 것**과
+   * 디스크에 없는 한 마디짜리뿐이고, 평범하게 생긴 밖 경로는 그대로 걸린다.
+   * 글로브도 마찬가지다 — `rm /Users/남/*` 은 진짜 경로다.
+   */
+  const 여전히막힘 = [
+    [`cat ${join(tmpdir(), 'x', 'secret.txt')}`, '평범한 밖 경로'],
+    [`rm ${join(tmpdir(), 'x')}/*`, '글로브'],
+    ['cat ~/.ssh/id_rsa', '집 폴더'],
+    ['cat ../../밖.txt', '위로 올라가기'],
+  ];
+  for (const [c, 뭐] of 여전히막힘) {
+    check(`밖으로 나가는 것은 그대로 막힌다 (${뭐})`, 막히나(c) !== null, c);
+  }
 }
 
 trace('6-읽기전용모드');

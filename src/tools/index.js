@@ -66,6 +66,56 @@ function clip(s, n = MAX_OUT) {
   return t.length > n ? t.slice(0, n) + `\n… (${t.length - n}자 잘림)` : t;
 }
 
+const 몇KB = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
+
+/*
+ * ── 파일에 박힌 그림을 빼고 읽는다 ──────────────────────────────────────
+ *
+ * 사내 업무용 HTML 은 그림을 파일 안에 base64 로 박아 넣는다(사내망 문서가
+ * 다 그렇다). 그러면 919줄짜리 문서가 5MB 가 된다. 줄 수는 멀쩡한데 한 줄이
+ * 메가바이트다.
+ *
+ * 이걸 그대로 실어 보내면 이렇게 된다 — 실제로 재 본 값이다:
+ *
+ *   919줄 문서, 결과 상한 30,000자
+ *   → 모델이 보는 것: **8줄**. 그중 99%가 base64.
+ *
+ * 여덟 줄로는 아무것도 못 한다. 그래서 모델은 같은 파일을 열한 번 읽고,
+ * 그러고도 못 봐서 결국 이런 명령을 쓴다 —
+ *
+ *   node -e "s.replace(/data:image\/[\s\S]*?base64,[^\"']+/g,'data:[omitted]')"
+ *
+ * **base64 를 지워야 읽을 수 있다는 것을 모델이 스스로 알아낸 것이다.**
+ * 그런데 그 명령마저 울타리에 막혔다(정규식을 경로로 읽었다 — guard.js).
+ * 한 요청에 몇 분이 가고 아무것도 안 바뀐 화면이 그렇게 나왔다.
+ *
+ * 그러니 모델이 할 일이 아니라 여기서 할 일이다. 그림 자리는 몇 바이트인지만
+ * 남기고 뺀다 — 모델에게 필요한 것은 그림의 바이트가 아니라 **문서의 뼈대**다.
+ *
+ * ── 지우는 게 아니다 ────────────────────────────────────────────────────
+ *
+ * 파일은 한 글자도 안 바뀐다. 실어 보내는 값만 줄인다. Edit 은 파일을 직접
+ * 보므로 그림이 든 줄도 그대로 고칠 수 있다 — 다만 생략된 자리를 그대로 베껴
+ * old_string 에 넣으면 안 맞는다. 그래서 생략했다는 것을 결과에 또렷이 적는다.
+ */
+const 그림자리 = /(data:[\w.+-]+\/[\w.+-]+(?:;[\w.+-]+=[\w.+-]+)*;base64,)([A-Za-z0-9+/=\s]{200,})/g;
+
+export function 붙박이그림줄이기(줄들) {
+  let 줄인바이트 = 0;
+  let 몇개 = 0;
+  const 나온것 = 줄들.map((l) => String(l).replace(그림자리, (_, 앞, 몸) => {
+    줄인바이트 += 몸.length;
+    몇개++;
+    return `${앞}…(${몇KB(몸.length)} 생략)…`;
+  }));
+  const 알림 = 몇개
+    ? `\n\n[박힌 그림 ${몇개}개(${몇KB(줄인바이트)})를 빼고 보여 줍니다. 파일은 그대로입니다 —`
+      + ' 생략 표시가 든 줄을 Edit 의 old_string 으로 그대로 쓰면 안 맞습니다.'
+      + ' 그 줄을 고쳐야 하면 생략된 자리를 뺀 앞뒤 짧은 조각으로 가리키세요.]'
+    : '';
+  return { 줄들: 나온것, 알림, 줄인바이트, 몇개 };
+}
+
 // 엑셀 파일에 쓰려 할 때 하는 말. 왜 안 되는지와, 그럼 어떻게 하는지를 같이 준다.
 /**
  * 이 자리에 글을 써 넣으면 안 되는 파일인가.
@@ -658,13 +708,16 @@ export const TOOLS = {
       const 줄상한 = 읽을줄수(ctx.모델컨텍스트);
       const count = Math.min(args.limit ?? 줄상한, 줄상한);
       const slice = lines.slice(start, start + count);
-      const body = slice.map((l, i) => `${String(start + i + 1).padStart(6)}\t${l}`).join('\n');
+      const 줄인것 = 붙박이그림줄이기(slice);
+      const body = 줄인것.줄들.map((l, i) => `${String(start + i + 1).padStart(6)}\t${l}`).join('\n');
       const more = lines.length > start + count ? `\n… 전체 ${lines.length}줄 중 ${start + count}줄까지` : '';
       ctx.seen.add(abs);
       const 별난인코딩 = 읽음.encoding !== 'utf-8';
       return {
-        content: clip(body + more),
-        summary: `${lines.length}줄` + (별난인코딩 ? ` · ${encLabel(읽음.encoding)}` : ''),
+        content: clip(body + more + 줄인것.알림),
+        summary: `${lines.length}줄`
+          + (줄인것.줄인바이트 ? ` · 그림 ${몇KB(줄인것.줄인바이트)} 생략` : '')
+          + (별난인코딩 ? ` · ${encLabel(읽음.encoding)}` : ''),
       };
     },
   },
