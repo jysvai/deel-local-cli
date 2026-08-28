@@ -10,25 +10,42 @@ What changed in each version, and why
 
 **The office fills up, and a day passes in it**
 
-After 1.5.3 shipped: "is it fixed at one person? whatever I ask for, only one
-shows up." It wasn't fixed — it was a bug. This fixes it, and since the room was
-also called too bare, a day now passes in it.
+After 1.5.3 shipped: "is it fixed at one person? even with a plan, only one shows
+up." It wasn't fixed — it was a bug. Now a plan fills the desks, everyone moves
+to their own beat, whoever can't get a desk walks the room, and a day passes
+outside the window.
 
 #### 1. The office only ever had one person in it
 
-Whatever you asked for, exactly one seat filled. Seats were counted as "the
-parent, plus each running **subagent**" — but subagents run one after another;
-the next one does not start until the previous finishes. So that count was
-effectively 0 or 1.
+Whatever you asked for, exactly one seat filled — even with a plan and five
+todos on the board.
 
-What actually runs concurrently is the **parallel read batch** — the one that
-reads three files at once. Its size was already on screen as "running 3
-together"; the room just never looked at that number.
+Seats counted only "work running right now", and that is effectively always one:
+deel does one thing at a time, and a subagent doesn't start until the previous
+one finishes. So five planned todos lived on the whiteboard while **the room
+stood empty.**
 
-Now it fills that many seats. The postures aren't invented either: only
-read-only tools are ever batched (Read, Glob, Grep, Skill, WebFetch), so those
-seats genuinely are reading. What a subagent is doing never reaches this layer,
-so those seats stay "idle" — unknown is left unknown.
+Who sits in the room now:
+
+| Who | What it is |
+|---|---|
+| At a bright screen, typing | Running right now |
+| At a dim screen | Taken on, but its turn hasn't come (an outstanding todo) |
+| Walking about the room | Whoever couldn't get a desk |
+
+**Concurrency is counted properly too.** What actually runs at the same time is
+the parallel read batch — the one that reads three files at once. Its size was
+already on screen as "running 3 together"; the room just never looked at that
+number. The postures aren't invented either: only read-only tools are ever
+batched (Read, Glob, Grep, Skill, WebFetch), so those seats genuinely are
+reading. What a subagent is doing never reaches this layer, so those seats stay
+"idle".
+
+One wrong turn, for the record. At first the waiting people's screens were
+switched **off** — the reasoning being that five lit screens would claim five
+things run at once, which would be a lie. The result was a room with four people
+frozen in front of dead monitors. Being honest had killed the reason this screen
+exists. They're **dim** now: the distinction survives and the room lives.
 
 #### 2. A day now passes in the room
 
@@ -55,6 +72,14 @@ Along with it:
 - **Up to two sheets of paper per desk** — it used to be one per desk, so a
   five-seat room capped at five. Editing six files and editing twenty looked
   identical.
+- **Every desk on its own beat** — the whole room used to read one clock, so
+  three people typed **in perfect unison**. That reads as three cogs, not three
+  people. Each desk is now offset by its seat number, and people waiting their
+  turn move more slowly: at the same tempo you cannot tell who is busy.
+- **With three or more, one is always up** — a room where everyone stays seated
+  is a reading hall, not an office. The headcount is unchanged; one of them is
+  simply away from their desk. Whoever holds the running work always stays
+  seated — a person mid-task wandering the room would be a lie.
 - **Drifting clouds and blinking stars** — these two alone are not numbers. They
   only say the room hasn't frozen, so they move very slowly. Anything faster
   pulls your eye away from the seats, the notes and the lamps, which are the
@@ -64,7 +89,9 @@ The rule holds: everything on screen is a real number. Each new thing comes from
 somewhere real, and what isn't known is still left at zero.
 
 Rows that actually change between frames went from an average of 0.4 of 12 to
-**about 0.5** — that is what the clouds and stars cost.
+**0.5 in a quiet room and about 4 in a full one**. One person moving one pixel
+resends all three rows of their seat — that is what the movement costs. It is a
+number to measure and write down rather than hide, so the tests measure it.
 
 #### 3. There are two screens and nothing compared them
 

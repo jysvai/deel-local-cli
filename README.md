@@ -907,7 +907,7 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (3,681항목)
+npm test          전체 검증 (3,693항목)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -972,7 +972,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[1.5.4](docs/ko/releases.md#154)** | 사무실에 사람이 차고, 방에 하루가 흐른다 — 「한 명뿐」은 고정이 아니라 버그였다 |
+| **[1.5.4](docs/ko/releases.md#154)** | 계획만큼 사람이 앉아 저마다 움직이고, 창밖으로 하루가 흐른다 |
 | [1.5.3](docs/ko/releases.md#153) | 맥에서 걸린 세 가지 — 줄바꿈 안내 · 사무실이 안 사라짐 · `/motion` 하나로 |
 | [1.5.2](docs/ko/releases.md#152) | 적대적 리뷰가 남긴 나머지를 전부 정리했다 — 화면이 거짓말하던 자리들 |
 | [1.5.1](docs/ko/releases.md#151) | 1.5.0 이 넣은 것 두 개가 망가진 채 나갔다. 그것을 고친다 |

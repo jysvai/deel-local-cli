@@ -374,8 +374,11 @@ Nothing is there for decoration.
 
 | In the room | What it is |
 |---|---|
-| Occupied seats | Work running **concurrently** — tools in the current parallel batch plus running subagents |
-| Posture | What that work is — typing (writing), papers (reading), asleep (past 45s) |
+| People in the room | Work running concurrently (parallel tool batch + subagents) **plus every outstanding todo** |
+| Bright screen | Running right now |
+| Dim screen | Taken on, but its turn has not come |
+| Posture | Typing (writing), papers (reading), asleep (past 45s) |
+| Someone walking about | Whoever could not get a desk. With three or more, one is always up |
 | Mug on a desk | That seat has passed 45s (same number as the doze) |
 | Whiteboard notes | Todos. Green is done, yellow is outstanding |
 | Filing-cabinet drawers | Files read (one drawer per seven) |
@@ -416,13 +419,15 @@ A whole frame is over 9KB, but very few of its rows actually change between fram
 rows that changed, which speeds things up even if you never turn the office on.
 
 How much lighter depends on **how many rows actually change between frames.**
-Across the office's twelve rows that number averages **about 0.5** — walls, windows,
-the filing cabinet and empty desks do not change; only the rows with people in
-them do. `test/office.test.js` measures it.
+In a quiet room (one thing running) it averages **0.5**; in a full one, **about
+4**. Walls, windows, the filing cabinet and empty desks never change; only rows
+with people in them do, so more people costs more — that is what the movement is
+worth. `test/office.test.js` measures it.
 
 | | |
 |---|---|
-| Rows that change per frame | **about 0.5** out of 12 |
+| Rows changed per frame (quiet) | **0.5** out of 12 |
+| Rows changed per frame (room full) | **about 4** out of 12 |
 | Worst case (everything changes) | **byte-identical** to a full redraw |
 
 No absolute throughput figure is published here. It swings by several times with
