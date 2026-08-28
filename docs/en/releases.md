@@ -6,17 +6,86 @@ What changed in each version, and why
 
 ---
 
+## 1.5.4
+
+**The office fills up, and a day passes in it**
+
+After 1.5.3 shipped: "is it fixed at one person? whatever I ask for, only one
+shows up." It wasn't fixed — it was a bug. This fixes it, and since the room was
+also called too bare, a day now passes in it.
+
+#### 1. The office only ever had one person in it
+
+Whatever you asked for, exactly one seat filled. Seats were counted as "the
+parent, plus each running **subagent**" — but subagents run one after another;
+the next one does not start until the previous finishes. So that count was
+effectively 0 or 1.
+
+What actually runs concurrently is the **parallel read batch** — the one that
+reads three files at once. Its size was already on screen as "running 3
+together"; the room just never looked at that number.
+
+Now it fills that many seats. The postures aren't invented either: only
+read-only tools are ever batched (Read, Glob, Grep, Skill, WebFetch), so those
+seats genuinely are reading. What a subagent is doing never reaches this layer,
+so those seats stay "idle" — unknown is left unknown.
+
+#### 2. A day now passes in the room
+
+The window had two states, day and night. So 5% of context and 50% of context
+were **the same bright afternoon** — twelve rows of screen saying nothing.
+
+There are four now: **morning → day → dusk → night**, turning at 25%, 55% and
+80%. The sun rises low in the east, climbs at midday, sinks in the west, and
+becomes the moon. Dusk means start wrapping up; night means you already should
+have — and you see it out of the corner of your eye without reading a number.
+The walls and floor dim along with it (people and desks do not — reading the
+seats is the reason this room exists).
+
+Along with it:
+
+- **A wall clock** — how long this turn has taken. One lap per minute, so by the
+  second lap "this is taking a while" arrives before you count anything. It is
+  only hung when there is space left over after the windows; losing a window to
+  a clock would be a bad trade.
+- **A cold coffee** — appears on a seat past 45 seconds. It is the **same
+  number** as the doze, shown twice. The sleeping posture half-hides behind the
+  monitor, so on a narrow terminal "asleep" and "empty" looked alike. The mug
+  doesn't hide.
+- **Up to two sheets of paper per desk** — it used to be one per desk, so a
+  five-seat room capped at five. Editing six files and editing twenty looked
+  identical.
+- **Drifting clouds and blinking stars** — these two alone are not numbers. They
+  only say the room hasn't frozen, so they move very slowly. Anything faster
+  pulls your eye away from the seats, the notes and the lamps, which are the
+  parts worth reading.
+
+The rule holds: everything on screen is a real number. Each new thing comes from
+somewhere real, and what isn't known is still left at zero.
+
+Rows that actually change between frames went from an average of 0.4 of 12 to
+**about 0.5** — that is what the clouds and stars cost.
+
+#### 3. There are two screens and nothing compared them
+
+Fixing #1 added one method to the box screen only, and the plan-approval flow
+under `--no-tui` **broke outright**. The syntax check passed. The box tests
+passed. Nothing anywhere checked that both screens understand the same calls.
+
+A test does now. If a method exists on the box screen and not on the line
+screen, it stops there.
+
+---
+
 ## 1.5.3
 
-**Three things a Mac user tripped over — and the office finally works**
+**Three things a Mac user tripped over**
 
 Nothing crashed. Every one of these is the "I thought this worked and it
 doesn't" kind — no error, no failing test, wrong only on screen, and therefore
 long-lived.
 
-The first four are what a Mac user hit. The last three surfaced while fixing
-those: the office had one person in it no matter what you asked for, and the
-window was either bright afternoon or night with nothing in between.
+The first three are what a Mac user hit. The fourth surfaced while fixing them.
 
 #### 1. `Shift+Enter` / `Ctrl+Enter` / `Cmd+Enter` didn't insert a newline on macOS
 
@@ -98,68 +167,6 @@ Screen text now picks the postposition from the value's final consonant. `/lang`
 and the status-bar hint had the same bug and are fixed too. Lists also align by
 **display columns** rather than character count — a Korean character is two
 columns wide, so the 사무실 row alone used to sit two columns off.
-
-#### 5. The office only ever had one person in it
-
-Whatever you asked for, exactly one seat filled. Seats were counted as "the
-parent, plus each running **subagent**" — but subagents run one after another;
-the next one does not start until the previous finishes. So that count was
-effectively 0 or 1.
-
-What actually runs concurrently is the **parallel read batch** — the one that
-reads three files at once. Its size was already on screen as "running 3
-together"; the room just never looked at that number.
-
-Now it fills that many seats. The postures aren't invented either: only
-read-only tools are ever batched (Read, Glob, Grep, Skill, WebFetch), so those
-seats genuinely are reading. What a subagent is doing never reaches this layer,
-so those seats stay "idle" — unknown is left unknown.
-
-#### 6. A day now passes in the room
-
-The window had two states, day and night. So 5% of context and 50% of context
-were **the same bright afternoon** — twelve rows of screen saying nothing.
-
-There are four now: **morning → day → dusk → night**, turning at 25%, 55% and
-80%. The sun rises low in the east, climbs at midday, sinks in the west, and
-becomes the moon. Dusk means start wrapping up; night means you already should
-have — and you see it out of the corner of your eye without reading a number.
-The walls and floor dim along with it (people and desks do not — reading the
-seats is the reason this room exists).
-
-Along with it:
-
-- **A wall clock** — how long this turn has taken. One lap per minute, so by the
-  second lap "this is taking a while" arrives before you count anything. It is
-  only hung when there is space left over after the windows; losing a window to
-  a clock would be a bad trade.
-- **A cold coffee** — appears on a seat past 45 seconds. It is the **same
-  number** as the doze, shown twice. The sleeping posture half-hides behind the
-  monitor, so on a narrow terminal "asleep" and "empty" looked alike. The mug
-  doesn't hide.
-- **Up to two sheets of paper per desk** — it used to be one per desk, so a
-  five-seat room capped at five. Editing six files and editing twenty looked
-  identical.
-- **Drifting clouds and blinking stars** — these two alone are not numbers. They
-  only say the room hasn't frozen, so they move very slowly. Anything faster
-  pulls your eye away from the seats, the notes and the lamps, which are the
-  parts worth reading.
-
-The rule holds: everything on screen is a real number. Each new thing comes from
-somewhere real, and what isn't known is still left at zero.
-
-Rows that actually change between frames went from an average of 0.4 of 12 to
-**about 0.5** — that is what the clouds and stars cost.
-
-#### 7. There are two screens and nothing compared them
-
-Fixing #5 added one method to the box screen only, and the plan-approval flow
-under `--no-tui` **broke outright**. The syntax check passed. The box tests
-passed. Nothing anywhere checked that both screens understand the same calls.
-
-A test does now. If a method exists on the box screen and not on the line
-screen, it stops there.
-
 
 ---
 
