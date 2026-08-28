@@ -9,9 +9,36 @@ import { 내부살림 } from '../tools/fsutil.js';
 export class ScopeError extends Error {}
 export class BlockedError extends Error {}
 
+/*
+ * ── 같은 이름이 두 가지 모양으로 온다 (맥의 한글 폴더) ──────────────────
+ *
+ * 맥은 파일 이름을 **자모 분리형(NFD)** 으로 저장한다. `챗` 은 디스크에
+ * `ᄎ + ᅢ + ᆺ` 세 글자로 들어가 있다. 반면 모델이 글로 쓰는 한글은 합쳐진
+ * 모양(NFC)이다. 눈에는 똑같이 보이는데 **자바스크립트 문자열로는 다르다.**
+ *
+ *   '오후'.length          → 2   (NFC, 모델이 쓴 것)
+ *   '오후'.normalize('NFD') → 4   (맥이 준 것)
+ *
+ * 울타리는 이 둘을 글자로만 견줬다. 그래서 한글이 든 폴더에서 deel 을 켜면
+ * **제 작업 폴더 안의 파일이 전부 범위 밖으로 튕겼다.** 실제로 이런 화면이
+ * 나왔다 — 뿌리 자신을 가리키는데도:
+ *
+ *   ❉ Outline(**\/*.py)
+ *     └ 작업 범위 밖입니다: /Users/me/.Trash/Archive 오후 3.05.41
+ *
+ * 그러고는 같은 호출이 다음 판에 그냥 됐다. 어느 쪽 모양으로 오느냐에 따라
+ * 갈렸기 때문이다. 사람 눈에는 "됐다 안 됐다 하는" 것으로만 보인다.
+ *
+ * **견줄 때만** 한 모양으로 맞춘다. 돌려주는 경로는 원래 것 그대로 둔다 —
+ * 리눅스 파일시스템은 바이트를 그대로 보므로 NFC 와 NFD 가 **다른 파일**이고,
+ * 거기서 바꿔 버리면 멀쩡한 파일을 못 찾게 된다. 맥은 찾을 때 두 모양을
+ * 같은 것으로 보므로 원래 것을 그대로 넘겨도 열린다.
+ */
+const 같은꼴 = (s) => String(s).normalize('NFC');
+
 /** 이 절대경로가 base 밖인가. */
 function 밖(base, abs) {
-  const rel = relative(base, abs);
+  const rel = relative(같은꼴(base), 같은꼴(abs));
   return rel.startsWith('..' + sep) || rel === '..' || (isAbsolute(rel) && rel !== '');
 }
 
@@ -54,14 +81,20 @@ export function makeScope(root) {
       const abs = isAbsolute(p) ? resolve(p) : resolve(base, p);
       if (밖(base, abs)) throw new ScopeError(`작업 범위 밖입니다: ${p}\n  범위: ${base}`);
       // 글자로는 안인데 링크를 따라가면 밖인 자리. 정션 하나로 울타리가 열린다.
+      //
+      // 여기 견주기도 한 모양으로 맞춘다. 맥에서 realpathSync 는 디스크에 있는
+      // 자모 분리형을 돌려주므로, 안 맞추면 링크가 하나도 없는 평범한 한글
+      // 폴더가 매번 '링크를 따라간 자리가 다르다' 로 잡힌다.
       const 진짜 = 진짜자리(abs);
-      if (진짜 !== abs && 밖(진짜뿌리(), 진짜)) {
+      if (같은꼴(진짜) !== 같은꼴(abs) && 밖(진짜뿌리(), 진짜)) {
         throw new ScopeError(`작업 범위 밖입니다 (링크가 밖을 가리킵니다): ${p}\n  실제 자리: ${진짜}\n  범위: ${base}`);
       }
       return abs;
     },
     show(abs) {
-      const rel = relative(base, abs);
+      // 여기도 맞춰야 한다. 안 맞추면 제 폴더 안의 파일이
+      // `../../../Users/me/Archive 오후/main.py` 처럼 보인다.
+      const rel = relative(같은꼴(base), 같은꼴(abs));
       return rel === '' ? '.' : rel.split(sep).join('/');
     },
   };

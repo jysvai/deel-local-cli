@@ -132,7 +132,7 @@ export const en = {
   'head.shiftTab': 'Shift+Tab',
   'head.shiftTabHint': ' changes it  ·  ',
   'head.tabHint': 'Tab completes the / command you are typing',
-  'head.newlineHint': 'New line: end a line with space + ` then Enter — works everywhere (Alt+Enter only if your terminal sends it)',
+  'head.newlineHint': 'New line: Alt+Enter (Option+Enter on Mac) breaks the line inside the box · if your terminal swallows it, end the line with space + ` then Enter',
   'head.star': 'Enjoying this tool? Star us on GitHub —',
   'head.thisPC': 'found',
   'head.skills': 'skills {n}',
@@ -200,6 +200,7 @@ export const en = {
   'motion.pickOne': 'Pick one of:',
   'motion.envWins': 'DEEL_MOTION / DEEL_OFFICE is set, and the environment wins.',
   'motion.tooSmall': 'This terminal is {줄} x {칸} — the office needs at least {최소줄} rows and {최소칸} columns.',
+  'motion.appleTerminal': "macOS Terminal spaces lines apart, so the room gets horizontal seams — Terminal › Settings › Profiles › Text › Font \"Change\" › set Line Spacing to 1.0. (iTerm2 defaults to 1.0, which is why it looks right there)",
 
   // ── Screen language ───────────────────────────────────────────────────
   'lang.now': 'Screen language is {이름}.',

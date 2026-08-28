@@ -14,6 +14,7 @@ import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기
 import { allowTemporarily, isOffline } from '../safety/network.js';
 import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴도구 } from '../safety/secrets.js';
 import { get as workMode } from './modes.js';
+import { 지시말 } from '../i18n/index.js';
 
 /**
  * 아무 내용도 없는 답인가.
@@ -165,8 +166,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
    * 결과가 달라졌으면 그대로 싣는다. 고치고 나서 다시 읽는 것은 정상이다.
    */
   const 부른것 = new Map();
+  /*
+   * 서명은 한 모양으로 맞춰 놓고 견준다 (NFC).
+   *
+   * 맥은 파일 이름을 자모를 쪼개서 돌려준다. 그래서 `Read(PDF_경로.md)` 와
+   * `Read(PDF_경로.md)` 가 글자로는 다른 호출이 된다 — 같은 파일을 두 번 읽고
+   * 두 번 싣고도 되풀이로 안 잡힌다. 실제로 3,250줄짜리 파일이 그렇게 두 번 들어갔다.
+   */
   const 서명만들기 = (call) => {
-    try { return `${call.name}(${JSON.stringify(call.args ?? {})})`; }
+    try { return `${call.name}(${JSON.stringify(call.args ?? {})})`.normalize('NFC'); }
     catch { return `${call.name}(?)`; }
   };
 
@@ -246,6 +254,60 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
   const attempted = new Set();   // 같은 변경성 명령을 두 번 실행하지 않기 위한 기록
   let steps = 0;
   let lastToolFailed = false;    // 직전 단계에서 도구가 오류를 냈나 → 다음 판단은 세게
+
+  /*
+   * ── 조사만 하고 "무엇을 도와드릴까요" 로 끝내는 것 ────────────
+   *
+   * 실제로 이렇게 끝난 턴이다. 할 일 셋을 적어 놓고, 파일 스물일곱 개를
+   * 읽고, 그중 하나도 안 끝낸 채로 —
+   *
+   *   ☰ TodoWrite(3건)  ▶ 문서와 실행 구조를 확인한다  ☐ README 를 정리한다 …
+   *   ◧ Read × 스물일곱
+   *   ▌ 무엇을 도와드릴까요? 프로젝트 구조와 실행 방식은 확인했습니다.
+   *   ── 30.9초 · 도구 27회
+   *
+   * 사람은 "문서 정리해줘" 라고 말했고 30초를 기다렸는데, 바뀐 파일은 없다.
+   * 다시 "정리해줘" 라고 하면 또 처음부터 읽는다 — 조사한 것은 매번 버려진다.
+   * 걸음 수 상한으로도, 반복 감지로도 이 자리는 안 잡힌다. 모델은 오류 없이,
+   * 정중하게, 제 일을 사람에게 되돌려주고 끝낸 것이다.
+   *
+   * 그래서 한 번만 되민다. 세 가지가 다 맞을 때만이다 —
+   *   · 이번 턴에 바꾼 파일이 하나도 없다
+   *   · 파일을 바꿀 수 있는 모드다 (설계·묻기 모드는 안 바꾸는 것이 정상이다)
+   *   · 되묻는 말로 끝났거나, 남은 할 일이 있는데 답이 한 줄이다
+   *
+   * 한 번뿐인 이유: 두 번 밀면 못 하는 일을 두고 실랑이가 된다. 한 번 밀었는데도
+   * 또 물으면 그건 진짜 막힌 것이니, 그 말을 사람에게 그대로 보여 준다.
+   *
+   * 물어볼 것이 진짜로 있을 때는 Ask 도구가 있다. 그것은 도구 호출이라
+   * 여기까지 오지 않는다 — 막히는 것은 글로 되묻고 턴을 닫는 쪽뿐이다.
+   */
+  let 민적 = false;
+  const 되묻는말 = /무엇을\s*도와|무엇을\s*해\s*드릴|원하시는\s*(작업|것)|어떤\s*(작업|것)\s*(을|부터)|말씀해\s*주세요|알려\s*주세요|지시해\s*주세요|어떻게\s*할까요|해\s*드릴까요|진행할까요|what would you like|how can i (help|assist)|let me know (what|which|how)|shall i\b|would you like me to/i;
+
+  /** 이번 답을 되밀까. 밀 이유를 돌려주고, 아니면 null. */
+  const 밀어줄까 = (글) => {
+    if (민적 || 깊이) return null;
+    if (손댄파일.size) return null;                       // 뭐라도 바꿨으면 일은 한 것이다
+    if (!모드.tools.includes('Write')) return null;         // 안 바꾸는 모드는 그게 맞다
+    const 말 = String(글 ?? '').trim();
+    if (되묻는말.test(말)) return '되물음';
+    const 남은 = (ctx.todos ?? []).filter((x) => x.state !== 'done');
+    // 진짜 보고는 길다. 한 줄로 끝났고 할 일이 남았으면 놓은 것이다.
+    if (남은.length && 말.length < 120) return '할일남음';
+    return null;
+  };
+
+  const 되미는말 = () => {
+    const 시킨 = String(userText ?? '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    return 지시말() === 'en'
+      ? `Nothing has been changed yet. What was asked: "${시킨}"\n`
+        + 'The reading is done. Do it now — do not ask back. Deciding how is your job.\n'
+        + 'If a tool is genuinely blocking you, say in one line what blocked you.'
+      : `아직 아무것도 안 바꿨습니다. 시킨 것은 이것입니다: "${시킨}"\n`
+        + '읽는 것은 끝났습니다. 되묻지 말고 지금 하세요 — 어떻게 할지 정하는 것이 당신 일입니다.\n'
+        + '정말 도구가 막고 있으면 무엇이 막았는지 한 줄로 말하세요.';
+  };
 
   while (steps < maxSteps) {
     steps++;
@@ -444,6 +506,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
     session.push(assistantMessage(conn.kind, msg));
 
     if (!msg.toolCalls?.length) {
+      const 왜 = 밀어줄까(msg.content);
+      if (왜) {
+        민적 = true;
+        session.push({ role: 'user', content: 되미는말() });
+        yield { type: 'nudge', why: 왜, text: msg.content };
+        continue;
+      }
       yield { type: 'done', steps, text: msg.content, files: 마무리() };
       return;
     }
@@ -826,8 +895,11 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
         let 실을것 = result.error ? `오류: ${result.error}` : result.content ?? '';
         if (!result.error) {
           const 서명 = 서명만들기(call);
+          // 결과도 한 모양으로 맞춰 견준다. 여러 도구가 받은 경로를 답에 그대로
+          // 되돌려 쓰므로, 자모가 쪼개진 경로로 부르면 결과까지 달라 보인다.
+          const 같은꼴 = 실을것.normalize('NFC');
           const 앞것 = 부른것.get(서명);
-          if (앞것 !== undefined && 앞것 === 실을것) {
+          if (앞것 !== undefined && 앞것 === 같은꼴) {
             session.본것?.본것('되풀이');
             const n = (막힘.get(`반복|${서명}`) ?? 0) + 1;
             막힘.set(`반복|${서명}`, n);
@@ -835,7 +907,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
               + ' 같은 것을 또 부르지 말고 다음 일로 넘어가세요.';
             if (n + 1 >= MAX_SAME) 멈출까 = `${call.name} 을 같은 인자로 계속 부르고 있습니다 — 결과가 매번 같습니다`;
           } else {
-            부른것.set(서명, 실을것);
+            부른것.set(서명, 같은꼴);
           }
         }
 

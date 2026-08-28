@@ -119,7 +119,7 @@ export const ko = {
   'head.shiftTab': 'Shift+Tab',
   'head.shiftTabHint': '으로 바꿉니다  ·  ',
   'head.tabHint': 'Tab 은 치던 / 명령을 채웁니다',
-  'head.newlineHint': '줄바꿈: 줄 끝에 빈칸+` 를 붙이고 Enter — 어디서나 됩니다 (Alt+Enter 는 터미널이 보내 줄 때만)',
+  'head.newlineHint': '줄바꿈: Alt+Enter(맥은 Option+Enter) 로 상자 안에서 줄이 바뀝니다 · 안 먹는 터미널이면 줄 끝에 빈칸+` 를 붙이고 Enter',
   'head.star': '쓸 만하면 별 하나 주세요 —',
   'head.thisPC': '이 PC',
   'head.skills': '스킬 {n}',
@@ -187,6 +187,7 @@ export const ko = {
   'motion.pickOne': '고를 수 있는 것:',
   'motion.envWins': '환경변수(DEEL_MOTION·DEEL_OFFICE)가 켜져 있어 그쪽이 이깁니다.',
   'motion.tooSmall': '이 터미널은 {줄}줄 × {칸}칸입니다 — 사무실은 {최소줄}줄 × {최소칸}칸부터 뜹니다.',
+  'motion.appleTerminal': '맥 기본 터미널은 줄 간격이 넓어 방에 가로줄이 그어집니다 — 터미널 › 설정 › 프로파일 › 텍스트 › 글꼴 「변경」 › 행간을 1.0 으로. (iTerm2 는 기본이 1.0 이라 멀쩡합니다)',
 
   // ── 화면 말 (/lang) ───────────────────────────────────────────────────
   'lang.now': '화면 말은 지금 {이름} 입니다.',

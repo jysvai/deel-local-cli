@@ -13,11 +13,19 @@
 //     **평범한 요청**이 안 보내지고 닫는 백틱까지 뜯겼다.
 //
 // 그래서 여기서 재는 것은 "그려지는 모습" 이 아니라 **보내지는 값**이다.
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import readline from 'node:readline';
 import { PassThrough } from 'node:stream';
 import { 이어쓰기표시 } from '../src/repl.js';
 import { trace } from './trace.mjs';
+
+const 여기 = dirname(fileURLToPath(import.meta.url));
+const 뿌리 = dirname(여기);
 
 const pass = [];
 const fail = [];
@@ -54,15 +62,16 @@ function 쳐보기(조각들, { 개행을rl에넣기 = false } = {}) {
       rl.cursor = 앞.length + 1;
       return;
     }
-    const 뒤 = (rl.line ?? '').slice(rl.cursor ?? 0);
-    (쌓인 ??= []).push((rl.line ?? '').slice(0, rl.cursor ?? 0));
-    rl.line = 뒤;
-    rl.cursor = 0;
+    // 지금 방식: 커서 자리에 줄표를 끼운다. 상자가 그만큼 늘어난다.
+    const 글 = rl.line ?? '';
+    const 자리 = Math.min(rl.cursor ?? 글.length, 글.length);
+    rl.line = 글.slice(0, 자리) + 줄표 + 글.slice(자리);
+    rl.cursor = 자리 + 1;
   });
 
   let 보낼것 = null;
   rl.on('line', (l) => {
-    보낼것 = 쌓인 ? [...쌓인, l].join('\n') : l;
+    보낼것 = String(l).replaceAll(줄표, '\n');
     쌓인 = null;
   });
 
@@ -72,6 +81,8 @@ function 쳐보기(조각들, { 개행을rl에넣기 = false } = {}) {
 }
 
 const ALT = '\x1b\r';   // Alt/Option+Enter — 터미널이 ESC 를 앞에 붙여 보낸다
+// 상자 안에서 들고 있는 줄바꿈. repl.js 의 줄표 와 같은 값이어야 한다.
+const 줄표 = '\uE000';
 
 trace('1-Alt+Enter가-순서를-지키나');
 {
@@ -130,14 +141,28 @@ trace('2.5-소스가-그-방식으로-안-돌아갔나');
    * 왜 규칙이냐면: 어떤 Node 에서는 멀쩡히 돌아서, 넣어 놓고도 한참 모른다.
    * 그러다 판이 올라가는 날 사용자 화면에서 줄 순서가 뒤집힌다 — 1.5.0 이
    * 실제로 그렇게 나갔다.
+   *
+   * 주석은 떼고 본다. 왜 그러면 안 되는지를 주석에 적으면 그 예시가 규칙에
+   * 걸려 빨개진다 — 설명을 적을수록 검사가 화내는 꼴이라 결국 설명을 지운다.
    */
   const 소스 = readFileSync(new URL('../src/repl.js', import.meta.url), 'utf8');
-  const 넣는꼴 = /rl\.line\s*=\s*[^;]*\n/;
-  check('repl.js 가 rl.line 에 개행을 안 넣는다', !넣는꼴.test(소스),
-    소스.split('\n').find((l) => 넣는꼴.test(l))?.trim() ?? '');
+  const 코드만 = 소스.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const 넣는꼴 = /rl\.line\s*=[^;]*\\n/;
+  check('repl.js 가 rl.line 에 개행을 안 넣는다', !넣는꼴.test(코드만),
+    코드만.split('\n').find((l) => 넣는꼴.test(l))?.trim() ?? '');
 
-  // 대신 줄을 따로 쌓아 두는 길이 살아 있어야 한다.
-  check('여러 줄은 따로 쌓아서 보낸다', /줄쌓기\s*\(/.test(소스));
+  /*
+   * 대신 무엇을 넣나 — 줄표다.
+   *
+   * 이력에게는 평범한 글자 하나라 쪼갤 거리가 없다. 이 글자가 사라지면
+   * 상자 안에서 줄이 안 바뀌는 것으로 되돌아간 것이므로 여기서 잡는다.
+   */
+  check('상자 안 줄바꿈은 줄표로 들고 있는다', /const 줄표 = '\\uE000'/.test(코드만),
+    코드만.split('\n').find((l) => /줄표\s*=/.test(l))?.trim() ?? '(없다)');
+  check('그리기·보내기 직전에 진짜 개행으로 편다', /replaceAll\(줄표, '\\n'\)/.test(코드만));
+
+  // 줄 끝 백틱으로 쌓아 두는 길도 그대로 살아 있어야 한다.
+  check('줄 끝 백틱으로 쌓는 길도 남아 있다', /줄쌓기\s*\(/.test(코드만));
 }
 
 trace('3-백틱-표시');
@@ -203,6 +228,116 @@ trace('3.5-일하는-도중에-쳐도-되나');
    */
   check('쌓는 중에는 빈 줄도 이 갈래로 온다',
     /else if \(l\.trim\(\) \|\| 이어쓰기줄들 !== null\)/.test(소스));
+}
+
+trace('3.7-진짜로-상자-안에서-줄이-바뀌나');
+
+/*
+ * ── 소스를 훑는 것만으로는 모자란다 ─────────────────────────────────────
+ *
+ * 위 검사들은 흉내 낸 readline 을 본다. 그런데 사용자가 겪은 것은 그게
+ * 아니었다 — 줄바꿈은 되는데 친 줄이 **상자 밖 위로** 올라가 버려서, 고칠
+ * 수도 없고 두 줄이 한눈에 안 보였다. 보내지는 값만 맞으면 통과하는 검사로는
+ * 그 차이를 못 잡는다.
+ *
+ * 그래서 진짜 deel 을 띄우고, 터미널이 Option+Enter 에 보내는 바이트를 그대로
+ * 흘려 넣은 다음 **두 가지**를 본다.
+ *   · 모델이 받은 값이 "안녕\n반가워" 인가 (뒤집히지 않았나)
+ *   · 그 줄이 상자 밖으로 올라갔나 (올라갔으면 예전 그대로다)
+ */
+{
+  const 받은것 = [];
+  const srv = createServer((req, res) => {
+    let b = ''; req.on('data', (c) => { b += c; });
+    req.on('end', () => {
+      const send = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (String(req.url).endsWith('/models')) return send({ data: [{ id: '스텁모델', object: 'model' }] });
+      const j = (() => { try { return JSON.parse(b || '{}'); } catch { return {}; } })();
+      const u = (j.messages ?? []).filter((m) => m.role === 'user').at(-1);
+      if (u) 받은것.push(String(u.content));
+      return send({ id: 'x', object: 'chat.completion', model: '스텁모델',
+        choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '네' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 2 } });
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+
+  const home = mkdtempSync(join(tmpdir(), 'deel-nl-home-'));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    version: 1, active: 's', level: '개발자',
+    profiles: [{
+      id: 's', name: 's', kind: 'openai', baseUrl: `http://127.0.0.1:${srv.address().port}/v1`,
+      auth: 'none', apiKey: '', model: '스텁모델', ctx: 32768, streaming: false, tools: false,
+    }],
+  }), 'utf8');
+  const root = mkdtempSync(join(tmpdir(), 'deel-nl-'));
+
+  // CI 를 빼야 상자 화면이 켜진다 — box.test.js 와 같은 이유다.
+  const { CI, ...환경 } = process.env;
+  const 앞선것 = join(여기, 'tty-preload.mjs').replace(/\\/g, '/');
+  const kid = spawn(process.execPath,
+    ['--import', `file:///${앞선것}`, join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline'],
+    { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...환경, DEEL_HOME: home } });
+
+  let out = '';
+  kid.stdout.on('data', (d) => { out += d; });
+  kid.stderr.on('data', (d) => { out += d; });
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  await 자기(1600);
+  kid.stdin.write('안녕');
+  await 자기(250);
+  const 켠뒤 = out.length;          // 여기서부터가 줄바꿈을 누른 뒤 화면이다
+  kid.stdin.write(ALT);             // Option+Enter
+  await 자기(350);
+  kid.stdin.write('반가워');
+  await 자기(400);
+  const 보내기전 = out;             // Enter 를 치기 바로 전 화면
+  kid.stdin.write('\n');            // 사람이 Enter 를 친다
+  await 자기(2200);
+  kid.stdin.write('/exit\n');
+  await Promise.race([new Promise((r) => kid.on('close', r)), 자기(7000).then(() => kid.kill())]);
+  srv.close();
+
+  check('두 줄이 한 번에 한 덩이로 간다', 받은것.length === 1,
+    `${받은것.length}번 갔다: ${받은것.map((m) => JSON.stringify(m)).join(' · ')}`);
+  check('친 순서 그대로 간다', 받은것[0] === '안녕\n반가워', JSON.stringify(받은것[0] ?? '(안 옴)'));
+  // 줄표가 새어 나가면 모델이 뜻 없는 사용자 영역 글자를 요청으로 읽는다.
+  check('줄표가 모델에게 안 샌다', !String(받은것[0] ?? '').includes(줄표), JSON.stringify(받은것[0] ?? ''));
+
+  /*
+   * 상자 밖으로 올라갔나.
+   *
+   * 예전 방식은 줄을 확정해 찍으면서 "… 다음 줄. 그냥 Enter 로 보냅니다" 를
+   * 같이 남겼다. 그 안내가 다시 보이면 예전 방식으로 되돌아간 것이다.
+   */
+  const 누른뒤 = out.slice(켠뒤).replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+  check('친 줄을 상자 밖으로 올리지 않는다', !/다음 줄\. 그냥 Enter/.test(누른뒤),
+    누른뒤.split('\n').find((l) => /다음 줄/.test(l))?.trim() ?? '');
+  /*
+   * 두 줄이 **한 상자 안에** 같이 있나.
+   *
+   * 그냥 두 말이 화면 어딘가에 보이는 것으로는 모자란다 — 예전 방식도 둘 다
+   * 보였다(하나는 상자 밖, 하나는 상자 안). 양쪽 테두리(│) 안에 이어진 두
+   * 줄로 들어 있어야 상자가 실제로 두 줄로 늘어난 것이다.
+   */
+  const 보내기전화면 = 보내기전.slice(켠뒤).replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+  const 상자줄들 = 보내기전화면.split('\n').filter((l) => /│.*│/.test(l));
+  /*
+   * 두 줄이 나란히 붙어 있는지로 보면 안 된다. 상자는 **바뀐 줄만** 다시
+   * 보내므로(inputbox 의 그리기), 마지막 판에는 고쳐 그린 줄 하나만 나간다.
+   *
+   * 대신 표를 본다. 상자 안 첫 줄만 ❯ 를 달고 이어지는 줄은 안 단다. 그러니
+   * **테두리 안에 ❯ 없이 들여쓴 「반가워」** 가 곧 "같은 상자의 둘째 줄" 이다.
+   * 예전 방식이면 반가워 는 새 상자의 첫 줄이라 ❯ 를 달고 나온다.
+   */
+  const 첫줄있나 = 상자줄들.some((l) => /│\s*❯\s*안녕\s*│/.test(l));
+  const 둘째줄있나 = 상자줄들.some((l) => /│\s+반가워\s*│/.test(l) && !l.includes('❯'));
+  check('둘째 줄이 같은 상자 안에 들어간다', 첫줄있나 && 둘째줄있나,
+    JSON.stringify(상자줄들.slice(-4)));
+
+  rmSync(home, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
 }
 
 trace('4-끝');

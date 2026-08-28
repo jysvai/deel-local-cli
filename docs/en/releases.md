@@ -6,6 +6,224 @@ What changed in each version, and why
 
 ---
 
+## 1.5.7
+
+**Korean folders on macOS made your own files "out of scope"**
+
+Someone running 1.5.6 sent this screen.
+
+```
+❉ Outline(**/*)
+  └ 20 files · 801 spots · 17 unreadable
+
+◧ Read(…/AML_ᄎ…)      ← ᄎ  (jamo, split apart)
+◧ Read(…/AML_챗…)      ← 챗 (one letter)
+
+❉ Outline(**/*.py)
+  └ Outside the working scope: /Users/me/.Trash/Archive 오후 3.05.41
+```
+
+The same filename printed **two different ways**, and the root folder itself
+was rejected as being outside itself.
+
+#### What was happening
+
+macOS stores filenames **decomposed** (NFD). `챗` is three characters on disk:
+`ᄎ + ᅢ + ᆺ`. What the model writes is composed (NFC). They look identical and
+compare **unequal**.
+
+```
+'오후'.length            → 2   (NFC, what the model wrote)
+'오후'.normalize('NFD')  → 4   (what macOS handed back)
+```
+
+The scope check compared them as plain strings. So starting deel in a folder
+with Korean in its name meant **files inside your own working folder bounced
+out of scope** — and which form arrived decided it, so the same call worked
+once and failed the next time.
+
+Which leads where you'd expect: with half the tools failing, the model can't
+see the files, and with nothing visible there is nothing to do, so it ends with
+"how can I help you?" A good part of what looked like "it ignores what I say"
+in the last release was this. Not the model — **the tool could not open its own
+folder.**
+
+Now the two forms are lined up **only for the comparison**. The path handed
+back is the original, because Linux filesystems compare bytes: there the two
+forms are genuinely **different files**, and rewriting the path would make deel
+miss real ones. The fence is unchanged — outside the folder is still outside,
+and `..` still doesn't climb.
+
+Korean folder names are everywhere in Korean offices. When this breaks, that
+person cannot use the program at all.
+
+#### Twenty-seven files read, then "how can I help you?"
+
+This is the biggest thing in this release.
+
+```
+❯ tidy up the docs
+
+  ☰ TodoWrite(3)
+    ▶ check the doc files and how the project runs
+    ☐ bring README and the PDF guide in line with the structure
+    ☐ review the links and contents
+  ◧ Read × twenty-seven
+  ▌ How can I help you? I've confirmed the structure and how it runs.
+
+  ── 30.9s · 27 tool calls
+```
+
+Not one error. Nowhere near the step limit. And the actual request never
+started — nothing changed on disk. Say "tidy it up" again and it reads the same
+twenty-seven files again; the research is thrown away every time.
+
+Nothing that already existed catches this. The step limit can't tell a long
+working turn from a stalled one, and repeat detection only watches for
+identical calls. The model errored on nothing — it politely handed the job back
+and ended the turn.
+
+Now it gets **pushed back once**.
+
+```
+  ↺ It tried to stop after only reading — pushed back once
+  ✎ Edit(README.md)
+```
+
+Only when all three hold: nothing changed this turn, the mode can write files,
+and the turn ended either on a question or on a one-line answer with unfinished
+to-dos. Design and ask modes are supposed to change nothing, so they're never
+pushed. Neither is "done — let me know if you need anything else" after real
+edits.
+
+**Once only.** If it asks again after the push, it is genuinely stuck, and you
+get to see that in its own words. Pushing twice turns a dead end into an
+argument.
+
+#### Asking back re-asked what you'd already said
+
+The `Ask` tool added in 1.5.6 came out like this.
+
+```
+❯ tidy the files up and split the structure by role
+  ⏺ Ask → "1 Sort docs and legacy files into folders by role…"
+```
+
+That wasn't a question, it was the job. The tool meant to save turns was
+spending them. Two lines went into the rules — **don't re-ask what you were
+already told**, and **if tools keep failing, say how many are blocked.**
+Swallowing the failures and ending on "how can I help you?" leaves the person
+with no idea why nothing happened.
+
+#### Paste asked once per line
+
+"When I paste something with line breaks, each line becomes its own prompt" —
+correct.
+
+The terminal replays a paste as **typing**. readline completes a line at every
+newline, so twenty pasted lines are **twenty separate questions**. One block of
+text becomes twenty fragments and twenty requests. On a slow local model that's
+minutes.
+
+Now a paste arrives as one block.
+
+```
+❯ (paste three lines)
+  Pasted 3 lines — Enter sends them together
+```
+
+deel asks the terminal to wrap pastes in markers (`bracketed paste`), and the
+newlines inside those markers are **not someone pressing Enter**, so they don't
+send. They stack until you actually press Enter. Terminals that don't send the
+markers behave exactly as before — nothing gets worse.
+
+#### Line breaks now happen inside the box
+
+Option+Enter did work. It just did this.
+
+```
+ ❯ first line
+   … next line. Plain Enter sends it
+ ╭────────────────────╮
+ │ ❯                  │
+ ╰────────────────────╯
+```
+
+The line you typed goes **above** the box. It's already printed, so backspace
+can't reach it, and what you're about to send is split across two places where
+you can't edit it. "If it's going out in one piece anyway, why push it up
+there?" — fair.
+
+Now the box grows.
+
+```
+ ╭────────────────────╮
+ │ ❯ first line       │
+ │   second line      │
+ ╰────────────────────╯
+```
+
+What blocked this was readline's history. Put a `\n` in `rl.line`, press Enter,
+and history splits the line at the `\n`, stacks the pieces backwards, and joins
+them with `\r`. Measured again for this release (node 24.19):
+
+```
+rl.line = 'a\nb'   →  what 'line' hands back: "b\ra"
+historySize: 0     →  "a\nb"
+```
+
+Turning history off isn't an option — the up arrow is used far more often. So
+the line break is held as **one ordinary character** and unfolded into a real
+newline only just before drawing and just before sending. History sees a plain
+character with nothing to split.
+
+The trailing-backtick route still works — some terminals never send
+Option+Enter. `/keys` shows what yours sends.
+
+#### Stop with ESC
+
+"Make ESC stop the conversation mid-way. Ctrl+Z kills the whole thing."
+
+`Ctrl+C` was the only way to stop, and **pressing it twice quits.** Reaching for
+it in a hurry closes the session. (`Ctrl+Z` is worse — the shell suspends the
+process and the conversation is cut off.)
+
+`ESC` **only stops.** It doesn't quit and doesn't touch what you were typing.
+When nothing is running it does nothing at all. So it's safe to lean on.
+
+#### Screen flicker
+
+One frame goes out in a single `write`, but the terminal paints as it receives.
+On a frame where twelve lines change together, you see it being repaired —
+tearing and ghosting.
+
+Frames are now wrapped in "show this when it's all here" markers. iTerm2,
+WezTerm, kitty, Windows Terminal and Ghostty stop flickering. Terminals that
+don't know the sequence ignore it, so there's nothing to lose.
+
+**macOS Terminal doesn't know it.** And the office picture breaking up there
+isn't something this code can fix: macOS Terminal spaces lines further apart
+than 1.0, so an empty band is left between cells — that's the horizontal seams
+across what should be solid colour. So turning on `/motion office` there now
+tells you where to fix it: Terminal › Settings › Profiles › Text › Font
+"Change" › Line Spacing 1.0. That's also why iTerm2 looks right — it defaults
+to 1.0.
+
+#### Numbers
+
+The fixed share went from **3,107 to 3,146** tokens in an 8k window (three rule
+lines). The fence moved from 3,150 to 3,200 — leaving 8 tokens of headroom means
+the next single-word edit turns it red, which makes the fence an obstacle rather
+than a check. The push-back is a **mechanism, not a rule**, so it adds nothing
+to what ships on every request.
+
+**3,848 checks.** Paste and line breaks run a real deel process, feed it the
+exact bytes a terminal sends, and count **how many times the model was called**
+and **how many lines the box drew** — not whether the source says so. Putting
+the old behaviour back and watching the checks go red was confirmed too.
+
+---
+
 ## 1.5.6
 
 **There was no tool for the job being asked for**

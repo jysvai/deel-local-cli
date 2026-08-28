@@ -362,6 +362,53 @@ export async function chatLoop(opts = {}) {
    */
   let 이어쓰기줄들 = null;
 
+  /*
+   * ── 상자 안에서 줄을 바꾼다 ────────────────────────────────────────────
+   *
+   * 전에는 Option+Enter 를 누르면 그때까지 친 줄을 상자 **위로** 올려 찍고
+   * 빈 상자를 다시 내줬다. 화면에는 이렇게 남는다 —
+   *
+   *   ❯ 첫째 줄
+   *     … 다음 줄. 그냥 Enter 로 보냅니다
+   *   ╭──────────────────╮
+   *   │ ❯                │
+   *   ╰──────────────────╯
+   *
+   * 보낼 글이 두 군데로 쪼개져 있으니 고칠 수가 없다. 위로 올라간 줄은 이미
+   * 찍힌 글자라 백스페이스가 안 닿는다. "한 번에 보낼 거면 위로 올릴 이유가
+   * 뭐냐" 는 말이 맞다 — 사람이 원하는 것은 상자가 두 줄로 늘어나는 것이다.
+   *
+   * 못 하고 있었던 진짜 이유는 readline 의 이력이다. rl.line 에 \n 을 넣고
+   * Enter 를 치면 이력이 그 줄을 \n 에서 쪼개 거꾸로 쌓고 \r 로 도로 붙인다.
+   * 지금 이 자리에서 다시 재 봤다(node 24.19) —
+   *
+   *   rl.line = 'a\nb'  → 'line' 이벤트가 주는 값: "b\ra"
+   *   historySize: 0    → "a\nb"          (이력을 끄면 멀쩡하다)
+   *
+   * 이력을 끌 수는 없다. 위 화살표로 지난 입력을 부르는 것은 훨씬 자주 쓴다.
+   *
+   * 그래서 **줄바꿈을 \n 이 아닌 글자로 들고 있는다.** 이력에게는 그냥 평범한
+   * 글자 하나라 쪼갤 거리가 없고, 화면에 그리기 직전과 보내기 직전에만 \n 으로
+   * 바꾼다. 길이가 1:1 이라 rl.cursor 값도 그대로 쓸 수 있다.
+   *
+   * 사용자 영역(U+E000)에서 골랐다. 어느 글꼴에도 뜻이 없고 어느 문서에도
+   * 안 들어 있는 자리라, 붙여넣기로 우연히 섞여 들어올 일이 없다.
+   */
+  const 줄표 = '\uE000';
+  const 펴기 = (s) => String(s ?? '').replaceAll(줄표, '\n');
+
+  /*
+   * 지금 도는 턴의 AbortController. 아래 SIGINT 와 키 처리(ESC)가 같이 본다.
+   *
+   * **여기 선언한 이유가 있다.** 키 처리는 이 아래에서 바로 걸리는데, 그
+   * 사이에 인트로를 기다리는 await 가 있다. 선언을 아래에 두면 인트로가
+   * 도는 동안 키를 누르는 순간 아직 만들어지지 않은 이름을 읽어 터진다
+   * (TDZ). 켜자마자 아무 키나 누르면 죽는 프로그램이 되는 셈이다.
+   */
+  let turn = null;
+  // 붙여넣는 중인가 (bracketed paste). 키 처리와 'line' 이 같이 본다.
+  let 붙여넣는중 = false;
+
   /** 줄을 쌓아 두고 "다음 줄" 이라고 알린다. 백틱 표시와 Alt+Enter 가 같이 쓴다. */
   const 줄쌓기 = (줄) => {
     const 첫줄 = 이어쓰기줄들 === null;
@@ -371,8 +418,22 @@ export async function chatLoop(opts = {}) {
     say(`   ${c.gray('… 다음 줄. 그냥 Enter 로 보냅니다 · Ctrl+C 로 취소')}`);
   };
 
-  rl.on('line', (l) => {
+  rl.on('line', (원래줄) => {
+    // 상자 안에서 바꾼 줄을 여기서 진짜 줄바꿈으로 되돌린다. 아래 코드는
+    // 전부 평범한 \n 만 본다 — 줄표가 이 아래로는 한 글자도 안 새어 나간다.
+    const l = 펴기(원래줄);
     if (echo) say(c.gray(l));
+    /*
+     * 붙여넣는 도중의 줄바꿈은 **사람이 Enter 를 친 것이 아니다.**
+     *
+     * 안 가려내면 스무 줄짜리를 붙였을 때 스무 번 물어본 것이 된다. 쌓아
+     * 두었다가 사람이 진짜로 Enter 를 칠 때 한 덩이로 나간다 — 줄 끝 백틱과
+     * 같은 자리에 쌓으므로, 아래 잇는 코드가 그대로 처리한다.
+     *
+     * 화면에는 아직 안 그린다. 붙이는 동안 줄마다 그리면 스무 줄이 주르륵
+     * 지나가고, 정작 무엇을 보낼지는 안 보인다. 끝날 때 몇 줄인지만 알린다.
+     */
+    if (붙여넣는중) { (이어쓰기줄들 ??= []).push(l); return; }
     let 보낼것 = l;
     if (상자쓰나) {
       if (묻는중 !== null) {
@@ -390,7 +451,13 @@ export async function chatLoop(opts = {}) {
         보낼것 = 이었나 ? [...이어쓰기줄들, l].join('\n') : l;
         이어쓰기줄들 = null;
         화면.입력지움();
-        if (l.trim() || 이었나) say(`${이었나 ? '   ' : ` ${c.hcyan('❯')} `}${c.white(l)}`);
+        // 여러 줄이면 줄마다 찍는다. 한 번에 던지면 둘째 줄부터 왼쪽 끝에
+        // 붙어서, 사람이 보낸 글인지 프로그램이 뱉은 글인지 알 수 없다.
+        if (l.trim() || 이었나) {
+          for (const [i, 한줄] of l.split('\n').entries()) {
+            say(`${i === 0 && !이었나 ? ` ${c.hcyan('❯')} ` : '   '}${c.white(한줄)}`);
+          }
+        }
       } else if (l.trim() || 이어쓰기줄들 !== null) {
         /*
          * 일하는 도중에 미리 쳐 둔 것.
@@ -464,7 +531,52 @@ export async function chatLoop(opts = {}) {
    */
   if (process.stdin.isTTY) {
     emitKeypressEvents(process.stdin, rl);
+    /*
+     * ── 붙여넣기를 한 덩이로 받는다 ──────────────────────────────────────
+     *
+     * 여러 줄을 복사해 붙이면 터미널은 그것을 그냥 **타자로** 흘려보낸다.
+     * 줄바꿈마다 readline 이 'line' 을 하나씩 쏘므로, 스무 줄을 붙이면
+     * **스무 번 물어본 것**이 된다. 한 덩이로 보내려던 글이 스무 조각으로
+     * 쪼개져 나가고, 그만큼 요청도 스무 번 나간다.
+     *
+     * `\x1b[?2004h` 를 보내면 터미널이 붙여넣기를 표로 감싸 준다
+     * (bracketed paste). 시작에 `\x1b[200~`, 끝에 `\x1b[201~` 가 온다.
+     * 그 사이에 오는 줄은 **사람이 Enter 를 친 것이 아니므로** 안 보내고
+     * 쌓아 두었다가, 붙여넣기가 끝나고 사람이 Enter 를 칠 때 한 덩이로 낸다.
+     * 쌓는 자리는 줄 끝 백틱이 쓰는 것과 같다(이어쓰기줄들).
+     *
+     * 모르는 터미널은 이 글자를 그냥 무시한다 — 그러면 예전 그대로 돈다.
+     */
+    process.stdout.write('\x1b[?2004h');
+    process.on('exit', () => { try { process.stdout.write('\x1b[?2004l'); } catch { /* 이미 닫혔다 */ } });
+
     process.stdin.on('keypress', (_ch, key) => {
+      if (key?.sequence === '\x1b[200~') { 붙여넣는중 = true; return; }
+      if (key?.sequence === '\x1b[201~') {
+        붙여넣는중 = false;
+        // 쌓인 것이 몇 줄인지 보여 준다. 안 보이면 사라진 줄 알고 다시 붙인다.
+        if (이어쓰기줄들?.length && 입력기다림) {
+          화면.입력지움();
+          say(`  ${c.gray(`${이어쓰기줄들.length + 1}줄을 붙여넣었습니다 — Enter 로 한 번에 보냅니다`)}`);
+        }
+        화면.입력갱신?.(session, 펴기(rl.line), rl.cursor ?? 0);
+        return;
+      }
+      /*
+       * ── ESC 로 하던 일을 멈춘다 ────────────────────────────────────────
+       *
+       * 여태 멈추는 길은 Ctrl+C 뿐이었다. 그런데 Ctrl+C 는 **한 번 더 누르면
+       * 프로그램을 끝낸다.** 급히 멈추려고 두 번 누르면 대화가 통째로 닫힌다.
+       * (Ctrl+Z 는 더 나쁘다 — 셸이 프로세스를 재워 버려서 대화가 끊긴다.)
+       *
+       * ESC 는 **멈추기만** 한다. 끝내지 않는다. 그래서 마음 놓고 누를 수 있다.
+       * 도는 중이 아닐 때는 아무것도 안 한다 — 입력칸에서 ESC 를 눌렀다고
+       * 치던 글이 날아가면 그게 더 놀랍다.
+       */
+      if (key?.name === 'escape' && !key.ctrl && !key.meta && !key.shift) {
+        if (turn && !turn.signal.aborted) { turn.abort(); return; }
+        return;
+      }
       // Shift+Tab — 승인 방식 (자동 → 위험만 → 모두)
       if (key && key.name === 'tab' && key.shift) {
         const 앞 = 승인고르기(session.mode);
@@ -494,10 +606,10 @@ export async function chatLoop(opts = {}) {
        * 뺏어야 하는데, 그건 훨씬 자주 쓰는 기능이다.
        */
       if (key && key.name === 'tab' && !key.shift && 상자쓰나 && 입력기다림 && 묻는중 === null) {
-        const 채울 = 채울글(rl.line ?? '', 지금추천(rl.line ?? ''));
+        const 채울 = 채울글(펴기(rl.line), 지금추천(펴기(rl.line)));
         if (채울) rl.write(채울);
         // 채울 게 없어도 그리기는 한다 — 후보 목록이 그대로 남아 있어야 한다.
-        화면.입력갱신(session, rl.line ?? '', rl.cursor ?? 0, 지금추천(rl.line ?? ''));
+        화면.입력갱신(session, 펴기(rl.line), rl.cursor ?? 0, 지금추천(펴기(rl.line)));
         return;
       }
       /*
@@ -526,15 +638,15 @@ export async function chatLoop(opts = {}) {
          * key.meta 로 여기서 골라낼 수 있다. rl.write('\n') 은 못 쓴다 —
          * 그것도 내부적으로 줄을 끝내는 처리를 그대로 타 버린다(직접 확인).
          *
-         * 커서 앞은 확정해서 쌓고, 뒤는 상자에 남긴다. rl.line 에 \n 을
-         * 넣어 이어붙이지 **않는다** — 그러면 화면은 맞는데 보낼 때
-         * history 가 줄 순서를 뒤집는다(이어쓰기줄들 선언부 참고).
+         * 커서 자리에 줄바꿈을 **끼워 넣는다.** 상자가 그만큼 늘어나고, 위로
+         * 올라간 줄이 없으니 백스페이스로 지우는 것도 그대로 된다. \n 이
+         * 아니라 줄표를 넣는 이유는 위 선언부에 적어 두었다.
          */
         if (key.meta && 입력기다림 && 묻는중 === null) {
-          const 뒤 = (rl.line ?? '').slice(rl.cursor ?? 0);
-          줄쌓기((rl.line ?? '').slice(0, rl.cursor ?? 0));
-          rl.line = 뒤;
-          rl.cursor = 0;
+          const 글 = rl.line ?? '';
+          const 자리 = Math.min(rl.cursor ?? 글.length, 글.length);
+          rl.line = 글.slice(0, 자리) + 줄표 + 글.slice(자리);
+          rl.cursor = 자리 + 1;
         } else {
           return;   // 줄이 끝나는 것은 'line' 이 맡는다
         }
@@ -543,7 +655,7 @@ export async function chatLoop(opts = {}) {
         const 앞 = 묻는중;
         setImmediate(() => {
           if (묻는중 === null) return;
-          process.stdout.write(`\r\x1b[2K${앞}${c.white(rl.line ?? '')}`);
+          process.stdout.write(`\r\x1b[2K${앞}${c.white(펴기(rl.line))}`);
         });
         return;
       }
@@ -559,7 +671,7 @@ export async function chatLoop(opts = {}) {
       setImmediate(() => {
         그릴예정 = false;
         if (입력기다림) {
-          화면.입력갱신(session, rl.line ?? '', rl.cursor ?? 0, 지금추천(rl.line ?? ''));
+          화면.입력갱신(session, 펴기(rl.line), rl.cursor ?? 0, 지금추천(펴기(rl.line)));
         } else {
           /*
            * 일하는 도중에 치고 있는 글.
@@ -572,7 +684,7 @@ export async function chatLoop(opts = {}) {
            * 답이 흘러나오는 동안(줄 중간)에는 그려도 답 줄을 덮으므로,
            * 상자 쪽에서 알아서 넘긴다. 글은 그대로 살아 있다.
            */
-          화면.대기갱신(rl.line ?? '', queue.length);
+          화면.대기갱신(펴기(rl.line), queue.length);
         }
       });
     });
@@ -944,7 +1056,9 @@ export async function chatLoop(opts = {}) {
   // 잘 된 것은 경고 표시를 달지 않는다. ⚠ 가 붙으면 뭘 고쳐야 하나 싶어진다.
   for (const l of 길이알림) say(`  ${mark.ok} ${c.gray(l)}`);
   for (const w of warn) say(`  ${mark.warn} ${c.gray(w)}`);
-  say(`  ${c.gray('/help 명령 목록')}   ${c.gray('/think 추론 강도')}   ${c.gray('Ctrl+C 중단·끝내기')}`);
+  // ESC 를 앞에 둔다 — 멈추는 길로는 이것이 먼저다. Ctrl+C 는 두 번 누르면
+  // 끝나 버려서, 급히 멈추려던 사람이 대화를 통째로 닫는 일이 실제로 있었다.
+  say(`  ${c.gray('/help 명령 목록')}   ${c.gray('ESC 중단')}   ${c.gray('Ctrl+C 중단·끝내기')}`);
 
   /*
    * 입력 자리. 어떻게 생겼는지는 화면 쪽이 정한다 —
@@ -956,7 +1070,7 @@ export async function chatLoop(opts = {}) {
    * 치면 멀쩡히 보내진다 — 화면만 거짓말을 하는 셈이라 더 나쁘다.
    */
   const prompt = () => {
-    const 글 = 상자쓰나 && 입력기다림 ? (rl.line ?? '') : '';
+    const 글 = 상자쓰나 && 입력기다림 ? 펴기(rl.line) : '';
     화면.입력자리(session, 글, 글 ? (rl.cursor ?? 0) : 0, 글 ? 지금추천(글) : []);
   };
 
@@ -965,7 +1079,6 @@ export async function chatLoop(opts = {}) {
   //   입력을 기다리는 중 → 한 번은 경고, 두 번이면 끝낸다
   // 느린 로컬 모델이 엉뚱한 답을 길게 뽑기 시작했을 때 끝까지 기다리지 않아도 된다.
   let interrupted = false;
-  let turn = null;              // 지금 도는 턴의 AbortController
   rl.on('SIGINT', () => {
     /*
      * 쌓아 둔 줄이 있으면 먼저 버린다. 이게 없으면 이어쓰기를 **취소할 길이
@@ -1551,6 +1664,19 @@ export async function chatLoop(opts = {}) {
             clearThinking();
             say('');
             오류보이기(ev.text);
+            break;
+
+          /*
+           * 조사만 하고 되물어서 한 번 밀어 봤다 (agent/loop.js).
+           *
+           * 조용히 밀면 모델이 말을 들은 것인지 우연히 다시 생각한 것인지
+           * 구분이 안 된다. 한 줄 적어 둠다 — 또 이러면 사람이 알아볼 수 있어야 한다.
+           */
+          case 'nudge':
+            clearThinking();
+            if (streamed) { 답비우기(); say(''); streamed = false; }
+            say('');
+            say(`  ${c.gray('↺ 읽기만 하고 끝내려고 해서 한 번 되밀었습니다')}`);
             break;
 
           case 'done':

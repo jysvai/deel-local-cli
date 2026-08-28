@@ -572,6 +572,20 @@ export async function handle(line, session, ctx) {
         if (줄 && 칸 && (줄 < 최소높이 || 칸 < 최소폭)) {
           say(`     ${c.yellow(mark.warn)} ${c.gray(말('motion.tooSmall', { 줄, 칸, 최소줄: 최소높이, 최소칸: 최소폭 }))}`);
         }
+        /*
+         * 맥 기본 터미널에서 방이 갈라져 보이는 것은 우리가 못 고친다.
+         *
+         * 방은 한 칸에 픽셀 둘을 넣는다 — 위는 글자색, 아래는 배경색, 글자는
+         * 반칸(▀). 그런데 기본 터미널은 줄 간격이 1.0 보다 넓게 잡혀 있어서
+         * 칸과 칸 사이에 빈 띠가 남는다. 색이 꽉 차야 할 자리에 가로줄이
+         * 그어지는 것이 그 모습이다. 우리가 무엇을 보내든 그 틈은 안 메워진다.
+         *
+         * 그래서 고치는 자리를 알려 준다. iTerm2 에서 멀쩡한 것도 같은 이유다 —
+         * 거기는 줄 간격이 기본 1.0 이다.
+         */
+        if (process.env.TERM_PROGRAM === 'Apple_Terminal') {
+          say(`     ${c.yellow(mark.warn)} ${c.gray(말('motion.appleTerminal'))}`);
+        }
       }
       if (process.env.DEEL_MOTION || process.env.DEEL_OFFICE) {
         say(`     ${c.yellow(mark.warn)} ${c.gray(말('motion.envWins'))}`);

@@ -1,0 +1,231 @@
+// 붙여넣기와 ESC — 여러 줄을 붙이면 한 덩이인가, ESC 가 멈추기만 하는가.
+//
+// ── 무슨 일이 났었나 ────────────────────────────────────────────────────
+//
+// 「줄 이어진 거 복사해서 넣으면 각각 한 줄씩 프롬프트 입력되어서 괜히
+//  과다하게 된다」
+//
+// 터미널은 붙여넣기를 그냥 **타자로** 흘려보낸다. 줄바꿈마다 readline 이
+// 'line' 을 하나씩 쏘므로, 스무 줄을 붙이면 **스무 번 물어본 것**이 된다.
+// 한 덩이로 보내려던 글이 스무 조각으로 쪼개지고, 요청도 스무 번 나간다.
+// 느린 로컬 모델에서는 이게 몇 분이다.
+//
+// 그리고:
+//
+// 「ESC 누르면 중간에 대화를 멈추게 해줘. Ctrl+Z 하니까 대화 자체를 꺼버려서」
+//
+// 멈추는 길이 Ctrl+C 뿐이었는데, 그건 **한 번 더 누르면 프로그램을 끝낸다.**
+// 급히 멈추려고 두 번 누르면 대화가 통째로 닫힌다.
+//
+// ── 여기서 무엇을 지키나 ────────────────────────────────────────────────
+//
+//   1. 붙여넣기 표(`\x1b[200~`…`\x1b[201~`) 안의 줄바꿈은 **안 보낸다.**
+//      쌓아 두었다가 사람이 Enter 를 칠 때 한 덩이로 나간다.
+//   2. 표를 안 보내는 터미널에서는 **예전 그대로** 돈다. 못 알아듣는 터미널이
+//      있어서, 거기서 깨지면 고친 것이 아니라 옮긴 것이다.
+//   3. ESC 는 도는 것을 멈추기만 하고 **끝내지 않는다.**
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
+import { trace } from './trace.mjs';
+
+const pass = [];
+const fail = [];
+const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
+
+const 여기 = dirname(fileURLToPath(import.meta.url));
+const 뿌리 = dirname(여기);
+const 소스 = readFileSync(new URL('../src/repl.js', import.meta.url), 'utf8');
+
+trace('1-붙여넣기-표를-켜나');
+
+{
+  // 표를 안 켜면 터미널이 붙여넣기를 감싸 주지 않는다 — 아무것도 안 달라진다.
+  check('bracketed paste 를 켠다', /\\x1b\[\?2004h/.test(소스));
+  // 끄고 나가지 않으면 deel 을 끝낸 뒤 그 터미널의 셸이 붙여넣기 표를 계속
+  // 받는다. 우리가 켠 것은 우리가 끈다.
+  check('나갈 때 다시 끈다', /\\x1b\[\?2004l/.test(소스));
+  check('끄는 것을 exit 에 걸어 둔다', /process\.on\('exit',[\s\S]{0,160}?2004l/.test(소스));
+}
+
+trace('2-표-안의-줄을-안-보내나');
+
+{
+  check('시작 표를 알아본다', /'\\x1b\[200~'/.test(소스));
+  check('끝 표를 알아본다', /'\\x1b\[201~'/.test(소스));
+
+  /*
+   * 여기가 핵심이다. 붙이는 도중의 'line' 은 **보내면 안 된다.**
+   * 쌓아 두는 자리는 줄 끝 백틱이 쓰는 것과 같아야 한다 — 따로 만들면
+   * 둘 중 하나를 고칠 때 다른 하나가 조용히 어긋난다.
+   */
+  const 줄들 = 소스.split(/\r?\n/);
+  const 자리 = 줄들.findIndex((l) => /if \(붙여넣는중\)/.test(l));
+  check('붙이는 도중의 줄은 보내지 않고 쌓는다',
+    자리 >= 0 && /이어쓰기줄들 \?\?= \[\]\)\.push\(l\); return;/.test(줄들[자리]),
+    자리 < 0 ? '그 갈래가 없다' : 줄들[자리].trim());
+
+  // 쌓기만 하고 잇는 코드가 없으면 마지막 줄만 나간다.
+  check('쌓은 것을 \\n 으로 이어 보낸다', /이어쓰기줄들, l\]\.join\('\\n'\)/.test(소스));
+}
+
+trace('3-못-알아듣는-터미널');
+
+/*
+ * 표를 안 보내는 터미널에서는 붙여넣는중 이 끝까지 false 다. 그러면 예전
+ * 그대로 줄마다 보내진다 — 나빠지는 것은 없다. 그 사실을 코드로 못 박는다:
+ * 붙여넣는중 은 **표를 받았을 때만** 켜져야 한다.
+ */
+{
+  const 켜는자리 = 소스.match(/붙여넣는중 = true/g) ?? [];
+  check('표를 받았을 때만 켜진다', 켜는자리.length === 1, `${켜는자리.length}군데에서 켠다`);
+  const 켜는줄 = 소스.split(/\r?\n/).find((l) => /붙여넣는중 = true/.test(l));
+  check('켜는 자리가 시작 표다', /\\x1b\[200~/.test(켜는줄 ?? ''), 켜는줄?.trim() ?? '');
+
+  // 시작 없이 끝 표만 와도 안 엉켜야 한다 — 켜진 적이 없으니 끄는 것이 무해하다.
+  // 선언(let 붙여넣는중 = false)은 빼고 센다 — 그건 끄는 자리가 아니다.
+  const 끄는자리 = 소스.match(/(?<!let )붙여넣는중 = false/g) ?? [];
+  check('끄는 자리도 한 군데다', 끄는자리.length === 1, `${끄는자리.length}군데`);
+}
+
+trace('4-ESC');
+
+{
+  const 줄들 = 소스.split(/\r?\n/);
+  const 자리 = 줄들.findIndex((l) => /key\?\.name === 'escape'/.test(l));
+  check('ESC 를 본다', 자리 >= 0);
+
+  const 갈래 = 자리 >= 0 ? 줄들.slice(자리, 자리 + 4).join('\n') : '';
+  check('ESC 는 도는 턴을 멈춘다', /turn\.abort\(\)/.test(갈래), 갈래.trim().slice(0, 80));
+
+  /*
+   * 멈추기만 해야 한다. 여기서 rl.close() 를 부르면 Ctrl+C 두 번과 같아져서,
+   * 사용자가 피하려던 바로 그 일(대화가 통째로 닫힘)이 그대로 난다.
+   */
+  check('ESC 로는 안 끝난다', !/rl\.close\(\)/.test(갈래), 갈래.trim().slice(0, 80));
+
+  // 도는 중이 아닐 때 치던 글을 지우면 안 된다 — 그게 더 놀랍다.
+  check('입력칸을 안 건드린다', !/rl\.line\s*=/.test(갈래), 갈래.trim().slice(0, 80));
+
+  // 조합키가 섞인 ESC(다른 키의 앞머리)를 멈춤으로 읽으면 안 된다.
+  check('맨 ESC 일 때만 본다', /!key\.ctrl && !key\.meta && !key\.shift/.test(줄들[자리] ?? ''),
+    줄들[자리]?.trim() ?? '');
+}
+
+trace('5-켜자마자-눌러도-안-죽나');
+
+/*
+ * 키 처리는 인트로를 기다리는 await **앞에서** 걸린다. 그래서 turn 을 그
+ * await 뒤에 선언해 두면, 인트로가 도는 동안 아무 키나 누르는 순간 아직
+ * 만들어지지 않은 이름을 읽어 터진다(TDZ). 켜자마자 키를 누르면 죽는
+ * 프로그램이 되는 셈이라, 선언이 **앞**에 있어야 한다.
+ */
+{
+  const 줄들 = 소스.split(/\r?\n/);
+  const 선언 = 줄들.findIndex((l) => /^\s*let turn = null;/.test(l));
+  const 키처리 = 줄들.findIndex((l) => /process\.stdin\.on\('keypress'/.test(l));
+  check('turn 선언이 키 처리보다 앞이다', 선언 >= 0 && 키처리 >= 0 && 선언 < 키처리,
+    `선언 ${선언}줄 · 키 처리 ${키처리}줄`);
+
+  const 붙임 = 줄들.findIndex((l) => /^\s*let 붙여넣는중 = false;/.test(l));
+  check('붙여넣는중 선언도 앞이다', 붙임 >= 0 && 붙임 < 키처리, `선언 ${붙임}줄`);
+
+  // 'line' 처리도 이 값을 본다. 키 처리 안에만 있으면 거기서 안 보인다.
+  const 라인 = 줄들.findIndex((l) => /rl\.on\('line'/.test(l));
+  check('line 처리에서도 보이는 자리다', 붙임 >= 0 && 붙임 < 라인, `line ${라인}줄`);
+}
+
+trace('6-진짜로-한-덩이로-가나');
+
+/*
+ * ── 소스를 훑는 것만으로는 모자란다 ─────────────────────────────────────
+ *
+ * 위 검사들은 "그렇게 적혀 있나" 를 본다. 그런데 이 결함이 잡으려는 것은
+ * **모델에게 몇 번 갔나** 이고, 그건 진짜 deel 을 띄워 봐야만 알 수 있다.
+ *
+ * 파이프로는 못 잰다 — 키 처리 자체가 터미널일 때만 걸리기 때문이다. 그래서
+ * tty-preload.mjs 로 터미널인 척하고, 터미널이 붙여넣기를 감쌀 때 실제로
+ * 보내는 바이트를 그대로 흘려 넣는다.
+ */
+{
+  const 받은것 = [];
+  const srv = createServer((req, res) => {
+    let b = ''; req.on('data', (c) => { b += c; });
+    req.on('end', () => {
+      const send = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (String(req.url).endsWith('/models')) return send({ data: [{ id: '스텁모델', object: 'model' }] });
+      const j = (() => { try { return JSON.parse(b || '{}'); } catch { return {}; } })();
+      const u = (j.messages ?? []).filter((m) => m.role === 'user').at(-1);
+      if (u) 받은것.push(String(u.content));
+      return send({ id: 'x', object: 'chat.completion', model: '스텁모델',
+        choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '네' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 2 } });
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+
+  const home = mkdtempSync(join(tmpdir(), 'deel-paste-home-'));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    version: 1, active: 's', level: '개발자',
+    profiles: [{
+      id: 's', name: 's', kind: 'openai', baseUrl: `http://127.0.0.1:${srv.address().port}/v1`,
+      auth: 'none', apiKey: '', model: '스텁모델', ctx: 32768, streaming: false, tools: false,
+    }],
+  }), 'utf8');
+  const root = mkdtempSync(join(tmpdir(), 'deel-paste-'));
+
+  // CI 를 빼야 상자 화면이 켜진다 — box.test.js 와 같은 이유다.
+  const { CI, ...환경 } = process.env;
+  const 앞선것 = join(여기, 'tty-preload.mjs').replace(/\\/g, '/');
+  const kid = spawn(process.execPath,
+    ['--import', `file:///${앞선것}`, join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline'],
+    { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...환경, DEEL_HOME: home } });
+
+  let out = '';
+  kid.stdout.on('data', (d) => { out += d; });
+  kid.stderr.on('data', (d) => { out += d; });
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  await 자기(1600);
+  // 터미널이 붙여넣기를 감쌀 때 보내는 바이트 그대로.
+  kid.stdin.write('\x1b[200~첫째 줄\n둘째 줄\n셋째 줄\x1b[201~');
+  await 자기(500);
+  kid.stdin.write('\n');                 // 사람이 Enter 를 친다
+  await 자기(2200);
+  kid.stdin.write('/exit\n');
+  await Promise.race([new Promise((r) => kid.on('close', r)), 자기(7000).then(() => kid.kill())]);
+  srv.close();
+
+  /*
+   * 여기가 이 파일이 있는 이유다. 세 줄을 붙였으면 **한 번** 가야 한다.
+   * 세 번 가면 사용자가 겪은 그대로다 — 한 덩이로 보내려던 글이 조각나고,
+   * 요청도 그만큼 나간다.
+   */
+  check('세 줄을 붙여도 한 번만 간다', 받은것.length === 1,
+    `${받은것.length}번 갔다: ${받은것.map((m) => JSON.stringify(m.slice(0, 20))).join(' · ')}`);
+  check('줄바꿈이 살아서 한 덩이로 간다', 받은것[0] === '첫째 줄\n둘째 줄\n셋째 줄',
+    JSON.stringify(받은것[0] ?? '(안 옴)'));
+  // 표가 글에 섞이면 모델이 제어문자를 요청으로 읽는다.
+  check('붙여넣기 표가 글에 안 섞인다', !/\x1b\[20[01]~/.test(받은것[0] ?? ''),
+    JSON.stringify(받은것[0] ?? ''));
+
+  const 화면 = out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+  check('몇 줄을 붙였는지 알려 준다', /3줄을 붙여넣었습니다/.test(화면),
+    화면.split('\n').find((l) => /붙여넣었/.test(l))?.trim() ?? '(안 알려 준다)');
+
+  rmSync(home, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+}
+
+trace('7-끝');
+
+const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
+console.log(`\n붙여넣기·ESC 검사  ${D}(스무 줄이 스무 번이 되지 않는가)${X}\n`);
+for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
+for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
+console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
+trace('끝-정상종료');
+process.exitCode = fail.length ? 1 : 0;

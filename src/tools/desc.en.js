@@ -134,10 +134,11 @@ export const 도구설명EN = {
     },
   },
   Ask: {
-    desc: 'Ask the person one question. At a fork, **do not pick for them** — use this.'
-      + ' If you do not know what to do, never write "let me know" and stop; call this instead —'
+    desc: 'Ask the person one question at a genuine fork. Never write "let me know" and stop;'
       + ' asking in prose ends the turn and throws away everything you have looked at.'
-      + ' Give 2-4 options and they answer with a single number.',
+      + ' Give 2-4 options and they answer with a single number.'
+      + ' **Never ask back something the user already said.** "Tidy up the files" is the answer —'
+      + ' go and do it. Deciding how is your job, not theirs.',
     params: {
       question: 'one sentence. Make it clear what has to be decided',
       options: '2-4 choices, one line each, so the difference is visible',

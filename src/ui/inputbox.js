@@ -33,7 +33,7 @@
  * 2) 그릴 것을 값으로 내놓는다(프레임). 검사는 파이프로 도니 화면을 못 본다 —
  *    값으로 내놓아야 한 칸도 안 어긋나는지 잴 수 있다.
  */
-import { c, width, cursor, clip } from './ansi.js';
+import { c, width, cursor, clip, 판시작, 판끝 } from './ansi.js';
 import { isLocalHost } from '../safety/network.js';
 import { statusLine, contextWarning } from './status.js';
 import { 접어쓰기 } from './wrap.js';
@@ -457,7 +457,9 @@ export class InputBox {
         // 예약해 둔 것이 있으면 잊지 않게 세어 준다. 몇 분짜리 일이 끝난 뒤
         // 엉뚱한 말이 저절로 나가는 것처럼 보이면 안 된다.
         this.일감.예약수 ? `${this.일감.예약수}건 예약됨` : '',
-        'Ctrl+C 중단',
+        // 도는 동안 보이는 자리라 여기서는 ESC 만 말한다. Ctrl+C 도 되지만
+        // 두 번 누르면 끝나 버려서, 급히 멈추려는 사람에게 권할 것이 못 된다.
+        'ESC 중단',
       ].filter(Boolean).join(' · '),
       대기: this.일감.대기,
     });
@@ -633,7 +635,22 @@ export class InputBox {
       || 남은줄 > 0
       || 지금때 - this.마지막통째로 >= 자가치유주기;
 
-    let 나갈것 = cursor.숨김 + '\r' + 위로(윗줄까지);
+    /*
+     * ── 한 판을 통째로 바꿔 달라고 터미널에 부탁한다 ──────────────────────
+     *
+     * 여기서 나가는 것은 이미 한 번의 write 다. 그래도 떨림이 보이는 터미널이
+     * 있다 — write 는 한 번이라도 터미널은 받는 대로 그리므로, 열두 줄을
+     * 고쳐 그리는 중간 모습이 그대로 눈에 들어온다. 사무실처럼 한 판에 여러
+     * 줄이 같이 바뀌는 화면에서 제일 심하다(잔상·찢김).
+     *
+     * `?2026` 은 "이 사이에 들어오는 것은 다 그린 뒤에 한 번에 보여 달라" 는
+     * 뜻이다. 지원하는 터미널(iTerm2 · WezTerm · kitty · Windows Terminal ·
+     * Ghostty)에서는 떨림이 사라지고, 모르는 터미널은 **그냥 무시한다** —
+     * 사설 모드라 못 알아들으면 아무 일도 안 일어난다. 그래서 잃을 것이 없다.
+     *
+     * 맥 기본 터미널은 이걸 모른다. 거기 떨림은 이걸로 안 잡힌다.
+     */
+    let 나갈것 = 판시작 + cursor.숨김 + '\r' + 위로(윗줄까지);
     if (통째로) {
       나갈것 += 줄들.map((l) => l + 줄끝지움).join('\n') + '\n';
       for (let i = 0; i < 남은줄; i++) 나갈것 += 줄끝지움 + '\n';
@@ -655,7 +672,7 @@ export class InputBox {
      */
     const 오른쪽 = Math.max(0, 자리.열 - 1);
     나갈것 += 위로(남은줄 + 자리.위 + 1) + '\r' + (오른쪽 ? `\x1b[${오른쪽}C` : '');
-    나갈것 += cursor.보임;
+    나갈것 += cursor.보임 + 판끝;
     process.stdout.write(나갈것);
 
     this.그린줄 = 줄들.length;
