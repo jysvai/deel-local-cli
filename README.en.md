@@ -18,7 +18,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-3%2C614%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-3%2C785%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -100,7 +100,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
-| [Release notes](docs/en/releases.md) | [1.5.5](docs/en/releases.md#155) · [1.5.4](docs/en/releases.md#154) · [1.5.3](docs/en/releases.md#153) · [1.5.2](docs/en/releases.md#152) · [1.5.1](docs/en/releases.md#151) · [1.5.0](docs/en/releases.md#150) · [1.4.3](docs/en/releases.md#143) · [1.4.2](docs/en/releases.md#142) · [1.4.1](docs/en/releases.md#141) · [1.4.0](docs/en/releases.md#140) · [1.3.0](docs/en/releases.md#130) · [1.2.0](docs/en/releases.md#120) |
+| [Release notes](docs/en/releases.md) | [1.5.6](docs/en/releases.md#156) · [1.5.5](docs/en/releases.md#155) · [1.5.4](docs/en/releases.md#154) · [1.5.3](docs/en/releases.md#153) · [1.5.2](docs/en/releases.md#152) · [1.5.1](docs/en/releases.md#151) · [1.5.0](docs/en/releases.md#150) · [1.4.3](docs/en/releases.md#143) · [1.4.2](docs/en/releases.md#142) · [1.4.1](docs/en/releases.md#141) · [1.4.0](docs/en/releases.md#140) · [1.3.0](docs/en/releases.md#130) · [1.2.0](docs/en/releases.md#120) |
 
 ---
 
@@ -363,7 +363,8 @@ Names follow Claude Code / Codex conventions.
 | Command | What it does |
 |---|---|
 | `/help` | Command list |
-| `/lang [ko\|en]` | Screen language. Falls back to Korean for anything not translated yet |
+| `/lang [ko\|en] [prompt lang]` | Screen language. **The prompt language is a separate axis** — `/lang en ko` instructs the model in Korean while answering you in English. Korean screen + English prompt cuts the 8k fixed share by 23% |
+| `/keys` | Press keys to see what your terminal actually sends — for when new lines will not work |
 | `/bell [on\|off]` | Ring and set the window title when a turn ends, or when deel needs an answer |
 | `/consult <profile> <question>` | Ask a second model one question. Your current model stays put |
 | `/export` | This conversation as a **one-page HTML report** — asked, changed, verified. Self-contained, opens on any network |
@@ -496,11 +497,13 @@ Names and arguments match Claude Code, so skills written for that convention wor
 | `Write` | Write / overwrite a file (**several at once via the `files` array**) |
 | `Append` | Append to the end of a file — **how large files get written in pieces** |
 | `Edit` | Replace an exact string (`replace_all`; **several sites at once via the `edits` array**) |
+| `Move` | Move / rename files and folders — **how you restructure** (`moves` array; covered by undo) |
 | `Glob` | Find files by name pattern |
 | `Grep` | Regex search file contents |
 | `Bash` | Run a command (**`background: true` for anything that does not finish**) |
 | `Skill` | Expand a skill body (shown to the model only when skills exist) |
 | `WebFetch` | Read a web page (read-only; hidden under `--offline`) |
+| `Ask` | **Ask you back** at a fork — offers the choices, takes a single number |
 | `Recall` | Search **past conversations** — the model digs up "that thing last time" itself |
 | `Remember` | One line that outlives the session — known from the start next time |
 | `TodoWrite` | Checklist — breaks long work into steps and shows progress |
@@ -511,8 +514,8 @@ Names and arguments match Claude Code, so skills written for that convention wor
 | `Def` | **Where a name is defined** — only shown when a language server is installed |
 | `Refs` | **Every place a name is used** — only shown when a language server is installed |
 
-Seven tools here are not in Claude Code — `Append`, `Recall`, `Remember`, `Outline`,
-`Verify`, `Task`, `Jobs`. Each tool costs 150-400 tokens of schema on **every request**,
+Nine tools here are not in Claude Code — `Append`, `Move`, `Ask`, `Recall`, `Remember`,
+`Outline`, `Verify`, `Task`, `Jobs`. Each tool costs 150-400 tokens of schema on **every request**,
 so a test stops you every time the list grows (`test/loop.test.js`). The last four earned
 their cost; here is why.
 
@@ -929,7 +932,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (3,695 checks)
+npm test          Full suite (3,785 checks)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -981,6 +984,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| **[1.5.6](docs/en/releases.md#156)** | It asks when stuck — instead of writing a question and ending the turn |
 | **[1.5.5](docs/en/releases.md#155)** | A plan fills the room — "only one person" was a bug, not a design |
 | [1.5.4](docs/en/releases.md#154) | A day passes in the room — morning to night, a wall clock, a cold coffee |
 | [1.5.3](docs/en/releases.md#153) | Three things a Mac user tripped over — newline hint, office stays put, one `/motion` |

@@ -10,6 +10,9 @@ import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
 import { 말, 언어 } from '../i18n/index.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
 
+// 저장소 주소. package.json 의 repository 와 같아야 한다 — 검사가 지킨다.
+export const GITHUB = 'https://github.com/jysvai/deel-local-cli';
+
 // 한 조각씩 따로 만든다. 좁은 화면에서는 뒤에서부터 떨군다.
 // 순서 = 중요도 순. 앞쪽이 끝까지 살아남는다.
 export const SEGMENTS = {
@@ -478,6 +481,23 @@ export function headerLines(session, found, 상자쓰나 = true) {
   }
   if (found.skills.length || found.commands.length) {
     lines.push(`${c.gray(자리(말('head.thisPC')))}${c.white(말('head.skills', { n: found.skills.length }))}${c.gray(' · ')}${c.white(말('head.commands', { n: found.commands.length }))}${c.gray(' · ')}${c.white(말('head.plugins', { n: found.plugins.length }))}`);
+  }
+  /*
+   * 별 부탁 한 줄.
+   *
+   * 맨 아래에 둔다. 위쪽은 **어디로 소스가 나가는지**를 읽는 자리라, 그
+   * 사이에 부탁을 끼우면 정작 읽어야 할 줄이 묻힌다.
+   *
+   * 회색 한 줄로만 둔다. 켤 때마다 나오는 것이라, 눈에 띄게 만들면 열 번째
+   * 켤 때부터는 부탁이 아니라 방해가 된다.
+   *
+   * 사람이 보고 있을 때만 낸다. 상자를 쓰나(상자쓰나)가 아니라 화면이 터미널인가로
+   * 가른다 — `--no-tui` 로 쓰는 사람도 사람이지만, 파이프·CI 로 흘러 들어가는
+   * 기록에 부탁 줄이 섞이면 그건 그냥 잡음이다.
+   */
+  if (process.stdout.isTTY) {
+    lines.push('');
+    lines.push(`${빈자리}${c.gray(말('head.star'))} ${c.cyan(GITHUB)}`);
   }
   return lines;
 }

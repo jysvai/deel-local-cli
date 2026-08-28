@@ -8,7 +8,7 @@ import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
 import { 지문 } from './project.js';
 import { 프롬프트토막 as 기억토막 } from './memory.js';
 import { 못박기 } from './pins.js';
-import { 언어 } from '../i18n/index.js';
+import { 언어, 지시말 } from '../i18n/index.js';
 
 // 토큰 추정 — 정확한 토크나이저 없이 대략만 센다.
 // 한글은 글자당 약 1토큰, 영문·코드는 약 4글자당 1토큰으로 본다.
@@ -29,6 +29,9 @@ const BASE_RULES = `너는 deel 다. 사용자의 작업 폴더 안에서 코드
 
 - 바로 시작한다. 없는 파일·폴더는 만든다. 그게 시킨 일의 일부다.
 - 되묻는 것은 **도구로도 못 알아낼 때뿐**이다. 정할 수 있으면 정하고 무엇으로 정했는지 말한다.
+- 그래도 물어야 하면 **Ask 도구로 묻는다.** 글로 "알려주세요" 하고 끝내지 마라 — 그러면 그 턴이
+  끝나서 여태 읽은 것이 다 버려지고, 사람은 아무것도 안 된 화면을 본다. Ask 는 답이 그 자리로
+  돌아와 하던 일이 이어진다. 고를 것을 2~4개 같이 준다.
 - 여러 파일을 만들고 나눠 담아야 하는 일이면 그렇게 한다. 하나만 건드려 놓고 멈추지 마라.
 - 다 했으면 확인한다. 돌려 보고 안 되면 고친다. 확인 못 했으면 "확인 못 했다" 고 말한다.
 
@@ -66,6 +69,7 @@ const BASE_RULES_짧게 = `너는 deel 다. 사용자의 작업 폴더에서 코
 시킨 일을 끝까지 해낸다. 계획만 내고 멈추지 마라.
 - 바로 시작한다. 없는 파일·폴더는 만든다.
 - 도구로 알아낼 수 있으면 되묻지 말고 정한다. 무엇으로 정했는지는 말한다.
+- 그래도 물어야 하면 Ask 도구로 묻는다. 글로 묻고 끝내면 턴이 끝나 여태 읽은 것이 버려진다.
 - 파일이 여럿이면 다 만든다. 하나만 하고 멈추지 마라.
 - 끝내기 전에 Verify 로 확인한다. 확인 못 했으면 "확인 못 했다" 고 말한다.
 
@@ -101,6 +105,9 @@ const BASE_RULES_EN = `You are deel, a tool that reads and edits code inside the
 
 - Start now. Create missing files and folders — that is part of the job.
 - Ask back **only when no tool can tell you**. If you can decide, decide, and say what you decided it from.
+- When you truly must ask, **ask with the Ask tool.** Do not write "let me know what you want" and stop — that ends
+  the turn, everything you read is thrown away, and the user sees a screen where nothing happened. An Ask answer
+  comes straight back to where you are, so the work carries on. Give 2–4 options to pick from.
 - If the job needs several files, make them all. Do not touch one and stop.
 - When you are done, check. Run it, and fix it if it fails. If you could not check, say "I could not verify this."
 
@@ -131,6 +138,7 @@ const BASE_RULES_짧게_EN = `You are deel. You read and edit code in the user's
 Finish the job. Do not stop at a plan.
 - Start now. Create missing files and folders.
 - If a tool can tell you, decide instead of asking. Say what you decided it from.
+- If you must ask, use the Ask tool. Asking in prose ends the turn and throws away what you read.
 - If there are several files, make them all. Do not do one and stop.
 - Verify before you finish. If you could not verify, say so.
 
@@ -150,8 +158,22 @@ Finish the job. Do not stop at a plan.
  */
 function 기본규칙(ctx) {
   const 짧게 = Number(ctx) > 0 && Number(ctx) < 24000;
-  if (언어() === 'en') return 짧게 ? BASE_RULES_짧게_EN : BASE_RULES_EN;
-  return 짧게 ? BASE_RULES_짧게 : BASE_RULES;
+  /*
+   * 시키는 말은 지시말() 이 정한다 — 화면 말과 다른 축이다(i18n/index.js).
+   *
+   * 그래서 "영어로 시키고 한국어로 받기" 가 된다. 규칙 글은 영어판을 쓰되,
+   * **답하는 말**만 다시 못 박는다. 안 박으면 영어 규칙 안의
+   * "Answer the user in English" 가 그대로 먹어서, 한국 사람이 영어 답을
+   * 받는다 — 값을 아끼려다 읽을 수 없는 답을 받는 셈이다.
+   */
+  const 시키는말 = 지시말();
+  const 글 = 시키는말 === 'en'
+    ? (짧게 ? BASE_RULES_짧게_EN : BASE_RULES_EN)
+    : (짧게 ? BASE_RULES_짧게 : BASE_RULES);
+  if (시키는말 === 언어()) return 글;
+  return `${글}\n\n${언어() === 'ko'
+    ? '**답은 한국어로 해라.** 위 규칙이 영어로 적혀 있어도 사용자에게 하는 말은 한국어다.'
+    : '**Answer in English.** The rules above are in Korean, but what you say to the user is English.'}`;
 }
 
 export class Session {

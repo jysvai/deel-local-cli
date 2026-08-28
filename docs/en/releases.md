@@ -6,6 +6,216 @@ What changed in each version, and why
 
 ---
 
+## 1.5.6
+
+**There was no tool for the job being asked for**
+
+Six things landed together. They look separate, but the three big ones share a
+cause: **there was no path for what was being asked** — the model was not
+ignoring instructions.
+
+#### 1. Why "restructure the file tree" kept going nowhere
+
+Counting the tool list again:
+
+```
+Read Write Append Edit Glob Grep Skill Bash WebFetch
+Recall Remember TodoWrite Verify Outline Task Jobs Def Refs
+```
+
+**Nothing moves a file.** So the only route to restructuring was `Bash mv`, and
+
+- `mv` is classified as a mutating command (`src/safety/guard.js`), so depending
+  on the approval mode it asked **once per file**. Twenty files, twenty prompts.
+- Anything moved through Bash **is not covered by undo.** Press `/undo` and the
+  structure does not come back.
+
+`Move` now exists.
+
+```
+Move(moves: [
+  { from: "utils.py",  to: "src/core/utils.py" },
+  { from: "models.py", to: "src/core/models.py" },
+  { from: "ui",        to: "src/view" },
+])
+```
+
+Many at once, whole folders included. Missing directories are created.
+
+Undo was the hard part. Undo works by **snapshotting content**, so a move has to
+snapshot **both** the source and the destination. Snapshot only one and undo
+leaves the file in two places — or **in none at all.** That is the safety net
+losing a file, so eight of this tool's 35 checks sit right there.
+
+Fixing it exposed a hole in undo itself. After undoing a whole-folder move, the
+directory to put files back into was already gone, `writeFileSync` died, and
+undo **held the content it needed and could not put it anywhere.** It recreates
+the directory now.
+
+What it refuses:
+
+| Situation | What happens |
+|---|---|
+| Destination already exists | **Refused.** Overwriting silently makes that file vanish where it stood (`overwrite: true` to go ahead) |
+| A folder into itself (`mv a a/b`) | Refused. A common shell accident that makes the folder disappear entirely |
+| Outside the working folder | Refused |
+| One of several fails | The rest still move, and **every failure is listed in the result.** Half-moved and unaware is the worst outcome |
+
+#### 2. "There is no specific task to perform."
+
+Given a large folder and "restructure it by role and make me an env file," the
+model read about twenty files, wrote that one line, and stopped.
+
+The request was right there. We measured where it could have gone — three rounds
+of `trim`, tool-result folding, and splitting all ran, and **the original request
+survived every one of them.** The goal was never lost.
+
+The model **had no way to ask.** It hit a fork, the only route back to the person
+was prose, so it wrote prose — and writing prose ends the turn. Even when you
+answer, those twenty files sit in a turn that is already over.
+
+Asking is a **tool** now.
+
+```
+  ┌ A question for you
+  │ How far should the restructure go?
+  │
+  │ 1 Full move to a standard package layout
+  │ 2 Minimal moves, just add .env.example
+  └ Pick a number, or type your own answer
+```
+
+One number ends it, and the answer comes back **as a tool result, right where
+the model left off.** Picking a number sends the **text of that line**, not "2".
+
+- It works in **every mode**. Forks do not care which mode you are in.
+- Where there is nobody to ask (`-p` one-shot, pipes, subtasks) it **does not
+  block** — it returns "decide for yourself and write down what you assumed."
+  Never finishing is worse than a wrong answer.
+- A tool alone changes nothing. The base rules said "ask back only when no tool
+  can tell you," which is right, but **the other half was missing** — how to ask
+  when you genuinely must. It is now in all four variants.
+
+#### 3. An approved plan sent it digging through past conversations
+
+The plan appeared, you pressed enter — and instead of starting, it called
+`Recall` three times, found nothing three times, and finished.
+
+The message sent after approval read: "**the plan above** is approved, finish
+**the steps you wrote down**." To a person that is fine; the plan is on screen.
+To the model it **points at something without handing it over.** So it went
+looking for what it "wrote down," and where it looked was past conversations.
+
+The plan is **carried over verbatim** now. Sending it twice cost tokens, which is
+why it wasn't. Spinning in circles cost far more.
+
+#### 4. Resizing the window made the office cascade down the screen
+
+When the size differed from last time, the box threw away everything it was
+holding and redrew **wherever the cursor happened to be.** Moving up by counts
+taken at the old width erases conversation, so the reasoning was "a stale box
+sits above for one frame — just a scroll mark."
+
+**It was not one frame.** Drag a window with the mouse and the terminal reports a
+new size for every step. Fifty steps prints fifty boxes and erases none. Growing
+vertically was worst: crossing 28 rows adds all twelve office rows at once.
+
+Split in two. **Wrapping is decided by width, so if the width held, the counts
+still hold.**
+
+| What changed | What happens |
+|---|---|
+| Height only | **Erases line by line** as usual, then redraws |
+| Width | The old counts are untrustworthy, so it **sweeps below the cursor.** The box is always at the bottom, nothing lives under it, and it never moves up — so the conversation is untouched |
+
+#### 5. Instructed in English, answered in Korean
+
+There used to be one language setting. `/lang en` switched the screen, the text
+given to the model, and the language it replied in, all together — so "instruct
+in English, answer in Korean" was impossible. That combination is genuinely
+useful: Korean costs about 1 token per character against roughly 3.6 characters
+per token for English, so it is **cheaper**, and small models follow English
+instructions more reliably.
+
+Two axes now.
+
+```
+/lang ko en      Korean screen, English instructions   ← answers stay Korean
+/lang ko auto    back to one
+```
+
+Measured on an 8k window, the fixed share drops from **3,109 to 2,408 tokens —
+23% smaller.** Rules, mode text and tool descriptions all go out in English,
+while **the reply language is pinned separately** — without that, the English
+rules' own "Answer the user in English" wins, and you save tokens by receiving
+an answer you cannot read.
+
+#### 6. New lines — it worked in one place and not the other
+
+Several releases running, Mac users said new lines did not work and it stayed
+unfixed. Not because the place to fix was hidden, but because **nobody knew what
+was actually happening.**
+
+Along the way a real defect turned up. Backtick continuation only worked **while
+deel was idle.** Type ahead while it is working and the backtick went through as
+a literal character — the first line sent on its own with a backtick attached,
+the next line sent separately. To a person that is simply **new lines not
+working**, and typing ahead is something you do *while it works*, so this is the
+more common case, not the rarer one. Fixed.
+
+And to stop guessing, `/keys`:
+
+```
+/keys
+  ┌ Key check
+  │ Press any key. This shows the bytes your terminal actually sent.
+  └ Ctrl+C or q to finish
+
+  · return     "\e\r"        meta
+```
+
+From what you pressed, it tells you **which route works in your terminal.** If
+you press Enter and `meta` never appears, that terminal does not send Option as
+ESC and no amount of pressing will help — so it points you at the backtick route
+and the terminal settings together. Writing "change your settings" in the docs
+was not a fix.
+
+#### Also
+
+- A one-line **star request** at the bottom of the startup header. Grey, one
+  line, and never in piped or CI output — a request mixed into a log is noise.
+- A check that catches **tests written but never run.** `test/run.mjs` runs a
+  hand-written list, so a new test file left off it silently never runs. That had
+  already happened: 18 checks for the Ask tool existed but were not listed, so the
+  suite was green while those 18 guarded nothing. A test that never runs is worse
+  than no test — with no test you know it is missing; with one you **believe** you
+  are covered.
+
+#### The price
+
+Two more tools means two more schemas on **every request**. On an 8k model the
+fixed share went from **2,764 to 3,107 tokens**, up 343 (34% → 38% of the
+window). Measured there, `Ask` costs 134 and `Move` 193.
+
+What could be trimmed was trimmed first: descriptions were reordered so the
+important part comes first (narrow windows cut from the end, sentence by
+sentence), and `question`, `from` and `to` are obvious from their names, so their
+descriptions are dropped on narrow windows.
+
+The remaining 343 was paid for by moving the fence (`test/compact.test.js`).
+Without these two, an 8k model loses the ability to do things: it asks in prose
+and ends the turn (throwing away everything read in that window), or reaches for
+`Bash mv` per file to restructure (which undo cannot reach). Saving 343 tokens by
+losing a whole window is a bad trade, and the smaller the window the worse it gets.
+
+Turn on `/lang ko en` and that 343 is more than repaid.
+
+The fence is still tight (43 tokens of headroom), on purpose.
+
+The suite is **3,785 checks**.
+
+---
+
 ## 1.5.5
 
 **A plan fills the room — and everyone moves to their own beat**

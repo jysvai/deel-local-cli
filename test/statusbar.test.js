@@ -4,11 +4,11 @@
 // 안 들키는** 자리이기도 하다. 초록 ⌂ 가 떠 있는데 실은 밖으로 나가고 있다면,
 // 그건 아무것도 안 띄우는 것보다 나쁘다. 여기서 재는 것은 예쁜가가 아니라
 // '보이는 것과 사실이 같은가' 다.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
-import { statusLine, SEGMENTS, SEGMENT_GROUPS } from '../src/ui/status.js';
+import { statusLine, SEGMENTS, SEGMENT_GROUPS, headerLines, GITHUB } from '../src/ui/status.js';
 import { 눈금게이지, width } from '../src/ui/ansi.js';
 import { 프레임 } from '../src/ui/inputbox.js';
 import { COMPACT_AT, FOLD_AT } from '../src/agent/compact.js';
@@ -193,6 +193,46 @@ trace('5-테두리가경계선');
   // 안 주면 안쪽으로 본다. 기본값이 노랑이면 늘 노란 테두리가 되어 뜻이 사라진다.
   check('바깥을 안 주면 평소대로',
     프레임({ 글: '안녕', 폭: 80 }).줄들.join('') === 안.줄들.join(''));
+}
+
+trace('머리말-별부탁');
+
+/*
+ * ── 켤 때 나가는 별 부탁 ────────────────────────────────────────────────
+ *
+ * 주소가 틀리면 부탁이 아니라 오안내다. package.json 의 repository 와
+ * **같은 값**이어야 하고, 그 둘이 따로 놀지 않게 여기서 못 박는다.
+ *
+ * 그리고 파이프·CI 로 흘러 들어가는 기록에는 안 나가야 한다. 거기 섞인
+ * 부탁 줄은 그냥 잡음이다.
+ */
+{
+  const 벗기기 = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, '');
+  const 없는것 = { skills: [], commands: [], plugins: [] };
+  const s = new Session({ kind: 'openai', base: 'http://127.0.0.1:1/v1', model: 'x', ctx: 32768 }, { root });
+  const 원래tty = process.stdout.isTTY;
+  const tty로 = (v) => Object.defineProperty(process.stdout, 'isTTY', { value: v, configurable: true });
+
+  tty로(true);
+  const 상자판 = headerLines(s, 없는것, true).map(벗기기).join('\n');
+  check('켤 때 별 부탁이 뜬다', /github\.com\/jysvai\/deel-local-cli/.test(상자판),
+    상자판.split('\n').slice(-1)[0]?.trim() ?? '');
+
+  tty로(false);
+  const 파이프판 = headerLines(s, 없는것, false).map(벗기기).join('\n');
+  check('파이프·CI 기록에는 안 나간다', !/github\.com/.test(파이프판));
+  tty로(true);
+
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const 적힌주소 = String(pkg.repository?.url ?? '').replace(/^git\+/, '').replace(/\.git$/, '');
+  check('package.json 의 저장소와 같은 주소다', 적힌주소 === GITHUB, `${적힌주소} vs ${GITHUB}`);
+
+  // 부탁은 맨 아래다 — 소스가 어디로 나가는지 읽는 줄들을 밀어내면 안 된다.
+  const 줄들 = headerLines(s, 없는것, true).map(벗기기);
+  const 별줄 = 줄들.findIndex((l) => /github\.com/.test(l));
+  const 보냄줄 = 줄들.findIndex((l) => /이 컴퓨터 안|바깥|sends to|this machine/.test(l));
+  check('부탁은 「보냄」 줄보다 아래다', 별줄 > 보냄줄 && 보냄줄 >= 0, `별 ${별줄} · 보냄 ${보냄줄}`);
+  tty로(원래tty);
 }
 
 rmSync(root, { recursive: true, force: true });

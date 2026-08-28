@@ -18,7 +18,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-3%2C614%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-3%2C785%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -101,7 +101,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.5.5](docs/ko/releases.md#155) · [1.5.4](docs/ko/releases.md#154) · [1.5.3](docs/ko/releases.md#153) · [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
+| [릴리스 노트](docs/ko/releases.md) | [1.5.6](docs/ko/releases.md#156) · [1.5.5](docs/ko/releases.md#155) · [1.5.4](docs/ko/releases.md#154) · [1.5.3](docs/ko/releases.md#153) · [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
 
 ---
 
@@ -342,7 +342,8 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 |---|---|
 | `/help` | 명령 목록 |
 | `/bell [on|off]` | 다 됐을 때·물어볼 때 종소리와 창 제목 |
-| `/lang [ko|en]` | 화면 말 — 영어권 사람이 쓸 때. 모델이 읽는 글도 같이 따라간다(영어 쪽이 1,400토큰 덜 먹는다). 코드는 그대로 |
+| `/lang [ko|en] [시킬말]` | 화면 말. **시킬 말을 따로 줄 수 있다** — `/lang ko en` 이면 모델에게는 영어로 시키고 답은 한국어로 받는다(8k 창에서 고정 몫 23% 감소). 코드는 그대로 |
+| `/keys` | 이 터미널이 무슨 키를 보내는지 눌러서 확인 — 줄바꿈이 안 될 때 |
 | `/consult <프로필> <질문>` | 다른 모델에게 한 번 물어보기 — 지금 쓰는 것은 안 바꿈 |
 | `/export` | 이 대화를 **보고서 한 장**(HTML)으로 — 시킨 것·바뀐 것·확인한 것. 폐쇄망에서 여는 자기완결 파일 |
 | `/lsp [on\|off]` | 언어 서버 — 무엇이 깔려 있고 `Def`·`Refs` 를 쓸 수 있는지. `off` 는 고친 뒤 진단만 끔 |
@@ -471,11 +472,13 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 | `Write` | 파일 쓰기·덮어쓰기 (**여러 개는 `files` 배열로 한 번에**) |
 | `Append` | 파일 끝에 이어 붙이기 — **큰 파일을 나눠 쓰는 자리** |
 | `Edit` | 정확한 문자열 바꾸기 (`replace_all` · **여러 군데는 `edits` 배열로 한 번에**) |
+| `Move` | 파일·폴더 옮기기·이름 바꾸기 — **구조를 바꾸는 자리** (`moves` 배열로 한 번에 · 되돌리기에 잡힘) |
 | `Glob` | 이름 패턴으로 파일 찾기 |
 | `Grep` | 내용 정규식 검색 |
 | `Bash` | 명령 실행 (**끝나지 않는 것은 `background: true`**) |
 | `Skill` | 스킬 본문 펼쳐 읽기 (스킬이 있을 때만 모델에게 보임) |
 | `WebFetch` | 웹 페이지 읽기 (읽기 전용 · `--offline` 이면 숨김) |
+| `Ask` | 갈림길에서 **사람에게 되묻기** — 고를 것을 주고 숫자 하나로 받는다 |
 | `Recall` | **지난 대화**에서 찾기 — "저번에 그거" 를 모델이 스스로 뒤진다 |
 | `Remember` | 대화가 끝나도 남길 것 한 줄 — 다음에 켤 때 처음부터 안다 |
 | `TodoWrite` | 할 일 목록 — 긴 일을 쪼개서 어디까지 했는지 화면에 띄움 |
@@ -486,8 +489,8 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 | `Def` | 이름이 **어디 정의됐는지** — 언어 서버가 깔려 있을 때만 보입니다 |
 | `Refs` | 이름을 **어디서 쓰는지** 전부 — 언어 서버가 깔려 있을 때만 보입니다 |
 
-Claude Code 에 없는 것은 일곱입니다 — `Append` · `Recall` · `Remember` ·
-`Outline` · `Verify` · `Task` · `Jobs`. 도구 하나가 스키마로 150~400토큰을 먹고
+Claude Code 에 없는 것은 아홉입니다 — `Append` · `Move` · `Ask` · `Recall` ·
+`Remember` · `Outline` · `Verify` · `Task` · `Jobs`. 도구 하나가 스키마로 150~400토큰을 먹고
 그게 **매 요청마다** 나가므로, 늘릴 때마다 검사에서 한 번 멈추게 해 뒀습니다
 (`test/loop.test.js`). 뒤의 넷은 그 값을 치르고도 넣을 만해서 넣은 것들이라,
 아래에 왜인지를 적어 뒀습니다.
@@ -907,7 +910,7 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (3,695항목)
+npm test          전체 검증 (3,785항목)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -972,6 +975,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
+| **[1.5.6](docs/ko/releases.md#156)** | 막히면 물어본다 — 글로 묻고 턴을 끝내는 대신에 |
 | **[1.5.5](docs/ko/releases.md#155)** | 계획을 세우면 방이 찬다 — 「한 명뿐」은 고정이 아니라 버그였다 |
 | [1.5.4](docs/ko/releases.md#154) | 방에 하루가 흐른다 — 아침·낮·노을·밤 · 벽시계 · 식은 커피 |
 | [1.5.3](docs/ko/releases.md#153) | 맥에서 걸린 세 가지 — 줄바꿈 안내 · 사무실이 안 사라짐 · `/motion` 하나로 |

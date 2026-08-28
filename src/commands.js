@@ -8,7 +8,7 @@ import { allowEndpoint } from './safety/network.js';
 import { pick } from './ui/prompt.js';
 import { load, save, resolveKey, upsert } from './config.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
-import { 말, 언어, 언어정하기, 언어고르기, 옮긴만큼 } from './i18n/index.js';
+import { 말, 언어, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
 import { allowTemporarily } from './safety/network.js';
 import { chat } from './backend/adapter.js';
@@ -110,6 +110,7 @@ const 명령들 = {
   memory: { arg: true },
   level: { arg: true },
   bell: { arg: true },
+  keys: { arg: false },
   motion: { arg: true },
   consult: { arg: true },
   lang: { arg: true },
@@ -312,16 +313,34 @@ export async function handle(line, session, ctx) {
     }
 
     case 'lang': {
-      const 값 = String(arg ?? '').trim();
+      /*
+       * 두 축이다 — 화면 말, 그리고 **모델에게 시키는 말**.
+       *
+       *   /lang en       둘 다 영어
+       *   /lang ko en    화면은 한국어, 시키는 말만 영어  ← "영어로 시키고 한국어로 받기"
+       *   /lang ko auto  다시 하나로 (시키는 말이 화면 말을 따라간다)
+       *
+       * 굳이 나눈 이유는 값이다. 한글은 글자당 약 1토큰이고 영문은 약 3.6자당
+       * 1토큰이라(session.js 의 estimateTokens), 시키는 말만 영어로 돌려도
+       * 고정 몫이 눈에 띄게 준다. 작은 창일수록 그 차이가 크다.
+       * 답은 그대로 한국어로 온다 — 기본규칙() 이 그 한 줄을 따로 못 박는다.
+       */
+      const 쪼갠것 = String(arg ?? '').trim().split(/\s+/).filter(Boolean);
+      const 값 = 쪼갠것[0] ?? '';
+      const 시킬말 = 쪼갠것[1] ?? null;
       const 이름 = (l) => 말(`lang.${l}`);
       if (!값) {
         const p = 옮긴만큼();
         say('');
         say(`  ${c.gray(말('lang.now', { 이름: 이름(언어()) }))}`);
+        say(`  ${c.gray(말('lang.promptNow', {
+          이름: 지시말따로정했나() ? 이름(지시말()) : 말('lang.follows'),
+        }))}`);
         say(`  ${c.gray(말('lang.progress', { 언어: 언어(), 옮김: p.옮김, 전체: p.전체 }))}`);
         if (p.남음) say(`  ${c.gray(말('lang.partial'))}`);
         say(`  ${c.gray(말('lang.codeStays'))}`);
         say(`  ${c.gray(말('lang.howto'))} ${c.cyan('/lang ko')} ${c.gray('·')} ${c.cyan('/lang en')}`);
+        say(`  ${c.gray(말('lang.splitHowto'))} ${c.cyan('/lang ko en')}`);
         say(`  ${c.gray(말('lang.envHint'))}`);
         say('');
         return { handled: true };
@@ -331,13 +350,27 @@ export async function handle(line, session, ctx) {
         say('');
         return { handled: true };
       }
+      // 시킬 말을 같이 줬으면 그것부터 본다 — 화면 말만 바꿔 놓고 거절하면
+      // 사람이 시킨 것의 절반만 먹은 채로 끝난다.
+      if (시킬말 !== null && !지시말정하기(시킬말)) {
+        say(`  ${c.gray(말('lang.unknown'))}`);
+        say('');
+        return { handled: true };
+      }
       언어정하기(값);
       const cfg = load();
       cfg.lang = 언어();
+      // 따로 안 정했으면 설정에서도 지운다. 남겨 두면 다음에 켤 때
+      // 「화면 말을 따라간다」 가 아니라 옛 값이 되살아난다.
+      if (지시말따로정했나()) cfg.promptLang = 지시말();
+      else delete cfg.promptLang;
       try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
       const p = 옮긴만큼();
       say('');
       say(`  ${mark.ok} ${말('lang.changed', { 이름: 이름(언어()) })}`);
+      if (지시말() !== 언어()) {
+        say(`     ${c.gray(말('lang.promptChanged', { 이름: 이름(지시말()), 답: 이름(언어()) }))}`);
+      }
       say(`     ${c.gray(말('lang.progress', { 언어: 언어(), 옮김: p.옮김, 전체: p.전체 }))}`);
       if (p.남음) say(`     ${c.gray(말('lang.partial'))}`);
       say('');
@@ -418,6 +451,24 @@ export async function handle(line, session, ctx) {
       }
       say(`  ${c.gray(말('lsp.howto'))} ${c.cyan('/lsp on')} ${c.gray('·')} ${c.cyan('/lsp off')}`);
       say('');
+      return { handled: true };
+    }
+
+    /*
+     * 이 터미널이 무슨 바이트를 보내나 (repl.js 의 키확인).
+     *
+     * 줄바꿈이 안 된다는 말은 여러 판째 나왔는데, 그때마다 문서에 "터미널
+     * 설정을 바꾸세요" 라고만 적었다. 그건 고친 것이 아니다 — 사람은 제
+     * 터미널에서 무엇이 오는지 볼 길이 없었다. 여기서는 짐작 대신 눌러 본다.
+     */
+    case 'keys': {
+      if (typeof ctx?.키확인 !== 'function') {
+        say('');
+        say(`  ${c.gray('키 확인은 상자 화면에서만 됩니다 (--no-tui 나 파이프에서는 못 씁니다).')}`);
+        say('');
+        return { handled: true };
+      }
+      await ctx.키확인();
       return { handled: true };
     }
 

@@ -122,6 +122,27 @@ export const 도구설명EN = {
         + ' material comes back cut (max 120000)',
     },
   },
+  Move: {
+    desc: 'Move or rename files and folders. This is how you restructure a tree.'
+      + ' **Several at once via the moves array** — do not call it twenty times to move twenty files.'
+      + ' Do not use Bash mv: it is not covered by undo and asks for approval every time.',
+    params: {
+      from: 'the file or folder to move (single form)',
+      to: 'where it goes. Missing folders are created (single form)',
+      moves: 'several at once. With this, from/to are unused',
+      overwrite: 'overwrite the destination if it already exists. Default false, so a clash is refused',
+    },
+  },
+  Ask: {
+    desc: 'Ask the person one question. At a fork, **do not pick for them** — use this.'
+      + ' If you do not know what to do, never write "let me know" and stop; call this instead —'
+      + ' asking in prose ends the turn and throws away everything you have looked at.'
+      + ' Give 2-4 options and they answer with a single number.',
+    params: {
+      question: 'one sentence. Make it clear what has to be decided',
+      options: '2-4 choices, one line each, so the difference is visible',
+    },
+  },
   Recall: {
     desc: 'Search past sessions in this folder. When the user points back ("last time"), use this'
       + ' instead of asking again. This does not search file contents — that is Grep.',

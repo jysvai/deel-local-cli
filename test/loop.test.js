@@ -109,17 +109,28 @@ check('쪼개진 도구 인자를 이어 붙였다', editEv?.args?.new_string ==
 
 // 게이트웨이에 보낸 요청 모양
 const first = seenBodies[0];
-// 파일 도구 7종 + 웹 읽기 + 지난 대화 찾기 + 기억하기 + 할 일 목록
-// + 확인하기 + 뼈대 보기 + 하위 작업 + 뒤에서 도는 명령.
+// 파일 도구 8종(옮기기 포함) + 웹 읽기 + 되묻기 + 지난 대화 찾기 + 기억하기
+// + 할 일 목록 + 확인하기 + 뼈대 보기 + 하위 작업 + 뒤에서 도는 명령.
 // 스킬이 없는 세션이라 Skill 은 빠진다.
-check('도구 정의 15종을 보냈다', first?.tools?.length === 15, `${first?.tools?.length}개`);
+check('도구 정의 17종을 보냈다', first?.tools?.length === 17, `${first?.tools?.length}개`);
 /*
- * Claude Code 의 이름을 그대로 쓰되 **둘만** 더 있다. 늘릴 때마다 여기가 걸리게
+ * Claude Code 의 이름을 그대로 쓰되 **아홉 개만** 더 있다. 늘릴 때마다 여기가 걸리게
  * 해 둔 이유: 도구 하나가 스키마로 150토큰쯤 먹는다. 매 요청마다 나가는 값이라
  * 슬그머니 늘면 컨텍스트가 조용히 줄어든다. 더할 값어치가 있는지 여기서 한 번 멈춘다.
  *
  *   Append    출력 상한이 작은 로컬 모델이 큰 파일을 나눠 쓰는 유일한 길.
  *             Edit 으로 잇는 방법은 앵커가 겹쳐 막힌다(HTML 의 </div> 가 그렇다).
+ *   Move      파일·폴더를 옮긴다 (test/move.test.js). 이게 없어서 "구조를
+ *             역할에 맞게 바꿔 줘" 가 계속 헛돌았다 — 남는 길이 `Bash mv`
+ *             하나뿐인데, mv 는 위험 명령이라 **파일마다** 승인을 묻고
+ *             되돌리기에도 안 잡힌다. /undo 를 눌러도 구조가 안 돌아온다.
+ *             도구로 주면 한 번에 스무 개를 옮기고 되돌리기에 잡힌다.
+ *   Ask       갈림길에서 사람에게 하나 묻는다 (test/ask.test.js). 이게 없을 때
+ *             모델은 파일 스무 개를 읽고 나서 "수행할 구체적인 작업 요청이
+ *             없습니다" 라고 적고 턴을 끝냈다. 글로 물으면 **그 턴이 끝나서**
+ *             여태 읽은 것이 다 버려지고, 사람은 아무것도 안 된 화면을 본다.
+ *             도구로 물으면 답이 도구 결과로 돌아와 하던 자리에서 이어진다.
+ *             스키마가 작다(문자열 하나 + 짧은 배열).
  *   Recall    지난 대화를 모델이 **스스로** 뒤진다. 사람만 쓰는 명령으로 두면
  *             "저번에 정한 대로" 에 모델이 할 수 있는 게 되묻는 것뿐이다.
  *   Remember  대화가 끝나도 남길 것. 지금 막 정한 것을 남길지 판단할 수 있는 것은
@@ -145,10 +156,10 @@ check('도구 정의 15종을 보냈다', first?.tools?.length === 15, `${first?
  *
  * 밖에서 붙인 도구(MCP)는 여기 안 나온다. 붙인 서버가 있을 때만 뒤에 더해진다.
  */
-check('도구 이름이 Claude Code 와 같다 (Append · Recall · Remember · Verify · Outline · Task · Jobs 만 더 있다)',
+check('도구 이름이 Claude Code 와 같다 (Append · Move · Ask · Recall · Remember · Verify · Outline · Task · Jobs 만 더 있다)',
   JSON.stringify(first?.tools?.map((t) => t.function.name))
-    === JSON.stringify(['Read', 'Write', 'Append', 'Edit', 'Glob', 'Grep', 'Bash', 'WebFetch',
-      'Recall', 'Remember', 'TodoWrite', 'Verify', 'Outline', 'Task', 'Jobs']),
+    === JSON.stringify(['Read', 'Write', 'Append', 'Edit', 'Move', 'Glob', 'Grep', 'Bash', 'WebFetch',
+      'Ask', 'Recall', 'Remember', 'TodoWrite', 'Verify', 'Outline', 'Task', 'Jobs']),
   JSON.stringify(first?.tools?.map((t) => t.function.name)));
 check('시스템 프롬프트를 보냈다', first?.messages?.[0]?.role === 'system');
 

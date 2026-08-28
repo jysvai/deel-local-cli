@@ -15,7 +15,10 @@
 // 묻기 모드에도 준다: "저번에 이거 어떻게 했더라" 가 딱 묻기 모드의 일이다.
 // Def·Refs 도 읽기다 — 아무것도 안 바꾼다. 언어 서버가 없는 자리에서는
 // toolSchemas 가 알아서 빼므로 여기서는 갈래만 정한다.
-const 읽기 = ['Read', 'Outline', 'Glob', 'Grep', 'Def', 'Refs', 'WebFetch', 'Skill', 'Recall'];
+// Ask 는 **모든 모드**에 있다(읽기 갈래에 둔 이유가 그것이다). 갈림길은
+// 어느 모드에서나 생기고, 물어볼 길이 없으면 모델은 글로 "알려주세요" 하고
+// 턴을 끝내 버린다 — 그러면 여태 조사한 것이 통째로 버려진다.
+const 읽기 = ['Read', 'Outline', 'Glob', 'Grep', 'Def', 'Refs', 'WebFetch', 'Skill', 'Recall', 'Ask'];
 // 계획을 적는 도구. 파일을 안 건드리므로 읽기 전용 모드에서도 준다.
 //
 // Remember 도 여기 있다. 기억은 사용자의 소스를 안 건드리고 .deel/memory.md
@@ -27,7 +30,9 @@ const 계획 = ['TodoWrite', 'Remember'];
 // Write 를 주는 자리에는 반드시 같이 준다. 하나만 주면 나눠 쓸 방법이 없어진다.
 // Jobs 는 Bash 와 짝이다. Bash 를 주는 자리에는 반드시 같이 준다 —
 // background 로 띄워 놓고 읽을 길이 없으면 띄운 것이 그냥 유령이 된다.
-const 쓰기 = ['Write', 'Append', 'Edit', 'Bash', 'Jobs'];
+// Move 는 구조를 바꾸는 유일한 길이다. 이게 없으면 "폴더를 역할대로 나눠 줘"
+// 에 남는 길이 Bash mv 뿐인데, 그건 매번 승인을 묻고 되돌리기에 안 잡힌다.
+const 쓰기 = ['Write', 'Append', 'Edit', 'Move', 'Bash', 'Jobs'];
 // 만든 것을 확인하는 도구. 아무것도 안 바꾸지만 **쓰는 모드에만** 준다 —
 // 안 만든 모드에서 확인할 것이 없고, 도구 정의로 나가는 자리만 먹는다.
 const 확인 = ['Verify'];
@@ -45,7 +50,7 @@ const 확인 = ['Verify'];
  */
 const 쪼개기 = ['Task'];
 
-import { 언어 } from '../i18n/index.js';
+import { 언어, 지시말 } from '../i18n/index.js';
 
 export const MODES = {
   // 처음에는 여기서 시작한다.
@@ -347,7 +352,7 @@ export function 말(id, ctx) {
    * 아무 지시도 없는 채로 도는데, 그게 화면 빈칸보다 훨씬 나쁘다 —
    * 모드가 있는 것처럼 보이면서 실제로는 아무 일도 안 한다.
    */
-  if (언어() === 'en') {
+  if (지시말() === 'en') {
     if (좁은가 && m.say짧게En) return m.say짧게En;
     if (m.sayEn) return m.sayEn;
   }

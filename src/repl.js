@@ -6,7 +6,7 @@ import { c, say as 바로쓰기, mark, clip } from './ui/ansi.js';
 import { headerLines } from './ui/status.js';
 import { 종, 창제목, 제목되돌리기, 알릴까, 제목글 } from './ui/notify.js';
 import { 보이기 as 인트로, 기본곁말 } from './ui/intro.js';
-import { 언어잡기 } from './i18n/index.js';
+import { 언어잡기, 말 as 옮긴말 } from './i18n/index.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
 import { handle, COMMANDS, 미리보기끄기, 적용하기 as 그림적용 } from './commands.js';
@@ -391,14 +391,33 @@ export async function chatLoop(opts = {}) {
         이어쓰기줄들 = null;
         화면.입력지움();
         if (l.trim() || 이었나) say(`${이었나 ? '   ' : ` ${c.hcyan('❯')} `}${c.white(l)}`);
-      } else if (l.trim()) {
+      } else if (l.trim() || 이어쓰기줄들 !== null) {
         /*
          * 일하는 도중에 미리 쳐 둔 것.
          *
-         * 여기서 대화에 `❯ …` 를 찍으면 **이미 보낸 것처럼** 보인다. 실제로는
-         * 지금 일이 끝난 뒤에 나가므로, 그때 가서 찍는다(아래 for 문). 지금은
+         * ── 여기서도 줄 끝 백틱이 먹어야 한다 ────────────────────────────
+         *
+         * 예전에는 이 갈래에 이어쓰기가 아예 없었다. 그래서 **일하는 도중에**
+         * 여러 줄을 치면 백틱이 그냥 글자로 나갔다 — 첫 줄이 백틱을 단 채로
+         * 혼자 보내지고, 다음 줄은 따로 또 보내진다. 사람 눈에는 줄바꿈이
+         * 안 먹는 것으로 보인다. 기다릴 때는 되고 일할 때는 안 되니, 되는
+         * 자리를 찾기도 어렵다.
+         *
+         * 미리 치는 것은 일하는 중에 하는 짓이라 오히려 여기가 더 흔하다.
+         *
+         * 그리는 것은 다르게 한다. 줄쌓기() 는 대화에 줄을 찍는데, 일하는
+         * 도중에 찍으면 이미 보낸 것처럼 보인다. 여기서는 조용히 쌓고
          * 상자에 몇 건이 밀려 있는지만 세어 준다.
          */
+        if (이어쓰기표시(l)) {
+          (이어쓰기줄들 ??= []).push(l.slice(0, -1).replace(/\s+$/, ''));
+          화면.대기갱신('', queue.length + 1);
+          return;
+        }
+        if (이어쓰기줄들 !== null) {
+          보낼것 = [...이어쓰기줄들, l].join('\n');
+          이어쓰기줄들 = null;
+        }
         화면.대기갱신('', queue.length + 1);
       }
     }
@@ -645,6 +664,127 @@ export async function chatLoop(opts = {}) {
       if (closed) return null;
       const pw = await askHidden(rl, label, nextLine);
       return pw === null || pw === '' ? null : pw;
+    },
+    /*
+     * ── 모델이 사람에게 되묻는 자리 (Ask 도구) ──────────────────────────
+     *
+     * 계획 승인 상자와 같은 꼴로 그린다. 사람이 이미 아는 모양이라 새로 배울
+     * 것이 없고, 무엇보다 **숫자 하나로 끝난다.**
+     *
+     * 자유롭게 쳐도 그대로 간다. 고를 것이 늘 맞지는 않아서, 넷 다 아닐 때
+     * 다시 물어보게 하면 그게 제일 답답하다.
+     */
+    /*
+     * ── 이 터미널이 무슨 바이트를 보내는지 본다 (/keys) ──────────────────
+     *
+     * 맥에서 줄바꿈이 안 된다는 말을 몇 판째 듣고도 못 고쳤다. 고칠 데를
+     * 못 찾은 게 아니라 **무슨 일이 나는지를 몰랐다.**
+     *
+     * Alt+Enter 는 앞에 ESC 가 붙어 올 때만 잡을 수 있는데(위 keypress 참고),
+     * macOS 터미널은 기본값이 Option 을 그렇게 안 보낸다. Shift+Enter·
+     * Ctrl+Enter 는 대부분 터미널에서 평범한 Enter 와 **바이트가 똑같다.**
+     * 즉 여기서는 셋을 구분할 길이 아예 없다 — 안 오는 것을 잡을 수는 없다.
+     *
+     * 그래서 문서에 "터미널 설정을 이렇게 바꾸세요" 라고만 적어 뒀는데, 그건
+     * 고친 것이 아니다. 사람이 제 터미널에서 **눌러 보고 바로 알 수 있어야**
+     * 한다. 여기서 보여 주는 것은 짐작이 아니라 실제로 온 바이트다.
+     */
+    키확인: async () => {
+      if (!process.stdin.isTTY) {
+        say('');
+        say(`  ${c.gray('키 확인은 터미널에서만 됩니다 (지금은 파이프로 들어와 있습니다).')}`);
+        say('');
+        return;
+      }
+      say('');
+      say(`  ${c.hcyan('┌')} ${c.bold('키 확인')}`);
+      say(`  ${c.hcyan('│')} ${c.gray('아무 키나 눌러 보세요. 이 터미널이 실제로 보낸 바이트를 그대로 보여 줍니다.')}`);
+      say(`  ${c.hcyan('│')} ${c.gray('줄바꿈에 쓰려던 것을 눌러 보세요 — Alt+Enter · Option+Enter · Shift+Enter.')}`);
+      say(`  ${c.hcyan('└')} ${c.gray('끝내려면 Ctrl+C 또는 q')}`);
+      say('');
+
+      const 본것 = [];
+      await new Promise((끝) => {
+        const 듣기 = (ch, key) => {
+          const 이름 = key?.name ?? (ch ? JSON.stringify(ch) : '?');
+          if (이름 === 'q' || (key?.ctrl && key?.name === 'c')) {
+            process.stdin.off('keypress', 듣기);
+            return 끝();
+        }
+          // 실제로 온 바이트. 이것이 이 화면의 전부다.
+          const 날것 = JSON.stringify(String(key?.sequence ?? ch ?? ''))
+            .replace(/\\u001b/g, '\\e');
+          const 꾸밈 = [key?.ctrl && 'ctrl', key?.meta && 'meta', key?.shift && 'shift']
+            .filter(Boolean).join('+');
+          본것.push({ 이름, 날것, 꾸밈 });
+          say(`  ${c.hcyan('·')} ${c.white(이름.padEnd(10))} ${c.gray(날것.padEnd(14))}`
+            + `${꾸밈 ? c.hgreen(꾸밈) : c.gray('꾸밈 없음')}`);
+        };
+        process.stdin.on('keypress', 듣기);
+      });
+
+      /*
+       * 눌러 본 것을 놓고 **이 터미널에서 되는 길**을 알려 준다.
+       *
+       * Enter 를 여러 번 눌렀는데 meta 가 한 번도 안 붙었으면, 그 터미널은
+       * Option/Alt 를 ESC 로 안 보내는 것이다. 그 자리에서는 아무리 눌러도
+       * 안 되므로, 백틱 쪽을 알려 주는 것이 맞다.
+       */
+      const 엔터들 = 본것.filter((k) => k.이름 === 'return' || k.이름 === 'enter');
+      const 메타본적있나 = 엔터들.some((k) => /meta/.test(k.꾸밈));
+      say('');
+      if (!엔터들.length) {
+        say(`  ${c.gray('Enter 를 안 눌러 봤습니다. 줄바꿈을 보려면 Alt/Option+Enter 를 눌러 보세요.')}`);
+      } else if (메타본적있나) {
+        say(`  ${mark.ok} ${c.white('이 터미널은 Alt/Option+Enter 를 보냅니다')} ${c.gray('— 그대로 쓰시면 됩니다.')}`);
+      } else {
+        say(`  ${mark.warn} ${c.white('이 터미널은 Alt/Option+Enter 를 안 보냅니다.')}`);
+        say(`  ${c.gray('  누른 Enter 가 평범한 Enter 와 바이트가 같아서, 프로그램 쪽에서 가려낼 길이 없습니다.')}`);
+        say('');
+        say(`  ${c.white('줄바꿈은 이렇게 하세요')} ${c.gray('— 어느 터미널에서나 됩니다')}`);
+        say(`  ${c.gray('  줄 끝에')} ${c.cyan('빈칸 + `')} ${c.gray('를 붙이고 Enter. 마지막 줄은 그냥 Enter.')}`);
+        say('');
+        say(`  ${c.gray('  Option 을 굳이 쓰시려면 터미널 설정을 바꿔야 합니다:')}`);
+        say(`  ${c.gray('    Terminal.app  설정 → 프로파일 → 키보드 → ')}${c.cyan('Option을 Meta 키로 사용')}`);
+        say(`  ${c.gray('    iTerm2        Settings → Profiles → Keys → Left Option → ')}${c.cyan('Esc+')}`);
+        say(`  ${c.gray('    VS Code       ')}${c.cyan('terminal.integrated.macOptionIsMeta')}${c.gray(' 를 true 로')}`);
+      }
+      say('');
+    },
+
+    ask물음: async (물음, 고를것 = []) => {
+      if (closed) return null;
+      say('');
+      say(`  ${c.hcyan('┌')} ${c.bold(옮긴말('ask.title'))}`);
+      for (const 줄 of 접어쓰기(물음, Math.max(40, Math.min(88, (process.stdout.columns || 80) - 6)) - 4)) {
+        say(`  ${c.hcyan('│')} ${c.white(줄)}`);
+      }
+      if (고를것.length) {
+        say(`  ${c.hcyan('│')}`);
+        고를것.forEach((것, i) => {
+          say(`  ${c.hcyan('│')} ${c.hcyan(String(i + 1))} ${c.white(것)}`);
+        });
+      }
+      say(`  ${c.hcyan('└')} ${c.gray(옮긴말(고를것.length ? 'ask.pickHint' : 'ask.freeHint'))}`);
+      say('');
+
+      // 막혀 있는 것은 기다린 만큼 그대로 손해다. confirm 과 같은 이유로 알린다.
+      if (알릴까({ 물어봄: true, 켬: 알림.켬 })) 종();
+      창제목(제목글('물어봄', { 폴더: 알림.폴더 }));
+      const 답 = String(await ask(
+        고를것.length ? 옮긴말('ask.pickPrompt', { 끝: 고를것.length }) : 옮긴말('ask.freePrompt'),
+        { def: 고를것.length ? '1' : '' },
+      )).trim();
+      창제목(제목글('도는중', { 폴더: 알림.폴더 }));
+
+      if (!답) return null;
+      // 숫자로 골랐으면 그 줄의 글을 그대로 돌려준다 — 모델에게 "2" 만 가면
+      // 무엇을 고른 것인지 모른다.
+      const n = Number(답);
+      const 고른것 = Number.isInteger(n) && n >= 1 && n <= 고를것.length ? 고를것[n - 1] : 답;
+      say(`  ${c.hgreen('▶')} ${c.gray(clip(고른것, 70))}`);
+      say('');
+      return 고른것;
     },
     confirm: async (name, args) => {
       say('');
@@ -1492,9 +1632,26 @@ export async function chatLoop(opts = {}) {
       if (['n', 'no', 'ㄴ', '취소', '아니', '아니요', '아니오'].includes(낮춘)) {
         say(`  ${c.gray('그만뒀습니다. 계획은 위에 남아 있으니 이어서 말씀하셔도 됩니다.')}`);
       } else if (['y', 'yes', 'ㅇ', 'ㅇㅇ', 'ㄱ', 'ㄱㄱ', '네', '응', '진행', 'ok'].includes(낮춘)) {
-        // 계획을 다시 적으라고 하면 두 번 적는다. 컨텍스트만 먹고 사람은 같은 글을 두 번 본다.
-        이어갈것 = '위 계획을 승인받았다. 계획을 다시 적지 말고 지금부터 그대로 실행해라.'
-          + ' 적어 둔 단계를 하나씩 끝내고, 다 끝나면 무엇을 만들었는지만 짧게 알려라.';
+        /*
+         * 승인한 계획을 **글자 그대로 실어 보낸다.**
+         *
+         * 예전에는 "위 계획을 승인받았다 · 적어 둔 단계를 하나씩 끝내라" 라고만
+         * 보냈다. 사람 눈에는 계획이 바로 위에 있으니 말이 되는데, 모델에게
+         * 이건 **가리키기만 하고 안 주는 말**이다. 그래서 작은 모델은 "적어 둔"
+         * 것을 찾으러 Recall 로 지난 대화를 뒤지기 시작했다 — 세 번 뒤지고
+         * 세 번 못 찾고, 정작 시킨 일은 시작도 안 했다.
+         *
+         * 계획은 이미 손에 있다(ctx.todos). 가리키지 말고 준다. 두 번 적는
+         * 것이 아까워서 안 준 것이었는데, 아낀 토큰보다 헛도는 값이 훨씬 컸다.
+         */
+        const 단계글 = 할일.map((t, i) => `${i + 1}. ${String(t.text ?? '')}`).join('\n');
+        이어갈것 = (할일.length
+          ? `방금 낸 계획을 사람이 승인했다. 계획은 아래 그대로다.\n\n${단계글}\n\n`
+            + '지금부터 이 단계를 하나씩 실제로 해라.'
+          : '바로 위에 네가 적은 계획을 사람이 승인했다.'
+            + ' 그 계획을 다시 적지 말고 지금부터 그대로 해라.')
+          + ' 계획을 다시 적지 마라. **지난 대화를 뒤지지 마라** — 필요한 것은'
+          + ' 이 대화 안에 다 있다. 다 끝나면 무엇을 만들었는지만 짧게 알려라.';
         이어갈모드 = 'code';
         say('');
         say(`  ${c.hgreen('▶')} ${c.gray('계획대로 진행합니다.')}`);

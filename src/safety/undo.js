@@ -1,6 +1,6 @@
 // 되돌리기. 승인 프롬프트를 안 쓰는 대신 이게 안전망이다.
 // 파일을 고치기 전에 항상 이전 내용을 떠 놓고, /undo 로 턴 단위로 되돌린다.
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, statSync } from 'node:fs';
 import { looksBinary } from '../tools/encoding.js';
 
@@ -169,6 +169,13 @@ export class History {
           rmSync(path, { force: true });
           restored.push({ path, how: '삭제됨(원래 없던 파일)' });
         } else {
+          /*
+           * 담고 있던 폴더가 없어졌을 수 있다 — Move 로 폴더째 옮긴 경우다.
+           * 그러면 writeFileSync 가 ENOENT 로 죽고, 되돌리기는 "실패" 만 남긴 채
+           * 파일을 못 되살린다. 되돌릴 내용은 손에 있는데 담을 자리가 없어서
+           * 못 넣는 것이라, 자리를 다시 만들어 준다.
+           */
+          mkdirSync(dirname(path), { recursive: true });
           // enc 가 붙어 있으면 UTF-8 로 담을 수 없던 파일이다 — 바이트를 그대로 되돌린다.
           writeFileSync(path, rec.enc === 'b64' ? Buffer.from(rec.before, 'base64') : Buffer.from(rec.before, 'utf8'));
           restored.push({ path, how: '되돌림' });

@@ -1,7 +1,7 @@
 // 도구. 이름과 인자를 Claude Code 와 같게 맞춘다 —
 // 그래야 그 관례로 쓰인 스킬·명령이 그대로 먹는다.
-import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, renameSync, cpSync, rmSync } from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsutil.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
@@ -24,7 +24,7 @@ import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOl
 import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
 import { 도구설명EN } from './desc.en.js';
-import { 언어 } from '../i18n/index.js';
+import { 지시말 } from '../i18n/index.js';
 
 /*
  * 한 번에 돌려줄 양은 **모델에 맞춰** 정한다 (agent/budget.js).
@@ -265,6 +265,121 @@ function 문서읽기(abs, ctx) {
  * 것이 중요하다. 한 덩이로 뜨면 `/undo` 가 전부-아니면-전무가 되어, 넷 중
  * 하나만 잘못 만들었을 때 나머지 셋까지 날려야 한다.
  */
+/*
+ * ── 하나 옮기기 ─────────────────────────────────────────────────────────
+ *
+ * 되돌리기는 **내용을 떠 놓는** 방식이다(safety/undo.js). 옮기기는 그 틀에
+ * 이렇게 얹는다: 떠난 자리와 닿을 자리를 **둘 다** 뜬다.
+ *
+ *   떠난 자리 — 내용이 떠지니 되돌리면 그 자리에 다시 쓰인다
+ *   닿을 자리 — 없던 파일이라 null 로 떠지고, 되돌리면 지워진다
+ *
+ * 둘이 합쳐져야 '옮기기 전' 이 된다. 하나만 뜨면 되돌린 뒤 파일이 두 군데
+ * 있거나(닿을 자리를 안 뜬 경우) 한 군데도 없다(떠난 자리를 안 뜬 경우).
+ *
+ * 그림·zip 같은 바이너리는 내용을 못 뜬다(skipped). 그때 되돌리기는 그 파일을
+ * **손대지 않는다** — 옮겨진 자리에 그대로 남는다. 되돌아가지는 않지만
+ * 없어지지도 않는다. 안전망이 파일을 지우는 것보다 이쪽이 낫다.
+ */
+function 한개옮기기({ from, to, overwrite = false }, ctx) {
+  if (typeof from !== 'string' || !from) return { error: 'from 이 없습니다' };
+  if (typeof to !== 'string' || !to) return { error: 'to 가 없습니다' };
+
+  const 앞 = ctx.scope.resolve(from);
+  const 뒤 = ctx.scope.resolve(to);
+  if (!existsSync(앞)) return { error: `없는 파일입니다: ${from}` };
+  if (앞 === 뒤) return { error: `옮길 자리가 지금 자리와 같습니다: ${from}` };
+
+  // 읽기만 막고 옮기기를 열어 두면 .deel/config.json 을 옮겨 연결을 끊을 수 있다.
+  for (const p of [앞, 뒤]) { const 왜 = 내부살림(p); if (왜) return { error: 왜 }; }
+
+  const 폴더인가 = statSync(앞).isDirectory();
+  /*
+   * 폴더를 **제 안으로** 옮기면 그 폴더가 통째로 사라진다 (`mv a a/b`).
+   * 셸에서도 잘 나는 사고라 여기서 막는다.
+   */
+  if (폴더인가 && (뒤 + sep).startsWith(앞 + sep)) {
+    return { error: `폴더를 제 안으로 옮길 수 없습니다: ${from} → ${to}` };
+  }
+
+  /*
+   * 닿을 자리에 이미 있으면 **기본값은 거절**이다.
+   *
+   * 조용히 덮어쓰면 그 파일 내용이 그 자리에서 없어진다. 구조를 바꾸는 일은
+   * 파일을 스무 개씩 옮기는 일이라, 이름이 겹치는 것이 드물지 않다.
+   * 겹쳤다고 알려 주면 모델이 이름을 고쳐서 다시 부른다.
+   */
+  if (existsSync(뒤) && !overwrite) {
+    return { error: `이미 있습니다: ${to}\n  덮어쓰려면 overwrite: true 를 주세요.` };
+  }
+
+  /*
+   * 되돌릴 수 있게 뜬다.
+   *
+   * 폴더면 안의 파일을 하나씩 짝지어 뜬다. walk 는 node_modules 같은 것을
+   * 건너뛰므로(fsutil.js 의 SKIP_DIRS) 그 안은 이력에 안 남는다 — 옮기기는
+   * 그대로 되지만 되돌리기에는 안 잡힌다. 그런 폴더를 되돌리자고 수만 개를
+   * 뜨는 쪽이 훨씬 나쁘다.
+   */
+  const 짝들 = 폴더인가
+    ? walk(앞).map((f) => [f.path, join(뒤, relative(앞, f.path))])
+    : [[앞, 뒤]];
+  for (const [a, b] of 짝들) {
+    ctx.history.snapshot(a, 'Move');
+    ctx.history.snapshot(b, 'Move');
+  }
+
+  mkdirSync(dirname(뒤), { recursive: true });
+  try {
+    renameSync(앞, 뒤);
+  } catch (err) {
+    /*
+     * 드라이브가 다르면 rename 이 안 된다 (윈도우 C: → D:, 리눅스 마운트 경계).
+     * 그때만 복사해서 옮긴다. 늘 복사하지 않는 것은 큰 폴더에서 값이 크고,
+     * 복사 도중에 끊기면 양쪽에 반씩 남기 때문이다.
+     */
+    if (err.code !== 'EXDEV') return { error: `못 옮겼습니다: ${err.message}` };
+    try {
+      cpSync(앞, 뒤, { recursive: true });
+      rmSync(앞, { recursive: true, force: true });
+    } catch (err2) {
+      return { error: `못 옮겼습니다: ${err2.message}` };
+    }
+  }
+
+  for (const [, b] of 짝들) ctx.seen.add(b);
+  const 무엇 = 폴더인가 ? `폴더 ${짝들.length}개 파일` : '';
+  return {
+    content: `옮김: ${ctx.scope.show(앞)} → ${ctx.scope.show(뒤)}${무엇 ? ` (${무엇})` : ''}`,
+    summary: `${ctx.scope.show(뒤)}`,
+    changed: 뒤,
+  };
+}
+
+/** 여러 개를 한 번에. 하나가 막혀도 나머지는 옮기고, 무엇이 막혔는지 다 알린다. */
+function 여러개옮기기(목록, ctx) {
+  const 된것 = [];
+  const 안된것 = [];
+  for (const 하나 of 목록) {
+    const r = 한개옮기기(하나, ctx);
+    if (r.error) 안된것.push(`${하나.from ?? '?'} → ${하나.to ?? '?'}: ${r.error}`);
+    else 된것.push(r.content);
+  }
+  /*
+   * 하나도 못 옮겼으면 오류로 돌려준다. 그래야 모델이 '됐다' 고 넘어가지
+   * 않는다. 하나라도 됐으면 결과로 돌려주되 막힌 것을 그 안에 다 적는다 —
+   * 절반만 옮겨진 상태를 모르고 지나가는 것이 제일 나쁘다.
+   */
+  if (!된것.length) return { error: 안된것.join('\n') || '옮길 것이 없습니다' };
+  return {
+    content: `${된것.length}개 옮겼습니다${안된것.length ? `, ${안된것.length}개 실패` : ''}.\n`
+      + 된것.map((c) => `  ✓ ${c.replace(/^옮김: /, '')}`).join('\n')
+      + (안된것.length ? `\n${안된것.map((e) => `  ✗ ${e.split('\n')[0]}`).join('\n')}` : '')
+      + (안된것.length ? '\n\n실패한 것만 다시 보내세요. 된 것은 다시 안 보내도 됩니다.' : ''),
+    summary: `${된것.length}개 옮김${안된것.length ? ` · ${안된것.length}개 실패` : ''}`,
+  };
+}
+
 function 한파일쓰기(args, ctx) {
   const abs = ctx.scope.resolve(args.file_path);
     if (typeof args.content !== 'string') return { error: 'content 가 문자열이 아닙니다' };
@@ -712,6 +827,62 @@ export const TOOLS = {
     },
   },
 
+  /*
+   * ── 파일을 옮긴다 ───────────────────────────────────────────────────────
+   *
+   * 이게 없어서 「폴더 구조를 역할에 맞게 바꿔 줘」 가 계속 헛돌았다.
+   *
+   * 도구 목록에 옮기는 것이 없으니 길은 `Bash mv` 하나뿐이었는데, mv 는 위험
+   * 명령으로 잡혀 있어서(safety/guard.js 의 MUTATING) 승인 방식에 따라
+   * **파일 하나 옮길 때마다** 물었다. 스무 개면 스무 번이다. 게다가 Bash 로
+   * 옮긴 것은 되돌리기에 안 잡혀서, /undo 를 눌러도 구조가 안 돌아왔다.
+   *
+   * 그래서 시키는 일에 맞는 도구가 없었던 것이지, 모델이 말을 안 들은 게
+   * 아니었다. 도구를 주면 한 번에 스무 개를 옮기고 되돌리기에도 잡힌다.
+   */
+  Move: {
+    schema: {
+      name: 'Move',
+      description: '파일·폴더를 옮기거나 이름을 바꾼다. 구조를 바꾸는 일은 이걸로 한다.'
+        + ' **여러 개는 moves 배열로 한 번에** — 스무 개를 옮기려고 스무 번 부르지 마라.'
+        + ' Bash 의 mv 를 쓰지 마라. 되돌리기에 안 잡히고 매번 승인을 묻는다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          from: { type: 'string', description: '옮길 파일·폴더 (한 개일 때)' },
+          to: { type: 'string', description: '옮겨 갈 자리. 없는 폴더는 만든다 (한 개일 때)' },
+          moves: {
+            type: 'array',
+            description: '여러 개를 한 번에. 이걸 쓰면 from·to 는 안 쓴다.',
+            items: {
+              type: 'object',
+              properties: {
+                from: { type: 'string', description: '옮길 파일·폴더' },
+                to: { type: 'string', description: '옮겨 갈 자리' },
+              },
+              required: ['from', 'to'],
+            },
+          },
+          overwrite: {
+            type: 'boolean',
+            description: '옮겨 갈 자리에 이미 있어도 덮어쓴다. 기본은 false 라 겹치면 거절한다',
+          },
+        },
+        required: [],
+      },
+    },
+    run(args, ctx) {
+      const 목록 = Array.isArray(args.moves) ? args.moves.filter((x) => x && typeof x === 'object') : [];
+      if (목록.length) {
+        return 여러개옮기기(목록.map((m) => ({ ...m, overwrite: m.overwrite ?? args.overwrite })), ctx);
+      }
+      if (typeof args.from !== 'string' || !args.from) {
+        return { error: 'from 이 없습니다. 한 개면 from·to 를, 여러 개면 moves 배열을 주세요.' };
+      }
+      return 한개옮기기(args, ctx);
+    },
+  },
+
   Glob: {
     schema: {
       name: 'Glob',
@@ -1083,6 +1254,83 @@ export const TOOLS = {
    *
    * 이 폴더의 기록만 본다. 작업 범위 밖은 애초에 읽을 수 없다.
    */
+  /*
+   * ── 사람에게 되묻기 ─────────────────────────────────────────────────────
+   *
+   * 이게 없어서 실제로 이런 일이 났다. 큰 폴더를 "역할에 맞게 구조 바꿔 줘"
+   * 라고 시켰더니, 모델이 파일을 스무 개쯤 읽고 나서 대화창에 이렇게 적고
+   * 멈췄다:
+   *
+   *   "수행할 구체적인 작업 요청이 없습니다. 원하는 변경 사항을 알려주세요."
+   *
+   * 요청은 있었다. 모델이 **어떻게 물어야 할지 몰랐던** 것이다. 물어볼 길이
+   * 없으니 글로 적고 턴을 끝냈고, 사람은 아무것도 안 된 화면을 봤다.
+   *
+   * 되묻기가 도구여야 하는 이유:
+   *   · 글로 물으면 그 턴이 **끝난다.** 사람이 답해도 앞의 조사 결과는 이미
+   *     끝난 턴에 있고, 모델은 처음부터 다시 읽는다.
+   *   · 도구로 물으면 답이 도구 결과로 돌아와 **하던 자리에서 이어진다.**
+   *
+   * 고를 것을 같이 주게 하는 것이 핵심이다. "어떻게 할까요?" 만 오면 사람은
+   * 다시 생각해야 하지만, 세 갈래를 주면 숫자 하나로 끝난다.
+   */
+  Ask: {
+    schema: {
+      name: 'Ask',
+      /*
+       * 첫 문장에 제일 중요한 것을 둔다 — 좁은 창에서는 설명줄이기가
+       * **뒤에서부터 문장째로** 잘라 낸다. 8k 에서 남는 것은 앞 90자다.
+       */
+      description: '갈림길에서 사람에게 하나 묻는다. 글로 "알려주세요" 하고 끝내지 마라 —'
+        + ' 턴이 끝나서 여태 본 것이 버려진다. options 에 2~4개를 주면 숫자로 답한다.',
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: '한 문장짜리 질문. 무엇을 정해야 하는지 분명하게' },
+          options: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '고를 것 2~4개. 각각 한 줄로, 무엇이 달라지는지 알 수 있게',
+          },
+        },
+        required: ['question'],
+      },
+    },
+    async run(args, ctx) {
+      const 물음 = String(args.question ?? '').trim();
+      if (!물음) return { error: 'question 이 비었습니다' };
+
+      const 고를것 = (Array.isArray(args.options) ? args.options : [])
+        .map((x) => String(x ?? '').trim()).filter(Boolean).slice(0, 4);
+
+      /*
+       * 물어볼 자리가 없는 데서도 안 죽어야 한다 — `deel -p` 한 방 실행, 파이프,
+       * 하위 작업. 거기서는 **막히지 말고** 스스로 판단하라고 돌려준다.
+       * 답을 기다리며 서 있으면 그 실행은 영영 안 끝난다.
+       */
+      /*
+       * 결과는 반드시 `content` 로 돌려준다.
+       *
+       * loop.js 가 대화에 싣는 것은 `result.content` 하나다(그 자리 하나로
+       * 비밀 가리기·중복 셈이 다 걸린다). 처음에 `answer` 로만 돌려줬더니
+       * 화면에는 답이 멀쩡히 뜨는데 **모델에게는 빈 글이 갔다** — 물어보고
+       * 답을 받고도 못 들은 셈이라, 없느니만 못한 자리가 될 뻔했다.
+       */
+      if (typeof ctx.ask물음 !== 'function') {
+        return {
+          content: '지금은 사람에게 물을 수 없는 자리입니다(한 방 실행·하위 작업).'
+            + ' 되묻지 말고 가장 그럴듯한 쪽으로 진행하고, 무엇을 가정했는지 끝에 적으세요.',
+        };
+      }
+
+      const 답 = await ctx.ask물음(물음, 고를것);
+      if (답 === null || 답 === undefined || String(답).trim() === '') {
+        return { content: '사람이 답하지 않았습니다. 되묻지 말고 스스로 판단해 이어가세요.' };
+      }
+      return { content: `사람의 답: ${String(답)}` };
+    },
+  },
+
   Recall: {
     schema: {
       name: 'Recall',
@@ -1206,7 +1454,10 @@ export const TOOLS = {
  *
  * 인자 설명도 같이 줄인다. 괄호로 붙인 보충(`(한 개일 때)`)이 먼저 떨어진다.
  */
-const 뻔한인자 = new Set(['file_path', 'content', 'pattern', 'path', 'command', 'text', 'name']);
+// from·to 는 Move 만 쓴다. 옮기는 도구에서 "어디서 → 어디로" 는 이름만으로 안다.
+const 뻔한인자 = new Set([
+  'file_path', 'content', 'pattern', 'path', 'command', 'text', 'name', 'question', 'from', 'to',
+]);
 
 export function 설명줄이기(schema, 한도) {
   if (!Number.isFinite(한도)) return schema;
@@ -1266,14 +1517,18 @@ export function 설명줄이기(schema, 한도) {
 }
 
 /**
- * 도구 설명을 지금 화면 말에 맞춘다.
+ * 도구 설명을 **모델에게 주는 말**에 맞춘다 (i18n 의 지시말).
  *
- * 표에 없는 도구·인자는 한글 설명이 그대로 나간다 — 화면 말과 같은 규칙이다.
+ * 화면 말이 아니라 지시말을 본다. 도구 설명은 사람이 아니라 모델이 읽는
+ * 글이라, '한국어 화면 + 영어 지시' 를 고른 사람에게는 여기도 영어로
+ * 가야 한다 — 그래야 아끼려던 토큰이 실제로 아껴진다.
+ *
+ * 표에 없는 도구·인자는 한글 설명이 그대로 나간다.
  * 빈 설명을 내보내지 않는다. 설명 없는 도구는 모델이 언제 쓰는지 모른 채로
  * 목록에만 서 있게 되는데, 그건 없는 것보다 나쁘다.
  */
 function 영어설명(schema, 이름) {
-  if (언어() !== 'en') return schema;
+  if (지시말() !== 'en') return schema;
   const 것 = 도구설명EN[이름];
   if (!것) return schema;
 
