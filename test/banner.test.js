@@ -17,7 +17,7 @@
  */
 import {
   글꼴, 이름, 높이, 줄수, 틀, 틀수, 마지막틀, 이름줄들, 선줄,
-  이름폭, 글자폭, 쓸배율, 경계글, 잰너비,
+  이름폭, 쓸배율, 경계글, 잰너비,
 } from '../src/ui/banner.js';
 import { 보이기 } from '../src/ui/intro.js';
 import { width } from '../src/ui/ansi.js';

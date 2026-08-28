@@ -13,6 +13,7 @@
 //     **평범한 요청**이 안 보내지고 닫는 백틱까지 뜯겼다.
 //
 // 그래서 여기서 재는 것은 "그려지는 모습" 이 아니라 **보내지는 값**이다.
+import { readFileSync } from 'node:fs';
 import readline from 'node:readline';
 import { PassThrough } from 'node:stream';
 import { 이어쓰기표시 } from '../src/repl.js';
@@ -20,6 +21,7 @@ import { trace } from './trace.mjs';
 
 const pass = [];
 const fail = [];
+const 적어둘것 = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
 
 /**
@@ -89,15 +91,53 @@ trace('1-Alt+Enter가-순서를-지키나');
 trace('2-예전방식이-왜-안되는지');
 {
   /*
-   * 이 블록은 "고친 방식이 맞다" 가 아니라 **"예전 방식은 틀렸다"** 를 잰다.
-   * 누가 다시 rl.line 에 \n 을 넣으면 여기서 걸린다. 이 검사가 실패하면
-   * (즉 예전 방식이 멀쩡해지면) Node 가 바뀐 것이니 그때 다시 판단하면 된다.
+   * ── 이 블록은 Node 를 재는 자리다. 통과·실패로 걸지 않는다 ──────────────
+   *
+   * 처음에는 "예전 방식은 틀렸다" 를 **못 박는** 검사로 뒀다. 그런데 CI 에서
+   * 갈렸다:
+   *
+   *   node 24  →  "안녕\n반가워" 를 보내면 "반가워\r안녕" 이 온다 (뒤집힘)
+   *   node 20·22 →  "안녕\n반가워" 가 그대로 온다 (안 뒤집힘)
+   *
+   * 리눅스·윈도 둘 다 같았으니 OS 가 아니라 **Node 판** 문제다. 여러 줄
+   * history 처리가 24 에서 들어오면서 갈렸다.
+   *
+   * 그러니 이건 우리 코드의 성질이 아니라 **Node 의 성질**이다. Node 의
+   * 성질을 통과 조건으로 걸면, 우리가 아무것도 안 고쳐도 남의 판올림에
+   * 검사가 빨개진다. 그래서 재기만 하고 적어 둔다.
+   *
+   * 그럼 "다시 rl.line 에 \n 을 넣는" 퇴행은 무엇이 막나 — 아래 3번이
+   * 소스를 직접 본다. 그쪽은 Node 판과 무관하다.
    */
   const 망가진것 = 쳐보기(['안녕', ALT, '반가워', '\r'], { 개행을rl에넣기: true });
-  check('rl.line 에 \\n 을 넣으면 값이 뒤집힌다 (그래서 안 쓴다)',
-    망가진것 !== '안녕\n반가워', JSON.stringify(망가진것));
-  check('뒤집힌 값에는 \\n 이 아예 없다',
-    typeof 망가진것 === 'string' && !망가진것.includes('\n'), JSON.stringify(망가진것));
+  const 뒤집혔나 = 망가진것 !== '안녕\n반가워';
+  적어둘것.push(`이 Node(${process.version})에서 rl.line 에 \\n 을 넣으면: `
+    + (뒤집혔나 ? `뒤집힌다 → ${JSON.stringify(망가진것)}` : '안 뒤집힌다 (판마다 다르다)'));
+  // 어느 쪽이든 안 터지기만 하면 된다. 값이 안 나오면 그건 흉내가 깨진 것이다.
+  check('예전 방식을 흉내 내도 검사가 안 터진다', typeof 망가진것 === 'string',
+    JSON.stringify(망가진것));
+}
+
+trace('2.5-소스가-그-방식으로-안-돌아갔나');
+{
+  /*
+   * ── 퇴행을 막는 진짜 자리 ───────────────────────────────────────────────
+   *
+   * 위가 Node 판을 타므로, 못 박는 일은 여기서 한다. repl.js 의 Alt+Enter
+   * 갈래가 **rl.line 에 개행을 도로 넣는지**를 소스에서 직접 본다. Node 가
+   * 무엇을 하든 이 규칙은 그대로다.
+   *
+   * 왜 규칙이냐면: 어떤 Node 에서는 멀쩡히 돌아서, 넣어 놓고도 한참 모른다.
+   * 그러다 판이 올라가는 날 사용자 화면에서 줄 순서가 뒤집힌다 — 1.5.0 이
+   * 실제로 그렇게 나갔다.
+   */
+  const 소스 = readFileSync(new URL('../src/repl.js', import.meta.url), 'utf8');
+  const 넣는꼴 = /rl\.line\s*=\s*[^;]*\n/;
+  check('repl.js 가 rl.line 에 개행을 안 넣는다', !넣는꼴.test(소스),
+    소스.split('\n').find((l) => 넣는꼴.test(l))?.trim() ?? '');
+
+  // 대신 줄을 따로 쌓아 두는 길이 살아 있어야 한다.
+  check('여러 줄은 따로 쌓아서 보낸다', /줄쌓기\s*\(/.test(소스));
 }
 
 trace('3-백틱-표시');
@@ -128,6 +168,7 @@ const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1
 console.log(`\n여러 줄 보내기  ${D}(그려지는 모습이 아니라 보내지는 값을 잰다)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
+if (적어둘것.length) { console.log(''); for (const l of 적어둘것) console.log(`  ${D}· ${l}${X}`); }
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;

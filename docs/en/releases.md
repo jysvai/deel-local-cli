@@ -363,6 +363,11 @@ There were no tests for it — and on screen, both features looked fine.
 Typing `hello` → Alt+Enter → `there` sent the model `there\rhello`. With three
 lines the order was fully reversed.
 
+> Added later, once it was known: this reversal happens **only on Node 24 and
+> up**. On Node 20 and 22 the text went through intact. Fixing it was still
+> right — deel supports Node 20 and up, and line order must not depend on which
+> runtime you happen to have.
+
 What the box drew was correct the whole time. The corruption happened at the
 moment of sending: readline's history split the newline held inside `rl.line`,
 stacked the pieces backwards, and rejoined them with `\r`.

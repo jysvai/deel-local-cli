@@ -151,6 +151,72 @@ rmSync(빈PC, { recursive: true, force: true });
     걸린것.length ? `${걸린것.join(', ')} — process.exitCode 로 바꾸세요` : '');
 }
 
+
+// --- 안 쓰는 들여오기 -----------------------------------------------------
+//
+// GitHub 의 CodeQL 이 `import { join } from 'node:path'` 하나를 잡아 왔다.
+// 안 터지고 검사도 다 통과하는 종류라, 아무도 안 보면 계속 쌓인다.
+//
+// 밖에서 잡아 주기를 기다릴 일이 아니다. 여기서 훑으면 밀기 전에 걸린다.
+// 정규식으로 낱말 경계를 짜는 대신 **낱말로 쪼개서** 본다 — 이스케이프로
+// 씨름하다 정작 규칙이 틀리는 것보다 이편이 확실하다.
+{
+  /*
+   * 점 **바로** 뒤에 오는 이름은 쓰임이 아니다 — 그건 속성이다.
+   *
+   * 두 번 틀린 자리라 둘 다 적어 둔다.
+   *
+   *  1) 처음엔 점을 아예 안 봤다. 그래서 `node:path` 의 join 을 안 쓰는
+   *     파일인데 `짝없음.join(', ')` 이 있어서 '쓰고 있다' 로 셌다 — 검사가
+   *     아무것도 못 잡았다.
+   *  2) 고치면서 `\.\s*[\w$]+` 로 썼다. `\s*` 가 **줄바꿈까지** 먹는 바람에,
+   *     마침표로 끝난 주석 다음 줄의 식별자가 통째로 지워졌다. 한국어 주석은
+   *     거의 다 마침표로 끝나므로 멀쩡한 호출 셋이 '안 쓴다' 로 걸렸다.
+   *
+   * 둘 다 **일부러 어겨 보고** 나서야 알았다. 검사를 넣었으면 넣은 검사가
+   * 진짜 잡는지도 한 번은 재 봐야 한다.
+   */
+  const 낱말 = (s) => new Set(
+    s.replace(/\.[\w$]+/g, '.').split(/[^\w$가-힣]+/).filter(Boolean));
+  const 들여오기 = /^import\s+(?:([\w$]+)\s*,\s*)?(?:\{([^}]*)\}|\*\s+as\s+([\w$]+)|([\w$]+))\s+from/gm;
+
+  const 훑을것 = [];
+  for (const d of ['src', 'test', 'bin', 'tools']) {
+    const 재귀 = (밑) => {
+      for (const e of readdirSync(join(repo, 밑), { withFileTypes: true })) {
+        const 속 = `${밑}/${e.name}`;
+        if (e.isDirectory()) 재귀(속);
+        else if (/\.m?js$/.test(e.name)) 훑을것.push(속);
+      }
+    };
+    재귀(d);
+  }
+
+  const 놀고있는것 = [];
+  for (const f of 훑을것) {
+    const s = readFileSync(join(repo, f), 'utf8');
+    들여오기.lastIndex = 0;
+    let m;
+    while ((m = 들여오기.exec(s))) {
+      const 이름들 = [];
+      if (m[1]) 이름들.push(m[1]);
+      if (m[2]) {
+        for (const p of m[2].split(',')) {
+          const t = p.trim();
+          if (t) 이름들.push(t.split(/\s+as\s+/).pop().trim());
+        }
+      }
+      if (m[3]) 이름들.push(m[3]);
+      if (m[4]) 이름들.push(m[4]);
+      // 이 import 문 자체는 빼고 본다 — 안 빼면 자기 이름을 자기가 찾는다.
+      const 있는것 = 낱말(s.slice(0, m.index) + s.slice(m.index + m[0].length));
+      for (const n of 이름들) if (n && !있는것.has(n)) 놀고있는것.push(`${f} → ${n}`);
+    }
+  }
+  check('들여와 놓고 안 쓰는 것이 없다', 놀고있는것.length === 0,
+    놀고있는것.slice(0, 5).join(' · '));
+}
+
 // --- 결과 ---------------------------------------------------------------
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log('\n반입 묶음 검사 — 남의 것이 섞이지 않았는가\n');
