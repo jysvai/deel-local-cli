@@ -6,14 +6,12 @@ What changed in each version, and why
 
 ---
 
-## 1.5.4
+## 1.5.5
 
-**The office fills up, and a day passes in it**
+**A plan fills the room — and everyone moves to their own beat**
 
-After 1.5.3 shipped: "is it fixed at one person? even with a plan, only one shows
-up." It wasn't fixed — it was a bug. Now a plan fills the desks, everyone moves
-to their own beat, whoever can't get a desk walks the room, and a day passes
-outside the window.
+"Is it fixed at one person? Even with a plan, only one shows up." It wasn't
+fixed — it was a bug.
 
 #### 1. The office only ever had one person in it
 
@@ -47,7 +45,34 @@ things run at once, which would be a lie. The result was a room with four people
 frozen in front of dead monitors. Being honest had killed the reason this screen
 exists. They're **dim** now: the distinction survives and the room lives.
 
-#### 2. A day now passes in the room
+#### 2. Everyone moves to their own beat
+
+The whole room used to read one clock, so three people typed **in perfect
+unison**. That reads as three cogs, not three people.
+
+Each desk is now offset by its seat number, and people waiting their turn move
+more slowly: at the same tempo you cannot tell who is busy.
+
+And **with three or more, one is always up.** A room where everyone stays
+seated is a reading hall, not an office. The headcount is unchanged; one of
+them is simply away from their desk. Whoever holds the running work always
+stays seated — a person mid-task wandering the room would be a lie.
+
+Rows that actually change between frames: **0.5 in a quiet room, about 4 in a
+full one** (out of 12). One person moving one pixel resends all three rows of
+their seat — that is what the movement costs. It is a number to measure and
+write down rather than hide, so the tests measure it.
+
+---
+
+## 1.5.4
+
+**A day now passes in the room**
+
+The room was too bare. The window had two states, day and night, so 5% of
+context and 50% looked identical, and the walls held nothing at all.
+
+#### 1. The window was either day or night, nothing in between
 
 The window had two states, day and night. So 5% of context and 50% of context
 were **the same bright afternoon** — twelve rows of screen saying nothing.
@@ -72,14 +97,6 @@ Along with it:
 - **Up to two sheets of paper per desk** — it used to be one per desk, so a
   five-seat room capped at five. Editing six files and editing twenty looked
   identical.
-- **Every desk on its own beat** — the whole room used to read one clock, so
-  three people typed **in perfect unison**. That reads as three cogs, not three
-  people. Each desk is now offset by its seat number, and people waiting their
-  turn move more slowly: at the same tempo you cannot tell who is busy.
-- **With three or more, one is always up** — a room where everyone stays seated
-  is a reading hall, not an office. The headcount is unchanged; one of them is
-  simply away from their desk. Whoever holds the running work always stays
-  seated — a person mid-task wandering the room would be a lie.
 - **Drifting clouds and blinking stars** — these two alone are not numbers. They
   only say the room hasn't frozen, so they move very slowly. Anything faster
   pulls your eye away from the seats, the notes and the lamps, which are the
@@ -89,13 +106,11 @@ The rule holds: everything on screen is a real number. Each new thing comes from
 somewhere real, and what isn't known is still left at zero.
 
 Rows that actually change between frames went from an average of 0.4 of 12 to
-**0.5 in a quiet room and about 4 in a full one**. One person moving one pixel
-resends all three rows of their seat — that is what the movement costs. It is a
-number to measure and write down rather than hide, so the tests measure it.
+**about 0.5** — that is what the clouds and stars cost.
 
-#### 3. There are two screens and nothing compared them
+#### 2. There are two screens and nothing compared them
 
-Fixing #1 added one method to the box screen only, and the plan-approval flow
+Fixing the office seats added one method to the box screen only, and the plan-approval flow
 under `--no-tui` **broke outright**. The syntax check passed. The box tests
 passed. Nothing anywhere checked that both screens understand the same calls.
 

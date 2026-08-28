@@ -101,7 +101,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.5.4](docs/ko/releases.md#154) · [1.5.3](docs/ko/releases.md#153) · [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
+| [릴리스 노트](docs/ko/releases.md) | [1.5.5](docs/ko/releases.md#155) · [1.5.4](docs/ko/releases.md#154) · [1.5.3](docs/ko/releases.md#153) · [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
 
 ---
 
@@ -972,7 +972,8 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[1.5.4](docs/ko/releases.md#154)** | 계획만큼 사람이 앉아 저마다 움직이고, 창밖으로 하루가 흐른다 |
+| **[1.5.5](docs/ko/releases.md#155)** | 계획을 세우면 방이 찬다 — 「한 명뿐」은 고정이 아니라 버그였다 |
+| [1.5.4](docs/ko/releases.md#154) | 방에 하루가 흐른다 — 아침·낮·노을·밤 · 벽시계 · 식은 커피 |
 | [1.5.3](docs/ko/releases.md#153) | 맥에서 걸린 세 가지 — 줄바꿈 안내 · 사무실이 안 사라짐 · `/motion` 하나로 |
 | [1.5.2](docs/ko/releases.md#152) | 적대적 리뷰가 남긴 나머지를 전부 정리했다 — 화면이 거짓말하던 자리들 |
 | [1.5.1](docs/ko/releases.md#151) | 1.5.0 이 넣은 것 두 개가 망가진 채 나갔다. 그것을 고친다 |
