@@ -6,6 +6,97 @@ What changed in each version, and why
 
 ---
 
+## 1.5.3
+
+**Three things a Mac user tripped over**
+
+None of these were crashes. All three were "I thought this worked and it
+doesn't." So the fixes aren't new features — they put the path that works in
+front, and write down honestly the path that can't.
+
+#### 1. `Shift+Enter` / `Ctrl+Enter` / `Cmd+Enter` didn't insert a newline on macOS
+
+**They still won't.** This one can't be fixed, so here's why.
+
+What a terminal sends a program is not "which key was pressed" — it's **bytes**.
+And all three of these send **the same bytes as a plain Enter**: a single `\r`.
+There is nothing on the program side to tell them apart. Same on macOS, Windows,
+and Linux.
+
+`Alt+Enter` (`Option+Enter` on a Mac) is the one exception: it arrives with an
+`\x1b` in front, as `\x1b\r`, so it *is* distinguishable. But **macOS terminals
+don't send Option that way by default** — Option is reserved for composing
+characters (´ø∑).
+
+So this release:
+
+- Moves the **``` ` ```(backtick) method to the front of the hint**, because it
+  works everywhere. End a line with a space + `` ` `` and press Enter to
+  continue on the next line. No terminal settings involved.
+- Documents the **"send Option as Meta" setting** per terminal in
+  `docs/en/interface.md` — Terminal.app, iTerm2, VS Code. Warp, Ghostty and
+  WezTerm usually work already.
+
+#### 2. The office disappeared while an answer streamed in
+
+As soon as a plan appeared or the model started talking, the office below went
+away and did not come back until the answer finished.
+
+Every appended chunk erased the box and **never redrew it**. An answer that
+streamed for 30 seconds meant 30 seconds with no office.
+
+Now the box is redrawn whenever a line completes. The people below keep moving
+for the whole answer.
+
+The limit, stated plainly: while **one very long line** streams character by
+character, the office is still briefly gone until that line ends. Removing that
+entirely would require claiming the terminal's scroll region (DECSTBM), which
+would stop scrolled-off conversation from reaching scrollback. deel keeps its
+promise that "the conversation just flows into the terminal" instead.
+
+#### 3. There was no obvious way to turn on the knight or animal themes
+
+It was two environment variables (`DEEL_MOTION`, `DEEL_OFFICE`). You had to
+remember both names, and changing one meant restarting the terminal. If turning
+on something that exists for fun costs that much, nobody turns it on.
+
+They're now one command:
+
+```
+/motion            what's on now + what you can pick
+/motion knight     ⚔ knight and dragon
+/motion animal     🐢 tortoise and hare
+/motion office     people at work in an office (wide terminals only)
+/motion off        nothing animates
+/motion plain      dot spinner
+```
+
+Picking one **takes effect immediately** — no restart — and the choice is saved,
+so it's still there next time.
+
+The environment variables still work. They're for looking at something different
+just once, and **the environment wins over the setting**. If one is set,
+`/motion` says so. And `/motion` never **deletes** a `DEEL_NO_MOTION` you set
+yourself — animation running where you believe you turned it off is the worst
+possible outcome.
+
+The office won't turn on in a small terminal (under 28 rows or under 60
+columns). `/motion office` there tells you your current size and the size it
+needs.
+
+#### 4. Along the way — Korean particles now follow the value
+
+Building `/motion` produced "기사 **으로** 바꿨습니다" — a Korean postposition
+hard-coded into a sentence whose inserted value changes. Nothing crashes, no
+test catches it, it is only wrong on screen, so it survives a long time.
+
+Screen text now picks the postposition from the value's final consonant. `/lang`
+and the status-bar hint had the same bug and are fixed too. Lists also align by
+**display columns** rather than character count — a Korean character is two
+columns wide, so the 사무실 row alone used to sit two columns off.
+
+---
+
 ## 1.5.2
 
 **Everything else the adversarial reviews turned up**

@@ -469,8 +469,24 @@ const 이름표 = {
   기사: '기사', knight: '기사', 동물: '동물', animal: '동물', animals: '동물',
   기본: '기본', default: '기본', plain: '기본',
 };
+/*
+ * 설정 파일에서 고른 그림. `/motion` 이 여기에 넣는다.
+ *
+ * **파일을 여기서 읽으면 안 된다.** 이 함수는 90ms 마다 불린다 — 판마다
+ * config.json 을 여는 셈이 된다. 그래서 켤 때 한 번 읽어서 이 값에 넣어 두고,
+ * 명령으로 바꿀 때 같이 갈아 끼운다.
+ *
+ * 환경변수가 이긴다. 한 번 띄우는 동안만 다르게 보고 싶을 때
+ * `DEEL_MOTION=기사 deel` 로 덮어쓸 수 있어야 하고, 검사도 그 길로 잰다.
+ */
+let 고른그림 = null;
+export function 그림고르기설정(값) {
+  고른그림 = 이름표[String(값 ?? '').trim().toLowerCase()] ?? 이름표[String(값 ?? '').trim()] ?? null;
+}
+
 export const 테마이름 = () => 이름표[String(process.env.DEEL_MOTION ?? '').trim().toLowerCase()]
   ?? 이름표[String(process.env.DEEL_MOTION ?? '').trim()]
+  ?? 고른그림
   ?? '기본';
 export const 테마 = () => 테마들[테마이름()] ?? 테마들.기본;
 
@@ -481,7 +497,10 @@ export const 테마 = () => 테마들[테마이름()] ?? 테마들.기본;
  * 자리가 있다. 그럴 때 DEEL_NO_MOTION=1 이면 예전처럼 한 칸짜리 돌림표만 돈다.
  * 아예 못 끄게 해 두면 그런 사람은 도구를 못 쓴다.
  */
-export const 끔 = () => !!process.env.DEEL_NO_MOTION;
+let 설정으로껐나 = false;
+/** `/motion 끔` 이 여기에 넣는다. 환경변수는 따로 살아 있고, 둘 중 하나면 꺼진다. */
+export function 끔설정(값) { 설정으로껐나 = !!값; }
+export const 끔 = () => !!process.env.DEEL_NO_MOTION || 설정으로껐나;
 
 // 못 끄는 자리에서 쓸 한 칸짜리. working.js 의 돌림틀과 같은 것이다.
 const 한칸 = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];

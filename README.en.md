@@ -100,7 +100,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
-| [Release notes](docs/en/releases.md) | [1.5.2](docs/en/releases.md#152) · [1.5.1](docs/en/releases.md#151) · [1.5.0](docs/en/releases.md#150) · [1.4.3](docs/en/releases.md#143) · [1.4.2](docs/en/releases.md#142) · [1.4.1](docs/en/releases.md#141) · [1.4.0](docs/en/releases.md#140) · [1.3.0](docs/en/releases.md#130) · [1.2.0](docs/en/releases.md#120) |
+| [Release notes](docs/en/releases.md) | [1.5.3](docs/en/releases.md#153) · [1.5.2](docs/en/releases.md#152) · [1.5.1](docs/en/releases.md#151) · [1.5.0](docs/en/releases.md#150) · [1.4.3](docs/en/releases.md#143) · [1.4.2](docs/en/releases.md#142) · [1.4.1](docs/en/releases.md#141) · [1.4.0](docs/en/releases.md#140) · [1.3.0](docs/en/releases.md#130) · [1.2.0](docs/en/releases.md#120) |
 
 ---
 
@@ -388,6 +388,7 @@ Names follow Claude Code / Codex conventions.
 | `/auto` | Hand the wheel back — it picks the mode from what you type |
 | `/code` `/plan` `/architect` `/debug` `/ask` `/orchestrator` | Switch work mode directly (pins it) |
 | `/level [level]` | How much to show (`쉬움` simple · `개발자` developer) |
+| `/motion [plain\|knight\|animal\|office\|off]` | What animates while it works — takes effect at once, and is saved |
 | `/undo [turns]` | Revert file changes |
 | `/diff [file]` | Files changed this session, and the changed lines |
 | `/preview [folder\|file\|off]` | Serve what you built, right here — a browser opens with it |
@@ -928,7 +929,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (1,832 checks)
+npm test          Full suite (3,667 checks)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -980,7 +981,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[1.5.2](docs/en/releases.md#152)** | Everything else the adversarial reviews turned up — where the screen was lying |
+| **[1.5.3](docs/en/releases.md#153)** | Three things a Mac user tripped over — newline hint, office stays put, one `/motion` |
+| [1.5.2](docs/en/releases.md#152) | Everything else the adversarial reviews turned up — where the screen was lying |
 | [1.5.1](docs/en/releases.md#151) | Two of the things 1.5.0 added shipped broken. This fixes them |
 | [1.5.0](docs/en/releases.md#150) | Line breaks exist now, the screen got fun, and it came out lighter than before |
 | [1.4.3](docs/en/releases.md#143) | The README explains what's different, and the review report gets its missing line |

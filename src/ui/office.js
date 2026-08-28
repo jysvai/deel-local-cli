@@ -350,9 +350,22 @@ export const 최소폭 = 60;
  * 정해야지 화면 높이로 정하면 안 된다. 창을 줄였다 늘였다 할 때마다 상자 안
  * 그림이 기사였다 돌림표였다 하면 무슨 규칙인지 아무도 모른다.
  */
+/*
+ * 설정 파일에서 켜 뒀나. `/motion 사무실` 이 여기에 넣는다.
+ *
+ * motion.js 와 같은 이유로 파일을 여기서 안 읽는다 — 판마다 불리는 자리다.
+ * 환경변수가 이긴다(한 번만 다르게 보고 싶을 때, 그리고 검사가 쓰는 길).
+ */
+let 설정으로켰나 = false;
+export function 사무실설정(켬) { 설정으로켰나 = !!켬; }
+
 export function 켜달라했나() {
-  const v = String(process.env.DEEL_OFFICE ?? '').trim().toLowerCase();
-  return v === '1' || v === 'on' || v === '켬' || v === '사무실';
+  const raw = process.env.DEEL_OFFICE;
+  if (raw !== undefined) {
+    const v = String(raw).trim().toLowerCase();
+    return v === '1' || v === 'on' || v === '켬' || v === '사무실';
+  }
+  return 설정으로켰나;
 }
 
 export function 켜나(rows = process.stdout.rows, cols = process.stdout.columns) {

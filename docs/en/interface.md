@@ -170,6 +170,50 @@ editor is how you break IME input first.
 
 ---
 
+### Sending several lines as one message
+
+**End a line with a space and a `` ` ``, then Enter** to keep going. The first
+line that ends without one sends everything as a single message.
+
+```
+❯ take a look at these three `
+   src/a.js `
+   src/b.js
+```
+
+**This works in every terminal.** `Ctrl+C` throws away a continuation in progress.
+
+The space in front is required so that an ordinary request ending in inline code
+— `` read `config.json` `` — is not mistaken for a continuation. Those lines
+getting swallowed was a defect in 1.5.0.
+
+#### Why `Shift+Enter` does not work
+
+**The terminal does not send that combination as anything distinct.**
+`Shift+Enter`, `Ctrl+Enter` and `Command+Enter` arrive as the exact same byte as
+plain Enter (`\r`) in most terminals, so there is nothing for a program to tell
+apart — it is not that it wasn't built, it is that it never arrives.
+
+`Alt+Enter` (`Option+Enter` on a Mac) is the exception: it comes through with an
+ESC in front, which can be detected, and that is the one deel accepts.
+
+#### When `Option+Enter` does nothing on a Mac
+
+macOS terminals **do not send Option as Meta by default**, which is why every
+combination appears to do nothing. Turning it on once is enough.
+
+| Terminal | Where |
+|---|---|
+| **Terminal.app** | Settings → Profiles → Keyboard → check **`Use Option as Meta key`** |
+| **iTerm2** | Settings → Profiles → Keys → Left Option key → **`Esc+`** |
+| **VS Code terminal** | set `terminal.integrated.macOptionIsMeta` to `true` |
+| **Warp · Ghostty · WezTerm** | usually send it already |
+
+If you would rather not change anything, use the backtick above — it needs no
+setup and works everywhere.
+
+---
+
 ### You don't have to type the whole command
 
 There are over thirty commands. The only person who has them memorised is the one who
@@ -277,16 +321,31 @@ and you get the old single-cell spinner.
 
 #### Changing the drawing
 
-`DEEL_MOTION` picks a theme. The default is the set above.
+**Pick one with `/motion`.** It takes effect at once, and the choice is saved, so
+it is still there next time. Typing just `/motion` shows what is on now.
+
+```
+/motion knight   ⚔ knight and dragon
+/motion animal   🐢 tortoise and hare
+/motion office   people at work in a room (below)
+/motion off      nothing animates
+/motion plain    back to the default drawings
+```
 
 | Value | What you get |
 |---|---|
-| (unset) | blobs, bars, scan lines — they tell you what is happening |
+| `plain` | blobs, bars, scan lines — they tell you what is happening |
 | `knight` (or `기사`) | **A medieval knight.** Swings a sword while writing code, advances behind a shield while reading |
 | `animal` (or `동물`) | **Pixel animals.** They walk, hop, and stretch |
+| `office` | A twelve-row room above the input box |
+| `off` | Just the one-cell spinner |
+
+The environment variables still work, for looking at something different just
+once. **The environment wins over the setting** — `/motion` says so when one is set.
 
 ```bash
 DEEL_MOTION=knight deel
+DEEL_OFFICE=1 deel
 ```
 
 The knight and animals use a 12×4 grid (six braille cells) — a figure or a creature drawn
@@ -303,8 +362,8 @@ An unrecognized name falls back to the default without complaint.
 
 ### The office — what is running, drawn as a room
 
-```bash
-DEEL_OFFICE=1 deel
+```
+/motion office
 ```
 
 A twelve-row room pins itself **above** the input box. When work starts it comes alive
@@ -350,12 +409,10 @@ does an office worker at a keyboard. Stacked one above the other they just say i
 
 No — and building it made the box **lighter than it was before.**
 
-A whole frame is over 9KB, but only **one of the twelve rows** actually changes between
-frames (walls, windows, cabinets and empty desks do not). So the box now sends only the
+A whole frame is over 9KB, but very few of its rows actually change between frames
+(walls, windows, cabinets and empty desks do not). So the box now sends only the
 rows that changed, which speeds things up even if you never turn the office on.
 
-| | Sent to the terminal |
-|---|---|
 How much lighter depends on **how many rows actually change between frames.**
 Across the office's twelve rows that number averages **0.4** — walls, windows,
 the filing cabinet and empty desks do not change; only the rows with people in

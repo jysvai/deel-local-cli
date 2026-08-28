@@ -9,7 +9,7 @@ import { 보이기 as 인트로, 기본곁말 } from './ui/intro.js';
 import { 언어잡기 } from './i18n/index.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
-import { handle, COMMANDS, 미리보기끄기 } from './commands.js';
+import { handle, COMMANDS, 미리보기끄기, 적용하기 as 그림적용 } from './commands.js';
 import { next as nextWork, get as getWork, canWrite, 보일이름, 보일한줄 } from './agent/modes.js';
 import { route } from './agent/route.js';
 import { run } from './agent/loop.js';
@@ -195,6 +195,10 @@ export async function chatLoop(opts = {}) {
    * 전부 'deel' 이면 어느 탭이 끝난 건지 알 수가 없다. (ui/notify.js)
    */
   const 알림 = { 켬: cfg.bell !== false, 폴더: basename(root) };
+
+  // 지난번에 /motion 으로 골라 둔 그림을 되살린다. 화면을 세우기 **전에**
+  // 해야 첫 판부터 맞다 — 뒤에 하면 켜자마자 한 번은 기본 그림이 스친다.
+  그림적용(cfg.motion);
 
   /*
    * 화면 말을 여기서 한 번 정한다.

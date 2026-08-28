@@ -50,6 +50,7 @@ const FILES = [
   'motion.test.js',
   'office.test.js',
   'newline.test.js',
+  'motioncmd.test.js',
   'preview.test.js',
   'setup.test.js',
   'guard.test.js',

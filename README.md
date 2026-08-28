@@ -101,7 +101,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
+| [릴리스 노트](docs/ko/releases.md) | [1.5.3](docs/ko/releases.md#153) · [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
 
 ---
 
@@ -366,6 +366,7 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 | `/auto` | 다시 맡기기 — 말을 보고 알맞은 모드로 저절로 옮겨 갑니다 |
 | `/code` `/plan` `/architect` `/debug` `/ask` `/orchestrator` | 작업 모드 바로 바꾸기 (그때부터 고정) |
 | `/level [수준]` | 화면에 무엇을 내놓을지 (`쉬움` · `개발자`) |
+| `/motion [기본\|기사\|동물\|사무실\|끔]` | 일하는 동안 뭐가 도나 — 그 자리에서 바뀌고 설정에 남습니다 |
 | `/undo [턴수]` | 파일 변경 되돌리기 |
 | `/diff [파일]` | 이번 대화에서 바뀐 파일 · 바뀐 자리 보기 |
 | `/preview [폴더\|파일\|off]` | 만든 웹을 이 자리에서 띄워 보기 — 브라우저가 같이 열립니다 |
@@ -906,7 +907,7 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (1,832항목)
+npm test          전체 검증 (3,667항목)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -971,7 +972,8 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[1.5.2](docs/ko/releases.md#152)** | 적대적 리뷰가 남긴 나머지를 전부 정리했다 — 화면이 거짓말하던 자리들 |
+| **[1.5.3](docs/ko/releases.md#153)** | 맥에서 걸린 세 가지 — 줄바꿈 안내 · 사무실이 안 사라짐 · `/motion` 하나로 |
+| [1.5.2](docs/ko/releases.md#152) | 적대적 리뷰가 남긴 나머지를 전부 정리했다 — 화면이 거짓말하던 자리들 |
 | [1.5.1](docs/ko/releases.md#151) | 1.5.0 이 넣은 것 두 개가 망가진 채 나갔다. 그것을 고친다 |
 | [1.5.0](docs/ko/releases.md#150) | 줄바꿈이 생겼고, 화면이 재미있어졌고, 그러면서 오히려 가벼워졌다 |
 | [1.4.3](docs/ko/releases.md#143) | README 가 왜 다른지 말하고, 심사서의 빠진 한 줄을 채운다 |

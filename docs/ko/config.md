@@ -34,8 +34,8 @@
 | `DEEL_DEBUG=1` | 자세한 오류 |
 | `NO_COLOR` | 색 끄기 |
 | `DEEL_NO_MOTION=1` | 일하는 중 그림 끄기 (한 칸짜리 돌림표로) |
-| `DEEL_MOTION` | 그 그림 바꾸기 — `기사`(knight) · `동물`(animal). [보기](interface.md#그림을-바꾸고-싶다면) |
-| `DEEL_OFFICE=1` | 입력 상자 위에 사무실 12줄. 지금 무슨 일이 도는지를 방으로. [보기](interface.md#사무실--지금-무슨-일이-도는지를-방-하나로) |
+| `DEEL_MOTION` | 그 그림 바꾸기 — `기사`(knight) · `동물`(animal). 이 한 번만 다르게 볼 때 씁니다. 늘 그렇게 두려면 `/motion` 이 낫습니다. [보기](interface.md#그림을-바꾸고-싶다면) |
+| `DEEL_OFFICE=1` | 입력 상자 위에 사무실 12줄. 지금 무슨 일이 도는지를 방으로 (`/motion 사무실` 과 같음). [보기](interface.md#사무실--지금-무슨-일이-도는지를-방-하나로) |
 
 ### 실행 옵션
 

@@ -19,6 +19,27 @@ import { 보고서적기 } from './ui/export.js';
 import { loadCommand, discover } from './skills/discover.js';
 import { install, list, remove, pack } from './plugins/manage.js';
 import { spin } from './ui/spinner.js';
+import { 그림고르기설정, 끔설정 } from './ui/motion.js';
+import { 사무실설정, 최소높이, 최소폭 } from './ui/office.js';
+
+/**
+ * 설정에 적힌 그림을 화면 쪽에 물린다.
+ *
+ * 켤 때(repl·oneshot)와 `/motion` 으로 바꿀 때가 **같은 길을 타야** 한다.
+ * 갈라 두면 명령으로 바꾼 것이 다음에 켤 때 안 살아나거나 그 반대가 된다.
+ *
+ * 사무실은 그림 하나가 아니라 화면 아래를 통째로 쓰는 것이라 따로 켠다.
+ * '사무실' 을 골랐으면 상자 안 그림은 조용한 돌림표로 돌아간다 — 둘 다
+ * 같은 것을 말하므로 나란히 두면 같은 소리를 두 번 하는 셈이다.
+ */
+export function 적용하기(고른것) {
+  const 값 = String(고른것 ?? '기본');
+  사무실설정(값 === '사무실');
+  그림고르기설정(값 === '사무실' ? '기본' : 값);
+  // 환경변수(DEEL_NO_MOTION)는 안 건드린다 — 사람이 직접 넣어 둔 것을 명령이
+  // 지워 버리면, 껐다고 믿는 자리에서 그림이 다시 돈다. 설정용 값은 따로 둔다.
+  끔설정(값 === '끔');
+}
 import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable } from './agent/effort.js';
 import { scanLocal, toProfiles } from './backend/scan.js';
 import { list as listSessions } from './agent/store.js';
@@ -89,6 +110,7 @@ const 명령들 = {
   memory: { arg: true },
   level: { arg: true },
   bell: { arg: true },
+  motion: { arg: true },
   consult: { arg: true },
   lang: { arg: true },
   lsp: { arg: true },
@@ -431,6 +453,83 @@ export async function handle(line, session, ctx) {
       say('');
       return { handled: true };
     }
+    /*
+     * 일하는 동안 뭐가 도나.
+     *
+     * 예전에는 DEEL_MOTION 과 DEEL_OFFICE 두 환경변수였다. 켜 보려면 터미널을
+     * 껐다 켜야 했고, 이름도 둘을 따로 외워야 했다 — 재미로 넣은 것을 켜는 데
+     * 그만한 품이 들면 아무도 안 켠다. 명령 하나로 합치고 그 자리에서 바뀐다.
+     */
+    case 'motion': {
+      const cfg = load();
+      const 고를것 = [
+        { 값: '기본',   별명: ['기본', 'default', 'plain', '돌림표'], 설명: 말('motion.plain') },
+        { 값: '기사',   별명: ['기사', 'knight'],                     설명: 말('motion.knight') },
+        { 값: '동물',   별명: ['동물', 'animal', 'animals'],          설명: 말('motion.animal') },
+        { 값: '사무실', 별명: ['사무실', 'office'],                   설명: 말('motion.office') },
+        { 값: '끔',     별명: ['끔', 'off', '꺼', '끄기', 'none'],    설명: 말('motion.off') },
+      ];
+      const 지금값 = cfg.motion ?? '기본';
+      const 값 = String(arg ?? '').trim().toLowerCase();
+
+      if (!값) {
+        say('');
+        say(`  ${c.gray(말('motion.now'))} ${c.hcyan(지금값)}`);
+        say('');
+        for (const 것 of 고를것) {
+          const 표 = 것.값 === 지금값 ? c.hgreen('●') : c.gray('○');
+          // padEnd 가 아니라 pad — 한글은 한 글자가 두 칸이라
+          // 글자 수로 채우면 '사무실' 줄만 두 칸 밀린다.
+          say(`  ${표} ${c.cyan(pad(`/motion ${것.값}`, 18))} ${c.gray(것.설명)}`);
+        }
+        say('');
+        // 사무실은 화면이 좁거나 낮으면 안 뜬다. 켜 놓고 안 보이면 고장으로
+        // 보이므로, 지금 이 터미널이 되는지를 여기서 미리 말해 준다.
+        const 줄 = process.stdout.rows ?? 0;
+        const 칸 = process.stdout.columns ?? 0;
+        if (줄 && 칸 && (줄 < 최소높이 || 칸 < 최소폭)) {
+          say(`  ${c.yellow(mark.warn)} ${c.gray(말('motion.tooSmall', { 줄, 칸, 최소줄: 최소높이, 최소칸: 최소폭 }))}`);
+          say('');
+        }
+        if (process.env.DEEL_MOTION || process.env.DEEL_OFFICE) {
+          say(`  ${c.gray(말('motion.envWins'))}`);
+          say('');
+        }
+        return { handled: true };
+      }
+
+      const 고른것 = 고를것.find((것) => 것.별명.includes(값));
+      if (!고른것) {
+        say('');
+        say(`  ${c.gray(말('motion.unknown', { 값: arg }))}`);
+        say(`  ${c.gray(말('motion.pickOne'))} ${고를것.map((것) => c.cyan(것.값)).join(c.gray(' · '))}`);
+        say('');
+        return { handled: true };
+      }
+
+      cfg.motion = 고른것.값;
+      try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+      적용하기(cfg.motion);
+
+      say('');
+      say(`  ${mark.ok} ${말('motion.set', { 것: 고른것.값 })} ${c.gray('— ' + 고른것.설명)}`);
+      // 사무실을 골랐는데 이 터미널이 작으면 아무 일도 안 일어난 것처럼 보인다.
+      // 켰다고 말해 놓고 안 보이면 그게 고장이다. 그래서 그 자리에서 말한다.
+      if (고른것.값 === '사무실') {
+        const 줄 = process.stdout.rows ?? 0;
+        const 칸 = process.stdout.columns ?? 0;
+        if (줄 && 칸 && (줄 < 최소높이 || 칸 < 최소폭)) {
+          say(`     ${c.yellow(mark.warn)} ${c.gray(말('motion.tooSmall', { 줄, 칸, 최소줄: 최소높이, 최소칸: 최소폭 }))}`);
+        }
+      }
+      if (process.env.DEEL_MOTION || process.env.DEEL_OFFICE) {
+        say(`     ${c.yellow(mark.warn)} ${c.gray(말('motion.envWins'))}`);
+      }
+      say(`     ${c.gray(말('motion.appliesNow'))}`);
+      say('');
+      return { handled: true };
+    }
+
     case 'exit':
     case 'quit': return { handled: true, exit: true };
 
