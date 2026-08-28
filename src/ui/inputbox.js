@@ -355,6 +355,16 @@ export class InputBox {
     this.할일들 = [];
     // 지금 도는 하위 작업 수 (사무실 자리 수). 모르면 0 이다.
     this.도는하위 = 0;
+    /*
+     * 지금 **한꺼번에** 도는 도구 수.
+     *
+     * 하위 작업은 순서대로 돈다(loop.js 가 하위를 `for await` 로 기다린다).
+     * 그래서 하위 수만 보면 자리는 거의 늘 하나다 — 방이 늘 한 명짜리로
+     * 보이던 진짜 이유가 이것이다. 실제로 동시에 도는 것은 읽기 도구 묶음
+     * 쪽이고(loop.js 의 Promise.all), 그 개수는 이미 알고 있었는데 방만
+     * 안 보고 있었다.
+     */
+    this.함께도는 = 0;
   }
 
   /** 할 일이 바뀌었다. 사무실 화이트보드가 이걸 본다. */
@@ -365,6 +375,11 @@ export class InputBox {
   /** 도는 하위 작업 수. 사무실이 자리를 이만큼 채운다. */
   하위갱신(n) {
     this.도는하위 = Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+  }
+
+  /** 한꺼번에 도는 도구 수. 묶음이 끝나면 0 으로 돌아온다. */
+  함께갱신(n) {
+    this.함께도는 = Number.isFinite(n) && n > 1 ? Math.trunc(n) : 0;
   }
 
   /** 대화 글이 줄 중간까지 쓰였다. 줄이 끝날 때까지 상자를 안 세운다. */
@@ -526,7 +541,7 @@ export class InputBox {
       this.그린높이 = 높이;
     }
     const 방 = 사무실켜나(process.stdout.rows, 칸수)
-      ? 사무실줄들(사무실상태(this.session, this.일감, this.틱, this.할일들, this.도는하위), 폭)
+      ? 사무실줄들(사무실상태(this.session, this.일감, this.틱, this.할일들, this.도는하위, this.함께도는), 폭)
       : null;
 
     const 짜기 = (방줄들) => 프레임({

@@ -374,13 +374,15 @@ Nothing is there for decoration.
 
 | In the room | What it is |
 |---|---|
-| Occupied seats | Work running right now (the parent plus each subagent) |
+| Occupied seats | Work running **concurrently** — tools in the current parallel batch plus running subagents |
 | Posture | What that work is — typing (writing), papers (reading), asleep (past 45s) |
+| Mug on a desk | That seat has passed 45s (same number as the doze) |
 | Whiteboard notes | Todos. Green is done, yellow is outstanding |
 | Filing-cabinet drawers | Files read (one drawer per seven) |
 | Server lights | Model calls made |
-| Daylight in the windows | How full the context is |
-| Paper on a desk | Files edited |
+| Morning / day / dusk / night outside | How full the context is (it turns at 25%, 55%, 80%) |
+| Wall-clock hand | How long this turn has taken (one lap per minute) |
+| Paper on a desk | Files edited (up to two sheets per desk) |
 
 What isn't known stays **zero**. It is never filled in with something plausible — invent
 one number and the whole screen stops being worth trusting, and then those twelve rows
@@ -414,13 +416,13 @@ A whole frame is over 9KB, but very few of its rows actually change between fram
 rows that changed, which speeds things up even if you never turn the office on.
 
 How much lighter depends on **how many rows actually change between frames.**
-Across the office's twelve rows that number averages **0.4** — walls, windows,
+Across the office's twelve rows that number averages **about 0.5** — walls, windows,
 the filing cabinet and empty desks do not change; only the rows with people in
 them do. `test/office.test.js` measures it.
 
 | | |
 |---|---|
-| Rows that change per frame | **0.4** out of 12 |
+| Rows that change per frame | **about 0.5** out of 12 |
 | Worst case (everything changes) | **byte-identical** to a full redraw |
 
 No absolute throughput figure is published here. It swings by several times with

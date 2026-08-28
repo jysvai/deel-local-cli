@@ -929,7 +929,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (3,667 checks)
+npm test          Full suite (3,681 checks)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -981,7 +981,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[1.5.3](docs/en/releases.md#153)** | Three things a Mac user tripped over — newline hint, office stays put, one `/motion` |
+| **[1.5.3](docs/en/releases.md#153)** | Three Mac fixes · one `/motion` · the office fills up and a day passes in it |
 | [1.5.2](docs/en/releases.md#152) | Everything else the adversarial reviews turned up — where the screen was lying |
 | [1.5.1](docs/en/releases.md#151) | Two of the things 1.5.0 added shipped broken. This fixes them |
 | [1.5.0](docs/en/releases.md#150) | Line breaks exist now, the screen got fun, and it came out lighter than before |

@@ -630,6 +630,38 @@ trace('9.55-일하는중미리치기');
     String(Math.max(...길게.줄들.map((l) => width(벗기기(l))))));
 }
 
+trace('9.7-두-화면이-같은-말을-알아듣나');
+
+/*
+ * ── 줄 화면에 없는 메서드를 부르면 그 자리에서 끝난다 ───────────────────
+ *
+ * 화면은 둘이다. 상자 화면(BoxScreen)과 `--no-tui` 의 줄 화면(LineScreen).
+ * repl.js 는 어느 쪽인지 모르고 부르므로, 상자에만 있는 메서드가 생기면
+ * 줄 화면에서 **턴이 통째로 죽는다.** 오류 한 줄만 남고 답도 계획도 안 나온다.
+ *
+ * 실제로 그렇게 한 번 나갔다. 사무실 자리 수를 넘기는 함께갱신() 을 상자에만
+ * 달았더니, `--no-tui` 로 도는 계획 승인 흐름이 통째로 끊겼다. 문법 검사도
+ * 통과했고 상자 검사도 통과했다 — 두 화면을 견주는 자리가 없었기 때문이다.
+ */
+{
+  const 메서드들 = (obj) => {
+    const 모음 = new Set();
+    for (let p = obj; p && p !== Object.prototype; p = Object.getPrototypeOf(p)) {
+      for (const k of Object.getOwnPropertyNames(p)) {
+        if (k === 'constructor') continue;
+        if (typeof Object.getOwnPropertyDescriptor(p, k)?.value === 'function') 모음.add(k);
+      }
+    }
+    return 모음;
+  };
+  // 상자는 줄 화면을 물려받으므로, 잴 것은 **상자에만 새로 생긴 것**이다.
+  const 줄것 = 메서드들(LineScreen.prototype);
+  const 상자것 = 메서드들(BoxScreen.prototype);
+  const 상자만 = [...상자것].filter((k) => !줄것.has(k));
+  check('상자에만 있는 메서드가 없다', 상자만.length === 0, 상자만.join(', '));
+}
+
+
 trace('9.6-승인방식차례');
 
 // ── Shift+Tab 이 도는 차례 ──────────────────────────────────────────────
