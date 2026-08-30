@@ -31,7 +31,7 @@
  * 그대로 맞다. 스크롤·복사·`| tee` 도 그대로다.
  */
 import { c, say, cursor, box } from './ansi.js';
-import { statusLine, contextWarning } from './status.js';
+import { statusLine, contextWarning, quotaWarning } from './status.js';
 import { spin } from './spinner.js';
 
 /**
@@ -168,6 +168,9 @@ export class LineScreen {
     say(statusLine(session));
     const w = contextWarning(session);
     if (w) say(` ${w}`);
+    // 서버 할당량이 바닥나 가면 그것도. 컨텍스트와 다른 이야기라 줄을 따로 쓴다.
+    const q = quotaWarning();
+    if (q) say(` ${q}`);
     process.stdout.write(` ${c.hcyan('❯')} `);
   }
 

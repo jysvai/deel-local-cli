@@ -3,6 +3,7 @@
 // 남의 패키지를 붙이지 않는다. 필요한 숫자는 전부 session 이 이미 갖고 있고,
 // 화면 그리기는 ansi.js 만 쓴다. 반입 심사에 새로 설명할 것이 늘지 않게 하려는 뜻이다.
 import { c, 눈금게이지, width, clip, cols, mark } from './ansi.js';
+import { 마지막할당량, 할당량말, 아슬아슬한가 } from '../backend/quota.js';
 import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite, 보일이름 } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
@@ -390,6 +391,20 @@ export function contextWarning(session) {
   if (r > 0.9) return `${mark.warn} 컨텍스트 ${Math.round(r * 100)}% — ${c.cyan('/compact')} 또는 ${c.cyan('/clear')} 를 권합니다.`;
   if (r > 0.8) return `${c.gray('컨텍스트 ' + Math.round(r * 100) + '% — 곧 오래된 대화를 줄입니다.')}`;
   return null;
+}
+
+/*
+ * 서버 할당량이 바닥나 가면 한마디 (backend/quota.js).
+ *
+ * 넉넉할 때는 아무 말도 안 한다. 늘 떠 있는 줄은 사람이 안 읽게 되고,
+ * 안 읽는 줄은 정작 급할 때도 안 읽힌다.
+ *
+ * 여기서 하는 말은 전부 **서버가 말한 숫자**다. 우리가 짐작한 것이 아니다.
+ */
+export function quotaWarning() {
+  const 것 = 마지막할당량();
+  if (!것 || !아슬아슬한가(것)) return null;
+  return `${mark.warn} 서버 할당량 ${할당량말(것)} — 게이트웨이가 알려 준 값입니다.`;
 }
 
 /**

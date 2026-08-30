@@ -35,7 +35,7 @@
  */
 import { c, width, cursor, clip, 판시작, 판끝 } from './ansi.js';
 import { isLocalHost } from '../safety/network.js';
-import { statusLine, contextWarning } from './status.js';
+import { statusLine, contextWarning, quotaWarning } from './status.js';
 import { 접어쓰기 } from './wrap.js';
 import {
   켜나 as 사무실켜나, 사무실줄들, 상태만들기 as 사무실상태,
@@ -569,7 +569,7 @@ export class InputBox {
       커서: 커서자리,
       폭,
       상태: this.session ? statusLine(this.session) : '',
-      경고: this.session ? (contextWarning(this.session) ?? '') : '',
+      경고: this.session ? (contextWarning(this.session) ?? quotaWarning() ?? '') : (quotaWarning() ?? ''),
       곁말: this.곁말,
       일감,
       추천,

@@ -1,5 +1,7 @@
 // 슬래시 명령. 이름은 Claude Code / Codex 관례에 맞춘다.
 import { writeFileSync, existsSync, statSync } from 'node:fs';
+import { 볼것, 리뷰받기 } from './agent/review.js';
+import { 마지막할당량, 할당량말, 아슬아슬한가 } from './backend/quota.js';
 import { join } from 'node:path';
 import { c, say, rule, pad, bar, mark, width, clip } from './ui/ansi.js';
 import { compact } from './agent/compact.js';
@@ -109,6 +111,7 @@ const 명령들 = {
   pin: { arg: true },
   evidence: { arg: true },
   commit: { arg: true },
+  review: { arg: false },
   sessions: { arg: false },
   recall: { arg: true },
   mcp: { arg: false },
@@ -860,6 +863,18 @@ export async function handle(line, session, ctx) {
       // 서버가 잠깐 막아 다시 부른 횟수. 0 이면 안 적는다 — 없는 일을 줄로 남기면 표만 길어진다.
       if (session.usage.retries) say(`  ${c.gray(pad(말('cost.retries'), 14))} ${session.usage.retries}회`);
       say(`  ${c.gray(pad('경과', 14))} ${mins}분`);
+      /*
+       * 서버가 남았다고 말해 준 할당량 (backend/quota.js).
+       *
+       * 안 알려주는 서버가 많다. 그러면 줄 자체를 안 적는다 — 모르는 것을
+       * 0 으로 적으면 멀쩡한데 다 썼다고 믿게 된다.
+       */
+      const 남은것 = 마지막할당량();
+      if (남은것) {
+        const 말줄 = 할당량말(남은것);
+        say(`  ${c.gray(pad('서버 할당량', 14))} ${아슬아슬한가(남은것) ? c.yellow(말줄) : 말줄}`
+          + ` ${c.gray(`(${Math.round((Date.now() - 남은것.때) / 1000)}초 전 응답 기준)`)}`);
+      }
       say('');
       return { handled: true };
     }
@@ -1134,6 +1149,9 @@ export async function handle(line, session, ctx) {
 
     case 'commit':
     case '커밋': return await 커밋명령(session, ctx, arg), { handled: true };
+
+    case 'review':
+    case '리뷰': return await 리뷰명령(session, ctx), { handled: true };
 
     case 'sessions': {
       const rows = listSessions(session.root, { limit: 12 });
@@ -1751,6 +1769,68 @@ function 증거명령(session, ctx, arg = '') {
  *
  * push 는 안 한다. 그건 되돌릴 수 없는 자리라 사람이 직접 할 일이다.
  */
+/*
+ * `/review` — 이번에 바꾼 것을 새 창에서 한 번 더 본다 (agent/review.js).
+ *
+ * 여기서는 **아무것도 안 고친다.** 찾은 것을 늘어놓고 끝이다. 고칠지 말지는
+ * 사람이 정한다. 리뷰가 제 손으로 고치기 시작하면 사람이 무엇을 승인한 것인지
+ * 흐려진다.
+ */
+async function 리뷰명령(session, ctx) {
+  const 것 = 볼것(session, ctx);
+  if (!것.ok) {
+    say('');
+    say(`  ${c.gray(것.왜)}`);
+    say('');
+    return;
+  }
+
+  rule(`리뷰 — ${것.어디}`, 70);
+  say(`  ${c.gray(것.통계.split(/\r?\n/).pop()?.trim() || `${것.파일들.length}개 파일`)}`);
+  say(`  ${c.gray('지금 대화는 안 보냅니다 — 바뀐 코드만 새 창에서 봅니다.')}`);
+  say('');
+
+  const s = spin('보는 중...');
+  const r = await 리뷰받기(session, 것, {
+    signal: ctx.signal ?? null,
+    onBackoff: (다시) => s.set?.(`서버가 잠깐 막아 ${Math.round((다시.wait ?? 0) / 1000)}초 기다리는 중...`),
+  });
+  s.stop('');
+
+  if (!r.ok) {
+    say(`  ${mark.no} ${c.red('못 봤습니다')} ${c.gray(`— ${r.왜}`)}`);
+    say('');
+    return;
+  }
+
+  /*
+   * 가른 것이 없으면 **원문을 그대로** 보여 준다.
+   *
+   * 모델이 형식을 안 지켰다고 아무것도 안 보여 주면, 사람은 리뷰가 아무것도
+   * 못 찾은 줄 안다. 우리가 못 읽은 것이지 모델이 침묵한 것이 아니다.
+   */
+  if (!r.찾은것.length) {
+    for (const 줄 of r.글.split(/\r?\n/)) say(`  ${줄}`);
+    say('');
+    return;
+  }
+
+  const 색 = { 심각: c.red, 보통: c.yellow, 사소: c.gray };
+  for (const f of r.찾은것) {
+    const 칠 = 색[f.급] ?? c.white;
+    say(`  ${칠(f.머리)}`);
+    for (const 줄 of f.몸) if (줄.trim()) say(`    ${c.gray(줄.trim())}`);
+    say('');
+  }
+  const 셈 = ['심각', '보통', '사소'].map((g) => [g, r.찾은것.filter((x) => x.급 === g).length]).filter(([, n]) => n);
+  say(`  ${c.gray(셈.map(([g, n]) => `${g} ${n}`).join(' · '))}`);
+  // 자리를 못 짚은 지적은 몇 개인지 적는다. 찾아갈 수 없는 지적은 값이 다르다.
+  const 자리없음 = r.찾은것.filter((x) => !x.자리).length;
+  if (자리없음) say(`  ${c.gray(`${자리없음}개는 파일:줄 을 안 짚었습니다 — 그만큼 확인하기 어렵습니다.`)}`);
+  say(`  ${c.gray('아무것도 안 고쳤습니다. 고칠 것을 골라 시키세요.')}`);
+  say('');
+}
+
 async function 커밋명령(session, ctx, arg = '') {
   const 말한것 = String(arg ?? '').trim();
   const 전부 = /^(전부|all)$/i.test(말한것);

@@ -35,6 +35,8 @@ const FILES = [
   'azure.test.js',
   'vision.test.js',
   'policy.test.js',
+  'quota.test.js',
+  'review.test.js',
   'task.test.js',
   'outline.test.js',
   'network.test.js',

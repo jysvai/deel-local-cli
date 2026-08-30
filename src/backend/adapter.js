@@ -1,6 +1,7 @@
 // 규격 차이(OpenAI 호환 / Ollama)를 여기 한 곳에서만 흡수한다.
 // 진단(probe)과 에이전트 루프가 같은 함수를 쓴다.
 import { req, headersFor, serverMessage, Aborted } from './http.js';
+import { 할당량기억 } from './quota.js';
 import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
 
 export function endpoint(shape) {
@@ -174,6 +175,9 @@ export async function chat(conn, opts) {
       timeout: opts.timeout ?? 300000,
       signal: opts.signal ?? null,
     });
+    // 서버가 남았다고 말해 준 할당량을 적어 둔다 (backend/quota.js).
+    // 429 를 맞고 나서야 아는 것과, 맞기 전에 아는 것은 사람이 할 일이 다르다.
+    할당량기억(r.headers);
     if (r.ok) return extractMessage(conn.kind, r.json);
     // 잠깐 막힌 것이면 기다렸다 다시 부른다 (backend/retry.js 머리말).
     // 한 번에 받는 길은 제너레이터가 아니라 화면에 말을 못 걸어서, 부르는 쪽이
@@ -246,6 +250,7 @@ export async function* chatStream(conn, opts) {
       stream: true,
       signal: opts.signal ?? null,
     });
+    할당량기억(r.headers ?? r.res?.headers);
     if (r.ok && r.res?.body) break;
     const 거절 = await 거절읽기(r);
     // 잠깐 막힌 것이면 알리고, 기다렸다, 다시 부른다. 머리말도 못 받은 자리라
