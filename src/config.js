@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'n
 import { 프록시정하기 } from './backend/proxy.js';
 import { 셸정하기 } from './tools/shell.js';
 import { 애저정하기 } from './backend/azure.js';
+import { 정책읽기 } from './safety/policy.js';
 import { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식 } from './safety/keystore.js';
 
 // 설정이 놓이는 자리.
@@ -100,6 +101,35 @@ export function load() {
   셸정하기({ config: cfg });
   // Azure 판 번호(api-version)도 같은 자리에서 정한다 (backend/azure.js).
   애저정하기({ config: cfg });
+  // 관리 정책이 걸려 있으면 여기서 덮어쓴다 (safety/policy.js).
+  정책덮기(cfg);
+  return cfg;
+}
+
+/*
+ * 관리 정책이 정한 것을 설정 위에 덮는다.
+ *
+ * 정책은 설정을 **이긴다.** 설정 파일은 쓰는 사람 것이라 지우고 고칠 수 있고,
+ * 그래서 "이번 배포 동안은 이 게이트웨이만" 같은 것을 적어 둘 자리가 아니다.
+ *
+ * 그렇다고 정책이 **풀어 주지는 못한다.** offline 을 켤 수는 있어도 끌 수는
+ * 없고, 금지를 더할 수는 있어도 사용자가 적어 둔 금지를 지우지는 못한다.
+ * 정책 파일 한 줄로 안전장치가 헐거워지는 길을 안 낸다.
+ */
+function 정책덮기(cfg) {
+  const 정책 = 정책읽기().값;
+  if (!정책 || typeof 정책 !== 'object') return cfg;
+
+  if (typeof 정책.baseUrl === 'string' && 정책.baseUrl.trim()) {
+    for (const 프로필 of cfg.profiles ?? []) 프로필.baseUrl = 정책.baseUrl.trim();
+    cfg.정책주소 = 정책.baseUrl.trim();
+  }
+  if (정책.offline === true) cfg.offline = true;      // 끄지는 못한다 — 켜기만
+  if (Array.isArray(정책.permissions?.deny)) {
+    cfg.permissions = cfg.permissions ?? {};
+    const 있던것 = Array.isArray(cfg.permissions.deny) ? cfg.permissions.deny : [];
+    cfg.permissions.deny = [...new Set([...있던것, ...정책.permissions.deny])];
+  }
   return cfg;
 }
 

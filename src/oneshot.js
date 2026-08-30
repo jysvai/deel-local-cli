@@ -11,6 +11,7 @@
 //   그래서 '묻는 자리' 를 전부 없앤 길을 따로 낸다. 에이전트 루프는 그대로 쓴다 —
 //   여기서 루프를 다시 짜면 두 벌이 되고, 언젠가 한쪽만 고쳐진다.
 import { c, mark, clip } from './ui/ansi.js';
+import { 규칙모으기 } from './safety/policy.js';
 import { run } from './agent/loop.js';
 import { Session } from './agent/session.js';
 import { makeScope } from './safety/guard.js';
@@ -162,7 +163,8 @@ export async function runOnce(opts = {}) {
   // 자물쇠는 대화 화면과 똑같이 건다. 비대화라고 느슨해질 이유가 없다 —
   // 오히려 배치는 아무도 안 보는 자리라 더 단단해야 한다.
   allowEndpoint(conn.base);
-  if (opts.offline ?? prof.offline) setOffline(true);
+  // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
+  if (opts.offline ?? prof.offline ?? cfg?.offline) setOffline(true);
 
   const session = new Session(conn, {
     root,
@@ -195,6 +197,8 @@ export async function runOnce(opts = {}) {
     get 모델컨텍스트() { return conn.ctx ?? null; },
     // 이 모델이 그림을 볼 수 있나 — Read 가 그림을 만났을 때 무슨 말을 할지가 여기서 갈린다.
     get 눈있나() { return !!conn.vision; },
+    // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
+    규칙들: 규칙모으기(cfg),
     history: new History(root),
     audit: new Audit(root),
     seen: new Set(),

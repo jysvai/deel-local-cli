@@ -1,5 +1,6 @@
 // 대화 화면. 루프가 보내는 이벤트를 Claude Code 풍으로 그린다.
 import { createInterface, emitKeypressEvents } from 'node:readline';
+import { 규칙모으기 } from './safety/policy.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { homedir } from 'node:os';
 import { resolve, basename } from 'node:path';
@@ -195,7 +196,8 @@ export async function chatLoop(opts = {}) {
 
   // 이 자리 하나만 연다. 다른 어디로도 나가지 못한다.
   allowEndpoint(conn.base);
-  if (opts.offline ?? prof.offline) setOffline(true);
+  // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
+  if (opts.offline ?? prof.offline ?? cfg?.offline) setOffline(true);
 
   /*
    * ── 끝났을 때 알리기 ─────────────────────────────────────────────────
@@ -801,6 +803,8 @@ export async function chatLoop(opts = {}) {
     get 모델컨텍스트() { return conn.ctx ?? null; },
     // 이 모델이 그림을 볼 수 있나 — Read 가 그림을 만났을 때 무슨 말을 할지가 여기서 갈린다.
     get 눈있나() { return !!conn.vision; },
+    // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
+    규칙들: 규칙모으기(cfg),
     history: new History(root),
     audit: new Audit(root),
     seen: new Set(),

@@ -34,6 +34,7 @@ const FILES = [
   'keystore.test.js',
   'azure.test.js',
   'vision.test.js',
+  'policy.test.js',
   'task.test.js',
   'outline.test.js',
   'network.test.js',

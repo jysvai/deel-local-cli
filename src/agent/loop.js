@@ -2,6 +2,7 @@
 // 화면에 그릴 것은 이벤트로 흘려보낸다 — 화면 코드와 섞지 않는다.
 import { chat, chatStream, assistantMessage, toolMessage } from '../backend/adapter.js';
 import { 그림메시지 } from '../backend/vision.js';
+import { 어떻게할까 } from '../safety/policy.js';
 import { toolSchemas, runTool, TOOLS, 파일현황 } from '../tools/index.js';
 import { isMutating } from '../safety/guard.js';
 import { effortFor, tokensFor, fullCap, wasCut, shiftLevel } from './effort.js';
@@ -704,8 +705,33 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           attempted.add(key);
         }
 
+        /*
+         * 적어 둔 규칙이 모드보다 먼저다 (safety/policy.js).
+         *
+         *   금지  — 물어보지도 않는다. 물어보는 것은 막는 것이 아니다.
+         *           `npm test` 에 스무 번 y 를 친 손은 스물한 번째도 친다.
+         *   허락  — 모드가 뭐든 안 묻는다.
+         *   없으면 예전 그대로 모드가 정한다.
+         *
+         * 막았으면 **어디에 적힌 규칙인지까지** 말한다. 그 말이 없으면 사람은
+         * 제 설정을 고칠 수도, 관리자에게 무엇을 풀어 달라고 할 수도 없다.
+         */
+        const 판정 = 어떻게할까(ctx.규칙들, call.name, call.args);
+        if (판정.답 === 'deny') {
+          ctx.audit?.blocked?.('규칙으로 금지됨', `${판정.출처}: ${판정.규칙}`);
+          거절(call, `${판정.출처}에 적힌 규칙 ${판정.규칙} 으로 막혀 있습니다.`
+            + ' 이 방법은 쓸 수 없습니다 — 다른 길을 찾거나, 왜 필요한지 사용자에게 말하세요.'
+            + ' 같은 것을 다시 부르지 마세요.');
+          if (막힘셈(call, '규칙 금지')) 멈출까 = '규칙으로 막힌 것을 계속 다시 부르고 있습니다';
+          yield {
+            type: 'tool', name: call.name, args: call.args, showLabel: true,
+            result: { error: `막힘 — ${판정.출처}의 ${판정.규칙}` },
+          };
+          continue;
+        }
+
         // 모드에 따라 물어본다. 기본(auto)은 안 묻고 되돌리기로 대응한다.
-        const needsOk = session.mode === 'strict'
+        const needsOk = 판정.답 === 'allow' ? false : session.mode === 'strict'
           ? ['Write', 'Edit', 'Bash'].includes(call.name)
           : session.mode === 'confirm'
             ? (call.name === 'Bash' && isMutating(call.args?.command))

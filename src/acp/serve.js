@@ -28,12 +28,13 @@
 // 하나하나 찾아 막는 방법도 있지만, 그건 앞으로 새로 쓰는 코드까지 계속
 // 조심해야 한다는 뜻이다 — 언젠가 반드시 한 군데를 빠뜨린다.
 import { VERSION } from '../version.js';
+import { 규칙모으기, 늘허락 } from '../safety/policy.js';
 import { run } from '../agent/loop.js';
 import { Session } from '../agent/session.js';
 import { makeScope } from '../safety/guard.js';
 import { History } from '../safety/undo.js';
 import { Audit } from '../safety/audit.js';
-import { activeProfile, load, resolveKey, homeDir } from '../config.js';
+import { activeProfile, load, resolveKey, homeDir, save as saveCfg } from '../config.js';
 import { 말 as 옮긴말 } from '../i18n/index.js';
 import { 알림채움 } from '../backend/retry.js';
 import { discover } from '../skills/discover.js';
@@ -117,7 +118,8 @@ export async function acp(opts = {}) {
       tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
     };
     allowEndpoint(conn.base);
-    if (opts.offline ?? prof.offline) setOffline(true);
+    // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
+    if (opts.offline ?? prof.offline ?? cfg?.offline) setOffline(true);
 
     const session = new Session(conn, {
       root,
@@ -171,6 +173,8 @@ export async function acp(opts = {}) {
       get 모델컨텍스트() { return conn.ctx ?? null; },
       // 이 모델이 그림을 볼 수 있나 — Read 가 그림을 만났을 때 무슨 말을 할지가 여기서 갈린다.
       get 눈있나() { return !!conn.vision; },
+      // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
+      규칙들: 규칙모으기(cfg),
       history: new History(root),
       audit: new Audit(root),
       seen: new Set(),
@@ -248,7 +252,25 @@ export async function acp(opts = {}) {
 
       const 결과 = 답?.outcome ?? {};
       if (결과.outcome !== 'selected') return false;   // cancelled 도 여기로 온다
-      if (결과.optionId === 'allow_always') { 방.늘허락.add(이름); return true; }
+      if (결과.optionId === 'allow_always') {
+        방.늘허락.add(이름);
+        /*
+         * '앞으로 묻지 않기' 는 **다음에 켤 때도** 안 물어야 한다.
+         *
+         * 이 켠 동안만 기억하면 사람은 편집기를 닫았다 열 때마다 같은 것을
+         * 다시 허락한다. 그러면 그 버튼은 '앞으로' 가 아니라 '이번 켠 동안' 이다.
+         * 설정에 적어 두고, 다음부터는 규칙이 먼저 통과시킨다 (safety/policy.js).
+         *
+         * 금지에 걸리는 것은 안 적는다 — 적어 봐야 금지가 이기는데 목록에는
+         * 허락으로 보여서, 사람이 풀린 줄 안다.
+         */
+        try {
+          const cfg = load();
+          const r = 늘허락(cfg, 이름, 규칙모으기(cfg));
+          if (r.ok) saveCfg(cfg);
+        } catch { /* 못 적어도 이번 켠 동안은 먹는다 */ }
+        return true;
+      }
       return 결과.optionId === 'allow_once';
     } catch (err) {
       /*

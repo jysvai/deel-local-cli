@@ -47,6 +47,55 @@ not be read. A server that returns **nothing at all**, though, is a failed conne
 closed port or a down VPN "the list was blocked" sends people to debug the wrong thing. Azure does not report context length over the API, so set that yourself with `/ctx`
 or in the config.
 
+### Always allow, never allow
+
+Three approval modes leave no middle. `npm test` runs twenty times a day and asks twenty times;
+`curl` should never run at all, yet it only asks. **Asking is not blocking** — the hand that
+typed `y` twenty times types it the twenty-first.
+
+Write the rules in `.deel/config.json`:
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm test*)", "Read", "Grep"],
+    "deny":  ["Bash(curl*)", "Bash(*rm -rf*)", "WebFetch"]
+  }
+}
+```
+
+The form is `Tool(pattern)`; without a pattern the rule covers the whole tool. Only `*` is
+special — everything else is literal. Regular expressions would be easy to get subtly wrong, and
+**a deny rule that is subtly wrong silently fails to match.**
+
+Order is **deny > allow > mode**. If both match, deny wins, and a denied call is not even offered
+for approval. A refusal names the rule and **where the rule is written** — without that you cannot
+tell whether to edit your own config or ask an administrator. `/mode` lists everything in force.
+
+### Managed policy (what IT sets)
+
+The config file belongs to the person using the tool: it can be edited or deleted, so it is the
+wrong place for "for this rollout, only this gateway". That goes somewhere the user cannot edit.
+
+| | |
+|---|---|
+| Windows | `%ProgramData%\deel\policy.json` |
+| macOS · Linux | `/etc/deel/policy.json` |
+| Testing | point `DEEL_POLICY` at a file |
+
+```json
+{
+  "baseUrl": "https://ai-gw.example.corp/v1",
+  "offline": false,
+  "permissions": { "deny": ["Bash(curl*)", "WebFetch"] }
+}
+```
+
+Policy **beats** config, but it cannot **loosen**: it can turn offline on but not off, and add
+denials but not remove the user's own. One line in a policy file must never widen what the tool
+may do. A corrupt policy file is treated as absent — but `/mode` says it could not be read, because
+silence would leave the administrator believing it applies and the user running without it.
+
 ### Environment variables
 
 | Variable | Use |

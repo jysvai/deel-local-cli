@@ -160,6 +160,21 @@ function 경로처럼보이나(line) {
 }
 
 // 반환: { handled, exit? }  handled=false 면 모델에게 보낸다.
+/** /mode 아래에 규칙을 늘어놓는다. 아무것도 안 걸려 있으면 아무 말도 안 한다. */
+function 규칙보이기(규칙들) {
+  if (!규칙들) return;
+  const 있나 = (규칙들.allow?.length ?? 0) + (규칙들.deny?.length ?? 0);
+  if (!있나 && !규칙들.정책곳 && !규칙들.탈) return;
+  say('');
+  say(`  ${c.gray('적어 둔 규칙 — 이건 모드보다 셉니다')}`);
+  for (const r of 규칙들.deny ?? []) say(`    ${c.red('✗')} ${c.white(r.원문)}  ${c.gray(r.출처)}`);
+  for (const r of 규칙들.allow ?? []) say(`    ${c.green('✓')} ${c.white(r.원문)}  ${c.gray(r.출처)}`);
+  if (규칙들.정책곳) say(`    ${c.gray(`관리 정책 ${규칙들.정책곳} — 이 파일은 고칠 수 없습니다`)}`);
+  if (규칙들.baseUrl) say(`    ${c.gray(`주소가 정책으로 못박혀 있습니다: ${규칙들.baseUrl}`)}`);
+  if (규칙들.offline) say(`    ${c.gray('정책으로 오프라인이 켜져 있습니다 — 끌 수 없습니다')}`);
+  if (규칙들.탈) say(`    ${mark.warn} ${c.yellow(규칙들.탈)}`);
+}
+
 export async function handle(line, session, ctx) {
   if (!line.startsWith('/')) return { handled: false };
   if (경로처럼보이나(line)) return { handled: false };
@@ -743,6 +758,15 @@ export async function handle(line, session, ctx) {
         say('');
         say(`  ${c.gray('지금은')} ${승인표시(session.mode)} ${c.gray('입니다. 상태줄 오른쪽에도 늘 떠 있습니다.')}`);
         say(`  ${c.gray('치지 않고 바꾸려면')} ${c.cyan('Shift+Tab')} ${c.gray('— 누를 때마다 차례로 돕니다.')}`);
+        /*
+         * 적어 둔 규칙은 모드보다 세다. 그러니 모드만 보여 주고 규칙을 안 보여
+         * 주면 화면이 거짓말을 하는 셈이다 — "안 묻습니다" 라고 적힌 모드에서
+         * 무언가 막히면 사람은 고장으로 읽는다.
+         *
+         * 어디에 적힌 규칙인지까지 적는다. 설정이면 제가 고치면 되고, 관리
+         * 정책이면 고칠 수 없다는 것을 알아야 관리자에게 말할 수 있다.
+         */
+        규칙보이기(ctx.규칙들);
         say('');
         return { handled: true };
       }
