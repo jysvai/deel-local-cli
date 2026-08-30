@@ -64,6 +64,41 @@ Editing stays off. Round-tripping a document with formatting, images and forms t
 text always loses something. Old-style `.hwp` (OLE) cannot be read — instead deel tells you
 the way out: save it as hwpx in Hancom Office and it reads fine.
 
+### PDF — page by page, and it says which pages it could not read
+
+`.pdf` opens with `Read` too. Inside, a PDF is dictionaries plus compressed streams, and that
+compression is almost always zlib — so **Node's built-in zlib is enough**. Nothing new is
+installed. Both the classic xref table and the modern xref stream / object stream layout
+(PDF 1.5+) are handled.
+
+The hard part is not decompression but **getting the characters back**. What a PDF stores is not
+text but glyph numbers — not "가" but "glyph 1,283 of this font". So deel reads the font's
+`/ToUnicode` table to map numbers back to characters. Korean PDFs are almost always Identity-H
+(two-byte glyph numbers), and without that table not one character is recoverable.
+
+```
+--- 1쪽 ---
+결제 한도는 1,000,000원입니다.
+The quick brown fox jumps over the lazy dog.
+--- 2쪽 ---
+[이 쪽은 글로 못 읽었습니다 — 글이 없는 쪽입니다 (스캔한 사진일 수 있습니다 — OCR 이 필요합니다)]
+   (this page could not be read as text — no text on it, likely a scan; OCR needed)
+```
+
+**This is the point of the feature.** PDFs very often contain no text at all — scans, fonts with
+no `/ToUnicode`, encryption. Returning empty text there reads as "the document does not say
+that," and the model answers on that basis. So an unreadable page is labelled **in place**, with
+the reason, and summarised at the end: how many pages of how many, which ones, and the line
+"이 쪽들의 내용은 여기 없습니다 — 없는 것이 아니라 못 꺼낸 것입니다" (the content of those pages
+is not here — not absent, just not extracted).
+
+An encrypted PDF is never read-as-if-it-worked; you get the way out instead (save an unprotected
+copy from a viewer). Files with a wrong xref or `/Length` — common when a PDF has been saved
+incrementally — are recovered by scanning the whole file.
+
+Editing is off, for the same reason as hwpx and Excel: PDF exists to print exactly as it looks,
+so a round trip through plain text destroys the layout entirely.
+
 ### Excel — read as CSV
 
 An Excel file is a compressed archive, not text, so normally you get "this is a binary file"

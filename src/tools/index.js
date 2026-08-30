@@ -23,6 +23,7 @@ import { allow as allowedIn } from '../agent/modes.js';
 import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOldHwp, 옛hwp안내, 문서는못고침 } from './docs.js';
+import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽은말, pdf는못고침 } from './pdf.js';
 import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
 import { 도구설명EN } from './desc.en.js';
@@ -315,6 +316,31 @@ function 문서읽기(abs, ctx) {
 }
 
 /**
+ * PDF 를 쪽마다 글로 읽어 돌려준다.
+ *
+ * 문서읽기와 같은 규칙 — ctx.seen 에 안 넣는다(고칠 수 있는 물건이 아니다).
+ * 다른 점은 **못 읽은 쪽을 반드시 말한다**는 것이다. PDF 는 글이 아예 안 든
+ * 쪽(스캔본)이 흔해서, 빈 글을 그냥 돌려주면 「그런 내용이 없는 문서」로
+ * 읽힌다. 모델은 그걸 근거로 답하고, 사람은 그 답을 믿는다.
+ */
+function pdf읽기(abs, ctx) {
+  const r = readPdf(abs);
+  if (!r.ok) return { error: r.error };
+  const { text, 잘림 } = pdfText(r);
+  const 못 = 못읽은말(r);
+  return {
+    content: clip(
+      `${text || '(글이 하나도 없는 PDF 입니다.)'}
+
+(PDF 를 쪽마다 글로 바꿔서 보여준 것입니다. 이 파일은 Edit/Write 로 고칠 수 없습니다.)`
+      + (못 ? `\n${못}` : '')
+      + (잘림.length ? `\n(${잘림.join(' · ')})` : ''),
+    ),
+    summary: pdfSummary(r) + (잘림.length ? ' · 일부만' : ''),
+  };
+}
+
+/**
  * 파일 하나를 쓴다 — Write 의 알맹이.
  *
  * 되돌리기 스냅샷을 **여기서** 뜬다. 여러 개를 쓸 때도 파일마다 한 번씩 뜨는
@@ -471,6 +497,7 @@ function 한파일쓰기(args, ctx) {
     // 문서(hwpx·docx·pptx)도 같은 이유로 또렷하게 거절한다. 일반 '바이너리'
     // 오류로 넘기면 왜 안 되는지가 안 실려서, 모델이 우회로를 찾는다.
     if (isDocPath(abs)) return { error: 문서는못고침(args.file_path) };
+    if (isPdfPath(abs)) return { error: pdf는못고침(args.file_path) };
     // 엑셀만 막아서는 모자란다. hwp·pdf·png·zip 도 똑같이 그 순간 끝난다.
     // 게다가 이런 파일은 되돌리기가 내용을 떠 놓지 못하는 종류라 되살릴 길이 없다.
     // 확장자로 고르지 않고 실제 내용으로 본다 — 사내 파일은 확장자가 제각각이다.
@@ -569,6 +596,7 @@ function 한군데고치기(args, ctx) {
   // '먼저 Read 로 읽어야 합니다' 라고만 하면 이미 읽은 쪽은 계속 헛돈다.
   if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
   if (isDocPath(abs)) return { error: 문서는못고침(args.file_path) };
+  if (isPdfPath(abs)) return { error: pdf는못고침(args.file_path) };
   if (!ctx.seen.has(abs)) return { error: `먼저 Read 로 읽어야 합니다: ${args.file_path}` };
   if (args.old_string === args.new_string) return { error: 'old_string 과 new_string 이 같습니다' };
 
@@ -758,6 +786,8 @@ export const TOOLS = {
       if (isExcelPath(abs)) return 엑셀읽기(abs, args, ctx);
       // hwpx·docx·pptx 도 같다 — 속이 ZIP+XML 이라 글로 바꿔 돌려준다 (docs.js).
       if (isDocPath(abs)) return 문서읽기(abs, ctx);
+      // PDF 도 같다. 속은 사전+흐름이라 zlib 만으로 쪽마다 글을 꺼낸다 (pdf.js).
+      if (isPdfPath(abs)) return pdf읽기(abs, ctx);
       /*
        * 구형 hwp 는 '바이너리' 로 끝내지 않는다. 그 오류에는 길이 없어서
        * 모델이 우회로(새로 쓰기)를 찾는다 — 실제로 그렇게 원본이 죽은 적이

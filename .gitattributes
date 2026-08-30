@@ -7,3 +7,7 @@
 *.json text eol=lf
 *.md   text eol=lf
 *.yml  text eol=lf
+
+# 검사에 쓰는 진짜 PDF 본보기(test/자료/). text=auto 가 알아서 가려내겠지만,
+# 한 바이트라도 바뀌면 「PDF 를 못 읽는다」는 엉뚱한 실패로 나타난다. 못박아 둔다.
+*.pdf  binary

@@ -96,7 +96,7 @@
 | [모델 다루기](docs/ko/models.md) | 급과 창 크기 · 국산 모델 이름표 · 켤 때 프로젝트 읽기 |
 | [화면과 조작](docs/ko/interface.md) | 입력칸 · 작업 모드 · 쉬움과 개발자 · 무엇을 묻고 무엇을 그냥 하나 |
 | [도구 자세히](docs/ko/tools.md) | `Outline` · `Verify` · `Task` · `Jobs` · `Append` · `Def`/`Refs` · 편집 매칭 |
-| [한글 문서와 엑셀](docs/ko/documents.md) | hwpx·docx·pptx · 인코딩 · 엑셀 → CSV |
+| [한글 문서와 엑셀](docs/ko/documents.md) | hwpx·docx·pptx·**PDF** · 인코딩 · 엑셀 → CSV |
 | [늘려 쓰기](docs/ko/extend.md) | 스킬 · 플러그인 · MCP · ACP |
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
@@ -469,7 +469,7 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 
 | 도구 | 하는 일 |
 |---|---|
-| `Read` | 파일 읽기 (줄 번호 · `offset`/`limit` 지원 · **엑셀은 CSV 로, hwpx·docx·pptx 는 글로 바꿔서**) |
+| `Read` | 파일 읽기 (줄 번호 · `offset`/`limit` 지원 · **엑셀은 CSV 로, hwpx·docx·pptx·PDF 는 글로 바꿔서**) |
 | `Write` | 파일 쓰기·덮어쓰기 (**여러 개는 `files` 배열로 한 번에**) |
 | `Append` | 파일 끝에 이어 붙이기 — **큰 파일을 나눠 쓰는 자리** |
 | `Edit` | 정확한 문자열 바꾸기 (`replace_all` · **여러 군데는 `edits` 배열로 한 번에**) |
@@ -505,10 +505,14 @@ Claude Code 에 없는 것은 아홉입니다 — `Append` · `Move` · `Ask` ·
 ## 한글 문서와 엑셀
 
 **CP949 로 저장된 파일은 CP949 로 되돌려 씁니다.** 인코딩을 바꾸지 않습니다.
-엑셀(`.xlsx`)은 CSV 로, 한글·워드·파워포인트(`.hwpx`/`.docx`/`.pptx`)는 글로
-바꿔서 읽습니다 — 전부 읽기 전용입니다.
+엑셀(`.xlsx`)은 CSV 로, 한글·워드·파워포인트(`.hwpx`/`.docx`/`.pptx`)와
+**PDF** 는 글로 바꿔서 읽습니다 — 전부 읽기 전용입니다.
 
-> **자세히** — 인코딩 · 엑셀 · hwpx/docx/pptx
+PDF 는 **못 읽은 쪽을 못 읽었다고 말합니다.** 스캔본·암호·글꼴 표가 없는 쪽은
+빈 글로 넘기지 않고 그 자리에 까닭을 적습니다 — 빈 글은 「그런 내용이 없다」로
+읽히기 때문입니다.
+
+> **자세히** — 인코딩 · 엑셀 · hwpx/docx/pptx · PDF
 >
 > **[한글 문서와 엑셀 읽기 →](docs/ko/documents.md#한글-문서와-엑셀)**
 

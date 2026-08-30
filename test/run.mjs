@@ -83,6 +83,7 @@ const FILES = [
   'commands-more.test.js',
   'xlsx.test.js',
   'docs.test.js',
+  'pdf.test.js',
   'compact.test.js',
   'store.test.js',
   'threads.test.js',

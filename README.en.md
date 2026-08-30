@@ -95,7 +95,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Models](docs/en/models.md) | Grade and window size · Korean-model presets · project detection |
 | [The screen](docs/en/interface.md) | The input box · work modes · simple vs developer · what it asks about |
 | [Tools in depth](docs/en/tools.md) | `Outline` · `Verify` · `Task` · `Jobs` · `Append` · `Def`/`Refs` · edit matching |
-| [Korean documents and Excel](docs/en/documents.md) | hwpx/docx/pptx · encoding · Excel → CSV |
+| [Korean documents and Excel](docs/en/documents.md) | hwpx/docx/pptx/**PDF** · encoding · Excel → CSV |
 | [Extending](docs/en/extend.md) | Skills · plugins · MCP · ACP |
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
@@ -494,7 +494,7 @@ Names and arguments match Claude Code, so skills written for that convention wor
 
 | Tool | What it does |
 |---|---|
-| `Read` | Read a file (line numbers, `offset`/`limit`, **Excel as CSV, hwpx/docx/pptx as text**) |
+| `Read` | Read a file (line numbers, `offset`/`limit`, **Excel as CSV, hwpx/docx/pptx and PDF as text**) |
 | `Write` | Write / overwrite a file (**several at once via the `files` array**) |
 | `Append` | Append to the end of a file — **how large files get written in pieces** |
 | `Edit` | Replace an exact string (`replace_all`; **several sites at once via the `edits` array**) |
