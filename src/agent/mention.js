@@ -15,6 +15,7 @@
 // 없으면 아무 말 없이 글자 그대로 둔다. 지목이 아니었을 테니 조용한 편이 맞다.
 import { existsSync, statSync, readdirSync } from 'node:fs';
 import { readTextFull } from '../tools/fsutil.js';
+import { 계보규칙읽기, 무시하나 } from '../tools/ignore.js';
 import { estimateTokens } from './session.js';
 
 // 붙일 수 있는 최대 토큰. 부르는 쪽에서 컨텍스트에 맞춰 넘겨준다.
@@ -74,13 +75,19 @@ function 찾아보기(m, scope) {
   return { why: 'missing', path: m.path };
 }
 
-function 폴더내용(abs, show) {
+function 폴더내용(abs, show, root = null) {
   let 목록 = [];
   try { 목록 = readdirSync(abs, { withFileTypes: true }); }
   catch (err) { return `(폴더를 못 읽었습니다: ${err.message})`; }
-  const 줄들 = 목록.slice(0, 폴더최대).map((e) => (e.isDirectory() ? `${e.name}/` : e.name));
-  const 더 = 목록.length > 폴더최대 ? `\n… 전체 ${목록.length}개 중 ${폴더최대}개까지` : '';
-  return `${show} 는 폴더입니다. 안에 든 것:\n${줄들.join('\n')}${더}`;
+  // git 이 안 보는 것은 여기서도 안 늘어놓는다 — Glob · Grep 과 같은 규칙 (tools/ignore.js). 뺀 수는 적는다.
+  const rel = show === '.' ? '' : String(show).replace(/\\/g, '/');
+  const 규칙 = root ? 계보규칙읽기(root, rel) : [];
+  const 보임 = 규칙.length ? 목록.filter((e) => !무시하나(rel ? `${rel}/${e.name}` : e.name, e.isDirectory(), 규칙)) : 목록;
+  const 뺀 = 목록.length - 보임.length;
+  const 줄들 = 보임.slice(0, 폴더최대).map((e) => (e.isDirectory() ? `${e.name}/` : e.name));
+  const 더 = 보임.length > 폴더최대 ? `\n… 전체 ${보임.length}개 중 ${폴더최대}개까지` : '';
+  const 건너뜀 = 뺀 ? `\n(.gitignore 로 ${뺀}개 건너뜀 — 경로를 직접 주면 Read 된다)` : '';
+  return `${show} 는 폴더입니다. 안에 든 것:\n${줄들.join('\n')}${더}${건너뜀}`;
 }
 
 /**
@@ -124,7 +131,7 @@ export function expand(text, { scope = null, budget = 기본예산, seen = null,
 
     try {
       if (statSync(자리.abs).isDirectory()) {
-        몸통 = 폴더내용(자리.abs, show);
+        몸통 = 폴더내용(자리.abs, show, scope.root ?? null);
       } else {
         // 사내 파일은 CP949 가 흔하다. 그냥 읽으면 통째로 깨진다.
         const 읽음 = readTextFull(자리.abs);

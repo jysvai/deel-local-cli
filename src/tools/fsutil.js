@@ -1,7 +1,8 @@
 // 파일 훑기와 glob 매칭. 외부 패키지 없이 직접 구현한다.
 import { readdirSync, statSync, readFileSync, mkdirSync, copyFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 import { decode, looksBinary } from './encoding.js';
+import { 뿌리규칙읽기, 파일규칙읽기, 걸리나 } from './ignore.js';
 
 /**
  * 폴더를 통째로 옮겨 담는다.
@@ -142,32 +143,46 @@ function escapeLiteral(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// 폴더를 훑어 파일 목록을 낸다. { path(절대), rel(/구분), mtime, size }
-export function walk(root, { limit = 20000, skipDirs = SKIP_DIRS } = {}) {
+/**
+ * 폴더를 훑어 파일 목록을 낸다. { path(절대), rel(/구분), mtime, size }
+ *
+ * `ignore` 가 켜져 있으면(기본) .gitignore 가 건너뛰라는 것은 건너뛴다 (tools/ignore.js).
+ * skipDirs 는 그 아래의 바닥이다 — .gitignore 가 없어도 node_modules 는 늘 건너뛴다.
+ * 돌려주는 배열에는 `건너뜀 = { 폴더, 파일 }` 이 (열거되지 않게) 붙어 있다. 부르는 쪽이 그 수를
+ * 화면에 적는다 — 조용히 빼면 "그 파일이 없다" 로 읽힌다.
+ * 폴더를 통째로 옮기거나 복사할 때는 `ignore: false` 로 — 그때는 다 있어야 한다.
+ */
+export function walk(root, { limit = 20000, skipDirs = SKIP_DIRS, ignore = true } = {}) {
   const out = [];
-  const stack = [root];
+  const 건너뜀 = { 폴더: 0, 파일: 0 };
+  const stack = [{ dir: root, rel: '', 규칙: ignore ? 뿌리규칙읽기(root) : [] }];
   while (stack.length && out.length < limit) {
-    const dir = stack.pop();
+    const { dir, rel, 규칙 } = stack.pop();
     let entries;
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    // 이 폴더에 .gitignore 가 있으면 그 아래에만 더한다 (뿌리 것은 위에서 읽었다).
+    let 여기규칙 = 규칙;
+    if (ignore && rel && entries.some((e) => e.name === '.gitignore' && e.isFile())) {
+      const 추가 = 파일규칙읽기(join(dir, '.gitignore'), rel);
+      if (추가.length) 여기규칙 = [...규칙, ...추가];
+    }
     for (const e of entries) {
       const full = join(dir, e.name);
+      const erel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         if (skipDirs.has(e.name)) continue;
-        stack.push(full);
+        if (여기규칙.length && 걸리나(erel, true, 여기규칙)) { 건너뜀.폴더 += 1; continue; }
+        stack.push({ dir: full, rel: erel, 규칙: 여기규칙 });
       } else if (e.isFile()) {
+        if (여기규칙.length && 걸리나(erel, false, 여기규칙)) { 건너뜀.파일 += 1; continue; }
         let st;
         try { st = statSync(full); } catch { continue; }
-        out.push({
-          path: full,
-          rel: relative(root, full).split(sep).join('/'),
-          mtime: st.mtimeMs,
-          size: st.size,
-        });
+        out.push({ path: full, rel: erel, mtime: st.mtimeMs, size: st.size });
         if (out.length >= limit) break;
       }
     }
   }
+  Object.defineProperty(out, '건너뜀', { value: 건너뜀, enumerable: false });
   return out;
 }
 

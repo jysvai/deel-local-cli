@@ -4,6 +4,7 @@ import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, sta
 import { dirname, join, relative, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsutil.js';
+import { 건너뜀말 } from './ignore.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
 import { checkCommand, checkPaths, isMutating } from '../safety/guard.js';
 import { 띄우기, JOBS_TOOL } from './jobs.js';
@@ -372,8 +373,9 @@ function 한개옮기기({ from, to, overwrite = false }, ctx) {
    * 그대로 되지만 되돌리기에는 안 잡힌다. 그런 폴더를 되돌리자고 수만 개를
    * 뜨는 쪽이 훨씬 나쁘다.
    */
+  // 옮길 때는 .gitignore 를 안 본다 — 옮겨지는 것은 전부이고, 되돌리기도 전부를 떠야 한다.
   const 짝들 = 폴더인가
-    ? walk(앞).map((f) => [f.path, join(뒤, relative(앞, f.path))])
+    ? walk(앞, { ignore: false }).map((f) => [f.path, join(뒤, relative(앞, f.path))])
     : [[앞, 뒤]];
   for (const [a, b] of 짝들) {
     ctx.history.snapshot(a, 'Move');
@@ -953,18 +955,21 @@ export const TOOLS = {
     run(args, ctx) {
       const root = args.path ? ctx.scope.resolve(args.path) : ctx.scope.root;
       const re = globToRegex(args.pattern);
-      const 맞는것 = walk(root)
+      const 전부 = walk(root);
+      // .gitignore 로 건너뛴 것은 수를 말한다 — 조용히 빼면 '그 파일이 없다' 로 읽힌다 (tools/ignore.js).
+      const 건너뜀 = 건너뜀말(전부.건너뜀);
+      const 맞는것 = 전부
         .filter((f) => re.test(f.rel) || re.test(f.rel.split('/').pop()))
         .sort((a, b) => b.mtime - a.mtime);
       const files = 맞는것.slice(0, 찾을개수(ctx.모델컨텍스트));
-      if (!files.length) return { content: `찾은 파일 없음: ${args.pattern}`, summary: '0개' };
+      if (!files.length) return { content: `찾은 파일 없음: ${args.pattern}${건너뜀}`, summary: '0개' };
       // 잘랐으면 잘랐다고 말한다. 전에는 '200개' 라고만 해서, 모델이 그게 전부인 줄
       // 알고 "전부 확인했습니다" 로 답을 맺었다. 실제로는 1,400개 중 200개였다.
       const 잘림 = 맞는것.length > files.length
         ? `\n\n… 모두 ${맞는것.length}개인데 최근 것 ${files.length}개만 보여 줍니다. 범위를 좁혀 다시 찾으세요.`
         : '';
       return {
-        content: files.map((f) => ctx.scope.show(f.path)).join('\n') + 잘림,
+        content: files.map((f) => ctx.scope.show(f.path)).join('\n') + 잘림 + 건너뜀,
         summary: 맞는것.length > files.length ? `${files.length}/${맞는것.length}개` : `${files.length}개`,
       };
     },
@@ -998,6 +1003,7 @@ export const TOOLS = {
       let files = isFile
         ? [{ path: root, rel: ctx.scope.show(root) }]
         : walk(root);
+      const 안본것 = isFile ? '' : 건너뜀말(files.건너뜀).trim();   // .gitignore 로 건너뛴 수 — 꼬리에 적는다
       if (args.glob) {
         const g = globToRegex(args.glob);
         files = files.filter((f) => g.test(f.rel) || g.test(f.rel.split('/').pop()));
@@ -1047,6 +1053,7 @@ export const TOOLS = {
         멈춤 === '중단' ? '(중단하셔서 여기까지만 찾았습니다)' : '',
         멈춤 === '상한' ? `(${limit}개에서 멈췄습니다 — 더 있을 수 있습니다)` : '',
         건너뛴것 ? `(글이 아니거나 너무 큰 파일 ${건너뛴것}개는 건너뛰었습니다)` : '',
+        안본것,
       ].filter(Boolean).join(' ');
       const 붙이기 = (s) => (꼬리 ? `${s}\n\n${꼬리}` : s);
 

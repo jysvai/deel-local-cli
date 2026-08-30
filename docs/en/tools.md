@@ -91,6 +91,17 @@ the audit log. There is no path for a subtask to edit files under a read-only mo
 (architect, plan, ask) — that is blocked both at the mode level and in the tool list.
 Nesting stops at two levels.
 
+### What git skips, the tools skip — `.gitignore` · `.deelignore`
+
+`Glob` · `Grep` · `Outline` · `Verify` · `@folder` skip whatever `.gitignore` says to skip — `build/`,
+`coverage/`, `*.min.js`, data dumps. On a small window (32k) one `Grep` used to spend the whole budget on
+build output. A nested `.gitignore` applies only below its folder; `!` re-includes, leading `/` anchoring
+and `**` follow git. When something was skipped, one line at the end says how much —
+`(.gitignore 로 폴더 3개 · 파일 12개 건너뜀 — 경로를 직접 주면 Read 된다)` (skipped 3 folders · 12 files;
+give a path directly and `Read` still works). `Read` · `Edit` on an explicit path are unaffected (only
+listings are filtered). To skip things for deel only, put a `.deelignore` with the same syntax in the working
+folder. `.gitignore` files **above** the working folder are not read.
+
 ### Which shell on Windows — bash when Git Bash is there
 
 On Windows, `Bash` looks for **Git for Windows' bash** first — `%ProgramFiles%\Git\bin\bash.exe`, or a

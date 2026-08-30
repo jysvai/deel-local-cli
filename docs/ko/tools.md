@@ -100,6 +100,16 @@ js/ts · py · java/kotlin · go · rust · c# · md · html · css · sh · jso
 그대로 남습니다. 읽기만 하는 모드(설계·계획·묻기)에서 하위가 파일을 고치는 길은
 없습니다 — 모드 쪽과 도구 목록 쪽에서 두 겹으로 막았습니다. 깊이는 2단까지입니다.
 
+### git 이 안 보는 것은 도구도 안 본다 — `.gitignore` · `.deelignore`
+
+`Glob` · `Grep` · `Outline` · `Verify` · `@폴더` 는 `.gitignore` 가 건너뛰라는 것을 건너뜁니다 —
+`build/` · `coverage/` · `*.min.js` · 자료 덤프 같은 것. 작은 창(32k)에서 `Grep` 한 번이 빌드
+산출물로 예산을 다 쓰던 자리입니다. 아래 폴더의 `.gitignore` 는 그 아래에만 듣고, `!` 로 되살리는
+것과 `/` 고정, `**` 도 git 과 같게 읽습니다. 건너뛴 것이 있으면 결과 끝에 한 줄로 셉니다 —
+`(.gitignore 로 폴더 3개 · 파일 12개 건너뜀 — 경로를 직접 주면 Read 된다)`. 경로를 짚어 주는
+`Read` · `Edit` 은 그대로 됩니다 (목록만 거릅니다). git 에는 안 적고 deel 만 건너뛰게 하려면
+작업 폴더에 `.deelignore` 를 같은 문법으로 두세요. 작업 폴더 **위**의 `.gitignore` 는 안 봅니다.
+
 ### 윈도우에서는 어느 셸인가 — Git Bash 가 있으면 bash
 
 `Bash` 는 윈도우에서 **Git for Windows 의 bash** 를 먼저 찾습니다 — `%ProgramFiles%\Git\bin\bash.exe`,

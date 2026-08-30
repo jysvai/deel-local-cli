@@ -29,6 +29,7 @@ const FILES = [
   'retry.test.js',
   'proxy.test.js',
   'shell.test.js',
+  'ignore.test.js',
   'task.test.js',
   'outline.test.js',
   'network.test.js',

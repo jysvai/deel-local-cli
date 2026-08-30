@@ -32,6 +32,7 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
 import { walk, SKIP_DIRS, globToRegex, 내부살림 } from './fsutil.js';
+import { 건너뜀말 } from './ignore.js';
 import { decode, looksBinary } from './encoding.js';
 import { 찾을개수, 뼈대줄수 } from '../agent/budget.js';
 
@@ -232,6 +233,7 @@ export const OUTLINE_TOOL = {
     let 파일들 = 하나인가
       ? [{ path: 시작, rel: ctx.scope.show(시작), mtime: statSync(시작).mtimeMs }]
       : walk(시작, { skipDirs: SKIP_DIRS });
+    const 건너뜀 = 하나인가 ? '' : 건너뜀말(파일들.건너뜀);   // .gitignore 로 건너뛴 수 (tools/ignore.js)
 
     // 좁히는 방식은 Glob 도구와 **같은 것**을 쓴다. 두 도구가 같은 패턴에
     // 다르게 답하면 모델이 둘 중 어느 것을 믿어야 할지 알 수 없다.
@@ -323,7 +325,7 @@ export const OUTLINE_TOOL = {
     }
 
     return {
-      content: 줄들.join('\n').trimEnd(),
+      content: 줄들.join('\n').trimEnd() + 건너뜀,
       summary: `${뼈대있는파일}개 파일 · ${항목수}곳`
         + (못읽은것.size ? ` · 못 읽음 ${[...못읽은것.values()].reduce((a, x) => a + x.length, 0)}개` : ''),
     };
