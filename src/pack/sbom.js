@@ -24,6 +24,7 @@
 // 검사에서 확인한다 (test/sbom.test.js) — Audit 이 실제로 남긴 줄에 여기
 // 적어 둔 칸이 다 있는지 본다.
 import { randomUUID } from 'node:crypto';
+import { 보관방식 } from '../safety/keystore.js';
 
 /** 우리가 내놓는 SBOM 규격. 스캐너가 이 숫자를 보고 읽는 법을 정한다. */
 export const CDX판 = '1.5';
@@ -148,6 +149,28 @@ export function 통신명세(a) {
 }
 
 /**
+ * 열쇠를 어디에 어떻게 두나.
+ *
+ * 심사에서 거의 언제나 나오는 질문이고, 전에는 이 문서에 답이 없었다.
+ * "홈 폴더에 평문" 이면 그 자리에서 끝나는 질문이라 더 그렇다.
+ * 지금 이 PC 에서 실제로 되는 방식을 그대로 적는다 — 되는 척은 안 한다.
+ */
+export function 열쇠명세() {
+  return {
+    어디: '~/.deel/config.json (또는 DEEL_HOME) 의 profiles[].apiKey',
+    이PC에서: 보관방식(),
+    방식: [
+      { 운영체제: '윈도우', 방법: 'DPAPI ProtectedData (CurrentUser) — 이 PC 의 이 계정만 풉니다. 파일을 복사해 가도 못 풉니다.' },
+      { 운영체제: '맥', 방법: '로그인 키체인 (security add-generic-password)' },
+      { 운영체제: '그 밖', 방법: '파일 권한 0600. 잠금장치가 없으므로 그렇게 적습니다.' },
+    ],
+    넘길때: '열쇠는 명령줄에 안 올립니다 — 언제나 stdin 으로 넘깁니다. 같은 PC 의 다른 사용자가 프로세스 목록으로 못 봅니다.',
+    안쓰려면: 'DEEL_API_KEY (또는 DEEL_KEY_<프로필>) 환경변수를 쓰면 파일에 아예 안 남습니다. 환경변수가 파일보다 우선합니다.',
+    끄려면: 'DEEL_KEYSTORE=off — 잠금장치를 안 씁니다(파일 권한만).',
+  };
+}
+
+/**
  * 감사기록 사양.
  *
  * 이걸 안 주면 담당자가 "로그가 남긴 남나요" 만 확인하고 끝난다. 칸 이름과
@@ -202,6 +225,7 @@ export function 심사명세(a, { at = new Date() } = {}) {
         : '외부 모듈이 있습니다 — 위 목록을 확인하세요.',
     },
     통신: 통신명세(a),
+    열쇠보관: 열쇠명세(),
     감사기록: 감사명세(),
     파일: a.files.map((f) => ({ 경로: f.path, 바이트: f.bytes, sha256: f.sha })),
   };

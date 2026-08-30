@@ -7,7 +7,7 @@ import { 증거모으기, 증거적기 } from './agent/evidence.js';
 import { 커밋준비, 커밋실행 } from './agent/commit.js';
 import { allowEndpoint } from './safety/network.js';
 import { pick, confirm } from './ui/prompt.js';
-import { load, save, resolveKey, upsert } from './config.js';
+import { load, save, resolveKey, upsert, 열쇠보관 } from './config.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
 import { 말, 언어, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
@@ -854,6 +854,9 @@ export async function handle(line, session, ctx) {
       say(`  ${c.gray(pad('작업 폴더', 10))} ${session.root}`);
       // 명령이 어느 셸에서 도는지. "ls 가 왜 안 되지" 의 답이 이 줄에 있다.
       say(`  ${c.gray(pad('셸', 10))} ${정한셸().표시}`);
+      // 열쇠를 어디에 두고 있나. 사내 심사에서 제일 먼저 묻는 것이라
+      // 「어딘가 잠겨 있겠지」 로 두지 않고 지금 상태를 그대로 적는다.
+      if (k.auth !== 'none') say(`  ${c.gray(pad('열쇠 보관', 10))} ${열쇠보관(load())}`);
       say(`  ${c.gray(pad('규칙', 10))} ${session.rules ? session.rules.name : '없음 (/init 으로 만들 수 있습니다)'}`);
       const caps = [
         k.tools ? c.green('도구') : c.red('도구'),

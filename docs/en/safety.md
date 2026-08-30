@@ -78,6 +78,36 @@ the read guard look at the same set. They used to be two copies, and two copies 
 comes when only one of them learns a new name — a folder that is skipped while walking but
 readable if you name it directly, which is very hard to explain.
 
+### Where the key lives
+
+The gateway key sits in `profiles[].apiKey` inside `~/.deel/config.json` (or `DEEL_HOME`). It used
+to sit there **in plain text**. Saving applied `chmod 600`, which does nothing on NTFS — so "locked
+to your account" was not a true statement on Windows.
+
+It is now handed to the machine's own keystore.
+
+| OS | How | What it means |
+|---|---|---|
+| Windows | DPAPI `ProtectedData` (CurrentUser) | Only **this account on this machine** can unlock it. Copying the file elsewhere gets you nothing |
+| macOS | Login keychain | Appears as `deel-gateway-key`; you can delete it from Keychain Access |
+| Others | File permission `0600` | No keystore, so that is what it says. It does not pretend to be locked |
+
+The file then holds only the locked form, `"apiKey": "dpapi:AQAAAN…"`. A config written by an older
+version is migrated **once, on the next start**, and says so in one line — change someone's key file
+silently and they will later open it and think their key is gone.
+
+The key is **never put on a command line.** Locking and unlocking shells out to PowerShell or
+`security`, and the value always goes over stdin: a command line is visible to other users of the
+same machine through the process list, and it lands in shell history. Both directions carry base64
+only, so no console encoding can corrupt the bytes.
+
+Unlocking costs one PowerShell call (about 0.3–0.8 s) once per session; the result is held in memory
+for the rest of the run. To keep the key out of the file entirely, use the `DEEL_API_KEY`
+environment variable — it wins over the file. Where policy blocks the keystore, `DEEL_KEYSTORE=off`
+turns it off and leaves file permissions as the only protection.
+
+The current state is printed verbatim in the `열쇠 보관` line of `/status` and in the diagnostic report.
+
 ---
 
 ## Corporate review package

@@ -17,7 +17,7 @@ import { makeScope } from './safety/guard.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
-import { activeProfile, load, resolveKey } from './config.js';
+import { activeProfile, load, resolveKey, 잠금소식 } from './config.js';
 import { 말 as 옮긴말 } from './i18n/index.js';
 import { 알림채움 } from './backend/retry.js';
 import { discover } from './skills/discover.js';
@@ -141,6 +141,11 @@ export async function runOnce(opts = {}) {
   const cfg = load();
   const prof = activeProfile(cfg);
   if (!prof) return 못함('no-config', '저장된 연결이 없습니다. deel setup 을 먼저 실행하세요.');
+
+  // 열쇠를 방금 잠갔으면 알린다. 여기서는 stdout 을 안 쓴다 —
+  // 배치로 부르는 쪽이 stdout 을 JSON 으로 읽고 있을 수 있다.
+  const 잠금 = 잠금소식();
+  if (잠금) { try { process.stderr.write(`  ${잠금}\n`); } catch { /* 못 써도 그만 */ } }
 
   const root = opts.root ? String(opts.root) : process.cwd();
   const conn = {

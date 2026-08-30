@@ -6,6 +6,7 @@ import { detect } from './backend/detect.js';
 import { probe } from './backend/probe.js';
 import { renderHeader, renderLine, verdict, renderVerdict, plainReport } from './report.js';
 import { load, save, upsert, slug, resolveKey, activeProfile, configPath } from './config.js';
+import { 보관방식 } from './safety/keystore.js';
 import { allowEndpoint } from './safety/network.js';
 import { writeFileSync } from 'node:fs';
 
@@ -108,8 +109,11 @@ export async function runSetup() {
 
   say(`  ${mark.ok} 저장됨 ${c.cyan(p)}`);
   if (key) {
-    say(`     ${c.gray('키가 이 파일에 들어 있습니다. 남기고 싶지 않으면 파일에서 지우고')}`);
-    say(`     ${c.gray('환경변수 DEEL_API_KEY 로 넣으세요 — 그쪽이 우선합니다.')}`);
+    // 열쇠가 파일에 '어떤 꼴로' 들어갔는지를 그대로 적는다. 잠겼는지 아닌지를
+    // 사람이 짐작하게 두면, 안 잠긴 파일을 잠긴 줄 알고 아무 데나 둔다.
+    const 저장한것 = activeProfile(load())?.apiKey ?? null;
+    say(`     ${c.gray(`열쇠 보관 — ${보관방식(저장한것)}`)}`);
+    say(`     ${c.gray('파일에 아예 안 남기려면 환경변수 DEEL_API_KEY 로 넣으세요 — 그쪽이 우선합니다.')}`);
   }
   say('');
   return 0;

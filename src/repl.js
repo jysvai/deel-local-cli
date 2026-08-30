@@ -20,7 +20,7 @@ import { 언어서버있나 } from './tools/index.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
-import { activeProfile, load, resolveKey, save as saveCfg, homeDir } from './config.js';
+import { activeProfile, load, resolveKey, save as saveCfg, homeDir, 잠금소식 } from './config.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
 import { Store, latest, prune } from './agent/store.js';
@@ -149,6 +149,14 @@ export async function chatLoop(opts = {}) {
     바로쓰기(`  ${mark.warn} 저장된 연결이 없습니다. ${c.cyan('deel setup')} 을 먼저 실행하세요.`);
     바로쓰기('');
     return 1;
+  }
+
+  // 평문으로 있던 열쇠를 방금 잠갔으면 그렇다고 한 줄. 조용히 바꾸면
+  // 나중에 설정 파일을 열어 본 사람이 제 열쇠가 사라진 줄 안다.
+  const 잠금 = 잠금소식();
+  if (잠금) {
+    바로쓰기('');
+    바로쓰기(`  ${mark.ok} ${잠금}`);
   }
 
   /*

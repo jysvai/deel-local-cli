@@ -31,6 +31,7 @@ Auth style is detected automatically: `Authorization: Bearer` → `x-api-key` �
 | `HTTPS_PROXY` · `HTTP_PROXY` | Behind a proxy — `http://user:pw@proxy:port`. Lower-case names work too. deel opens the CONNECT tunnel itself, so this works on every Node version |
 | `NO_PROXY` | Where not to use the proxy — `.corp.com, 10.1.2.3, intra:8443, *`. This machine (localhost · 127.*) always goes direct. CIDR (`10.0.0.0/8`) is not understood — list addresses one by one, or use a domain suffix |
 | `DEEL_SHELL` | Which shell the `Bash` tool uses on Windows — `auto` (default: bash if Git Bash is installed, else cmd) · `bash` · `cmd` · `powershell`. `"shell"` in the config file works too. The pick shows in `/status` and in the `Shell:` line the model is given |
+| `DEEL_KEYSTORE=off` | Keep the key in the file instead of handing it to the machine keystore (Windows DPAPI · macOS keychain). For places where policy blocks PowerShell — whatever it ends up doing is printed verbatim in the `열쇠 보관` line of `/status` |
 | `DEEL_DEBUG=1` | Verbose errors |
 | `NO_COLOR` | Disable colour |
 | `DEEL_NO_MOTION=1` | Turn off the working animation (falls back to a one-cell spinner) |
