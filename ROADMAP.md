@@ -52,7 +52,7 @@ exists), Korean identifiers in source (house style — do not "fix" that).
 | **1** | T1-2 | `.gitignore`-aware walking (+ `.deelignore`) | Walker skips a fixed list only; Java/Python/monorepo junk (`out/`, `.gradle/`, `coverage/`, generated code) floods `Glob`/`Grep`/`Outline` on an 8k–32k window. | M | fs paths |
 | **1** | T1-3 | `/commit` — message from the session's own diff and evidence | Work leaves the agent only through git; today the model has to type `git commit -m` through `Bash` with quoting hazards and no evidence trailer. | M | command exec |
 | **1** | T1-4 | Gateway key at rest: DPAPI (Windows) / Keychain (macOS) | `chmod 600` is a no-op on NTFS; the key sits in plaintext under the roaming profile. First question a reviewer asks. | M | secrets |
-| **2** | T2-1 | Anthropic Messages API shape (`/v1/messages`) | Claude via Bedrock/corporate passthrough is a common gateway; only OpenAI-compatible and Ollama shapes exist. | L | network |
+| **—** | T2-1 | Anthropic Messages API shape (`/v1/messages`) — **deferred, later review** | Owner's decision (2026-08-30): company security rules mean an external `/v1/messages` endpoint can only be worked on from a separate network. Not built now; revisit when that network exists. | L | network |
 | **2** | T2-2 | Azure OpenAI URL shape (`/openai/deployments/{d}/…?api-version=`) | `api-key` header is supported but the URL shape is not; Korean enterprises are Azure-heavy. | S | network |
 | **2** | T2-3 | Vision input (`Read`/`@` on png·jpg·webp → image part) | "Here is the screenshot of the bug" is the most common non-text input; local VL models and gateway GPT-4o/Claude accept it. | M | — |
 | **2** | T2-4 | Permission rules + managed policy file | Only three approval modes; no persistent allow/deny (`Bash(npm test*)`), no admin-locked gateway address / forced offline for rollout. | M | authz |
@@ -81,7 +81,8 @@ ships as one commit. Order chosen so that each slice is independently valuable:
 4. **T1-2 .gitignore walking** — context hygiene for real repos.
 5. **T1-3 `/commit`** — closes the loop from edit to repository.
 6. **T1-4 key at rest** — review-sheet line reviewers ask for.
-7. Tier 2 onward — separate spec pass; T2-1 and T2-2 share the adapter and should be planned together.
+7. Tier 2 onward — separate spec pass. T2-1 is **deferred by the owner** (security rules — a
+   separate network is required for external `/v1/messages`); T2-2 is planned on its own.
 
 Gate 1 (slice plan) is this document. Gate 2 (commit) is per slice: diff summary + message shown, then commit locally.
 
@@ -339,6 +340,11 @@ the key.
 ---
 
 ### T2-1 — Anthropic Messages API shape
+
+**Status: deferred — later review.** Owner's decision (2026-08-30): company security rules
+require any work against an external `/v1/messages` endpoint to happen on a separate network.
+Nothing below is to be built in this repository until that network is available. The card
+is kept so the design is not lost.
 
 **Goal.** `deel setup` against a gateway that speaks `/v1/messages` works like the other two shapes.
 
