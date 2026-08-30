@@ -31,6 +31,7 @@ import { existsSync, statSync, readFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { extname, dirname, join, resolve } from 'node:path';
 import { walk, SKIP_DIRS, 내부살림 } from './fsutil.js';
+import { 건너뜀말 } from './ignore.js';
 import { decode, looksBinary } from './encoding.js';
 import { checkCommand } from '../safety/guard.js';
 
@@ -160,17 +161,25 @@ export const VERIFY_TOOL = {
 
     // 볼 파일 고르기. 안 주면 작업 폴더에서 확인할 수 있는 것을 찾는다.
     let 볼것 = [];
+    // .gitignore 로 안 본 것은 셈해 뒀다가 끝에 적는다. 조용히 빼면
+    // "빌드 산출물에 탈이 있는데 왜 확인이 통과냐" 를 사람이 못 푼다.
+    const 건너뜀 = { 폴더: 0, 파일: 0 };
+    const 셈더하기 = (목록) => { 건너뜀.폴더 += 목록.건너뜀?.폴더 ?? 0; 건너뜀.파일 += 목록.건너뜀?.파일 ?? 0; };
     if (Array.isArray(args.paths) && args.paths.length) {
       for (const p of args.paths) {
         let abs;
         try { abs = ctx.scope.resolve(p); } catch (e) { 볼것.push({ 없음: p, 왜: e.message }); continue; }
         if (!existsSync(abs)) { 볼것.push({ 없음: p, 왜: '파일이 없습니다' }); continue; }
         if (statSync(abs).isDirectory()) {
-          for (const f of walk(abs, { skipDirs: SKIP_DIRS })) 볼것.push({ path: f.path });
-        } else 볼것.push({ path: abs });
+          const 안것 = walk(abs, { skipDirs: SKIP_DIRS });
+          셈더하기(안것);
+          for (const f of 안것) 볼것.push({ path: f.path });
+        } else 볼것.push({ path: abs });      // 짚어 준 파일은 규칙과 상관없이 본다
       }
     } else {
-      볼것 = walk(뿌리, { skipDirs: SKIP_DIRS })
+      const 전부 = walk(뿌리, { skipDirs: SKIP_DIRS });
+      셈더하기(전부);
+      볼것 = 전부
         .filter((f) => ['.html', '.htm', '.css', '.json', '.js', '.mjs', '.cjs', '.py'].includes(extname(f.path).toLowerCase()))
         .slice(0, 40)
         .map((f) => ({ path: f.path }));
@@ -273,7 +282,7 @@ export const VERIFY_TOOL = {
 
     const 다됐나 = !탈난것.length;
     return {
-      content: 줄.join('\n').trim(),
+      content: 줄.join('\n').trim() + 건너뜀말(건너뜀),
       summary: 탈난것.length
         ? `탈 ${탈난것.length}개 · 확인 ${된것.length}개`
         : `확인 ${된것.length}개` + (못한것.length ? ` · 못 확인 ${못한것.length}개` : ''),

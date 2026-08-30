@@ -79,6 +79,15 @@ trace('1-규칙표');
     ['\\!important', '!important', false, true],
     ['a\\*b', 'a*b', false, true],
     ['a\\*b', 'axb', false, false],
+    // 제자리가 아닌 별둘은 git 이 그냥 별 하나로 읽는다 — 슬래시를 안 넘는다.
+    // (아래 여섯 줄은 진짜 git check-ignore 와 하나씩 맞춰 본 것이다)
+    ['a**b', 'axxb', false, true],
+    ['a**b', 'ab', false, true],
+    ['a**b', 'a/dir/b', false, false],
+    ['a**b', 'a/dir/b/f.txt', false, false],
+    ['x/**y', 'x/zzy', false, true],
+    ['x/**y', 'x/d/y', false, false],
+    ['**a', 'x/ya', false, true],
   ];
   for (const [글, 경로, 폴더, 기대] of 표) {
     const 규칙 = 규칙읽기(글, '');
@@ -156,6 +165,11 @@ trace('3-도구');
   const o = TOOLS.Outline.run({}, ctx);
   check('Outline 도 out/ 를 안 낸다', !/out\//.test(o.content ?? '') && /src\/a\.js/.test(o.content ?? ''), (o.content ?? o.error ?? '').slice(0, 120));
   check('Outline 도 건너뛴 수를 말한다', /건너뜀/.test(o.content ?? ''), (o.content ?? '').split('\n').pop());
+
+  const v = await TOOLS.Verify.run({}, ctx);
+  const v글 = v?.content ?? '';
+  check('Verify 도 out/ 을 안 본다', !/out\//.test(v글), v글.slice(0, 80).replace(/\n/g, ' | '));
+  check('Verify 도 건너뛴 수를 말한다', /\.gitignore 로 폴더 3개 · 파일 2개 건너뜀/.test(v글), v글.split('\n').pop());
 
   const rd = TOOLS.Read.run({ file_path: 'out/b.js' }, ctx);
   check('Read 로 짚어 주면 그대로 읽힌다', /needle = 2/.test(rd.content ?? ''), rd.error ?? '');
