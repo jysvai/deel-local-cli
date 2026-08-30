@@ -252,7 +252,7 @@ export class Session {
     this.plugins = [];
     this.maxSkillsListed = 40;    // 프롬프트에 올릴 최대 개수
     this.maxSkillDesc = 140;      // 설명 한 줄 최대 길이
-    this.usage = { in: 0, out: 0, calls: 0, ms: 0 };
+    this.usage = { in: 0, out: 0, calls: 0, ms: 0, retries: 0 };
     /*
      * 지금 붙은 모델이 얼마나 하는가 (agent/grade.js).
      *

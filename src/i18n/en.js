@@ -287,6 +287,11 @@ export const en = {
   'ask.pickPrompt': '1-{끝}, or type your own',
   'ask.freePrompt': 'Answer',
 
+  // ── When the server pushes back (backend/retry.js) ────────────────────
+  'loop.backoff': 'The server pushed back ({무엇}) — calling again in {초}s ({n}/{max})',
+  'loop.backoffDone': 'The server pushed back ({무엇}) — waited {초}s and called again ({n}/{max})',
+  'cost.retries': 'retries',
+
   // ── Common ────────────────────────────────────────────────────────────
   'common.unknownCommand': 'Unknown command',
   'common.seeHelp': 'Run /help for the list',

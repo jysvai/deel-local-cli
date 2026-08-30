@@ -34,6 +34,8 @@ import { makeScope } from '../safety/guard.js';
 import { History } from '../safety/undo.js';
 import { Audit } from '../safety/audit.js';
 import { activeProfile, load, resolveKey, homeDir } from '../config.js';
+import { 말 as 옮긴말 } from '../i18n/index.js';
+import { 알림채움 } from '../backend/retry.js';
 import { discover } from '../skills/discover.js';
 import { allowEndpoint, setOffline } from '../safety/network.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from '../backend/ctxsize.js';
@@ -318,6 +320,11 @@ export async function acp(opts = {}) {
           case 'retry':
             방.메시지번호++;
             말하기(`\n\n_(${ev.why} — 다시 답을 받습니다)_\n\n`);
+            break;
+
+          // 서버가 잠깐 막아 기다리는 중. 아직 흘러간 글이 없으니 답을 새로 시작하지는 않는다.
+          case 'backoff':
+            말하기(`\n\n_(${옮긴말(ev.지남 ? 'loop.backoffDone' : 'loop.backoff', 알림채움(ev))})_\n\n`);
             break;
 
           case 'tool_start':

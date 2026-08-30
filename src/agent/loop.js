@@ -357,12 +357,25 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
           if (ev.type === 'done') msg = ev.message;
           else {
             if (ev.type === 'content') 흘린것 += ev.text ?? '';
+            // 서버가 잠깐 막아 기다렸다 다시 부르는 것은 세어 둔다 — /cost 와
+            // deel run --json 이 본다. 느렸던 턴이 왜 느렸는지 여기서만 남는다.
+            if (ev.type === 'backoff') session.usage.retries = (session.usage.retries ?? 0) + 1;
             yield ev;
           }
         }
       } else {
         yield { type: 'waiting' };
-        msg = await chat(conn, ask(maxTokens, think));
+        /*
+         * 한 번에 받는 길에서는 기다리는 동안 화면에 말을 못 건다 — 제너레이터가
+         * 아니라 await 하나라서다. 그래서 알림을 모아 뒀다가 받은 뒤에 낸다.
+         * 늦게라도 "429 였고 2초 기다렸다" 가 남아야 왜 느렸는지 알 수 있다.
+         */
+        const 미룬알림 = [];
+        msg = await chat(conn, { ...ask(maxTokens, think), onBackoff: (알림) => 미룬알림.push(알림) });
+        for (const 알림 of 미룬알림) {
+          session.usage.retries = (session.usage.retries ?? 0) + 1;
+          yield { ...알림, 지남: true };
+        }
         if (msg.thinking) yield { type: 'thinking', text: msg.thinking };
         if (msg.content) yield { type: 'content', text: msg.content };
       }
@@ -810,6 +823,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
         session.usage.out += 자식.usage.out;
         session.usage.calls += 자식.usage.calls;
         session.usage.ms += 자식.usage.ms;
+        session.usage.retries = (session.usage.retries ?? 0) + (자식.usage.retries ?? 0);
 
         const 글 = 하위요약({
           목적, 모드: 자식모드, 끝, 모델: 모델알림?.말 ?? null,

@@ -82,7 +82,7 @@ export class Threads {
     const g = {
       이름: String(이름 ?? '').trim() || 기본이름(this.센것),
       messages: 물려줄것 ? [...물려줄것] : [],
-      usage: { in: 0, out: 0, calls: 0, ms: 0 },
+      usage: { in: 0, out: 0, calls: 0, ms: 0, retries: 0 },
       todos: null,
       store,
     };

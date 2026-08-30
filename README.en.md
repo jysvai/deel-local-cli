@@ -925,6 +925,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 | Empty replies | The server ignores streaming. deel retries once, then turns streaming off for the session |
 | Large files cut off mid-write | Check `/out` and raise it — the cap may be sitting at the 16,384 default because it could not be discovered |
 | Only `HTTP 400` shows | The server's own message is shown verbatim. If it is a length problem the number is read and applied automatically |
+| `429` · `503` shows | The gateway pushed back for a moment. deel waits and calls again, up to three times (honouring `Retry-After`). If it keeps happening, check your quota |
 | `deel scan` finds nothing | Server is off or on another port — use `--ports` |
 
 ---

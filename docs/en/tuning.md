@@ -8,7 +8,7 @@ Per-stage effort, the prefix cache, context length, reply-length cap
 
 ## Reasoning effort
 
-<sub>Context length is read off the model · /out · Truncated tool calls</sub>
+<sub>Context length is read off the model · /out · Truncated tool calls · When the server pushes back</sub>
 
 ### Context length is read off the model
 
@@ -142,6 +142,28 @@ One silently swallowed value produced all of that. What happens now:
 **A step limit (`maxSteps`) cannot catch this.** It cannot tell a long healthy task from a
 spinning one. What is counted here is not steps but **how many times the same tool failed for
 the same reason.**
+
+### When the server pushes back — 429 · 5xx · dropped connections
+
+Corporate gateways rate-limit per user, so `429` is routine; when the model behind one
+restarts, `502`/`503` show up for a few seconds; sometimes the connection just drops. All
+three mean "send the same request again in a moment", so the turn is not killed — deel
+waits and calls again.
+
+```
+  ↻ The server pushed back (HTTP 429) — calling again in 2s (1/3)
+```
+
+| | |
+|---|---|
+| Retried | `408` `429` `500` `502` `503` `504` `529`, and a connection dropped before any headers arrived |
+| Not retried | `400` `401` `403` `404` — calling again would give the same answer. Connection refused (server is down) and timeouts are not retried either |
+| How many | Three times. After that it says so, with the number of attempts |
+| How long | `Retry-After` if the server sends one (capped at 60 s). Otherwise 1 s → 2 s → 4 s with up to 30 % jitter |
+| Dropped after text has streamed | Not retried — a half-received answer must not come back twice. The salvage path takes over |
+| Ctrl+C while waiting | Stops immediately |
+
+The count shows in `/cost`, and `deel run --json` reports it as `usage.retries`.
 
 ---
 

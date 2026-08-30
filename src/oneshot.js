@@ -18,6 +18,8 @@ import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
 import { activeProfile, load, resolveKey } from './config.js';
+import { 말 as 옮긴말 } from './i18n/index.js';
+import { 알림채움 } from './backend/retry.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline } from './safety/network.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
@@ -123,7 +125,7 @@ export async function runOnce(opts = {}) {
     삐끗(`  ${c.red('✗')} ${message}`);
     return 내놓기({
       ok: false, reason, code: EXIT.error, text: '', why: message,
-      tools: 0, steps: 0, usage: { in: 0, out: 0, calls: 0, ms: 0 }, ms: 0,
+      tools: 0, steps: 0, usage: { in: 0, out: 0, calls: 0, ms: 0, retries: 0 }, ms: 0,
     });
   };
 
@@ -337,6 +339,12 @@ export async function runOnce(opts = {}) {
           곁(`  ${c.yellow('↻')} ${c.gray(`${ev.why} — 상한을 ${ev.from} → ${ev.to} 로 올려 다시 부릅니다`)}`);
           break;
 
+        // 서버가 잠깐 막아서 기다렸다 다시 부른 자리 (backend/retry.js).
+        // 배치 기록에 남아야 "그날 밤 왜 12분이 걸렸나" 를 나중에 읽을 수 있다.
+        case 'backoff':
+          곁(`  ${c.yellow('↻')} ${c.gray(옮긴말(ev.지남 ? 'loop.backoffDone' : 'loop.backoff', 알림채움(ev)))}`);
+          break;
+
         case 'folded':
           곁(`  ${c.cyan('◲')} ${c.gray(`오래된 도구 결과 ${ev.접은것}개를 접었습니다 (${ev.아낀토큰.toLocaleString()} 토큰을 비움)`)}`);
           break;
@@ -405,6 +413,7 @@ export async function runOnce(opts = {}) {
     usage: {
       in: session.usage.in, out: session.usage.out,
       calls: session.usage.calls, ms: session.usage.ms,
+      retries: session.usage.retries ?? 0,
     },
     model: conn.model,
     ms: Date.now() - t0,

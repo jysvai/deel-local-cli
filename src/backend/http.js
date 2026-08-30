@@ -69,8 +69,15 @@ export async function req(url, { method = 'GET', headers = {}, body, timeout = 2
     if (err instanceof NetBlocked) throw err;
     // 사용자가 끊은 것도 실패가 아니다. 오류 화면을 띄우면 안 된다.
     if (signal?.aborted) throw new Aborted();
-    return { ok: false, status: 0, error: normalizeError(err), ms };
+    // 코드도 같이 준다. 사람 말(error)로는 "끊겼다" 와 "거부됐다" 를 가를 수 있지만
+    // 다시 불러도 되는지(backend/retry.js)는 코드로 가르는 것이 정확하다.
+    return { ok: false, status: 0, error: normalizeError(err), code: 오류코드(err), ms };
   }
+}
+
+// fetch 가 던진 것에서 코드 하나를 뽑는다. undici 는 원인을 cause 에 싸서 준다.
+function 오류코드(err) {
+  return err?.cause?.code ?? err?.code ?? err?.cause?.name ?? err?.name ?? null;
 }
 
 // 사용자가 Ctrl+C 로 끊었다는 뜻. 통신 오류와 구분하려고 따로 둔다.

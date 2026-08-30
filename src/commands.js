@@ -818,6 +818,8 @@ export async function handle(line, session, ctx) {
       say(`  ${c.gray(pad('입력 토큰', 14))} ${session.usage.in.toLocaleString()}`);
       say(`  ${c.gray(pad('출력 토큰', 14))} ${session.usage.out.toLocaleString()}`);
       say(`  ${c.gray(pad('도구 시간', 14))} ${(session.usage.ms / 1000).toFixed(1)}초`);
+      // 서버가 잠깐 막아 다시 부른 횟수. 0 이면 안 적는다 — 없는 일을 줄로 남기면 표만 길어진다.
+      if (session.usage.retries) say(`  ${c.gray(pad(말('cost.retries'), 14))} ${session.usage.retries}회`);
       say(`  ${c.gray(pad('경과', 14))} ${mins}분`);
       say('');
       return { handled: true };

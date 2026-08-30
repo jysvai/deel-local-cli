@@ -274,6 +274,11 @@ export const ko = {
   'ask.pickPrompt': '1-{끝} 또는 직접 입력',
   'ask.freePrompt': '답',
 
+  // ── 잠깐 막혔을 때 (backend/retry.js) ─────────────────────────────────
+  'loop.backoff': '서버가 잠시 막았습니다 ({무엇}) — {초}초 뒤 다시 부릅니다 ({n}/{max})',
+  'loop.backoffDone': '서버가 잠시 막았습니다 ({무엇}) — {초}초 기다렸다 다시 불렀습니다 ({n}/{max})',
+  'cost.retries': '다시 부름',
+
   // ── 자주 나오는 것 ────────────────────────────────────────────────────
   'common.unknownCommand': '모르는 명령입니다',
   'common.seeHelp': '명령 목록은 /help',

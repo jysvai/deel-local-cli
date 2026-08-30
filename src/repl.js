@@ -7,6 +7,7 @@ import { headerLines } from './ui/status.js';
 import { 종, 창제목, 제목되돌리기, 알릴까, 제목글 } from './ui/notify.js';
 import { 보이기 as 인트로, 기본곁말 } from './ui/intro.js';
 import { 언어잡기, 말 as 옮긴말 } from './i18n/index.js';
+import { 알림채움 } from './backend/retry.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
 import { handle, COMMANDS, 미리보기끄기, 적용하기 as 그림적용 } from './commands.js';
@@ -1335,6 +1336,14 @@ export async function chatLoop(opts = {}) {
             say(session.level === '쉬움'
               ? `  ${c.yellow('↻')} ${c.gray('답이 잘려서 더 길게 다시 받습니다')}`
               : `  ${c.yellow('↻')} ${c.gray(`${ev.why} — 상한을 ${ev.from} → ${ev.to} 로 올려 다시 부릅니다`)}`);
+            break;
+
+          // 서버가 잠깐 막아서 기다렸다 다시 부르는 자리 (backend/retry.js).
+          // 상태 코드·몇 초·몇 번째를 그대로 적는다 — 왜 느린지가 여기서만 읽힌다.
+          // 쉬움 수준에서도 숫자를 뺀 채 내지 않는다. 429 는 설명이 필요한 숫자가 아니다.
+          case 'backoff':
+            clearThinking();
+            say(`  ${c.yellow('↻')} ${c.gray(옮긴말(ev.지남 ? 'loop.backoffDone' : 'loop.backoff', 알림채움(ev)))}`);
             break;
 
           case 'waiting':

@@ -1,6 +1,7 @@
 // 규격 차이(OpenAI 호환 / Ollama)를 여기 한 곳에서만 흡수한다.
 // 진단(probe)과 에이전트 루프가 같은 함수를 쓴다.
 import { req, headersFor, serverMessage, Aborted } from './http.js';
+import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
 
 export function endpoint(shape) {
   return shape === 'ollama' ? '/api/chat' : '/chat/completions';
@@ -145,59 +146,96 @@ export function toolMessage(shape, { callId, name, content }) {
 // 한 번에 받기.
 export async function chat(conn, opts) {
   const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts });
-  const r = await req(`${conn.base}${endpoint(conn.kind)}`, {
-    method: 'POST',
-    headers: headersFor(conn.auth, conn.key ?? ''),
-    body,
-    timeout: opts.timeout ?? 300000,
-    signal: opts.signal ?? null,
-  });
-  if (!r.ok) {
-    // 서버가 한 말을 그대로 달아 둔다. 루프가 이걸 읽고 한계를 배운다(backend/learn.js).
-    const err = new Error(serverMessage(r));
-    err.status = r.status;
-    err.serverMessage = serverMessage(r);
-    throw err;
+  const 정책 = 정책고르기(conn, opts);
+  for (let 시도 = 1; ; 시도++) {
+    const r = await req(`${conn.base}${endpoint(conn.kind)}`, {
+      method: 'POST',
+      headers: headersFor(conn.auth, conn.key ?? ''),
+      body,
+      timeout: opts.timeout ?? 300000,
+      signal: opts.signal ?? null,
+    });
+    if (r.ok) return extractMessage(conn.kind, r.json);
+    // 잠깐 막힌 것이면 기다렸다 다시 부른다 (backend/retry.js 머리말).
+    // 한 번에 받는 길은 제너레이터가 아니라 화면에 말을 못 걸어서, 부르는 쪽이
+    // 준 onBackoff 로 알린다. 안 줬으면 조용히 기다린다.
+    const 다시 = 다시부를지(r, 시도, 정책);
+    if (!다시) throw 거절오류(r, 시도);
+    opts.onBackoff?.(다시);
+    await 기다리기(다시.wait, opts.signal ?? null);
   }
-  return extractMessage(conn.kind, r.json);
+}
+
+/*
+ * 서버가 한 말을 그대로 달아 둔다. 루프가 이걸 읽고 한계를 배운다(backend/learn.js).
+ *
+ * 다시 불렀는데도 계속 막힌 것이면 **몇 번 불렀는지**도 적는다. `HTTP 429` 한 줄로는
+ * 한 번 막힌 것인지 계속 막히는 것인지 알 수 없고, 그 둘은 사람이 할 일이 다르다 —
+ * 앞은 그냥 다시 시키면 되고, 뒤는 할당량을 봐야 한다.
+ */
+function 거절오류(r, 시도) {
+  const 원문 = serverMessage(r);
+  let 말 = 원문;
+  if (시도 > 1) {
+    const 무엇 = r.status ? `HTTP ${r.status}` : (r.code ?? '연결 끊김');
+    말 += `\n  ${시도}번 불렀지만 계속 막혔습니다 (${무엇}) — 잠시 뒤 다시 시키세요`;
+  }
+  const err = new Error(말);
+  err.status = r.status;
+  err.serverMessage = 원문;
+  err.attempts = 시도;
+  return err;
+}
+
+/*
+ * 흘려 받으려다 거절당한 응답을, 한 번에 받은 것과 같은 모양으로 바꾼다.
+ *
+ * 거절당했으면 **본문을 읽는다.** 전에는 여기서 `HTTP 400` 만 던졌다. 스트리밍이라
+ * 본문을 안 읽고 넘어간 것인데, 정작 그 본문에 답이 들어 있다 —
+ *   "This model's maximum context length is 8192 tokens, however you requested 41003"
+ * 사용자를 구할 수 있었던 문장이 그 자리에서 사라졌다. 화면에는 ✗ HTTP 400 한 줄만
+ * 남고, 왜 그런지 알아낼 방법이 없었다.
+ *
+ * 실패한 응답은 흘려 받을 것도 없으니 통째로 읽어도 된다. 그리고 다시 부르기 전에
+ * 반드시 읽어야 한다 — 안 읽은 몸을 두고 다음 요청을 보내면 연결이 남는다.
+ */
+async function 거절읽기(r) {
+  const 것 = {
+    ok: false, status: r.status, error: r.error ?? null, code: r.code ?? null,
+    json: null, text: '', ms: r.ms, headers: r.res?.headers ?? null,
+  };
+  if (r.res) {
+    try {
+      것.text = await r.res.text();
+      try { 것.json = JSON.parse(것.text); } catch { /* 글로만 오는 서버도 있다 */ }
+    } catch { /* 본문마저 못 읽으면 상태 코드만으로 간다 */ }
+  }
+  return 것;
 }
 
 // 흘려 받기. { type:'thinking'|'content', text } 를 내보내고 마지막에 { type:'done', message } 를 준다.
 export async function* chatStream(conn, opts) {
   const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts, stream: true });
-  const r = await req(`${conn.base}${endpoint(conn.kind)}`, {
-    method: 'POST',
-    headers: headersFor(conn.auth, conn.key ?? ''),
-    body,
-    timeout: opts.timeout ?? 300000,
-    stream: true,
-    signal: opts.signal ?? null,
-  });
-  if (!r.ok || !r.res?.body) {
-    /*
-     * 거절당했으면 **본문을 읽는다.**
-     *
-     * 전에는 여기서 `HTTP 400` 만 던졌다. 스트리밍이라 본문을 안 읽고 넘어간
-     * 것인데, 정작 그 본문에 답이 들어 있다 —
-     *   "This model's maximum context length is 8192 tokens, however you requested 41003"
-     * 사용자를 구할 수 있었던 문장이 그 자리에서 사라졌다. 화면에는 ✗ HTTP 400
-     * 한 줄만 남고, 왜 그런지 알아낼 방법이 없었다.
-     *
-     * 실패한 응답은 흘려 받을 것도 없으니 통째로 읽어도 된다.
-     */
-    let 말 = r.error ?? `HTTP ${r.status}`;
-    if (r.res) {
-      try {
-        const text = await r.res.text();
-        let json = null;
-        try { json = JSON.parse(text); } catch { /* 글로만 오는 서버도 있다 */ }
-        말 = serverMessage({ status: r.status, json, text });
-      } catch { /* 본문마저 못 읽으면 위의 말 그대로 */ }
-    }
-    const err = new Error(말);
-    err.status = r.status;
-    err.serverMessage = 말;
-    throw err;
+  const 정책 = 정책고르기(conn, opts);
+  let r;
+  for (let 시도 = 1; ; 시도++) {
+    r = await req(`${conn.base}${endpoint(conn.kind)}`, {
+      method: 'POST',
+      headers: headersFor(conn.auth, conn.key ?? ''),
+      body,
+      timeout: opts.timeout ?? 300000,
+      stream: true,
+      signal: opts.signal ?? null,
+    });
+    if (r.ok && r.res?.body) break;
+    const 거절 = await 거절읽기(r);
+    // 잠깐 막힌 것이면 알리고, 기다렸다, 다시 부른다. 머리말도 못 받은 자리라
+    // 화면에 흘러간 글이 없다 — 그래서 여기서만 다시 부르고, 아래 읽기 도중에
+    // 끊긴 것은 다시 안 부른다 (backend/retry.js 머리말).
+    const 다시 = 다시부를지(거절, 시도, 정책);
+    if (!다시) throw 거절오류(거절, 시도);
+    yield 다시;
+    await 기다리기(다시.wait, opts.signal ?? null);
   }
 
   const acc = { content: '', thinking: '', toolCalls: [], usage: { in: 0, out: 0 }, stopped: null };
