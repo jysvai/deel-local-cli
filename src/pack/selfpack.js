@@ -45,8 +45,10 @@ const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 // 앞에 점이나 글자가 붙은 것은 뺀다. 그러지 않으면 정규식의 .exec( 까지
 // '외부 명령 실행' 으로 세어 심사서가 거짓말을 한다.
 const PROBES = [
-  { id: 'net', label: '네트워크 요청', re: /(?<![.\w])fetch\s*\(/g,
-    note: '사용자가 setup 에서 넣은 주소로만 나갑니다' },
+  // fetch 말고도 http.js 의 프록시 터널(httpRequest·httpsRequest·tlsConnect)이 있다.
+  // 그것을 안 세면 심사서가 "네트워크 요청 N건" 을 거짓으로 적는다.
+  { id: 'net', label: '네트워크 요청', re: /(?<![.\w])fetch\s*\(|(?<![.\w])(?:httpRequest|httpsRequest|tlsConnect)\s*\(/g,
+    note: '사용자가 setup 에서 넣은 주소로만 나갑니다 (HTTPS_PROXY 가 있으면 그 프록시를 거쳐서)' },
   { id: 'exec', label: '외부 명령 실행', re: /(?<![.\w])(execFile|execFileSync|execSync|spawn|spawnSync|exec)\s*\(/g,
     note: '사용자·모델이 지시한 명령, 그리고 플러그인 받을 때의 git' },
   { id: 'listen', label: '포트 열기', re: /(?<![.\w])(createServer)\s*\(/g,
@@ -171,6 +173,9 @@ export function reviewSheet(a, at) {
   L.push('       · 그 한 자리만 허용 목록에 오릅니다. 모델을 바꾸면 앞의 자리는 닫힙니다.');
   L.push('       · src/safety/network.js 가 요청마다 확인하고, 목록에 없으면 요청 자체를');
   L.push('         만들지 않습니다.');
+  L.push('       · HTTPS_PROXY(또는 설정의 proxy)가 있으면 그 프록시를 **거쳐** 갑니다 (CONNECT');
+  L.push('         터널). 목적지는 그대로 그 한 자리이고, 거치는 프록시는 켤 때 화면과 /status 에');
+  L.push('         적힙니다. 이 컴퓨터 안(127.*, localhost)으로 가는 요청은 프록시를 안 탑니다.');
   L.push('');
   L.push('   [B] 웹 읽기 (WebFetch 도구) — 받아 오기만 하는 길');
   L.push('       · GET 만 씁니다. 본문을 실어 보내지 않습니다 (소스·대화가 나갈 수 없음).');

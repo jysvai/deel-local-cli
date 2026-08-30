@@ -11,7 +11,8 @@ import {
 } from 'node:fs';
 import { untargz, stripTop } from '../pack/tar.js';
 import { makeZip } from '../pack/zip.js';
-import { allowTemporarily, checkUrl, isOffline } from '../safety/network.js';
+import { allowTemporarily, isOffline } from '../safety/network.js';
+import { 원시요청 } from '../backend/http.js';
 import { copyDir } from '../tools/fsutil.js';
 
 export const pluginsDir = (home = homedir()) => join(home, '.deel', 'plugins');
@@ -64,11 +65,12 @@ async function fetchInto(spec, dest, onStep) {
     // 사용자가 이 명령을 친 동안만 github 를 연다. 끝나면 바로 닫는다.
     const close = allowTemporarily(url);
     let res;
-    try { checkUrl(url); res = await fetch(url, { signal: AbortSignal.timeout(120000) }); }
-    catch (err) { continue; }
+    // 한 문(backend/http.js)으로 나간다 — 프록시를 거치고, 다른 집으로 되돌리면 거기서 막힌다.
+    try { res = await 원시요청(url, { timeout: 120000 }); }
+    catch { continue; }
     finally { close(); }
     if (!res.ok) continue;
-    const gz = Buffer.from(await res.arrayBuffer());
+    const gz = res.bytes;
     const files = stripTop(untargz(gz));
     if (!files.length) return { error: '받은 묶음이 비어 있습니다' };
     rmSync(dest, { recursive: true, force: true });

@@ -13,6 +13,7 @@ import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기
 import { allowTemporarily } from './safety/network.js';
 import { chat } from './backend/adapter.js';
 import { 알림채움 } from './backend/retry.js';
+import { 프록시고르기 } from './backend/proxy.js';
 import { TOOLS } from './tools/index.js';
 import { 둘러보기, 프로젝트갈래 } from './lsp/servers.js';
 import { 지금것들 } from './lsp/client.js';
@@ -841,6 +842,9 @@ export async function handle(line, session, ctx) {
       rule('연결', 70);
       say(`  ${c.gray(pad('규격', 10))} ${k.kind === 'ollama' ? 'Ollama' : 'OpenAI 호환'}`);
       say(`  ${c.gray(pad('주소', 10))} ${k.base}`);
+      // 프록시를 거치면 어느 것을, 어디서 읽었는지(env · config)까지. 안 거치면 줄 자체가 없다.
+      const 프록시 = 프록시고르기(k.base);
+      if (프록시) say(`  ${c.gray(pad('프록시', 10))} ${프록시.url} ${c.gray(`(${프록시.출처})`)}`);
       say(`  ${c.gray(pad('모델', 10))} ${k.model}`);
       say(`  ${c.gray(pad('작업 폴더', 10))} ${session.root}`);
       say(`  ${c.gray(pad('규칙', 10))} ${session.rules ? session.rules.name : '없음 (/init 으로 만들 수 있습니다)'}`);

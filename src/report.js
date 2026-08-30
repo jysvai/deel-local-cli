@@ -1,5 +1,12 @@
 // 진단 결과를 화면에 표로 그리고, "이걸로 돌릴 수 있는지" 판정한다.
 import { c, say, rule, pad, width, mark } from './ui/ansi.js';
+import { 프록시고르기 } from './backend/proxy.js';
+
+// 이 주소로 갈 때 거칠 프록시를 한 줄로. 안 거치면 null — 그때는 줄 자체를 안 만든다.
+function 프록시줄(base) {
+  const p = 프록시고르기(base);
+  return p ? `${p.url} (${p.출처})` : null;
+}
 
 const ICON = { ok: mark.ok, no: mark.no, warn: mark.warn, skip: c.gray('·') };
 const WORD = { ok: c.green('됨'), no: c.red('안됨'), warn: c.yellow('조건부'), skip: c.gray('확인불가') };
@@ -21,6 +28,10 @@ export function renderHeader(facts) {
     ['인증', facts.auth === 'none' ? '없음' : facts.auth],
     ['모델', facts.model],
   ];
+  // 프록시를 거치면 그 줄도 적는다. "연결 실패" 가 프록시 탓인지 게이트웨이 탓인지는
+  // 이 한 줄이 있어야 갈린다 — 진단 보고서를 받는 사내 담당자가 제일 먼저 보는 자리다.
+  const 프록시 = 프록시줄(facts.base);
+  if (프록시) rows.push(['프록시', 프록시]);
   for (const [k, v] of rows) say(`  ${c.gray(pad(k, 8))} ${v}`);
   say('');
   rule('검사', 74);
@@ -104,6 +115,7 @@ export function plainReport(facts, results, v) {
     '',
     `규격        ${facts.shape === 'ollama' ? 'Ollama 자체 규격' : 'OpenAI 호환'}`,
     `주소        ${facts.base}`,
+    ...(프록시줄(facts.base) ? [`프록시      ${프록시줄(facts.base)}`] : []),
     `인증        ${facts.auth === 'none' ? '없음' : facts.auth}`,
     `모델        ${facts.model}`,
     `컨텍스트    ${facts.ctx ? facts.ctx.toLocaleString() + ' 토큰' : '미상'}`,

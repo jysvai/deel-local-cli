@@ -73,6 +73,9 @@ src/
   backend/http.js        the single HTTP layer (the only door out)
   backend/detect.js      protocol and auth detection
   backend/adapter.js     absorbing OpenAI/Ollama differences + streaming parser
+  backend/retry.js       when to wait and call again (429 · 5xx · dropped connections)
+  backend/proxy.js       reading HTTPS_PROXY · NO_PROXY — choosing the way out
+  backend/learn.js       learning limits from what the server said (context · reply length)
   backend/ctxsize.js     reading context length off the model
   backend/probe.js       8 diagnostic checks
   backend/scan.js        scanning for local servers

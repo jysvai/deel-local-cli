@@ -73,6 +73,9 @@ src/
   backend/http.js        HTTP 한 겹 (바깥으로 나가는 유일한 문)
   backend/detect.js      규격·인증 자동 판별
   backend/adapter.js     OpenAI/Ollama 차이 흡수 + 스트리밍 파서
+  backend/retry.js       잠깐 막혔을 때(429 · 5xx · 끊김) 기다렸다 다시 부르는 규칙
+  backend/proxy.js       HTTPS_PROXY · NO_PROXY 읽기 — 어느 길로 나갈지 고르기
+  backend/learn.js       서버가 한 말에서 한계 배우기 (컨텍스트 · 답 길이)
   backend/ctxsize.js     컨텍스트 길이를 모델에서 긁어오기
   backend/probe.js       진단 검사 8종
   backend/scan.js        로컬 서버 훑기

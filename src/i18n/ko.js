@@ -105,6 +105,7 @@ export const ko = {
   'head.inside': '이 컴퓨터 안',
   'head.outside': '바깥',
   'head.offlineLock': '[오프라인 잠금]',
+  'head.viaProxy': '프록시 {프록시} 거침',
   'head.nowhereElse': '← 여기 말고는 어디로도 안 갑니다',
   'head.glyphHint': '상태줄 맨 앞 {안:이가} 이 뜻입니다. 바깥으로 가면 {밖:으로} 바뀝니다.',
   'head.conn': '연결',

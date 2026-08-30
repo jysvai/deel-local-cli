@@ -2,6 +2,7 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
+import { 프록시정하기 } from './backend/proxy.js';
 
 // 설정이 놓이는 자리.
 //
@@ -37,6 +38,14 @@ export function configPath() {
 const EMPTY = { version: 1, active: null, profiles: [] };
 
 export function load() {
+  const cfg = 읽기();
+  // 프록시는 설정을 읽는 자리에서 정한다. run · acp · setup · diagnose 어느 문으로
+  // 들어와도 한 번은 여기를 지나므로, 여기가 빠뜨리지 않는 유일한 자리다.
+  프록시정하기({ config: cfg });
+  return cfg;
+}
+
+function 읽기() {
   const p = configPath();
   if (!existsSync(p)) return structuredClone(EMPTY);
   try {

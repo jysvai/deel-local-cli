@@ -12,6 +12,7 @@
 //   · 오프라인이면 아예 거절.
 //   · 받은 것은 글자만 뽑고 길이를 자른다.
 import { allowTemporarily, isOffline, isLocalHost } from '../safety/network.js';
+import { 원시요청 } from '../backend/http.js';
 import { decode as decodeBytes } from './encoding.js';
 import { 웹글자수 } from '../agent/budget.js';
 
@@ -90,6 +91,24 @@ function 얼마나쉬라나(머리, 회차) {
   return Math.min(초, 10);
 }
 
+/** 몸을 상한까지만 읽는다. 넘으면 끊고 null — 2MB 를 다 받아 놓고 버리던 것을, 받다 말게. */
+async function 몸읽기(body, 상한) {
+  const reader = body.getReader();
+  const 조각 = [];
+  let 크기 = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    크기 += value.length;
+    if (크기 > 상한) {
+      try { await reader.cancel(); } catch { /* 끊는 중 오류는 그만 */ }
+      return null;
+    }
+    조각.push(Buffer.from(value));
+  }
+  return Buffer.concat(조각);
+}
+
 function 태그벗기기(html) {
   let 글 = String(html);
   // script·style·주석을 겹쳐 쓰거나 안 닫은 모양으로 흘려 보내는 페이지가
@@ -150,25 +169,35 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
   }
 
   const close = allowTemporarily(u.origin);
+  // 되돌림(redirect)으로 옮겨 간 집도 그 한 번만 연다. 한 홉마다 문지기를 지나므로
+  // 여기서 열어 주지 않으면 막힌다 — 그리고 사내망으로 되돌리는 것은 열지 않는다.
+  const 열어둔 = [];
   try {
     // 같은 집이면 줄을 서고, 잠시 뒤 되는 오류면 쉬었다 다시 부른다.
     let res = null;
     let 쉰시간 = 0;
     for (let 회차 = 0; ; 회차++) {
-      res = await 한집씩(u.origin, () => fetch(u.href, {
+      res = await 한집씩(u.origin, () => 원시요청(u.href, {
         method: 'GET',                            // 보내는 건 없다
-        redirect: 'follow',
         headers: { 'User-Agent': 'deel/cli', Accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5' },
-        signal: AbortSignal.timeout(30000),
+        timeout: 30000,
+        stream: true,                             // 상한까지만 받는다 — 다 받아 놓고 버리지 않는다
+        되돌림: (다음) => {
+          if (다음.protocol !== 'http:' && 다음.protocol !== 'https:') throw new Error(`${다음.protocol} 로 되돌립니다 — 따라가지 않습니다`);
+          if (isLocalHost(다음.hostname) && !allowPrivate) throw new Error(`이 컴퓨터·사내망 주소(${다음.hostname})로 되돌립니다 — 따라가지 않습니다`);
+          열어둔.push(allowTemporarily(다음.origin));
+        },
       }));
       방문기록.push({ url: u.href, status: res.status, at: new Date().toISOString() });
       if (res.ok || !다시할것.has(res.status) || 회차 >= 다시횟수) break;
+      await res.버리기?.();
       const 초 = 얼마나쉬라나(res.headers.get('retry-after'), 회차);
       쉰시간 += 초;
       await 잠깐(초 * 1000);
     }
 
     if (!res.ok) {
+      await res.버리기?.();
       /*
        * 오류를 그냥 번호로만 던지면 모델은 할 수 있는 게 없다. 실제로 그랬다 —
        * `✗ HTTP 429` 만 보고 그 자료를 포기했다. 무엇을 하면 되는지 같이 준다.
@@ -193,11 +222,12 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
 
     const type = (res.headers.get('content-type') ?? '').toLowerCase();
     if (!/text|json|xml|javascript/.test(type)) {
+      await res.버리기?.();
       return { error: `글이 아닌 내용입니다 (${type || '알 수 없음'}). 이 도구는 글만 읽습니다.` };
     }
 
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > MAX_BYTES) return { error: `너무 큽니다 (${(buf.length / 1024 / 1024).toFixed(1)}MB).` };
+    const buf = await 몸읽기(res.res.body, MAX_BYTES);
+    if (!buf) return { error: `너무 큽니다 (${MAX_BYTES / 1024 / 1024}MB 넘음) — 받다 말았습니다. 범위를 좁힌 주소를 쓰세요.` };
 
     /*
      * 무엇으로 쓰여 있는지 알아보고 읽는다.
@@ -274,6 +304,7 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
     return { error: m };
   } finally {
     close();   // 반드시 닫는다. 열어 둔 채로 두면 자물쇠가 아니게 된다.
+    for (const 닫기 of 열어둔) 닫기();
   }
 }
 

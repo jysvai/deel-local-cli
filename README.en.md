@@ -918,7 +918,8 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 | `address not found` | Typo, DNS, VPN / intranet connectivity |
 | `connection refused` | Server is down or the port differs |
 | certificate error | `set NODE_EXTRA_CA_CERTS=C:\path\corp-ca.pem` |
-| behind a proxy | `set HTTPS_PROXY=http://proxy:port` |
+| behind a proxy | `set HTTPS_PROXY=http://proxy:port` (with auth: `http://user:pw@proxy:port`). If the first screen and `/status` show `proxy …`, it is in use. Exclude hosts with `NO_PROXY=.corp.com,10.1.2.3`; turn it off entirely with `"proxy": "none"` in the config |
+| the proxy answers 407 | Put `user:pw@` into the proxy address. Proxies that only accept NTLM · Negotiate are not supported — ask the admin for Basic or an unauthenticated address |
 | 401 / 403 | Wrong key or auth header style (four are tried automatically) |
 | `address not permitted` | The lock did its job — pick a connection with `/model` |
 | Tool calls don't work | Run `deel diagnose`. Small models (1B–3B) often can't |

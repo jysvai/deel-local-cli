@@ -28,12 +28,15 @@ Auth style is detected automatically: `Authorization: Bearer` → `x-api-key` �
 | `DEEL_API_KEY` | Keep the key out of the config file (takes precedence) |
 | `DEEL_KEY_<PROFILE_ID>` | Per-profile key |
 | `NODE_EXTRA_CA_CERTS` | Corporate TLS certificate |
-| `HTTPS_PROXY` | Behind a proxy |
+| `HTTPS_PROXY` · `HTTP_PROXY` | Behind a proxy — `http://user:pw@proxy:port`. Lower-case names work too. deel opens the CONNECT tunnel itself, so this works on every Node version |
+| `NO_PROXY` | Where not to use the proxy — `.corp.com, 10.1.2.3, intra:8443, *`. This machine (localhost · 127.*) always goes direct |
 | `DEEL_DEBUG=1` | Verbose errors |
 | `NO_COLOR` | Disable colour |
 | `DEEL_NO_MOTION=1` | Turn off the working animation (falls back to a one-cell spinner) |
 | `DEEL_MOTION` | Change that animation — `knight` · `animal`. For this run only; `/motion` is better for keeping it. [See](interface.md#changing-the-drawing) |
 | `DEEL_OFFICE=1` | Pin a twelve-row office above the input box (same as `/motion office`). [See](interface.md#the-office--what-is-running-drawn-as-a-room) |
+
+The proxy can also be set in the config file — `"proxy": "http://user:pw@proxy:port"` takes precedence over the environment, and `"proxy": "none"` bypasses it even when the variables are set. While one is in use, the first screen and `/status` show `proxy …`. Only `http://` proxies are supported (Basic auth); proxies that accept only NTLM · Negotiate cannot be used.
 
 ### Flags
 

@@ -27,6 +27,7 @@ const FILES = [
   'smoke.js',
   'loop.test.js',
   'retry.test.js',
+  'proxy.test.js',
   'task.test.js',
   'outline.test.js',
   'network.test.js',

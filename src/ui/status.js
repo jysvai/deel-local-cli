@@ -6,6 +6,7 @@ import { c, 눈금게이지, width, clip, cols, mark } from './ansi.js';
 import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite, 보일이름 } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
+import { 프록시고르기 } from '../backend/proxy.js';
 import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
 import { 말, 언어 } from '../i18n/index.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
@@ -434,6 +435,9 @@ export function headerLines(session, found, 상자쓰나 = true) {
     const 로컬 = isLocalHost(u.hostname);
     목적지 = `${로컬 ? c.green(말('head.inside')) : c.yellow(말('head.outside'))} ${c.white(u.host)}`
       + (isOffline() ? c.green(`  ${말('head.offlineLock')}`) : '');
+    // 프록시를 거치면 그것도 첫 화면에. "연결 실패" 가 프록시 탓인지는 이 한 마디로 갈린다.
+    const 프록시 = 프록시고르기(conn.base);
+    if (프록시) 목적지 += c.gray(`  ${말('head.viaProxy', { 프록시: `${프록시.host}:${프록시.port}` })}`);
   } catch { 목적지 = c.gray(String(conn.base)); }
 
   /*

@@ -30,12 +30,15 @@
 | `DEEL_API_KEY` | 키를 파일에 안 남기고 싶을 때 (파일보다 우선) |
 | `DEEL_KEY_<프로필ID>` | 프로필별 키 |
 | `NODE_EXTRA_CA_CERTS` | 사내 인증서를 쓰는 게이트웨이 |
-| `HTTPS_PROXY` | 프록시를 거쳐야 할 때 |
+| `HTTPS_PROXY` · `HTTP_PROXY` | 프록시를 거쳐야 할 때 — `http://user:pw@프록시:포트`. 소문자 이름도 봅니다. CONNECT 터널을 직접 열므로 Node 판과 상관없이 먹습니다 |
+| `NO_PROXY` | 프록시를 안 거칠 곳 — `.corp.com, 10.1.2.3, intra:8443, *`. 이 컴퓨터(localhost · 127.*)는 언제나 직접 갑니다 |
 | `DEEL_DEBUG=1` | 자세한 오류 |
 | `NO_COLOR` | 색 끄기 |
 | `DEEL_NO_MOTION=1` | 일하는 중 그림 끄기 (한 칸짜리 돌림표로) |
 | `DEEL_MOTION` | 그 그림 바꾸기 — `기사`(knight) · `동물`(animal). 이 한 번만 다르게 볼 때 씁니다. 늘 그렇게 두려면 `/motion` 이 낫습니다. [보기](interface.md#그림을-바꾸고-싶다면) |
 | `DEEL_OFFICE=1` | 입력 상자 위에 사무실 12줄. 지금 무슨 일이 도는지를 방으로 (`/motion 사무실` 과 같음). [보기](interface.md#사무실--지금-무슨-일이-도는지를-방-하나로) |
+
+프록시는 설정 파일로도 정합니다 — `"proxy": "http://user:pw@프록시:포트"` 는 환경변수보다 우선하고, `"proxy": "none"` 이면 환경변수가 있어도 안 거칩니다. 거치는 중이면 첫 화면과 `/status` 에 `프록시 …` 가 뜹니다. 지원하는 것은 `http://` 프록시(인증은 Basic)뿐이고, NTLM · Negotiate 만 받는 프록시는 못 씁니다.
 
 ### 실행 옵션
 
