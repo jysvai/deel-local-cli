@@ -13,6 +13,7 @@ import { closeConnections } from '../src/backend/http.js';
 import { parseSize } from '../src/backend/ctxsize.js';
 import { runSessions } from '../src/agent/sessionui.js';
 import { acp } from '../src/acp/serve.js';
+import { runCompletion } from '../src/completion.js';
 
 const MIN_NODE = 20;
 
@@ -137,6 +138,7 @@ function help() {
   say(`    ${c.cyan('deel setup')}                  연결 설정 (주소·키·모델)`);
   say(`    ${c.cyan('deel status')}                 연결 상태 보기`);
   say(`    ${c.cyan('deel diagnose')}               저장된 연결로 진단 다시 돌리기`);
+  say(`    ${c.cyan('deel completion <셸>')}        탭 완성 스크립트 ${c.gray('(bash · zsh · powershell)')}`);
   say(`    ${c.cyan('deel --version')}              판 번호 ${c.gray('(-v 도 됩니다)')}`);
   say('');
   say(`  ${c.bold('여러 로컬을 같이 쓸 때')}`);
@@ -298,6 +300,14 @@ async function main() {
     case 'sessions':
     case 'ls':
       return runSessions(flags);
+    /*
+     * 탭 완성 스크립트를 낸다 (src/completion.js).
+     *
+     * 표준출력으로만 낸다 — `deel completion bash > ~/.deel-completion.bash`
+     * 처럼 바로 파이프에 물릴 수 있어야 한다. 그래서 여기서는 say() 를 안 쓴다.
+     */
+    case 'completion':
+      return runCompletion(args);
     default:
       say('');
       say(`  ${c.red('모르는 명령')} ${c.bold(cmd)}`);

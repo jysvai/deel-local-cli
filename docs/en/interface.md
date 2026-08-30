@@ -344,6 +344,43 @@ so you could no longer see it.
 
 ---
 
+### Tab works in the shell too — `deel completion`
+
+The above is for `/commands` typed **inside** a conversation. The things you type **before**
+one starts — `deel sbom`, `--effort` — used to require reading the help text.
+
+```
+deel completion bash       > ~/.deel-completion.bash   # then source it from .bashrc
+deel completion zsh        > ~/.deel-completion.zsh
+deel completion powershell | Out-File -Encoding utf8 -Append $PROFILE
+```
+
+Once installed:
+
+```
+$ deel sb<TAB>
+sbom
+
+$ deel --mode <TAB>
+auto  code  architect  ask  debug  plan  orchestrator
+
+$ deel --think <TAB>
+off  low  medium  high  max
+```
+
+The value lists for `--mode`, `--think` and `--effort` come **straight from the code**.
+Copying them by hand means they drift eventually, and a completion that offers a value which
+does not exist is worse than wrong help — help can be ignored, but completion insists the
+thing is there. For the same reason, a test goes red if the command list stops matching the
+commands the CLI actually accepts.
+
+> **The PowerShell script is the one that is entirely in English.** Windows PowerShell 5.1,
+> which ships with Windows, reads a BOM-less `.ps1` as the machine's legacy codepage (CP949
+> in Korea). A double-byte decode there can **swallow a closing quote**, turning the whole
+> script into a syntax error. Found by actually pressing TAB in a real PowerShell.
+
+---
+
 ### The box stays while it works
 
 Local models are slow. A single step can take tens of seconds, and if the bottom of the

@@ -343,6 +343,42 @@ macOS 터미널은 **기본값이 Option 을 Meta 로 안 보냅니다.** 그래
 
 ---
 
+### 셸에서도 탭이 됩니다 — `deel completion`
+
+위의 것은 대화 **안**에서 `/명령` 을 칠 때입니다. 대화를 **켜기 전에** 치는
+`deel sbom` · `--effort` 같은 것은 도움말을 읽어야 알 수 있었습니다.
+
+```
+deel completion bash       > ~/.deel-completion.bash   # 그리고 .bashrc 에서 source
+deel completion zsh        > ~/.deel-completion.zsh
+deel completion powershell | Out-File -Encoding utf8 -Append $PROFILE
+```
+
+넣고 나면 이렇게 됩니다.
+
+```
+$ deel sb<TAB>
+sbom
+
+$ deel --mode <TAB>
+auto  code  architect  ask  debug  plan  orchestrator
+
+$ deel --think <TAB>
+off  low  medium  high  max
+```
+
+`--mode` · `--think` · `--effort` 의 값 목록은 **코드에서 그대로 가져옵니다.**
+손으로 베껴 적으면 언젠가 갈리는데, 완성이 없는 값을 알려 주는 것은 도움말이
+틀린 것보다 나쁩니다 — 도움말은 안 읽으면 그만이지만 완성은 없는 것을 있다고
+우깁니다. 같은 까닭으로 명령 목록이 실제 명령과 어긋나면 검사가 빨개집니다.
+
+> **파워셸 스크립트만 영어입니다.** 윈도우에 기본으로 깔린 Windows PowerShell
+> 5.1 은 BOM 없는 `.ps1` 을 UTF-8 이 아니라 그 PC 의 옛 코드페이지(CP949)로
+> 읽습니다. 그러면 한글 두 바이트를 짝지어 먹다가 **닫는 따옴표까지 삼켜서**
+> 스크립트가 통째로 문법 오류가 됩니다. 진짜 파워셸에 넣어 보고 알았습니다.
+
+---
+
 ### 일하는 중에는 상자가 그대로 있습니다
 
 로컬 모델은 느립니다. 한 걸음에 수십 초가 걸리는데 그 동안 화면 아래가 텅 비면
