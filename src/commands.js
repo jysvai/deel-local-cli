@@ -1756,6 +1756,11 @@ async function 커밋명령(session, ctx, arg = '') {
   if (r.살림뺌) {
     say(`    ${c.gray('· .deel/ 은 안 담았습니다 — 열쇠와 감사기록이 든 곳입니다')}`);
   }
+  if (r.폴더통째?.length) {
+    say('');
+    say(`  ${c.yellow('폴더째 바뀐 자리는 안 담았습니다')} ${c.gray(`— ${r.폴더통째.slice(0, 4).join(', ')}`)}`);
+    say(`  ${c.gray('그 안에는 남이 고치던 파일도 있습니다. 통째로 담으려면')} ${c.cyan('/commit 전부')}`);
+  }
   if (r.남의것.length) {
     say('');
     say(`  ${c.yellow('먼저 담겨 있던 것도 같이 실립니다')} ${c.gray(`— ${r.남의것.slice(0, 6).join(', ')}`)}`);
@@ -1793,6 +1798,15 @@ async function 커밋명령(session, ctx, arg = '') {
     const 예 = await confirm('이대로 커밋할까요?', true);
     if (!예) {
       say(`  ${c.gray('안 찍었습니다. 담은 것은 그대로 둡니다.')}`);
+      say('');
+      return;
+    }
+    // 묻는 사이에 담긴 것이 바뀌었을 수 있다(다른 창·다른 도구). 보여 준 것과
+    // 다른 것을 찍으면, 승인을 받은 의미가 없어진다.
+    const 지금 = r.다시확인();
+    if (JSON.stringify(지금) !== JSON.stringify(r.파일들)) {
+      say(`  ${c.yellow('묻는 사이에 담긴 것이 바뀌었습니다')} ${c.gray(`— 보여 준 ${r.파일들.length}개 → 지금 ${지금.length}개`)}`);
+      say(`  ${c.gray('안 찍었습니다. 다시')} ${c.cyan('/commit')} ${c.gray('으로 확인하세요.')}`);
       say('');
       return;
     }

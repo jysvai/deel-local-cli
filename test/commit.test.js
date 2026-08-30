@@ -15,7 +15,7 @@
 //
 // 모델은 가짜 게이트웨이로 세운다. 진짜 모델은 안 쓴다.
 import { createServer } from 'node:http';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { Session } from '../src/agent/session.js';
@@ -197,6 +197,140 @@ trace('3-살림');
   check('커밋에도 열쇠가 안 실렸다', !/\.deel/.test(실린것), 실린것.trim().replace(/\n/g, ' '));
   check('열쇠 글자가 저장소 이력 어디에도 없다', !/sk-진짜열쇠/.test(깃(root, ['log', '-p']).out));
   rmSync(root, { recursive: true, force: true });
+}
+
+// ── 3¾. 모노레포 — `전부` 는 작업 폴더까지다 ──────────────────────────
+//
+// 보안 검토가 잡은 자리다. 저장소 뿌리에 대고 add -A 를 하면, 하위 폴더에서
+// 켰을 때 옆 팀 폴더와 그 안의 .env 까지 담기고 그 내용이 모델에게도 나간다.
+trace('3-모노레포');
+{
+  const root = 저장소만들기();
+  쓰기(root, 'packages/우리/app.js', '1\n');
+  쓰기(root, 'packages/옆팀/.env', 'DB_PASSWORD=처음부터있던것\n');
+  깃(root, ['add', '-A']); 깃(root, ['commit', '-q', '-m', 'init']);
+
+  const 우리 = join(root, 'packages', '우리');
+  쓰기(root, 'packages/우리/app.js', '2\n');
+  쓰기(root, 'packages/우리/.deel/config.json', '{"key":"sk-여기열쇠"}\n');
+  쓰기(root, 'packages/옆팀/.env', 'DB_PASSWORD=옆팀이방금바꾼것\n');
+
+  const s = new Session(conn, { root: 우리 });
+  s.noteChange(join(우리, 'app.js'), { added: 1, removed: 1 });
+  const r = await 커밋준비(s, { scope: makeScope(우리), audit: new Audit(우리) }, { 전부: true });
+  check('전부 라도 작업 폴더 밖은 안 담는다', !r.파일들.some((f) => f.includes('옆팀')), r.파일들.join(' '));
+  check('하위 폴더의 .deel 도 안 담는다', !r.파일들.some((f) => f.includes('.deel')), r.파일들.join(' '));
+  check('그래도 제 폴더 것은 담는다', r.파일들.includes('packages/우리/app.js'), r.파일들.join(' '));
+  const 보낸글 = JSON.stringify(마지막요청 ?? {});
+  check('옆 팀 비밀이 모델에게 안 나간다', !/옆팀이방금바꾼것/.test(보낸글) && !/sk-여기열쇠/.test(보낸글));
+  rmSync(root, { recursive: true, force: true });
+}
+
+// ── 3⅞. 이름이 다른 링크로 살림이 딸려 들어오면 ───────────────────────
+trace('3-링크');
+{
+  const root = 저장소만들기();
+  쓰기(root, 'a.js', '1\n'); 깃(root, ['add', '-A']); 깃(root, ['commit', '-q', '-m', 'init']);
+  쓰기(root, 'a.js', '2\n');
+  쓰기(root, '.deel/config.json', '{"key":"sk-링크로샐뻔한열쇠"}\n');
+
+  let 링크됨 = false;
+  try { symlinkSync(join(root, '.deel'), join(root, '살림별칭'), 'junction'); 링크됨 = true; }
+  catch { try { symlinkSync(join(root, '.deel'), join(root, '살림별칭'), 'dir'); 링크됨 = true; } catch { /* 권한이 없으면 건너뛴다 */ } }
+
+  if (!링크됨) {
+    check('⚠ 이 PC 에서는 링크를 못 만들어 건너뜀', true, '(관리자 권한·개발자 모드 필요)');
+  } else {
+    const s = 판만들기(root, ['a.js']);
+    const r = await 커밋준비(s, ctx만들기(root), { 전부: true });
+    check('링크로 들어온 살림도 안 담긴다', r.ok && !r.파일들.some((f) => /살림별칭|\.deel/.test(f)), (r.파일들 ?? []).join(' ') || r.why);
+    if (r.ok) {
+      커밋실행(root, r.메시지, { 파일들: r.파일들, 제목: r.제목 });
+      check('열쇠 글자가 이력에 안 남는다', !/sk-링크로샐뻔한열쇠/.test(깃(root, ['log', '-p']).out));
+    }
+  }
+  rmSync(root, { recursive: true, force: true });
+}
+
+// ── 3⅞+. 대소문자만 바꿔도 안 통한다 ──────────────────────────────────
+trace('3-대소문자');
+{
+  const root = 저장소만들기();
+  쓰기(root, 'a.js', '1\n'); 깃(root, ['add', '-A']); 깃(root, ['commit', '-q', '-m', 'init']);
+  쓰기(root, 'a.js', '2\n');
+  쓰기(root, '.DEEL/config.json', '{"key":"sk-대소문자로샐뻔"}\n');
+
+  const s = 판만들기(root, ['a.js', '.DEEL/config.json']);
+  check('대소문자만 바꾼 살림도 골라내지 않는다', !이번에바꾼것(s, root).some((f) => /deel/i.test(f)), 이번에바꾼것(s, root).join(' '));
+  const r = await 커밋준비(s, ctx만들기(root), { 전부: true });
+  check('전부 로도 안 담긴다', r.ok && !r.파일들.some((f) => /deel/i.test(f)), (r.파일들 ?? []).join(' ') || r.why);
+  rmSync(root, { recursive: true, force: true });
+}
+
+// ── 3⅞++. 모델이 쓴 글은 걸러서 넣는다 ────────────────────────────────
+trace('3-거르기');
+{
+  const 험한제목 = `fix: 보이는 것과 ${''}[8m다른 것${''}[0m`;
+  const 다듬 = 제목다듬기(험한제목);
+  check('제목에서 터미널 제어문자를 뺀다', !/[ --]/.test(다듬.제목), JSON.stringify(다듬.제목));
+  const 메시지 = 메시지꾸리기({
+    제목: '제목',
+    본문: `왜 고쳤나\nSigned-off-by: 없는사람 <x@y.z>\nCo-authored-by: 아무개 <a@b.c>\n진짜 몸통${''}[31m`,
+    모델: 'm',
+  });
+  check('모델이 지어낸 서명 꼬리표를 지운다', !/Signed-off-by|Co-authored-by/i.test(메시지), 메시지.replace(/\n/g, ' | '));
+  check('우리 꼬리표는 그대로 붙는다', /Generated-by: deel /.test(메시지));
+  check('본문 알맹이는 안 지운다', /왜 고쳤나/.test(메시지) && /진짜 몸통/.test(메시지));
+  check('본문에서도 제어문자를 뺀다', !/[ ---]/.test(메시지), JSON.stringify(메시지.slice(-40)));
+}
+
+// ── 3⅞+++. 폴더가 통째로 적혀 있어도 쓸어 담지 않는다 ────────────────
+//
+// 평가자가 잡은 자리다. `Move` 로 폴더를 옮기면 닿은 폴더가 '바뀐 것' 으로
+// 적히는데, 그 폴더 안에는 남이 고치던 파일도 산다.
+trace('3-폴더째');
+{
+  const root = 저장소만들기();
+  쓰기(root, 'src/내것.js', '1\n');
+  쓰기(root, 'src/남이고치던것.js', '남의 것 처음\n');
+  깃(root, ['add', '-A']); 깃(root, ['commit', '-q', '-m', 'init']);
+  쓰기(root, 'src/내것.js', '2\n');
+  쓰기(root, 'src/남이고치던것.js', '남이 방금 고친 것\n');
+
+  const s = new Session(conn, { root });
+  s.noteChange(join(root, 'src'), { added: 1, removed: 0 });        // 폴더가 통째로 적힌 경우
+  s.noteChange(join(root, 'src/내것.js'), { added: 1, removed: 1 });
+  const 고른것 = 이번에바꾼것(s, root);
+  check('폴더는 담을 목록에서 빠진다', !고른것.includes('src') && 고른것.includes('src/내것.js'), 고른것.join(' '));
+  check('빠진 폴더를 따로 알려 준다', (고른것.폴더 ?? []).includes('src'), JSON.stringify(고른것.폴더));
+
+  const r = await 커밋준비(s, ctx만들기(root), {});
+  check('남이 고치던 파일이 안 담긴다', !r.파일들.includes('src/남이고치던것.js'), r.파일들.join(' '));
+  check('화면에 알릴 폴더 목록이 온다', (r.폴더통째 ?? []).includes('src'), JSON.stringify(r.폴더통째));
+  rmSync(root, { recursive: true, force: true });
+}
+
+// ── 3⅞++++. 저장소 뿌리가 링크여도 「바꾼 게 없다」 고 안 한다 ────────
+trace('3-링크뿌리');
+{
+  const 진짜뿌리 = 저장소만들기();
+  쓰기(진짜뿌리, 'a.js', '1\n'); 깃(진짜뿌리, ['add', '-A']); 깃(진짜뿌리, ['commit', '-q', '-m', 'init']);
+  쓰기(진짜뿌리, 'a.js', '2\n');
+
+  const 링크 = join(mkdtempSync(join(tmpdir(), 'deel-link-')), '저장소');
+  let 됐나 = false;
+  try { symlinkSync(진짜뿌리, 링크, 'junction'); 됐나 = true; }
+  catch { try { symlinkSync(진짜뿌리, 링크, 'dir'); 됐나 = true; } catch { /* 권한 없으면 건너뜀 */ } }
+
+  if (!됐나) {
+    check('⚠ 링크를 못 만들어 건너뜀', true, '(관리자 권한·개발자 모드 필요)');
+  } else {
+    const s = new Session(conn, { root: 링크 });
+    s.noteChange(join(링크, 'a.js'), { added: 1, removed: 1 });
+    const r = await 커밋준비(s, { scope: makeScope(링크), audit: new Audit(진짜뿌리) }, {});
+    check('링크로 연 저장소에서도 바꾼 것을 찾는다', r.ok === true && r.파일들.includes('a.js'), r.why ?? r.파일들.join(' '));
+  }
+  rmSync(진짜뿌리, { recursive: true, force: true });
 }
 
 // ── 4. 안 되는 자리 ────────────────────────────────────────────────────

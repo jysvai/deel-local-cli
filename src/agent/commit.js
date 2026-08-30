@@ -23,7 +23,7 @@
 // 남이 미리 담아 둔 것(index)을 풀지도 않는다 — 남의 준비를 말없이 흩는
 // 것이 커밋을 하나 더 만드는 것보다 나쁘다. 대신 화면에 같이 적는다.
 import { spawnSync } from 'node:child_process';
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, unlinkSync, realpathSync, statSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -91,18 +91,68 @@ export function 저장소뿌리(root) {
  */
 export const 살림폴더 = '.deel';
 
-/** 이번 대화가 건드린 파일 — 저장소 안의 것만, 저장소 기준 상대경로로. */
+/*
+ * 살림을 가리는 자를 세 겹으로 둔다. 한 겹은 반드시 뚫린다.
+ *
+ *   1) 경로 글자   — 어느 깊이에 있든, 대소문자가 어떻든 (`packages/x/.DEEL/…`)
+ *   2) git 패스스펙 — 담을 때 아예 빼 달라고 git 에게도 말한다
+ *   3) 진짜 자리   — 담긴 뒤 realpath 로 다시 본다. 이름이 다른 링크
+ *                    (`alias\ → .deel`)는 앞의 둘을 그냥 지나간다.
+ *
+ * 열쇠가 한 번 커밋에 실리면 되돌려도 이력에 남는다. 되돌릴 수 없는 것 앞에서는
+ * "설마" 를 쓰지 않는다.
+ */
+const 살림꼴 = /(^|[\\/])\.deel([\\/]|$)/i;
+
+/** 이 경로가 살림을 가리키나 — 글자로 본다. */
+export function 살림경로인가(rel) { return 살림꼴.test(String(rel ?? '')); }
+
+/** 이 경로가 **진짜로** 살림 안에 닿나 — 링크를 다 풀고 본다. */
+export function 살림에닿나(abs) {
+  try { return 살림꼴.test(realpathSync(abs)); }
+  catch { return 살림경로인가(abs); }      // 못 풀면(지워진 파일 등) 글자로만 본다
+}
+
+/** 담을 때 git 에게도 빼 달라고 하는 자리. 어느 깊이든, 대소문자 상관없이. */
+const 살림빼기 = [':(exclude,icase,glob)**/.deel/**', ':(exclude,icase,glob)**/.deel'];
+
+/**
+ * 링크를 다 푼 진짜 자리. 못 풀면(아직 없는 파일 등) 준 것을 그대로.
+ *
+ * 저장소 뿌리를 링크로 열어 둔 사람이 있다(윈도우 junction, 맥의 /tmp).
+ * git 은 링크를 풀어서 답하고 우리는 안 풀면, 같은 자리를 두 이름으로 부르게
+ * 되어 "이번에 바꾼 것이 없습니다" 가 된다 — 바꾼 것이 있는데도.
+ */
+function 진짜(p) {
+  try { return realpathSync(p); } catch { return p; }
+}
+
+/**
+ * 이번 대화가 건드린 파일 — 저장소 안의 것만, 저장소 기준 상대경로로.
+ *
+ * 폴더는 안 담는다. `Move` 로 폴더를 옮기면 **닿은 폴더**가 바뀐 것으로 적히는데,
+ * 그 폴더 안에는 남이 고치던 파일도 같이 산다. 그걸 그대로 담으면 이 명령이
+ * 없애려던 `git add -A` 사고를 이름만 바꿔 다시 내는 셈이다. 안 담은 폴더는
+ * 목록으로 돌려주고, 화면이 그렇게 말한다.
+ */
 export function 이번에바꾼것(session, 뿌리) {
+  const 기준 = 진짜(뿌리);
   const 것들 = [];
+  const 폴더들 = [];
   for (const p of (session?.changes?.keys?.() ?? [])) {
-    const abs = isAbsolute(p) ? p : join(뿌리, p);
-    const rel = relative(뿌리, abs).replace(/\\/g, '/');
+    const abs = 진짜(isAbsolute(p) ? p : join(기준, p));
+    const rel = relative(기준, abs).replace(/\\/g, '/');
     // 저장소 밖은 담지 않는다. `..` 로 시작하면 밖이다.
     if (!rel || rel.startsWith('../') || rel === '..') continue;
-    if (rel === 살림폴더 || rel.startsWith(`${살림폴더}/`)) continue;
+    if (살림경로인가(rel) || 살림에닿나(abs)) continue;
+    let 폴더인가 = false;
+    try { 폴더인가 = statSync(abs).isDirectory(); } catch { /* 지워진 것은 파일로 친다 */ }
+    if (폴더인가) { if (!폴더들.includes(rel)) 폴더들.push(rel); continue; }
     if (!것들.includes(rel)) 것들.push(rel);
   }
-  return 것들.sort();
+  것들.sort();
+  Object.defineProperty(것들, '폴더', { value: 폴더들.sort(), enumerable: false });
+  return 것들;
 }
 
 /**
@@ -111,11 +161,37 @@ export function 이번에바꾼것(session, 뿌리) {
  * `-A` 를 경로와 함께 쓴다 — 그래야 지운 파일도 '지웠다' 로 담긴다.
  * 경로 없이 쓰면 남의 변경까지 쓸어 담는데, 그건 `전부` 를 시켰을 때만 한다.
  */
-export function 담기(뿌리, 경로들, { 전부 = false } = {}) {
-  // `:(exclude)` 로 살림을 뺀다. 사람이 `전부` 라고 해도 열쇠는 그 '전부' 가 아니다.
-  if (전부) return 깃(뿌리, ['add', '-A', '--', '.', `:(exclude)${살림폴더}`]);
+export function 담기(뿌리, 경로들, { 전부 = false, 안쪽 = '' } = {}) {
+  /*
+   * `전부` 는 **작업 폴더 전부**지 저장소 전부가 아니다.
+   *
+   * 큰 저장소의 하위 폴더에서 deel 을 켜는 것은 흔한 일이다(모노레포). 그때
+   * 저장소 뿌리에 대고 `git add -A` 를 하면, 옆 팀 폴더와 그 안의 .env 까지
+   * 담기고 — 그 내용이 커밋 메시지를 지으러 모델에게도 나간다. 사람은
+   * "이 폴더에서 일하는 중" 이라고 알고 있었다.
+   */
+  if (전부) return 깃(뿌리, ['add', '-A', '--', 안쪽 || '.', ...살림빼기]);
   if (!경로들.length) return { ok: true, code: 0, out: '', err: '' };
-  return 깃(뿌리, ['add', '-A', '--', ...경로들]);
+  return 깃(뿌리, ['add', '-A', '--', ...경로들, ...살림빼기]);
+}
+
+/**
+ * 담긴 것 중 진짜로 살림에 닿는 것을 도로 뺀다.
+ *
+ * 이름이 다른 링크는 글자로도 패스스펙으로도 안 걸린다. 여기서 realpath 로
+ * 한 번 더 본다. 못 빼면 커밋을 아예 안 한다 — 열쇠가 실릴 바에는 안 되는
+ * 편이 낫다.
+ *
+ * @returns {{샌것: string[], 못뺀것: string[]}}
+ */
+export function 살림도로빼기(뿌리, 파일들) {
+  const 샌것 = 파일들.filter((f) => 살림에닿나(join(뿌리, f)));
+  if (!샌것.length) return { 샌것, 못뺀것: [] };
+  // 첫 커밋 전이면 HEAD 가 없어 restore 가 안 된다. 그때는 index 에서 지운다.
+  const r = 깃(뿌리, ['restore', '--staged', '--', ...샌것]);
+  if (!r.ok) 깃(뿌리, ['rm', '--cached', '-q', '-r', '--', ...샌것]);
+  const 아직 = 담긴것(뿌리).파일들.filter((f) => 살림에닿나(join(뿌리, f)));
+  return { 샌것, 못뺀것: 아직 };
 }
 
 /** 지금 담겨 있는 것. */
@@ -205,8 +281,46 @@ export function 답가르기(글) {
  * `git log --oneline` 에서 그 커밋을 찾는 유일한 단서라, 끊긴 자리에서
  * 뜻이 뒤집히면(「…를 안 」) 아무도 못 찾는다.
  */
+/*
+ * 모델이 준 글에서 제어글자를 뺀다.
+ *
+ * 커밋 메시지는 **두 번 화면에 나간다** — 찍기 전 미리보기와, 나중에 누군가의
+ * `git log`. ESC 가 살아 있으면 그 두 자리에서 터미널이 그 글자를 명령으로
+ * 읽는다. 보이는 제목과 실제로 적히는 제목을 다르게 만들 수 있고(\x1b[8m 는
+ * 글자를 감춘다), 그렇게 적힌 것은 이력에 영영 남아 남의 터미널에서 다시 돈다.
+ * 줄바꿈과 탭만 남긴다.
+ */
+export function 제어글자빼기(글) {
+  let 남길것 = '';
+  for (const 글자 of String(글 ?? '')) {
+    const 값 = 글자.codePointAt(0);
+    if (값 === 9 || 값 === 10) { 남길것 += 글자; continue; }   // 탭·줄바꿈만 남긴다
+    if (값 < 32 || (값 >= 127 && 값 <= 159)) continue;         // C0·C1 제어글자
+    남길것 += 글자;
+  }
+  return 남길것;
+}
+
+/*
+ * 모델이 지어낸 꼬리표를 지운다.
+ *
+ * `Signed-off-by:` 는 사람이 "내가 이 코드에 책임진다" 고 적는 줄이다. 모델이
+ * 그 줄을 쓰면 없는 사람의 서명이 이력에 남고, 그걸 세는 도구들은 그것을
+ * 진짜로 읽는다. 우리 꼬리표(Generated-by)는 우리가 따로 붙이므로, 모델이
+ * 꼬리표를 쓸 이유가 아예 없다.
+ */
+const 가짜꼬리표 = /^\s*(signed-off-by|co-authored-by|reviewed-by|acked-by|tested-by|generated-by|claude-session|closes|fixes)\s*:/i;
+
+export function 꼬리표걸러내기(본문) {
+  return String(본문 ?? '')
+    .split('\n')
+    .filter((줄) => !가짜꼬리표.test(줄))
+    .join('\n')
+    .trim();
+}
+
 export function 제목다듬기(글) {
-  let t = String(글 ?? '').replace(/\s+/g, ' ').trim();
+  let t = 제어글자빼기(글).replace(/\s+/g, ' ').trim();
   t = t.replace(/^["'`「『]+/, '').replace(/["'`」』]+$/, '').trim();
   t = t.replace(/[.。]+$/, '').trim();
   if (!t) return { 제목: '', 남은것: '' };
@@ -237,8 +351,8 @@ export function 사실로만(파일들, 통계) {
  * 유일한 기록이고, "그때 검사를 돌렸던가" 는 그때 안 적으면 영영 모른다.
  */
 export function 메시지꾸리기({ 제목, 본문 = '', 확인 = 0, 미확인 = 0, 모델 = '', 버전 = VERSION }) {
-  const 몫 = [제목.trim()];
-  const b = String(본문 ?? '').trim();
+  const 몫 = [제어글자빼기(제목).trim()];
+  const b = 꼬리표걸러내기(제어글자빼기(본문));
   if (b) 몫.push('', b);
   if (미확인 > 0) 몫.push('', `검증: ${확인}건 확인 · ${미확인}건 미확인`);
   몫.push('', `Generated-by: deel ${버전}${모델 ? ` · ${모델}` : ''}`);
@@ -303,10 +417,12 @@ export async function 메시지짓기(session, { 뿌리, diff, 통계, 파일들
  * @returns {Promise<object>} ok:false 면 why 한 줄만 보고 끝내면 된다.
  */
 export async function 커밋준비(session, ctx, { 전부 = false, 제목 = null, signal = null, onBackoff = null } = {}) {
-  const 여기 = ctx?.scope?.root ?? session?.뿌리 ?? process.cwd();
+  // 링크를 먼저 푼다. git 은 푼 자리로 답하므로, 우리도 같은 이름으로 말해야
+  // "바꾼 것이 없습니다" 라는 거짓말이 안 나온다.
+  const 여기 = 진짜(ctx?.scope?.root ?? session?.root ?? process.cwd());
   if (!깃있나(여기)) return { ok: false, why: 'git 을 못 찾았습니다 — PATH 에 git 이 있어야 합니다.' };
-  const 뿌리 = 저장소뿌리(여기);
-  if (!뿌리) return { ok: false, why: '여기는 git 저장소가 아닙니다 — `git init` 부터 하세요.' };
+  const 뿌리 = 진짜(저장소뿌리(여기) ?? '');
+  if (!저장소뿌리(여기)) return { ok: false, why: '여기는 git 저장소가 아닙니다 — `git init` 부터 하세요.' };
 
   const 미리담긴 = 담긴것(뿌리).파일들;      // 남이 먼저 담아 둔 것. 풀지 않고 알리기만 한다.
   const 내것 = 이번에바꾼것(session, 뿌리);
@@ -314,9 +430,17 @@ export async function 커밋준비(session, ctx, { 전부 = false, 제목 = null
     return { ok: false, why: '이번 대화에서 바꾼 파일이 없습니다 — 작업 폴더 전부를 담으려면 `/commit 전부`.' };
   }
 
-  const 살림바뀜 = !!깃(뿌리, ['status', '--short', '--', 살림폴더]).out.trim();
-  const 담은결과 = 담기(뿌리, 내것, { 전부 });
+  // `전부` 가 미칠 자리 = 작업 폴더. 저장소 뿌리가 아니다 (담기() 머리말).
+  const 안쪽 = relative(뿌리, 여기).replace(/\\/g, '/');
+  const 살림바뀜 = !!깃(뿌리, ['status', '--short', '--', 안쪽 ? `${안쪽}/${살림폴더}` : 살림폴더]).out.trim();
+  const 담은결과 = 담기(뿌리, 내것, { 전부, 안쪽 });
   if (!담은결과.ok) return { ok: false, why: `담지 못했습니다 — ${(담은결과.err || '').trim() || 'git add 실패'}` };
+
+  // 이름이 다른 링크로 살림이 딸려 들어왔으면 여기서 도로 뺀다.
+  const 뺀것 = 살림도로빼기(뿌리, 담긴것(뿌리).파일들);
+  if (뺀것.못뺀것.length) {
+    return { ok: false, why: `열쇠가 든 자리(${뺀것.못뺀것.join(', ')})가 담긴 채로 안 빠집니다 — 커밋하지 않았습니다.` };
+  }
 
   const { 파일들, 통계, diff } = 담긴것(뿌리);
   if (!파일들.length) return { ok: false, why: '담을 것이 없습니다 — 바뀐 내용이 없습니다.' };
@@ -356,7 +480,12 @@ export async function 커밋준비(session, ctx, { 전부 = false, 제목 = null
     미확인,
     // 이 두 줄이 화면에서 사람이 놀랄 자리를 미리 말해 준다.
     남의것: 미리담긴.filter((f) => !내것.includes(f) && !전부),
-    살림뺌: 살림바뀜,
+    살림뺌: 살림바뀜 || 뺀것.샌것.length > 0,
+    링크로샌것: 뺀것.샌것,
+    폴더통째: 전부 ? [] : (내것.폴더 ?? []),
+    // 물어보는 사이에 담긴 것이 바뀌었는지 다시 보라고. 보여 준 것과 다른 것을
+    // 찍으면 승인을 받은 뜻이 없어진다.
+    다시확인: () => 담긴것(뿌리).파일들,
     사실로만: 사실,
   };
 }
@@ -365,7 +494,9 @@ export async function 커밋준비(session, ctx, { 전부 = false, 제목 = null
 export function 커밋실행(뿌리, 메시지, { audit = null, 파일들 = [], 제목 = '' } = {}) {
   const 임시 = join(tmpdir(), `deel-commit-${randomBytes(6).toString('hex')}.txt`);
   try {
-    writeFileSync(임시, 메시지, 'utf8');
+    // 잠깐 있다 지워지는 파일이지만 본인만 읽게 둔다 — 여러 사람이 쓰는
+    // 리눅스 서버에서 /tmp 는 남의 눈앞이다.
+    writeFileSync(임시, 메시지, { encoding: 'utf8', mode: 0o600 });
     const r = 깃(뿌리, ['commit', '--file', 임시, '--cleanup=whitespace']);
     if (!r.ok) return { ok: false, why: (r.err || r.out || 'git commit 실패').trim() };
     const h = 깃(뿌리, ['rev-parse', '--short', 'HEAD']);

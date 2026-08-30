@@ -1510,6 +1510,15 @@ export async function chatLoop(opts = {}) {
                     say(`      ${c.red('✗')} ${c.white(f.보인이름 ?? '(경로 없음)')} ${c.gray(`— ${clip(String(f.error), 60)}`)}`);
                   }
                 }
+              } else if (ev.result?.바뀐것들?.length) {
+                /*
+                 * 폴더를 옮겼다. 옮겨진 파일을 **하나씩** 적어 둔다.
+                 *
+                 * 「이 폴더가 바뀌었다」 로 적으면 나중에 /commit 이 그 폴더를
+                 * 통째로 담고, 같은 폴더에 있던 남의 변경까지 실린다.
+                 * 줄 수는 0 이다 — 옮긴 것이지 고친 것이 아니다.
+                 */
+                for (const f of ev.result.바뀐것들) session.noteChange(f, { added: 0, removed: 0 });
               }
             }
             flush();   // 도구가 하나 끝날 때마다 적어 둔다

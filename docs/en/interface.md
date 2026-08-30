@@ -92,8 +92,22 @@ record of what was actually checked at the time.
 others can see), a person belongs. It also never quietly unstages what someone else already
 staged — it says "these were already staged and will go in too" instead.
 
-Even `전부` (all) leaves **`.deel/` out**: that is where the gateway key (`config.json`) and the
+`전부` (all) means **the whole working folder**, not the whole repository. Started in a subdirectory of
+a larger repo, it stays inside that subdirectory — sweeping in a neighbouring team's folder would also
+send its contents to the model that writes the message.
+
+Even `전부` leaves **`.deel/` out**: that is where the gateway key (`config.json`) and the
 audit log live. A key that once landed in a commit stays in the history even after you revert it.
+Anything that slipped in through a differently-named symlink is caught after staging, by resolving
+the real path and unstaging it; if it cannot be unstaged, nothing is committed at all.
+
+Whatever the model wrote is **filtered** before it goes in: terminal control characters (ESC) are
+stripped — otherwise the preview you approve can differ from what gets written, and those bytes
+replay later in someone else's `git log` — and trailers such as `Signed-off-by:` are dropped, since a
+signature from a person who never signed is read as real by the tools that count them.
+
+`/commit` runs the repository's `pre-commit` and `commit-msg` hooks, as git always does. In an
+unfamiliar repository, look at what those hooks do before the first run.
 
 No git, not a repository, or nothing to stage: one readable line, and it stops.
 
