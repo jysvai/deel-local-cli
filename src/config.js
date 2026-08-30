@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
 import { 프록시정하기 } from './backend/proxy.js';
 import { 셸정하기 } from './tools/shell.js';
+import { 애저정하기 } from './backend/azure.js';
 import { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식 } from './safety/keystore.js';
 
 // 설정이 놓이는 자리.
@@ -97,6 +98,8 @@ export function load() {
   프록시정하기({ config: cfg });
   // 명령을 돌릴 셸도 같은 까닭으로 여기서 정한다 (tools/shell.js).
   셸정하기({ config: cfg });
+  // Azure 판 번호(api-version)도 같은 자리에서 정한다 (backend/azure.js).
+  애저정하기({ config: cfg });
   return cfg;
 }
 

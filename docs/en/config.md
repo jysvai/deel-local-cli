@@ -15,11 +15,30 @@ Servers, environment variables, run flags, project rules
 | | Example address |
 |---|---|
 | Corporate AI gateway (OpenAI-compatible) | `https://ai-gw.example.corp/v1` |
+| Azure OpenAI | `https://<name>.openai.azure.com/openai/deployments/<deployment>` |
 | Ollama | `http://localhost:11434` |
 | LM Studio | `http://localhost:1234/v1` |
 | llama.cpp · vLLM · LiteLLM | `http://host:port/v1` |
 
 Auth style is detected automatically: `Authorization: Bearer` → `x-api-key` → `api-key` (Azure) → none.
+
+### Azure OpenAI
+
+Azure calls itself OpenAI-compatible, and **only the address shape differs.** The model name lives
+in the URL, `?api-version=` is mandatory (400 without it), the model list is at
+`/openai/deployments` rather than `/models`, and the key goes in an `api-key` header. Paste the
+address exactly as the portal shows it: with `/openai/deployments/<deployment>` it connects to that
+deployment; with just the resource address it fetches the deployment list to pick from. A trailing
+`/chat/completions?api-version=…` is stripped for you.
+
+`api-version` comes from the address when it is there, otherwise the GA version (`2024-10-21`). If
+your organisation pins a version, set `"apiVersion"` in the config file or the
+`DEEL_AZURE_API_VERSION` environment variable.
+
+Listing deployments is a separate permission and is often blocked. That is **not treated as a
+failed connection** — with a deployment in the address it connects anyway and says the list could
+not be read. Azure does not report context length over the API, so set that yourself with `/ctx`
+or in the config.
 
 ### Environment variables
 

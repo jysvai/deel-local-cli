@@ -7,6 +7,7 @@ import { probe } from './backend/probe.js';
 import { renderHeader, renderLine, verdict, renderVerdict, plainReport } from './report.js';
 import { load, save, upsert, slug, resolveKey, activeProfile, configPath } from './config.js';
 import { 보관방식 } from './safety/keystore.js';
+import { 애저풀기, 애저base } from './backend/azure.js';
 import { allowEndpoint } from './safety/network.js';
 import { writeFileSync } from 'node:fs';
 
@@ -26,7 +27,7 @@ async function connect(url, key) {
     s.stop(`  ${mark.no} ${c.red('연결 실패')}`);
     say('');
     say(`    시도한 주소:`);
-    for (const t of found.tried) say(`      ${c.gray(t + '/models')}`);
+    for (const t of found.tried) say(`      ${c.gray(t.includes('?') ? t : t + '/models')}`);
     say('');
     say(`    ${c.gray('확인할 것 — 주소·포트가 맞는지, 프록시가 필요한지,')}`);
     say(`    ${c.gray('사내 인증서라면 NODE_EXTRA_CA_CERTS 환경변수가 필요합니다.')}`);
@@ -85,6 +86,18 @@ export async function runSetup() {
 
   const model = await chooseModel(found);
   if (!model) { say(`  ${mark.no} 모델이 비었습니다.`); return 1; }
+
+  /*
+   * Azure 는 모델 이름이 **주소 안에** 있다.
+   *
+   * 목록에서 다른 배포를 골랐으면 주소도 그 배포로 바꿔야 한다. 안 바꾸면
+   * 화면에는 고른 이름이 보이는데 요청은 처음 주소의 배포로 나간다 —
+   * 사람이 알아챌 방법이 없는 어긋남이다.
+   */
+  if (found.azure) {
+    const 푼것 = 애저풀기(found.base);
+    if (푼것) found.base = 애저base(푼것.origin, model, 푼것.판);
+  }
 
   const conn = { kind: found.kind, base: found.base, auth: found.auth, key, model };
   const { facts } = await runProbe(conn);

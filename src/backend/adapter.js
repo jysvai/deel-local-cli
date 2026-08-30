@@ -7,6 +7,22 @@ export function endpoint(shape) {
   return shape === 'ollama' ? '/api/chat' : '/chat/completions';
 }
 
+/**
+ * 실제로 두드릴 주소. 물음표 뒤는 **끝에 그대로 남긴다.**
+ *
+ * Azure 주소에는 `?api-version=2024-10-21` 이 붙어 있고, 그게 없으면 400 이다.
+ * 예전처럼 `base + '/chat/completions'` 로 이으면
+ * `.../deployments/gpt-4o?api-version=2024-10-21/chat/completions` 가 되어
+ * 경로도 판도 다 망가진다. 물음표가 없는 보통 주소는 하던 그대로다.
+ */
+export function 요청주소(conn) {
+  const base = String(conn?.base ?? '');
+  const 길 = endpoint(conn?.kind);
+  const i = base.indexOf('?');
+  if (i < 0) return base + 길;
+  return base.slice(0, i).replace(/\/+$/, '') + 길 + base.slice(i);
+}
+
 export function buildBody(shape, { model, messages, tools, stream, json, think, maxTokens = 4096, ctx = null }) {
   if (shape === 'ollama') {
     const body = { model, messages, stream: !!stream, options: { num_predict: maxTokens } };
@@ -148,7 +164,7 @@ export async function chat(conn, opts) {
   const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts });
   const 정책 = 정책고르기(conn, opts);
   for (let 시도 = 1; ; 시도++) {
-    const r = await req(`${conn.base}${endpoint(conn.kind)}`, {
+    const r = await req(요청주소(conn), {
       method: 'POST',
       headers: headersFor(conn.auth, conn.key ?? ''),
       body,
@@ -219,7 +235,7 @@ export async function* chatStream(conn, opts) {
   const 정책 = 정책고르기(conn, opts);
   let r;
   for (let 시도 = 1; ; 시도++) {
-    r = await req(`${conn.base}${endpoint(conn.kind)}`, {
+    r = await req(요청주소(conn), {
       method: 'POST',
       headers: headersFor(conn.auth, conn.key ?? ''),
       body,

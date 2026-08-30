@@ -32,6 +32,7 @@ const FILES = [
   'ignore.test.js',
   'commit.test.js',
   'keystore.test.js',
+  'azure.test.js',
   'task.test.js',
   'outline.test.js',
   'network.test.js',

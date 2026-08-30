@@ -17,11 +17,29 @@
 | | 주소 예 |
 |---|---|
 | 사내 AI 게이트웨이 (OpenAI 호환) | `https://ai-gw.example.corp/v1` |
+| Azure OpenAI | `https://<이름>.openai.azure.com/openai/deployments/<배포>` |
 | Ollama | `http://localhost:11434` |
 | LM Studio | `http://localhost:1234/v1` |
 | llama.cpp · vLLM · LiteLLM | `http://호스트:포트/v1` |
 
 인증도 자동으로 맞춥니다 — `Authorization: Bearer` → `x-api-key` → `api-key`(Azure 계열) → 인증 없음.
+
+### Azure OpenAI
+
+Azure 는 OpenAI 호환이라면서 **주소 모양만 다릅니다.** 모델 이름이 주소 안에 있고,
+`?api-version=` 이 없으면 400 이고, 모델 목록은 `/models` 가 아니라 `/openai/deployments`
+에 있고, 열쇠는 `api-key` 헤더입니다. 포털에서 복사한 주소를 그대로 넣으세요 —
+`/openai/deployments/<배포이름>` 까지 붙어 있으면 그 배포로 바로 붙고, 회사 주소만
+넣으면 배포 목록을 받아 고르게 합니다. 뒤에 `/chat/completions?api-version=…` 이
+딸려 와도 알아서 떼어 냅니다.
+
+`api-version` 은 주소에 적혀 있으면 그 값을 쓰고, 없으면 GA 판(`2024-10-21`)을 씁니다.
+사내에서 판을 고정해 뒀다면 설정 파일의 `"apiVersion"` 이나 환경변수
+`DEEL_AZURE_API_VERSION` 으로 바꾸세요.
+
+배포 목록은 권한이 따로라 막아 둔 곳이 많습니다. 목록을 못 받아도 **연결 실패로 치지
+않습니다** — 주소에 배포 이름이 있으면 그것으로 그냥 붙고, 못 본 것은 못 봤다고 적습니다.
+Azure 는 컨텍스트 길이를 API 로 알려주지 않으므로 그 값은 `/ctx` 나 설정에서 직접 넣으세요.
 
 ### 환경변수
 

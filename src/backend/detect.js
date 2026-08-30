@@ -1,5 +1,6 @@
 // 주소만 받아서 "이 서버가 무슨 규격이고 인증을 어떻게 받는지" 알아낸다.
 import { req, headersFor, AUTH_STYLES, serverMessage } from './http.js';
+import { 애저인가, 애저풀기, 애저base, 배포목록 } from './azure.js';
 
 // 사람이 대충 적은 주소를 시도해볼 후보들로 넓힌다.
 export function candidates(input) {
@@ -9,9 +10,60 @@ export function candidates(input) {
   const out = [];
   const push = (x) => { if (x && !out.includes(x)) out.push(x); };
 
+  /*
+   * Azure 는 `/v1` 을 붙이면 안 된다.
+   *
+   * 배포 주소 뒤에 `/v1/models` 를 두드리면 404 만 돌아오고, 사람은 주소를
+   * 제대로 넣고도 "연결 실패" 를 본다. 모양이 다른 것뿐이라 고칠 방법도 없다.
+   * Azure 면 그 주소 하나만 후보로 둔다 — 확인은 tryAzure 가 따로 한다.
+   */
+  if (애저인가(u)) { push(u); return out; }
+
   if (/\/v\d+$/.test(u)) push(u);                 // .../v1 을 직접 준 경우
   else { push(u + '/v1'); push(u); push(u + '/openai/v1'); }
   return out;
+}
+
+/*
+ * Azure 확인.
+ *
+ * 배포 목록(`/openai/deployments?api-version=`)을 먼저 묻는다. 여기서 오는
+ * 이름이 곧 주소에 들어갈 이름이라, 목록을 받으면 사람은 고르기만 하면 된다.
+ *
+ * 목록을 막아 둔 테넌트가 많다(권한이 따로다). 그때도 **연결 실패로 치지
+ * 않는다** — 주소에 배포 이름이 이미 있으면 그것으로 그냥 간다. 목록을 못 본
+ * 것과 못 쓰는 것은 다르고, 여기서 실패로 처리하면 정작 잘 되는 설정이
+ * 설치 화면을 못 넘어간다.
+ */
+async function tryAzure(input, key) {
+  const 푼것 = 애저풀기(input);
+  if (!푼것) return null;
+  // Azure 는 api-key 헤더가 제 방식이다. 그것부터 본다.
+  const 차례 = ['api-key', 'bearer', 'none'].map((id) => AUTH_STYLES.find((s) => s.id === id));
+
+  for (const style of 차례) {
+    if (style.id !== 'none' && !key) continue;
+    const r = await req(푼것.목록주소, { headers: headersFor(style.id, key), timeout: 12000 });
+    if (r.ok && r.json) {
+      const models = 배포목록(r.json);
+      const base = 푼것.base ?? (models[0] ? 애저base(푼것.origin, models[0].id, 푼것.판) : null);
+      if (base) return { kind: 'openai', base, auth: style.id, models, ms: r.ms, azure: true };
+    }
+    // 목록만 막힌 경우. 주소에 배포가 있으면 그대로 쓴다.
+    if ([401, 403, 404].includes(r.status) && 푼것.base) {
+      return {
+        kind: 'openai', base: 푼것.base, auth: style.id, models: [], ms: r.ms, azure: true,
+        warn: `배포 목록을 못 봤습니다 (HTTP ${r.status}) — 주소에 적힌 배포로 그냥 씁니다.`,
+      };
+    }
+  }
+  if (푼것.base) {
+    return {
+      kind: 'openai', base: 푼것.base, auth: key ? 'api-key' : 'none', models: [], ms: 0, azure: true,
+      warn: '배포 목록에 못 닿았습니다 — 주소에 적힌 배포로 그냥 씁니다.',
+    };
+  }
+  return null;
 }
 
 // OpenAI 호환인지 확인 (GET {base}/models)
@@ -70,6 +122,16 @@ function normalizeModels(list) {
 export async function detect(input, key) {
   const tried = [];
   const origin = String(input).trim().replace(/\/+$/, '').replace(/\/v\d+$/, '');
+
+  // Azure 는 모양이 아예 다르다. 여기서 갈라 놓지 않으면 아래 후보들이
+  // 엉뚱한 자리를 두드리다 끝난다.
+  if (애저인가(input)) {
+    const 푼것 = 애저풀기(input);
+    tried.push(푼것?.목록주소 ?? String(input));
+    const hit = await tryAzure(input, key);
+    if (hit) return { ...hit, tried };
+    return { kind: null, tried, why: 'Azure 주소로 보이는데 배포를 못 찾았습니다 — 주소에 /openai/deployments/<배포이름> 까지 넣어 보세요.' };
+  }
 
   // Ollama 를 먼저 본다 — 로컬이면 대개 이쪽이고 확인이 빠르다.
   const oll = await tryOllama(/^https?:\/\//i.test(origin) ? origin : 'http://' + origin);

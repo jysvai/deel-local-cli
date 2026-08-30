@@ -372,6 +372,15 @@ function normalizeError(err) {
     // 받아 놓고 끊은 것 — 서버가 꺼진 것과 다르다. "주소를 확인하라" 는 틀린 조언이다.
     if (/ECONNRESET|EPIPE|UND_ERR_SOCKET/.test(코드) || /ECONNRESET|other side closed/i.test(m)) return '서버가 연결을 끊었습니다';
     if (/certificate|SELF_SIGNED|UNABLE_TO_VERIFY|CERT_/i.test(m + ' ' + 코드)) return '인증서 문제 — 사내 인증서라면 NODE_EXTRA_CA_CERTS 가 필요합니다';
+    /*
+     * 헤더에 한글이 섞였다.
+     *
+     * HTTP 헤더는 Latin-1 만 실린다. 열쇠에 한글이나 특수문자가 한 글자라도
+     * 있으면 요청이 만들어지지도 않고 `ByteString` 소리를 하는 오류가 난다 —
+     * 그대로 보여 주면 사람은 서버를 의심하고 방화벽부터 뒤진다. 실제로는
+     * 열쇠를 붙여넣다 한글이 섞였거나 따옴표가 딸려 온 것이다.
+     */
+    if (/ByteString|character at index/i.test(m)) return '열쇠(또는 헤더)에 한글·특수문자가 섞여 있습니다 — API 키는 영문·숫자만 실립니다. 붙여넣을 때 따옴표가 딸려 오지 않았는지 보세요';
     if (/fetch failed/i.test(m)) return '연결 실패 — 주소·포트·프록시를 확인하세요';
     return m;
   })();

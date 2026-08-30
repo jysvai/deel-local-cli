@@ -161,6 +161,22 @@ export async function probeCtx(conn, { timeout = 6000 } = {}) {
   const model = conn.model;
   const tried = [];
 
+  /*
+   * Azure 는 컨텍스트 길이를 API 로 안 알려 준다.
+   *
+   * 그런데 여기서 두드리는 여섯 자리(`/models`, `/props`, `/info` …)는 Azure
+   * 배포 주소 밑에 아예 없다. 그대로 두면 켤 때마다 여섯 번 404 를 받으며
+   * 기다리고, 진단 화면에는 "아무 응답도 못 받았습니다" 가 뜬다 — 서버가
+   * 멀쩡한데 우리가 없는 문을 두드린 것뿐이다.
+   */
+  if (String(conn.base ?? '').includes('/openai/deployments/')) {
+    return {
+      value: null, max: null, loaded: null, out: null, source: null, outSource: null,
+      maxKey: null, loadedKey: null, tried: [],
+      why: 'Azure 는 컨텍스트 길이를 알려주지 않습니다 — 배포한 모델에 맞게 설정에서 직접 넣으세요',
+    };
+  }
+
   const 본다 = async (label, url, opts = {}) => {
     try {
       const r = await req(url, { headers: H(), timeout, ...opts });
