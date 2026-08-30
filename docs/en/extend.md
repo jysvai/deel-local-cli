@@ -85,11 +85,28 @@ process and talks over a real pipe).
 | **Cancellation reaching a running turn** | Cancellation always arrives while something is running; that is what cancellation is. Awaiting each incoming line in order means it **never arrives** |
 | **When permission cannot be asked** | It is tempting to just run the tool — otherwise nothing works against a client that has not built the approval dialog yet. But that means "if I can't ask, I do as I please". **It does not** |
 
+### Yesterday's conversation is still there
+
+Close the editor, open it again, and **the conversation is still there.** What `--resume`
+does in the terminal now works inside the editor — no re-explaining what was already
+checked, or what you asked it not to touch.
+
+Conversations live in the **same place** as the terminal's (`.deel/sessions/`), so a
+session started in the editor can be picked up with `deel --resume <id>`, and the
+other way round.
+
+| What it gets right | Why |
+|---|---|
+| **Session id = file name** | The editor stores that id and hands it back **the next time it starts**. An id like `deel-1`, meaningful only inside one process, points at nothing once that process is gone |
+| **Written at every step** | Writing once at the end of the turn means that if the editor closes after ten tool calls, all ten vanish. That is exactly the part worth restoring |
+| **What is drawn ≠ what is sent** | If it died while a tool was running, the call is recorded with no result. Sent as-is, **the gateway answers 400** — it dies on the first message after restoring. So the model gets the repaired history, while **the person is shown that spot as "interrupted."** What you were in the middle of yesterday decides what you ask for today |
+| **Pins come back too** | Otherwise "pinned text survives folding and summarising" becomes false the first time the editor is closed and reopened (`/pin`) |
+| **The restored history reaches the model** | Redraw it on screen but not send it, and the person continues — "finish that thing from before" — while the model knows nothing. That is **worse than an empty conversation: the person is misled.** The test measures the body the gateway received, not the text on screen |
+
 **What it does not do yet, stated plainly:**
 
 | | |
 |---|---|
-| `session/load` | Restoring a past conversation means replaying every message as an update. Half-built, the editor opens an empty conversation and the user assumes the history is gone. It reports **`loadSession: false`** |
 | Image / audio attachments | Most local models cannot read them. Rather than dropping them silently, deel tells the model what it could not read |
 | MCP servers passed in by the editor | Not launched. That would mean **deel spawning processes named in the editor's config**. "What does this tool launch?" is the first question in a corporate review, and "whatever the editor says" is not an acceptable answer. Only `.deel/mcp.json`, written by a person, is launched |
 

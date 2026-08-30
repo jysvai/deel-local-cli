@@ -773,6 +773,7 @@ stdio. It is not a command you type yourself.
 | Approval dialog | deel's safety rails, rendered as the editor's own prompt (`allow once` · `always allow` · `reject`) |
 | Mode picker | deel's seven work modes (auto · code · plan · architect · debug · ask · orchestrator) |
 | Stop button | Reaches the turn mid-flight, even while waiting on the model |
+| Past conversations | Still there after a restart. They live in the **same place** as the terminal's, so a session started in the editor can be picked up with `deel --resume` |
 
 **Still zero dependencies.** Same reason as MCP — newline-delimited JSON-RPC 2.0 is the whole
 transport, so no SDK is needed.

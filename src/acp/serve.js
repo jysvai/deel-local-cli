@@ -27,10 +27,13 @@
 // 그래서 여기서 process.stdout.write 를 통째로 바꿔 끼운다. 부르는 자리를
 // 하나하나 찾아 막는 방법도 있지만, 그건 앞으로 새로 쓰는 코드까지 계속
 // 조심해야 한다는 뜻이다 — 언젠가 반드시 한 군데를 빠뜨린다.
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { VERSION } from '../version.js';
 import { 규칙모으기, 늘허락 } from '../safety/policy.js';
 import { run } from '../agent/loop.js';
-import { Session } from '../agent/session.js';
+import { Session, repairToolPairs } from '../agent/session.js';
+import { Store, sessionsDir, prune } from '../agent/store.js';
 import { makeScope } from '../safety/guard.js';
 import { History } from '../safety/undo.js';
 import { Audit } from '../safety/audit.js';
@@ -39,6 +42,7 @@ import { 말 as 옮긴말 } from '../i18n/index.js';
 import { 알림채움 } from '../backend/retry.js';
 import { discover } from '../skills/discover.js';
 import { allowEndpoint, setOffline } from '../safety/network.js';
+import { 주소가리기 } from '../safety/secrets.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from '../backend/ctxsize.js';
 import { 다붙이기 } from '../backend/mcp.js';
 import { 배움 } from '../agent/evolve.js';
@@ -48,7 +52,7 @@ import { route } from '../agent/route.js';
 import { ORDER as 모드순서, get as getWork, normalize as 모드정리 } from '../agent/modes.js';
 import { 모두끝내기 as 일감모두끝내기 } from '../tools/jobs.js';
 import { 연결, 줄나누기, 모르는방법오류, 잘못된인자오류 } from './jsonrpc.js';
-import { 도구시작, 도구끝남, 도구이름표, 도구갈래, 도구자리, 멈춘까닭, 프롬프트글 } from './map.js';
+import { 도구시작, 도구끝남, 도구이름표, 도구갈래, 도구자리, 멈춘까닭, 프롬프트글, 되살린것 } from './map.js';
 
 /** 우리가 말하는 규격 판. 정수 하나이고, 깨지는 변경에서만 올라간다. */
 export const 규격판 = 1;
@@ -82,7 +86,6 @@ export async function acp(opts = {}) {
 
   /** 세션 하나. 에디터의 탭 하나에 해당한다. */
   const 방들 = new Map();
-  let 다음방번호 = 1;
   let 클라이언트 = null;      // initialize 로 받은 저쪽 소개
   let 시작했나 = false;
 
@@ -92,7 +95,12 @@ export async function acp(opts = {}) {
   });
 
   // ── 방 만들기 ─────────────────────────────────────────────────────────
-  async function 방만들기(요청) {
+  /**
+   * @param {object} 요청  session/new 또는 session/load 로 온 인자
+   * @param {object} o
+   * @param {string|null} o.아이디  이어할 대화 이름. 주면 그 파일에 이어 쓴다
+   */
+  async function 방만들기(요청, { 아이디 = null } = {}) {
     const cfg = load();
     const prof = activeProfile(cfg);
     if (!prof) {
@@ -108,6 +116,19 @@ export async function acp(opts = {}) {
      * 엉뚱한 폴더를 고친다. 그게 제일 무서운 종류의 실수다.
      */
     const root = typeof 요청?.cwd === 'string' && 요청.cwd ? 요청.cwd : (opts.root ?? process.cwd());
+
+    /*
+     * 대화는 폴더 안(.deel/sessions/)에 남는다 — 터미널에서 하던 것과 같은 자리다.
+     *
+     * 세션 이름을 그 파일 이름으로 삼는 데는 까닭이 있다. ACP 의 sessionId 는
+     * 에디터가 적어 뒀다가 **다음에 켤 때 session/load 로 도로 들고 오는** 이름이다.
+     * 'deel-1' 처럼 이 프로세스 안에서만 뜻이 있는 번호를 주면, 껐다 켠 순간 그
+     * 이름이 가리키는 것이 아무 데도 없다. 그러면 loadSession 은 못 지킬 약속이 된다.
+     */
+    if (아이디 && !existsSync(join(sessionsDir(root), `${아이디}.jsonl`))) {
+      throw 잘못된인자오류(`그런 대화가 없습니다: ${아이디} (${root})`);
+    }
+    const store = new Store(root, 아이디);
 
     const conn = {
       kind: prof.kind, base: prof.baseUrl, auth: prof.auth,
@@ -138,6 +159,28 @@ export async function acp(opts = {}) {
     session.못박은것 = new 못박기();
 
     /*
+     * 이어하기라면 적힌 것을 도로 채워 넣는다.
+     *
+     * repairToolPairs 를 반드시 거친다. 도구가 도는 중에 프로그램이 끊겼으면
+     * 부름만 적히고 답이 없는데, 그대로 보내면 규격 서버가 400 을 준다 —
+     * 되살리자마자 첫 마디에서 죽는다. 터미널의 --resume 과 같은 손질이다.
+     */
+    if (아이디) {
+      const { messages: 적힌것 } = store.load();
+      const { messages, 고친것 } = repairToolPairs(적힌것);
+      session.messages = messages;
+      // 못 박아 둔 것도 같이 되살린다 (agent/pins.js). 이걸 빠뜨리면 '접어도
+      // 안 지워진다' 가 에디터를 닫았다 여는 한 번에 거짓이 된다.
+      const 박힌것 = store.못박은것읽기();
+      if (박힌것.length) session.못박은것 = new 못박기(박힌것);
+      로그(`${store.id} — 메시지 ${messages.length}개를 이어 받았습니다${고친것 ? ` (끊긴 도구 호출 ${고친것}개는 걷어냈습니다)` : ''}.`);
+    }
+    // 주소는 가려서 적는다. 열쇠가 주소에 박혀 오는 게이트웨이가 있어서,
+    // 그대로 적으면 대화 기록 파일에 열쇠가 남는다 (safety/secrets.js).
+    store.begin({ model: conn.model, base: 주소가리기(conn.base), root });
+    try { prune(root); } catch { /* 정리는 못 해도 대화는 된다 */ }
+
+    /*
      * 밖에서 붙인 도구(MCP).
      *
      * 규격에는 클라이언트가 mcpServers 를 넘겨 주는 자리가 있다. 그런데 그걸
@@ -158,8 +201,8 @@ export async function acp(opts = {}) {
     }
 
     const 방 = {
-      id: `deel-${다음방번호++}`,
-      root, conn, session,
+      id: store.id,
+      root, conn, session, store,
       턴: null,
       늘허락: new Set(),        // 이 세션에서 "앞으로 묻지 않기" 를 고른 도구들
       mcp: mcp붙임.서버들,
@@ -318,6 +361,19 @@ export async function acp(opts = {}) {
     let 왜 = '';
     방.메시지번호++;
 
+    /*
+     * 어디까지 적었나. 자주 흘려 보낸다.
+     *
+     * 턴이 다 끝나고 한 번에 적으면, 도구를 열 번 돌린 뒤에 에디터가 닫힌 순간
+     * 그 열 번이 통째로 사라진다. 되살릴 때 제일 아쉬운 것이 바로 그 부분이라
+     * (무엇을 이미 확인했는지) 걸음마다 적는다.
+     */
+    let 적은데까지 = 방.session.messages.length;
+    const 적기 = () => {
+      for (const m of 방.session.messages.slice(적은데까지)) 방.store.append(m);
+      적은데까지 = 방.session.messages.length;
+    };
+
     try {
       for await (const ev of run(방.session, 방.ctx, 글, { signal: 턴.signal })) {
         switch (ev.type) {
@@ -363,6 +419,18 @@ export async function acp(opts = {}) {
 
           case 'tool':
             보내기(도구끝남(도구찾기(방, ev.name), ev));
+            적기();
+            break;
+
+          /*
+           * 접히면 이력이 통째로 바뀐다.
+           *
+           * 덧붙이기로는 못 맞춘다 — 앞의 것 여러 개가 요약 하나로 바뀌었으니,
+           * 이어 붙이면 파일에는 접히기 전과 접힌 뒤가 겹쳐 남는다. 새로 적는다.
+           */
+          case 'compacted':
+            방.store.replace(방.session.messages, `압축 — ${ev.folded}개를 요약으로`);
+            적은데까지 = 방.session.messages.length;
             break;
 
           /*
@@ -432,6 +500,9 @@ export async function acp(opts = {}) {
     } finally {
       if (방.턴 === 턴) 방.턴 = null;
       방.돌던도구.clear();
+      // 끊겼든 터졌든 여기까지 오간 것은 남긴다. 끊긴 턴이야말로 다음에
+      // 되살려서 이어가고 싶은 자리다.
+      try { 적기(); } catch { /* 못 적어도 답은 돌려줘야 한다 */ }
     }
 
     /*
@@ -485,10 +556,9 @@ export async function acp(opts = {}) {
           // 저쪽이 우리보다 새 판을 말하면 우리 판을 답한다. 규격이 그렇게 정했다.
           protocolVersion: Number.isFinite(저쪽판) && 저쪽판 < 규격판 ? 저쪽판 : 규격판,
           agentCapabilities: {
-            // session/load 는 아직 안 한다. 지난 대화를 되살리려면 오간 말을
-            // 전부 session/update 로 다시 흘려야 하는데, 그 자리를 반쯤 만들어
-            // 두면 에디터가 빈 대화를 열고 사용자는 기록이 날아간 줄 안다.
-            loadSession: false,
+            // 지난 대화를 되살릴 수 있다. 이 값이 false 면 에디터는 아예 안
+            // 물어보고 빈 대화를 연다 — 붙여 놓고 안 켜면 없는 것과 같다.
+            loadSession: true,
             promptCapabilities: { image: false, audio: false, embeddedContext: true },
             mcpCapabilities: { http: false, sse: false },
           },
@@ -507,6 +577,52 @@ export async function acp(opts = {}) {
           sessionId: 방.id,
           modes: 모드상태(방),
         };
+      }
+
+      /*
+       * 지난 대화 되살리기.
+       *
+       * ── 답에 대화를 실어 주는 자리가 없다 ────────────────────────────
+       *
+       * 규격은 오간 말을 **session/update 로 전부 다시 흘리라**고 한다. 답으로
+       * 한 번에 주는 자리가 아예 없다. 그래서 여기서 흘린 것이 에디터에 그려지는
+       * 지난 대화의 전부다.
+       *
+       * 흘리기 전에 방을 다 만들어야 한다. 반쯤 만들어 두고 흘리다가 설정이
+       * 없어서 터지면, 에디터에는 지난 대화가 절반만 그려진 채로 남는다.
+       */
+      case 'session/load': {
+        const 아이디 = String(인자?.sessionId ?? '').trim();
+        if (!아이디) throw 잘못된인자오류('sessionId 가 없습니다.');
+
+        // 이 프로세스가 이미 열어 둔 방이면 그대로 쓴다. 다시 만들면 같은
+        // 대화를 두 곳에서 밟게 되고, 그때부터 어느 쪽이 참인지 알 수 없다.
+        const 방 = 방들.get(아이디) ?? await 방만들기(인자, { 아이디 });
+
+        /*
+         * 화면에 그릴 것과 모델에게 줄 것이 다르다.
+         *
+         * 모델에게는 손질한 것이 간다 — 답 없는 도구 부름이 섞이면 규격 서버가
+         * 400 을 준다. 그런데 **사람에게는 그 자리를 보여 줘야 한다.** 어제
+         * 무엇을 하다 끊겼는지가 오늘 무엇을 시킬지를 정하기 때문이다. 그래서
+         * 그리는 것은 적힌 그대로(손질 전)를 쓴다.
+         *
+         * 파일을 다시 읽는 까닭도 같다. 걸음마다 적어 두므로 파일이 늘 최신이고,
+         * 손질로 걷어낸 것까지 그대로 남아 있는 유일한 자리다.
+         */
+        let 그릴것 = 방.session.messages;
+        try {
+          const 적힌것 = 방.store.load().messages;
+          if (적힌것.length) 그릴것 = 적힌것;
+        } catch { /* 못 읽으면 기억하고 있는 것으로 그린다 */ }
+
+        let 흘린것 = 0;
+        for (const update of 되살린것(그릴것)) {
+          관.알림('session/update', { sessionId: 방.id, update });
+          흘린것++;
+        }
+        로그(`${방.id} — 지난 대화 ${흘린것}덩이를 되살렸습니다.`);
+        return { modes: 모드상태(방) };
       }
 
       case 'session/prompt': {

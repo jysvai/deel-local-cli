@@ -176,6 +176,149 @@ export function 멈춘까닭(까닭) {
 }
 
 /**
+ * 메시지 하나에서 사람이 읽을 글만 뽑는다.
+ *
+ * content 는 글 한 덩어리일 때도 있고, 그림이 섞인 배열일 때도 있다
+ * (backend/vision.js). 배열에서 글만 빼고 그림은 조용히 버리면, 되살린
+ * 화면에서 "이 말을 왜 했는지" 가 사라진다 — 몇 장이 붙어 있었는지는 적는다.
+ */
+function 글만(m) {
+  const c = m?.content;
+  let 글 = '';
+  let 장수 = Array.isArray(m?.images) ? m.images.length : 0;   // ollama 규격
+  if (typeof c === 'string') 글 = c;
+  else if (Array.isArray(c)) {
+    const 조각 = [];
+    for (const p of c) {
+      if (p?.type === 'text' && typeof p.text === 'string') 조각.push(p.text);
+      else if (p?.type === 'image_url') 장수++;
+    }
+    글 = 조각.join('\n');
+  }
+  글 = 글.trim();
+  if (장수) 글 = 글 ? `${글}\n\n_(그림 ${장수}장)_` : `_(그림 ${장수}장)_`;
+  return 글;
+}
+
+/** 저장된 도구 인자. 규격에 따라 글일 수도, 이미 풀린 것일 수도 있다. */
+function 인자풀기(x) {
+  if (x && typeof x === 'object') return x;
+  if (typeof x !== 'string' || !x.trim()) return {};
+  try { return JSON.parse(x); } catch { return {}; }
+}
+
+/**
+ * 저장된 대화를 에디터에 다시 흘려 줄 알림 묶음으로.
+ *
+ * ── 왜 이 자리가 필요한가 ───────────────────────────────────────────────
+ *
+ * session/load 는 "지난 대화를 되살려라" 는 부름인데, 규격에는 되살린 것을
+ * **답으로 돌려주는 자리가 없다.** 오간 말을 전부 session/update 로 다시
+ * 흘려야 한다. 그러니까 에디터가 그리는 지난 대화는 여기서 만든 것이 전부다 —
+ * 여기서 빠뜨린 것은 화면에서 통째로 사라지고, 사람은 기록이 날아간 줄 안다.
+ *
+ * 도구 호출은 시작·끝 두 번으로 안 나눈다. 이미 끝난 일을 '도는 중' 으로 한 번
+ * 그렸다가 고칠 까닭이 없다. 끝난 모습 한 덩이만 준다.
+ *
+ * @param {object[]} messages  store.js 가 읽어 온 대화
+ * @returns {object[]} session/update 의 update 자리에 그대로 넣을 것들
+ */
+export function 되살린것(messages, { 최대내용 = 2000 } = {}) {
+  const 줄 = Array.isArray(messages) ? messages : [];
+
+  /*
+   * 도구 답을 먼저 줄 세운다.
+   *
+   * 답(role:'tool')은 부름보다 뒤에 온다. 앞에서부터 한 번에 그리려면 미리
+   * 찾아 둬야 한다. OpenAI 규격은 id 로 짝을 짓고, ollama 규격은 id 를 안 주므로
+   * 이름별 차례로 짝을 짓는다 (session.js 의 repairToolPairs 와 같은 눈).
+   */
+  const id로 = new Map();
+  const 이름으로 = new Map();
+  for (const m of 줄) {
+    if (m?.role !== 'tool') continue;
+    if (m.tool_call_id != null) id로.set(m.tool_call_id, m.content);
+    else if (m.tool_name) {
+      const q = 이름으로.get(m.tool_name) ?? [];
+      q.push(m.content);
+      이름으로.set(m.tool_name, q);
+    }
+  }
+
+  const 나온것 = [];
+  let 말번호 = 0;
+  let 도구번호 = 0;
+
+  for (const m of 줄) {
+    if (!m || typeof m !== 'object') continue;
+    // 시스템 프롬프트는 사람이 한 말이 아니다. 되살리면 매번 대화 머리에
+    // 수천 자짜리 지시문이 붙어서, 정작 무슨 얘기를 했는지가 안 보인다.
+    if (m.role === 'system' || m.role === 'tool') continue;
+
+    if (m.role === 'user') {
+      const 글 = 글만(m);
+      if (글) 나온것.push({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 글 } });
+      continue;
+    }
+    if (m.role !== 'assistant') continue;
+
+    말번호++;
+    const 생각 = typeof m.thinking === 'string' ? m.thinking.trim() : '';
+    if (생각) {
+      나온것.push({
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: 자르기(생각, 최대내용) },
+        messageId: `h${말번호}`,
+      });
+    }
+    const 글 = 글만(m);
+    if (글) {
+      나온것.push({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 글 },
+        messageId: `h${말번호}`,
+      });
+    }
+
+    for (const tc of Array.isArray(m.tool_calls) ? m.tool_calls : []) {
+      const fn = tc?.function ?? tc ?? {};
+      const 이름 = String(fn.name ?? tc?.name ?? '도구');
+      const 인자 = 인자풀기(fn.arguments ?? fn.args ?? tc?.args);
+
+      let 답;
+      if (tc?.id != null && id로.has(tc.id)) 답 = id로.get(tc.id);
+      else {
+        const q = 이름으로.get(이름);
+        if (q?.length) 답 = q.shift();
+      }
+
+      /*
+       * 답이 안 남은 부름 = 그때 프로그램이 도구 도는 중에 끊긴 것이다.
+       *
+       * 성공으로 그리면 안 된다. 그 도구가 끝까지 갔는지 아닌지가 다음에 무엇을
+       * 시킬지를 정한다 — 파일을 고치던 중이었을 수도 있다.
+       */
+      const 없음 = 답 === undefined || 답 === null;
+      나온것.push({
+        sessionUpdate: 'tool_call',
+        toolCallId: `h${말번호}-${++도구번호}`,
+        title: 도구이름표(이름, 인자),
+        kind: 도구갈래(이름),
+        // 남은 글만 보고 성공·실패를 점치지 않는다. 도구마다 실패를 적는 말이
+        // 달라서, 맞히려 들면 멀쩡한 것을 빨갛게 칠하게 된다.
+        status: 없음 ? 'failed' : 'completed',
+        content: 없음
+          ? [{ type: 'content', content: { type: 'text', text: '결과가 안 남았습니다 — 이 도구가 도는 중에 끊겼습니다.' } }]
+          : [{ type: 'content', content: { type: 'text', text: 자르기(String(답), 최대내용) } }],
+        locations: 도구자리(이름, 인자, null),
+      });
+    }
+  }
+
+  return 나온것;
+}
+
+/**
  * 프롬프트로 온 덩이들에서 글만 뽑는다.
  *
  * resource 는 알맹이가 실려 오므로 그대로 쓴다. resource_link 는 주소만 오는데,

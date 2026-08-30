@@ -18,14 +18,14 @@
 //   · 승인을 못 물어봤을 때 마음대로 하지 않는가
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { 줄나누기, 연결, 오류번호, 모르는방법오류 } from '../src/acp/jsonrpc.js';
 import {
   도구갈래, 도구이름표, 도구자리, 도구탈났나, 도구내용,
-  도구끝남, 멈춘까닭, 프롬프트글,
+  도구끝남, 멈춘까닭, 프롬프트글, 되살린것,
 } from '../src/acp/map.js';
 import { trace } from './trace.mjs';
 
@@ -278,6 +278,124 @@ trace('3-옮기기');
   check('이상한 것이 와도 안 죽는다', 프롬프트글(null) === '' && 프롬프트글([null, 3, 'x']) === '');
 }
 
+trace('3-2-되살리기');
+
+// ── 지난 대화를 다시 흘릴 모양으로 ──────────────────────────────────────
+//
+// session/load 는 되살린 것을 **답으로 돌려주는 자리가 없다.** 오간 말을 전부
+// session/update 로 다시 흘려야 한다. 그러니 에디터에 그려지는 지난 대화는
+// 여기서 만든 것이 전부다 — 여기서 빠뜨린 것은 화면에서 통째로 사라지고,
+// 사람은 기록이 날아간 줄 안다.
+{
+  const 대화 = [
+    { role: 'system', content: '너는 코딩 에이전트다. (아주 긴 지시문)' },
+    { role: 'user', content: '집계.py 고쳐줘' },
+    {
+      role: 'assistant',
+      content: '먼저 읽어 보겠습니다.',
+      tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: '/일터/집계.py' }) } }],
+    },
+    { role: 'tool', tool_call_id: 'c1', content: '1  import sys\n2  print(1)\n' },
+    { role: 'assistant', content: '고쳤습니다.' },
+  ];
+  const 나온것 = 되살린것(대화);
+  const 갈래 = 나온것.map((u) => u.sessionUpdate);
+
+  check('사람 말을 되살린다', 나온것.some((u) => u.sessionUpdate === 'user_message_chunk' && /집계\.py 고쳐줘/.test(u.content?.text ?? '')),
+    JSON.stringify(갈래));
+  check('모델 말을 되살린다', 나온것.filter((u) => u.sessionUpdate === 'agent_message_chunk').length === 2, JSON.stringify(갈래));
+  check('순서가 오간 그대로다', 갈래.join('>').startsWith('user_message_chunk>agent_message_chunk>tool_call'), 갈래.join('>'));
+
+  /*
+   * 시스템 프롬프트는 사람이 한 말이 아니다.
+   *
+   * 되살려서 흘리면 지난 대화 머리마다 수천 자짜리 지시문이 붙는다. 정작
+   * 무슨 얘기를 했는지가 그 아래로 밀려나서 안 보인다.
+   */
+  check('★ 시스템 프롬프트는 안 흘린다', !나온것.some((u) => /코딩 에이전트다/.test(u.content?.text ?? '')),
+    JSON.stringify(나온것.map((u) => (u.content?.text ?? '').slice(0, 20))));
+
+  const 도구 = 나온것.find((u) => u.sessionUpdate === 'tool_call');
+  check('도구 호출을 되살린다', !!도구, JSON.stringify(갈래));
+  check('무엇을 했는지 이름표에 있다', /Read\(.*집계\.py\)/.test(도구?.title ?? ''), 도구?.title);
+  check('갈래를 준다 — 없으면 전부 같은 회색 점이 된다', 도구?.kind === 'read', String(도구?.kind));
+  check('만진 파일 자리를 준다 — 눌러서 열 수 있게', 도구?.locations?.[0]?.path === '/일터/집계.py',
+    JSON.stringify(도구?.locations));
+  check('이미 끝난 일이니 끝난 모습으로 준다', 도구?.status === 'completed', String(도구?.status));
+  check('★ 도구 결과도 같이 붙인다 — 무엇을 이미 확인했는지가 거기 있다',
+    /import sys/.test(도구?.content?.[0]?.content?.text ?? ''), JSON.stringify(도구?.content));
+  // 이미 끝난 것을 '도는 중' 으로 한 번 그렸다가 고칠 까닭이 없다.
+  check('되살릴 때는 도는 중을 안 거친다', !갈래.includes('tool_call_update'), 갈래.join('>'));
+
+  /*
+   * 답이 안 남은 도구 부름 = 그때 프로그램이 도구 도는 중에 끊긴 것이다.
+   *
+   * 성공으로 그리면 안 된다. 그 도구가 끝까지 갔는지가 다음에 무엇을 시킬지를
+   * 정한다 — 파일을 고치던 중이었을 수도 있다.
+   */
+  {
+    const 끊긴것 = 되살린것([
+      { role: 'user', content: '고쳐줘' },
+      { role: 'assistant', content: null, tool_calls: [{ id: 'c9', type: 'function', function: { name: 'Edit', arguments: '{"file_path":"/a.js"}' } }] },
+    ]);
+    const t = 끊긴것.find((u) => u.sessionUpdate === 'tool_call');
+    check('★ 답이 안 남은 부름은 성공으로 안 그린다', t?.status === 'failed', String(t?.status));
+    check('왜 그런지 말해 준다', /끊겼습니다/.test(t?.content?.[0]?.content?.text ?? ''), JSON.stringify(t?.content));
+  }
+
+  // ollama 규격은 도구 답에 id 를 안 준다. 이름 차례로 짝을 짓는다.
+  {
+    const o = 되살린것([
+      { role: 'assistant', content: '', tool_calls: [{ function: { name: 'Grep', arguments: { pattern: '오류' } } }] },
+      { role: 'tool', tool_name: 'Grep', content: '3건 찾음' },
+    ]);
+    const t = o.find((u) => u.sessionUpdate === 'tool_call');
+    check('id 를 안 주는 규격도 짝을 짓는다', t?.status === 'completed' && /3건 찾음/.test(t?.content?.[0]?.content?.text ?? ''),
+      JSON.stringify(t));
+  }
+
+  // 그림이 붙어 있던 말. 글만 빼고 버리면 그 말을 왜 했는지가 사라진다.
+  {
+    const g = 되살린것([{ role: 'user', content: [{ type: 'text', text: '이 화면 봐줘' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AAA' } }] }]);
+    check('그림이 붙어 있었다는 것은 남긴다', /그림 1장/.test(g[0]?.content?.text ?? ''), JSON.stringify(g[0]));
+    check('그림 알맹이는 안 싣는다 — 되살리는 데 base64 를 흘릴 까닭이 없다',
+      !/base64|AAA/.test(g[0]?.content?.text ?? ''), JSON.stringify(g[0]));
+  }
+
+  check('빈 대화도 안 죽는다', 되살린것([]).length === 0 && 되살린것(null).length === 0);
+  check('이상한 것이 섞여 와도 안 죽는다', 되살린것([null, 3, { role: 'user' }]).length === 0,
+    JSON.stringify(되살린것([null, 3, { role: 'user' }])));
+
+  // 번호가 겹치면 에디터가 서로 다른 두 호출을 하나로 그린다.
+  {
+    const 여럿 = 되살린것([
+      { role: 'assistant', content: '', tool_calls: [
+        { id: 'a', type: 'function', function: { name: 'Read', arguments: '{"file_path":"/1"}' } },
+        { id: 'b', type: 'function', function: { name: 'Read', arguments: '{"file_path":"/2"}' } },
+      ] },
+      { role: 'tool', tool_call_id: 'a', content: '하나' },
+      { role: 'tool', tool_call_id: 'b', content: '둘' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'c', type: 'function', function: { name: 'Read', arguments: '{"file_path":"/3"}' } }] },
+      { role: 'tool', tool_call_id: 'c', content: '셋' },
+    ]);
+    const 번호들 = 여럿.filter((u) => u.sessionUpdate === 'tool_call').map((u) => u.toolCallId);
+    check('★ 도구 번호가 안 겹친다', new Set(번호들).size === 번호들.length && 번호들.length === 3, JSON.stringify(번호들));
+    check('짝을 순서대로 맞춘다',
+      여럿.filter((u) => u.sessionUpdate === 'tool_call').map((u) => u.content[0].content.text).join('|') === '하나|둘|셋',
+      JSON.stringify(여럿.filter((u) => u.sessionUpdate === 'tool_call').map((u) => u.content[0].content.text)));
+  }
+
+  // 파일 하나가 수만 자다. 그것이 통째로 에디터로 흘러가면 사람이 못 읽는다.
+  {
+    const 긴것 = 되살린것([
+      { role: 'assistant', content: '', tool_calls: [{ id: 'z', type: 'function', function: { name: 'Read', arguments: '{"file_path":"/big"}' } }] },
+      { role: 'tool', tool_call_id: 'z', content: 'ㄱ'.repeat(50000) },
+    ]);
+    const 글 = 긴것.find((u) => u.sessionUpdate === 'tool_call')?.content?.[0]?.content?.text ?? '';
+    check('긴 결과는 보여 줄 만큼만 자른다', 글.length < 3000 && /줄임/.test(글), `${글.length}자`);
+  }
+}
+
 trace('4-표준출력잠그기');
 
 // ── 표준출력에 ACP 말고 아무것도 안 나가는가 ────────────────────────────
@@ -333,6 +451,7 @@ trace('5-진짜로띄우기');
 let 느리게 = 0;      // 이 밀리초만큼 뜸을 들이고 답한다 (취소를 재려고)
 let 도구번호 = 1;
 let 읽기한번 = false;
+const 받은대화 = [];   // 게이트웨이가 받은 messages 원본 (되살리기를 재려고)
 
 const srv = createServer((req, res) => {
   let body = '';
@@ -348,6 +467,9 @@ const srv = createServer((req, res) => {
       return 보냄({ id: '스텁모델', max_context_length: 262144, loaded_context_length: 262144 });
     }
     if (url === '/v1/chat/completions') {
+      // 나간 몸통을 그대로 적어 둔다. 되살리기가 진짜로 되는지는 화면 글자가
+      // 아니라 **모델이 무엇을 받았는가** 로만 잴 수 있다.
+      받은대화.push(json?.messages ?? []);
       const 답 = (msg, why) => 보냄({
         id: 'x', object: 'chat.completion', model: '스텁모델',
         choices: [{ index: 0, finish_reason: why ?? (msg.tool_calls ? 'tool_calls' : 'stop'), message: msg }],
@@ -475,9 +597,12 @@ trace('5-1-악수');
     check('규격 판을 답한다', 첫?.protocolVersion === 1, JSON.stringify(첫?.protocolVersion));
     check('제 이름을 말한다', 첫?.agentInfo?.name === 'deel', JSON.stringify(첫?.agentInfo));
     check('판 번호를 지어내지 않는다', /^\d+\.\d+\.\d+$/.test(첫?.agentInfo?.version ?? ''), 첫?.agentInfo?.version);
-    // 못 하는 것을 할 수 있다고 하면 에디터가 부르고, 그때 빈 화면이 뜬다.
-    check('아직 못 하는 것은 못 한다고 말한다', 첫?.agentCapabilities?.loadSession === false,
+    // 이 값이 false 면 에디터는 아예 안 물어보고 빈 대화를 연다.
+    check('지난 대화를 되살릴 수 있다고 말한다', 첫?.agentCapabilities?.loadSession === true,
       JSON.stringify(첫?.agentCapabilities));
+    // 못 하는 것을 할 수 있다고 하면 에디터가 부르고, 그때 빈 화면이 뜬다.
+    check('못 하는 것은 여전히 못 한다고 말한다', 첫?.agentCapabilities?.promptCapabilities?.image === false,
+      JSON.stringify(첫?.agentCapabilities?.promptCapabilities));
 
     const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
     check('세션을 열어 준다', typeof 방?.sessionId === 'string' && 방.sessionId.length > 0, JSON.stringify(방?.sessionId));
@@ -710,6 +835,128 @@ trace('5-7-없는세션');
     check('없는 세션 — 통째로 실패', false, String(err?.message ?? err));
   } finally {
     await e.끝내기();
+  }
+}
+
+trace('5-8-되살리기');
+
+// ── 껐다 켜도 지난 대화가 그대로 있는가 ─────────────────────────────────
+//
+// 여태는 에디터를 닫았다 열면 빈 대화가 열렸다. 사람은 어제 한 얘기를 처음부터
+// 다시 해야 했다 — 무엇을 이미 확인했는지, 무엇을 하지 말라고 했는지 전부.
+// 터미널에서는 --resume 으로 되던 것이라 더 이상하게 보였다.
+//
+// 그래서 여기서는 **프로세스를 진짜로 죽였다가** 새로 띄운다. 같은 프로세스
+// 안에서 재면 파일에 제대로 적혔는지를 못 잰다.
+{
+  읽기한번 = false;
+  도구번호 = 1;
+  받은대화.length = 0;
+
+  let 대화이름 = null;
+  const e1 = 에디터();
+  try {
+    await 시간제한(e1.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    const 방 = await 시간제한(e1.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    대화이름 = 방.sessionId;
+    await 시간제한(e1.요청('session/prompt', {
+      sessionId: 대화이름,
+      prompt: [{ type: 'text', text: '일부러_읽어 줘 — 어제 하던 얘기' }],
+    }), 30000, 'session/prompt');
+  } catch (err) {
+    check('되살리기(앞 대화) — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e1.끝내기();   // 여기서 프로세스가 정말로 죽는다
+  }
+
+  /*
+   * 도구가 도는 중에 죽은 자리를 만든다.
+   *
+   * 진짜로 자주 일어나는 일이다 — 명령이 오래 걸려서 에디터를 닫아 버리는 것.
+   * 그러면 파일에는 부름만 적히고 답이 없다. 그걸 그대로 모델에게 보내면
+   * 규격 서버가 400 을 준다: 되살리자마자 첫 마디에서 죽는다.
+   */
+  try {
+    appendFileSync(
+      join(work, '.deel', 'sessions', `${대화이름}.jsonl`),
+      JSON.stringify({
+        t: 'msg',
+        m: {
+          role: 'assistant', content: null,
+          tool_calls: [{ id: '끊긴부름', type: 'function', function: { name: 'Edit', arguments: '{"file_path":"/고치던것.js"}' } }],
+        },
+      }) + '\n',
+      'utf8',
+    );
+  } catch (err) {
+    check('끊긴 자리 만들기 — 실패', false, String(err?.message ?? err));
+  }
+
+  const e2 = 에디터();
+  try {
+    const 첫 = await 시간제한(e2.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    check('되살릴 수 있다고 말한 그대로다', 첫?.agentCapabilities?.loadSession === true);
+
+    const 되살림 = await 시간제한(e2.요청('session/load', {
+      sessionId: 대화이름, cwd: work, mcpServers: [],
+    }), 25000, 'session/load');
+
+    const 흘린것 = e2.알림들.map((u) => u.update);
+    const 사람말 = 흘린것.filter((u) => u.sessionUpdate === 'user_message_chunk').map((u) => u.content?.text ?? '');
+    const 모델말 = 흘린것.filter((u) => u.sessionUpdate === 'agent_message_chunk').map((u) => u.content?.text ?? '');
+    const 도구들 = 흘린것.filter((u) => u.sessionUpdate === 'tool_call');
+
+    check('★ 지난 사람 말을 다시 흘려 준다', 사람말.some((t) => /어제 하던 얘기/.test(t)), JSON.stringify(사람말));
+    check('★ 지난 모델 말도 다시 흘려 준다', 모델말.some((t) => /스텁 모델이 답했습니다/.test(t)), JSON.stringify(모델말));
+    check('★ 지난 도구 호출도 되살린다 — 무엇을 이미 봤는지가 거기 있다',
+      도구들.some((t) => /^Read/.test(t.title ?? '')), JSON.stringify(도구들.map((t) => t.title)));
+    check('되살린 알림도 세션을 밝힌다', e2.알림들.every((u) => u.sessionId === 대화이름), 대화이름);
+
+    // 끊긴 자리는 끊겼다고 그린다. 성공으로 칠하면 사람은 그 편집이 끝난 줄 안다.
+    const 끊긴것 = 도구들.find((t) => /고치던것\.js/.test(JSON.stringify(t.locations ?? [])));
+    check('★ 도구 도는 중에 죽은 자리는 끊겼다고 그린다', 끊긴것?.status === 'failed',
+      JSON.stringify(도구들.map((t) => `${t.title}:${t.status}`)));
+    check('되살리고 나서 모드도 알려 준다', typeof 되살림?.modes?.currentModeId === 'string', JSON.stringify(되살림));
+
+    /*
+     * ★ 진짜로 재는 것은 이것이다.
+     *
+     * 화면에만 다시 그리고 모델에게는 안 보내면, 사람은 이어서 얘기하는 줄 알고
+     * "아까 그거 마저 해줘" 라고 한다. 모델은 아무것도 모른다. 그건 빈 대화를
+     * 여는 것보다 나쁘다 — 사람이 속는다.
+     */
+    받은대화.length = 0;
+    await 시간제한(e2.요청('session/prompt', {
+      sessionId: 대화이름, prompt: [{ type: 'text', text: '이어서 해줘' }],
+    }), 30000, '이어서 한 턴');
+
+    const 나간것 = 받은대화[0] ?? [];
+    const 글다 = JSON.stringify(나간것);
+    check('★ 되살린 대화가 모델에게도 실려 나간다', /어제 하던 얘기/.test(글다),
+      `${나간것.length}개 메시지`);
+    check('새로 친 말도 같이 나간다', /이어서 해줘/.test(글다), `${나간것.length}개 메시지`);
+
+    /*
+     * 도구 부름과 답의 짝이 성해야 한다.
+     *
+     * 도구가 도는 중에 죽었으면 부름만 적히고 답이 없다. 그대로 보내면 규격
+     * 서버가 400 을 준다 — 되살리자마자 첫 마디에서 죽는다.
+     */
+    const 짝없는것 = 나간것.filter((m) => m.role === 'assistant' && Array.isArray(m.tool_calls))
+      .flatMap((m) => m.tool_calls.map((t) => t.id))
+      .filter((id) => !나간것.some((m) => m.role === 'tool' && m.tool_call_id === id));
+    check('★ 도구 짝이 안 깨진 채로 나간다 — 깨지면 400 이다', 짝없는것.length === 0, JSON.stringify(짝없는것));
+
+    let 코드 = null; let 말 = '';
+    try {
+      await 시간제한(e2.요청('session/load', { sessionId: '20200101-000000', cwd: work, mcpServers: [] }), 15000, '없는 대화');
+    } catch (err) { 코드 = err.code; 말 = err.message; }
+    check('없는 대화를 되살리라면 잘못된 인자로 답한다', 코드 === -32602, `${코드} · ${말}`);
+    check('무엇이 없는지 말한다', /20200101-000000/.test(말), 말);
+  } catch (err) {
+    check('되살리기 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e2.끝내기();
   }
 }
 
