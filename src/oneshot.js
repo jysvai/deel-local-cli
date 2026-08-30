@@ -156,6 +156,7 @@ export async function runOnce(opts = {}) {
     maxTokens: opts.maxTokens ?? prof.maxTokens ?? null,
     streaming: prof.streaming ?? false,
     tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
+    vision: prof.vision ?? false,
   };
 
   // 자물쇠는 대화 화면과 똑같이 건다. 비대화라고 느슨해질 이유가 없다 —
@@ -192,6 +193,8 @@ export async function runOnce(opts = {}) {
     // 도구가 한 번에 돌려줄 양을 이 값에서 뽑는다 (agent/budget.js).
     // /model 로 갈아타면 conn 이 통째로 바뀌므로 그때마다 다시 읽는다.
     get 모델컨텍스트() { return conn.ctx ?? null; },
+    // 이 모델이 그림을 볼 수 있나 — Read 가 그림을 만났을 때 무슨 말을 할지가 여기서 갈린다.
+    get 눈있나() { return !!conn.vision; },
     history: new History(root),
     audit: new Audit(root),
     seen: new Set(),
@@ -352,6 +355,10 @@ export async function runOnce(opts = {}) {
 
         case 'folded':
           곁(`  ${c.cyan('◲')} ${c.gray(`오래된 도구 결과 ${ev.접은것}개를 접었습니다 (${ev.아낀토큰.toLocaleString()} 토큰을 비움)`)}`);
+          break;
+
+        case 'images_folded':
+          곁(`  ${c.cyan('◲')} ${c.gray(`오래된 그림 ${(ev.뺀것들 ?? []).reduce((a3, x) => a3 + x.장수, 0)}장을 뺐습니다`)}`);
           break;
 
         case 'compacted':

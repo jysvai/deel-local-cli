@@ -116,6 +116,7 @@ export async function runSetup() {
     tools: facts.tools ?? false,
     json: facts.json ?? false,
     think: facts.think ?? false,
+    vision: facts.vision ?? false,
   });
   cfg.active = id;
   const p = save(cfg);

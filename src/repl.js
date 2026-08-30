@@ -37,6 +37,7 @@ import { 접어쓰기 } from './ui/wrap.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { renderDiff, shortStat } from './ui/diff.js';
 import { expand as expandMentions } from './agent/mention.js';
+import { 크기말 } from './backend/vision.js';
 import { 다붙이기 } from './backend/mcp.js';
 import { 읽기 as 기억읽기 } from './agent/memory.js';
 import { 갈래고르기 } from './ui/working.js';
@@ -187,6 +188,8 @@ export async function chatLoop(opts = {}) {
     maxTokens: opts.maxTokens ?? prof.maxTokens ?? null,
     streaming: prof.streaming ?? false,
     tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
+    // 그림을 볼 수 있는 모델인지. 못 보면 바이트를 아예 안 싣는다 (backend/vision.js).
+    vision: prof.vision ?? false,
   };
 
   // 이 자리 하나만 연다. 다른 어디로도 나가지 못한다.
@@ -795,6 +798,8 @@ export async function chatLoop(opts = {}) {
     // 도구가 한 번에 돌려줄 양을 이 값에서 뽑는다 (agent/budget.js).
     // /model 로 갈아타면 conn 이 통째로 바뀌므로 그때마다 다시 읽는다.
     get 모델컨텍스트() { return conn.ctx ?? null; },
+    // 이 모델이 그림을 볼 수 있나 — Read 가 그림을 만났을 때 무슨 말을 할지가 여기서 갈린다.
+    get 눈있나() { return !!conn.vision; },
     history: new History(root),
     audit: new Audit(root),
     seen: new Set(),
@@ -1208,15 +1213,19 @@ export async function chatLoop(opts = {}) {
     // 붙인 것은 화면에 반드시 알린다. 사람이 안 보낸 줄 아는 글이 대화에
     // 들어가 있으면 안 된다 — 컨텍스트가 왜 줄었는지도 모르게 된다.
     let 보낼글 = toSend;
+    let 보낼그림 = null;
     if (toSend.includes('@')) {
       const 예산 = Math.min(20000, Math.floor((session.conn.ctx ?? CTX_DEFAULT) * 0.25));
       const r = expandMentions(toSend, {
         scope: ctx.scope, budget: 예산, seen: ctx.seen,
         onRead: (p, t) => session.noteRead(p, t),
+        눈있나: !!session.conn.vision,
       });
       보낼글 = r.text;
+      보낼그림 = r.그림들?.length ? r.그림들 : null;
       for (const a of r.attached) {
-        say(`  ${c.blue('◧')} ${c.gray('붙임')} ${c.white(a.show)}${a.full ? '' : c.gray(' (앞부분만)')}`);
+        const 꼬리 = a.그림 ? c.gray(` (그림 · ${크기말(a.bytes)})`) : (a.full ? '' : c.gray(' (앞부분만)'));
+        say(`  ${c.blue('◧')} ${c.gray('붙임')} ${c.white(a.show)}${꼬리}`);
       }
       for (const b of r.blocked) {
         say(`  ${mark.warn} ${c.gray(`${b.path} 는 작업 범위 밖이라 안 붙였습니다.`)}`);
@@ -1322,7 +1331,7 @@ export async function chatLoop(opts = {}) {
     // '겪을수록 나아진다' 가 이번 대화 안에서도 참이 된다.
     ctx.카드다시?.();
     try {
-      for await (const ev of run(session, ctx, 보낼글, { signal: turn.signal })) {
+      for await (const ev of run(session, ctx, 보낼글, { signal: turn.signal, 그림들: 보낼그림 })) {
         /*
          * 하위 작업 안쪽에서 온 것이면 한 단 들여 그린다.
          *
@@ -1624,6 +1633,13 @@ export async function chatLoop(opts = {}) {
               const 남은수 = 접은것들.length - Math.min(4, 접은것들.length);
               say(`    ${c.gray(`${보일것}${남은수 > 0 ? ` 외 ${남은수}개` : ''}`)}`);
             }
+            break;
+          }
+
+          case 'images_folded': {
+            clearThinking();
+            const 장수 = (ev.뺀것들 ?? []).reduce((a2, x) => a2 + x.장수, 0);
+            say(`  ${c.cyan('◲')} ${c.gray(`오래된 그림 ${장수}장을 뺐습니다 — 사람이 쓴 말은 그대로입니다.`)}`);
             break;
           }
 

@@ -169,6 +169,8 @@ export async function acp(opts = {}) {
     방.ctx = {
       scope: makeScope(root),
       get 모델컨텍스트() { return conn.ctx ?? null; },
+      // 이 모델이 그림을 볼 수 있나 — Read 가 그림을 만났을 때 무슨 말을 할지가 여기서 갈린다.
+      get 눈있나() { return !!conn.vision; },
       history: new History(root),
       audit: new Audit(root),
       seen: new Set(),

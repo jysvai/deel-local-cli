@@ -9,6 +9,7 @@
 //      실패하면 옛 방식(그냥 자르기)으로 물러선다.
 import { chat } from '../backend/adapter.js';
 import { estimateTokens, safeCut, safeHead } from './session.js';
+import { 그림장수, 글만 } from '../backend/vision.js';
 
 // 몇 %에서 접기 시작할지. 접고 나서 다시 금방 차면 아무 소용이 없으니 넉넉히 비운다.
 export const COMPACT_AT = 0.8;
@@ -46,6 +47,41 @@ function 어디(args) {
     if (typeof v === 'string' && v.trim()) return v.trim().replace(/\s+/g, ' ').slice(0, 60);
   }
   return '';
+}
+
+/*
+ * ── 그림은 따로 뺀다 ───────────────────────────────────────────────────
+ *
+ * 위의 접기는 도구 결과(role:'tool')만 건드린다. 사람 말은 한 글자도 안 건드리는
+ * 것이 그 함수의 약속이라 그렇다. 그런데 그림은 **사람 말 자리에** 실린다
+ * (backend/vision.js 의 그림메시지 머리말 — 도구 결과에는 못 넣는다).
+ *
+ * 그림 한 장은 base64 로 몇 MB 다. 화면 사진 몇 장을 이어 보여 주면 대화가
+ * 그것만으로 무거워지고, 오래된 사진은 이미 이야기가 끝난 것이다. 그래서
+ * 최근 몇 장만 남기고 나머지는 **무엇이었는지만 남기고** 뺀다.
+ *
+ * 사람이 쓴 말은 그대로 둔다 — 빼는 것은 그림 조각뿐이다.
+ */
+export const KEEP_IMAGES = 2;
+
+/** 오래된 그림을 이름만 남기고 뺀다. @returns {{뺀것:number, 뺀것들:Array}} */
+export function foldImages(session, { keep = KEEP_IMAGES } = {}) {
+  const ms = session.messages ?? [];
+  const 자리 = [];
+  ms.forEach((m, i) => { if (그림장수(m)) 자리.push(i); });
+
+  const 뺄것 = 자리.slice(0, Math.max(0, 자리.length - keep));
+  const 뺀것들 = [];
+  for (const i of 뺄것) {
+    const m = ms[i];
+    const 장수 = 그림장수(m);
+    const 글 = 글만(m);
+    ms[i] = { ...m, content: `${글}
+${접힘표} 그림 ${장수}장은 자리를 비우려고 뺐습니다. 필요하면 다시 여세요.` };
+    delete ms[i].images;
+    뺀것들.push({ 장수 });
+  }
+  return { 뺀것: 뺄것.length, 뺀것들 };
 }
 
 export function shouldFold(session, at = FOLD_AT) {

@@ -26,6 +26,7 @@ import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOl
 import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
 import { 도구설명EN } from './desc.en.js';
+import { 그림인가, 그림읽기, 크기말, 기본한도 } from '../backend/vision.js';
 import { 지시말 } from '../i18n/index.js';
 
 /*
@@ -666,6 +667,49 @@ function 여러군데고치기(목록, ctx) {
   };
 }
 
+/*
+ * 그림 파일을 Read 로 열었을 때.
+ *
+ * 두 갈래다.
+ *
+ *   눈이 있는 모델 — 도구 결과에는 "열었다" 는 말만 남기고, 그림 자체는
+ *     루프가 바로 뒤에 사람 말로 붙인다 (vision.js 의 그림메시지 머리말 참고).
+ *     여기서 base64 를 content 에 넣으면 안 된다. 도구 결과는 글 한 덩어리라
+ *     그림으로 안 읽히고, 그냥 자리만 5MB 먹는다.
+ *
+ *   눈이 없는 모델 — **바이트를 아예 안 싣는다.** 대신 한 줄로 말한다.
+ *     안 보이는 모델에게 보내 봐야 400 이 오거나, 더 나쁘게는 서버가 조용히
+ *     무시하고 답을 지어낸다. 그러면 사람은 모델이 화면을 봤다고 믿는다.
+ */
+function 그림보기(abs, ctx) {
+  const show = ctx.scope.show(abs);
+  const 눈있나 = !!ctx.눈있나;
+  const 것 = 그림읽기(abs, { 한도: 기본한도 });
+
+  if (!것.ok) {
+    return { error: `${show} — ${것.왜}` };
+  }
+  ctx.seen.add(abs);
+  const 잰것 = `그림 · ${크기말(것.bytes)} · ${것.mime}`;
+
+  if (!눈있나) {
+    return {
+      content: `${show} 는 그림입니다 (${잰것}).\n`
+        + '지금 붙어 있는 모델은 그림을 못 봅니다 — 그래서 보내지 않았습니다.\n'
+        + '이 파일을 코드처럼 읽으려 하지 마세요. 무엇이 찍혀 있는지 알아야 한다면'
+        + ' 사용자에게 말로 설명해 달라고 하세요.',
+      summary: `${잰것} · 이 모델은 못 봄`,
+      그림없음: true,
+    };
+  }
+  return {
+    content: `${show} 를 열었습니다 (${잰것}). 그림은 이 다음 메시지에 붙어 있습니다.`,
+    summary: 잰것,
+    // 루프가 이걸 보고 사람 말 자리에 그림을 붙인다. 모델에게 가는 글이 아니다.
+    그림: { b64: 것.b64, mime: 것.mime, bytes: 것.bytes, show },
+  };
+}
+
 export const TOOLS = {
   Read: {
     schema: {
@@ -692,6 +736,8 @@ export const TOOLS = {
       const 막을이유 = 내부살림(abs);
       if (막을이유) return { error: 막을이유 };
 
+      // 그림은 글로 읽지 않는다. 읽으면 깨진 글자 수천 자가 대화에 실린다.
+      if (그림인가(abs)) return 그림보기(abs, ctx);
       // 엑셀 파일은 글이 아니라 압축 꾸러미다. 그냥 읽으면 '바이너리' 로 끝난다.
       // 여기서 표로 바꿔 돌려준다 — 사람이 손으로 CSV 로 내보낼 일이 없게.
       if (isExcelPath(abs)) return 엑셀읽기(abs, args, ctx);
@@ -1581,6 +1627,26 @@ export function 설명줄이기(schema, 한도) {
  * 빈 설명을 내보내지 않는다. 설명 없는 도구는 모델이 언제 쓰는지 모른 채로
  * 목록에만 서 있게 되는데, 그건 없는 것보다 나쁘다.
  */
+/*
+ * 그림 이야기는 **볼 수 있는 모델에게만** 한다.
+ *
+ * 못 보는 모델에게 "그림도 읽을 수 있다" 고 적어 두면 모델은 화면 사진을
+ * 열려 들고, 열어 봐야 "이 모델은 못 봅니다" 를 받는다. 그 한 걸음이 매번
+ * 헛간다 — 작은 로컬 모델일수록 그 한 걸음이 아깝다.
+ *
+ * 반대로 볼 수 있는데 안 적어 두면 그림 파일을 아예 안 연다. 사람이 화면
+ * 사진을 폴더에 넣어 두고 "이거 봐" 라고 해도 이름만 보고 지나간다.
+ */
+function 눈붙이기(fn, 이름, vision) {
+  if (이름 !== 'Read' || !vision) return fn;
+  // 화면 말을 그대로 본다. 설명 글자를 보고 짐작하면 안 된다 — 줄이기가 문장
+  // 한복판을 자르므로 마지막 글자가 무엇일지 정해져 있지 않다.
+  const 덧말 = 지시말() === 'en'
+    ? ' Screenshots and images (.png/.jpg/.gif/.webp) can be opened too — this model can see them.'
+    : ' 화면 사진·그림(.png/.jpg/.gif/.webp)도 그대로 열 수 있다 — 지금 붙어 있는 모델은 그림을 본다.';
+  return { ...fn, description: String(fn.description ?? '') + 덧말 };
+}
+
 function 영어설명(schema, 이름) {
   if (지시말() !== 'en') return schema;
   const 것 = 도구설명EN[이름];
@@ -1601,7 +1667,7 @@ function 영어설명(schema, 이름) {
 
 // 모델에게 넘길 도구 정의 목록.
 // 스킬이 없으면 Skill 도구는 빼서 자리를 아낀다.
-export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null, lsp = false } = {}) {
+export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null, lsp = false, vision = false } = {}) {
   let list = names ?? Object.keys(TOOLS).filter((n) => {
     if (n === 'Skill') return hasSkills;
     if (n === 'WebFetch') return web;
@@ -1642,7 +1708,9 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
    */
   const 우리것 = list.map((n) => ({
     type: 'function',
-    function: 설명줄이기(영어설명(TOOLS[n].schema, n), 한도),
+    // 눈 이야기는 줄인 **뒤에** 붙인다. 먼저 붙이면 한도에 걸려 그 한 문장이
+    // 그대로 잘려 나간다 — 좁은 창일수록 정작 알려야 할 때 안 실린다.
+    function: 눈붙이기(설명줄이기(영어설명(TOOLS[n].schema, n), 한도), n, vision),
   }));
 
   /*

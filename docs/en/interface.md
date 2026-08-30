@@ -47,6 +47,32 @@ model edit a part it never saw. Only a fully attached file lets it skip `Read`.
 Every attachment is announced on screen. Text the user did not type is now in the conversation;
 not showing it would also leave them wondering where the context went.
 
+### Showing a screenshot
+
+`.png` · `.jpg` · `.gif` · `.webp` are sent **as images**, not as text — the same for
+`Read shot.png` and for `@shot.png`.
+
+```
+> @error-screen.png what is going on here?
+  |= attached error-screen.png (image · 340KB)
+```
+
+Whether the connected model can see images is settled on first connect by asking it about a
+**1x1 white dot** (the `Vision` row in `deel setup`). Names are not trusted for this: a
+corporate gateway can put anything behind the name `gpt-4o`, and locally pulled models are
+named however their author felt.
+
+**A model that cannot see gets no bytes at all.** Sending anyway earns a 400, or worse, the
+server quietly ignores the image and invents an answer — and then the user believes the model
+looked at the screen. Instead it says so in one line.
+
+| | |
+|---|---|
+| Per-image cap | 4MB. Over that it is not sent, and the size is named. It is not downscaled — installing nothing is this tool's rule |
+| Named .png but actually a JPEG | The bytes decide the type. Trusting the name earns a 400 from the gateway |
+| A saved image URL that was really a login page | Says it is not an image |
+| When the window fills | Old images are dropped first (the last two stay). Words the user typed are never touched |
+
 ### `/commit` — records only what this session changed
 
 Work only lasts once it goes through git. When the model takes that last step itself with

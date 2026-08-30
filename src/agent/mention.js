@@ -16,6 +16,7 @@
 import { existsSync, statSync, readdirSync } from 'node:fs';
 import { readTextFull } from '../tools/fsutil.js';
 import { 계보규칙읽기, 무시하나 } from '../tools/ignore.js';
+import { 그림인가, 그림읽기, 크기말 } from '../backend/vision.js';
 import { estimateTokens } from './session.js';
 
 // 붙일 수 있는 최대 토큰. 부르는 쪽에서 컨텍스트에 맞춰 넘겨준다.
@@ -103,9 +104,9 @@ function 폴더내용(abs, show, root = null) {
  *   'Read 부터 하라' 며 되돌려 보내지 않는다. 잘린 파일은 안 적는다.
  *   안 본 데를 본 것으로 치면 그 자리를 그냥 고쳐 버린다.
  */
-export function expand(text, { scope = null, budget = 기본예산, seen = null, onRead = null } = {}) {
+export function expand(text, { scope = null, budget = 기본예산, seen = null, onRead = null, 눈있나 = false } = {}) {
   const 원문 = String(text ?? '');
-  const 빈답 = { text: 원문, attached: [], missing: [], blocked: [] };
+  const 빈답 = { text: 원문, attached: [], missing: [], blocked: [], 그림들: [] };
   if (!원문.includes('@') || !scope?.resolve) return 빈답;
 
   const 지목들 = findMentions(원문);
@@ -114,6 +115,7 @@ export function expand(text, { scope = null, budget = 기본예산, seen = null,
   const attached = [];
   const missing = [];
   const blocked = [];
+  const 그림들 = [];
   const 붙일것 = [];
   const 본것 = new Set();
   let 남은예산 = Math.max(200, Number(budget) || 기본예산);
@@ -132,6 +134,31 @@ export function expand(text, { scope = null, budget = 기본예산, seen = null,
     try {
       if (statSync(자리.abs).isDirectory()) {
         몸통 = 폴더내용(자리.abs, show, scope.root ?? null);
+      } else if (그림인가(자리.abs)) {
+        /*
+         * 그림은 글로 안 붙인다. 붙이면 깨진 글자 수천 자가 대화에 실린다.
+         *
+         * 볼 수 있는 모델이면 그림 자체를 이 말과 함께 싣고(repl.js → loop.js),
+         * 못 보는 모델이면 **바이트를 아예 안 싣는다.** 안 보이는 모델에게
+         * 보내 봐야 400 이 오거나, 더 나쁘게는 서버가 조용히 무시하고 답을
+         * 지어낸다. 그러면 사람은 모델이 화면을 봤다고 믿는다.
+         */
+        const 것 = 눈있나 ? 그림읽기(자리.abs) : { ok: false, 왜: null, bytes: 0 };
+        if (것.ok) {
+          그림들.push({ b64: 것.b64, mime: 것.mime, bytes: 것.bytes, show });
+          몸통 = `(그림 · ${크기말(것.bytes)} — 이 말과 함께 붙였습니다)`;
+          attached.push({ path: 자리.abs, show, full: true, 그림: true, bytes: 것.bytes });
+          붙일것.push(`
+
+--- ${show} ---
+${몸통}
+--- ${show} 끝 ---`);
+          continue;
+        }
+        몸통 = 눈있나
+          ? `(못 붙였습니다: ${것.왜})`
+          : '(그림입니다. 지금 붙어 있는 모델은 그림을 못 봅니다 — 안 붙였습니다.)';
+        통째로 = false;
       } else {
         // 사내 파일은 CP949 가 흔하다. 그냥 읽으면 통째로 깨진다.
         const 읽음 = readTextFull(자리.abs);
@@ -163,9 +190,9 @@ export function expand(text, { scope = null, budget = 기본예산, seen = null,
     if (남은예산 <= 0) break;
   }
 
-  if (!붙일것.length) return { text: 원문, attached, missing, blocked };
+  if (!붙일것.length) return { text: 원문, attached, missing, blocked, 그림들 };
   const 머리 = attached.length === 1
     ? '아래는 사용자가 @ 로 지목한 파일입니다. 이미 읽은 것으로 치고 답하세요.'
     : `아래는 사용자가 @ 로 지목한 파일 ${attached.length}개입니다. 이미 읽은 것으로 치고 답하세요.`;
-  return { text: `${원문}\n\n${머리}${붙일것.join('')}`, attached, missing, blocked };
+  return { text: `${원문}\n\n${머리}${붙일것.join('')}`, attached, missing, blocked, 그림들 };
 }

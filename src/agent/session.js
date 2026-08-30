@@ -1,6 +1,7 @@
 // 대화 상태와 컨텍스트 셈. /context 가 보여주는 숫자가 여기서 나온다.
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { 그림장수, 글만, 그림한장토큰 } from '../backend/vision.js';
 import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './modes.js';
 import { toolSchemas } from '../tools/index.js';
 import { normalize as normLevel, DEFAULT as LEVEL_DEFAULT } from '../ui/level.js';
@@ -603,7 +604,18 @@ export class Session {
     let history = 0;
     let files = 0;
     for (const m of this.messages) {
-      const t = estimateTokens(typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''))
+      /*
+       * 그림은 글자 수로 세지 않는다.
+       *
+       * 그림은 base64 로 실려 있어서 글로 세면 4MB 짜리 한 장이 150만 토큰으로
+       * 잡힌다. 그러면 창이 다 찬 줄 알고 대화를 통째로 접는다 — 화면 사진 한 장
+       * 보여 준 값으로 하던 일을 잃는 셈이다. 한 장에 얼마인지는 서버가 정하는
+       * 것이라 우리는 모르므로, 정해 둔 값으로 세고 서버가 알려주는 실제 값으로
+       * 고쳐 나간다 (backend/vision.js 의 그림한장토큰 머리말).
+       */
+      const 장수 = 그림장수(m);
+      const t = estimateTokens(장수 ? 글만(m) : (typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')))
+        + 장수 * 그림한장토큰
         + estimateTokens(JSON.stringify(m.tool_calls ?? ''));
       if (m.role === 'tool') files += t; else history += t;
     }
@@ -678,6 +690,7 @@ export class Session {
         // 재게 되고, 그러면 /context 가 실제보다 크게 말한다 — 그 값으로
         // effort.js 가 출력 상한을 잡으므로 답이 이유 없이 짧아진다.
         ctx: this.conn?.ctx ?? null,
+        vision: this.conn?.vision === true,
       });
       n = estimateTokens(JSON.stringify(list));
     } catch { n = 0; }

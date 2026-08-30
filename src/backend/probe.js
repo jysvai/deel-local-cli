@@ -6,6 +6,7 @@
 //   skip 앞 검사가 실패해 확인 불가
 import { req, headersFor, serverMessage } from './http.js';
 import { probeCtx } from './ctxsize.js';
+import { 눈검사메시지 } from './vision.js';
 
 const READ_TOOL = {
   type: 'function',
@@ -59,6 +60,7 @@ const SKIPPED = [
   ['tools', '도구 호출'],
   ['toolresult', '도구 결과 되돌리기'],
   ['json', '구조적 출력'],
+  ['vision', '그림 보기'],
   ['think', '추론 강도 조절'],
   ['ctx', '컨텍스트 길이'],
 ];
@@ -282,6 +284,40 @@ export async function probe(conn, onStep = () => {}) {
     ms: js?.ms ?? 0,
   });
   facts.json = jsonOk;
+
+  /*
+   * 6.5 그림 — 이 모델이 그림을 볼 수 있느냐.
+   *
+   * 이름으로 짐작하지 않는다. 사내 게이트웨이는 `gpt-4o` 라는 이름 뒤에
+   * 무엇이든 걸어 둘 수 있고, 로컬에 받아 둔 llava 계열은 이름이 제각각이다.
+   * 한 번 물어보면 확실해지는 것을 짐작할 이유가 없다.
+   *
+   * 흰 점 하나짜리 1×1 PNG 로 묻는다 (vision.js). 무엇이 찍혀 있을지 모르는
+   * 진짜 화면을 확인하자고 바깥으로 내보낼 수는 없다.
+   *
+   * 답의 내용은 안 본다. 흰 점 하나를 보고 무슨 말을 하든 상관없고, 우리가
+   * 알고 싶은 것은 **서버가 그림이 든 메시지를 받아 주느냐** 하나다.
+   * 못 받는 서버는 400 이나 415 로 거절한다.
+   */
+  const 눈 = await call({
+    ...quiet,
+    messages: [눈검사메시지(shape)],
+    maxTokens: 32,
+    timeout: 60000,
+  });
+  const 눈있음 = !!(눈.ok && extract(shape, 눈.json).content);
+  add({
+    id: 'vision',
+    label: '그림 보기',
+    status: 눈있음 ? 'ok' : 눈.ok ? 'warn' : 'no',
+    detail: 눈있음
+      ? `1×1 PNG 를 받아서 답함 — Read·@ 로 화면 사진을 보여 줄 수 있습니다`
+      : 눈.ok
+        ? '그림을 받긴 했는데 답이 비었습니다 — 안 보이는 것으로 칩니다'
+        : `${serverMessage(눈)} — 그림은 안 보냅니다`,
+    ms: 눈.ms ?? 0,
+  });
+  facts.vision = 눈있음;
 
   // 7. 추론 강도 조절 — 낮음/높음이 실제로 다른 결과를 내느냐.
   //    상한에 걸리면 둘 다 같은 숫자가 나와 비교가 무의미해진다. 넉넉히 준다.

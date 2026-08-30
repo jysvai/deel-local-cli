@@ -1,12 +1,13 @@
 // 에이전트 루프. 모델 → 도구 → 결과 → 모델 을 답이 나올 때까지 돈다.
 // 화면에 그릴 것은 이벤트로 흘려보낸다 — 화면 코드와 섞지 않는다.
 import { chat, chatStream, assistantMessage, toolMessage } from '../backend/adapter.js';
+import { 그림메시지 } from '../backend/vision.js';
 import { toolSchemas, runTool, TOOLS, 파일현황 } from '../tools/index.js';
 import { isMutating } from '../safety/guard.js';
 import { effortFor, tokensFor, fullCap, wasCut, shiftLevel } from './effort.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
-import { compact, shouldCompact, shouldFold, foldToolResults } from './compact.js';
+import { compact, shouldCompact, shouldFold, foldToolResults, foldImages } from './compact.js';
 import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
 import { Session } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
@@ -88,7 +89,7 @@ export function 묶기(calls) {
   return out;
 }
 
-export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 } = {}) {
+export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 그림들 = null } = {}) {
   /*
    * 되돌리기 턴은 **부모만** 연다.
    *
@@ -101,7 +102,10 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
    * 되돌린 일을 또 하려 든다.
    */
   if (!깊이) session.턴시작(ctx.history.nextTurn());
-  session.push({ role: 'user', content: userText });
+  // @ 로 그림을 지목했으면 그 말과 함께 실어 보낸다 (backend/vision.js).
+  session.push(그림들?.length
+    ? 그림메시지(session.conn?.kind, { 글: userText, 그림들 })
+    : { role: 'user', content: userText });
   ctx.audit.turn(깊이 ? `[하위작업 ${깊이}겹] ${userText}` : userText);
 
   /*
@@ -251,6 +255,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
     // 창이 좁으면 도구 설명을 줄여 싣는다 (budget.js 의 설명길이).
     // 도구를 빼는 게 아니라 설명만 줄이므로 할 수 있는 일은 안 달라진다.
     ctx: conn.ctx ?? null,
+    // 그림을 볼 수 있는 모델일 때만 Read 설명에 그림 이야기를 넣는다.
+    // 못 보는데 넣어 두면 모델이 화면 사진을 열려 들고, 그때마다 한 걸음이 헛간다.
+    vision: conn.vision === true,
   });
 
   /*
@@ -574,6 +581,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
       lastToolFailed = true;
       session.push(toolMessage(conn.kind, { callId: call.id, name: call.name, content: note }));
     };
+
+    /*
+     * 이번 턴에 Read 로 연 그림들.
+     *
+     * 도구 결과가 다 들어간 **뒤에** 한꺼번에 붙인다. 하나 읽을 때마다 바로
+     * 붙이면 도구 결과 사이에 사람 말이 끼어드는데, 그러면 뒤에 오는 도구
+     * 결과들이 짝을 잃는다 — 게이트웨이가 통째로 400 을 준다.
+     */
+    const 붙일그림 = [];
 
     for (const 덩어리 of 묶기(msg.toolCalls)) {
       // 돌리는 중에 끊었다면, 남은 것은 실행하지 않고 결과 자리만 채운다.
@@ -1002,6 +1018,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
           name: call.name,
           content: 실을것,
         }));
+        if (result.그림) 붙일그림.push(result.그림);
         yield {
           type: 'tool',
           name: call.name,
@@ -1012,6 +1029,17 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
           ...(비밀.length ? { 비밀: { 가렸나: 가릴도구.has(call.name), 말: 봤다는말(비밀) } } : {}),
         };
       }
+    }
+
+    // 연 그림들을 사람 말 자리로 붙인다 (backend/vision.js).
+    if (붙일그림.length) {
+      const 이름들 = 붙일그림.map((g) => g.show).join(' · ');
+      session.push(그림메시지(conn.kind, {
+        글: 붙일그림.length === 1
+          ? `방금 연 그림입니다: ${이름들}`
+          : `방금 연 그림 ${붙일그림.length}장입니다: ${이름들}`,
+        그림들: 붙일그림,
+      }));
     }
 
     // 도구를 돌리다 끕어졌어도 모델이 한 말은 이미 대화에 들어가 있다. 그건 남는다.
@@ -1035,6 +1063,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
     if (shouldFold(session)) {
       const f = foldToolResults(session);
       if (f.접은것) yield { type: 'folded', ...f };
+      // 그림은 사람 말 자리에 실려서 위 접기가 못 건드린다. 따로 뺀다.
+      const g = foldImages(session);
+      if (g.뺀것) yield { type: 'images_folded', ...g };
     }
 
     // 컨텍스트가 차오르면 오래된 대화를 '요약해서' 접는다. 그냥 자르면 하던 일을 잊는다.
