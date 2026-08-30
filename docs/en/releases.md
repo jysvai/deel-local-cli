@@ -6,6 +6,204 @@ What changed in each version, and why
 
 ---
 
+## 1.6.0
+
+**The things that did not work on a corporate network**
+
+Up to 1.5.8 there was a long list of "works at home, not at the office." This release
+is that list, sorted by urgency into five tiers and cleared. Fourteen items.
+
+The short version:
+
+| | 1.5.8 | 1.6.0 |
+|---|---|---|
+| Behind a proxy | **Could not reach the gateway** (went direct, silently) | Reaches it — deel reads `HTTPS_PROXY` itself and opens the tunnel |
+| Server answers 429 | The turn died | Waits and calls again |
+| Windows | Sent `ls` to `cmd` | Uses Git Bash when present, and **tells the model which shell it is** either way |
+| A 50k-file repository | Grep said "no matches" (there were 100) | Borrows the `rg` already installed, and **says what it did not look at** |
+| PDF | Could not read it | Reads it page by page. Unreadable pages say so |
+| Screenshots | Could not see them | `/paste` sends the clipboard image straight through |
+| Closing the editor window | The conversation was gone | It is still there |
+| The key | Plaintext in the roaming profile | In the machine's own vault (DPAPI · Keychain) |
+
+Tests went from **3,869 to 4,932 checks** across 92 files.
+
+---
+
+### Tier 0 — could not connect at all
+
+#### Behind a proxy, the gateway was unreachable
+
+The docs promised `HTTPS_PROXY` support. Measured on Node 24.19:
+
+```
+HTTP_PROXY=http://127.0.0.1:3128  deel
+→ requests the proxy saw: 0        (it went direct)
+```
+
+On a network with no direct egress this looks like nothing more than "connection
+failed," with no hint anywhere as to why. deel now reads the variable itself and opens
+a `CONNECT` tunnel. If the proxy is unusable, **it says so** rather than quietly going
+direct.
+
+#### A brief block killed the turn
+
+Corporate gateways count requests per user. `Task` fans work out, and the count adds up
+fast. One 429 ended everything in flight. It now waits and retries, and **says why it
+is waiting** while it waits.
+
+---
+
+### Tier 1 — tens of seconds leaking every day
+
+#### On Windows, `ls` was being handed to `cmd`
+
+Models write `ls`, `cat`, `grep`. On Windows those went to `cmd.exe`. A local model
+costs 20–40 seconds per round trip — that is what each failure costs.
+
+It now runs through Git Bash when it is installed, and when it is not, **it tells the
+model which shell it is** up front. Being right knowingly is cheaper than being wrong
+blindly.
+
+#### Tools were looking at what git ignores
+
+`out/`, `.gradle/`, `coverage/`, generated code. Flood an 8k window with those and
+nothing worth reading is left. `.gitignore` and `.deelignore` are now honoured.
+
+#### `/commit` · the key at rest
+
+Work leaves the agent through exactly one door: git. Until now the model had to type
+`git commit -m "…"` through `Bash`, where one quote mangles the message. `/commit` now
+stages **only what this session changed** and writes the message from the diff.
+
+The key moved from a `chmod 600` that means nothing on NTFS into the machine's own
+vault (Windows DPAPI, macOS Keychain). It is the first thing a reviewer asks about.
+
+---
+
+### Tier 2 — gateway shapes, eyes, rules
+
+| | |
+|---|---|
+| **Azure** | The `api-key` header was supported, the URL shape was not. `/openai/deployments/{name}/…?api-version=` now works |
+| **Eyes** | "Look at this screen" is the most common non-text input. `Read` and `@` pass png/jpg/webp through as images. If the model has no eyes, **it says so** |
+| **Rules** | Three approval modes meant clicking through `Bash(npm test*)` every time. Persistent allow and never-allow lists, plus an admin-locked policy file |
+
+> **`/v1/messages` (the Anthropic shape) is not in this release.** Company security rules
+> mean that work has to happen on a separate network, so the owner **deferred it for later
+> review**. It is not half-built — what is absent is simply absent.
+
+---
+
+### Tier 3 — big repositories, big documents
+
+#### Grep said "no matches" in a 50,000-file repository
+
+This is the worst thing found this round. The directory walk had a 20,000-file cap, and
+**it never mentioned hitting it.**
+
+```
+50,000 files · 100 real matches
+
+1.5.8   ❊ Grep(TODO)   → no matches            ← a lie
+1.6.0   ❊ Grep(TODO)   → 62 hits (not all seen)
+                          Too many files — only the first 20,000 were looked at.
+                          Anything in the rest is not listed here.
+```
+
+Told there is nothing, a person believes it and searches somewhere else. That is the
+expensive failure.
+
+And when `rg` (ripgrep) is already installed, deel **borrows it**. Nothing is installed —
+without it, the old path still runs. The extension list lives in one place so the JS walk
+and `rg` look at exactly the same files and cannot disagree.
+
+#### PDFs are read page by page
+
+Specifications are usually PDFs. hwpx, docx and pptx were already read; only PDF was not.
+Added with zero dependencies still — xref tables, xref streams, ObjStm, FlateDecode, PNG
+predictors, `/ToUnicode`, Identity-H.
+
+Two defects surfaced only against PDFs printed by a real Chrome:
+
+```
+Chrome emits one operator per glyph
+  before:  결 제 를  누 르 면
+  after:   결제를 누르면          ← track where the pen actually was
+
+Estimating glyph widths
+  before:  jum ps over the la zy
+  after:   jumps over the lazy    ← read the widths the font declares
+```
+
+A page with no text at all (a scanned image) **says it could not be read.** Hand back a
+silent blank page and the reader concludes the page was blank.
+
+#### `/review` · quota
+
+Changes get a second look **in a fresh context** (`/review`). It exists to catch what the
+writer cannot see, so it is deliberately not given the conversation history.
+
+Quota is no longer something you learn about by hitting 429 — the headers the server
+already sends are recorded and shown in `/cost` and the status line.
+
+---
+
+### Tier 4 — the things you feel
+
+#### Type while it works and it steers
+
+A local model spends minutes on one turn. Typing "not that, this first" during those
+minutes used to do nothing until the turn ended. The only real option was Ctrl+C, which
+**throws everything away.**
+
+```
+❯ rewrite the whole test suite
+  ◧ Read  test/smoke.js
+❯ not that — look at the failing one first
+  ❯ not that — look at the failing one first  (steered — takes effect from the next step)
+```
+
+Nothing done so far is discarded; only the direction changes. It is never inserted between
+a tool call and its result — a message there breaks the conversation shape and the gateway
+answers 400.
+
+#### Screenshots without saving a file
+
+`/paste` sends the clipboard image straight through. No save-then-`@` detour.
+
+Building it turned up **a leaking key**. The `Read` tool blocked `.deel/config.json`, but
+attaching `@.deel/config.json` handed it over intact. The same gatekeeper now stands on
+that path too.
+
+#### Close the editor, reopen it, yesterday's conversation is there
+
+Used from an editor (Zed, JetBrains, Neovim), closing the window used to erase the
+conversation. It now comes back. Conversations live in the **same place as the terminal's**,
+so a session started in the editor can be continued with `deel --resume`.
+
+A spot where it died mid-tool is shown as "interrupted." What you were in the middle of
+yesterday decides what you ask for today.
+
+#### Also
+
+`deel completion bash|zsh|powershell` makes TAB work in the shell. Screen languages are now
+four: Korean, English, Japanese, Chinese.
+
+---
+
+#### The numbers
+
+**4,932 checks** across 92 files. Everything added this round was measured against **real
+artifacts** — PDFs printed by a real Chrome, TAB pressed in a real bash and a real
+PowerShell, a real clipboard, an editor process really killed and really restarted. Against
+hand-built fixtures alone, half the fixes above would never have been found.
+
+For every fix, the code was **put back the way it was to confirm the test actually goes
+red.**
+
+---
+
 ## 1.5.8
 
 **A 5MB document showed 8 lines out of 919**

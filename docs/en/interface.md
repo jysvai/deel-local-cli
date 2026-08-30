@@ -126,7 +126,7 @@ and none of the evidence deel already has (`/evidence`) reaches the message.
     Glob 이 빌드 산출물을 그대로 훑어 답이 잘리고 있었다.
 
     검증: 2건 확인 · 0건 미확인
-    Generated-by: deel 1.5.8 · qwen2.5-coder-7b
+    Generated-by: deel 1.6.0 · qwen2.5-coder-7b
 
   ✓ 477b88b  feat: git 이 안 보는 것은 도구도 안 본다
      push 는 안 했습니다. 되돌리려면 git reset --soft HEAD~1

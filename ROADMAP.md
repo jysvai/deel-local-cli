@@ -53,18 +53,18 @@ exists), Korean identifiers in source (house style — do not "fix" that).
 | **1** | T1-3 | `/commit` — message from the session's own diff and evidence — **done (1d3817a·1c3bf91)** | Work leaves the agent only through git; today the model has to type `git commit -m` through `Bash` with quoting hazards and no evidence trailer. | M | command exec |
 | **1** | T1-4 | Gateway key at rest: DPAPI (Windows) / Keychain (macOS) — **done (3fde811)** | `chmod 600` is a no-op on NTFS; the key sits in plaintext under the roaming profile. First question a reviewer asks. | M | secrets |
 | **—** | T2-1 | Anthropic Messages API shape (`/v1/messages`) — **deferred, later review** | Owner's decision (2026-08-30): company security rules mean an external `/v1/messages` endpoint can only be worked on from a separate network. Not built now; revisit when that network exists. | L | network |
-| **2** | T2-2 | Azure OpenAI URL shape (`/openai/deployments/{d}/…?api-version=`) | `api-key` header is supported but the URL shape is not; Korean enterprises are Azure-heavy. | S | network |
-| **2** | T2-3 | Vision input (`Read`/`@` on png·jpg·webp → image part) | "Here is the screenshot of the bug" is the most common non-text input; local VL models and gateway GPT-4o/Claude accept it. | M | — |
-| **2** | T2-4 | Permission rules + managed policy file | Only three approval modes; no persistent allow/deny (`Bash(npm test*)`), no admin-locked gateway address / forced offline for rollout. | M | authz |
-| **3** | T3-1 | PDF text extraction (zero-dep, honest about unreadable pages) | Spec documents are PDFs; hwpx/docx/pptx already read. | L | — |
-| **3** | T3-2 | `/review` — the model reviews the session diff in a fresh context | Pairs with `/commit`; catches what the writer cannot see. | S | — |
-| **3** | T3-3 | Use `rg` / `git grep` when installed (install nothing) | JS walker is slow on 50k+ files; `rg` is often already on dev PCs. | S | command exec |
-| **3** | T3-4 | Surface gateway quota headers (`x-ratelimit-*`) in `/cost` and status | Users learn about quota only when 429 hits. | S | — |
-| **4** | T4-1 | `deel completion <shell>` (bash/zsh/PowerShell) | Discoverability. | S | — |
-| **4** | T4-2 | Queue a message while a turn runs (steering) | Local turns are slow; typing "also do X" should not require Ctrl+C. | M | — |
-| **4** | T4-3 | Clipboard image paste (after T2-3) | Screenshot → Ctrl+V. | S | — |
-| **4** | T4-4 | ACP `session/load` | Editors currently open an empty conversation on resume. | M | — |
-| **4** | T4-5 | Screen languages ja / zh | Same mechanism as `en`; translation only. | S | — |
+| **2** | T2-2 | Azure OpenAI URL shape (`/openai/deployments/{d}/…?api-version=`) — **done (ca2748d·e1c6a49)** | `api-key` header is supported but the URL shape is not; Korean enterprises are Azure-heavy. | S | network |
+| **2** | T2-3 | Vision input (`Read`/`@` on png·jpg·webp → image part) — **done (ac185e2)** | "Here is the screenshot of the bug" is the most common non-text input; local VL models and gateway GPT-4o/Claude accept it. | M | — |
+| **2** | T2-4 | Permission rules + managed policy file — **done (101b0e3)** | Only three approval modes; no persistent allow/deny (`Bash(npm test*)`), no admin-locked gateway address / forced offline for rollout. | M | authz |
+| **3** | T3-1 | PDF text extraction (zero-dep, honest about unreadable pages) — **done (c229a0b)** | Spec documents are PDFs; hwpx/docx/pptx already read. | L | — |
+| **3** | T3-2 | `/review` — the model reviews the session diff in a fresh context — **done (68fdaff)** | Pairs with `/commit`; catches what the writer cannot see. | S | — |
+| **3** | T3-3 | Use `rg` / `git grep` when installed (install nothing) — **done (fe715f8)** | JS walker is slow on 50k+ files; `rg` is often already on dev PCs. | S | command exec |
+| **3** | T3-4 | Surface gateway quota headers (`x-ratelimit-*`) in `/cost` and status — **done (68fdaff)** | Users learn about quota only when 429 hits. | S | — |
+| **4** | T4-1 | `deel completion <shell>` (bash/zsh/PowerShell) — **done (91a5ffc)** | Discoverability. | S | — |
+| **4** | T4-2 | Queue a message while a turn runs (steering) — **done (b91c344)** | Local turns are slow; typing "also do X" should not require Ctrl+C. | M | — |
+| **4** | T4-3 | Clipboard image paste (after T2-3) — **done (5787f49)** | Screenshot → Ctrl+V. | S | — |
+| **4** | T4-4 | ACP `session/load` — **done (ba6590c)** | Editors currently open an empty conversation on resume. | M | — |
+| **4** | T4-5 | Screen languages ja / zh — **done (2520cc4)** | Same mechanism as `en`; translation only. | S | — |
 
 Size: S ≤ 1 day, M 1–3 days, L 3–5 days for one agent including tests and docs.
 
@@ -81,10 +81,14 @@ ships as one commit. Order chosen so that each slice is independently valuable:
 4. **T1-2 .gitignore walking** — context hygiene for real repos.
 5. **T1-3 `/commit`** — closes the loop from edit to repository.
 6. **T1-4 key at rest** — review-sheet line reviewers ask for.
-7. Tier 2 onward — separate spec pass. T2-1 is **deferred by the owner** (security rules — a
-   separate network is required for external `/v1/messages`); T2-2 is planned on its own.
+7. Tier 2 → 3 → 4, in table order, one commit each.
 
 Gate 1 (slice plan) is this document. Gate 2 (commit) is per slice: diff summary + message shown, then commit locally.
+
+**Every slice above shipped in 1.6.0 except T2-1**, which is **deferred by the owner**
+(security rules — a separate network is required for an external `/v1/messages`
+endpoint). It is not built and not half-built: the shape is simply absent, and the
+gateway kinds deel does speak are the ones it can actually reach from here.
 
 ---
 
