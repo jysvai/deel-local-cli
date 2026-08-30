@@ -68,6 +68,13 @@ function 진짜자리(p) {
   return p;
 }
 
+/** `/c/Users/…` → `C:/Users/…`. 윈도우에서만, 드라이브 글자 한 자짜리 첫 칸만. */
+export function MSYS풀기(p) {
+  if (process.platform !== 'win32') return p;
+  const m = /^\/([a-zA-Z])(\/|$)/.exec(p);
+  return m ? `${m[1].toUpperCase()}:${p.slice(2) || '/'}` : p;
+}
+
 // 작업 범위 — deel 를 띄운 폴더. 그 밖은 읽기도 쓰기도 막는다.
 export function makeScope(root) {
   const base = resolve(root);
@@ -78,7 +85,10 @@ export function makeScope(root) {
     root: base,
     resolve(p) {
       if (!p || typeof p !== 'string') throw new ScopeError('경로가 비었습니다');
-      const abs = isAbsolute(p) ? resolve(p) : resolve(base, p);
+      // Git Bash 꼴 절대 경로(/c/Users/…)는 윈도우에서 C:\Users\… 다. 안 풀면 지금
+      // 드라이브 밑의 \c\Users\… 로 읽혀, 안에 있는 파일이 '범위 밖' 으로 막힌다.
+      const 경로 = MSYS풀기(p);
+      const abs = isAbsolute(경로) ? resolve(경로) : resolve(base, 경로);
       if (밖(base, abs)) throw new ScopeError(`작업 범위 밖입니다: ${p}\n  범위: ${base}`);
       // 글자로는 안인데 링크를 따라가면 밖인 자리. 정션 하나로 울타리가 열린다.
       //
@@ -102,7 +112,8 @@ export function makeScope(root) {
 
 // 되돌릴 수 없는 것만 막는다. 목록이 길어지면 도구가 쓸모없어진다.
 const BLOCKED = [
-  { re: /\brm\s+(-[a-z]*[rR][a-z]*f|-[a-z]*f[a-z]*[rR])\b[^|;&]*\s(\/|~|\$HOME)\s*$/i, why: '뿌리 폴더를 통째로 지우려 합니다' },
+  // `/c` · `/c/` 는 Git Bash 에서 C:\ 다 — 윈도우에서 bash 를 쓰게 되면서 닿게 된 자리.
+  { re: /\brm\s+(-[a-z]*[rR][a-z]*f|-[a-z]*f[a-z]*[rR])\b[^|;&]*\s(\/|\/[a-z]\/?|~|\$HOME)\s*$/i, why: '뿌리 폴더를 통째로 지우려 합니다' },
   { re: /\b(mkfs|fdisk|diskpart)\b/i, why: '디스크를 초기화하는 명령입니다' },
   { re: /\bformat\s+[a-z]:/i, why: '드라이브를 포맷하는 명령입니다' },
   // 윈도우 짝을 빠뜨리면 안 된다 — deel 은 윈도우에서 주로 돈다.

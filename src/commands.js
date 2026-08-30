@@ -14,6 +14,7 @@ import { allowTemporarily } from './safety/network.js';
 import { chat } from './backend/adapter.js';
 import { 알림채움 } from './backend/retry.js';
 import { 프록시고르기 } from './backend/proxy.js';
+import { 정한셸 } from './tools/shell.js';
 import { TOOLS } from './tools/index.js';
 import { 둘러보기, 프로젝트갈래 } from './lsp/servers.js';
 import { 지금것들 } from './lsp/client.js';
@@ -847,6 +848,8 @@ export async function handle(line, session, ctx) {
       if (프록시) say(`  ${c.gray(pad('프록시', 10))} ${프록시.url} ${c.gray(`(${프록시.출처})`)}`);
       say(`  ${c.gray(pad('모델', 10))} ${k.model}`);
       say(`  ${c.gray(pad('작업 폴더', 10))} ${session.root}`);
+      // 명령이 어느 셸에서 도는지. "ls 가 왜 안 되지" 의 답이 이 줄에 있다.
+      say(`  ${c.gray(pad('셸', 10))} ${정한셸().표시}`);
       say(`  ${c.gray(pad('규칙', 10))} ${session.rules ? session.rules.name : '없음 (/init 으로 만들 수 있습니다)'}`);
       const caps = [
         k.tools ? c.green('도구') : c.red('도구'),

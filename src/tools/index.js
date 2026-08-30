@@ -7,6 +7,7 @@ import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsuti
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
 import { checkCommand, checkPaths, isMutating } from '../safety/guard.js';
 import { 띄우기, JOBS_TOOL } from './jobs.js';
+import { 셸명령 } from './shell.js';
 import { findMatch, applySpans, reindent, TIER_LABELS } from './edit-match.js';
 import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
@@ -1158,27 +1159,9 @@ export const TOOLS = {
         };
       }
 
-      /*
-       * 명령을 셸에 넘기는 방법. 윈도우에서 여기가 조용히 틀려 있었다.
-       *
-       * 무슨 일이 있었나:
-       *   Node 는 인자를 넘길 때 따옴표를 \" 로 바꿔 준다. 그런데 cmd.exe 는
-       *   \" 를 모른다. 그래서 따옴표가 든 명령이 통째로 뭉개졌다 —
-       *     node -e "console.log(1)"  →  아무것도 안 하고 **종료코드 0**
-       *   출력도 없고 오류도 없이 '성공' 이다. 모델은 잘된 줄 알고 넘어간다.
-       *   `node -e`, `python -c`, `git commit -m "..."` 이 전부 이 자리였다.
-       *
-       * Node 의 exec() 가 안에서 하는 것과 똑같이 맞춘다 — 명령을 통째로
-       * 따옴표로 감싸고, 인자를 손대지 말라고(verbatim) 일러 준다.
-       * /s 는 그 감싼 따옴표 한 쌍을 벗기라는 뜻이라 짝이 맞는다.
-       */
-      const shell = process.platform === 'win32'
-        ? {
-          file: process.env.COMSPEC ?? 'cmd.exe',
-          args: ['/d', '/s', '/c', `"${cmd}"`],
-          verbatim: true,
-        }
-        : { file: '/bin/sh', args: ['-c', cmd] };
+      // 어느 셸로 넘기나 — tools/shell.js 가 정한다. Jobs 와 같은 답이어야 하므로 한 군데다.
+      // (윈도우 cmd 의 따옴표 문제와 그 해법도 거기 적혀 있다.)
+      const shell = 셸명령(cmd);
 
       const 제한 = args.timeout ?? 120000;
       return new Promise((끝) => {

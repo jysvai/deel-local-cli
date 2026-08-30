@@ -25,6 +25,7 @@
  */
 import { spawn, execFileSync } from 'node:child_process';
 import { decode as decodeBytes, consoleCodepage } from './encoding.js';
+import { 셸명령 } from './shell.js';
 
 // 한 일감이 **들고 있을** 출력 상한. 넘으면 앞을 버리고 뒤를 남긴다 —
 // 오래 도는 것에서 필요한 건 언제나 **방금** 나온 쪽이다.
@@ -61,18 +62,9 @@ const 끝난것상한 = 8;
  */
 const 죽는말기다림 = 700;
 
-/**
- * 명령을 셸에 넘기는 방법.
- *
- * 윈도우에서 여기가 조용히 틀리면 따옴표가 든 명령이 통째로 뭉개진다 —
- * 출력도 오류도 없이 **종료코드 0** 이다. Bash 쪽과 같은 값을 쓴다.
- * 한 군데서만 정의하는 것이 중요하다. 두 벌이 되면 한쪽만 고쳐진다.
- */
-export function 셸명령(cmd) {
-  return process.platform === 'win32'
-    ? { file: process.env.COMSPEC ?? 'cmd.exe', args: ['/d', '/s', '/c', `"${cmd}"`], verbatim: true }
-    : { file: '/bin/sh', args: ['-c', cmd], verbatim: false };
-}
+// 명령을 셸에 넘기는 방법은 tools/shell.js 한 군데서 정한다. Bash 도구와 같은 값이어야
+// 한다 — 두 벌이 되면 한쪽만 고쳐지고, 윈도우에서 따옴표가 든 명령이 조용히 뭉개진다.
+export { 셸명령 };
 
 /**
  * 어떻게 띄우나 — spawn 에 넘길 것들.

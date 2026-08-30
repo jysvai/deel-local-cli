@@ -21,6 +21,7 @@ import { History } from '../src/safety/undo.js';
 import { makeScope } from '../src/safety/guard.js';
 import { Audit } from '../src/safety/audit.js';
 import { TOOLS } from '../src/tools/index.js';
+import { 정한셸 } from '../src/tools/shell.js';
 import { decode, encode, looksBinary } from '../src/tools/encoding.js';
 import { trace } from './trace.mjs';
 
@@ -184,7 +185,8 @@ trace('8-Bash로사라진것');
   const 판 = join(방, 'bash판');
   mkdirSync(판, { recursive: true });
   const ctx = { scope: makeScope(판), history: new History(판), audit: new Audit(판), seen: new Set() };
-  const 윈 = process.platform === 'win32';
+  // 어느 셸이 골라졌느냐로 철자를 정한다 — 윈도우라도 Git Bash 가 있으면 rm · mv · cat 이다.
+  const 윈 = 정한셸().id === 'cmd';
   const 지우기 = (f) => (윈 ? `del ${f}` : `rm ${f}`);
   const 옮기기 = (a, b) => (윈 ? `move ${a} ${b}` : `mv ${a} ${b}`);
 

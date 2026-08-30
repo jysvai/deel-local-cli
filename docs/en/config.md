@@ -30,6 +30,7 @@ Auth style is detected automatically: `Authorization: Bearer` → `x-api-key` �
 | `NODE_EXTRA_CA_CERTS` | Corporate TLS certificate |
 | `HTTPS_PROXY` · `HTTP_PROXY` | Behind a proxy — `http://user:pw@proxy:port`. Lower-case names work too. deel opens the CONNECT tunnel itself, so this works on every Node version |
 | `NO_PROXY` | Where not to use the proxy — `.corp.com, 10.1.2.3, intra:8443, *`. This machine (localhost · 127.*) always goes direct |
+| `DEEL_SHELL` | Which shell the `Bash` tool uses on Windows — `auto` (default: bash if Git Bash is installed, else cmd) · `bash` · `cmd` · `powershell`. `"shell"` in the config file works too. The pick shows in `/status` and in the `Shell:` line the model is given |
 | `DEEL_DEBUG=1` | Verbose errors |
 | `NO_COLOR` | Disable colour |
 | `DEEL_NO_MOTION=1` | Turn off the working animation (falls back to a one-cell spinner) |

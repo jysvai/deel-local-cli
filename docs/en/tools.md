@@ -91,6 +91,15 @@ the audit log. There is no path for a subtask to edit files under a read-only mo
 (architect, plan, ask) — that is blocked both at the mode level and in the tool list.
 Nesting stops at two levels.
 
+### Which shell on Windows — bash when Git Bash is there
+
+On Windows, `Bash` looks for **Git for Windows' bash** first — `%ProgramFiles%\Git\bin\bash.exe`, or a
+`bash.exe` on PATH (`System32\bash.exe` is skipped: it launches WSL). Otherwise it is `cmd.exe`. Either
+way the model is told in one `Shell: …` line, so it stops typing `ls` into cmd and losing twenty seconds
+per miss. `/status` shows the same line. Override with `DEEL_SHELL=bash|cmd|powershell` or `"shell"` in
+the config file — PowerShell is used only when asked for (Windows PowerShell 5.1 does not know `&&`).
+Under bash, `/c/Users/…`-style paths pass the scope check when they point inside the working folder.
+
 ### Commands that never finish — `Bash`'s `background` and `Jobs`
 
 `Bash` only returns once the command **ends**. So anything that does not end could not be

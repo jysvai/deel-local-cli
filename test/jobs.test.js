@@ -46,6 +46,7 @@ import { TOOLS } from '../src/tools/index.js';
 import {
   띄우기, 목록, 하나, 읽기, 끝내기, 모두끝내기, 비우기, 셸명령, 띄우기옵션, 최대일감, JOBS_TOOL,
 } from '../src/tools/jobs.js';
+import { 정한셸 } from '../src/tools/shell.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -643,10 +644,14 @@ trace('10-셸명령');
 // 출력도 오류도 없이 **종료코드 0** 이다. 두 벌로 두면 한쪽만 고쳐진다.
 {
   const s = 셸명령('echo 안녕');
-  if (process.platform === 'win32') {
-    check('윈도우는 cmd /d /s /c 로 넘긴다', s.args.slice(0, 3).join(' ') === '/d /s /c', s.args.join(' '));
+  const 고른 = 정한셸();   // 윈도우라도 Git Bash 가 있으면 bash 다 (tools/shell.js) — shell.test.js 가 고르기를 잰다
+  if (고른.id === 'cmd') {
+    check('윈도우 cmd 는 /d /s /c 로 넘긴다', s.args.slice(0, 3).join(' ') === '/d /s /c', s.args.join(' '));
     check('통째로 따옴표를 씌운다', s.args[3] === '"echo 안녕"', s.args[3]);
     check('그대로 넘긴다고 표시한다', s.verbatim === true, String(s.verbatim));
+  } else if (고른.id === 'bash') {
+    check('Git Bash 는 bash -c 로 넘긴다', /bash\.exe$/i.test(s.file) && s.args[0] === '-c' && s.args[1] === 'echo 안녕', `${s.file} ${s.args.join(' ')}`);
+    check('그대로 넘기기를 안 켠다 (bash 는 \\" 를 안다)', s.verbatim === false, String(s.verbatim));
   } else {
     check('유닉스는 sh -c 로 넘긴다', s.file === '/bin/sh' && s.args[0] === '-c', `${s.file} ${s.args[0]}`);
     check('그대로 넘기기를 안 켠다', s.verbatim === false, String(s.verbatim));

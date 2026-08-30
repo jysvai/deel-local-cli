@@ -100,6 +100,15 @@ js/ts · py · java/kotlin · go · rust · c# · md · html · css · sh · jso
 그대로 남습니다. 읽기만 하는 모드(설계·계획·묻기)에서 하위가 파일을 고치는 길은
 없습니다 — 모드 쪽과 도구 목록 쪽에서 두 겹으로 막았습니다. 깊이는 2단까지입니다.
 
+### 윈도우에서는 어느 셸인가 — Git Bash 가 있으면 bash
+
+`Bash` 는 윈도우에서 **Git for Windows 의 bash** 를 먼저 찾습니다 — `%ProgramFiles%\Git\bin\bash.exe`,
+또는 PATH 의 `bash.exe` (`System32\bash.exe` 는 WSL 을 띄우는 것이라 건너뜁니다). 없으면 `cmd.exe`
+입니다. 어느 쪽이든 모델에게 `Shell: …` 한 줄로 알려 주므로, cmd 에서 `ls` 를 치고 20초를 버리는
+일이 없어집니다. `/status` 에도 같은 줄이 나옵니다. 바꾸려면 `DEEL_SHELL=bash|cmd|powershell` 이나
+설정 파일의 `"shell"` — 파워셸은 시켜야만 씁니다 (Windows PowerShell 5.1 은 `&&` 를 모릅니다).
+bash 에서는 `/c/Users/…` 꼴 경로도 작업 범위 안이면 그대로 통합니다.
+
 ### 끝나지 않는 명령은 뒤에서 — `Bash` 의 `background` 와 `Jobs`
 
 `Bash` 는 명령이 **끝나야** 결과를 줍니다. 그래서 끝나지 않는 것을 못 돌렸습니다 —

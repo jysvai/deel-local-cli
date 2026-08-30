@@ -9,6 +9,7 @@ import { 지문 } from './project.js';
 import { 프롬프트토막 as 기억토막 } from './memory.js';
 import { 못박기 } from './pins.js';
 import { 언어, 지시말 } from '../i18n/index.js';
+import { 셸안내 } from '../tools/shell.js';
 
 // 토큰 추정 — 정확한 토크나이저 없이 대략만 센다.
 // 한글은 글자당 약 1토큰, 영문·코드는 약 4글자당 1토큰으로 본다.
@@ -319,6 +320,10 @@ export class Session {
     parts.push(영
       ? `\nWorking folder: ${this.root}\nYou can neither read nor write files outside this folder.`
       : `\n작업 폴더: ${this.root}\n이 폴더 밖의 파일은 읽지도 쓰지도 못한다.`);
+    // 어느 셸에서 명령이 도는지 한 줄 (tools/shell.js). 모델이 ls 를 칠지 dir 를 칠지가
+    // 여기서 갈린다 — cmd 에서 유닉스 명령을 치면 한 번에 20~40초짜리 헛걸음이다.
+    // 세션 안에서는 안 변하는 줄이라 앞머리(캐시되는 자리)에 둔다.
+    parts.push(셸안내(영));
 
     /*
      * 모델 급에 맞춘 한 문단 (grade.js).
