@@ -12,3 +12,6 @@ deel-반입*.zip
 
 # 레딧 초안 — 저장소에 남길 물건이 아니다
 reddit-post.md
+
+# 에이전트가 만드는 작업 사본 — 저장소에 올릴 물건이 아니다
+.claude/worktrees/
