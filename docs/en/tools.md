@@ -102,6 +102,10 @@ give a path directly and `Read` still works). `Read` · `Edit` on an explicit pa
 listings are filtered). To skip things for deel only, put a `.deelignore` with the same syntax in the working
 folder. `.gitignore` files **above** the working folder are not read.
 
+`node_modules`, `.git`, `dist`, `build`, `target`, `.cache` and friends are always skipped, rules or
+not. So `!build/keep.txt` will not bring one file back out of such a folder — naming the path
+directly still works with `Read`.
+
 ### Which shell on Windows — bash when Git Bash is there
 
 On Windows, `Bash` looks for **Git for Windows' bash** first — `%ProgramFiles%\Git\bin\bash.exe`, or a

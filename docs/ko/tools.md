@@ -110,6 +110,10 @@ js/ts · py · java/kotlin · go · rust · c# · md · html · css · sh · jso
 `Read` · `Edit` 은 그대로 됩니다 (목록만 거릅니다). git 에는 안 적고 deel 만 건너뛰게 하려면
 작업 폴더에 `.deelignore` 를 같은 문법으로 두세요. 작업 폴더 **위**의 `.gitignore` 는 안 봅니다.
 
+`node_modules` · `.git` · `dist` · `build` · `target` · `.cache` 같은 자리는 규칙과 상관없이
+언제나 건너뜁니다. 그래서 `!build/keep.txt` 로 그 안의 파일 하나를 되살리는 것은 안 됩니다 —
+경로를 직접 주면 `Read` 는 됩니다.
+
 ### 윈도우에서는 어느 셸인가 — Git Bash 가 있으면 bash
 
 `Bash` 는 윈도우에서 **Git for Windows 의 bash** 를 먼저 찾습니다 — `%ProgramFiles%\Git\bin\bash.exe`,
