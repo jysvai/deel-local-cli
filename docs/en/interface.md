@@ -8,7 +8,7 @@ Commands, the input box, work modes, simple vs developer, what it asks about
 
 ## Slash commands
 
-<sub>Attaching a file with @ · Interrupting</sub>
+<sub>Attaching a file with @ · /commit · Interrupting</sub>
 
 ### Attaching a file with `@`
 
@@ -46,6 +46,56 @@ model edit a part it never saw. Only a fully attached file lets it skip `Read`.
 
 Every attachment is announced on screen. Text the user did not type is now in the conversation;
 not showing it would also leave them wondering where the context went.
+
+### `/commit` — records only what this session changed
+
+Work only lasts once it goes through git. When the model takes that last step itself with
+`Bash` and `git commit -m "…"`, three things leak: quoting breaks on Windows so the message
+collapses to one line, `git add -A` sweeps in files someone was editing in another window,
+and none of the evidence deel already has (`/evidence`) reaches the message.
+
+```
+❯ /commit
+  담은 것 — 파일 2개
+    · src/tools/ignore.js
+    · test/ignore.test.js
+
+  메시지
+    feat: git 이 안 보는 것은 도구도 안 본다
+
+    Glob 이 빌드 산출물을 그대로 훑어 답이 잘리고 있었다.
+
+    검증: 2건 확인 · 0건 미확인
+    Generated-by: deel 1.5.8 · qwen2.5-coder-7b
+
+  ✓ 477b88b  feat: git 이 안 보는 것은 도구도 안 본다
+     push 는 안 했습니다. 되돌리려면 git reset --soft HEAD~1
+```
+
+| Type this | What happens |
+|---|---|
+| `/commit` | stages only the files this session touched, then commits |
+| `/commit 전부` (`all`) | stages every change in the working folder |
+| `/commit 미리보기` (`preview`) | shows the message and status, commits **nothing** |
+| `/commit <title>` | keeps your title verbatim, writes only the body |
+
+The message is written from the **staged diff and the evidence**, not from the conversation.
+Send the whole conversation and the model ends up citing its own words back at itself; what
+goes into a commit should be what the code says. The repo's last ten subjects go along too,
+so a repo that uses `feat:`/`fix:` gets that style and one that doesn't, doesn't.
+
+If nothing was run after the edits, the message carries `검증: 0건 확인 · 1건 미확인`
+(0 verified · 1 unverified). For whoever reads this commit later, that line is the only
+record of what was actually checked at the time.
+
+**It never pushes.** Between what can be undone (a local commit) and what cannot (somewhere
+others can see), a person belongs. It also never quietly unstages what someone else already
+staged — it says "these were already staged and will go in too" instead.
+
+Even `전부` (all) leaves **`.deel/` out**: that is where the gateway key (`config.json`) and the
+audit log live. A key that once landed in a commit stays in the history even after you revert it.
+
+No git, not a repository, or nothing to stage: one readable line, and it stops.
 
 ### Interrupting
 

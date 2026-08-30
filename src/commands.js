@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { c, say, rule, pad, bar, mark, width, clip } from './ui/ansi.js';
 import { compact } from './agent/compact.js';
 import { 증거모으기, 증거적기 } from './agent/evidence.js';
+import { 커밋준비, 커밋실행 } from './agent/commit.js';
 import { allowEndpoint } from './safety/network.js';
-import { pick } from './ui/prompt.js';
+import { pick, confirm } from './ui/prompt.js';
 import { load, save, resolveKey, upsert } from './config.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
 import { 말, 언어, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
@@ -107,6 +108,7 @@ const 명령들 = {
   learned: { arg: true },
   pin: { arg: true },
   evidence: { arg: true },
+  commit: { arg: true },
   sessions: { arg: false },
   recall: { arg: true },
   mcp: { arg: false },
@@ -1103,6 +1105,9 @@ export async function handle(line, session, ctx) {
     case 'evidence':
     case '증거': return 증거명령(session, ctx, arg), { handled: true };
 
+    case 'commit':
+    case '커밋': return await 커밋명령(session, ctx, arg), { handled: true };
+
     case 'sessions': {
       const rows = listSessions(session.root, { limit: 12 });
       rule('이 폴더의 지난 대화', 70);
@@ -1702,6 +1707,107 @@ function 증거명령(session, ctx, arg = '') {
     say(`  ${c.gray('파일로 남기려면')} ${c.cyan('/evidence 파일')}`);
     say('');
   }
+}
+
+/**
+ * /commit — 이번 대화가 바꾼 것을 커밋한다.
+ *
+ * 화면에서 지키는 것 두 가지.
+ *
+ *   1) **찍기 전에 다 보여 준다.** 메시지 전문과 `git status --short` 를
+ *      먼저 낸다. 커밋은 남는 것이고, 남을 것을 안 보여 주고 남기면 사람은
+ *      나중에 `git log` 에서 처음 읽게 된다. 그때는 이미 늦다.
+ *   2) **놀랄 자리를 미리 말한다.** 남이 먼저 담아 둔 것(index)이 있으면
+ *      그것도 같이 실린다고 적는다. 우리가 말없이 풀어 버리면 남의 준비가
+ *      사라지고, 말없이 실으면 남의 변경이 이 커밋에 묻어 들어간다.
+ *      둘 다 나쁘니 풀지 않고 알린다.
+ *
+ * push 는 안 한다. 그건 되돌릴 수 없는 자리라 사람이 직접 할 일이다.
+ */
+async function 커밋명령(session, ctx, arg = '') {
+  const 말한것 = String(arg ?? '').trim();
+  const 전부 = /^(전부|all)$/i.test(말한것);
+  const 미리보기 = /^(미리보기|preview|dry|--dry-run)$/i.test(말한것);
+  const 준제목 = 전부 || 미리보기 ? null : (말한것 || null);
+
+  say('');
+  rule('커밋', 70);
+
+  const 도는말 = '메시지를 짓는 중…';
+  let 돌림 = spin(도는말);
+  const r = await 커밋준비(session, ctx, {
+    전부,
+    제목: 준제목,
+    onBackoff: (알림) => {
+      돌림.stop(`  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`);
+      돌림 = spin(도는말);
+    },
+  });
+
+  if (!r.ok) {
+    돌림.stop(`  ${c.gray(r.why)}`);
+    say('');
+    return;
+  }
+  돌림.stop(`  ${c.bold('담은 것')} ${c.gray(`— 파일 ${r.파일들.length}개`)}`);
+
+  for (const f of r.파일들.slice(0, 12)) say(`    ${c.gray('·')} ${c.white(f)}`);
+  if (r.파일들.length > 12) say(`    ${c.gray(`… 그 밖에 ${r.파일들.length - 12}개`)}`);
+  if (r.살림뺌) {
+    say(`    ${c.gray('· .deel/ 은 안 담았습니다 — 열쇠와 감사기록이 든 곳입니다')}`);
+  }
+  if (r.남의것.length) {
+    say('');
+    say(`  ${c.yellow('먼저 담겨 있던 것도 같이 실립니다')} ${c.gray(`— ${r.남의것.slice(0, 6).join(', ')}`)}`);
+    say(`  ${c.gray('빼려면 `git restore --staged <파일>` 뒤에 다시 부르세요.')}`);
+  }
+
+  say('');
+  say(`  ${c.bold('메시지')}`);
+  for (const line of r.메시지.trimEnd().split('\n')) {
+    say(`    ${line.trim() ? c.white(clip(line, 76)) : ''}`);
+  }
+  if (r.사실로만) {
+    say('');
+    say(`  ${c.yellow('모델이 메시지를 못 만들어 바뀐 것만 적었습니다.')}`);
+  }
+
+  const 상태줄 = r.상태 ? r.상태.split('\n') : [];
+  if (상태줄.length) {
+    say('');
+    say(`  ${c.bold('git status --short')}`);
+    for (const line of 상태줄.slice(0, 10)) say(`    ${c.gray(clip(line, 76))}`);
+    if (상태줄.length > 10) say(`    ${c.gray(`… 그 밖에 ${상태줄.length - 10}줄`)}`);
+  }
+  say('');
+
+  if (미리보기) {
+    say(`  ${c.gray('미리보기입니다 — 찍지 않았습니다. 그대로 찍으려면')} ${c.cyan('/commit')}`);
+    say('');
+    return;
+  }
+
+  // 엄격 모드에서만 묻는다. 여기서 무르면 담은 것은 그대로 둔다 —
+  // 사람이 메시지만 다시 받고 싶을 수도 있는데, 담은 것까지 풀면 처음부터다.
+  if (session.mode === 'strict') {
+    const 예 = await confirm('이대로 커밋할까요?', true);
+    if (!예) {
+      say(`  ${c.gray('안 찍었습니다. 담은 것은 그대로 둡니다.')}`);
+      say('');
+      return;
+    }
+  }
+
+  const 찍음 = 커밋실행(r.뿌리, r.메시지, { audit: ctx?.audit, 파일들: r.파일들, 제목: r.제목 });
+  if (!찍음.ok) {
+    say(`  ${c.red('✗')} ${c.gray(clip(찍음.why, 90))}`);
+    say('');
+    return;
+  }
+  say(`  ${mark.ok} ${c.green(찍음.hash)} ${c.white(clip(r.제목, 60))}`);
+  if (r.미확인 > 0) say(`     ${c.yellow(`검증: ${r.확인}건 확인 · ${r.미확인}건 미확인`)} ${c.gray('— 메시지에도 적었습니다')}`);
+  say(`     ${c.gray('push 는 안 했습니다. 되돌리려면')} ${c.cyan('git reset --soft HEAD~1')}`);
+  say('');
 }
 
 /**

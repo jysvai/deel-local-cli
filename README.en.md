@@ -379,6 +379,7 @@ Names follow Claude Code / Codex conventions.
 | `/learned [clear]` | What deel has picked up on its own — commands that work here, this model's habits |
 | `/pin <text>` | Pin a line — folding and compaction **cannot reach it** |
 | `/evidence [file]` | Evidence — what changed, and what proves it. **What is unproven is listed too** |
+| `/commit [all\|preview\|title]` | Commits only what this session changed; message from the diff and the evidence. **Never pushes** |
 | `/model` | Switch connection / model |
 | `/model 카드` | Model card — what this model has actually done here, and what deel changed because of it |
 | `/think <level>` | Reasoning level (`off·low·medium·high·max`) |

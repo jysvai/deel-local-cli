@@ -72,6 +72,8 @@ export const en = {
   'cmd.pin.arg': '[text|clear number|clear all]',
   'cmd.evidence.desc': 'evidence — what changed and what proves it. Says what is unproven too',
   'cmd.evidence.arg': '[file]',
+  'cmd.commit.desc': 'commit — stages only what this session changed; message from the diff and the evidence',
+  'cmd.commit.arg': '[all|preview|title]',
   'cmd.sessions.desc': 'past sessions in this folder',
   'cmd.recall.desc': 'search past sessions — by what was said, not by title',
   'cmd.recall.arg': '<text>',

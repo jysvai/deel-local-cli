@@ -30,6 +30,7 @@ const FILES = [
   'proxy.test.js',
   'shell.test.js',
   'ignore.test.js',
+  'commit.test.js',
   'task.test.js',
   'outline.test.js',
   'network.test.js',

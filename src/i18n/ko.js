@@ -59,6 +59,8 @@ export const ko = {
   'cmd.pin.arg': '[말|clear 번호|clear all]',
   'cmd.evidence.desc': '증거 — 무엇을 바꿨고 무엇이 그걸 증명하나. 안 된 것도 적는다',
   'cmd.evidence.arg': '[파일]',
+  'cmd.commit.desc': '커밋 — 이번 대화가 바꾼 것만 담고, diff 와 증거로 메시지를 짓는다',
+  'cmd.commit.arg': '[전부|미리보기|제목]',
   'cmd.sessions.desc': '이 폴더의 지난 대화 목록',
   'cmd.recall.desc': '지난 대화에서 찾기 — 목록 말고 내용으로',
   'cmd.recall.arg': '<찾을 말>',
