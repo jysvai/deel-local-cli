@@ -26,11 +26,22 @@
  */
 import { ko } from './ko.js';
 import { en } from './en.js';
+import { ja } from './ja.js';
+import { zh } from './zh.js';
 
-export const 언어들 = ['ko', 'en'];
+export const 언어들 = ['ko', 'en', 'ja', 'zh'];
 export const 기본언어 = 'ko';
 
-const 표 = { ko, en };
+const 표 = { ko, en, ja, zh };
+
+/*
+ * 못 찾았을 때 어디로 물러나나.
+ *
+ * 한국어로만 물러나면, 일본어를 고른 사람이 안 옮긴 자리에서 **한글**을 본다.
+ * 그 사람에게는 영어가 훨씬 읽힌다. 그래서 ko 가 아닌 말은 영어를 한 번
+ * 거쳐서 내려간다. 어느 쪽이든 빈칸은 안 낸다 — 빈칸은 고장으로 읽힌다.
+ */
+const 물러날곳 = { ko: [], en: ['ko'], ja: ['en', 'ko'], zh: ['en', 'ko'] };
 
 let 지금 = 기본언어;
 
@@ -40,6 +51,8 @@ export function 언어고르기(값) {
   if (!v) return null;
   if (v === 'ko' || v === 'kr' || v === 'korean' || v === '한국어' || v === '한글') return 'ko';
   if (v === 'en' || v === 'eng' || v === 'english' || v === '영어') return 'en';
+  if (v === 'ja' || v === 'jp' || v === 'jpn' || v === 'japanese' || v === '일본어' || v === '日本語') return 'ja';
+  if (v === 'zh' || v === 'cn' || v === 'chs' || v === 'chinese' || v === '중국어' || v === '中文' || v === '简体中文') return 'zh';
   // ko_KR.UTF-8 · en-US 같은 것도 받는다.
   const 앞 = v.split(/[-_.]/)[0];
   return 언어들.includes(앞) ? 앞 : null;
@@ -159,7 +172,13 @@ export function 조사붙이기(값, 갈래) {
 export function 말(열쇠, 채움 = null) {
   const k = String(열쇠 ?? '');
   // 있는 것 → 한국어 → 열쇠. 어느 자리에서도 빈칸이 안 나오게 세 겹으로 받친다.
-  const 글 = 표[지금]?.[k] ?? ko[k] ?? k;
+  let 글 = 표[지금]?.[k];
+  if (글 === undefined) {
+    for (const 뒤 of 물러날곳[지금] ?? ['ko']) {
+      if (표[뒤]?.[k] !== undefined) { 글 = 표[뒤][k]; break; }
+    }
+  }
+  if (글 === undefined) 글 = ko[k] ?? k;
   if (!채움) return 글;
   /*
    * 자리 이름에 \w 를 쓰면 안 된다.

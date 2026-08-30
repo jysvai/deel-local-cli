@@ -16,6 +16,11 @@ import {
 } from '../src/i18n/index.js';
 import { ko } from '../src/i18n/ko.js';
 import { en } from '../src/i18n/en.js';
+import { ja } from '../src/i18n/ja.js';
+import { zh } from '../src/i18n/zh.js';
+
+/** 말 표를 이름으로 본다. 검사 안에서만 쓴다. */
+const 표보기 = (l) => ({ ko, en, ja, zh })[l] ?? {};
 import { COMMANDS } from '../src/commands.js';
 import { SEGMENTS } from '../src/ui/status.js';
 import { 기본곁말 } from '../src/ui/intro.js';
@@ -91,7 +96,7 @@ trace('3-언어고르기');
   for (const v of ['en', 'EN', 'english', '영어', 'en_US.UTF-8', 'en-GB']) {
     check(`'${v}' → en`, 언어고르기(v) === 'en', String(언어고르기(v)));
   }
-  for (const v of ['fr', '', null, undefined, 'zh_CN', 42]) {
+  for (const v of ['fr', '', null, undefined, 'xx_YY', 42]) {
     check(`'${v}' 는 모른다`, 언어고르기(v) === null, String(언어고르기(v)));
   }
   const 앞 = 언어();
@@ -126,8 +131,47 @@ trace('5-죽은말이없나');
 // 한국어 쪽을 고치면서 열쇠 이름을 바꾸면 영어 쪽에 짝 없는 말이 남는다.
 // 그 말은 영영 화면에 안 나오는데, 파일에는 있으니 누군가 계속 손본다.
 {
-  const 짝없음 = 짝없는열쇠('en');
-  check('영어에만 있는 열쇠가 없다', 짝없음.length === 0, 짝없음.join(', '));
+  for (const l of 언어들.filter((x) => x !== 'ko')) {
+    const 짝없음 = 짝없는열쇠(l);
+    check(`${l} 에만 있는 열쇠가 없다 (한국어에 없으면 죽은 말이다)`, 짝없음.length === 0, 짝없음.join(', '));
+  }
+
+  /*
+   * ★ 자리 이름({이름}·{n})은 말마다 그대로여야 한다.
+   *
+   * 옮기면서 자리 이름을 그 나라 말로 바꾸면 코드가 못 찾아서 **중괄호째**
+   * 화면에 찍힌다. 안 터지고 검사도 안 걸려서 오래 남는다. 이 저장소는
+   * 같은 함정을 이미 한 번 밟았다(영어 화면의 {안}).
+   */
+  const 자리뽑기 = (글) => [...new Set(
+    [...String(글).matchAll(/{~?([^{}s:]+)(?::[^{}s]+)?}/g)].map((m) => m[1]),
+  )].sort().join(',');
+  for (const l of 언어들.filter((x) => x !== 'ko')) {
+    const 어긋난것 = Object.keys(ko).filter((k) => {
+      const 그말 = 표보기(l)[k];
+      return 그말 !== undefined && 자리뽑기(그말) !== 자리뽑기(ko[k]);
+    });
+    check(`★ ${l}: 자리 이름이 한국어와 똑같다`, 어긋난것.length === 0,
+      어긋난것.slice(0, 3).map((k) => `${k}: ${자리뽑기(표보기(l)[k])} vs ${자리뽑기(ko[k])}`).join(' | '));
+  }
+
+  /*
+   * ★ 못 옮긴 자리는 영어를 먼저 거친다.
+   *
+   * 한국어로 바로 물러나면, 일본어를 고른 사람이 안 옮긴 자리에서 한글을 본다.
+   * 그 사람에게는 영어가 훨씬 읽힌다.
+   */
+  for (const l of ['ja', 'zh']) {
+    언어정하기(l);
+    const 없는열쇠 = Object.keys(ko).find((k) => !옮겨졌나(k, l) && 옮겨졌나(k, 'en'));
+    if (없는열쇠) {
+      check(`★ ${l}: 못 옮긴 자리는 한국어가 아니라 영어로 물러난다`,
+        말(없는열쇠) === en[없는열쇠], `${없는열쇠} → ${말(없는열쇠)}`);
+    } else {
+      check(`${l}: 지금은 전부 옮겨져 있다 (물러날 자리가 없다)`, true, '');
+    }
+  }
+  언어정하기('ko');
   check('한국어 쪽에 빈 값이 없다',
     Object.entries(ko).every(([, v]) => typeof v === 'string' && v.trim()),
     Object.entries(ko).filter(([, v]) => !String(v).trim()).map(([k]) => k).join(', '));

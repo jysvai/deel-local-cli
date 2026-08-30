@@ -11,7 +11,7 @@ import { allowEndpoint } from './safety/network.js';
 import { pick, confirm } from './ui/prompt.js';
 import { load, save, resolveKey, upsert, 열쇠보관 } from './config.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
-import { 말, 언어, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
+import { 말, 언어, 언어들, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
 import { allowTemporarily } from './safety/network.js';
 import { chat } from './backend/adapter.js';
@@ -370,8 +370,19 @@ export async function handle(line, session, ctx) {
         say(`  ${c.gray(말('lang.progress', { 언어: 언어(), 옮김: p.옮김, 전체: p.전체 }))}`);
         if (p.남음) say(`  ${c.gray(말('lang.partial'))}`);
         say(`  ${c.gray(말('lang.codeStays'))}`);
-        say(`  ${c.gray(말('lang.howto'))} ${c.cyan('/lang ko')} ${c.gray('·')} ${c.cyan('/lang en')}`);
-        say(`  ${c.gray(말('lang.splitHowto'))} ${c.cyan('/lang ko en')}`);
+        // 고를 수 있는 말은 언어들 에서 그대로 만든다 — 손으로 적으면 새 말을
+        // 넣고 여기를 안 고쳐서, 있는 말이 없는 것처럼 보인다.
+        say(`  ${c.gray(말('lang.howto'))} ${언어들.map((l) => c.cyan(`/lang ${l}`)).join(c.gray(' · '))}`);
+        /*
+         * 예시는 **지금 쓰는 말**로 만든다.
+         *
+         * 못 박아 두면 일본어 화면에서 "/lang ko en" 을 치라고 하게 되는데,
+         * 그대로 치면 화면이 한국어로 바뀐다. 알려 준 대로 했더니 엉뚱한
+         * 데로 가는 안내는 없느니만 못하다.
+         */
+        // 화면이 이미 영어면 「영어로 시키고 …로 받기」가 뜻이 없다.
+        // 그때 이 줄을 그대로 내면 "/lang en en" 이라는 헛말이 나온다.
+        if (언어() !== 'en') say(`  ${c.gray(말('lang.splitHowto'))} ${c.cyan(`/lang ${언어()} en`)}`);
         say(`  ${c.gray(말('lang.envHint'))}`);
         say('');
         return { handled: true };

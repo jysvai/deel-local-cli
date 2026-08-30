@@ -211,6 +211,8 @@ export const en = {
   // ── Screen language ───────────────────────────────────────────────────
   'lang.now': 'Screen language is {이름}.',
   'lang.ko': '한국어 (Korean)',
+  'lang.ja': '日本語 (Japanese)',
+  'lang.zh': '中文 (Chinese)',
   'lang.en': 'English',
   'lang.howto': 'To change it',
   'lang.changed': 'Screen language is now {이름}.',
@@ -220,7 +222,7 @@ export const en = {
   'lang.codeStays': 'Unless you set it separately, what the model reads follows the screen. Code, tool names and argument names stay as they are.',
   'lang.promptNow': 'The model is instructed in {이름}.',
   'lang.follows': 'the same as the screen',
-  'lang.splitHowto': 'To be instructed in English but answered in Korean:',
+  'lang.splitHowto': 'To be instructed in English while the screen stays in your language:',
   'lang.promptChanged': 'Instructions in {이름}, answers in {답} — 23% off the fixed share on an 8k window.',
   'lang.envHint': 'To start in English every time, set DEEL_LANG=en',
 

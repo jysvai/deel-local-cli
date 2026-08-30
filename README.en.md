@@ -207,19 +207,23 @@ reviewer catches one drifted claim, they stop trusting the rest of it.
 
 ## Quick start
 
-### The screen speaks English too
+### The screen speaks your language
 
 deel is written in Korean — the code, the function names, the comments. That part stays.
-What you see on screen does not have to.
+What you see on screen does not have to. Four screen languages ship: **한국어 · English ·
+日本語 · 中文**, all four complete.
 
 ```bash
-DEEL_LANG=en deel        # this run only
+DEEL_LANG=en deel        # this run only  (also ja, zh)
 /lang en                 # and remember it
+/lang ja                 # 日本語
+/lang zh                 # 中文
 /lang                    # how much is translated so far
 ```
 
-Untranslated lines come through in Korean rather than as blanks, and `/lang` tells you exactly
-how many are left.
+Nothing ever comes through blank. A line that has not been translated falls back to English
+first and Korean second — so a Japanese or Chinese screen degrades to English, not to Korean —
+and `/lang` prints exactly how many strings are covered.
 
 What the model reads follows the same switch. Set it to English and the rules, the mode
 instructions, and the tool descriptions all go out in English — so the model answers you in
