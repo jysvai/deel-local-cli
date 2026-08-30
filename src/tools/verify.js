@@ -164,7 +164,14 @@ export const VERIFY_TOOL = {
     // .gitignore 로 안 본 것은 셈해 뒀다가 끝에 적는다. 조용히 빼면
     // "빌드 산출물에 탈이 있는데 왜 확인이 통과냐" 를 사람이 못 푼다.
     const 건너뜀 = { 폴더: 0, 파일: 0 };
-    const 셈더하기 = (목록) => { 건너뜀.폴더 += 목록.건너뜀?.폴더 ?? 0; 건너뜀.파일 += 목록.건너뜀?.파일 ?? 0; };
+    // 훑기 상한에서 멈춘 것도 같이 챙긴다 — 안 본 것을 "탈 없음" 으로 읽히게 두면 안 된다.
+    let 잘림 = false;
+    let 상한 = 0;
+    const 셈더하기 = (목록) => {
+      건너뜀.폴더 += 목록.건너뜀?.폴더 ?? 0;
+      건너뜀.파일 += 목록.건너뜀?.파일 ?? 0;
+      if (목록.잘림) { 잘림 = true; 상한 = 목록.상한 ?? 상한; }
+    };
     if (Array.isArray(args.paths) && args.paths.length) {
       for (const p of args.paths) {
         let abs;
@@ -282,7 +289,7 @@ export const VERIFY_TOOL = {
 
     const 다됐나 = !탈난것.length;
     return {
-      content: 줄.join('\n').trim() + 건너뜀말(건너뜀),
+      content: 줄.join('\n').trim() + 건너뜀말(건너뜀, 잘림, 상한),
       summary: 탈난것.length
         ? `탈 ${탈난것.length}개 · 확인 ${된것.length}개`
         : `확인 ${된것.length}개` + (못한것.length ? ` · 못 확인 ${못한것.length}개` : ''),

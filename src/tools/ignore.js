@@ -165,10 +165,28 @@ export function 계보규칙읽기(root, rel = '') {
 }
 
 /** 화면 한 줄. 건너뛴 것이 없으면 빈 문자열 — 없는데 줄을 만들면 그게 소음이다. */
-export function 건너뜀말(건너뜀) {
+/**
+ * @param 건너뜀 `{ 폴더, 파일 }` — .gitignore 로 뺀 수
+ * @param 잘림   상한에서 멈췄나 (walk 가 붙여 준다)
+ * @param 상한   몇 개까지 봤나. 0 이면 수 없이 말한다.
+ *               (숫자를 인자로 받는다 — fsutil 이 ignore 를 부르므로 거꾸로 가져오면 고리가 된다)
+ */
+export function 건너뜀말(건너뜀, 잘림 = false, 상한 = 0) {
   const 폴더 = 건너뜀?.폴더 ?? 0;
   const 파일 = 건너뜀?.파일 ?? 0;
-  if (!폴더 && !파일) return '';
-  const 몫 = [폴더 ? `폴더 ${폴더}개` : null, 파일 ? `파일 ${파일}개` : null].filter(Boolean).join(' · ');
-  return `\n\n(.gitignore 로 ${몫} 건너뜀 — 경로를 직접 주면 Read 된다)`;
+  const 줄 = [];
+  if (폴더 || 파일) {
+    const 몫 = [폴더 ? `폴더 ${폴더}개` : null, 파일 ? `파일 ${파일}개` : null].filter(Boolean).join(' · ');
+    줄.push(`(.gitignore 로 ${몫} 건너뜀 — 경로를 직접 주면 Read 된다)`);
+  }
+  /*
+   * 상한에서 멈췄으면 반드시 말한다.
+   *
+   * 이 한 줄이 없으면 "일치 없음" 이 "없다" 로 읽힌다. 실제로는 안 본 것이다.
+   */
+  if (잘림) {
+    const 몇 = 상한 ? `${상한.toLocaleString('en-US')}개까지만` : '앞부분만';
+    줄.push(`(파일이 너무 많아 ${몇} 봤습니다 — 못 본 자리에 있는 것은 여기 안 나옵니다. 폴더를 좁혀서 다시 시켜 보세요)`);
+  }
+  return 줄.length ? `\n\n${줄.join('\n')}` : '';
 }

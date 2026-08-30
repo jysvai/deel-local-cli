@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { 규칙읽기, 무시하나, 걸리나, 건너뜀말 } from '../src/tools/ignore.js';
 import { walk } from '../src/tools/fsutil.js';
+import { 엔진잊기 } from '../src/tools/fastgrep.js';
 import { TOOLS } from '../src/tools/index.js';
 import { expand } from '../src/agent/mention.js';
 import { makeScope } from '../src/safety/guard.js';
@@ -156,9 +157,39 @@ trace('3-도구');
   const g0 = TOOLS.Glob.run({ pattern: '**/*.nothing' }, ctx);
   check('못 찾았을 때도 건너뛴 수는 말한다', /찾은 파일 없음/.test(g0.content) && /건너뜀/.test(g0.content), g0.content);
 
+  /*
+   * Grep 은 두 길로 간다 — 이 PC 에 rg 나 git 이 있으면 그걸 빌려 쓰고,
+   * 없으면 자바스크립트로 하나씩 연다. **두 길이 같은 파일을 봐야 한다.**
+   * 엔진에 따라 out/ · secret.txt 가 보였다 안 보였다 하면, 빠른 것이
+   * 문제가 아니라 같은 명령이 PC 마다 다른 답을 내는 것이 문제다.
+   *
+   * 그래서 여기서는 이 PC 가 고른 길과 자바스크립트 길을 **둘 다** 돌린다.
+   * (`DEEL_GREP=js` 로 예전 길을 강제할 수 있다 — 그러라고 만든 스위치다.)
+   */
+  // 꼬리말(빈 줄 뒤)은 빼고 파일 이름만 뽑는다 — 꼬리는 길마다 다른 게 맞다.
+  const 뽑기 = (글) => String(글).split('\n\n')[0].split('\n')
+    .map((l) => l.trim()).filter((l) => /\.[A-Za-z0-9]+$/.test(l)).sort().join(' ');
+
   const gr = TOOLS.Grep.run({ pattern: 'needle' }, ctx);
-  check('Grep 도 out/ · secret.txt 를 안 본다', !/out\/|secret\.txt|data\/big/.test(gr.content) && /src\/a\.js/.test(gr.content), gr.content);
-  check('Grep 도 건너뛴 수를 말한다', /\.gitignore 로 폴더 3개 · 파일 2개 건너뜀/.test(gr.content), gr.content.split('\n').pop());
+  check('Grep 도 out/ · secret.txt 를 안 본다', !/out\/|secret\.txt|data\/big|sub\/gen/.test(gr.content) && /src\/a\.js/.test(gr.content), gr.content);
+
+  process.env.DEEL_GREP = 'js';
+  엔진잊기();
+  const grJS = TOOLS.Grep.run({ pattern: 'needle' }, ctx);
+  delete process.env.DEEL_GREP;
+  엔진잊기();
+
+  check('예전 길도 out/ · secret.txt 를 안 본다', !/out\/|secret\.txt|data\/big|sub\/gen/.test(grJS.content) && /src\/a\.js/.test(grJS.content), grJS.content);
+  check('두 길이 같은 파일을 본다', 뽑기(gr.content) === 뽑기(grJS.content), `빠른 길: ${뽑기(gr.content)} / 예전 길: ${뽑기(grJS.content)}`);
+  check('예전 길은 건너뛴 수를 말한다', /\.gitignore 로 폴더 3개 · 파일 2개 건너뜀/.test(grJS.content), grJS.content.split('\n').pop());
+  // 빠른 엔진은 그 수를 안 알려준다. 지어내느니 안 셌다고 말한다.
+  const 빠른길인가 = !/건너뜀/.test(gr.content);
+  check(빠른길인가 ? '빠른 길은 무엇으로 찾았는지 밝히고, 안 센 것은 안 셌다고 한다' : '이 PC 에는 빠른 엔진이 없어 예전 길로 갔다',
+    빠른길인가
+      ? /(rg|git grep) 으로 찾았습니다/.test(gr.content) && /건너뛴 수는 안 셌습니다/.test(gr.content)
+      : gr.content === grJS.content,
+    gr.content.split('\n').pop());
+
   const gr1 = TOOLS.Grep.run({ pattern: 'needle', path: 'out/b.js' }, ctx);
   check('파일을 짚어 준 Grep 은 그대로 본다', /out\/b\.js/.test(gr1.content) && !/건너뜀/.test(gr1.content), gr1.content);
 

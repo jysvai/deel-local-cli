@@ -27,6 +27,7 @@ import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
 import { 도구설명EN } from './desc.en.js';
 import { 그림인가, 그림읽기, 크기말, 기본한도 } from '../backend/vision.js';
+import { 빠르게찾기, 엔진말, 안볼정규식 } from './fastgrep.js';
 import { 지시말 } from '../i18n/index.js';
 
 /*
@@ -44,7 +45,9 @@ const MAX_OUT = 30000;
 // 한 파일에서 몇십 초를 쓰면 그동안 화면이 멈춘 것처럼 보인다.
 const GREP_MAX_FILE = 2 * 1024 * 1024;
 // 정규식으로 찾을 것이 없는 파일들. 열어 봐야 시간만 든다.
-const 안읽을확장자 = /\.(png|jpe?g|gif|bmp|ico|webp|svgz|pdf|zip|gz|tgz|7z|rar|exe|dll|so|dylib|bin|dat|db|sqlite3?|woff2?|ttf|otf|eot|mp[34]|wav|avi|mov|mkv|class|jar|pyc|pyo|o|a|lib|pack|idx|map|min\.js|min\.css|lock)$/i;
+// 목록은 tools/fastgrep.js 에 한 벌만 둔다 — rg 도 같은 목록으로 걸러야
+// 엔진이 달라도 같은 파일을 본다.
+const 안읽을확장자 = 안볼정규식;
 // 이보다 큰 파일은 바뀐 자리를 안 재고 넘어간다. 화면에 못 담을 양이기도 하고,
 // 재는 값보다 기다리는 값이 커진다.
 const MAX_DIFF_CHARS = 4_000_000;
@@ -375,9 +378,18 @@ function 한개옮기기({ from, to, overwrite = false }, ctx) {
    * 뜨는 쪽이 훨씬 나쁘다.
    */
   // 옮길 때는 .gitignore 를 안 본다 — 옮겨지는 것은 전부이고, 되돌리기도 전부를 떠야 한다.
+  const 훑은것 = 폴더인가 ? walk(앞, { ignore: false }) : null;
   const 짝들 = 폴더인가
-    ? walk(앞, { ignore: false }).map((f) => [f.path, join(뒤, relative(앞, f.path))])
+    ? 훑은것.map((f) => [f.path, join(뒤, relative(앞, f.path))])
     : [[앞, 뒤]];
+  /*
+   * 훑기 상한에 걸리면 **되돌리기가 반쪽이 된다.**
+   *
+   * 옮기는 것 자체는 renameSync 가 폴더째 하므로 전부 옮겨진다. 그런데 이력에
+   * 뜨는 것은 여기서 훑은 것뿐이라, 2만 개가 넘는 폴더를 옮기면 `/undo` 가
+   * 앞의 2만 개만 되돌린다. 그걸 말 안 하면 사람은 되돌렸다고 믿고 넘어간다.
+   */
+  const 되돌리기반쪽 = !!훑은것?.잘림;
   for (const [a, b] of 짝들) {
     ctx.history.snapshot(a, 'Move');
     ctx.history.snapshot(b, 'Move');
@@ -403,8 +415,11 @@ function 한개옮기기({ from, to, overwrite = false }, ctx) {
 
   for (const [, b] of 짝들) ctx.seen.add(b);
   const 무엇 = 폴더인가 ? `폴더 ${짝들.length}개 파일` : '';
+  const 경고 = 되돌리기반쪽
+    ? `\n(파일이 ${훑은것.상한.toLocaleString('en-US')}개를 넘어 되돌리기에는 앞부분만 떴습니다 — 옮기기는 전부 됐지만 /undo 는 다 못 되돌립니다)`
+    : '';
   return {
-    content: `옮김: ${ctx.scope.show(앞)} → ${ctx.scope.show(뒤)}${무엇 ? ` (${무엇})` : ''}`,
+    content: `옮김: ${ctx.scope.show(앞)} → ${ctx.scope.show(뒤)}${무엇 ? ` (${무엇})` : ''}${경고}`,
     summary: `${ctx.scope.show(뒤)}`,
     changed: 뒤,
     /*
@@ -1012,12 +1027,18 @@ export const TOOLS = {
       const re = globToRegex(args.pattern);
       const 전부 = walk(root);
       // .gitignore 로 건너뛴 것은 수를 말한다 — 조용히 빼면 '그 파일이 없다' 로 읽힌다 (tools/ignore.js).
-      const 건너뜀 = 건너뜀말(전부.건너뜀);
+      const 건너뜀 = 건너뜀말(전부.건너뜀, 전부.잘림, 전부.상한);
       const 맞는것 = 전부
         .filter((f) => re.test(f.rel) || re.test(f.rel.split('/').pop()))
         .sort((a, b) => b.mtime - a.mtime);
       const files = 맞는것.slice(0, 찾을개수(ctx.모델컨텍스트));
-      if (!files.length) return { content: `찾은 파일 없음: ${args.pattern}${건너뜀}`, summary: '0개' };
+      // 훑기 상한에서 멈췄으면 '없다' 가 아니라 '본 데까지는 없다' 다.
+      if (!files.length) {
+        return {
+          content: `${전부.잘림 ? '본 데까지는 찾은 파일 없음' : '찾은 파일 없음'}: ${args.pattern}${건너뜀}`,
+          summary: 전부.잘림 ? '0개 (다 못 봄)' : '0개',
+        };
+      }
       // 잘랐으면 잘랐다고 말한다. 전에는 '200개' 라고만 해서, 모델이 그게 전부인 줄
       // 알고 "전부 확인했습니다" 로 답을 맺었다. 실제로는 1,400개 중 200개였다.
       const 잘림 = 맞는것.length > files.length
@@ -1055,20 +1076,87 @@ export const TOOLS = {
 
       const root = args.path ? ctx.scope.resolve(args.path) : ctx.scope.root;
       const isFile = existsSync(root) && statSync(root).isFile();
-      let files = isFile
-        ? [{ path: root, rel: ctx.scope.show(root) }]
-        : walk(root);
-      const 안본것 = isFile ? '' : 건너뜀말(files.건너뜀).trim();   // .gitignore 로 건너뛴 수 — 꼬리에 적는다
-      if (args.glob) {
-        const g = globToRegex(args.glob);
-        files = files.filter((f) => g.test(f.rel) || g.test(f.rel.split('/').pop()));
-      }
 
       const mode = args.output_mode ?? 'files_with_matches';
       const limit = args.head_limit ?? 찾을줄수(ctx.모델컨텍스트);
       const hitFiles = [];
       const lines = [];
       let total = 0;
+
+      /*
+       * 이 PC 에 rg 나 git grep 이 이미 있으면 빌려 쓴다 (tools/fastgrep.js).
+       *
+       * 깔지는 않는다 — 없으면 아래 자바스크립트 길로 그대로 간다. 5만 개짜리
+       * 저장소에서 수십 초가 1초 안쪽이 된다. 대신 **무엇으로 찾았는지 반드시
+       * 적는다.** rg 의 정규식 문법은 자바스크립트와 조금 달라서, 결과가
+       * 다르게 나왔을 때 무엇으로 찾은 것인지 모르면 사람은 코드를 의심한다.
+       */
+      const 무시파일 = join(ctx.scope.root, '.deelignore');
+      const 빠른것 = isFile ? null : 빠르게찾기({
+        무늬: args.pattern,
+        자리: root,
+        glob: args.glob ?? null,
+        대소문자무시: !!args['-i'],
+        무시파일: existsSync(무시파일) ? 무시파일 : null,
+        최대: Math.max(limit * 4, 2000),
+      });
+      if (빠른것) {
+        const 파일별 = new Map();
+        for (const x of 빠른것.줄들) {
+          // 우리 규칙(글 아닌 것·큰 파일)은 rg 쪽 옵션으로 이미 걸었다. 여기서는 세기만.
+          const rel = ctx.scope.show(x.파일);
+          파일별.set(rel, (파일별.get(rel) ?? 0) + 1);
+          total += 1;
+          if (mode === 'content' && lines.length < limit) {
+            const num = args['-n'] === false ? '' : `:${x.줄}`;
+            lines.push(`${rel}${num}: ${x.내용.trim().slice(0, 200)}`);
+          }
+        }
+        for (const [rel, n] of 파일별) hitFiles.push({ rel, n });
+        /*
+         * 꼬리에 무엇을 적나.
+         *
+         * 자바스크립트 길은 '몇 개를 건너뛰었는지' 를 세어서 적는다. rg 는 그
+         * 숫자를 안 알려준다. 그러면 **모르는 것을 안 적는다** — 지어낸 숫자를
+         * 적느니 안 셌다고 말하는 편이 낫다.
+         */
+        const 꼬리2 = [
+          빠른것.잘림 ? '(결과가 많아 앞부분만 봤습니다 — 더 있을 수 있습니다)' : '',
+          엔진말(빠른것.엔진),
+          '(.gitignore·.deelignore 는 지켰습니다. 건너뛴 수는 안 셌습니다)',
+        ].filter(Boolean).join(' ');
+        const 붙이기2 = (t) => (꼬리2 ? [t, '', 꼬리2].join('\n') : t);
+        if (!total) return { content: 붙이기2(`일치 없음: ${args.pattern}`), summary: `0건 · ${빠른것.엔진}` };
+        if (mode === 'content') return { content: 붙이기2(clip(lines.join('\n'))), summary: `${total}건 · ${빠른것.엔진}` };
+        if (mode === 'count') {
+          return {
+            content: 붙이기2(hitFiles.slice(0, limit).map((f) => `${f.n}\t${f.rel}`).join('\n')),
+            summary: `${hitFiles.length}개 파일 · ${빠른것.엔진}`,
+          };
+        }
+        return {
+          content: 붙이기2(hitFiles.slice(0, limit).map((f) => f.rel).join('\n')),
+          summary: `${hitFiles.length}개 파일 · ${total}건 · ${빠른것.엔진}`,
+        };
+      }
+
+      /*
+       * ── 여기서부터 예전 길 (자바스크립트로 하나씩 연다) ──
+       *
+       * 폴더를 훑는 일(`walk`)을 여기까지 미뤄 두었다. 빠른 엔진이 답을 준
+       * 경우에는 훑을 까닭이 없는데, 전에는 위에서 먼저 훑고 있었다 —
+       * 그러면 rg 를 빌려 쓰고도 제일 오래 걸리는 일을 그대로 한 셈이 된다.
+       */
+      let files = isFile
+        ? [{ path: root, rel: ctx.scope.show(root) }]
+        : walk(root);
+      const 안본것 = isFile ? '' : 건너뜀말(files.건너뜀, files.잘림, files.상한).trim();   // .gitignore 로 건너뛴 수 — 꼬리에 적는다
+      // 훑기 상한에 걸렸으면 "일치 없음" 이라고 잘라 말하면 안 된다. 안 본 것이다.
+      const 다못봄 = !isFile && !!files.잘림;
+      if (args.glob) {
+        const g = globToRegex(args.glob);
+        files = files.filter((f) => g.test(f.rel) || g.test(f.rel.split('/').pop()));
+      }
 
       /*
        * 큰 파일과 글이 아닌 파일은 건너뛴다.
@@ -1112,7 +1200,12 @@ export const TOOLS = {
       ].filter(Boolean).join(' ');
       const 붙이기 = (s) => (꼬리 ? `${s}\n\n${꼬리}` : s);
 
-      if (!total) return { content: 붙이기(`일치 없음: ${args.pattern}`), summary: '0건' };
+      if (!total) {
+        return {
+          content: 붙이기(다못봄 ? `본 데까지는 일치 없음: ${args.pattern}` : `일치 없음: ${args.pattern}`),
+          summary: 다못봄 ? '0건 (다 못 봄)' : '0건',
+        };
+      }
       if (mode === 'content') return { content: 붙이기(clip(lines.join('\n'))), summary: `${total}건` };
       if (mode === 'count') {
         return { content: 붙이기(hitFiles.map((f) => `${f.n}\t${f.rel}`).join('\n')), summary: `${hitFiles.length}개 파일` };

@@ -151,8 +151,31 @@ function escapeLiteral(s) {
  * 돌려주는 배열에는 `건너뜀 = { 폴더, 파일 }` 이 (열거되지 않게) 붙어 있다. 부르는 쪽이 그 수를
  * 화면에 적는다 — 조용히 빼면 "그 파일이 없다" 로 읽힌다.
  * 폴더를 통째로 옮기거나 복사할 때는 `ignore: false` 로 — 그때는 다 있어야 한다.
+ *
+ * `잘림` 도 같이 붙는다 — **상한에서 멈췄다는 뜻이다.**
+ *
+ * 전에는 이 상한이 조용했다. 파일 5만 개짜리 저장소에서 앞의 2만 개만 훑고
+ * 멈추는데, 아무 데도 그 말이 안 나갔다. 그래서 `Grep` 이 "일치 없음" 이라고
+ * 답했다 — 실제로는 뒤쪽 3만 개에 100군데가 있는데도. 못 찾은 것과 안 본 것은
+ * 다르고, 그걸 안 가르면 사람은 없는 줄 알고 그냥 간다. 조용한 상한은
+ * 틀린 답보다 나쁘다.
  */
-export function walk(root, { limit = 20000, skipDirs = SKIP_DIRS, ignore = true } = {}) {
+export const 기본훑기상한 = 20000;
+
+/**
+ * 몇 개까지 훑을까.
+ *
+ * 2만 개는 대부분의 저장소에 넉넉하지만 큰 단일 저장소에는 모자란다. 그래서
+ * 올릴 수 있게 열어 둔다 — 못 보는 것을 알려 주기만 하고 손쓸 방법이 없으면
+ * 알려 준 뜻이 없다. 터무니없는 값은 안 받는다(100 미만·200만 초과).
+ */
+export function 훑기상한(env = process.env) {
+  const n = Number(env.DEEL_WALK_LIMIT);
+  if (!Number.isFinite(n) || n < 100 || n > 2000000) return 기본훑기상한;
+  return Math.floor(n);
+}
+
+export function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS, ignore = true } = {}) {
   const out = [];
   const 건너뜀 = { 폴더: 0, 파일: 0 };
   const stack = [{ dir: root, rel: '', 규칙: ignore ? 뿌리규칙읽기(root) : [] }];
@@ -183,6 +206,11 @@ export function walk(root, { limit = 20000, skipDirs = SKIP_DIRS, ignore = true 
     }
   }
   Object.defineProperty(out, '건너뜀', { value: 건너뜀, enumerable: false });
+  // 상한까지 찼으면 "여기서 멈췄다" 고 표시한다. 딱 맞아떨어져 끝난 경우까지
+  // 잘렸다고 하게 되지만, 그쪽으로 틀리는 편이 낫다 — 덜 봤다고 말하는 것은
+  // 사람을 한 번 더 보게 만들 뿐이고, 다 봤다고 말하는 것은 못 보게 만든다.
+  Object.defineProperty(out, '잘림', { value: out.length >= limit, enumerable: false });
+  Object.defineProperty(out, '상한', { value: limit, enumerable: false });
   return out;
 }
 

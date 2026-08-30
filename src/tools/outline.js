@@ -233,7 +233,7 @@ export const OUTLINE_TOOL = {
     let 파일들 = 하나인가
       ? [{ path: 시작, rel: ctx.scope.show(시작), mtime: statSync(시작).mtimeMs }]
       : walk(시작, { skipDirs: SKIP_DIRS });
-    const 건너뜀 = 하나인가 ? '' : 건너뜀말(파일들.건너뜀);   // .gitignore 로 건너뛴 수 (tools/ignore.js)
+    const 건너뜀 = 하나인가 ? '' : 건너뜀말(파일들.건너뜀, 파일들.잘림, 파일들.상한);   // .gitignore 로 건너뛴 수 (tools/ignore.js)
 
     // 좁히는 방식은 Glob 도구와 **같은 것**을 쓴다. 두 도구가 같은 패턴에
     // 다르게 답하면 모델이 둘 중 어느 것을 믿어야 할지 알 수 없다.

@@ -30,6 +30,7 @@ const FILES = [
   'proxy.test.js',
   'shell.test.js',
   'ignore.test.js',
+  'fastgrep.test.js',
   'commit.test.js',
   'keystore.test.js',
   'azure.test.js',

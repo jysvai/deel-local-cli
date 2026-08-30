@@ -19,6 +19,7 @@ import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
 import { run } from '../src/agent/loop.js';
 import { TOOLS, runTool } from '../src/tools/index.js';
+import { 엔진잊기 } from '../src/tools/fastgrep.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import { trace } from './trace.mjs';
 
@@ -247,7 +248,25 @@ trace('6-Glob이잘랐다고말하는가');
   writeFileSync(join(방, '진짜.js'), 'const 찾을것 = 1;\n', 'utf8');
   const ctx = 새ctx();
   const r = TOOLS.Grep.run({ pattern: '찾을것|a{100}', path: '무거운폴더' }, ctx);
-  check('건너뛴 파일을 말해 준다', /건너뛰었습니다/.test(String(r.content)), String(r.content).split('\n').pop());
+  /*
+   * 빠른 엔진(rg)을 빌려 썼을 때도 **같은 파일만 열어야 한다.**
+   *
+   * rg 는 `.min.js` 를 그냥 글 파일로 보고 뒤진다. 그대로 두면 rg 가 깔린
+   * PC 에서만 번들 속 `aaaa…` 가 걸린다 — 오류도 안 나고, 사람은 제 코드에
+   * 그런 게 있는 줄 안다. 그래서 안 볼 확장자 목록을 rg 에도 그대로 넘긴다.
+   */
+  process.env.DEEL_GREP = 'js';
+  엔진잊기();
+  const rJS = TOOLS.Grep.run({ pattern: '찾을것|a{100}', path: '무거운폴더' }, 새ctx());
+  delete process.env.DEEL_GREP;
+  엔진잊기();
+  const 앞부분 = (글) => String(글).split('\n\n')[0].trim();
+  check('두 길이 같은 파일을 연다 — 번들·그림은 어느 쪽도 안 뒤진다',
+    앞부분(r.content) === 앞부분(rJS.content) && !/번들\.min\.js|그림\.png/.test(String(r.content)),
+    `빠른 길: ${앞부분(r.content)} / 예전 길: ${앞부분(rJS.content)}`);
+  // 건너뛴 것을 어떻게든 밝혀야 한다 — 셌으면 수로, 못 셌으면 못 셌다고.
+  check('건너뛴 파일을 말해 준다', /건너뛰었습니다|건너뛴 수는 안 셌습니다/.test(String(r.content)), String(r.content).split('\n').pop());
+  check('예전 길은 몇 개인지까지 말해 준다', /건너뛰었습니다/.test(String(rJS.content)), String(rJS.content).split('\n').pop());
   check('진짜 글 파일은 제대로 찾는다', /진짜\.js/.test(String(r.content)), String(r.content).slice(0, 60));
 }
 

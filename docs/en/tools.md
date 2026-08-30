@@ -106,6 +106,49 @@ folder. `.gitignore` files **above** the working folder are not read.
 not. So `!build/keep.txt` will not bring one file back out of such a folder — naming the path
 directly still works with `Read`.
 
+### It borrows the `rg` you already have — it never installs one
+
+`Grep` uses **`rg` (ripgrep) if this machine already has it**, `git grep` if not, and otherwise falls
+back to opening files one at a time in JavaScript, as before. **Nothing is ever installed** — the
+zero-dependency promise is unchanged. If you use VS Code, `rg` already came with it.
+
+| 20,000 files | Time |
+|---|---|
+| Borrowing `rg` | **493ms** |
+| JavaScript, one file at a time | 3,690ms |
+
+**It always says which engine found the answer.** Results carry a tail line naming the engine and
+noting it was borrowed from this machine. `rg`'s regex differs slightly from JavaScript's (there is
+no lookbehind `(?<=…)`), so when a result looks wrong you need to know what asked the question. If
+`rg` cannot parse the pattern, the answer is **not "no matches"** — it quietly falls back to the
+JavaScript path and searches again. Not finding something and not being able to ask are different.
+
+Both paths **look at the same files.** They honour `.gitignore` and `.deelignore` identically, and
+neither opens files there is nothing to find in (`*.min.js`, `*.map`, images). If those two ever
+diverged, the same command would answer differently from machine to machine, so the test suite
+holds them together.
+
+Turn it off with `DEEL_GREP=js` — the switch exists so you can compare both paths on the same spot
+when a result looks suspicious.
+
+### When there are too many files, it says it did not look at all of them
+
+A folder walk stops at **20,000 files**. When it stops, the result ends like this:
+
+```
+본 데까지는 일치 없음: 결제처리          (no match in what was searched)
+
+(파일이 너무 많아 20,000개까지만 봤습니다 — 못 본 자리에 있는 것은 여기 안 나옵니다.
+ 폴더를 좁혀서 다시 시켜 보세요)
+(too many files; only the first 20,000 were searched — narrow the folder and try again)
+```
+
+Not "no matches" but **"no matches in what was searched."** Not finding something and not looking
+are different, and if they read the same you walk away believing the thing is not there. `Glob`,
+`Outline` and `Verify` behave the same way. Raise the cap with `DEEL_WALK_LIMIT=50000` (accepted
+range 100 – 2,000,000). Moving a whole folder past that count still moves everything, but `/undo`
+will only restore the first part — and it says so when that happens.
+
 ### Which shell on Windows — bash when Git Bash is there
 
 On Windows, `Bash` looks for **Git for Windows' bash** first — `%ProgramFiles%\Git\bin\bash.exe`, or a
