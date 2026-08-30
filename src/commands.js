@@ -54,6 +54,8 @@ import { LEVELS, ORDER as LEVEL_ORDER, DEFAULT as LEVEL_DEFAULT, normalize as no
 import { diffLines, renderDiff, shortStat } from './ui/diff.js';
 import { readTextFull } from './tools/fsutil.js';
 import { 띄우기, 브라우저로 } from './preview/serve.js';
+import { 클립보드그림, 그림앉히기 } from './tools/clipboard.js';
+import { 크기말 } from './backend/vision.js';
 const MODES = {
   auto: '자율 — 전부 알아서. 되돌리기가 안전망',
   confirm: '확인 — 되돌릴 수 없는 것만 물어봄',
@@ -112,6 +114,7 @@ const 명령들 = {
   evidence: { arg: true },
   commit: { arg: true },
   review: { arg: false },
+  paste: { arg: false },
   sessions: { arg: false },
   recall: { arg: true },
   mcp: { arg: false },
@@ -1153,6 +1156,19 @@ export async function handle(line, session, ctx) {
     case 'review':
     case '리뷰': return await 리뷰명령(session, ctx), { handled: true };
 
+    /*
+     * 클립보드에 든 화면 캡처를 그대로 붙인다.
+     *
+     * 파일로 앉힌 뒤 `@경로` 한 줄로 바꿔서 돌려준다. 붙이는 일은 이미
+     * 검증된 @-붙이기 길(agent/mention.js)이 하게 두는 것이다 — 여기서
+     * 따로 그림을 만들어 넣으면 예산 셈·눈 없는 모델 처리가 두 벌이 된다.
+     *
+     * 사람에게 **경로를 보여 준다.** 무엇이 나가는지 안 보이면, 실수로
+     * 다른 캡처가 나가도 알아차릴 자리가 없다.
+     */
+    case 'paste':
+    case '붙여넣기': return 붙여넣기명령(session, ctx);
+
     case 'sessions': {
       const rows = listSessions(session.root, { limit: 12 });
       rule('이 폴더의 지난 대화', 70);
@@ -1769,6 +1785,50 @@ function 증거명령(session, ctx, arg = '') {
  *
  * push 는 안 한다. 그건 되돌릴 수 없는 자리라 사람이 직접 할 일이다.
  */
+/*
+ * `/paste` — 클립보드에 든 화면 캡처를 붙인다 (tools/clipboard.js).
+ *
+ * 돌려주는 것은 `@경로` 한 줄이다. 그러면 바깥(repl.js)의 @-붙이기가 평소대로
+ * 그림을 실어 보낸다 — 예산 셈도, 눈 없는 모델일 때의 처리도 그쪽에 이미
+ * 있으니 두 벌로 만들지 않는다.
+ *
+ * 세 가지를 갈라 말한다. 「그림이 없다」(사람이 캡처를 다시 하면 된다),
+ * 「못 꺼냈다」(까닭과 길을 준다), 「눈이 없는 모델이다」(붙여도 못 본다).
+ * 셋을 뭉뚱그려 「안 됩니다」로 내면 사람은 무엇을 고쳐야 할지 모른다.
+ */
+export function 붙여넣기명령(session, ctx, { 꺼내기 = 클립보드그림 } = {}) {
+  // 꺼내기를 갈아 끼울 수 있게 열어 둔다 — 검사가 **사람의 진짜 클립보드를
+  // 건드리지 않고** 세 갈래(그림 있음·없음·못 꺼냄)를 다 재려면 이 자리가 필요하다.
+  const r = 꺼내기();
+  if (!r.ok) {
+    if (r.없음) {
+      say(`  ${mark.warn} ${c.gray('클립보드에 그림이 없습니다. 화면을 캡처한 뒤 다시 /paste 하세요.')}`);
+      say(`  ${c.gray('(윈도우: Win+Shift+S · 맥: Cmd+Ctrl+Shift+4)')}`);
+    } else {
+      for (const 줄 of String(r.왜).split('\n')) say(`  ${mark.warn} ${c.gray(줄)}`);
+    }
+    return { handled: true };
+  }
+
+  let 앉힌것;
+  try {
+    앉힌것 = 그림앉히기(r.buf, join(ctx?.scope?.root ?? session.root, '.deel'));
+  } catch (err) {
+    say(`  ${mark.warn} ${c.gray(`그림을 저장 못 했습니다: ${err.message}`)}`);
+    return { handled: true };
+  }
+
+  const 보일 = ctx?.scope?.show ? ctx.scope.show(앉힌것.자리) : 앉힌것.자리;
+  say(`  ${c.blue('◧')} ${c.gray('클립보드에서 가져와 앉혔습니다')} ${c.white(보일)} ${c.gray(`(${크기말(앉힌것.바이트)})`)}`);
+
+  // 눈이 없는 모델이면 붙여도 못 본다. 보내기 전에 말한다 — 보내고 나서
+  // "그림이 안 보인다" 는 답을 받으면 사람은 이 기능이 고장 난 줄 안다.
+  if (!session.conn?.vision) {
+    say(`  ${mark.warn} ${c.gray('지금 모델은 그림을 못 봅니다 — 파일은 남았지만 글로만 나갑니다.')}`);
+  }
+  return { handled: false, text: `@${보일}` };
+}
+
 /*
  * `/review` — 이번에 바꾼 것을 새 창에서 한 번 더 본다 (agent/review.js).
  *

@@ -38,7 +38,10 @@
  * 엑셀·문서와 같다. 고치기는 없다.
  */
 import { readFileSync } from 'node:fs';
-import { inflateSync, inflateRawSync } from 'node:zlib';
+import { inflateSync, inflateRawSync, constants as zlib상수 } from 'node:zlib';
+
+// 끝이 잘린 흐름을 부풀릴 때 쓴다 — 「여기까지」로 끝내 달라는 뜻.
+const { Z_SYNC_FLUSH } = zlib상수;
 import { extname, basename } from 'node:path';
 
 /** 한 번에 글로 바꿔 줄 최대 글자. 넘으면 자르고 잘랐다고 말한다. */
@@ -358,8 +361,10 @@ function 부풀리기(buf) {
    * 「글 없는 쪽」이 되어 스캔본과 구분이 안 된다. 부풀린 데까지는 건진다.
    */
   try {
-    const z = require('node:zlib');
-    return z.inflateSync(buf, { finishFlush: z.constants.Z_SYNC_FLUSH });
+    return inflateSync(buf, { finishFlush: Z_SYNC_FLUSH });
+  } catch { /* 아래로 */ }
+  try {
+    return inflateRawSync(buf, { finishFlush: Z_SYNC_FLUSH });
   } catch { return null; }
 }
 

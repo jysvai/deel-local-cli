@@ -61,6 +61,7 @@ export const ko = {
   'cmd.evidence.arg': '[파일]',
   'cmd.commit.desc': '커밋 — 이번 대화가 바꾼 것만 담고, diff 와 증거로 메시지를 짓는다',
   'cmd.review.desc': '바꾼 것을 새 창에서 한 번 더 본다 — 찾은 것만 말하고 아무것도 안 고친다',
+  'cmd.paste.desc': '클립보드에 든 화면 캡처를 붙인다 (캡처 → /paste)',
   'cmd.commit.arg': '[전부|미리보기|제목]',
   'cmd.sessions.desc': '이 폴더의 지난 대화 목록',
   'cmd.recall.desc': '지난 대화에서 찾기 — 목록 말고 내용으로',

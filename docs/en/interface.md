@@ -73,6 +73,40 @@ looked at the screen. Instead it says so in one line.
 | A saved image URL that was really a login page | Says it is not an image |
 | When the window fills | Old images are dropped first (the last two stay). Words the user typed are never touched |
 
+#### You don't have to save the screenshot — `/paste`
+
+Asking about one error screen used to mean **capture → paint → save → find the path**. Those
+four steps push people back to "let me just describe it." The capture is already on the
+clipboard; it only needs fetching.
+
+```
+(Win+Shift+S to capture)
+
+❯ /paste
+  ◧ 클립보드에서 가져와 앉혔습니다 .deel/붙인그림/2026-03-04_05-06-07.png (182KB)
+      (fetched from the clipboard and saved)
+
+❯ @.deel/붙인그림/2026-03-04_05-06-07.png 이거 왜 이래?
+```
+
+`/paste` saves the image under `.deel/붙인그림/` and turns it into a single `@path` line.
+Attaching is then done by the `@` path above, so budgeting and the no-vision case exist in
+one place only. **It shows you which file is going out** — without that, the wrong capture
+could be sent with nowhere to notice.
+
+Nothing is installed. Windows uses PowerShell's .NET clipboard, macOS uses `osascript` —
+both ship with the OS. Linux needs `wl-paste` or `xclip`, and if neither is there, it says
+**which one to install**.
+
+Three cases are kept apart: "no image on the clipboard" (capture again), "could not fetch
+it" (reason and remedy given), and "this model cannot see images" (said before sending).
+Collapsing them into one "cannot do that" leaves you with nothing to fix.
+
+> It lives under `.deel/`, but **the key file `config.json` cannot be attached with `@`
+> either.** Putting pasted images in that folder made it reachable by `@`, and what the
+> `Read` tool had been blocking, `@` was not. Blocking the tool while leaving `@` open is
+> not blocking. Both are closed now.
+
 ### `/commit` — records only what this session changed
 
 Work only lasts once it goes through git. When the model takes that last step itself with

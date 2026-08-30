@@ -74,6 +74,7 @@ export const en = {
   'cmd.evidence.arg': '[file]',
   'cmd.commit.desc': 'commit — stages only what this session changed; message from the diff and the evidence',
   'cmd.review.desc': 'review the changes in a fresh context — reports findings only, changes nothing',
+  'cmd.paste.desc': 'attach the screenshot sitting in the clipboard (capture, then /paste)',
   'cmd.commit.arg': '[all|preview|title]',
   'cmd.sessions.desc': 'past sessions in this folder',
   'cmd.recall.desc': 'search past sessions — by what was said, not by title',

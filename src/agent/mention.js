@@ -14,7 +14,7 @@
 // 그래서 규칙을 하나로 뒀다: **실제로 있는 경로일 때만 붙인다.**
 // 없으면 아무 말 없이 글자 그대로 둔다. 지목이 아니었을 테니 조용한 편이 맞다.
 import { existsSync, statSync, readdirSync } from 'node:fs';
-import { readTextFull } from '../tools/fsutil.js';
+import { readTextFull, 내부살림 } from '../tools/fsutil.js';
 import { 계보규칙읽기, 무시하나 } from '../tools/ignore.js';
 import { 그림인가, 그림읽기, 크기말 } from '../backend/vision.js';
 import { estimateTokens } from './session.js';
@@ -124,6 +124,18 @@ export function expand(text, { scope = null, budget = 기본예산, seen = null,
     const 자리 = 찾아보기(m, scope);
     if (자리.why === 'blocked') { blocked.push({ path: 자리.path, why: 자리.note }); continue; }
     if (자리.why === 'missing') { missing.push(자리.path); continue; }
+
+    /*
+     * 살림 파일은 @ 로도 못 붙인다.
+     *
+     * Read 도구는 .deel/config.json 을 막고 있었는데 **여기는 안 막고 있었다.**
+     * 그래서 `@.deel/config.json` 한 줄이면 게이트웨이 열쇠가 대화에 실려
+     * 그대로 바깥으로 나갔다. 도구는 막고 @ 는 안 막으면 막은 것이 아니다.
+     * (검사: test/mention-secret.test.js)
+     */
+    const 살림 = 내부살림(자리.abs);
+    if (살림) { blocked.push({ path: 자리.path, why: 살림 }); continue; }
+
     if (본것.has(자리.abs)) continue;               // 같은 파일을 두 번 적지 않는다
     본것.add(자리.abs);
 
