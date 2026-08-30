@@ -85,6 +85,7 @@ const FILES = [
   'docs.test.js',
   'completion.test.js',
   'clipboard.test.js',
+  'steer.test.js',
   'pdf.test.js',
   'compact.test.js',
   'store.test.js',

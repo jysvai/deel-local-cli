@@ -192,6 +192,34 @@ session. Tools already running finish; **tools not yet started never run.**
 
 Pressing Ctrl+C again on an empty line quits.
 
+### Steering without stopping
+
+Ctrl+C **throws away everything done so far.** But usually the thing you want to say is
+not "drop it all" — it is "not that, this first." A local model can spend minutes on one
+turn, and if what you type only lands after the turn ends, those minutes are already
+spent going the wrong way.
+
+**Just type it while it works and press Enter.**
+
+```
+❯ rewrite the whole test suite
+  ◧ Read  test/smoke.js
+❯ not that — look at the failing one first
+  ❯ not that — look at the failing one first  (steered — takes effect from the next step)
+  ◧ Read  test/loop.test.js
+```
+
+The line rides along on the **next call to the model**. Nothing done so far is thrown
+away; only the direction changes. The request already in flight cannot be recalled, so
+that one step runs to the end — everything after it is steered.
+
+| | |
+|---|---|
+| A tool is running | It goes in **after** every tool result is attached. A user message wedged between a tool call and its result breaks the conversation shape, and the gateway answers 400 |
+| You typed a slash command (`/mode`, `/undo`) | Not applied mid-turn. Those touch settings and files, and it would stop being clear which setting a given step ran under. It stays in the queue and runs when the turn ends |
+| You typed it **before** the turn started | It stays the next turn, as always. Steering redirects the road being travelled; it does not pull forward what is waiting in line |
+| Nothing appears on screen | It did not land. Anything accepted always prints the line above — without it people type the same thing again and it gets sent twice |
+
 ---
 
 ## Work modes

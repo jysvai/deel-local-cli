@@ -90,7 +90,7 @@ export function 묶기(calls) {
   return out;
 }
 
-export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 그림들 = null } = {}) {
+export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 그림들 = null, 끼어들기 = null } = {}) {
   /*
    * 되돌리기 턴은 **부모만** 연다.
    *
@@ -348,6 +348,36 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
 
   while (steps < maxSteps) {
     steps++;
+
+    /*
+     * ── 도중에 한 말을 여기서 받는다 (끼어들기) ──────────────────────────
+     *
+     * 일하는 동안 친 말은 여태 **턴이 끝날 때까지** 기다렸다. 로컬 모델은
+     * 한 턴이 몇 분씩 가는데, 그 사이에 "아, 그건 말고 저거" 라고 쳐도
+     * 모델은 하던 길을 끝까지 간다. 사람이 할 수 있는 것은 Ctrl+C 로
+     * 지금까지 한 것을 통째로 버리는 것뿐이었다.
+     *
+     * 그래서 걸음마다 **모델을 부르기 직전에** 받아 넣는다. 다음 부름에
+     * 그 말이 같이 실리니, 하던 일을 버리지 않고 방향만 튼다.
+     *
+     * 도구가 도는 중간에는 안 넣는다 — 도구 호출과 그 답 사이에 사람 말이
+     * 끼면 대화 모양이 깨져서 게이트웨이가 400 을 준다. 걸음의 머리는
+     * 언제나 도구 답이 다 붙은 뒤다.
+     */
+    /*
+     * 첫 걸음에는 안 받는다.
+     *
+     * 첫 부름 전에 큐에 남아 있는 것은 **턴이 시작되기 전에** 친 말이다.
+     * 그건 원래 다음 턴이 될 것이었는데, 여기서 끌어다 넣으면 사람이 따로
+     * 시킨 두 가지가 한 턴으로 뭉친다. 끼어들기는 「가던 길을 트는 것」이지
+     * 「줄 서 있는 것을 당겨오는 것」이 아니다.
+     */
+    const 끼어든말 = (깊이 || steps <= 1) ? null : 끼어들기?.();
+    if (끼어든말) {
+      session.push({ role: 'user', content: 끼어든말 });
+      ctx.audit.turn(`[도중에 끼어든 말] ${끼어든말}`);
+      yield { type: 'steer', text: 끼어든말 };
+    }
     /*
      * 이 모델이 실제로 어떻게 하고 있는지 센다 (agent/grade.js).
      *

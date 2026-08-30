@@ -1336,7 +1336,23 @@ export async function chatLoop(opts = {}) {
     // '겪을수록 나아진다' 가 이번 대화 안에서도 참이 된다.
     ctx.카드다시?.();
     try {
-      for await (const ev of run(session, ctx, 보낼글, { signal: turn.signal, 그림들: 보낼그림 })) {
+      /*
+       * 일하는 중에 친 말을 걸음마다 건네준다 (agent/loop.js 의 끼어들기).
+       *
+       * **슬래시 명령은 안 건넨다.** /mode 나 /undo 는 설정과 파일을 건드리는
+       * 것이라, 도는 턴 한가운데서 먹으면 무엇이 어느 설정으로 돌았는지가
+       * 흐려진다. 그건 큐에 그대로 두고 턴이 끝난 뒤에 평소대로 처리한다.
+       *
+       * 큐에서 **빼서** 넘긴다 — 넘기고 큐에도 남기면 같은 말이 두 번 나간다.
+       */
+      const 끼어들기 = () => {
+        const i = queue.findIndex((x) => !String(x ?? '').trimStart().startsWith('/'));
+        if (i < 0) return null;
+        const [것] = queue.splice(i, 1);
+        화면.대기갱신('', queue.length);
+        return String(것).trim() || null;
+      };
+      for await (const ev of run(session, ctx, 보낼글, { signal: turn.signal, 그림들: 보낼그림, 끼어들기 })) {
         /*
          * 하위 작업 안쪽에서 온 것이면 한 단 들여 그린다.
          *
@@ -1345,6 +1361,15 @@ export async function chatLoop(opts = {}) {
          */
         화면.들여쓰기(ev.depth ?? 0);
         switch (ev.type) {
+          /*
+           * 도중에 낀 말. **화면에 그대로 보여 준다.**
+           *
+           * 안 보여 주면 사람은 제가 친 말이 먹혔는지 모른 채 기다린다.
+           * 그러면 한 번 더 치게 되고, 같은 말이 두 번 나간다.
+           */
+          case 'steer':
+            say(` ${c.hcyan('❯')} ${c.white(ev.text)}  ${c.gray('(도중에 낀 말 — 다음 걸음부터 반영됩니다)')}`);
+            break;
           // 어느 단계를 어떤 강도로 도는지 — 추론 강도 조절이 실제로 먹는지 눈으로 보인다.
           case 'stage':
             stage = ev;

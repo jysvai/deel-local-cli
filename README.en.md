@@ -426,10 +426,11 @@ the conversation.
 | `Ctrl+O` | Work mode (`종합` → `코드` → `계획` → …) |
 | `↑` `↓` | Input history |
 | `Ctrl+C` | Stops the answer in progress; twice on an empty line quits |
+| Typing while it works, then `Enter` | Steers without throwing anything away — takes effect from the next step |
 
 Korean IME composition, paste, `Ctrl+A/E` and backspace all keep working.
 
-> **More** — Attaching a file with @ · Interrupting
+> **More** — Attaching a file with @ · Interrupting · Steering without stopping
 >
 > **[The screen read →](docs/en/interface.md#slash-commands)**
 
@@ -964,7 +965,7 @@ so one run tells you everything.
 | `guard` | 24 | **What it refuses to do** — denied edits, unknown tools, repeated mutations, out-of-scope writes |
 | `network` | 30 | Nothing escapes the configured address |
 | `web` | 25 | Web reads stay read-only |
-| `abort` | 16 | Ctrl+C leaves the conversation valid |
+| `abort` · `steer` | 16 · 15 | Ctrl+C leaves the conversation valid · a line typed mid-turn rides the next call |
 | `parallel` | 23 | Read-only tools run together; checklists |
 | `cli` | 75 | **Spawns the real `deel`** and drives it to completion |
 | `setup` | 42 | First-run wizard, driven through a fake TTY |
