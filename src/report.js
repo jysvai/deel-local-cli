@@ -1,11 +1,14 @@
 // 진단 결과를 화면에 표로 그리고, "이걸로 돌릴 수 있는지" 판정한다.
 import { c, say, rule, pad, width, mark } from './ui/ansi.js';
-import { 프록시고르기 } from './backend/proxy.js';
+import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
 
 // 이 주소로 갈 때 거칠 프록시를 한 줄로. 안 거치면 null — 그때는 줄 자체를 안 만든다.
+// 적어 놨는데 못 쓰는 것(socks5 등)이면 그 까닭을 적는다 — 진단 보고서에서 제일 먼저 볼 줄이다.
 function 프록시줄(base) {
   const p = 프록시고르기(base);
-  return p ? `${p.url} (${p.출처})` : null;
+  if (p) return `${p.url} (${p.출처})`;
+  const 탈 = 프록시설정().탈;
+  return 탈 ? `못 씀 — ${탈}` : null;
 }
 
 const ICON = { ok: mark.ok, no: mark.no, warn: mark.warn, skip: c.gray('·') };

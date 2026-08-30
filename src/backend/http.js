@@ -144,6 +144,27 @@ export async function 원시요청(url, { method = 'GET', headers = {}, body, ti
   }
 }
 
+/**
+ * 흘려 받는 몸을 상한까지만 읽는다. 넘으면 끊고 null — 다 받아 놓고 버리지 않는다.
+ * WebFetch(2MB)와 플러그인 받기(64MB)가 쓴다. 상한 없는 읽기는 한 자리(어댑터의 JSON 답)만 남긴다.
+ */
+export async function 몸읽기(body, 상한) {
+  const reader = body.getReader();
+  const 조각 = [];
+  let 크기 = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    크기 += value.length;
+    if (크기 > 상한) {
+      try { await reader.cancel(); } catch { /* 끊는 중 오류는 그만 */ }
+      return null;
+    }
+    조각.push(Buffer.from(value));
+  }
+  return Buffer.concat(조각);
+}
+
 // 시간 초과와 '사용자가 Ctrl+C' 를 둘 다 듣는다. 둘 중 먼저 오는 쪽이 끊는다.
 function 신호(timeout, signal) {
   const 시계 = AbortSignal.timeout(timeout);
@@ -179,6 +200,7 @@ function 프록시로(url, { method, headers, body, timeout, stream, signal, 프
 
   return new Promise((resolve, reject) => {
     let rq = null;
+    let 응답 = null;
     let 끝났나 = false;
     const 정리 = () => sig.removeEventListener('abort', 끊기);
     const 실패 = (e, 프록시탓 = false) => {
@@ -190,12 +212,16 @@ function 프록시로(url, { method, headers, body, timeout, stream, signal, 프
     };
     const 끊기 = () => {
       const e = 왜끊겼나();
+      // 이미 답을 돌려준 뒤(흘려 받는 중)라도 소켓은 끊는다 — 읽는 쪽이 **이 까닭**으로 멈춘다.
+      // 요청만 끊으면 읽는 쪽에는 'aborted' 라는 맹숭한 오류가 간다. 답 쪽을 먼저 그 까닭으로 끊는다.
+      if (응답) { try { 응답.destroy(e); } catch { /* 이미 닫혔으면 그만 */ } }
       if (rq) { try { rq.destroy(e); } catch { /* 이미 닫혔으면 그만 */ } }
       실패(e);
     };
     sig.addEventListener('abort', 끊기, { once: true });
 
     const 받기 = (res) => {
+      응답 = res;
       const 머리 = new Headers();
       for (const [k, v] of Object.entries(res.headers)) {
         if (v != null) 머리.set(k, Array.isArray(v) ? v.join(', ') : String(v));
@@ -208,13 +234,20 @@ function 프록시로(url, { method, headers, body, timeout, stream, signal, 프
         return 마침({ ok: false, status: 407, headers: 머리, bytes: Buffer.alloc(0), text: '', json: null, error: 인증말(머리.get('proxy-authenticate'), 프록시) });
       }
       if (stream && ok) {
+        /*
+         * 흘려 받는 동안에는 끊기 귀를 **계속 열어 둔다.** 머리말이 왔다고 귀를 닫으면
+         * 그 뒤의 Ctrl+C 가 소켓을 못 끊어서, 답이 다 올 때까지 화면이 안 멈춘다
+         * (평가에서 잡혔다 — 직접 갈 때는 2ms, 프록시로 갈 때는 안 멈췄다).
+         * 몸이 다 오거나 끊기면(close) 그때 닫는다.
+         */
         const body = Readable.toWeb(res);
         res.once('close', 정리);
-        return 마침({
+        if (!끝났나) { 끝났나 = true; resolve({
           ok, status: res.statusCode, headers: 머리,
           res: { body, headers: 머리, text: () => 다읽기(res) },
           버리기: async () => { try { res.resume(); await new Promise((r) => res.once('close', r)); } catch { /* 그만 */ } },
-        });
+        }); }
+        return;
       }
       다읽기(res).then((text) => {
         const bytes = Buffer.from(text, 'utf8');
@@ -305,14 +338,20 @@ function 다읽기(res) {
 }
 
 // 프록시가 407 을 줬을 때 사람이 칠 것까지 적어 준다. NTLM·Negotiate 는 못 하니 그렇다고 말한다.
+// 칠 자리는 **지금 그 프록시를 읽어 온 곳**이다 — HTTP_PROXY 로 정한 사람에게 HTTPS_PROXY 를
+// 고치라고 하면 고쳐도 안 바뀐다 (평가에서 잡혔다).
 function 인증말(도전, 프록시) {
   const s = String(도전 ?? '');
   if (/ntlm|negotiate/i.test(s)) {
     return `프록시(${프록시.url})가 ${/ntlm/i.test(s) ? 'NTLM' : 'Negotiate'} 인증을 요구합니다 — 이 방식은 지원하지 않습니다.`
       + ' 사내 담당자에게 Basic 인증이나 인증 없는 프록시 주소를 문의하세요.';
   }
+  const 주소 = `http://user:pw@${프록시.host}:${프록시.port}`;
+  const 자리 = 프록시.출처 === 'config'
+    ? `설정 파일의 "proxy": "${주소}"`
+    : `${프록시.출처 ?? 'HTTPS_PROXY'}=${주소}`;
   return `프록시(${프록시.url})가 인증을 요구합니다 (407${s ? ` · ${s.slice(0, 60)}` : ''})`
-    + ` — 프록시 주소에 user:pw@ 를 넣으세요: HTTPS_PROXY=http://user:pw@${프록시.host}:${프록시.port}`;
+    + ` — 프록시 주소에 user:pw@ 를 넣으세요: ${자리}`;
 }
 
 // fetch 가 던진 것에서 코드 하나를 뽑는다. undici 는 원인을 cause 에 싸서 준다.

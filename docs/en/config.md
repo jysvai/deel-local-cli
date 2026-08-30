@@ -29,7 +29,7 @@ Auth style is detected automatically: `Authorization: Bearer` → `x-api-key` �
 | `DEEL_KEY_<PROFILE_ID>` | Per-profile key |
 | `NODE_EXTRA_CA_CERTS` | Corporate TLS certificate |
 | `HTTPS_PROXY` · `HTTP_PROXY` | Behind a proxy — `http://user:pw@proxy:port`. Lower-case names work too. deel opens the CONNECT tunnel itself, so this works on every Node version |
-| `NO_PROXY` | Where not to use the proxy — `.corp.com, 10.1.2.3, intra:8443, *`. This machine (localhost · 127.*) always goes direct |
+| `NO_PROXY` | Where not to use the proxy — `.corp.com, 10.1.2.3, intra:8443, *`. This machine (localhost · 127.*) always goes direct. CIDR (`10.0.0.0/8`) is not understood — list addresses one by one, or use a domain suffix |
 | `DEEL_SHELL` | Which shell the `Bash` tool uses on Windows — `auto` (default: bash if Git Bash is installed, else cmd) · `bash` · `cmd` · `powershell`. `"shell"` in the config file works too. The pick shows in `/status` and in the `Shell:` line the model is given |
 | `DEEL_DEBUG=1` | Verbose errors |
 | `NO_COLOR` | Disable colour |

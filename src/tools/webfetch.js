@@ -12,7 +12,7 @@
 //   · 오프라인이면 아예 거절.
 //   · 받은 것은 글자만 뽑고 길이를 자른다.
 import { allowTemporarily, isOffline, isLocalHost } from '../safety/network.js';
-import { 원시요청 } from '../backend/http.js';
+import { 원시요청, 몸읽기 } from '../backend/http.js';
 import { decode as decodeBytes } from './encoding.js';
 import { 웹글자수 } from '../agent/budget.js';
 
@@ -89,24 +89,6 @@ function 얼마나쉬라나(머리, 회차) {
   if (초 == null || 초 < 0) 초 = 회차 + 1;
   // 너무 오래 붙잡고 있지 않는다. 그건 멈춘 것과 화면상 구분이 안 된다.
   return Math.min(초, 10);
-}
-
-/** 몸을 상한까지만 읽는다. 넘으면 끊고 null — 2MB 를 다 받아 놓고 버리던 것을, 받다 말게. */
-async function 몸읽기(body, 상한) {
-  const reader = body.getReader();
-  const 조각 = [];
-  let 크기 = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    크기 += value.length;
-    if (크기 > 상한) {
-      try { await reader.cancel(); } catch { /* 끊는 중 오류는 그만 */ }
-      return null;
-    }
-    조각.push(Buffer.from(value));
-  }
-  return Buffer.concat(조각);
 }
 
 function 태그벗기기(html) {

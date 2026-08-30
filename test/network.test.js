@@ -100,6 +100,18 @@ server.close();
 other.close();
 await new Promise((r) => setImmediate(r));
 
+// ── 6¼. 이 컴퓨터·사내망 철자 — 글자를 바꿔 빠져나가지 못한다 ────────────
+// `localhost.` 와 `[::ffff:127.0.0.1]` 은 둘 다 127.0.0.1 에 붙는데 '바깥' 으로 읽혔다.
+{
+  for (const h of ['localhost', 'localhost.', 'LOCALHOST', '127.0.0.1', '127.1.2.3', '[::1]', '::1', '[::ffff:127.0.0.1]', '::ffff:127.0.0.1',
+    '::ffff:7f00:1', '[::ffff:c0a8:101]', '0.0.0.0', '10.1.2.3', '192.168.0.9', '172.16.5.5', '172.31.255.1', '169.254.169.254', 'fe80::1', 'fd00::1', '[fc00::1]']) {
+    check(`${h} 는 이 컴퓨터·사내망이다`, isLocalHost(h) === true);
+  }
+  for (const h of ['example.com', 'localhost.example.com', '8.8.8.8', '172.32.0.1', '172.15.0.1', '11.0.0.1', '192.169.0.1', '2001:db8::1', '::ffff:8.8.8.8', 'my-localhost']) {
+    check(`${h} 는 바깥이다`, isLocalHost(h) === false);
+  }
+}
+
 // ── 6½. 잠깐 열기는 겹쳐 열 수 있어야 한다 ───────────────────────────────
 // WebFetch 다섯이 한 집에 줄을 서면, 첫 것이 닫을 때 나머지 넷이 막히면 안 된다.
 resetNet();
@@ -144,7 +156,9 @@ for (const f of SRC) {
   const lines = readFileSync(join(repo, f), 'utf8').split(/\r?\n/);
   lines.forEach((line, i) => {
     if (/^\s*(\/\/|\*)/.test(line)) return;
-    if (!/(?<![.\w])fetch\s*\(/.test(line)) return;
+    // fetch( 만이 아니다 — globalThis.fetch( · window.fetch( · new WebSocket( 도 문이다.
+    // (preview/serve.js 가 브라우저에 주는 글 속의 EventSource 는 이 프로그램이 여는 문이 아니라 안 본다.)
+    if (!/(?<![.\w])fetch\s*\(|(?:globalThis|window|self)\s*\.\s*fetch\s*\(|\bnew\s+WebSocket\s*\(/.test(line)) return;
     if (f !== 'src/backend/http.js') 직접fetch.push(`${f}:${i + 1}`);   // 자물쇠를 지나는 문은 하나뿐이다
   });
 }

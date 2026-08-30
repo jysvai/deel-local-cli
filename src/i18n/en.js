@@ -119,6 +119,7 @@ export const en = {
   'head.outside': 'outside',
   'head.offlineLock': '[offline lock]',
   'head.viaProxy': 'via proxy {프록시}',
+  'head.proxyBad': '[proxy setting unusable — see /status]',
   'head.nowhereElse': '← and nowhere else',
   'head.glyphHint': 'The {안} at the start of the status bar means this. It becomes {밖} when traffic leaves.',
   'head.conn': 'link',

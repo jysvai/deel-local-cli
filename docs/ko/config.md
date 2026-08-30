@@ -31,7 +31,7 @@
 | `DEEL_KEY_<프로필ID>` | 프로필별 키 |
 | `NODE_EXTRA_CA_CERTS` | 사내 인증서를 쓰는 게이트웨이 |
 | `HTTPS_PROXY` · `HTTP_PROXY` | 프록시를 거쳐야 할 때 — `http://user:pw@프록시:포트`. 소문자 이름도 봅니다. CONNECT 터널을 직접 열므로 Node 판과 상관없이 먹습니다 |
-| `NO_PROXY` | 프록시를 안 거칠 곳 — `.corp.com, 10.1.2.3, intra:8443, *`. 이 컴퓨터(localhost · 127.*)는 언제나 직접 갑니다 |
+| `NO_PROXY` | 프록시를 안 거칠 곳 — `.corp.com, 10.1.2.3, intra:8443, *`. 이 컴퓨터(localhost · 127.*)는 언제나 직접 갑니다. CIDR(`10.0.0.0/8`) 꼴은 못 읽습니다 — 주소는 하나씩, 아니면 도메인 뒷부분으로 적으세요 |
 | `DEEL_SHELL` | 윈도우에서 `Bash` 도구가 명령을 돌릴 셸 — `auto`(기본: Git Bash 가 있으면 bash, 없으면 cmd) · `bash` · `cmd` · `powershell`. 설정 파일의 `"shell"` 로도 됩니다. 고른 셸은 `/status` 와 모델에게 주는 `Shell:` 줄에 나옵니다 |
 | `DEEL_DEBUG=1` | 자세한 오류 |
 | `NO_COLOR` | 색 끄기 |

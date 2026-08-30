@@ -47,7 +47,7 @@ const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const PROBES = [
   // fetch 말고도 http.js 의 프록시 터널(httpRequest·httpsRequest·tlsConnect)이 있다.
   // 그것을 안 세면 심사서가 "네트워크 요청 N건" 을 거짓으로 적는다.
-  { id: 'net', label: '네트워크 요청', re: /(?<![.\w])fetch\s*\(|(?<![.\w])(?:httpRequest|httpsRequest|tlsConnect)\s*\(/g,
+  { id: 'net', label: '네트워크 요청', re: /(?<![.\w])fetch\s*\(|(?:globalThis|window|self)\s*\.\s*fetch\s*\(|\bnew\s+WebSocket\s*\(|(?<![.\w])(?:httpRequest|httpsRequest|tlsConnect)\s*\(/g,
     note: '사용자가 setup 에서 넣은 주소로만 나갑니다 (HTTPS_PROXY 가 있으면 그 프록시를 거쳐서)' },
   { id: 'exec', label: '외부 명령 실행', re: /(?<![.\w])(execFile|execFileSync|execSync|spawn|spawnSync|exec)\s*\(/g,
     note: '사용자·모델이 지시한 명령, 그리고 플러그인 받을 때의 git' },
@@ -85,7 +85,8 @@ const MODULE_NAME = /^[@\w./:-]+$/;
 
 export function importSpecs(text) {
   const out = [];
-  const re = /(?:^|[\s;{(])(?:import[^'"()]*from\s*|import\s*|require\s*\(\s*)(['"])([^'"]+)\1/g;
+  // 동적으로 부르는 import 도 문이다 — from 이 없어서 못 잡던 것을 잡는다.
+  const re = /(?:^|[\s;{(])(?:import[^'"()]*from\s*|import\s*\(\s*|import\s*|require\s*\(\s*)(['"])([^'"]+)\1/g;
   for (const m of text.matchAll(re)) {
     const spec = m[2];
     if (MODULE_NAME.test(spec)) out.push(spec);

@@ -24,11 +24,13 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { req, Aborted } from '../src/backend/http.js';
-import { allowEndpoint, resetNet, NetBlocked, contacted, 프록시경유 } from '../src/safety/network.js';
+import { allowEndpoint, allowTemporarily, resetNet, NetBlocked, contacted, 프록시경유 } from '../src/safety/network.js';
 import {
   프록시정하기, 프록시고르기, 프록시지우기, 우회할까, 프록시읽기, 프록시설정,
 } from '../src/backend/proxy.js';
 import { 증명서만들기 } from './mkcert.mjs';
+import { plainReport } from '../src/report.js';
+import { 플러그인되돌림 } from '../src/plugins/manage.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -87,7 +89,14 @@ const target = httpServer((rq, rs) => {
   let body = '';
   rq.on('data', (d) => (body += d));
   rq.on('end', () => {
-    대상본것.push({ method: rq.method, url: rq.url, host: rq.headers.host, body });
+    대상본것.push({ method: rq.method, url: rq.url, host: rq.headers.host, body, auth: rq.headers.authorization ?? null, key: rq.headers['x-api-key'] ?? null, custom: rq.headers['x-custom'] ?? null });
+    if (rq.url === '/v1/stream-hold') {
+      // 한 조각만 주고 붙들고 있는다 — 흘려 받는 중에 끊기가 되는지 재는 자리.
+      rs.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      rs.write('data: 1\n\n');
+      rq.socket.once('close', () => { try { rs.destroy(); } catch { /* 이미 */ } });
+      return;
+    }
     if (rq.url === '/v1/stream') {
       rs.writeHead(200, { 'Content-Type': 'text/event-stream' });
       rs.write('data: 1\n\n');
@@ -107,7 +116,8 @@ const target = httpServer((rq, rs) => {
   });
 });
 const 몰래본것 = [];
-const 몰래 = httpServer((rq, rs) => { 몰래본것.push(rq.url); rs.end('{}'); });
+const 몰래머리 = [];
+const 몰래 = httpServer((rq, rs) => { 몰래본것.push(rq.url); 몰래머리.push(rq.headers); rs.end('{}'); });
 
 const { key, cert } = 증명서만들기();
 const tls = httpsServer({ key, cert }, (rq, rs) => {
@@ -269,6 +279,88 @@ trace('4-끊기');
 // ═══════════════════════════════════════════════════════════════════════
 // 5. https 대상 — CONNECT 터널 (자식 프로세스, 인증서를 믿게 해서)
 // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+// 4½. 흘려 받는 중에 Ctrl+C — 직접 갈 때도, 프록시로 갈 때도 바로 멈춘다
+// ═══════════════════════════════════════════════════════════════════════
+// 프록시 길은 머리말이 오면 끊기 귀를 닫아 버려서, 그 뒤의 Ctrl+C 가 답이 다 올 때까지
+// 안 먹었다 (평가에서 잡혔다 — 직접은 2ms, 프록시는 800ms 넘게).
+trace('4반-흘리다끊기');
+for (const 길 of ['직접', '프록시']) {
+  if (길 === '직접') 프록시지우기();
+  else 프록시정하기({ env: { HTTP_PROXY: `http://127.0.0.1:${프록시포트}` }, 로컬우회: false });
+  resetNet();
+  allowEndpoint(`http://127.0.0.1:${대상포트}`);
+  const ac = new AbortController();
+  const s = await req(`http://127.0.0.1:${대상포트}/v1/stream-hold`, { stream: true, signal: ac.signal, timeout: 8000 });
+  check(`[${길}] 흘려 받기가 열린다`, s.ok && !!s.res?.body, JSON.stringify({ status: s.status, error: s.error }));
+  let 끊김 = null;
+  let 걸린 = -1;
+  if (s.ok && s.res?.body) {
+    const reader = s.res.body.getReader();
+    const 첫 = await reader.read();
+    check(`[${길}] 첫 조각은 온다`, !첫.done && new TextDecoder().decode(첫.value).includes('data: 1'));
+    const t0 = Date.now();
+    setTimeout(() => ac.abort(), 30);
+    try { await reader.read(); } catch (e) { 끊김 = e; }
+    걸린 = Date.now() - t0;
+  }
+  check(`[${길}] 흘려 받는 중 끊으면 바로 멈춘다`, !!끊김 && 걸린 < 500, `${걸린}ms · ${끊김?.name ?? '안 끊김'}`);
+  // 직접 갈 때는 fetch 제 오류(AbortError)가 온다 — 어댑터가 신호를 보고 '사용자가 중단' 으로 바꾼다.
+  // 프록시 길은 우리가 끊으므로 처음부터 그 까닭(Aborted)이어야 한다.
+  check(`[${길}] 끊긴 까닭이 '사용자가 중단' 이다`, 길 === '직접'
+    ? /Aborted|AbortError/.test(String(끊김?.name)) && ac.signal.aborted
+    : 끊김?.name === 'Aborted', `${끊김?.name}: ${끊김?.message}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 4¾. 407 은 **그 프록시를 읽어 온 자리**를 고치라고 한다 · 다른 집으로 갈 때 열쇠를 뗀다
+// ═══════════════════════════════════════════════════════════════════════
+trace('4반반-말과열쇠');
+{
+  const 인증포트 = authProxy.address().port;
+  프록시정하기({ env: { HTTP_PROXY: `http://127.0.0.1:${인증포트}` }, 로컬우회: false });
+  resetNet();
+  allowEndpoint(`http://127.0.0.1:${대상포트}`);
+  const r1 = await req(`http://127.0.0.1:${대상포트}/v1/models`, { timeout: 5000 });
+  check('HTTP_PROXY 로 정한 프록시의 407 은 HTTP_PROXY 를 고치라고 한다', r1.status === 407 && /HTTP_PROXY=http:\/\/user:pw@/.test(r1.error ?? '') && !/HTTPS_PROXY/.test(r1.error ?? ''), r1.error);
+  프록시정하기({ env: {}, config: { proxy: `http://127.0.0.1:${인증포트}` }, 로컬우회: false });
+  const r2 = await req(`http://127.0.0.1:${대상포트}/v1/models`, { timeout: 5000 });
+  check('설정 파일로 정한 프록시의 407 은 설정 파일을 고치라고 한다', r2.status === 407 && /설정 파일의 "proxy"/.test(r2.error ?? ''), r2.error);
+
+  // 비밀번호는 어디에도 안 나온다 — 고른 프록시의 url 에도, 진단 보고서에도.
+  프록시정하기({ env: { HTTPS_PROXY: 'http://user:s3cret@127.0.0.1:1' } });
+  const p = 프록시고르기('https://gw.example.net/v1');
+  check('고른 프록시의 url 에 비밀번호가 없다', p && !/s3cret/.test(p.url) && p.auth?.startsWith('Basic '), p?.url);
+  const 보고서 = plainReport({ shape: 'openai', base: 'https://gw.example.net/v1', auth: 'bearer', model: 'm', ctx: 1 }, [], { level: 'ready', notes: [] });
+  check('진단 보고서에 프록시 줄은 있고 비밀번호는 없다', /프록시\s+http:\/\/127\.0\.0\.1:1 \(HTTPS_PROXY\)/.test(보고서) && !/s3cret/.test(보고서), 보고서.split('\n').find((l) => /프록시/.test(l)));
+
+  // 못 쓰는 프록시(socks5)는 그렇다고 적힌다 — 조용히 직접 가면 사람은 프록시를 탄 줄 안다.
+  프록시정하기({ env: { HTTPS_PROXY: 'socks5://127.0.0.1:1080' } });
+  const 보고서2 = plainReport({ shape: 'openai', base: 'https://gw.example.net/v1', auth: 'bearer', model: 'm', ctx: 1 }, [], { level: 'ready', notes: [] });
+  check('못 쓰는 프록시는 보고서에 까닭이 적힌다', /프록시\s+못 씀 — .*socks5/.test(보고서2), 보고서2.split('\n').find((l) => /프록시/.test(l)));
+
+  // 다른 집으로 되돌릴 때 열쇠 머리말을 뗀다 — 두 집을 다 열어 두고 본다.
+  프록시지우기();
+  resetNet();
+  allowEndpoint(`http://127.0.0.1:${대상포트}`);
+  const 닫기 = allowTemporarily(`http://127.0.0.1:${몰래.address().port}`);
+  몰래머리.length = 0;
+  const r3 = await req(`http://127.0.0.1:${대상포트}/redirect`, { headers: { Authorization: 'Bearer secret-key', 'x-api-key': 'k1', 'X-Custom': 'keep-me' }, timeout: 5000 });
+  닫기();
+  const 받은 = 몰래머리.at(-1) ?? {};
+  check('다른 집으로 되돌리면 Authorization · x-api-key 를 떼고 간다', r3.status === 200 && 받은.authorization === undefined && 받은['x-api-key'] === undefined, JSON.stringify(받은));
+  check('열쇠가 아닌 머리말은 그대로 간다', 받은['x-custom'] === 'keep-me', String(받은['x-custom']));
+  대상본것.length = 0;
+  const r4 = await req(`http://127.0.0.1:${대상포트}/redirect-same`, { headers: { Authorization: 'Bearer secret-key' }, timeout: 5000 });
+  const 같은집 = 대상본것.find((x) => x.url === '/v1/models');
+  check('같은 집 안의 되돌림에는 열쇠가 그대로 간다', r4.ok && 같은집?.auth === 'Bearer secret-key', JSON.stringify(같은집));
+
+  // 플러그인 받기의 되돌림 규칙 — github 의 제 집만 따라간다.
+  const 되나 = (u) => { try { 플러그인되돌림(new URL(u)); return true; } catch { return false; } };
+  check('플러그인 받기: github 의 다른 집은 따라간다', 되나('https://objects.githubusercontent.com/x') && 되나('https://codeload.github.com/y'));
+  check('플러그인 받기: 남의 집 · http · 흉내 낸 이름은 안 따라간다', !되나('https://evil.example/x') && !되나('http://github.com/x') && !되나('https://github.com.evil.example/x'));
+}
+
 trace('5-https터널');
 {
   const dir = mkdtempSync(join(tmpdir(), 'deel-proxy-'));

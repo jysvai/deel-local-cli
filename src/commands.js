@@ -13,7 +13,7 @@ import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기
 import { allowTemporarily } from './safety/network.js';
 import { chat } from './backend/adapter.js';
 import { 알림채움 } from './backend/retry.js';
-import { 프록시고르기 } from './backend/proxy.js';
+import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
 import { 정한셸 } from './tools/shell.js';
 import { TOOLS } from './tools/index.js';
 import { 둘러보기, 프로젝트갈래 } from './lsp/servers.js';
@@ -844,8 +844,10 @@ export async function handle(line, session, ctx) {
       say(`  ${c.gray(pad('규격', 10))} ${k.kind === 'ollama' ? 'Ollama' : 'OpenAI 호환'}`);
       say(`  ${c.gray(pad('주소', 10))} ${k.base}`);
       // 프록시를 거치면 어느 것을, 어디서 읽었는지(env · config)까지. 안 거치면 줄 자체가 없다.
+      // 적어 놨는데 못 쓰는 것(socks5 등)이면 그 까닭을 — 조용히 직접 가면 사람은 프록시를 탄 줄 안다.
       const 프록시 = 프록시고르기(k.base);
       if (프록시) say(`  ${c.gray(pad('프록시', 10))} ${프록시.url} ${c.gray(`(${프록시.출처})`)}`);
+      else if (프록시설정().탈) say(`  ${c.gray(pad('프록시', 10))} ${c.yellow('못 씀')} ${c.gray(`— ${프록시설정().탈}`)}`);
       say(`  ${c.gray(pad('모델', 10))} ${k.model}`);
       say(`  ${c.gray(pad('작업 폴더', 10))} ${session.root}`);
       // 명령이 어느 셸에서 도는지. "ls 가 왜 안 되지" 의 답이 이 줄에 있다.

@@ -6,7 +6,7 @@ import { c, 눈금게이지, width, clip, cols, mark } from './ansi.js';
 import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite, 보일이름 } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
-import { 프록시고르기 } from '../backend/proxy.js';
+import { 프록시고르기, 프록시설정 } from '../backend/proxy.js';
 import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
 import { 말, 언어 } from '../i18n/index.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
@@ -438,6 +438,9 @@ export function headerLines(session, found, 상자쓰나 = true) {
     // 프록시를 거치면 그것도 첫 화면에. "연결 실패" 가 프록시 탓인지는 이 한 마디로 갈린다.
     const 프록시 = 프록시고르기(conn.base);
     if (프록시) 목적지 += c.gray(`  ${말('head.viaProxy', { 프록시: `${프록시.host}:${프록시.port}` })}`);
+    // 적어 놨는데 못 쓰는 프록시(socks5 등)는 여기서 한 번은 말해야 한다 — 조용히 직접 가면
+    // 사람은 프록시를 탄 줄 알고, 막히면 엉뚱한 데를 고친다.
+    else if (프록시설정().탈) 목적지 += c.yellow(`  ${말('head.proxyBad')}`);
   } catch { 목적지 = c.gray(String(conn.base)); }
 
   /*

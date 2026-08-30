@@ -11,8 +11,19 @@ import {
 } from 'node:fs';
 import { untargz, stripTop } from '../pack/tar.js';
 import { makeZip } from '../pack/zip.js';
-import { allowTemporarily, isOffline } from '../safety/network.js';
-import { 원시요청 } from '../backend/http.js';
+import { allowTemporarily, isOffline, NetBlocked } from '../safety/network.js';
+import { 원시요청, 몸읽기 } from '../backend/http.js';
+
+/**
+ * 플러그인을 받다 되돌림(redirect)이 오면 따라가도 되는 곳인가. 던지면 안 따라간다.
+ * github 가 제 다른 집으로 보내는 것만 따라간다 — https 이고, github.com · githubusercontent.com 뿐.
+ */
+export function 플러그인되돌림(다음) {
+  if (다음.protocol !== 'https:') throw new Error(`${다음.protocol} 로 되돌립니다 — 따라가지 않습니다`);
+  if (!/(^|\.)github\.com$|(^|\.)githubusercontent\.com$/i.test(다음.hostname)) {
+    throw new Error(`github 밖(${다음.hostname})으로 되돌립니다 — 따라가지 않습니다`);
+  }
+}
 import { copyDir } from '../tools/fsutil.js';
 
 export const pluginsDir = (home = homedir()) => join(home, '.deel', 'plugins');
@@ -64,13 +75,27 @@ async function fetchInto(spec, dest, onStep) {
     const url = `https://codeload.github.com/${spec.owner}/${spec.repo}/tar.gz/refs/heads/${branch}`;
     // 사용자가 이 명령을 친 동안만 github 를 연다. 끝나면 바로 닫는다.
     const close = allowTemporarily(url);
-    let res;
-    // 한 문(backend/http.js)으로 나간다 — 프록시를 거치고, 다른 집으로 되돌리면 거기서 막힌다.
-    try { res = await 원시요청(url, { timeout: 120000 }); }
-    catch { continue; }
-    finally { close(); }
-    if (!res.ok) continue;
-    const gz = res.bytes;
+    let gz;
+    // 한 문(backend/http.js)으로 나간다 — 프록시를 거치고, 되돌림은 홉마다 문지기를 지난다.
+    // github 는 받기 주소를 제 다른 집(githubusercontent 등)으로 되돌리므로 그 홉은 열어 준다 —
+    // 그 밖의 집이면 안 따라가고, 왜 못 받았는지를 말한다 (조용히 '주소를 확인하세요' 로 끝내지 않는다).
+    // 상한까지만 받는다. 플러그인 묶음이 64MB 를 넘을 일은 없고, 넘는 것을 다 받아 줄 이유도 없다.
+    const 열어둔 = [];
+    try {
+      const res = await 원시요청(url, {
+        timeout: 120000, stream: true,
+        되돌림: (다음) => { 플러그인되돌림(다음); 열어둔.push(allowTemporarily(다음.origin)); },
+      });
+      if (!res.ok) { await res.버리기?.(); continue; }
+      gz = await 몸읽기(res.res.body, 64 * 1024 * 1024);
+    } catch (err) {
+      if (err instanceof NetBlocked || /되돌립니다/.test(String(err?.message))) return { error: `받지 못했습니다 — ${err.message}` };
+      continue;
+    } finally {
+      close();
+      for (const 닫기 of 열어둔) 닫기();
+    }
+    if (!gz) return { error: '받은 묶음이 너무 큽니다 (64MB 넘음) — 플러그인 저장소가 맞는지 확인하세요' };
     const files = stripTop(untargz(gz));
     if (!files.length) return { error: '받은 묶음이 비어 있습니다' };
     rmSync(dest, { recursive: true, force: true });

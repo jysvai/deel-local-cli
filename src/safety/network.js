@@ -20,13 +20,32 @@ export class NetBlocked extends Error {
   }
 }
 
-const LOCAL = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0', '[::1]']);
+const LOCAL = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0', '::']);
 
-export const isLocalHost = (h) => LOCAL.has(String(h).toLowerCase()) ||
-  /^127\./.test(h) ||
-  /^10\./.test(h) ||
-  /^192\.168\./.test(h) ||
-  /^172\.(1[6-9]|2\d|3[01])\./.test(h);
+/*
+ * 이 컴퓨터·사내망 주소인가. WebFetch 가 안 읽을 곳, 오프라인 잠금이 그래도 열어 줄 곳.
+ *
+ * 글자만 보면 빠져나가는 철자가 있었다 — `localhost.`(끝에 점)와 `[::ffff:127.0.0.1]`
+ * (IPv4 를 IPv6 에 싼 것)은 둘 다 127.0.0.1 에 붙는데 '바깥' 으로 읽혔다. 되돌림이
+ * 그리로 가면 사내 서비스를 읽게 된다. 그래서 먼저 철자를 편다: 끝 점을 떼고, 대괄호를
+ * 벗기고, ::ffff: 로 싼 IPv4 는 점 네 개 꼴로 되돌린 뒤 본다.
+ * 169.254.* (링크 로컬 — 클라우드 메타데이터가 여기 산다)와 IPv6 의 fe80:: · fc00::/7 도
+ * 이 컴퓨터·사내망으로 친다.
+ */
+export const isLocalHost = (h) => {
+  let s = String(h ?? '').trim().toLowerCase().replace(/\.$/, '').replace(/^\[|\]$/g, '');
+  if (s.startsWith('::ffff:')) {
+    const 뒤 = s.slice(7);
+    const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(뒤);
+    s = hex
+      ? [hex[1], hex[2]].flatMap((x) => { const n = parseInt(x, 16); return [n >> 8, n & 255]; }).join('.')
+      : 뒤;
+  }
+  if (LOCAL.has(s)) return true;
+  if (/^(127|10|0)\./.test(s) || /^192\.168\./.test(s) || /^172\.(1[6-9]|2\d|3[01])\./.test(s) || /^169\.254\./.test(s)) return true;
+  if (/^fe[89ab][0-9a-f]:/.test(s) || /^f[cd][0-9a-f]{2}:/.test(s)) return true;
+  return false;
+};
 
 function originOf(url) {
   const u = new URL(url);
