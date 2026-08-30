@@ -324,7 +324,7 @@ export async function acp(opts = {}) {
 
           // 서버가 잠깐 막아 기다리는 중. 아직 흘러간 글이 없으니 답을 새로 시작하지는 않는다.
           case 'backoff':
-            말하기(`\n\n_(${옮긴말(ev.지남 ? 'loop.backoffDone' : 'loop.backoff', 알림채움(ev))})_\n\n`);
+            말하기(`\n\n_(${옮긴말('loop.backoff', 알림채움(ev))})_\n\n`);
             break;
 
           case 'tool_start':

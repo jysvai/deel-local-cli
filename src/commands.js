@@ -12,6 +12,7 @@ import { 말, 언어, 언어정하기, 언어고르기, 옮긴만큼, 지시말,
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
 import { allowTemporarily } from './safety/network.js';
 import { chat } from './backend/adapter.js';
+import { 알림채움 } from './backend/retry.js';
 import { TOOLS } from './tools/index.js';
 import { 둘러보기, 프로젝트갈래 } from './lsp/servers.js';
 import { 지금것들 } from './lsp/client.js';
@@ -256,7 +257,7 @@ export async function handle(line, session, ctx) {
 
       // 그 한 번 동안만 연다. 끝나면 반드시 닫는다.
       const 닫기 = 알림.다른자리 ? allowTemporarily(새conn.base) : null;
-      const 돌림 = spin(말('consult.asking', { 모델: 새conn.model }));
+      let 돌림 = spin(말('consult.asking', { 모델: 새conn.model }));
       let 답 = null;
       let 탈 = null;
       const 잰때 = Date.now();
@@ -267,6 +268,11 @@ export async function handle(line, session, ctx) {
             { role: 'user', content: 질문 },
           ],
           temperature: 0.3,
+          // 서버가 잠깐 막으면 돌림표 뒤에 숨기지 않고 말한다 — 왜 오래 걸리는지 보여야 한다.
+          onBackoff: (알림) => {
+            돌림.stop(`  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`);
+            돌림 = spin(말('consult.asking', { 모델: 새conn.model }));
+          },
         });
         답 = String(m?.content ?? '').trim();
       } catch (err) {
@@ -617,8 +623,13 @@ export async function handle(line, session, ctx) {
     case 'out': case '출력': return await 출력상한(session, arg), { handled: true };
 
     case 'compact': {
-      const s = spin('앞선 대화를 요약해 접는 중…');
-      const r = await compact(session);
+      let s = spin('앞선 대화를 요약해 접는 중…');
+      const r = await compact(session, {
+        onBackoff: (알림) => {
+          s.stop(`  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`);
+          s = spin('앞선 대화를 요약해 접는 중…');
+        },
+      });
       if (!r.ok) {
         s.stop(`  ${c.gray(r.why ?? '접지 못했습니다.')}`);
         say('');

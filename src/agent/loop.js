@@ -16,6 +16,35 @@ import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴도구 } from '
 import { get as workMode } from './modes.js';
 import { 지시말 } from '../i18n/index.js';
 
+/*
+ * 콜백으로만 소식을 주는 부름을, 제너레이터가 중간에 내보낼 수 있는 모양으로 바꾼다.
+ *
+ * chat() 이나 compact() 는 await 하나로 끝나는 부름이라, 그 안에서 "서버가 막았다,
+ * 2초 기다린다" 같은 소식이 생겨도 화면으로 나올 길이 없었다. 소식을 우편함에
+ * 넣어 두고 받는 쪽이 하나씩 꺼내 yield 한다. 부름이 끝나면 소식()도 끝난다.
+ *
+ *   const 편지 = 우편함((알려줘) => chat(conn, { ..., onBackoff: 알려줘 }));
+ *   for await (const 소식 of 편지.소식()) yield 소식;
+ *   const 답 = await 편지.부름;
+ */
+function 우편함(부르기) {
+  const 함 = [];
+  let 깨우기 = null;
+  let 끝 = false;
+  const 부름 = 부르기((소식) => { 함.push(소식); 깨우기?.(); });
+  부름.then(() => { 끝 = true; 깨우기?.(); }, () => { 끝 = true; 깨우기?.(); });
+  return {
+    부름,
+    async *소식() {
+      while (!끝 || 함.length) {
+        if (함.length) { yield 함.shift(); continue; }
+        await new Promise((r) => { 깨우기 = r; });
+        깨우기 = null;
+      }
+    },
+  };
+}
+
 /**
  * 아무 내용도 없는 답인가.
  *
@@ -351,31 +380,40 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
     // 흘러온 글을 우리도 모아 둔다. 중간에 끊기면 이것만이 남는 전부다 —
     // chatStream 은 끝까지 가야 message 를 주므로, 끊긴 순간에는 msg 가 비어 있다.
     let 흘린것 = '';
+    /*
+     * 서버가 잠깐 막아 기다렸다 다시 부른 횟수는 /cost 와 deel run --json 이 본다.
+     * 다만 **정말 다시 불렀을 때** 센다 — 알림을 낸 뒤 기다리다 Ctrl+C 로 끊기면
+     * 다시 부른 것이 아니다. 그래서 셈은 미뤄 두고, 다음 소식이 오면 그때 더한다.
+     */
+    let 미룬셈 = 0;
+    const 셈하기 = () => { session.usage.retries = (session.usage.retries ?? 0) + 미룬셈; 미룬셈 = 0; };
+    const 끝셈 = (err) => { if (err?.name === 'Aborted') 미룬셈 = 0; else 셈하기(); };
     const askModel = async function* (maxTokens, think, { 한번에 = false } = {}) {
       if (conn.streaming && !한번에) {
-        for await (const ev of chatStream(conn, ask(maxTokens, think))) {
-          if (ev.type === 'done') msg = ev.message;
-          else {
-            if (ev.type === 'content') 흘린것 += ev.text ?? '';
-            // 서버가 잠깐 막아 기다렸다 다시 부르는 것은 세어 둔다 — /cost 와
-            // deel run --json 이 본다. 느렸던 턴이 왜 느렸는지 여기서만 남는다.
-            if (ev.type === 'backoff') session.usage.retries = (session.usage.retries ?? 0) + 1;
-            yield ev;
+        try {
+          for await (const ev of chatStream(conn, ask(maxTokens, think))) {
+            셈하기();   // 무슨 소식이든 왔다는 것은 앞의 다시 부름이 실제로 있었다는 뜻
+            if (ev.type === 'done') msg = ev.message;
+            else {
+              if (ev.type === 'content') 흘린것 += ev.text ?? '';
+              if (ev.type === 'backoff') 미룬셈 = 1;
+              yield ev;
+            }
           }
-        }
+        } catch (err) { 끝셈(err); throw err; }
+        셈하기();
       } else {
         yield { type: 'waiting' };
         /*
-         * 한 번에 받는 길에서는 기다리는 동안 화면에 말을 못 건다 — 제너레이터가
-         * 아니라 await 하나라서다. 그래서 알림을 모아 뒀다가 받은 뒤에 낸다.
-         * 늦게라도 "429 였고 2초 기다렸다" 가 남아야 왜 느렸는지 알 수 있다.
+         * 한 번에 받는 길은 await 하나라 알림이 흘러나오지 않는다. 그래서 부름을
+         * 띄워 두고, 알림이 오면 먼저 내보내고, 답이 오면 그때 끝낸다. 안 그러면
+         * 서버가 60초 기다리라 한 동안 화면에는 '생각 중' 만 떠 있다 — 사람은
+         * 모델이 느린 줄 알지만 실은 429 였다.
          */
-        const 미룬알림 = [];
-        msg = await chat(conn, { ...ask(maxTokens, think), onBackoff: (알림) => 미룬알림.push(알림) });
-        for (const 알림 of 미룬알림) {
-          session.usage.retries = (session.usage.retries ?? 0) + 1;
-          yield { ...알림, 지남: true };
-        }
+        const 편지 = 우편함((onBackoff) => chat(conn, { ...ask(maxTokens, think), onBackoff }));
+        for await (const 알림 of 편지.소식()) { 셈하기(); 미룬셈 = 1; yield 알림; }
+        try { msg = await 편지.부름; } catch (err) { 끝셈(err); throw err; }
+        셈하기();
         if (msg.thinking) yield { type: 'thinking', text: msg.thinking };
         if (msg.content) yield { type: 'content', text: msg.content };
       }
@@ -1002,7 +1040,10 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0 }
     // 컨텍스트가 차오르면 오래된 대화를 '요약해서' 접는다. 그냥 자르면 하던 일을 잊는다.
     if (shouldCompact(session)) {
       yield { type: 'compacting' };
-      const r = await compact(session, { auto: true, signal });
+      // 요약을 부르다 서버가 막으면 그 알림도 화면으로 — '접는 중' 뒤에 60초를 숨기지 않는다.
+      const 편지 = 우편함((onBackoff) => compact(session, { auto: true, signal, onBackoff }));
+      for await (const 알림 of 편지.소식()) yield 알림;
+      const r = await 편지.부름;
       if (r.aborted) { yield { type: 'aborted', steps, kept: true }; return; }
       if (r.ok) yield { type: 'compacted', ...r };
       else yield { type: 'compact_failed', why: r.why };

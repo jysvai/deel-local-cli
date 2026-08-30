@@ -160,7 +160,9 @@ for truncation and empty replies. Corporate gateways return `429` (per-user quot
   4 s, each with ≤ 30 % jitter. Ctrl+C during the wait aborts immediately.
 - Screen: `↻ 서버가 잠시 막았습니다 (429) — 2초 뒤 다시 (1/3)`; English twin. `deel run`
   prints the same in its side log; `--json` gets `retries`. ACP gets a one-line note.
-- Applies everywhere the adapter is used (REPL, `deel run`, ACP, `Task`, `/consult`, `diagnose`).
+- Applies everywhere the adapter is used (REPL, `deel run`, ACP, `Task`, `/consult`, compaction).
+  `deel diagnose` deliberately measures the raw first answer — a probe that silently retried
+  would hide the very thing it exists to show.
 
 **Acceptance (`test/retry.test.js`, fake gateway on port 0).**
 1. `429` then `200` → turn completes; one `backoff` event; `session.usage.retries === 1`.

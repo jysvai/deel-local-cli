@@ -53,15 +53,26 @@ export function 다시부를까({ status = 0, code = null, attempt = 1 } = {}, �
 export function 기다릴시간({ attempt = 1, retryAfter = null } = {}, 정책 = 기본정책()) {
   const 서버말 = retryAfter읽기(retryAfter);
   if (서버말 !== null) return Math.min(서버말, 정책.상한);
-  const 칸 = 정책.base[Math.min(attempt, 정책.base.length) - 1] ?? 정책.base[정책.base.length - 1];
+  // 사다리가 비었으면(설정이 이상하면) 기본 사다리로 — NaN 초를 기다릴 수는 없다.
+  const 사다리 = Array.isArray(정책.base) && 정책.base.some(Number.isFinite)
+    ? 정책.base.filter(Number.isFinite)
+    : 기본정책().base;
+  const 칸 = 사다리[Math.min(attempt, 사다리.length) - 1] ?? 사다리[사다리.length - 1];
   return Math.min(정책.상한, Math.round(칸 * (1 + Math.random() * 정책.흔들림)));
 }
 
-// Retry-After 는 초(정수)이거나 HTTP 날짜다. 못 읽으면 null — 그때는 사다리로 간다.
+/*
+ * Retry-After 는 초이거나 HTTP 날짜다. 못 읽으면 null — 그때는 사다리로 간다.
+ *
+ * 규격은 정수 초지만 `1.5` 처럼 소수로 주는 서버가 실제로 있다. 그리고 `1,5` · `5;` ·
+ * `-1` 같은 것을 Date.parse 에 그냥 주면 엉뚱한 옛날 날짜로 읽혀 **0초**가 된다 —
+ * 그러면 세 번을 연달아 두드린다. 그래서 글자가 든 것만 날짜로 본다.
+ */
 function retryAfter읽기(값) {
   if (값 == null || 값 === '') return null;
   const s = String(값).trim();
-  if (/^\d+$/.test(s)) return Number(s) * 1000;
+  if (/^\d+(\.\d+)?$/.test(s)) return Math.round(Number(s) * 1000);
+  if (!/[a-z]/i.test(s)) return null;
   const t = Date.parse(s);
   if (Number.isNaN(t)) return null;
   return Math.max(0, t - Date.now());

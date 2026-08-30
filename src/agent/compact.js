@@ -167,13 +167,16 @@ function transcript(msgs) {
  * 실제로 접는다.
  * @returns {{ok:boolean, folded:number, before:number, after:number, summary?:string, why?:string}}
  */
-export async function compact(session, { auto = false, signal = null } = {}) {
+export async function compact(session, { auto = false, signal = null, onBackoff = null } = {}) {
   const before = session.breakdown().used;
   const parts = split(session.messages);
   if (!parts) return { ok: false, why: '접을 만큼 쌓이지 않았습니다', folded: 0, before, after: before };
 
   const text = transcript(parts.fold);
   let summary = null;
+  // 서버가 잠깐 막아 다시 부른 횟수. 알림은 부르는 쪽(onBackoff)이 화면에 내고, 셈은 여기서 한다.
+  let 다시 = 0;
+  const 셈하기 = (n) => { session.usage.retries = (session.usage.retries ?? 0) + Math.max(0, n); };
   try {
     const r = await chat(session.conn, {
       messages: [
@@ -185,16 +188,20 @@ export async function compact(session, { auto = false, signal = null } = {}) {
       // 사용자가 Ctrl+C 를 누르면 이것도 멈춰야 한다. 안 받으면 답하는 도중
       // 화면이 멈춰 있고 아무 키도 안 먹는 것처럼 보인다.
       signal,
+      onBackoff: (알림) => { 다시 += 1; onBackoff?.(알림); },
       // 요약 하나에 5분을 기다릴 이유가 없다. 그만한 서버면 그냥 줄이는 편이 빠르다.
       timeout: 60000,
     });
+    셈하기(다시);
     summary = (r.content ?? '').trim();
   } catch (err) {
     // 사용자가 끊은 것은 실패가 아니다. 대화를 건드리지 않고 그대로 둔다 —
     // 여기서 물러서기(trim)까지 해 버리면, 끊었는데 대화가 줄어 있게 된다.
     if (err?.name === 'Aborted' || signal?.aborted) {
+      셈하기(다시 - 1);   // 기다리다 끊긴 마지막 것은 다시 부른 것이 아니다
       return { ok: false, aborted: true, why: '중단했습니다', folded: 0, before, after: before };
     }
+    셈하기(다시);
     summary = null;
   }
 

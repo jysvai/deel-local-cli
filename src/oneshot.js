@@ -342,7 +342,7 @@ export async function runOnce(opts = {}) {
         // 서버가 잠깐 막아서 기다렸다 다시 부른 자리 (backend/retry.js).
         // 배치 기록에 남아야 "그날 밤 왜 12분이 걸렸나" 를 나중에 읽을 수 있다.
         case 'backoff':
-          곁(`  ${c.yellow('↻')} ${c.gray(옮긴말(ev.지남 ? 'loop.backoffDone' : 'loop.backoff', 알림채움(ev)))}`);
+          곁(`  ${c.yellow('↻')} ${c.gray(옮긴말('loop.backoff', 알림채움(ev)))}`);
           break;
 
         case 'folded':

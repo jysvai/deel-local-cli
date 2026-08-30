@@ -23,6 +23,7 @@ import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
 import { run } from '../src/agent/loop.js';
+import { chat } from '../src/backend/adapter.js';
 import { allowEndpoint } from '../src/safety/network.js';
 import { 다시부를까, 기다릴시간, 기다리기, 기본정책 } from '../src/backend/retry.js';
 import { trace } from './trace.mjs';
@@ -62,6 +63,15 @@ trace('1-정책');
   check('지난 날짜면 바로', 기다릴시간({ attempt: 1, retryAfter: new Date(Date.now() - 5000).toUTCString() }, 정책) === 0);
   check('Retry-After 가 이상하면 사다리로', 기다릴시간({ attempt: 1, retryAfter: '잠깐만' }, 정책) >= 1000);
   check('60초를 넘게 시키면 60초에서 자른다', 기다릴시간({ attempt: 1, retryAfter: '600' }, 정책) === 60000);
+  // 규격 밖의 값들. 전에는 Date.parse 가 '1,5' 를 2001년으로 읽어 0초가 됐다 — 세 번을 연달아 두드렸다.
+  check('Retry-After 1.5 는 1.5초', 기다릴시간({ attempt: 1, retryAfter: '1.5' }, 정책) === 1500);
+  check('Retry-After 0.5 는 0.5초', 기다릴시간({ attempt: 1, retryAfter: '0.5' }, 정책) === 500);
+  for (const 값 of ['-1', '+5', '5;', '1,5', '1 5', '']) {
+    const ms = 기다릴시간({ attempt: 1, retryAfter: 값 }, 정책);
+    check(`Retry-After '${값}' 은 0초가 아니라 사다리로`, ms >= 1000 && ms <= 1300, `${ms}ms`);
+  }
+  check('사다리가 비어 있으면 기본 사다리로 (NaN 초가 아니다)',
+    (() => { const ms = 기다릴시간({ attempt: 1 }, { ...정책, base: [] }); return Number.isFinite(ms) && ms >= 1000; })());
 
   // 기다리는 중 끊기.
   const ac = new AbortController();
@@ -189,16 +199,25 @@ trace('3-RetryAfter');
 // ── 3. 계속 막으면 사실대로 말하고 곱게 끝난다 ──────────────────────────
 trace('4-계속429');
 {
-  const r = await 돌리기([
-    { status: 429, retryAfter: 0 }, { status: 429, retryAfter: 0 },
-    { status: 429, retryAfter: 0 }, { status: 429, retryAfter: 0 }, { text: '여기까지 오면 안 된다' },
-  ]);
+  // 서버가 한 말에 숫자를 안 넣는다 — 그래야 '429' 가 우리 글에서 나온 것임이 확실하다.
+  const 막힘 = { status: 429, retryAfter: 0, message: '할당량을 넘었습니다' };
+  const r = await 돌리기([막힘, 막힘, 막힘, 막힘, { text: '여기까지 오면 안 된다' }]);
   check('네 번(처음 + 세 번) 부르고 멈춘다', hits.length === 4, `${hits.length}번`);
   const err = r.events.find((e) => e.type === 'error');
   check('오류로 끝난다', !!err && !r.kinds.includes('done'), r.kinds.join(','));
-  check('오류 글에 상태 코드와 몇 번 불렀는지가 있다', /429/.test(err?.text ?? '') && /4번|4 번|4회/.test(err?.text ?? ''), err?.text);
+  check('오류 글에 상태 코드가 있다 (서버 글이 아니라 우리가 적은 것)', /HTTP 429/.test(err?.text ?? ''), err?.text);
+  check('오류 글에 몇 번 불렀는지가 있다', /4번 불렀지만/.test(err?.text ?? ''), err?.text);
+  check('서버가 한 말도 그대로 있다', /할당량을 넘었습니다/.test(err?.text ?? ''), err?.text);
   check('세 번 알렸다', r.events.filter((e) => e.type === 'backoff').length === 3);
   check('다시 부른 횟수 3', r.session.usage.retries === 3, String(r.session.usage.retries));
+
+  // 어댑터가 던진 것 자체도 본다 — 루프가 화면에 내기 전의 모양.
+  script = [막힘, 막힘, 막힘, 막힘]; turn = 0; hits.length = 0;
+  let 던진것 = null;
+  try { await chat(새연결(), { messages: [{ role: 'user', content: '안녕' }] }); } catch (e) { 던진것 = e; }
+  check('어댑터 오류에 몇 번 불렀는지가 숫자로 있다', 던진것?.attempts === 4, String(던진것?.attempts));
+  check('어댑터 오류에 서버가 한 말이 원문 그대로 있다', 던진것?.serverMessage === '할당량을 넘었습니다', String(던진것?.serverMessage));
+  check('어댑터 오류 글에도 HTTP 429 와 4번이 있다', /HTTP 429/.test(던진것?.message ?? '') && /4번/.test(던진것?.message ?? ''), 던진것?.message);
   // 대화는 멀쩡해야 한다 — 다음 말을 걸 수 있어야 한다.
   check('대화에 반쪽짜리 assistant 가 안 남는다', !r.session.messages.some((m) => m.role === 'assistant' && !m.content && !m.tool_calls));
 }
@@ -220,6 +239,9 @@ trace('6-흘린뒤끊김');
   check('한 번만 불렀다 — 반쯤 온 답을 두 벌 만들지 않는다', hits.length === 1, `${hits.length}번`);
   check('기다렸다 다시 부른다는 알림이 없다', !r.kinds.includes('backoff'), r.kinds.join(','));
   check('턴은 어쨌든 끝난다 (멈추지 않는다)', r.kinds.includes('error') || r.kinds.includes('done'), r.kinds.join(','));
+  const 흘린 = r.events.filter((e) => e.type === 'content').map((e) => e.text).join('');
+  check('끊기기 전에 흘러온 글은 화면에 남는다', 흘린 === 'x'.repeat(30), `${흘린.length}자`);
+  check('다시 부른 횟수 0', (r.session.usage.retries ?? 0) === 0, String(r.session.usage.retries));
 }
 
 // ── 6. 기다리는 중에 Ctrl+C ─────────────────────────────────────────────
@@ -232,18 +254,35 @@ trace('7-기다리다끊기');
     중간에: (ev) => { if (ev.type === 'backoff') { 끊은때 = Date.now(); setTimeout(() => ac.abort(), 50); } },
   });
   check('중단으로 끝난다', r.kinds.includes('aborted'), r.kinds.join(','));
-  check('끊자마자 멈춘다 (5초를 안 기다린다)', 끊은때 && Date.now() - 끊은때 < 1000, `${Date.now() - 끊은때}ms`);
+  check('끊자마자 멈춘다 (5초를 안 기다린다)', 끊은때 && Date.now() - 끊은때 < 400, `${Date.now() - 끊은때}ms`);
   check('두 번째는 안 불렀다', hits.length === 1, `${hits.length}번`);
+  check('안 부른 것은 세지 않는다', (r.session.usage.retries ?? 0) === 0, String(r.session.usage.retries));
 }
 
-// ── 7. 스트리밍을 끈 길도 같다 ──────────────────────────────────────────
+// ── 7. 스트리밍을 끈 길도 같다 — 알림은 기다리기 **전에** 나와야 한다 ───────
 trace('8-비스트리밍');
 {
-  const r = await 돌리기([{ status: 429, retryAfter: 0 }, { text: '됐습니다' }], { conn: 새연결({ streaming: false }) });
+  const 때 = {};
+  const r = await 돌리기([{ status: 429, retryAfter: 1 }, { text: '됐습니다' }], {
+    conn: 새연결({ streaming: false }),
+    중간에: (ev) => { 때[ev.type] ??= Date.now(); },
+  });
   check('스트리밍 없이도 다시 불러 끝까지 간다', r.kinds.includes('done'), r.kinds.join(','));
   check('두 번 불렀다', hits.length === 2, `${hits.length}번`);
   check('알림도 온다', r.kinds.includes('backoff'), r.kinds.join(','));
+  check('Retry-After: 1 을 한 번에 받는 길에서도 지킨다', r.ms >= 1000 && r.ms < 5000, `${r.ms}ms`);
+  // 전에는 답을 다 받은 뒤에야 알림이 나왔다 — 60초 동안 '생각 중' 만 떠 있었다.
+  check('알림이 답보다 먼저, 기다리기 전에 나온다', 때.backoff && 때.done && 때.done - 때.backoff >= 900, `${때.done - 때.backoff}ms 차이`);
   check('횟수도 센다', r.session.usage.retries === 1, String(r.session.usage.retries));
+
+  // 한 번에 받는 길에서 기다리다 끊기 — 알림은 나왔고, 다시 부른 것은 아니다.
+  const ac = new AbortController();
+  const r2 = await 돌리기([{ status: 429, retryAfter: 5 }, { text: '여기까지 오면 안 된다' }], {
+    conn: 새연결({ streaming: false }), signal: ac.signal,
+    중간에: (ev) => { if (ev.type === 'backoff') setTimeout(() => ac.abort(), 50); },
+  });
+  check('한 번에 받는 길에서도 기다리다 끊으면 바로 멈춘다', r2.kinds.includes('aborted') && r2.ms < 1500, `${r2.ms}ms · ${r2.kinds.join(',')}`);
+  check('그때는 안 센다', (r2.session.usage.retries ?? 0) === 0, String(r2.session.usage.retries));
 }
 
 // ── 8. 400 은 한 번만 ────────────────────────────────────────────────────

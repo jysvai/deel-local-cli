@@ -1343,7 +1343,7 @@ export async function chatLoop(opts = {}) {
           // 쉬움 수준에서도 숫자를 뺀 채 내지 않는다. 429 는 설명이 필요한 숫자가 아니다.
           case 'backoff':
             clearThinking();
-            say(`  ${c.yellow('↻')} ${c.gray(옮긴말(ev.지남 ? 'loop.backoffDone' : 'loop.backoff', 알림채움(ev)))}`);
+            say(`  ${c.yellow('↻')} ${c.gray(옮긴말('loop.backoff', 알림채움(ev)))}`);
             break;
 
           case 'waiting':
