@@ -55,7 +55,12 @@ export function closeConnections() {
 export function headersFor(authStyle, key, extra = {}) {
   const h = { 'Content-Type': 'application/json', Accept: 'application/json', ...extra };
   const style = AUTH_STYLES.find((s) => s.id === authStyle) ?? AUTH_STYLES[0];
-  if (key) style.apply(h, key);
+  // 앞뒤 공백·줄바꿈은 떼고 싣는다. 열쇠를 파일이나 메일에서 복사해 오면
+  // 줄바꿈이 딸려 오는 일이 흔한데, 그것 하나로 요청이 아예 안 만들어진다.
+  // 가운데 낀 것은 안 건드린다 — 그건 진짜 잘못된 열쇠이고, 조용히 고쳐 주면
+  // 무엇이 틀렸는지 영영 모른다.
+  const k = typeof key === 'string' ? key.trim() : key;
+  if (k) style.apply(h, k);
   return h;
 }
 
@@ -380,7 +385,22 @@ function normalizeError(err) {
      * 그대로 보여 주면 사람은 서버를 의심하고 방화벽부터 뒤진다. 실제로는
      * 열쇠를 붙여넣다 한글이 섞였거나 따옴표가 딸려 온 것이다.
      */
-    if (/ByteString|character at index/i.test(m)) return '열쇠(또는 헤더)에 한글·특수문자가 섞여 있습니다 — API 키는 영문·숫자만 실립니다. 붙여넣을 때 따옴표가 딸려 오지 않았는지 보세요';
+    /*
+     * `invalid header value` 도 같이 잡는 이유 — **여기가 열쇠 유출 자리다.**
+     *
+     * 헤더 값이 못 실릴 때 런타임이 내는 말이 두 가지다.
+     *   한글이 섞였을 때   Cannot convert … ByteString … character at index 23
+     *   줄바꿈·NUL 이 섞였을 때  Headers.append: "sk-진짜열쇠…" is an invalid header value.
+     *
+     * 뒤엣것은 **열쇠를 그대로 따옴표 안에 넣어서** 말한다. 그 문구는 화면에도
+     * 뜨고 진단 보고서 파일에도 적히는데, 그 파일은 "사내망에서 돌렸다면 이것만
+     * 가져오시면 됩니다" 라고 우리가 권하는 파일이다. 열쇠를 파일에 안 남기려고
+     * 잠금장치까지 붙여 놓고, 오류 한 줄로 평문으로 흘리는 셈이었다.
+     *
+     * 그래서 두 가지를 한 자리에서 잡아 **우리 문장으로 갈아 끼운다.** 원문을
+     * 안 보여 주는 것이 여기서는 친절이 아니라 안전이다.
+     */
+    if (/ByteString|character at index|invalid header (value|name)/i.test(m)) return '열쇠(또는 헤더)에 한글·특수문자가 섞여 있습니다 — API 키는 영문·숫자만 실립니다. 붙여넣을 때 따옴표나 줄바꿈이 딸려 오지 않았는지 보세요';
     if (/fetch failed/i.test(m)) return '연결 실패 — 주소·포트·프록시를 확인하세요';
     return m;
   })();

@@ -1,5 +1,6 @@
 // 진단 결과를 화면에 표로 그리고, "이걸로 돌릴 수 있는지" 판정한다.
 import { c, say, rule, pad, width, mark } from './ui/ansi.js';
+import { 주소가리기 } from './safety/secrets.js';
 import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
 import { 보관방식 } from './safety/keystore.js';
 import { load, activeProfile } from './config.js';
@@ -34,7 +35,7 @@ export function renderHeader(facts) {
   const kindName = facts.shape === 'ollama' ? 'Ollama 자체 규격' : 'OpenAI 호환';
   const rows = [
     ['규격', kindName],
-    ['주소', facts.base],
+    ['주소', 주소가리기(facts.base)],
     ['인증', facts.auth === 'none' ? '없음' : facts.auth],
     ['모델', facts.model],
   ];
@@ -124,7 +125,7 @@ export function plainReport(facts, results, v) {
     `생성 시각   ${at}`,
     '',
     `규격        ${facts.shape === 'ollama' ? 'Ollama 자체 규격' : 'OpenAI 호환'}`,
-    `주소        ${facts.base}`,
+    `주소        ${주소가리기(facts.base)}`,
     ...(프록시줄(facts.base) ? [`프록시      ${프록시줄(facts.base)}`] : []),
     `인증        ${facts.auth === 'none' ? '없음' : facts.auth}`,
     `열쇠 보관   ${열쇠줄()}`,

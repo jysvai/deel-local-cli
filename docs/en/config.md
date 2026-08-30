@@ -20,7 +20,10 @@ Servers, environment variables, run flags, project rules
 | LM Studio | `http://localhost:1234/v1` |
 | llama.cpp · vLLM · LiteLLM | `http://host:port/v1` |
 
-Auth style is detected automatically: `Authorization: Bearer` → `x-api-key` → `api-key` (Azure) → none.
+Auth style is detected automatically: `Authorization: Bearer` → `x-api-key` → `api-key` → none.
+Azure addresses use a different order: `api-key` → `Bearer` → none (`x-api-key` is not tried).
+**Every style is tried before one is chosen** — the first 401 does not end the search, because an
+Azure front end wrapped in Entra ID answers 401 to `api-key` and accepts `Bearer`.
 
 ### Azure OpenAI
 
@@ -35,9 +38,13 @@ deployment; with just the resource address it fetches the deployment list to pic
 your organisation pins a version, set `"apiVersion"` in the config file or the
 `DEEL_AZURE_API_VERSION` environment variable.
 
+An address mounted one level down behind a front end such as APIM
+(`https://apim.corp/azure-openai/openai/...`) keeps that prefix.
+
 Listing deployments is a separate permission and is often blocked. That is **not treated as a
 failed connection** — with a deployment in the address it connects anyway and says the list could
-not be read. Azure does not report context length over the API, so set that yourself with `/ctx`
+not be read. A server that returns **nothing at all**, though, is a failed connection: calling a
+closed port or a down VPN "the list was blocked" sends people to debug the wrong thing. Azure does not report context length over the API, so set that yourself with `/ctx`
 or in the config.
 
 ### Environment variables

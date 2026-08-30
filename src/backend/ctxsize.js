@@ -27,6 +27,7 @@
 // 서버가 거절한다. 그래서 실제로 쓸 값은 '올린 길이' 로 잡고, '모델 최대' 는
 // 따로 알려 준다 — 사용자가 서버에서 더 올린 다음 /ctx 로 맞출 수 있게.
 import { req, headersFor } from './http.js';
+import { 애저인가 } from './azure.js';
 
 // 이 이름들 중 하나면 '모델이 낼 수 있는 최대 컨텍스트' 다. 순서가 곧 우선순위다.
 const 최대이름 = [
@@ -169,7 +170,9 @@ export async function probeCtx(conn, { timeout = 6000 } = {}) {
    * 기다리고, 진단 화면에는 "아무 응답도 못 받았습니다" 가 뜬다 — 서버가
    * 멀쩡한데 우리가 없는 문을 두드린 것뿐이다.
    */
-  if (String(conn.base ?? '').includes('/openai/deployments/')) {
+  // 'Azure 인가' 를 여기서 따로 정하지 않는다. 글자 조각으로 보면 detect 와
+  // 답이 갈리고, 갈리는 순간 한쪽만 맞는 자리가 생긴다 (backend/azure.js).
+  if (애저인가(conn.base)) {
     return {
       value: null, max: null, loaded: null, out: null, source: null, outSource: null,
       maxKey: null, loadedKey: null, tried: [],

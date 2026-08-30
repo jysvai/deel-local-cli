@@ -10,15 +10,6 @@ export function candidates(input) {
   const out = [];
   const push = (x) => { if (x && !out.includes(x)) out.push(x); };
 
-  /*
-   * Azure 는 `/v1` 을 붙이면 안 된다.
-   *
-   * 배포 주소 뒤에 `/v1/models` 를 두드리면 404 만 돌아오고, 사람은 주소를
-   * 제대로 넣고도 "연결 실패" 를 본다. 모양이 다른 것뿐이라 고칠 방법도 없다.
-   * Azure 면 그 주소 하나만 후보로 둔다 — 확인은 tryAzure 가 따로 한다.
-   */
-  if (애저인가(u)) { push(u); return out; }
-
   if (/\/v\d+$/.test(u)) push(u);                 // .../v1 을 직접 준 경우
   else { push(u + '/v1'); push(u); push(u + '/openai/v1'); }
   return out;
@@ -34,6 +25,18 @@ export function candidates(input) {
  * 않는다** — 주소에 배포 이름이 이미 있으면 그것으로 그냥 간다. 목록을 못 본
  * 것과 못 쓰는 것은 다르고, 여기서 실패로 처리하면 정작 잘 되는 설정이
  * 설치 화면을 못 넘어간다.
+ *
+ * ── 다만 두 가지는 성공이 아니다 ──────────────────────────────────────
+ *
+ *   1) **아무 바이트도 안 왔을 때.** 포트가 닫혀 있거나, VPN 이 안 올라왔거나,
+ *      자원 이름을 잘못 적었을 때가 그렇다. 이걸 "목록만 못 봤다" 로 넘기면
+ *      설치 화면이 초록색 `연결됨` 을 띄우고, 사람은 권한 문제인 줄 알고
+ *      엉뚱한 데를 뒤진다. 서버에 닿지도 못했으면 닿지 못했다고 해야 한다.
+ *
+ *   2) **첫 번째 401 로 인증 방식을 정해 버리는 것.** Azure 앞단을 Entra ID 로
+ *      감싼 곳은 `api-key` 에 401 을 주고 `Bearer` 를 받는다. 첫 401 에서
+ *      멈추면 그 곳은 영영 못 붙는다 — 화면은 초록색인데 첫 한마디가 401 이다.
+ *      그래서 방식은 **다 해 보고** 고른다.
  */
 async function tryAzure(input, key) {
   const 푼것 = 애저풀기(input);
@@ -41,26 +44,62 @@ async function tryAzure(input, key) {
   // Azure 는 api-key 헤더가 제 방식이다. 그것부터 본다.
   const 차례 = ['api-key', 'bearer', 'none'].map((id) => AUTH_STYLES.find((s) => s.id === id));
 
+  let 닿음 = false;              // 서버가 HTTP 로 대답을 하기는 했나
+  const 막힌것 = [];             // 거절당한 방식들 — 다 해 보고 고른다
+  let 마지막오류 = null;
+
   for (const style of 차례) {
     if (style.id !== 'none' && !key) continue;
     const r = await req(푼것.목록주소, { headers: headersFor(style.id, key), timeout: 12000 });
+    if (r.status) 닿음 = true;
+    else 마지막오류 = r.error ?? 마지막오류;
+
     if (r.ok && r.json) {
       const models = 배포목록(r.json);
-      const base = 푼것.base ?? (models[0] ? 애저base(푼것.origin, models[0].id, 푼것.판) : null);
+      const base = 푼것.base ?? (models[0] ? 애저base(푼것.origin, models[0].id, 푼것.판, 푼것.앞길) : null);
       if (base) return { kind: 'openai', base, auth: style.id, models, ms: r.ms, azure: true };
-    }
-    // 목록만 막힌 경우. 주소에 배포가 있으면 그대로 쓴다.
-    if ([401, 403, 404].includes(r.status) && 푼것.base) {
+      // 200 인데 배포가 하나도 없다. 인증은 통했으니 더 두드려 봐야 같은 답이다.
       return {
-        kind: 'openai', base: 푼것.base, auth: style.id, models: [], ms: r.ms, azure: true,
-        warn: `배포 목록을 못 봤습니다 (HTTP ${r.status}) — 주소에 적힌 배포로 그냥 씁니다.`,
+        kind: null,
+        ms: r.ms,
+        why: '배포 목록은 받았는데 비어 있습니다 — 이 자원에 배포된 모델이 없습니다.'
+          + ' Azure 포털에서 모델을 배포한 뒤 다시 해 보세요.',
       };
     }
+    if ([401, 403, 404].includes(r.status)) 막힌것.push({ auth: style.id, status: r.status, ms: r.ms });
   }
-  if (푼것.base) {
+
+  // 아무도 못 닿았다. 이건 목록 권한 문제가 아니라 연결 문제다.
+  if (!닿음) return { kind: null, why: 마지막오류 ?? '주소에 닿지 못했습니다' };
+
+  if (푼것.base && 막힌것.length) {
+    /*
+     * 어느 방식으로 적어 둘까.
+     *
+     * 401·403 은 "인증이 틀렸다" 는 말이고, 404 는 "인증은 됐는데 그 자리가
+     * 없다"에 가깝다. 그러니 404 를 받은 방식이 있으면 그쪽이 맞을 확률이
+     * 높다. 아무것도 안 통했으면 Azure 의 제 방식(api-key)으로 적어 두되,
+     * **열쇠를 줬는데 '인증 없음' 으로 적지는 않는다** — 그렇게 적으면 그
+     * 뒤의 모든 요청이 열쇠 없이 나간다.
+     */
+    // 열쇠를 줬으면 '인증 없음' 은 아예 후보에서 뺀다. 그것으로 적어 두면
+    // 그 뒤의 모든 요청이 맨몸으로 나간다 — 붙은 것처럼 보이는데 다 401 이다.
+    const 볼것 = key ? 막힌것.filter((x) => x.auth !== 'none') : 막힌것;
+    const 쓸것 = 볼것.length ? 볼것 : [{ auth: key ? 'api-key' : 'none', status: 막힌것[0].status, ms: 막힌것[0].ms }];
+    const 나은것 = 쓸것.find((x) => x.status === 404) ?? null;
+    const 고른것 = 나은것 ?? 쓸것[0];
+    const 다막힘 = !나은것;
     return {
-      kind: 'openai', base: 푼것.base, auth: key ? 'api-key' : 'none', models: [], ms: 0, azure: true,
-      warn: '배포 목록에 못 닿았습니다 — 주소에 적힌 배포로 그냥 씁니다.',
+      kind: 'openai',
+      base: 푼것.base,
+      auth: 고른것.auth,
+      models: [],
+      ms: 고른것.ms,
+      azure: true,
+      warn: 다막힘 && key
+        ? `배포 목록도 인증도 확인 못 했습니다 (해 본 방식마다 HTTP ${막힌것.map((x) => x.status).join('·')})`
+          + ' — 주소에 적힌 배포로 그냥 씁니다. 첫 한마디에서 걸리면 /model 로 인증 방식을 바꾸세요.'
+        : `배포 목록을 못 봤습니다 (HTTP ${고른것.status}) — 주소에 적힌 배포로 그냥 씁니다.`,
     };
   }
   return null;
@@ -129,8 +168,13 @@ export async function detect(input, key) {
     const 푼것 = 애저풀기(input);
     tried.push(푼것?.목록주소 ?? String(input));
     const hit = await tryAzure(input, key);
-    if (hit) return { ...hit, tried };
-    return { kind: null, tried, why: 'Azure 주소로 보이는데 배포를 못 찾았습니다 — 주소에 /openai/deployments/<배포이름> 까지 넣어 보세요.' };
+    if (hit?.kind) return { ...hit, tried };
+    // 못 붙은 이유를 tryAzure 가 알고 있으면 그 말을 쓴다. 우리가 아는 것보다 정확하다.
+    return {
+      kind: null,
+      tried,
+      why: hit?.why ?? 'Azure 주소로 보이는데 배포를 못 찾았습니다 — 주소에 /openai/deployments/<배포이름> 까지 넣어 보세요.',
+    };
   }
 
   // Ollama 를 먼저 본다 — 로컬이면 대개 이쪽이고 확인이 빠르다.

@@ -1,5 +1,6 @@
 // 첫 실행 마법사 + 진단 실행.
 import { c, say, rule, mark } from './ui/ansi.js';
+import { 주소가리기 } from './safety/secrets.js';
 import { ask, pick } from './ui/prompt.js';
 import { spin } from './ui/spinner.js';
 import { detect } from './backend/detect.js';
@@ -20,14 +21,22 @@ export function banner() {
 // 주소와 키를 받아 연결을 찾아낸다. 실패하면 null.
 async function connect(url, key) {
   const s = spin(`${url} 확인 중...`);
-  // 사용자가 방금 적어 넣은 주소다. 확인하는 동안만 문을 연다.
-  allowEndpoint(/^https?:\/\//i.test(url) ? url : 'http://' + url);
+  /*
+   * 사용자가 방금 적어 넣은 주소다. 확인하는 동안만 문을 연다.
+   *
+   * 스킴을 안 적었으면 **두 가지 다 열어 둔다.** 자리마다 기본으로 붙이는
+   * 스킴이 다르기 때문이다 — 로컬 서버를 찾는 쪽은 `http://` 를, Azure 쪽은
+   * `https://` 를 붙인다. 한쪽만 열어 두면 우리가 만든 주소를 우리 자물쇠가
+   * 막고, 화면에는 "허용되지 않은 주소" 만 뜬다. 여는 것은 사람이 적어 넣은
+   * 그 호스트 하나뿐이라 넓어지는 것이 아니다.
+   */
+  allowEndpoint(/^https?:\/\//i.test(url) ? url : [`http://${url}`, `https://${url}`]);
   const found = await detect(url, key);
   if (!found.kind) {
     s.stop(`  ${mark.no} ${c.red('연결 실패')}`);
     say('');
     say(`    시도한 주소:`);
-    for (const t of found.tried) say(`      ${c.gray(t.includes('?') ? t : t + '/models')}`);
+    for (const t of found.tried) say(`      ${c.gray(주소가리기(t.includes('?') ? t : `${t}/models`))}`);
     say('');
     say(`    ${c.gray('확인할 것 — 주소·포트가 맞는지, 프록시가 필요한지,')}`);
     say(`    ${c.gray('사내 인증서라면 NODE_EXTRA_CA_CERTS 환경변수가 필요합니다.')}`);
@@ -36,7 +45,8 @@ async function connect(url, key) {
   }
   const kindName = found.kind === 'ollama' ? `Ollama ${found.version ?? ''}`.trim() : 'OpenAI 호환';
   s.stop(`  ${mark.ok} ${c.green('연결됨')} ${c.gray(`${kindName} · ${found.ms}ms`)}`);
-  say(`    ${c.gray('주소')} ${found.base}`);
+  // 물음표 뒤에 열쇠를 싣는 앞단이 있다 (safety/secrets.js 의 주소가리기).
+  say(`    ${c.gray('주소')} ${주소가리기(found.base)}`);
   say(`    ${c.gray('인증')} ${found.auth === 'none' ? '없음' : found.auth}`);
   say(`    ${c.gray('모델')} ${found.models.length}개 발견`);
   if (found.warn) say(`    ${mark.warn} ${c.yellow(found.warn)}`);
@@ -72,6 +82,10 @@ export async function runProbe(conn, { out = null } = {}) {
 
 export async function runSetup() {
   banner();
+  // 설정에 적어 둔 api-version 을 **붙기 전에** 읽는다. load() 가 애저정하기()를
+  // 부른다. 이걸 뒤에서 하면 사내에서 판을 고정해 둔 곳이 확인만 GA판으로 하고,
+  // 문서에 적어 둔 대로 안 도는 셈이 된다.
+  load();
   say(`  ${c.gray('모델 연결을 설정합니다. 주소와 키만 있으면 됩니다.')}`);
   say('');
 
@@ -139,6 +153,7 @@ export async function runDiagnose(flags) {
   let conn;
 
   if (flags.url) {
+    load();      // 설정의 api-version 을 먼저 읽는다 (runSetup 과 같은 이유)
     const key = flags.key ?? process.env.DEEL_API_KEY ?? '';
     const found = await connect(flags.url, key);
     if (!found) return 1;
@@ -185,7 +200,7 @@ export async function showStatus() {
       p.think ? c.green('추론') : c.gray('추론'),
     ].join(c.gray('·'));
     say(`  ${c.bold(p.name)}  ${c.gray(p.model)}  ${caps}${here}`);
-    say(`    ${c.gray(p.baseUrl)}`);
+    say(`    ${c.gray(주소가리기(p.baseUrl))}`);
   }
   say('');
   say(`  ${c.gray('설정 파일')} ${configPath()}`);

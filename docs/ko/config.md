@@ -22,7 +22,10 @@
 | LM Studio | `http://localhost:1234/v1` |
 | llama.cpp · vLLM · LiteLLM | `http://호스트:포트/v1` |
 
-인증도 자동으로 맞춥니다 — `Authorization: Bearer` → `x-api-key` → `api-key`(Azure 계열) → 인증 없음.
+인증도 자동으로 맞춥니다 — `Authorization: Bearer` → `x-api-key` → `api-key` → 인증 없음.
+Azure 주소는 순서가 다릅니다: `api-key` → `Bearer` → 인증 없음 (`x-api-key` 는 안 씁니다).
+**해 본 방식 중 하나가 되면 그것으로 정합니다** — 첫 401 에서 멈추지 않습니다. Azure 앞단을
+Entra ID 로 감싼 곳은 `api-key` 에 401 을 주고 `Bearer` 를 받기 때문입니다.
 
 ### Azure OpenAI
 
@@ -37,8 +40,13 @@ Azure 는 OpenAI 호환이라면서 **주소 모양만 다릅니다.** 모델 �
 사내에서 판을 고정해 뒀다면 설정 파일의 `"apiVersion"` 이나 환경변수
 `DEEL_AZURE_API_VERSION` 으로 바꾸세요.
 
+APIM 같은 앞단에 한 겹 아래로 매달아 둔 주소(`https://apim.사내/azure-openai/openai/...`)도
+그 앞길을 그대로 지킵니다.
+
 배포 목록은 권한이 따로라 막아 둔 곳이 많습니다. 목록을 못 받아도 **연결 실패로 치지
 않습니다** — 주소에 배포 이름이 있으면 그것으로 그냥 붙고, 못 본 것은 못 봤다고 적습니다.
+다만 서버에서 **아무 대답도 못 받으면** 그건 연결 실패로 칩니다. 포트가 닫혔거나 VPN 이
+안 올라온 것을 "목록만 못 봤다" 로 넘기면, 초록색 화면을 믿고 엉뚱한 데를 뒤지게 됩니다.
 Azure 는 컨텍스트 길이를 API 로 알려주지 않으므로 그 값은 `/ctx` 나 설정에서 직접 넣으세요.
 
 ### 환경변수

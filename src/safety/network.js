@@ -61,10 +61,23 @@ const gate = {
   enforced: true,
 };
 
-/** 모델 연결 주소를 허용 목록에 올린다. 이전에 올린 것은 지운다. */
+/*
+ * 모델 연결 주소를 허용 목록에 올린다. **이전에 올린 것은 지운다.**
+ *
+ * 여럿을 한 번에 줄 수 있다. 다만 그건 "하나씩 더 쌓는" 길이 아니다 — 부르는
+ * 쪽이 지금 열려 있어야 할 것 **전부**를 한 번에 말하는 것이다. 쌓는 길을
+ * 내주면 여기저기서 한 줄씩 더하다가 자물쇠가 자물쇠가 아니게 된다.
+ *
+ * 여럿이 필요한 자리는 하나다. 사람이 스킴을 안 적은 주소를 넣었을 때,
+ * 자리마다 기본으로 붙이는 스킴이 달라서(로컬은 http, Azure 는 https) 둘 다
+ * 열어 둬야 우리가 만든 주소를 우리 자물쇠가 막지 않는다. 호스트는 사람이
+ * 적어 넣은 그 하나뿐이라 넓어지는 것이 아니다.
+ */
 export function allowEndpoint(baseUrl) {
   gate.allow.clear();
-  if (baseUrl) gate.allow.add(originOf(baseUrl));
+  for (const u of Array.isArray(baseUrl) ? baseUrl : [baseUrl]) {
+    if (u) gate.allow.add(originOf(u));
+  }
   return [...gate.allow];
 }
 

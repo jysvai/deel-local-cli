@@ -2395,6 +2395,19 @@ async function 서버모델들(conn) {
     const r = await req(`${conn.base.replace(/\/v1\/?$/, '')}/api/tags`, { timeout: 4000 });
     return (r.json?.models ?? []).map((m) => m.name ?? m.model).filter(Boolean);
   }
+  /*
+   * Azure 는 모델 목록이 `/models` 가 아니라 `/openai/deployments` 에 있다.
+   * 여기를 안 고쳐 두면 `/model` 로 배포를 바꾸려는 순간
+   * `.../deployments/gpt-4o?api-version=2024-10-21/models` 를 두드리고 404 다 —
+   * 붙는 길만 고치고 바꾸는 길을 안 고치면 반쪽이다.
+   */
+  const { 애저인가, 애저풀기, 배포목록 } = await import('./backend/azure.js');
+  if (애저인가(conn.base)) {
+    const 푼것 = 애저풀기(conn.base);
+    const a = await req(푼것.목록주소, { headers: headersFor(conn.auth ?? 'none', conn.key), timeout: 4000 });
+    if (!a.ok) return null;
+    return 배포목록(a.json).map((m) => m.id);
+  }
   const r = await req(`${conn.base.replace(/\/$/, '')}/models`, {
     headers: headersFor(conn.auth ?? 'none', conn.key), timeout: 4000,
   });

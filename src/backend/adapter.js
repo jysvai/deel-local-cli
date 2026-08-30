@@ -15,12 +15,15 @@ export function endpoint(shape) {
  * `.../deployments/gpt-4o?api-version=2024-10-21/chat/completions` 가 되어
  * 경로도 판도 다 망가진다. 물음표가 없는 보통 주소는 하던 그대로다.
  */
+export function 주소붙이기(base, 길) {
+  const b2 = String(base ?? '');
+  const i = b2.indexOf('?');
+  if (i < 0) return b2 + 길;
+  return b2.slice(0, i).replace(/\/+$/, '') + 길 + b2.slice(i);
+}
+
 export function 요청주소(conn) {
-  const base = String(conn?.base ?? '');
-  const 길 = endpoint(conn?.kind);
-  const i = base.indexOf('?');
-  if (i < 0) return base + 길;
-  return base.slice(0, i).replace(/\/+$/, '') + 길 + base.slice(i);
+  return 주소붙이기(conn?.base, endpoint(conn?.kind));
 }
 
 export function buildBody(shape, { model, messages, tools, stream, json, think, maxTokens = 4096, ctx = null }) {

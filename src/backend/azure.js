@@ -45,12 +45,20 @@ export function 판되돌리기() { 정한판 = 기본판; return 정한판; }
 // Azure 가 쓰는 호스트들. 포털이 주는 이름이 서비스마다 다르다.
 const 애저호스트 = /\.(openai\.azure\.com|cognitiveservices\.azure\.com|services\.ai\.azure\.com)$/i;
 
-/** 이 주소가 Azure 인가. 호스트로 보고, 아니면 경로 모양으로 본다. */
+/*
+ * 이 주소가 Azure 인가. 호스트로 보고, 아니면 경로 모양으로 본다.
+ *
+ * 단, 주소가 이미 `/v1` 로 끝나면 **Azure 로 다루지 않는다.**
+ * Azure 자원에도 OpenAI 규격 그대로인 `/openai/v1` 창구가 있고, 그 주소를
+ * 넣는 사람이 있다. 그것까지 배포 주소로 바꾸려 들면 되던 것이 안 된다 —
+ * 사람은 어제까지 되던 주소가 왜 갑자기 안 되는지 알 길이 없다.
+ */
 export function 애저인가(input) {
   const s = String(input ?? '').trim();
   if (!s) return false;
   const u = 뜯기(s);
   if (!u) return /\/openai\/deployments(\/|\?|$)/i.test(s);
+  if (/\/v\d+\/?$/.test(u.pathname)) return false;
   return 애저호스트.test(u.hostname) || /\/openai\/deployments(\/|$)/i.test(u.pathname);
 }
 
@@ -82,21 +90,46 @@ export function 애저풀기(input) {
   const i = 조각.findIndex((x) => x.toLowerCase() === 'deployments');
   // `/openai/deployments/<배포>` 뒤에 붙은 `chat/completions` 같은 것은 버린다 —
   // 우리가 다시 붙일 것이라, 두 번 붙으면 404 가 된다.
-  const 배포 = i >= 0 && 조각[i + 1] ? decodeURIComponent(조각[i + 1]) : null;
+  const 배포 = i >= 0 && 조각[i + 1] ? 풀어보기(조각[i + 1]) : null;
+
+  /*
+   * `openai/deployments` **앞에 붙은 길은 지킨다.**
+   *
+   * 사내에서 Azure 를 그대로 열어 주는 곳은 드물다. APIM 같은 앞단을 하나 두고
+   * `https://apim.사내/azure-openai/openai/deployments/...` 처럼 한 겹 아래에
+   * 매단다. 그 앞머리를 버리고 호스트 바로 밑에 다시 붙이면, 사람이 정확히
+   * 옮겨 적은 주소가 우리 손에서 틀린 주소가 된다. 그러고는 404 만 돌아온다.
+   */
+  const 앞머리 = i >= 1 && 조각[i - 1].toLowerCase() === 'openai' ? 조각.slice(0, i - 1) : [];
+  const 앞길 = 앞머리.length ? `/${앞머리.join('/')}` : '';
 
   const origin = `${u.protocol}//${u.host}`;
   return {
     origin,
+    앞길,
     배포,
     판,
-    base: 배포 ? `${origin}/openai/deployments/${encodeURIComponent(배포)}?api-version=${encodeURIComponent(판)}` : null,
-    목록주소: `${origin}/openai/deployments?api-version=${encodeURIComponent(판)}`,
+    base: 배포 ? 애저base(origin, 배포, 판, 앞길) : null,
+    목록주소: `${origin}${앞길}/openai/deployments?api-version=${encodeURIComponent(판)}`,
   };
 }
 
-/** 배포 이름 하나로 쓸 주소를 만든다. */
-export function 애저base(origin, 배포, 판 = 정한판) {
-  return `${String(origin).replace(/\/+$/, '')}/openai/deployments/${encodeURIComponent(배포)}?api-version=${encodeURIComponent(판)}`;
+/*
+ * 퍼센트 인코딩이 망가진 조각을 만나도 안 죽는다.
+ *
+ * `decodeURIComponent('100%')` 는 URIError 를 던진다. 그 자리가 프로그램의
+ * 제일 바깥이라, 사람은 `오류 URI malformed` 한 줄만 보고 무엇을 잘못
+ * 넣었는지 알 수 없다. 못 풀면 적힌 그대로 쓴다.
+ */
+function 풀어보기(s) {
+  try { return decodeURIComponent(s); }
+  catch { return s; }
+}
+
+/** 배포 이름 하나로 쓸 주소를 만든다. 앞단에 매달려 있으면 그 앞길도 지킨다. */
+export function 애저base(origin, 배포, 판 = 정한판, 앞길 = '') {
+  return `${String(origin).replace(/\/+$/, '')}${앞길}/openai/deployments/${encodeURIComponent(배포)}`
+    + `?api-version=${encodeURIComponent(판)}`;
 }
 
 /**

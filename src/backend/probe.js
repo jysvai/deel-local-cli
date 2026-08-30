@@ -7,6 +7,7 @@
 import { req, headersFor, serverMessage } from './http.js';
 import { probeCtx } from './ctxsize.js';
 import { 눈검사메시지 } from './vision.js';
+import { 주소붙이기 } from './adapter.js';
 
 const READ_TOOL = {
   type: 'function',
@@ -69,7 +70,17 @@ export async function probe(conn, onStep = () => {}) {
   const { kind: shape, base, auth, model } = conn;
   const key = conn.key ?? '';
   const H = () => headersFor(auth, key);
-  const url = (p) => `${base}${p}`;
+  /*
+   * 물음표 뒤를 끝에 남겨야 한다 (adapter.js 의 주소붙이기).
+   *
+   * 이 한 줄이 예전에 `${base}${p}` 였다. Azure base 에는 `?api-version=` 이
+   * 붙어 있어서, 그대로 이으면
+   * `.../deployments/gpt-4o?api-version=2024-10-21/chat/completions` 가 된다.
+   * 그러면 **설치 화면이 제 검사에 통째로 실패한다** — 기본 대화가 안 되니
+   * 나머지 일곱 칸이 다 '확인 불가' 로 건너뛰어지고, 프로필에는 스트리밍도
+   * 도구 호출도 안 된다고 적힌다. 붙기는 붙는데 반쪽짜리로 붙는다.
+   */
+  const url = (p) => 주소붙이기(base, p);
   const results = [];
   const facts = { shape, base, auth, model };
 

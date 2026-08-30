@@ -1,5 +1,6 @@
 // 대화 화면. 루프가 보내는 이벤트를 Claude Code 풍으로 그린다.
 import { createInterface, emitKeypressEvents } from 'node:readline';
+import { 주소가리기 } from './safety/secrets.js';
 import { homedir } from 'node:os';
 import { resolve, basename } from 'node:path';
 import { c, say as 바로쓰기, mark, clip } from './ui/ansi.js';
@@ -271,7 +272,7 @@ export async function chatLoop(opts = {}) {
     }
   }
   if (!store) store = new Store(root);
-  store.begin({ model: conn.model, base: conn.base, root });
+  store.begin({ model: conn.model, base: 주소가리기(conn.base), root });
   try { prune(root); } catch {}
 
   /*
@@ -988,7 +989,7 @@ export async function chatLoop(opts = {}) {
    * 대화 갈래. 연결·도구·되돌리기는 같이 쓰고 오간 말만 여러 벌 갖는다.
    * 갈래마다 저장 파일을 따로 열어서, 나중에 `/sessions` 로 각각 찾아갈 수 있다.
    */
-  ctx.갈래 = new Threads(session, ctx, () => new Store(root).begin({ model: conn.model, base: conn.base, root }), store);
+  ctx.갈래 = new Threads(session, ctx, () => new Store(root).begin({ model: conn.model, base: 주소가리기(conn.base), root }), store);
 
   // ── 컨텍스트 길이를 모델에서 긁어온다 ─────────────────────────────────
   //

@@ -196,6 +196,38 @@ export function 아는열쇠(것들) {
   return out.sort((a, b) => b.length - a.length);
 }
 
+/*
+ * 주소에 실린 자격증명을 가린다.
+ *
+ * 게이트웨이 주소는 화면·진단 보고서·대화 기록 파일에 그대로 적힌다. 보통은
+ * 그래도 되는데, 물음표 뒤에 열쇠를 싣는 앞단이 있다 —
+ * Azure API Management 는 `?subscription-key=`, Azure Functions 앞단은
+ * `?code=` 로 받는다. 사람이 포털에서 복사한 주소를 그대로 넣으라고 우리가
+ * 권하고 있으니, 그런 주소가 들어오는 것은 예외가 아니라 예정된 일이다.
+ *
+ * 그래서 물음표 뒤의 **값은 전부** 가린다. 이름은 남긴다 — 어떤 것이 붙어
+ * 있는지는 사람이 봐야 하고, 이름만으로는 아무것도 못 연다.
+ *
+ * 예외를 두지 않는다. `api-version` 만 남기고 나머지를 가리는 식으로 목록을
+ * 관리하기 시작하면, 새로 나온 이름 하나가 조용히 평문으로 새어 나간다.
+ */
+export function 주소가리기(주소) {
+  const s = String(주소 ?? '');
+  const i = s.indexOf('?');
+  if (i < 0) return s;
+  const 앞 = s.slice(0, i);
+  const 뒤 = s.slice(i + 1);
+  const 가린 = 뒤.split('&').map((쌍) => {
+    const j = 쌍.indexOf('=');
+    if (j < 0) return 쌍;
+    const 이름 = 쌍.slice(0, j);
+    // 판 번호는 비밀이 아니고, 이게 안 보이면 무엇이 잘못됐는지 알 수 없다.
+    if (/^api-version$/i.test(이름)) return 쌍;
+    return `${이름}=«가림»`;
+  }).join('&');
+  return `${앞}?${가린}`;
+}
+
 /**
  * 이 도구의 결과를 가려도 되는가.
  *
