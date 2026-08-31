@@ -58,6 +58,7 @@ const FILES = [
   'resize.test.js',
   'promptlang.test.js',
   'paste.test.js',
+  'pastechip.test.js',
   'ctxsize.test.js',
   'cli.test.js',
   'oneshot.test.js',

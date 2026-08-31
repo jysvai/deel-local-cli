@@ -36,6 +36,7 @@ import { explain, shows as levelShows } from './ui/level.js';
 import { 고르기 as 승인고르기, 다음 as 승인다음 } from './ui/approve.js';
 import { 추천, 채울글 } from './ui/complete.js';
 import { 접어쓰기 } from './ui/wrap.js';
+import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들 } from './ui/pastechip.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { renderDiff, shortStat } from './ui/diff.js';
 import { expand as expandMentions } from './agent/mention.js';
@@ -448,6 +449,21 @@ export async function chatLoop(opts = {}) {
   // 붙여넣는 중인가 (bracketed paste). 키 처리와 'line' 이 같이 본다.
   let 붙여넣는중 = false;
 
+  /*
+   * ── 붙여넣은 덩이를 접어 둔다 ────────────────────────────────────────
+   *
+   * 상자에 남는 것은 `[붙여넣기 #1 · 47줄 · 2.1KB]` 한 줄이고, 원문은
+   * 여기 그대로 있다가 보낼 때 되돌아간다. 왜 접는지는 pastechip.js 에.
+   *
+   * 접기 전 화면이 어디까지였는지도 같이 적어 둔다. 붙여넣기는 커서
+   * 자리에 끼어 들어오므로, 무엇이 새로 온 것인지는 시작 표를 받은
+   * 순간을 기억해 두어야만 안다.
+   */
+  const 붙인것들 = new Map();
+  let 붙임번호 = 0;
+  let 붙임앞줄수 = 0;
+  let 붙임앞입력 = '';
+
   /** 줄을 쌓아 두고 "다음 줄" 이라고 알린다. 백틱 표시와 Alt+Enter 가 같이 쓴다. */
   const 줄쌓기 = (줄) => {
     const 첫줄 = 이어쓰기줄들 === null;
@@ -544,8 +560,22 @@ export async function chatLoop(opts = {}) {
         화면.대기갱신('', queue.length + 1);
       }
     }
-    if (waiter) { const w = waiter; waiter = null; w(보낼것); }
-    else queue.push(보낼것);
+    /*
+     * ── 접어 둔 붙여넣기를 여기서 편다 ──────────────────────────────────
+     *
+     * 화면에 남는 것과 모델에게 가는 것이 여기서만 일부러 다르다. 화면에는
+     * `[붙여넣기 #1 · 47줄 · 2.1KB]` 이 남고, 모델에게는 그 47줄이 그대로
+     * 간다. 표가 무엇을 담고 있었는지를 말해 주므로 나중에 스크롤을 올려도
+     * 무엇을 시켰는지 알아볼 수 있다.
+     *
+     * 펴는 자리는 여기 한 군데다. 미리 쳐 둔 것이든 기다리다 보낸 것이든
+     * 결국 이 줄을 지나가므로, 여기서 펴면 어느 길로 와도 원문이 간다.
+     */
+    const 펴진것 = 붙임펼치기(보낼것, 붙인것들);
+    // 다 쓴 것은 치운다. 안 치우면 대화가 길어질수록 붙인 원문이 계속 쌓인다.
+    for (const 번호 of 붙임쓴번호들(보낼것)) 붙인것들.delete(번호);
+    if (waiter) { const w = waiter; waiter = null; w(펴진것); }
+    else queue.push(펴진것);
   });
   rl.on('close', () => {
     closed = true;
@@ -607,11 +637,53 @@ export async function chatLoop(opts = {}) {
     process.on('exit', () => { try { process.stdout.write('\x1b[?2004l'); } catch { /* 이미 닫혔다 */ } });
 
     process.stdin.on('keypress', (_ch, key) => {
-      if (key?.sequence === '\x1b[200~') { 붙여넣는중 = true; return; }
+      if (key?.sequence === '\x1b[200~') {
+        붙여넣는중 = true;
+        붙임앞줄수 = 이어쓰기줄들?.length ?? 0;
+        붙임앞입력 = rl.line ?? '';
+        return;
+      }
       if (key?.sequence === '\x1b[201~') {
         붙여넣는중 = false;
-        // 쌓인 것이 몇 줄인지 보여 준다. 안 보이면 사라진 줄 알고 다시 붙인다.
-        if (이어쓰기줄들?.length && 입력기다림) {
+        /*
+         * 이번에 들어온 것만 골라낸다.
+         *
+         * 붙여넣기에 줄바꿈이 있었으면 readline 이 줄마다 'line' 을 쐈고,
+         * 그 줄들은 붙임앞줄수 뒤에 쌓여 있다. 마지막 조각은 아직 입력칸에
+         * 남아 있다. 그리고 붙이기 전에 치고 있던 글(앞머리)은 **첫 줄
+         * 앞에 붙어서** 같이 나갔으므로 떼어 내야 한다.
+         *
+         * 커서를 글 가운데 두고 붙이면 어디까지가 붙인 것인지 가릴 수
+         * 없다. 그때는 접지 않는다 — 접기는 되돌릴 수 있어야 하고, 잘못
+         * 가른 접기는 못 되돌린다.
+         */
+        const 새줄들 = (이어쓰기줄들 ?? []).slice(붙임앞줄수);
+        const 지금입력 = rl.line ?? '';
+        const 앞머리 = 붙임앞입력;
+        let 붙인줄들 = null;
+        if (새줄들.length) {
+          if (!앞머리 || 새줄들[0].startsWith(앞머리)) {
+            붙인줄들 = [새줄들[0].slice(앞머리.length), ...새줄들.slice(1), 지금입력];
+          }
+        } else if (지금입력.startsWith(앞머리)) {
+          붙인줄들 = [지금입력.slice(앞머리.length)];
+        }
+        const 붙인것 = 붙인줄들 ? 펴기(붙인줄들.join('\n')) : '';
+        const 폭 = Math.max(20, (process.stdout.columns ?? 80) - 8);
+
+        if (붙인줄들 && 입력기다림 && 묻는중 === null && 붙임접을까(붙인것, { 폭 })) {
+          const 번호 = ++붙임번호;
+          붙인것들.set(번호, 붙인것);
+          이어쓰기줄들 = 붙임앞줄수 ? (이어쓰기줄들 ?? []).slice(0, 붙임앞줄수) : null;
+          if (이어쓰기줄들 === null) 이어쓴것 = false;
+          const 표 = 붙임표(번호, 붙인것);
+          rl.line = 앞머리 + 표;
+          rl.cursor = rl.line.length;
+          화면.입력지움();
+          say(`  ${c.gray(`${표} — 접어 뒀습니다. 보낼 때 그대로 펴집니다.`)}`);
+        } else if (이어쓰기줄들?.length && 입력기다림) {
+          // 접지 않은 덩이는 몇 줄인지라도 알려 준다. 안 보이면 사라진 줄
+          // 알고 다시 붙인다.
           화면.입력지움();
           say(`  ${c.gray(`${이어쓰기줄들.length + 1}줄을 붙여넣었습니다 — Enter 로 한 번에 보냅니다`)}`);
         }
