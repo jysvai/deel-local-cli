@@ -194,6 +194,8 @@ export function checkCommand(cmd) {
 export function checkPaths(cmd, scope) {
   if (!scope) return true;
   for (const t of 경로낱말(String(cmd))) {
+    // 자료가 아닌 자리는 울타리를 안 묻는다 (봐주는자리 머리말).
+    if (봐주는자리(t)) continue;
     let abs;
     try { abs = scope.resolve(t); }
     catch (e) {
@@ -280,6 +282,65 @@ export function 코드조각인가(낱말) {
     try { return !existsSync(낱말); } catch { return true; }
   }
   return false;
+}
+
+/*
+ * ── 울타리 밖이지만 막을 까닭이 없는 자리 ───────────────────────────────
+ *
+ * 울타리는 **사람의 자료**를 지키려고 있다. 그런데 두 가지가 자료가 아닌데도
+ * 같이 막혀서, 모델이 할 수 있는 일을 못 하게 만들고 있었다.
+ *
+ *   ▶ Bash(soffice --convert-to txt 보고서.pptx > /dev/null 2>&1)
+ *     └ 막힘 — 작업 범위 밖입니다: /dev/null
+ *   ▶ Bash(ls -l /usr/bin/strings)
+ *     └ 막힘 — 작업 범위 밖입니다: /usr/bin/strings
+ *
+ * 앞엣것은 **아무것도 저장되지 않는 자리**다. `2>/dev/null` 은 셸 명령 절반이
+ * 달고 다니는데, 그 한 조각 때문에 명령 전체가 거절됐다. 뒤엣것은 **이 PC 에
+ * 무엇이 깔렸는지 보는 것**이다. 그걸 못 보면 모델은 우회로를 못 찾는다 —
+ * 못 읽는 문서를 만났을 때 변환기가 있는지조차 확인할 수 없다.
+ *
+ * 실제로 그래서 헛돌았다. 문서를 못 읽었고, 변환하려니 막혔고, 남은 길이
+ * 없으니 같은 문을 계속 두드렸다. 1.5.8 에서 한 번 겪은 것과 같은 모양인데
+ * 그때는 걸린 명령 하나만 풀고 같은 갈래를 안 훑었다.
+ *
+ * **넓히는 것은 이 둘뿐이다.** 남의 홈 · /etc · /var · /tmp 는 그대로 막는다.
+ * 프로그램이 든 폴더는 자료가 아니고, 거기 쓰는 것은 어차피 OS 가 막는다.
+ */
+const 버리는자리 = new Set([
+  '/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty',
+  'nul', 'nul:', '\\\\.\\nul',            // 윈도우
+]);
+
+/**
+ * 프로그램이 사는 자리. 자료가 아니라 실행파일이다.
+ *
+ * **전부 소문자로 적는다** — 견줄 때 소문자로 낮춰서 보기 때문이다.
+ * `/Applications` 처럼 대문자를 섞어 적으면 그 줄만 조용히 안 걸린다.
+ */
+const 프로그램자리 = [
+  '/bin', '/sbin', '/usr/bin', '/usr/sbin', '/usr/libexec',
+  '/usr/local/bin', '/usr/local/sbin',
+  '/opt/homebrew/bin', '/opt/homebrew/sbin', '/opt/local/bin',
+  '/snap/bin', '/applications',           // 맥은 앱 꾸러미 안에 실행파일이 있다
+  'c:/windows', 'c:/program files', 'c:/program files (x86)',
+];
+
+/**
+ * 이 경로는 울타리를 안 물어도 되는 자리인가.
+ *
+ * @returns {string|null} 봐 주는 까닭. 아니면 null
+ */
+export function 봐주는자리(경로) {
+  const p = String(경로 ?? '').replace(/\\/g, '/');
+  const 낮춤 = p.toLowerCase().replace(/\/+$/, '');
+  if (버리는자리.has(낮춤)) return '아무것도 저장되지 않는 자리';
+  // 한 칸 아래까지만 본다. `/usr/bin/strings` 는 되고 `/usr/bin/../../Users/남` 은
+  // 여기 오기 전에 resolve 로 펴져서 이 목록에 안 걸린다.
+  for (const 자리 of 프로그램자리) {
+    if (낮춤 === 자리 || 낮춤.startsWith(`${자리}/`)) return '프로그램이 있는 자리';
+  }
+  return null;
 }
 
 /** 명령줄에서 경로처럼 보이는 낱말만 골라낸다. */

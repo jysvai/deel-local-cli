@@ -306,6 +306,79 @@ trace('4.5-그림이박힌파일읽기');
   check('작은 그림은 그대로 둔다', 작은것.몇개 === 0, `${작은것.몇개}개 줄임`);
 }
 
+trace('4-2-안보여준것을지우게두지않는다');
+
+// ── 안 보여 준 그림을 모델이 지우게 두지 않는다 ─────────────────────────
+//
+// 위 줄이기는 **읽을 때만** 그림을 뺀다. 파일은 그대로다. 그런데 그 다음이
+// 문제였다 — 모델은 그렇게 받은 글을 손봐서 Write 로 통째로 덮어쓴다. 제가
+// 못 본 그림은 새 내용에 없으니 **사용자 파일에서 그림이 사라진다.**
+//
+//   ◧ Read(보고서.html)   1425줄 · 그림 8.0MB 생략
+//   ◈ Write(보고서.html)  1420줄        ← 8MB 짜리 그림 일곱 개가 여기서 없어진다
+//
+// 오류도 없고 화면도 멀쩡하다. 파일을 열어 봐야 안다 — 그림이 있던 자리에
+// 깨진 아이콘만 남는다. 몇 주 뒤에 알아채면 되돌릴 방법도 없다.
+//
+// 안 보여 준 것에 대한 책임은 우리에게 있다. 모델은 있는 줄 몰랐던 것을
+// 지킬 수 없다. 그래서 재는 것은 **파일이 바이트 하나까지 그대로인가** 다.
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-img-'));
+  const 파일 = join(방, '보고서.html');
+  const 그림태그 = (n) => `<img src="data:image/png;base64,${'A'.repeat(n)}">`;
+  const 원본 = `<html>\n<h1>분기 보고</h1>\n${그림태그(3000)}\n${그림태그(3000)}\n<p>끝</p>\n</html>`;
+  writeFileSync(파일, 원본, 'utf8');
+  const 원래바이트 = readFileSync(파일).length;
+
+  const c = {
+    scope: makeScope(방), history: new History(방), audit: new Audit(방),
+    seen: new Set(), 모델컨텍스트: 200000, enc: new Map(),
+  };
+
+  const 읽은것 = await TOOLS.Read.run({ file_path: '보고서.html' }, c);
+  check('준비: 읽을 때 그림이 빠진다', /생략/.test(읽은것.summary), 읽은것.summary);
+
+  // ① 모델이 **본 대로** 되쓴다 — 생략 표시가 그대로 들어간 채로.
+  const 본대로 = 읽은것.content.split('\n')
+    .filter((l) => /^\s*\d+\t/.test(l)).map((l) => l.replace(/^\s*\d+\t/, '')).join('\n');
+  const 쓴것1 = await TOOLS.Write.run(
+    { file_path: '보고서.html', content: 본대로.replace('분기 보고', '2분기 보고') }, c,
+  );
+  check('★ 생략 표시를 되쓰면 막는다', !!쓴것1.error, JSON.stringify(쓴것1).slice(0, 90));
+  check('몇 개를 잃는지 숫자로 말한다', /그림 2개 중 2개/.test(쓴것1.error ?? ''), (쓴것1.error ?? '').split('\n')[0]);
+  check('자리 표시라는 것을 알려 준다', /자리 표시/.test(쓴것1.error ?? ''), (쓴것1.error ?? '').split('\n')[1] ?? '');
+  check('어떻게 하면 되는지 준다 (Edit)', /Edit/.test(쓴것1.error ?? ''), '');
+
+  // ② 모델이 img 줄을 **통째로 지우고** 쓴다. 이쪽이 더 흔하고, 생략 표시도 없다.
+  const 쓴것2 = await TOOLS.Write.run(
+    { file_path: '보고서.html', content: '<html>\n<h1>2분기 보고</h1>\n<p>끝</p>\n</html>' }, c,
+  );
+  check('★ img 줄을 지우고 써도 막는다 (표시가 없어도 개수로 잡는다)', !!쓴것2.error,
+    JSON.stringify(쓴것2).slice(0, 90));
+
+  check('★ 파일이 바이트 하나까지 그대로다', readFileSync(파일).length === 원래바이트,
+    `${원래바이트} → ${readFileSync(파일).length}`);
+
+  /*
+   * ★ 반대쪽. 그림을 그대로 들고 오면 통과해야 한다.
+   *
+   * 이걸 같이 안 재면 Write 를 통째로 막아 놓고도 위가 전부 초록이 된다.
+   */
+  const 쓴것3 = await TOOLS.Write.run(
+    { file_path: '보고서.html', content: 원본.replace('분기 보고', '3분기 보고') }, c,
+  );
+  check('★ 그림을 그대로 들고 오면 쓴다', !쓴것3.error, JSON.stringify(쓴것3).slice(0, 90));
+  check('실제로 고쳐졌다', readFileSync(파일, 'utf8').includes('3분기 보고'));
+  check('그림도 그대로 남았다', readFileSync(파일, 'utf8').split('base64,').length - 1 === 2);
+
+  // 그림이 없던 파일은 이 검사에 안 걸린다. 평범한 덮어쓰기가 막히면 안 된다.
+  writeFileSync(join(방, '그냥.txt'), '한 줄\n두 줄\n', 'utf8');
+  const 쓴것4 = await TOOLS.Write.run({ file_path: '그냥.txt', content: '바뀐 줄\n' }, c);
+  check('★ 그림 없는 파일은 그냥 덮어쓴다', !쓴것4.error, JSON.stringify(쓴것4).slice(0, 90));
+
+  rmSync(방, { recursive: true, force: true });
+}
+
 trace('5-치움');
 resetNet();
 

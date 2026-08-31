@@ -320,11 +320,30 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 여기까지 오지 않는다 — 막히는 것은 글로 되묻고 턴을 닫는 쪽뿐이다.
    */
   let 민적 = false;
+  /*
+   * 인사에는 안 민다.
+   *
+   * 「안녕」 한 마디에 모델이 "안녕하세요! 무엇을 도와드릴까요?" 라고 답하면
+   * 그건 **맞는 답**이다. 그런데 그 말이 되묻는말에 걸려서 되밀렸다 —
+   *
+   *   ❯ 안녕
+   *     ▌ 안녕하세요! 무엇을 도와드릴까요?
+   *     ↺ 읽기만 하고 끝내려고 해서 한 번 되밀었습니다
+   *     ▌ 안녕하세요! 반갑습니다.
+   *     ── 6.8초
+   *
+   * 인사 한 마디에 모델을 두 번 부른다. 로컬 모델에서 그 왕복이 6.8초다.
+   * 되밀기는 「시킨 일을 안 하고 되돌려준」 자리를 잡으라고 만든 것인데,
+   * 인사는 시킨 일이 없다. 시킨 것이 없으면 안 한 것도 없다.
+   */
+  const 인사인가 = /^(안녕[가-힣]*|반(가|갑)[가-힣]*|하이|ㅎㅇ+|헬로[우가-힣]*|고마[가-힣]*|감사[가-힣]*|수고[가-힣]*|hi|hello|hey|yo|thanks?|thank you|테스트|test|ok(ay)?|네|응)[\s!.~?ㅎㅋ,]*$/i
+    .test(String(userText ?? '').trim());
   const 되묻는말 = /무엇을\s*도와|무엇을\s*해\s*드릴|원하시는\s*(작업|것)|어떤\s*(작업|것)\s*(을|부터)|말씀해\s*주세요|알려\s*주세요|지시해\s*주세요|어떻게\s*할까요|해\s*드릴까요|진행할까요|what would you like|how can i (help|assist)|let me know (what|which|how)|shall i\b|would you like me to/i;
 
   /** 이번 답을 되밀까. 밀 이유를 돌려주고, 아니면 null. */
   const 밀어줄까 = (글) => {
     if (민적 || 깊이) return null;
+    if (인사인가) return null;                            // 시킨 것이 없으면 안 한 것도 없다
     if (손댄파일.size) return null;                       // 뭐라도 바꿨으면 일은 한 것이다
     if (!모드.tools.includes('Write')) return null;         // 안 바꾸는 모드는 그게 맞다
     const 말 = String(글 ?? '').trim();
@@ -479,13 +498,36 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        */
       const full = Math.max(cap, fullCap(room));
       const 낮춘생각 = level === 'off' || level === 'low' ? level : shiftLevel(level, -1);
+      let 마지막상한 = cap;
       if (wasCut(msg) && (full > cap || 낮춘생각 !== level)) {
         yield {
           type: 'retry',
           why: full > cap ? '대답이 상한에서 잘렸습니다' : '대답이 잘렸습니다 — 생각을 줄여 자리를 냅니다',
           from: cap, to: full, think: 낮춘생각,
         };
+        마지막상한 = full;
         yield* askModel(full, 낮춘생각);
+      }
+
+      /*
+       * 우리가 할 수 있는 것을 다 했는데도 잘렸다 — 여기서 입을 다물면 안 된다.
+       *
+       * 상한도 올려 봤고 생각도 줄여 봤는데 여전히 잘렸으면, 남은 일은 사람
+       * 몫이다. 그런데 여태 그냥 조용히 끝냈다. 화면에는 중간에서 끊긴 답만
+       * 남는다 — 사람 눈에는 모델이 게을러서 대충 답한 것으로 보이니 같은 것을
+       * 다시 시키고, 같은 자리에서 또 잘린다. 몇 분씩 가는 로컬 모델에서
+       * 이 왕복은 비싸다.
+       *
+       * 안 되는 것은 **까닭과 손댈 자리를 같이** 말한다 (`/out`).
+       * 다시 부른 뒤에 보는 것이 중요하다. 부르기 전에 판정하면, 상한을 올려
+       * 멀쩡히 끝난 답에까지 경고가 붙는다 — 그러면 곧 아무도 안 읽는다.
+       */
+      if (wasCut(msg)) {
+        yield {
+          type: 'capped',
+          cap: 마지막상한,
+          정한값: conn.maxTokens ?? conn.maxOut ?? null,
+        };
       }
 
       /*

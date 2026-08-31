@@ -32,6 +32,7 @@ const FILES = [
   'ignore.test.js',
   'fastgrep.test.js',
   'commit.test.js',
+  'cap.test.js',
   'keystore.test.js',
   'azure.test.js',
   'vision.test.js',

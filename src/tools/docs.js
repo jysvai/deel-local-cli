@@ -56,6 +56,77 @@ export function looksOldHwp(경로, buf) {
   return buf.length >= 8 && buf.readUInt32LE(0) === 0xe011cfd0 && buf.readUInt32LE(4) === 0xe11ab1a1;
 }
 
+/*
+ * ── 겉과 속이 다를 때, 속이 무엇인지 말한다 ─────────────────────────────
+ *
+ * 여태는 이랬다 —
+ *
+ *   ◧ Read(보고서.pptx)
+ *     └ pptx 모양이 아닙니다 — 겉은 pptx 인데 속이 zip 꾸러미가 아닙니다.
+ *       깨졌거나 다른 형식입니다.
+ *
+ * 「깨졌거나 다른 형식」 은 **아무것도 안 알려 준다.** 깨진 것이면 할 일이
+ * 없고, 다른 형식이면 바꾸면 되는데 둘을 안 갈라 줬다. 그래서 모델은 같은
+ * 파일을 몇 번씩 다시 열어 봤다 — 답이 매번 같은데도.
+ *
+ * 앞 몇 바이트만 보면 무엇인지 거의 다 안다. 알면 길도 같이 줄 수 있다.
+ * 옛 hwp 안내(아래)가 이미 그렇게 하고 있었는데, 이쪽만 안 하고 있었다.
+ */
+const 서명들 = [
+  { 이름: '옛 Office 파일 (.ppt · .doc · .xls)', 바이트: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] },
+  { 이름: 'PDF', 바이트: [0x25, 0x50, 0x44, 0x46] },                     // %PDF
+  { 이름: 'RTF 문서', 바이트: [0x7b, 0x5c, 0x72, 0x74, 0x66] },           // {\rtf
+  { 이름: 'PNG 그림', 바이트: [0x89, 0x50, 0x4e, 0x47] },
+  { 이름: 'JPEG 그림', 바이트: [0xff, 0xd8, 0xff] },
+  { 이름: 'gzip 압축', 바이트: [0x1f, 0x8b] },
+  { 이름: '7z 압축', 바이트: [0x37, 0x7a, 0xbc, 0xaf] },
+  { 이름: 'RAR 압축', 바이트: [0x52, 0x61, 0x72, 0x21] },
+];
+
+/** 앞 몇 바이트로 정체를 짚는다. 모르면 null. */
+export function 속내용(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 2) return null;
+  for (const s of 서명들) {
+    if (s.바이트.every((b, i) => buf[i] === b)) return s.이름;
+  }
+  const 앞 = buf.subarray(0, 200).toString('latin1').trim().toLowerCase();
+  if (/^<(!doctype html|html|\?xml)/.test(앞)) return 앞.startsWith('<?xml') ? 'XML 글' : 'HTML 글';
+  // 남은 것이 전부 읽을 수 있는 글자면 그냥 글 파일이다.
+  const 이상한바이트 = buf.subarray(0, 512).filter((b) => b < 9 || (b > 13 && b < 32)).length;
+  if (!이상한바이트) return '그냥 글 파일';
+  return null;
+}
+
+/**
+ * 겉과 속이 다를 때 하는 말. **길을 같이 준다.**
+ *
+ * @param {string} 갈래  겉으로 본 갈래 (pptx · docx · hwpx)
+ * @param {string|null} 속  속내용() 이 짚은 것
+ */
+export function 겉속다름말(갈래, 속) {
+  const 머리 = `겉은 ${갈래} 인데 속이 다릅니다`;
+  if (!속) {
+    return `${머리} — 무엇인지 알아보지 못했습니다 (zip 꾸러미가 아닙니다).\n`
+      + '  파일이 깨졌을 수 있습니다. 이 파일로는 더 해 볼 것이 없으니 사용자에게 알리세요.';
+  }
+  if (속.startsWith('옛 Office')) {
+    return `${머리} — 실제로는 ${속} 입니다.\n`
+      + `  이름만 ${갈래} 로 바뀐 옛 형식이라 이 도구로는 못 읽습니다.\n`
+      + `  PowerPoint·Word 에서 열어 ${갈래} 로 다시 저장하거나,\n`
+      + `  soffice 가 깔려 있으면 soffice --headless --convert-to ${갈래} <파일> 로 바꾸세요.`;
+  }
+  if (속 === 'PDF') {
+    return `${머리} — 실제로는 PDF 입니다.\n`
+      + `  확장자만 ${갈래} 입니다. 파일 이름을 .pdf 로 바꿔서 Read 하면 그대로 읽힙니다.`;
+  }
+  if (속 === 'HTML 글' || 속 === 'XML 글' || 속 === '그냥 글 파일') {
+    return `${머리} — 실제로는 ${속} 입니다.\n`
+      + '  글 파일이라 확장자를 .txt 로 바꾸거나 그대로 Bash 로 읽을 수 있습니다.';
+  }
+  return `${머리} — 실제로는 ${속} 입니다.\n`
+    + `  ${갈래} 로 읽을 수 있는 파일이 아닙니다. 이 파일로는 더 해 볼 것이 없으니 사용자에게 알리세요.`;
+}
+
 /** 구형 hwp 를 만났을 때 하는 말. 길을 같이 준다. */
 export function 옛hwp안내(보인이름) {
   return `구형 hwp 형식이라 읽지 못합니다: ${보인이름}\n`
@@ -176,7 +247,7 @@ export function readDoc(경로또는버퍼) {
   }
   if (!갈래) return { ok: false, error: '어떤 문서인지 모르는 경로입니다' };
   if (!looksZip(buf)) {
-    return { ok: false, error: `${갈래} 모양이 아닙니다 — 겉은 ${갈래} 인데 속이 zip 꾸러미가 아닙니다. 깨졌거나 다른 형식입니다.` };
+    return { ok: false, error: 겉속다름말(갈래, 속내용(buf)), 끝났다: true };
   }
 
   let 꾸러미;

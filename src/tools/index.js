@@ -23,7 +23,7 @@ import { allow as allowedIn } from '../agent/modes.js';
 import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOldHwp, 옛hwp안내, 문서는못고침 } from './docs.js';
-import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽은말, pdf는못고침 } from './pdf.js';
+import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽은말, pdf는못고침, 한쪽도못읽음말 } from './pdf.js';
 import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
 import { 도구설명EN } from './desc.en.js';
@@ -121,6 +121,56 @@ export function 붙박이그림줄이기(줄들) {
       + ' 그 줄을 고쳐야 하면 생략된 자리를 뺀 앞뒤 짧은 조각으로 가리키세요.]'
     : '';
   return { 줄들: 나온것, 알림, 줄인바이트, 몇개 };
+}
+
+/*
+ * ── 안 보여 준 것을 지우게 두면 안 된다 ─────────────────────────────────
+ *
+ * 위 붙박이그림줄이기 는 **읽을 때만** 그림을 뺀다. 파일은 그대로다. 그런데
+ * 그 다음이 문제였다 — 모델은 그렇게 받은 글을 손봐서 Write 로 통째로 덮어쓴다.
+ * 그러면 제가 못 본 그림은 새 내용에 없다. **사용자 파일에서 그림이 사라진다.**
+ *
+ * 실제로 이렇게 났다 (사내 보고서 HTML):
+ *
+ *   ◧ Read(보고서.html)   1425줄 · 그림 8.0MB 생략
+ *   ◈ Write(보고서.html)  1420줄          ← 8MB 짜리 그림 일곱 개가 여기서 없어진다
+ *
+ * 오류는 없다. 화면도 멀쩡하다. 파일을 열어 봐야 안다 — 그림이 있던 자리에
+ * 깨진 아이콘만 남는다. 몇 주 뒤에 알아채면 되돌릴 방법도 없다.
+ *
+ * 안 보여 준 것에 대한 책임은 우리에게 있다. 모델은 최선을 다한 것이다 —
+ * 있는 줄 몰랐던 것을 지킬 수는 없다. 그러니 여기서 막는다.
+ *
+ * 세는 방식이 중요하다. **생략 표시가 있나** 로만 보면 모자란다. 모델이 그
+ * 줄을 통째로 지워 버리는 경우가 더 흔하고, 그때는 표시도 같이 사라진다.
+ * 그래서 **개수를 견준다** — 있던 것보다 줄었으면 잃은 것이다.
+ */
+export function 박힌그림수(글) {
+  return (String(글 ?? '').match(그림자리) ?? []).length;
+}
+
+/**
+ * 이 덮어쓰기가 박힌 그림을 잃게 하나.
+ *
+ * @returns {string|null} 막을 이유. 잃는 것이 없으면 null.
+ */
+function 그림잃나(abs, 새내용) {
+  if (!existsSync(abs)) return null;
+  let 옛것;
+  try { 옛것 = readTextFull(abs).text; } catch { return null; }
+  const 있던것 = 박힌그림수(옛것);
+  if (!있던것) return null;
+  const 남는것 = 박힌그림수(새내용);
+  if (남는것 >= 있던것) return null;
+
+  const 잃는것 = 있던것 - 남는것;
+  const 생략표시 = /…\([\d.]+\s*[KMG]?B 생략\)…/.test(새내용);
+  return `이 파일에 박혀 있는 그림 ${있던것}개 중 ${잃는것}개가 새 내용에 없습니다 — 덮어쓰면 사라집니다.\n`
+    + (생략표시
+      ? '  Read 가 보여준 「…(생략)…」 표시를 그대로 되쓰셨습니다. 그건 그림이 아니라 자리 표시입니다.\n'
+      : '  Read 는 그림 자리를 빼고 보여줍니다. 못 본 것이라 새로 쓸 때 빠진 것입니다.\n')
+    + '  통째로 덮어쓰지 말고 **Edit 으로 고칠 자리만** 바꾸세요. 그러면 그림은 파일에 그대로 남습니다.\n'
+    + '  정말 그림을 빼는 것이 목적이면 사용자에게 먼저 확인하세요.';
 }
 
 // 엑셀 파일에 쓰려 할 때 하는 말. 왜 안 되는지와, 그럼 어떻게 하는지를 같이 준다.
@@ -328,6 +378,19 @@ function pdf읽기(abs, ctx) {
   if (!r.ok) return { error: r.error };
   const { text, 잘림 } = pdfText(r);
   const 못 = 못읽은말(r);
+  /*
+   * 한 쪽도 못 읽었으면 **실패다.** 성공으로 돌려주면 안 된다.
+   *
+   * 여태 「글이 하나도 없는 PDF 입니다」를 본문으로 돌려줬다. 그러면 도구는
+   * 성공한 것이 되어 되풀이 감지도, 배움도, 재시도 억제도 하나도 안 걸린다.
+   * 그래서 모델은 같은 파일을 몇 번씩 다시 열었고, 그때마다 같은 답을 받았다.
+   */
+  // text 로 재면 안 된다 — 못 읽은 쪽에도 `--- 3쪽 ---` 와 「못 읽었습니다」가
+  // 들어가서 글이 있는 것처럼 보인다. 실제 문단이 하나라도 나왔는지로 가른다.
+  const 글나온쪽 = (r.덩이들 ?? []).some((d) => (d.문단들 ?? []).some((p) => String(p).trim()));
+  if (!글나온쪽) {
+    return { error: 한쪽도못읽음말(r, ctx.scope.show(abs)), 끝났다: true };
+  }
   return {
     content: clip(
       `${text || '(글이 하나도 없는 PDF 입니다.)'}
@@ -503,6 +566,9 @@ function 한파일쓰기(args, ctx) {
     // 확장자로 고르지 않고 실제 내용으로 본다 — 사내 파일은 확장자가 제각각이다.
     const 바이너리막기 = 바이너리인가(abs);
     if (바이너리막기) return { error: 바이너리막기 };
+    // 우리가 안 보여 준 그림을 모델이 지우게 두지 않는다 (그림잃나 머리말).
+    const 그림막기 = 그림잃나(abs, args.content);
+    if (그림막기) return { error: 그림막기 };
     ctx.history.snapshot(abs, 'Write');
     const existed = existsSync(abs);
     // 덮어쓰기 전 내용. 바뀐 자리를 보여주려면 지금 떠 놔야 한다.
@@ -816,9 +882,23 @@ export const TOOLS = {
       const more = lines.length > start + count ? `\n… 전체 ${lines.length}줄 중 ${start + count}줄까지` : '';
       ctx.seen.add(abs);
       const 별난인코딩 = 읽음.encoding !== 'utf-8';
+      /*
+       * 요약에는 **실제로 건넨 줄 수**를 적는다.
+       *
+       * 여태 파일의 전체 줄 수를 적었다. 그래서 32k 모델에서 1,425줄짜리
+       * 파일을 열면 모델은 384줄만 받는데 화면에는 `1425줄` 이 찍혔다 —
+       * 사람은 다 읽은 줄 알고 "왜 저걸 못 고치지" 를 되풀이한다. 잘렸다는
+       * 말은 모델에게 가는 본문에만 있었고, 보는 사람에게는 없었다.
+       *
+       * budget.js 의 읽을줄수 머리말에 이 함정이 그대로 적혀 있는데
+       * (「화면에는 2,000줄이라고만 떠서 사람은 잘 읽은 줄 안다」) 정작
+       * 이 줄은 안 고쳐져 있었다.
+       */
+      const 준줄수 = slice.length;
+      const 다못줌 = start + count < lines.length || start > 0;
       return {
         content: clip(body + more + 줄인것.알림),
-        summary: `${lines.length}줄`
+        summary: (다못줌 ? `${준줄수}/${lines.length}줄 (일부만)` : `${lines.length}줄`)
           + (줄인것.줄인바이트 ? ` · 그림 ${몇KB(줄인것.줄인바이트)} 생략` : '')
           + (별난인코딩 ? ` · ${encLabel(읽음.encoding)}` : ''),
       };

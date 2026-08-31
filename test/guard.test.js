@@ -310,6 +310,44 @@ trace('5b-Bash로우회');
   check('~ 를 풀어서 본다', /범위 밖/.test(막히나('cat ~/.aws/credentials') ?? ''), 막히나('cat ~/.aws/credentials')?.split('\n')[0]);
   check('내보내는 자리도 본다', /범위 밖/.test(막히나('echo x > ../밖.txt') ?? ''), 막히나('echo x > ../밖.txt')?.split('\n')[0]);
 
+  /*
+   * ── 자료가 아닌 자리까지 막고 있었다 ─────────────────────────────────
+   *
+   * 울타리는 **사람의 자료**를 지키려고 있다. 그런데 두 가지가 자료가 아닌데도
+   * 같이 막혀서, 모델이 할 수 있는 일을 못 하게 만들었다. 진짜로 이렇게 났다 —
+   *
+   *   ▶ Bash(soffice --convert-to txt 보고서.pptx > /dev/null 2>&1)
+   *     └ 막힘 — 작업 범위 밖입니다: /dev/null
+   *   ▶ Bash(ls -l /usr/bin/strings)
+   *     └ 막힘 — 작업 범위 밖입니다: /usr/bin/strings
+   *
+   * 문서를 못 읽었고, 변환하려니 막혔고, 남은 길이 없으니 같은 문을 계속
+   * 두드렸다. 헛돌던 턴의 원인이 여기였다.
+   *
+   * ★ 이 검사는 **두 방향**으로 잰다. 푸는 것만 재면 울타리를 통째로 열어 놓고도
+   * 초록이 된다. 남의 홈·/etc·/tmp 가 그대로 막히는지가 같은 무게로 중요하다.
+   */
+  const 풀려야 = [
+    ['2>/dev/null 하나로 명령 전체가 죽지 않는다', 'cat a.txt 2>/dev/null'],
+    ['버리는 자리로 내보낼 수 있다', 'soffice --headless --convert-to txt a.pptx > /dev/null 2>&1'],
+    ['이 PC 에 무엇이 깔렸는지 볼 수 있다', 'ls -l /usr/bin/strings'],
+    ['맥 앱 꾸러미 안의 실행파일을 부를 수 있다', '/Applications/LibreOffice.app/Contents/MacOS/soffice --version'],
+    ['표준출력으로 받는 것도 된다', 'textutil -convert txt a.doc -output /dev/stdout'],
+  ];
+  for (const [이름, cmd] of 풀려야) {
+    check(`★ ${이름}`, 막히나(cmd) === null, 막히나(cmd)?.split('\n')[0] ?? '');
+  }
+
+  const 막혀야 = [
+    ['남의 홈은 그대로 막힌다', 'cat /Users/남/비밀.txt'],
+    ['/etc 는 그대로 막힌다', 'cat /etc/passwd'],
+    ['/tmp 는 그대로 막힌다 (중간 파일은 .deel/tmp 에 쓴다)', 'soffice --convert-to pdf x.pptx > /tmp/log.txt'],
+    ['/dev 라고 아무거나 되는 것은 아니다', 'cat /dev/disk0'],
+  ];
+  for (const [이름, cmd] of 막혀야) {
+    check(`★ ${이름}`, /범위 밖/.test(막히나(cmd) ?? ''), 막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
+  }
+
   // 그런데 평범한 명령까지 막으면 도구가 쓸모없어진다. 이쪽이 더 흔하다.
   const 통과 = [
     'npm test',

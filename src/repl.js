@@ -1700,6 +1700,20 @@ export async function chatLoop(opts = {}) {
             if (session.level === '개발자' && ev.from) say(`     ${c.gray(clip(ev.from, 110))}`);
             break;
 
+          /*
+           * 답이 천장에서 잘렸고 우리가 더 해 줄 것이 없다.
+           *
+           * 조용히 넘기면 화면에는 중간에서 끊긴 답만 남는다 — 사람은 모델이
+           * 대충 답한 줄 알고 같은 것을 다시 시키고, 같은 자리에서 또 잘린다.
+           * 손댈 자리를 그 자리에서 알려 준다.
+           */
+          case 'capped':
+            clearThinking();
+            say(`  ${mark.warn} ${c.gray(`답이 ${c.white(ev.cap.toLocaleString())} 토큰에서 잘렸습니다`)}`
+              + `${ev.정한값 ? c.gray(' (직접 정하신 상한입니다)') : c.gray(' — 더 못 올리는 천장입니다')}`);
+            say(`     ${c.gray('한 번에 더 길게 받으려면')} ${c.cyan('/out 32k')}${c.gray('. 파일을 쓰는 중이었다면 Append 로 나눠 쓰게 하세요.')}`);
+            break;
+
           case 'compact_failed':
             접기멈춤();
             say(`  ${c.gray(`(접지 못했습니다: ${ev.why})`)}`);
