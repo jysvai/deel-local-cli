@@ -164,6 +164,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * '사용자의 말' 은 자기가 받은 할일이다.
    */
   ctx.요청 = String(userText ?? '');
+  // 이번 턴에 물어본 것. 관문이 "같은 것을 또 묻나" 를 보는 자리다 (agent/askcheck.js).
+  ctx.물은것 = [];
   // 접힐 때 요약에 뭉개지지 않게 원문을 세션에도 박아 둔다 (compact.js 의 못박은요청).
   session.이번요청 = ctx.요청;
 
