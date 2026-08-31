@@ -123,18 +123,54 @@ async function 띄우기(줄들) {
     { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, DEEL_HOME: home } });
 
   let out = '';
+  // 한글이 조각 경계에서 잘리면 화면 글을 못 찾는다. 글자로 받는다.
+  kid.stdout.setEncoding('utf8');
+  kid.stderr.setEncoding('utf8');
   kid.stdout.on('data', (b) => { out += b; });
   kid.stderr.on('data', (b) => { out += b; });
   let 끝남 = false;
   const 닫힘 = new Promise((r) => kid.on('close', () => { 끝남 = true; r(); }));
   const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  /*
+   * ── 시간이 아니라 '받을 자리' 를 기다린다 ────────────────────────────
+   *
+   * 예전에는 900ms 자고 줄을 밀어 넣었다. 혼자 돌리면 넉넉한데, 검사
+   * 아흔몇 개가 한꺼번에 돌면 부팅도 한 턴도 그보다 늦어진다. 그러면
+   * 아직 키를 받을 자리가 아닌 데에 글자가 떨어져 그대로 사라지고,
+   * 「승인 뒤 실행이 안 이어졌다」 는 엉뚱한 실패가 난다. 실제로 이
+   * 파일 하나만 돌리면 21개 다 통과인데, 넷을 겹쳐 돌리면 네 번 다
+   * 2~5개가 그렇게 깨졌다. 고친 것은 코드가 아니라 이 기다림이다.
+   *
+   * 그래서 화면이 **입력을 기다리는 모양**이 될 때까지 기다린다.
+   *   `❯ `   — 다음 말을 받는 자리
+   *   `[y] ` — 계획을 승인받는 자리
+   * 밀어 넣은 뒤에는 그 자리보다 화면이 더 자라야 다음으로 친다.
+   * 안 그러면 우리가 쓴 줄이 화면에 닿기 전의 옛 `❯` 를 또 보고
+   * 다음 줄을 바로 밀어 넣는다.
+   */
+  let 쓴자리 = 0;
+  const 받을때까지 = async (최대 = 25000) => {
+    const 끝 = Date.now() + 최대;
+    while (Date.now() < 끝 && !끝남) {
+      const 글 = 벗기기(out);
+      if (글.length > 쓴자리 && /(?:❯|\[y\])[ \t]*$/.test(글)) return true;
+      await 자기(30);
+    }
+    return false;
+  };
+  const 밀어넣기 = (l) => {
+    if (끝남) return;
+    쓴자리 = 벗기기(out).length;
+    try { kid.stdin.write((l ?? '') + '\n'); } catch { /* 이미 닫혔다 */ }
+  };
+
   for (const l of 줄들) {
-    await 자기(l === null ? 1500 : 900);
-    if (!끝남) { try { kid.stdin.write((l ?? '') + '\n'); } catch { /* 이미 닫혔다 */ } }
+    await 받을때까지();
+    밀어넣기(l);
   }
-  await 자기(1200);
-  if (!끝남) { try { kid.stdin.write('/exit\n'); } catch { /* 이미 닫혔다 */ } }
+  await 받을때까지();
+  밀어넣기('/exit');
   // 안 끝나면 검사가 통째로 매달린다. 반드시 시한을 둔다.
   await Promise.race([닫힘, 자기(6000).then(() => kid.kill())]);
   return { out: 벗기기(out), root, home };
