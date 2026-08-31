@@ -123,7 +123,7 @@ trace('3-바꾸기');
   const 파일 = join(방, '보고서.ppt');
   writeFileSync(파일, 옛ppt());
 
-  const r = 글로바꾸기(파일, 방, { 찾은것: { soffice, textutil: false, 왜: null } });
+  const r = await 글로바꾸기(파일, 방, { 찾은것: { soffice, textutil: false, 왜: null } });
   check('★ 글을 뽑아 온다', r.ok === true, JSON.stringify(r).slice(0, 120));
   check('뽑은 글이 진짜 내용이다', /분기 실적 보고/.test(r.text ?? ''), (r.text ?? '').slice(0, 40));
   check('무엇으로 뽑았는지 말한다', r.쓴것 === 'soffice', String(r.쓴것));
@@ -170,12 +170,12 @@ trace('4-못뽑았을때');
   const 파일 = join(방, '빈것.ppt');
   writeFileSync(파일, 옛ppt());
 
-  const r = 글로바꾸기(파일, 방, { 찾은것: { soffice, textutil: false, 왜: null } });
+  const r = await 글로바꾸기(파일, 방, { 찾은것: { soffice, textutil: false, 왜: null } });
   check('★ 못 뽑았으면 성공이라고 안 한다', r.ok === false, JSON.stringify(r).slice(0, 120));
   check('왜 못 했는지 말한다', /글을 못 뽑았습니다/.test(r.왜 ?? ''), r.왜 ?? '');
 
   // 변환기가 아예 없을 때와 못 뽑았을 때는 사람이 할 일이 다르다.
-  const 없을때 = 글로바꾸기(파일, 방, { 찾은것: { soffice: null, textutil: false, 왜: null } });
+  const 없을때 = await 글로바꾸기(파일, 방, { 찾은것: { soffice: null, textutil: false, 왜: null } });
   check('변환기가 없는 것과 못 뽑은 것을 가른다', 없을때.없음 === true && r.없음 !== true,
     `${없을때.없음} / ${r.없음}`);
 

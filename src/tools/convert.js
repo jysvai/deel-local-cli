@@ -25,6 +25,7 @@
 //
 // 바뀐 글만 쓰고 원본은 한 글자도 안 건드린다. 변환은 읽기의 곁길이다.
 import { spawnSync } from 'node:child_process';
+import { 돌려보기 } from './spawn.js';
 import {
   existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync,
 } from 'node:fs';
@@ -90,17 +91,44 @@ const soffice자리 = [
  * `cmd /s /c` 는 뒤엣것이 따옴표로 시작해 따옴표로 끝나면 바깥 한 쌍을 떼어
  * 내므로, 한 겹 더 둘러서 넘긴다.
  */
-function 부르기(cmd, 인자, opts = {}) {
+function 명령짓기(cmd, 인자) {
   const 셸필요 = process.platform === 'win32' && /\.(cmd|bat)$/i.test(String(cmd));
-  if (!셸필요) return spawnSync(cmd, 인자, { encoding: 'utf8', windowsHide: true, ...opts });
+  if (!셸필요) return { 실행: cmd, 인자, 덤: {} };
   const 몰아쓰기 = `""${cmd}" ${인자.map((a) => `"${a}"`).join(' ')}"`;
-  return spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 몰아쓰기], {
-    encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true, ...opts,
-  });
+  return {
+    실행: process.env.ComSpec || 'cmd.exe',
+    인자: ['/d', '/s', '/c', 몰아쓰기],
+    덤: { windowsVerbatimArguments: true },
+  };
 }
 
+/*
+ * 변환은 **비동기로** 부른다.
+ *
+ * soffice 는 처음 뜰 때 20초, 큰 문서면 그 이상 걸린다. 전에는 이 자리가
+ * spawnSync 였고, 그동안 Node 는 이벤트 루프를 통째로 멈췄다 — 그 90초 내내
+ * ESC 가 배달되지 않았다. 화면에는 도는 그림이 보이는데 키가 안 먹으니
+ * 사람 눈에는 프로그램이 고장 난 것처럼 보인다.
+ *
+ * 자식을 띄우고 기다리는 일은 tools/spawn.js 한 벌만 안다. 찾기(fastgrep)와
+ * 여기가 같은 것을 쓴다 — 따로 적어 두면 언젠가 한쪽만 고쳐진다.
+ */
+function 부르기(cmd, 인자, opts = {}) {
+  const c = 명령짓기(cmd, 인자);
+  return 돌려보기(c.실행, c.인자, { ...opts, 덤: c.덤 });
+}
+
+/*
+ * 있는지 본다. 여기는 **동기로 둔다.**
+ *
+ * `--version` 은 곧바로 답하고, 한 세션에 한 번만 부른다(변환기찾기가 기억한다).
+ * 이걸 비동기로 만들면 변환기찾기·변환기말·못바꿈말이 줄줄이 비동기가 되고,
+ * 그 함수들은 안내문을 만드는 자리라 부르는 데가 많다. 90초를 없애려다
+ * 열 군데를 흔드는 것은 값이 안 맞는다.
+ */
 function 돌아가나(cmd, 인자) {
-  const r = 부르기(cmd, 인자, { timeout: 15000 });
+  const c = 명령짓기(cmd, 인자);
+  const r = spawnSync(c.실행, c.인자, { encoding: 'utf8', timeout: 15000, windowsHide: true, ...c.덤 });
   return !r.error && r.status === 0;
 }
 
@@ -189,7 +217,7 @@ export function 임시자리(root) {
  * @param {string} root  작업 폴더 — 바꾼 것을 여기 안에 떨군다
  * @returns {{ok:true, text:string, 쓴것:string} | {ok:false, 왜:string, 없음?:boolean}}
  */
-export function 글로바꾸기(abs, root, { timeout = 90000, 찾은것 = null } = {}) {
+export async function 글로바꾸기(abs, root, { timeout = 90000, 찾은것 = null, signal = null } = {}) {
   const 있는것 = 찾은것 ?? 변환기찾기();
   if (!있는것.soffice && !있는것.textutil) {
     return { ok: false, 없음: true, 왜: 있는것.왜 ?? '이 PC 에 변환기가 없습니다' };
@@ -210,7 +238,7 @@ export function 글로바꾸기(abs, root, { timeout = 90000, 찾은것 = null }
   const 확장자 = extname(abs).toLowerCase();
   if (있는것.textutil && ['.doc', '.rtf', '.odt', '.docx'].includes(확장자)) {
     const 나온것 = join(받을곳, `${basename(abs, 확장자)}.txt`);
-    const r = 부르기('textutil', ['-convert', 'txt', '-output', 나온것, abs], { timeout });
+    const r = await 부르기('textutil', ['-convert', 'txt', '-output', 나온것, abs], { timeout, signal });
     if (!r.error && r.status === 0 && existsSync(나온것)) {
       const text = readFileSync(나온것, 'utf8');
       // soffice 쪽과 같은 규칙 — 읽었으면 사본을 남기지 않는다.
@@ -234,13 +262,13 @@ export function 글로바꾸기(abs, root, { timeout = 90000, 찾은것 = null }
    */
   const 프로필 = join(받을곳, '.soffice-profile');
   const 전 = new Set(existsSync(받을곳) ? readdirSync(받을곳) : []);
-  const r = 부르기(있는것.soffice, [
+  const r = await 부르기(있는것.soffice, [
     `-env:UserInstallation=file:///${프로필.replace(/\\/g, '/').replace(/^\/+/, '')}`,
     '--headless', '--norestore',
     '--convert-to', 'txt:Text',
     '--outdir', 받을곳,
     abs,
-  ], { timeout });
+  ], { timeout, signal });
 
   if (r.error) {
     return { ok: false, 왜: `변환기를 못 돌렸습니다: ${r.error.message}` };

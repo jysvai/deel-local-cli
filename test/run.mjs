@@ -45,6 +45,7 @@ const FILES = [
   'network.test.js',
   'web.test.js',
   'abort.test.js',
+  'abort-tools.test.js',
   'parallel.test.js',
   'modes.test.js',
   'route.test.js',

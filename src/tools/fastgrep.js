@@ -24,6 +24,7 @@
 //      결과가 없는 것이 아니라 우리가 못 물어본 것이다. 그때 '일치 없음' 을
 //      돌려주면 사람은 없는 줄 안다. 그래서 실패는 실패로 두고 JS 로 다시 찾는다.
 import { spawnSync } from 'node:child_process';
+import { 돌려보기 } from './spawn.js';
 import { join } from 'node:path';
 
 /*
@@ -99,7 +100,7 @@ export function 저장소인가(폴더) {
  *
  * @returns {{ok:true, 줄들:string[], 잘림:boolean} | {ok:false, 왜:string}}
  */
-export function rg로찾기({ 무늬, 자리, glob = null, 대소문자무시 = false, 무시파일 = null, 최대 = 5000, timeout = 20000 }) {
+export async function rg로찾기({ 무늬, 자리, glob = null, 대소문자무시 = false, 무시파일 = null, 최대 = 5000, timeout = 20000, signal = null }) {
   const 인자 = [
     '--line-number',
     '--no-heading',
@@ -132,9 +133,7 @@ export function rg로찾기({ 무늬, 자리, glob = null, 대소문자무시 = 
   // `--` 뒤로 넘겨서 무늬가 옵션으로 안 읽히게 한다. `-foo` 같은 무늬가 실제로 있다.
   인자.push('--regexp', 무늬, '--', 자리);
 
-  const r = spawnSync('rg', 인자, {
-    encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024,
-  });
+  const r = await 돌려보기('rg', 인자, { timeout, signal });
   // rg 는 못 찾으면 1, 진짜 탈이 나면 2 를 준다. 1 은 성공(빈 결과)이다.
   if (r.error) return { ok: false, 왜: r.error.message };
   if (r.status === 2) return { ok: false, 왜: (r.stderr ?? '').split('\n')[0] || 'rg 가 무늬를 못 읽었습니다' };
@@ -143,14 +142,12 @@ export function rg로찾기({ 무늬, 자리, glob = null, 대소문자무시 = 
 }
 
 /** `git grep` 으로 찾는다. rg 가 없고 여기가 저장소일 때. */
-export function git로찾기({ 무늬, 자리, 대소문자무시 = false, 최대 = 5000, timeout = 20000 }) {
+export async function git로찾기({ 무늬, 자리, 대소문자무시 = false, 최대 = 5000, timeout = 20000, signal = null }) {
   const 인자 = ['-C', 자리, '--no-pager', 'grep', '--line-number', '--no-color', '-I', '-E'];
   if (대소문자무시) 인자.push('-i');
   // 여기도 같은 목록으로 뺀다. git 은 경로무늬 앞머리에 마법을 붙여 빼낸다.
   인자.push('-e', 무늬, '--', '.', ...안볼확장자.map((x) => `:(exclude,icase)*.${x}`));
-  const r = spawnSync('git', 인자, {
-    encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024,
-  });
+  const r = await 돌려보기('git', 인자, { timeout, signal });
   if (r.error) return { ok: false, 왜: r.error.message };
   if (r.status !== 0 && r.status !== 1) {
     return { ok: false, 왜: (r.stderr ?? '').split('\n')[0] || 'git grep 이 무늬를 못 읽었습니다' };
@@ -191,10 +188,10 @@ export function 줄가르기(줄) {
  *
  * @returns {{엔진:string, 줄들:Array<{파일,줄,내용}>, 잘림:boolean} | null}
  */
-export function 빠르게찾기({ 무늬, 자리, glob = null, 대소문자무시 = false, 무시파일 = null, 최대 = 5000 }) {
+export async function 빠르게찾기({ 무늬, 자리, glob = null, 대소문자무시 = false, 무시파일 = null, 최대 = 5000, signal = null }) {
   const 것 = 엔진찾기();
   if (것.rg) {
-    const r = rg로찾기({ 무늬, 자리, glob, 대소문자무시, 무시파일, 최대 });
+    const r = await rg로찾기({ 무늬, 자리, glob, 대소문자무시, 무시파일, 최대, signal });
     if (r.ok) return { 엔진: 'rg', 줄들: r.줄들.map(줄가르기).filter(Boolean), 잘림: r.잘림 };
     // rg 가 무늬를 못 읽은 것일 수 있다(Rust regex 에는 되돌아보기가 없다).
     // 그건 '없다' 가 아니라 '못 물어봤다' 이므로 예전 길로 내려간다.
@@ -203,7 +200,7 @@ export function 빠르게찾기({ 무늬, 자리, glob = null, 대소문자무�
   // git grep 은 .deelignore 를 시킬 방법이 없다. 그 파일이 있으면 예전 길로 간다 —
   // 사람이 "deel 은 여기 보지 마라" 고 적어 둔 것을 못 지키면 빠른 것이 뜻이 없다.
   if (것.gitgrep && !무시파일 && 저장소인가(자리)) {
-    const r = git로찾기({ 무늬, 자리, 대소문자무시, 최대 });
+    const r = await git로찾기({ 무늬, 자리, 대소문자무시, 최대, signal });
     if (r.ok) return { 엔진: 'git grep', 줄들: r.줄들.map(줄가르기).filter(Boolean), 잘림: r.잘림 };
     return null;
   }

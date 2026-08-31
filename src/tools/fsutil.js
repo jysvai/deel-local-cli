@@ -175,11 +175,22 @@ export function 훑기상한(env = process.env) {
   return Math.floor(n);
 }
 
-export function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS, ignore = true } = {}) {
+/**
+ * 폴더를 훑는다.
+ *
+ * @param {AbortSignal|null} signal 멈추라면 훑다 말고 나온다.
+ *   사내망 드라이브에서는 파일 20,000개 훑기가 몇 초다. 그 사이에
+ *   ESC 를 눌렀는데 끝까지 다 훑고 나서 멈추면, 사람 눈에는 멈추지
+ *   않는 것으로 보인다. 나온 것에 `끊김` 을 달아 부르는 쪽이 알게 한다 —
+ *   조용히 적게 돌려주면 「그런 파일이 없다」가 되어 버린다.
+ */
+export function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS, ignore = true, signal = null } = {}) {
   const out = [];
   const 건너뜀 = { 폴더: 0, 파일: 0 };
+  let 끊김 = false;
   const stack = [{ dir: root, rel: '', 규칙: ignore ? 뿌리규칙읽기(root) : [] }];
   while (stack.length && out.length < limit) {
+    if (signal?.aborted) { 끊김 = true; break; }
     const { dir, rel, 규칙 } = stack.pop();
     let entries;
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
@@ -211,6 +222,7 @@ export function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS, ignor
   // 사람을 한 번 더 보게 만들 뿐이고, 다 봤다고 말하는 것은 못 보게 만든다.
   Object.defineProperty(out, '잘림', { value: out.length >= limit, enumerable: false });
   Object.defineProperty(out, '상한', { value: limit, enumerable: false });
+  Object.defineProperty(out, '끊김', { value: 끊김, enumerable: false });
   return out;
 }
 

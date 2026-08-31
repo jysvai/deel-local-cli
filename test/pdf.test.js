@@ -463,7 +463,7 @@ trace('17-도구');
   writeFileSync(파일, 한쪽짜리({ 내용: 흐름으로('BT /F1 12 Tf 72 720 Td (Tool level) Tj ET') }));
   const ctx = { scope: makeScope(root), history: new History(root), audit: new Audit(root), seen: new Set() };
 
-  const r = TOOLS.Read.run({ file_path: '명세.pdf' }, ctx);
+  const r = await TOOLS.Read.run({ file_path: '명세.pdf' }, ctx);
   check('Read 가 PDF 를 글로 준다', /Tool level/.test(String(r.content)), String(r.content).slice(0, 80));
   check('Read 요약이 pdf 라고 말한다', /pdf/.test(String(r.summary)), String(r.summary));
   check('고칠 수 없다고 미리 적어 준다', /Edit\/Write 로 고칠 수 없습니다/.test(String(r.content)), String(r.content).slice(-120));

@@ -337,7 +337,7 @@ async function 엑셀읽기(abs, args, ctx) {
      * LibreOffice 가 있으면 그것이 곧 길이다. 표는 아니고 글이지만,
      * 아무것도 못 읽는 것보다 낫다.
      */
-    const 빌린것 = 빌려읽기(abs, ctx, r.error);
+    const 빌린것 = await 빌려읽기(abs, ctx, r.error);
     if (빌린것) return 빌린것;
     if (직접못읽나(abs)) return { error: 못바꿈말(ctx.scope.show(abs), extname(abs)), 끝났다: true };
     return { error: r.error };
@@ -376,7 +376,7 @@ async function 엑셀읽기(abs, args, ctx) {
  *
  * @returns {object|null} 읽어냈으면 도구 결과. 못 하면 null (부르는 쪽이 원래 오류를 낸다)
  */
-function 빌려읽기(abs, ctx, 원래오류) {
+async function 빌려읽기(abs, ctx, 원래오류) {
   if (!바꿔볼까(abs)) return null;
   const root = ctx.scope?.root;
   if (!root) return null;
@@ -386,7 +386,9 @@ function 빌려읽기(abs, ctx, 원래오류) {
   const 있는것 = ctx.변환기 ?? 변환기찾기();
   if (!있는것.soffice && !있는것.textutil) return null;
 
-  const r = 글로바꾸기(abs, root, { 찾은것: 있는것 });
+  // signal 을 같이 넘긴다. 멈추라고 하면 soffice 를 죽여야 한다 — 안 그러면
+  // ESC 를 듣고도 남은 90초를 그대로 기다린다.
+  const r = await 글로바꾸기(abs, root, { 찾은것: 있는것, signal: ctx.signal ?? null });
   if (!r.ok || !r.text.trim()) return null;
 
   const 줄수 = r.text.split('\n').length;
@@ -400,11 +402,11 @@ function 빌려읽기(abs, ctx, 원래오류) {
   };
 }
 
-function 문서읽기(abs, ctx) {
+async function 문서읽기(abs, ctx) {
   const r = readDoc(abs);
   if (!r.ok) {
     // 우리가 못 읽는다고 끝이 아니다. 이 PC 에 변환기가 있으면 빌려 본다.
-    const 빌린것 = 빌려읽기(abs, ctx, r.error);
+    const 빌린것 = await 빌려읽기(abs, ctx, r.error);
     if (빌린것) return 빌린것;
     // 끝났다 를 그대로 넘긴다. 여기서 떨구면 docs.js 가 「다시 열어도 같다」고
     // 판정해 놓은 것이 루프까지 못 가서, 되풀이 억제가 안 걸린다.
@@ -895,7 +897,7 @@ export const TOOLS = {
         required: ['file_path'],
       },
     },
-    run(args, ctx) {
+    async run(args, ctx) {
       const abs = ctx.scope.resolve(args.file_path);
       if (!existsSync(abs)) return { error: `파일이 없습니다: ${args.file_path}` };
       if (statSync(abs).isDirectory()) return { error: `폴더입니다. Glob 을 쓰세요: ${args.file_path}` };
@@ -923,7 +925,9 @@ export const TOOLS = {
           if (looksOldHwp(abs, 머리)) {
             // 여기도 먼저 빌려 본다. 이 PC 에 변환기가 있으면 안내문보다 글이 낫다.
             const 안내 = 옛hwp안내(ctx.scope.show(abs));
-            return 빌려읽기(abs, ctx, 안내) ?? { error: 안내 };
+            // 괄호가 있어야 한다. await 를 빼면 `??` 가 **약속(Promise)** 을
+            // 보고 "값이 있다" 고 판단해서, 안내문이 영영 안 나간다.
+            return (await 빌려읽기(abs, ctx, 안내)) ?? { error: 안내 };
           }
         } catch { /* 아래 일반 읽기가 제 오류를 낸다 */ }
       }
@@ -941,7 +945,7 @@ export const TOOLS = {
        */
       if (직접못읽나(abs)) {
         const 보인이름 = ctx.scope.show(abs);
-        const 빌린것 = 빌려읽기(abs, ctx, `${보인이름} 을 deel 이 직접 못 읽습니다.`);
+        const 빌린것 = await 빌려읽기(abs, ctx, `${보인이름} 을 deel 이 직접 못 읽습니다.`);
         if (빌린것) return 빌린것;
         return { error: 못바꿈말(보인이름, extname(abs)), 끝났다: true };
       }
@@ -1215,7 +1219,9 @@ export const TOOLS = {
     run(args, ctx) {
       const root = args.path ? ctx.scope.resolve(args.path) : ctx.scope.root;
       const re = globToRegex(args.pattern);
-      const 전부 = walk(root);
+      const 전부 = walk(root, { signal: ctx.signal });
+      // 훑다 말고 나왔으면 그렇다고 말한다. 조용히 적게 주면 「그런 파일이 없다」가 된다.
+      if (전부.끊김) return { error: '중단했습니다. 폴더를 끝까지 안 훑었습니다.', 끝났다: true, 중단됨: true };
       // .gitignore 로 건너뛴 것은 수를 말한다 — 조용히 빼면 '그 파일이 없다' 로 읽힌다 (tools/ignore.js).
       const 건너뜀 = 건너뜀말(전부.건너뜀, 전부.잘림, 전부.상한);
       const 맞는것 = 전부
@@ -1259,7 +1265,9 @@ export const TOOLS = {
         required: ['pattern'],
       },
     },
-    run(args, ctx) {
+    // async 인 까닭: 아래 빠르게찾기() 가 rg·git grep 을 **비동기로** 부른다.
+    // 큰 저장소에서 20초를 도는 동안에도 ESC 가 들려야 하기 때문이다.
+    async run(args, ctx) {
       let re;
       try { re = new RegExp(args.pattern, args['-i'] ? 'i' : ''); }
       catch (err) { return { error: `정규식이 잘못됐습니다: ${err.message}` }; }
@@ -1282,13 +1290,15 @@ export const TOOLS = {
        * 다르게 나왔을 때 무엇으로 찾은 것인지 모르면 사람은 코드를 의심한다.
        */
       const 무시파일 = join(ctx.scope.root, '.deelignore');
-      const 빠른것 = isFile ? null : 빠르게찾기({
+      const 빠른것 = isFile ? null : await 빠르게찾기({
         무늬: args.pattern,
         자리: root,
         glob: args.glob ?? null,
         대소문자무시: !!args['-i'],
         무시파일: existsSync(무시파일) ? 무시파일 : null,
         최대: Math.max(limit * 4, 2000),
+        // 멈추라고 하면 rg 를 죽인다. 이게 없으면 ESC 를 듣고도 20초를 더 기다린다.
+        signal: ctx.signal ?? null,
       });
       if (빠른것) {
         const 파일별 = new Map();
@@ -1339,7 +1349,8 @@ export const TOOLS = {
        */
       let files = isFile
         ? [{ path: root, rel: ctx.scope.show(root) }]
-        : walk(root);
+        : walk(root, { signal: ctx.signal });
+      if (files.끊김) return { error: '중단했습니다. 폴더를 끝까지 안 훑었습니다.', 끝났다: true, 중단됨: true };
       const 안본것 = isFile ? '' : 건너뜀말(files.건너뜀, files.잘림, files.상한).trim();   // .gitignore 로 건너뛴 수 — 꼬리에 적는다
       // 훑기 상한에 걸렸으면 "일치 없음" 이라고 잘라 말하면 안 된다. 안 본 것이다.
       const 다못봄 = !isFile && !!files.잘림;
@@ -2069,9 +2080,39 @@ export async function runTool(name, args, ctx) {
 
   const t = TOOLS[name];
   if (!t) return { error: `모르는 도구: ${name}` };
+
+  /*
+   * ── 멈추라고 했으면 시작도 안 한다 ──────────────────────────────────
+   *
+   * 여럿을 함께 돌릴 때(loop.js 의 Promise.all) 앞엣것이 도는 사이 사람이
+   * ESC 를 누르면, 뒤엣것들은 **아직 아무 일도 안 했는데** 그대로 돌았다.
+   * 여기서 한 번 보면 그 자리가 막힌다.
+   *
+   * 중단은 **실패가 아니다.** 그래서 중단됨 을 따로 단다 — 이걸 실패로
+   * 세면 되풀이 감지가 엉뚱하게 걸려서, 다음에 같은 도구를 부르는 것까지
+   * "또 그러네" 로 막아 버린다. 사람이 멈춘 것은 도구 잘못이 아니다.
+   */
+  if (ctx.signal?.aborted) {
+    return { error: '중단했습니다. 실행하지 않았습니다.', 끝났다: true, 중단됨: true };
+  }
+
   try {
     const r = await t.run(args ?? {}, ctx);
     ctx.audit.tool(name, args, r);
+    /*
+     * 도는 중에 멈췄다면 결과를 안 쓴다.
+     *
+     * 다만 **이미 바꿔 놓은 것은 사실대로 말한다.** 파일을 고친 뒤에
+     * "중단했습니다" 만 돌려주면 모델은 안 고쳐진 줄 알고 또 고친다 —
+     * 그러면 같은 편집이 두 번 들어가거나, 되돌리기 기록과 어긋난다.
+     * 읽기만 한 것은 버려도 잃을 것이 없으니 중단으로 끝낸다.
+     */
+    if (ctx.signal?.aborted) {
+      if (!isMutating(name) || r.error) {
+        return { error: '중단했습니다.', 끝났다: true, 중단됨: true };
+      }
+      return { ...r, 중단됨: true, 중단전에끝남: true };
+    }
     return await 고친뒤진단(name, r, ctx);
   } catch (err) {
     const r = { error: err.message };

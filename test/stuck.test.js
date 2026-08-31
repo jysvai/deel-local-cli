@@ -247,7 +247,7 @@ trace('6-Glob이잘랐다고말하는가');
   writeFileSync(join(방, '그림.png'), Buffer.alloc(1000));
   writeFileSync(join(방, '진짜.js'), 'const 찾을것 = 1;\n', 'utf8');
   const ctx = 새ctx();
-  const r = TOOLS.Grep.run({ pattern: '찾을것|a{100}', path: '무거운폴더' }, ctx);
+  const r = await TOOLS.Grep.run({ pattern: '찾을것|a{100}', path: '무거운폴더' }, ctx);
   /*
    * 빠른 엔진(rg)을 빌려 썼을 때도 **같은 파일만 열어야 한다.**
    *
@@ -257,7 +257,7 @@ trace('6-Glob이잘랐다고말하는가');
    */
   process.env.DEEL_GREP = 'js';
   엔진잊기();
-  const rJS = TOOLS.Grep.run({ pattern: '찾을것|a{100}', path: '무거운폴더' }, 새ctx());
+  const rJS = await TOOLS.Grep.run({ pattern: '찾을것|a{100}', path: '무거운폴더' }, 새ctx());
   delete process.env.DEEL_GREP;
   엔진잊기();
   const 앞부분 = (글) => String(글).split('\n\n')[0].trim();

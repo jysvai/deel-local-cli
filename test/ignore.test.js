@@ -170,12 +170,12 @@ trace('3-도구');
   const 뽑기 = (글) => String(글).split('\n\n')[0].split('\n')
     .map((l) => l.trim()).filter((l) => /\.[A-Za-z0-9]+$/.test(l)).sort().join(' ');
 
-  const gr = TOOLS.Grep.run({ pattern: 'needle' }, ctx);
+  const gr = await TOOLS.Grep.run({ pattern: 'needle' }, ctx);
   check('Grep 도 out/ · secret.txt 를 안 본다', !/out\/|secret\.txt|data\/big|sub\/gen/.test(gr.content) && /src\/a\.js/.test(gr.content), gr.content);
 
   process.env.DEEL_GREP = 'js';
   엔진잊기();
-  const grJS = TOOLS.Grep.run({ pattern: 'needle' }, ctx);
+  const grJS = await TOOLS.Grep.run({ pattern: 'needle' }, ctx);
   delete process.env.DEEL_GREP;
   엔진잊기();
 
@@ -190,7 +190,7 @@ trace('3-도구');
       : gr.content === grJS.content,
     gr.content.split('\n').pop());
 
-  const gr1 = TOOLS.Grep.run({ pattern: 'needle', path: 'out/b.js' }, ctx);
+  const gr1 = await TOOLS.Grep.run({ pattern: 'needle', path: 'out/b.js' }, ctx);
   check('파일을 짚어 준 Grep 은 그대로 본다', /out\/b\.js/.test(gr1.content) && !/건너뜀/.test(gr1.content), gr1.content);
 
   const o = TOOLS.Outline.run({}, ctx);
@@ -202,7 +202,7 @@ trace('3-도구');
   check('Verify 도 out/ 을 안 본다', !/out\//.test(v글), v글.slice(0, 80).replace(/\n/g, ' | '));
   check('Verify 도 건너뛴 수를 말한다', /\.gitignore 로 폴더 3개 · 파일 2개 건너뜀/.test(v글), v글.split('\n').pop());
 
-  const rd = TOOLS.Read.run({ file_path: 'out/b.js' }, ctx);
+  const rd = await TOOLS.Read.run({ file_path: 'out/b.js' }, ctx);
   check('Read 로 짚어 주면 그대로 읽힌다', /needle = 2/.test(rd.content ?? ''), rd.error ?? '');
 
   const at = expand('@sub 여기 뭐 있어', { scope: ctx.scope });

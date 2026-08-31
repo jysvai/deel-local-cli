@@ -148,9 +148,9 @@ trace('4-열쇠');
 
   // 도구 쪽도 여전히 막혀 있어야 한다 — 한쪽만 고치고 다른 쪽이 열리면 안 된다.
   const ctx = { scope, history: new History(root), audit: new Audit(root), seen: new Set() };
-  const rd = TOOLS.Read.run({ file_path: '.deel/config.json' }, ctx);
+  const rd = await TOOLS.Read.run({ file_path: '.deel/config.json' }, ctx);
   check('Read 도구도 여전히 막는다', /열쇠가 들어 있어/.test(rd.error ?? ''), rd.error ?? String(rd.content).slice(0, 60));
-  const rd2 = TOOLS.Read.run({ file_path: '.deel/붙인그림/x.png' }, ctx);
+  const rd2 = await TOOLS.Read.run({ file_path: '.deel/붙인그림/x.png' }, ctx);
   check('붙인 그림은 Read 로도 읽힌다', !rd2.error, rd2.error ?? '(읽힘)');
 }
 

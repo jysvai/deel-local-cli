@@ -126,23 +126,23 @@ trace('4-Read');
 {
   const 만들기 = (눈) => ({ scope: makeScope(root), seen: new Set(), 눈있나: 눈 });
 
-  const 없을때 = TOOLS.Read.run({ file_path: 'shot.png' }, 만들기(false));
+  const 없을때 = await TOOLS.Read.run({ file_path: 'shot.png' }, 만들기(false));
   check('눈이 없어도 오류로 끝내지 않는다', !없을때.error, 없을때.error ?? '');
   check('못 본다고 말해 준다', /그림을 못 봅니다/.test(없을때.content ?? ''), 없을때.content?.split('\n')[1]);
   check('코드처럼 읽지 말라고 막아 준다', /코드처럼 읽으려 하지 마세요/.test(없을때.content ?? ''));
   check('눈이 없으면 바이트가 아예 없다', !JSON.stringify(없을때).includes(한점PNG.slice(0, 24)));
   check('눈이 없으면 그림을 안 딸려 보낸다', 없을때.그림 === undefined);
 
-  const 있을때 = TOOLS.Read.run({ file_path: 'shot.png' }, 만들기(true));
+  const 있을때 = await TOOLS.Read.run({ file_path: 'shot.png' }, 만들기(true));
   check('눈이 있으면 그림을 딸려 보낸다', 있을때.그림?.b64 === 한점PNG, 있을때.그림?.mime);
   check('그래도 도구 결과 글에는 base64 가 안 들어간다', !String(있을때.content).includes(한점PNG.slice(0, 24)),
     있을때.content);
   check('크기와 종류를 적어 준다', /그림 · \d+B · image\/png/.test(있을때.content ?? ''), 있을때.content);
 
-  const 큰것 = TOOLS.Read.run({ file_path: '큰것.png' }, 만들기(true));
+  const 큰것 = await TOOLS.Read.run({ file_path: '큰것.png' }, 만들기(true));
   check('큰 그림은 오류로 돌려준다', !!큰것.error && /한도/.test(큰것.error), 큰것.error?.slice(0, 60));
 
-  const 글파일 = TOOLS.Read.run({ file_path: '메모.txt' }, 만들기(true));
+  const 글파일 = await TOOLS.Read.run({ file_path: '메모.txt' }, 만들기(true));
   check('글 파일은 예전 그대로 읽힌다', /그냥 글입니다/.test(글파일.content ?? ''), 글파일.summary);
 }
 

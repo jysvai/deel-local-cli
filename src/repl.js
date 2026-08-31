@@ -430,6 +430,21 @@ export async function chatLoop(opts = {}) {
    * (TDZ). 켜자마자 아무 키나 누르면 죽는 프로그램이 되는 셈이다.
    */
   let turn = null;
+
+  /*
+   * 멈추라는 것이 닿았다고 **곧바로** 화면에 적는다.
+   *
+   * 멈추기는 즉시가 아니다. 돌던 자식 프로그램(rg·soffice)을 죽이고, 안 돈
+   * 도구 자리를 채우고, 대화를 성하게 닫는 데 잠깐이 걸린다. 그 잠깐 동안
+   * 화면이 아까 하던 말을 그대로 하고 있으면 사람은 안 먹었다고 판단한다.
+   * 그러면 또 누르고, 그러다 Ctrl+C 로 손이 가고, 두 번 누르면 대화가 닫힌다.
+   *
+   * "ESC 를 눌러도 안 멈춘다" 는 제보의 절반은 진짜로 안 멈춘 것이었고
+   * (동기 호출이 키를 안 배달했다), 나머지 절반이 이것이다 — 멈추고는
+   * 있는데 그렇게 보이지 않았다.
+   */
+  const 멈추는중 = () => { try { 화면.일바꿈('멈춤'); } catch { /* 상자가 없는 화면도 있다 */ } };
+
   // 붙여넣는 중인가 (bracketed paste). 키 처리와 'line' 이 같이 본다.
   let 붙여넣는중 = false;
 
@@ -615,7 +630,7 @@ export async function chatLoop(opts = {}) {
        * 치던 글이 날아가면 그게 더 놀랍다.
        */
       if (key?.name === 'escape' && !key.ctrl && !key.meta && !key.shift) {
-        if (turn && !turn.signal.aborted) { turn.abort(); return; }
+        if (turn && !turn.signal.aborted) { turn.abort(); 멈추는중(); return; }
         return;
       }
       // Shift+Tab — 승인 방식 (자동 → 위험만 → 모두)
@@ -1138,6 +1153,7 @@ export async function chatLoop(opts = {}) {
     }
     if (turn && !turn.signal.aborted) {
       turn.abort();
+      멈추는중();
       return;                   // 화면 정리는 루프 쪽 'aborted' 이벤트가 한다
     }
     if (interrupted) { rl.close(); return; }

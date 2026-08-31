@@ -89,7 +89,7 @@ trace('3-엔진');
   check('DEEL_GREP=js 면 둘 다 끈다', 끈것.rg === false && 끈것.gitgrep === false, JSON.stringify(끈것));
   check('왜 껐는지 말해 준다', /DEEL_GREP/.test(끈것.왜 ?? ''), 끈것.왜);
   check('껐으면 빠르게찾기가 null 을 준다 — 부르는 쪽이 예전 길로 간다',
-    빠르게찾기({ 무늬: '찾을것', 자리: root }) === null);
+    await 빠르게찾기({ 무늬: '찾을것', 자리: root }) === null);
   엔진잊기();
   check('엔진잊기 뒤에는 다시 본다', 엔진찾기().rg === 엔진.rg, JSON.stringify(엔진찾기()));
 
@@ -100,7 +100,7 @@ trace('3-엔진');
 // ── 4. rg 로 찾기 ──────────────────────────────────────────────────────
 trace('4-rg');
 if (엔진.rg) {
-  const r = rg로찾기({ 무늬: '찾을것', 자리: root });
+  const r = await rg로찾기({ 무늬: '찾을것', 자리: root });
   check('rg 가 찾아 온다', r.ok === true, JSON.stringify(r).slice(0, 120));
   const 판 = r.줄들.map(줄가르기).filter(Boolean);
   const 파일들 = [...new Set(판.map((x) => x.파일.replace(/\\/g, '/').replace(root.replace(/\\/g, '/'), '.')))].sort();
@@ -109,15 +109,15 @@ if (엔진.rg) {
   check('한 파일에 두 줄이면 두 줄로 온다', 판.filter((x) => /a\.js$/.test(x.파일)).length === 2, String(판.length));
 
   // 못 찾은 것과 못 물어본 것은 다르다.
-  const 빈것 = rg로찾기({ 무늬: '이런글자는없다', 자리: root });
+  const 빈것 = await rg로찾기({ 무늬: '이런글자는없다', 자리: root });
   check('못 찾으면 성공에 빈 목록 (실패가 아니다)', 빈것.ok === true && 빈것.줄들.length === 0, JSON.stringify(빈것));
-  const 못읽음 = rg로찾기({ 무늬: '(?<=foo)bar', 자리: root });
+  const 못읽음 = await rg로찾기({ 무늬: '(?<=foo)bar', 자리: root });
   check('무늬를 못 읽으면 실패로 돌려준다', 못읽음.ok === false, JSON.stringify(못읽음));
   check('빠르게찾기는 그때 null 을 준다 — "없다" 가 아니다',
-    빠르게찾기({ 무늬: '(?<=foo)bar', 자리: root }) === null);
+    await 빠르게찾기({ 무늬: '(?<=foo)bar', 자리: root }) === null);
 
   // 상한.
-  const 잘림 = rg로찾기({ 무늬: '찾을것', 자리: root, 최대: 1 });
+  const 잘림 = await rg로찾기({ 무늬: '찾을것', 자리: root, 최대: 1 });
   check('최대를 넘으면 자르고 잘랐다고 한다', 잘림.줄들.length === 1 && 잘림.잘림 === true, JSON.stringify(잘림.잘림));
 } else {
   건너뜀('rg 로 찾기', '이 PC 에 rg 가 없습니다');
@@ -138,7 +138,7 @@ trace('5-셸');
   ];
   let 터짐 = null;
   for (const 무늬 of 위험한무늬) {
-    try { 빠르게찾기({ 무늬, 자리: root }); } catch (err) { 터짐 = `${무늬} → ${err.message}`; }
+    try { await 빠르게찾기({ 무늬, 자리: root }); } catch (err) { 터짐 = `${무늬} → ${err.message}`; }
   }
   check('위험하게 생긴 무늬에 안 터진다', 터짐 === null, 터짐 ?? '');
   check('무늬가 명령이 되지 않는다 — 흔적 파일이 안 생겼다', !existsSync(표), 표);
@@ -146,7 +146,7 @@ trace('5-셸');
   // 옵션처럼 생긴 무늬는 글자 그대로 찾아야 한다 (`--` 뒤로 넘기니까).
   쓰기('옵션.txt', '이 줄에는 --version 이라는 글자가 있다\n');
   if (엔진.rg) {
-    const r = 빠르게찾기({ 무늬: '--version', 자리: root });
+    const r = await 빠르게찾기({ 무늬: '--version', 자리: root });
     check('`--version` 은 옵션이 아니라 찾을 글자로 읽힌다',
       r !== null && r.줄들.some((x) => /옵션\.txt/.test(x.파일)), JSON.stringify(r?.줄들?.[0] ?? r));
   } else {
@@ -169,12 +169,12 @@ if (엔진.gitgrep) {
   check('저장소인지 안다', 저장소인가(g저장소) === true);
   check('저장소가 아니면 아니라고 한다', 저장소인가(root) === false, root);
 
-  const r = git로찾기({ 무늬: '찾을것', 자리: g저장소 });
+  const r = await git로찾기({ 무늬: '찾을것', 자리: g저장소 });
   check('git grep 이 찾아 온다', r.ok === true, JSON.stringify(r).slice(0, 120));
   const 판 = r.줄들.map(줄가르기).filter(Boolean);
   check('상대경로가 아니라 절대경로로 맞춰 준다', 판.every((x) => /^([A-Za-z]:|\/)/.test(x.파일)), JSON.stringify(판[0]));
   check('git grep 도 번들은 안 뒤진다', !판.some((x) => /min\.js/.test(x.파일)), 판.map((x) => x.파일).join(' '));
-  const 빈것 = git로찾기({ 무늬: '이런글자는없다', 자리: g저장소 });
+  const 빈것 = await git로찾기({ 무늬: '이런글자는없다', 자리: g저장소 });
   check('git grep 도 못 찾은 것은 성공에 빈 목록', 빈것.ok === true && 빈것.줄들.length === 0, JSON.stringify(빈것));
 } else {
   건너뜀('git grep', '이 PC 에 git 이 없습니다');
@@ -205,10 +205,10 @@ trace('7-같은답');
   const 앞부분 = (글) => String(글).split('\n\n')[0].split('\n').map((l) => l.trim()).filter(Boolean).sort();
 
   엔진잊기();
-  const 빠른 = TOOLS.Grep.run({ pattern: 'needle' }, ctx);
+  const 빠른 = await TOOLS.Grep.run({ pattern: 'needle' }, ctx);
   process.env.DEEL_GREP = 'js';
   엔진잊기();
-  const 예전 = TOOLS.Grep.run({ pattern: 'needle' }, ctx);
+  const 예전 = await TOOLS.Grep.run({ pattern: 'needle' }, ctx);
   delete process.env.DEEL_GREP;
   엔진잊기();
 
@@ -220,10 +220,10 @@ trace('7-같은답');
 
   // 줄까지 같아야 한다 — 파일만 같고 줄이 다르면 사람이 엉뚱한 데로 간다.
   엔진잊기();
-  const 빠른줄 = TOOLS.Grep.run({ pattern: 'needle', output_mode: 'content' }, ctx);
+  const 빠른줄 = await TOOLS.Grep.run({ pattern: 'needle', output_mode: 'content' }, ctx);
   process.env.DEEL_GREP = 'js';
   엔진잊기();
-  const 예전줄 = TOOLS.Grep.run({ pattern: 'needle', output_mode: 'content' }, ctx);
+  const 예전줄 = await TOOLS.Grep.run({ pattern: 'needle', output_mode: 'content' }, ctx);
   delete process.env.DEEL_GREP;
   엔진잊기();
   check('줄 수도 같다', 앞부분(빠른줄.content).length === 앞부분(예전줄.content).length,
@@ -240,7 +240,7 @@ trace('7-같은답');
   check('예전 길 요약에는 엔진 이름이 없다', !/rg|git grep/.test(String(예전.summary)), String(예전.summary));
 
   // 파일을 콕 짚어 주면 빠른 엔진을 안 부른다 (한 파일에 프로세스를 띄울 값이 없다).
-  const 한파일 = TOOLS.Grep.run({ pattern: 'needle', path: 'src/a.js' }, ctx);
+  const 한파일 = await TOOLS.Grep.run({ pattern: 'needle', path: 'src/a.js' }, ctx);
   check('파일을 짚으면 예전 길로 간다', !/rg|git grep/.test(String(한파일.summary)) && /a\.js/.test(String(한파일.content)),
     `${한파일.summary} / ${한파일.content}`);
 }
@@ -254,7 +254,7 @@ trace('8-되돌아보기');
   writeFileSync(join(방, 'a.js'), 'const foobar = 1;\n', 'utf8');
   const ctx = { scope: makeScope(방), history: new History(방), audit: new Audit(방), seen: new Set() };
   엔진잊기();
-  const r = TOOLS.Grep.run({ pattern: '(?<=foo)bar' }, ctx);
+  const r = await TOOLS.Grep.run({ pattern: '(?<=foo)bar' }, ctx);
   check('되돌아보기 무늬도 결국 찾아 낸다', /a\.js/.test(String(r.content)), String(r.content).slice(0, 120));
   check('그때는 예전 길로 갔다고 요약이 말해 준다', !/rg|git grep/.test(String(r.summary)), String(r.summary));
   check('원본은 안 건드린다', readFileSync(join(방, 'a.js'), 'utf8') === 'const foobar = 1;\n');
@@ -299,7 +299,7 @@ trace('9-상한');
   process.env.DEEL_WALK_LIMIT = '100';
   process.env.DEEL_GREP = 'js';
   엔진잊기();
-  const 못본것 = TOOLS.Grep.run({ pattern: '바늘' }, ctx);
+  const 못본것 = await TOOLS.Grep.run({ pattern: '바늘' }, ctx);
   const 못본글로브 = TOOLS.Glob.run({ pattern: '**/f299.js' }, ctx);
   delete process.env.DEEL_WALK_LIMIT;
   delete process.env.DEEL_GREP;
@@ -317,7 +317,7 @@ trace('9-상한');
   // 상한이 넉넉하면 군말이 없어야 한다. 늘 붙으면 그 말이 뜻을 잃는다.
   process.env.DEEL_GREP = 'js';
   엔진잊기();
-  const 다본것 = TOOLS.Grep.run({ pattern: '바늘' }, ctx);
+  const 다본것 = await TOOLS.Grep.run({ pattern: '바늘' }, ctx);
   delete process.env.DEEL_GREP;
   엔진잊기();
   check('다 봤으면 군말을 안 붙인다', !/봤습니다|다 못 봄/.test(`${다본것.content}${다본것.summary}`), String(다본것.content));
