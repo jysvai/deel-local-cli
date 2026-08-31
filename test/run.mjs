@@ -52,6 +52,7 @@ const FILES = [
   'planapprove.test.js',
   'ask.test.js',
   'askcheck.test.js',
+  'asks.test.js',
   'move.test.js',
   'nudge.test.js',
   'resize.test.js',

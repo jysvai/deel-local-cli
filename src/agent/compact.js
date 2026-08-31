@@ -169,6 +169,31 @@ const 요약지시 = `지금까지의 대화를 다음 형식으로 요약하세
 // 쓰던 자리가 있으니 이름은 그대로 내보낸다.
 export { safeCut, safeHead } from './session.js';
 
+/*
+ * ── 시킨 말은 요약하지 않는다 ───────────────────────────────────────────
+ *
+ * 요약 지시에는 「## 목표 — 사용자가 무엇을 시켰는가」 가 있다. 그런데 요약은
+ * 요약이다. 네 가지를 적어 준 요청이 「네 가지를 고쳐 달라고 했다」 한 줄로
+ * 뭉개지고, **그 네 가지가 무엇이었는지는 사라진다.** 접힌 뒤로는 아무리
+ * 찾아도 원문이 없으니, 남은 것을 이어 하려 해도 무엇이 남았는지 모른다.
+ *
+ * "요청사항이 다량일 경우 몇 번 까먹거나 누락되거나" 의 절반이 여기였다.
+ *
+ * 그래서 이번에 시킨 말을 **글자 그대로** 한 번 더 박아 둔다. 요약 모델이
+ * 무엇을 하든 이 줄은 그대로 남는다. 길면 앞부분만 — 그래도 항목 목록은
+ * 대개 앞에 있다.
+ */
+const 못박을길이 = 1200;
+
+export function 못박은요청(session) {
+  const 원문 = String(session?.이번요청 ?? '').trim();
+  if (!원문) return '';
+  const 실을것 = 원문.length > 못박을길이
+    ? `${원문.slice(0, 못박을길이)}\n…(뒷부분 줄임)`
+    : 원문;
+  return `[이번에 시킨 말 — 요약이 아니라 원문 그대로입니다. 여기 적힌 것을 빠짐없이 하세요.]\n${실을것}\n\n`;
+}
+
 /** 접을 구간과 남길 구간을 나눈다. */
 export function split(messages, { keepHead = KEEP_HEAD, tailRatio = KEEP_TAIL_RATIO } = {}) {
   const n = messages.length;
@@ -252,7 +277,9 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
     ...parts.head,
     {
       role: 'user',
-      content: `[앞선 대화 ${parts.fold.length}개를 요약해 접었습니다. 아래가 그 요약입니다.]\n\n${summary}\n\n[요약 끝. 이어서 진행하세요. 파일 내용이 필요하면 다시 읽으세요.]`,
+      content: `[앞선 대화 ${parts.fold.length}개를 요약해 접었습니다. 아래가 그 요약입니다.]\n\n${summary}\n\n`
+        + 못박은요청(session)
+        + '[요약 끝. 이어서 진행하세요. 파일 내용이 필요하면 다시 읽으세요.]',
     },
     ...parts.tail,
   ];

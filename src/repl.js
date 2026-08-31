@@ -1819,13 +1819,28 @@ export async function chatLoop(opts = {}) {
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }
             say('');
-            say(`  ${c.gray('↺ 읽기만 하고 끝내려고 해서 한 번 되밀었습니다')}`);
+            say(ev.why === '요청누락'
+              ? `  ${c.gray(`↺ 시킨 것 ${ev.빠진?.length ?? 0}가지를 빼놓고 끝내려고 해서 되밀었습니다`)}`
+              : `  ${c.gray('↺ 읽기만 하고 끝내려고 해서 한 번 되밀었습니다')}`);
             break;
 
           case 'done':
             clearThinking();
             if (streamed) { 답비우기(); say(''); }
             만든파일보이기(ev.files);
+            /*
+             * 되밀고도 그대로면 사람에게 말한다.
+             *
+             * 조용히 넘어가면 사람은 다 된 줄 알고 그 위에 다음 것을 쌓는다.
+             * 나중에 발견했을 때는 이미 늦다. 「몇 번 까먹거나 누락되거나」라는
+             * 제보가 정확히 그 모양이었다 — 빠진 것 자체보다, 빠졌다는 말을
+             * 안 한 것이 문제다.
+             */
+            if (ev.빠진?.length) {
+              say('');
+              say(`  ${c.yellow('!')} ${c.white(`시킨 것 중 ${ev.빠진.length}가지가 안 다뤄졌습니다`)}`);
+              for (const x of ev.빠진) say(`    ${c.gray(`${x.번호}. ${clip(x.글, 68)}`)}`);
+            }
             break;
         }
       }

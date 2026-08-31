@@ -115,6 +115,45 @@ for (let i = 0; i < s.messages.length; i++) {
 check('도구 호출·결과 짝이 안 깨짐', 짝깨짐 === null, 짝깨짐 ?? '');
 check('요약 요청에 사고를 안 씀', 받은요약요청?.reasoning_effort === 'low', String(받은요약요청?.reasoning_effort));
 
+// ── 2-1. 이번에 시킨 말은 요약하지 않고 원문 그대로 남긴다 ──────────────
+//
+// 요약 지시에 「## 목표 — 사용자가 무엇을 시켰는가」 가 있지만, 요약은 요약이다.
+// 네 가지를 적어 준 요청이 「네 가지를 고쳐 달라고 했다」 한 줄로 뭉개지고
+// **그 네 가지가 무엇이었는지는 사라진다.** 그러면 남은 것을 이어 하려 해도
+// 무엇이 남았는지 모른다. "요청사항이 다량일 경우 누락된다" 의 절반이 여기였다.
+//
+// 못 박는 함수만 있고 **안 부르는** 것을 잡으려고 여기서 잰다. 함수 자체는
+// asks.test.js 가 따로 본다 — 거기만 있으면, 부르는 줄을 지워도 안 빨개진다.
+{
+  mode = 'ok';
+  const 시킨말 = [
+    '1. 붙여넣기된 내용이 다 안 뜨는 것 고쳐줘',
+    '2. esc 눌러도 안 멈추는 것 고쳐줘',
+    '3. 요청이 많을 때 누락되는 것 고쳐줘',
+    '4. 여러 파일 동시 편집 넣어줘',
+  ].join('\n');
+
+  const s2 = new Session(conn, { root: process.cwd() });
+  s2.messages = 대화만들기(12);
+  s2.이번요청 = 시킨말;
+
+  const r = await compact(s2);
+  check('접기 성공 (못 박기 검사용)', r.ok, r.why ?? '');
+
+  const 접힌뒤 = s2.messages.map((m) => String(m.content ?? '')).join('\n');
+  check('★ 시킨 말이 요약 옆에 원문 그대로 남는다', 접힌뒤.includes(시킨말),
+    접힌뒤.includes('붙여넣기') ? '일부만 남음' : '아예 없음');
+  check('★ 네 항목이 다 남는다',
+    ['붙여넣기', 'esc', '누락', '동시 편집'].every((x) => 접힌뒤.includes(x)));
+  check('요약이 아니라 원문이라고 밝힌다', /원문 그대로/.test(접힌뒤));
+
+  // 시킨 말을 안 걸어 뒀으면 아무것도 안 붙어야 한다 — 빈 표는 자리만 먹는다.
+  const s3 = new Session(conn, { root: process.cwd() });
+  s3.messages = 대화만들기(12);
+  const r3 = await compact(s3);
+  check('시킨 말이 없으면 표를 안 붙인다', r3.ok && !s3.messages.some((m) => /원문 그대로/.test(String(m.content ?? ''))));
+}
+
 // ── 3. 접은 뒤 계속 쌓아도 또 접힌다 ────────────────────────────────────
 s.messages.push(...대화만들기(10));
 check('다시 차오름', shouldCompact(s));

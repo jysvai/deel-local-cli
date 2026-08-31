@@ -17,6 +17,7 @@ import { allowTemporarily, isOffline } from '../safety/network.js';
 import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴도구 } from '../safety/secrets.js';
 import { get as workMode } from './modes.js';
 import { 지시말 } from '../i18n/index.js';
+import { 빠진것, 빠졌다는말 } from './asks.js';
 
 /*
  * 콜백으로만 소식을 주는 부름을, 제너레이터가 중간에 내보낼 수 있는 모양으로 바꾼다.
@@ -163,6 +164,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * '사용자의 말' 은 자기가 받은 할일이다.
    */
   ctx.요청 = String(userText ?? '');
+  // 접힐 때 요약에 뭉개지지 않게 원문을 세션에도 박아 둔다 (compact.js 의 못박은요청).
+  session.이번요청 = ctx.요청;
 
   const conn = session.conn;
 
@@ -394,6 +397,34 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     // 진짜 보고는 길다. 한 줄로 끝났고 할 일이 남았으면 놓은 것이다.
     if (남은.length && 말.length < 120) return '할일남음';
     return null;
+  };
+
+  /*
+   * ── 시킨 것을 다 했나 (agent/asks.js) ────────────────────────────────
+   *
+   * 위의 되밀기는 **아무것도 안 바꿨을 때**만 본다(손댄파일.size 로 빠져나간다).
+   * 그런데 제보받은 것은 그게 아니었다 — 네 가지를 시키면 셋을 고치고 끝냈다.
+   * 뭐라도 고쳤으니 되밀기는 안 걸리고, 안 한 하나는 말없이 사라진다.
+   *
+   * 그래서 여기서 따로 대조한다. 시킨 것을 항목으로 쪼개 두고, 항목마다
+   * 자국이 남았는지 본다 — 할 일 목록에 있나, 손댄 파일 이름에 있나,
+   * 마지막 보고에 있나. 하나도 없으면 잊은 것이다.
+   *
+   * 한 번만 민다. 밀고도 그대로면 사람에게 말한다 — 두 번 세 번 미는 것은
+   * 모델이 못 하는 일을 억지로 시키는 꼴이고, 그 왕복은 사람이 낸다.
+   */
+  let 빠뜨림민적 = false;
+  const 빠뜨린것 = (글) => {
+    // 하위 작업은 사람이 시킨 말이 아니다. 거기 할일은 부모가 이미 쪼개 준 것이다.
+    if (깊이) return [];
+    return 빠진것({
+      요청: userText,
+      자국: [
+        ...(ctx.todos ?? []).map((x) => x.text),
+        ...손댄파일,
+        String(글 ?? ''),
+      ],
+    });
   };
 
   const 되미는말 = () => {
@@ -686,7 +717,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         yield { type: 'nudge', why: 왜, text: msg.content };
         continue;
       }
-      yield { type: 'done', steps, text: msg.content, files: 마무리() };
+      const 빠진 = 빠뜨린것(msg.content);
+      if (빠진.length && !빠뜨림민적) {
+        빠뜨림민적 = true;
+        session.push({ role: 'user', content: 빠졌다는말(빠진, { 영어: 지시말() === 'en' }) });
+        yield { type: 'nudge', why: '요청누락', 빠진, text: msg.content };
+        continue;
+      }
+      // 밀고도 그대로면 조용히 넘어가지 않는다. 사람이 알아야 다음을 정한다.
+      yield { type: 'done', steps, text: msg.content, files: 마무리(), 빠진 };
       return;
     }
 
