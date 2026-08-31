@@ -60,6 +60,36 @@ function 빈답인가(msg) {
   return !String(msg.content ?? '').trim();
 }
 
+/**
+ * 도구 결과 중에서 **대화에 실을 글**을 고른다.
+ *
+ * ── 왜 따로 두나 ────────────────────────────────────────────────────────
+ *
+ * 여태 여기는 `result.content ?? ''` 한 줄이었다. 그런데 도구가 `summary` 만
+ * 돌려주는 자리가 있다 — Recall 이 지난 대화를 다 뒤졌지만 못 찾았을 때가
+ * 그렇다. 그 경우 모델에게 가는 것은 **빈 글**이다.
+ *
+ * 사람 화면에는 「지난 대화 12개를 다 뒤졌지만 없습니다」 가 멀쩡히 찍힌다.
+ * 그래서 아무도 눈치를 못 챈다. 정작 모델은 아무 말도 못 들었으므로,
+ * 못 찾았다는 것도 모르고 **찾아본 적이 있다는 것조차** 모른다. 그 자리에서
+ * 모델이 하는 일은 둘 중 하나다 — 없는 것을 지어내거나, 사람에게 엉뚱한
+ * 선택지를 들이민다. 실제 제보가 딱 그 모양이었다.
+ *
+ * 그래서 규칙을 셋으로 못 박는다.
+ *   1) 글이 있으면 그대로.
+ *   2) 글이 없고 요약이 있으면 요약을 싣는다 — 사람이 본 것과 같은 말이다.
+ *   3) 둘 다 없으면 **없다고 말한다.** 침묵은 지어내기를 부른다.
+ */
+export function 실을글(result) {
+  if (result?.error) return `오류: ${result.error}`;
+  const 글 = result?.content;
+  if (String(글 ?? '').trim()) return String(글);
+  const 요약 = String(result?.summary ?? '').trim();
+  if (요약) return 요약;
+  return '도구는 돌았지만 돌려준 것이 없습니다.'
+    + ' 없는 것을 있다고 지어내지 말고, 못 얻었다는 것을 그대로 두고 다음으로 넘어가세요.';
+}
+
 // think 값을 규격에 맞게. 'off' 는 사고를 끈다.
 function thinkFor(conn, level) {
   if (level === 'off') return conn.kind === 'ollama' ? false : undefined;
@@ -121,6 +151,18 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 사라져서, 사내 CP949 문서가 한 번 고치는 것만으로 UTF-8 이 되어 버린다.
    */
   ctx.signal = signal;
+
+  /*
+   * 이번에 사람이 실제로 친 말. 도구가 볼 수 있게 여기 걸어 둔다.
+   *
+   * Ask 관문(agent/askcheck.js)이 이걸 본다 — "사용자가 이미 적어 준 것을
+   * 되묻고 있나" 는 원문 없이는 판단할 수 없다. 프롬프트에는 들어 있지만
+   * 그건 모델이 보는 것이고, 우리 코드가 볼 수 있는 자리가 없었다.
+   *
+   * 하위 작업에서는 그 하위가 받은 할일이 들어온다. 그게 맞다 — 하위에게
+   * '사용자의 말' 은 자기가 받은 할일이다.
+   */
+  ctx.요청 = String(userText ?? '');
 
   const conn = session.conn;
 
@@ -1058,7 +1100,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         for (const f of result.여럿 ?? []) if (f.ok && f.path) 손댄파일.add(f.path);
 
         // 앞에서 똑같이 부른 적이 있고 결과도 같으면, 결과를 다시 싣지 않는다.
-        let 실을것 = result.error ? `오류: ${result.error}` : result.content ?? '';
+        let 실을것 = 실을글(result);
         if (!result.error) {
           const 서명 = 서명만들기(call);
           // 결과도 한 모양으로 맞춰 견준다. 여러 도구가 받은 경로를 답에 그대로

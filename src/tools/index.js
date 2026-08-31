@@ -24,6 +24,7 @@ import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOldHwp, 옛hwp안내, 문서는못고침 } from './docs.js';
 import { 바꿔볼까, 직접못읽나, 변환기찾기, 글로바꾸기, 못바꿈말 } from './convert.js';
+import { 물음검사 } from '../agent/askcheck.js';
 import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽은말, pdf는못고침, 한쪽도못읽음말 } from './pdf.js';
 import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
@@ -1673,13 +1674,21 @@ export const TOOLS = {
        * 첫 문장에 제일 중요한 것을 둔다 — 좁은 창에서는 설명줄이기가
        * **뒤에서부터 문장째로** 잘라 낸다. 8k 에서 남는 것은 앞 90자다.
        */
-      description: '갈림길에서 사람에게 하나 묻는다. 글로 "알려주세요" 하고 끝내지 마라 —'
-        + ' 턴이 끝나서 여태 본 것이 버려진다. options 에 2~4개를 주면 숫자로 답한다.'
+      description: '갈림길에서 사람에게 하나 묻는다. **먼저 `이해` 에 이번 요청을 무엇으로'
+        + ' 알아들었는지 한 줄로 적고**, 그러고도 정말 정할 것이 남았을 때만 묻는다.'
+        + ' 글로 "알려주세요" 하고 끝내지 마라 — 턴이 끝나서 여태 본 것이 버려진다.'
+        + ' options 에 2~4개를 주면 숫자로 답한다.'
         + ' **이미 사용자가 말한 것을 다시 묻지 마라.** "파일 정리해 줘" 라고 했으면'
         + ' 그게 답이다 — 그대로 하면 된다. 어떻게 할지 정하는 것은 네 일이다.',
       parameters: {
         type: 'object',
         properties: {
+          이해: {
+            type: 'string',
+            description: '이번 요청을 무엇으로 알아들었는지 한 줄. 사람은 이 줄을 보고 네가'
+              + ' 제대로 읽었는지 판단한다. "요청을 이해했습니다" 같은 인사말은 안 된다 —'
+              + ' 그 일의 내용이 들어가야 한다',
+          },
           question: { type: 'string', description: '한 문장짜리 질문. 무엇을 정해야 하는지 분명하게' },
           options: {
             type: 'array',
@@ -1687,7 +1696,7 @@ export const TOOLS = {
             description: '고를 것 2~4개. 각각 한 줄로, 무엇이 달라지는지 알 수 있게',
           },
         },
-        required: ['question'],
+        required: ['이해', 'question'],
       },
     },
     async run(args, ctx) {
@@ -1696,11 +1705,16 @@ export const TOOLS = {
 
       const 고를것 = (Array.isArray(args.options) ? args.options : [])
         .map((x) => String(x ?? '').trim()).filter(Boolean).slice(0, 4);
+      const 이해 = String(args.이해 ?? '').trim();
 
       /*
        * 물어볼 자리가 없는 데서도 안 죽어야 한다 — `deel -p` 한 방 실행, 파이프,
        * 하위 작업. 거기서는 **막히지 말고** 스스로 판단하라고 돌려준다.
        * 답을 기다리며 서 있으면 그 실행은 영영 안 끝난다.
+       *
+       * 아래 관문보다 **먼저** 본다. 어차피 아무도 못 듣는 자리에서 "이해를
+       * 채워서 다시 물어라" 라고 돌려주면, 고쳐서 다시 불러도 결과가 같다 —
+       * 왕복만 한 번 늘고 그 실행은 그만큼 늦어진다.
        */
       /*
        * 결과는 반드시 `content` 로 돌려준다.
@@ -1717,7 +1731,17 @@ export const TOOLS = {
         };
       }
 
-      const 답 = await ctx.ask물음(물음, 고를것);
+      /*
+       * 사람에게 내보내기 전에 한 번 거른다 (agent/askcheck.js).
+       *
+       * 막힌 물음은 **오류로** 돌려준다. content 로 돌려주면 모델은 그것을
+       * 사람의 답으로 읽고 그대로 이어 간다 — 묻지도 않은 답을 받은 셈이 된다.
+       * 오류여야 되풀이 감지에도 걸리고, 같은 물음을 또 던지지 않는다.
+       */
+      const 관문 = 물음검사({ 물음, 고를것, 이해, 요청: ctx.요청 ?? '' });
+      if (!관문.ok) return { error: 관문.할말, 끝났다: true, 물음막힘: 관문.왜 };
+
+      const 답 = await ctx.ask물음(물음, 고를것, 이해);
       if (답 === null || 답 === undefined || String(답).trim() === '') {
         return { content: '사람이 답하지 않았습니다. 되묻지 말고 스스로 판단해 이어가세요.' };
       }
@@ -1756,7 +1780,24 @@ export const TOOLS = {
         const 왜 = r.예산초과
           ? `지난 대화 ${r.전체파일}개 중 ${r.본파일}개까지만 뒤졌습니다(양이 많아 멈춤). 못 찾았습니다`
           : `지난 대화 ${r.본파일}개를 다 뒤졌지만 없습니다`;
-        return { summary: `${왜}: ${q}`, hits: [], searched: r.본파일, total: r.전체파일, partial: r.예산초과 };
+        /*
+         * content 를 반드시 채운다.
+         *
+         * 대화에 실리는 것은 content 다. 여태 여기는 summary 만 돌려줬고,
+         * 그래서 **모델에게는 빈 글이 갔다.** 사람 화면에는 「없습니다」가
+         * 멀쩡히 찍히니 아무도 못 알아챘다. 모델은 못 찾은 줄도 모르고
+         * 찾아본 줄도 몰라서, 그 자리에서 엉뚱한 선택지를 들이밀었다.
+         *
+         * 「없다」는 것도 알아낸 것이다. 알아낸 것은 반드시 전한다.
+         */
+        const 없다는말 = `${왜}: ${q}\n`
+          + '이 대화 밖에는 단서가 없습니다. 없는 것을 지어내지 말고,'
+          + ' 지금 대화에 있는 것으로 판단하거나 무엇이 없는지 밝히세요.';
+        return {
+          content: 없다는말,
+          summary: `${왜}: ${q}`,
+          hits: [], searched: r.본파일, total: r.전체파일, partial: r.예산초과,
+        };
       }
 
       const 줄들 = r.맞은것.map((h) => {

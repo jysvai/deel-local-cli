@@ -150,6 +150,8 @@ trace('3-진짜로-왕복하나');
           function: {
             name: 'Ask',
             arguments: JSON.stringify({
+              // 이해를 빼면 관문(agent/askcheck.js)이 막는다 — 그게 규칙이다.
+              이해: '이 저장소를 배포할 수 있게 정리하라는 것으로 이해했습니다',
               question: '구조를 어디까지 바꿀까요?',
               options: ['표준 패키지 구조로 전부 재배치', '파일 이동은 최소화하고 .env.example 만 추가'],
             }),

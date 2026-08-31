@@ -134,12 +134,16 @@ export const 도구설명EN = {
     },
   },
   Ask: {
-    desc: 'Ask the person one question at a genuine fork. Never write "let me know" and stop;'
-      + ' asking in prose ends the turn and throws away everything you have looked at.'
-      + ' Give 2-4 options and they answer with a single number.'
+    desc: 'Ask the person one question at a genuine fork. **First fill in `이해` with what you'
+      + ' understood this request to be**, and only ask if something is genuinely left to decide.'
+      + ' Never write "let me know" and stop; asking in prose ends the turn and throws away'
+      + ' everything you have looked at. Give 2-4 options and they answer with a single number.'
       + ' **Never ask back something the user already said.** "Tidy up the files" is the answer —'
       + ' go and do it. Deciding how is your job, not theirs.',
     params: {
+      이해: 'one line: what you understood this request to be. The person reads this line to judge'
+        + ' whether you actually read them. "I understand your request" is not an understanding —'
+        + ' name the actual work',
       question: 'one sentence. Make it clear what has to be decided',
       options: '2-4 choices, one line each, so the difference is visible',
     },

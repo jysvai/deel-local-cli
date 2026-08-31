@@ -924,11 +924,26 @@ export async function chatLoop(opts = {}) {
       say('');
     },
 
-    ask물음: async (물음, 고를것 = []) => {
+    ask물음: async (물음, 고를것 = [], 이해 = '') => {
       if (closed) return null;
+      const 폭 = Math.max(40, Math.min(88, (process.stdout.columns || 80) - 6)) - 4;
       say('');
       say(`  ${c.hcyan('┌')} ${c.bold(옮긴말('ask.title'))}`);
-      for (const 줄 of 접어쓰기(물음, Math.max(40, Math.min(88, (process.stdout.columns || 80) - 6)) - 4)) {
+      /*
+       * 물음보다 **이해를 먼저** 보여 준다.
+       *
+       * 사람이 이 상자에서 제일 먼저 알고 싶은 것은 "얘가 내 말을 알아듣긴
+       * 했나" 이다. 그걸 모르는 채 선택지부터 보면, 답을 고르는 것이 아니라
+       * 딴소리를 하는지 아닌지를 먼저 가늠해야 한다. 순서가 뒤바뀌면
+       * 물음 자체가 짐이 된다.
+       */
+      if (String(이해 ?? '').trim()) {
+        for (const 줄 of 접어쓰기(`알아들은 것: ${String(이해).trim()}`, 폭)) {
+          say(`  ${c.hcyan('│')} ${c.gray(줄)}`);
+        }
+        say(`  ${c.hcyan('│')}`);
+      }
+      for (const 줄 of 접어쓰기(물음, 폭)) {
         say(`  ${c.hcyan('│')} ${c.white(줄)}`);
       }
       if (고를것.length) {
