@@ -50,6 +50,7 @@ const FILES = [
   'modes.test.js',
   'route.test.js',
   'planapprove.test.js',
+  'resume.test.js',
   'ask.test.js',
   'askcheck.test.js',
   'asks.test.js',
