@@ -185,6 +185,9 @@ trace('6-진짜로-한-덩이로-가나');
     { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...환경, DEEL_HOME: home } });
 
   let out = '';
+  // 조각 경계에서 한글이 쪼개지면 글자가 깨진다. 스트림에 맡긴다.
+  kid.stdout.setEncoding('utf8');
+  kid.stderr.setEncoding('utf8');
   kid.stdout.on('data', (d) => { out += d; });
   kid.stderr.on('data', (d) => { out += d; });
   const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -222,6 +225,11 @@ trace('6-진짜로-한-덩이로-가나');
    * 달리 이 방법은 느린 PC 에서도 알아서 맞는다.
    */
   await 기다리기('붙여넣기 표 켜기', () => out.includes('\x1b[?2004h'));
+  // ❯ 가 보이면 입력 상자가 그려진 것이다 — 키를 받을 채비가 끝났다는 뜻.
+  // 켜는 도중에도 잠깐 조용한 틈이 있어서, 조용해지는 것만으로는 이르다
+  // (newline.test.js 에서 그 틈에 걸려 한 번 헛짚었다).
+  await 기다리기('입력 자리(❯)가 그려지기',
+    () => out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').includes('❯'));
   await 기다리기('화면이 다 그려지기', (() => {
     let 앞길이 = -1; let 그대로인때 = 0;
     return () => {

@@ -280,11 +280,61 @@ trace('3.7-진짜로-상자-안에서-줄이-바뀌나');
     { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...환경, DEEL_HOME: home } });
 
   let out = '';
+  // 조각 경계에서 한글이 쪼개지면 글자가 깨진다. 스트림에 맡긴다.
+  kid.stdout.setEncoding('utf8');
+  kid.stderr.setEncoding('utf8');
   kid.stdout.on('data', (d) => { out += d; });
   kid.stderr.on('data', (d) => { out += d; });
   const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  await 자기(1600);
+  /*
+   * 시간이 아니라 **조건**을 기다린다 (paste.test.js 와 같은 이유).
+   *
+   * 전에는 `자기(1600)` 이었다. 혼자 돌리면 넉넉하지만 검사 96개를 함께
+   * 돌리면 이 PC 에서 그 안에 deel 이 다 못 뜬다. 그러면 첫 글자가 아직
+   * 채비 안 된 입력으로 들어가고, 이 파일만 가끔 빨개진다 — 혼자 돌리면
+   * 멀쩡해서 원인 찾기가 제일 나쁜 종류다.
+   */
+  const 기다리기 = async (뭐, 될때까지, 최대 = 20000) => {
+    const 끝 = Date.now() + 최대;
+    while (Date.now() < 끝) {
+      if (될때까지()) return true;
+      await 자기(50);
+    }
+    check(`${뭐} 를 ${최대}ms 안에 못 봤다`, false, out.slice(-160));
+    return false;
+  };
+  const 조용해지면 = (몇번 = 8) => {
+    let 앞길이 = -1; let 그대로 = 0;
+    return () => {
+      if (out.length === 앞길이) { 그대로 += 1; return 그대로 >= 몇번; }
+      앞길이 = out.length; 그대로 = 0; return false;
+    };
+  };
+
+  /*
+   * 무엇을 기다려야 하나 — **입력 자리(❯)가 그려질 때까지**다.
+   *
+   * 처음에 "화면이 조용해지면" 하나로 잡았다가 헛짚었다. 켜는 도중에도 잠깐씩
+   * 조용한 틈이 있어서(인트로가 무언가를 기다리는 사이), 아직 키 처리가
+   * 안 걸린 자리에 글자를 밀어 넣었다. 그러면 Option+Enter 가 그냥 글자로
+   * 먹혀 "안녕반가워" 가 된다 — 이 파일이 잡으려는 결함과 **똑같은 증상**이라,
+   * 원인을 코드 쪽으로 오해하기 딱 좋다.
+   *
+   * ❯ 는 입력 상자를 그릴 때 나온다. 그게 보였으면 키를 받을 채비가 끝난 것이다.
+   */
+  const 민것 = () => out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+  await 기다리기('입력 자리(❯)가 그려지기', () => 민것().includes('❯'));
+  await 기다리기('그리기가 끝나기', 조용해지면());
+
+  /*
+   * 조건으로 기다리는 것은 **켤 때와 보낸 뒤**뿐이다.
+   *
+   * 사이의 한 글자 한 글자는 그대로 짧게 잔다. 여기는 흔들린 적이 없고,
+   * 무엇보다 상자는 글자를 칠 때마다 다시 그리지 않는다 — '안녕' 을 쳐도
+   * 다음 판이 올 때까지 화면에는 안 나온다. 그걸 신호로 삼으면 있지도 않은
+   * 것을 20초 기다리게 된다(실제로 그렇게 한 번 헛짚었다).
+   */
   kid.stdin.write('안녕');
   await 자기(250);
   const 켠뒤 = out.length;          // 여기서부터가 줄바꿈을 누른 뒤 화면이다
@@ -294,7 +344,8 @@ trace('3.7-진짜로-상자-안에서-줄이-바뀌나');
   await 자기(400);
   const 보내기전 = out;             // Enter 를 치기 바로 전 화면
   kid.stdin.write('\n');            // 사람이 Enter 를 친다
-  await 자기(2200);
+  await 기다리기('두 줄이 모델까지 가기', () => 받은것.length >= 1);
+  await 기다리기('답이 화면에 되비치기', 조용해지면());
   kid.stdin.write('/exit\n');
   await Promise.race([new Promise((r) => kid.on('close', r)), 자기(7000).then(() => kid.kill())]);
   srv.close();
