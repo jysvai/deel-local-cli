@@ -100,7 +100,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
-| [Release notes](docs/en/releases.md) | [1.6.0](docs/en/releases.md#160) · [1.5.8](docs/en/releases.md#158) · [1.5.7](docs/en/releases.md#157) · [1.5.6](docs/en/releases.md#156) · [1.5.5](docs/en/releases.md#155) · [1.5.4](docs/en/releases.md#154) · [1.5.3](docs/en/releases.md#153) · [1.5.2](docs/en/releases.md#152) · [1.5.1](docs/en/releases.md#151) · [1.5.0](docs/en/releases.md#150) · [1.4.3](docs/en/releases.md#143) · [1.4.2](docs/en/releases.md#142) · [1.4.1](docs/en/releases.md#141) · [1.4.0](docs/en/releases.md#140) · [1.3.0](docs/en/releases.md#130) · [1.2.0](docs/en/releases.md#120) |
+| [Release notes](docs/en/releases.md) | [1.6.1](docs/en/releases.md#161) · [1.6.0](docs/en/releases.md#160) · [1.5.8](docs/en/releases.md#158) · [1.5.7](docs/en/releases.md#157) · [1.5.6](docs/en/releases.md#156) · [1.5.5](docs/en/releases.md#155) · [1.5.4](docs/en/releases.md#154) · [1.5.3](docs/en/releases.md#153) · [1.5.2](docs/en/releases.md#152) · [1.5.1](docs/en/releases.md#151) · [1.5.0](docs/en/releases.md#150) · [1.4.3](docs/en/releases.md#143) · [1.4.2](docs/en/releases.md#142) · [1.4.1](docs/en/releases.md#141) · [1.4.0](docs/en/releases.md#140) · [1.3.0](docs/en/releases.md#130) · [1.2.0](docs/en/releases.md#120) |
 
 ---
 
@@ -998,6 +998,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| **[1.6.1](docs/en/releases.md#161)** | The places that made a turn spin in circles — the fence blocking `/dev/null` · old documents it could not read · images vanishing from files |
 | **[1.6.0](docs/en/releases.md#160)** | The things that did not work on a corporate network — proxy · 429 · Windows shell · 50k-file repos · PDF · clipboard paste · editor resume |
 | **[1.5.8](docs/en/releases.md#158)** | A 5MB document showed 8 lines out of 919 · a regex read as a path blocked the command |
 | **[1.5.7](docs/en/releases.md#157)** | Korean folders on macOS made your own files "out of scope" · paste · ESC |

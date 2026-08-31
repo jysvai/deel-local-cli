@@ -101,7 +101,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.6.0](docs/ko/releases.md#160) · [1.5.8](docs/ko/releases.md#158) · [1.5.7](docs/ko/releases.md#157) · [1.5.6](docs/ko/releases.md#156) · [1.5.5](docs/ko/releases.md#155) · [1.5.4](docs/ko/releases.md#154) · [1.5.3](docs/ko/releases.md#153) · [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
+| [릴리스 노트](docs/ko/releases.md) | [1.6.1](docs/ko/releases.md#161) · [1.6.0](docs/ko/releases.md#160) · [1.5.8](docs/ko/releases.md#158) · [1.5.7](docs/ko/releases.md#157) · [1.5.6](docs/ko/releases.md#156) · [1.5.5](docs/ko/releases.md#155) · [1.5.4](docs/ko/releases.md#154) · [1.5.3](docs/ko/releases.md#153) · [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
 
 ---
 
@@ -989,6 +989,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
+| **[1.6.1](docs/ko/releases.md#161)** | 헛도는 턴을 만들던 자리들 — 울타리가 `/dev/null` 까지 막던 것 · 옷 문서를 못 읽던 것 · 파일에서 그림이 사라지던 것 |
 | **[1.6.0](docs/ko/releases.md#160)** | 사내망에서 안 되던 것들 — 프록시 · 429 · 윈도우 셸 · 5만 개 저장소 · PDF · 캡처 붙여넣기 · 에디터 이어하기 |
 | **[1.5.8](docs/ko/releases.md#158)** | 5MB 문서를 919줄 중 8줄만 보던 것 · 정규식을 경로로 읽어 명령을 막던 것 |
 | **[1.5.7](docs/ko/releases.md#157)** | 맥 한글 폴더에서 제 파일이 「범위 밖」이던 것 · 붙여넣기 · ESC |

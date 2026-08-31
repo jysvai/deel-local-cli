@@ -1,6 +1,6 @@
 {
   "name": "deel-local-cli",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "로컬 모델·사내 게이트웨이 전용 코딩 에이전트 CLI — 외부 의존성 0개 / Zero-dependency coding agent CLI for local LLMs and private gateways",
   "type": "module",
   "license": "MIT",

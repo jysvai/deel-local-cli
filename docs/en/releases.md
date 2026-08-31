@@ -6,6 +6,157 @@ What changed in each version, and why
 
 ---
 
+## 1.6.1
+
+**The places that made a turn spin in circles**
+
+These came out of actually using 1.6.0 on a Mac. An ordinary request — turn these
+company reports (pptx, pdf) into HTML — spun and stalled. Walking that screen from the
+top, it was **not four bugs but one chain**:
+
+```
+could not read it → the detour was fenced off → the failure gave no way forward
+                  → the model kept knocking on the same door → context burned, stuck
+```
+
+Fixing one link just moves the stall to the next one, so the whole chain is cut.
+
+| | 1.6.0 | 1.6.1 |
+|---|---|---|
+| `soffice … > /dev/null` | Blocked: "outside the working folder" | Goes through (nothing is stored there) |
+| `ls /usr/bin` | Blocked — could not even see what is installed | Allowed (where programs live) |
+| `.ppt` · `.doc` · `.xls` | "Binary file" | **Borrows the installed LibreOffice** |
+| With no converter either | Same message, over and over | Reason + fix + **"do not open it again"** |
+| A 1,425-line file on a 32k model | Screen said `1425 lines` (384 were sent) | `384/1425 lines (partial)` |
+| An answer cut off at the ceiling | Silence | Says where it was cut, and `/out` |
+| A PDF with 11 unreadable pages | Returned as **success** | Returned as failure, with the reason |
+| A bare "hi" | Called the model twice (6.8s) | Once |
+| Editing a file with embedded images | **Images silently disappeared** | Blocked |
+
+The test suite goes from **4,932 to 5,024 checks** (92 → 94 files).
+
+---
+
+### The safety fence was blocking things that are not data
+
+```
+▶ Bash(soffice --convert-to txt report.pptx > /dev/null 2>&1)
+  └ Blocked — outside the working folder: /dev/null
+▶ Bash(ls -l /usr/bin/strings)
+  └ Blocked — outside the working folder: /usr/bin/strings
+```
+
+Half the shell commands in the world carry `2>/dev/null`. That one fragment got the whole
+command refused. The second one is how you find out what this machine has — and without
+that, there is no detour to find.
+
+Now **places that store nothing** (`/dev/null` and friends) and **places where programs
+live** (`/usr/bin`, `/Applications`, `Program Files`…) do not go through the fence. Other
+people's home directories, `/etc`, `/var` and `/tmp` stay blocked. The model is told to
+put scratch files under `.deel/tmp/`.
+
+### Old documents it cannot read: it borrows this machine's converter
+
+```
+◧ Read(report.ppt)
+  └ Binary file — cannot be read as text          ← 1.6.0
+
+◧ Read(report.ppt)
+  └ converted with soffice · 148 lines            ← 1.6.1
+```
+
+That Mac had LibreOffice on it all along — the very program a person double-clicks the
+file with. deel borrows it on **the same terms** it borrowed `rg` in 1.6.0: **nothing is
+ever installed.** On macOS the faster `textutil` goes first, and the places that are not
+on `PATH` (inside macOS app bundles, `Program Files`) are checked too. Turn it off with
+`DEEL_CONVERT=off`.
+
+Converted text lands inside the working folder (`.deel/tmp/`) and is **deleted the moment
+it is read** — that text is the document's own content, and a copy left behind is a copy
+that can be committed or zipped up. The original is never touched.
+
+[More →](documents.md#formats-it-cannot-read-it-borrows-this-machines-converter)
+
+### When something cannot be done, it says so definitively
+
+With no converter, this is how it ends:
+
+```
+◧ Read(report.ppt)
+  └ report.ppt is a format deel cannot read directly (.ppt).
+    LibreOffice (soffice) is not on this machine, so it cannot be converted either.
+    Fix: save it as pptx from the original program and hand it over again.
+    **Do not Read this file again. The result will be the same.**
+```
+
+What the file is, what is missing, and what you can do about it — in one message. The fix
+differs per format: docx for `.doc`, xlsx for `.xls`, hwpx for `.hwp`. **A refusal with no
+way forward is the expensive kind.** The model reopens the file, tries a shell detour, hits
+the fence, and every one of those round trips is tokens.
+
+When a format deel *can* read fails to open, the bytes are compared against the extension
+and the file is named for what it actually is — not lumped into "corrupt, or a different
+format." Corrupt means there is nothing to do; a different format means convert it. Those
+are entirely different situations.
+
+### The Read summary was not telling the truth
+
+It printed the file's **total** line count, not what actually reached the model.
+
+```
+On screen      ◧ Read(report.html)   1425 lines
+The model got  384 lines  (at ctx 32k)
+```
+
+The truncation notice existed only in the body sent to the model, never on screen. So the
+person believes it was all read and keeps asking "why can't you fix that part." It now
+prints `384/1425 lines (partial)`.
+
+### An answer cut off at the ceiling said nothing
+
+When the cap cannot go higher and thinking is already at the floor, there is nothing left
+to do — but it used to just end quietly. All that is left on screen is an answer that stops
+mid-sentence, which reads as a lazy model, so the person asks again and it gets cut at the
+same place. It now says where it was cut and which knob to turn (`/out`).
+
+### An unreadable PDF was being returned as a success
+
+Eleven pages, none of them readable, reported as **success**. That means loop detection,
+learning and retry suppression all fail to trigger. It is now a failure, and the reason is
+carried up to the screen summary (`11 pages unreadable (font has no /ToUnicode table)`) —
+because a scan and a font problem call for completely different things from a person.
+
+### A one-word greeting called the model twice
+
+```
+❯ hi
+  ▌ Hello! What can I help you with?
+  ↺ It only read and stopped, so it was nudged once
+  ▌ Hello! Nice to meet you.
+  ── 6.8s
+```
+
+The nudge exists to catch a turn that hands the work back without doing it. A greeting has
+no work in it. Nothing asked means nothing left undone. Greetings are not nudged; "hi, tidy
+up the README" still is.
+
+### And images were silently disappearing from files
+
+The worst of the batch. Embedded images (base64) are stripped when a file is read, so when
+the model edits that text and writes it back, **what it never saw is not in the new
+content.**
+
+```
+◧ Read(report.html)   1425 lines · 8.0MB of images elided
+◈ Write(report.html)  1420 lines        ← seven images, 8MB, gone right here
+```
+
+No error, nothing wrong on screen. You find out by opening the file. **What we hid is our
+responsibility** — the model cannot protect what it was never shown. Image counts are now
+compared before an overwrite, and a drop is refused.
+
+---
+
 ## 1.6.0
 
 **The things that did not work on a corporate network**
