@@ -1,7 +1,7 @@
 // 도구. 이름과 인자를 Claude Code 와 같게 맞춘다 —
 // 그래야 그 관례로 쓰인 스킬·명령이 그대로 먹는다.
 import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, renameSync, cpSync, rmSync } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, extname, join, relative, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
@@ -23,6 +23,7 @@ import { allow as allowedIn } from '../agent/modes.js';
 import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOldHwp, 옛hwp안내, 문서는못고침 } from './docs.js';
+import { 바꿔볼까, 직접못읽나, 변환기찾기, 글로바꾸기, 못바꿈말 } from './convert.js';
 import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽은말, pdf는못고침, 한쪽도못읽음말 } from './pdf.js';
 import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
@@ -329,7 +330,18 @@ function 엑셀은못고침(보인이름) {
  */
 async function 엑셀읽기(abs, args, ctx) {
   const r = await readExcel(abs, { askPassword: ctx.askPassword ?? null });
-  if (!r.ok) return { error: r.error };
+  if (!r.ok) {
+    /*
+     * 옛 `.xls` 는 엑셀 COM 말고는 길이 없었다. 그래서 엑셀이 없는 PC —
+     * 맥과 리눅스가 전부 여기다 — 에서는 그냥 실패로 끝났다. 이 PC 에
+     * LibreOffice 가 있으면 그것이 곧 길이다. 표는 아니고 글이지만,
+     * 아무것도 못 읽는 것보다 낫다.
+     */
+    const 빌린것 = 빌려읽기(abs, ctx, r.error);
+    if (빌린것) return 빌린것;
+    if (직접못읽나(abs)) return { error: 못바꿈말(ctx.scope.show(abs), extname(abs)), 끝났다: true };
+    return { error: r.error };
+  }
 
   const { text, 잘림 } = excelText(r.sheets);
   const 말 = [...(r.notes ?? []), ...잘림];
@@ -349,9 +361,55 @@ async function 엑셀읽기(abs, args, ctx) {
  * 엑셀읽기와 같은 규칙 — ctx.seen 에 안 넣는다. 넣으면 Edit 이 '이 파일 고칠
  * 수 있다' 고 오해한다. 문서는 이 도구로 고치는 물건이 아니다.
  */
+/**
+ * 우리가 못 읽는 문서를 **이미 깔린 변환기**로 한 번 더 해 본다 (tools/convert.js).
+ *
+ * `rg` 를 빌려 쓰는 것과 같은 원칙이다 — 아무것도 설치하지 않고, 있으면 쓰고,
+ * 없으면 없다고 말한다. 여기가 붙기 전에는 이렇게 끝났다:
+ *
+ *   ◧ Read(보고서.pptx)
+ *     └ pptx 모양이 아닙니다 — 깨졌거나 다른 형식입니다.
+ *
+ * 정작 그 PC 에는 LibreOffice 가 깔려 있었다. 사람이 그 파일을 열어 보는 바로
+ * 그 프로그램이다. 그런데 모델은 그걸 부를 수도 없었고(울타리에 막혔다),
+ * 있는지 볼 수도 없었다.
+ *
+ * @returns {object|null} 읽어냈으면 도구 결과. 못 하면 null (부르는 쪽이 원래 오류를 낸다)
+ */
+function 빌려읽기(abs, ctx, 원래오류) {
+  if (!바꿔볼까(abs)) return null;
+  const root = ctx.scope?.root;
+  if (!root) return null;
+
+  // ctx.변환기 는 검사에서 가짜 변환기를 끼우는 자리다. 진짜 LibreOffice 를
+  // 깔아야만 확인되는 검사는 아무도 안 돌린다.
+  const 있는것 = ctx.변환기 ?? 변환기찾기();
+  if (!있는것.soffice && !있는것.textutil) return null;
+
+  const r = 글로바꾸기(abs, root, { 찾은것: 있는것 });
+  if (!r.ok || !r.text.trim()) return null;
+
+  const 줄수 = r.text.split('\n').length;
+  return {
+    content: clip(
+      `${r.text}\n\n(deel 이 직접 못 읽는 형식이라 이 PC 의 ${r.쓴것} 로 글만 뽑아 보여준 것입니다.`
+      + ' 원본은 한 글자도 안 바뀌었습니다. 이 파일은 Edit/Write 로 고칠 수 없습니다 —'
+      + ` 고쳐야 하면 새 파일에 쓰세요.)\n(원래 못 읽은 까닭: ${String(원래오류).split('\n')[0]})`,
+    ),
+    summary: `${r.쓴것} 로 바꿔 읽음 · ${줄수}줄`,
+  };
+}
+
 function 문서읽기(abs, ctx) {
   const r = readDoc(abs);
-  if (!r.ok) return { error: r.error };
+  if (!r.ok) {
+    // 우리가 못 읽는다고 끝이 아니다. 이 PC 에 변환기가 있으면 빌려 본다.
+    const 빌린것 = 빌려읽기(abs, ctx, r.error);
+    if (빌린것) return 빌린것;
+    // 끝났다 를 그대로 넘긴다. 여기서 떨구면 docs.js 가 「다시 열어도 같다」고
+    // 판정해 놓은 것이 루프까지 못 가서, 되풀이 억제가 안 걸린다.
+    return { error: r.error, ...(r.끝났다 ? { 끝났다: true } : {}) };
+  }
   const { text, 잘림 } = docText(r.덩이들);
   return {
     content: clip(
@@ -862,8 +920,30 @@ export const TOOLS = {
       if (abs.toLowerCase().endsWith('.hwp')) {
         try {
           const 머리 = readFileSync(abs);
-          if (looksOldHwp(abs, 머리)) return { error: 옛hwp안내(ctx.scope.show(abs)) };
+          if (looksOldHwp(abs, 머리)) {
+            // 여기도 먼저 빌려 본다. 이 PC 에 변환기가 있으면 안내문보다 글이 낫다.
+            const 안내 = 옛hwp안내(ctx.scope.show(abs));
+            return 빌려읽기(abs, ctx, 안내) ?? { error: 안내 };
+          }
         } catch { /* 아래 일반 읽기가 제 오류를 낸다 */ }
+      }
+
+      /*
+       * 옛 Office(.ppt·.doc·.xls·.rtf·.odt…)가 여기서 걸린다.
+       *
+       * 위의 갈래들과 달리 우리는 이걸 아예 못 읽는다. 그냥 두면 아래 일반
+       * 읽기가 `바이너리 파일입니다` 로 끝냈다 — 까닭도 길도 없는 거절이라
+       * 모델이 같은 문을 계속 두드린다. 사내 자료에 제일 흔한 갈래가 하필
+       * 이것들이다.
+       *
+       * 그래서 여기서 두 갈래로 끝낸다. 이 PC 에 변환기가 있으면 빌려 읽고,
+       * 없으면 **없다고 못 박고 끝낸다**(끝났다: true → 되풀이 억제가 걸린다).
+       */
+      if (직접못읽나(abs)) {
+        const 보인이름 = ctx.scope.show(abs);
+        const 빌린것 = 빌려읽기(abs, ctx, `${보인이름} 을 deel 이 직접 못 읽습니다.`);
+        if (빌린것) return 빌린것;
+        return { error: 못바꿈말(보인이름, extname(abs)), 끝났다: true };
       }
 
       const 읽음 = readTextFull(abs);

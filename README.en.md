@@ -536,7 +536,12 @@ their cost; here is why.
 **A file saved as CP949 is written back as CP949.** The encoding is never changed.
 Excel (`.xlsx`) is read as CSV — read-only.
 
-> **More** — Encoding · Excel
+Old formats (`.ppt`, `.doc`, `.xls`, `.rtf`) are read by **borrowing the LibreOffice already
+on this machine** — the same terms on which deel borrows `rg`, and nothing is ever installed.
+With no converter it **says so definitively and stops**: what is missing, what you can do about
+it, and not to open the file again. Turn it off with `DEEL_CONVERT=off`.
+
+> **More** — Encoding · Excel · borrowing a converter
 >
 > **[Korean documents and Excel read →](docs/en/documents.md#korean-text-and-excel)**
 

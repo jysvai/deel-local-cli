@@ -61,8 +61,52 @@ forward pushes the model onto a detour. Once reading works, that detour does not
 **handing the agent a spec document and saying "build this"** finally works.
 
 Editing stays off. Round-tripping a document with formatting, images and forms through plain
-text always loses something. Old-style `.hwp` (OLE) cannot be read — instead deel tells you
-the way out: save it as hwpx in Hancom Office and it reads fine.
+text always loses something. Old-style `.hwp` (OLE) cannot be read directly — deel tells you
+the way out (save it as hwpx in Hancom Office) and, if this machine has LibreOffice, borrows
+it to read the file anyway (below).
+
+### Formats it cannot read: it borrows this machine's converter
+
+`.ppt` · `.doc` · `.xls` · `.rtf` · `.odt` — the old formats deel cannot read itself — are the
+most common thing in a corporate share, along with files named `.pptx` whose bytes are an old
+`.ppt`. Until now such a file ended here:
+
+```
+◧ Read(report.ppt)
+  └ Binary file — cannot be read as text
+```
+
+A refusal with no reason and no way forward. The model reopens the same file, then tries a
+shell detour and hits the safety fence, and that round trip is your context. **Meanwhile that
+machine usually has LibreOffice on it** — the very program a person would open the file with.
+deel borrows it, on the same terms it borrows `rg`.
+
+```
+◧ Read(report.ppt)
+  └ converted with soffice · 148 lines
+```
+
+- **Nothing is ever installed.** If it is there, it gets used; if not, deel says so and stops.
+- On macOS the faster `textutil` goes first.
+- It looks in the places that are not on `PATH` — inside macOS app bundles, `Program Files`.
+- Converted text lands **inside the working folder** (`.deel/tmp/`) and is **deleted the moment
+  it is read** — the extracted text is the document's own content, and a copy left behind is a
+  copy that can be committed or zipped up. The original is never touched.
+- Turn it off with `DEEL_CONVERT=off`.
+
+With no converter either, it **says so definitively and stops** — what the file is, what is
+missing, what you can do about it, and not to open it again:
+
+```
+◧ Read(report.ppt)
+  └ report.ppt is a format deel cannot read directly (.ppt).
+    LibreOffice (soffice) is not on this machine, so it cannot be converted either.
+    Fix: save it as pptx from the original program and hand it over again.
+    **Do not Read this file again. The result will be the same.**
+```
+
+A borrowed read is still not editable with `Edit` or `Write` — only the text was extracted, so
+writing it back would flatten the original layout.
 
 ### PDF — page by page, and it says which pages it could not read
 
@@ -115,7 +159,9 @@ and somebody has to export a CSV by hand. `Read` just does it.
 - Formulas come back as **computed values**, and error values like `#REF!` are not dropped.
 
 **Password-protected files and legacy `.xls`** are handed to Excel itself; those cannot be
-unpacked directly. You are asked for the password at that point.
+unpacked directly. You are asked for the password at that point. On a machine without Excel
+— every Mac and Linux box — LibreOffice is borrowed instead and the file is read as text.
+Text rather than a table, but better than reading nothing at all.
 
 The password is **not stored anywhere**:
 

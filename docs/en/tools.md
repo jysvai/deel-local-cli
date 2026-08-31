@@ -131,6 +131,37 @@ holds them together.
 Turn it off with `DEEL_GREP=js` — the switch exists so you can compare both paths on the same spot
 when a result looks suspicious.
 
+### It borrows this machine's document converter too
+
+**Same principle as `rg`.** deel reads hwpx, docx, pptx, xlsx and pdf on its own, but office files
+in the wild are often named `.pptx` while the bytes inside are an old `.ppt`. Until now that ended
+here:
+
+```
+◧ Read(report.pptx)
+  └ Not a pptx — corrupt, or a different format.
+```
+
+With no way forward, the model reopened the same file again and again. **Meanwhile LibreOffice was
+installed on that machine** — the very program a person would double-click the file with.
+
+```
+◧ Read(report.pptx)
+  └ converted with soffice · 148 lines
+```
+
+| | |
+|---|---|
+| What it borrows | `soffice` (LibreOffice) and `textutil` (macOS). On macOS the faster `textutil` goes first |
+| Where it looks | `PATH`, plus the places that are not on `PATH` — inside macOS app bundles, `Program Files` on Windows |
+| What it tries to convert | `.ppt` · `.doc` · `.xls` · `.rtf` · `.odt` · `.hwp`, and any file whose extension and bytes disagree |
+| Where output goes | `.deel/tmp/` — **inside** the working folder, deleted the moment it is read. The original is never touched |
+| If nothing is installed | It says so and stops. **Nothing is ever installed** |
+| To turn it off | `DEEL_CONVERT=off` |
+
+**A borrowed read says it was borrowed** on screen. Such a file cannot be changed with `Edit` or
+`Write` — only the text was extracted, so writing that text back would flatten the original layout.
+
 ### When there are too many files, it says it did not look at all of them
 
 A folder walk stops at **20,000 files**. When it stops, the result ends like this:

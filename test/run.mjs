@@ -33,6 +33,7 @@ const FILES = [
   'fastgrep.test.js',
   'commit.test.js',
   'cap.test.js',
+  'convert.test.js',
   'keystore.test.js',
   'azure.test.js',
   'vision.test.js',
