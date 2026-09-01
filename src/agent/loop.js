@@ -14,7 +14,8 @@ import { Session } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './models.js';
 import { allowTemporarily, isOffline } from '../safety/network.js';
-import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴도구 } from '../safety/secrets.js';
+import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴까 } from '../safety/secrets.js';
+import { 바깥인가 } from '../safety/runmode.js';
 import { get as workMode } from './modes.js';
 import { 지시말 } from '../i18n/index.js';
 import { 빠진것, 빠졌다는말 } from './asks.js';
@@ -170,6 +171,23 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   session.이번요청 = ctx.요청;
 
   const conn = session.conn;
+
+  /*
+   * ── 바깥 모델에게는 파일 속 비밀도 가린다 ───────────────────────────
+   *
+   * safety/secrets.js 는 「파일 내용은 안 가린다」 로 정해 두었다. 가리면
+   * 모델이 가려진 글을 보고 그대로 되돌려 써서 **사람의 열쇠가 지워지기**
+   * 때문이다. 로컬 모델만 쓰던 동안에는 그 손해가 이득보다 컸다 — 어차피
+   * 이 컴퓨터 밖으로 안 나가니까.
+   *
+   * 바깥으로 나가는 순간 저울이 뒤집힌다. Read 한 번이면 `.env` 가 통째로
+   * 남의 서버 로그에 남는다. 그건 되돌릴 수가 없다.
+   *
+   * 되돌려 쓰는 사고는 이제 다른 자리에서 막는다 — Write·Append·Edit 이
+   * 가린 표를 파일에 못 쓴다(tools/index.js 의 가린표되돌리나). 그 자물쇠가
+   * 생겼기 때문에 여기서 가릴 수 있게 된 것이다. 순서가 중요하다.
+   */
+  const 바깥으로나감 = 바깥인가(conn.base);
 
   /**
    * 같은 실패가 되풀이되는지 센다.
@@ -1218,7 +1236,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          */
         const 아는열쇠들 = [conn.key, process.env.DEEL_API_KEY].filter(Boolean);
         let 비밀 = [];
-        if (가릴도구.has(call.name)) {
+        // 바깥으로 나가면 파일에서 읽어 온 글까지 가린다 (safety/secrets.js 의 가릴까).
+        const 이번엔가릴까 = 가릴까(call.name, { 바깥: 바깥으로나감 });
+        if (이번엔가릴까) {
           const 가린 = 가리기(실을것, { 열쇠들: 아는열쇠들 });
           if (가린.가린것.length) {
             비밀 = 가린.가린것;
@@ -1231,7 +1251,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         if (비밀.length) {
           ctx.audit?.write?.('secret', {
             tool: call.name,
-            가렸나: 가릴도구.has(call.name),
+            가렸나: 이번엔가릴까,
+            바깥: 바깥으로나감,
             무엇: 비밀.map((x) => `${x.종류}×${x.몇번}`).join(' '),
           });
         }
@@ -1249,7 +1270,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           result,
           ms,
           parallel: 함께,
-          ...(비밀.length ? { 비밀: { 가렸나: 가릴도구.has(call.name), 말: 봤다는말(비밀) } } : {}),
+          ...(비밀.length ? { 비밀: { 가렸나: 이번엔가릴까, 말: 봤다는말(비밀) } } : {}),
         };
       }
     }
