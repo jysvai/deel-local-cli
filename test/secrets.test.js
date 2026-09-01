@@ -14,7 +14,12 @@
 // 우리 손으로 지우는 셈이다. 그래서 파일 내용은 **안 가린다.**
 //
 // 이 검사는 그 둘을 갈라 놓는다.
-import { 가리기, 훑기, 가렸다는말, 봤다는말, 아는열쇠, 가릴도구 } from '../src/safety/secrets.js';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { 가리기, 훑기, 가렸다는말, 봤다는말, 아는열쇠, 가릴도구, 표몇군데 } from '../src/safety/secrets.js';
+import { runTool } from '../src/tools/index.js';
+import { makeScope } from '../src/safety/guard.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -159,6 +164,95 @@ trace('6-파일은안가린다');
   check('훑은 숫자와 가린 숫자가 같다',
     JSON.stringify(훑기(글)) === JSON.stringify(가리기(글).가린것),
     `${JSON.stringify(훑기(글))} / ${JSON.stringify(가리기(글).가린것)}`);
+}
+
+trace('6-2-가린표가-파일로-되돌아가나');
+
+/*
+ * ── 가린 표가 파일에 적히면 진짜 열쇠가 없어진다 ────────────────────────
+ *
+ * 위 6절이 "파일은 안 가린다" 고 정한 까닭 그대로의 사고가, 파일을 안 가려도
+ * 일어날 수 있다.
+ *
+ *   1. 모델이 `cat .env` 를 부른다      → Bash 라서 우리가 가린다
+ *   2. 모델은 «가림:환경변수» 를 진짜 값으로 알고
+ *   3. Write 로 `.env` 를 다시 쓴다     → 진짜 열쇠 자리에 표가 적힌다
+ *
+ * 가렸다는말() 이 "이건 진짜 값이 아닙니다" 라고 일러 주지만 그건 **부탁이지
+ * 자물쇠가 아니다.** 못 알아들은 모델 하나면 사람의 열쇠가 없어지고, 파일은
+ * 멀쩡해 보여서 사람은 무엇이 없어졌는지조차 모른다.
+ *
+ * 그래서 진짜 파일을 놓고, 진짜 도구를 불러서, 열쇠가 살아 있는지를 본다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-secret-'));
+  const ctx = () => ({
+    scope: makeScope(방),
+    history: { snapshot() {} },
+    audit: { write() {}, tool() {} },
+    seen: new Set([join(방, '.env')]),
+    enc: new Map(),
+    모델컨텍스트: 32768,
+  });
+  const 진짜 = 'OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz012345';
+  const 파일 = join(방, '.env');
+
+  // 모델이 본 것 — 명령 출력이라 우리가 가린 글.
+  const 모델이본것 = 가리기(진짜).글;
+  check('명령 출력에서는 열쇠가 가려진다', !모델이본것.includes('sk-proj-'), 모델이본것);
+
+  for (const [이름, 부르기] of [
+    ['Write', () => runTool('Write', { file_path: '.env', content: 모델이본것 }, ctx())],
+    ['Append', () => runTool('Append', { file_path: '.env', content: `\n${모델이본것}\n` }, ctx())],
+    ['Edit', () => runTool('Edit', {
+      file_path: '.env', old_string: 진짜, new_string: 모델이본것,
+    }, ctx())],
+  ]) {
+    writeFileSync(파일, 진짜, 'utf8');
+    const r = await 부르기();
+    check(`★ ${이름} 은 가린 표를 파일에 못 쓴다`, !!r.error, JSON.stringify(r.error ?? r.content ?? '').slice(0, 90));
+    check(`★ ${이름} 뒤에도 진짜 열쇠가 살아 있다`,
+      readFileSync(파일, 'utf8').includes('sk-proj-abcdefghijklmnopqrstuvwxyz012345'),
+      JSON.stringify(readFileSync(파일, 'utf8')).slice(0, 90));
+    // "안 됩니다" 만 하면 모델은 표를 지우고 빈 값으로 써서 결국 열쇠를 없앤다.
+    check(`${이름} 은 어떻게 하라는지도 말한다`, /사용자에게 물어보|Edit/.test(String(r.error ?? '')),
+      String(r.error ?? '').split('\n').at(-1)?.trim().slice(0, 70));
+  }
+
+  /*
+   * 막는 것이 여기서 그쳐야 한다. 표가 없는 글까지 막으면 파일을 아예 못 쓴다 —
+   * 지키려던 것보다 훨씬 큰 고장이다.
+   */
+  writeFileSync(파일, 진짜, 'utf8');
+  const 멀쩡 = await runTool('Write', { file_path: '.env', content: 'OPENAI_API_KEY=sk-proj-새로받은열쇠입니다0123456789' }, ctx());
+  check('표가 없으면 그냥 써진다', !멀쩡.error, JSON.stringify(멀쩡.error ?? '').slice(0, 80));
+  check('쓴 것이 그대로 들어갔다', readFileSync(파일, 'utf8').includes('새로받은열쇠입니다'));
+
+  // 「가림」 이라는 낱말이 글에 들어 있는 것만으로는 안 막는다. 표 모양이어야 한다.
+  const 낱말 = await runTool('Write', { file_path: '메모.txt', content: '이 값은 가림 처리했습니다' }, ctx());
+  check('「가림」 이라는 낱말만으로는 안 막는다', !낱말.error, JSON.stringify(낱말.error ?? '').slice(0, 80));
+
+  /*
+   * 찾는 말(old_string)에 표가 있는 것은 막을 일이 아니다.
+   *
+   * 모델이 가려진 줄을 그대로 **찾을 말**로 쓴 것뿐이고, 그러면 파일에서 못
+   * 찾고 끝난다 — 파일은 한 글자도 안 바뀐다. 여기까지 막으면 "쓰려는 내용에
+   * 표가 있습니다" 라는 **틀린 까닭**을 대게 되고, 모델은 안 쓴 것을 썼다고
+   * 알아듣는다. 진짜 까닭(못 찾음)을 그대로 말해야 다음 수가 나온다.
+   */
+  writeFileSync(파일, 진짜, 'utf8');
+  const 찾는말에표 = await runTool('Edit', {
+    file_path: '.env', old_string: 모델이본것, new_string: 'OPENAI_API_KEY=새값',
+  }, ctx());
+  check('찾는 말에 든 표는 이 자물쇠가 안 막는다',
+    !/쓰려는 내용에/.test(String(찾는말에표.error ?? '')), String(찾는말에표.error ?? '').split('\n')[0].slice(0, 60));
+  check('대신 못 찾았다고 한다', /찾지 못했습니다/.test(String(찾는말에표.error ?? '')),
+    String(찾는말에표.error ?? '').split('\n')[0].slice(0, 60));
+
+  check('몇 군데인지 센다', 표몇군데(`a «가림:openai» b «가림» c`) === 2, String(표몇군데(`a «가림:openai» b «가림» c`)));
+  check('표가 없으면 0', 표몇군데('그냥 글') === 0);
+
+  rmSync(방, { recursive: true, force: true });
 }
 
 trace('7-이상한것');

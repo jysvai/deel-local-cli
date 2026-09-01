@@ -32,6 +32,7 @@ import { 도구설명EN } from './desc.en.js';
 import { 그림인가, 그림읽기, 크기말, 기본한도 } from '../backend/vision.js';
 import { 빠르게찾기, 엔진말, 안볼정규식 } from './fastgrep.js';
 import { 지시말 } from '../i18n/index.js';
+import { 표몇군데, 표막는말 } from '../safety/secrets.js';
 
 /*
  * 한 번에 돌려줄 양은 **모델에 맞춰** 정한다 (agent/budget.js).
@@ -190,6 +191,23 @@ function 그림잃나(abs, 새내용) {
  * 것이 반드시 나온다. 내용을 보고 정하면 목록을 관리할 일이 없다.
  * @returns {string|null} 막을 이유. 써도 되면 null.
  */
+/*
+ * 우리가 가린 표를 파일에 되돌려 쓰려 하나.
+ *
+ * 명령 출력의 비밀은 이미 가리고 있다(safety/secrets.js). 그런데 모델은 그
+ * «가림:…» 을 **진짜 값으로 알고** 파일에 그대로 옮겨 쓸 수 있다. 그러면
+ * 진짜 열쇠가 있던 자리에 표가 적힌다 — 비밀을 지키려다 비밀을 지우는 셈이고,
+ * 파일은 멀쩡해 보여서 사람은 무엇이 없어졌는지조차 모른다.
+ *
+ * "이건 진짜 값이 아닙니다" 라고 일러 주고는 있지만 그건 부탁이지 자물쇠가
+ * 아니다. 못 알아들은 모델 하나면 그것으로 끝이다. 그림잃나() 와 같은 자리,
+ * 같은 까닭이다 — **우리가 안 보여 준 것을 모델이 지우게 두지 않는다.**
+ */
+function 가린표되돌리나(보인이름, 새내용) {
+  const 몇 = 표몇군데(새내용);
+  return 몇 ? 표막는말(보인이름, 몇) : null;
+}
+
 function 바이너리인가(abs) {
   if (!existsSync(abs)) return null;
   let buf;
@@ -645,6 +663,9 @@ function 한파일쓰기(args, ctx) {
     // 우리가 안 보여 준 그림을 모델이 지우게 두지 않는다 (그림잃나 머리말).
     const 그림막기 = 그림잃나(abs, args.content);
     if (그림막기) return { error: 그림막기 };
+    // 우리가 가린 비밀도 마찬가지다 (가린표되돌리나 머리말).
+    const 표막기 = 가린표되돌리나(ctx.scope.show(abs), args.content);
+    if (표막기) return { error: 표막기 };
     ctx.history.snapshot(abs, 'Write');
     const existed = existsSync(abs);
     // 덮어쓰기 전 내용. 바뀐 자리를 보여주려면 지금 떠 놔야 한다.
@@ -741,6 +762,10 @@ function 한군데고치기(args, ctx) {
   if (isPdfPath(abs)) return { error: pdf는못고침(args.file_path) };
   if (!ctx.seen.has(abs)) return { error: `먼저 Read 로 읽어야 합니다: ${args.file_path}` };
   if (args.old_string === args.new_string) return { error: 'old_string 과 new_string 이 같습니다' };
+  // 새로 넣을 글에만 본다. old_string 쪽은 **찾는 말**이라 표가 들어 있어도
+  // 파일이 안 바뀐다 — 못 찾고 끝날 뿐이다 (가린표되돌리나 머리말).
+  const 표막기 = 가린표되돌리나(ctx.scope.show(abs), args.new_string);
+  if (표막기) return { error: 표막기 };
 
   const 읽음 = readTextFull(abs);
   const text = 읽음.text;
@@ -1078,6 +1103,10 @@ export const TOOLS = {
 
       const existed = existsSync(abs);
       if (existed && statSync(abs).isDirectory()) return { error: `폴더입니다: ${args.file_path}` };
+
+      // 이어 붙이는 조각에도 가린 표가 섞이면 안 된다 (가린표되돌리나 머리말).
+      const 표막기 = 가린표되돌리나(ctx.scope.show(abs), args.content);
+      if (표막기) return { error: 표막기 };
 
       // Append 는 한 턴에 여러 번 불리는 것이 정상이다. 그래도 되돌리기 이력에
       // 사본이 쌓이지 않는다 — History.snapshot 이 턴마다 한 번만 뜬다(undo.js).
