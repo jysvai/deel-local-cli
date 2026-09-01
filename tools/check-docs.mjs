@@ -52,7 +52,15 @@ function 닻들(파일) {
 
 const 볼것 = ['README.md', 'README.en.md'];
 for (const 말 of ['ko', 'en']) {
-  for (const f of readdirSync(`docs/${말}`)) 볼것.push(`docs/${말}/${f}`);
+  // 릴리스 노트처럼 줄기마다 폴더로 나뉜 것도 같이 본다. 안 보면 그 안의
+  // 링크만 검사 밖에 남아서, 끊겨도 아무 데도 안 찍힌다.
+  const 담기 = (자리) => {
+    for (const f of readdirSync(자리, { withFileTypes: true })) {
+      if (f.isDirectory()) 담기(`${자리}/${f.name}`);
+      else if (/\.md$/.test(f.name)) 볼것.push(`${자리}/${f.name}`);
+    }
+  };
+  담기(`docs/${말}`);
 }
 
 for (const 파일 of 볼것) {

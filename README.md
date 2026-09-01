@@ -101,7 +101,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.6.1](docs/ko/releases.md#161) · [1.6.0](docs/ko/releases.md#160) · [1.5.8](docs/ko/releases.md#158) · [1.5.7](docs/ko/releases.md#157) · [1.5.6](docs/ko/releases.md#156) · [1.5.5](docs/ko/releases.md#155) · [1.5.4](docs/ko/releases.md#154) · [1.5.3](docs/ko/releases.md#153) · [1.5.2](docs/ko/releases.md#152) · [1.5.1](docs/ko/releases.md#151) · [1.5.0](docs/ko/releases.md#150) · [1.4.3](docs/ko/releases.md#143) · [1.4.2](docs/ko/releases.md#142) · [1.4.1](docs/ko/releases.md#141) · [1.4.0](docs/ko/releases.md#140) · [1.3.0](docs/ko/releases.md#130) · [1.2.0](docs/ko/releases.md#120) |
+| [릴리스 노트](docs/ko/releases.md) | [1.6.x](docs/ko/releases/1.6.md) · [1.5.x](docs/ko/releases/1.5.md) · [1.4.x](docs/ko/releases/1.4.md) · [1.3.x](docs/ko/releases/1.3.md) · [1.2.x](docs/ko/releases/1.2.md) |
 
 ---
 
@@ -989,25 +989,25 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[1.6.3](docs/ko/releases.md#163)** | 일이 되고 있는데 헛돈다고 끊던 자리 — 배열로 옮기면 무엇이 움직였는지가 사라졌다 |
-| **[1.6.2](docs/ko/releases.md#162)** | 누르면 멈추고, 시킨 대로 하고, 안 끊긴다 — ESC · 되묻기 · 요청 누락 · 붙여넣기 접기 · 끊긴 자리 잇기 |
-| **[1.6.1](docs/ko/releases.md#161)** | 헛도는 턴을 만들던 자리들 — 울타리가 `/dev/null` 까지 막던 것 · 옷 문서를 못 읽던 것 · 파일에서 그림이 사라지던 것 |
-| **[1.6.0](docs/ko/releases.md#160)** | 사내망에서 안 되던 것들 — 프록시 · 429 · 윈도우 셸 · 5만 개 저장소 · PDF · 캡처 붙여넣기 · 에디터 이어하기 |
-| **[1.5.8](docs/ko/releases.md#158)** | 5MB 문서를 919줄 중 8줄만 보던 것 · 정규식을 경로로 읽어 명령을 막던 것 |
-| **[1.5.7](docs/ko/releases.md#157)** | 맥 한글 폴더에서 제 파일이 「범위 밖」이던 것 · 붙여넣기 · ESC |
-| **[1.5.6](docs/ko/releases.md#156)** | 막히면 물어본다 — 글로 묻고 턴을 끝내는 대신에 |
-| **[1.5.5](docs/ko/releases.md#155)** | 계획을 세우면 방이 찬다 — 「한 명뿐」은 고정이 아니라 버그였다 |
-| [1.5.4](docs/ko/releases.md#154) | 방에 하루가 흐른다 — 아침·낮·노을·밤 · 벽시계 · 식은 커피 |
-| [1.5.3](docs/ko/releases.md#153) | 맥에서 걸린 세 가지 — 줄바꿈 안내 · 사무실이 안 사라짐 · `/motion` 하나로 |
-| [1.5.2](docs/ko/releases.md#152) | 적대적 리뷰가 남긴 나머지를 전부 정리했다 — 화면이 거짓말하던 자리들 |
-| [1.5.1](docs/ko/releases.md#151) | 1.5.0 이 넣은 것 두 개가 망가진 채 나갔다. 그것을 고친다 |
-| [1.5.0](docs/ko/releases.md#150) | 줄바꿈이 생겼고, 화면이 재미있어졌고, 그러면서 오히려 가벼워졌다 |
-| [1.4.3](docs/ko/releases.md#143) | README 가 왜 다른지 말하고, 심사서의 빠진 한 줄을 채운다 |
-| [1.4.2](docs/ko/releases.md#142) | 1.4.1 이 보안 수정 전에 나갔다 — 그걸 바로잡는 판 |
-| [1.4.1](docs/ko/releases.md#141) | 새 기능 없이, 실제로 찾은 것만 고친다 — 윈도우 abort·ReDoS·XSS |
-| [1.4.0](docs/ko/releases.md#140) | deel 이 제 얼굴을 갖고, 영어로도 말하고, 뜻까지 본다 — 열한 자리 |
-| [1.3.0](docs/ko/releases.md#130) | 말 대신 증거, 터미널 대신 에디터 — 여섯 자리 |
-| [1.2.0](docs/ko/releases.md#120) | 대화가 끊기지 않게 — 여섯 자리 |
+| **[1.6.3](docs/ko/releases/1.6.md#163)** | 일이 되고 있는데 헛돈다고 끊던 자리 — 배열로 옮기면 무엇이 움직였는지가 사라졌다 |
+| **[1.6.2](docs/ko/releases/1.6.md#162)** | 누르면 멈추고, 시킨 대로 하고, 안 끊긴다 — ESC · 되묻기 · 요청 누락 · 붙여넣기 접기 · 끊긴 자리 잇기 |
+| **[1.6.1](docs/ko/releases/1.6.md#161)** | 헛도는 턴을 만들던 자리들 — 울타리가 `/dev/null` 까지 막던 것 · 옷 문서를 못 읽던 것 · 파일에서 그림이 사라지던 것 |
+| **[1.6.0](docs/ko/releases/1.6.md#160)** | 사내망에서 안 되던 것들 — 프록시 · 429 · 윈도우 셸 · 5만 개 저장소 · PDF · 캡처 붙여넣기 · 에디터 이어하기 |
+| **[1.5.8](docs/ko/releases/1.5.md#158)** | 5MB 문서를 919줄 중 8줄만 보던 것 · 정규식을 경로로 읽어 명령을 막던 것 |
+| **[1.5.7](docs/ko/releases/1.5.md#157)** | 맥 한글 폴더에서 제 파일이 「범위 밖」이던 것 · 붙여넣기 · ESC |
+| **[1.5.6](docs/ko/releases/1.5.md#156)** | 막히면 물어본다 — 글로 묻고 턴을 끝내는 대신에 |
+| **[1.5.5](docs/ko/releases/1.5.md#155)** | 계획을 세우면 방이 찬다 — 「한 명뿐」은 고정이 아니라 버그였다 |
+| [1.5.4](docs/ko/releases/1.5.md#154) | 방에 하루가 흐른다 — 아침·낮·노을·밤 · 벽시계 · 식은 커피 |
+| [1.5.3](docs/ko/releases/1.5.md#153) | 맥에서 걸린 세 가지 — 줄바꿈 안내 · 사무실이 안 사라짐 · `/motion` 하나로 |
+| [1.5.2](docs/ko/releases/1.5.md#152) | 적대적 리뷰가 남긴 나머지를 전부 정리했다 — 화면이 거짓말하던 자리들 |
+| [1.5.1](docs/ko/releases/1.5.md#151) | 1.5.0 이 넣은 것 두 개가 망가진 채 나갔다. 그것을 고친다 |
+| [1.5.0](docs/ko/releases/1.5.md#150) | 줄바꿈이 생겼고, 화면이 재미있어졌고, 그러면서 오히려 가벼워졌다 |
+| [1.4.3](docs/ko/releases/1.4.md#143) | README 가 왜 다른지 말하고, 심사서의 빠진 한 줄을 채운다 |
+| [1.4.2](docs/ko/releases/1.4.md#142) | 1.4.1 이 보안 수정 전에 나갔다 — 그걸 바로잡는 판 |
+| [1.4.1](docs/ko/releases/1.4.md#141) | 새 기능 없이, 실제로 찾은 것만 고친다 — 윈도우 abort·ReDoS·XSS |
+| [1.4.0](docs/ko/releases/1.4.md#140) | deel 이 제 얼굴을 갖고, 영어로도 말하고, 뜻까지 본다 — 열한 자리 |
+| [1.3.0](docs/ko/releases/1.3.md#130) | 말 대신 증거, 터미널 대신 에디터 — 여섯 자리 |
+| [1.2.0](docs/ko/releases/1.2.md#120) | 대화가 끊기지 않게 — 여섯 자리 |
 
 무엇이 왜 바뀌었는지는 **[릴리스 노트](docs/ko/releases.md)** 에 있습니다.
 
