@@ -191,6 +191,12 @@ for (const f of SRC) {
     }
   }
   // 소스에 박힌 바깥 주소 (github 는 플러그인 받기용, 보기 주소(example · .corp)는 설명용이라 예외)
+  //
+  // src/providers/ 는 예외다. **거기 있는 것이 주소 그 자체**이기 때문이다 —
+  // bedrock-runtime.ap-northeast-2.amazonaws.com 을 외워서 치라고 하면 아무도
+  // 안 쓴다. 다만 예외를 그냥 뚫어 두지는 않는다. 아래 9절에서 그 폴더가
+  // **주소만 적힌 데이터**이고 문이 아니라는 것을 따로 잰다.
+  if (/^src[\\/]providers[\\/]/.test(f)) continue;
   for (const m of text.matchAll(/https?:\/\/([a-z0-9.-]+\.[a-z]{2,})/gi)) {
     const host = m[1].toLowerCase();
     if (/github\.com$/.test(host)) continue;
@@ -199,6 +205,36 @@ for (const f of SRC) {
   }
 }
 check('소스에 박힌 바깥 주소·저수준 소켓 없음 (src 전체)', 의심.length === 0, 의심.slice(0, 4).join(' · '));
+
+/*
+ * ── 9. 주소 메모가 문이 되지 않았나 ────────────────────────────────────
+ *
+ * 위에서 src/providers/ 만 예외로 뒀다. 그 예외가 안전하려면 그 폴더가
+ * **아무 데도 안 나가야** 한다 — 주소가 적혀 있는 것과 그 주소로 나가는 것은
+ * 전혀 다른 일이다.
+ *
+ * 그래서 여기서 잰다: 그 폴더는 아무것도 안 들여오고(import 0개), fetch 도
+ * 소켓도 없다. 순수한 데이터 한 장이다. 나가는 문은 여전히 backend/http.js
+ * 하나뿐이고, 그 문은 checkUrl 을 지난다.
+ */
+{
+  const 메모들 = SRC.filter((f) => /^src[\\/]providers[\\/]/.test(f));
+  check('주소 메모가 실제로 있다', 메모들.length >= 5, String(메모들.length));
+  const 새는것 = [];
+  for (const f of 메모들) {
+    const text = readFileSync(join(repo, f), 'utf8');
+    // 제 폴더 안끼리 잇는 것(index.js → openai.js)만 봐준다.
+    for (const spec of importSpecs(text)) {
+      if (!/^\.\/[a-z]+\.js$/.test(spec)) 새는것.push(`${f} → ${spec}`);
+    }
+    for (const [i, line] of text.split(/\r?\n/).entries()) {
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
+      if (/(?<![.\w])fetch\s*\(|\bnew\s+WebSocket\s*\(|\breq\s*\(/.test(line)) 새는것.push(`${f}:${i + 1}`);
+    }
+  }
+  check('★ 주소 메모는 문이 아니다 — 아무것도 안 들여오고 아무 데도 안 나간다',
+    새는것.length === 0, 새는것.join(' · '));
+}
 
 // ── 결과 ────────────────────────────────────────────────────────────────
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
