@@ -105,6 +105,44 @@ check('묻기 모드에는 TodoWrite 도 없다',
   check('마지막 것도 안 잘린다', /17번째 단계/.test(String(r.content ?? '')));
 }
 
+/*
+ * ── 똑같은 목록을 또 보내면 그렇다고 말하는가 ───────────────────────────
+ *
+ * 「폴더 정리 해줘」 에서 이 자리가 걸렸다. 파일을 옮긴 뒤 모델이 목록을
+ * 갱신하려 했는데, 끝난 줄을 done 으로 안 바꾸고 **글자 하나 안 틀린 같은
+ * 목록**을 다시 보냈다. 그러면 성공으로 돌려주고 앞과 똑같은 글이 나간다 —
+ * 모델 쪽에서는 갱신이 된 것이라, 다음 걸음에 또 같은 것을 보낸다.
+ */
+{
+  const 목록 = {
+    todos: [
+      { text: '구조를 확인한다', state: 'done' },
+      { text: '유형별로 옮긴다', state: 'doing' },
+      { text: '검증하고 요약한다', state: 'todo' },
+    ],
+  };
+  const ctx = {};
+  const 처음 = TODO_TOOL.run(목록, ctx);
+  const 다시 = TODO_TOOL.run(목록, ctx);
+
+  check('★ 같은 목록을 또 보내면 앞과 다른 말을 돌려준다', 처음.content !== 다시.content,
+    처음.content === 다시.content ? '글자까지 같다 — 모델이 아무것도 못 배운다' : '');
+  check('★ 바뀐 것이 없다고 말해 준다', /바뀐 것이 없습니다/.test(다시.content ?? ''),
+    String(다시.content ?? '').split('\n').at(-2) ?? '');
+  check('★ 그럴 때 무엇을 하라고 알려 준다',
+    /done 으로 바꿔서/.test(다시.content ?? '') && /다음 일을 하세요/.test(다시.content ?? ''));
+  // 오류로 만들면 안 된다 — 목록은 실제로 저장됐고 틀린 것을 한 것도 아니다.
+  check('오류로 만들지는 않는다', !다시.error && 다시.todos?.length === 3, String(다시.error ?? ''));
+  check('요약도 그대로라고 말한다', /그대로/.test(다시.summary ?? ''), 다시.summary ?? '');
+
+  // 한 줄이라도 달라지면 평범한 갱신이다.
+  const 바꾼것 = { todos: 목록.todos.map((t, i) => (i === 1 ? { ...t, state: 'done' } : t)) };
+  const 셋째 = TODO_TOOL.run(바꾼것, ctx);
+  check('★ 한 줄이라도 바뀌면 평범하게 돌려준다', !/바뀐 것이 없습니다/.test(셋째.content ?? ''),
+    셋째.summary ?? '');
+  check('무엇이 방금 끝났는지 센다', /방금 1개/.test(셋째.summary ?? ''), 셋째.summary ?? '');
+}
+
 // 없는 것을 만들어 주지는 않는다 — 오프라인이면 웹 도구는 모드와 무관하게 없다
 check('오프라인이면 모드와 무관하게 웹 도구 없음',
   !toolSchemas(null, { web: false, work: 'ask' }).map((t) => t.function.name).includes('WebFetch'));

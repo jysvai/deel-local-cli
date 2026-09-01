@@ -117,6 +117,86 @@ trace('1-서로다른파일을뭉치지않는다');
     `${evs.filter((e) => e.type === 'tool').length}번 불렀다`);
 }
 
+trace('1-2-일하면서장부를다시쓰는것');
+
+/*
+ * ── D1-2: 일이 되고 있는데 헛돈다고 끊던 자리 ───────────────────────────
+ *
+ * 「폴더 정리 해줘」 한 마디에 이런 화면이 나왔다.
+ *
+ *   ⏺ Move  7개 옮김
+ *   ☰ TodoWrite(3건)
+ *   ⏺ Move  22개 옮김
+ *   ☰ TodoWrite(3건)
+ *   ⊘ 같은 자리에서 헛돌고 있어 멈췄습니다
+ *
+ * 파일 스물아홉 개가 **실제로 움직이는 중**이었다. 헛돈 것은 할 일 목록을
+ * 같은 값으로 다시 쓴 것뿐인데, 세는 자리가 그 사이에 무슨 일이 있었는지를
+ * 안 봤다. 이 파일이 지키려던 것과 정반대다 — 여기서 잡아야 하는 것은
+ * '조용히 아무것도 안 나아가는 것' 이지 '오래 걸리는 일' 이 아니다.
+ */
+const 같은목록 = {
+  todos: [
+    { text: '구조를 확인한다', state: 'done' },
+    { text: '유형별로 옮긴다', state: 'doing' },
+    { text: '검증하고 요약한다', state: 'todo' },
+  ],
+};
+
+{
+  mkdirSync(join(root, '정리'), { recursive: true });
+  for (let i = 0; i < 9; i++) writeFileSync(join(root, '정리', `p${i}.txt`), 'x\n', 'utf8');
+  const 옮김 = (묶음) => ({
+    name: 'Move',
+    args: {
+      moves: [0, 1, 2].map((k) => ({
+        from: `정리/p${묶음 * 3 + k}.txt`,
+        to: `정리/모음${묶음}/p${묶음 * 3 + k}.txt`,
+      })),
+    },
+  });
+  대본 = [
+    { calls: [{ name: 'TodoWrite', args: 같은목록 }] },
+    { calls: [옮김(0)] },
+    { calls: [{ name: 'TodoWrite', args: 같은목록 }] },
+    { calls: [옮김(1)] },
+    { calls: [{ name: 'TodoWrite', args: 같은목록 }] },
+    { calls: [옮김(2)] },
+    { calls: [{ name: 'TodoWrite', args: 같은목록 }] },
+    { text: '정리했습니다.' },
+  ];
+  const { evs } = await 돌리기('폴더 정리 해줘');
+  대본 = [];
+
+  check('★ 파일이 진짜로 움직이는 동안은 헛돈다고 안 끊는다', !evs.some((e) => e.type === 'stuck'),
+    evs.find((e) => e.type === 'stuck')?.why ?? '안 끊음');
+  check('옮기기가 세 번 다 돌았다',
+    evs.filter((e) => e.type === 'tool' && e.name === 'Move').length === 3,
+    `${evs.filter((e) => e.type === 'tool' && e.name === 'Move').length}번`);
+
+  /*
+   * ★ 그리고 옮긴 파일을 이 턴이 **알고 있어야** 한다.
+   *
+   * 배열로 옮기면(moves) 한 개짜리 결과의 changed 를 버리고 있었다. 그래서
+   * 스물두 개를 옮겨 놓고도 턴이 아는 손댄 파일은 0개였다. 그 값은 턴 끝의
+   * 파일 목록도, /commit 도, 위의 헛돌기 판정도 같이 본다.
+   */
+  const 끝 = evs.find((e) => e.type === 'done');
+  check('★ 배열로 옮긴 파일을 턴이 알고 있다', (끝?.files?.length ?? 0) === 9,
+    `${끝?.files?.length ?? 0}개 (옮긴 것은 9개)`);
+}
+
+{
+  // 반대쪽. 아무것도 안 바뀌는데 같은 목록만 되풀이하면 그건 진짜로 헛도는 것이다.
+  대본 = () => ({ calls: [{ name: 'TodoWrite', args: 같은목록 }] });
+  const { evs } = await 돌리기('할 일만 계속 적어줘', { maxSteps: 24 });
+  대본 = [];
+  check('★ 아무것도 안 하면서 같은 목록만 되풀이하면 멈춘다', evs.some((e) => e.type === 'stuck'),
+    evs.map((e) => e.type).slice(-3).join(','));
+  check('걸음 수를 다 쓰기 전에 멈춘다', evs.filter((e) => e.type === 'tool').length <= 6,
+    `${evs.filter((e) => e.type === 'tool').length}번 불렀다`);
+}
+
 trace('2-모르는도구도센다');
 
 // ── D2: 없는 도구를 계속 부르는 것도 헛도는 것이다 ──────────────────────
