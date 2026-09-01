@@ -23,6 +23,8 @@ import { 말 as 옮긴말 } from './i18n/index.js';
 import { 알림채움 } from './backend/retry.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline } from './safety/network.js';
+import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
+import { 주소가리기 } from './safety/secrets.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { route } from './agent/route.js';
 import { get as getWork } from './agent/modes.js';
@@ -160,11 +162,30 @@ export async function runOnce(opts = {}) {
     vision: prof.vision ?? false,
   };
 
-  // 자물쇠는 대화 화면과 똑같이 건다. 비대화라고 느슨해질 이유가 없다 —
-  // 오히려 배치는 아무도 안 보는 자리라 더 단단해야 한다.
+  /*
+   * 자물쇠는 대화 화면과 똑같이 건다. 비대화라고 느슨해질 이유가 없다 —
+   * 오히려 배치는 아무도 안 보는 자리라 더 단단해야 한다.
+   *
+   * 다른 것은 딱 하나, **물을 수가 없다**는 것이다. 파이프 뒤에는 답할 사람이
+   * 없다. 그래서 여기서는 묻는 대신 멈추고, 무엇을 붙이면 되는지를 말한다.
+   * 조용히 나가 버리면 스크립트가 바깥으로 나가고 있는 줄 아무도 모른다.
+   */
+  const 바깥연결 = 바깥인가(conn.base);
+  const 실행모드 = 지금모드({
+    online: opts.online === true,
+    // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
+    offline: !!(opts.offline ?? prof.offline ?? cfg?.offline),
+  });
+  const 나감 = 나갈수있나(실행모드, { 바깥: 바깥연결, 허가: prof.online === true });
+  if (나감.물어볼까) {
+    const 어디 = (() => { try { return new URL(conn.base).host; } catch { return conn.base; } })();
+    return 못함('needs-online',
+      `이 연결은 이 컴퓨터 밖으로 나갑니다 (${주소가리기(어디)}). 여기서는 물어볼 수 없습니다.\n`
+      + '    나가도 된다면 --online 을 붙이거나, 대화 화면(deel)에서 한 번 허락해 두세요.\n'
+      + '    이 컴퓨터 안의 모델을 쓰려면 deel scan --save 로 붙이세요.');
+  }
   allowEndpoint(conn.base);
-  // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
-  if (opts.offline ?? prof.offline ?? cfg?.offline) setOffline(true);
+  if (실행모드.허가무시) setOffline(true);
 
   const session = new Session(conn, {
     root,
@@ -174,6 +195,9 @@ export async function runOnce(opts = {}) {
     effort: opts.effort ?? 'save',
     maxSteps: opts.maxSteps ?? null,   // null 이면 작업 모드가 정한다
   });
+  // 지금 어느 실행 모드인가. 화면이 첫 줄에 이걸 그린다(ui/status.js).
+  // session 에 실어 두는 까닭은, 대화 도중 /model 로 옮겨도 같은 자리를 보게 하려는 것이다.
+  session.실행모드 = 실행모드;
 
   const found = discover(root);
   session.skills = found.skills;

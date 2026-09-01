@@ -106,7 +106,7 @@ function runSbom(flags) {
 // 실제로 이랬다 — deel run --json "검사 돌려줘" 를 쳤더니 --json 이 뒤의 말을
 // 통째로 삼켰다. 시킬 말이 사라졌으니 "무엇을 시킬지 적어 주세요" 가 떴는데,
 // 화면만 보면 왜 그런지 알 길이 없다. 깃발을 앞에 두는 것은 아주 흔한 습관이다.
-const BOOL = new Set(['help', 'version', 'offline', 'continue', 'json', 'quiet', 'yes', 'no-tui', 'tui']);
+const BOOL = new Set(['help', 'version', 'offline', 'online', 'continue', 'json', 'quiet', 'yes', 'no-tui', 'tui']);
 
 function parse(argv) {
   const flags = {};
@@ -175,7 +175,11 @@ function help() {
   say(`    ${c.gray('--think <수준>')}     off / low / medium(기본) / high / max`);
   say(`    ${c.gray('--effort <배분>')}    even(균일) / save(절약, 기본) / deep(깊게)`);
   say(`    ${c.gray('--no-tui')}           입력 상자 없이 줄 화면으로 (파이프·기록·좁은 터미널)`);
-  say(`    ${c.gray('--offline')}          이 컴퓨터 밖으로는 아무것도 안 보냄 (자물쇠)`);
+  // 실행 모드 셋. 기본이 잠겨 있다는 것을 여기서 분명히 말한다 —
+  // 「--online 이 있다」 보다 「기본은 안 나간다」 가 사람이 알아야 할 쪽이다.
+  say(`    ${c.gray('(기본)')}             ⌂ 이 안 — 바깥 주소면 한 번 물어보고 기억합니다`);
+  say(`    ${c.gray('--online')}           ↗ 바깥 — 묻지 않고 나갑니다 ${c.gray('(스크립트·CI 처럼 물어볼 사람이 없을 때)')}`);
+  say(`    ${c.gray('--offline')}          ⛊ 봉인 — 기억해 둔 허가까지 무시하고 막습니다 ${c.gray('(사내망은 그대로 갑니다)')}`);
   say(`    ${c.gray('--continue')}         이 폴더에서 가장 최근 대화 이어하기`);
   say(`    ${c.gray('--resume <id>')}      골라서 이어하기 (deel sessions 로 id 확인)`);
   say('');
@@ -210,7 +214,18 @@ async function main() {
     process.exit(1);
   }
 
-  const { cmd, args, flags } = parse(process.argv.slice(2));
+  const { cmd: 친명령, args, flags } = parse(process.argv.slice(2));
+
+  /*
+   * `deel online` · `deel offline` 은 깃발의 별칭이다.
+   *
+   * 사람은 이것을 「모드로 켠다」 고 생각한다 — `deel --online` 보다
+   * `deel online` 이 먼저 손에서 나온다. 둘 다 받는다. 안 받으면 "모르는
+   * 명령입니다" 가 뜨는데, 그 화면에서는 무엇을 잘못 쳤는지 알 길이 없다.
+   */
+  const cmd = (친명령 === 'online' || 친명령 === 'offline')
+    ? (flags[친명령] = true, '')
+    : 친명령;
 
   /*
    * 판 번호.
@@ -241,6 +256,7 @@ async function main() {
         think: flags.think ? String(flags.think) : undefined,
         effort: flags.effort ? String(flags.effort) : undefined,
         offline: flags.offline === true || flags.offline === 'true',
+        online: flags.online === true || flags.online === 'true',
         yes: flags.yes === true || flags.yes === 'true',
         json: flags.json === true || flags.json === 'true',
         quiet: flags.quiet === true || flags.quiet === 'true',
@@ -261,6 +277,7 @@ async function main() {
         //   --tui     터미널이면 무조건 입력 상자를 켠다
         tui: flags['no-tui'] === true ? false : (flags.tui === true ? true : null),
         offline: flags.offline === true || flags.offline === 'true',
+        online: flags.online === true || flags.online === 'true',
         continue: flags.continue === true || flags.c === true,
         sessionId: typeof flags.resume === 'string' ? flags.resume : (flags.resume === true ? null : undefined),
       });
@@ -281,6 +298,7 @@ async function main() {
         think: flags.think ? String(flags.think) : undefined,
         effort: flags.effort ? String(flags.effort) : undefined,
         offline: flags.offline === true || flags.offline === 'true',
+        online: flags.online === true || flags.online === 'true',
       });
     case 'status':
       return showStatus();

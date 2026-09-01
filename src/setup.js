@@ -1,7 +1,7 @@
 // 첫 실행 마법사 + 진단 실행.
 import { c, say, rule, mark } from './ui/ansi.js';
 import { 주소가리기 } from './safety/secrets.js';
-import { ask, pick } from './ui/prompt.js';
+import { ask, pick, confirm } from './ui/prompt.js';
 import { spin } from './ui/spinner.js';
 import { detect } from './backend/detect.js';
 import { probe } from './backend/probe.js';
@@ -10,6 +10,7 @@ import { load, save, upsert, slug, resolveKey, activeProfile, configPath } from 
 import { 보관방식 } from './safety/keystore.js';
 import { 애저풀기, 애저base } from './backend/azure.js';
 import { allowEndpoint } from './safety/network.js';
+import { 바깥인가 } from './safety/runmode.js';
 import { writeFileSync } from 'node:fs';
 
 export function banner() {
@@ -116,6 +117,29 @@ export async function runSetup() {
   const conn = { kind: found.kind, base: found.base, auth: found.auth, key, model };
   const { facts } = await runProbe(conn);
 
+  /*
+   * ── 「나가도 된다」 를 여기서 명시적으로 받는다 ───────────────────────
+   *
+   * 주소와 허가를 뗀 것이 이번 자물쇠의 요점이다(safety/runmode.js). 주소는
+   * 설정 파일에 그대로 있고 손으로도 고칠 수 있지만, 허가는 **사람이 고른
+   * 자리에서만** 붙는다. 그래서 둘 다 있어야 나간다 — 설정 파일 한 줄을
+   * 고쳐서는 못 나간다.
+   *
+   * 여기서 안 받아도 대화 화면이 첫 켤 때 다시 묻는다. 그러니 이건 막는
+   * 자리가 아니라, **지금 사실을 알려 주는** 자리다. 주소를 방금 친 사람이
+   * 그 주소가 바깥이라는 것을 제일 잘 알아들을 자리이기도 하다.
+   */
+  let 나가도되나 = false;
+  if (바깥인가(found.base)) {
+    say('');
+    say(`  ${c.yellow('↗')} ${c.bold(주소가리기(found.base))} ${c.gray('는 이 컴퓨터 밖입니다.')}`);
+    say(`     ${c.gray('쓰면 시킨 말과, 모델이 읽은 파일의 내용이 그리로 갑니다.')}`);
+    나가도되나 = await confirm('이 연결로 바깥에 나가도 될까요?', true);
+    if (!나가도되나) {
+      say(`  ${c.gray('허락 없이 저장합니다 — 이 연결로 처음 켤 때 다시 물어봅니다.')}`);
+    }
+  }
+
   const id = slug(name);
   const cfg = load();
   upsert(cfg, {
@@ -125,6 +149,9 @@ export async function runSetup() {
     auth: found.auth,
     apiKey: key,
     model,
+    // 로컬·사내망이면 이 칸 자체가 없다. 있는 것만으로도 「바깥이다」 라는 뜻이라,
+    // 설정 파일을 열어 본 사람이 그것만 보고도 안다.
+    ...(나가도되나 ? { online: true } : {}),
     ctx: facts.ctx ?? null,
     streaming: facts.streaming ?? false,
     tools: facts.tools ?? false,
@@ -200,7 +227,18 @@ export async function showStatus() {
       p.think ? c.green('추론') : c.gray('추론'),
     ].join(c.gray('·'));
     say(`  ${c.bold(p.name)}  ${c.gray(p.model)}  ${caps}${here}`);
-    say(`    ${c.gray(주소가리기(p.baseUrl))}`);
+    /*
+     * 바깥으로 나가는 연결인지, 그리고 허락이 붙어 있는지를 같이 적는다.
+     *
+     * 주소만 보고는 모른다 — `gw.회사.com` 이 사내인지 바깥인지는 사람이
+     * 헷갈리는 자리다. 그리고 허락이 없으면 켤 때 물어본다는 사실도 여기서
+     * 미리 알려 준다. 안 그러면 "왜 갑자기 물어보지" 가 된다.
+     */
+    const 바깥 = 바깥인가(p.baseUrl);
+    const 표 = 바깥
+      ? `${c.yellow('↗ 바깥')}${p.online ? c.gray(' · 나가도 됨') : c.gray(' · 켤 때 물어봄')}`
+      : c.green('⌂ 이 안');
+    say(`    ${c.gray(주소가리기(p.baseUrl))}  ${표}`);
   }
   say('');
   say(`  ${c.gray('설정 파일')} ${configPath()}`);

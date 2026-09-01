@@ -62,6 +62,7 @@ export const 깃발들 = [
   { 이름: '--max-tokens', 뜻: '한 번에 뱉을 최대 토큰', en: 'max tokens per reply', 값: null },
   { 이름: '--think', 뜻: '생각의 양', en: 'how much thinking', 값: LEVELS },
   { 이름: '--effort', 뜻: '생각을 어디에 몰아줄까', en: 'where to spend the thinking budget', 값: Object.keys(PROFILES) },
+  { 이름: '--online', 뜻: '묻지 않고 바깥으로 나간다', en: 'go outside without asking', 값: false },
   { 이름: '--offline', 뜻: '바깥으로 아예 안 나간다', en: 'never reach the network', 값: false },
   { 이름: '--yes', 뜻: '물어보지 않고 진행', en: 'do not ask, just proceed', 값: false },
   { 이름: '--json', 뜻: '결과를 JSON 으로', en: 'output JSON', 값: false },

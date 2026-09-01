@@ -8,6 +8,8 @@ import { compact } from './agent/compact.js';
 import { 증거모으기, 증거적기 } from './agent/evidence.js';
 import { 커밋준비, 커밋실행 } from './agent/commit.js';
 import { allowEndpoint } from './safety/network.js';
+import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
+import { 주소가리기 } from './safety/secrets.js';
 import { pick, confirm } from './ui/prompt.js';
 import { load, save, resolveKey, upsert, 열쇠보관 } from './config.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
@@ -2616,7 +2618,7 @@ async function switchModel(session, ctx, arg = '') {
   // 이름으로 바로 바꾸기 — 메뉴를 안 거친다.
   if (말) {
     const 찾은 = 이름으로찾기(cfg.profiles, 말);
-    if (찾은.length === 1) return 골라적용(session, cfg, 찾은[0]);
+    if (찾은.length === 1) return await 골라적용(session, cfg, 찾은[0]);
     if (찾은.length > 1) {
       say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 것이 여럿입니다.')}`);
       for (const p of 찾은.slice(0, 12)) say(`    ${c.cyan(p.name)}  ${c.gray(p.model)}`);
@@ -2653,7 +2655,7 @@ async function switchModel(session, ctx, arg = '') {
     ask: ctx?.ask,
   });
   if (i === cfg.profiles.length) return await 서버모델고르기(session, ctx, cfg);
-  return 골라적용(session, cfg, cfg.profiles[i]);
+  return await 골라적용(session, cfg, cfg.profiles[i]);
 }
 
 function 이름으로찾기(profiles, 말) {
@@ -2663,7 +2665,44 @@ function 이름으로찾기(profiles, 말) {
   return profiles.filter((p) => `${p.name} ${p.model} ${p.id}`.toLowerCase().includes(q));
 }
 
-function 골라적용(session, cfg, p) {
+/*
+ * 이 프로필로 갈아타면 바깥으로 나가는가. 나가면 한 번 묻는다.
+ *
+ * 켤 때 지나는 문(repl.js)과 **같은 문**이다. 여기를 안 지키면 자물쇠가
+ * 반쪽이 된다 — 로컬로 켜서 물음을 지나친 다음, /model 로 바깥 프로필에
+ * 갈아타는 순간 아무것도 안 묻고 나간다. 실제로 그렇게 쓴다: 한 시간쯤
+ * 로컬로 하다가 「이건 큰 모델이 낫겠다」 하고 옮긴다.
+ *
+ * 허락은 프로필에 적힌다. 갈아탈 때마다 묻지 않는다.
+ */
+async function 나가도되나묻기(session, p) {
+  const 모드 = session.실행모드 ?? 지금모드({});
+  const 나감 = 나갈수있나(모드, { 바깥: 바깥인가(p.baseUrl), 허가: p.online === true });
+  if (나감.되나) return true;
+
+  const 어디 = 주소가리기((() => { try { return new URL(p.baseUrl).host; } catch { return String(p.baseUrl); } })());
+  if (!나감.물어볼까) {
+    // 봉인이다. 여기서 바꿔 주면 다음 한마디에서 막히는데, 그 화면만 보고는
+    // 왜 막혔는지 알 수 없다 — 바꾸기 전에 말하는 편이 언제나 낫다.
+    say(`  ${mark.warn} ${c.gray(`${어디} 는 이 컴퓨터 밖입니다. 지금은`)} ${c.white('봉인(--offline)')} ${c.gray('이라 안 바꿉니다.')}`);
+    say('');
+    return false;
+  }
+  say('');
+  say(`  ${c.yellow('↗')} ${c.bold(어디)} ${c.gray('는 이 컴퓨터 밖입니다.')}`);
+  say(`     ${c.gray('바꾸면 시킨 말과, 모델이 읽은 파일의 내용이 그리로 갑니다.')}`);
+  const 예 = await confirm('나가도 될까요? (한 번 허락하면 이 연결은 다음부터 안 묻습니다)', true);
+  if (!예) {
+    say(`  ${c.gray('안 바꿨습니다. 아무것도 안 보냈습니다.')}`);
+    say('');
+    return false;
+  }
+  p.online = true;
+  return true;
+}
+
+async function 골라적용(session, cfg, p) {
+  if (!await 나가도되나묻기(session, p)) return;
   cfg.active = p.id;
   try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 바뀐다 */ }
   연결적용(session, p);
@@ -2691,6 +2730,9 @@ async function 모델만바꾸기(session, cfg, 모델) {
     // 반대로 큰 데서 작은 데로 옮기면 긴 대화에서 서버가 거절한다. 아래에서 다시 잰다.
     ctx: null,
   };
+  // 서버는 그대로지만 문은 같이 지난다. 등록 안 된 서버로 옮겨 가는 길도
+  // 여기라서, 여기를 열어 두면 자물쇠에 구멍이 하나 남는다.
+  if (!await 나가도되나묻기(session, p)) return;
   if (!이미) { try { save(upsert(cfg, p)); } catch { /* 못 남겨도 이번 세션에는 바뀐다 */ } }
   else { cfg.active = p.id; try { save(cfg); } catch {} }
   연결적용(session, p);

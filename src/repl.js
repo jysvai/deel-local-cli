@@ -24,7 +24,8 @@ import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
 import { activeProfile, load, resolveKey, save as saveCfg, homeDir, 잠금소식 } from './config.js';
 import { discover } from './skills/discover.js';
-import { allowEndpoint, setOffline, isOffline, isLocalHost } from './safety/network.js';
+import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
+import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
 import { Store, latest, prune } from './agent/store.js';
 import { Threads } from './agent/threads.js';
 import { 못박기 } from './agent/pins.js';
@@ -196,10 +197,29 @@ export async function chatLoop(opts = {}) {
     vision: prof.vision ?? false,
   };
 
+  /*
+   * ── 주소와 허가를 뗀다 ───────────────────────────────────────────────
+   *
+   * 여태는 baseUrl 만 보고 그 자리를 열었다. 그러면 설정 파일 한 줄만 고쳐도
+   * 바깥으로 나간다 — 화면에 ↗ 가 뜨긴 하지만 그건 알리는 것이지 막는 것이
+   * 아니다. 「완전 로컬」 이 정체성인데 코드가 지키는 것은 그 절반이었다.
+   *
+   * 이제 **둘 다 있어야** 나간다: 주소(baseUrl)와 허가(profile.online).
+   * 주소만 바꿔서는 못 나간다 — 실수로는 안 되고, 마음먹어야 된다.
+   *
+   * 허가를 물어야 하는 자리면 여기서 안 연다. 머리말을 보여 준 **뒤에** 묻고,
+   * 그때 연다 — 어디로 나가는지를 보고 답하게 하는 것이 요점이다.
+   */
+  const 바깥연결 = 바깥인가(conn.base);
+  const 실행모드 = 지금모드({
+    online: opts.online === true,
+    // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
+    offline: !!(opts.offline ?? prof.offline ?? cfg?.offline),
+  });
+  const 나감 = 나갈수있나(실행모드, { 바깥: 바깥연결, 허가: prof.online === true });
   // 이 자리 하나만 연다. 다른 어디로도 나가지 못한다.
-  allowEndpoint(conn.base);
-  // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
-  if (opts.offline ?? prof.offline ?? cfg?.offline) setOffline(true);
+  if (!나감.물어볼까) allowEndpoint(conn.base);
+  if (실행모드.허가무시) setOffline(true);
 
   /*
    * ── 끝났을 때 알리기 ─────────────────────────────────────────────────
@@ -237,6 +257,9 @@ export async function chatLoop(opts = {}) {
     effort: opts.effort ?? 'save',
     maxSteps: opts.maxSteps ?? null,   // null 이면 작업 모드가 정한다
   });
+  // 지금 어느 실행 모드인가. 화면이 첫 줄에 이걸 그린다(ui/status.js).
+  // session 에 실어 두는 까닭은, 대화 도중 /model 로 옮겨도 같은 자리를 보게 하려는 것이다.
+  session.실행모드 = 실행모드;
 
   // ── 대화 이어하기 ─────────────────────────────────────────────────────
   // 껐다 켜도 이어지도록, 메시지가 오갈 때마다 .deel/sessions/ 에 바로 적는다.
@@ -1189,10 +1212,8 @@ export async function chatLoop(opts = {}) {
    * 꼴이 되는데, 그건 안 보여 주느니만 못하다.
    */
   {
-    let 바깥 = false;
-    try { 바깥 = !isLocalHost(new URL(conn.base).hostname); } catch { 바깥 = false; }
     say('');
-    await 인트로({ 바깥, 곁말: 기본곁말(바깥), 쓰기: (t) => process.stdout.write(t) });
+    await 인트로({ 바깥: 바깥연결, 곁말: 기본곁말(바깥연결), 쓰기: (t) => process.stdout.write(t) });
   }
 
   // ── 머리말 ────────────────────────────────────────────────────────────
@@ -1236,6 +1257,46 @@ export async function chatLoop(opts = {}) {
   // ESC 를 앞에 둔다 — 멈추는 길로는 이것이 먼저다. Ctrl+C 는 두 번 누르면
   // 끝나 버려서, 급히 멈추려던 사람이 대화를 통째로 닫는 일이 실제로 있었다.
   say(`  ${c.gray('/help 명령 목록')}   ${c.gray('ESC 중단')}   ${c.gray('Ctrl+C 중단·끝내기')}`);
+
+  /*
+   * ── 바깥으로 나가도 되는지 한 번 묻는다 ─────────────────────────────
+   *
+   * 여기서 묻는 까닭은 **머리말 다음**이어야 하기 때문이다. 바로 위 화면에
+   * `보냄  바깥 api.anthropic.com` 이 찍혀 있다. 그것을 보고 답하는 것과,
+   * 켜자마자 "나가도 될까요?" 를 받는 것은 전혀 다른 물음이다.
+   *
+   * 한 번만 묻는다. 답하면 그 프로필에 적어 두고 다음부터 안 묻는다 — 기본값을
+   * 뒤집으면서 쓰던 사람을 안 깨뜨리는 길이 이것이다. 막는 것이 목적이 아니라
+   * **모르고 나가는 것**을 없애는 것이 목적이다.
+   */
+  if (나감.물어볼까) {
+    const 어디 = (() => { try { return new URL(conn.base).host; } catch { return conn.base; } })();
+    say('');
+    say(`  ${c.yellow('↗')} ${c.bold('이 연결은 이 컴퓨터 밖으로 나갑니다.')}`);
+    say(`     ${c.gray('보낼 곳')} ${c.white(주소가리기(어디))}`);
+    say(`     ${c.gray('보내는 것 — 시킨 말, 그리고 모델이 읽은 파일의 내용입니다.')}`);
+    say(`     ${c.gray('로컬 모델(127.0.0.1)이나 사내망 주소였다면 이 물음이 안 나옵니다.')}`);
+    say('');
+    const 답 = String(await ask(`나가도 될까요? ${c.gray('⏎ 허락하고 기억 · n 그만')}`, { def: 'y' }))
+      .trim().toLowerCase();
+    if (['n', 'no', 'ㄴ', '아니', '아니요', '아니오', '취소', '그만'].includes(답)) {
+      say('');
+      say(`  ${c.gray('나가지 않았습니다. 아무것도 안 보냈습니다.')}`);
+      say(`  ${c.gray('이 컴퓨터 안의 모델을 붙이려면')} ${c.cyan('deel setup')} ${c.gray('또는')} ${c.cyan('deel scan --save')} ${c.gray('를 쓰세요.')}`);
+      rl.close();
+      return 0;
+    }
+    prof.online = true;
+    try {
+      saveCfg(cfg);
+      say(`  ${c.gray('허락을 적어 뒀습니다 — 이 프로필은 다음부터 안 묻습니다.')}`
+        + ` ${c.gray('되돌리려면 설정에서')} ${c.white('online')} ${c.gray('을 지우면 됩니다.')}`);
+    } catch (e) {
+      // 못 적어도 이번 판은 나간다. 사람이 방금 허락했다 — 그걸 무르는 것이 더 놀랍다.
+      say(`  ${mark.warn} ${c.gray(`허락을 저장하지 못했습니다 (${e.message}). 이번에만 나갑니다.`)}`);
+    }
+    allowEndpoint(conn.base);
+  }
 
   /*
    * 입력 자리. 어떻게 생겼는지는 화면 쪽이 정한다 —

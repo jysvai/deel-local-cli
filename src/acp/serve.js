@@ -42,6 +42,7 @@ import { 말 as 옮긴말 } from '../i18n/index.js';
 import { 알림채움 } from '../backend/retry.js';
 import { discover } from '../skills/discover.js';
 import { allowEndpoint, setOffline } from '../safety/network.js';
+import { 지금모드, 바깥인가, 나갈수있나 } from '../safety/runmode.js';
 import { 주소가리기 } from '../safety/secrets.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from '../backend/ctxsize.js';
 import { 다붙이기 } from '../backend/mcp.js';
@@ -138,9 +139,28 @@ export async function acp(opts = {}) {
       streaming: prof.streaming ?? false,
       tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
     };
+    /*
+     * 바깥으로 나가는 연결은 허가가 있어야 연다 (safety/runmode.js).
+     *
+     * 에디터에는 승인 창이 있지만 그건 **도구 실행**을 묻는 창이고, 「이 대화가
+     * 통째로 바깥으로 나갑니다」 를 물을 자리는 규격에 없다. 그래서 여기서는
+     * 묻지 않고 또렷하게 거절한다 — 에디터 화면에 이 글이 그대로 뜬다.
+     */
+    const 바깥연결 = 바깥인가(conn.base);
+    const 실행모드 = 지금모드({
+      online: opts.online === true,
+      // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
+      offline: !!(opts.offline ?? prof.offline ?? cfg?.offline),
+    });
+    const 나감 = 나갈수있나(실행모드, { 바깥: 바깥연결, 허가: prof.online === true });
+    if (나감.물어볼까) {
+      const 어디 = (() => { try { return new URL(conn.base).host; } catch { return conn.base; } })();
+      throw 잘못된인자오류(
+        `이 연결은 이 컴퓨터 밖으로 나갑니다 (${주소가리기(어디)}).`
+        + ' 터미널에서 deel 을 한 번 켜서 허락하거나, deel acp --online 으로 띄우세요.');
+    }
     allowEndpoint(conn.base);
-    // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
-    if (opts.offline ?? prof.offline ?? cfg?.offline) setOffline(true);
+    if (실행모드.허가무시) setOffline(true);
 
     const session = new Session(conn, {
       root,
@@ -151,6 +171,9 @@ export async function acp(opts = {}) {
       think: opts.think ?? 'medium',
       effort: opts.effort ?? 'save',
     });
+    // 지금 어느 실행 모드인가. 화면이 첫 줄에 이걸 그린다(ui/status.js).
+    // session 에 실어 두는 까닭은, 대화 도중 /model 로 옮겨도 같은 자리를 보게 하려는 것이다.
+    session.실행모드 = 실행모드;
 
     const found = discover(root);
     session.skills = found.skills;

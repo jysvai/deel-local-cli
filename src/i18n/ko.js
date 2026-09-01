@@ -101,6 +101,9 @@ export const ko = {
   // ── 켤 때 머리말 ──────────────────────────────────────────────────────
   'head.spec.ollama': 'Ollama 규격',
   'head.spec.openai': 'OpenAI 호환 규격',
+  'head.mode.default': '이 안 (기본)',
+  'head.mode.online': '바깥 (online)',
+  'head.mode.offline': '봉인 (offline)',
   'head.model': '모델',
   'head.tokens': '토큰',
   'head.grade': '급',
@@ -139,6 +142,7 @@ export const ko = {
 
   // ── 상태줄 조각 이름 (/status 와 설정이 본다) ─────────────────────────
   'seg.dir': '작업 폴더 (앞의 ⌂/↗ 는 소스가 어디로 나가나)',
+  'seg.ver': '판 번호',
   'seg.thread': '대화 갈래',
   'seg.model': '모델 이름',
   'seg.grade': '모델 급 (얼마나 알아서 하나)',

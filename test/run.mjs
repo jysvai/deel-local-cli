@@ -61,6 +61,7 @@ const FILES = [
   'paste.test.js',
   'pastechip.test.js',
   'histline.test.js',
+  'runmode.test.js',
   'ctxsize.test.js',
   'cli.test.js',
   'oneshot.test.js',

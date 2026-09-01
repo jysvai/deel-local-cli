@@ -11,6 +11,7 @@ import { 프록시고르기, 프록시설정 } from '../backend/proxy.js';
 import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
 import { 말, 언어 } from '../i18n/index.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
+import { VERSION } from '../version.js';
 
 // 저장소 주소. package.json 의 repository 와 같아야 한다 — 검사가 지킨다.
 export const GITHUB = 'https://github.com/jysvai/deel-local-cli';
@@ -43,6 +44,29 @@ export const SEGMENTS = {
     get desc() { return 말('seg.dir'); },
     make: (s) => `${경계표(s)} ${c.gray(clip(base(s.root), 20))}`,
     short: (s) => `${경계표(s)} ${c.gray(clip(base(s.root), 12))}`,
+  },
+
+  /*
+   * 판 번호.
+   *
+   * 「무슨 판을 쓰고 있나」 는 화면 어디에도 안 떴다 — `deel --version` 을 따로
+   * 쳐야 알았다. 그런데 그 질문이 나오는 자리는 대개 뭔가 이상할 때고, 그때
+   * 사람은 화면을 캡처해서 보낸다. 캡처에 판 번호가 없으면 무슨 판 이야기인지
+   * 부터 다시 물어야 한다. 켤 때 머리말에도 적지만 그건 스크롤에 밀린다.
+   *
+   * **조각을 따로 둔다.** 처음에는 폴더 이름(dir) 안에 글자로 붙였는데, 그러면
+   * 여덟 칸이 늘어난 채로 「자리에 맞나」 를 재게 되어 114칸 아래 터미널에서
+   * 온 줄이 짧은 꼴로 바뀌었다 — 승인 방식이 `위험만 확인` 에서 `위험만` 이
+   * 됐다. 이 파일이 이미 정해 둔 원칙에 걸린다: **안전 표시를 흐리게 만드는
+   * 표시는 손해다.**
+   *
+   * 조각으로 떼어 두면 자리가 모자랄 때 이것부터 뺄 수 있다(아래 사다리).
+   * 판 번호는 밀려도 되는 것이고, 승인 방식은 아니다.
+   */
+  ver: {
+    get desc() { return 말('seg.ver'); },
+    make: () => c.gray(VERSION),
+    short: () => null,
   },
 
   /*
@@ -246,7 +270,7 @@ export const SEGMENTS = {
  * 그러면 눈이 세 번만 멈춘다.
  */
 export const SEGMENT_GROUPS = [
-  ['dir', 'thread', 'model'],
+  ['dir', 'ver', 'thread', 'model'],
   ['ctx', 'grade'],
   ['work', 'think', 'mode'],
   // 내 폴더에 무슨 일이 있었나. 아무 일도 없으면 이 덩이는 아예 안 선다.
@@ -309,6 +333,24 @@ function 경계표(s) {
   return c.hgreen('⌂');
 }
 
+/*
+ * 실행 모드 한 조각 — `⌂ 이 안 (기본)`.
+ *
+ * 모드를 안 심어 준 화면(옛 호출부·검사)에서는 아무것도 안 그린다. 모르는
+ * 것을 기본값으로 지어내면, 봉인으로 켠 줄 알았는데 화면은 「이 안」 이라고
+ * 하는 자리가 생긴다 — 안 보여 주느니만 못하다.
+ *
+ * 색은 여기서 칠한다. 모드 표(safety/runmode.js)는 자물쇠지 화면이 아니다.
+ */
+const 모드색 = { default: c.hgreen, online: c.hyellow, offline: c.hgreen };
+
+function 모드칸(s) {
+  const m = s?.실행모드;
+  if (!m?.영) return '';
+  const 칠 = 모드색[m.영] ?? c.gray;
+  return `  ${칠(m.글자)} ${c.gray(말(`head.mode.${m.영}`))}`;
+}
+
 function base(p) {
   const parts = String(p ?? '').split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? '~';
@@ -367,6 +409,15 @@ export function statusLine(session, { segments = null, max = cols() - 2 } = {}) 
    * 덜 급한 자리를 접는 편이 낫다.
    */
   let parts = 그리기(false);
+  /*
+   * 자리가 모자라면 **판 번호부터** 뺀다. 접기보다도 먼저다.
+   *
+   * 여기 있는 것 중에 지금 안 봐도 되는 것은 판 번호 하나뿐이다. 나머지는
+   * 전부 「지금 어떤 상태냐」 를 말한다. 순서를 안 두고 그냥 접기부터 들어가면
+   * 판 번호 여덟 칸 때문에 온 줄이 짧은 꼴로 바뀌고, 그 바람에 승인 방식이
+   * `위험만 확인` 에서 `위험만` 이 된다 — 이 파일이 여러 번 적어 둔 그 손해다.
+   */
+  if (!맞나(parts) && !segments) parts = 그리기(false, new Set(['ver']));
   if (!맞나(parts)) parts = 그리기(true);
 
   /*
@@ -470,7 +521,20 @@ export function headerLines(session, found, 상자쓰나 = true) {
   const 자리 = (글) => `${글}${' '.repeat(Math.max(1, 이름칸 - width(글)))}`;
   const 빈자리 = ' '.repeat(이름칸);
   const lines = [
-    `${c.hcyan(c.bold('deel'))}  ${c.gray(말(conn.kind === 'ollama' ? 'head.spec.ollama' : 'head.spec.openai'))}`,
+    /*
+     * 판 번호와 실행 모드를 첫 줄에 같이 놓는다.
+     *
+     * 여태 판 번호는 화면 어디에도 안 떴다 — `deel --version` 을 따로 쳐야
+     * 알았다. 그런데 그 질문이 나오는 자리는 대개 뭔가 이상할 때고, 그때
+     * 사람은 화면을 캡처해서 보낸다. 캡처에 판 번호가 없으면 무슨 판
+     * 이야기인지부터 다시 물어야 한다.
+     *
+     * 실행 모드도 같은 줄이다. 「지금 나가나 안 나가나」 는 아래 `보냄` 줄이
+     * 주소로 말해 주지만, 그건 **어디로** 이지 **나가도 되나** 가 아니다.
+     * 봉인(--offline)으로 켠 사람은 그 사실을 첫 줄에서 봐야 한다.
+     */
+    `${c.hcyan(c.bold('deel'))} ${c.gray(VERSION)}${모드칸(session)}`
+      + `  ${c.gray(말(conn.kind === 'ollama' ? 'head.spec.ollama' : 'head.spec.openai'))}`,
     '',
     /*
      * 모델 줄에 급을 같이 적는다.

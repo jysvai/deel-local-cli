@@ -114,6 +114,9 @@ export const en = {
   // ── Startup header ────────────────────────────────────────────────────
   'head.spec.ollama': 'Ollama API',
   'head.spec.openai': 'OpenAI-compatible API',
+  'head.mode.default': 'inside (default)',
+  'head.mode.online': 'outside (online)',
+  'head.mode.offline': 'sealed (offline)',
   'head.model': 'model',
   'head.tokens': 'tokens',
   'head.grade': 'class',
@@ -152,6 +155,7 @@ export const en = {
 
   // ── Status bar segments ───────────────────────────────────────────────
   'seg.dir': 'working folder (the ⌂/↗ in front says where your source goes)',
+  'seg.ver': 'version',
   'seg.thread': 'thread',
   'seg.model': 'model name',
   'seg.grade': 'model class (how much it does on its own)',
