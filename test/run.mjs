@@ -60,6 +60,7 @@ const FILES = [
   'promptlang.test.js',
   'paste.test.js',
   'pastechip.test.js',
+  'histline.test.js',
   'ctxsize.test.js',
   'cli.test.js',
   'oneshot.test.js',

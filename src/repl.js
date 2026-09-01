@@ -37,6 +37,7 @@ import { 고르기 as 승인고르기, 다음 as 승인다음 } from './ui/appro
 import { 추천, 채울글 } from './ui/complete.js';
 import { 접어쓰기 } from './ui/wrap.js';
 import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들 } from './ui/pastechip.js';
+import { 이력지킴이 } from './ui/histline.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { renderDiff, shortStat } from './ui/diff.js';
 import { expand as expandMentions } from './agent/mention.js';
@@ -449,6 +450,11 @@ export async function chatLoop(opts = {}) {
   // 붙여넣는 중인가 (bracketed paste). 키 처리와 'line' 이 같이 본다.
   let 붙여넣는중 = false;
 
+  // 위/아래로 이력을 뒤지는 동안 치던 글을 붙잡아 둔다. 왜 우리가 갖는지는
+  // ui/histline.js 에 — 한 줄로 줄이면, readline 의 화살표 동작이 Node 판마다
+  // 다르고 옛 판에서는 치던 글이 그냥 없어지기 때문이다.
+  const 이력지킴 = 이력지킴이();
+
   /*
    * ── 붙여넣은 덩이를 접어 둔다 ────────────────────────────────────────
    *
@@ -475,6 +481,9 @@ export async function chatLoop(opts = {}) {
   };
 
   rl.on('line', (원래줄) => {
+    // 줄이 나갔으니 붙잡아 둔 「치던 글」도 놓는다. 안 놓으면 다음 줄을 치다가
+    // 위/아래를 눌렀을 때 아까 보낸 글이 되살아난다.
+    이력지킴.비우기();
     // 상자 안에서 바꾼 줄을 여기서 진짜 줄바꿈으로 되돌린다. 아래 코드는
     // 전부 평범한 \n 만 본다 — 줄표가 이 아래로는 한 글자도 안 새어 나간다.
     const l = 펴기(원래줄);
@@ -788,6 +797,24 @@ export async function chatLoop(opts = {}) {
         return;
       }
       /*
+       * 위/아래로 이력을 뒤져도 치던 글을 안 잃는다.
+       *
+       * readline 이 이 키를 처리한 **뒤에** 자리를 봐야 하므로 한 틱 미룬다.
+       * 아래 그리기보다 먼저 잡아 두는 자리이니, 되돌린 글은 이어서 도는
+       * 그리기가 그대로 화면에 올린다.
+       */
+      if (key && (key.name === 'up' || key.name === 'down')) {
+        setImmediate(() => {
+          const 되돌릴 = 이력지킴.되돌릴것(key.name, rl.historyIndex ?? -1);
+          if (되돌릴 === null || rl.line === 되돌릴) return;
+          rl.line = 되돌릴;
+          rl.cursor = 되돌릴.length;
+          if (입력기다림 && 묻는중 === null) {
+            화면.입력갱신(session, 펴기(rl.line), rl.cursor, 지금추천(펴기(rl.line)));
+          }
+        });
+      }
+      /*
        * 여러 키가 한꺼번에 들어와도 **한 번만** 그린다.
        *
        * 붙여넣기는 글자 수만큼 키가 쏟아진다. 스무 줄짜리를 붙이면 상자를
@@ -798,6 +825,9 @@ export async function chatLoop(opts = {}) {
       그릴예정 = true;
       setImmediate(() => {
         그릴예정 = false;
+        // 이력을 안 뒤지는 동안의 줄을 적어 둔다 — 화살표로 돌아왔을 때
+        // 돌려줄 것이 이것이다. readline 이 다 처리한 뒤라야 제 값이 보인다.
+        이력지킴.적기(rl.line ?? '', rl.historyIndex ?? -1);
         if (입력기다림) {
           화면.입력갱신(session, 펴기(rl.line), rl.cursor ?? 0, 지금추천(펴기(rl.line)));
         } else {
