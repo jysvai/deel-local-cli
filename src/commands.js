@@ -2,6 +2,7 @@
 import { writeFileSync, existsSync, statSync } from 'node:fs';
 import { 볼것, 리뷰받기 } from './agent/review.js';
 import { 마지막할당량, 할당량말, 아슬아슬한가 } from './backend/quota.js';
+import { 세션요금, 돈셈, 돈말, 어디서온값, 요금적는법 } from './backend/price.js';
 import { join } from 'node:path';
 import { c, say, rule, pad, bar, mark, width, clip } from './ui/ansi.js';
 import { compact } from './agent/compact.js';
@@ -11,7 +12,8 @@ import { allowEndpoint } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { pick, confirm } from './ui/prompt.js';
-import { load, save, resolveKey, upsert, 열쇠보관 } from './config.js';
+import { load, save, resolveKey, upsert, 열쇠보관, configPath } from './config.js';
+import { 제공자고르기 } from './providers/index.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
 import { 말, 언어, 언어들, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
@@ -879,6 +881,33 @@ export async function handle(line, session, ctx) {
       // 서버가 잠깐 막아 다시 부른 횟수. 0 이면 안 적는다 — 없는 일을 줄로 남기면 표만 길어진다.
       if (session.usage.retries) say(`  ${c.gray(pad(말('cost.retries'), 14))} ${session.usage.retries}회`);
       say(`  ${c.gray(pad('경과', 14))} ${mins}분`);
+      /*
+       * 돈.
+       *
+       * 이 도구에는 값이 박힌 요금표가 없다(backend/price.js). 지어낸 요금을
+       * 자신 있게 찍는 것보다 모른다고 말하는 편이 낫다고 봤다.
+       *
+       * 그래서 두 갈래다 — 아는 값이 있으면 금액과 **어디서 온 값인지**를
+       * 같이 적고, 모르면 어디에 무엇을 적으면 되는지를 적는다. 「모릅니다」
+       * 한 줄로 끝내면 사람이 할 수 있는 일이 없다.
+       *
+       * 로컬로만 쓰는 사람에게는 아예 안 띄운다. 로컬은 공짜라 그 자리가
+       * 영영 안 채워지고, 그러면 매번 쓸모없는 안내만 보게 된다.
+       */
+      const 요금값 = 세션요금(session);
+      const 쓴돈 = 돈셈(session.usage, 요금값);
+      if (쓴돈) {
+        say(`  ${c.gray(pad('요금', 14))} ${c.bold(돈말(쓴돈.달러))}`
+          + ` ${c.gray(`(${어디서온값(요금값)})`)}`);
+      } else if (바깥인가(session.conn.base) && (session.usage.in || session.usage.out)) {
+        const 붙은곳 = session.제공자 ? 제공자고르기(session.제공자) : null;
+        for (const 줄 of 요금적는법(session.conn.model, { 제공자: 붙은곳, 설정파일: configPath() })) {
+          say(`  ${c.gray(줄)}`);
+        }
+      }
+      // 설정에 적어는 뒀는데 숫자가 아니면 조용히 넘어가면 안 된다. 사람은
+      // 적었다고 믿고 있으므로, 안 나오는 까닭을 화면에서 알 수 있어야 한다.
+      for (const 탈 of 요금값?.탈들 ?? []) say(`  ${c.yellow(mark.no)} ${c.gray(탈)}`);
       /*
        * 서버가 남았다고 말해 준 할당량 (backend/quota.js).
        *
@@ -2557,6 +2586,9 @@ function 연결적용(session, p) {
   // 자물쇠도 같이 옮긴다. 이걸 빼먹으면 옛 주소가 열린 채로 남고 새 주소는 막혀
   // 다음 한마디에서 바로 "허용되지 않은 주소" 가 난다.
   allowEndpoint(p.baseUrl);
+  // 어디 것인지도 같이 옮긴다. 요금표 주소 같은 안내가 옛 회사 것으로 남으면
+  // 사람이 엉뚱한 요금표를 보러 간다.
+  session.제공자 = p.제공자 ?? null;
 }
 
 /**

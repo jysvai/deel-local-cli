@@ -149,8 +149,9 @@ trace('4-덩이차례');
   check('모든 조각 이름이 실제로 있다', 평평.every((k) => SEGMENTS[k]),
     평평.filter((k) => !SEGMENTS[k]).join(','));
   check('조각 이름이 안 겹친다', new Set(평평).size === 평평.length, 평평.join(','));
-  // 토큰 수는 제일 뒤다 — 좁아지면 이것부터 떨어져야 한다.
-  check('토큰이 맨 뒤', SEGMENT_GROUPS.at(-1).join() === 'tok', SEGMENT_GROUPS.at(-1).join());
+  // 토큰 수와 돈은 제일 뒤다 — 좁아지면 이것부터 떨어져야 한다.
+  // 둘은 같은 말(얼마나 썼나)이라 한 덩이로 붙어 다닌다. 떨어질 때도 같이 떨어진다.
+  check('토큰과 돈이 맨 뒤', SEGMENT_GROUPS.at(-1).join() === 'tok,cost', SEGMENT_GROUPS.at(-1).join());
   check('내 폴더 이야기가 토큰보다 앞', SEGMENT_GROUPS.at(-2).includes('edits'),
     SEGMENT_GROUPS.at(-2).join());
 }

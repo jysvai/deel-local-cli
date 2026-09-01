@@ -146,6 +146,7 @@ export const ja = {
   'seg.verify': '実際に確かめたもの',
   'seg.undoable': 'まだ戻せるターン',
   'seg.tok': '入出力トークン',
+  'seg.cost': '使った金額（料金が分かるときだけ）',
   'seg.tools': '道具の呼び出し',
   'seg.skills': 'このPCで見つかったスキル',
   'seg.time': '始めてからの時間',

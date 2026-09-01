@@ -154,6 +154,7 @@ export const ko = {
   'seg.verify': '확인한 것 (Verify)',
   'seg.undoable': '되돌릴 수 있는 턴',
   'seg.tok': '주고받은 토큰',
+  'seg.cost': '여태 쓴 돈 (요금을 알 때만)',
   'seg.tools': '도구 호출 수',
   'seg.skills': '이 PC 에서 찾은 스킬',
   'seg.time': '켠 지 얼마나',

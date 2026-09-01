@@ -4,6 +4,7 @@
 // 화면 그리기는 ansi.js 만 쓴다. 반입 심사에 새로 설명할 것이 늘지 않게 하려는 뜻이다.
 import { c, 눈금게이지, width, clip, cols, mark } from './ansi.js';
 import { 마지막할당량, 할당량말, 아슬아슬한가 } from '../backend/quota.js';
+import { 세션요금, 돈셈, 돈말 } from '../backend/price.js';
 import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite, 보일이름 } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
@@ -202,6 +203,26 @@ export const SEGMENTS = {
   },
 
   /*
+   * 여태 쓴 돈.
+   *
+   * 요금을 모르면 **아무것도 안 그린다.** 여기에 '요금 모름' 을 적으면
+   * 로컬로만 쓰는 사람 화면에 평생 그 다섯 글자가 서 있게 된다 — 로컬은
+   * 원래 공짜라 그 자리는 영원히 안 채워진다. 모른다는 말은 물어본 자리
+   * (/cost)에서 하고, 상태줄은 아는 것만 그린다.
+   *
+   * 반대로 아는데 안 그리면 안 된다. 바깥 API 는 몇 턴 만에 몇 달러가
+   * 나가고, 그걸 화면 밖에 두면 다 쓴 뒤에나 안다.
+   */
+  cost: {
+    get desc() { return 말('seg.cost'); },
+    make: (s) => {
+      const 돈 = 돈셈(s.usage, 세션요금(s));
+      if (!돈 || !(돈.달러 > 0)) return null;
+      return c.gray(돈말(돈.달러));
+    },
+  },
+
+  /*
    * 이번 대화에서 **내 폴더에 무슨 일이 있었나** — 다른 축이라 따로 묶는다.
    *
    * 셋 다 아무 일도 없으면 아무것도 안 그린다. 갓 켠 화면에 `✎ 0 · ↩ 0` 이
@@ -275,7 +296,7 @@ export const SEGMENT_GROUPS = [
   ['work', 'think', 'mode'],
   // 내 폴더에 무슨 일이 있었나. 아무 일도 없으면 이 덩이는 아예 안 선다.
   ['edits', 'verify', 'undoable'],
-  ['tok'],
+  ['tok', 'cost'],
 ];
 
 // 옛 이름. 조각 이름을 직접 넘기던 자리(검사·설정)가 그대로 돌게 남긴다.

@@ -146,6 +146,7 @@ export const zh = {
   'seg.verify': '真正验证过的东西',
   'seg.undoable': '还能撤销的轮数',
   'seg.tok': '输入/输出词元',
+  'seg.cost': '已花费金额（仅在已知价格时）',
   'seg.tools': '工具调用',
   'seg.skills': '本机上找到的技能',
   'seg.time': '开始以来的时间',

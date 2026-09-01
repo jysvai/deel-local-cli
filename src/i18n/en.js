@@ -167,6 +167,7 @@ export const en = {
   'seg.verify': 'what was actually verified',
   'seg.undoable': 'turns you can still undo',
   'seg.tok': 'tokens in/out',
+  'seg.cost': 'money spent (only when the price is known)',
   'seg.tools': 'tool calls',
   'seg.skills': 'skills found on this machine',
   'seg.time': 'time since start',

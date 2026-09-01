@@ -63,6 +63,7 @@ const FILES = [
   'histline.test.js',
   'runmode.test.js',
   'providers.test.js',
+  'price.test.js',
   'ctxsize.test.js',
   'cli.test.js',
   'oneshot.test.js',

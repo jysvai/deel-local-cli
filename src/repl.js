@@ -26,6 +26,7 @@ import { activeProfile, load, resolveKey, save as saveCfg, homeDir, 잠금소식
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
+import { 세션요금, 돈셈, 돈말 } from './backend/price.js';
 import { Store, latest, prune } from './agent/store.js';
 import { Threads } from './agent/threads.js';
 import { 못박기 } from './agent/pins.js';
@@ -260,6 +261,14 @@ export async function chatLoop(opts = {}) {
   // 지금 어느 실행 모드인가. 화면이 첫 줄에 이걸 그린다(ui/status.js).
   // session 에 실어 두는 까닭은, 대화 도중 /model 로 옮겨도 같은 자리를 보게 하려는 것이다.
   session.실행모드 = 실행모드;
+  /*
+   * 요금표는 사람이 설정에 적은 것만 쓴다 (backend/price.js).
+   *
+   * 여기서 한 번만 읽는다. 상태줄은 글자를 칠 때마다 다시 그려지는데,
+   * 그때마다 설정 파일을 열면 디스크를 초당 수십 번 두드리게 된다.
+   */
+  session.요금표 = cfg?.요금 ?? null;
+  session.제공자 = prof?.제공자 ?? null;
 
   // ── 대화 이어하기 ─────────────────────────────────────────────────────
   // 껐다 켜도 이어지도록, 메시지가 오갈 때마다 .deel/sessions/ 에 바로 적는다.
@@ -2059,6 +2068,17 @@ export async function chatLoop(opts = {}) {
     const dIn = session.usage.in - before.in;
     const dOut = session.usage.out - before.out;
     if (dIn || dOut) bits.push(`↑${dIn.toLocaleString()} ↓${dOut.toLocaleString()}`);
+    /*
+     * 이번 턴에 나간 돈.
+     *
+     * 누적은 상태줄에 있다. 그런데 누적만 보면 **어느 한마디가 비쌌는지**를
+     * 알 수가 없다. 긴 파일을 한 번 붙였을 때 그 한 턴이 앞의 스무 턴보다
+     * 비싼 일이 흔하고, 사람이 버릇을 고칠 수 있는 건 그걸 봤을 때다.
+     *
+     * 요금을 모르면 안 적는다 (backend/price.js — 지어낸 요금은 안 찍는다).
+     */
+    const 이번돈 = 돈셈({ in: dIn, out: dOut }, 세션요금(session));
+    if (이번돈 && 이번돈.달러 > 0) bits.push(돈말(이번돈.달러));
     say('');
     say(`  ${c.gray('─'.repeat(2))} ${c.gray(bits.join(c.gray(' · ')))}`);
 
