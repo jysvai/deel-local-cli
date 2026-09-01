@@ -5,9 +5,11 @@
   <img alt="deel — stays on this machine" src="docs/assets/hero-en-light.svg" width="620">
 </picture>
 
-### A coding-agent CLI that runs on local models and private gateways only
+### A coding-agent CLI that runs on local models and private gateways
 
 Zero dependencies · Node 20+ · Exactly one place your source can go
+
+Vendor APIs connect too — **only when you say so**
 
 <br>
 
@@ -18,7 +20,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-4%2C932%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-5%2C685%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -33,7 +35,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 
 ```
  ╭──────────────────────────────────────────────────────────────╮
- │ deel  OpenAI-compatible                                      │
+ │ deel 1.7.0  ⌂ inside   OpenAI-compatible                     │
  │                                                              │
  │ Model    qwen2.5-coder:7b  (40k tokens)                      │
  │ Sends to this machine 127.0.0.1:11434  ← nowhere else        │
@@ -67,6 +69,7 @@ Zero dependencies · Node 20+ · Exactly one place your source can go
 - [What's different](#whats-different)
 - [Quick start](#quick-start)
 - [Where your data can go](#where-your-data-can-go)
+- [Connecting a vendor API](#connecting-a-vendor-api)
 - [Multiple local runtimes](#multiple-local-runtimes)
 - [Slash commands](#slash-commands)
 - [Work modes](#work-modes)
@@ -100,7 +103,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
-| [Release notes](docs/en/releases.md) | [1.6.x](docs/en/releases/1.6.md) · [1.5.x](docs/en/releases/1.5.md) · [1.4.x](docs/en/releases/1.4.md) · [1.3.x](docs/en/releases/1.3.md) · [1.2.x](docs/en/releases/1.2.md) |
+| [Release notes](docs/en/releases.md) | [1.7.x](docs/en/releases/1.7.md) · [1.6.x](docs/en/releases/1.6.md) · [1.5.x](docs/en/releases/1.5.md) · [1.4.x](docs/en/releases/1.4.md) · [1.3.x](docs/en/releases/1.3.md) · [1.2.x](docs/en/releases/1.2.md) |
 
 ---
 
@@ -310,15 +313,103 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
+ deel 1.7.0  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
+
+### Three run modes
+
+Through 1.6 the only lock was `--offline`, and **the default was open**. One
+line in `.deel/config.json` pointing outside was enough. The screen did show
+`↗`, but that is a *notice*, not a lock.
+
+| Mode | How | On an external address |
+|---|---|---|
+| `⌂ inside` | `deel` (default) | **Asks.** Say yes once and that connection stops asking |
+| `↗ outside` | `deel online` · `--online` | Does not ask |
+| `⛊ sealed` | `deel offline` · `--offline` | Ignores even remembered permission (strongest) |
+
+**Both the address and the permission are required.** Changing the address
+alone does not get you out.
+
+Local and intranet ranges (`127.x` · `10.x` · `192.168.x` · `172.16-31.x`) pass
+in all three modes — `offline` does not mean "no internet," it means "nothing
+leaves the company." 
 
 Nothing is collected or transmitted. No telemetry, no usage stats, no crash reporting.
 Conversation history, undo snapshots and config live only in `.deel/` inside your working folder.
 
-> Verified by 123 checks in `npm test` (network + web + mcp), including bringing up a real
+> Verified by 159 checks in `npm test` (network + web + mcp), including bringing up a real
 > server and confirming that **not a single request reaches it** when it is not allow-listed,
 > and that an MCP server **never starts** under `--offline`.
+
+---
+
+## Connecting a vendor API
+
+Local models are the default and that does not change. But "we have no GPU
+in-house" and "just this one task on a bigger model" are real situations, so
+vendor APIs can connect. **The modes above guard that door.**
+
+```bash
+deel setup
+```
+
+Instead of asking for a URL, it asks **where you're connecting**.
+
+```
+1. I only have a key — I'll figure out where it goes    1 blank
+2. Enter an address (corporate gateway · local)          2 blanks
+3. OpenAI (GPT)                                          1 blank
+4. Anthropic (Claude)                                    1 blank
+5. Google (Gemini)                                       1 blank
+6. AWS Bedrock                                           2 blanks
+```
+
+Option 1 is the point — the key prefix decides which single vendor is asked.
+
+```
+❯ sk-ant-api03-••••
+  ✓ Looks like an Anthropic (Claude) key. (the key starts with sk-ant-)
+    It is not thrown at every vendor in turn.
+```
+
+Probing vendors one by one would send an Anthropic key to OpenAI's server and
+then to Google's. You get a 401 and stop — but **the key has already left.**
+So an unrecognized key is never guessed at; you are asked.
+
+Bedrock asks for a region — five including Seoul (`ap-northeast-2`), plus
+"enter it yourself." Claude has a different wire shape, absorbed in six places
+([1.7.0 release notes](docs/en/releases/1.7.md#170)).
+
+### Going outside masks secrets in file contents too
+
+While everything stayed local, text read from files was deliberately **not**
+masked: mask it and the model writes the mask back into the file, destroying
+your real key.
+
+Going outside flips that trade. One `Read` puts your whole `.env` into someone
+else's server log, and that cannot be undone. The other side is now handled
+elsewhere — `Write`, `Append` and `Edit` refuse to write a mask back into a file.
+
+### You can see what it costs
+
+```
+❯ ─ 12.4s · 3 tools · ↑8.2k ↓1.1k · $0.0271
+```
+
+**There is no built-in price table.** Prices change whenever a vendor decides,
+and a table baked into source would have the tool confidently printing wrong
+amounts six months later. Write them in `.deel/config.json` — dollars per
+million tokens:
+
+```json
+"요금": { "claude-opus-4-6": { "입력": 0, "출력": 0, "기준": "2026-09-01" } }
+```
+
+The amount is shown with **where it came from and as of when**, and after six
+months it is marked stale. Unknown means nothing is printed — a local-only
+session never sees money at all.
 
 ---
 
@@ -946,7 +1037,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (4,932 checks)
+npm test          Full suite (5,685 checks)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -998,7 +1089,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[1.6.1](docs/en/releases/1.6.md#161)** | The places that made a turn spin in circles — the fence blocking `/dev/null` · old documents it could not read · images vanishing from files |
+| **[1.7.0](docs/en/releases/1.7.md#170)** | Local stays local; it goes out only when you say so — three modes · vendor setup · automatic masking · cost |
+| [1.6.1](docs/en/releases/1.6.md#161) | The places that made a turn spin in circles — the fence blocking `/dev/null` · old documents it could not read · images vanishing from files |
 | **[1.6.0](docs/en/releases/1.6.md#160)** | The things that did not work on a corporate network — proxy · 429 · Windows shell · 50k-file repos · PDF · clipboard paste · editor resume |
 | **[1.5.8](docs/en/releases/1.5.md#158)** | A 5MB document showed 8 lines out of 919 · a regex read as a path blocked the command |
 | **[1.5.7](docs/en/releases/1.5.md#157)** | Korean folders on macOS made your own files "out of scope" · paste · ESC |

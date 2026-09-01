@@ -1,11 +1,41 @@
-// 규격 차이(OpenAI 호환 / Ollama)를 여기 한 곳에서만 흡수한다.
+// 규격 차이(OpenAI 호환 / Ollama / Anthropic)를 여기 한 곳에서만 흡수한다.
 // 진단(probe)과 에이전트 루프가 같은 함수를 쓴다.
 import { req, headersFor, serverMessage, Aborted } from './http.js';
 import { 할당량기억 } from './quota.js';
 import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
 
+/*
+ * Anthropic 규격의 판 이름.
+ *
+ * 이 머리 하나가 없으면 400 이다. 열쇠가 멀쩡해도 그렇다. 날짜처럼 생겼지만
+ * 「오늘 날짜」 가 아니라 **규격 판 이름**이라, 새 날짜를 넣는다고 새 기능이
+ * 켜지지 않는다. 회사가 새 판을 내놓기 전에는 이 값이 바뀔 일이 없다.
+ */
+export const ANTHROPIC_VERSION = '2023-06-01';
+
 export function endpoint(shape) {
-  return shape === 'ollama' ? '/api/chat' : '/chat/completions';
+  if (shape === 'ollama') return '/api/chat';
+  if (shape === 'anthropic') return '/messages';
+  return '/chat/completions';
+}
+
+/** 이 규격이 더 요구하는 머리. 없으면 빈 것. */
+export function 더할머리(shape) {
+  return shape === 'anthropic' ? { 'anthropic-version': ANTHROPIC_VERSION } : {};
+}
+
+/**
+ * 이 규격을 사람에게 뭐라고 부를까.
+ *
+ * 한 곳에 모아 둔다. 화면 여러 자리가 각자 `kind === 'ollama' ? … : 'OpenAI
+ * 호환'` 로 갈라 놓고 있었는데, 규격이 셋이 되는 순간 그 자리들이 전부
+ * Anthropic 연결을 **「OpenAI 호환」 이라고 잘못 적는다.** 붙는 데는 아무
+ * 지장이 없어서 아무도 안 고치고, 그 화면을 믿고 남에게 설명하게 된다.
+ */
+export function 규격이름(shape) {
+  if (shape === 'ollama') return 'Ollama 자체 규격';
+  if (shape === 'anthropic') return 'Anthropic 규격';
+  return 'OpenAI 호환';
 }
 
 /**
@@ -60,6 +90,9 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
     if (think !== undefined) body.think = think;
     return body;
   }
+  if (shape === 'anthropic') return anthropic몸(
+    { model, messages, tools, stream, json, think, maxTokens },
+  );
   // 출력 상한을 **두 이름으로 같이** 보낸다.
   //
   // 옛 규격은 max_tokens 하나였다. 그런데 GPT-5 계열을 붙여 놓은 게이트웨이는
@@ -78,7 +111,90 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
   return body;
 }
 
+/*
+ * ── Anthropic 규격은 어디가 다른가 ─────────────────────────────────────
+ *
+ * OpenAI 호환 서버는 문 이름(/chat/completions)만 같으면 대충 통했다. 이쪽은
+ * 통하지 않는 자리가 넷이다. 그래서 여기 한 곳에 몰아 둔다.
+ *
+ *   1. 시킴말(system)이 messages 안에 못 들어간다. 몸의 딴 칸이다.
+ *   2. 차례가 사람·모델로 **번갈아** 와야 한다. 도구를 한 턴에 둘 부르면
+ *      결과가 둘인데, 그대로 보내면 거절당한다.
+ *   3. 도구 모양이 { name, description, input_schema } 다.
+ *      OpenAI 의 { type:'function', function:{...} } 가 아니다.
+ *   4. 답이 글 한 덩어리가 아니라 **블록 배열**이다.
+ *
+ * 안 보내는 것도 적어 둔다. 확인 못 한 것은 안 보낸다는 뜻이지, 없다는 뜻이
+ * 아니다 — 짐작으로 보낸 칸 하나가 400 을 만들면 열쇠가 틀린 줄 알게 된다.
+ *
+ *   · think — 생각 칸의 값 모양을 문서에서 확인하지 못했다.
+ *   · json  — 이 규격에는 답 모양을 강제하는 칸이 없다. 도구로 하는 방법뿐이다.
+ */
+function anthropic몸({ model, messages, tools, stream, json, think, maxTokens }) {
+  const 머리말 = [];
+  const 나머지 = [];
+  for (const m of messages ?? []) {
+    if (m?.role === 'system') 머리말.push(typeof m.content === 'string' ? m.content : String(m.content ?? ''));
+    else 나머지.push(m);
+  }
+  const body = { model, messages: 차례합치기(나머지), stream: !!stream, max_tokens: maxTokens };
+  if (머리말.length) body.system = 머리말.join('\n\n');
+  if (tools?.length) {
+    body.tools = tools.map((t) => {
+      const f = t.function ?? t;
+      return {
+        name: f.name,
+        description: f.description ?? '',
+        input_schema: f.parameters ?? f.input_schema ?? { type: 'object', properties: {} },
+      };
+    });
+    body.tool_choice = { type: 'auto' };
+  }
+  return body;
+}
+
+/**
+ * 같은 차례가 연달아 오면 하나로 합친다.
+ *
+ * 도구를 한 턴에 둘 부르면 결과 메시지가 둘이고, 이 규격에서 그 둘은 다
+ * 사람 차례다. 번갈아 오지 않으면 서버가 통째로 거절한다 — 그러면 도구를
+ * 하나만 부를 때는 되고 둘 부를 때만 안 되는, 제일 알아내기 어려운 고장이 된다.
+ */
+export function 차례합치기(messages) {
+  const 덩이 = (c) => (Array.isArray(c) ? c : [{ type: 'text', text: String(c ?? '') }]);
+  const out = [];
+  for (const m of messages ?? []) {
+    const 앞 = out[out.length - 1];
+    if (앞 && 앞.role === m?.role) {
+      앞.content = [...덩이(앞.content), ...덩이(m.content)];
+      continue;
+    }
+    out.push({ ...m });
+  }
+  return out;
+}
+
 export function extractMessage(shape, json) {
+  if (shape === 'anthropic') {
+    // 답이 블록 배열이다. 글·생각·도구 부름이 한 배열에 섞여 온다.
+    let content = '';
+    let thinking = '';
+    const 부름들 = [];
+    for (const b of Array.isArray(json?.content) ? json.content : []) {
+      if (b?.type === 'text') content += b.text ?? '';
+      else if (b?.type === 'thinking') thinking += b.thinking ?? '';
+      else if (b?.type === 'tool_use') 부름들.push({ id: b.id, name: b.name, args: b.input ?? {} });
+    }
+    return {
+      content,
+      thinking,
+      toolCalls: normalizeCalls(부름들),
+      // 이름이 다르다. prompt_tokens 를 찾으면 늘 0 이 나오고, 화면에는
+      // 「토큰을 하나도 안 썼다」 로 뜬다.
+      usage: { in: json?.usage?.input_tokens ?? 0, out: json?.usage?.output_tokens ?? 0 },
+      stopped: json?.stop_reason ?? null,
+    };
+  }
   if (shape === 'ollama') {
     const m = json?.message ?? {};
     return {
@@ -141,6 +257,23 @@ export function normalizeCalls(list) {
 
 // 대화 이력에 되돌려 넣을 메시지 만들기 — 규격마다 모양이 다르다.
 export function assistantMessage(shape, { content = '', thinking = '', toolCalls = [] }) {
+  if (shape === 'anthropic') {
+    const 블록 = [];
+    if (content) 블록.push({ type: 'text', text: content });
+    for (const t of toolCalls) 블록.push({ type: 'tool_use', id: t.id, name: t.name, input: t.args ?? {} });
+    /*
+     * 생각은 **안 돌려보낸다.**
+     *
+     * 이 규격의 생각 블록에는 서명(signature)이 딸려 있고, 서명 없이 돌려보내면
+     * 서버가 거절한다. 흘려받기에서 서명 조각을 제대로 모으는 것까지 확인하지
+     * 못했으므로 여기서는 뺀다. 화면에는 그대로 흘러가고, 대화 이력에만 안 남는다.
+     *
+     * 블록이 하나도 없으면 이 규격은 거절한다. 빈 답이 오는 일은 드물지만
+     * 그때 대화 전체가 죽으면 안 되니 자리표시를 하나 넣는다.
+     */
+    if (!블록.length) 블록.push({ type: 'text', text: '(빈 답)' });
+    return { role: 'assistant', content: 블록 };
+  }
   if (shape === 'ollama') {
     const m = { role: 'assistant', content };
     if (thinking) m.thinking = thinking;
@@ -158,6 +291,11 @@ export function assistantMessage(shape, { content = '', thinking = '', toolCalls
 }
 
 export function toolMessage(shape, { callId, name, content }) {
+  // 이 규격에는 도구 차례가 없다. 도구 결과도 **사람 차례**로 돌려준다.
+  // role:'tool' 로 보내면 「모르는 역할」 이라고 거절당한다.
+  if (shape === 'anthropic') {
+    return { role: 'user', content: [{ type: 'tool_result', tool_use_id: callId, content: String(content) }] };
+  }
   return shape === 'ollama'
     ? { role: 'tool', tool_name: name, content: String(content) }
     : { role: 'tool', tool_call_id: callId, content: String(content) };
@@ -170,7 +308,7 @@ export async function chat(conn, opts) {
   for (let 시도 = 1; ; 시도++) {
     const r = await req(요청주소(conn), {
       method: 'POST',
-      headers: headersFor(conn.auth, conn.key ?? ''),
+      headers: headersFor(conn.auth, conn.key ?? '', 더할머리(conn.kind)),
       body,
       timeout: opts.timeout ?? 300000,
       signal: opts.signal ?? null,
@@ -244,7 +382,7 @@ export async function* chatStream(conn, opts) {
   for (let 시도 = 1; ; 시도++) {
     r = await req(요청주소(conn), {
       method: 'POST',
-      headers: headersFor(conn.auth, conn.key ?? ''),
+      headers: headersFor(conn.auth, conn.key ?? '', 더할머리(conn.kind)),
       body,
       timeout: opts.timeout ?? 300000,
       stream: true,
@@ -299,6 +437,7 @@ export async function* chatStream(conn, opts) {
 // 조각 하나를 누적하고, 화면에 흘릴 것만 내보낸다.
 function absorb(shape, obj, acc) {
   const out = [];
+  if (shape === 'anthropic') return anthropic흡수(obj, acc, out);
   if (shape === 'ollama') {
     const m = obj.message ?? {};
     if (m.thinking) { acc.thinking += m.thinking; out.push({ type: 'thinking', text: m.thinking }); }
@@ -320,6 +459,68 @@ function absorb(shape, obj, acc) {
   return out;
 }
 
+/*
+ * Anthropic 흘려받기.
+ *
+ * OpenAI 는 조각마다 같은 모양(choices[0].delta)이 오는데, 이쪽은 **사건 이름**
+ * 으로 나뉜다. 하나씩 다르게 읽어야 한다.
+ *
+ *   message_start        — 시작. 여기 입력 토큰 수가 들어 있다.
+ *   content_block_start  — 블록 하나 시작. 도구 부름이면 이름과 번호가 여기 있다.
+ *   content_block_delta  — 알맹이 조각. 글·생각·도구 인자가 각각 딴 이름으로 온다.
+ *   message_delta        — 끝난 까닭과 출력 토큰 수.
+ *   message_stop         — 끝.
+ *
+ * 도구 인자는 글자 단위로 쪼개져 오므로 번호별로 이어 붙인다. 이 자리는
+ * OpenAI 쪽과 같아서 마무리(도구마무리)를 같이 쓴다.
+ */
+function anthropic흡수(obj, acc, out) {
+  const 종류 = obj?.type;
+  const 번호 = obj?.index ?? 0;
+  if (종류 === 'message_start') {
+    const u = obj.message?.usage;
+    if (u) acc.usage = { in: u.input_tokens ?? 0, out: u.output_tokens ?? 0 };
+    return out;
+  }
+  if (종류 === 'content_block_start') {
+    const b = obj.content_block ?? {};
+    if (b.type === 'tool_use') {
+      acc._raw ??= [];
+      acc._raw[번호] = { id: b.id, name: b.name ?? '', args: '' };
+    }
+    return out;
+  }
+  if (종류 === 'content_block_delta') {
+    const d = obj.delta ?? {};
+    if (d.type === 'text_delta' && d.text) {
+      acc.content += d.text;
+      out.push({ type: 'content', text: d.text });
+    } else if (d.type === 'thinking_delta' && d.thinking) {
+      acc.thinking += d.thinking;
+      out.push({ type: 'thinking', text: d.thinking });
+    } else if (d.type === 'input_json_delta' && d.partial_json != null) {
+      acc._raw ??= [];
+      acc._raw[번호] ??= { id: null, name: '', args: '' };
+      acc._raw[번호].args += d.partial_json;
+    }
+    return out;
+  }
+  if (종류 === 'message_delta') {
+    /*
+     * 출력 토큰은 **덮어쓴다.** 조각마다의 양이 아니라 여태 누적 총계라서,
+     * 더하면 조각 수만큼 부풀어 오른다. 입력 쪽은 해당 없으면 아예 안 오므로
+     * 왔을 때만 덮는다 — 없는 것을 0 으로 덮으면 message_start 에서 받아 둔
+     * 진짜 값이 지워진다.
+     */
+    if (obj.usage?.output_tokens != null) acc.usage.out = obj.usage.output_tokens;
+    if (obj.usage?.input_tokens != null) acc.usage.in = obj.usage.input_tokens;
+    if (obj.delta?.stop_reason) acc.stopped = obj.delta.stop_reason;
+    return out;
+  }
+  if (종류 === 'content_block_stop' || 종류 === 'message_stop') 도구마무리(acc);
+  return out;
+}
+
 // OpenAI 스트리밍은 도구 호출 인자를 글자 단위로 쪼개 보낸다. 인덱스별로 이어 붙인다.
 function mergeDeltaCalls(acc, deltas) {
   acc._raw ??= [];
@@ -330,6 +531,12 @@ function mergeDeltaCalls(acc, deltas) {
     if (d.function?.name) acc._raw[i].name += d.function.name;
     if (d.function?.arguments) acc._raw[i].args += d.function.arguments;
   }
+  도구마무리(acc);
+}
+
+// 글자로 쪼개져 온 도구 인자를 하나로 읽는다. 두 규격이 같이 쓴다.
+function 도구마무리(acc) {
+  if (!acc._raw) return;
   // 인자가 안 읽히면 읽혔다고 치지 않는다 — normalizeCalls 머리말 참고.
   // 스트리밍은 마지막 조각이 안 오면 여기서 늘 깨진 채로 끝난다.
   acc.toolCalls = acc._raw.filter(Boolean).map((c, i) => {

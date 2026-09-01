@@ -13,10 +13,11 @@
 //
 // ── 무엇을 하나 ────────────────────────────────────────────────────────
 //
-// 그림이면 그림으로 싣는다. 규격이 둘이라 모양도 둘이다.
+// 그림이면 그림으로 싣는다. 규격이 셋이라 모양도 셋이다.
 //
 //   OpenAI 호환   content 배열에 { type:'image_url', image_url:{ url:'data:…' } }
 //   Ollama        메시지에 images: ['<base64>'] (data: 머리말 없이)
+//   Anthropic     content 배열에 { type:'image', source:{ type:'base64', media_type, data } }
 //
 // 못 보는 모델에게는 **바이트를 아예 안 보낸다.** 보내 봐야 400 이 오거나,
 // 더 나쁘게는 서버가 조용히 무시하고 답을 지어낸다. 대신 한 줄로 말한다.
@@ -127,11 +128,15 @@ export function 그림읽기(abs, { 한도 = 기본한도 } = {}) {
  */
 export const 그림한장토큰 = 1000;
 
-/** 메시지 하나에 그림이 몇 장 실려 있나. 규격 두 가지를 다 본다. */
+/** 메시지 하나에 그림이 몇 장 실려 있나. 규격 세 가지를 다 본다. */
 export function 그림장수(m) {
   if (!m) return 0;
   if (Array.isArray(m.images)) return m.images.length;           // Ollama
-  if (Array.isArray(m.content)) return m.content.filter((p) => p?.type === 'image_url').length;
+  // image_url 은 OpenAI 호환, image 는 Anthropic. 한쪽만 세면 그림을 실어
+  // 놓고도 안 실은 줄 알고 창 크기를 잘못 잡는다.
+  if (Array.isArray(m.content)) {
+    return m.content.filter((p) => p?.type === 'image_url' || p?.type === 'image').length;
+  }
   return 0;
 }
 
@@ -155,6 +160,23 @@ export function 글만(m) {
  */
 export function 그림메시지(shape, { 글 = '', 그림들 = [] } = {}) {
   const 것들 = 그림들.filter((g) => g?.b64);
+  /*
+   * Anthropic 은 그림을 data: 주소로 안 받는다. 종류와 알맹이를 따로 준다.
+   * image_url 로 보내면 「모르는 블록」 이라고 통째로 거절당한다 — 글까지
+   * 같이 안 간다는 뜻이라, 눈이 없는 것과 달리 대화가 아예 안 이어진다.
+   */
+  if (shape === 'anthropic') {
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: 글 },
+        ...것들.map((g) => ({
+          type: 'image',
+          source: { type: 'base64', media_type: g.mime, data: g.b64 },
+        })),
+      ],
+    };
+  }
   if (shape === 'ollama') {
     // Ollama 는 data: 머리말을 안 받는다. base64 알맹이만 준다.
     return { role: 'user', content: 글, images: 것들.map((g) => g.b64) };
@@ -176,7 +198,7 @@ export function 그림메시지(shape, { 글 = '', 그림들 = [] } = {}) {
  */
 export const 한점PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
-/** 눈 검사에 쓸 메시지. 규격 두 가지 다. */
+/** 눈 검사에 쓸 메시지. 규격 세 가지 다. */
 export function 눈검사메시지(shape) {
   return 그림메시지(shape, {
     글: '이 그림에 무엇이 있습니까? 한 단어로 답하세요.',

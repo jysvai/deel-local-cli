@@ -2,6 +2,7 @@
 import { c, say, rule, pad, width, mark } from './ui/ansi.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
+import { 규격이름 } from './backend/adapter.js';
 import { 보관방식 } from './safety/keystore.js';
 import { load, activeProfile } from './config.js';
 
@@ -32,7 +33,7 @@ export function renderLine(r) {
 export function renderHeader(facts) {
   say('');
   rule('연결', 74);
-  const kindName = facts.shape === 'ollama' ? 'Ollama 자체 규격' : 'OpenAI 호환';
+  const kindName = 규격이름(facts.shape);
   const rows = [
     ['규격', kindName],
     ['주소', 주소가리기(facts.base)],
@@ -124,7 +125,7 @@ export function plainReport(facts, results, v) {
     'deel 연결 진단 보고서',
     `생성 시각   ${at}`,
     '',
-    `규격        ${facts.shape === 'ollama' ? 'Ollama 자체 규격' : 'OpenAI 호환'}`,
+    `규격        ${규격이름(facts.shape)}`,
     `주소        ${주소가리기(facts.base)}`,
     ...(프록시줄(facts.base) ? [`프록시      ${프록시줄(facts.base)}`] : []),
     `인증        ${facts.auth === 'none' ? '없음' : facts.auth}`,

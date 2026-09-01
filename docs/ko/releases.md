@@ -8,6 +8,7 @@
 
 | 줄기 | 판 | 무엇이 바뀌었나 |
 |---|---|---|
+| **[1.7.x](releases/1.7.md)** | [1.7.0](releases/1.7.md#170) | 로컬은 그대로 두고, 말했을 때만 바깥으로 나갑니다 |
 | **[1.6.x](releases/1.6.md)** | [1.6.3](releases/1.6.md#163) · [1.6.2](releases/1.6.md#162) · [1.6.1](releases/1.6.md#161) · [1.6.0](releases/1.6.md#160) | 일이 되고 있는데 헛돈다고 끊던 자리 |
 | **[1.5.x](releases/1.5.md)** | [1.5.8](releases/1.5.md#158) · [1.5.7](releases/1.5.md#157) · [1.5.6](releases/1.5.md#156) · [1.5.5](releases/1.5.md#155) · [1.5.4](releases/1.5.md#154) · [1.5.3](releases/1.5.md#153) · [1.5.2](releases/1.5.md#152) · [1.5.1](releases/1.5.md#151) · [1.5.0](releases/1.5.md#150) | 5MB 문서를 919줄 중 8줄만 보고 있었습니다 |
 | **[1.4.x](releases/1.4.md)** | [1.4.3](releases/1.4.md#143) · [1.4.2](releases/1.4.md#142) · [1.4.1](releases/1.4.md#141) · [1.4.0](releases/1.4.md#140) | README 가 왜 다른지 말하고, 심사서의 빠진 한 줄을 채운다 |

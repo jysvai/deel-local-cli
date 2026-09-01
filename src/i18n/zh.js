@@ -96,6 +96,7 @@ export const zh = {
   'consult.added': '已把那个回答加进对话，并标明是谁说的。',
   'head.spec.ollama': 'Ollama API',
   'head.spec.openai': 'OpenAI 兼容 API',
+  'head.spec.anthropic': 'Anthropic API',
   'head.mode.default': '本机内（默认）',
   'head.mode.online': '外部（online）',
   'head.mode.offline': '封锁（offline）',

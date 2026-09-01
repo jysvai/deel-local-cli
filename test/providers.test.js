@@ -194,14 +194,17 @@ trace('5-데이터-위생');
   check('id 가 겹치지 않는다', new Set(제공자들.map((p) => p.id)).size === 제공자들.length);
 
   /*
-   * Anthropic 규격은 아직 안 붙었다. 그 사실을 숨기지 않는다.
+   * 말 못 하는 규격은 아예 안 싣는다.
    *
-   * 숨기면 이렇게 된다 — 목록에 Claude 가 보이고, 열쇠를 넣고, 연결도 되고,
-   * 첫 한마디에서 400 이 난다. 그 화면으로는 무엇이 잘못됐는지 알 길이 없다.
+   * 반쯤 붙은 채로 목록에 오르면 이렇게 된다 — 목록에 보이고, 열쇠를 넣고,
+   * 연결도 되고, 첫 한마디에서 400 이 난다. 그 화면으로는 무엇이 잘못됐는지
+   * 알 길이 없다. 그래서 칸을 남겨 두고, 여기서 다 true 인지를 잰다.
    */
-  check('★ 아직 못 하는 규격은 그렇다고 적어 둔다', 제공자고르기('anthropic').규격됐나 === false);
-  check('할 수 있는 것들은 그 표가 없다',
-    ['openai', 'gemini', 'bedrock'].every((id) => 제공자고르기(id).규격됐나 === undefined));
+  check('★ 실린 것은 다 말할 줄 안다', 제공자들.every((p) => p.규격됐나 === true),
+    제공자들.filter((p) => p.규격됐나 !== true).map((p) => p.id).join(' '));
+  // 그 칸이 false 면 설치 화면이 멈춘다. 칸만 있고 아무도 안 보면 소용이 없다.
+  check('★ false 면 설치가 멈춘다', /if \(제공자\.규격됐나 === false\)/.test(
+    readFileSync(new URL('../src/setup.js', import.meta.url), 'utf8')));
 
   // 리전 목록은 짧게. 길면 고르는 데 시간이 들고, 어차피 「직접 입력」이 있다.
   check('Bedrock 리전이 다섯 이하', 리전들.length <= 5, String(리전들.length));

@@ -96,6 +96,7 @@ export const ja = {
   'consult.added': 'その答えを、誰が言ったか付けて会話に足しました。',
   'head.spec.ollama': 'Ollama API',
   'head.spec.openai': 'OpenAI 互換 API',
+  'head.spec.anthropic': 'Anthropic API',
   'head.mode.default': 'この中（既定）',
   'head.mode.online': '外（online）',
   'head.mode.offline': '封印（offline）',

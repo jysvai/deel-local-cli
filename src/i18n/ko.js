@@ -101,6 +101,7 @@ export const ko = {
   // ── 켤 때 머리말 ──────────────────────────────────────────────────────
   'head.spec.ollama': 'Ollama 규격',
   'head.spec.openai': 'OpenAI 호환 규격',
+  'head.spec.anthropic': 'Anthropic 규격',
   'head.mode.default': '이 안 (기본)',
   'head.mode.online': '바깥 (online)',
   'head.mode.offline': '봉인 (offline)',

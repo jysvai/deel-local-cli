@@ -60,6 +60,7 @@ export const 제공자 = {
     ];
   },
 
+  규격됐나: true,
   빈칸: ['리전', '열쇠'],
   열쇠받는곳: 'https://console.aws.amazon.com/bedrock/home#/api-keys',
 

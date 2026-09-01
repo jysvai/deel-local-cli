@@ -5,9 +5,11 @@
   <img alt="deel — 이 컴퓨터 안에서만" src="docs/assets/hero-ko-light.svg" width="620">
 </picture>
 
-### 로컬 모델과 사내 게이트웨이만으로 도는 코딩 에이전트 CLI
+### 로컬 모델과 사내 게이트웨이로 도는 코딩 에이전트 CLI
 
 의존성 0개 · Node 20+ · 소스가 나가는 자리는 딱 한 곳
+
+바깥 API 도 붙습니다 — **말했을 때만**
 
 <br>
 
@@ -18,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-4%2C932%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-5%2C685%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -33,7 +35,7 @@
 
 ```
  ╭──────────────────────────────────────────────────────────────╮
- │ deel  OpenAI 호환 규격                                        │
+ │ deel 1.7.0  ⌂ 이 안   OpenAI 호환 규격                        │
  │                                                              │
  │ 모델    qwen2.5-coder:7b  (40k 토큰)                          │
  │ 보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다  │
@@ -68,6 +70,7 @@
 - [무엇이 다른가](#무엇이-다른가)
 - [빠른 시작](#빠른-시작)
 - [데이터가 나가는 길](#데이터가-나가는-길)
+- [바깥 API 붙이기](#바깥-api-붙이기)
 - [로컬 모델 여러 개 쓰기](#로컬-모델-여러-개-쓰기)
 - [대화 중 명령](#대화-중-명령)
 - [작업 모드](#작업-모드)
@@ -101,7 +104,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.6.x](docs/ko/releases/1.6.md) · [1.5.x](docs/ko/releases/1.5.md) · [1.4.x](docs/ko/releases/1.4.md) · [1.3.x](docs/ko/releases/1.3.md) · [1.2.x](docs/ko/releases/1.2.md) |
+| [릴리스 노트](docs/ko/releases.md) | [1.7.x](docs/ko/releases/1.7.md) · [1.6.x](docs/ko/releases/1.6.md) · [1.5.x](docs/ko/releases/1.5.md) · [1.4.x](docs/ko/releases/1.4.md) · [1.3.x](docs/ko/releases/1.3.md) · [1.2.x](docs/ko/releases/1.2.md) |
 
 ---
 
@@ -274,15 +277,100 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
+ deel 1.7.0  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
+
+### 실행 모드 셋
+
+1.6 까지는 자물쇠가 `--offline` 하나였고 **기본이 열림**이었습니다.
+`.deel/config.json` 의 주소 한 줄만 바깥으로 바꾸면 그대로 나갔습니다.
+화면에 `↗` 가 뜨긴 했지만 그건 **알리는 것**이지 막는 것이 아닙니다.
+
+| 모드 | 켜는 법 | 바깥 주소일 때 |
+|---|---|---|
+| `⌂ 이 안` | `deel` (처음 값) | **물어봅니다.** 한 번 허락하면 그 연결은 다음부터 안 묻습니다 |
+| `↗ 바깥` | `deel online` · `--online` | 안 물어봅니다 |
+| `⛊ 봉인` | `deel offline` · `--offline` | 기억해 둔 허가까지 무시합니다 (제일 셈) |
+
+**주소와 허가가 둘 다 있어야 나갑니다.** 주소만 바꿔서는 못 나갑니다.
+
+로컬·사내망(`127.x` · `10.x` · `192.168.x` · `172.16~31.x`)은 셋 중 어느
+모드에서도 그냥 갑니다 — `offline` 은 「인터넷 없음」 이 아니라 「회사 밖으로
+안 나감」 입니다.
 
 수집·전송하는 것이 없습니다. 텔레메트리, 사용 통계, 오류 보고 전부 없습니다.
 대화 기록·되돌리기 이력·설정은 작업 폴더의 `.deel/` 안에만 남습니다.
 
-> 검증: `npm test` 의 network·web·mcp 검사 123항목. 허용되지 않은 서버에 실제로
+> 검증: `npm test` 의 network·web·mcp 검사 159항목. 허용되지 않은 서버에 실제로
 > 요청이 **한 건도 닿지 않는지**, `--offline` 일 때 MCP 서버가 **한 번도 안
 > 뜨는지**까지 진짜 서버를 띄워서 확인합니다.
+
+---
+
+## 바깥 API 붙이기
+
+로컬 모델이 이 도구의 기본값이고, 그건 안 바뀝니다. 다만 「사내에 GPU 가 없다」
+「이 한 가지만 큰 모델로 하고 싶다」 는 자리가 있어서, 벤더 API 도 붙을 수
+있게 열었습니다. **위의 모드가 그 문을 지킵니다.**
+
+```bash
+deel setup
+```
+
+주소를 묻는 대신 **어디에 붙을지**를 묻습니다.
+
+```
+1. 열쇠만 있습니다 — 어디 것인지 찾아 드립니다   빈칸 1개
+2. 주소를 직접 넣기 (사내 게이트웨이 · 로컬)      빈칸 2개
+3. OpenAI (GPT)                                  빈칸 1개
+4. Anthropic (Claude)                            빈칸 1개
+5. Google (Gemini)                               빈칸 1개
+6. AWS Bedrock                                   빈칸 2개
+```
+
+1번이 핵심입니다. 열쇠 앞머리로 어디 것인지 짚어서 **한 곳만** 묻습니다.
+
+```
+❯ sk-ant-api03-••••
+  ✓ Anthropic (Claude) 열쇠로 보입니다. (열쇠가 sk-ant- 로 시작합니다)
+    여기저기 던지지 않습니다.
+```
+
+벤더마다 찔러 보는 식으로 만들면 Anthropic 열쇠가 OpenAI 서버로, 다시 Google
+서버로 갑니다. 401 이 오고 끝이지만 **열쇠는 이미 갔습니다.** 그래서 모르는
+열쇠는 짐작하지 않고 사람에게 묻습니다.
+
+Bedrock 은 리전을 고릅니다 — 서울(`ap-northeast-2`) 포함 다섯 곳과 「직접 입력」.
+Claude 는 몸통 규격이 달라서 여섯 자리를 따로 흡수했습니다
+([1.7.0 릴리스 노트](docs/ko/releases/1.7.md#170)).
+
+### 바깥에 붙으면 파일 속 비밀도 가립니다
+
+로컬만 쓸 때는 파일에서 읽어 온 글을 **일부러 안 가렸습니다** — 가리면 모델이
+그 가림표를 다시 파일에 써서 사람의 진짜 열쇠를 지워 버리기 때문입니다.
+
+바깥으로 나가면 저울이 뒤집힙니다. `Read` 한 번이면 `.env` 가 통째로 남의
+서버 로그에 남고, 그건 되돌릴 수가 없습니다. 잃는 쪽은 다른 자리에서 막았습니다 —
+`Write`·`Append`·`Edit` 이 가린 표를 파일에 못 씁니다.
+
+### 얼마 나갔는지 보입니다
+
+```
+❯ ─ 12.4초 · 도구 3회 · ↑8.2k ↓1.1k · $0.0271
+```
+
+**값이 박힌 요금표가 없습니다.** 요금은 회사가 아무 때나 바꾸는 값이라, 소스에
+박아 두면 반년 뒤 이 도구는 틀린 금액을 자신 있게 찍는 도구가 됩니다.
+`.deel/config.json` 에 적으면 셈합니다 — 100만 토큰당 달러입니다.
+
+```json
+"요금": { "claude-opus-4-6": { "입력": 0, "출력": 0, "기준": "2026-09-01" } }
+```
+
+금액 옆에 **어디서 온 값인지·언제 기준인지**가 같이 뜨고, 반년이 지나면
+`· 오래됨` 이 붙습니다. 모르면 안 찍습니다 — 로컬로만 쓰는 화면에는 돈 이야기가
+아예 안 뜹니다.
 
 ---
 
@@ -924,7 +1012,7 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (4,932항목)
+npm test          전체 검증 (5,685항목)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -989,7 +1077,8 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[1.6.3](docs/ko/releases/1.6.md#163)** | 일이 되고 있는데 헛돈다고 끊던 자리 — 배열로 옮기면 무엇이 움직였는지가 사라졌다 |
+| **[1.7.0](docs/ko/releases/1.7.md#170)** | 로컬은 그대로 두고, 말했을 때만 바깥으로 — 모드 셋 · 벤더 붙이기 · 자동 마스킹 · 돈 표시 |
+| [1.6.3](docs/ko/releases/1.6.md#163) | 일이 되고 있는데 헛돈다고 끊던 자리 — 배열로 옮기면 무엇이 움직였는지가 사라졌다 |
 | **[1.6.2](docs/ko/releases/1.6.md#162)** | 누르면 멈추고, 시킨 대로 하고, 안 끊긴다 — ESC · 되묻기 · 요청 누락 · 붙여넣기 접기 · 끊긴 자리 잇기 |
 | **[1.6.1](docs/ko/releases/1.6.md#161)** | 헛도는 턴을 만들던 자리들 — 울타리가 `/dev/null` 까지 막던 것 · 옷 문서를 못 읽던 것 · 파일에서 그림이 사라지던 것 |
 | **[1.6.0](docs/ko/releases/1.6.md#160)** | 사내망에서 안 되던 것들 — 프록시 · 429 · 윈도우 셸 · 5만 개 저장소 · PDF · 캡처 붙여넣기 · 에디터 이어하기 |

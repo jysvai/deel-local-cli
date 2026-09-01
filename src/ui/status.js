@@ -555,7 +555,7 @@ export function headerLines(session, found, 상자쓰나 = true) {
      * 봉인(--offline)으로 켠 사람은 그 사실을 첫 줄에서 봐야 한다.
      */
     `${c.hcyan(c.bold('deel'))} ${c.gray(VERSION)}${모드칸(session)}`
-      + `  ${c.gray(말(conn.kind === 'ollama' ? 'head.spec.ollama' : 'head.spec.openai'))}`,
+      + `  ${c.gray(말(`head.spec.${['ollama', 'anthropic'].includes(conn.kind) ? conn.kind : 'openai'}`))}`,
     '',
     /*
      * 모델 줄에 급을 같이 적는다.

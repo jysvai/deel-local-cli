@@ -4,6 +4,7 @@ import { 주소가리기 } from './safety/secrets.js';
 import { ask, pick, confirm } from './ui/prompt.js';
 import { spin } from './ui/spinner.js';
 import { detect } from './backend/detect.js';
+import { 규격이름 } from './backend/adapter.js';
 import { probe } from './backend/probe.js';
 import { renderHeader, renderLine, verdict, renderVerdict, plainReport } from './report.js';
 import { load, save, upsert, slug, resolveKey, activeProfile, configPath } from './config.js';
@@ -37,7 +38,18 @@ async function connect(url, key, { 조용히 = false, 제공자: 어디 = null }
    * 그 호스트 하나뿐이라 넓어지는 것이 아니다.
    */
   allowEndpoint(/^https?:\/\//i.test(url) ? url : [`http://${url}`, `https://${url}`]);
-  const found = await detect(url, key);
+  /*
+   * 자물쇠가 막으면 **던져서 끝나지 않게** 받아 둔다.
+   *
+   * 봉인(offline)이 켜져 있으면 checkUrl 이 예외를 던진다. 예전에는 그것이
+   * 여기를 그냥 지나쳐 `deel setup` 전체를 죽였다 — 화면에는 스택 자국이
+   * 뜨고, 사람은 자기가 켜 둔 봉인 때문이라는 것을 알 길이 없다.
+   *
+   * 못 붙은 것으로 치고 그 말을 아래 「연결 실패」 자리에 그대로 싣는다.
+   */
+  let found;
+  try { found = await detect(url, key); }
+  catch (err) { found = { kind: null, tried: [url], status: 0, why: String(err?.message ?? err) }; }
   if (!found.kind) {
     if (조용히) { s.stop(''); return null; }
     s.stop(`  ${mark.no} ${c.red('연결 실패')}`);
@@ -54,7 +66,16 @@ async function connect(url, key, { 조용히 = false, 제공자: 어디 = null }
      * 모르는 것은 지어내지 않는다 — 그때는 아래 「확인할 것」 이 그대로 남는다.
      */
     const 까닭 = 막힌까닭(어디, { status: found.status ?? 0, 서버말: found.why ?? '' });
+    /*
+     * 옮길 말이 없으면 **받은 말을 그대로** 보여 준다.
+     *
+     * 사람 말로 옮기는 표는 HTTP 상태코드가 있을 때만 쓸모가 있다. 닿지도
+     * 못했을 때(status 0)가 오히려 원인이 또렷한 경우가 많다 — 봉인에 막힘 ·
+     * 포트 닫힘 · 인증서 · 프록시. 그 한 줄을 버리면 화면에는 「연결 실패」
+     * 네 글자만 남고, 정작 답이 적힌 문장을 우리가 지운 셈이 된다.
+     */
     if (까닭) { say(`    ${mark.warn} ${c.yellow(까닭)}`); say(''); }
+    else if (found.why) { say(`    ${mark.warn} ${c.yellow(found.why)}`); say(''); }
     say(`    시도한 주소:`);
     for (const t of found.tried) say(`      ${c.gray(주소가리기(t.includes('?') ? t : `${t}/models`))}`);
     say('');
@@ -64,7 +85,7 @@ async function connect(url, key, { 조용히 = false, 제공자: 어디 = null }
     say('');
     return null;
   }
-  const kindName = found.kind === 'ollama' ? `Ollama ${found.version ?? ''}`.trim() : 'OpenAI 호환';
+  const kindName = found.kind === 'ollama' ? `Ollama ${found.version ?? ''}`.trim() : 규격이름(found.kind);
   s.stop(`  ${mark.ok} ${c.green('연결됨')} ${c.gray(`${kindName} · ${found.ms}ms`)}`);
   // 물음표 뒤에 열쇠를 싣는 앞단이 있다 (safety/secrets.js 의 주소가리기).
   say(`    ${c.gray('주소')} ${주소가리기(found.base)}`);

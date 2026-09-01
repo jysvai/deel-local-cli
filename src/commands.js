@@ -18,7 +18,7 @@ import { 종, 알릴만한초 } from './ui/notify.js';
 import { 말, 언어, 언어들, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
 import { allowTemporarily } from './safety/network.js';
-import { chat } from './backend/adapter.js';
+import { chat, 규격이름 } from './backend/adapter.js';
 import { 알림채움 } from './backend/retry.js';
 import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
 import { 정한셸 } from './tools/shell.js';
@@ -927,7 +927,7 @@ export async function handle(line, session, ctx) {
     case 'status': {
       const k = session.conn;
       rule('연결', 70);
-      say(`  ${c.gray(pad('규격', 10))} ${k.kind === 'ollama' ? 'Ollama' : 'OpenAI 호환'}`);
+      say(`  ${c.gray(pad('규격', 10))} ${규격이름(k.kind)}`);
       say(`  ${c.gray(pad('주소', 10))} ${k.base}`);
       // 프록시를 거치면 어느 것을, 어디서 읽었는지(env · config)까지. 안 거치면 줄 자체가 없다.
       // 적어 놨는데 못 쓰는 것(socks5 등)이면 그 까닭을 — 조용히 직접 가면 사람은 프록시를 탄 줄 안다.

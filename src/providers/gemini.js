@@ -32,6 +32,7 @@ export const 제공자 = {
   주소들: () => ['https://generativelanguage.googleapis.com/v1beta/openai/'],
   리전들: null,
 
+  규격됐나: true,
   빈칸: ['열쇠'],
   열쇠받는곳: 'https://aistudio.google.com/apikey',
   키앞머리: [/^AIza/],

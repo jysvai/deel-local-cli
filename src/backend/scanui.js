@@ -3,6 +3,7 @@ import { c, say, rule, pad, mark, clip, width } from '../ui/ansi.js';
 import { pick } from '../ui/prompt.js';
 import { spin } from '../ui/spinner.js';
 import { scanLocal, toProfiles, KNOWN } from './scan.js';
+import { 규격이름 } from './adapter.js';
 import { load, save, upsert } from '../config.js';
 
 // 코딩 에이전트로 쓰려면 도구 호출이 되어야 한다. 진단 전이라 확실히는 모르니,
@@ -66,7 +67,7 @@ export async function runScan(flags = {}) {
   const wRun = Math.max(10, ...found.map((f) => width(f.runtime)));
   for (const f of found) {
     const 자리 = `${f.host}:${f.port}`;
-    const 규격 = f.kind === 'ollama' ? 'Ollama 규격' : 'OpenAI 호환';
+    const 규격 = f.kind === 'ollama' ? 'Ollama 규격' : 규격이름(f.kind);
     const 표시 = f.guessed ? c.gray(' (추정)') : '';
     say(`  ${c.hcyan('◆')} ${c.bold(pad(f.runtime, wRun))}${표시}  ${c.gray(pad(자리, 22))}${c.gray(pad(규격, 14))}${c.gray(f.ms + 'ms')}`);
     if (f.locked) {

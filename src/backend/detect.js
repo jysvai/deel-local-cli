@@ -1,6 +1,7 @@
 // 주소만 받아서 "이 서버가 무슨 규격이고 인증을 어떻게 받는지" 알아낸다.
 import { req, headersFor, AUTH_STYLES, serverMessage } from './http.js';
 import { 애저인가, 애저풀기, 애저base, 배포목록 } from './azure.js';
+import { ANTHROPIC_VERSION } from './adapter.js';
 
 // 사람이 대충 적은 주소를 시도해볼 후보들로 넓힌다.
 export function candidates(input) {
@@ -105,28 +106,68 @@ async function tryAzure(input, key) {
   return null;
 }
 
-// OpenAI 호환인지 확인 (GET {base}/models)
 /*
- * @param 막힌것  못 붙었을 때 **무엇이 막았는지**를 여기에 적어 둔다.
+ * 못 붙었을 때 **무엇이 막았는지**를 적어 둔다.
  *
  * 여태는 실패한 응답을 그냥 버렸다. 그래서 401(닿았는데 열쇠) · 404(주소가
  * 아님) · Bedrock 의 AccessDenied(모델 신청을 안 함)가 화면에서 전부
  * 「연결 실패」 한 마디가 됐다. 셋은 고칠 자리가 완전히 다른데도.
  *
- * 값을 채워 주는 자리를 인자로 받는 것은, 돌려주는 모양을 안 바꾸려는 것이다 —
- * 이 함수의 반환값(붙었나 아닌가)은 부르는 데가 여럿이라 건드리지 않는다.
+ * 값을 채워 주는 자리를 인자로 받는 것은, 두드리는 함수들이 돌려주는 모양을
+ * 안 바꾸려는 것이다 — 그 반환값(붙었나 아닌가)은 부르는 데가 여럿이다.
  *
  * **진짜 상태코드를 먼저 적는다.** 후보를 여럿 두드리다 보면 하나는 401 이고
  * 하나는 0(닿지도 못함)일 수 있는데, 401 쪽이 훨씬 쓸모 있는 단서다 — 적어도
  * 서버가 거기 있다는 뜻이니까.
  */
+function 막은것적기(막힌것, r) {
+  if (!막힌것) return;
+  const 말 = (r.status ? serverMessage(r) : r.error) ?? '';
+  if (!막힌것.status && r.status) { 막힌것.status = r.status; 막힌것.why = 말; }
+  else if (!막힌것.status && !막힌것.why) 막힌것.why = 말;
+}
+
+/*
+ * Anthropic 규격인지 확인 (GET {base}/models · 판 머리를 얹어서).
+ *
+ * ── 왜 OpenAI 쪽과 안 헷갈리나 ─────────────────────────────────────────
+ *
+ * 문 이름이 `/models` 로 같다. 그런데 이쪽 서버는 `anthropic-version` 머리가
+ * 없으면 400 을 준다. tryOpenAI 는 그 머리를 안 보내므로 여기 붙을 수가 없다.
+ *
+ * 반대는 성립하지 않는다 — OpenAI 호환 서버는 모르는 머리를 그냥 무시하므로
+ * 이 함수로도 붙어 버린다. 그래서 **뒤에 두드린다.** 다만 열쇠가 sk-ant- 로
+ * 시작하거나 주소가 그 회사면 먼저 본다. 그때는 헷갈릴 일이 없고, 앞에서
+ * 네 가지 인증 방식으로 헛되이 두드리는 시간도 없앤다.
+ *
+ * 인증 방식을 한 가지만 본다. 이 규격은 x-api-key 하나뿐이라, 나머지로
+ * 두드려 봐야 401 만 늘고 사람이 기다리는 시간만 길어진다.
+ */
+async function tryAnthropic(base, key, 막힌것 = null) {
+  if (!key) return null;
+  const r = await req(`${base}/models`, {
+    headers: headersFor('x-api-key', key, { 'anthropic-version': ANTHROPIC_VERSION }),
+    timeout: 12000,
+  });
+  막은것적기(막힌것, r);
+  if (r.ok && Array.isArray(r.json?.data)) {
+    return { kind: 'anthropic', base, auth: 'x-api-key', models: normalizeModels(r.json.data), ms: r.ms };
+  }
+  return null;
+}
+
+/** 이 규격을 먼저 볼 만한 단서가 있나. 열쇠 앞머리나 주소로만 본다. */
+export function 앤트로픽같나(input, key) {
+  if (/^sk-ant-/.test(String(key ?? '').trim())) return true;
+  try {
+    const u = new URL(/^https?:\/\//i.test(input) ? String(input) : 'https://' + String(input));
+    return /(^|\.)anthropic\.com$/i.test(u.hostname);
+  } catch { return false; }
+}
+
+// OpenAI 호환인지 확인 (GET {base}/models). 막힌것은 막은것적기 머리말 참고.
 async function tryOpenAI(base, key, 막힌것 = null) {
-  const 적기 = (r) => {
-    if (!막힌것) return;
-    const 말 = (r.status ? serverMessage(r) : r.error) ?? '';
-    if (!막힌것.status && r.status) { 막힌것.status = r.status; 막힌것.why = 말; }
-    else if (!막힌것.status && !막힌것.why) 막힌것.why = 말;
-  };
+  const 적기 = (r) => 막은것적기(막힌것, r);
   for (const style of AUTH_STYLES) {
     if (style.id !== 'none' && !key) continue;
     if (style.id === 'none' && key) { /* 키를 줬어도 인증 없는 서버일 수 있으니 마지막에 본다 */ }
@@ -147,6 +188,16 @@ async function tryOpenAI(base, key, 막힌것 = null) {
     // 로그인 페이지를 200 으로 내주는 일이 흔한데, 예전에는 그걸 "OpenAI 호환
     // 서버 · 모델 0개" 로 잡았다. 그러면 사람은 모델이 안 올라온 줄 알고
     // 엉뚱한 데를 파게 된다 — 실제로는 인증 페이지에 막힌 것이다.
+    /*
+     * 400 인데 「anthropic-version 이 필요하다」 고 하면, 그건 서버가 화가 난
+     * 것이 아니라 **규격이 다르다**는 말이다. 서버가 제 규격을 말해 줬다.
+     *
+     * 여기서 openai 로 잡아 버리면 설치는 초록색으로 끝나고 첫 한마디에서
+     * 400 이 난다 — 그 화면으로는 원인을 알 길이 없다. 열쇠 앞머리가 sk-ant-
+     * 가 아닌 열쇠(사내에서 다시 발급한 것 등)로 그 규격 서버에 붙을 때
+     * 실제로 이 길로 온다.
+     */
+    if (r.status === 400 && /anthropic-version/i.test(serverMessage(r) ?? '')) return null;
     const 성공인데JSON아님 = r.status >= 200 && r.status < 300 && !r.json;
     if (r.status && !성공인데JSON아님 && ![401, 403, 0, 404].includes(r.status)) {
       return { kind: 'openai', base, auth: style.id, models: [], ms: r.ms, warn: serverMessage(r) };
@@ -175,7 +226,7 @@ function fmtSize(bytes) {
 
 function normalizeModels(list) {
   return list
-    .map((m) => (typeof m === 'string' ? { id: m } : { id: m.id ?? m.name ?? m.model, note: m.owned_by ?? '' }))
+    .map((m) => (typeof m === 'string' ? { id: m } : { id: m.id ?? m.name ?? m.model, note: m.owned_by ?? m.display_name ?? '' }))
     .filter((m) => m.id);
 }
 
@@ -198,17 +249,40 @@ export async function detect(input, key) {
     };
   }
 
+  // 못 붙으면 무엇이 막았는지를 같이 돌려준다 — 부르는 쪽이 사람 말로 옮긴다
+  // (providers/index.js 의 막힌까닭). tryOpenAI 머리말 참고.
+  const 막힌것 = { status: 0, why: '' };
+
+  // 단서가 있으면 이 규격을 먼저 본다 (tryAnthropic 머리말).
+  if (앤트로픽같나(input, key)) {
+    for (const base of candidates(input)) {
+      tried.push(base);
+      const hit = await tryAnthropic(base, key, 막힌것);
+      if (hit) return { ...hit, tried };
+    }
+  }
+
   // Ollama 를 먼저 본다 — 로컬이면 대개 이쪽이고 확인이 빠르다.
   const oll = await tryOllama(/^https?:\/\//i.test(origin) ? origin : 'http://' + origin);
   if (oll) return { ...oll, tried };
 
-  // 못 붙으면 무엇이 막았는지를 같이 돌려준다 — 부르는 쪽이 사람 말로 옮긴다
-  // (providers/index.js 의 막힌까닭). tryOpenAI 머리말 참고.
-  const 막힌것 = { status: 0, why: '' };
   for (const base of candidates(input)) {
-    tried.push(base);
+    if (!tried.includes(base)) tried.push(base);
     const hit = await tryOpenAI(base, key, 막힌것);
     if (hit) return { ...hit, tried };
+  }
+
+  /*
+   * 마지막으로 이 규격도 본다.
+   *
+   * 사내 게이트웨이가 이 규격만 열어 둔 경우가 있다. 여기까지 왔다는 것은
+   * OpenAI 쪽으로는 안 붙었다는 뜻이라, 이제 헷갈릴 일이 없다.
+   */
+  if (key && !앤트로픽같나(input, key)) {
+    for (const base of candidates(input)) {
+      const hit = await tryAnthropic(base, key, 막힌것);
+      if (hit) return { ...hit, tried };
+    }
   }
   return { kind: null, tried, status: 막힌것.status, why: 막힌것.why };
 }

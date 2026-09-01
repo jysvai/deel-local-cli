@@ -64,6 +64,7 @@ const FILES = [
   'runmode.test.js',
   'providers.test.js',
   'price.test.js',
+  'anthropic.test.js',
   'ctxsize.test.js',
   'cli.test.js',
   'oneshot.test.js',

@@ -28,6 +28,7 @@
 // 따로 알려 준다 — 사용자가 서버에서 더 올린 다음 /ctx 로 맞출 수 있게.
 import { req, headersFor } from './http.js';
 import { 애저인가 } from './azure.js';
+import { 더할머리 } from './adapter.js';
 
 // 이 이름들 중 하나면 '모델이 낼 수 있는 최대 컨텍스트' 다. 순서가 곧 우선순위다.
 const 최대이름 = [
@@ -156,7 +157,7 @@ function 목록에서찾기(json, model) {
  * @returns {Promise<{value, max, loaded, out, source, outSource, tried, why}>}
  */
 export async function probeCtx(conn, { timeout = 6000 } = {}) {
-  const H = () => headersFor(conn.auth, conn.key);
+  const H = () => headersFor(conn.auth, conn.key, 더할머리(conn.kind));
   const base = String(conn.base ?? '').replace(/\/+$/, '');
   const origin = base.replace(/\/v\d+$/, '').replace(/\/api$/, '');
   const model = conn.model;
@@ -196,7 +197,20 @@ export async function probeCtx(conn, { timeout = 6000 } = {}) {
     ? [
       ['Ollama 모델 정보', `${origin}/api/show`, { method: 'POST', body: { model } }, {}],
     ]
-    : [
+    : conn.kind === 'anthropic'
+      /*
+       * Anthropic 은 모델 목록에 **창 크기가 없다.** 이름과 나온 날짜뿐이다.
+       *
+       * 그래도 두 자리는 두드린다. 값이 없어도 「모델이 있다」 는 것은 확인되고,
+       * 못 찾았다는 사실이 tried 에 남아 화면이 짐작을 사실처럼 말하지 않게 된다.
+       * llama.cpp 의 /props 나 TGI 의 /info 는 여기 있을 리가 없으므로 안 두드린다 —
+       * 없는 문을 두드리면 켤 때마다 그만큼 기다린다.
+       */
+      ? [
+        ['모델 상세', `${base}/models/${encodeURIComponent(model)}`, {}, {}],
+        ['모델 목록', `${base}/models`, {}, { 목록: true }],
+      ]
+      : [
       // 이 모델만 콕 집어 묻는다. 있으면 가장 정확하다.
       ['모델 상세', `${base}/models/${encodeURIComponent(model)}`, {}, {}],
       // LM Studio 는 자기 규격에만 '올린 길이' 를 준다. 이게 실제로 쓸 값이다.

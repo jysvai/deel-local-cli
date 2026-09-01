@@ -114,6 +114,7 @@ export const en = {
   // ── Startup header ────────────────────────────────────────────────────
   'head.spec.ollama': 'Ollama API',
   'head.spec.openai': 'OpenAI-compatible API',
+  'head.spec.anthropic': 'Anthropic API',
   'head.mode.default': 'inside (default)',
   'head.mode.online': 'outside (online)',
   'head.mode.offline': 'sealed (offline)',
