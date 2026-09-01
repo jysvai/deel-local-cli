@@ -11,6 +11,7 @@ import { 보관방식 } from './safety/keystore.js';
 import { 애저풀기, 애저base } from './backend/azure.js';
 import { allowEndpoint } from './safety/network.js';
 import { 바깥인가 } from './safety/runmode.js';
+import { 제공자들, 제공자고르기, 어디것일까, 주소후보, 막힌까닭 } from './providers/index.js';
 import { writeFileSync } from 'node:fs';
 
 export function banner() {
@@ -20,7 +21,11 @@ export function banner() {
 }
 
 // 주소와 키를 받아 연결을 찾아낸다. 실패하면 null.
-async function connect(url, key) {
+//
+// 조용히 = 후보를 여럿 훑는 중이라, 실패해도 아직 화면에 안 적는다.
+// 세 개를 줄줄이 시도하면서 실패 안내를 세 번 찍으면, 마지막에 성공해도
+// 사람 눈에는 「뭔가 잔뜩 실패했다」 로 남는다.
+async function connect(url, key, { 조용히 = false, 제공자: 어디 = null } = {}) {
   const s = spin(`${url} 확인 중...`);
   /*
    * 사용자가 방금 적어 넣은 주소다. 확인하는 동안만 문을 연다.
@@ -34,13 +39,28 @@ async function connect(url, key) {
   allowEndpoint(/^https?:\/\//i.test(url) ? url : [`http://${url}`, `https://${url}`]);
   const found = await detect(url, key);
   if (!found.kind) {
+    if (조용히) { s.stop(''); return null; }
     s.stop(`  ${mark.no} ${c.red('연결 실패')}`);
     say('');
+    /*
+     * 무엇이 막았는지를 먼저 말한다 (providers/index.js 의 막힌까닭).
+     *
+     * 여태는 401 도 404 도 403 도 전부 「연결 실패」 한 마디였다. 그런데 이
+     * 셋은 고칠 자리가 완전히 다르다 — 401 은 닿은 것이라 주소를 의심하면
+     * 안 되고, 404 는 주소를 봐야 하고, Bedrock 의 AccessDenied 는 콘솔에서
+     * 신청 버튼 한 번 누르면 되는 일이다. 뭉쳐 놓으면 사람은 셋 다 주소
+     * 문제로 알고 엉뚱한 데를 판다.
+     *
+     * 모르는 것은 지어내지 않는다 — 그때는 아래 「확인할 것」 이 그대로 남는다.
+     */
+    const 까닭 = 막힌까닭(어디, { status: found.status ?? 0, 서버말: found.why ?? '' });
+    if (까닭) { say(`    ${mark.warn} ${c.yellow(까닭)}`); say(''); }
     say(`    시도한 주소:`);
     for (const t of found.tried) say(`      ${c.gray(주소가리기(t.includes('?') ? t : `${t}/models`))}`);
     say('');
     say(`    ${c.gray('확인할 것 — 주소·포트가 맞는지, 프록시가 필요한지,')}`);
     say(`    ${c.gray('사내 인증서라면 NODE_EXTRA_CA_CERTS 환경변수가 필요합니다.')}`);
+    if (어디?.열쇠받는곳) say(`    ${c.gray('열쇠 받는 곳')} ${c.cyan(어디.열쇠받는곳)}`);
     say('');
     return null;
   }
@@ -81,22 +101,143 @@ export async function runProbe(conn, { out = null } = {}) {
   return { facts, results, v };
 }
 
+/*
+ * ── 어디에 붙일까 ───────────────────────────────────────────────────────
+ *
+ * 세 갈래가 다 같은 문으로 들어간다. 다른 것은 **사람이 채울 빈칸 개수**뿐이다.
+ *
+ *   열쇠만 있을 때        빈칸 1개 — 앞머리로 어디 것인지 알아본다
+ *   아는 곳에서 고르기     빈칸 1~2개 — 주소를 대신 채워 준다
+ *   주소를 직접 넣기       빈칸 2개 — 규격·인증은 스캐너가 알아낸다
+ *
+ * 「직접 넣기」 를 목록 위쪽에 둔다. 목록이 지원 명단처럼 보이면, 거기 없는
+ * 회사는 안 되는 줄 알고 돌아선다 (providers/index.js 머리말).
+ *
+ * @returns {{제공자, 주소들: string[], 열쇠: string, 이름: string} | null}
+ */
+async function 붙일곳고르기() {
+  const 목록 = [
+    { id: '열쇠먼저', label: '열쇠만 있습니다 — 어디 것인지 알아봐 주세요', note: '빈칸 1개' },
+    { id: 'custom', label: '주소를 직접 넣기', note: '사내 게이트웨이 · 목록에 없는 곳' },
+    ...제공자들.filter((p) => p.id !== 'custom').map((p) => ({
+      id: p.id,
+      label: p.이름,
+      note: `빈칸 ${p.빈칸.length}개 (${p.빈칸.join(' + ')})`
+        + (p.규격됐나 === false ? ' · 규격 붙이는 중' : ''),
+    })),
+  ];
+  const i = await pick('어디에 붙일까요?', 목록, { def: 1 });
+  const 고른 = 목록[i];
+
+  // ── 열쇠 먼저 ────────────────────────────────────────────────────────
+  //
+  // 열쇠를 여러 곳에 던져 보고 200 이 오는 데를 찾지 **않는다.** 그러면 남의
+  // 서버에 내 열쇠가 남는다. 앞머리로 짐작해 한 곳만 묻고, 모르면 물어본다.
+  let 제공자 = null;
+  let 열쇠 = '';
+  if (고른.id === '열쇠먼저') {
+    열쇠 = (await ask('API 키', { mask: true })).trim();
+    if (!열쇠) { say(`  ${mark.no} 열쇠가 비었습니다.`); return null; }
+    const 짚은것 = 어디것일까(열쇠);
+    if (짚은것) {
+      제공자 = 짚은것.제공자;
+      say(`  ${mark.ok} ${c.bold(제공자.이름)} 열쇠로 보입니다. ${c.gray(`(${짚은것.왜})`)}`);
+      say(`     ${c.gray('여기 말고 다른 데는 안 물어봅니다 — 열쇠를 여기저기 던지지 않습니다.')}`);
+    } else {
+      say(`  ${mark.warn} ${c.yellow('어디 열쇠인지 모르겠습니다.')}`);
+      say(`     ${c.gray('짐작으로 여기저기 보내지 않습니다. 어디 것인지 골라 주세요.')}`);
+      const 나머지 = 제공자들.map((p) => ({ label: p.이름, note: p.한줄 }));
+      제공자 = 제공자들[await pick('어디 열쇠인가요?', 나머지, { def: 0 })];
+    }
+  } else {
+    제공자 = 제공자고르기(고른.id);
+  }
+  if (!제공자) return null;
+
+  /*
+   * 아직 말할 줄 모르는 규격은 여기서 멈춘다.
+   *
+   * 열쇠를 받고, 연결도 되고, 저장까지 해 놓고 첫 한마디에서 400 이 나면
+   * 그 화면으로는 무엇이 잘못됐는지 알 길이 없다. 못 하는 것은 못 한다고
+   * 지금 말하는 편이 언제나 싸다.
+   */
+  if (제공자.규격됐나 === false) {
+    say('');
+    say(`  ${mark.no} ${c.yellow(`${제공자.이름} 는 규격을 아직 다 못 붙였습니다.`)}`);
+    say(`     ${c.gray('주소와 열쇠는 아는데 말을 아직 못 합니다. 붙는 대로 열립니다.')}`);
+    say(`     ${c.gray('지금 쓰시려면 OpenAI 호환 창구가 있는 곳(Gemini · Bedrock)을 골라 주세요.')}`);
+    say('');
+    return null;
+  }
+
+  // ── 리전 ─────────────────────────────────────────────────────────────
+  //
+  // 리전을 고르면 그 자리에서 진짜로 물어본다. 표에 「서울에 무슨 모델이
+  // 있다」 를 박아 두지 않는다 — 그 표는 반드시 낡는다.
+  let 리전 = null;
+  if (제공자.리전들) {
+    const 것들 = [...제공자.리전들.map((r) => ({ label: `${r.id}  ${r.어디}`, note: r.왜 })),
+      { label: '직접 입력', note: '목록은 낡습니다 — 빠져나갈 구멍을 늘 둡니다' }];
+    const j = await pick('어느 리전인가요?', 것들, { def: 0 });
+    리전 = j < 제공자.리전들.length
+      ? 제공자.리전들[j].id
+      : (await ask('리전 (예: ap-northeast-2)')).trim();
+  }
+
+  // ── 주소 ─────────────────────────────────────────────────────────────
+  let 주소들 = 주소후보(제공자, { 리전 });
+  if (!주소들.length) {
+    if (제공자.리전들 && 리전) {
+      say(`  ${mark.no} ${c.yellow(`리전 이름이 이상합니다: ${리전}`)} ${c.gray('(예: us-east-1 · ap-northeast-2)')}`);
+      return null;
+    }
+    const url = (await ask('주소 (Base URL)')).trim();
+    if (!url) { say(`  ${mark.no} 주소가 비었습니다.`); return null; }
+    주소들 = [url];
+  } else {
+    say(`  ${c.gray('주소')} ${주소들.map((u) => 주소가리기(u)).join(c.gray('  ·  '))}`);
+  }
+
+  // ── 열쇠 ─────────────────────────────────────────────────────────────
+  if (!열쇠) {
+    if (제공자.열쇠받는곳) say(`  ${c.gray('열쇠 받는 곳')} ${c.cyan(제공자.열쇠받는곳)}`);
+    열쇠 = (await ask('API 키', { mask: true })).trim();
+  }
+
+  const 기본이름 = 제공자.id === 'custom' ? '사내게이트웨이' : 제공자.이름;
+  const 이름 = (await ask('이름', { def: 기본이름 })).trim() || 기본이름;
+  return { 제공자, 주소들, 열쇠, 이름 };
+}
+
 export async function runSetup() {
   banner();
   // 설정에 적어 둔 api-version 을 **붙기 전에** 읽는다. load() 가 애저정하기()를
   // 부른다. 이걸 뒤에서 하면 사내에서 판을 고정해 둔 곳이 확인만 GA판으로 하고,
   // 문서에 적어 둔 대로 안 도는 셈이 된다.
   load();
-  say(`  ${c.gray('모델 연결을 설정합니다. 주소와 키만 있으면 됩니다.')}`);
-  say('');
+  say(`  ${c.gray('모델 연결을 설정합니다.')}`);
+  // 빈칸 0개짜리 길을 제일 먼저 알려 준다. 이 PC 에 이미 모델이 떠 있는데
+  // 주소를 손으로 치게 만드는 것은 우리 잘못이다.
+  say(`  ${c.gray('이 PC 에 로컬 모델이 떠 있다면')} ${c.cyan('deel scan --save')} ${c.gray('가 빈칸 없이 찾아 줍니다.')}`);
 
-  const name = (await ask('이름', { def: '사내게이트웨이' })).trim();
-  const url = (await ask('주소 (Base URL)')).trim();
-  if (!url) { say(`  ${mark.no} 주소가 비었습니다.`); return 1; }
-  const key = (await ask('API 키', { mask: true })).trim();
+  const 고른것 = await 붙일곳고르기();
+  if (!고른것) return 1;
+  const { 제공자: 붙일곳, 주소들, 열쇠: key, 이름: name } = 고른것;
 
   say('');
-  const found = await connect(url, key);
+  /*
+   * 후보를 앞에서부터 두드린다. 하나라도 붙으면 그것으로 간다.
+   *
+   * Bedrock 처럼 창구가 여럿인 곳이 있고, 리전·계정마다 열린 창구가 다르다.
+   * 표를 믿고 하나만 쓰면 그 표가 낡은 날 「연결 실패」 만 남는다 —
+   * 물어보면 되는 것을 짐작으로 정하지 않는다.
+   */
+  let found = null;
+  for (const [n, url] of 주소들.entries()) {
+    const 마지막 = n === 주소들.length - 1;
+    found = await connect(url, key, { 조용히: !마지막, 제공자: 붙일곳 });
+    if (found) break;
+  }
   if (!found) return 1;
 
   const model = await chooseModel(found);

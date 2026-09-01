@@ -106,11 +106,32 @@ async function tryAzure(input, key) {
 }
 
 // OpenAI 호환인지 확인 (GET {base}/models)
-async function tryOpenAI(base, key) {
+/*
+ * @param 막힌것  못 붙었을 때 **무엇이 막았는지**를 여기에 적어 둔다.
+ *
+ * 여태는 실패한 응답을 그냥 버렸다. 그래서 401(닿았는데 열쇠) · 404(주소가
+ * 아님) · Bedrock 의 AccessDenied(모델 신청을 안 함)가 화면에서 전부
+ * 「연결 실패」 한 마디가 됐다. 셋은 고칠 자리가 완전히 다른데도.
+ *
+ * 값을 채워 주는 자리를 인자로 받는 것은, 돌려주는 모양을 안 바꾸려는 것이다 —
+ * 이 함수의 반환값(붙었나 아닌가)은 부르는 데가 여럿이라 건드리지 않는다.
+ *
+ * **진짜 상태코드를 먼저 적는다.** 후보를 여럿 두드리다 보면 하나는 401 이고
+ * 하나는 0(닿지도 못함)일 수 있는데, 401 쪽이 훨씬 쓸모 있는 단서다 — 적어도
+ * 서버가 거기 있다는 뜻이니까.
+ */
+async function tryOpenAI(base, key, 막힌것 = null) {
+  const 적기 = (r) => {
+    if (!막힌것) return;
+    const 말 = (r.status ? serverMessage(r) : r.error) ?? '';
+    if (!막힌것.status && r.status) { 막힌것.status = r.status; 막힌것.why = 말; }
+    else if (!막힌것.status && !막힌것.why) 막힌것.why = 말;
+  };
   for (const style of AUTH_STYLES) {
     if (style.id !== 'none' && !key) continue;
     if (style.id === 'none' && key) { /* 키를 줬어도 인증 없는 서버일 수 있으니 마지막에 본다 */ }
     const r = await req(`${base}/models`, { headers: headersFor(style.id, key), timeout: 12000 });
+    적기(r);
     if (r.ok && r.json) {
       const list = r.json.data ?? r.json.models ?? [];
       if (Array.isArray(list)) {
@@ -181,10 +202,13 @@ export async function detect(input, key) {
   const oll = await tryOllama(/^https?:\/\//i.test(origin) ? origin : 'http://' + origin);
   if (oll) return { ...oll, tried };
 
+  // 못 붙으면 무엇이 막았는지를 같이 돌려준다 — 부르는 쪽이 사람 말로 옮긴다
+  // (providers/index.js 의 막힌까닭). tryOpenAI 머리말 참고.
+  const 막힌것 = { status: 0, why: '' };
   for (const base of candidates(input)) {
     tried.push(base);
-    const hit = await tryOpenAI(base, key);
+    const hit = await tryOpenAI(base, key, 막힌것);
     if (hit) return { ...hit, tried };
   }
-  return { kind: null, tried };
+  return { kind: null, tried, status: 막힌것.status, why: 막힌것.why };
 }

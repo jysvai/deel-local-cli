@@ -13,7 +13,9 @@ import { join } from 'node:path';
 import { ask, confirm, pick } from '../src/ui/prompt.js';
 import { runSetup, showStatus, runDiagnose } from '../src/setup.js';
 import { load } from '../src/config.js';
-import { resetNet } from '../src/safety/network.js';
+import { resetNet, setOffline, isOffline } from '../src/safety/network.js';
+import { 제공자들 } from '../src/providers/index.js';
+import { 리전들 } from '../src/providers/bedrock.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -172,8 +174,9 @@ await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 const port = srv.address().port;
 
 {
+  // 2번 = 주소를 직접 넣기. 그 다음 주소 · 키(없음) · 이름 · 모델 1번.
   const { v, out } = await 대화(
-    ['검사연결', `127.0.0.1:${port}`, '', '1'],   // 이름 · 주소 · 키(없음) · 모델 1번
+    ['2', `127.0.0.1:${port}`, '', '검사연결', '1'],
     () => runSetup(),
   );
   const 글 = 색빼기(out);
@@ -193,7 +196,7 @@ const port = srv.address().port;
 
 {
   // 주소를 비우면 더 진행하면 안 된다. 빈 주소로 저장되면 다음에 켤 때 막힌다.
-  const { v, out } = await 대화(['이름만', ''], () => runSetup());
+  const { v, out } = await 대화(['2', ''], () => runSetup());
   check('주소가 비면 1 로 끝낸다', v === 1, String(v));
   check('주소가 비었다고 말해 준다', /주소가 비었습니다/.test(색빼기(out)), 색빼기(out).slice(-60));
 }
@@ -201,7 +204,7 @@ const port = srv.address().port;
 {
   // 안 붙는 주소. 무엇을 확인해야 하는지 알려 줘야 한다 —
   // 사내망에서는 대개 프록시나 인증서 문제라서 그 두 개를 짚어 준다.
-  const { v, out } = await 대화(['이름', '127.0.0.1:1', ''], () => runSetup());
+  const { v, out } = await 대화(['2', '127.0.0.1:1', '', '이름'], () => runSetup());
   const 글 = 색빼기(out);
   check('안 붙으면 1 로 끝낸다', v === 1, String(v));
   check('연결 실패라고 말해 준다', /연결 실패/.test(글), 글.slice(0, 80));
@@ -213,11 +216,99 @@ const port = srv.address().port;
 {
   // 키를 넣은 경우 — 그 키가 **어떤 꼴로** 파일에 들어갔는지 반드시 알려 줘야 한다.
   // 잠긴 것과 평문을 구분해 주지 않으면, 안 잠긴 파일을 잠긴 줄 알고 아무 데나 둔다.
-  const { out } = await 대화(['키있는연결', `127.0.0.1:${port}`, 'key-1', '1'], () => runSetup());
+  const { out } = await 대화(['2', `127.0.0.1:${port}`, 'key-1', '키있는연결', '1'], () => runSetup());
   const 글 = 색빼기(out);
   check('키를 넣으면 어디에 어떻게 두는지 알려 준다', /열쇠 보관 — (DPAPI|맥 키체인|파일에 평문)/.test(글), 글.slice(-260));
   check('환경변수로 빼는 법도 알려 준다', /DEEL_API_KEY/.test(글), '');
 }
+
+trace('4-2-붙일곳-고르기');
+
+/*
+ * ── 이 절은 바깥에 못 나간다 ────────────────────────────────────────────
+ *
+ * 여기서 밟는 길에는 진짜 벤더 주소(api.openai.com · generativelanguage…)가
+ * 들어 있다. 번호를 하나 잘못 세면 검사가 진짜로 구글에 붙는다 — 실제로 한 번
+ * 그랬다. 「조심해서 번호를 잘 세자」 는 대책이 아니다.
+ *
+ * 그래서 봉인을 걸어 둔다. 127.0.0.1 은 그대로 되고(위 절의 스텁), 바깥은
+ * 자물쇠가 막는다. 번호를 잘못 세도 나갈 수가 없다.
+ */
+setOffline(true);
+check('★ 이 절은 봉인되어 있다 — 번호를 잘못 세도 바깥에 못 나간다', isOffline());
+
+// 메뉴 번호를 손으로 세지 않는다. 제공자를 하나 더하면 번호가 통째로 밀리는데,
+// 그때 검사는 조용히 엉뚱한 항목을 고르게 된다 — 위에서 겪은 그대로다.
+const 메뉴번호 = (id) => {
+  if (id === '열쇠먼저') return '1';
+  if (id === 'custom') return '2';
+  const 벤더 = 제공자들.filter((p) => p.id !== 'custom').map((p) => p.id);
+  return String(3 + 벤더.indexOf(id));
+};
+
+/*
+ * ── 「열쇠만 있습니다」 길 ───────────────────────────────────────────────
+ *
+ * 여기서 제일 조심할 것은 편의가 아니라 **열쇠가 어디로 가느냐**다.
+ * 「어디 것인지 찾아 주기」 를 벤더마다 찔러 보는 식으로 만들면, Anthropic
+ * 열쇠가 OpenAI 서버로, 다시 Google 서버로 간다. 401 이 오고 끝이지만 열쇠는
+ * 이미 갔다. 그래서 앞머리로 짐작해 **한 곳만** 묻고, 모르면 물어본다.
+ *
+ * 아래 검사들은 전부 **바깥에 안 나간다.** 고른 뒤 규격이 아직 없어서
+ * (Anthropic) 또는 리전이 이상해서, 붙기 전에 멈추는 자리만 밟는다.
+ */
+{
+  // 1번 = 열쇠만 있습니다. sk-ant- 는 Anthropic 이다 — sk- 가 먼저 집으면 안 된다.
+  const { v, out } = await 대화([메뉴번호('열쇠먼저'), 'sk-ant-api03-abcdefghijklmnop'], () => runSetup());
+  const 글 = 색빼기(out);
+  check('★ 앞머리로 어디 열쇠인지 알아본다', /Anthropic/.test(글), 글.slice(-300).split('\n').filter(Boolean).slice(0, 2).join(' / '));
+  check('★ 다른 데는 안 묻는다고 말한다', /여기저기 던지지 않습니다/.test(글), '');
+  check('아직 못 하는 규격이면 붙기 전에 멈춘다', v === 1, String(v));
+  check('왜 멈췄는지 말한다', /규격을 아직 다 못 붙였습니다/.test(글), '');
+  check('그럼 뭘 쓰면 되는지도 말한다', /Gemini|Bedrock/.test(글), '');
+}
+
+{
+  /*
+   * 모르는 열쇠. 여기서 짐작으로 아무 데나 보내면 그게 바로 유출이다.
+   * 「모르겠으니 골라 주세요」 가 정답이다.
+   */
+  const { v, out } = await 대화([메뉴번호('열쇠먼저'), 'ABSK-사내에서-발급한-열쇠-1234', String(제공자들.findIndex((x) => x.id === 'anthropic') + 1)], () => runSetup());
+  const 글 = 색빼기(out);
+  check('★ 모르는 열쇠는 모른다고 한다', /어디 열쇠인지 모르겠습니다/.test(글), '');
+  check('★ 짐작으로 안 보낸다고 말한다', /짐작으로 여기저기 보내지 않습니다/.test(글), '');
+  check('대신 사람에게 고르게 한다', /어디 열쇠인가요/.test(글), '');
+  // 2번 = Anthropic → 규격이 없어서 멈춘다. 바깥에 안 나간다.
+  check('고른 뒤 흐름이 이어진다', v === 1, String(v));
+}
+
+{
+  // Bedrock 은 리전이 주소에 들어간다. 이상한 리전으로 주소를 지어내면
+  // 있지도 않은 호스트를 두드리고, 화면에는 「연결 실패」 만 남는다 —
+  // 리전을 잘못 적었다는 것을 알려 줄 기회를 놓친다.
+  // 5번 = AWS Bedrock · 6번 = 리전 직접 입력.
+  const { v, out } = await 대화([메뉴번호('bedrock'), String(리전들.length + 1), '서울'], () => runSetup());
+  const 글 = 색빼기(out);
+  check('★ 이상한 리전이면 주소를 안 만들고 멈춘다', v === 1, String(v));
+  check('리전이 이상하다고 콕 집어 말한다', /리전 이름이 이상합니다/.test(글), 글.slice(-160).trim().split('\n').at(-1) ?? '');
+  check('올바른 꼴을 예로 보여 준다', /ap-northeast-2/.test(글), '');
+}
+
+{
+  // 목록이 지원 명단처럼 보이면 거기 없는 회사는 안 되는 줄 알고 돌아선다.
+  // 「직접 넣기」 가 목록 위쪽에 있어야 한다.
+  const { out } = await 대화([메뉴번호('custom'), ''], () => runSetup());
+  const 글 = 색빼기(out);
+  const 직접자리 = 글.indexOf('주소를 직접 넣기');
+  const 벤더자리 = 글.indexOf('AWS Bedrock');
+  check('★ 「직접 넣기」 가 벤더 목록보다 위에 있다',
+    직접자리 >= 0 && 벤더자리 >= 0 && 직접자리 < 벤더자리, `직접@${직접자리} 벤더@${벤더자리}`);
+  check('빈칸이 몇 개인지 미리 알려 준다', /빈칸 \d개/.test(글), (글.match(/빈칸 \d개[^\n]*/) ?? [''])[0]);
+  check('빈칸 0개짜리 길(deel scan)을 먼저 알려 준다', /deel scan --save/.test(글), '');
+}
+
+// 봉인을 푼다. 아래는 다시 이 컴퓨터 안의 스텁에 붙는다.
+setOffline(false);
 
 trace('5-상태와진단');
 
