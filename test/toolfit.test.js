@@ -201,6 +201,35 @@ trace('5-이름을-고치면-되돌린다');
     둘이름[0].endsWith('read') && 둘이름[1].endsWith('write'), 둘이름.join(' · '));
   check('앞의 서버 자리도 남는다', 둘이름.every((n) => n.startsWith('mcp__')));
 
+  /*
+   * ★ 못 쓰는 글자를 지우고 나서도 **서로 구별이 돼야 한다.**
+   *
+   * 글자마다 밑줄로 바꾸면 한글 이름 셋이 전부 `mcp__________` 이 된다.
+   * 겹침은 뒤에 번호를 붙여 면할 수 있지만, 모델이 보는 이름은 여전히
+   * 구별이 안 된다 — 「검색해 줘」 라고 했는데 지우기가 불려도 오류가 안 난다.
+   */
+  const 한글셋 = ['검색', '열기', '지우기'].map((끝) => ({
+    type: 'function',
+    function: { name: `mcp__사내문서__${끝}`, description: `[사내문서] ${끝}`, parameters: { type: 'object', properties: {} } },
+  }));
+  const 셋 = 도구맞추기(한글셋, 연결('https://api.openai.com/v1'));
+  const 셋이름 = 셋.tools.map((t) => t.function.name);
+  check('★ 한글 이름 셋이 서로 다른 이름이 된다', new Set(셋이름).size === 3, 셋이름.join(' · '));
+  check('★ 밑줄만 남지 않는다', 셋이름.every((n) => /[a-z0-9]/.test(n.replace(/^mcp_+/, ''))), 셋이름.join(' · '));
+  check('셋 다 되짚을 수 있다',
+    셋이름.every((n, i) => 셋.되돌림.get(n) === 한글셋[i].function.name), 셋이름.join(' · '));
+  /*
+   * ★ 판마다 같아야 한다.
+   *
+   * 겹침을 번호로만 면하면 이름이 목록 차례를 탄다. MCP 서버가 다시 붙어
+   * 차례가 바뀌면 같은 도구가 다른 이름으로 나가고, 그러면 모델이 앞 턴에서
+   * 본 이름을 다시 못 부른다.
+   */
+  const 뒤집어서 = 도구맞추기([...한글셋].reverse(), 연결('https://api.openai.com/v1'));
+  check('★ 차례가 바뀌어도 같은 이름이 나온다',
+    뒤집어서.tools.map((t) => t.function.name).reverse().join() === 셋이름.join(),
+    뒤집어서.tools.map((t) => t.function.name).join(' · '));
+
   // 되돌리기 — 두 모양 다.
   const 되돌린것 = 이름되돌리기({ toolCalls: [{ id: 'c1', name: 이름들[0], args: {} }] }, r.되돌림);
   check('★ 답에 실린 이름이 원래대로 돌아온다', 되돌린것.toolCalls[0].name === 이상한이름);

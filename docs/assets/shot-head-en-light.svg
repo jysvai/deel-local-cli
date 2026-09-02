@@ -7,10 +7,10 @@
   <text x="428" y="22" fill="#59636e" font-size="12" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,sans-serif">deel</text>
   <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14">
     <text x="16.0" y="64" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮</text>
-    <text x="16.0" y="83" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ deel 1.9.0  ⌂ inside (default)  OpenAI-compatible API                                        │</text>
+    <text x="16.0" y="83" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ deel 1.9.1  ⌂ inside (default)  OpenAI-compatible API                                        │</text>
     <text x="16.0" y="102" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │                                                                                              │</text>
     <text x="16.0" y="121" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ model     qwen2.5-coder:7b  (128k tokens · class small guessed)                              │</text>
-    <text x="16.0" y="140" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ sends to  this machine 127.0.0.1:61926  ← and nowhere else                                   │</text>
+    <text x="16.0" y="140" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ sends to  this machine 127.0.0.1:51709  ← and nowhere else                                   │</text>
     <text x="16.0" y="159" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │           The ⌂ at the start of the status bar means this. It becomes ↗ when traffic leaves. │</text>
     <text x="16.0" y="178" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ link      no streaming · tools · no effort control                                           │</text>
     <text x="16.0" y="197" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ folder    C:\work\myproject                                                                  │</text>
