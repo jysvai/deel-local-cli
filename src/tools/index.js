@@ -7,7 +7,7 @@ import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsuti
 import { 건너뜀말 } from './ignore.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
 import { checkCommand, checkPaths, isMutating } from '../safety/guard.js';
-import { 띄우기, 나무끊기, JOBS_TOOL } from './jobs.js';
+import { 띄우기, 나무끊기, 무리끊기, JOBS_TOOL } from './jobs.js';
 import { 셸명령 } from './shell.js';
 import { findMatch, applySpans, reindent, TIER_LABELS } from './edit-match.js';
 import { loadSkill } from '../skills/discover.js';
@@ -1644,6 +1644,21 @@ export const TOOLS = {
           timeout: 제한 + 3000,
           maxBuffer: 출력상한,
           windowsHide: true,
+          /*
+           * 유닉스에서는 **무리를 만들어 둔다.**
+           *
+           * 나중에 만들어 줄 방법이 없어서 띄우는 순간에 정해야 한다. 안 만들면
+           * 나중에 손자를 가리킬 길이 아예 없다 — `sh -c "cd app && npm start"`
+           * 처럼 복합 명령이면 sh 가 exec 로 갈아치우지 않고 fork 하므로,
+           * kid.kill() 은 sh 만 죽이고 npm·node·vite 는 포트를 문 채로 남는다.
+           * 화면에는 「시간 초과로 중단됨」 이 뜬다. 이 도구가 없애려던 바로 그
+           * 상태다.
+           *
+           * 윈도우에서는 반대로 안 만든다 — 거기서 detached 는 새 콘솔 창을
+           * 띄우는 쪽으로 작동해서, 조용히 돌아야 할 것이 화면에 튀어나온다.
+           * 윈도우는 taskkill /t 가 나무를 훑는다. (jobs.js 띄우기옵션 과 같은 판단)
+           */
+          detached: process.platform !== 'win32',
           windowsVerbatimArguments: shell.verbatim === true,
           encoding: 'buffer',
         }, (err, stdoutBuf, stderrBuf) => {
@@ -1756,6 +1771,17 @@ export const TOOLS = {
            */
           if (process.platform === 'win32' && kid.pid) {
             if (!나무끊기(kid.pid, 1500) && 더줄까 > 0) 나무끊기(kid.pid, 더줄까);
+          } else if (kid.pid) {
+            /*
+             * 유닉스는 무리째 끊는다. 위 detached 와 짝이다.
+             *
+             * 한동안 이 갈래가 통째로 없었다. 윈도우 쪽만 고쳐 놓고 「중단하면
+             * 진짜 멈춘다」 를 판 소개에 적었는데, 유닉스에서는 sh 만 죽고
+             * 그 아래가 그대로 남아 있었다. 검사가 초록이었던 것도 까닭이
+             * 있다 — 검사가 쓰는 명령이 `node ticker.cjs` 하나뿐이라
+             * 유닉스 sh 가 그걸 exec 로 갈아치웠고, 애초에 손자가 안 생겼다.
+             */
+            무리끊기(kid.pid);
           }
           try { kid.kill(); } catch {}
           // 죽이라고 시켰다고 곧바로 죽는 것은 아니다. 그동안 이 프로세스가

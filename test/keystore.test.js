@@ -26,7 +26,7 @@ delete process.env.DEEL_API_KEY;
 delete process.env.DEEL_KEYSTORE;
 
 const { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식, 마지막명령줄, 잠금지우기 } = await import('../src/safety/keystore.js');
-const { load, save, resolveKey, 잠금소식, 열쇠보관, configPath } = await import('../src/config.js');
+const { load, save, resolveKey, 잠금소식, 열쇠탈소식, 열쇠보관, configPath } = await import('../src/config.js');
 const { 열쇠명세 } = await import('../src/pack/sbom.js');
 
 const pass = [];
@@ -199,6 +199,54 @@ trace('잠금지우기');
   const 줄 = (마지막명령줄() ?? []).join(' ');
   check('★ 지울 때도 명령줄에 열쇠가 없다',
     !줄.includes('QUFB') && !줄.includes('sk-평문열쇠'), 줄.slice(0, 90));
+}
+
+/*
+ * ── 못 푼 까닭이 사람에게 닿는가 ────────────────────────────────────────
+ *
+ * 못 풀 때가 진짜 있다 — 설정 파일만 다른 PC 로 옮겼거나, 계정을 바꿨거나,
+ * 윈도우 프로필을 다시 만든 경우다. 풀기() 는 그때 왜인지를 성실하게 만들어
+ * 돌려주고, 그 머리말에 까닭까지 적어 뒀다: **빈 글자만 돌려주면 사람은 401 만
+ * 보고 게이트웨이를 의심한다.**
+ *
+ * 그런데 유일한 부르는 쪽인 resolveKey 가 그 말을 버리고 있었다. 빈 열쇠가
+ * 나가면 http.js 는 Authorization 머리말을 아예 안 붙인다. 사람은 방화벽·주소·
+ * 계정을 뒤진다. 진짜 까닭은 우리만 알고 있었다.
+ *
+ * 게다가 그 실패를 **담아 뒀다.** 그러면 사람이 그 사이에 deel setup 으로 열쇠를
+ * 다시 넣어도 그 판에서는 영영 안 풀린다.
+ */
+trace('9-못푼까닭');
+{
+  // 이 PC 것이 아닌 잠긴 값. 어느 판에서든 못 푼다.
+  const 남의것 = process.platform === 'darwin'
+    ? 'dpapi:AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA남의PC에서잠근것'
+    : 'keychain:deel-gateway-key';
+  const 프로필 = { id: '남의것', apiKey: 남의것 };
+
+  열쇠탈소식();   // 앞엣것을 비우고 시작한다
+  const 푼것 = resolveKey(프로필);
+  check('못 푸는 열쇠는 빈 글자로 나간다 (틀린 열쇠를 보내지 않는다)', 푼것 === '', JSON.stringify(푼것));
+
+  const 탈 = 열쇠탈소식();
+  check('★ 왜 못 풀었는지가 화면으로 갈 자리에 남는다', typeof 탈 === 'string' && 탈.length > 0, String(탈));
+  check('★ 그 말이 무엇을 하라는지까지 담고 있다', /deel setup|PC|키체인|윈도우/.test(탈 ?? ''), String(탈));
+  check('한 번 읽으면 지워진다 (두 번 안 알린다)', 열쇠탈소식() === null);
+
+  /*
+   * ★ 실패는 담아 두지 않는다.
+   *
+   * 담아 두면 그 판 내내 다시 시도조차 안 한다. 두 번째로 불러도 똑같이
+   * 까닭이 나와야 한다 — 나온다는 것은 실제로 다시 풀어 봤다는 뜻이다.
+   */
+  resolveKey(프로필);
+  check('★ 실패를 담아 두지 않는다 (다시 넣으면 그 판에서 바로 풀리게)',
+    typeof 열쇠탈소식() === 'string');
+
+  // 멀쩡한 열쇠는 조용해야 한다 — 없는 탈을 만들어 내면 안 된다.
+  열쇠탈소식();
+  resolveKey({ id: '평문', apiKey: 'sk-그냥평문' });
+  check('멀쩡한 열쇠에는 아무 말도 안 남긴다', 열쇠탈소식() === null);
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

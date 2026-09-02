@@ -379,6 +379,7 @@ export const ko = {
   'sum.jobStarted': '{n}번으로 띄움',
   'sum.jobRunning': '도는중',
   'sum.jobEndedAlready': '이미 끝남',
+  'sum.jobNotStopped': '안 끝났습니다 — 아직 살아 있습니다',
   'sum.jobStopped': '끝냄',
 
   // Edit 이 어떤 느슨함으로 자리를 찾았나 (tools/edit-match.js 의 TIERS).

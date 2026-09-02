@@ -23,7 +23,7 @@ import { 언어서버있나 } from './tools/index.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
-import { activeProfile, load, resolveKey, save as saveCfg, homeDir, 잠금소식 } from './config.js';
+import { activeProfile, load, resolveKey, save as saveCfg, homeDir, 잠금소식, 열쇠탈소식 } from './config.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
@@ -168,6 +168,22 @@ export async function chatLoop(opts = {}) {
   }
 
   /*
+   * 잠근 열쇠를 못 풀었으면 **그 까닭을** 적는다.
+   *
+   * 이걸 안 하면 빈 열쇠가 그대로 나가서 Authorization 머리말이 아예 안 붙고,
+   * 사람은 401 만 보고 방화벽·주소·계정을 뒤진다. 진짜 까닭은 대개
+   * 「설정 파일을 다른 PC 로 옮겼다」 이고, 그건 우리만 알고 있다.
+   *
+   * 아래 conn 을 짓는 자리에서 resolveKey 가 불리므로, 읽는 것은 그 뒤여야 한다.
+   */
+  const 열쇠탈보이기 = () => {
+    const 탈 = 열쇠탈소식();
+    if (!탈) return;
+    바로쓰기('');
+    바로쓰기(`  ${mark.warn} ${탈}`);
+  };
+
+  /*
    * 여기서부터 화면에 나가는 것은 전부 `화면` 을 거친다.
    *
    * `say` 를 지역 이름으로 다시 묶은 이유: 이 함수 안에 출력이 79군데 있었다.
@@ -206,6 +222,9 @@ export async function chatLoop(opts = {}) {
     // 그림을 볼 수 있는 모델인지. 못 보면 바이트를 아예 안 싣는다 (backend/vision.js).
     vision: prof.vision ?? false,
   };
+
+  // conn 을 짓느라 resolveKey 가 방금 불렸다. 못 푼 것이 있으면 여기서 말한다.
+  열쇠탈보이기();
 
   /*
    * ── 주소와 허가를 뗀다 ───────────────────────────────────────────────

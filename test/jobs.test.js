@@ -574,7 +574,20 @@ trace('8-Bash와붙였을때');
   // 자국 이름도 짧게 준다 — 위 안에서() 머리말과 같은 까닭이다. cwd 가 방이라
   // 상대이름이 그대로 방 안에 떨어진다.
   const 시간초과자국 = join(방, 'tick-timeout.txt');
-  const 느린것 = await TOOLS.Bash.run({ command: 안에서('ticker.cjs', 'tick-timeout.txt'), timeout: 700 }, ctx);
+  /*
+   * ★ **복합 명령**으로 부른다. 이게 이 검사의 값을 정한다.
+   *
+   * 전에는 `node ticker.cjs …` 하나였다. 유닉스 sh 는 그런 명령을 exec 로
+   * **제 자신을 갈아치워** 돌린다 — 그러면 우리 아이가 곧 node 이고 손자가
+   * 아예 안 생긴다. 그래서 「손자를 못 죽인다」 는 고장이 있어도 이 검사는
+   * 초록이었다. 실제로 유닉스 갈래가 통째로 빠져 있는 동안에도 그랬다.
+   *
+   * `cd . && node …` 로 부르면 sh 가 exec 를 못 하고 fork 한다. 그러면
+   * sh → node 로 나무가 생겨서, 진짜로 재려던 것을 잰다.
+   * (윈도우 cmd.exe 도 마찬가지로 한 겹이 더 생긴다.)
+   */
+  const 복합 = `cd . && ${안에서('ticker.cjs', 'tick-timeout.txt')}`;
+  const 느린것 = await TOOLS.Bash.run({ command: 복합, timeout: 700 }, ctx);
   check('background 없이 부르면 예전처럼 기다리다 끊는다',
     /시간 초과/.test((느린것.error ?? '') + (느린것.content ?? '')),
     (느린것.error ?? 느린것.content ?? '').slice(0, 60));

@@ -172,6 +172,23 @@ export function activeProfile(cfg = load()) {
 // 환경변수가 있으면 파일보다 우선한다 — 사내망에서 키를 파일에 안 남기고 싶을 때 쓴다.
 const 푼것 = new Map();     // 잠긴 값 → 푼 글. 한 판에 한 번만 풀면 된다.
 
+/**
+ * 잠근 열쇠를 못 푼 까닭. 화면이 한 번 읽어 가면 지워진다.
+ *
+ * ── 왜 있어야 하나 ──────────────────────────────────────────────────────
+ *
+ * keystore.js 의 풀기() 는 왜 못 풀었는지를 성실하게 만들어 돌려준다 —
+ * 「이 PC 의 이 계정에서 잠근 것만 풀립니다」 같은 말이다. 그 함수 머리말이
+ * 그렇게 하는 까닭까지 적어 뒀다: **빈 글자만 돌려주면 사람은 401 만 보고
+ * 게이트웨이를 의심한다.**
+ *
+ * 그런데 부르는 쪽이 그 말을 버리고 있었다. 빈 열쇠가 나가면 http.js 는
+ * Authorization 머리말을 아예 안 붙이고, 게이트웨이는 401 을 준다. 사람은
+ * 방화벽·주소·계정을 뒤진다. 진짜 까닭은 「설정 파일을 다른 PC 로 옮겼다」 인데.
+ */
+let 열쇠탈 = null;
+export function 열쇠탈소식() { const s = 열쇠탈; 열쇠탈 = null; return s; }
+
 export function resolveKey(profile) {
   const byName = profile?.id ? process.env[`DEEL_KEY_${profile.id.toUpperCase()}`] : null;
   const 값 = byName || process.env.DEEL_API_KEY || profile?.apiKey || '';
@@ -180,8 +197,19 @@ export function resolveKey(profile) {
   // 기다리는 시간이라, 판에 한 번만 풀고 들고 있는다.
   if (푼것.has(값)) return 푼것.get(값);
   const r = 풀기(값);
-  푼것.set(값, r.ok ? r.text : '');
-  return r.ok ? r.text : '';
+  if (!r.ok) {
+    /*
+     * **실패는 안 담아 둔다.**
+     *
+     * 담아 두면 그 판 내내 다시 시도조차 안 한다. 사람이 그 사이에
+     * `deel setup` 으로 열쇠를 다시 넣어도 이 판에서는 영영 안 풀린다.
+     * 푸는 값이 0.2초라, 안 되는 것을 아껴서 얻을 것이 없다.
+     */
+    열쇠탈 = r.why || '잠근 열쇠를 못 풀었습니다';
+    return '';
+  }
+  푼것.set(값, r.text);
+  return r.text;
 }
 
 export function upsert(cfg, profile) {

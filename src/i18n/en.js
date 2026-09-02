@@ -379,6 +379,7 @@ export const en = {
   'sum.jobStarted': 'started as job {n}',
   'sum.jobRunning': 'running',
   'sum.jobEndedAlready': 'already finished',
+  'sum.jobNotStopped': 'still running — could not stop it',
   'sum.jobStopped': 'stopped',
 
   'tier.exact': 'exact match',

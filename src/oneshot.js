@@ -19,7 +19,7 @@ import { makeScope } from './safety/guard.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
 import { Audit } from './safety/audit.js';
-import { activeProfile, load, resolveKey, 잠금소식 } from './config.js';
+import { activeProfile, load, resolveKey, 잠금소식, 열쇠탈소식 } from './config.js';
 import { 말 as 옮긴말 } from './i18n/index.js';
 import { 알림채움 } from './backend/retry.js';
 import { discover } from './skills/discover.js';
@@ -170,6 +170,16 @@ export async function runOnce(opts = {}) {
     tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
     vision: prof.vision ?? false,
   };
+
+  /*
+   * 잠근 열쇠를 못 풀었으면 그 까닭을 표준오류로 낸다.
+   *
+   * 배치로 부르는 쪽은 표준출력을 JSON 으로 읽으므로 거기에 섞으면 안 된다.
+   * 그렇다고 조용히 넘기면 여기가 더 나쁘다 — 아무도 안 보고 있는 자리라
+   * 401 하나 남기고 끝난다. 위 잠금소식 과 같은 자리, 같은 규칙이다.
+   */
+  const 열쇠탈 = 열쇠탈소식();
+  if (열쇠탈) { try { process.stderr.write(`  ${열쇠탈}\n`); } catch { /* 못 써도 그만 */ } }
 
   /*
    * 자물쇠는 대화 화면과 똑같이 건다. 비대화라고 느슨해질 이유가 없다 —
