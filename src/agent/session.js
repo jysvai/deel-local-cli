@@ -9,6 +9,7 @@ import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
 import { 지문 } from './project.js';
 import { 프롬프트토막 as 기억토막 } from './memory.js';
 import { 못박기 } from './pins.js';
+import { 파일기억 } from './filemem.js';
 import { 언어, 지시말, 말 as 옮긴말 } from '../i18n/index.js';
 import { 셸안내 } from '../tools/shell.js';
 
@@ -231,6 +232,14 @@ export class Session {
      */
     this.못박은것 = new 못박기();
     this.filesRead = new Map();   // 경로 → 추정 토큰
+    /*
+     * 읽은 파일을 들고 있다가 **바뀐 만큼만** 다시 싣는다 (agent/filemem.js).
+     *
+     * filesRead 와 둘로 나눠 둔 이유: 저쪽은 `/context` 가 「몇 개 읽었나」 를
+     * 세는 자리라 값이 토큰 수뿐이다. 여기는 글 자체를 들고 있어야 한다.
+     * 한 맵에 두 가지를 담으면 화면 셈이 글자까지 들고 다니게 된다.
+     */
+    this.파일기억 = new 파일기억();
     this.changes = new Map();     // 경로 → {added, removed, times}. /diff 가 본다
     /*
      * 상태줄이 보는 두 숫자.
@@ -517,6 +526,7 @@ export class Session {
   clear() {
     this.messages = [];
     this.filesRead.clear();
+    this.파일기억.잊기();
     this.#턴표 = [];
     this.#다음턴 = null;
     return this;

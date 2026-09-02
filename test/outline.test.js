@@ -26,7 +26,7 @@ import { Audit } from '../src/safety/audit.js';
 import { TOOLS, 설명줄이기, toolSchemas } from '../src/tools/index.js';
 import { 뼈대뽑기 } from '../src/tools/outline.js';
 import { html보기, css보기, json보기 } from '../src/tools/verify.js';
-import { 이름에서크기, 이름으로짐작, 매김, 값 as 급값, 급말, 지켜본것 } from '../src/agent/grade.js';
+import { 이름에서크기, 이름으로짐작, 첫짐작, 매김, 값 as 급값, 급말, 지켜본것 } from '../src/agent/grade.js';
 import { estimateTokens } from '../src/agent/session.js';
 import { 뼈대줄수, 설명길이 } from '../src/agent/budget.js';
 
@@ -444,6 +444,35 @@ export interface 모양 { a: number }
    */
   check('이름을 못 읽으면 보통 (작음이 아니다)', 이름으로짐작('gpt-oss').급 === '보통');
   check('짐작이라고 표시한다', 이름으로짐작('gpt-oss').짐작 === true);
+
+  /*
+   * ★ 이름에 크기가 없으면 **서버가 알려 준 창 크기**로 잡는다.
+   *
+   * 벤더 모델은 이름에 파라미터 수를 안 적는다. `anthropic.claude-opus-4-1`
+   * 에는 B 가 없어서 여태 '보통' 으로 떨어졌고, 그래서 Bedrock 의 Opus 가
+   * 「한 번에 파일 3개 · 400줄 넘으면 나눠 쓰기」 를 받았다 — 제일 큰 모델에
+   * 중급용 보조바퀴를 달아 준 셈이다.
+   *
+   * 이름표(`opus` 면 큼)를 두는 쪽은 일부러 안 갔다. 새 모델이 나올 때마다
+   * 어긋나고 어긋난 줄도 모른다. 창 크기는 완벽한 잣대는 아니지만 **우리가
+   * 실제로 아는 것** 중 제일 가깝다.
+   */
+  check('★ 이름에 크기가 없으면 창 크기로 잡는다',
+    첫짐작({ model: 'anthropic.claude-opus-4-1', ctx: 200000 }).급 === '큼',
+    JSON.stringify(첫짐작({ model: 'anthropic.claude-opus-4-1', ctx: 200000 })));
+  check('★ 창이 좁으면 작음', 첫짐작({ model: 'unknown-thing', ctx: 8192 }).급 === '작음',
+    첫짐작({ model: 'unknown-thing', ctx: 8192 }).왜);
+  check('중간 창은 보통', 첫짐작({ model: 'unknown-thing', ctx: 32768 }).급 === '보통');
+  /*
+   * ★ 그런데 이름에서 파라미터 수를 읽었으면 **그게 이긴다.**
+   * 8B 는 창이 128k 여도 8B 다 — 창이 넓다고 머리가 커지지 않는다.
+   */
+  check('★ 이름의 파라미터 수가 창 크기를 이긴다',
+    첫짐작({ model: 'llama-3.1-8b', ctx: 128000 }).급 === '작음',
+    JSON.stringify(첫짐작({ model: 'llama-3.1-8b', ctx: 128000 })));
+  check('창도 이름도 모르면 보통', 첫짐작({ model: 'gpt-oss', ctx: null }).급 === '보통');
+  check('왜 그렇게 봤는지 창 크기를 적어 준다',
+    /200k/.test(첫짐작({ model: 'x', ctx: 200000 }).왜), 첫짐작({ model: 'x', ctx: 200000 }).왜);
 
   // 실제로 본 것이 이름을 이긴다
   const 나쁨 = new 지켜본것();

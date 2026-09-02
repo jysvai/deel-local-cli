@@ -284,6 +284,14 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
     ...parts.tail,
   ];
   session.filesRead.clear();   // 접힌 뒤에는 읽어 둔 파일도 기억에서 지운다
+  /*
+   * 들고 있던 파일 내용도 같이 버린다.
+   *
+   * 「앞에서 읽은 그대로입니다」 는 그 앞엣것이 대화에 살아 있을 때만 참이다.
+   * 접어 버린 뒤에도 그 쪽지를 내밀면, 모델은 있지도 않은 글을 가리키는 말만
+   * 받는다 — 통째로 다시 싣는 것보다 훨씬 나쁘다.
+   */
+  session.파일기억?.잊기();
 
   const after = session.breakdown().used;
   return { ok: true, folded: parts.fold.length, before, after, summary, auto };
