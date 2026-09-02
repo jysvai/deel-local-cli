@@ -337,7 +337,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.9.1  ⌂ inside
+ deel 1.9.2  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1208,11 +1208,11 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[1.9.1](docs/en/releases/1.9.md#191)** | MCP tools with Korean names all looked the same to the model — names are now distinct and stable |
+| **[1.9.2](docs/en/releases/1.9.md#192)** | Guards that said they were blocking were not blocking · folding lost the request and the outstanding work |
+| [1.9.1](docs/en/releases/1.9.md#191) | MCP tools with Korean names all looked the same to the model — names are now distinct and stable |
 | **[1.9.0](docs/en/releases/1.9.md#190)** | Tables are drawn as tables · reasoning effort reaches Claude and Bedrock · tool schemas shaped per vendor · only the changed part of a file is re-sent |
 | **[1.8.0](docs/en/releases/1.8.md#180)** | A full day against a gateway that hands out one-hour tokens — fetch the key instead of storing it · `deel reset` · an English screen that is actually English |
 | [1.7.0](docs/en/releases/1.7.md#170) | Local stays local; it goes out only when you say so — three modes · vendor setup · automatic masking · cost |
-| [1.6.1](docs/en/releases/1.6.md#161) | The places that made a turn spin in circles — the fence blocking `/dev/null` · old documents it could not read · images vanishing from files |
 
 The five most recent are listed here. Every version, and why each thing changed, is in the **[release notes](docs/en/releases.md)**.
 
