@@ -6,7 +6,7 @@
 //   2) 사내망·이 컴퓨터 주소를 긁지 않는가
 //   3) 다녀온 뒤 자물쇠가 원래대로 닫히는가
 import { createServer } from 'node:http';
-import { webFetch, 방문기록 } from '../src/tools/webfetch.js';
+import { webFetch, 웹되돌림, 방문기록 } from '../src/tools/webfetch.js';
 import { allowEndpoint, allowed, resetNet, setOffline } from '../src/safety/network.js';
 import { toolSchemas } from '../src/tools/index.js';
 // 이제 상한이 모델 크기에서 나온다. 검사도 그 값을 물어봐서 쓴다 —
@@ -38,6 +38,17 @@ const server = createServer((req, res) => {
       return res.end(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
     }
     if (req.url === '/404') { res.writeHead(404); return res.end('nope'); }
+
+    // ── 되돌림(redirect) ────────────────────────────────────────────────
+    // 남의 서버가 302 한 번으로 우리를 어디로든 보낼 수 있다. 그게 이 자리다.
+    if (req.url === '/goto') {
+      res.writeHead(302, { Location: `http://127.0.0.1:${port}/page` });
+      return res.end('');
+    }
+    if (req.url === '/goto-file') {
+      res.writeHead(302, { Location: 'file:///etc/passwd' });
+      return res.end('');
+    }
 
     // ── 잠시 뒤 되는 오류들 ─────────────────────────────────────────────
     // 처음 두 번은 429, 세 번째는 준다. 진짜 API 가 이렇게 군다.
@@ -251,9 +262,49 @@ check('다녀온 곳이 기록에 남음', 방문기록.length > 0, `${방문기
     `${남은것} (${맞는값} 이어야 한다 — 바이트로 세면 세 배가 된다)`);
 }
 
+/*
+ * ── ★ 되돌림으로 울타리를 넘지 못한다 ──────────────────────────────────
+ *
+ * 여기가 이 파일에서 제일 오래 비어 있던 자리다. 직접 친 주소가 사내망인 것은
+ * 위에서 재고 있었는데, **바깥 주소가 302 로 사내망을 가리키는** 길은 아무
+ * 검사도 안 지나고 있었다. 위험한 쪽은 이쪽이다 — 사람은 바깥 문서 주소
+ * 하나만 줬을 뿐인데, 그 서버가 우리를 사내망 안쪽으로 보낸다.
+ *
+ * 막는 코드는 있었다. 다만 이름 없는 함수로 묻혀 있어서 두 줄을 통째로 지워도
+ * 검사가 전부 초록이었다. 「있다」 와 「돈다」 는 다르다.
+ */
+// (이 파일은 trace 를 안 쓴다)
+{
+  const 던지나 = (다음, 옵션) => {
+    try { 웹되돌림(new URL(다음), 옵션); return false; } catch { return true; }
+  };
+  check('★ file:// 로 되돌리면 안 따라간다', 던지나('file:///etc/passwd'));
+  check('★ 다른 규격(ftp)으로 되돌려도 안 따라간다', 던지나('ftp://a.example/x'));
+  check('★ 사내망으로 되돌리면 안 따라간다', 던지나('http://192.168.0.1/router'));
+  check('★ 이 컴퓨터로 되돌려도 안 따라간다', 던지나('http://127.0.0.1:9/속살'));
+  check('★ localhost 도 마찬가지', 던지나('http://localhost:8080/admin'));
+  check('바깥에서 바깥으로는 그대로 따라간다 (막느라 기능을 죽이지 않는다)',
+    !던지나('https://example.com/next'));
+  check('검사용으로 열어 두면 이 컴퓨터도 따라간다',
+    !던지나('http://127.0.0.1:9/속살', { allowPrivate: true }));
+
+  // 그리고 **진짜로 302 를 받아 본다.** 판단이 부르는 자리에 안 물려 있으면
+  // 위 검사가 다 통과해도 아무 소용이 없다.
+  const 파일로 = await webFetch({ url: `http://127.0.0.1:${port}/goto-file` }, { allowPrivate: true });
+  check('★ 302 로 file:// 을 가리키면 실제로 못 따라간다', !!파일로.error,
+    파일로.error ?? (파일로.content ?? '').slice(0, 60));
+  check('★ 그 파일 내용이 답에 안 실린다', !/root:|bin\/bash/.test(파일로.content ?? ''),
+    (파일로.content ?? '').slice(0, 40));
+
+  const 정상 = await webFetch({ url: `http://127.0.0.1:${port}/goto` }, { allowPrivate: true });
+  check('보통 되돌림은 그대로 따라간다', /본문 첫 줄/.test(정상.content ?? ''),
+    정상.error ?? (정상.content ?? '').slice(0, 40));
+}
+
 server.closeAllConnections?.();
 server.close();
 await new Promise((r) => setImmediate(r));
+
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log('\n웹 읽기 검사  ' + D + '(읽기만 하는가 · 데이터가 안 실려 나가는가)' + X + '\n');

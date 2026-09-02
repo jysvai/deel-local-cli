@@ -382,6 +382,57 @@ trace('4-2-안보여준것을지우게두지않는다');
 trace('5-치움');
 resetNet();
 
+/*
+ * ── ★ 조각만 읽었으면 그렇다고 표시한다 ────────────────────────────────
+ *
+ * `부분인가` 는 「우리가 들고 있는 것이 파일 전부가 아니다」 는 뜻이다.
+ * 읽은 파일 기억(agent/filemem.js)이 이 깃발 하나로 갈린다 — 조각을 통째로
+ * 읽은 것처럼 기억해 두면, 다음에 같은 파일을 읽을 때 「앞에서 읽은
+ * 그대로입니다」 가 나간다. 모델은 **안 본 데를 봤다고 여긴다.**
+ *
+ * filemem 쪽은 깃발을 넣어 주면 제대로 도는 것을 이미 재고 있었다. 안 재던
+ * 것은 **Read 가 그 깃발을 세우는가** 였다. 그 자리를 `부분인가: false` 로
+ * 고정해도 전체 검사가 초록이었다 — 이미 한 번 겪은 고장과 똑같은 모양의
+ * 다음 고장이 거기 있었다.
+ */
+trace('9-조각표시');
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-part-'));
+  const ctx = { scope: makeScope(방), history: new History(방), audit: new Audit(방), seen: new Set() };
+  const p = join(방, '백줄.txt');
+  writeFileSync(p, Array.from({ length: 100 }, (_, i) => `${i + 1}번째 줄 내용`).join('\n') + '\n', 'utf8');
+
+  const 통째로 = await TOOLS.Read.run({ file_path: p }, ctx);
+  check('다 준 경우에는 조각이라고 안 한다', 통째로.부분인가 !== true,
+    `부분인가=${String(통째로.부분인가)} · ${통째로.summary ?? ''}`);
+
+  const 잘라읽기 = await TOOLS.Read.run({ file_path: p, offset: 10, limit: 5 }, ctx);
+  check('★ offset·limit 로 잘라 읽으면 조각이라고 표시한다', 잘라읽기.부분인가 === true,
+    `부분인가=${String(잘라읽기.부분인가)} · ${잘라읽기.summary ?? ''}`);
+
+  // 창이 작아 다 못 싣는 경우도 조각이다. 이쪽이 사람 눈에 더 안 보인다.
+  const 좁은ctx = { ...ctx, seen: new Set(), 모델컨텍스트: 4096 };
+  const 긴것 = join(방, '아주긴것.txt');
+  writeFileSync(긴것, Array.from({ length: 8000 }, (_, i) => `${i} 아주 긴 줄을 넣어 창을 넘긴다`).join('\n'), 'utf8');
+  const 다못준것 = await TOOLS.Read.run({ file_path: 긴것 }, 좁은ctx);
+  check('★ 창이 작아 다 못 실었을 때도 조각이라고 표시한다', 다못준것.부분인가 === true,
+    `부분인가=${String(다못준것.부분인가)} · ${다못준것.summary ?? ''}`);
+
+  /*
+   * ★ 그리고 그 깃발이 **파일 기억까지 닿는지** 본다.
+   *
+   * 깃발만 세우고 안 넘겨 주면 아무 소용이 없다. 조각을 두 번 읽었을 때
+   * 두 번째가 「앞에서 읽은 그대로입니다」 가 되면 안 된다.
+   */
+  const { 파일기억 } = await import('../src/agent/filemem.js');
+  const 기억 = new 파일기억();
+  기억.실을것(p, 잘라읽기.content, { 부분인가: !!잘라읽기.부분인가 });
+  const 두번째 = 기억.실을것(p, 잘라읽기.content, { 부분인가: !!잘라읽기.부분인가 });
+  check('★ 조각은 두 번 읽어도 「그대로입니다」 라고 안 한다', 두번째.어떻게 === 'full', 두번째.어떻게);
+
+  rmSync(방, { recursive: true, force: true });
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n큰 파일 만들기 검사  ${D}(사람이 쪼개 주지 않아도 끝까지 만드는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

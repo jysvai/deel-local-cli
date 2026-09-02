@@ -127,6 +127,35 @@ function 태그벗기기(html) {
  *   allowPrivate 는 검사용이다. 도구 스키마에 없으므로 모델은 이 값을 줄 수 없다.
  *   (환경변수로 열어 두면 실제 사용 중에도 열려 버린다 — 그래서 인자로만 둔다)
  */
+/**
+ * 되돌림(redirect)을 따라가도 되는 곳인가. 던지면 안 따라간다.
+ *
+ * ── 왜 이름을 붙여 꺼냈나 ───────────────────────────────────────────────
+ *
+ * 이 판단이 webFetch 안의 이름 없는 함수로 묻혀 있었다. 그래서 **어떤 검사도
+ * 여기를 안 지났다** — 두 줄을 통째로 지워도 검사가 전부 초록이었다.
+ * 직접 친 주소가 사내망인 것은 재고 있었는데, **바깥 주소가 302 로 사내망을
+ * 가리키는** 길은 아무도 안 지났다. 위험한 쪽은 이쪽이다.
+ *
+ * 이름을 붙이면 재 볼 수 있다. `플러그인되돌림`(plugins/manage.js)이 같은
+ * 까닭으로 먼저 그렇게 되어 있다.
+ *
+ * ── 무엇을 막나 ─────────────────────────────────────────────────────────
+ *
+ * 첫째, http·https 가 아닌 곳. `file:///etc/passwd` 로 되돌리면 남의 서버가
+ * 우리 디스크를 읽어 제 화면에 실어 보낼 수 있다.
+ * 둘째, 이 컴퓨터·사내망 주소. 바깥에서 시작한 요청이 302 한 번으로 사내망
+ * 안쪽에 닿으면, 「소스가 어디로도 안 나간다」 와 짝을 이루는 문장이 깨진다.
+ */
+export function 웹되돌림(다음, { allowPrivate = false } = {}) {
+  if (다음.protocol !== 'http:' && 다음.protocol !== 'https:') {
+    throw new Error(`${다음.protocol} 로 되돌립니다 — 따라가지 않습니다`);
+  }
+  if (isLocalHost(다음.hostname) && !allowPrivate) {
+    throw new Error(`이 컴퓨터·사내망 주소(${다음.hostname})로 되돌립니다 — 따라가지 않습니다`);
+  }
+}
+
 export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 = null } = {}) {
   const raw = String(args?.url ?? '').trim();
   /*
@@ -166,8 +195,7 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
         timeout: 30000,
         stream: true,                             // 상한까지만 받는다 — 다 받아 놓고 버리지 않는다
         되돌림: (다음) => {
-          if (다음.protocol !== 'http:' && 다음.protocol !== 'https:') throw new Error(`${다음.protocol} 로 되돌립니다 — 따라가지 않습니다`);
-          if (isLocalHost(다음.hostname) && !allowPrivate) throw new Error(`이 컴퓨터·사내망 주소(${다음.hostname})로 되돌립니다 — 따라가지 않습니다`);
+          웹되돌림(다음, { allowPrivate });
           열어둔.push(allowTemporarily(다음.origin));
         },
       }));

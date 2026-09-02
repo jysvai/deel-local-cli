@@ -11,6 +11,7 @@ import { untargz, stripTop, 안쪽인가, 밖을가리키는것 } from '../src/p
 import { makeZip, crc32 } from '../src/pack/zip.js';
 import { parseSpec, install, list, remove, pack, pluginsDir, 묶음풀기 } from '../src/plugins/manage.js';
 import { discover } from '../src/skills/discover.js';
+import { TOOLS } from '../src/tools/index.js';
 import { copyDir } from '../src/tools/fsutil.js';
 import { trace } from './trace.mjs';
 
@@ -234,7 +235,7 @@ writeFileSync(join(받은폴더, '.claude-plugin', 'plugin.json'),
 for (const n of ['품의서', '주간보고']) {
   mkdirSync(join(받은폴더, 'skills', n), { recursive: true });
   writeFileSync(join(받은폴더, 'skills', n, 'SKILL.md'),
-    `---\nname: ${n}\ndescription: ${n} 쓰기\n---\n본문\n`, 'utf8');
+    `---\nname: ${n}\ndescription: ${n} 쓰기\n---\n본문: ${n} 는 이렇게 쓴다.\n결재선은 팀장 다음 부서장.\n`, 'utf8');
 }
 mkdirSync(join(받은폴더, 'commands'), { recursive: true });
 writeFileSync(join(받은폴더, 'commands', '결재.md'), '결재 올려줘: $ARGUMENTS\n', 'utf8');
@@ -295,6 +296,41 @@ if (!묶음.error && 열개) {
     `스킬 ${새PC결과.skills.length}개 · 명령 ${새PC결과.commands.length}개`);
   // 그래도 내장은 같이 보여야 한다 — 반입한 것이 그것을 밀어내면 안 된다.
   // 개수를 못 박지 않는다. 방법론을 하나 더할 때마다 여기가 엉뚱하게 빨개진다.
+  /*
+   * ── ★ 그리고 **펼쳐 읽는 데까지** 가 본다 ────────────────────────────
+   *
+   * 스킬은 두 단으로 실린다. 목록에는 이름과 설명만 올라가고, 모델이 필요한
+   * 것을 골라 Skill 도구로 본문을 받는다. 그 둘째 단이 이 기능의 전부다.
+   *
+   * 찾는 것(discover)은 여러 검사가 재고 도구 목록에 Skill 이 뜨는지도 쟀는데,
+   * **본문을 실제로 받아 오는 길은 저장소 어디에서도 한 번도 안 불렸다.**
+   * loadSkill 이 늘 오류를 돌려주게 만들어도 전체 검사가 초록이었다 —
+   * 판에 넣어 내보내는 기능 하나가 통째로 안 돌아 본 셈이다.
+   */
+  const 펼칠판 = { skills: 새PC결과.skills, loadedSkills: new Set() };
+  const 첫스킬 = 새PC결과.skills[0];
+  const 펼친것 = TOOLS.Skill.run({ name: 첫스킬.name }, 펼칠판);
+  check('★ 스킬 본문이 실제로 실린다', !펼친것.error && (펼친것.content ?? '').length > 20,
+    펼친것.error ?? (펼친것.content ?? '').slice(0, 60).replace(/\n/g, ' '));
+  check('★ 어느 스킬인지 머리에 적는다', /^# 스킬: /.test(펼친것.content ?? ''),
+    (펼친것.content ?? '').split('\n')[0]);
+  check('★ 앞머리(frontmatter)는 안 싣는다', !/^---/m.test(펼친것.content ?? ''),
+    (펼친것.content ?? '').slice(0, 40).replace(/\n/g, ' '));
+  check('★ 무엇을 펼쳤는지 기록한다', 펼칠판.loadedSkills.has(첫스킬.name),
+    [...펼칠판.loadedSkills].join(', '));
+
+  // 상한에 걸리면 잘랐다고 말한다 — 조용히 자르면 모델이 뒤쪽을 봤다고 여긴다.
+  const 자른것 = TOOLS.Skill.run({ name: 첫스킬.name }, { ...펼칠판, maxSkillChars: 20 });
+  check('★ 잘렸으면 잘렸다고 말하고 어디서 읽을지 알려 준다',
+    /잘렸습니다/.test(자른것.content ?? '') && /Read/.test(자른것.content ?? ''),
+    (자른것.content ?? '').split('\n').pop());
+
+  // 없는 이름은 비슷한 것을 짚어 준다. 그냥 '없다' 로 끝내면 모델이 헤맨다.
+  const 없는것 = TOOLS.Skill.run({ name: '없는스킬이름' }, 펼칠판);
+  check('없는 이름은 오류로 돌려준다', !!없는것.error, 없는것.error ?? '(그냥 폈다)');
+  const 꼬리로 = TOOLS.Skill.run({ name: 첫스킬.name.split(':').pop() }, 펼칠판);
+  check('이름 꼬리만 줘도 찾아 준다', !꼬리로.error, 꼬리로.error ?? '');
+
   const 같이 = discover(join(새PC, 'proj'), { home: 새PC });
   const 반입이름 = 새PC결과.skills.map((s) => s.name);
   check('반입한 것과 내 방법론이 같이 뜬다',

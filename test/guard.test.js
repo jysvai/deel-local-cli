@@ -449,6 +449,60 @@ srv.close();
 resetNet();
 rmSync(root, { recursive: true, force: true });
 
+/*
+ * ── ★ 링크가 밖을 가리키면 막는다 ──────────────────────────────────────
+ *
+ * 이 프로그램이 파는 두 문장 가운데 하나가 「작업 폴더 밖은 안 만진다」 다.
+ * 글자로 밖을 가리키는 것은 재고 있었는데(`../..`), **글자로는 안인데 링크를
+ * 따라가면 밖**인 자리는 아무 검사도 안 지나고 있었다. 정션 하나면 울타리가
+ * 통째로 열린다 — 사내망 공유 폴더를 그렇게 걸어 두는 사람이 실제로 있다.
+ *
+ * 막는 코드는 있었다. 다만 저장소 전체에서 밖을 가리키는 링크를 만드는 검사가
+ * 하나도 없어서, 그 코드를 `if (false)` 로 바꿔도 어떤 판에서도 안 빨개졌다.
+ * 「있다」 와 「돈다」 는 다르다.
+ */
+trace('9-링크탈출');
+{
+  const { symlinkSync, mkdirSync } = await import('node:fs');
+  const { ScopeError } = await import('../src/safety/guard.js');
+
+  const 판 = mkdtempSync(join(tmpdir(), 'deel-link-'));
+  const 뿌리 = join(판, '작업폴더');
+  const 바깥 = join(판, '남의폴더');
+  mkdirSync(뿌리, { recursive: true });
+  mkdirSync(바깥, { recursive: true });
+  writeFileSync(join(바깥, '비밀.txt'), '남의 것\n', 'utf8');
+  writeFileSync(join(뿌리, '내것.txt'), '내 것\n', 'utf8');
+
+  const 샛문 = join(뿌리, '샛문');
+  // 윈도우는 심볼릭 링크에 권한이 필요하다. 정션은 권한 없이도 걸린다.
+  let 걸었나 = false;
+  for (const 갈래 of process.platform === 'win32' ? ['junction', 'dir'] : ['dir']) {
+    try { symlinkSync(바깥, 샛문, 갈래); 걸었나 = true; break; } catch { /* 다음 갈래로 */ }
+  }
+
+  if (!걸었나) {
+    /*
+     * 못 걸었으면 **건너뛰었다고 남긴다.** 조용히 넘기면 「검사 있음」 으로
+     * 세어지는데 실제로는 아무것도 안 잰 것이다 — 이 저장소가 이미 여러 번
+     * 겪은 모양이다. (리눅스에서는 늘 걸리므로 CI 에서는 반드시 돈다.)
+     */
+    건너뜀?.push?.('링크를 못 걸어 링크 탈출 검사 3건을 못 쟀다 (윈도우 권한)');
+    console.log('\n  ⚠ 링크를 못 걸어 링크 탈출 검사를 건너뜁니다 (윈도우 권한).\n');
+  } else {
+    const scope = makeScope(뿌리);
+    const 막혔나 = (p) => {
+      try { scope.resolve(p); return false; } catch (e) { return e instanceof ScopeError; }
+    };
+    check('★ 링크를 따라가면 밖인 자리를 막는다', 막혔나('샛문/비밀.txt'), 'samun/비밀.txt');
+    check('★ 링크 폴더 자체도 막는다', 막혔나('샛문'));
+    check('링크가 아닌 안쪽 파일은 그대로 통과한다',
+      !막혔나('내것.txt') && scope.resolve('내것.txt') === join(뿌리, '내것.txt'));
+  }
+
+  rmSync(판, { recursive: true, force: true });
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n안 하는 자리 검사  ${D}(못 하는 것보다 하지 말아야 할 것을 하는 게 무섭다)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
