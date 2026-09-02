@@ -22,7 +22,7 @@ import { makeScope } from './safety/guard.js';
 import { 언어서버있나 } from './tools/index.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
-import { Audit } from './safety/audit.js';
+import { Audit, 열쇠묻기 } from './safety/audit.js';
 import { activeProfile, load, resolveKey, save as saveCfg, homeDir, 잠금소식, 열쇠탈소식 } from './config.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
@@ -388,7 +388,7 @@ export async function chatLoop(opts = {}) {
    */
   const mcp붙임 = await 다붙이기(root, {
     offline: isOffline(),
-    audit: new Audit(root),
+    audit: new Audit(root, { 열쇠들: 열쇠묻기(conn) }),
   });
 
   // 이 PC 에 있는 스킬·명령·플러그인을 찾아 붙인다. 품고 다니지 않는다.
@@ -1023,7 +1023,7 @@ export async function chatLoop(opts = {}) {
     // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
     규칙들: 규칙모으기(cfg),
     history: new History(root),
-    audit: new Audit(root),
+    audit: new Audit(root, { 열쇠들: 열쇠묻기(conn) }),
     seen: new Set(),
     // 붙은 MCP 서버. 도구를 부를 때 여기서 찾는다.
     mcp: mcp붙임.서버들,

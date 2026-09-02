@@ -36,7 +36,7 @@ import { Session, repairToolPairs } from '../agent/session.js';
 import { Store, sessionsDir, prune } from '../agent/store.js';
 import { makeScope } from '../safety/guard.js';
 import { History } from '../safety/undo.js';
-import { Audit } from '../safety/audit.js';
+import { Audit, 열쇠묻기 } from '../safety/audit.js';
 import { activeProfile, load, resolveKey, homeDir, save as saveCfg } from '../config.js';
 import { 말 as 옮긴말 } from '../i18n/index.js';
 import { 알림채움 } from '../backend/retry.js';
@@ -242,7 +242,7 @@ export async function acp(opts = {}) {
       // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
       규칙들: 규칙모으기(cfg),
       history: new History(root),
-      audit: new Audit(root),
+      audit: new Audit(root, { 열쇠들: 열쇠묻기(conn) }),
       seen: new Set(),
       mcp: mcp붙임.서버들,
       skills: found.skills,
