@@ -9,10 +9,10 @@
     <text x="16.0" y="64" fill="#e6edf3" textLength="201.6" lengthAdjust="spacing" xml:space="preserve">deel 사내 반입 심사 자료</text>
     <text x="16.0" y="83" fill="#e6edf3" textLength="621.6" lengthAdjust="spacing" xml:space="preserve">--------------------------------------------------------------------------</text>
     <text x="16.0" y="102" fill="#e6edf3" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">이름        deel-local-cli</text>
-    <text x="16.0" y="121" fill="#e6edf3" textLength="142.8" lengthAdjust="spacing" xml:space="preserve">판          1.8.0</text>
+    <text x="16.0" y="121" fill="#e6edf3" textLength="142.8" lengthAdjust="spacing" xml:space="preserve">판          1.9.0</text>
     <text x="16.0" y="140" fill="#e6edf3" textLength="126.0" lengthAdjust="spacing" xml:space="preserve">라이선스    MIT</text>
     <text x="16.0" y="159" fill="#e6edf3" textLength="378.0" lengthAdjust="spacing" xml:space="preserve">실행 환경   Node &gt;=20 (표준 내장 기능만 사용)</text>
-    <text x="16.0" y="178" fill="#e6edf3" textLength="260.4" lengthAdjust="spacing" xml:space="preserve">만든 시각   2026-09-02 06:01:05</text>
+    <text x="16.0" y="178" fill="#e6edf3" textLength="260.4" lengthAdjust="spacing" xml:space="preserve">만든 시각   2026-09-02 10:38:31</text>
     <text x="16.0" y="216" fill="#e6edf3" textLength="117.6" lengthAdjust="spacing" xml:space="preserve">1. 외부 의존성</text>
     <text x="16.0" y="235" fill="#e6edf3" textLength="621.6" lengthAdjust="spacing" xml:space="preserve">--------------------------------------------------------------------------</text>
     <text x="16.0" y="254" fill="#e6edf3" textLength="529.2" lengthAdjust="spacing" xml:space="preserve">   dependencies      0개   ← 남의 코드를 함께 들여오지 않습니다</text>

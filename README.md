@@ -119,7 +119,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
-| [Release notes](docs/en/releases.md) | [1.7.x](docs/en/releases/1.7.md) · [1.6.x](docs/en/releases/1.6.md) · [1.5.x](docs/en/releases/1.5.md) · [1.4.x](docs/en/releases/1.4.md) · [1.3.x](docs/en/releases/1.3.md) · [1.2.x](docs/en/releases/1.2.md) |
+| [Release notes](docs/en/releases.md) | [1.9.x](docs/en/releases/1.9.md) · [1.8.x](docs/en/releases/1.8.md) · [1.7.x](docs/en/releases/1.7.md) · [older](docs/en/releases.md) |
 
 ---
 
@@ -256,8 +256,10 @@ English instead of Korean. That side is cheaper, too: the part of the window tha
 single request drops from about 4,900 tokens to about 3,450 — on a 32k model, from 15% of the
 window to 10.5%.
 
-Tool names and argument names stay Korean (`목적`, `할일`, `번호`). Those are identifiers, not
-prose — rename them and the tool stops being called at all.
+Tool and argument names are ASCII in every language — `Read(file_path)`, `Task(purpose)`.
+Those are identifiers, not prose, and several vendors reject a non-ASCII name outright.
+The Korean names some models learned earlier are still accepted on the way *in*, so a model
+that sends `목적` instead of `purpose` still gets through.
 
 ### Install
 
@@ -335,7 +337,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.8.0  ⌂ inside
+ deel 1.9.0  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -426,7 +428,7 @@ amounts six months later. Write them in `.deel/config.json` — dollars per
 million tokens:
 
 ```json
-"요금": { "claude-opus-4-6": { "입력": 0, "출력": 0, "기준": "2026-09-01" } }
+"pricing": { "claude-opus-4-6": { "input": 0, "output": 0, "asOf": "2026-09-01" } }
 ```
 
 The amount is shown with **where it came from and as of when**, and after six
@@ -445,9 +447,9 @@ never the problem.
 So write down *how to get a key* instead of the key:
 
 ```json
-"열쇠받기": {
-  "명령": "az account get-access-token --resource api://ai-gw --query accessToken -o tsv",
-  "수명": 3600
+"authCommand": {
+  "command": "az account get-access-token --resource api://ai-gw --query accessToken -o tsv",
+  "ttl": 3600
 }
 ```
 
@@ -534,15 +536,15 @@ Names follow Claude Code / Codex conventions.
 | `/evidence [file]` | Evidence — what changed, and what proves it. **What is unproven is listed too** |
 | `/commit [all\|preview\|title]` | Commits only what this session changed; message from the diff and the evidence. **Never pushes** |
 | `/model` | Switch connection / model |
-| `/model 카드` | Model card — what this model has actually done here, and what deel changed because of it |
+| `/model card` | Model card — what this model has actually done here, and what deel changed because of it |
 | `/think <level>` | Reasoning level (`off·low·medium·high·max`) |
-| `/think 배분 <profile>` | Per-stage profile (`even·save·deep`) |
-| `/think 자세히` | Stage table — which stage runs at which level and cap |
+| `/think profile <name>` | Per-stage profile (`even·save·deep`) |
+| `/think detail` | Stage table — which stage runs at which level and cap |
 | `/mode <mode>` | Approval policy — how much it asks (`auto` · `confirm` · `strict`) |
 | `/work [mode]` | Work mode — what kind of work you are doing |
 | `/auto` | Hand the wheel back — it picks the mode from what you type |
 | `/code` `/plan` `/architect` `/debug` `/ask` `/orchestrator` | Switch work mode directly (pins it) |
-| `/level [level]` | How much to show (`쉬움` simple · `개발자` developer) |
+| `/level [level]` | How much to show (`simple` · `developer`) |
 | `/motion [plain\|knight\|animal\|office\|off]` | What animates while it works — takes effect at once, and is saved |
 | `/undo [turns]` | Revert file changes |
 | `/diff [file]` | Files changed this session, and the changed lines |
@@ -572,7 +574,7 @@ the conversation.
 |---|---|
 | `Tab` | Completes the `/` command you are typing. Candidates appear under the box as you type |
 | `Shift+Tab` | Approval policy (`⏵⏵ auto` → `⏵ risky only` → `⏸ everything`) |
-| `Ctrl+O` | Work mode (`종합` → `코드` → `계획` → …) |
+| `Ctrl+O` | Work mode (`Auto` → `Code` → `Plan` → …) |
 | `↑` `↓` | Input history |
 | `Ctrl+C` | Stops the answer in progress; twice on an empty line quits |
 | Typing while it works, then `Enter` | Steers without throwing anything away — takes effect from the next step |
@@ -622,13 +624,13 @@ overrides something a person chose.
 Twenty commands on first launch means nothing gets chosen. Locking features away means
 hitting a wall later. So only **what is shown** differs.
 
-| | Simple (`쉬움`, default) | Developer (`개발자`) |
+| | Simple (default) | Developer |
 |---|---|---|
 | `/help` listing | Common commands only | Everything |
 | Error messages | What to do about it | The original text |
 | Safety | **Identical** | **Identical** |
 
-`/level 개발자` is saved to config and persists across sessions.
+`/level developer` is saved to config and persists across sessions.
 
 Two things matter here:
 
@@ -790,8 +792,8 @@ not a stage table.
 ```
 $ /think
 
-  추론 강도  medium   (첫 판단 medium · 이어가기 low · 막혔을 때 high)
-  더 세게 /think high   더 빠르게 /think low
+  Effort  medium   (First call medium · Continue low · Stuck high)
+  harder /think high   faster /think low
 ```
 
 | Profile | Character |
@@ -800,25 +802,25 @@ $ /think
 | `save` (default) | Hard on the first decision only |
 | `deep` | Everything one notch up — for hard work |
 
-Set the profile with `/think 배분 절약`. **Level and profile are different axes, so the
+Set the profile with `/think profile save`. **Level and profile are different axes, so the
 commands were split** — `/think high` and `/think save` used to set different things under
 one name, which made the screen unreadable.
 
-The stage table moved to `/think 자세히` (the default at developer level).
+The stage table moved to `/think detail` (the default at developer level).
 
 ```
-$ /think 자세히
+$ /think detail
 
-  추론 강도  medium   (첫 판단 medium · 이어가기 low · 막혔을 때 high)
-  배분      절약   첫 판단만 세게, 이어가기는 얕게 — 대개 이게 낫습니다
+  Effort  medium   (First call medium · Continue low · Stuck high)
+  Profile   save   Hard on the first call, shallow while continuing - usually the better trade
 
-  단계        강도      출력상한  언제
-  첫 판단     · medium      15,549  무엇을 할지 정하는 자리
-  이어가기    ↓ low         13,605  도구 결과를 읽고 다음 한 수
-  막혔을 때   ↑ high        16,384  직전 도구가 오류를 냄
+  Stage       Effort    Out cap   When
+  First call  · medium      14,069  Deciding what to do
+  Continue    ↓ low         12,310  Reading a tool result, picking the next move
+  Stuck       ↑ high        15,827  The last tool returned an error
 
-  출력 상한은 16,384 (모르는 값이라 기본값) 안에서 나눕니다 — /out
-  컨텍스트 40,960 · 지금 찬 양 2,087
+  Caps are shared inside 16,384 (unknown, so a default) — /out
+  Context 40,960 · used 5,787
 ```
 
 That second-to-last line exists for a reason: **when all three caps are equal, it is the
@@ -1096,9 +1098,9 @@ audit-log spec to write SIEM ingestion rules.
 
 | File | What |
 |---|---|
-| `반입심사서.txt` | Dependencies · install scripts · **every network and process-spawn call site found by scanning the source** (file:line) · the three outbound lanes · SHA-256 per file |
+| `import-review.txt` | Dependencies · install scripts · **every network and process-spawn call site found by scanning the source** (file:line) · the three outbound lanes · SHA-256 per file |
 | `sbom.cdx.json` | **SBOM (CycloneDX 1.5).** Feed it straight to a scanner. One component per file with SHA-256; dependencies stated as an **explicit empty array** — "not declared" and "none" are different claims |
-| `심사명세.json` | Egress list (per lane: when, where, what, how it's stopped, and the source location) · **audit-log spec** (field names and meanings, plus what is never recorded) · file hashes |
+| `audit-spec.json` | Egress list (per lane: when, where, what, how it's stopped, and the source location) · **audit-log spec** (field names and meanings, plus what is never recorded) · file hashes |
 
 ```bash
 deel audit                    # the human-readable sheet only
@@ -1106,6 +1108,9 @@ deel sbom                     # the two machine-readable ones, on stdout (deel s
 deel sbom --out review.json   # to a file
 deel sbom --only sbom         # just the SBOM
 ```
+
+With the screen language set to English these three, and the `deel pack` archive itself,
+come out in English — file names included (`deel pack` writes `deel-import.zip`).
 
 All three are generated by scanning the source, never written by hand — hand-written sheets
 drift, and **a review document that drifts is worse than none.** Find one wrong line and the
@@ -1203,27 +1208,13 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| **[1.9.0](docs/en/releases/1.9.md#190)** | Tables are drawn as tables · reasoning effort reaches Claude and Bedrock · tool schemas shaped per vendor · only the changed part of a file is re-sent |
 | **[1.8.0](docs/en/releases/1.8.md#180)** | A full day against a gateway that hands out one-hour tokens — fetch the key instead of storing it · `deel reset` · an English screen that is actually English |
 | [1.7.0](docs/en/releases/1.7.md#170) | Local stays local; it goes out only when you say so — three modes · vendor setup · automatic masking · cost |
 | [1.6.1](docs/en/releases/1.6.md#161) | The places that made a turn spin in circles — the fence blocking `/dev/null` · old documents it could not read · images vanishing from files |
 | **[1.6.0](docs/en/releases/1.6.md#160)** | The things that did not work on a corporate network — proxy · 429 · Windows shell · 50k-file repos · PDF · clipboard paste · editor resume |
-| **[1.5.8](docs/en/releases/1.5.md#158)** | A 5MB document showed 8 lines out of 919 · a regex read as a path blocked the command |
-| **[1.5.7](docs/en/releases/1.5.md#157)** | Korean folders on macOS made your own files "out of scope" · paste · ESC |
-| **[1.5.6](docs/en/releases/1.5.md#156)** | It asks when stuck — instead of writing a question and ending the turn |
-| **[1.5.5](docs/en/releases/1.5.md#155)** | A plan fills the room — "only one person" was a bug, not a design |
-| [1.5.4](docs/en/releases/1.5.md#154) | A day passes in the room — morning to night, a wall clock, a cold coffee |
-| [1.5.3](docs/en/releases/1.5.md#153) | Three things a Mac user tripped over — newline hint, office stays put, one `/motion` |
-| [1.5.2](docs/en/releases/1.5.md#152) | Everything else the adversarial reviews turned up — where the screen was lying |
-| [1.5.1](docs/en/releases/1.5.md#151) | Two of the things 1.5.0 added shipped broken. This fixes them |
-| [1.5.0](docs/en/releases/1.5.md#150) | Line breaks exist now, the screen got fun, and it came out lighter than before |
-| [1.4.3](docs/en/releases/1.4.md#143) | The README explains what's different, and the review report gets its missing line |
-| [1.4.2](docs/en/releases/1.4.md#142) | 1.4.1 shipped before its own security fixes — this corrects that |
-| [1.4.1](docs/en/releases/1.4.md#141) | No new features, only what was actually found and fixed — Windows abort, ReDoS, XSS |
-| [1.4.0](docs/en/releases/1.4.md#140) | deel gets a face, speaks English, and sees meaning — eleven places |
-| [1.3.0](docs/en/releases/1.3.md#130) | Evidence instead of claims, the editor instead of a terminal — six places |
-| [1.2.0](docs/en/releases/1.2.md#120) | So the conversation doesn't break — six places |
 
-What changed and why is in the **[release notes](docs/en/releases.md)**.
+The five most recent are listed here. Every version, and why each thing changed, is in the **[release notes](docs/en/releases.md)**.
 
 ---
 

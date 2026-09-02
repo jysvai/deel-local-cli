@@ -7,10 +7,10 @@
   <text x="444.5" y="22" fill="#59636e" font-size="12" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,sans-serif">deel</text>
   <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14">
     <text x="16.0" y="64" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮</text>
-    <text x="16.0" y="83" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ deel 1.8.0  ⌂ inside (default)  OpenAI-compatible API                                        │</text>
+    <text x="16.0" y="83" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ deel 1.9.0  ⌂ inside (default)  OpenAI-compatible API                                        │</text>
     <text x="16.0" y="102" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │                                                                                              │</text>
     <text x="16.0" y="121" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ model     qwen2.5-coder:7b  (128k tokens · class small guessed)                              │</text>
-    <text x="16.0" y="140" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ sends to  this machine 127.0.0.1:50547  ← and nowhere else                                   │</text>
+    <text x="16.0" y="140" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ sends to  this machine 127.0.0.1:61926  ← and nowhere else                                   │</text>
     <text x="16.0" y="159" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │           The ⌂ at the start of the status bar means this. It becomes ↗ when traffic leaves. │</text>
     <text x="16.0" y="178" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ link      no streaming · tools · no effort control                                           │</text>
     <text x="16.0" y="197" fill="#1f2328" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ folder    C:\work\myproject                                                                  │</text>
@@ -22,19 +22,18 @@
     <text x="16.0" y="330" fill="#1f2328" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> ❯ unify the logging style</text>
     <text x="16.0" y="368" fill="#1f2328" textLength="226.8" lengthAdjust="spacing" xml:space="preserve">  deciding·medium thinking…</text>
     <text x="16.0" y="387" fill="#1f2328" textLength="184.8" lengthAdjust="spacing" xml:space="preserve">  ❊ Grep(console\.log)</text>
-    <text x="16.0" y="406" fill="#1f2328" textLength="260.4" lengthAdjust="spacing" xml:space="preserve">    └ 1 file · 1 hit · rg  0.8s</text>
-    <text x="16.0" y="425" fill="#1f2328" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">  continuing·low thinking…</text>
-    <text x="16.0" y="444" fill="#1f2328" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  ◧ Read(src/runner.js)</text>
-    <text x="16.0" y="463" fill="#1f2328" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">    └ 5 lines</text>
-    <text x="16.0" y="482" fill="#1f2328" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">  continuing·low thinking…</text>
-    <text x="16.0" y="501" fill="#1f2328" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  ◈ Edit(src/runner.js)</text>
-    <text x="16.0" y="520" fill="#1f2328" textLength="151.2" lengthAdjust="spacing" xml:space="preserve">    └ 1 spot +1 −1</text>
-    <text x="16.0" y="539" fill="#1f2328" textLength="260.4" lengthAdjust="spacing" xml:space="preserve">      1 export function run() {</text>
-    <text x="16.0" y="558" fill="#1f2328" textLength="285.6" lengthAdjust="spacing" xml:space="preserve">    -     console.log('run start')</text>
-    <text x="16.0" y="577" fill="#1f2328" textLength="285.6" lengthAdjust="spacing" xml:space="preserve">    + 2   logger.info('run start')</text>
-    <text x="16.0" y="596" fill="#1f2328" textLength="151.2" lengthAdjust="spacing" xml:space="preserve">      3   return 0</text>
-    <text x="16.0" y="615" fill="#1f2328" textLength="75.6" lengthAdjust="spacing" xml:space="preserve">      4 }</text>
-    <text x="16.0" y="634" fill="#1f2328" textLength="856.8" lengthAdjust="spacing" xml:space="preserve">  continuing·low thinking…  ▌ Unified the log calls to the logger format. One change in src/runner.js.</text>
-    <text x="16.0" y="691" fill="#1f2328" textLength="277.2" lengthAdjust="spacing" xml:space="preserve">  ✓ src/runner.js · 4 lines · 64B</text>
+    <text x="16.0" y="406" fill="#1f2328" textLength="210.0" lengthAdjust="spacing" xml:space="preserve">    └ 1 file · 1 hit · rg</text>
+    <text x="16.0" y="425" fill="#1f2328" textLength="260.4" lengthAdjust="spacing" xml:space="preserve">  continuing·low thinking…/exit</text>
+    <text x="16.0" y="463" fill="#1f2328" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  ◧ Read(src/runner.js)</text>
+    <text x="16.0" y="482" fill="#1f2328" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">    └ 5 lines</text>
+    <text x="16.0" y="501" fill="#1f2328" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">  continuing·low thinking…</text>
+    <text x="16.0" y="520" fill="#1f2328" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  ◈ Edit(src/runner.js)</text>
+    <text x="16.0" y="539" fill="#1f2328" textLength="151.2" lengthAdjust="spacing" xml:space="preserve">    └ 1 spot +1 −1</text>
+    <text x="16.0" y="558" fill="#1f2328" textLength="260.4" lengthAdjust="spacing" xml:space="preserve">      1 export function run() {</text>
+    <text x="16.0" y="577" fill="#1f2328" textLength="285.6" lengthAdjust="spacing" xml:space="preserve">    -     console.log('run start')</text>
+    <text x="16.0" y="596" fill="#1f2328" textLength="285.6" lengthAdjust="spacing" xml:space="preserve">    + 2   logger.info('run start')</text>
+    <text x="16.0" y="615" fill="#1f2328" textLength="151.2" lengthAdjust="spacing" xml:space="preserve">      3   return 0</text>
+    <text x="16.0" y="634" fill="#1f2328" textLength="75.6" lengthAdjust="spacing" xml:space="preserve">      4 }</text>
+    <text x="16.0" y="653" fill="#1f2328" textLength="856.8" lengthAdjust="spacing" xml:space="preserve">  continuing·low thinking…  ▌ Unified the log calls to the logger format. One change in src/runner.js.</text>
   </g>
 </svg>
