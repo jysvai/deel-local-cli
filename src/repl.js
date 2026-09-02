@@ -1,6 +1,7 @@
 // 대화 화면. 루프가 보내는 이벤트를 Claude Code 풍으로 그린다.
 import { createInterface, emitKeypressEvents } from 'node:readline';
-import { 규칙모으기 } from './safety/policy.js';
+import { 규칙모으기, 정책읽기 } from './safety/policy.js';
+import { 받기설정 } from './safety/authcmd.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { homedir } from 'node:os';
 import { resolve, basename } from 'node:path';
@@ -33,7 +34,7 @@ import { 못박기 } from './agent/pins.js';
 import { 카드 } from './agent/card.js';
 import { 배움 } from './agent/evolve.js';
 import { 마크다운 } from './ui/md.js';
-import { askHidden } from './ui/prompt.js';
+import { askHidden, confirm } from './ui/prompt.js';
 import { explain, shows as levelShows } from './ui/level.js';
 import { 고르기 as 승인고르기, 다음 as 승인다음 } from './ui/approve.js';
 import { 추천, 채울글 } from './ui/complete.js';
@@ -185,6 +186,14 @@ export async function chatLoop(opts = {}) {
   const conn = {
     kind: prof.kind, base: prof.baseUrl, auth: prof.auth,
     key: resolveKey(prof), model: prof.model,
+    /*
+     * 열쇠를 갖고 있는 대신 **받아 오는** 설정 (safety/authcmd.js).
+     *
+     * 여기서는 설정만 싣는다. 명령은 요청 직전에 부른다 — 켤 때 한 번
+     * 받아 두면 한 시간짜리 토큰이 세 시간짜리 대화 한복판에서 죽고,
+     * 그 401 은 화면에서 「열쇠가 틀렸다」 와 구별이 안 된다.
+     */
+    열쇠받기: 받기설정(prof, { 정책값: 정책읽기().값 }),
     // 컨텍스트 길이. 순서가 곧 우선순위다 —
     //   deel --ctx 655360  >  프로필에 저장된 값  >  기본값
     // 기본값으로 떨어졌다는 것은 '아직 못 쟀다' 는 뜻이다. 아래에서 그렇다고 말해 준다.
@@ -269,6 +278,44 @@ export async function chatLoop(opts = {}) {
    */
   session.요금표 = cfg?.요금 ?? null;
   session.제공자 = prof?.제공자 ?? null;
+
+  /*
+   * ── 열쇠를 받아 오는 연결 (safety/authcmd.js) ───────────────────────
+   *
+   * 두 자리를 여기서 잇는다.
+   *
+   *   묻기 — 우리가 남이 적어 준 명령을 띄우려는 참이다. 한 번은 물어야
+   *          한다. 다만 **한 판에 한 번만** 묻는다 (authcmd 가 기억한다) —
+   *          한 시간짜리 토큰으로 세 시간 일하면 세 번 받아 오는데, 세 번
+   *          다 물으면 사람은 손이 가는 대로 누른다. 관리 정책이 준
+   *          명령은 아예 안 묻는다.
+   *   표시 — 사내 로그인은 브라우저를 열고 사람을 기다린다. 그동안 화면이
+   *          조용하면 사람은 멈춘 줄 안다. 무엇을 기다리는지 적는다.
+   */
+  if (conn.열쇠받기) {
+    session.열쇠물어보기 = async (설정) => {
+      say('');
+      say(`  ${mark.warn} ${c.gray('이 연결은 열쇠를 받아 옵니다. 아래 명령을 띄웁니다:')}`);
+      say(`  ${c.white(clip(설정.명령, 88))}`);
+      say(`  ${c.gray('받은 열쇠는 이 판이 도는 동안 메모리에만 있고, 파일로 안 적습니다.')}`);
+      const 예 = await confirm('  띄울까요?', true);
+      say('');
+      return 예;
+    };
+    session.onAuth = (것) => {
+      if (것?.type === '시작') return 화면.돌리기(옮긴말('auth.waiting'));
+      if (것?.type === '끝') return 화면.돌림멈춤('');
+      화면.돌림멈춤('');
+      if (것?.ok) {
+        const 초 = Math.max(0, Math.round((것.만료 - Date.now()) / 1000));
+        return say(`  ${mark.ok} ${c.gray(옮긴말('auth.got', { 분: Math.round(초 / 60) }))}`);
+      }
+      // 못 받았어도 대화를 안 끊는다. 원래 열쇠로 가 보고, 그것도 안 되면
+      // 서버가 한 말이 화면에 나온다. 여기서 끊으면 무엇이 문제인지 못 본다.
+      say(`  ${mark.warn} ${c.gray(옮긴말('auth.failed', { 왜: 것?.왜 ?? '?' }))}`);
+      if (것?.보인것) say(`    ${c.gray(clip(String(것.보인것), 88))}`);
+    };
+  }
 
   // ── 대화 이어하기 ─────────────────────────────────────────────────────
   // 껐다 켜도 이어지도록, 메시지가 오갈 때마다 .deel/sessions/ 에 바로 적는다.

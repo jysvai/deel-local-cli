@@ -47,6 +47,69 @@ not be read. A server that returns **nothing at all**, though, is a failed conne
 closed port or a down VPN "the list was blocked" sends people to debug the wrong thing. Azure does not report context length over the API, so set that yourself with `/ctx`
 or in the config.
 
+### Fetching the key instead of storing it
+
+Corporate gateways do not hand out a fixed key. They hand out a one-hour token, and only
+after a corporate login. So you copy one in the morning, see `HTTP 401` after lunch, and go
+get another. **That 401 does not tell you whether the key is wrong or merely old.**
+
+So you can write down *how to get a key* instead of the key itself.
+
+```json
+{
+  "profiles": [{
+    "id": "corp",
+    "baseUrl": "https://ai-gw.example.corp/v1",
+    "auth": "bearer",
+    "열쇠받기": {
+      "명령": "az account get-access-token --resource api://ai-gw --query accessToken -o tsv",
+      "수명": 3600
+    }
+  }]
+}
+```
+
+(The keys are Korean because the codebase is. `열쇠받기` is "fetch the key", `명령` is
+"command", `수명` is "lifetime in seconds".)
+
+The command must print one of two things:
+
+| Output | Example |
+|---|---|
+| A bare token, one line | `eyJhbGciOi…` |
+| JSON | `{"token": "eyJ…", "expires_at": 1700000000, "headers": {"X-Tenant": "acme"}}` |
+
+`expires_at` is a Unix timestamp (seconds or milliseconds, both accepted). Without it the
+`수명` value is used, and without that, 55 minutes. A new token is fetched a minute before
+expiry — a token that was alive when the request left and dead when it arrived is exactly
+what produces a 401.
+
+**Print the token and nothing else.** Output with a banner or a `Logged in as …` line is
+rejected, and the first line is shown back to you. Sending it whole gets a 400 from the
+gateway, which on screen is indistinguishable from a wrong key. Trim it with `--query`,
+`-o tsv`, or whatever your tool offers.
+
+The rules it holds to:
+
+| | |
+|---|---|
+| **You write the path** | Nothing is auto-detected. Looking for `az` on PATH and calling it would mean you no longer know when this program runs what |
+| **Separate process** | Never `import`ed. Code running inside our process would see other keys and the whole conversation |
+| **Asked once** | It is someone else's command, so you are asked before it runs — once per session, not once per fetch. Three prompts and people just press the key. A command supplied by admin policy is not asked about |
+| **Not while sealed** | Going out to a corporate login from a session locked with `--offline` would break the promise the lock makes |
+| **Not when there is nowhere to put it** | An `auth: "none"` connection has no header for a key. Fetching one would open a browser for nothing |
+| **Never written to disk** | The token lives in memory for the life of the session |
+| **Masked** | The token, any headers that came with it, and anything the command printed to stderr. Corporate login tools print tokens in error messages more often than you would like |
+
+On a 401 the key is fetched again and the call retried **once**. A second 401 means you
+genuinely lack access; retrying past that only re-opens the login prompt.
+
+Whether a key is held, and how long it has left, shows in the `Key store` row of `/status`.
+For these connections it says *fetched* rather than naming a store — we are not holding it.
+
+This is also something an organisation can set: the same block in the managed policy file
+overrides the user's config, and is never asked about (see "Managed policy" below).
+
 ### Always allow, never allow
 
 Three approval modes leave no middle. `npm test` runs twenty times a day and asks twenty times;

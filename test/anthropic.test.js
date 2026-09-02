@@ -489,8 +489,29 @@ trace('10-배선');
     && !/conn\.kind === 'anthropic'[\s\S]{0,900}?llama\.cpp \/props/.test(ctx));
 
   const ad = readFileSync(new URL('../src/backend/adapter.js', import.meta.url), 'utf8');
-  check('보낼 때 판 머리를 얹는 자리가 둘', (ad.match(/더할머리\(conn\.kind\)/g) ?? []).length === 2,
-    String((ad.match(/더할머리\(conn\.kind\)/g) ?? []).length));
+  /*
+   * ★ 보내는 길이 **전부** 판 머리를 지나간다.
+   *
+   * 여태 `더할머리(conn.kind)` 가 소스에 몇 번 적혀 있나로 셌다. 그 숫자는
+   * 코드 모양을 바꾸면 같이 흔들린다 — 실제로 한 번에 받기와 흘려 받기가
+   * 머리말짓기() 한 자리로 모이면서 두 개가 세 개가 됐고, 좋아진 것 때문에
+   * 검사가 빨개졌다.
+   *
+   * 지켜야 하는 것은 개수가 아니라 「보내는 길에 안 지나가는 자리가 없다」 다.
+   * 그래서 두 가지를 본다 — 보내는 자리는 머리말짓기() 만 쓰고(headersFor 를
+   * 직접 부르지 않고), 머리말짓기() 는 돌려주는 **모든** 자리에서 판 머리를
+   * 얹는다.
+   */
+  const 보내는자리 = [...ad.matchAll(/^\s*headers: (.+?),\s*$/gm)].map((m) => m[1].trim());
+  check('★ 보내는 길은 머리말짓기() 만 쓴다',
+    보내는자리.length >= 2 && 보내는자리.every((x) => x.startsWith('await 머리말짓기(')),
+    보내는자리.join(' / '));
+
+  const 짓기 = ad.match(/async function 머리말짓기[\s\S]*?^}/m)?.[0] ?? '';
+  const 돌려주는것 = [...짓기.matchAll(/return (headersFor\([\s\S]*?\));/g)].map((m) => m[1]);
+  check('★ 머리말짓기() 는 어느 길로 나가도 판 머리를 얹는다',
+    돌려주는것.length >= 3 && 돌려주는것.every((x) => x.includes('더할머리(conn.kind)')),
+    `${돌려주는것.length}갈래 · ${돌려주는것.filter((x) => !x.includes('더할머리')).length}개 빠짐`);
 }
 
 trace('11-끝');

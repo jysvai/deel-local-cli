@@ -11,7 +11,8 @@
 //   그래서 '묻는 자리' 를 전부 없앤 길을 따로 낸다. 에이전트 루프는 그대로 쓴다 —
 //   여기서 루프를 다시 짜면 두 벌이 되고, 언젠가 한쪽만 고쳐진다.
 import { c, mark, clip } from './ui/ansi.js';
-import { 규칙모으기 } from './safety/policy.js';
+import { 규칙모으기, 정책읽기 } from './safety/policy.js';
+import { 받기설정 } from './safety/authcmd.js';
 import { run } from './agent/loop.js';
 import { Session } from './agent/session.js';
 import { makeScope } from './safety/guard.js';
@@ -154,6 +155,14 @@ export async function runOnce(opts = {}) {
   const conn = {
     kind: prof.kind, base: prof.baseUrl, auth: prof.auth,
     key: resolveKey(prof), model: prof.model,
+    /*
+     * 열쇠를 갖고 있는 대신 **받아 오는** 설정 (safety/authcmd.js).
+     *
+     * 여기서는 설정만 싣는다. 명령은 요청 직전에 부른다 — 켤 때 한 번
+     * 받아 두면 한 시간짜리 토큰이 세 시간짜리 대화 한복판에서 죽고,
+     * 그 401 은 화면에서 「열쇠가 틀렸다」 와 구별이 안 된다.
+     */
+    열쇠받기: 받기설정(prof, { 정책값: 정책읽기().값 }),
     ctx: opts.ctx ?? prof.ctx ?? CTX_DEFAULT,
     // 답 길이 상한 — deel --max-tokens 32k 로 높일 수 있다(대화 화면의 /out 과 같은 값).
     maxTokens: opts.maxTokens ?? prof.maxTokens ?? null,

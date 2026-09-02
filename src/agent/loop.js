@@ -532,6 +532,16 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       think: thinkFor(conn, think),
       maxTokens,
       signal,
+      /*
+       * 열쇠받기(safety/authcmd.js)가 걸린 연결에서 쓴다.
+       *
+       * 두 갈래를 위층으로 올린다 — 「부를까요」 를 사람에게 묻는 길과,
+       * 「지금 사내 로그인을 기다리는 중」 을 화면에 적는 길. 여기서 화면을
+       * 직접 만지지 않는 것은, 이 루프가 대화 화면 말고 oneshot·ACP 에서도
+       * 돌기 때문이다. 그쪽에는 물어볼 사람이 없다.
+       */
+      열쇠물어보기: session.열쇠물어보기 ?? null,
+      onAuth: (것) => { session.onAuth?.(것); },
     });
 
     let msg;

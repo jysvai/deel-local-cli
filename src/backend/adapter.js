@@ -2,6 +2,7 @@
 // 진단(probe)과 에이전트 루프가 같은 함수를 쓴다.
 import { req, headersFor, serverMessage, Aborted } from './http.js';
 import { 할당량기억 } from './quota.js';
+import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
 import { 말 } from '../i18n/index.js';
 import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
 
@@ -302,14 +303,61 @@ export function toolMessage(shape, { callId, name, content }) {
     : { role: 'tool', tool_call_id: callId, content: String(content) };
 }
 
+/*
+ * 이번 요청에 실을 머리말.
+ *
+ * 열쇠받기가 걸려 있으면 여기서 받아 온다. 요청 **직전**에 받는 것이
+ * 중요하다 — 판을 켤 때 한 번 받아 두면 세 시간짜리 대화의 두 시간째에
+ * 죽어 있고, 그 401 은 「열쇠가 틀렸다」 와 화면에서 구별이 안 된다.
+ *
+ * 못 받으면 **던지지 않는다.** 원래 열쇠(있으면)로 그냥 간다. 여기서
+ * 막아 버리면 열쇠받기 설정 한 줄이 잘못된 것으로 멀쩡히 붙던 연결까지
+ * 안 붙는다. 못 받았다는 것은 부르는 쪽이 onAuth 로 듣고 화면에 적는다.
+ */
+async function 머리말짓기(conn, opts, { 다시 = false } = {}) {
+  const 설정 = conn.열쇠받기 ?? null;
+  const 판단 = 쓸수있나(설정, { auth: conn.auth });
+  if (!설정 || !판단.된다) {
+    if (설정 && 판단.왜) opts.onAuth?.({ ok: false, 왜: 판단.왜, 안부름: true });
+    return headersFor(conn.auth, conn.key ?? '', 더할머리(conn.kind));
+  }
+  const r = await 열쇠받아오기(설정, {
+    다시, signal: opts.signal ?? null,
+    물어보기: opts.열쇠물어보기 ?? null,
+    알림: opts.onAuth ? (것) => opts.onAuth(것) : null,
+  });
+  if (!r.ok) {
+    opts.onAuth?.({ ...r, ok: false });
+    return headersFor(conn.auth, conn.key ?? '', 더할머리(conn.kind));
+  }
+  if (!r.그대로) opts.onAuth?.({ ok: true, 만료: r.만료, ms: r.ms });
+  return headersFor(conn.auth, r.token, { ...더할머리(conn.kind), ...r.headers });
+}
+
+/*
+ * 401 을 맞았을 때 열쇠를 새로 받고 한 번만 다시 부를까.
+ *
+ * retry.js 는 401 을 안 다시 부른다 — 열쇠가 틀린 것은 백 번 불러도
+ * 같기 때문이다. 그 말은 지금도 맞다. 다른 것은 **열쇠를 바꿀 수 있을
+ * 때**뿐이다. 그때는 같은 열쇠로 다시 부르는 것이 아니라 새 열쇠로
+ * 부르는 것이라, 「불러 봐야 같다」 에 해당하지 않는다.
+ *
+ * 한 번만이다. 두 번째 401 은 진짜로 권한이 없는 것이고, 그때 더 부르면
+ * 로그인 명령만 되풀이해서 띄우게 된다.
+ */
+function 열쇠다시받을까(conn, status, 이미) {
+  return !이미 && Number(status) === 401 && !!conn.열쇠받기;
+}
+
 // 한 번에 받기.
 export async function chat(conn, opts) {
   const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts });
   const 정책 = 정책고르기(conn, opts);
+  let 열쇠다시받음 = false;
   for (let 시도 = 1; ; 시도++) {
     const r = await req(요청주소(conn), {
       method: 'POST',
-      headers: headersFor(conn.auth, conn.key ?? '', 더할머리(conn.kind)),
+      headers: await 머리말짓기(conn, opts),
       body,
       timeout: opts.timeout ?? 300000,
       signal: opts.signal ?? null,
@@ -318,6 +366,14 @@ export async function chat(conn, opts) {
     // 429 를 맞고 나서야 아는 것과, 맞기 전에 아는 것은 사람이 할 일이 다르다.
     할당량기억(r.headers);
     if (r.ok) return extractMessage(conn.kind, r.json);
+    // 열쇠가 늙어서 막힌 것이면 새로 받고 한 번만 다시. 시도 수는 안 올린다 —
+    // 서버가 막은 것이 아니라 우리 열쇠가 낡았던 것이라 물러설 까닭이 없다.
+    if (열쇠다시받을까(conn, r.status, 열쇠다시받음)) {
+      열쇠다시받음 = true;
+      await 머리말짓기(conn, opts, { 다시: true });
+      시도 -= 1;
+      continue;
+    }
     // 잠깐 막힌 것이면 기다렸다 다시 부른다 (backend/retry.js 머리말).
     // 한 번에 받는 길은 제너레이터가 아니라 화면에 말을 못 걸어서, 부르는 쪽이
     // 준 onBackoff 로 알린다. 안 줬으면 조용히 기다린다.
@@ -380,10 +436,11 @@ export async function* chatStream(conn, opts) {
   const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts, stream: true });
   const 정책 = 정책고르기(conn, opts);
   let r;
+  let 열쇠다시받음 = false;
   for (let 시도 = 1; ; 시도++) {
     r = await req(요청주소(conn), {
       method: 'POST',
-      headers: headersFor(conn.auth, conn.key ?? '', 더할머리(conn.kind)),
+      headers: await 머리말짓기(conn, opts),
       body,
       timeout: opts.timeout ?? 300000,
       stream: true,
@@ -392,6 +449,14 @@ export async function* chatStream(conn, opts) {
     할당량기억(r.headers ?? r.res?.headers);
     if (r.ok && r.res?.body) break;
     const 거절 = await 거절읽기(r);
+    // 위 chat() 과 같은 규칙. 몸을 먼저 읽고(거절읽기) 나서 다시 부른다 —
+    // 안 읽은 몸을 두고 다음 요청을 보내면 연결이 남는다.
+    if (열쇠다시받을까(conn, 거절.status, 열쇠다시받음)) {
+      열쇠다시받음 = true;
+      await 머리말짓기(conn, opts, { 다시: true });
+      시도 -= 1;
+      continue;
+    }
     // 잠깐 막힌 것이면 알리고, 기다렸다, 다시 부른다. 머리말도 못 받은 자리라
     // 화면에 흘러간 글이 없다 — 그래서 여기서만 다시 부르고, 아래 읽기 도중에
     // 끊긴 것은 다시 안 부른다 (backend/retry.js 머리말).

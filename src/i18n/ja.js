@@ -399,6 +399,14 @@ export const ja = {
   'ctx.calibrated': 'サーバーの実測値に合わせて {부호}{퍼센트}% 補正しました ({번}回計測)。',
   'ctx.estimate': '数字は推定です — 正確なトークナイザーは使っていません。',
 
+  'auth.waiting': '社内ログインを待っています…',
+  'auth.got': '鍵を受け取りました — 約{분}分使えます',
+  'auth.failed': '鍵を受け取れませんでした — {왜}',
+  'auth.from': '取得',
+  'auth.fromPolicy': '取得（管理ポリシー）',
+  'auth.leftMin': '残り{분}分',
+  'auth.notYet': 'まだ取得していません',
+
   'undo.wayRestored': '戻しました',
   'undo.wayDeleted': '削除（元々なかったファイル）',
 

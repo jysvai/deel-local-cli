@@ -445,6 +445,15 @@ export const en = {
   'ctx.calibrated': 'Adjusted by {부호}{퍼센트}% against what the server reported ({번} samples).',
   'ctx.estimate': 'These are estimates — no exact tokenizer is used.',
 
+  // ── Fetching the key (safety/authcmd.js) ──────────────────────────────
+  'auth.waiting': 'waiting for your corporate login…',
+  'auth.got': 'Got a key — good for about {분} min',
+  'auth.failed': 'Could not get a key — {왜}',
+  'auth.from': 'fetched',
+  'auth.fromPolicy': 'fetched (admin policy)',
+  'auth.leftMin': '{분} min left',
+  'auth.notYet': 'not fetched yet',
+
   // ── Undo result lines ─────────────────────────────────────────────────
   'undo.wayRestored': 'restored',
   'undo.wayDeleted': 'deleted (did not exist before)',

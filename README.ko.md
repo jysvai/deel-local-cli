@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-5%2C825%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-5%2C899%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -60,6 +60,7 @@
 - [빠른 시작](#빠른-시작)
 - [데이터가 나가는 길](#데이터가-나가는-길)
 - [바깥 API 붙이기](#바깥-api-붙이기)
+- [만료되는 열쇠 (사내 게이트웨이)](#만료되는-열쇠-사내-게이트웨이)
 - [로컬 모델 여러 개 쓰기](#로컬-모델-여러-개-쓰기)
 - [대화 중 명령](#대화-중-명령)
 - [작업 모드](#작업-모드)
@@ -266,7 +267,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 1.7.0  ⌂ 이 안
+ deel 1.8.0  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -360,6 +361,43 @@ Claude 는 몸통 규격이 달라서 여섯 자리를 따로 흡수했습니다
 금액 옆에 **어디서 온 값인지·언제 기준인지**가 같이 뜨고, 반년이 지나면
 `· 오래됨` 이 붙습니다. 모르면 안 찍습니다 — 로컬로만 쓰는 화면에는 돈 이야기가
 아예 안 뜹니다.
+
+---
+
+## 만료되는 열쇠 (사내 게이트웨이)
+
+사내 게이트웨이는 고정된 열쇠를 안 줍니다. 사내 로그인 뒤에 나오는 한 시간짜리
+토큰을 줍니다. 아침에 붙여 넣으면 점심까지는 되고, 그 다음에는 `HTTP 401` 입니다 —
+그 메시지는 **「열쇠가 틀렸다」 와 「열쇠가 늙었다」 를 구별해 주지 않습니다.**
+그래서 사람은 멀쩡한 열쇠를 다시 발급받으러 갑니다.
+
+열쇠 대신 **열쇠를 얻는 방법**을 적으세요.
+
+```json
+"열쇠받기": {
+  "명령": "az account get-access-token --resource api://ai-gw --query accessToken -o tsv",
+  "수명": 3600
+}
+```
+
+요청 직전에 부르고, 받은 것은 메모리에만 두고, 만료 1분 전부터 미리 새로 받습니다 —
+보내는 순간에 살아 있던 토큰이 게이트웨이에 닿을 때 죽어 있으면 그게 바로 그
+401 이기 때문입니다. 401 을 맞으면 새로 받아 **한 번만** 다시 부릅니다. 두 번째
+401 은 진짜로 권한이 없는 것입니다.
+
+| | |
+|---|---|
+| 경로는 직접 적습니다 | 찾아 주지 않습니다. `az` 가 PATH 에 있나 보고 알아서 부르면, 이 프로그램이 언제 무엇을 실행할지 모르게 됩니다 |
+| 딴 프로세스로 띄웁니다 | `import` 하지 않습니다 — 우리 프로세스 안에서 돌면 그 코드가 다른 열쇠와 대화를 봅니다 |
+| 한 판에 한 번 묻습니다 | 받을 때마다가 아닙니다. 세 번 물으면 사람은 손이 가는 대로 누릅니다 |
+| 봉인이면 안 부릅니다 | `--offline` 로 잠근 판은 로그인 포털에 안 나갑니다 |
+| 파일에 안 적습니다 | 이 판이 도는 동안 메모리에만 있습니다 |
+| 배너가 섞이면 거절합니다 | 「Logged in as …」 다음 줄에 토큰이 오는 출력을 통째로 실으면 게이트웨이는 400 을 주고, 화면에서는 열쇠가 틀린 것과 구별이 안 됩니다. 첫 줄을 보여 주므로 `--query` 를 붙일 줄 알게 됩니다 |
+
+`/status` 에는 `열쇠 보관  받아 옴 · 52분 남음` 이라고 나옵니다. 보관이라고 안 적는
+까닭은 우리가 그 열쇠를 갖고 있지 않기 때문입니다. 회사가
+[관리 정책](docs/ko/config.md) 파일에 같은 모양으로 적으면 개인 설정을 이기고,
+그때는 묻지 않습니다.
 
 ---
 
@@ -1048,7 +1086,7 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (5,825항목)
+npm test          전체 검증 (5,890항목 안팎 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -1113,7 +1151,8 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[1.7.0](docs/ko/releases/1.7.md#170)** | 로컬은 그대로 두고, 말했을 때만 바깥으로 — 모드 셋 · 벤더 붙이기 · 자동 마스킹 · 돈 표시 |
+| **[1.8.0](docs/ko/releases/1.8.md#180)** | 한 시간짜리 토큰을 쓰는 사내 게이트웨이에서 하루를 — 열쇠를 받아 오기 · `deel reset` · 영어 화면이 진짜 영어 |
+| [1.7.0](docs/ko/releases/1.7.md#170) | 로컬은 그대로 두고, 말했을 때만 바깥으로 — 모드 셋 · 벤더 붙이기 · 자동 마스킹 · 돈 표시 |
 | [1.6.3](docs/ko/releases/1.6.md#163) | 일이 되고 있는데 헛돈다고 끊던 자리 — 배열로 옮기면 무엇이 움직였는지가 사라졌다 |
 | **[1.6.2](docs/ko/releases/1.6.md#162)** | 누르면 멈추고, 시킨 대로 하고, 안 끊긴다 — ESC · 되묻기 · 요청 누락 · 붙여넣기 접기 · 끊긴 자리 잇기 |
 | **[1.6.1](docs/ko/releases/1.6.md#161)** | 헛도는 턴을 만들던 자리들 — 울타리가 `/dev/null` 까지 막던 것 · 옷 문서를 못 읽던 것 · 파일에서 그림이 사라지던 것 |

@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-5%2C825%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-5%2C899%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -83,6 +83,7 @@ No account, no sign-up, no telemetry. If you already run Ollama or LM Studio,
 - [Quick start](#quick-start)
 - [Where your data can go](#where-your-data-can-go)
 - [Connecting a vendor API](#connecting-a-vendor-api)
+- [Keys that expire (corporate gateways)](#keys-that-expire-corporate-gateways)
 - [Multiple local runtimes](#multiple-local-runtimes)
 - [Slash commands](#slash-commands)
 - [Work modes](#work-modes)
@@ -334,7 +335,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.7.0  ⌂ inside
+ deel 1.8.0  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -431,6 +432,42 @@ million tokens:
 The amount is shown with **where it came from and as of when**, and after six
 months it is marked stale. Unknown means nothing is printed — a local-only
 session never sees money at all.
+
+---
+
+## Keys that expire (corporate gateways)
+
+Corporate gateways do not hand out a fixed key. They hand out a one-hour token, behind a
+corporate login. Pasting one in works until lunch, and then you get `HTTP 401` — a message
+that **does not distinguish "wrong key" from "old key."** People go re-issue a key that was
+never the problem.
+
+So write down *how to get a key* instead of the key:
+
+```json
+"열쇠받기": {
+  "명령": "az account get-access-token --resource api://ai-gw --query accessToken -o tsv",
+  "수명": 3600
+}
+```
+
+It runs right before a request, keeps the result in memory only, and fetches a fresh one a
+minute before expiry — a token alive when the request left and dead when it arrived is
+exactly that 401. On a 401 it fetches once more and retries **once**; a second 401 means you
+genuinely lack access.
+
+| | |
+|---|---|
+| You write the path | Nothing is auto-detected. Guessing at `az` on your PATH would mean you no longer know when this program runs what |
+| Separate process | Never `import`ed — code inside our process would see other keys and the conversation |
+| Asked once per session | Not once per fetch. Three prompts and people just press the key |
+| Not while sealed | An `--offline` session does not go out to a login portal |
+| Never written to disk | Memory only, for the life of the session |
+| Banner output rejected | `Logged in as …` followed by a token gets a 400 from the gateway, indistinguishable on screen from a wrong key. The first line is shown back so you know to add `--query` |
+
+`/status` says `Key store  fetched · 52 min left` — not "stored", because we are not holding
+it. An organisation can set the same block in the [managed policy](docs/en/config.md) file,
+where it overrides the user's config and is never asked about.
 
 ---
 
@@ -1114,7 +1151,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (5,825 checks)
+npm test          Full suite (~5,890 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1166,7 +1203,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[1.7.0](docs/en/releases/1.7.md#170)** | Local stays local; it goes out only when you say so — three modes · vendor setup · automatic masking · cost |
+| **[1.8.0](docs/en/releases/1.8.md#180)** | A full day against a gateway that hands out one-hour tokens — fetch the key instead of storing it · `deel reset` · an English screen that is actually English |
+| [1.7.0](docs/en/releases/1.7.md#170) | Local stays local; it goes out only when you say so — three modes · vendor setup · automatic masking · cost |
 | [1.6.1](docs/en/releases/1.6.md#161) | The places that made a turn spin in circles — the fence blocking `/dev/null` · old documents it could not read · images vanishing from files |
 | **[1.6.0](docs/en/releases/1.6.md#160)** | The things that did not work on a corporate network — proxy · 429 · Windows shell · 50k-file repos · PDF · clipboard paste · editor resume |
 | **[1.5.8](docs/en/releases/1.5.md#158)** | A 5MB document showed 8 lines out of 919 · a regex read as a path blocked the command |

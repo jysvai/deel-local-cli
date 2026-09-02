@@ -399,6 +399,14 @@ export const zh = {
   'ctx.calibrated': '已按服务器实测值校正 {부호}{퍼센트}%（采样{번}次）。',
   'ctx.estimate': '数字为估算 — 没有使用精确的分词器。',
 
+  'auth.waiting': '正在等待公司登录…',
+  'auth.got': '已取得密钥 — 大约可用{분}分钟',
+  'auth.failed': '没能取得密钥 — {왜}',
+  'auth.from': '取得',
+  'auth.fromPolicy': '取得（管理策略）',
+  'auth.leftMin': '剩余{분}分钟',
+  'auth.notYet': '尚未取得',
+
   'undo.wayRestored': '已还原',
   'undo.wayDeleted': '已删除（原本不存在的文件）',
 

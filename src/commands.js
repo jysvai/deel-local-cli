@@ -13,6 +13,7 @@ import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js
 import { 주소가리기 } from './safety/secrets.js';
 import { pick, confirm } from './ui/prompt.js';
 import { load, save, resolveKey, upsert, 열쇠보관, configPath } from './config.js';
+import { 지금상태 as 지금열쇠상태 } from './safety/authcmd.js';
 import { 제공자고르기 } from './providers/index.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
 import { 말, 언어, 언어들, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
@@ -951,7 +952,24 @@ export async function handle(line, session, ctx) {
       say(`  ${c.gray(pad(말('status.shell'), 10))} ${정한셸().표시}`);
       // 열쇠를 어디에 두고 있나. 사내 심사에서 제일 먼저 묻는 것이라
       // 「어딘가 잠겨 있겠지」 로 두지 않고 지금 상태를 그대로 적는다.
-      if (k.auth !== 'none') say(`  ${c.gray(pad(말('status.keyStore'), 10))} ${열쇠보관(load())}`);
+      /*
+       * 열쇠를 어디에 두고 있나 — 또는 **어디서 받아 오나.**
+       *
+       * 받아 오는 연결에서는 「보관」 을 적으면 거짓말이 된다. 우리는 그
+       * 열쇠를 갖고 있지 않다. 사내 심사에서 제일 먼저 묻는 자리라
+       * 있는 그대로 적는다 (safety/authcmd.js).
+       */
+      if (session.conn.열쇠받기) {
+        const 상태 = 지금열쇠상태();
+        const 남은말 = 상태
+          ? 말('auth.leftMin', { 분: Math.round(상태.남은초 / 60) })
+          : 말('auth.notYet');
+        say(`  ${c.gray(pad(말('status.keyStore'), 10))} `
+          + `${말(session.conn.열쇠받기.곳 === '정책' ? 'auth.fromPolicy' : 'auth.from')} ${c.gray(`· ${남은말}`)}`);
+        say(`  ${c.gray(pad('', 10))} ${c.gray(clip(session.conn.열쇠받기.명령, 56))}`);
+      } else if (k.auth !== 'none') {
+        say(`  ${c.gray(pad(말('status.keyStore'), 10))} ${열쇠보관(load())}`);
+      }
       say(`  ${c.gray(pad(말('status.rules'), 10))} ${session.rules ? session.rules.name : 말('status.noRules')}`);
       const caps = [
         k.tools ? c.green(말('status.capTools')) : c.red(말('status.capTools')),

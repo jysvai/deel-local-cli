@@ -61,6 +61,7 @@ const FILES = [
   'resize.test.js',
   'promptlang.test.js',
   'langleak.test.js',
+  'authcmd.test.js',
   'paste.test.js',
   'pastechip.test.js',
   'histline.test.js',
