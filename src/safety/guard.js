@@ -193,9 +193,15 @@ export function checkCommand(cmd) {
  */
 export function checkPaths(cmd, scope) {
   if (!scope) return true;
+  // 폴더를 옮기고 나면 뒤 낱말은 전부 맨 이름이라 아래 검사에 안 걸린다.
+  // 그래서 옮기는 것부터 먼저 본다 (폴더옮김검사 머리말).
+  const 옮긴자리 = 폴더옮김검사(String(cmd), scope);
   for (const t of 경로낱말(String(cmd))) {
     // 자료가 아닌 자리는 울타리를 안 묻는다 (봐주는자리 머리말).
     if (봐주는자리(t)) continue;
+    // cd 가 가리킨 자리는 위에서 **옮겨 간 자리 기준**으로 이미 봤다. 여기서
+    // 또 보면 뿌리 기준으로 풀려서 `cd src/a && cd ../..` 가 밖으로 읽힌다.
+    if (옮긴자리.has(t)) continue;
     let abs;
     try { abs = scope.resolve(t); }
     catch (e) {
@@ -367,6 +373,143 @@ export function 경로낱말(cmd) {
     out.push(풀린);
   }
   return out;
+}
+
+/*
+ * ── 폴더를 옮기면 그 뒤로는 볼 글자가 없다 ─────────────────────────────
+ *
+ * 위 경로낱말() 은 **경로처럼 생긴 것**만 고른다 — 빗금이 있거나 드라이브로
+ * 시작하는 것. 그래서 `cd .deel` 다음에 오는 `config.json` 은 낱말 후보로도
+ * 안 뽑혔고, 아무 검사도 안 받았다. 화면에서는 이랬다 —
+ *
+ *   ▶ Bash(type .deel\config.json)      └ 막힘 (열쇠가 든 파일입니다)
+ *   ▶ Bash(cd .deel && type config.json)  └ 그냥 읽혔다
+ *
+ * 같은 파일인데 한 줄은 막고 한 줄은 통과다. 그러면 잠근 뜻이 없을 뿐 아니라
+ * 더 나쁘다 — 시스템 프롬프트와 화면은 「막혀 있다」 고 말하는데 사실이
+ * 아니게 된다. 그 말이 거짓이 되면 모델은 그 말을 안 믿고, 사용자는 울타리가
+ * 있다고 믿는다. (checkPaths 머리말에 적어 둔 것과 같은 까닭이다.)
+ *
+ * 그래서 **들어가는 것 자체**를 위반으로 본다. 들어간 뒤에는 우리가 볼 수
+ * 있는 글자가 남지 않아서, 거기서 막을 방법이 아예 없기 때문이다.
+ *
+ * 여기서도 넓히지 않는다 — 안에서 도는 cd 는 전부 그대로 돈다. 모델이 하는
+ * 일의 절반이 `cd 하위폴더 && 무엇` 이라, 그걸 막으면 도구를 못 쓴다.
+ */
+const 폴더옮김 = /^(cd|chdir|pushd|sl|set-location|push-location)$/i;
+const 되돌리기 = /^(popd|pop-location)$/i;
+/** 셸을 한 겹 씌워 부르는 것들. 안 들여다보면 `sh -c "cd .deel …"` 로 그냥 지나간다. */
+const 셸꼴 = /^(?:.*[/\\])?(bash|sh|zsh|dash|ksh|fish|cmd|powershell|pwsh)(\.exe)?$/i;
+
+/** 명령을 실행 단위로 자른다. 따옴표 안의 `;` 는 글자지 이음매가 아니다. */
+function 마디들(cmd) {
+  const 마디 = [];
+  let 지금 = '';
+  let 따옴 = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+    if (따옴) { 지금 += c; if (c === 따옴) 따옴 = null; continue; }
+    if (c === '"' || c === "'") { 따옴 = c; 지금 += c; continue; }
+    if (c === '\n' || c === ';') { 마디.push(지금); 지금 = ''; continue; }
+    if (c === '&' || c === '|') {
+      마디.push(지금); 지금 = '';
+      if (cmd[i + 1] === c) i++;          // && · ||
+      continue;
+    }
+    지금 += c;
+  }
+  마디.push(지금);
+  return 마디;
+}
+
+/** 한 마디를 낱말로. 따옴표는 벗기되, 벗겼다는 것은 남긴다(셸 한 겹을 알아보려고). */
+function 낱말들(마디) {
+  const out = [];
+  const re = /"([^"]*)"|'([^']*)'|[^\s]+/g;
+  let m;
+  while ((m = re.exec(마디))) {
+    const 안 = m[1] ?? m[2];
+    out.push({ 글: 안 ?? m[0], 쌌나: 안 != null });
+  }
+  return out;
+}
+
+/**
+ * cd 가 어디로 가라는 것인가. 모르면 null — 모르는 것을 막으면 안 된다.
+ *
+ * 옵션은 건너뛴다: 파워셸의 `-Path`·`-LiteralPath`, 윈도우 cmd 의 `/d`.
+ * `/d` 만 콕 집어 본다 — `/etc` 도 빗금으로 시작하지만 그건 진짜 갈 자리다.
+ */
+function 갈자리(뒤) {
+  for (const w of 뒤) {
+    if (!w.글) continue;
+    if (w.글.startsWith('-')) continue;
+    if (/^\/d$/i.test(w.글)) continue;
+    return w.글;
+  }
+  return null;
+}
+
+/**
+ * 폴더를 옮기는 명령을 따라가며, 옮겨 간 자리가 울타리 안인지 본다.
+ *
+ * @returns {Set<string>} 여기서 이미 본 cd 목적지들. 부르는 쪽은 이걸 두 번
+ *   보지 않는다 — 뿌리 기준으로 다시 풀면 `cd src/a && cd ../..` 가 밖이 된다.
+ */
+function 폴더옮김검사(cmd, scope, 시작 = null, 깊이 = 0, 본것 = new Set()) {
+  let 여기 = 시작 ?? scope.root;
+  const 쌓은것 = [];
+  for (const 마디 of 마디들(cmd)) {
+    const 낱말 = 낱말들(마디);
+    if (!낱말.length) continue;
+    const 첫 = 낱말[0].글;
+
+    // 셸을 한 겹 씌운 것은 안을 들여다본다. 그 안의 cd 는 딴 살림이라
+    // (하위 셸이다) 우리 자리는 안 바뀐다 — 결과만 받고 여기는 그대로 둔다.
+    if (깊이 < 2 && 셸꼴.test(첫)) {
+      for (const w of 낱말.slice(1)) if (w.쌌나) 폴더옮김검사(w.글, scope, 여기, 깊이 + 1, 본것);
+      continue;
+    }
+    if (되돌리기.test(첫)) { 여기 = 쌓은것.pop() ?? 여기; continue; }
+    if (!폴더옮김.test(첫)) continue;
+
+    const 목적 = 갈자리(낱말.slice(1));
+    // 인자 없는 cd(집으로) · `cd -`(직전 자리) 는 어디로 가는지 여기서 모른다.
+    // 모르는 것을 막으면 멀쩡한 명령이 죽는다.
+    if (목적 == null || 목적 === '-') continue;
+    const 풀린 = 자리표풀기(목적);
+    // 못 푼 자리표가 남아 있으면(`$BUILD_DIR`) 역시 어디로 갈지 모른다.
+    if (/[$%]/.test(풀린)) continue;
+
+    const 열린 = MSYS풀기(풀린);
+    const abs = isAbsolute(열린) ? resolve(열린) : resolve(여기, 열린);
+    본것.add(풀린);
+
+    // 프로그램이 있는 자리로 들어가는 것은 자료를 만지는 일이 아니다.
+    // 푼 값이 아니라 **적힌 글자**로 본다 — 윈도우에서 resolve('/usr/bin') 은
+    // `C:\usr\bin` 이 되어 목록에 안 걸린다 (checkPaths 도 낱말로 본다).
+    if (봐주는자리(풀린)) { 여기 = abs; continue; }
+    try { scope.resolve(abs); }
+    catch (e) {
+      if (e instanceof ScopeError) {
+        throw new ScopeError(`${e.message}\n  이 명령 안에 있습니다: ${cmd.slice(0, 120)}`);
+      }
+      throw e;
+    }
+    // `.deel` 폴더 자신은 내부살림() 이 안 잡는다 — 그건 그 **안의 파일**을
+    // 보는 검사다. 여기서는 폴더에 발을 들이는 것이 곧 위반이다.
+    const 조각 = abs.replace(/\\/g, '/').split('/');
+    const 이유 = 조각.includes('.deel')
+      ? 'deel 자신의 살림 폴더입니다. 그 안에 게이트웨이 열쇠가 든 config.json 이 있어'
+        + ' 들어가지 않습니다 — 들어가면 뒤 명령이 맨 이름만으로 그 파일에 닿습니다.'
+        + ' 연결 상태가 궁금하면 사용자에게 /status 를 쳐 보라고 하세요.'
+      : 내부살림(abs);
+    if (이유) throw new BlockedError(`${이유}\n  이 명령 안에 있습니다: ${cmd.slice(0, 120)}`);
+
+    if (/^(pushd|push-location)$/i.test(첫)) 쌓은것.push(여기);
+    여기 = abs;
+  }
+  return 본것;
 }
 
 /**

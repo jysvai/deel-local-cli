@@ -430,6 +430,94 @@ trace('5b-Bash로우회');
   }
 }
 
+trace('5c-cd로우회');
+
+/*
+ * ── cd 한 줄이면 위 울타리가 통째로 없는 것이 된다 ─────────────────────
+ *
+ * 바로 위 검사는 `type .deel\config.json` 을 막는다. 그런데 `cd .deel` 을
+ * 먼저 하고 나면 뒤에 오는 것은 전부 **맨 이름**이다. `config.json` 에는
+ * 빗금이 없으니 경로낱말() 이 낱말 후보로도 안 뽑고, 그래서 아무 검사도
+ * 안 받았다. 실제로 이 네 줄이 전부 그냥 지나갔다 —
+ *
+ *   cd .deel && type config.json
+ *   cd .deel; cat config.json
+ *   cd .deel && del audit.jsonl
+ *   cd .deel ⏎ type config.json
+ *
+ * 앞 문은 잠그고 옆 문은 열어 두면 잠근 뜻이 없다. 게다가 더 나쁘다 —
+ * 사용자와 시스템 프롬프트는 「막혀 있다」 고 믿는데 실제로는 안 막혀 있다.
+ *
+ * 그래서 **들어가는 것 자체**를 위반으로 본다. 들어가고 난 뒤에는 우리가
+ * 볼 수 있는 글자가 남지 않기 때문에, 거기서 막을 방법이 아예 없다.
+ */
+{
+  const { ctx } = 새것();
+  const 막히나 = (cmd) => {
+    try { checkPaths(cmd, ctx.scope); return null; }
+    catch (e) { return e.message; }
+  };
+
+  const 넘어갔던것 = [
+    ['&& 로 이어 붙인 것', 'cd .deel && type config.json'],
+    ['; 로 이어 붙인 것', 'cd .deel; cat config.json'],
+    ['들어가서 지우는 것', 'cd .deel && del audit.jsonl'],
+    ['줄을 바꿔 적은 것', 'cd .deel\ntype config.json'],
+    ['빗금을 붙인 것', 'cd .deel/ && cat config.json'],
+    ['pushd 도 같은 일을 한다', 'pushd .deel && type config.json'],
+    ['파워셸 꼴', 'Set-Location .deel; Get-Content config.json'],
+    ['셸을 한 겹 씌운 것', 'bash -c "cd .deel && cat config.json"'],
+    ['남의 도구 살림으로 들어가는 것', 'cd .codex && cat history.jsonl'],
+  ];
+  for (const [뭐, cmd] of 넘어갔던것) {
+    check(`★ cd 로는 못 넘어간다 (${뭐})`, 막히나(cmd) !== null, 막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
+  }
+  check('★ 왜 막혔는지에 열쇠 이야기가 있다', /열쇠/.test(막히나('cd .deel && type config.json') ?? ''),
+    막히나('cd .deel && type config.json')?.split('\n')[0] ?? '');
+
+  // 밖으로 나가는 cd 도 같은 무게다. 나가고 나면 뒤 낱말은 다 맨 이름이다.
+  const 나가는것 = [
+    ['위로 올라가기', 'cd .. && cat 비밀.txt'],
+    ['남의 폴더', 'cd /etc && cat passwd'],
+    ['집 폴더', 'cd ~/.ssh && cat id_rsa'],
+    ['절대경로로 밖', `cd ${join(tmpdir(), '남의방')} && ls`],
+  ];
+  for (const [뭐, cmd] of 나가는것) {
+    check(`★ 밖으로 나가는 cd 는 막힌다 (${뭐})`, /범위 밖/.test(막히나(cmd) ?? ''),
+      막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
+  }
+
+  /*
+   * ★ 반대쪽이 같은 무게로 중요하다.
+   *
+   * cd 를 전부 막아 버리면 초록이 되지만 도구는 못 쓴다 — 모델이 하는 일의
+   * 절반이 `cd 하위폴더 && 무엇` 이다. 안에서 도는 것은 전부 그대로 돌아야 한다.
+   */
+  const 그대로돌것 = [
+    ['하위 폴더로 들어가 읽기', 'cd src && cat x.js'],
+    ['들어갔다 나오면 제자리다', 'cd src && cd .. && npm test'],
+    ['pushd 로 들어갔다 popd 로 나오기', 'pushd src && npm test && popd && npm run build'],
+    ['인자 없는 cd', 'cd'],
+    ['cd - (직전 자리)', 'cd - && npm test'],
+    ['cd . 은 제자리다', 'cd . && node src/cli.js'],
+    ['윈도우 드라이브 스위치가 있어도 안 죽는다', `cd /d ${root} && npm test`],
+    ['자리표가 남아 있으면 어디로 갈지 모르니 안 막는다', 'cd $BUILD_DIR && make'],
+    ['프로그램이 있는 자리로는 갈 수 있다', 'cd /usr/bin && ls'],
+    ['글 안의 cd 는 명령이 아니다', 'echo "cd .deel" > note.txt'],
+  ];
+  for (const [뭐, cmd] of 그대로돌것) {
+    check(`★ 평범한 cd 는 그대로 돈다 (${뭐})`, 막히나(cmd) === null, 막히나(cmd)?.split('\n')[0] ?? '');
+  }
+
+  // 앞에서 옮긴 자리를 이어서 센다. 안 그러면 `cd src && cd ..` 가 밖으로 읽힌다.
+  check('★ 옮긴 자리를 이어서 센다 (cd src && cd .. && cd .deel 은 막힌다)',
+    막히나('cd src && cd .. && cd .deel') !== null,
+    막히나('cd src && cd .. && cd .deel')?.split('\n')[0] ?? '(통과했습니다)');
+  check('★ 두 칸 내려갔다 두 칸 올라오는 것은 제자리다',
+    막히나('cd src/a && cd ../.. && npm test') === null,
+    막히나('cd src/a && cd ../.. && npm test')?.split('\n')[0] ?? '');
+}
+
 trace('6-읽기전용모드');
 
 {
