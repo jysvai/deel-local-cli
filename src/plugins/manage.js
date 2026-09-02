@@ -135,7 +135,11 @@ async function fetchInto(spec, dest, onStep) {
       for (const 닫기 of 열어둔) 닫기();
     }
     if (!gz) return { error: '받은 묶음이 너무 큽니다 (64MB 넘음) — 플러그인 저장소가 맞는지 확인하세요' };
-    const 푼것 = 묶음풀기(dest, stripTop(untargz(gz)));
+    // 받는 크기만 막으면 압축 폭탄에 그대로 당한다 (pack/tar.js 푼것상한 머리말).
+    // 던지는 것을 여기서 받아 화면에 올린다 — 안 받으면 명령이 통째로 죽는다.
+    let 푼것;
+    try { 푼것 = 묶음풀기(dest, stripTop(untargz(gz))); }
+    catch (err) { return { error: `받은 묶음을 풀지 못했습니다 — ${String(err?.message ?? err)}` }; }
     if (푼것.error) return { error: 푼것.error };
     return { how: 'tarball', branch };
   }

@@ -16,12 +16,43 @@ function octal(buf, off, len) {
   return s ? parseInt(s, 8) : 0;
 }
 
+/*
+ * ── 작게 받아서 크게 푸는 묶음(압축 폭탄) ───────────────────────────────
+ *
+ * 받는 쪽(plugins/manage.js)은 **압축된** 크기를 64MB 로 막는다. 그런데
+ * 0 으로만 채운 파일은 천 배 넘게 줄어든다 — 64MB 짜리 하나가 풀면 수십 GB 다.
+ * gunzipSync 는 그걸 통째로 메모리에 올리므로, 화면에는 아무 말도 안 남고
+ * 프로세스가 그대로 죽는다. 사용자가 보는 것은 「플러그인을 깔아 줘」 라고
+ * 시킨 뒤 deel 이 사라진 것뿐이다 — 하던 대화까지 같이.
+ *
+ * 그래서 **푼 크기**에도 상한을 둔다. 256MB 로 잡은 까닭은 받는 상한의 네 배라서다.
+ * 플러그인은 글과 스크립트 묶음이라 서너 배까지는 부푼다. 그보다 더 부푸는 것은
+ * 플러그인이 아니라 폭탄으로 본다.
+ */
+export const 푼것상한 = 256 * 1024 * 1024;
+
 /**
  * gzip 된 tar 를 풀어 파일 목록을 돌려준다.
+ * @param {Buffer} gz
+ * @param {object} o
+ * @param {number} o.상한 푼 크기 상한. 검사가 작은 값으로 부르려고 열어 뒀다 —
+ *   256MB 를 진짜로 만들어 재면 그 검사 하나가 기계를 잡아먹는다.
  * @returns {Array<{name:string, data:Buffer, mode:number}>}
  */
-export function untargz(gz) {
-  const buf = gunzipSync(gz);
+export function untargz(gz, { 상한 = 푼것상한 } = {}) {
+  let buf;
+  try {
+    buf = gunzipSync(gz, { maxOutputLength: 상한 });
+  } catch (err) {
+    // 조용히 죽는 대신 왜 안 되는지 말한다. 이 말은 install 이 그대로 화면에 올린다.
+    if (err?.code === 'ERR_BUFFER_TOO_LARGE') {
+      // MB 로만 적으면 작은 상한이 「0MB」 가 된다 — 사람에게 아무 말도 안 하는 숫자다.
+      const 상한말 = 상한 >= 1024 * 1024 ? `${Math.round(상한 / 1024 / 1024)}MB` : `${Math.round(상한 / 1024)}KB`;
+      throw new Error(`푼 크기가 상한(${상한말})을 넘습니다`
+        + ' — 압축만 작고 풀면 몇 GB 가 되는 묶음입니다. 저장소가 맞는지 확인하세요.');
+    }
+    throw err;
+  }
   const out = [];
   let pos = 0;
   let longName = null;

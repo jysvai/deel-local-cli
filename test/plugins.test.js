@@ -7,7 +7,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { untargz, stripTop, 안쪽인가, 밖을가리키는것 } from '../src/pack/tar.js';
+import { gzipSync } from 'node:zlib';
+import { untargz, stripTop, 안쪽인가, 밖을가리키는것, 푼것상한 } from '../src/pack/tar.js';
 import { makeZip, crc32 } from '../src/pack/zip.js';
 import { parseSpec, install, list, remove, pack, pluginsDir, 묶음풀기 } from '../src/plugins/manage.js';
 import { discover } from '../src/skills/discover.js';
@@ -190,6 +191,44 @@ check('최상위가 여럿이면 안 벗김', 안벗김[0].name === 'a/1.md');
   check('멀쩡한 묶음은 그대로 풀린다',
     !착한결과.error && readFileSync(join(풀곳, 'skills', '품의서', 'SKILL.md'), 'utf8') === '본문',
     착한결과.error ?? `${착한결과.푼것}개`);
+}
+
+trace('2c-압축폭탄');
+
+/*
+ * ── 작게 받아서 크게 푸는 묶음 ──────────────────────────────────────────
+ *
+ * 받는 쪽은 **압축된** 크기만 64MB 로 막았다. 그런데 0 으로만 찬 파일은
+ * 천 배 넘게 줄어든다 — 64MB 짜리 하나가 풀면 수십 GB 다. 푸는 자리는 그걸
+ * 통째로 메모리에 올리므로 화면에 아무 말도 안 남고 프로세스가 그냥 죽는다.
+ * 사용자가 보는 것은 「플러그인을 깔아 줘」 라고 시킨 뒤 deel 이 사라진
+ * 것뿐이다 — 하던 대화까지 같이.
+ *
+ * 상한을 인자로 열어 두고 작은 값으로 잰다. 진짜 256MB 를 만들어 재면
+ * 이 검사 하나가 기계를 잡아먹는다.
+ */
+{
+  const 빈것 = Buffer.alloc(4 * 1024 * 1024);          // 0 으로 찬 4MB
+  const 폭탄 = gzipSync(빈것);
+  check('압축이 천 배로 먹는다 (이게 폭탄의 밑천이다)',
+    폭탄.length * 100 < 빈것.length, `${폭탄.length}바이트 → ${빈것.length}바이트`);
+
+  let 탈 = null;
+  try { untargz(폭탄, { 상한: 64 * 1024 }); } catch (e) { 탈 = e; }
+  check('★ 상한을 넘게 부푸는 묶음은 거절한다', 탈 != null, 탈 ? '' : '(그냥 풀었다 — 메모리가 터진다)');
+  check('★ 조용히 죽는 대신 왜인지 말한다',
+    /상한|넘습니다/.test(탈?.message ?? ''), (탈?.message ?? '').slice(0, 90));
+  // 상한을 숫자로 말해 준다. MB 로만 적으면 작은 상한이 「0MB」 가 되어
+  // 사람에게 아무 말도 안 하는 숫자가 된다.
+  check('★ 얼마까지 되는지도 말해 준다', /64KB/.test(탈?.message ?? ''), (탈?.message ?? '').slice(0, 90));
+
+  // 반대쪽. 상한 안에 드는 평범한 묶음은 그대로 풀려야 한다.
+  const 작은묶음 = gzipSync(Buffer.alloc(512));
+  let 작은탈 = null;
+  try { untargz(작은묶음, { 상한: 64 * 1024 }); } catch (e) { 작은탈 = e; }
+  check('★ 상한 안의 묶음은 그대로 풀린다', 작은탈 === null, 작은탈?.message ?? '');
+  check('기본 상한은 받는 상한(64MB)보다 넉넉하다', 푼것상한 > 64 * 1024 * 1024,
+    `${Math.round(푼것상한 / 1024 / 1024)}MB`);
 }
 
 trace('3-ZIP쓰기');
