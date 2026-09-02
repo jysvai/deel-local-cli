@@ -1,7 +1,7 @@
 // 감사 로그. 무엇을 언제 어떻게 했는지 전부 남긴다.
 // 자율 실행을 사내에 설득할 때 이 파일이 근거가 된다.
 import { join } from 'node:path';
-import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, existsSync, readFileSync, chmodSync } from 'node:fs';
 import { 가리기 } from './secrets.js';
 
 /**
@@ -27,6 +27,8 @@ export class Audit {
     this.못쓴수 = 0;
     this.못쓴까닭 = null;
     this.열쇠들 = 열쇠들;
+    /** 파일 권한을 건 결과. `{모드}` 면 걸었고, `{못함}` 이면 못 걸었다. */
+    this.잠금 = null;
   }
 
   /*
@@ -64,11 +66,34 @@ export class Audit {
     const rec = { at: new Date().toISOString(), session: this.session, kind, ...data };
     try {
       appendFileSync(this.file, JSON.stringify(rec) + '\n', 'utf8');
+      this.#잠그기();
     } catch (err) {
       this.못쓴수 += 1;
       if (!this.못쓴까닭) this.못쓴까닭 = err?.message ?? String(err);
     }
     return rec;
+  }
+
+  /*
+   * 만들자마자 본인만 읽게 잠근다 (config.js 가 설정 파일에 하는 것과 같다).
+   *
+   * 가리기를 지나도 여기에는 무엇을 언제 어디서 했는지가 남는다 — 파일 경로,
+   * 돌린 명령, 사람이 친 말. 같은 PC 를 여럿이 쓰거나 홈이 공유 폴더에 있으면
+   * 그게 그대로 남에게 읽힌다. 한 번만 건다 — 줄마다 걸 일이 아니다.
+   * 윈도우(NTFS)에서는 chmod 가 아무 일도 안 한다. 거기서는 못 잠근 것이지
+   * 잠근 척하지 않는다 — 보관방식 화면이 그 사실을 따로 말한다.
+   *
+   * 건 결과를 `잠금` 에 남긴다. "본인만 읽게 잠근다" 는 말은 지켜지는지
+   * **밖에서 볼 수 있어야** 뜻이 있다 (keystore.js 의 마지막명령줄 과 같은
+   * 까닭). 윈도우에서 값이 남는다고 실제로 잠겼다는 뜻은 아니다 —
+   * 우리가 걸어는 봤다는 뜻이다.
+   */
+  #잠갔나 = false;
+  #잠그기() {
+    if (this.#잠갔나) return;
+    this.#잠갔나 = true;
+    try { chmodSync(this.file, 0o600); this.잠금 = { 모드: 0o600 }; }
+    catch (err) { this.잠금 = { 못함: err?.code ?? String(err) }; }
   }
 
   /** 기록이 새고 있나. 새고 있으면 `{수, 까닭}`, 멀쩡하면 null. */

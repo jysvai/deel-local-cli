@@ -11,7 +11,7 @@
 // 여기서 재는 것:
 //   1) 적히는 글에서 비밀이 가려지나 (명령줄·요약·사람이 친 말)
 //   2) 그래도 무엇을 했는지는 읽히나 — 다 지워 버리면 기록이 쓸모없어진다
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { trace } from './trace.mjs';
@@ -108,6 +108,39 @@ trace('3-다른자리');
   check('★ 평범한 기록은 안 건드린다', !글.includes('«가림'), 글.trim().slice(0, 160));
   check('경로가 그대로 남는다', 글.includes('C:/일/보고서.md'), 글.split('\n')[0].slice(0, 120));
   check('돌린 명령이 그대로 남는다', 글.includes('git log --oneline -5'), 글.split('\n')[1].slice(0, 120));
+}
+
+trace('4-파일권한');
+
+/*
+ * ── 이 파일을 아무나 읽으면 안 된다 ─────────────────────────────────────
+ *
+ * 가리기를 지나도 여기에는 무엇을 언제 어디서 했는지가 남는다 — 파일 경로,
+ * 돌린 명령, 사람이 친 말. 설정 파일은 config.js 가 만들 때 0600 을 걸어 두는데
+ * 감사기록에는 그게 없었다. 같은 PC 를 여럿이 쓰거나 홈이 공유 폴더에 있으면
+ * 그대로 읽힌다.
+ *
+ * 윈도우(NTFS)에서는 chmod 가 아무 일도 안 한다 — 권한이 ACL 로 정해지기
+ * 때문이다. 그래서 거기서는 모드를 재지 않는다. **재는 척도 하지 않는다** —
+ * 이 프로그램이 열쇠 보관에 대해 정해 둔 규칙과 같다.
+ */
+{
+  const a = 새기록();
+  a.tool('Bash', { command: 'npm test' }, { summary: '다 통과' });
+  // 이 한 줄은 어느 판에서든 잰다 — 걸었다는 사실 자체는 밖에서 보여야 한다.
+  check('★ 감사기록에 0600 을 건다', a.잠금?.모드 === 0o600, JSON.stringify(a.잠금));
+  check('파일이 실제로 있다 (건 자리가 허공이 아니다)', existsSync(a.file), a.file);
+  if (process.platform === 'win32') {
+    check('윈도우에서는 모드를 안 잰다 (NTFS 는 ACL 이라 chmod 가 아무 일도 안 한다)',
+      a.못쓴것() === null, JSON.stringify(a.못쓴것()));
+  } else {
+    const 모드 = statSync(a.file).mode & 0o777;
+    check('★ 감사기록이 정말 0600 이다', 모드 === 0o600, '0' + 모드.toString(8));
+  }
+  // 어느 판에서든 잠그느라 기록을 잃으면 안 된다.
+  a.tool('Bash', { command: 'git status' }, {});
+  check('잠근 뒤에도 계속 적힌다', readFileSync(a.file, 'utf8').trim().split('\n').length === 2,
+    readFileSync(a.file, 'utf8').trim().split('\n').length + '줄');
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

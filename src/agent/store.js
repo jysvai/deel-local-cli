@@ -14,7 +14,7 @@
 //   마지막 줄까지는 성하다. 통째로 다시 쓰는 방식이면 그 순간 파일이 깨진다.
 import {
   existsSync, mkdirSync, readdirSync, readFileSync,
-  appendFileSync, writeFileSync, statSync, rmSync,
+  appendFileSync, writeFileSync, statSync, rmSync, chmodSync,
 } from 'node:fs';
 import { join } from 'node:path';
 
@@ -56,6 +56,29 @@ export class Store {
   #use(id) {
     this.id = id;
     this.file = join(this.dir, `${id}.jsonl`);
+    this.#잠갔나 = false;      // 다른 파일로 옮겨 갔으면 그 파일은 아직 안 잠갔다
+  }
+
+  /*
+   * 만든 뒤 본인만 읽게 잠근다 (config.js 가 설정 파일에 하는 것과 같다).
+   *
+   * 여기 남는 것은 대화 전체다 — 사람이 붙여 넣은 글, 읽은 파일 내용, 모델이
+   * 쓴 답. 홈이 공유 폴더에 있거나 같은 PC 를 여럿이 쓰면 그게 그대로 읽힌다.
+   * 한 번만 건다. 윈도우(NTFS)에서는 chmod 가 아무 일도 안 한다 — 거기서는
+   * 못 잠근 것이지 잠근 척하지 않는다.
+   *
+   * 건 결과를 `잠금` 에 남긴다. "본인만 읽게 잠근다" 는 말은 지켜지는지
+   * **밖에서 볼 수 있어야** 뜻이 있다 (keystore.js 의 마지막명령줄 과 같은
+   * 까닭). 윈도우에서 값이 남는다고 실제로 잠겼다는 뜻은 아니다.
+   */
+  #잠갔나 = false;
+  /** 파일 권한을 건 결과. `{모드}` 면 걸었고, `{못함}` 이면 못 걸었다. */
+  잠금 = null;
+  #잠그기() {
+    if (this.#잠갔나) return;
+    this.#잠갔나 = true;
+    try { chmodSync(this.file, 0o600); this.잠금 = { 모드: 0o600 }; }
+    catch (err) { this.잠금 = { 못함: err?.code ?? String(err) }; }
   }
 
   #open() {
@@ -77,6 +100,7 @@ export class Store {
     for (let tries = 0; tries < 50; tries++) {
       try {
         writeFileSync(this.file, head, { encoding: 'utf8', flag: 'wx' });
+        this.#잠그기();
         return this;
       } catch (err) {
         if (err?.code !== 'EEXIST') return this;   // 못 적어도 대화는 계속돼야 한다
@@ -88,8 +112,10 @@ export class Store {
   }
 
   #write(obj) {
-    try { appendFileSync(this.file, JSON.stringify(obj) + '\n', 'utf8'); }
-    catch { /* 기록에 실패해도 대화는 계속돼야 한다 */ }
+    try {
+      appendFileSync(this.file, JSON.stringify(obj) + '\n', 'utf8');
+      this.#잠그기();
+    } catch { /* 기록에 실패해도 대화는 계속돼야 한다 */ }
   }
 
   // 메시지 하나를 덧붙인다. 대화가 진행되는 대로 즉시 남긴다.
@@ -136,7 +162,8 @@ export class Store {
     lines.push(JSON.stringify({ t: 'note', at: new Date().toISOString(), note }));
     if (못박은것.length) lines.push(JSON.stringify({ t: 'pins', at: new Date().toISOString(), 목록: 못박은것 }));
     for (const m of messages) lines.push(JSON.stringify({ t: 'msg', m }));
-    try { writeFileSync(this.file, lines.join('\n') + '\n', 'utf8'); } catch {}
+    // 통째로 다시 쓰면 파일이 새로 만들어진다 — 그때 잠금도 다시 걸어야 한다.
+    try { writeFileSync(this.file, lines.join('\n') + '\n', 'utf8'); this.#잠갔나 = false; this.#잠그기(); } catch {}
   }
 
   readMeta() {

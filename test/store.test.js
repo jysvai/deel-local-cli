@@ -6,7 +6,7 @@
 //   3) 도구 호출과 결과의 짝이 되살릴 때도 안 깨지는가
 //   4) 압축이 일어난 뒤에도 파일이 대화와 맞는가
 //   5) 목록에서 어떤 대화인지 알아볼 수 있는가
-import { mkdtempSync, rmSync, appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, appendFileSync, existsSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store, list, latest, remove, newId, prune, sessionsDir } from '../src/agent/store.js';
@@ -225,6 +225,46 @@ const 빈폴더 = mkdtempSync(join(tmpdir(), 'deel-empty-'));
 check('대화 없는 폴더에서 빈 목록', list(빈폴더).length === 0);
 check('대화 없는 폴더에서 latest 는 null', latest(빈폴더) === null);
 rmSync(빈폴더, { recursive: true, force: true });
+
+/*
+ * ── 대화 파일을 아무나 읽으면 안 된다 ───────────────────────────────────
+ *
+ * 여기 남는 것은 대화 전체다 — 사람이 붙여 넣은 글, 읽은 파일 내용, 모델이
+ * 쓴 답. 설정 파일은 config.js 가 만들 때 0600 을 걸어 두는데 대화 파일에는
+ * 그게 없었다. 홈이 공유 폴더에 있거나 같은 PC 를 여럿이 쓰면 그대로 읽힌다.
+ *
+ * 윈도우(NTFS)에서는 chmod 가 아무 일도 안 한다 — 권한이 ACL 로 정해지기
+ * 때문이다. 거기서는 모드를 재지 않고 **재는 척도 하지 않는다.**
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-store-권한-'));
+  const s = new Store(방, 'perm-001');
+  s.begin({ model: 'm', base: 'http://127.0.0.1:1', root: 방 });
+  s.append({ role: 'user', content: '사내 계정 비번은 …' });
+  const 파일 = join(sessionsDir(방), 'perm-001.jsonl');
+  // 이 한 줄은 어느 판에서든 잰다 — 걸었다는 사실 자체는 밖에서 보여야 한다.
+  check('★ 대화 파일에 0600 을 건다', s.잠금?.모드 === 0o600, JSON.stringify(s.잠금));
+  check('파일이 실제로 있다 (건 자리가 허공이 아니다)', existsSync(파일), 파일);
+  if (process.platform === 'win32') {
+    check('윈도우에서는 모드를 안 잰다 (NTFS 는 ACL 이라 chmod 가 아무 일도 안 한다)',
+      new Store(방, 'perm-001').load().messages.length === 1);
+  } else {
+    check('★ 대화 파일이 정말 0600 이다', (statSync(파일).mode & 0o777) === 0o600,
+      '0' + (statSync(파일).mode & 0o777).toString(8));
+  }
+
+  // 압축이 일어나면 파일을 통째로 다시 쓴다. 그때 잠금이 풀리면 안 된다.
+  s.잠금 = null;
+  s.replace([{ role: 'user', content: '줄인 것' }], '압축');
+  check('★ 통째로 다시 쓴 뒤에 다시 건다', s.잠금?.모드 === 0o600, JSON.stringify(s.잠금));
+  if (process.platform !== 'win32') {
+    check('★ 다시 쓴 뒤에도 정말 0600 이다', (statSync(파일).mode & 0o777) === 0o600,
+      '0' + (statSync(파일).mode & 0o777).toString(8));
+  } else {
+    check('다시 쓴 뒤에도 대화가 성하다', new Store(방, 'perm-001').load().messages.length === 1);
+  }
+  rmSync(방, { recursive: true, force: true });
+}
 
 rmSync(root, { recursive: true, force: true });
 
