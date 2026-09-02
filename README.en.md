@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-5%2C716%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-5%2C825%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -822,6 +822,62 @@ covers `.deel/` so it never reaches a repository.
 
 ---
 
+## Starting over (`deel reset`)
+
+Switching gateways, learned facts that went stale, handing the machine to someone else —
+sometimes you want to go back to the beginning. Reinstalling does not do it: `~/.deel`
+survives an install. Hence a command of its own.
+
+```
+$ deel reset
+
+── what can be wiped ──────────────────────────────────────────
+  home            C:\Users\me\.deel
+  working folder  C:\work\myproject
+
+  connections                        2
+  memory                             8 lines
+  conversations                     14
+  learned                            2 places
+  evidence, exports, temp            6
+  plugins                            3
+  sealed key                             DPAPI — this PC, this account only
+
+── what is kept ───────────────────────────────────────────────
+  undo snapshots                    41  needs all --hard
+  audit log                      1,203 lines  needs all --hard
+  written by you                         .deel/mcp.json · .deelignore
+     never touched, by any route.
+```
+
+**Bare `deel reset` wipes nothing.** It shows what exists and asks.
+
+| Command | What goes |
+|---|---|
+| `deel reset model` | connections and profiles, plus the key in the OS keystore |
+| `deel reset memory` | memory (`.deel/memory.md`) |
+| `deel reset sessions` | conversation history |
+| `deel reset learned` | learned facts (this PC + this folder) |
+| `deel reset plugins` | installed plugins |
+| `deel reset all` | everything above **except plugins** |
+| `deel reset all --hard` | plus undo snapshots and the audit log |
+| `--yes` | skip the question (scripts, first-time provisioning) |
+
+What it does **not** touch matters more.
+
+| Kept | Why |
+|---|---|
+| `.deel/history/` (undo snapshots) | This is the safety net offered in place of an approval prompt. `--hard` only |
+| `.deel/audit.jsonl` | The evidence for an internal review. `--hard` only |
+| `.deel/mcp.json` · `.deelignore` · `DEEL.md` | You wrote these by hand. **Never touched, by any route** |
+| Everything else in the working folder | Nothing outside `.deel` and the home folder is ever reached |
+
+It runs on a broken config. That is usually *why* someone reaches for a reset, so
+`deel reset` starts without reading the connection — the same reason `deel --version` answers
+without one. Plugins take time to fetch again, so they stay out of `all`; ask for them by name.
+
+---
+
 ## Attaching tools from outside (MCP)
 
 A corporate wiki search, an issue tracker, a DB query tool — if a team publishes one as an MCP
@@ -1037,7 +1093,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (5,716 checks)
+npm test          Full suite (5,825 checks)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate

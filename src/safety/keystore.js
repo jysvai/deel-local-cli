@@ -235,3 +235,56 @@ export function 보관방식(값 = null) {
   if (process.platform === 'darwin') return '맥 키체인 · 저장된 열쇠 없음';
   return '파일 권한 0600 · 저장된 열쇠 없음';
 }
+
+/**
+ * 잠금장치에서 열쇠를 지운다 (`deel reset model` 이 부른다).
+ *
+ * ── 왜 따로 있어야 하나 ────────────────────────────────────────────────
+ *
+ * 설정 파일만 지우면 **잠금장치에는 열쇠가 그대로 남는다.** 화면에는
+ * 「초기화했습니다」 가 뜨는데 열쇠는 살아 있는 상태다. 「초기화」 라고
+ * 말하려면 그것까지 지워야 하고, 못 지웠으면 못 지웠다고 말해야 한다.
+ *
+ * 두 방식이 다르게 생겼다:
+ *
+ *   윈도우(DPAPI)  잠근 덩이가 설정 파일 **안에** 있다. 파일을 지우면 같이
+ *                  사라진다 — 잠금장치에 따로 남는 것이 없다. 그래서 여기서
+ *                  할 일이 없고, 없다고 정직하게 답한다. 「지웠다」 고 하면
+ *                  안 한 일을 했다고 말하는 것이다.
+ *   맥(키체인)     설정에는 이름표만 있고 실물은 로그인 키체인에 남는다.
+ *                  이건 우리가 지워야 한다. 안 지우면 설정을 지운 뒤에도
+ *                  키체인 앱에 `deel-gateway-key` 가 그대로 보인다.
+ *
+ * 열쇠는 여기서도 명령줄에 안 올린다 — 지울 때 넘기는 것은 이름뿐이다.
+ *
+ * @param {string|null} 값 설정에 적혀 있던 잠긴 값. 없으면 이 PC 방식으로 판단한다.
+ * @returns {{지움: boolean, 방식: 'dpapi'|'keychain'|'없음', 왜: string}}
+ */
+export function 잠금지우기(값 = null) {
+  const m = 꼴.exec(String(값 ?? ''));
+  const 갈래 = m ? m[1] : (process.platform === 'darwin' ? 'keychain' : null);
+
+  if (갈래 === 'dpapi' || (!갈래 && process.platform === 'win32')) {
+    return { 지움: false, 방식: 'dpapi', 왜: '설정 파일 안에 있어서 파일과 같이 지워집니다' };
+  }
+  if (갈래 !== 'keychain') {
+    return { 지움: false, 방식: '없음', 왜: '잠금장치에 따로 둔 것이 없습니다' };
+  }
+  if (process.platform !== 'darwin') {
+    return { 지움: false, 방식: 'keychain', 왜: '맥에서 넣은 열쇠라 여기서는 못 지웁니다 — 그 맥에서 지우세요' };
+  }
+
+  const 계정 = userInfo().username;
+  const 인자 = ['delete-generic-password', '-a', 계정, '-s', 키체인이름];
+  마지막인자 = ['security', ...인자];
+  const r = spawnSync('security', 인자, { encoding: 'utf8', timeout: 20000 });
+  if (r.error) return { 지움: false, 방식: 'keychain', 왜: r.error.message };
+  // 없는 것을 지우라고 해도 실패로 온다. 그건 탈이 아니라 이미 없는 것이다.
+  if (r.status !== 0) {
+    const 말 = (r.stderr ?? '').trim();
+    return /could not be found|SecKeychainSearchCopyNext/i.test(말)
+      ? { 지움: false, 방식: 'keychain', 왜: '키체인에 이미 없습니다' }
+      : { 지움: false, 방식: 'keychain', 왜: 말 || 'security 가 실패했습니다' };
+  }
+  return { 지움: true, 방식: 'keychain', 왜: '' };
+}

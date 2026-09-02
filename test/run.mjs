@@ -42,6 +42,7 @@ const FILES = [
   'review.test.js',
   'task.test.js',
   'toolargs.test.js',
+  'reset.test.js',
   'outline.test.js',
   'network.test.js',
   'web.test.js',

@@ -17,6 +17,7 @@ import { join, resolve } from 'node:path';
 import { 명령들, 숨은명령, 깃발들, 셸들, 완성스크립트, runCompletion } from '../src/completion.js';
 import { MODES } from '../src/agent/modes.js';
 import { LEVELS, PROFILES } from '../src/agent/effort.js';
+import { 차례 as 승인모드 } from '../src/ui/approve.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -57,8 +58,38 @@ trace('1-안갈림');
 
   // 값 목록도 코드에서 온 것이어야 한다. 손으로 베끼면 언젠가 갈린다.
   const 값찾기 = (이름) => 깃발들.find((x) => x.이름 === 이름)?.값;
-  check('★ --mode 값이 진짜 모드 목록이다',
-    값찾기('--mode').join(' ') === Object.keys(MODES).join(' '), 값찾기('--mode').join(' '));
+
+  /*
+   * ★ 베낀 자리 말고 **베껴 온 곳**이 맞는지.
+   *
+   * 여기 있던 검사는 `--mode` 값이 agent/modes.js 에서 온 것이 맞나만 봤다.
+   * 그런데 agent/modes.js 는 `--work` 가 받는 목록이었다. 검사는 초록인데
+   * `deel --mode <탭>` 을 누르면 받지도 않는 code·plan 이 나왔고, `--work`
+   * 는 폴더 이름을 완성해 줬다 — 둘이 뒤바뀌어 있었다.
+   *
+   * 그래서 이제 **도움말에 사람에게 적어 준 값**과 맞춰 본다. 도움말과
+   * 완성이 서로 다른 것을 말하면 둘 중 하나는 틀린 것이고, 어느 쪽이든
+   * 사람이 손해를 본다.
+   */
+  const 도움말값 = (깃발) => {
+    const m = 소스.match(new RegExp(`'${깃발} <[^']*>'\\)}\\s*([^\`]*)\``));
+    if (!m) return null;
+    return m[1].trim().split('/').map((s) => s.trim().replace(/\(.*?\)/g, '').trim()).filter(Boolean);
+  };
+  // 순서는 안 본다 — 도움말은 사람이 읽기 좋은 차례로 적고, 완성은 코드
+  // 차례로 낸다. **같은 값을 말하는가**가 이 검사가 지키려는 것이다.
+  const 같은것들 = (a, b) => a.length === b.length && [...a].sort().join(' ') === [...b].sort().join(' ');
+  for (const 깃발 of ['--mode', '--work', '--think', '--effort']) {
+    const 적힌것 = 도움말값(깃발);
+    check(`★ ${깃발}: 완성 값이 도움말과 같다`,
+      적힌것 !== null && 같은것들(적힌것, 값찾기(깃발) ?? []),
+      `도움말 [${(적힌것 ?? []).join(' ')}] · 완성 [${(값찾기(깃발) ?? []).join(' ')}]`);
+  }
+
+  check('★ --mode 값이 진짜 승인 모드 목록이다',
+    값찾기('--mode').join(' ') === 승인모드.join(' '), 값찾기('--mode').join(' '));
+  check('★ --work 값이 진짜 작업 모드 목록이다',
+    값찾기('--work').join(' ') === Object.keys(MODES).join(' '), (값찾기('--work') ?? []).join(' '));
   check('★ --think 값이 진짜 단계 목록이다',
     값찾기('--think').join(' ') === LEVELS.join(' '), 값찾기('--think').join(' '));
   check('★ --effort 값이 진짜 프로필 목록이다',
@@ -124,7 +155,7 @@ if (있나('bash', ['-c', 'echo ok'])) {
   check('★ 첫 낱말이면 명령이 나온다', 눌러보기(['deel', ''], 1).split(' ').includes('sbom'), 눌러보기(['deel', ''], 1));
   check('★ 앞글자를 치면 좁혀진다', 눌러보기(['deel', 'sb'], 1) === 'sbom', 눌러보기(['deel', 'sb'], 1));
   check('★ --mode 다음에는 모드만 나온다',
-    눌러보기(['deel', '--mode', ''], 2) === Object.keys(MODES).join(' '), 눌러보기(['deel', '--mode', ''], 2));
+    눌러보기(['deel', '--mode', ''], 2) === 승인모드.join(' '), 눌러보기(['deel', '--mode', ''], 2));
   check('★ --think 다음에는 단계만 나온다',
     눌러보기(['deel', '--think', ''], 2) === LEVELS.join(' '), 눌러보기(['deel', '--think', ''], 2));
   check('★ completion 다음에는 셸만 나온다',
@@ -158,7 +189,7 @@ if (process.platform === 'win32' && 있나('powershell', ['-NoProfile', '-Comman
   check('★ 파워셸에서도 명령이 좁혀진다', 첫.글 === 'sbom', `${첫.글} / ${첫.탈.split('\n')[0]}`);
   const 모드 = 눌러보기('deel --mode ');
   check('★ 파워셸: 빈칸까지 친 자리에서도 앞 낱말을 제대로 본다',
-    모드.글 === Object.keys(MODES).join(' '), 모드.글);
+    모드.글 === 승인모드.join(' '), 모드.글);
   const 단계 = 눌러보기('deel --think ');
   check('★ 파워셸: --think 다음에는 단계만', 단계.글 === LEVELS.join(' '), 단계.글);
   const 깃발 = 눌러보기('deel --js');

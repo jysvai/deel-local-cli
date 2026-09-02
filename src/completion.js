@@ -23,6 +23,10 @@
  */
 import { MODES } from './agent/modes.js';
 import { LEVELS, PROFILES } from './agent/effort.js';
+// 승인 모드(auto·confirm·strict). agent/modes.js 의 MODES 와 헷갈리기 쉬운데,
+// 저쪽은 `--work` 가 받는 '무슨 일을 하는 중인가' 다. 실제로 한 번 뒤바뀌어
+// 있었다 — `--mode` 를 누르면 code·plan 이 나오고 `--work` 는 폴더를 냈다.
+import { 차례 as 승인모드 } from './ui/approve.js';
 
 /** deel 이 받는 명령. bin/deel.js 의 switch 와 같아야 한다(검사가 지킨다). */
 export const 명령들 = [
@@ -39,6 +43,7 @@ export const 명령들 = [
   { 이름: 'scan', 뜻: '게이트웨이에 어떤 모델이 있나 훑는다', en: 'scan the gateway for available models' },
   { 이름: 'sessions', 뜻: '지난 대화 목록', en: 'list past conversations' },
   { 이름: 'ls', 뜻: 'sessions 와 같다', en: 'same as sessions' },
+  { 이름: 'reset', 뜻: '설정·기억·기록을 지운다 (그냥 치면 보여만 준다)', en: 'wipe settings, memory and records (bare: just shows)' },
   { 이름: 'completion', 뜻: '탭 완성 스크립트를 낸다', en: 'print a tab-completion script' },
   { 이름: 'version', 뜻: '판 번호', en: 'version number' },
   { 이름: 'help', 뜻: '도움말', en: 'help' },
@@ -55,8 +60,20 @@ export const 숨은명령 = ['-p'];
  */
 export const 깃발들 = [
   { 이름: '--root', 뜻: '작업 폴더', en: 'working folder', 값: '폴더' },
-  { 이름: '--work', 뜻: '살림 폴더 (.deel 자리)', en: 'state folder (where .deel lives)', 값: '폴더' },
-  { 이름: '--mode', 뜻: '무엇을 할 수 있게 할까', en: 'what the agent is allowed to do', 값: Object.keys(MODES) },
+  /*
+   * 이 둘은 한 번 뒤바뀌어 있었다.
+   *
+   * `--mode` 는 **승인 모드**(auto·confirm·strict)인데 작업 모드 목록이
+   * 붙어 있었고, `--work` 는 **작업 모드**인데 「살림 폴더」 라고 적혀 폴더를
+   * 완성해 주고 있었다. 그래서 `deel --mode <탭>` 을 누르면 받지도 않는
+   * code·plan 이 나왔다.
+   *
+   * 검사도 이걸 못 잡았다 — 완성 목록이 agent/modes.js 에서 온 것이 맞나만
+   * 봤기 때문이다. 베낀 자리가 맞는지는 봤는데, 베껴 온 곳이 맞는지는 안 봤다.
+   * 지금은 도움말에 적힌 값과 맞춰 본다 (test/completion.test.js).
+   */
+  { 이름: '--work', 뜻: '무슨 일을 하는 중인가', en: 'what kind of work this is', 값: Object.keys(MODES) },
+  { 이름: '--mode', 뜻: '무엇까지 물어보지 않고 할까', en: 'how much it may do without asking', 값: 승인모드 },
   { 이름: '--level', 뜻: '화면을 얼마나 자세히', en: 'how much detail on screen', 값: null },
   { 이름: '--ctx', 뜻: '창 크기 (예: 32k)', en: 'context window size (e.g. 32k)', 값: null },
   { 이름: '--max-tokens', 뜻: '한 번에 뱉을 최대 토큰', en: 'max tokens per reply', 값: null },
@@ -65,6 +82,7 @@ export const 깃발들 = [
   { 이름: '--online', 뜻: '묻지 않고 바깥으로 나간다', en: 'go outside without asking', 값: false },
   { 이름: '--offline', 뜻: '바깥으로 아예 안 나간다', en: 'never reach the network', 값: false },
   { 이름: '--yes', 뜻: '물어보지 않고 진행', en: 'do not ask, just proceed', 값: false },
+  { 이름: '--hard', 뜻: 'reset all 에서 되돌리기·감사기록까지', en: 'with reset all: undo snapshots and the audit log too', 값: false },
   { 이름: '--json', 뜻: '결과를 JSON 으로', en: 'output JSON', 값: false },
   { 이름: '--quiet', 뜻: '군말 없이', en: 'no chatter', 값: false },
   { 이름: '--tui', 뜻: '입력 상자를 켠다', en: 'force the input box on', 값: false },

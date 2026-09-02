@@ -14,6 +14,7 @@ import { parseSize } from '../src/backend/ctxsize.js';
 import { runSessions } from '../src/agent/sessionui.js';
 import { acp } from '../src/acp/serve.js';
 import { runCompletion } from '../src/completion.js';
+import { runReset } from '../src/reset.js';
 
 const MIN_NODE = 20;
 
@@ -138,6 +139,7 @@ function help() {
   say(`    ${c.cyan('deel setup')}                  연결 설정 (주소·키·모델)`);
   say(`    ${c.cyan('deel status')}                 연결 상태 보기`);
   say(`    ${c.cyan('deel diagnose')}               저장된 연결로 진단 다시 돌리기`);
+  say(`    ${c.cyan('deel reset')}                  설정·기억·기록 지우기 ${c.gray('(그냥 치면 보여만 줍니다)')}`);
   say(`    ${c.cyan('deel completion <셸>')}        탭 완성 스크립트 ${c.gray('(bash · zsh · powershell)')}`);
   say(`    ${c.cyan('deel --version')}              판 번호 ${c.gray('(-v 도 됩니다)')}`);
   say('');
@@ -154,6 +156,19 @@ function help() {
   say(`    ${c.cyan('deel acp')}                    에디터가 띄우는 자리 (ACP). 사람이 직접 칠 명령은 아닙니다`);
   say(`    ${c.gray('에디터 설정에 이 명령을 적어 두면 그 안에서 deel 이 돕니다.')}`);
   say(`    ${c.gray('승인 창·모드 고르개·고친 파일 링크가 에디터 것으로 그려집니다.')}`);
+  say('');
+  say(`  ${c.bold('되돌아가기')} ${c.gray('— 지우려고 다시 깔지 않아도 됩니다')}`);
+  say('');
+  say(`    ${c.cyan('deel reset')}                  무엇이 얼마나 있는지 보여 주고 묻습니다 ${c.gray('(아무것도 안 지웁니다)')}`);
+  say(`    ${c.gray('deel reset model')}      연결·프로필·잠긴 열쇠`);
+  say(`    ${c.gray('deel reset memory')}     기억 (.deel/memory.md)`);
+  say(`    ${c.gray('deel reset sessions')}   대화 기록`);
+  say(`    ${c.gray('deel reset learned')}    배운 것 (이 PC + 이 폴더)`);
+  say(`    ${c.gray('deel reset plugins')}    설치한 플러그인`);
+  say(`    ${c.gray('deel reset all')}        위 전부 ${c.gray('— 플러그인·되돌리기·감사기록은 빼고')}`);
+  say(`    ${c.gray('--hard')}                ${c.yellow('되돌리기 스냅샷·감사기록까지')}. all 에서만 씁니다`);
+  say(`    ${c.gray('--yes')}                 안 묻고 지웁니다 (스크립트용)`);
+  say(`    ${c.gray('.deel/mcp.json · .deelignore · DEEL.md 는 사람이 적은 것이라 어떤 길로도 안 건드립니다.')}`);
   say('');
   say(`  ${c.bold('사내 반입')}`);
   say('');
@@ -318,6 +333,14 @@ async function main() {
     case 'sessions':
     case 'ls':
       return runSessions(flags);
+    /*
+     * 초기화.
+     *
+     * setup 과 달리 **설정을 안 읽는다.** 초기화를 찾는 까닭이 대개 설정이
+     * 깨져서인데, 읽고 시작하면 그 자리에서 못 넘어간다.
+     */
+    case 'reset':
+      return runReset(args, flags);
     /*
      * 탭 완성 스크립트를 낸다 (src/completion.js).
      *

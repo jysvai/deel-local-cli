@@ -25,7 +25,7 @@ process.env.DEEL_HOME = 집;
 delete process.env.DEEL_API_KEY;
 delete process.env.DEEL_KEYSTORE;
 
-const { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식, 마지막명령줄 } = await import('../src/safety/keystore.js');
+const { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식, 마지막명령줄, 잠금지우기 } = await import('../src/safety/keystore.js');
 const { load, save, resolveKey, 잠금소식, 열쇠보관, configPath } = await import('../src/config.js');
 const { 열쇠명세 } = await import('../src/pack/sbom.js');
 
@@ -162,6 +162,43 @@ trace('7-심사서');
   check('안 쓰는 길(환경변수)도 적는다', /DEEL_API_KEY/.test(명세.안쓰려면));
   check('이 PC 에서 실제로 무엇인지도 적는다', typeof 명세.이PC에서 === 'string' && 명세.이PC에서.length > 3, 명세.이PC에서);
   check('설정 자리를 엉뚱한 데로 옮기지 않았다', configPath().startsWith(집), configPath());
+}
+
+trace('잠금지우기');
+
+/*
+ * ── 잠금장치에서 지우기 (`deel reset model` 이 부른다) ──────────────────
+ *
+ * 설정 파일만 지우면 잠금장치에는 열쇠가 그대로 남는다. 화면에는
+ * 「초기화했습니다」 가 뜨는데 열쇠는 살아 있는 상태다.
+ *
+ * 여기서 제일 조심할 것은 **안 한 일을 했다고 말하는 것**이다. 윈도우는
+ * 잠근 덩이가 설정 파일 안에 있어서 잠금장치에 따로 지울 것이 없다.
+ * 그때 「지웠습니다」 라고 답하면, 파일이 안 지워진 경우에도 사람은
+ * 열쇠가 없어진 줄 안다.
+ */
+{
+  const d = 잠금지우기('dpapi:QUFB');
+  check('DPAPI 는 따로 지울 것이 없다고 말한다', d.방식 === 'dpapi' && d.지움 === false, JSON.stringify(d));
+  check('★ 안 한 일을 했다고 안 한다', d.지움 === false && /설정 파일 안에/.test(d.왜), d.왜);
+
+  const 없음 = 잠금지우기('sk-평문열쇠');
+  check('평문 열쇠는 잠금장치에 따로 없다고 말한다',
+    없음.지움 === false && /없습니다|설정 파일 안에/.test(없음.왜), JSON.stringify(없음));
+
+  const k = 잠금지우기('keychain:deel-gateway-key');
+  if (process.platform === 'darwin') {
+    check('맥에서는 키체인을 실제로 손댄다', k.방식 === 'keychain', JSON.stringify(k));
+    check('없는 것을 지우라 해도 탈로 안 친다', !/실패/.test(k.왜), k.왜);
+  } else {
+    check('★ 맥 열쇠를 맥이 아닌 데서 지웠다고 하지 않는다',
+      k.지움 === false && /맥에서/.test(k.왜), JSON.stringify(k));
+  }
+
+  // 지울 때도 열쇠를 명령줄에 안 올린다. 넘기는 것은 이름뿐이다.
+  const 줄 = (마지막명령줄() ?? []).join(' ');
+  check('★ 지울 때도 명령줄에 열쇠가 없다',
+    !줄.includes('QUFB') && !줄.includes('sk-평문열쇠'), 줄.slice(0, 90));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

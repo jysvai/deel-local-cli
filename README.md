@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-5%2C716%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-5%2C825%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -793,6 +793,61 @@ $ deel sessions
 
 ---
 
+## 되돌아가기 (`deel reset`)
+
+연결을 바꿔 보다, 배운 것이 꼬여서, 남에게 넘기기 전에 — 처음으로 돌리고 싶을 때가 있습니다.
+다시 깔아도 `~/.deel` 은 그대로 남아서 사실 초기화가 안 됩니다. 그래서 따로 있습니다.
+
+```
+$ deel reset
+
+── 지울 수 있는 것 ────────────────────────────────────────────
+  살림 자리  C:\Users\me\.deel
+  작업 폴더  C:\work\myproject
+
+  연결·프로필                        2개
+  기억                               8줄
+  대화 기록                         14개
+  배운 것                            2곳
+  증거·내보낸 것·임시                6개
+  플러그인                           3개
+  잠긴 열쇠                              DPAPI — 이 PC 의 이 계정만 풉니다
+
+── 안 지웁니다 ────────────────────────────────────────────────
+  되돌리기 스냅샷                   41자리  all --hard 를 줘야 지웁니다
+  감사기록                       1,203줄  all --hard 를 줘야 지웁니다
+  사람이 적은 것                          .deel/mcp.json · .deelignore
+     어떤 길로도 안 건드립니다.
+```
+
+**그냥 `deel reset` 은 아무것도 안 지웁니다.** 무엇이 얼마나 있는지 보여 주고 물어봅니다.
+
+| 명령 | 지우는 것 |
+|---|---|
+| `deel reset model` | 연결·프로필 + 잠금장치에 든 열쇠 |
+| `deel reset memory` | 기억 (`.deel/memory.md`) |
+| `deel reset sessions` | 대화 기록 |
+| `deel reset learned` | 배운 것 (이 PC + 이 폴더) |
+| `deel reset plugins` | 설치한 플러그인 |
+| `deel reset all` | 위에서 **플러그인만 빼고** 전부 |
+| `deel reset all --hard` | 거기에 되돌리기 스냅샷·감사기록까지 |
+| `--yes` | 안 묻고 지웁니다 (스크립트·초기 배포용) |
+
+무엇을 **안** 지우는지가 더 중요합니다.
+
+| 안 지우는 것 | 왜 |
+|---|---|
+| `.deel/history/` (되돌리기 스냅샷) | 승인 프롬프트 대신 내건 안전망 그 자체입니다. `--hard` 로만 |
+| `.deel/audit.jsonl` (감사기록) | 사내 심사에 낼 근거입니다. `--hard` 로만 |
+| `.deel/mcp.json` · `.deelignore` · `DEEL.md` | 사람이 손으로 적은 것입니다. **어떤 길로도 안 건드립니다** |
+| 작업 폴더의 나머지 전부 | `.deel` 과 살림 폴더 밖은 아예 손대지 않습니다 |
+
+설정이 깨져 있어도 돕니다 — 초기화를 찾는 까닭이 대개 그것이라서,
+`deel reset` 은 `deel --version` 처럼 연결을 안 읽고 시작합니다.
+플러그인은 다시 받는 데 시간이 걸려서 `all` 에 안 넣었습니다. 따로 골라야 지웁니다.
+
+---
+
 ## 밖에서 도구 붙이기 (MCP)
 
 사내 위키 검색기, 이슈 트래커, DB 조회기 같은 것을 각 팀이 MCP 서버로 만들어 두면
@@ -1012,7 +1067,7 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (5,716항목)
+npm test          전체 검증 (5,825항목)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
