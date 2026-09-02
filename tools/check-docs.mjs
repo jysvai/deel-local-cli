@@ -50,7 +50,7 @@ function 닻들(파일) {
   return 것;
 }
 
-const 볼것 = ['README.md', 'README.en.md'];
+const 볼것 = ['README.md', 'README.ko.md'];
 for (const 말 of ['ko', 'en']) {
   // 릴리스 노트처럼 줄기마다 폴더로 나뉜 것도 같이 본다. 안 보면 그 안의
   // 링크만 검사 밖에 남아서, 끊겨도 아무 데도 안 찍힌다.

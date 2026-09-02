@@ -1,4 +1,4 @@
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
 
 # 설정
 
@@ -143,4 +143,4 @@ deel --no-tui            입력 상자를 끄고 줄 화면으로 (아래 참고
 
 ---
 
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)

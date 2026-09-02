@@ -1,4 +1,4 @@
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
 
 # 속도와 씀씀이
 
@@ -186,4 +186,4 @@ This model's maximum context length is 8192 tokens, however you requested 41003
 
 ---
 
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)

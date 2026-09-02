@@ -1,4 +1,4 @@
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)
 
 # The screen
 
@@ -667,4 +667,4 @@ press only makes it ask more; it never drops you into "changes files unasked" in
 
 ---
 
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)

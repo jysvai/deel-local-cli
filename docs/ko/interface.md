@@ -1,4 +1,4 @@
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
 
 # 화면과 조작
 
@@ -655,4 +655,4 @@ DEEL_OFFICE=1 deel
 
 ---
 
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)

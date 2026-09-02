@@ -1,4 +1,4 @@
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
 
 # 늘려 쓰기
 
@@ -112,4 +112,4 @@ unzip 반입.zip -d ~/.deel/plugins/
 
 ---
 
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)

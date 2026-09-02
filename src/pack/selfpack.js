@@ -17,7 +17,7 @@ export const repoRoot = () => join(dirname(fileURLToPath(import.meta.url)), '..'
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.github', 'test', '.deel']);
 const SHIP = ['bin', 'src'];
-const SHIP_FILES = ['package.json', 'README.md', 'README.en.md', 'LICENSE'];
+const SHIP_FILES = ['package.json', 'README.md', 'README.ko.md', 'LICENSE'];
 
 function walk(dir, base, out) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {

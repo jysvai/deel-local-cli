@@ -1,4 +1,4 @@
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)
 
 # Development
 
@@ -136,4 +136,4 @@ skip the 2FA prompt so CI can use them (publishing by hand still asks for an OTP
 
 ---
 
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)

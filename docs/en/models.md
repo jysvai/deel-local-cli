@@ -1,4 +1,4 @@
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)
 
 # Models
 
@@ -171,4 +171,4 @@ can be recovered with one `Glob`; "tests run with `npm test`" requires opening
 
 ---
 
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)

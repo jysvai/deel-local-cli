@@ -1,4 +1,4 @@
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
 
 # 개발
 
@@ -137,4 +137,4 @@ Automation 토큰은 2FA 를 안 묻는 형이라 CI 에서 쓸 수 있습니다
 
 ---
 
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)

@@ -1,4 +1,4 @@
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
 
 # 릴리스 노트
 
@@ -17,4 +17,4 @@
 
 ---
 
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)

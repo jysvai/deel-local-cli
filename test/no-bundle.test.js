@@ -77,8 +77,8 @@ if (shipped.length) {
   check('설정·자격 파일 0개', 비밀.length === 0, 비밀.join(', '));
 
   check('bin·src·문서만 담김',
-    shipped.every((p) => /^(bin|src)\//.test(p) || ['package.json', 'LICENSE', 'README.md', 'README.en.md'].includes(p)),
-    shipped.filter((p) => !/^(bin|src)\//.test(p) && !['package.json', 'LICENSE', 'README.md', 'README.en.md'].includes(p)).join(', '));
+    shipped.every((p) => /^(bin|src)\//.test(p) || ['package.json', 'LICENSE', 'README.md', 'README.ko.md'].includes(p)),
+    shipped.filter((p) => !/^(bin|src)\//.test(p) && !['package.json', 'LICENSE', 'README.md', 'README.ko.md'].includes(p)).join(', '));
 }
 
 /*

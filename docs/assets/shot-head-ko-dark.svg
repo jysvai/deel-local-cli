@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="679" height="275" viewBox="0 0 679 275" role="img" aria-label="deel — 어디로 나가는지 한 줄로">
+  <title>deel — 어디로 나가는지 한 줄로</title>
+  <rect width="679" height="275" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <path d="M0 8a8 8 0 0 1 8-8h663a8 8 0 0 1 8 8v26H0z" fill="#161b22"/>
+  <line x1="0" y1="34" x2="679" y2="34" stroke="#30363d"/>
+  <circle cx="18" cy="17" r="5.5" fill="#ff5f57"/><circle cx="36" cy="17" r="5.5" fill="#febc2e"/><circle cx="54" cy="17" r="5.5" fill="#28c840"/>
+  <text x="339.5" y="22" fill="#8b949e" font-size="12" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,sans-serif">deel</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14">
+    <text x="16.0" y="64" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  ╭─────────────────────────────────────────────────────────────────────────╮</text>
+    <text x="16.0" y="83" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ deel 1.7.0  ⌂ 이 안 (기본)  OpenAI 호환 규격                            │</text>
+    <text x="16.0" y="102" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │                                                                         │</text>
+    <text x="16.0" y="121" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 모델   qwen2.5-coder:7b  (128k 토큰 · 급 작음 짐작)                     │</text>
+    <text x="16.0" y="140" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 보냄   이 컴퓨터 안 127.0.0.1:53107  ← 여기 말고는 어디로도 안 갑니다   │</text>
+    <text x="16.0" y="159" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │        상태줄 맨 앞 ⌂가 이 뜻입니다. 바깥으로 가면 ↗로 바뀝니다.        │</text>
+    <text x="16.0" y="178" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 연결   스트리밍 없음 · 도구 · 추론 조절 없음                            │</text>
+    <text x="16.0" y="197" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 폴더   C:\work\myproject                                                │</text>
+    <text x="16.0" y="216" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 승인   ⏵⏵ 자동 승인  — 안 묻고 고칩니다. 되돌리기(/undo)가 안전망입니다 │</text>
+    <text x="16.0" y="235" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 이 PC  스킬 344 · 명령 127 · 플러그인 42                                │</text>
+    <text x="16.0" y="254" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  ╰─────────────────────────────────────────────────────────────────────────╯</text>
+  </g>
+</svg>

@@ -1,4 +1,4 @@
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)
 
 # Configuration
 
@@ -139,4 +139,4 @@ If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as
 
 ---
 
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)

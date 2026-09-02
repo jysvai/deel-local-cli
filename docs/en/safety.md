@@ -1,4 +1,4 @@
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)
 
 # Safety and corporate review
 
@@ -137,4 +137,4 @@ Verdict is one of **ready · limited · blocked · unreachable**.
 
 ---
 
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)

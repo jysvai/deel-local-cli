@@ -1,4 +1,4 @@
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
 
 # 한글 문서와 엑셀
 
@@ -183,4 +183,4 @@ LibreOffice 가 있으면 그걸 빌려 글로 읽어 봅니다 — 표가 아�
 
 ---
 
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)

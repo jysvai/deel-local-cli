@@ -1,15 +1,15 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-ko-dark.svg">
-  <img alt="deel — 이 컴퓨터 안에서만" src="docs/assets/hero-ko-light.svg" width="620">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/hero-en-dark.svg">
+  <img alt="deel — stays on this machine" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/hero-en-light.svg" width="620">
 </picture>
 
-### 로컬 모델과 사내 게이트웨이로 도는 코딩 에이전트 CLI
+### A coding-agent CLI that runs on local models and private gateways
 
-의존성 0개 · Node 20+ · 소스가 나가는 자리는 딱 한 곳
+Zero dependencies · Node 20+ · Exactly one place your source can go
 
-바깥 API 도 붙습니다 — **말했을 때만**
+Vendor APIs connect too — **only when you say so**
 
 <br>
 
@@ -20,222 +20,293 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-5%2C825%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-5%2C825%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
-[![network](https://img.shields.io/badge/network-127.0.0.1%20only-1a7f37?logo=wireguard&logoColor=white)](#데이터가-나가는-길)
-[![telemetry](https://img.shields.io/badge/telemetry-none-1a7f37?logo=ghostery&logoColor=white)](#데이터가-나가는-길)
+[![network](https://img.shields.io/badge/network-127.0.0.1%20only-1a7f37?logo=wireguard&logoColor=white)](#where-your-data-can-go)
+[![telemetry](https://img.shields.io/badge/telemetry-none-1a7f37?logo=ghostery&logoColor=white)](#where-your-data-can-go)
 
-**[English](README.en.md)** · [사내 반입 안내](#사내-반입) · [문제 해결](#문제-해결) · [자세한 문서](docs/ko/)
+**[한국어](README.ko.md)** · [Corporate review](#corporate-review-package) · [Troubleshooting](#troubleshooting) · [Full docs](docs/en/)
 
 </div>
 
 ---
 
-```
- ╭──────────────────────────────────────────────────────────────╮
- │ deel 1.7.0  ⌂ 이 안   OpenAI 호환 규격                        │
- │                                                              │
- │ 모델    qwen2.5-coder:7b  (40k 토큰)                          │
- │ 보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다  │
- │ 연결    스트리밍 · 도구 · 추론 조절                              │
- │ 폴더    C:\work\myproject                                     │
- │ 승인    ⏵⏵ 자동 승인  — 안 묻고 고칩니다. 되돌리기(/undo)가 안전망입니다 │
- │         Shift+Tab 으로 바꿉니다  ·  Tab 은 치던 / 명령을 채웁니다   │
- │ 이 PC   스킬 337 · 명령 127 · 플러그인 42                       │
- ╰──────────────────────────────────────────────────────────────╯
- /help 명령 목록   /think 추론 강도   Ctrl+C 중단·끝내기
+### The first thing you see answers the only question that matters
 
- ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱▱▱ 22% 28k/128k ▏ ◎ 종합 · ◇ medium·절약 · ⏵⏵ 자동
- ❯ 로그 형식 통일해줘
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-head-en-dark.svg">
+  <img alt="deel startup panel: model, where it sends, link capabilities, folder, approval mode" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-head-en-light.svg" width="900">
+</picture>
 
-  ❊ Grep(console.log)
-    └ 1개 파일 · 1건
-  ◧ Read(src/runner.js)
-    └ 5줄
-  ◈ Edit(src/runner.js)
-    └ 1군데
-
-  ▌ 로그 호출을 logger 형식으로 통일했습니다. runner.js 한 군데를 고쳤습니다.
-
-  ── 4.2초 · 도구 3회 · ↑3,900 ↓180
-```
-
----
-
-## 목차
-
-- [왜 만들었나](#왜-만들었나)
-- [무엇이 다른가](#무엇이-다른가)
-- [빠른 시작](#빠른-시작)
-- [데이터가 나가는 길](#데이터가-나가는-길)
-- [바깥 API 붙이기](#바깥-api-붙이기)
-- [로컬 모델 여러 개 쓰기](#로컬-모델-여러-개-쓰기)
-- [대화 중 명령](#대화-중-명령)
-- [작업 모드](#작업-모드)
-- [쉬움 · 개발자](#쉬움--개발자)
-- [도구](#도구)
-- [한글 문서와 엑셀](#한글-문서와-엑셀)
-- [만든 웹을 그 자리에서 띄웁니다](#만든-웹을-그-자리에서-띄웁니다)
-- [스킬·플러그인](#스킬플러그인)
-- [추론 강도](#추론-강도)
-- [자동 압축](#자동-압축)
-- [대화 이어하기](#대화-이어하기)
-- [밖에서 도구 붙이기 (MCP)](#밖에서-도구-붙이기-mcp)
-- [에디터 안에서 쓰기 (ACP)](#에디터-안에서-쓰기-acp)
-- [비밀이 새지 않게](#비밀이-새지-않게)
-- [안전망](#안전망)
-- [사내 반입](#사내-반입)
-- [설정](#설정)
-- [문제 해결](#문제-해결)
-- [개발](#개발)
-- [릴리스 노트](#릴리스-노트)
-
-여기는 **요약**입니다. 절마다 붙은 링크를 따라가면 그 안의 이야기가 나옵니다.
-
-| 자세한 문서 | 무엇이 있나 |
-|---|---|
-| [모델 다루기](docs/ko/models.md) | 급과 창 크기 · 국산 모델 이름표 · 켤 때 프로젝트 읽기 |
-| [화면과 조작](docs/ko/interface.md) | 입력칸 · 작업 모드 · 쉬움과 개발자 · 무엇을 묻고 무엇을 그냥 하나 |
-| [도구 자세히](docs/ko/tools.md) | `Outline` · `Verify` · `Task` · `Jobs` · `Append` · `Def`/`Refs` · 편집 매칭 |
-| [한글 문서와 엑셀](docs/ko/documents.md) | hwpx·docx·pptx·**PDF** · 인코딩 · 엑셀 → CSV |
-| [늘려 쓰기](docs/ko/extend.md) | 스킬 · 플러그인 · MCP · ACP |
-| [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
-| [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
-| [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.7.x](docs/ko/releases/1.7.md) · [1.6.x](docs/ko/releases/1.6.md) · [1.5.x](docs/ko/releases/1.5.md) · [1.4.x](docs/ko/releases/1.4.md) · [1.3.x](docs/ko/releases/1.3.md) · [1.2.x](docs/ko/releases/1.2.md) |
-
----
-
-## 왜 만들었나
-
-사내 보안 정책이 **미승인 소프트웨어 반입**을 막으면, 코딩 에이전트 도구는 대부분 쓸 수 없습니다.
-의존성 수백 개가 딸려 오고, 설치할 때 스크립트가 돌고, 어디로 통신하는지 한 줄로 답할 수 없기 때문입니다.
-
-deel 은 그 심사를 통과하는 것을 목표로 만들었습니다.
-
-| | deel |
-|---|---|
-| 외부 의존성 | **0개** — Node 내장 기능만 |
-| 설치 스크립트 | **없음** — 압축 풀고 바로 실행 |
-| 소스가 나가는 자리 | **딱 한 곳** — 직접 설정한 주소 |
-| 필요한 것 | Node 20 이상 |
-
-직접 확인하실 수 있습니다.
-
-```bash
-npm view deel-local-cli dependencies   # {}
-npm view deel-local-cli scripts        # install/postinstall 없음
-deel audit                             # 심사서 전문 출력
-```
-
----
-
-## 무엇이 다른가
-
-로컬 모델을 상대하는 코딩 에이전트는 몇 개 있습니다. 그런데 **로컬로 돌리는
-걸 전제로 속을 다시 설계한** 것은 드뭅니다.
-
-| | 다른 도구 | deel |
-|---|---|---|
-| `/undo` | 파일만 되돌린다 — 대화는 그 일이 있었다고 믿는 채로 | **대화까지** 같이 되감는다 |
-| 긴 대화 | 클라우드가 안 느끼는 비용을 로컬에서도 그대로 짊어진다 | 프리픽스 캐시가 **살아남게** 순서를 설계 |
-| 작은 모델의 편집 | 공백 하나 틀려도 실패 | 성공률 20%→**100%**, 엉뚱한 곳 0건 |
-| 국산 모델 | 겪어 보기 전엔 모른다 | 공개 문서로 **미리** 안다 |
-| "다 됐습니다" | 확인 안 된 것도 됐다고 한다 | `/evidence`·`/export` — **안 된 것까지** 적는다 |
-| MCP·ACP | SDK 가 필요하다 | `child_process` + `JSON` 뿐 |
-| 심사 서류 | 사람이 손으로 써서 실제와 어긋난다 | **코드가 소스를 훑어서** 만든다 |
+**`sends to  this machine 127.0.0.1 ← and nowhere else`.** Not in a policy document —
+on screen, every time you start. The `⌂` in front stays in the status bar for the whole
+session and turns into `↗` the moment traffic would leave. A real capture, not a mockup:
+`node tools/shot.mjs` regenerates every image on this page from a live run.
 
 <br>
 
-#### `/undo` 는 파일과 대화를 같이 되감습니다
+Then you give it work, and it goes and does it:
 
-파일만 되돌리면 모델은 방금 그 편집을 했다고 계속 믿고 다음 턴을 그 위에
-쌓습니다 — 화면에는 아무 일도 없었던 것처럼 보입니다. deel 은 되돌린 만큼
-오간 메시지도 같이 접습니다. 접다가 도구 호출의 짝이 어긋나면 API 가 400 을
-내므로, 짝을 다시 맞추는 로직(`repairToolPairs`)까지 같이 돕니다.
+```
+ ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱▱▱ 22% 28k/128k ▏ ◎ Auto · ◇ medium·save · ⏵⏵ auto
+ ❯ unify the logging style
 
-#### 긴 대화에서 로컬 모델이 갈수록 느려지는 이유를 직접 잡았습니다
+  ❊ Grep(console\.log)
+    └ 1 file · 1 hit
+  ◧ Read(src/runner.js)
+    └ 5 lines
+  ◈ Edit(src/runner.js)
+    └ 1 spot  +1 −1
+        1 export function run() {
+      -     console.log('run start')
+      + 2   logger.info('run start')
 
-Ollama·llama.cpp 는 프롬프트 앞부분이 한 글자라도 바뀌면 그 뒤 전부를 다시
-계산합니다. 클라우드 API 는 이 비용을 안 느끼니 신경 쓸 이유가 없지만,
-로컬로 돌리는 사람에게는 대화가 길어질수록 턴마다 지연이 쌓입니다. deel 은
-매 턴 바뀔 수 있는 것(모드·핀)을 프롬프트 **맨 끝**으로 보내고, Ollama 에는
-`keep_alive: 60m` 을 같이 보내 앞부분이 캐시에 그대로 남게 합니다. 이 순서는
-검사(`test/cache.test.js`)가 지킵니다.
+  ▌ Unified the log calls to the logger format. One change in src/runner.js.
 
-#### 작은 모델도 편집이 실제로 성공합니다
+  ── 4.2s · 3 tools · ↑3,900 ↓180
+```
 
-작은 로컬 모델은 고치려는 문자열을 공백 하나까지 완벽히 재현하지 못하는
-경우가 흔합니다. `npm run bench` 로 잰 내부 벤치마크에서, 정확히 일치만
-요구하던 옛 방식은 성공률 20% 였습니다. 지금 방식(공백·들여쓰기를 단계적으로
-완화)은 **100%** — 그러면서도 엉뚱한 곳을 고친 건수는 두 방식 다 **0건**
-입니다. 모호하면 찾지 못했다고 말할지언정 짐작해서 고치지 않습니다.
-
-#### 국산 모델은 겪어 보기 전에 압니다
-
-EXAONE·HyperCLOVA X·Kanana·Midm·Solar 는 공개 문서로 확인 가능한 버릇(예:
-추론형 여부)을 deel 이 미리 알고 시작합니다. 다른 도구는 이 모델들을 한
-번도 못 만나 본 채로 취급하고, 사람이 열 몇 턴을 겪어야 요령이 붙습니다.
-
-#### "다 됐습니다" 대신 증명서를 냅니다
-
-`/evidence` 와 `/export` 는 무엇을 바꿨는지뿐 아니라 **무엇을 확인하지
-못했는지**까지 적습니다. AI 코딩 도구가 사람을 제일 잘 속이는 순간이 자신
-있게 "됐습니다" 라고 말할 때라는 걸 알기 때문입니다. `/export` 는 바깥
-주소가 하나도 없는 자기완결 HTML 이라 폐쇄망 어디서든 열립니다.
-
-#### MCP·ACP 를 SDK 없이 붙였습니다
-
-Model Context Protocol 과 Agent Client Protocol 은 둘 다 표준입출력으로 줄
-단위 JSON-RPC 2.0 을 주고받는 게 전부입니다. deel 은 `child_process` 와
-`JSON` 만으로 둘 다 구현했습니다 — 의존성 0개가 "기능을 뺀 결과" 가 아니라
-"안 필요해서" 라는 걸 이 두 가지가 보여 줍니다.
-
-#### 심사 서류를 손으로 안 씁니다
-
-`deel pack` 이 만드는 반입심사서·SBOM·감사 사양은 **코드가 소스를 훑어서**
-만든 겁니다. 손으로 적은 서류는 언젠가 실제와 어긋나고, 담당자가 그걸 한 번
-발견하면 나머지 서류도 안 믿습니다.
+> The panel above is a real screenshot. This transcript block is still hand-written, because a
+> few of its lines — the tool result summaries and the thinking indicator — have not been
+> translated yet and would print Korean in an English capture. Known gap, being worked on;
+> everything else on an English screen is English.
 
 ---
 
-## 빠른 시작
+## 60 seconds
 
-### 설치
+```bash
+npm i -g deel-local-cli    # 0 dependencies, no install scripts
+deel setup                 # point it at Ollama, LM Studio, or your gateway
+deel                       # start working in the current folder
+```
+
+No account, no sign-up, no telemetry. If you already run Ollama or LM Studio,
+`deel setup` finds it — `deel scan` lists every local runtime and model on the machine.
+
+---
+
+<details>
+<summary><b>Contents</b> — every section on this page</summary>
+
+<br>
+
+- [Why this exists](#why-this-exists)
+- [What's different](#whats-different)
+- [Quick start](#quick-start)
+- [Where your data can go](#where-your-data-can-go)
+- [Connecting a vendor API](#connecting-a-vendor-api)
+- [Multiple local runtimes](#multiple-local-runtimes)
+- [Slash commands](#slash-commands)
+- [Work modes](#work-modes)
+- [Simple vs developer](#simple-vs-developer)
+- [Tools](#tools)
+- [Korean text and Excel](#korean-text-and-excel)
+- [Serving what you built](#serving-what-you-built)
+- [Skills and plugins](#skills-and-plugins)
+- [Reasoning effort](#reasoning-effort)
+- [Auto-compaction](#auto-compaction)
+- [Resuming a conversation](#resuming-a-conversation)
+- [Attaching tools from outside (MCP)](#attaching-tools-from-outside-mcp)
+- [Inside your editor (ACP)](#inside-your-editor-acp)
+- [Keeping secrets out of the conversation](#keeping-secrets-out-of-the-conversation)
+- [Safety](#safety)
+- [Corporate review package](#corporate-review-package)
+- [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Release notes](#release-notes)
+
+</details>
+
+This page is the **summary**. Each section links to the detail behind it.
+
+| Full docs | What is in there |
+|---|---|
+| [Models](docs/en/models.md) | Grade and window size · Korean-model presets · project detection |
+| [The screen](docs/en/interface.md) | The input box · work modes · simple vs developer · what it asks about |
+| [Tools in depth](docs/en/tools.md) | `Outline` · `Verify` · `Task` · `Jobs` · `Append` · `Def`/`Refs` · edit matching |
+| [Korean documents and Excel](docs/en/documents.md) | hwpx/docx/pptx/**PDF** · encoding · Excel → CSV |
+| [Extending](docs/en/extend.md) | Skills · plugins · MCP · ACP |
+| [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
+| [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
+| [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
+| [Release notes](docs/en/releases.md) | [1.7.x](docs/en/releases/1.7.md) · [1.6.x](docs/en/releases/1.6.md) · [1.5.x](docs/en/releases/1.5.md) · [1.4.x](docs/en/releases/1.4.md) · [1.3.x](docs/en/releases/1.3.md) · [1.2.x](docs/en/releases/1.2.md) |
+
+---
+
+## Why this exists
+
+When a corporate security policy blocks **unapproved software**, most coding-agent tools are
+unusable: hundreds of transitive dependencies, scripts that run at install time, and no
+one-line answer to "where does it send my code?"
+
+deel is built to pass that review.
+
+| | deel |
+|---|---|
+| External dependencies | **0** — Node built-ins only |
+| Install scripts | **none** — unzip and run |
+| Where source can go | **one address** — the one you configured |
+| Requirement | Node 20+ |
+
+Verify it yourself:
+
+```bash
+npm view deel-local-cli dependencies   # {}
+npm view deel-local-cli scripts        # no install/postinstall
+deel audit                             # full review sheet
+```
+
+---
+
+## What's different
+
+A handful of coding agents can talk to a local model. Far fewer were
+**redesigned inside for running locally.**
+
+| | Other tools | deel |
+|---|---|---|
+| `/undo` | rolls back files only — the conversation still believes it happened | rewinds **the conversation too** |
+| Long conversations | pay a cost cloud tools never feel, unchanged, locally | ordering designed so the prefix cache **survives** |
+| Edits on small models | fail on a single whitespace mismatch | 20%→**100%** success, 0 wrong-location edits |
+| Korean models | unknown until you've run them | known **in advance** from public docs |
+| "Done" | says so even for what wasn't checked | `/evidence` / `/export` — **unproven items included** |
+| MCP · ACP | need an SDK | `child_process` + `JSON`, nothing else |
+| Compliance paperwork | hand-written, drifts from reality | **generated by scanning the source** |
+
+<br>
+
+#### `/undo` rewinds the conversation along with the files
+
+Roll back only the files and the model still believes it just made that edit
+— it builds the next step on a premise that no longer holds, and nothing on
+screen says otherwise. deel folds the messages back in lockstep with the
+files. Folding can orphan a tool call, which the server answers with a 400,
+so the same pass repairs the pairing (`repairToolPairs`).
+
+#### Fixed the hidden reason local models get slower as a conversation grows
+
+Ollama and llama.cpp only reuse computation when a request's prefix exactly
+matches the last one — change one character near the front and everything
+after it, the whole conversation, gets recomputed. A cloud API never pays
+this cost, so cloud-first tools have no reason to care; someone running
+locally feels it compound every turn. deel pushes what can change per turn
+(mode, pins) to the **end** of the prompt and sends Ollama `keep_alive: 60m`
+so the front stays cached. The ordering is enforced by a test
+(`test/cache.test.js`).
+
+#### Edits actually succeed on small models
+
+Small local models often can't reproduce the exact whitespace of the string
+they're trying to edit. The internal benchmark (`npm run bench`) measured
+20% success for the old exact-match-only approach. The current approach
+(stepped whitespace/indent tolerance) measures **100%** — and both approaches
+land at **0** wrong-location edits. When it's ambiguous, it says so instead
+of guessing.
+
+#### Korean models are known before you've ever run them
+
+EXAONE, HyperCLOVA X, Kanana, Midm, and Solar get whatever's verifiable from
+public documentation (e.g., whether a model is a reasoning model) applied
+before the first prompt. Other tools meet these models cold, and it takes a
+dozen-plus turns of trial and error before anyone learns their quirks.
+
+#### "Done" comes with a receipt, not just a claim
+
+`/evidence` and `/export` record what wasn't verified alongside what was —
+because the moment an AI coding tool is most likely to mislead someone is
+exactly the moment it confidently says "done." `/export` is a self-contained
+HTML file with zero outbound links, so it opens anywhere, including an
+air-gapped network.
+
+#### MCP and ACP, with no SDK
+
+Both the Model Context Protocol and the Agent Client Protocol are just
+newline-delimited JSON-RPC 2.0 over stdio. deel implements both with nothing
+but `child_process` and `JSON` — proof that zero dependencies isn't a
+capability given up, it's a capability that was never needed.
+
+#### Compliance paperwork it doesn't hand-write
+
+The import-review report, SBOM, and audit spec that `deel pack` produces are
+generated **by scanning the actual source**, not typed by a person.
+Hand-written paperwork eventually drifts from reality, and the moment a
+reviewer catches one drifted claim, they stop trusting the rest of it.
+
+---
+
+## Quick start
+
+### The screen speaks your language
+
+deel is written in Korean — the code, the function names, the comments. That part stays.
+What you see on screen does not have to. Four screen languages ship: **한국어 · English ·
+日本語 · 中文**.
+
+> **Honest status:** the panels, menus, modes and tool descriptions are fully translated, and
+> `/lang` reports 100% because every string *in the table* is covered. A handful of lines never
+> made it into that table — the tool result summaries (`5 lines`, `1 spot`) and the thinking
+> indicator — and those still print Korean on an English screen. That is why the transcript
+> further up this page is hand-written rather than a screenshot.
+
+```bash
+DEEL_LANG=en deel        # this run only  (also ja, zh)
+/lang en                 # and remember it
+/lang ja                 # 日本語
+/lang zh                 # 中文
+/lang                    # how much is translated so far
+```
+
+Nothing ever comes through blank. A line that has not been translated falls back to English
+first and Korean second — so a Japanese or Chinese screen degrades to English, not to Korean —
+and `/lang` prints exactly how many strings are covered.
+
+What the model reads follows the same switch. Set it to English and the rules, the mode
+instructions, and the tool descriptions all go out in English — so the model answers you in
+English instead of Korean. That side is cheaper, too: the part of the window that ships on every
+single request drops from about 4,900 tokens to about 3,450 — on a 32k model, from 15% of the
+window to 10.5%.
+
+Tool names and argument names stay Korean (`목적`, `할일`, `번호`). Those are identifiers, not
+prose — rename them and the tool stops being called at all.
+
+### Install
 
 ```bash
 npm install -g deel-local-cli
 ```
 
-설치가 싫으면 소스를 받아 그대로 쓰셔도 됩니다. `npm install` 이 필요 없습니다.
+Or skip installing entirely — there is no `npm install` step:
 
 ```bash
 git clone https://github.com/jysvai/deel-local-cli
 node deel-local-cli/bin/deel.js
 ```
 
-> **주의** — 홈 디렉터리(`~`)에서 `npm install` 하지 마세요. 거기에 `node_modules` 가 생기면
-> 이후 모든 npm 명령이 그 폴더를 훑어서 무관한 패키지 경고를 냅니다. `-g` 로 설치하거나 `npx` 를 쓰세요.
+> **Note** — do not run `npm install` in your home directory. A `node_modules` there makes every
+> later npm command scan it and report warnings about unrelated packages. Use `-g` or `npx`.
 
-### 연결 정하기
+### Point it at a model
 
-이 PC 에 떠 있는 로컬 서버를 훑어서 고르는 방법:
+Scan this machine and pick one:
 
 ```bash
 deel scan --pick
 ```
 
-주소를 직접 넣는 방법 (사내 게이트웨이는 이쪽):
+Or enter an address directly (use this for a corporate gateway):
 
 ```bash
 deel setup
 ```
 
-### 시작
+### Start
 
-작업할 폴더에서 `deel` 을 칩니다. **그 폴더가 작업 범위가 되고, 밖의 파일은 읽지도 쓰지도 못합니다.**
+Run `deel` in the folder you want to work in. **That folder becomes the scope — files outside it
+cannot be read or written.**
 
 ```bash
 cd C:\work\myproject
@@ -244,461 +315,455 @@ deel
 
 ---
 
-## 데이터가 나가는 길
+## Where your data can go
 
-코딩 에이전트는 소스 코드를 통째로 모델에 보냅니다. **그 주소가 어디인지가 전부입니다.**
-말로 보장하는 대신 코드가 막습니다 — `src/safety/network.js` 가 요청마다 확인하고,
-허용 목록에 없으면 요청을 만들지도 않습니다.
+A coding agent ships your whole source to a model. **The address is everything.**
+Rather than promising in prose, the code enforces it: `src/safety/network.js` checks every request
+and never builds one for an address that is not on the allow-list.
 
 ```
- [A] 모델 게이트웨이 ─── 소스 코드가 나가는 유일한 길
-     setup 에서 정한 한 자리만. 모델을 바꾸면 이전 자리는 닫힙니다.
+ [A] Model gateway ────── the only path your source travels
+     One address, set in `setup`. Switching models closes the previous one.
 
- [B] 웹 읽기 (WebFetch) ─ 받아 오기만 하는 길
-     GET 만. 본문 0바이트. 사내망·로컬 주소는 거절. 다녀온 곳은 전부 기록.
+ [B] Web read (WebFetch) ─ receive-only
+     GET only, zero-byte body. Private/loopback addresses refused. Every visit logged.
 
- [C] 플러그인 받기 ────── /plugin install 을 칠 때만 잠깐
+ [C] Plugin fetch ─────── open only while /plugin install runs
 
- [D] MCP 서버 ─────────── 딴 자식 프로세스, 남의 프로그램
-     .deel/mcp.json 에 사람이 직접 적어야만 뜹니다. 기본은 꺼져 있습니다.
+ [D] MCP servers ──────── a separate child process, someone else's program
+     Only starts if a human writes it into .deel/mcp.json. Off by default.
 ```
 
-A·B·C 는 deel 이 직접 만드는 요청이라 하나씩 걸러낼 수 있습니다. **[D] 는
-다릅니다** — MCP 서버는 별도 프로세스라 그 안에서 무슨 소켓을 여는지 코드로
-볼 수 없습니다. 그래서 `--offline` 일 때는 요청을 거르는 대신 **그 서버
-자체를 아예 띄우지 않습니다** — 막을 수 없는 것을 막았다고 말하지 않습니다.
+A, B, and C are requests deel makes itself, so each one can be filtered.
+**D is different** — an MCP server is its own process; there is no way to see
+what sockets it opens from the outside. So under `--offline`, instead of
+filtering its requests, deel **never starts the server at all** — it doesn't
+claim to have blocked what it can't actually see.
 
-`--offline` 을 주면 **B·C·D 가 모두 막히고 이 컴퓨터 안으로만** 다닙니다.
+Pass `--offline` and **B, C, and D are all closed** — traffic stays on this machine.
 
 ```bash
 deel --offline
 ```
 
-무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
+The destination is printed at the top of every session:
 
 ```
- deel 1.7.0  ⌂ 이 안
- 보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
+ deel 1.7.0  ⌂ inside
+ Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
-### 실행 모드 셋
+### Three run modes
 
-1.6 까지는 자물쇠가 `--offline` 하나였고 **기본이 열림**이었습니다.
-`.deel/config.json` 의 주소 한 줄만 바깥으로 바꾸면 그대로 나갔습니다.
-화면에 `↗` 가 뜨긴 했지만 그건 **알리는 것**이지 막는 것이 아닙니다.
+Through 1.6 the only lock was `--offline`, and **the default was open**. One
+line in `.deel/config.json` pointing outside was enough. The screen did show
+`↗`, but that is a *notice*, not a lock.
 
-| 모드 | 켜는 법 | 바깥 주소일 때 |
+| Mode | How | On an external address |
 |---|---|---|
-| `⌂ 이 안` | `deel` (처음 값) | **물어봅니다.** 한 번 허락하면 그 연결은 다음부터 안 묻습니다 |
-| `↗ 바깥` | `deel online` · `--online` | 안 물어봅니다 |
-| `⛊ 봉인` | `deel offline` · `--offline` | 기억해 둔 허가까지 무시합니다 (제일 셈) |
+| `⌂ inside` | `deel` (default) | **Asks.** Say yes once and that connection stops asking |
+| `↗ outside` | `deel online` · `--online` | Does not ask |
+| `⛊ sealed` | `deel offline` · `--offline` | Ignores even remembered permission (strongest) |
 
-**주소와 허가가 둘 다 있어야 나갑니다.** 주소만 바꿔서는 못 나갑니다.
+**Both the address and the permission are required.** Changing the address
+alone does not get you out.
 
-로컬·사내망(`127.x` · `10.x` · `192.168.x` · `172.16~31.x`)은 셋 중 어느
-모드에서도 그냥 갑니다 — `offline` 은 「인터넷 없음」 이 아니라 「회사 밖으로
-안 나감」 입니다.
+Local and intranet ranges (`127.x` · `10.x` · `192.168.x` · `172.16-31.x`) pass
+in all three modes — `offline` does not mean "no internet," it means "nothing
+leaves the company." 
 
-수집·전송하는 것이 없습니다. 텔레메트리, 사용 통계, 오류 보고 전부 없습니다.
-대화 기록·되돌리기 이력·설정은 작업 폴더의 `.deel/` 안에만 남습니다.
+Nothing is collected or transmitted. No telemetry, no usage stats, no crash reporting.
+Conversation history, undo snapshots and config live only in `.deel/` inside your working folder.
 
-> 검증: `npm test` 의 network·web·mcp 검사 159항목. 허용되지 않은 서버에 실제로
-> 요청이 **한 건도 닿지 않는지**, `--offline` 일 때 MCP 서버가 **한 번도 안
-> 뜨는지**까지 진짜 서버를 띄워서 확인합니다.
+> Verified by 159 checks in `npm test` (network + web + mcp), including bringing up a real
+> server and confirming that **not a single request reaches it** when it is not allow-listed,
+> and that an MCP server **never starts** under `--offline`.
 
 ---
 
-## 바깥 API 붙이기
+## Connecting a vendor API
 
-로컬 모델이 이 도구의 기본값이고, 그건 안 바뀝니다. 다만 「사내에 GPU 가 없다」
-「이 한 가지만 큰 모델로 하고 싶다」 는 자리가 있어서, 벤더 API 도 붙을 수
-있게 열었습니다. **위의 모드가 그 문을 지킵니다.**
+Local models are the default and that does not change. But "we have no GPU
+in-house" and "just this one task on a bigger model" are real situations, so
+vendor APIs can connect. **The modes above guard that door.**
 
 ```bash
 deel setup
 ```
 
-주소를 묻는 대신 **어디에 붙을지**를 묻습니다.
+Instead of asking for a URL, it asks **where you're connecting**.
 
 ```
-1. 열쇠만 있습니다 — 어디 것인지 찾아 드립니다   빈칸 1개
-2. 주소를 직접 넣기 (사내 게이트웨이 · 로컬)      빈칸 2개
-3. OpenAI (GPT)                                  빈칸 1개
-4. Anthropic (Claude)                            빈칸 1개
-5. Google (Gemini)                               빈칸 1개
-6. AWS Bedrock                                   빈칸 2개
+1. I only have a key — I'll figure out where it goes    1 blank
+2. Enter an address (corporate gateway · local)          2 blanks
+3. OpenAI (GPT)                                          1 blank
+4. Anthropic (Claude)                                    1 blank
+5. Google (Gemini)                                       1 blank
+6. AWS Bedrock                                           2 blanks
 ```
 
-1번이 핵심입니다. 열쇠 앞머리로 어디 것인지 짚어서 **한 곳만** 묻습니다.
+Option 1 is the point — the key prefix decides which single vendor is asked.
 
 ```
 ❯ sk-ant-api03-••••
-  ✓ Anthropic (Claude) 열쇠로 보입니다. (열쇠가 sk-ant- 로 시작합니다)
-    여기저기 던지지 않습니다.
+  ✓ Looks like an Anthropic (Claude) key. (the key starts with sk-ant-)
+    It is not thrown at every vendor in turn.
 ```
 
-벤더마다 찔러 보는 식으로 만들면 Anthropic 열쇠가 OpenAI 서버로, 다시 Google
-서버로 갑니다. 401 이 오고 끝이지만 **열쇠는 이미 갔습니다.** 그래서 모르는
-열쇠는 짐작하지 않고 사람에게 묻습니다.
+Probing vendors one by one would send an Anthropic key to OpenAI's server and
+then to Google's. You get a 401 and stop — but **the key has already left.**
+So an unrecognized key is never guessed at; you are asked.
 
-Bedrock 은 리전을 고릅니다 — 서울(`ap-northeast-2`) 포함 다섯 곳과 「직접 입력」.
-Claude 는 몸통 규격이 달라서 여섯 자리를 따로 흡수했습니다
-([1.7.0 릴리스 노트](docs/ko/releases/1.7.md#170)).
+Bedrock asks for a region — five including Seoul (`ap-northeast-2`), plus
+"enter it yourself." Claude has a different wire shape, absorbed in six places
+([1.7.0 release notes](docs/en/releases/1.7.md#170)).
 
-### 바깥에 붙으면 파일 속 비밀도 가립니다
+### Going outside masks secrets in file contents too
 
-로컬만 쓸 때는 파일에서 읽어 온 글을 **일부러 안 가렸습니다** — 가리면 모델이
-그 가림표를 다시 파일에 써서 사람의 진짜 열쇠를 지워 버리기 때문입니다.
+While everything stayed local, text read from files was deliberately **not**
+masked: mask it and the model writes the mask back into the file, destroying
+your real key.
 
-바깥으로 나가면 저울이 뒤집힙니다. `Read` 한 번이면 `.env` 가 통째로 남의
-서버 로그에 남고, 그건 되돌릴 수가 없습니다. 잃는 쪽은 다른 자리에서 막았습니다 —
-`Write`·`Append`·`Edit` 이 가린 표를 파일에 못 씁니다.
+Going outside flips that trade. One `Read` puts your whole `.env` into someone
+else's server log, and that cannot be undone. The other side is now handled
+elsewhere — `Write`, `Append` and `Edit` refuse to write a mask back into a file.
 
-### 얼마 나갔는지 보입니다
+### You can see what it costs
 
 ```
-❯ ─ 12.4초 · 도구 3회 · ↑8.2k ↓1.1k · $0.0271
+❯ ─ 12.4s · 3 tools · ↑8.2k ↓1.1k · $0.0271
 ```
 
-**값이 박힌 요금표가 없습니다.** 요금은 회사가 아무 때나 바꾸는 값이라, 소스에
-박아 두면 반년 뒤 이 도구는 틀린 금액을 자신 있게 찍는 도구가 됩니다.
-`.deel/config.json` 에 적으면 셈합니다 — 100만 토큰당 달러입니다.
+**There is no built-in price table.** Prices change whenever a vendor decides,
+and a table baked into source would have the tool confidently printing wrong
+amounts six months later. Write them in `.deel/config.json` — dollars per
+million tokens:
 
 ```json
 "요금": { "claude-opus-4-6": { "입력": 0, "출력": 0, "기준": "2026-09-01" } }
 ```
 
-금액 옆에 **어디서 온 값인지·언제 기준인지**가 같이 뜨고, 반년이 지나면
-`· 오래됨` 이 붙습니다. 모르면 안 찍습니다 — 로컬로만 쓰는 화면에는 돈 이야기가
-아예 안 뜹니다.
+The amount is shown with **where it came from and as of when**, and after six
+months it is marked stale. Unknown means nothing is printed — a local-only
+session never sees money at all.
 
 ---
 
-## 로컬 모델 여러 개 쓰기
+## Multiple local runtimes
 
-로컬 런타임은 보통 하나만 쓰지 않습니다. Ollama 로 작은 모델을 돌리면서
-LM Studio 로 큰 모델을 띄워 두기도 합니다. `deel scan` 이 알려진 자리 13곳을 동시에 두드려
-전부 찾아냅니다.
+People rarely run just one. `deel scan` knocks on 13 known ports concurrently and identifies
+each runtime from its **response**, not its port number — Ollama by `/api/version`,
+LM Studio by `/api/v0/models`, llama.cpp by `/props`. Unrecognised ones are marked as a guess.
 
 ```
 $ deel scan
 
-── 로컬 모델 서버 훑기 ───────────────────────────────────────────────
-  127.0.0.1 의 알려진 자리 13곳을 두드립니다. 바깥으로는 나가지 않습니다.
+  ✓ found 3
 
-  ✓ 3곳 찾음
-
-  ◆ Ollama      127.0.0.1:11434   Ollama 규격   36ms
+  ◆ Ollama      127.0.0.1:11434   Ollama API      36ms
       · qwen2.5-coder:7b            7B · 4.4GB
       · llama3.2:1b                 1B · 1.2GB
-  ◆ LM Studio   127.0.0.1:1234     OpenAI 호환    7ms
+  ◆ LM Studio   127.0.0.1:1234     OpenAI-compat    7ms
       · devstral-small-2507
-  ◆ llama.cpp   127.0.0.1:8080     OpenAI 호환    7ms
+  ◆ llama.cpp   127.0.0.1:8080     OpenAI-compat    7ms
       · gemma-3-4b-it
 
-  합계  서버 3곳 · 모델 6개
-
-  추천  Ollama · qwen2.5-coder:7b
-        코딩용 모델 · 도구 호출을 잘하는 계열
+  Recommended  Ollama · qwen2.5-coder:7b
 ```
 
-포트로 단정하지 않고 **응답을 보고** 런타임을 구분합니다 — Ollama 는 `/api/version`,
-LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추정)` 이라고 밝힙니다.
-
-| 명령 | 하는 일 |
+| Command | What it does |
 |---|---|
-| `deel scan` | 찾아서 보여주기만 |
-| `deel scan --pick` | 목록에서 골라 등록 |
-| `deel scan --save` | 찾은 것 전부 등록 |
-| `deel scan --ports 9000,9100` | 기본 자리 말고 더 볼 포트 |
-| `deel scan --host <주소>` | 기본은 `127.0.0.1` |
-| `deel scan --key <키>` | 키가 필요한 로컬 서버일 때 |
+| `deel scan` | Show what is running |
+| `deel scan --pick` | Choose one from the list |
+| `deel scan --save` | Register everything found |
+| `deel scan --ports 9000,9100` | Extra ports to probe |
+| `deel scan --host <addr>` | Defaults to `127.0.0.1` |
 
-등록한 뒤에는 대화 중 `/model` 로 갈아탑니다. **대화 내용은 그대로 이어집니다.**
+Switch with `/model` mid-conversation — **the conversation carries over.**
 
-> **자세히** — 걸린 모델에 맞춰 스스로 바뀝니다 · 국산 모델은 겪기 전에 압니다 · 작은 창에서는 고정 몫을 줄입니다 · 켤 때 이 폴더가 무슨 프로젝트인지 읽습니다
+> **More** — It adapts to whatever model is attached · Korean models are known before they are experienced · Small windows get a smaller fixed share · On startup it reads what kind of project this folder is
 >
-> **[모델 다루기 읽기 →](docs/ko/models.md#로컬-모델-여러-개-쓰기)**
+> **[Models read →](docs/en/models.md#multiple-local-runtimes)**
 
 ---
 
-## 대화 중 명령
+## Slash commands
 
-이름은 Claude Code / Codex 관례에 맞췄습니다.
+Names follow Claude Code / Codex conventions.
 
-| 명령 | 하는 일 |
+| Command | What it does |
 |---|---|
-| `/help` | 명령 목록 |
-| `/bell [on|off]` | 다 됐을 때·물어볼 때 종소리와 창 제목 |
-| `/lang [ko|en|ja|zh] [시킬말]` | 화면 말 (한국어·English·日本語·中文 네 가지, 전부 다 채워져 있다). **시킬 말을 따로 줄 수 있다** — `/lang ko en` 이면 모델에게는 영어로 시키고 답은 한국어로 받는다(8k 창에서 고정 몫 23% 감소). 코드는 그대로 |
-| `/keys` | 이 터미널이 무슨 키를 보내는지 눌러서 확인 — 줄바꿈이 안 될 때 |
-| `/consult <프로필> <질문>` | 다른 모델에게 한 번 물어보기 — 지금 쓰는 것은 안 바꿈 |
-| `/export` | 이 대화를 **보고서 한 장**(HTML)으로 — 시킨 것·바뀐 것·확인한 것. 폐쇄망에서 여는 자기완결 파일 |
-| `/lsp [on\|off]` | 언어 서버 — 무엇이 깔려 있고 `Def`·`Refs` 를 쓸 수 있는지. `off` 는 고친 뒤 진단만 끔 |
-| `/context` | 무엇이 컨텍스트를 먹고 있는지 |
-| `/ctx [auto\|숫자\|자세히]` | 컨텍스트 **길이** — 모델에 맞춰 다시 재거나 직접 지정 |
-| `/out [숫자\|auto]` | 한 번에 받을 **답 길이** 상한 — 큰 파일이 잘리면 여기를 올립니다 |
-| `/grade [작음\|보통\|큼\|auto]` | 모델 **급** — 얼마나 알아서 하나. `/ctx` 와 다른 축입니다 |
-| `/compact` | 앞선 대화를 요약해서 접기 |
-| `/clear` | 대화 비우기 (연결·규칙은 유지) |
-| `/thread [new\|fork\|close\|번호]` | 대화 갈래 — 곁가지를 딴 자리에서. 연결·되돌리기는 같이 씁니다 |
-| `/learned [지우기]` | 쓰면서 저절로 알게 된 것 — 되는 명령·이 모델의 버릇 |
-| `/pin <말>` | 못 박기 — 접거나 요약해도 **안 지워지는** 말 |
-| `/evidence [파일]` | 증거 — 무엇을 바꿨고 무엇이 그걸 증명하나. **안 된 것도** 적습니다 |
-| `/commit [전부\|미리보기\|제목]` | 이번 대화가 바꾼 것만 담아 커밋. 메시지는 diff 와 증거에서. **push 는 안 합니다** |
-| `/model` | 연결·모델 바꾸기 |
-| `/model 카드` | 이 모델을 겪어 본 결과 — 그래서 deel 이 무엇을 바꿔 뒀는지 |
-| `/think <강도>` | 추론 강도 (`off·low·medium·high·max`) |
-| `/think 배분 <배분>` | 단계별 배분 (`균일·절약·깊게`) |
-| `/think 자세히` | 단계표 — 어느 단계를 어떤 강도·상한으로 도는지 |
-| `/mode <모드>` | 승인 정책 — 얼마나 물어보나 (`auto` · `confirm` · `strict`) |
-| `/work [모드]` | 작업 모드 — 무슨 일을 하는 중인가 |
-| `/auto` | 다시 맡기기 — 말을 보고 알맞은 모드로 저절로 옮겨 갑니다 |
-| `/code` `/plan` `/architect` `/debug` `/ask` `/orchestrator` | 작업 모드 바로 바꾸기 (그때부터 고정) |
-| `/level [수준]` | 화면에 무엇을 내놓을지 (`쉬움` · `개발자`) |
-| `/motion [기본\|기사\|동물\|사무실\|끔]` | 일하는 동안 뭐가 도나 — 그 자리에서 바뀌고 설정에 남습니다 |
-| `/undo [턴수]` | 파일 변경 되돌리기 |
-| `/diff [파일]` | 이번 대화에서 바뀐 파일 · 바뀐 자리 보기 |
-| `/preview [폴더\|파일\|off]` | 만든 웹을 이 자리에서 띄워 보기 — 브라우저가 같이 열립니다 |
-| `/tools` | 쓸 수 있는 도구 |
-| `/skills [검색어\|all\|off]` | 스킬 보기·검색·골라 올리기 |
-| `/plugin [install\|remove\|pack]` | 플러그인 관리 |
-| `/cost` | 이번 세션 사용량 |
-| `/status` | 연결 상태 |
-| `/scan [save]` | 이 PC 에 떠 있는 로컬 모델 서버 훑기 (`save` 면 바로 등록) |
-| `/sessions` | 이 폴더의 지난 대화 목록 |
-| `/recall <말>` | 지난 대화에서 **내용으로** 찾기 |
-| `/memory` | 대화가 끝나도 남는 기억 — 보기·적기·지우기 |
-| `/mcp` | 밖에서 붙인 도구(MCP) 서버 보기 |
-| `/init` | `DEEL.md` 규칙 파일 만들기 |
-| `/exit` | 끝내기 |
+| `/help` | Command list |
+| `/lang [ko\|en] [prompt lang]` | Screen language. **The prompt language is a separate axis** — `/lang en ko` instructs the model in Korean while answering you in English. Korean screen + English prompt cuts the 8k fixed share by 23% |
+| `/keys` | Press keys to see what your terminal actually sends — for when new lines will not work |
+| `/bell [on\|off]` | Ring and set the window title when a turn ends, or when deel needs an answer |
+| `/consult <profile> <question>` | Ask a second model one question. Your current model stays put |
+| `/export` | This conversation as a **one-page HTML report** — asked, changed, verified. Self-contained, opens on any network |
+| `/lsp [on\|off]` | Language servers — what is installed, and whether `Def`/`Refs` are available. `off` turns post-edit diagnostics off only |
+| `/context` | What is consuming the context window |
+| `/ctx [auto\|number]` | Context **length** — re-read it off the model, or set it yourself |
+| `/grade [small\|medium\|large\|auto]` | Model **grade** — how much it does on its own. A different axis from `/ctx` |
+| `/out [number\|auto]` | Cap on a **single reply** — raise it when large files get cut |
+| `/compact` | Summarise and fold older turns |
+| `/clear` | Clear the conversation (keeps link and rules) |
+| `/thread [new\|fork\|close\|n]` | Conversation threads — side work in its own context. Link and undo stay shared |
+| `/learned [clear]` | What deel has picked up on its own — commands that work here, this model's habits |
+| `/pin <text>` | Pin a line — folding and compaction **cannot reach it** |
+| `/evidence [file]` | Evidence — what changed, and what proves it. **What is unproven is listed too** |
+| `/commit [all\|preview\|title]` | Commits only what this session changed; message from the diff and the evidence. **Never pushes** |
+| `/model` | Switch connection / model |
+| `/model 카드` | Model card — what this model has actually done here, and what deel changed because of it |
+| `/think <level>` | Reasoning level (`off·low·medium·high·max`) |
+| `/think 배분 <profile>` | Per-stage profile (`even·save·deep`) |
+| `/think 자세히` | Stage table — which stage runs at which level and cap |
+| `/mode <mode>` | Approval policy — how much it asks (`auto` · `confirm` · `strict`) |
+| `/work [mode]` | Work mode — what kind of work you are doing |
+| `/auto` | Hand the wheel back — it picks the mode from what you type |
+| `/code` `/plan` `/architect` `/debug` `/ask` `/orchestrator` | Switch work mode directly (pins it) |
+| `/level [level]` | How much to show (`쉬움` simple · `개발자` developer) |
+| `/motion [plain\|knight\|animal\|office\|off]` | What animates while it works — takes effect at once, and is saved |
+| `/undo [turns]` | Revert file changes |
+| `/diff [file]` | Files changed this session, and the changed lines |
+| `/preview [folder\|file\|off]` | Serve what you built, right here — a browser opens with it |
+| `/tools` | Available tools |
+| `/skills [query\|all\|off]` | Browse, search, load skills |
+| `/plugin [install\|remove\|pack]` | Manage plugins |
+| `/cost` | Session usage |
+| `/status` | Connection status |
+| `/scan [save]` | Sweep this machine for local model servers (`save` registers them) |
+| `/sessions` | Past conversations in this folder |
+| `/recall <text>` | Search past conversations **by content** |
+| `/memory` | What persists across sessions — view, add, delete |
+| `/mcp` | Externally attached tools (MCP servers) |
+| `/init` | Create a `DEEL.md` rules file |
+| `/exit` | Quit |
 
-`/scan` 과 `/sessions` 는 나가지 않고도 씁니다. 로컬 서버를 새로 켰거나 모델을
-바꿔 올렸을 때 `/scan save` → `/model` 두 번이면 대화를 이어둔 채로 갈아탑니다.
+Discovered plugin commands are invoked as `/<plugin>:<name>`, with `$ARGUMENTS` substituted.
 
-**치지 않고 쓰는 것**
+`/scan` and `/sessions` work without leaving the session. If you just started another local
+server or loaded a different model, `/scan save` then `/model` switches over without losing
+the conversation.
 
-| 키 | 무엇을 |
+**Without typing**
+
+| Key | What it does |
 |---|---|
-| `Tab` | 치던 `/` 명령을 채웁니다. 치는 도중에 후보가 상자 아래에 뜹니다 |
-| `Shift+Tab` | 승인 방식 (`⏵⏵ 자동` → `⏵ 위험만` → `⏸ 모두`) |
-| `Ctrl+O` | 작업 모드 (`종합` → `코드` → `계획` → …) |
-| `↑` `↓` | 지난 입력 이력 |
-| `Ctrl+C` | 답하는 중이면 그 답만 끊고, 빈 줄에서 두 번이면 끝냅니다 |
-| 일하는 중에 그냥 치고 `Enter` | 하던 일을 안 버리고 방향만 틉니다 — 다음 걸음부터 반영 |
+| `Tab` | Completes the `/` command you are typing. Candidates appear under the box as you type |
+| `Shift+Tab` | Approval policy (`⏵⏵ auto` → `⏵ risky only` → `⏸ everything`) |
+| `Ctrl+O` | Work mode (`종합` → `코드` → `계획` → …) |
+| `↑` `↓` | Input history |
+| `Ctrl+C` | Stops the answer in progress; twice on an empty line quits |
+| Typing while it works, then `Enter` | Steers without throwing anything away — takes effect from the next step |
 
-한글 조합·붙여넣기·`Ctrl+A/E`·백스페이스는 전부 그대로 됩니다.
+Korean IME composition, paste, `Ctrl+A/E` and backspace all keep working.
 
-> **자세히** — @파일 로 바로 붙이기 · 도중에 멈추기 · 멈추지 않고 방향만 틀기
+> **More** — Attaching a file with @ · Interrupting · Steering without stopping
 >
-> **[화면과 조작 읽기 →](docs/ko/interface.md#대화-중-명령)**
+> **[The screen read →](docs/en/interface.md#slash-commands)**
 
 ---
 
-## 작업 모드
+## Work modes
 
-무슨 일을 하는 중인지에 따라 **줄 수 있는 도구와 추론 설정이 같이 바뀝니다.**
-`Shift+Tab` 으로 차례로 돌리거나, 이름을 그대로 치면 됩니다.
+What you are working on changes **which tools the model is given and how hard it thinks.**
+Cycle with `Shift+Tab`, or type the name.
 
-| 모드 | 하는 일 | 파일을 고치나 | 추론 |
+| Mode | For | Can edit files | Reasoning |
 |---|---|---|---|
-| `/auto` ◎ 종합 | **처음 값.** 말을 보고 알맞은 모드로 옮겨 간다 | 예 | 보통 (`save`) |
-| `/code` ◆ 코드 | 고치고 만든다 | 예 | 보통 (`save`) |
-| `/plan` ☰ 계획 | 먼저 계획만 세운다 | **아니오** | 깊게 (`deep`·high) |
-| `/architect` ◈ 설계 | 구조를 짠다 | **아니오** | 깊게 (`deep`·high) |
-| `/debug` ◉ 디버그 | 원인을 찾는다 | 예 | 깊게 · 단계 많이 (32) |
-| `/ask` ◇ 묻기 | 설명만 한다 | **아니오** | 얕게 (`low`) |
-| `/orchestrator` ❋ 총괄 | 큰 일을 쪼개서 | 예 | 단계 아주 많이 (40) |
+| `/auto` ◎ Auto | **Default.** Reads your message and switches for you | Yes | Normal (`save`) |
+| `/code` ◆ Code | Writing and fixing | Yes | Normal (`save`) |
+| `/plan` ☰ Plan | Planning first | **No** | Deep (`deep`·high) |
+| `/architect` ◈ Architect | Shaping structure | **No** | Deep (`deep`·high) |
+| `/debug` ◉ Debug | Finding causes | Yes | Deep, more steps (32) |
+| `/ask` ◇ Ask | Explaining only | **No** | Shallow (`low`) |
+| `/orchestrator` ❋ Orchestrator | Breaking up large work | Yes | Many steps (40) |
 
-읽기만 하는 모드에서는 `Write`·`Edit`·`Bash` 를 **모델에게 아예 보내지 않습니다.**
-"고치지 마세요" 라고 부탁하지 않습니다 — 모델은 부탁을 잊습니다. 없는 도구는 못 씁니다.
+In read-only modes, `Write`, `Edit` and `Bash` are **never sent to the model at all.**
+It is not asked politely not to edit — models forget requests. A tool that isn't there can't be used.
 
-`/mode` 와 헷갈리지 마세요. 둘은 다른 축입니다.
+Don't confuse this with `/mode`. They are separate axes:
 
-- `/mode` — **얼마나 물어보나** (auto · confirm · strict)
-- `/work` — **무슨 일을 하는 중인가** (위 일곱 가지)
+- `/mode` — **how much it asks you** (auto · confirm · strict)
+- `/work` — **what kind of work you are doing** (the seven above)
 
-`/think` 나 `/mode` 를 직접 고른 적이 있으면 그 선택이 우선합니다.
-모드가 사람이 고른 값을 덮어쓰지 않습니다.
+If you have explicitly set `/think` or `/mode`, your choice wins. A work mode never
+overrides something a person chose.
 
-> **자세히** — 저절로 옮겨 가기 (종합 모드)
+> **More** — Switching by itself (Auto mode)
 >
-> **[화면과 조작 읽기 →](docs/ko/interface.md#작업-모드)**
+> **[The screen read →](docs/en/interface.md#work-modes)**
 
 ---
 
-## 쉬움 · 개발자
+## Simple vs developer
 
-처음 켠 사람에게 명령 스무 개를 들이밀면 아무것도 못 고릅니다.
-그렇다고 기능을 잠그면 쓸 만해졌을 때 막힙니다. 그래서 **보이는 것만** 나눕니다.
+Twenty commands on first launch means nothing gets chosen. Locking features away means
+hitting a wall later. So only **what is shown** differs.
 
-| | 쉬움 (기본) | 개발자 |
+| | Simple (`쉬움`, default) | Developer (`개발자`) |
 |---|---|---|
-| `/help` 목록 | 자주 쓰는 것만 | 전부 |
-| 오류 문구 | 무엇을 하면 되는지 | 원래 문구 그대로 |
-| 안전 장치 | **똑같음** | **똑같음** |
+| `/help` listing | Common commands only | Everything |
+| Error messages | What to do about it | The original text |
+| Safety | **Identical** | **Identical** |
 
-`/level 개발자` 로 바꾸면 설정에 남아 다음에 켤 때도 이어집니다.
+`/level 개발자` is saved to config and persists across sessions.
 
-중요한 것 두 가지입니다.
+Two things matter here:
 
-- **감춘 것도 그대로 먹습니다.** 쉬움에서 `/think high` 를 쳐도 됩니다. 목록에 안 띄울 뿐입니다.
-- **초보라고 승인을 덜 받지 않습니다.** 되돌리기·작업 범위·위험 명령 차단은 두 수준이 같습니다.
-  초보일수록 되돌릴 수 있어야 합니다.
+- **Hidden commands still work.** `/think high` works in simple mode. It just isn't listed.
+- **Beginners do not get fewer safeguards.** Undo, workspace scope and dangerous-command
+  blocking are identical. A beginner needs the undo more, not less.
 
-> **자세히** — 입력칸 · 명령은 다 안 쳐도 됩니다 · 일하는 중에는 상자가 그대로 있습니다 · 왼쪽 그림도 같이 움직입니다 외 1개
+> **More** — The input box · You don't have to type the whole command · The box stays while it works · The picture on the left moves too and 1 more
 >
-> **[화면과 조작 읽기 →](docs/ko/interface.md#쉬움--개발자)**
+> **[The screen read →](docs/en/interface.md#simple-vs-developer)**
 
 ---
 
-## 도구
+## Tools
 
-이름과 인자를 Claude Code 와 같게 맞췄습니다. 그 관례로 쓰인 스킬·명령이 그대로 먹습니다.
+Names and arguments match Claude Code, so skills written for that convention work unchanged.
 
-| 도구 | 하는 일 |
+| Tool | What it does |
 |---|---|
-| `Read` | 파일 읽기 (줄 번호 · `offset`/`limit` 지원 · **엑셀은 CSV 로, hwpx·docx·pptx·PDF 는 글로 바꿔서**) |
-| `Write` | 파일 쓰기·덮어쓰기 (**여러 개는 `files` 배열로 한 번에**) |
-| `Append` | 파일 끝에 이어 붙이기 — **큰 파일을 나눠 쓰는 자리** |
-| `Edit` | 정확한 문자열 바꾸기 (`replace_all` · **여러 군데는 `edits` 배열로 한 번에**) |
-| `Move` | 파일·폴더 옮기기·이름 바꾸기 — **구조를 바꾸는 자리** (`moves` 배열로 한 번에 · 되돌리기에 잡힘) |
-| `Glob` | 이름 패턴으로 파일 찾기 |
-| `Grep` | 내용 정규식 검색 |
-| `Bash` | 명령 실행 (**끝나지 않는 것은 `background: true`**) |
-| `Skill` | 스킬 본문 펼쳐 읽기 (스킬이 있을 때만 모델에게 보임) |
-| `WebFetch` | 웹 페이지 읽기 (읽기 전용 · `--offline` 이면 숨김) |
-| `Ask` | 갈림길에서 **사람에게 되묻기** — 고를 것을 주고 숫자 하나로 받는다 |
-| `Recall` | **지난 대화**에서 찾기 — "저번에 그거" 를 모델이 스스로 뒤진다 |
-| `Remember` | 대화가 끝나도 남길 것 한 줄 — 다음에 켤 때 처음부터 안다 |
-| `TodoWrite` | 할 일 목록 — 긴 일을 쪼개서 어디까지 했는지 화면에 띄움 |
-| `Outline` | 폴더의 **뼈대만** 보기 — 통째로 읽는 것보다 수십 분의 일 |
-| `Verify` | 만든 것이 **진짜 되는지** 확인 |
-| `Task` | 큰 일의 한 덩이를 **따로 떨어진 창**에서 돌리기 |
-| `Jobs` | **뒤에서 도는 명령** 보기·읽기·끝내기 — `Bash` 의 `background` 와 짝 |
-| `Def` | 이름이 **어디 정의됐는지** — 언어 서버가 깔려 있을 때만 보입니다 |
-| `Refs` | 이름을 **어디서 쓰는지** 전부 — 언어 서버가 깔려 있을 때만 보입니다 |
+| `Read` | Read a file (line numbers, `offset`/`limit`, **Excel as CSV, hwpx/docx/pptx and PDF as text**) |
+| `Write` | Write / overwrite a file (**several at once via the `files` array**) |
+| `Append` | Append to the end of a file — **how large files get written in pieces** |
+| `Edit` | Replace an exact string (`replace_all`; **several sites at once via the `edits` array**) |
+| `Move` | Move / rename files and folders — **how you restructure** (`moves` array; covered by undo) |
+| `Glob` | Find files by name pattern |
+| `Grep` | Regex search file contents |
+| `Bash` | Run a command (**`background: true` for anything that does not finish**) |
+| `Skill` | Expand a skill body (shown to the model only when skills exist) |
+| `WebFetch` | Read a web page (read-only; hidden under `--offline`) |
+| `Ask` | **Ask you back** at a fork — offers the choices, takes a single number |
+| `Recall` | Search **past conversations** — the model digs up "that thing last time" itself |
+| `Remember` | One line that outlives the session — known from the start next time |
+| `TodoWrite` | Checklist — breaks long work into steps and shows progress |
+| `Outline` | See a folder's **skeleton only** — tens of times cheaper than reading it whole |
+| `Verify` | Check that what was built **actually works** |
+| `Task` | Run one chunk of a big job in a **separate context** |
+| `Jobs` | Inspect, read and stop **background commands** — the other half of `Bash`'s `background` |
+| `Def` | **Where a name is defined** — only shown when a language server is installed |
+| `Refs` | **Every place a name is used** — only shown when a language server is installed |
 
-Claude Code 에 없는 것은 아홉입니다 — `Append` · `Move` · `Ask` · `Recall` ·
-`Remember` · `Outline` · `Verify` · `Task` · `Jobs`. 도구 하나가 스키마로 150~400토큰을 먹고
-그게 **매 요청마다** 나가므로, 늘릴 때마다 검사에서 한 번 멈추게 해 뒀습니다
-(`test/loop.test.js`). 뒤의 넷은 그 값을 치르고도 넣을 만해서 넣은 것들이라,
-아래에 왜인지를 적어 뒀습니다.
+Nine tools here are not in Claude Code — `Append`, `Move`, `Ask`, `Recall`, `Remember`,
+`Outline`, `Verify`, `Task`, `Jobs`. Each tool costs 150-400 tokens of schema on **every request**,
+so a test stops you every time the list grows (`test/loop.test.js`). The last four earned
+their cost; here is why.
 
-> **자세히** — Outline · Verify · Task · Def · Refs · 끝나지 않는 명령은 뒤에서 외 9개
+> **More** — Outline · Verify · Task · Def · Refs · Commands that never finish and 9 more
 >
-> **[도구 자세히 읽기 →](docs/ko/tools.md#도구)**
+> **[Tools in depth read →](docs/en/tools.md#tools)**
 
 ---
 
-## 한글 문서와 엑셀
+## Korean text and Excel
 
-**CP949 로 저장된 파일은 CP949 로 되돌려 씁니다.** 인코딩을 바꾸지 않습니다.
-엑셀(`.xlsx`)은 CSV 로, 한글·워드·파워포인트(`.hwpx`/`.docx`/`.pptx`)와
-**PDF** 는 글로 바꿔서 읽습니다 — 전부 읽기 전용입니다.
+**A file saved as CP949 is written back as CP949.** The encoding is never changed.
+Excel (`.xlsx`) is read as CSV — read-only.
 
-PDF 는 **못 읽은 쪽을 못 읽었다고 말합니다.** 스캔본·암호·글꼴 표가 없는 쪽은
-빈 글로 넘기지 않고 그 자리에 까닭을 적습니다 — 빈 글은 「그런 내용이 없다」로
-읽히기 때문입니다.
+Old formats (`.ppt`, `.doc`, `.xls`, `.rtf`) are read by **borrowing the LibreOffice already
+on this machine** — the same terms on which deel borrows `rg`, and nothing is ever installed.
+With no converter it **says so definitively and stops**: what is missing, what you can do about
+it, and not to open the file again. Turn it off with `DEEL_CONVERT=off`.
 
-옛 형식(`.ppt`·`.doc`·`.xls`·`.rtf`)은 **이 PC 에 깔린 LibreOffice 를 빌려서**
-읽습니다 — `rg` 를 빌려 쓰는 것과 같은 원칙으로, 아무것도 설치하지 않습니다.
-없으면 **없다고 못 박고 끝냅니다**(무엇이 없어서 못 하는지, 무엇을 하면 되는지,
-그리고 「다시 열지 말라」까지). 끄려면 `DEEL_CONVERT=off`.
-
-> **자세히** — 인코딩 · 엑셀 · hwpx/docx/pptx · PDF · 변환기 빌려 쓰기
+> **More** — Encoding · Excel · borrowing a converter
 >
-> **[한글 문서와 엑셀 읽기 →](docs/ko/documents.md#한글-문서와-엑셀)**
+> **[Korean documents and Excel read →](docs/en/documents.md#korean-text-and-excel)**
 
 ---
 
-## 만든 웹을 그 자리에서 띄웁니다
+## Serving what you built
 
 ```
 ❯ /preview
 
-  ▶ 띄웠습니다  http://127.0.0.1:56801/
-  보여 주는 것 .
-  파일을 고치면 화면이 저절로 새로 뜹니다.
-  이 컴퓨터에서만 열립니다(127.0.0.1). 다른 PC 에서는 안 보입니다.
-  끄려면 /preview off  · deel 을 끝내면 같이 꺼집니다.
+  ▶ Serving  http://127.0.0.1:56801/
+  showing .
+  Edit a file and the page reloads by itself.
+  Only this machine can open it (127.0.0.1). No other PC can see it.
+  Stop with /preview off  · it shuts down when deel exits.
 ```
 
-브라우저가 같이 열립니다. `/preview 폴더` 로 자리를 정하고, `/preview off` 로 끕니다.
+A browser opens with it. `/preview <folder>` picks what to serve, `/preview off` stops it.
 
-**파일을 두 번 눌러 여는 것(`file://`)과 다릅니다.** `file://` 에서는 아래가 전부
-막힙니다 — 그런데 오류는 콘솔에만 나오고 화면은 그냥 희어서, 만든 사람은 제 코드를
-의심하며 시간을 씁니다. 진짜 HTTP 서버라 다 돕니다:
+**This is not the same as double-clicking the file (`file://`).** Under `file://` everything
+below is blocked — and the error only shows up in the console while the page stays blank, so
+you end up suspecting your own code. This is a real HTTP server, so it all works:
 
 | | `file://` | `/preview` |
 |---|---|---|
-| `<script type="module">` · `import` | 막힘 (CORS) | **됨** |
-| `fetch('./자료.json')` | 막힘 | **됨** |
-| `new Worker(...)` | 막힘 | **됨** |
-| `WebAssembly.compileStreaming` | 막힘 (형식) | **됨** |
-| 텍스처·`getImageData` | 캔버스 오염 | **됨** |
-| `.glb` / `.gltf` (Three.js) | 형식 없음 → 조용히 안 그려짐 | **됨** |
+| `<script type="module">` · `import` | blocked (CORS) | **works** |
+| `fetch('./data.json')` | blocked | **works** |
+| `new Worker(...)` | blocked | **works** |
+| `WebAssembly.compileStreaming` | blocked (MIME) | **works** |
+| textures · `getImageData` | tainted canvas | **works** |
+| `.glb` / `.gltf` (Three.js) | no MIME type → silently not drawn | **works** |
 
-실제 크롬에서 이 일곱 가지를 돌려 **7/7** 을 확인했습니다.
+All seven were run in a real Chrome and confirmed **7/7**.
 
-라우터를 쓰는 앱(React Router 등)은 안쪽 주소에서 새로고침해도 첫 장이 나옵니다.
-다만 확장자가 있는 요청(`app.js`)에는 절대 안 그럽니다 — 없는 스크립트에 HTML 을
-돌려주면 `Unexpected token '<'` 로 죽는데, 그게 진짜 원인(파일 이름 오타)을 가립니다.
+Apps with a router (React Router and friends) get the first page back when you reload on a
+deep link. Never for requests with an extension (`app.js`) though — returning HTML for a
+missing script dies with `Unexpected token '<'`, which hides the real cause (a typo in a filename).
 
-### 열어 주는 만큼만 엽니다
+### It opens exactly as much as it says
 
-서버를 띄운다는 것은 내 디스크를 남에게 열어 주는 일입니다.
+Starting a server means opening your disk to somebody else.
 
-- **`127.0.0.1` 에만** 묶습니다. `0.0.0.0` 은 아예 못 씁니다 — 같은 사무실 망에서
-  아무나 내 소스를 읽게 됩니다.
-- 포트는 **0**(커널이 빈 것을 줍니다). 고정 포트는 남이 쓰던 것을 뺏습니다.
-- 경로는 작업 범위 밖으로 못 나갑니다. `../` · `%2e%2e` · 두 번 인코딩 · 절대 경로 ·
-  널바이트 · 심볼릭 링크 — 여덟 가지를 검사로 막아 뒀습니다.
-- **주기만 합니다.** `POST` · `PUT` · `DELETE` 는 405 로 거절합니다.
-- `deel` 을 끝내면 같이 꺼집니다.
-
-## 스킬·플러그인
-
-**남의 스킬은 품고 다니지 않습니다.** 켜질 때 그 PC 를 훑어 있는 것을 그대로 씁니다.
-
-**다만 일하는 방법 일곱 가지는 품고 다닙니다.** 사내에서 새로 받은 PC 에는
-`~/.claude/skills` 도 플러그인도 없습니다. 거기서는 방법론이 0개라 모델이 매번
-제 나름대로 했고, 시킨 것만 겨우 하고 끝나는 얄팍한 결과가 거기서 나왔습니다.
-
-| 스킬 | 언제 |
-|---|---|
-| `깊이있게-만들기` | 고도화·보고용·선포용 — 최소치만 내고 끝내지 않게 |
-| `끝까지-하기` | 시킨 것이 여러 조각일 때. 빼먹은 것은 말하게 |
-| `차근차근-디버깅` | 재현 → 좁히기 → 원인 → 고치기 → 증명 |
-| `검사-먼저` | 고치기 전에 실패하는 검사부터 |
-| `찔러보기` | 되는지 모를 때 시간 정해 작게 찔러 보고 버리기 |
-| `코드-줄이기` | 동작은 그대로 두고 읽기 쉽게 |
-| `스스로-검토` | 다 됐다고 말하기 전에. 못 잰 것까지 말하게 |
-
-목록으로 늘 나가는 몫은 354토큰입니다(8k 창의 4%). 본문은 `Skill` 로 부를 때만 나갑니다.
-같은 이름을 직접 만들면 그쪽이 이깁니다 — 품고 다니는 것이 제일 낮은 자리입니다.
-
-```
-품고 다님  (패키지 안)                                    ← 제일 낮은 자리
-프로젝트  ./.deel/skills   ./.claude/skills   ./.deel/commands   ./.claude/commands
-사용자    ~/.deel/skills   ~/.claude/skills   ~/.claude/commands
-플러그인  ~/.claude/plugins/**   ~/.deel/plugins/**
-```
-
-Claude Code 와 같은 형식(`SKILL.md` + YAML 앞머리, `commands/*.md`, `$ARGUMENTS`)을 읽습니다.
-
-> **자세히** — 3단계로 나눠 올립니다 · 플러그인 받아 오기 · 안 넣은 것
->
-> **[늘려 쓰기 읽기 →](docs/ko/extend.md#스킬플러그인)**
+- Bound to **`127.0.0.1` only**. `0.0.0.0` is not available at all — on an office network
+  that would let anyone read your source.
+- Port **0** (the kernel hands out a free one). A fixed port steals someone else's.
+- Paths cannot leave the working scope. `../` · `%2e%2e` · double encoding · absolute paths ·
+  null bytes · symlinks — eight of these are held shut by tests.
+- **It only serves.** `POST` · `PUT` · `DELETE` are refused with 405.
+- It shuts down when `deel` exits.
 
 ---
 
-## 추론 강도
+## Skills and plugins
 
-에이전트 한 번의 대답은 모델을 여러 번 부릅니다. **부를 때마다 필요한 생각의 양이 다릅니다.**
-전부 세게 두면 느리고, 전부 얕게 두면 엉뚱한 길로 갑니다.
+**deel does not carry skills with it.** On startup it scans the machine it is running on and uses
+whatever is there. On a clean PC: zero. On a PC with skills installed: those skills.
 
-기본은 **한 줄**입니다. 알고 싶은 것은 '지금 얼마나 생각하나' 이지 단계표가 아닙니다.
+```
+project  ./.deel/skills   ./.claude/skills   ./.deel/commands   ./.claude/commands
+user     ~/.deel/skills   ~/.claude/skills   ~/.claude/commands
+plugins  ~/.claude/plugins/**   ~/.deel/plugins/**
+```
+
+Reads the Claude Code format: `SKILL.md` with YAML front matter, `commands/*.md`, `$ARGUMENTS`.
+
+> **More** — Loaded in three stages · Fetching plugins · Deliberately not included
+>
+> **[Extending read →](docs/en/extend.md#skills-and-plugins)**
+
+---
+
+### The hidden latency of local models — keeping the prefix cache alive
+
+Ollama and llama.cpp reuse computation **only while the request starts the same way as the
+last one.** Change one early character and everything after it — the entire conversation —
+is recomputed. This is the usual hidden reason long local sessions feel slower and slower,
+and it never shows up anywhere, because it is not an error.
+
+deel routes every message to the right mode automatically, and that mode instruction used to
+sit **early** in the prompt — every mode switch broke the whole cache. So the stable parts
+(rules, folder, project fingerprint, user rules, memory, skills) are frozen at the front and
+the per-turn parts (mode, pins) go last. A test pins this order down (`test/cache.test.js`).
+
+Ollama also gets `keep_alive: 60m` — with the 5-minute default, the model unloads while you
+glance at another window, and the first message after you come back recomputes everything.
+Override with `DEEL_KEEP_ALIVE`. If you run llama.cpp directly, `--cache-reuse 256` on the
+server side does the same job.
+
+## Reasoning effort
+
+One answer means several model calls, and **each needs a different amount of thinking.**
+All-high is slow; all-low wanders off.
+
+The default is **one line**. What you want to know is how hard it is thinking right now,
+not a stage table.
 
 ```
 $ /think
@@ -707,17 +772,17 @@ $ /think
   더 세게 /think high   더 빠르게 /think low
 ```
 
-| 배분 | 성격 |
+| Profile | Character |
 |---|---|
-| `even` (균일) | 모든 단계 같은 강도 — 예측 가능한 대신 느림 |
-| `save` (절약, 기본) | 첫 판단만 세게, 이어가기는 얕게 |
-| `deep` (깊게) | 전 단계 한 칸씩 위로 — 어려운 일에만 |
+| `even` | Same effort everywhere — predictable, slower |
+| `save` (default) | Hard on the first decision only |
+| `deep` | Everything one notch up — for hard work |
 
-배분은 `/think 배분 절약` 로 정합니다. **강도와 배분은 다른 축이라 명령을 갈랐습니다** —
-전에는 `/think high` 와 `/think save` 가 같은 이름으로 다른 것을 정해서,
-화면을 봐도 지금 무엇이 무엇인지 읽히지 않았습니다.
+Set the profile with `/think 배분 절약`. **Level and profile are different axes, so the
+commands were split** — `/think high` and `/think save` used to set different things under
+one name, which made the screen unreadable.
 
-단계표는 `/think 자세히` 로 뺐습니다(개발자 수준 기본).
+The stage table moved to `/think 자세히` (the default at developer level).
 
 ```
 $ /think 자세히
@@ -734,429 +799,411 @@ $ /think 자세히
   컨텍스트 40,960 · 지금 찬 양 2,087
 ```
 
-마지막에서 두 번째 줄이 있는 이유: **세 값이 다 같을 때 그게 고장인지 아닌지**
-이 한 줄로 갈립니다. 아는 상한이 낮으면 셋이 같아지는 것이 맞습니다.
-한동안 이 표는 세 줄이 늘 `16,384` 였고, 그건 표가 뜻이 없다는 뜻이었습니다.
+That second-to-last line exists for a reason: **when all three caps are equal, it is the
+only thing that says whether that is correct.** A low known cap makes them equal, and that
+is fine. For a while all three read `16,384` always — which meant the table said nothing.
 
-> **자세히** — 컨텍스트 길이는 모델에서 긁어옵니다 · /out · 잘린 도구 호출
+> **More** — Context length is read off the model · /out · Truncated tool calls
 >
-> **[속도와 씀씀이 읽기 →](docs/ko/tuning.md#추론-강도)**
+> **[Speed and spend read →](docs/en/tuning.md#reasoning-effort)**
 
 ---
 
-## 자동 압축
+## Auto-compaction
 
-컨텍스트가 80% 차면 앞선 대화를 **요약해서 접고 계속 이어 갑니다.**
-그냥 잘라내면 모델이 하던 일을 잊고, 파일을 다시 읽고, 이미 고친 곳을 또 고칩니다.
+At 80% context, older turns are **summarised and folded** so work continues.
+Plain truncation makes the model forget: it re-reads files and re-fixes what it already fixed.
 
 ```
-  ◱ 대화 44개를 요약으로 접었습니다 — 10,399 → 3,170 토큰 (70% 줄어듦)
+  ◱ Folded 44 turns into a summary — 10,399 → 3,170 tokens (70% smaller)
 ```
 
-요약은 목표 / 한 일 / 알아낸 것 / 정한 것 / 남은 일 다섯 항목으로 남습니다.
-접을 때 **도구 호출과 그 결과가 갈라지지 않는 자리**를 골라 자릅니다 — 갈라지면 서버가 400 을 냅니다.
-요약 요청이 실패하면 옛 방식(그냥 줄이기)으로 물러서고 멈추지 않습니다.
+The summary keeps goal / done / learned / decided / remaining. The cut point is chosen so a
+**tool call is never separated from its result** — splitting them makes the server return 400.
+If the summary request fails, it falls back to plain trimming rather than stopping.
 
-`/compact` 로 직접 접을 수도 있습니다.
+`/compact` folds on demand.
 
 ---
 
-## 대화 이어하기
+## Resuming a conversation
 
-터미널을 실수로 닫거나 컴퓨터가 재부팅돼도 하던 대화를 그대로 이어 받습니다.
-오간 내용은 **메시지 하나가 끝날 때마다 바로** `.deel/sessions/` 에 적히기 때문에,
-도중에 죽어도 그 직전까지는 남습니다.
+Close the terminal by accident, or reboot, and the conversation is still there.
+Messages are written to `.deel/sessions/` **as each one completes**, so a crash
+loses at most the message in flight.
 
 ```
 $ deel sessions
 
-── 이 폴더의 대화 ──────────────────────────────────────────────
-  ● 20260824-090200  방금        1턴  devstral-small-2507
-      테스트 깨진 거 고쳐줘
-  · 20260824-084500  2시간 전     2턴  qwen2.5-coder:7b
-      src/a.js 의 로그를 logger 로 바꿔줘
+── conversations in this folder ────────────────────────────────
+  ● 20260824-090200  just now    1 turn   devstral-small-2507
+      fix the failing test
+  · 20260824-084500  2h ago      2 turns  qwen2.5-coder:7b
+      switch src/a.js logging to the logger
 ```
 
-| 명령 | 하는 일 |
+| Command | What it does |
 |---|---|
-| `deel --continue` | 이 폴더에서 가장 최근 대화 이어하기 |
-| `deel --resume <id>` | 골라서 이어하기 |
-| `deel sessions` | 남아 있는 대화 목록 |
-| `deel sessions --rm <id>` | 하나 지우기 |
+| `deel --continue` | Resume the most recent conversation in this folder |
+| `deel --resume <id>` | Resume a specific one |
+| `deel sessions` | List what is stored |
+| `deel sessions --rm <id>` | Delete one |
 
-한 줄에 메시지 하나씩 쓰는 `jsonl` 이라, 쓰다가 전원이 나가도 마지막 줄만 잃습니다.
-이어받은 대화는 도구 호출과 그 결과의 짝까지 그대로 살아 있어 바로 이어서 일할 수 있습니다.
-30일이 지나고 최근 30개 밖인 것은 자동으로 정리합니다.
+The format is `jsonl` — one message per line — so a power cut costs only the last line.
+Resumed history keeps tool calls paired with their results, so work continues immediately.
+Conversations older than 30 days and outside the most recent 30 are pruned automatically.
 
-저장 위치는 작업 폴더의 `.deel/sessions/` 이고, `.gitignore` 에 `.deel/` 이 들어 있어
-깃에 올라가지 않습니다.
+Everything lives in `.deel/sessions/` inside the working folder, and `.gitignore`
+covers `.deel/` so it never reaches a repository.
 
 ---
 
-## 되돌아가기 (`deel reset`)
+## Starting over (`deel reset`)
 
-연결을 바꿔 보다, 배운 것이 꼬여서, 남에게 넘기기 전에 — 처음으로 돌리고 싶을 때가 있습니다.
-다시 깔아도 `~/.deel` 은 그대로 남아서 사실 초기화가 안 됩니다. 그래서 따로 있습니다.
+Switching gateways, learned facts that went stale, handing the machine to someone else —
+sometimes you want to go back to the beginning. Reinstalling does not do it: `~/.deel`
+survives an install. Hence a command of its own.
 
 ```
 $ deel reset
 
-── 지울 수 있는 것 ────────────────────────────────────────────
-  살림 자리  C:\Users\me\.deel
-  작업 폴더  C:\work\myproject
+── what can be wiped ──────────────────────────────────────────
+  home            C:\Users\me\.deel
+  working folder  C:\work\myproject
 
-  연결·프로필                        2개
-  기억                               8줄
-  대화 기록                         14개
-  배운 것                            2곳
-  증거·내보낸 것·임시                6개
-  플러그인                           3개
-  잠긴 열쇠                              DPAPI — 이 PC 의 이 계정만 풉니다
+  connections                        2
+  memory                             8 lines
+  conversations                     14
+  learned                            2 places
+  evidence, exports, temp            6
+  plugins                            3
+  sealed key                             DPAPI — this PC, this account only
 
-── 안 지웁니다 ────────────────────────────────────────────────
-  되돌리기 스냅샷                   41자리  all --hard 를 줘야 지웁니다
-  감사기록                       1,203줄  all --hard 를 줘야 지웁니다
-  사람이 적은 것                          .deel/mcp.json · .deelignore
-     어떤 길로도 안 건드립니다.
+── what is kept ───────────────────────────────────────────────
+  undo snapshots                    41  needs all --hard
+  audit log                      1,203 lines  needs all --hard
+  written by you                         .deel/mcp.json · .deelignore
+     never touched, by any route.
 ```
 
-**그냥 `deel reset` 은 아무것도 안 지웁니다.** 무엇이 얼마나 있는지 보여 주고 물어봅니다.
+**Bare `deel reset` wipes nothing.** It shows what exists and asks.
 
-| 명령 | 지우는 것 |
+| Command | What goes |
 |---|---|
-| `deel reset model` | 연결·프로필 + 잠금장치에 든 열쇠 |
-| `deel reset memory` | 기억 (`.deel/memory.md`) |
-| `deel reset sessions` | 대화 기록 |
-| `deel reset learned` | 배운 것 (이 PC + 이 폴더) |
-| `deel reset plugins` | 설치한 플러그인 |
-| `deel reset all` | 위에서 **플러그인만 빼고** 전부 |
-| `deel reset all --hard` | 거기에 되돌리기 스냅샷·감사기록까지 |
-| `--yes` | 안 묻고 지웁니다 (스크립트·초기 배포용) |
+| `deel reset model` | connections and profiles, plus the key in the OS keystore |
+| `deel reset memory` | memory (`.deel/memory.md`) |
+| `deel reset sessions` | conversation history |
+| `deel reset learned` | learned facts (this PC + this folder) |
+| `deel reset plugins` | installed plugins |
+| `deel reset all` | everything above **except plugins** |
+| `deel reset all --hard` | plus undo snapshots and the audit log |
+| `--yes` | skip the question (scripts, first-time provisioning) |
 
-무엇을 **안** 지우는지가 더 중요합니다.
+What it does **not** touch matters more.
 
-| 안 지우는 것 | 왜 |
+| Kept | Why |
 |---|---|
-| `.deel/history/` (되돌리기 스냅샷) | 승인 프롬프트 대신 내건 안전망 그 자체입니다. `--hard` 로만 |
-| `.deel/audit.jsonl` (감사기록) | 사내 심사에 낼 근거입니다. `--hard` 로만 |
-| `.deel/mcp.json` · `.deelignore` · `DEEL.md` | 사람이 손으로 적은 것입니다. **어떤 길로도 안 건드립니다** |
-| 작업 폴더의 나머지 전부 | `.deel` 과 살림 폴더 밖은 아예 손대지 않습니다 |
+| `.deel/history/` (undo snapshots) | This is the safety net offered in place of an approval prompt. `--hard` only |
+| `.deel/audit.jsonl` | The evidence for an internal review. `--hard` only |
+| `.deel/mcp.json` · `.deelignore` · `DEEL.md` | You wrote these by hand. **Never touched, by any route** |
+| Everything else in the working folder | Nothing outside `.deel` and the home folder is ever reached |
 
-설정이 깨져 있어도 돕니다 — 초기화를 찾는 까닭이 대개 그것이라서,
-`deel reset` 은 `deel --version` 처럼 연결을 안 읽고 시작합니다.
-플러그인은 다시 받는 데 시간이 걸려서 `all` 에 안 넣었습니다. 따로 골라야 지웁니다.
+It runs on a broken config. That is usually *why* someone reaches for a reset, so
+`deel reset` starts without reading the connection — the same reason `deel --version` answers
+without one. Plugins take time to fetch again, so they stay out of `all`; ask for them by name.
 
 ---
 
-## 밖에서 도구 붙이기 (MCP)
+## Attaching tools from outside (MCP)
 
-사내 위키 검색기, 이슈 트래커, DB 조회기 같은 것을 각 팀이 MCP 서버로 만들어 두면
-deel 은 그걸 **코드를 안 고치고** 도구로 씁니다.
+A corporate wiki search, an issue tracker, a DB query tool — if a team publishes one as an MCP
+server, deel uses it as a tool **without a code change**.
 
-`.deel/mcp.json` 에 적습니다. Claude Code 설정을 그대로 복사해 붙일 수 있습니다:
+Configure in `.deel/mcp.json`. A Claude Code config can be copied over verbatim:
 
 ```json
-{ "mcpServers": { "사내위키": { "command": "node", "args": ["wiki-mcp.js"] } } }
+{ "mcpServers": { "wiki": { "command": "node", "args": ["wiki-mcp.js"] } } }
 ```
 
-모델에게는 `mcp__사내위키__검색` 이라는 이름으로 보입니다. `/mcp` 로 무엇이 붙었는지 봅니다.
+The model sees it as `mcp__wiki__search`. `/mcp` shows what is attached.
 
-**의존성은 그대로 0 입니다.** stdio 규격은 자식 프로세스의 stdin/stdout 에 줄 단위
-JSON-RPC 2.0 을 주고받는 것이 전부라, `child_process` 와 `JSON` 이면 됩니다. SDK 가
-필요 없습니다.
+**Dependencies stay at zero.** The stdio transport is nothing but newline-delimited JSON-RPC
+2.0 over a child process's stdin/stdout, so `child_process` and `JSON` cover it. No SDK.
 
-> **자세히** — 다만 이건 남의 프로그램입니다
+> **More** — But this is somebody else's program
 >
-> **[늘려 쓰기 읽기 →](docs/ko/extend.md#밖에서-도구-붙이기-mcp)**
+> **[Extending read →](docs/en/extend.md#attaching-tools-from-outside-mcp)**
 
 ---
 
-## 에디터 안에서 쓰기 (ACP)
+## Inside your editor (ACP)
 
-터미널을 하나 더 띄우게 하는 도구는 두 주쯤 뒤에 안 씁니다. 개발자는 하루 종일
-IDE 안에 있습니다. 그래서 **ACP**(Agent Client Protocol)를 지킵니다 — Zed ·
-JetBrains · Neovim · Emacs 가 **저쪽을 한 줄도 안 고치고** deel 을 붙입니다.
+A tool that makes you open one more terminal window stops being used after about two weeks.
+Developers live inside the IDE. So deel speaks **ACP** (Agent Client Protocol) — Zed,
+JetBrains, Neovim and Emacs attach to it **without changing a line on their side**.
 
-에디터 설정에 이 명령 하나만 적으면 됩니다.
+One command in your editor's settings:
 
 ```
 deel acp
 ```
 
-에디터가 이걸 자식 프로세스로 띄우고, 표준입출력으로 줄 단위 JSON-RPC 2.0 을
-주고받습니다. 사람이 직접 칠 명령은 아닙니다.
+The editor spawns that as a child process and exchanges newline-delimited JSON-RPC 2.0 over
+stdio. It is not a command you type yourself.
 
-**붙으면 이렇게 됩니다.**
+**What you get once it is attached:**
 
-| 에디터 쪽 | deel 쪽 |
+| In the editor | From deel |
 |---|---|
-| 답이 흘러나오는 자리 | 모델이 흘리는 글 · 생각 |
-| 도구 목록 (아이콘·상태) | `Read` 는 읽기, `Edit` 는 고치기, `Bash` 는 실행 — **갈래를 붙여** 보냅니다 |
-| 파일 링크 | 고친 파일의 **절대 경로**. 눌러서 그 자리로 갑니다 |
-| 승인 창 | deel 의 안전망이 그대로 에디터 창으로 뜹니다 (`이번만` · `앞으로 묻지 않기` · `안 함`) |
-| 모드 고르개 | deel 의 작업 모드 7개 (`종합` · `코드` · `계획` · `설계` · `디버그` · `묻기` · `총괄`) |
-| 멈춤 단추 | 도중에 닿습니다 — 답을 기다리는 중에도 |
-| 지난 대화 | 껐다 켜도 그대로 열립니다. 터미널과 **같은 자리**에 남아서, 에디터에서 하던 것을 `deel --resume` 으로 이어받는 것도 됩니다 |
+| Streaming reply pane | The model's text and its reasoning |
+| Tool list with icons and status | `Read` is a read, `Edit` is an edit, `Bash` is an execution — **the kind is sent**, not just a name |
+| Clickable file links | The **absolute path** of every file touched |
+| Approval dialog | deel's safety rails, rendered as the editor's own prompt (`allow once` · `always allow` · `reject`) |
+| Mode picker | deel's seven work modes (auto · code · plan · architect · debug · ask · orchestrator) |
+| Stop button | Reaches the turn mid-flight, even while waiting on the model |
+| Past conversations | Still there after a restart. They live in the **same place** as the terminal's, so a session started in the editor can be picked up with `deel --resume` |
 
-**의존성은 그대로 0 입니다.** MCP 와 같은 이유입니다 — 줄 단위 JSON-RPC 2.0 이
-전부라 SDK 가 필요 없습니다.
+**Still zero dependencies.** Same reason as MCP — newline-delimited JSON-RPC 2.0 is the whole
+transport, so no SDK is needed.
 
-> **자세히** — 조용히 깨지는 자리들
+> **More** — Details — the places this breaks silently
 >
-> **[늘려 쓰기 읽기 →](docs/ko/extend.md#에디터-안에서-쓰기-acp)**
+> **[Extending read →](docs/en/extend.md#inside-your-editor-acp)**
 
 ---
 
-## 비밀이 새지 않게
+## Keeping secrets out of the conversation
 
-사람이 열쇠를 붙여 넣는 일은 드뭅니다. 새는 자리는 거의 항상 **명령 출력**입니다.
+People rarely paste a key. The leak is almost always **command output**.
 
 ```
 env                  OPENAI_API_KEY=sk-proj-…
-git remote -v        https://사람:토큰@github.com/…
+git remote -v        https://user:token@github.com/…
 curl -v              > Authorization: Bearer eyJ…
-검사 실패 로그         연결 문자열이 통째로
+a failing test log   the whole connection string
 ```
 
-그 글은 모델에게 실려 가고, **동시에** `.deel/sessions/*.jsonl` 로 디스크에
-적힙니다. 그 파일은 나중에 `/recall` 로 다시 읽히고 `deel pack` 에 딸려 갈 수도
-있습니다. 한 번 새면 여러 벌이 됩니다.
+That text goes to the model **and** gets written to `.deel/sessions/*.jsonl` on disk. That
+file is later re-read by `/recall` and can end up inside a `deel pack` bundle. Leak once and
+you have several copies.
 
-그래서 도구 결과가 대화로 들어가는 **한 자리**에서 가립니다.
-
-```
-  ⏺ Bash(env | grep API)  완료
-    ⊘ 비밀로 보이는 값 2군데가 대화에 들어갔습니다 (openai · 환경변수) — 모델에 가려서 보냈습니다
-```
-
-찾는 것: 사설키 블록 · OpenAI/Anthropic 열쇠 · GitHub 토큰 · Slack 토큰 ·
-AWS 키 · Google 키 · JWT · 주소에 박힌 열쇠 · `Authorization` 계열 헤더 ·
-이름이 `…KEY`/`…TOKEN`/`…SECRET`/`…PASSWORD` 인 환경변수. 그리고 **설정에 든
-게이트웨이 열쇠는 모양과 상관없이** — 그건 짐작이 아니라 아는 값이니까요.
-
-### 파일 내용은 일부러 안 가립니다
-
-가리고 싶은 마음이 제일 드는 자리가 `.env` 인데, 거기를 가리면 이렇게 됩니다 —
-모델이 가려진 글을 보고, 그걸 고쳐서 되돌려 씁니다. 그러면 진짜 열쇠가 있던
-자리에 `«가림»` 이 적힙니다. **비밀을 지키려다 사람의 열쇠를 우리 손으로
-지우는 셈입니다.**
-
-그래서 파일 쪽은 가리는 대신 **알립니다.**
+So it is masked at the single point where tool output enters the conversation.
 
 ```
-  ⏺ Read(.env)  12줄
-    ! 비밀로 보이는 값 3군데가 대화에 들어갔습니다 (환경변수)
-      — 파일 내용은 가리지 않습니다 (가리면 되돌려 쓸 때 지워집니다)
+  ⏺ Bash(env | grep API)  done
+    ⊘ 2 secret-looking values entered the conversation (openai · env var) — masked before the model
 ```
 
-무엇을 못 막는지 분명히 말하는 편이, 막았다고 해 놓고 파일을 망가뜨리는 것보다
-언제나 낫습니다. 어느 쪽이든 감사기록에 남습니다.
+What it looks for: private-key blocks · OpenAI/Anthropic keys · GitHub tokens · Slack tokens ·
+AWS keys · Google keys · JWTs · credentials embedded in URLs · `Authorization`-family headers ·
+env vars named `…KEY` / `…TOKEN` / `…SECRET` / `…PASSWORD`. Plus **the configured gateway key
+regardless of its shape** — that one is not a guess, it is a known value.
+
+### File contents are deliberately not masked
+
+`.env` is exactly where masking feels most tempting, and exactly where it backfires: the model
+sees the masked text, edits it, writes it back — and `«가림»` lands where the real key was.
+**Protecting the secret would destroy it.**
+
+So on the file side it reports instead of rewriting.
+
+```
+  ⏺ Read(.env)  12 lines
+    ! 3 secret-looking values entered the conversation (env var)
+      — file contents are not masked (masking them would erase the key on write-back)
+```
+
+Saying plainly what cannot be stopped beats claiming it was stopped while corrupting the file.
+Either way it lands in the audit log.
 
 ---
 
-## 안전망
+## Safety
 
-승인 프롬프트 대신 **되돌릴 수 있게** 만들었습니다. 기본 모드 `auto` 는 묻지 않고 알아서 합니다.
+Instead of approval prompts, the design makes things **reversible**. The default `auto` mode
+does not ask.
 
-| 장치 | 내용 |
+| Mechanism | Detail |
 |---|---|
-| **되돌리기** | 파일을 고치기 전 항상 스냅샷. `/undo` 로 턴 단위 복구. **`Bash` 로 옮기고 지우는 것도 포함** |
-| **바뀐 자리 보기** | 고칠 때마다 바뀐 줄을 화면에. 이번 대화 전체는 `/diff` |
-| **작업 범위** | 시작한 폴더 밖은 모델이 시켜도 거부 |
-| **위험 명령 차단** | 되돌릴 수 없는 것만 (디스크 포맷, 재귀 삭제, `--force` 푸시 등) |
-| **재실행 금지** | 변경성 명령은 실패해도 다시 실행하지 않음 — 두 번 돌면 사고 |
-| **중단** | Ctrl+C 로 도중에 끊어도 대화가 성한 채로 남음 |
-| **헛돌기 차단** | 같은 도구가 같은 이유로 3번 실패하면 그 턴을 멈추고 왜인지 말함 |
-| **안 읽는 자리** | 남의 도구 살림과 deel 자신의 기록·설정(열쇠)은 거절 |
-| **감사 로그** | `.deel/audit.jsonl` 에 전부 기록 |
+| **Undo** | Snapshot before every write. `/undo` restores per turn. **Includes moves and deletes done through `Bash`** |
+| **Change display** | The changed lines are shown on every edit; `/diff` for the whole session |
+| **Scope** | Outside the starting folder is refused, even if the model insists |
+| **Blocked commands** | Only irreversible ones (disk format, recursive delete, `--force` push) |
+| **No re-run** | A mutating command is never retried after failure |
+| **Interrupt** | Ctrl+C stops mid-answer and leaves the conversation valid |
+| **Spin guard** | Three identical failures stop the turn, with the reason |
+| **Not read** | Other tools' private stores, and deel's own logs and config (the key), are refused |
+| **Audit log** | Everything recorded in `.deel/audit.jsonl` |
 
-| 모드 | 언제 물어보나 |
+| Mode | Asks when |
 |---|---|
-| `auto` (기본) | 안 물어봄. 되돌리기가 안전망 |
-| `confirm` | 되돌릴 수 없는 명령만 |
-| `strict` | 파일 변경·명령 전부 |
+| `auto` (default) | Never — undo is the safety net |
+| `confirm` | Irreversible commands only |
+| `strict` | All file changes and commands |
 
-되돌리기 이력은 파일 내용을 통째로 담기 때문에 큰 파일을 여러 번 고치면 금방 커집니다.
-32MB 를 넘으면 **최근 50턴만 남기고** 오래된 것을 버립니다. 방금 한 일은 언제나
-되돌릴 수 있고, 지금 이력이 얼마나 되는지는 `/status` 에서 봅니다.
+Undo history stores whole file contents, so repeated edits to large files add up. Past 32MB
+it keeps the **most recent 50 turns** and drops the rest. What you just did is always
+undoable; `/status` shows how large the history currently is.
 
-> **자세히** — Bash 로 사라진 것도 되돌아갑니다 · 안 읽는 자리
+> **More** — Files removed through Bash come back too · What it will not read
 >
-> **[안전망과 사내 반입 읽기 →](docs/ko/safety.md#안전망)**
+> **[Safety and corporate review read →](docs/en/safety.md#safety)**
 
 ---
 
-## 사내 반입
-
-심사서와 소스를 zip 하나로 묶습니다.
+## Corporate review package
 
 ```bash
-deel pack --out deel-반입.zip
+deel pack --out deel-import.zip
 ```
 
 ```
-── 반입 묶음 ───────────────────────────────────────────────────
-  ✓ deel-반입.zip
-     94개 파일 · 509.6KB
+  ✓ deel-import.zip
+     94 files · 509.6KB
 
-  의존성          0개
-  설치 스크립트   없음
-  외부 import     0건
-  네트워크 호출   3곳 (설정한 주소로만)
-  포트 열기       1곳 (/preview 만)
+  Dependencies      0
+  Install scripts   none
+  External imports  0
+  Network calls     3 sites (configured address only)
+  Ports opened      1 site (/preview only)
 ```
 
-zip 안에는 **사람이 읽을 것 한 장, 기계가 읽을 것 두 장**이 같이 들어갑니다.
-반입 심사는 사람만 보는 절차가 아니기 때문입니다 — 보안팀은 SBOM 을 스캐너에
-먹여 취약점 목록을 뽑고, 운영팀은 감사 사양을 보고 SIEM 수집 규칙을 짭니다.
+The zip carries **one document for people and two for machines.** A corporate review is
+not a human-only process — security feeds an SBOM to a scanner, and operations reads the
+audit-log spec to write SIEM ingestion rules.
 
-| 파일 | 무엇 |
+| File | What |
 |---|---|
-| `반입심사서.txt` | 의존성 · 설치 스크립트 · **소스를 훑어 찾은 네트워크·외부 명령 호출 자리 전부**(파일:줄) · 나가는 길 세 갈래 · 파일별 SHA-256 |
-| `sbom.cdx.json` | **SBOM (CycloneDX 1.5).** 스캐너에 그대로 넣습니다. 파일마다 부품 하나에 SHA-256, 의존성은 **빈 배열로 명시** — 안 적어 낸 것과 없는 것은 다릅니다 |
-| `심사명세.json` | 통신 목록(갈래마다 언제·어디로·무엇이·막는법·소스 자리) · **감사기록 사양**(칸 이름과 뜻, 안 남기는 것) · 파일 해시 |
+| `반입심사서.txt` | Dependencies · install scripts · **every network and process-spawn call site found by scanning the source** (file:line) · the three outbound lanes · SHA-256 per file |
+| `sbom.cdx.json` | **SBOM (CycloneDX 1.5).** Feed it straight to a scanner. One component per file with SHA-256; dependencies stated as an **explicit empty array** — "not declared" and "none" are different claims |
+| `심사명세.json` | Egress list (per lane: when, where, what, how it's stopped, and the source location) · **audit-log spec** (field names and meanings, plus what is never recorded) · file hashes |
 
 ```bash
-deel audit                    # 사람이 읽는 심사서만 보기
-deel sbom                     # 기계가 읽는 두 장을 표준출력으로 (deel sbom | jq)
-deel sbom --out 심사.json     # 파일로
-deel sbom --only sbom         # SBOM 한 장만
+deel audit                    # the human-readable sheet only
+deel sbom                     # the two machine-readable ones, on stdout (deel sbom | jq)
+deel sbom --out review.json   # to a file
+deel sbom --only sbom         # just the SBOM
 ```
 
-셋 다 손으로 적지 않고 코드가 소스를 훑어서 만듭니다 — 손으로 적으면 언젠가
-사실과 어긋나고, **어긋난 심사 서류는 없느니만 못합니다.** 담당자가 한 번 틀린
-것을 발견하면 나머지도 안 믿습니다. 감사기록 사양만은 손으로 적혀 있어서,
-그것이 진짜 기록과 어긋나지 않는지를 검사가 매번 대조합니다.
+All three are generated by scanning the source, never written by hand — hand-written sheets
+drift, and **a review document that drifts is worse than none.** Find one wrong line and the
+reviewer stops trusting the rest. The audit-log spec is the one hand-written part, so a test
+checks it against real log records on every run.
 
-> **자세히** — 사내 게이트웨이 진단
+> **More** — Diagnosing a corporate gateway
 >
-> **[안전망과 사내 반입 읽기 →](docs/ko/safety.md#사내-반입)**
+> **[Safety and corporate review read →](docs/en/safety.md#corporate-review-package)**
 
 ---
 
-## 설정
+## Configuration
 
-`~/.deel/config.json` 에 저장됩니다. 프로젝트 폴더에 `.deel/config.json` 이 있으면 그쪽이 우선입니다.
+Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder takes precedence.
 
-> **자세히** — 붙는 서버 · 환경변수 · 실행 옵션 · 프로젝트 규칙
+> **More** — Supported servers · Environment variables · Flags · Project rules
 >
-> **[설정 읽기 →](docs/ko/config.md#설정)**
+> **[Configuration read →](docs/en/config.md#configuration)**
 
 ---
 
-## 문제 해결
+## Troubleshooting
 
-| 증상 | 확인할 것 |
+| Symptom | Check |
 |---|---|
-| `주소를 찾을 수 없습니다` | 주소 오타, DNS, 사내망 접속 여부 |
-| `연결이 거부되었습니다` | 서버가 꺼져 있거나 포트가 다름 |
-| `인증서 문제` | `set NODE_EXTRA_CA_CERTS=C:\경로\사내CA.pem` |
-| 프록시를 거쳐야 함 | `set HTTPS_PROXY=http://프록시:포트` (인증은 `http://user:pw@프록시:포트`). 첫 화면과 `/status` 에 `프록시 …` 가 뜨면 거치는 것. 안 거칠 곳은 `NO_PROXY=.corp.com,10.1.2.3`, 아예 끄려면 설정에 `"proxy": "none"` |
-| 프록시가 407 을 줌 | 프록시 주소에 `user:pw@` 를 넣으세요. NTLM · Negotiate 만 받는 프록시는 못 씁니다 — 담당자에게 Basic 이나 인증 없는 주소를 문의 |
-| 401 / 403 | 키가 틀렸거나 인증 헤더 형식이 다름 (4가지를 자동 시도합니다) |
-| `허용되지 않은 주소입니다` | 자물쇠가 막은 것. 정상입니다 — `/model` 로 연결을 고르세요 |
-| 도구 호출이 안 먹음 | `deel diagnose` 로 판정을 보세요. 작은 모델(1B~3B)은 자주 못 합니다 |
-| 대답이 비어 있음 | 스트리밍을 무시하는 서버입니다. 한 번은 저절로 다시 부르고, 그래도 비면 이 대화에서는 스트리밍을 끕니다 |
-| 큰 파일이 중간에 끊김 | `/out` 으로 지금 상한을 보고 올리세요. 상한을 몰라 16,384 로 서 있을 수 있습니다 |
-| `HTTP 400` 만 뜸 | 서버가 보낸 문장을 그대로 보여 줍니다. 길이 문제면 숫자를 읽어 저절로 맞춥니다 |
-| `429` · `503` 이 뜸 | 게이트웨이가 잠깐 막은 것입니다. 세 번까지 저절로 기다렸다 다시 부릅니다(`Retry-After` 를 지킵니다). 그래도 계속 뜨면 할당량을 보세요 |
-| `deel scan` 이 0곳 | 로컬 서버가 꺼져 있거나 다른 포트 — `--ports` 로 지정 |
+| `address not found` | Typo, DNS, VPN / intranet connectivity |
+| `connection refused` | Server is down or the port differs |
+| certificate error | `set NODE_EXTRA_CA_CERTS=C:\path\corp-ca.pem` |
+| behind a proxy | `set HTTPS_PROXY=http://proxy:port` (with auth: `http://user:pw@proxy:port`). If the first screen and `/status` show `proxy …`, it is in use. Exclude hosts with `NO_PROXY=.corp.com,10.1.2.3`; turn it off entirely with `"proxy": "none"` in the config |
+| the proxy answers 407 | Put `user:pw@` into the proxy address. Proxies that only accept NTLM · Negotiate are not supported — ask the admin for Basic or an unauthenticated address |
+| 401 / 403 | Wrong key or auth header style (four are tried automatically) |
+| `address not permitted` | The lock did its job — pick a connection with `/model` |
+| Tool calls don't work | Run `deel diagnose`. Small models (1B–3B) often can't |
+| Empty replies | The server ignores streaming. deel retries once, then turns streaming off for the session |
+| Large files cut off mid-write | Check `/out` and raise it — the cap may be sitting at the 16,384 default because it could not be discovered |
+| Only `HTTP 400` shows | The server's own message is shown verbatim. If it is a length problem the number is read and applied automatically |
+| `429` · `503` shows | The gateway pushed back for a moment. deel waits and calls again, up to three times (honouring `Retry-After`). If it keeps happening, check your quota |
+| `deel scan` finds nothing | Server is off or on another port — use `--ports` |
 
 ---
 
-## 개발
+## Development
 
 ```bash
-npm test          전체 검증 (5,825항목)
-npm run coverage  검사가 소스의 어디를 밟았는지
-npm run verify    반입·통신 검증만
-npm run bench     편집 성공률 측정
-npm run demo      화면이 어떻게 보이는지 실제로 돌려 보기
-npm run check     전 파일 문법 검사
+npm test          Full suite (5,825 checks)
+npm run coverage  Which lines the tests actually execute
+npm run verify    Import + network checks only
+npm run bench     Edit success rate
+npm run demo      See what the UI actually looks like
+npm run check     Syntax check every file
 ```
 
-검증은 **가짜 게이트웨이**를 띄워서 합니다. 실제 모델 없이 규격 그대로
-루프·스트리밍·도구 실행·되돌리기·압축을 결정적으로 확인합니다.
-zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교차 확인합니다.
+Tests run against a **fake gateway**, so the loop, streaming, tool execution, undo and compaction
+are verified deterministically without any model. ZIP output is cross-checked with the real
+`unzip`; the TAR reader is fed archives produced by the real `tar`.
 
-`npm test` 는 파일을 하나씩 돌리고 **파일별 종료코드**를 표로 남깁니다.
-화면의 통과 표시가 아니라 종료코드가 CI 가 보는 값이기 때문입니다. 둘은
-갈라질 수 있습니다 — 검사를 다 통과하고도 끝낼 때 죽으면 화면은 초록인데
-종료코드는 1 입니다. 실제로 윈도우에서 그렇게 한 번 놓쳤습니다.
-첫 실패에서 멈추지 않고 끝까지 돌기 때문에, 한 번 돌리면 전부 알 수 있습니다.
+`npm test` runs each file separately and reports **per-file exit codes**, because the exit code
+— not the pass marks on screen — is what CI reads, and the two can disagree: a file can pass
+every check and still die on the way out, leaving the screen green and the exit code 1. That
+happened once on Windows and cost a lot of time. The runner does not stop at the first failure,
+so one run tells you everything.
 
-```
-  ────────────────────────────────────────────────────────────
-  검사 파일              종료코드   통과   실패   시간
-  ────────────────────────────────────────────────────────────
-  ✓ smoke.js            0            20     0     0.2초
-  ✗ scan.test.js        1            19     0     0.2초
-  ────────────────────────────────────────────────────────────
-
-  ✗ scan.test.js — 종료코드 1
-     검사는 전부 통과했는데 종료코드만 1 입니다 —
-     끝낼 때 남은 핸들·처리 안 된 거절 때문입니다.
-```
-
-| 검증 | 항목 | 무엇을 |
+| Suite | Checks | Covers |
 |---|---|---|
-| `smoke` | 20 | 도구·작업범위·되돌리기·감사로그 |
-| `loop` | 16 | 에이전트 루프·스트리밍·도구 호출 |
-| `guard` | 24 | **안 하는 자리** — 거부·모르는 도구·두 번 실행·범위 밖 |
-| `network` | 30 | 정해진 자리 밖으로 새지 않는가 |
-| `web` | 25 | 웹 읽기가 읽기만 하는가 |
-| `abort` · `steer` | 16 · 15 | Ctrl+C 로 끊어도 대화가 성한가 · 도중에 낀 말이 다음 부름에 실리는가 |
-| `parallel` | 23 | 읽기만 동시에 도는가 · 할 일 목록 |
-| `cli` | 75 | **진짜 `deel` 을 띄워** 끝까지 돌려 본다 |
-| `setup` | 42 | 첫 실행 마법사 (가짜 TTY 로 사람처럼 입력) |
-| `detect` | 66 | 주소 한 줄로 규격·인증을 짚어내는가 |
-| `modes` · `route` | 89 · 33 | 작업 모드 · 종합에서 알맞은 모드로 옮겨 가는가 |
-| `ctxsize` | 43 | 모델에 걸린 컨텍스트 길이를 긁어오는가 |
-| `commands` · `commands-more` | 128 · 62 | 슬래시 명령 전부 |
-| `ui` · `ui2` | 60 · 40 | 암호 가림·한글 폭·상태줄·대화 목록·엑셀→글 |
-| `encoding` · `xlsx` | 68 · 72 | 한글 인코딩 판별 · 엑셀 읽기 |
-| `compact` | 21 | 요약 압축·짝 안 깨짐·실패 시 물러섬 |
-| `store` | 34 | 대화 저장·이어하기·중간에 죽어도 복구 |
-| `scan` | 29 | 여러 런타임을 구분해 찾는가 |
-| `plugins` | 38 | 플러그인 받기·묶기·ZIP/TAR |
-| `no-bundle` | 12 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
-| `edit-bench` | 20건 | 편집 성공률 |
+| `smoke` | 20 | Tools, scope, undo, audit log |
+| `loop` | 16 | Agent loop, streaming, tool calls |
+| `guard` | 24 | **What it refuses to do** — denied edits, unknown tools, repeated mutations, out-of-scope writes |
+| `network` | 30 | Nothing escapes the configured address |
+| `web` | 25 | Web reads stay read-only |
+| `abort` · `steer` | 16 · 15 | Ctrl+C leaves the conversation valid · a line typed mid-turn rides the next call |
+| `parallel` | 23 | Read-only tools run together; checklists |
+| `cli` | 75 | **Spawns the real `deel`** and drives it to completion |
+| `setup` | 42 | First-run wizard, driven through a fake TTY |
+| `detect` | 66 | Identifying shape and auth from one address |
+| `modes` · `route` | 89 · 33 | Work modes; auto-switching from Auto |
+| `ctxsize` | 43 | Reading context length off the model |
+| `commands` · `commands-more` | 128 · 62 | Every slash command |
+| `ui` · `ui2` | 60 · 40 | Password masking, CJK width, status line, session list, Excel→text |
+| `encoding` · `xlsx` | 68 · 72 | Legacy-encoding detection; Excel reading |
+| `compact` | 21 | Summary folding, pairing intact, graceful fallback |
+| `store` | 34 | Session persistence, resume, crash recovery |
+| `scan` | 29 | Distinguishing multiple runtimes |
+| `plugins` | 38 | Plugin fetch/pack, ZIP/TAR |
+| `no-bundle` | 12 | Nothing foreign in the published package; test-file hygiene |
+| `edit-bench` | 20 cases | Edit success rate |
 
-> **자세히** — 어디를 밟았는지 · 폴더 구조
+> **More** — Coverage · Layout
 >
-> **[개발 읽기 →](docs/ko/develop.md#개발)**
+> **[Development read →](docs/en/develop.md#development)**
 
 ---
 
-## 릴리스 노트
+## Release notes
 
-| 판 | 무엇이 바뀌었나 |
+| Version | What changed |
 |---|---|
-| **[1.7.0](docs/ko/releases/1.7.md#170)** | 로컬은 그대로 두고, 말했을 때만 바깥으로 — 모드 셋 · 벤더 붙이기 · 자동 마스킹 · 돈 표시 |
-| [1.6.3](docs/ko/releases/1.6.md#163) | 일이 되고 있는데 헛돈다고 끊던 자리 — 배열로 옮기면 무엇이 움직였는지가 사라졌다 |
-| **[1.6.2](docs/ko/releases/1.6.md#162)** | 누르면 멈추고, 시킨 대로 하고, 안 끊긴다 — ESC · 되묻기 · 요청 누락 · 붙여넣기 접기 · 끊긴 자리 잇기 |
-| **[1.6.1](docs/ko/releases/1.6.md#161)** | 헛도는 턴을 만들던 자리들 — 울타리가 `/dev/null` 까지 막던 것 · 옷 문서를 못 읽던 것 · 파일에서 그림이 사라지던 것 |
-| **[1.6.0](docs/ko/releases/1.6.md#160)** | 사내망에서 안 되던 것들 — 프록시 · 429 · 윈도우 셸 · 5만 개 저장소 · PDF · 캡처 붙여넣기 · 에디터 이어하기 |
-| **[1.5.8](docs/ko/releases/1.5.md#158)** | 5MB 문서를 919줄 중 8줄만 보던 것 · 정규식을 경로로 읽어 명령을 막던 것 |
-| **[1.5.7](docs/ko/releases/1.5.md#157)** | 맥 한글 폴더에서 제 파일이 「범위 밖」이던 것 · 붙여넣기 · ESC |
-| **[1.5.6](docs/ko/releases/1.5.md#156)** | 막히면 물어본다 — 글로 묻고 턴을 끝내는 대신에 |
-| **[1.5.5](docs/ko/releases/1.5.md#155)** | 계획을 세우면 방이 찬다 — 「한 명뿐」은 고정이 아니라 버그였다 |
-| [1.5.4](docs/ko/releases/1.5.md#154) | 방에 하루가 흐른다 — 아침·낮·노을·밤 · 벽시계 · 식은 커피 |
-| [1.5.3](docs/ko/releases/1.5.md#153) | 맥에서 걸린 세 가지 — 줄바꿈 안내 · 사무실이 안 사라짐 · `/motion` 하나로 |
-| [1.5.2](docs/ko/releases/1.5.md#152) | 적대적 리뷰가 남긴 나머지를 전부 정리했다 — 화면이 거짓말하던 자리들 |
-| [1.5.1](docs/ko/releases/1.5.md#151) | 1.5.0 이 넣은 것 두 개가 망가진 채 나갔다. 그것을 고친다 |
-| [1.5.0](docs/ko/releases/1.5.md#150) | 줄바꿈이 생겼고, 화면이 재미있어졌고, 그러면서 오히려 가벼워졌다 |
-| [1.4.3](docs/ko/releases/1.4.md#143) | README 가 왜 다른지 말하고, 심사서의 빠진 한 줄을 채운다 |
-| [1.4.2](docs/ko/releases/1.4.md#142) | 1.4.1 이 보안 수정 전에 나갔다 — 그걸 바로잡는 판 |
-| [1.4.1](docs/ko/releases/1.4.md#141) | 새 기능 없이, 실제로 찾은 것만 고친다 — 윈도우 abort·ReDoS·XSS |
-| [1.4.0](docs/ko/releases/1.4.md#140) | deel 이 제 얼굴을 갖고, 영어로도 말하고, 뜻까지 본다 — 열한 자리 |
-| [1.3.0](docs/ko/releases/1.3.md#130) | 말 대신 증거, 터미널 대신 에디터 — 여섯 자리 |
-| [1.2.0](docs/ko/releases/1.2.md#120) | 대화가 끊기지 않게 — 여섯 자리 |
+| **[1.7.0](docs/en/releases/1.7.md#170)** | Local stays local; it goes out only when you say so — three modes · vendor setup · automatic masking · cost |
+| [1.6.1](docs/en/releases/1.6.md#161) | The places that made a turn spin in circles — the fence blocking `/dev/null` · old documents it could not read · images vanishing from files |
+| **[1.6.0](docs/en/releases/1.6.md#160)** | The things that did not work on a corporate network — proxy · 429 · Windows shell · 50k-file repos · PDF · clipboard paste · editor resume |
+| **[1.5.8](docs/en/releases/1.5.md#158)** | A 5MB document showed 8 lines out of 919 · a regex read as a path blocked the command |
+| **[1.5.7](docs/en/releases/1.5.md#157)** | Korean folders on macOS made your own files "out of scope" · paste · ESC |
+| **[1.5.6](docs/en/releases/1.5.md#156)** | It asks when stuck — instead of writing a question and ending the turn |
+| **[1.5.5](docs/en/releases/1.5.md#155)** | A plan fills the room — "only one person" was a bug, not a design |
+| [1.5.4](docs/en/releases/1.5.md#154) | A day passes in the room — morning to night, a wall clock, a cold coffee |
+| [1.5.3](docs/en/releases/1.5.md#153) | Three things a Mac user tripped over — newline hint, office stays put, one `/motion` |
+| [1.5.2](docs/en/releases/1.5.md#152) | Everything else the adversarial reviews turned up — where the screen was lying |
+| [1.5.1](docs/en/releases/1.5.md#151) | Two of the things 1.5.0 added shipped broken. This fixes them |
+| [1.5.0](docs/en/releases/1.5.md#150) | Line breaks exist now, the screen got fun, and it came out lighter than before |
+| [1.4.3](docs/en/releases/1.4.md#143) | The README explains what's different, and the review report gets its missing line |
+| [1.4.2](docs/en/releases/1.4.md#142) | 1.4.1 shipped before its own security fixes — this corrects that |
+| [1.4.1](docs/en/releases/1.4.md#141) | No new features, only what was actually found and fixed — Windows abort, ReDoS, XSS |
+| [1.4.0](docs/en/releases/1.4.md#140) | deel gets a face, speaks English, and sees meaning — eleven places |
+| [1.3.0](docs/en/releases/1.3.md#130) | Evidence instead of claims, the editor instead of a terminal — six places |
+| [1.2.0](docs/en/releases/1.2.md#120) | So the conversation doesn't break — six places |
 
-무엇이 왜 바뀌었는지는 **[릴리스 노트](docs/ko/releases.md)** 에 있습니다.
+What changed and why is in the **[release notes](docs/en/releases.md)**.
 
 ---
 
-## 라이선스
+## Licence
 
 [MIT](LICENSE)

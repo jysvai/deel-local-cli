@@ -1,4 +1,4 @@
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)
 
 # Speed and spend
 
@@ -167,4 +167,4 @@ The count shows in `/cost`, and `deel run --json` reports it as `usage.retries`.
 
 ---
 
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)

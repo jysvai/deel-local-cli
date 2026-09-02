@@ -128,8 +128,8 @@ const 묶음 = [
 ];
 
 const 말들 = {
-  ko: { 파일: 'README.md', 되돌아: '← README 로', 자세히: '자세히', 읽기: '읽기' },
-  en: { 파일: 'README.en.md', 되돌아: '← back to README', 자세히: 'More', 읽기: 'read' },
+  ko: { 파일: 'README.ko.md', 되돌아: '← README 로', 자세히: '자세히', 읽기: '읽기' },
+  en: { 파일: 'README.md', 되돌아: '← back to README', 자세히: 'More', 읽기: 'read' },
 };
 
 /** `<b>자세히</b> — A · B` 에서 글자만. 링크 이름표로 쓴다. */

@@ -1,4 +1,4 @@
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)
 
 # Korean documents and Excel
 
@@ -179,4 +179,4 @@ Extracted intermediate files are deleted after use.
 
 ---
 
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)

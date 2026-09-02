@@ -1,4 +1,4 @@
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)
 
 # Release notes
 
@@ -17,4 +17,4 @@ One file per version line — open only the line you need.
 
 ---
 
-[← back to README](../../README.en.md)
+[← back to README](../../README.md)

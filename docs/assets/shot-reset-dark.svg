@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="730" height="427" viewBox="0 0 730 427" role="img" aria-label="deel reset — shows what exists, deletes nothing">
+  <title>deel reset — shows what exists, deletes nothing</title>
+  <rect width="730" height="427" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <path d="M0 8a8 8 0 0 1 8-8h714a8 8 0 0 1 8 8v26H0z" fill="#161b22"/>
+  <line x1="0" y1="34" x2="730" y2="34" stroke="#30363d"/>
+  <circle cx="18" cy="17" r="5.5" fill="#ff5f57"/><circle cx="36" cy="17" r="5.5" fill="#febc2e"/><circle cx="54" cy="17" r="5.5" fill="#28c840"/>
+  <text x="365" y="22" fill="#8b949e" font-size="12" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,sans-serif">deel reset</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14">
+    <text x="16.0" y="64" fill="#e6edf3" textLength="621.6" lengthAdjust="spacing" xml:space="preserve">── 지울 수 있는 것 ───────────────────────────────────────────────────────</text>
+    <text x="16.0" y="83" fill="#e6edf3" textLength="588.0" lengthAdjust="spacing" xml:space="preserve">  살림 자리  C:\Users\me\.deel                                        </text>
+    <text x="16.0" y="102" fill="#e6edf3" textLength="588.0" lengthAdjust="spacing" xml:space="preserve">  작업 폴더  C:\work\myproject                                        </text>
+    <text x="16.0" y="140" fill="#e6edf3" textLength="327.6" lengthAdjust="spacing" xml:space="preserve">  연결·프로필                       2개</text>
+    <text x="16.0" y="159" fill="#e6edf3" textLength="327.6" lengthAdjust="spacing" xml:space="preserve">  기억                              8줄</text>
+    <text x="16.0" y="178" fill="#e6edf3" textLength="327.6" lengthAdjust="spacing" xml:space="preserve">  대화 기록                         9개</text>
+    <text x="16.0" y="197" fill="#e6edf3" textLength="327.6" lengthAdjust="spacing" xml:space="preserve">  배운 것                           2곳</text>
+    <text x="16.0" y="216" fill="#e6edf3" textLength="327.6" lengthAdjust="spacing" xml:space="preserve">  증거·내보낸 것·임시               3개</text>
+    <text x="16.0" y="235" fill="#e6edf3" textLength="327.6" lengthAdjust="spacing" xml:space="preserve">  플러그인                          3개</text>
+    <text x="16.0" y="254" fill="#e6edf3" textLength="613.2" lengthAdjust="spacing" xml:space="preserve">  잠긴 열쇠                             DPAPI — 이 PC 의 이 계정만 풉니다</text>
+    <text x="16.0" y="292" fill="#e6edf3" textLength="621.6" lengthAdjust="spacing" xml:space="preserve">── 안 지웁니다 ───────────────────────────────────────────────────────────</text>
+    <text x="16.0" y="311" fill="#e6edf3" textLength="571.2" lengthAdjust="spacing" xml:space="preserve">  되돌리기 스냅샷                41자리  all --hard 를 줘야 지웁니다</text>
+    <text x="16.0" y="330" fill="#e6edf3" textLength="571.2" lengthAdjust="spacing" xml:space="preserve">  감사기록                      1,203줄  all --hard 를 줘야 지웁니다</text>
+    <text x="16.0" y="349" fill="#e6edf3" textLength="579.6" lengthAdjust="spacing" xml:space="preserve">  사람이 적은 것                         .deel/mcp.json · .deelignore</text>
+    <text x="16.0" y="368" fill="#e6edf3" textLength="260.4" lengthAdjust="spacing" xml:space="preserve">     어떤 길로도 안 건드립니다.</text>
+    <text x="16.0" y="406" fill="#e6edf3" textLength="697.2" lengthAdjust="spacing" xml:space="preserve">  무엇을 지울지 같이 주세요: deel reset &lt;model|memory|sessions|learned|plugins|all&gt;</text>
+  </g>
+</svg>

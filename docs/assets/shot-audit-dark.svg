@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1015" height="712" viewBox="0 0 1015 712" role="img" aria-label="deel audit — the corporate review sheet">
+  <title>deel audit — the corporate review sheet</title>
+  <rect width="1015" height="712" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <path d="M0 8a8 8 0 0 1 8-8h999a8 8 0 0 1 8 8v26H0z" fill="#161b22"/>
+  <line x1="0" y1="34" x2="1015" y2="34" stroke="#30363d"/>
+  <circle cx="18" cy="17" r="5.5" fill="#ff5f57"/><circle cx="36" cy="17" r="5.5" fill="#febc2e"/><circle cx="54" cy="17" r="5.5" fill="#28c840"/>
+  <text x="507.5" y="22" fill="#8b949e" font-size="12" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,sans-serif">deel audit</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14">
+    <text x="16.0" y="64" fill="#e6edf3" textLength="201.6" lengthAdjust="spacing" xml:space="preserve">deel 사내 반입 심사 자료</text>
+    <text x="16.0" y="83" fill="#e6edf3" textLength="621.6" lengthAdjust="spacing" xml:space="preserve">--------------------------------------------------------------------------</text>
+    <text x="16.0" y="102" fill="#e6edf3" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">이름        deel-local-cli</text>
+    <text x="16.0" y="121" fill="#e6edf3" textLength="142.8" lengthAdjust="spacing" xml:space="preserve">판          1.7.0</text>
+    <text x="16.0" y="140" fill="#e6edf3" textLength="126.0" lengthAdjust="spacing" xml:space="preserve">라이선스    MIT</text>
+    <text x="16.0" y="159" fill="#e6edf3" textLength="378.0" lengthAdjust="spacing" xml:space="preserve">실행 환경   Node &gt;=20 (표준 내장 기능만 사용)</text>
+    <text x="16.0" y="178" fill="#e6edf3" textLength="260.4" lengthAdjust="spacing" xml:space="preserve">만든 시각   2026-09-02 03:05:02</text>
+    <text x="16.0" y="216" fill="#e6edf3" textLength="117.6" lengthAdjust="spacing" xml:space="preserve">1. 외부 의존성</text>
+    <text x="16.0" y="235" fill="#e6edf3" textLength="621.6" lengthAdjust="spacing" xml:space="preserve">--------------------------------------------------------------------------</text>
+    <text x="16.0" y="254" fill="#e6edf3" textLength="529.2" lengthAdjust="spacing" xml:space="preserve">   dependencies      0개   ← 남의 코드를 함께 들여오지 않습니다</text>
+    <text x="16.0" y="273" fill="#e6edf3" textLength="201.6" lengthAdjust="spacing" xml:space="preserve">   devDependencies   0개</text>
+    <text x="16.0" y="292" fill="#e6edf3" textLength="529.2" lengthAdjust="spacing" xml:space="preserve">   소스의 외부 import 0건   ← node: 내장과 자기 파일만 부릅니다</text>
+    <text x="16.0" y="330" fill="#e6edf3" textLength="243.6" lengthAdjust="spacing" xml:space="preserve">2. 설치할 때 저절로 도는 코드</text>
+    <text x="16.0" y="349" fill="#e6edf3" textLength="621.6" lengthAdjust="spacing" xml:space="preserve">--------------------------------------------------------------------------</text>
+    <text x="16.0" y="368" fill="#e6edf3" textLength="588.0" lengthAdjust="spacing" xml:space="preserve">   없음   ← preinstall / install / postinstall / prepare 전부 없습니다</text>
+    <text x="16.0" y="387" fill="#e6edf3" textLength="596.4" lengthAdjust="spacing" xml:space="preserve">   압축을 풀고 `node bin/deel.js` 로 바로 씁니다. 설치 절차가 없습니다.</text>
+    <text x="16.0" y="425" fill="#e6edf3" textLength="394.8" lengthAdjust="spacing" xml:space="preserve">3. 바깥으로 나가는 자리 (소스를 훑어 찾은 전부)</text>
+    <text x="16.0" y="444" fill="#e6edf3" textLength="621.6" lengthAdjust="spacing" xml:space="preserve">--------------------------------------------------------------------------</text>
+    <text x="16.0" y="463" fill="#e6edf3" textLength="932.4" lengthAdjust="spacing" xml:space="preserve">   [네트워크 요청]  5건   사용자가 setup 에서 넣은 주소로만 나갑니다 (HTTPS_PROXY 가 있으면 그 프록시를 거쳐서)</text>
+    <text x="16.0" y="482" fill="#e6edf3" textLength="949.2" lengthAdjust="spacing" xml:space="preserve">       src/backend/http.js:182   const res = await fetch(url, { method, headers, body, signal: 신호(timeout, sign</text>
+    <text x="16.0" y="501" fill="#e6edf3" textLength="436.8" lengthAdjust="spacing" xml:space="preserve">       src/backend/http.js:274   rq = httpsRequest({</text>
+    <text x="16.0" y="520" fill="#e6edf3" textLength="982.8" lengthAdjust="spacing" xml:space="preserve">       src/backend/http.js:282   rq = httpRequest({ host: 프록시.host, port: 프록시.port, agent: false, path: url, me</text>
+    <text x="16.0" y="539" fill="#e6edf3" textLength="478.8" lengthAdjust="spacing" xml:space="preserve">       src/backend/http.js:304   const rq = httpRequest({</text>
+    <text x="16.0" y="558" fill="#e6edf3" textLength="949.2" lengthAdjust="spacing" xml:space="preserve">       src/backend/http.js:325   const tls = tlsConnect({ socket, host: hostname, servername: 이름 }, () =&gt; resol</text>
+    <text x="16.0" y="577" fill="#e6edf3" textLength="705.6" lengthAdjust="spacing" xml:space="preserve">   [외부 명령 실행]  29건   사용자·모델이 지시한 명령, 그리고 플러그인 받을 때의 git</text>
+    <text x="16.0" y="596" fill="#e6edf3" textLength="814.8" lengthAdjust="spacing" xml:space="preserve">       src/agent/commit.js:56   r = spawnSync('git', ['-c', 'core.quotepath=false', ...인자들], {</text>
+    <text x="16.0" y="615" fill="#e6edf3" textLength="705.6" lengthAdjust="spacing" xml:space="preserve">       src/backend/mcp.js:95   this.kid = spawn(this.설정.command, this.설정.args, {</text>
+    <text x="16.0" y="634" fill="#e6edf3" textLength="957.6" lengthAdjust="spacing" xml:space="preserve">       src/backend/scan.js:58   out = execFileSync(명령.file, 명령.args, { timeout, encoding: 'latin1', windowsHid</text>
+    <text x="16.0" y="653" fill="#e6edf3" textLength="873.6" lengthAdjust="spacing" xml:space="preserve">       src/lsp/client.js:128   ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 몰아쓰기], {</text>
+    <text x="16.0" y="672" fill="#e6edf3" textLength="520.8" lengthAdjust="spacing" xml:space="preserve">       src/lsp/client.js:134   : spawn(실행, this.서버.args, {</text>
+    <text x="16.0" y="691" fill="#e6edf3" textLength="940.8" lengthAdjust="spacing" xml:space="preserve">       src/plugins/manage.js:46   execFile(cmd, ['--version'], { timeout: 8000, windowsHide: true }, (err) =&gt; re</text>
+  </g>
+</svg>

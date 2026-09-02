@@ -1,4 +1,4 @@
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
 
 # 안전망과 사내 반입
 
@@ -138,4 +138,4 @@ node bin/deel.js diagnose --url <게이트웨이주소> --key <키> --model <모
 
 ---
 
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)

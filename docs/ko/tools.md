@@ -1,4 +1,4 @@
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
 
 # 도구 자세히
 
@@ -621,4 +621,4 @@ $ /lsp
 
 ---
 
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)

@@ -1,4 +1,4 @@
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
 
 # 모델 다루기
 
@@ -183,4 +183,4 @@ node 프로젝트 (deel-local-cli) · git main
 
 ---
 
-[← README 로](../../README.md)
+[← README 로](../../README.ko.md)
