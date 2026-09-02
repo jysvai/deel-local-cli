@@ -8,7 +8,7 @@
 //   2) 요약도 모델이 만든다. 그 요청이 실패하면 프로그램이 멈추면 안 된다 —
 //      실패하면 옛 방식(그냥 자르기)으로 물러선다.
 import { chat } from '../backend/adapter.js';
-import { estimateTokens, safeCut, safeHead } from './session.js';
+import { estimateTokens, safeCut, safeHead, 못박을것 } from './session.js';
 import { 그림장수, 글만 } from '../backend/vision.js';
 
 // 몇 %에서 접기 시작할지. 접고 나서 다시 금방 차면 아무 소용이 없으니 넉넉히 비운다.
@@ -115,10 +115,28 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN } 
     if (m?.role !== 'tool') return;
     const 글 = typeof m.content === 'string' ? m.content : '';
     if (글.startsWith(접힘표)) return;      // 이미 접은 것
-    자리.push({ i, 글 });
+    자리.push({ i, 글, 이름: 이름표.get(m.tool_call_id)?.name ?? m.tool_name ?? '' });
   });
 
-  const 접을것 = 자리.slice(0, Math.max(0, 자리.length - keep)).filter((x) => x.글.length >= min);
+  /*
+   * ── 가장 최근 할 일 목록은 안 접는다 ─────────────────────────────────
+   *
+   * 접힘 문구는 「필요하면 다시 읽으세요」다. 파일이면 맞는 말이다 — 읽는
+   * 값은 싸고 하던 일을 잊는 값은 비싸니까. 그런데 **할 일 목록은 다시
+   * 읽을 파일이 없다.** 접는 순간 남은 항목이 어디에도 없어진다.
+   *
+   * 그래서 긴 작업일수록 뒤로 갈수록 시킨 것을 빠뜨렸다 — 「대화를 잘
+   * 기억 못 한다」로 제보받은 것의 큰 몫이 여기였다.
+   *
+   * 옛 목록은 그대로 접는다. 새 목록이 나온 순간 옛것은 이미 틀린 것이라
+   * 남겨 둘수록 해롭다. 지키는 것은 **마지막 하나**뿐이고, 목록 하나는
+   * 몇백 글자라 자리도 거의 안 먹는다.
+   */
+  const 지킬할일 = 자리.filter((x) => x.이름 === 'TodoWrite').at(-1)?.i ?? -1;
+
+  const 접을것 = 자리
+    .slice(0, Math.max(0, 자리.length - keep))
+    .filter((x) => x.글.length >= min && x.i !== 지킬할일);
   let 아낀토큰 = 0;
   // 무엇을 버렸는지 이름으로 남긴다.
   //
@@ -170,29 +188,11 @@ const 요약지시 = `지금까지의 대화를 다음 형식으로 요약하세
 export { safeCut, safeHead } from './session.js';
 
 /*
- * ── 시킨 말은 요약하지 않는다 ───────────────────────────────────────────
- *
- * 요약 지시에는 「## 목표 — 사용자가 무엇을 시켰는가」 가 있다. 그런데 요약은
- * 요약이다. 네 가지를 적어 준 요청이 「네 가지를 고쳐 달라고 했다」 한 줄로
- * 뭉개지고, **그 네 가지가 무엇이었는지는 사라진다.** 접힌 뒤로는 아무리
- * 찾아도 원문이 없으니, 남은 것을 이어 하려 해도 무엇이 남았는지 모른다.
- *
- * "요청사항이 다량일 경우 몇 번 까먹거나 누락되거나" 의 절반이 여기였다.
- *
- * 그래서 이번에 시킨 말을 **글자 그대로** 한 번 더 박아 둔다. 요약 모델이
- * 무엇을 하든 이 줄은 그대로 남는다. 길면 앞부분만 — 그래도 항목 목록은
- * 대개 앞에 있다.
+ * 시킨 말과 남은 할 일을 못 박는 것은 session.js 에 있다. 접기와 줄이기가
+ * **같은 것**을 박아야 하기 때문이다 — 한쪽만 고치면 물러서는 순간 대화가
+ * 어긋난다. safeCut·safeHead 를 그리 둔 것과 같은 까닭이다.
  */
-const 못박을길이 = 1200;
-
-export function 못박은요청(session) {
-  const 원문 = String(session?.이번요청 ?? '').trim();
-  if (!원문) return '';
-  const 실을것 = 원문.length > 못박을길이
-    ? `${원문.slice(0, 못박을길이)}\n…(뒷부분 줄임)`
-    : 원문;
-  return `[이번에 시킨 말 — 요약이 아니라 원문 그대로입니다. 여기 적힌 것을 빠짐없이 하세요.]\n${실을것}\n\n`;
-}
+export { 못박은요청, 못박은할일, 못박을것 } from './session.js';
 
 /** 접을 구간과 남길 구간을 나눈다. */
 export function split(messages, { keepHead = KEEP_HEAD, tailRatio = KEEP_TAIL_RATIO } = {}) {
@@ -288,7 +288,7 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
     {
       role: 'user',
       content: `[앞선 대화 ${parts.fold.length}개를 요약해 접었습니다. 아래가 그 요약입니다.]\n\n${summary}\n\n`
-        + 못박은요청(session)
+        + 못박을것(session)
         + '[요약 끝. 이어서 진행하세요. 파일 내용이 필요하면 다시 읽으세요.]',
     },
     ...parts.tail,

@@ -12,6 +12,7 @@
  * 줄인 양보다 먼저 잰다.
  */
 import { 파일기억, 바뀐데만 } from '../src/agent/filemem.js';
+import { 못박을것 } from '../src/agent/session.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -198,6 +199,21 @@ trace('7-대화가-지워지면-기억도');
     s.clear();
     check('/clear 뒤에는 파일을 통째로 다시 싣는다',
       s.파일기억.실을것('/집/가.txt', 긴글).어떻게 === 'full');
+
+    /*
+     * ★ 할 일 목록과 시킨 말도 같이 지워야 한다.
+     *
+     * 이 둘은 접거나 줄일 때 **다시 박히는** 것들이다(못박을것). 지운 뒤에도
+     * 들고 있으면, 새로 시작한 일이 처음 접히는 순간 지운 대화의 할 일이
+     * 되살아나 붙는다. 모델은 그걸 지금 시킨 것으로 알고 하러 간다 —
+     * 안 지운 것만 못하다.
+     */
+    const t = 새판();
+    t.이번요청 = '앞의 일 네 가지를 해줘';
+    t.할일 = [{ text: '앞의 일 1', state: 'todo' }, { text: '앞의 일 2', state: 'doing' }];
+    t.clear();
+    check('★ /clear 뒤에는 앞 대화의 할 일이 안 붙는다', 못박을것(t) === '',
+      JSON.stringify(못박을것(t)).slice(0, 120));
   }
 
   // (2) 되감기(/undo)

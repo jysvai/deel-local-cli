@@ -184,6 +184,56 @@ check('★ 그냥 줄인 뒤에도 파일은 통째로 다시 싣는다 — 가�
   s3.파일기억.실을것('/집/본것.txt', 읽은것).어떻게 === 'full',
   s3.파일기억.실을것('/집/본것.txt', 읽은것).어떻게);
 
+/*
+ * ── ★ 4-1. 물러선 길에도 시킨 말과 남은 할 일을 박는다 ──────────────────
+ *
+ * 위 2-1 은 **접기가 성공한** 길만 잰다. 그런데 못 박는 코드가 그 길에만
+ * 있었다 — 정작 제일 자주 밟히는 길은 요약을 못 받아 물러선 이쪽이다.
+ *
+ * 물러서기(trim)는 머리 2개만 남긴다. 그래서 사용자가 **세 번째 턴에서**
+ * 네 가지를 시켰다면 그 네 가지가 통째로 사라진다. 「대화를 잘 기억 못
+ * 한다」로 제보받은 것의 큰 몫이 여기였다. 요청을 일부러 대화 한가운데
+ * 둬서 잰다 — messages[0] 에 두면 머리에 걸려 살아남아 검사가 무의미해진다.
+ */
+{
+  mode = 'dead';
+  const 시킨말 = '1. 붙여넣기 접기\n2. esc 로 멈추기\n3. 요청 누락 막기\n4. 중간에 끊기는 것 막기';
+  const s5 = new Session(conn, { root: process.cwd() });
+  s5.messages = [
+    ...대화만들기(4),
+    { role: 'user', content: 시킨말 },     // 한가운데 — 머리 2개에 안 걸린다
+    ...대화만들기(12),
+  ];
+  s5.이번요청 = 시킨말;
+  s5.할일 = [
+    { text: '붙여넣기 접기', state: 'done' },
+    { text: 'esc 로 멈추기', state: 'doing' },
+    { text: '요청 누락 막기', state: 'todo' },
+  ];
+
+  const r5 = await compact(s5);
+  check('물러서기로 갔다 (못 박기 검사용)', r5.fallback === true, JSON.stringify(r5.why ?? ''));
+  const 남은글 = s5.messages.map((m) => String(m.content ?? '')).join('\n');
+
+  check('★ 그냥 줄인 뒤에도 시킨 말이 원문 그대로 남는다', 남은글.includes(시킨말),
+    남은글.includes('붙여넣기') ? '일부만' : '아예 없음');
+  check('★ 안 끝난 할 일이 남는다',
+    남은글.includes('esc 로 멈추기') && 남은글.includes('요청 누락 막기'), 남은글.slice(-300));
+  // 끝난 것은 안 싣는다 — 이 쪽지가 답할 질문은 「무엇이 남았나」 하나다.
+  check('끝난 할 일은 다시 안 싣는다',
+    !/☐ 붙여넣기 접기|▶ .*붙여넣기 접기/.test(남은글));
+  check('하는 중인 것을 구분해 준다', /▶ \(하는 중\) esc 로 멈추기/.test(남은글));
+
+  // 할 일이 없으면 빈 표를 안 붙인다 — 자리만 먹는다.
+  const s6 = new Session(conn, { root: process.cwd() });
+  s6.messages = 대화만들기(16);
+  s6.이번요청 = '한 가지만 해줘';
+  const r6 = await compact(s6);
+  check('할 일이 없으면 할 일 표를 안 붙인다',
+    r6.fallback === true && !s6.messages.some((m) => /안 끝난 할 일/.test(String(m.content ?? ''))));
+  mode = 'ok';
+}
+
 // ── 5. 접을 게 없으면 조용히 넘어간다 ───────────────────────────────────
 mode = 'ok';
 const s4 = new Session(conn, { root: process.cwd() });
@@ -377,6 +427,38 @@ await new Promise((r) => setImmediate(r));
   // 두 번째 부름 — 이미 접은 것을 또 세면 화면에 거짓 숫자가 뜬다.
   const r2 = foldToolResults(s);
   check('이미 접은 것은 다시 안 센다', r2.접은것 === 0, `${r2.접은것}개`);
+
+  /*
+   * ── ★ 할 일 목록은 다시 읽을 파일이 없다 ─────────────────────────────
+   *
+   * 접힘 문구는 「필요하면 다시 읽으세요」다. 파일이면 맞는 말이다 — 읽는
+   * 값은 싸고 하던 일을 잊는 값은 비싸니까. 그런데 할 일 목록에는 **다시
+   * 읽을 파일이 없다.** 접는 순간 남은 항목이 어디에도 없어진다.
+   *
+   * 그래서 긴 작업일수록 뒤로 갈수록 시킨 것을 빠뜨렸다. 파일 읽기 여섯 번
+   * 뒤에 목록이 밀려나면 모델은 3·4번이 남았다는 것을 알 길이 없다.
+   *
+   * 옛 목록은 그대로 접는다 — 새 목록이 나온 순간 옛것은 틀린 것이라,
+   * 남겨 두면 도움이 아니라 해다.
+   */
+  const 할일 = (id, 글) => ({
+    role: 'assistant', content: null,
+    tool_calls: [{ id, type: 'function', function: { name: 'TodoWrite', arguments: JSON.stringify({ todos: [] }) } }],
+  });
+  const 목록글 = (표) => `${표}\n${'| ☐ | 자리를 채우는 줄 |\n'.repeat(30)}`;
+
+  const u = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
+  u.push({ role: 'user', content: '네 가지 해줘' });
+  u.push(할일('t1')); u.push(결과('t1', 목록글('| ☐ | 옛 목록입니다 |')));
+  u.push(할일('t2')); u.push(결과('t2', 목록글('| ☐ | 3. 요청 누락 막기 |')));
+  for (let i = 1; i <= 6; i++) { u.push(호출(`e${i}`, `src/뒤${i}.js`)); u.push(결과(`e${i}`, 긴글(60))); }
+
+  const ru = foldToolResults(u);
+  const 다 = u.messages.filter((m) => m.role === 'tool').map((m) => m.content).join('\n');
+  check('★ 가장 최근 할 일 목록은 안 접는다', 다.includes('3. 요청 누락 막기'),
+    `접은 것 ${ru.접은것}개`);
+  check('★ 옛 할 일 목록은 접는다 — 새것이 나오면 틀린 것이다', !다.includes('옛 목록입니다'));
+  check('그 밖의 오래된 결과는 그대로 접는다', ru.접은것 >= 3, `${ru.접은것}개`);
 
   // 작은 결과는 접어도 자리가 안 준다. 오히려 무엇을 했는지만 잃는다.
   const t = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });

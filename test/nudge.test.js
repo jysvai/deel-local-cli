@@ -19,6 +19,7 @@ import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
 import { run } from '../src/agent/loop.js';
 import { allowEndpoint } from '../src/safety/network.js';
+import { 못박을것 } from '../src/agent/session.js';
 
 const pass = [];
 const fail = [];
@@ -88,7 +89,7 @@ async function 돌리기(대본, { work = 'auto', todos = [], 시킨말 = '문�
   const session = new Session(conn(), { root, work, think: 'off' });
   const events = [];
   for await (const ev of run(session, ctx, 시킨말)) events.push(ev);
-  return { events, root, 종류: events.map((e) => e.type) };
+  return { events, root, ctx, session, 종류: events.map((e) => e.type) };
 }
 
 const 되묻기 = '무엇을 도와드릴까요? 프로젝트 구조와 실행 방식은 확인했습니다.';
@@ -300,6 +301,48 @@ const 할일 = [{ text: 'README 를 정리한다', state: 'doing' }];
     { text: '고쳤습니다.' },
   ], { todos: 할일, 시킨말: '안녕, README 정리해줘' });
   check('★ 인사 뒤에 일이 붙으면 지시로 본다', 섞인것.종류.includes('nudge'), 섞인것.종류.join(','));
+}
+
+/*
+ * ── ★ 할 일 목록을 세션에도 넘겨 준다 ──────────────────────────────
+ *
+ * 여태 목록이 사는 자리는 도구 결과 하나뿐이었다. 그런데 도구 결과는
+ * 55%에서 한 줄로 접히고 80%에서 요약에 뭉개진다. 접힘 문구는 「필요하면
+ * 다시 읽으세요」인데 **할 일 목록은 다시 읽을 파일이 없다.**
+ *
+ * 접거나 줄일 때 다시 실어 주려면 session 이 목록을 들고 있어야 한다
+ * (session.js 의 못박은할일). ctx.todos 는 우리 코드만 보는 것이라
+ * 모델에게는 아무 소용이 없다.
+ *
+ * 이 검사가 여기 있는 까닭은 진짜 루프를 돌리는 판이 이 파일에만 있어서다.
+ * compact.test.js 는 박아 넣는 쪽을 재고, 여기서는 **넣어 주는 쪽**을 잰다 —
+ * 둘 중 하나만 있으면 나머지 한 줄을 지워도 안 빨개진다.
+ */
+{
+  const 목록 = [
+    { text: 'README 를 정리한다', state: 'done' },
+    { text: '설정 파일을 손본다', state: 'doing' },
+    { text: '검사를 돌린다', state: 'todo' },
+  ];
+  const { session, ctx } = await 돌리기([
+    { toolCall: { name: 'TodoWrite', args: { todos: 목록 } } },
+    { toolCall: { name: 'Edit', args: { file_path: 'README.md', old_string: '낡은 설명.', new_string: '새 설명.' } } },
+    { text: 'README 를 정리했습니다. 설정 파일은 아직 남았습니다.' },
+  ]);
+
+  check('★ 할 일 목록이 세션에 남는다', (session.할일 ?? []).length === 3,
+    JSON.stringify(session.할일 ?? null));
+  check('★ 상태까지 그대로 남는다',
+    session.할일?.find((x) => x.text === '설정 파일을 손본다')?.state === 'doing',
+    JSON.stringify(session.할일));
+  // ctx 쪽도 그대로여야 한다 — 되밀기 판단이 그걸 본다.
+  check('ctx.todos 도 같이 선다', (ctx.todos ?? []).length === 3);
+
+  // 접혀도 안 끝난 것이 살아남는지는 여기서 바로 확인한다. 이게 이 줄의 목적이다.
+  const 박은것 = 못박을것(session);
+  check('★ 접힐 때 박을 글에 안 끝난 것이 들어간다',
+    박은것.includes('설정 파일을 손본다') && 박은것.includes('검사를 돌린다'), 박은것.slice(0, 160));
+  check('끝난 것은 안 들어간다', !박은것.includes('README 를 정리한다'));
 }
 
 // ── 결과 ───────────────────────────────────────────────────────────
