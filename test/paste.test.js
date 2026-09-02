@@ -286,15 +286,20 @@ trace('6-진짜로-한-덩이로-가나');
    * 안 갔다고 생각하고 다시 붙여넣었다.
    *
    * 보낸 값만 재는 검사로는 이걸 못 잡는다. 화면을 따로 봐야 한다.
+   *
+   * 지금은 붙인 덩이를 **상자에서만** 표로 접는다(pastechip.js). 상자는
+   * readline 의 rl.line 이라 여러 줄을 아예 못 그리기 때문이다. 대화에 남길
+   * 때는 도로 편다 — 여기 세 줄이 그대로 있어야 한다.
    */
-  const 보낸뒤 = 화면.slice(화면.indexOf('붙여넣었습니다'));
+  const 보낸뒤 = 화면.slice(화면.indexOf('접어 뒀습니다'));
   for (const 줄 of ['첫째 줄', '둘째 줄', '셋째 줄']) {
     check(`보낸 뒤 화면에 「${줄}」이 남는다`, 보낸뒤.includes(줄),
       JSON.stringify(보낸뒤.split('\n').filter((l) => l.trim()).slice(0, 6)));
   }
 
-  check('몇 줄을 붙였는지 알려 준다', /3줄을 붙여넣었습니다/.test(화면),
-    화면.split('\n').find((l) => /붙여넣었/.test(l))?.trim() ?? '(안 알려 준다)');
+  // 몇 줄 몇 바이트인지는 접은 표가 말해 준다 — 무엇을 붙였는지 모르면 다시 붙인다.
+  check('몇 줄을 붙였는지 알려 준다', /붙여넣기 #\d+ · 3줄 · \d+B/.test(화면),
+    화면.split('\n').find((l) => /붙여넣기 #/.test(l))?.trim() ?? '(안 알려 준다)');
 
   rmSync(home, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });

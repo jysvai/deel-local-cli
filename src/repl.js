@@ -39,7 +39,7 @@ import { explain, shows as levelShows } from './ui/level.js';
 import { 고르기 as 승인고르기, 다음 as 승인다음 } from './ui/approve.js';
 import { 추천, 채울글 } from './ui/complete.js';
 import { 접어쓰기 } from './ui/wrap.js';
-import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들 } from './ui/pastechip.js';
+import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들, 남길글 } from './ui/pastechip.js';
 import { 이력지킴이 } from './ui/histline.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { renderDiff, shortStat } from './ui/diff.js';
@@ -276,7 +276,9 @@ export async function chatLoop(opts = {}) {
    * 여기서 한 번만 읽는다. 상태줄은 글자를 칠 때마다 다시 그려지는데,
    * 그때마다 설정 파일을 열면 디스크를 초당 수십 번 두드리게 된다.
    */
-  session.요금표 = cfg?.요금 ?? null;
+  // `pricing` 으로 적어도 받는다 — 설정은 사람이 손으로 적는 것이라, 한글
+  // 자판이 없는 사람이 못 적는 이름 하나에 기능이 통째로 막히면 안 된다.
+  session.요금표 = cfg?.요금 ?? cfg?.pricing ?? null;
   session.제공자 = prof?.제공자 ?? null;
 
   /*
@@ -612,7 +614,7 @@ export async function chatLoop(opts = {}) {
          * 백틱으로 이어 쓴 경우에는 앞줄이 이미 찍혀 있으므로 마지막 줄만
          * 이어 찍는다 — 안 그러면 같은 줄이 두 번 보인다.
          */
-        const 찍을것 = 이어쓴것 ? l : 보낼것;
+        const 찍을것 = 남길글(이어쓴것 ? l : 보낼것, 붙인것들);
         if (찍을것.trim() || 이었나) {
           for (const [i, 한줄] of String(찍을것).split('\n').entries()) {
             say(`${i === 0 && !이어쓴것 ? ` ${c.hcyan('❯')} ` : '   '}${c.white(한줄)}`);
@@ -1304,7 +1306,7 @@ export async function chatLoop(opts = {}) {
   }
   // 안 뜬 것은 조용히 빠지면 안 된다. "왜 그 도구가 없지" 를 영영 알 수 없다.
   for (const m of mcp붙임.못한것) warn.push(`MCP ${c.white(m.이름)} 을 못 붙였습니다 — ${m.왜}`);
-  if (!conn.tools) warn.push('도구 호출이 확인되지 않았습니다 — deel diagnose 로 점검하세요');
+  if (!conn.tools) warn.push(옮긴말('run.noTools'));
   if (!conn.streaming) warn.push(옮긴말('run.noStream'));
   warn.push(...길이경고);
   // 잘 된 것은 경고 표시를 달지 않는다. ⚠ 가 붙으면 뭘 고쳐야 하나 싶어진다.
