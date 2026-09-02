@@ -23,11 +23,27 @@ const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
 
 const 벗기기 = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
+/*
+ * 방은 **색이 전부**라, 색을 끈 자리에서는 아예 안 켜진다(office.js 의
+ * 색충분한가). 그 판단이 부른 사람의 환경을 그대로 읽는다 — 그래서 이
+ * 검사가 NO_COLOR 를 켜 둔 셸에서 돌면, 켜져야 할 자리가 전부 「안 켜짐」
+ * 으로 나온다. 실제로 그렇게 아홉 항목이 셸 하나에서만 빨개졌다.
+ *
+ * 재는 것은 「색이 있으면 켜지나」 이지 「이 셸에 색이 있나」 가 아니다.
+ * 그러니 여기서 색을 못 박고 시작한다.
+ */
+const 원래NO_COLOR = process.env.NO_COLOR;
 const 환경되돌리기 = () => {
   delete process.env.DEEL_OFFICE;
   delete process.env.DEEL_NO_MOTION;
   delete process.env.DEEL_MOTION;
+  delete process.env.NO_COLOR;
+  process.env.FORCE_COLOR = '1';
 };
+process.on('exit', () => {
+  if (원래NO_COLOR === undefined) delete process.env.NO_COLOR;
+  else process.env.NO_COLOR = 원래NO_COLOR;
+});
 환경되돌리기();
 
 trace('1-크기');

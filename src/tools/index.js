@@ -2,7 +2,7 @@
 // 그래야 그 관례로 쓰인 스킬·명령이 그대로 먹는다.
 import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, renameSync, cpSync, rmSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
@@ -1042,8 +1042,21 @@ export const TOOLS = {
        */
       const 준줄수 = slice.length;
       const 다못줌 = start + count < lines.length || start > 0;
+      const 통째로 = body + more + 줄인것.알림;
+      const 실린것 = clip(통째로);
       return {
-        content: clip(body + more + 줄인것.알림),
+        content: 실린것,
+        /*
+         * 어느 파일을 읽었는지 알려 준다 — 대화에 실을 때 앞서 읽은 것과
+         * 견주려면 열쇠가 있어야 한다(agent/filemem.js).
+         *
+         * `부분인가` 는 **우리가 들고 있는 것이 파일 전부가 아니다** 는 뜻이다.
+         * 줄로 잘렸든(offset·limit·창 상한), 그림을 줄였든, clip 에 걸렸든
+         * 마찬가지다. 조각을 기억해 두고 나중에 「그대로입니다」 라고 하면
+         * 모델은 안 본 데를 봤다고 여긴다 — 줄이려다 잃는 자리다.
+         */
+        읽은것: abs,
+        부분인가: 다못줌 || 줄인것.줄인바이트 > 0 || 실린것.length < 통째로.length,
         summary: 이어(
           다못줌
             ? `${말('sum.linesOf', { 준: 준줄수, 전체: lines.length })} (${말('sum.partial')})`
@@ -1617,7 +1630,9 @@ export const TOOLS = {
         // '�Ľ� ����' 이 된다. 바이트로 받아 이 컴퓨터가 쓰는 것으로 해독한다.
         const kid = execFile(shell.file, shell.args, {
           cwd: ctx.scope.root,
-          timeout: 제한,
+          // 우리 시계(아래 뒷북)가 제한에서 먼저 나무를 끊는다. 이건 그것마저
+          // 못 돌았을 때 서는 마지막 그물이라 뒤에 세운다.
+          timeout: 제한 + 3000,
           maxBuffer: 8 * 1024 * 1024,
           windowsHide: true,
           windowsVerbatimArguments: shell.verbatim === true,
@@ -1636,7 +1651,9 @@ export const TOOLS = {
           const out = [stdout, stderr].filter(Boolean).join('\n').trim();
 
           if (끊겼나) return done({ error: '사용자가 중단했습니다', content: clip(out) });
-          if (err && err.killed) return done({ error: `시간 초과로 중단됨 (${제한}ms)`, content: clip(out) });
+          if (시간초과 || (err && err.killed)) {
+            return done({ error: `시간 초과로 중단됨 (${제한}ms)`, content: clip(out) });
+          }
 
           /*
            * 결과를 사실대로 말한다.
@@ -1672,19 +1689,40 @@ export const TOOLS = {
          * Ctrl+C 는 다음 요청에나 반영됐다. 터미널을 닫는 수밖에 없었다.
          */
         let 끊겼나 = false;
-        const 죽이기 = () => {
-          // 윈도우에서는 자식만 죽이면 손자가 남는다. 트리째 끝내야 한다.
-          // 그리고 **트리 죽이기를 먼저** 한다 — cmd 를 먼저 죽이면 트리의 뿌리가
-          // 없어져서 taskkill 이 손자를 못 찾는다. 그러면 손자가 그대로 남아 돈다.
+        let 시간초과 = false;
+        const 죽이기 = ({ 파이프끊기 = true } = {}) => {
+          /*
+           * 윈도우에서는 자식만 죽이면 손자가 남는다. 트리째 끝내야 한다.
+           *
+           * 그리고 **기다린다.** 전에는 execFile(비동기)로 불렀는데, 그러면
+           * 바로 아래 kid.kill() 이 먼저 돌아 cmd 를 죽인다. 나무의 뿌리가
+           * 없어진 뒤에 taskkill 이 뜨므로 손자 — `npm run dev` 의 진짜
+           * 서버 — 를 못 찾고, 그놈은 그대로 남아 포트를 문다. 「먼저 부른다」
+           * 는 비동기에서는 「먼저 돈다」 가 아니다.
+           *
+           * jobs.js 의 나무죽이기() 가 이미 같은 자리에서 같은 결론에 닿았다.
+           * 여기만 그 교훈 밖에 있었다.
+           */
           if (process.platform === 'win32' && kid.pid) {
-            try { execFile('taskkill', ['/pid', String(kid.pid), '/t', '/f'], { windowsHide: true }, () => {}); } catch {}
+            try {
+              execFileSync('taskkill', ['/pid', String(kid.pid), '/t', '/f'],
+                { windowsHide: true, stdio: 'ignore', timeout: 1500 });
+            } catch { /* 이미 죽었으면 0 이 아닌 값으로 끝난다 — 탈이 아니다 */ }
           }
           try { kid.kill(); } catch {}
           // 죽이라고 시켰다고 곧바로 죽는 것은 아니다. 그동안 이 프로세스가
           // 그 손을 붙들고 있으면 deel 을 끝내도 안 끝난다 — 실제로 검사가
           // 60초를 더 기다렸다. 놓아 주고 우리 갈 길을 간다.
           try { kid.unref(); } catch {}
-          try { kid.stdout?.destroy(); kid.stderr?.destroy(); } catch {}
+          /*
+           * 파이프는 부르는 쪽이 고른다.
+           *
+           * 끊으면 이벤트 루프를 안 붙잡아서 좋은데, 그 순간 아직 안 읽힌
+           * 것이 통째로 사라진다. 하필 그게 제일 중요한 몇 줄이다 — 서버가
+           * 뻗으며 남긴 스택 트레이스가 거기 있다. 시간 초과에서는 그 몇
+           * 줄을 받아야 하므로 안 끊는다. (jobs.js 의 끝내기() 와 같은 판단)
+           */
+          if (파이프끊기) { try { kid.stdout?.destroy(); kid.stderr?.destroy(); } catch {} }
         };
         const 끊기 = () => {
           끊겼나 = true;
@@ -1697,17 +1735,35 @@ export const TOOLS = {
         else ctx.signal?.addEventListener?.('abort', 끊기, { once: true });
 
         /*
-         * execFile 의 timeout 을 못 믿는 자리가 있다.
+         * ── 시간 초과는 **우리가** 끊는다 ───────────────────────────────
          *
-         * 손자 프로세스가 파이프를 물고 있으면 부모를 죽여도 stdout 이 안 닫혀서
-         * 콜백이 안 불린다. 그러면 제 시간 제한이 있는데도 영영 안 끝난다.
-         * 그래서 우리 쪽에서도 시계를 하나 걸고, 넘으면 트리째 끝낸다.
+         * execFile 의 timeout 은 바로 아래 자식(윈도우면 cmd.exe)에게만
+         * 시그널을 보낸다. 손자는 안 건드린다. 그래서 오래 이랬다 —
+         *
+         *   Bash(npm run dev)  → 시간 초과로 중단됨 (120000ms)
+         *   실제로는           → 서버가 그대로 돌면서 포트를 물고 있다
+         *
+         * 화면에는 「중단됨」 이 뜨는데 프로세스는 살아 있다. 무엇이 포트를
+         * 물고 있는지 알 길이 없는, 이 프로그램이 없애려던 바로 그 상태다.
+         *
+         * 그렇다고 콜백에서 뒤늦게 나무를 끊어도 소용없다. 그때는 cmd 가
+         * 이미 죽어 나무의 뿌리가 없어서 taskkill 이 손자를 못 찾는다.
+         * **cmd 가 살아 있는 동안** 끊어야 한다. 그래서 우리 시계를 제한에
+         * 두고, execFile 의 timeout 은 그 뒤에 서는 마지막 그물로 남긴다.
+         *
+         * 끊고 나서 곧장 끝맺지 않는다. 나무가 끊기면 대개 곧바로 콜백이
+         * 오는데, 그때라야 죽기 직전에 나온 몇 줄을 같이 실어 줄 수 있다.
+         * 그것마저 안 오면 아래 그물이 대신 끝맺는다.
          */
         const 뒷북 = setTimeout(() => {
           if (끝났나 || 끊겼나) return;
-          죽이기();
-          done({ error: `시간 초과로 중단됨 (${제한}ms) — 자식 프로세스가 안 끝나 강제로 끝냈습니다` });
-        }, 제한 + 2000);
+          시간초과 = true;
+          죽이기({ 파이프끊기: false });
+          const 그물 = setTimeout(() => {
+            done({ error: `시간 초과로 중단됨 (${제한}ms) — 자식 프로세스가 안 끝나 강제로 끝냈습니다` });
+          }, 1000);
+          그물.unref?.();
+        }, 제한);
         // 이 시계 때문에 프로그램이 안 끝나면 안 된다.
         뒷북.unref?.();
       });

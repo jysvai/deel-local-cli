@@ -571,10 +571,38 @@ trace('8-Bash와붙였을때');
   check('설명서에 없는 옛 이름으로 시키지 않는다', !/번호:|끝내기:/.test(r.content), r.content.split('\n').pop());
 
   // 안 끝나는 명령을 그냥 부르면 어떻게 되나 — 짧은 제한 시간으로 확인한다.
-  const 느린것 = await TOOLS.Bash.run({ command: 안에서('quiet.cjs'), timeout: 700 }, ctx);
+  // 자국 이름도 짧게 준다 — 위 안에서() 머리말과 같은 까닭이다. cwd 가 방이라
+  // 상대이름이 그대로 방 안에 떨어진다.
+  const 시간초과자국 = join(방, 'tick-timeout.txt');
+  const 느린것 = await TOOLS.Bash.run({ command: 안에서('ticker.cjs', 'tick-timeout.txt'), timeout: 700 }, ctx);
   check('background 없이 부르면 예전처럼 기다리다 끊는다',
     /시간 초과/.test((느린것.error ?? '') + (느린것.content ?? '')),
     (느린것.error ?? 느린것.content ?? '').slice(0, 60));
+
+  /*
+   * ★ 「중단됨」 이라고 말했으면 진짜 멈춰야 한다.
+   *
+   * execFile 의 timeout 은 바로 아래 자식(윈도우면 cmd.exe)만 죽인다. 손자는
+   * 안 건드린다. 그래서 여기까지는 예전에도 초록이었다 — **말은 맞았기
+   * 때문이다.** 정작 프로세스는 그대로 돌면서 포트를 물고 있었다.
+   *
+   *   Bash(npm run dev)  → 시간 초과로 중단됨 (120000ms)
+   *   실제로는           → 서버가 살아서 3000 포트를 물고 있다
+   *
+   * 무엇이 물고 있는지 알 길이 없는, 이 기능이 없애려던 바로 그 상태다.
+   * 자국 파일이 안 자라는 것으로 「진짜 멈췄나」 를 잰다 — 위 5절과 같은 방식.
+   */
+  let 시간초과멈췄나 = false;
+  let 잰1 = 0;
+  let 잰2 = 0;
+  for (let i = 0; i < 20 && !시간초과멈췄나; i++) {
+    await 쉬기(300);
+    잰1 = existsSync(시간초과자국) ? statSync(시간초과자국).size : 0;
+    await 쉬기(300);
+    잰2 = existsSync(시간초과자국) ? statSync(시간초과자국).size : 0;
+    시간초과멈췄나 = 잰1 === 잰2;
+  }
+  check('★ 시간 초과여도 진짜 멈춘다', 시간초과멈췄나, `${잰1}바이트 → ${잰2}바이트`);
 
   모두끝내기();
 
