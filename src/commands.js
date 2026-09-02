@@ -1659,13 +1659,26 @@ function showThink(session, { 자세히 = false } = {}) {
   const 개발자 = session.level === '개발자';
   const 단계 = t.rows.map((r) => `${r.label} ${r.level}`).join(c.gray(' · '));
 
+  /*
+   * 이 화면은 여태 통째로 한국어였다.
+   *
+   * `/lang en` 으로 켠 사람에게 「추론 강도 medium (첫 판단 medium · …)」 이
+   * 뜨면 아무것도 안 읽힌다. 명령 이름만 영어고 화면이 한국어인 자리는
+   * 「덜 옮겨졌다」 가 아니라 「고장 났다」 로 읽힌다 — i18n/index.js 머리말.
+   *
+   * 예로 드는 명령도 말을 따라간다. `/think 배분 절약` 은 영어로 켠 사람이
+   * 칠 수 없는 글자다. 두 이름 다 진짜로 받는다(위 배분말·자세히 갈래).
+   */
+  const 한국어 = 언어() === 'ko';
+  const 배분예 = 한국어 ? '/think 배분 절약' : '/think profile save';
+  const 자세히예 = 한국어 ? '/think 자세히' : '/think detail';
   say('');
-  say(`  ${c.gray('추론 강도')}  ${c.bold(session.think)}   ${c.gray(`(${단계})`)}`);
-  if (개발자 || 자세히) say(`  ${c.gray('배분')}      ${c.bold(t.name)}   ${c.gray(t.desc)}`);
+  say(`  ${c.gray(말('think.effort'))}  ${c.bold(session.think)}   ${c.gray(`(${단계})`)}`);
+  if (개발자 || 자세히) say(`  ${c.gray(pad(말('think.profile'), 한국어 ? 8 : 10))}${c.bold(t.name)}   ${c.gray(t.desc)}`);
 
   if (자세히) {
     say('');
-    say(`  ${c.gray(pad('단계', 12) + pad('강도', 10) + pad('출력상한', 10) + '언제')}`);
+    say(`  ${c.gray(pad(말('think.col.stage'), 12) + pad(말('think.col.level'), 10) + pad(말('think.col.cap'), 10) + 말('think.col.when'))}`);
     for (const r of t.rows) {
       const 화살 = r.moved > 0 ? c.yellow('↑') : r.moved < 0 ? c.cyan('↓') : c.gray('·');
       say(`  ${pad(r.label, 12)}${화살} ${pad(r.level, 8)}${pad(r.cap.toLocaleString(), 10, 'right')}  ${c.gray(r.why)}`);
@@ -1673,21 +1686,21 @@ function showThink(session, { 자세히 = false } = {}) {
     say('');
     // 상한이 어디서 왔는지 밝힌다. 세 줄이 같은 값일 때 그게 고장인지 아닌지
     // 이 한 줄로 갈린다 — 아는 상한이 낮으면 셋이 같아지는 것이 맞다.
-    say(`  ${c.gray('출력 상한은')} ${c.white((아는상한 ?? 16384).toLocaleString())} ${c.gray(
-      session.conn.maxTokens ? '(직접 정하신 값)' : session.conn.maxOut ? '(서버에서 알아낸 값)' : '(모르는 값이라 기본값)',
-    )}${c.gray(' 안에서 나눕니다 —')} ${c.cyan('/out')}`);
-    say(`  ${c.gray('컨텍스트')} ${c.white(t.ctx.toLocaleString())}${c.gray(' · 지금 찬 양 ')}${c.white(t.used.toLocaleString())}`);
+    const 어디서 = session.conn.maxTokens ? 말('think.cap.you')
+      : session.conn.maxOut ? 말('think.cap.server') : 말('think.cap.guess');
+    say(`  ${c.gray(말('think.cap.head'))} ${c.white((아는상한 ?? 16384).toLocaleString())} ${c.gray(어디서)}${c.gray(말('think.cap.tail'))} ${c.cyan('/out')}`);
+    say(`  ${c.gray(말('think.ctx'))} ${c.white(t.ctx.toLocaleString())}${c.gray(말('think.ctx.used'))}${c.white(t.used.toLocaleString())}`);
     say('');
-    say(`  ${c.gray('강도')}  ${THINK_LEVELS.join(' · ')}   ${c.gray('예')} ${c.cyan('/think high')}`);
-    say(`  ${c.gray('배분')}  ${Object.entries(PROFILES).map(([k, v]) => `${k}(${v.name})`).join(' · ')}   ${c.gray('예')} ${c.cyan('/think 배분 절약')}`);
+    say(`  ${c.gray(말('think.effort'))}  ${THINK_LEVELS.join(' · ')}   ${c.gray(말('think.eg'))} ${c.cyan('/think high')}`);
+    say(`  ${c.gray(말('think.profile'))}  ${Object.entries(PROFILES).map(([k, v]) => { const n = 한국어 ? v.name : (v.en ?? v.name); return n === k ? k : `${k}(${n})`; }).join(' · ')}   ${c.gray(말('think.eg'))} ${c.cyan(배분예)}`);
   } else if (개발자) {
-    say(`  ${c.gray('강도')} ${c.cyan('/think high')}   ${c.gray('배분')} ${c.cyan('/think 배분 절약')}   ${c.gray('자세히')} ${c.cyan('/think 자세히')}`);
+    say(`  ${c.gray(말('think.effort'))} ${c.cyan('/think high')}   ${c.gray(말('think.profile'))} ${c.cyan(배분예)}   ${c.gray(말('think.detail'))} ${c.cyan(자세히예)}`);
   } else {
-    say(`  ${c.gray('더 세게')} ${c.cyan('/think high')}   ${c.gray('더 빠르게')} ${c.cyan('/think low')}`);
+    say(`  ${c.gray(말('think.harder'))} ${c.cyan('/think high')}   ${c.gray(말('think.faster'))} ${c.cyan('/think low')}`);
   }
 
   if (!session.conn.think && session.think !== 'off') {
-    say(`  ${c.yellow('이 연결은 모델 층 강도 조절이 적용되지 않습니다.')} ${c.gray('출력 상한만 단계별로 적용됩니다.')}`);
+    say(`  ${c.yellow(말('think.nomodel'))} ${c.gray(말('think.nomodel.note'))}`);
   }
   say('');
 }

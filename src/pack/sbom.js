@@ -25,6 +25,8 @@
 // 적어 둔 칸이 다 있는지 본다.
 import { randomUUID } from 'node:crypto';
 import { 보관방식 } from '../safety/keystore.js';
+import { 언어 } from '../i18n/index.js';
+import { specEn, egressEn, keyStorageEn, auditLogEn, specSummaryEn } from './sheet.en.js';
 
 /** 우리가 내놓는 SBOM 규격. 스캐너가 이 숫자를 보고 읽는 법을 정한다. */
 export const CDX판 = '1.5';
@@ -41,7 +43,7 @@ export const CDX판 = '1.5';
  * @param {Date}   o.at        만든 때 (검사가 고정할 수 있게)
  * @param {string} o.serial    문서 일련번호 (검사가 고정할 수 있게)
  */
-export function sbom(a, { at = new Date(), serial = null } = {}) {
+export function sbom(a, { at = new Date(), serial = null, lang = 언어() } = {}) {
   const purl = `pkg:npm/${a.name}@${a.version}`;
   const 본체 = {
     type: 'application',
@@ -50,7 +52,11 @@ export function sbom(a, { at = new Date(), serial = null } = {}) {
     version: a.version,
     purl,
     licenses: a.license ? [{ license: { id: a.license } }] : [],
-    description: '로컬 모델·사내 게이트웨이 전용 코딩 에이전트 CLI',
+    // SBOM 은 남에게 내는 서류다. 화면을 영어로 켜 둔 사람이 한국어 설명이
+    // 박힌 문서를 심사에 낼 수는 없다.
+    description: lang === 'ko'
+      ? '로컬 모델·사내 게이트웨이 전용 코딩 에이전트 CLI'
+      : 'A coding agent CLI for local models and in-house gateways',
   };
 
   return {
@@ -208,7 +214,20 @@ export function 감사명세() {
 /**
  * 세 가지를 한 덩이로. zip 에 이대로 들어간다.
  */
-export function 심사명세(a, { at = new Date() } = {}) {
+export function 심사명세(a, { at = new Date(), lang = 언어() } = {}) {
+  /*
+   * 한국어가 아니면 영어 서류를 낸다 (pack/sheet.en.js).
+   *
+   * 열쇠 이름까지 영어라야 뜻이 있다. 값만 옮기고 열쇠를 `통신`·`감사기록`
+   * 으로 두면, 스캐너에 넣는 사람이 무엇이 무엇인지 못 읽는다 — 반쯤 옮긴
+   * 서류는 안 옮긴 것보다 나쁘다.
+   *
+   * 일본어·중국어도 영어로 간다. i18n 의 물러날곳(ja→en→ko)과 같은 규칙이다.
+   */
+  if (lang !== 'ko') {
+    const 자리 = (id) => (a.calls?.[id] ?? []).map((x) => `${x.file}:${x.line}`);
+    return specEn(a, at, egressEn(자리, a), keyStorageEn(보관방식(null, { lang: 'en' })), auditLogEn());
+  }
   return {
     만든것: a.name,
     판: a.version,
@@ -231,9 +250,16 @@ export function 심사명세(a, { at = new Date() } = {}) {
   };
 }
 
-/** 사람이 읽을 짧은 요약. 화면에 찍는 자리에서 쓴다. */
+/**
+ * 사람이 읽을 짧은 요약. 화면에 찍는 자리에서 쓴다.
+ *
+ * 어느 말로 쓸지를 **명세 자체를 보고** 정한다. 언어() 를 여기서 또 물으면,
+ * 명세를 만든 뒤에 말이 바뀐 자리에서 요약만 딴 말이 된다 — 그러면 읽을 수
+ * 없는 열쇠에서 값을 꺼내려다 전부 0 으로 찍힌다.
+ */
 export function 명세요약(명세) {
   const m = 명세 ?? {};
+  if (!m.파일 && m.files) return specSummaryEn(m);
   return [
     `SBOM 부품     ${(m.파일?.length ?? 0).toLocaleString()}개 (전부 SHA-256 붙임)`,
     `의존성        ${(m.의존성?.dependencies?.length ?? 0)}개 · 설치 스크립트 ${(m.의존성?.설치스크립트?.length ?? 0)}개`,

@@ -90,13 +90,24 @@ export function 지금상태() {
  * @returns {{명령: string, 수명: number, 곳: '정책'|'설정'}|null}
  */
 export function 받기설정(프로필, { 정책값 = null } = {}) {
+  /*
+   * 영어 이름도 받는다.
+   *
+   * 설정 파일은 **사람이 손으로 적는 것**이다. `열쇠받기`·`명령`·`수명` 은
+   * 한글 자판이 없는 사람에게는 옮겨 적을 수조차 없는 글자다. 화면을 영어로
+   * 켤 수 있게 해 놓고 설정만 한글로 두면, 그 사람은 이 기능을 못 쓴다.
+   *
+   * 코드 안의 이름은 그대로 한국어다 — 그건 이 저장소의 뜻이라 안 바꾼다.
+   * 바깥에서 들어오는 이름만 두 벌 받는다 (price.js 의 입력·in·input 과 같다).
+   */
   const 고르기 = (것, 곳) => {
-    const 명령 = String(것?.명령 ?? '').trim();
+    const 명령 = String(것?.명령 ?? 것?.command ?? '').trim();
     if (!명령) return null;
-    const 수명 = Number(것?.수명);
+    const 수명 = Number(것?.수명 ?? 것?.ttl);
     return { 명령, 수명: Number.isFinite(수명) && 수명 > 0 ? Math.floor(수명) : 기본수명, 곳 };
   };
-  return 고르기(정책값?.열쇠받기, '정책') ?? 고르기(프로필?.열쇠받기, '설정');
+  const 칸 = (x) => x?.열쇠받기 ?? x?.authCommand ?? null;
+  return 고르기(칸(정책값), '정책') ?? 고르기(칸(프로필), '설정');
 }
 
 /**

@@ -7,12 +7,19 @@
 //   - 막힘: 도구가 오류를 냈다. 얕게 생각하면 같은 실수를 또 한다. → 세게
 //   전부 똑같이 세게 두면 느리고, 전부 얕게 두면 엉뚱한 길로 간다.
 
+import { 언어 } from '../i18n/index.js';
+
 export const LEVELS = ['off', 'low', 'medium', 'high', 'max'];
 
+/*
+ * 단계 이름은 화면에 그대로 나간다. 그래서 영어 이름을 여기 같이 둔다 —
+ * modes.js 의 en 과 같은 방식이다. i18n 표에 같은 말을 또 적어 두면
+ * 단계를 하나 늘릴 때 한쪽만 늘어나서 화면에 빈칸이 뜬다.
+ */
 export const STAGES = {
-  plan: { label: '첫 판단', why: '무엇을 할지 정하는 자리' },
-  work: { label: '이어가기', why: '도구 결과를 읽고 다음 한 수' },
-  fix: { label: '막혔을 때', why: '직전 도구가 오류를 냄' },
+  plan: { label: '첫 판단', why: '무엇을 할지 정하는 자리', en: 'First call', whyEn: 'Deciding what to do' },
+  work: { label: '이어가기', why: '도구 결과를 읽고 다음 한 수', en: 'Continue', whyEn: 'Reading a tool result, picking the next move' },
+  fix: { label: '막혔을 때', why: '직전 도구가 오류를 냄', en: 'Stuck', whyEn: 'The last tool returned an error' },
 };
 
 // shift = 기준 강도에서 몇 칸 올리고 내릴지.
@@ -40,6 +47,7 @@ export const PROFILES = {
     // i18n 표에 같은 말을 또 적어 두면 언젠가 둘이 갈라진다.
     en: 'even',
     desc: '모든 단계 같은 강도 — 예측 가능한 대신 느립니다',
+    descEn: 'Same effort at every stage - predictable, but slower',
     shift: { plan: 0, work: 0, fix: 0 },
     share: { plan: 0.40, work: 0.40, fix: 0.40 },
   },
@@ -47,6 +55,7 @@ export const PROFILES = {
     name: '절약',
     en: 'save',
     desc: '첫 판단만 세게, 이어가기는 얕게 — 대개 이게 낫습니다',
+    descEn: 'Hard on the first call, shallow while continuing - usually the better trade',
     shift: { plan: 0, work: -1, fix: +1 },
     share: { plan: 0.40, work: 0.35, fix: 0.45 },
   },
@@ -54,6 +63,7 @@ export const PROFILES = {
     name: '깊게',
     en: 'deep',
     desc: '전 단계 한 칸씩 위로 — 어려운 일에만',
+    descEn: 'Every stage one notch up - for hard work only',
     shift: { plan: +1, work: 0, fix: +1 },
     share: { plan: 0.50, work: 0.45, fix: 0.50 },
   },
@@ -158,16 +168,26 @@ export function wasCut(msg) {
 export function table(base, profileKey, room = {}) {
   const key = normalizeProfile(profileKey) ?? 'save';
   const p = PROFILES[key];
+  /*
+   * 화면 말이 한국어가 아니면 영어 이름으로 낸다.
+   *
+   * 여태 이 표는 언제나 한국어였다. /lang en 으로 켠 사람은 「단계 강도
+   * 출력상한」 옆에 「첫 판단·이어가기·막혔을 때」 가 서 있는 화면을 봤다 —
+   * 표의 틀만 영어고 알맹이가 한국어면 아무것도 안 읽힌다.
+   *
+   * 일본어·중국어도 영어로 간다. i18n 의 물러날곳(ja→en→ko)과 같은 규칙이다.
+   */
+  const 한국어 = 언어() === 'ko';
   return {
     key,
-    name: p.name,
-    desc: p.desc,
+    name: 한국어 ? p.name : (p.en ?? p.name),
+    desc: 한국어 ? p.desc : (p.descEn ?? p.desc),
     ctx: room.ctx ?? 0,
     used: room.used ?? 0,
     rows: Object.entries(STAGES).map(([stage, s]) => ({
       stage,
-      label: s.label,
-      why: s.why,
+      label: 한국어 ? s.label : (s.en ?? s.label),
+      why: 한국어 ? s.why : (s.whyEn ?? s.why),
       level: effortFor(base, key, stage),
       cap: tokensFor(key, stage, room),
       share: p.share[stage],

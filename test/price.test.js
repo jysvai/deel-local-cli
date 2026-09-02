@@ -256,7 +256,10 @@ trace('10-배선');
   const repl = readFileSync(new URL('../src/repl.js', import.meta.url), 'utf8');
   check('★ 턴 꼬리말이 이번 턴 돈을 붙인다',
     /const 이번돈 = 돈셈\(\{ in: dIn, out: dOut \}, 세션요금\(session\)\)[\s\S]{0,200}?bits\.push\(돈말\(이번돈\.달러\)\)/.test(repl));
-  check('설정의 요금표를 대화에 싣는다', /session\.요금표 = cfg\?\.요금 \?\? null/.test(repl));
+  check('설정의 요금표를 대화에 싣는다', /session\.요금표 = cfg\?\.요금 \?\?/.test(repl));
+  // 한글 자판이 없는 사람도 적을 수 있어야 한다. 이름이 하나뿐이면
+  // 「영어로 켤 수는 있는데 요금은 못 적는」 자리가 남는다.
+  check('★ pricing 으로 적어도 받는다', /cfg\?\.pricing/.test(repl));
   check('어디 것인지도 싣는다', /session\.제공자 = prof\?\.제공자 \?\? null/.test(repl));
 
   const cmds = readFileSync(new URL('../src/commands.js', import.meta.url), 'utf8');

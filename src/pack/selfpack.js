@@ -12,6 +12,8 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeZip } from './zip.js';
 import { sbom, 심사명세 } from './sbom.js';
+import { 언어 } from '../i18n/index.js';
+import { reviewSheetEn, readMeEn } from './sheet.en.js';
 
 export const repoRoot = () => join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -127,7 +129,10 @@ export function audit(root = repoRoot()) {
 
 const 줄 = (n = 74) => '-'.repeat(n);
 
-export function reviewSheet(a, at) {
+export function reviewSheet(a, at, { lang = 언어() } = {}) {
+  // 한국어가 아니면 영어 서류 (pack/sheet.en.js). 같은 audit() 을 쓴다 —
+  // 말이 달라도 숫자가 달라지면 그건 서류가 거짓말을 하는 것이다.
+  if (lang !== 'ko') return reviewSheetEn(a, at, PROBES);
   const L = [];
   L.push('deel 사내 반입 심사 자료');
   L.push(줄());
@@ -221,10 +226,11 @@ export function reviewSheet(a, at) {
 /**
  * 심사서 + 소스를 zip 하나로 묶는다.
  */
-export function packSelf(outFile, { root = repoRoot(), at = new Date() } = {}) {
+export function packSelf(outFile, { root = repoRoot(), at = new Date(), lang = 언어() } = {}) {
   const a = audit(root);
   const stamp = at.toISOString().replace('T', ' ').slice(0, 19);
-  const sheet = reviewSheet(a, stamp);
+  const sheet = reviewSheet(a, stamp, { lang });
+  const 한국어 = lang === 'ko';
 
   /*
    * 사람이 읽는 것 하나, 기계가 읽는 것 둘.
@@ -233,10 +239,20 @@ export function packSelf(outFile, { root = repoRoot(), at = new Date() } = {}) {
    * 취약점 목록을 뽑고, 운영팀은 감사기록 사양을 보고 SIEM 수집 규칙을 짠다.
    * 사람이 읽는 글은 그 어느 쪽에도 못 들어간다 — 그래서 셋을 다 넣는다.
    */
+  /*
+   * 파일 이름도 같이 옮긴다.
+   *
+   * 안이 영어인데 이름이 `반입심사서.txt` 면, 받은 사람은 열기 전에 무엇인지
+   * 모르고 메일에 첨부하면 이름이 깨져서 온다. 서류의 이름은 서류의 일부다.
+   */
+  const 이름 = 한국어
+    ? { 심사서: '반입심사서.txt', 명세: '심사명세.json', 안내: '읽어주세요.txt' }
+    : { 심사서: 'import-review.txt', 명세: 'audit-spec.json', 안내: 'READ-ME-FIRST.txt' };
+
   const entries = [
-    { name: '반입심사서.txt', data: Buffer.from(sheet, 'utf8'), mtime: at },
-    { name: 'sbom.cdx.json', data: Buffer.from(JSON.stringify(sbom(a, { at }), null, 2), 'utf8'), mtime: at },
-    { name: '심사명세.json', data: Buffer.from(JSON.stringify(심사명세(a, { at }), null, 2), 'utf8'), mtime: at },
+    { name: 이름.심사서, data: Buffer.from(sheet, 'utf8'), mtime: at },
+    { name: 'sbom.cdx.json', data: Buffer.from(JSON.stringify(sbom(a, { at, lang }), null, 2), 'utf8'), mtime: at },
+    { name: 이름.명세, data: Buffer.from(JSON.stringify(심사명세(a, { at, lang }), null, 2), 'utf8'), mtime: at },
   ];
   for (const f of a.files) {
     entries.push({
@@ -247,8 +263,8 @@ export function packSelf(outFile, { root = repoRoot(), at = new Date() } = {}) {
     });
   }
   entries.push({
-    name: '읽어주세요.txt',
-    data: Buffer.from([
+    name: 이름.안내,
+    data: 한국어 ? Buffer.from([
       'deel — 로컬 모델·사내 게이트웨이 코딩 에이전트',
       '',
       '쓰는 법 (설치 절차 없음)',
@@ -265,7 +281,7 @@ export function packSelf(outFile, { root = repoRoot(), at = new Date() } = {}) {
       '',
       '  세 파일 모두 소스를 훑어 자동으로 만든 것입니다. 손으로 적은 값이 아닙니다.',
       '',
-    ].join('\n'), 'utf8'),
+    ].join('\n'), 'utf8') : Buffer.from(readMeEn(), 'utf8'),
     mtime: at,
   });
 

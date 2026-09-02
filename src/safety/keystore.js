@@ -133,19 +133,19 @@ export function 쓸수있나() {
   // 꺼 뒀으면 켜져 있는 척하지 않는다. 이 값을 화면 문구도 그대로 쓰기 때문에,
   // 여기서 거짓으로 답하면 "다음 저장 때 잠급니다" 라고 해 놓고 안 잠근다.
   if (process.env.DEEL_KEYSTORE === 'off') {
-    return { 되나: false, 방식: '파일', 왜: 'DEEL_KEYSTORE=off 로 꺼 두었습니다' };
+    return { 되나: false, 방식: '파일', 왜: 'DEEL_KEYSTORE=off 로 꺼 두었습니다', 왜영어: 'turned off with DEEL_KEYSTORE=off' };
   }
   if (process.platform === 'win32') {
     const r = 파워셸실행('[Console]::Out.Write("ok")', '');
     if (r.ok && r.out === 'ok') return { 되나: true, 방식: 'dpapi', 왜: '' };
-    return { 되나: false, 방식: '파일', 왜: r.err || '파워셸을 못 돌렸습니다 (정책으로 막혔을 수 있습니다)' };
+    return { 되나: false, 방식: '파일', 왜: r.err || '파워셸을 못 돌렸습니다 (정책으로 막혔을 수 있습니다)', 왜영어: r.err || 'PowerShell could not be run (execution policy may block it)' };
   }
   if (process.platform === 'darwin') {
     const r = spawnSync('security', ['-h'], { encoding: 'utf8', timeout: 10000 });
     if (!r.error) return { 되나: true, 방식: 'keychain', 왜: '' };
-    return { 되나: false, 방식: '파일', 왜: 'security 명령을 못 찾았습니다' };
+    return { 되나: false, 방식: '파일', 왜: 'security 명령을 못 찾았습니다', 왜영어: 'the security command was not found' };
   }
-  return { 되나: false, 방식: '파일', 왜: '이 운영체제에서는 파일 권한(0600)으로만 둡니다' };
+  return { 되나: false, 방식: '파일', 왜: '이 운영체제에서는 파일 권한(0600)으로만 둡니다', 왜영어: 'this OS has no keystore, so file permissions (0600) are all there is' };
 }
 
 /**
@@ -217,23 +217,41 @@ export function 풀기(태그) {
   return { ok: false, text: '', why: '모르는 잠금 방식입니다' };
 }
 
-/** 화면·심사서에 그대로 쓰는 한 줄. 되는 척도 안 되는 척도 안 한다. */
-export function 보관방식(값 = null) {
+/**
+ * 화면·심사서에 그대로 쓰는 한 줄. 되는 척도 안 되는 척도 안 한다.
+ *
+ * 영어 심사서(pack/sheet.en.js)도 **이 함수**를 쓴다. 사실을 가려내는 규칙은
+ * 하나여야 한다 — 영어판에 같은 판단을 다시 적어 두면, 잠금장치가 달라졌을 때
+ * 한쪽만 고쳐져서 두 서류가 서로 다른 말을 하게 된다.
+ */
+export function 보관방식(값 = null, { lang = 'ko' } = {}) {
+  const 한 = lang === 'ko';
   if (값 && 잠긴것인가(값)) {
-    return 값.startsWith('dpapi:')
-      ? 'DPAPI — 이 PC 의 이 계정만 풉니다'
-      : '맥 키체인 — 이 계정의 로그인 키체인에 있습니다';
+    if (값.startsWith('dpapi:')) {
+      return 한 ? 'DPAPI — 이 PC 의 이 계정만 풉니다'
+        : 'DPAPI - only this account on this machine can unseal it';
+    }
+    return 한 ? '맥 키체인 — 이 계정의 로그인 키체인에 있습니다'
+      : 'macOS keychain - stored in this account\'s login keychain';
   }
   const 쓸수 = 쓸수있나();
   if (값) {
     // 평문인데 잠글 수는 있는 상태. 다음 저장에서 잠긴다.
-    return 쓸수.되나
-      ? `파일에 평문 — 다음 저장 때 ${쓸수.방식 === 'dpapi' ? 'DPAPI' : '키체인'} 로 잠급니다`
-      : `파일에 평문 + 권한 0600 — ${쓸수.왜}`;
+    const 장치 = 쓸수.방식 === 'dpapi' ? 'DPAPI' : (한 ? '키체인' : 'the keychain');
+    if (쓸수.되나) {
+      return 한 ? `파일에 평문 — 다음 저장 때 ${장치} 로 잠급니다`
+        : `Plain text in the file - it will be sealed with ${장치} on the next save`;
+    }
+    return 한 ? `파일에 평문 + 권한 0600 — ${쓸수.왜}`
+      : `Plain text in the file, mode 0600 - ${쓸수.왜영어 ?? 'no OS keystore is available here'}`;
   }
-  if (process.platform === 'win32') return 'DPAPI (윈도우) · 저장된 열쇠 없음';
-  if (process.platform === 'darwin') return '맥 키체인 · 저장된 열쇠 없음';
-  return '파일 권한 0600 · 저장된 열쇠 없음';
+  if (process.platform === 'win32') {
+    return 한 ? 'DPAPI (윈도우) · 저장된 열쇠 없음' : 'DPAPI (Windows) - no key stored';
+  }
+  if (process.platform === 'darwin') {
+    return 한 ? '맥 키체인 · 저장된 열쇠 없음' : 'macOS keychain - no key stored';
+  }
+  return 한 ? '파일 권한 0600 · 저장된 열쇠 없음' : 'File mode 0600 - no key stored';
 }
 
 /**

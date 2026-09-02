@@ -60,6 +60,20 @@ trace('1-설정읽기');
   check('수명이 이상하면 기본값', 받기설정({ 열쇠받기: { 명령: 'a', 수명: -5 } }).수명 === 기본수명);
 
   /*
+   * ★ 영어 이름으로 적어도 된다.
+   *
+   * 설정 파일은 사람이 손으로 적는다. `열쇠받기`·`명령`·`수명` 은 한글 자판이
+   * 없는 사람에게는 옮겨 적을 수조차 없는 글자다. 화면만 영어로 켜지고 설정은
+   * 한글이면, 그 사람에게 이 기능은 **없는 것**이다.
+   */
+  const 영어로 = 받기설정({ authCommand: { command: 'az account get-access-token', ttl: 900 } });
+  check('★ authCommand·command·ttl 로도 받는다',
+    영어로?.명령 === 'az account get-access-token' && 영어로?.수명 === 900, JSON.stringify(영어로));
+  check('★ 영어 이름도 정책이 이긴다',
+    받기설정({ authCommand: { command: '개인것' } }, { 정책값: { authCommand: { command: '회사것' } } }).명령 === '회사것');
+  check('영어 이름에도 빈 명령은 없는 것', 받기설정({ authCommand: { command: '  ' } }) === null);
+
+  /*
    * ★ 정책이 설정을 이긴다.
    *
    * 회사가 「이 게이트웨이는 이 명령으로만」 이라고 정해 둔 자리다. 설정이

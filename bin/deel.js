@@ -15,6 +15,8 @@ import { runSessions } from '../src/agent/sessionui.js';
 import { acp } from '../src/acp/serve.js';
 import { runCompletion } from '../src/completion.js';
 import { runReset } from '../src/reset.js';
+import { 언어잡기, 언어 } from '../src/i18n/index.js';
+import { load as 설정읽기 } from '../src/config.js';
 
 const MIN_NODE = 20;
 
@@ -35,25 +37,63 @@ function 판번호() {
   }
 }
 
+/*
+ * 켤 때 말을 한 번 정한다.
+ *
+ * 여태 이 자리가 비어 있었다. 말을 정하는 곳이 repl.js 하나뿐이라서,
+ * `deel audit`·`deel pack`·`deel sbom` 은 **언제나 한국어**로 나왔다 —
+ * /lang en 으로 쓰던 사람이 심사에 낼 서류를 뽑으면 한글 문서가 나왔다는 뜻이다.
+ *
+ * 설정을 못 읽어도 죽지 않는다. 말 하나 때문에 `deel --version` 이 안 되면 안 된다.
+ */
+function 말정하기() {
+  let cfg = null;
+  try { cfg = 설정읽기(); } catch { /* 설정이 없어도 기본 말로 돈다 */ }
+  return 언어잡기({ cfg });
+}
+
 // 사내 반입용 묶음 만들기.
 function runPack(flags) {
-  const out = flags.out ? String(flags.out) : join(process.cwd(), 'deel-반입.zip');
+  const 한국어 = 언어() === 'ko';
+  const out = flags.out ? String(flags.out) : join(process.cwd(), 한국어 ? 'deel-반입.zip' : 'deel-import.zip');
   const r = packSelf(out);
   const a = r.audit;
   say('');
-  rule('반입 묶음', 70);
+  rule(한국어 ? '반입 묶음' : 'Review package', 70);
   say(`  ${mark.ok} ${c.bold(r.out)}`);
-  say(`     ${c.gray(`${r.files}개 파일 · ${(r.bytes / 1024).toFixed(1)}KB`)}`);
+  say(`     ${c.gray(한국어 ? `${r.files}개 파일 · ${(r.bytes / 1024).toFixed(1)}KB` : `${r.files} files · ${(r.bytes / 1024).toFixed(1)}KB`)}`);
   say('');
-  say(`  ${c.gray('의존성')}          ${a.deps.length === 0 ? c.green('0개') : c.red(a.deps.length + '개')}`);
-  say(`  ${c.gray('설치 스크립트')}   ${a.lifecycle.length === 0 ? c.green('없음') : c.red(a.lifecycle.join(', '))}`);
-  say(`  ${c.gray('외부 import')}     ${a.외부모듈.length === 0 ? c.green('0건') : c.red(a.외부모듈.length + '건')}`);
-  say(`  ${c.gray('네트워크 호출')}   ${a.calls.net.length}곳 ${c.gray('(설정한 주소로만)')}`);
-  say(`  ${c.gray('포트 열기')}       ${a.calls.listen.length === 0 ? c.green('없음') : c.red(a.calls.listen.length + '곳')}`);
+  const 없음 = 한국어 ? '없음' : 'none';
+  const 개 = (n, 단위) => (한국어 ? `${n}${단위}` : String(n));
+  /*
+   * 이름 칸을 손으로 띄우지 않는다.
+   *
+   * 한글은 한 글자가 두 칸이라 「의존성」 과 「Dependencies」 를 같은 수의
+   * 빈칸으로 맞출 수 없다. 손으로 맞춰 두면 말을 바꾸는 순간 줄이 어긋난다 —
+   * 실제로 영어판이 처음에 그렇게 어긋났다.
+   */
+  const 칸 = (ko, en) => (한국어 ? ko : en.padEnd(18));
+  say(`  ${c.gray(칸('의존성          ', 'Dependencies'))}${a.deps.length === 0 ? c.green(개(0, '개')) : c.red(개(a.deps.length, '개'))}`);
+  say(`  ${c.gray(칸('설치 스크립트   ', 'Install scripts'))}${a.lifecycle.length === 0 ? c.green(없음) : c.red(a.lifecycle.join(', '))}`);
+  say(`  ${c.gray(칸('외부 import     ', 'External imports'))}${a.외부모듈.length === 0 ? c.green(개(0, '건')) : c.red(개(a.외부모듈.length, '건'))}`);
+  say(`  ${c.gray(칸('네트워크 호출   ', 'Network calls'))}${개(a.calls.net.length, '곳')} ${c.gray(한국어 ? '(설정한 주소로만)' : '(only to the configured address)')}`);
+  say(`  ${c.gray(칸('포트 열기       ', 'Listening ports'))}${a.calls.listen.length === 0 ? c.green(없음) : c.red(개(a.calls.listen.length, '곳'))}`);
   say('');
-  say(`  ${c.gray('안에 반입심사서.txt · sbom.cdx.json · 심사명세.json 이 같이 들어 있습니다.')}`);
-  say(`  ${c.gray('사람이 읽을 것 한 장, 스캐너에 넣을 것 두 장입니다 — 그대로 제출하시면 됩니다.')}`);
-  say(`  ${c.gray('내용만 먼저 보시려면')} ${c.cyan('deel audit')}`);
+  /*
+   * 여기 적는 이름은 zip 안에 진짜로 든 이름이어야 한다.
+   *
+   * 안내 글과 실제 파일 이름이 어긋나면, 받은 사람은 없는 파일을 찾다가
+   * 묶음이 잘못 만들어진 줄 안다 — 서류를 못 믿게 되는 자리다.
+   */
+  if (한국어) {
+    say(`  ${c.gray('안에 반입심사서.txt · sbom.cdx.json · 심사명세.json 이 같이 들어 있습니다.')}`);
+    say(`  ${c.gray('사람이 읽을 것 한 장, 스캐너에 넣을 것 두 장입니다 — 그대로 제출하시면 됩니다.')}`);
+    say(`  ${c.gray('내용만 먼저 보시려면')} ${c.cyan('deel audit')}`);
+  } else {
+    say(`  ${c.gray('It contains import-review.txt · sbom.cdx.json · audit-spec.json.')}`);
+    say(`  ${c.gray('One document to read, two to feed a scanner — submit them as they are.')}`);
+    say(`  ${c.gray('To see the contents first:')} ${c.cyan('deel audit')}`);
+  }
   say('');
   return 0;
 }
@@ -230,6 +270,9 @@ async function main() {
   }
 
   const { cmd: 친명령, args, flags } = parse(process.argv.slice(2));
+
+  // 서류를 뽑는 명령(audit·sbom·pack)이 어느 말로 나갈지를 여기서 정한다.
+  말정하기();
 
   /*
    * `deel online` · `deel offline` 은 깃발의 별칭이다.
