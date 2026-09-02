@@ -10,7 +10,7 @@
     <text x="16.0" y="83" fill="#e6edf3" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ deel 1.7.0  ⌂ inside (default)  OpenAI-compatible API                                        │</text>
     <text x="16.0" y="102" fill="#e6edf3" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │                                                                                              │</text>
     <text x="16.0" y="121" fill="#e6edf3" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ model     qwen2.5-coder:7b  (128k tokens · class small guessed)                              │</text>
-    <text x="16.0" y="140" fill="#e6edf3" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ sends to  this machine 127.0.0.1:53107  ← and nowhere else                                   │</text>
+    <text x="16.0" y="140" fill="#e6edf3" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ sends to  this machine 127.0.0.1:58877  ← and nowhere else                                   │</text>
     <text x="16.0" y="159" fill="#e6edf3" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │           The ⌂ at the start of the status bar means this. It becomes ↗ when traffic leaves. │</text>
     <text x="16.0" y="178" fill="#e6edf3" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ link      no streaming · tools · no effort control                                           │</text>
     <text x="16.0" y="197" fill="#e6edf3" textLength="823.2" lengthAdjust="spacing" xml:space="preserve">  │ folder    C:\work\myproject                                                                  │</text>

@@ -49,29 +49,14 @@ session and turns into `↗` the moment traffic would leave. A real capture, not
 
 Then you give it work, and it goes and does it:
 
-```
- ▏myproject · qwen2.5-coder:7b ▏ ▰▰▱▱▱▱▱▱▱▱ 22% 28k/128k ▏ ◎ Auto · ◇ medium·save · ⏵⏵ auto
- ❯ unify the logging style
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-chat-en-dark.svg">
+  <img alt="deel doing a task end to end: Grep, Read, Edit with an inline diff, and the file it wrote" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-chat-en-light.svg" width="900">
+</picture>
 
-  ❊ Grep(console\.log)
-    └ 1 file · 1 hit
-  ◧ Read(src/runner.js)
-    └ 5 lines
-  ◈ Edit(src/runner.js)
-    └ 1 spot  +1 −1
-        1 export function run() {
-      -     console.log('run start')
-      + 2   logger.info('run start')
-
-  ▌ Unified the log calls to the logger format. One change in src/runner.js.
-
-  ── 4.2s · 3 tools · ↑3,900 ↓180
-```
-
-> The panel above is a real screenshot. This transcript block is still hand-written, because a
-> few of its lines — the tool result summaries and the thinking indicator — have not been
-> translated yet and would print Korean in an English capture. Known gap, being worked on;
-> everything else on an English screen is English.
+Every number in that image is real — the tools ran against real files. Only the model is a
+stub on `127.0.0.1`, so the capture is reproducible; the tool calls, the diff and the file
+summary are what deel actually printed.
 
 ---
 
@@ -246,11 +231,11 @@ deel is written in Korean — the code, the function names, the comments. That p
 What you see on screen does not have to. Four screen languages ship: **한국어 · English ·
 日本語 · 中文**.
 
-> **Honest status:** the panels, menus, modes and tool descriptions are fully translated, and
-> `/lang` reports 100% because every string *in the table* is covered. A handful of lines never
-> made it into that table — the tool result summaries (`5 lines`, `1 spot`) and the thinking
-> indicator — and those still print Korean on an English screen. That is why the transcript
-> further up this page is hand-written rather than a screenshot.
+> **How this is kept honest:** `/lang` counting the table is not enough — it can only count
+> strings that made it *into* the table, and for a long time the tool result summaries and the
+> thinking indicator never did. So a test starts deel in each language and reads the screen:
+> `test/langleak.test.js` walks seven screens and fails if a Korean character shows up on an
+> English one. It also fails on `1 files`, and on a stray `·` left dangling at the end of a line.
 
 ```bash
 DEEL_LANG=en deel        # this run only  (also ja, zh)

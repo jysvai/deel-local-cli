@@ -1,16 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="730" height="598" viewBox="0 0 730 598" role="img" aria-label="deel — 시킨 일 한 바퀴">
+<svg xmlns="http://www.w3.org/2000/svg" width="898" height="712" viewBox="0 0 898 712" role="img" aria-label="deel — 시킨 일 한 바퀴">
   <title>deel — 시킨 일 한 바퀴</title>
-  <rect width="730" height="598" rx="8" fill="#0d1117" stroke="#30363d"/>
-  <path d="M0 8a8 8 0 0 1 8-8h714a8 8 0 0 1 8 8v26H0z" fill="#161b22"/>
-  <line x1="0" y1="34" x2="730" y2="34" stroke="#30363d"/>
+  <rect width="898" height="712" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <path d="M0 8a8 8 0 0 1 8-8h882a8 8 0 0 1 8 8v26H0z" fill="#161b22"/>
+  <line x1="0" y1="34" x2="898" y2="34" stroke="#30363d"/>
   <circle cx="18" cy="17" r="5.5" fill="#ff5f57"/><circle cx="36" cy="17" r="5.5" fill="#febc2e"/><circle cx="54" cy="17" r="5.5" fill="#28c840"/>
-  <text x="365" y="22" fill="#8b949e" font-size="12" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,sans-serif">deel</text>
+  <text x="449" y="22" fill="#8b949e" font-size="12" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,sans-serif">deel</text>
   <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14">
     <text x="16.0" y="64" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  ╭─────────────────────────────────────────────────────────────────────────╮</text>
     <text x="16.0" y="83" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ deel 1.7.0  ⌂ 이 안 (기본)  OpenAI 호환 규격                            │</text>
     <text x="16.0" y="102" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │                                                                         │</text>
     <text x="16.0" y="121" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 모델   qwen2.5-coder:7b  (128k 토큰 · 급 작음 짐작)                     │</text>
-    <text x="16.0" y="140" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 보냄   이 컴퓨터 안 127.0.0.1:53107  ← 여기 말고는 어디로도 안 갑니다   │</text>
+    <text x="16.0" y="140" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 보냄   이 컴퓨터 안 127.0.0.1:58877  ← 여기 말고는 어디로도 안 갑니다   │</text>
     <text x="16.0" y="159" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │        상태줄 맨 앞 ⌂가 이 뜻입니다. 바깥으로 가면 ↗로 바뀝니다.        │</text>
     <text x="16.0" y="178" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 연결   스트리밍 없음 · 도구 · 추론 조절 없음                            │</text>
     <text x="16.0" y="197" fill="#e6edf3" textLength="646.8" lengthAdjust="spacing" xml:space="preserve">  │ 폴더   C:\work\myproject                                                │</text>
@@ -22,15 +22,19 @@
     <text x="16.0" y="330" fill="#e6edf3" textLength="193.2" lengthAdjust="spacing" xml:space="preserve"> ❯ 로그 형식을 통일해줘</text>
     <text x="16.0" y="368" fill="#e6edf3" textLength="210.0" lengthAdjust="spacing" xml:space="preserve">  첫 판단·medium 생각 중…</text>
     <text x="16.0" y="387" fill="#e6edf3" textLength="184.8" lengthAdjust="spacing" xml:space="preserve">  ❊ Grep(console\.log)</text>
-    <text x="16.0" y="406" fill="#e6edf3" textLength="42.0" lengthAdjust="spacing" xml:space="preserve">/exit</text>
-    <text x="16.0" y="425" fill="#e6edf3" textLength="210.0" lengthAdjust="spacing" xml:space="preserve">    └ 1개 파일 · 1건 · rg</text>
-    <text x="16.0" y="444" fill="#e6edf3" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  이어가기·low 생각 중…</text>
-    <text x="16.0" y="463" fill="#e6edf3" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  ◧ Read(src/runner.js)</text>
-    <text x="16.0" y="482" fill="#e6edf3" textLength="75.6" lengthAdjust="spacing" xml:space="preserve">    └ 5줄</text>
-    <text x="16.0" y="501" fill="#e6edf3" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  이어가기·low 생각 중…</text>
-    <text x="16.0" y="520" fill="#e6edf3" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  ◈ Edit(src/runner.js)</text>
-    <text x="16.0" y="539" fill="#e6edf3" textLength="142.8" lengthAdjust="spacing" xml:space="preserve">    └ 1군데 +1 −1</text>
-    <text x="16.0" y="558" fill="#e6edf3" textLength="260.4" lengthAdjust="spacing" xml:space="preserve">      1 export function run() {</text>
-    <text x="16.0" y="577" fill="#e6edf3" textLength="285.6" lengthAdjust="spacing" xml:space="preserve">    -     console.log('run start')</text>
+    <text x="16.0" y="406" fill="#e6edf3" textLength="210.0" lengthAdjust="spacing" xml:space="preserve">    └ 1개 파일 · 1건 · rg</text>
+    <text x="16.0" y="425" fill="#e6edf3" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  이어가기·low 생각 중…</text>
+    <text x="16.0" y="444" fill="#e6edf3" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  ◧ Read(src/runner.js)</text>
+    <text x="16.0" y="463" fill="#e6edf3" textLength="75.6" lengthAdjust="spacing" xml:space="preserve">    └ 5줄</text>
+    <text x="16.0" y="482" fill="#e6edf3" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  이어가기·low 생각 중…</text>
+    <text x="16.0" y="501" fill="#e6edf3" textLength="193.2" lengthAdjust="spacing" xml:space="preserve">  ◈ Edit(src/runner.js)</text>
+    <text x="16.0" y="520" fill="#e6edf3" textLength="142.8" lengthAdjust="spacing" xml:space="preserve">    └ 1군데 +1 −1</text>
+    <text x="16.0" y="539" fill="#e6edf3" textLength="260.4" lengthAdjust="spacing" xml:space="preserve">      1 export function run() {</text>
+    <text x="16.0" y="558" fill="#e6edf3" textLength="285.6" lengthAdjust="spacing" xml:space="preserve">    -     console.log('run start')</text>
+    <text x="16.0" y="577" fill="#e6edf3" textLength="285.6" lengthAdjust="spacing" xml:space="preserve">    + 2   logger.info('run start')</text>
+    <text x="16.0" y="596" fill="#e6edf3" textLength="151.2" lengthAdjust="spacing" xml:space="preserve">      3   return 0</text>
+    <text x="16.0" y="615" fill="#e6edf3" textLength="75.6" lengthAdjust="spacing" xml:space="preserve">      4 }</text>
+    <text x="16.0" y="634" fill="#e6edf3" textLength="865.2" lengthAdjust="spacing" xml:space="preserve">  이어가기·low 생각 중…  ▌ src/runner.js 의 로그를 logger 형식으로 맞췄습니다. 고친 곳은 한 군데입니다.</text>
+    <text x="16.0" y="691" fill="#e6edf3" textLength="243.6" lengthAdjust="spacing" xml:space="preserve">  ✓ src/runner.js · 4줄 · 64B</text>
   </g>
 </svg>
