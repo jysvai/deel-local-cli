@@ -353,6 +353,8 @@ export const ko = {
   'sum.ok': '성공',
   'sum.exitCode': '종료코드 {code}',
   'sum.killedBy': '{시그널} 로 죽음',
+  'sum.tooMuchOut': '출력이 너무 많아 받다 말았습니다',
+  'sum.cantRun': '못 돌렸습니다 ({왜})',
   'sum.partial': '일부만',
   'sum.cut': '일부 잘림',
   'sum.notAllSeen': '다 못 봄',

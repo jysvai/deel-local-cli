@@ -9,7 +9,7 @@ import {
   existsSync, mkdirSync, writeFileSync, readFileSync, rmSync,
   readdirSync, statSync,
 } from 'node:fs';
-import { untargz, stripTop } from '../pack/tar.js';
+import { untargz, stripTop, 밖을가리키는것 } from '../pack/tar.js';
 import { makeZip } from '../pack/zip.js';
 import { allowTemporarily, isOffline, NetBlocked } from '../safety/network.js';
 import { 원시요청, 몸읽기 } from '../backend/http.js';
@@ -54,6 +54,45 @@ function run(cmd, args, opts = {}) {
   });
 }
 
+/**
+ * 받은 묶음을 폴더에 푼다.
+ *
+ * ── 왜 따로 떼어 놨나 ───────────────────────────────────────────────────
+ *
+ * 이 몇 줄이 **남이 준 글자로 디스크에 파일을 쓰는 자리**다. 이 프로그램에서
+ * 제일 조심해야 하는 대목인데, fetchInto 안에 묻혀 있어서 검사가 한 번도 안
+ * 지나갔다. 거기까지 가려면 진짜로 네트워크에서 tarball 을 받아야 했기 때문이다.
+ *
+ * 그래서 「받는 일」 과 「푸는 일」 을 갈랐다. 푸는 일은 이제 파일 목록만 주면
+ * 그대로 재 볼 수 있다 — 남이 노리고 만든 묶음을 먹여 보는 것을 포함해서.
+ *
+ * ── 무엇을 막나 ─────────────────────────────────────────────────────────
+ *
+ * tar 안의 이름은 남이 적은 글자다. `../../../..` 하나면 플러그인 폴더 밖에
+ * 파일을 쓴다. 아래 mkdirSync 가 recursive 라 없는 폴더까지 만들어 가며 나간다.
+ * 이 프로그램이 파는 문장이 「작업 폴더 밖은 안 만진다」 인데, 플러그인을 받는
+ * 이 길에만 그 문장을 지키는 코드가 없었다.
+ *
+ * 나쁜 것만 골라 버리지 않고 **묶음째 거절한다.** 밖을 가리키는 이름이 든
+ * 묶음은 실수가 아니라 노린 것이고, 나머지를 풀어 줄 까닭이 없다.
+ * 그리고 **rmSync 앞에서** 막는다 — 거절할 묶음 때문에 이미 깔린 것을
+ * 지워 버리면 안 된다.
+ */
+export function 묶음풀기(dest, files) {
+  if (!files?.length) return { error: '받은 묶음이 비어 있습니다' };
+  const 밖엣것 = 밖을가리키는것(dest, files);
+  if (밖엣것.length) {
+    return { error: `묶음 안에 플러그인 폴더 밖을 가리키는 이름이 있습니다 — 풀지 않았습니다: ${밖엣것[0].name}` };
+  }
+  rmSync(dest, { recursive: true, force: true });
+  for (const f of files) {
+    const p = join(dest, f.name);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, f.data);
+  }
+  return { 푼것: files.length };
+}
+
 // 받는 방법 두 가지. git 이 있으면 clone, 없으면 tarball 을 내려받아 푼다.
 async function fetchInto(spec, dest, onStep) {
   if (await has('git')) {
@@ -96,14 +135,8 @@ async function fetchInto(spec, dest, onStep) {
       for (const 닫기 of 열어둔) 닫기();
     }
     if (!gz) return { error: '받은 묶음이 너무 큽니다 (64MB 넘음) — 플러그인 저장소가 맞는지 확인하세요' };
-    const files = stripTop(untargz(gz));
-    if (!files.length) return { error: '받은 묶음이 비어 있습니다' };
-    rmSync(dest, { recursive: true, force: true });
-    for (const f of files) {
-      const p = join(dest, f.name);
-      mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, f.data);
-    }
+    const 푼것 = 묶음풀기(dest, stripTop(untargz(gz)));
+    if (푼것.error) return { error: 푼것.error };
     return { how: 'tarball', branch };
   }
   return { error: '받지 못했습니다 — 저장소 주소나 가지 이름을 확인하세요' };

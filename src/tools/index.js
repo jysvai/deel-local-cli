@@ -41,6 +41,15 @@ import { 지시말, 말, 세말 } from '../i18n/index.js';
  * 그 자리를 부르는 쪽마다 살피게 두면 반드시 어딘가는 빠진다.
  */
 const 이어 = (...조각들) => 조각들.filter((x) => x != null && String(x) !== '').join(' · ');
+
+/**
+ * Bash 가 한 번에 받아 두는 출력의 상한.
+ *
+ * 넘으면 Node 가 자식을 죽이고 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' 를 준다.
+ * 그때 무엇이 일어났는지를 사람 말로 적어 줘야 한다 — 그러지 않으면 모델은
+ * 같은 명령을 그대로 다시 부른다.
+ */
+const 출력상한 = 8 * 1024 * 1024;
 import { 표몇군데, 표막는말 } from '../safety/secrets.js';
 
 /*
@@ -1633,7 +1642,7 @@ export const TOOLS = {
           // 우리 시계(아래 뒷북)가 제한에서 먼저 나무를 끊는다. 이건 그것마저
           // 못 돌았을 때 서는 마지막 그물이라 뒤에 세운다.
           timeout: 제한 + 3000,
-          maxBuffer: 8 * 1024 * 1024,
+          maxBuffer: 출력상한,
           windowsHide: true,
           windowsVerbatimArguments: shell.verbatim === true,
           encoding: 'buffer',
@@ -1665,15 +1674,39 @@ export const TOOLS = {
            * 종료코드도 모델에게 준다. 전에는 화면에만 적고 대화에는 안 실었다.
            * 그러면 모델은 명령이 실패한 줄 모른 채 다음 단계로 넘어간다.
            */
+          /*
+           * err.code 가 **늘 종료코드인 것은 아니다.**
+           *
+           * 프로세스가 0 이 아닌 값으로 끝나면 숫자가 온다. 그런데 Node 자신이
+           * 못 견뎌서 끝낸 경우에는 글자가 온다 —
+           * 출력이 maxBuffer 를 넘으면 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+           * 명령을 못 찾으면 'ENOENT'.
+           *
+           * 그걸 그대로 종료코드로 썼다. 그래서 12MB 를 뱉는 명령을 부르면
+           * 화면과 모델이 「종료코드 ERR_CHILD_PROCESS_STDIO_MAXBUFFER」 라는
+           * 뜻 모를 말을 받았다. exitCode 가 숫자가 아니라 글자로 나가는 것도
+           * 규격 위반이고, 무엇보다 **무엇을 고쳐야 하는지가 어디에도 없어서**
+           * 모델이 같은 명령을 그대로 다시 부른다.
+           */
           const 시그널 = err?.signal ?? null;
-          const code = 시그널 ? null : (err?.code ?? 0);
-          const 잘됨 = !시그널 && code === 0;
-          const 꼬리 = 잘됨 ? '' : 시그널 ? `\n\n[${시그널} 시그널로 죽었습니다 — 정상 종료가 아닙니다]` : `\n\n[종료코드 ${code}]`;
+          const 넘침 = err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
+          const 숫자코드 = typeof err?.code === 'number' ? err.code : null;
+          const 글자코드 = typeof err?.code === 'string' ? err.code : null;
+          const code = (시그널 || (err && 숫자코드 === null)) ? null : (숫자코드 ?? 0);
+          const 잘됨 = !err && !시그널;
+          const 꼬리 = 잘됨 ? ''
+            : 시그널 ? `\n\n[${시그널} 시그널로 죽었습니다 — 정상 종료가 아닙니다]`
+              : 넘침 ? `\n\n[출력이 ${출력상한 / (1024 * 1024)}MB 를 넘어 받다 말았습니다 — 명령을 끝까지 못 봤습니다.`
+                + ' `| head -n 200` 처럼 줄이거나 파일로 받아서 다시 부르세요]'
+                : 숫자코드 === null ? `\n\n[${글자코드} — 명령을 아예 못 돌렸습니다]`
+                  : `\n\n[종료코드 ${code}]`;
           done({
             content: clip(out || '(출력 없음)') + 꼬리,
             summary: 잘됨 ? 말('sum.ok')
               : 시그널 ? 말('sum.killedBy', { 시그널 })
-                : 말('sum.exitCode', { code }),
+                : 넘침 ? 말('sum.tooMuchOut')
+                  : 숫자코드 === null ? 말('sum.cantRun', { 왜: 글자코드 })
+                    : 말('sum.exitCode', { code }),
             failed: !잘됨,
             exitCode: code,
             signal: 시그널,

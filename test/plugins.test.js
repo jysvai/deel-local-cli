@@ -6,10 +6,10 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { untargz, stripTop } from '../src/pack/tar.js';
+import { join, resolve } from 'node:path';
+import { untargz, stripTop, 안쪽인가, 밖을가리키는것 } from '../src/pack/tar.js';
 import { makeZip, crc32 } from '../src/pack/zip.js';
-import { parseSpec, install, list, remove, pack, pluginsDir } from '../src/plugins/manage.js';
+import { parseSpec, install, list, remove, pack, pluginsDir, 묶음풀기 } from '../src/plugins/manage.js';
 import { discover } from '../src/skills/discover.js';
 import { copyDir } from '../src/tools/fsutil.js';
 import { trace } from './trace.mjs';
@@ -121,6 +121,75 @@ const 안벗김 = stripTop([
   { name: 'b/2.md', data: Buffer.alloc(0) },
 ]);
 check('최상위가 여럿이면 안 벗김', 안벗김[0].name === 'a/1.md');
+
+/*
+ * ── ★ 묶음 안의 이름은 남이 적은 글자다 ────────────────────────────────
+ *
+ * tar 이름을 그대로 join(dest, name) 에 넣으면 `../../../..` 하나로 플러그인
+ * 폴더 밖에 파일을 쓴다. 받는 쪽이 mkdirSync(recursive) 까지 해 주므로 없는
+ * 폴더도 만들어 가며 나간다. 이 프로그램이 파는 문장이 「작업 폴더 밖은 안
+ * 만진다」 인데, 플러그인을 받는 길에만 그 문장을 지키는 코드가 없었다.
+ *
+ * 검사가 못 잡은 까닭도 분명하다 — 지금까지 **멀쩡한 tar** 로만 쟀다.
+ * 남이 노리고 만든 묶음을 한 번도 안 먹여 봤다.
+ */
+{
+  const 뿌리 = join(sand, '플러그인집', '어떤것');
+  const 나쁜이름 = [
+    '../../../../윗동네에쓰기.txt',
+    '..\\..\\윈도우식.txt',
+    'a/../../밖으로.txt',
+    '/절대경로.txt',
+    process.platform === 'win32' ? 'C:\\Windows\\Temp\\드라이브.txt' : '/etc/passwd',
+  ];
+  for (const 이름 of 나쁜이름) {
+    check(`★ 밖을 가리키는 이름을 막는다 — ${이름}`, 안쪽인가(뿌리, 이름) === false,
+      resolve(뿌리, 이름.replace(/\\/g, '/')));
+  }
+  const 착한이름 = ['README.md', 'skills/품의서작성/SKILL.md', './a/b.txt', '깊은/폴더/파일.txt'];
+  for (const 이름 of 착한이름) {
+    check(`안쪽 이름은 그대로 통과 — ${이름}`, 안쪽인가(뿌리, 이름) === true);
+  }
+
+  // 하나라도 밖을 가리키면 **묶음째** 걸러진다 — 나머지를 풀어 줄 까닭이 없다.
+  const 섞인묶음 = [
+    { name: 'README.md', data: Buffer.alloc(0) },
+    { name: '../../../../몰래.txt', data: Buffer.alloc(0) },
+    { name: 'skills/x/SKILL.md', data: Buffer.alloc(0) },
+  ];
+  const 걸린것 = 밖을가리키는것(뿌리, 섞인묶음);
+  check('★ 섞여 있으면 그 이름을 짚어 준다', 걸린것.length === 1 && 걸린것[0].name === '../../../../몰래.txt',
+    걸린것.map((f) => f.name).join(' · '));
+  check('멀쩡한 묶음은 하나도 안 걸린다',
+    밖을가리키는것(뿌리, [{ name: 'a.md' }, { name: 'b/c.md' }]).length === 0);
+
+  /*
+   * ★ 그리고 **진짜로 푸는 자리**를 지난다.
+   *
+   * 위 두 검사는 판단 함수만 잰다. 그 판단이 정작 파일을 쓰는 자리에 안 물려
+   * 있으면 아무 소용이 없다 — 이 저장소에서 이미 두 번 그랬다(끊긴 뒤 결과
+   * 판단, 파일 기억 버리기). 그래서 여기서는 디스크를 본다.
+   */
+  const 풀곳 = join(sand, '푸는자리', '어떤것');
+  const 밖경로 = join(sand, '푸는자리', '몰래.txt');
+
+  const 나쁜결과 = 묶음풀기(풀곳, [
+    { name: 'README.md', data: Buffer.from('착한 것') },
+    { name: '../몰래.txt', data: Buffer.from('밖으로 나갔다') },
+  ]);
+  check('★ 밖을 가리키는 묶음은 아예 안 푼다', !!나쁜결과.error, 나쁜결과.error ?? '(그냥 풀었다)');
+  check('★ 그 파일이 진짜로 안 생겼다', !existsSync(밖경로), 밖경로);
+  // 착한 파일까지 안 푼다 — 노린 묶음의 나머지를 깔아 줄 까닭이 없다.
+  check('★ 같은 묶음의 나머지도 안 푼다', !existsSync(join(풀곳, 'README.md')));
+
+  const 착한결과 = 묶음풀기(풀곳, [
+    { name: 'README.md', data: Buffer.from('착한 것') },
+    { name: 'skills/품의서/SKILL.md', data: Buffer.from('본문') },
+  ]);
+  check('멀쩡한 묶음은 그대로 풀린다',
+    !착한결과.error && readFileSync(join(풀곳, 'skills', '품의서', 'SKILL.md'), 'utf8') === '본문',
+    착한결과.error ?? `${착한결과.푼것}개`);
+}
 
 trace('3-ZIP쓰기');
 // ── 3. ZIP 쓰기 — 진짜 unzip 으로 열어 본다 ─────────────────────────────

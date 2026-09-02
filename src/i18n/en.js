@@ -353,6 +353,8 @@ export const en = {
   'sum.ok': 'ok',
   'sum.exitCode': 'exit {code}',
   'sum.killedBy': 'killed by {시그널}',
+  'sum.tooMuchOut': 'output too large — capture cut short',
+  'sum.cantRun': 'could not run ({왜})',
   'sum.partial': 'partial',
   'sum.cut': 'truncated',
   'sum.notAllSeen': 'not all scanned',
