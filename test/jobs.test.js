@@ -44,7 +44,7 @@ import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { TOOLS } from '../src/tools/index.js';
 import {
-  띄우기, 목록, 하나, 읽기, 끝내기, 모두끝내기, 비우기, 셸명령, 띄우기옵션, 최대일감, JOBS_TOOL,
+  띄우기, 목록, 하나, 읽기, 끝내기, 모두끝내기, 비우기, 셸명령, 띄우기옵션, 최대일감, 나무끊기, 잘렸나, JOBS_TOOL,
 } from '../src/tools/jobs.js';
 import { 정한셸 } from '../src/tools/shell.js';
 import { trace } from './trace.mjs';
@@ -780,6 +780,63 @@ trace('11-치움');
 for (let i = 0; i < 6; i++) {
   await 쉬기(300);
   try { rmSync(방, { recursive: true, force: true }); break; } catch { /* 아직 물고 있다 */ }
+}
+
+/*
+ * ── 「나무를 다 못 끊었다」 를 무엇으로 아나 ─────────────────────────────
+ *
+ * 이 판의 대표 기능이 여기 걸려 있는데, 판별식이 **늘 참**이었다.
+ *
+ * 처음엔 `!err?.killed` 로 갈랐다. 비동기 execFile 의 콜백은 상한에 걸리면
+ * err.killed 를 true 로 주므로 그럴듯했다. 그런데 여기서 쓰는 것은
+ * execFileSync 고, **그건 killed 를 안 준다.** 그래서 「못 끊었다」 가 한 번도
+ * 안 나왔고, 뿌리를 살려 두는 분기는 처음부터 닿지 않는 코드였다. 검사는
+ * 내내 초록이었다 — 아무도 그 값을 직접 재 보지 않았기 때문이다.
+ *
+ * 그래서 여기서 **값을 못 박는다.** 실제로 재서 얻은 것이다(윈도우 11 · Node 20):
+ *
+ *   상한에 걸림      killed=undefined  signal=SIGTERM  code=ETIMEDOUT  status=null
+ *   없는 pid 를 죽임  killed=undefined  signal=null     code=undefined  status=128
+ *
+ * 이 두 줄이 이 기능의 바닥이다. Node 가 이걸 바꾸면 여기가 빨개져야 한다.
+ */
+trace('12-끊김판별');
+{
+  const { execFileSync } = await import('node:child_process');
+
+  // (1) 진짜로 상한에 걸려 본다. 오래 걸리는 명령을 아주 짧은 상한으로 부른다.
+  let 걸린탈 = null;
+  try {
+    const 느린것 = process.platform === 'win32'
+      ? ['-e', 'const t=Date.now(); while (Date.now()-t < 5000);']
+      : ['-e', 'const t=Date.now(); while (Date.now()-t < 5000);'];
+    execFileSync(process.execPath, 느린것, { timeout: 150, windowsHide: true, stdio: 'ignore' });
+  } catch (err) { 걸린탈 = err; }
+  check('상한에 걸리면 탈이 난다', !!걸린탈, 걸린탈 ? '' : '안 났다');
+  check('★ execFileSync 는 상한에 걸려도 killed 를 안 준다 — 이걸로 가르면 안 된다',
+    걸린탈?.killed !== true, `killed=${String(걸린탈?.killed)}`);
+  check('★ 상한에 걸린 것은 signal·code 로 알아본다',
+    걸린탈?.code === 'ETIMEDOUT' || 걸린탈?.signal != null,
+    `signal=${String(걸린탈?.signal)} code=${String(걸린탈?.code)}`);
+  check('★ 잘렸나() 가 상한에 걸린 것을 잘렸다고 한다', 잘렸나(걸린탈) === true);
+
+  // (2) 그냥 0 이 아닌 값으로 끝난 것 — 이건 잘린 것이 아니다.
+  let 진탈 = null;
+  try {
+    execFileSync(process.execPath, ['-e', 'process.exit(3)'], { timeout: 20000, windowsHide: true, stdio: 'ignore' });
+  } catch (err) { 진탈 = err; }
+  check('0 이 아닌 값으로 끝나면 탈이 난다', !!진탈, String(진탈?.status));
+  check('★ 잘렸나() 가 「그냥 실패」 를 잘렸다고 하지 않는다', 잘렸나(진탈) === false,
+    `signal=${String(진탈?.signal)} code=${String(진탈?.code)} status=${String(진탈?.status)}`);
+
+  // (3) 없는 프로세스를 끊으라고 해도 「다 끊었다」 로 본다 — 이미 죽은 것이다.
+  if (process.platform === 'win32') {
+    check('★ 없는 pid 는 이미 죽은 것으로 본다(뿌리를 살려 두면 안 된다)',
+      나무끊기(0x7ffffff0, 4000) === true);
+  } else {
+    check('★ 윈도우가 아니면 나무끊기 는 늘 참 — 무리째 죽이는 길이 따로 있다',
+      나무끊기(1234) === true);
+  }
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

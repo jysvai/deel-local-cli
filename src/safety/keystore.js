@@ -39,10 +39,6 @@ const 꼴 = /^(dpapi|keychain):(.*)$/s;
 /** 키체인에 넣을 때 쓰는 이름. 사람이 키체인 앱에서 찾아 지울 수 있어야 한다. */
 export const 키체인이름 = 'deel-gateway-key';
 
-let 마지막탈 = null;
-/** 마지막으로 잠그거나 풀다 난 탈. 화면·심사서가 읽는다. */
-export function 열쇠탈() { return 마지막탈; }
-
 /** 이 값이 우리가 잠근 것인가. 평문 열쇠와 헷갈리면 안 된다. */
 export function 잠긴것인가(값) { return 꼴.test(String(값 ?? '')); }
 
@@ -157,19 +153,16 @@ export function 쓸수있나() {
 export function 잠그기(글) {
   const 값 = String(글 ?? '');
   if (!값) return null;
-  마지막탈 = null;
 
   if (process.platform === 'win32') {
     const r = 파워셸실행(잠그는스크립트, Buffer.from(값, 'utf8').toString('base64'));
     if (r.ok && r.out) return `dpapi:${r.out}`;
-    마지막탈 = `열쇠를 못 잠갔습니다 — ${r.err || '파워셸이 답을 안 줬습니다'}`;
-    return null;
+    return null;   // 사유는 어디로도 안 간다 — 잠긴 것인지 아닌지는 보관방식() 이 따로 말한다
   }
   if (process.platform === 'darwin') {
     const r = 키체인넣기(값);
     if (r.ok) return `keychain:${키체인이름}`;
-    마지막탈 = `열쇠를 키체인에 못 넣었습니다 — ${r.err || 'security 가 실패했습니다'}`;
-    return null;
+    return null;   // 사유는 어디로도 안 간다 — 잠긴 것인지 아닌지는 보관방식() 이 따로 말한다
   }
   return null;
 }
@@ -187,31 +180,26 @@ export function 풀기(태그) {
   const m = 꼴.exec(String(태그 ?? ''));
   if (!m) return { ok: false, text: '', why: '잠긴 열쇠가 아닙니다' };
   const [, 갈래, 값] = m;
-  마지막탈 = null;
 
   if (갈래 === 'dpapi') {
     if (process.platform !== 'win32') {
-      마지막탈 = '이 열쇠는 윈도우에서 잠근 것이라 여기서는 못 풉니다 — deel setup 으로 다시 넣으세요.';
-      return { ok: false, text: '', why: 마지막탈 };
+      return { ok: false, text: '', why: '이 열쇠는 윈도우에서 잠근 것이라 여기서는 못 풉니다 — deel setup 으로 다시 넣으세요.' };
     }
     const r = 파워셸실행(푸는스크립트, 값);
     if (r.ok && r.out) {
       try { return { ok: true, text: Buffer.from(r.out, 'base64').toString('utf8'), why: '' }; }
       catch { /* 아래로 */ }
     }
-    마지막탈 = '잠근 열쇠를 못 풉니다 — 이 PC 의 이 계정에서 잠근 것만 풀립니다. deel setup 으로 다시 넣으세요.';
-    return { ok: false, text: '', why: 마지막탈 };
+    return { ok: false, text: '', why: '잠근 열쇠를 못 풉니다 — 이 PC 의 이 계정에서 잠근 것만 풀립니다. deel setup 으로 다시 넣으세요.' };
   }
 
   if (갈래 === 'keychain') {
     if (process.platform !== 'darwin') {
-      마지막탈 = '이 열쇠는 맥 키체인에 있습니다 — 여기서는 못 읽습니다. deel setup 으로 다시 넣으세요.';
-      return { ok: false, text: '', why: 마지막탈 };
+      return { ok: false, text: '', why: '이 열쇠는 맥 키체인에 있습니다 — 여기서는 못 읽습니다. deel setup 으로 다시 넣으세요.' };
     }
     const r = 키체인읽기();
     if (r.ok) return { ok: true, text: r.text, why: '' };
-    마지막탈 = `키체인에서 열쇠를 못 읽었습니다 — ${r.err}`;
-    return { ok: false, text: '', why: 마지막탈 };
+    return { ok: false, text: '', why: `키체인에서 열쇠를 못 읽었습니다 — ${r.err}` };
   }
 
   return { ok: false, text: '', why: '모르는 잠금 방식입니다' };

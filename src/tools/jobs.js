@@ -95,6 +95,52 @@ export function 띄우기옵션(cwd) {
 }
 
 /**
+ * 윈도우에서 pid 아래 나무를 통째로 끊는다.
+ *
+ * @returns {boolean} 나무를 **다 훑었나.** false 면 손자가 남아 있을 수 있으니,
+ *   부르는 쪽은 뿌리(cmd.exe)를 죽이지 말고 다시 와야 한다.
+ *
+ * ── 실패 두 가지를 갈라야 한다 ──────────────────────────────────────────
+ *
+ *   · 「그런 프로세스 없다」 — 이미 죽은 것이다. 탈이 아니다.
+ *   · **taskkill 이 제 상한에 걸려 잘렸다** — 나무를 다 못 훑었다.
+ *
+ * 뒤엣것을 앞엣것처럼 넘기고 뿌리를 죽여 버리면 손자가 영영 못 찾는 채로
+ * 남는다. 뿌리가 죽은 뒤에는 `taskkill /pid` 가 「프로세스를 못 찾았습니다」 로
+ * 끝나서 다시 부를 수조차 없다.
+ *
+ * ── 무엇으로 가르나: err.killed 가 아니다 ───────────────────────────────
+ *
+ * 처음에는 `!err?.killed` 로 갈랐다. **그게 늘 참이었다.** 비동기 execFile 의
+ * 콜백은 상한에 걸리면 err.killed 를 true 로 주는데, execFileSync 는 안 준다.
+ * 그래서 「나무를 다 못 훑었다」 가 한 번도 안 나왔고, 뿌리를 살려 두는 분기는
+ * 처음부터 닿지 않는 코드였다 — 이 판의 대표 기능이 통째로 헛돈 셈이다.
+ *
+ * 실제로 재 보고 갈랐다(윈도우 11 · Node 20):
+ *
+ *   상한에 걸림        killed=undefined  signal=SIGTERM  code=ETIMEDOUT  status=null
+ *   없는 pid 를 죽임    killed=undefined  signal=null     code=undefined  status=128
+ *
+ * 갈리는 자리는 **signal 과 code** 다. 아래 검사(test/jobs.test.js 의
+ * '★ taskkill 이 잘린 것과 이미 죽은 것을 가른다')가 이 값을 못박아 둔다.
+ */
+export function 나무끊기(pid, 상한 = 1500) {
+  if (process.platform !== 'win32' || !pid) return true;
+  try {
+    execFileSync('taskkill', ['/pid', String(pid), '/t', '/f'],
+      { windowsHide: true, stdio: 'ignore', timeout: 상한 });
+    return true;
+  } catch (err) {
+    return !잘렸나(err);
+  }
+}
+
+/** 이 오류가 「상한에 걸려 잘렸다」 인가. 아니면 그냥 0 이 아닌 값으로 끝난 것이다. */
+export function 잘렸나(err) {
+  return err?.code === 'ETIMEDOUT' || err?.signal != null || err?.killed === true;
+}
+
+/**
  * 프로세스 나무를 통째로 끝낸다. 자식만 죽이면 손자가 남아 포트를 계속 문다.
  *
  * 윈도우에서 taskkill 을 **기다린다.** 전에는 execFile(비동기)로 불렀는데,
@@ -120,25 +166,7 @@ function 나무죽이기(kid, { 파이프끊기: 끊을까 = true, 곧장 = fals
      * 그래서 기본은 짧다. 사람이 「끝내」 라고 시킨 자리에서는 길게 준다 —
      * 거기서는 몇백 ms 늦는 것보다 안 죽는 것이 훨씬 나쁘다.
      */
-    나무끊었나 = false;
-    try {
-      execFileSync('taskkill', ['/pid', String(kid.pid), '/t', '/f'],
-        { windowsHide: true, stdio: 'ignore', timeout: 상한 });
-      나무끊었나 = true;
-    } catch (err) {
-      /*
-       * 두 가지 실패를 갈라야 한다.
-       *
-       *   · 「그런 프로세스 없다」 — 이미 죽은 것이다. 탈이 아니다.
-       *   · **taskkill 이 상한에 걸려 잘렸다** — 나무를 다 못 훑었다.
-       *
-       * 뒤엣것을 앞엣것처럼 넘기고 아래에서 cmd 를 죽여 버리면, 손자가
-       * 영영 못 찾는 채로 남는다. 뿌리가 죽은 뒤에는 `taskkill /pid` 가
-       * 「프로세스를 못 찾았습니다」 로 끝나서 다시 부를 수조차 없다.
-       * (실제로 그래서 검사가 바쁠 때만 빨개졌다.)
-       */
-      나무끊었나 = !err?.killed;
-    }
+    나무끊었나 = 나무끊기(kid.pid, 상한);
     /*
      * 나무를 다 못 훑었으면 뿌리를 살려 둔다. 부르는 쪽이 다시 온다.
      *

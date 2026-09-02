@@ -269,6 +269,16 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
   // 요약을 못 받았으면 옛 방식으로 물러선다. 멈추지는 않는다.
   if (!summary) {
     const folded = session.trim();
+    /*
+     * 여기서도 들고 있던 파일 내용을 버린다. 아래 성공한 길과 **같은 까닭**이다.
+     *
+     * 이 자리를 한동안 빠뜨리고 있었다. 성공한 길에만 넣어 두면, 정작 요약을
+     * 못 받아 물러선 자리 — 서버가 흔들릴 때라 제일 자주 지나가는 길 — 에서만
+     * 조용히 어긋난다. trim() 은 옛 메시지를 진짜로 지우므로, 지운 뒤에도
+     * 「앞에서 읽은 그대로입니다」 를 내밀면 모델은 대화에 없는 글을 가리키는
+     * 쪽지만 받는다. 통째로 다시 싣는 것보다 훨씬 나쁘다.
+     */
+    if (folded > 0) session.파일기억?.잊기();
     const after = session.breakdown().used;
     return { ok: folded > 0, folded, before, after, why: '요약을 받지 못해 그냥 줄였습니다', fallback: true };
   }

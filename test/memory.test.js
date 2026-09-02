@@ -8,7 +8,7 @@
 import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { 읽기, 쓰기, 더하기, 지우기, 비우기, 프롬프트토막, 자리, 기억최대, 한줄최대, 줄최대 } from '../src/agent/memory.js';
+import { 읽기, 더하기, 지우기, 비우기, 프롬프트토막, 자리, 기억최대, 한줄최대, 줄최대 } from '../src/agent/memory.js';
 import { TOOLS, toolSchemas } from '../src/tools/index.js';
 import { Session } from '../src/agent/session.js';
 import { makeScope } from '../src/safety/guard.js';

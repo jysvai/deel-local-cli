@@ -228,7 +228,6 @@ export const 틀 = Object.fromEntries(
  * 그린다 — 세로로 선 정면 모습은 4점 안에서 절대 안 읽힌다.
  */
 export const 넓은칸수 = 6;        // 점자 여섯 칸
-export const 넓은가로 = 넓은칸수 * 2; // 점 12개
 
 /*
  * 중세 기사 — 옆모습. 왼쪽에 몸이 서 있고 오른쪽에서 칼이 움직인다.

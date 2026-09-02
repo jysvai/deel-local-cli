@@ -2,12 +2,12 @@
 // 그래야 그 관례로 쓰인 스킬·명령이 그대로 먹는다.
 import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, renameSync, cpSync, rmSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
 import { checkCommand, checkPaths, isMutating } from '../safety/guard.js';
-import { 띄우기, JOBS_TOOL } from './jobs.js';
+import { 띄우기, 나무끊기, JOBS_TOOL } from './jobs.js';
 import { 셸명령 } from './shell.js';
 import { findMatch, applySpans, reindent, TIER_LABELS } from './edit-match.js';
 import { loadSkill } from '../skills/discover.js';
@@ -1702,12 +1702,21 @@ export const TOOLS = {
            *
            * jobs.js 의 나무죽이기() 가 이미 같은 자리에서 같은 결론에 닿았다.
            * 여기만 그 교훈 밖에 있었다.
+           *
+           * ── 판단은 베끼지 않고 **가져다 쓴다** ─────────────────────────
+           *
+           * 전에는 여기서 taskkill 오류를 통째로 삼켰다. 잘린 것과 이미 죽은
+           * 것을 안 가른 채 곧장 뿌리(cmd.exe)를 죽였으니, 컴퓨터가 바쁘면
+           * 손자가 남고 화면에는 「중단됨」 이 떴다. jobs.js 는 그 구분을
+           * 갖고 있었는데 여기만 없었다 — 같은 판단이 두 벌로 있으면 늘
+           * 한쪽만 고쳐진다. 그래서 이제 그 함수 하나를 같이 쓴다.
+           *
+           * 여기는 jobs.js 와 달리 **다시 올 자리가 없다.** 이 부름은 지금
+           * 끝난다. 그러니 못 훑었으면 한 번 더, 넉넉히 준 다음 뿌리를 죽인다.
+           * 뿌리를 그냥 살려 두면 이번에는 cmd.exe 까지 남는다.
            */
           if (process.platform === 'win32' && kid.pid) {
-            try {
-              execFileSync('taskkill', ['/pid', String(kid.pid), '/t', '/f'],
-                { windowsHide: true, stdio: 'ignore', timeout: 1500 });
-            } catch { /* 이미 죽었으면 0 이 아닌 값으로 끝난다 — 탈이 아니다 */ }
+            if (!나무끊기(kid.pid, 1500)) 나무끊기(kid.pid, 4000);
           }
           try { kid.kill(); } catch {}
           // 죽이라고 시켰다고 곧바로 죽는 것은 아니다. 그동안 이 프로세스가

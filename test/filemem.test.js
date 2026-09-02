@@ -153,6 +153,70 @@ trace('6-바뀐데만-혼자서도');
   check('짧은 것도 null', 바뀐데만(읽은꼴(코드(3)), 읽은꼴(코드(4))) === null);
 }
 
+/*
+ * ── 대화에서 글이 사라지면 기억도 같이 버려야 한다 ──────────────────────
+ *
+ * 「앞에서 읽은 그대로입니다」 는 **그 앞엣것이 대화에 살아 있을 때만** 참이다.
+ * 이 파일 머리말이 스스로 그렇게 못박아 놓고, 정작 대화를 지우는 길 넷 가운데
+ * 둘에서 기억을 안 버리고 있었다.
+ *
+ *   · 접기 성공(compact)  — 버렸다
+ *   · /clear             — 버렸다
+ *   · **접기 실패 후 그냥 줄이기** — 안 버렸다 (서버가 흔들릴 때 지나는 길)
+ *   · 되감기(/undo)         — **안 버렸다**
+ *
+ * 안 버리면 모델은 대화에 없는 글을 가리키는 쪽지만 받는다. 통째로 다시 싣는
+ * 것보다 훨씬 나쁘다 — 없는 것을 있다고 믿고 답을 짓기 때문이다.
+ *
+ * 되감기는 더 고약하다. 파일을 고치면(기억에 담김) 되돌리기가 디스크를 옛
+ * 모습으로 돌리는데 기억은 고친 모습이라, 다시 읽을 때 **있지도 않은 차이**를
+ * 적어 보낸다.
+ *
+ * 그래서 여기서는 클래스만 재지 않고 **대화를 지우는 길 넷을 다 지나 본다.**
+ */
+trace('7-대화가-지워지면-기억도');
+{
+  const { Session } = await import('../src/agent/session.js');
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  // 진짜 폴더를 준다. 안 주면 Session 이 DEEL.md 를 찾다가 넘어진다.
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-filemem-'));
+  const 긴글 = 읽은꼴(Array.from({ length: 60 }, (_, i) => `줄 ${i + 1} 내용이 여기 있다`));
+
+  const 새판 = () => {
+    const s = new Session(null, { root: 방 });
+    // 대화가 넉넉히 있어야 trim() 이 실제로 자른다(12개 미만이면 아무것도 안 한다).
+    for (let i = 0; i < 24; i++) s.push({ role: i % 2 ? 'assistant' : 'user', content: `말 ${i}` });
+    s.파일기억.실을것('/집/가.txt', 긴글);
+    return s;
+  };
+
+  // (1) /clear — 이미 지키고 있던 자리. 나머지가 여기에 맞춰야 한다.
+  {
+    const s = 새판();
+    s.clear();
+    check('/clear 뒤에는 파일을 통째로 다시 싣는다',
+      s.파일기억.실을것('/집/가.txt', 긴글).어떻게 === 'full');
+  }
+
+  // (2) 되감기(/undo)
+  {
+    const s = new Session(null, { root: 방 });
+    s.턴시작?.(1);
+    s.push({ role: 'user', content: '가.txt 를 고쳐 줘' });
+    s.push({ role: 'assistant', content: '고쳤습니다' });
+    s.파일기억.실을것('/집/가.txt', 긴글);
+    const 걷은것 = s.되감기([1]);
+    check('되감기가 그 턴을 실제로 걷어냈다', 걷은것.걷은것 > 0, String(걷은것.걷은것));
+    check('★ 되감기 뒤에는 파일을 통째로 다시 싣는다 — 가리킬 앞엣것이 없다',
+      s.파일기억.실을것('/집/가.txt', 긴글).어떻게 === 'full');
+  }
+
+  // (3) 접기가 요약을 못 받아 그냥 줄인 자리는 test/compact.test.js 가 잰다 —
+  //     거기에 가짜 서버가 이미 있어서, 진짜로 요약을 못 받게 만들 수 있다.
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n읽은 파일 기억 검사  ${D}(바뀐 만큼만 싣는가 · 그러면서 아무것도 안 잃는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

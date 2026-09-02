@@ -262,6 +262,68 @@ trace('6-인자는-객체여야-한다');
   }
 }
 
+/*
+ * ── 지문이 진짜로 갈라 놓는가 ───────────────────────────────────────────
+ *
+ * 지금까지 이 파일은 이름 서너 개로만 쟀다. 그래서 지문을 만드는 자리가
+ * **엉뚱한 쪽을 잘라도** 초록이었다. 32비트 값을 36진수로 적으면 길어야
+ * 일곱 자인데 여덟 자로 맞추려고 앞을 0 으로 채웠고, 거기서 앞 여섯 자를
+ * 떼고 있었다 — 채워 넣은 0 을 세고 제일 자주 바뀌는 뒷자리를 버린 셈이다.
+ * 21억 가지가 330만 가지로 줄었는데 검사는 아무 말이 없었다.
+ *
+ * 그래서 **많이** 넣어 본다. 겹침은 이름 세 개로는 안 보이고 수천 개에서
+ * 보인다. 그리고 겹치면 무슨 일이 나는지도 같이 잰다 — 겹침을 면하려고
+ * 뒤에 붙이는 번호는 목록 차례를 타므로, 겹치는 순간 이 파일이 없애려던
+ * 고장(검색과 지우기가 이름을 맞바꾸는 것)이 그대로 돌아온다.
+ */
+trace('8-지문');
+{
+  const 젬 = { base: 'https://generativelanguage.googleapis.com/v1beta/openai/', kind: 'openai' };
+  const 도구 = (이름) => ({ type: 'function', function: { name: 이름, description: 이름, parameters: { type: 'object', properties: {} } } });
+
+  // 한글로만 갈리는 이름 — 다듬고 나면 남는 것은 지문뿐이다.
+  const 글자 = '가나다라마바사아자차카타파하거너더러머버서어저처커터퍼허';
+  const 많은것 = [];
+  for (let i = 0; i < 4000; i++) {
+    const a = 글자[i % 글자.length];
+    const b = 글자[Math.floor(i / 글자.length) % 글자.length];
+    const c = 글자[Math.floor(i / (글자.length * 글자.length)) % 글자.length];
+    많은것.push(도구(`mcp__사내문서__${c}${b}${a}`));
+  }
+  const 큰것 = 도구맞추기(많은것, 젬);
+  const 나온이름 = 큰것.tools.map((t) => t.function.name);
+  check('★ 한글로만 갈리는 이름 4,000개가 서로 다른 이름으로 나간다',
+    new Set(나온이름).size === 나온이름.length, `${new Set(나온이름).size}/${나온이름.length}`);
+  /*
+   * 겹쳤나는 「혼자 넣었을 때와 같은 이름이 나오나」 로 잰다.
+   *
+   * 뒤에 붙는 번호로는 못 잰다 — 지문 자체가 숫자로만 될 수 있어서
+   * (`mcp_378679`) 「_숫자로 끝난다」 가 겹침의 표가 안 된다. 실제로 이 검사를
+   * 그렇게 짰다가 멀쩡한 이름 셋을 겹쳤다고 잘못 걸었다.
+   *
+   * 혼자 넣으면 겹칠 상대가 없으니 번호가 절대 안 붙는다. 그것과 다르면
+   * 목록에 같이 있었다는 이유만으로 이름이 달라졌다는 뜻이고, 그 이름은
+   * 목록 차례를 탄다.
+   */
+  const 홀로다른것 = 많은것.filter((t, i) => 도구맞추기([t], 젬).tools[0].function.name !== 나온이름[i]);
+  check('★ 지문이 겹쳐 이름이 목록 차례를 타는 것이 없다',
+    홀로다른것.length === 0, 홀로다른것.slice(0, 3).map((t) => t.function.name).join(' · ') || '0개');
+  check('되돌림 표는 4,000개를 다 들고 있다', 큰것.되돌림?.size === 4000, String(큰것.되돌림?.size));
+
+  // 차례를 바꿔도 같은 이름이 나와야 한다. 이게 번호가 아니라 지문을 쓰는 까닭이다.
+  const 거꾸로 = 도구맞추기([...많은것].reverse(), 젬);
+  const 거꾸로표 = new Map(거꾸로.tools.map((t, i) => [많은것[많은것.length - 1 - i].function.name, t.function.name]));
+  const 어긋난것 = 많은것.filter((t) => 거꾸로표.get(t.function.name) !== 큰것.tools[많은것.indexOf(t)].function.name);
+  check('★ 목록 차례를 뒤집어도 도구마다 같은 이름이 나온다',
+    어긋난것.length === 0, 어긋난것.slice(0, 2).map((t) => t.function.name).join(' · ') || '0개');
+
+  // 긴 이름을 접을 때도 앞뒤가 남아야 한다 — 읽기와 쓰기가 구별돼야 한다.
+  const 긴서버 = `mcp__${'아주긴서버이름'.repeat(6)}`;
+  const 둘 = 도구맞추기([도구(`${긴서버}__read`), 도구(`${긴서버}__write`)], 젬).tools.map((t) => t.function.name);
+  check('★ 긴 이름 둘도 서로 달라진다', 둘[0] !== 둘[1], 둘.join(' · '));
+  check('긴 이름도 64자를 안 넘는다', 둘.every((n) => n.length <= 64), 둘.map((n) => n.length).join('/'));
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n회사별 도구 다듬기 검사  ${D}(모르는 곳은 안 건드리는가 · 고친 이름을 되돌리는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
