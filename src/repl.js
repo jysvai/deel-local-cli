@@ -70,7 +70,7 @@ const TOOL_GLYPH = {
 function toolLabel(name, args) {
   const a = args ?? {};
   const first =
-    a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.목적 ??
+    a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.purpose ?? a.목적 ??
     (a.command ? String(a.command).replace(/\s+/g, ' ').slice(0, 52) : null) ??
     // 뒤에서 도는 명령. 번호가 곧 그 일감의 이름이다 — 빈 괄호를 띄우면
     // 어느 것을 보고 있는지가 화면에서 사라진다. 서너 개를 띄워 놓고 나면

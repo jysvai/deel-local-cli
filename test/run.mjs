@@ -41,6 +41,7 @@ const FILES = [
   'quota.test.js',
   'review.test.js',
   'task.test.js',
+  'toolargs.test.js',
   'outline.test.js',
   'network.test.js',
   'web.test.js',

@@ -134,8 +134,9 @@ trace('5-도구설명');
   check('도구 이름이 같다 — 이름은 식별자다',
     영목록.map((t) => t.function.name).join() === 한목록.map((t) => t.function.name).join());
 
-  // 인자 이름도 그대로여야 한다. Task 의 목적·할일 같은 한글 인자 이름을
-  // 바꾸면 그 도구가 아예 안 불린다.
+  // 인자 이름도 그대로여야 한다. 인자 이름은 식별자라 안 옮긴다 — 여기서
+  // 영어 뜻으로 갈아 끼우면 모델이 부른 이름과 우리가 읽는 이름이 어긋나
+  // 그 도구가 아예 안 불린다.
   const 인자들 = (목록) => 목록.map((t) => `${t.function.name}(${Object.keys(t.function.parameters?.properties ?? {}).join('|')})`).join();
   check('인자 이름이 같다', 인자들(영목록) === 인자들(한목록), 인자들(영목록).slice(0, 120));
 
@@ -143,13 +144,18 @@ trace('5-도구설명');
   check('설명이 빈 도구가 없다', 빠짐.length === 0, 빠짐.map((t) => t.function.name).join());
 
   /*
-   * 설명에 남은 한글은 **인자 이름뿐**이어야 한다.
+   * 영어 설명에는 한글이 하나도 남으면 안 된다.
    *
-   * Task 의 목적·할일 같은 인자 이름은 식별자라 안 옮긴다 — 옮기면 그 도구가
-   * 아예 안 불린다. 그래서 설명 안에서 그 이름을 가리키는 자리에는 한글이
-   * 남는 것이 맞다. 그 밖의 한글은 안 옮긴 것이다.
+   * 예전엔 예외가 하나 있었다 — Task 의 목적·할일 같은 **인자 이름**은
+   * 식별자라 안 옮겼고, 설명이 그 이름을 가리키는 자리에는 한글이 남는 것이
+   * 맞았다. 인자 이름을 전부 영문으로 바꾼 뒤로 그 예외는 빈 채로 남아 있다
+   * (test/toolargs.test.js). 그래서 이 검사는 이제 "한글이 하나도 없다" 와
+   * 같은 뜻이다. 예외가 다시 생기면 아래 검사가 그 자리를 알려 준다.
    */
   const 인자이름들 = new Set(한목록.flatMap((t) => Object.keys(t.function.parameters?.properties ?? {})));
+  check('인자 이름에 한글이 하나도 없다',
+    [...인자이름들].every((n) => !/[가-힣]/.test(n)),
+    [...인자이름들].filter((n) => /[가-힣]/.test(n)).join());
   const 아직한글 = 영목록.filter((t) => {
     const 한글토막 = String(t.function.description ?? '').match(/[가-힣]+/g) ?? [];
     return 한글토막.some((x) => !인자이름들.has(x));
@@ -172,7 +178,19 @@ trace('5-도구설명');
   check('Verify: 확인 못 한 것은 못 했다고 말한다', /could not check/i.test(하나('Verify').description));
   check('Append: 앞부분을 다시 보내지 마라', /No Read needed first/i.test(하나('Append').description));
   check('Task: 하위는 이 대화를 못 본다', /cannot see your conversation/i.test(하나('Task').description));
-  check('Task: 모델 인자 이름이 한글 그대로', '모델' in 하나('Task').parameters.properties);
+  /*
+   * 예전엔 이 자리에서 '모델' 이라는 **한글** 인자 이름이 영어 설명으로
+   * 갈아 끼워도 그대로 남는지를 봤다. 그 뒤 인자 이름을 전부 영문으로
+   * 바꿨다 — 한글이면 Bedrock 이 설명서를 통째로 튕긴다
+   * (test/toolargs.test.js).
+   *
+   * 지켜야 할 것은 그대로다: **영어로 갈아 끼울 때 인자 이름은 안 건드린다.**
+   * 이름만 달라졌으니 재는 자도 새 이름으로 바꿔 둔다. 여기서 하나라도
+   * 영어 뜻으로 옮겨지면 모델이 부른 이름과 우리가 읽는 이름이 어긋난다.
+   */
+  check('Task: 영어로 바꿔도 인자 이름은 그대로',
+    Object.keys(하나('Task').parameters.properties).join() === 'purpose,task,mode,model',
+    Object.keys(하나('Task').parameters.properties).join());
 }
 
 trace('6-창이좁아도');

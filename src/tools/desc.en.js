@@ -25,8 +25,12 @@
  *   Bash  “끝나지 않는 것은 background”   · 시간 초과로 죽는 것을 막는 자리
  *   Verify“확인 못 한 것은 못 했다고”     · 이 프로그램이 거짓말을 안 하게 하는 자리
  *
- * 도구 이름과 인자 이름은 **안 옮긴다.** 그건 식별자다. Task 의 목적·할일처럼
- * 한글로 된 인자 이름도 그대로 둔다 — 이름을 바꾸면 그 도구가 아예 안 불린다.
+ * 도구 이름과 인자 이름은 **안 옮긴다.** 그건 식별자다 — 이름을 바꾸면 그 도구가
+ * 아예 안 불린다. 여기 적힌 이름은 tools/*.js 의 설명서와 **글자까지 같아야**
+ * 한다. 다르면 그 인자만 영어 설명이 조용히 빠진다.
+ *
+ * 인자 이름은 전부 영문이다. 우리 취향이 아니라 서버가 검사한다 — Bedrock 은
+ * `^[a-zA-Z0-9_.-]{1,64}$` 가 아니면 첫 한마디를 통째로 400 으로 돌려보낸다.
  */
 export const 도구설명EN = {
   Read: {
@@ -134,14 +138,14 @@ export const 도구설명EN = {
     },
   },
   Ask: {
-    desc: 'Ask the person one question at a genuine fork. **First fill in `이해` with what you'
+    desc: 'Ask the person one question at a genuine fork. **First fill in `understanding` with what you'
       + ' understood this request to be**, and only ask if something is genuinely left to decide.'
       + ' Never write "let me know" and stop; asking in prose ends the turn and throws away'
       + ' everything you have looked at. Give 2-4 options and they answer with a single number.'
       + ' **Never ask back something the user already said.** "Tidy up the files" is the answer —'
       + ' go and do it. Deciding how is your job, not theirs.',
     params: {
-      이해: 'one line: what you understood this request to be. The person reads this line to judge'
+      understanding: 'one line: what you understood this request to be. The person reads this line to judge'
         + ' whether you actually read them. "I understand your request" is not an understanding —'
         + ' name the actual work',
       question: 'one sentence. Make it clear what has to be decided',
@@ -197,14 +201,14 @@ export const 도구설명EN = {
       + ' not pile up in your window. That is why work that creates or edits several files has to be'
       + ' divided this way to get to the end. One chunk must be finishable on its own (e.g. "create'
       + ' index.html and style.css"). The subtask cannot see your conversation — put everything it'
-      + ' needs into 할일. Do not use this for one short job. Doing it yourself is faster.',
+      + ' needs into `task`. Do not use this for one short job. Doing it yourself is faster.',
     params: {
-      목적: 'this chunk in one line (e.g. "build the dashboard page skeleton")',
-      할일: 'everything the subtask has to do. It cannot see this conversation, so put the background,'
+      purpose: 'this chunk in one line (e.g. "build the dashboard page skeleton")',
+      task: 'everything the subtask has to do. It cannot see this conversation, so put the background,'
         + ' the decisions, and the file paths here. Say what counts as done, too.',
-      모드: 'how the subtask works: code (builds and edits) · debug (finds causes) · ask (reads and'
+      mode: 'how the subtask works: code (builds and edits) · debug (finds causes) · ask (reads and'
         + ' answers only). Defaults to code.',
-      모델: 'hand this chunk to a **different model**. Only profile names the user has configured'
+      model: 'hand this chunk to a **different model**. Only profile names the user has configured'
         + ' work (do not invent an address — it will not be accepted). Left out, it stays on the model'
         + ' you are using. Handing routine work (formatting, repetitive edits, short summaries) to a'
         + ' small model keeps your window from filling. Do the work that needs judgement yourself.',
@@ -236,12 +240,13 @@ export const 도구설명EN = {
     },
   },
   Jobs: {
-    desc: 'List, read, and end background commands (Bash with background). Called with no number,'
-      + ' you get the list. Given a number, you get whatever output arrived since last time.'
-      + ' If you started a server, you must end it when the job is done.',
+    desc: 'List, read, and end background commands (Bash with background). Called with no `job`,'
+      + ' you get the list. Given a `job`, you get whatever output arrived since last time.'
+      + ' If you started a server, you must end it with `stop` when the job is done.',
     params: {
-      번호: 'job number to look at. Left out, the list',
-      끝내기: 'true to end that job (stop)',
+      job: 'job number to look at. Left out, the list',
+      stop: 'true to end that job',
+      from_start: 'true to read from the beginning again',
     },
   },
 };

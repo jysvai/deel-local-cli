@@ -43,19 +43,19 @@ export const TASK_TOOL = {
       + ' 처음부터 끝까지 일하고, 너에게는 결과 요약만 돌아온다 — 하위가 읽은 파일 내용은'
       + ' 네 창에 안 쌓인다. 그래서 파일 여러 개를 만들거나 고치는 일은 이걸로 나눠야 끝까지 간다.'
       + ' 덩이 하나는 혼자 끝낼 수 있는 크기여야 한다 (예: "index.html 과 style.css 만들기").'
-      + ' 하위는 네 대화를 못 본다 — 필요한 것은 할일 안에 다 적어 줘라.'
+      + ' 하위는 네 대화를 못 본다 — 필요한 것은 task 안에 다 적어 줘라.'
       + ' 짧은 일 하나를 할 때는 쓰지 마라. 그냥 직접 하는 편이 빠르다.',
     parameters: {
       type: 'object',
       properties: {
-        목적: { type: 'string', description: '이 덩이를 한 줄로 (예: "대시보드 화면 뼈대 만들기")' },
-        할일: {
+        purpose: { type: 'string', description: '이 덩이를 한 줄로 (예: "대시보드 화면 뼈대 만들기")' },
+        task: {
           type: 'string',
           description:
             '하위가 할 일을 빠짐없이. 하위는 지금 대화를 못 보니 필요한 배경·정한 것·파일 경로를'
             + ' 여기 다 적어라. 무엇이 끝나면 다 된 것인지도 적어라.',
         },
-        모드: {
+        mode: {
           type: 'string',
           description: '하위가 일할 방식: code(만들고 고침) · debug(원인 찾기) · ask(읽고 답만). 안 적으면 code.',
         },
@@ -72,7 +72,7 @@ export const TASK_TOOL = {
          * 약속을 그 자리에서 깨는 것이다. 실제 판단은 loop.js 가 한다 —
          * 부탁으로 막지 않는다.
          */
-        모델: {
+        model: {
           type: 'string',
           description:
             '이 덩이를 **다른 모델**에게 맡긴다. 사람이 설정에 적어 둔 프로필 이름만 쓸 수 있다'
@@ -81,7 +81,11 @@ export const TASK_TOOL = {
             + ' 판단이 필요한 일은 네가 직접 해라.',
         },
       },
-      required: ['목적', '할일'],
+      // 위 properties 와 **같은 이름**이어야 한다. 이름을 바꾸면서 여기만
+      // 옛 이름으로 남겨 두면, 서버는 "없는 인자를 필수라고 한다" 고 거절하거나
+      // (더 나쁘게) 그냥 받아 놓고 모델이 아무것도 안 채우게 둔다.
+      // test/toolargs.test.js 가 이 짝을 맞춰 본다.
+      required: ['purpose', 'task'],
     },
   },
 

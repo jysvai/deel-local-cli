@@ -564,8 +564,11 @@ trace('8-Bash와붙였을때');
    * 다시 적어 주면 Jobs 를 제대로 부른다 — 안 적으면 번호 없이 부르거나
    * 아예 안 부르고 "띄웠습니다" 로 끝낸다.
    */
-  check('읽는 법을 번호와 함께 적어 준다', /Jobs\(\{번호: \d+\}\)/.test(r.content), r.content.split('\n').pop());
-  check('끝내는 법도 적어 준다', /끝내기: true/.test(r.content), '');
+  check('읽는 법을 번호와 함께 적어 준다', /Jobs\(\{job: \d+\}\)/.test(r.content), r.content.split('\n').pop());
+  check('끝내는 법도 적어 준다', /stop: true/.test(r.content), '');
+  // 시키는 이름이 설명서에 실린 이름과 같아야 한다. 별칭으로 시키면
+  // 엄격한 게이트웨이가 그 호출을 튕긴다 (test/toolargs.test.js).
+  check('설명서에 없는 옛 이름으로 시키지 않는다', !/번호:|끝내기:/.test(r.content), r.content.split('\n').pop());
 
   // 안 끝나는 명령을 그냥 부르면 어떻게 되나 — 짧은 제한 시간으로 확인한다.
   const 느린것 = await TOOLS.Bash.run({ command: 안에서('quiet.cjs'), timeout: 700 }, ctx);
@@ -621,7 +624,10 @@ trace('9-도구모양');
     Object.keys(s.parameters.properties).join(','));
   check('스키마가 작다', JSON.stringify(s).length < 700, `${JSON.stringify(s).length}자`);
   // 서버를 띄워 놓고 안 끄는 것이 제일 흔한 사고다. 설명에 못 박아 둔다.
-  check('정리하라는 말이 설명에 있다', /끝날 때 반드시 끝내기/.test(s.description), s.description.slice(-40));
+  // 인자 이름 그대로 적혀 있어야 한다. 예전엔 '끝내기' 였는데, 그 이름이
+  // 한글이라 서버가 설명서를 통째로 튕겼다 (test/toolargs.test.js).
+  // 이름을 바꿀 때 설명글도 같이 안 고치면, 모델은 없는 인자를 채운다.
+  check('정리하라는 말이 설명에 있다', /끝날 때 반드시 stop/.test(s.description), s.description.slice(-40));
 
   const 목록결과 = await 띄우기(부르기(조용한아이), { cwd: 방, 기다림: 0 });
   const ls = await JOBS_TOOL.run({});

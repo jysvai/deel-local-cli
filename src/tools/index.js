@@ -1552,7 +1552,10 @@ export const TOOLS = {
         return {
           content: `${r.번호}번으로 띄웠습니다: ${cmd}\n`
             + (r.출력?.trim() ? `\n${clip(r.출력, 4000)}\n` : '')
-            + `\n계속 돌고 있습니다. 새 출력은 Jobs({번호: ${r.번호}}) 로 읽고, 일이 끝나면 Jobs({번호: ${r.번호}, 끝내기: true}) 로 정리해라.`,
+            // 여기 적는 이름은 **Jobs 설명서에 실린 그 이름**이어야 한다.
+            // 별칭(번호·끝내기)도 받아 주긴 하지만, 설명서와 다른 이름을
+            // 모델에게 시키면 엄격한 게이트웨이가 그 호출을 튕긴다.
+            + `\n계속 돌고 있습니다. 새 출력은 Jobs({job: ${r.번호}}) 로 읽고, 일이 끝나면 Jobs({job: ${r.번호}, stop: true}) 로 정리해라.`,
           summary: `${r.번호}번으로 띄움`,
           일감번호: r.번호,
           뒤에서: true,
@@ -1718,7 +1721,7 @@ export const TOOLS = {
        * 첫 문장에 제일 중요한 것을 둔다 — 좁은 창에서는 설명줄이기가
        * **뒤에서부터 문장째로** 잘라 낸다. 8k 에서 남는 것은 앞 90자다.
        */
-      description: '갈림길에서 사람에게 하나 묻는다. **먼저 `이해` 에 이번 요청을 무엇으로'
+      description: '갈림길에서 사람에게 하나 묻는다. **먼저 `understanding` 에 이번 요청을 무엇으로'
         + ' 알아들었는지 한 줄로 적고**, 그러고도 정말 정할 것이 남았을 때만 묻는다.'
         + ' 글로 "알려주세요" 하고 끝내지 마라 — 턴이 끝나서 여태 본 것이 버려진다.'
         + ' options 에 2~4개를 주면 숫자로 답한다.'
@@ -1727,7 +1730,19 @@ export const TOOLS = {
       parameters: {
         type: 'object',
         properties: {
-          이해: {
+          /*
+           * 인자 이름은 **영문·숫자·`_.-` 만** 쓴다.
+           *
+           * 이 이름은 우리끼리 쓰는 것이 아니라 도구 설명서에 실려 서버로 나간다.
+           * Bedrock 은 `^[a-zA-Z0-9_.-]{1,64}$` 로 검사하고, 안 맞으면 **첫 한마디가
+           * 통째로 400** 이다. 화면에는 그냥 「BadRequest」 라서, 사람은 열쇠가
+           * 틀린 줄 알고 다시 발급받으러 간다.
+           *
+           * 로컬 모델도 OpenAI 호환 서버도 이 검사를 안 한다. 그래서 바깥에
+           * 붙어 보기 전까지는 멀쩡해 보였다. 검사가 이제 그 자리를 잰다
+           * (test/toolargs.test.js).
+           */
+          understanding: {
             type: 'string',
             description: '이번 요청을 무엇으로 알아들었는지 한 줄. 사람은 이 줄을 보고 네가'
               + ' 제대로 읽었는지 판단한다. "요청을 이해했습니다" 같은 인사말은 안 된다 —'
@@ -1740,7 +1755,7 @@ export const TOOLS = {
             description: '고를 것 2~4개. 각각 한 줄로, 무엇이 달라지는지 알 수 있게',
           },
         },
-        required: ['이해', 'question'],
+        required: ['understanding', 'question'],
       },
     },
     async run(args, ctx) {
@@ -1749,7 +1764,9 @@ export const TOOLS = {
 
       const 고를것 = (Array.isArray(args.options) ? args.options : [])
         .map((x) => String(x ?? '').trim()).filter(Boolean).slice(0, 4);
-      const 이해 = String(args.이해 ?? '').trim();
+      // 옛 이름(`이해`)도 받는다. 이름을 바꾼 것은 서버가 검사하기 때문이지
+      // 뜻이 달라져서가 아니다 — 옛 이름으로 부르던 자리가 조용히 비면 안 된다.
+      const 이해 = String(args.understanding ?? args.이해 ?? '').trim();
 
       /*
        * 물어볼 자리가 없는 데서도 안 죽어야 한다 — `deel -p` 한 방 실행, 파이프,
@@ -1972,7 +1989,7 @@ export function 설명줄이기(schema, 한도) {
     // 이름만 봐도 아는 인자는 아주 좁은 창에서 설명을 통째로 뺀다.
     // `file_path` 가 무엇인지 설명하는 데 토큰을 쓰는 것은, 8k 모델에서는
     // 그 토큰만큼 대화를 잘라먹는 것과 같다. 헷갈릴 만한 것(offset·files·
-    // replace_all·목적·할일)은 그대로 둔다 — 거기서 틀리면 일이 안 된다.
+    // replace_all·purpose·task)은 그대로 둔다 — 거기서 틀리면 일이 안 된다.
     if (한도 <= 100 && 뻔한인자.has(이름)) { 새속성[이름] = { type: 값.type }; continue; }
     /*
      * 배열 안쪽 설명은 좁은 창에서 통째로 뺀다.
@@ -2093,8 +2110,9 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
    * 다음 영어로 통째로 바꾸는 셈이라, 자른 것이 아무 뜻이 없어지고 영어 글은
    * 한도를 넘긴 채로 실린다.
    *
-   * 이름과 인자 이름은 안 건드린다 — 그건 식별자다. Task 의 목적·할일처럼
-   * 한글로 된 인자 이름을 바꾸면 그 도구가 아예 안 불린다.
+   * 이름과 인자 이름은 안 건드린다 — 그건 식별자다. 여기서 인자 이름을
+   * 갈아 끼우면 모델이 부른 이름과 우리가 읽는 이름이 어긋나 도구가 아예
+   * 안 불린다. (인자 이름 자체는 이미 다 영문이다 — test/toolargs.test.js.)
    */
   const 우리것 = list.map((n) => ({
     type: 'function',

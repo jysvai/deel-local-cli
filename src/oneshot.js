@@ -63,7 +63,7 @@ async function 표준입력읽기() {
 // 도구 한 줄 요약. 화면 그림이 아니라 로그에 남을 글이라 색을 아낀다.
 function 도구줄(name, args) {
   const a = args ?? {};
-  const 첫 = a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.목적 ??
+  const 첫 = a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.purpose ?? a.목적 ??
     (a.command ? String(a.command).replace(/\s+/g, ' ') : null) ??
     // 뒤에서 도는 명령. 번호가 곧 그 일감의 이름이라, 이게 없으면 기록에
     // `Jobs()` 만 여러 줄 남아 나중에 무엇을 본 것인지 알 수 없다.

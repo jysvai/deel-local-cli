@@ -215,7 +215,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     // 파일 하나가 아니라 **그 파일** 을 센다. 이름만 세면 서로 다른 파일 세 개를
     // 고치다 실패한 것이 한 덩어리로 뭉쳐 턴이 죽는다. 다섯 군데 중 두 군데만
     // 고쳐 놓고 '헛돌고 있어 멈췄습니다' 가 되는 것이 그 모습이다.
-    const 어디 = call.args?.file_path ?? call.args?.path ?? call.args?.pattern ?? call.args?.command ?? call.args?.목적 ?? '';
+    const 어디 = call.args?.file_path ?? call.args?.path ?? call.args?.pattern ?? call.args?.command
+      ?? call.args?.purpose ?? call.args?.목적 ?? '';
     const 서명 = `${call.name}|${이유}|${String(어디).slice(0, 200)}`;
     const n = (막힘.get(서명) ?? 0) + 1;
     막힘.set(서명, n);
@@ -945,8 +946,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        */
       if (실행할것.length === 1 && 실행할것[0].name === 'Task') {
         const call = 실행할것[0];
-        const 목적 = String(call.args?.목적 ?? call.args?.purpose ?? '').trim() || '이름 없는 작업';
-        const 할일 = String(call.args?.할일 ?? call.args?.task ?? '').trim();
+        const 목적 = String(call.args?.purpose ?? call.args?.목적 ?? '').trim() || '이름 없는 작업';
+        const 할일 = String(call.args?.task ?? call.args?.할일 ?? '').trim();
 
         // 할 일이 비면 하위는 아무것도 모른 채로 시작한다. 하위는 이 대화를
         // 못 보므로, 여기서 통과시키면 걸음만 태우고 빈손으로 돌아온다.
@@ -959,7 +960,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           continue;
         }
 
-        const 자식모드 = 하위모드(call.args?.모드 ?? call.args?.mode, 모드.id);
+        const 자식모드 = 하위모드(call.args?.mode ?? call.args?.모드, 모드.id);
 
         /*
          * ── 다른 모델에게 떼어 주기 ─────────────────────────────────────
@@ -975,7 +976,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         let 자식conn = conn;
         let 자리닫기 = null;
         let 모델알림 = null;
-        const 부른모델 = String(call.args?.모델 ?? call.args?.model ?? '').trim();
+        const 부른모델 = String(call.args?.model ?? call.args?.모델 ?? '').trim();
         if (부른모델) {
           const 찾음 = 프로필찾기(부른모델);
           if (!찾음.ok) {

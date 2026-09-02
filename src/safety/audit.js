@@ -20,9 +20,12 @@ export class Audit {
   tool(name, args, result) {
     return this.write('tool', {
       tool: name,
-      // 목적 은 하위 작업(Task)이 쓰는 이름이다. 이게 없으면 감사기록에
+      // purpose 는 하위 작업(Task)이 쓰는 이름이다. 이게 없으면 감사기록에
       // '하위 작업을 돌렸다' 만 남고 **무엇을** 돌렸는지가 안 남는다.
-      target: args?.file_path ?? args?.path ?? args?.pattern ?? args?.command ?? args?.목적 ?? null,
+      // 옛 이름(목적)도 같이 본다 — 이름을 바꾼 판 이전의 기록이 남아 있고,
+      // 옛 이름으로 부르는 모델도 있다.
+      target: args?.file_path ?? args?.path ?? args?.pattern ?? args?.command
+        ?? args?.purpose ?? args?.목적 ?? null,
       ok: !result?.error,
       note: result?.error ?? result?.summary ?? null,
     });

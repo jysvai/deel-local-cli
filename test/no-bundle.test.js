@@ -4,7 +4,7 @@
 //  npm install 로그에 다른 패키지 이름이 뜨면 "얘가 딸려왔나?" 하고 놀라게 된다.
 //  실제로 한 번 그랬다. 그래서 사람 기억 대신 테스트가 지키게 한다.
 import { execSync } from 'node:child_process';
-import { readFileSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -79,6 +79,35 @@ if (shipped.length) {
   check('bin·src·문서만 담김',
     shipped.every((p) => /^(bin|src)\//.test(p) || ['package.json', 'LICENSE', 'README.md', 'README.en.md'].includes(p)),
     shipped.filter((p) => !/^(bin|src)\//.test(p) && !['package.json', 'LICENSE', 'README.md', 'README.en.md'].includes(p)).join(', '));
+}
+
+/*
+ * 3-b) `npm run check` 가 src 를 하나도 빠뜨리지 않는가.
+ *
+ * prepublishOnly 가 check 를 돌려서 문법 오류를 배포 전에 잡는다. 그런데 그
+ * 목록은 손으로 적는 것이라, 파일을 새로 만들면서 여기 안 적으면 그 파일만
+ * 아무도 안 본다. 실제로 13개가 그렇게 빠져 있었다 — 몇 달 동안 조용히.
+ *
+ * 문법 오류는 그 파일을 **부르는 순간**에만 터진다. 잘 안 지나가는 갈래에
+ * 있으면 검사도 못 잡고 그대로 npm 에 올라간다.
+ */
+{
+  const chk = pkg.scripts?.check ?? '';
+  const 적힌것 = new Set([...chk.matchAll(/node --check ([^\s]+)/g)].map((m) => m[1]));
+  const 훑기 = (d, 모음 = []) => {
+    for (const e of readdirSync(join(repo, d), { withFileTypes: true })) {
+      const p = `${d}/${e.name}`;
+      if (e.isDirectory()) 훑기(p, 모음);
+      else if (e.name.endsWith('.js')) 모음.push(p);
+    }
+    return 모음;
+  };
+  const 빠진것 = 훑기('src').filter((f) => !적힌것.has(f));
+  check('npm run check 가 src 를 다 본다', 빠진것.length === 0,
+    `${빠진것.length}개: ${빠진것.slice(0, 6).join(', ')}`);
+  // 반대쪽 — 없어진 파일이 목록에 남아 있으면 check 가 그 자리에서 죽는다.
+  const 헛것 = [...적힌것].filter((f) => f.startsWith('src/') && !existsSync(join(repo, f)));
+  check('없는 파일을 보라고 적혀 있지 않다', 헛것.length === 0, 헛것.join(', '));
 }
 
 // 4) 소스가 바깥 패키지를 부르지 않는다 (node: 내장과 상대경로만).

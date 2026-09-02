@@ -43,7 +43,7 @@ function 도구줄(tc) {
   let 핵심 = '';
   try {
     const a = JSON.parse(tc?.function?.arguments ?? '{}');
-    핵심 = a.file_path ?? a.pattern ?? a.command ?? a.name ?? a.목적 ?? '';
+    핵심 = a.file_path ?? a.pattern ?? a.command ?? a.name ?? a.purpose ?? a.목적 ?? '';
   } catch { /* 인자가 잘렸어도 이름은 보여 준다 */ }
   핵심 = String(핵심);
   if (핵심.length > 80) 핵심 = 핵심.slice(0, 80) + '…';

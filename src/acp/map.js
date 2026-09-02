@@ -55,7 +55,7 @@ export function 도구갈래(이름) {
  */
 export function 도구이름표(이름, 인자) {
   const a = 인자 ?? {};
-  const 첫 = a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.목적
+  const 첫 = a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.purpose ?? a.목적
     ?? (a.command ? String(a.command).replace(/\s+/g, ' ') : null)
     ?? (Array.isArray(a.files) && a.files.length
       ? `${a.files[0]?.file_path ?? '?'}${a.files.length > 1 ? ` 외 ${a.files.length - 1}개` : ''}`

@@ -500,9 +500,9 @@ process.once('exit', () => { try { 모두끝내기(); } catch { /* 끝나는 중
  * 두 벌이 되면 한쪽만 고쳐지고, 그때부터 화면과 실제가 어긋난다.
  */
 const 인자이름 = {
-  번호: ['번호', 'job', 'job_id', 'jobId', 'id', 'number'],
-  끝내기: ['끝내기', 'stop', 'kill'],
-  처음부터: ['처음부터', 'from_start', 'fromStart', 'full'],
+  번호: ['job', 'job_id', 'jobId', 'id', 'number', '번호'],
+  끝내기: ['stop', 'kill', '끝내기'],
+  처음부터: ['from_start', 'fromStart', 'full', '처음부터'],
 };
 const 아는이름 = new Set(Object.values(인자이름).flat());
 
@@ -555,14 +555,14 @@ export const JOBS_TOOL = {
   schema: {
     name: 'Jobs',
     description: '뒤에서 도는 명령(Bash 의 background)을 보고·읽고·끝낸다.'
-      + ' 번호 없이 부르면 목록. 번호를 주면 그동안 새로 나온 출력.'
-      + ' 서버를 띄웠으면 일이 끝날 때 반드시 끝내기로 정리해라.',
+      + ' job 없이 부르면 목록. job 을 주면 그동안 새로 나온 출력.'
+      + ' 서버를 띄웠으면 일이 끝날 때 반드시 stop 으로 정리해라.',
     parameters: {
       type: 'object',
       properties: {
-        번호: { type: 'number', description: '볼 일감 번호 (job). 없으면 목록' },
-        끝내기: { type: 'boolean', description: 'true 면 그 일감을 끝낸다 (stop)' },
-        처음부터: { type: 'boolean', description: 'true 면 처음부터 다시 읽는다 (from_start)' },
+        job: { type: 'number', description: '볼 일감 번호. 없으면 목록' },
+        stop: { type: 'boolean', description: 'true 면 그 일감을 끝낸다' },
+        from_start: { type: 'boolean', description: 'true 면 처음부터 다시 읽는다' },
       },
       required: [],
     },
