@@ -8,7 +8,7 @@ import { c, say as 바로쓰기, mark, clip } from './ui/ansi.js';
 import { headerLines } from './ui/status.js';
 import { 종, 창제목, 제목되돌리기, 알릴까, 제목글 } from './ui/notify.js';
 import { 보이기 as 인트로, 기본곁말 } from './ui/intro.js';
-import { 언어잡기, 말 as 옮긴말 } from './i18n/index.js';
+import { 언어잡기, 말 as 옮긴말, 세말 } from './i18n/index.js';
 import { 알림채움 } from './backend/retry.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
@@ -79,27 +79,27 @@ function toolLabel(name, args) {
     //
     // 이름 고르기는 jobs.js 에 맡긴다. 모델이 `job` 으로 보낼 수도 있는데,
     // 여기서 `a.번호` 만 보면 도구는 제대로 도는데 화면만 빈 괄호가 된다.
-    (() => { const g = 일감인자(a); return g.번호 != null ? `${g.번호}번${g.끝내기 ? ' · 끝내기' : ''}` : null; })() ??
+    (() => { const g = 일감인자(a); return g.번호 != null ? `${옮긴말('job.no', { n: g.번호 })}${g.끝내기 ? ` · ${옮긴말('job.stop')}` : ''}` : null; })() ??
     // 한 번에 여러 파일을 쓸 때. 빈 괄호를 띄우면 화면만 보고는 무엇을
     // 만들었는지 알 수 없다 — 첫 파일과 개수를 적는다.
     (Array.isArray(a.files) && a.files.length
-      ? `${a.files[0]?.file_path ?? '?'}${a.files.length > 1 ? ` 외 ${a.files.length - 1}개` : ''}`
+      ? `${a.files[0]?.file_path ?? '?'}${a.files.length > 1 ? ` ${옮긴말('more.files', { n: a.files.length - 1 })}` : ''}`
       : null) ??
     // 한 번에 여러 군데를 고칠 때. 파일 수와 군데 수는 다르다 — 한 파일을
     // 여섯 군데 고치는 것이 보통이라 '외 5개' 라고 적으면 거짓이 된다.
     (Array.isArray(a.edits) && a.edits.length
-      ? `${a.edits[0]?.file_path ?? '?'}${a.edits.length > 1 ? ` 외 ${a.edits.length - 1}군데` : ''}`
+      ? `${a.edits[0]?.file_path ?? '?'}${a.edits.length > 1 ? ` ${옮긴말('more.spots', { n: a.edits.length - 1 })}` : ''}`
       : null) ??
-    (Array.isArray(a.paths) && a.paths.length ? `${a.paths.length}개` : null) ??
+    (Array.isArray(a.paths) && a.paths.length ? 세말('count', a.paths.length) : null) ??
     // 할 일 목록은 보여줄 경로가 없다. 빈 괄호를 띄우느니 개수를 적는다.
-    (Array.isArray(a.todos) ? `${a.todos.length}건` : null) ?? '';
+    (Array.isArray(a.todos) ? 세말('hits', a.todos.length) : null) ?? '';
   const g = TOOL_GLYPH[name] ?? c.cyan('⏺');
   const 안 = clip(String(first ?? ''), 56);
   return `${g} ${c.bold(name)}${안 ? `${c.gray('(')}${c.gray(안)}${c.gray(')')}` : ''}`;
 }
 
 function toolResultLine(result, ms) {
-  const t = ms > 700 ? c.gray(`  ${(ms / 1000).toFixed(1)}초`) : '';
+  const t = ms > 700 ? c.gray(`  ${옮긴말('unit.sec', { n: (ms / 1000).toFixed(1) })}`) : '';
   if (result?.error) return `${c.red('└')} ${c.red(clip(String(result.error).split('\n')[0], 80))}${t}`;
 
   /*
@@ -111,16 +111,16 @@ function toolResultLine(result, ms) {
    */
   if (typeof result?.탈 === 'number') {
     const 조각 = [];
-    if (result.탈) 조각.push(c.red(`탈 ${result.탈}개`));
-    if (result.확인됨) 조각.push(c.green(`확인 ${result.확인됨}개`));
-    if (result.못확인) 조각.push(c.yellow(`못 확인 ${result.못확인}개`));
+    if (result.탈) 조각.push(c.red(옮긴말('sum.broken', { n: result.탈 })));
+    if (result.확인됨) 조각.push(c.green(옮긴말('sum.verified', { n: result.확인됨 })));
+    if (result.못확인) 조각.push(c.yellow(옮긴말('sum.unverified', { n: result.못확인 })));
     return `${result.탈 ? c.red('└') : c.gray('└')} `
-      + `${조각.join(c.gray(' · ')) || c.gray('확인할 것이 없었습니다')}${t}`;
+      + `${조각.join(c.gray(' · ')) || c.gray(옮긴말('sum.nothingToCheck'))}${t}`;
   }
 
   // 고친 자리는 몇 줄이 늘고 줄었는지를 요약 옆에 붙인다.
   const 셈 = result?.diff ? ` ${shortStat(result.diff)}` : '';
-  return `${c.gray('└')} ${c.gray(clip(result?.summary ?? '완료', 80))}${셈}${t}`;
+  return `${c.gray('└')} ${c.gray(clip(result?.summary ?? 옮긴말('sum.done'), 80))}${셈}${t}`;
 }
 
 // 수준별로 몇 줄까지 펼칠지. 초보에게 60줄을 쏟으면 아무것도 안 읽는다.
@@ -936,12 +936,12 @@ export async function chatLoop(opts = {}) {
     for (const f of files) {
       const 이름 = ctx?.scope ? ctx.scope.show(f.path) : f.path;
       if (f.missing) {
-        say(`  ${c.yellow('⚠')} ${c.white(이름)} ${c.gray('— 만들어지지 않았습니다')}`);
+        say(`  ${c.yellow('⚠')} ${c.white(이름)} ${c.gray(옮긴말('run.notMade'))}`);
         continue;
       }
       if (f.dir) continue;
       const kb = f.bytes >= 1024 ? `${(f.bytes / 1024).toFixed(1)}KB` : `${f.bytes}B`;
-      say(`  ${c.green('✓')} ${c.white(이름)} ${c.gray(`· ${f.lines.toLocaleString()}줄 · ${kb}`)}`);
+      say(`  ${c.green('✓')} ${c.white(이름)} ${c.gray(`· ${세말('lines', f.lines)} · ${kb}`)}`);
     }
   };
 
@@ -1171,7 +1171,7 @@ export async function chatLoop(opts = {}) {
   if (opts.ctx == null) {
     // 이 컴퓨터 안의 서버면 눈 깜짝할 새다. 사내 게이트웨이는 몇 초 걸릴 수 있어
     // 무슨 일이 일어나는 중인지 알려 준다 — 멈춘 것처럼 보이면 안 된다.
-    화면.돌리기('모델에 걸린 컨텍스트 길이를 확인하는 중…');
+    화면.돌리기(옮긴말('run.ctxProbe'));
     let r = null;
     try { r = await probeCtx(conn, { timeout: 6000 }); } catch { /* 못 물어보면 아래에서 처리 */ }
     화면.돌림멈춤('');
@@ -1258,14 +1258,14 @@ export async function chatLoop(opts = {}) {
   // 안 뜬 것은 조용히 빠지면 안 된다. "왜 그 도구가 없지" 를 영영 알 수 없다.
   for (const m of mcp붙임.못한것) warn.push(`MCP ${c.white(m.이름)} 을 못 붙였습니다 — ${m.왜}`);
   if (!conn.tools) warn.push('도구 호출이 확인되지 않았습니다 — deel diagnose 로 점검하세요');
-  if (!conn.streaming) warn.push('스트리밍이 없어 응답이 한 번에 나옵니다');
+  if (!conn.streaming) warn.push(옮긴말('run.noStream'));
   warn.push(...길이경고);
   // 잘 된 것은 경고 표시를 달지 않는다. ⚠ 가 붙으면 뭘 고쳐야 하나 싶어진다.
   for (const l of 길이알림) say(`  ${mark.ok} ${c.gray(l)}`);
   for (const w of warn) say(`  ${mark.warn} ${c.gray(w)}`);
   // ESC 를 앞에 둔다 — 멈추는 길로는 이것이 먼저다. Ctrl+C 는 두 번 누르면
   // 끝나 버려서, 급히 멈추려던 사람이 대화를 통째로 닫는 일이 실제로 있었다.
-  say(`  ${c.gray('/help 명령 목록')}   ${c.gray('ESC 중단')}   ${c.gray('Ctrl+C 중단·끝내기')}`);
+  say(`  ${c.gray(옮긴말('run.hintHelp'))}   ${c.gray(옮긴말('run.hintEsc'))}   ${c.gray(옮긴말('run.hintQuit'))}`);
 
   /*
    * ── 바깥으로 나가도 되는지 한 번 묻는다 ─────────────────────────────
@@ -1606,7 +1606,7 @@ export async function chatLoop(opts = {}) {
             break;
 
           case 'waiting':
-            화면.기다림(c.gray(꼬리표(stage) + '생각 중…'));
+            화면.기다림(c.gray(꼬리표(stage) + 옮긴말('run.thinking')));
             // 지워야 할 줄이 화면에 있다고 표시해 둔다.
             //
             // 전에는 이 표시를 안 세웠다. \r 로 커서만 앞으로 보내 놓고 지우지는
@@ -1617,7 +1617,7 @@ export async function chatLoop(opts = {}) {
 
           case 'thinking':
             thinkChars += ev.text.length;
-            화면.생각(`${mark.think} ${c.gray(꼬리표(stage))}${c.gray(`생각 중… ${thinkChars.toLocaleString()}자`)}`);
+            화면.생각(`${mark.think} ${c.gray(꼬리표(stage))}${c.gray(옮긴말('run.thinkingChars', { n: thinkChars.toLocaleString() }))}`);
             if (process.stdout.isTTY) thinkingShown = true;
             break;
 
@@ -2063,8 +2063,8 @@ export async function chatLoop(opts = {}) {
 
     // ── 꼬리말 — 이번 턴만의 숫자 ────────────────────────────────────────
     const secs = ((Date.now() - started) / 1000).toFixed(1);
-    const bits = [`${secs}초`];
-    if (tools) bits.push(`도구 ${tools}회`);
+    const bits = [옮긴말('unit.sec', { n: secs })];
+    if (tools) bits.push(`${옮긴말('scr.tools')} ${옮긴말('unit.calls', { n: tools })}`);
     const dIn = session.usage.in - before.in;
     const dOut = session.usage.out - before.out;
     if (dIn || dOut) bits.push(`↑${dIn.toLocaleString()} ↓${dOut.toLocaleString()}`);
@@ -2212,7 +2212,12 @@ export async function chatLoop(opts = {}) {
   // 끝맺음은 화면을 접기 **전에** 그린다. close() 가 상자를 걷어내므로,
   // 그 뒤에 찍으면 걷어낸 자리에 뜬금없이 한 줄이 남는다.
   say('');
-  say(`  ${c.gray('끝냅니다.')} ${c.gray(`모델 호출 ${session.usage.calls}회 · 도구 시간 ${(session.usage.ms / 1000).toFixed(1)}초 · ↑${session.usage.in.toLocaleString()} ↓${session.usage.out.toLocaleString()}`)}`);
+  say(`  ${c.gray(옮긴말('run.bye'))} ${c.gray(옮긴말('run.byeStats', {
+    n: session.usage.calls,
+    초: (session.usage.ms / 1000).toFixed(1),
+    입력: session.usage.in.toLocaleString(),
+    출력: session.usage.out.toLocaleString(),
+  }))}`);
   say('');
   화면.close();
   return 0;
@@ -2227,6 +2232,8 @@ export async function chatLoop(opts = {}) {
  */
 function stageTag(ev, level) {
   if (!ev || level === '쉬움') return '';
-  const label = STAGES[ev.stage]?.label ?? ev.stage;
+  // 아는 단계만 표를 거친다. 모르는 것에 말() 을 태우면 못 찾은 열쇠가
+  // 그대로 화면에 찍혀 `stage.xyz 생각 중…` 이 된다.
+  const label = STAGES[ev.stage] ? 옮긴말(`stage.${ev.stage}`) : ev.stage;
   return `${label}·${ev.level}`;
 }

@@ -15,6 +15,7 @@ import { allowTemporarily, isOffline, isLocalHost } from '../safety/network.js';
 import { 원시요청, 몸읽기 } from '../backend/http.js';
 import { decode as decodeBytes } from './encoding.js';
 import { 웹글자수 } from '../agent/budget.js';
+import { 말 } from '../i18n/index.js';
 
 /**
  * 받아 온 바이트를 글로. 머리글에 적힌 인코딩이 있으면 그것부터 믿는다.
@@ -275,7 +276,7 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
       content: `${u.href}\n${'─'.repeat(60)}\n${text}${꼬리}`,
       // 요약은 화면에 그대로 뜬다. 잘렸으면 **얼마나** 잘렸는지까지 보여야
       // 사람이 "받은 줄 알았는데 아니었다" 를 안 겪는다.
-      summary: `${text.length.toLocaleString()}자`
+      summary: 말('unit.chars', { n: text.length.toLocaleString() })
         + (눌렀나 ? ' (눌러 담음)' : '')
         + (cut ? ` (잘림 — ${원래길이.toLocaleString()}자 중)` : ''),
     };

@@ -31,7 +31,16 @@ import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent
 import { 도구설명EN } from './desc.en.js';
 import { 그림인가, 그림읽기, 크기말, 기본한도 } from '../backend/vision.js';
 import { 빠르게찾기, 엔진말, 안볼정규식 } from './fastgrep.js';
-import { 지시말 } from '../i18n/index.js';
+import { 지시말, 말, 세말 } from '../i18n/index.js';
+
+/*
+ * 도구 결과 한 줄을 잇는다 — `1개 파일 · 3건 · rg`.
+ *
+ * 빈 조각은 버린다. 조건부 조각을 `조건 ? '· 뭐' : ''` 로 이어 붙이면
+ * 어느 말에서는 가운뎃점이 둘 붙거나(`· ·`) 줄 끝에 하나 남는다.
+ * 그 자리를 부르는 쪽마다 살피게 두면 반드시 어딘가는 빠진다.
+ */
+const 이어 = (...조각들) => 조각들.filter((x) => x != null && String(x) !== '').join(' · ');
 import { 표몇군데, 표막는말 } from '../safety/secrets.js';
 
 /*
@@ -534,7 +543,7 @@ function 한개옮기기({ from, to, overwrite = false }, ctx) {
    * 겹쳤다고 알려 주면 모델이 이름을 고쳐서 다시 부른다.
    */
   if (existsSync(뒤) && !overwrite) {
-    return { error: `이미 있습니다: ${to}\n  덮어쓰려면 overwrite: true 를 주세요.` };
+    return { error: `${말('err.alreadyThere', { 경로: to })}\n  ${말('err.overwriteHint')}` };
   }
 
   /*
@@ -636,7 +645,7 @@ function 여러개옮기기(목록, ctx) {
       + 된것.map((c) => `  ✓ ${c.replace(/^옮김: /, '')}`).join('\n')
       + (안된것.length ? `\n${안된것.map((e) => `  ✗ ${e.split('\n')[0]}`).join('\n')}` : '')
       + (안된것.length ? '\n\n실패한 것만 다시 보내세요. 된 것은 다시 안 보내도 됩니다.' : ''),
-    summary: `${된것.length}개 옮김${안된것.length ? ` · ${안된것.length}개 실패` : ''}`,
+    summary: 이어(말('sum.moved', { n: 된것.length }), 안된것.length ? 말('sum.filesFailed', { n: 안된것.length }) : ''),
     바뀐것들,
   };
 }
@@ -691,7 +700,7 @@ function 한파일쓰기(args, ctx) {
     const 표기 = 원래 !== 'utf-8' ? ` · ${encLabel(원래)}` : '';
     return {
       content: `${existed ? '덮어씀' : '새로 만듦'}: ${ctx.scope.show(abs)} (${n}줄${표기})`,
-      summary: `${n}줄${표기}`,
+      summary: 이어(세말('lines', n), 원래 !== 'utf-8' ? encLabel(원래) : ''),
       changed: abs,
       diff: 바뀐자리(이전, args.content),
     };
@@ -735,8 +744,11 @@ function 여러파일쓰기(목록, ctx) {
     content: `${된것.length}개 만들었습니다${안된것.length ? `, ${안된것.length}개 실패` : ''}.\n`
       + 줄들.join('\n')
       + (안된것.length ? '\n\n실패한 것만 다시 보내세요. 된 것은 다시 안 보내도 됩니다.' : ''),
-    summary: `${된것.length}개 · ${된것.reduce((a, r) => a + (r.lines ?? 0), 0)}줄`
-      + (안된것.length ? ` · ${안된것.length}개 실패` : ''),
+    summary: 이어(
+      세말('count', 된것.length),
+      세말('lines', 된것.reduce((a, r) => a + (r.lines ?? 0), 0)),
+      안된것.length ? 말('sum.filesFailed', { n: 안된것.length }) : '',
+    ),
     // 화면과 루프가 파일별로 처리하도록 그대로 넘긴다. changed 는 안 넣는다 —
     // 넣으면 그 한 개만 세어지고 나머지가 조용히 빠진다.
     여럿: 결과,
@@ -752,7 +764,7 @@ function 여러파일쓰기(목록, ctx) {
  */
 function 한군데고치기(args, ctx) {
   const abs = ctx.scope.resolve(args.file_path);
-  if (!existsSync(abs)) return { error: `파일이 없습니다: ${args.file_path}` };
+  if (!existsSync(abs)) return { error: 말('err.noSuchFile', { 경로: args.file_path }) };
   const 못고치는이유 = 내부살림(abs);
   if (못고치는이유) return { error: 못고치는이유 };
   // 엑셀 파일은 Read 로 읽히긴 하지만 고칠 수 있는 물건이 아니다.
@@ -809,7 +821,12 @@ function 한군데고치기(args, ctx) {
   const 표기 = 읽음.encoding !== 'utf-8' ? ` · ${encLabel(읽음.encoding)}` : '';
   return {
     content: `고침: ${ctx.scope.show(abs)} (${n}군데${how}${표기})`,
-    summary: `${n}군데${how}${표기}`,
+    summary: 이어(
+      세말('spots', n),
+      // 화면 말로. TIER_LABELS 는 한국어 원본이라 content 쪽에만 남긴다.
+      m.tier === 'exact' ? '' : 말(`tier.${m.tier}`),
+      읽음.encoding !== 'utf-8' ? encLabel(읽음.encoding) : '',
+    ),
     changed: abs,
     tier: m.tier,
     diff: 바뀐자리(text, next),
@@ -869,7 +886,11 @@ function 여러군데고치기(목록, ctx) {
         ? '\n\n실패한 것만 다시 보내세요. 된 것은 다시 안 보내도 됩니다.'
           + ' 앞엣것이 이미 반영됐으니 **파일을 다시 Read 해서** 지금 내용을 보고 old_string 을 잡으세요.'
         : ''),
-    summary: `${파일수}개 파일 · ${군데수}군데` + (안된것.length ? ` · ${안된것.length}개 실패` : ''),
+    summary: 이어(
+      세말('files', 파일수),
+      세말('spots', 군데수),
+      안된것.length ? 말('sum.spotsFailed', { n: 안된것.length }) : '',
+    ),
     // 화면과 루프가 자리별로 처리하도록 그대로 넘긴다. changed 는 안 넣는다 —
     // 넣으면 그 한 개만 세어지고 나머지가 조용히 빠진다 (여러파일쓰기 와 같다).
     여럿: 결과,
@@ -900,7 +921,7 @@ function 그림보기(abs, ctx) {
     return { error: `${show} — ${것.왜}` };
   }
   ctx.seen.add(abs);
-  const 잰것 = `그림 · ${크기말(것.bytes)} · ${것.mime}`;
+  const 잰것 = 이어(말('sum.image'), 크기말(것.bytes), 것.mime);
 
   if (!눈있나) {
     return {
@@ -908,7 +929,7 @@ function 그림보기(abs, ctx) {
         + '지금 붙어 있는 모델은 그림을 못 봅니다 — 그래서 보내지 않았습니다.\n'
         + '이 파일을 코드처럼 읽으려 하지 마세요. 무엇이 찍혀 있는지 알아야 한다면'
         + ' 사용자에게 말로 설명해 달라고 하세요.',
-      summary: `${잰것} · 이 모델은 못 봄`,
+      summary: 이어(잰것, 말('sum.noVision')),
       그림없음: true,
     };
   }
@@ -940,7 +961,7 @@ export const TOOLS = {
     },
     async run(args, ctx) {
       const abs = ctx.scope.resolve(args.file_path);
-      if (!existsSync(abs)) return { error: `파일이 없습니다: ${args.file_path}` };
+      if (!existsSync(abs)) return { error: 말('err.noSuchFile', { 경로: args.file_path }) };
       if (statSync(abs).isDirectory()) return { error: `폴더입니다. Glob 을 쓰세요: ${args.file_path}` };
       // 제 살림·남의 도구 살림은 안 읽는다 — fsutil 의 내부살림() 머리말 참고.
       const 막을이유 = 내부살림(abs);
@@ -1023,9 +1044,13 @@ export const TOOLS = {
       const 다못줌 = start + count < lines.length || start > 0;
       return {
         content: clip(body + more + 줄인것.알림),
-        summary: (다못줌 ? `${준줄수}/${lines.length}줄 (일부만)` : `${lines.length}줄`)
-          + (줄인것.줄인바이트 ? ` · 그림 ${몇KB(줄인것.줄인바이트)} 생략` : '')
-          + (별난인코딩 ? ` · ${encLabel(읽음.encoding)}` : ''),
+        summary: 이어(
+          다못줌
+            ? `${말('sum.linesOf', { 준: 준줄수, 전체: lines.length })} (${말('sum.partial')})`
+            : 세말('lines', lines.length),
+          줄인것.줄인바이트 ? 말('sum.imageDropped', { 크기: 몇KB(줄인것.줄인바이트) }) : '',
+          별난인코딩 ? encLabel(읽음.encoding) : '',
+        ),
       };
     },
   },
@@ -1137,7 +1162,11 @@ export const TOOLS = {
       return {
         content: `${existed ? '이어 붙임' : '새로 만듦'}: ${ctx.scope.show(abs)}`
           + ` (+${붙인줄}줄, 지금 전체 ${전체줄}줄${표기})`,
-        summary: `+${붙인줄}줄 · 전체 ${전체줄}줄${표기}`,
+        summary: 이어(
+          말('sum.addedLines', { 줄: 세말('lines', 붙인줄) }),
+          말('sum.total', { 줄: 세말('lines', 전체줄) }),
+          원래 !== 'utf-8' ? encLabel(원래) : '',
+        ),
         changed: abs,
         // 이어 붙이기는 앞부분이 그대로다. 전후를 통째로 견줄 이유가 없다 —
         // 큰 파일에서 그 비용이 그대로 기다리는 시간이 된다.
@@ -1277,7 +1306,7 @@ export const TOOLS = {
       if (!files.length) {
         return {
           content: `${전부.잘림 ? '본 데까지는 찾은 파일 없음' : '찾은 파일 없음'}: ${args.pattern}${건너뜀}`,
-          summary: 전부.잘림 ? '0개 (다 못 봄)' : '0개',
+          summary: 전부.잘림 ? `${세말('count', 0)} (${말('sum.notAllSeen')})` : 세말('count', 0),
         };
       }
       // 잘랐으면 잘랐다고 말한다. 전에는 '200개' 라고만 해서, 모델이 그게 전부인 줄
@@ -1287,7 +1316,9 @@ export const TOOLS = {
         : '';
       return {
         content: files.map((f) => ctx.scope.show(f.path)).join('\n') + 잘림 + 건너뜀,
-        summary: 맞는것.length > files.length ? `${files.length}/${맞는것.length}개` : `${files.length}개`,
+        summary: 맞는것.length > files.length
+          ? 말('sum.countOf', { n: files.length, 전체: 맞는것.length })
+          : 세말('count', files.length),
       };
     },
   },
@@ -1371,17 +1402,17 @@ export const TOOLS = {
           '(.gitignore·.deelignore 는 지켰습니다. 건너뛴 수는 안 셌습니다)',
         ].filter(Boolean).join(' ');
         const 붙이기2 = (t) => (꼬리2 ? [t, '', 꼬리2].join('\n') : t);
-        if (!total) return { content: 붙이기2(`일치 없음: ${args.pattern}`), summary: `0건 · ${빠른것.엔진}` };
-        if (mode === 'content') return { content: 붙이기2(clip(lines.join('\n'))), summary: `${total}건 · ${빠른것.엔진}` };
+        if (!total) return { content: 붙이기2(`일치 없음: ${args.pattern}`), summary: 이어(세말('hits', 0), 빠른것.엔진) };
+        if (mode === 'content') return { content: 붙이기2(clip(lines.join('\n'))), summary: 이어(세말('hits', total), 빠른것.엔진) };
         if (mode === 'count') {
           return {
             content: 붙이기2(hitFiles.slice(0, limit).map((f) => `${f.n}\t${f.rel}`).join('\n')),
-            summary: `${hitFiles.length}개 파일 · ${빠른것.엔진}`,
+            summary: 이어(세말('files', hitFiles.length), 빠른것.엔진),
           };
         }
         return {
           content: 붙이기2(hitFiles.slice(0, limit).map((f) => f.rel).join('\n')),
-          summary: `${hitFiles.length}개 파일 · ${total}건 · ${빠른것.엔진}`,
+          summary: 이어(세말('files', hitFiles.length), 세말('hits', total), 빠른것.엔진),
         };
       }
 
@@ -1449,14 +1480,14 @@ export const TOOLS = {
       if (!total) {
         return {
           content: 붙이기(다못봄 ? `본 데까지는 일치 없음: ${args.pattern}` : `일치 없음: ${args.pattern}`),
-          summary: 다못봄 ? '0건 (다 못 봄)' : '0건',
+          summary: 다못봄 ? `${세말('hits', 0)} (${말('sum.notAllSeen')})` : 세말('hits', 0),
         };
       }
-      if (mode === 'content') return { content: 붙이기(clip(lines.join('\n'))), summary: `${total}건` };
+      if (mode === 'content') return { content: 붙이기(clip(lines.join('\n'))), summary: 세말('hits', total) };
       if (mode === 'count') {
-        return { content: 붙이기(hitFiles.map((f) => `${f.n}\t${f.rel}`).join('\n')), summary: `${hitFiles.length}개 파일` };
+        return { content: 붙이기(hitFiles.map((f) => `${f.n}\t${f.rel}`).join('\n')), summary: 세말('files', hitFiles.length) };
       }
-      return { content: 붙이기(hitFiles.map((f) => f.rel).join('\n')), summary: `${hitFiles.length}개 파일 · ${total}건` };
+      return { content: 붙이기(hitFiles.map((f) => f.rel).join('\n')), summary: 이어(세말('files', hitFiles.length), 세말('hits', total)) };
     },
   },
 
@@ -1488,7 +1519,8 @@ export const TOOLS = {
       ctx.loadedSkills?.add(hit.name);
       return {
         content: `# 스킬: ${hit.name}\n\n${body}`,
-        summary: `${Math.round(body.length / 100) / 10}k자${cut ? ' (일부 잘림)' : ''}`,
+        summary: 말('unit.kchars', { n: Math.round(body.length / 100) / 10 })
+          + (cut ? ` (${말('sum.cut')})` : ''),
       };
     },
   },
@@ -1556,7 +1588,7 @@ export const TOOLS = {
             // 별칭(번호·끝내기)도 받아 주긴 하지만, 설명서와 다른 이름을
             // 모델에게 시키면 엄격한 게이트웨이가 그 호출을 튕긴다.
             + `\n계속 돌고 있습니다. 새 출력은 Jobs({job: ${r.번호}}) 로 읽고, 일이 끝나면 Jobs({job: ${r.번호}, stop: true}) 로 정리해라.`,
-          summary: `${r.번호}번으로 띄움`,
+          summary: 말('sum.jobStarted', { n: r.번호 }),
           일감번호: r.번호,
           뒤에서: true,
           되돌릴것: 뜬것,
@@ -1622,7 +1654,9 @@ export const TOOLS = {
           const 꼬리 = 잘됨 ? '' : 시그널 ? `\n\n[${시그널} 시그널로 죽었습니다 — 정상 종료가 아닙니다]` : `\n\n[종료코드 ${code}]`;
           done({
             content: clip(out || '(출력 없음)') + 꼬리,
-            summary: 잘됨 ? '성공' : 시그널 ? `${시그널} 로 죽음` : `종료코드 ${code}`,
+            summary: 잘됨 ? 말('sum.ok')
+              : 시그널 ? 말('sum.killedBy', { 시그널 })
+                : 말('sum.exitCode', { code }),
             failed: !잘됨,
             exitCode: code,
             signal: 시그널,
@@ -1877,7 +1911,7 @@ export const TOOLS = {
         return `[${h.세션} · ${날} · ${h.누구}] ${h.토막}`;
       });
       return {
-        summary: `지난 대화에서 ${r.전체맞음}건 중 ${r.맞은것.length}건`
+        summary: 말('sum.recall', { 전체: r.전체맞음, 맞음: r.맞은것.length })
           + (r.예산초과 ? ` (${r.전체파일}개 중 ${r.본파일}개만 뒤짐)` : ''),
         hits: r.맞은것.map((h) => ({ session: h.세션, when: h.언제, who: h.누구, text: h.토막 })),
         text: 줄들.join('\n'),
@@ -1917,7 +1951,7 @@ export const TOOLS = {
       const r = 더하기(ctx.scope.root, args.text);
       if (!r.ok) return { summary: r.why, remembered: false };
       return {
-        summary: `기억했습니다 (${r.줄수}줄)` + (r.넘침 ? ' · 자리가 차서 오래된 것을 뺐습니다' : ''),
+        summary: 이어(말('sum.remembered', { n: r.줄수 }), r.넘침 ? 말('sum.rememberFull') : ''),
         remembered: true,
         line: r.줄,
         // 화면에 무엇을 적었는지 보여 주려고 같이 넘긴다. 사람이 못 보면
@@ -2048,14 +2082,28 @@ function 눈붙이기(fn, 이름, vision) {
   if (이름 !== 'Read' || !vision) return fn;
   // 화면 말을 그대로 본다. 설명 글자를 보고 짐작하면 안 된다 — 줄이기가 문장
   // 한복판을 자르므로 마지막 글자가 무엇일지 정해져 있지 않다.
-  const 덧말 = 지시말() === 'en'
+  // 위 영어설명() 과 같은 갈림이어야 한다. 여기만 'en' 을 보면, 일본어로
+  // 켠 사람은 영어 설명 뒤에 한국어 한 문장이 붙은 것을 받는다.
+  const 덧말 = 지시말() !== 'ko'
     ? ' Screenshots and images (.png/.jpg/.gif/.webp) can be opened too — this model can see them.'
     : ' 화면 사진·그림(.png/.jpg/.gif/.webp)도 그대로 열 수 있다 — 지금 붙어 있는 모델은 그림을 본다.';
   return { ...fn, description: String(fn.description ?? '') + 덧말 };
 }
 
-function 영어설명(schema, 이름) {
-  if (지시말() !== 'en') return schema;
+/*
+ * 도구 설명을 영어 표로 갈아 끼운다.
+ *
+ * 쓸말을 밖에서 받는다. 두 군데가 서로 다른 말을 봐야 해서다 —
+ * **모델에게 주는 글**은 지시말() 을 따르고, `/tools` 로 **사람이 보는
+ * 화면**은 언어() 를 따른다. 여태 한 함수가 지시말() 만 봐서, `/tools` 는
+ * 이 함수를 아예 안 거치고 원본(한국어)을 그대로 찍고 있었다.
+ *
+ * ko 가 아니면 영어를 쓴다. 일본어·중국어 표에는 도구 설명이 없는데,
+ * 그 사람들에게는 한국어보다 영어가 낫다 — i18n 의 물러날곳(ja→en→ko)이
+ * 이미 그렇게 정해 두었고, 여기만 그 규칙 밖에 있었다.
+ */
+export function 영어설명(schema, 이름, 쓸말 = 지시말()) {
+  if (쓸말 === 'ko') return schema;
   const 것 = 도구설명EN[이름];
   if (!것) return schema;
 
@@ -2257,7 +2305,10 @@ async function runMcpTool(name, args, ctx) {
       if (out.isError) return { error: out.text || '도구가 오류를 냈습니다' };
       const 글 = out.text ?? '';
       const 줄 = 글 ? 글.split(/\r?\n/).length : 0;
-      return { summary: 글 ? `${줄}줄 · ${글.length.toLocaleString()}자` : '빈 답', content: clip(글) };
+      return {
+        summary: 글 ? 이어(세말('lines', 줄), 말('unit.chars', { n: 글.length.toLocaleString() })) : 말('sum.emptyAnswer'),
+        content: clip(글),
+      };
     } catch (e) {
       return { error: e.message };
     }

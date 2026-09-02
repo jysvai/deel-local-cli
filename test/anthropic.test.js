@@ -27,6 +27,7 @@ import {
   assistantMessage, toolMessage, 차례합치기, chatStream, 요청주소, 규격이름,
 } from '../src/backend/adapter.js';
 import { headerLines } from '../src/ui/status.js';
+import { 언어정하기 } from '../src/i18n/index.js';
 import { Session } from '../src/agent/session.js';
 import { detect, 앤트로픽같나 } from '../src/backend/detect.js';
 import { 그림메시지, 그림장수, 눈검사메시지 } from '../src/backend/vision.js';
@@ -433,8 +434,22 @@ trace('9-2-뭐라고-부르나');
  */
 {
   check('★ 이 규격을 제 이름으로 부른다', 규격이름('anthropic') === 'Anthropic 규격', 규격이름('anthropic'));
-  check('나머지는 하던 대로', 규격이름('ollama') === 'Ollama 자체 규격' && 규격이름('openai') === 'OpenAI 호환');
-  check('모르는 것은 기본 규격으로', 규격이름(undefined) === 'OpenAI 호환');
+  /*
+   * 이 이름은 이제 말 표(head.spec.*)에서 나온다. 그래서 켤 때 머리말과
+   * `/status` 가 **같은 말**을 한다 — 여태 앞은 「Ollama 규격」, 뒤는
+   * 「Ollama 자체 규격」 이었다. 둘 다 맞는 말이라 아무도 안 고쳤고,
+   * 그래서 오래 남았다. 더 정확한 쪽(자체)으로 모았다.
+   */
+  check('나머지는 하던 대로', 규격이름('ollama') === 'Ollama 자체 규격' && 규격이름('openai') === 'OpenAI 호환 규격',
+    `${규격이름('ollama')} / ${규격이름('openai')}`);
+  check('모르는 것은 기본 규격으로', 규격이름(undefined) === 'OpenAI 호환 규격', 규격이름(undefined));
+  // 영어로 켜면 영어로 부른다. 여기가 화면에 그대로 나가는 자리라서다.
+  {
+    언어정하기('en');
+    const 영 = [규격이름('ollama'), 규격이름('anthropic'), 규격이름('openai')];
+    check('★ 영어로 켜면 규격 이름도 영어다', 영.every((x) => !/[가-힣]/.test(x)), 영.join(' / '));
+    언어정하기('ko');
+  }
 
   // 켤 때 첫 줄. 여기가 사람이 제일 먼저 보는 자리다.
   const 방 = mkdtempSync(join(tmpdir(), 'deel-anthropic-'));

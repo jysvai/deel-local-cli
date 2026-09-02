@@ -9,6 +9,10 @@
 //   여러 개를 한꺼번에 '하는 중' 으로 두면 결국 아무것도 안 끝난다.
 //   여기서 막아 두면 모델이 순서를 정하고 하나씩 닫는다.
 
+import { 말 } from '../i18n/index.js';
+
+/* 결과 한 줄을 잇는다 — 빈 조각은 버린다(tools/index.js 의 이어 와 같은 것). */
+const 이어 = (...조각들) => 조각들.filter((x) => x != null && String(x) !== '').join(' · ');
 export const STATES = ['todo', 'doing', 'done'];
 
 const 표시 = { todo: '☐', doing: '▶', done: '☑' };
@@ -117,7 +121,7 @@ export const TODO_TOOL = {
           + '이 목록은 앞에 보낸 것과 글자 하나까지 같습니다 — 바뀐 것이 없습니다.\n'
           + '방금 끝낸 일이 있으면 그 줄을 done 으로 바꿔서 보내고,'
           + ' 없으면 목록을 다시 보내지 말고 다음 일을 하세요.',
-        summary: '그대로 (바뀐 것 없음)',
+        summary: 말('sum.noChange'),
         todos: items,
         안바뀜: true,
       };
@@ -129,7 +133,10 @@ export const TODO_TOOL = {
 
     return {
       content: render(items),
-      summary: `${끝난것}/${items.length} 완료${새로끝난.length ? ` · 방금 ${새로끝난.length}개` : ''}`,
+      summary: 이어(
+        말('sum.doneOf', { 끝: 끝난것, 전체: items.length }),
+        새로끝난.length ? 말('sum.justDone', { n: 새로끝난.length }) : '',
+      ),
       todos: items,
     };
   },

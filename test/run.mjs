@@ -60,6 +60,7 @@ const FILES = [
   'nudge.test.js',
   'resize.test.js',
   'promptlang.test.js',
+  'langleak.test.js',
   'paste.test.js',
   'pastechip.test.js',
   'histline.test.js',

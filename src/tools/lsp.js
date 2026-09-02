@@ -27,6 +27,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { 얻기, 색인중일까 } from '../lsp/client.js';
 import { 갈래, 프로젝트갈래 } from '../lsp/servers.js';
 import { 찾을개수 } from '../agent/budget.js';
+import { 말, 세말 } from '../i18n/index.js';
 
 /** 한 자리를 사람이 읽을 한 줄로. 그 줄의 글까지 붙여야 열어 보지 않고도 안다. */
 function 한줄(scope, uri, 범위) {
@@ -240,11 +241,11 @@ export const DEF_TOOL = {
       곳들 = 후보.map((c) => 한줄(ctx.scope, c.uri, c.range));
       어디서 = 'workspace/symbol';
     }
-    if (!곳들.length) return { summary: `${이름}: 정의를 못 찾았습니다. Grep 으로 찾아보세요.`, found: 0 };
+    if (!곳들.length) return { summary: `${이름}: ${말('lsp.noDef')}`, found: 0 };
 
     const 여럿 = 여럿이면(후보, ctx.scope);
     return {
-      summary: `${이름} — 정의 ${곳들.length}곳${여럿 ? `\n${여럿}` : ''}`,
+      summary: `${이름} — ${말('lsp.defs', { n: 세말('places', 곳들.length) })}${여럿 ? `\n${여럿}` : ''}`,
       found: 곳들.length,
       source: 어디서,
       locations: 곳들,
@@ -288,7 +289,7 @@ export const REFS_TOOL = {
     const 곳들 = 자리들펴기(답.값).map((x) => 한줄(ctx.scope, x.uri, x.range));
     if (!곳들.length) {
       return {
-        summary: `${이름}: 쓰는 자리가 없습니다.`
+        summary: `${이름}: ${말('lsp.noRefs')}`
           + ' 정말 안 쓰는 것일 수도 있고, 언어 서버가 아직 색인 중일 수도 있습니다 —'
           + ' 지우기 전에 Grep 으로 한 번 더 보세요.',
         found: 0,
@@ -314,7 +315,7 @@ export const REFS_TOOL = {
 
     const 여럿 = 여럿이면(후보, ctx.scope);
     return {
-      summary: `${이름} — 쓰는 자리 ${곳들.length}곳 · 파일 ${묶음.size}개`
+      summary: `${이름} — ${말('lsp.refs', { 자리: 세말('places', 곳들.length), 파일: 세말('files', 묶음.size) })}`
         + (남은 ? ` (${남은}곳은 자리가 모자라 안 실었습니다)` : '')
         + (여럿 ? `\n${여럿}` : ''),
       found: 곳들.length,

@@ -99,7 +99,7 @@ export const ko = {
   'consult.empty': '빈 답이 왔습니다. 그 모델이 도구 없이 답을 못 내는 것일 수 있습니다.',
   'consult.added': '이 답을 대화에도 넣었습니다 — 누가 한 말인지 표를 달아서.',
   // ── 켤 때 머리말 ──────────────────────────────────────────────────────
-  'head.spec.ollama': 'Ollama 규격',
+  'head.spec.ollama': 'Ollama 자체 규격',
   'head.spec.openai': 'OpenAI 호환 규격',
   'head.spec.anthropic': 'Anthropic 규격',
   'head.mode.default': '이 안 (기본)',
@@ -291,6 +291,163 @@ export const ko = {
   // ── 잠깐 막혔을 때 (backend/retry.js) ─────────────────────────────────
   'loop.backoff': '서버가 잠시 막았습니다 ({무엇}) — {초}초 뒤 다시 부릅니다 ({n}/{max})',
   'cost.retries': '다시 부름',
+
+  /*
+   * ── 세는 말 ───────────────────────────────────────────────────────────
+   *
+   * 도구 결과 한 줄(`└ 1개 파일 · 3건 · rg`)은 이 조각들을 ` · ` 로 이어
+   * 만든다. 통짜 문장으로 안 두는 까닭은, 같은 조각이 열두 자리에서 다른
+   * 순서로 섞이기 때문이다 — 통짜로 두면 열쇠가 마흔 개가 되고, 그러면
+   * 새 자리를 만들 때마다 표를 네 번 고쳐야 해서 결국 아무도 안 고친다.
+   *
+   * 영어는 단수·복수를 갈라야 해서 {n} 하나로는 모자란 자리가 있다.
+   * 그런 자리는 열쇠를 둘로 나눠 뒀다(files/file1 처럼). 부르는 쪽에서
+   * n === 1 을 보고 고른다 — 한국어 표에서는 두 열쇠가 같은 값이라
+   * 한국어 화면은 한 글자도 안 바뀐다.
+   */
+  'unit.files': '{n}개 파일',
+  'unit.files1': '1개 파일',
+  'unit.hits': '{n}건',
+  'unit.hits1': '1건',
+  'unit.lines': '{n}줄',
+  'unit.lines1': '1줄',
+  'unit.spots': '{n}군데',
+  'unit.spots1': '1군데',
+  'unit.places': '{n}곳',
+  'unit.places1': '1곳',
+  'unit.count': '{n}개',
+  'unit.count1': '1개',
+  'unit.chars': '{n}자',
+  'unit.kchars': '{n}k자',
+  'unit.calls': '{n}회',
+  'unit.sec': '{n}초',
+  'unit.min': '{n}분',
+
+  // ── 도구 결과 한 줄 ──────────────────────────────────────────────────
+  'sum.done': '완료',
+  'sum.ok': '성공',
+  'sum.exitCode': '종료코드 {code}',
+  'sum.killedBy': '{시그널} 로 죽음',
+  'sum.partial': '일부만',
+  'sum.cut': '일부 잘림',
+  'sum.notAllSeen': '다 못 봄',
+  'sum.filesFailed': '{n}개 실패',
+  'sum.spotsFailed': '{n}군데 실패',
+  'sum.moved': '{n}개 옮김',
+  'sum.total': '전체 {줄}',
+  'sum.addedLines': '+{줄}',
+  'sum.noVision': '이 모델은 못 봄',
+  'sum.emptyAnswer': '빈 답',
+  'sum.unread': '못 읽음 {n}개',
+  'sum.doneOf': '{끝}/{전체} 완료',
+  'sum.justDone': '방금 {n}개',
+  'sum.noChange': '그대로 (바뀐 것 없음)',
+  'sum.verified': '확인 {n}개',
+  'sum.readAs': '{쓴것} 로 바꿔 읽음',
+  'sum.linesOf': '{준}/{전체}줄',
+  'sum.countOf': '{n}/{전체}개',
+  'sum.remembered': '기억했습니다 ({n}줄)',
+  'sum.rememberFull': '자리가 차서 오래된 것을 뺐습니다',
+  'sum.recall': '지난 대화에서 {전체}건 중 {맞음}건',
+  'sum.jobStarted': '{n}번으로 띄움',
+  'sum.jobRunning': '도는중',
+  'sum.jobEndedAlready': '이미 끝남',
+  'sum.jobStopped': '끝냄',
+
+  // Edit 이 어떤 느슨함으로 자리를 찾았나 (tools/edit-match.js 의 TIERS).
+  'tier.exact': '정확히 일치',
+  'tier.trail': '줄 끝 공백·줄바꿈 차이 무시',
+  'tier.indent': '들여쓰기 차이 무시',
+  'tier.space': '모든 공백 차이 무시',
+
+  'sum.image': '그림',
+  'sum.imageDropped': '그림 {크기} 생략',
+
+  'sum.broken': '탈 {n}개',
+  'sum.unverified': '못 확인 {n}개',
+  'lsp.noDef': '정의를 못 찾았습니다. Grep 으로 찾아보세요.',
+  'lsp.defs': '정의 {n}',
+  'lsp.noRefs': '쓰는 자리가 없습니다.',
+  'lsp.refs': '쓰는 자리 {자리} · 파일 {파일}',
+
+  'sum.nothingToCheck': '확인할 것이 없었습니다',
+  'job.no': '{n}번',
+  'job.stop': '끝내기',
+  'more.files': '외 {n}개',
+  'more.spots': '외 {n}군데',
+
+  // ── 도구 오류 ────────────────────────────────────────────────────────
+  'err.noSuchFile': '파일이 없습니다: {경로}',
+  'err.alreadyThere': '이미 있습니다: {경로}',
+  'err.overwriteHint': '덮어쓰려면 overwrite: true 를 주세요.',
+
+  // ── 대화 화면 ────────────────────────────────────────────────────────
+  'run.ctxProbe': '모델에 걸린 컨텍스트 길이를 확인하는 중…',
+  'run.noStream': '스트리밍이 없어 응답이 한 번에 나옵니다',
+  'run.hintHelp': '/help 명령 목록',
+  'run.hintEsc': 'ESC 중단',
+  'run.hintQuit': 'Ctrl+C 중단·끝내기',
+  'run.thinking': '생각 중…',
+  'run.thinkingChars': '생각 중… {n}자',
+  'run.turnFoot': '{초}초 · 도구 {n}회 · ↑{입력} ↓{출력}',
+  'run.bye': '끝냅니다.',
+  'run.byeStats': '모델 호출 {n}회 · 도구 시간 {초}초 · ↑{입력} ↓{출력}',
+  'run.notMade': '— 만들어지지 않았습니다',
+
+  // 생각 중 앞에 붙는 단계 꼬리표 (agent/effort.js 의 STAGES).
+  'stage.plan': '첫 판단',
+  'stage.work': '이어가기',
+  'stage.fix': '막혔을 때',
+
+  // ── /tools · /status · /cost 화면 ────────────────────────────────────
+  'scr.tools': '도구',
+  'scr.conn': '연결',
+  'scr.session': '이번 세션',
+  'status.kind': '규격',
+  'status.url': '주소',
+  'status.proxy': '프록시',
+  'status.proxyOff': '못 씀',
+  'status.model': '모델',
+  'status.root': '작업 폴더',
+  'status.shell': '셸',
+  'status.keyStore': '열쇠 보관',
+  'status.rules': '규칙',
+  'status.noRules': '없음 (/init 으로 만들 수 있습니다)',
+  'status.caps': '지원',
+  'status.capTools': '도구',
+  'status.capStream': '스트림',
+  'status.capSchema': '스키마',
+  'status.capThink': '추론',
+  'cost.calls': '모델 호출',
+  'cost.tokIn': '입력 토큰',
+  'cost.tokOut': '출력 토큰',
+  'cost.toolMs': '도구 시간',
+  'cost.elapsed': '경과',
+  'cost.money': '요금',
+  'cost.quota': '서버 할당량',
+  'cost.quotaAge': '{초}초 전 응답 기준',
+
+  // ── /context 표 ──────────────────────────────────────────────────────
+  'scr.context': '컨텍스트',
+  'unit.tokens': '{n} 토큰',
+  'ctx.system': '시스템 프롬프트',
+  'ctx.rules': '규칙 ({이름})',
+  'ctx.rulesNone': '규칙 (없음)',
+  'ctx.memory': '기억 ({n}줄)',
+  'ctx.learned': '겪어 본 것',
+  'ctx.skills': '스킬 목록 ({실림}/{전체}개)',
+  'ctx.tools': '도구 정의',
+  'ctx.history': '대화 이력',
+  'ctx.toolResults': '도구 결과 (파일 {n}개)',
+  'ctx.left': '남음',
+  'ctx.compactHint': '대화 줄이기',
+  'ctx.clearHint': '통째로 비우기',
+  'ctx.calibrated': '서버가 알려 준 실제값에 맞춰 {부호}{퍼센트}% 보정했습니다 ({번}번 재봄).',
+  'ctx.estimate': '숫자는 추정입니다 — 정확한 토크나이저를 쓰지 않습니다.',
+
+  // ── 되돌리기 결과 줄 ─────────────────────────────────────────────────
+  'undo.wayRestored': '되돌림',
+  'undo.wayDeleted': '삭제됨(원래 없던 파일)',
 
   // ── 자주 나오는 것 ────────────────────────────────────────────────────
   'common.unknownCommand': '모르는 명령입니다',

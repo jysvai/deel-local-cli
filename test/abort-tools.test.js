@@ -213,8 +213,11 @@ trace('6-찾기');
   const 걸린시간 = Date.now() - t0;
   clearInterval(맥);
 
+  // 자릿점을 넣어 준다 — `1,200개 파일`. 세는 말이 i18n/index.js 의 세말()
+  // 을 거치면서 toLocaleString() 이 한 자리에서 붙게 됐다. 여기서 `1200`
+  // 만 찾으면 화면이 더 읽기 좋아진 것 때문에 검사가 빨개진다.
   check('찾기는 제대로 찾는다 (고치느라 망가뜨리지 않았다)',
-    /1200|바늘/.test(String(찾은것.summary ?? '') + String(찾은것.content ?? '')) && !찾은것.error,
+    /1,?200|바늘/.test(String(찾은것.summary ?? '') + String(찾은것.content ?? '')) && !찾은것.error,
     찾은것.summary ?? 찾은것.error ?? '');
   check('★ 찾는 동안에도 심장이 뛴다 (동기로 부르면 0이다)',
     심장 >= 2, `${걸린시간}ms 도는 사이 ${심장}번 뛰었다`);

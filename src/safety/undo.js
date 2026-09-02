@@ -3,6 +3,7 @@
 import { join, dirname } from 'node:path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, statSync } from 'node:fs';
 import { looksBinary } from '../tools/encoding.js';
+import { 말 } from '../i18n/index.js';
 
 // 되돌리기 이력은 파일 내용을 통째로 담는다. 이만큼 커지면 오래된 턴을 버린다.
 const MAX_BYTES = 32 * 1024 * 1024;
@@ -167,7 +168,7 @@ export class History {
             continue;
           }
           rmSync(path, { force: true });
-          restored.push({ path, how: '삭제됨(원래 없던 파일)' });
+          restored.push({ path, how: 말('undo.wayDeleted') });
         } else {
           /*
            * 담고 있던 폴더가 없어졌을 수 있다 — Move 로 폴더째 옮긴 경우다.
@@ -178,7 +179,7 @@ export class History {
           mkdirSync(dirname(path), { recursive: true });
           // enc 가 붙어 있으면 UTF-8 로 담을 수 없던 파일이다 — 바이트를 그대로 되돌린다.
           writeFileSync(path, rec.enc === 'b64' ? Buffer.from(rec.before, 'base64') : Buffer.from(rec.before, 'utf8'));
-          restored.push({ path, how: '되돌림' });
+          restored.push({ path, how: 말('undo.wayRestored') });
         }
       } catch (err) {
         restored.push({ path, how: `실패: ${err.message}` });

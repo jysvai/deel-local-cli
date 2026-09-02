@@ -34,6 +34,10 @@ import { walk, SKIP_DIRS, 내부살림 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
 import { decode, looksBinary } from './encoding.js';
 import { checkCommand } from '../safety/guard.js';
+import { 말 } from '../i18n/index.js';
+
+/* 결과 한 줄을 잇는다 — 빈 조각은 버린다(tools/index.js 의 이어 와 같은 것). */
+const 이어 = (...조각들) => 조각들.filter((x) => x != null && String(x) !== '').join(' · ');
 
 /** 짝이 맞아야 하는 HTML 태그. 안 닫아도 되는 것(void)은 뺀다. */
 const 안닫아도되는것 = new Set([
@@ -290,9 +294,11 @@ export const VERIFY_TOOL = {
     const 다됐나 = !탈난것.length;
     return {
       content: 줄.join('\n').trim() + 건너뜀말(건너뜀, 잘림, 상한),
-      summary: 탈난것.length
-        ? `탈 ${탈난것.length}개 · 확인 ${된것.length}개`
-        : `확인 ${된것.length}개` + (못한것.length ? ` · 못 확인 ${못한것.length}개` : ''),
+      summary: 이어(
+        탈난것.length ? 말('sum.broken', { n: 탈난것.length }) : '',
+        말('sum.verified', { n: 된것.length }),
+        !탈난것.length && 못한것.length ? 말('sum.unverified', { n: 못한것.length }) : '',
+      ),
       // 루프가 '아직 안 끝났다' 고 알 수 있게. 탈이 났는데 성공으로 넘기면
       // 다음 걸음에서 모델이 "다 됐습니다" 로 답을 맺는다.
       failed: !다됐나,

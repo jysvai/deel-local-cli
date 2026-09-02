@@ -9,7 +9,7 @@ import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
 import { 지문 } from './project.js';
 import { 프롬프트토막 as 기억토막 } from './memory.js';
 import { 못박기 } from './pins.js';
-import { 언어, 지시말 } from '../i18n/index.js';
+import { 언어, 지시말, 말 as 옮긴말 } from '../i18n/index.js';
 import { 셸안내 } from '../tools/shell.js';
 
 // 토큰 추정 — 정확한 토크나이저 없이 대략만 센다.
@@ -630,15 +630,21 @@ export class Session {
     const 기억 = this.memory ? estimateTokens(this.memory) : 0;
     const 기억줄 = this.memory ? this.memory.split('\n').filter((l) => l.startsWith('- ')).length : 0;
 
+    /*
+     * 이름은 화면에 그대로 나간다(`/context`). 그래서 여기서 말 표를 거친다.
+     * 여기만 한국어로 두면 영어로 켠 사람의 컨텍스트 표가 통째로 한국어가
+     * 되는데, `/lang` 은 그 사이에도 100% 라고 답한다 — 표에 없는 글은
+     * 세지지 못하기 때문이다. test/langleak.test.js 가 이 자리를 지킨다.
+     */
     const rows = [
-      { label: '시스템 프롬프트', n: sys },
-      { label: this.rules ? `규칙 (${this.rules.name})` : '규칙 (없음)', n: rules },
-      { label: `기억 (${기억줄}줄)`, n: 기억 },
-      { label: '겪어 본 것', n: this.배움요약 ? estimateTokens(this.배움요약) : 0 },
-      { label: `스킬 목록 (${listed.length}/${this.skills.length}개)`, n: skills },
-      { label: '도구 정의', n: 도구 },
-      { label: '대화 이력', n: history },
-      { label: `도구 결과 (파일 ${this.filesRead.size}개)`, n: files },
+      { label: 옮긴말('ctx.system'), n: sys },
+      { label: this.rules ? 옮긴말('ctx.rules', { 이름: this.rules.name }) : 옮긴말('ctx.rulesNone'), n: rules },
+      { label: 옮긴말('ctx.memory', { n: 기억줄 }), n: 기억 },
+      { label: 옮긴말('ctx.learned'), n: this.배움요약 ? estimateTokens(this.배움요약) : 0 },
+      { label: 옮긴말('ctx.skills', { 실림: listed.length, 전체: this.skills.length }), n: skills },
+      { label: 옮긴말('ctx.tools'), n: 도구 },
+      { label: 옮긴말('ctx.history'), n: history },
+      { label: 옮긴말('ctx.toolResults', { n: this.filesRead.size }), n: files },
     ];
     const used = rows.reduce((a, r) => a + r.n, 0);
     const total = this.conn.ctx ?? 32768;

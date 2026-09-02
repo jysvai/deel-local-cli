@@ -26,6 +26,10 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { decode as decodeBytes, consoleCodepage } from './encoding.js';
 import { 셸명령 } from './shell.js';
+import { 말, 세말 } from '../i18n/index.js';
+
+/* 결과 한 줄을 잇는다 — 빈 조각은 버린다(tools/index.js 의 이어 와 같은 것). */
+const 이어 = (...조각들) => 조각들.filter((x) => x != null && String(x) !== '').join(' · ');
 
 // 한 일감이 **들고 있을** 출력 상한. 넘으면 앞을 버리고 뒤를 남긴다 —
 // 오래 도는 것에서 필요한 건 언제나 **방금** 나온 쪽이다.
@@ -612,7 +616,7 @@ export const JOBS_TOOL = {
         };
       }
       const ls = 목록();
-      if (!ls.length) return { content: '뒤에서 도는 명령이 없습니다.', summary: '0개' };
+      if (!ls.length) return { content: '뒤에서 도는 명령이 없습니다.', summary: 세말('count', 0) };
       const 줄들 = ls.map((j) => {
         const 상 = j.상태 === '도는중' ? `도는중 ${j.초}초` : j.시그널 ? `${j.시그널} 로 죽음` : `끝남 (종료코드 ${j.종료코드})`;
         const 새것 = j.안읽은글자 ? ` · 안 읽은 출력 ${j.안읽은글자}자` : '';
@@ -626,17 +630,17 @@ export const JOBS_TOOL = {
        * 그러면 포트가 물려서 안 뜨고, 왜 안 되는지도 모른다.
        */
       if (치운것) 줄들.push(`  (오래된 것 ${치운것}개는 자리를 위해 지웠습니다)`);
-      return { content: 줄들.join('\n'), summary: `${ls.length}개`, 일감수: ls.length };
+      return { content: 줄들.join('\n'), summary: 세말('count', ls.length), 일감수: ls.length };
     }
 
     if (받은것.끝내기) {
       const r = await 끝내기(번호);
       if (!r) return { error: `${번호}번 일감이 없습니다. 번호 없이 Jobs 를 불러 목록을 보세요.` };
-      if (r.이미) return { content: `${번호}번은 이미 끝나 있었습니다: ${r.명령}`, summary: '이미 끝남' };
+      if (r.이미) return { content: `${번호}번은 이미 끝나 있었습니다: ${r.명령}`, summary: 말('sum.jobEndedAlready') };
       return {
         content: `${번호}번을 끝냈습니다 (${r.초}초 돌았습니다): ${r.명령}`
           + (r.남은 ? `\n\n마지막 출력:\n${뒤만(r.남은, 2000).글}` : ''),
-        summary: `끝냄 · ${r.초}초`,
+        summary: 이어(말('sum.jobStopped'), 말('unit.sec', { n: r.초 })),
       };
     }
 
@@ -652,7 +656,7 @@ export const JOBS_TOOL = {
       : '(지난번 읽은 뒤로 새 출력이 없습니다)';
     return {
       content: `${머리}\n\n${몸}`,
-      summary: (r.상태 === '도는중' ? `도는중 · ${r.초}초` : 끝난말(r))
+      summary: (r.상태 === '도는중' ? 이어(말('sum.jobRunning'), 말('unit.sec', { n: r.초 })) : 끝난말(r))
         + (잘라낸.줄임 ? ' · 일부만' : ''),
       // 끝난 일감이 종료코드 0 이 아니면 실패로 물들인다 — Bash 와 같은 규칙이다.
       // 시그널로 죽은 것도 실패다 — 그때 종료코드는 null 이라 !== 0 으로 잡힌다.

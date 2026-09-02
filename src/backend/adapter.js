@@ -2,6 +2,7 @@
 // 진단(probe)과 에이전트 루프가 같은 함수를 쓴다.
 import { req, headersFor, serverMessage, Aborted } from './http.js';
 import { 할당량기억 } from './quota.js';
+import { 말 } from '../i18n/index.js';
 import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
 
 /*
@@ -33,9 +34,9 @@ export function 더할머리(shape) {
  * 지장이 없어서 아무도 안 고치고, 그 화면을 믿고 남에게 설명하게 된다.
  */
 export function 규격이름(shape) {
-  if (shape === 'ollama') return 'Ollama 자체 규격';
-  if (shape === 'anthropic') return 'Anthropic 규격';
-  return 'OpenAI 호환';
+  if (shape === 'ollama') return 말('head.spec.ollama');
+  if (shape === 'anthropic') return 말('head.spec.anthropic');
+  return 말('head.spec.openai');
 }
 
 /**

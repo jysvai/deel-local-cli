@@ -35,6 +35,10 @@ import { walk, SKIP_DIRS, globToRegex, 내부살림 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
 import { decode, looksBinary } from './encoding.js';
 import { 찾을개수, 뼈대줄수 } from '../agent/budget.js';
+import { 말, 세말 } from '../i18n/index.js';
+
+/* 결과 한 줄을 잇는다 — 빈 조각은 버린다(tools/index.js 의 이어 와 같은 것). */
+const 이어 = (...조각들) => 조각들.filter((x) => x != null && String(x) !== '').join(' · ');
 
 /**
  * 언어별로 '뼈대' 를 이루는 것들.
@@ -243,7 +247,7 @@ export const OUTLINE_TOOL = {
       파일들 = 파일들.filter((f) => re.test(f.rel) || re.test(f.rel.split('/').pop()));
     }
 
-    if (!파일들.length) return { content: '볼 파일이 없습니다.', summary: '0개' };
+    if (!파일들.length) return { content: '볼 파일이 없습니다.', summary: 세말('count', 0) };
 
     // 최근에 손댄 것부터. 지금 하는 일과 가까울 가능성이 높다.
     파일들.sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
@@ -327,8 +331,8 @@ export const OUTLINE_TOOL = {
 
     return {
       content: 줄들.join('\n').trimEnd() + 건너뜀,
-      summary: `${뼈대있는파일}개 파일 · ${항목수}곳`
-        + (못읽은것.size ? ` · 못 읽음 ${[...못읽은것.values()].reduce((a, x) => a + x.length, 0)}개` : ''),
+      summary: 이어(세말('files', 뼈대있는파일), 세말('places', 항목수))
+        + (못읽은것.size ? ` · ${말('sum.unread', { n: [...못읽은것.values()].reduce((a, x) => a + x.length, 0) })}` : ''),
     };
   },
 };

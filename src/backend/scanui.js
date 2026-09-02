@@ -67,7 +67,7 @@ export async function runScan(flags = {}) {
   const wRun = Math.max(10, ...found.map((f) => width(f.runtime)));
   for (const f of found) {
     const 자리 = `${f.host}:${f.port}`;
-    const 규격 = f.kind === 'ollama' ? 'Ollama 규격' : 규격이름(f.kind);
+    const 규격 = 규격이름(f.kind);
     const 표시 = f.guessed ? c.gray(' (추정)') : '';
     say(`  ${c.hcyan('◆')} ${c.bold(pad(f.runtime, wRun))}${표시}  ${c.gray(pad(자리, 22))}${c.gray(pad(규격, 14))}${c.gray(f.ms + 'ms')}`);
     if (f.locked) {

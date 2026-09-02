@@ -22,7 +22,7 @@ import { chat, 규격이름 } from './backend/adapter.js';
 import { 알림채움 } from './backend/retry.js';
 import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
 import { 정한셸 } from './tools/shell.js';
-import { TOOLS } from './tools/index.js';
+import { TOOLS, 영어설명 } from './tools/index.js';
 import { 둘러보기, 프로젝트갈래 } from './lsp/servers.js';
 import { 지금것들 } from './lsp/client.js';
 import { 보고서적기 } from './ui/export.js';
@@ -863,9 +863,20 @@ export async function handle(line, session, ctx) {
     case 'serve': return await 미리보기(session, ctx, arg), { handled: true };
 
     case 'tools': {
-      rule('도구', 70);
+      rule(말('scr.tools'), 70);
+      /*
+       * 원본 schema.description 을 그대로 찍으면 안 된다.
+       *
+       * 그 글은 한국어다. 영어 표(tools/desc.en.js)는 **모델에게 줄 때만**
+       * 갈아 끼우고 있어서, 영어로 켠 사람의 `/tools` 는 스물한 줄이 통째로
+       * 한국어로 나왔다. `/lang` 은 그 사이에도 100% 라고 답했다 — 이 글들은
+       * 애초에 말 표에 들어간 적이 없어서 셈에 안 잡혔기 때문이다.
+       *
+       * 여기서는 **화면 말**(언어())로 고른다. 모델에게 주는 글의 말과는
+       * 다른 축이다 — 영어로 시키고 한국어로 보는 조합이 실제로 쓰인다.
+       */
       for (const [n, t] of Object.entries(TOOLS)) {
-        say(`  ${c.cyan(pad(n, 8))} ${c.gray(t.schema.description)}`);
+        say(`  ${c.cyan(pad(n, 8))} ${c.gray(영어설명(t.schema, n, 언어()).description)}`);
       }
       say('');
       return { handled: true };
@@ -873,14 +884,14 @@ export async function handle(line, session, ctx) {
 
     case 'cost': {
       const mins = ((Date.now() - session.startedAt) / 60000).toFixed(1);
-      rule('이번 세션', 70);
-      say(`  ${c.gray(pad('모델 호출', 14))} ${session.usage.calls}회`);
-      say(`  ${c.gray(pad('입력 토큰', 14))} ${session.usage.in.toLocaleString()}`);
-      say(`  ${c.gray(pad('출력 토큰', 14))} ${session.usage.out.toLocaleString()}`);
-      say(`  ${c.gray(pad('도구 시간', 14))} ${(session.usage.ms / 1000).toFixed(1)}초`);
+      rule(말('scr.session'), 70);
+      say(`  ${c.gray(pad(말('cost.calls'), 14))} ${말('unit.calls', { n: session.usage.calls })}`);
+      say(`  ${c.gray(pad(말('cost.tokIn'), 14))} ${session.usage.in.toLocaleString()}`);
+      say(`  ${c.gray(pad(말('cost.tokOut'), 14))} ${session.usage.out.toLocaleString()}`);
+      say(`  ${c.gray(pad(말('cost.toolMs'), 14))} ${말('unit.sec', { n: (session.usage.ms / 1000).toFixed(1) })}`);
       // 서버가 잠깐 막아 다시 부른 횟수. 0 이면 안 적는다 — 없는 일을 줄로 남기면 표만 길어진다.
-      if (session.usage.retries) say(`  ${c.gray(pad(말('cost.retries'), 14))} ${session.usage.retries}회`);
-      say(`  ${c.gray(pad('경과', 14))} ${mins}분`);
+      if (session.usage.retries) say(`  ${c.gray(pad(말('cost.retries'), 14))} ${말('unit.calls', { n: session.usage.retries })}`);
+      say(`  ${c.gray(pad(말('cost.elapsed'), 14))} ${말('unit.min', { n: mins })}`);
       /*
        * 돈.
        *
@@ -897,7 +908,7 @@ export async function handle(line, session, ctx) {
       const 요금값 = 세션요금(session);
       const 쓴돈 = 돈셈(session.usage, 요금값);
       if (쓴돈) {
-        say(`  ${c.gray(pad('요금', 14))} ${c.bold(돈말(쓴돈.달러))}`
+        say(`  ${c.gray(pad(말('cost.money'), 14))} ${c.bold(돈말(쓴돈.달러))}`
           + ` ${c.gray(`(${어디서온값(요금값)})`)}`);
       } else if (바깥인가(session.conn.base) && (session.usage.in || session.usage.out)) {
         const 붙은곳 = session.제공자 ? 제공자고르기(session.제공자) : null;
@@ -917,8 +928,8 @@ export async function handle(line, session, ctx) {
       const 남은것 = 마지막할당량();
       if (남은것) {
         const 말줄 = 할당량말(남은것);
-        say(`  ${c.gray(pad('서버 할당량', 14))} ${아슬아슬한가(남은것) ? c.yellow(말줄) : 말줄}`
-          + ` ${c.gray(`(${Math.round((Date.now() - 남은것.때) / 1000)}초 전 응답 기준)`)}`);
+        say(`  ${c.gray(pad(말('cost.quota'), 14))} ${아슬아슬한가(남은것) ? c.yellow(말줄) : 말줄}`
+          + ` ${c.gray(`(${말('cost.quotaAge', { 초: Math.round((Date.now() - 남은것.때) / 1000) })})`)}`);
       }
       say('');
       return { handled: true };
@@ -926,29 +937,29 @@ export async function handle(line, session, ctx) {
 
     case 'status': {
       const k = session.conn;
-      rule('연결', 70);
-      say(`  ${c.gray(pad('규격', 10))} ${규격이름(k.kind)}`);
-      say(`  ${c.gray(pad('주소', 10))} ${k.base}`);
+      rule(말('scr.conn'), 70);
+      say(`  ${c.gray(pad(말('status.kind'), 10))} ${규격이름(k.kind)}`);
+      say(`  ${c.gray(pad(말('status.url'), 10))} ${k.base}`);
       // 프록시를 거치면 어느 것을, 어디서 읽었는지(env · config)까지. 안 거치면 줄 자체가 없다.
       // 적어 놨는데 못 쓰는 것(socks5 등)이면 그 까닭을 — 조용히 직접 가면 사람은 프록시를 탄 줄 안다.
       const 프록시 = 프록시고르기(k.base);
-      if (프록시) say(`  ${c.gray(pad('프록시', 10))} ${프록시.url} ${c.gray(`(${프록시.출처})`)}`);
-      else if (프록시설정().탈) say(`  ${c.gray(pad('프록시', 10))} ${c.yellow('못 씀')} ${c.gray(`— ${프록시설정().탈}`)}`);
-      say(`  ${c.gray(pad('모델', 10))} ${k.model}`);
-      say(`  ${c.gray(pad('작업 폴더', 10))} ${session.root}`);
+      if (프록시) say(`  ${c.gray(pad(말('status.proxy'), 10))} ${프록시.url} ${c.gray(`(${프록시.출처})`)}`);
+      else if (프록시설정().탈) say(`  ${c.gray(pad(말('status.proxy'), 10))} ${c.yellow(말('status.proxyOff'))} ${c.gray(`— ${프록시설정().탈}`)}`);
+      say(`  ${c.gray(pad(말('status.model'), 10))} ${k.model}`);
+      say(`  ${c.gray(pad(말('status.root'), 10))} ${session.root}`);
       // 명령이 어느 셸에서 도는지. "ls 가 왜 안 되지" 의 답이 이 줄에 있다.
-      say(`  ${c.gray(pad('셸', 10))} ${정한셸().표시}`);
+      say(`  ${c.gray(pad(말('status.shell'), 10))} ${정한셸().표시}`);
       // 열쇠를 어디에 두고 있나. 사내 심사에서 제일 먼저 묻는 것이라
       // 「어딘가 잠겨 있겠지」 로 두지 않고 지금 상태를 그대로 적는다.
-      if (k.auth !== 'none') say(`  ${c.gray(pad('열쇠 보관', 10))} ${열쇠보관(load())}`);
-      say(`  ${c.gray(pad('규칙', 10))} ${session.rules ? session.rules.name : '없음 (/init 으로 만들 수 있습니다)'}`);
+      if (k.auth !== 'none') say(`  ${c.gray(pad(말('status.keyStore'), 10))} ${열쇠보관(load())}`);
+      say(`  ${c.gray(pad(말('status.rules'), 10))} ${session.rules ? session.rules.name : 말('status.noRules')}`);
       const caps = [
-        k.tools ? c.green('도구') : c.red('도구'),
-        k.streaming ? c.green('스트림') : c.gray('스트림'),
-        k.json ? c.green('스키마') : c.gray('스키마'),
-        k.think ? c.green('추론') : c.gray('추론'),
+        k.tools ? c.green(말('status.capTools')) : c.red(말('status.capTools')),
+        k.streaming ? c.green(말('status.capStream')) : c.gray(말('status.capStream')),
+        k.json ? c.green(말('status.capSchema')) : c.gray(말('status.capSchema')),
+        k.think ? c.green(말('status.capThink')) : c.gray(말('status.capThink')),
       ].join(c.gray(' · '));
-      say(`  ${c.gray(pad('지원', 10))} ${caps}`);
+      say(`  ${c.gray(pad(말('status.caps'), 10))} ${caps}`);
       say('');
       return { handled: true };
     }
@@ -2219,8 +2230,8 @@ function 배움명령(session, ctx, arg = '') {
 function showContext(session) {
   const b = session.breakdown();
   say('');
-  rule('컨텍스트', 70);
-  say(`  ${c.bold(session.conn.model)} ${c.gray('·')} ${b.total.toLocaleString()} 토큰`);
+  rule(말('scr.context'), 70);
+  say(`  ${c.bold(session.conn.model)} ${c.gray('·')} ${말('unit.tokens', { n: b.total.toLocaleString() })}`);
   say('');
   say(`  ${bar(b.used, b.total, 32)}  ${b.used.toLocaleString()} / ${b.total.toLocaleString()}  ${c.gray(`${Math.round((b.used / b.total) * 100)}%`)}`);
   say('');
@@ -2229,9 +2240,9 @@ function showContext(session) {
     say(`  ${c.gray(pad(r.label, 26))} ${pad(r.n.toLocaleString(), 8, 'right')}`);
   }
   say(`  ${c.gray('─'.repeat(35))}`);
-  say(`  ${c.gray(pad('남음', 26))} ${pad(b.left.toLocaleString(), 8, 'right')}`);
+  say(`  ${c.gray(pad(말('ctx.left'), 26))} ${pad(b.left.toLocaleString(), 8, 'right')}`);
   say('');
-  say(`  ${c.gray('/compact 대화 줄이기   /clear 통째로 비우기')}`);
+  say(`  ${c.gray(`/compact ${말('ctx.compactHint')}   /clear ${말('ctx.clearHint')}`)}`);
   /*
    * 추정이라고만 적어 두면 사람은 얼마나 믿어야 할지 모른다. 서버가 알려 준
    * 실제값에 맞춰 가고 있으면 그 사실을 적는다 — '추정' 과 '맞춰 본 추정' 은
@@ -2239,9 +2250,9 @@ function showContext(session) {
    */
   if (b.보정잰것 > 0) {
     const 차이 = Math.round((b.보정 - 1) * 100);
-    say(`  ${c.gray(`서버가 알려 준 실제값에 맞춰 ${차이 >= 0 ? '+' : ''}${차이}% 보정했습니다 (${b.보정잰것}번 재봄).`)}`);
+    say(`  ${c.gray(말('ctx.calibrated', { 부호: 차이 >= 0 ? '+' : '', 퍼센트: 차이, 번: b.보정잰것 }))}`);
   } else {
-    say(`  ${c.gray('숫자는 추정입니다 — 정확한 토크나이저를 쓰지 않습니다.')}`);
+    say(`  ${c.gray(말('ctx.estimate'))}`);
   }
   say('');
 }

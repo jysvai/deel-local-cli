@@ -201,6 +201,28 @@ export function 말(열쇠, 채움 = null) {
   });
 }
 
+/*
+ * 세는 말 한 조각 — `3개 파일` · `1건` · `12줄`.
+ *
+ * 도구 결과 한 줄은 이 조각들을 ` · ` 로 이어 만든다. 왜 통짜 문장으로
+ * 안 두는지는 ko.js 의 '세는 말' 묶음에 적어 두었다.
+ *
+ * **하나일 때 열쇠가 갈린다.** 한국어는 「1개 파일」 로 끝이지만 영어는
+ * `1 files` 가 나오면 그 줄 전체가 대충 만든 것으로 읽힌다. 그래서 홑을
+ * 따로 두는 갈래만 모아 뒀다 — 여기 없는 갈래(자·회·초)는 영어에서도
+ * 홑복수가 안 갈려서 열쇠를 늘릴 까닭이 없다.
+ *
+ * 숫자는 여기서 toLocaleString() 을 거친다. 부르는 쪽마다 하면 어디선가
+ * 빠져서 `50700` 과 `50,700` 이 한 화면에 같이 뜬다.
+ */
+const 홑이따로인것 = new Set(['files', 'hits', 'lines', 'spots', 'places', 'count', 'turns']);
+
+export function 세말(갈래, n) {
+  const 수 = Number(n);
+  const 홑 = 홑이따로인것.has(갈래) && 수 === 1;
+  return 말(`unit.${갈래}${홑 ? '1' : ''}`, { n: Number.isFinite(수) ? 수.toLocaleString() : String(n) });
+}
+
 /** 이 열쇠가 지금 언어로 옮겨져 있나. 검사와 /lang 이 본다. */
 export function 옮겨졌나(열쇠, 언어이름 = 지금) {
   return Object.prototype.hasOwnProperty.call(표[언어이름] ?? {}, String(열쇠));
