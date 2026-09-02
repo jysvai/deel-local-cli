@@ -50,13 +50,38 @@ const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note 
  * 16ms 뒤에 불리라고 타이머를 걸고 일을 시킨다. 일이 끝난 뒤 타이머가 실제로
  * 언제 불렸는지 보면, 그 차이가 곧 **귀를 닫고 있던 시간**이다.
  */
+/**
+ * 일이 도는 **내내** 심장을 뛰게 하고, 제일 크게 벌어진 틈을 돌려준다.
+ *
+ * 전에는 16ms 짜리 타이머를 하나만 걸어 두고 잤다. 그러면 도구가 막히기 **전에**
+ * 한 번이라도 양보하는 순간 그 타이머가 울어 버려서, 그 뒤에 300ms 를 통째로
+ * 막아도 0ms 로 잰다. 실제로 spawn 앞에 300ms 를 심어 보니 검사가 안 빨개졌다 —
+ * ESC 가 들리는지를 지킨다고 적혀 있는 자리가 아무것도 안 지키고 있었다.
+ *
+ * 심장을 계속 뛰게 하면 막힌 자리가 어디든 그 틈으로 드러난다.
+ */
 async function 귀막힌시간(일) {
-  let 불린때 = 0;
-  const t0 = Date.now();
-  const 타이머 = new Promise((r) => setTimeout(() => { 불린때 = Date.now(); r(); }, 16));
-  await 일();
-  await 타이머;
-  return Math.max(0, 불린때 - t0 - 16);
+  let 제일큰틈 = 0;
+  let 마지막 = Date.now();
+  const 심장 = setInterval(() => {
+    const 지금 = Date.now();
+    제일큰틈 = Math.max(제일큰틈, 지금 - 마지막 - 16);
+    마지막 = 지금;
+  }, 16);
+  마지막 = Date.now();
+  try {
+    await 일();
+  } finally {
+    /*
+     * 끝나고 한 번 더 잰다. 이걸 빠뜨리면 **끝까지 막고 끝난 것**을 0 으로 읽는다.
+     * `await` 뒤는 마이크로태스크라 타이머보다 먼저 도는데, 거기서 심장을 바로
+     * 멈추면 막힌 동안 못 뛴 그 틈이 아무 데도 안 적힌 채 사라진다.
+     * 1번 단(spawnSync)이 정확히 그래서 0ms 로 나왔다.
+     */
+    제일큰틈 = Math.max(제일큰틈, Date.now() - 마지막 - 16);
+    clearInterval(심장);
+  }
+  return Math.max(0, 제일큰틈);
 }
 
 /** 일부러 ms 만큼 자는 가짜 프로그램. 이름은 ASCII 로 — cmd.exe 가 내용을 CP949 로 읽는다. */
@@ -176,11 +201,27 @@ trace('5-비동기');
   const 방 = mkdtempSync(join(tmpdir(), 'deel-abort5-'));
   const 느린것 = 느린프로그램(방, 300);
 
-  const 막힌시간 = await 귀막힌시간(async () => {
-    await runTool('Bash', { command: `"${process.execPath}" "${느린것}"`, timeout: 5000 }, 판(방));
-  });
+  /*
+   * 세 번 재고 **제일 짧은 것**을 쓴다.
+   *
+   * 한 번만 재면 세 가지가 한 숫자로 뭉개진다. ① 도구가 진짜로 귀를 막은 것,
+   * ② 첫 부름의 몸풀기(모듈 읽기·JIT — 여기서 250ms 씩 나온다), ③ 그 순간 OS 가
+   * 우리를 안 깨워 준 것. 전체 판에서 이 자리가 748ms 로 빨개진 적이 있는데
+   * 단독으로 재면 19·27·22ms 였다 — ①이 아니었다.
+   *
+   * 최솟값이면 그 구별이 선다. spawnSync 로 진짜 막히면 **세 번 다** 자식이 사는
+   * 만큼(300ms) 막히므로 최솟값도 그대로 크다. 어쩌다 한 번 밀린 것만 걸러진다.
+   */
+  const 잰것들 = [];
+  for (let i = 0; i < 3; i++) {
+    잰것들.push(await 귀막힌시간(async () => {
+      await runTool('Bash', { command: `"${process.execPath}" "${느린것}"`, timeout: 5000 }, 판(방));
+    }));
+  }
+  const 막힌시간 = Math.min(...잰것들);
   check('★ 오래 도는 도구가 도는 동안에도 귀가 열려 있다',
-    막힌시간 < 150, `${막힌시간}ms 동안 귀가 막혔다 (Bash 는 원래 비동기다 — 기준선)`);
+    막힌시간 < 150,
+    `${막힌시간}ms 동안 귀가 막혔다 · 세 번 잼 ${잰것들.join('·')} (Bash 는 원래 비동기다 — 기준선)`);
 
   rmSync(방, { recursive: true, force: true });
 }
