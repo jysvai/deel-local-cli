@@ -23,7 +23,7 @@ import { readFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  ANTHROPIC_VERSION, endpoint, 더할머리, buildBody, extractMessage,
+  ANTHROPIC_VERSION, endpoint, 더할머리, buildBody, extractMessage, 생각예산,
   assistantMessage, toolMessage, 차례합치기, chatStream, 요청주소, 규격이름,
 } from '../src/backend/adapter.js';
 import { headerLines } from '../src/ui/status.js';
@@ -106,8 +106,45 @@ trace('2-몸통');
    * 한다), 생각 칸의 값 모양은 문서에서 확인하지 못했다.
    */
   check('★ 답 모양 강제는 안 보낸다', b.response_format === undefined && b.format === undefined);
-  check('★ 생각 값은 안 보낸다', b.thinking === undefined && b.reasoning_effort === undefined);
+
+  /*
+   * ★ 추론 강도는 **이 규격의 말로** 보낸다.
+   *
+   * 여기는 「안 보낸다」 였다. 그래서 Claude 를 직접 붙이면 /effort 가 아무
+   * 일도 안 했다 — 상태줄에는 강도가 뜨는데 요청에는 아무것도 안 실렸다.
+   * 안 되는 것보다 나쁜 것이, 사람이 조절했다고 믿는다는 점이다.
+   *
+   * `reasoning_effort` 는 여전히 안 보낸다. 그건 OpenAI 호환 쪽 이름이고,
+   * 여기에 실으면 모르는 칸이라 400 이 온다.
+   */
+  check('★ 추론 강도를 thinking 으로 보낸다',
+    b.thinking?.type === 'enabled' && b.thinking.budget_tokens > 0, JSON.stringify(b.thinking));
+  check('★ 남의 규격 이름은 안 섞는다', b.reasoning_effort === undefined);
+  /*
+   * 생각도 max_tokens 에서 나간다. 예산이 상한을 넘으면 서버가 거절한다 —
+   * 그러면 강도를 올렸다는 이유로 그 턴이 통째로 죽는다.
+   */
+  check('★ 생각 예산이 출력 상한보다 작다', b.thinking.budget_tokens < b.max_tokens,
+    `${b.thinking.budget_tokens} / ${b.max_tokens}`);
   check('OpenAI 쪽 이름은 안 섞인다', b.max_completion_tokens === undefined);
+
+  /*
+   * ── 예산 셈을 자리째로 잰다 ──────────────────────────────────────────
+   *
+   * 위 검사는 넉넉한 상한에서만 본다. 진짜 위험한 자리는 **좁을 때**다.
+   * 이 규격은 1,024 미만을 거절하고, max_tokens 이상도 거절한다. 둘 중
+   * 하나라도 어기면 강도를 올렸다는 이유로 그 턴이 통째로 죽는다 —
+   * 그때 화면에 뜨는 것은 400 한 줄이라, 왜인지 알아낼 길이 없다.
+   */
+  check('★ 상한이 좁으면 생각을 아예 안 켠다', 생각예산('high', 1500) === 0, String(생각예산('high', 1500)));
+  check('★ 켠다면 반드시 1,024 이상', 생각예산('high', 3000) >= 1024, String(생각예산('high', 3000)));
+  check('★ 켠다면 반드시 상한보다 작다', 생각예산('max', 8000) < 8000, String(생각예산('max', 8000)));
+  check('강도가 높을수록 더 준다', 생각예산('low', 99999) < 생각예산('high', 99999));
+  check('모르는 강도면 0', 생각예산('off', 99999) === 0 && 생각예산(undefined, 99999) === 0);
+  // 좁은 자리에서 켜지는 딱 그 지점. 여기서 한 칸이라도 어긋나면 400 이 온다.
+  check('★ 되는 자리와 안 되는 자리가 딱 갈린다',
+    생각예산('low', 2047) === 0 && 생각예산('low', 2048) === 1024,
+    `${생각예산('low', 2047)} / ${생각예산('low', 2048)}`);
 
   /*
    * 몸통을 만들 때 **실제로** 차례를 합치는가.

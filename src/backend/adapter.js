@@ -5,6 +5,7 @@ import { 할당량기억 } from './quota.js';
 import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
 import { 말 } from '../i18n/index.js';
 import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
+import { 도구맞추기, 이름되돌리기 } from './toolfit.js';
 
 /*
  * Anthropic 규격의 판 이름.
@@ -132,6 +133,36 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
  *   · think — 생각 칸의 값 모양을 문서에서 확인하지 못했다.
  *   · json  — 이 규격에는 답 모양을 강제하는 칸이 없다. 도구로 하는 방법뿐이다.
  */
+/*
+ * ── 이 규격의 추론 강도 ────────────────────────────────────────────────
+ *
+ * OpenAI 호환 쪽은 `reasoning_effort: 'high'` 처럼 **말**로 준다. 이쪽은
+ * **토큰 수**로 준다 — `thinking: { type:'enabled', budget_tokens: 12000 }`.
+ * 그래서 우리 단계말(low·medium·high·max)을 숫자로 옮겨야 한다.
+ *
+ * 여태 이 자리가 비어 있었다. anthropic몸() 이 think 를 인자로 받아 놓고 한
+ * 번도 안 썼다. 그래서 Claude 를 직접 붙이면 상태줄에는 `◇ medium` 이 뜨는데
+ * 요청에는 아무것도 안 실렸다 — **화면과 전선이 다른 말을 하고 있었다.**
+ * 아무 일도 안 하는 것보다 나쁘다. 사람은 조절했다고 믿기 때문이다.
+ *
+ * 지키는 선 둘(둘 다 서버가 거절하는 자리다):
+ *   · 최소 1,024. 그보다 작게 주면 요청이 통째로 튕긴다.
+ *   · max_tokens 보다 작아야 한다. 생각도 그 예산에서 나가기 때문이다.
+ *     그래서 답이 설 자리를 남겨 두고 깎는다. 그러고도 1,024 가 안 되면
+ *     생각을 아예 안 켠다 — 켤 수 없는 자리에서 켜면 그 턴이 죽는다.
+ */
+const 생각최소 = 1024;
+const 답에남길것 = 1024;
+const 강도별예산 = { low: 2048, medium: 6144, high: 16384, max: 32768 };
+
+export function 생각예산(강도, maxTokens) {
+  const 바라는것 = 강도별예산[String(강도)];
+  if (!바라는것) return 0;
+  const 쓸수있는 = Math.floor(Number(maxTokens) || 0) - 답에남길것;
+  const 예산 = Math.min(바라는것, 쓸수있는);
+  return 예산 >= 생각최소 ? 예산 : 0;
+}
+
 function anthropic몸({ model, messages, tools, stream, json, think, maxTokens }) {
   const 머리말 = [];
   const 나머지 = [];
@@ -141,6 +172,8 @@ function anthropic몸({ model, messages, tools, stream, json, think, maxTokens }
   }
   const body = { model, messages: 차례합치기(나머지), stream: !!stream, max_tokens: maxTokens };
   if (머리말.length) body.system = 머리말.join('\n\n');
+  const 예산 = 생각예산(think, maxTokens);
+  if (예산) body.thinking = { type: 'enabled', budget_tokens: 예산 };
   if (tools?.length) {
     body.tools = tools.map((t) => {
       const f = t.function ?? t;
@@ -181,15 +214,29 @@ export function extractMessage(shape, json) {
     // 답이 블록 배열이다. 글·생각·도구 부름이 한 배열에 섞여 온다.
     let content = '';
     let thinking = '';
+    /*
+     * 생각 블록은 **받은 그대로** 따로 챙긴다.
+     *
+     * 글자만 이어 붙이면 안 된다. 이 규격의 생각 블록에는 서명(signature)이
+     * 딸려 있고, 도구를 쓰는 턴에서는 그 블록을 서명째 돌려보내야 서버가
+     * 받는다. 서명 없이 지어서 보내면 그 턴이 통째로 거절된다.
+     * redacted_thinking 은 속을 우리가 못 읽는 블록인데, 그것도 그대로
+     * 돌려보내야 한다 — 읽지 말고 나르라는 뜻이다.
+     */
+    const 생각블록 = [];
     const 부름들 = [];
     for (const b of Array.isArray(json?.content) ? json.content : []) {
       if (b?.type === 'text') content += b.text ?? '';
-      else if (b?.type === 'thinking') thinking += b.thinking ?? '';
+      else if (b?.type === 'thinking') {
+        thinking += b.thinking ?? '';
+        생각블록.push({ type: 'thinking', thinking: b.thinking ?? '', signature: b.signature ?? '' });
+      } else if (b?.type === 'redacted_thinking') 생각블록.push({ type: 'redacted_thinking', data: b.data });
       else if (b?.type === 'tool_use') 부름들.push({ id: b.id, name: b.name, args: b.input ?? {} });
     }
     return {
       content,
       thinking,
+      생각블록,
       toolCalls: normalizeCalls(부름들),
       // 이름이 다르다. prompt_tokens 를 찾으면 늘 0 이 나오고, 화면에는
       // 「토큰을 하나도 안 썼다」 로 뜬다.
@@ -258,20 +305,39 @@ export function normalizeCalls(list) {
 }
 
 // 대화 이력에 되돌려 넣을 메시지 만들기 — 규격마다 모양이 다르다.
-export function assistantMessage(shape, { content = '', thinking = '', toolCalls = [] }) {
+export function assistantMessage(shape, { content = '', thinking = '', toolCalls = [], 생각블록 = null }) {
   if (shape === 'anthropic') {
+    /*
+     * ── 생각 블록을 **맨 앞에, 받은 그대로** 돌려보낸다 ──────────────────
+     *
+     * 여기는 오래 비어 있던 자리다. 예전 주석은 「서명 조각을 제대로 모으는
+     * 것까지 확인하지 못했으므로 뺀다」 였다. 이제 모은다(흘려받기의
+     * signature_delta). 그래서 실을 수 있다.
+     *
+     * 왜 실어야 하나 — 생각을 켜고 도구를 쓰면, 서버는 그 도구 부름을 낳은
+     * 생각 블록이 **같이 돌아오기를** 요구한다. 안 보내면 그 턴이 거절된다.
+     * 즉 생각을 켜는 것과 이 블록을 나르는 것은 한 몸이다.
+     *
+     * 서명은 우리가 읽거나 고칠 것이 아니다. 받은 문자열 그대로 나른다.
+     * 서명이 빈 블록은 아예 안 싣는다 — 지어낸 서명은 거절당하고, 그러면
+     * 왜 안 되는지가 화면에서 안 보인다.
+     */
     const 블록 = [];
+    for (const b of 생각블록 ?? []) {
+      if (b?.type === 'thinking' && b.signature) {
+        블록.push({ type: 'thinking', thinking: b.thinking ?? '', signature: b.signature });
+      } else if (b?.type === 'redacted_thinking' && b.data) {
+        블록.push({ type: 'redacted_thinking', data: b.data });
+      }
+    }
     if (content) 블록.push({ type: 'text', text: content });
     for (const t of toolCalls) 블록.push({ type: 'tool_use', id: t.id, name: t.name, input: t.args ?? {} });
     /*
-     * 생각은 **안 돌려보낸다.**
-     *
-     * 이 규격의 생각 블록에는 서명(signature)이 딸려 있고, 서명 없이 돌려보내면
-     * 서버가 거절한다. 흘려받기에서 서명 조각을 제대로 모으는 것까지 확인하지
-     * 못했으므로 여기서는 뺀다. 화면에는 그대로 흘러가고, 대화 이력에만 안 남는다.
-     *
      * 블록이 하나도 없으면 이 규격은 거절한다. 빈 답이 오는 일은 드물지만
      * 그때 대화 전체가 죽으면 안 되니 자리표시를 하나 넣는다.
+     *
+     * 생각 블록**만** 있는 경우도 여기 걸리지 않게 한다 — 생각만 하고 아무
+     * 말도 안 한 턴은 실제로 있고, 그때 생각 블록은 살아 있어야 한다.
      */
     if (!블록.length) 블록.push({ type: 'text', text: '(빈 답)' });
     return { role: 'assistant', content: 블록 };
@@ -351,7 +417,10 @@ function 열쇠다시받을까(conn, status, 이미) {
 
 // 한 번에 받기.
 export async function chat(conn, opts) {
-  const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts });
+  // 이 회사가 받는 모양으로 도구를 다듬는다 (backend/toolfit.js).
+  // 모르는 주소면 아무것도 안 바뀐다 — 지금까지와 똑같이 돈다.
+  const 맞춘것 = 도구맞추기(opts.tools, conn);
+  const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts, tools: 맞춘것.tools });
   const 정책 = 정책고르기(conn, opts);
   let 열쇠다시받음 = false;
   for (let 시도 = 1; ; 시도++) {
@@ -365,7 +434,9 @@ export async function chat(conn, opts) {
     // 서버가 남았다고 말해 준 할당량을 적어 둔다 (backend/quota.js).
     // 429 를 맞고 나서야 아는 것과, 맞기 전에 아는 것은 사람이 할 일이 다르다.
     할당량기억(r.headers);
-    if (r.ok) return extractMessage(conn.kind, r.json);
+    // 다듬느라 이름을 고쳤으면 여기서 되돌린다. 밖에서는 그런 일이 있었는지
+    // 모른 채로 원래 이름을 받는다.
+    if (r.ok) return 이름되돌리기(extractMessage(conn.kind, r.json), 맞춘것.되돌림);
     // 열쇠가 늙어서 막힌 것이면 새로 받고 한 번만 다시. 시도 수는 안 올린다 —
     // 서버가 막은 것이 아니라 우리 열쇠가 낡았던 것이라 물러설 까닭이 없다.
     if (열쇠다시받을까(conn, r.status, 열쇠다시받음)) {
@@ -433,7 +504,8 @@ async function 거절읽기(r) {
 
 // 흘려 받기. { type:'thinking'|'content', text } 를 내보내고 마지막에 { type:'done', message } 를 준다.
 export async function* chatStream(conn, opts) {
-  const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts, stream: true });
+  const 맞춘것 = 도구맞추기(opts.tools, conn);
+  const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts, tools: 맞춘것.tools, stream: true });
   const 정책 = 정책고르기(conn, opts);
   let r;
   let 열쇠다시받음 = false;
@@ -497,7 +569,7 @@ export async function* chatStream(conn, opts) {
       for (const ev of absorb(conn.kind, obj, acc)) yield ev;
     }
   }
-  yield { type: 'done', message: acc };
+  yield { type: 'done', message: 이름되돌리기(acc, 맞춘것.되돌림) };
 }
 
 // 조각 하나를 누적하고, 화면에 흘릴 것만 내보낸다.
@@ -553,6 +625,19 @@ function anthropic흡수(obj, acc, out) {
     if (b.type === 'tool_use') {
       acc._raw ??= [];
       acc._raw[번호] = { id: b.id, name: b.name ?? '', args: '' };
+    } else if (b.type === 'thinking') {
+      /*
+       * 생각 블록이 열렸다. 여기서는 속이 비어 있고(`thinking:''`,
+       * `signature:''`), 글은 thinking_delta 로, 서명은 **블록이 닫히기
+       * 직전** signature_delta 로 따로 온다. 그래서 자리를 먼저 잡아 두고
+       * 번호로 찾아 채운다 — 한 답에 생각 블록이 여럿일 수 있다.
+       */
+      acc.생각블록 ??= [];
+      acc.생각블록[번호] = { type: 'thinking', thinking: b.thinking ?? '', signature: b.signature ?? '' };
+    } else if (b.type === 'redacted_thinking') {
+      // 속을 우리가 못 읽는 블록. 읽지 말고 그대로 나르라는 뜻이다.
+      acc.생각블록 ??= [];
+      acc.생각블록[번호] = { type: 'redacted_thinking', data: b.data };
     }
     return out;
   }
@@ -563,7 +648,22 @@ function anthropic흡수(obj, acc, out) {
       out.push({ type: 'content', text: d.text });
     } else if (d.type === 'thinking_delta' && d.thinking) {
       acc.thinking += d.thinking;
+      // 화면으로 흘려보내는 것과 별개로, 돌려보낼 블록에도 그대로 쌓는다.
+      acc.생각블록 ??= [];
+      acc.생각블록[번호] ??= { type: 'thinking', thinking: '', signature: '' };
+      acc.생각블록[번호].thinking += d.thinking;
       out.push({ type: 'thinking', text: d.thinking });
+    } else if (d.type === 'signature_delta' && d.signature) {
+      /*
+       * 서명. 이것 하나가 없으면 그 생각 블록은 못 돌려보낸다 — 서버가
+       * 서명 없는 생각 블록을 거절하기 때문이다. 여기를 빠뜨리면 생각을
+       * 켠 채 도구를 쓰는 순간 그 턴이 죽고, 화면에는 왜인지 안 나온다.
+       *
+       * 조각으로 나뉘어 올 수 있으므로 이어 붙인다.
+       */
+      acc.생각블록 ??= [];
+      acc.생각블록[번호] ??= { type: 'thinking', thinking: '', signature: '' };
+      acc.생각블록[번호].signature += d.signature;
     } else if (d.type === 'input_json_delta' && d.partial_json != null) {
       acc._raw ??= [];
       acc._raw[번호] ??= { id: null, name: '', args: '' };
