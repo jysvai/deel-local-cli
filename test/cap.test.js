@@ -164,6 +164,53 @@ trace('4-안잘렸으면');
   check('다시 부르지도 않는다', 받은상한.length === 1, `${받은상한.length}번`);
 }
 
+trace('4.5-말없이끊길때');
+
+/*
+ * ── ★ 끝났다는 말 없이 멎은 것을 '끝난 것' 으로 세면 안 된다 ─────────────
+ *
+ * 규격대로면 끝을 알리는 조각이 반드시 하나 온다 — OpenAI 는 finish_reason,
+ * Anthropic 은 stop_reason, Ollama 는 done:true. 그런데 중계 프록시가 몸통을
+ * 자르고 연결을 **곱게** 닫으면 그 조각이 하나도 안 온 채로 스트림이 멎는다.
+ * 끊긴 티가 안 나서 read 가 던지지도 않는다.
+ *
+ * 여태 그 자리를 stopped=null 로 뒀고, null 은 정상 종료와 구별이 안 됐다.
+ * 그래서 **중간에서 잘린 답이 온전한 답으로 지나갔다.** 화면에는 말을 하다 만
+ * 답만 남으니 사람은 모델이 대충 답한 줄 알고 같은 것을 다시 시킨다.
+ *
+ * 그렇다고 capped 로 묶으면 안 된다 — capped 는 `/out` 을 올리라고 말한다.
+ * 여기서 올려야 할 것은 상한이 아니라 연결이다. 엉뚱한 데를 고치게 만든다.
+ */
+{
+  const base = await 띄우기((q, res) => {
+    let body = '';
+    q.on('data', (d) => (body += d));
+    q.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      // 알맹이는 주고, 끝났다는 조각은 **한 번도 안 준 채** 곱게 닫는다.
+      res.write('data: {"choices":[{"delta":{"content":"여기까지 쓰다가 "}}]}\n\n');
+      res.write('data: {"choices":[{"delta":{"content":"끊"}}]}\n\n');
+      res.end();
+    });
+  });
+  allowEndpoint(서버들.map((s) => `http://127.0.0.1:${s.address().port}/v1`));
+  const { session, ctx } = 판깔기(base, { ctx: 200000 });
+  session.conn.streaming = true;
+  const 이벤트 = [];
+  for await (const ev of run(session, ctx, '긴 것 하나')) 이벤트.push(ev);
+  const 순서 = 이벤트.map((e) => e.type);
+
+  check('★ 말없이 끊긴 것을 그냥 넘기지 않는다', 이벤트.some((e) => e.type === 'cutoff'),
+    JSON.stringify(순서));
+  // 상한 얘기가 아니다 — /out 을 권하면 엉뚱한 데를 고치게 만든다.
+  check('★ 상한에서 잘린 것과는 다르게 말한다', !이벤트.some((e) => e.type === 'capped'),
+    JSON.stringify(순서));
+  // 받은 글은 버리지 않는다. 반쪽이라도 사람이 볼 것은 봐야 한다.
+  const 끝 = 이벤트.find((e) => e.type === 'done' || e.type === 'end');
+  check('받은 데까지는 그대로 있다', /끊$/.test(session.messages.at(-1)?.content ?? ''),
+    JSON.stringify(session.messages.at(-1)?.content ?? '').slice(0, 60) + ` · ${끝?.type ?? ''}`);
+}
+
 trace('5-잘림판정');
 
 // ── 5. 무엇을 '잘렸다' 로 보나 ─────────────────────────────────────────

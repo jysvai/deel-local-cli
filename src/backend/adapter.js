@@ -569,8 +569,32 @@ export async function* chatStream(conn, opts) {
       for (const ev of absorb(conn.kind, obj, acc)) yield ev;
     }
   }
+  /*
+   * ── 끝을 안 알려 주고 끊긴 것은 '끝난 것' 이 아니다 ──────────────────────
+   *
+   * 규격대로면 끝을 알리는 조각이 반드시 하나 온다 —
+   * OpenAI 는 finish_reason, Anthropic 은 message_delta.stop_reason,
+   * Ollama 는 done:true. 그게 하나도 안 왔는데 흘러오던 것이 그냥 멎었으면
+   * **왜 끝났는지 모르는 것**이다. 중계 프록시가 몸통을 자르고 연결을 곱게
+   * 닫으면 이 모양이 된다(끊긴 티가 안 나서 read 가 던지지도 않는다).
+   *
+   * 여태 stopped 를 null 로 뒀는데, 위에서는 null 을 '정상 종료' 와 구별하지
+   * 못했다. 그래서 중간에서 잘린 답이 온전한 답으로 지나갔다 — 사람 눈에는
+   * 모델이 말을 하다 만 것으로 보이니 같은 것을 다시 시킨다.
+   *
+   * 다만 '상한에서 잘림(length)' 과 같이 취급하지는 않는다. 까닭이 다르므로
+   * 상한을 올려 다시 부르는 것은 답이 아니다. 이름만 따로 붙여서, 화면이
+   * 사실대로 말할 수 있게 한다. 아무것도 안 온 경우는 여기서 안 다룬다 —
+   * 그건 '빈 답' 쪽이 받는다.
+   */
+  if (acc.stopped == null && (acc.content || acc.thinking || acc.toolCalls.length)) {
+    acc.stopped = 말없이끝남;
+  }
   yield { type: 'done', message: 이름되돌리기(acc, 맞춘것.되돌림) };
 }
+
+/** 서버가 끝난 까닭을 안 주고 흘려보내기를 멈춘 것. 'stop' 과 구별해야 한다. */
+export const 말없이끝남 = '말없이끝남';
 
 // 조각 하나를 누적하고, 화면에 흘릴 것만 내보낸다.
 function absorb(shape, obj, acc) {

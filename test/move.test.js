@@ -24,7 +24,7 @@ import { mkdtempSync, writeFileSync, existsSync, readFileSync, mkdirSync, rmSync
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TOOLS } from '../src/tools/index.js';
+import { TOOLS, 복사해옮기기 } from '../src/tools/index.js';
 import { allow, MODES, canWrite } from '../src/agent/modes.js';
 import { History } from '../src/safety/undo.js';
 import { trace } from './trace.mjs';
@@ -268,7 +268,56 @@ trace('8-하나가-막혀도');
   rmSync(root, { recursive: true, force: true });
 }
 
-trace('9-끝');
+trace('9-드라이브가다를때');
+
+/*
+ * ── ★ 「복사는 됐는데 원본이 안 지워진 것」 은 실패가 아니다 ─────────────
+ *
+ * C: → D: 처럼 드라이브가 다르면 rename 이 EXDEV 로 깨진다. 그때만 복사한 뒤
+ * 원본을 지우는데, 그 둘이 한 try 에 묶여 있었다. 묶여 있으면 **원본만 못
+ * 지운** 경우까지 「못 옮겼습니다」가 된다 — 윈도우에서 원본 폴더의 파일
+ * 하나를 편집기가 잡고 있으면 바로 그 모양이다.
+ *
+ * 그 거짓말이 비싼 까닭: 사람은 실패로 알고 다시 옮긴다. 그런데 닿은 자리에는
+ * 이미 다 있다. 원본은 계속 남아 있고, 아무도 두 벌이 된 걸 모른다.
+ *
+ * 진짜 EXDEV 와 진짜 '지우기만 깨짐' 은 검사 PC 마다 다르게 나므로,
+ * fs 를 밖에서 넣어 세 갈래를 각각 만든다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-exdev-'));
+  const 앞 = join(방, '앞'); const 뒤 = join(방, '뒤');
+  mkdirSync(앞, { recursive: true });
+  writeFileSync(join(앞, 'a.txt'), '내용', 'utf8');
+
+  const 다됨 = 복사해옮기기(앞, 뒤, {
+    복사: (a, b) => { mkdirSync(b, { recursive: true }); writeFileSync(join(b, 'a.txt'), '내용', 'utf8'); },
+    지우기: (a) => rmSync(a, { recursive: true, force: true }),
+  });
+  check('★ 복사도 되고 원본도 지워지면 할 말이 없다',
+    !다됨.복사깨짐 && !다됨.원본남음, JSON.stringify(다됨));
+  check('★ 그때는 원본이 진짜로 없다', !existsSync(앞));
+
+  const 복사깨짐 = 복사해옮기기(앞, 뒤, {
+    복사: () => { const e = new Error('EACCES: permission denied'); throw e; },
+    지우기: () => { throw new Error('여기까지 오면 안 된다'); },
+  });
+  check('★ 복사가 깨지면 실패다', 복사깨짐.복사깨짐 === 'EACCES: permission denied', JSON.stringify(복사깨짐));
+  check('★ 복사가 깨졌으면 원본은 안 건드린다', 복사깨짐.원본남음 === undefined,
+    '지우기가 불렸으면 위에서 던졌다');
+
+  const 원본남음 = 복사해옮기기(앞, 뒤, {
+    복사: () => {},
+    지우기: () => { throw new Error('EBUSY: resource busy or locked'); },
+  });
+  check('★ 원본만 못 지운 것은 실패로 안 친다', 원본남음.복사깨짐 === undefined, JSON.stringify(원본남음));
+  check('★ 그래도 원본이 남았다고는 말한다', 원본남음.원본남음 === 'EBUSY: resource busy or locked',
+    JSON.stringify(원본남음));
+
+  rmSync(방, { recursive: true, force: true });
+}
+
+trace('10-끝');
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n옮기기 검사  ${D}(옮긴 것이 되돌아오는가)${X}\n`);

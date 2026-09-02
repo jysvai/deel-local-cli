@@ -523,6 +523,38 @@ function pdf읽기(abs, ctx) {
  * **손대지 않는다** — 옮겨진 자리에 그대로 남는다. 되돌아가지는 않지만
  * 없어지지도 않는다. 안전망이 파일을 지우는 것보다 이쪽이 낫다.
  */
+/*
+ * ── 복사와 지우기를 한 try 로 묶으면 안 된다 ──────────────────────────────
+ *
+ * 드라이브가 다르면(EXDEV) rename 이 안 되니 복사하고 원본을 지운다. 그 둘을
+ * 한 try 에 묶어 두면 **복사는 다 됐는데 원본을 못 지운** 경우까지 「못
+ * 옮겼습니다」가 된다. 윈도우에서 아주 흔하다 — 원본 폴더 안의 파일 하나를
+ * 편집기나 탐색기가 잡고 있으면 EPERM/EBUSY 로 rmSync 만 깨진다.
+ * 그때 화면은 실패라고 말하는데 실제로는 **양쪽에 다 있다.** 사람은 실패로
+ * 알고 다시 옮기고, 원본은 계속 남는다.
+ *
+ * 세 결과는 서로 다른 말이므로 서로 다르게 돌려준다.
+ *   {}                  다 됐다
+ *   { 복사깨짐: 까닭 }   닿은 자리가 반쯤 됐다 — 실패다
+ *   { 원본남음: 까닭 }   닿은 자리는 다 됐고 원본이 남았다 — 실패가 아니다
+ *
+ * fs 를 밖에서 넣을 수 있게 해 둔 것은 검사 때문이다. 진짜 EXDEV 와 진짜
+ * '지우기만 깨짐' 은 어느 PC 에서나 똑같이 만들어 낼 수 없다.
+ */
+export function 복사해옮기기(앞, 뒤, { 복사 = cpSync, 지우기 = rmSync } = {}) {
+  try {
+    복사(앞, 뒤, { recursive: true });
+  } catch (err) {
+    return { 복사깨짐: err.message };
+  }
+  try {
+    지우기(앞, { recursive: true, force: true });
+  } catch (err) {
+    return { 원본남음: err.message };
+  }
+  return {};
+}
+
 function 한개옮기기({ from, to, overwrite = false }, ctx) {
   if (typeof from !== 'string' || !from) return { error: 'from 이 없습니다' };
   if (typeof to !== 'string' || !to) return { error: 'to 가 없습니다' };
@@ -582,6 +614,7 @@ function 한개옮기기({ from, to, overwrite = false }, ctx) {
   }
 
   mkdirSync(dirname(뒤), { recursive: true });
+  let 원본남음 = null;
   try {
     renameSync(앞, 뒤);
   } catch (err) {
@@ -591,19 +624,23 @@ function 한개옮기기({ from, to, overwrite = false }, ctx) {
      * 복사 도중에 끊기면 양쪽에 반씩 남기 때문이다.
      */
     if (err.code !== 'EXDEV') return { error: `못 옮겼습니다: ${err.message}` };
-    try {
-      cpSync(앞, 뒤, { recursive: true });
-      rmSync(앞, { recursive: true, force: true });
-    } catch (err2) {
-      return { error: `못 옮겼습니다: ${err2.message}` };
+    const 벌어진일 = 복사해옮기기(앞, 뒤);
+    if (벌어진일.복사깨짐) {
+      // 닿은 자리를 여기서 지우지 않는다 — 이미 있던 폴더로 옮기는 중이었으면
+      // 남의 파일까지 지운다. 어디에 반쯤 남았는지만 정확히 말한다.
+      return { error: `못 옮겼습니다: ${벌어진일.복사깨짐}\n(옮기다 만 것이 ${ctx.scope.show(뒤)} 에 남아 있을 수 있습니다 — 지우기 전에 확인하세요)` };
     }
+    원본남음 = 벌어진일.원본남음 ?? null;
   }
 
   for (const [, b] of 짝들) ctx.seen.add(b);
   const 무엇 = 폴더인가 ? `폴더 ${짝들.length}개 파일` : '';
-  const 경고 = 되돌리기반쪽
+  const 경고 = (되돌리기반쪽
     ? `\n(파일이 ${훑은것.상한.toLocaleString('en-US')}개를 넘어 되돌리기에는 앞부분만 떴습니다 — 옮기기는 전부 됐지만 /undo 는 다 못 되돌립니다)`
-    : '';
+    : '')
+    + (원본남음
+      ? `\n(닿은 자리에는 다 옮겼는데 원본을 못 지웠습니다 — 지금 ${ctx.scope.show(앞)} 에도 그대로 있습니다: ${원본남음})`
+      : '');
   return {
     content: `옮김: ${ctx.scope.show(앞)} → ${ctx.scope.show(뒤)}${무엇 ? ` (${무엇})` : ''}${경고}`,
     summary: `${ctx.scope.show(뒤)}`,

@@ -194,6 +194,43 @@ trace('7-자리를안먹는다');
     `${전} → ${s.systemPrompt().length}`);
 }
 
+trace('8-기록이샐때');
+
+/*
+ * ── ★ 기록을 못 적으면 「안 했다」가 아니라 「못 적었다」라고 해야 한다 ──
+ *
+ * 이 화면은 감사기록을 읽어서 만든다. 그런데 적는 쪽이 조용히 삼키고 있었다 —
+ * 디스크가 차거나 폴더가 읽기 전용이면 한 줄도 안 적히는데 화면은 아무 말이
+ * 없었다. 그러면 「이번 대화에서 아직 바꾸거나 돌린 것이 없습니다」가 뜬다.
+ * **안 한 것을 말하라고 만든 화면이 안 한 것처럼 보이게 하는** 자리다.
+ *
+ * 못 쓰는 상황은 파일 자리에 폴더를 세워서 만든다 — 권한을 건드리지 않고
+ * 어느 OS 에서나 똑같이 EISDIR/EPERM 이 난다.
+ */
+{
+  const { s, a } = 새것();
+  const 원래 = a.file;
+  rmSync(원래, { force: true });
+  mkdirSync(원래, { recursive: true });          // 파일 자리에 폴더 → 못 적는다
+
+  check('기록이 멀쩡할 때는 아무 말도 안 한다', 증거모으기(s, { audit: a }).기록못씀 === null);
+
+  a.tool('Bash', { command: 'npm test' }, { summary: '통과' });
+  s.noteChange('src/runner.js', { added: 10, removed: 2 });
+  a.tool('Bash', { command: 'npm run build' }, { summary: '통과' });
+
+  const e = 증거모으기(s, { audit: a });
+  check('★ 기록이 샜다고 말한다 (몇 건인지까지)', e.기록못씀 != null && e.기록못씀.수 === 2,
+    JSON.stringify(e.기록못씀));
+  check('★ 왜 못 적었는지도 남긴다', (e.기록못씀?.까닭 ?? '').length > 0, e.기록못씀?.까닭 ?? '(없음)');
+  // 여기가 요점이다 — 기록이 없으니 돌린 것은 0건이다.
+  // 그 0 을 「안 돌렸다」로 읽으면 안 된다는 표시가 위의 기록못씀이다.
+  check('★ 그래서 돌린 것이 0건으로 보인다 (이게 거짓말이 되는 자리)',
+    e.돌린것.length === 0 && e.바꾼것.length === 1, `돌린것 ${e.돌린것.length} · 바꾼것 ${e.바꾼것.length}`);
+
+  rmSync(원래, { recursive: true, force: true });
+}
+
 rmSync(root, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

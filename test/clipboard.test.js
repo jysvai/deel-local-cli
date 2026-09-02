@@ -166,8 +166,8 @@ trace('5-진짜');
   const 성한가 = r && typeof r.ok === 'boolean'
     && (r.ok ? (Buffer.isBuffer(r.buf) && r.buf.length > 0 && typeof r.mime === 'string')
       : (r.없음 === true || typeof r.왜 === 'string'));
+  // 「안 터진다」는 따로 안 적는다 — 터지면 이 줄까지 못 온다.
   check('★ 진짜 클립보드를 읽어도 모양이 성하다', 성한가 === true, JSON.stringify(r?.ok ? { ok: true, bytes: r.buf.length } : r));
-  check('★ 안 터진다 (무엇이 들어 있든)', true);
   if (r.ok) check('그림이면 진짜 그림 바이트다', r.buf.length > 8, String(r.buf.length));
 }
 

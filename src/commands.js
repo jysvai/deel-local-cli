@@ -1219,6 +1219,10 @@ export async function handle(line, session, ctx) {
       say(`  ${c.gray('모델에게는')} ${c.white('mcp__<서버>__<도구>')} ${c.gray('라는 이름으로 보입니다.')}`);
       say(`  ${c.yellow('※')} ${c.gray('이 도구들은 남의 프로그램이 돌립니다 —')} ${c.white('작업 범위(' + session.root + ') 를 안 지킵니다.')}`);
       say(`  ${c.gray('  무엇을 불렀는지는')} ${c.white('.deel/audit.jsonl')} ${c.gray('에 남습니다.')}`);
+      // 바로 위 줄이 약속이다. 못 지키고 있으면 여기서 말해야 한다.
+      if (ctx?.audit?.못쓴것?.()) {
+        say(`  ${mark.warn} ${c.yellow('지금 그 파일에 못 적고 있습니다')} ${c.gray('— /증거 에서 까닭을 보세요.')}`);
+      }
       say('');
       return { handled: true };
     }
@@ -1815,6 +1819,19 @@ function 증거명령(session, ctx, arg = '') {
   const 말 = String(arg ?? '').trim();
   say('');
   rule('작업 증거', 70);
+
+  /*
+   * 기록이 새고 있으면 **목록보다 먼저** 말한다.
+   *
+   * 이 화면은 감사기록을 읽어서 만든다. 기록이 안 적히면 목록이 짧아지는
+   * 게 아니라 「아무것도 안 했다」로 보인다 — 아래 이른 반환이 그 자리다.
+   * 안 한 것을 말하라고 만든 화면이 안 한 것처럼 보이게 하면 안 된다.
+   */
+  if (e.기록못씀) {
+    say(`  ${mark.warn} ${c.yellow(`감사기록 ${e.기록못씀.수}건이 안 적혔습니다`)} ${c.gray(`— ${clip(e.기록못씀.까닭, 60)}`)}`);
+    say(`  ${c.gray('아래는 실제로 한 것보다 짧습니다.')}`);
+    say('');
+  }
 
   if (!e.바꾼것.length && !e.돌린것.length) {
     say(`  ${c.gray('이번 대화에서 아직 바꾸거나 돌린 것이 없습니다.')}`);
