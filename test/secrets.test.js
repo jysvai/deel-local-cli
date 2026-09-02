@@ -126,6 +126,47 @@ trace('4-몇군데인지');
     JSON.stringify(둘.가린것));
 }
 
+trace('4.5-헤더규칙자체');
+
+/*
+ * ── ★ 겹치는 규칙은 겹치지 않는 예로 따로 재야 한다 ─────────────────────
+ *
+ * 바로 위 검사와 1절의 `curl -v 헤더` 는 값이 둘 다 **JWT** 다. 그래서 헤더
+ * 규칙이 통째로 죽어 있어도 jwt 규칙이 대신 가려 버린다 — 실제로 헤더 규칙의
+ * 정규식을 아무것도 안 맞게 바꿔 봤는데 71건이 전부 초록이었다.
+ * 「가리는 규칙이 있다」와 「그 규칙이 실제로 가린다」는 다른 말이다.
+ *
+ * 그런데 사내 게이트웨이가 주는 Bearer 값은 대개 JWT 가 아니라 그냥 불투명한
+ * 문자열이다. 헤더 규칙이 유일한 그물인 자리가 바로 거기다. 그 값으로 잰다.
+ */
+{
+  const 것들 = [
+    ['불투명 Bearer', 'Authorization: Bearer A1b2C3d4E5f6G7h8I9j0K1l2M3n4', 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4'],
+    ['Basic 인증', 'Authorization: Basic dXNlcjpwYXNzd29yZA==', 'dXNlcjpwYXNzd29yZA=='],
+    ['프록시 헤더', 'Proxy-Authorization: Bearer 사내게이트웨이토큰1234', '사내게이트웨이토큰1234'],
+    ['X-Api-Key', 'X-Api-Key: 0123456789abcdef0123', '0123456789abcdef0123'],
+    ['등호로 적힌 것', 'X-Auth-Token=zzzz-yyyy-xxxx-wwww', 'zzzz-yyyy-xxxx-wwww'],
+  ];
+  for (const [무엇, 글, 값] of 것들) {
+    const r = 가리기(글);
+    check(`★ ${무엇} — 값이 안 남는다`, !r.글.includes(값), r.글);
+    check(`  ${무엇} — 헤더 규칙이 잡았다고 적는다`, r.가린것.some((x) => x.종류 === '헤더'),
+      JSON.stringify(r.가린것));
+  }
+
+  // 헤더 이름은 남긴다 — 무슨 헤더가 새고 있었는지 모르면 사람이 손을 못 쓴다.
+  check('헤더 이름은 그대로 둔다',
+    가리기('Authorization: Bearer A1b2C3d4E5f6G7h8I9j0K1l2').글.startsWith('Authorization: '));
+
+  // 값이 줄 끝까지 가려져야 한다. `Bearer` 만 가리고 뒤를 남기면 안 가린 것만 못하다.
+  check('낱말 하나만 가리고 값을 남기지 않는다',
+    !/Bearer\s+\S/.test(가리기('Authorization: Bearer A1b2C3d4E5f6G7h8I9j0K1l2').글));
+
+  // 다음 줄까지 먹으면 멀쩡한 출력이 통째로 사라진다.
+  const 두줄 = 가리기('Authorization: Bearer A1b2C3d4E5f6G7h8I9j0K1l2\n다음 줄은 멀쩡합니다');
+  check('다음 줄까지 먹지 않는다', 두줄.글.includes('다음 줄은 멀쩡합니다'), 두줄.글);
+}
+
 trace('5-모델에게하는말');
 
 // ── 표만 남기고 말을 안 하면 모델이 헛돈다 ──────────────────────────────
