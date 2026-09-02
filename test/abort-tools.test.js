@@ -31,7 +31,7 @@
 // 실제 rg 나 LibreOffice 를 깔고 재지 않는다. 깔아야만 도는 검사는 아무도 안
 // 돌린다. 대신 **일부러 오래 자는 가짜 프로그램**을 세운다 — 재려는 것은
 // 검색이 잘 되는지가 아니라 그동안 우리가 귀를 열고 있는가다.
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TOOLS, runTool } from '../src/tools/index.js';
@@ -287,6 +287,71 @@ trace('6-찾기');
     `${멈추는데}ms 만에 「${끊은것.error ?? 끊은것.summary}」`);
 
   rmSync(방, { recursive: true, force: true });
+}
+
+/*
+ * ── 이미 바꿔 놓은 것은 사실대로 말한다 ─────────────────────────────────
+ *
+ * 도구가 일을 다 마친 **직후**에 ESC 가 눌리는 자리가 있다. 그때 「중단했습니다」
+ * 만 돌려주면 모델은 안 고쳐진 줄 알고 또 고친다 — 같은 편집이 두 번 들어가거나
+ * 되돌리기 기록과 어긋난다. 그래서 runTool 은 그 경우 결과를 그대로 실어 준다.
+ *
+ * 적어 놓기만 하고 안 되고 있었다. 판단을 `isMutating(name)` 으로 했는데,
+ * isMutating 은 **셸 명령줄**을 받아 mv·cp·rm 같은 낱말을 찾는 함수다. 거기에
+ * 도구 이름을 넣었으니 `Move` 만 우연히 참이고 Write·Edit·Append 는 전부
+ * 거짓이었다 — 저 주석이 지키겠다던 도구들이 통째로 빠져 있었다.
+ *
+ * 그러면 디스크는 바뀌었는데 changed 가 떨어져 나가서, 턴 끝의 파일 목록에도
+ * /diff 에도 안 잡힌다. 검사는 내내 초록이었다. 아무도 이 자리를 안 쟀기 때문이다.
+ */
+trace('7-끊겨도-바꾼-것은-말한다');
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-abort7-'));
+  /*
+   * 재려는 것은 「이미 끊긴 뒤」 가 아니라 **「일을 다 하고 난 뒤에 끊긴 것」** 이다.
+   *
+   * runTool 은 시작 전에도 signal 을 본다. 처음부터 끊긴 신호를 주면 거기서
+   * 「실행하지 않았습니다」 로 끝나 버려서, 정작 재려던 아래쪽 자리에 닿지도
+   * 못한다. 그래서 **처음 한 번만 안 끊긴 척**하는 신호를 만든다 — 도구가
+   * 도는 사이에 사람이 ESC 를 누른 것과 같은 모양이다.
+   */
+  // seen 은 나눠 쓴다 — Edit 은 **먼저 읽은 파일**만 고친다.
+  const 본것 = new Set();
+  const 성한ctx = () => 판(방, { seen: 본것 });
+  const 끊긴ctx = () => {
+    let 본횟수 = 0;
+    return 판(방, { seen: 본것, signal: { get aborted() { return 본횟수++ > 0; } } });
+  };
+  const 파일 = (이름) => join(방, 이름);
+
+  // (1) 쓰기 — 다 쓰고 나서 끊긴 자리
+  writeFileSync(파일('w.js'), '옛 내용\n', 'utf8');
+  const 쓴것 = await runTool('Write', { file_path: 파일('w.js'), content: '새 내용\n' }, 끊긴ctx());
+  check('★ 끊겨도 Write 가 바꾼 파일을 말해 준다', !!쓴것.changed,
+    JSON.stringify({ changed: 쓴것.changed ?? null, error: 쓴것.error ?? null }).slice(0, 90));
+  check('디스크는 실제로 바뀌어 있다', readFileSync(파일('w.js'), 'utf8') === '새 내용\n',
+    JSON.stringify(readFileSync(파일('w.js'), 'utf8')));
+  check('그러면서 끊겼다는 표시는 남는다', 쓴것.중단됨 === true, String(쓴것.중단됨));
+
+  // (2) 고치기 — 같은 자리. 먼저 읽어 둬야 고칠 수 있다.
+  writeFileSync(파일('e.js'), 'const a = 1;\n', 'utf8');
+  await runTool('Read', { file_path: 파일('e.js') }, 성한ctx());
+  const 고친것 = await runTool('Edit',
+    { file_path: 파일('e.js'), old_string: 'const a = 1;', new_string: 'const a = 2;' }, 끊긴ctx());
+  check('★ 끊겨도 Edit 이 바꾼 파일을 말해 준다', !!고친것.changed,
+    JSON.stringify({ changed: 고친것.changed ?? null, error: 고친것.error ?? null }).slice(0, 90));
+  check('그 파일도 실제로 바뀌어 있다', readFileSync(파일('e.js'), 'utf8') === 'const a = 2;\n',
+    JSON.stringify(readFileSync(파일('e.js'), 'utf8')));
+
+  // (3) 읽기만 한 것은 버려도 잃을 것이 없다 — 그건 중단으로 끝나야 한다.
+  const 읽은것 = await runTool('Read', { file_path: 파일('w.js') }, 끊긴ctx());
+  check('읽기만 한 것은 그냥 중단으로 끝난다', !!읽은것.error && 읽은것.끝났다 === true,
+    JSON.stringify({ error: 읽은것.error ?? null }).slice(0, 60));
+
+  // (4) 실패한 것도 중단으로 끝난다 — 바꿔 놓은 것이 없다.
+  const 실패한것 = await runTool('Edit',
+    { file_path: 파일('e.js'), old_string: '없는 글', new_string: 'x' }, 끊긴ctx());
+  check('바꾸다 실패한 것은 중단으로 끝난다', !!실패한것.error, (실패한것.error ?? '').slice(0, 50));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

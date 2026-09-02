@@ -849,7 +849,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
                 + `  다시 보내면 또 같은 자리에서 잘립니다. 한 번에 300줄 안쪽으로 끊어 보내세요.`;
               session.push(toolMessage(conn.kind, { callId: call.id, name: call.name, content: note }));
               if (r.changed) { session.noteChange(r.changed, r.diff); 손댄파일.add(r.changed); }
-              ctx.audit.tool(call.name, { file_path: 건진것.path }, `잘린 것을 살려 ${건진것.lines}줄 씀`);
+              ctx.audit.tool(call.name, { file_path: 건진것.path }, { summary: `잘린 것을 살려 ${건진것.lines}줄 씀` });
               yield {
                 type: 'tool', name: call.name, args: { file_path: 건진것.path },
                 result: { ...r, summary: `${건진것.lines}줄 · 잘린 데까지`, warn: `잘린 데까지만 썼습니다 — ${건진것.lines}줄` },

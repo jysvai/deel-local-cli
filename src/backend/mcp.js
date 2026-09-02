@@ -275,7 +275,7 @@ export async function 다붙이기(root, { offline = false, timeout = 붙기제�
     const ok = await 서버.붙기({ timeout });
     if (ok) {
       붙은것.push(서버);
-      audit?.note?.('mcp', { 이름: s.이름, command: s.command, 도구: 서버.도구.length });
+      audit?.write?.('mcp', { 이름: s.이름, command: s.command, 도구: 서버.도구.length });
     } else {
       못한것.push({ 이름: s.이름, 왜: 서버.죽음 ?? '알 수 없는 이유' });
       서버.닫기();

@@ -209,6 +209,41 @@ trace('3-도구');
   check('@폴더 목록도 gen/ 을 빼고 그렇다고 말한다', !/gen\//.test(at.text) && /keep\.js/.test(at.text) && /\.gitignore 로 1개 건너뜀/.test(at.text), at.text.split('\n').slice(-3).join(' | '));
 }
 
+/*
+ * ── Verify 는 **상한에 걸려 안 본 것도** 말해야 한다 ────────────────────
+ *
+ * verify.js 머리말이 스스로 못 박아 둔 것 — 「못 확인한 것은 못 확인했다고
+ * 말한다. 확인 못 한 것을 확인했다고 하는 것이 제일 나쁘다.」
+ *
+ * .gitignore 로 건너뛴 것(바로 위 검사)과 훑기 상한은 그렇게 하고 있었는데,
+ * 「한 번에 마흔 개」 라는 상한만 아무 데도 안 적혔다. 그래서 파일이 마흔 개를
+ * 넘으면 마흔한 번째가 깨져 있어도 「확인했습니다」 로 끝났고, failed 도 거짓이라
+ * 루프까지 성공으로 넘어갔다. 상한이 있는 것 자체는 옳다 — **말을 안 한 것**이 탈이다.
+ */
+trace('7-확인상한');
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-verify-cap-'));
+  const ctx = {
+    scope: makeScope(방), history: new History(방), audit: new Audit(방),
+    seen: new Set(), 모델컨텍스트: 200000, enc: new Map(),
+  };
+  // 멀쩡한 것 44개 + 진짜로 깨진 것 1개. 상한(40)을 확실히 넘긴다.
+  for (let i = 0; i < 44; i++) writeFileSync(join(방, `ok${String(i).padStart(2, '0')}.js`, ), `const x${i} = ${i};\n`, 'utf8');
+  writeFileSync(join(방, 'zzz-broken.js'), 'function 깨짐( {\n', 'utf8');
+
+  const v = await TOOLS.Verify.run({}, ctx);
+  const v글 = v?.content ?? '';
+  check('★ 상한에 걸려 안 본 것이 있다고 말한다', /한 번에 \d+개까지만 봅니다/.test(v글),
+    v글.split('\n').filter((l) => /못 한 것|한 번에/.test(l)).join(' | ') || v글.slice(0, 80));
+  check('★ 그것을 「확인 못 한 것」 으로 센다', /확인 못 한 것/.test(v글),
+    v글.split('\n').find((l) => /확인 못 한 것/.test(l)) ?? '(그런 줄 없음)');
+  check('paths 로 짚어 주면 그 파일은 본다',
+    /zzz-broken/.test((await TOOLS.Verify.run({ paths: ['zzz-broken.js'] }, ctx))?.content ?? ''),
+    '');
+
+  rmSync(방, { recursive: true, force: true });
+}
+
 // ── 4. .gitignore 가 없으면 전과 같다 ──────────────────────────────────
 trace('4-회귀');
 {

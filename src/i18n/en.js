@@ -205,6 +205,7 @@ export const en = {
   'undo.alsoTalk': 'Rolled back {n} message(s) too — if the model still thinks the reverted code is there, it keeps building on it.',
   'undo.repaired': '({n} orphaned tool call(s) cleaned up as well)',
   'undo.saidWas': 'You had asked:',
+  'undo.failed': '{n} file(s) could not be restored — they are still modified. The snapshots were kept, so try /undo again.',
   'undo.talkKept': 'The conversation is left as is — that turn had already been folded away.',
   'undo.talkKeptWhy': 'The model may still think the reverted work exists, so mention it in your next message.',
 

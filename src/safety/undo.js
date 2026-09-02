@@ -168,7 +168,7 @@ export class History {
             continue;
           }
           rmSync(path, { force: true });
-          restored.push({ path, how: 말('undo.wayDeleted') });
+          restored.push({ path, how: 말('undo.wayDeleted'), ok: true });
         } else {
           /*
            * 담고 있던 폴더가 없어졌을 수 있다 — Move 로 폴더째 옮긴 경우다.
@@ -179,16 +179,34 @@ export class History {
           mkdirSync(dirname(path), { recursive: true });
           // enc 가 붙어 있으면 UTF-8 로 담을 수 없던 파일이다 — 바이트를 그대로 되돌린다.
           writeFileSync(path, rec.enc === 'b64' ? Buffer.from(rec.before, 'base64') : Buffer.from(rec.before, 'utf8'));
-          restored.push({ path, how: 말('undo.wayRestored') });
+          restored.push({ path, how: 말('undo.wayRestored'), ok: true });
         }
       } catch (err) {
-        restored.push({ path, how: `실패: ${err.message}` });
+        restored.push({ path, how: `실패: ${err.message}`, ok: false, 못했나: true });
       }
     }
-    // 되돌린 기록은 잘라낸다.
-    const keep = recs.filter((r) => !turns.includes(r.turn));
+    /*
+     * ── 못 되돌린 것의 기록은 **남긴다** ──────────────────────────────
+     *
+     * 전에는 성패를 안 가리고 그 턴의 기록을 통째로 잘라냈다. 그러면 한 번
+     * 실패한 파일은 스냅샷이 사라져서 **다시 시도할 길이 없다.** 화면은
+     * 「파일 N개를 되돌렸습니다」 라고 하고(실패한 것까지 셌다), 감사기록에도
+     * 그 부풀린 수가 남고, 부르는 쪽은 /diff 목록에서까지 그 파일을 지운다.
+     * 파일만 고쳐진 채로 남고 아무도 그걸 모른다.
+     *
+     * 되돌린 것만 잘라낸다. 못한 것은 그대로 두어 한 번 더 시도할 수 있게 한다.
+     */
+    const 못한것 = new Set(restored.filter((x) => x.ok === false).map((x) => x.path));
+    const keep = recs.filter((r) => !turns.includes(r.turn) || 못한것.has(r.path));
     writeFileSync(this.file, keep.map((r) => JSON.stringify(r)).join('\n') + (keep.length ? '\n' : ''), 'utf8');
-    return { restored, turns: turns.length, turnIds: turns.slice() };
+    return {
+      restored,
+      // 화면·감사기록이 쓰는 수. **진짜로 되돌아간 것만** 센다.
+      되돌린수: restored.filter((x) => x.ok === true).length,
+      못한것: restored.filter((x) => x.ok === false),
+      turns: turns.length,
+      turnIds: turns.slice(),
+    };
   }
 }
 

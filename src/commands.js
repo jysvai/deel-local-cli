@@ -822,18 +822,32 @@ export async function handle(line, session, ctx) {
     case 'undo': {
       const n = Math.max(1, parseInt(arg, 10) || 1);
       const r = ctx.history.undo(n);
-      ctx.audit.undo({ turns: r.turns, files: r.restored.length });
+      /*
+       * 세는 수는 **진짜로 되돌아간 것**이다.
+       *
+       * 전에는 restored.length 를 그대로 썼다. 그 배열에는 못 되돌린 것과
+       * 손대지 않은 것(바이너리처럼 내용을 못 떠 둔 파일)까지 들어 있어서,
+       * 하나도 못 되돌린 판에도 「파일 2개를 되돌렸습니다」 가 나올 수 있었다.
+       * 감사기록에도 그 부풀린 수가 그대로 남았다.
+       */
+      const 되돌린수 = r.되돌린수 ?? r.restored.length;
+      ctx.audit.undo({ turns: r.turns, files: 되돌린수 });
       if (!r.restored.length) {
         say(`  ${c.gray(말('undo.nothing'))}`);
         say('');
         return { handled: true };
       }
-      say(`  ${mark.ok} ${말('undo.done', { turns: r.turns, files: r.restored.length })}`);
+      say(`  ${mark.ok} ${말('undo.done', { turns: r.turns, files: 되돌린수 })}`);
       for (const f of r.restored) say(`    ${c.gray(ctx.scope.show(f.path))}  ${c.gray(f.how)}`);
+      // 못 되돌린 것이 있으면 그것만 따로 못 박는다. 위 목록에 섞여 있으면 안 읽힌다.
+      if (r.못한것?.length) {
+        say(`  ${mark.warn} ${말('undo.failed', { n: r.못한것.length })}`);
+      }
 
       // /diff 가 세던 것에서도 뺀다. 되돌린 파일이 '바뀐 파일' 로 남아 있으면
-      // 사람도 되돌아간 줄 모른다.
-      for (const f of r.restored) if (!f.skipped) session.changes.delete(f.path);
+      // 사람도 되돌아간 줄 모른다. **되돌아간 것만** 뺀다 — 못 되돌린 파일을
+      // 여기서 빼면 진짜로 바뀌어 있는 파일이 /diff 에서도 사라진다.
+      for (const f of r.restored) if (f.ok === true) session.changes.delete(f.path);
       // 상태줄의 '되돌릴 턴' 도 여기서 줄여 준다. 안 줄이면 방금 되돌린 것을
       // 아직 되돌릴 수 있는 것처럼 세고 있게 된다.
       try { session.되돌릴턴 = ctx.history.turns().length; } catch { /* 못 세면 그냥 둔다 */ }

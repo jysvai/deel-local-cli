@@ -282,6 +282,75 @@ trace('8-Bash로사라진것');
 trace('9-치움');
 rmSync(방, { recursive: true, force: true });
 
+/*
+ * ── 못 되돌린 것을 되돌렸다고 세지 않는다 ───────────────────────────────
+ *
+ * 되돌리기가 실패할 수 있다. 그 자리에 폴더가 생겼거나(EISDIR), 다른 프로그램이
+ * 파일을 물고 있거나, 권한이 막혔거나.
+ *
+ * 그때 네 가지가 한꺼번에 어긋나고 있었다.
+ *
+ *   ① 화면은 「파일 1개를 되돌렸습니다」 — 실패한 것까지 셌다
+ *   ② 감사기록에도 그 부풀린 수가 남는다
+ *   ③ 부르는 쪽이 /diff 목록에서 그 파일을 뺀다 — 진짜로 바뀐 파일이 사라진다
+ *   ④ **스냅샷을 지운다** — 다시 시도할 길이 없어진다
+ *
+ * 파일만 고쳐진 채로 남고 아무도 그걸 모른다. 되돌리기는 이 프로그램의 안전망이라
+ * 여기서 조용히 틀리는 것이 제일 나쁘다.
+ */
+trace('9-못되돌린것');
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-undo-fail-'));
+  const 이력 = new History(방);
+
+  const 될것 = join(방, '될것.txt');
+  const 안될것 = join(방, '안될것.txt');
+  writeFileSync(될것, '처음\n', 'utf8');
+  writeFileSync(안될것, '처음\n', 'utf8');
+
+  이력.nextTurn();
+  이력.snapshot(될것, '고침');
+  이력.snapshot(안될것, '고침');
+  writeFileSync(될것, '고쳐짐\n', 'utf8');
+  writeFileSync(안될것, '고쳐짐\n', 'utf8');
+
+  // 되돌리기를 **진짜로** 실패하게 만든다 — 그 자리를 폴더로 바꿔 둔다.
+  rmSync(안될것, { force: true });
+  mkdirSync(안될것);
+
+  const r = 이력.undo(1);
+  const 실패한것 = r.restored.filter((x) => x.ok === false);
+
+  check('★ 되돌린 수는 진짜로 되돌아간 것만 센다', r.되돌린수 === 1,
+    `${r.되돌린수}개 (목록에는 ${r.restored.length}개)`);
+  check('★ 못한 것을 따로 알려 준다', 실패한것.length === 1 && r.못한것?.length === 1,
+    실패한것.map((x) => x.how).join(' · '));
+  check('된 것은 진짜로 되돌아갔다', readFileSync(될것, 'utf8') === '처음\n',
+    JSON.stringify(readFileSync(될것, 'utf8')));
+
+  /*
+   * ★ 그리고 **다시 시도할 수 있어야** 한다.
+   *
+   * 전에는 성패를 안 가리고 그 턴의 기록을 통째로 잘라냈다. 그러면 한 번 실패한
+   * 파일은 스냅샷이 사라져 영영 못 되돌린다 — 안전망이 스스로를 지운 셈이다.
+   */
+  const 남은기록 = 이력.all().filter((x) => x.path === 안될것);
+  check('★ 못 되돌린 것의 기록은 남겨 둔다 (다시 해 볼 수 있게)', 남은기록.length === 1,
+    `${남은기록.length}개`);
+  const 된기록 = 이력.all().filter((x) => x.path === 될것);
+  check('되돌린 것의 기록은 잘라낸다', 된기록.length === 0, `${된기록.length}개`);
+
+  // 막던 것을 치우고 다시 하면 이번엔 된다.
+  rmSync(안될것, { recursive: true, force: true });
+  writeFileSync(안될것, '고쳐짐\n', 'utf8');
+  const 다시 = 이력.undo(1);
+  check('★ 막던 것을 치우면 다시 되돌릴 수 있다',
+    다시.되돌린수 === 1 && readFileSync(안될것, 'utf8') === '처음\n',
+    JSON.stringify(readFileSync(안될것, 'utf8')));
+
+  rmSync(방, { recursive: true, force: true });
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n되돌리기 검사  ${D}(안전망이 파일을 지우지 않는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
