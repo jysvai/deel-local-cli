@@ -276,6 +276,11 @@ export class Store {
     // 남은 할 일과 시킨 말 원문도 같은 이유로 옮겨 싣는다. 접힌 자리에서
     // 다시 박으라고 들고 있는 것들인데, 정작 접는 자리에서 파일에서 빠지면
     // 이어받을 때 그 둘만 없는 대화가 된다.
+    //
+    // 옮겨 싣기 **전에** 아직 안 적은 것을 먼저 적는다. 여기서 파일만 보고
+    // 옮기면, 메시지가 한 번도 안 붙은 사이에 할 일이 바뀐 경우 그 바뀐 것이
+    // 통째로 사라진다 — 접는 자리는 원래 제일 크게 잃는 자리다.
+    this.살림적기();
     const { 할일, 이번요청 } = this.load();
     const lines = [JSON.stringify({ t: 'meta', at: new Date().toISOString(), ...meta })];
     lines.push(JSON.stringify({ t: 'note', at: new Date().toISOString(), note }));
