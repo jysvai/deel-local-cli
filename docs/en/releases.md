@@ -8,6 +8,7 @@ One file per version line — open only the line you need.
 
 | Line | Versions | What changed |
 |---|---|---|
+| **[1.10.x](releases/1.10.md)** | [1.10.0](releases/1.10.md#1100) | ESC actually stops, and a full context carries on |
 | **[1.9.x](releases/1.9.md)** | [1.9.2](releases/1.9.md#192) · [1.9.1](releases/1.9.md#191) · [1.9.0](releases/1.9.md#190) | The screen reads, and vendor APIs understand what you set |
 | **[1.8.x](releases/1.8.md)** | [1.8.0](releases/1.8.md#180) | A full day against a gateway that hands out one-hour tokens |
 | **[1.7.x](releases/1.7.md)** | [1.7.0](releases/1.7.md#170) | Local stays local; it goes out only when you say so |

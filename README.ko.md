@@ -94,7 +94,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.9.x](docs/ko/releases/1.9.md) · [1.8.x](docs/ko/releases/1.8.md) · [1.7.x](docs/ko/releases/1.7.md) · [그 앞](docs/ko/releases.md) |
+| [릴리스 노트](docs/ko/releases.md) | [1.10.x](docs/ko/releases/1.10.md) · [1.9.x](docs/ko/releases/1.9.md) · [1.8.x](docs/ko/releases/1.8.md) · [1.7.x](docs/ko/releases/1.7.md) · [그 앞](docs/ko/releases.md) |
 
 ---
 
@@ -267,7 +267,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 1.9.2  ⌂ 이 안
+ deel 1.10.0  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -1151,11 +1151,11 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[1.9.2](docs/ko/releases/1.9.md#192)** | 막고 있다고 적어 둔 것이 실제로는 안 막고 있던 자리들 · 접히면 시킨 말과 남은 할 일이 사라지던 것 |
+| **[1.10.0](docs/ko/releases/1.10.md#1100)** | ESC 가 진짜로 멈춥니다 · 자리가 다 차도 그 턴 안에서 이어 갑니다 · 회사별 창구를 여덟 자리 전부 쟀습니다 |
+| [1.9.2](docs/ko/releases/1.9.md#192) | 막고 있다고 적어 둔 것이 실제로는 안 막고 있던 자리들 · 접히면 시킨 말과 남은 할 일이 사라지던 것 |
 | [1.9.1](docs/ko/releases/1.9.md#191) | 한글 이름을 쓴 MCP 도구가 모델 눈에 전부 같아 보이던 것 — 서로 다르고 판마다 같은 이름으로 |
 | **[1.9.0](docs/ko/releases/1.9.md#190)** | 표를 표로 그린다 · Claude·Bedrock 에 추론 강도가 실제로 걸린다 · 회사별 도구 규격 · 바뀐 자리만 다시 싣기 |
 | **[1.8.0](docs/ko/releases/1.8.md#180)** | 한 시간짜리 토큰을 쓰는 사내 게이트웨이에서 하루를 — 열쇠를 받아 오기 · `deel reset` · 영어 화면이 진짜 영어 |
-| [1.7.0](docs/ko/releases/1.7.md#170) | 로컬은 그대로 두고, 말했을 때만 바깥으로 — 모드 셋 · 벤더 붙이기 · 자동 마스킹 · 돈 표시 |
 
 가까운 다섯 판만 적었습니다. 나머지 전부와 무엇이 왜 바뀌었는지는 **[릴리스 노트](docs/ko/releases.md)** 에 있습니다.
 
