@@ -451,6 +451,7 @@ trace('5-진짜로띄우기');
 let 느리게 = 0;      // 이 밀리초만큼 뜸을 들이고 답한다 (취소를 재려고)
 let 도구번호 = 1;
 let 읽기한번 = false;
+let 한계알린적 = false;
 const 받은대화 = [];   // 게이트웨이가 받은 messages 원본 (되살리기를 재려고)
 
 const srv = createServer((req, res) => {
@@ -494,6 +495,30 @@ const srv = createServer((req, res) => {
         읽기한번 = true;
         return 도구답('Bash', { command: 'echo 안녕' });
       }
+
+      /*
+       * ── 에디터에 아무 말도 안 가고 있던 세 자리 ────────────────────────
+       *
+       * 제일 나쁜 것이 말없이 끊김이다. 서버가 끝났다는 말도 없이 멈춘 반쪽
+       * 답이 에디터에는 **온전한 답**으로 뜬다. 사람은 그걸 읽고 다음 일로
+       * 넘어가는데, 정작 답의 뒷부분은 오지도 않았다.
+       */
+      if (/일부러_말없이끊김/.test(사람말)) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write('data: {"choices":[{"delta":{"content":"여기까지 쓰다가 "}}]}\n\n');
+        res.write('data: {"choices":[{"delta":{"content":"끊"}}]}\n\n');
+        return res.end();
+      }
+      if (/일부러_한계알림/.test(사람말)) {
+        if (!한계알린적) {
+          한계알린적 = true;
+          return 보냄({ error: { message: "This model's maximum context length is 8192 tokens, however you requested 41003 tokens." } }, 400);
+        }
+        return 답({ role: 'assistant', content: '(스텁 모델이 답했습니다)' });
+      }
+      if (/일부러_길이잘림/.test(사람말)) {
+        return 답({ role: 'assistant', content: '여기까지 쓰다가 끊' }, 'length');
+      }
       return 답({ role: 'assistant', content: '(스텁 모델이 답했습니다)' });
     }
     보냄({}, 404);
@@ -519,10 +544,10 @@ writeFileSync(join(home, 'config.json'), JSON.stringify({
  *
  * 일부러 아주 작게 짠다 — 여기가 커지면 무엇을 재는지가 흐려진다.
  */
-function 에디터(더줄인자 = []) {
+function 에디터(더줄인자 = [], 환경덧 = {}) {
   const kid = spawn(process.execPath, [진입점, 'acp', '--root', work, ...더줄인자], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, DEEL_HOME: home, DEEL_NO_OPEN: '1', FORCE_COLOR: '' },
+    env: { ...process.env, DEEL_HOME: home, DEEL_NO_OPEN: '1', FORCE_COLOR: '', ...환경덧 },
   });
 
   const 대기 = new Map();
@@ -618,8 +643,19 @@ trace('5-1-악수');
       JSON.stringify(방?.modes?.availableModes?.map((m) => m.id)));
     check('지금 모드도 알려 준다', typeof 방?.modes?.currentModeId === 'string', JSON.stringify(방?.modes?.currentModeId));
 
+    /*
+     * ── 값을 잰다, '뭐라도 왔다' 를 재지 않는다 ──────────────────────────
+     *
+     * 여기는 `바꿈 !== undefined` 였다. 그건 「답이 왔다」 는 뜻일 뿐이라,
+     * 모드를 엉뚱한 것으로 바꿔 놔도 초록이다. 규격이 정한 답은 빈 객체이고,
+     * **정말 바뀌었는지**는 그 뒤에 적히는 줄로 가린다.
+     */
     const 바꿈 = await 시간제한(e.요청('session/set_mode', { sessionId: 방.sessionId, modeId: 'plan' }), 8000, 'set_mode');
-    check('모드를 바꿔 준다', 바꿈 !== undefined, JSON.stringify(바꿈));
+    check('모드 바꾸기에 규격대로 빈 객체를 답한다', JSON.stringify(바꿈) === '{}', JSON.stringify(바꿈));
+    // 로그가 표준오류로 나가는 데 잠깐 걸린다.
+    await new Promise((r) => setTimeout(r, 300));
+    check('★ 고른 모드로 진짜 바뀐다', /작업 모드를 plan 로 바꿨습니다/.test(e.표준오류()),
+      (e.표준오류().split('\n').find((l) => /작업 모드를/.test(l)) ?? '그런 줄이 없다').slice(0, 80));
 
     let 코드 = null;
     try { await e.요청('없는/방법', {}); } catch (err) { 코드 = err.code; }
@@ -957,6 +993,134 @@ trace('5-8-되살리기');
     check('되살리기 — 통째로 실패', false, String(err?.message ?? err));
   } finally {
     await e2.끝내기();
+  }
+}
+
+trace('5-9-사실대로-말하는가');
+
+/*
+ * ── 에디터에도 사실이 가야 한다 ─────────────────────────────────────────
+ *
+ * ACP 는 `capped` 하나만 보고 있었다. 나머지 셋 — 말없이 끊김(cutoff) ·
+ * 되밀기(nudge) · 서버 한계 배움(learned) — 은 아무 말도 안 가고 있었다.
+ * 그 중 cutoff 가 제일 나쁘다. 반쪽 답이 에디터에는 온전한 답으로 뜨고,
+ * 사람은 그걸 읽고 다음 일로 넘어간다.
+ *
+ * 하나 더: `capped` 줄에는 한국어가 박혀 있었다. `/lang en` 으로 켠 사람이
+ * 이 자리에서만 한글을 본다.
+ */
+{
+  // 말없이 끊기는 것은 흘려보내는 연결에서만 난다. 그래서 이 절만 살림을 따로 쓴다.
+  const 흐름집 = mkdtempSync(join(tmpdir(), 'deel-acp-stream-'));
+  writeFileSync(join(흐름집, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자',
+    profiles: [{
+      id: 'stub', name: '스텁 연결', kind: 'openai',
+      baseUrl: base, auth: 'none', apiKey: '', model: '스텁모델',
+      ctx: 32768, streaming: true, tools: true, json: true, think: false,
+    }],
+  }, null, 2), 'utf8');
+
+  const e = 에디터([], { DEEL_HOME: 흐름집 });
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    await 시간제한(e.요청('session/prompt', {
+      sessionId: 방.sessionId,
+      prompt: [{ type: 'text', text: '일부러_말없이끊김' }],
+    }), 30000, 'session/prompt');
+
+    const 글 = e.알림들
+      .filter((u) => u.update?.sessionUpdate === 'agent_message_chunk')
+      .map((u) => u.update.content.text).join('');
+    check('★ 말없이 끊겼다고 에디터에 적는다', /끝났다는 말 없이/.test(글),
+      글.replace(/\n+/g, ' ').slice(0, 120));
+    check('받은 데까지는 그대로 보인다', /끊/.test(글), 글.slice(0, 60));
+  } catch (err) {
+    check('말없이 끊김(ACP) — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+    rmSync(흐름집, { recursive: true, force: true });
+  }
+}
+
+{
+  한계알린적 = false;
+  const e = 에디터();
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    await 시간제한(e.요청('session/prompt', {
+      sessionId: 방.sessionId,
+      prompt: [{ type: 'text', text: '일부러_한계알림' }],
+    }), 30000, 'session/prompt');
+
+    const 글 = e.알림들
+      .filter((u) => u.update?.sessionUpdate === 'agent_message_chunk')
+      .map((u) => u.update.content.text).join('');
+    check('★ 서버 한계를 배웠다고 에디터에 적는다', /컨텍스트 한계 8,192/.test(글),
+      글.replace(/\n+/g, ' ').slice(0, 120));
+  } catch (err) {
+    check('한계 배움(ACP) — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+  }
+}
+
+{
+  const e = 에디터();
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    await 시간제한(e.요청('session/prompt', {
+      sessionId: 방.sessionId,
+      prompt: [{ type: 'text', text: '일부러_길이잘림' }],
+    }), 30000, 'session/prompt');
+
+    const 글 = e.알림들
+      .filter((u) => u.update?.sessionUpdate === 'agent_message_chunk')
+      .map((u) => u.update.content.text).join('');
+    check('잘렸다고 에디터에 적는다', /토큰에서 잘렸습니다/.test(글), 글.replace(/\n+/g, ' ').slice(0, 120));
+    /*
+     * ★ 이 줄은 여태 한국어가 박혀 있었다. 말 표를 거치는지는 `/lang en`
+     * 으로 켜 보면 바로 갈린다 — 거치면 영어가 나오고, 안 거치면 한글 그대로다.
+     */
+    check('★ 잘림 안내가 말 표를 거친다 (한국어 박아 두지 않는다)',
+      /토큰에서 잘렸습니다/.test(글) && !/터미널에서/.test(글),
+      글.replace(/\n+/g, ' ').slice(0, 120));
+  } catch (err) {
+    check('잘림(ACP) — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+  }
+}
+
+{
+  // 화면 말을 영어로 켠 사람도 이 자리에서 한글을 보면 안 된다.
+  const e = 에디터([], { DEEL_LANG: 'en' });
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    await 시간제한(e.요청('session/prompt', {
+      sessionId: 방.sessionId,
+      prompt: [{ type: 'text', text: '일부러_길이잘림' }],
+    }), 30000, 'session/prompt');
+
+    const 글 = e.알림들
+      .filter((u) => u.update?.sessionUpdate === 'agent_message_chunk')
+      .map((u) => u.update.content.text).join('');
+    /*
+     * 잘림 안내 한 줄만 잰다. 같은 화면의 `retry` 줄은 아직 한국어인데,
+     * 그건 루프가 만들어 넘기는 글이라 여기서 고칠 자리가 아니다 —
+     * 안 고친 것을 이 검사로 덮으면 안 되므로 범위를 좁혀 둔다.
+     */
+    const 잘림줄 = (글.match(/_\([^)]*(?:cut off at|토큰에서 잘렸습니다)[^)]*\)_/g) ?? []).join(' ');
+    check('★ 영어로 켜면 잘림 안내도 영어다', /cut off at/.test(잘림줄) && !/[가-힣]/.test(잘림줄),
+      잘림줄.slice(0, 140) || 글.replace(/\n+/g, ' ').slice(0, 140));
+  } catch (err) {
+    check('잘림 영어(ACP) — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
   }
 }
 

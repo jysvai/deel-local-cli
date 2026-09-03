@@ -427,8 +427,34 @@ export async function acp(opts = {}) {
 
           // 답이 천장에서 잘렸고 더 못 올린다. 조용히 끝내면 에디터에는 중간에서
           // 끊긴 답만 남아서, 사람은 모델이 대충 답한 줄 안다.
+          //
+          // 한국어를 박아 두고 있었다 — `/lang en` 으로 켠 사람이 이 자리에서만
+          // 한글을 본다. 말 표를 거친다.
           case 'capped':
-            말하기(`\n\n_(답이 ${ev.cap.toLocaleString()} 토큰에서 잘렸습니다 — 터미널에서 \`/out 32k\` 로 상한을 올리거나, 파일은 나눠 쓰게 하세요)_\n\n`);
+            말하기(`\n\n_(${옮긴말('ev.capped', { 한계: ev.cap.toLocaleString() })})_\n\n`);
+            break;
+
+          /*
+           * ── 여기 셋은 에디터에 아무 말도 안 가고 있었다 ──────────────
+           *
+           * 특히 cutoff 가 나쁘다. 서버가 끝났다는 말도 없이 멈춘 반쪽 답이
+           * 에디터에는 **온전한 답**으로 뜬다. 사람은 그걸 읽고 다음 일로
+           * 넘어가는데, 정작 답의 뒷부분은 오지도 않았다.
+           */
+          case 'cutoff':
+            말하기(`\n\n_(${옮긴말('ev.cutoff')})_\n\n`);
+            break;
+
+          case 'nudge':
+            말하기(`\n\n_(${ev.why === '요청누락'
+              ? 옮긴말('ev.nudgeMissed', { n: ev.빠진?.length ?? 0 })
+              : 옮긴말('ev.nudgeRead')})_\n\n`);
+            break;
+
+          case 'learned':
+            말하기(`\n\n_(${ev.what === 'ctx'
+              ? 옮긴말('ev.learnedCtx', { 한계: ev.limit.toLocaleString() })
+              : 옮긴말('ev.learnedOut', { 한계: ev.limit.toLocaleString() })})_\n\n`);
             break;
 
           // 서버가 잠깐 막아 기다리는 중. 아직 흘러간 글이 없으니 답을 새로 시작하지는 않는다.

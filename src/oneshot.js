@@ -44,6 +44,15 @@ export const EXIT = {
   limit: 2,     // 도구 호출 걸음 수 상한에 닿았다
   stuck: 3,     // 같은 자리에서 헛돌아 스스로 멈췄다
   aborted: 4,   // 도중에 끊겼다 (Ctrl+C)
+  /*
+   * 서버가 끝났다는 말을 한 번도 안 주고 답을 멈췄다.
+   *
+   * 여기에 자기 코드가 있어야 한다. 전에는 이걸 아예 안 보고 `done`(0) 으로
+   * 끝냈다. `deel -p` 는 잡·CI 에서 돌고 그 뒤에 스크립트가 붙는데, 반쪽짜리
+   * 답이 0 으로 넘어가면 그 스크립트는 온전한 답으로 알고 그대로 쓴다.
+   * 사람이 나중에 결과를 보고 왜 반쪽인지 되짚을 방법이 없다.
+   */
+  cutoff: 5,
 };
 
 /**
@@ -318,6 +327,8 @@ export async function runOnce(opts = {}) {
   let steps = 0;
   let 이번단계글 = '';   // 지금 단계에서 모델이 흘린 글. 단계가 바뀌면 비운다
   let 답 = null;
+  // 서버가 끝났다는 말 없이 멈춘 적이 있나. 뒤에 오는 done 이 이걸 못 지운다.
+  let 말없이끊겼나 = false;
 
   try {
     // 하위 작업 안쪽에서 온 이벤트는 그 겹만큼 들여 쓴다.
@@ -416,6 +427,44 @@ export async function runOnce(opts = {}) {
           곁(`  ${c.gray(`(접지 못했습니다: ${ev.why})`)}`);
           break;
 
+        /*
+         * ── 여기 넷은 여태 아예 안 보고 있었다 ────────────────────────
+         *
+         * 대화창은 넷 다 화면에 적어 준다. 한 방 실행은 안 적었다. 그래서
+         * 잘린 답이 **온전한 답인 척** 파이프 뒤로 넘어갔다. `deel -p` 는
+         * 잡·CI 에서 돌고 그 기록이 나중에 근거가 되는 물건이라, 여기서
+         * 빠지면 왜 반쪽인지 되짚을 자리가 아무 데도 없다.
+         */
+        case 'capped':
+          곁(`  ${c.yellow('⚠')} ${c.gray(옮긴말('ev.capped', { 한계: ev.cap.toLocaleString() }))}`);
+          break;
+
+        /*
+         * 말없이 끊긴 것은 **종료코드까지** 바꾼다.
+         *
+         * 뒤에 done 이 따라오므로 그대로 두면 0 으로 끝난다. 잘렸다는 사실을
+         * 화면에만 적고 코드로는 성공이라고 하면, 스크립트는 화면을 안 읽으니
+         * 아무 일도 없던 것이 된다. 다만 여기서 곧바로 reason 을 바꾸지는
+         * 않는다 — 뒤에 오는 done 이 덮어쓰기 때문에 표시만 해 두고
+         * 루프가 끝난 뒤에 판정한다.
+         */
+        case 'cutoff':
+          말없이끊겼나 = true;
+          곁(`  ${c.yellow('⚠')} ${c.gray(옮긴말('ev.cutoff'))}`);
+          break;
+
+        case 'nudge':
+          곁(`  ${c.gray(`↺ ${ev.why === '요청누락'
+            ? 옮긴말('ev.nudgeMissed', { n: ev.빠진?.length ?? 0 })
+            : 옮긴말('ev.nudgeRead')}`)}`);
+          break;
+
+        case 'learned':
+          곁(`  ${c.cyan('◎')} ${c.gray(ev.what === 'ctx'
+            ? 옮긴말('ev.learnedCtx', { 한계: ev.limit.toLocaleString() })
+            : 옮긴말('ev.learnedOut', { 한계: ev.limit.toLocaleString() }))}`);
+          break;
+
         case 'limit':
           reason = 'limit';
           why = `도구 호출 ${ev.steps}회에서 멈췄습니다. 한 번에 하기엔 큰 일입니다 — 나눠서 시키세요.`;
@@ -452,6 +501,19 @@ export async function runOnce(opts = {}) {
   // 끝까지 못 갔어도 여기까지 나온 말은 내준다. 빈손으로 돌려보내면
   // 왜 안 됐는지 짐작할 거리조차 없다.
   if (답 == null) 답 = 이번단계글;
+
+  /*
+   * 말없이 끊긴 답은 '다 됐다' 로 안 넘긴다.
+   *
+   * done 이 뒤따라오므로 그냥 두면 reason 이 done 으로 덮인다. 그런데 그
+   * 답은 중간에서 끊긴 물건이다. 여기서 갈라 주지 않으면 파이프 뒤 스크립트가
+   * 반쪽을 온전한 것으로 받아 쓴다 — 그러고도 아무 표시가 안 남는다.
+   * 진짜 탈(error·limit·stuck)이 이미 잡혔으면 그쪽이 먼저다.
+   */
+  if (말없이끊겼나 && reason === 'done') {
+    reason = 'cutoff';
+    why = 옮긴말('ev.cutoff');
+  }
 
   const code = EXIT[reason] ?? EXIT.error;
   if (why) 삐끗(`  ${reason === 'done' ? c.gray('·') : c.red('✗')} ${why}`);

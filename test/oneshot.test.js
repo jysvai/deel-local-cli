@@ -32,7 +32,12 @@ let 받은요청 = [];
 let 도구한번 = false;
 let 쓰기한번 = false;
 let 도구번호 = 1;
-const 대본초기화 = () => { 도구한번 = 쓰기한번 = false; 도구번호 = 1; 받은요청 = []; };
+let 한계알린적 = false;
+let 되물은적 = false;
+const 대본초기화 = () => {
+  도구한번 = 쓰기한번 = 한계알린적 = 되물은적 = false;
+  도구번호 = 1; 받은요청 = [];
+};
 
 const srv = createServer((req, res) => {
   let body = '';
@@ -63,6 +68,41 @@ const srv = createServer((req, res) => {
       const 사람말 = String([...(json?.messages ?? [])].reverse().find((m) => m.role === 'user')?.content ?? '');
 
       if (/일부러_터뜨려/.test(사람말)) return 보냄({ error: { message: '스텁이 일부러 낸 오류입니다' } }, 500);
+
+      /*
+       * ── 화면이 사실대로 말해야 하는 네 자리 ──────────────────────────
+       *
+       * 대화창은 넷 다 적어 주는데 `deel run` 은 아무 말도 안 했다.
+       * 특히 첫째 것은 **종료코드까지** 0 이었다 — 반쪽짜리 답이 파이프
+       * 뒤 스크립트로 온전한 답인 척 넘어갔다.
+       */
+      // 알맹이는 주고 끝났다는 조각은 한 번도 안 준 채 곱게 닫는다.
+      if (/일부러_말없이끊김/.test(사람말)) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write('data: {"choices":[{"delta":{"content":"여기까지 쓰다가 "}}]}\n\n');
+        res.write('data: {"choices":[{"delta":{"content":"끊"}}]}\n\n');
+        return res.end();
+      }
+      // 언제나 상한에서 잘린다. 루프가 상한을 올려 다시 불러도 마찬가지다.
+      if (/일부러_길이잘림/.test(사람말)) {
+        return 답({ role: 'assistant', content: '여기까지 쓰다가 끊' }, 'length');
+      }
+      // 서버가 제 한계를 말투로 알려 준다. 그걸 읽고 맞춰 다시 부르는 자리.
+      if (/일부러_한계알림/.test(사람말)) {
+        if (!한계알린적) {
+          한계알린적 = true;
+          return 보냄({ error: { message: "This model's maximum context length is 8192 tokens, however you requested 41003 tokens." } }, 400);
+        }
+        return 답({ role: 'assistant', content: 답글 });
+      }
+      // 시킨 일을 안 하고 되묻고 끝내려 한다. 루프가 한 번 되민다.
+      if (/일부러_되물음/.test(사람말)) {
+        if (!되물은적) {
+          되물은적 = true;
+          return 답({ role: 'assistant', content: '어떤 작업을 원하시는지 말씀해 주세요.' });
+        }
+        return 답({ role: 'assistant', content: 답글 });
+      }
       // 걸음 수 상한까지 성공하는 도구만 계속 부른다 — 헛도는 것과 구분해야 한다.
       // 인자를 매번 조금씩 바꾼다. 똑같은 인자로 다시 부르면 루프가 '헛돌고 있다'
       // 고 보고 먼저 끊는데(그것도 맞다), 그러면 걸음 수 상한 자리를 못 밟는다.
@@ -347,6 +387,80 @@ trace('8-도움말');
   const r = await 띄우기(['--help']);
   check('도움말에 run 이 적혀 있다', /deel run/.test(r.out), r.out.slice(0, 80));
   check('도움말에 종료코드 표가 있다', /종료코드/.test(r.out), '');
+}
+
+trace('8.5-사실대로-말하는가');
+
+/*
+ * ── 잘린 답이 온전한 답인 척 파이프 뒤로 넘어가던 것 ────────────────────
+ *
+ * 한 방 실행은 대화창과 다른 자리다. 사람이 안 보고, 그 출력이 곧바로
+ * 다음 스크립트의 입력이 된다. 그런데 여기서 네 가지 소식을 **아예 안
+ * 보고 있었다** — 잘림(capped) · 말없이 끊김(cutoff) · 되밀기(nudge) ·
+ * 서버 한계 배움(learned).
+ *
+ * 제일 나쁜 것은 cutoff 다. 반쪽짜리 답이 종료코드 0 으로 나가면, 뒤에
+ * 붙은 스크립트는 그것을 온전한 답으로 알고 그대로 쓴다. 나중에 결과가
+ * 이상해도 왜 반쪽인지 되짚을 자리가 아무 데도 없다.
+ */
+{
+  // 말없이 끊기는 것은 흘려보내는 연결에서만 난다(끝났다는 조각이 안 오는 것이므로).
+  // 그래서 이 절만 흘려보내기를 켠 살림을 따로 쓴다.
+  const 흐름집 = mkdtempSync(join(tmpdir(), 'deel-one-stream-'));
+  writeFileSync(join(흐름집, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자',
+    profiles: [{
+      id: 'stub', name: '스텁 연결', kind: 'openai',
+      baseUrl: base, auth: 'none', apiKey: '', model: '스텁모델',
+      ctx: 32768, streaming: true, tools: true, json: true, think: false,
+    }],
+  }, null, 2), 'utf8');
+
+  대본초기화();
+  const r = await 띄우기(['run', '일부러_말없이끊김'], { env: { DEEL_HOME: 흐름집 } });
+  check('말없이 끊겨도 스스로 끝난다', !r.시간초과, `code=${r.code}`);
+  /*
+   * ★ 이 절의 핵심. 여기가 0 이면 파이프 뒤 스크립트가 반쪽을 온전한
+   * 것으로 받아 쓴다 — 그러고도 아무 표시가 안 남는다.
+   */
+  check('★ 말없이 끊긴 답은 0 으로 안 끝난다', r.code === 5, `code=${r.code}`);
+  check('★ 왜 그랬는지 곁으로 말해 준다', /끝났다는 말 없이/.test(r.err),
+    r.err.split('\n').find((l) => /끝났다는 말 없이/.test(l))?.trim().slice(0, 90) ?? '그런 줄이 없다');
+  check('받은 데까지는 그대로 내준다', /끊/.test(r.out), JSON.stringify(r.out.slice(0, 80)));
+
+  // --json 으로 받는 쪽도 같은 판정을 봐야 한다.
+  대본초기화();
+  const j = await 띄우기(['run', '일부러_말없이끊김', '--json'], { env: { DEEL_HOME: 흐름집 } });
+  let 몸 = null;
+  try { 몸 = JSON.parse(j.out); } catch { /* 아래 검사에서 잡힌다 */ }
+  check('★ --json 에도 까닭이 실린다', 몸?.reason === 'cutoff' && 몸?.ok === false,
+    JSON.stringify({ reason: 몸?.reason, ok: 몸?.ok, code: 몸?.code }));
+
+  rmSync(흐름집, { recursive: true, force: true });
+}
+
+{
+  대본초기화();
+  const r = await 띄우기(['run', '일부러_길이잘림']);
+  check('★ 상한에서 잘렸다고 곁으로 말해 준다', /토큰에서 잘렸습니다/.test(r.err),
+    r.err.split('\n').find((l) => /토큰에서 잘렸습니다/.test(l))?.trim().slice(0, 90) ?? '그런 줄이 없다');
+  check('어디를 손보면 되는지도 적는다', /\/out/.test(r.err));
+}
+
+{
+  대본초기화();
+  const r = await 띄우기(['run', '일부러_한계알림']);
+  check('서버가 한계를 알려 주면 맞춰 다시 부른다', r.code === 0, `code=${r.code}`);
+  check('★ 무엇을 배웠는지 곁으로 말해 준다', /컨텍스트 한계 8,192/.test(r.err),
+    r.err.split('\n').find((l) => /한계/.test(l))?.trim().slice(0, 90) ?? '그런 줄이 없다');
+}
+
+{
+  대본초기화();
+  const r = await 띄우기(['run', '일부러_되물음']);
+  check('되물어도 끝까지 간다', r.code === 0, `code=${r.code}`);
+  check('★ 한 번 되밀었다고 곁으로 말해 준다', /되밀었습니다/.test(r.err),
+    r.err.split('\n').find((l) => /되밀었습니다/.test(l))?.trim().slice(0, 90) ?? '그런 줄이 없다');
 }
 
 trace('9-치움');
