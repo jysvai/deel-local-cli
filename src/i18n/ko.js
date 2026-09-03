@@ -421,6 +421,7 @@ export const ko = {
   'run.bye': '끝냅니다.',
   'run.byeStats': '모델 호출 {n}회 · 도구 시간 {초}초 · ↑{입력} ↓{출력}',
   'run.notMade': '— 만들어지지 않았습니다',
+  'store.notSaving': '이 대화가 파일에 안 적히고 있습니다 ({까닭}) — {n}줄을 잃었습니다. 지금 창을 닫으면 이어할 수 없습니다.',
 
   // 생각 중 앞에 붙는 단계 꼬리표 (agent/effort.js 의 STAGES).
   'stage.plan': '첫 판단',

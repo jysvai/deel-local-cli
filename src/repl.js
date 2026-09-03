@@ -2140,6 +2140,10 @@ export async function chatLoop(opts = {}) {
     turn = null;
     interrupted = false;   // 중단은 '끝내기' 의사가 아니다. 종료 카운트를 되돌린다.
     flush();               // 오류로 끝났어도 여기까지는 남긴다
+    // 대화가 파일에 안 적히고 있으면 여기서 **한 번** 말한다 (agent/store.js).
+    // 여태는 아무 말이 없어서, 사람이 알아차리는 자리가 다음 날 --resume 이었다.
+    const 저장샘 = ctx.갈래?.현재store?.()?.처음못쓴것?.();
+    if (저장샘) say(`  ${mark.warn} ${c.yellow(옮긴말('store.notSaving', { n: 저장샘.수, 까닭: 저장샘.까닭 }))}`);
 
     // ── 꼬리말 — 이번 턴만의 숫자 ────────────────────────────────────────
     const secs = ((Date.now() - started) / 1000).toFixed(1);

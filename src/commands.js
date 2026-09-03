@@ -1272,7 +1272,19 @@ export async function handle(line, session, ctx) {
       }
       say('');
       say(`  ${c.gray('이어하려면 나갔다가')} ${c.cyan('deel --continue')} ${c.gray('또는')} ${c.cyan(`deel --resume ${rows[0].id}`)}`);
-      say(`  ${c.gray('지금 대화는 나가지 않아도 계속 저장되고 있습니다.')}`);
+      /*
+       * 바로 아래 줄이 약속이다. 못 지키고 있으면 약속을 되풀이하면 안 된다.
+       *
+       * /mcp 화면에서 감사기록을 두고 한 것과 같은 자리다 — 「남습니다」 라고
+       * 적어 놓고 실제로는 안 남는 것이 제일 나쁘다. 이 화면은 이어하기를
+       * 보러 온 화면이라, 여기서 안 말하면 사람이 알 자리가 없다.
+       */
+      const 저장샘 = ctx?.갈래?.현재store?.()?.못쓴것?.();
+      if (저장샘) {
+        say(`  ${mark.warn} ${c.yellow(말('store.notSaving', { n: 저장샘.수, 까닭: 저장샘.까닭 }))}`);
+      } else {
+        say(`  ${c.gray('지금 대화는 나가지 않아도 계속 저장되고 있습니다.')}`);
+      }
       say('');
       return { handled: true };
     }

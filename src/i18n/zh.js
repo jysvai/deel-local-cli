@@ -350,6 +350,7 @@ export const zh = {
   'run.bye': '结束。',
   'run.byeStats': '模型调用{n}次 · 工具耗时{초}秒 · ↑{입력} ↓{출력}',
   'run.notMade': '— 没有被创建',
+  'store.notSaving': '这次对话没有写入文件（{까닭}）— 已丢失 {n} 行。现在关闭窗口就无法继续。',
 
   'stage.plan': '先做判断',
   'stage.work': '接着做',

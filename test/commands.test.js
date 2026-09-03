@@ -7,7 +7,7 @@
 //
 //   그래서 '이 파일은 파싱된다' 가 아니라 '이 명령은 눌리면 끝까지 간다' 를 본다.
 //   case 하나를 새로 넣을 때마다 여기 목록에 한 줄 늘리면 된다.
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -23,6 +23,7 @@ import { Session } from '../src/agent/session.js';
 import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
+import { Store, sessionsDir } from '../src/agent/store.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -521,6 +522,35 @@ trace('3.5-못박기를실제로눌러본다');
   const 빼기 = await 조용히(() => handle('/pin 지우기 1', s, ctx));
   check('/pin 지우기 로 뺀다', s.못박은것.개수() === 0, 빼기.out.trim().slice(0, 60));
   check('뺀 뒤엔 프롬프트에서도 사라진다', !s.systemPrompt().includes('운영 DB'));
+}
+
+// ── /sessions 는 저장이 새고 있으면 약속을 되풀이하지 않는다 ────────────
+//
+// 이 화면 마지막 줄이 「지금 대화는 나가지 않아도 계속 저장되고 있습니다」 다.
+// 디스크가 차거나 홈이 읽기 전용이면 그 줄이 거짓이 되는데, 여태 그래도 똑같이
+// 찍혔다. 이어하기를 보러 온 화면이라 여기서 안 말하면 알 자리가 없다.
+{
+  const 성한 = new Store(root, '멀쩡');
+  성한.begin({ model: 'm', root });
+  성한.append({ role: 'user', content: '뭐 하나 고쳐줘' });
+
+  const s = 새세션();
+  const 잘될때 = await 조용히(() => handle('/sessions', s, { ...ctx, 갈래: { 현재store: () => 성한 } }));
+  check('저장이 멀쩡하면 계속 저장된다고 말한다', 잘될때.out.includes('계속 저장되고 있습니다'),
+    잘될때.out.trim().split('\n').at(-1) ?? '');
+  check('멀쩡할 때는 경고를 안 띄운다', !잘될때.out.includes('안 적히고 있습니다'));
+
+  // 대화 파일 자리에 폴더를 놓아 쓰기를 막는다 — 어느 OS 에서나 EISDIR 이 난다.
+  mkdirSync(join(sessionsDir(root), '막힘.jsonl'), { recursive: true });
+  const 막힌 = new Store(root, '막힘');
+  막힌.begin({ model: 'm', root });
+  막힌.append({ role: 'user', content: '이건 안 적힌다' });
+
+  const 샐때 = await 조용히(() => handle('/sessions', s, { ...ctx, 갈래: { 현재store: () => 막힌 } }));
+  check('저장이 새면 화면이 그렇게 말한다', 샐때.out.includes('안 적히고 있습니다'),
+    샐때.out.trim().split('\n').at(-1) ?? '');
+  check('까닭도 같이 적는다', 샐때.out.includes('EISDIR'));
+  check('샐 때는 저장된다는 약속을 되풀이하지 않는다', !샐때.out.includes('계속 저장되고 있습니다'));
 }
 
 // 모든 명령이 목록에 설명을 갖고 있나 — 새로 넣고 빠뜨리기 쉬운 자리다.

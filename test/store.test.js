@@ -6,7 +6,7 @@
 //   3) 도구 호출과 결과의 짝이 되살릴 때도 안 깨지는가
 //   4) 압축이 일어난 뒤에도 파일이 대화와 맞는가
 //   5) 목록에서 어떤 대화인지 알아볼 수 있는가
-import { mkdtempSync, rmSync, appendFileSync, existsSync, writeFileSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, appendFileSync, existsSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store, list, latest, remove, newId, prune, sessionsDir } from '../src/agent/store.js';
@@ -218,6 +218,69 @@ check('id 가 파일 이름으로 안전함', /^[0-9-]+$/.test(id));
   const 고친것 = repairToolPairs(되살린);
   check('이어받을 때 손보면 성해진다', 짝검사(고친것.messages) === null, 짝검사(고친것.messages) ?? '');
   check('처음 시킨 일은 그대로 있다', 고친것.messages[0]?.content === '로그 좀 고쳐줘');
+}
+
+// ── 6.6. 못 적으면 못 적었다고 말한다 ───────────────────────────────────
+//
+// 이 파일의 첫 줄이 파는 문장이 「껐다 켜도 이어서 하게 한다」 이고, /sessions
+// 화면은 대놓고 「지금 대화는 나가지 않아도 계속 저장되고 있습니다」 라고 적어
+// 준다. 디스크가 차거나 홈이 읽기 전용이면 그 두 문장이 거짓이 되는데, 여태
+// 화면은 아무 말이 없었다 — 사람은 다음 날 --resume 을 쳐 보고서야 안다.
+// 그때는 이미 대화가 없다. 감사기록에서 한 것과 같은 방식으로 세어 둔다.
+{
+  const 막힌곳 = mkdtempSync(join(tmpdir(), 'deel-store-못씀-'));
+  // 대화 파일 자리에 **폴더**를 놓는다. 디스크가 찬 것과 같은 모양을 만들되
+  // 어느 OS 에서나 똑같이 재현되는 방법이다 (append → EISDIR).
+  mkdirSync(sessionsDir(막힌곳), { recursive: true });
+  mkdirSync(join(sessionsDir(막힌곳), '막힘.jsonl'));
+
+  const 막힌 = new Store(막힌곳, '막힘');
+  막힌.begin({ model: 'm', root: 막힌곳 });
+  막힌.append({ role: 'user', content: '이건 안 적힌다' });
+  막힌.append({ role: 'assistant', content: '이것도' });
+
+  const 못씀 = 막힌.못쓴것();
+  check('못 적은 것을 세어 둔다', 못씀?.수 === 2, `${못씀?.수}건`);
+  check('못 적은 까닭도 들고 있다', 못씀?.까닭 === 'EISDIR', String(못씀?.까닭));
+
+  // 화면은 **한 번만** 말한다. 한 줄 못 적을 때마다 말하면 곧 아무도 안 읽는다.
+  const 첫번째 = 막힌.처음못쓴것();
+  check('처음 물어보면 알려 준다', 첫번째?.수 === 2, `${첫번째?.수}건`);
+  check('두 번째부터는 안 알려 준다', 막힌.처음못쓴것() === null);
+  check('세어 둔 것은 그대로 남는다', 막힌.못쓴것()?.수 === 2, `${막힌.못쓴것()?.수}건`);
+
+  // 머리글부터 못 적는 경우 — 대화 폴더 자리에 파일이 있어 폴더를 못 만든다.
+  // 홈이 읽기 전용일 때가 이 모양이다. 여기서 세지 않으면 「첫 줄도 못 적었는데
+  // 아무 일 없었다」 가 되고, 뒤이은 줄들은 그 위에서 조용히 쌓인다.
+  const 폴더막힌곳 = mkdtempSync(join(tmpdir(), 'deel-store-폴더막힘-'));
+  mkdirSync(join(폴더막힌곳, '.deel'), { recursive: true });
+  writeFileSync(join(폴더막힌곳, '.deel', 'sessions'), '여기는 폴더가 아니다', 'utf8');
+  const 머리글못씀 = new Store(폴더막힌곳, '아무거나');
+  머리글못씀.begin({ model: 'm', root: 폴더막힌곳 });
+  check('머리글을 못 적은 것도 센다', 머리글못씀.못쓴것()?.수 === 1, JSON.stringify(머리글못씀.못쓴것()));
+  rmSync(폴더막힌곳, { recursive: true, force: true });
+
+  // 통째로 다시 쓰는 길(압축)도 같은 자리에서 샌다.
+  막힌.replace([{ role: 'user', content: '접힌 뒤' }], '압축');
+  check('압축해 다시 쓰다 깨진 것도 센다', 막힌.못쓴것()?.수 === 3, `${막힌.못쓴것()?.수}건`);
+
+  // 멀쩡한 대화는 아무 말도 안 한다 — 안 쓰는 사람 화면은 그대로여야 한다.
+  const 멀쩡 = new Store(막힌곳, '멀쩡');
+  멀쩡.begin({ model: 'm', root: 막힌곳 });
+  멀쩡.append({ role: 'user', content: '잘 적힌다' });
+  check('멀쩡하면 못쓴것 이 null', 멀쩡.못쓴것() === null, JSON.stringify(멀쩡.못쓴것()));
+  check('멀쩡하면 처음못쓴것 도 null', 멀쩡.처음못쓴것() === null);
+
+  // 못 읽는 파일 하나 때문에 목록 전체가 죽으면 안 된다. list() 가 폴더의 대화를
+  // 하나씩 열어 보므로, 거기서 던지면 /sessions 화면이 통째로 안 뜬다 —
+  // 멀쩡히 이어할 수 있는 나머지 대화까지 사람 눈에서 사라진다.
+  check('못 읽은 까닭을 담아 돌려준다', new Store(막힌곳, '막힘').load().못읽음 === 'EISDIR',
+    String(new Store(막힌곳, '막힘').load().못읽음));
+  const 목록 = list(막힌곳);
+  check('못 읽는 대화가 섞여도 목록은 뜬다', 목록.length === 1 && 목록[0].id === '멀쩡',
+    목록.map((r) => r.id).join(' '));
+
+  rmSync(막힌곳, { recursive: true, force: true });
 }
 
 // ── 7. 없는 폴더에서도 안 죽는다 ────────────────────────────────────────

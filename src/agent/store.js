@@ -51,6 +51,10 @@ export class Store {
     this.auto = id == null;      // 우리가 지은 이름인가 (그러면 겹칠 때 바꿔도 된다)
     this.#use(id ?? freeId(this.dir));
     this.opened = false;
+    /** 적으려다 못 적은 줄 수와 첫 까닭. 0 이 아니면 이 대화는 반만 남는다. */
+    this.못쓴수 = 0;
+    this.못쓴까닭 = null;
+    this.말한적있나 = false;
   }
 
   #use(id) {
@@ -83,8 +87,50 @@ export class Store {
 
   #open() {
     if (this.opened) return;
-    mkdirSync(this.dir, { recursive: true });
+    // 폴더를 못 만들어도 여기서 던지지 않는다. 던지면 대화 자체가 그 자리에서
+    // 끊긴다 — 기록을 남기려다 작업을 죽이면 본말이 뒤집힌다.
+    // 조용히 넘기는 것도 아니다: 폴더가 없으면 바로 아래 쓰기가 깨지고,
+    // 그 자리에서 세어 화면에 오른다.
+    try { mkdirSync(this.dir, { recursive: true }); } catch { /* 아래 쓰기가 센다 */ }
     this.opened = true;
+  }
+
+  /*
+   * 못 적은 것을 세어 둔다.
+   *
+   * 이 파일 첫 줄이 파는 문장이 「껐다 켜도 이어서 하게 한다」 이고, /sessions
+   * 화면은 대놓고 「지금 대화는 나가지 않아도 계속 저장되고 있습니다」 라고
+   * 적어 준다. 디스크가 차거나 홈이 읽기 전용이거나 파일을 누가 잡고 있으면
+   * 그 두 문장이 거짓이 되는데, 여태 화면은 아무 말이 없었다.
+   *
+   * 그 침묵이 비싼 까닭: 사람이 알아차리는 자리가 **다음 날 --resume** 이다.
+   * 그때는 이미 대화가 없고, 되돌릴 방법도 없다. 안 적히고 있다는 것만 그때
+   * 알았어도 창을 안 닫거나 중요한 것을 따로 적어 뒀을 것이다.
+   * 감사기록(safety/audit.js)에서 한 것과 같은 방식으로 세어 둔다.
+   */
+  #못썼다(err) {
+    this.못쓴수 += 1;
+    // 까닭은 코드가 먼저다 — EACCES·ENOSPC 한 낱말이 긴 문장보다 알아보기 쉽고,
+    // 파일 경로가 섞여 들어가지 않아 화면 한 줄에 들어간다.
+    if (!this.못쓴까닭) this.못쓴까닭 = err?.code ?? err?.message ?? String(err);
+  }
+
+  /** 저장이 새고 있나. 새고 있으면 `{수, 까닭}`, 멀쩡하면 null. */
+  못쓴것() {
+    return this.못쓴수 ? { 수: this.못쓴수, 까닭: this.못쓴까닭 } : null;
+  }
+
+  /**
+   * 화면이 **한 번만** 말하게 하려고 쓴다. 처음 물어볼 때만 알려 주고 그 뒤로는 null.
+   *
+   * 한 줄 못 적을 때마다 경고를 찍으면 사람은 이틀 만에 그 줄을 안 읽게 되고,
+   * 그러면 정작 처음 한 번도 못 읽힌다. 세어 둔 값(못쓴것)은 안 지운다 —
+   * /sessions 화면은 언제 열어도 지금 몇 건인지 말해야 한다.
+   */
+  처음못쓴것() {
+    if (!this.못쓴수 || this.말한적있나) return null;
+    this.말한적있나 = true;
+    return this.못쓴것();
   }
 
   /**
@@ -103,7 +149,9 @@ export class Store {
         this.#잠그기();
         return this;
       } catch (err) {
-        if (err?.code !== 'EEXIST') return this;   // 못 적어도 대화는 계속돼야 한다
+        // 못 적어도 대화는 계속돼야 한다. 다만 조용히 넘기지는 않는다 —
+        // 머리글을 못 적었으면 그 뒤의 줄도 십중팔구 못 적는다.
+        if (err?.code !== 'EEXIST') { this.#못썼다(err); return this; }
         if (!this.auto) return this;               // 이어쓰기 — 이미 있는 게 맞다
         this.#use(freeId(this.dir));               // 누가 채 갔다. 옆자리로.
       }
@@ -115,7 +163,7 @@ export class Store {
     try {
       appendFileSync(this.file, JSON.stringify(obj) + '\n', 'utf8');
       this.#잠그기();
-    } catch { /* 기록에 실패해도 대화는 계속돼야 한다 */ }
+    } catch (err) { this.#못썼다(err); }   // 계속은 하되, 몇 줄을 잃었는지는 센다
   }
 
   // 메시지 하나를 덧붙인다. 대화가 진행되는 대로 즉시 남긴다.
@@ -162,8 +210,16 @@ export class Store {
     lines.push(JSON.stringify({ t: 'note', at: new Date().toISOString(), note }));
     if (못박은것.length) lines.push(JSON.stringify({ t: 'pins', at: new Date().toISOString(), 목록: 못박은것 }));
     for (const m of messages) lines.push(JSON.stringify({ t: 'msg', m }));
-    // 통째로 다시 쓰면 파일이 새로 만들어진다 — 그때 잠금도 다시 걸어야 한다.
-    try { writeFileSync(this.file, lines.join('\n') + '\n', 'utf8'); this.#잠갔나 = false; this.#잠그기(); } catch {}
+    /*
+     * 통째로 다시 쓰면 파일이 새로 만들어진다 — 그때 잠금도 다시 걸어야 한다.
+     * 그리고 여기서 깨지면 앞의 append 들이 남긴 것까지 통째로 못 고친 셈이
+     * 된다. 제일 크게 잃는 자리라 더더욱 조용히 넘길 수 없다.
+     */
+    try {
+      writeFileSync(this.file, lines.join('\n') + '\n', 'utf8');
+      this.#잠갔나 = false;
+      this.#잠그기();
+    } catch (err) { this.#못썼다(err); }
   }
 
   readMeta() {
@@ -175,12 +231,22 @@ export class Store {
     } catch { return null; }
   }
 
-  // 저장된 대화를 읽어 온다. 깨진 줄은 건너뛴다 — 도중에 죽었을 수 있다.
+  /**
+   * 저장된 대화를 읽어 온다. 깨진 줄은 건너뛴다 — 도중에 죽었을 수 있다.
+   *
+   * 파일을 아예 못 여는 경우(권한, 다른 프로그램이 잡고 있음)에도 던지지 않는다.
+   * 이 함수는 list() 가 폴더의 대화를 하나씩 훑으면서 부른다. 한 파일에서
+   * 던지면 **목록 화면 전체가 안 뜨고**, 멀쩡히 이어할 수 있는 나머지 대화까지
+   * 사람 눈에서 사라진다. 못 읽은 것은 못읽음 에 까닭을 담아 알린다.
+   */
   load() {
     if (!existsSync(this.file)) return { meta: null, messages: [] };
+    let 글;
+    try { 글 = readFileSync(this.file, 'utf8'); }
+    catch (err) { return { meta: null, messages: [], 못읽음: err?.code ?? err?.message ?? String(err) }; }
     let meta = null;
     const messages = [];
-    for (const line of readFileSync(this.file, 'utf8').split('\n')) {
+    for (const line of 글.split('\n')) {
       if (!line.trim()) continue;
       let j;
       try { j = JSON.parse(line); } catch { continue; }

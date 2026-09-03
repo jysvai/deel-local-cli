@@ -350,6 +350,7 @@ export const ja = {
   'run.bye': '終了します。',
   'run.byeStats': 'モデル呼び出し{n}回 · ツール時間{초}秒 · ↑{입력} ↓{출력}',
   'run.notMade': '— 作られませんでした',
+  'store.notSaving': 'この会話がファイルに書けていません ({까닭}) — {n}行を失いました。このまま閉じると再開できません。',
 
   'stage.plan': '最初の判断',
   'stage.work': '続き',

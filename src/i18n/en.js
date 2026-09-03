@@ -420,6 +420,7 @@ export const en = {
   'run.bye': 'Bye.',
   'run.byeStats': '{n} model calls · {초}s in tools · ↑{입력} ↓{출력}',
   'run.notMade': '— was not created',
+  'store.notSaving': 'This conversation is not being written to disk ({까닭}) — {n} lines lost. Close this window and you cannot resume it.',
 
   'stage.plan': 'deciding',
   'stage.work': 'continuing',
