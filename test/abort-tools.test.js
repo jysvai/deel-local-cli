@@ -354,6 +354,97 @@ trace('7-끊겨도-바꾼-것은-말한다');
   check('바꾸다 실패한 것은 중단으로 끝난다', !!실패한것.error, (실패한것.error ?? '').slice(0, 50));
 }
 
+trace('8-남을-기다리는-자리');
+/*
+ * ── 남을 기다리는 동안 ESC 가 먹히는가 ──────────────────────────────────
+ *
+ * 위 일곱 단은 **우리가 도는 동안**을 잰다. 여기는 그 반대다 — 우리는 아무것도
+ * 안 하고 남이 답하기를 기다리는 자리. 웹 서버 하나, 남의 프로그램(MCP) 하나.
+ *
+ * 이 두 자리에는 시한만 있었다. 웹 30초, MCP 60초. 그 사이 ESC 를 누르면
+ * 화면에는 「멈추는 중…」 이 뜨는데, 실제로는 시한이 다 찰 때까지 그대로
+ * 기다렸다. 사람 눈에는 「ESC 가 또 안 먹는다」 로 보인다 — 제보의 그 갈래다.
+ *
+ * 그래서 **시간을 잰다.** "멈췄다" 는 말만 보면 시한이 다 차서 끝난 것과
+ * 구별이 안 된다. 시한보다 훨씬 짧게 끝나야 사람이 누른 그 키로 끝난 것이다.
+ * 시한은 검사에서 짧게 줄여 잡는다 — 30초를 진짜로 기다리는 검사는 아무도
+ * 안 돌린다.
+ */
+{
+  const { createServer } = await import('node:http');
+  const { webFetch } = await import('../src/tools/webfetch.js');
+
+  // 붙기는 받아 주고 **답은 영영 안 하는** 서버. 안 답하는 상대를 문 상태를 만든다.
+  const 벙어리 = createServer(() => { /* 일부러 아무것도 안 한다 */ });
+  await new Promise((r) => 벙어리.listen(0, '127.0.0.1', r));
+  const 주소 = `http://127.0.0.1:${벙어리.address().port}/`;
+
+  const 끊개 = new AbortController();
+  setTimeout(() => 끊개.abort(), 120);
+  const 잰다 = Date.now();
+  const 웹결과 = await webFetch({ url: 주소 }, { allowPrivate: true, signal: 끊개.signal });
+  const 웹걸린시간 = Date.now() - 잰다;
+
+  check('★ ESC 를 누르면 WebFetch 가 곧바로 멈춘다', 웹걸린시간 < 3000, `${웹걸린시간}ms (시한은 30000ms)`);
+  check('멈췄다고 말한다 — 남의 서버 잘못으로 안 적는다',
+    웹결과?.중단됨 === true && /중단/.test(웹결과?.error ?? ''), JSON.stringify(웹결과).slice(0, 80));
+
+  // 이미 끊긴 신호면 두드리지도 않는다. 멈춘 뒤에 남의 서버에 남기는 발자국은 설명할 길이 없다.
+  let 두드린횟수 = 0;
+  const 세는서버 = createServer((_, res) => { 두드린횟수++; res.end('ok'); });
+  await new Promise((r) => 세는서버.listen(0, '127.0.0.1', r));
+  const 세는주소 = `http://127.0.0.1:${세는서버.address().port}/`;
+  await webFetch({ url: 세는주소 }, { allowPrivate: true, signal: AbortSignal.abort() });
+  check('이미 끊긴 뒤에는 아예 안 나간다', 두드린횟수 === 0, `${두드린횟수}번 두드림`);
+
+  벙어리.close(); 세는서버.close();
+}
+
+{
+  const { MCP서버 } = await import('../src/backend/mcp.js');
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-abort8-'));
+
+  // 인사와 도구 목록에는 답하고, **도구를 부르면 영영 안 답하는** 스텁.
+  // 이름은 ASCII 로 둔다 — 자식 프로세스에 넘기는 경로라 인코딩을 안 탄다.
+  const 스텁 = join(방, 'silent-mcp.mjs');
+  writeFileSync(스텁, [
+    "let 남은글 = '';",
+    "process.stdin.setEncoding('utf8');",
+    "process.stdin.on('data', (d) => {",
+    '  남은글 += d; let i;',
+    "  while ((i = 남은글.indexOf('\\n')) >= 0) {",
+    '    const 줄 = 남은글.slice(0, i); 남은글 = 남은글.slice(i + 1);',
+    '    let j; try { j = JSON.parse(줄); } catch { continue; }',
+    "    if (j.method === 'initialize') 답(j.id, { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: '벙어리', version: '1' } });",
+    "    else if (j.method === 'tools/list') 답(j.id, { tools: [{ name: '느린것', description: '답 안 함', inputSchema: { type: 'object', properties: {} } }] });",
+    '    // tools/call 은 일부러 안 답한다.',
+    '  }',
+    '});',
+    "function 답(id, result) { process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n'); }",
+  ].join('\n'), 'utf8');
+
+  const 서버 = new MCP서버({ 이름: '벙어리', command: process.execPath, args: [스텁] });
+  const 붙었나 = await 서버.붙기({ timeout: 5000 });
+  check('스텁 MCP 서버가 붙는다 (아래 검사의 전제)', 붙었나 === true, String(서버.죽음 ?? ''));
+
+  if (붙었나) {
+    const 끊개 = new AbortController();
+    setTimeout(() => 끊개.abort(), 120);
+    const 잰다 = Date.now();
+    let 왜 = '';
+    try { await 서버.부르기('느린것', {}, { timeout: 20000, signal: 끊개.signal }); }
+    catch (e) { 왜 = e.message; }
+    const 걸린시간 = Date.now() - 잰다;
+
+    check('★ ESC 를 누르면 MCP 도구도 곧바로 멈춘다', 걸린시간 < 3000, `${걸린시간}ms (시한은 20000ms)`);
+    check('멈춤과 시한 초과를 구별해서 말한다', /중단/.test(왜), 왜.slice(0, 40));
+    // 답을 기다리던 자리를 안 치우면, 뒤늦게 온 답이 죽은 약속을 또 푼다.
+    check('기다리던 자리를 치운다', 서버.기다리는것.size === 0, `${서버.기다리는것.size}개 남음`);
+  }
+  서버.닫기();
+  rmSync(방, { recursive: true, force: true });
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n멈춤 검사  ${D}(멈추라면 멈추는가 · 멈추는 동안 귀가 열려 있는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

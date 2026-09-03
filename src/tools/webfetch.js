@@ -56,16 +56,42 @@ const MAX_BYTES = 2 * 1024 * 1024;   // 2MB 넘게 받지 않는다
 const 집줄 = new Map();          // origin → 그 집의 마지막 차례가 끝나는 약속
 const 집간격 = 400;              // 같은 집을 다시 두드리기 전에 쉬는 시간
 
-const 잠깐 = (ms) => new Promise((r) => setTimeout(r, ms));
+/**
+ * 잠깐 잔다. 멈추라고 하면 자다가도 일어난다.
+ *
+ * 이 파일에는 사람을 최대 10초까지 붙잡는 잠이 두 군데 있다 — 줄 서는 사이와
+ * 429 뒤에 쉬는 사이다. 그냥 setTimeout 이면 ESC 를 눌러도 그 10초는 그대로
+ * 흐른다. 화면에는 「멈추는 중…」 이 10초 내내 떠 있고, 사람 눈에는 ESC 가
+ * 안 먹은 것과 똑같이 보인다 — 제보받은 그 증상이다.
+ */
+const 잠깐 = (ms, signal = null) => new Promise((풀기) => {
+  const t = setTimeout(풀기, ms);
+  signal?.addEventListener?.('abort', () => { clearTimeout(t); 풀기(); }, { once: true });
+});
 
-function 한집씩(origin, 일) {
+function 한집씩(origin, 일, signal = null) {
   const 앞사람 = 집줄.get(origin);
   const 내차례 = (앞사람 ?? Promise.resolve())
-    .then(async () => { if (앞사람) await 잠깐(집간격); return 일(); });
+    .then(async () => {
+      if (앞사람) await 잠깐(집간격, signal);
+      // 줄을 서 있는 사이에 멈췄으면 두드리지 않는다. 안 두드려도 잃을 것이 없다 —
+      // 아직 나간 것이 하나도 없는 자리다.
+      if (signal?.aborted) throw new Error('중단했습니다');
+      return 일();
+    });
   // 다음 사람이 기다리는 것은 '내가 끝났다' 뿐이다. 내가 실패해도 줄은 넘어간다.
   집줄.set(origin, 내차례.then(() => {}, () => {}));
   return 내차례;
 }
+
+/**
+ * 멈췄을 때 돌려줄 모양.
+ *
+ * 다른 도구들과 **같은 모양**이어야 한다(tools/index.js 의 runTool). 멈춤은
+ * 실패가 아니라서 중단됨 을 따로 단다 — 실패로 세면 되풀이 감지가 엉뚱하게
+ * 걸려서 다음에 같은 주소를 부르는 것까지 막힌다.
+ */
+const 중단결과 = () => ({ error: '중단했습니다. 웹을 읽다 말았습니다.', 끝났다: true, 중단됨: true });
 
 /*
  * 잠시 뒤에 다시 하면 되는 것들.
@@ -156,8 +182,16 @@ export function 웹되돌림(다음, { allowPrivate = false } = {}) {
   }
 }
 
-export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 = null } = {}) {
+export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 = null, signal = null } = {}) {
   const raw = String(args?.url ?? '').trim();
+  /*
+   * 이미 멈췄으면 아예 안 나간다.
+   *
+   * 여럿을 함께 부를 때(loop.js 의 Promise.all) 앞엣것이 도는 사이 ESC 를
+   * 누르면, 뒤엣것들은 아직 아무 데도 안 두드렸는데 그대로 나갔다. 나가면
+   * 상대 서버에는 기록이 남는다 — 멈춘 뒤에 남기는 발자국은 설명할 길이 없다.
+   */
+  if (signal?.aborted) return 중단결과();
   /*
    * 얼마나 가져올지는 **모델에 맞춰** 정한다 (agent/budget.js).
    *
@@ -193,18 +227,28 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
         method: 'GET',                            // 보내는 건 없다
         headers: { 'User-Agent': 'deel/cli', Accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5' },
         timeout: 30000,
+        /*
+         * 사람이 누른 ESC 를 여기까지 데려온다.
+         *
+         * 여태 이 자리에는 시한(30초)만 있었다. 그래서 안 답하는 서버를 하나
+         * 물면 ESC 를 눌러도 30초를 꼬박 기다렸다 — 「ESC 를 눌러도 안 멈춘다」
+         * 는 제보의 한 갈래가 정확히 이것이다. http.js 의 신호() 가 시한과
+         * 이 신호를 AbortSignal.any 로 묶어 준다.
+         */
+        signal,
         stream: true,                             // 상한까지만 받는다 — 다 받아 놓고 버리지 않는다
         되돌림: (다음) => {
           웹되돌림(다음, { allowPrivate });
           열어둔.push(allowTemporarily(다음.origin));
         },
-      }));
+      }), signal);
       방문기록.push({ url: u.href, status: res.status, at: new Date().toISOString() });
       if (res.ok || !다시할것.has(res.status) || 회차 >= 다시횟수) break;
       await res.버리기?.();
       const 초 = 얼마나쉬라나(res.headers.get('retry-after'), 회차);
       쉰시간 += 초;
-      await 잠깐(초 * 1000);
+      await 잠깐(초 * 1000, signal);
+      if (signal?.aborted) return 중단결과();
     }
 
     if (!res.ok) {
@@ -310,6 +354,15 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
     };
   } catch (err) {
     const m = String(err?.message ?? err);
+    /*
+     * 멈춤이 먼저다.
+     *
+     * 신호가 끊으면 fetch 는 AbortError 를 던지는데, 그 말은 「이 작업이
+     * 중단되었습니다」 라는 영어 한 줄이다. 그대로 오류로 올리면 화면에는
+     * 사람이 누른 ESC 가 남의 서버 잘못처럼 찍힌다. 시한 초과와도 구별해야
+     * 한다 — 시한은 상대가 늦은 것이고, 이건 우리가 그만둔 것이다.
+     */
+    if (signal?.aborted) return 중단결과();
     if (err?.name === 'TimeoutError') return { error: '시간 초과 — 응답이 없습니다.' };
     if (/ENOTFOUND|getaddrinfo/i.test(m)) return { error: '주소를 찾을 수 없습니다 (DNS).' };
     return { error: m };
@@ -334,5 +387,7 @@ export const WEB_FETCH_TOOL = {
       required: ['url'],
     },
   },
-  run: (args, ctx) => webFetch(args, { 모델컨텍스트: ctx?.모델컨텍스트 ?? null }),
+  // signal 을 같이 넘긴다. 안 넘기면 ESC 를 눌러도 이 도구만 최대 30초를 더 산다
+  // — 화면은 「멈추는 중…」 인데 실제로는 남의 서버를 계속 붙들고 있는 상태다.
+  run: (args, ctx) => webFetch(args, { 모델컨텍스트: ctx?.모델컨텍스트 ?? null, signal: ctx?.signal ?? null }),
 };

@@ -2492,7 +2492,9 @@ async function runMcpTool(name, args, ctx) {
     if (!서버) return { error: `${갈린것.서버} 서버가 붙어 있지 않습니다 — /mcp 로 확인하세요` };
     if (!서버.살아있나()) return { error: `${갈린것.서버} 서버가 죽었습니다: ${서버.죽음 ?? '이유 모름'}` };
     try {
-      const out = await 서버.부르기(갈린것.도구, args);
+      // 사람이 누른 ESC 를 남의 프로그램에까지 데려간다. 안 넘기면 도구 한 번에
+      // 60초(부르기제한)를 꼬박 기다리는데, 그 사이 ESC 는 아무 일도 안 한다.
+      const out = await 서버.부르기(갈린것.도구, args, { signal: ctx?.signal ?? null });
       if (out.isError) return { error: out.text || '도구가 오류를 냈습니다' };
       const 글 = out.text ?? '';
       const 줄 = 글 ? 글.split(/\r?\n/).length : 0;

@@ -163,25 +163,56 @@ export class MCP서버 {
     if (!기다림) return;
     this.기다리는것.delete(j.id);
     clearTimeout(기다림.타이머);
+    // 끝난 자리의 ESC 엿듣기는 떼어 낸다. 안 떼면 한 턴에 도구를 스무 번
+    // 부르는 사이 신호 하나에 스무 개가 매달린다 — 노드가 열 개 넘으면
+    // 「메모리가 새는 것 같다」 고 경고를 찍는데, 실제로 새는 것이 맞다.
+    기다림.끊기그만?.();
     if (j.error) 기다림.실패(new Error(j.error.message ?? '알 수 없는 오류'));
     else 기다림.성공(j.result);
   }
 
-  보내고기다리기(method, params, timeout = 부르기제한) {
+  /**
+   * 한 통 보내고 답을 기다린다.
+   *
+   * signal 은 사람이 누른 ESC 다. 안 받으면 도구 하나 부르는 데 최대 60초
+   * (부르기제한)를 기다리는데, 그 60초 동안 ESC 는 아무것도 안 한다 — 화면은
+   * 「멈추는 중…」 인데 남의 프로세스의 답을 계속 기다리고 있는 상태다.
+   * 그래서 시한과 같은 자리에서 같은 방식으로 푼다: 기다리는 표에서 빼고,
+   * 왜 끝났는지를 말로 남기고 끝낸다.
+   */
+  보내고기다리기(method, params, timeout = 부르기제한, signal = null) {
     return new Promise((성공, 실패) => {
       if (!this.kid || this.kid.exitCode !== null) return 실패(new Error(this.죽음 ?? '연결이 없습니다'));
+      // 이미 멈췄으면 보내지도 않는다. 보내 놓고 버리면 남의 서버는 그 일을 끝까지 한다.
+      if (signal?.aborted) return 실패(new Error('중단했습니다'));
       const id = this.다음번호++;
       const 타이머 = setTimeout(() => {
         this.기다리는것.delete(id);
+        끊기그만();
         실패(new Error(`${Math.round(timeout / 1000)}초 안에 답이 없습니다`));
       }, timeout);
       if (타이머.unref) 타이머.unref();
-      this.기다리는것.set(id, { 성공, 실패, 타이머 });
+      /*
+       * 기다리는 표에서 **반드시** 뺀다.
+       *
+       * 안 빼면 뒤늦게 온 답이 이미 끝난 약속을 또 푼다. 두 번째 풀기는
+       * 조용히 무시되므로 오류는 안 나지만, 표에 죽은 자리가 남아서
+       * 끝냄() 이 그것들을 다시 실패시킨다 — 아무도 안 듣는 실패다.
+       */
+      const 끊겼다 = () => {
+        clearTimeout(타이머);
+        this.기다리는것.delete(id);
+        실패(new Error('중단했습니다'));
+      };
+      signal?.addEventListener?.('abort', 끊겼다, { once: true });
+      const 끊기그만 = () => signal?.removeEventListener?.('abort', 끊겼다);
+      this.기다리는것.set(id, { 성공, 실패, 타이머, 끊기그만 });
       try {
         this.kid.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
       } catch (e) {
         clearTimeout(타이머);
         this.기다리는것.delete(id);
+        끊기그만();
         실패(e);
       }
     });
@@ -191,8 +222,8 @@ export class MCP서버 {
     try { this.kid?.stdin?.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n'); } catch { /* 죽었으면 어차피 끝이다 */ }
   }
 
-  async 부르기(도구이름, args, { timeout = 부르기제한 } = {}) {
-    const r = await this.보내고기다리기('tools/call', { name: 도구이름, arguments: args ?? {} }, timeout);
+  async 부르기(도구이름, args, { timeout = 부르기제한, signal = null } = {}) {
+    const r = await this.보내고기다리기('tools/call', { name: 도구이름, arguments: args ?? {} }, timeout, signal);
     // 규격상 결과는 content 배열이다. 글만 뽑아 모델에게 넘긴다.
     const 조각 = Array.isArray(r?.content) ? r.content : [];
     const 글 = 조각
@@ -206,6 +237,7 @@ export class MCP서버 {
     this.죽음 = this.마지막말 ? `${왜} — ${this.마지막말}` : 왜;
     for (const [, 기다림] of this.기다리는것) {
       clearTimeout(기다림.타이머);
+      기다림.끊기그만?.();
       기다림.실패(new Error(this.죽음));
     }
     this.기다리는것.clear();
