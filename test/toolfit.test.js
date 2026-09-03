@@ -27,7 +27,28 @@ trace('1-어디로-가는지는-주소로');
   check('Gemini 직통', 벤더(연결('https://generativelanguage.googleapis.com/v1beta/openai/')) === 'gemini');
   check('Bedrock 직통', 벤더(연결('https://bedrock-runtime.ap-northeast-2.amazonaws.com/v1')) === 'bedrock');
   check('OpenAI 직통', 벤더(연결('https://api.openai.com/v1')) === 'openai');
-  check('Azure OpenAI', 벤더(연결('https://our.openai.azure.com/openai')) === 'openai');
+  /*
+   * ★ Azure 를 OpenAI 직통과 **다른 이름**으로 부른다.
+   *
+   * 도구를 다듬는 데는 둘이 똑같다(아래에서 그걸 잰다). 갈리는 자리는
+   * 몸통이다 — OpenAI 직통의 추론 모델은 출력 상한의 옛 이름(`max_tokens`)을
+   * 「지원 안 하는 인자」 라고 튕기는데, Azure 는 옛 판이 아직 많아서 그 이름
+   * 만 본다. 한 이름으로 묶어 두면 한쪽을 고치는 순간 다른 쪽이 끊긴다.
+   */
+  check('★ Azure 는 OpenAI 직통과 따로 센다', 벤더(연결('https://our.openai.azure.com/openai')) === 'azure',
+    String(벤더(연결('https://our.openai.azure.com/openai'))));
+  check('배포 주소 모양도 Azure 로 센다',
+    벤더(연결('https://x.openai.azure.com/openai/deployments/d?api-version=2024-10-21')) === 'azure');
+  // 이름이 갈렸다고 다듬기가 갈리면 안 된다. 둘 다 이름만 손보고 스키마는 안 건드린다.
+  {
+    const 도구 = [{ type: 'function', function: { name: 'a b', parameters: { type: 'object', properties: { x: { $ref: '#/d' } } } } }];
+    const o = 도구맞추기(도구, 연결('https://api.openai.com/v1'));
+    const z = 도구맞추기(도구, 연결('https://our.openai.azure.com/openai'));
+    check('★ Azure 와 OpenAI 직통의 다듬기가 같다',
+      JSON.stringify(o.tools) === JSON.stringify(z.tools)
+      && o.손본것.이름 === z.손본것.이름 && o.손본것.스키마 === z.손본것.스키마 && z.손본것.스키마 === 0,
+      `${JSON.stringify(o.손본것)} / ${JSON.stringify(z.손본것)}`);
+  }
 
   /*
    * ★ 모르는 주소면 null 이다.

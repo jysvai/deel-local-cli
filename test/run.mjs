@@ -75,6 +75,7 @@ const FILES = [
   'oneshot.test.js',
   'detect.test.js',
   'toolfit.test.js',
+  'vendors.test.js',
   'packlang.test.js',
   'ui.test.js',
   'tui.test.js',

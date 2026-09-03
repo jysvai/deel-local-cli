@@ -28,6 +28,7 @@
 // 안 불리는, 제일 알아내기 어려운 고장이다. 그래서 다듬은 자리에서
 // 되돌림 표를 같이 내놓고, 답이 오면 adapter.js 가 그 표로 되돌린다.
 // 밖에서는 이 일이 있었는지조차 모른다.
+import { 애저인가 } from './azure.js';
 
 /**
  * 이름 규칙.
@@ -75,8 +76,19 @@ const 제미니format = {
 /**
  * 이 주소는 어느 회사인가.
  *
- * @returns {'anthropic'|'gemini'|'bedrock'|'openai'|null}  모르면 null —
+ * @returns {'anthropic'|'gemini'|'bedrock'|'openai'|'azure'|null}  모르면 null —
  *   그때는 **아무것도 안 건드린다**.
+ *
+ * ── Azure 를 왜 따로 부르나 ─────────────────────────────────────────────
+ *
+ * 도구를 다듬는 데는 둘이 똑같다(아래 도구맞추기 에서 둘 다 이름만 손본다).
+ * 갈리는 자리는 **몸통**이다 — OpenAI 직통의 추론 모델은 출력 상한을 옛 이름
+ * (`max_tokens`)으로 주면 「지원 안 하는 인자」 라고 튕기는데, Azure 는 옛 판이
+ * 아직 많아서 그 이름을 그대로 받는다. 둘을 한 이름으로 묶어 두면 한쪽을
+ * 고치는 순간 다른 쪽이 깨진다.
+ *
+ * Azure 인지는 **azure.js 에게 묻는다.** 여기서 글자 조각으로 따로 판단하면
+ * detect 와 답이 갈리고, 갈리는 순간 한쪽만 맞는 자리가 생긴다.
  */
 export function 벤더(conn) {
   let 호스트 = '';
@@ -89,7 +101,8 @@ export function 벤더(conn) {
     // bedrock-runtime.<리전>.amazonaws.com. amazonaws 아래에는 남의 것도 많아서
     // 앞머리까지 본다 — S3 주소를 Bedrock 으로 읽으면 안 된다.
     if (호스트.startsWith('bedrock') && 호스트.endsWith('.amazonaws.com')) return 'bedrock';
-    if (호스트 === 'api.openai.com' || 호스트.endsWith('.openai.azure.com')) return 'openai';
+    if (애저인가(conn?.base)) return 'azure';
+    if (호스트 === 'api.openai.com') return 'openai';
   }
   /*
    * 주소를 못 읽었을 때만 규격을 본다.

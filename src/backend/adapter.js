@@ -5,7 +5,7 @@ import { 할당량기억 } from './quota.js';
 import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
 import { 말 } from '../i18n/index.js';
 import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
-import { 도구맞추기, 이름되돌리기 } from './toolfit.js';
+import { 도구맞추기, 이름되돌리기, 벤더 } from './toolfit.js';
 
 /*
  * Anthropic 규격의 판 이름.
@@ -60,7 +60,7 @@ export function 요청주소(conn) {
   return 주소붙이기(conn?.base, endpoint(conn?.kind));
 }
 
-export function buildBody(shape, { model, messages, tools, stream, json, think, maxTokens = 4096, ctx = null }) {
+export function buildBody(shape, { model, messages, tools, stream, json, think, maxTokens = 4096, ctx = null, 회사 = null }) {
   if (shape === 'ollama') {
     const body = { model, messages, stream: !!stream, options: { num_predict: maxTokens } };
     /*
@@ -103,9 +103,23 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
   // max_tokens 만 보내면 상한이 안 걸린 것처럼 제 기본값으로 답하고, 우리가
   // 셈해 둔 자리와 어긋난다. 사용자 게이트웨이가 바로 그 경우였다.
   //
-  // 둘 다 보내도 탈이 없다. 옛 서버는 모르는 이름을 무시하고, 새 서버는
-  // 제가 보는 이름을 골라 쓴다. 둘 중 무엇을 보는지 우리가 알 필요가 없어진다.
-  const body = { model, messages, stream: !!stream, max_tokens: maxTokens, max_completion_tokens: maxTokens };
+  // 둘 다 보내도 탈이 없다 — **한 곳만 빼고.** 옛 서버는 모르는 이름을 무시하고,
+  // 새 서버는 제가 보는 이름을 골라 쓴다. 둘 중 무엇을 보는지 우리가 알 필요가
+  // 없어진다.
+  //
+  // ── 그 한 곳: OpenAI 직통 ──────────────────────────────────────────────
+  //
+  // 여기 추론 모델(o 계열·GPT-5 계열)은 옛 이름을 **무시하지 않고 튕긴다** —
+  // "Unsupported parameter: 'max_tokens' is not supported with this model."
+  // 그러면 첫 요청부터 400 이고, 화면에서는 열쇠가 틀린 것과 구별이 안 된다.
+  // 모델 이름으로 가르지 않는다(게이트웨이 뒤에 무엇이 있는지 우리는 모른다).
+  // **주소로** 가른다 — 그 규칙은 toolfit.js 의 벤더() 한 곳에서만 정한다.
+  //
+  // Azure 는 여기 안 넣는다. 옛 판(api-version)이 아직 많고 그쪽은 옛 이름만
+  // 본다 — 같이 묶으면 멀쩡히 쓰던 사내 Azure 연결이 이 줄 하나로 끊긴다.
+  const 옛이름도 = 회사 !== 'openai';
+  const body = { model, messages, stream: !!stream, max_completion_tokens: maxTokens };
+  if (옛이름도) body.max_tokens = maxTokens;
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
   if (json) {
     body.response_format = { type: 'json_schema', json_schema: { name: 'out', schema: json, strict: true } };
@@ -420,7 +434,9 @@ export async function chat(conn, opts) {
   // 이 회사가 받는 모양으로 도구를 다듬는다 (backend/toolfit.js).
   // 모르는 주소면 아무것도 안 바뀐다 — 지금까지와 똑같이 돈다.
   const 맞춘것 = 도구맞추기(opts.tools, conn);
-  const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts, tools: 맞춘것.tools });
+  const body = buildBody(conn.kind, {
+    model: conn.model, ctx: conn.ctx ?? null, ...opts, tools: 맞춘것.tools, 회사: 벤더(conn),
+  });
   const 정책 = 정책고르기(conn, opts);
   let 열쇠다시받음 = false;
   for (let 시도 = 1; ; 시도++) {
@@ -505,7 +521,9 @@ async function 거절읽기(r) {
 // 흘려 받기. { type:'thinking'|'content', text } 를 내보내고 마지막에 { type:'done', message } 를 준다.
 export async function* chatStream(conn, opts) {
   const 맞춘것 = 도구맞추기(opts.tools, conn);
-  const body = buildBody(conn.kind, { model: conn.model, ctx: conn.ctx ?? null, ...opts, tools: 맞춘것.tools, stream: true });
+  const body = buildBody(conn.kind, {
+    model: conn.model, ctx: conn.ctx ?? null, ...opts, tools: 맞춘것.tools, stream: true, 회사: 벤더(conn),
+  });
   const 정책 = 정책고르기(conn, opts);
   let r;
   let 열쇠다시받음 = false;
