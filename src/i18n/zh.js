@@ -376,6 +376,7 @@ export const zh = {
   'run.hintHelp': '/help 命令列表',
   'run.hintEsc': 'ESC 中断',
   'run.hintQuit': 'Ctrl+C 中断·退出',
+  'run.stopping': '正在停止…',
   'run.thinking': '思考中…',
   'run.thinkingChars': '思考中… {n}字',
   'run.turnFoot': '{초}秒 · 工具{n}次 · ↑{입력} ↓{출력}',

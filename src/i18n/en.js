@@ -418,6 +418,7 @@ export const en = {
   'run.hintHelp': '/help commands',
   'run.hintEsc': 'ESC stop',
   'run.hintQuit': 'Ctrl+C stop / quit',
+  'run.stopping': 'stopping…',
   'run.thinking': 'thinking…',
   'run.thinkingChars': 'thinking… {n} chars',
   'run.turnFoot': '{초}s · {n} tool calls · ↑{입력} ↓{출력}',

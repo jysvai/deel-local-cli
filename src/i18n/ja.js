@@ -376,6 +376,7 @@ export const ja = {
   'run.hintHelp': '/help コマンド一覧',
   'run.hintEsc': 'ESC 中断',
   'run.hintQuit': 'Ctrl+C 中断・終了',
+  'run.stopping': '止めています…',
   'run.thinking': '考え中…',
   'run.thinkingChars': '考え中… {n}文字',
   'run.turnFoot': '{초}秒 · ツール{n}回 · ↑{입력} ↓{출력}',

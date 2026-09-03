@@ -420,6 +420,8 @@ export const ko = {
   'run.hintHelp': '/help 명령 목록',
   'run.hintEsc': 'ESC 중단',
   'run.hintQuit': 'Ctrl+C 중단·끝내기',
+  // 줄 화면에는 상자가 없다. 눌린 것이 닿았다는 신호를 여기 한 줄로 낸다.
+  'run.stopping': '멈추는 중…',
   'run.thinking': '생각 중…',
   'run.thinkingChars': '생각 중… {n}자',
   'run.turnFoot': '{초}초 · 도구 {n}회 · ↑{입력} ↓{출력}',
