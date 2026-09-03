@@ -28,7 +28,8 @@ import { createServer } from 'node:http';
 import { TOOLS } from '../src/tools/index.js';
 import { allow, MODES } from '../src/agent/modes.js';
 import { Session } from '../src/agent/session.js';
-import { 언어, 언어정하기 } from '../src/i18n/index.js';
+import { 언어, 언어정하기, 말 } from '../src/i18n/index.js';
+import { 고른것풀기, 계획답풀기 } from '../src/ui/pick.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -214,6 +215,123 @@ trace('3-진짜로-왕복하나');
   rmSync(home, { recursive: true, force: true });
 }
 
+trace('3.6-번호와-의견을-같이');
+
+/*
+ * ── 「번호만 말고, 의견도 같이」 ────────────────────────────────────────
+ *
+ * 사람 말: 「사용자에게 계획 물어볼 때 번호만 입력하는 게 아니라, 번호를
+ * 고르고 의견이 있으면 의견도 입력할 수 있게」.
+ *
+ * 여태는 둘 중 하나였다. 숫자만 치면 고른 것이고, 그 밖의 글은 **고른 것
+ * 없이** 통째로 자유 답이었다. 그래서 「2 파일은 나눠서」 라고 치면 2번을
+ * 골랐다는 사실이 사라진다. 사람은 골랐다고 생각하는데 모델에게는 고른
+ * 것이 없는 문장 하나만 간다.
+ *
+ * 가르는 자리는 ui/pick.js 하나다. 여기서 그 자리를 낱낱이 잰다 — 상자를
+ * 띄우는 검사(아래)는 오래 걸려서 모든 모양을 다 밟을 수가 없다.
+ */
+{
+  const 목록 = ['표준 구조로 전부 재배치', '최소한만 옮기기', '손 안 대기'];
+  const 재기 = (답) => 고른것풀기(답, 목록);
+
+  check('숫자만 치면 여태와 같다', 재기('2').글 === '최소한만 옮기기', 재기('2').글);
+  check('★ 번호 뒤에 말을 붙이면 둘 다 간다',
+    재기('2 파일은 나눠서').글 === '최소한만 옮기기 — 파일은 나눠서', 재기('2 파일은 나눠서').글);
+  for (const [모양, 답] of [[':', '2: 나눠서'], [',', '2, 나눠서'], ['-', '2 - 나눠서'], ['.', '2. 나눠서']]) {
+    check(`${모양} 로 갈라 써도 읽는다`, 재기(답).글 === '최소한만 옮기기 — 나눠서', `${답} → ${재기(답).글}`);
+  }
+  check('★ 여럿 고르면 여럿 간다 (1,3)',
+    재기('1,3').글 === '표준 구조로 전부 재배치 · 손 안 대기', 재기('1,3').글);
+  check('빈칸으로 갈라도 여럿이다 (1 3)',
+    재기('1 3').글 === '표준 구조로 전부 재배치 · 손 안 대기', 재기('1 3').글);
+  check('여럿 고르고 말도 붙인다',
+    재기('1 3 순서는 반대로').글 === '표준 구조로 전부 재배치 · 손 안 대기 — 순서는 반대로',
+    재기('1 3 순서는 반대로').글);
+  check('같은 번호를 두 번 쳐도 한 번만 센다', 재기('2 2').번호들.length === 1, 재기('2 2').번호들.join('+'));
+
+  /*
+   * ★ 여기가 제일 조심할 자리다.
+   *
+   * 「3개만 해줘」 는 3번을 고른 것이 아니다. 수 뒤에 글자가 바로 붙어 있으면
+   * 수로 안 읽는다. 이 선이 없으면 사람이 고른 적 없는 것을 골랐다고 하게
+   * 되는데, 그건 안 받느니만 못하다.
+   */
+  check('★ 「3개만 해줘」 는 고른 것이 아니다', 재기('3개만 해줘').글 === '3개만 해줘',
+    `번호 ${재기('3개만 해줘').번호들.join('+') || '없음'}`);
+  check('★ 목록에 없는 수는 고른 것이 아니다', 재기('5 기다려').글 === '5 기다려',
+    `번호 ${재기('5 기다려').번호들.join('+') || '없음'}`);
+  check('그냥 글은 그냥 글이다', 재기('전혀 다른 답').글 === '전혀 다른 답');
+  check('빈 답은 빈 답이다', 재기('').글 === '');
+  check('선택지가 없으면 숫자도 그냥 글이다', 고른것풀기('2', []).글 === '2', 고른것풀기('2', []).글);
+}
+
+trace('3.7-계획-상자의-답');
+
+/*
+ * ── 계획 상자도 같은 말을 받는다 ────────────────────────────────────────
+ *
+ * 여태 계획 상자는 셋 중 하나였다. ⏎ 면 진행, n 이면 그만, 그 밖의 글은
+ * 통째로 「이걸 고쳐서 다시 내라」. 그래서 「그대로 하되 검사도 넣어줘」 라고
+ * 치면 계획을 다시 짜러 갔다 — 사람은 진행하라고 한 것인데.
+ */
+{
+  const 재기 = (답) => 계획답풀기(답, 4);
+
+  check('⏎ 하나면 그대로 진행이다', 재기('').갈래 === '진행', JSON.stringify(재기('')));
+  check('y 도 진행이다', 재기('y').갈래 === '진행');
+  check('n 은 그만이다', 재기('n').갈래 === '그만');
+  check('★ y 뒤에 말을 붙이면 그 말을 얹고 진행이다',
+    재기('y 검사도 같이 넣어줘').갈래 === '진행' && 재기('y 검사도 같이 넣어줘').덧말 === '검사도 같이 넣어줘',
+    JSON.stringify(재기('y 검사도 같이 넣어줘')));
+  check('★ 단계 번호를 대면 그 단계에 대고 하는 말이다',
+    재기('3 이건 빼자').갈래 === '다시' && 재기('3 이건 빼자').단계 === 3
+      && 재기('3 이건 빼자').덧말 === '이건 빼자', JSON.stringify(재기('3 이건 빼자')));
+  check('그 밖의 글은 여태 그대로 「다시 짜라」 다',
+    재기('테스트부터 짜자').갈래 === '다시' && 재기('테스트부터 짜자').단계 === null,
+    JSON.stringify(재기('테스트부터 짜자')));
+  // 없는 단계 번호는 단계가 아니라 그냥 하는 말이다.
+  check('없는 단계 번호는 단계로 안 읽는다', 재기('9 이것도').단계 === null, JSON.stringify(재기('9 이것도')));
+  // 번호만 치고 아무 말도 안 하면 무엇을 하라는 건지 알 수 없다. 여태 뜻대로 둔다.
+  check('번호만 치면 단계 지목이 아니다', 재기('3').단계 === null, JSON.stringify(재기('3')));
+}
+
+trace('3.8-안내가-말표를-거치나');
+
+/*
+ * 이 두 줄은 **무엇을 치면 되나** 를 말하는 줄이다. 못 읽으면 그 자리에서
+ * 막힌다. 계획 상자 쪽은 여태 한국어가 글자 그대로 박혀 있었다.
+ */
+{
+  const 본말 = 언어();
+  const 모으기 = () => ({
+    고르기: 말('ask.pickHint'),
+    계획: 말('plan.hint'),
+    물음: 말('plan.ask'),
+  });
+  언어정하기('ko');
+  const 한 = 모으기();
+  언어정하기('en');
+  const 영 = 모으기();
+  언어정하기('ja');
+  const 일 = 모으기();
+  언어정하기('zh');
+  const 중 = 모으기();
+  언어정하기(본말);
+
+  check('★ 고르기 안내가 「번호 + 한마디」 를 알려 준다', /2 /.test(한.고르기), 한.고르기);
+  check('★ 고르기 안내가 영어로도 나온다', 영.고르기 !== 한.고르기 && !/[가-힣]/.test(영.고르기), 영.고르기);
+  check('일본어·중국어도 제 말이다', !/[가-힣]/.test(일.고르기) && !/[가-힣]/.test(중.고르기),
+    `${일.고르기} | ${중.고르기}`);
+
+  check('★ 계획 상자 안내에 네 갈래가 다 보인다',
+    /⏎/.test(한.계획) && /y/.test(한.계획) && /3/.test(한.계획) && /n/.test(한.계획), 한.계획);
+  check('★ 계획 상자 안내가 영어로도 나온다', !/[가-힣]/.test(영.계획) && 영.계획 !== 한.계획, 영.계획);
+  check('★ 계획 상자 물음도 영어로 나온다', !/[가-힣]/.test(영.물음), 영.물음);
+  check('일본어·중국어 계획 안내도 제 말이다', !/[가-힣]/.test(일.계획) && !/[가-힣]/.test(중.계획),
+    `${일.계획} | ${중.계획}`);
+}
+
 trace('3.5-물어보는-도중에-ESC');
 
 /*
@@ -338,6 +456,228 @@ trace('3.5-물어보는-도중에-ESC');
     화면.split('\n').find((l) => /멈췄습니다/.test(l))?.trim().slice(0, 60) ?? '못 찾음');
   check('★ 멈춘 뒤에도 다음 말을 받는다', 이어지나,
     이어지나 ? '' : '멈추고 나서 입력이 안 돌아왔다');
+
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+}
+
+trace('3.9-번호와-의견을-진짜-상자에서');
+
+/*
+ * ── 가르는 함수만 잰 것으로는 모자란다 ─────────────────────────────────
+ *
+ * 위(3.6)에서 잰 것은 「글자를 어떻게 가르나」 다. 여기서 재는 것은
+ * **그 가른 것이 모델까지 가나** 이다. 상자에서 받아 놓고 중간에서 흘리면
+ * 사람은 의견을 말했는데 모델은 못 들은 것이 된다 — 그게 여태 났던 일이다.
+ */
+{
+  let 도구번호 = 1;
+  let 받은답 = null;
+
+  const srv = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      let json = null;
+      try { json = JSON.parse(body || '{}'); } catch { /* 스텁이라 넘어간다 */ }
+      const 보냄 = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (!String(req.url).includes('/chat/completions')) return 보냄({ data: [{ id: '스텁모델', object: 'model' }] });
+
+      const 답 = (msg, why) => 보냄({
+        id: 'x', object: 'chat.completion', model: '스텁모델',
+        choices: [{ index: 0, finish_reason: why ?? (msg.tool_calls ? 'tool_calls' : 'stop'), message: msg }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+
+      const 메시지들 = json?.messages ?? [];
+      const 마지막 = 메시지들[메시지들.length - 1];
+      if (마지막?.role === 'tool') {
+        받은답 = String(마지막.content ?? '');
+        return 답({ role: 'assistant', content: '알겠습니다.' });
+      }
+      return 답({
+        role: 'assistant', content: null,
+        tool_calls: [{
+          id: `c${도구번호++}`, type: 'function',
+          function: {
+            name: 'Ask',
+            arguments: JSON.stringify({
+              이해: '이 저장소를 배포할 수 있게 정리하라는 것으로 이해했습니다',
+              question: '구조를 어디까지 바꿀까요?',
+              options: ['표준 패키지 구조로 전부 재배치', '파일 이동은 최소화하고 .env.example 만 추가'],
+            }),
+          },
+        }],
+      });
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const 주소 = `http://127.0.0.1:${srv.address().port}/v1`;
+
+  const root = mkdtempSync(join(tmpdir(), 'deel-asknote-'));
+  const home = mkdtempSync(join(tmpdir(), 'deel-asknote-home-'));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자',
+    profiles: [{
+      id: 'stub', name: '스텁', kind: 'openai', baseUrl: 주소,
+      auth: 'none', apiKey: '', model: '스텁모델', ctx: 32768, streaming: false, tools: true,
+    }],
+  }), 'utf8');
+
+  const kid = spawn(process.execPath,
+    [join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline', '--ctx', '32768', '--no-tui'],
+    { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, DEEL_HOME: home } });
+
+  let out = '';
+  kid.stdout.on('data', (b) => { out += b; });
+  kid.stderr.on('data', (b) => { out += b; });
+  let 끝남 = false;
+  const 닫힘 = new Promise((r) => kid.on('close', () => { 끝남 = true; r(); }));
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+  const 치기 = async (l, ms = 1000) => {
+    await 자기(ms);
+    if (!끝남) { try { kid.stdin.write(`${l}\n`); } catch { /* 이미 닫혔다 */ } }
+  };
+
+  await 치기('구조 좀 바꿔줘', 900);
+  // 골라 놓고 조건을 하나 붙인다 — 여태는 이렇게 치면 고른 것이 사라졌다.
+  await 치기('2 다만 .env 는 건드리지 마', 1600);
+  await 치기('/exit', 1400);
+  await Promise.race([닫힘, 자기(7000).then(() => kid.kill())]);
+  srv.close();
+
+  const 화면 = 벗기기(out);
+  check('★ 고른 줄의 글이 모델에게 간다',
+    !!받은답 && 받은답.includes('파일 이동은 최소화'), (받은답 ?? '(안 옴)').slice(0, 110));
+  check('★ 덧붙인 말도 같이 간다',
+    !!받은답 && 받은답.includes('.env 는 건드리지 마'), (받은답 ?? '(안 옴)').slice(0, 110));
+  check('★ 숫자는 답에 안 남는다 (「2」 만 가면 무엇을 고른지 모른다)',
+    !!받은답 && !/사람의 답: 2\b/.test(받은답), (받은답 ?? '(안 옴)').slice(0, 110));
+  check('★ 되비추는 줄에도 둘 다 보인다',
+    /▶.*파일 이동은 최소화.*건드리지 마/.test(화면),
+    화면.split('\n').find((l) => /▶/.test(l))?.trim().slice(0, 100) ?? '못 찾음');
+
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+}
+
+trace('3.95-계획-상자에-한마디-얹기');
+
+/*
+ * ── 「그대로 하되 이것도」 가 갈 데가 없었다 ────────────────────────────
+ *
+ * 계획 상자에서 「y 검사도 넣어줘」 라고 치면 여태는 **계획을 다시 짜러**
+ * 갔다. 사람은 진행하라고 한 것인데 한 바퀴를 더 돈다. 몇 분짜리 계획이면
+ * 그 몇 분을 다시 기다린다.
+ *
+ * 진짜 deel 을 띄워서, 상자를 띄우고, 한마디를 얹어 승인해 본다.
+ */
+{
+  let 도구번호 = 1;
+  const 나간것 = [];
+  const srv = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      let json = null;
+      try { json = JSON.parse(body || '{}'); } catch { /* 스텁이라 넘어간다 */ }
+      const 보냄 = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (!String(req.url).includes('/chat/completions')) return 보냄({ data: [{ id: '스텁모델', object: 'model' }] });
+
+      const 답 = (msg, why) => 보냄({
+        id: 'x', object: 'chat.completion', model: '스텁모델',
+        choices: [{ index: 0, finish_reason: why ?? (msg.tool_calls ? 'tool_calls' : 'stop'), message: msg }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+
+      const 메시지들 = json?.messages ?? [];
+      const 마지막 = 메시지들[메시지들.length - 1];
+      const 사람말 = [...메시지들].reverse().find((m) => m.role === 'user');
+      if (사람말) 나간것.push(String(사람말.content ?? ''));
+
+      // 계획을 todo 로 낸 뒤 말로 맺는다 — 그래야 계획 상자가 뜬다.
+      if (마지막?.role === 'tool') return 답({ role: 'assistant', content: '계획은 위와 같습니다.' });
+      if (도구번호 === 1) {
+        return 답({
+          role: 'assistant', content: null,
+          tool_calls: [{
+            id: `c${도구번호++}`, type: 'function',
+            function: {
+              name: 'TodoWrite',
+              arguments: JSON.stringify({
+                todos: [
+                  { text: '설정 파일 자리 잡기', state: 'pending' },
+                  { text: '읽는 코드 옮기기', state: 'pending' },
+                  { text: '문서 손보기', state: 'pending' },
+                ],
+              }),
+            },
+          }],
+        });
+      }
+      return 답({ role: 'assistant', content: '다 했습니다.' });
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const 주소 = `http://127.0.0.1:${srv.address().port}/v1`;
+
+  const root = mkdtempSync(join(tmpdir(), 'deel-plan-'));
+  const home = mkdtempSync(join(tmpdir(), 'deel-plan-home-'));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자',
+    profiles: [{
+      id: 'stub', name: '스텁', kind: 'openai', baseUrl: 주소,
+      auth: 'none', apiKey: '', model: '스텁모델', ctx: 32768, streaming: false, tools: true,
+    }],
+  }), 'utf8');
+
+  const kid = spawn(process.execPath,
+    [join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline', '--ctx', '32768', '--no-tui'],
+    { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, DEEL_HOME: home } });
+
+  let out = '';
+  kid.stdout.on('data', (b) => { out += b; });
+  kid.stderr.on('data', (b) => { out += b; });
+  let 끝남 = false;
+  const 닫힘 = new Promise((r) => kid.on('close', () => { 끝남 = true; r(); }));
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+  const 민것 = () => 벗기기(out);
+  const 기다리기 = async (될때까지, 최대 = 25000) => {
+    const 끝 = Date.now() + 최대;
+    while (Date.now() < 끝 && !끝남) {
+      if (될때까지()) return true;
+      await 자기(50);
+    }
+    return false;
+  };
+
+  await 기다리기(() => 민것().includes('❯'), 15000);
+  kid.stdin.write('계획 세우고 만들어줘\n');
+  const 상자떴나 = await 기다리기(() => /이대로 진행할까요|Go ahead with this/.test(민것()));
+  // 승인하되 한마디를 얹는다.
+  if (!끝남) kid.stdin.write('y 검사도 같이 넣어줘\n');
+  const 이어졌나 = await 기다리기(() => 나간것.some((t) => /사람이 승인하며 덧붙인 말/.test(t)), 20000);
+  if (!끝남) { try { kid.stdin.write('/exit\n'); } catch { /* 이미 닫혔다 */ } }
+  await Promise.race([닫힘, 자기(8000).then(() => kid.kill())]);
+  srv.close();
+
+  const 화면 = 민것();
+  check('먼저: 계획 상자가 떴다 (여기서부터 재는 것이다)', 상자떴나,
+    화면.split('\n').filter((l) => /계획|진행할까요/.test(l)).slice(-2).join(' | ').slice(0, 120));
+  check('★ 상자가 네 갈래를 다 알려 준다',
+    /⏎ 진행/.test(화면) && /y 한마디/.test(화면) && /n 취소/.test(화면),
+    화면.split('\n').find((l) => /진행할까요/.test(l))?.trim().slice(0, 110) ?? '못 찾음');
+  check('★ 한마디를 얹어도 계획을 다시 안 짜고 진행한다',
+    나간것.some((t) => /방금 낸 계획을 사람이 승인했다/.test(t)),
+    나간것.map((t) => t.slice(0, 30)).join(' | ').slice(0, 140));
+  check('★ 얹은 한마디가 모델에게 간다',
+    이어졌나 && 나간것.some((t) => /검사도 같이 넣어줘/.test(t)),
+    나간것.find((t) => /덧붙인 말/.test(t))?.slice(-60) ?? '(안 감)');
+  check('★ 계획을 다시 내라고는 안 한다',
+    !나간것.some((t) => /계획에서 이걸 고쳐서/.test(t)),
+    나간것.find((t) => /고쳐서/.test(t))?.slice(0, 60) ?? '');
+  check('★ 화면에도 한마디를 얹었다고 적는다', /한마디를 얹어 진행합니다/.test(화면),
+    화면.split('\n').find((l) => /진행합니다/.test(l))?.trim().slice(0, 90) ?? '못 찾음');
 
   rmSync(root, { recursive: true, force: true });
   rmSync(home, { recursive: true, force: true });

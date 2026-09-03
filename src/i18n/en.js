@@ -320,10 +320,17 @@ export const en = {
   'level.developer.hint': 'everything by hand',
 
   // ── Ask box (the Ask tool) ────────────────────────────────────────────
+  'plan.ask': 'Go ahead with this?',
+  'plan.hint': '⏎ go · y with a note · 3 a note on that step · n cancel',
+  'plan.cancelled': 'Stopped. The plan is still above — just say what you want next.',
+  'plan.going': 'Going ahead with the plan.',
+  'plan.goingWith': 'Going ahead, with your note — {말}',
+  'plan.replan': 'Redoing the plan with that in mind.',
+  'plan.replanStep': 'Redoing the plan with your note on step {단계}.',
   'ask.title': 'A question for you',
-  'ask.pickHint': 'Pick a number, or type your own answer',
+  'ask.pickHint': 'Pick a number. Add a note after it if you have one (2 split the files)',
   'ask.freeHint': 'Type your answer',
-  'ask.pickPrompt': '1-{끝}, or type your own',
+  'ask.pickPrompt': '1-{끝} (a note may follow), or type your own',
   'ask.freePrompt': 'Answer',
   'ask.stopped': 'Stopped — treating it as unanswered.',
 
