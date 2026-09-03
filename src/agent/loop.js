@@ -455,6 +455,17 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     });
   };
 
+  /*
+   * 걸음이 끊긴 자리에서 대조할 '마지막으로 한 말'.
+   *
+   * done 은 방금 받은 답(msg.content)을 자국으로 넘긴다. limit·stuck 에는
+   * 그 답이 없다 — 도구를 부르다 끊겼기 때문이다. 그래도 모델이 앞서 글로
+   * 적어 둔 것은 자국이 되므로 대화에서 마지막 assistant 글을 꺼내 쓴다.
+   */
+  const 마지막말 = () => String(
+    [...session.messages].reverse().find((m) => m.role === 'assistant' && m.content)?.content ?? '',
+  );
+
   const 되미는말 = () => {
     const 시킨 = String(userText ?? '').replace(/\s+/g, ' ').trim().slice(0, 160);
     return 지시말() === 'en'
@@ -1425,7 +1436,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     // 컨텍스트만 채우고 사람은 기다리기만 한다.
     if (멈출까) {
       ctx.audit.blocked('같은 자리를 반복해 스스로 멈춤', 멈출까);
-      yield { type: 'stuck', why: 멈출까, steps, files: 마무리() };
+      yield { type: 'stuck', why: 멈출까, steps, files: 마무리(), 빠진: 빠뜨린것(마지막말()) };
       return;
     }
 
@@ -1440,5 +1451,5 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 할 때 무엇을 이어야 하는지가 화면에 있어야 한다.
    */
   const 남은할일 = (ctx.todos ?? []).filter((x) => x.state !== 'done');
-  yield { type: 'limit', steps, files: 마무리(), 남은할일 };
+  yield { type: 'limit', steps, files: 마무리(), 남은할일, 빠진: 빠뜨린것(마지막말()) };
 }

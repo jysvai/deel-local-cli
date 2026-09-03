@@ -233,12 +233,13 @@ trace('6-루프에서-진짜로');
   const 주소 = `http://127.0.0.1:${srv.address().port}/v1`;
   allowEndpoint(주소);
 
-  const 돌려보기 = async (대본줄) => {
+  const 돌려보기 = async (대본줄, { 걸음상한 = null } = {}) => {
     대본 = 대본줄; 차례 = 0;
     const 방 = mkdtempSync(join(tmpdir(), 'deel-asks-'));
     const conn = { kind: 'openai', base: 주소, auth: 'none', key: '', model: '스텁모델', ctx: 32768, streaming: false, tools: true };
     const ctx = { scope: makeScope(방), history: new History(방), audit: new Audit(방), seen: new Set() };
     const session = new Session(conn, { root: 방, mode: 'auto', think: 'off' });
+    if (걸음상한) { session.stepsSet = true; session.maxSteps = 걸음상한; }
     const 것들 = [];
     for await (const ev of run(session, ctx, 네가지)) 것들.push(ev);
     rmSync(방, { recursive: true, force: true });
@@ -276,6 +277,50 @@ trace('6-루프에서-진짜로');
   check('★ 다 다뤘으면 끝에 아무 말도 안 붙는다',
     (다한것.find((e) => e.type === 'done')?.빠진 ?? []).length === 0,
     JSON.stringify(다한것.find((e) => e.type === 'done')?.빠진 ?? []));
+
+  trace('7-끊긴-자리에서도-대조하나');
+
+  /*
+   * ── 정작 빠질 확률이 제일 높은 자리에서 입을 다물고 있었다 ────────────
+   *
+   * 대조는 `done` 에서만 돌았다. 그런데 `done` 은 모델이 **스스로 다 했다고
+   * 맺은** 자리다. 항목이 빠지는 것은 오히려 반대쪽 —
+   *
+   *   limit  걸음 상한에 걸려 도중에 끊겼다
+   *   stuck  같은 자리에서 헛돌아 우리가 끊었다
+   *
+   * 여기서는 대조를 안 했으니, 「시킨 것 넷 중 셋만 됐습니다」 라는 말이
+   * 가장 필요한 두 자리에서 그 말이 아예 안 나왔다. 사람은 「도구 호출
+   * 24회에서 멈췄습니다」 한 줄만 보고 무엇이 남았는지를 스스로 세어야 했다.
+   */
+  {
+    // 걸음 상한 2. 도구만 부르다 끊긴다 — 시킨 넷 중 어느 것도 자국이 안 남는다.
+    const 끊긴것 = await 돌려보기([
+      { 도구: { name: 'Write', args: { file_path: '기록.md', content: '붙여넣기 표시만 고침\n' } } },
+      { 도구: { name: 'Write', args: { file_path: '기록2.md', content: '또 한 줄\n' } } },
+      { 도구: { name: 'Write', args: { file_path: '기록3.md', content: '또 한 줄\n' } } },
+    ], { 걸음상한: 2 });
+
+    const 상한것 = 끊긴것.find((e) => e.type === 'limit');
+    check('먼저: 걸음 상한에서 끊겼다', !!상한것, 끊긴것.map((e) => e.type).join(','));
+    check('★ 걸음 상한에서 끊겨도 빠진 것을 셈한다', (상한것?.빠진?.length ?? 0) >= 3,
+      JSON.stringify(상한것?.빠진?.map((x) => x.번호) ?? []));
+    check('★ 빠진 것의 글도 같이 들고 있다',
+      /esc|누락|cli/i.test((상한것?.빠진 ?? []).map((x) => x.글).join(' ')),
+      (상한것?.빠진 ?? []).map((x) => x.글.slice(0, 20)).join(' / '));
+  }
+
+  {
+    // 없는 도구를 계속 부르면 우리가 끊는다(stuck). 그때도 대조가 돌아야 한다.
+    const 헛돈것 = await 돌려보기(Array.from({ length: 8 }, () => (
+      { 도구: { name: '없는도구', args: {} } }
+    )));
+
+    const 헛것 = 헛돈것.find((e) => e.type === 'stuck');
+    check('먼저: 헛돌아서 끊겼다', !!헛것, 헛돈것.map((e) => e.type).join(','));
+    check('★ 헛돌아 끊겨도 빠진 것을 셈한다', (헛것?.빠진?.length ?? 0) >= 3,
+      JSON.stringify(헛것?.빠진?.map((x) => x.번호) ?? []));
+  }
 
   srv.close();
 }

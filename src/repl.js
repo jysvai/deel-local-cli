@@ -1071,6 +1071,24 @@ export async function chatLoop(opts = {}) {
     }
   };
 
+  /*
+   * 시킨 것 중 자국이 하나도 안 남은 항목을 적는다.
+   *
+   * 조용히 넘어가면 사람은 다 된 줄 알고 그 위에 다음 것을 쌓는다. 나중에
+   * 발견했을 때는 이미 늦다. 「몇 번 까먹거나 누락되거나」라는 제보가 정확히
+   * 그 모양이었다 — 빠진 것 자체보다, 빠졌다는 말을 안 한 것이 문제다.
+   *
+   * 세 자리(done·limit·stuck)가 같은 글을 내야 한다. 한 군데만 고치면
+   * 「끝났을 때는 알려 주는데 끊겼을 때는 안 알려 주는」 화면이 된다 —
+   * 정작 빠질 확률은 끊겼을 때가 훨씬 높다.
+   */
+  const 빠진것보이기 = (빠진) => {
+    if (!빠진?.length) return;
+    say('');
+    say(`  ${c.yellow('!')} ${c.white(`시킨 것 중 ${빠진.length}가지가 안 다뤄졌습니다`)}`);
+    for (const x of 빠진) say(`    ${c.gray(`${x.번호}. ${clip(x.글, 68)}`)}`);
+  };
+
   const ctx = {
     scope: makeScope(root),
     // 도구가 한 번에 돌려줄 양을 이 값에서 뽑는다 (agent/budget.js).
@@ -2098,6 +2116,9 @@ export async function chatLoop(opts = {}) {
               if (ev.남은할일.length > 8) say(`    ${c.gray(`… 그 밖에 ${ev.남은할일.length - 8}개`)}`);
             }
             만든파일보이기(ev.files);
+            // 할 일 목록에 못 들어간 채로 빠진 것도 같이 적는다 — 목록에
+            // 없으면 「안 끝난 것」 에도 안 뜨므로 여기서 말 안 하면 아무 데도 없다.
+            빠진것보이기(ev.빠진);
             break;
 
           // 같은 자리를 계속 반복하고 있다. 두면 컨텍스트만 차고 아무것도 안 나온다.
@@ -2121,6 +2142,7 @@ export async function chatLoop(opts = {}) {
             // 멈췄어도 여기까지 만든 것은 있다. 그것부터 알려 준다 —
             // 없는 줄 알고 다시 시키면 앞서 만든 것을 덮어쓴다.
             만든파일보이기(ev.files);
+            빠진것보이기(ev.빠진);
             break;
 
           case 'aborted':
@@ -2179,11 +2201,7 @@ export async function chatLoop(opts = {}) {
              * 제보가 정확히 그 모양이었다 — 빠진 것 자체보다, 빠졌다는 말을
              * 안 한 것이 문제다.
              */
-            if (ev.빠진?.length) {
-              say('');
-              say(`  ${c.yellow('!')} ${c.white(`시킨 것 중 ${ev.빠진.length}가지가 안 다뤄졌습니다`)}`);
-              for (const x of ev.빠진) say(`    ${c.gray(`${x.번호}. ${clip(x.글, 68)}`)}`);
-            }
+            빠진것보이기(ev.빠진);
             break;
         }
       }
