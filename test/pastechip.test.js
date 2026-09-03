@@ -25,6 +25,7 @@ import { createServer } from 'node:http';
 import { trace } from './trace.mjs';
 import { 크기말, 접을까, 표만들기, 펼치기, 쓴번호들, 표무늬 } from '../src/ui/pastechip.js';
 import { 안쪽최대 } from '../src/ui/inputbox.js';
+import { 언어정하기 } from '../src/i18n/index.js';
 
 const pass = [];
 const fail = [];
@@ -312,6 +313,183 @@ trace('7-진짜로-접히나');
     JSON.stringify(String(받은것[0] ?? '').slice(0, 60)));
   check('마흔 줄을 붙여도 한 번만 간다', 받은것.length === 1, `${받은것.length}번 갔다`);
   check('붙여넣기 표가 글에 안 섞인다', !/\x1b\[20[01]~/.test(받은것[0] ?? ''));
+
+  rmSync(home, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+}
+
+trace('7.5-말을-바꿔도-알아보나');
+
+/*
+ * ── 표 낱말이 한국어로 박혀 있었다 ──────────────────────────────────────
+ *
+ * `/lang en` 을 켠 사람 화면에도 `[붙여넣기 #1 · 40줄 · 2.1KB]` 가 떴다.
+ * 그 줄만 한글이라 무엇을 뜻하는지 알 길이 없다.
+ *
+ * 그런데 여기서 조심할 것이 하나 더 있다. 이 낱말은 **찍고 나서 다시 찾는**
+ * 말이다 — 보낼 때 표를 원문으로 펴야 하기 때문이다. 지금 말로만 찾게 해
+ * 두면, 표를 찍어 놓고 `/lang en` 을 치는 순간 앞서 찍은 표를 못 알아본다.
+ * 그러면 사람이 붙인 마흔 줄 대신 **표 글자가 그대로** 모델에게 간다.
+ * 화면에는 아무 표시도 안 난다. 그래서 여기서 못 박는다.
+ */
+{
+  const 원문 = 'a\nb\nc';
+  언어정하기('en');
+  const 영표 = 표만들기(1, 원문);
+  check('★ 영어로 켜면 표도 영어다', /^\[pasted #1 · 3 lines · \d+B\]$/.test(영표), 영표);
+
+  언어정하기('ja');
+  check('일본어도 제 말로 적는다', /^\[貼り付け #1 · 3行 · \d+B\]$/.test(표만들기(1, 원문)), 표만들기(1, 원문));
+  언어정하기('zh');
+  check('중국어도 제 말로 적는다', /^\[粘贴 #1 · 3行 · \d+B\]$/.test(표만들기(1, 원문)), 표만들기(1, 원문));
+
+  // 여기가 진짜다. 한국어로 찍어 둔 표를, 말을 바꾼 뒤에도 펴는가.
+  언어정하기('ko');
+  const 한글표 = 표만들기(1, 원문);
+  언어정하기('en');
+  const 통 = new Map([[1, 원문]]);
+  check('★ 말을 바꿔도 앞서 찍은 표를 알아본다', 표무늬.test(한글표), `${한글표} · 지금 말 en`);
+  check('★ 말을 바꿔도 앞서 찍은 표가 원문으로 펴진다', 펼치기(한글표, 통) === 원문,
+    JSON.stringify(펼치기(한글표, 통)));
+  const 영표2 = 표만들기(2, 원문);
+  통.set(2, 원문);
+  check('영어로 찍은 표도 펴진다', 펼치기(영표2, 통) === 원문, JSON.stringify(펼치기(영표2, 통)));
+  check('두 말로 찍힌 표가 한 줄에 섞여도 다 펴진다',
+    펼치기(`${한글표} 와 ${영표2}`, 통) === `${원문} 와 ${원문}`,
+    JSON.stringify(펼치기(`${한글표} 와 ${영표2}`, 통)));
+  언어정하기('ko');
+}
+
+trace('7.7-일하는-도중에-붙여도-접히나');
+
+/*
+ * ── 접기가 기다릴 때만 돌았다 ───────────────────────────────────────────
+ *
+ * 붙여넣기는 **일하는 도중이 더 흔하다.** 몇 분짜리 턴이 도는 동안 다음에
+ * 시킬 것을 미리 붙여 두는 것이 그것이다. 그런데 접기 갈래가 `입력기다림`
+ * 일 때만 돌아서, 일하는 중에 마흔 줄을 붙이면 —
+ *
+ *   상자(일감 자리)에는 **마지막 한 줄만** 보인다
+ *     → 사람은 한 줄만 들어갔다고 여기고 다시 붙인다
+ *       → 이번엔 진짜로 두 번 들어간다
+ *
+ * 접기가 애초에 막으려던 바로 그 사고가, 기다릴 때는 안 나고 일할 때만 났다.
+ * 그래서 진짜로 일을 시켜 놓고, 그 위에 붙여 본다.
+ */
+{
+  const 받은것 = [];
+  let 첫부름 = true;
+  const srv = createServer((req, res) => {
+    let b = ''; req.on('data', (c) => { b += c; });
+    req.on('end', () => {
+      const send = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      /*
+       * 대화 부름이 아닌 것은 여기서 끝낸다.
+       *
+       * deel 은 켜질 때 서버를 훑는다(/v1/models/<이름> 따위). 그걸 안
+       * 갈라 두면 그 탐색이 아래 「첫 부름은 오래 끈다」 를 먼저 써 버려서,
+       * 정작 사람이 시킨 일은 곧바로 끝난다 — 일하는 중이 아예 없는 검사가
+       * 된다. 앞서 한 번 여기에 속았다.
+       */
+      if (!String(req.url).includes('/chat/completions')) {
+        return send({ data: [{ id: '스텁모델', object: 'model' }] });
+      }
+      const j = (() => { try { return JSON.parse(b || '{}'); } catch { return {}; } })();
+      const u = (j.messages ?? []).filter((m) => m.role === 'user').at(-1);
+      if (u) 받은것.push(String(u.content));
+      const 답 = () => send({ id: 'x', object: 'chat.completion', model: '스텁모델',
+        choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '네' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 2 } });
+      // 사람이 시킨 첫 부름만 오래 끈다 — 그동안이 '일하는 중' 이다.
+      if (u && 첫부름) { 첫부름 = false; setTimeout(답, 6000); return; }
+      답();
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+
+  const home = mkdtempSync(join(tmpdir(), 'deel-chipwork-home-'));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    version: 1, active: 's', level: '개발자',
+    profiles: [{
+      id: 's', name: 's', kind: 'openai', baseUrl: `http://127.0.0.1:${srv.address().port}/v1`,
+      auth: 'none', apiKey: '', model: '스텁모델', ctx: 32768, streaming: false, tools: false,
+    }],
+  }), 'utf8');
+  const root = mkdtempSync(join(tmpdir(), 'deel-chipwork-'));
+
+  const { CI, ...환경 } = process.env;
+  const 앞선것 = join(여기, 'tty-preload.mjs').replace(/\\/g, '/');
+  const kid = spawn(process.execPath,
+    ['--import', `file:///${앞선것}`, join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline'],
+    { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...환경, DEEL_HOME: home } });
+
+  let out = '';
+  kid.stdout.setEncoding('utf8');
+  kid.stderr.setEncoding('utf8');
+  kid.stdout.on('data', (d) => { out += d; });
+  kid.stderr.on('data', (d) => { out += d; });
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+  const 민화면 = () => out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+  const 기다리기 = async (뭐, 될때까지, 최대 = 25000) => {
+    const 끝 = Date.now() + 최대;
+    while (Date.now() < 끝) {
+      if (될때까지()) return true;
+      await 자기(50);
+    }
+    check(`${뭐} 를 ${최대}ms 안에 못 봤다`, false, 민화면().slice(-200));
+    return false;
+  };
+
+  await 기다리기('붙여넣기 표 켜기', () => out.includes('\x1b[?2004h'));
+  await 기다리기('입력 자리(❯)가 그려지기', () => 민화면().includes('❯'));
+
+  // 일을 시킨다. 서버가 6초를 끄니 그동안이 '일하는 중' 이다.
+  kid.stdin.write('오래 걸리는 일 좀 해줘\n');
+  const 일하나 = await 기다리기('일하는 중 화면', () => 받은것.length >= 1, 15000);
+
+  const 붙이기전 = 민화면().length;
+  const 붙일것 = Array.from({ length: 40 }, (_, i) => `${i + 1}번째 줄 — 일하는 중에 붙임`).join('\n');
+  kid.stdin.write(`\x1b[200~${붙일것}\x1b[201~`);
+  const 접혔나 = await 기다리기('일하는 중에도 표가 뜨기',
+    () => /\[붙여넣기 #1/.test(민화면().slice(붙이기전)), 15000);
+  const 붙인뒤화면 = 민화면().slice(붙이기전);
+
+  // 이제 보낸다. 아직 일하는 중이라 예약으로 들어가고, 첫 턴이 끝나면 나간다.
+  kid.stdin.write('\n');
+  await 기다리기('붙인 것이 모델까지 가기', () => 받은것.length >= 2, 25000);
+  kid.stdin.write('/exit\n');
+  await Promise.race([new Promise((r) => kid.on('close', r)), 자기(8000).then(() => kid.kill())]);
+  srv.close();
+
+  check('먼저: 진짜로 일하는 중이었다', 일하나, `부름 ${받은것.length}회`);
+  /*
+   * ★ 여기가 이 검사의 심장이다.
+   *
+   * 기다리는 중에 접으면 대화에 「접어 뒀습니다」 를 찍는다. 일하는 중에는
+   * 안 찍는다 — 찍으면 이미 보낸 것처럼 보인다. 그 줄이 보였다면 붙일 때
+   * 이미 턴이 끝나 있었다는 뜻이고, 그러면 이 검사는 아무것도 안 잰 것이다.
+   */
+  check('★ 붙일 때 진짜로 일하는 중이었다', !/접어 뒀습니다/.test(붙인뒤화면),
+    /접어 뒀습니다/.test(붙인뒤화면) ? '기다리는 중에 붙었다 — 잰 것이 없다' : '');
+  check('★ 일하는 중에 붙여도 표로 접힌다', 접혔나,
+    붙인뒤화면.split('\n').find((l) => /붙여넣기 #|번째 줄/.test(l))?.trim().slice(0, 80) ?? '(못 찾음)');
+
+  /*
+   * ★ 그리고 원문이 화면에 안 쏟아져야 한다. 접기가 도는지 재는 자리는
+   * 여기다 — 표만 뜨고 원문도 같이 쏟아지면 아무것도 안 고친 것이다.
+   */
+  const 쏟아진줄 = ['3번째 줄', '20번째 줄', '39번째 줄'].filter((s) => 붙인뒤화면.includes(s));
+  check('★ 일하는 중에도 원문이 안 쏟아진다', 쏟아진줄.length === 0, 쏟아진줄.join(' · ') || '없다');
+
+  /*
+   * ★ 접었어도 보낼 때는 원문 그대로여야 한다. 일하는 중에 붙인 것은
+   * 예약으로 들어갔다가 나중에 나가는데, 그 길에서도 펴져야 한다.
+   */
+  const 나중것 = 받은것[1];
+  check('★ 일하는 중에 붙인 것도 원문 그대로 간다', 나중것 === 붙일것,
+    나중것 === 붙일것 ? '' : `왔다: ${JSON.stringify(String(나중것 ?? '(안 옴)').slice(0, 70))}`);
+  check('표가 모델에게 안 간다', !/붙여넣기 #\d+ ·/.test(나중것 ?? ''),
+    JSON.stringify(String(나중것 ?? '').slice(0, 60)));
 
   rmSync(home, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });

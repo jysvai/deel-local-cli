@@ -21,6 +21,7 @@
 // 바이트 그대로다. 되돌릴 수 없는 접기는 접기가 아니라 잘라내기다.
 import { 접어쓰기 } from './wrap.js';
 import { 안쪽최대 } from './inputbox.js';
+import { 말, 말모두 } from '../i18n/index.js';
 
 /** 사람이 읽는 크기. 47줄이 몇 KB 인지 알아야 뭘 붙였는지 감이 온다. */
 export function 크기말(바이트) {
@@ -86,10 +87,11 @@ export function 남길글(글, 붙인것들) {
   return 펴진것.split('\n').length <= 안쪽최대 ? 펴진것 : 원;
 }
 
-/** `[붙여넣기 #1 · 47줄 · 2.1KB]` */
+/** `[붙여넣기 #1 · 47줄 · 2.1KB]` — 낱말은 고른 말을 따른다. */
 export function 표만들기(번호, 글) {
   const 원 = String(글 ?? '');
-  return `[붙여넣기 #${번호} · ${원.split('\n').length}줄 · ${크기말(Buffer.byteLength(원, 'utf8'))}]`;
+  const 줄 = 말('paste.chipLines', { n: 원.split('\n').length });
+  return `[${말('paste.chip')} #${번호} · ${줄} · ${크기말(Buffer.byteLength(원, 'utf8'))}]`;
 }
 
 /*
@@ -101,7 +103,15 @@ export function 표만들기(번호, 글) {
  * /g 를 안 붙인다 — 붙이면 lastIndex 가 남아서 같은 무늬로 test() 를
  * 두 번 부를 때 두 번째가 조용히 거짓이 된다. 훑는 자리에서만 새로 만든다.
  */
-export const 표무늬 = /\[붙여넣기 #(\d+) · [^[\]]*\]/;
+/*
+ * 낱말은 **네 말을 다 받는다.**
+ *
+ * 표를 찍은 뒤에 `/lang en` 을 치면, 지금 말로만 찾는 무늬는 앞서 찍어 둔
+ * 표를 못 알아본다. 그러면 사람이 붙인 40줄이 표 글자 그대로 모델에게
+ * 가고, 아무 데도 안 적히는 채로 그렇게 된다. 어느 말로 찍힌 표든 편다.
+ */
+const 낱말들 = 말모두('paste.chip').map((w) => String(w).replace(/[.*+?^${}()|[\]\\]/g, (ch) => `\\${ch}`));
+export const 표무늬 = new RegExp(`\\[(?:${낱말들.join('|')}) #(\\d+) · [^[\\]]*\\]`);
 
 /** 글 안의 표를 원문으로 되돌린다. 모르는 번호는 사람이 친 글로 보고 둔다. */
 export function 펼치기(글, 붙인것들) {
