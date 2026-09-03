@@ -563,6 +563,10 @@ trace('7-남은할당량');
       'x-ratelimit-remaining-requests': '9', 'x-ratelimit-limit-requests': '500',
       'x-ratelimit-remaining-tokens': '1200', 'x-ratelimit-limit-tokens': '90000',
     }],
+    ['Anthropic', {
+      'anthropic-ratelimit-requests-remaining': '9', 'anthropic-ratelimit-requests-limit': '500',
+      'anthropic-ratelimit-tokens-remaining': '1200', 'anthropic-ratelimit-tokens-limit': '90000',
+    }],
   ];
   for (const [회사, 머리] of 표) {
     const 것 = 할당량읽기(머리);
@@ -571,6 +575,17 @@ trace('7-남은할당량');
     check(`${회사}: 남은 토큰을 읽는다`, 것.토큰 === 1200, String(것.토큰));
     check(`★ ${회사}: 바닥에 가까우면 화면에 띄운다`, 아슬아슬한가(것) === true, JSON.stringify(것));
   }
+  /*
+   * Anthropic 은 풀리는 때를 초가 아니라 날짜(RFC 3339)로 준다. 초로만
+   * 읽으면 그 자리가 늘 비고, 화면은 "언제 풀리는지 모른다" 고 말하게 된다.
+   */
+  {
+    const 이제 = new Date(Date.now() + 30000).toISOString();
+    const 것 = 할당량읽기({ 'anthropic-ratelimit-requests-reset': 이제 });
+    check('★ Anthropic 의 풀리는 때(날짜)를 초로 읽는다', 것.풀림 !== null && 것.풀림 >= 25 && 것.풀림 <= 31,
+      String(것.풀림));
+  }
+
   // 못 읽은 것을 0 으로 치면 안 된다 — 멀쩡한데 다 썼다고 믿게 된다.
   check('아무 머리도 없으면 「없다」 고 한다', 할당량읽기({}).있나 === false);
   할당량잊기();

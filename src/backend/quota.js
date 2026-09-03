@@ -16,13 +16,37 @@
 // `x-ratelimit-remaining-tokens` 를 쓰기도 하고 아예 안 주기도 한다.
 // 그래서 **아는 이름만 읽고, 없으면 없다고 한다.** 없는 것을 0 으로 치면
 // 화면에 "0 남음" 이 떠서, 멀쩡한데 다 썼다고 믿게 된다.
+//
+// Anthropic 은 `anthropic-` 을 앞에 달고, 남은 것을 **뒤에** 적는다
+// (`anthropic-ratelimit-requests-remaining`). 그 이름을 몰라서, Claude 직통과
+// Bedrock 게이트웨이에서는 이 줄이 **언제나 비어 있었다** — 서버는 매 응답에
+// 남은 양을 실어 보내고 있었는데 우리만 못 읽었다. 그래서 그 두 자리에서는
+// 아직도 429 를 맞아야만 알 수 있었다. 이 파일이 없애려던 바로 그 상황이다.
 
 // 읽을 이름들. 앞에서부터 처음 있는 것 하나를 쓴다.
-const 요청남음 = ['x-ratelimit-remaining-requests', 'ratelimit-remaining-requests', 'x-ratelimit-remaining'];
-const 토큰남음 = ['x-ratelimit-remaining-tokens', 'ratelimit-remaining-tokens'];
-const 요청한도 = ['x-ratelimit-limit-requests', 'ratelimit-limit-requests'];
-const 토큰한도 = ['x-ratelimit-limit-tokens', 'ratelimit-limit-tokens'];
-const 다시언제 = ['retry-after', 'x-ratelimit-reset-requests', 'x-ratelimit-reset-tokens', 'ratelimit-reset'];
+const 요청남음 = [
+  'x-ratelimit-remaining-requests', 'ratelimit-remaining-requests', 'x-ratelimit-remaining',
+  'anthropic-ratelimit-requests-remaining',
+];
+const 토큰남음 = [
+  'x-ratelimit-remaining-tokens', 'ratelimit-remaining-tokens',
+  'anthropic-ratelimit-tokens-remaining',
+  // 입력·출력을 따로 세는 판도 있다. 둘 중 먼저 바닥나는 쪽이 곧 막히는 쪽이다.
+  'anthropic-ratelimit-input-tokens-remaining', 'anthropic-ratelimit-output-tokens-remaining',
+];
+const 요청한도 = ['x-ratelimit-limit-requests', 'ratelimit-limit-requests', 'anthropic-ratelimit-requests-limit'];
+const 토큰한도 = [
+  'x-ratelimit-limit-tokens', 'ratelimit-limit-tokens', 'anthropic-ratelimit-tokens-limit',
+  'anthropic-ratelimit-input-tokens-limit', 'anthropic-ratelimit-output-tokens-limit',
+];
+/*
+ * 풀리는 때. Anthropic 은 초가 아니라 **날짜(RFC 3339)** 로 준다 —
+ * `언제풀리나` 가 Date.parse 로 받아 지금과의 차이를 초로 바꾼다.
+ */
+const 다시언제 = [
+  'retry-after', 'x-ratelimit-reset-requests', 'x-ratelimit-reset-tokens', 'ratelimit-reset',
+  'anthropic-ratelimit-requests-reset', 'anthropic-ratelimit-tokens-reset',
+];
 
 function 골라(머리, 이름들) {
   if (!머리) return null;
