@@ -33,6 +33,10 @@ import { detect, 앤트로픽같나 } from '../src/backend/detect.js';
 import { 그림메시지, 그림장수, 눈검사메시지 } from '../src/backend/vision.js';
 import { 제공자고르기 } from '../src/providers/index.js';
 import { allowEndpoint } from '../src/safety/network.js';
+import { run } from '../src/agent/loop.js';
+import { makeScope } from '../src/safety/guard.js';
+import { History } from '../src/safety/undo.js';
+import { Audit } from '../src/safety/audit.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -442,6 +446,75 @@ trace('8-알아보기');
   check('★ 판 머리 없이는 못 붙는다', r2.kind === null, String(r2.kind));
   check('막힌 상태코드를 남긴다', r2.status === 400 || r2.status === 401, String(r2.status));
   srv.close();
+}
+
+/*
+ * ── 이 규격에서 부르다 거절당하면 대화가 성한가 ─────────────────────────
+ *
+ * 짝을 맞추는 자리가 `last.tool_calls` 만 보고 있었다. 그건 OpenAI 꼴이다.
+ * 이 규격은 같은 것을 `content` 배열의 `tool_use` 블록으로 싣는다. 그래서
+ * 이 창구에서는 짝맞추기가 **한 번도 일한 적이 없었다** — 부르다 끊긴 대화가
+ * 그대로 남고, 다음 요청에서 서버가 「tool_use 에 짝이 없다」 로 통째로 400 을
+ * 낸다. 거절 한 번이 그 뒤의 세션을 못 쓰게 만드는 것이다.
+ *
+ * mantle 의 Anthropic 창구를 후보에 넣으면서 여기가 실제로 지나다니는 길이 됐다.
+ */
+{
+  const 사건들 = [
+    { type: 'message_start', message: { usage: { input_tokens: 40, cache_read_input_tokens: 900, cache_creation_input_tokens: 60 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_x', name: 'Read' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"file_path":"a.txt"}' } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', delta: { stop_reason: 'refusal' }, usage: { output_tokens: 7 } },
+    { type: 'message_stop' },
+  ];
+  const srv = createServer((req, res) => {
+    req.on('data', () => {});
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      for (const e of 사건들) res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+      res.end();
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}/v1`;
+  allowEndpoint(base);
+
+  const 뿌리 = mkdtempSync(join(tmpdir(), 'deel-ant-loop-'));
+  const conn = {
+    kind: 'anthropic', base, auth: 'x-api-key', key: 'k-1', model: 'claude-x',
+    ctx: 32768, streaming: true, tools: true, json: true, think: false,
+  };
+  const ctx = { scope: makeScope(뿌리), history: new History(뿌리), audit: new Audit(뿌리), seen: new Set() };
+  const 대화 = new Session(conn, { root: 뿌리, mode: 'auto', think: 'off' });
+
+  const 나온것 = [];
+  for await (const ev of run(대화, ctx, '해줘')) 나온것.push(ev);
+  srv.close();
+
+  check('★ 이 규격에서도 거절을 거절로 읽는다', 나온것.some((e) => e.type === 'refusal'),
+    나온것.map((e) => e.type).join(','));
+
+  const 마지막 = [...대화.messages].reverse()
+    .find((m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.some((b) => b?.type === 'tool_use'));
+  const 부른수 = (마지막?.content ?? []).filter((b) => b?.type === 'tool_use').length;
+  const 뒤 = 대화.messages.slice(대화.messages.indexOf(마지막) + 1);
+  const 결과수 = 뒤.filter((m) => Array.isArray(m.content) && m.content.some((b) => b?.type === 'tool_result')).length;
+  check('★★ tool_use 블록에도 짝을 맞춰 남긴다', 부른수 > 0 && 결과수 === 부른수,
+    `부름 ${부른수} · 결과 ${결과수}`);
+  check('★ 짝은 tool_use id 로 맞춘다',
+    뒤.find((m) => Array.isArray(m.content))?.content?.[0]?.tool_use_id === 'toolu_x',
+    JSON.stringify(뒤[0]?.content?.[0] ?? null));
+
+  /*
+   * 그리고 **보낸 토큰**을 캐시 몫까지 세는지 여기서 같이 잰다. 이 규격은
+   * input_tokens 가 마지막 표식 뒤쪽만이라, 안 더하면 40 으로 보인다 —
+   * 실제로 보낸 것은 1,000 이다.
+   */
+  check('★★ 캐시에 맞은 몫까지 보낸 것으로 센다', 대화.usage.prompt === 1000, String(대화.usage.prompt));
+  check('서버가 새로 읽은 몫은 따로 남는다', 대화.usage.in === 40, String(대화.usage.in));
+  check('캐시 읽기·쓰기를 갈라 센다', 대화.usage.cacheRead === 900 && 대화.usage.cacheWrite === 60,
+    `${대화.usage.cacheRead}/${대화.usage.cacheWrite}`);
 }
 
 trace('9-단서');

@@ -9,7 +9,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
-import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, 접힘표, 최소이득 } from '../src/agent/compact.js';
+import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, 접힘표, 최소이득, 접힌파일열쇠 } from '../src/agent/compact.js';
+import { 파일기억 } from '../src/agent/filemem.js';
 
 /*
  * ── 아래 검사들은 문턱을 0 으로 두고 부른다 ─────────────────────────────
@@ -622,6 +623,54 @@ await new Promise((r) => setImmediate(r));
   v.배운다(Math.round(v처음 * 1.0));
   v.배운다(Math.round(v.breakdown().used / v.보정 * 1.5));
   check('한 번 튄 값을 통째로 안 믿는다', v.보정 > 1.05 && v.보정 < 1.25, `보정 ${v.보정.toFixed(3)}`);
+}
+
+/*
+ * ── 접은 파일을 기억에서도 지운다 — 열쇠가 맞아야 지워진다 ──────────────
+ *
+ * 접은 자리에 남는 경로는 모델이 적어 보낸 그대로다. 파일 기억은 울타리를
+ * 거친 **절대 경로**로 묶여 있다. 이 둘을 안 맞추면 delete 가 빗나가고,
+ * 빗나간 delete 는 **아무 소리도 안 낸다** — 접힌 파일을 다시 읽을 때
+ * 「앞에서 읽은 그대로입니다」 만 돌아가고, 모델은 결국 또 읽는다.
+ * 접기로 아낀 토큰을 되읽기로 도로 쓰는 자리라, 여기가 조용히 새면
+ * 자동 압축이 있는 것보다 없는 편이 나아진다.
+ */
+{
+  const 가짜울타리 = { resolve: (길) => (길.startsWith('/뿌리/') ? 길 : `/뿌리/${길}`) };
+
+  check('★ 상대 경로를 절대 경로로 맞춰서 지운다',
+    접힌파일열쇠('src/a.js', 가짜울타리) === '/뿌리/src/a.js',
+    접힌파일열쇠('src/a.js', 가짜울타리));
+
+  check('이미 절대 경로면 그대로 둔다',
+    접힌파일열쇠('/뿌리/src/a.js', 가짜울타리) === '/뿌리/src/a.js');
+
+  // 울타리 밖이라 못 풀면 던진다. 던지는 것을 그대로 흘리면 접기 자체가 죽는다 —
+  // 기억 하나 못 지운 것 때문에 압축이 통째로 멈추면 그게 더 큰 고장이다.
+  const 던지는울타리 = { resolve: () => { throw new Error('울타리 밖'); } };
+  check('★ 못 풀어도 안 던지고 적힌 그대로 돌려준다',
+    접힌파일열쇠('../밖/a.js', 던지는울타리) === '../밖/a.js');
+
+  check('울타리가 없어도 돈다', 접힌파일열쇠('src/a.js', null) === 'src/a.js');
+  check('빈 것은 빈 것으로', 접힌파일열쇠(null) === '' && 접힌파일열쇠(undefined) === '');
+
+  /*
+   * 그리고 **정말 지워지는지** 파일 기억으로 한 번 더 확인한다. 위는 열쇠
+   * 모양만 보는 것이고, 진짜로 알고 싶은 것은 delete 가 맞았는가다.
+   */
+  const 기억 = new 파일기억();
+  const abs = '/뿌리/src/a.js';
+  const 글 = '1\tconst a = 1;\n';
+  기억.실을것(abs, 글);
+  check('두 번째로 읽으면 같은 글이라고 알려 준다', 기억.실을것(abs, 글).어떻게 === 'same');
+
+  기억.잊기('src/a.js');                       // ← 예전 방식: 적힌 그대로
+  check('★ 적힌 그대로 지우면 안 지워진다(이게 고장이었다)',
+    기억.실을것(abs, 글).어떻게 === 'same');
+
+  기억.잊기(접힌파일열쇠('src/a.js', 가짜울타리));   // ← 고친 방식
+  check('★ 맞춘 열쇠로 지우면 다시 통째로 싣는다',
+    기억.실을것(abs, 글).어떻게 === 'full');
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

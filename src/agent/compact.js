@@ -204,6 +204,29 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
   return { 접은것: 접을것.length, 아낀토큰: Math.max(0, 아낀토큰), 접은것들 };
 }
 
+/**
+ * 접힌 파일을 **파일 기억에서 지울 때 쓸 열쇠** (agent/filemem.js).
+ *
+ * 접은 자리에 남은 경로는 모델이 적어 보낸 글자 그대로다 — 대개 `src/a.js`
+ * 같은 상대 경로다. 그런데 파일 기억은 `ctx.scope.resolve()` 를 거친 **절대
+ * 경로**로 묶여 있다(tools/index.js 의 읽은것). 그대로 지우면 Map 이 안 맞아서
+ * 조용히 아무것도 안 지워지고, 그러면 접혀 사라진 파일을 다시 읽을 때
+ * 「앞에서 읽은 그대로입니다」 가 돌아간다. 모델은 대화 어디에도 없는 글을
+ * 가리키는 쪽지를 받고, 결국 또 읽는다 — 접기로 아낀 것을 되읽기로 도로 쓴다.
+ *
+ * 울타리 밖이라 못 풀면 적힌 그대로 돌려준다. 둘 다 지워 보는 것은 부르는
+ * 쪽 몫이다 — 지우는 일은 없는 열쇠에도 안전하다.
+ *
+ * @param {string} 경로  접은 자리에 적혀 있던 경로 (모델이 준 그대로)
+ * @param {object|null} scope  safety/guard.js 의 울타리
+ * @returns {string} 지울 때 쓸 열쇠
+ */
+export function 접힌파일열쇠(경로, scope = null) {
+  const 적힌것 = String(경로 ?? '');
+  if (!적힌것) return 적힌것;
+  try { return scope?.resolve?.(적힌것) ?? 적힌것; } catch { return 적힌것; }
+}
+
 const 요약지시 = `지금까지의 대화를 다음 형식으로 요약하세요. 이어서 일할 사람이 이것만 보고도 계속할 수 있어야 합니다.
 추측하지 말고 실제로 오간 내용만 쓰세요. 한국어로, 각 항목 3줄 이내로 쓰세요.
 

@@ -948,7 +948,13 @@ export async function handle(line, session, ctx) {
       const mins = ((Date.now() - session.startedAt) / 60000).toFixed(1);
       rule(말('scr.session'), 70);
       say(`  ${c.gray(pad(말('cost.calls'), 14))} ${말('unit.calls', { n: session.usage.calls })}`);
-      say(`  ${c.gray(pad(말('cost.tokIn'), 14))} ${session.usage.in.toLocaleString()}`);
+      /*
+       * 「들어간 토큰」 은 **보낸 것 전체**를 적는다. 캐시에 맞은 몫도 보낸 것이다.
+       * 서버가 새로 읽은 몫만 적으면 캐시가 잘 맞을수록 숫자가 줄어서, 일이
+       * 줄어든 것처럼 읽힌다. 새로 읽은 몫과의 차이는 바로 아래 캐시 줄이 적는다.
+       */
+      const 보낸것 = session.usage.prompt || session.usage.in;
+      say(`  ${c.gray(pad(말('cost.tokIn'), 14))} ${보낸것.toLocaleString()}`);
       say(`  ${c.gray(pad(말('cost.tokOut'), 14))} ${session.usage.out.toLocaleString()}`);
       /*
        * ── 캐시가 얼마나 맞았나 ────────────────────────────────────────
@@ -963,7 +969,8 @@ export async function handle(line, session, ctx) {
       const 읽힘 = session.usage.cacheRead ?? 0;
       const 쓰임 = session.usage.cacheWrite ?? 0;
       if (읽힘 || 쓰임) {
-        const 몫 = session.usage.in > 0 ? Math.round((읽힘 / (session.usage.in + 읽힘)) * 100) : 0;
+        // 분모는 보낸 것 전체다. 읽힘은 이미 그 안에 들어 있으므로 또 더하면 안 된다.
+        const 몫 = 보낸것 > 0 ? Math.round((읽힘 / 보낸것) * 100) : 0;
         say(`  ${c.gray(pad(말('cost.cache'), 14))} ${말('cost.cacheLine', {
           읽음: 읽힘.toLocaleString(), 씀: 쓰임.toLocaleString(), 몫: String(몫),
         })}`);

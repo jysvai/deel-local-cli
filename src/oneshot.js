@@ -504,6 +504,15 @@ export async function runOnce(opts = {}) {
         case 'refusal':
           reason = 'refusal';
           why = 옮긴말('run.refusal');
+          /*
+           * 모델이 **뭐라고 하면서** 거절했는지도 내놓는다.
+           *
+           * 이 규격은 거절 글을 흘려보내지 않고 맨 끝에 한 번에 준다
+           * (backend/adapter.js 의 흡수). 그래서 여기서 안 담으면 화면에도
+           * 파이프 뒤에도 아무 글이 안 남고, 「거절당했습니다」 한 줄만
+           * 보인다 — 무엇을 고쳐 다시 물어야 할지 알 길이 없다.
+           */
+          if (ev.text) 답 = ev.text;
           곁(`  ${c.yellow('⚠')} ${c.gray(옮긴말('run.refusal'))}`);
           if (ev.왜 && ev.왜 !== 'refusal') 곁(`     ${c.gray(옮긴말('run.refusalWhy', { 왜: ev.왜 }))}`);
           break;
@@ -579,7 +588,7 @@ export async function runOnce(opts = {}) {
   if (!json && !quiet) {
     const 조각 = [`${((Date.now() - t0) / 1000).toFixed(1)}초`];
     if (tools) 조각.push(`도구 ${tools}회`);
-    조각.push(`↑${session.usage.in.toLocaleString()} ↓${session.usage.out.toLocaleString()}`);
+    조각.push(`↑${(session.usage.prompt || session.usage.in).toLocaleString()} ↓${session.usage.out.toLocaleString()}`);
     곁(`  ${c.gray('── ' + 조각.join(' · '))}`);
   }
 
@@ -591,7 +600,15 @@ export async function runOnce(opts = {}) {
     tools,
     steps,
     usage: {
+      /*
+       * `in` 은 여태와 같은 뜻으로 둔다 — 서버가 새로 읽었다고 센 만큼이다.
+       * 파이프 뒤 스크립트가 이 이름을 이미 쓰고 있어서 뜻을 바꾸면 안 된다.
+       * 보낸 것 전체는 이름을 새로 붙여 **더한다** (backend/adapter.js 의 보낸토큰).
+       */
       in: session.usage.in, out: session.usage.out,
+      prompt: session.usage.prompt || session.usage.in,
+      cacheRead: session.usage.cacheRead ?? 0,
+      cacheWrite: session.usage.cacheWrite ?? 0,
       calls: session.usage.calls, ms: session.usage.ms,
       retries: session.usage.retries ?? 0,
     },

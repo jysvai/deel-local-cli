@@ -389,6 +389,26 @@ trace('4-끝난까닭과종료코드');
   check('★ JSON 에도 거절이 담긴다', j?.reason === 'refusal' && j?.code === 6,
     JSON.stringify({ reason: j?.reason, code: j?.code }));
   check('★ JSON 이 종료코드와 안 어긋난다', j?.code === r.code, `json=${j?.code} 실제=${r.code}`);
+
+  /*
+   * ★★ 모델이 **뭐라고 하면서** 거절했는지도 담아야 한다.
+   *
+   * 이 규격은 거절 글을 조각으로 안 흘리고 맨 끝에 한 번에 준다. 그래서
+   * 담지 않으면 화면에도 파이프 뒤에도 아무 글이 안 남고 「거절당했습니다」
+   * 한 줄뿐이다 — 무엇을 고쳐 다시 물어야 할지 알 길이 없고, 사람은 같은
+   * 말을 그대로 다시 친다. 요금은 두 배가 되고 결과는 똑같다.
+   */
+  check('★★ 거절한 말도 같이 담는다', /도와드릴 수 없습니다/.test(String(j?.text ?? '')),
+    String(j?.text ?? '').slice(0, 40));
+
+  /*
+   * 그리고 캐시 수치도 같이 내놓는다. `in` 은 이름을 그대로 두고 (파이프 뒤
+   * 스크립트가 이미 쓰고 있다) **보낸 것 전체**는 이름을 새로 붙여 더한다.
+   */
+  check('보낸 것 전체를 따로 적는다', typeof j?.usage?.prompt === 'number', JSON.stringify(j?.usage));
+  check('캐시 읽기·쓰기도 적는다',
+    typeof j?.usage?.cacheRead === 'number' && typeof j?.usage?.cacheWrite === 'number',
+    JSON.stringify(j?.usage));
 }
 
 trace('5-물어볼사람이없을때');

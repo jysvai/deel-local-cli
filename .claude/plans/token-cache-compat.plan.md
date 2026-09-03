@@ -168,6 +168,8 @@ measurement disagreed with the plan.
 | `stream_options.include_usage` only for known-good vendors | Same, but gated on the wire card | The gate is now the card rather than a hardcoded list, so an unknown gateway gets nothing extra. |
 | Both send paths pass the same arguments to `buildBody` | One shared builder that both paths call | "Write the same thing twice" is a shape where one copy eventually gets fixed alone. Attaching the wire card nearly did exactly that. The source-scan test now checks there is only one place a body can be built. |
 | Session name: strip unsafe characters | Replace the whole string with a fingerprint unless it is already safe | Stripping does not look at what survives. A Windows desktop path came out as `deel-CUsersyunseokDesktop` - only the Korean fell off. The person's name and the folder names went out intact. |
+| Send the session name on every OpenAI-shaped request | Send it only where the vendor documents a slot | Checked the Bedrock docs while writing this: `user` is not listed for its OpenAI-compatible endpoint, and even if accepted there is nothing to gain - that endpoint caches the head server-side rather than grouping by name. Narrowing wrongly costs nothing measurable; widening wrongly costs the turn. |
+| Effort rungs follow the vendor | Rungs follow the vendor **and the body's protocol** | Same check: `xhigh` is documented for the Anthropic Messages protocol, not for Bedrock's OpenAI-compatible door. One vendor, two doors, two vocabularies. |
 
 ### Left out: a per-turn token or cost budget
 
@@ -200,14 +202,52 @@ because each is a shape that will recur.
 
 ---
 
+## 4d. Defects an adversarial review surfaced after the build
+
+A review agent read the finished change with one instruction: find what breaks.
+Six findings, all real, all fixed before the tag. Recording them because the
+first three share one shape - **the change made a dormant assumption load-bearing.**
+
+| Where | Defect | Why the build created it |
+|---|---|---|
+| `짝맞추기()` in `loop.js` | Read tool calls from `last.tool_calls` only. That is the OpenAI shape; the Anthropic shape carries them as `tool_use` blocks inside `content`. So on that protocol the function had never once done its job. | The Anthropic wire shape existed before, but no candidate endpoint reached the agent loop through it. Adding the mantle Anthropic door made a dead path live. |
+| Refusal exit in `loop.js` | Returned without pairing tool calls at all. A refusal usually carries none - but streaming can open `tool_use` blocks and only report the refusal in the final `stop_reason`. The next request then `400`s on the whole conversation. | Three exits from the loop; the two older ones paired, the new one did not. |
+| `배운다()` input in `loop.js` | Learned the token-estimate factor from `usage.in`. On the Anthropic protocol that field counts **only the tokens after the last cache breakpoint**, so a good cache hit shrinks it - and the shrunken value lands inside the trusted `[0.5, 2]` band, dragging the factor down and **persisting it to disk**. | Before this change nothing was cached, so `in` and "what we sent" were always the same number. Making the cache work split them. |
+| `#전선열쇠()` in `evolve.js` | Keyed the learned wire card by `model@host`, path deliberately stripped. mantle serves `/openai/v1` and `/anthropic/v1` on the **same host with the same model id**, so one door's learned card was applied to the other - switching thinking and cache marks silently off. | Dropping the path was right for deployment names and version numbers. It was wrong the moment one host served two protocols. |
+| `미리기다릴까()` in `quota.js` | Read a single process-global quota with no connection identity, so one endpoint reporting `remaining: 0` made the next request to **any other endpoint** sleep - including a local model a sub-task had delegated to. | The value was display-only until this change started gating sends on it. |
+| `잊기(경로)` on fold | Passed the model-supplied path (usually relative); the file memory is keyed by the resolved absolute path. The `Map.delete` missed silently, so the exact bug the code's own comment claims to prevent survived. | Two sides of one key, written in two files, never compared. |
+
+Two smaller ones from the same review, also fixed: the refusal text was never
+shown to the user on the OpenAI shape (that protocol delivers it in one piece at
+the end rather than streaming it), and `/cost` measured the cache hit rate against
+a denominator that meant different things on different protocols.
+
+**What generalizes.** Every one of the first three is the same move: a field, a
+key, or a code path that was *unambiguous while one thing was true*, and stopped
+being unambiguous when the change made the other thing true. None of them were
+introduced as wrong code. They were correct code whose premise the change removed.
+The tests added for each assert the invariant, not the fix - each was confirmed to
+fail against the pre-fix code.
+
+---
+
 ## 5. Acceptance
 
 - `/cost` reports cache reads and writes separately.
 - Across the steps of one turn, cache reads grow instead of sitting at the static head.
-- One conversation appears to the gateway as one session.
+- One conversation appears as one session **where the vendor documents a slot for it**
+  (`metadata.user_id` on the Anthropic protocol, `prompt_cache_key` and `user` on OpenAI
+  direct). Nowhere else — an undocumented field for no measurable gain is a `400` waiting
+  to happen at any endpoint strict about unknown fields.
 - `/think max` reaches the model's real top rung, and the screen matches the wire.
 - Thinking works on Opus 5 without a 400.
 - A 429 pauses the turn instead of killing it.
 - A re-read after a fold returns the whole file once.
+- A refusal leaves the conversation in a state the next request can be built from,
+  on every wire shape - and says what the model actually said.
+- The token-estimate factor is learned from what was **sent**, not from what the
+  server billed as fresh input, so a working cache cannot corrupt it.
+- A learned wire card never crosses between two protocols served from one host.
+- An exhausted quota at one endpoint never stalls a request to another.
 - No new dependency, one network door, no new egress.
 - `npm test`, `CI=true node test/run.mjs`, and a PowerShell run are all green.

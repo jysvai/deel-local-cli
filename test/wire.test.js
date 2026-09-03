@@ -32,9 +32,10 @@
 import {
   눈금차례, 세대, 클로드인가, 추론형오픈AI, 기본카드, 눈금맞추기,
   배울전선, 카드고치기, 카드저장꼴, 카드합치기, 전선붙이기, 세션이름짓기, 전선말,
+  카드칸들,
 } from '../src/backend/wire.js';
 import { 조각표, 메시지표식, 시스템블록, 잡힐만한가, 블록에붙이기, 닻문턱 } from '../src/backend/cachemark.js';
-import { buildBody } from '../src/backend/adapter.js';
+import { buildBody, 보낸토큰 } from '../src/backend/adapter.js';
 import { 자동강도, 인사인가, effortFor, 가벼운강도 } from '../src/agent/effort.js';
 import { 언어정하기 } from '../src/i18n/index.js';
 import { trace } from './trace.mjs';
@@ -251,21 +252,62 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
 //
 // 다음에 켤 때 같은 400 을 또 맞으면 배운 뜻이 없다.
 {
-  const 카드 = 기본카드(연결('https://api.openai.com/v1', 'openai', 'gpt-5'));
-  const 남길것 = 카드저장꼴(카드);
-  check('저장꼴은 JSON 으로 오간다', typeof JSON.parse(JSON.stringify(남길것)) === 'object');
+  const 기본 = 기본카드(연결('https://api.openai.com/v1', 'openai', 'gpt-5'));
 
+  /*
+   * ★ 짐작은 안 남긴다. 배운 것만 남긴다.
+   *
+   * 카드는 대부분 짐작이다. 통째로 남기면 오늘의 짐작이 내일 「배운 것」 인
+   * 척 살아 돌아온다 — 짐작하는 자리를 고쳐도 남긴 것이 위에 얹혀서 그
+   * 고침이 영영 안 먹는다. 판을 올려도 낫지 못하는 고장이 이렇게 생긴다.
+   */
+  check('★ 배운 것이 없으면 아예 안 남긴다', 카드저장꼴(기본) === null,
+    JSON.stringify(카드저장꼴(기본)));
+
+  const 배운카드 = 카드고치기(기본, 배울전선('Unsupported parameter: stream_options'));
+  const 남길것 = 카드저장꼴(배운카드);
+  check('저장꼴은 JSON 으로 오간다', typeof JSON.parse(JSON.stringify(남길것)) === 'object');
+  check('★ 배운 칸만 남는다', Object.keys(남길것).join(',') === '스트림usage',
+    Object.keys(남길것).join(','));
+  check('★ 짐작한 칸은 안 따라간다', 남길것.눈금 === undefined && 남길것.캐시 === undefined,
+    JSON.stringify(남길것));
+
+  // 되살리면 배운 칸은 배운 대로, 나머지는 그날의 짐작으로 선다.
   const 되살린것 = 카드합치기(기본카드(연결('https://api.openai.com/v1', 'openai', 'gpt-5')), 남길것);
-  check('되살리면 눈금이 같다', 되살린것.눈금.join('·') === 카드.눈금.join('·'), 되살린것.눈금.join('·'));
-  check('되살리면 캐시도 같다', 되살린것.캐시 === 카드.캐시, 되살린것.캐시);
+  check('★ 되살리면 배운 것이 먹는다', 되살린것.스트림usage === false, String(되살린것.스트림usage));
+  check('되살려도 짐작은 그날 것을 쓴다', 되살린것.눈금.join('·') === 기본.눈금.join('·'),
+    되살린것.눈금.join('·'));
+
+  // 배운 칸은 이어서 또 배우면 함께 남는다. 한 번 배우면 앞에 배운 것을 잊으면 안 된다.
+  const 두번배운것 = 카드저장꼴(카드고치기(되살린것, 배울전선("Unknown parameter: 'user'")));
+  check('★ 두 번 배우면 둘 다 남는다',
+    두번배운것?.스트림usage === false && 두번배운것?.세션자리 === null,
+    JSON.stringify(두번배운것));
 
   // ★ 남긴 것이 없으면 기본 카드가 그대로 산다. 빈 것으로 덮으면 안 된다.
-  const 빈것으로 = 카드합치기(카드, null);
-  check('★ 남긴 것이 없으면 기본이 그대로', 빈것으로.눈금.join('·') === 카드.눈금.join('·'), 빈것으로.눈금.join('·'));
+  const 빈것으로 = 카드합치기(기본, null);
+  check('★ 남긴 것이 없으면 기본이 그대로', 빈것으로.눈금.join('·') === 기본.눈금.join('·'), 빈것으로.눈금.join('·'));
 
   const conn = 연결('https://api.openai.com/v1', 'openai', 'gpt-5');
   전선붙이기(conn, { 아는전선: () => 남길것 });
   check('연결에 카드가 붙는다', !!conn.전선?.눈금?.length, JSON.stringify(conn.전선?.눈금));
+
+  /*
+   * ★ 전선붙이기 는 규격까지 물어봐야 한다.
+   *
+   * mantle 은 한 호스트에 창구가 둘이다 — `/openai/v1` 과 `/anthropic/v1` 이
+   * 같은 모델 이름으로 서 있다. 규격을 안 물으면 한쪽에서 배운 것이 다른
+   * 쪽 카드 위에 얹히고, 그러면 그 창구에서는 생각도 캐시 표식도 조용히 꺼진다.
+   */
+  const 물은것 = [];
+  전선붙이기(연결('https://bedrock-mantle.us-east-1.api.aws/anthropic/v1', 'anthropic', 'claude-opus-5'),
+    { 아는전선: (...a) => { 물은것.push(a); return null; } });
+  check('★ 카드를 찾을 때 규격까지 준다', 물은것[0]?.[2] === 'anthropic',
+    JSON.stringify(물은것[0]));
+
+  // 카드칸들 은 저장꼴·합치기가 같이 쓰는 목록이다. 한쪽만 늘면 조용히 샌다.
+  check('카드 칸 목록이 한 군데 있다', 카드칸들.includes('생각형식') && 카드칸들.includes('캐시')
+    && 카드칸들.length === 7, 카드칸들.join(','));
 }
 
 // ── 8. 캐시 표식이 붙는 자리 ────────────────────────────────────────────
@@ -408,9 +450,65 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
     maxTokens: 4096,
     카드: 모르는카드,
   });
+  /*
+   * ★★ 대화 이름도 **문서에 있는 자리에만** 싣는다.
+   *
+   * Bedrock 의 OpenAI 창구가 `user` 를 받는지 문서에서 확인하지 못했고,
+   * 받는다 해도 얻는 것이 없다 — 그 창구는 서버가 알아서 앞머리를 캐시하지
+   * 이름으로 대화를 묶어 주지 않는다. 문서에 없는 칸을 **얻는 것 없이**
+   * 실어 보내는 셈이라, 모르는 칸에 엄격한 곳에서는 그 턴이 400 이다.
+   */
+  const 베드락몸 = buildBody('openai', {
+    model: 'anthropic.claude-opus-5-v1:0',
+    messages: [{ role: 'system', content: 'x' }, { role: 'user', content: '안녕' }],
+    maxTokens: 4096,
+    카드: 기본카드(연결('https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1', 'openai', 'anthropic.claude-opus-5-v1:0')),
+    세션이름: 'deel-abc123',
+  });
+  check('★★ Bedrock 에는 대화 이름을 안 싣는다',
+    !('user' in 베드락몸) && !('prompt_cache_key' in 베드락몸), Object.keys(베드락몸).sort().join(', '));
+  적어둘것.push('Bedrock(openai) 에 나가는 칸: ' + Object.keys(베드락몸).sort().join(', '));
+
   check('★★ 모르는 곳에는 캐시 열쇠를 안 싣는다', !('prompt_cache_key' in 모르는몸), Object.keys(모르는몸).join());
   check('★★ 모르는 곳에는 user 도 안 싣는다', !('user' in 모르는몸), Object.keys(모르는몸).join());
   적어둘것.push('모르는 주소에 나가는 칸: ' + Object.keys(모르는몸).sort().join(', '));
+}
+
+/*
+ * ── 10b. 이번에 **보낸** 프롬프트가 몇 토큰이었나 ───────────────────────
+ *
+ * 규격마다 `usage.in` 이 세는 범위가 다르다. 캐시가 한 번도 안 걸리던 동안은
+ * 둘이 같은 값이라 이 차이가 안 보였다. 걸리기 시작하면 갈라진다.
+ *
+ *   OpenAI     prompt_tokens 가 합계다 (cached·cache_write 가 그 안에 있다)
+ *   Anthropic  input_tokens 는 마지막 표식 뒤쪽만이다 (합계는 셋을 더한 값)
+ *
+ * 여기를 안 가르면 session.배운다() 가 줄어든 숫자를 「우리 추정」 과 견줘서
+ * 토큰 배수를 아래로 끌어내리고, **그 배수를 디스크에 남긴다.** 그러면 남은
+ * 자리를 실제보다 넉넉히 보고 답 상한을 크게 잡아 답이 잘리고, 접기를 늦게
+ * 시작한다. 게다가 다음에 켤 때도 그 값이 그대로 살아난다.
+ */
+{
+  const 앤 = { in: 500, cacheRead: 4000, cacheWrite: 1000 };
+  check('★ Anthropic 은 캐시 몫까지 더해야 보낸 것이 된다', 보낸토큰('anthropic', 앤) === 5500,
+    String(보낸토큰('anthropic', 앤)));
+
+  // OpenAI 는 prompt_tokens 가 이미 합계다. 또 더하면 두 벌로 센다.
+  const 오 = { in: 5500, cacheRead: 4000, cacheWrite: 1000 };
+  check('★ OpenAI 는 이미 합계라 안 더한다', 보낸토큰('openai', 오) === 5500,
+    String(보낸토큰('openai', 오)));
+
+  // 모르는 규격도 OpenAI 쪽으로 둔다 — 안 더하는 편이 두 벌로 세는 것보다 낫다.
+  check('모르는 규격도 안 더한다', 보낸토큰('ollama', 오) === 5500, String(보낸토큰('ollama', 오)));
+
+  // 캐시를 안 알려 주는 창구에서는 예전과 똑같은 값이 나와야 한다.
+  check('캐시를 안 알려 주면 그대로', 보낸토큰('anthropic', { in: 5500 }) === 5500,
+    String(보낸토큰('anthropic', { in: 5500 })));
+  check('아무것도 없으면 0', 보낸토큰('anthropic', null) === 0 && 보낸토큰('openai', undefined) === 0);
+
+  // 이상한 값이 와도 안 터지고 안 부푼다.
+  check('음수·글자는 0 으로 친다', 보낸토큰('anthropic', { in: -5, cacheRead: 'x', cacheWrite: null }) === 0,
+    String(보낸토큰('anthropic', { in: -5, cacheRead: 'x', cacheWrite: null })));
 }
 
 // ── 11. 강도가 시킨 말을 따라간다 ───────────────────────────────────────

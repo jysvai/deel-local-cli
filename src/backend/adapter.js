@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { req, headersFor, serverMessage, Aborted } from './http.js';
-import { 할당량기억, 미리기다릴까 } from './quota.js';
+import { 할당량기억, 미리기다릴까, 마지막할당량, 할당량자리 } from './quota.js';
 import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
 import { 말 } from '../i18n/index.js';
 import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
@@ -365,6 +365,35 @@ export function 캐시읽기(u) {
   };
 }
 
+/*
+ * ── 이번에 **실제로 보낸** 프롬프트가 몇 토큰이었나 ─────────────────────
+ *
+ * 규격마다 `in` 이 세는 것이 다르다. 여태는 캐시가 한 번도 안 걸려서 둘이
+ * 같은 값이었고, 그래서 이 차이가 안 보였다. 캐시를 붙이는 순간 갈라진다.
+ *
+ *   OpenAI     prompt_tokens 가 **합계**다. cached·cache_write 가 그 안에 있다.
+ *              (조직 사용량 표: 1000 = 500 uncached + 400 cached + 100 write)
+ *   Anthropic  input_tokens 는 **마지막 표식 뒤쪽만**이다. 합계는 셋을 더한 값이다.
+ *              (docs: total = cache_read + cache_creation + input_tokens)
+ *
+ * 왜 이걸 가려야 하나 — session.배운다() 가 이 값을 「우리 추정」 과 견줘서
+ * 토큰 배수를 배우고, 그 배수를 디스크에 남긴다. Anthropic 창구에서 절반이
+ * 캐시에 맞으면 `in` 이 절반으로 줄고, 그 절반이 0.5~2배 믿는 구간 안에
+ * 들어와서 **배수가 조용히 아래로 끌려간다.** 그러면 남은 자리를 실제보다
+ * 넉넉히 보고, 답 상한을 크게 잡고, 접기를 늦게 시작한다. 게다가 그 잘못된
+ * 배수가 다음에 켤 때도 그대로 살아난다.
+ *
+ * @param {string} shape  전선 규격 (conn.kind)
+ * @param {object} u      정규화된 usage ({in, cacheRead, cacheWrite})
+ * @returns {number} 이번 요청에 들어간 프롬프트 토큰 합계
+ */
+export function 보낸토큰(shape, u) {
+  const n = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : 0);
+  const 들어온것 = n(u?.in);
+  if (shape !== 'anthropic') return 들어온것;
+  return 들어온것 + n(u?.cacheRead) + n(u?.cacheWrite);
+}
+
 export function extractMessage(shape, json) {
   if (shape === 'anthropic') {
     // 답이 블록 배열이다. 글·생각·도구 부름이 한 배열에 섞여 온다.
@@ -651,8 +680,9 @@ function 몸덤프(body) {
  * 서버가 「남은 것 0, 몇 초 뒤 풀림」 이라고 알려 줬는데도 그대로 보내면
  * 429 를 맞고 사다리를 태우고 턴이 죽는다. 알고 있으면 그냥 기다리면 된다.
  */
-async function 미리비키기(opts) {
-  const ms = 미리기다릴까();
+async function 미리비키기(opts, conn) {
+  // **이 창구** 것만 본다. 옆 창구가 바닥났다고 이쪽이 기다리면 안 된다.
+  const ms = 미리기다릴까(마지막할당량(할당량자리(conn)));
   if (!ms) return 0;
   opts.onBackoff?.({ type: 'backoff', status: 429, code: null, wait: ms, attempt: 0, max: 0, 미리: true });
   await 기다리기(ms, opts.signal ?? null);
@@ -668,7 +698,7 @@ export async function chat(conn, opts) {
   몸덤프(body);
   const 정책 = 정책고르기(conn, opts);
   let 열쇠다시받음 = false;
-  let 쌓인대기 = await 미리비키기(opts);
+  let 쌓인대기 = await 미리비키기(opts, conn);
   for (let 시도 = 1; ; 시도++) {
     const r = await req(요청주소(conn), {
       method: 'POST',
@@ -679,7 +709,7 @@ export async function chat(conn, opts) {
     });
     // 서버가 남았다고 말해 준 할당량을 적어 둔다 (backend/quota.js).
     // 429 를 맞고 나서야 아는 것과, 맞기 전에 아는 것은 사람이 할 일이 다르다.
-    할당량기억(r.headers);
+    할당량기억(r.headers, 할당량자리(conn));
     // 다듬느라 이름을 고쳤으면 여기서 되돌린다. 밖에서는 그런 일이 있었는지
     // 모른 채로 원래 이름을 받는다.
     if (r.ok) return 이름되돌리기(extractMessage(conn.kind, r.json), 맞춘것.되돌림);
@@ -759,7 +789,7 @@ export async function* chatStream(conn, opts) {
   let 열쇠다시받음 = false;
   let 쌓인대기 = 0;
   {
-    const 미리 = 미리기다릴까();
+    const 미리 = 미리기다릴까(마지막할당량(할당량자리(conn)));
     if (미리) {
       yield { type: 'backoff', status: 429, code: null, wait: 미리, attempt: 0, max: 0, 미리: true };
       await 기다리기(미리, opts.signal ?? null);
@@ -775,7 +805,7 @@ export async function* chatStream(conn, opts) {
       stream: true,
       signal: opts.signal ?? null,
     });
-    할당량기억(r.headers ?? r.res?.headers);
+    할당량기억(r.headers ?? r.res?.headers, 할당량자리(conn));
     if (r.ok && r.res?.body) break;
     const 거절 = await 거절읽기(r);
     // 위 chat() 과 같은 규칙. 몸을 먼저 읽고(거절읽기) 나서 다시 부른다 —

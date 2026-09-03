@@ -197,6 +197,35 @@ trace('7-못써도안죽는다');
   check('빈 것으로는 안 덮는다',
     JSON.stringify(다시.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')) === 전);
 
+  /*
+   * ── 한 호스트에 창구가 둘인 자리 ────────────────────────────────────
+   *
+   * 경로를 뺐더니 mantle 이 걸렸다 — `/openai/v1` 과 `/anthropic/v1` 이
+   * **같은 호스트에 같은 모델 이름**으로 서 있다(providers/bedrock.js).
+   * 규격을 안 가르면 OpenAI 창구에서 배운 `생각형식:'effort'` 가 Anthropic
+   * 창구 카드 위에 얹히고, 그러면 그 창구에서는 생각도 캐시 표식도 조용히
+   * 다 꺼진다 — 이번 판이 고치려던 두 가지가 켠 적도 없이 꺼져 있게 된다.
+   */
+  const 맨틀 = 'https://bedrock-mantle.us-east-1.api.aws';
+  다시.전선본것('claude-opus-5', `${맨틀}/openai/v1`, { 생각형식: 'effort', 캐시: 'auto' }, 'openai');
+  다시.전선본것('claude-opus-5', `${맨틀}/anthropic/v1`, { 생각형식: 'adaptive', 캐시: 'explicit' }, 'anthropic');
+
+  check('★★ 같은 호스트라도 규격이 다르면 남의 카드를 안 준다',
+    다시.아는전선('claude-opus-5', `${맨틀}/anthropic/v1`, 'anthropic')?.생각형식 === 'adaptive',
+    JSON.stringify(다시.아는전선('claude-opus-5', `${맨틀}/anthropic/v1`, 'anthropic')));
+  check('★★ 반대쪽도 제 것을 받는다',
+    다시.아는전선('claude-opus-5', `${맨틀}/openai/v1`, 'openai')?.생각형식 === 'effort',
+    JSON.stringify(다시.아는전선('claude-opus-5', `${맨틀}/openai/v1`, 'openai')));
+  check('★ 캐시 칸도 안 섞인다',
+    다시.아는전선('claude-opus-5', `${맨틀}/anthropic/v1`, 'anthropic')?.캐시 === 'explicit',
+    JSON.stringify(다시.아는전선('claude-opus-5', `${맨틀}/anthropic/v1`, 'anthropic')?.캐시));
+
+  // 규격을 안 주고 물으면 옛 열쇠를 본다. 옛 열쇠에 적힌 것이 없으면 없다고 한다 —
+  // 모르는 채로 남의 카드를 주는 것보다 짐작으로 새로 서는 편이 안전하다.
+  check('규격 없이 물으면 남의 것을 안 준다',
+    다시.아는전선('claude-opus-5', `${맨틀}/anthropic/v1`) === null,
+    JSON.stringify(다시.아는전선('claude-opus-5', `${맨틀}/anthropic/v1`)));
+
   rmSync(r2, { recursive: true, force: true });
   rmSync(h2, { recursive: true, force: true });
 }

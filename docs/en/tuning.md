@@ -8,7 +8,26 @@ Per-stage effort, the prefix cache, context length, reply-length cap
 
 ## Reasoning effort
 
-<sub>The wire card · Cache marks · Effort follows the request · Context length is read off the model · /out · Truncated tool calls · When the server pushes back</sub>
+<sub>The prefix cache · The wire card · Cache marks · Effort follows the request · Context length is read off the model · /out · Truncated tool calls · When the server pushes back</sub>
+
+### The hidden slowdown on local models — protecting the prefix cache
+
+Ollama and llama.cpp reuse computation **only while the front of the request matches the
+last one**. One character different and everything from that point to the end — the whole
+conversation included — is recomputed. That is usually the hidden reason a long local
+conversation keeps getting slower. It is not an error, so nothing anywhere reports it.
+
+deel moves itself into the right work mode as you talk. If that mode instruction sat near
+the **front** of the prompt, every mode switch would blow the whole cache. So the parts
+that do not change (rules, folder, project fingerprint, your own rules, memory, skills)
+are frozen at the front, and the parts that can change each turn (mode, pins) go at the
+end. A test holds that order (`test/cache.test.js`) — order is invisible, so without a
+test the next feature lands wherever it likes.
+
+Ollama also gets `keep_alive: 60m`. At the default five minutes the model unloads while
+you glance at another window, and the first message after you come back recomputes the
+entire conversation. `DEEL_KEEP_ALIVE` changes it. Running llama.cpp directly, the
+server-side `--cache-reuse 256` does the same job.
 
 ### The wire card — what this model actually accepts at this address
 
@@ -30,7 +49,17 @@ The card is settled in three steps, the same way deel works out context length.
 
 1. **Guess** — from the vendor in the address and the version in the model name
 2. **Learn** — when the server answers `400`, read what it refused out of the message
-3. **Keep** — write it down per model and address, and start there next time
+3. **Keep** — write it down per model, address **and protocol**, and start there next time
+
+Only **learned** fields are kept. A card is mostly guesswork, and storing it whole makes
+today's guess come back tomorrow wearing the label of something learned — improving the
+guess then never takes effect, because the stored value sits on top of it. Only fields
+the server rejected with a `400` are written down; the rest is guessed fresh each start.
+
+The protocol belongs in the key because **one host can serve two endpoints**. AWS
+Bedrock's mantle does: `/openai/v1` and `/anthropic/v1` sit at the same address under
+the same model id. Without the protocol in the key, one endpoint's learned card lands on
+the other, and thinking and cache marks switch off there without a word.
 
 When it learns, one line appears and the request goes out again with the fixed card.
 
@@ -100,6 +129,17 @@ nothing, so none is attached.
 **Writes with zero reads** means the head is being rebuilt every single time. `/cost`
 says so in the same place.
 
+**"Tokens in" means everything that was sent.** On the Anthropic protocol `input_tokens`
+holds only what follows the last cache breakpoint, so the better the cache works the
+smaller that number gets. Printed as-is it reads as though the work shrank. The line
+shows the full prompt, cache hits included, and the cache line above it accounts for the
+difference.
+
+This is not only about the display. deel learns its token multiplier from that number and
+writes it to disk (see *Context length is read off the model*). Learn from the shrunken
+value and the multiplier is dragged down, free context is over-reported, answers get cut,
+and folding starts late. Making the cache work and counting tokens are one job.
+
 The share of output tokens spent on thinking shows up alongside it. That is where the
 price of a high `/think` setting becomes a number.
 
@@ -140,9 +180,19 @@ rebuilt every call.
 
 ### The session name
 
-Endpoints that catch the cache are told **this conversation is that earlier one**. On the
-Anthropic protocol that rides in `metadata.user_id`; on OpenAI direct it goes out as
-`prompt_cache_key` and `user`.
+Endpoints that catch the cache are told **this conversation is that earlier one**.
+
+| Endpoint | Where it rides |
+|---|---|
+| Anthropic protocol (direct · Bedrock mantle) | `metadata.user_id` |
+| OpenAI direct | `prompt_cache_key` · `user` |
+| Everything else (Bedrock runtime · Gemini · Azure · unknown) | **not sent** |
+
+That last row is deliberate. Whether those endpoints accept `user` is not confirmed in
+their docs, and even if they do there is nothing to gain — they cache the head
+server-side rather than grouping a conversation by name. Sending an undocumented field
+for no benefit costs the whole turn at any endpoint strict about unknown fields. What
+protects the cache there is not a name, it is **not shifting the head**.
 
 It carries **the conversation number and nothing else** — no path, no address, no user
 name, no key. Anything that is not already a conversation number is replaced wholesale by
@@ -168,6 +218,16 @@ step of a script proceed as though the work had happened. It is kept separate fr
 error (`1`) because the fix is different: an error means checking the connection or the
 key, a refusal means **changing what you asked for**.
 
+**What the model said is shown too.** The OpenAI protocol delivers the refusal text in
+one piece at the end rather than streaming it, so the screen used to carry a single
+"declined" line with no indication of what was declined.
+
+**A refusal leaves the conversation usable.** "Usually carries no tool call" is not
+"always" — a refusal can land after the calls have opened, leaving calls with no results.
+Send the next message from that state and the server rejects the whole conversation with
+a `400`. deel fills in a "not executed" result for each open call, on all three
+protocols, exactly as it already did for an interrupt or an error.
+
 ### Waiting before sending when the quota is empty
 
 Some servers report the remaining quota and the reset time in response headers. While
@@ -181,6 +241,12 @@ The outcome matches sending and backing off from a `429`, except no request is w
 That matters because each wasted request pushes the limit up again. If the wait would run
 past a minute, or the reset time is unknown, it just sends — turning "unknown" into
 "wait" stalls requests that would have worked.
+
+**Counted per endpoint.** Held as a single value, remaining quota has no owner — yet deel
+talks to several endpoints at once: the main model, a model a sub-task chose, the one
+`/model` consults, the one that writes summaries. A corporate gateway running dry must not
+stall a local model running alongside it. Quota is stored per host and model, and the
+pre-send wait reads **only that endpoint's** entry.
 
 ### Context length is read off the model
 

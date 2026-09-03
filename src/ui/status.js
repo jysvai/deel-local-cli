@@ -197,8 +197,11 @@ export const SEGMENTS = {
 
   tok: {
     get desc() { return 말('seg.tok'); },
-    make: (s) => s.usage.in || s.usage.out
-      ? c.gray(`↑${short(s.usage.in)} ↓${short(s.usage.out)}`)
+    // ↑ 는 **보낸 것**이다. 캐시에 맞은 몫도 보낸 것이라 같이 센다.
+    // 서버가 새로 읽은 몫만 세면 캐시가 잘 맞을수록 숫자가 줄어서, 대화가
+    // 짧아진 것처럼 보인다 (backend/adapter.js 의 보낸토큰).
+    make: (s) => (s.usage.prompt || s.usage.in) || s.usage.out
+      ? c.gray(`↑${short(s.usage.prompt || s.usage.in)} ↓${short(s.usage.out)}`)
       : null,
   },
 

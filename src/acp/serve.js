@@ -408,10 +408,13 @@ export async function acp(opts = {}) {
     };
 
     try {
+      // 이번 걸음에 글이 흘러 나갔나. 거절 자리에서 같은 글을 두 벌 싣지 않으려고 센다.
+      let 흘렸나 = false;
       for await (const ev of run(방.session, 방.ctx, 글, { signal: 턴.signal })) {
         switch (ev.type) {
           case 'stage':
             방.메시지번호++;
+            흘렸나 = false;
             break;
 
           case 'thinking':
@@ -419,7 +422,7 @@ export async function acp(opts = {}) {
             break;
 
           case 'content':
-            if (ev.text) 말하기(ev.text);
+            if (ev.text) { 말하기(ev.text); 흘렸나 = true; }
             break;
 
           /*
@@ -464,6 +467,15 @@ export async function acp(opts = {}) {
           // 모델이 안 하겠다고 했다. 에디터 쪽에도 그렇게 적어 둔다 —
           // 안 적으면 반쪽 답과 구별이 안 되고, 사람은 같은 말을 또 친다.
           case 'refusal':
+            /*
+             * 흘러 나온 것이 없으면 거절 글을 여기서 싣는다.
+             *
+             * OpenAI 꼴은 거절 글을 조각으로 안 보내고 맨 끝에 한 번에 준다
+             * (backend/adapter.js 의 흡수). 그래서 이 자리가 없으면 에디터에는
+             * 「거절당했습니다」 한 줄만 남고, 무엇을 고쳐 다시 물어야 할지
+             * 알 길이 없다. 이미 흘러 나온 창구에서는 두 벌이 되니 안 싣는다.
+             */
+            if (!흘렸나 && ev.text) 말하기(String(ev.text));
             말하기(`\n\n_(${옮긴말('run.refusal')}${
               ev.왜 && ev.왜 !== 'refusal' ? ` · ${옮긴말('run.refusalWhy', { 왜: ev.왜 })}` : ''})_\n\n`);
             break;

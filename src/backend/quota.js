@@ -147,14 +147,57 @@ export function 할당량말(것) {
  */
 let 마지막 = null;
 
-export function 할당량기억(머리) {
+/*
+ * ── 창구마다 따로 센다 ──────────────────────────────────────────────────
+ *
+ * 값이 한 벌이면 **누구 것인지**가 없다. 그런데 이 프로그램은 한 번에 여러
+ * 창구를 부른다 — 본 모델, 하위 작업이 고른 모델(agent/loop.js), `/model` 로
+ * 물어보는 자리, 요약을 짓는 자리. 사내 게이트웨이가 「남은 것 0, 55초 뒤」
+ * 라고 답하면, 그 다음에 **전혀 다른 주소**로 나가는 요청까지 55초를 기다렸다.
+ * 옆에 켜 둔 로컬 모델이 남의 할당량 때문에 멎는 것이다.
+ *
+ * 그래서 창구별로 담아 두고, 보내기 전에 비킬 때는 **그 창구 것만** 본다.
+ * 화면(상태줄·/cost)은 여전히 마지막 것을 쓴다 — 사람이 보는 것은 지금 쓰는
+ * 창구 하나라, 그 자리에는 한 벌로 충분하다.
+ */
+const 자리들 = new Map();
+const 자리최대 = 24;
+
+/** 이 연결을 가리키는 이름. 주소의 호스트와 모델까지만 쓴다 — 열쇠는 안 넣는다. */
+export function 할당량자리(conn) {
+  if (!conn) return '';
+  let host = '';
+  try { host = new URL(String(conn.base ?? '')).host; } catch { host = ''; }
+  return `${host}|${String(conn.model ?? '').trim()}`;
+}
+
+export function 할당량기억(머리, 어디 = '') {
   const 것 = 할당량읽기(머리);
-  if (것.있나) 마지막 = { ...것, 때: Date.now() };
+  if (것.있나) {
+    const 적을것 = { ...것, 때: Date.now() };
+    마지막 = 적을것;
+    if (어디) {
+      자리들.delete(어디);
+      자리들.set(어디, 적을것);
+      // 오래 안 쓴 자리부터 버린다. 창구를 옮겨 다녀도 표가 안 자란다.
+      while (자리들.size > 자리최대) 자리들.delete(자리들.keys().next().value);
+    }
+  }
   return 것;
 }
 
-export function 마지막할당량() { return 마지막; }
-export function 할당량잊기() { 마지막 = null; return null; }
+/** 마지막으로 본 할당량. 자리를 주면 **그 창구 것**, 안 주면 가장 최근 것. */
+export function 마지막할당량(어디 = '') {
+  if (어디) return 자리들.get(어디) ?? null;
+  return 마지막;
+}
+
+export function 할당량잊기(어디 = '') {
+  if (어디) { 자리들.delete(어디); return null; }
+  마지막 = null;
+  자리들.clear();
+  return null;
+}
 
 /*
  * ── 맞기 전에 비킨다 ────────────────────────────────────────────────────

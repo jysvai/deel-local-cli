@@ -288,7 +288,17 @@ export class Session {
      * 번도 못 읽는」 것과 「잘 읽고 있는」 것은 완전히 다른 상태인데,
      * 하나로 뭉치면 그 둘이 같아 보인다.
      */
-    this.usage = { in: 0, out: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+    /*
+     * `in` 과 `prompt` 는 다른 값이다.
+     *
+     *   in      서버가 「새로 읽었다」 고 센 만큼. 규격마다 세는 범위가 다르다.
+     *   prompt  이번에 **실제로 보낸** 프롬프트 전체 (캐시에 맞은 몫까지).
+     *
+     * 캐시가 걸리기 전에는 둘이 늘 같았다. 걸리기 시작하면 갈라지고, 그때
+     * 「들어간 토큰」 자리에 in 을 적으면 캐시가 잘 맞을수록 숫자가 줄어서
+     * 일이 줄어든 것처럼 보인다 — 까닭은 backend/adapter.js 의 보낸토큰.
+     */
+    this.usage = { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
     /*
      * 이 대화의 이름. 게이트웨이에 「같은 대화다」 라고 알려 줄 때 쓴다.
      *

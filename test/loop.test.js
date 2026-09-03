@@ -55,6 +55,20 @@ const server = createServer((req, res) => {
      * 안 하겠다고 하는 응답. 이 규격은 거절을 `content` 가 아니라 `refusal`
      * 로 흘려보낸다 — 화면에서는 **빈 답과 겉모습이 같다.**
      */
+    /*
+     * 도구를 부르다가 앞단 필터에 걸린 응답.
+     *
+     * 거절에는 도구 호출이 **대개** 없다. 대개지 늘이 아니다 — 흘려받기는
+     * tool_calls 조각을 먼저 보내 놓고 맨 끝의 finish_reason 에서 거절을
+     * 알려 줄 수 있다. 그러면 부름만 있고 결과가 없는 채로 대화가 끝난다.
+     */
+    if (step.부르다거절) {
+      const argStr = JSON.stringify(step.부르다거절.args);
+      return sse(res, [
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c9', function: { name: step.부르다거절.name, arguments: argStr } }] } }] },
+        { choices: [{ delta: {}, finish_reason: 'content_filter' }], usage: { prompt_tokens: 130, completion_tokens: 10 } },
+      ]);
+    }
     if (step.refusal) {
       const 조각 = String(step.refusal).match(/.{1,8}/gs) ?? [''];
       return sse(res, [
@@ -264,6 +278,42 @@ check('상한(24회)까지 안 간다', ev4.filter((e) => e.type === 'tool').len
   const 거절것 = ev5.find((e) => e.type === 'refusal');
   check('★ 거절한 말이 화면에 남는다', /도와드릴 수 없습니다/.test(String(거절것?.text ?? '')),
     String(거절것?.text ?? '').slice(0, 30));
+}
+
+/*
+ * ── 부르다 거절당해도 대화를 성한 상태로 남긴다 ─────────────────────────
+ *
+ * 도구를 부르겠다고 해 놓고 결과가 안 들어간 채로 끝나면, 그 다음 말을 보낼
+ * 때 서버가 **대화 전체를** 400 으로 돌려보낸다 ("tool_calls must be followed
+ * by tool messages"). 거절 한 번이 그 뒤의 세션을 통째로 못 쓰게 만드는 것이다.
+ *
+ * 중단·오류에서는 짝을 맞추고 있었는데 거절에서만 빠져 있었다. 나가는 문이
+ * 셋인데 둘만 잠근 셈이라, 화면에는 아무 표시 없이 다음 턴에서 터진다.
+ */
+{
+  turn = 0;
+  script = [
+    { 부르다거절: { name: 'Read', args: { file_path: 'app.js' } } },
+    { text: '(여기까지 오면 안 된다)' },
+  ];
+  const s7 = new Session(conn, { root, mode: 'auto', think: 'off' });
+  const ev7 = [];
+  for await (const ev of run(s7, ctx, '안 되는 것 해줘')) ev7.push(ev);
+
+  check('★ 부르다 거절당한 것도 거절로 읽는다', ev7.some((e) => e.type === 'refusal'),
+    ev7.map((e) => e.type).join(','));
+
+  // 마지막 assistant 가 부른 만큼 도구 결과가 뒤따라야 한다.
+  const 마지막부름 = [...s7.messages].reverse().find((m) => m.role === 'assistant' && m.tool_calls?.length);
+  const 부른수 = 마지막부름?.tool_calls?.length ?? 0;
+  const 부름뒤 = s7.messages.slice(s7.messages.indexOf(마지막부름) + 1).filter((m) => m.role === 'tool');
+  check('★★ 부른 도구에 결과가 짝지어져 남는다', 부른수 > 0 && 부름뒤.length === 부른수,
+    `부름 ${부른수} · 결과 ${부름뒤.length}`);
+  check('★ 짝은 부름 id 로 맞춘다',
+    부름뒤[0]?.tool_call_id === 마지막부름?.tool_calls?.[0]?.id,
+    `${부름뒤[0]?.tool_call_id} vs ${마지막부름?.tool_calls?.[0]?.id}`);
+  check('실행은 안 했다고 적는다', /실행하지 않았습니다/.test(부름뒤[0]?.content ?? ''),
+    String(부름뒤[0]?.content ?? '').slice(0, 30));
 }
 
 /*

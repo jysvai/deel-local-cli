@@ -1679,7 +1679,7 @@ export async function chatLoop(opts = {}) {
 
     say('');
     const started = Date.now();
-    const before = { in: session.usage.in, out: session.usage.out };
+    const before = { in: session.usage.prompt || session.usage.in, out: session.usage.out };
 
     /*
      * 창 제목에 흐른 시간을 띄운다. 탭 이름만 봐도 도는 중인지 알게 하려는 것이다.
@@ -2307,6 +2307,12 @@ export async function chatLoop(opts = {}) {
             if (streamed) { 답비우기(); say(''); streamed = false; }
             만든파일보이기(ev.files);
             say('');
+            /*
+             * 흘려 나온 것이 없으면 거절 글을 여기서 적는다. 이 규격은 거절
+             * 글을 조각으로 안 보내고 맨 끝에 한 번에 준다(adapter.js 의 흡수).
+             * 안 적으면 화면에는 「거절당했습니다」 한 줄만 남는다.
+             */
+            if (!streamed && ev.text) { say(`  ${ev.text}`); say(''); }
             say(`  ${c.yellow(mark.no)} ${c.gray(옮긴말('run.refusal'))}`);
             if (ev.왜 && ev.왜 !== 'refusal') say(`     ${c.gray(옮긴말('run.refusalWhy', { 왜: ev.왜 }))}`);
             break;
@@ -2378,7 +2384,7 @@ export async function chatLoop(opts = {}) {
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     const bits = [옮긴말('unit.sec', { n: secs })];
     if (tools) bits.push(`${옮긴말('scr.tools')} ${옮긴말('unit.calls', { n: tools })}`);
-    const dIn = session.usage.in - before.in;
+    const dIn = (session.usage.prompt || session.usage.in) - before.in;
     const dOut = session.usage.out - before.out;
     if (dIn || dOut) bits.push(`↑${dIn.toLocaleString()} ↓${dOut.toLocaleString()}`);
     /*
@@ -2560,7 +2566,7 @@ export async function chatLoop(opts = {}) {
   say(`  ${c.gray(옮긴말('run.bye'))} ${c.gray(옮긴말('run.byeStats', {
     n: session.usage.calls,
     초: (session.usage.ms / 1000).toFixed(1),
-    입력: session.usage.in.toLocaleString(),
+    입력: (session.usage.prompt || session.usage.in).toLocaleString(),
     출력: session.usage.out.toLocaleString(),
   }))}`);
   say('');

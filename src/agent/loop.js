@@ -1,6 +1,6 @@
 // 에이전트 루프. 모델 → 도구 → 결과 → 모델 을 답이 나올 때까지 돈다.
 // 화면에 그릴 것은 이벤트로 흘려보낸다 — 화면 코드와 섞지 않는다.
-import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남 } from '../backend/adapter.js';
+import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남, 보낸토큰 } from '../backend/adapter.js';
 import { 그림메시지 } from '../backend/vision.js';
 import { 어떻게할까 } from '../safety/policy.js';
 import { toolSchemas, runTool, TOOLS, 파일현황 } from '../tools/index.js';
@@ -9,7 +9,7 @@ import { effortFor, tokensFor, fullCap, wasCut, shiftLevel, 자동강도, 인사
 import { 배울전선, 카드고치기, 카드저장꼴, 전선붙이기 } from '../backend/wire.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
-import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박을것 } from './compact.js';
+import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박을것, 접힌파일열쇠 } from './compact.js';
 import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
 import { Session } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
@@ -305,16 +305,31 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 그 배열을 그대로 보낼 수 없다 — 서버가 400 을 낸다. 그래서 부른 만큼
    * '중단됨' 결과를 채워 짝을 맞춘다.
    */
-  const 짝맞추기 = () => {
+  const 짝맞추기 = (왜 = '사용자가 중단했습니다. 실행하지 않았습니다.') => {
     const last = session.messages.at(-1);
-    const calls = last?.tool_calls ?? [];
-    if (!calls.length) return;
+    if (last?.role !== 'assistant') return;
+    /*
+     * 부른 자리가 규격마다 다르다.
+     *
+     * 여긴 `last.tool_calls` 만 봤다. 그건 OpenAI 꼴이다. Anthropic 꼴은
+     * 같은 것을 `content` 배열 안의 `tool_use` 블록으로 싣는다(adapter.js 의
+     * assistantMessage). 그래서 이 함수는 Anthropic 창구에서 **한 번도 짝을
+     * 안 맞추고 있었다** — 부르고 끊긴 대화가 그대로 남고, 다음 요청에서
+     * 서버가 「tool_use 에 짝이 없다」 로 통째로 400 을 낸다.
+     *
+     * mantle 의 Anthropic 창구를 후보에 넣으면서 이 자리가 실제로 지나다니는
+     * 길이 됐다. 한 곳만 보던 것을 세 규격 다 보게 고친다.
+     */
+    const 부른것 = Array.isArray(last.content)
+      ? last.content.filter((b) => b?.type === 'tool_use').map((b) => ({ id: b.id, name: b.name }))
+      : (last.tool_calls ?? []).map((t) => ({ id: t.id, name: t.function?.name ?? t.name ?? '?' }));
+    if (!부른것.length) return;
     const 이미 = session.messages.filter((m) => m.role === 'tool').length;
-    for (const t of calls) {
+    for (const t of 부른것) {
       session.push(toolMessage(conn.kind, {
         callId: t.id ?? `call_${이미 + 1}`,
-        name: t.function?.name ?? t.name ?? '?',
-        content: '사용자가 중단했습니다. 실행하지 않았습니다.',
+        name: t.name ?? '?',
+        content: 왜,
       }));
     }
   };
@@ -562,7 +577,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 대화 어디에도 없는 글을 가리키는 쪽지를 받고, 결국 또 읽는다.
          * 같은 파일을 두 번 읽는 자리가 여기였다.
          */
-        for (const x of f.접은것들 ?? []) if (x.경로) session.파일기억?.잊기(x.경로);
+        for (const x of f.접은것들 ?? []) {
+          if (!x.경로) continue;
+          // 열쇠를 맞춰서 지운다 — 까닭은 agent/compact.js 의 접힌파일열쇠.
+          const 열쇠 = 접힌파일열쇠(x.경로, ctx.scope);
+          session.파일기억?.잊기(열쇠);
+          if (열쇠 !== x.경로) session.파일기억?.잊기(x.경로);
+        }
         yield { type: 'folded', ...f };
       }
       // 그림은 사람 말 자리에 실려서 위 접기가 못 건드린다. 따로 뺀다.
@@ -873,7 +894,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       if (전선고침 && !전선배운적) {
         전선배운적 = true;
         conn.전선 = 카드고치기(conn.전선, 전선고침);
-        try { ctx.배움?.전선본것?.(conn.model, conn.base, 카드저장꼴(conn.전선)); } catch { /* 못 적어도 이번 대화에는 먹는다 */ }
+        try { ctx.배움?.전선본것?.(conn.model, conn.base, 카드저장꼴(conn.전선), conn.kind); } catch { /* 못 적어도 이번 대화에는 먹는다 */ }
         yield {
           type: 'wire', 무엇: 전선고침.무엇, 값: 전선고침.값,
           from: 짧게말(err.serverMessage ?? err.message),
@@ -983,7 +1004,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
      *
      * 답을 push 하기 **전**이어야 한다. 지금 이력이 곧 방금 보낸 프롬프트다.
      */
-    const 새보정 = session.배운다?.(msg.usage?.in);
+    /*
+     * 견줄 값은 `usage.in` 이 아니라 **이번에 보낸 프롬프트 전체**다.
+     * 규격마다 `in` 이 세는 것이 다르다 — 까닭은 backend/adapter.js 의 보낸토큰.
+     */
+    const 보낸것 = 보낸토큰(conn.kind, msg.usage);
+    session.usage.prompt = (session.usage.prompt ?? 0) + 보낸것;
+    const 새보정 = session.배운다?.(보낸것);
     // 배운 배수를 디스크에도 남긴다. 다음에 켤 때 이 값으로 시작한다.
     if (새보정) ctx.배움?.보정본것(conn.model, 새보정);
 
@@ -1005,6 +1032,19 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
      * 칠지는 사람이 정할 일이지, 같은 말을 열 번 더 보내서 알아낼 일이 아니다.
      */
     if (msg.거절) {
+      /*
+       * 나가기 전에 짝을 맞춘다.
+       *
+       * 거절에는 도구 호출이 **대개** 없다. 대개지 늘이 아니다 — 흘려받기는
+       * `tool_use` 블록을 먼저 열어 두고 맨 끝의 `stop_reason` 에서 거절을
+       * 알려 주는 창구가 있고(adapter.js 의 흡수), 그러면 부름만 있고 결과가
+       * 없는 채로 대화가 끝난다. 그 상태로 다음 말을 보내면 서버가 대화 전체를
+       * 400 으로 돌려보낸다 — 거절 한 번이 그 뒤의 세션을 통째로 못 쓰게 만든다.
+       *
+       * 중단·오류에서 하던 것과 같은 일이다. 나가는 문마다 따로 기억하지 않게
+       * 여기서도 부른다.
+       */
+      짝맞추기('모델이 거절해 실행하지 않았습니다.');
       yield {
         type: 'refusal',
         왜: String(msg.거절?.type ?? 'refusal'),
