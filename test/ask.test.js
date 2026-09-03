@@ -214,6 +214,135 @@ trace('3-진짜로-왕복하나');
   rmSync(home, { recursive: true, force: true });
 }
 
+trace('3.5-물어보는-도중에-ESC');
+
+/*
+ * ── 물음이 떠 있을 때 ESC 를 누르면 ─────────────────────────────────────
+ *
+ * 「ESC 를 눌러도 아직 작업이 안 멈춘다」 의 한 갈래가 여기였다. 도구가
+ * 「실행할까요?」 나 Ask 상자를 띄우고 사람 답을 기다리는 동안, repl 은
+ * `nextLine()` 에 통째로 걸려 있었다. ESC 는 turn 을 끊지만 이 자리는 그
+ * 신호를 아예 안 보고 있어서, 화면은 물음을 그대로 들고 서 있는다.
+ * 사람 눈에는 ESC 가 고장 난 것이고, 그래서 Ctrl+C 로 손이 간다 —
+ * 두 번 누르면 대화가 통째로 닫힌다.
+ *
+ * 파이프로는 ESC 를 못 보낸다(키 가로채기가 터미널일 때만 걸린다).
+ * 그래서 tty-preload.mjs 로 터미널인 척하고 진짜 바이트 `\x1b` 를 흘린다 —
+ * pastechip.test.js 와 같은 방법이다.
+ */
+{
+  let 물었나 = false;
+  const srv = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      let json = null;
+      try { json = JSON.parse(body || '{}'); } catch { /* 스텁이라 넘어간다 */ }
+      const 보냄 = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (String(req.url).endsWith('/models')) return 보냄({ data: [{ id: '스텁모델', object: 'model' }] });
+      const 답 = (msg, why) => 보냄({
+        id: 'x', object: 'chat.completion', model: '스텁모델',
+        choices: [{ index: 0, finish_reason: why ?? (msg.tool_calls ? 'tool_calls' : 'stop'), message: msg }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+      const 메시지들 = json?.messages ?? [];
+      if (메시지들[메시지들.length - 1]?.role === 'tool') {
+        return 답({ role: 'assistant', content: '알겠습니다.' });
+      }
+      물었나 = true;
+      return 답({
+        role: 'assistant', content: null,
+        tool_calls: [{
+          id: 'c1', type: 'function',
+          function: {
+            name: 'Ask',
+            arguments: JSON.stringify({
+              이해: '배포 전에 구조를 정리하라는 것으로 이해했습니다',
+              question: '구조를 어디까지 바꿀까요?',
+              options: ['전부 재배치', '최소한만'],
+            }),
+          },
+        }],
+      });
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const 주소 = `http://127.0.0.1:${srv.address().port}/v1`;
+
+  const root = mkdtempSync(join(tmpdir(), 'deel-askesc-'));
+  const home = mkdtempSync(join(tmpdir(), 'deel-askesc-home-'));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자',
+    profiles: [{
+      id: 'stub', name: '스텁', kind: 'openai', baseUrl: 주소,
+      auth: 'none', apiKey: '', model: '스텁모델', ctx: 32768, streaming: false, tools: true,
+    }],
+  }), 'utf8');
+
+  // CI 가 켜져 있으면 상자를 안 쓴다(screen.js 의 상자쓸까). 키 가로채기도 같이 꺼진다.
+  const { CI, ...환경 } = process.env;
+  const 앞선것 = join(뿌리, 'test', 'tty-preload.mjs').replace(/\\/g, '/');
+  const kid = spawn(process.execPath,
+    ['--import', `file:///${앞선것}`, join(뿌리, 'bin', 'deel.js'),
+      '--root', root, '--offline', '--ctx', '32768'],
+    { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...환경, DEEL_HOME: home } });
+
+  let out = '';
+  kid.stdout.setEncoding('utf8');
+  kid.stderr.setEncoding('utf8');
+  kid.stdout.on('data', (b) => { out += b; });
+  kid.stderr.on('data', (b) => { out += b; });
+  let 끝남 = false;
+  const 닫힘 = new Promise((r) => kid.on('close', () => { 끝남 = true; r(); }));
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+  const 민화면 = () => out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+  const 기다리기 = async (될때까지, 최대 = 20000) => {
+    const 끝 = Date.now() + 최대;
+    while (Date.now() < 끝 && !끝남) {
+      if (될때까지()) return true;
+      await 자기(40);
+    }
+    return false;
+  };
+
+  await 기다리기(() => 민화면().includes('❯'));
+  kid.stdin.write('구조 좀 바꿔줘\n');
+  // 물음 상자가 실제로 화면에 뜰 때까지 기다린다 — 뜨기 전에 ESC 를 누르면
+  // 무엇을 잰 것인지 알 수 없다.
+  const 물음떴나 = await 기다리기(() => /구조를 어디까지 바꿀까요/.test(민화면()));
+
+  const 누른때 = Date.now();
+  kid.stdin.write('\x1b');
+  const 풀렸나 = await 기다리기(() => /멈췄습니다|중단됨/.test(민화면().slice(민화면().indexOf('구조를 어디까지 바꿀까요'))), 5000);
+  const 걸린시간 = Date.now() - 누른때;
+
+  // 멈춘 **뒤에도** 다음 말을 받는가. 못 받으면 대화가 죽은 것이다.
+  const 멈춘뒤자리 = 민화면().length;
+  kid.stdin.write('/help\n');
+  const 이어지나 = await 기다리기(() => /명령|commands/i.test(민화면().slice(멈춘뒤자리)), 8000);
+
+  if (!끝남) { try { kid.stdin.write('/exit\n'); } catch { /* 이미 닫혔다 */ } }
+  await Promise.race([닫힘, 자기(6000).then(() => kid.kill())]);
+  srv.close();
+
+  const 화면 = 민화면();
+  check('물음 상자가 떴다 (여기서부터 재는 것이다)', 물음떴나 && 물었나,
+    물음떴나 ? '' : 화면.slice(-200));
+  /*
+   * ★ 이 파일의 핵심. 예전에는 여기서 영영 안 풀렸다 — 5초를 기다려도
+   * 화면이 물음 그대로였다. 지금은 ESC 한 번에 그 자리에서 풀린다.
+   */
+  check('★ 물음이 떠 있어도 ESC 한 번에 풀린다', 풀렸나,
+    풀렸나 ? `${걸린시간}ms` : `5000ms 를 기다려도 안 풀렸다: ${화면.slice(-200)}`);
+  check('★ 멈췄다고 화면에 적는다', /멈췄습니다/.test(화면),
+    화면.split('\n').find((l) => /멈췄습니다/.test(l))?.trim().slice(0, 60) ?? '못 찾음');
+  check('★ 멈춘 뒤에도 다음 말을 받는다', 이어지나,
+    이어지나 ? '' : '멈추고 나서 입력이 안 돌아왔다');
+
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+}
+
 trace('4-끝');
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

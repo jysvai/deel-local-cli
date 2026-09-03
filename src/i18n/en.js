@@ -325,6 +325,7 @@ export const en = {
   'ask.freeHint': 'Type your answer',
   'ask.pickPrompt': '1-{끝}, or type your own',
   'ask.freePrompt': 'Answer',
+  'ask.stopped': 'Stopped — treating it as unanswered.',
 
   // ── When the server pushes back (backend/retry.js) ────────────────────
   'loop.backoff': 'The server pushed back ({무엇}) — calling again in {초}s ({n}/{max})',

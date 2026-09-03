@@ -290,6 +290,7 @@ export const zh = {
   'ask.freeHint': '写下你的回答',
   'ask.pickPrompt': '1-{끝}，或者自己写',
   'ask.freePrompt': '回答',
+  'ask.stopped': '已停止 — 按没有回答继续。',
   'loop.backoff': '服务端把请求推回来了 ({무엇}) — {초} 秒后再试 ({n}/{max})',
   'cost.retries': '重试',
   // ── 计数词 ────────────────────────────────────────────────────────────

@@ -809,8 +809,25 @@ export async function chatLoop(opts = {}) {
        * ESC 는 **멈추기만** 한다. 끝내지 않는다. 그래서 마음 놓고 누를 수 있다.
        * 도는 중이 아닐 때는 아무것도 안 한다 — 입력칸에서 ESC 를 눌렀다고
        * 치던 글이 날아가면 그게 더 놀랍다.
+       *
+       * ── meta 를 안 본다 ──────────────────────────────────────────────
+       *
+       * 여기 `!key.meta` 가 붙어 있었다. 그래서 이 갈래는 **한 번도 안
+       * 돌았다** — 사람이 ESC 를 눌러도 아무 일이 안 났다.
+       *
+       * 홑 ESC 는 그 자체가 escape 열쇠의 시작 바이트이기도 해서, Node 의
+       * readline 은 뒤에 뭐가 더 올지 500ms 를 기다렸다가 아무것도 안 오면
+       * `{ name:'escape', meta:true }` 로 배달한다. 즉 **ESC 는 언제나
+       * meta 가 참**이다. 직접 재어 봤다 —
+       *
+       *     \x1b       → {"name":"escape","meta":true}
+       *     \x1b\x1b   → {"name":"escape","meta":true}
+       *
+       * 그러니 meta 를 보고 거르면 ESC 를 통째로 거르는 셈이다. 이름이
+       * escape 인 것에 Ctrl·Shift 가 붙는 조합은 터미널이 아예 안 보내므로
+       * 나머지 둘만 본다.
        */
-      if (key?.name === 'escape' && !key.ctrl && !key.meta && !key.shift) {
+      if (key?.name === 'escape' && !key.ctrl && !key.shift) {
         if (turn && !turn.signal.aborted) { turn.abort(); 멈추는중(); return; }
         return;
       }
@@ -948,12 +965,46 @@ export async function chatLoop(opts = {}) {
     });
   }
 
-  const nextLine = () => {
+  /*
+   * 다음 줄을 기다린다. 멈춤신호를 주면 **기다리다가도 손을 뗀다.**
+   *
+   * 신호 없이 기다리는 자리(맨 위 입력칸)는 여태 그대로다 — 거기서 ESC 는
+   * 아무 일도 안 하는 것이 맞다. 신호를 주는 쪽은 turn 이 도는 동안 사람
+   * 답을 기다리는 자리뿐이다.
+   */
+  const nextLine = (멈춤 = null) => {
     if (queue.length) return Promise.resolve(queue.shift());
     if (closed) return Promise.resolve(null);
-    return new Promise((res) => { waiter = res; });
+    if (멈춤?.aborted) return Promise.resolve(null);
+    return new Promise((res) => {
+      waiter = res;
+      if (!멈춤) return;
+      /*
+       * 기다리던 자리를 **반드시 비우고** 돌아간다.
+       *
+       * 안 비우면 다음에 사람이 친 줄이 이미 없어진 물음에게 배달되고,
+       * 그 줄은 화면에서 그냥 사라진다 — 「쳤는데 안 먹었다」 가 된다.
+       */
+      멈춤.addEventListener('abort', () => {
+        if (waiter === res) waiter = null;
+        res(null);
+      }, { once: true });
+    });
   };
 
+  /*
+   * ── 사람에게 되묻는 자리 ────────────────────────────────────────────────
+   *
+   * 여기도 ESC 로 손을 뗄 수 있어야 한다. 예전에는 이 자리가 **멈춤에서
+   * 빠져 있었다** — 도구가 「실행할까요?」 를 띄운 채 답을 기다리면 ESC 를
+   * 몇 번을 눌러도 아무 일도 안 났다. turn 은 이미 끊긴 상태인데 화면은
+   * 물음을 그대로 들고 서 있으니, 사람은 Ctrl+C 로 손이 가고 두 번 누르면
+   * 대화가 통째로 닫힌다. "ESC 를 눌러도 안 멈춘다" 는 제보의 한 갈래다.
+   *
+   * 멈췄을 때 무엇으로 답한 셈 칠지는 부르는 쪽이 정한다(`멈추면`). 기본값을
+   * `def` 로 하면 안 된다 — confirm 의 def 는 'y' 라, 멈추라고 누른 것이
+   * 승인으로 읽힌다.
+   */
   const ask = async (label, o = {}) => {
     const 앞 = `  ${c.gray('›')} ${label} ${o.def ? c.gray(`[${o.def}] `) : ''}`;
     화면.붙임(앞);
@@ -965,8 +1016,15 @@ export async function chatLoop(opts = {}) {
      */
     묻는중 = 상자쓰나 ? 앞 : null;
     이어쓰기줄들 = null; 이어쓴것 = false;   // 되묻는 사이에 걸쳐 있던 미완성 이어쓰기는 버린다
+    const 멈춤 = o.signal ?? turn?.signal ?? null;
     try {
-      const a = await nextLine();
+      const a = await nextLine(멈춤);
+      if (멈춤?.aborted) {
+        // 물음이 화면에 걸린 채로 남으면 안 된다. 줄을 끊고 멈췄다고 적는다.
+        say('');
+        say(`  ${c.gray(옮긴말('ask.stopped'))}`);
+        return o.멈추면 ?? '';
+      }
       if (a === null) return o.def ?? '';
       return a.trim() || o.def || '';
     } finally { 묻는중 = null; }
@@ -1185,7 +1243,8 @@ export async function chatLoop(opts = {}) {
        */
       if (알릴까({ 물어봄: true, 켬: 알림.켬 })) 종();
       창제목(제목글('물어봄', { 폴더: 알림.폴더 }));
-      const a = (await ask('실행할까요? (y/n)', { def: 'y' })).toLowerCase();
+      // 멈추라고 누른 것은 **거절**이다. def 인 'y' 로 물러나면 ESC 가 승인이 된다.
+      const a = (await ask('실행할까요? (y/n)', { def: 'y', 멈추면: 'n' })).toLowerCase();
       창제목(제목글('도는중', { 폴더: 알림.폴더 }));
       return a === 'y' || a === 'yes' || a === 'ㅇ';
     },

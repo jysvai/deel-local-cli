@@ -314,6 +314,8 @@ export const ko = {
   'ask.freeHint': '답을 쳐 주세요',
   'ask.pickPrompt': '1-{끝} 또는 직접 입력',
   'ask.freePrompt': '답',
+  // 물어보는 도중에 ESC 를 눌렀다. 물음이 화면에 걸린 채로 남으면 안 된다.
+  'ask.stopped': '멈췄습니다 — 답하지 않은 것으로 넘어갑니다.',
 
   // ── 잠깐 막혔을 때 (backend/retry.js) ─────────────────────────────────
   'loop.backoff': '서버가 잠시 막았습니다 ({무엇}) — {초}초 뒤 다시 부릅니다 ({n}/{max})',
