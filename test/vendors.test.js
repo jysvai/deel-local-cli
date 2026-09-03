@@ -29,7 +29,7 @@ import { toolSchemas } from '../src/tools/index.js';
 import { 도구맞추기, 벤더, 이름되돌리기 } from '../src/backend/toolfit.js';
 import {
   buildBody, extractMessage, assistantMessage, toolMessage, chatStream,
-  endpoint, 더할머리, 요청주소, ANTHROPIC_VERSION, 말없이끝남, 생각예산,
+  endpoint, 더할머리, 말없이끝남, 생각예산, 강도말,
 } from '../src/backend/adapter.js';
 import { 그림메시지, 한점PNG } from '../src/backend/vision.js';
 import { 배울것 } from '../src/backend/learn.js';
@@ -428,7 +428,7 @@ trace('3-추론강도');
  */
 {
   for (const 자리 of 자리들) {
-    for (const 강도 of ['low', 'medium', 'high']) {
+    for (const 강도 of ['low', 'medium', 'high', 'max']) {
       const srv = await 세우고열기(자리.창구);
       allowEndpoint(srv.주소);
       const { r, 왜 } = await 보내보기(srv, 자리, { messages: 사람말, maxTokens: 8000, think: 강도 });
@@ -443,6 +443,27 @@ trace('3-추론강도');
       r2.ok && body.reasoning_effort === undefined && body.thinking === undefined && body.think === undefined,
       JSON.stringify({ e: body.reasoning_effort, t: body.thinking, k: body.think }));
     srv2.close();
+  }
+
+  /*
+   * 옮긴 값이 무엇인지도 못 박아 둔다.
+   *
+   * 「받아 준다」 만 재면, 언젠가 `max` 를 통째로 빼먹는 고쳐도 그대로 초록이다.
+   * 우리 눈금 다섯 중 넷은 이름이 그대로 가고, `max` 만 그 규격이 낼 수 있는
+   * 제일 센 말로 선다.
+   */
+  check('★ max 는 그 규격의 제일 센 말이 된다', 강도말('max') === 'high', String(강도말('max')));
+  check('나머지 셋은 이름이 그대로 간다',
+    강도말('low') === 'low' && 강도말('medium') === 'medium' && 강도말('high') === 'high');
+  check('★ 모르는 말은 아예 안 싣는다', 강도말('off') === null && 강도말('아무말') === null,
+    `${강도말('off')} / ${강도말('아무말')}`);
+  // Anthropic 규격은 말이 아니라 숫자 예산이라, 거기서는 max 가 진짜 max 다.
+  check('★ Anthropic 규격에서는 max 가 제일 큰 예산이다',
+    생각예산('max', 99999) > 생각예산('high', 99999), `${생각예산('max', 99999)} / ${생각예산('high', 99999)}`);
+  // 생각을 끈 채로 Ollama 에 보내면 참·거짓이 그대로 가야 한다 (loop.js thinkFor).
+  {
+    const b = buildBody('ollama', { model: 'm', messages: 사람말, maxTokens: 512, think: false });
+    check('★ Ollama 에 끄기(거짓)는 그대로 간다', b.think === false, JSON.stringify(b.think));
   }
 }
 

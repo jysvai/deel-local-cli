@@ -90,7 +90,13 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
     body.keep_alive = process.env.DEEL_KEEP_ALIVE || '60m';
     if (tools?.length) body.tools = tools;
     if (json) body.format = json;
-    if (think !== undefined) body.think = think;
+    // 참·거짓은 그대로(생각을 켜고 끄는 말이다). 단계말은 이 규격이 아는
+    // 말로 옮긴다 — 위 강도말() 머리말 참고.
+    if (typeof think === 'boolean') body.think = think;
+    else if (think !== undefined) {
+      const 말 = 강도말(think);
+      if (말) body.think = 말;
+    }
     return body;
   }
   if (shape === 'anthropic') return anthropic몸(
@@ -124,7 +130,10 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
   if (json) {
     body.response_format = { type: 'json_schema', json_schema: { name: 'out', schema: json, strict: true } };
   }
-  if (think !== undefined && think !== false) body.reasoning_effort = think;
+  if (think !== undefined && think !== false) {
+    const 말 = 강도말(think);
+    if (말) body.reasoning_effort = 말;
+  }
   return body;
 }
 
@@ -168,6 +177,34 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
 const 생각최소 = 1024;
 const 답에남길것 = 1024;
 const 강도별예산 = { low: 2048, medium: 6144, high: 16384, max: 32768 };
+
+/*
+ * ── 우리 눈금은 다섯, 전선 위의 눈금은 넷 ──────────────────────────────
+ *
+ * agent/effort.js 의 눈금은 off·low·medium·high·**max** 다. 그런데 `max` 를
+ * 받는 창구는 하나도 없다 — OpenAI 는 minimal·low·medium·high, Gemini 의
+ * OpenAI 호환 창구는 none·low·medium·high, Ollama 는 참·거짓이거나
+ * low·medium·high 다. 그 말을 그대로 실어 보내면 400 이고, 그 400 은 화면에서
+ * 열쇠가 틀린 것과 구별이 안 된다.
+ *
+ * 여태 그대로 흘려보내고 있었다. 그리고 이 자리는 `/think max` 를 친
+ * 사람만 밟는 것이 아니다 — `깊게` 배분은 첫 판단과 막혔을 때를 한 칸씩
+ * 올리므로, `/think high` 만 해도 그 두 자리가 `max` 가 된다. 즉 **가장
+ * 세게 생각하라고 시킨 턴만 골라서 죽는다.**
+ *
+ * 그래서 여기서 전선이 아는 말로 옮긴다. `max` 는 그 규격이 낼 수 있는 제일
+ * 센 말(high)이 된다 — 없는 칸을 지어내지 않고, 있는 칸 중 가장 위에 선다.
+ *
+ * Anthropic 규격은 여기 안 온다. 거기는 말이 아니라 **숫자 예산**으로 주므로
+ * (아래 생각예산) `max` 가 32,768 이라는 진짜 값이 된다. 눈금이 모자라지 않는다.
+ *
+ * 모르는 말은 **안 보낸다.** 짐작으로 실은 칸 하나가 그 턴을 죽인다.
+ */
+const 전선눈금 = { low: 'low', medium: 'medium', high: 'high', max: 'high' };
+
+export function 강도말(강도) {
+  return 전선눈금[String(강도)] ?? null;
+}
 
 export function 생각예산(강도, maxTokens) {
   const 바라는것 = 강도별예산[String(강도)];
