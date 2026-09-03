@@ -483,6 +483,17 @@ export async function acp(opts = {}) {
            * 덧붙이기로는 못 맞춘다 — 앞의 것 여러 개가 요약 하나로 바뀌었으니,
            * 이어 붙이면 파일에는 접히기 전과 접힌 뒤가 겹쳐 남는다. 새로 적는다.
            */
+          /*
+           * 자리가 다 차서 비웠다. 에디터에는 오류가 아니라 알림으로 간다 —
+           * 붉게 보내면 편집기가 턴이 끝난 줄 알고 되물음을 닫아 버린다.
+           */
+          case 'reset':
+            말하기(`\n\n_(${(ev.kept?.할일 ?? 0)
+              ? 옮긴말('ev.reset', { 버린수: ev.dropped, 할일: ev.kept.할일 })
+              : 옮긴말('ev.resetBare', { 버린수: ev.dropped })})_\n\n`);
+            방.store.replace(방.session.messages, `자리부족 — 앞선 대화 ${ev.dropped}개를 비움`);
+            적은데까지 = 방.session.messages.length;
+            break;
           case 'compacted':
             방.store.replace(방.session.messages, `압축 — ${ev.folded}개를 요약으로`);
             적은데까지 = 방.session.messages.length;

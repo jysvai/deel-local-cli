@@ -452,6 +452,7 @@ let 느리게 = 0;      // 이 밀리초만큼 뜸을 들이고 답한다 (취�
 let 도구번호 = 1;
 let 읽기한번 = false;
 let 한계알린적 = false;
+let 자리없다한횟수 = 0;
 const 받은대화 = [];   // 게이트웨이가 받은 messages 원본 (되살리기를 재려고)
 
 const srv = createServer((req, res) => {
@@ -512,6 +513,21 @@ const srv = createServer((req, res) => {
       if (/일부러_한계알림/.test(사람말)) {
         if (!한계알린적) {
           한계알린적 = true;
+          return 보냄({ error: { message: "This model's maximum context length is 8192 tokens, however you requested 41003 tokens." } }, 400);
+        }
+        return 답({ role: 'assistant', content: '(스텁 모델이 답했습니다)' });
+      }
+      /*
+       * 자리가 다 차서 두 번 거절한다.
+       *
+       * 한 번만 거절하면 배우기(learned)로 끝난다 — 그건 위에서 이미 잰다.
+       * 두 번째 거절이 있어야 「접어도 안 들어간다」 가 되고, 그때 비우기가
+       * 돈다. 비운 뒤에도 시킨 말은 못 박혀 그대로 실려 오므로 이 갈래는
+       * 그 다음 부름에서도 맞는다 — 맞아야 맞는 것이다.
+       */
+      if (/일부러_자리없음/.test(사람말)) {
+        if (자리없다한횟수 < 2) {
+          자리없다한횟수++;
           return 보냄({ error: { message: "This model's maximum context length is 8192 tokens, however you requested 41003 tokens." } }, 400);
         }
         return 답({ role: 'assistant', content: '(스텁 모델이 답했습니다)' });
@@ -1044,6 +1060,33 @@ trace('5-9-사실대로-말하는가');
   }
 }
 
+/*
+ * 자리가 다 차서 비운 것은 **오류가 아니다.** 에디터에 오류로 보내면
+ * 편집기가 턴이 끝난 줄 알고 되물음을 닫는다 — 정작 일은 이어 가는 중이다.
+ */
+{
+  자리없다한횟수 = 0;
+  const e = 에디터();
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    const 답 = await 시간제한(e.요청('session/prompt', {
+      sessionId: 방.sessionId,
+      prompt: [{ type: 'text', text: '일부러_자리없음 을 해줘' }],
+    }), 30000, 'session/prompt');
+
+    const 글 = e.알림들
+      .filter((u) => u.update?.sessionUpdate === 'agent_message_chunk')
+      .map((u) => u.update.content.text).join('');
+    check('★ 자리가 다 차도 에디터에는 끝냈다고 답한다', 답?.stopReason === 'end_turn', JSON.stringify(답));
+    check('★ 비우고 이어간다고 에디터에 적는다', /비우고 이어갑니다/.test(글),
+      글.replace(/\n+/g, ' ').slice(0, 140));
+  } catch (err) {
+    check('자리 없음(ACP) — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+  }
+}
 {
   한계알린적 = false;
   const e = 에디터();

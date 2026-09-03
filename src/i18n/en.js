@@ -426,6 +426,8 @@ export const en = {
   'ev.nudgeRead': 'It was about to finish having only read things — pushed back once',
   'ev.learnedCtx': 'Setting the context limit to {한계} as the server reported, and calling again',
   'ev.learnedOut': 'Setting the answer-length limit to {한계} as the server reported, and calling again',
+  'ev.reset': 'Out of room — cleared {버린수} earlier messages and carrying on, {할일} to-do items left',
+  'ev.resetBare': 'Out of room — cleared {버린수} earlier messages and carrying on',
   'run.thinking': 'thinking…',
   'run.thinkingChars': 'thinking… {n} chars',
   'run.turnFoot': '{초}s · {n} tool calls · ↑{입력} ↓{출력}',

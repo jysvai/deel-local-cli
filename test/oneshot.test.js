@@ -33,6 +33,7 @@ let 도구한번 = false;
 let 쓰기한번 = false;
 let 도구번호 = 1;
 let 한계알린적 = false;
+let 자리없다한횟수 = 0;
 let 되물은적 = false;
 const 대본초기화 = () => {
   도구한번 = 쓰기한번 = 한계알린적 = 되물은적 = false;
@@ -91,6 +92,21 @@ const srv = createServer((req, res) => {
       if (/일부러_한계알림/.test(사람말)) {
         if (!한계알린적) {
           한계알린적 = true;
+          return 보냄({ error: { message: "This model's maximum context length is 8192 tokens, however you requested 41003 tokens." } }, 400);
+        }
+        return 답({ role: 'assistant', content: 답글 });
+      }
+      /*
+       * 자리가 다 차서 두 번 거절한다.
+       *
+       * 한 번만 거절하면 배우기(learned)로 끝난다 — 그건 위에서 이미 잰다.
+       * 두 번째 거절이 있어야 「접어도 안 들어간다」 가 되고, 그때 비우기가
+       * 돈다. 비운 뒤에도 시킨 말은 못 박혀 그대로 실려 오므로 이 갈래는
+       * 그 다음 부름에서도 맞는다 — 맞아야 맞는 것이다.
+       */
+      if (/일부러_자리없음/.test(사람말)) {
+        if (자리없다한횟수 < 2) {
+          자리없다한횟수++;
           return 보냄({ error: { message: "This model's maximum context length is 8192 tokens, however you requested 41003 tokens." } }, 400);
         }
         return 답({ role: 'assistant', content: 답글 });
@@ -463,6 +479,24 @@ trace('8.5-사실대로-말하는가');
     r.err.split('\n').find((l) => /되밀었습니다/.test(l))?.trim().slice(0, 90) ?? '그런 줄이 없다');
 }
 
+/*
+ * ── 자리가 다 차도 그 자리에서 이어 가는가 ──────────────────────────────
+ *
+ * 사람 말: 「current 가 다 차서 막힐 경우, 초기화되고 난 후에 다시 바로
+ * 작업할 수 있게」. 대화창에서는 이걸 ctxfull 검사가 잰다. 여기서 재는 것은
+ * `deel run` 이 **그 사실을 화면에 적고, 종료코드로는 성공이라고 하는가** 다.
+ *
+ * 종료코드가 중요하다. 비우기는 오류가 아니라 이어 가는 길이라 0 이어야
+ * 한다. 여기서 1 을 주면 잡·CI 가 멀쩡히 끝난 일을 실패로 적는다.
+ */
+{
+  대본초기화();
+  const r = await 띄우기(['run', '일부러_자리없음 을 해줘']);
+  check('★ 자리가 다 차도 끝까지 간다', r.code === 0, `code=${r.code}`);
+  check('★ 비우고 이어간다고 곁으로 말해 준다', /비우고 이어갑니다/.test(r.err),
+    r.err.split('\n').find((l) => /비우고 이어갑니다/.test(l))?.trim().slice(0, 90) ?? '그런 줄이 없다');
+  check('오류라고는 안 한다', !/^\s*✗/m.test(r.err) && r.code === 0, `code=${r.code}`);
+}
 trace('9-치움');
 srv.close();
 rmSync(home, { recursive: true, force: true });

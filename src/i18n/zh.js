@@ -384,6 +384,8 @@ export const zh = {
   'ev.nudgeRead': '只看不动就要收尾，已经推回去一次',
   'ev.learnedCtx': '按服务端给出的上下文上限 {한계} 重新调用',
   'ev.learnedOut': '按服务端给出的回答长度上限 {한계} 重新调用',
+  'ev.reset': '位置不够，已清掉前面 {버린수} 条对话继续做 — 还剩 {할일} 件待办',
+  'ev.resetBare': '位置不够，已清掉前面 {버린수} 条对话继续做',
   'run.thinking': '思考中…',
   'run.thinkingChars': '思考中… {n}字',
   'run.turnFoot': '{초}秒 · 工具{n}次 · ↑{입력} ↓{출력}',

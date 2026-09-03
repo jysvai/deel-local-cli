@@ -459,6 +459,12 @@ export async function runOnce(opts = {}) {
             : 옮긴말('ev.nudgeRead')}`)}`);
           break;
 
+        // 자리가 다 차서 비웠다. 오류가 아니라 이어 가는 중이라, 종료코드는 안 건드린다.
+        case 'reset':
+          곁(`  ${c.cyan('◱')} ${c.gray((ev.kept?.할일 ?? 0)
+            ? 옮긴말('ev.reset', { 버린수: ev.dropped, 할일: ev.kept.할일 })
+            : 옮긴말('ev.resetBare', { 버린수: ev.dropped }))}`);
+          break;
         case 'learned':
           곁(`  ${c.cyan('◎')} ${c.gray(ev.what === 'ctx'
             ? 옮긴말('ev.learnedCtx', { 한계: ev.limit.toLocaleString() })

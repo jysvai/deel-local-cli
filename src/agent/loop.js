@@ -8,7 +8,7 @@ import { isMutating } from '../safety/guard.js';
 import { effortFor, tokensFor, fullCap, wasCut, shiftLevel } from './effort.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
-import { compact, shouldCompact, shouldFold, foldToolResults, foldImages } from './compact.js';
+import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박을것 } from './compact.js';
 import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
 import { Session } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
@@ -249,6 +249,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   // 이번 턴에 서버에게서 한계를 배웠나. 배웠는데도 또 거절당하면 다른 문제다 —
   // 그때는 끝없이 다시 부르지 않고 오류를 그대로 보여 준다.
   let 배운적 = false;
+  // 이번 턴에 자리가 없어 기억을 비운 적이 있나. 한 턴에 한 번뿐이다 —
+  // 비우고도 또 막히면 자리 문제가 아니라 다른 탈이다.
+  let 비운적 = false;
   const 짧게말 = (s) => String(s ?? '').replace(/\s+/g, ' ').slice(0, 200);
 
   /**
@@ -798,6 +801,64 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         conn.ctx = 줄인것;
         yield { type: 'learned', what: 'ctx', limit: 줄인것, guessed: true, from: 짧게말(err.serverMessage ?? err.message) };
         steps--;
+        continue;
+      }
+
+      /*
+       * ── 자리가 다 찼으면, 턴을 죽이지 말고 비우고 이어 간다 ──────────────
+       *
+       * 여기가 사용자가 이름 대어 말한 자리다 — "current 가 다 차서 막힐 경우,
+       * 초기화되고 난 후에 다시 바로 작업할 수 있게".
+       *
+       * 여태 있었던 일: 서버가 「자리가 없다」고 거절한다 → 위에서 한계를
+       * 배우고 다시 부른다 → 접기가 걸음의 머리에서 도니 대개 여기서 낫는다.
+       * 그래도 안 맞으면(요약 자체가 크거나, 요약을 못 받았거나) 배운적이
+       * 이미 참이라 그대로 오류로 떨어졌다. 화면에는 붉은 줄 하나가 뜨고
+       * **턴이 죽는다.** 사람은 /clear 를 치고, 시킨 말을 다시 타이핑하고,
+       * 붙였던 파일을 다시 붙여야 한다. 한 걸음도 못 나아간 채로.
+       *
+       * 그래서 이 자리에서 **턴 안에서** 비우고 이어 간다. 버리는 것은 지나간
+       * 대화뿐이고, 잃으면 안 되는 것은 그대로 옮긴다 —
+       *   · 시킨 말 원문과 남은 할 일 (못박을것)
+       *   · 이번 턴에 이미 손댄 파일 이름
+       * 모델이 다음 걸음에서 보는 것은 「무엇을 시켰고 · 어디까지 했나」 다.
+       * 그거면 이어서 할 수 있다.
+       *
+       * 읽어 둔 파일 기억도 같이 지운다. 내용은 대화에서 사라졌는데 '이미
+       * 읽었다' 는 표만 남으면, 모델은 다시 안 읽고 기억에 없는 파일을
+       * 고치려 든다 — 비운 것보다 나쁘다.
+       *
+       * 한 턴에 한 번뿐이다. 비우고도 또 막히면 그건 자리 문제가 아니라
+       * 다른 탈이라, 끝없이 비우며 도는 대신 있는 그대로 오류로 말한다.
+       */
+      const 자리문제 = 배운?.kind === 'ctx' || 길이문제인가(err.serverMessage ?? err.message);
+      if (자리문제 && !비운적) {
+        비운적 = true;
+        const 지운수 = session.messages.length;
+        const 손댄것 = [...손댄파일];
+        const 남은할일수 = (ctx.todos ?? []).filter((x) => x?.state !== 'done').length;
+        session.messages = [{
+          role: 'user',
+          content: `(자리가 모자라 앞선 대화 ${지운수}개를 비웠습니다. 필요한 파일은 다시 읽으세요.)\n`
+            + (손댄것.length ? `이번 턴에 이미 손댄 파일: ${손댄것.join(', ')}\n` : '')
+            + '\n' + 못박을것(session),
+        }];
+        // 내용은 없어졌는데 '읽었다' 는 표만 남으면 모델이 다시 안 읽는다.
+        try { session.filesRead?.clear?.(); session.파일기억?.잊기?.(); } catch { /* 없어도 그만 */ }
+        yield {
+          type: 'reset',
+          dropped: 지운수,
+          kept: { 요청: !!String(session.이번요청 ?? '').trim(), 할일: 남은할일수, 파일: 손댄것.length },
+        };
+        /*
+         * 배우기(위)와 달리 여기서는 걸음을 **안 돌려준다.**
+         *
+         * 돌려주면 걸음 수가 영영 안 올라간다. 그러면 위의 한 번 규칙이
+         * 어쩌다 무너졌을 때 걸음 상한도 못 잡아서 턴이 **영영 돈다** —
+         * 화면은 멈춘 채로 있고 사람은 왜 그런지 알 길이 없다. 붉은 줄
+         * 하나보다 훨씬 나쁘다. 한 걸음 값은 어차피 실제로 한 번 부르고
+         * 거절당한 값이라, 안 돌려주는 쪽이 사실에도 맞다.
+         */
         continue;
       }
 

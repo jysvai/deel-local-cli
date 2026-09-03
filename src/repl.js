@@ -2043,6 +2043,30 @@ export async function chatLoop(opts = {}) {
             break;
           }
 
+          /*
+           * 자리가 다 차서 기억을 비웠다. **턴은 안 죽었다.**
+           *
+           * 여기 붉은 줄을 찍으면 사람은 하던 일이 엎어진 줄 알고 /clear 를
+           * 치고 시킨 말을 다시 타이핑한다 — 정작 지금은 시킨 말과 남은 할 일을
+           * 들고 그대로 이어 가는 중이다. 접기(compacted)와 같은 자리·같은
+           * 빛깔로 한 줄만 적는다.
+           */
+          case 'reset': {
+            접기멈춤();
+            clearThinking();
+            const 할일수 = ev.kept?.할일 ?? 0;
+            say(`  ${c.cyan('◱')} ${c.gray(할일수
+              ? 옮긴말('ev.reset', { 버린수: ev.dropped, 할일: 할일수 })
+              : 옮긴말('ev.resetBare', { 버린수: ev.dropped }))}`);
+            /*
+             * 비우면 이력이 통째로 바뀐다. 덧붙이기로는 못 맞춘다.
+             * 여기서 안 적으면, 비운 뒤에 죽었을 때 /resume 이 옛 대화를
+             * 통째로 되살려 놓는다 — 자리가 없어서 비운 것이 도로 차 있다.
+             */
+            ctx.갈래.현재store().replace(session.messages, `자리부족 — 앞선 대화 ${ev.dropped}개를 비움`);
+            saved = session.messages.length;
+            break;
+          }
           // 서버가 거절하면서 알려 준 한계를 받아 적었다. 실패로 보이면 안 된다 —
           // 사용자 눈에는 잠깐 멈췄다가 그냥 잘 되는 것으로 보여야 맞다.
           case 'learned':
