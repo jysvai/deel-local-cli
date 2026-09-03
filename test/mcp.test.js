@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  설정읽기, 다붙이기, 이름풀기, 도구정의, 도구최대,
+  설정읽기, 다붙이기, 이름풀기, 도구정의, 도구최대, 살아있는수, 모두닫기,
 } from '../src/backend/mcp.js';
 import { VERSION } from '../src/version.js';
 import { toolSchemas, runTool } from '../src/tools/index.js';
@@ -306,6 +306,57 @@ trace('7-판번호');
     JSON.stringify(r.서버들[0]?.정보));
 
   for (const s of r.서버들) s.닫기();
+}
+
+trace('7.5-끝날때-남기지않는가');
+
+/*
+ * ── 프로그램이 끝나면 남의 서버도 데려가는가 ────────────────────────────
+ *
+ * 여기서 재는 탈은 화면에 안 나온다. MCP 서버는 우리가 띄운 **남의 프로그램**
+ * 이라, 우리가 안 닫으면 그냥 남는다. 사람은 deel 을 껐다고 생각하는데
+ * 작업 관리자에는 노드가 셋씩 떠 있다 — 며칠 쓰면 눈에 띄게 느려진다.
+ *
+ * 그래서 두 가지를 못 박는다.
+ *   1. 띄운 것을 우리가 세고 있는가 (명부에 드는가·나가는가)
+ *   2. 끝나는 길에 거두는 그물이 **실제로 걸려 있는가**
+ *
+ * 2번을 자식 프로세스로 재지 않는 까닭: 윈도우는 부모가 죽으면 프로세스
+ * 나무를 통째로 거둔다. 그물을 다 걷어내도 아이는 어차피 죽어서 검사가
+ * 초록으로 남는다 — 아무것도 안 지키는 검사가 된다. 그래서 그물이 걸려
+ * 있다는 것 자체를 본다.
+ */
+{
+  설정쓰기({ mcpServers: { 하나: 서버설정(), 둘: 서버설정() } });
+  const r = await 다붙이기(root, { timeout: 2500 });
+  check('두 대가 붙었다', r.서버들.length === 2, String(r.서버들.length));
+  check('★ 띄운 것을 세고 있다', 살아있는수() === 2, `명부 ${살아있는수()}`);
+
+  const 아이들 = r.서버들.map((s) => s.kid);
+  const 살아있는아이 = () => 아이들.filter((k) => k && k.exitCode === null && !k.killed).length;
+  check('아이 둘이 진짜 떠 있다', 살아있는아이() === 2, String(살아있는아이()));
+
+  // 하나만 손으로 닫으면 그 하나만 명부에서 빠져야 한다.
+  r.서버들[0].닫기();
+  check('★ 닫은 것은 명부에서 빠진다', 살아있는수() === 1, `명부 ${살아있는수()}`);
+
+  const 거둔수 = 모두닫기();
+  check('★ 남은 것을 모두닫기 가 거둔다', 거둔수 === 1, `${거둔수}개`);
+  check('★ 다 거두면 명부가 빈다', 살아있는수() === 0, `명부 ${살아있는수()}`);
+
+  // 죽는 데 시간이 조금 걸린다. 기다렸다가 본다.
+  const 끝 = Date.now() + 5000;
+  while (살아있는아이() > 0 && Date.now() < 끝) await new Promise((r2) => setTimeout(r2, 50));
+  check('★ 닫으면 남의 프로세스가 진짜 없어진다', 살아있는아이() === 0,
+    `아직 ${살아있는아이()}개`);
+
+  check('★ 끝나는 길에 거두는 그물이 걸려 있다',
+    process.listeners('exit').includes(모두닫기));
+
+  // 두 번 불러도 안 터진다 — 끝날 때는 붙인 쪽이 이미 닫았을 수도 있다.
+  let 두번째탈 = null;
+  try { 모두닫기(); } catch (e) { 두번째탈 = e.message; }
+  check('두 번 거둬도 안 터진다', 두번째탈 === null, 두번째탈 ?? '');
 }
 
 try { rmSync(root, { recursive: true, force: true }); } catch { /* 자식이 아직 놓지 않았다 */ }

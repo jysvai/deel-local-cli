@@ -22,7 +22,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { 틀, 받개 } from '../src/lsp/rpc.js';
 import { 갈래, 언어아이디, 어디있나, 고르기, 둘러보기, 프로젝트갈래, 서버박기, 셈지우기 } from '../src/lsp/servers.js';
-import { 얻기, 지금것들, 모두끄기, 언어서버, 색인중일까, 열쇠주소 } from '../src/lsp/client.js';
+import { 얻기, 지금것들, 모두끄기, 언어서버, 색인중일까, 열쇠주소, 다시보낼까, 아이들데려가기 } from '../src/lsp/client.js';
 import { 편집후진단, 붙이기, 데우기 } from '../src/lsp/diag.js';
 import { toolSchemas, runTool, TOOLS, 언어서버있나 } from '../src/tools/index.js';
 import { allow as 모드허용 } from '../src/agent/modes.js';
@@ -226,7 +226,18 @@ trace('4-안될때');
   // 켜다 죽는 서버. 다시 안 켜야 한다 — 부를 때마다 몇 초씩 물면 안 된다.
   const 죽는것 = new 언어서버(root, { cmd: process.execPath, args: [흉내, '--die'], 이름: '죽는것' });
   await 죽는것.켜기();
-  await new Promise((r) => setTimeout(r, 300));
+  /*
+   * 시계로 재지 않는다.
+   *
+   * 여기는 300ms 를 자고 있었다. 흉내 서버가 죽는 것을 node 가 알아채는 데
+   * 걸리는 시간은 그 기계가 얼마나 바쁜지에 달렸는데, 검사 백 개가 한꺼번에
+   * 돌면 300ms 를 넘긴다 — 그러면 아직 안 죽은 것을 보고 「다시 켰다」 고
+   * 빨간불이 켜진다. 재려던 것(죽은 것을 다시 안 켠다)과 아무 상관이 없는
+   * 이유다. 죽은 것을 **본 뒤에** 재면 그 흔들림이 사라진다.
+   */
+  for (let i = 0; i < 100 && 죽는것.살았나(); i++) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
   const 다시 = await 죽는것.켜기();
   check('죽은 것은 다시 안 켠다', 다시 === false || !죽는것.살았나(), `${다시} · ${죽는것.죽음}`);
   const 죽은뒤 = await 죽는것.물어보기('workspace/symbol', { query: 'x' });
@@ -431,6 +442,128 @@ trace('8-정리');
   let 두번째괜찮 = true;
   try { await 모두끄기(); } catch { 두번째괜찮 = false; }
   check('두 번 꺼도 안 죽는다', 두번째괜찮);
+}
+
+// ══ 9. 신호를 받으면 치우고 **원래대로 죽는가** ══════════════════════════
+trace('9-신호');
+
+/*
+ * ── 무슨 일이 났었나 ────────────────────────────────────────────────────
+ *
+ * 이 파일은 exit·SIGINT·SIGTERM 세 신호에 손을 달아 놓고 아이만 치웠다.
+ * 그런데 Node 는 SIGINT·SIGTERM 에 손이 하나라도 달려 있으면 **기본 동작
+ * (끝내기)을 안 한다.** 그래서 lsp/client.js 가 한 번이라도 불려 들어온
+ * 프로그램은 유닉스에서 SIGTERM 을 **삼켰다** —
+ *
+ *     kill <pid>  →  언어 서버는 죽고, deel 은 그대로 산다
+ *
+ * 잡 관리자·컨테이너 종료·systemd 가 전부 이 신호로 정리한다. 삼키면
+ * 그것들이 시간을 다 기다린 뒤 SIGKILL 로 때려잡고, 그때는 정작 아이 정리를
+ * 못 하고 죽는다 — 막으려던 것이 그대로 일어난다.
+ *
+ * 재는 것은 프로세스가 **어떻게 죽는가** 라서, 같은 프로세스 안에서는 잴 수가
+ * 없다. 아이를 따로 띄운다(test/signal-child.mjs).
+ */
+/*
+ * 갈림부터 값으로 잰다.
+ *
+ * 윈도우에서는 아래 e2e 가 SIGTERM 길을 못 밟는다(신호를 보내면 손이 돌기도
+ * 전에 Node 가 죽인다). 그런데 갈림이 틀리면 유닉스에서 한 방 실행의 Ctrl+C 가
+ * 턴만 끊는 대신 프로그램을 통째로 죽인다 — 어느 판에서든 재어야 하는 자리다.
+ */
+{
+  check('★ 우리 손 하나뿐이면 그 신호로 죽는다', 다시보낼까('SIGTERM', 1) === true);
+  check('★ 남이 그 신호를 맡고 있으면 안 건드린다', 다시보낼까('SIGTERM', 2) === false);
+  check('손이 아예 없어도 죽는 쪽이다', 다시보낼까('SIGTERM', 0) === true);
+  // 끝나는 길에 거둘 그물이 실제로 걸려 있나. 아래 e2e 는 윈도우에서
+  // 이걸 못 가린다 — OS 가 프로세스 나무를 통째로 거두기 때문이다.
+  check('★ 끝나는 길에 아이들 거두는 그물이 걸려 있다',
+    process.listeners('exit').includes(아이들데려가기));
+}
+
+{
+  const { spawn } = await import('node:child_process');
+  const 윈도우 = process.platform === 'win32';
+
+  const 아이 = spawn(process.execPath, [join(여기, 'signal-child.mjs')], {
+    cwd: resolve(여기, '..'), stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let 나온글 = '';
+  아이.stdout.setEncoding('utf8');
+  아이.stdout.on('data', (d) => { 나온글 += d; });
+  아이.stderr.setEncoding('utf8');
+  아이.stderr.on('data', (d) => { 나온글 += d; });
+
+  let 끝난것 = null;
+  const 닫힘 = new Promise((r) => 아이.on('close', (code, sig) => { 끝난것 = { code, sig }; r(); }));
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // 손자가 실제로 뜰 때까지 기다린다. 안 뜬 채로 재면 무엇을 잰 것인지 모른다.
+  let 손자 = null;
+  for (let i = 0; i < 300 && 손자 === null; i++) {
+    const m = /손자 (\d+)/.exec(나온글);
+    if (m) 손자 = Number(m[1]);
+    else await 자기(50);
+  }
+  check('먼저: 손자(언어 서버)가 실제로 떴다', Number.isInteger(손자),
+    나온글.trim().slice(0, 120) || '아무 말도 안 했다');
+
+  /** pid 가 아직 살아 있나. 0 신호는 아무 일도 안 하고 있는지만 본다. */
+  const 살아있나 = (pid) => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+
+  if (손자 !== null) {
+    check('먼저: 손자가 살아 있다', 살아있나(손자), String(손자));
+
+    if (윈도우) {
+      // 윈도우에서는 SIGTERM 을 보내도 손이 안 돈다(Node 가 곧바로 죽인다).
+      // 그래서 'exit' 그물 쪽을 잰다 — 여기서 안 거두면 서버가 그대로 남는다.
+      아이.stdin.write('exit\n');
+    } else {
+      아이.kill('SIGTERM');
+    }
+
+    await Promise.race([닫힘, 자기(12_000)]);
+
+    // 죽는 데 잠깐 걸린다. 몇 번 다시 본다.
+    let 죽었나 = false;
+    for (let i = 0; i < 60 && !죽었나; i++) {
+      죽었나 = !살아있나(손자);
+      if (!죽었나) await 자기(50);
+    }
+    /*
+     * 윈도우에서는 이 줄이 그물을 가리지 못한다.
+     *
+     * 재어 봤다 — 부모를 SIGKILL 로 죽여(손이 하나도 못 돈다) 봐도 손자가
+     * 200ms 안에 같이 사라진다. 윈도우가 프로세스 나무를 통째로 거두기
+     * 때문이다. 그러니 여기서 초록이 떠도 **우리 그물이 돌았다는 뜻은
+     * 아니다.** 그물 자체는 위에서 값으로 가렸고, 진짜로 도는지는 유닉스에서
+     * 이 줄이 가린다. 이름표에 그대로 적어 둔다 — 안 적으면 지키는 것보다
+     * 많이 지킨다고 읽힌다.
+     */
+    check(윈도우
+      ? '(윈도우) 부모가 끝나면 언어 서버도 없어진다 — 다만 OS 가 나무째 거둔다'
+      : '★ 부모가 끝나면 언어 서버도 같이 데려간다', 죽었나,
+    죽었나 ? '' : `${손자} 가 아직 살아 있다`);
+
+    /*
+     * ★ 여기가 이 절의 핵심이다. 고치기 전에는 SIGTERM 을 보내면 아이가
+     * 치워지기만 하고 프로세스는 **안 죽었다** — 12초를 기다려도 그대로였다.
+     */
+    check(윈도우
+      ? '★ (윈도우) 신호 대신 끝내기로도 프로세스가 끝난다'
+      : '★ SIGTERM 을 삼키지 않고 그 자리에서 끝난다',
+    끝난것 !== null, 끝난것 ? JSON.stringify(끝난것) : '12초를 기다려도 안 끝났다');
+
+    if (!윈도우 && 끝난것) {
+      // 셸이 기대하는 값이다 — 신호로 죽었으면 signal 이 실리거나 128+15 로 온다.
+      check('★ 끝난 까닭이 SIGTERM 으로 남는다',
+        끝난것.sig === 'SIGTERM' || 끝난것.code === 143, JSON.stringify(끝난것));
+    }
+  }
+
+  try { 아이.kill('SIGKILL'); } catch { /* 이미 죽었다 */ }
 }
 
 서버박기('ts', null);

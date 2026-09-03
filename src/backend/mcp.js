@@ -69,6 +69,42 @@ export function 설정읽기(root) {
   return { 서버들, 자리: p, 있음: true };
 }
 
+/*
+ * ── 지금 띄워 둔 서버들 ─────────────────────────────────────────────────
+ *
+ * 여기 왜 명부가 있나. MCP 서버는 붙인 쪽(repl·ACP)이 들고 있을 뿐이라,
+ * 프로그램이 어느 길로든 끝나 버리면 **아무도 안 닫는다.** 그러면 사람
+ * 컴퓨터에 서버 프로세스가 하나씩 쌓인다 — 작업 관리자를 열기 전에는
+ * 모르는 종류의 탈이다.
+ *
+ * 일감(tools/jobs.js)과 언어 서버(lsp/client.js)에는 이미 이 그물이 있는데
+ * 여기만 없었다. 같은 자리, 같은 규칙으로 둔다.
+ */
+const 띄운것들 = new Set();
+
+/** 검사와 진단이 본다. 지금 살아 있는 서버 수. */
+export function 살아있는수() { return 띄운것들.size; }
+
+/**
+ * 다 닫는다. 프로그램이 끝날 때와 검사 뒤에 부른다.
+ * @returns {number} 닫은 개수
+ */
+export function 모두닫기() {
+  const 것들 = [...띄운것들];
+  띄운것들.clear();
+  let n = 0;
+  for (const s of 것들) { try { s.닫기(); n++; } catch { /* 끝나는 중이라 할 수 있는 게 없다 */ } }
+  return n;
+}
+
+/*
+ * 어떤 길로 끝나든 남기지 않는다. 붙인 쪽이 이미 닫았어도 무해하다.
+ *
+ * 이름 있는 함수를 그대로 건다 — 이름 없는 화살표로 걸면 그물이 걸려 있는지
+ * 검사가 밖에서 확인할 길이 없다. 걷어내도 아무도 모르는 그물은 없는 것과 같다.
+ */
+process.once('exit', 모두닫기);
+
 /**
  * 서버 하나와의 연결.
  *
@@ -105,6 +141,9 @@ export class MCP서버 {
       this.죽음 = `띄우지 못했습니다: ${e.message}`;
       return false;
     }
+    // 띄운 순간부터 명부에 든다. 악수(initialize)를 못 마쳐도 아이는 이미
+    // 떠 있으므로, 여기서 안 적으면 그 아이는 아무도 안 거두는 아이가 된다.
+    띄운것들.add(this);
 
     this.kid.on('error', (e) => this.끝냄(`오류: ${e.message}`));
     this.kid.on('exit', (code, sig) => this.끝냄(`끝났습니다 (코드 ${code ?? sig})`));
@@ -245,6 +284,7 @@ export class MCP서버 {
 
   닫기() {
     this.끝냄('닫았습니다');
+    띄운것들.delete(this);
     try {
       this.kid?.stdin?.end();
       this.kid?.kill();
