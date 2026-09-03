@@ -1,11 +1,15 @@
 // 규격 차이(OpenAI 호환 / Ollama / Anthropic)를 여기 한 곳에서만 흡수한다.
 // 진단(probe)과 에이전트 루프가 같은 함수를 쓴다.
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { req, headersFor, serverMessage, Aborted } from './http.js';
-import { 할당량기억 } from './quota.js';
+import { 할당량기억, 미리기다릴까 } from './quota.js';
 import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
 import { 말 } from '../i18n/index.js';
 import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
 import { 도구맞추기, 이름되돌리기, 벤더 } from './toolfit.js';
+import { 눈금맞추기 } from './wire.js';
+import { 시스템블록, 메시지표식, 잡힐만한가, 조각표 } from './cachemark.js';
 
 /*
  * Anthropic 규격의 판 이름.
@@ -60,7 +64,7 @@ export function 요청주소(conn) {
   return 주소붙이기(conn?.base, endpoint(conn?.kind));
 }
 
-export function buildBody(shape, { model, messages, tools, stream, json, think, maxTokens = 4096, ctx = null, 회사 = null }) {
+export function buildBody(shape, { model, messages, tools, stream, json, think, maxTokens = 4096, ctx = null, 회사 = null, 카드 = null, 세션이름 = null }) {
   if (shape === 'ollama') {
     const body = { model, messages, stream: !!stream, options: { num_predict: maxTokens } };
     /*
@@ -100,7 +104,7 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
     return body;
   }
   if (shape === 'anthropic') return anthropic몸(
-    { model, messages, tools, stream, json, think, maxTokens },
+    { model, messages, tools, stream, json, think, maxTokens, 카드, 세션이름 },
   );
   // 출력 상한을 **두 이름으로 같이** 보낸다.
   //
@@ -131,9 +135,35 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
     body.response_format = { type: 'json_schema', json_schema: { name: 'out', schema: json, strict: true } };
   }
   if (think !== undefined && think !== false) {
-    const 눈금 = 강도말(think);
+    /*
+     * 눈금은 **이 전선이 받는 말**로 옮긴다 (backend/wire.js).
+     *
+     * 여태 여기는 max 를 high 로 뭉갰다. 우리 눈금이 다섯인데 받는 곳이 넷뿐인
+     * 자리가 있어서였다. 그런데 그러면 Claude 처럼 xhigh·max 를 진짜로 받는
+     * 전선에서도 high 밖에 못 나간다 — 화면에는 max 라고 떠 있는 채로.
+     * 카드가 있으면 카드가 아는 눈금으로, 없으면 여태처럼 좁은 쪽으로 맞춘다.
+     */
+    const 눈금 = 카드 ? (카드.생각형식 === 'effort' ? 눈금맞추기(카드, think) : null) : 강도말(think);
     if (눈금) body.reasoning_effort = 눈금;
   }
+  /*
+   * 이 대화가 한 덩어리라고 알려 준다.
+   *
+   * 안 보내면 게이트웨이는 요청마다 새 세션을 연다 — 대시보드에 한 대화가
+   * 열 줄로 흩어지고, 세션에 묶어 두는 캐시가 있다면 그것도 매번 새로 엮인다.
+   * 아는 칸에만 싣고, 서버가 거절하면 카드가 그것을 배워 다음부터 안 싣는다.
+   */
+  if (세션이름 && 카드?.세션자리 === 'user') body.user = 세션이름;
+  if (세션이름 && 카드?.캐시 === 'key') body.prompt_cache_key = 세션이름;
+  /*
+   * 흘려받을 때도 usage 를 달라고 한다.
+   *
+   * 이 칸이 없으면 흘려받기에서는 usage 가 **아예 안 온다.** 그러면 캐시가
+   * 얼마나 맞았는지도, 우리 추정이 얼마나 틀렸는지도(session.배운다) 영영
+   * 못 배운다. 아는 창구에만 보낸다 — 모르는 게이트웨이에 지어낸 칸을
+   * 실어 보내면 그 400 이 열쇠 문제처럼 보인다.
+   */
+  if (stream && 카드?.스트림usage) body.stream_options = { include_usage: true };
   return body;
 }
 
@@ -176,7 +206,7 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
  */
 const 생각최소 = 1024;
 const 답에남길것 = 1024;
-const 강도별예산 = { low: 2048, medium: 6144, high: 16384, max: 32768 };
+const 강도별예산 = { low: 2048, medium: 6144, high: 16384, xhigh: 24576, max: 32768 };
 
 /*
  * ── 우리 눈금은 다섯, 전선 위의 눈금은 넷 ──────────────────────────────
@@ -204,7 +234,7 @@ const 강도별예산 = { low: 2048, medium: 6144, high: 16384, max: 32768 };
  * i18n 의 그 함수라, 같은 이름으로 가리면 그 블록 안에서는 화면에 말을 걸
  * 수가 없어진다 — 나중에 한 줄 더 적으려는 사람이 거기서 넘어진다.
  */
-const 전선눈금 = { low: 'low', medium: 'medium', high: 'high', max: 'high' };
+const 전선눈금 = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high', max: 'high' };
 
 export function 강도말(강도) {
   return 전선눈금[String(강도)] ?? null;
@@ -218,17 +248,63 @@ export function 생각예산(강도, maxTokens) {
   return 예산 >= 생각최소 ? 예산 : 0;
 }
 
-function anthropic몸({ model, messages, tools, stream, json, think, maxTokens }) {
+function anthropic몸({ model, messages, tools, stream, json, think, maxTokens, 카드 = null, 세션이름 = null }) {
   const 머리말 = [];
+  // 시스템 글을 「굳은 부분 / 매 턴 바뀌는 부분」 으로 나눠 받았으면 그대로 쓴다.
+  // 나눠 받은 조각은 이어 붙이면 원래 글과 **한 글자도 안 다르다**(agent/session.js).
+  let 조각들 = null;
   const 나머지 = [];
   for (const m of messages ?? []) {
-    if (m?.role === 'system') 머리말.push(typeof m.content === 'string' ? m.content : String(m.content ?? ''));
-    else 나머지.push(m);
+    if (m?.role === 'system') {
+      const 나눔 = m[조각표];
+      if (Array.isArray(나눔) && 나눔.length > 1) 조각들 = 나눔;
+      머리말.push(typeof m.content === 'string' ? m.content : String(m.content ?? ''));
+    } else 나머지.push(m);
   }
-  const body = { model, messages: 차례합치기(나머지), stream: !!stream, max_tokens: maxTokens };
-  if (머리말.length) body.system = 머리말.join('\n\n');
-  const 예산 = 생각예산(think, maxTokens);
-  if (예산) body.thinking = { type: 'enabled', budget_tokens: 예산 };
+
+  const 표식쓰나 = 카드?.캐시 === 'explicit';
+  let 대화 = 차례합치기(나머지);
+  /*
+   * 자라는 대화에 옮겨 가는 표식을 박는다 (backend/cachemark.js).
+   *
+   * 이것이 없으면 캐시는 정적 앞머리에서 멈춘다 — 대화가 60k 로 자라도
+   * 읽히는 것은 5.9k 뿐이고, 나머지는 걸음마다 전액 다시 나간다.
+   */
+  if (표식쓰나 && 잡힐만한가(대화, 카드?.캐시최소 ?? 1024)) 대화 = 메시지표식(대화);
+
+  const body = { model, messages: 대화, stream: !!stream, max_tokens: maxTokens };
+  if (머리말.length) {
+    body.system = 표식쓰나
+      ? 시스템블록(조각들 ?? 머리말, true)
+      : 머리말.join('\n\n');
+  }
+
+  /*
+   * ── 생각을 어떻게 켜나 ────────────────────────────────────────────────
+   *
+   * 판마다 다르다. 4.6 판부터는 `adaptive` 하나로 켜고 세기는 output_config
+   * 로 준다. 그 전 판은 토큰 예산(budget_tokens)이다. **섞으면 400 이다** —
+   * Opus 5 에 budget_tokens 를 보내면 거절당하고, 그 400 은 화면에서 열쇠가
+   * 틀린 것과 구별이 안 된다. 어느 쪽인지는 카드가 안다(backend/wire.js).
+   *
+   * 카드가 없으면 여태 하던 대로 예산으로 간다 — 이 파일을 직접 부르는
+   * 자리(검사·진단)가 있어서, 없다고 모양이 달라지면 안 된다.
+   */
+  const 형식 = 카드?.생각형식 ?? 'budget';
+  if (형식 === 'adaptive') {
+    if (think !== undefined && think !== false && think !== 'off') {
+      body.thinking = { type: 'adaptive' };
+      const 눈금 = 눈금맞추기(카드, think);
+      if (눈금 && 카드?.효력칸 === 'output_config') body.output_config = { effort: 눈금 };
+    }
+  } else if (형식 === 'budget' || 형식 === undefined) {
+    const 예산 = 생각예산(think, maxTokens);
+    if (예산) body.thinking = { type: 'enabled', budget_tokens: 예산 };
+  }
+
+  // 이 대화가 한 덩어리라고 알려 준다. 규격이 정한 칸이다.
+  if (세션이름 && 카드?.세션자리 === 'metadata') body.metadata = { user_id: 세션이름 };
+
   if (tools?.length) {
     body.tools = tools.map((t) => {
       const f = t.function ?? t;
@@ -264,6 +340,31 @@ export function 차례합치기(messages) {
   return out;
 }
 
+/*
+ * ── 캐시가 얼마나 맞았나 ────────────────────────────────────────────────
+ *
+ * 여태 이 프로그램은 **캐시에 눈이 없었다.** usage 에서 들어온 토큰과 나간
+ * 토큰만 읽었다. 그래서 캐시가 통째로 안 맞고 있어도 화면에는 아무 표시가
+ * 없었고, 고쳐도 나아졌는지 스스로 확인할 방법이 없었다.
+ *
+ * 이름이 규격마다 다르다. 아는 이름을 다 훑고, 없으면 0 이다 —
+ * 응답에 더 있는 칸을 읽는 것은 아무 위험이 없다(보내는 것과 다르다).
+ *
+ *   Anthropic  cache_read_input_tokens · cache_creation_input_tokens
+ *   OpenAI     prompt_tokens_details.cached_tokens
+ *   Bedrock    input_tokens_details.cached_tokens · .cache_write_tokens
+ *
+ * @returns {{읽음:number, 씀:number}}
+ */
+export function 캐시읽기(u) {
+  const n = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : 0);
+  const 자세히 = u?.prompt_tokens_details ?? u?.input_tokens_details ?? null;
+  return {
+    읽음: n(u?.cache_read_input_tokens) || n(자세히?.cached_tokens) || n(u?.cached_tokens),
+    씀: n(u?.cache_creation_input_tokens) || n(자세히?.cache_write_tokens) || n(u?.cache_write_tokens),
+  };
+}
+
 export function extractMessage(shape, json) {
   if (shape === 'anthropic') {
     // 답이 블록 배열이다. 글·생각·도구 부름이 한 배열에 섞여 온다.
@@ -295,8 +396,14 @@ export function extractMessage(shape, json) {
       toolCalls: normalizeCalls(부름들),
       // 이름이 다르다. prompt_tokens 를 찾으면 늘 0 이 나오고, 화면에는
       // 「토큰을 하나도 안 썼다」 로 뜬다.
-      usage: { in: json?.usage?.input_tokens ?? 0, out: json?.usage?.output_tokens ?? 0 },
+      usage: {
+        in: json?.usage?.input_tokens ?? 0,
+        out: json?.usage?.output_tokens ?? 0,
+        ...(() => { const c = 캐시읽기(json?.usage); return { cacheRead: c.읽음, cacheWrite: c.씀 }; })(),
+      },
       stopped: json?.stop_reason ?? null,
+      // 안전 판정으로 거절당한 것. 빈 답과 섞으면 엉뚱한 곳을 고치게 된다.
+      거절: json?.stop_reason === 'refusal' ? (json?.stop_details ?? { type: 'refusal' }) : null,
     };
   }
   if (shape === 'ollama') {
@@ -315,12 +422,38 @@ export function extractMessage(shape, json) {
   // 전에는 이 숫자를 읽지도 않아서 화면에도 셈에도 안 나타났다.
   const 생각 = json?.usage?.completion_tokens_details?.reasoning_tokens
     ?? json?.usage?.reasoning_tokens ?? 0;
+  /*
+   * ── 안 하겠다고 한 것인가 ────────────────────────────────────────────
+   *
+   * 이 규격은 두 가지 모양으로 말한다.
+   *
+   *   message.refusal              모델이 스스로 거절한 글
+   *   finish_reason 'content_filter'  앞단 필터가 잘라낸 것 (Azure 가 이쪽이다)
+   *
+   * 둘 다 **빈 답과 겉모습이 같다.** 그래서 예전에는 「읽기만 하고 끝내려
+   * 한다」 로 읽고 한 번 더 밀었다. 밀어도 판정은 같아서 또 거절이고, 그게
+   * 걸음 수만큼 되풀이됐다 — 한 번 거절당할 요청이 열 번 나갔다.
+   */
+  const 끝난까닭 = json?.choices?.[0]?.finish_reason ?? null;
+  const 거절글 = typeof m.refusal === 'string' && m.refusal.trim() ? m.refusal.trim() : null;
+  const 거절 = 거절글
+    ? { type: 'refusal', message: 거절글 }
+    : (끝난까닭 === 'content_filter' ? { type: 'content_filter' } : null);
+
   return {
-    content: m.content ?? '',
+    // 거절 글은 답이 비어 있을 때만 답 자리에 넣는다. 사람이 화면에서
+    // 무슨 일이 있었는지 읽을 수 있어야 한다.
+    content: m.content ?? 거절글 ?? '',
     thinking: m.reasoning_content ?? '',
     toolCalls: normalizeCalls(m.tool_calls ?? []),
-    usage: { in: json?.usage?.prompt_tokens ?? 0, out: json?.usage?.completion_tokens ?? 0, reasoning: 생각 },
-    stopped: json?.choices?.[0]?.finish_reason ?? null,
+    usage: {
+      in: json?.usage?.prompt_tokens ?? 0,
+      out: json?.usage?.completion_tokens ?? 0,
+      reasoning: 생각,
+      ...(() => { const c = 캐시읽기(json?.usage); return { cacheRead: c.읽음, cacheWrite: c.씀 }; })(),
+    },
+    stopped: 끝난까닭,
+    거절,
   };
 }
 
@@ -470,16 +603,72 @@ function 열쇠다시받을까(conn, status, 이미) {
   return !이미 && Number(status) === 401 && !!conn.열쇠받기;
 }
 
+/**
+ * 이번에 실제로 보낼 몸통을 만든다. chat 과 chatStream 이 같은 것을 쓴다.
+ *
+ * 전선 카드와 세션 이름은 **연결에 붙어 있다.** 부르는 자리마다 손으로
+ * 넘기게 두면 언젠가 한 곳이 빠지고, 그 한 곳만 캐시가 안 걸린다 —
+ * 요약을 만드는 부름(agent/compact.js)이 딱 그런 자리다.
+ */
+function 몸만들기(conn, opts, 맞춘것, 더할것 = {}) {
+  return buildBody(conn.kind, {
+    model: conn.model,
+    ctx: conn.ctx ?? null,
+    ...opts,
+    tools: 맞춘것.tools,
+    회사: 벤더(conn),
+    카드: opts.카드 ?? conn.전선 ?? null,
+    세션이름: opts.세션이름 ?? conn.세션이름 ?? null,
+    ...더할것,
+  });
+}
+
+/*
+ * ── 보낸 몸통을 파일로 떨어뜨린다 (DEEL_TRACE_BODY) ─────────────────────
+ *
+ * 캐시가 왜 안 맞는지는 **인접한 두 요청을 견줘야만** 알 수 있다. 자라는
+ * 대화에서 두 요청은 끝부분만 달라야 정상이고, 그보다 앞에서 갈리는 자리가
+ * 있으면 거기가 캐시를 깨는 자리다. 화면으로는 절대 안 보인다.
+ *
+ * 열쇠는 머리말에 있고 여기서는 몸통만 적으므로 열쇠가 새지 않는다. 그래도
+ * 대화 내용은 그대로 적히므로 **사람이 환경변수로 켤 때만** 돈다.
+ */
+let 덤프번호 = 0;
+function 몸덤프(body) {
+  const 폴더 = process.env.DEEL_TRACE_BODY;
+  if (!폴더) return;
+  try {
+    mkdirSync(폴더, { recursive: true });
+    덤프번호 += 1;
+    const 이름 = `${String(덤프번호).padStart(4, '0')}.json`;
+    writeFileSync(join(폴더, 이름), JSON.stringify(body, null, 2), 'utf8');
+  } catch { /* 못 적어도 요청은 간다 — 이건 곁다리다 */ }
+}
+
+/**
+ * 보내기 **전에** 할당량을 보고 비킨다 (backend/quota.js).
+ *
+ * 서버가 「남은 것 0, 몇 초 뒤 풀림」 이라고 알려 줬는데도 그대로 보내면
+ * 429 를 맞고 사다리를 태우고 턴이 죽는다. 알고 있으면 그냥 기다리면 된다.
+ */
+async function 미리비키기(opts) {
+  const ms = 미리기다릴까();
+  if (!ms) return 0;
+  opts.onBackoff?.({ type: 'backoff', status: 429, code: null, wait: ms, attempt: 0, max: 0, 미리: true });
+  await 기다리기(ms, opts.signal ?? null);
+  return ms;
+}
+
 // 한 번에 받기.
 export async function chat(conn, opts) {
   // 이 회사가 받는 모양으로 도구를 다듬는다 (backend/toolfit.js).
   // 모르는 주소면 아무것도 안 바뀐다 — 지금까지와 똑같이 돈다.
   const 맞춘것 = 도구맞추기(opts.tools, conn);
-  const body = buildBody(conn.kind, {
-    model: conn.model, ctx: conn.ctx ?? null, ...opts, tools: 맞춘것.tools, 회사: 벤더(conn),
-  });
+  const body = 몸만들기(conn, opts, 맞춘것);
+  몸덤프(body);
   const 정책 = 정책고르기(conn, opts);
   let 열쇠다시받음 = false;
+  let 쌓인대기 = await 미리비키기(opts);
   for (let 시도 = 1; ; 시도++) {
     const r = await req(요청주소(conn), {
       method: 'POST',
@@ -505,9 +694,10 @@ export async function chat(conn, opts) {
     // 잠깐 막힌 것이면 기다렸다 다시 부른다 (backend/retry.js 머리말).
     // 한 번에 받는 길은 제너레이터가 아니라 화면에 말을 못 걸어서, 부르는 쪽이
     // 준 onBackoff 로 알린다. 안 줬으면 조용히 기다린다.
-    const 다시 = 다시부를지(r, 시도, 정책);
+    const 다시 = 다시부를지(r, 시도, 정책, 쌓인대기);
     if (!다시) throw 거절오류(r, 시도);
     opts.onBackoff?.(다시);
+    쌓인대기 += 다시.wait;
     await 기다리기(다시.wait, opts.signal ?? null);
   }
 }
@@ -562,12 +752,20 @@ async function 거절읽기(r) {
 // 흘려 받기. { type:'thinking'|'content', text } 를 내보내고 마지막에 { type:'done', message } 를 준다.
 export async function* chatStream(conn, opts) {
   const 맞춘것 = 도구맞추기(opts.tools, conn);
-  const body = buildBody(conn.kind, {
-    model: conn.model, ctx: conn.ctx ?? null, ...opts, tools: 맞춘것.tools, stream: true, 회사: 벤더(conn),
-  });
+  const body = 몸만들기(conn, opts, 맞춘것, { stream: true });
+  몸덤프(body);
   const 정책 = 정책고르기(conn, opts);
   let r;
   let 열쇠다시받음 = false;
+  let 쌓인대기 = 0;
+  {
+    const 미리 = 미리기다릴까();
+    if (미리) {
+      yield { type: 'backoff', status: 429, code: null, wait: 미리, attempt: 0, max: 0, 미리: true };
+      await 기다리기(미리, opts.signal ?? null);
+      쌓인대기 += 미리;
+    }
+  }
   for (let 시도 = 1; ; 시도++) {
     r = await req(요청주소(conn), {
       method: 'POST',
@@ -591,13 +789,18 @@ export async function* chatStream(conn, opts) {
     // 잠깐 막힌 것이면 알리고, 기다렸다, 다시 부른다. 머리말도 못 받은 자리라
     // 화면에 흘러간 글이 없다 — 그래서 여기서만 다시 부르고, 아래 읽기 도중에
     // 끊긴 것은 다시 안 부른다 (backend/retry.js 머리말).
-    const 다시 = 다시부를지(거절, 시도, 정책);
+    const 다시 = 다시부를지(거절, 시도, 정책, 쌓인대기);
     if (!다시) throw 거절오류(거절, 시도);
     yield 다시;
+    쌓인대기 += 다시.wait;
     await 기다리기(다시.wait, opts.signal ?? null);
   }
 
-  const acc = { content: '', thinking: '', toolCalls: [], usage: { in: 0, out: 0 }, stopped: null };
+  const acc = {
+    content: '', thinking: '', toolCalls: [],
+    usage: { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
+    stopped: null,
+  };
   const reader = r.res.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
@@ -649,6 +852,15 @@ export async function* chatStream(conn, opts) {
   if (acc.stopped == null && (acc.content || acc.thinking || acc.toolCalls.length)) {
     acc.stopped = 말없이끝남;
   }
+  /*
+   * 거절 글밖에 안 온 경우, 그 글을 답 자리에 놓는다.
+   *
+   * 이 규격은 거절을 `content` 가 아니라 `refusal` 로 흘려보낸다. 그대로 두면
+   * 화면에는 **아무 글도 안 나오고**, 사람은 답이 비었다고 읽고 같은 말을 또
+   * 친다. 판정은 같으니 또 거절이고, 값만 두 배가 된다.
+   */
+  if (!acc.content && acc.거절글?.trim()) acc.content = acc.거절글.trim();
+  delete acc.거절글;
   yield { type: 'done', message: 이름되돌리기(acc, 맞춘것.되돌림) };
 }
 
@@ -674,9 +886,30 @@ function absorb(shape, obj, acc) {
   if (d.reasoning_content) { acc.thinking += d.reasoning_content; out.push({ type: 'thinking', text: d.reasoning_content }); }
   if (d.content) { acc.content += d.content; out.push({ type: 'content', text: d.content }); }
   if (d.tool_calls?.length) mergeDeltaCalls(acc, d.tool_calls);
-  if (obj.usage) acc.usage = { in: obj.usage.prompt_tokens ?? 0, out: obj.usage.completion_tokens ?? 0 };
+  /*
+   * 거절 글도 조각으로 흘러온다. 이어 붙여 둔다 — 한 조각만 보고 판단하면
+   * 「Sorry」 한 마디로 끝난 답과 구별이 안 된다.
+   */
+  if (typeof d.refusal === 'string' && d.refusal) acc.거절글 = (acc.거절글 ?? '') + d.refusal;
+  if (obj.usage) {
+    const c = 캐시읽기(obj.usage);
+    acc.usage = {
+      in: obj.usage.prompt_tokens ?? 0,
+      out: obj.usage.completion_tokens ?? 0,
+      // 한 번에 받는 길과 같은 자리를 본다. 여기만 빠지면 흘려받을 때
+      // 생각 토큰이 늘 0 으로 보이는데, 그건 「생각을 안 했다」 로 읽힌다.
+      reasoning: obj.usage.completion_tokens_details?.reasoning_tokens
+        ?? obj.usage.reasoning_tokens ?? 0,
+      cacheRead: c.읽음,
+      cacheWrite: c.씀,
+    };
+  }
   const fin = obj.choices?.[0]?.finish_reason;
   if (fin) acc.stopped = fin;
+  // 흘려받는 길도 거절을 알아본다. 여기가 빠지면 흘려받기를 켠 사람에게만
+  // 예전 그대로 되밀기가 남는다 — 그게 기본값이라 사실상 아무도 안 고쳐진다.
+  if (acc.거절글?.trim()) acc.거절 = { type: 'refusal', message: acc.거절글.trim() };
+  else if (fin === 'content_filter') acc.거절 = { type: 'content_filter' };
   return out;
 }
 
@@ -700,7 +933,12 @@ function anthropic흡수(obj, acc, out) {
   const 번호 = obj?.index ?? 0;
   if (종류 === 'message_start') {
     const u = obj.message?.usage;
-    if (u) acc.usage = { in: u.input_tokens ?? 0, out: u.output_tokens ?? 0 };
+    if (u) {
+      // 캐시 수치는 여기 한 번만 온다. message_delta 에는 안 실린다 —
+      // 여기서 안 챙기면 흘려받기에서는 캐시가 영영 0 으로 보인다.
+      const c = 캐시읽기(u);
+      acc.usage = { in: u.input_tokens ?? 0, out: u.output_tokens ?? 0, cacheRead: c.읽음, cacheWrite: c.씀 };
+    }
     return out;
   }
   if (종류 === 'content_block_start') {
@@ -763,7 +1001,12 @@ function anthropic흡수(obj, acc, out) {
      */
     if (obj.usage?.output_tokens != null) acc.usage.out = obj.usage.output_tokens;
     if (obj.usage?.input_tokens != null) acc.usage.in = obj.usage.input_tokens;
+    // 캐시 수치는 대개 message_start 에 실리지만, 여기 싣는 판도 있다.
+    const c = 캐시읽기(obj.usage);
+    if (c.읽음) acc.usage.cacheRead = c.읽음;
+    if (c.씀) acc.usage.cacheWrite = c.씀;
     if (obj.delta?.stop_reason) acc.stopped = obj.delta.stop_reason;
+    if (obj.delta?.stop_reason === 'refusal') acc.거절 = obj.delta.stop_details ?? { type: 'refusal' };
     return out;
   }
   if (종류 === 'content_block_stop' || 종류 === 'message_stop') 도구마무리(acc);

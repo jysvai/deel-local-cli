@@ -130,6 +130,7 @@ const FILES = [
   'models.test.js',
   'prompt.test.js',
   'cache.test.js',
+  'wire.test.js',
   'export.test.js',
   'preset.test.js',
   'lsp.test.js',

@@ -9,7 +9,19 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
-import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, 접힘표 } from '../src/agent/compact.js';
+import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, 접힘표, 최소이득 } from '../src/agent/compact.js';
+
+/*
+ * ── 아래 검사들은 문턱을 0 으로 두고 부른다 ─────────────────────────────
+ *
+ * foldToolResults 는 이제 **비울 수 있는 양이 문턱을 넘을 때만** 접는다
+ * (agent/compact.js 의 최소이득). 그 문턱 자체는 바로 아래 따로 잰다.
+ *
+ * 여기서 재는 것은 「접는 일을 제대로 하나」 — 무엇을 남기고, 무엇을 접고,
+ * 짝이 안 깨지나 — 라서 문턱과는 다른 축이다. 문턱에 걸려 아무것도 안 접히면
+ * 그 검사들은 **아무것도 안 지키면서 초록으로 뜬다.** 그게 제일 나쁘다.
+ */
+const 접기 = (s, o = {}) => foldToolResults(s, { 이득문턱: 0, ...o });
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import { discover } from '../src/skills/discover.js';
 
@@ -400,7 +412,7 @@ await new Promise((r) => setImmediate(r));
   const 결과몫 = (x) => x.breakdown().rows.find((r) => r.label.startsWith('도구 결과'))?.n ?? 0;
   const 접기전 = 결과몫(s);
   const 전체전 = s.breakdown().used;
-  const r = foldToolResults(s);
+  const r = 접기(s);
 
   check('오래된 도구 결과가 접힌다', r.접은것 === 3, `${r.접은것}개 (7개 중 최근 4개는 남겨야 함)`);
   check('도구 결과 몫이 실제로 준다', 결과몫(s) < 접기전 * 0.7,
@@ -425,7 +437,7 @@ await new Promise((r) => setImmediate(r));
   check('접어도 호출·결과 짝이 안 깨진다', 짝깨짐 === null, 짝깨짐 ?? '');
 
   // 두 번째 부름 — 이미 접은 것을 또 세면 화면에 거짓 숫자가 뜬다.
-  const r2 = foldToolResults(s);
+  const r2 = 접기(s);
   check('이미 접은 것은 다시 안 센다', r2.접은것 === 0, `${r2.접은것}개`);
 
   /*
@@ -453,7 +465,7 @@ await new Promise((r) => setImmediate(r));
   u.push(할일('t2')); u.push(결과('t2', 목록글('| ☐ | 3. 요청 누락 막기 |')));
   for (let i = 1; i <= 6; i++) { u.push(호출(`e${i}`, `src/뒤${i}.js`)); u.push(결과(`e${i}`, 긴글(60))); }
 
-  const ru = foldToolResults(u);
+  const ru = 접기(u);
   const 다 = u.messages.filter((m) => m.role === 'tool').map((m) => m.content).join('\n');
   check('★ 가장 최근 할 일 목록은 안 접는다', 다.includes('3. 요청 누락 막기'),
     `접은 것 ${ru.접은것}개`);
@@ -463,7 +475,62 @@ await new Promise((r) => setImmediate(r));
   // 작은 결과는 접어도 자리가 안 준다. 오히려 무엇을 했는지만 잃는다.
   const t = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
   for (let i = 1; i <= 8; i++) { t.push(호출(`d${i}`, `a${i}.js`)); t.push(결과(`d${i}`, '1군데 고쳤습니다')); }
-  check('짧은 결과는 안 접는다', foldToolResults(t).접은것 === 0);
+  check('짧은 결과는 안 접는다', 접기(t).접은것 === 0);
+
+  /*
+   * ── ★★ 조금 아끼자고 앞머리를 깨지 않는다 ────────────────────────────
+   *
+   * 여기가 이번에 고친 자리다. 접기는 이력 **가운데**의 글을 딴 글로 바꿔친다.
+   * 그러면 그 자리부터 뒤가 전부 새 글이 되고, 프리픽스 캐시는 거기서 끊긴다.
+   *
+   * 그런데 이 함수는 걸음마다 「최근 넷 빼고 다」 를 접었고, 걸음마다 도구
+   * 결과가 하나씩 느니까 실제로 하는 일은 **걸음마다 딱 하나 접기**였다.
+   * 즉 걸음마다 한 줄을 아끼려고 **걸음마다 대화 전체를 다시 보내고 있었다.**
+   * 아끼려던 것보다 훨씬 크게 쓴 셈이다.
+   *
+   * 그래서 문턱을 둔다. 모아 두었다가 한 번에 접으면 접기가 가끔 크게
+   * 일어나고, 그 사이에는 앞머리가 가만히 있는다.
+   */
+  {
+    const 조금 = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
+    조금.push({ role: 'user', content: '조금만 봐줘' });
+    // 접을 수 있는 것이 셋뿐이고, 셋 다 작다 — 다 접어도 문턱에 한참 못 미친다.
+    for (let i = 1; i <= 7; i++) { 조금.push(호출(`s${i}`, `src/작은${i}.js`)); 조금.push(결과(`s${i}`, 긴글(30))); }
+    const 안접음 = foldToolResults(조금);
+    check('★★ 조금밖에 못 비우면 이번엔 안 접는다', 안접음.접은것 === 0, `${안접음.접은것}개`);
+    check('★★ 미뤘다고 말해 준다 — 조용히 안 하는 것과 다르다',
+      안접음.미룸 === true && 안접음.모인것 > 0, JSON.stringify({ 미룸: 안접음.미룸, 모인것: 안접음.모인것 }));
+    check('★★ 미룰 때는 글자를 한 자도 안 건드린다',
+      조금.messages.every((m) => typeof m.content !== 'string' || !m.content.startsWith(접힘표)));
+
+    // 모이면 그때 한 번에 접는다. 접기가 아예 안 되는 것이 아니라 **몰아서** 되는 것이다.
+    const 많이 = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
+    많이.push({ role: 'user', content: '많이 봐줘' });
+    for (let i = 1; i <= 12; i++) { 많이.push(호출(`b${i}`, `src/큰${i}.js`)); 많이.push(결과(`b${i}`, 긴글(200))); }
+    const 접음 = foldToolResults(많이);
+    check('★★ 모이면 그때 한 번에 접는다', 접음.접은것 >= 8, `${접음.접은것}개`);
+    check('★★ 그때 비우는 양이 문턱을 넘는다', 접음.아낀토큰 >= 최소이득,
+      `${접음.아낀토큰.toLocaleString()} ≥ ${최소이득.toLocaleString()}`);
+  }
+
+  /*
+   * ★ 접힌 파일은 **진짜 경로**로 남는다.
+   *
+   * 화면에 쓰는 이름(곳)은 60자에서 자른 것이라, 그걸로 파일 기억을 지우면
+   * 긴 경로가 안 맞아 조용히 안 지워진다 — 그러면 접힌 파일을 다시 읽을 때
+   * 「앞에서 읽은 그대로입니다」 만 돌아가고, 모델은 대화 어디에도 없는 글을
+   * 가리키는 쪽지를 받는다 (agent/loop.js 가 이 값으로 잊기 를 부른다).
+   */
+  {
+    const 긴경로 = 'src/' + 'a'.repeat(80) + '/깊은/자리/파일.js';
+    const p = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
+    p.push({ role: 'user', content: '봐줘' });
+    p.push(호출('p1', 긴경로)); p.push(결과('p1', 긴글(60)));
+    for (let i = 2; i <= 7; i++) { p.push(호출(`p${i}`, `src/그냥${i}.js`)); p.push(결과(`p${i}`, 긴글(60))); }
+    const 것 = 접기(p).접은것들?.[0];
+    check('★ 접은 것에 안 자른 경로가 남는다', 것?.경로 === 긴경로, String(것?.경로));
+    check('★ 화면용 이름은 따로 짧다', (것?.곳?.length ?? 0) <= 60, `${것?.곳?.length}자`);
+  }
 
   // 언제 접기 시작하나 — 요약 압축(80%)보다 일찍이어야 미루는 뜻이 있다.
   check('요약 압축보다 먼저 접는다', FOLD_AT < COMPACT_AT, `${FOLD_AT} < ${COMPACT_AT}`);
@@ -485,7 +552,7 @@ await new Promise((r) => setImmediate(r));
       x.push(결과(`t${턴}`, 긴글(40)));
       x.push({ role: 'assistant', content: `${턴}번째 파일을 봤습니다.` });
       x.push({ role: 'user', content: '계속' });
-      if (접나 && shouldFold(x)) foldToolResults(x);
+      if (접나 && shouldFold(x)) 접기(x);
       if (shouldCompact(x)) return 턴;
     }
     return 200;

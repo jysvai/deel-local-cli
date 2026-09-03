@@ -29,9 +29,20 @@
 //   쓰는 사람 여럿이 같은 박자로 다시 두드리면 그게 또 429 를 만든다.
 import { Aborted } from './http.js';
 
-/** 기본 정책. 검사는 base 를 짧게 바꿔 준다 — 모양은 같고 시간만 다르다. */
+/**
+ * 기본 정책. 검사는 base 를 짧게 바꿔 준다 — 모양은 같고 시간만 다르다.
+ *
+ * `막힘최대` 는 **429 에만** 쓰는 횟수다. 기본은 `최대` 와 같게 둔다 —
+ * 사람이 안 시켰는데 프로그램이 오래 붙들고 있으면 화면이 멈춘 것과
+ * 구별이 안 되기 때문이다. 사내 게이트웨이처럼 할당량이 자주 차는 자리는
+ * 설정에서 올린다 (`retry.막힘최대`). 그 대신 **맞기 전에 비키는 것**은
+ * 기본으로 켜져 있다 (backend/quota.js 의 미리기다릴까).
+ *
+ * `총상한` 은 한 요청에서 기다린 시간을 다 더한 울타리다. 사다리가 길어져도
+ * 여기서 멎는다 — 얼마나 기다릴지 모르는 채로 붙드는 일이 없어야 한다.
+ */
 export function 기본정책() {
-  return { 최대: 3, base: [1000, 2000, 4000], 흔들림: 0.3, 상한: 60000 };
+  return { 최대: 3, 막힘최대: null, base: [1000, 2000, 4000], 흔들림: 0.3, 상한: 60000, 총상한: 300000 };
 }
 
 // 잠깐 막힌 것으로 보는 상태 코드. 529 는 Anthropic 계열 게이트웨이의 '과부하' 다.
@@ -44,7 +55,10 @@ const 다시부를코드 = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'EC
  * @param {{status?: number, code?: string|null, attempt?: number}} 실패  attempt 는 방금 실패한 것이 몇 번째였나 (1부터)
  */
 export function 다시부를까({ status = 0, code = null, attempt = 1 } = {}, 정책 = 기본정책()) {
-  if (attempt > 정책.최대) return false;
+  // 429 는 「틀렸다」 가 아니라 「지금은 안 된다」 다. 참을 횟수를 따로 둘 수 있게
+  // 한다 — 안 정했으면 여태와 똑같이 최대 를 쓴다.
+  const 한도 = Number(status) === 429 ? (정책.막힘최대 ?? 정책.최대) : 정책.최대;
+  if (attempt > 한도) return false;
   if (status) return 다시부를상태.has(Number(status));
   return !!code && 다시부를코드.has(String(code));
 }
@@ -99,18 +113,28 @@ export function 기다리기(ms, signal = null) {
  * 실패한 응답 하나를 보고 "기다렸다 다시 부른다" 알림을 만든다. 안 부를 것이면 null.
  * 화면·기록이 이 한 덩이를 그대로 쓴다 — 여기 없는 숫자는 화면에도 없다.
  */
-export function 다시부를지(r, attempt, 정책 = 기본정책()) {
+export function 다시부를지(r, attempt, 정책 = 기본정책(), 쌓인 = 0) {
   const status = r?.status ?? 0;
   const code = r?.code ?? null;
   if (!다시부를까({ status, code, attempt }, 정책)) return null;
   const retryAfter = r?.headers?.get?.('retry-after') ?? r?.res?.headers?.get?.('retry-after') ?? null;
+  const wait = 기다릴시간({ attempt, retryAfter }, 정책);
+  /*
+   * 한 요청에서 기다린 것을 다 더해 울타리를 친다.
+   *
+   * 참을 횟수를 올려 둔 자리(사내 게이트웨이)에서 사다리가 길어지면, 사람은
+   * 왜 멈춰 있는지 모르는 채로 몇 분을 본다. 횟수와 시간은 다른 울타리라
+   * 둘 다 있어야 한다.
+   */
+  const 총상한 = 정책.총상한 ?? Infinity;
+  if (Number.isFinite(총상한) && 쌓인 + wait > 총상한) return null;
   return {
     type: 'backoff',
     status,
     code,
-    wait: 기다릴시간({ attempt, retryAfter }, 정책),
+    wait,
     attempt,
-    max: 정책.최대,
+    max: Number(status) === 429 ? (정책.막힘최대 ?? 정책.최대) : 정책.최대,
     retryAfter: retryAfter ?? null,
   };
 }

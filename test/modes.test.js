@@ -22,6 +22,7 @@ import { Audit } from '../src/safety/audit.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import { effortFor } from '../src/agent/effort.js';
 import { 강도말 } from '../src/backend/adapter.js';
+import { 기본카드, 눈금맞추기 } from '../src/backend/wire.js';
 
 const pass = [];
 const fail = [];
@@ -278,17 +279,38 @@ const 기대강도 = (강도, 배분, 단계) => 강도말(effortFor(강도, 배
 }
 
 /*
- * ★ 이 모드가 우리 눈금의 끝을 실제로 밟는다.
+ * ★ 이 모드가 혼자서 우리 눈금의 위쪽 칸을 밟는다.
  *
- * 계획 모드는 high 인데 「깊게」 배분이 첫 판단을 한 칸 올려 `max` 가 된다.
- * `max` 는 우리 눈금에만 있는 칸이라 어느 창구도 안 받는다 — 즉 `/plan` 한
- * 번이면 그 턴이 400 으로 죽고 있었다. 사람이 `/think max` 를 칠 필요조차
- * 없었다는 뜻이라, 이 자리를 못 박아 둔다.
+ * 계획 모드는 high 인데 「깊게」 배분이 첫 판단을 한 칸 올려 `xhigh` 가 된다.
+ * 사람이 `/think` 를 아예 안 건드려도 그렇다 — 그래서 이 자리가 중요하다.
+ *
+ * `xhigh` 는 Claude 창구에만 있는 칸이다. 예전에는 이 값이 그대로 전선에
+ * 나가서 다른 창구에서 400 으로 죽었다. 지금은 두 겹으로 막는다.
+ *
+ *   전선 카드를 모를 때  강도말() 이 규격이 늘 아는 말로 낮춘다
+ *   전선 카드를 알 때    눈금맞추기() 가 그 회사 눈금으로 낮춘다
+ *
+ * 아래 넷은 그 두 겹이 각각 살아 있는지를 본다. 하나라도 빠지면 `/plan` 한
+ * 번에 그 턴이 죽는다.
  */
 {
   const 셈한것 = effortFor(get('plan').think, get('plan').effort, 'plan');
-  check('★ 계획 모드는 우리 눈금의 끝(max)까지 올라간다', 셈한것 === 'max', 셈한것);
-  check('★ 그런데 전선에는 그 규격이 아는 말로 나간다', 강도말(셈한것) === 'high', String(강도말(셈한것)));
+  check('★ 계획 모드는 혼자서 xhigh 까지 올라간다', 셈한것 === 'xhigh', 셈한것);
+  check('★ 카드를 모르면 규격이 아는 말로 낮춘다', 강도말(셈한것) === 'high', String(강도말(셈한것)));
+
+  const 클로드 = 기본카드({ base: 'https://api.anthropic.com/v1', kind: 'anthropic', model: 'claude-opus-5' });
+  check(
+    '★ Claude 창구에서는 xhigh 가 그대로 간다',
+    눈금맞추기(클로드, 셈한것) === 'xhigh',
+    String(눈금맞추기(클로드, 셈한것)),
+  );
+
+  const 오픈AI = 기본카드({ base: 'https://api.openai.com/v1', kind: 'openai', model: 'gpt-5' });
+  check(
+    '★ OpenAI 창구에서는 그 눈금 안으로 낮춘다',
+    눈금맞추기(오픈AI, 셈한것) === 'high',
+    String(눈금맞추기(오픈AI, 셈한것)),
+  );
 }
 
 server.closeAllConnections?.();

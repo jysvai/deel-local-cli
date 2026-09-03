@@ -140,18 +140,40 @@ function 막은것적기(막힌것, r) {
  * 시작하거나 주소가 그 회사면 먼저 본다. 그때는 헷갈릴 일이 없고, 앞에서
  * 네 가지 인증 방식으로 헛되이 두드리는 시간도 없앤다.
  *
- * 인증 방식을 한 가지만 본다. 이 규격은 x-api-key 하나뿐이라, 나머지로
- * 두드려 봐야 401 만 늘고 사람이 기다리는 시간만 길어진다.
+ * ── 인증은 주소를 보고 고른다 ──────────────────────────────────────────
+ *
+ * 이 규격은 오랫동안 x-api-key 하나뿐이었다. 지금은 한 자리가 더 있다 —
+ * AWS 의 mantle 창구가 같은 Anthropic Messages 규격을 **Bedrock API 키를
+ * Bearer 로 받아서** 내어 준다.
+ *
+ *   bedrock-mantle.<리전>.api.aws/anthropic/v1
+ *
+ * 그렇다고 아무 데나 두 방식을 다 두드리지는 않는다. 안 되는 방식으로
+ * 두드릴 때마다 401 이 하나씩 늘고 사람이 기다리는 시간도 그만큼 는다.
+ * 그래서 **그 주소에서만** Bearer 를 먼저 본다.
+ *
+ * 여기서 고른 값이 그대로 프로필에 남아 매 요청에 실린다. 틀리면 열쇠가
+ * 맞는데도 매번 401 이고, 화면에서는 열쇠가 틀린 것과 구별이 안 된다.
  */
+function 맨틀인가(base) {
+  try {
+    const h = new URL(String(base)).hostname.toLowerCase();
+    return h.startsWith('bedrock') && h.endsWith('.api.aws');
+  } catch { return false; }
+}
+
 async function tryAnthropic(base, key, 막힌것 = null) {
   if (!key) return null;
-  const r = await req(`${base}/models`, {
-    headers: headersFor('x-api-key', key, { 'anthropic-version': ANTHROPIC_VERSION }),
-    timeout: 12000,
-  });
-  막은것적기(막힌것, r);
-  if (r.ok && Array.isArray(r.json?.data)) {
-    return { kind: 'anthropic', base, auth: 'x-api-key', models: normalizeModels(r.json.data), ms: r.ms };
+  const 볼것 = 맨틀인가(base) ? ['bearer', 'x-api-key'] : ['x-api-key'];
+  for (const auth of 볼것) {
+    const r = await req(`${base}/models`, {
+      headers: headersFor(auth, key, { 'anthropic-version': ANTHROPIC_VERSION }),
+      timeout: 12000,
+    });
+    막은것적기(막힌것, r);
+    if (r.ok && Array.isArray(r.json?.data)) {
+      return { kind: 'anthropic', base, auth, models: normalizeModels(r.json.data), ms: r.ms };
+    }
   }
   return null;
 }
@@ -161,7 +183,23 @@ export function 앤트로픽같나(input, key) {
   if (/^sk-ant-/.test(String(key ?? '').trim())) return true;
   try {
     const u = new URL(/^https?:\/\//i.test(input) ? String(input) : 'https://' + String(input));
-    return /(^|\.)anthropic\.com$/i.test(u.hostname);
+    if (/(^|\.)anthropic\.com$/i.test(u.hostname)) return true;
+    /*
+     * AWS mantle 의 Anthropic 창구. 길에 규격 이름이 적혀 있다.
+     *
+     *   bedrock-mantle.<리전>.api.aws/anthropic/v1
+     *
+     * 같은 호스트가 `/openai/v1` 도 함께 연다. 그래서 호스트만 보면 안 되고
+     * **길까지** 봐야 한다 — 안 그러면 OpenAI 창구로 붙이려는 사람이
+     * Anthropic 쪽으로 끌려간다.
+     *
+     * 이 단서가 없으면 OpenAI 규격으로 먼저 두드리게 되는데, 그쪽 서버가
+     * 모르는 머리를 무시하고 `{data:[...]}` 를 내주면 규격이 openai 로
+     * 굳어 버린다. 그러면 캐시 표식을 붙일 자리가 사라진다 — 이 창구를
+     * 후보에 넣은 이유가 바로 그 표식이라, 순서 하나로 뜻이 없어진다.
+     */
+    if (맨틀인가(u.origin) && /(^|\/)anthropic(\/|$)/i.test(u.pathname)) return true;
+    return false;
   } catch { return false; }
 }
 

@@ -51,11 +51,29 @@ const server = createServer((req, res) => {
         { choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 100, completion_tokens: 20 } },
       ]);
     }
+    /*
+     * 안 하겠다고 하는 응답. 이 규격은 거절을 `content` 가 아니라 `refusal`
+     * 로 흘려보낸다 — 화면에서는 **빈 답과 겉모습이 같다.**
+     */
+    if (step.refusal) {
+      const 조각 = String(step.refusal).match(/.{1,8}/gs) ?? [''];
+      return sse(res, [
+        ...조각.map((p) => ({ choices: [{ delta: { refusal: p } }] })),
+        { choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 120, completion_tokens: 30 } },
+      ]);
+    }
     // 본문은 여러 조각으로 흘려보낸다.
     const parts = String(step.text).match(/.{1,8}/gs) ?? [''];
     return sse(res, [
       ...parts.map((p) => ({ choices: [{ delta: { content: p } }] })),
-      { choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 120, completion_tokens: 30 } },
+      {
+        choices: [{ delta: {}, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 120,
+          completion_tokens: 30,
+          ...(step.생각토큰 ? { completion_tokens_details: { reasoning_tokens: step.생각토큰 } } : {}),
+        },
+      },
     ]);
   });
 });
@@ -214,6 +232,56 @@ check('같은 것만 되풀이하면 먼저 끊는다', ev4.some((e) => e.type =
   `${ev4.filter((e) => e.type === 'tool').length}회 실행 · ${ev4.map((e) => e.type).at(-1)}`);
 check('상한(24회)까지 안 간다', ev4.filter((e) => e.type === 'tool').length <= 6,
   `${ev4.filter((e) => e.type === 'tool').length}회`);
+
+/*
+ * ── 안 하겠다고 하면 되밀지 않고 멈춘다 ──────────────────────────────────
+ *
+ * 이 자리가 「호출 한도 초과」 를 만들던 곳이다.
+ *
+ * 거절한 답에는 대개 도구 호출이 없다. 그래서 루프가 「읽기만 하고 끝내려
+ * 한다」 로 읽고 한 번 더 밀었다. 밀어도 판정은 같으니 또 거절이고, 그게
+ * 남은 걸음 수만큼 되풀이됐다 — 한 번 거절당할 요청 하나가 열 번 나가고,
+ * 그 열 번이 분당 한도를 밀어 올려 **그 다음 진짜 요청**이 429 를 받는다.
+ */
+{
+  turn = 0;
+  const 부른수앞 = seenBodies.length;
+  script = [
+    { refusal: '그 일은 도와드릴 수 없습니다.' },
+    { text: '(여기까지 오면 안 된다)' },
+    { text: '(여기도 안 된다)' },
+  ];
+  const s5 = new Session(conn, { root, mode: 'auto', think: 'off' });
+  const ev5 = [];
+  for await (const ev of run(s5, ctx, '안 되는 것 해줘')) ev5.push(ev);
+
+  const 종류 = ev5.map((e) => e.type);
+  check('★ 거절을 거절이라고 말한다', 종류.includes('refusal'), 종류.join(','));
+  check('★ 거절한 뒤에는 안 밀었다', !종류.includes('nudge'), 종류.join(','));
+  check('★ 딱 한 번만 불렀다', seenBodies.length - 부른수앞 === 1,
+    `${seenBodies.length - 부른수앞}번`);
+  // 거절 글이 화면에 남아야 사람이 무슨 일인지 안다. 안 남으면 빈 답과 같다.
+  const 거절것 = ev5.find((e) => e.type === 'refusal');
+  check('★ 거절한 말이 화면에 남는다', /도와드릴 수 없습니다/.test(String(거절것?.text ?? '')),
+    String(거절것?.text ?? '').slice(0, 30));
+}
+
+/*
+ * ── 생각에 쓴 토큰을 센다 ───────────────────────────────────────────────
+ *
+ * 답 토큰 중 생각 몫이 `/think` 를 높게 잡아 둔 대가다. 흘려받는 길에서
+ * 이 값을 안 읽으면 늘 0 으로 보이는데, 0 은 「생각을 안 했다」 로 읽힌다 —
+ * 그건 우리가 모른다는 사실과 다르다. 흘려받기가 기본값이라, 여기가 빠지면
+ * 사실상 아무에게도 안 보인다.
+ */
+{
+  turn = 0;
+  script = [{ text: '다 했습니다.', 생각토큰: 900 }];
+  const s6 = new Session(conn, { root, mode: 'auto', think: 'off' });
+  for await (const ev of run(s6, ctx, '간단한 것')) void ev;
+  check('★ 흘려받아도 생각 토큰을 센다', s6.usage.reasoning === 900, String(s6.usage.reasoning));
+  check('생각 몫은 답 토큰을 안 건드린다', s6.usage.out === 30, String(s6.usage.out));
+}
 
 // ── 결과 ───────────────────────────────────────────────────────────
 const W = (s, n) => s + ' '.repeat(Math.max(0, n - [...s].reduce((a, ch) => a + (ch.codePointAt(0) > 0x1100 ? 2 : 1), 0)));

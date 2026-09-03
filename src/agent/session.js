@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { 그림장수, 글만, 그림한장토큰 } from '../backend/vision.js';
+import { 조각표 } from '../backend/cachemark.js';
 import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './modes.js';
 import { toolSchemas } from '../tools/index.js';
 import { normalize as normLevel, DEFAULT as LEVEL_DEFAULT } from '../ui/level.js';
@@ -278,7 +279,23 @@ export class Session {
     this.plugins = [];
     this.maxSkillsListed = 40;    // 프롬프트에 올릴 최대 개수
     this.maxSkillDesc = 140;      // 설명 한 줄 최대 길이
-    this.usage = { in: 0, out: 0, calls: 0, ms: 0, retries: 0 };
+    /*
+     * 캐시 읽기·쓰기도 센다.
+     *
+     * 여태 이 셈에는 캐시 칸이 아예 없었다. 그래서 캐시가 통째로 안 걸리고
+     * 있어도 화면에는 아무 표시가 없었고, 고쳐도 나아졌는지 스스로 확인할
+     * 방법이 없었다. 읽기와 쓰기를 **따로** 센다 — 「매번 쓰기만 하고 한
+     * 번도 못 읽는」 것과 「잘 읽고 있는」 것은 완전히 다른 상태인데,
+     * 하나로 뭉치면 그 둘이 같아 보인다.
+     */
+    this.usage = { in: 0, out: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+    /*
+     * 이 대화의 이름. 게이트웨이에 「같은 대화다」 라고 알려 줄 때 쓴다.
+     *
+     * 켤 때 repl·oneshot·acp 가 채운다. 여기에는 경로도 주소도 열쇠도 안
+     * 들어간다 — 밖으로 나가는 값이라, 남에게 알려도 되는 것만 담는다.
+     */
+    this.세션이름 = null;
     /*
      * 지금 붙은 모델이 얼마나 하는가 (agent/grade.js).
      *
@@ -356,7 +373,23 @@ export class Session {
   /** 이 급에서 쓸 손잡이 값들 (한 번에 만들 파일 수 같은 것). */
   급값() { return 급값(this.급().급); }
 
-  systemPrompt() {
+  /**
+   * 시스템 글을 **굳은 부분**과 **매 턴 바뀌는 부분**으로 나눠 돌려준다.
+   *
+   * ── 왜 나누나 ────────────────────────────────────────────────────────
+   *
+   * 캐시는 앞머리가 한 글자도 안 바뀐 만큼만 걸린다. 이 글에서 바뀌는 것은
+   * 끝의 둘뿐이다 — 지금 모드(말을 던질 때마다 옮겨 간다)와 못 박은 것.
+   * 그래서 그 앞까지를 한 덩어리로 묶어 두면, 모드가 바뀌어도 **그 앞은
+   * 그대로 읽힌다.**
+   *
+   * 이어 붙이면 예전 글과 **한 글자도 다르지 않다.** 그게 이 함수의 약속이고,
+   * test/cache.test.js 가 그것을 지킨다 — 나누느라 글이 달라지면 로컬
+   * 프리픽스 캐시가 통째로 한 번 더 깨진다.
+   *
+   * @returns {[string, string]} [굳은 부분, 바뀌는 부분]
+   */
+  시스템조각() {
     const 영 = 언어() === 'en';
     const parts = [기본규칙(this.conn?.ctx)];
     // 범위를 못 박는 줄. 이건 모델이 읽는 글이라 화면 말을 따라간다.
@@ -451,8 +484,11 @@ export class Session {
      * 도구 목록도 이 모드에 맞춰 이미 걸러져 있다. 창이 좁으면 짧은 판을
      * 쓴다 (modes.js 의 말()) — 규칙은 같고 설득하는 문장만 빠진다.
      */
+    // 여기까지가 굳은 부분이다. 아래는 말을 던질 때마다 바뀔 수 있다.
+    const 굳은 = parts.join('\n');
+    const 변함 = [];
     const w = workMode(this.effectiveWork());
-    parts.push(영
+    변함.push(영
       ? `\n--- current mode: ${w.en} ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`
       : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`);
     /*
@@ -463,9 +499,12 @@ export class Session {
      * 가장 마지막, 대화 바로 앞에 둔다. 모드 절보다도 뒤인 것도 그래서다.
      */
     const 못박은글 = this.못박은것?.요약();
-    if (못박은글) parts.push(못박은글);
-    return parts.join('\n');
+    if (못박은글) 변함.push(못박은글);
+    return [굳은, 변함.length ? `\n${변함.join('\n')}` : ''];
   }
+
+  /** 모델이 읽는 시스템 글 전체. 조각을 그대로 이어 붙인 것이다. */
+  systemPrompt() { return this.시스템조각().join(''); }
 
   // 프롬프트에 실제로 올릴 스킬: 가까운 자리(프로젝트 > 사용자 > 플러그인) 순으로 상한까지.
   listedSkills() {
@@ -605,7 +644,18 @@ export class Session {
 
   // 모델에 실제로 보낼 배열.
   wire() {
-    return [{ role: 'system', content: this.systemPrompt() }, ...this.messages];
+    const 조각 = this.시스템조각();
+    const 머리 = { role: 'system', content: 조각.join('') };
+    /*
+     * 나눈 자리를 같이 알려 준다 — 캐시 표식을 박는 규격에서만 쓴다
+     * (backend/adapter.js 의 anthropic몸).
+     *
+     * Symbol 로 다는 것이 중요하다. 보통 이름으로 달면 openai 규격에서는
+     * 이 메시지가 그대로 몸통에 실려 나가고, 모르는 칸 하나가 그 게이트웨이
+     * 에서 400 을 만든다. JSON.stringify 는 Symbol 열쇠를 아예 안 본다.
+     */
+    if (조각[1]) 머리[조각표] = 조각;
+    return [머리, ...this.messages];
   }
 
   /**

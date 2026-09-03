@@ -11,6 +11,7 @@ import { 종, 창제목, 제목되돌리기, 알릴까, 제목글 } from './ui/n
 import { 보이기 as 인트로, 기본곁말 } from './ui/intro.js';
 import { 언어잡기, 말 as 옮긴말, 세말 } from './i18n/index.js';
 import { 알림채움 } from './backend/retry.js';
+import { 전선붙이기, 세션이름짓기 } from './backend/wire.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
 import { handle, COMMANDS, 미리보기끄기, 적용하기 as 그림적용 } from './commands.js';
@@ -1320,6 +1321,27 @@ export async function chatLoop(opts = {}) {
   if (아는배수) { session.보정 = 아는배수; session.보정잰것 = 1; }
 
   /*
+   * ── 전선 카드 (backend/wire.js) ──────────────────────────────────────
+   *
+   * 이 모델이 이 주소에서 **실제로 받는 것**을 여기서 한 번 정한다. 생각을
+   * 어떤 칸으로 켜는지, 눈금을 어디까지 받는지, 캐시 표식을 붙일 수 있는지.
+   * 지난번에 400 으로 배운 것이 있으면 그것이 짐작을 이긴다.
+   *
+   * 켤 때 한 번만 정하는 것이 중요하다. 요청마다 다시 지으면 그 값이
+   * 흔들릴 수 있고, 흔들리는 순간 캐시는 매번 새로 엮인다.
+   */
+  전선붙이기(conn, ctx.배움);
+  /*
+   * 이 대화의 이름. 게이트웨이에게 「같은 대화다」 라고 알려 준다.
+   *
+   * 안 보내면 요청마다 새 세션이 열린다 — 대시보드에 한 대화가 열 줄로
+   * 흩어지고, 세션에 묶인 캐시가 있다면 그것도 매번 새로 엮인다.
+   * 담기는 것은 대화 번호 하나뿐이다(경로·주소·열쇠는 안 들어간다).
+   */
+  session.세션이름 = 세션이름짓기(store?.id);
+  conn.세션이름 = session.세션이름;
+
+  /*
    * 모델 카드 (agent/card.js).
    *
    * 겪어 본 버릇을 **하네스 설정으로** 바꾼다. 프롬프트에 "이렇게 해라" 고 적는
@@ -1779,12 +1801,35 @@ export async function chatLoop(opts = {}) {
               : `  ${c.yellow('↻')} ${c.gray(`${ev.why} — 상한을 ${ev.from} → ${ev.to} 로 올려 다시 부릅니다`)}`);
             break;
 
-          // 서버가 잠깐 막아서 기다렸다 다시 부르는 자리 (backend/retry.js).
-          // 상태 코드·몇 초·몇 번째를 그대로 적는다 — 왜 느린지가 여기서만 읽힌다.
-          // 쉬움 수준에서도 숫자를 뺀 채 내지 않는다. 429 는 설명이 필요한 숫자가 아니다.
+          /*
+           * 이 알림이 「맞고 나서 물러난 것」 인가, 「맞기 전에 비킨 것」 인가.
+           *
+           * 화면 말이 달라야 한다. 물러난 것은 서버가 우리를 막은 것이고, 비킨 것은
+           * 우리가 아직 안 보낸 것이다. 둘을 같은 말로 적으면 「서버가 잠시
+           * 막았습니다 (HTTP 429) — 12초 뒤 다시 부릅니다 (0/0)」 처럼, 있지도 않은
+           * 429 와 뜻 없는 (0/0) 이 화면에 남는다.
+           *
+           * 물러난 쪽은 상태 코드·몇 초·몇 번째를 그대로 적는다 — 왜 느린지가
+           * 여기서만 읽힌다. 쉬움 수준에서도 숫자를 빼지 않는다. 429 는 설명이
+           * 필요한 숫자가 아니다.
+           */
           case 'backoff':
             clearThinking();
-            say(`  ${c.yellow('↻')} ${c.gray(옮긴말('loop.backoff', 알림채움(ev)))}`);
+            say(ev.미리
+              ? `  ${c.yellow('⏸')} ${c.gray(옮긴말('loop.quotaAhead', { 초: 알림채움(ev).초 }))}`
+              : `  ${c.yellow('↻')} ${c.gray(옮긴말('loop.backoff', 알림채움(ev)))}`);
+            break;
+
+          /*
+           * 서버가 안 받는 칸이 있어 전선 카드를 고쳤다 (backend/wire.js).
+           *
+           * 이 자리가 없으면 사람은 그 턴이 왜 한 번 더 걸렸는지 모른다.
+           * 그리고 이건 조용히 지나갈 일이 아니다 — 무엇을 배웠는지 남아야
+           * 같은 게이트웨이를 쓰는 다음 사람에게 말해 줄 수 있다.
+           */
+          case 'wire':
+            clearThinking();
+            say(`  ${c.cyan('⚙')} ${c.gray(옮긴말('loop.wire', { 무엇: ev.무엇 }))}`);
             break;
 
           case 'waiting':
@@ -2248,6 +2293,30 @@ export async function chatLoop(opts = {}) {
             say(ev.why === '요청누락'
               ? `  ${c.gray(`↺ 시킨 것 ${ev.빠진?.length ?? 0}가지를 빼놓고 끝내려고 해서 되밀었습니다`)}`
               : `  ${c.gray('↺ 읽기만 하고 끝내려고 해서 한 번 되밀었습니다')}`);
+            break;
+
+          /*
+           * 모델이 안 하겠다고 했다 (agent/loop.js 의 거절).
+           *
+           * 이 자리가 없으면 화면에는 답 한 줄만 남고, 사람은 그것을 「짧게
+           * 답한 것」 으로 읽는다. 그리고 같은 말을 다시 친다 — 판정이 같으니
+           * 또 거절이고, 요금만 두 배가 된다. 거절은 거절이라고 적는다.
+           */
+          case 'refusal':
+            clearThinking();
+            if (streamed) { 답비우기(); say(''); streamed = false; }
+            만든파일보이기(ev.files);
+            say('');
+            say(`  ${c.yellow(mark.no)} ${c.gray(옮긴말('run.refusal'))}`);
+            if (ev.왜 && ev.왜 !== 'refusal') say(`     ${c.gray(옮긴말('run.refusalWhy', { 왜: ev.왜 }))}`);
+            break;
+
+          // 루프가 사람에게 알려 둘 것이 있을 때. 여태 이 자리가 없어서
+          // 그냥 사라지고 있었다 — 말할 것이 있어서 보낸 것인데.
+          case 'note':
+            clearThinking();
+            if (streamed) { 답비우기(); say(''); streamed = false; }
+            say(`  ${c.gray(`· ${ev.text}`)}`);
             break;
 
           case 'done':

@@ -40,6 +40,7 @@ import { Audit, 열쇠묻기 } from '../safety/audit.js';
 import { activeProfile, load, resolveKey, homeDir, save as saveCfg } from '../config.js';
 import { 말 as 옮긴말 } from '../i18n/index.js';
 import { 알림채움 } from '../backend/retry.js';
+import { 전선붙이기, 세션이름짓기 } from '../backend/wire.js';
 import { discover } from '../skills/discover.js';
 import { allowEndpoint, setOffline } from '../safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from '../safety/runmode.js';
@@ -260,6 +261,15 @@ export async function acp(opts = {}) {
     };
 
     방.ctx.배움 = new 배움(root, homeDir());
+    /*
+     * 전선 카드와 이 대화의 이름 (backend/wire.js).
+     *
+     * 에디터에서 붙어도 나가는 전선은 같다. 여기만 빼 두면 Zed 로 쓰는
+     * 사람만 캐시가 안 걸리고, 그건 화면 어디에도 안 나타난다.
+     */
+    전선붙이기(conn, 방.ctx.배움);
+    session.세션이름 = 세션이름짓기(store.id);
+    conn.세션이름 = session.세션이름;
     session.배움요약 = 방.ctx.배움.요약(conn.model);
     const 아는배수 = 방.ctx.배움.아는보정(conn.model);
     if (아는배수) { session.보정 = 아는배수; session.보정잰것 = 1; }
@@ -451,6 +461,17 @@ export async function acp(opts = {}) {
               : 옮긴말('ev.nudgeRead')})_\n\n`);
             break;
 
+          // 모델이 안 하겠다고 했다. 에디터 쪽에도 그렇게 적어 둔다 —
+          // 안 적으면 반쪽 답과 구별이 안 되고, 사람은 같은 말을 또 친다.
+          case 'refusal':
+            말하기(`\n\n_(${옮긴말('run.refusal')}${
+              ev.왜 && ev.왜 !== 'refusal' ? ` · ${옮긴말('run.refusalWhy', { 왜: ev.왜 })}` : ''})_\n\n`);
+            break;
+
+          case 'note':
+            말하기(`\n\n_(${ev.text})_\n\n`);
+            break;
+
           case 'learned':
             말하기(`\n\n_(${ev.what === 'ctx'
               ? 옮긴말('ev.learnedCtx', { 한계: ev.limit.toLocaleString() })
@@ -459,7 +480,14 @@ export async function acp(opts = {}) {
 
           // 서버가 잠깐 막아 기다리는 중. 아직 흘러간 글이 없으니 답을 새로 시작하지는 않는다.
           case 'backoff':
-            말하기(`\n\n_(${옮긴말('loop.backoff', 알림채움(ev))})_\n\n`);
+            말하기(`\n\n_(${ev.미리
+              ? 옮긴말('loop.quotaAhead', { 초: 알림채움(ev).초 })
+              : 옮긴말('loop.backoff', 알림채움(ev))})_\n\n`);
+            break;
+
+          // 서버가 안 받는 칸이 있어 전선 카드를 고쳤다 (backend/wire.js).
+          case 'wire':
+            말하기(`\n\n_(${옮긴말('loop.wire', { 무엇: ev.무엇 })})_\n\n`);
             break;
 
           case 'tool_start':

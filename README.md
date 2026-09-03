@@ -537,7 +537,8 @@ Names follow Claude Code / Codex conventions.
 | `/commit [all\|preview\|title]` | Commits only what this session changed; message from the diff and the evidence. **Never pushes** |
 | `/model` | Switch connection / model |
 | `/model card` | Model card — what this model has actually done here, and what deel changed because of it |
-| `/think <level>` | Reasoning level (`off·low·medium·high·max`) |
+| `/think <level>` | Reasoning level (`off·low·medium·high·xhigh·max`) — a rung this endpoint does not accept is lowered to one it does |
+| `/think auto` | Effort follows the request — your setting becomes the **ceiling** |
 | `/think profile <name>` | Per-stage profile (`even·save·deep`) |
 | `/think detail` | Stage table — which stage runs at which level and cap |
 | `/mode <mode>` | Approval policy — how much it asks (`auto` · `confirm` · `strict`) |

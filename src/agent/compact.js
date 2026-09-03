@@ -39,6 +39,23 @@ export const KEEP_RECENT = 4;     // 최근 도구 결과 이만큼은 원문 �
 export const FOLD_MIN = 300;      // 이보다 작으면 접어도 자리가 안 준다 (글자 수)
 export const 접힘표 = '(접힘)';
 
+/*
+ * ── 접기는 **묶음으로** 한다 ────────────────────────────────────────────
+ *
+ * 여태 이 함수는 걸음마다 「최근 넷 빼고 다」 를 접었다. 얼핏 맞는 말인데,
+ * 걸음마다 도구 결과가 하나씩 늘어나므로 실제로 하는 일은
+ * **걸음마다 딱 하나씩 접는 것**이었다.
+ *
+ * 접는다는 것은 이력 가운데 있는 글을 **딴 글로 바꿔치는 것**이다. 그러면
+ * 그 자리부터 뒤가 전부 새 글이 되고, 프리픽스 캐시는 거기서 끊긴다.
+ * 즉 걸음마다 한 줄을 아끼려고 **걸음마다 대화 전체를 다시 보내고 있었다.**
+ * 아끼려던 것보다 훨씬 크게 쓴 셈이다.
+ *
+ * 그래서 문턱을 둔다 — 이만큼 비울 수 있을 때만 접는다. 그러면 접기가
+ * 가끔 크게 일어나고, 그 사이에는 앞머리가 가만히 있는다.
+ */
+export const 최소이득 = 2000;
+
 /** 인자에서 사람이 알아볼 한 조각만 뽑는다. 경로가 제일 쓸모 있다. */
 function 어디(args) {
   if (!args || typeof args !== 'object') return '';
@@ -97,7 +114,7 @@ export function shouldFold(session, at = FOLD_AT) {
  *
  * @returns {{접은것: number, 아낀토큰: number}}
  */
-export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN } = {}) {
+export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, 이득문턱 = 최소이득 } = {}) {
   const ms = session.messages ?? [];
 
   // 호출 쪽에서 이름과 인자를 가져온다. 결과 메시지에는 그게 안 실려 있다.
@@ -137,6 +154,19 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN } 
   const 접을것 = 자리
     .slice(0, Math.max(0, 자리.length - keep))
     .filter((x) => x.글.length >= min && x.i !== 지킬할일);
+
+  /*
+   * 비울 수 있는 양이 문턱에 못 미치면 **이번에는 안 접는다.**
+   *
+   * 한 줄 아끼자고 앞머리를 깨면 그 걸음에 대화가 통째로 다시 나간다.
+   * 모아 두었다가 한 번에 접는 편이 눈에 띄게 싸다. 자리가 정말 모자라면
+   * 80% 에서 요약 압축이 받아 준다 — 안전망은 그쪽에 있다.
+   */
+  const 예상이득 = 접을것.reduce((a, x) => a + estimateTokens(x.글), 0);
+  if (예상이득 < 이득문턱) {
+    return { 접은것: 0, 아낀토큰: 0, 접은것들: [], 미룸: true, 모인것: 예상이득 };
+  }
+
   let 아낀토큰 = 0;
   // 무엇을 버렸는지 이름으로 남긴다.
   //
@@ -158,7 +188,17 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN } 
     };
     const 아낀것 = 전 - estimateTokens(ms[i].content);
     아낀토큰 += 아낀것;
-    접은것들.push({ 도구: 아는것.name, 곳, 줄수, 토큰: Math.max(0, 아낀것) });
+    /*
+     * 자른 표시용 이름(곳)과 **진짜 경로**를 따로 담는다.
+     *
+     * 곳 은 화면에 쓰려고 60자에서 자른 것이라, 이걸로 파일 기억을 지우면
+     * 긴 경로가 안 맞아서 조용히 안 지워진다 — 그러면 접힌 파일을 다시
+     * 읽을 때 「앞에서 읽은 그대로입니다」 만 돌아간다(agent/filemem.js).
+     */
+    const 경로 = typeof 아는것.args?.file_path === 'string'
+      ? 아는것.args.file_path
+      : (typeof 아는것.args?.path === 'string' ? 아는것.args.path : null);
+    접은것들.push({ 도구: 아는것.name, 곳, 경로, 줄수, 토큰: Math.max(0, 아낀것) });
   }
 
   return { 접은것: 접을것.length, 아낀토큰: Math.max(0, 아낀토큰), 접은것들 };

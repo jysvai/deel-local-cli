@@ -101,6 +101,17 @@ export function 벤더(conn) {
     // bedrock-runtime.<리전>.amazonaws.com. amazonaws 아래에는 남의 것도 많아서
     // 앞머리까지 본다 — S3 주소를 Bedrock 으로 읽으면 안 된다.
     if (호스트.startsWith('bedrock') && 호스트.endsWith('.amazonaws.com')) return 'bedrock';
+    /*
+     * mantle 은 amazonaws.com 이 아니라 **api.aws** 아래에 있다.
+     *
+     *   bedrock-mantle.us-east-1.api.aws
+     *
+     * 위 줄만 있으면 이 주소가 Bedrock 으로 안 읽힌다. 그러면 전선 카드가
+     * 회사를 못 정하고(backend/wire.js), 눈금도 캐시 최소 크기도 전부
+     * 「모르는 주소」 취급이 된다 — 즉 mantle 로 붙인 사람만 조용히 손해를
+     * 본다. 여기서도 앞머리를 같이 보는 이유는 위와 같다.
+     */
+    if (호스트.startsWith('bedrock') && 호스트.endsWith('.api.aws')) return 'bedrock';
     if (애저인가(conn?.base)) return 'azure';
     if (호스트 === 'api.openai.com') return 'openai';
   }

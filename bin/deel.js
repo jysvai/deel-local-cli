@@ -227,7 +227,7 @@ function help() {
   say(`    ${c.gray('--level <수준>')}     쉬움(기본) / 개발자`);
   say(`    ${c.gray('--ctx <길이>')}       컨텍스트 길이 직접 지정 (655360 · 640k · 128k). 없으면 서버에 맞춤`);
   say(`    ${c.gray('--max-tokens <길이>')} 한 번에 받을 답 길이 상한 (32k). 큰 파일이 잘리면 올린다 — /out 과 같은 값`);
-  say(`    ${c.gray('--think <수준>')}     off / low / medium(기본) / high / max`);
+  say(`    ${c.gray('--think <수준>')}     off / low / medium(기본) / high / xhigh / max`);
   say(`    ${c.gray('--effort <배분>')}    even(균일) / save(절약, 기본) / deep(깊게)`);
   say(`    ${c.gray('--no-tui')}           입력 상자 없이 줄 화면으로 (파이프·기록·좁은 터미널)`);
   // 실행 모드 셋. 기본이 잠겨 있다는 것을 여기서 분명히 말한다 —

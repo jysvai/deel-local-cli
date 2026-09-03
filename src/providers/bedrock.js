@@ -57,6 +57,23 @@ export const 제공자 = {
       `https://bedrock-runtime.${r}.amazonaws.com/v1`,
       `https://bedrock-runtime.${r}.amazonaws.com/openai/v1`,
       `https://bedrock-mantle.${r}.api.aws/v1`,
+      /*
+       * mantle 의 **Anthropic Messages 창구**.
+       *
+       * 위 셋은 전부 OpenAI 호환 창구다. 그 길로 가면 캐시 표식을 붙일 자리가
+       * 없어서(backend/cachemark.js) 서버가 알아서 잡아 주는 앞머리 말고는
+       * 캐시가 안 걸린다 — 대화가 자랄수록 그만큼 매번 다시 나간다.
+       *
+       * 이 창구는 Anthropic 규격이라 표식을 정식으로 받는다. 생각도
+       * adaptive 로 켤 수 있다. 인증은 Bedrock API 키를 Bearer 로 준다
+       * (문서: inference-messages-api). 그래서 detect 가 이 주소에서는
+       * Bearer 도 같이 두드린다.
+       *
+       * **뒤에 둔다.** 앞의 셋으로 이미 잘 쓰고 있는 사람의 설치가 이 줄
+       * 하나로 다른 창구로 옮겨 가면 안 된다. 골라서 쓰고 싶은 사람은
+       * 주소를 직접 적으면 된다 (docs/ko/models.md).
+       */
+      `https://bedrock-mantle.${r}.api.aws/anthropic/v1`,
     ];
   },
 

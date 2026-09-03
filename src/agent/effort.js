@@ -9,7 +9,18 @@
 
 import { 언어 } from '../i18n/index.js';
 
-export const LEVELS = ['off', 'low', 'medium', 'high', 'max'];
+/*
+ * 눈금이 여섯이다.
+ *
+ * `xhigh` 가 늘었다. Claude 계열이 실제로 받는 눈금이 low·medium·high·xhigh·
+ * max 다섯인데, 우리 눈금이 넷뿐이라 `high` 와 `max` 사이가 통째로 비어
+ * 있었다. 그 사이가 하필 **코딩·에이전트 작업에 제일 잘 맞는 자리**다.
+ *
+ * 받는 곳이 없는 전선에서는 있는 것 중 가장 가까운 아래로 내려간다
+ * (backend/wire.js 의 눈금맞추기). 그러니 눈금을 늘려도 못 받는 서버에서
+ * 400 이 나지 않는다.
+ */
+export const LEVELS = ['off', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 /*
  * 단계 이름은 화면에 그대로 나간다. 그래서 영어 이름을 여기 같이 둔다 —
@@ -105,11 +116,111 @@ export function shiftLevel(level, by) {
 /**
  * 이번 호출에 쓸 강도.
  * off 는 사람이 "생각 끄기" 를 고른 것이므로 어떤 단계에서도 켜지 않는다.
+ *
+ * `고정` 은 **단계별로 안 움직인다** 는 뜻이다. 바깥 모델에 붙었을 때 켠다.
+ *
+ *   왜: 생각 설정이 요청마다 달라지면 그 자체로 캐시가 깨진다. 걸음마다
+ *   plan → work → fix 로 눈금을 옮기면, 걸음마다 대화 전체가 다시 나간다.
+ *   한 걸음 얕게 생각해서 아끼는 것보다 60k 짜리 앞머리를 다시 보내는 값이
+ *   훨씬 크다. 로컬 모델은 자기 KV 캐시를 쓰고 토큰 값을 따로 안 내므로
+ *   여태 하던 대로 단계별로 움직인다.
  */
-export function effortFor(base, profileKey, stage) {
+export function effortFor(base, profileKey, stage, { 고정 = false } = {}) {
   if (base === 'off') return 'off';
+  if (고정) return base;
   const p = PROFILES[normalizeProfile(profileKey) ?? 'save'];
   return shiftLevel(base, p.shift[stage] ?? 0);
+}
+
+/*
+ * ── 시킨 말에 따라 강도를 고른다 ────────────────────────────────────────
+ *
+ * `/think max` 는 「언제나 max 로 생각해라」 가 아니라 「필요하면 max 까지
+ * 써도 된다」 는 뜻이다. 사람이 정한 값은 **천장**이지 고정값이 아니다.
+ *
+ * 「안녕」 한 마디에 max 로 생각하면 답이 느려지고 값만 나간다. 생각 토큰은
+ * 출력 단가로 나가서, 그 한 마디가 실제로 제일 비싼 토큰이 된다.
+ *
+ * ── 언제 안 움직이나 ────────────────────────────────────────────────────
+ *
+ * 대화가 이미 쌓였으면 **천장 그대로 둔다.** 강도가 바뀌면 캐시가 깨지는데,
+ * 60k 짜리 앞머리를 다시 보내는 값이 짧은 턴 하나에서 아끼는 값보다 훨씬
+ * 크기 때문이다. 아끼자고 한 일이 더 쓰는 일이 되면 안 된다.
+ */
+
+/** 대화가 이만큼 쌓이면 강도를 더 안 움직인다 — 그때부터는 캐시가 더 비싸다. */
+export const 유지문턱 = 8;
+
+/** 인사·맞장구. 시킨 일이 없으면 깊이 생각할 것도 없다. */
+export const 인사말 = /^(안녕[가-힣]*|반(가|갑)[가-힣]*|하이|ㅎㅇ+|헬로[우가-힣]*|고마[가-힣]*|감사[가-힣]*|수고[가-힣]*|hi|hello|hey|yo|thanks?|thank you|테스트|test|ok(ay)?|네|응)[\s!.~?ㅎㅋ,]*$/i;
+
+export function 인사인가(글) {
+  return 인사말.test(String(글 ?? '').trim());
+}
+
+/** 일을 시키는 말인가 — 이게 있으면 가벼운 턴이 아니다. */
+const 일하는말 = /고쳐|고치|만들|수정|추가|삭제|지워|구현|리팩|바꿔|정리|실행|돌려|테스트|빌드|배포|커밋|설치|분석|찾아|검토|계획|write|edit|create|fix|add|remove|delete|implement|refactor|run|build|deploy|commit|install|analy[sz]e|review|plan/i;
+/** 경로·파일 이름·지목(@)이 보이면 코드를 만지는 턴이다. */
+const 경로같은것 = /[\\/]|@|\.(js|mjs|cjs|ts|tsx|jsx|py|java|kt|go|rs|rb|php|cs|c|h|cpp|md|json|ya?ml|toml|css|html|sh|ps1|sql)\b/i;
+
+/**
+ * 깊이 생각할 것 없는 가벼운 말인가.
+ *
+ * 넉넉하게 잡는다 — 헷갈리면 「가볍지 않다」 쪽이다. 잘못 낮추면 진짜 일이
+ * 얕게 처리되는데, 그 손해가 토큰 몇 푼보다 훨씬 크다.
+ */
+export function 가벼운가(글) {
+  const s = String(글 ?? '').trim();
+  if (!s) return false;
+  if (인사인가(s)) return true;
+  if (s.length > 60) return false;
+  if (일하는말.test(s) || 경로같은것.test(s)) return false;
+  // 줄이 여럿이면 붙여넣은 것이다 — 짧아 보여도 가벼운 말이 아니다.
+  if (s.includes('\n')) return false;
+  return true;
+}
+
+/**
+ * 이번 턴의 기준 강도.
+ *
+ * @param {string} 요청     사람이 이번에 친 말
+ * @param {string} 천장     사람이 정한 강도 (이보다 위로는 절대 안 간다)
+ * @param {object} o
+ * @param {number} o.대화크기  지금까지 쌓인 메시지 수 (캐시를 지킬지 정한다)
+ * @param {boolean} o.켜짐    자동 조절을 쓰나 (`/think auto` 로 끈다)
+ */
+export function 자동강도(요청, 천장, { 대화크기 = 0, 켜짐 = true } = {}) {
+  const 기준 = LEVELS.includes(천장) ? 천장 : 'medium';
+  if (!켜짐 || 기준 === 'off') return 기준;
+  const s = String(요청 ?? '').trim();
+  if (!s) return 기준;
+  // 대화가 쌓인 뒤에는 안 움직인다. 캐시를 지키는 쪽이 이긴다.
+  if (대화크기 >= 유지문턱) return 기준;
+  if (!가벼운가(s)) return 기준;
+  const 바라는것 = 인사인가(s) ? 'low' : 'medium';
+  // 천장 위로는 안 올린다 — 사람이 낮게 잡아 뒀으면 그 뜻을 지킨다.
+  return 아래로만(바라는것, 기준);
+}
+
+/** 천장 아래로만 내린다. 위로는 절대 안 간다. */
+function 아래로만(바라는것, 천장) {
+  return LEVELS.indexOf(바라는것) < LEVELS.indexOf(천장) ? 바라는것 : 천장;
+}
+
+/**
+ * 이 천장에서 **가벼운 말**이 받게 될 강도.
+ *
+ * `/think` 화면이 「max 라고 정했는데 왜 medium 인가」 에 답하려면 이 값이
+ * 필요하다. 여태는 화면이 빈 글로 자동강도()를 불러서 늘 천장이 돌아왔고,
+ * 그래서 「가벼운 말은 max 까지 낮춰 씁니다」 라는 말이 안 되는 줄이 떴다.
+ *
+ * 여기서 실제로 나가는 값을 셈하지는 않는다 — 그건 사람이 무엇을 치느냐에
+ * 달렸다. 이 함수가 답하는 것은 **가장 낮게 갈 수 있는 자리**다.
+ */
+export function 가벼운강도(천장, { 켜짐 = true } = {}) {
+  const 기준 = LEVELS.includes(천장) ? 천장 : 'medium';
+  if (!켜짐 || 기준 === 'off') return 기준;
+  return 아래로만('low', 기준);
 }
 
 /**

@@ -475,7 +475,8 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 | `/commit [전부\|미리보기\|제목]` | 이번 대화가 바꾼 것만 담아 커밋. 메시지는 diff 와 증거에서. **push 는 안 합니다** |
 | `/model` | 연결·모델 바꾸기 |
 | `/model 카드` | 이 모델을 겪어 본 결과 — 그래서 deel 이 무엇을 바꿔 뒀는지 |
-| `/think <강도>` | 추론 강도 (`off·low·medium·high·max`) |
+| `/think <강도>` | 추론 강도 (`off·low·medium·high·xhigh·max`) — 창구가 안 받는 칸은 받는 값으로 낮춰 보냅니다 |
+| `/think auto` | 시킨 말에 맞춰 강도를 고릅니다 — 정한 값이 **천장**이 됩니다 |
 | `/think 배분 <배분>` | 단계별 배분 (`균일·절약·깊게`) |
 | `/think 자세히` | 단계표 — 어느 단계를 어떤 강도·상한으로 도는지 |
 | `/mode <모드>` | 승인 정책 — 얼마나 물어보나 (`auto` · `confirm` · `strict`) |

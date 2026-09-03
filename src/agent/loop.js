@@ -5,7 +5,8 @@ import { 그림메시지 } from '../backend/vision.js';
 import { 어떻게할까 } from '../safety/policy.js';
 import { toolSchemas, runTool, TOOLS, 파일현황 } from '../tools/index.js';
 import { isMutating } from '../safety/guard.js';
-import { effortFor, tokensFor, fullCap, wasCut, shiftLevel } from './effort.js';
+import { effortFor, tokensFor, fullCap, wasCut, shiftLevel, 자동강도, 인사인가 as 인사말인가 } from './effort.js';
+import { 배울전선, 카드고치기, 카드저장꼴, 전선붙이기 } from '../backend/wire.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
 import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박을것 } from './compact.js';
@@ -249,6 +250,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   // 이번 턴에 서버에게서 한계를 배웠나. 배웠는데도 또 거절당하면 다른 문제다 —
   // 그때는 끝없이 다시 부르지 않고 오류를 그대로 보여 준다.
   let 배운적 = false;
+  /*
+   * 이번 턴에 **전선 모양**을 배운 적이 있나 (backend/wire.js).
+   *
+   * 한계(숫자)와는 다른 축이다. 이쪽은 「무슨 칸을 보내면 안 되나」 다 —
+   * Opus 5 에 budget_tokens 를 보내면 400 이고, 그 400 은 화면에서 열쇠가
+   * 틀린 것과 구별이 안 된다. 한 번 배우면 카드에 적고 다시 안 밟는다.
+   * 한 턴에 한 번뿐이다 — 고치고도 또 거절당하면 다른 탈이다.
+   */
+  let 전선배운적 = false;
   // 이번 턴에 자리가 없어 기억을 비운 적이 있나. 한 턴에 한 번뿐이다 —
   // 비우고도 또 막히면 자리 문제가 아니라 다른 탈이다.
   let 비운적 = false;
@@ -355,7 +365,32 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   // 모드마다 생각의 배분과 걸음 수가 다르다. 사용자가 따로 정했으면 그걸 존중한다.
   const 모드 = workMode(session.effectiveWork());
   const effort = session.effortSet ? session.effort : (모드.effort ?? session.effort);
-  const think = session.thinkSet ? session.think : (모드.think ?? session.think);
+  /*
+   * ── 강도는 **천장**이고, 이번 턴 값은 시킨 말이 정한다 (agent/effort.js) ──
+   *
+   * `/think max` 는 「언제나 max」 가 아니라 「max 까지 써도 된다」 는 뜻이다.
+   * 「안녕」 한 마디에 max 로 생각하면 느려지고 값만 나간다 — 생각 토큰은
+   * 출력 단가로 나가서, 그 한 마디가 그 세션에서 제일 비싼 토큰이 된다.
+   *
+   * 대화가 쌓인 뒤에는 안 움직인다. 강도가 바뀌면 캐시가 깨지는데, 그때는
+   * 앞머리를 다시 보내는 값이 아끼는 값보다 크다.
+   *
+   * 한 번 정하면 이 턴 안에서는 안 바꾼다. while 바깥에서 정하는 것이 그
+   * 뜻이다 — 걸음마다 흔들리면 그것이 곧 캐시가 매번 새로 엮인다는 말이다.
+   */
+  const 천장 = session.thinkSet ? session.think : (모드.think ?? session.think);
+  const think = 자동강도(userText, 천장, {
+    대화크기: session.messages.length,
+    켜짐: session.autoThink !== false,
+  });
+  /*
+   * 바깥 모델에서는 단계별로도 안 움직인다.
+   *
+   * 로컬은 자기 KV 캐시를 쓰고 토큰 값을 따로 안 내므로 여태처럼 첫 판단만
+   * 세게, 이어가기는 얕게 간다. 바깥은 그 배분 하나가 걸음마다 요청을
+   * 바꿔 놓아 캐시를 깬다.
+   */
+  const 강도고정 = 바깥으로나감;
   /*
    * 걸음 수 상한은 **모델에 맞춰** 정한다 (budget.js).
    *
@@ -412,8 +447,14 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 되밀기는 「시킨 일을 안 하고 되돌려준」 자리를 잡으라고 만든 것인데,
    * 인사는 시킨 일이 없다. 시킨 것이 없으면 안 한 것도 없다.
    */
-  const 인사인가 = /^(안녕[가-힣]*|반(가|갑)[가-힣]*|하이|ㅎㅇ+|헬로[우가-힣]*|고마[가-힣]*|감사[가-힣]*|수고[가-힣]*|hi|hello|hey|yo|thanks?|thank you|테스트|test|ok(ay)?|네|응)[\s!.~?ㅎㅋ,]*$/i
-    .test(String(userText ?? '').trim());
+  /*
+   * 무엇이 인사인지는 agent/effort.js 가 한 벌만 들고 있다.
+   *
+   * 여기와 거기가 각자 규칙을 들고 있으면 언젠가 갈라진다 — 한쪽은 인사로
+   * 보고 강도를 낮추는데 다른 쪽은 인사가 아니라고 되미는, 설명하기 어려운
+   * 화면이 된다.
+   */
+  const 인사인가 = 인사말인가(userText);
   const 되묻는말 = /무엇을\s*도와|무엇을\s*해\s*드릴|원하시는\s*(작업|것)|어떤\s*(작업|것)\s*(을|부터)|말씀해\s*주세요|알려\s*주세요|지시해\s*주세요|어떻게\s*할까요|해\s*드릴까요|진행할까요|what would you like|how can i (help|assist)|let me know (what|which|how)|shall i\b|would you like me to/i;
 
   /** 이번 답을 되밀까. 밀 이유를 돌려주고, 아니면 null. */
@@ -512,7 +553,18 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
      */
     if (shouldFold(session)) {
       const f = foldToolResults(session);
-      if (f.접은것) yield { type: 'folded', ...f };
+      if (f.접은것) {
+        /*
+         * 접힌 파일은 **기억에서도 지운다** (agent/filemem.js).
+         *
+         * 내용은 접혀 사라졌는데 「이미 읽었다」 는 표만 남으면, 그 파일을
+         * 다시 읽을 때 「앞에서 읽은 그대로입니다」 가 돌아간다 — 모델은
+         * 대화 어디에도 없는 글을 가리키는 쪽지를 받고, 결국 또 읽는다.
+         * 같은 파일을 두 번 읽는 자리가 여기였다.
+         */
+        for (const x of f.접은것들 ?? []) if (x.경로) session.파일기억?.잊기(x.경로);
+        yield { type: 'folded', ...f };
+      }
       // 그림은 사람 말 자리에 실려서 위 접기가 못 건드린다. 따로 뺀다.
       const g = foldImages(session);
       if (g.뺀것) yield { type: 'images_folded', ...g };
@@ -578,7 +630,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     ctx.배움?.모델본것(conn.model, '걸음');
     // 단계마다 필요한 생각의 양이 다르다. effort.js 가 그 배분을 갖고 있다.
     const stage = steps === 1 ? 'plan' : lastToolFailed ? 'fix' : 'work';
-    const level = effortFor(think, effort, stage);
+    const level = effortFor(think, effort, stage, { 고정: 강도고정 });
     // 상한은 모델 컨텍스트와 지금 찬 양에서 계산한다. 고정 숫자가 아니다.
     // 출력 상한을 아는 값이 둘 있다 — 사용자가 정한 것(/out)과 서버에서 알아낸 것.
     // 사람이 정한 것이 먼저다. 둘 다 없으면 null 이고, 그때만 effort.js 의 MAX_CAP 에 선다.
@@ -593,7 +645,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     const cap = 이카드?.조정?.상한먼저올리기
       ? Math.max(tokensFor(effort, stage, room), fullCap(room))
       : tokensFor(effort, stage, room);
-    yield { type: 'stage', stage, level, cap, step: steps };
+    // 천장도 같이 알려 준다 — 화면이 「max 라고 정했는데 왜 medium 인가」 에
+    // 답할 수 있어야 한다. 안 그러면 자동 조절이 고장으로 보인다.
+    yield { type: 'stage', stage, level, cap, step: steps, 천장, 고정: 강도고정 };
 
     const ask = (maxTokens, think) => ({
       messages: session.wire(),
@@ -805,6 +859,30 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       }
 
       /*
+       * ── 서버가 「그 칸은 안 받는다」 고 하면 카드를 고친다 ────────────────
+       *
+       * 규격을 하나하나 아는 방식으로는 못 따라간다. 그런데 서버는 거절할 때
+       * **무엇이 안 되는지 그대로 말해 준다** — "budget_tokens is not
+       * supported", "reasoning_effort must be one of: minimal, low, medium,
+       * high". 그 한 줄이면 짐작을 그만두고 사실로 갈아탈 수 있다.
+       *
+       * 걸음은 안 센다. 아직 일은 시작도 안 했고, 고친 값으로 다시 부르는
+       * 것이 이 자리의 전부다 (위 '배우기' 와 같은 셈법).
+       */
+      const 전선고침 = 배울전선(err.serverMessage ?? err.message);
+      if (전선고침 && !전선배운적) {
+        전선배운적 = true;
+        conn.전선 = 카드고치기(conn.전선, 전선고침);
+        try { ctx.배움?.전선본것?.(conn.model, conn.base, 카드저장꼴(conn.전선)); } catch { /* 못 적어도 이번 대화에는 먹는다 */ }
+        yield {
+          type: 'wire', 무엇: 전선고침.무엇, 값: 전선고침.값,
+          from: 짧게말(err.serverMessage ?? err.message),
+        };
+        steps--;
+        continue;
+      }
+
+      /*
        * ── 자리가 다 찼으면, 턴을 죽이지 말고 비우고 이어 간다 ──────────────
        *
        * 여기가 사용자가 이름 대어 말한 자리다 — "current 가 다 차서 막힐 경우,
@@ -885,6 +963,18 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
 
     session.usage.in += msg.usage?.in ?? 0;
     session.usage.out += msg.usage?.out ?? 0;
+    // 캐시가 얼마나 맞았나. 읽기와 쓰기를 따로 센다 — 「매번 쓰기만 하고 한
+    // 번도 못 읽는」 것과 「잘 읽고 있는」 것은 완전히 다른 상태다.
+    session.usage.cacheRead = (session.usage.cacheRead ?? 0) + (msg.usage?.cacheRead ?? 0);
+    session.usage.cacheWrite = (session.usage.cacheWrite ?? 0) + (msg.usage?.cacheWrite ?? 0);
+    /*
+     * 답 토큰 중 **생각에 쓴 몫**. 알려 주는 창구에서만 값이 온다.
+     *
+     * 이 값이 `/think` 를 높게 잡아 둔 대가를 눈에 보이게 한다. 안 알려 주는
+     * 창구에서는 0 으로 남고, 0 이면 `/cost` 가 줄 자체를 안 적는다 — 모르는
+     * 것을 0 으로 적으면 「생각을 안 했다」 로 읽힌다.
+     */
+    session.usage.reasoning = (session.usage.reasoning ?? 0) + (msg.usage?.reasoning ?? 0);
     session.usage.calls++;
 
     /*
@@ -898,6 +988,32 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     if (새보정) ctx.배움?.보정본것(conn.model, 새보정);
 
     session.push(assistantMessage(conn.kind, msg));
+
+    /*
+     * ── 안전 판정으로 거절당했다. 여기서 멈춘다 ────────────────────────
+     *
+     * `stop_reason: 'refusal'` 은 **답이 짧은 것이 아니라 안 하겠다는 것**이다.
+     * 그런데 이 답에는 대개 도구 호출이 없어서, 아래 `밀어줄까` 가 「읽기만
+     * 하고 끝내려 한다」 로 읽고 한 번 더 밀었다. 밀어도 판정은 같으니 또
+     * 거절이고, 그게 걸음 수만큼 되풀이됐다.
+     *
+     * 그 되풀이가 곧 요금이다 — 한 번 거절당할 요청 하나가 열 번 나가고,
+     * 그 열 번이 분당 한도를 밀어 올려 그 다음 진짜 요청이 429 를 받는다.
+     * 「호출 한도 초과」 가 여기서도 만들어졌다.
+     *
+     * 그래서 거절은 되밀지 않고 그 자리에서 끝낸다. 사람이 무엇을 다시
+     * 칠지는 사람이 정할 일이지, 같은 말을 열 번 더 보내서 알아낼 일이 아니다.
+     */
+    if (msg.거절) {
+      yield {
+        type: 'refusal',
+        왜: String(msg.거절?.type ?? 'refusal'),
+        text: msg.content,
+        steps,
+        files: 마무리(),
+      };
+      return;
+    }
 
     if (!msg.toolCalls?.length) {
       const 왜 = 밀어줄까(msg.content);
@@ -1154,6 +1270,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
             continue;
           }
           자식conn = 연결만들기(찾음.prof);
+          /*
+           * 떼어 준 자리에도 전선 카드를 달아 준다 (backend/wire.js).
+           *
+           * 여기를 빼면 다른 모델로 넘긴 일만 캐시도 안 걸리고 생각 칸도
+           * 짐작으로 나간다 — 그리고 그건 화면 어디에도 안 나타난다.
+           * 대화 이름은 부모 것을 그대로 물려준다: 사람이 시킨 것은 하나다.
+           */
+          전선붙이기(자식conn, ctx.배움);
+          자식conn.세션이름 = conn.세션이름 ?? null;
           모델알림 = 알릴말(conn, 자식conn);
           // 그 일이 도는 동안만 연다. 끝나면 반드시 닫는다 — 아래 finally.
           if (모델알림.다른자리) 자리닫기 = allowTemporarily(자식conn.base);

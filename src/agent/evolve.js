@@ -137,6 +137,42 @@ export class 배움 {
     return r?.보정 && r.보정 >= 0.5 && r.보정 <= 2 ? r.보정 : null;
   }
 
+  /*
+   * ── 이 모델이 이 주소에서 받는 전선 모양 (backend/wire.js) ─────────────
+   *
+   * 모델 이름만으로는 못 가른다. 같은 `claude-opus-5` 라도 회사 직통과 사내
+   * 게이트웨이가 받는 것이 다르고, 게이트웨이는 제 나름대로 깎아서 넘긴다.
+   * 그래서 **모델과 주소를 함께** 열쇠로 쓴다.
+   *
+   * 주소는 host 만 쓴다. 경로에는 배포 이름·판 번호 같은 것이 붙어 있고,
+   * 그건 사람이 설정을 조금만 바꿔도 달라져서 배운 것이 매번 새것이 된다.
+   */
+  #전선열쇠(모델, 주소) {
+    let host = '';
+    try { host = new URL(String(주소 ?? '')).host; } catch { host = ''; }
+    return `${String(모델 ?? '').trim()}@${host}`;
+  }
+
+  /** 전선 모양 하나를 적어 둔다. */
+  전선본것(모델, 주소, 카드) {
+    if (!카드) return this;
+    const 열쇠 = this.#전선열쇠(모델, 주소);
+    if (열쇠 === '@') return this;
+    this.집.전선 = this.집.전선 ?? {};
+    this.집.전선[열쇠] = { ...카드, at: this.지금 };
+    줄이기(this.집.전선, 모델최대);
+    this.#저장집();
+    return this;
+  }
+
+  /** 지난번에 알아낸 전선 모양. 없으면 null. */
+  아는전선(모델, 주소) {
+    const r = this.집.전선?.[this.#전선열쇠(모델, 주소)];
+    if (!r || typeof r !== 'object') return null;
+    const { at: _때, ...나머지 } = r;
+    return 나머지;
+  }
+
   #모델칸(모델) {
     const 이름 = String(모델 ?? '').trim();
     if (!이름) return null;

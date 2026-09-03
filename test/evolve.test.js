@@ -153,6 +153,54 @@ trace('7-못써도안죽는다');
   check('저장할 자리가 없어도 프롬프트는 성하다', typeof b.요약('m') === 'string' || b.요약('m') === null);
 }
 
+/*
+ * ── 전선 모양은 모델과 주소를 함께 열쇠로 쓴다 (backend/wire.js) ────────
+ *
+ * 모델 이름만으로는 못 가른다. 같은 `claude-opus-5` 라도 회사 직통과 사내
+ * 게이트웨이가 받는 것이 다르고, 게이트웨이는 제 나름대로 깎아서 넘긴다.
+ * 한 열쇠로 뭉치면 한쪽에서 배운 것이 다른 쪽을 망가뜨린다 — 그리고 그
+ * 고장은 400 으로만 나타나서, 화면에서는 열쇠가 틀린 것과 구별이 안 된다.
+ */
+{
+  const r2 = mkdtempSync(join(tmpdir(), 'deel-wire-'));
+  const h2 = mkdtempSync(join(tmpdir(), 'deel-wire-home-'));
+  const b = new 배움(r2, h2);
+  const 카드 = { 눈금: ['low', 'medium', 'high'], 캐시: 'explicit', 생각형식: 'adaptive' };
+  b.전선본것('claude-opus-5', 'https://api.anthropic.com/v1', 카드);
+
+  check('★ 배운 전선을 다시 읽는다',
+    JSON.stringify(b.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')) === JSON.stringify(카드),
+    JSON.stringify(b.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')));
+
+  /*
+   * 주소는 host 만 본다. 경로에는 배포 이름·판 번호가 붙어서, 사람이 설정을
+   * 조금만 바꿔도 배운 것이 매번 새것이 된다 — 그러면 영영 못 배운 것과 같다.
+   */
+  check('★ 같은 host 면 경로가 달라도 같은 것으로 본다',
+    b.아는전선('claude-opus-5', 'https://api.anthropic.com/v2/뭔가') !== null);
+
+  check('★★ 주소가 다르면 남의 것을 안 준다',
+    b.아는전선('claude-opus-5', 'https://gw.사내.example.com/v1') === null,
+    JSON.stringify(b.아는전선('claude-opus-5', 'https://gw.사내.example.com/v1')));
+  check('모델이 다르면 안 준다',
+    b.아는전선('gpt-5', 'https://api.anthropic.com/v1') === null);
+
+  // 다시 켰을 때 그대로 있어야 뜻이 있다. 안 그러면 세션마다 같은 400 을 다시 맞는다.
+  const 다시 = new 배움(r2, h2);
+  check('★ 껐다 켜도 남아 있다',
+    JSON.stringify(다시.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')) === JSON.stringify(카드),
+    JSON.stringify(다시.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')));
+
+  // 빈 것으로 부르면 아무 일도 안 한다 — 못 배운 것을 배운 척하면 안 된다.
+  const 전 = JSON.stringify(다시.아는전선('claude-opus-5', 'https://api.anthropic.com/v1'));
+  다시.전선본것('claude-opus-5', 'https://api.anthropic.com/v1', null);
+  check('빈 것으로는 안 덮는다',
+    JSON.stringify(다시.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')) === 전);
+
+  rmSync(r2, { recursive: true, force: true });
+  rmSync(h2, { recursive: true, force: true });
+}
+
 rmSync(root, { recursive: true, force: true });
 rmSync(home, { recursive: true, force: true });
 

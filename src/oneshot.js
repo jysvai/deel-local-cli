@@ -22,6 +22,8 @@ import { Audit, 열쇠묻기 } from './safety/audit.js';
 import { activeProfile, load, resolveKey, 잠금소식, 열쇠탈소식 } from './config.js';
 import { 말 as 옮긴말 } from './i18n/index.js';
 import { 알림채움 } from './backend/retry.js';
+import { 전선붙이기, 세션이름짓기 } from './backend/wire.js';
+import { newId } from './agent/store.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
@@ -53,6 +55,17 @@ export const EXIT = {
    * 사람이 나중에 결과를 보고 왜 반쪽인지 되짚을 방법이 없다.
    */
   cutoff: 5,
+  /*
+   * 모델이 안 하겠다고 했다 (안전 판정).
+   *
+   * 이것도 자기 코드가 있어야 한다. 거절한 답은 **아무 일도 안 한 답**인데,
+   * 도구 호출이 없다는 것 말고는 짧은 답과 겉모습이 같다. 0 으로 끝내면
+   * 뒤에 붙은 스크립트는 일이 된 줄 알고 그 다음 단계로 넘어간다.
+   *
+   * 오류(1)와도 갈라 둔다. 고칠 자리가 다르기 때문이다 — 오류는 연결이나
+   * 열쇠를 보는 일이고, 거절은 **시킨 말을 바꾸는 일**이다.
+   */
+  refusal: 6,
 };
 
 /**
@@ -226,6 +239,18 @@ export async function runOnce(opts = {}) {
   // 지금 어느 실행 모드인가. 화면이 첫 줄에 이걸 그린다(ui/status.js).
   // session 에 실어 두는 까닭은, 대화 도중 /model 로 옮겨도 같은 자리를 보게 하려는 것이다.
   session.실행모드 = 실행모드;
+
+  /*
+   * 전선 카드와 이 실행의 이름 (backend/wire.js).
+   *
+   * 여기는 배운 것을 읽을 자리가 없다(배치는 대화 이력을 안 들고 돈다).
+   * 그래도 짐작만으로 충분하다 — 짐작이 틀리면 첫 400 에서 그 자리 안에
+   * 고쳐서 다시 부른다. 이름을 실어 보내는 것은 한 번의 실행이 게이트웨이
+   * 대시보드에서 한 줄로 묶이게 하려는 것이다.
+   */
+  전선붙이기(conn);
+  session.세션이름 = 세션이름짓기(newId());
+  conn.세션이름 = session.세션이름;
 
   const found = discover(root);
   session.skills = found.skills;
@@ -408,7 +433,16 @@ export async function runOnce(opts = {}) {
         // 서버가 잠깐 막아서 기다렸다 다시 부른 자리 (backend/retry.js).
         // 배치 기록에 남아야 "그날 밤 왜 12분이 걸렸나" 를 나중에 읽을 수 있다.
         case 'backoff':
-          곁(`  ${c.yellow('↻')} ${c.gray(옮긴말('loop.backoff', 알림채움(ev)))}`);
+          // 맞고 물러난 것과 맞기 전에 비킨 것은 다른 일이다. 같은 말로 적으면
+          // 있지도 않은 429 가 배치 기록에 남는다.
+          곁(ev.미리
+            ? `  ${c.yellow('⏸')} ${c.gray(옮긴말('loop.quotaAhead', { 초: 알림채움(ev).초 }))}`
+            : `  ${c.yellow('↻')} ${c.gray(옮긴말('loop.backoff', 알림채움(ev)))}`);
+          break;
+
+        // 서버가 안 받는 칸이 있어 전선 카드를 고쳤다 (backend/wire.js).
+        case 'wire':
+          곁(`  ${c.cyan('⚙')} ${c.gray(옮긴말('loop.wire', { 무엇: ev.무엇 }))}`);
           break;
 
         case 'folded':
@@ -457,6 +491,25 @@ export async function runOnce(opts = {}) {
           곁(`  ${c.gray(`↺ ${ev.why === '요청누락'
             ? 옮긴말('ev.nudgeMissed', { n: ev.빠진?.length ?? 0 })
             : 옮긴말('ev.nudgeRead')}`)}`);
+          break;
+
+        /*
+         * 모델이 안 하겠다고 했다.
+         *
+         * 화면에만 적고 종료코드는 0 으로 두면, 뒤에 붙은 스크립트가 일이
+         * 된 줄 알고 다음 단계로 넘어간다. 거절은 **아무 일도 안 한 것**이라
+         * 그렇게 넘어가면 안 된다. 여기서 곧바로 정한다 — 이 뒤에는 done 이
+         * 안 온다(루프가 그 자리에서 끝낸다).
+         */
+        case 'refusal':
+          reason = 'refusal';
+          why = 옮긴말('run.refusal');
+          곁(`  ${c.yellow('⚠')} ${c.gray(옮긴말('run.refusal'))}`);
+          if (ev.왜 && ev.왜 !== 'refusal') 곁(`     ${c.gray(옮긴말('run.refusalWhy', { 왜: ev.왜 }))}`);
+          break;
+
+        case 'note':
+          곁(`  ${c.gray(`· ${ev.text}`)}`);
           break;
 
         // 자리가 다 차서 비웠다. 오류가 아니라 이어 가는 중이라, 종료코드는 안 건드린다.

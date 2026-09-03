@@ -8,7 +8,179 @@ Per-stage effort, the prefix cache, context length, reply-length cap
 
 ## Reasoning effort
 
-<sub>Context length is read off the model · /out · Truncated tool calls · When the server pushes back</sub>
+<sub>The wire card · Cache marks · Effort follows the request · Context length is read off the model · /out · Truncated tool calls · When the server pushes back</sub>
+
+### The wire card — what this model actually accepts at this address
+
+Two endpoints can speak the same protocol and still accept different fields. So deel
+settles on one **wire card** when the session opens and sends with that card for the
+rest of the session. `/status` and `/think` both show it as one line.
+
+```
+  wire       thinking adaptive · rungs low·medium·high·xhigh·max · cache marked
+```
+
+| Field | Meaning |
+|---|---|
+| thinking | How thinking is switched on — `adaptive` · `budget_tokens` · `reasoning_effort` · `on/off` |
+| rungs | The effort words this endpoint accepts |
+| cache | Who catches the cache — `marked` (we attach it) · `key` · `server-side` · `none` |
+
+The card is settled in three steps, the same way deel works out context length.
+
+1. **Guess** — from the vendor in the address and the version in the model name
+2. **Learn** — when the server answers `400`, read what it refused out of the message
+3. **Keep** — write it down per model and address, and start there next time
+
+When it learns, one line appears and the request goes out again with the fixed card.
+
+```
+  ⚙ The server does not take that field — retrying with it adjusted (thinking)
+```
+
+**Nothing extra is sent to an address deel does not recognize.** Corporate gateways
+commonly answer `400` to a single unknown field. If "broaden compatibility" turned into
+"guess extra fields at unknown endpoints," a working install would die on an upgrade.
+So when the vendor is unknown, the request body is **byte-for-byte what it was before**
+(`test/wire.test.js` holds that line).
+
+#### Rungs by vendor
+
+| Endpoint | Accepted words |
+|---|---|
+| Claude — Anthropic Messages body (direct · Bedrock mantle) | `low` `medium` `high` `xhigh` `max` |
+| Claude — OpenAI-compatible body (Bedrock runtime) | `minimal` `low` `medium` `high` |
+| OpenAI | `minimal` `low` `medium` `high` |
+| Gemini | `none` `low` `medium` `high` |
+| Azure | `low` `medium` `high` |
+| Ollama | true/false |
+
+**The same vendor follows the body's protocol.** That is why the first two rows differ.
+`xhigh` and `max` go out only on an Anthropic Messages body — whether the
+OpenAI-compatible endpoint accepts those words is not confirmed in the docs, and sending
+an unconfirmed word costs the whole turn a `400`. Narrowing wrongly costs some reasoning;
+widening wrongly costs the turn.
+
+A word this endpoint does not have is lowered to **the nearest one below that it does
+have**. Set `/think max` and connect to OpenAI and `high` goes on the wire.
+**Nothing is ever raised.** If you picked `low` and deel sent `medium`, that is a
+different job than the one you asked for, billed at a number you did not choose.
+
+### Cache marks — stop resending the head
+
+A prompt cache only matches **a prefix**. Something has to say how far that prefix runs,
+and each protocol says it differently.
+
+| Endpoint | How | Left unmarked |
+|---|---|---|
+| Anthropic direct | `cache_control` marks | **Nothing** is cached |
+| Bedrock · Gemini · Azure | The server does it | Only the static head is cached |
+| OpenAI direct | `prompt_cache_key` | It cannot tell this is the same conversation |
+
+Where marks are accepted, deel attaches **two**.
+
+- The end of the **stable half of the system prompt** — this catches the tool schemas too
+- The **last usable block of the conversation** — everything up to here freezes this turn
+
+Past twenty messages it drives one more **anchor** into the middle. The lookback window
+is twenty positions, so without an anchor the whole head goes out again the moment the
+conversation walks past it.
+
+Thinking blocks and empty text never get a mark. Thinking blocks arrive signed and
+touching one gets the whole turn rejected; a mark on empty text is refused outright.
+Below the minimum cacheable size (1,024 on Anthropic, 4,096 on Bedrock) a mark catches
+nothing, so none is attached.
+
+`/cost` shows how much is actually landing.
+
+```
+  Cache      read 48,200 · written 6,100 · 78% hit
+```
+
+**Writes with zero reads** means the head is being rebuilt every single time. `/cost`
+says so in the same place.
+
+The share of output tokens spent on thinking shows up alongside it. That is where the
+price of a high `/think` setting becomes a number.
+
+```
+  Thinking   12,400 tokens · 61% of output
+```
+
+Many endpoints do not report this. When they don't, the line is absent — writing an
+unknown as zero reads as "it did not think," which is not the same fact.
+
+### Effort follows the request — `/think auto`
+
+With `/think max` set, "hi" ran at maximum reasoning. Slow, expensive, and the prefix
+kept shifting underneath it.
+
+Turn `auto` on and your setting becomes a **ceiling**. Light turns come back fast at a
+low rung; real work climbs to the ceiling.
+
+```
+  /think auto        toggle
+  /think             show the current value and the ceiling
+```
+
+| What you typed | What goes out under `/think max` |
+|---|---|
+| `hi` · `thanks` | `low` |
+| `fix src/a.js` | `max` |
+| `yes` after a long conversation | `max` |
+
+That last row is the important one. Short is not automatically light — a bare "yes" can
+be the turn that picks up everything said before it.
+
+**The ceiling is never exceeded.** If you set `/think low`, `medium` never goes out.
+
+On turns that leave the machine, effort is **pinned** for the whole turn. Effort that
+moves between steps is a prefix that moves between steps, and a moving prefix is a cache
+rebuilt every call.
+
+### The session name
+
+Endpoints that catch the cache are told **this conversation is that earlier one**. On the
+Anthropic protocol that rides in `metadata.user_id`; on OpenAI direct it goes out as
+`prompt_cache_key` and `user`.
+
+It carries **the conversation number and nothing else** — no path, no address, no user
+name, no key. Anything that is not already a conversation number is replaced wholesale by
+a fingerprint rather than filtered. Filtering does not look at what survives: strip a path
+and the person's name and folder names are still sitting there.
+
+### A refusal is not pushed again
+
+When the model declines on safety grounds (`stop_reason: refusal`), the turn stops there.
+
+A refusal usually carries no tool call, so deel used to read it as "tried to finish after
+only reading" and push once more. The verdict does not change, so it refused again, and
+that repeated for as many steps as were left. One request that was going to be refused
+went out ten times, and those ten pushed the per-minute limit up until the next real
+request took a `429`.
+
+```
+  ⚠ The model declined this request — stopping here instead of pushing again
+```
+
+`deel run` exits **6** with `reason` set to `refusal`. Exiting `0` would let the next
+step of a script proceed as though the work had happened. It is kept separate from an
+error (`1`) because the fix is different: an error means checking the connection or the
+key, a refusal means **changing what you asked for**.
+
+### Waiting before sending when the quota is empty
+
+Some servers report the remaining quota and the reset time in response headers. While
+that number is zero and the reset time is known, deel waits **before** sending.
+
+```
+  ⏸ Quota is empty — waiting 12s before sending
+```
+
+The outcome matches sending and backing off from a `429`, except no request is wasted.
+That matters because each wasted request pushes the limit up again. If the wait would run
+past a minute, or the reset time is unknown, it just sends — turning "unknown" into
+"wait" stalls requests that would have worked.
 
 ### Context length is read off the model
 

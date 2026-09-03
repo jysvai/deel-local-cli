@@ -65,6 +65,9 @@ exists), Korean identifiers in source (house style — do not "fix" that).
 | **4** | T4-3 | Clipboard image paste (after T2-3) — **done (5787f49)** | Screenshot → Ctrl+V. | S | — |
 | **4** | T4-4 | ACP `session/load` — **done (ba6590c)** | Editors currently open an empty conversation on resume. | M | — |
 | **4** | T4-5 | Screen languages ja / zh — **done (2520cc4)** | Same mechanism as `en`; translation only. | S | — |
+| **0** | T0-3 | Wire card — per-vendor effort rungs, thinking shape, cache marks, session name — **done (1.12.0)** | Measured on Bedrock: cache reads pinned at 5,900 tokens (the static head) from the first request; `cache_control` appeared **zero times** in `src/`. `/think max` reached the wire as `high`; `budget_tokens` went to Opus 5, which rejects it with a `400` indistinguishable from an auth failure. | L | network |
+| **0** | T0-4 | Stop manufacturing call-limit errors — refusals, pre-emptive quota wait, cumulative retry cap — **done (1.12.0)** | A refusal carries no tool call, so the nudge pushed it again for every remaining step: one request that was going to be refused went out ten times, and those ten pushed the per-minute limit until the next real request took a `429`. | M | — |
+| **1** | T1-5 | `/think auto` — effort follows the request, the setting becomes a ceiling — **done (1.12.0)** | With `/think max` set, "hi" ran maximum reasoning: slow, expensive, and the prefix kept shifting between steps. | M | — |
 
 Size: S ≤ 1 day, M 1–3 days, L 3–5 days for one agent including tests and docs.
 
@@ -458,3 +461,4 @@ Weighted 1–10 per axis, pass ≥ 7.0, plateau rule after 3 iterations without 
 | VS Code extension | A separate deliverable with its own import review; terminal + ACP cover editors today. |
 | Auto-update / telemetry | One network destination is the promise. `deel pack` is the distribution path. |
 | Translating tool or argument names | They are identifiers; renaming stops the tool from being called. |
+| Per-turn token or cost cap | Token counts are known only **after** they are spent. Gating on a pre-send estimate fails both ways: generous stops nothing, tight cuts a working long job mid-edit. The step cap and spin detection gate on values that can actually be counted; `/cost` now measures cache reads and writes, and a numeric lock belongs after measurement, not before it. |

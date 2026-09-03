@@ -16,7 +16,14 @@ import { load, save, 저장시도, resolveKey, upsert, 열쇠보관, configPath 
 import { 지금상태 as 지금열쇠상태 } from './safety/authcmd.js';
 import { 제공자고르기 } from './providers/index.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
-import { 말, 언어, 언어들, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
+/*
+ * 화면 말 표.
+ *
+ * `옮긴말` 이라는 이름을 하나 더 둔다. `/think` 처리 자리에서 지역 변수
+ * `말`(사람이 친 인자)이 이 함수를 가리기 때문이다 — 그 블록 안에서는
+ * 화면에 말을 걸 수가 없어서, 여태 그 자리만 한국어가 소스에 박혀 있었다.
+ */
+import { 말, 말 as 옮긴말, 언어, 언어들, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
 import { allowTemporarily } from './safety/network.js';
 import { chat, 규격이름 } from './backend/adapter.js';
@@ -51,7 +58,8 @@ export function 적용하기(고른것) {
   // 지워 버리면, 껐다고 믿는 자리에서 그림이 다시 돈다. 설정용 값은 따로 둔다.
   끔설정(값 === '끔');
 }
-import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable } from './agent/effort.js';
+import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable, 가벼운강도, shiftLevel } from './agent/effort.js';
+import { 전선붙이기, 전선말, 눈금맞추기 } from './backend/wire.js';
 import { scanLocal, toProfiles } from './backend/scan.js';
 import { list as listSessions } from './agent/store.js';
 import { MODES as WORK_MODES, ORDER as WORK_ORDER, DEFAULT as WORK_DEFAULT, normalize as normWork, get as getWork, canWrite, 보일이름, 보일한줄 } from './agent/modes.js';
@@ -296,6 +304,9 @@ export async function handle(line, session, ctx) {
       }
 
       const 새conn = 연결만들기(찾음.prof);
+      // 물어보러 가는 자리에도 전선 카드를 달아 준다 (backend/wire.js) —
+      // 없으면 이 한 번만 생각 칸이 짐작으로 나가고, Opus 5 계열에서는 400 이다.
+      전선붙이기(새conn, ctx?.배움);
       const 알림 = 알릴말(session.conn, 새conn);
       say('');
       say(알림.밖으로
@@ -752,6 +763,23 @@ export async function handle(line, session, ctx) {
 
       if (/^(자세히|detail|-v)$/.test(말)) { showThink(session, { 자세히: true }); return { handled: true }; }
 
+      /*
+       * ── /think auto — 시킨 말에 맞춰 강도를 고를까 ──────────────────
+       *
+       * 켜면 사람이 정한 값은 **천장**이 된다. 「안녕」 한 마디에 max 로
+       * 생각하지 않고, 진짜 일에는 천장까지 쓴다. 대화가 쌓인 뒤에는
+       * 안 움직인다 — 그때는 강도를 바꾸는 값(캐시가 깨진다)이 아끼는
+       * 값보다 크기 때문이다 (agent/effort.js).
+       */
+      if (/^(auto|자동)(\s|$)/.test(말)) {
+        const 값 = 말.replace(/^(auto|자동)\s*/, '').trim().toLowerCase();
+        const 켤까 = 값 === '' ? session.autoThink === false : /^(on|켜|켜기|true)$/.test(값);
+        session.autoThink = 켤까;
+        say(`  ${mark.ok} ${옮긴말(켤까 ? 'think.autoOn' : 'think.autoOff')}`);
+        showThink(session);
+        return { handled: true };
+      }
+
       // 옛 이름 — /think save 처럼 배분 이름을 바로 친 경우.
       const asProfile = normalizeProfile(말);
       if (asProfile) {
@@ -769,9 +797,11 @@ export async function handle(line, session, ctx) {
       }
       session.think = 말;
       session.thinkSet = true;      // 사용자가 직접 정했다 — 작업 모드보다 우선한다
-      say(`  ${mark.ok} 추론 강도 ${c.bold(말)}`);
+      // 여기는 지역 변수 `말`(사람이 친 인자)이 i18n 의 말() 을 가리는 자리라,
+      // 여태 이 두 줄만 한국어가 소스에 박혀 있었다. 옮긴말 로 부른다.
+      say(`  ${mark.ok} ${옮긴말('think.effort')} ${c.bold(말)}`);
       if (!session.conn.think && 말 !== 'off') {
-        say(`     ${c.yellow('이 연결은 모델 층 조절이 적용되지 않습니다.')} ${c.gray('루프 층(도구 호출 상한)으로만 조절됩니다.')}`);
+        say(`     ${c.yellow(옮긴말('think.nomodel'))} ${c.gray(옮긴말('think.nomodel.note'))}`);
       }
       showThink(session);
       return { handled: true };
@@ -920,6 +950,39 @@ export async function handle(line, session, ctx) {
       say(`  ${c.gray(pad(말('cost.calls'), 14))} ${말('unit.calls', { n: session.usage.calls })}`);
       say(`  ${c.gray(pad(말('cost.tokIn'), 14))} ${session.usage.in.toLocaleString()}`);
       say(`  ${c.gray(pad(말('cost.tokOut'), 14))} ${session.usage.out.toLocaleString()}`);
+      /*
+       * ── 캐시가 얼마나 맞았나 ────────────────────────────────────────
+       *
+       * 읽기와 쓰기를 **따로** 적는다. 하나로 뭉치면 「잘 읽고 있다」 와
+       * 「매번 쓰기만 하고 한 번도 못 읽는다」 가 같아 보이는데, 그 둘은
+       * 정반대 상태다. 뒤쪽은 캐시를 켜 놓고 값만 더 내는 것이다.
+       *
+       * 서버가 캐시 수치를 안 주는 자리도 많다. 그때는 줄 자체를 안 적는다 —
+       * 모르는 것을 0 으로 적으면 「캐시가 하나도 안 맞는다」 로 읽힌다.
+       */
+      const 읽힘 = session.usage.cacheRead ?? 0;
+      const 쓰임 = session.usage.cacheWrite ?? 0;
+      if (읽힘 || 쓰임) {
+        const 몫 = session.usage.in > 0 ? Math.round((읽힘 / (session.usage.in + 읽힘)) * 100) : 0;
+        say(`  ${c.gray(pad(말('cost.cache'), 14))} ${말('cost.cacheLine', {
+          읽음: 읽힘.toLocaleString(), 씀: 쓰임.toLocaleString(), 몫: String(몫),
+        })}`);
+        // 쓰기만 있고 읽기가 없으면 표식이 매번 새로 엮이는 것이다. 그건 손해다.
+        if (쓰임 > 0 && 읽힘 === 0) say(`  ${c.gray(pad('', 14))} ${c.yellow(말('cost.cacheColdWarn'))}`);
+      }
+      /*
+       * 답 토큰 중 생각에 쓴 몫. `/think` 를 높게 잡아 둔 대가가 여기 보인다.
+       *
+       * 안 알려 주는 창구가 많다. 0 이면 줄을 안 적는다 — 모르는 것을 0 으로
+       * 적으면 「생각을 안 했다」 로 읽히고, 그건 우리가 모른다는 사실과 다르다.
+       */
+      const 생각몫 = session.usage.reasoning ?? 0;
+      if (생각몫 > 0) {
+        const 비율 = session.usage.out > 0 ? Math.round((생각몫 / session.usage.out) * 100) : 0;
+        say(`  ${c.gray(pad(말('cost.think'), 14))} ${말('cost.thinkLine', {
+          토큰: 생각몫.toLocaleString(), 몫: String(비율),
+        })}`);
+      }
       say(`  ${c.gray(pad(말('cost.toolMs'), 14))} ${말('unit.sec', { n: (session.usage.ms / 1000).toFixed(1) })}`);
       // 서버가 잠깐 막아 다시 부른 횟수. 0 이면 안 적는다 — 없는 일을 줄로 남기면 표만 길어진다.
       if (session.usage.retries) say(`  ${c.gray(pad(말('cost.retries'), 14))} ${말('unit.calls', { n: session.usage.retries })}`);
@@ -978,6 +1041,14 @@ export async function handle(line, session, ctx) {
       if (프록시) say(`  ${c.gray(pad(말('status.proxy'), 10))} ${프록시.url} ${c.gray(`(${프록시.출처})`)}`);
       else if (프록시설정().탈) say(`  ${c.gray(pad(말('status.proxy'), 10))} ${c.yellow(말('status.proxyOff'))} ${c.gray(`— ${프록시설정().탈}`)}`);
       say(`  ${c.gray(pad(말('status.model'), 10))} ${k.model}`);
+      /*
+       * 이 모델이 이 주소에서 **실제로 받는 것** (backend/wire.js).
+       *
+       * 여태 화면과 전선이 다른 말을 할 수 있었다 — `/think max` 를 쳐도
+       * 전선에는 high 가 나가는 식이다. 무엇이 나가는지는 사람이 볼 수
+       * 있어야 한다. 안 보이면 조절이 먹었는지 안 먹었는지 알 길이 없다.
+       */
+      if (k.전선) say(`  ${c.gray(pad(말('status.wire'), 10))} ${c.gray(전선말(k.전선))}`);
       say(`  ${c.gray(pad(말('status.root'), 10))} ${session.root}`);
       // 명령이 어느 셸에서 도는지. "ls 가 왜 안 되지" 의 답이 이 줄에 있다.
       say(`  ${c.gray(pad(말('status.shell'), 10))} ${정한셸().표시}`);
@@ -1728,6 +1799,34 @@ function showThink(session, { 자세히 = false } = {}) {
   const 자세히예 = 한국어 ? '/think 자세히' : '/think detail';
   say('');
   say(`  ${c.gray(말('think.effort'))}  ${c.bold(session.think)}   ${c.gray(`(${단계})`)}`);
+  /*
+   * ── 정한 값과 **실제로 나가는 값**을 같이 보여 준다 ──────────────────
+   *
+   * 여기가 여태 비어 있던 자리다. `/think max` 를 쳐도 전선이 max 를 안
+   * 받으면 high 가 나갔고, 화면에는 그 사실이 어디에도 없었다. 사람은
+   * 세게 생각하라고 시켰다고 믿는다.
+   *
+   * 자동 조절도 같이 적는다. 정한 값이 천장이 되므로, 「max 라고 했는데 왜
+   * medium 인가」 에 답할 수 있어야 한다.
+   */
+  /*
+   * 자동 조절이 **실제로 무언가를 바꿀 때만** 적는다.
+   *
+   * `/think low` 로 정해 둔 사람에게 「가벼운 말은 low 까지 낮춰 씁니다」 는
+   * 아무 말도 아니다 — 이미 low 다. 아무 일도 안 하는 줄을 화면에 남기면
+   * 사람은 그 줄을 읽는 데 시간을 쓰고 아무것도 얻지 못한다.
+   */
+  if (session.autoThink !== false) {
+    const 가장낮게 = 가벼운강도(session.think);
+    if (가장낮게 !== session.think) {
+      say(`  ${c.gray(pad(말('think.auto'), 한국어 ? 8 : 10))}${c.gray(말('think.autoNote', { 천장: session.think, 지금: 가장낮게 }))}`);
+    }
+  }
+  if (session.conn?.전선) {
+    const 나가는것 = 눈금맞추기(session.conn.전선, session.think);
+    say(`  ${c.gray(pad(말('think.wire'), 한국어 ? 8 : 10))}${c.gray(전선말(session.conn.전선))}`
+      + (나가는것 ? `   ${c.gray(말('think.wireSends', { 값: 나가는것 }))}` : ''));
+  }
   if (개발자 || 자세히) say(`  ${c.gray(pad(말('think.profile'), 한국어 ? 8 : 10))}${c.bold(t.name)}   ${c.gray(t.desc)}`);
 
   if (자세히) {
@@ -1750,7 +1849,22 @@ function showThink(session, { 자세히 = false } = {}) {
   } else if (개발자) {
     say(`  ${c.gray(말('think.effort'))} ${c.cyan('/think high')}   ${c.gray(말('think.profile'))} ${c.cyan(배분예)}   ${c.gray(말('think.detail'))} ${c.cyan(자세히예)}`);
   } else {
-    say(`  ${c.gray(말('think.harder'))} ${c.cyan('/think high')}   ${c.gray(말('think.faster'))} ${c.cyan('/think low')}`);
+    /*
+     * 다음 칸을 **지금 값에서** 셈한다.
+     *
+     * 여태 이 두 자리는 high · low 로 박혀 있었다. 눈금이 넷일 때는 그럭저럭
+     * 맞았는데 xhigh 가 늘면서 티가 났다 — max 로 쓰고 있는 사람에게
+     * 「더 세게 → /think high」 라고 적어 준다. high 는 지금보다 **약하다.**
+     *
+     * 끝에 서 있으면 그쪽은 아예 안 적는다. 갈 데가 없는 길을 적어 주는 것은
+     * 없는 기능을 알려 주는 것과 같다.
+     */
+    const 위 = shiftLevel(session.think, 1);
+    const 아래 = shiftLevel(session.think, -1);
+    const 조각 = [];
+    if (위 !== session.think) 조각.push(`${c.gray(말('think.harder'))} ${c.cyan(`/think ${위}`)}`);
+    if (아래 !== session.think && 아래 !== 'off') 조각.push(`${c.gray(말('think.faster'))} ${c.cyan(`/think ${아래}`)}`);
+    if (조각.length) say(`  ${조각.join('   ')}`);
   }
 
   if (!session.conn.think && session.think !== 'off') {
