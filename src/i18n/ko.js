@@ -529,7 +529,6 @@ export const ko = {
   'wire.think': '생각',
   'run.refusal': '모델이 이 요청을 거절했습니다 — 되밀지 않고 여기서 멈춥니다',
   'run.refusalWhy': '까닭 {왜}',
-  'run.note': '{말}',
   'wire.rungs': '눈금',
   'wire.cache': '캐시',
   'wire.none': '없음',

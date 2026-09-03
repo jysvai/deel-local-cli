@@ -439,7 +439,6 @@ export const zh = {
   'wire.think': '思考',
   'run.refusal': '模型拒绝了这个请求 — 不再重试，就此停止',
   'run.refusalWhy': '原因 {왜}',
-  'run.note': '{말}',
   'wire.rungs': '档位',
   'wire.cache': '缓存',
   'wire.none': '无',

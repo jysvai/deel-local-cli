@@ -51,8 +51,13 @@ export const 눈금차례 = ['low', 'medium', 'high', 'xhigh', 'max'];
  *   Gemini    none · low · medium · high
  *   Ollama    참·거짓, 또는 low · medium · high
  *
- * 모르는 주소면 빈 목록이다 — 그때는 **아무것도 안 보낸다.** 짐작으로 실은
- * 칸 하나가 그 턴을 죽인다.
+ * 회사를 못 알아본 주소에는 **아무것도 더 안 보낸다.** 짐작으로 실은 칸
+ * 하나가 그 턴을 죽인다.
+ *
+ * 다만 이 표가 비었다고 눈금이 늘 비는 것은 아니다. 규격을 알아본 자리에는
+ * 그 규격이 확실히 받는 눈금을 채운다(아래 기본카드의 anthropic·ollama 갈래).
+ * 회사를 모르는 것과 규격을 모르는 것은 다른 이야기라서다 — 규격이 anthropic
+ * 이면 어느 게이트웨이를 거치든 low·medium·high 는 받는다.
  */
 const 회사눈금 = {
   anthropic: ['low', 'medium', 'high', 'xhigh', 'max'],
@@ -314,17 +319,46 @@ export function 배울전선(문구) {
    * 세션마다 다시 맞는다. 넓게 잡되, 아래에서 **칸 이름과 함께** 있을 때만
    * 쓴다. 낱말 하나로는 아무 오류 문장에나 걸린다.
    */
-  const 거절 = /not supported|unsupported|unrecognized|unknown|unexpected|invalid|must be|is not permitted|not allowed|removed|deprecated|cannot be used|no longer/i;
+  const 거절 = /not supported|unsupported|unrecognized|unknown|unexpected|invalid|is not permitted|not allowed|removed|deprecated|cannot be used|no longer|extra fields|additional propert/i;
+
+  /*
+   * ── 「그 칸을 안 받는다」 와 「그 값이 틀렸다」 는 다른 말이다 ─────────
+   *
+   * 이 자리가 여태 둘을 안 갈랐다. 그래서 이런 것들을 전부 「그 칸을 안
+   * 받는다」 로 읽었다.
+   *
+   *   thinking.budget_tokens must be greater than or equal to 1024
+   *   max_tokens must be greater than thinking.budget_tokens
+   *   Expected `thinking` block to have a signature
+   *
+   * 셋 다 **값을 고치면 되는 말**이다. 그런데 「budget_tokens 를 안 받는구나」
+   * 로 읽고 생각형식을 adaptive 로 바꿨다. 그리고 그 카드를 **디스크에
+   * 남긴다.** budget 만 받는 모델은 그때부터 세션마다 400 이고, 사람이 배움
+   * 파일을 지우기 전에는 안 낫는다 — 되돌릴 길이 화면에 안 보이는 고장이다.
+   *
+   * 잘못 배우는 것은 못 배우는 것보다 나쁘다. 못 배우면 같은 400 을 다시
+   * 맞을 뿐이지만, 잘못 배우면 **멀쩡하던 것이 망가진 채로 굳는다.**
+   * 그래서 값 탓으로 읽히면 아무것도 안 배운다.
+   */
+  const 값탓 = /must be (?:greater|less|at least|at most|between|larger|smaller|higher|lower|a |an |of type)|(?:minimum|maximum|min_?tokens|max_?value)\b|out of range|expected [^\n]{0,40}to have|too (?:large|small|long|short|many|few)|>=|<=/i;
 
   // ── 받는 값의 목록을 통째로 알려 주는 자리 ──────────────────────────
-  const 목록 = /(?:reasoning_effort|effort)[^\n]{0,60}?(?:must be one of|one of|expected one of)\s*[:\s]*([a-z0-9_,'"\s|-]+)/i.exec(s);
+  //
+  // 값 탓 중에서 **이것 하나만** 배울 것이 있다. 서버가 받는 값을 세어 주면
+  // 그건 짐작을 사실로 갈아탈 수 있는 유일한 문장이다. 그래서 값탓보다 먼저 본다.
+  const 목록 = /(?:reasoning_effort|effort)[^\n]{0,60}?(?:must be one of|one of|expected one of|valid values are)\s*[:\s]*([a-z0-9_,'"\s|-]+)/i.exec(s);
   if (목록) {
+    // 쉼표로 세는 창구도 있고 띄어쓰기로만 세는 창구도 있다. 둘 다 받는다 —
+    // 한쪽만 보면 다른 쪽에서는 이 문장이 아래 「안 받는다」 로 굴러떨어진다.
     const 값들 = 목록[1]
-      .split(/[,|]/)
-      .map((x) => x.replace(/['"`.\s]/g, '').toLowerCase())
-      .filter((x) => /^[a-z]+$/.test(x) && x.length <= 12);
+      .split(/[,|\s]+/)
+      .map((x) => x.replace(/['"`.]/g, '').toLowerCase())
+      .filter((x) => /^[a-z]+$/.test(x) && x.length <= 12 && x !== 'or' && x !== 'and');
     if (값들.length >= 2) return { 무엇: '눈금', 값: 값들, 왜: 짧게(s) };
   }
+
+  // 값 탓이면 여기서 끝낸다. 칸을 끄는 것은 값을 고쳐서 될 일이 아니다.
+  if (값탓.test(s)) return null;
 
   // ── 생각 칸 ─────────────────────────────────────────────────────────
   if (/budget_tokens/i.test(s) && 거절.test(s)) {
@@ -386,8 +420,21 @@ export function 카드고치기(카드, 고침) {
   const 배운것 = new Set(카드.배운칸 ?? []);
   배운것.add(고침.무엇);
   if (고침.무엇 === '생각형식') {
-    새.효력칸 = 고침.값 === 'adaptive' ? 'output_config' : null;
-    배운것.add('효력칸');
+    /*
+     * 생각형식을 바꾸면 효력칸도 따라간다. 다만 **이미 안 받는다고 배운
+     * 칸은 도로 켜지 않는다.**
+     *
+     * 안 그러면 이렇게 된다 — 게이트웨이가 `output_config` 를 모른다고
+     * 400 을 냈고 우리는 그걸 배웠다. 그 뒤에 생각형식을 하나 더 배우는
+     * 순간 이 줄이 `output_config` 를 되살리고, 그 값이 「배운 것」 이라는
+     * 표까지 달고 디스크에 남는다. 서버가 안 받는다고 말해 준 칸을 우리가
+     * 배웠다고 적어 두는 셈이다.
+     */
+    const 효력끈적있나 = (카드.배운칸 ?? []).includes('효력칸') && 카드.효력칸 === null;
+    if (!효력끈적있나) {
+      새.효력칸 = 고침.값 === 'adaptive' ? 'output_config' : null;
+      배운것.add('효력칸');
+    }
     if (고침.값 === 'none') { 새.눈금 = []; 배운것.add('눈금'); }
   }
   if (고침.무엇 === '눈금' && Array.isArray(고침.값)) {
@@ -527,7 +574,14 @@ export function 전선말(카드) {
   // 전선에 나가는 글자 그대로. 'none' 만 나갈 값이 없다는 뜻이라 옮긴다.
   const 생각 = {
     adaptive: 'adaptive', budget: 'budget_tokens', effort: 'reasoning_effort',
-    boolean: 'on/off', none: 말('wire.none'),
+    /*
+     * 나머지가 다 **나가는 칸 이름**인데 이것만 'on/off' 였다. 그런데 이
+     * 규격은 참·거짓만 받는 것이 아니라 눈금 글자도 받고, 실제로 눈금을 정해
+     * 두면 눈금이 나간다(adapter.js 의 buildBody). 화면은 「on/off」 라고 하고
+     * 전선에는 `think:"high"` 가 나가던 셈이다 — 이 모듈이 없애겠다고 만든
+     * 어긋남이다. 칸 이름으로 적고, 받는 눈금은 옆의 눈금 칸이 말해 준다.
+     */
+    boolean: 'think', none: 말('wire.none'),
   }[카드.생각형식] ?? 카드.생각형식;
   조각.push(`${말('wire.think')} ${생각}`);
   if (카드.눈금?.length) 조각.push(`${말('wire.rungs')} ${카드.눈금.join('·')}`);

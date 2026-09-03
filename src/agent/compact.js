@@ -7,8 +7,9 @@
 //   1) 도구 호출과 그 결과는 한 몸이다. 사이를 끊으면 규격 위반이라 서버가 400 을 낸다.
 //   2) 요약도 모델이 만든다. 그 요청이 실패하면 프로그램이 멈추면 안 된다 —
 //      실패하면 옛 방식(그냥 자르기)으로 물러선다.
-import { chat } from '../backend/adapter.js';
+import { chat, 부른것들, 결과들, 도구결과인가 } from '../backend/adapter.js';
 import { estimateTokens, safeCut, safeHead, 못박을것 } from './session.js';
+import { wasCut } from './effort.js';
 import { 그림장수, 글만 } from '../backend/vision.js';
 
 // 몇 %에서 접기 시작할지. 접고 나서 다시 금방 차면 아무 소용이 없으니 넉넉히 비운다.
@@ -117,22 +118,29 @@ export function shouldFold(session, at = FOLD_AT) {
 export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, 이득문턱 = 최소이득 } = {}) {
   const ms = session.messages ?? [];
 
-  // 호출 쪽에서 이름과 인자를 가져온다. 결과 메시지에는 그게 안 실려 있다.
+  /*
+   * 호출 쪽에서 이름과 인자를 가져온다. 결과 메시지에는 그게 안 실려 있다.
+   *
+   * 부름도 결과도 규격마다 다른 자리에 담긴다(backend/adapter.js). 여기가
+   * `tool_calls` 와 `role:'tool'` 만 보던 동안 Anthropic 창구에서는 **접은 것이
+   * 늘 0 이었다** — 55% 에서 싸게 자리를 비우는 단계가 통째로 죽어 있었고,
+   * 그대로 80% 의 손실 있는 요약으로 직행했다. 캐시가 제일 중요한 창구에서
+   * 캐시를 지키려고 만든 단계가 안 돈 것이다.
+   */
   const 이름표 = new Map();
   for (const m of ms) {
-    for (const c of m?.tool_calls ?? []) {
-      let args = {};
-      try { args = JSON.parse(c?.function?.arguments ?? '{}'); } catch { /* 못 읽으면 그만 */ }
-      if (c?.id) 이름표.set(c.id, { name: c?.function?.name ?? '도구', args });
-    }
+    for (const c of 부른것들(m)) if (c.id) 이름표.set(c.id, { name: c.name ?? '도구', args: c.args ?? {} });
   }
 
   const 자리 = [];
   ms.forEach((m, i) => {
-    if (m?.role !== 'tool') return;
-    const 글 = typeof m.content === 'string' ? m.content : '';
+    if (!도구결과인가(m)) return;
+    const 것들 = 결과들(m);
+    // 한 메시지에 결과가 여럿 실리는 규격이 있다. 그때는 이어 붙여 한 자리로 본다.
+    const 글 = 것들.map((x) => x.글).join('\n');
     if (글.startsWith(접힘표)) return;      // 이미 접은 것
-    자리.push({ i, 글, 이름: 이름표.get(m.tool_call_id)?.name ?? m.tool_name ?? '' });
+    const 첫 = 것들[0];
+    자리.push({ i, 글, 이름: 이름표.get(첫?.id)?.name ?? 첫?.name ?? '' });
   });
 
   /*
@@ -273,14 +281,20 @@ export function split(messages, { keepHead = KEEP_HEAD, tailRatio = KEEP_TAIL_RA
 function transcript(msgs) {
   const out = [];
   for (const m of msgs) {
-    const who = m.role === 'user' ? '사용자' : m.role === 'assistant' ? '나' : '도구결과';
-    let body = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '');
-    if (m.role === 'tool') body = body.slice(0, 400);
-    const calls = (m.tool_calls ?? []).map((t) => {
-      const fn = t.function ?? t;
-      const args = typeof fn.arguments === 'string' ? fn.arguments : JSON.stringify(fn.arguments ?? {});
-      return `${fn.name}(${args.slice(0, 160)})`;
-    });
+    /*
+     * 누가 한 말인지도 규격을 봐야 안다. Anthropic 은 도구 결과를 **사람
+     * 차례**에 싣기 때문에, role 만 보면 도구가 뱉은 것이 전부 「사용자」 가
+     * 된다. 그러면 아래 400자 자르기도 안 걸려서, 요약을 시키는 요청에 도구
+     * 출력이 통째로 실려 나간다 — 요약하려는 대화보다 요약 요청이 더 커진다.
+     * 그리고 그렇게 만든 요약이 대화를 **대신하게** 된다.
+     */
+    const 결과인가 = 도구결과인가(m);
+    const who = 결과인가 ? '도구결과' : (m.role === 'user' ? '사용자' : m.role === 'assistant' ? '나' : '도구결과');
+    let body = 결과인가
+      ? 결과들(m).map((x) => x.글).join('\n')
+      : (typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''));
+    if (결과인가) body = body.slice(0, 400);
+    const calls = 부른것들(m).map((t) => `${t.name}(${JSON.stringify(t.args ?? {}).slice(0, 160)})`);
     if (calls.length) out.push(`${who}: [도구] ${calls.join(', ')}`);
     if (body.trim()) out.push(`${who}: ${body.trim()}`);
   }
@@ -298,6 +312,8 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
 
   const text = transcript(parts.fold);
   let summary = null;
+  // 왜 못 받았는지. 「못 받았다」 만으로는 사람이 할 수 있는 일이 없다.
+  let 못한까닭 = null;
   // 서버가 잠깐 막아 다시 부른 횟수. 알림은 부르는 쪽(onBackoff)이 화면에 내고, 셈은 여기서 한다.
   let 다시 = 0;
   const 셈하기 = (n) => { session.usage.retries = (session.usage.retries ?? 0) + Math.max(0, n); };
@@ -317,7 +333,20 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
       timeout: 60000,
     });
     셈하기(다시);
-    summary = (r.content ?? '').trim();
+    /*
+     * 받은 것을 그대로 믿지 않는다. 이 요약은 **대화를 대신하게 될 글**이라,
+     * 반쪽이거나 거절이면 대화 전체가 그 반쪽으로 바뀐다.
+     *
+     *   · 상한에 걸려 잘린 요약 — 비어 있지 않으니 그냥 통과했다. 그러면
+     *     대화가 문장 중간에서 끊긴 한 토막으로 바뀐다.
+     *   · 거절 — 이 규격은 거절 글을 `content` 에 담는다(adapter.js). 그러면
+     *     대화 전체가 「그건 도와드릴 수 없습니다」 한 줄이 된다.
+     *
+     * 둘 다 `ok: true` 로 보고됐다. 그냥 줄이는 편이 훨씬 낫다.
+     */
+    if (r?.거절) 못한까닭 = '요약을 거절당했습니다';
+    else if (wasCut(r)) 못한까닭 = '요약이 상한에서 잘렸습니다';
+    else summary = (r.content ?? '').trim();
   } catch (err) {
     // 사용자가 끊은 것은 실패가 아니다. 대화를 건드리지 않고 그대로 둔다 —
     // 여기서 물러서기(trim)까지 해 버리면, 끊었는데 대화가 줄어 있게 된다.
@@ -326,6 +355,17 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
       return { ok: false, aborted: true, why: '중단했습니다', folded: 0, before, after: before };
     }
     셈하기(다시);
+    /*
+     * 서버가 한 말을 **버리지 않는다.**
+     *
+     * 여태 `err` 를 통째로 흘렸다. 열쇠가 만료돼 401 이든, 게이트웨이가
+     * 모르는 칸에 400 을 내든, 모델 이름이 틀렸든 화면에는 늘 「요약을 받지
+     * 못해 그냥 줄였습니다」 한 줄이었다. 그러면 사람은 압축이 왜 매번
+     * 물러서는지 알 길이 없고, 고칠 데는 대개 한 줄이면 되는 것이었다.
+     */
+    못한까닭 = err?.serverMessage
+      ? `요약을 못 받았습니다 — ${String(err.serverMessage).replace(/\s+/g, ' ').trim().slice(0, 120)}`
+      : `요약을 못 받았습니다 — ${String(err?.message ?? err).slice(0, 120)}`;
     summary = null;
   }
 
@@ -343,7 +383,10 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
      */
     if (folded > 0) session.파일기억?.잊기();
     const after = session.breakdown().used;
-    return { ok: folded > 0, folded, before, after, why: '요약을 받지 못해 그냥 줄였습니다', fallback: true };
+    return {
+      ok: folded > 0, folded, before, after, fallback: true,
+      why: 못한까닭 ? `${못한까닭}. 그냥 줄였습니다` : '요약을 받지 못해 그냥 줄였습니다',
+    };
   }
 
   session.messages = [

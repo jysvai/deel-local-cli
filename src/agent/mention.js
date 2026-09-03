@@ -131,7 +131,7 @@ export function expand(text, { scope = null, budget = 기본예산, seen = null,
      * Read 도구는 .deel/config.json 을 막고 있었는데 **여기는 안 막고 있었다.**
      * 그래서 `@.deel/config.json` 한 줄이면 게이트웨이 열쇠가 대화에 실려
      * 그대로 바깥으로 나갔다. 도구는 막고 @ 는 안 막으면 막은 것이 아니다.
-     * (검사: test/mention-secret.test.js)
+     * (검사: test/mention.test.js 의 「살림 파일은 @ 로도 못 붙인다」)
      */
     const 살림 = 내부살림(자리.abs);
     if (살림) { blocked.push({ path: 자리.path, why: 살림 }); continue; }

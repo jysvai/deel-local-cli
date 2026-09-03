@@ -1,5 +1,6 @@
 // 주소만 받아서 "이 서버가 무슨 규격이고 인증을 어떻게 받는지" 알아낸다.
 import { req, headersFor, AUTH_STYLES, serverMessage } from './http.js';
+import { 맨틀호스트인가 } from './toolfit.js';
 import { 애저인가, 애저풀기, 애저base, 배포목록 } from './azure.js';
 import { ANTHROPIC_VERSION } from './adapter.js';
 
@@ -156,10 +157,10 @@ function 막은것적기(막힌것, r) {
  * 맞는데도 매번 401 이고, 화면에서는 열쇠가 틀린 것과 구별이 안 된다.
  */
 function 맨틀인가(base) {
-  try {
-    const h = new URL(String(base)).hostname.toLowerCase();
-    return h.startsWith('bedrock') && h.endsWith('.api.aws');
-  } catch { return false; }
+  // 호스트를 알아보는 규칙은 backend/toolfit.js 한 곳에 둔다. 여기에 사본을
+  // 두면 AWS 가 이름을 하나 더 낼 때 한쪽만 고쳐진다.
+  try { return 맨틀호스트인가(new URL(String(base)).hostname); }
+  catch { return false; }
 }
 
 async function tryAnthropic(base, key, 막힌것 = null) {

@@ -209,10 +209,10 @@ const 답에남길것 = 1024;
 const 강도별예산 = { low: 2048, medium: 6144, high: 16384, xhigh: 24576, max: 32768 };
 
 /*
- * ── 우리 눈금은 다섯, 전선 위의 눈금은 넷 ──────────────────────────────
+ * ── 우리 눈금은 여섯, 이 표가 옮기는 창구의 눈금은 넷 ──────────────────
  *
- * agent/effort.js 의 눈금은 off·low·medium·high·**max** 다. 그런데 `max` 를
- * 받는 창구는 하나도 없다 — OpenAI 는 minimal·low·medium·high, Gemini 의
+ * agent/effort.js 의 눈금은 off·low·medium·high·**xhigh·max** 다. 그런데 이
+ * 표가 상대하는 창구 중에 `xhigh` 나 `max` 를 받는 곳은 하나도 없다 — OpenAI 는 minimal·low·medium·high, Gemini 의
  * OpenAI 호환 창구는 none·low·medium·high, Ollama 는 참·거짓이거나
  * low·medium·high 다. 그 말을 그대로 실어 보내면 400 이고, 그 400 은 화면에서
  * 열쇠가 틀린 것과 구별이 안 된다.
@@ -297,7 +297,7 @@ function anthropic몸({ model, messages, tools, stream, json, think, maxTokens, 
       const 눈금 = 눈금맞추기(카드, think);
       if (눈금 && 카드?.효력칸 === 'output_config') body.output_config = { effort: 눈금 };
     }
-  } else if (형식 === 'budget' || 형식 === undefined) {
+  } else if (형식 === 'budget') {
     const 예산 = 생각예산(think, maxTokens);
     if (예산) body.thinking = { type: 'enabled', budget_tokens: 예산 };
   }
@@ -472,7 +472,10 @@ export function extractMessage(shape, json) {
   return {
     // 거절 글은 답이 비어 있을 때만 답 자리에 넣는다. 사람이 화면에서
     // 무슨 일이 있었는지 읽을 수 있어야 한다.
-    content: m.content ?? 거절글 ?? '',
+    // `??` 로 두면 빈 글자를 못 잡는다. 거절한 답은 `content: ""` 로 오는 쪽이
+    // 오히려 흔해서, 그 경우 거절 글이 통째로 사라졌다 — 흘려받기 쪽은
+    // `if (!acc.content …)` 로 이미 빈 글자를 챙기고 있었다. 두 길을 맞춘다.
+    content: (typeof m.content === 'string' && m.content) ? m.content : (거절글 ?? m.content ?? ''),
     thinking: m.reasoning_content ?? '',
     toolCalls: normalizeCalls(m.tool_calls ?? []),
     usage: {
@@ -573,6 +576,91 @@ export function assistantMessage(shape, { content = '', thinking = '', toolCalls
     }));
   }
   return m;
+}
+
+/*
+ * ── 이 메시지가 무엇을 담고 있나 — 규격 셋을 한자리에서 읽는다 ──────────
+ *
+ * 도구 부름과 도구 결과가 규격마다 **다른 자리**에 담긴다. 바로 위
+ * assistantMessage·toolMessage 가 그렇게 적기 때문이다.
+ *
+ *   OpenAI     부름 assistant.tool_calls[]          결과 {role:'tool', tool_call_id}
+ *   Ollama     부름 assistant.tool_calls[]          결과 {role:'tool', tool_name}
+ *   Anthropic  부름 assistant.content 의 tool_use   결과 {role:'user'} content 의 tool_result
+ *
+ * 이 사실이 여태 **여섯 군데에 흩어져** 있었고, 그중 다섯이 OpenAI 꼴만
+ * 알았다. 그래서 Anthropic 창구에서는 접기도, 이력 고치기도, 자르는 자리
+ * 고르기도 조용히 아무 일도 안 했다 — 「고친 것 0」 은 화면에서 「고칠 것이
+ * 없었다」 와 구별이 안 된다. 안 되는 줄도 모르고 쓰게 되는 종류의 고장이다.
+ *
+ * 그중 하나(짝맞추기)만 고쳤더니 나머지 다섯이 남았다. 그래서 **적는 자리
+ * 바로 옆에 읽는 자리를 둔다.** 규격이 하나 더 늘면 고칠 데도 여기 하나다.
+ */
+
+/**
+ * 이 메시지가 부른 도구들. 부름이 아니면 빈 배열.
+ * @returns {Array<{id:string|null, name:string, args:object}>}
+ */
+export function 부른것들(m) {
+  if (!m || m.role !== 'assistant') return [];
+  if (Array.isArray(m.content)) {
+    return m.content
+      .filter((b) => b?.type === 'tool_use')
+      .map((b) => ({ id: b.id ?? null, name: b.name ?? '?', args: b.input ?? {} }));
+  }
+  return (m.tool_calls ?? []).map((t) => {
+    const fn = t?.function ?? t ?? {};
+    let args = {};
+    // 인자는 규격마다 글이기도 하고 객체이기도 하다. 못 읽으면 빈 것으로 둔다 —
+    // 인자를 못 읽는 것과 부름이 없는 것은 다르다.
+    if (typeof fn.arguments === 'string') { try { args = JSON.parse(fn.arguments || '{}'); } catch { args = {}; } }
+    else if (fn.arguments && typeof fn.arguments === 'object') args = fn.arguments;
+    else if (t?.args && typeof t.args === 'object') args = t.args;
+    return { id: t?.id ?? null, name: fn.name ?? t?.name ?? '?', args };
+  });
+}
+
+/**
+ * 이 메시지가 담고 있는 도구 결과들. 결과가 아니면 빈 배열.
+ * @returns {Array<{id:string|null, name:string|null, 글:string}>}
+ */
+export function 결과들(m) {
+  if (!m || typeof m !== 'object') return [];
+  if (Array.isArray(m.content)) {
+    /*
+     * 사람 차례에 tool_result 블록이 섞여 온다 — 이 규격에는 도구 차례가
+     * 없어서다(toolMessage). 사람이 친 글과 한 메시지에 같이 있을 수 있으니
+     * **블록 종류로** 가른다. role 만 보면 사람 말까지 도구 결과가 된다.
+     */
+    return m.content
+      .filter((b) => b?.type === 'tool_result')
+      .map((b) => ({
+        id: b.tool_use_id ?? null,
+        name: null,
+        글: typeof b.content === 'string' ? b.content : JSON.stringify(b.content ?? ''),
+      }));
+  }
+  if (m.role !== 'tool') return [];
+  return [{
+    id: m.tool_call_id ?? null,
+    name: m.tool_name ?? null,
+    글: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
+  }];
+}
+
+/** 이 메시지가 **도구 결과만** 담고 있나. 자르는 자리를 고를 때 쓴다. */
+export function 도구결과인가(m) {
+  if (!m || typeof m !== 'object') return false;
+  if (Array.isArray(m.content)) {
+    // 결과 블록이 하나라도 있으면 그렇다. 이 앞을 자르면 짝이 깨진다.
+    return m.content.some((b) => b?.type === 'tool_result');
+  }
+  return m.role === 'tool';
+}
+
+/** 이 메시지가 도구를 불렀나. */
+export function 도구불렀나(m) {
+  return 부른것들(m).length > 0;
 }
 
 export function toolMessage(shape, { callId, name, content }) {

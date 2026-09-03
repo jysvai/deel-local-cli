@@ -511,6 +511,79 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
     String(보낸토큰('anthropic', { in: -5, cacheRead: 'x', cacheWrite: null })));
 }
 
+/*
+ * ── 10c. 「그 칸을 안 받는다」 와 「그 값이 틀렸다」 는 다른 말이다 ─────
+ *
+ * 이 자리는 **잘못 배우면 되돌릴 길이 없는** 자리다. 배운 카드는 디스크에
+ * 남고, 다음 세션이 그 값으로 시작한다.
+ *
+ *   thinking.budget_tokens must be greater than or equal to 1024
+ *
+ * 이건 값을 고치면 되는 말이다. 그런데 「budget_tokens 를 안 받는구나」 로
+ * 읽고 생각형식을 adaptive 로 바꿔 남기면, budget 만 받는 모델은 그때부터
+ * 세션마다 400 이다. 사람은 배움 파일이 있는 줄도 모르니 고칠 길이 없다.
+ *
+ * **못 배우는 것보다 잘못 배우는 것이 나쁘다.** 못 배우면 같은 400 을 다시
+ * 맞을 뿐이지만, 잘못 배우면 멀쩡하던 것이 망가진 채로 굳는다.
+ */
+{
+  const 값탓들 = [
+    'thinking.budget_tokens must be greater than or equal to 1024',
+    'max_tokens must be greater than thinking.budget_tokens',
+    'messages.0.content.0.thinking: Expected `thinking` block to have a signature. Invalid request.',
+    'max_tokens: value must be at most 8192',
+    'budget_tokens is too large for this model',
+  ];
+  for (const 말 of 값탓들) {
+    check(`★★ 값 탓이면 아무것도 안 배운다 — ${말.slice(0, 34)}`,
+      배울전선(말) === null, JSON.stringify(배울전선(말)));
+  }
+
+  // 그러면서 **진짜 「안 받는다」 는 그대로 배워야** 한다. 값 탓을 가리려다
+  // 배울 것까지 못 배우면, 이번에는 같은 400 을 세션마다 다시 맞는다.
+  const 배울것들 = [
+    ['thinking.budget_tokens is deprecated', '생각형식', 'adaptive'],
+    ['Unrecognized request argument supplied: reasoning_effort', '생각형식', 'none'],
+    ['Unsupported parameter: stream_options', '스트림usage', false],
+    ['ValidationException: cache_control is not supported', '캐시', 'none'],
+    ['The parameter `user` is not allowed', '세션자리', null],
+  ];
+  for (const [말, 무엇, 값] of 배울것들) {
+    const 배운 = 배울전선(말);
+    check(`★ 안 받는다는 말은 그대로 배운다 — ${무엇}`,
+      배운?.무엇 === 무엇 && 배운?.값 === 값, JSON.stringify(배운));
+  }
+
+  /*
+   * 값 탓 중에 **하나만** 배울 것이 있다 — 받는 값을 세어 주는 문장이다.
+   * 쉼표로 세는 창구도 있고 띄어쓰기로만 세는 창구도 있어서 둘 다 받는다.
+   * 한쪽만 보면 다른 쪽에서는 이 문장이 「reasoning_effort 를 안 받는다」 로
+   * 굴러떨어져서, 도와주려던 서버 말이 추론을 통째로 끄는 결과가 된다.
+   */
+  const 쉼표 = 배울전선('Invalid value for reasoning_effort: must be one of minimal, low, medium, high');
+  check('★ 쉼표로 세어 주면 눈금을 배운다', 쉼표?.무엇 === '눈금' && 쉼표.값.join(',') === 'minimal,low,medium,high',
+    JSON.stringify(쉼표));
+  const 띄기 = 배울전선('reasoning_effort must be one of low medium high');
+  check('★★ 띄어쓰기로 세어 줘도 눈금을 배운다', 띄기?.무엇 === '눈금' && 띄기.값.join(',') === 'low,medium,high',
+    JSON.stringify(띄기));
+
+  /*
+   * ★ 서버가 안 받는다고 한 칸을 **도로 켜지 않는다.**
+   *
+   * output_config 를 못 쓴다고 배운 뒤에 생각형식을 하나 더 배우면, 딸린
+   * 자리를 맞추는 줄이 output_config 를 되살렸다 — 그것도 「배운 것」 이라는
+   * 표를 달고 디스크에 남았다. 서버가 안 된다고 말해 준 칸을 우리가 배웠다고
+   * 적어 두는 셈이다.
+   */
+  const 효력끈것 = 카드고치기(
+    기본카드(연결('https://gw.example.com/v1', 'anthropic', 'claude-opus-5')),
+    배울전선('Unrecognized request argument supplied: output_config'));
+  check('먼저 효력칸을 껐다', 효력끈것.효력칸 === null, String(효력끈것.효력칸));
+  const 그뒤 = 카드고치기(효력끈것, 배울전선('thinking.budget_tokens is deprecated'));
+  check('★★ 껐던 칸을 도로 안 켠다', 그뒤.효력칸 === null, String(그뒤.효력칸));
+  check('생각형식은 그대로 배운다', 그뒤.생각형식 === 'adaptive', String(그뒤.생각형식));
+}
+
 // ── 11. 강도가 시킨 말을 따라간다 ───────────────────────────────────────
 //
 // `/think max` 를 걸어 두면 「안녕」 한 마디에도 최대 추론이 돌았다. 느리고,

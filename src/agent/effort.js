@@ -149,7 +149,7 @@ export function effortFor(base, profileKey, stage, { 고정 = false } = {}) {
  */
 
 /** 대화가 이만큼 쌓이면 강도를 더 안 움직인다 — 그때부터는 캐시가 더 비싸다. */
-export const 유지문턱 = 8;
+const 유지문턱 = 8;
 
 /** 인사·맞장구. 시킨 일이 없으면 깊이 생각할 것도 없다. */
 export const 인사말 = /^(안녕[가-힣]*|반(가|갑)[가-힣]*|하이|ㅎㅇ+|헬로[우가-힣]*|고마[가-힣]*|감사[가-힣]*|수고[가-힣]*|hi|hello|hey|yo|thanks?|thank you|테스트|test|ok(ay)?|네|응)[\s!.~?ㅎㅋ,]*$/i;

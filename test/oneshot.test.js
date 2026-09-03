@@ -59,7 +59,20 @@ const srv = createServer((req, res) => {
       const 답 = (msg, why) => 보냄({
         id: 'x', object: 'chat.completion', model: '스텁모델',
         choices: [{ index: 0, finish_reason: why ?? (msg.tool_calls ? 'tool_calls' : 'stop'), message: msg }],
-        usage: { prompt_tokens: 120, completion_tokens: 12 },
+        /*
+         * 캐시 수치를 **실제로** 실어 준다.
+         *
+         * 안 실으면 cacheRead·cacheWrite 가 늘 0 이고, `typeof 0 === 'number'`
+         * 는 언제나 참이라 아래 검사가 **캐시 셈을 통째로 지워도 통과한다.**
+         * 1.12 의 간판 기능을 지키는 유일한 끝-끝 검사가 그런 모양이면
+         * 없는 것과 같다.
+         */
+        usage: {
+          prompt_tokens: 120,
+          completion_tokens: 12,
+          prompt_tokens_details: { cached_tokens: 90 },
+          cache_creation_input_tokens: 20,
+        },
       });
       const 도구답 = (name, args) => 답({
         role: 'assistant', content: null,
@@ -405,9 +418,19 @@ trace('4-끝난까닭과종료코드');
    * 그리고 캐시 수치도 같이 내놓는다. `in` 은 이름을 그대로 두고 (파이프 뒤
    * 스크립트가 이미 쓰고 있다) **보낸 것 전체**는 이름을 새로 붙여 더한다.
    */
-  check('보낸 것 전체를 따로 적는다', typeof j?.usage?.prompt === 'number', JSON.stringify(j?.usage));
-  check('캐시 읽기·쓰기도 적는다',
-    typeof j?.usage?.cacheRead === 'number' && typeof j?.usage?.cacheWrite === 'number',
+  /*
+   * ★★ 값을 **숫자로** 본다. `typeof === 'number'` 는 0 도 통과시키는데,
+   * 서버가 아무것도 안 줘도 0 이 나오므로 그 검사는 아무것도 안 지킨다.
+   */
+  check('★★ 캐시에 맞은 몫을 서버 값 그대로 내놓는다', j?.usage?.cacheRead === 90,
+    JSON.stringify(j?.usage));
+  check('★★ 캐시에 쓴 몫도 따로 내놓는다', j?.usage?.cacheWrite === 20,
+    JSON.stringify(j?.usage));
+  /*
+   * 이 규격은 prompt_tokens 가 **이미 합계**다. 캐시 몫을 또 더하면 두 벌로
+   * 센다 — 규격마다 갈라야 하는 자리다(backend/adapter.js 의 보낸토큰).
+   */
+  check('★★ OpenAI 꼴에서는 캐시 몫을 또 더하지 않는다', j?.usage?.prompt === 120,
     JSON.stringify(j?.usage));
 }
 

@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { 그림장수, 글만, 그림한장토큰 } from '../backend/vision.js';
+import { 부른것들, 결과들, 도구결과인가 } from '../backend/adapter.js';
 import { 조각표 } from '../backend/cachemark.js';
 import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './modes.js';
 import { toolSchemas } from '../tools/index.js';
@@ -13,19 +14,16 @@ import { 못박기 } from './pins.js';
 import { 파일기억 } from './filemem.js';
 import { 언어, 지시말, 말 as 옮긴말 } from '../i18n/index.js';
 import { 셸안내 } from '../tools/shell.js';
+import { estimateTokens } from '../backend/tokens.js';
 
-// 토큰 추정 — 정확한 토크나이저 없이 대략만 센다.
-// 한글은 글자당 약 1토큰, 영문·코드는 약 4글자당 1토큰으로 본다.
-export function estimateTokens(text) {
-  const s = String(text ?? '');
-  let cjk = 0;
-  for (const ch of s) {
-    const cp = ch.codePointAt(0);
-    if ((cp >= 0xac00 && cp <= 0xd7a3) || (cp >= 0x3040 && cp <= 0x30ff) || (cp >= 0x4e00 && cp <= 0x9fff)) cjk++;
-  }
-  const rest = s.length - cjk;
-  return Math.ceil(cjk + rest / 3.6);
-}
+/*
+ * 토큰 추정 — 자는 backend/tokens.js 에 한 벌만 둔다.
+ *
+ * 여기서 다시 내보낸다. 부르던 자리(compact·evolve·mention·pins)는 그대로
+ * 두면서, 잎 모듈인 cachemark 도 같은 자를 쓸 수 있게 하려는 것이다.
+ * 자가 둘이면 언젠가 둘이 어긋나고, 어긋난 자는 화면에서 안 보인다.
+ */
+export { estimateTokens } from '../backend/tokens.js';
 
 const BASE_RULES = `너는 deel 다. 사용자의 작업 폴더 안에서 코드를 읽고 고치는 도구다.
 
@@ -676,8 +674,8 @@ export class Session {
    * 그만큼 몰래 나간다** — 다 찼는데 안 찼다고 알고 있는 상태가 된다.
    *
    * 전에는 두 가지를 안 셌다.
-   *   · 도구 스키마 JSON — 도구 11종의 설명과 인자 정의. 약 1,800토큰이다.
-   *     매 요청에 통째로 들어가는데 어느 칸에도 안 잡혔다.
+   *   · 도구 스키마 JSON — 도구 스무 종의 설명과 인자 정의. 매 요청에
+   *     통째로 들어가는데 어느 칸에도 안 잡히고 있었다.
    *   · 지금 모드 문구 — modes.js 의 say. 모드마다 수백 토큰이다.
    */
   /**
@@ -743,7 +741,10 @@ export class Session {
       const t = estimateTokens(장수 ? 글만(m) : (typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')))
         + 장수 * 그림한장토큰
         + estimateTokens(JSON.stringify(m.tool_calls ?? ''));
-      if (m.role === 'tool') files += t; else history += t;
+      // 도구 결과는 규격마다 다른 자리에 온다. `role` 만 보면 Anthropic 에서는
+      // 도구 결과가 통째로 '대화' 로 세어져서, /context 가 「도구 결과 0 토큰」
+      // 이라고 적는다 — 무엇을 접어야 할지 보라고 만든 표가 거꾸로 가리킨다.
+      if (도구결과인가(m)) files += t; else history += t;
     }
 
     // 도구 정의도 매 요청에 실려 나간다. 세는 값이라기보다 '이미 나간 값' 이다.
@@ -918,8 +919,15 @@ export function 못박을것(session) {
  */
 export function safeCut(messages, i) {
   let k = Math.max(0, Math.min(i, messages.length));
-  // tool 결과로 시작하면 그 앞의 assistant(tool_calls) 가 없어 규격이 깨진다. 앞으로 당긴다.
-  while (k > 0 && messages[k]?.role === 'tool') k--;
+  /*
+   * 도구 결과로 시작하면 그 앞의 부름이 없어 규격이 깨진다. 앞으로 당긴다.
+   *
+   * 「도구 결과인가」 는 규격마다 다른 자리를 본다(backend/adapter.js). 여기가
+   * `role === 'tool'` 만 보던 동안 Anthropic 창구에서는 이 울타리가 **한 번도
+   * 안 걸렸다** — 결과는 그쪽에서 사람 차례에 실려 오기 때문이다. 그래서
+   * 자동 접기가 짝을 반으로 갈랐고, 그 뒤 요청이 통째로 400 을 받았다.
+   */
+  while (k > 0 && 도구결과인가(messages[k])) k--;
   return k;
 }
 
@@ -930,7 +938,8 @@ export function safeCut(messages, i) {
  */
 export function safeHead(messages, k) {
   let h = Math.max(0, Math.min(k, messages.length));
-  while (h > 0 && messages[h - 1]?.tool_calls?.length) h--;
+  // 부름이 담긴 자리도 규격마다 다르다 — safeCut 과 같은 까닭이다.
+  while (h > 0 && 부른것들(messages[h - 1]).length) h--;
   return h;
 }
 
@@ -960,6 +969,28 @@ export function safeHead(messages, k) {
  *
  * @returns {{messages: object[], 고친것: number}} 고친것 = 걷어낸 호출·결과 수
  */
+/** 남길 부름만 남긴 새 메시지. 규격마다 부름이 담긴 자리가 다르다. */
+function 부름줄이기(m, 남길id) {
+  if (Array.isArray(m.content)) {
+    return { ...m, content: m.content.filter((b) => b?.type !== 'tool_use' || 남길id.has(b.id)) };
+  }
+  return { ...m, tool_calls: (m.tool_calls ?? []).filter((c) => 남길id.has(c?.id)) };
+}
+
+/** 이 메시지가 사람에게 한 말만. 부름 블록은 뺀다. */
+function 글자만(m) {
+  if (typeof m.content === 'string') return m.content.trim();
+  if (!Array.isArray(m.content)) return '';
+  return m.content.filter((b) => b?.type === 'text').map((b) => b.text ?? '').join('').trim();
+}
+
+/** 부름은 빼고 한 말만 남긴 메시지. */
+function 부름빼기(m, 글) {
+  if (Array.isArray(m.content)) return { ...m, content: [{ type: 'text', text: 글 }] };
+  const { tool_calls: _버림, ...나머지 } = m;
+  return { ...나머지, content: 글 };
+}
+
 export function repairToolPairs(messages) {
   const out = [];
   let 고친것 = 0;
@@ -973,35 +1004,45 @@ export function repairToolPairs(messages) {
     if (!m || typeof m !== 'object' || typeof m.role !== 'string') { 고친것++; continue; }
 
     // 호출 없이 굴러다니는 결과. 앞이 잘려 나간 이력이다.
-    if (m.role === 'tool') { 고친것++; continue; }
+    if (도구결과인가(m)) { 고친것++; continue; }
 
-    if (m?.role !== 'assistant' || !m.tool_calls?.length) { out.push(m); continue; }
+    /*
+     * 부름이 담긴 자리는 규격마다 다르다(backend/adapter.js 의 부른것들).
+     *
+     * 여기가 `m.tool_calls` 만 보던 동안 Anthropic 이력은 **손도 안 대고 그대로
+     * 지나갔다.** 도중에 죽어 부름만 남은 대화를 이어 열면 「고친 것 0」 이라
+     * 조용히 넘어가고, 첫 요청이 400 이었다. 이 함수가 없애겠다고 적어 둔 바로
+     * 그 고장이다.
+     */
+    const 부름 = 부른것들(m);
+    if (m?.role !== 'assistant' || !부름.length) { out.push(m); continue; }
 
-    // 이 호출에 딸린 결과 묶음 — 바로 뒤에 붙어 있는 tool 들이 전부다.
+    // 이 호출에 딸린 결과 묶음 — 바로 뒤에 붙어 있는 결과들이 전부다.
     const 결과 = [];
     let j = i + 1;
-    while (j < messages.length && messages[j]?.role === 'tool') 결과.push(messages[j++]);
+    while (j < messages.length && 도구결과인가(messages[j])) 결과.push(messages[j++]);
     i = j - 1;   // 결과는 여기서 같이 처리한다
 
-    const 있는id = new Set(결과.map((r) => r?.tool_call_id).filter(Boolean));
-    const 남길호출 = 있는id.size
-      ? m.tool_calls.filter((c) => 있는id.has(c?.id))
-      : m.tool_calls.slice(0, 결과.length);      // id 가 없는 규격 — 순서로 본다
-    const 남길id = new Set(남길호출.map((c) => c?.id).filter(Boolean));
+    const 결과id = (r) => 결과들(r).map((x) => x.id).filter(Boolean);
+    const 있는id = new Set(결과.flatMap(결과id));
+    const 남길부름 = 있는id.size
+      ? 부름.filter((c) => 있는id.has(c?.id))
+      : 부름.slice(0, 결과.length);              // id 가 없는 규격 — 순서로 본다
+    const 남길id = new Set(남길부름.map((c) => c?.id).filter(Boolean));
     const 남길결과 = 있는id.size
-      ? 결과.filter((r) => 남길id.has(r.tool_call_id))
-      : 결과.slice(0, 남길호출.length);
+      ? 결과.filter((r) => 결과id(r).some((x) => 남길id.has(x)))
+      : 결과.slice(0, 남길부름.length);
 
-    고친것 += (m.tool_calls.length - 남길호출.length) + (결과.length - 남길결과.length);
+    고친것 += (부름.length - 남길부름.length) + (결과.length - 남길결과.length);
 
-    if (남길호출.length) {
-      out.push(남길호출.length === m.tool_calls.length ? m : { ...m, tool_calls: 남길호출 });
+    if (남길부름.length) {
+      out.push(남길부름.length === 부름.length ? m : 부름줄이기(m, 남길id));
       out.push(...남길결과);
       continue;
     }
     // 남은 호출이 없다. 할 말이라도 있으면 그건 살린다.
-    const 글 = typeof m.content === 'string' ? m.content.trim() : '';
-    if (글) { const { tool_calls: _버림, ...나머지 } = m; out.push(나머지); }
+    const 글 = 글자만(m);
+    if (글) out.push(부름빼기(m, 글));
   }
 
   return { messages: out, 고친것 };

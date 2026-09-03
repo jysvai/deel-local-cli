@@ -23,7 +23,11 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-// 기억 전체가 차지할 수 있는 최대 글자. 대략 2,000 토큰쯤이다.
+// 기억 전체가 차지할 수 있는 최대 글자.
+//
+// 한글은 **글자당 1토큰**으로 센다(session.js 의 estimateTokens). 그래서 다
+// 채우면 2,000 이 아니라 6,000토큰쯤이고, 그게 매 요청마다 통째로 나간다.
+// 이 숫자를 낮게 적어 두면 그 차이만큼을 아무도 안 세게 된다.
 export const 기억최대 = 6000;
 // 한 줄이 이보다 길면 자른다. 모델이 파일을 통째로 기억에 넣으려 드는 일이 있다.
 export const 한줄최대 = 400;

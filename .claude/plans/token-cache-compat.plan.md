@@ -231,6 +231,70 @@ fail against the pre-fix code.
 
 ---
 
+## 4e. What a second review round found — one assumption, six call sites
+
+The first review round fixed `짝맞추기` and I treated that as *the* fix. It was
+one call site of a much larger assumption: **"a tool call lives in
+`m.tool_calls`, a tool result lives in `role:'tool'`."** That is the OpenAI
+shape. The Anthropic shape puts calls in `content` as `tool_use` blocks and
+results in a **user** message as `tool_result` blocks.
+
+Five more places believed the OpenAI shape, and every one of them **failed
+silently** — the failure mode is always "did nothing, reported success".
+
+| Where | What it silently did on Anthropic connections |
+|---|---|
+| `safeCut` / `safeHead` (`session.js`) | Never pulled the cut point back, so compaction split a tool pair. Every request after that returns `400` and only `/clear` recovers — at the highest-context moment of a long session. |
+| `foldToolResults` (`compact.js`) | Folded **zero** results. The cheap lossless 55% stage was inert on exactly the wire where the prompt cache matters most; every compaction went straight to lossy summarization. |
+| `transcript` (`compact.js`) | Labelled every tool result as `사용자` and skipped the 400-char truncation, so full tool payloads went into a 1,200-token summarize call — and that summary then *replaced* the conversation. |
+| `repairToolPairs` (`session.js`) | Reported `고친것: 0` on a conversation killed mid-tool. Resume and `/undo` handed back a history whose first request `400`s. The docstring says this function exists to prevent exactly that. |
+| `breakdown` (`session.js`) | Counted tool output as conversation, so `/context` showed "tool results: 0 tokens" — the table you read to decide what to prune pointed the wrong way. |
+
+**The fix is not five fixes.** The shape knowledge now lives in one place —
+`부른것들` / `결과들` / `도구결과인가` in `backend/adapter.js`, next to the
+`assistantMessage` / `toolMessage` that *write* those shapes. Readers beside
+writers. A fourth wire shape changes one file.
+
+### Three more of the same family
+
+- **`배울전선` could not tell "this field is rejected" from "this value is
+  wrong."** `thinking.budget_tokens must be greater than or equal to 1024` is a
+  *size* complaint; it was read as "budget_tokens is unsupported", which flipped
+  the card to `adaptive` **and wrote it to disk**. A budget-only model then
+  `400`s in every future session with no way for the user to know why. Value
+  complaints now teach nothing — except the one that enumerates valid values,
+  which is the only sentence in that family worth learning from.
+- **`/model` never reattached the wire card.** Switching endpoints kept the old
+  one, so thinking, cache marks, and streaming usage could all be off while
+  `/status` printed the old card's description. Screen and wire disagreeing is
+  the precise failure this module exists to eliminate.
+- **`잡힐만한가` compared a character count against `tokens * 2`.** Correct for
+  English, wrong by half for Korean, so on Bedrock's 4,096 minimum we attached
+  marks that would never be honoured and reported "cache marked". The estimator
+  now lives in one leaf module (`backend/tokens.js`) that both the agent layer
+  and `cachemark` use — two rulers eventually disagree.
+
+### And one hole the new tests found
+
+Writing the missing test for "`@` cannot attach deel's own files" surfaced that
+**`mcp.json` was not on the blocked list** — it holds each MCP server's `env`,
+which is where tokens live. `config.json` was blocked; its sibling was not.
+A blocklist leaks exactly this way: someone adds a file of the same kind and
+does not add the row.
+
+### What generalizes
+
+Every item above is the same shape as `4d`: code that was correct while one
+thing was true. The difference this round is that **the first fix made the
+assumption look handled.** Fixing one call site of a shared assumption is more
+dangerous than fixing none, because it removes the symptom that would have led
+someone to the other five.
+
+The tests added this round assert the invariant on **both wire shapes in the
+same loop**, so a shape-blind change fails on the shape it forgot.
+
+---
+
 ## 5. Acceptance
 
 - `/cost` reports cache reads and writes separately.
@@ -249,5 +313,11 @@ fail against the pre-fix code.
   server billed as fresh input, so a working cache cannot corrupt it.
 - A learned wire card never crosses between two protocols served from one host.
 - An exhausted quota at one endpoint never stalls a request to another.
+- Every history-maintenance path — cut, fold, repair, transcribe, measure —
+  behaves identically on all three wire shapes, asserted side by side.
+- A server complaining about a *value* teaches the wire card nothing; only
+  "this field is not accepted" is learned, and only that is persisted.
+- Switching connections with `/model` re-derives the wire card from scratch.
+- deel's own files, including `mcp.json`, cannot be attached with `@`.
 - No new dependency, one network door, no new egress.
 - `npm test`, `CI=true node test/run.mjs`, and a PowerShell run are all green.

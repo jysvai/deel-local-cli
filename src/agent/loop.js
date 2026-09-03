@@ -1,6 +1,6 @@
 // 에이전트 루프. 모델 → 도구 → 결과 → 모델 을 답이 나올 때까지 돈다.
 // 화면에 그릴 것은 이벤트로 흘려보낸다 — 화면 코드와 섞지 않는다.
-import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남, 보낸토큰 } from '../backend/adapter.js';
+import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남, 보낸토큰, 부른것들 } from '../backend/adapter.js';
 import { 그림메시지 } from '../backend/vision.js';
 import { 어떻게할까 } from '../safety/policy.js';
 import { toolSchemas, runTool, TOOLS, 파일현황 } from '../tools/index.js';
@@ -308,21 +308,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   const 짝맞추기 = (왜 = '사용자가 중단했습니다. 실행하지 않았습니다.') => {
     const last = session.messages.at(-1);
     if (last?.role !== 'assistant') return;
-    /*
-     * 부른 자리가 규격마다 다르다.
-     *
-     * 여긴 `last.tool_calls` 만 봤다. 그건 OpenAI 꼴이다. Anthropic 꼴은
-     * 같은 것을 `content` 배열 안의 `tool_use` 블록으로 싣는다(adapter.js 의
-     * assistantMessage). 그래서 이 함수는 Anthropic 창구에서 **한 번도 짝을
-     * 안 맞추고 있었다** — 부르고 끊긴 대화가 그대로 남고, 다음 요청에서
-     * 서버가 「tool_use 에 짝이 없다」 로 통째로 400 을 낸다.
-     *
-     * mantle 의 Anthropic 창구를 후보에 넣으면서 이 자리가 실제로 지나다니는
-     * 길이 됐다. 한 곳만 보던 것을 세 규격 다 보게 고친다.
-     */
-    const 부른것 = Array.isArray(last.content)
-      ? last.content.filter((b) => b?.type === 'tool_use').map((b) => ({ id: b.id, name: b.name }))
-      : (last.tool_calls ?? []).map((t) => ({ id: t.id, name: t.function?.name ?? t.name ?? '?' }));
+    // 부른 자리는 규격마다 다르다 — 읽는 규칙은 backend/adapter.js 의 부른것들 하나뿐이다.
+    const 부른것 = 부른것들(last);
     if (!부른것.length) return;
     const 이미 = session.messages.filter((m) => m.role === 'tool').length;
     for (const t of 부른것) {
@@ -708,7 +695,10 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
             if (ev.type === 'done') msg = ev.message;
             else {
               if (ev.type === 'content') 흘린것 += ev.text ?? '';
-              if (ev.type === 'backoff') 미룬셈 = 1;
+              // 맞기 전에 비켜 준 것은 **다시 부른 것이 아니다.** 요청은 한 번만
+              // 나갔다. 이걸 같이 세면 `/cost` 의 「다시 부른 횟수」 와 `--json` 의
+              // retries 가 「서버가 N번 막았다」 고 말하는데, 서버는 안 막았다.
+              if (ev.type === 'backoff' && !ev.미리) 미룬셈 = 1;
               yield ev;
             }
           }
@@ -835,11 +825,26 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 실제로는 아무것도 안 남겼다. 그래서 "이어서 해줘" 라고 하면 모델이
          * 방금 제가 한 말을 몰랐다. 안내가 거짓이면 안 하느니만 못하다.
          */
-        const 남길것 = 흘린것.trim();
-        if (!msg && 남길것) session.push({ role: 'assistant', content: 남길것 });
-        짝맞추기();
-        yield { type: 'aborted', steps, kept: !!남길것 || !!msg };
-        return;
+        /*
+          * `msg` 가 있다고 **대화에 실린 것은 아니다.**
+          *
+          * 답을 미는 자리는 이 try 가 끝난 뒤다. 그런데 이 안에서 답을 받고도
+          * 한 번 더 부르는 길이 둘 있다 — 잘려서 다시 부르기, 빈 답이라 다시
+          * 부르기. 그 사이에 사람이 Ctrl+C 를 누르면 `msg` 는 차 있는데 아직
+          * 아무것도 안 실린 상태다. 그런데도 `kept: !!msg` 라 화면에는
+          * 「여기까지는 대화에 남아 있으니 이어서 말씀하세요」 가 떴다.
+          * 사람이 「이어서 해줘」 라고 하면 모델은 방금 제가 한 말을 모른다 —
+          * 바로 위 주석이 없애겠다고 적어 둔 그 고장이 모양만 바꿔 남아 있었다.
+          *
+          * 그래서 **실제로 실었는지**를 보고 말한다. 아직 안 실렸으면 여기서 싣는다.
+          */
+         const 남길것 = 흘린것.trim();
+         let 실었나 = false;
+         if (msg) { session.push(assistantMessage(conn.kind, msg)); 실었나 = true; }
+         else if (남길것) { session.push({ role: 'assistant', content: 남길것 }); 실었나 = true; }
+         짝맞추기();
+         yield { type: 'aborted', steps, kept: 실었나 };
+         return;
       }
 
       /*
@@ -975,10 +980,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 안 된다. 도구 호출만 있고 결과가 빈 자리도 같이 채운다(짝맞추기).
        * 안 채우면 다음 요청에서 게이트웨이가 통째로 400 을 준다.
        */
+      // 중단 쪽과 같은 규칙이다 — 실었는지를 보고 말한다.
       const 오류때남길것 = 흘린것.trim();
-      if (!msg && 오류때남길것) session.push({ role: 'assistant', content: 오류때남길것 });
+      let 오류때실었나 = false;
+      if (msg) { session.push(assistantMessage(conn.kind, msg)); 오류때실었나 = true; }
+      else if (오류때남길것) { session.push({ role: 'assistant', content: 오류때남길것 }); 오류때실었나 = true; }
       짝맞추기();
-      yield { type: 'error', text: err.message, kept: !!오류때남길것 || !!msg };
+      yield { type: 'error', text: err.message, kept: 오류때실었나 };
       return;
     }
 
@@ -1409,6 +1417,19 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         // 하위가 쓴 토큰·시간도 이번 턴의 셈에 들어가야 한다. 안 그러면 /context 가 거짓말을 한다.
         session.usage.in += 자식.usage.in;
         session.usage.out += 자식.usage.out;
+        /*
+         * 새로 생긴 네 칸도 같이 더한다.
+         *
+         * 안 더하면 하위가 쓴 것이 통째로 사라진다. 화면이 전부
+         * `usage.prompt || usage.in` 을 보기 때문이다 — 부모가 한 번이라도
+         * 부르면 prompt 가 0 이 아니라서 `|| in` 이 영영 안 걸리고, 그러면
+         * 하위에 다 맡긴 턴이 `↑0` 으로 찍힌다. 바로 위 주석이 「안 그러면
+         * /context 가 거짓말을 한다」 고 적어 둔 그 자리다.
+         */
+        session.usage.prompt = (session.usage.prompt ?? 0) + (자식.usage.prompt ?? 0);
+        session.usage.cacheRead = (session.usage.cacheRead ?? 0) + (자식.usage.cacheRead ?? 0);
+        session.usage.cacheWrite = (session.usage.cacheWrite ?? 0) + (자식.usage.cacheWrite ?? 0);
+        session.usage.reasoning = (session.usage.reasoning ?? 0) + (자식.usage.reasoning ?? 0);
         session.usage.calls += 자식.usage.calls;
         session.usage.ms += 자식.usage.ms;
         session.usage.retries = (session.usage.retries ?? 0) + (자식.usage.retries ?? 0);
@@ -1592,9 +1613,14 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         /*
          * ── 비밀 가리기 ─────────────────────────────────────────────────
          *
-         * 여기가 도구 결과가 대화로 들어가는 **유일한** 자리다. 여기서 막으면
-         * 모델에게도 안 가고 `.deel/sessions/*.jsonl` 에도 안 적힌다. 한 번
-         * 새면 두 벌이 되는 것을 한 곳에서 끊는다.
+         * 도구 결과가 **가려진 채로** 대화에 들어가는 자리는 여기다. 여기서
+         * 막으면 모델에게도 안 가고 `.deel/sessions/*.jsonl` 에도 안 적힌다.
+         * 한 번 새면 두 벌이 되는 것을 한 곳에서 끊는다.
+         *
+         * 다만 `toolMessage` 를 미는 자리가 여기만은 아니다 — 하위 작업 요약과
+         * 살린쓰기는 딴 길로 들어온다. 하위 쪽은 제 루프가 이 자리를 이미
+         * 지나온 글을 넘겨받는 것이라 성립하지만, **새 길을 낼 때는 여기를
+         * 같이 봐야 한다.** 「유일한 자리」 라고 적어 두면 그때 안 본다.
          *
          * 새는 자리는 거의 항상 명령 출력이다 — env · git remote -v · curl -v ·
          * 검사 실패 로그. 그래서 그런 도구만 가린다.

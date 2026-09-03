@@ -439,7 +439,6 @@ export const ja = {
   'wire.think': '思考',
   'run.refusal': 'モデルがこの依頼を断りました — 押し直さずにここで止めます',
   'run.refusalWhy': '理由 {왜}',
-  'run.note': '{말}',
   'wire.rungs': '目盛り',
   'wire.cache': 'キャッシュ',
   'wire.none': 'なし',

@@ -1,3 +1,5 @@
+import { estimateTokens } from './tokens.js';
+
 // 캐시 표식을 어디에 붙일까.
 //
 // ── 무엇이 문제였나 ─────────────────────────────────────────────────────
@@ -66,7 +68,7 @@ const 붙일수있나 = (b) => {
 /** 대화가 이보다 길면 중간에 닻을 하나 더 박는다 (되돌아보기 창 스무 자리). */
 export const 닻문턱 = 20;
 /** 닻은 끝에서 이만큼 앞에 박는다. */
-export const 닻거리 = 12;
+const 닻거리 = 12;
 
 /**
  * 메시지 하나의 **마지막 성한 블록**에 표식을 붙인 사본을 돌려준다.
@@ -130,15 +132,19 @@ export function 메시지표식(messages) {
  * 너무 작으면 서버가 안 잡는다. 붙여도 탈은 없지만, 안 잡히는 표식을 붙여
  * 놓고 「캐시를 켰다」 고 말하면 화면이 거짓말을 한다.
  *
- * 글자 수로 어림한다 — 토크나이저가 없으므로(의존성 0개) 넉넉히 잡는다.
+ * 재는 자는 이 프로그램이 이미 쓰는 것으로 맞춘다(agent/session.js 의
+ * estimateTokens). 여기는 **글자 수를 토큰의 두 배로** 치고 있었는데, 그건
+ * 영어·코드에서만 맞는 셈이다. 한글은 글자당 1토큰이라 두 배로 나누면 절반이
+ * 되고, Bedrock 처럼 최소가 4,096 인 창구에서는 실제로는 2,300 토큰밖에 안
+ * 되는 대화에 「잡힐 만하다」 고 답했다. 그러면 안 잡힐 표식을 붙여 놓고
+ * `/status` 가 「캐시 표식」 이라고 적는다 — 이 함수가 막겠다고 적어 둔 바로
+ * 그 거짓말이다.
  */
 export function 잡힐만한가(messages, 최소토큰 = 1024) {
-  let 글자 = 0;
+  let 토큰 = 0;
   for (const m of messages ?? []) {
-    글자 += typeof m?.content === 'string'
-      ? m.content.length
-      : JSON.stringify(m?.content ?? '').length;
-    if (글자 > 최소토큰 * 2) return true;
+    토큰 += estimateTokens(typeof m?.content === 'string' ? m.content : JSON.stringify(m?.content ?? ''));
+    if (토큰 > 최소토큰) return true;
   }
   return false;
 }

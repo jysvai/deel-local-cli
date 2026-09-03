@@ -482,7 +482,6 @@ export const en = {
   'wire.think': 'thinking',
   'run.refusal': 'The model declined this request — stopping here instead of pushing again',
   'run.refusalWhy': 'reason {왜}',
-  'run.note': '{말}',
   'wire.rungs': 'rungs',
   'wire.cache': 'cache',
   'wire.none': 'none',

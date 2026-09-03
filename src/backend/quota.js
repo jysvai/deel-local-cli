@@ -168,7 +168,13 @@ export function 할당량자리(conn) {
   if (!conn) return '';
   let host = '';
   try { host = new URL(String(conn.base ?? '')).host; } catch { host = ''; }
-  return `${host}|${String(conn.model ?? '').trim()}`;
+  /*
+   * 규격까지 넣는다. 전선 카드 열쇠와 같은 까닭이다(agent/evolve.js) —
+   * mantle 은 `/openai/v1` 과 `/anthropic/v1` 이 **같은 호스트에 같은 모델
+   * 이름**으로 서 있어서, 규격을 빼면 한쪽이 바닥났다고 다른 쪽까지 기다린다.
+   */
+  const 꼴 = String(conn.kind ?? '').trim();
+  return `${host}|${String(conn.model ?? '').trim()}${꼴 ? `#${꼴}` : ''}`;
 }
 
 export function 할당량기억(머리, 어디 = '') {
@@ -223,7 +229,15 @@ export function 할당량잊기(어디 = '') {
 export const 낡은값 = 60000;      // 이보다 오래된 할당량으로는 안 정한다
 export const 미리기다림상한 = 60000;
 
-export function 미리기다릴까(것 = 마지막, 지금 = Date.now()) {
+/*
+ * 어느 창구 것인지는 **부르는 쪽이 정해서 준다.** 기본값을 두지 않는다.
+ *
+ * 전에는 `것 = 마지막` 이었다. 그 기본값이 곧 「아무 창구나 마지막에 답한
+ * 것」 이라, 빠뜨리고 부르면 옆 창구의 바닥난 할당량으로 이쪽이 기다린다 —
+ * 방금 고친 그 고장이다. 기본값을 없애면 다음에 빠뜨렸을 때 조용히 옛
+ * 동작으로 돌아가는 대신 눈에 보이게 어긋난다.
+ */
+export function 미리기다릴까(것, 지금 = Date.now()) {
   if (!것?.있나) return null;
   if (!(것.때 > 0) || 지금 - 것.때 > 낡은값) return null;
   const 바닥난것 = (것.요청 !== null && 것.요청 <= 0) || (것.토큰 !== null && 것.토큰 <= 0);

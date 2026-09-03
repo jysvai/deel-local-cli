@@ -94,6 +94,55 @@ trace('3-아닌것');
   check('막힌 것도 글자는 그대로', r.text.includes('@../../../비밀.txt'), r.text);
 }
 
+/*
+ * ── 살림 파일은 @ 로도 못 붙인다 ────────────────────────────────────────
+ *
+ * mention.js 가 이 검사를 가리키고 있었는데 **검사가 없었다.** 주석은
+ * `test/mention-secret.test.js` 를 가리켰고 그런 파일은 없다. 그러니까 이
+ * 자리는 「지킨다고 적어 두고 아무도 안 재는」 상태였다 — 그게 제일 오래
+ * 안 들키는 종류다.
+ *
+ * 무엇을 막나: Read 도구는 `.deel/config.json` 을 막고 있었는데 @ 는 안
+ * 막고 있었다. 그래서 `@.deel/config.json` 한 줄이면 게이트웨이 열쇠가
+ * 대화에 실려 그대로 바깥으로 나갔다. 도구는 막고 @ 는 안 막으면 막은 것이
+ * 아니다.
+ *
+ * 울타리 밖(위 검사)과는 다른 축이다. 이건 **울타리 안에 있는데도 못 읽는**
+ * 파일이라, 경로 검사로는 안 걸린다.
+ */
+{
+  mkdirSync(join(root, '.deel'), { recursive: true });
+  writeFileSync(join(root, '.deel', 'config.json'),
+    '{"profiles":[{"key":"sk-비밀열쇠-절대-안-나가야-함"}]}', 'utf8');
+
+  const r = 붙임('@.deel/config.json 좀 봐줘');
+  check('★★ 살림 파일은 안 붙인다', r.attached.length === 0, JSON.stringify(r.attached));
+  check('★★ 열쇠가 글에 안 실린다', !r.text.includes('sk-비밀열쇠'), r.text.slice(0, 80));
+  check('막혔다고 남긴다', r.blocked.length === 1, JSON.stringify(r.blocked));
+  // 막았다고 사람이 친 글자를 지우지는 않는다. 화면에서 무엇을 시켰는지는 남아야 한다.
+  check('막힌 것도 글자는 그대로', r.text.includes('@.deel/config.json'), r.text.slice(0, 80));
+
+  /*
+   * ★★ 열쇠를 담는 파일이 config.json 하나가 아니다.
+   *
+   * mcp.json 은 붙여 둔 MCP 서버마다 env 를 통째로 적어 두는 자리라 토큰이
+   * 그대로 들어 있다. 목록으로 막는 방식은 늘 이렇게 샌다 — 같은 종류의
+   * 파일을 하나 늘려 놓고 목록에 안 올리면 그날부터 조용히 나간다.
+   * (이 검사를 쓰면서 실제로 찾은 구멍이다.)
+   */
+  writeFileSync(join(root, '.deel', 'mcp.json'),
+    '{"servers":{"깃허브":{"env":{"GITHUB_TOKEN":"ghp_비밀토큰"}}}}', 'utf8');
+  const r2 = 붙임('@.deel/mcp.json 이거 봐줘');
+  check('★★ MCP 설정도 안 붙인다', r2.attached.length === 0, JSON.stringify(r2.attached));
+  check('★★ MCP 토큰이 글에 안 실린다', !r2.text.includes('ghp_비밀토큰'), r2.text.slice(0, 80));
+
+  // 지난 대화 기록도 안 붙인다. 열쇠는 없지만 옛 대화가 통째로 들어온다.
+  mkdirSync(join(root, '.deel', 'sessions'), { recursive: true });
+  writeFileSync(join(root, '.deel', 'sessions', 'a1.jsonl'), '{"role":"user"}', 'utf8');
+  const r3 = 붙임('@.deel/sessions/a1.jsonl');
+  check('★ 지난 대화 기록도 안 붙인다', r3.attached.length === 0, JSON.stringify(r3.attached));
+}
+
 trace('4-폴더');
 
 // ── 폴더를 지목하면 ─────────────────────────────────────────────────────

@@ -90,6 +90,22 @@ const 제미니format = {
  * Azure 인지는 **azure.js 에게 묻는다.** 여기서 글자 조각으로 따로 판단하면
  * detect 와 답이 갈리고, 갈리는 순간 한쪽만 맞는 자리가 생긴다.
  */
+/**
+ * mantle 창구의 호스트인가.
+ *
+ * 이 규칙이 여기와 backend/detect.js 두 군데에 똑같이 적혀 있었다. AWS 가
+ * 이름을 하나 더 내면 한쪽만 고쳐지고, 그러면 「연결은 되는데 전선 카드가
+ * 모르는 주소로 선다」 는 반쯤 되는 상태가 된다 — 화면에 아무 말도 안 뜨는
+ * 종류다. 주소를 알아보는 규칙은 이 파일이 갖는다고 이미 정해 두었으므로
+ * (아래 벤더 머리말) 여기에 두고 detect 가 가져다 쓴다.
+ *
+ * @param {string} 호스트 소문자로 맞춘 hostname
+ */
+export function 맨틀호스트인가(호스트) {
+  const h = String(호스트 ?? '').toLowerCase();
+  return h.startsWith('bedrock') && h.endsWith('.api.aws');
+}
+
 export function 벤더(conn) {
   let 호스트 = '';
   try { 호스트 = new URL(String(conn?.base ?? '')).hostname.toLowerCase(); }
@@ -111,7 +127,7 @@ export function 벤더(conn) {
      * 「모르는 주소」 취급이 된다 — 즉 mantle 로 붙인 사람만 조용히 손해를
      * 본다. 여기서도 앞머리를 같이 보는 이유는 위와 같다.
      */
-    if (호스트.startsWith('bedrock') && 호스트.endsWith('.api.aws')) return 'bedrock';
+    if (맨틀호스트인가(호스트)) return 'bedrock';
     if (애저인가(conn?.base)) return 'azure';
     if (호스트 === 'api.openai.com') return 'openai';
   }

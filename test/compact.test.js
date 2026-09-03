@@ -11,6 +11,8 @@ import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
 import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, 접힘표, 최소이득, 접힌파일열쇠 } from '../src/agent/compact.js';
 import { 파일기억 } from '../src/agent/filemem.js';
+import { assistantMessage, toolMessage } from '../src/backend/adapter.js';
+import { repairToolPairs } from '../src/agent/session.js';
 
 /*
  * ── 아래 검사들은 문턱을 0 으로 두고 부른다 ─────────────────────────────
@@ -671,6 +673,68 @@ await new Promise((r) => setImmediate(r));
   기억.잊기(접힌파일열쇠('src/a.js', 가짜울타리));   // ← 고친 방식
   check('★ 맞춘 열쇠로 지우면 다시 통째로 싣는다',
     기억.실을것(abs, 글).어떻게 === 'full');
+}
+
+/*
+ * ── 규격이 달라도 같은 일을 하는가 ──────────────────────────────────────
+ *
+ * 이 파일의 검사는 전부 OpenAI 꼴로만 짜여 있었다. 그래서 접기·자르기·이력
+ * 고치기가 Anthropic 꼴에서 **아무 일도 안 하고 있었는데도** 다 초록이었다.
+ *
+ * 그 규격은 도구 결과를 `role:'tool'` 이 아니라 **사람 차례의 tool_result
+ * 블록**으로 싣고, 부름도 `tool_calls` 가 아니라 `content` 의 tool_use 블록에
+ * 담는다. `role` 만 보는 코드에는 그게 전부 안 보인다.
+ *
+ * 안 보이면 어떻게 되나 —
+ *   · 접기가 0 이라 55% 단계가 통째로 죽는다. 곧장 80% 손실 요약으로 간다.
+ *   · 자르는 자리가 짝을 반으로 가른다. 그 뒤 요청이 전부 400 이다.
+ *   · 이어하기가 「고친 것 0」 이라고 조용히 넘어가고 첫 요청이 400 이다.
+ *
+ * 셋 다 화면에 아무 말이 없다. 그래서 규격 둘을 **같은 잣대로** 잰다.
+ */
+{
+  const 이력 = (규격, n = 25) => {
+    const ms = [{ role: 'system', content: '시킴' }, { role: 'user', content: '해줘' }];
+    for (let i = 0; i < n; i++) {
+      ms.push(assistantMessage(규격, { content: `${i}번째`, toolCalls: [{ id: `t${i}`, name: 'Read', args: { file_path: `f${i}.js` } }] }));
+      ms.push(toolMessage(규격, { callId: `t${i}`, name: 'Read', content: 'x'.repeat(2400) }));
+    }
+    return ms;
+  };
+  const 부름있나 = (m) => (Array.isArray(m?.content)
+    ? m.content.some((b) => b?.type === 'tool_use') : !!m?.tool_calls?.length);
+  const 결과있나 = (m) => (Array.isArray(m?.content)
+    ? m.content.some((b) => b?.type === 'tool_result') : m?.role === 'tool');
+
+  for (const 규격 of ['openai', 'anthropic']) {
+    const 이름 = 규격 === 'anthropic' ? 'Anthropic' : 'OpenAI';
+
+    // ── 접기 ──
+    const f = foldToolResults({ messages: 이력(규격) }, { 이득문턱: 0 });
+    check(`★★ ${이름} 꼴에서도 접는다`, f.접은것 > 0, `접은것 ${f.접은것}`);
+    check(`★ ${이름} 꼴에서도 자리를 아낀다`, f.아낀토큰 > 1000, `${f.아낀토큰} 토큰`);
+
+    // ── 자르는 자리 ──
+    const p2 = split(이력(규격));
+    check(`★★ ${이름} 꼴에서 머리가 짝 없는 부름으로 안 끝난다`,
+      !부름있나(p2.head.at(-1)), JSON.stringify(p2.head.at(-1))?.slice(0, 60));
+    check(`★★ ${이름} 꼴에서 꼬리가 짝 없는 결과로 안 시작한다`,
+      !결과있나(p2.tail[0]), JSON.stringify(p2.tail[0])?.slice(0, 60));
+
+    // ── 도중에 죽은 이력 고치기 ──
+    const 반쪽 = 이력(규격).slice(0, -1);       // 마지막 결과가 없다
+    const r = repairToolPairs(반쪽);
+    check(`★★ ${이름} 꼴에서도 짝 없는 부름을 걷어낸다`,
+      r.고친것 > 0 && !부름있나(r.messages.at(-1)), `고친것 ${r.고친것}`);
+  }
+
+  /*
+   * 그리고 두 규격이 **같은 양**을 접어야 한다. 한쪽만 절반이면 그 규격에서만
+   * 조용히 손해를 보는 것이고, 그건 위 검사들을 다 지나간다.
+   */
+  const 오 = foldToolResults({ messages: 이력('openai') }, { 이득문턱: 0 }).접은것;
+  const 앤 = foldToolResults({ messages: 이력('anthropic') }, { 이득문턱: 0 }).접은것;
+  check('★ 규격이 달라도 접는 개수가 같다', 오 === 앤, `openai ${오} · anthropic ${앤}`);
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

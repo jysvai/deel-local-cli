@@ -2807,7 +2807,7 @@ async function ctxLength(session, arg = '') {
 }
 
 /** 지금 연결을 이 프로필로 갈아끼운다. 대화는 그대로 둔다. */
-function 연결적용(session, p) {
+function 연결적용(session, p, ctx = null) {
   Object.assign(session.conn, {
     kind: p.kind, base: p.baseUrl, auth: p.auth, key: resolveKey(p), model: p.model,
     ctx: p.ctx, maxTokens: p.maxTokens ?? null,
@@ -2819,6 +2819,22 @@ function 연결적용(session, p) {
   // 어디 것인지도 같이 옮긴다. 요금표 주소 같은 안내가 옛 회사 것으로 남으면
   // 사람이 엉뚱한 요금표를 보러 간다.
   session.제공자 = p.제공자 ?? null;
+
+  /*
+   * 전선 카드도 **다시 달아 준다** (backend/wire.js).
+   *
+   * 안 다시 달면 옛 창구의 카드가 그대로 붙어 있다. 그것만으로 이런 일이
+   * 난다 — Anthropic 으로 옮겼는데 카드는 `생각형식:'effort'` 라 생각이 안
+   * 켜지고, `캐시:'열쇠'` 라 **캐시 표식이 한 자리도 안 붙는다.** 반대로
+   * OpenAI 호환으로 옮기면 `스트림usage:false` 가 남아 usage 가 영영 안 와서
+   * 상태줄의 ↑↓ 가 멈춰 선다. 그러면서 `/status` 는 옛 카드를 그대로 적는다 —
+   * 화면과 전선이 어긋나는 것, 이 모듈이 없애겠다고 만든 바로 그 고장이다.
+   *
+   * 지우고 새로 단다. 안 지우면 `배운칸` 이 따라붙어서, 옛 창구가 거절한
+   * 칸이 새 창구에서 「배운 것」 으로 남는다.
+   */
+  session.conn.전선 = null;
+  전선붙이기(session.conn, ctx?.배움 ?? null);
 }
 
 /**
@@ -2880,7 +2896,7 @@ async function switchModel(session, ctx, arg = '') {
   // 이름으로 바로 바꾸기 — 메뉴를 안 거친다.
   if (말) {
     const 찾은 = 이름으로찾기(cfg.profiles, 말);
-    if (찾은.length === 1) return await 골라적용(session, cfg, 찾은[0]);
+    if (찾은.length === 1) return await 골라적용(session, cfg, 찾은[0], ctx);
     if (찾은.length > 1) {
       say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 것이 여럿입니다.')}`);
       for (const p of 찾은.slice(0, 12)) say(`    ${c.cyan(p.name)}  ${c.gray(p.model)}`);
@@ -2890,7 +2906,7 @@ async function switchModel(session, ctx, arg = '') {
     // 등록된 것에 없으면, 지금 서버가 내주는 모델 중에 있는지 본다.
     const 있는것 = await 서버모델들(session.conn);
     const 맞는것 = (있는것 ?? []).filter((m) => m.toLowerCase().includes(말.toLowerCase()));
-    if (맞는것.length === 1) return await 모델만바꾸기(session, cfg, 맞는것[0]);
+    if (맞는것.length === 1) return await 모델만바꾸기(session, cfg, 맞는것[0], ctx);
     if (맞는것.length > 1) {
       say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 모델이 여럿입니다.')}`);
       for (const m of 맞는것.slice(0, 12)) say(`    ${c.cyan(m)}`);
@@ -2917,7 +2933,7 @@ async function switchModel(session, ctx, arg = '') {
     ask: ctx?.ask,
   });
   if (i === cfg.profiles.length) return await 서버모델고르기(session, ctx, cfg);
-  return await 골라적용(session, cfg, cfg.profiles[i]);
+  return await 골라적용(session, cfg, cfg.profiles[i], ctx);
 }
 
 function 이름으로찾기(profiles, 말) {
@@ -2963,11 +2979,11 @@ async function 나가도되나묻기(session, p) {
   return true;
 }
 
-async function 골라적용(session, cfg, p) {
+async function 골라적용(session, cfg, p, ctx = null) {
   if (!await 나가도되나묻기(session, p)) return;
   cfg.active = p.id;
   설정남기기(cfg);
-  연결적용(session, p);
+  연결적용(session, p, ctx);
   say(`  ${mark.ok} ${c.bold(p.name)} ${c.gray(p.model)} 로 바꿨습니다. 대화는 이어집니다.`);
   say('');
 }
@@ -2978,7 +2994,7 @@ async function 골라적용(session, cfg, p) {
  * 등록된 연결이 아니어도 된다 — 서버가 내준다면 쓸 수 있어야 한다.
  * 다음에도 쓰도록 프로필로 남겨 둔다. 그래야 /model 목록에서 다시 보인다.
  */
-async function 모델만바꾸기(session, cfg, 모델) {
+async function 모델만바꾸기(session, cfg, 모델, ctx = null) {
   const 지금 = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
   const 이미 = cfg.profiles.find((p) => p.baseUrl === session.conn.base && p.model === 모델);
   const p = 이미 ?? {
@@ -2997,7 +3013,7 @@ async function 모델만바꾸기(session, cfg, 모델) {
   if (!await 나가도되나묻기(session, p)) return;
   if (!이미) 설정남기기(upsert(cfg, p));
   else { cfg.active = p.id; 설정남기기(cfg); }
-  연결적용(session, p);
+  연결적용(session, p, ctx);
   say(`  ${mark.ok} 모델을 ${c.bold(모델)} 로 바꿨습니다. ${c.gray('서버는 그대로입니다.')}`);
   await 길이맞추기(session, cfg, p);
   say('');
@@ -3077,7 +3093,7 @@ async function 서버모델고르기(session, ctx, cfg) {
     say('');
     return;
   }
-  await 모델만바꾸기(session, cfg, 고른것);
+  await 모델만바꾸기(session, cfg, 고른것, ctx);
 }
 
 const INIT_TEMPLATE = `# DEEL.md

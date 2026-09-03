@@ -238,6 +238,61 @@ trace('4-진짜응답');
   check('통째로도 지운다', 마지막할당량() === null && 마지막할당량(할당량자리(사내)) === null);
 }
 
+/*
+ * ── 창구를 가리는지 **어댑터를 통해** 잰다 ──────────────────────────────
+ *
+ * 위 검사들은 순수 함수만 본다. 그런데 실제 고장은 `chat()` 이 자리 없이
+ * `미리기다릴까()` 를 부르는 것이었다 — 인자 하나 빠뜨리면 옛 동작으로 돌아가고
+ * **위 검사는 전부 그대로 초록**이다. 그래서 진짜 요청을 두 번 보내 본다.
+ */
+{
+  할당량잊기();
+  let 머리 = {};
+  const srv = createServer((req, res) => {
+    req.on('data', () => {});
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json', ...머리 });
+      res.end(JSON.stringify({
+        choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '네' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 2 },
+      }));
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}/v1`;
+  resetNet();
+  allowEndpoint(base);
+
+  const 바닥난것 = { kind: 'openai', base, auth: 'none', key: '', model: '바닥난모델', ctx: 8000 };
+  const 옆것 = { kind: 'openai', base, auth: 'none', key: '', model: '옆모델', ctx: 8000 };
+
+  // 첫 부름에서 서버가 「남은 것 0, 3초 뒤 풀림」 이라고 알려 준다.
+  머리 = { 'x-ratelimit-remaining-requests': '0', 'x-ratelimit-reset-requests': '3s' };
+  await chat(바닥난것, { messages: [{ role: 'user', content: 'x' }], maxTokens: 10 });
+  머리 = {};   // 그 뒤로는 아무 말도 안 해 준다
+
+  const 잰다 = async (conn) => {
+    const 알림 = [];
+    const t0 = Date.now();
+    await chat(conn, {
+      messages: [{ role: 'user', content: 'x' }], maxTokens: 10,
+      onBackoff: (ev) => 알림.push(ev),
+    });
+    return { 걸린시간: Date.now() - t0, 미리: 알림.filter((x) => x.미리).length };
+  };
+
+  const 옆 = await 잰다(옆것);
+  check('★★ 옆 창구는 남의 할당량으로 안 기다린다', 옆.미리 === 0 && 옆.걸린시간 < 1000,
+    `${옆.걸린시간}ms · 미리 ${옆.미리}`);
+
+  const 바닥 = await 잰다(바닥난것);
+  check('★★ 바닥난 창구는 보내기 전에 기다린다', 바닥.미리 === 1,
+    `${바닥.걸린시간}ms · 미리 ${바닥.미리}`);
+
+  srv.close();
+  할당량잊기();
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log('\n할당량 검사\n');
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
