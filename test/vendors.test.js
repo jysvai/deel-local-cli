@@ -32,6 +32,7 @@ import {
   endpoint, 더할머리, 말없이끝남, 생각예산, 강도말,
 } from '../src/backend/adapter.js';
 import { 그림메시지, 한점PNG } from '../src/backend/vision.js';
+import { probe } from '../src/backend/probe.js';
 import { 배울것 } from '../src/backend/learn.js';
 import { 할당량읽기, 아슬아슬한가, 할당량잊기 } from '../src/backend/quota.js';
 import { req, headersFor } from '../src/backend/http.js';
@@ -210,6 +211,14 @@ const 검사관 = {
       return "messages: Unexpected role 'system'. The Messages API accepts a top-level `system` parameter, not \"system\" as an input message role.";
     }
     for (const [i, m] of (b.messages ?? []).entries()) {
+      /*
+       * 이 규격에는 **도구 차례가 없다.** 역할은 사람과 모델 둘뿐이고,
+       * 도구 결과도 사람 차례의 tool_result 블록으로 간다. `role:'tool'` 을
+       * 보내면 「모르는 역할」 이라고 통째로 거절당한다.
+       */
+      if (m.role !== 'user' && m.role !== 'assistant') {
+        return `messages.${i}.role: Input should be 'user' or 'assistant' (got '${m.role}')`;
+      }
       if (i && m.role === b.messages[i - 1].role) {
         return `messages: roles must alternate between "user" and "assistant", but found multiple "${m.role}" roles in a row`;
       }
@@ -768,6 +777,159 @@ trace('9-흘려받기');
     check('물러섰다는 것을 화면에 알린다', 물러선것?.status === 429, JSON.stringify(물러선것?.status));
     srv.close();
     할당량잊기();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+trace('9-2-연결진단');
+/*
+ * ── 9-2. 연결 진단 여덟 칸 (`deel setup` 이 보여 주는 그 화면) ──────────
+ *
+ * 여기가 사람이 제일 먼저 보는 자리다. 그리고 여기서 나온 답이 그대로
+ * 프로필에 적힌다 — 「도구 호출 안 됨」 이라고 적히면 그 연결은 앞으로
+ * **도구를 아예 안 쓴다.** 즉 진단이 틀리면 프로그램이 반쪽이 된다.
+ *
+ * 그래서 규격 셋마다 「제대로 대답할 줄 아는 창구」 를 세우고 probe() 를
+ * 통째로 돌린다. 창구는 위 검사관을 그대로 쓰므로, 몸통이 그 규격에 안 맞으면
+ * 400 이 나고 그 칸은 빨개진다.
+ */
+{
+  const 성실한창구 = (종류) => {
+    const shape = 종류 === 'anthropic' ? 'anthropic' : (종류 === 'ollama' ? 'ollama' : 'openai');
+    const srv = createServer((r, res) => {
+      let 글 = '';
+      r.on('data', (c) => (글 += c));
+      r.on('end', () => {
+        const [길, 물음 = ''] = String(r.url).split('?');
+        const 보내기 = (코드, 것) => {
+          res.writeHead(코드, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(것));
+        };
+        // 창 크기 물어보기 (ctxsize.probeCtx). 규격마다 두드리는 자리가 다르다.
+        if (r.method === 'GET') {
+          if (/\/models\/[^/]+$/.test(길)) return 보내기(200, { id: 'm-1', context_length: 200000 });
+          if (/\/models$/.test(길)) return 보내기(200, { data: [{ id: 'm-1', context_length: 200000 }] });
+          return 보내기(404, {});
+        }
+        if (길 === '/api/show') return 보내기(200, { model_info: { context_length: 200000 } });
+
+        let 몸 = null;
+        try { 몸 = JSON.parse(글 || '{}'); } catch { 몸 = null; }
+        if (몸 === null) return 보내기(400, { error: { message: 'invalid JSON body' } });
+        const 탈 = 검사관[종류]({ 길, 물음, 머리: r.headers, 몸 });
+        if (탈) return 보내기(400, { error: { type: 'invalid_request_error', message: 탈 } });
+
+        // ── 여기부터는 「제대로 대답하는 모델」 흉내 ──────────────────────
+        const 시킴 = shape === 'anthropic' ? String(몸.system ?? '')
+          : (몸.messages ?? []).filter((m) => m.role === 'system').map((m) => m.content).join(' ');
+        const 그림있나 = (몸.messages ?? []).some((m) => (m.images?.length)
+          || (Array.isArray(m.content) && m.content.some((b) => b?.type === 'image' || b?.type === 'image_url')));
+        const 결과왔나 = JSON.stringify(몸.messages ?? []).includes('7099');
+        const 강도 = shape === 'anthropic' ? (몸.thinking?.budget_tokens ?? 0)
+          : (몸.think ?? 몸.reasoning_effort ?? null);
+        const 도구줄까 = !!(몸.tools?.length && !결과왔나);
+
+        let 글답 = '2';
+        if (/DEEL/.test(시킴)) 글답 = 'DEEL';
+        else if (결과왔나) 글답 = '7099';
+        else if (그림있나) 글답 = '흰색';
+        else if (몸.response_format || 몸.format) 글답 = '{"answer":21}';
+        // 강도가 셀수록 생각을 길게 한다. 진단은 그 차이를 본다.
+        const 센가 = 강도 === 'high' || Number(강도) > 3000;
+        const 생각 = 센가 ? '곱하기를 자리마다 나눠서 '.repeat(20) : '대충 ';
+
+        if (몸.stream) {
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          for (const 조각 of ['하나 ', '둘 ', '셋 ', '넷 ']) {
+            // 진짜 Ollama 는 조각마다 done:false 를 같이 준다. 그 열쇠가 곧
+            // 「한 조각이 왔다」 는 표시라, 빼면 흘려받기가 안 되는 것으로 보인다.
+            if (shape === 'ollama') { res.write(`${JSON.stringify({ message: { content: 조각 }, done: false })}\n`); continue; }
+            if (shape === 'anthropic') {
+              res.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 조각 } })}\n\n`);
+              continue;
+            }
+            res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 조각 } }] })}\n\n`);
+          }
+          if (shape === 'ollama') res.write(`${JSON.stringify({ message: { content: '' }, done: true, done_reason: 'stop' })}\n`);
+          else if (shape === 'anthropic') res.write(`event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`);
+          else res.write('data: [DONE]\n\n');
+          return res.end();
+        }
+
+        if (shape === 'anthropic') {
+          const 블록 = [];
+          if (몸.thinking) 블록.push({ type: 'thinking', thinking: 생각, signature: 'sig-1' });
+          블록.push({ type: 'text', text: 글답 });
+          if (도구줄까) 블록.push({ type: 'tool_use', id: 'toolu_1', name: 몸.tools[0].name, input: { path: 'config.json' } });
+          return 보내기(200, {
+            content: 블록, stop_reason: 도구줄까 ? 'tool_use' : 'end_turn',
+            usage: { input_tokens: 20, output_tokens: 생각.length },
+          });
+        }
+        if (shape === 'ollama') {
+          const m = { role: 'assistant', content: 글답 };
+          if (몸.think) m.thinking = 생각;
+          if (도구줄까) m.tool_calls = [{ function: { name: (몸.tools[0].function ?? 몸.tools[0]).name, arguments: { path: 'config.json' } } }];
+          return 보내기(200, { message: m, done: true, done_reason: 'stop', prompt_eval_count: 20, eval_count: 생각.length });
+        }
+        const m = { role: 'assistant', content: 글답 };
+        if (몸.reasoning_effort) m.reasoning_content = 생각;
+        if (도구줄까) {
+          m.tool_calls = [{
+            id: 'call_1', type: 'function',
+            function: { name: (몸.tools[0].function ?? 몸.tools[0]).name, arguments: '{"path":"config.json"}' },
+          }];
+        }
+        return 보내기(200, {
+          choices: [{ message: m, finish_reason: 도구줄까 ? 'tool_calls' : 'stop' }],
+          usage: { prompt_tokens: 20, completion_tokens: 생각.length },
+        });
+      });
+    });
+    return srv;
+  };
+
+  for (const [이름, 종류, kind, auth] of [
+    ['openai 규격', 'openai로컬', 'openai', 'bearer'],
+    ['ollama 규격', 'ollama', 'ollama', 'none'],
+    ['anthropic 규격', 'anthropic', 'anthropic', 'x-api-key'],
+  ]) {
+    const srv = 성실한창구(종류);
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const port = srv.address().port;
+    const base = kind === 'ollama' ? `http://127.0.0.1:${port}` : `http://127.0.0.1:${port}/v1`;
+    allowEndpoint(base);
+    const { facts, results } = await probe({ kind, base, auth, key: 'k-1', model: 'm-1' });
+    const 칸 = Object.fromEntries(results.map((x) => [x.id, x.status]));
+    const 건너뛴것 = results.filter((x) => x.status === 'skip').map((x) => x.id);
+
+    check(`★ ${이름}: 진단 여덟 칸을 다 확인한다 (건너뛴 칸 없음)`, 건너뛴것.length === 0, 건너뛴것.join(' '));
+    check(`★ ${이름}: 기본 대화가 된다`, 칸.chat === 'ok', `${칸.chat} · ${results[0]?.detail}`);
+    check(`${이름}: 시킴말이 먹는다`, 칸.system === 'ok', String(칸.system));
+    check(`★ ${이름}: 도구 호출을 확인한다`, facts.tools === true && 칸.tools === 'ok',
+      `${칸.tools} · ${results.find((x) => x.id === 'tools')?.detail}`);
+    check(`★ ${이름}: 도구 결과 되돌리기를 확인한다`, 칸.toolresult === 'ok',
+      `${칸.toolresult} · ${results.find((x) => x.id === 'toolresult')?.detail}`);
+    check(`${이름}: 흘려받기를 확인한다`, facts.streaming === true, String(칸.stream));
+    check(`★ ${이름}: 그림을 볼 수 있다고 적는다`, facts.vision === true, String(칸.vision));
+    check(`★ ${이름}: 추론 강도 차이를 잰다`, 칸.think === 'ok',
+      `${칸.think} · ${results.find((x) => x.id === 'think')?.detail}`);
+    check(`${이름}: 창 크기를 읽는다`, facts.ctx === 200000, String(facts.ctx));
+
+    /*
+     * JSON 모드는 규격에 따라 없을 수 있다. 없으면 **없다고 적혀야** 한다 —
+     * Anthropic 규격에는 답 모양을 강제하는 칸이 아예 없어서(도구로만 한다)
+     * 그 자리는 「스키마를 안 지킴」 으로 적히고, 편집 형식은 프롬프트로 문다.
+     */
+    if (kind === 'anthropic') {
+      check('★ anthropic 규격: JSON 모드가 없다는 것을 화면에 적는다',
+        facts.json === false && 칸.json === 'warn'
+        && /프롬프트로 강제/.test(results.find((x) => x.id === 'json')?.detail ?? ''),
+        `${칸.json} · ${results.find((x) => x.id === 'json')?.detail}`);
+    } else {
+      check(`${이름}: JSON 모드를 확인한다`, facts.json === true && 칸.json === 'ok', String(칸.json));
+    }
+    srv.close();
   }
 }
 

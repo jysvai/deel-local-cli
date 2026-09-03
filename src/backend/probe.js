@@ -7,7 +7,11 @@
 import { req, headersFor, serverMessage } from './http.js';
 import { probeCtx } from './ctxsize.js';
 import { 눈검사메시지 } from './vision.js';
-import { 주소붙이기 } from './adapter.js';
+import {
+  주소붙이기, endpoint, 더할머리, buildBody, extractMessage,
+  assistantMessage, toolMessage,
+} from './adapter.js';
+import { 벤더 } from './toolfit.js';
 
 const READ_TOOL = {
   type: 'function',
@@ -22,32 +26,32 @@ const READ_TOOL = {
   },
 };
 
-// 규격별 요청 만들기 — 이 함수 하나가 openai/ollama 차이를 흡수한다.
-function build(shape, { model, messages, tools, stream, json, think, maxTokens = 128 }) {
-  if (shape === 'ollama') {
-    const body = { model, messages, stream: !!stream, options: { num_predict: maxTokens } };
-    if (tools) body.tools = tools;
-    if (json) body.format = json;
-    if (think !== undefined) body.think = think;
-    return { path: '/api/chat', body };
-  }
-  const body = { model, messages, stream: !!stream, max_tokens: maxTokens };
-  if (tools) { body.tools = tools; body.tool_choice = 'auto'; }
-  if (json) {
-    body.response_format = { type: 'json_schema', json_schema: { name: 'probe', schema: json, strict: true } };
-  }
-  if (think !== undefined) body.reasoning_effort = think;
-  return { path: '/chat/completions', body };
-}
+/*
+ * ── 규격 차이는 여기서 흡수하지 않는다 ──────────────────────────────────
+ *
+ * 여기에 build() 와 extract() 가 따로 있었다. 그 둘이 아는 규격은 `ollama` 와
+ * 「나머지 = OpenAI」 **둘뿐**이었고, `anthropic` 은 「나머지」 로 떨어졌다.
+ * 그래서 Claude 를 직접 붙이면 진단이 이렇게 갔다 —
+ *
+ *   · 판 머리(anthropic-version)를 안 얹는다 → 그 하나로 400
+ *   · 문 이름이 /chat/completions (있어야 할 것은 /messages)
+ *   · 시킴말이 messages 안으로 들어간다 → 「모르는 역할」
+ *   · 도구가 {type:'function', function:{…}} 모양으로 간다
+ *   · 답을 choices[0].message 에서 찾는다 (실제로는 content 블록 배열)
+ *
+ * 첫 칸(기본 대화)이 400 으로 죽으면 나머지 일곱 칸은 전부 「확인 불가」 로
+ * 건너뛴다. 그 결과 `deel setup` 이 저장하는 프로필에 streaming·tools·json·
+ * vision 이 **다 false** 로 적힌다 — Claude 를 붙였는데 도구를 아예 안 쓰는
+ * 연결이 만들어진다. 붙기는 붙으니 아무도 고장이라고 생각하지 않는다.
+ *
+ * adapter.js 첫 줄은 처음부터 "진단(probe)과 에이전트 루프가 같은 함수를
+ * 쓴다" 고 적어 두었다. 실제로는 안 썼다. 이제 쓴다 — 규격이 넷째가 되어도
+ * 이 파일은 안 고쳐도 된다.
+ */
 
-// 응답에서 본문과 도구호출을 꺼낸다.
-function extract(shape, json) {
-  if (shape === 'ollama') {
-    const m = json?.message ?? {};
-    return { content: m.content ?? '', toolCalls: m.tool_calls ?? [], thinking: m.thinking ?? '' };
-  }
-  const m = json?.choices?.[0]?.message ?? {};
-  return { content: m.content ?? '', toolCalls: m.tool_calls ?? [], thinking: m.reasoning_content ?? '' };
+/** 이 회사가 무엇을 받는지까지 봐야 몸통이 맞다 (toolfit.js 의 벤더). */
+function 몸통(conn, opts) {
+  return buildBody(conn.kind, { model: conn.model, 회사: 벤더(conn), maxTokens: 128, ...opts });
 }
 
 // 추론 모델일 때 기본 대화 칸에 덧붙일 설명.
@@ -69,7 +73,14 @@ const SKIPPED = [
 export async function probe(conn, onStep = () => {}) {
   const { kind: shape, base, auth, model } = conn;
   const key = conn.key ?? '';
-  const H = () => headersFor(auth, key);
+  /*
+   * 판 머리를 여기서도 얹는다 (adapter.js 의 더할머리).
+   *
+   * Anthropic 규격은 `anthropic-version` 하나가 없으면 400 이다. 열쇠가
+   * 멀쩡해도 그렇다. 진단 화면은 그 400 을 「연결 실패」 로 적고, 사람은
+   * 열쇠를 다시 받으러 간다 — 여덟 칸이 전부 그 한 줄 때문에 빨개진다.
+   */
+  const H = () => headersFor(auth, key, 더할머리(shape));
   /*
    * 물음표 뒤를 끝에 남겨야 한다 (adapter.js 의 주소붙이기).
    *
@@ -85,23 +96,23 @@ export async function probe(conn, onStep = () => {}) {
   const facts = { shape, base, auth, model };
 
   const add = (r) => { results.push(r); onStep(r); return r; };
-  const call = (opts) => {
-    const { path, body } = build(shape, { model, ...opts });
-    return req(url(path), {
-      method: 'POST',
-      headers: H(),
-      body,
-      timeout: opts.timeout ?? 60000,
-      stream: opts.stream,
-    });
-  };
+  const call = (opts) => req(url(endpoint(shape)), {
+    method: 'POST',
+    headers: H(),
+    body: 몸통(conn, opts),
+    timeout: opts.timeout ?? 60000,
+    stream: opts.stream,
+  });
+  // 답 읽기도 루프와 같은 함수를 쓴다. 도구 부름은 { id, name, args } 로
+  // 고르게 나온다 — 규격마다 다른 자리를 여기서 또 헤아리지 않는다.
+  const 읽기 = (r) => extractMessage(shape, r?.json);
 
   // 1. 기본 대화 — 이게 안 되면 나머지는 볼 필요가 없다.
   //    추론 모델은 본문이 전부 thinking 으로 가고 토큰 상한에 잘린다.
   //    그걸 "안됨"으로 볼 수 없으므로, 사고를 끄고 넉넉히 한 번 더 물어본다.
   const ASK = { messages: [{ role: 'user', content: '1+1은? 숫자만 답하세요.' }] };
   let basic = await call({ ...ASK, maxTokens: 256 });
-  let got = basic.ok ? extract(shape, basic.json) : { content: '', thinking: '' };
+  let got = basic.ok ? 읽기(basic) : { content: '', thinking: '' };
   let thinkingModel = false;
   let retried = false;
 
@@ -110,12 +121,12 @@ export async function probe(conn, onStep = () => {}) {
     retried = true;
     const second = await call({ ...ASK, maxTokens: 1024, think: false, timeout: 90000 });
     if (second.ok) {
-      const e2 = extract(shape, second.json);
+      const e2 = 읽기(second);
       if (e2.content) { basic = second; got = e2; }
       else {
         // 사고를 못 끄는 서버 — 상한만 크게 올려 한 번 더.
         const third = await call({ ...ASK, maxTokens: 2048, timeout: 120000 });
-        if (third.ok && extract(shape, third.json).content) { basic = third; got = extract(shape, third.json); }
+        if (third.ok && 읽기(third).content) { basic = third; got = 읽기(third); }
       }
     }
   }
@@ -154,7 +165,7 @@ export async function probe(conn, onStep = () => {}) {
       { role: 'user', content: '안녕하세요' },
     ],
   });
-  const sysHit = sys.ok && /DEEL/i.test(extract(shape, sys.json).content);
+  const sysHit = sys.ok && /DEEL/i.test(읽기(sys).content);
   add({
     id: 'system',
     label: '시스템 메시지',
@@ -209,15 +220,18 @@ export async function probe(conn, onStep = () => {}) {
     maxTokens: 512,
     timeout: 90000,
   });
-  const tcalls = tl.ok ? extract(shape, tl.json).toolCalls : [];
+  const tcalls = tl.ok ? 읽기(tl).toolCalls : [];
   const gotCall = tcalls.length > 0;
-  const argOk = gotCall && JSON.stringify(tcalls[0]?.function?.arguments ?? '').includes('config');
+  // 부름은 이미 { id, name, args } 로 고르게 나온다 (extractMessage).
+  // 예전에는 여기서 OpenAI 날모양(function.arguments)을 직접 팠다 —
+  // 그러면 Anthropic 은 도구를 제대로 불러도 「안 불렀다」 로 읽힌다.
+  const argOk = gotCall && JSON.stringify(tcalls[0]?.args ?? '').includes('config');
   add({
     id: 'tools',
     label: '도구 호출',
     status: gotCall ? (argOk ? 'ok' : 'warn') : 'no',
     detail: gotCall
-      ? `${tcalls[0]?.function?.name} 호출됨${argOk ? '' : ' — 인자가 부정확, 편집 신뢰성 작업이 더 필요합니다'}`
+      ? `${tcalls[0]?.name} 호출됨${argOk ? '' : ' — 인자가 부정확, 편집 신뢰성 작업이 더 필요합니다'}`
       : tl.ok ? '도구를 안 부르고 글로만 답합니다' : serverMessage(tl),
     ms: tl.ms,
   });
@@ -227,12 +241,15 @@ export async function probe(conn, onStep = () => {}) {
   if (gotCall) {
     const tc = tcalls[0];
     const callId = tc.id ?? 'call_1';
-    const assistantMsg = shape === 'ollama'
-      ? { role: 'assistant', content: '', tool_calls: tcalls }
-      : { role: 'assistant', content: null, tool_calls: [{ id: callId, type: 'function', function: tc.function }] };
-    const toolMsg = shape === 'ollama'
-      ? { role: 'tool', tool_name: tc.function?.name, content: '{"port": 7099}' }
-      : { role: 'tool', tool_call_id: callId, content: '{"port": 7099}' };
+    /*
+     * 되돌려 넣는 모양도 루프와 같은 함수로 짓는다 (adapter.js).
+     *
+     * 여기에 규격별 갈래를 손으로 적어 두면 규격이 하나 늘 때마다 이 자리가
+     * 조용히 틀린다 — Anthropic 에서는 도구 결과가 사람 차례로 가야 하는데
+     * `role:'tool'` 로 보내 「모르는 역할」 을 받고 있었다.
+     */
+    const assistantMsg = assistantMessage(shape, { content: '', toolCalls: [tc] });
+    const toolMsg = toolMessage(shape, { callId, name: tc.name, content: '{"port": 7099}' });
     const rt = await call({
       ...quiet,
       timeout: 90000,
@@ -245,7 +262,7 @@ export async function probe(conn, onStep = () => {}) {
       tools: [READ_TOOL],
       maxTokens: 256,
     });
-    const said = rt.ok ? extract(shape, rt.json).content : '';
+    const said = rt.ok ? 읽기(rt).content : '';
     add({
       id: 'toolresult',
       label: '도구 결과 되돌리기',
@@ -279,8 +296,20 @@ export async function probe(conn, onStep = () => {}) {
       timeout: 90000,
     });
     if (!js.ok) break;
-    raw = extract(shape, js.json).content ?? '';
-    try { parsed = JSON.parse(raw); } catch {}
+    raw = 읽기(js).content ?? '';
+    /*
+     * **객체일 때만** 읽었다고 한다.
+     *
+     * 답 모양을 강제하는 칸이 없는 규격(Anthropic)에서는 이 물음에 그냥
+     * `21` 이라고 답한다. `JSON.parse('21')` 은 오류 없이 숫자 21 을 준다.
+     * 그런데 그다음 줄이 `'answer' in parsed` 라, 숫자에 `in` 을 써서
+     * **TypeError 로 진단 전체가 통째로 죽었다.** 스키마를 안 지킨 것은
+     * 「구조적 출력 안 됨」 이라고 적을 일이지 프로그램이 끝날 일이 아니다.
+     */
+    try {
+      const 읽힌것 = JSON.parse(raw);
+      if (읽힌것 && typeof 읽힌것 === 'object' && !Array.isArray(읽힌것)) parsed = 읽힌것;
+    } catch { /* 글로만 답하는 서버 — 아래에서 '스키마를 안 지킴' 으로 적는다 */ }
   }
   const jsonOk = !!(parsed && 'answer' in parsed);
   add({
@@ -316,7 +345,7 @@ export async function probe(conn, onStep = () => {}) {
     maxTokens: 32,
     timeout: 60000,
   });
-  const 눈있음 = !!(눈.ok && extract(shape, 눈.json).content);
+  const 눈있음 = !!(눈.ok && 읽기(눈).content);
   add({
     id: 'vision',
     label: '그림 보기',
@@ -330,9 +359,18 @@ export async function probe(conn, onStep = () => {}) {
   });
   facts.vision = 눈있음;
 
-  // 7. 추론 강도 조절 — 낮음/높음이 실제로 다른 결과를 내느냐.
-  //    상한에 걸리면 둘 다 같은 숫자가 나와 비교가 무의미해진다. 넉넉히 준다.
-  const THINK_CAP = 1500;
+  /*
+   * 7. 추론 강도 조절 — 낮음/높음이 실제로 다른 결과를 내느냐.
+   *
+   * 상한에 걸리면 둘 다 같은 숫자가 나와 비교가 무의미해진다. 넉넉히 준다.
+   *
+   * Anthropic 규격은 여기서 상한을 더 크게 잡아야 한다. 그쪽은 강도를 말이
+   * 아니라 **출력 상한 안에서 나가는 예산**으로 주는데(adapter.js 의
+   * 생각예산), 1,500 으로는 답에 남길 자리를 빼고 나면 최소 예산 1,024 를
+   * 못 만든다. 그러면 생각이 아예 안 켜진 채로 두 번을 부르고, 이 칸은
+   * 「차이 없음」 이라고 적는다 — 켤 수 있는 모델에 대고 못 켠다고 적는 셈이다.
+   */
+  const THINK_CAP = shape === 'anthropic' ? 8000 : 1500;
   const seen = [];
   for (const lv of ['low', 'high']) {
     const r = await call({
@@ -342,13 +380,15 @@ export async function probe(conn, onStep = () => {}) {
       timeout: 120000,
     });
     if (r.ok) {
-      const e = extract(shape, r.json);
+      const e = 읽기(r);
       seen.push({
         lv,
         ms: r.ms,
         thought: (e.thinking ?? '').length,
-        out: r.json?.usage?.completion_tokens ?? r.json?.eval_count ?? 0,
-        capped: (r.json?.done_reason ?? r.json?.choices?.[0]?.finish_reason) === 'length',
+        // 토큰 수와 끝난 까닭도 규격마다 이름이 다르다. 읽는 자리를 하나로 모은다 —
+        // 여기서 OpenAI 이름만 보면 Anthropic 은 늘 0 이고 늘 '안 잘림' 이 된다.
+        out: e.usage?.out ?? 0,
+        capped: e.stopped === 'length' || e.stopped === 'max_tokens',
       });
     } else {
       seen.push({ lv, ms: r.ms, err: serverMessage(r) });
