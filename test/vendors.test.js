@@ -28,7 +28,7 @@ import { readFileSync } from 'node:fs';
 import { toolSchemas } from '../src/tools/index.js';
 import { 도구맞추기, 벤더, 이름되돌리기 } from '../src/backend/toolfit.js';
 import {
-  buildBody, extractMessage, assistantMessage, toolMessage, chatStream,
+  buildBody, assistantMessage, toolMessage, chatStream,
   endpoint, 더할머리, 말없이끝남, 생각예산, 강도말,
 } from '../src/backend/adapter.js';
 import { 그림메시지, 한점PNG } from '../src/backend/vision.js';
@@ -554,6 +554,66 @@ trace('6-도구왕복');
     ];
     const { r, 왜 } = await 보내보기(srv, 자리, { messages, tools: 내장도구, maxTokens: 2048 });
     check(`★ ${자리.이름}: 도구 둘을 부르고 결과 둘을 되돌려도 받는다`, r.ok, String(왜));
+    srv.close();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+trace('6-2-곁다리기능');
+/*
+ * ── 6-2. 대화 말고 모델을 부르는 나머지 넷 ──────────────────────────────
+ *
+ * 대화 접기 요약(compact) · 커밋 메시지(commit) · `/grade` 리뷰(review) ·
+ * `/consult`. 넷 다 chatStream 이 아니라 **한 번에 받는 chat()** 을 쓰고,
+ * 넷 다 몸통이 같은 모양이다 — 시킴말 + 사람말, 도구 없음, 좁은 상한,
+ * `think:'low'`, 그리고 서버가 받아 주면 JSON 모드.
+ *
+ * 이 넷은 대화가 잘 되면 당연히 될 것 같지만 아니다. 상한이 좁아서
+ * (700~2,000) Anthropic 규격에서는 생각 예산이 최소 1,024 를 못 넘기는데,
+ * 그걸 모르고 실어 보내면 그 요청만 400 이 난다 — 대화는 멀쩡한데 `/compact`
+ * 만 안 되는, 사람이 연결 탓이라고 생각하지 못하는 고장이 된다.
+ */
+{
+  const 스키마 = {
+    type: 'object',
+    properties: { 제목: { type: 'string' }, 본문: { type: 'string' } },
+    required: ['제목', '본문'],
+    additionalProperties: false,
+  };
+  for (const 자리 of 자리들) {
+    const srv = await 세우고열기(자리.창구);
+    allowEndpoint(srv.주소);
+    // commit.js·compact.js·review.js 가 실제로 보내는 그 모양 그대로.
+    const 곁 = {
+      messages: [{ role: 'system', content: '너는 대화를 요약한다.' }, { role: 'user', content: '요약해라' }],
+      maxTokens: 700,
+      think: 자리.kind === 'ollama' ? false : 'low',
+    };
+    const { r, body, 왜 } = await 보내보기(srv, 자리, 곁);
+    check(`★ ${자리.이름}: 좁은 상한의 곁다리 요청을 받는다`, r.ok, String(왜));
+    if (자리.kind === 'anthropic') {
+      // 700 에서는 예산 1,024 를 못 만든다. 못 만들면 아예 안 켜야 한다.
+      check(`★ ${자리.이름}: 상한이 좁으면 생각을 안 켠다`, body.thinking === undefined,
+        JSON.stringify(body.thinking));
+    }
+
+    /*
+     * JSON 모드. 받는 규격에서는 몸통에 실리고, 없는 규격에서는 아예 안 실린다.
+     * 안 실리는 것이 곧 「없다」 이므로, 화면이 그렇게 말하는지는 아래
+     * 연결 진단 절에서 따로 잰다.
+     */
+    const { r: rj, body: bj, 왜: 왜j } = await 보내보기(srv, 자리, { ...곁, json: 스키마 });
+    check(`★ ${자리.이름}: JSON 모드를 켜도 받는다`, rj.ok, String(왜j));
+    if (자리.kind === 'anthropic') {
+      check(`★ ${자리.이름}: 없는 칸을 지어내지 않는다`,
+        bj.response_format === undefined && bj.format === undefined, JSON.stringify(bj.response_format));
+    } else if (자리.kind === 'ollama') {
+      check(`${자리.이름}: 답 모양을 format 으로 준다`, bj.format?.type === 'object', JSON.stringify(bj.format?.type));
+    } else {
+      check(`${자리.이름}: 답 모양을 response_format 으로 준다`,
+        bj.response_format?.type === 'json_schema' && bj.response_format.json_schema?.strict === true,
+        JSON.stringify(bj.response_format?.type));
+    }
     srv.close();
   }
 }

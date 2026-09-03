@@ -21,6 +21,7 @@ import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import { effortFor } from '../src/agent/effort.js';
+import { 강도말 } from '../src/backend/adapter.js';
 
 const pass = [];
 const fail = [];
@@ -234,6 +235,18 @@ async function 한턴(work, opts = {}) {
 // 한 칸 올리기도 하기 때문이다. 그래서 기대값도 같은 셈으로 구한다 —
 // 여기서 숫자를 손으로 적으면 배분 규칙이 바뀔 때마다 검사가 거짓말을 한다.
 const 보낸강도 = (b) => b?.reasoning_effort ?? b?.think;
+/*
+ * 셈이 한 걸음 늘었다. effort.js 로 보정한 뒤, 그 값을 **그 규격이 아는 말**로
+ * 옮겨서 싣는다 (adapter.js 의 강도말).
+ *
+ * 이 검사가 그 걸음을 실제로 만났다. 계획 모드는 high 인데 첫 판단에서 한 칸
+ * 올라 `max` 가 되고, `max` 를 받는 창구는 하나도 없다 — 즉 `/plan` 한 번이면
+ * 그 턴이 400 으로 죽고 있었다. 사람이 `/think max` 를 칠 필요도 없었다.
+ *
+ * 여기서 기대값을 손으로 'max' 라고 적으면 안 된다. 그러면 전선에 못 나가는
+ * 값을 「맞다」 고 지키는 검사가 된다. 제품이 밟는 그 두 걸음을 그대로 밟는다.
+ */
+const 기대강도 = (강도, 배분, 단계) => 강도말(effortFor(강도, 배분, 단계));
 
 {
   // 계획 모드는 think 를 high 로 올리려 한다. 사용자가 low 로 정해 뒀으면 그게 이긴다.
@@ -241,7 +254,7 @@ const 보낸강도 = (b) => b?.reasoning_effort ?? b?.think;
   s.thinkSet = true;
   받은것.length = 0;
   for await (const _ of run(s, ctx, '해줘')) { /* */ }
-  const 기대 = effortFor('low', get('plan').effort, 'plan');
+  const 기대 = 기대강도('low', get('plan').effort, 'plan');
   check('사용자가 정한 think 가 이긴다', 보낸강도(받은것[0]) === 기대,
     `보냄 ${보낸강도(받은것[0])} · 기대 ${기대}`);
 }
@@ -251,16 +264,31 @@ const 보낸강도 = (b) => b?.reasoning_effort ?? b?.think;
   const s = new Session(conn, { root, work: 'plan', think: 'low' });
   받은것.length = 0;
   for await (const _ of run(s, ctx, '해줘')) { /* */ }
-  const 기대 = effortFor(get('plan').think, get('plan').effort, 'plan');
+  const 기대 = 기대강도(get('plan').think, get('plan').effort, 'plan');
   check('안 정했으면 모드 값이 쓰인다', 보낸강도(받은것[0]) === 기대,
     `보냄 ${보낸강도(받은것[0])} · 기대 ${기대}`);
 }
 
 {
   // 위 둘이 실제로 다른 값이어야 의미가 있다. 같으면 검사가 아무것도 안 지킨 것이다.
-  const 정한것 = effortFor('low', get('plan').effort, 'plan');
-  const 모드것 = effortFor(get('plan').think, get('plan').effort, 'plan');
+  // 위에서 잰 것이 **전선에 실린 값**이므로 여기서도 전선 값으로 잰다.
+  const 정한것 = 기대강도('low', get('plan').effort, 'plan');
+  const 모드것 = 기대강도(get('plan').think, get('plan').effort, 'plan');
   check('두 경우가 실제로 다르다', 정한것 !== 모드것, `${정한것} vs ${모드것}`);
+}
+
+/*
+ * ★ 이 모드가 우리 눈금의 끝을 실제로 밟는다.
+ *
+ * 계획 모드는 high 인데 「깊게」 배분이 첫 판단을 한 칸 올려 `max` 가 된다.
+ * `max` 는 우리 눈금에만 있는 칸이라 어느 창구도 안 받는다 — 즉 `/plan` 한
+ * 번이면 그 턴이 400 으로 죽고 있었다. 사람이 `/think max` 를 칠 필요조차
+ * 없었다는 뜻이라, 이 자리를 못 박아 둔다.
+ */
+{
+  const 셈한것 = effortFor(get('plan').think, get('plan').effort, 'plan');
+  check('★ 계획 모드는 우리 눈금의 끝(max)까지 올라간다', 셈한것 === 'max', 셈한것);
+  check('★ 그런데 전선에는 그 규격이 아는 말로 나간다', 강도말(셈한것) === 'high', String(강도말(셈한것)));
 }
 
 server.closeAllConnections?.();
