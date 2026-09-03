@@ -26,8 +26,14 @@ Windows machine, and on a Korean one.
 
 ```
 › Read report.txt
-└ 4 lines · CP949
+└ 4 lines · CP949 (guessed)
 ```
+
+Without a byte-order mark it is, in the end, a **guess**. CP949 and CP932 share byte
+ranges, and the shorter the file the more often the guess flips. So a guess is labelled
+`(guessed)`. Stating it as fact would let you believe the file read cleanly and edit on
+top of it — and because the rule is to write it back in the same encoding, that is the
+moment the original gets damaged. A file with a mark is labelled plainly, e.g. `UTF-8(BOM)`.
 
 If you try to insert a character that encoding **cannot hold**, it refuses instead of saving.
 
