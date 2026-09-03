@@ -377,6 +377,7 @@ export const zh = {
   'run.hintEsc': 'ESC 中断',
   'run.hintQuit': 'Ctrl+C 中断·退出',
   'run.stopping': '正在停止…',
+  'run.errKept': '出错前收到的内容已经留在对话里 — 可以直接接着说。',
   'run.thinking': '思考中…',
   'run.thinkingChars': '思考中… {n}字',
   'run.turnFoot': '{초}秒 · 工具{n}次 · ↑{입력} ↓{출력}',

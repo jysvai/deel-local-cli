@@ -422,6 +422,8 @@ export const ko = {
   'run.hintQuit': 'Ctrl+C 중단·끝내기',
   // 줄 화면에는 상자가 없다. 눌린 것이 닿았다는 신호를 여기 한 줄로 낸다.
   'run.stopping': '멈추는 중…',
+  // 탈이 나기 전까지 흘러온 반쪽을 대화에 남겼다. 안 말하면 다시 처음부터 친다.
+  'run.errKept': '여기까지 받은 것은 대화에 남겼습니다 — 이어서 말씀하셔도 됩니다.',
   'run.thinking': '생각 중…',
   'run.thinkingChars': '생각 중… {n}자',
   'run.turnFoot': '{초}초 · 도구 {n}회 · ↑{입력} ↓{출력}',

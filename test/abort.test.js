@@ -37,6 +37,20 @@ const server = createServer((req, res) => {
       res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })}\n\n`);
       return res.end();
     }
+    /*
+     * 200자쯤 흘려 보내다 연결을 그냥 끊는다.
+     *
+     * 사람이 제일 자주 겪는 사고다 — 사내 게이트웨이가 몸통 중간에서 연결을
+     * 놓거나, 로컬 서버가 답을 뽑다 죽는다. 화면에는 그 200자가 그대로
+     * 보이는데 대화에는 한 글자도 안 들어가던 자리를 여기서 잰다.
+     */
+    if (모드 === 'die') {
+      for (let i = 0; i < 10; i++) {
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '흘러온말스무자짜리조각입니다여기까지' } }] })}\n\n`);
+      }
+      await new Promise((r) => setTimeout(r, 30));
+      return res.destroy();
+    }
     // 아주 천천히 100조각을 흘린다 — 끊지 않으면 한참 걸린다
     for (let i = 0; i < 100; i++) {
       if (res.writableEnded || res.destroyed) return;
@@ -158,6 +172,54 @@ const 만들기 = () => ({
   }
   check('안 끊으면 도구가 실제로 돎', existsSync(join(root, 'one.txt')) && existsSync(join(root, 'two.txt')));
   check('중단 이벤트는 안 나옴', !받은.includes('aborted'), 받은.join(','));
+}
+
+// ── 4. 탈이 나도 여기까지 흘러온 말은 남는가 ────────────────────────────
+//
+// ── 무슨 일이 났었나 ────────────────────────────────────────────────────
+//
+// 중단(Ctrl+C)에서는 흘러온 반쪽을 대화에 남기고 있었다. 그런데 **오류에서는
+// 안 남겼다.** 사람이 겪는 것은 오히려 이쪽이 잦다 — 게이트웨이가 몸통
+// 중간에서 연결을 놓으면 화면에는 200자가 그대로 보이는데 대화에는 한 글자도
+// 안 들어간다. 그 상태에서 "이어서 해줘" 라고 하면 모델은 방금 제가 한 말을
+// 모른다. 화면과 대화가 어긋나 있으면 사람은 그 뒤로 무엇을 믿어야 할지 모른다.
+모드 = 'die';
+{
+  const root3 = mkdtempSync(join(tmpdir(), 'deel-abort3-'));
+  const s = new Session(conn, { root: root3 });
+  const ctx = { scope: makeScope(root3), history: new History(root3), audit: new Audit(root3), seen: new Set() };
+  ctx.history.nextTurn();
+
+  const 받은 = [];
+  let 오류것 = null;
+  let 흘러온글자 = 0;
+  for await (const ev of run(s, ctx, '길게 답해줘')) {
+    받은.push(ev.type);
+    if (ev.type === 'content') 흘러온글자 += ev.text.length;
+    if (ev.type === 'error') 오류것 = ev;
+  }
+
+  check('중간에 끊기면 오류로 끝난다', 받은.includes('error'), 받은.join(','));
+  check('먼저: 화면에는 글이 흘러왔다', 흘러온글자 >= 100, `${흘러온글자}자`);
+
+  const 남은답 = s.messages.filter((m) => m.role === 'assistant').map((m) => String(m.content ?? '')).join('');
+  /*
+   * ★ 이 절의 핵심. 화면에 보인 글자가 대화에도 들어가 있어야 한다.
+   */
+  check('★ 탈이 나도 흘러온 말이 대화에 남는다', 남은답.includes('흘러온말스무자짜리조각입니다'),
+    `대화에 남은 답 ${남은답.length}자 / 화면에 흐른 것 ${흘러온글자}자`);
+  check('★ 남겼다는 것을 이벤트로도 알린다', 오류것?.kept === true, JSON.stringify(오류것?.kept));
+  check('사용자 말도 그대로 있다', s.messages[0]?.content === '길게 답해줘');
+
+  // 남긴 뒤에도 대화가 규격을 지켜야 한다 — 안 그러면 다음 요청이 400 이다.
+  let 깨짐 = null;
+  s.messages.forEach((m, i) => {
+    if (깨짐) return;
+    if (m.role === 'tool' && !s.messages[i - 1]?.tool_calls?.length) 깨짐 = `${i}번 tool 앞에 호출 없음`;
+    if (m.tool_calls?.length && s.messages[i + 1]?.role !== 'tool') 깨짐 = `${i}번 호출 뒤에 결과 없음`;
+  });
+  check('탈이 난 뒤에도 대화가 성하다', 깨짐 === null, 깨짐 ?? '');
+  rmSync(root3, { recursive: true, force: true });
 }
 
 server.closeAllConnections?.();

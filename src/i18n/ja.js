@@ -377,6 +377,7 @@ export const ja = {
   'run.hintEsc': 'ESC 中断',
   'run.hintQuit': 'Ctrl+C 中断・終了',
   'run.stopping': '止めています…',
+  'run.errKept': 'ここまで届いた分は会話に残しました — このまま続けて話せます。',
   'run.thinking': '考え中…',
   'run.thinkingChars': '考え中… {n}文字',
   'run.turnFoot': '{초}秒 · ツール{n}回 · ↑{입력} ↓{출력}',

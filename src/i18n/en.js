@@ -419,6 +419,7 @@ export const en = {
   'run.hintEsc': 'ESC stop',
   'run.hintQuit': 'Ctrl+C stop / quit',
   'run.stopping': 'stopping…',
+  'run.errKept': 'What arrived before the failure was kept in the conversation — you can carry on from there.',
   'run.thinking': 'thinking…',
   'run.thinkingChars': 'thinking… {n} chars',
   'run.turnFoot': '{초}s · {n} tool calls · ↑{입력} ↓{출력}',

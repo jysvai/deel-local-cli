@@ -2128,6 +2128,13 @@ export async function chatLoop(opts = {}) {
             clearThinking();
             say('');
             오류보이기(ev.text);
+            /*
+             * 반쪽이라도 남겼으면 그렇다고 말해 준다.
+             *
+             * 안 말하면 사람은 화면에 보이는 200자가 대화에도 들어갔는지를
+             * 모른다. 모르면 "이어서 해줘" 를 못 치고 처음부터 다시 친다.
+             */
+            if (ev.kept) say(`  ${c.gray(옮긴말('run.errKept'))}`);
             break;
 
           /*
