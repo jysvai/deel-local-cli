@@ -369,6 +369,7 @@ export const ja = {
   'status.keyStore': '鍵の保管',
   'status.rules': 'ルール',
   'status.noRules': 'なし（/init で作れます）',
+  'status.rulesUnread': '{이름} はありますが読めませんでした（{까닭}）— このフォルダのルールは効いていません',
   'status.caps': '対応',
   'status.capTools': 'ツール',
   'status.capStream': 'ストリーム',

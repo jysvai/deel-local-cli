@@ -369,6 +369,7 @@ export const zh = {
   'status.keyStore': '密钥存放',
   'status.rules': '规则',
   'status.noRules': '无（可用 /init 建一个）',
+  'status.rulesUnread': '{이름} 存在但读不了（{까닭}）— 本文件夹的规则没有生效',
   'status.caps': '支持',
   'status.capTools': '工具',
   'status.capStream': '流式',

@@ -257,6 +257,40 @@ trace('8-규칙파일은안건드린다');
   })(), '');
 }
 
+trace('9-못읽은규칙파일');
+
+// ── 규칙 파일이 있는데 못 읽으면 그렇게 말한다 ──────────────────────────
+//
+// 여태 세 후보를 전부 `try {…} catch {}` 로 감싸서, 권한이 막혔거나 같은 이름의
+// 폴더가 있으면 **없는 것과 똑같이** 다뤘다. 사람은 규칙을 적어 뒀으니 걸려
+// 있다고 믿는데 실제로는 하나도 안 걸린 채로 일이 돈다 — 「운영 DB 는 건드리지
+// 마라」 를 적어 놓고 그게 안 걸린 것이 여기서 나올 수 있는 제일 나쁜 모양이다.
+{
+  const fs = await import('node:fs');
+
+  // 없으면 그냥 없는 것이다. 말할 일이 아니다.
+  const 빈방 = join(root, '규칙없는방');
+  fs.mkdirSync(빈방, { recursive: true });
+  const s0 = new Session(conn(), { root: 빈방 });
+  check('규칙이 아예 없으면 아무 말도 안 한다', s0.rules === null && s0.규칙못읽음 === null,
+    JSON.stringify(s0.규칙못읽음));
+
+  // 있는데 못 읽는 경우 — DEEL.md 라는 이름의 폴더 (어느 OS 에서나 EISDIR).
+  const 막힌방 = join(root, '규칙막힌방');
+  fs.mkdirSync(join(막힌방, 'DEEL.md'), { recursive: true });
+  const s1 = new Session(conn(), { root: 막힌방 });
+  check('못 읽은 규칙 파일 이름을 들고 있다', s1.규칙못읽음?.이름 === 'DEEL.md', JSON.stringify(s1.규칙못읽음));
+  check('못 읽은 까닭도 들고 있다', s1.규칙못읽음?.까닭 === 'EISDIR', String(s1.규칙못읽음?.까닭));
+  check('못 읽었으면 규칙은 안 걸린다', s1.rules === null, JSON.stringify(s1.rules));
+
+  // 앞엣것을 못 읽어도 뒤엣것이 읽히면 그게 규칙이 된다. 다만 못 읽었다는
+  // 사실은 그대로 남는다 — 사람이 적어 둔 자리는 앞엣것이다.
+  fs.writeFileSync(join(막힌방, 'CLAUDE.md'), '이건 읽힌다', 'utf8');
+  const s2 = new Session(conn(), { root: 막힌방 });
+  check('뒤엣 규칙 파일로 넘어간다', s2.rules?.name === 'CLAUDE.md', s2.rules?.name ?? '없음');
+  check('넘어가도 못 읽은 것은 남는다', s2.규칙못읽음?.이름 === 'DEEL.md', JSON.stringify(s2.규칙못읽음));
+}
+
 언어정하기(원래);
 rmSync(root, { recursive: true, force: true });
 

@@ -985,6 +985,13 @@ export async function handle(line, session, ctx) {
         say(`  ${c.gray(pad(말('status.keyStore'), 10))} ${열쇠보관(load())}`);
       }
       say(`  ${c.gray(pad(말('status.rules'), 10))} ${session.rules ? session.rules.name : 말('status.noRules')}`);
+      // 파일이 있는데 못 읽은 것을 '없음' 으로 적으면, 규칙을 적어 둔 사람은
+      // 걸려 있다고 믿는다. 안 걸린 채로 도는 것이 여기서 제일 나쁜 모양이다.
+      if (session.규칙못읽음) {
+        say(`  ${c.gray(pad('', 10))} ${mark.warn} ${c.yellow(말('status.rulesUnread', {
+          이름: session.규칙못읽음.이름, 까닭: session.규칙못읽음.까닭,
+        }))}`);
+      }
       const caps = [
         k.tools ? c.green(말('status.capTools')) : c.red(말('status.capTools')),
         k.streaming ? c.green(말('status.capStream')) : c.gray(말('status.capStream')),

@@ -442,6 +442,7 @@ export const ko = {
   'status.keyStore': '열쇠 보관',
   'status.rules': '규칙',
   'status.noRules': '없음 (/init 으로 만들 수 있습니다)',
+  'status.rulesUnread': '{이름} 이 있는데 못 읽었습니다 ({까닭}) — 이 폴더 규칙이 안 걸려 있습니다',
   'status.caps': '지원',
   'status.capTools': '도구',
   'status.capStream': '스트림',

@@ -440,6 +440,7 @@ export const en = {
   'status.keyStore': 'Key store',
   'status.rules': 'Rules',
   'status.noRules': 'none (/init creates one)',
+  'status.rulesUnread': '{이름} exists but could not be read ({까닭}) — this folder\'s rules are not in effect',
   'status.caps': 'Supports',
   'status.capTools': 'tools',
   'status.capStream': 'stream',

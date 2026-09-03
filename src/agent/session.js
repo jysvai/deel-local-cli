@@ -291,6 +291,8 @@ export class Session {
     this.본것 = new 지켜본것();
     this.급정한것 = null;
     this.startedAt = Date.now();
+    /** 규칙 파일이 있는데 못 읽었나. `{이름, 까닭}` — /status 가 이걸 말한다. */
+    this.규칙못읽음 = null;
     this.rules = this.#loadRules();
     /*
      * 이 폴더가 무슨 프로젝트인가 (agent/project.js).
@@ -311,11 +313,27 @@ export class Session {
     this.memory = 기억토막(this.root);
   }
 
+  /**
+   * 이 폴더의 규칙 파일. DEEL.md → CLAUDE.md → AGENTS.md 중 먼저 읽히는 하나.
+   *
+   * 없는 것은 그냥 없는 것이라 아무 말도 안 한다. 그런데 **있는데 못 읽는**
+   * 것까지 같이 삼키면 안 된다 — 권한이 막혔거나 같은 이름의 폴더가 있으면
+   * 그렇게 된다. 사람은 규칙을 적어 뒀으니 걸려 있다고 믿는데 실제로는 하나도
+   * 안 걸린 채로 일이 돈다. 「운영 DB 는 건드리지 마라」 를 적어 놓고 그게
+   * 안 걸린 것이 여기서 나올 수 있는 제일 나쁜 모양이다.
+   * 못 읽은 것은 적어 두고 /status 가 '없음' 대신 그 까닭을 말한다.
+   */
   #loadRules() {
     for (const name of ['DEEL.md', 'CLAUDE.md', 'AGENTS.md']) {
-      const p = join(this.root, name);
-      if (existsSync(p)) {
-        try { return { name, text: readFileSync(p, 'utf8').slice(0, 20000) }; } catch {}
+      try { return { name, text: readFileSync(join(this.root, name), 'utf8').slice(0, 20000) }; }
+      catch (err) {
+        // 없으면 그냥 없는 것이다 — 말할 일이 아니다. existsSync 로 먼저 보지
+        // 않는 이유도 여기 있다: 보고 나서 읽는 사이에 지워지면 그 ENOENT 를
+        // 「있는데 못 읽었다」 로 적게 된다.
+        if (err?.code === 'ENOENT') continue;
+        // 첫 번째 것만 적어 둔다. 뒤엣것이 읽히면 그게 규칙이 되지만, 사람이
+        // 적어 둔 자리를 못 읽었다는 사실은 그래도 남아야 한다.
+        if (!this.규칙못읽음) this.규칙못읽음 = { 이름: name, 까닭: err?.code ?? err?.message ?? String(err) };
       }
     }
     return null;

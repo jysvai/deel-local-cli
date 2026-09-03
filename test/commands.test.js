@@ -524,6 +524,25 @@ trace('3.5-못박기를실제로눌러본다');
   check('뺀 뒤엔 프롬프트에서도 사라진다', !s.systemPrompt().includes('운영 DB'));
 }
 
+// ── /status 는 규칙 파일을 못 읽었으면 '없음' 이라고 하지 않는다 ─────────
+//
+// 있는데 못 읽는 것을 없는 것과 같이 적으면, 규칙을 적어 둔 사람은 걸려 있다고
+// 믿는다. 「운영 DB 는 건드리지 마라」 를 적어 놓고 안 걸린 채로 도는 것이
+// 여기서 나올 수 있는 제일 나쁜 모양이다.
+{
+  const 막힌방 = mkdtempSync(join(tmpdir(), 'deel-cmd-규칙-'));
+  mkdirSync(join(막힌방, 'DEEL.md'), { recursive: true });   // 이름만 같은 폴더 → EISDIR
+  const s = new Session(conn, { root: 막힌방, mode: 'auto', think: 'medium', effort: 'save' });
+  const r = await 조용히(() => handle('/status', s, ctx));
+  check('/status 가 못 읽은 규칙 파일을 말한다', r.out.includes('못 읽었습니다'),
+    r.out.split('\n').find((l) => l.includes('DEEL.md')) ?? '한 줄도 없음');
+  check('까닭도 같이 적는다', r.out.includes('EISDIR'));
+
+  const 멀쩡 = await 조용히(() => handle('/status', 새세션(), ctx));
+  check('규칙이 없을 뿐이면 경고는 안 뜬다', !멀쩡.out.includes('못 읽었습니다'));
+  rmSync(막힌방, { recursive: true, force: true });
+}
+
 // ── /sessions 는 저장이 새고 있으면 약속을 되풀이하지 않는다 ────────────
 //
 // 이 화면 마지막 줄이 「지금 대화는 나가지 않아도 계속 저장되고 있습니다」 다.
