@@ -603,6 +603,34 @@ trace('8-거절에서배우기');
       r ? `${r.kind} ${r.limit}` : 'null');
   }
 
+  /*
+   * ★ Anthropic 의 출력 상한 문장.
+   *
+   *   "max_tokens: 100000 > 64000, which is the maximum allowed number of
+   *    output tokens for claude-x"
+   *
+   * 앞 숫자는 **우리가 요청한 값**이고 뒤 숫자가 서버의 한계다. 앞을 집으면
+   * 방금 거절당한 그 값을 한계로 배우고, 그대로 다시 불러 또 거절당한다.
+   * 그때는 이미 배운 뒤라 두 번은 못 배우고 턴이 죽는다 — 그리고 그 값이
+   * 프로필에 남아서 **다음에 켤 때도 똑같이 죽는다.**
+   */
+  const a = 배울것('max_tokens: 100000 > 64000, which is the maximum allowed number of output tokens for claude-x');
+  check('★ Anthropic 출력 상한을 거꾸로 안 읽는다', a?.kind === 'out' && a?.limit === 64000,
+    a ? `${a.kind} ${a.limit}` : 'null');
+  check('★ 우리가 요청했던 값도 같이 적는다', a?.asked === 100000, String(a?.asked));
+
+  // 이름이 새 쪽(max_completion_tokens)인 게이트웨이도 같은 모양으로 말한다.
+  const b = 배울것('max_completion_tokens: 32768 > 16384 is the maximum for this deployment');
+  check('새 이름으로 말해도 뒤 숫자를 집는다', b?.kind === 'out' && b?.limit === 16384,
+    b ? `${b.kind} ${b.limit}` : 'null');
+
+  /*
+   * 한계를 따로 말해 주는 문장(OpenAI)은 그쪽을 집어야 한다. 앞 숫자는 여기서도
+   * 우리가 요청한 값이라, 그걸 배우면 같은 죽음이 OpenAI 쪽에서도 난다.
+   */
+  const c = 배울것('max_tokens is too large: 200000. This model supports at most 16384 completion tokens');
+  check('★ 한계를 따로 말해 준 문장은 그쪽을 집는다', c?.kind === 'out' && c?.limit === 16384,
+    c ? `${c.kind} ${c.limit}` : 'null');
 }
 
 // ═══════════════════════════════════════════════════════════════════════

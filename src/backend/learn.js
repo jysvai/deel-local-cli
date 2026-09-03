@@ -69,6 +69,30 @@ export function 배울것(message) {
   }
 
   // ── 2) 답 길이 한계 ───────────────────────────────────────────────────
+
+  /*
+   * 「우리가 준 값 > 서버의 한계」 로 말하는 자리부터 본다.
+   *
+   * Anthropic 은 출력 상한을 이렇게 말한다 —
+   *
+   *   "max_tokens: 100000 > 64000, which is the maximum allowed number of
+   *    output tokens for claude-x"
+   *
+   * 숫자가 둘인데 **앞이 우리가 요청한 값**이고 뒤가 한계다. 아래 표는 이름
+   * 뒤의 첫 숫자를 집으므로, 그대로 두면 방금 거절당한 바로 그 값을 한계로
+   * 배운다. 그러면 같은 값으로 곧장 다시 부르고 또 거절당하는데, 그때는 이미
+   * 배운 뒤라 두 번은 못 배우고 턴이 죽는다(loop.js). 게다가 배운 값은
+   * 연결저장() 으로 프로필에 적히므로 **다음에 켤 때도 똑같이 죽는다.**
+   * 사람이 손으로 설정을 고치기 전에는 안 풀린다.
+   *
+   * 표보다 먼저 본다. 표에 한 번 걸리고 나면 되돌릴 자리가 없다.
+   */
+  const 넘김 = /max_(?:completion_)?tokens\s*[:=]?\s*(\d{3,})\s*>\s*(\d{3,})/i.exec(s);
+  if (넘김) {
+    const limit = 성한수(넘김[2]);
+    if (limit) return { kind: 'out', limit, asked: 성한수(넘김[1]), text: 짧게(s) };
+  }
+
   const out표 = [
     // "max_tokens is too large: 200000. This model supports at most 16384 completion tokens"
     /supports? at most\s+(\d+)\s*(?:completion\s*)?tokens?/i,
