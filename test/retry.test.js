@@ -57,9 +57,20 @@ trace('1-정책');
     사다리.join(' / '));
   check('Retry-After 초는 그대로', 기다릴시간({ attempt: 1, retryAfter: '2' }, 정책) === 2000);
   check('Retry-After 0 은 바로', 기다릴시간({ attempt: 1, retryAfter: '0' }, 정책) === 0);
-  const 뒤 = new Date(Date.now() + 3000).toUTCString();
+  /*
+   * 재는 성질: **앞으로의 시각은 진짜 기다림으로 읽힌다** — 0초로 뭉개지지 않고,
+   * 그 시각을 넘겨 잡지도 않는다.
+   *
+   * 벽시계가 끼는 자리라 창을 좁게 잡으면 안 된다. HTTP 날짜는 초 단위라
+   * 만드는 순간 이미 최대 1초가 깎이고, 이 두 줄 사이에 컴퓨터가 멎으면 더
+   * 깎인다. 그래서 절대값 대신 시킨 시간(3초)에 대한 비율로 본다 —
+   * 느린 컴퓨터에서 2초가 지나가도 「0초로 읽었다」 와는 여전히 구별된다.
+   */
+  const 시킨것 = 3000;
+  const 뒤 = new Date(Date.now() + 시킨것).toUTCString();
   const 날짜로 = 기다릴시간({ attempt: 1, retryAfter: 뒤 }, 정책);
-  check('Retry-After 가 날짜면 그때까지', 날짜로 > 1500 && 날짜로 <= 3000, String(날짜로));
+  check('Retry-After 가 날짜면 0초가 아니라 그 시각까지 (시킨 것의 1/3 이상, 넘지 않음)',
+    날짜로 > 시킨것 / 3 && 날짜로 <= 시킨것, `${날짜로}ms / ${시킨것}ms`);
   check('지난 날짜면 바로', 기다릴시간({ attempt: 1, retryAfter: new Date(Date.now() - 5000).toUTCString() }, 정책) === 0);
   check('Retry-After 가 이상하면 사다리로', 기다릴시간({ attempt: 1, retryAfter: '잠깐만' }, 정책) >= 1000);
   check('60초를 넘게 시키면 60초에서 자른다', 기다릴시간({ attempt: 1, retryAfter: '600' }, 정책) === 60000);
@@ -73,20 +84,32 @@ trace('1-정책');
   check('사다리가 비어 있으면 기본 사다리로 (NaN 초가 아니다)',
     (() => { const ms = 기다릴시간({ attempt: 1 }, { ...정책, base: [] }); return Number.isFinite(ms) && ms >= 1000; })());
 
-  // 기다리는 중 끊기.
+  /*
+   * 기다리는 중 끊기.
+   *
+   * 재는 성질: **시킨 시간을 다 안 기다린다.** 「몇 ms 안에 돌아온다」 가 아니다.
+   * 500ms 같은 절대값으로 잡으면 검사가 재는 것이 코드가 아니라 그날 컴퓨터가
+   * 얼마나 바쁜가가 된다 — 빨개져도 아무도 안 고치는 빨강이 제일 나쁘다.
+   * 시킨 시간의 절반을 넘지 않으면 「안 기다리고 돌아왔다」 는 성립한다.
+   */
+  const 기다릴것 = 5000;
   const ac = new AbortController();
   const t0 = Date.now();
   setTimeout(() => ac.abort(), 30);
   let 끊김 = null;
-  try { await 기다리기(5000, ac.signal); } catch (e) { 끊김 = e; }
-  check('기다리다 끊으면 바로 Aborted 로 나온다', 끊김?.name === 'Aborted' && Date.now() - t0 < 500, `${끊김?.name} · ${Date.now() - t0}ms`);
+  try { await 기다리기(기다릴것, ac.signal); } catch (e) { 끊김 = e; }
+  check('기다리다 끊으면 Aborted 로 나오고 시킨 시간의 절반도 안 붙든다',
+    끊김?.name === 'Aborted' && Date.now() - t0 < 기다릴것 / 2, `${끊김?.name} · ${Date.now() - t0}ms / ${기다릴것}ms`);
   const 이미 = new AbortController(); 이미.abort();
   let 미리 = null;
-  try { await 기다리기(5000, 이미.signal); } catch (e) { 미리 = e; }
+  try { await 기다리기(기다릴것, 이미.signal); } catch (e) { 미리 = e; }
   check('이미 끊긴 채로 오면 기다리지 않는다', 미리?.name === 'Aborted');
+  // 재는 성질: 0 이면 **사다리를 안 탄다.** 사다리의 첫 칸이 1초라, 그보다
+  // 빨리 돌아오면 안 기다린 것이다. 50ms 로 잡으면 GC 한 번에 빨개진다.
   const t1 = Date.now();
   await 기다리기(0, null);
-  check('0 이면 안 기다린다', Date.now() - t1 < 50);
+  check('0 이면 사다리 첫 칸(1초)보다 훨씬 빨리 돌아온다', Date.now() - t1 < 정책.base[0],
+    `${Date.now() - t1}ms / ${정책.base[0]}ms`);
 }
 
 // ── 가짜 게이트웨이 ────────────────────────────────────────────────────
@@ -191,9 +214,18 @@ trace('3-RetryAfter');
 {
   const r = await 돌리기([{ status: 503, retryAfter: 1 }, { text: '됐습니다' }]);
   check('503 뒤에도 끝까지 간다', r.kinds.includes('done'), r.kinds.join(','));
-  check('Retry-After: 1 이면 1초는 기다린다', r.ms >= 1000 && r.ms < 5000, `${r.ms}ms`);
+  /*
+   * 재는 성질: **서버가 1초 뒤에 오라면 1초는 기다린다.**
+   *
+   * 아래쪽만 잰다. 위쪽을 5초로 막아 두면 그 5초가 재는 것은 코드가 아니라
+   * 그날 이 컴퓨터가 얼마나 바쁜가다 — 검사가 늦었다고 빨개지는 날이 오고,
+   * 그러면 다들 재검사를 눌러 넘긴다. 「사다리를 안 타고 서버 말을 따랐나」 는
+   * 바로 아래 줄이 벽시계 없이 딱 떨어지는 값으로 대신 잰다.
+   */
+  check('Retry-After: 1 이면 1초는 기다린다 (아래쪽만 잰다)', r.ms >= 1000, `${r.ms}ms`);
   const b = r.events.find((e) => e.type === 'backoff');
-  check('기다린 시간을 알림에 적는다', b?.wait >= 1000, JSON.stringify(b));
+  check('기다린 시간을 알림에 딱 1초로 적는다 (사다리가 아니라 서버 말)',
+    b?.wait === 1000, JSON.stringify(b));
 }
 
 // ── 3. 계속 막으면 사실대로 말하고 곱게 끝난다 ──────────────────────────
@@ -254,7 +286,10 @@ trace('7-기다리다끊기');
     중간에: (ev) => { if (ev.type === 'backoff') { 끊은때 = Date.now(); setTimeout(() => ac.abort(), 50); } },
   });
   check('중단으로 끝난다', r.kinds.includes('aborted'), r.kinds.join(','));
-  check('끊자마자 멈춘다 (5초를 안 기다린다)', 끊은때 && Date.now() - 끊은때 < 400, `${Date.now() - 끊은때}ms`);
+  // 재는 성질: 시킨 5초를 다 안 기다린다. 절대값(400ms)으로 잡으면 바쁜
+  // 컴퓨터에서 빨개지는데, 그때 빨개지는 것은 코드가 아니라 그 컴퓨터다.
+  check('끊자마자 멈춘다 (시킨 5초의 절반도 안 붙든다)',
+    끊은때 && Date.now() - 끊은때 < 5000 / 2, `${Date.now() - 끊은때}ms / 5000ms`);
   check('두 번째는 안 불렀다', hits.length === 1, `${hits.length}번`);
   check('안 부른 것은 세지 않는다', (r.session.usage.retries ?? 0) === 0, String(r.session.usage.retries));
 }
@@ -270,7 +305,7 @@ trace('8-비스트리밍');
   check('스트리밍 없이도 다시 불러 끝까지 간다', r.kinds.includes('done'), r.kinds.join(','));
   check('두 번 불렀다', hits.length === 2, `${hits.length}번`);
   check('알림도 온다', r.kinds.includes('backoff'), r.kinds.join(','));
-  check('Retry-After: 1 을 한 번에 받는 길에서도 지킨다', r.ms >= 1000 && r.ms < 5000, `${r.ms}ms`);
+  check('Retry-After: 1 을 한 번에 받는 길에서도 지킨다 (아래쪽만 잰다)', r.ms >= 1000, `${r.ms}ms`);
   // 전에는 답을 다 받은 뒤에야 알림이 나왔다 — 60초 동안 '생각 중' 만 떠 있었다.
   check('알림이 답보다 먼저, 기다리기 전에 나온다', 때.backoff && 때.done && 때.done - 때.backoff >= 900, `${때.done - 때.backoff}ms 차이`);
   check('횟수도 센다', r.session.usage.retries === 1, String(r.session.usage.retries));
@@ -281,7 +316,10 @@ trace('8-비스트리밍');
     conn: 새연결({ streaming: false }), signal: ac.signal,
     중간에: (ev) => { if (ev.type === 'backoff') setTimeout(() => ac.abort(), 50); },
   });
-  check('한 번에 받는 길에서도 기다리다 끊으면 바로 멈춘다', r2.kinds.includes('aborted') && r2.ms < 1500, `${r2.ms}ms · ${r2.kinds.join(',')}`);
+  // 여기도 재는 성질은 「시킨 5초를 다 안 기다린다」 다. 1500ms 로 잡으면
+  // 절반이 넘게 여유가 있는데도 바쁜 컴퓨터에서 빨개진다.
+  check('한 번에 받는 길에서도 기다리다 끊으면 시킨 5초의 절반도 안 붙든다',
+    r2.kinds.includes('aborted') && r2.ms < 5000 / 2, `${r2.ms}ms / 5000ms · ${r2.kinds.join(',')}`);
   check('그때는 안 센다', (r2.session.usage.retries ?? 0) === 0, String(r2.session.usage.retries));
 }
 

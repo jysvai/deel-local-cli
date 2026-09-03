@@ -20,6 +20,9 @@ import { join } from 'node:path';
 import { 가리기, 훑기, 가렸다는말, 봤다는말, 아는열쇠, 가릴도구, 표몇군데, 가릴까 } from '../src/safety/secrets.js';
 import { runTool } from '../src/tools/index.js';
 import { makeScope } from '../src/safety/guard.js';
+import { Session } from '../src/agent/session.js';
+import { run } from '../src/agent/loop.js';
+import { allowEndpoint } from '../src/safety/network.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -309,16 +312,18 @@ trace('6-3-바깥으로-나갈-때는-파일도-가린다');
  * 남의 서버 로그에 남고, 그건 되돌릴 수가 없다. 그리고 잃는 쪽은 이제 6-2절의
  * 자물쇠가 막는다. 그 자물쇠가 먼저 생겼기 때문에 여기서 가릴 수 있게 됐다.
  *
- * ── 왜 여기는 끝까지 돌려보는 검사가 없나 ──────────────────────────────
+ * ── 어떻게 끝까지 돌려 보나 ────────────────────────────────────────────
  *
- * 「바깥으로 나가는 연결」을 진짜로 만들어 볼 수가 없다. 이 도구가 「이 안」
- * 으로 치는 범위가 곧 사설 대역 전부이기 때문이다(127.x · 10.x · 192.168.x ·
- * 172.16~31.x). 검사가 닿을 수 있는 주소는 전부 「이 안」 이고, 진짜 바깥
- * 주소로 붙는 검사는 이 저장소가 절대 안 만든다.
+ * 「바깥으로 나가는 연결」을 진짜로 붙어서 만들 수는 없다. 이 도구가 「이 안」
+ * 으로 치는 범위가 곧 사설 대역 전부라(127.x · 10.x · 192.168.x · 172.16~31.x),
+ * 검사가 닿을 수 있는 주소는 전부 「이 안」 이다. 진짜 바깥 주소로 붙는 검사는
+ * 이 저장소가 절대 안 만든다.
  *
- * 그래서 판단을 순수 함수로 떼어 내 여기서 재고, 루프가 그 함수를 그 자리에서
- * 부르는지를 소스로 확인한다. 「돌려 봤다」 고 말할 수 없는 자리라 그렇게
- * 적는다.
+ * 그래서 **주소는 바깥 것을 쓰되 나가지는 않는다** — fetch 를 검사 안에서
+ * 갈아 끼워 가짜 게이트웨이가 답하게 한다. 한 바이트도 밖으로 안 나가면서
+ * 루프는 자기가 바깥에 붙은 줄 안다. 여태 이 자리를 loop.js 소스를 정규식으로
+ * 훑어서 때웠는데, 글자를 재면 변수 이름 하나만 바꿔도 빨개지고 정작 판단이
+ * 뒤집혀도 글자가 그대로면 초록이다.
  */
 {
   // 이 안 — 여태 하던 그대로다. 명령 출력만 가리고 파일은 안 가린다.
@@ -338,14 +343,69 @@ trace('6-3-바깥으로-나갈-때는-파일도-가린다');
   // 사용자의 파일이 조용히 가려진다.
   check('안 주면 여태대로', 가릴까('Read') === false && 가릴까('Bash') === true);
 
-  // 루프가 이걸 그 자리에서 쓰나. 안 쓰면 사람에게는 하나도 안 고쳐졌다.
-  const 루프 = readFileSync(new URL('../src/agent/loop.js', import.meta.url), 'utf8');
-  check('루프가 이 판단을 들여온다', /import \{[^}]*가릴까[^}]*\} from '\.\.\/safety\/secrets\.js'/.test(루프));
-  check('★ 루프가 연결이 바깥인지 본다', /const 바깥으로나감 = 바깥인가\(conn\.base\)/.test(루프));
-  check('★ 도구 결과가 대화로 들어가는 자리에서 쓴다',
-    /const 이번엔가릴까 = 가릴까\(call\.name, \{ 바깥: 바깥으로나감 \}\)[\s\S]{0,200}?if \(이번엔가릴까\) \{[\s\S]{0,200}?가리기\(실을것/.test(루프));
-  // 가린 것을 기록에도 남긴다 — 나중에 무엇이 안 나갔는지 물어볼 수 있어야 한다.
-  check('가렸다는 것을 감사기록에 남긴다', /바깥: 바깥으로나감/.test(루프));
+}
+
+trace('6-4-바깥으로나가는루프');
+
+// ── 루프를 끝까지 돌려서, 모델에게 실제로 나간 글을 본다 ────────────────
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-secret-loop-'));
+  const 진짜열쇠 = 'sk-proj-abcdefghijklmnopqrstuvwxyz012345';
+  writeFileSync(join(방, '.env'), `OPENAI_API_KEY=${진짜열쇠}\n`, 'utf8');
+
+  /*
+   * 가짜 게이트웨이. 첫 부름에는 Read 를 시키고, 그 결과를 받은 두 번째
+   * 부름의 몸통을 그대로 들고 있는다 — 거기 담긴 것이 곧 **바깥으로 나가는 글**
+   * 이다. 주소는 바깥 것이지만 fetch 를 갈아 끼웠으므로 한 바이트도 안 나간다.
+   */
+  const 나간몸통 = [];
+  const 진짜fetch = globalThis.fetch;
+  globalThis.fetch = async (url, opt = {}) => {
+    나간몸통.push(JSON.parse(String(opt.body ?? '{}')));
+    const 답 = 나간몸통.length === 1
+      ? { choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: '.env' }) } }] } }] }
+      : { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '봤습니다.' } }] };
+    return new Response(JSON.stringify(답), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  const 가린기록 = [];
+  const 돌려보기 = async (base) => {
+    나간몸통.length = 0;
+    allowEndpoint(base);
+    const conn = {
+      kind: 'openai', base, auth: 'none', key: null, model: '검사용',
+      ctx: 32768, streaming: false, tools: true, json: false, think: false,
+    };
+    const session = new Session(conn, { root: 방, mode: 'auto', think: 'off', maxSteps: 4 });
+    const ctx = {
+      scope: makeScope(방),
+      history: { snapshot() {}, nextTurn() {} },
+      audit: { write(kind, d) { if (kind === 'secret') 가린기록.push(d); }, tool() {}, turn() {} },
+      seen: new Set(), enc: new Map(), 요청: '.env 좀 봐줘',
+    };
+    for await (const _ of run(session, ctx, '.env 좀 봐줘', {})) { /* 이벤트는 여기서 안 본다 */ }
+    // 두 번째 부름의 몸통에 도구 결과가 실려 나간다.
+    return JSON.stringify(나간몸통.at(-1) ?? {});
+  };
+
+  try {
+    const 바깥으로 = await 돌려보기('https://gateway.example.test/v1');
+    check('★ 바깥으로 나가는 길에서는 파일 내용이 가려져 나간다',
+      !바깥으로.includes(진짜열쇠), 바깥으로.includes(진짜열쇠) ? '열쇠가 그대로 나갔다' : '');
+    check('★ 가렸다는 것을 모델에게도 알려 준다', 바깥으로.includes('가림'), '');
+    check('가렸다는 것을 감사기록에 남긴다',
+      가린기록.some((d) => d.가렸나 === true && d.바깥 === true), JSON.stringify(가린기록));
+
+    가린기록.length = 0;
+    const 이안에서 = await 돌려보기('http://127.0.0.1:11434/v1');
+    check('★ 이 안에서는 파일 내용을 안 가리고 그대로 준다',
+      이안에서.includes(진짜열쇠), 이안에서.includes('가림') ? '가려 버렸다' : '열쇠가 아예 안 실렸다');
+    check('안 가려도 봤다는 것은 기록에 남긴다',
+      가린기록.some((d) => d.가렸나 === false && d.바깥 === false), JSON.stringify(가린기록));
+  } finally {
+    globalThis.fetch = 진짜fetch;
+    rmSync(방, { recursive: true, force: true });
+  }
 }
 
 trace('7-이상한것');
