@@ -446,4 +446,5 @@ export const zh = {
   'common.seeHelp': '用 /help 看命令列表',
   'common.yes': '是',
   'common.no': '否',
+  'common.cfgSaveFailed': '设置没能写入文件（{왜}）— 本次有效，重开就会恢复原样。',
 };

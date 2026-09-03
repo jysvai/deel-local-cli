@@ -164,6 +164,23 @@ export function save(cfg, { toProject = false } = {}) {
   return p;
 }
 
+/**
+ * 설정을 남긴다. 못 남겨도 던지지 않고, **왜 못 남겼는지를 돌려준다.**
+ *
+ * 부르는 자리가 아홉 군데인데 전부 `try { save(cfg) } catch {}` 였다. 「못
+ * 남겨도 이번 세션에는 먹는다」 는 맞는 말이지만, 그 뒤에 화면은 `✓` 를
+ * 찍는다 — 사람은 정해진 줄 알고 다음에 창을 열었다가 옛 값을 본다. 그리고
+ * 그때는 무엇 때문인지 알 길이 없다(홈이 읽기 전용인지, 디스크가 찼는지).
+ *
+ * 던지는 것은 안 바꾼다. 설정 하나 못 적었다고 대화가 끊기면 본말이 뒤집힌다.
+ *
+ * @returns {{ok: true, 자리: string} | {ok: false, 왜: string}}
+ */
+export function 저장시도(cfg, 옵션 = {}) {
+  try { return { ok: true, 자리: save(cfg, 옵션) }; }
+  catch (err) { return { ok: false, 왜: err?.message ?? String(err) }; }
+}
+
 export function activeProfile(cfg = load()) {
   if (!cfg.profiles.length) return null;
   return cfg.profiles.find((x) => x.id === cfg.active) ?? cfg.profiles[0];

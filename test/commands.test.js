@@ -524,6 +524,31 @@ trace('3.5-못박기를실제로눌러본다');
   check('뺀 뒤엔 프롬프트에서도 사라진다', !s.systemPrompt().includes('운영 DB'));
 }
 
+// ── 설정을 못 남기면 ✓ 옆에 그 말도 같이 뜬다 ──────────────────────────
+//
+// 여태 아홉 자리가 전부 `try { save(cfg) } catch {}` 였다. 못 남겨도 이번 판에는
+// 먹으니 대화는 계속되는데, 바로 다음 줄에서 화면은 「✓ 바꿨습니다」 를 찍는다.
+// 사람은 정해진 줄 알고 창을 닫았다가 다음에 옛 값을 보고, 그때는 무엇 때문인지
+// 알 길이 없다.
+{
+  const 원래집 = process.env.DEEL_HOME;
+  // 설정 폴더 자리에 파일을 놓아 쓰기를 막는다 — 홈이 읽기 전용인 것과 같은 모양.
+  const 막힌집 = mkdtempSync(join(tmpdir(), 'deel-cmd-설정막힘-'));
+  writeFileSync(join(막힌집, '여기는파일'), '폴더가 아니다', 'utf8');
+  process.env.DEEL_HOME = join(막힌집, '여기는파일', '안쪽');
+  const 막혔을때 = await 조용히(() => handle('/bell off', 새세션(), ctx));
+  process.env.DEEL_HOME = 원래집;
+
+  check('설정을 못 남기면 화면이 그렇게 말한다', 막혔을때.out.includes('남기지 못했습니다'),
+    막혔을때.out.trim().split('\n').join(' / ') || '한 줄도 없음');
+  check('이번 판에는 먹는다는 것도 같이 말한다', 막혔을때.out.includes('이번 판에는 먹지만'));
+
+  const 멀쩡할때 = await 조용히(() => handle('/bell on', 새세션(), ctx));
+  check('잘 남기면 아무 말도 안 한다', !멀쩡할때.out.includes('남기지 못했습니다'),
+    멀쩡할때.out.trim().split('\n')[0] ?? '');
+  rmSync(막힌집, { recursive: true, force: true });
+}
+
 // ── /status 는 규칙 파일을 못 읽었으면 '없음' 이라고 하지 않는다 ─────────
 //
 // 있는데 못 읽는 것을 없는 것과 같이 적으면, 규칙을 적어 둔 사람은 걸려 있다고

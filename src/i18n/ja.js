@@ -446,4 +446,5 @@ export const ja = {
   'common.seeHelp': '/help で一覧が出ます',
   'common.yes': 'はい',
   'common.no': 'いいえ',
+  'common.cfgSaveFailed': '設定をファイルに保存できませんでした（{왜}）— 今回は効きますが、開き直すと元に戻ります。',
 };

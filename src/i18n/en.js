@@ -492,4 +492,5 @@ export const en = {
   'common.seeHelp': 'Run /help for the list',
   'common.yes': 'yes',
   'common.no': 'no',
+  'common.cfgSaveFailed': 'Could not write the setting to disk ({왜}) — it applies now but reverts on restart.',
 };

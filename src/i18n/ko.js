@@ -494,4 +494,5 @@ export const ko = {
   'common.seeHelp': '명령 목록은 /help',
   'common.yes': '네',
   'common.no': '아니요',
+  'common.cfgSaveFailed': '설정을 파일에 남기지 못했습니다 ({왜}) — 이번 판에는 먹지만 다시 켜면 돌아갑니다.',
 };

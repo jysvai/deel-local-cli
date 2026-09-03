@@ -12,7 +12,7 @@ import { allowEndpoint } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { pick, confirm } from './ui/prompt.js';
-import { load, save, resolveKey, upsert, 열쇠보관, configPath } from './config.js';
+import { load, save, 저장시도, resolveKey, upsert, 열쇠보관, configPath } from './config.js';
 import { 지금상태 as 지금열쇠상태 } from './safety/authcmd.js';
 import { 제공자고르기 } from './providers/index.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
@@ -171,6 +171,23 @@ function 경로처럼보이나(line) {
 }
 
 // 반환: { handled, exit? }  handled=false 면 모델에게 보낸다.
+
+/**
+ * 설정을 남기고, 못 남겼으면 화면에 한 줄 (config.js 의 저장시도).
+ *
+ * 여태 아홉 자리가 전부 `try { save(cfg) } catch {}` 였다. 못 남겨도 이번 판에는
+ * 먹으니 대화는 계속되는데, 바로 다음 줄에서 화면은 `✓ 바꿨습니다` 를 찍는다.
+ * 사람은 정해진 줄 알고 창을 닫았다가 다음에 옛 값을 보고, 그때는 무엇 때문인지
+ * 알 길이 없다 — 홈이 읽기 전용인지, 디스크가 찼는지.
+ *
+ * @returns {boolean} 남겼나
+ */
+function 설정남기기(cfg, 옵션 = {}) {
+  const r = 저장시도(cfg, 옵션);
+  if (!r.ok) say(`  ${mark.warn} ${c.yellow(말('common.cfgSaveFailed', { 왜: clip(r.왜, 70) }))}`);
+  return r.ok;
+}
+
 /** /mode 아래에 규칙을 늘어놓는다. 아무것도 안 걸려 있으면 아무 말도 안 한다. */
 function 규칙보이기(규칙들) {
   if (!규칙들) return;
@@ -411,7 +428,7 @@ export async function handle(line, session, ctx) {
       // 「화면 말을 따라간다」 가 아니라 옛 값이 되살아난다.
       if (지시말따로정했나()) cfg.promptLang = 지시말();
       else delete cfg.promptLang;
-      try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+      설정남기기(cfg);
       const p = 옮긴만큼();
       say('');
       say(`  ${mark.ok} ${말('lang.changed', { 이름: 이름(언어()) })}`);
@@ -542,7 +559,7 @@ export async function handle(line, session, ctx) {
         return { handled: true };
       }
       cfg.bell = 켜는말.includes(값);
-      try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+      설정남기기(cfg);
       say('');
       say(`  ${mark.ok} ${말(cfg.bell ? 'bell.turnedOn' : 'bell.turnedOff')}`);
       // 켤 때는 한 번 울려 준다. "켰다는데 소리가 나나?" 를 그 자리에서 확인하게.
@@ -606,7 +623,7 @@ export async function handle(line, session, ctx) {
       }
 
       cfg.motion = 고른것.값;
-      try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+      설정남기기(cfg);
       적용하기(cfg.motion);
 
       say('');
@@ -2440,7 +2457,7 @@ async function 출력상한(session, arg = '') {
 
   if (말 === 'auto' || 말 === '자동') {
     session.conn.maxTokens = null;
-    if (prof) { delete prof.maxTokens; try { save(cfg); } catch {} }
+    if (prof) { delete prof.maxTokens; 설정남기기(cfg); }
     say(`  ${mark.ok} 직접 정한 값을 지웠습니다.`);
     say(`     ${c.gray(알아낸것 ? `서버에서 알아낸 ${알아낸것.toLocaleString()} 토큰을 씁니다.` : '모르는 값이라 16,384 토큰으로 갑니다.')}`);
     say('');
@@ -2456,7 +2473,7 @@ async function 출력상한(session, arg = '') {
       return;
     }
     session.conn.maxTokens = 값;
-    if (prof) { prof.maxTokens = 값; try { save(cfg); } catch {} }
+    if (prof) { prof.maxTokens = 값; 설정남기기(cfg); }
     say(`  ${mark.ok} 답 길이 상한 ${c.bold(값.toLocaleString())} 토큰`);
     say(`     ${c.gray('모델이 못 내는 값을 넣으면 서버가 거절합니다. 거절당하면')} ${c.cyan('/out auto')} ${c.gray('로 되돌리세요.')}`);
     say('');
@@ -2828,7 +2845,7 @@ async function 나가도되나묻기(session, p) {
 async function 골라적용(session, cfg, p) {
   if (!await 나가도되나묻기(session, p)) return;
   cfg.active = p.id;
-  try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 바뀐다 */ }
+  설정남기기(cfg);
   연결적용(session, p);
   say(`  ${mark.ok} ${c.bold(p.name)} ${c.gray(p.model)} 로 바꿨습니다. 대화는 이어집니다.`);
   say('');
@@ -2857,8 +2874,8 @@ async function 모델만바꾸기(session, cfg, 모델) {
   // 서버는 그대로지만 문은 같이 지난다. 등록 안 된 서버로 옮겨 가는 길도
   // 여기라서, 여기를 열어 두면 자물쇠에 구멍이 하나 남는다.
   if (!await 나가도되나묻기(session, p)) return;
-  if (!이미) { try { save(upsert(cfg, p)); } catch { /* 못 남겨도 이번 세션에는 바뀐다 */ } }
-  else { cfg.active = p.id; try { save(cfg); } catch {} }
+  if (!이미) 설정남기기(upsert(cfg, p));
+  else { cfg.active = p.id; 설정남기기(cfg); }
   연결적용(session, p);
   say(`  ${mark.ok} 모델을 ${c.bold(모델)} 로 바꿨습니다. ${c.gray('서버는 그대로입니다.')}`);
   await 길이맞추기(session, cfg, p);
@@ -2880,7 +2897,7 @@ async function 길이맞추기(session, cfg, prof) {
   session.conn.ctx = 값;
   if (prof) {
     prof.ctx = 값;
-    try { save(cfg); } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+    설정남기기(cfg);
   }
   say(`     ${c.gray('컨텍스트')} ${c.white(값.toLocaleString())} ${c.gray('토큰 (' + fmtSize(값) + ') — ' + (r?.source ? r.source + '에서 읽음' : '서버가 안 알려줘 기본값'))}`);
   if (r?.max && r?.loaded && r.max > r.loaded) {
