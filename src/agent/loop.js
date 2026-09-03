@@ -466,8 +466,63 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         + '정말 도구가 막고 있으면 무엇이 막았는지 한 줄로 말하세요.';
   };
 
+  /*
+   * ── 자리를 만든다 (접기 → 요약) ────────────────────────────────────────
+   *
+   * 여태 이 검사는 **도구를 한 번 돌린 뒤에만** 했다. 그래서 첫 부름 전에는
+   * 아무리 꽉 차 있어도 그대로 보냈다. 실제로 이렇게 죽는다 —
+   *
+   *   컨텍스트가 78% 인 대화에 긴 파일을 하나 붙인다
+   *     → 첫 요청이 창을 넘겨 서버가 거절한다
+   *     → 배운 값으로 다시 부른다(같은 이력 그대로) → 또 거절
+   *     → 이번엔 배운 적이 있으니 오류로 끝난다
+   *
+   * 사람이 보는 것은 「턴이 죽었다」 이고, /clear 하고 시킨 말을 다시 쳐야
+   * 한다. 붙인 파일도 다시 붙여야 한다. 검사는 걸음마다 **부르기 전에**
+   * 해야 맞다 — 자리가 모자란 것은 부른 뒤가 아니라 부르기 전에 안다.
+   *
+   * 문턱은 안 건드린다(FOLD_AT 0.55 · COMPACT_AT 0.8). 여기서 바뀐 것은
+   * '언제 재느냐' 하나다.
+   *
+   * @returns {boolean} 멈추라는 것이 닿아서 턴을 접어야 하나
+   */
+  let 접다멈췄나 = false;
+  const 자리만들기 = async function* () {
+    접다멈췄나 = false;
+    /*
+     * 요약해서 접기 **전에** 도구 결과부터 접는다.
+     *
+     * 자리를 먹는 것은 대개 사람 말이 아니라 옛날에 읽어 둔 파일이다. 그쪽을
+     * 먼저 비우면 요약 압축을 한참 미룰 수 있고, 미루는 동안 대화는 한 글자도
+     * 안 잃는다. 그래도 차면 아래에서 통째로 요약한다.
+     */
+    if (shouldFold(session)) {
+      const f = foldToolResults(session);
+      if (f.접은것) yield { type: 'folded', ...f };
+      // 그림은 사람 말 자리에 실려서 위 접기가 못 건드린다. 따로 뺀다.
+      const g = foldImages(session);
+      if (g.뺀것) yield { type: 'images_folded', ...g };
+    }
+
+    // 컨텍스트가 차오르면 오래된 대화를 '요약해서' 접는다. 그냥 자르면 하던 일을 잊는다.
+    if (shouldCompact(session)) {
+      yield { type: 'compacting' };
+      // 요약을 부르다 서버가 막으면 그 알림도 화면으로 — '접는 중' 뒤에 60초를 숨기지 않는다.
+      const 편지 = 우편함((onBackoff) => compact(session, { auto: true, signal, onBackoff }));
+      for await (const 알림 of 편지.소식()) yield 알림;
+      const r = await 편지.부름;
+      if (r.aborted) { 접다멈췄나 = true; yield { type: 'aborted', steps, kept: true }; return; }
+      if (r.ok) yield { type: 'compacted', ...r };
+      else yield { type: 'compact_failed', why: r.why };
+    }
+  };
+
   while (steps < maxSteps) {
     steps++;
+
+    // 부르기 **전에** 자리를 본다. 왜 여기인지는 자리만들기() 머리말에.
+    yield* 자리만들기();
+    if (접다멈췄나) return;
 
     /*
      * ── 도중에 한 말을 여기서 받는다 (끼어들기) ──────────────────────────
@@ -1357,32 +1412,6 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       return;
     }
 
-    /*
-     * 요약해서 접기 **전에** 도구 결과부터 접는다.
-     *
-     * 자리를 먹는 것은 대개 사람 말이 아니라 옛날에 읽어 둔 파일이다. 그쪽을
-     * 먼저 비우면 요약 압축을 한참 미룰 수 있고, 미루는 동안 대화는 한 글자도
-     * 안 잃는다. 그래도 차면 아래에서 통째로 요약한다.
-     */
-    if (shouldFold(session)) {
-      const f = foldToolResults(session);
-      if (f.접은것) yield { type: 'folded', ...f };
-      // 그림은 사람 말 자리에 실려서 위 접기가 못 건드린다. 따로 뺀다.
-      const g = foldImages(session);
-      if (g.뺀것) yield { type: 'images_folded', ...g };
-    }
-
-    // 컨텍스트가 차오르면 오래된 대화를 '요약해서' 접는다. 그냥 자르면 하던 일을 잊는다.
-    if (shouldCompact(session)) {
-      yield { type: 'compacting' };
-      // 요약을 부르다 서버가 막으면 그 알림도 화면으로 — '접는 중' 뒤에 60초를 숨기지 않는다.
-      const 편지 = 우편함((onBackoff) => compact(session, { auto: true, signal, onBackoff }));
-      for await (const 알림 of 편지.소식()) yield 알림;
-      const r = await 편지.부름;
-      if (r.aborted) { yield { type: 'aborted', steps, kept: true }; return; }
-      if (r.ok) yield { type: 'compacted', ...r };
-      else yield { type: 'compact_failed', why: r.why };
-    }
   }
 
   /*
