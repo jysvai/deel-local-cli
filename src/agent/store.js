@@ -55,6 +55,11 @@ export class Store {
     this.못쓴수 = 0;
     this.못쓴까닭 = null;
     this.말한적있나 = false;
+    // 이 파일과 묶인 대화, 그리고 그 대화에서 **마지막으로 적어 둔** 할 일·시킨 말.
+    // 안 바뀐 것을 다시 적지 않으려고 들고 있는다 (살림적기).
+    this.따라갈세션 = null;
+    this.적은할일 = null;
+    this.적은요청 = null;
   }
 
   #use(id) {
@@ -170,6 +175,68 @@ export class Store {
   append(msg) {
     this.#open();
     this.#write({ t: 'msg', m: msg });
+    // 남은 할 일과 시킨 말도 이 자리에서 같이 본다 (아래 살림적기).
+    // 따로 부르는 자리를 만들면 언젠가 한 길에서만 부르게 되고, 그 길로 들어온
+    // 사람만 이어하기가 반쪽이 된다.
+    this.살림적기();
+  }
+
+  /*
+   * ── 남은 할 일과 시킨 말 원문 ──────────────────────────────────────────
+   *
+   * 1.9.2 는 **한 대화 안에서** 이 둘이 접히거나 줄어들며 사라지던 것을 막았다
+   * (session.js 의 못박을것). 그런데 둘 다 세션 객체, 곧 메모리에만 있어서
+   * 창을 닫는 한 번에 그 보호가 통째로 없어졌다 — 이어받으면 오간 말은 돌아오고
+   * 못 박은 것도 돌아오는데, 남은 할 일과 시킨 말 원문만 안 돌아온다.
+   * 「요청사항이 많으면 몇 개 까먹는다」 가 껐다 켜는 자리에서 되풀이된다.
+   *
+   * 메시지와 따로 한 줄로 두는 이유는 pins 와 같다 — 접기·요약은 메시지를
+   * 손보는데 이 둘은 그 손질에 닿으면 안 된다. 마지막 것이 이긴다.
+   */
+
+  /**
+   * 이 대화의 할 일·시킨 말을 이 저장 파일과 묶는다.
+   *
+   * 처음 묶을 때 파일에 적힌 것을 세션으로 되살린다 — 이어하기의 빠져 있던
+   * 절반이 여기다. 그 뒤로는 append 가 돌 때마다 **바뀐 만큼만** 적는다.
+   */
+  살림따라가기(session) {
+    if (!session) return this;
+    const 처음 = this.따라갈세션 !== session;
+    this.따라갈세션 = session;
+    if (처음) this.#살림되살리기(session);
+    return this;
+  }
+
+  #살림되살리기(session) {
+    const { 할일, 이번요청 } = this.load();
+    // 적힌 것이 없으면 세션이 들고 있던 것을 그대로 둔다. 빈 값으로 덮으면
+    // 새 갈래를 열자마자 방금 시킨 말이 사라진다 — 갈래마다 파일이 따로다.
+    if (할일) session.할일 = 할일;
+    if (이번요청) session.이번요청 = 이번요청;
+    this.적은할일 = JSON.stringify(session.할일 ?? []);
+    this.적은요청 = String(session.이번요청 ?? '');
+  }
+
+  /**
+   * 바뀐 것만 적는다. 안 바뀌었으면 한 줄도 안 늘린다.
+   *
+   * 메시지마다 목록을 통째로 다시 적으면 긴 대화에서 파일이 몇 배가 되고,
+   * 그 값은 매번 사람이 기다리는 시간이다. pins 를 사람이 고칠 때만 적는
+   * 것과 같은 뜻이다.
+   */
+  살림적기(session = this.따라갈세션) {
+    if (!session) return;
+    const 할일 = JSON.stringify(session.할일 ?? []);
+    if (할일 !== this.적은할일) {
+      this.적은할일 = 할일;
+      this.#write({ t: 'todo', at: new Date().toISOString(), 목록: session.할일 ?? [] });
+    }
+    const 요청 = String(session.이번요청 ?? '');
+    if (요청 !== this.적은요청) {
+      this.적은요청 = 요청;
+      this.#write({ t: 'request', at: new Date().toISOString(), 글: 요청 });
+    }
   }
 
   /**
@@ -206,9 +273,15 @@ export class Store {
     // 여기가 놓치기 쉬운 자리다. 파일을 새로 쓰면서 못 박은 것을 안 옮기면,
     // '요약해도 안 지워진다' 는 말이 바로 그 요약에서 거짓이 된다.
     const 못박은것 = this.못박은것읽기();
+    // 남은 할 일과 시킨 말 원문도 같은 이유로 옮겨 싣는다. 접힌 자리에서
+    // 다시 박으라고 들고 있는 것들인데, 정작 접는 자리에서 파일에서 빠지면
+    // 이어받을 때 그 둘만 없는 대화가 된다.
+    const { 할일, 이번요청 } = this.load();
     const lines = [JSON.stringify({ t: 'meta', at: new Date().toISOString(), ...meta })];
     lines.push(JSON.stringify({ t: 'note', at: new Date().toISOString(), note }));
     if (못박은것.length) lines.push(JSON.stringify({ t: 'pins', at: new Date().toISOString(), 목록: 못박은것 }));
+    if (할일) lines.push(JSON.stringify({ t: 'todo', at: new Date().toISOString(), 목록: 할일 }));
+    if (이번요청) lines.push(JSON.stringify({ t: 'request', at: new Date().toISOString(), 글: 이번요청 }));
     for (const m of messages) lines.push(JSON.stringify({ t: 'msg', m }));
     /*
      * 통째로 다시 쓰면 파일이 새로 만들어진다 — 그때 잠금도 다시 걸어야 한다.
@@ -246,14 +319,20 @@ export class Store {
     catch (err) { return { meta: null, messages: [], 못읽음: err?.code ?? err?.message ?? String(err) }; }
     let meta = null;
     const messages = [];
+    // 마지막 것이 이긴다. 없으면 null 이고, null 은 '적힌 적이 없다' 는 뜻이라
+    // 빈 목록·빈 글과 구별된다 — 되살릴 때 그 차이로 덮을지 말지를 정한다.
+    let 할일 = null;
+    let 이번요청 = null;
     for (const line of 글.split('\n')) {
       if (!line.trim()) continue;
       let j;
       try { j = JSON.parse(line); } catch { continue; }
       if (j.t === 'meta') meta = j;
       else if (j.t === 'msg' && j.m) messages.push(j.m);
+      else if (j.t === 'todo' && Array.isArray(j.목록)) 할일 = j.목록;
+      else if (j.t === 'request' && typeof j.글 === 'string') 이번요청 = j.글;
     }
-    return { meta, messages };
+    return { meta, messages, 할일, 이번요청 };
   }
 }
 

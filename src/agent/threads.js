@@ -40,7 +40,19 @@ export class Threads {
     this.session = session;
     this.ctx = ctx;
     this.새store = 새store;
-    this.갈래들 = [{ 이름: '본줄기', messages: session.messages, usage: session.usage, todos: ctx?.todos ?? null, store: 첫store }];
+    /*
+     * 남은 할 일과 시킨 말 원문을 저장 파일과 묶는다 (agent/store.js 의 살림따라가기).
+     *
+     * **첫 한마디가 오기 전**인 여기여야 한다. 턴이 시작되면 loop.js 가
+     * 이번요청을 새 말로 덮으므로, 그 뒤에 되살리면 방금 시킨 말이 어제 시킨
+     * 말로 되돌아간다. 여태 이 둘만 메모리에 있어서, 이어받아도 오간 말은
+     * 돌아오는데 남은 할 일은 안 돌아왔다.
+     */
+    첫store?.살림따라가기?.(session);
+    this.갈래들 = [{
+      이름: '본줄기', messages: session.messages, usage: session.usage, todos: ctx?.todos ?? null,
+      할일: session.할일, 이번요청: session.이번요청, store: 첫store,
+    }];
     this.자리 = 0;
     this.센것 = 1;
   }
@@ -55,6 +67,11 @@ export class Threads {
     g.messages = this.session.messages;
     g.usage = this.session.usage;
     g.todos = this.ctx?.todos ?? null;
+    // 남은 할 일·시킨 말도 갈래 것이다. 저장 파일이 갈래마다 따로라, 이걸 안
+    // 담아 두면 곁가지에서 적은 할 일을 들고 본줄기로 돌아와 본줄기 파일에
+    // 적어 버린다 — 이어받을 때 하지도 않은 일이 본줄기에 남는다.
+    g.할일 = this.session.할일;
+    g.이번요청 = this.session.이번요청;
   }
 
   /** 갈래 하나를 화면으로 꺼낸다. */
@@ -64,6 +81,10 @@ export class Threads {
     this.session.messages = g.messages;
     this.session.usage = g.usage;
     if (this.ctx) this.ctx.todos = g.todos;
+    this.session.할일 = g.할일 ?? [];
+    this.session.이번요청 = g.이번요청 ?? '';
+    // 적는 자리도 지금 갈래의 파일로 옮긴다 (agent/store.js 의 살림따라가기).
+    g.store?.살림따라가기?.(this.session);
     // 상태줄이 지금 어느 갈래인지 보여 줄 수 있게 남긴다.
     // 갈래가 하나뿐이면 안 보인다 — 안 쓰는 사람 화면은 그대로여야 한다.
     this.session.갈래표 = this.갈래들.length > 1 ? g.이름 : null;
@@ -84,6 +105,10 @@ export class Threads {
       messages: 물려줄것 ? [...물려줄것] : [],
       usage: { in: 0, out: 0, calls: 0, ms: 0, retries: 0 },
       todos: null,
+      // 할 일도 todos 와 같이 비워서 시작한다. 곁가지는 다른 일을 하러 나가는
+      // 것이고, 물려받으면 본줄기의 남은 일을 곁가지 파일에도 적게 된다.
+      할일: [],
+      이번요청: '',
       store,
     };
     this.갈래들.push(g);

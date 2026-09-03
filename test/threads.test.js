@@ -116,6 +116,60 @@ check('하나로 돌아오면 상태줄에서 사라진다', !/⑂/.test(statusL
 check('없는 갈래로는 안 옮겨진다', 갈래.옮기기('없는이름') === null);
 check('빈 말로도 안 옮겨진다', 갈래.옮기기('') === null);
 
+trace('8-할일이껐다켜도살아남나');
+
+// ── 껐다 켜도 남은 할 일과 시킨 말 원문이 살아난다 ──────────────────────
+//
+// 갈래를 붙이는 자리가 곧 이어하기가 되살아나는 자리다 (agent/store.js 의
+// 살림따라가기). 여기서 안 붙이면 오간 말만 돌아오고 「무엇을 하다 말았나」 는
+// 안 돌아온다 — 사람이 어제 시킨 것을 다시 다 적어 줘야 한다.
+{
+  const 살림root = mkdtempSync(join(tmpdir(), 'deel-thread-살림-'));
+  const 새파일 = () => new Store(살림root).begin({ model: conn.model, root: 살림root });
+
+  const 어제세션 = new Session(conn, { root: 살림root });
+  const 어제store = new Store(살림root, 'thr-살림');
+  어제store.begin({ model: conn.model, root: 살림root });
+  const 어제갈래 = new Threads(어제세션, { todos: null }, 새파일, 어제store);
+  어제세션.이번요청 = '로그·테스트·README 셋 다 고쳐줘';
+  어제세션.할일 = [{ text: '로그', state: 'done' }, { text: 'README', state: 'pending' }];
+  어제갈래.현재store().append({ role: 'user', content: 어제세션.이번요청 });
+
+  // 창을 닫았다 — 세션도 저장 파일 손잡이도 새로 만든다.
+  const 오늘세션 = new Session(conn, { root: 살림root });
+  new Threads(오늘세션, { todos: null }, 새파일, new Store(살림root, 'thr-살림'));
+  check('이어받으면 남은 할 일이 돌아온다',
+    JSON.stringify(오늘세션.할일) === JSON.stringify(어제세션.할일), JSON.stringify(오늘세션.할일));
+  check('이어받으면 시킨 말 원문도 돌아온다', 오늘세션.이번요청 === 어제세션.이번요청, 오늘세션.이번요청);
+
+  // 곁가지에서 적은 할 일이 본줄기 파일로 새면 안 된다 — 이어받을 때 본줄기에
+  // 하지도 않은 일이 남는다.
+  const 곁가지 = 어제갈래.새로('곁');
+  어제세션.할일 = [{ text: '곁가지에서만 한 일', state: 'pending' }];
+  어제갈래.현재store().append({ role: 'user', content: '곁가지 말' });
+  check('곁가지 파일에는 적힌다',
+    readFileSync(join(살림root, '.deel', 'sessions', `${곁가지.store.id}.jsonl`), 'utf8')
+      .includes('곁가지에서만 한 일'));
+
+  // 갈래를 오가도 각자 것이 그대로여야 한다. 안 그러면 곁가지에서 적은 할 일을
+  // 들고 본줄기로 돌아와 본줄기 파일에 적어 버린다 — 이어받을 때 하지도 않은
+  // 일이 본줄기에 남는다.
+  어제갈래.옮기기(1);
+  check('본줄기로 돌아오면 본줄기 할 일이 돌아온다', 어제세션.할일?.[0]?.text === '로그',
+    JSON.stringify(어제세션.할일));
+  check('본줄기 시킨 말도 그대로', 어제세션.이번요청 === '로그·테스트·README 셋 다 고쳐줘', 어제세션.이번요청);
+  어제갈래.현재store().append({ role: 'user', content: '본줄기에서 한마디 더' });
+  const 본줄기글 = readFileSync(join(살림root, '.deel', 'sessions', 'thr-살림.jsonl'), 'utf8');
+  check('곁가지 할 일이 본줄기 파일에 안 샌다', !본줄기글.includes('곁가지에서만 한 일'),
+    본줄기글.split('\n').filter((l) => l.includes('"t":"todo"')).join(' '));
+
+  어제갈래.옮기기(2);
+  check('곁가지로 오면 곁가지 할 일이 돌아온다', 어제세션.할일?.[0]?.text === '곁가지에서만 한 일',
+    JSON.stringify(어제세션.할일));
+
+  rmSync(살림root, { recursive: true, force: true });
+}
+
 rmSync(root, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

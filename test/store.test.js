@@ -6,11 +6,11 @@
 //   3) 도구 호출과 결과의 짝이 되살릴 때도 안 깨지는가
 //   4) 압축이 일어난 뒤에도 파일이 대화와 맞는가
 //   5) 목록에서 어떤 대화인지 알아볼 수 있는가
-import { mkdtempSync, mkdirSync, rmSync, appendFileSync, existsSync, writeFileSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, appendFileSync, existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store, list, latest, remove, newId, prune, sessionsDir } from '../src/agent/store.js';
-import { repairToolPairs } from '../src/agent/session.js';
+import { repairToolPairs, Session, 못박을것 } from '../src/agent/session.js';
 
 const pass = [];
 const fail = [];
@@ -281,6 +281,75 @@ check('id 가 파일 이름으로 안전함', /^[0-9-]+$/.test(id));
     목록.map((r) => r.id).join(' '));
 
   rmSync(막힌곳, { recursive: true, force: true });
+}
+
+// ── 6.7. 남은 할 일과 시킨 말 원문도 껐다 켜면 살아난다 ─────────────────
+//
+// 1.9.2 는 **한 대화 안에서** 접히거나 줄어들 때 이 둘이 사라지던 것을 막았다
+// (session.js 의 못박을것). 그런데 둘 다 메모리에만 있어서, 창을 닫는 한 번에
+// 그 보호가 통째로 없어졌다 — 이어받으면 오간 말은 돌아오는데 남은 할 일과
+// 시킨 말 원문은 안 돌아온다. 「요청사항이 많으면 몇 개 까먹는다」 가 껐다 켜는
+// 자리에서 그대로 되풀이되는 셈이다.
+{
+  const 살림root = mkdtempSync(join(tmpdir(), 'deel-store-살림-'));
+  const 살림파일 = join(sessionsDir(살림root), '살림-001.jsonl');
+  const conn = { kind: 'openai', base: 'http://127.0.0.1:1/v1', model: '검사용', ctx: 32768 };
+  const 셈 = (글, 조각) => 글.split(조각).length - 1;
+
+  const 어제 = new Session(conn, { root: 살림root });
+  const 어제store = new Store(살림root, '살림-001');
+  어제store.begin({ model: '검사용', root: 살림root });
+  어제store.살림따라가기(어제);
+
+  어제.이번요청 = '로그 형식 통일하고, 테스트도 붙이고, README 도 고쳐줘';
+  어제.할일 = [
+    { text: '로그 형식 통일', state: 'done' },
+    { text: '테스트 붙이기', state: 'in_progress' },
+    { text: 'README 고치기', state: 'pending' },
+  ];
+  어제store.append({ role: 'user', content: 어제.이번요청 });
+
+  const 적힌것 = readFileSync(살림파일, 'utf8');
+  check('할 일이 파일에 남는다', 적힌것.includes('"t":"todo"'));
+  check('시킨 말 원문도 파일에 남는다', 적힌것.includes('"t":"request"'));
+
+  // 안 바뀌었으면 한 줄도 안 늘린다. 메시지마다 목록을 통째로 다시 적으면
+  // 긴 대화에서 파일이 몇 배가 되고, 그 값은 매번 사람이 기다리는 시간이다.
+  어제store.append({ role: 'assistant', content: '하겠습니다' });
+  const 두번째 = readFileSync(살림파일, 'utf8');
+  check('안 바뀌면 할 일을 다시 안 적는다', 셈(두번째, '"t":"todo"') === 1, `${셈(두번째, '"t":"todo"')}줄`);
+  check('안 바뀌면 시킨 말도 다시 안 적는다', 셈(두번째, '"t":"request"') === 1, `${셈(두번째, '"t":"request"')}줄`);
+
+  // 바뀌면 적는다 — 마지막 것이 이긴다(못 박은 것과 같은 방식).
+  어제.할일 = 어제.할일.map((t) => ({ ...t, state: 'done' }));
+  어제store.append({ role: 'assistant', content: '다 했습니다' });
+  check('바뀌면 다시 적는다', 셈(readFileSync(살림파일, 'utf8'), '"t":"todo"') === 2);
+
+  // 껐다 켠다 — 새 Session, 새 Store. 여기가 여태 비어 있던 자리다.
+  const 오늘 = new Session(conn, { root: 살림root });
+  new Store(살림root, '살림-001').살림따라가기(오늘);
+  check('남은 할 일이 그대로 돌아온다',
+    JSON.stringify(오늘.할일) === JSON.stringify(어제.할일), JSON.stringify(오늘.할일));
+  check('시킨 말 원문도 그대로 돌아온다', 오늘.이번요청 === 어제.이번요청, 오늘.이번요청);
+  check('못 박을 것이 이어받기 뒤에도 같다', 못박을것(오늘) === 못박을것(어제),
+    못박을것(오늘).slice(0, 60));
+
+  // 압축이 돌아도 안 지워진다 — 못 박은 것과 같은 이유다. 파일을 새로 쓰면서
+  // 안 옮기면 '접거나 요약해도 안 지워진다' 가 바로 그 요약에서 거짓이 된다.
+  어제store.replace([{ role: 'user', content: '요약된 대화' }], '압축');
+  const 압축뒤 = new Session(conn, { root: 살림root });
+  new Store(살림root, '살림-001').살림따라가기(압축뒤);
+  check('압축해 다시 써도 할 일이 남는다',
+    JSON.stringify(압축뒤.할일) === JSON.stringify(어제.할일), JSON.stringify(압축뒤.할일));
+  check('압축해 다시 써도 시킨 말이 남는다', 압축뒤.이번요청 === 어제.이번요청, 압축뒤.이번요청);
+
+  // 적힌 것이 없는 새 갈래에 붙일 때 들고 있던 것을 빈 값으로 덮으면 안 된다.
+  const 새갈래 = new Session(conn, { root: 살림root });
+  새갈래.이번요청 = '방금 시킨 말';
+  new Store(살림root, '살림-빈것').begin({ model: '검사용', root: 살림root }).살림따라가기(새갈래);
+  check('적힌 게 없으면 들고 있던 것을 안 지운다', 새갈래.이번요청 === '방금 시킨 말', 새갈래.이번요청);
+
+  rmSync(살림root, { recursive: true, force: true });
 }
 
 // ── 7. 없는 폴더에서도 안 죽는다 ────────────────────────────────────────
