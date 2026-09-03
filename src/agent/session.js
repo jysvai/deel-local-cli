@@ -1,5 +1,5 @@
 // 대화 상태와 컨텍스트 셈. /context 가 보여주는 숫자가 여기서 나온다.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { 그림장수, 글만, 그림한장토큰 } from '../backend/vision.js';
 import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './modes.js';
