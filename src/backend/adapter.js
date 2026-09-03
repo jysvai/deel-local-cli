@@ -91,11 +91,11 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
     if (tools?.length) body.tools = tools;
     if (json) body.format = json;
     // 참·거짓은 그대로(생각을 켜고 끄는 말이다). 단계말은 이 규격이 아는
-    // 말로 옮긴다 — 위 강도말() 머리말 참고.
+    // 말로 옮긴다 — 아래 강도말() 머리말 참고.
     if (typeof think === 'boolean') body.think = think;
     else if (think !== undefined) {
-      const 말 = 강도말(think);
-      if (말) body.think = 말;
+      const 눈금 = 강도말(think);
+      if (눈금) body.think = 눈금;
     }
     return body;
   }
@@ -131,8 +131,8 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
     body.response_format = { type: 'json_schema', json_schema: { name: 'out', schema: json, strict: true } };
   }
   if (think !== undefined && think !== false) {
-    const 말 = 강도말(think);
-    if (말) body.reasoning_effort = 말;
+    const 눈금 = 강도말(think);
+    if (눈금) body.reasoning_effort = 눈금;
   }
   return body;
 }
@@ -199,6 +199,10 @@ const 강도별예산 = { low: 2048, medium: 6144, high: 16384, max: 32768 };
  * (아래 생각예산) `max` 가 32,768 이라는 진짜 값이 된다. 눈금이 모자라지 않는다.
  *
  * 모르는 말은 **안 보낸다.** 짐작으로 실은 칸 하나가 그 턴을 죽인다.
+ *
+ * 받은 값을 담는 자리를 `말` 이라고 부르지 않는다. 이 파일에서 `말` 은
+ * i18n 의 그 함수라, 같은 이름으로 가리면 그 블록 안에서는 화면에 말을 걸
+ * 수가 없어진다 — 나중에 한 줄 더 적으려는 사람이 거기서 넘어진다.
  */
 const 전선눈금 = { low: 'low', medium: 'medium', high: 'high', max: 'high' };
 
