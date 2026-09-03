@@ -110,6 +110,7 @@ const FILES = [
   'pdf.test.js',
   'compact.test.js',
   'ctxfull.test.js',
+  'held.test.js',
   'store.test.js',
   'threads.test.js',
   'evolve.test.js',

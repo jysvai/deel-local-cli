@@ -2046,8 +2046,20 @@ export async function chatLoop(opts = {}) {
            * 대충 답한 줄 알고 같은 것을 다시 시키고, 같은 자리에서 또 잘린다.
            * 손댈 자리를 그 자리에서 알려 준다.
            */
+          /*
+           * ── 붙잡아 둔 반 줄을 먼저 비운다 ────────────────────────────
+           *
+           * 표를 그리려면 줄이 다 모여야 해서, 마크다운 그림은 마지막
+           * 몇 줄을 손에 쥐고 있다. `done` 은 그걸 비우고 끝나는데
+           * capped·cutoff·error 는 안 비우고 있었다.
+           *
+           * 그러면 두 가지가 난다. 붙잡힌 글이 **화면에서 그냥 사라지거나**
+           * (오류로 끝나면 뒤에 done 이 없다), 무엇이 잘렸는지 보라고 띄운
+           * 경고가 정작 그 답의 마지막 줄보다 **위에** 찍힌다.
+           */
           case 'capped':
             clearThinking();
+            if (streamed) { 답비우기(); say(''); streamed = false; }
             say(`  ${mark.warn} ${c.gray(`답이 ${c.white(ev.cap.toLocaleString())} 토큰에서 잘렸습니다`)}`
               + `${ev.정한값 ? c.gray(' (직접 정하신 상한입니다)') : c.gray(' — 더 못 올리는 천장입니다')}`);
             say(`     ${c.gray('한 번에 더 길게 받으려면')} ${c.cyan('/out 32k')}${c.gray('. 파일을 쓰는 중이었다면 Append 로 나눠 쓰게 하세요.')}`);
@@ -2061,6 +2073,7 @@ export async function chatLoop(opts = {}) {
            */
           case 'cutoff':
             clearThinking();
+            if (streamed) { 답비우기(); say(''); streamed = false; }
             say(`  ${mark.warn} ${c.gray('서버가 끝났다는 말 없이 답을 멈췄습니다 — 중간에서 끊겼을 수 있습니다.')}`);
             say(`     ${c.gray('중계 프록시·게이트웨이를 거치면 나는 일입니다. 같은 것을 다시 물어 보세요.')}`);
             break;
@@ -2126,6 +2139,8 @@ export async function chatLoop(opts = {}) {
           case 'error':
             턴탈났나 = true;
             clearThinking();
+            // 붙잡아 둔 반 줄을 먼저 비운다 — 까닭은 위 capped 자리에 적어 두었다.
+            if (streamed) { 답비우기(); say(''); streamed = false; }
             say('');
             오류보이기(ev.text);
             /*
