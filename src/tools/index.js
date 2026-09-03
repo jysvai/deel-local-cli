@@ -20,7 +20,7 @@ import { DEF_TOOL, REFS_TOOL } from './lsp.js';
 import { 편집후진단, 붙이기 as 진단붙이기, 데우기 } from '../lsp/diag.js';
 import { 프로젝트갈래 } from '../lsp/servers.js';
 import { allow as allowedIn } from '../agent/modes.js';
-import { 도구정의, 이름풀기 } from '../backend/mcp.js';
+import { 도구정의, 이름풀기, 열쇠뺀환경 } from '../backend/mcp.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOldHwp, 옛hwp안내, 문서는못고침 } from './docs.js';
 import { 바꿔볼까, 직접못읽나, 변환기찾기, 글로바꾸기, 못바꿈말 } from './convert.js';
@@ -1676,6 +1676,9 @@ export const TOOLS = {
         // '�Ľ� ����' 이 된다. 바이트로 받아 이 컴퓨터가 쓰는 것으로 해독한다.
         const kid = execFile(shell.file, shell.args, {
           cwd: ctx.scope.root,
+          // 열쇠만 빼고 나머지는 그대로 물려준다 (backend/mcp.js 열쇠뺀환경 머리말).
+          // 안 빼면 `env` 한 줄이 열쇠를 화면과 대화 기록에 그대로 싣는다.
+          env: 열쇠뺀환경(),
           // 우리 시계(아래 뒷북)가 제한에서 먼저 나무를 끊는다. 이건 그것마저
           // 못 돌았을 때 서는 마지막 그물이라 뒤에 세운다.
           timeout: 제한 + 3000,

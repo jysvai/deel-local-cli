@@ -26,6 +26,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { decode as decodeBytes, consoleCodepage } from './encoding.js';
 import { 셸명령 } from './shell.js';
+import { 열쇠뺀환경 } from '../backend/mcp.js';
 import { 말, 세말 } from '../i18n/index.js';
 
 /* 결과 한 줄을 잇는다 — 빈 조각은 버린다(tools/index.js 의 이어 와 같은 것). */
@@ -88,6 +89,8 @@ export function 띄우기옵션(cwd) {
   const win = process.platform === 'win32';
   return {
     cwd,
+    // 열쇠만 빼고 나머지는 그대로 물려준다 (backend/mcp.js 열쇠뺀환경 머리말).
+    env: 열쇠뺀환경(),
     windowsHide: true,
     detached: !win,
     stdio: ['ignore', 'pipe', 'pipe'],

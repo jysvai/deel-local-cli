@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { 셸고르기, 배시후보, 셸정하기, 정한셸, 셸명령, 셸안내, 셸지우기 } from '../src/tools/shell.js';
-import { 셸명령 as 일감셸명령 } from '../src/tools/jobs.js';
+import { 셸명령 as 일감셸명령, 띄우기, 끝내기 } from '../src/tools/jobs.js';
 import { TOOLS } from '../src/tools/index.js';
 import { makeScope, checkCommand, MSYS풀기 } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
@@ -125,6 +125,48 @@ if (윈도우) {
   check('윈도우가 아니라 실제 셸 검사를 건넌다 ⚠ (/bin/sh 그대로)', 정한셸().id === 'sh', 정한셸().표시);
   const r = await TOOLS.Bash.run({ command: 'printf "%s" "$0"' }, ctx);
   check('/bin/sh 에서 돈다', !r.failed, 결과글(r));
+}
+
+trace('2b-열쇠안물려줌');
+
+/*
+ * ── 자식 셸이 게이트웨이 열쇠를 물려받고 있었다 ─────────────────────────
+ *
+ * MCP 서버에는 환경을 통째로 씻어서 넘긴다(backend/mcp.js 깨끗한환경).
+ * 그런데 Bash 와 Jobs 는 아무것도 안 주고 있었고, 그러면 Node 가 우리 환경을
+ * **통째로** 물려준다. 그래서 `env` 한 줄이면 DEEL_API_KEY 가 화면에 찍히고,
+ * 그 화면이 대화에 실려 게이트웨이로 나가고 `.deel/sessions/*.jsonl` 로
+ * 디스크에도 남는다 — 열쇠를 그 열쇠의 주인에게 보내는 셈이다.
+ *
+ * 그렇다고 통째로 씻으면 안 된다. Bash 로 도는 것은 **사용자 제 프로젝트**라,
+ * PATH·NODE_ENV·DEEL_HOME 이 다 있어야 한다. 그래서 딱 하나만 뺀다 —
+ * 이 검사는 **두 방향**으로 잰다.
+ */
+{
+  const 옛열쇠 = process.env.DEEL_API_KEY;
+  const 옛집 = process.env.DEEL_HOME;
+  process.env.DEEL_API_KEY = 'sk-가짜검사용-0123456789abcdef';
+  process.env.DEEL_HOME ??= root;          // 홀로 돌릴 때도 잴 것이 있어야 한다
+  const 물음 = (이름) => `node -e "console.log(process.env.${이름} ?? 'none')"`;
+  try {
+    const k = await TOOLS.Bash.run({ command: 물음('DEEL_API_KEY') }, ctx);
+    check('★ Bash 자식은 게이트웨이 열쇠를 못 본다',
+      /(^|\n)\s*none\s*(\n|$)/.test(맨글(k)) && !맨글(k).includes('sk-가짜검사용'), 결과글(k));
+
+    const h = await TOOLS.Bash.run({ command: 물음('DEEL_HOME') }, ctx);
+    check('★ 나머지 환경은 그대로 물려준다 (사용자가 이 셸로 제 검사를 돌린다)',
+      !/(^|\n)\s*none\s*(\n|$)/.test(맨글(h)), 결과글(h));
+
+    // Jobs 도 같은 자리다. 한쪽만 고치면 뒤에서 도는 명령으로 그대로 샌다.
+    const j = await 띄우기(물음('DEEL_API_KEY'), { cwd: root, 기다림: 4000 });
+    const 일감글 = String(j.출력 ?? '').replace(/\x1b\[[0-9;]*m/g, '');
+    check('★ Jobs 로 뒤에서 도는 것도 열쇠를 못 본다',
+      !일감글.includes('sk-가짜검사용'), 일감글.replace(/\s+/g, ' ').slice(0, 100));
+    if (j.떴나) await 끝내기(j.번호);   // 살아 있으면 거둔다 — 검사가 자식을 남기면 안 된다
+  } finally {
+    if (옛열쇠 == null) delete process.env.DEEL_API_KEY; else process.env.DEEL_API_KEY = 옛열쇠;
+    if (옛집 == null) delete process.env.DEEL_HOME; else process.env.DEEL_HOME = 옛집;
+  }
 }
 
 // ── 3. Bash 도구와 Jobs 가 같은 답을 본다 ───────────────────────────────
