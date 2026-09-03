@@ -119,6 +119,7 @@ export const ja = {
   'consult.failed': '訊けませんでした — {왜}',
   'consult.empty': '返答が空でした。そのモデルは道具なしでは答えないのかもしれません。',
   'consult.added': 'その答えを、誰が言ったか付けて会話に足しました。',
+  'probe.codexOnly': '{모델} 系列はこの窓口(/chat/completions)では出てきません — OpenAI が Responses API(/responses)でのみ提供しているモデルで、deel はまだその窓口を使えません。今は別のモデルを選んでください。',
   'head.spec.ollama': 'Ollama 独自規格',
   'head.spec.openai': 'OpenAI 互換 API',
   'head.spec.anthropic': 'Anthropic API',

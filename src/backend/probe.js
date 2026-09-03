@@ -12,6 +12,7 @@ import {
   assistantMessage, toolMessage,
 } from './adapter.js';
 import { 벤더 } from './toolfit.js';
+import { 말 } from '../i18n/index.js';
 
 const READ_TOOL = {
   type: 'function',
@@ -57,6 +58,31 @@ function 몸통(conn, opts) {
 // 추론 모델일 때 기본 대화 칸에 덧붙일 설명.
 function c_note(retried) {
   return retried ? ' (추론 모델 — 사고를 끄고 다시 물어 확인)' : ' (추론 모델)';
+}
+
+/*
+ * ── 이 문으로는 안 나오는 모델 (Codex 계열) ─────────────────────────────
+ *
+ * `gpt-5-codex` 계열은 OpenAI 가 **Responses API(/responses)로만** 내준다.
+ * `/chat/completions` 로 물으면 404 나 400 이 오는데, 그 화면에는 상태 코드
+ * 한 줄만 남는다. 그러면 사람은 열쇠를 의심하거나 모델 이름을 잘못 적은 줄
+ * 알고, 맞는 이름을 몇 번씩 다시 넣어 본다 — 이름은 처음부터 맞았다.
+ *
+ * ── 왜 이름을 보나. 이 파일에서만 본다 ─────────────────────────────────
+ *
+ * 어디로 보낼지는 **주소로만** 정한다(1.9). 그 규칙은 여기서도 안 깬다 —
+ * 여기서 이름을 보는 것은 보낼 곳을 고르려는 것이 아니라, **이미 실패한
+ * 요청에 까닭을 붙이려는** 것뿐이다. 그래서 미리 막지 않는다. 요청은 그대로
+ * 나가고, 실패했을 때만 한 줄이 붙는다. 언젠가 OpenAI 가 이 문으로도 내주면
+ * 요청이 그냥 성공하고 이 줄은 저절로 안 나온다.
+ *
+ * 게이트웨이는 해당 없다. 그 뒤에 무엇이 걸려 있는지 우리는 모르고, 사내
+ * 게이트웨이가 제 나름대로 이 계열을 chat 창구로 내주는 일도 있다.
+ */
+const CODEX계열 = /^(?:gpt-5-codex|codex-)/i;
+
+export function 코덱스인가(conn) {
+  return 벤더(conn) === 'openai' && CODEX계열.test(String(conn?.model ?? ''));
 }
 
 const SKIPPED = [
@@ -147,7 +173,11 @@ export async function probe(conn, onStep = () => {}) {
         ? got.thinking
           ? '사고만 나오고 본문이 안 나옵니다 — 토큰 상한을 크게 올려야 합니다'
           : '응답이 비어 있습니다 — 모델 이름을 확인하세요'
-        : serverMessage(basic),
+        // 못 붙은 까닭을 아는 자리가 하나 있다. 상태 코드만 남기면 사람은
+        // 열쇠를 의심하는데, 열쇠도 이름도 처음부터 맞았다 (코덱스인가 머리말).
+        : 코덱스인가(conn)
+          ? `${serverMessage(basic)}\n${말('probe.codexOnly', { 모델: model })}`
+          : serverMessage(basic),
     ms: basic.ms,
   });
   if (!basicOk) {

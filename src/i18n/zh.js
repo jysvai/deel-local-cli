@@ -119,6 +119,7 @@ export const zh = {
   'consult.failed': '问不成 — {왜}',
   'consult.empty': '返回是空的。那个模型可能不带工具就不回答。',
   'consult.added': '已把那个回答加进对话，并标明是谁说的。',
+  'probe.codexOnly': '{모델} 系列无法通过这个接口(/chat/completions)使用 — OpenAI 只通过 Responses API(/responses) 提供该系列，而 deel 还不会说那个接口。请暂时改选别的模型。',
   'head.spec.ollama': 'Ollama 自有规格',
   'head.spec.openai': 'OpenAI 兼容 API',
   'head.spec.anthropic': 'Anthropic API',

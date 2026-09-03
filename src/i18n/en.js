@@ -133,6 +133,8 @@ export const en = {
   'consult.failed': 'Could not ask — {왜}',
   'consult.empty': 'The reply came back empty. That model may not answer without tools.',
   'consult.added': 'Added that answer to the conversation, labelled with who said it.',
+  // ── Connection check ──────────────────────────────────────────────────
+  'probe.codexOnly': 'The {모델} family is not served through this endpoint (/chat/completions) — OpenAI serves it only through the Responses API (/responses), which deel cannot speak yet. Pick a different model for now.',
   // ── Startup header ────────────────────────────────────────────────────
   'head.spec.ollama': "Ollama's own API",
   'head.spec.openai': 'OpenAI-compatible API',

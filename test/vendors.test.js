@@ -32,7 +32,8 @@ import {
   endpoint, 더할머리, 말없이끝남, 생각예산, 강도말,
 } from '../src/backend/adapter.js';
 import { 그림메시지, 한점PNG } from '../src/backend/vision.js';
-import { probe } from '../src/backend/probe.js';
+import { probe, 코덱스인가 } from '../src/backend/probe.js';
+import { 말, 언어정하기 } from '../src/i18n/index.js';
 import { 배울것 } from '../src/backend/learn.js';
 import { 할당량읽기, 아슬아슬한가, 할당량잊기 } from '../src/backend/quota.js';
 import { req, headersFor } from '../src/backend/http.js';
@@ -930,6 +931,79 @@ trace('9-2-연결진단');
       check(`${이름}: JSON 모드를 확인한다`, facts.json === true && 칸.json === 'ok', String(칸.json));
     }
     srv.close();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+trace('9-3-코덱스');
+/*
+ * ── 9-3. 이 문으로는 안 나오는 모델 (Codex 계열) ────────────────────────
+ *
+ * `gpt-5-codex` 계열은 OpenAI 가 Responses API(/responses)로만 내준다.
+ * deel 은 아직 그 문을 못 쓴다 — **그러면 그렇다고 말해야 한다.** 여태는
+ * 404 한 줄만 남아서, 사람은 열쇠를 의심하거나 모델 이름을 잘못 적은 줄 알고
+ * 맞는 이름을 몇 번씩 다시 넣어 봤다.
+ *
+ * 여기서 이름을 보는 것은 보낼 곳을 고르려는 것이 아니라 **이미 실패한
+ * 요청에 까닭을 붙이려는** 것이다. 그래서 주소 규칙(1.9)은 그대로다 —
+ * 게이트웨이와 Azure 는 같은 이름이어도 해당 없다.
+ */
+{
+  const 연결 = (base, model) => ({ base, kind: 'openai', model });
+  check('★ OpenAI 직통의 Codex 계열을 알아본다',
+    코덱스인가(연결('https://api.openai.com/v1', 'gpt-5-codex')) === true);
+  check('앞머리만 같아도 같은 계열로 본다',
+    코덱스인가(연결('https://api.openai.com/v1', 'gpt-5-codex-2025-11-01')) === true
+    && 코덱스인가(연결('https://api.openai.com/v1', 'codex-mini-latest')) === true);
+  check('같은 곳의 보통 모델은 아니다',
+    코덱스인가(연결('https://api.openai.com/v1', 'gpt-4o')) === false);
+  /*
+   * ★ 주소 규칙을 안 깬다.
+   *
+   * 사내 게이트웨이 뒤에 무엇이 걸려 있는지 우리는 모른다. 게이트웨이가 제
+   * 나름대로 이 계열을 chat 창구로 내주는 일도 있어서, 이름만 보고 「안 된다」
+   * 고 적으면 멀쩡히 되는 자리에 틀린 말을 띄우게 된다.
+   */
+  check('★ 게이트웨이는 같은 이름이어도 해당 없다',
+    코덱스인가(연결('https://ai-gw.corp.example/v1', 'gpt-5-codex')) === false);
+  check('★ Azure 도 해당 없다',
+    코덱스인가(연결('https://our.openai.azure.com/openai/deployments/d?api-version=2024-10-21', 'gpt-5-codex')) === false);
+  check('로컬도 해당 없다', 코덱스인가(연결('http://127.0.0.1:1234/v1', 'gpt-5-codex')) === false);
+
+  // 화면에 나갈 말. `/lang en` 으로 켠 사람도 읽을 수 있어야 한다.
+  {
+    const ko = 말('probe.codexOnly', { 모델: 'gpt-5-codex' });
+    check('★ 무엇을 하라는 말까지 적는다', /responses/i.test(ko) && /gpt-5-codex/.test(ko), ko.slice(0, 40));
+    for (const 말투 of ['en', 'ja', 'zh']) {
+      언어정하기(말투);
+      const 글 = 말('probe.codexOnly', { 모델: 'gpt-5-codex' });
+      check(`${말투} 로도 이 말이 있다`, 글 !== ko && /responses/i.test(글) && !글.includes('{모델}'), 글.slice(0, 36));
+    }
+    언어정하기('ko');
+  }
+
+  /*
+   * 그 말이 실제로 진단 화면에 붙는가. 진짜 OpenAI 주소로는 물어볼 수 없으니
+   * (바깥으로 나가는 연결은 이 검사에 없다) 붙은 자리를 소스로 잰다 —
+   * 함수는 멀쩡한데 아무도 안 부르는 고장을 그 검사 하나가 막는다.
+   */
+  {
+    const pb = readFileSync(new URL('../src/backend/probe.js', import.meta.url), 'utf8');
+    check('★ 기본 대화 칸이 그 말을 붙인다',
+      /코덱스인가\(conn\)[\s\S]{0,120}말\('probe\.codexOnly'/.test(pb), '');
+    /*
+     * 미리 막지 않는다. 언젠가 OpenAI 가 이 문으로도 내주면 요청이 그냥
+     * 성공하고 이 말은 저절로 안 나와야 한다. 이름을 보고 요청을 걸러 버리면
+     * 그날부터 **되는 것을 안 된다고 적는** 프로그램이 된다.
+     *
+     * 그래서 진단이 시작된 뒤 첫 요청보다 **앞에서** 이름을 보는 자리가
+     * 없는지를 잰다.
+     */
+    const 진단시작 = pb.indexOf('export async function probe(');
+    const 첫요청 = pb.indexOf('let basic = await call(', 진단시작);
+    const 앞에서보나 = pb.slice(진단시작, 첫요청).includes('코덱스인가');
+    check('★ 요청을 미리 막지는 않는다', 진단시작 > 0 && 첫요청 > 진단시작 && !앞에서보나,
+      `${진단시작} → ${첫요청}`);
   }
 }
 

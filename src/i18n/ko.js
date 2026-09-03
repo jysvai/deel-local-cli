@@ -122,6 +122,8 @@ export const ko = {
   'consult.failed': '못 물어봤습니다 — {왜}',
   'consult.empty': '빈 답이 왔습니다. 그 모델이 도구 없이 답을 못 내는 것일 수 있습니다.',
   'consult.added': '이 답을 대화에도 넣었습니다 — 누가 한 말인지 표를 달아서.',
+  // ── 연결 진단 ─────────────────────────────────────────────────────────
+  'probe.codexOnly': '{모델} 계열은 이 문(/chat/completions)으로는 안 나옵니다 — OpenAI 가 Responses API(/responses)로만 내주는 모델인데, deel 은 아직 그 문을 못 씁니다. 지금은 다른 모델을 고르세요.',
   // ── 켤 때 머리말 ──────────────────────────────────────────────────────
   'head.spec.ollama': 'Ollama 자체 규격',
   'head.spec.openai': 'OpenAI 호환 규격',
