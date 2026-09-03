@@ -1108,7 +1108,19 @@ export const TOOLS = {
             ? `${말('sum.linesOf', { 준: 준줄수, 전체: lines.length })} (${말('sum.partial')})`
             : 세말('lines', lines.length),
           줄인것.줄인바이트 ? 말('sum.imageDropped', { 크기: 몇KB(줄인것.줄인바이트) }) : '',
-          별난인코딩 ? encLabel(읽음.encoding) : '',
+          /*
+           * 짐작한 인코딩은 짐작이라고 적는다.
+           *
+           * 앞머리 표식(BOM)이 없고 UTF-8 규칙에도 안 맞으면 남은 길은 내용을
+           * 보고 점수를 매기는 것뿐이다 (encoding.js 의 detect). CP949 와
+           * CP932 는 바이트 범위가 겹쳐서 짧은 파일일수록 자주 뒤집힌다.
+           * 여태 그 확신도(sure)를 재 놓고 아무 데서도 안 읽어서, 화면에는
+           * 짐작이 사실처럼 `CP949` 한 낱말로 떴다. 사람은 잘 읽힌 줄 알고
+           * 그 위에서 고치고, 그때 원본이 상한다.
+           */
+          읽음.sure
+            ? (별난인코딩 ? encLabel(읽음.encoding) : '')
+            : 말('sum.encGuess', { 인코딩: encLabel(읽음.encoding) }),
         ),
       };
     },

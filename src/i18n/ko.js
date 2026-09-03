@@ -371,6 +371,7 @@ export const ko = {
   'sum.noChange': '그대로 (바뀐 것 없음)',
   'sum.verified': '확인 {n}개',
   'sum.readAs': '{쓴것} 로 바꿔 읽음',
+  'sum.encGuess': '{인코딩} (추정)',
   'sum.linesOf': '{준}/{전체}줄',
   'sum.countOf': '{n}/{전체}개',
   'sum.remembered': '기억했습니다 ({n}줄)',

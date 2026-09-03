@@ -116,6 +116,23 @@ writeFileSync(join(root, '보통문서.md'), '# 안내\nUTF-8 문서\n', 'utf8')
   const r = await runTool('Read', { file_path: '사내문서.txt' }, ctx);
   check('Read 가 CP949 를 읽음', r.content.includes('품의서'), r.error ?? r.content.slice(0, 40));
   check('Read 요약에 인코딩이 뜸', r.summary.includes('CP949'), r.summary);
+  /*
+   * 표식도 없고 UTF-8 규칙에도 안 맞으면 남은 길은 내용을 보고 점수를 매기는
+   * 짐작뿐이다. CP949 와 CP932 는 바이트 범위가 겹쳐서 짧은 파일일수록 자주
+   * 뒤집힌다. 그 확신도를 여태 재 놓고 아무 데서도 안 읽어서, 화면에는 짐작이
+   * 사실처럼 `CP949` 한 낱말로 떴다 — 사람은 잘 읽힌 줄 알고 그 위에서 고친다.
+   */
+  check('짐작한 인코딩은 짐작이라고 적는다', r.summary.includes('추정'), r.summary);
+}
+
+{
+  // 앞머리 표식이 있으면 짐작이 아니다. 확실한 것까지 「추정」 이라고 적으면
+  // 곧 그 낱말을 아무도 안 읽는다.
+  writeFileSync(join(root, 'bom문서.txt'),
+    Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from('표식 있음\n', 'utf8')]));
+  const r = await runTool('Read', { file_path: 'bom문서.txt' }, ctx);
+  check('표식이 있으면 인코딩을 확정으로 적는다',
+    r.summary.includes('UTF-8(BOM)') && !r.summary.includes('추정'), r.summary ?? r.error);
 }
 
 {

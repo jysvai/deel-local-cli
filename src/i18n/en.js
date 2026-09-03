@@ -371,6 +371,7 @@ export const en = {
   'sum.noChange': 'unchanged',
   'sum.verified': '{n} checked',
   'sum.readAs': 'read via {쓴것}',
+  'sum.encGuess': '{인코딩} (guessed)',
   'sum.linesOf': '{준}/{전체} lines',
   'sum.countOf': '{n}/{전체}',
   'sum.remembered': 'remembered ({n} lines)',

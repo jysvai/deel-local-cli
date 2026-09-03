@@ -304,6 +304,7 @@ export const zh = {
   'sum.noChange': '没有变化',
   'sum.verified': '核对{n}项',
   'sum.readAs': '用 {쓴것} 转换后读取',
+  'sum.encGuess': '{인코딩}（推测）',
   'sum.linesOf': '{준}/{전체}行',
   'sum.countOf': '{n}/{전체}个',
   'sum.remembered': '已记住（{n}行）',

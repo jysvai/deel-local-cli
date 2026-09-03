@@ -304,6 +304,7 @@ export const ja = {
   'sum.noChange': '変更なし',
   'sum.verified': '確認{n}個',
   'sum.readAs': '{쓴것} で変換して読み込み',
+  'sum.encGuess': '{인코딩}（推定）',
   'sum.linesOf': '{준}/{전체}行',
   'sum.countOf': '{n}/{전체}個',
   'sum.remembered': '覚えました（{n}行）',
