@@ -25,7 +25,21 @@ process.env.DEEL_HOME = 집;
 delete process.env.DEEL_API_KEY;
 delete process.env.DEEL_KEYSTORE;
 
-const { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식, 마지막명령줄, 잠금지우기 } = await import('../src/safety/keystore.js');
+/*
+ * ── 맥에서 이 검사가 사람의 진짜 열쇠를 덮어썼다 ────────────────────────
+ *
+ * DEEL_HOME 을 임시 폴더로 돌려놔도 키체인은 안 따라온다 — 키체인 이름이
+ * 코드에 박힌 한 개였기 때문이다. 그래서 맥에서 이 파일을 돌리면 아래 잠그기가
+ * `deel-gateway-key` 를 **진짜로 덮어썼고**, 잠금지우기 검사가 그걸 **지웠다.**
+ * 검사 한 번에 사용자가 쓰던 게이트웨이 열쇠가 없어진다. 다음에 deel 을 켜면
+ * 401 만 뜨고, 왜인지는 아무 데도 안 적힌다.
+ *
+ * 그래서 검사는 제 이름을 주고 쓴다. 기본 이름은 **한 번도 안 건드린다.**
+ * (윈도우 DPAPI 는 잠근 덩이가 설정 파일 안에 있어서 이 이름과 상관없다.)
+ */
+process.env.DEEL_KEYCHAIN_NAME = `deel-검사-${process.pid}-${Date.now()}`;
+
+const { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식, 마지막명령줄, 잠금지우기, 키체인이름, 기본키체인이름 } = await import('../src/safety/keystore.js');
 const { load, save, resolveKey, 잠금소식, 열쇠탈소식, 열쇠보관, configPath } = await import('../src/config.js');
 const { 열쇠명세 } = await import('../src/pack/sbom.js');
 
@@ -34,6 +48,13 @@ const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
 
 const 열쇠 = 'sk-비밀열쇠-1234-"따옴표"-$(rm -rf /)-%PATH%';
+
+// ── 0. 이 검사는 사람의 열쇠를 안 건드린다 ─────────────────────────────
+trace('0-제이름으로');
+check('★ 검사는 기본 키체인 이름을 안 쓴다 (사람의 열쇠를 덮어쓰면 안 된다)',
+  키체인이름() !== 기본키체인이름 && 키체인이름().startsWith('deel-검사-'), 키체인이름());
+check('기본 이름은 그대로다 (이미 넣어 둔 열쇠를 계속 찾아야 한다)',
+  기본키체인이름 === 'deel-gateway-key', 기본키체인이름);
 
 // ── 1. 이 PC 에서 무엇이 되나 ──────────────────────────────────────────
 trace('1-쓸수있나');
@@ -186,7 +207,7 @@ trace('잠금지우기');
   check('평문 열쇠는 잠금장치에 따로 없다고 말한다',
     없음.지움 === false && /없습니다|설정 파일 안에/.test(없음.왜), JSON.stringify(없음));
 
-  const k = 잠금지우기('keychain:deel-gateway-key');
+  const k = 잠금지우기(`keychain:${키체인이름()}`);
   if (process.platform === 'darwin') {
     check('맥에서는 키체인을 실제로 손댄다', k.방식 === 'keychain', JSON.stringify(k));
     check('없는 것을 지우라 해도 탈로 안 친다', !/실패/.test(k.왜), k.왜);
@@ -221,7 +242,7 @@ trace('9-못푼까닭');
   // 이 PC 것이 아닌 잠긴 값. 어느 판에서든 못 푼다.
   const 남의것 = process.platform === 'darwin'
     ? 'dpapi:AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA남의PC에서잠근것'
-    : 'keychain:deel-gateway-key';
+    : `keychain:${키체인이름()}`;
   const 프로필 = { id: '남의것', apiKey: 남의것 };
 
   열쇠탈소식();   // 앞엣것을 비우고 시작한다
@@ -255,4 +276,6 @@ for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? D + '  ' + 
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 rmSync(집, { recursive: true, force: true });
+// 제가 넣은 것은 제가 거둔다. 안 지우면 검사를 돌릴 때마다 키체인에 찌꺼기가 쌓인다.
+if (process.platform === 'darwin') { try { 잠금지우기(`keychain:${키체인이름()}`); } catch { /* 이미 없다 */ } }
 process.exitCode = fail.length ? 1 : 0;

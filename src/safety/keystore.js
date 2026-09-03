@@ -36,8 +36,25 @@ import { join } from 'node:path';
 /** 잠긴 값의 꼴. `dpapi:<base64>` · `keychain:<이름>` */
 const 꼴 = /^(dpapi|keychain):(.*)$/s;
 
-/** 키체인에 넣을 때 쓰는 이름. 사람이 키체인 앱에서 찾아 지울 수 있어야 한다. */
-export const 키체인이름 = 'deel-gateway-key';
+/** 키체인에 넣을 때 쓰는 기본 이름. 사람이 키체인 앱에서 찾아 지울 수 있어야 한다. */
+export const 기본키체인이름 = 'deel-gateway-key';
+
+/**
+ * 실제로 쓸 키체인 이름.
+ *
+ * 기본값은 **바꾸지 않는다.** 이미 넣어 둔 열쇠를 계속 찾아야 하기 때문이다 —
+ * 이름을 갈면 사용자의 열쇠가 키체인에 남은 채로 안 보이게 된다.
+ *
+ * DEEL_KEYCHAIN_NAME 은 **따로 두고 쓰라고** 있는 자리다. 이름이 고정이라
+ * DEEL_HOME 을 임시 폴더로 돌려놓아도 키체인만은 진짜 자리를 썼고, 맥에서
+ * 이 저장소의 검사를 돌리면 잠그기/풀기가 **사용자의 진짜 게이트웨이 열쇠를
+ * 덮어썼다.** 검사 하나가 사람의 열쇠를 지우는 셈이다. 그래서 검사는 제 이름을
+ * 주고 쓰고, 끝나면 제 것만 지운다. 윈도우(DPAPI)는 잠근 덩이가 설정 파일 안에
+ * 있어서 이 이름과 상관이 없다.
+ */
+export function 키체인이름() {
+  return process.env.DEEL_KEYCHAIN_NAME || 기본키체인이름;
+}
 
 /** 이 값이 우리가 잠근 것인가. 평문 열쇠와 헷갈리면 안 된다. */
 export function 잠긴것인가(값) { return 꼴.test(String(값 ?? '')); }
@@ -98,7 +115,7 @@ function 키체인넣기(글) {
   const 계정 = userInfo().username;
   // 값 자체는 base64 로 넣는다. 키체인 도구가 줄바꿈·따옴표를 만나면 거기서 끊긴다.
   const 값 = Buffer.from(글, 'utf8').toString('base64');
-  const 명령 = `add-generic-password -a ${계정} -s ${키체인이름} -w ${값} -U\n`;
+  const 명령 = `add-generic-password -a ${계정} -s ${키체인이름()} -w ${값} -U\n`;
   마지막인자 = ['security', '-i'];
   const r = spawnSync('security', ['-i'], { input: 명령, encoding: 'utf8', timeout: 20000 });
   if (r.error) return { ok: false, err: r.error.message };
@@ -107,8 +124,8 @@ function 키체인넣기(글) {
 
 function 키체인읽기() {
   const 계정 = userInfo().username;
-  마지막인자 = ['security', 'find-generic-password', '-a', 계정, '-s', 키체인이름, '-w'];
-  const r = spawnSync('security', ['find-generic-password', '-a', 계정, '-s', 키체인이름, '-w'], {
+  마지막인자 = ['security', 'find-generic-password', '-a', 계정, '-s', 키체인이름(), '-w'];
+  const r = spawnSync('security', ['find-generic-password', '-a', 계정, '-s', 키체인이름(), '-w'], {
     encoding: 'utf8', timeout: 20000,
   });
   if (r.error) return { ok: false, text: '', err: r.error.message };
@@ -161,7 +178,7 @@ export function 잠그기(글) {
   }
   if (process.platform === 'darwin') {
     const r = 키체인넣기(값);
-    if (r.ok) return `keychain:${키체인이름}`;
+    if (r.ok) return `keychain:${키체인이름()}`;
     return null;   // 사유는 어디로도 안 간다 — 잠긴 것인지 아닌지는 보관방식() 이 따로 말한다
   }
   return null;
@@ -281,7 +298,7 @@ export function 잠금지우기(값 = null) {
   }
 
   const 계정 = userInfo().username;
-  const 인자 = ['delete-generic-password', '-a', 계정, '-s', 키체인이름];
+  const 인자 = ['delete-generic-password', '-a', 계정, '-s', 키체인이름()];
   마지막인자 = ['security', ...인자];
   const r = spawnSync('security', 인자, { encoding: 'utf8', timeout: 20000 });
   if (r.error) return { 지움: false, 방식: 'keychain', 왜: r.error.message };
