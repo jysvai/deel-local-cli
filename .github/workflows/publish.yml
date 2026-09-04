@@ -167,20 +167,15 @@ jobs:
             echo "$name@$ver 는 아직 없습니다 — 검사를 돌리고 올립니다."
           fi
 
-      # 이미 올라간 판이면 검사도 안 돌린다. 그 커밋의 검사는 그때 이미 돌았고,
-      # 지금 코드가 아닌 옛 코드를 다시 재는 것은 아무에게도 안 쓰인다.
-      - name: syntax
-        if: steps.onnpm.outputs.found == 'no'
-        run: npm run check
-      - name: test
-        if: steps.onnpm.outputs.found == 'no'
-        run: npm test
-
       # ── 올릴 길이 있나 ────────────────────────────────────────────────
       #
-      # 없으면 **여기서** 멈춘다. 예전에는 검사를 다 돌린 뒤 마지막 줄에서
-      # ENEEDAUTH 를 만났고, 그 글자만 봐서는 무엇을 해야 하는지 알 수 없다.
-      # 열두 판이 그렇게 빨갰다.
+      # **검사보다 먼저 본다.** 이 자리가 검사 뒤에 있으면 아무 뜻이 없다 —
+      # 어차피 20분을 다 쓰고 나서 멈추는 것이고, 그건 예전에 마지막 줄에서
+      # ENEEDAUTH 를 만나던 것과 사람이 겪는 바가 같다. 열두 판이 그렇게
+      # 빨갰고, 그 글자만 봐서는 무엇을 해야 하는지 알 수가 없었다.
+      #
+      # 「먼저 멈춘다」 고 적어 놓고 뒤에 세워 두면 그 주석이 거짓이 된다.
+      # 이 저장소가 코드에 대고 하는 말과 같은 잣대를 워크플로에도 댄다.
       - name: can we publish?
         if: steps.onnpm.outputs.found == 'no'
         shell: bash
@@ -202,6 +197,15 @@ jobs:
           echo "  나. Automation 토큰을 만들어 이 저장소 Secrets 에" >&2
           echo "      NPM_TOKEN 으로 넣는다" >&2
           exit 1
+
+      # 이미 올라간 판이면 검사도 안 돌린다. 그 커밋의 검사는 그때 이미 돌았고,
+      # 지금 코드가 아닌 옛 코드를 다시 재는 것은 아무에게도 안 쓰인다.
+      - name: syntax
+        if: steps.onnpm.outputs.found == 'no'
+        run: npm run check
+      - name: test
+        if: steps.onnpm.outputs.found == 'no'
+        run: npm test
 
       - name: publish
         if: steps.onnpm.outputs.found == 'no'
