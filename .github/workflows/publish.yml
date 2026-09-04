@@ -47,10 +47,33 @@ name: publish
 #      없다. provenance 도 자동으로 붙는다.
 #      npm 11.5.1 · Node 22.14 위여야 한다 (아래 setup-node 가 그렇게 맞춘다).
 #
-#   나. 토큰
-#      npmjs.com → Access Tokens → Automation 형으로 하나 만들고,
-#      이 저장소 Settings → Secrets and variables → Actions 에
-#      `NPM_TOKEN` 으로 넣는다. Automation 형이어야 2FA 를 안 묻는다.
+#      **이 길을 고르면 NPM_TOKEN 시크릿을 지운다.** 토큰이 있으면 아래
+#      setup-node 가 그걸 .npmrc 에 적고, npm 은 OIDC 로 안 간다.
+#      둘을 같이 두면 「믿는 발행자를 켰는데 왜 여전히 토큰으로 가나」 를
+#      알아낼 방법이 없다.
+#
+#   나. 토큰 (급할 때)
+#      **Granular** 토큰이어야 하고, 두 가지가 같이 켜져 있어야 한다.
+#
+#        · Packages and scopes → deel-local-cli → **Read and write**
+#        · **Bypass 2FA** 켜기
+#
+#      npm 은 모든 패키지의 발행에 2FA 를 요구한다. 토큰으로 올리려면 그
+#      토큰이 2FA 를 건너뛸 수 있어야 한다는 뜻이다. 둘 중 하나라도 없으면
+#      인증은 되는데 쓰기에서 막힌다 — 401 이 아니라 **403** 이 온다.
+#
+#        npm error 403 Forbidden - PUT https://registry.npmjs.org/…
+#        You may not perform that action with these credentials.
+#
+#      401 은 「누구냐」 이고 403 은 「너인 건 알겠는데 그건 못 한다」 이다.
+#      글자가 비슷해서 같은 것으로 읽기 쉬운데, 고칠 자리가 서로 다르다.
+#
+#      그리고 npm 이 이 우회 자체를 걷어내는 중이다. 올릴 때마다 그렇게
+#      적어 준다 —
+#
+#        npm notice npm tokens that bypass 2FA are being restricted
+#
+#      그러니 이 길은 임시로 두고, 가. 로 옮기는 편이 낫다.
 #
 # 어느 쪽도 안 해 두면 아래 publish 단계가 **왜 못 올리는지 적고 멈춘다.**
 # 20분짜리 검사를 다 돌리고 마지막 줄에서 ENEEDAUTH 를 보는 것보다,
@@ -184,6 +207,11 @@ jobs:
         run: |
           if [ -n "$NPM_TOKEN" ]; then
             echo "토큰으로 올립니다 (NPM_TOKEN)."
+            # 토큰이 **있다**는 것과 그 토큰이 **올릴 수 있다**는 것은 다르다.
+            # 여기서 미리 물어볼 방법이 없어서(권한은 PUT 을 해 봐야 안다),
+            # 대신 막혔을 때 무엇을 봐야 하는지를 지금 적어 둔다.
+            echo "  403 이 오면 토큰 권한 문제입니다 — Read and write 와" >&2
+            echo "  Bypass 2FA 를 둘 다 켜야 합니다 (이 파일 머리말 참고)." >&2
             exit 0
           fi
           if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
@@ -194,8 +222,9 @@ jobs:
           echo "올릴 길이 없습니다. 둘 중 하나를 해 두세요:" >&2
           echo "  가. npmjs.com 의 이 패키지 Settings 에서 믿는 발행자로" >&2
           echo "      이 저장소와 이 워크플로를 등록한다 (저장할 비밀이 없습니다)" >&2
-          echo "  나. Automation 토큰을 만들어 이 저장소 Secrets 에" >&2
-          echo "      NPM_TOKEN 으로 넣는다" >&2
+          echo "  나. Granular 토큰을 만들어 NPM_TOKEN 으로 넣는다." >&2
+          echo "      그 토큰에 Read and write 와 Bypass 2FA 가 둘 다 있어야" >&2
+          echo "      한다 — 없으면 인증은 되고 쓰기에서 403 이 온다." >&2
           exit 1
 
       # 이미 올라간 판이면 검사도 안 돌린다. 그 커밋의 검사는 그때 이미 돌았고,
