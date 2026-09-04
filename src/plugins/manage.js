@@ -4,7 +4,7 @@
 // 오프라인 기기에 반입한다. 오프라인에서는 압축만 풀면 그대로 인식된다.
 import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, resolve, sep } from 'node:path';
 import {
   existsSync, mkdirSync, writeFileSync, readFileSync, rmSync,
   readdirSync, statSync,
@@ -146,6 +146,59 @@ async function fetchInto(spec, dest, onStep) {
   return { error: '받지 못했습니다 — 저장소 주소나 가지 이름을 확인하세요' };
 }
 
+/**
+ * 플러그인 이름을 **폴더 이름 한 칸**으로 자른다.
+ *
+ * ── 왜 있어야 하나 ────────────────────────────────────────────────────
+ *
+ * 설치할 자리를 `join(플러그인폴더, 이름)` 으로 정하는데, 이 **이름은 남이 적은
+ * 글자**다. `.claude-plugin/plugin.json` 의 `name` 을 그대로 읽어 쓰고, 그 파일은
+ * 플러그인을 만든 사람이 통째로 정한다.
+ *
+ * 그래서 이름이 `../../Desktop/뭐시기` 면 설치할 자리가 홈 폴더 밖으로 나간다.
+ * `join` 은 `..` 를 정리해 줄 뿐 막아 주지 않는다. 그 자리에 대고 우리가 하는
+ * 일이 하필 이것이다 —
+ *
+ *   rmSync(dest, { recursive: true, force: true })   ← 통째로 지운다
+ *   copyDir(tmp, dest)                                ← 그 자리에 파일을 놓는다
+ *
+ * 묶음 안의 파일 확장자는 안 가린다(반입 묶음을 만들 때만 가린다). 그러니
+ * 이름 한 줄로 **남의 폴더를 지우고 그 자리에 실행 파일을 놓을 수 있다.**
+ * 시작프로그램 폴더를 노리면 다음 로그인부터 그것이 돈다.
+ *
+ * 빈 이름과 `.` 도 막아야 한다. 그 둘은 자리가 **플러그인 폴더 자신**이 되어,
+ * `rmSync` 가 설치해 둔 플러그인을 전부 지운다.
+ *
+ * 역슬래시도 칸막이로 본다. 윈도우에서 만든 묶음이 리눅스에서 이름 한 칸으로
+ * 통과하면, 그 묶음을 다시 윈도우로 옮겼을 때 그때 나간다 (pack/tar.js 의
+ * 안쪽인가 와 같은 판단이다).
+ *
+ * 이 함수가 없으면 tar 엔트리 이름을 아무리 잘 막아도 소용이 없다. 묶음이
+ * **제 이름으로** 나가기 때문이다.
+ */
+export function 이름한칸(이름) {
+  const 글 = String(이름 ?? '').replace(/\\/g, '/').trim();
+  if (!글) return null;
+  // 마지막 칸만 쓴다. `a/b/../c` 같은 것도 여기서 한 칸이 된다.
+  const 한칸 = basename(글);
+  if (!한칸 || 한칸 === '.' || 한칸 === '..') return null;
+  // 드라이브 글자·칸막이가 남아 있으면 이름이 아니다.
+  if (/[/:]/.test(한칸)) return null;
+  return 한칸;
+}
+
+/**
+ * 그 자리가 정말 플러그인 폴더 **안**인가 — 이름을 자른 뒤에도 한 번 더 본다.
+ *
+ * 자르는 자가 언젠가 틀릴 수 있다. 그때 마지막으로 서는 그물이다. 지우고
+ * 쓰는 자리라 두 겹으로 막는다.
+ */
+export function 플러그인자리인가(base, dest) {
+  const 뿌리 = resolve(base);
+  const 갈곳 = resolve(dest);
+  return 갈곳 !== 뿌리 && 갈곳.startsWith(뿌리 + sep);
+}
+
 function manifestOf(dir) {
   const f = join(dir, '.claude-plugin', 'plugin.json');
   if (!existsSync(f)) return null;
@@ -217,8 +270,24 @@ export async function install(spec, { home = homedir(), onStep } = {}) {
   if (got.error) { rmSync(tmp, { recursive: true, force: true }); return { error: got.error }; }
 
   const info = manifestOf(tmp);
-  const name = info?.name || (isLocal ? basename(asPath) : parsed.repo);
+  /*
+   * 이름은 **남이 적은 글자**다. 자리 조립에 쓰기 전에 한 칸으로 자른다
+   * (이름한칸 머리말 — 안 자르면 이름 한 줄로 남의 폴더가 지워진다).
+   * 매니페스트 이름이 못 쓸 것이면 우리가 아는 이름(폴더명·저장소명)으로 간다.
+   */
+  const 적힌이름 = 이름한칸(info?.name);
+  const 뒷이름 = 이름한칸(isLocal ? basename(asPath) : parsed.repo);
+  const name = 적힌이름 || 뒷이름;
+  if (!name) {
+    rmSync(tmp, { recursive: true, force: true });
+    return { error: '플러그인 이름을 읽지 못했습니다 — 이름이 비었거나 폴더 이름으로 쓸 수 없는 글자입니다.' };
+  }
   const dest = join(base, name);
+  // 두 겹째 그물. 여기서 걸리면 자르는 자가 틀린 것이므로 아예 멈춘다.
+  if (!플러그인자리인가(base, dest)) {
+    rmSync(tmp, { recursive: true, force: true });
+    return { error: `설치할 자리가 플러그인 폴더 밖입니다 — 설치하지 않았습니다 (${name}).` };
+  }
 
   const counts = countIn(tmp);
   if (!counts.skills && !counts.commands) {
@@ -267,10 +336,21 @@ export function list({ home = homedir() } = {}) {
 }
 
 export function remove(name, { home = homedir() } = {}) {
-  const dir = join(pluginsDir(home), name);
-  if (!existsSync(dir)) return { error: `설치돼 있지 않습니다: ${name}` };
+  /*
+   * 지우는 자리도 이름으로 정해진다. 그러니 여기도 한 칸으로 자른다.
+   *
+   * 사람이 직접 치는 자리라 안전할 것 같지만, 목록(list)이 보여 주는 이름을
+   * 그대로 복사해 붙이는 것이 보통이고 그 이름은 매니페스트에서 온다.
+   * 설치 때 막아도 이미 깔려 있던 것에는 못 쓴 이름이 남아 있을 수 있다.
+   */
+  const base = pluginsDir(home);
+  const 한칸 = 이름한칸(name);
+  const dir = 한칸 ? join(base, 한칸) : null;
+  if (!dir || !플러그인자리인가(base, dir) || !existsSync(dir)) {
+    return { error: `설치돼 있지 않습니다: ${name}` };
+  }
   rmSync(dir, { recursive: true, force: true });
-  return { removed: name };
+  return { removed: 한칸 };
 }
 
 // 반입용 묶음. 실행 스크립트는 빼고 스킬·명령만 담는다.

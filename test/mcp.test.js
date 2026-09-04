@@ -15,8 +15,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  설정읽기, 다붙이기, 이름풀기, 도구정의, 도구최대, 살아있는수, 모두닫기,
-} from '../src/backend/mcp.js';
+  설정읽기, 다붙이기, 이름풀기, 도구정의, 도구최대, 살아있는수, 모두닫기, 깨끗한환경 } from '../src/backend/mcp.js';
 import { VERSION } from '../src/version.js';
 import { toolSchemas, runTool } from '../src/tools/index.js';
 import { Audit } from '../src/safety/audit.js';
@@ -362,6 +361,45 @@ trace('7.5-끝날때-남기지않는가');
 try { rmSync(root, { recursive: true, force: true }); } catch { /* 자식이 아직 놓지 않았다 */ }
 
 trace('8-끝');
+
+/*
+ * ── 남의 프로그램에 주는 환경 ───────────────────────────────────────────
+ *
+ * MCP 서버는 **남이 만든 프로그램**이고, 우리가 띄운다. 그쪽으로 넘어간 값은
+ * 어디로 가는지 우리가 모른다. 그래서 필요한 것만 남기고 통째로 씻는다.
+ *
+ * 그런데 그 씻는 자를 재는 검사가 하나도 없었다. Bash·Jobs 쪽(열쇠뺀환경)은
+ * shell.test.js 가 재는데, **더 위험한 쪽**인 여기는 아무도 안 봤다.
+ */
+{
+  const 옛것 = {
+    DEEL_API_KEY: process.env.DEEL_API_KEY,
+    DEEL_KEY_사내: process.env.DEEL_KEY_사내,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  };
+  process.env.DEEL_API_KEY = 'sk-검사용-1111';
+  process.env.DEEL_KEY_사내 = 'sk-검사용-2222';
+  process.env.OPENAI_API_KEY = 'sk-남의열쇠-3333';
+  try {
+    const 준것 = 깨끗한환경();
+    const 값들 = Object.values(준것).join(' | ');
+    check('★★ MCP 자식에게 우리 열쇠를 안 준다',
+      !/sk-검사용-1111|sk-검사용-2222/.test(값들),
+      Object.keys(준것).filter((k) => /KEY/i.test(k)).join(', ') || '(열쇠꼴 이름 없음)');
+    check('★★ DEEL_* 은 이름조차 안 넘어간다',
+      !Object.keys(준것).some((k) => k.toUpperCase().startsWith('DEEL_')),
+      Object.keys(준것).filter((k) => k.toUpperCase().startsWith('DEEL_')).join(', '));
+    check('★ 남의 열쇠도 안 넘긴다 — 우리가 흘릴 값이 아니다',
+      !/sk-남의열쇠-3333/.test(값들), '');
+    check('★ 돌아가는 데 꼭 필요한 것은 남긴다', !!(준것.PATH ?? 준것.Path),
+      Object.keys(준것).join(', ').slice(0, 100));
+  } finally {
+    for (const [k, v] of Object.entries(옛것)) {
+      if (v == null) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+}
+
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n밖에서 붙인 도구(MCP) 검사  ${D}(진짜 자식 프로세스를 띄워서)${X}\n`);

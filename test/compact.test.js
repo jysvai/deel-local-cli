@@ -710,9 +710,28 @@ await new Promise((r) => setImmediate(r));
     const 이름 = 규격 === 'anthropic' ? 'Anthropic' : 'OpenAI';
 
     // ── 접기 ──
-    const f = foldToolResults({ messages: 이력(규격) }, { 이득문턱: 0 });
+    const 접을이력 = 이력(규격);
+    const 접기전 = 접을이력.map(결과있나);
+    const f = foldToolResults({ messages: 접을이력 }, { 이득문턱: 0 });
     check(`★★ ${이름} 꼴에서도 접는다`, f.접은것 > 0, `접은것 ${f.접은것}`);
     check(`★ ${이름} 꼴에서도 자리를 아낀다`, f.아낀토큰 > 1000, `${f.아낀토큰} 토큰`);
+    /*
+     * 접은 **뒤에도** 그것이 여전히 도구 결과여야 한다.
+     *
+     * 위 두 줄은 「접었다」와 「아꼈다」만 본다. 둘 다 참이면서 이력이 깨질 수
+     * 있다 — 실제로 그랬다. Anthropic 꼴 결과를 통째로 글로 덮어써서
+     * `tool_use_id` 가 없어졌고, 앞 차례의 `tool_use` 가 짝을 잃어 다음
+     * 요청이 400 이었다. 접은 개수와 아낀 토큰은 그때도 멀쩡했다.
+     */
+    const 깨진것 = 접을이력.filter((m, i) => 접기전[i] && !결과있나(m)).length;
+    check(`★★ ${이름} 꼴에서 접은 뒤에도 결과가 결과로 남는다`, 깨진것 === 0, `깨진것 ${깨진것}`);
+    const 접힌이름 = f.접은것들.map((x) => x.도구);
+    check(`★★ ${이름} 꼴에서 접힌 줄이 도구 이름을 안다`,
+      접힌이름.length > 0 && 접힌이름.every((v) => v === 'Read'), JSON.stringify(접힌이름.slice(0, 3)));
+    const 접힌경로 = f.접은것들.map((x) => x.경로);
+    check(`★★ ${이름} 꼴에서 접힌 줄이 경로를 안다`,
+      접힌경로.length > 0 && 접힌경로.every((v) => typeof v === 'string' && v.endsWith('.js')),
+      JSON.stringify(접힌경로.slice(0, 3)));
 
     // ── 자르는 자리 ──
     const p2 = split(이력(규격));

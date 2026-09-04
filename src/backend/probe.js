@@ -215,6 +215,7 @@ export async function probe(conn, onStep = () => {}) {
   });
   let chunks = 0;
   let firstMs = 0;
+  let 읽다실패 = null;
   if (st.ok && st.res?.body) {
     const t0 = Date.now();
     try {
@@ -229,15 +230,28 @@ export async function probe(conn, onStep = () => {}) {
         chunks += hits || (text.trim() ? 1 : 0);
       }
       reader.cancel().catch(() => {});
-    } catch {}
+    } catch (e) {
+      /*
+       * 여기가 빈 catch 였다.
+       *
+       * 그러면 `getReader()` 가 던진 TypeError(본문이 우리가 기대한 꼴이
+       * 아니다)도 삼켜지고, 조각이 0개인 채로 아래에서 **「한 번에 옵니다」**
+       * 라고 적힌다. 우리 잘못이 서버 진단으로 둔갑하는 것이다 — 사람은
+       * 멀쩡한 창구를 스트리밍 안 되는 창구로 알고 쓴다.
+       *
+       * 끊긴 것(Abort)은 진짜로 예상한 일이라 그대로 넘긴다. 그 밖은 적는다.
+       */
+      if (e?.name !== 'AbortError') 읽다실패 = String(e?.message ?? e).slice(0, 120);
+    }
   }
   add({
     id: 'stream',
     label: '스트리밍',
-    status: chunks > 2 ? 'ok' : st.ok ? 'warn' : 'no',
+    status: chunks > 2 ? 'ok' : (st.ok && !읽다실패) ? 'warn' : 'no',
     detail: chunks > 2
       ? `조각 ${chunks}개, 첫 응답 ${firstMs}ms`
-      : st.ok ? '한 번에 옵니다 — 화면은 스피너로 대체합니다' : serverMessage(st),
+      : 읽다실패 ? `흘러오는 것을 읽지 못했습니다 — ${읽다실패}`
+        : st.ok ? '한 번에 옵니다 — 화면은 스피너로 대체합니다' : serverMessage(st),
     ms: st.ms,
   });
   facts.streaming = chunks > 2;

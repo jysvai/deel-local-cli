@@ -26,7 +26,7 @@ import { 종, 알릴만한초 } from './ui/notify.js';
 import { 말, 말 as 옮긴말, 언어, 언어들, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
 import { allowTemporarily } from './safety/network.js';
-import { chat, 규격이름 } from './backend/adapter.js';
+import { chat, 규격이름, 더할머리 } from './backend/adapter.js';
 import { 알림채움 } from './backend/retry.js';
 import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
 import { 정한셸 } from './tools/shell.js';
@@ -954,7 +954,16 @@ export async function handle(line, session, ctx) {
        * 줄어든 것처럼 읽힌다. 새로 읽은 몫과의 차이는 바로 아래 캐시 줄이 적는다.
        */
       const 보낸것 = session.usage.prompt || session.usage.in;
-      say(`  ${c.gray(pad(말('cost.tokIn'), 14))} ${보낸것.toLocaleString()}`);
+      /*
+       * 창구가 usage 를 안 준 부름이 있었으면 **그렇다고 적는다.**
+       *
+       * 안 적으면 그 몫이 0 으로 합쳐져서, 유료로 부르고도 화면이 「입력 0 ·
+       * $0.00」 이라고 말한다. 이 프로그램에서 제일 나쁜 고장이 화면이
+       * 거짓말하는 것이고, 0 은 「모른다」 를 숫자로 지어낸 것이다.
+       */
+      const 못잰것 = session.usage.못잰것 ?? 0;
+      const 덧말 = 못잰것 ? c.yellow(`  (${못잰것}번은 창구가 안 알려 줘서 안 들어감)`) : '';
+      say(`  ${c.gray(pad(말('cost.tokIn'), 14))} ${보낸것.toLocaleString()}${덧말}`);
       say(`  ${c.gray(pad(말('cost.tokOut'), 14))} ${session.usage.out.toLocaleString()}`);
       /*
        * ── 캐시가 얼마나 맞았나 ────────────────────────────────────────
@@ -1010,8 +1019,21 @@ export async function handle(line, session, ctx) {
       const 요금값 = 세션요금(session);
       const 쓴돈 = 돈셈(session.usage, 요금값);
       if (쓴돈) {
+        /*
+         * 캐시 요금을 모르면 캐시 토큰도 정가로 셌다는 뜻이다. 그 금액은
+         * 실제보다 **크다**. 그냥 찍으면 사람은 그 숫자를 예산으로 잡는데,
+         * 캐시가 잘 걸리는 대화일수록 몇 배씩 부풀어 있다. 숫자를 감추지
+         * 말고 「위쪽 값」 이라고 말한다 — 그리고 어디에 적으면 정확해지는지
+         * 같이 알려 준다.
+         */
+        const 위쪽 = 쓴돈.캐시모름;
         say(`  ${c.gray(pad(말('cost.money'), 14))} ${c.bold(돈말(쓴돈.달러))}`
+          + (위쪽 ? ` ${c.gray('이하')}` : '')
           + ` ${c.gray(`(${어디서온값(요금값)})`)}`);
+        if (위쪽) {
+          say(`  ${c.gray(' '.repeat(14))} ${c.gray('캐시 요금을 몰라 캐시 토큰도 정가로 셌습니다 — 실제로는 이보다 쌉니다.')}`);
+          say(`  ${c.gray(' '.repeat(14))} ${c.gray('요금표에 `캐시읽기`·`캐시쓰기` 를 적으면 정확해집니다.')}`);
+        }
       } else if (바깥인가(session.conn.base) && (session.usage.in || session.usage.out)) {
         const 붙은곳 = session.제공자 ? 제공자고르기(session.제공자) : null;
         for (const 줄 of 요금적는법(session.conn.model, { 제공자: 붙은곳, 설정파일: configPath() })) {
@@ -1830,9 +1852,28 @@ function showThink(session, { 자세히 = false } = {}) {
     }
   }
   if (session.conn?.전선) {
-    const 나가는것 = 눈금맞추기(session.conn.전선, session.think);
-    say(`  ${c.gray(pad(말('think.wire'), 한국어 ? 8 : 10))}${c.gray(전선말(session.conn.전선))}`
-      + (나가는것 ? `   ${c.gray(말('think.wireSends', { 값: 나가는것 }))}` : ''));
+    const 카드 = session.conn.전선;
+    const 나가는것 = 눈금맞추기(카드, session.think);
+    /*
+     * ── 「끈다」 가 정말로 꺼지는 창구인가 ────────────────────────────
+     *
+     * off 인데 나갈 말이 없으면 두 가지 중 하나다.
+     *
+     *   a. 이 규격에서는 **칸을 안 싣는 것이 곧 끄는 것**이다.
+     *      anthropic 은 thinking 을 빼면 안 생각하고, ollama 는 think:false
+     *      를 싣는다. 이쪽은 아무 말도 안 해도 된다.
+     *   b. 이 규격에서는 칸을 안 실으면 **서버 기본값**으로 돈다. openai 꼴의
+     *      추론 모델이 그렇다 — reasoning_effort 를 빼면 서버가 제 기본값
+     *      (보통 medium)으로 생각한다. 여기서 아무 말도 안 하면 화면은 off
+     *      라고 적어 두고 실제로는 생각이 도는 셈이 된다.
+     *
+     * b 를 잠자코 두면 화면이 거짓말을 한다. 창구가 끄는 말을 알려 준 적이
+     * 없으면 우리는 못 끈다 — 못 끄면 못 끈다고 적는다.
+     */
+    const 못끄나 = session.think === 'off' && !나가는것 && 카드.생각형식 === 'effort';
+    say(`  ${c.gray(pad(말('think.wire'), 한국어 ? 8 : 10))}${c.gray(전선말(카드))}`
+      + (나가는것 ? `   ${c.gray(말('think.wireSends', { 값: 나가는것 }))}` : '')
+      + (못끄나 ? `   ${c.yellow(말('think.wireNoOff'))}` : ''));
   }
   if (개발자 || 자세히) say(`  ${c.gray(pad(말('think.profile'), 한국어 ? 8 : 10))}${c.bold(t.name)}   ${c.gray(t.desc)}`);
 
@@ -2859,12 +2900,20 @@ async function 서버모델들(conn) {
   const { 애저인가, 애저풀기, 배포목록 } = await import('./backend/azure.js');
   if (애저인가(conn.base)) {
     const 푼것 = 애저풀기(conn.base);
-    const a = await req(푼것.목록주소, { headers: headersFor(conn.auth ?? 'none', conn.key), timeout: 4000 });
+    const a = await req(푼것.목록주소,
+      { headers: headersFor(conn.auth ?? 'none', conn.key, 더할머리(conn.kind)), timeout: 4000 });
     if (!a.ok) return null;
     return 배포목록(a.json).map((m) => m.id);
   }
+  /*
+   * 판 머리를 같이 얹는다 (adapter.js 의 더할머리).
+   *
+   * Anthropic 은 `anthropic-version` 이 없으면 400 이다. 이 자리가 그것을
+   * 빠뜨리고 있어서, 그 창구에서는 `/model` 이 목록을 못 받아 왔다 — 그리고
+   * 목록을 못 받으면 화면은 「모델이 없습니다」 라고 적는다. 있는데.
+   */
   const r = await req(`${conn.base.replace(/\/$/, '')}/models`, {
-    headers: headersFor(conn.auth ?? 'none', conn.key), timeout: 4000,
+    headers: headersFor(conn.auth ?? 'none', conn.key, 더할머리(conn.kind)), timeout: 4000,
   });
   if (!r.ok) return null;
   const list = r.json?.data ?? r.json?.models ?? [];

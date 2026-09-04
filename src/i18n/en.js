@@ -499,6 +499,7 @@ export const en = {
   'think.autoOff': 'Effort stays exactly where you set it',
   'think.wire': 'wire',
   'think.wireSends': 'sends {값}',
+  'think.wireNoOff': 'this endpoint never told us its off value — the field is omitted, so the server default applies',
   'loop.wire': 'The server does not take that field — retrying with it adjusted ({무엇})',
   'loop.quotaAhead': 'Quota is empty — waiting {초}s before sending',
   'cost.quota': 'Server quota',

@@ -623,6 +623,31 @@ const 시간제한 = (p, ms, 무엇) => Promise.race([
   new Promise((_, 깨기) => setTimeout(() => 깨기(new Error(`${무엇} 가 ${ms}ms 안에 안 끝났습니다`)), ms).unref()),
 ]);
 
+/*
+ * ── 정해 둔 만큼 자지 말고, **될 때까지 본다** ─────────────────────────
+ *
+ * 여기 두 자리가 `setTimeout(r, 300)` · `setTimeout(r, 700)` 이었다. 둘 다
+ * 「이쯤이면 됐겠지」 다. 그 숫자에는 두 가지 값이 붙는다.
+ *
+ *   빠른 판에서는 **늘 그만큼 논다.** 두 자리에서 1초, 검사 전체로는 더.
+ *   느린 판(CI 의 공용 일꾼·윈도우)에서는 **가끔 모자라서** 빨개진다.
+ *   그 빨강은 고장이 아니라 그날 그 기계가 느렸다는 뜻이라, 보는 사람은
+ *   다시 돌려 보고 넘어간다. 그렇게 몇 번 하면 빨강 자체를 안 믿게 된다.
+ *
+ * 기다리는 대상이 「무엇이 참이 되는 것」 이면 그것을 보면 된다. 되면 곧장
+ * 지나가고, 안 되면 정해 둔 시간까지만 기다렸다 그 사실대로 빨개진다.
+ *
+ * @returns {Promise<boolean>} 참이 됐으면 true, 시간이 다 갔으면 false
+ */
+async function 될때까지(볼것, ms = 8000, 사이 = 20) {
+  const 끝날때 = Date.now() + ms;
+  for (;;) {
+    try { if (볼것()) return true; } catch { /* 아직 없는 것을 보면 그럴 수 있다 */ }
+    if (Date.now() >= 끝날때) return false;
+    await new Promise((r) => { setTimeout(r, 사이).unref?.(); });
+  }
+}
+
 trace('5-1-악수');
 
 // ── 붙는가 ──────────────────────────────────────────────────────────────
@@ -657,7 +682,17 @@ trace('5-1-악수');
      */
     check('작업 모드를 목록으로 내놓는다', (방?.modes?.availableModes?.length ?? 0) >= 5,
       JSON.stringify(방?.modes?.availableModes?.map((m) => m.id)));
-    check('지금 모드도 알려 준다', typeof 방?.modes?.currentModeId === 'string', JSON.stringify(방?.modes?.currentModeId));
+    /*
+      * 「글이 왔다」 가 아니라 **쓸 수 있는 값인가**를 잰다.
+      *
+      * 에디터는 이 값으로 모드 단추의 고른 자리를 칠한다. 목록에 없는 이름이
+      * 오면 아무것도 안 골라진 채로 그려지고, 그건 화면만 봐서는 우리 탓인지
+      * 저쪽 탓인지 알 수가 없다. `typeof … === 'string'` 은 오타 하나까지
+      * 통과시킨다 — 그 검사는 이 고장을 한 번도 못 잡는다.
+      */
+    const 모드목록 = (방?.modes?.availableModes ?? []).map((m) => m.id);
+    check('★ 지금 모드가 그 목록 안에 있다', 모드목록.includes(방?.modes?.currentModeId),
+      `${방?.modes?.currentModeId} ∉ ${JSON.stringify(모드목록)}`);
 
     /*
      * ── 값을 잰다, '뭐라도 왔다' 를 재지 않는다 ──────────────────────────
@@ -668,9 +703,10 @@ trace('5-1-악수');
      */
     const 바꿈 = await 시간제한(e.요청('session/set_mode', { sessionId: 방.sessionId, modeId: 'plan' }), 8000, 'set_mode');
     check('모드 바꾸기에 규격대로 빈 객체를 답한다', JSON.stringify(바꿈) === '{}', JSON.stringify(바꿈));
-    // 로그가 표준오류로 나가는 데 잠깐 걸린다.
-    await new Promise((r) => setTimeout(r, 300));
-    check('★ 고른 모드로 진짜 바뀐다', /작업 모드를 plan 로 바꿨습니다/.test(e.표준오류()),
+    // 로그가 표준오류로 나가는 데 잠깐 걸린다 — 300ms 를 재지 말고 그 줄을 본다.
+    const 바뀐줄 = () => /작업 모드를 plan 로 바꿨습니다/.test(e.표준오류());
+    await 될때까지(바뀐줄, 8000);
+    check('★ 고른 모드로 진짜 바뀐다', 바뀐줄(),
       (e.표준오류().split('\n').find((l) => /작업 모드를/.test(l)) ?? '그런 줄이 없다').slice(0, 80));
 
     let 코드 = null;
@@ -820,7 +856,15 @@ trace('5-5-못물어보면');
       prompt: [{ type: 'text', text: '일부러_명령 을 돌려줘' }],
     }), 30000, 'session/prompt');
 
-    check('승인을 못 물어봐도 턴은 끝난다 — 서 있지 않는다', typeof 끝?.stopReason === 'string', JSON.stringify(끝));
+    /*
+     * 규격이 정한 다섯 낱말 중 하나여야 한다. 아무 글이나 오면 에디터는
+     * 턴이 어떻게 끝났는지 모르고, 「멈춤」 인지 「끝남」 인지 화면에
+     * 못 그린다. 여기는 못 물어봐서 도구를 거부한 자리라 end_turn 이다 —
+     * cancelled 로 오면 사람이 취소한 것처럼 보인다.
+     */
+    const 끝낱말 = ['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled'];
+    check('★ 승인을 못 물어봐도 턴은 규격대로 끝난다 — 서 있지 않는다',
+      끝?.stopReason === 'end_turn', `${끝?.stopReason} (받는 말: ${끝낱말.join('·')})`);
     const 끝남 = e.알림들.filter((u) => u.update?.sessionUpdate === 'tool_call_update').map((u) => u.update);
     check('못 물어봤으면 실행하지 않는다', !끝남.some((x) => x.status === 'completed' && /Bash/.test(x.title ?? '')),
       JSON.stringify(끝남.map((x) => `${x.title}:${x.status}`)));
@@ -852,7 +896,20 @@ trace('5-6-취소');
       sessionId: 방.sessionId,
       prompt: [{ type: 'text', text: '일부러_느리게 답해줘' }],
     });
-    await new Promise((r) => setTimeout(r, 700));
+    /*
+     * 취소는 **무언가가 돌고 있을 때** 보내야 뜻이 있다. 700ms 를 자고 보내면
+     * 느린 판에서는 아직 시작도 안 한 턴에 취소를 던지게 되고, 그건 이 검사가
+     * 재려던 것(도는 중에 끼어들 수 있나)이 아니다.
+     *
+     * 「돌기 시작했다」 의 증거는 **게이트웨이가 그 한마디를 받은 것**이다.
+     * 에디터로 흘러나온 알림을 보면 안 된다 — 사람 말을 되비추는 알림은
+     * 모델을 부르기 전에 먼저 나가서, 아직 부르지도 않은 턴에 취소를 던지게
+     * 된다(그렇게 하니 end_turn 이 돌아왔다). 여기 스텁은 이 한마디를 받고
+     * 3초를 끄는 자리라, 받았다는 것이 곧 그 3초 안이라는 뜻이다.
+     */
+    const 받은수 = 받은대화.length;
+    const 돌기시작 = await 될때까지(() => 받은대화.length > 받은수, 10000);
+    check('취소를 보내기 전에 턴이 정말 돌고 있다', 돌기시작, `받은 대화 ${받은대화.length}개`);
     e.알림('session/cancel', { sessionId: 방.sessionId });
 
     const 끝 = await 시간제한(턴, 12000, '취소한 턴');
@@ -968,7 +1025,11 @@ trace('5-8-되살리기');
     const 끊긴것 = 도구들.find((t) => /고치던것\.js/.test(JSON.stringify(t.locations ?? [])));
     check('★ 도구 도는 중에 죽은 자리는 끊겼다고 그린다', 끊긴것?.status === 'failed',
       JSON.stringify(도구들.map((t) => `${t.title}:${t.status}`)));
-    check('되살리고 나서 모드도 알려 준다', typeof 되살림?.modes?.currentModeId === 'string', JSON.stringify(되살림));
+    // 되살린 뒤에도 같은 규칙이다 — 목록에 없는 이름이면 모드 단추가 빈다.
+    const 되산모드목록 = (되살림?.modes?.availableModes ?? []).map((m) => m.id);
+    check('★ 되살리고 나서도 모드가 그 목록 안에 있다',
+      되산모드목록.length > 0 && 되산모드목록.includes(되살림?.modes?.currentModeId),
+      `${되살림?.modes?.currentModeId} ∉ ${JSON.stringify(되산모드목록)}`);
 
     /*
      * ★ 진짜로 재는 것은 이것이다.

@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { expand, findMentions } from '../src/agent/mention.js';
 import { makeScope } from '../src/safety/guard.js';
 import { trace } from './trace.mjs';
+import { 내부살림 } from '../src/tools/fsutil.js';
 
 const pass = [];
 const fail = [];
@@ -223,6 +224,34 @@ trace('8-이상한것');
 
 trace('9-치움');
 rmSync(root, { recursive: true, force: true });
+
+/*
+ * ── 살림 자리는 옮길 수 있다 ────────────────────────────────────────────
+ *
+ * `DEEL_HOME` 이 정식 설정이다(config.js) — 사내 휴대용 설치와 검사가 쓴다.
+ * 그런데 막는 자(내부살림)가 `.deel` 이라는 **글자**로 찾고 있었다. 이름에
+ * 그 글자가 없는 자리로 옮기면 막이 통째로 풀리고, 그 순간 `config.json`
+ * (게이트웨이 열쇠가 든 파일)이 그냥 읽힌다.
+ */
+{
+  const 옛집 = process.env.DEEL_HOME;
+  const 딴집 = join(tmpdir(), 'deel-딴이름-살림');
+  process.env.DEEL_HOME = 딴집;
+  try {
+    check('★★ 옮긴 살림의 설정 파일도 막는다',
+      !!내부살림(join(딴집, 'config.json')), String(내부살림(join(딴집, 'config.json'))).slice(0, 40));
+    check('★★ 옮긴 살림의 MCP 설정도 막는다',
+      !!내부살림(join(딴집, 'mcp.json')), String(내부살림(join(딴집, 'mcp.json'))).slice(0, 40));
+    check('★ 기본 이름(.deel)도 그대로 막는다',
+      !!내부살림(join('C:', 'Users', 'x', '.deel', 'config.json').replace(/\\/g, '/')));
+    check('★ 남의 config.json 은 안 막는다 — 막는 것이 아니라 살림을 막는 것',
+      내부살림(join(딴집, '..', '프로젝트', 'config.json')) === null,
+      String(내부살림(join(딴집, '..', '프로젝트', 'config.json'))));
+  } finally {
+    if (옛집 == null) delete process.env.DEEL_HOME; else process.env.DEEL_HOME = 옛집;
+  }
+}
+
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n@파일 지목  ${D}(아닌 것을 파일로 오해하지 않는 게 절반이다)${X}\n`);

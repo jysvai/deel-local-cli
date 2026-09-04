@@ -158,8 +158,30 @@ export function 기본카드(conn) {
     효력칸: null,
     // 캐시 표식을 우리가 붙이나
     캐시: 'none',
+    // 표식을 **어느 칸에** 적나 (backend/cachemark.js 의 표식칸들)
+    표식칸: 'cache_control',
     // 캐시 표식이 잡히는 최소 크기 (그 아래면 붙여도 안 잡힌다 — 탈은 아니다)
     캐시최소: 1024,
+    /*
+     * 출력 상한을 **어느 이름으로** 싣나 — '둘다' · '새것' · '옛것'
+     *
+     * 옛 규격은 `max_tokens` 하나였다. 추론 모델(o 계열·GPT-5 계열)은 그
+     * 이름을 안 볼 뿐 아니라 **튕긴다**: "Unsupported parameter:
+     * 'max_tokens' is not supported with this model."
+     *
+     * 여태 이걸 `회사 !== 'openai'` 로 갈랐다. 즉 **주소로** 정한 것이다.
+     * 그러면 사내 게이트웨이(우리가 이름을 모르는 주소) 뒤에 GPT-5 를
+     * 물린 사람은 회사가 null 이라 둘 다 보내고, 첫 요청부터 400 이다.
+     * 우리 집안 규칙이 「업체 이름으로 갈래를 만들지 않는다」 인데 그걸
+     * 어긴 자리였고, 어긴 대가가 정확히 그 창구에서 나왔다.
+     *
+     * 그래서 두 가지로 바꾼다.
+     *   1) 짐작은 **모델 이름**으로 한다 — 게이트웨이 뒤에 무엇이 있는지는
+     *      모델 이름에 적혀 있다. 주소에는 안 적혀 있다.
+     *   2) 짐작이 틀리면 **배운다**(배울전선). 400 한 번이면 고쳐지고
+     *      디스크에 남아서 다음 판에는 안 틀린다.
+     */
+    출력칸: '둘다',
     // 세션 이름을 어느 칸에 싣나
     세션자리: null,
     // 흘려받기에서 usage 를 달라고 할까
@@ -204,6 +226,43 @@ export function 기본카드(conn) {
    */
   카드.스트림usage = !!회사;
 
+  /*
+   * ── 몸이 OpenAI 꼴이어도, 캐시를 정하는 것은 **모델**이다 ────────────
+   *
+   * 여태 여기는 「이 창구들은 서버가 알아서 앞머리를 캐시한다」 고 믿고
+   * 표식을 하나도 안 붙였다. 그 믿음이 Claude 앞에서 틀린다. Claude 의 캐시는
+   * 자라는 앞머리 캐시가 아니라 **표식으로 끊는 방식**이다. 표식이 없으면
+   * 서버가 기본으로 잡아 주는 앞머리에서 멈춘다 — 대화가 60k 로 자라도 읽히는
+   * 것은 처음 몇 k 뿐이고, 늘어난 만큼이 걸음마다 전액 다시 나간다.
+   * (실제로 그랬다: 6k→59k 로 자라는 동안 읽힌 것은 5.9k 에 못 박혀 있었고
+   *  새로 쓴 것은 0 이었다.)
+   *
+   * ── 왜 창구가 아니라 모델로 가르나 ───────────────────────────────────
+   *
+   * 창구로 가르면 창구마다 예외가 하나씩 는다. 그건 이 파일이 없애려는
+   * 종류의 코드다. 칸을 받는지 안 받는지는 **그 몸을 결국 누가 읽느냐**로
+   * 정해지고, 그건 모델이다. Claude 를 앞에 둔 창구는 몸이 OpenAI 꼴이어도
+   * 이 칸을 제 규격으로 알아듣는다.
+   *
+   * 그리고 이건 지어낸 칸이 아니다. 두 이름 다 문서에 있다 —
+   * `cache_control` 은 Anthropic 규격, `prompt_cache_breakpoint` 는 OpenAI
+   * 규격의 text 조각에 정식으로 들어 있는 칸이다. 안 받는 서버는 400 으로
+   * 말해 주고, 그러면 아래 배울전선이 다른 이름으로 바꿔 보고, 그것도
+   * 안 되면 끈다. 짐작 → 배움 → 남김, 이 파일이 늘 하던 세 걸음이다.
+   *
+   * OpenAI 직통은 여기 안 걸린다 — 아래에서 제 칸(prompt_cache_key)으로
+   * 덮어쓴다. 거기는 서버가 알아서 캐시하는 것이 문서에 적혀 있다.
+   */
+  /*
+   * 추론 모델은 옛 이름을 튕긴다. 이름으로 알아본다 — o1·o3·o4·gpt-5·gpt-6.
+   * 앞에 무엇이 붙어 있어도(`openai/gpt-5`, `azure-gpt-5-chat`) 잡히게 둔다.
+   */
+  if (/(^|[^a-z0-9])(o[1-9]|gpt-[5-9])([^a-z0-9]|$)/i.test(모델)) 카드.출력칸 = '새것';
+  if (클로드인가(모델)) {
+    카드.캐시 = 'explicit';
+    카드.캐시최소 = 회사 === 'bedrock' ? 4096 : 1024;
+  }
+
   if (회사 === 'openai') {
     /*
      * 여기가 이 칸들이 **문서에 있는** 유일한 자리다.
@@ -222,7 +281,8 @@ export function 기본카드(conn) {
      * 실어 보내는 것보다, **앞머리를 안 흔드는 것**이 여기서 할 일이다
      * (agent/session.js 의 차례 · loop.js 의 전선 고정).
      */
-    카드.캐시 = 'auto';
+    // Claude 를 앞에 뒀으면 위에서 표식으로 정해졌다. 그걸 덮지 않는다.
+    if (카드.캐시 !== 'explicit') 카드.캐시 = 'auto';
     /*
      * ── 대화 이름은 여기에 안 싣는다 ──────────────────────────────────
      *
@@ -305,21 +365,27 @@ export function 눈금맞추기(카드, 강도) {
  *
  * @returns {{무엇:string, 값:any, 왜:string}|null}
  */
-export function 배울전선(문구) {
+export function 배울전선(문구, 규격) {
   const s = String(문구 ?? '');
   if (!s) return null;
   /*
    * 「안 받는다」 를 뜻하는 말들. 창구마다 쓰는 낱말이 다르다.
    *
    *   Anthropic  "is deprecated"          (아직 400 은 아닌데 곧 그렇게 된다)
+   *   Anthropic  "Extra inputs are not permitted"   ← 모르는 칸에 이 말이 온다
    *   OpenAI     "Unrecognized request argument supplied"
    *   Bedrock    "ValidationException ... not supported"
+   *
+   * `is not permitted` 라고 못 박아 뒀던 적이 있다. Anthropic 이 실제로 쓰는
+   * 말은 **`are` 쪽**(`Extra inputs are not permitted`)이라, 그 창구에서 모르는
+   * 칸을 보냈을 때 한 줄도 못 배웠다. 낱말을 못 박을 때는 실제로 오는 문장을
+   * 보고 박아야 한다 — 한 글자 차이로 그 창구만 조용히 안 배운다.
    *
    * 하나라도 빠지면 그 창구에서만 못 배운다 — 그리고 못 배우면 같은 400 을
    * 세션마다 다시 맞는다. 넓게 잡되, 아래에서 **칸 이름과 함께** 있을 때만
    * 쓴다. 낱말 하나로는 아무 오류 문장에나 걸린다.
    */
-  const 거절 = /not supported|unsupported|unrecognized|unknown|unexpected|invalid|is not permitted|not allowed|removed|deprecated|cannot be used|no longer|extra fields|additional propert/i;
+  const 거절 = /not supported|unsupported|unrecognized|unknown|unexpected|invalid|not permitted|not allowed|removed|deprecated|cannot be used|no longer|extra (?:fields|inputs)|additional propert/i;
 
   /*
    * ── 「그 칸을 안 받는다」 와 「그 값이 틀렸다」 는 다른 말이다 ─────────
@@ -377,8 +443,57 @@ export function 배울전선(문구) {
     return { 무엇: '생각형식', 값: 'none', 왜: 짧게(s) };
   }
 
-  // ── 캐시 표식 ───────────────────────────────────────────────────────
-  if (/cache_control|prompt_cache_key|cache_creation/i.test(s) && 거절.test(s)) {
+  /*
+   * ── 출력 상한 칸 ───────────────────────────────────────────────────
+   *
+   * 이 둘은 같은 뜻을 다른 이름으로 적은 것이다. 어느 쪽을 받는지 서버마다
+   * 다르고, 게이트웨이 뒤에 무엇이 있는지는 주소로 알 수 없다. 그러니
+   * 튕기면 **반대 이름으로 갈아탄다.** 한 번 배우면 디스크에 남는다.
+   *
+   * 아래 「문맥이 넘쳤다」 판정보다 **먼저** 봐야 한다. 그쪽 정규식이
+   * `max_tokens` 라는 낱말만으로도 걸려서, 「128k 를 64k 로 줄였다」 는
+   * 엉뚱한 배움을 남기고 같은 400 을 다시 맞았다.
+   */
+  if (/max_completion_tokens/i.test(s) && 거절.test(s)) {
+    return { 무엇: '출력칸', 값: '옛것', 왜: 짧게(s) };
+  }
+  if (/max_tokens/i.test(s) && 거절.test(s) && !/thinking|budget|greater than|less than|at least|must be/i.test(s)) {
+    return { 무엇: '출력칸', 값: '새것', 왜: 짧게(s) };
+  }
+
+  /*
+   * ── 캐시 표식 ───────────────────────────────────────────────────────
+   *
+   * 「이 칸을 안 받는다」 는 말이 곧 「캐시를 못 한다」 는 뜻은 아니다.
+   * 같은 뜻을 두 규격이 다른 이름으로 적기 때문이다(cachemark.js 의
+   * 표식칸들). 그래서 **한 번은 다른 이름으로 바꿔 본다.** 그것까지
+   * 거절당해야 끈다.
+   *
+   * 바로 끄면 받을 수 있었던 창구에서도 캐시를 영영 안 쓰게 된다. 그건
+   * 조용히 비싸지는 쪽이라 화면에 아무 표시도 안 난다 — 이 파일이 없애려던
+   * 바로 그 고장이다.
+   */
+  if (/cache_control/i.test(s) && 거절.test(s)) {
+    /*
+     * 다른 이름으로 바꿔 보는 것은 **OpenAI 규격일 때만** 이다.
+     *
+     * `prompt_cache_breakpoint` 는 OpenAI 스키마의 칸이다. Anthropic 규격
+     * 창구에 그 이름을 보내면 받아 줄 리가 없다 — `cache_control` 이 그
+     * 규격의 유일한 이름이라, 거기서 거절당했다는 것은 그 창구가 캐시를
+     * 아예 안 한다는 뜻이다.
+     *
+     * 규격을 안 보고 바꾸면 이렇게 된다: `cache_control` 400 → 「배웠다」 며
+     * OpenAI 칸으로 갈아탐 → Anthropic 창구가 `Extra inputs are not
+     * permitted` 로 또 400 → 두 번째 배움은 이미 썼으니 **끄지도 못한다.**
+     * 그 창구에서는 매 턴이 죽는데 화면에는 「배웠습니다」 가 두 번 뜬다.
+     *
+     * 규격을 모르면(옛 부름) 바꿔 보는 쪽으로 간다. 그쪽이 여태 하던 일이고,
+     * 그 다음 거절에서 어차피 꺼진다.
+     */
+    if (규격 === 'anthropic') return { 무엇: '캐시', 값: 'none', 왜: 짧게(s) };
+    return { 무엇: '표식칸', 값: 'prompt_cache_breakpoint', 왜: 짧게(s) };
+  }
+  if (/prompt_cache_breakpoint|prompt_cache_key|cache_creation/i.test(s) && 거절.test(s)) {
     return { 무엇: '캐시', 값: 'none', 왜: 짧게(s) };
   }
 
@@ -446,7 +561,7 @@ export function 카드고치기(카드, 고침) {
   return 새;
 }
 
-export const 카드칸들 = ['생각형식', '눈금', '끄는말', '효력칸', '캐시', '세션자리', '스트림usage'];
+export const 카드칸들 = ['생각형식', '눈금', '끄는말', '효력칸', '캐시', '표식칸', '출력칸', '세션자리', '스트림usage'];
 
 /**
  * 집 파일에 적을 만한 것만. 주소·모델은 부르는 쪽이 열쇠로 쓴다.

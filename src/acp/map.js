@@ -14,9 +14,19 @@
 //
 // ── 순수하게 둔다 ───────────────────────────────────────────────────────
 //
-// 이 파일은 아무것도 안 부르고 아무 데도 안 쓴다. 값을 넣으면 값이 나온다.
-// 그래야 진짜 에디터 없이 검사할 수 있다 — 붙인 것이 맞는지 확인하려고
-// Zed 를 띄워야 한다면 아무도 확인 안 하게 된다.
+// 이 파일은 **아무것도 건드리지 않는다** — 파일도, 그물도, 화면도. 값을
+// 넣으면 값이 나온다. 그래야 진짜 에디터 없이 검사할 수 있다 — 붙인 것이
+// 맞는지 확인하려고 Zed 를 띄워야 한다면 아무도 확인 안 하게 된다.
+//
+// 「아무것도 안 부른다」 로 적어 뒀던 적이 있고, 그 말 때문에 도구 부름을
+// 읽는 규칙을 여기에 **한 벌 더** 적었다. 그 벌은 OpenAI 꼴만 알았고,
+// Anthropic 으로 대화하면 되살린 화면에서 도구가 통째로 사라졌다. 아무 말도
+// 없이 — 「도구를 안 썼구나」 와 구별이 안 된다.
+//
+// 읽기만 하는 순수 함수를 들여오는 것은 순수함을 안 깬다. 규격을 읽는 규칙은
+// backend/adapter.js 한 곳에만 있어야 한다 (집안 규칙: 자는 한 벌).
+import { 부른것들, 결과들, 본문글 } from '../backend/adapter.js';
+import { 첫이름 } from '../tools/label.js';
 
 /**
  * 도구 이름 → ACP 갈래.
@@ -55,7 +65,9 @@ export function 도구갈래(이름) {
  */
 export function 도구이름표(이름, 인자) {
   const a = 인자 ?? {};
-  const 첫 = a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.purpose ?? a.목적
+  // 어느 이름을 먼저 보는지는 tools/label.js 한 곳에 있다. 여기에 또 적으면,
+  // 새 인자 이름이 생겼을 때 다섯 자리 중 몇 곳만 고쳐진다.
+  const 첫 = 첫이름(a)
     ?? (a.command ? String(a.command).replace(/\s+/g, ' ') : null)
     ?? (Array.isArray(a.files) && a.files.length
       ? `${a.files[0]?.file_path ?? '?'}${a.files.length > 1 ? ` 외 ${a.files.length - 1}개` : ''}`
@@ -184,18 +196,10 @@ export function 멈춘까닭(까닭) {
  */
 function 글만(m) {
   const c = m?.content;
-  let 글 = '';
   let 장수 = Array.isArray(m?.images) ? m.images.length : 0;   // ollama 규격
-  if (typeof c === 'string') 글 = c;
-  else if (Array.isArray(c)) {
-    const 조각 = [];
-    for (const p of c) {
-      if (p?.type === 'text' && typeof p.text === 'string') 조각.push(p.text);
-      else if (p?.type === 'image_url') 장수++;
-    }
-    글 = 조각.join('\n');
-  }
-  글 = 글.trim();
+  if (Array.isArray(c)) for (const p of c) if (p?.type === 'image_url' || p?.type === 'image') 장수++;
+  // 글을 뽑는 규칙은 규격마다 다르다 — 그 규칙은 adapter.js 한 곳에 있다.
+  let 글 = 본문글(m).trim();
   if (장수) 글 = 글 ? `${글}\n\n_(그림 ${장수}장)_` : `_(그림 ${장수}장)_`;
   return 글;
 }
@@ -236,12 +240,14 @@ export function 되살린것(messages, { 최대내용 = 2000 } = {}) {
   const id로 = new Map();
   const 이름으로 = new Map();
   for (const m of 줄) {
-    if (m?.role !== 'tool') continue;
-    if (m.tool_call_id != null) id로.set(m.tool_call_id, m.content);
-    else if (m.tool_name) {
-      const q = 이름으로.get(m.tool_name) ?? [];
-      q.push(m.content);
-      이름으로.set(m.tool_name, q);
+    // Anthropic 꼴 결과는 role 이 'user' 다. role 로 고르면 통째로 놓친다.
+    for (const r of 결과들(m)) {
+      if (r.id != null) id로.set(r.id, r.글);
+      else if (r.name) {
+        const q = 이름으로.get(r.name) ?? [];
+        q.push(r.글);
+        이름으로.set(r.name, q);
+      }
     }
   }
 
@@ -280,10 +286,9 @@ export function 되살린것(messages, { 최대내용 = 2000 } = {}) {
       });
     }
 
-    for (const tc of Array.isArray(m.tool_calls) ? m.tool_calls : []) {
-      const fn = tc?.function ?? tc ?? {};
-      const 이름 = String(fn.name ?? tc?.name ?? '도구');
-      const 인자 = 인자풀기(fn.arguments ?? fn.args ?? tc?.args);
+    for (const tc of 부른것들(m)) {
+      const 이름 = String(tc.name ?? '도구');
+      const 인자 = 인자풀기(tc.args);
 
       let 답;
       if (tc?.id != null && id로.has(tc.id)) 답 = id로.get(tc.id);

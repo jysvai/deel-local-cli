@@ -261,6 +261,57 @@ trace('3-요청모양');
   const 생각 = extractMessage('openai', { choices: [{ message: { content: '답', reasoning_content: '속으로' } }] });
   check('OpenAI 의 생각도 꺼낸다', 생각.thinking === '속으로', String(생각.thinking));
 
+  /*
+   * ── ★ 「0 을 썼다」 와 「얼마 썼는지 모른다」 는 다른 말이다 ────────────
+   *
+   * usage 를 아예 안 주는 창구가 있다. 그때 우리가 만드는 usage 는 전부 0 이라,
+   * 합계에 0 을 더하고 나면 화면에 **아무 표도 안 난다.** 그 판은 유료로
+   * 불렀는데 화면은 「0 원」 이라고 적어 두는 셈이다 — 사람이 그 숫자를 보고
+   * 하는 판단이 달라진다.
+   *
+   * 그래서 `잰것` 을 같이 싣는다. 이 값이 없으면 loop.js 는 「안 준 판」 을
+   * 셀 수가 없고, /cost 의 「n번은 창구가 안 알려 줘서 안 들어감」 줄이
+   * 영영 안 뜬다. 그 줄이 안 뜨는 것과 0 인 것은 화면에서 똑같이 보인다.
+   */
+  const 안준것 = extractMessage('openai', { choices: [{ message: { content: '답' } }] });
+  check('★★ usage 를 안 주면 안 쟀다고 적는다', 안준것.usage?.잰것 === false,
+    JSON.stringify(안준것.usage));
+  check('★ 안 쟀어도 숫자 자리는 0 으로 채운다 (더하기가 안 깨진다)',
+    안준것.usage?.in === 0 && 안준것.usage?.out === 0, JSON.stringify(안준것.usage));
+  check('★ 준 판은 쟀다고 적는다', o.usage?.잰것 === true, JSON.stringify(o.usage));
+
+  /*
+   * ★ 진짜 0 과 「안 줌」 이 갈리는가.
+   *
+   * 서버가 `usage: { prompt_tokens: 0, completion_tokens: 0 }` 을 **주는** 일이
+   * 있다(캐시가 전부 맞은 판 등). 그건 잰 값이라 합계에 그대로 들어가야 하고,
+   * 「안 알려 줌」 으로 세면 안 된다. 숫자만 보면 두 자리가 똑같아서, 이걸
+   * 가르는 것은 잰것 하나뿐이다.
+   */
+  const 진짜0 = extractMessage('openai', {
+    choices: [{ message: { content: '답' } }],
+    usage: { prompt_tokens: 0, completion_tokens: 0 },
+  });
+  check('★★ 서버가 준 0 은 잰 값이다 (안 준 것과 안 헷갈린다)',
+    진짜0.usage?.잰것 === true && 진짜0.usage.in === 0, JSON.stringify(진짜0.usage));
+
+  // 세 규격이 다 같은 말을 해야 한다. 한 규격만 이 값을 안 실으면 그 창구를
+  // 쓰는 사람에게만 화면이 조용히 틀린 말을 한다.
+  const 올라마안줌 = extractMessage('ollama', { message: { role: 'assistant', content: '답' } });
+  check('★ ollama 도 안 준 판을 안 쟀다고 적는다', 올라마안줌.usage?.잰것 === false,
+    JSON.stringify(올라마안줌.usage));
+  check('★ ollama 가 준 판은 쟀다고 적는다', l.usage?.잰것 === true, JSON.stringify(l.usage));
+
+  const 클로드안줌 = extractMessage('anthropic', { content: [{ type: 'text', text: '답' }] });
+  check('★ anthropic 도 안 준 판을 안 쟀다고 적는다', 클로드안줌.usage?.잰것 === false,
+    JSON.stringify(클로드안줌.usage));
+  const 클로드줌 = extractMessage('anthropic', {
+    content: [{ type: 'text', text: '답' }],
+    usage: { input_tokens: 11, output_tokens: 22 },
+  });
+  check('★ anthropic 이 준 판은 쟀다고 적는다',
+    클로드줌.usage?.잰것 === true && 클로드줌.usage.in === 11, JSON.stringify(클로드줌.usage));
+
   const 그냥답 = extractMessage('openai', { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '그냥 답' } }] });
   check('도구가 없으면 빈 배열', 그냥답.toolCalls?.length === 0, JSON.stringify(그냥답.toolCalls));
   check('글은 그대로 나온다', 그냥답.content === '그냥 답', String(그냥답.content));

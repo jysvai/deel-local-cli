@@ -37,7 +37,7 @@ import {
 import { 조각표, 메시지표식, 시스템블록, 잡힐만한가, 블록에붙이기, 닻문턱 } from '../src/backend/cachemark.js';
 import { buildBody, 보낸토큰 } from '../src/backend/adapter.js';
 import { 자동강도, 인사인가, effortFor, 가벼운강도 } from '../src/agent/effort.js';
-import { 언어정하기 } from '../src/i18n/index.js';
+import { 언어정하기, 말모두 } from '../src/i18n/index.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -158,7 +158,10 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
 //
 //   explicit  우리가 표식을 붙인다 (Anthropic 규격 — 붙일 수 있는 유일한 자리)
 //   key       열쇠 한 줄로 같은 대화라고 알려 준다 (OpenAI 직통)
-//   auto      서버가 알아서 앞머리만 잡아 준다 (Bedrock · Gemini · Azure)
+//   auto      서버가 알아서 앞머리만 잡아 준다 (Gemini · Azure · Claude 아닌 것)
+//
+// 갈림은 **창구가 아니라 모델**이다. Claude 의 캐시는 자라는 앞머리 캐시가
+// 아니라 표식으로 끊는 방식이라, 몸이 OpenAI 꼴이어도 표식이 있어야 자란다.
 {
   const 직통 = 기본카드(연결('https://api.anthropic.com/v1', 'anthropic', 'claude-opus-5'));
   const 맨틀 = 기본카드(연결('https://bedrock-mantle.us-east-1.api.aws/anthropic/v1', 'anthropic', 'anthropic.claude-opus-5-v1:0'));
@@ -167,7 +170,15 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
 
   check('★ Anthropic 직통은 우리가 붙인다', 직통.캐시 === 'explicit', 직통.캐시);
   check('★ OpenAI 직통은 열쇠로 묶는다', 오픈AI.캐시 === 'key', 오픈AI.캐시);
-  check('★ Bedrock OpenAI 창구는 서버가 잡는다', 베드락.캐시 === 'auto', 베드락.캐시);
+  /*
+   * 여기는 여태 `auto` 였다 — 「이 창구는 서버가 알아서 앞머리를 캐시한다」.
+   * Claude 앞에서 그게 틀린다. 표식이 없으면 서버가 기본으로 잡아 주는
+   * 앞머리에서 멈추고, 대화가 6k→59k 로 자라는 동안 읽힌 것이 5.9k 에 못
+   * 박힌 채 늘어난 53k 가 걸음마다 전액 다시 나갔다.
+   */
+  check('★★ Bedrock OpenAI 창구라도 Claude 면 우리가 붙인다', 베드락.캐시 === 'explicit', 베드락.캐시);
+  const 베드락노바 = 기본카드(연결('https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1', 'openai', 'amazon.nova-pro'));
+  check('★ 같은 창구라도 Claude 가 아니면 서버에 맡긴다', 베드락노바.캐시 === 'auto', 베드락노바.캐시);
 
   /*
    * ★ mantle 의 Anthropic 창구를 Bedrock 으로 알아본다.
@@ -280,6 +291,27 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
 
   // 배운 칸은 이어서 또 배우면 함께 남는다. 한 번 배우면 앞에 배운 것을 잊으면 안 된다.
   const 두번배운것 = 카드저장꼴(카드고치기(되살린것, 배울전선("Unknown parameter: 'user'")));
+
+  /*
+   * ★ `cache_control` 거절을 규격마다 다르게 배운다.
+   *
+   * OpenAI 규격에서는 같은 뜻의 다른 이름(`prompt_cache_breakpoint`)이 있으니
+   * 한 번 바꿔 본다. Anthropic 규격에는 그 이름이 없다 — 거기서 바꾸면
+   * `Extra inputs are not permitted` 로 두 번째 400 을 맞고, 배움은 이미
+   * 한 번 썼으니 끄지도 못한다. 그 창구는 매 턴이 죽는다.
+   */
+  {
+    const 말 = "Extra inputs are not permitted: 'cache_control'";
+    const 오픈 = 배울전선(말, 'openai');
+    check('★★ openai 규격은 cache_control 거절을 다른 이름으로 한 번 바꿔 본다',
+      오픈?.무엇 === '표식칸' && 오픈?.값 === 'prompt_cache_breakpoint', JSON.stringify(오픈));
+    const 앤 = 배울전선(말, 'anthropic');
+    check('★★ anthropic 규격은 cache_control 거절이면 바로 끈다',
+      앤?.무엇 === '캐시' && 앤?.값 === 'none', JSON.stringify(앤));
+    const 모름 = 배울전선(말);
+    check('규격을 모르면 여태 하던 대로 바꿔 본다',
+      모름?.무엇 === '표식칸', JSON.stringify(모름));
+  }
   check('★ 두 번 배우면 둘 다 남는다',
     두번배운것?.스트림usage === false && 두번배운것?.세션자리 === null,
     JSON.stringify(두번배운것));
@@ -305,9 +337,27 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   check('★ 카드를 찾을 때 규격까지 준다', 물은것[0]?.[2] === 'anthropic',
     JSON.stringify(물은것[0]));
 
-  // 카드칸들 은 저장꼴·합치기가 같이 쓰는 목록이다. 한쪽만 늘면 조용히 샌다.
-  check('카드 칸 목록이 한 군데 있다', 카드칸들.includes('생각형식') && 카드칸들.includes('캐시')
-    && 카드칸들.length === 7, 카드칸들.join(','));
+  /*
+   * 카드칸들 은 저장꼴·합치기가 같이 쓰는 목록이다. 한쪽만 늘면 조용히 샌다.
+   *
+   * 여기가 `length === 8` 이었다. 그 숫자는 **칸이 늘었다**는 것만 알려 주고
+   * **어느 칸이 빠졌는지**는 안 알려 준다. 칸을 하나 더하면서 이 숫자만 고치면
+   * 목록에 안 넣어도 검사가 초록이 된다 — 그러면 그 칸은 배워도 디스크에 안
+   * 남고, 사람은 「배웠습니다」 를 매 판 다시 본다.
+   *
+   * 그래서 숫자가 아니라 **기본카드가 실제로 만드는 칸**과 맞춰 본다.
+   * 회사·규격은 카드가 아니라 그 카드가 누구 것인지를 적은 꼬리표고,
+   * 캐시최소는 모델에서 늘 다시 셈하므로 배울 것이 아니다.
+   */
+  {
+    const 꼬리표 = new Set(['회사', '규격', '캐시최소']);
+    const 실제칸 = Object.keys(기본카드(연결('https://api.openai.com/v1', 'openai', 'gpt-4o')))
+      .filter((k) => !꼬리표.has(k));
+    const 빠진것 = 실제칸.filter((k) => !카드칸들.includes(k));
+    const 남는것 = 카드칸들.filter((k) => !실제칸.includes(k));
+    check('★★ 카드 칸 목록이 기본카드와 정확히 맞는다', 빠진것.length === 0 && 남는것.length === 0,
+      `빠진것 [${빠진것}] · 남는것 [${남는것}]`);
+  }
 }
 
 // ── 8. 캐시 표식이 붙는 자리 ────────────────────────────────────────────
@@ -418,7 +468,16 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
     think: 'high',
     카드: 옛카드,
   });
-  check('★ 옛 모델에는 budget_tokens 로', typeof 옛몸.thinking?.budget_tokens === 'number', JSON.stringify(옛몸.thinking));
+  /*
+   * 숫자이기만 하면 0 도 통과한다. 그런데 budget_tokens 0 은 **거절당하는
+   * 값**이고(최소치가 있다), 우리 쪽 생각예산()이 0 을 돌려주는 길도 있다 —
+   * 출력 상한이 좁을 때. 그 두 자리가 만나면 400 이 난다. 실을 거면 실을 수
+   * 있는 값이어야 한다.
+   */
+  check('★ 옛 모델에는 budget_tokens 로 — 실을 수 있는 값이다',
+    Number.isInteger(옛몸.thinking?.budget_tokens) && 옛몸.thinking.budget_tokens >= 1024
+    && 옛몸.thinking.budget_tokens < (옛몸.max_tokens ?? Infinity),
+    JSON.stringify(옛몸.thinking) + ' / max ' + 옛몸.max_tokens);
   check('★ 옛 모델에는 output_config 를 안 싣는다', !('output_config' in 옛몸), Object.keys(옛몸).join());
 
   // OpenAI 쪽.
@@ -545,7 +604,9 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
     ['thinking.budget_tokens is deprecated', '생각형식', 'adaptive'],
     ['Unrecognized request argument supplied: reasoning_effort', '생각형식', 'none'],
     ['Unsupported parameter: stream_options', '스트림usage', false],
-    ['ValidationException: cache_control is not supported', '캐시', 'none'],
+    // cache_control 은 바로 끄지 않는다 — 같은 뜻의 다른 이름을 한 번 더 본다.
+    ['ValidationException: cache_control is not supported', '표식칸', 'prompt_cache_breakpoint'],
+    ['ValidationException: prompt_cache_breakpoint is not supported', '캐시', 'none'],
     ['The parameter `user` is not allowed', '세션자리', null],
   ];
   for (const [말, 무엇, 값] of 배울것들) {
@@ -642,6 +703,134 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   check('★ 그래도 나가는 글자는 그대로다', 영어줄.includes('adaptive') && 영어줄.includes('xhigh'), 영어줄);
   적어둘것.push('영어 줄: ' + 영어줄);
   언어정하기('ko');
+}
+
+/*
+ * ══ 캐시를 정하는 것은 **창구가 아니라 모델**이다 ═══════════════════════
+ *
+ * 여기는 「bedrock·gemini·azure 는 서버가 알아서 앞머리를 캐시한다」 고 믿고
+ * 표식을 안 붙였다. Claude 앞에서 그게 틀린다 — Claude 의 캐시는 자라는
+ * 앞머리 캐시가 아니라 **표식으로 끊는 방식**이라, 표식이 없으면 서버가
+ * 기본으로 잡아 주는 앞머리에서 멈춘다. 실제로 대화가 6k→59k 로 자라는 동안
+ * 읽힌 것이 5.9k 에 못 박혀 있었고 새로 쓴 것은 계속 0 이었다.
+ *
+ * 창구 이름으로 가르면 창구마다 예외가 하나씩 는다. 모델로 가른다.
+ */
+trace('캐시-모델로가른다');
+{
+  const 만틀 = 기본카드(연결('https://bedrock-mantle.us-west-2.api.aws/openai/v1', 'openai', 'anthropic.claude-opus-5'));
+  check('★★ OpenAI 꼴이어도 Claude 면 표식을 붙인다', 만틀.캐시 === 'explicit', 만틀.캐시);
+  check('그 창구의 최소 크기도 따라간다', 만틀.캐시최소 === 4096, String(만틀.캐시최소));
+
+  // 모르는 사내 게이트웨이도 마찬가지다 — 아는 것은 모델 이름뿐이고, 그거면 된다.
+  const 사내 = 기본카드(연결('https://llm.내회사.example/v1', 'openai', 'claude-opus-5'));
+  check('★★ 모르는 게이트웨이라도 Claude 면 붙인다', 사내.캐시 === 'explicit', 사내.캐시);
+
+  // 같은 창구라도 Claude 가 아니면 여태대로 둔다. 넓히다 멀쩡한 것을 깨면 안 된다.
+  const 노바 = 기본카드(연결('https://bedrock-mantle.us-west-2.api.aws/openai/v1', 'openai', 'amazon.nova-pro'));
+  check('★ Claude 가 아니면 안 건드린다', 노바.캐시 === 'auto', 노바.캐시);
+
+  // OpenAI 직통은 제 칸이 따로 있다(prompt_cache_key). 거기는 서버가 알아서 한다.
+  const 직통 = 기본카드(연결('https://api.openai.com/v1', 'openai', 'gpt-5'));
+  check('★ OpenAI 직통은 제 칸 그대로', 직통.캐시 === 'key', 직통.캐시);
+
+  // Anthropic 직통은 원래 붙이던 대로.
+  const 직 = 기본카드(연결('https://api.anthropic.com/v1', 'anthropic', 'claude-opus-5'));
+  check('Anthropic 직통은 그대로', 직.캐시 === 'explicit', 직.캐시);
+}
+
+/*
+ * ══ 「이 칸을 모른다」 가 「캐시를 못 한다」 는 뜻은 아니다 ═══════════════
+ *
+ * 같은 뜻을 두 규격이 다른 이름으로 적는다 — `cache_control` 은 Anthropic
+ * 규격, `prompt_cache_breakpoint` 는 OpenAI 규격의 칸이다. 첫 거절에 바로
+ * 끄면 받을 수 있었던 창구에서도 캐시를 영영 안 쓰게 되고, 그건 조용히
+ * 비싸지는 쪽이라 화면에 아무 표시도 안 난다.
+ */
+trace('캐시-두이름');
+{
+  const 한번 = 배울전선("Unrecognized request argument supplied: cache_control");
+  check('★★ 첫 거절에는 다른 이름으로 바꿔 본다',
+    한번?.무엇 === '표식칸' && 한번?.값 === 'prompt_cache_breakpoint', JSON.stringify(한번));
+
+  const 두번 = 배울전선("Unrecognized request argument supplied: prompt_cache_breakpoint");
+  check('★★ 그것까지 거절당하면 끈다', 두번?.무엇 === '캐시' && 두번?.값 === 'none', JSON.stringify(두번));
+
+  // 배운 것이 카드에 앉고, 남길 때도 그 칸이 남는다.
+  const 카드0 = 기본카드(연결('https://llm.내회사.example/v1', 'openai', 'claude-opus-5'));
+  const 카드1 = 카드고치기(카드0, 한번);
+  check('배운 칸이 카드에 앉는다', 카드1.표식칸 === 'prompt_cache_breakpoint', 카드1.표식칸);
+  check('배운 것으로 세어진다', (카드1.배운칸 ?? []).includes('표식칸'), JSON.stringify(카드1.배운칸));
+  const 남긴것 = 카드저장꼴(카드1);
+  check('★ 디스크에도 그 칸이 남는다', 남긴것?.표식칸 === 'prompt_cache_breakpoint', JSON.stringify(남긴것));
+
+  const 카드2 = 카드고치기(카드1, 두번);
+  check('두 번째 거절 뒤에는 꺼진다', 카드2.캐시 === 'none', 카드2.캐시);
+
+  // 값 탓은 여기서도 아무것도 안 배운다 (크기가 모자란다는 말은 칸 이야기가 아니다).
+  check('★ 값 탓으로는 안 배운다',
+    배울전선('cache_control blocks must be at least 1024 tokens') === null,
+    JSON.stringify(배울전선('cache_control blocks must be at least 1024 tokens')));
+}
+
+// ── 14. `/think off` 가 전선에서도 꺼지는가 ─────────────────────────────
+//
+// 화면에 off 라고 적어 두고 실제로는 생각이 도는 자리가 있었다. 규격마다
+// 「끈다」 를 적는 법이 달라서다:
+//
+//   ollama     think: false        칸을 안 실으면 **모델 기본값**(켜짐)이다
+//   anthropic  thinking 을 뺀다     빼는 것이 곧 끄는 것이다
+//   openai꼴   reasoning_effort     창구가 알려 준 끄는 말(minimal·none)
+//
+// ollama 자리가 비어 있었다 — `강도말('off')` 이 null 이라 아무것도 안 실었고,
+// 그건 이 규격에서 「알아서 해라」 라는 뜻이다.
+{
+  const 몸 = (conn, think) => buildBody(conn.kind, {
+    model: conn.model, messages: [{ role: 'user', content: '안녕' }],
+    think, maxTokens: 4096, 카드: 기본카드(conn),
+  });
+
+  const 올라마 = 연결('http://localhost:11434', 'ollama', 'qwen3:8b');
+  check('★★ ollama: off 는 끄라고 보낸다', 몸(올라마, 'off').think === false,
+    JSON.stringify(몸(올라마, 'off').think));
+  check('ollama: 켜면 눈금이 나간다', 몸(올라마, 'high').think === 'high',
+    JSON.stringify(몸(올라마, 'high').think));
+
+  const 클로드 = 연결('https://api.anthropic.com/v1', 'anthropic', 'claude-opus-5');
+  const 클로드몸 = 몸(클로드, 'off');
+  check('★ anthropic: off 면 thinking 칸이 아예 없다',
+    클로드몸.thinking === undefined, JSON.stringify(클로드몸.thinking));
+  check('anthropic: 켜면 thinking 이 있다', 몸(클로드, 'high').thinking != null);
+
+  const 오픈 = 연결('https://api.openai.com/v1', 'openai', 'o3');
+  check('★ openai: off 는 그 창구가 아는 끄는 말로 나간다',
+    몸(오픈, 'off').reasoning_effort === 'minimal', String(몸(오픈, 'off').reasoning_effort));
+
+  /*
+   * ★ 못 끄는 자리 — 여기서 화면이 거짓말을 하기 시작한다.
+   *
+   * 모르는 게이트웨이 뒤의 추론 모델은 끄는 말을 우리가 모른다. 칸을 안
+   * 실으면 서버 기본값으로 돈다. 못 끄는 것 자체는 어쩔 수 없지만,
+   * **못 끈다는 사실을 화면이 말해야 한다** — 그 줄을 commands.js 가
+   * `카드.생각형식 === 'effort' && 끄는말 없음` 으로 고른다. 그 두 조건이
+   * 실제로 이 자리에서 참인지 여기서 못 박는다.
+   */
+  const 모르는곳 = 연결('https://gw.example.com/v1', 'openai', 'gpt-5');
+  const 모르는카드 = 기본카드(모르는곳);
+  check('★★ 못 끄는 자리를 화면이 알아볼 수 있다',
+    모르는카드.생각형식 === 'effort' && !모르는카드.끄는말
+    && 눈금맞추기(모르는카드, 'off') === null,
+    `${모르는카드.생각형식} · ${모르는카드.끄는말}`);
+  check('그 자리에서는 칸을 안 싣는다', 몸(모르는곳, 'off').reasoning_effort === undefined,
+    String(몸(모르는곳, 'off').reasoning_effort));
+
+  // 네 말 모두 그 줄을 가지고 있어야 한다 — 한 말에만 있으면 다른 말로 켠
+  // 사람은 못 끈다는 사실을 영영 못 본다. 말모두() 는 열쇠가 빠진 말이 있으면
+  // 그만큼 짧은 목록을 준다 (없는 자리는 열쇠 그 자체로 떨어진다).
+  const 못끈다는줄 = 말모두('think.wireNoOff');
+  check('★★ 네 말 모두 못 끈다는 줄이 있다',
+    못끈다는줄.length === 4 && !못끈다는줄.includes('think.wireNoOff'),
+    `${못끈다는줄.length}개`);
 }
 
 // ── 마무리 ──────────────────────────────────────────────────────────────

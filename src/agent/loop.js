@@ -1,6 +1,6 @@
 // 에이전트 루프. 모델 → 도구 → 결과 → 모델 을 답이 나올 때까지 돈다.
 // 화면에 그릴 것은 이벤트로 흘려보낸다 — 화면 코드와 섞지 않는다.
-import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남, 보낸토큰, 부른것들 } from '../backend/adapter.js';
+import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남, 보낸토큰, 부른것들, 도구결과인가 } from '../backend/adapter.js';
 import { 그림메시지 } from '../backend/vision.js';
 import { 어떻게할까 } from '../safety/policy.js';
 import { toolSchemas, runTool, TOOLS, 파일현황 } from '../tools/index.js';
@@ -20,6 +20,7 @@ import { 바깥인가 } from '../safety/runmode.js';
 import { get as workMode } from './modes.js';
 import { 지시말 } from '../i18n/index.js';
 import { 빠진것, 빠졌다는말 } from './asks.js';
+import { 환경속열쇠들 } from '../config.js';
 
 /*
  * 콜백으로만 소식을 주는 부름을, 제너레이터가 중간에 내보낼 수 있는 모양으로 바꾼다.
@@ -311,7 +312,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     // 부른 자리는 규격마다 다르다 — 읽는 규칙은 backend/adapter.js 의 부른것들 하나뿐이다.
     const 부른것 = 부른것들(last);
     if (!부른것.length) return;
-    const 이미 = session.messages.filter((m) => m.role === 'tool').length;
+    // 결과가 어느 role 에 실리는지도 규격마다 다르다. `role === 'tool'` 로
+    // 세면 Anthropic 꼴에서 언제나 0 이라, 지어낸 번호가 전부 겹친다.
+    const 이미 = session.messages.filter(도구결과인가).length;
     for (const t of 부른것) {
       session.push(toolMessage(conn.kind, {
         callId: t.id ?? `call_${이미 + 1}`,
@@ -895,7 +898,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 걸음은 안 센다. 아직 일은 시작도 안 했고, 고친 값으로 다시 부르는
        * 것이 이 자리의 전부다 (위 '배우기' 와 같은 셈법).
        */
-      const 전선고침 = 배울전선(err.serverMessage ?? err.message);
+      const 전선고침 = 배울전선(err.serverMessage ?? err.message, conn.kind);
       if (전선고침 && !전선배운적) {
         전선배운적 = true;
         conn.전선 = 카드고치기(conn.전선, 전선고침);
@@ -990,6 +993,14 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       return;
     }
 
+    /*
+     * usage 를 **안 준 응답**을 따로 센다.
+     *
+     * 0 을 더하면 합계는 그대로라 화면에 표가 안 난다. 그런데 그 부름은
+     * 유료였고, 쓴 것을 우리가 모를 뿐이다. 「0 원 썼다」 로 적으면 그건
+     * 지어낸 값이다 (backend/adapter.js 의 잰것).
+     */
+    if (msg.usage?.잰것 === false) session.usage.못잰것 = (session.usage.못잰것 ?? 0) + 1;
     session.usage.in += msg.usage?.in ?? 0;
     session.usage.out += msg.usage?.out ?? 0;
     // 캐시가 얼마나 맞았나. 읽기와 쓰기를 따로 센다 — 「매번 쓰기만 하고 한
@@ -1433,6 +1444,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         session.usage.calls += 자식.usage.calls;
         session.usage.ms += 자식.usage.ms;
         session.usage.retries = (session.usage.retries ?? 0) + (자식.usage.retries ?? 0);
+        session.usage.못잰것 = (session.usage.못잰것 ?? 0) + (자식.usage.못잰것 ?? 0);
 
         const 글 = 하위요약({
           목적, 모드: 자식모드, 끝, 모델: 모델알림?.말 ?? null,
@@ -1629,7 +1641,16 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 그대로 되돌려 써서, 진짜 열쇠가 있던 자리에 표가 적힌다 — 비밀을
          * 지키려다 비밀을 지우는 셈이다. 대신 무엇이 들어왔는지 알린다.
          */
-        const 아는열쇠들 = [conn.key, process.env.DEEL_API_KEY].filter(Boolean);
+        /*
+         * 가릴 값도 **환경에 있는 열쇠를 전부** 받는다.
+         *
+         * 여기가 `[conn.key, process.env.DEEL_API_KEY]` 였다. 지금 연결에 안
+         * 쓰는 프로필 열쇠(`DEEL_KEY_PROD`)는 이 목록에 없어서, 자식이 뱉은
+         * 글에 그 값이 그대로 있어도 **정확값 가리기가 못 잡았다.** 이름
+         * 정규식(safety/secrets.js)도 `_PROD` 꼬리 때문에 못 잡는다.
+         * 무엇이 열쇠인지는 config.js 한 곳만 안다 (환경속열쇠들).
+         */
+        const 아는열쇠들 = [conn.key, ...환경속열쇠들()].filter(Boolean);
         let 비밀 = [];
         // 바깥으로 나가면 파일에서 읽어 온 글까지 가린다 (safety/secrets.js 의 가릴까).
         const 이번엔가릴까 = 가릴까(call.name, { 바깥: 바깥으로나감 });

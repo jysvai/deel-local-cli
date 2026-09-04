@@ -23,13 +23,15 @@
 // 남이 미리 담아 둔 것(index)을 풀지도 않는다 — 남의 준비를 말없이 흩는
 // 것이 커밋을 하나 더 만드는 것보다 나쁘다. 대신 화면에 같이 적는다.
 import { spawnSync } from 'node:child_process';
-import { writeFileSync, unlinkSync, realpathSync, statSync } from 'node:fs';
+import { writeFileSync, unlinkSync, statSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
+import { 진짜자리 } from '../safety/guard.js';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { chat } from '../backend/adapter.js';
 import { 증거모으기 } from './evidence.js';
 import { VERSION } from '../version.js';
+import { homeDir } from '../config.js';
 
 /** 제목 길이 상한. git 관례(50~72)의 넉넉한 쪽. 한글은 글자 수로 센다. */
 export const 제목상한 = 72;
@@ -107,25 +109,45 @@ const 살림꼴 = /(^|[\\/])\.deel([\\/]|$)/i;
 /** 이 경로가 살림을 가리키나 — 글자로 본다. */
 export function 살림경로인가(rel) { return 살림꼴.test(String(rel ?? '')); }
 
-/** 이 경로가 **진짜로** 살림 안에 닿나 — 링크를 다 풀고 본다. */
+/**
+ * 이 경로가 **진짜로** 살림 안에 닿나 — 링크를 다 풀고 본다.
+ *
+ * 푸는 자는 울타리와 같은 것을 쓴다(진짜자리). 여기서 따로 realpathSync 를
+ * 부르면 없는 파일에서 그냥 포기하고, 그러면 링크로 들어온 살림이 글자
+ * 검사만 거쳐 통과한다 — 열쇠가 담기는 길이 그렇게 열린다.
+ */
 export function 살림에닿나(abs) {
-  try { return 살림꼴.test(realpathSync(abs)); }
-  catch { return 살림경로인가(abs); }      // 못 풀면(지워진 파일 등) 글자로만 본다
+  const 푼것 = 진짜자리(abs);
+  if (살림꼴.test(푼것) || 살림경로인가(abs)) return true;
+  /*
+   * 이름이 `.deel` 이 아닐 수도 있다 — `DEEL_HOME` 으로 옮기면 그렇다.
+   * 살림이 어디인지는 config.js 만 안다. 여기서 또 적으면 한쪽이 낡는다.
+   */
+  try {
+    const 집 = String(homeDir()).replace(/\\/g, '/').replace(/[/]+$/, '').toLowerCase();
+    const 낮은 = String(푼것 ?? '').replace(/\\/g, '/').toLowerCase();
+    return !!집 && (낮은 === 집 || 낮은.startsWith(집 + '/'));
+  } catch { return false; }
 }
 
 /** 담을 때 git 에게도 빼 달라고 하는 자리. 어느 깊이든, 대소문자 상관없이. */
 const 살림빼기 = [':(exclude,icase,glob)**/.deel/**', ':(exclude,icase,glob)**/.deel'];
 
 /**
- * 링크를 다 푼 진짜 자리. 못 풀면(아직 없는 파일 등) 준 것을 그대로.
+ * 링크를 다 푼 진짜 자리 — 자는 울타리와 **같은 것**을 쓴다.
  *
  * 저장소 뿌리를 링크로 열어 둔 사람이 있다(윈도우 junction, 맥의 /tmp).
  * git 은 링크를 풀어서 답하고 우리는 안 풀면, 같은 자리를 두 이름으로 부르게
- * 되어 "이번에 바꾼 것이 없습니다" 가 된다 — 바꾼 것이 있는데도.
+ * 되어 "이번에 바꾼 것이 없습니다" 가 된다 — 바꾼 것이 있는데도. 그리고 그
+ * 「없다」 는 **작업 폴더 전부**로 물러서는 신호다. 이 파일이 없애려고 만들어진
+ * 바로 그 `git add -A` 사고가, 경고 한 줄 없이 난다.
+ *
+ * 여기 자를 따로 두고 있었다. 없는 파일에서 그냥 포기하는 자였고(지운 파일은
+ * 이 명령이 제일 자주 다루는 것이다), 윈도우 8.3 단축명도 안 폈다. 울타리
+ * (safety/guard.js)에는 그 둘을 다 하는 자가 이미 있었는데도 따로 있었다.
+ * 자가 둘이면 언젠가 어긋나고, 어긋나는 날 이 명령은 남의 것까지 담는다.
  */
-function 진짜(p) {
-  try { return realpathSync(p); } catch { return p; }
-}
+const 진짜 = 진짜자리;
 
 /**
  * 이번 대화가 건드린 파일 — 저장소 안의 것만, 저장소 기준 상대경로로.
@@ -143,6 +165,7 @@ export function 이번에바꾼것(session, 뿌리) {
     const abs = 진짜(isAbsolute(p) ? p : join(기준, p));
     const rel = relative(기준, abs).replace(/\\/g, '/');
     // 저장소 밖은 담지 않는다. `..` 로 시작하면 밖이다.
+    // (지워진 파일도 여기서 안 새어 나간다 — 진짜() 가 있는 데까지 풀어 준다.)
     if (!rel || rel.startsWith('../') || rel === '..') continue;
     if (살림경로인가(rel) || 살림에닿나(abs)) continue;
     let 폴더인가 = false;

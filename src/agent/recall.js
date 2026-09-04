@@ -19,6 +19,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { sessionsDir } from './store.js';
+// 도구 부름·결과·글이 어디 실리는지는 규격마다 다르다 (backend/adapter.js).
+import { 부른것들, 결과들, 도구결과인가, 본문글 } from '../backend/adapter.js';
 
 // 한 번 찾을 때 읽을 최대 바이트. 넘으면 거기서 멈추고 **멈췄다고 말한다.**
 export const 읽기예산 = 64 * 1024 * 1024;
@@ -62,15 +64,25 @@ export function 토막내기(글, 낱말들, 폭 = 150) {
 
 /** 메시지 하나를 사람이 읽을 글로. 도구 호출은 이름과 인자만 남긴다. */
 function 글로(m) {
-  if (typeof m?.content === 'string' && m.content) return m.content;
-  // 도구 호출은 content 가 비어 있고 tool_calls 에 들어 있다.
-  if (Array.isArray(m?.tool_calls) && m.tool_calls.length) {
-    return m.tool_calls.map((t) => `${t.function?.name ?? '도구'}(${t.function?.arguments ?? ''})`).join(' ');
+  /*
+   * 규격을 안 가린다.
+   *
+   * 여기가 `m.tool_calls` 와 `p?.text` 로만 읽고 있었다. Anthropic 꼴에서
+   * 부름은 `tool_use` 블록(`.text` 가 없다)이고 결과는 `tool_result`
+   * 블록(`.content` 다)이라 **둘 다 빈 글**로 떨어졌고, 빈 글은 아래에서
+   * 버려진다. 그래서 그 창구로 한 일은 `/recall` 로 아무리 찾아도 안 나왔다 —
+   * 「그런 얘기 한 적 없다」 와 구별이 안 되는 고장이다.
+   */
+  const 조각 = [];
+  const 글 = 본문글(m);
+  if (글) 조각.push(글);
+  for (const t of 부른것들(m)) {
+    let 인자 = '';
+    try { 인자 = JSON.stringify(t.args ?? {}); } catch { /* 못 적어도 이름은 남긴다 */ }
+    조각.push(`${t.name ?? '도구'}(${인자})`);
   }
-  if (Array.isArray(m?.content)) {
-    return m.content.map((p) => (typeof p === 'string' ? p : p?.text ?? '')).join(' ');
-  }
-  return '';
+  for (const r of 결과들(m)) if (r.글) 조각.push(r.글);
+  return 조각.join(' ');
 }
 
 const 누구 = { user: '나', assistant: '모델', tool: '도구결과', system: '규칙' };
@@ -144,7 +156,8 @@ export function 찾기(root, 물음, o = {}) {
       if (j.t === 'meta') { meta = j; continue; }
       차례 += 1;
       if (j.role === 'system') continue;
-      if (!도구결과까지 && j.role === 'tool') continue;
+      // 결과가 어느 role 에 실리는지도 규격마다 다르다 (도구결과인가).
+      if (!도구결과까지 && 도구결과인가(j)) continue;
 
       const 글 = 글로(j).slice(0, 메시지최대);
       if (!글) continue;

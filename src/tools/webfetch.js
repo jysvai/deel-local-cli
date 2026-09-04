@@ -11,7 +11,7 @@
 //   · 사설·로컬 주소는 거절. 사내 서버를 모델이 긁어 오게 두지 않는다.
 //   · 오프라인이면 아예 거절.
 //   · 받은 것은 글자만 뽑고 길이를 자른다.
-import { allowTemporarily, isOffline, isLocalHost } from '../safety/network.js';
+import { allowTemporarily, isOffline, isLocalHost, 사설로풀리나 } from '../safety/network.js';
 import { 원시요청, 몸읽기 } from '../backend/http.js';
 import { decode as decodeBytes } from './encoding.js';
 import { 웹글자수 } from '../agent/budget.js';
@@ -182,6 +182,21 @@ export function 웹되돌림(다음, { allowPrivate = false } = {}) {
   }
 }
 
+/**
+ * 되돌림 한 홉을 통째로 본다 — 글자와 **닿는 곳** 둘 다.
+ *
+ * 첫 주소만 이름을 풀어 보면 소용이 없다. 공개 주소로 시작해 302 한 번으로
+ * 사내로 들어가는 것이 가장 흔한 길이라, 홉마다 같은 것을 물어야 한다.
+ */
+export async function 웹되돌림검사(다음, { allowPrivate = false } = {}) {
+  웹되돌림(다음, { allowPrivate });
+  if (allowPrivate) return;
+  const 푼것 = await 사설로풀리나(다음.hostname);
+  if (푼것) {
+    throw new Error(`되돌린 곳이 사내·로컬로 풀립니다 (${다음.hostname} → ${푼것.걸린것.join(', ')}) — 따라가지 않습니다`);
+  }
+}
+
 export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 = null, signal = null } = {}) {
   const raw = String(args?.url ?? '').trim();
   /*
@@ -213,6 +228,16 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
   if (isLocalHost(u.hostname) && !allowPrivate) {
     return { error: `이 컴퓨터·사내망 주소는 이 도구로 읽지 않습니다: ${u.hostname}\n  파일은 Read, 사내 서버는 사람이 직접 확인하세요.` };
   }
+  /*
+   * 이름이 멀쩡해도 **닿는 곳**은 사내일 수 있다 (network.js 의 사설로풀리나).
+   * 이름만 보는 검사는 A 레코드 한 줄로 지나간다.
+   */
+  if (!allowPrivate) {
+    const 푼것 = await 사설로풀리나(u.hostname);
+    if (푼것) {
+      return { error: `이 주소는 사내·로컬로 풀립니다: ${u.hostname} → ${푼것.걸린것.join(', ')}\n  이름은 바깥이지만 닿는 곳이 안입니다. 사내 서버는 사람이 직접 확인하세요.` };
+    }
+  }
 
   const close = allowTemporarily(u.origin);
   // 되돌림(redirect)으로 옮겨 간 집도 그 한 번만 연다. 한 홉마다 문지기를 지나므로
@@ -237,8 +262,8 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
          */
         signal,
         stream: true,                             // 상한까지만 받는다 — 다 받아 놓고 버리지 않는다
-        되돌림: (다음) => {
-          웹되돌림(다음, { allowPrivate });
+        되돌림: async (다음) => {
+          await 웹되돌림검사(다음, { allowPrivate });
           열어둔.push(allowTemporarily(다음.origin));
         },
       }), signal);

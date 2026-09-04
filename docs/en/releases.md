@@ -8,6 +8,7 @@ One file per version line — open only the line you need.
 
 | Line | Versions | What changed |
 |---|---|---|
+| **[1.13.x](releases/1.13.md)** | [1.13.0](releases/1.13.md#1130) | Every place deel touches someone else's endpoint, re-examined |
 | **[1.12.x](releases/1.12.md)** | [1.12.0](releases/1.12.md#1120) | The same head was going out on every single request |
 | **[1.10.x](releases/1.10.md)** | [1.10.0](releases/1.10.md#1100) | ESC actually stops, and a full context carries on |
 | **[1.9.x](releases/1.9.md)** | [1.9.2](releases/1.9.md#192) · [1.9.1](releases/1.9.md#191) · [1.9.0](releases/1.9.md#190) | The screen reads, and vendor APIs understand what you set |

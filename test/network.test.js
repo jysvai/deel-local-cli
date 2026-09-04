@@ -7,8 +7,7 @@ import { createServer } from 'node:http';
 import { req } from '../src/backend/http.js';
 import {
   allowEndpoint, allowTemporarily, setOffline, checkUrl, resetNet,
-  contacted, allowed, isLocalHost, NetBlocked,
-} from '../src/safety/network.js';
+  contacted, allowed, isLocalHost, NetBlocked, 사설로풀리나 } from '../src/safety/network.js';
 import { importSpecs } from '../src/pack/selfpack.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
@@ -234,6 +233,26 @@ check('소스에 박힌 바깥 주소·저수준 소켓 없음 (src 전체)', �
   }
   check('★ 주소 메모는 문이 아니다 — 아무것도 안 들여오고 아무 데도 안 나간다',
     새는것.length === 0, 새는것.join(' · '));
+}
+
+
+/*
+ * ── 이름이 아니라 **닿는 곳** ───────────────────────────────────────────
+ *
+ * isLocalHost 는 글자를 본다. 그 검사를 통과하는 평범한 공개 도메인이
+ * A 레코드 하나로 `127.0.0.1` 이나 `169.254.169.254`(클라우드 메타데이터)
+ * 를 가리키면 그대로 닿는다. 그래서 실제로 풀어 보고 돌아온 주소를 본다.
+ */
+{
+  const 로컬 = await 사설로풀리나('localhost');
+  check('★★ 사내로 풀리는 이름을 잡는다', !!로컬 && 로컬.걸린것.length > 0,
+    JSON.stringify(로컬));
+  check('★ 숫자로 적은 주소는 여기서 안 푼다 (isLocalHost 가 이미 본다)',
+    (await 사설로풀리나('127.0.0.1')) === null);
+  check('★ 못 푸는 이름에서 안 죽는다',
+    (await 사설로풀리나('없는이름.invalid')) === null);
+  check('★ 빈 값도 안 죽는다',
+    (await 사설로풀리나('')) === null && (await 사설로풀리나(null)) === null);
 }
 
 // ── 결과 ────────────────────────────────────────────────────────────────

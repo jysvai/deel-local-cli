@@ -27,6 +27,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { VERSION } from '../version.js';
+import { 열쇠환경인가 } from '../config.js';
 
 // 붙는 데 이만큼 넘게 걸리면 포기한다. 시작이 느려지면 안 쓰게 된다.
 export const 붙기제한 = 8000;
@@ -301,7 +302,7 @@ export class MCP서버 {
  * 넘어가면 어디로 가는지 우리가 알 수 없다. 프로그램이 도는 데 꼭 필요한
  * 것만 남긴다.
  */
-function 깨끗한환경() {
+export function 깨끗한환경() {
   const 남길것 = ['PATH', 'Path', 'PATHEXT', 'HOME', 'USERPROFILE', 'TEMP', 'TMP', 'SystemRoot', 'windir', 'COMSPEC', 'LANG', 'LC_ALL', 'APPDATA', 'LOCALAPPDATA', 'ProgramFiles', 'ProgramData', 'NODE_PATH'];
   const out = {};
   for (const k of 남길것) if (process.env[k] != null) out[k] = process.env[k];
@@ -309,7 +310,7 @@ function 깨끗한환경() {
 }
 
 /**
- * 게이트웨이 열쇠 **하나만** 뺀 환경. Bash 와 Jobs 가 자식에게 넘길 것.
+ * 게이트웨이 열쇠**만** 뺀 환경. Bash 와 Jobs 가 자식에게 넘길 것.
  *
  * 위 깨끗한환경 은 남의 프로그램(MCP 서버)에 주는 것이라 통째로 씻는다.
  * 여기는 다르다 — Bash 로 도는 것은 **사용자 제 프로젝트**다. PATH·NODE_ENV·
@@ -323,7 +324,18 @@ function 깨끗한환경() {
  */
 export function 열쇠뺀환경(env = process.env) {
   const out = { ...env };
-  delete out.DEEL_API_KEY;
+  /*
+   * 이름을 못 박지 않는다.
+   *
+   * 여기가 `delete out.DEEL_API_KEY` 한 줄이었다. 열쇠 이름은 **둘**인데
+   * (config.js 의 resolveKey), 그중 하나만 지운 것이다. 프로필 열쇠
+   * (`DEEL_KEY_PROD`)를 쓰는 사람은 `env` 한 줄로 그대로 샜다 — 그리고
+   * 그 방법을 우리 심사 명세가 권장으로 적어 뒀다.
+   *
+   * 무엇이 열쇠인지는 **읽는 자에게 묻는다**(열쇠환경인가). 이름이 늘면
+   * 거기만 고친다. 여기서 다시 적으면 반드시 한쪽이 낡는다.
+   */
+  for (const k of Object.keys(out)) if (열쇠환경인가(k)) delete out[k];
   return out;
 }
 

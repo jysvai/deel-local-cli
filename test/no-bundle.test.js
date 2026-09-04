@@ -3,8 +3,8 @@
 // 이 파일이 있는 이유:
 //  npm install 로그에 다른 패키지 이름이 뜨면 "얘가 딸려왔나?" 하고 놀라게 된다.
 //  실제로 한 번 그랬다. 그래서 사람 기억 대신 테스트가 지키게 한다.
-import { execSync } from 'node:child_process';
-import { readFileSync, readdirSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { execSync, execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -84,30 +84,40 @@ if (shipped.length) {
 /*
  * 3-b) `npm run check` 가 src 를 하나도 빠뜨리지 않는가.
  *
- * prepublishOnly 가 check 를 돌려서 문법 오류를 배포 전에 잡는다. 그런데 그
- * 목록은 손으로 적는 것이라, 파일을 새로 만들면서 여기 안 적으면 그 파일만
- * 아무도 안 본다. 실제로 13개가 그렇게 빠져 있었다 — 몇 달 동안 조용히.
+ * prepublishOnly 가 check 를 돌려서 배포 전에 잡는다. 그 목록이 **손으로 적는
+ * 것**이던 때가 있었고, 파일을 새로 만들면서 안 적으면 그 파일만 아무도 안
+ * 봤다. 실제로 13개가 그렇게 빠져 있었다 — 몇 달 동안 조용히. 그리고 자바
+ * 스크립트가 아닌 파일(`SKILL.md` 일곱 개)은 애초에 목록에 못 들어갔다.
  *
- * 문법 오류는 그 파일을 **부르는 순간**에만 터진다. 잘 안 지나가는 갈래에
- * 있으면 검사도 못 잡고 그대로 npm 에 올라간다.
+ * 그래서 목록을 짓지 않고 **훑는 자**로 바꿨다(tools/check-src.mjs). 이
+ * 검사는 그 자가 정말로 다 훑는지를 잰다 — 훑는 자가 생겼다고 검사가 없어도
+ * 되는 것은 아니다. 훑는 자도 폴더 하나를 빠뜨릴 수 있다.
  */
 {
-  const chk = pkg.scripts?.check ?? '';
-  const 적힌것 = new Set([...chk.matchAll(/node --check ([^\s]+)/g)].map((m) => m[1]));
+  const chk = String(pkg.scripts?.check ?? '');
+  check('check 는 목록이 아니라 훑는 자다', /check-src\.mjs/.test(chk), chk.slice(0, 80));
+
   const 훑기 = (d, 모음 = []) => {
     for (const e of readdirSync(join(repo, d), { withFileTypes: true })) {
       const p = `${d}/${e.name}`;
       if (e.isDirectory()) 훑기(p, 모음);
-      else if (e.name.endsWith('.js')) 모음.push(p);
+      else 모음.push(p);
     }
     return 모음;
   };
-  const 빠진것 = 훑기('src').filter((f) => !적힌것.has(f));
-  check('npm run check 가 src 를 다 본다', 빠진것.length === 0,
-    `${빠진것.length}개: ${빠진것.slice(0, 6).join(', ')}`);
-  // 반대쪽 — 없어진 파일이 목록에 남아 있으면 check 가 그 자리에서 죽는다.
-  const 헛것 = [...적힌것].filter((f) => f.startsWith('src/') && !existsSync(join(repo, f)));
-  check('없는 파일을 보라고 적혀 있지 않다', 헛것.length === 0, 헛것.join(', '));
+  const 다 = 훑기('src');
+  const 봤다는것 = (() => {
+    try {
+      const 글 = execFileSync(process.execPath, [join(repo, 'tools', 'check-src.mjs')],
+        { cwd: repo, encoding: 'utf8' });
+      return Number(/OK\s+(\d+)개/.exec(글)?.[1] ?? 0);
+    } catch { return 0; }
+  })();
+  // bin/deel.js 도 같이 본다 — 그래서 +1.
+  check('★★ npm run check 가 src 의 모든 파일을 본다', 봤다는것 === 다.length + 1,
+    `훑은것 ${봤다는것} · 실제 ${다.length + 1}`);
+  check('★★ 자바스크립트가 아닌 파일도 본다', 다.some((p) => p.endsWith('.md')) && 봤다는것 > 다.filter((p) => p.endsWith('.js')).length,
+    `md ${다.filter((p) => p.endsWith('.md')).length}개`);
 }
 
 // 4) 소스가 바깥 패키지를 부르지 않는다 (node: 내장과 상대경로만).

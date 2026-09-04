@@ -13,6 +13,7 @@ import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
 import { 말, 언어 } from '../i18n/index.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
 import { VERSION } from '../version.js';
+import { 규격이름 } from '../backend/adapter.js';
 
 // 저장소 주소. package.json 의 repository 와 같아야 한다 — 검사가 지킨다.
 export const GITHUB = 'https://github.com/jysvai/deel-local-cli';
@@ -558,7 +559,10 @@ export function headerLines(session, found, 상자쓰나 = true) {
      * 봉인(--offline)으로 켠 사람은 그 사실을 첫 줄에서 봐야 한다.
      */
     `${c.hcyan(c.bold('deel'))} ${c.gray(VERSION)}${모드칸(session)}`
-      + `  ${c.gray(말(`head.spec.${['ollama', 'anthropic'].includes(conn.kind) ? conn.kind : 'openai'}`))}`,
+      // 규격을 뭐라고 부르는지는 한 자만 안다(backend/adapter.js 의 규격이름).
+      // 여기가 그 규칙을 **한 벌 더** 적고 있었다. 규격이 하나 늘면 그때
+      // 이 줄만 조용히 「OpenAI 호환」 이라고 잘못 적는다.
+      + `  ${c.gray(규격이름(conn.kind))}`,
     '',
     /*
      * 모델 줄에 급을 같이 적는다.

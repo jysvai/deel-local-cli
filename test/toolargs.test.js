@@ -26,6 +26,7 @@ import { readFileSync } from 'node:fs';
 import { TOOLS } from '../src/tools/index.js';
 import { 도구설명EN } from '../src/tools/desc.en.js';
 import { 일감인자 } from '../src/tools/jobs.js';
+import { 이름칸들, 첫이름 } from '../src/tools/label.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -141,24 +142,56 @@ trace('4-화면-이름표');
  * 안 나고 검사도 안 걸린다 — 사람이 화면을 보다가 이상하다고 느껴야 안다.
  *
  * 같은 함정을 Jobs 에서 이미 한 번 겪어서 repl.js 주석에 적혀 있다.
- * 그때는 별칭 표(일감인자)로 막았고, 여기서는 여섯 자리를 소스로 잰다.
+ * 그때는 별칭 표(일감인자)로 막았다.
+ *
+ * ── 이 검사가 어떻게 바뀌었나 ───────────────────────────────────────────
+ *
+ * 여기는 여섯 파일을 열어 `a.name ?? a.purpose ?? a.목적` 라는 **글자**를
+ * 찾고 있었다. 그 글자가 다섯 벌이었다는 것 자체가 고칠 거리였고(어떤 벌에는
+ * url 이 있고 어떤 벌에는 없었다), 지금은 tools/label.js 한 곳에 모여 있다.
+ *
+ * 그러니 여기서도 **글자 대신 뜻**을 잰다 — 「그 자리가 새 이름을 보는가」.
+ * 소스 글자를 못 박으면, 고쳐서 나아진 코드 앞에서 검사가 빨개진다. 그러면
+ * 사람은 코드를 되돌리거나 검사를 지우는데, 둘 다 손해다.
  */
 {
+  // 목록이 새 이름과 옛 이름을 **둘 다** 알고, 새 이름이 앞이다.
+  const p = 이름칸들.indexOf('purpose');
+  const k = 이름칸들.indexOf('목적');
+  check('★ 이름표 목록이 새 이름을 안다', p >= 0, 이름칸들.join(' '));
+  check('★ 옛 이름도 여전히 안다 — 옛 이름으로 부르는 모델이 있다', k >= 0, 이름칸들.join(' '));
+  check('★ 둘 다 오면 새 이름이 이긴다 — 설명서에 실리는 것이 그쪽이다',
+    p >= 0 && k >= 0 && p < k && 첫이름({ 목적: '옛', purpose: '새' }) === '새', `${p} < ${k}`);
+
+  // 그리고 그 자리들이 정말 이 목록을 쓰는가. 파일 하나가 제 목록을 다시
+  // 적으면 그 파일만 낡는다 — 그것을 막는 검사는 test/label.test.js 에 있고,
+  // 여기서는 「그 자리가 이 자를 쥐고 있나」 만 본다.
   const 자리들 = [
-    ['src/repl.js', /a\.name \?\? a\.purpose \?\? a\.목적/],
-    ['src/oneshot.js', /a\.name \?\? a\.purpose \?\? a\.목적/],
-    ['src/acp/map.js', /a\.name \?\? a\.purpose \?\? a\.목적/],
-    ['src/ui/export.js', /a\.name \?\? a\.purpose \?\? a\.목적/],
-    ['src/agent/loop.js', /call\.args\?\.purpose \?\? call\.args\?\.목적/],
-    ['src/safety/audit.js', /args\?\.purpose \?\? args\?\.목적/],
+    'src/repl.js', 'src/oneshot.js', 'src/acp/map.js', 'src/ui/export.js', 'src/safety/audit.js',
   ];
   const 못본곳 = [];
-  for (const [f, 무늬] of 자리들) {
+  for (const f of 자리들) {
     const t = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
-    if (!무늬.test(t)) 못본곳.push(f);
+    if (!/from '[^']*tools\/label\.js'/.test(t)) 못본곳.push(f);
   }
+  /*
+   * loop.js 는 목록을 안 쓴다 — 여기는 **이름표를 그리는** 자리가 아니라
+   * Task 도구의 인자를 실제로 읽어 쓰는 자리다. 읽는 이름이 다르면 화면이
+   * 아니라 일 자체가 안 돈다. 그래서 이쪽은 글자로 못 박는 것이 맞다.
+   */
+  const loop2 = readFileSync(new URL('../src/agent/loop.js', import.meta.url), 'utf8');
+  if (!/call\.args\?\.purpose \?\? call\.args\?\.목적/.test(loop2)) 못본곳.push('src/agent/loop.js');
   check('★ 이름표 그리는 자리가 새 이름을 본다', 못본곳.length === 0, 못본곳.join(' '));
-  check('그 자리가 여섯 군데다', 자리들.length === 6, String(자리들.length));
+  /*
+   * 자리 수를 세는 까닭: 새 화면(예를 들어 웹 붙임)이 생기면서 제 이름표를
+   * 따로 그리기 시작하면, 위 검사는 그 새 자리를 아예 안 본다. 초록인데
+   * 안 재는 자리가 하나 늘어난 셈이다. 여기서 수가 어긋나면 사람이 목록을
+   * 다시 본다.
+   *
+   * 다섯 + loop.js 하나. 여섯이 다섯이 된 것은 자리가 줄어서가 아니라
+   * 다섯 자리가 **같은 자를 쥐게 되어** 한 줄로 세지기 때문이다.
+   */
+  check('이름표를 그리는 자리를 빠짐없이 센다', 자리들.length === 5, String(자리들.length));
 }
 
 trace('5-영어-설명');

@@ -330,7 +330,10 @@ trace('5-끝내기');
 
   const k = await 끝내기(r.번호);
   check('끝냈다고 말해 준다', k && k.이미 === false, JSON.stringify(k).slice(0, 80));
-  check('몇 초 돌았는지 적는다', typeof k.초 === 'number', String(k.초));
+  // 숫자이기만 하면 NaN 도 -1 도 통과한다. 화면에 `NaN초 돌았습니다` 가
+  // 뜨는 고장이 정확히 그 틈으로 들어온다.
+  check('★ 몇 초 돌았는지 적는다 — 셀 수 있는 값이다',
+    Number.isFinite(k.초) && k.초 >= 0 && k.초 < 600, String(k.초));
   check('목록에서 빠진다', 목록().length === 0, `${목록().length}개`);
 
   /*
@@ -554,7 +557,10 @@ trace('8-Bash와붙였을때');
   const 안에서 = (이름, ...인자) => ['node', 이름, ...인자].join(' ');
 
   const r = await TOOLS.Bash.run({ command: 안에서('ticker.cjs', 'tick8.txt'), background: true }, ctx);
-  check('background 면 일감 번호를 준다', typeof r.일감번호 === 'number', JSON.stringify(r).slice(0, 100));
+  // 번호는 사람이 `/jobs 3` 처럼 다시 칠 값이다. 0 이나 소수가 오면 그 자리에서
+  // 못 부른다 — 숫자이기만 하면 되는 값이 아니다.
+  check('★ background 면 다시 부를 수 있는 일감 번호를 준다',
+    Number.isInteger(r.일감번호) && r.일감번호 > 0, JSON.stringify(r).slice(0, 100));
   check('뒤에서 돈다고 표시한다', r.뒤에서 === true, String(r.뒤에서));
   check('막히지 않았다', !r.error, String(r.error));
   /*

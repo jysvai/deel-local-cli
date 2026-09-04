@@ -3,6 +3,8 @@ import { readdirSync, statSync, readFileSync, mkdirSync, copyFileSync } from 'no
 import { join } from 'node:path';
 import { decode, looksBinary } from './encoding.js';
 import { 뿌리규칙읽기, 파일규칙읽기, 걸리나 } from './ignore.js';
+// 살림이 **어디** 있는지는 config.js 한 곳만 안다 (DEEL_HOME 으로 옮길 수 있다).
+import { homeDir } from '../config.js';
 
 /**
  * 폴더를 통째로 옮겨 담는다.
@@ -81,9 +83,33 @@ export const SKIP_DIRS = new Set([
  * @returns {string|null} 막을 이유. 막을 것이 아니면 null.
  */
 export function 내부살림(abs) {
-  const 조각 = String(abs ?? '').replace(/\\/g, '/').split('/');
+  const 편 = String(abs ?? '').replace(/\\/g, '/');
+  const 조각 = 편.split('/');
   const 이름 = 조각[조각.length - 1] ?? '';
-  const i = 조각.lastIndexOf('.deel');
+  /*
+   * 살림 자리를 `.deel` 이라는 **글자**로 찾고 있었다.
+   *
+   * 그 폴더는 옮길 수 있다 — `DEEL_HOME` 이 정식 설정이고(config.js), 사내
+   * 휴대용 설치와 검사가 실제로 그걸 쓴다. 이름에 `.deel` 이 안 들어가는
+   * 자리로 옮기면(`DEEL_HOME=D:/agent`) 이 막이 **통째로 풀린다.**
+   * `config.json` 은 게이트웨이 열쇠가 든 파일이고, 이 자는 도구 울타리가
+   * 부르는 자다(safety/guard.js 의 checkPaths) — 즉 그 순간 모델이
+   * `cat D:/agent/config.json` 으로 열쇠를 읽는다.
+   *
+   * 기본 이름도 계속 본다. 옮겨 쓰다가 되돌린 사람, 프로젝트 안에 둔 `.deel`,
+   * 남의 PC 에서 옮겨 온 폴더가 다 그 이름이다.
+   */
+  let i = 조각.lastIndexOf('.deel');
+  if (i < 0) {
+    try {
+      const 집 = String(homeDir()).replace(/\\/g, '/').replace(/[/]+$/, '');
+      const 낮은 = 편.toLowerCase();
+      const 집낮은 = 집.toLowerCase();
+      if (집 && (낮은 === 집낮은 || 낮은.startsWith(집낮은 + '/'))) {
+        i = 집.split('/').length - 1;
+      }
+    } catch { /* 집을 못 물어봐도 아래 이름 검사는 그대로 돈다 */ }
+  }
   if (i >= 0) {
     const 안 = 조각.slice(i + 1);
     if (안[0] === 'config.json') {

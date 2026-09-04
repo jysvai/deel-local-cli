@@ -141,6 +141,94 @@ trace('5-keep_alive');
   delete process.env.DEEL_KEEP_ALIVE;
 }
 
+/*
+ * ══ 4. OpenAI 꼴로 나가도 Claude 면 표식을 붙인다 ═══════════════════════
+ *
+ * 여기가 실제로 돈이 샌 자리다. 표식을 붙이는 코드가 **Anthropic 몸에만**
+ * 있었고 OpenAI 몸에는 한 줄도 없었다. Claude 를 앞에 둔 게이트웨이에
+ * OpenAI 꼴로 말하면 표식이 하나도 안 나가고, Claude 의 캐시는 표식으로
+ * 끊는 방식이라 서버가 기본으로 잡아 주는 앞머리에서 멈춘다.
+ *
+ * 대시보드에 그게 그대로 찍혔다 — 대화가 6k 에서 59k 로 자라는 동안 읽힌
+ * 캐시는 **5.9k 에 못 박혀** 있었고 새로 쓴 것은 계속 0 이었다. 늘어난 53k 가
+ * 걸음마다 전액 다시 나간 셈이다. 400 도 아니고 경고도 아니라서, 화면은
+ * 끝까지 아무 말도 안 했다.
+ */
+trace('4-오픈AI표식');
+{
+  const 카드 = { 캐시: 'explicit', 표식칸: 'cache_control', 캐시최소: 1024 };
+  const 긴글 = '가'.repeat(2000);
+  const 메시지 = [
+    { role: 'system', content: '굳은 부분' + 긴글 },
+    { role: 'user', content: '해줘' },
+    { role: 'assistant', content: null, tool_calls: [{ id: 't1', type: 'function', function: { name: 'Read', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 't1', content: 긴글 },
+  ];
+  const b = buildBody('openai', { model: 'anthropic.claude-opus-5', messages: 메시지, maxTokens: 100, 카드 });
+  const 표식수 = JSON.stringify(b.messages).split('"cache_control"').length - 1;
+  check('★★ 표식이 실제로 나간다', 표식수 > 0, `${표식수}개`);
+
+  /*
+   * 꼬리에 붙는 것이 핵심이다. 도구를 도는 턴에서 마지막은 role:'tool' 인데,
+   * 거기 안 붙이면 붙는 자리가 맨 앞 시스템뿐이라 **고치기 전과 똑같다** —
+   * 자라는 쪽이 하나도 안 잡힌다. 그 자리에 글 조각 배열을 쓰는 것은
+   * OpenAI 규격 그대로다(ChatCompletionRequestToolMessageContentPart).
+   */
+  const 꼬리 = b.messages[b.messages.length - 1];
+  check('★★ 자라는 꼬리에 붙는다 (여기가 안 붙으면 고친 게 없다)',
+    Array.isArray(꼬리.content) && !!꼬리.content[꼬리.content.length - 1].cache_control,
+    JSON.stringify(꼬리.content).slice(0, 70));
+  check('꼬리 조각은 규격대로 text 다', 꼬리.content[0]?.type === 'text', JSON.stringify(꼬리.content[0]).slice(0, 40));
+
+  // 시킴말에도 하나 — 꼬리가 바뀌어도 앞머리는 남는다.
+  const 시킴 = b.messages[0];
+  check('시킴말에도 붙는다', Array.isArray(시킴.content) && !!시킴.content[0].cache_control,
+    JSON.stringify(시킴.content).slice(0, 60));
+
+  // 부름만 있고 글이 없는 차례에는 안 붙인다 — 붙일 자리가 없다.
+  const 부름 = b.messages[2];
+  check('빈 차례는 안 건드린다', !Array.isArray(부름.content) || 부름.content === null, JSON.stringify(부름.content));
+
+  /*
+   * ★ 안 켠 창구는 **한 글자도** 안 달라져야 한다.
+   *
+   * 이 칸을 모르는 서버에 지어낸 모양을 실어 보내면 그 턴이 400 이고,
+   * 그 400 은 화면에서 열쇠가 틀린 것과 구별이 안 된다. 카드가 안 켰으면
+   * 옛 몸 그대로 나가야 한다.
+   */
+  const 안켬 = buildBody('openai', { model: 'gpt-4o', messages: 메시지, maxTokens: 100, 카드: { 캐시: 'auto' } });
+  check('★ 카드가 안 켰으면 옛 몸 그대로',
+    JSON.stringify(안켬.messages) === JSON.stringify(메시지), '달라졌다');
+
+  // 너무 짧으면 안 잡히니 안 붙인다 — 안 잡힐 표식을 붙여 놓고 「켰다」 하면 화면이 거짓말을 한다.
+  const 짧은것 = [{ role: 'user', content: '짧다' }];
+  const 짧 = buildBody('openai', { model: 'anthropic.claude-opus-5', messages: 짧은것, maxTokens: 100, 카드 });
+  check('작으면 안 붙인다', !JSON.stringify(짧.messages).includes('cache_control'));
+
+  /*
+   * 시킴말 하나뿐인 요청. 옮겨 가는 표식과 시킴말 표식이 **같은 메시지**에
+   * 걸리는 유일한 자리다. 둘 다 손대면 앞엣것이 만든 조각 배열을 뒤엣것이
+   * 통째로 글 하나로 쳐서 `[object Object]` 가 나간다.
+   */
+  const 시킴만 = buildBody('openai', {
+    model: 'anthropic.claude-opus-5', maxTokens: 100, 카드,
+    messages: [{ role: 'system', content: 긴글 }],
+  });
+  check('★ 시킴말 하나뿐이어도 안 깨진다',
+    !JSON.stringify(시킴만.messages).includes('object Object'),
+    JSON.stringify(시킴만.messages).slice(0, 60));
+
+  // 규격이 다른 이름을 쓰면 그 이름으로 나간다 (배워서 바뀌는 자리).
+  const b2 = buildBody('openai', {
+    model: 'anthropic.claude-opus-5', messages: 메시지, maxTokens: 100,
+    카드: { ...카드, 표식칸: 'prompt_cache_breakpoint' },
+  });
+  const 글2 = JSON.stringify(b2.messages);
+  check('★ 배운 칸 이름으로 바꿔 적는다',
+    글2.includes('"prompt_cache_breakpoint"') && !글2.includes('"cache_control"'));
+  check('그 칸의 값 모양도 규격대로', 글2.includes('"mode":"explicit"'));
+}
+
 rmSync(root, { recursive: true, force: true });
 
 // ── 마무리 ──────────────────────────────────────────────────────────────

@@ -28,17 +28,29 @@ const 요청남음 = [
   'x-ratelimit-remaining-requests', 'ratelimit-remaining-requests', 'x-ratelimit-remaining',
   'anthropic-ratelimit-requests-remaining',
 ];
-const 토큰남음 = [
-  'x-ratelimit-remaining-tokens', 'ratelimit-remaining-tokens',
-  'anthropic-ratelimit-tokens-remaining',
-  // 입력·출력을 따로 세는 판도 있다. 둘 중 먼저 바닥나는 쪽이 곧 막히는 쪽이다.
-  'anthropic-ratelimit-input-tokens-remaining', 'anthropic-ratelimit-output-tokens-remaining',
+/*
+ * 토큰 통은 **여러 개일 수 있다.**
+ *
+ * Anthropic 은 입력과 출력을 따로 센다. 둘은 서로 다른 통이고, 둘 중
+ * **먼저 바닥나는 쪽**이 곧 막히는 쪽이다.
+ *
+ * 여태 이걸 한 줄짜리 이름 목록으로 두고 골라() 로 「처음 있는 것」 을
+ * 집었다. 목록 차례상 입력이 앞이라, 입력 100,000 · 출력 0 인 응답에서
+ * 남은 양을 **100,000 으로 적었다.** 그러면 미리기다릴까() 가 「아직
+ * 넉넉하다」 고 보고 곧장 다음 요청을 보내 429 를 맞는다. 주석에는
+ * 「먼저 바닥나는 쪽」 이라고 적혀 있었는데 코드는 그 반대를 했다.
+ *
+ * 남음과 한도를 **짝으로** 묶어 두고, 남은 것이 가장 적은 짝을 쓴다.
+ * 짝으로 안 묶으면 화면이 「출력 0 / 입력 한도 100만」 같은 소리를 한다.
+ */
+const 토큰통 = [
+  ['x-ratelimit-remaining-tokens', 'x-ratelimit-limit-tokens'],
+  ['ratelimit-remaining-tokens', 'ratelimit-limit-tokens'],
+  ['anthropic-ratelimit-tokens-remaining', 'anthropic-ratelimit-tokens-limit'],
+  ['anthropic-ratelimit-input-tokens-remaining', 'anthropic-ratelimit-input-tokens-limit'],
+  ['anthropic-ratelimit-output-tokens-remaining', 'anthropic-ratelimit-output-tokens-limit'],
 ];
 const 요청한도 = ['x-ratelimit-limit-requests', 'ratelimit-limit-requests', 'anthropic-ratelimit-requests-limit'];
-const 토큰한도 = [
-  'x-ratelimit-limit-tokens', 'ratelimit-limit-tokens', 'anthropic-ratelimit-tokens-limit',
-  'anthropic-ratelimit-input-tokens-limit', 'anthropic-ratelimit-output-tokens-limit',
-];
 /*
  * 풀리는 때. Anthropic 은 초가 아니라 **날짜(RFC 3339)** 로 준다 —
  * `언제풀리나` 가 Date.parse 로 받아 지금과의 차이를 초로 바꾼다.
@@ -87,6 +99,19 @@ export function 언제풀리나(v) {
   return null;
 }
 
+/** 토큰 통 중 **가장 적게 남은** 짝. 없으면 둘 다 null. */
+function 가장빠듯한통(머리) {
+  let 고른것 = { 토큰: null, 토큰한도: null };
+  for (const [남음이름, 한도이름] of 토큰통) {
+    const 남 = 숫자(골라(머리, [남음이름]));
+    if (남 === null) continue;
+    if (고른것.토큰 === null || 남 < 고른것.토큰) {
+      고른것 = { 토큰: 남, 토큰한도: 숫자(골라(머리, [한도이름])) };
+    }
+  }
+  return 고른것;
+}
+
 /**
  * 응답 머리에서 할당량을 읽는다.
  *
@@ -96,8 +121,7 @@ export function 할당량읽기(머리) {
   const 것 = {
     요청: 숫자(골라(머리, 요청남음)),
     요청한도: 숫자(골라(머리, 요청한도)),
-    토큰: 숫자(골라(머리, 토큰남음)),
-    토큰한도: 숫자(골라(머리, 토큰한도)),
+    ...가장빠듯한통(머리),
     풀림: 언제풀리나(골라(머리, 다시언제)),
   };
   것.있나 = 것.요청 !== null || 것.토큰 !== null || 것.풀림 !== null;

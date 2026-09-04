@@ -44,6 +44,28 @@ import { estimateTokens } from './tokens.js';
 /** 표식 한 개. 기본 수명(5분)을 쓴다 — 한 시간짜리는 쓰기 값이 두 배다. */
 export const 표식 = { type: 'ephemeral' };
 
+/**
+ * 표식을 적는 **칸 이름**들.
+ *
+ * 같은 뜻을 두 규격이 다른 이름으로 적는다. 어느 쪽인지는 창구가 아니라
+ * **규격**이 정하므로, 여기서는 이름만 알고 고르는 것은 카드가 한다
+ * (backend/wire.js 의 표식칸).
+ *
+ *   cache_control            Anthropic 규격의 칸. Claude 를 앞에 둔 창구는
+ *                            몸이 OpenAI 꼴이어도 이 칸으로 알아듣는다.
+ *   prompt_cache_breakpoint  OpenAI 규격의 칸. 규격 문서의 text 조각에
+ *                            정식으로 들어 있다.
+ *
+ * 어느 것도 「업체별 예외」 가 아니다. 둘 다 문서에 있는 칸이고, 안 받는
+ * 서버는 400 으로 말해 준다 — 그러면 카드가 배운다(backend/wire.js).
+ */
+export const 표식칸들 = ['cache_control', 'prompt_cache_breakpoint'];
+
+/** 그 칸에 적을 값. 칸마다 값의 모양이 다르다. */
+const 표식값 = (칸) => (칸 === 'prompt_cache_breakpoint'
+  ? { mode: 'explicit' }
+  : { ...표식 });
+
 /*
  * 시스템 글의 「굳은 부분 / 매 턴 바뀌는 부분」 을 나눠 담는 표.
  *
@@ -74,7 +96,7 @@ const 닻거리 = 12;
  * 메시지 하나의 **마지막 성한 블록**에 표식을 붙인 사본을 돌려준다.
  * 붙일 자리가 없으면 원본 그대로.
  */
-export function 블록에붙이기(msg) {
+export function 블록에붙이기(msg, 칸 = 'cache_control') {
   if (!msg) return msg;
   const 본래 = Array.isArray(msg.content)
     ? msg.content
@@ -84,7 +106,7 @@ export function 블록에붙이기(msg) {
     if (붙일수있나(본래[i])) { 자리 = i; break; }
   }
   if (자리 < 0) return msg;
-  const 새 = 본래.map((b, i) => (i === 자리 ? { ...b, cache_control: { ...표식 } } : b));
+  const 새 = 본래.map((b, i) => (i === 자리 ? { ...b, [칸]: 표식값(칸) } : b));
   return { ...msg, content: 새 };
 }
 
@@ -101,13 +123,13 @@ export function 블록에붙이기(msg) {
  * @param {string[]} 조각들
  * @param {boolean} 표식쓰나
  */
-export function 시스템블록(조각들, 표식쓰나) {
+export function 시스템블록(조각들, 표식쓰나, 칸 = 'cache_control') {
   const 있는것 = (조각들 ?? []).map((x) => String(x ?? '')).filter((x) => x.length);
   if (!있는것.length) return null;
   if (!표식쓰나) return 있는것.join('');
   const 굳은끝 = 0;   // 첫 조각이 굳은 부분이다
   return 있는것.map((text, i) => (
-    i === 굳은끝 ? { type: 'text', text, cache_control: { ...표식 } } : { type: 'text', text }
+    i === 굳은끝 ? { type: 'text', text, [칸]: 표식값(칸) } : { type: 'text', text }
   ));
 }
 
@@ -117,13 +139,43 @@ export function 시스템블록(조각들, 표식쓰나) {
  * @param {object[]} messages  차례합치기를 이미 거친 배열
  * @returns {object[]}
  */
-export function 메시지표식(messages) {
+/**
+ * 그 자리에 표식을 **붙일 수 있나.** 없으면 한 칸씩 앞으로 물러선다.
+ *
+ * 도구만 부른 차례는 붙일 자리가 없다 — OpenAI 규격에서 그런 차례는
+ * `content: null` 이고(adapter.js 의 assistantMessage), 빈 글에는 표식을
+ * 못 붙인다(붙일수있나).
+ *
+ * 문제는 그때 `블록에붙이기` 가 **원본을 그대로 돌려준다**는 것이다. 아무
+ * 말도 안 하므로 그 요청은 닻 없이 나가고, 화면은 여전히 「캐시 표식」 이라고
+ * 적는다. 도구를 도는 턴은 `assistant(부름)` ↔ `tool(결과)` 이 번갈아 오므로
+ * **닻 자리가 절반 확률로 부름 차례에 떨어진다.** 하필 그 닻이 되돌아보기
+ * 창(스무 자리)을 넘기지 않으려고 박아 둔 것이라, 없어지면 앞이 통째로 다시 나간다.
+ *
+ * 그래서 못 붙이면 앞으로 물러서서 붙는 자리를 찾는다. 한 칸 앞이면 결과
+ * 차례라 거의 바로 걸린다.
+ */
+function 붙는자리(ms, 부터) {
+  for (let i = Math.min(부터, ms.length - 1); i >= 0; i--) {
+    const 그자리 = 블록에붙이기(ms[i], 'cache_control');
+    if (그자리 !== ms[i]) return i;
+  }
+  return -1;
+}
+
+export function 메시지표식(messages, 칸 = 'cache_control') {
   const ms = messages ?? [];
   if (!ms.length) return ms;
-  const 붙일자리 = new Set([ms.length - 1]);
+  const 붙일자리 = new Set();
+  const 꼬리 = 붙는자리(ms, ms.length - 1);
+  if (꼬리 >= 0) 붙일자리.add(꼬리);
   // 도구를 길게 늘어놓는 턴에서 되돌아보기 창을 넘기지 않게 닻을 하나 더.
-  if (ms.length > 닻문턱) 붙일자리.add(ms.length - 1 - 닻거리);
-  return ms.map((m, i) => (붙일자리.has(i) ? 블록에붙이기(m) : m));
+  if (ms.length > 닻문턱) {
+    const 닻 = 붙는자리(ms, ms.length - 1 - 닻거리);
+    // 꼬리와 같은 자리면 닻이 아니다 — 그건 표식 하나짜리다.
+    if (닻 >= 0 && 닻 !== 꼬리) 붙일자리.add(닻);
+  }
+  return ms.map((m, i) => (붙일자리.has(i) ? 블록에붙이기(m, 칸) : m));
 }
 
 /**
@@ -140,8 +192,29 @@ export function 메시지표식(messages) {
  * `/status` 가 「캐시 표식」 이라고 적는다 — 이 함수가 막겠다고 적어 둔 바로
  * 그 거짓말이다.
  */
-export function 잡힐만한가(messages, 최소토큰 = 1024) {
+export function 잡힐만한가(messages, 최소토큰 = 1024, 곁 = null) {
   let 토큰 = 0;
+  /*
+   * 도구 정의도 **앞머리에 나가는 것**이다.
+   *
+   * 이 자가 메시지만 세고 있었다. 그런데 전선에 실릴 때 순서는
+   * `tools → system → messages` 라, 도구 스키마가 캐시 앞머리의 **맨 앞**
+   * 이다. 내장 도구 스무 개의 스키마는 1,800토큰쯤 된다.
+   *
+   * 그래서 시킴말과 사람말이 합쳐 500토큰인 판에서 이 자가 「문턱을 못
+   * 넘는다」 고 답했고, 표식을 하나도 안 붙였다. 실제로는 2,300토큰이라
+   * 넘고도 남는다. **덜 세서 캐시를 안 켠 것**인데, 화면에는 아무 말도
+   * 안 난다 — 그냥 매 턴 값이 더 나온다.
+   *
+   * 세는 것과 보내는 것이 다르면, 세는 쪽이 틀린 것이다.
+   */
+  if (곁) {
+    for (const 것 of [곁.tools, 곁.system]) {
+      if (것 == null) continue;
+      토큰 += estimateTokens(typeof 것 === 'string' ? 것 : JSON.stringify(것));
+      if (토큰 > 최소토큰) return true;
+    }
+  }
   for (const m of messages ?? []) {
     토큰 += estimateTokens(typeof m?.content === 'string' ? m.content : JSON.stringify(m?.content ?? ''));
     if (토큰 > 최소토큰) return true;

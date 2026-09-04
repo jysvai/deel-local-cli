@@ -130,7 +130,9 @@ export async function 원시요청(url, { method = 'GET', headers = {}, body, ti
       let 다음;
       try { 다음 = new URL(loc, 지금); } catch { return { ...r, ms: Date.now() - started }; }
       await r.버리기?.();               // 안 읽은 몸을 두고 다음 요청을 보내면 연결이 남는다.
-      되돌림?.(다음);
+      // 훅이 async 여도 기다린다 — 이름을 실제로 풀어 보는 검사(webfetch.js)가
+      // 여기 붙는다. 안 기다리면 그 검사가 끝나기 전에 다음 홉이 나간다.
+      await 되돌림?.(다음);
       // fetch 가 하는 대로: 303 은 GET 으로, POST 의 301·302 도 GET 으로, 307·308 은 그대로.
       if (r.status === 303 || ((r.status === 301 || r.status === 302) && 방법 !== 'GET' && 방법 !== 'HEAD')) {
         방법 = 'GET';

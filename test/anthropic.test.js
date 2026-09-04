@@ -308,6 +308,17 @@ trace('6-흘려받기');
     { type: 'message_start', message: { usage: { input_tokens: 100, output_tokens: 1 } } },
     { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } },
     { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '생각' } },
+    /*
+     * 서명은 **따로 온다.** 이 사건이 검사 어디에도 없었다.
+     *
+     * 서명이 없는 생각 블록은 다음 요청에 못 싣는다 — 그 규격이 "thinking
+     * blocks must be returned with their signature" 로 400 을 낸다. 즉
+     * **생각을 켠 채 도구를 쓰는 순간 그 턴이 죽는다.** Claude 를 쓰는 제일
+     * 흔한 조합이 그것인데, 가짜 스트림이 이 사건을 안 보내는 바람에
+     * 조립된 서명이 늘 빈 글이었고 아무도 그것을 안 봤다.
+     */
+    { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'sig-ab' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'cd' } },
     { type: 'content_block_stop', index: 0 },
     { type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } },
     { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: '이렇' } },
@@ -372,6 +383,19 @@ trace('6-흘려받기');
    */
   check('★ 출력 토큰을 더하지 않고 덮는다', 끝?.usage?.out === 42, String(끝?.usage?.out));
   check('끝난 까닭을 읽는다', 끝?.stopped === 'tool_use', String(끝?.stopped));
+
+  /*
+   * ★★ 서명을 이어 붙여서 생각 블록에 담는다.
+   *
+   * 이것 하나가 없으면 그 생각 블록은 다음 요청에 못 실린다(400). 그리고
+   * 화면에는 왜인지 안 나온다 — 그냥 그 턴이 죽는다.
+   */
+  const 생각블록 = (끝?.생각블록 ?? []).find((b) => b?.type === 'thinking');
+  check('★★ 생각 블록을 통째로 챙긴다', !!생각블록, JSON.stringify(끝?.생각블록));
+  check('★★ 쪼개져 온 서명을 이어 붙인다', 생각블록?.signature === 'sig-abcd',
+    JSON.stringify(생각블록?.signature));
+  check('★ 생각 글도 그 블록에 담긴다', 생각블록?.thinking === '생각',
+    JSON.stringify(생각블록?.thinking));
 
   srv.close();
 }

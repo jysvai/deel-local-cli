@@ -38,11 +38,13 @@ import { TOOLS, runTool } from '../src/tools/index.js';
 import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
+import { 엔진찾기 } from '../src/tools/fastgrep.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
 const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
+const 건너뜀 = [];
 
 /**
  * 이벤트 루프가 막혀 있던 시간을 잰다.
@@ -268,13 +270,33 @@ trace('6-찾기');
    *
    * 평소 턴에는 언제나 signal 이 붙어 있다. 여기를 '신호가 있으면 그만둔다' 로
    * 잘못 적으면 오류는 하나도 안 나고, 대신 rg 를 영영 안 쓰게 된다 — 사람 눈에는
-   * "요즘 deel 이 느리다" 로만 보인다. 그래서 안 눌린 신호로도 같은 답이
-   * 나오는지 본다. 이 PC 에 rg 가 없으면 양쪽 다 예전 길이라 그대로 통과한다.
+   * "요즘 deel 이 느리다" 로만 보인다.
+   *
+   * ── 이 검사가 스스로 아무것도 안 지키던 자리 ─────────────────────────
+   *
+   * 여기 머리말에 「이 PC 에 rg 가 없으면 양쪽 다 예전 길이라 그대로 통과한다」
+   * 고 적혀 있었다. 그건 곧 **rg 없는 기계에서는 이 초록이 아무 뜻도 없다**는
+   * 뜻이다. 그런데 초록은 똑같이 초록으로 보인다 — 재고 있는 줄 알고 넘어간다.
+   *
+   * 두 가지로 가른다.
+   *   빠른 길이 있는 기계 → 결과가 같기만 한 게 아니라 **그 길을 정말 썼는지**
+   *                        까지 본다 (꼬리에 무엇으로 찾았는지 적힌다).
+   *   없는 기계           → 초록으로 세지 않고 「못 쟀다」 로 적는다.
    */
   const 산신호 = new AbortController();
   const 신호달고 = await TOOLS.Grep.run({ pattern: '바늘' }, 판(방, { signal: 산신호.signal }));
-  check('★ 신호가 붙어 있어도 안 눌렀으면 빠른 길을 그대로 쓴다',
-    신호달고.summary === 찾은것.summary, `${신호달고.summary} ↔ ${찾은것.summary}`);
+  const 엔진 = 엔진찾기();
+  const 빠른길있나 = !!(엔진.rg || 엔진.gitgrep);
+  if (!빠른길있나) {
+    건너뜀.push(`rg 도 git grep 도 없어 「신호가 붙어도 빠른 길을 쓴다」 를 못 쟀다 (${엔진.왜 ?? '둘 다 없음'})`);
+  } else {
+    const 길이름 = /rg 으로 찾았습니다|git 으로 찾았습니다|rg|git/;
+    check('★★ 신호가 붙어 있어도 빠른 길을 **정말로** 쓴다',
+      길이름.test(String(찾은것.content ?? '') + String(찾은것.summary ?? '')),
+      String(찾은것.summary ?? '').slice(0, 80));
+    check('★ 신호가 붙어 있어도 답이 달라지지 않는다',
+      신호달고.summary === 찾은것.summary, `${신호달고.summary} ↔ ${찾은것.summary}`);
+  }
 
   // 멈추라고 하면 자식(rg)을 죽이고 곧바로 돌아온다.
   const ac = new AbortController();
@@ -445,10 +467,14 @@ trace('8-남을-기다리는-자리');
   rmSync(방, { recursive: true, force: true });
 }
 
-const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
+const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const Y = '\x1b[33m'; const X = '\x1b[0m';
 console.log(`\n멈춤 검사  ${D}(멈추라면 멈추는가 · 멈추는 동안 귀가 열려 있는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
-console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
+// 못 잰 것은 못 쟀다고 적는다. 조용히 초록으로 세면 이 파일이 무엇을 지키는지
+// 아무도 다시 안 본다.
+for (const 글 of 건너뜀) console.log(`  ${Y}⚠${X} ${글}`);
+console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패`
+  + (건너뜀.length ? ` · ${Y}${건너뜀.length}개 건너뜀${X}` : '') + '\n');
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;

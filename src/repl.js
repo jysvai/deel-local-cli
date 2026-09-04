@@ -51,6 +51,7 @@ import { 다붙이기 } from './backend/mcp.js';
 import { 읽기 as 기억읽기 } from './agent/memory.js';
 import { 갈래고르기 } from './ui/working.js';
 import { 모두끝내기 as 일감모두끝내기, 일감인자 } from './tools/jobs.js';
+import { 첫이름 } from './tools/label.js';
 
 // 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
 const TOOL_GLYPH = {
@@ -72,8 +73,10 @@ const TOOL_GLYPH = {
 // 도구 호출을 한 줄로 요약 — Read(src/a.js) 처럼.
 function toolLabel(name, args) {
   const a = args ?? {};
+  // 이름 차례는 tools/label.js 한 곳에서 온다 (다섯 벌이던 것을 모았다).
+  // 여기서 더 하는 일은 화면 사정뿐이다 — 52자에서 자른다.
   const first =
-    a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.purpose ?? a.목적 ??
+    첫이름(a) ??
     (a.command ? String(a.command).replace(/\s+/g, ' ').slice(0, 52) : null) ??
     // 뒤에서 도는 명령. 번호가 곧 그 일감의 이름이다 — 빈 괄호를 띄우면
     // 어느 것을 보고 있는지가 화면에서 사라진다. 서너 개를 띄워 놓고 나면
@@ -1683,7 +1686,14 @@ export async function chatLoop(opts = {}) {
 
     say('');
     const started = Date.now();
-    const before = { in: session.usage.prompt || session.usage.in, out: session.usage.out };
+    const before = {
+      in: session.usage.prompt || session.usage.in,
+      out: session.usage.out,
+      // 캐시 몫도 같이 떠 둔다 — 안 그러면 이번 턴 값이 정가로만 셈해져서
+      // 캐시가 걸린 턴일수록 실제보다 비싸게 뜬다.
+      cacheRead: session.usage.cacheRead ?? 0,
+      cacheWrite: session.usage.cacheWrite ?? 0,
+    };
 
     /*
      * 창 제목에 흐른 시간을 띄운다. 탭 이름만 봐도 도는 중인지 알게 하려는 것이다.
@@ -2407,7 +2417,11 @@ export async function chatLoop(opts = {}) {
      *
      * 요금을 모르면 안 적는다 (backend/price.js — 지어낸 요금은 안 찍는다).
      */
-    const 이번돈 = 돈셈({ in: dIn, out: dOut }, 세션요금(session));
+    const 이번돈 = 돈셈({
+      prompt: dIn, out: dOut,
+      cacheRead: (session.usage.cacheRead ?? 0) - before.cacheRead,
+      cacheWrite: (session.usage.cacheWrite ?? 0) - before.cacheWrite,
+    }, 세션요금(session));
     if (이번돈 && 이번돈.달러 > 0) bits.push(돈말(이번돈.달러));
     say('');
     say(`  ${c.gray('─'.repeat(2))} ${c.gray(bits.join(c.gray(' · ')))}`);

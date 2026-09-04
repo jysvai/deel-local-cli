@@ -26,6 +26,8 @@ const 진입점 = join(here, '..', 'bin', 'deel.js');
 const pass = [];
 const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
+// 이 기계에서 못 재는 것. 초록으로 세지 않고 못 쟀다고 적는다.
+const 건너뜀 = [];
 
 // ── 스텁 모델 ───────────────────────────────────────────────────────────
 let 받은요청 = [];
@@ -82,6 +84,17 @@ const srv = createServer((req, res) => {
       const 사람말 = String([...(json?.messages ?? [])].reverse().find((m) => m.role === 'user')?.content ?? '');
 
       if (/일부러_터뜨려/.test(사람말)) return 보냄({ error: { message: '스텁이 일부러 낸 오류입니다' } }, 500);
+
+      /*
+       * 답을 붙들고 있는 창구. Ctrl+C 를 재려면 **끊을 것이 돌고 있어야** 한다.
+       * 5초는 넉넉히 길고, 검사는 그보다 훨씬 먼저 끊으므로 실제로 5초를
+       * 기다리는 일은 없다.
+       */
+      if (/일부러_느리게/.test(사람말)) {
+        const 늦게 = setTimeout(() => { try { 답({ role: 'assistant', content: '늦게 왔습니다' }); } catch { /* 이미 끊겼다 */ } }, 5000);
+        res.on('close', () => clearTimeout(늦게));
+        return undefined;
+      }
 
       /*
        * 안 하겠다고 하는 답. 이 규격은 거절을 `content` 가 아니라 `refusal`
@@ -233,6 +246,51 @@ function 띄우기(인자 = [], { 입력 = null, 제한 = 30000, 폴더 = work, 
   });
 }
 
+/**
+ * 띄운 뒤 **돌고 있는 중에** 신호를 보내고, 그 프로그램이 몇으로 끝나는지 본다.
+ *
+ * 정해 둔 만큼 자고 보내면 느린 판에서는 아직 서버에 닿지도 않은 프로그램을
+ * 끊게 된다 — 그건 이 검사가 재려던 자리가 아니다. 그래서 「모델을 부르기
+ * 시작했다」 는 증거(스텁이 그 한마디를 받은 것)를 보고 나서 보낸다.
+ */
+function 끊어보기(인자, { 보낼신호 = 'SIGINT', 제한 = 30000, 닿았나 } = {}) {
+  return new Promise((done) => {
+    const kid = spawn(process.execPath, [진입점, ...인자], {
+      cwd: work,
+      env: { ...process.env, DEEL_HOME: home, NO_COLOR: '1', COLUMNS: '100' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let out = ''; let err = ''; let 끝남 = false; let 보냈나 = false;
+    kid.stdout.on('data', (b) => { out += b; });
+    kid.stderr.on('data', (b) => { err += b; });
+    kid.stdin.on('error', () => {});
+    kid.stdin.end();
+
+    const 시계 = setTimeout(() => {
+      if (끝남) return;
+      kid.kill('SIGKILL');
+      done({ code: null, out, err, 시간초과: true, 보냈나 });
+    }, 제한);
+
+    // 도는 중인지 20ms 마다 본다 — 자는 대신 본다.
+    const 지켜보기 = setInterval(() => {
+      if (끝남 || 보냈나) return;
+      if (!닿았나()) return;
+      보냈나 = true;
+      clearInterval(지켜보기);
+      try { kid.kill(보낼신호); } catch { /* 이미 죽었다 */ }
+    }, 20);
+    지켜보기.unref?.();
+
+    kid.on('close', (code) => {
+      끝남 = true;
+      clearTimeout(시계);
+      clearInterval(지켜보기);
+      done({ code, out, err, 시간초과: false, 보냈나 });
+    });
+  });
+}
+
 trace('1-기본한번돌기');
 
 // ── 한 번 돌고 끝나는가 ─────────────────────────────────────────────────
@@ -361,6 +419,32 @@ trace('4-끝난까닭과종료코드');
   const r = await 띄우기(['run', '일부러_헛돎 해줘'], { 제한: 60000 });
   check('헛돌아 멈추면 3 으로 끝난다', r.code === 3, `code=${r.code}${r.시간초과 ? ' 시간초과' : ''}`);
   check('헛돈다고 말해 준다', /계속 실패|헛돌|같은/.test(r.err), r.err.slice(-240));
+}
+
+trace('5-3-끊김');
+
+/*
+ * ── 도중에 끊긴 것도 제 번호로 끝나야 한다 (4) ─────────────────────────
+ *
+ * EXIT 표에 여섯 자리가 있는데 4(aborted)만 아무 검사도 안 밟고 있었다.
+ * 이 자리가 왜 값진가: `deel -p` 는 배치·CI 안에서 돌고, 그 위에서 사람이나
+ * 상위 잡이 Ctrl+C 를 보내는 일이 실제로 있다. 그때 0 으로 끝나면 뒤따르는
+ * 스크립트는 「다 됐다」 로 읽는다. 아무 답도 안 받았는데.
+ *
+ * 신호는 유닉스 이야기다. 윈도우에는 진짜 신호가 없어서 Node 의 kill 은
+ * 그냥 프로세스를 없앤다 — 우리 SIGINT 처리기가 아예 안 돌아서 4 가 나올
+ * 수가 없다. 못 재는 자리는 **못 쟀다고 적는다.**
+ */
+if (process.platform === 'win32') {
+  건너뜀.push('윈도우에는 진짜 SIGINT 가 없어 「끊기면 4 로 끝난다」 를 못 쟀다');
+} else {
+  대본초기화();
+  const 받기시작 = () => 받은요청.some((x) => x.url === '/v1/chat/completions');
+  const r = await 끊어보기(['run', '일부러_느리게 답해줘'], { 닿았나: 받기시작, 제한: 30000 });
+  check('끊을 것이 정말 돌고 있을 때 보냈다', r.보냈나 === true, JSON.stringify({ 보냈나: r.보냈나 }));
+  check('★★ 도중에 끊기면 4 로 끝난다', r.code === 4,
+    `code=${r.code}${r.시간초과 ? ' 시간초과 — 신호를 듣고도 안 끝났다' : ''}`);
+  check('★ 0 으로는 절대 안 끝난다 — 뒤 스크립트가 다 된 줄 안다', r.code !== 0, `code=${r.code}`);
 }
 
 /*
@@ -594,10 +678,12 @@ srv.close();
 rmSync(home, { recursive: true, force: true });
 rmSync(work, { recursive: true, force: true });
 
-const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
+const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const Y = '\x1b[33m'; const X = '\x1b[0m';
 console.log(`\n한 번만 돌리기  ${D}(물어볼 사람이 없는 자리에서 서지 않고 끝나는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
-console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
+for (const 글 of 건너뜀) console.log(`  ${Y}⚠${X} ${글}`);
+console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패`
+  + (건너뜀.length ? ` · ${Y}${건너뜀.length}개 건너뜀${X}` : '') + '\n');
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;

@@ -122,7 +122,15 @@ trace('4-진짜응답');
   await chat(conn, { messages: [{ role: 'user', content: 'x' }], maxTokens: 10 });
   const 본것 = 마지막할당량();
   check('한 번 부르면 서버가 말한 값을 안다', 본것?.요청 === 3, JSON.stringify(본것?.요청));
-  check('언제 본 값인지도 안다', typeof 본것?.때 === 'number');
+  /*
+   * 이 값은 「이 숫자가 얼마나 낡았나」 를 재는 데 쓴다. 숫자이기만 하면
+   * 0(1970년)도 통과하는데, 그러면 방금 받은 값이 늘 「아주 낡음」 으로
+   * 읽혀서 화면이 조용히 틀린 말을 한다.
+   */
+  const 잰때 = Date.now();
+  check('★ 언제 본 값인지도 안다 — 방금이다',
+    Number.isFinite(본것?.때) && 본것.때 <= 잰때 && 잰때 - 본것.때 < 60000,
+    `${잰때 - (본것?.때 ?? 0)}ms 전`);
   check('바닥이라 화면에 띄운다', /서버 할당량/.test(quotaWarning() ?? ''), quotaWarning());
   check('화면 말이 서버 숫자 그대로다', /요청 3\/100/.test(quotaWarning() ?? ''), quotaWarning());
 

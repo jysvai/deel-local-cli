@@ -23,7 +23,10 @@
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { 증거모으기 } from '../agent/evidence.js';
+// 도구 부름과 글이 어디 실리는지는 규격마다 다르다 — 읽는 규칙은 한 곳뿐이다.
+import { 부른것들, 본문글 } from '../backend/adapter.js';
 import { 말, 언어 } from '../i18n/index.js';
+import { 첫이름 } from '../tools/label.js';
 
 /** HTML 로 안전하게. 문서 전체가 이 함수 하나를 지나야 한다. */
 function 글자(s) {
@@ -39,11 +42,14 @@ const 민글 = (s) => String(s ?? '').replace(/\x1b\[[0-9;]*m/g, '');
 
 /** 도구 호출 한 줄 요약. 보고서는 기록이지 재현이 아니다 — 인자 전체를 안 싣는다. */
 function 도구줄(tc) {
-  const 이름 = tc?.function?.name ?? tc?.name ?? '?';
+  // 부른것들() 이 규격을 이미 펴서 { id, name, args } 로 준다.
+  const 이름 = tc?.name ?? '?';
   let 핵심 = '';
   try {
-    const a = JSON.parse(tc?.function?.arguments ?? '{}');
-    핵심 = a.file_path ?? a.pattern ?? a.command ?? a.name ?? a.purpose ?? a.목적 ?? '';
+    const a = tc?.args ?? {};
+    // 이름 차례는 tools/label.js 한 곳에서 온다. 여기 목록에는 url 이 빠져
+    // 있어서, 웹을 읽은 줄이 보고서에서만 빈 괄호로 남았다.
+    핵심 = 첫이름(a) ?? a.command ?? '';
   } catch { /* 인자가 잘렸어도 이름은 보여 준다 */ }
   핵심 = String(핵심);
   if (핵심.length > 80) 핵심 = 핵심.slice(0, 80) + '…';
@@ -62,19 +68,29 @@ export function 보고서짓기(session, { scope = null, audit = null } = {}) {
   const 보임 = (p) => { try { return scope?.show ? scope.show(p) : String(p); } catch { return String(p); } };
 
   // ── 재료 ──────────────────────────────────────────────────────────────
-  const 첫말 = (session.messages ?? []).find((m) => m.role === 'user')?.content;
-  const 제목 = String(첫말 ?? 말('export.untitled')).split('\n')[0].slice(0, 80);
+  const 첫말 = 본문글((session.messages ?? []).find((m) => m.role === 'user'));
+  const 제목 = String(첫말 || 말('export.untitled')).split('\n')[0].slice(0, 80);
 
   const 흐름 = [];
   for (const m of session.messages ?? []) {
-    if (m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
-      흐름.push({ 갈래: 'user', 글: m.content });
+    /*
+     * 규격을 안 가린다.
+     *
+     * 여기가 `typeof m.content === 'string'` 과 `m.tool_calls` 로 읽고 있었다.
+     * Anthropic 꼴은 둘 다 안 맞는다 — 모델이 한 말은 블록 배열 안에 있고
+     * 부름은 `tool_use` 블록이다. 그래서 그 창구로 나눈 대화를 `/export`
+     * 하면 **모델 말과 도구가 통째로 빈** 보고서가 나왔다. 오류는 없다.
+     */
+    const 글 = 본문글(m);
+    if (m.role === 'user') {
+      // Anthropic 꼴에서 사람 차례에 도구 결과가 섞여 온다. 그건 글이 아니다.
+      if (글.trim()) 흐름.push({ 갈래: 'user', 글 });
     } else if (m.role === 'assistant') {
-      const 부른것 = (m.tool_calls ?? []).map(도구줄);
+      const 부른것 = 부른것들(m).map(도구줄);
       if (부른것.length) 흐름.push({ 갈래: 'tools', 글: 부른것.join(' · ') });
-      if (typeof m.content === 'string' && m.content.trim()) 흐름.push({ 갈래: 'assistant', 글: m.content });
+      if (글.trim()) 흐름.push({ 갈래: 'assistant', 글 });
     }
-    // tool 결과는 안 싣는다 — 길고, 요점은 답과 증거 절에 이미 있다.
+    // 도구 결과 알맹이는 안 싣는다 — 길고, 요점은 답과 증거 절에 이미 있다.
   }
 
   const 바뀐것 = [...(session.changes ?? new Map()).entries()]

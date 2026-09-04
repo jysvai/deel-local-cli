@@ -194,7 +194,25 @@ export function readZip(buf, { only = null } = {}) {
       files.set(name, Buffer.from(body));
     } else if (method === 8) {
       try {
-        const out = inflateRawSync(body);
+        /*
+         * ── 풀기 **전에** 상한을 정한다 ──────────────────────────────
+         *
+         * 여기가 `inflateRawSync(body)` 한 줄이었다. 다 풀어 놓고 나서
+         * 크기를 견줬으니, 크기가 안 맞는 것을 **알아내는 시점이 이미 늦다.**
+         *
+         *   작은 deflate 조각 + 수 GB 로 부푸는 내용  →  프로세스가 죽는다
+         *
+         * `.docx`·`.xlsx` 는 사람이 아무 데서나 받아 오는 파일이고, 우리는
+         * 모델이 시키는 대로 그것을 연다. 즉 남이 정한 바이트로 우리 메모리를
+         * 정하게 두고 있었다. 목록에 적힌 크기(rawSize)를 이미 읽어 뒀으면서
+         * 쓰지 않은 것이 아까운 자리다.
+         *
+         * zlib 는 `maxOutputLength` 로 그 자리에서 멈춰 준다. 다 풀고 재는
+         * 것과 달리 **메모리를 안 쓰고** 멈춘다.
+         */
+        const 한항목상한 = 64 * 1024 * 1024;      // 이 프로그램이 여는 문서의 현실적 위쪽
+        const 상한 = Math.min(rawSize > 0 ? rawSize : 한항목상한, 한항목상한);
+        const out = inflateRawSync(body, { maxOutputLength: 상한 });
         if (rawSize && out.length !== rawSize) {
           skipped.push({ name, why: `푼 크기가 안 맞음 (${out.length} ≠ ${rawSize})` });
           continue;

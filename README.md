@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-5%2C899%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-7%2C041%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -119,7 +119,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
-| [Release notes](docs/en/releases.md) | [1.10.x](docs/en/releases/1.10.md) · [1.9.x](docs/en/releases/1.9.md) · [1.8.x](docs/en/releases/1.8.md) · [1.7.x](docs/en/releases/1.7.md) · [older](docs/en/releases.md) |
+| [Release notes](docs/en/releases.md) | [1.13.x](docs/en/releases/1.13.md) · [1.12.x](docs/en/releases/1.12.md) · [1.10.x](docs/en/releases/1.10.md) · [1.9.x](docs/en/releases/1.9.md) · [older](docs/en/releases.md) |
 
 ---
 
@@ -337,7 +337,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.10.0  ⌂ inside
+ deel 1.13.0  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1209,11 +1209,11 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| **[1.13.0](docs/en/releases/1.13.md#1130)** | Every place deel touches someone else's endpoint, re-examined — three independent reviewers, four findings they shared |
+| **[1.12.0](docs/en/releases/1.12.md#1120)** | The same prefix was being sent again on every step |
 | **[1.10.0](docs/en/releases/1.10.md#1100)** | ESC actually stops · a full context carries on inside the same turn · every vendor endpoint measured |
 | [1.9.2](docs/en/releases/1.9.md#192) | Guards that said they were blocking were not blocking · folding lost the request and the outstanding work |
-| [1.9.1](docs/en/releases/1.9.md#191) | MCP tools with Korean names all looked the same to the model — names are now distinct and stable |
 | **[1.9.0](docs/en/releases/1.9.md#190)** | Tables are drawn as tables · reasoning effort reaches Claude and Bedrock · tool schemas shaped per vendor · only the changed part of a file is re-sent |
-| **[1.8.0](docs/en/releases/1.8.md#180)** | A full day against a gateway that hands out one-hour tokens — fetch the key instead of storing it · `deel reset` · an English screen that is actually English |
 
 The five most recent are listed here. Every version, and why each thing changed, is in the **[release notes](docs/en/releases.md)**.
 

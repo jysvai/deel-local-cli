@@ -456,6 +456,7 @@ export const ja = {
   'think.autoOff': '設定した強度をそのまま使います',
   'think.wire': '配線',
   'think.wireSends': '実際に送る値 {값}',
+  'think.wireNoOff': 'この窓口は切る値を教えてくれませんでした — 項目を送らないので、サーバー既定値で動きます',
   'loop.wire': 'サーバーが受け取らない項目があるため、直して呼び直します ({무엇})',
   'loop.quotaAhead': '残量が尽きたので {초} 秒待ってから送ります',
   'cost.quota': 'サーバー残量',

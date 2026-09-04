@@ -198,6 +198,42 @@ trace('5-옮겨온기록');
   rmSync(옮김, { recursive: true, force: true });
 }
 
+/*
+ * ★★ Anthropic 꼴 도구 부름·결과도 찾힌다.
+ *
+ * `글로()` 가 `m.tool_calls` 와 `p?.text` 로만 읽었다. 그 규격의 부름
+ * (`tool_use`)에는 `.text` 가 없고 결과(`tool_result`)는 `.content` 라
+ * 둘 다 빈 글로 떨어졌고, 빈 글은 버려진다. 그래서 그 창구로 한 일은
+ * 아무리 찾아도 안 나왔다 — 「그런 적 없다」 와 구별이 안 된다.
+ */
+{
+  const 방 = join(root, '.deel', 'sessions');
+  mkdirSync(방, { recursive: true });
+  const 줄 = [
+    JSON.stringify({ t: 'meta', 때: Date.now(), 방: '앤트로픽판' }),
+    JSON.stringify({ role: 'user', content: '토큰 세는 데를 고쳐줘' }),
+    JSON.stringify({
+      role: 'assistant',
+      content: [
+        { type: 'text', text: '토큰 세는 자리를 보겠습니다.' },
+        { type: 'tool_use', id: 'u1', name: 'Read', input: { file_path: 'src/backend/tokens.js' } },
+      ],
+    }),
+    JSON.stringify({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'u1', content: '자모범위가 빠져 있었다' }] }),
+  ].join(String.fromCharCode(10));
+  writeFileSync(join(방, '20260904-9999.jsonl'), 줄 + String.fromCharCode(10), 'utf8');
+
+  const 찾음 = 찾기(root, 'tokens.js').맞은것;
+  check('★★ Anthropic 꼴 도구 부름의 인자로 찾힌다', 찾음.length > 0,
+    `${찾음.length}건`);
+  const 찾음2 = 찾기(root, '자모범위', { 도구결과까지: true }).맞은것;
+  check('★★ Anthropic 꼴 도구 결과 알맹이로도 찾힌다', 찾음2.length > 0,
+    `${찾음2.length}건`);
+  const 찾음3 = 찾기(root, '자모범위').맞은것;
+  check('★ 도구 결과까지 안 켜면 결과 알맹이는 안 뒤진다', 찾음3.length === 0,
+    `${찾음3.length}건`);
+}
+
 rmSync(root, { recursive: true, force: true });
 
 trace('6-끝');

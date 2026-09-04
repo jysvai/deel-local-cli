@@ -98,13 +98,27 @@ different job than the one you asked for, billed at a number you did not choose.
 ### Cache marks — stop resending the head
 
 A prompt cache only matches **a prefix**. Something has to say how far that prefix runs,
-and each protocol says it differently.
+and there is more than one way to say it.
 
-| Endpoint | How | Left unmarked |
+The split is by **model, not endpoint**. Whether a field is accepted is decided
+by who ultimately reads the body, and that is the model.
+
+| What you are calling | How | Left unmarked |
 |---|---|---|
-| Anthropic direct | `cache_control` marks | **Nothing** is cached |
-| Bedrock · Gemini · Azure | The server does it | Only the static head is cached |
+| Claude — Anthropic or OpenAI shaped | `cache_control` marks | Caching **stops** at whatever prefix the server holds by default |
 | OpenAI direct | `prompt_cache_key` | It cannot tell this is the same conversation |
+| Gemini · Azure · others | The server does it | Only the static head is cached |
+
+An endpoint fronting Claude (LiteLLM, OpenRouter, Bedrock, a corporate proxy)
+understands this field as its own format even when the body is OpenAI-shaped.
+An endpoint that does not accept it says so with a 400, and deel then tries the
+other name for the same thing (`prompt_cache_breakpoint`, a field of the OpenAI
+schema); only a second rejection turns caching off.
+
+> Claude's cache is **not a growing prefix cache.** It is cut by explicit
+> breakpoints, so with no marker a conversation can grow to 60k while only the
+> first few k are ever read back — everything added is paid for in full on every
+> step. Not an error; just quietly more expensive.
 
 Where marks are accepted, deel attaches **two**.
 

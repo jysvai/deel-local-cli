@@ -7,7 +7,7 @@
 //   1) 도구 호출과 그 결과는 한 몸이다. 사이를 끊으면 규격 위반이라 서버가 400 을 낸다.
 //   2) 요약도 모델이 만든다. 그 요청이 실패하면 프로그램이 멈추면 안 된다 —
 //      실패하면 옛 방식(그냥 자르기)으로 물러선다.
-import { chat, 부른것들, 결과들, 도구결과인가 } from '../backend/adapter.js';
+import { chat, 부른것들, 결과들, 도구결과인가, 결과바꾸기 } from '../backend/adapter.js';
 import { estimateTokens, safeCut, safeHead, 못박을것 } from './session.js';
 import { wasCut } from './effort.js';
 import { 그림장수, 글만 } from '../backend/vision.js';
@@ -140,7 +140,22 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
     const 글 = 것들.map((x) => x.글).join('\n');
     if (글.startsWith(접힘표)) return;      // 이미 접은 것
     const 첫 = 것들[0];
-    자리.push({ i, 글, 이름: 이름표.get(첫?.id)?.name ?? 첫?.name ?? '' });
+    /*
+      * 이름과 인자를 **여기서** 뽑아 둔다.
+      *
+      * 아래 접는 자리가 이걸 안 쓰고 `이름표.get(m.tool_call_id)` 로 다시
+      * 뽑고 있었다. `tool_call_id` 는 OpenAI 꼴 짐작이라 Anthropic·Ollama
+      * 에서는 늘 undefined 였고, 그러면 이름이 「도구」로, 인자가 `{}` 로
+      * 떨어진다. 인자가 비면 경로도 못 뽑아서 파일 기억이 안 지워지고,
+      * 접힌 파일을 다시 읽을 때 「앞에서 읽은 그대로입니다」 만 돌아온다.
+      * 같은 것을 두 번 뽑을 까닭이 없다 — 한 번 뽑아서 같이 들고 간다.
+      */
+     const 아는것 = 이름표.get(첫?.id) ?? null;
+     자리.push({
+       i, 글,
+       이름: 아는것?.name ?? 첫?.name ?? '',
+       args: 아는것?.args ?? {},
+     });
   });
 
   /*
@@ -183,18 +198,24 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
   // 사람 화면에는 여기서 돌려주는 목록으로 알려 준다.
   const 접은것들 = [];
 
-  for (const { i, 글 } of 접을것) {
+  for (const { i, 글, 이름, args } of 접을것) {
     const m = ms[i];
-    const 아는것 = 이름표.get(m.tool_call_id) ?? { name: m.tool_name ?? '도구', args: {} };
-    const 곳 = 어디(아는것.args);
+    const 도구이름 = 이름 || '도구';
+    const 곳 = 어디(args);
     const 줄수 = 글.split('\n').length;
     const 전 = estimateTokens(글);
-    ms[i] = {
-      ...m,
-      content: `${접힘표} ${아는것.name}${곳 ? `(${곳})` : ''} — ${줄수}줄. `
-        + '자리를 비우려고 내용을 접었습니다. 필요하면 다시 읽으세요.',
-    };
-    const 아낀것 = 전 - estimateTokens(ms[i].content);
+    const 접은글 = `${접힘표} ${도구이름}${곳 ? `(${곳})` : ''} — ${줄수}줄. `
+      + '자리를 비우려고 내용을 접었습니다. 필요하면 다시 읽으세요.';
+    /*
+     * 글만 갈아 끼운다 — 메시지를 통째로 덮으면 짝이 깨진다.
+     *
+     * Anthropic 꼴 결과는 `tool_result` 블록 안에 `tool_use_id` 를 들고 있다.
+     * `{ ...m, content: 접은글 }` 로 덮으면 그 id 가 없어지고, 앞 차례의
+     * `tool_use` 가 짝을 잃어 다음 요청이 400 이다. 규격별로 어디를 바꿔야
+     * 하는지는 backend/adapter.js 가 안다 (결과바꾸기).
+     */
+    ms[i] = 결과바꾸기(m, 접은글);
+    const 아낀것 = 전 - estimateTokens(접은글);
     아낀토큰 += 아낀것;
     /*
      * 자른 표시용 이름(곳)과 **진짜 경로**를 따로 담는다.
@@ -203,10 +224,10 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
      * 긴 경로가 안 맞아서 조용히 안 지워진다 — 그러면 접힌 파일을 다시
      * 읽을 때 「앞에서 읽은 그대로입니다」 만 돌아간다(agent/filemem.js).
      */
-    const 경로 = typeof 아는것.args?.file_path === 'string'
-      ? 아는것.args.file_path
-      : (typeof 아는것.args?.path === 'string' ? 아는것.args.path : null);
-    접은것들.push({ 도구: 아는것.name, 곳, 경로, 줄수, 토큰: Math.max(0, 아낀것) });
+    const 경로 = typeof args?.file_path === 'string'
+      ? args.file_path
+      : (typeof args?.path === 'string' ? args.path : null);
+    접은것들.push({ 도구: 도구이름, 곳, 경로, 줄수, 토큰: Math.max(0, 아낀것) });
   }
 
   return { 접은것: 접을것.length, 아낀토큰: Math.max(0, 아낀토큰), 접은것들 };

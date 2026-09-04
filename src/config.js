@@ -206,6 +206,45 @@ const 푼것 = new Map();     // 잠긴 값 → 푼 글. 한 판에 한 번만 �
 let 열쇠탈 = null;
 export function 열쇠탈소식() { const s = 열쇠탈; 열쇠탈 = null; return s; }
 
+/**
+ * 이 이름의 환경변수는 **열쇠를 담나.**
+ *
+ * ── 왜 이 자가 있어야 하나 ────────────────────────────────────────────
+ *
+ * 열쇠는 두 이름으로 들어온다 — `DEEL_API_KEY` 하나, 그리고 프로필마다
+ * `DEEL_KEY_<프로필>`. 아래 resolveKey 가 그 둘을 다 읽는다.
+ *
+ * 그런데 **막는 쪽은 하나만 알고 있었다.** 자식에게 넘길 환경을 씻는 자
+ * (backend/mcp.js 의 열쇠뺀환경)도, 도구 출력에서 값을 가리는 자
+ * (agent/loop.js)도 `DEEL_API_KEY` 만 지웠다. 그래서 프로필 열쇠를 쓰는
+ * 사람은 `Bash({command:'env'})` 한 줄로 열쇠가 화면에 찍히고, 그 화면이
+ * 대화에 실려 **그 열쇠의 주인인 게이트웨이로** 나가고 `.deel/sessions/*.jsonl`
+ * 에 남는다.
+ *
+ * 하필 그 방법을 우리가 권한다 — pack/sbom.js 와 pack/sheet.en.js 의 사내
+ * 심사용 명세가 「환경변수를 쓰면 파일에 아예 안 남습니다」 라고 적어 뒀다.
+ * 권한 대로 한 사람만 샌 셈이다.
+ *
+ * 읽는 자리와 막는 자리가 **같은 자에게 물어야** 이런 일이 안 난다. 이름이
+ * 하나 늘면 여기만 고친다.
+ *
+ * 윈도우는 환경변수 이름의 대소문자를 안 가린다(`deel_api_key` 도 같은 값이다).
+ * 그래서 견줄 때 대문자로 올린다.
+ */
+export function 열쇠환경인가(이름) {
+  const n = String(이름 ?? '').toUpperCase();
+  return n === 'DEEL_API_KEY' || n.startsWith('DEEL_KEY_');
+}
+
+/** 환경에 실제로 들어 있는 **열쇠 값들.** 가릴 때 쓴다. */
+export function 환경속열쇠들(env = process.env) {
+  const out = [];
+  for (const [k, v] of Object.entries(env ?? {})) {
+    if (열쇠환경인가(k) && typeof v === 'string' && v) out.push(v);
+  }
+  return out;
+}
+
 export function resolveKey(profile) {
   const byName = profile?.id ? process.env[`DEEL_KEY_${profile.id.toUpperCase()}`] : null;
   const 값 = byName || process.env.DEEL_API_KEY || profile?.apiKey || '';

@@ -456,6 +456,7 @@ export const zh = {
   'think.autoOff': '始终使用你设定的强度',
   'think.wire': '线路',
   'think.wireSends': '实际发送 {값}',
+  'think.wireNoOff': '该端点未告知关闭值 — 不发送该字段，因此按服务器默认值运行',
   'loop.wire': '服务端不接受该字段，已调整后重试 ({무엇})',
   'loop.quotaAhead': '额度用尽，等待 {초} 秒后再发送',
   'cost.quota': '服务器额度',

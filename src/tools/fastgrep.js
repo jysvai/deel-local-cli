@@ -117,6 +117,21 @@ export async function rg로찾기({ 무늬, 자리, glob = null, 대소문자무
      * 답이 갈린다 — 그것도 **비밀을 더 보는 쪽으로**.
      */
     '--no-require-git',
+    /*
+     * 무시 규칙의 **대소문자를 JS 길과 맞춘다.**
+     *
+     * tools/ignore.js 는 윈도우에서만 규칙을 대소문자 없이 본다(git 의
+     * core.ignorecase 기본값과 같은 자세다). rg 는 어느 판에서든 가린다.
+     * 그래서 윈도우에서 `.gitignore` 에 `*.log` 를 적어 두면 —
+     *
+     *   rg 가 깔린 PC   →  A.LOG 가 **검색된다**
+     *   안 깔린 PC      →  A.LOG 가 안 검색된다
+     *
+     * 같은 명령이 PC 에 따라 다른 답을 내고, 하필 **가리라고 적은 것을 더
+     * 보는 쪽**으로 갈린다. 이 파일 머리말이 없애려던 바로 그 고장이다.
+     * 빠른 길이 다른 답을 내면 그건 빠른 게 아니다.
+     */
+    ...(process.platform === 'win32' ? ['--glob-case-insensitive'] : []),
   ];
   if (대소문자무시) 인자.push('--ignore-case');
   if (glob) 인자.push('--glob', glob);

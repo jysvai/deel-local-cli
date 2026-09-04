@@ -10,7 +10,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeScope, checkPaths, 경로낱말 } from '../src/safety/guard.js';
+import { makeScope, checkPaths, 경로낱말, 봐주는자리 } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
@@ -590,6 +590,45 @@ trace('9-링크탈출');
 
   rmSync(판, { recursive: true, force: true });
 }
+
+/*
+ * ── 울타리를 그냥 지나가던 세 길 ────────────────────────────────────────
+ *
+ * 셋 다 「경로 낱말」 을 고르는 자리에서 새고 있었다. 낱말로 안 뽑히면
+ * checkPaths 는 그것을 **보지도 않는다** — 막힌 것이 아니라 안 본 것이다.
+ */
+{
+  const 낱 = (cmd) => 경로낱말(cmd).map((x) => String(x).replace(/\\/g, '/'));
+
+  // 1) 파워셸의 `$env:이름`
+  const ps = 낱('pwsh -Command Get-Content $env:USERPROFILE/.deel/config.json');
+  check('★★ $env: 로 적은 경로도 낱말로 뽑힌다',
+    ps.some((x) => /[.]deel[/]config[.]json$/i.test(x)), JSON.stringify(ps));
+
+  // 2) 주소 꼴로 적은 이 PC 의 경로
+  const f1 = 낱('curl.exe file:///C:/Users/x/.deel/config.json');
+  check('★★ file:// 는 주소가 아니라 경로로 본다',
+    f1.some((x) => /^C:[/]Users[/]x[/][.]deel[/]config[.]json$/i.test(x)), JSON.stringify(f1));
+  const f2 = 낱('curl file:///etc/passwd');
+  check('★ file:/// 뒤가 유닉스 경로여도 본다', f2.some((x) => x === '/etc/passwd'), JSON.stringify(f2));
+
+  // 진짜 주소는 여전히 이 울타리가 볼 것이 아니다 (그물은 safety/network.js).
+  check('★ http(s) 주소는 경로로 안 본다', 낱('curl https://example.com/a/b').length === 0,
+    JSON.stringify(낱('curl https://example.com/a/b')));
+
+  // 3) 윈도우 뿌리를 통째로 봐주던 것
+  check('★★ C:/Windows 아래를 통째로 봐주지 않는다',
+    봐주는자리('c:/windows/system32/drivers/etc/hosts') === null
+    && 봐주는자리('c:/windows/temp/뭔가.exe') === null,
+    `${봐주는자리('c:/windows/system32/drivers/etc/hosts')} · ${봐주는자리('c:/windows/temp/뭔가.exe')}`);
+  check('★ 그래도 실행파일 폴더는 봐준다',
+    !!봐주는자리('c:/windows/system32/cmd.exe') && !!봐주는자리('c:/program files/git/bin/git.exe'),
+    `${봐주는자리('c:/windows/system32/cmd.exe')}`);
+  check('★ /dev/null 과 /usr/bin 은 그대로 봐준다',
+    !!봐주는자리('/dev/null') && !!봐주는자리('/usr/bin/strings'));
+}
+
+
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n안 하는 자리 검사  ${D}(못 하는 것보다 하지 말아야 할 것을 하는 게 무섭다)${X}\n`);

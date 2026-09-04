@@ -15,6 +15,7 @@
 //
 // 모델은 가짜 게이트웨이로 세운다. 진짜 모델은 안 쓴다.
 import { createServer } from 'node:http';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -329,6 +330,94 @@ trace('3-링크뿌리');
     s.noteChange(join(링크, 'a.js'), { added: 1, removed: 1 });
     const r = await 커밋준비(s, { scope: makeScope(링크), audit: new Audit(진짜뿌리) }, {});
     check('링크로 연 저장소에서도 바꾼 것을 찾는다', r.ok === true && r.파일들.includes('a.js'), r.why ?? r.파일들.join(' '));
+
+    /*
+     * ★★ 링크로 연 저장소에서 **지운 파일**.
+     *
+     * 링크를 푸는 일은 없는 파일에서 실패한다 — 그러면 적힌 이름이 그대로
+     * 돌아온다. 뿌리는 풀려서 진짜 자리가 되는데 파일은 안 풀려서 링크
+     * 자리로 남으니, 둘을 견주면 `..` 가 나오고 저장소 밖으로 걸러진다.
+     *
+     * 걸러지는 게 이 파일 하나가 아니다. 지운 것이 이번에 바꾼 전부이면
+     * 목록이 **통째로 비고**, 부르는 쪽은 그걸 「바꾼 게 없다」 로 읽어
+     * **작업 폴더 전부**로 물러선다. 옆 창에서 고치던 남의 것까지 담기는,
+     * 이 파일이 없애려고 만들어진 바로 그 사고다 — 경고 한 줄 없이.
+     *
+     * 지운 파일은 `/commit` 이 제일 자주 다루는 것 중 하나다(그래서 담기가
+     * `-A` 를 쓴다). 흔한 자리에서 제일 위험한 쪽으로 조용히 넘어가면 안 된다.
+     */
+    쓰기(진짜뿌리, '지울것.js', 'x\n');
+    깃(진짜뿌리, ['add', '-A']); 깃(진짜뿌리, ['commit', '-q', '-m', '둘']);
+    rmSync(join(진짜뿌리, '지울것.js'), { force: true });
+
+    const s2 = new Session(conn, { root: 링크 });
+    s2.noteChange(join(링크, '지울것.js'), { added: 0, removed: 1 });
+    const 것 = 이번에바꾼것(s2, 링크);
+    check('★★ 링크로 연 저장소에서 지운 파일도 목록에 남는다',
+      것.includes('지울것.js'), 것.join(',') || '(빈 목록 — 저장소 전부로 물러선다)');
+
+    const r2 = await 커밋준비(s2, { scope: makeScope(링크), audit: new Audit(진짜뿌리) }, {});
+    check('★★ 그래서 남의 것까지 담지 않는다',
+      r2.ok === true && r2.파일들.length === 1 && r2.파일들[0] === '지울것.js',
+      r2.why ?? r2.파일들.join(','));
+  }
+  rmSync(진짜뿌리, { recursive: true, force: true });
+}
+
+/*
+ * ── 3⅞+++++. 윈도우 8.3 단축명 ─────────────────────────────────────────
+ *
+ * 윈도우는 여덟 자가 넘는 이름에 `LONGDI~1` 같은 짧은 별명을 같이 만든다.
+ * `realpathSync` 는 링크는 풀어도 이 별명은 **안 편다.** 그래서 우리가 짧은
+ * 이름으로 들고 있고 git 이 긴 이름으로 답하면, 같은 파일이 서로 남남이 되어
+ * 「저장소 밖」 으로 걸러진다 — 하나가 아니라 전부. 목록이 통째로 비고,
+ * 부르는 쪽은 그걸 「바꾼 게 없다」 로 읽어 **작업 폴더 전부**로 물러선다.
+ *
+ * 남 일이 아니다. 윈도우 사용자 이름이 여덟 자만 넘으면 `%TEMP%` 가 통째로
+ * 단축명이 된다(`C:\Users\RUNNER~1\AppData\Local\Temp`). CI 의 윈도우 러너가
+ * 정확히 그 경우여서, 이 검사 파일은 **열 판 동안 CI 에서 빨간불**이었다.
+ * 사람 이름이 여덟 자 이하인 기계에서는 재현이 안 된다 — 그래서 안 잡혔다.
+ */
+trace('3-단축명');
+if (process.platform === 'win32') {
+  const 진짜뿌리 = 저장소만들기();
+  const 긴이름 = join(진짜뿌리, 'longdirname12345');
+  mkdirSync(긴이름);
+  쓰기(긴이름, 'a.js', '1\n');
+  깃(진짜뿌리, ['add', '-A']); 깃(진짜뿌리, ['commit', '-q', '-m', 'init']);
+  쓰기(긴이름, 'a.js', '2\n');
+
+  // 이 볼륨이 8.3 이름을 안 만들 수도 있다(끌 수 있는 설정이다). 그때는 건너뛴다.
+  let 짧은이름 = null;
+  try {
+    const out = execFileSync('cmd', ['/c', 'dir', '/x', '/a:d', 진짜뿌리], { encoding: 'utf8', windowsHide: true });
+    const 줄 = out.split(/\r?\n/).find((l) => /longdirname12345/i.test(l));
+    const m = 줄 && 줄.match(/\s([A-Z0-9~]{1,8}(?:\.[A-Z0-9]{1,3})?)\s+longdirname12345/i);
+    if (m) 짧은이름 = m[1];
+  } catch { /* 못 물어보면 건너뛴다 */ }
+
+  if (!짧은이름) {
+    check('⚠ 이 볼륨은 8.3 이름을 안 만들어 건너뜀', true, '(NtfsDisable8dot3NameCreation)');
+  } else {
+    const 짧은길 = join(진짜뿌리, 짧은이름);
+    const s = new Session(conn, { root: 짧은길 });
+    s.noteChange(join(짧은길, 'a.js'), { added: 1, removed: 1 });
+
+    const 것 = 이번에바꾼것(s, 긴이름);
+    check('★★ 단축명으로 적혀 있어도 같은 파일로 본다',
+      것.includes('a.js'), 것.join(',') || `(빈 목록 — ${짧은이름} 를 밖으로 걸렀다)`);
+
+    /*
+     * 물러섰는지 아닌지를 **가릴 수 있게** 남의 파일을 하나 둔다.
+     * 파일이 하나뿐이면 물러서도 개수가 같아서 검사가 아무것도 안 재게 된다.
+     */
+    쓰기(진짜뿌리, '남의것.js', '옆 창에서 고치던 것\n');
+    const r = await 커밋준비(s, { scope: makeScope(긴이름), audit: new Audit(긴이름) }, {});
+    check('★★ 그래서 저장소 전부로 안 물러선다',
+      r.ok === true && !r.파일들.some((f) => f.includes('남의것')),
+      r.why ?? r.파일들.join(','));
+    check('바꾼 것은 그대로 담는다',
+      (r.파일들 ?? []).some((f) => f.endsWith('a.js')), (r.파일들 ?? []).join(','));
   }
   rmSync(진짜뿌리, { recursive: true, force: true });
 }
@@ -480,7 +569,16 @@ trace('10-말투');
   check('커밋이 하나도 없어도 안 터진다', Array.isArray(최근제목들(빈저장소)) && 최근제목들(빈저장소).length === 0);
   mkdirSync(join(root, '깊은/폴더'), { recursive: true });
   check('하위 폴더에서 불러도 저장소 뿌리를 찾는다', 저장소뿌리(root) !== null && 저장소뿌리(join(root, '깊은/폴더')) !== null, String(저장소뿌리(join(root, '깊은/폴더'))));
-  check('담긴 것을 읽는다', typeof 담긴것(root).diff === 'string');
+  /*
+    * 「글이 왔다」 로는 **빈 글**도 통과한다. 그런데 담긴 것을 못 읽는 고장은
+    * 정확히 빈 글로 나타난다 — 커밋 글을 지을 때 아무것도 못 보고 짓게 된다.
+    * 방금 담은 파일 이름이 그 안에 있어야 읽은 것이다.
+    */
+  깃(root, ['add', '-A']);
+  const 담김 = 담긴것(root);
+  check('★ 담긴 것을 읽는다 — 방금 담은 것이 그 안에 있다',
+    typeof 담김.diff === 'string' && /a\.js/.test(담김.diff) && /\+3/.test(담김.diff),
+    String(담김.diff).slice(0, 160));
   rmSync(빈저장소, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 }

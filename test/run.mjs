@@ -42,6 +42,7 @@ const FILES = [
   'review.test.js',
   'task.test.js',
   'toolargs.test.js',
+  'label.test.js',
   'reset.test.js',
   'outline.test.js',
   'network.test.js',
@@ -140,6 +141,7 @@ const FILES = [
   'scan.test.js',
   'plugins.test.js',
   'no-bundle.test.js',
+  'shipmeta.test.js',
   'edit-bench.js',
 ];
 
@@ -147,6 +149,7 @@ const C = process.stdout.isTTY || process.env.FORCE_COLOR || process.env.CI;
 const g = (s) => (C ? `\x1b[32m${s}\x1b[0m` : s);
 const r = (s) => (C ? `\x1b[31m${s}\x1b[0m` : s);
 const d = (s) => (C ? `\x1b[90m${s}\x1b[0m` : s);
+const y = (s) => (C ? `\x1b[33m${s}\x1b[0m` : String(s));
 
 // 한 파일을 돌린다. 화면에는 그대로 흘려보내고, 나중에 쓸 것만 따로 모은다.
 function runOne(file) {
@@ -204,6 +207,24 @@ function runOne(file) {
     kid.on('close', (code, signal) => {
       // 숫자를 세어 둔다. 없으면 없는 대로 둔다 — 세는 게 목적이 아니다.
       const m = out.match(/(\d+)개 통과 · (\d+)개 실패|통과 (\d+) · 실패 (\d+)/);
+      /*
+       * ── 건너뛴 것도 센다 ──────────────────────────────────────────────
+       *
+       * 검사 파일 몇 개는 못 잰 것을 정직하게 적는다 — 「12개 건너뜀」,
+       * 「15건 못 쟀음」. 그런데 그 숫자가 **여기서 안 읽혔다.** 표에도 열이
+       * 없고 마지막 줄에도 안 실렸다. 그래서 바깥에서 보이는 것은 늘
+       * 「전부 통과」 뿐이었고, rg 없는 러너에서 열두 건이 통째로 안 재졌다는
+       * 사실은 로그를 펼쳐야만 보였다 — 이 파일 머리말이 「로그를 열 권한이
+       * 있어야 읽힌다」 를 문제로 적어 둔 바로 그 자리다.
+       *
+       * 통과 수에 섞으면 안 된다. 「쟀는데 맞았다」 와 「아예 못 쟀다」 는
+       * 다른 것이고, 섞는 순간 초록불이 무슨 뜻인지 아무도 모르게 된다.
+       *
+       * **요약줄에서만** 읽는다. 아무 데서나 「N개 건너뜀」 을 주우면 도구가
+       * 뱉은 글(「.gitignore 로 파일 2개 건너뜀」)까지 세게 된다 — 실제로
+       * 그렇게 세다가 안 건너뛴 파일이 건너뛴 것으로 잡혔다.
+       */
+      const 건너뜀 = Number(/\d+개 통과 · \d+개 실패(?:[^\n]*?· (?:\x1b\[[0-9;]*m)?(\d+)개 건너뜀)?/.exec(out)?.[1] ?? 0);
       let steps = [];
       try { steps = readFileSync(자취, 'utf8').split('\n').filter(Boolean); } catch { /* 없을 수 있다 */ }
       try { rmSync(자취, { force: true }); } catch { /* 그만 */ }
@@ -229,6 +250,7 @@ function runOne(file) {
         ms: Date.now() - t0,
         passed: m ? Number(m[1] ?? m[3]) : null,
         failed: m ? Number(m[2] ?? m[4]) : null,
+        skipped: 건너뜀,
         quiet: out.trim().length === 0,
         err: err.trim(),
         steps,
@@ -245,22 +267,44 @@ for (const f of FILES) results.push(await runOne(f));
 const 진 = results.filter((x) => x.code !== 0);
 const 총통과 = results.reduce((a, x) => a + (x.passed ?? 0), 0);
 const 총실패 = results.reduce((a, x) => a + (x.failed ?? 0), 0);
+const 총건너뜀 = results.reduce((a, x) => a + (x.skipped ?? 0), 0);
 
-const W = (s, n) => s + ' '.repeat(Math.max(0, n - [...String(s)].length));
+/*
+ * 칸 너비는 **눈에 보이는 글자**로 잰다.
+ *
+ * 여기가 색 글자를 그대로 세고 있었다. `[90m` 은 다섯 글자인데 화면에는
+ * 한 칸도 안 나온다. 그래서 색을 켠 판과 끈 판(파이프로 넘길 때)의 표가
+ * 다르게 어긋났다 — 그때마다 숫자를 손으로 맞춰 두느라 열을 하나 더할 수가
+ * 없었다. 안 보이는 것을 안 세면 그 숫자 맞추기가 통째로 없어진다.
+ */
+const 민글 = (s) => String(s).replace(/\[[0-9;]*m/g, '');
+const W = (s, n) => s + ' '.repeat(Math.max(0, n - [...민글(s)].length));
 
 console.log('');
 console.log('  ' + '─'.repeat(66));
-console.log(`  ${W('검사 파일', 22)}${W('종료코드', 10)}${W('통과', 8)}${W('실패', 8)}시간`);
+console.log(`  ${W('검사 파일', 22)}${W('종료코드', 10)}${W('통과', 8)}${W('실패', 8)}${W('건너뜀', 8)}시간`);
 console.log('  ' + '─'.repeat(66));
 for (const x of results) {
   const ok = x.code === 0;
   const 표 = ok ? g('✓') : r('✗');
   const 코드 = x.signal ? `${x.signal}` : String(x.code);
-  console.log(`  ${표} ${W(x.file, 20)}${W(ok ? d(코드) : r(코드), ok ? 19 : 19)}` +
-              `${W(x.passed ?? '-', 8)}${W(x.failed ?? '-', 8)}${d(`${(x.ms / 1000).toFixed(1)}초`)}`);
+  const 건너뛴것 = x.skipped ? y(String(x.skipped)) : d('-');
+  console.log(`  ${표} ${W(x.file, 20)}${W(ok ? d(코드) : r(코드), 10)}` +
+              `${W(x.passed ?? '-', 8)}${W(x.failed ?? '-', 8)}${W(건너뛴것, 8)}` +
+              `${d(`${(x.ms / 1000).toFixed(1)}초`)}`);
 }
 console.log('  ' + '─'.repeat(66));
-console.log(`  ${총통과}개 통과 · ${총실패}개 실패 · 파일 ${results.length}개 중 ${results.length - 진.length}개 정상 종료`);
+console.log(`  ${총통과}개 통과 · ${총실패}개 실패`
+  + (총건너뜀 ? ` · ${y(`${총건너뜀}개 건너뜀`)}` : '')
+  + ` · 파일 ${results.length}개 중 ${results.length - 진.length}개 정상 종료`);
+/*
+ * 건너뛴 것이 있으면 CI 에도 적는다. 실패가 아니므로 빨갛게는 안 하지만,
+ * 「이 판에서는 안 쟀다」 는 사실은 로그를 안 펼쳐도 보여야 한다.
+ */
+if (총건너뜀 && process.env.GITHUB_ACTIONS) {
+  const 어디 = results.filter((x) => x.skipped).map((x) => `${x.file}(${x.skipped})`).join(', ');
+  console.log(`::warning title=건너뛴 검사::이 판에서 ${총건너뜀}개를 못 쟀습니다 — ${어디}`);
+}
 console.log('');
 
 // 통과를 다 찍고도 종료코드가 0 이 아닌 경우가 있다. 그 구분을 눈에 띄게 적는다.

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { untargz, stripTop, 안쪽인가, 밖을가리키는것, 푼것상한 } from '../src/pack/tar.js';
-import { makeZip, crc32 } from '../src/pack/zip.js';
+import { makeZip, readZip, crc32 } from '../src/pack/zip.js';
 import { parseSpec, install, list, remove, pack, pluginsDir, 묶음풀기 } from '../src/plugins/manage.js';
 import { discover } from '../src/skills/discover.js';
 import { TOOLS } from '../src/tools/index.js';
@@ -142,7 +142,18 @@ check('최상위가 여럿이면 안 벗김', 안벗김[0].name === 'a/1.md');
     '..\\..\\윈도우식.txt',
     'a/../../밖으로.txt',
     '/절대경로.txt',
-    process.platform === 'win32' ? 'C:\\Windows\\Temp\\드라이브.txt' : '/etc/passwd',
+    /*
+     * 판을 묻지 않는다.
+     *
+     * pack/tar.js 는 드라이브 글자를 **어느 판에서든** 막는다 — 그 코드 바로
+     * 위 주석이 「판마다 다르게 막으면 막은 게 아니다」 이다. 그런데 이
+     * 목록만 판을 물어서, 리눅스 CI 세 갈래에서는 드라이브 줄이 한 번도 안
+     * 불렸다. 윈도우에서 만든 묶음이 리눅스를 거쳐 다시 윈도우로 가는 것이
+     * 정확히 그 길이다.
+     */
+    'C:\\Windows\\Temp\\드라이브.txt',
+    'D:/다른드라이브.txt',
+    '/etc/passwd',
   ];
   for (const 이름 of 나쁜이름) {
     check(`★ 밖을 가리키는 이름을 막는다 — ${이름}`, 안쪽인가(뿌리, 이름) === false,
@@ -191,6 +202,80 @@ check('최상위가 여럿이면 안 벗김', 안벗김[0].name === 'a/1.md');
   check('멀쩡한 묶음은 그대로 풀린다',
     !착한결과.error && readFileSync(join(풀곳, 'skills', '품의서', 'SKILL.md'), 'utf8') === '본문',
     착한결과.error ?? `${착한결과.푼것}개`);
+}
+
+trace('2b-링크항목');
+
+/*
+ * ── ★ tar 안의 **링크** 항목 ────────────────────────────────────────────
+ *
+ * 여태 잰 것은 이름이 나쁜 「보통 파일」 뿐이었다. tar 에는 갈래가 더 있고,
+ * 그중 둘이 이 프로그램을 폴더 밖으로 데리고 나갈 수 있다.
+ *
+ *   '2' 심볼릭 링크 — 이름은 안쪽인데 **가리키는 곳**이 바깥이다.
+ *                     `bin/x → /etc/passwd` 를 만들어 두고, 그 뒤 항목에서
+ *                     `bin/x` 에 쓰면 진짜 /etc/passwd 에 쓰인다.
+ *   '1' 하드 링크   — 이미 있는 파일에 이름 하나를 더 붙인다. 같은 수법.
+ *
+ * `안쪽인가()` 는 **이름**만 본다. 링크가 가리키는 곳은 그 검사를 안 지난다.
+ * 그래서 푸는 자리에서 아예 안 만드는 것이 답이고, pack/tar.js 는 실제로 안
+ * 만든다 — 「폴더('5')·링크 등은 건너뛴다」. 그런데 그 한 줄을 지키는 검사가
+ * 없었다. 누가 「링크도 살려 주자」 고 한 줄 고치면 아무 데서도 안 빨개진다.
+ */
+{
+  const 블록 = 512;
+  /** tar 머리 하나. 갈래(type)와 링크가 가리키는 곳(linkname)까지 적는다. */
+  const 머리 = (이름, { type = '0', size = 0, linkname = '' } = {}) => {
+    const h = Buffer.alloc(블록);
+    h.write(이름, 0, 100, 'utf8');
+    h.write('000644 \0', 100, 8, 'utf8');            // mode
+    h.write('000000 \0', 108, 8, 'utf8');            // uid
+    h.write('000000 \0', 116, 8, 'utf8');            // gid
+    h.write(size.toString(8).padStart(11, '0') + ' ', 124, 12, 'utf8');
+    h.write('00000000000 ', 136, 12, 'utf8');        // mtime
+    h.write('        ', 148, 8, 'utf8');             // 검사합 자리는 공백으로 두고
+    h.write(type, 156, 1, 'utf8');
+    h.write(linkname, 157, 100, 'utf8');
+    h.write('ustar\0' + '00', 257, 8, 'utf8');
+    let 합 = 0;
+    for (const b of h) 합 += b;
+    h.write(합.toString(8).padStart(6, '0') + '\0 ', 148, 8, 'utf8');
+    return h;
+  };
+  const 살 = (글) => {
+    const b = Buffer.from(글, 'utf8');
+    return Buffer.concat([b, Buffer.alloc((블록 - (b.length % 블록)) % 블록)]);
+  };
+
+  const 내용 = '진짜 파일입니다\n';
+  const 묶음 = gzipSync(Buffer.concat([
+    // 바깥을 가리키는 심볼릭 링크. 이름 자체는 나무랄 데가 없다.
+    머리('bin/열쇠고리', { type: '2', linkname: '/etc/passwd' }),
+    // 하드 링크도 같다.
+    머리('bin/또다른이름', { type: '1', linkname: '../../../../밖의것' }),
+    // 폴더 항목.
+    머리('bin/', { type: '5' }),
+    // 그리고 멀쩡한 파일 하나 — 이건 나와야 한다.
+    머리('bin/진짜.txt', { type: '0', size: Buffer.byteLength(내용) }),
+    살(내용),
+    Buffer.alloc(블록 * 2),
+  ]));
+
+  const 푼것 = untargz(묶음);
+  const 이름들 = 푼것.map((f) => f.name);
+  check('★★ 심볼릭 링크 항목은 안 만든다', !이름들.includes('bin/열쇠고리'), 이름들.join(' · '));
+  check('★★ 하드 링크 항목도 안 만든다', !이름들.includes('bin/또다른이름'), 이름들.join(' · '));
+  check('폴더 항목도 파일로 치지 않는다', !이름들.some((n) => n.endsWith('/')), 이름들.join(' · '));
+  check('★ 그러면서 멀쩡한 파일은 그대로 나온다',
+    이름들.length === 1 && 이름들[0] === 'bin/진짜.txt'
+    && 푼것[0].data.toString('utf8') === 내용, 이름들.join(' · '));
+  /*
+   * 링크가 가리키던 곳이 **결과 어디에도** 안 남아야 한다. 이름만 걸러 놓고
+   * linkname 을 파일 내용이나 이름으로 흘리면 막은 뜻이 없다.
+   */
+  const 통째로 = JSON.stringify(푼것.map((f) => [f.name, f.data.toString('utf8')]));
+  check('★ 링크가 가리키던 바깥 경로가 결과에 안 남는다',
+    !/etc\/passwd|밖의것/.test(통째로), 통째로.slice(0, 120));
 }
 
 trace('2c-압축폭탄');
@@ -263,6 +348,51 @@ if (열개) {
 }
 check('CRC32 표준값 (0xCBF43926)', crc32(Buffer.from('123456789')) === 0xcbf43926,
   '0x' + crc32(Buffer.from('123456789')).toString(16));
+
+trace('3b-zip풀기상한');
+
+/*
+ * ── ★ zip 한 항목이 부푸는 크기에 상한이 있는가 ─────────────────────────
+ *
+ * `.docx`·`.xlsx` 는 사람이 아무 데서나 받아 오는 파일이고, 모델이 시키는 대로
+ * 우리가 그것을 연다. 즉 **남이 정한 바이트로 우리 메모리가 정해진다.**
+ * 작은 deflate 조각 하나가 수 GB 로 부풀면 화면에 아무 말도 안 남고 프로세스가
+ * 죽는다 — 하던 대화까지 같이.
+ *
+ * 여기서 재는 것은 「크기가 안 맞더라」 가 아니다. 그 판정은 **다 풀고 나서**도
+ * 할 수 있고, 다 풀고 나면 이미 늦다. 재는 것은 zlib 가 상한에서 **멈췄는가**다.
+ * 둘은 남는 말이 다르다 — 멈추면 「풀지 못함」, 다 풀고 재면 「푼 크기가 안 맞음」.
+ */
+{
+  const 부푸는것 = Buffer.alloc(4 * 1024 * 1024);   // 0 으로 찬 4MB → deflate 하면 몇 KB
+  const 묶음 = makeZip([{ name: '폭탄.bin', data: 부푸는것 }]);
+  check('압축이 잘 먹는 알맹이다 (이 검사의 밑천)', 묶음.length * 100 < 부푸는것.length,
+    `${묶음.length}B → ${부푸는것.length}B`);
+
+  /*
+   * 목록에 적힌 「푼 크기」 를 작게 거짓말시킨다. 진짜 공격 묶음이 하는 짓이
+   * 그것이다 — 목록은 얌전한 숫자를 적어 두고 알맹이는 안 얌전하다.
+   * 중앙 목록은 로컬 항목들 뒤에 붙는다. 항목이 하나뿐이니 EOCD 가 알려 주는
+   * 자리에서 바로 찾는다.
+   */
+  const 고친것 = Buffer.from(묶음);
+  const eocd = 고친것.length - 22;
+  const 목록자리 = 고친것.readUInt32LE(eocd + 16);
+  고친것.writeUInt32LE(1024, 목록자리 + 24);          // 푼 크기 = 1KB 라고 우긴다
+
+  const { files, skipped } = readZip(고친것);
+  check('★★ 목록이 우기는 크기를 넘으면 그 자리에서 멈춘다',
+    files.size === 0 && skipped.length === 1, `${files.size}개 풀림 · ${skipped.length}개 건너뜀`);
+  check('★★ 다 풀고 재는 것이 아니라 **푸는 중에** 멈춘다',
+    /풀지 못함/.test(skipped[0]?.why ?? ''), skipped[0]?.why ?? '(아무 말도 없다)');
+  check('무엇을 못 풀었는지 이름을 말해 준다', skipped[0]?.name === '폭탄.bin', String(skipped[0]?.name));
+
+  // 반대쪽. 정직한 묶음은 그대로 풀린다 — 막느라 멀쩡한 것을 막으면 안 된다.
+  const 정직한것 = readZip(묶음);
+  check('★ 정직한 묶음은 그대로 풀린다',
+    정직한것.files.size === 1 && 정직한것.files.get('폭탄.bin')?.length === 부푸는것.length,
+    `${정직한것.files.size}개 · ${정직한것.skipped.map((x) => x.why).join(' ')}`);
+}
 
 trace('4-폴더설치');
 // ── 4. 폴더에서 설치 (오프라인 기기의 길) ───────────────────────────────
@@ -394,6 +524,7 @@ for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 // 건너뛴 것을 조용히 넘기지 않는다. 안 보이면 '다 통과' 로 읽힌다.
 for (const s of 건너뜀) console.log(`  ${Y}⚠${X} ${s}`);
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패`
-  + (건너뜀.length ? ` · ${Y}${건너뜀.length}건 못 쟀음${X}` : '') + '\n');
+  // 낱말을 요약줄 한 벌로 맞춘다 — 러너가 이 줄 하나만 읽는다(test/run.mjs).
+  + (건너뜀.length ? ` · ${Y}${건너뜀.length}개 건너뜀${X}` : '') + '\n');
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;

@@ -126,6 +126,36 @@ trace('6-파일');
   check('빈 세션도 문서가 된다', /<!doctype html>/i.test(빈글), '');
 }
 
+/*
+ * ★★ Anthropic 꼴 대화도 보고서에 실린다.
+ *
+ * 여기가 `typeof m.content === 'string'` 과 `m.tool_calls` 로 읽고 있었다.
+ * 그 규격은 둘 다 안 맞아서, 그 창구로 나눈 대화를 내보내면 **모델 말과
+ * 도구가 통째로 빈** 문서가 나왔다. 오류도 경고도 없이.
+ */
+{
+  const conn2 = { kind: 'anthropic', model: 'claude-opus-5', base: 'https://api.anthropic.com' };
+  const s2 = new Session(conn2, { root, work: 'code' });
+  s2.push({ role: 'user', content: '설정 파일 좀 봐줘' });
+  s2.push({
+    role: 'assistant',
+    content: [
+      { type: 'text', text: '설정을 읽어 보겠습니다.' },
+      { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'package.json' } },
+    ],
+  });
+  s2.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: '{"name":"deel"}' }] });
+  s2.push({ role: 'assistant', content: [{ type: 'text', text: '이름은 deel 입니다.' }] });
+
+  const 글2 = 보고서짓기(s2, {});
+  check('★★ Anthropic 꼴에서도 사람 말이 실린다', 글2.includes('설정 파일 좀 봐줘'), '');
+  check('★★ Anthropic 꼴에서도 모델 말이 실린다', 글2.includes('이름은 deel 입니다'), '');
+  check('★★ Anthropic 꼴에서도 도구 부름이 실린다', /Read/.test(글2), '');
+  check('★★ 도구 부름의 인자도 실린다', 글2.includes('package.json'), '');
+  check('도구 결과 알맹이는 안 싣는다', !글2.includes('"name":"deel"'), '');
+  check('★ 제목이 첫 사람 말에서 나온다', /설정 파일 좀 봐줘/.test(글2), '');
+}
+
 rmSync(root, { recursive: true, force: true });
 
 // ── 마무리 ──────────────────────────────────────────────────────────────

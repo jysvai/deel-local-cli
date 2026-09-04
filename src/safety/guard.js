@@ -51,13 +51,35 @@ function 밖(base, abs) {
  *
  * 아직 없는 파일도 검사해야 한다 — 새로 쓰는 자리가 그렇다. 그래서 있는
  * 자리가 나올 때까지 위로 올라가 거기서 링크를 풀고, 남은 이름을 다시 붙인다.
+ *
+ * ── 왜 native 를 먼저 부르나: 윈도우의 8.3 단축명 ─────────────────────
+ *
+ * 윈도우는 여덟 자가 넘는 이름에 `LONGDI~1` 같은 짧은 별명을 같이 만든다.
+ * `realpathSync` 는 링크는 풀지만 이 별명은 **안 편다.** 그래서 같은 자리를
+ * 한쪽은 `RUNNER~1`, 다른 쪽은 `runneradmin` 으로 부르게 되고, 견주면
+ * 남남이 된다. `realpathSync.native` 는 OS 에게 물어보므로 긴 이름으로 편다.
+ *
+ * 이게 남 일이 아니다 — 윈도우 사용자 이름이 여덟 자만 넘으면 `%TEMP%` 가
+ * 통째로 단축명이 된다(`C:\Users\RUNNER~1\AppData\Local\Temp`). git 은 긴
+ * 이름으로 답하는데 우리는 짧은 이름으로 들고 있으면, 같은 파일이 「저장소
+ * 밖」 으로 걸러진다. 여기 울타리에서는 막히는 쪽이라 안전하지만,
+ * agent/commit.js 에서는 **담을 것이 없다** 가 되어 저장소 전부로 물러섰다.
+ *
+ * native 가 없거나 실패하는 자리(옛 판·이상한 파일 시스템)에서는 여태 쓰던
+ * 것으로 물러선다. 두 자를 안 쓰는 것이 중요하지, 어느 쪽인지가 중요한 게
+ * 아니다 — 견주는 양쪽이 같은 자를 쓰기만 하면 된다.
  */
-function 진짜자리(p) {
+const 풀기 = (p) => {
+  try { return realpathSync.native(p); } catch { /* 없거나 못 물어보는 자리 */ }
+  return realpathSync(p);
+};
+
+export function 진짜자리(p) {
   const 남은 = [];
   let cur = p;
   for (let i = 0; i < 64; i++) {
     try {
-      const r = realpathSync(cur);
+      const r = 풀기(cur);
       return 남은.length ? resolve(r, ...남은) : r;
     } catch { /* 아직 없는 자리 — 한 칸 위로 */ }
     const 위 = dirname(cur);
@@ -220,6 +242,21 @@ export function checkPaths(cmd, scope) {
 function 자리표풀기(s) {
   return s
     .replace(/^~(?=[/\\]|$)/, homedir())
+    /*
+     * 파워셸은 `$env:이름` 으로 적는다.
+     *
+     * 이 꼴을 안 풀면 아래 경로낱말() 이 「못 푼 자리표」 로 보고 그 낱말을
+     * **통째로 건너뛴다.** 그래서 윈도우에서 이 한 줄이 울타리를 그냥 지나갔다:
+     *
+     *   pwsh -Command "Get-Content $env:USERPROFILE\.deel\config.json"
+     *
+     * 셸이 실제로 푸는 값을 우리도 그대로 푼다. 우리가 모르는 이름이면 안
+     * 건드린다 — 그건 아래에서 「못 푼 것」 으로 걸러진다.
+     */
+    .replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)/g, (전체, 이름) => {
+      const v = process.env[이름] ?? process.env[String(이름).toUpperCase()];
+      return typeof v === 'string' && v ? v : 전체;
+    })
     .replace(/\$\{?HOME\}?|%USERPROFILE%|\$\{?USERPROFILE\}?/gi, homedir());
 }
 
@@ -285,7 +322,19 @@ export function 코드조각인가(낱말) {
    * checkCommand 가 따로 잡는다.
    */
   if (/^\/[^/\\]+$/.test(낱말)) {
-    try { return !existsSync(낱말); } catch { return true; }
+    /*
+     * 못 물어봤으면 **경로로 친다.**
+     *
+     * 여기가 `catch { return true; }` 였다. `true` 는 「코드 조각이다」 —
+     * 곧 이 낱말은 울타리 검사를 **안 받는다**. 디스크에 못 물어본 것을
+     * 열어 주는 쪽으로 떨어진 셈이다.
+     *
+     * 두 실수의 값이 다르다. 코드 조각을 경로로 잘못 보면 멀쩡한 명령이
+     * 한 번 막히고, 사람이 보고 다시 친다. 경로를 코드 조각으로 잘못 보면
+     * 울타리가 없는 것과 같고, 그건 아무 표시도 안 난다. 모를 때는 좁은
+     * 쪽으로 간다.
+     */
+    try { return !existsSync(낱말); } catch { return false; }
   }
   return false;
 }
@@ -324,12 +373,29 @@ const 버리는자리 = new Set([
  * **전부 소문자로 적는다** — 견줄 때 소문자로 낮춰서 보기 때문이다.
  * `/Applications` 처럼 대문자를 섞어 적으면 그 줄만 조용히 안 걸린다.
  */
+/** 안에 폴더를 더 두는 자리. 여기만 깊이를 안 따진다. */
+const 꾸러미자리 = new Set(['/applications', 'c:/program files', 'c:/program files (x86)']);
+
 const 프로그램자리 = [
   '/bin', '/sbin', '/usr/bin', '/usr/sbin', '/usr/libexec',
   '/usr/local/bin', '/usr/local/sbin',
   '/opt/homebrew/bin', '/opt/homebrew/sbin', '/opt/local/bin',
   '/snap/bin', '/applications',           // 맥은 앱 꾸러미 안에 실행파일이 있다
-  'c:/windows', 'c:/program files', 'c:/program files (x86)',
+  /*
+   * 윈도우는 **실행파일 폴더만** 적는다.
+   *
+   * 여기가 `'c:/windows'` 한 줄이었다. 그 아래에는 실행파일만 있는 게
+   * 아니다 — `System32/drivers/etc/hosts`(그물 설정), `win.ini`,
+   * `System32/config`(레지스트리 하이브), 그리고 누구나 쓸 수 있는
+   * `C:/Windows/Temp` 가 전부 그 안이다. 이 목록에 걸리면 checkPaths 가
+   * 그 낱말을 **통째로 건너뛴다**(continue) — 즉 울타리가 없는 것과 같다.
+   *
+   * 유닉스 쪽은 `/bin`·`/usr/bin` 처럼 실행파일만 든 폴더라 이 문제가 없었고,
+   * 그래서 한 줄이 넓다는 것이 눈에 안 띄었다. 판마다 폭이 다르면 그건
+   * 넓은 쪽이 진짜 폭이다.
+   */
+  'c:/windows/system32', 'c:/windows/syswow64',
+  'c:/program files', 'c:/program files (x86)',
 ];
 
 /**
@@ -344,7 +410,26 @@ export function 봐주는자리(경로) {
   // 한 칸 아래까지만 본다. `/usr/bin/strings` 는 되고 `/usr/bin/../../Users/남` 은
   // 여기 오기 전에 resolve 로 펴져서 이 목록에 안 걸린다.
   for (const 자리 of 프로그램자리) {
-    if (낮춤 === 자리 || 낮춤.startsWith(`${자리}/`)) return '프로그램이 있는 자리';
+    if (낮춤 === 자리) return '프로그램이 있는 자리';
+    if (!낮춤.startsWith(`${자리}/`)) continue;
+    /*
+     * **얼마나 깊이까지** 봐주나.
+     *
+     * 머리말은 「한 칸 아래까지만 본다」 라고 적어 뒀는데 코드는 깊이를 안
+     * 봤다. 그래서 `c:/windows/system32` 를 목록에 넣는 순간 그 아래가 통째로
+     * 열린다 — `system32/drivers/etc/hosts`(그물 설정)와 `system32/config`
+     * (레지스트리 하이브)가 다 그 안이다. 실행파일 폴더만 적어 놓고도 자료를
+     * 통째로 내주는 셈이다.
+     *
+     * 실행파일은 그 폴더에 **바로** 놓인다(`/usr/bin/strings`,
+     * `system32/cmd.exe`). 그러니 기본은 한 칸이다.
+     *
+     * 꾸러미 자리는 다르다. 맥 앱은 `/Applications/X.app/Contents/MacOS/x`
+     * 이고 윈도우 프로그램은 `C:/Program Files/Git/bin/git.exe` 라, 여기서
+     * 한 칸으로 자르면 멀쩡히 쓰던 명령이 다시 막힌다.
+     */
+    const 나머지 = 낮춤.slice(자리.length + 1);
+    if (꾸러미자리.has(자리) || !나머지.includes('/')) return '프로그램이 있는 자리';
   }
   return null;
 }
@@ -359,16 +444,46 @@ export function 경로낱말(cmd) {
     let t = m[1] ?? m[2] ?? m[0];
     if (!t) continue;
     if (t.startsWith('-')) continue;                 // 옵션
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) continue; // 주소(http://, file:// …)
+    /*
+     * 주소는 이 울타리가 볼 것이 아니다 — 그물로 나가는 것은 safety/network.js
+     * 가 본다. 딱 하나 **`file:` 만 빼고**: 그건 주소 꼴로 적은 이 PC 의
+     * 경로다. 여기가 스킴을 다 넘기고 있어서 이 한 줄이 그냥 지나갔다:
+     *
+     *   curl.exe file:///C:/Users/사용자/.deel/config.json
+     *
+     * `file:` 은 경로로 되돌려 아래 검사를 그대로 받게 한다.
+     */
+    if (/^file:/i.test(t)) {
+      t = t.replace(/^file:(\/\/)?(localhost)?/i, '');
+      // `file:///C:/…` 는 빗금이 하나 남는다. 드라이브 앞의 그것만 떼어 낸다.
+      t = t.replace(/^\/(?=[a-zA-Z]:)/, '');
+      try { t = decodeURIComponent(t); } catch { /* 못 풀면 적힌 그대로 본다 */ }
+      if (!t) continue;
+    } else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) {
+      continue;                                       // 주소(http://, ftp:// …)
+    }
     // 리디렉션이 붙어 온 것(>out.txt)은 기호를 떼고 본다.
     t = t.replace(/^[<>]+/, '');
     if (!t) continue;
     const 풀린 = 자리표풀기(t);
     const 경로같나 = 풀린.includes('/') || 풀린.includes('\\') || /^[a-zA-Z]:$/.test(풀린);
     if (!경로같나) continue;
-    // 남은 자리표가 있으면(우리가 못 푼 것) 어디로 갈지 모르니 검사하지 않는다.
-    // 여기서 억지로 풀면 엉뚱한 자리를 막게 된다.
-    if (/[$%]/.test(풀린)) continue;
+    /*
+     * 남은 자리표가 있으면(우리가 못 푼 것) **어디로 갈지 모른다.** 울타리
+     * (범위 밖인가)는 그래서 못 묻는다 — 억지로 풀면 엉뚱한 자리를 막는다.
+     *
+     * 그런데 여태 그럴 때 낱말을 통째로 버렸다. 울타리를 못 묻는 것과
+     * **살림 파일인지도 안 보는 것**은 다른 이야기다. 살림은 자리가 아니라
+     * 이름으로도 알아본다(`…/.deel/config.json`). 자리표가 앞에 붙어 있어도
+     * 그 꼬리는 그대로 읽힌다.
+     *
+     * 그래서 못 푼 것은 **이름 검사만** 받고 자리 검사는 건너뛴다. 걸리면
+     * 아래 checkPaths 가 내부살림() 으로 막는다.
+     */
+    if (/[$%]/.test(풀린)) {
+      if (내부살림(풀린)) out.push(풀린);
+      continue;
+    }
     if (코드조각인가(풀린)) continue;
     out.push(풀린);
   }

@@ -157,17 +157,57 @@ export function 잘렸나(err) {
  * 만들어 줄 방법은 없다 — 그래서 이 판단이 띄우는 자리와 짝을 이뤄야 한다.
  * (Bash 도구가 한동안 이 짝을 안 맞춰서, 윈도우만 고쳐지고 유닉스는 그대로였다.)
  */
+/** 그 무리가 아직 살아 있나. 죽었으면 false. */
+function 무리살아있나(pid) {
+  try { process.kill(-pid, 0); return true; } catch { return false; }
+}
+
+/**
+ * 동기로 잠깐 쉰다.
+ *
+ * `setTimeout` 이 아니라 이걸 쓰는 까닭은 아래 무리끊기 머리말에 있다 —
+ * 이 자리는 프로그램이 끝나는 길에서도 지나가고, 그 자리에서는 비동기
+ * 일감이 하나도 안 돈다.
+ */
+function 동기로쉬기(ms) {
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+  catch { /* SharedArrayBuffer 가 막힌 판이면 그냥 지나간다 */ }
+}
+
 export function 무리끊기(pid, { 곧장 = false, 늦게 = 800 } = {}) {
   if (process.platform === 'win32' || !pid) return;
   if (곧장) {
     try { process.kill(-pid, 'SIGKILL'); } catch { /* 이미 죽음 */ }
     return;
   }
-  try { process.kill(-pid, 'SIGTERM'); } catch { /* 무리가 없거나 이미 죽음 */ }
-  try {
-    const 시계 = setTimeout(() => { try { process.kill(-pid, 'SIGKILL'); } catch { /* 죽었다 */ } }, 늦게);
-    시계.unref?.();
-  } catch { /* 끝나는 중이면 타이머를 못 건다 — 부르는 쪽이 곧장 으로 다시 온다 */ }
+  try { process.kill(-pid, 'SIGTERM'); } catch { /* 무리가 없거나 이미 죽음 */ return; }
+
+  /*
+   * ── 올려치기를 **동기로** 한다 ────────────────────────────────────────
+   *
+   * 여기가 `setTimeout(…, 늦게).unref()` 였다. 두 가지가 어긋났다.
+   *
+   *   1. `unref()` 한 타이머는 **프로세스를 안 붙잡는다.** 시간 초과로
+   *      끊고 곧바로 끝나는 길에서는 그 타이머가 아예 안 뜬다. 즉 SIGTERM
+   *      을 무시하는 손자(제 신호 처리기를 단 dev 서버·watch 프로세스)는
+   *      그대로 살아남는다. 「죽이라고 말은 했는데 안 죽는」 자리다.
+   *   2. 부르는 쪽은 이 함수가 **돌아오면 끝난 줄로 안다.** 실제로는 아직
+   *      TERM 만 보낸 상태라, 바로 뒤에서 「진짜 멈췄나」 를 보면 살아 있다.
+   *      이 비대칭이 윈도우와 유닉스 사이에도 있었다 — 윈도우 쪽은
+   *      taskkill 을 동기로 기다린다(나무죽이기 머리말).
+   *
+   * 그래서 곱게 말한 뒤 **짧게 나눠 지켜보다가**, 그래도 살아 있으면 그
+   * 자리에서 끊는다. 얌전히 끝나는 무리는 첫 20ms 에 사라지므로 보통은
+   * 거의 안 기다린다. 안 죽는 놈에게만 `늦게` 만큼 쓴다.
+   */
+  const 조각 = 20;
+  for (let 쓴시간 = 0; 쓴시간 < 늦게; 쓴시간 += 조각) {
+    if (!무리살아있나(pid)) return;
+    동기로쉬기(조각);
+  }
+  if (무리살아있나(pid)) {
+    try { process.kill(-pid, 'SIGKILL'); } catch { /* 그새 죽었다 */ }
+  }
 }
 
 /**

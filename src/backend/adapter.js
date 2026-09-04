@@ -97,6 +97,18 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
     // 참·거짓은 그대로(생각을 켜고 끄는 말이다). 단계말은 이 규격이 아는
     // 말로 옮긴다 — 아래 강도말() 머리말 참고.
     if (typeof think === 'boolean') body.think = think;
+    /*
+     * `off` 는 **끄라는 말이다.** 안 싣는 것과 다르다.
+     *
+     * 여기가 `강도말('off')` 로 떨어졌었다. 그 표에는 off 가 없어서 null 이
+     * 나오고, null 이면 `think` 칸을 아예 안 실었다. 그런데 이 규격에서 칸을
+     * 안 싣는 것은 **모델 기본값**이라는 뜻이고, 생각하는 모델의 기본값은
+     * 켜짐이다. 즉 사람이 `/think off` 를 치면 화면에는 off 가 뜨고 전선에는
+     * 아무것도 안 나가서 모델은 그대로 생각했다.
+     *
+     * 이 규격은 참·거짓을 그대로 받는다. 끄라고 했으면 끄라고 보낸다.
+     */
+    else if (think === 'off') body.think = false;
     else if (think !== undefined) {
       const 눈금 = 강도말(think);
       if (눈금) body.think = 눈금;
@@ -117,18 +129,70 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
   // 새 서버는 제가 보는 이름을 골라 쓴다. 둘 중 무엇을 보는지 우리가 알 필요가
   // 없어진다.
   //
-  // ── 그 한 곳: OpenAI 직통 ──────────────────────────────────────────────
+  // ── 튕기는 서버가 있다 ────────────────────────────────────────────────
   //
-  // 여기 추론 모델(o 계열·GPT-5 계열)은 옛 이름을 **무시하지 않고 튕긴다** —
+  // 추론 모델(o 계열·GPT-5 계열)은 옛 이름을 **무시하지 않고 튕긴다** —
   // "Unsupported parameter: 'max_tokens' is not supported with this model."
   // 그러면 첫 요청부터 400 이고, 화면에서는 열쇠가 틀린 것과 구별이 안 된다.
-  // 모델 이름으로 가르지 않는다(게이트웨이 뒤에 무엇이 있는지 우리는 모른다).
-  // **주소로** 가른다 — 그 규칙은 toolfit.js 의 벤더() 한 곳에서만 정한다.
   //
-  // Azure 는 여기 안 넣는다. 옛 판(api-version)이 아직 많고 그쪽은 옛 이름만
-  // 본다 — 같이 묶으면 멀쩡히 쓰던 사내 Azure 연결이 이 줄 하나로 끊긴다.
-  const 옛이름도 = 회사 !== 'openai';
-  const body = { model, messages, stream: !!stream, max_completion_tokens: maxTokens };
+  // 여기가 `회사 !== 'openai'` 였다. **주소로** 가른 것이다. 그래서 사내
+  // 게이트웨이 뒤에 GPT-5 를 물리면(회사 = null) 둘 다 나가서 첫 요청이
+  // 죽었다. 집안 규칙이 「업체 이름으로 갈래를 만들지 않는다」 인 까닭이
+  // 이것이다 — 주소는 뒤에 무엇이 있는지 말해 주지 않는다.
+  //
+  // 이제는 카드가 정한다(backend/wire.js 의 출력칸). 짐작은 **모델 이름**
+  // 으로 하고, 틀리면 400 한 번으로 배운다.
+  const 칸정하기 = 카드?.출력칸 ?? '둘다';
+  const 옛이름도 = 칸정하기 !== '새것';
+  const 새이름도 = 칸정하기 !== '옛것';
+  /*
+   * ── 자라는 대화에 옮겨 가는 표식을 박는다 ─────────────────────────────
+   *
+   * 여태 이 몸에는 표식이 **한 줄도** 없었다. Anthropic 몸에만 달아 놓고
+   * 여기는 「서버가 알아서 하겠지」 로 뒀는데, Claude 를 앞에 둔 창구에서
+   * 그게 틀린다 — 캐시가 처음 앞머리에서 멈추고, 늘어난 대화는 걸음마다
+   * 전액 다시 나간다. 붙일지 말지는 카드가 정한다(backend/wire.js).
+   *
+   * 꼬리에 붙이는 것이 핵심이다. 도구를 도는 턴에서는 마지막 자리가
+   * `role:'tool'` 인데, 그 자리에 글 조각 배열을 쓰는 것은 **OpenAI 규격
+   * 그대로다**(ChatCompletionRequestToolMessageContentPart). 지어낸 모양이
+   * 아니라서 이 칸을 모르는 서버도 조각 배열 자체는 읽는다.
+   *
+   * 시스템 글은 따로 다룬다. 굳은 부분과 매 턴 바뀌는 부분을 나눠 받았으면
+   * (agent/session.js) **굳은 부분 끝**에 박아야 한다. 통째로 끝에 박으면
+   * 매 턴 새로 쓰게 되어 표식이 있으나 마나가 된다.
+   */
+  let 대화 = messages;
+  // 문턱을 잴 때 **실제로 앞머리에 나가는 것**을 같이 준다 — 도구 스키마와
+  // 시킴말. 메시지만 세면 도구가 큰 판에서 캐시가 조용히 안 켜진다.
+  if (카드?.캐시 === 'explicit'
+    && 잡힐만한가(대화, 카드?.캐시최소 ?? 1024, { tools, system: 대화[0]?.role === 'system' ? 대화[0].content : null })) {
+    const 칸 = 카드?.표식칸 ?? 'cache_control';
+    /*
+     * 시킴말은 **따로** 다룬다 — 그리고 옮겨 가는 표식에서 빼 둔다.
+     *
+     * 둘 다 걸리면 같은 메시지를 두 번 손대게 된다. 먼저 옮겨 가는 표식이
+     * content 를 조각 배열로 바꿔 놓고, 그 뒤 시스템블록이 그 배열을 통째로
+     * 글 하나로 치면서 `[object Object]` 를 만든다. 대화가 시킴말 하나뿐일
+     * 때 실제로 그렇게 된다.
+     *
+     * 자리도 다르다. 옮겨 가는 표식은 **끝**에 박고, 시킴말은 **굳은 부분
+     * 끝**에 박아야 한다(agent/session.js 의 시스템조각). 통째로 끝에 박으면
+     * 모드가 바뀔 때마다 새로 쓰게 되어 표식이 있으나 마나가 된다.
+     */
+    const 시킴 = 대화[0]?.role === 'system' ? 대화[0] : null;
+    const 나머지 = 시킴 ? 대화.slice(1) : 대화;
+    const 박은것 = 나머지.length ? 메시지표식(나머지, 칸) : 나머지;
+    if (시킴) {
+      const 나눔 = 시킴[조각표];
+      const 블록 = 시스템블록(Array.isArray(나눔) && 나눔.length > 1 ? 나눔 : [시킴.content], true, 칸);
+      대화 = [Array.isArray(블록) ? { ...시킴, content: 블록 } : 시킴, ...박은것];
+    } else {
+      대화 = 박은것;
+    }
+  }
+  const body = { model, messages: 대화, stream: !!stream };
+  if (새이름도) body.max_completion_tokens = maxTokens;
   if (옛이름도) body.max_tokens = maxTokens;
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
   if (json) {
@@ -270,12 +334,23 @@ function anthropic몸({ model, messages, tools, stream, json, think, maxTokens, 
    * 이것이 없으면 캐시는 정적 앞머리에서 멈춘다 — 대화가 60k 로 자라도
    * 읽히는 것은 5.9k 뿐이고, 나머지는 걸음마다 전액 다시 나간다.
    */
-  if (표식쓰나 && 잡힐만한가(대화, 카드?.캐시최소 ?? 1024)) 대화 = 메시지표식(대화);
+  /*
+   * 어느 칸에 적을지는 **카드가 안다** (backend/wire.js 의 표식칸).
+   *
+   * 여기가 카드를 안 보고 `cache_control` 을 박아 두고 있었다. 그러면
+   * 배움이 진행을 못 한다 — 서버가 그 칸을 거절해서 `배울전선` 이
+   * `prompt_cache_breakpoint` 로 바꾸라고 배우고 디스크에 남겨도, 다음
+   * 요청이 또 `cache_control` 을 보낸다. 같은 400 을 다시 맞고, 같은 것을
+   * 다시 배우고, 「그것도 안 되면 끈다」 에 **영영 못 닿는다.**
+   * 그 창구에서는 매 턴이 죽는데 화면에는 카드가 「캐시 표식」 이라고 뜬다.
+   */
+  const 칸 = 카드?.표식칸 ?? 'cache_control';
+  if (표식쓰나 && 잡힐만한가(messages, 카드?.캐시최소 ?? 1024, { tools, system: 머리말 })) 대화 = 메시지표식(대화, 칸);
 
   const body = { model, messages: 대화, stream: !!stream, max_tokens: maxTokens };
   if (머리말.length) {
     body.system = 표식쓰나
-      ? 시스템블록(조각들 ?? 머리말, true)
+      ? 시스템블록(조각들 ?? 머리말, true, 칸)
       : 머리말.join('\n\n');
   }
 
@@ -390,8 +465,25 @@ export function 캐시읽기(u) {
 export function 보낸토큰(shape, u) {
   const n = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : 0);
   const 들어온것 = n(u?.in);
-  if (shape !== 'anthropic') return 들어온것;
-  return 들어온것 + n(u?.cacheRead) + n(u?.cacheWrite);
+  const 캐시몫 = n(u?.cacheRead) + n(u?.cacheWrite);
+  if (shape === 'anthropic') return 들어온것 + 캐시몫;
+  /*
+   * OpenAI 규격은 `prompt_tokens` 가 **총계**라고 문서에 적혀 있다. 그러니
+   * 그대로 쓰면 된다 — 그 말을 지키는 창구에서는.
+   *
+   * 그런데 이 규격으로 말하는 창구가 이제 여럿이다(게이트웨이·프록시·
+   * 호환 창구). 그중 어딘가가 Anthropic 처럼 캐시를 빼고 셈해 준다면, 우리는
+   * 보낸 것을 **캐시 몫만큼 통째로 덜 세게 된다.** 그 값은 화면 숫자로만
+   * 끝나지 않는다 — session.배운다() 가 이걸로 토큰 추정 배수를 학습하므로,
+   * 덜 센 값이 배수를 아래로 끌고 가고, 그러면 남은 자리를 넉넉히 보고,
+   * 답 상한을 크게 잡고, 접기를 늦게 시작한다.
+   *
+   * 어느 쪽인지 창구마다 알아낼 방법은 없다. 대신 **셈으로 알 수 있는 것**이
+   * 하나 있다: 총계가 제 일부보다 작을 수는 없다. 그래서 바닥만 깐다.
+   * 문서를 지키는 창구에서는 값이 그대로고(총계 ≥ 캐시 몫), 안 지키는
+   * 창구에서는 최소한 캐시 몫만큼은 세어진다. 어느 쪽으로도 더 틀리지 않는다.
+   */
+  return Math.max(들어온것, 캐시몫);
 }
 
 export function extractMessage(shape, json) {
@@ -426,6 +518,21 @@ export function extractMessage(shape, json) {
       // 이름이 다르다. prompt_tokens 를 찾으면 늘 0 이 나오고, 화면에는
       // 「토큰을 하나도 안 썼다」 로 뜬다.
       usage: {
+        /*
+         * ── 「안 왔다」 는 「0」 이 아니다 ────────────────────────────
+         *
+         * usage 를 아예 안 주는 창구가 있다(호환 게이트웨이·프록시). 여기가
+         * `?? 0` 으로 메워 두고 있었고, 그러면 **유료로 부르고 나서**
+         * `/cost` 가 「입력 0 · 출력 0 · $0.00」 이라고 적는다. 사람은 그
+         * 숫자를 예산으로 잡는다.
+         *
+         * 이 프로그램의 집안 규칙이 「지어내지 않는다 — 모르면 모른다고
+         * 화면에 적는다」 이다. 0 은 지어낸 값이다.
+         *
+         * 그래서 값은 그대로 0 으로 두되(셈하는 쪽이 다 고치지 않아도 되게),
+         * **재긴 쟀나**를 따로 남긴다. 화면과 JSON 이 그것으로 가른다.
+         */
+        잰것: json?.usage != null,
         in: json?.usage?.input_tokens ?? 0,
         out: json?.usage?.output_tokens ?? 0,
         ...(() => { const c = 캐시읽기(json?.usage); return { cacheRead: c.읽음, cacheWrite: c.씀 }; })(),
@@ -441,7 +548,11 @@ export function extractMessage(shape, json) {
       content: m.content ?? '',
       thinking: m.thinking ?? '',
       toolCalls: normalizeCalls(m.tool_calls ?? []),
-      usage: { in: json?.prompt_eval_count ?? 0, out: json?.eval_count ?? 0 },
+      usage: {
+      잰것: json?.prompt_eval_count != null || json?.eval_count != null,
+      in: json?.prompt_eval_count ?? 0,
+      out: json?.eval_count ?? 0,
+    },
       stopped: json?.done_reason ?? null,
     };
   }
@@ -479,6 +590,8 @@ export function extractMessage(shape, json) {
     thinking: m.reasoning_content ?? '',
     toolCalls: normalizeCalls(m.tool_calls ?? []),
     usage: {
+      // 「안 왔다」 와 「0」 을 가른다 (위 anthropic 갈래의 머리말).
+      잰것: json?.usage != null,
       in: json?.usage?.prompt_tokens ?? 0,
       out: json?.usage?.completion_tokens ?? 0,
       reasoning: 생각,
@@ -658,9 +771,66 @@ export function 도구결과인가(m) {
   return m.role === 'tool';
 }
 
+/**
+ * 메시지에서 **사람이 읽을 글**만. 없으면 빈 글.
+ *
+ * 글이 어디 실리는지도 규격마다 다르다. OpenAI·Ollama 는 `content` 가 글
+ * 하나고, Anthropic 은 블록 배열이라 그 안의 `text` 조각만 글이다. 나머지
+ * 블록(tool_use·tool_result·생각)은 글이 아니다 — 섞어 뽑으면 화면에
+ * `[object Object]` 나 도구 인자 뭉치가 사람 말인 척 끼어든다.
+ *
+ * 이 규칙이 세 곳(acp/map.js·ui/export.js·agent/recall.js)에 따로 적혀
+ * 있었고 셋 다 OpenAI 꼴만 알았다. 그래서 Anthropic 으로 대화하면 ACP
+ * 화면·내보낸 보고서·`/recall` 에서 **모델이 한 말이 통째로 비었다.**
+ */
+export function 본문글(m) {
+  const c = m?.content;
+  if (typeof c === 'string') return c;
+  if (!Array.isArray(c)) return '';
+  return c
+    .map((b) => (typeof b === 'string' ? b : (b?.type === 'text' || b?.text != null ? String(b.text ?? '') : '')))
+    .filter(Boolean)
+    .join('\n');
+}
+
 /** 이 메시지가 도구를 불렀나. */
 export function 도구불렀나(m) {
   return 부른것들(m).length > 0;
+}
+
+/**
+ * 도구 결과의 **글만** 갈아 끼운 사본. 짝지어 주는 것(id)은 그대로 둔다.
+ *
+ * ── 왜 이 자가 있어야 하나 ────────────────────────────────────────────
+ *
+ * 접기(agent/compact.js)가 결과 내용을 짧은 한 줄로 바꾼다. 그때 여태
+ * `{ ...m, content: '접힘…' }` 로 **통째로** 덮어썼다. OpenAI 꼴에서는 그게
+ * 맞다 — 그 규격의 결과는 글 하나니까.
+ *
+ * Anthropic 꼴에서는 그 한 줄이 이력을 **깨뜨린다.** 그 규격의 결과는
+ * `[{ type:'tool_result', tool_use_id:'t3', content:'…' }]` 인데, 배열을 글로
+ * 덮으면 `tool_use_id` 가 통째로 없어진다. 앞 차례의 `tool_use` 는 그대로
+ * 남으므로 다음 요청이 `400` 이다 — "tool_use ids were found without
+ * tool_result blocks". 접힌 대화는 `/clear` 말고는 못 살린다.
+ *
+ * 전에는 이게 안 터졌다. 접는 쪽이 Anthropic 결과를 **찾지도 못해서** 아무
+ * 일도 안 했기 때문이다. 읽는 쪽을 고쳐 접기가 실제로 돌기 시작한 순간,
+ * 아무 일도 안 하던 자리가 망가뜨리는 자리가 됐다. 읽는 쪽만 고치고 쓰는
+ * 쪽을 안 고치면 이렇게 된다 — 그래서 이 자를 **읽는 자 바로 옆**에 둔다.
+ */
+export function 결과바꾸기(m, 새글) {
+  if (!m || typeof m !== 'object') return m;
+  if (Array.isArray(m.content)) {
+    let 바꿨나 = false;
+    const 새것 = m.content.map((b) => {
+      if (b?.type !== 'tool_result' || 바꿨나) return b;
+      바꿨나 = true;                       // 여럿이면 첫 자리에만 적고 나머지는 비운다
+      return { ...b, content: String(새글) };
+    }).map((b) => (b?.type === 'tool_result' && b.content !== String(새글) ? { ...b, content: '' } : b));
+    return 바꿨나 ? { ...m, content: 새것 } : m;
+  }
+  if (m.role !== 'tool') return m;
+  return { ...m, content: String(새글) };
 }
 
 export function toolMessage(shape, { callId, name, content }) {
@@ -916,12 +1086,34 @@ export async function* chatStream(conn, opts) {
 
   const acc = {
     content: '', thinking: '', toolCalls: [],
-    usage: { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
+    usage: { 잰것: false, in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
     stopped: null,
   };
   const reader = r.res.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
+
+  /*
+   * 한 줄을 읽는 규칙. 루프 안에서도, **끝난 뒤에도** 같은 것을 쓴다.
+   *
+   * 여태 이 규칙이 `while` 안에만 있었고, 스트림이 끝나면 남은 버퍼를 그냥
+   * 버렸다. SSE 서버는 관례상 사건마다 개행을 붙이므로 보통은 남는 것이
+   * 없다 — 하지만 그건 관례지 규격이 아니다. 마지막 JSON 뒤에 개행을 안
+   * 붙이는 창구(Ollama NDJSON·일부 호환 서버)에서는 **마지막 내용·도구
+   * 호출·usage·종료 사유가 통째로 버려진다.** 한 줄로 답하는 서버면 답이
+   * 아예 비어서 온다.
+   *
+   * TextDecoder 도 마지막에 flush 해야 한다. 여러 바이트짜리 글자가 마지막
+   * 조각에 걸쳐 있으면 그 글자가 사라진다 — 한국어에서 특히 잘 난다.
+   */
+  const 한줄 = function* (line) {
+    if (!line) return;
+    const payload = line.startsWith('data:') ? line.slice(5).trim() : line;
+    if (payload === '[DONE]') return;
+    let obj;
+    try { obj = JSON.parse(payload); } catch { return; }
+    for (const ev of absorb(conn.kind, obj, acc)) yield ev;
+  };
 
   while (true) {
     // 사용자가 끊었으면 흘러오는 것을 더 받지 않는다. 읽던 연결도 닫는다.
@@ -933,20 +1125,23 @@ export async function* chatStream(conn, opts) {
     let value;
     try { ({ done, value } = await reader.read()); }
     catch (err) { if (opts.signal?.aborted) throw new Aborted(); throw err; }
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
+    // 끝났으면 decoder 에 걸쳐 있던 마지막 글자까지 뱉게 한다(flush).
+    buf += done ? dec.decode() : dec.decode(value, { stream: true });
 
     // OpenAI 는 SSE(data: ...), Ollama 는 줄바꿈 JSON. 둘 다 줄 단위로 처리된다.
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, nl).trim();
       buf = buf.slice(nl + 1);
-      if (!line) continue;
-      const payload = line.startsWith('data:') ? line.slice(5).trim() : line;
-      if (payload === '[DONE]') continue;
-      let obj;
-      try { obj = JSON.parse(payload); } catch { continue; }
-      for (const ev of absorb(conn.kind, obj, acc)) yield ev;
+      yield* 한줄(line);
+    }
+
+    if (done) {
+      // 개행 없이 끝난 마지막 한 줄. 있으면 같은 길로 읽고 끝낸다.
+      const 꼬리 = buf.trim();
+      buf = '';
+      yield* 한줄(꼬리);
+      break;
     }
   }
   /*
@@ -995,7 +1190,7 @@ function absorb(shape, obj, acc) {
     if (m.content) { acc.content += m.content; out.push({ type: 'content', text: m.content }); }
     if (m.tool_calls?.length) acc.toolCalls.push(...normalizeCalls(m.tool_calls));
     if (obj.done) {
-      acc.usage = { in: obj.prompt_eval_count ?? 0, out: obj.eval_count ?? 0 };
+      acc.usage = { 잰것: true, in: obj.prompt_eval_count ?? 0, out: obj.eval_count ?? 0 };
       acc.stopped = obj.done_reason ?? 'stop';
     }
     return out;
@@ -1012,6 +1207,7 @@ function absorb(shape, obj, acc) {
   if (obj.usage) {
     const c = 캐시읽기(obj.usage);
     acc.usage = {
+      잰것: true,
       in: obj.usage.prompt_tokens ?? 0,
       out: obj.usage.completion_tokens ?? 0,
       // 한 번에 받는 길과 같은 자리를 본다. 여기만 빠지면 흘려받을 때

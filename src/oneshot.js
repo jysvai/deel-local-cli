@@ -32,6 +32,7 @@ import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { route } from './agent/route.js';
 import { get as getWork } from './agent/modes.js';
 import { 모두끝내기 as 일감모두끝내기, 일감인자 } from './tools/jobs.js';
+import { 첫이름 } from './tools/label.js';
 
 /**
  * 종료코드.
@@ -86,7 +87,8 @@ async function 표준입력읽기() {
 // 도구 한 줄 요약. 화면 그림이 아니라 로그에 남을 글이라 색을 아낀다.
 function 도구줄(name, args) {
   const a = args ?? {};
-  const 첫 = a.file_path ?? a.pattern ?? a.path ?? a.url ?? a.name ?? a.purpose ?? a.목적 ??
+  // 이름 차례는 tools/label.js 한 곳에서 온다 (다섯 벌이던 것을 모았다).
+  const 첫 = 첫이름(a) ??
     (a.command ? String(a.command).replace(/\s+/g, ' ') : null) ??
     // 뒤에서 도는 명령. 번호가 곧 그 일감의 이름이라, 이게 없으면 기록에
     // `Jobs()` 만 여러 줄 남아 나중에 무엇을 본 것인지 알 수 없다.
@@ -611,6 +613,9 @@ export async function runOnce(opts = {}) {
       cacheRead: session.usage.cacheRead ?? 0,
       cacheWrite: session.usage.cacheWrite ?? 0,
       calls: session.usage.calls, ms: session.usage.ms,
+      // 창구가 usage 를 안 준 부름 수. 0 이 아니면 위 숫자는 **덜 센 값**이다.
+      // 이 칸이 없으면 받는 쪽이 0 을 실측으로 읽는다 (backend/adapter.js 의 잰것).
+      못잰것: session.usage.못잰것 ?? 0,
       retries: session.usage.retries ?? 0,
     },
     model: conn.model,

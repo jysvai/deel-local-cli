@@ -546,6 +546,7 @@ export const ko = {
   'think.autoOff': '정한 강도를 그대로 씁니다',
   'think.wire': '전선',
   'think.wireSends': '지금 나가는 값 {값}',
+  'think.wireNoOff': '이 창구는 끄는 말을 안 알려 줬습니다 — 칸을 안 싣고, 서버 기본값으로 돕니다',
   'loop.wire': '서버가 안 받는 칸이 있어 맞춰 다시 부릅니다 ({무엇})',
   'loop.quotaAhead': '할당량이 바닥나서 {초}초 기다렸다 보냅니다',
   'cost.quota': '서버 할당량',

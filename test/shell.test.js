@@ -144,14 +144,43 @@ trace('2b-열쇠안물려줌');
  */
 {
   const 옛열쇠 = process.env.DEEL_API_KEY;
+  const 옛프로필열쇠 = process.env.DEEL_KEY_검사프로필;
   const 옛집 = process.env.DEEL_HOME;
   process.env.DEEL_API_KEY = 'sk-가짜검사용-0123456789abcdef';
+  /*
+   * 열쇠 이름은 **둘**이다 (config.js 의 resolveKey).
+   *
+   * 이 검사가 `DEEL_API_KEY` 하나만 심어 놓고 「자식은 열쇠를 못 본다」 를
+   * 재고 있었다. 실제로 재고 있던 것은 「자식은 그 **이름**의 변수를 못
+   * 본다」 였고, `DEEL_KEY_<프로필>` 은 그대로 샜다 — 그리고 그 방법을
+   * 우리 사내 심사 명세(pack/sbom.js)가 권장으로 적어 뒀다.
+   *
+   * 이름 하나를 못 박으면 이름이 하나 늘 때마다 또 샌다. 그래서 **열쇠꼴
+   * 값이 하나도 안 보인다**를 잰다.
+   */
+  process.env.DEEL_KEY_검사프로필 = 'sk-프로필열쇠-fedcba9876543210';
   process.env.DEEL_HOME ??= root;          // 홀로 돌릴 때도 잴 것이 있어야 한다
   const 물음 = (이름) => `node -e "console.log(process.env.${이름} ?? 'none')"`;
   try {
     const k = await TOOLS.Bash.run({ command: 물음('DEEL_API_KEY') }, ctx);
     check('★ Bash 자식은 게이트웨이 열쇠를 못 본다',
       /(^|\n)\s*none\s*(\n|$)/.test(맨글(k)) && !맨글(k).includes('sk-가짜검사용'), 결과글(k));
+
+    const k2 = await TOOLS.Bash.run({ command: 물음('DEEL_KEY_검사프로필') }, ctx);
+    check('★★ 프로필 열쇠(DEEL_KEY_*)도 자식이 못 본다',
+      /(^|\n)\s*none\s*(\n|$)/.test(맨글(k2)) && !맨글(k2).includes('sk-프로필열쇠'), 결과글(k2));
+
+    /*
+     * 이름을 하나씩 묻는 것으로는 모자란다. `env` 한 줄이 전부를 뱉는데,
+     * 실제로 새는 길이 그것이다. 그래서 통째로 뱉게 하고 **열쇠꼴 값이
+     * 하나도 없다**를 잰다 — 이름이 늘어도 이 줄은 안 낡는다.
+     */
+    const 전부 = await TOOLS.Bash.run(
+      { command: `node -e "for (const [k,v] of Object.entries(process.env)) console.log(k+'='+v)"` }, ctx);
+    const 다뱉은것 = 맨글(전부);
+    check('★★ env 통째로 뱉어도 열쇠 값이 하나도 없다',
+      !/sk-가짜검사용|sk-프로필열쇠/.test(다뱉은것),
+      (다뱉은것.match(/DEEL_[A-Z가-힣_]*=.*/g) ?? []).join(' | ').slice(0, 120));
 
     const h = await TOOLS.Bash.run({ command: 물음('DEEL_HOME') }, ctx);
     check('★ 나머지 환경은 그대로 물려준다 (사용자가 이 셸로 제 검사를 돌린다)',
@@ -165,6 +194,7 @@ trace('2b-열쇠안물려줌');
     if (j.떴나) await 끝내기(j.번호);   // 살아 있으면 거둔다 — 검사가 자식을 남기면 안 된다
   } finally {
     if (옛열쇠 == null) delete process.env.DEEL_API_KEY; else process.env.DEEL_API_KEY = 옛열쇠;
+    if (옛프로필열쇠 == null) delete process.env.DEEL_KEY_검사프로필; else process.env.DEEL_KEY_검사프로필 = 옛프로필열쇠;
     if (옛집 == null) delete process.env.DEEL_HOME; else process.env.DEEL_HOME = 옛집;
   }
 }

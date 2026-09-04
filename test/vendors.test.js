@@ -39,6 +39,7 @@ import { 할당량읽기, 아슬아슬한가, 할당량잊기 } from '../src/bac
 import { req, headersFor } from '../src/backend/http.js';
 import { allowEndpoint } from '../src/safety/network.js';
 import { trace } from './trace.mjs';
+import { 기본카드 } from '../src/backend/wire.js';
 
 const pass = [];
 const fail = [];
@@ -121,6 +122,9 @@ function 공통도구검사(body) {
   return null;
 }
 
+/** 옛 이름을 튕기는 모델인가 — 실제 창구가 가르는 기준과 같다. */
+const 추론모델인가 = (m) => /(^|[^a-z0-9])(o[1-9]|gpt-[5-9])([^a-z0-9]|$)/i.test(String(m ?? ''));
+
 const 검사관 = {
   /*
    * OpenAI 직통.
@@ -128,12 +132,17 @@ const 검사관 = {
    * 여기만 있는 자리 둘 —
    *   · 추론 모델은 `max_tokens` 를 **거절한다.** 게이트웨이는 모르는 이름을
    *     흘려보내지만 이쪽은 「지원 안 하는 인자」 라고 튕긴다.
+   *
+   *     여기가 **모델을 안 보고 전부** 튕기고 있었다. 그러면 `gpt-4o` 처럼
+   *     옛 이름을 멀쩡히 받는 모델까지 거절하는 셈이라, 「OpenAI 직통에는
+   *     옛 이름을 아예 보내지 마라」 는 잘못된 규칙을 이 검사가 정답으로
+   *     못 박고 있었다. 실제 창구는 모델로 가른다.
    *   · 강도 이름이 제 목록에 없으면 400 이다.
    */
   openai(요청) {
     if (요청.길 !== '/v1/chat/completions') return `Unknown request URL: ${요청.길}`;
     const b = 요청.몸;
-    if (b.max_tokens !== undefined) {
+    if (b.max_tokens !== undefined && 추론모델인가(b.model)) {
       return "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.";
     }
     if (b.reasoning_effort !== undefined && !OPENAI강도.has(String(b.reasoning_effort))) {
@@ -236,11 +245,30 @@ const 검사관 = {
         }
       }
     }
+    /*
+     * 생각을 켜는 꼴이 **모델에 따라 둘**이다.
+     *
+     *   옛 모델   {type:'enabled', budget_tokens:N}   N 은 1024 이상, max_tokens 미만
+     *   4.6 이후  {type:'adaptive'}                   budget_tokens 를 주면 400
+     *
+     * 이 가짜 창구가 앞엣것만 받고 있었다. 그러면 「Anthropic 은 언제나
+     * enabled 다」 를 정답으로 못 박는 셈이라, adaptive 를 보내야 하는 모델에
+     * 그것을 보내는 순간 검사가 빨개진다 — 맞는 것을 했는데.
+     */
     if (b.thinking !== undefined) {
-      if (b.thinking?.type !== 'enabled') return 'thinking.type: Input should be \'enabled\'';
-      const 예산 = Number(b.thinking.budget_tokens);
-      if (!(예산 >= 1024)) return `thinking.budget_tokens: Input should be greater than or equal to 1024`;
-      if (!(예산 < Number(b.max_tokens))) return 'thinking.budget_tokens must be less than max_tokens';
+      const 꼴 = b.thinking?.type;
+      if (꼴 !== 'enabled' && 꼴 !== 'adaptive') {
+        return 'thinking.type: Input should be \'enabled\' or \'adaptive\'';
+      }
+      if (꼴 === 'adaptive') {
+        if (b.thinking.budget_tokens !== undefined) {
+          return 'thinking.budget_tokens: Extra inputs are not permitted with adaptive';
+        }
+      } else {
+        const 예산 = Number(b.thinking.budget_tokens);
+        if (!(예산 >= 1024)) return `thinking.budget_tokens: Input should be greater than or equal to 1024`;
+        if (!(예산 < Number(b.max_tokens))) return 'thinking.budget_tokens must be less than max_tokens';
+      }
     }
     for (const t of b.tools ?? []) {
       if (t.function !== undefined) return 'tools: Extra inputs are not permitted (function)';
@@ -331,10 +359,13 @@ async function 세우고열기(종류, 옵션) {
  * 걸음을 밟는지를 소스로 재므로, 여기서 통과한 몸통은 실제로 나가는 몸통이다.
  */
 function 몸통짓기(자리, opts) {
-  const conn = { base: 자리.base, kind: 자리.kind, model: 'm-1' };
+  const conn = { base: 자리.base, kind: 자리.kind, model: opts.model ?? 'm-1' };
   const 맞춘것 = 도구맞추기(opts.tools ?? null, conn);
   const body = buildBody(conn.kind, {
     model: conn.model, ctx: null, ...opts, tools: 맞춘것.tools, 회사: 벤더(conn),
+    // chat() 이 넘기는 것을 그대로 넘긴다(adapter.js 의 몸만들기). 카드를 빼고
+    // 재면 카드가 정하는 칸(출력칸·표식칸)을 하나도 안 재게 된다.
+    카드: opts.카드 ?? 기본카드(conn),
   });
   return { body, 되돌림: 맞춘것.되돌림, conn };
 }
@@ -482,11 +513,18 @@ trace('4-출력상한이름');
 /*
  * ── 4. 출력 상한을 뭐라고 부르나 ────────────────────────────────────────
  *
- * 옛 규격은 `max_tokens` 하나였고, GPT-5 계열을 붙인 게이트웨이는
- * `max_completion_tokens` 만 본다. 그래서 게이트웨이에는 둘 다 보낸다.
+ * 옛 규격은 `max_tokens` 하나였고, 추론 모델(o 계열·GPT-5 계열)은
+ * `max_completion_tokens` 만 본다. 뒤엣것은 옛 이름을 무시하지 않고 **튕긴다.**
  *
- * **OpenAI 직통은 다르다.** 추론 모델은 `max_tokens` 를 「지원 안 하는 인자」
- * 라고 튕긴다. 둘 다 보내면 첫 요청부터 400 이다.
+ * ── 이 절이 여태 잘못 재고 있던 것 ─────────────────────────────────────
+ *
+ * 「OpenAI **직통**은 옛 이름을 안 싣는다」 로 재고 있었다. 즉 **주소**로
+ * 갈리는 규칙을 정답으로 못 박은 것이다. 그러면 사내 게이트웨이 뒤에 GPT-5 를
+ * 물린 사람이 첫 요청부터 400 을 맞는데도 이 검사는 초록이다 — 실제로
+ * 그랬다. 주소는 그 뒤에 무엇이 있는지 말해 주지 않는다.
+ *
+ * 이제 **모델 이름**으로 가른다(backend/wire.js 의 출력칸). 그러니 여기서도
+ * 그렇게 잰다: 같은 모델이면 직통이든 게이트웨이든 같은 칸이 나가야 한다.
  */
 {
   for (const 자리 of 자리들) {
@@ -494,16 +532,31 @@ trace('4-출력상한이름');
     allowEndpoint(srv.주소);
     const { r, body, 왜 } = await 보내보기(srv, 자리, { messages: 사람말, maxTokens: 4096 });
     check(`★ ${자리.이름}: 출력 상한 이름을 받아들인다`, r.ok, String(왜));
-    if (자리.이름 === 'A OpenAI') {
-      check('★ A OpenAI: 옛 이름을 안 싣는다', body.max_tokens === undefined, JSON.stringify(body.max_tokens));
-      check('A OpenAI: 새 이름은 싣는다', body.max_completion_tokens === 4096, String(body.max_completion_tokens));
-    }
-    if (자리.이름 === 'W 게이트웨이') {
-      // 게이트웨이는 어느 쪽을 보는지 우리가 모른다. 둘 다 보내는 것이 맞다.
-      check('★ W 게이트웨이: 두 이름을 같이 싣는다',
+    // 두 이름은 OpenAI 규격 이야기다. 다른 규격은 제 이름이 따로 있다.
+    if (자리.kind === 'openai') {
+      // 모르는 모델(m-1)이면 어느 창구든 둘 다 보낸다 — 어느 쪽을 보는지 모른다.
+      check(`★ ${자리.이름}: 모르는 모델에는 두 이름을 같이 싣는다`,
         body.max_tokens === 4096 && body.max_completion_tokens === 4096,
         `${body.max_tokens} / ${body.max_completion_tokens}`);
     }
+    srv.close();
+  }
+
+  /*
+   * ★★ 같은 모델이면 **주소가 달라도 같은 칸**이 나간다.
+   *
+   * 이 두 줄이 「업체 이름으로 갈래를 만들지 않는다」 를 재는 자리다.
+   * 여기가 빨개지면 어딘가에 주소로 가르는 줄이 다시 생긴 것이다.
+   */
+  for (const 자리 of 자리들.filter((x) => x.kind === 'openai')) {
+    const srv = await 세우고열기(자리.창구);
+    allowEndpoint(srv.주소);
+    const { r, body, 왜 } = await 보내보기(srv, 자리,
+      { messages: 사람말, maxTokens: 4096, model: 'gpt-5-mini' });
+    check(`★★ ${자리.이름}: 추론 모델에는 옛 이름을 안 싣는다`,
+      body.max_tokens === undefined && body.max_completion_tokens === 4096,
+      `${body.max_tokens} / ${body.max_completion_tokens}`);
+    check(`★ ${자리.이름}: 그래서 추론 모델도 안 튕긴다`, r.ok, String(왜));
     srv.close();
   }
 }
@@ -592,9 +645,22 @@ trace('6-2-곁다리기능');
     const { r, body, 왜 } = await 보내보기(srv, 자리, 곁);
     check(`★ ${자리.이름}: 좁은 상한의 곁다리 요청을 받는다`, r.ok, String(왜));
     if (자리.kind === 'anthropic') {
-      // 700 에서는 예산 1,024 를 못 만든다. 못 만들면 아예 안 켜야 한다.
-      check(`★ ${자리.이름}: 상한이 좁으면 생각을 안 켠다`, body.thinking === undefined,
-        JSON.stringify(body.thinking));
+      /*
+       * 700 에서는 **예산 꼴**을 못 만든다 — 예산은 1,024 이상이어야 하고
+       * max_tokens 보다 작아야 한다. 그러니 예산 꼴이면 아예 안 켜야 한다.
+       *
+       * adaptive 꼴은 예산이 없다. 좁은 상한과 아무 상관이 없으므로 켜도
+       * 된다. 여기가 「thinking 이 아예 없어야 한다」 로 못 박혀 있었는데,
+       * 그건 예산 꼴만 있던 시절의 규칙이다. 규칙을 판이 아니라 **꼴**에
+       * 걸어야 새 꼴이 들어와도 안 빨개진다.
+       */
+      const 꼴 = body.thinking?.type ?? null;
+      check(`★ ${자리.이름}: 상한이 좁으면 예산 꼴로는 안 켠다`,
+        꼴 !== 'enabled', JSON.stringify(body.thinking));
+      if (꼴 === 'adaptive') {
+        check(`★ ${자리.이름}: adaptive 에는 예산을 안 싣는다`,
+          body.thinking.budget_tokens === undefined, JSON.stringify(body.thinking));
+      }
     }
 
     /*

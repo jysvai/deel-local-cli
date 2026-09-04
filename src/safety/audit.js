@@ -3,12 +3,28 @@
 import { join } from 'node:path';
 import { appendFileSync, mkdirSync, existsSync, readFileSync, chmodSync } from 'node:fs';
 import { 가리기 } from './secrets.js';
+import { 첫이름 } from '../tools/label.js';
+import { 환경속열쇠들 } from '../config.js';
 
 /**
  * 감사기록에 넘길 '아는 열쇠' 를 묻는 길. loop.js 가 대화 쪽에서 쓰는 것과 같은 값이다.
  * 값이 아니라 길로 주는 까닭은 Audit 만들기 머리말에 적어 뒀다.
+ *
+ * ── 왜 `DEEL_API_KEY` 하나가 아닌가 ──────────────────────────────────
+ *
+ * 여기가 `[conn?.key, process.env.DEEL_API_KEY]` 였다. 그런데 열쇠는 한
+ * 이름이 아니다 — `DEEL_KEY_WORK` 처럼 이름을 붙여 여러 개를 둘 수 있고,
+ * 그게 이 프로그램이 스스로 권하는 방식이다.
+ *
+ * 그 열쇠들이 이 목록에 없으면, 모델이 `DEEL_KEY_WORK=… curl …` 같은
+ * 명령을 부른 그 줄이 감사기록에 **그대로** 적힌다. 감사기록은 사내에
+ * 자율 실행을 설득하려고 남기는 것이라 사람이 읽고 남에게도 보인다.
+ * 가려 주는 자리에서 새면 안 가린 것보다 나쁘다 — 가려졌다고 믿기 때문이다.
+ *
+ * 「무엇이 열쇠인가」 는 config.js 한 곳에서 온다. 대화 쪽(loop.js)과 같은
+ * 자를 쓴다 — 두 벌이면 한쪽만 새는 날이 온다.
  */
-export const 열쇠묻기 = (conn) => () => [conn?.key, process.env.DEEL_API_KEY].filter(Boolean);
+export const 열쇠묻기 = (conn) => () => [conn?.key, ...환경속열쇠들()].filter(Boolean);
 
 export class Audit {
   /**
@@ -108,8 +124,11 @@ export class Audit {
       // '하위 작업을 돌렸다' 만 남고 **무엇을** 돌렸는지가 안 남는다.
       // 옛 이름(목적)도 같이 본다 — 이름을 바꾼 판 이전의 기록이 남아 있고,
       // 옛 이름으로 부르는 모델도 있다.
-      target: this.#가린것(args?.file_path ?? args?.path ?? args?.pattern ?? args?.command
-        ?? args?.purpose ?? args?.목적 ?? null),
+      //
+      // 이름 차례는 tools/label.js 한 곳에서 온다. 여기 목록에는 url 과 name
+      // 이 빠져 있어서, 웹을 읽은 줄과 스킬을 부른 줄이 감사기록에서만
+      // 무엇을 향한 것인지 없이 남았다.
+      target: this.#가린것(첫이름(args) ?? args?.command ?? null),
       ok: !result?.error,
       note: this.#가린것(result?.error ?? result?.summary ?? null),
     });

@@ -296,7 +296,14 @@ export class Session {
      * 「들어간 토큰」 자리에 in 을 적으면 캐시가 잘 맞을수록 숫자가 줄어서
      * 일이 줄어든 것처럼 보인다 — 까닭은 backend/adapter.js 의 보낸토큰.
      */
-    this.usage = { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+    /*
+      * `못잰것` 은 **usage 를 안 준 응답이 몇 번이었나** 이다.
+      *
+      * 0 을 더하면 합계는 그대로라 화면에 아무 표가 안 난다. 그런데 그 판은
+      * 유료로 불렀고, 쓴 것을 우리가 모를 뿐이다. 「0 원 썼다」 와 「얼마
+      * 썼는지 모른다」 는 사람이 하는 판단이 다르다 — 그래서 세어 둔다.
+      */
+     this.usage = { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, 못잰것: 0 };
     /*
      * 이 대화의 이름. 게이트웨이에 「같은 대화다」 라고 알려 줄 때 쓴다.
      *
@@ -655,8 +662,8 @@ export class Session {
     const 조각 = this.시스템조각();
     const 머리 = { role: 'system', content: 조각.join('') };
     /*
-     * 나눈 자리를 같이 알려 준다 — 캐시 표식을 박는 규격에서만 쓴다
-     * (backend/adapter.js 의 anthropic몸).
+     * 나눈 자리를 같이 알려 준다 — 캐시 표식을 박는 자리에서 쓴다
+     * (backend/adapter.js 의 anthropic몸 · openai몸 둘 다).
      *
      * Symbol 로 다는 것이 중요하다. 보통 이름으로 달면 openai 규격에서는
      * 이 메시지가 그대로 몸통에 실려 나가고, 모르는 칸 하나가 그 게이트웨이

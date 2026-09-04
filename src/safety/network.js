@@ -47,6 +47,49 @@ export const isLocalHost = (h) => {
   return false;
 };
 
+/**
+ * 이 이름이 **실제로 어디로 풀리나.** 하나라도 사내·로컬이면 막는다.
+ *
+ * ── 왜 이름만 보면 모자란가 ───────────────────────────────────────────
+ *
+ * 위 isLocalHost 는 **글자**를 본다. `localhost` · `127.0.0.1` ·
+ * `[::ffff:127.0.0.1]` 같은 철자를 촘촘히 편다. 그런데 이런 주소는 그 어느
+ * 철자에도 안 걸린다:
+ *
+ *   https://내부로푸는이름.example.com/   ← A 레코드가 169.254.169.254
+ *
+ * 이름은 평범한 공개 도메인이고, DNS 만 공격자가 쥐고 있으면 된다. 글자
+ * 검사를 지나서 **클라우드 메타데이터**(임시 자격증명이 나온다)나 사내
+ * 서비스에 그대로 닿는다. 모델에게 주소 한 줄을 읽히는 것으로 끝난다.
+ *
+ * 그래서 이름을 실제로 풀어 보고, 돌아온 주소를 **전부** 본다. 하나라도
+ * 사내·로컬이면 막는다 — 여러 개 중 하나만 안전한 척하는 응답도 있다.
+ *
+ * ── 여기까지가 이 자가 막는 것 ────────────────────────────────────────
+ *
+ * 푼 뒤에 실제 연결이 다시 풀린다(TOCTOU). 그 사이에 DNS 를 바꾸면 이 검사를
+ * 지나고도 다른 데로 갈 수 있다. 그것까지 막으려면 푼 주소를 소켓에 못
+ * 박아야 하는데, `fetch` 는 그 자리를 안 내준다. 여기서 막는 것은 **한 번
+ * 푸는 것으로 끝나는 흔한 길**이고, 못 막는 것은 위에 적은 그 틈이다.
+ * 적어 두지 않으면 다음 사람이 이것을 완전한 자물쇠로 여긴다.
+ */
+export async function 사설로풀리나(hostname) {
+  const h = String(hostname ?? '').trim();
+  if (!h) return null;
+  // 숫자로 적힌 주소는 풀 것이 없다 — 위 isLocalHost 가 이미 본다.
+  if (/^[0-9.]+$/.test(h) || h.includes(':') || h.startsWith('[')) return null;
+  let 주소들;
+  try {
+    const { lookup } = await import('node:dns/promises');
+    주소들 = await lookup(h, { all: true, verbatim: true });
+  } catch {
+    // 못 풀면 어차피 못 붙는다. 여기서 막을 것도 없다.
+    return null;
+  }
+  const 걸린것 = 주소들.map((a) => a.address).filter((a) => isLocalHost(a));
+  return 걸린것.length ? { 주소들: 주소들.map((a) => a.address), 걸린것 } : null;
+}
+
 function originOf(url) {
   const u = new URL(url);
   return `${u.protocol}//${u.host}`;
