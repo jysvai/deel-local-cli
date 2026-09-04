@@ -38,7 +38,7 @@ import { TOOLS, runTool } from '../src/tools/index.js';
 import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
-import { 엔진찾기 } from '../src/tools/fastgrep.js';
+import { 엔진찾기, 저장소인가 } from '../src/tools/fastgrep.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -285,10 +285,22 @@ trace('6-찾기');
    */
   const 산신호 = new AbortController();
   const 신호달고 = await TOOLS.Grep.run({ pattern: '바늘' }, 판(방, { signal: 산신호.signal }));
+  /*
+   * ── 「이 기계에 있나」 와 「여기서 쓸 수 있나」 는 다른 물음이다 ──────
+   *
+   * 처음에 `엔진.rg || 엔진.gitgrep` 으로 갈랐다가 리눅스 CI 에서 빨개졌다.
+   * `git grep` 은 **저장소 안에서만** 도는데(fastgrep.js 의 저장소인가), 이
+   * 검사가 쓰는 자리는 임시 폴더라 저장소가 아니다. 그래서 git 만 있는
+   * 기계에서는 「빠른 길이 있다」 고 해 놓고 실제로는 예전 길로 갔고,
+   * 「빠른 길을 정말 쓴다」 가 있지도 않은 것을 찾았다.
+   *
+   * 있나 없나가 아니라 **여기서 쓰이나**를 묻는다.
+   */
   const 엔진 = 엔진찾기();
-  const 빠른길있나 = !!(엔진.rg || 엔진.gitgrep);
+  const 빠른길있나 = !!엔진.rg || (!!엔진.gitgrep && 저장소인가(방));
   if (!빠른길있나) {
-    건너뜀.push(`rg 도 git grep 도 없어 「신호가 붙어도 빠른 길을 쓴다」 를 못 쟀다 (${엔진.왜 ?? '둘 다 없음'})`);
+    건너뜀.push('rg 가 없고 이 자리는 git 저장소도 아니라 '
+      + `「신호가 붙어도 빠른 길을 쓴다」 를 못 쟀다 (${엔진.왜 ?? 'rg 없음'})`);
   } else {
     const 길이름 = /rg 으로 찾았습니다|git 으로 찾았습니다|rg|git/;
     check('★★ 신호가 붙어 있어도 빠른 길을 **정말로** 쓴다',

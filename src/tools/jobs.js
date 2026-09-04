@@ -157,9 +157,16 @@ export function 잘렸나(err) {
  * 만들어 줄 방법은 없다 — 그래서 이 판단이 띄우는 자리와 짝을 이뤄야 한다.
  * (Bash 도구가 한동안 이 짝을 안 맞춰서, 윈도우만 고쳐지고 유닉스는 그대로였다.)
  */
-/** 그 무리가 아직 살아 있나. 죽었으면 false. */
+/**
+ * 그 무리가 아직 살아 있나. 죽었으면 false.
+ *
+ * 무리로 못 물어보면 **그 하나에게** 물어본다 — 위 신호주기() 와 같은 까닭이다.
+ * 무리가 없는 판에서 「무리가 없다 = 다 죽었다」 로 읽으면, 살아 있는 자식을
+ * 죽은 것으로 세고 그냥 지나간다.
+ */
 function 무리살아있나(pid) {
-  try { process.kill(-pid, 0); return true; } catch { return false; }
+  try { process.kill(-pid, 0); return true; } catch { /* 무리가 없다 */ }
+  try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
 /**
@@ -174,13 +181,41 @@ function 동기로쉬기(ms) {
   catch { /* SharedArrayBuffer 가 막힌 판이면 그냥 지나간다 */ }
 }
 
+/**
+ * 신호를 보낸다. **무리째 못 보내면 그 하나에게라도 보낸다.**
+ *
+ * ── 왜 두 번 시도하나 ──────────────────────────────────────────────────
+ *
+ * `-pid` 는 「그 무리 전부」 라는 뜻이고, 그 무리는 띄울 때 `detached` 로
+ * 만들어 둔 것이다. 그런데 그게 늘 있으리라 믿으면 안 된다 —
+ *
+ *   · `detached` 가 안 먹은 판 (컨테이너 안, 이상한 실행 환경)
+ *   · 이미 무리 우두머리가 죽고 남은 놈이 딴 무리로 넘어간 자리
+ *
+ * 이런 자리에서 `kill(-pid, …)` 는 ESRCH 로 튕긴다. 그러면 여태는 그
+ * 자리에서 **아무것도 안 하고 돌아갔다.** 무리로 못 보냈다는 것이 「보낼
+ * 것이 없다」 는 뜻은 아닌데, 그렇게 다뤘다. 무리로 못 보내면 적어도 우리가
+ * 아는 그 하나(자식)에게는 보낸다 — 그게 손자를 못 잡더라도, 아무것도 안
+ * 하는 것보다는 낫다.
+ *
+ * @returns {boolean} 하나라도 닿았으면 true
+ */
+function 신호주기(pid, 신호) {
+  let 닿았나 = false;
+  try { process.kill(-pid, 신호); 닿았나 = true; } catch { /* 무리가 없다 */ }
+  if (!닿았나) {
+    try { process.kill(pid, 신호); 닿았나 = true; } catch { /* 그마저 죽었다 */ }
+  }
+  return 닿았나;
+}
+
 export function 무리끊기(pid, { 곧장 = false, 늦게 = 800 } = {}) {
   if (process.platform === 'win32' || !pid) return;
   if (곧장) {
-    try { process.kill(-pid, 'SIGKILL'); } catch { /* 이미 죽음 */ }
+    신호주기(pid, 'SIGKILL');
     return;
   }
-  try { process.kill(-pid, 'SIGTERM'); } catch { /* 무리가 없거나 이미 죽음 */ return; }
+  신호주기(pid, 'SIGTERM');
 
   /*
    * ── 올려치기를 **동기로** 한다 ────────────────────────────────────────
@@ -205,9 +240,15 @@ export function 무리끊기(pid, { 곧장 = false, 늦게 = 800 } = {}) {
     if (!무리살아있나(pid)) return;
     동기로쉬기(조각);
   }
-  if (무리살아있나(pid)) {
-    try { process.kill(-pid, 'SIGKILL'); } catch { /* 그새 죽었다 */ }
-  }
+  /*
+   * 마지막 한 방은 **묻지 않고** 보낸다.
+   *
+   * 여기가 `if (무리살아있나(pid))` 였다. 그 물음은 틀릴 수 있다 — 권한이
+   * 없으면(EPERM) 살아 있는데도 「없다」 가 나오고, 그러면 안 죽이고 지나간다.
+   * 이미 죽은 것에 SIGKILL 을 보내는 값은 예외 하나뿐이고 그건 여기서 삼킨다.
+   * 안 죽은 것을 살려 보내는 값은 포트를 문 프로세스가 남는 것이다. 값이 다르다.
+   */
+  신호주기(pid, 'SIGKILL');
 }
 
 /**

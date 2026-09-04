@@ -621,7 +621,27 @@ trace('8-Bash와붙였을때');
     잰2 = existsSync(시간초과자국) ? statSync(시간초과자국).size : 0;
     시간초과멈췄나 = 잰1 === 잰2;
   }
-  check('★ 시간 초과여도 진짜 멈춘다', 시간초과멈췄나, `${잰1}바이트 → ${잰2}바이트`);
+  /*
+   * 안 멈췄으면 **무엇이 살아 있는지** 적는다.
+   *
+   * 「222바이트 → 227바이트」 만 남으면 그 다음에 할 수 있는 것이 없다.
+   * 리눅스에서만 나는 탈이라 손으로 재현할 수도 없어서, 그 판에서 보이는
+   * 것을 그 자리에서 적어 두는 것이 유일한 길이다 — 살아남은 프로세스의
+   * pid·무리(pgid)·부모(ppid)까지. 무리가 우리가 만든 그 무리면 죽이는
+   * 쪽 문제고, 딴 무리면 애초에 무리에 안 들어간 것이다. 그 둘은 고칠
+   * 자리가 다르다.
+   */
+  let 살아남은것 = '';
+  if (!시간초과멈췄나 && process.platform !== 'win32') {
+    try {
+      const { execFileSync } = await import('node:child_process');
+      const 목록 = execFileSync('ps', ['-eo', 'pid,pgid,ppid,stat,args'], { encoding: 'utf8', timeout: 5000 });
+      살아남은것 = 목록.split('\n').filter((l) => /ticker\.cjs|tick-timeout/.test(l))
+        .map((l) => l.trim()).join(' | ').slice(0, 300);
+    } catch (err) { 살아남은것 = 'ps 를 못 불렀다 — ' + String(err?.message ?? err).slice(0, 60); }
+  }
+  check('★ 시간 초과여도 진짜 멈춘다', 시간초과멈췄나,
+    `${잰1}바이트 → ${잰2}바이트${살아남은것 ? `  살아남음: ${살아남은것}` : ''}`);
 
   모두끝내기();
 
