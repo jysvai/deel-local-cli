@@ -97,3 +97,117 @@ export function 돌려보기(이름, 인자, { timeout = 20000, maxBuffer = 32 *
     아이.on('close', (코드) => 끝내기({ error: null, status: 코드, stdout: 밖, stderr: 탈 }));
   });
 }
+
+
+/*
+ * ── `execFile` 은 `detached` 를 **버린다** ──────────────────────────────
+ *
+ * Bash 도구가 이렇게 부르고 있었다.
+ *
+ *   execFile(셸, 인자, { cwd, env, timeout, maxBuffer, detached: true, … })
+ *
+ * 그리고 그 옆에 「유닉스에서는 무리를 만들어 둔다」 는 머리말이 열두 줄
+ * 붙어 있었다. 그 줄은 **아무 일도 안 하고 있었다.** Node 의 execFile 은
+ * 받은 옵션을 spawn 에 통째로 넘기지 않는다. 제 소스에 목록이 박혀 있다 —
+ *
+ *   cwd · env · gid · shell · signal · uid ·
+ *   windowsHide · windowsVerbatimArguments
+ *
+ * `detached` 가 없다. 오타도 아니고 오류도 아니라서, 적어 둔 사람도 읽는
+ * 사람도 그게 안 걸린 줄 모른다. 리눅스 CI 가 열 판 넘게 이 자리에서
+ * 빨갰는데, 무엇이 살아남았는지를 검사가 적기 시작하고서야 보였다.
+ *
+ *   pid 6791 · pgid 1938 · ppid 1   node ticker.cjs
+ *
+ * 무리(pgid)가 제 pid 가 아니라 **검사 프로세스의 무리**였다. 즉 애초에
+ * 무리가 안 만들어졌고, `kill(-pid, …)` 는 죽일 것을 못 찾고 있었다.
+ * 죽이는 쪽을 아무리 고쳐도 안 고쳐질 자리였다.
+ *
+ * 그래서 spawn 을 바로 쓴다. execFile 이 해 주던 것(모아 담기·상한·시한·
+ * 오류 모양)은 여기서 **같은 모양으로** 해 준다 — 부르는 쪽의 판단 코드를
+ * 한 줄도 안 건드리려는 것이다. 이 파일 머리말과 같은 자세다.
+ */
+
+/**
+ * execFile 과 같은 약속으로 부르되, **무리를 진짜로 만든다.**
+ *
+ * 콜백은 execFile 의 것과 같다 — `(탈, 밖Buffer, 탈Buffer)`.
+ * 탈의 모양도 맞춘다:
+ *
+ *   못 돌렸다        탈.code = 'ENOENT' 같은 글자
+ *   출력이 넘쳤다    탈.code = 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', 탈.killed = true
+ *   시한을 넘겼다    탈.killed = true, 탈.signal = 보낸 신호
+ *   시그널로 죽었다  탈.signal = 그 신호
+ *   0 이 아니게 끝남 탈.code = 그 숫자
+ *
+ * @returns {import('node:child_process').ChildProcess}
+ */
+export function 무리로돌리기(파일, 인자, 옵션 = {}, 끝나면 = () => {}) {
+  const {
+    cwd = undefined, env = undefined, timeout = 0, maxBuffer = 32 * 1024 * 1024,
+    windowsHide = true, windowsVerbatimArguments = false, detached = false,
+    killSignal = 'SIGTERM',
+  } = 옵션;
+
+  const 아이 = spawn(파일, 인자, {
+    cwd, env, windowsHide, windowsVerbatimArguments, detached,
+  });
+
+  const 밖조각 = [];
+  const 탈조각 = [];
+  let 밖크기 = 0;
+  let 탈크기 = 0;
+  let 끝났나 = false;
+  let 미리잡은탈 = null;
+
+  const 모으기 = (스트림, 조각들, 더할것) => {
+    조각들.push(더할것);
+    return 스트림 + 더할것.length;
+  };
+
+  const 끝내기 = (탈) => {
+    if (끝났나) return;
+    끝났나 = true;
+    clearTimeout(시계);
+    끝나면(탈 ?? null, Buffer.concat(밖조각), Buffer.concat(탈조각));
+  };
+
+  /** execFile 이 만드는 것과 같은 모양의 탈. */
+  const 탈만들기 = (글, 더할것) => Object.assign(new Error(글), 더할것);
+
+  const 넘쳤다 = () => {
+    미리잡은탈 = 탈만들기('stdout maxBuffer length exceeded',
+      { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', killed: true });
+    try { 아이.kill(killSignal); } catch { /* 이미 죽었다 */ }
+  };
+
+  아이.stdout?.on('data', (조각) => {
+    밖크기 = 모으기(밖크기, 밖조각, 조각);
+    if (밖크기 > maxBuffer && !미리잡은탈) 넘쳤다();
+  });
+  아이.stderr?.on('data', (조각) => {
+    탈크기 = 모으기(탈크기, 탈조각, 조각);
+    if (탈크기 > maxBuffer && !미리잡은탈) 넘쳤다();
+  });
+
+  /*
+   * 시한은 **마지막 그물**이다. 부르는 쪽이 제 시계로 먼저 끊는 것이 보통이고,
+   * 이건 그것마저 못 돌았을 때 선다. unref 하지 않는다 — 여기서 놓아 버리면
+   * 그물이 아니게 된다.
+   */
+  const 시계 = timeout > 0 ? setTimeout(() => {
+    미리잡은탈 = 탈만들기(`명령이 ${timeout}ms 안에 안 끝났습니다`,
+      { killed: true, signal: killSignal });
+    try { 아이.kill(killSignal); } catch { /* 이미 죽었다 */ }
+  }, timeout) : null;
+
+  아이.on('error', (탈) => 끝내기(탈));
+  아이.on('close', (코드, 신호) => {
+    if (미리잡은탈) return 끝내기(미리잡은탈);
+    if (신호) return 끝내기(탈만들기(`${신호} 시그널로 죽었습니다`, { killed: true, signal: 신호 }));
+    if (코드 !== 0) return 끝내기(탈만들기(`종료코드 ${코드}`, { code: 코드, killed: false }));
+    끝내기(null);
+  });
+
+  return 아이;
+}

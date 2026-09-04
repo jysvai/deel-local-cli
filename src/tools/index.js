@@ -2,7 +2,7 @@
 // 그래야 그 관례로 쓰인 스킬·명령이 그대로 먹는다.
 import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, renameSync, cpSync, rmSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
-import { execFile } from 'node:child_process';
+import { 무리로돌리기 } from './spawn.js';
 import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
@@ -1711,7 +1711,7 @@ export const TOOLS = {
         // 윈도우 명령창은 UTF-8 이 아니다. 한국어 윈도우는 CP949 로 뱉는다.
         // 이걸 utf8 이라고 하고 받으면 한글이 통째로 깨진다 — '파싱 성공' 이
         // '�Ľ� ����' 이 된다. 바이트로 받아 이 컴퓨터가 쓰는 것으로 해독한다.
-        const kid = execFile(shell.file, shell.args, {
+        const kid = 무리로돌리기(shell.file, shell.args, {
           cwd: ctx.scope.root,
           // 열쇠만 빼고 나머지는 그대로 물려준다 (backend/mcp.js 열쇠뺀환경 머리말).
           // 안 빼면 `env` 한 줄이 열쇠를 화면과 대화 기록에 그대로 싣는다.
@@ -1723,6 +1723,10 @@ export const TOOLS = {
           windowsHide: true,
           /*
            * 유닉스에서는 **무리를 만들어 둔다.**
+           *
+           * 이 한 줄 때문에 execFile 을 안 쓴다 — 그쪽은 detached 를 spawn 에
+           * 안 넘기고 조용히 버린다(tools/spawn.js 의 무리로돌리기 머리말).
+           * 여기 이 줄이 열두 판 동안 아무 일도 안 하고 있었다.
            *
            * 나중에 만들어 줄 방법이 없어서 띄우는 순간에 정해야 한다. 안 만들면
            * 나중에 손자를 가리킬 길이 아예 없다 — `sh -c "cd app && npm start"`
