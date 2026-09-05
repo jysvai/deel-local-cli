@@ -2616,6 +2616,9 @@ function 모델급(session, arg = '') {
 
   if (값 === 'auto' || 값 === '자동') {
     session.급정한것 = null;
+    // 급은 턴마다 한 번만 맨다(session.js 의 급 머리말). 사람이 여기서 정한
+    // 것은 다음 턴이 아니라 **지금** 먹어야 하니 빗장을 풀어 준다.
+    session.급다시재기?.();
     const g = session.급();
     say('');
     say(`  ${c.cyan('◈')} 모델 급을 다시 ${c.bold('스스로 잡게')} 했습니다 — 지금은 ${c.white(g.급)}`);
@@ -2625,6 +2628,7 @@ function 모델급(session, arg = '') {
 
   if (값 && 별명[값]) {
     session.급정한것 = 별명[값];
+    session.급다시재기?.();
     const v = session.급값();
     say('');
     say(`  ${c.cyan('◈')} 모델 급을 ${c.bold(별명[값])} 으로 정했습니다.`);
