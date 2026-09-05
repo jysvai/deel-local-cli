@@ -18,7 +18,7 @@
 //   · 승인을 못 물어봤을 때 마음대로 하지 않는가
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -1225,6 +1225,80 @@ trace('5-9-사실대로-말하는가');
     check('잘림 영어(ACP) — 통째로 실패', false, String(err?.message ?? err));
   } finally {
     await e.끝내기();
+  }
+}
+
+trace('5-10-탭마다-MCP-를-다시-띄우나');
+
+/*
+ * ── 탭을 열 때마다 남의 프로세스를 한 벌씩 더 띄우고 있었다 ────────────
+ *
+ * 에디터에서 `session/new` 는 **탭 하나**다. 사람은 한 프로젝트를 열어 놓고
+ * 탭을 서너 개 띄운다 — 그게 에디터를 쓰는 이유다.
+ *
+ * 그런데 방만들기() 가 방마다 다붙이기() 를 새로 불렀다. 같은 폴더, 같은
+ * `.deel/mcp.json` 인데도 탭 셋이면 서버 프로세스가 세 벌 뜬다. MCP 서버는
+ * 남의 프로그램이라 무엇을 들고 뜨는지 우리는 모른다 — 인덱스를 통째로
+ * 메모리에 올리는 것도 있고, 뜰 때마다 원격에 붙는 것도 있다.
+ *
+ * 값도 두 번 치른다. 붙기 자체가 왕복 두 번(initialize + tools/list)이고,
+ * 그 사이 탭은 멈춰 있다. 탭을 여는 데 걸리는 시간이 서버 수만큼 늘어난다.
+ *
+ * 그래서 **폴더 하나에 한 벌**이다. 여기서는 서버가 뜰 때마다 파일에 한 줄씩
+ * 적게 해 놓고, 탭 셋을 열어 그 줄이 하나인지 본다.
+ */
+{
+  const 엠씨피 = mkdtempSync(join(tmpdir(), 'deel-acp-mcp-'));
+  mkdirSync(join(엠씨피, '.deel'), { recursive: true });
+  const 뜬자국 = join(엠씨피, '뜬자국.txt');
+  const 서버파일 = join(엠씨피, 'stub.mjs');
+  const 줄바꿈 = String.fromCharCode(10);
+  writeFileSync(서버파일, [
+    "import { appendFileSync } from 'node:fs';",
+    'const NL = String.fromCharCode(10);',
+    // 뜨자마자 한 줄. 붙기에 성공하든 말든 **프로세스가 떴다**는 사실을 남긴다.
+    `appendFileSync(${JSON.stringify(뜬자국)}, '떴음' + NL);`,
+    "let 찌꺼기 = '';",
+    "process.stdin.setEncoding('utf8');",
+    "process.stdin.on('data', (d) => {",
+    '  찌꺼기 += d;',
+    '  let i;',
+    '  while ((i = 찌꺼기.indexOf(NL)) >= 0) {',
+    '    const 줄 = 찌꺼기.slice(0, i); 찌꺼기 = 찌꺼기.slice(i + 1);',
+    '    if (!줄.trim()) continue;',
+    '    let j; try { j = JSON.parse(줄); } catch { continue; }',
+    "    if (j.method === 'initialize') 답(j.id, { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: '탭스텁', version: '1.0.0' } });",
+    "    else if (j.method === 'tools/list') 답(j.id, { tools: [{ name: '재보기', description: '스텁', inputSchema: { type: 'object', properties: {} } }] });",
+    "    else if (j.id != null) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: j.id, error: { code: -32601, message: '모름' } }) + NL);",
+    '  }',
+    '});',
+    "function 답(id, result) { process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + NL); }",
+  ].join(줄바꿈), 'utf8');
+  writeFileSync(join(엠씨피, '.deel', 'mcp.json'), JSON.stringify({
+    mcpServers: { 탭스텁: { command: process.execPath, args: [서버파일] } },
+  }, null, 2), 'utf8');
+
+  const e = 에디터();
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    const 방들 = [];
+    for (let n = 0; n < 3; n++) {
+      방들.push(await 시간제한(e.요청('session/new', { cwd: 엠씨피, mcpServers: [] }), 20000, `session/new ${n}`));
+    }
+    const 뜬수 = readFileSync(뜬자국, 'utf8').split('\n').filter(Boolean).length;
+    check('탭 셋이 다 열렸다', 방들.every((x) => x?.sessionId) && new Set(방들.map((x) => x.sessionId)).size === 3,
+      방들.map((x) => x?.sessionId).join(' · '));
+    check('★★ 같은 폴더면 탭을 몇 개 열어도 MCP 는 한 벌만 뜬다', 뜬수 === 1, `탭 3개 · 뜬 프로세스 ${뜬수}벌`);
+
+    // 폴더가 다르면 당연히 따로 떠야 한다 — 안 그러면 옆 프로젝트의 도구가 딸려 온다.
+    await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new (다른 폴더)');
+    check('다른 폴더는 그 폴더 것을 따로 본다', readFileSync(뜬자국, 'utf8').split('\n').filter(Boolean).length === 1,
+      '(work 에는 mcp.json 이 없다)');
+  } catch (err) {
+    check('탭마다 MCP — 통째로 실패', false, String(err?.message ?? err) + ' | ' + e.표준오류().slice(-600));
+  } finally {
+    await e.끝내기();
+    rmSync(엠씨피, { recursive: true, force: true });
   }
 }
 

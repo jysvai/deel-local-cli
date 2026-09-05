@@ -28,7 +28,7 @@
 // 하나하나 찾아 막는 방법도 있지만, 그건 앞으로 새로 쓰는 코드까지 계속
 // 조심해야 한다는 뜻이다 — 언젠가 반드시 한 군데를 빠뜨린다.
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import { 규칙모으기, 늘허락, 정책읽기 } from '../safety/policy.js';
 import { 받기설정 } from '../safety/authcmd.js';
@@ -89,6 +89,26 @@ export async function acp(opts = {}) {
 
   /** 세션 하나. 에디터의 탭 하나에 해당한다. */
   const 방들 = new Map();
+
+  /*
+   * 폴더 → MCP 붙임. **폴더 하나에 한 벌**이다.
+   *
+   * 에디터에서 `session/new` 는 탭 하나다. 사람은 한 프로젝트를 열어 놓고 탭을
+   * 서너 개 띄운다 — 그게 에디터를 쓰는 이유다. 그런데 방마다 다붙이기() 를
+   * 새로 부르면 같은 `.deel/mcp.json` 을 보고 같은 서버를 탭 수만큼 띄운다.
+   *
+   * MCP 서버는 남의 프로그램이라 무엇을 들고 뜨는지 우리는 모른다 — 인덱스를
+   * 통째로 메모리에 올리는 것도 있고, 뜰 때마다 원격에 붙는 것도 있다. 탭
+   * 하나 여는 값도 두 번 치른다: 붙기는 왕복 두 번(initialize + tools/list)이고
+   * 그동안 그 탭은 멈춰 있다.
+   *
+   * 값으로 **약속(Promise)** 을 넣는다. 에디터가 탭 셋을 한꺼번에 열면
+   * session/new 셋이 겹쳐 도는데, 다 붙은 뒤에 넣으면 셋 다 빈 칸을 보고
+   * 셋 다 띄운다 — 고치려던 것이 그대로 남는다.
+   *
+   * 폴더가 다르면 따로 띄운다. 옆 프로젝트의 도구가 딸려 오면 안 된다.
+   */
+  const mcp캐시 = new Map();
   let 클라이언트 = null;      // initialize 로 받은 저쪽 소개
   let 시작했나 = false;
 
@@ -235,10 +255,29 @@ export async function acp(opts = {}) {
      * 그래서 deel 은 늘 제 폴더의 .deel/mcp.json 만 본다. 사람이 직접 적은 것만
      * 띄운다는 규칙이 대화 화면과 여기서 똑같이 유지된다.
      */
-    const mcp붙임 = await 다붙이기(root, {
-      offline: !!(opts.offline ?? prof.offline),
-      audit: null,
-    });
+    const 캐시열쇠 = resolve(root);
+    if (!mcp캐시.has(캐시열쇠)) {
+      mcp캐시.set(캐시열쇠, 다붙이기(root, {
+        offline: !!(opts.offline ?? prof.offline),
+        audit: null,
+      }).then((붙임) => {
+        /*
+         * 못 붙은 것은 **못 붙었다고 말한다.**
+         *
+         * 대화 화면은 이걸 적어 준다(repl.js 의 경고 줄). 여기만 안 적고
+         * 있었다. 그러면 에디터 안에서는 도구가 그냥 없다 — 왜 없는지는
+         * 어디에도 안 남는다. 사람은 모델이 게을러진 줄 안다.
+         */
+        for (const m of 붙임.못한것 ?? []) 로그(`MCP ${m.이름} 을 못 붙였습니다 — ${m.왜}`);
+        if (붙임.서버들.length) 로그(`MCP ${붙임.서버들.length}대에 붙었습니다 (${캐시열쇠}) — 이 폴더의 다른 탭도 같이 씁니다.`);
+        return 붙임;
+      }).catch((err) => {
+        // 붙이다 터져도 탭은 열려야 한다. 도구가 없는 채로 대화는 된다.
+        로그(`MCP 를 붙이다 실패했습니다 — ${err?.message ?? err}`);
+        return { 서버들: [], 못한것: [], 설정: null };
+      }));
+    }
+    const mcp붙임 = await mcp캐시.get(캐시열쇠);
     session.mcp = mcp붙임.서버들;
     if (Array.isArray(요청?.mcpServers) && 요청.mcpServers.length) {
       로그(`에디터가 MCP 서버 ${요청.mcpServers.length}대를 넘겼지만 띄우지 않습니다 — deel 은 .deel/mcp.json 에 적힌 것만 띄웁니다.`);
@@ -818,8 +857,12 @@ export async function acp(opts = {}) {
    */
   const 껐다 = 일감모두끝내기();
   if (껐다) 로그(`뒤에서 돌던 명령 ${껐다}개를 껐습니다.`);
-  for (const 방 of 방들.values()) {
-    for (const s of 방.mcp ?? []) { try { s.닫기(); } catch { /* 이미 죽은 것 */ } }
+  // 방이 아니라 **캐시**를 돈다. 방 여럿이 한 벌을 나눠 쓰므로 방을 돌면
+  // 같은 서버에 닫기() 를 여러 번 부르게 된다.
+  for (const 약속 of mcp캐시.values()) {
+    let 붙임 = null;
+    try { 붙임 = await 약속; } catch { /* 붙다 만 것은 닫을 것도 없다 */ }
+    for (const s of 붙임?.서버들 ?? []) { try { s.닫기(); } catch { /* 이미 죽은 것 */ } }
   }
   if (!시작했나) 로그('initialize 를 못 받고 끝났습니다 — 이 명령은 에디터가 자식 프로세스로 띄우는 자리입니다.');
   return 0;
