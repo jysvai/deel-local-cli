@@ -19,6 +19,7 @@ import { join } from 'node:path';
 const 설정집 = mkdtempSync(join(tmpdir(), 'deel-cmd-home-'));
 process.env.DEEL_HOME = 설정집;
 import { handle, COMMANDS } from '../src/commands.js';
+import { 받기설정, 지금상태 as 지금열쇠상태 } from '../src/safety/authcmd.js';
 import { Session } from '../src/agent/session.js';
 import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
@@ -436,6 +437,57 @@ trace('3-효과확인');
     const r = await 조용히(() => handle('/model list', s, ctx));
     check('/model list 가 등록된 것을 보여준다', r.ok && /사내 프록시/.test(r.out) && /로컬 · small/.test(r.out), r.out.trim().split('\n')[1] ?? '');
     check('/model list 는 아무것도 안 바꾼다', s.conn.model === 'gw-qwen-32b', s.conn.model);
+  }
+
+
+  /*
+   * ── `/model` 이 회사 토큰을 남의 창구로 들고 가지 않는가 ────────────────
+   *
+   * conn 을 짓는 자리가 넷인데(repl · oneshot · acp · 여기) 여기만 열쇠받기·
+   * vision 을 안 옮기고 있었다. 그래서 회사 프로필에서 남의 프로필로 갈아타면
+   * **옛 프로필의 살아 있는 SSO 토큰이 새 창구로 그대로 나갔다** — 새 프로필의
+   * 제 열쇠는 쓰이지도 않은 채로(adapter.js 의 머리말짓기 는 열쇠받기가 있으면
+   * 그쪽을 쓴다). 화면에는 「바꿨습니다. 대화는 이어집니다.」 한 줄뿐이었다.
+   *
+   * test/doorparity.test.js 가 글자로 잡고, 여기서는 값으로 잡는다.
+   */
+  {
+    const 회사 = {
+      ...프로필('corp-key', '회사 게이트웨이', 'gw-corp'),
+      auth: 'bearer', apiKey: '',
+      열쇠받기: { 명령: 'node -e "console.log(1)"', 수명: 3600 },
+    };
+    const 남의곳 = { ...프로필('vendor-key', '남의 창구', 'gw-vendor'), auth: 'bearer', apiKey: 'sk-vendor-BBBB' };
+    save({ ...load(), active: 'corp-key', profiles: [회사, 남의곳] });
+
+    const s = 새세션();
+    const cfg2 = load();
+    // 회사 프로필로 시작한 모양을 만든다 — 다른 세 문이 하는 그대로.
+    Object.assign(s.conn, {
+      kind: 회사.kind, base: 회사.baseUrl, auth: 회사.auth, key: '', model: 회사.model,
+      열쇠받기: 받기설정(회사, { 정책값: null }), vision: true,
+    });
+    check('먼저: 회사 프로필은 열쇠를 받아 오는 설정이다', !!s.conn.열쇠받기, String(!!s.conn.열쇠받기));
+
+    await 조용히(() => handle('/model 남의', s, ctx));
+    check('★★ /model 뒤에 주소가 새 창구다', s.conn.base === 남의곳.baseUrl, s.conn.base);
+    check('★★ 옛 프로필의 열쇠받기가 안 따라온다', !s.conn.열쇠받기,
+      JSON.stringify(s.conn.열쇠받기 ?? null));
+    check('★★ 새 프로필의 제 열쇠를 쓴다', s.conn.key === 'sk-vendor-BBBB', String(s.conn.key));
+    check('★★ vision 도 새 프로필 것이다', s.conn.vision === false, String(s.conn.vision));
+    check('들고 있던 토큰도 버렸다', 지금열쇠상태() === null, JSON.stringify(지금열쇠상태()));
+
+    // 반대쪽 — 맨 프로필에서 회사 프로필로 가면 받아오는 길이 열려야 한다.
+    const s2 = 새세션();
+    Object.assign(s2.conn, {
+      kind: 남의곳.kind, base: 남의곳.baseUrl, auth: 남의곳.auth, key: 'sk-vendor-BBBB',
+      model: 남의곳.model, 열쇠받기: null, vision: false,
+    });
+    await 조용히(() => handle('/model 회사', s2, ctx));
+    check('★★ 반대쪽도 따라온다 — 열쇠받기가 열린다', !!s2.conn.열쇠받기,
+      JSON.stringify(s2.conn.열쇠받기 ?? null));
+
+    save({ ...load(), active: 'gw-a', profiles: [프로필('gw-a', '사내 프록시 · gw-qwen-32b', 'gw-qwen-32b'), 프로필('local-b', '로컬 · small', 'gw-small-3b')] });
   }
 
   {

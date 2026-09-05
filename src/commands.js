@@ -13,7 +13,9 @@ import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js
 import { 주소가리기 } from './safety/secrets.js';
 import { pick, confirm } from './ui/prompt.js';
 import { load, save, 저장시도, resolveKey, upsert, 열쇠보관, configPath } from './config.js';
-import { 지금상태 as 지금열쇠상태 } from './safety/authcmd.js';
+import { 지금상태 as 지금열쇠상태, 받기설정, 잊기 as 받은열쇠잊기 } from './safety/authcmd.js';
+// 열쇠받기 명령을 정책이 못박아 뒀을 수 있다 — 받기설정 이 그 값을 같이 본다.
+import { 정책읽기 } from './safety/policy.js';
 import { 제공자고르기 } from './providers/index.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
 /*
@@ -2789,7 +2791,47 @@ function 연결적용(session, p, ctx = null) {
     kind: p.kind, base: p.baseUrl, auth: p.auth, key: resolveKey(p), model: p.model,
     ctx: p.ctx, maxTokens: p.maxTokens ?? null,
     streaming: p.streaming, tools: p.tools, json: p.json, think: p.think,
+    /*
+     * ── 이 두 줄이 없어서 회사 토큰이 남의 창구로 나갔다 ────────────────
+     *
+     * conn 을 짓는 자리는 넷이다 — repl.js · oneshot.js · acp/serve.js, 그리고
+     * 여기. 앞의 셋은 이 둘을 넣는데 여기만 빠져 있었다. 그래서 `/model` 로
+     * 갈아타면 **옛 프로필의 것이 그대로 남았다.**
+     *
+     *   회사 프로필(열쇠받기로 SSO 토큰을 받아 온다) → /model 남의창구
+     *     · 살아 있는 회사 토큰이 `Authorization` 에 실려 남의 host 로 간다
+     *     · 새 프로필의 제 열쇠(conn.key)는 **쓰이지도 않는다** —
+     *       adapter.js 의 머리말짓기 는 열쇠받기가 있으면 그쪽을 쓴다
+     *     · 남의 창구는 그 토큰을 모르니 401, 그러면 로그인 명령을 다시 돌린다
+     *
+     * 반대쪽도 같다. 맨 프로필에서 회사 프로필로 옮기면 열쇠받기가 null 로
+     * 남아 401 뒤에 열쇠를 다시 받는 길이 잠긴다(adapter.js 의 열쇠다시받을까).
+     *
+     * vision 도 같은 값이다 — 안 옮기면 그림을 못 보는 모델에 그림을 보낸다.
+     */
+    열쇠받기: 받기설정(p, { 정책값: 정책읽기().값 }),
+    vision: p.vision ?? false,
   });
+  /*
+   * 들고 있던 토큰도 버린다.
+   *
+   * 열쇠받기 설정을 새것으로 갈아도, authcmd.js 가 **모듈 전역 하나**에
+   * 받은 토큰을 들고 있다(받은것). 어느 프로필 것인지는 안 적혀 있다. 그래서
+   * 안 버리면 새 창구의 첫 요청에 옛 회사 토큰이 그대로 실려 나간다 — 위에서
+   * 고친 것을 캐시가 도로 되돌리는 셈이다.
+   *
+   * 이 함수의 머리말이 「검사와 `/model` 갈아타기가 부른다」 라고 적혀 있었는데
+   * 부르는 곳이 검사밖에 없었다. 이제 적힌 대로가 된다.
+   */
+  받은열쇠잊기();
+  /*
+   * 급도 다시 맨다.
+   *
+   * 급은 conn 을 보고 매긴다(agent/grade.js 의 매김). 모델을 갈아탔는데 앞
+   * 모델로 매긴 급을 턴 끝까지 들고 있으면, 화면에 적힌 급과 프롬프트에 실린
+   * 급이 서로 다른 모델 이야기가 된다.
+   */
+  session.급다시재기?.();
   // 자물쇠도 같이 옮긴다. 이걸 빼먹으면 옛 주소가 열린 채로 남고 새 주소는 막혀
   // 다음 한마디에서 바로 "허용되지 않은 주소" 가 난다.
   allowEndpoint(p.baseUrl);

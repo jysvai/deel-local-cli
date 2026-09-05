@@ -46,8 +46,8 @@ const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note 
  * 다 필요하고, 그 셋을 세우는 비용이 이 검사가 잡으려는 것보다 크다. 여기서
  * 잡으려는 것은 「열쇠를 한 곳에만 더했다」 이고, 그건 글자에 다 드러난다.
  */
-function conn열쇠(글, 파일) {
-  const i = 글.indexOf('const conn = {');
+function conn열쇠(글, 파일, 머리 = 'const conn = {') {
+  const i = 글.indexOf(머리);
   if (i < 0) return null;
   // 중괄호 깊이를 세어서 리터럴 끝을 찾는다.
   let 깊이 = 0; let 끝 = -1;
@@ -67,13 +67,29 @@ function conn열쇠(글, 파일) {
 
 trace('1-세-문의-conn');
 
+/*
+ * ── 문은 셋이 아니라 넷이었다 ───────────────────────────────────────────
+ *
+ * 이 검사는 처음에 `const conn = {` 리터럴 셋만 봤다. 그런데 conn 을 짓는
+ * 자리가 하나 더 있다 — `/model` 로 프로필을 갈아끼우는 commands.js 의
+ * 연결적용() 이다. 그쪽은 리터럴이 아니라 `Object.assign(session.conn, {…})`
+ * 이라 글자가 안 맞아서, 이 검사가 못 박아 둔 vision·열쇠받기 두 개가 거기서
+ * 빠져 있는데도 내내 초록이었다.
+ *
+ * 빠져서 난 일이 가벼운 것이 아니다. 회사 프로필(열쇠받기로 SSO 토큰을 받아
+ * 오는 것)에서 남의 프로필로 `/model` 하면, 옛 프로필의 **살아 있는 회사
+ * 토큰이 새 창구로 그대로 나간다** — 새 프로필의 제 열쇠는 버려진 채로.
+ *
+ * 그래서 문을 찾는 자를 넓힌다. 새 문이 또 생기면 그 문도 여기 적어야 한다.
+ */
 const 문들 = [
   conn열쇠(src('repl.js'), 'src/repl.js'),
   conn열쇠(src('oneshot.js'), 'src/oneshot.js'),
   conn열쇠(src('acp/serve.js'), 'src/acp/serve.js'),
+  conn열쇠(src('commands.js'), 'src/commands.js (/model)', 'Object.assign(session.conn, {'),
 ].filter(Boolean);
 
-check('★ 세 문에서 conn 리터럴을 다 찾았다', 문들.length === 3,
+check('★ 네 문에서 conn 짓는 자리를 다 찾았다', 문들.length === 4,
   `${문들.length}개: ${문들.map((x) => x.파일).join(', ')}`);
 
 /*
@@ -88,23 +104,23 @@ const 봐주는열쇠 = new Map([
   ['이름', '채팅에만 있는 자리'],
 ]);
 
-if (문들.length === 3) {
+if (문들.length === 4) {
   const 모든열쇠 = new Set(문들.flatMap((x) => [...x.열쇠]));
   const 어긋남 = [];
   for (const k of 모든열쇠) {
     if (봐주는열쇠.has(k)) continue;
     const 있는곳 = 문들.filter((x) => x.열쇠.has(k));
-    if (있는곳.length !== 3) {
+    if (있는곳.length !== 문들.length) {
       const 없는곳 = 문들.filter((x) => !x.열쇠.has(k)).map((x) => x.파일);
       어긋남.push(`${k} → ${없는곳.join(', ')} 에 없음`);
     }
   }
-  check('★★ 한쪽에만 있는 conn 열쇠가 없다', 어긋남.length === 0, 어긋남.join(' | '));
+  check('★★ 한 문에만 있는 conn 열쇠가 없다', 어긋남.length === 0, 어긋남.join(' | '));
 
   // 이 두 개는 특히 못박는다 — 실제로 빠져 있었고, 빠지면 조용히 틀린 답을 한다.
   for (const k of ['vision', '열쇠받기']) {
     const 없는곳 = 문들.filter((x) => !x.열쇠.has(k)).map((x) => x.파일);
-    check(`★★ ${k} 가 세 문에 다 있다`, 없는곳.length === 0, 없는곳.join(', '));
+    check(`★★ ${k} 가 네 문에 다 있다`, 없는곳.length === 0, 없는곳.join(', '));
   }
 }
 
