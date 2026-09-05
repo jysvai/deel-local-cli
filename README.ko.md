@@ -94,7 +94,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.14.x](docs/ko/releases/1.14.md) · [1.13.x](docs/ko/releases/1.13.md) · [1.12.x](docs/ko/releases/1.12.md) · [1.10.x](docs/ko/releases/1.10.md) · [1.9.x](docs/ko/releases/1.9.md) · [그 앞](docs/ko/releases.md) |
+| [릴리스 노트](docs/ko/releases.md) | [1.15.x](docs/ko/releases/1.15.md) · [1.14.x](docs/ko/releases/1.14.md) · [1.13.x](docs/ko/releases/1.13.md) · [1.12.x](docs/ko/releases/1.12.md) · [1.10.x](docs/ko/releases/1.10.md) · [1.9.x](docs/ko/releases/1.9.md) · [그 앞](docs/ko/releases.md) |
 
 ---
 
@@ -267,7 +267,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 1.14.0  ⌂ 이 안
+ deel 1.15.0  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -1087,7 +1087,7 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (7,095항목 — 몇몇은 터미널에 따라 갈립니다)
+npm test          전체 검증 (7,144항목 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -1133,18 +1133,18 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 | `detect` | 85 | 주소 한 줄로 규격·인증을 짚어내는가 |
 | `modes` · `route` | 120 · 72 | 작업 모드 · 종합에서 알맞은 모드로 옮겨 가는가 |
 | `ctxsize` | 56 | 모델에 걸린 컨텍스트 길이를 긁어오는가 |
-| `commands` · `commands-more` | 214 · 93 | 슬래시 명령 전부 |
+| `commands` · `commands-more` | 221 · 93 | 슬래시 명령 전부 |
 | `ui` · `ui2` | 89 · 40 | 암호 가림·한글 폭·상태줄·대화 목록·엑셀→글 |
-| `encoding` · `xlsx` | 70 · 72 | 한글 인코딩 판별 · 엑셀 읽기 |
-| `compact` | 98 | 요약 압축·짝 안 깨짐·실패 시 물러섬 |
-| `stuck` · `undo` | 48 · 54 | 헛도는 것과 일이 되는 것을 가르는가 · 셸이 쓴 파일도 되돌려지는가 |
+| `encoding` · `xlsx` | 77 · 72 | 한글 인코딩 판별 · 엑셀 읽기 |
+| `compact` | 101 | 요약 압축·짝 안 깨짐·실패 시 물러섬 |
+| `stuck` · `undo` | 48 · 58 | 헛도는 것과 일이 되는 것을 가르는가 · 셸이 쓴 파일도 되돌려지는가 |
 | `store` | 75 | 대화 저장·이어하기·중간에 죽어도 복구 |
 | `scan` | 30 | 여러 런타임을 구분해 찾는가 |
 | `plugins` | 79 | 플러그인 받기·묶기·ZIP/TAR |
-| `exitcode` · `doorparity` | 7 · 7 | 화면에 적은 종료코드 표가 진짜인가 · 문 세 개가 같은 것을 주는가 |
+| `exitcode` · `doorparity` | 7 · 7 | 화면에 적은 종료코드 표가 진짜인가 · 문 **네 개**가 같은 것을 주는가 |
 | `no-bundle` | 21 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
 | `edit-bench` | 20건 | 편집 성공률 |
-| `mutate` | 어긋 7개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
+| `mutate` | 어긋 10개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
 
 > **자세히** — 어디를 밟았는지 · 폴더 구조
 >
@@ -1156,6 +1156,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
+| **[1.15.0](docs/ko/releases/1.15.md#1150)** | 같은 것을 두 번 하지 않습니다 — 프리픽스 캐시를 깨던 조용히 비싼 아홉 자리 |
 | **[1.14.0](docs/ko/releases/1.14.md#1140)** | 적어 둔 것이 참인지 기계가 대신 봅니다 — 초록불과 「깨면 잡힌다」 는 다릅니다 |
 | [1.13.1](docs/ko/releases/1.13.md#1131) | 올라간 물건이 소스와 달랐습니다 — 148개 중 47개가 CRLF 로 나갔습니다 |
 | **[1.13.0](docs/ko/releases/1.13.md#1130)** | 바깥 창구와 붙는 자리를 전부 다시 봤습니다 — 서로 못 보는 검수자 셋, 셋이 같이 짚은 것 넷 |

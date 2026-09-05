@@ -1,6 +1,6 @@
 {
   "name": "deel-local-cli",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "description": "A coding-agent CLI that runs on local models and private gateways. Zero dependencies, Node 20+.",
   "type": "module",
   "license": "MIT",
