@@ -1,7 +1,7 @@
 // 되돌리기. 승인 프롬프트를 안 쓰는 대신 이게 안전망이다.
 // 파일을 고치기 전에 항상 이전 내용을 떠 놓고, /undo 로 턴 단위로 되돌린다.
 import { join, dirname } from 'node:path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, statSync, chmodSync } from 'node:fs';
 import { looksBinary } from '../tools/encoding.js';
 import { 말 } from '../i18n/index.js';
 
@@ -12,9 +12,40 @@ const KEEP_TURNS = 50;
 export class History {
   constructor(root) {
     this.dir = join(root, '.deel', 'history');
-    mkdirSync(this.dir, { recursive: true });
+    // 폴더부터 본인 것으로. 파일만 잠그고 폴더가 0755 면 이름은 다 보인다.
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.file = join(this.dir, 'edits.jsonl');
     this.turn = 0;
+    /** 잠근 결과. 밖에서 볼 수 있어야 「잠갔다」 는 말이 뜻을 갖는다. */
+    this.잠금 = null;
+  }
+
+  /*
+   * ── 이 파일은 남의 파일 **원문**을 담는다 ───────────────────────────────
+   *
+   * 되돌리려면 고치기 전 내용을 그대로 들고 있어야 한다. 그래서 여기에는
+   * `.env` · `id_rsa` · `.npmrc` · kubeconfig 가 **평문으로** 들어온다.
+   * 가리지도 않는다 — 가리면 되돌릴 때 사람의 진짜 열쇠가 표로 덮여 없어진다.
+   * 즉 이 자리에서 지키는 방법은 파일 권한 하나뿐인데, 그것이 없었다.
+   *
+   * umask 022 인 리눅스·맥에서 이 파일은 0644 로 만들어진다. 같은 PC 의 다른
+   * 계정, 데몬, 공유 홈(NFS)의 아무나가 deel 이 손댄 모든 파일의 원문을 읽는다
+   * — 주인이 일부러 0600 으로 잠가 둔 파일까지. `.deel` 아래 다른 기록
+   * (agent/store.js · safety/audit.js)은 전부 잠그는데 여기만 안 잠갔다.
+   *
+   * 1.14.0 에서 셸 쓰기(`sed -i` · `echo >` · `tee`)까지 스냅샷을 뜨게 하면서
+   * 들어오는 파일이 더 늘었다. 고친 것이 이 구멍을 넓힌 셈이라 같이 막는다.
+   *
+   * 윈도우(NTFS)에서는 chmod 가 아무 일도 안 한다. 거기서는 못 잠근 것이지
+   * 잠근 척하지 않는다 — 그래서 결과를 `잠금` 에 있는 그대로 남긴다.
+   * (safety/audit.js · agent/store.js 와 같은 모양이다)
+   */
+  #잠갔나 = false;
+  #잠그기() {
+    if (this.#잠갔나) return;
+    this.#잠갔나 = true;
+    try { chmodSync(this.file, 0o600); this.잠금 = { 모드: 0o600 }; }
+    catch (err) { this.잠금 = { 못함: err?.code ?? String(err) }; }
   }
 
   /**
@@ -73,6 +104,7 @@ export class History {
     if (뜬것.enc) rec.enc = 뜬것.enc;
     if (뜬것.skipped) rec.skipped = 뜬것.skipped;
     appendFileSync(this.file, JSON.stringify(rec) + '\n', 'utf8');
+    this.#잠그기();
     this.#이번턴.set(absPath, rec);
     this.#maybePrune();
     return rec;
@@ -109,6 +141,8 @@ export class History {
     if (!버린수) return 0;
     try {
       writeFileSync(this.file, 남길것.map((r) => JSON.stringify(r)).join('\n') + (남길것.length ? '\n' : ''), 'utf8');
+      // 통째로 다시 쓰면 새 파일일 수 있다 — 빗장을 다시 건다 (agent/store.js 도 같다).
+      this.#잠갔나 = false; this.#잠그기();
     } catch { return 0; }
     return 버린수;
   }
@@ -199,6 +233,7 @@ export class History {
     const 못한것 = new Set(restored.filter((x) => x.ok === false).map((x) => x.path));
     const keep = recs.filter((r) => !turns.includes(r.turn) || 못한것.has(r.path));
     writeFileSync(this.file, keep.map((r) => JSON.stringify(r)).join('\n') + (keep.length ? '\n' : ''), 'utf8');
+    this.#잠갔나 = false; this.#잠그기();
     return {
       restored,
       // 화면·감사기록이 쓰는 수. **진짜로 되돌아간 것만** 센다.

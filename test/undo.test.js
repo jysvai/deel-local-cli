@@ -14,7 +14,7 @@
 //   그러고 /undo 를 누르면 멀쩡한 파일이 지워졌다.
 //
 // 그래서 여기서 재는 것은 하나다 — **되돌리기가 파일을 없애지 않는가.**
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { History } from '../src/safety/undo.js';
@@ -415,6 +415,50 @@ trace('셸쓰기-다른턴을-되돌리던-것');
   check('★ 되돌린 결과가 무언가를 말해 준다', !!r && typeof r === 'object', JSON.stringify(r).slice(0, 120));
 
   rmSync(방, { recursive: true, force: true });
+}
+
+trace('잠금-되돌리기기록도-본인만');
+
+/*
+ * ── 되돌리기 기록은 남의 파일 **원문**을 담는다 ─────────────────────────
+ *
+ * 되돌리려면 고치기 전 내용을 그대로 들고 있어야 한다. 그래서 여기에는
+ * `.env` · `id_rsa` · `.npmrc` 가 평문으로 들어온다. 가리지도 않는다 —
+ * 가리면 되돌릴 때 사람의 진짜 열쇠가 표로 덮여 없어진다.
+ *
+ * 즉 이 자리에서 지키는 방법은 파일 권한 하나뿐이었는데 그것이 없었다.
+ * umask 022 면 0644 로 만들어져, 같은 PC 의 다른 계정과 공유 홈의 아무나가
+ * deel 이 손댄 모든 파일의 원문을 읽었다 — 주인이 0600 으로 잠가 둔 것까지.
+ * `.deel` 아래 다른 기록(store · audit)은 전부 잠그는데 여기만 안 잠갔다.
+ */
+{
+  const 살림 = mkdtempSync(join(tmpdir(), 'deel-undo-lock-'));
+  const h = new History(살림);
+  h.nextTurn();
+  const 비밀 = join(살림, '.env');
+  writeFileSync(비밀, 'API_KEY=sk-매우비밀\n', 'utf8');
+  h.snapshot(비밀, 'Bash');
+
+  check('★ 되돌리기 기록에 0600 을 건다', h.잠금?.모드 === 0o600, JSON.stringify(h.잠금));
+  check('건 자리가 허공이 아니다 (파일이 실제로 있다)', existsSync(h.file), h.file);
+  // 잠갔어도 원문은 그대로 담겨 있어야 한다 — 되돌릴 것이 없으면 뜻이 없다.
+  check('원문은 그대로 담긴다', readFileSync(h.file, 'utf8').includes('sk-매우비밀'));
+
+  if (process.platform !== 'win32') {
+    check('★★ 되돌리기 기록이 정말 0600 이다',
+      (statSync(h.file).mode & 0o777) === 0o600, '0' + (statSync(h.file).mode & 0o777).toString(8));
+    check('★ 그 폴더도 본인 것이다 (파일만 잠그면 이름은 다 보인다)',
+      (statSync(h.dir).mode & 0o777) === 0o700, '0' + (statSync(h.dir).mode & 0o777).toString(8));
+  }
+
+  // 통째로 다시 쓰는 자리(되돌리기)를 지나도 빗장이 풀리면 안 된다.
+  h.undo(1);
+  check('★ 되돌린 뒤에도 잠겨 있다', h.잠금?.모드 === 0o600, JSON.stringify(h.잠금));
+  if (process.platform !== 'win32') {
+    check('★★ 되돌린 뒤에도 정말 0600 이다',
+      (statSync(h.file).mode & 0o777) === 0o600, '0' + (statSync(h.file).mode & 0o777).toString(8));
+  }
+  rmSync(살림, { recursive: true, force: true });
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
