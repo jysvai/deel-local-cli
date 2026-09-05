@@ -24,7 +24,7 @@
 // 이 파일 자체는 `tools/` 라 이 검사의 대상이 아니다. 대상이 되면 스스로를
 // 검사하다 도는 이야기가 된다.
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -43,9 +43,59 @@ function 훑기(dir) {
   return out;
 }
 
+/**
+ * `package.json` 의 `files` 가 가리키는 것 전부. 폴더면 파고든다.
+ *
+ * 목록을 여기 손으로 다시 적지 않는다. 두 곳에 적힌 목록은 반드시 어긋나고,
+ * 어긋난 쪽이 어느 쪽인지는 사고가 난 다음에야 알게 된다.
+ */
+function 담길것들() {
+  const { files = [] } = JSON.parse(readFileSync(join(뿌리, 'package.json'), 'utf8'));
+  const out = [];
+  for (const 것 of files) {
+    const p = join(뿌리, 것);
+    let s;
+    try { s = statSync(p); } catch { continue; }  // 없는 것은 npm 도 그냥 넘긴다
+    if (s.isDirectory()) out.push(...훑기(p));
+    else out.push(p);
+  }
+  return out.sort();
+}
+
 const 탈 = [];
 const 종류별 = new Map();
 const 파일들 = [join(뿌리, 'bin', 'deel.js'), ...훑기(src)].sort();
+
+// ── 줄바꿈은 LF 만 담는다 ───────────────────────────────────────────────
+//
+// 1.13.0 을 손으로 올렸더니 148개 중 **47개에 CRLF 가 섞여** 나갔다.
+//
+// `.gitattributes` 에 `eol=lf` 를 적어 두었는데도 그랬다. git 은 이미
+// 체크아웃해 둔 파일을 그 규칙이 생겼다고 소급해서 고쳐 주지 않는다.
+// 규칙이 생기기 전에 `core.autocrlf=true` 로 받아 둔 파일이 디스크에 그대로
+// 남아 있었고, `npm pack` 은 git 이 아니라 **작업 트리**를 담는다. 그래서
+// 저장소는 멀쩡한데 올라간 물건만 어긋났다.
+//
+// 두 가지가 걸린다.
+//
+//   1. 셰뱅이 CRLF 가 되면 리눅스·맥에서 **실행이 아예 안 된다.**
+//      `env: 'node\r': No such file or directory`. 1.13.0 은 `bin/deel.js`
+//      가 마침 LF 라 살았다 — 고쳐서가 아니라 운이 좋아서 살았다.
+//   2. 이 저장소가 파는 문장이 「올라간 물건이 이 소스에서 나왔다」 이다.
+//      줄바꿈이 다르면 CI 가 만든 tarball 과 shasum 이 달라진다. 같은
+//      커밋에서 나왔는데 물건이 다르면, 그 문장은 절반만 참이다.
+//      (실제로 그랬다 — CI 는 af107a1…, 손으로 올린 것은 8705e83…)
+//
+// 사람이 눈으로 볼 수 있는 차이가 아니다. 그러니 여기서 본다.
+const 담길것 = 담길것들();
+for (const p of 담길것) {
+  const 글 = readFileSync(p);
+  const 자리 = 글.indexOf(0x0d);
+  if (자리 === -1) continue;
+  const 줄번호 = 글.subarray(0, 자리).toString('utf8').split('\n').length;
+  const 짧게 = relative(뿌리, p).replace(/\\/g, '/');
+  탈.push(`${짧게}:${줄번호}: 줄바꿈이 CRLF 입니다 — 배포에는 LF 만 담깁니다`);
+}
 
 for (const p of 파일들) {
   const 짧게 = relative(뿌리, p).replace(/\\/g, '/');
@@ -99,3 +149,4 @@ if (탈.length) {
   process.exit(1);
 }
 console.log(`OK  ${파일들.length}개 파일 — ${줄}`);
+console.log(`    배포에 담기는 ${담길것.length}개는 줄바꿈이 전부 LF`);

@@ -171,6 +171,45 @@ trace('5-진짜');
   if (r.ok) check('그림이면 진짜 그림 바이트다', r.buf.length > 8, String(r.buf.length));
 }
 
+// ── 6. 맥·리눅스 갈래도 계약을 지키는가 ───────────────────────────────
+trace('6-갈래별');
+{
+  /*
+   * 세 갈래 중 이 PC 에서 진짜로 도는 것은 하나뿐이다. 나머지 둘은 **한 번도
+   * 안 불려 본 채로** 맥·리눅스 사람에게 나간다. 거기서 계약이 깨지면
+   * (undefined 를 돌려준다든지) 그 사실은 그 사람 화면에서 처음 드러난다.
+   *
+   * 계약은 3번 절에서 `붙여넣기명령` 이 기대는 바로 그것이다 —
+   * 실패는 「없음」(다시 캡처하면 된다)이거나 「왜」(까닭과 길이 있다)여야
+   * 하고, 둘 다 없는 실패는 사람이 뭘 할지 모른다.
+   *
+   * 무엇이 나오는지는 그 PC 에 무엇이 깔렸느냐에 달렸다(리눅스 러너에
+   * xclip 이 있을 수도 없을 수도 있다). 그러니 5번 절과 같은 까닭으로,
+   * **나오는 값이 아니라 계약**을 잰다.
+   */
+  const 계약지킴 = (r) => r && typeof r.ok === 'boolean'
+    && (r.ok ? (Buffer.isBuffer(r.buf) && r.buf.length > 0 && typeof r.mime === 'string')
+      : (r.없음 === true || (typeof r.왜 === 'string' && r.왜.length > 0)));
+
+  const 맥 = 클립보드그림({ platform: 'darwin' });
+  check('★ 맥 갈래가 계약을 지킨다', 계약지킴(맥) === true, JSON.stringify(맥.ok ? { ok: true } : 맥));
+  if (process.platform !== 'darwin') {
+    check('맥이 아닌 곳에서는 osascript 를 못 불렀다고 한다',
+      맥.ok === false && (맥.없음 === true || /osascript/.test(맥.왜 ?? '')), JSON.stringify(맥));
+  }
+
+  const 리 = 클립보드그림({ platform: 'linux' });
+  check('★ 리눅스 갈래가 계약을 지킨다', 계약지킴(리) === true, JSON.stringify(리.ok ? { ok: true } : 리));
+  if (리.ok === false && 리.왜) {
+    // 도구가 없어서 막힌 것이라면, 「안 됩니다」로 끝내지 않았어야 한다.
+    check('★ 막혔으면 무엇을 하면 되는지 같이 준다',
+      /wl-clipboard|xclip|@경로/.test(리.왜), 리.왜);
+  }
+
+  // 낯선 OS 는 2번 절에서 이미 쟀다. 여기서는 그 답도 같은 계약인지만 본다.
+  check('낯선 OS 의 답도 같은 계약이다', 계약지킴(클립보드그림({ platform: 'sunos' })) === true);
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log('\n클립보드 붙이기 검사\n');
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

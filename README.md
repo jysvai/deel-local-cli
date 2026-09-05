@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-7%2C041%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-7%2C046%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -337,7 +337,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.13.0  ⌂ inside
+ deel 1.13.1  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1209,6 +1209,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| [1.13.1](docs/en/releases/1.13.md#1131) | What shipped was not what the source said — 47 of 148 files went out with CRLF line endings |
 | **[1.13.0](docs/en/releases/1.13.md#1130)** | Every place deel touches someone else's endpoint, re-examined — three independent reviewers, four findings they shared |
 | **[1.12.0](docs/en/releases/1.12.md#1120)** | The same prefix was being sent again on every step |
 | **[1.10.0](docs/en/releases/1.10.md#1100)** | ESC actually stops · a full context carries on inside the same turn · every vendor endpoint measured |
