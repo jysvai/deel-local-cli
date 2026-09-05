@@ -142,6 +142,8 @@ const FILES = [
   'plugins.test.js',
   'no-bundle.test.js',
   'shipmeta.test.js',
+  'exitcode.test.js',
+  'doorparity.test.js',
   'edit-bench.js',
 ];
 

@@ -30,7 +30,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { VERSION } from '../version.js';
-import { 규칙모으기, 늘허락 } from '../safety/policy.js';
+import { 규칙모으기, 늘허락, 정책읽기 } from '../safety/policy.js';
+import { 받기설정 } from '../safety/authcmd.js';
 import { run } from '../agent/loop.js';
 import { Session, repairToolPairs } from '../agent/session.js';
 import { Store, sessionsDir, prune } from '../agent/store.js';
@@ -139,6 +140,25 @@ export async function acp(opts = {}) {
       maxTokens: opts.maxTokens ?? prof.maxTokens ?? null,
       streaming: prof.streaming ?? false,
       tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
+      /*
+       * ── 문이 셋인데 둘만 이걸 넣고 있었다 ──────────────────────────
+       *
+       * repl.js 와 oneshot.js 는 이 두 열쇠를 넣는데 여기만 안 넣고 있었다.
+       * 같은 프로필로 같은 게이트웨이에 붙는데 **들어온 문에 따라 다른
+       * 프로그램**이 되던 자리다.
+       *
+       *   vision   : 없으면 아래 눈있나 게터가 늘 거짓이 되어, 그림을 볼 수
+       *              있는 모델에 붙어 있어도 「이 모델은 그림을 못 봅니다」
+       *              라고 답한다. 모델 얘기인데 우리 쪽 사실이 틀렸다.
+       *   열쇠받기 : 없으면 401 을 받고 열쇠를 다시 받아 오는 길이 잠긴다
+       *              (backend/adapter.js 가 !!conn.열쇠받기 로 잠근다).
+       *              한 시간짜리 토큰을 쓰는 사내 게이트웨이가 그 꼴이다 —
+       *              터미널에서는 되고 에디터에서는 한 시간 뒤에 죽는다.
+       *
+       * test/doorparity.test.js 가 세 문의 열쇠 집합을 맞춰 본다.
+       */
+      vision: prof.vision ?? false,
+      열쇠받기: 받기설정(prof, { 정책값: 정책읽기().값 }),
     };
     /*
      * 바깥으로 나가는 연결은 허가가 있어야 연다 (safety/runmode.js).
