@@ -106,7 +106,7 @@ export function reviewSheetEn(a, at, probes) {
   L.push('         filtering its requests, --offline does not start the server at all.');
   L.push('');
   L.push('   Starting with --offline blocks [B], [C] and [D]; traffic stays on this machine.');
-  L.push('   (Verified by the network / web / mcp checks in npm test - 123 assertions.)');
+  L.push('   (Verified by the network / web / mcp checks in npm test; the count is in that output.)');
   L.push('');
 
   L.push('4. Skills and plugins');
@@ -116,7 +116,21 @@ export function reviewSheetEn(a, at, probes) {
   L.push('   (Verified by the no-bundle check in npm test.)');
   L.push('');
 
-  L.push(`5. ${a.files.length} files shipped - SHA-256`);
+  L.push('5. What the tests actually guard');
+  L.push(rule());
+  L.push('   A green test run means "nothing broke", not "breaking it would be caught".');
+  L.push('   The two look identical and are worth the opposite.');
+  L.push('   So we deliberately break the lines that matter and check that the paired test');
+  L.push('   turns red. What gets broken, and what would go wrong if it stayed broken, is');
+  L.push('   written down in test/mutants.json - deleting the whole .deel folder, undo');
+  L.push('   snapshots, ACP door parity, and the exit-code table are among them.');
+  L.push('   A single survivor fails the run.');
+  L.push('   (Verified by npm run mutate; killed and survived counts are in that output.)');
+  L.push('   The tests and that list are not in this package - it ships only running code.');
+  L.push('   Read them in the repository: https://github.com/jysvai/deel-local-cli');
+  L.push('');
+
+  L.push(`6. ${a.files.length} files shipped - SHA-256`);
   L.push(rule());
   const w = Math.max(...a.files.map((f) => f.path.length));
   for (const f of a.files) {

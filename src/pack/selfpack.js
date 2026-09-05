@@ -199,7 +199,7 @@ export function reviewSheet(a, at, { lang = 언어() } = {}) {
   L.push('         아예 띄우지 않습니다.');
   L.push('');
   L.push('   --offline 으로 켜면 [B]·[C]·[D] 가 모두 막히고, 이 컴퓨터 안으로만 다닙니다.');
-  L.push('   (검증: npm test 안의 network / web / mcp 검사 123항목이 이를 확인합니다)');
+  L.push('   (검증: npm test 안의 network / web / mcp 검사가 이를 확인합니다 — 항목 수는 그 출력에 있습니다)');
   L.push('');
 
   L.push('4. 스킬·플러그인');
@@ -209,7 +209,20 @@ export function reviewSheet(a, at, { lang = 언어() } = {}) {
   L.push('   (검증: npm test 안의 no-bundle 검사가 이를 확인합니다)');
   L.push('');
 
-  L.push(`5. 담긴 파일 ${a.files.length}개 — SHA-256`);
+  L.push('5. 검사가 무엇을 지키는가');
+  L.push(줄());
+  L.push('   검사가 초록이라는 것은 「아무도 안 깨졌다」 는 뜻이지 「깨면 잡힌다」 는 뜻이');
+  L.push('   아닙니다. 이 둘은 겉으로 구별이 안 되는데 값어치는 정반대입니다.');
+  L.push('   그래서 지켜야 할 줄을 일부러 어긋내 놓고, 짝지은 검사가 빨개지는지 되잽니다.');
+  L.push('   무엇을 어긋내는지와 「그러면 무슨 일이 나는지」 는 test/mutants.json 에 적어');
+  L.push('   두었습니다 — 살림 폴더 통째로 지우기 · 되돌리기 스냅샷 · ACP 문 파리티 ·');
+  L.push('   도움말의 종료코드 표가 그 안에 있습니다. 하나라도 안 잡히면 실패입니다.');
+  L.push('   (검증: npm run mutate — 잡은 수와 샌 수가 그 출력에 있습니다)');
+  L.push('   검사와 이 목록은 이 묶음에 안 들어 있습니다 — 묶음에는 도는 코드만 담습니다.');
+  L.push('   저장소에서 보실 수 있습니다: https://github.com/jysvai/deel-local-cli');
+  L.push('');
+
+  L.push(`6. 담긴 파일 ${a.files.length}개 — SHA-256`);
   L.push(줄());
   const w = Math.max(...a.files.map((f) => f.path.length));
   for (const f of a.files) {

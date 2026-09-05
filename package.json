@@ -48,11 +48,12 @@
     "chat": "node bin/deel.js",
     "test": "node test/run.mjs",
     "docs": "node tools/check-docs.mjs",
-    "verify": "node test/no-bundle.test.js && node test/network.test.js && node test/web.test.js",
+    "verify": "node test/no-bundle.test.js && node test/network.test.js && node test/web.test.js && node test/mcp.test.js",
     "bench": "node test/edit-bench.js",
     "demo": "node test/demo.js",
     "check": "node tools/check-src.mjs",
     "coverage": "node test/coverage.mjs",
+    "mutate": "node tools/mutate.mjs",
     "prepublishOnly": "npm run check && npm test"
   },
   "dependencies": {},

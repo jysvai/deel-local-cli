@@ -43,3 +43,30 @@ jobs:
       - name: docs links
         if: matrix.os == 'ubuntu-latest' && matrix.node == 22
         run: npm run docs
+
+      # ── 커버리지 숫자를 기계가 내게 한다 ────────────────────────────────
+      #
+      # README 배지와 문서가 「90%」 를 적어 두고 있었는데, 그 수를 내는 기계가
+      # 어디에도 없었다. package.json 에 coverage 스크립트가 있어도 CI 가 안
+      # 돌리면 그 수는 누구의 출력도 아니다 — 심사서에 박혀 있던 「123항목」 과
+      # 같은 종류의 수였다.
+      #
+      # 문턱은 실측(91%)에서 5의 배수로 내림한 90. 올리려면 먼저 재고 올린다.
+      # 파일별이 아니라 **전체**에 건다 — 일부러 낮게 둔 파일이 있고, 그것을
+      # 억지로 올리면 검사가 거짓말을 시작한다(test/coverage.mjs 머리말).
+      - name: coverage floor
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: node test/coverage.mjs --min 90
+
+      # ── 검사가 정말 무언가를 지키는지 되잰다 ────────────────────────────
+      #
+      # 초록불은 「아무도 안 깨졌다」 는 뜻이지 「깨면 잡힌다」 는 뜻이 아니다.
+      # 이 저장소에서 그 차이가 실제로 났다 — 커버리지 문턱(--min)은 열두 판
+      # 동안 색깔만 칠하고 아무것도 안 막았고, 검사는 내내 초록이었다.
+      #
+      # 그래서 지켜야 할 줄을 일부러 어긋내 놓고 짝지은 검사가 빨개지는지 본다.
+      # 무엇을 어긋내는지와 그 까닭은 test/mutants.json 에 적혀 있다.
+      # npm test 뒤에 둔다 — 맨 것이 초록이어야 이 판이 뜻을 갖는다.
+      - name: mutants
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: npm run mutate
