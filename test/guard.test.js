@@ -630,6 +630,66 @@ trace('9-링크탈출');
 
 
 
+trace('9-살림폴더-통째로');
+
+/*
+ * ★★ `.deel` 을 통째로 지우는 것은 막는다.
+ *
+ * ── 왜 이게 빠져 있었나 ─────────────────────────────────────────────────
+ *
+ * 이 프로그램은 `.deel/config.json` 을 **읽는 것**은 촘촘히 막는다. Read 도구도
+ * 막고 `@` 도 막는다 — 실제로 열쇠 한 줄이 대화로 나간 사고를 겪고 고친
+ * 자리다(test/clipboard.test.js 4절).
+ *
+ * 그런데 **지우는 것**은 안 막고 있었다. `rm -rf .deel` 이 checkCommand 와
+ * checkPaths 를 둘 다 그냥 지나갔다. 「작업 폴더 정리해 줘」 한 마디에
+ * 되돌리기 이력과 감사 기록이 같이 사라진다. 되돌리기는 이 프로그램이
+ * 승인 창을 안 띄우는 근거이므로(집안 규칙 3), 그 그물을 지우는 명령을
+ * 그냥 통과시키면 근거가 통째로 없어진다.
+ *
+ * ── 왜 내부살림() 한 곳만 고쳐서는 안 됐나 ──────────────────────────────
+ *
+ * 처음 제안은 `내부살림()` 만 고치는 것이었다. 그런데 `경로낱말` 의
+ * 경로같나 필터가 `/` 나 `\` 를 요구해서, `rm -rf .deel` 의 `.deel` 은
+ * **후보로도 안 잡힌다.** checkPaths 는 그 목록 안에서만 내부살림 을 부르니,
+ * 내부살림 을 아무리 고쳐도 이 네 가지 철자는 안 걸린다. 낱말 뽑는 쪽과
+ * 판정하는 쪽을 **같이** 고쳐야 한다.
+ */
+{
+  const root = mkdtempSync(join(tmpdir(), 'deel-guard-home-'));
+  const scope = makeScope(root);
+  const 막히나 = (cmd) => {
+    try { checkPaths(cmd, scope); return false; } catch { return true; }
+  };
+
+  for (const cmd of [
+    'rm -rf .deel',
+    'rm -rf build dist .deel',
+    'del /f /s /q .deel',
+    'Remove-Item .deel -Recurse -Force',
+  ]) {
+    check(`★★ ${cmd} 를 막는다`, 막히나(cmd), '통과해 버림');
+  }
+
+  // 경로가 붙은 철자도 여전히 막아야 한다 (원래도 막던 자리).
+  check('★ ./.deel 도 막는다', 막히나('rm -rf ./.deel'));
+  check('★ .deel/history 도 막는다', 막히나('rm -rf .deel/history'));
+
+  /*
+   * ── 넓히다 반대로 베면 안 된다 ────────────────────────────────────────
+   *
+   * `경로낱말` 은 이 제품의 모든 경로 검사가 지나는 자리다. 한 글자만 넓으면
+   * `.deel` 을 **이름에 품은** 멀쩡한 것들이 같이 막힌다. 그러면 모델이
+   * 까닭 없이 무언가를 못 하게 되는데, 신고할 사용자가 없다.
+   */
+  check('★ .deelignore 는 안 막는다 (다른 파일이다)', !막히나('cat .deelignore'));
+  check('★ deel 이라는 낱말은 안 막는다', !막히나('echo deel'));
+  check('★ my.deel.txt 같은 이름도 안 막는다', !막히나('cat my.deel.txt'));
+  check('★ 글 속의 .deel 은 안 막는다', !막히나('echo "run .deel later"'));
+
+  rmSync(root, { recursive: true, force: true });
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n안 하는 자리 검사  ${D}(못 하는 것보다 하지 말아야 할 것을 하는 게 무섭다)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

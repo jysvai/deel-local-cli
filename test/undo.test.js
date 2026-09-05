@@ -351,6 +351,72 @@ trace('9-못되돌린것');
   rmSync(방, { recursive: true, force: true });
 }
 
+trace('셸쓰기-다른턴을-되돌리던-것');
+
+/*
+ * ★★ 셸로 고친 파일 때문에 **엉뚱한 턴**이 되돌아가던 것.
+ *
+ * ── 무슨 일이었나 ───────────────────────────────────────────────────────
+ *
+ * 스냅샷은 `isMutating(cmd)` 일 때만 떴다. 그 정규식은 `mv`·`cp`·`rm` 같은
+ * **첫 낱말**만 본다. 그런데 모델이 셸에서 파일을 고치는 흔한 방법은 그게
+ * 아니다 — `echo x > a.js`, `sed -i`, `tee`, `node -e`, `npx prettier --write`.
+ * 열한 가지를 재 보니 `rm` 하나만 걸렸다.
+ *
+ * 못 뜨는 것이 있는 것 자체는 이 프로그램이 원래 인정하는 바다(위 머리말과
+ * docs/safety.md — `↩` 줄이 없으면 아무것도 약속 안 한다). 진짜 문제는
+ * 그다음이었다.
+ *
+ * 스냅샷이 안 뜨면 그 턴은 기록을 **한 줄도** 안 남긴다. 그러면
+ * `History.turns()` 가 그 턴의 존재 자체를 모른다. 그래서 `/undo` 한 번이
+ * 직전의 **무관한 턴**을 되돌리고, 화면에는 초록색 성공 줄이 뜬다.
+ *
+ *   턴1: Edit a.js (A0 → A1)
+ *   턴2: echo B_PWNED > b.js
+ *   /undo  →  a.js 가 A0 으로 되돌아감. b.js 는 그대로 오염.  "✓ 1개 되돌림"
+ *
+ * 사용자는 방금 벌어진 일을 되돌리라고 했고, 초록불을 봤고, 지키고 싶던
+ * 것을 잃었고, 지우고 싶던 것은 그대로 남았다. 「못 되돌린다」 가 아니라
+ * **「엉뚱한 것을 되돌린다」** 이므로 정직 규칙(집안 규칙 6) 위반이다.
+ *
+ * ── 어떻게 고쳤나 ───────────────────────────────────────────────────────
+ *
+ * 새 기록 종류를 만들지 않았다. `skipped` 모양이 이미 있고(binary·못읽음),
+ * 이미 정직한 줄을 찍는다. 셸이 파일에 쓸 낌새면 그 파일로 `skipped` 기록을
+ * 하나 남긴다 — 그러면 턴이 보이고, /undo 가 뛰어넘지 못한다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-shellwrite-'));
+  const h = new History(방);
+  const scope = makeScope(방);
+  const ctx = { scope, history: h, audit: new Audit(방), seen: new Set() };
+
+  const a = join(방, 'a.js');
+  const b = join(방, 'b.js');
+  writeFileSync(a, 'A0\n', 'utf8');
+  writeFileSync(b, 'B0\n', 'utf8');
+
+  // 턴 1 — Write 로 a.js 를 고친다 (여기는 원래도 스냅샷이 뜬다).
+  h.nextTurn();
+  await TOOLS.Write.run({ file_path: 'a.js', content: 'A1\n' }, ctx);
+  check('셸쓰기: 턴1 의 Write 는 먹혔다', readFileSync(a, 'utf8').trim() === 'A1', readFileSync(a, 'utf8').trim());
+
+  // 턴 2 — 셸로 b.js 를 덮어쓴다. 여기가 여태 아무 기록도 안 남기던 자리다.
+  h.nextTurn();
+  await TOOLS.Bash.run({ command: `echo B_PWNED > "${b}"`, description: '덮어쓰기' }, ctx);
+
+  const 턴수 = h.turns().length;
+  check('★★ 셸로 덮어쓴 턴이 이력에 보인다', 턴수 >= 2, `턴 ${턴수}개`);
+
+  const r = h.undo(1);
+  const a지금 = readFileSync(a, 'utf8').trim();
+  check('★★ /undo 한 번이 앞의 무관한 턴을 안 건드린다', a지금 === 'A1',
+    `a.js = ${a지금} (A1 이어야 한다 — A0 이면 엉뚱한 턴을 되돌린 것)`);
+  check('★ 되돌린 결과가 무언가를 말해 준다', !!r && typeof r === 'object', JSON.stringify(r).slice(0, 120));
+
+  rmSync(방, { recursive: true, force: true });
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n되돌리기 검사  ${D}(안전망이 파일을 지우지 않는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

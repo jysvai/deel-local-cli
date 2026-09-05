@@ -466,7 +466,25 @@ export function 경로낱말(cmd) {
     t = t.replace(/^[<>]+/, '');
     if (!t) continue;
     const 풀린 = 자리표풀기(t);
-    const 경로같나 = 풀린.includes('/') || 풀린.includes('\\') || /^[a-zA-Z]:$/.test(풀린);
+    /*
+     * ── 맨 낱말 `.deel` 도 자리로 친다 ──────────────────────────────────
+     *
+     * 이 필터는 `/` 나 `\` 가 있어야 「자리」 로 쳤다. 그래서 `rm -rf .deel`
+     * 의 `.deel` 은 **후보로도 안 잡혔다.** checkPaths 는 이 목록 안에서만
+     * 내부살림() 을 부르므로, 내부살림 을 아무리 고쳐도 이 철자는 안 걸린다.
+     *
+     * 그 결과가 이랬다 — 같은 파일을 지우는 두 명령이 서로 다른 답을 받았다.
+     *
+     *   rm -rf .deel/history   → 막힘
+     *   rm -rf .deel           → 통과
+     *
+     * 그래서 이 이름 하나만 예외로 둔다. **품고 있는 것이 아니라 그 이름
+     * 자체**일 때만이다 — `.deelignore` 는 다른 파일이고, `my.deel.txt` 도
+     * 남의 파일이다. 넓히다 반대로 베면 모델이 까닭 없이 무언가를 못 하게
+     * 되는데, 그것을 신고해 줄 사람이 없다.
+     */
+    const 살림이름 = 풀린 === '.deel' || 풀린.toLowerCase() === '.deel';
+    const 경로같나 = 풀린.includes('/') || 풀린.includes('\\') || /^[a-zA-Z]:$/.test(풀린) || 살림이름;
     if (!경로같나) continue;
     /*
      * 남은 자리표가 있으면(우리가 못 푼 것) **어디로 갈지 모른다.** 울타리
@@ -638,4 +656,59 @@ const MUTATING = /(^|[|;&]\s*)(sudo\s+)?(git\s+(commit|push|merge|rebase|reset)|
 
 export function isMutating(cmd) {
   return MUTATING.test(String(cmd));
+}
+
+/*
+ * 셸이 **파일에 쓰는 꼴**인가 — 스냅샷을 뜰지 정하는 데만 쓴다.
+ *
+ * ── 왜 MUTATING 을 넓히지 않고 새로 만드나 ──────────────────────────────
+ *
+ * MUTATING 은 세 곳에서 쓰인다.
+ *
+ *   tools/index.js:307   스냅샷을 뜰지            ← 넓히고 싶은 곳
+ *   agent/loop.js:1214   같은 명령을 두 번 안 돌린다
+ *   agent/loop.js:1255   엄격 모드에서 물어본다
+ *
+ * 아래 것들을 MUTATING 에 넣으면 뒤의 두 곳이 같이 넓어진다. `echo x > log`
+ * 마다 승인 창이 뜨고, 두 번째 `echo` 가 「다시 실행하지 않습니다」 로 막힌다.
+ * 고치려던 것보다 나쁜 것이 생긴다. 그래서 **쓰임이 하나뿐인 술어**를 따로 둔다.
+ *
+ * ── 왜 넉넉해도 되나 ────────────────────────────────────────────────────
+ *
+ * 여기서 잘못 걸리면 안 떠도 될 파일을 하나 더 뜨는 것뿐이다. MUTATING 에서
+ * 잘못 걸리면 멀쩡한 명령이 막힌다. 값이 다른 두 실수라, 이쪽은 넉넉히 잡는다.
+ * `echo "a > b"` 처럼 글 안의 부등호까지 걸려도 손해가 스냅샷 한 장이다.
+ *
+ * ── 왜 이 목록이 필요했나 ───────────────────────────────────────────────
+ *
+ * 열한 가지 파일 고치기를 재 보니 MUTATING 에는 `rm` 하나만 걸렸다.
+ *
+ *   O rm f.js
+ *   X echo x > f.js      X printf x >> f.js     X sed -i s/a/b/ f.js
+ *   X tee f.js           X truncate -s 0 f.js   X dd of=f.js
+ *   X node -e "…"        X python -c "…"        X npx prettier --write src/
+ *   X git checkout -- f.js
+ *
+ * 즉 모델이 셸에서 파일을 고치는 **흔한 방법 전부**가 스냅샷 없이 지나갔다.
+ * 그리고 스냅샷이 없으면 그 턴은 기록을 한 줄도 안 남겨서, /undo 가 그 턴의
+ * 존재를 모르고 **앞의 무관한 턴**을 되돌린 뒤 성공했다고 적었다.
+ * (검사: test/undo.test.js 의 「셸쓰기-다른턴을-되돌리던-것」)
+ */
+const 셸쓰기무늬 = [
+  />{1,2}\s*(?![&>])\S/,                       // echo x > f · printf x >> f  (2>&1 은 & 라 안 걸린다)
+  /\bsed\s+(-[a-z]*i\b|--in-place)/i,          // sed -i · sed --in-place
+  /\bperl\s+(-[a-z]*i\b|--in-place)/i,
+  /\btee\b/i,
+  /\b(set-content|add-content|out-file)\b/i,   // 파워셸
+  /\btruncate\b/i,
+  /\bdd\b[^|;&]*\bof=/i,
+  /--write\b/i,                                // prettier --write 류
+  /\bpatch\b/i,
+  /\bgit\s+(checkout\s+--|restore)\b/i,        // 작업 트리를 되돌리는 것도 파일을 바꾼다
+];
+
+/** 이 명령이 파일 내용을 바꿀 낌새인가. **스냅샷 판단에만** 쓴다. */
+export function 셸이파일에쓰나(cmd) {
+  const s = String(cmd ?? '');
+  return 셸쓰기무늬.some((무늬) => 무늬.test(s));
 }

@@ -6,7 +6,7 @@ import { 무리로돌리기 } from './spawn.js';
 import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
-import { checkCommand, checkPaths, isMutating } from '../safety/guard.js';
+import { checkCommand, checkPaths, isMutating, 셸이파일에쓰나 } from '../safety/guard.js';
 import { 띄우기, 나무끊기, 무리끊기, JOBS_TOOL } from './jobs.js';
 import { 셸명령 } from './shell.js';
 import { findMatch, applySpans, reindent, TIER_LABELS } from './edit-match.js';
@@ -304,7 +304,25 @@ function 뜰만한낱말(cmd) {
  * @returns {string[]} 떠 둔 파일들의 보인 이름
  */
 function 바꾸기전스냅샷(cmd, ctx) {
-  if (!isMutating(cmd)) return [];
+  /*
+   * ── 쓰는 꼴도 뜬다 ────────────────────────────────────────────────────
+   *
+   * 여태 `isMutating(cmd)` 하나로 갈랐다. 그건 `mv`·`cp`·`rm` 같은 **첫
+   * 낱말**만 보는 자다. 그런데 모델이 셸에서 파일을 고치는 흔한 방법은
+   * `echo x > f` · `sed -i` · `tee` · `prettier --write` 이고, 그 전부가
+   * 여기서 빠져나갔다 — 열한 가지 중 `rm` 하나만 걸렸다.
+   *
+   * 그냥 못 뜨는 것으로 끝나지 않았다. 스냅샷이 없으면 그 턴은 기록을 한 줄도
+   * 안 남기고, 그러면 History.turns() 가 그 턴을 못 본다. /undo 는 그 턴을
+   * **뛰어넘어 앞의 무관한 턴**을 되돌리고 초록색 성공 줄을 찍었다. 사용자는
+   * 지키고 싶던 것을 잃고 지우고 싶던 것은 그대로 두게 된다.
+   *
+   * MUTATING 을 넓히면 안 된다 — 승인 창과 이중실행 거부가 같이 물고 있어서
+   * `echo` 마다 물어보게 된다. 그래서 셸이파일에쓰나() 를 따로 둔다
+   * (safety/guard.js).
+   */
+  const 셸쓰기 = 셸이파일에쓰나(cmd);
+  if (!isMutating(cmd) && !셸쓰기) return [];
   const 뜬것 = [];
   for (const t of 뜰만한낱말(cmd)) {
     if (뜬것.length >= 스냅샷상한) break;
@@ -313,7 +331,19 @@ function 바꾸기전스냅샷(cmd, ctx) {
     // 뜨는 데 실패했다고 명령 자체를 막으면 안 되는 명령까지 막힌다.
     try { abs = ctx.scope.resolve(t); } catch { continue; }
     try {
-      if (!existsSync(abs) || statSync(abs).isDirectory()) continue;
+      const 있나 = existsSync(abs);
+      if (있나 && statSync(abs).isDirectory()) continue;
+      /*
+       * 쓰는 꼴이면 **없는 파일도** 떠 둔다.
+       *
+       * `echo x > 새파일.js` 는 파일을 만든다. 「없었다」 는 사실 자체가
+       * 되돌릴 거리다 — Write 도구가 이미 그렇게 한다(before: null 이면
+       * /undo 가 지운다). 여기만 안 그러면 셸로 만든 파일은 영영 안 지워진다.
+       *
+       * 옮기기·지우기(isMutating)는 반대다. 없는 파일을 떠 두면 `rm *.tmp`
+       * 한 번에 이력이 쓰레기로 찬다. 그래서 이 갈래는 쓰는 꼴에만 연다.
+       */
+      if (!있나 && !셸쓰기) continue;
       ctx.history.snapshot(abs, 'Bash');
       뜬것.push(ctx.scope.show(abs));
     } catch { /* 못 뜨면 그냥 넘어간다. 명령은 돌아야 한다 */ }
