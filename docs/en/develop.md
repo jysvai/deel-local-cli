@@ -24,14 +24,20 @@ child processes too, so the `cli` suite that spawns `deel` counts like everythin
 
 Currently **90% overall** - and it depends on where you measure.
 
-| Where | How much | |
-|---|---|---|
-| Windows | 90.6% | 20,864/23,030 |
-| Linux | 89.96% | 20,717/23,030 |
+| Where | How much | | Measured on |
+|---|---|---|---|
+| Windows | 90.6% | 20,947/23,119 | 1.15.0 |
+| Linux | 89.96% | 20,717/23,030 | 1.14.0 (CI) |
 
 Windows-only paths (`tools/excel-com.js` and friends) are never executed on
 Linux, so neither figure is the "right" one - **both are right**. It also moves
 by a few lines per run.
+
+Why the "measured on" column: Linux cannot be measured on the development
+machine, so the Linux figure here is **what that release's CI last reported**,
+not what today's source scores. Putting two numbers side by side without saying
+they were taken at different times is exactly the mistake that set the floor
+wrong in 1.14.0.
 
 CI stops the build below **88% on Linux** - the lower figure rounded down, minus
 a point. Setting the floor flush against the measurement makes it a coin toss
