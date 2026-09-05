@@ -431,7 +431,7 @@ export async function handle(line, session, ctx) {
       }
 
       const { 있는것, 없는것 } = 둘러보기();
-      const 뿌리것 = ctx?.scope?.root ? 프로젝트갈래(ctx.scope.root) : null;
+      const 뿌리것 = ctx?.scope?.root ? await 프로젝트갈래(ctx.scope.root) : null;
       const 떠있는것 = 지금것들();
       say('');
       if (있는것.length) {

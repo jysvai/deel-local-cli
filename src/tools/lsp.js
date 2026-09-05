@@ -179,7 +179,7 @@ async function 채비(args, ctx) {
    * 간다 — 모델은 `handleClick 어디 있어` 처럼 이름만 알고 부르는 것이 보통이라,
    * 매번 파일을 요구하면 이 도구를 쓰는 값이 사라진다.
    */
-  const 볼것 = 파일 ?? 프로젝트갈래(ctx.scope.root)?.대표파일 ?? null;
+  const 볼것 = 파일 ?? (await 프로젝트갈래(ctx.scope.root))?.대표파일 ?? null;
   if (!볼것) return { 오류: '이 폴더에서 쓸 수 있는 언어 서버가 없습니다. Grep · Outline 을 쓰세요.' };
   if (!갈래(볼것)) return { 오류: `언어 서버가 없는 갈래입니다: ${볼것}` };
 

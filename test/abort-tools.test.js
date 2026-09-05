@@ -35,6 +35,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TOOLS, runTool } from '../src/tools/index.js';
+import { walk } from '../src/tools/fsutil.js';
 import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
@@ -193,6 +194,56 @@ trace('4-훑기');
   rmSync(방, { recursive: true, force: true });
 }
 
+trace('4-2-훑는-도중에');
+
+// ── 4-2. 훑는 **도중에** 누른 것이 들리는가 ─────────────────────────────
+//
+// 위 4번은 **누르고 나서 시킨** 것을 잰다. 그건 시작하기 전에 한 번 보면 되니
+// 동기 훑기로도 통과한다. 실제로 그렇게 통과하고 있었다.
+//
+// 사람이 실제로 하는 것은 반대다 — 시켜 놓고, 오래 걸리니까, 그때 누른다.
+//
+// 동기로 훑는 동안에는 그 키가 배달될 자리가 없다. walk() 안에 `signal.aborted`
+// 를 보는 줄이 **있는데도** 그렇다. 그 값을 바꾸는 것은 이벤트 루프에 걸린
+// 콜백인데, 동기 반복문이 도는 동안 이벤트 루프는 한 칸도 안 돈다. 즉 그 줄은
+// 부르기 전에 이미 켜져 있던 깃발만 볼 수 있다 — 도중에는 절대 안 바뀐다.
+// 지키는 것처럼 생겼는데 아무것도 안 지키는 줄이다.
+//
+// 그래서 여기서는 **시킨 뒤에** 끈다. 훑기가 중간에 숨을 쉬면 그 자리에서
+// 들리고, 안 쉬면 다 훑고 나서야 들린다 — 둘은 결과로 갈린다.
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-abort42-'));
+  const 폴더수 = 60;
+  const 폴더당 = 50;
+  for (let i = 0; i < 폴더수; i++) {
+    const d = join(방, `d${i}`);
+    mkdirSync(d);
+    for (let j = 0; j < 폴더당; j++) writeFileSync(join(d, `f${j}.txt`), 'x\n');
+  }
+  const 전부수 = 폴더수 * 폴더당;
+
+  const 다본것 = await walk(방);
+  check('안 멈추면 다 훑는다', 다본것.length === 전부수 && !다본것.끊김, `${다본것.length}/${전부수}개`);
+
+  const ac = new AbortController();
+  // 시킨 **뒤에** 끈다. 훑기가 한 번이라도 숨을 쉬어야 이 콜백이 돈다.
+  setImmediate(() => ac.abort());
+  const 끊긴것 = await walk(방, { signal: ac.signal });
+  check('★★ 훑는 도중에 누른 것이 그 자리에서 들린다', 끊긴것.끊김 === true,
+    `끊김=${끊긴것.끊김} · ${끊긴것.length}/${전부수}개`);
+  check('★★ 다 훑고 나서 멈추는 것이 아니다', 끊긴것.length < 전부수,
+    `${끊긴것.length}/${전부수}개까지만 훑었다`);
+
+  // 도구를 거쳐도 같아야 한다 — walk 만 고치고 Glob 이 안 기다리면 헛일이다.
+  const ac2 = new AbortController();
+  setImmediate(() => ac2.abort());
+  const 도구것 = await TOOLS.Glob.run({ pattern: '**/*.txt' }, 판(방, { signal: ac2.signal }));
+  check('★ Glob 도 도중에 멈춘다', !!도구것.error && /중단/.test(도구것.error),
+    도구것.error ?? 도구것.summary ?? '');
+
+  rmSync(방, { recursive: true, force: true });
+}
+
 trace('5-비동기');
 
 // ── 5. 오래 걸리는 도구가 귀를 막지 않는다 ─────────────────────────────
@@ -313,6 +364,7 @@ trace('6-찾기');
   // 멈추라고 하면 자식(rg)을 죽이고 곧바로 돌아온다.
   const ac = new AbortController();
   const t1 = Date.now();
+  // 일부러 안 기다린다 — 돌기 **시작한 뒤에** 끄는 것이 이 검사의 요점이다.
   const 일 = TOOLS.Grep.run({ pattern: '바늘' }, 판(방, { signal: ac.signal }));
   ac.abort();
   const 끊은것 = await 일;

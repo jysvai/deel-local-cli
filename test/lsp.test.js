@@ -180,10 +180,10 @@ trace('3-켜기');
 셈지우기();
 
 {
-  const 것 = 프로젝트갈래(root);
+  const 것 = await 프로젝트갈래(root);
   check('이 폴더의 언어를 센다', 것?.갈래 === 'ts' && 것.개수 >= 5, JSON.stringify(것));
   check('대표 파일이 이 폴더 안이다', String(것?.대표파일 ?? '').startsWith(root));
-  check('언어서버있나 가 true', 언어서버있나(root) === true);
+  check('언어서버있나 가 true', (await 언어서버있나(root)) === true);
 
   const 서버 = await 얻기(root, join(root, 'src', '셈.js'));
   check('켜졌다', !!서버 && 서버.살았나(), 서버 ? String(서버.죽음) : 'null');

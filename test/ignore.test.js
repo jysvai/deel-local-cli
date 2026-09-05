@@ -145,7 +145,7 @@ const rels = (list) => list.map((f) => f.rel).sort();
 // ── 2. walk ────────────────────────────────────────────────────────────
 trace('2-walk');
 {
-  const 본것 = walk(root);
+  const 본것 = await walk(root);
   const r = rels(본것);
   check('out/ 안은 안 나온다', !r.some((x) => x.startsWith('out/')), r.join(' '));
   check('*.log 는 빠지고 !important.log 는 남는다', !r.includes('x.log') && r.includes('important.log'), r.join(' '));
@@ -155,17 +155,17 @@ trace('2-walk');
   check('남는 것은 남는다', r.includes('src/a.js') && r.includes('.gitignore'));
   check('건너뛴 수를 센다 — 폴더 3 (out · sub/gen · data) · 파일 2 (x.log · secret.txt)', 본것.건너뜀?.폴더 === 3 && 본것.건너뜀?.파일 === 2, JSON.stringify(본것.건너뜀));
   check('건너뜀은 열거되지 않는다 (JSON 에 안 섞인다)', !Object.keys(본것).includes('건너뜀') && !('건너뜀' in JSON.parse(JSON.stringify(본것))));
-  const 전부 = walk(root, { ignore: false });
+  const 전부 = await walk(root, { ignore: false });
   check('ignore: false 면 전부 나온다', rels(전부).includes('out/b.js') && rels(전부).includes('secret.txt') && 전부.건너뜀.폴더 === 0, rels(전부).join(' '));
 }
 
 // ── 3. 도구들 — 같은 규칙, 그리고 수를 말한다 ─────────────────────────
 trace('3-도구');
 {
-  const g = TOOLS.Glob.run({ pattern: '**/*.js' }, ctx);
+  const g = await TOOLS.Glob.run({ pattern: '**/*.js' }, ctx);
   check('Glob 은 out/ 를 안 낸다', !/out\//.test(g.content) && /src\/a\.js/.test(g.content), g.content);
   check('Glob 이 건너뛴 수를 말한다', /\.gitignore 로 폴더 3개 · 파일 2개 건너뜀/.test(g.content), g.content.split('\n').pop());
-  const g0 = TOOLS.Glob.run({ pattern: '**/*.nothing' }, ctx);
+  const g0 = await TOOLS.Glob.run({ pattern: '**/*.nothing' }, ctx);
   check('못 찾았을 때도 건너뛴 수는 말한다', /찾은 파일 없음/.test(g0.content) && /건너뜀/.test(g0.content), g0.content);
 
   /*
@@ -204,7 +204,7 @@ trace('3-도구');
   const gr1 = await TOOLS.Grep.run({ pattern: 'needle', path: 'out/b.js' }, ctx);
   check('파일을 짚어 준 Grep 은 그대로 본다', /out\/b\.js/.test(gr1.content) && !/건너뜀/.test(gr1.content), gr1.content);
 
-  const o = TOOLS.Outline.run({}, ctx);
+  const o = await TOOLS.Outline.run({}, ctx);
   check('Outline 도 out/ 를 안 낸다', !/out\//.test(o.content ?? '') && /src\/a\.js/.test(o.content ?? ''), (o.content ?? o.error ?? '').slice(0, 120));
   check('Outline 도 건너뛴 수를 말한다', /건너뜀/.test(o.content ?? ''), (o.content ?? '').split('\n').pop());
 
@@ -260,8 +260,8 @@ trace('4-회귀');
 {
   const 맨 = mkdtempSync(join(tmpdir(), 'deel-ignore-plain-'));
   for (const f of ['a.js', 'out/b.js', 'x.log', 'node_modules/m.js', 'build/z.js']) { const p = join(맨, f); mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, 'x'); }
-  const 켬 = walk(맨);
-  const 끔 = walk(맨, { ignore: false });
+  const 켬 = await walk(맨);
+  const 끔 = await walk(맨, { ignore: false });
   check('규칙 파일이 없으면 켜고 끄고가 같다', JSON.stringify(rels(켬)) === JSON.stringify(rels(끔)) && 켬.건너뜀.폴더 === 0 && 켬.건너뜀.파일 === 0, rels(켬).join(' '));
   check('바닥(node_modules · build)은 규칙과 무관하게 여전히 건너뛴다', !rels(켬).some((x) => x.startsWith('node_modules/') || x.startsWith('build/')), rels(켬).join(' '));
   rmSync(맨, { recursive: true, force: true });
@@ -277,12 +277,12 @@ trace('5-시간');
     mkdirSync(dir, { recursive: true });
     for (let i = 0; i < 100; i++) writeFileSync(join(dir, `f${i}.${i % 10 === 0 ? 'log' : 'js'}`), 'x');
   }
-  walk(큰, { ignore: false });   // 먼저 한 번 — 안 데우고 재면 첫 훑기가 OS 캐시 값을 혼자 뒤집어쓴다
+  await walk(큰, { ignore: false });   // 먼저 한 번 — 안 데우고 재면 첫 훑기가 OS 캐시 값을 혼자 뒤집어쓴다
   const t0 = process.hrtime.bigint();
-  const 본것 = walk(큰);
+  const 본것 = await walk(큰);
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   const t1 = process.hrtime.bigint();
-  walk(큰, { ignore: false });
+  await walk(큰, { ignore: false });
   const ms0 = Number(process.hrtime.bigint() - t1) / 1e6;
   check(`5,000개를 규칙 켜고 훑는 데 ${ms.toFixed(0)}ms (끄면 ${ms0.toFixed(0)}ms) — 1.5초 안`, ms < 1500, `${ms.toFixed(0)}ms`);
   check('그중 *.log 500개를 건너뛰었다 (남는 것 4,500 + .gitignore 자신)', 본것.건너뜀.파일 === 500 && 본것.length === 4501, JSON.stringify({ 남음: 본것.length, ...본것.건너뜀 }));

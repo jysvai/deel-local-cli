@@ -411,7 +411,7 @@ export async function chatLoop(opts = {}) {
    * 답이 바뀌지 않는다. 아무것도 안 깔아 준다 — 있으면 쓰고 없으면 없는 대로
    * Grep·Outline 으로 간다 (lsp/servers.js 머리말).
    */
-  session.lsp = 언어서버있나(root);
+  session.lsp = await 언어서버있나(root);
   // 지난 대화에서 정해 둔 것을 들고 시작한다.
   // 기억은 Session 이 켤 때 직접 읽는다 (session.js 생성자) — deel run 도 같은 것을 들고 시작하게.
 

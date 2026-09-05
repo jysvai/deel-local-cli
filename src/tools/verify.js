@@ -194,13 +194,13 @@ export const VERIFY_TOOL = {
         try { abs = ctx.scope.resolve(p); } catch (e) { 볼것.push({ 없음: p, 왜: e.message }); continue; }
         if (!existsSync(abs)) { 볼것.push({ 없음: p, 왜: '파일이 없습니다' }); continue; }
         if (statSync(abs).isDirectory()) {
-          const 안것 = walk(abs, { skipDirs: SKIP_DIRS });
+          const 안것 = await walk(abs, { skipDirs: SKIP_DIRS });
           셈더하기(안것);
           for (const f of 안것) 볼것.push({ path: f.path });
         } else 볼것.push({ path: abs });      // 짚어 준 파일은 규칙과 상관없이 본다
       }
     } else {
-      const 전부 = walk(뿌리, { skipDirs: SKIP_DIRS });
+      const 전부 = await walk(뿌리, { skipDirs: SKIP_DIRS });
       셈더하기(전부);
       const 볼만한것 = 전부
         .filter((f) => ['.html', '.htm', '.css', '.json', '.js', '.mjs', '.cjs', '.py'].includes(extname(f.path).toLowerCase()));

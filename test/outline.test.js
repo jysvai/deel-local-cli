@@ -113,7 +113,7 @@ export interface 모양 { a: number }
   쓰기('그림.svg', '<svg></svg>');
   쓰기('README.md', '# 제목\n## 둘째\n');
 
-  const r = TOOLS.Outline.run({ path: 'src' }, ctx);
+  const r = await TOOLS.Outline.run({ path: 'src' }, ctx);
   check('Outline 이 폴더를 본다', !r.error, r.error ?? '');
   check('두 파일의 뼈대가 다 나온다', /a\.js/.test(r.content) && /b\.js/.test(r.content));
   check('이름과 줄 번호가 같이 나온다', /\d+\s+fn\s+하나/.test(r.content),
@@ -127,7 +127,7 @@ export interface 모양 { a: number }
     `${통째로.toLocaleString()} → ${뼈대토큰.toLocaleString()}토큰 (${(통째로 / 뼈대토큰).toFixed(1)}배)`);
 
   // 정직함 — 못 읽은 것을 조용히 빼면 모델은 그 파일이 없는 줄 안다.
-  const 전체 = TOOLS.Outline.run({}, ctx);
+  const 전체 = await TOOLS.Outline.run({}, ctx);
   check('못 읽은 것을 그렇다고 말한다', /뼈대는 못 뽑은 것/.test(전체.content),
     전체.summary);
   check('그 파일 이름도 적어 준다', /설정\.yml/.test(전체.content));
@@ -136,11 +136,11 @@ export interface 모양 { a: number }
   check('마크다운 헤딩도 뼈대로 나온다', /README\.md/.test(전체.content));
 
   // 좁히기는 Glob 과 같은 뜻이어야 한다.
-  const 좁힌것 = TOOLS.Outline.run({ pattern: '**/a.js' }, ctx);
+  const 좁힌것 = await TOOLS.Outline.run({ pattern: '**/a.js' }, ctx);
   check('pattern 으로 좁힐 수 있다', /a\.js/.test(좁힌것.content) && !/b\.js/.test(좁힌것.content),
     좁힌것.summary);
 
-  const 없는것 = TOOLS.Outline.run({ path: '없는폴더' }, ctx);
+  const 없는것 = await TOOLS.Outline.run({ path: '없는폴더' }, ctx);
   check('없는 경로는 오류로 말한다', !!없는것.error, 없는것.error ?? '');
 
   // 상한이 창을 따라간다

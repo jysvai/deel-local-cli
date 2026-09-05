@@ -81,7 +81,7 @@ trace('2-한-개-옮기기');
   const { root, ctx } = 판깔기();
   writeFileSync(join(root, 'a.js'), 'const x = 1;\n', 'utf8');
 
-  const r = TOOLS.Move.run({ from: 'a.js', to: 'src/core/a.js' }, ctx);
+  const r = await TOOLS.Move.run({ from: 'a.js', to: 'src/core/a.js' }, ctx);
   check('옮겨졌다', !r.error && existsSync(join(root, 'src', 'core', 'a.js')), r.error ?? '');
   check('떠난 자리는 비었다', !existsSync(join(root, 'a.js')));
   check('내용은 그대로다', readFileSync(join(root, 'src', 'core', 'a.js'), 'utf8') === 'const x = 1;\n');
@@ -106,7 +106,7 @@ trace('3-되돌리기');
 {
   const { root, ctx } = 판깔기();
   writeFileSync(join(root, 'a.js'), 'const x = 1;\n', 'utf8');
-  TOOLS.Move.run({ from: 'a.js', to: 'src/a.js' }, ctx);
+  await TOOLS.Move.run({ from: 'a.js', to: 'src/a.js' }, ctx);
 
   ctx.history.undo(1);
   check('되돌리면 원래 자리로 온다', existsSync(join(root, 'a.js')));
@@ -125,7 +125,7 @@ trace('4-폴더째-옮기기');
   writeFileSync(join(root, 'ui', 'a.js'), 'a\n', 'utf8');
   writeFileSync(join(root, 'ui', 'b.js'), 'b\n', 'utf8');
 
-  const r = TOOLS.Move.run({ from: 'ui', to: 'src/view' }, ctx);
+  const r = await TOOLS.Move.run({ from: 'ui', to: 'src/view' }, ctx);
   check('폴더가 통째로 옮겨졌다', !r.error && existsSync(join(root, 'src', 'view', 'a.js')), r.error ?? '');
   check('안의 것이 다 따라왔다', existsSync(join(root, 'src', 'view', 'b.js')));
   check('떠난 폴더는 없다', !existsSync(join(root, 'ui')));
@@ -149,12 +149,12 @@ trace('5-겹칠때');
   mkdirSync(join(root, 'src'), { recursive: true });
   writeFileSync(join(root, 'src', 'a.js'), '원래것\n', 'utf8');
 
-  const r = TOOLS.Move.run({ from: 'a.js', to: 'src/a.js' }, ctx);
+  const r = await TOOLS.Move.run({ from: 'a.js', to: 'src/a.js' }, ctx);
   check('겹치면 거절한다', !!r.error, r.error ?? '(그냥 덮어썼다)');
   check('거절했으면 원래 것이 살아 있다', readFileSync(join(root, 'src', 'a.js'), 'utf8') === '원래것\n');
   check('어떻게 하라고 알려 준다', /overwrite/.test(r.error ?? ''));
 
-  const r2 = TOOLS.Move.run({ from: 'a.js', to: 'src/a.js', overwrite: true }, ctx);
+  const r2 = await TOOLS.Move.run({ from: 'a.js', to: 'src/a.js', overwrite: true }, ctx);
   check('overwrite 를 주면 덮어쓴다', !r2.error && readFileSync(join(root, 'src', 'a.js'), 'utf8') === '새것\n',
     r2.error ?? '');
 
@@ -174,19 +174,19 @@ trace('6-막아야-하는-것');
   writeFileSync(join(root, 'ui', 'a.js'), 'x\n', 'utf8');
 
   // 폴더를 제 안으로 — 셸에서도 잘 나는 사고다. 그대로 두면 폴더가 사라진다.
-  const 안으로 = TOOLS.Move.run({ from: 'ui', to: 'ui/inner' }, ctx);
+  const 안으로 = await TOOLS.Move.run({ from: 'ui', to: 'ui/inner' }, ctx);
   check('폴더를 제 안으로는 못 옮긴다', !!안으로.error, 안으로.error ?? '(옮겨졌다)');
   check('막았으면 폴더가 그대로 있다', existsSync(join(root, 'ui', 'a.js')));
 
-  const 밖 = (() => {
-    try { return TOOLS.Move.run({ from: 'a.js', to: '../밖.js' }, ctx); } catch (e) { return { error: e.message }; }
+  const 밖 = await (async () => {
+    try { return await TOOLS.Move.run({ from: 'a.js', to: '../밖.js' }, ctx); } catch (e) { return { error: e.message }; }
   })();
   check('작업 폴더 밖으로 못 나간다', !!밖.error, 밖.error ?? '(나갔다)');
 
-  const 없는것 = TOOLS.Move.run({ from: '없는파일.js', to: 'b.js' }, ctx);
+  const 없는것 = await TOOLS.Move.run({ from: '없는파일.js', to: 'b.js' }, ctx);
   check('없는 파일은 또렷하게 거절한다', /없는 파일/.test(없는것.error ?? ''), 없는것.error ?? '');
 
-  const 같은자리 = TOOLS.Move.run({ from: 'a.js', to: 'a.js' }, ctx);
+  const 같은자리 = await TOOLS.Move.run({ from: 'a.js', to: 'a.js' }, ctx);
   check('같은 자리로 옮기라면 거절한다', !!같은자리.error, 같은자리.error ?? '');
 
   rmSync(root, { recursive: true, force: true });
@@ -202,7 +202,7 @@ trace('7-한꺼번에-여러-개');
   const { root, ctx } = 판깔기();
   for (const n of ['a.js', 'b.js', 'c.js']) writeFileSync(join(root, n), `${n}\n`, 'utf8');
 
-  const r = TOOLS.Move.run({ moves: [
+  const r = await TOOLS.Move.run({ moves: [
     { from: 'a.js', to: 'src/a.js' },
     { from: 'b.js', to: 'src/b.js' },
     { from: 'c.js', to: 'test/c.js' },
@@ -250,7 +250,7 @@ trace('8-하나가-막혀도');
   writeFileSync(join(root, 'a.js'), 'a\n', 'utf8');
   writeFileSync(join(root, 'c.js'), 'c\n', 'utf8');
 
-  const r = TOOLS.Move.run({ moves: [
+  const r = await TOOLS.Move.run({ moves: [
     { from: 'a.js', to: 'src/a.js' },
     { from: '없는것.js', to: 'src/b.js' },
     { from: 'c.js', to: 'src/c.js' },
@@ -261,7 +261,7 @@ trace('8-하나가-막혀도');
   check('막힌 것을 감추지 않는다', /실패|✗/.test(r.content ?? ''), r.content ?? '');
   check('막힌 것의 이름이 나온다', /없는것\.js/.test(r.content ?? ''), r.content ?? '');
 
-  const 다막힘 = TOOLS.Move.run({ moves: [{ from: '없1.js', to: 'x.js' }, { from: '없2.js', to: 'y.js' }] }, ctx);
+  const 다막힘 = await TOOLS.Move.run({ moves: [{ from: '없1.js', to: 'x.js' }, { from: '없2.js', to: 'y.js' }] }, ctx);
   // 하나도 못 옮겼으면 오류여야 한다 — 아니면 모델이 됐다고 넘어간다.
   check('하나도 못 옮기면 오류다', !!다막힘.error, JSON.stringify(다막힘).slice(0, 80));
 

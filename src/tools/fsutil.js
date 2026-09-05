@@ -240,16 +240,44 @@ export function 훑기상한(env = process.env) {
 /**
  * 폴더를 훑는다.
  *
+/*
+ * ── 몇 개마다 한 번 숨을 쉴까 ───────────────────────────────────────────
+ *
+ * 숨 한 번은 setImmediate 한 번이고, 그 사이에 이벤트 루프가 한 바퀴 돈다.
+ * 그 한 바퀴가 이 파일에서 제일 중요한 줄이다 — 그동안에만 키보드가 배달되고,
+ * 그동안에만 signal.aborted 가 참으로 바뀔 수 있다.
+ *
+ * 자주 쉬면 훑기 자체가 느려지고, 드물게 쉬면 그만큼 귀를 닫는다. 200개면
+ * 사내망 드라이브에서도 한 숨 사이가 10ms 언저리다.
+ */
+export const 숨쉴간격 = 200;
+const 한숨 = () => new Promise((풀기) => setImmediate(풀기));
+
+/**
+ * 폴더를 훑는다. **비동기다** — 부르는 쪽은 반드시 await 한다.
+ *
  * @param {AbortSignal|null} signal 멈추라면 훑다 말고 나온다.
  *   사내망 드라이브에서는 파일 20,000개 훑기가 몇 초다. 그 사이에
  *   ESC 를 눌렀는데 끝까지 다 훑고 나서 멈추면, 사람 눈에는 멈추지
  *   않는 것으로 보인다. 나온 것에 `끊김` 을 달아 부르는 쪽이 알게 한다 —
  *   조용히 적게 돌려주면 「그런 파일이 없다」가 되어 버린다.
+ *
+ *   ── 왜 비동기여야 하나 ───────────────────────────────────────────────
+ *
+ *   여기 `signal?.aborted` 를 보는 줄은 오래 있었다. 그런데 훑기가 동기면
+ *   그 줄은 **부르기 전에 이미 켜져 있던 깃발**만 볼 수 있다. 깃발을 켜는
+ *   것은 이벤트 루프에 걸린 콜백인데, 동기 반복문이 도는 동안 이벤트 루프는
+ *   한 칸도 안 돈다.
+ *
+ *   그래서 「누르고 나서 시킨」 것은 멈추고 「시켜 놓고 누른」 것은 안 멈췄다.
+ *   사람이 실제로 하는 것은 뒤쪽인데. 지키는 것처럼 생겼는데 아무것도 안
+ *   지키는 줄이었다 (검사: test/abort-tools.test.js 의 4-2).
  */
-export function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS, ignore = true, signal = null } = {}) {
+export async function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS, ignore = true, signal = null } = {}) {
   const out = [];
   const 건너뜀 = { 폴더: 0, 파일: 0 };
   let 끊김 = false;
+  let 본것 = 0;
   const stack = [{ dir: root, rel: '', 규칙: ignore ? 뿌리규칙읽기(root) : [] }];
   while (stack.length && out.length < limit) {
     if (signal?.aborted) { 끊김 = true; break; }
@@ -276,7 +304,14 @@ export function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS, ignor
         out.push({ path: full, rel: erel, mtime: st.mtimeMs, size: st.size });
         if (out.length >= limit) break;
       }
+      // 본 것을 다 센다 — 걸러낸 것도 readdirSync·걸리나 값을 이미 치렀다.
+      본것 += 1;
+      if (본것 % 숨쉴간격 === 0) {
+        await 한숨();
+        if (signal?.aborted) { 끊김 = true; break; }
+      }
     }
+    if (끊김) break;
   }
   Object.defineProperty(out, '건너뜀', { value: 건너뜀, enumerable: false });
   // 상한까지 찼으면 "여기서 멈췄다" 고 표시한다. 딱 맞아떨어져 끝난 경우까지

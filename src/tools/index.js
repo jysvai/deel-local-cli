@@ -644,7 +644,7 @@ export function 복사해옮기기(앞, 뒤, { 복사 = cpSync, 지우기 = rmSy
   return {};
 }
 
-function 한개옮기기({ from, to, overwrite = false }, ctx) {
+async function 한개옮기기({ from, to, overwrite = false }, ctx) {
   if (typeof from !== 'string' || !from) return { error: 'from 이 없습니다' };
   if (typeof to !== 'string' || !to) return { error: 'to 가 없습니다' };
 
@@ -685,7 +685,7 @@ function 한개옮기기({ from, to, overwrite = false }, ctx) {
    * 뜨는 쪽이 훨씬 나쁘다.
    */
   // 옮길 때는 .gitignore 를 안 본다 — 옮겨지는 것은 전부이고, 되돌리기도 전부를 떠야 한다.
-  const 훑은것 = 폴더인가 ? walk(앞, { ignore: false }) : null;
+  const 훑은것 = 폴더인가 ? await walk(앞, { ignore: false }) : null;
   const 짝들 = 폴더인가
     ? 훑은것.map((f) => [f.path, join(뒤, relative(앞, f.path))])
     : [[앞, 뒤]];
@@ -747,7 +747,7 @@ function 한개옮기기({ from, to, overwrite = false }, ctx) {
 }
 
 /** 여러 개를 한 번에. 하나가 막혀도 나머지는 옮기고, 무엇이 막혔는지 다 알린다. */
-function 여러개옮기기(목록, ctx) {
+async function 여러개옮기기(목록, ctx) {
   const 된것 = [];
   const 안된것 = [];
   /*
@@ -763,7 +763,7 @@ function 여러개옮기기(목록, ctx) {
    */
   const 바뀐것들 = [];
   for (const 하나 of 목록) {
-    const r = 한개옮기기(하나, ctx);
+    const r = await 한개옮기기(하나, ctx);
     if (r.error) { 안된것.push(`${하나.from ?? '?'} → ${하나.to ?? '?'}: ${r.error}`); continue; }
     된것.push(r.content);
     // 폴더를 옮겼으면 그 안의 파일 하나하나가, 아니면 옮겨 간 자리가 답이다.
@@ -1470,15 +1470,15 @@ export const TOOLS = {
         required: [],
       },
     },
-    run(args, ctx) {
+    async run(args, ctx) {
       const 목록 = Array.isArray(args.moves) ? args.moves.filter((x) => x && typeof x === 'object') : [];
       if (목록.length) {
-        return 여러개옮기기(목록.map((m) => ({ ...m, overwrite: m.overwrite ?? args.overwrite })), ctx);
+        return await 여러개옮기기(목록.map((m) => ({ ...m, overwrite: m.overwrite ?? args.overwrite })), ctx);
       }
       if (typeof args.from !== 'string' || !args.from) {
         return { error: 'from 이 없습니다. 한 개면 from·to 를, 여러 개면 moves 배열을 주세요.' };
       }
-      return 한개옮기기(args, ctx);
+      return await 한개옮기기(args, ctx);
     },
   },
 
@@ -1495,10 +1495,10 @@ export const TOOLS = {
         required: ['pattern'],
       },
     },
-    run(args, ctx) {
+    async run(args, ctx) {
       const root = args.path ? ctx.scope.resolve(args.path) : ctx.scope.root;
       const re = globToRegex(args.pattern);
-      const 전부 = walk(root, { signal: ctx.signal });
+      const 전부 = await walk(root, { signal: ctx.signal });
       // 훑다 말고 나왔으면 그렇다고 말한다. 조용히 적게 주면 「그런 파일이 없다」가 된다.
       if (전부.끊김) return { error: '중단했습니다. 폴더를 끝까지 안 훑었습니다.', 끝났다: true, 중단됨: true };
       // .gitignore 로 건너뛴 것은 수를 말한다 — 조용히 빼면 '그 파일이 없다' 로 읽힌다 (tools/ignore.js).
@@ -1630,7 +1630,7 @@ export const TOOLS = {
        */
       let files = isFile
         ? [{ path: root, rel: ctx.scope.show(root) }]
-        : walk(root, { signal: ctx.signal });
+        : await walk(root, { signal: ctx.signal });
       if (files.끊김) return { error: '중단했습니다. 폴더를 끝까지 안 훑었습니다.', 끝났다: true, 중단됨: true };
       const 안본것 = isFile ? '' : 건너뜀말(files.건너뜀, files.잘림, files.상한).trim();   // .gitignore 로 건너뛴 수 — 꼬리에 적는다
       // 훑기 상한에 걸렸으면 "일치 없음" 이라고 잘라 말하면 안 된다. 안 본 것이다.
@@ -2582,8 +2582,8 @@ async function 고친뒤진단(name, r, ctx) {
 }
 
 /** 이 폴더에서 언어 서버를 쓸 수 있나. repl 이 켤 때 한 번 물어본다. */
-export function 언어서버있나(뿌리) {
-  try { return !!프로젝트갈래(뿌리); } catch { return false; }
+export async function 언어서버있나(뿌리) {
+  try { return !!(await 프로젝트갈래(뿌리)); } catch { return false; }
 }
 
 export async function runTool(name, args, ctx) {

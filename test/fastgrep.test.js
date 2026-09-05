@@ -290,13 +290,14 @@ trace('9-상한');
   }
   const ctx = { scope: makeScope(방), history: new History(방), audit: new Audit(방), seen: new Set() };
 
-  check('상한이 넉넉하면 잘렸다고 안 한다', walk(방).잘림 === false, JSON.stringify(walk(방).length));
+  const 안잘린것 = await walk(방);
+  check('상한이 넉넉하면 잘렸다고 안 한다', 안잘린것.잘림 === false, JSON.stringify(안잘린것.length));
   check('기본 상한은 20,000', 기본훑기상한 === 20000, String(기본훑기상한));
   check('터무니없는 값은 안 받는다', 훑기상한({ DEEL_WALK_LIMIT: '3' }) === 20000 && 훑기상한({ DEEL_WALK_LIMIT: '없음' }) === 20000
     && 훑기상한({ DEEL_WALK_LIMIT: '99999999' }) === 20000, String(훑기상한({ DEEL_WALK_LIMIT: '3' })));
   check('제대로 된 값은 받는다', 훑기상한({ DEEL_WALK_LIMIT: '100' }) === 100);
 
-  const 잘린것 = walk(방, { limit: 100 });
+  const 잘린것 = await walk(방, { limit: 100 });
   check('상한에서 멈추면 잘렸다고 표시한다', 잘린것.잘림 === true && 잘린것.length === 100, `${잘린것.length}개`);
   check('몇 개까지 봤는지도 붙여 준다', 잘린것.상한 === 100, String(잘린것.상한));
   check('잘림은 열거되지 않는다 (JSON 에 안 섞인다)',
@@ -310,7 +311,7 @@ trace('9-상한');
   process.env.DEEL_GREP = 'js';
   엔진잊기();
   const 못본것 = await TOOLS.Grep.run({ pattern: '바늘' }, ctx);
-  const 못본글로브 = TOOLS.Glob.run({ pattern: '**/f299.js' }, ctx);
+  const 못본글로브 = await TOOLS.Glob.run({ pattern: '**/f299.js' }, ctx);
   delete process.env.DEEL_WALK_LIMIT;
   delete process.env.DEEL_GREP;
   엔진잊기();

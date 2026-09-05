@@ -193,13 +193,17 @@ export function 둘러보기(env = process.env) {
  *
  * 뿌리마다 한 번만 센다. 폴더 훑기는 값이 있고, 세션 중에 언어가 바뀌지 않는다.
  */
-export function 프로젝트갈래(뿌리, env = process.env) {
+export async function 프로젝트갈래(뿌리, env = process.env) {
+  // 센 것이 아니라 **세는 약속**을 담아 둔다. 훑기가 비동기라, 다 세고 나서
+  // 담으면 겹쳐 부른 쪽이 둘 다 빈 칸을 보고 둘 다 훑는다 — 에디터에서 탭을
+  // 한꺼번에 열면 실제로 그렇게 된다.
   if (_센것.has(뿌리)) return _센것.get(뿌리);
+  const 약속 = (async () => {
   let 답 = null;
   try {
     const 셈 = new Map();
     const 첫파일 = new Map();
-    for (const f of walk(뿌리, { limit: 4000 })) {
+    for (const f of await walk(뿌리, { limit: 4000 })) {
       const g = 갈래(f.path);
       if (!g) continue;
       셈.set(g, (셈.get(g) ?? 0) + 1);
@@ -210,8 +214,10 @@ export function 프로젝트갈래(뿌리, env = process.env) {
       if (고르기(g, env)) { 답 = { 갈래: g, 대표파일: 첫파일.get(g), 개수: 셈.get(g) }; break; }
     }
   } catch { 답 = null; }
-  _센것.set(뿌리, 답);
   return 답;
+  })();
+  _센것.set(뿌리, 약속);
+  return 약속;
 }
 
 /** 시험이 쓴다 — 폴더를 새로 만들고 다시 셀 때. */

@@ -229,14 +229,14 @@ export const OUTLINE_TOOL = {
     },
   },
 
-  run(args, ctx) {
+  async run(args, ctx) {
     const 시작 = args.path ? ctx.scope.resolve(args.path) : ctx.scope.root;
     if (!existsSync(시작)) return { error: `없는 경로입니다: ${args.path ?? '.'}` };
 
     const 하나인가 = statSync(시작).isFile();
     let 파일들 = 하나인가
       ? [{ path: 시작, rel: ctx.scope.show(시작), mtime: statSync(시작).mtimeMs }]
-      : walk(시작, { skipDirs: SKIP_DIRS, signal: ctx.signal });
+      : await walk(시작, { skipDirs: SKIP_DIRS, signal: ctx.signal });
     if (파일들.끊김) return { error: '중단했습니다. 폴더를 끝까지 안 훑었습니다.', 끝났다: true, 중단됨: true };
     const 건너뜀 = 하나인가 ? '' : 건너뜀말(파일들.건너뜀, 파일들.잘림, 파일들.상한);   // .gitignore 로 건너뛴 수 (tools/ignore.js)
 
