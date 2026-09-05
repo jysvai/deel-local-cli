@@ -1,6 +1,7 @@
 // 도구. 이름과 인자를 Claude Code 와 같게 맞춘다 —
 // 그래야 그 관례로 쓰인 스킬·명령이 그대로 먹는다.
-import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, renameSync, cpSync, rmSync } from 'node:fs';
+import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, renameSync, cpSync, rmSync,
+  openSync, readSync, closeSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
 import { 무리로돌리기 } from './spawn.js';
 import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsutil.js';
@@ -226,10 +227,37 @@ function 가린표되돌리나(보인이름, 새내용) {
   return 몇 ? 표막는말(보인이름, 몇) : null;
 }
 
+/**
+ * 파일 앞머리만 읽는다.
+ *
+ * 「글이 아닌 파일인가」 를 가리는 데 30MB 를 다 읽을 이유가 없다. 실제로
+ * looksBinary() 자체가 **앞 8000바이트만** 본다(encoding.js) — 그 뒤를 읽는
+ * 것은 답에 아무 영향이 없는 순수한 낭비다.
+ */
+function 앞머리(abs, 만큼) {
+  let fd = null;
+  try {
+    fd = openSync(abs, 'r');
+    const buf = Buffer.allocUnsafe(만큼);
+    const 읽은 = readSync(fd, buf, 0, 만큼, 0);
+    return buf.subarray(0, 읽은);
+  } catch { return null; } finally {
+    if (fd != null) { try { closeSync(fd); } catch { /* 이미 닫혔다 */ } }
+  }
+}
+
+// looksBinary 가 보는 만큼. 두 수가 어긋나면 답이 달라지므로 같이 움직여야 한다.
+const 냄새맡을바이트 = 8000;
+
+/** 파일이 몇 바이트인가. 못 재면 -1 — 그러면 들고 있던 수와 절대 안 맞는다. */
+function 파일크기(abs) {
+  try { return statSync(abs).size; } catch { return -1; }
+}
+
 function 바이너리인가(abs) {
   if (!existsSync(abs)) return null;
-  let buf;
-  try { buf = readFileSync(abs); } catch { return null; }
+  const buf = 앞머리(abs, 냄새맡을바이트);
+  if (!buf) return null;
   if (!looksBinary(buf)) return null;
   return `글이 아닌 파일입니다 — 덮어쓰면 되살릴 수 없습니다.\n`
     + '  그림·hwp·pdf·압축파일 같은 것을 글로 덮어쓰면 그 파일은 그대로 끝납니다.\n'
@@ -352,13 +380,44 @@ function 바꾸기전스냅샷(cmd, ctx) {
 }
 
 /** 지금 파일이 몇 줄인가. 붙인 뒤 '얼마나 찼는지' 를 사실로 말해 주려고 센다. */
-function 줄수(abs, 인코딩) {
+function 줄수(abs, 인코딩) { return 줄재기(abs, 인코딩).줄; }
+
+/**
+ * 줄 수와 「끝이 줄바꿈인가」 를 한 번에.
+ *
+ * 둘을 따로 재면 파일을 두 번 읽는다. 그리고 이어 붙일 때는 둘 다 필요하다 —
+ * 끝이 줄바꿈이 아니면 붙이는 첫 줄이 **마지막 줄에 이어지므로** 한 줄 덜 는다.
+ */
+function 줄재기(abs, 인코딩) {
   try {
     const buf = readFileSync(abs);
-    if (looksBinary(buf)) return 0;
+    if (looksBinary(buf)) return { 줄: 0, 끝줄바꿈: true };
     const t = 인코딩 && 인코딩 !== 'utf-8' ? decodeBytes(buf).text : buf.toString('utf8');
-    return t.split('\n').length - (t.endsWith('\n') ? 1 : 0);
-  } catch { return 0; }
+    const 끝줄바꿈 = t.length === 0 || t.endsWith('\n');
+    return { 줄: t.split('\n').length - (t.endsWith('\n') ? 1 : 0), 끝줄바꿈 };
+  } catch { return { 줄: 0, 끝줄바꿈: true }; }
+}
+
+/*
+ * ── 이어 붙일 때 줄 수를 다시 안 세려고 들고 있는 것 ─────────────────────
+ *
+ * Append 는 **한 파일에 여러 번** 불리는 것이 정상이다 — 도구 설명문이 그렇게
+ * 시킨다. 그런데 부를 때마다 「지금 전체 몇 줄」 을 대려고 파일을 통째로 읽고
+ * 해독하고 split 했다. 30MB 로그에 다섯 줄 붙이는 데 그 짓을 다섯 번 한다.
+ *
+ * 붙인 줄 수는 우리가 안다. 그러니 앞의 수에 더하면 된다.
+ *
+ * 그 수가 아직 참인지는 **바이트 수**로 가린다. 우리가 붙인 만큼만 커졌으면
+ * 우리가 아는 그 파일이다. 사람이 편집기로 갈아엎었거나 다른 도구가 건드렸으면
+ * 크기가 안 맞고, 그때는 두말없이 다시 센다. 틀린 수를 빠르게 대는 것보다
+ * 맞는 수를 느리게 대는 편이 낫다.
+ */
+const 줄기억 = new Map();
+// 파일이 수천 개씩 쌓이지는 않지만, 오래 도는 대화에서 무한정 크지도 않게 한다.
+const 줄기억최대 = 512;
+function 줄기억넣기(abs, 것) {
+  if (줄기억.size >= 줄기억최대) 줄기억.delete(줄기억.keys().next().value);
+  줄기억.set(abs, 것);
 }
 
 /**
@@ -755,13 +814,38 @@ function 한파일쓰기(args, ctx) {
     const existed = existsSync(abs);
     // 덮어쓰기 전 내용. 바뀐 자리를 보여주려면 지금 떠 놔야 한다.
     // 읽다 터지는 파일(바이너리 등)이면 그냥 없던 셈 친다 — 쓰는 것 자체는 막지 않는다.
-    let 이전 = null;
-    if (existed) { try { 이전 = readTextFull(abs).text; } catch { 이전 = null; } }
+    /*
+     * 읽은 것을 **통째로** 들고 있는다 — 글만 뽑고 버리지 않는다.
+     *
+     * 여기가 `.text` 만 꺼내 쓰고 `.encoding` 을 버리고 있었다. 그래서 바로
+     * 아래에서 인코딩을 다시 정할 때 볼 것이 캐시밖에 없었고, 캐시는 이
+     * 파일을 **Read 로 한 번이라도 연 적이 있을 때만** 차 있다.
+     *
+     *   「이 파일 전체를 다시 써 줘」 → 모델은 Read 없이 Write 로 간다
+     *     → 캐시가 비어 있다 → utf-8 로 때운다
+     *     → 사내 CP949 문서가 조용히 UTF-8 이 된다
+     *
+     * 화면에는 `덮어씀: 사내문서.txt (4줄)` 만 뜬다. 인코딩 표기는 「원래가
+     * utf-8 이 아닐 때」 붙는데 그 원래가 이미 틀렸으니 한 글자도 안 뜬다.
+     * 사내 뷰어에서 한글이 깨지고 .bat 이 안 도는데, 사람은 「한 줄 고쳐
+     * 달라」 고 했을 뿐이라 원인을 인코딩으로 이을 길이 없다.
+     */
+    let 읽음 = null;
+    if (existed) { try { 읽음 = readTextFull(abs); } catch { 읽음 = null; } }
+    // 덮어쓰기 전 내용. 바뀐 자리를 보여주려면 지금 떠 놔야 한다.
+    const 이전 = 읽음?.text ?? null;
     mkdirSync(dirname(abs), { recursive: true });
 
-    // 원래 있던 파일이면 그 파일이 쓰던 인코딩으로 되돌려 쓴다.
-    // 새 파일이면 UTF-8 이다 — 요즘 만드는 파일까지 옛 인코딩으로 둘 이유가 없다.
-    const 원래 = existed ? (ctx.enc?.get(abs) ?? 'utf-8') : 'utf-8';
+    /*
+     * 원래 있던 파일이면 그 파일이 **지금** 쓰는 인코딩으로 되돌려 쓴다.
+     * 새 파일이면 UTF-8 이다 — 요즘 만드는 파일까지 옛 인코딩으로 둘 이유가 없다.
+     *
+     * 캐시(ctx.enc)는 여기서 안 본다. 방금 잰 값이 있는데 캐시를 보면 두 가지가
+     * 어긋난다 — 캐시가 비면 UTF-8 로 때우고(위), 캐시가 낡으면 남이 이미
+     * UTF-8 로 바꿔 둔 파일을 CP949 라고 우기며 이모지를 거절한다. 재는 값이
+     * 있는 자리에서는 잰 값이 이긴다. Edit 도 이미 그렇게 한다.
+     */
+    const 원래 = 읽음?.encoding ?? 'utf-8';
     const 만든것 = encode(args.content, 원래);
     if (만든것.lost.length) {
       return {
@@ -1242,6 +1326,9 @@ export const TOOLS = {
       // 이어 붙이는 조각에는 앞머리 표식(BOM)이 들어가면 안 된다 — 파일 한가운데에
       // BOM 이 박히면 그 자리가 이상한 글자로 보인다. 그래서 표식 없는 이름으로 바꾼다.
       const 원래 = existed ? (ctx.enc?.get(abs) ?? 재는인코딩(abs)) : 'utf-8';
+      // 잰 것은 적어 둔다 — Read 가 하는 것과 같은 자리다. 안 적어 두면 이 파일에
+      // 붙일 때마다 인코딩을 다시 재느라 파일을 통째로 또 읽는다.
+      ctx.enc?.set?.(abs, 원래);
       const 조각인코딩 = 원래 === 'utf-8-bom' ? 'utf-8' : 원래;
       const 만든것 = encode(args.content, 조각인코딩);
       if (만든것.lost.length) {
@@ -1252,13 +1339,30 @@ export const TOOLS = {
         };
       }
 
+      /*
+       * 붙이기 **전에** 앞의 줄 수를 잡아 둔다.
+       *
+       * 들고 있던 것이 있고 크기가 그대로면 그걸 쓴다. 아니면 여기서 한 번
+       * 세고, 다음 번부터는 더하기만 한다. 없던 파일이면 앞이 0줄이다.
+       */
+      const 앞것 = !existed
+        ? { 줄: 0, 끝줄바꿈: true }
+        : (() => {
+          const 크기 = 파일크기(abs);
+          const 든것 = 줄기억.get(abs);
+          if (든것 && 든것.바이트 === 크기) return 든것;
+          const 잰것 = 줄재기(abs, 원래);
+          return { 바이트: 크기, ...잰것 };
+        })();
+
       mkdirSync(dirname(abs), { recursive: true });
       if (existed) appendFileSync(abs, 만든것.buf);
       else writeFileSync(abs, 만든것.buf);
       ctx.seen.add(abs);
 
       const 붙인줄 = args.content.split('\n').length - (args.content.endsWith('\n') ? 1 : 0);
-      const 전체줄 = 줄수(abs, 원래);
+      const 전체줄 = 앞것 ? 앞것.줄 + 붙인줄 - (앞것.끝줄바꿈 ? 0 : 1) : 줄수(abs, 원래);
+      줄기억넣기(abs, { 바이트: 파일크기(abs), 줄: 전체줄, 끝줄바꿈: args.content.endsWith('\n') });
       const 표기 = 원래 !== 'utf-8' ? ` · ${encLabel(원래)}` : '';
       return {
         content: `${existed ? '이어 붙임' : '새로 만듦'}: ${ctx.scope.show(abs)}`

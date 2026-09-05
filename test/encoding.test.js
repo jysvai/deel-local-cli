@@ -146,6 +146,59 @@ writeFileSync(join(root, '보통문서.md'), '# 안내\nUTF-8 문서\n', 'utf8')
   check('나머지도 안 깨짐', 뒤.text.includes('품의서') && 뒤.text.includes('긴급'));
 }
 
+/*
+ * ── Read 를 안 거친 Write 가 인코딩을 갈아엎지 않는가 ────────────────────
+ *
+ * 「이 파일 전체를 다시 써 줘」 는 모델이 Read 없이 바로 Write 로 가는 흔한
+ * 모양이다. 그때 이 도구는 인코딩을 **캐시(ctx.enc)에서만** 찾고, 없으면
+ * UTF-8 로 때웠다. 그래서 사내 CP949 문서가 조용히 UTF-8 로 바뀌었다 —
+ * 화면에는 `덮어씀: 사내문서.txt (4줄)` 한 줄뿐이다. 인코딩이 바뀌었다는
+ * 표기는 「원래가 utf-8 이 아닐 때」 만 붙는데, 그 원래가 이미 틀렸다.
+ *
+ * 사람이 겪는 것은 이렇다: 사내 뷰어에서 한글이 깨지고, .bat 이면 안 돌고,
+ * 「한 줄만 고쳐 달라」 고 했을 뿐이라 원인을 인코딩으로 이을 길이 없다.
+ *
+ * 고친 자리는 바로 위 줄이다 — Write 는 이미 diff 를 만들려고 readTextFull()
+ * 을 부르고 있었고, 잰 인코딩을 버리고 있었다. 재는 값이 있는데 캐시를 볼
+ * 까닭이 없다.
+ */
+{
+  const 원래바이트 = encode('결재 품의서\n금액: 1,200,000원\n비고: 긴급\n', 'euc-kr').buf;
+  writeFileSync(join(root, '안읽은문서.txt'), 원래바이트);
+  // ctx.enc 를 일부러 비워 둔다 — Read 를 한 번도 안 한 상태 그대로.
+  const 캐시없는ctx = { ...ctx, enc: new Map() };
+
+  const r = await runTool('Write', {
+    file_path: '안읽은문서.txt',
+    content: '결재 품의서\n금액: 1,500,000원\n비고: 긴급\n',
+  }, 캐시없는ctx);
+  check('Read 없이 Write 가 된다', !r.error, r.error ?? '');
+
+  const 뒤 = decode(readFileSync(join(root, '안읽은문서.txt')));
+  check('★★ Read 를 안 거쳐도 CP949 그대로 쓴다', 뒤.encoding === 'euc-kr', 뒤.encoding);
+  check('★ 내용도 맞다', 뒤.text.includes('1,500,000원') && 뒤.text.includes('품의서'),
+    JSON.stringify(뒤.text.slice(0, 40)));
+  check('★ 무슨 인코딩으로 썼는지 화면에 적는다', /CP949|EUC-KR/i.test(String(r.content)),
+    String(r.content));
+}
+
+{
+  /*
+   * 반대쪽 — 캐시가 **낡았을** 때. 우리가 CP949 로 잡아 둔 뒤에 다른
+   * 프로그램이 그 파일을 UTF-8 로 저장했으면, 캐시를 믿는 쪽이 틀린다.
+   * 지금은 그 자리에서 다시 재므로 캐시가 무엇을 들고 있든 상관이 없다.
+   */
+  writeFileSync(join(root, '남이바꾼문서.txt'), Buffer.from('이제는 UTF-8 문서 🚀\n', 'utf8'));
+  const 낡은ctx = { ...ctx, enc: new Map([[join(root, '남이바꾼문서.txt'), 'euc-kr']]) };
+  const r = await runTool('Write', {
+    file_path: '남이바꾼문서.txt', content: '이제는 UTF-8 문서 🚀 고쳤습니다\n',
+  }, 낡은ctx);
+  check('★★ 낡은 인코딩 캐시 때문에 거절하지 않는다', !r.error, r.error?.split('\n')[0] ?? '');
+  const 뒤 = decode(readFileSync(join(root, '남이바꾼문서.txt')));
+  check('★★ 지금 파일의 인코딩(UTF-8)으로 쓴다', 뒤.encoding.startsWith('utf-8'), 뒤.encoding);
+  check('★ 이모지가 살아 있다', 뒤.text.includes('🚀'), JSON.stringify(뒤.text));
+}
+
 {
   // 못 담는 글자를 넣으려 하면 안 쓰고 멈춘다 — 조용히 뭉개는 것보다 낫다
   const 전 = readFileSync(join(root, '사내문서.txt'));

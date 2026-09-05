@@ -433,6 +433,87 @@ trace('9-조각표시');
   rmSync(방, { recursive: true, force: true });
 }
 
+trace('N-이어붙이는-값');
+
+// ── 이어 붙이는 값이 파일 크기를 따라가면 안 된다 ────────────────────────
+//
+// Append 의 설명문이 「한 번에 다 담으려다 잘리는 것보다 나눠서 확실히 남기는
+// 편이 낫다」 다. 그 말대로 하면 한 파일에 Append 가 스무 번쯤 불린다.
+//
+// 그런데 그 스무 번이 매번 파일을 통째로 읽고 있었다. 한 번에 세 벌씩이다.
+//
+//   바이너리인가(abs)   readFileSync 전체 — 정작 looksBinary 는 앞 8000바이트만 본다
+//   재는인코딩(abs)     readFileSync 전체 — 붙일 때마다 같은 답을 다시 잰다
+//   줄수(abs, 원래)     readFileSync 전체 + 해독 + split('\n')
+//
+// 30MB 짜리 로그에 다섯 줄 붙이는 데 1초가 든다. 붙이는 내용은 다섯 줄인데
+// 450MB 를 읽는다. 그리고 그 값은 화면에 안 나온다 — 모델이 느려 보일 뿐이다.
+//
+// 그래서 **파일 크기와 상관없어야 한다** 를 잰다. 시계로 재는 검사는 기계
+// 속도를 타므로, 같은 기계에서 잰 작은 파일과 견준다. 배수로 보면 기계가
+// 빠르든 느리든 같은 뜻이 된다.
+{
+  const 뿌리 = mkdtempSync(join(tmpdir(), 'deel-append-'));
+  const ctx = {
+    scope: makeScope(뿌리), history: new History(뿌리), audit: new Audit(뿌리),
+    seen: new Set(), enc: new Map(),
+  };
+  const 붙이기 = (이름, 글) => TOOLS.Append.run({ file_path: 이름, content: 글 }, ctx);
+
+  // 30MB. 한 줄 240바이트 남짓으로 채운다.
+  const 한줄 = '가'.repeat(79) + '\n';
+  const 큰줄수 = Math.round(30 * 1024 * 1024 / Buffer.byteLength(한줄, 'utf8'));
+  writeFileSync(join(뿌리, '큰것.txt'), 한줄.repeat(큰줄수), 'utf8');
+  writeFileSync(join(뿌리, '작은것.txt'), 한줄.repeat(5), 'utf8');
+
+  const 재기 = (이름) => {
+    // 첫 판은 버린다 — 모듈 데우기가 섞이면 배수가 거짓말을 한다.
+    붙이기(이름, '데우기\n');
+    const 시작 = process.hrtime.bigint();
+    for (let n = 0; n < 5; n++) 붙이기(이름, `줄 ${n}\n`);
+    return Number(process.hrtime.bigint() - 시작) / 1e6;
+  };
+  const 작은값 = 재기('작은것.txt');
+  const 큰값 = 재기('큰것.txt');
+  const 배수 = 큰값 / Math.max(작은값, 1);
+
+  check('★★ 30MB 파일에 이어 붙이는 값이 크기를 안 탄다',
+    배수 <= 5 && 큰값 < 250,
+    `작은 파일 ${작은값.toFixed(0)}ms · 30MB ${큰값.toFixed(0)}ms · ${배수.toFixed(1)}배`);
+
+  // ── 값을 깎았다고 수가 틀리면 안 된다 ──────────────────────────────────
+  //
+  // 전체 줄 수는 모델이 「어디까지 썼나」 를 세는 데 쓰는 수다. 매번 다시 세는
+  // 대신 들고 더하기로 바꾸면, 아래 다섯 가지가 전부 맞아야 그 값이 참이다.
+  const 줄따기 = (r) => Number(/전체 (\d+)줄/.exec(r?.content ?? '')?.[1] ?? -1);
+
+  writeFileSync(join(뿌리, '끝에줄바꿈.txt'), 'ㄱ\nㄴ\n', 'utf8');
+  check('끝이 줄바꿈이면 그대로 더한다', 줄따기(붙이기('끝에줄바꿈.txt', 'ㄷ\nㄹ\n')) === 4, 'ㄱㄴ + ㄷㄹ = 4');
+
+  // 마지막 줄이 안 끝난 파일. 붙인 첫 줄은 **그 줄에 이어진다** — 한 줄 덜 는다.
+  writeFileSync(join(뿌리, '끝에줄바꿈없음.txt'), 'ㄱ\nㄴ', 'utf8');
+  check('끝이 줄바꿈이 아니면 첫 줄은 이어 붙는다', 줄따기(붙이기('끝에줄바꿈없음.txt', '더\n다음\n')) === 3, 'ㄱ + ㄴ더 + 다음 = 3');
+
+  check('없던 파일은 새로 만들고 그만큼 센다', 줄따기(붙이기('처음.txt', 'ㄱ\nㄴ\nㄷ\n')) === 3);
+  check('두 번째부터도 맞다', 줄따기(붙이기('처음.txt', 'ㄹ\n')) === 4);
+  check('세 번째도 맞다', 줄따기(붙이기('처음.txt', 'ㅁ\nㅂ\n')) === 6);
+
+  // CP949 파일에 이어 붙여도 인코딩과 줄 수가 같이 맞아야 한다.
+  writeFileSync(join(뿌리, '한글.txt'), encode('결재\n요청\n', 'euc-kr').buf);
+  const 한글결과 = 붙이기('한글.txt', '드립니다\n');
+  check('CP949 파일도 줄 수가 맞다', 줄따기(한글결과) === 3, 한글결과?.content);
+  check('CP949 파일은 CP949 로 이어진다',
+    readFileSync(join(뿌리, '한글.txt')).equals(encode('결재\n요청\n드립니다\n', 'euc-kr').buf));
+
+  // ★ 밖에서 파일이 바뀌면 들고 있던 수는 거짓말이 된다. 다시 세야 한다.
+  writeFileSync(join(뿌리, '처음.txt'), 'ㄱ\n', 'utf8');
+  check('★ 남이 파일을 갈아치우면 다시 센다', 줄따기(붙이기('처음.txt', 'ㄴ\n')) === 2,
+    '밖에서 1줄로 줄여 놓았다');
+
+  rmSync(뿌리, { recursive: true, force: true });
+}
+
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n큰 파일 만들기 검사  ${D}(사람이 쪼개 주지 않아도 끝까지 만드는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
