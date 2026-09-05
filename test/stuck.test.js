@@ -221,6 +221,60 @@ trace('1.5-읽기-되풀이');
     `${부른수}번 읽었다`);
 }
 
+trace('1.6-접힌뒤에는-되풀이가-아니다');
+
+/*
+ * ── 접어서 없앤 것을 「앞에서 봤잖아」 로 막지 않는가 ────────────────────
+ *
+ * 되풀이 표(부른것)는 **그 결과가 대화에 아직 있다** 를 전제로 다시 안 싣는다.
+ * 접기는 그 전제를 깬다 — 도구 결과 원문을 한 줄짜리 자국으로 바꿔치우고 나면
+ * 같은 파일을 다시 읽어도 표는 여전히 「인자도 결과도 같습니다」 라고 답한다.
+ * 모델이 받는 것은 **대화 어디에도 없는 글을 가리키는 쪽지**다. 파일 내용은
+ * 영영 안 돌아오고, 고치라던 일은 그 자리에서 멈춘다. 오류는 한 줄도 안 난다.
+ *
+ * 파일 기억(agent/filemem.js) 쪽은 접을 때 같이 지우고 있었다. 같은 이유로
+ * 지워야 할 표가 하나 더 있었는데 그것만 안 지웠다.
+ */
+{
+  // 접기가 걸릴 만큼 큰 파일 하나 + 최근 넷을 채울 파일 넷.
+  // KEEP_RECENT 가 4 라, 뒤에 넷이 쌓여야 이 큰 것이 접히는 자리로 밀린다.
+  const 큰줄 = (i) => `${i}: ` + '가'.repeat(60);
+  writeFileSync(join(root, '큰것.txt'), Array.from({ length: 180 }, (_, i) => 큰줄(i)).join('\n') + '\n', 'utf8');
+  for (const n of [1, 2, 3, 4]) writeFileSync(join(root, `채움${n}.txt`), '나'.repeat(1800) + '\n', 'utf8');
+
+  대본 = [
+    { calls: [{ name: 'Read', args: { file_path: '큰것.txt' } }] },
+    { calls: [{ name: 'Read', args: { file_path: '채움1.txt' } }] },
+    { calls: [{ name: 'Read', args: { file_path: '채움2.txt' } }] },
+    { calls: [{ name: 'Read', args: { file_path: '채움3.txt' } }] },
+    { calls: [{ name: 'Read', args: { file_path: '채움4.txt' } }] },
+    { calls: [{ name: 'Read', args: { file_path: '큰것.txt' } }] },
+    { text: '다 봤습니다.' },
+  ];
+  차례 = 0;
+  const s = new Session(conn(), { root, think: 'off', maxSteps: 24 });
+  const evs = [];
+  // 대화에 **실제로 실린 글**을 걸음마다 붙잡아 둔다. 뒤에서 또 접히면
+  // 끝나고 나서 뒤져 봐야 이미 없다.
+  const 실린것 = [];
+  for await (const ev of run(s, 새ctx(), '큰것.txt 를 보고 고쳐줘')) {
+    evs.push(ev);
+    if (ev.type === 'tool') 실린것.push(String(s.messages.at(-1)?.content ?? ''));
+  }
+  대본 = [];
+
+  const 접은자리 = evs.findIndex((e) => e.type === 'folded');
+  check('먼저: 두 번 읽는 사이에 접기가 돌았다', 접은자리 >= 0,
+    evs.map((e) => e.type).join(','));
+  check('먼저: 첫 읽기는 내용이 통째로 실렸다',
+    (실린것[0] ?? '').includes('가'.repeat(60)), `${(실린것[0] ?? '').length}자`);
+  check('★ 접어서 없앤 것을 「앞에서 봤잖아」 로 막지 않는다',
+    !(실린것[5] ?? '').includes('인자도 결과도 같습니다'),
+    (실린것[5] ?? '').slice(0, 70));
+  check('★ 다시 읽은 내용이 대화에 진짜로 들어왔다',
+    (실린것[5] ?? '').includes('가'.repeat(60)), `${(실린것[5] ?? '').length}자`);
+}
+
 trace('2-모르는도구도센다');
 
 // ── D2: 없는 도구를 계속 부르는 것도 헛도는 것이다 ──────────────────────

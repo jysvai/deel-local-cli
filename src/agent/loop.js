@@ -288,6 +288,30 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    */
   const 반복진척 = new Map();
   /*
+   * 자리가 줄어든 걸음에서는 위 두 표를 **통째로 버린다.**
+   *
+   * 두 표는 「그 결과가 대화에 아직 있다」 를 전제로 다시 안 싣는다. 접기·요약·
+   * 비우기는 그 전제를 깨는 일이다 — 원문을 없애 놓고 표만 남기면, 같은 파일을
+   * 다시 읽어도 「앞에서 부른 것과 인자도 결과도 같습니다」 가 돌아간다. 모델이
+   * 받는 것은 대화 어디에도 없는 글을 가리키는 쪽지고, 파일 내용은 영영 안
+   * 돌아온다. 오류는 한 줄도 안 나면서 하던 일이 그 자리에서 멈춘다.
+   * 접을 때 파일 기억(agent/filemem.js)을 같이 지우는 것과 똑같은 까닭이다.
+   *
+   * 접힌 것만 골라 지울 수는 없다. 표의 열쇠는 부름 서명(이름+인자 JSON)인데
+   * 접기가 돌려주는 것은 도구 이름과 경로뿐이라, Bash·Grep 처럼 경로가 없는
+   * 부름은 짝을 못 맞춘다. 통째로 버리는 쪽이 안전한 방향이다 — 잘못해야
+   * 결과 하나를 두 번 싣는 것이고 그건 접기가 다시 걷어 간다. 반대쪽 잘못은
+   * 턴이 죽는 것이다. 헛도는 것은 걸음 수 상한이 여전히 막는다.
+   *
+   * 되풀이 셈(막힘의 `반복|…`)도 같이 버린다. 표만 지우고 셈을 남기면, 접힌
+   * 뒤 처음 읽은 것이 이미 두 번째로 세어져 한 걸음 일찍 멈춘다.
+   */
+  const 되풀이표잊기 = () => {
+    부른것.clear();
+    반복진척.clear();
+    for (const k of [...막힘.keys()]) if (k.startsWith('반복|')) 막힘.delete(k);
+  };
+  /*
    * 서명은 한 모양으로 맞춰 놓고 견준다 (NFC).
    *
    * 맥은 파일 이름을 자모를 쪼개서 돌려준다. 그래서 `Read(PDF_경로.md)` 와
@@ -574,6 +598,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           session.파일기억?.잊기(열쇠);
           if (열쇠 !== x.경로) session.파일기억?.잊기(x.경로);
         }
+        // 접힌 원문을 「앞에서 봤잖아」 로 대신하지 않게 — 까닭은 되풀이표잊기 머리말에.
+        되풀이표잊기();
         yield { type: 'folded', ...f };
       }
       // 그림은 사람 말 자리에 실려서 위 접기가 못 건드린다. 따로 뺀다.
@@ -589,7 +615,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       for await (const 알림 of 편지.소식()) yield 알림;
       const r = await 편지.부름;
       if (r.aborted) { 접다멈췄나 = true; yield { type: 'aborted', steps, kept: true }; return; }
-      if (r.ok) yield { type: 'compacted', ...r };
+      if (r.ok) { 되풀이표잊기(); yield { type: 'compacted', ...r }; }
       else yield { type: 'compact_failed', why: r.why };
     }
   };
@@ -952,6 +978,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         }];
         // 내용은 없어졌는데 '읽었다' 는 표만 남으면 모델이 다시 안 읽는다.
         try { session.filesRead?.clear?.(); session.파일기억?.잊기?.(); } catch { /* 없어도 그만 */ }
+        되풀이표잊기();
         yield {
           type: 'reset',
           dropped: 지운수,
