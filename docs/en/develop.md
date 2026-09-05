@@ -130,9 +130,53 @@ git push origin v1.4.0
 If the tag and `package.json` disagree, it stops before publishing. npm never lets
 the same version be published twice, so a mismatch that gets out cannot be undone.
 
-One-time setup: create an **Automation token** on npm and add it to the repository
-as `NPM_TOKEN` under `Settings → Secrets and variables → Actions`. Automation tokens
-skip the 2FA prompt so CI can use them (publishing by hand still asks for an OTP).
+### There is no key to store
+
+This repository publishes through **trusted publishing** (OIDC). The package
+settings on npmjs.com name this repository and the **workflow filename**
+(`publish.yml`), and the workflow publishes with a short-lived credential it
+receives at that moment.
+
+**Do not add an `NPM_TOKEN` secret.** If a token is present, `setup-node` writes it
+into `.npmrc` and npm stops using OIDC. This package forbids token publishing
+(`mfa=publish`), so that path ends in **403**. An earlier version of this document
+told you to create an Automation token; that route is closed.
+
+**Renaming `publish.yml` means changing the registration on npmjs.com too.**
+Otherwise it becomes an unregistered workflow and is rejected on the spot.
+
+### Line endings are LF only
+
+Every file that ships must use **LF**. `.gitattributes` pins `eol=lf`, and
+`npm run check` verifies it on every release.
+
+One thing to know if you work on Windows: **git does not retroactively fix files
+that were already checked out** when `.gitattributes` appeared. Files pulled down
+before that rule existed, under `core.autocrlf=true`, stay on disk as CRLF — and
+`npm pack` packs the **working tree**, not git. So `git status` can be clean while
+the published artifact is wrong.
+
+That is exactly how 1.13.0 shipped: 47 of 148 files had CRLF, and the tarball's
+shasum did not match the one CI built. Had the shebang been affected, the program
+would not have started at all on Linux or macOS
+(`env: 'node\r': No such file or directory`).
+
+When `npm run check` reports CRLF, this is how to undo it:
+
+```bash
+# which files disagree
+git ls-files --eol | grep 'w/crlf'
+
+# delete and re-check-out (only with a clean working tree)
+git ls-files --eol | grep 'w/crlf' | sed 's/.*\t//' | while read -r f; do rm -f "$f"; done
+git checkout -- .
+```
+
+`git add --renormalize .` will not fix it: the index is already correct: only the
+working tree drifted.
+
+To confirm, compare shasums — for a given commit, `npm pack` must produce the same
+shasum on every OS.
 
 ---
 

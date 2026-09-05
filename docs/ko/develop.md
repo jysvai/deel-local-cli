@@ -130,10 +130,51 @@ git push origin v1.4.0
 태그와 `package.json` 의 판이 다르면 올리기 전에 멈춥니다. npm 은 같은 판을
 다시 못 올리므로, 어긋난 채 나가면 되돌릴 수가 없습니다.
 
-한 번만 해 두어야 하는 것이 있습니다 — npm 에서 **Automation 형 토큰**을 만들어
-저장소 `Settings → Secrets and variables → Actions` 에 `NPM_TOKEN` 으로 넣습니다.
-Automation 토큰은 2FA 를 안 묻는 형이라 CI 에서 쓸 수 있습니다(사람이 손으로
-올릴 때는 그대로 OTP 를 묻습니다).
+### 열쇠는 저장할 것이 없습니다
+
+이 저장소는 **믿는 발행자**(trusted publishing · OIDC)로 올립니다. npmjs.com 의
+이 패키지 Settings 에 저장소 이름과 **워크플로 파일 이름**(`publish.yml`)이
+등록되어 있고, 워크플로는 그 자리에서 받은 짧은 신분증으로 올립니다.
+
+**`NPM_TOKEN` 시크릿을 넣지 마세요.** 토큰이 있으면 `setup-node` 가 그것을
+`.npmrc` 에 적고, 그러면 npm 은 OIDC 로 안 갑니다. 이 패키지는 토큰 발행을
+막아 두었으므로(`mfa=publish`) 그 길은 **403 으로 끝납니다.** 예전 이 문서는
+Automation 토큰을 만들라고 했었는데, 그 길은 막혔습니다.
+
+`publish.yml` 의 **이름을 바꾸면 npmjs.com 쪽 등록도 같이 바꿔야 합니다.**
+안 바꾸면 「등록 안 된 워크플로」 가 되어 그 자리에서 튕깁니다.
+
+### 줄바꿈은 LF 만
+
+배포에 담기는 파일은 **전부 LF** 여야 합니다. `.gitattributes` 가 `eol=lf` 로
+못박고 있고, `npm run check` 가 판마다 확인합니다.
+
+윈도우에서 작업한다면 한 가지를 알아 두세요. **git 은 이미 체크아웃해 둔
+파일을 `.gitattributes` 가 생겼다고 소급해서 고쳐 주지 않습니다.** 규칙이
+생기기 전에 `core.autocrlf=true` 로 받아 둔 파일은 디스크에 CRLF 로 남아
+있고, `npm pack` 은 git 이 아니라 **작업 트리**를 담습니다. 그래서
+`git status` 는 깨끗한데 올라간 물건만 어긋날 수 있습니다.
+
+실제로 1.13.0 이 그렇게 나갔습니다 — 148개 중 47개가 CRLF 였고, CI 가 만든
+tarball 과 shasum 이 달랐습니다. 셰뱅이 걸렸다면 리눅스·맥에서 실행 자체가
+안 됐을 겁니다(`env: 'node\r': No such file or directory`).
+
+`npm run check` 가 CRLF 를 잡으면 이렇게 되돌립니다:
+
+```bash
+# 어긋난 파일 목록
+git ls-files --eol | grep 'w/crlf'
+
+# 지우고 다시 받는다 (작업 트리가 깨끗할 때만)
+git ls-files --eol | grep 'w/crlf' | sed 's/.*\t//' | while read -r f; do rm -f "$f"; done
+git checkout -- .
+```
+
+`git add --renormalize .` 로는 안 고쳐집니다. 인덱스는 이미 LF 로 올바르고,
+어긋난 것은 작업 트리뿐이기 때문입니다.
+
+제대로 됐는지는 shasum 으로 확인합니다 — 같은 커밋이면 어느 OS 에서 만들든
+`npm pack` 의 shasum 이 같아야 합니다.
 
 ---
 
