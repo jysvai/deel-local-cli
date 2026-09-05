@@ -52,7 +52,7 @@ exists), Korean identifiers in source (house style — do not "fix" that).
 | **1** | T1-2 | `.gitignore`-aware walking (+ `.deelignore`) — **done (477b88b·977fa22)** | Walker skips a fixed list only; Java/Python/monorepo junk (`out/`, `.gradle/`, `coverage/`, generated code) floods `Glob`/`Grep`/`Outline` on an 8k–32k window. | M | fs paths |
 | **1** | T1-3 | `/commit` — message from the session's own diff and evidence — **done (1d3817a·1c3bf91)** | Work leaves the agent only through git; today the model has to type `git commit -m` through `Bash` with quoting hazards and no evidence trailer. | M | command exec |
 | **1** | T1-4 | Gateway key at rest: DPAPI (Windows) / Keychain (macOS) — **done (3fde811)** | `chmod 600` is a no-op on NTFS; the key sits in plaintext under the roaming profile. First question a reviewer asks. | M | secrets |
-| **—** | T2-1 | Anthropic Messages API shape (`/v1/messages`) — **deferred, later review** | Owner's decision (2026-08-30): company security rules mean an external `/v1/messages` endpoint can only be worked on from a separate network. Not built now; revisit when that network exists. | L | network |
+| **2** | T2-1 | Anthropic Messages API shape (`/v1/messages`) — **shape absorbed in 1.7.0; the external endpoint has still never been reached from this network** | The wire shape is built and exercised: `src/providers/anthropic.js`, `src/backend/adapter.js`, `test/anthropic.test.js` — all against a fake on 127.0.0.1 port 0. The owner's 2026-08-30 decision was about *reaching an external endpoint*, and that is still true: nothing here has ever talked to `api.anthropic.com`. Do not read this row as "done". | L | network |
 | **2** | T2-2 | Azure OpenAI URL shape (`/openai/deployments/{d}/…?api-version=`) — **done (ca2748d·e1c6a49)** | `api-key` header is supported but the URL shape is not; Korean enterprises are Azure-heavy. | S | network |
 | **2** | T2-3 | Vision input (`Read`/`@` on png·jpg·webp → image part) — **done (ac185e2)** | "Here is the screenshot of the bug" is the most common non-text input; local VL models and gateway GPT-4o/Claude accept it. | M | — |
 | **2** | T2-4 | Permission rules + managed policy file — **done (101b0e3)** | Only three approval modes; no persistent allow/deny (`Bash(npm test*)`), no admin-locked gateway address / forced offline for rollout. | M | authz |
@@ -88,10 +88,19 @@ ships as one commit. Order chosen so that each slice is independently valuable:
 
 Gate 1 (slice plan) is this document. Gate 2 (commit) is per slice: diff summary + message shown, then commit locally.
 
-**Every slice above shipped in 1.6.0 except T2-1**, which is **deferred by the owner**
-(security rules — a separate network is required for an external `/v1/messages`
-endpoint). It is not built and not half-built: the shape is simply absent, and the
-gateway kinds deel does speak are the ones it can actually reach from here.
+**Every slice above shipped in 1.6.0.** T2-1 followed in 1.7.0 — but read it carefully:
+what shipped is the **wire shape**, verified against a fake server on 127.0.0.1 port 0.
+The owner's 2026-08-30 decision was about *reaching an external endpoint from this
+network*, and that has not changed. Nothing in this repository has ever talked to
+`api.anthropic.com`. "The shape is absorbed" and "the endpoint is reachable" are two
+different claims, and only the first one is true.
+
+**This paragraph said the opposite for six release lines.** It read "It is not built and
+not half-built: the shape is simply absent" while `src/providers/anthropic.js` and
+`test/anthropic.test.js` sat in the tree. Nobody was misled — `ROADMAP.md` is not in the
+npm `files` list, so no installed user receives it — but a roadmap that describes a
+different program than the one in the folder is the same defect class as a review sheet
+that counts assertions nobody counted. Both were fixed in 1.14.0.
 
 ---
 
@@ -348,10 +357,18 @@ the key.
 
 ### T2-1 — Anthropic Messages API shape
 
-**Status: deferred — later review.** Owner's decision (2026-08-30): company security rules
-require any work against an external `/v1/messages` endpoint to happen on a separate network.
-Nothing below is to be built in this repository until that network is available. The card
-is kept so the design is not lost.
+**Status: the shape shipped in 1.7.0. The endpoint has still never been reached.**
+
+Read those as two claims, because they are. Built and exercised: `src/providers/anthropic.js`,
+the `/v1/messages` branches in `src/backend/adapter.js`, and `test/anthropic.test.js` — all
+driven by a fake Anthropic-shaped server on 127.0.0.1 port 0, the way every other wire shape
+in this repository is tested.
+
+What the owner's 2026-08-30 decision was actually about — talking to an external
+`/v1/messages` endpoint from this network — has not happened and is not scheduled. If you
+need that, you still need the separate network.
+
+The card below is the original design and is kept because it is what got built.
 
 **Goal.** `deel setup` against a gateway that speaks `/v1/messages` works like the other two shapes.
 
@@ -444,7 +461,7 @@ Weighted 1–10 per axis, pass ≥ 7.0, plateau rule after 3 iterations without 
 |---|---|---|
 | Correctness under the constraints | 0.35 | Every acceptance check passes; no new dependency; the one-door and prefix-cache tests untouched or strengthened. |
 | Honesty of the screen | 0.25 | Every new line on screen is a real number or a real state; nothing invented; failures name their cause. |
-| Test quality | 0.20 | Tests would fail on the old code; fake gateway on port 0; ANSI stripped; skips are visible ⚠, not silent. |
+| Test quality | 0.20 | Tests would fail on the old code; fake gateway on port 0; ANSI stripped; skips are visible ⚠, not silent. A load-bearing line gets an entry in `test/mutants.json` so `npm run mutate` proves the test catches its removal. |
 | House style | 0.10 | Korean identifiers/comments explaining *why*; i18n twins; docs paired ko/en; `check` script updated. |
 | Blast radius | 0.10 | Diff touches only the listed touchpoints; security-trigger files reviewed; no behaviour change for users who do not opt in. |
 

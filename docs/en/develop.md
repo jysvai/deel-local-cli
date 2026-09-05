@@ -22,13 +22,42 @@ Zero dependencies rules out c8 and nyc, so this reads Node's own
 `NODE_V8_COVERAGE` instead — nothing new to get through an import review. It picks up
 child processes too, so the `cli` suite that spawns `deel` counts like everything else.
 
-Currently **92% overall** (7,056 of 7,646 lines). Three files are deliberately left short.
+Currently **91% overall** (20,864 of 23,030 lines; it moves by a few lines per run).
+Three files are deliberately left short.
+
+CI stops the build below 90% - the measured figure rounded down to a multiple of
+five. Raise it by measuring first. The floor is on the **total**, not per file:
+forcing the three below up would make the tests start lying.
 
 | File | Now | Why it stops there |
 |---|---|---|
-| `tools/excel.js` | 67% | The password path needs Excel installed and a genuinely encrypted file. Faking it would produce a test that only *looks* like it passes |
-| `repl.js` | 77% | The keypress paths — Shift+Tab, Ctrl+C, password entry, paste. Reaching them needs a pty, and a pty is a dependency. What the screen *prints* is measured instead, as a value (`ui` and `tui` suites) |
+| `tools/excel.js` | 71% | The password path needs Excel installed and a genuinely encrypted file. Faking it would produce a test that only *looks* like it passes |
+| `repl.js` | 73% | The keypress paths — Shift+Tab, Ctrl+C, password entry, paste. Reaching them needs a pty, and a pty is a dependency. What the screen *prints* is measured instead, as a value (`ui` and `tui` suites) |
 | `plugins/manage.js` | 79% | The GitHub download path. **Tests not reaching the network** matters more. Folder installs are covered |
+
+### Whether the tests actually guard
+
+```bash
+npm run mutate                            break the lines that matter, on purpose
+node tools/mutate.mjs --json              machine-readable
+```
+
+Coverage only tells you a line was *executed*. A test that runs a line and
+asserts nothing about it still reports 100%. So it is measured the other way
+round too: the lines that matter are **broken on purpose** and the paired test
+has to turn red. If it stays green, that test is not guarding that line.
+
+What gets broken, and what would go wrong if it stayed broken, lives in
+`test/mutants.json`. When adding one, pair it with **exactly one** test — pair
+it with several and you cannot tell which one caught it; pair it with a slow
+one and the whole pass gets slow.
+
+The source is never edited in place. A copy goes to a temp folder and only
+that copy is mutated, so a crash mid-run cannot leave a mangled working tree.
+Each paired test is run **unmutated first** — a test that was already red
+would look like it caught everything.
+
+CI runs one pass after `npm test`. A single survivor fails the run.
 
 ### Layout
 
@@ -37,7 +66,8 @@ bin/deel.js              entry point
 src/
   repl.js                the conversation screen — what a person faces
   oneshot.js             run once and exit (-p)
-  commands.js            35 slash commands
+  commands.js            49 slash commands
+  cmdnames.js            just their names - batch mode reads it too
   setup.js               first-run connection setup
   config.js              reading and writing config
 

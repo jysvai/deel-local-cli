@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-7%2C046%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-7%2C095%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -94,7 +94,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.13.x](docs/ko/releases/1.13.md) · [1.12.x](docs/ko/releases/1.12.md) · [1.10.x](docs/ko/releases/1.10.md) · [1.9.x](docs/ko/releases/1.9.md) · [그 앞](docs/ko/releases.md) |
+| [릴리스 노트](docs/ko/releases.md) | [1.14.x](docs/ko/releases/1.14.md) · [1.13.x](docs/ko/releases/1.13.md) · [1.12.x](docs/ko/releases/1.12.md) · [1.10.x](docs/ko/releases/1.10.md) · [1.9.x](docs/ko/releases/1.9.md) · [그 앞](docs/ko/releases.md) |
 
 ---
 
@@ -267,7 +267,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 1.13.1  ⌂ 이 안
+ deel 1.14.0  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -292,7 +292,7 @@ deel --offline
 수집·전송하는 것이 없습니다. 텔레메트리, 사용 통계, 오류 보고 전부 없습니다.
 대화 기록·되돌리기 이력·설정은 작업 폴더의 `.deel/` 안에만 남습니다.
 
-> 검증: `npm test` 의 network·web·mcp 검사 159항목. 허용되지 않은 서버에 실제로
+> 검증: `npm test` 의 network·web·mcp 검사 186항목. 허용되지 않은 서버에 실제로
 > 요청이 **한 건도 닿지 않는지**, `--offline` 일 때 MCP 서버가 **한 번도 안
 > 뜨는지**까지 진짜 서버를 띄워서 확인합니다.
 
@@ -457,7 +457,7 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 |---|---|
 | `/help` | 명령 목록 |
 | `/bell [on|off]` | 다 됐을 때·물어볼 때 종소리와 창 제목 |
-| `/lang [ko|en|ja|zh] [시킬말]` | 화면 말 (한국어·English·日本語·中文 네 가지). 네 가지 다 채워져 있고, 그 말이 참인지를 **켜서 읽는 검사**가 지킨다 — 일곱 화면을 영어로 띄워 한글이 한 자라도 나오면 빨개진다(`test/langleak.test.js`). 「표는 100% 인데 화면에는 한국어」 를 여기서 한 번 겪었기 때문이다. **시킬 말을 따로 줄 수 있다** — `/lang ko en` 이면 모델에게는 영어로 시키고 답은 한국어로 받는다(8k 창에서 고정 몫 23% 감소). 코드는 그대로 |
+| `/lang [ko|en|ja|zh] [시킬말]` | 화면 말 (한국어·English·日本語·中文 네 가지). 네 가지 다 채워져 있고, 그 말이 참인지를 **켜서 읽는 검사**가 지킨다 — 열 화면(채팅 안 여섯 · argv 로만 닿는 넷)을 영어로 띄워 한글이 한 자라도 나오면 빨개진다(`test/langleak.test.js`). 채팅창 밖 넷은 아직 한국어가 남아 있어, 0 이 아니라 **줄어들기만 하는 수**로 못박아 두었다. 「표는 100% 인데 화면에는 한국어」 를 여기서 한 번 겪었기 때문이다. **시킬 말을 따로 줄 수 있다** — `/lang ko en` 이면 모델에게는 영어로 시키고 답은 한국어로 받는다(8k 창에서 고정 몫 23% 감소). 코드는 그대로 |
 | `/keys` | 이 터미널이 무슨 키를 보내는지 눌러서 확인 — 줄바꿈이 안 될 때 |
 | `/consult <프로필> <질문>` | 다른 모델에게 한 번 물어보기 — 지금 쓰는 것은 안 바꿈 |
 | `/export` | 이 대화를 **보고서 한 장**(HTML)으로 — 시킨 것·바뀐 것·확인한 것. 폐쇄망에서 여는 자기완결 파일 |
@@ -1087,12 +1087,13 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (5,890항목 안팎 — 몇몇은 터미널에 따라 갈립니다)
+npm test          전체 검증 (7,095항목 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
 npm run demo      화면이 어떻게 보이는지 실제로 돌려 보기
-npm run check     전 파일 문법 검사
+npm run check     전 파일 문법 검사 · 배포에 담길 줄바꿈
+npm run mutate    검사가 정말 지키는지 되재기 (일부러 어긋내 본다)
 ```
 
 검증은 **가짜 게이트웨이**를 띄워서 합니다. 실제 모델 없이 규격 그대로
@@ -1120,27 +1121,30 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 검증 | 항목 | 무엇을 |
 |---|---|---|
-| `smoke` | 20 | 도구·작업범위·되돌리기·감사로그 |
-| `loop` | 16 | 에이전트 루프·스트리밍·도구 호출 |
-| `guard` | 24 | **안 하는 자리** — 거부·모르는 도구·두 번 실행·범위 밖 |
-| `network` | 30 | 정해진 자리 밖으로 새지 않는가 |
-| `web` | 25 | 웹 읽기가 읽기만 하는가 |
-| `abort` · `steer` | 16 · 15 | Ctrl+C 로 끊어도 대화가 성한가 · 도중에 낀 말이 다음 부름에 실리는가 |
+| `smoke` | 24 | 도구·작업범위·되돌리기·감사로그 |
+| `loop` | 28 | 에이전트 루프·스트리밍·도구 호출 |
+| `guard` | 113 | **안 하는 자리** — 거부·모르는 도구·두 번 실행·범위 밖·`.deel` 울타리 |
+| `network` | 70 | 정해진 자리 밖으로 새지 않는가 |
+| `web` | 56 | 웹 읽기가 읽기만 하는가 |
+| `abort` · `steer` | 22 · 15 | Ctrl+C 로 끊어도 대화가 성한가 · 도중에 낀 말이 다음 부름에 실리는가 |
 | `parallel` | 23 | 읽기만 동시에 도는가 · 할 일 목록 |
-| `cli` | 75 | **진짜 `deel` 을 띄워** 끝까지 돌려 본다 |
-| `setup` | 42 | 첫 실행 마법사 (가짜 TTY 로 사람처럼 입력) |
-| `detect` | 66 | 주소 한 줄로 규격·인증을 짚어내는가 |
-| `modes` · `route` | 89 · 33 | 작업 모드 · 종합에서 알맞은 모드로 옮겨 가는가 |
-| `ctxsize` | 43 | 모델에 걸린 컨텍스트 길이를 긁어오는가 |
-| `commands` · `commands-more` | 128 · 62 | 슬래시 명령 전부 |
-| `ui` · `ui2` | 60 · 40 | 암호 가림·한글 폭·상태줄·대화 목록·엑셀→글 |
-| `encoding` · `xlsx` | 68 · 72 | 한글 인코딩 판별 · 엑셀 읽기 |
-| `compact` | 21 | 요약 압축·짝 안 깨짐·실패 시 물러섬 |
-| `store` | 34 | 대화 저장·이어하기·중간에 죽어도 복구 |
-| `scan` | 29 | 여러 런타임을 구분해 찾는가 |
-| `plugins` | 38 | 플러그인 받기·묶기·ZIP/TAR |
-| `no-bundle` | 12 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
+| `cli` · `oneshot` | 84 · 82 | **진짜 `deel` 을 띄워** 끝까지 돌려 본다 · 배치 모드와 종료코드 |
+| `setup` | 60 | 첫 실행 마법사 (가짜 TTY 로 사람처럼 입력) |
+| `detect` | 85 | 주소 한 줄로 규격·인증을 짚어내는가 |
+| `modes` · `route` | 120 · 72 | 작업 모드 · 종합에서 알맞은 모드로 옮겨 가는가 |
+| `ctxsize` | 56 | 모델에 걸린 컨텍스트 길이를 긁어오는가 |
+| `commands` · `commands-more` | 214 · 93 | 슬래시 명령 전부 |
+| `ui` · `ui2` | 89 · 40 | 암호 가림·한글 폭·상태줄·대화 목록·엑셀→글 |
+| `encoding` · `xlsx` | 70 · 72 | 한글 인코딩 판별 · 엑셀 읽기 |
+| `compact` | 98 | 요약 압축·짝 안 깨짐·실패 시 물러섬 |
+| `stuck` · `undo` | 48 · 54 | 헛도는 것과 일이 되는 것을 가르는가 · 셸이 쓴 파일도 되돌려지는가 |
+| `store` | 75 | 대화 저장·이어하기·중간에 죽어도 복구 |
+| `scan` | 30 | 여러 런타임을 구분해 찾는가 |
+| `plugins` | 79 | 플러그인 받기·묶기·ZIP/TAR |
+| `exitcode` · `doorparity` | 7 · 7 | 화면에 적은 종료코드 표가 진짜인가 · 문 세 개가 같은 것을 주는가 |
+| `no-bundle` | 21 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
 | `edit-bench` | 20건 | 편집 성공률 |
+| `mutate` | 어긋 7개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
 
 > **자세히** — 어디를 밟았는지 · 폴더 구조
 >
@@ -1152,6 +1156,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
+| **[1.14.0](docs/ko/releases/1.14.md#1140)** | 적어 둔 것이 참인지 기계가 대신 봅니다 — 초록불과 「깨면 잡힌다」 는 다릅니다 |
 | [1.13.1](docs/ko/releases/1.13.md#1131) | 올라간 물건이 소스와 달랐습니다 — 148개 중 47개가 CRLF 로 나갔습니다 |
 | **[1.13.0](docs/ko/releases/1.13.md#1130)** | 바깥 창구와 붙는 자리를 전부 다시 봤습니다 — 서로 못 보는 검수자 셋, 셋이 같이 짚은 것 넷 |
 | **[1.12.0](docs/ko/releases/1.12.md#1120)** | 같은 앞머리를 걸음마다 다시 보내고 있었습니다 |

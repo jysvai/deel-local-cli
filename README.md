@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-7%2C046%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-7%2C095%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -119,7 +119,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
-| [Release notes](docs/en/releases.md) | [1.13.x](docs/en/releases/1.13.md) · [1.12.x](docs/en/releases/1.12.md) · [1.10.x](docs/en/releases/1.10.md) · [1.9.x](docs/en/releases/1.9.md) · [older](docs/en/releases.md) |
+| [Release notes](docs/en/releases.md) | [1.14.x](docs/en/releases/1.14.md) · [1.13.x](docs/en/releases/1.13.md) · [1.12.x](docs/en/releases/1.12.md) · [1.10.x](docs/en/releases/1.10.md) · [1.9.x](docs/en/releases/1.9.md) · [older](docs/en/releases.md) |
 
 ---
 
@@ -235,8 +235,9 @@ What you see on screen does not have to. Four screen languages ship: **한국어
 > **How this is kept honest:** `/lang` counting the table is not enough — it can only count
 > strings that made it *into* the table, and for a long time the tool result summaries and the
 > thinking indicator never did. So a test starts deel in each language and reads the screen:
-> `test/langleak.test.js` walks seven screens and fails if a Korean character shows up on an
-> English one. It also fails on `1 files`, and on a stray `·` left dangling at the end of a line.
+> `test/langleak.test.js` starts deel on ten screens — six inside the chat REPL and four that
+> argv reaches on its own (`--help`, `status`, `sessions`, `reset`) — and fails if a Korean
+> character shows up on an English one. It also fails on `1 files`, and on a stray `·` left dangling at the end of a line.
 
 ```bash
 DEEL_LANG=en deel        # this run only  (also ja, zh)
@@ -337,7 +338,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.13.1  ⌂ inside
+ deel 1.14.0  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -363,7 +364,7 @@ leaves the company."
 Nothing is collected or transmitted. No telemetry, no usage stats, no crash reporting.
 Conversation history, undo snapshots and config live only in `.deel/` inside your working folder.
 
-> Verified by 159 checks in `npm test` (network + web + mcp), including bringing up a real
+> Verified by 186 checks in `npm test` (network + web + mcp), including bringing up a real
 > server and confirming that **not a single request reaches it** when it is not allow-listed,
 > and that an MCP server **never starts** under `--offline`.
 
@@ -1157,7 +1158,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (~5,890 checks; a few are TTY-dependent)
+npm test          Full suite (7,095 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1177,27 +1178,30 @@ so one run tells you everything.
 
 | Suite | Checks | Covers |
 |---|---|---|
-| `smoke` | 20 | Tools, scope, undo, audit log |
-| `loop` | 16 | Agent loop, streaming, tool calls |
-| `guard` | 24 | **What it refuses to do** — denied edits, unknown tools, repeated mutations, out-of-scope writes |
-| `network` | 30 | Nothing escapes the configured address |
-| `web` | 25 | Web reads stay read-only |
-| `abort` · `steer` | 16 · 15 | Ctrl+C leaves the conversation valid · a line typed mid-turn rides the next call |
+| `smoke` | 24 | Tools, scope, undo, audit log |
+| `loop` | 28 | Agent loop, streaming, tool calls |
+| `guard` | 113 | **What it refuses to do** — denied edits, unknown tools, repeated mutations, out-of-scope writes, the `.deel` fence |
+| `network` | 70 | Nothing escapes the configured address |
+| `web` | 56 | Web reads stay read-only |
+| `abort` · `steer` | 22 · 15 | Ctrl+C leaves the conversation valid · a line typed mid-turn rides the next call |
 | `parallel` | 23 | Read-only tools run together; checklists |
-| `cli` | 75 | **Spawns the real `deel`** and drives it to completion |
-| `setup` | 42 | First-run wizard, driven through a fake TTY |
-| `detect` | 66 | Identifying shape and auth from one address |
-| `modes` · `route` | 89 · 33 | Work modes; auto-switching from Auto |
-| `ctxsize` | 43 | Reading context length off the model |
-| `commands` · `commands-more` | 128 · 62 | Every slash command |
-| `ui` · `ui2` | 60 · 40 | Password masking, CJK width, status line, session list, Excel→text |
-| `encoding` · `xlsx` | 68 · 72 | Legacy-encoding detection; Excel reading |
-| `compact` | 21 | Summary folding, pairing intact, graceful fallback |
-| `store` | 34 | Session persistence, resume, crash recovery |
-| `scan` | 29 | Distinguishing multiple runtimes |
-| `plugins` | 38 | Plugin fetch/pack, ZIP/TAR |
-| `no-bundle` | 12 | Nothing foreign in the published package; test-file hygiene |
+| `cli` · `oneshot` | 84 · 82 | **Spawns the real `deel`** and drives it to completion · batch mode and exit codes |
+| `setup` | 60 | First-run wizard, driven through a fake TTY |
+| `detect` | 85 | Identifying shape and auth from one address |
+| `modes` · `route` | 120 · 72 | Work modes; auto-switching from Auto |
+| `ctxsize` | 56 | Reading context length off the model |
+| `commands` · `commands-more` | 214 · 93 | Every slash command |
+| `ui` · `ui2` | 89 · 40 | Password masking, CJK width, status line, session list, Excel→text |
+| `encoding` · `xlsx` | 70 · 72 | Legacy-encoding detection; Excel reading |
+| `compact` | 98 | Summary folding, pairing intact, graceful fallback |
+| `stuck` · `undo` | 48 · 54 | Telling spinning apart from real progress · shell-written files are undoable too |
+| `store` | 75 | Session persistence, resume, crash recovery |
+| `scan` | 30 | Distinguishing multiple runtimes |
+| `plugins` | 79 | Plugin fetch/pack, ZIP/TAR |
+| `exitcode` · `doorparity` | 7 · 7 | The printed exit-code table is real · all three doors hand out the same thing |
+| `no-bundle` | 21 | Nothing foreign in the published package; test-file hygiene |
 | `edit-bench` | 20 cases | Edit success rate |
+| `mutate` | 7 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
 
 > **More** — Coverage · Layout
 >
@@ -1209,6 +1213,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| **[1.14.0](docs/en/releases/1.14.md#1140)** | A machine now checks that what we wrote down is true — green does not mean guarded |
 | [1.13.1](docs/en/releases/1.13.md#1131) | What shipped was not what the source said — 47 of 148 files went out with CRLF line endings |
 | **[1.13.0](docs/en/releases/1.13.md#1130)** | Every place deel touches someone else's endpoint, re-examined — three independent reviewers, four findings they shared |
 | **[1.12.0](docs/en/releases/1.12.md#1120)** | The same prefix was being sent again on every step |
