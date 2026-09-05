@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
-import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, 접힘표, 최소이득, 접힌파일열쇠 } from '../src/agent/compact.js';
+import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, 접힘표, 최소이득, 접힌파일열쇠, KEEP_RECENT } from '../src/agent/compact.js';
 import { 파일기억 } from '../src/agent/filemem.js';
 import { assistantMessage, toolMessage } from '../src/backend/adapter.js';
 import { repairToolPairs } from '../src/agent/session.js';
@@ -401,7 +401,9 @@ await new Promise((r) => setImmediate(r));
 
   const s = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
   s.push({ role: 'user', content: '이 폴더 좀 봐줘' });
-  for (let i = 1; i <= 7; i++) {
+  // 여덟 개다. 접기는 최근 넷을 남기고 **넷이 모여야** 한 번에 접는다 —
+  // 하나씩 접으면 걸음마다 앞머리가 깨진다(agent/compact.js 의 묶음 문턱).
+  for (let i = 1; i <= 8; i++) {
     s.push(호출(`c${i}`, `src/파일${i}.js`));
     s.push(결과(`c${i}`, 긴글(60)));
   }
@@ -417,7 +419,7 @@ await new Promise((r) => setImmediate(r));
   const 전체전 = s.breakdown().used;
   const r = 접기(s);
 
-  check('오래된 도구 결과가 접힌다', r.접은것 === 3, `${r.접은것}개 (7개 중 최근 4개는 남겨야 함)`);
+  check('오래된 도구 결과가 접힌다', r.접은것 === 4, `${r.접은것}개 (8개 중 최근 4개는 남겨야 함)`);
   check('도구 결과 몫이 실제로 준다', 결과몫(s) < 접기전 * 0.7,
     `${접기전.toLocaleString()} → ${결과몫(s).toLocaleString()} 토큰`);
   check('아낀 토큰을 세어서 알려 준다', r.아낀토큰 > 0 && Math.abs(r.아낀토큰 - (전체전 - s.breakdown().used)) <= 5,
@@ -466,7 +468,7 @@ await new Promise((r) => setImmediate(r));
   u.push({ role: 'user', content: '네 가지 해줘' });
   u.push(할일('t1')); u.push(결과('t1', 목록글('| ☐ | 옛 목록입니다 |')));
   u.push(할일('t2')); u.push(결과('t2', 목록글('| ☐ | 3. 요청 누락 막기 |')));
-  for (let i = 1; i <= 6; i++) { u.push(호출(`e${i}`, `src/뒤${i}.js`)); u.push(결과(`e${i}`, 긴글(60))); }
+  for (let i = 1; i <= 8; i++) { u.push(호출(`e${i}`, `src/뒤${i}.js`)); u.push(결과(`e${i}`, 긴글(60))); }
 
   const ru = 접기(u);
   const 다 = u.messages.filter((m) => m.role === 'tool').map((m) => m.content).join('\n');
@@ -529,10 +531,59 @@ await new Promise((r) => setImmediate(r));
     const p = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
     p.push({ role: 'user', content: '봐줘' });
     p.push(호출('p1', 긴경로)); p.push(결과('p1', 긴글(60)));
-    for (let i = 2; i <= 7; i++) { p.push(호출(`p${i}`, `src/그냥${i}.js`)); p.push(결과(`p${i}`, 긴글(60))); }
+    for (let i = 2; i <= 9; i++) { p.push(호출(`p${i}`, `src/그냥${i}.js`)); p.push(결과(`p${i}`, 긴글(60))); }
     const 것 = 접기(p).접은것들?.[0];
     check('★ 접은 것에 안 자른 경로가 남는다', 것?.경로 === 긴경로, String(것?.경로));
     check('★ 화면용 이름은 따로 짧다', (것?.곳?.length ?? 0) <= 60, `${것?.곳?.length}자`);
+  }
+
+  /*
+   * ── 몇 걸음에 한 번 접는가 ────────────────────────────────────────────
+   *
+   * 이 파일 머리말이 「접기는 **묶음으로** 한다」 고 적어 두고, 걸음마다 하나씩
+   * 접는 것을 고쳤다고 말한다. 그런데 막는 자가 「모인 것이 2,000토큰 넘으면」
+   * 하나뿐이라, **평범한 Read 결과 하나가 혼자서 그 문턱을 넘는다.** 그래서
+   * 55% 를 넘긴 뒤로는 걸음마다 한 개씩 접혔다 — 고쳤다고 적어 둔 그 모양 그대로.
+   *
+   * 접는다는 것은 이력 한가운데 글을 바꿔치는 일이라, 그 자리부터 뒤가 전부
+   * 프리픽스 캐시에서 빠진다. 걸음마다 접으면 **걸음마다 대화가 통째로 다시
+   * 나간다.** 한 걸음에 3천 토큰 아끼려고 1만 2천 토큰을 정가로 다시 보내는 셈이다.
+   *
+   * 그래서 여기서 재는 것은 「접느냐」 가 아니라 **몇 걸음에 한 번 접느냐** 다.
+   */
+  {
+    const 굴리며세기 = () => {
+      const x = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 16000, kind: 'openai' }, { root: process.cwd() });
+      x.push({ role: 'user', content: '이 폴더 전체를 훑고 로그 형식을 통일해줘' });
+      let 접은걸음 = 0; let 접을만한걸음 = 0; let 접은개수 = 0;
+      for (let 턴 = 1; 턴 <= 60; 턴++) {
+        x.push(호출(`f${턴}`, `src/파일${턴}.js`));
+        x.push(결과(`f${턴}`, 긴글(60)));
+        x.push({ role: 'assistant', content: `${턴}번째 파일을 봤습니다.` });
+        // 진짜 루프와 같은 차례다 — 접고 나서 요약을 본다 (agent/loop.js 의 자리만들기).
+        if (shouldFold(x)) {
+          접을만한걸음++;
+          const r = 접기(x);
+          if (r.접은것 > 0) { 접은걸음++; 접은개수 += r.접은것; }
+        }
+        if (shouldCompact(x)) break;
+      }
+      return { 접은걸음, 접을만한걸음, 접은개수 };
+    };
+    const { 접은걸음, 접을만한걸음, 접은개수 } = 굴리며세기();
+    check('먼저: 접을 만한 걸음이 넉넉히 있었다', 접을만한걸음 >= 10, `${접을만한걸음}걸음`);
+    /*
+     * 재는 것은 「몇 번 접었나」 가 아니라 **한 번에 몇 개씩 접었나** 다.
+     *
+     * 앞머리를 깨는 값은 한 번 접을 때마다 한 번씩 든다. 그러니 한 번에 하나씩
+     * 접으면 아끼는 것보다 다시 보내는 것이 많다. 한 번에 KEEP_RECENT 개씩
+     * 모아서 접으면 깨는 횟수가 그만큼 줄고, 깰 때 아끼는 양은 그만큼 커진다.
+     */
+    const 한번에 = 접은개수 / Math.max(1, 접은걸음);
+    check('★★ 한 번에 하나씩 접지 않는다 — 묶어서 접는다', 한번에 >= KEEP_RECENT,
+      `${접은걸음}번 접어 ${접은개수}개 (한 번에 ${한번에.toFixed(1)}개) ·`
+      + ` 접을 만한 ${접을만한걸음}걸음 중 ${접은걸음}번`);
+    check('★ 그래도 접기는 한다 (아예 안 접으면 요약이 일찍 온다)', 접은걸음 >= 1, `${접은걸음}번`);
   }
 
   // 언제 접기 시작하나 — 요약 압축(80%)보다 일찍이어야 미루는 뜻이 있다.

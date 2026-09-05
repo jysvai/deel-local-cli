@@ -237,17 +237,18 @@ trace('1.6-접힌뒤에는-되풀이가-아니다');
  */
 {
   // 접기가 걸릴 만큼 큰 파일 하나 + 최근 넷을 채울 파일 넷.
-  // KEEP_RECENT 가 4 라, 뒤에 넷이 쌓여야 이 큰 것이 접히는 자리로 밀린다.
+  // 접기가 큰것을 건드리려면 뒤에 여러 개가 쌓여 밀려나야 한다 — 아래 채움수 참고.
   const 큰줄 = (i) => `${i}: ` + '가'.repeat(60);
   writeFileSync(join(root, '큰것.txt'), Array.from({ length: 180 }, (_, i) => 큰줄(i)).join('\n') + '\n', 'utf8');
-  for (const n of [1, 2, 3, 4]) writeFileSync(join(root, `채움${n}.txt`), '나'.repeat(1800) + '\n', 'utf8');
+  // 접기는 **묶음으로** 돈다 — 최근 넷을 남기고 넷이 모여야 한 번에 접는다
+  // (agent/compact.js 의 묶음 문턱). 그러니 큰것이 접히는 자리까지 밀리려면
+  // 뒤에 일곱 개는 쌓여야 한다.
+  const 채움수 = 7;
+  for (let n = 1; n <= 채움수; n++) writeFileSync(join(root, `채움${n}.txt`), '나'.repeat(1200) + '\n', 'utf8');
 
   대본 = [
     { calls: [{ name: 'Read', args: { file_path: '큰것.txt' } }] },
-    { calls: [{ name: 'Read', args: { file_path: '채움1.txt' } }] },
-    { calls: [{ name: 'Read', args: { file_path: '채움2.txt' } }] },
-    { calls: [{ name: 'Read', args: { file_path: '채움3.txt' } }] },
-    { calls: [{ name: 'Read', args: { file_path: '채움4.txt' } }] },
+    ...Array.from({ length: 채움수 }, (_, i) => ({ calls: [{ name: 'Read', args: { file_path: `채움${i + 1}.txt` } }] })),
     { calls: [{ name: 'Read', args: { file_path: '큰것.txt' } }] },
     { text: '다 봤습니다.' },
   ];
@@ -269,10 +270,10 @@ trace('1.6-접힌뒤에는-되풀이가-아니다');
   check('먼저: 첫 읽기는 내용이 통째로 실렸다',
     (실린것[0] ?? '').includes('가'.repeat(60)), `${(실린것[0] ?? '').length}자`);
   check('★ 접어서 없앤 것을 「앞에서 봤잖아」 로 막지 않는다',
-    !(실린것[5] ?? '').includes('인자도 결과도 같습니다'),
-    (실린것[5] ?? '').slice(0, 70));
+    !(실린것.at(-1) ?? '').includes('인자도 결과도 같습니다'),
+    (실린것.at(-1) ?? '').slice(0, 70));
   check('★ 다시 읽은 내용이 대화에 진짜로 들어왔다',
-    (실린것[5] ?? '').includes('가'.repeat(60)), `${(실린것[5] ?? '').length}자`);
+    (실린것.at(-1) ?? '').includes('가'.repeat(60)), `${(실린것.at(-1) ?? '').length}자`);
 }
 
 trace('2-모르는도구도센다');
@@ -388,12 +389,12 @@ trace('6-Glob이잘랐다고말하는가');
   mkdirSync(방, { recursive: true });
   for (let i = 0; i < 260; i++) writeFileSync(join(방, `f${i}.txt`), 'x', 'utf8');
   const ctx = 새ctx();
-  const r = TOOLS.Glob.run({ pattern: '많은폴더/*.txt' }, ctx);
+  const r = await TOOLS.Glob.run({ pattern: '많은폴더/*.txt' }, ctx);
   check('★ 잘랐으면 잘랐다고 말한다', /모두 260개/.test(String(r.content)), String(r.content).split('\n').pop());
   check('요약에도 잘린 것이 드러난다', /\/260개/.test(String(r.summary)), String(r.summary));
 
   // 안 잘렸으면 군말이 없어야 한다. 늘 붙으면 그 말이 뜻을 잃는다.
-  const r2 = TOOLS.Glob.run({ pattern: '가.txt' }, ctx);
+  const r2 = await TOOLS.Glob.run({ pattern: '가.txt' }, ctx);
   check('안 잘렸으면 군말을 안 붙인다', !/모두/.test(String(r2.content)), String(r2.content));
 }
 
