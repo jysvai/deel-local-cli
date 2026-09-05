@@ -27,7 +27,7 @@ Currently **90% overall** - and it depends on where you measure.
 | Where | How much | | Measured on |
 |---|---|---|---|
 | Windows | 90.6% | 20,947/23,119 | 1.15.0 |
-| Linux | 89.96% | 20,717/23,030 | 1.14.0 (CI) |
+| Linux | 90.0% | 20,800/23,119 | 1.15.0 (CI) |
 
 Windows-only paths (`tools/excel-com.js` and friends) are never executed on
 Linux, so neither figure is the "right" one - **both are right**. It also moves
