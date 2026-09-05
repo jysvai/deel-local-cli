@@ -22,12 +22,24 @@ Zero dependencies rules out c8 and nyc, so this reads Node's own
 `NODE_V8_COVERAGE` instead — nothing new to get through an import review. It picks up
 child processes too, so the `cli` suite that spawns `deel` counts like everything else.
 
-Currently **91% overall** (20,864 of 23,030 lines; it moves by a few lines per run).
-Three files are deliberately left short.
+Currently **90% overall** - and it depends on where you measure.
 
-CI stops the build below 90% - the measured figure rounded down to a multiple of
-five. Raise it by measuring first. The floor is on the **total**, not per file:
-forcing the three below up would make the tests start lying.
+| Where | How much | |
+|---|---|---|
+| Windows | 90.6% | 20,864/23,030 |
+| Linux | 89.96% | 20,717/23,030 |
+
+Windows-only paths (`tools/excel-com.js` and friends) are never executed on
+Linux, so neither figure is the "right" one - **both are right**. It also moves
+by a few lines per run.
+
+CI stops the build below **88% on Linux** - the lower figure rounded down, minus
+a point. Setting the floor flush against the measurement makes it a coin toss
+rather than a gate (it was first set at 90 and went red by 0.04 points). Raise it
+by measuring on Linux first. The floor is on the **total**, not per file: forcing
+the three below up would make the tests start lying.
+
+Three files are deliberately left short.
 
 | File | Now | Why it stops there |
 |---|---|---|
