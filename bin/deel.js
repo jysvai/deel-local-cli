@@ -242,6 +242,8 @@ function help() {
   say('');
   say(`    ${c.cyan('deel run "검사 돌리고 실패한 것만 알려줘"')}`);
   say(`    ${c.cyan('echo "..." | deel run')}      ${c.gray('시킬 말을 표준입력으로 넣어도 됩니다')}`);
+  // 대화 화면에서 손으로 치던 슬래시 명령을 그대로 배치에 옮기는 자리 (src/oneshot.js).
+  say(`    ${c.cyan('deel run /배포점검 서버3')}     ${c.gray('.claude/commands 에 적어 둔 슬래시 명령도 그대로')}`);
   say(`    ${c.gray('deel -p "..." 도 같습니다.')} ${c.gray('위 대화 시작 옵션을 그대로 씁니다.')}`);
   say('');
   say(`    ${c.gray('--json')}             결과를 JSON 한 덩이로 (답·도구 횟수·토큰·끝난 까닭)`);

@@ -14,7 +14,7 @@
 //   안 나간다. 설정도 임시 폴더(DEEL_HOME)라 사람의 ~/.deel 을 못 건드린다.
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -673,6 +673,68 @@ trace('8.5-사실대로-말하는가');
     r.err.split('\n').find((l) => /비우고 이어갑니다/.test(l))?.trim().slice(0, 90) ?? '그런 줄이 없다');
   check('오류라고는 안 한다', !/^\s*✗/m.test(r.err) && r.code === 0, `code=${r.code}`);
 }
+trace('8.8-슬래시-명령을-배치에서도');
+
+/*
+ * ── `deel run /이름` ────────────────────────────────────────────────────
+ *
+ * 대화 화면에서 쓰던 슬래시 명령을 야간 잡에 그대로 옮길 수 있어야 한다.
+ * 여태는 `/배포점검` 이 **글자 그대로** 모델에게 갔다. 슬래시 낱말 하나를
+ * 받은 모델은 "무슨 말인지 모르겠다" 고 답하고 그 턴은 0 으로 끝난다 —
+ * 아무 일도 안 했는데 배치는 초록불이다. 이 파일이 제일 싫어하는 결말이다.
+ */
+{
+  mkdirSync(join(work, '.deel', 'commands'), { recursive: true });
+  writeFileSync(join(work, '.deel', 'commands', '배포점검.md'),
+    '---\ndescription: 배포 전에 볼 것\n---\n\n배포 전 점검표를 훑어라. 대상은 $ARGUMENTS 다.\n', 'utf8');
+
+  대본초기화();
+  const r = await 띄우기(['run', '/배포점검']);
+  const 보낸글 = JSON.stringify(받은요청.map((x) => x.json ?? null));
+  check('★ 파일로 적어 둔 슬래시 명령이 배치에서도 펴진다', 보낸글.includes('배포 전 점검표를 훑어라'),
+    `code=${r.code} · 요청 ${받은요청.length}건`);
+  check('★ 명령 이름을 글자 그대로 보내지 않는다', !/"content":"\/배포점검"/.test(보낸글),
+    보낸글.slice(0, 80));
+  check('편 뒤에는 평범하게 끝난다', r.code === 0, `code=${r.code}`);
+  check('무엇을 폈는지 곁에 적는다', /배포점검/.test(r.err), r.err.split('\n').find((l) => l.includes('배포점검')) ?? '(안 나옴)');
+
+  대본초기화();
+  const r2 = await 띄우기(['run', '/배포점검 서버3']);
+  const 보낸글2 = JSON.stringify(받은요청.map((x) => x.json ?? null));
+  check('★ 뒤에 붙인 말이 $ARGUMENTS 자리로 들어간다', 보낸글2.includes('대상은 서버3 다'),
+    `code=${r2.code}`);
+}
+
+{
+  /*
+   * 대화 화면 전용 이름은 **0 으로 끝내면 안 된다.**
+   *
+   * `deel run /undo` 를 배치에 적어 두면 사람은 되돌리기가 돈 줄로 안다.
+   * 여기에 그 명령이 없다는 것을 종료코드로 말해야, 잡이 그 자리에서 선다.
+   */
+  대본초기화();
+  const r = await 띄우기(['run', '/help']);
+  check('★ 대화 화면 전용 명령은 0 으로 안 끝난다', r.code !== 0, `code=${r.code}`);
+  check('무엇이 문제인지 곁에 적는다', /대화 화면에서만/.test(r.err), r.err.trim().split('\n').pop() ?? '');
+  check('모델을 부르지도 않는다', !받은요청.some((x) => x.url === '/v1/chat/completions'),
+    `요청 ${받은요청.length}건`);
+
+  대본초기화();
+  const r2 = await 띄우기(['run', '/이런건없습니다']);
+  check('★ 모르는 슬래시 이름도 0 으로 안 끝난다', r2.code !== 0, `code=${r2.code}`);
+  check('모르는 명령이라고 말한다', /모르는 명령/.test(r2.err), r2.err.trim().split('\n').pop() ?? '');
+}
+
+{
+  // 슬래시로 시작한다고 다 명령은 아니다. 경로는 시킨 말 그대로 둔다.
+  대본초기화();
+  const r = await 띄우기(['run', '/mnt/d/일감 을 봐줘']);
+  const 보낸글 = JSON.stringify(받은요청.map((x) => x.json ?? null));
+  check('★ 경로처럼 생긴 것은 명령으로 안 먹는다', r.code === 0 && 보낸글.includes('/mnt/d/일감'),
+    `code=${r.code}`);
+}
+
+
 trace('9-치움');
 srv.close();
 rmSync(home, { recursive: true, force: true });

@@ -24,7 +24,8 @@ import { 말 as 옮긴말 } from './i18n/index.js';
 import { 알림채움 } from './backend/retry.js';
 import { 전선붙이기, 세션이름짓기 } from './backend/wire.js';
 import { newId } from './agent/store.js';
-import { discover } from './skills/discover.js';
+import { discover, loadCommand } from './skills/discover.js';
+import { 명령들 } from './cmdnames.js';
 import { allowEndpoint, setOffline } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
 import { 주소가리기 } from './safety/secrets.js';
@@ -258,6 +259,65 @@ export async function runOnce(opts = {}) {
   session.skills = found.skills;
   session.commands = found.commands;
   session.plugins = found.plugins;
+
+  /*
+   * ── `deel run /이름` ──────────────────────────────────────────────────
+   *
+   * 사람이 대화 화면에서 쓰던 슬래시 명령을 배치에서도 그대로 부르게 한다.
+   * `.claude/commands/배포점검.md` 를 만들어 두고 아침마다 손으로 `/배포점검`
+   * 을 치고 있었으면, 그걸 야간 잡에 옮기는 데 드는 일이 이것 하나다.
+   *
+   * 여태는 `/배포점검` 이 **그냥 글자로** 모델에게 갔다. 슬래시가 붙은 낱말
+   * 하나를 받은 모델은 대개 "무슨 뜻인지 모르겠다" 고 답하고 0 으로 끝난다 —
+   * 아무 일도 안 했는데 배치는 초록불이다. 이 파일이 제일 피하려는 결말이다.
+   *
+   * 세 갈래로 끝난다.
+   *   · 이 PC 에 파일로 있는 명령이면 → 본문을 펴서 그것을 시킨다
+   *   · 대화 화면 전용 이름(/help·/undo…)이면 → 여기선 안 된다고 말하고 1
+   *   · 아무것도 아니면 → 모르는 명령이라고 말하고 1
+   * 두 실패 모두 **종료코드가 0 이 아니다.** 스크립트가 보는 것은 그 숫자다.
+   *
+   * 첫 낱말에 슬래시·역슬래시가 또 있으면 명령이 아니라 경로다(`/mnt/d/일감`).
+   * 그건 건드리지 않고 시킨 말 그대로 둔다 — commands.js 의 경로처럼보이나 와
+   * 같은 기준이다.
+   */
+  if (시킬말.startsWith('/')) {
+    const [부른이름 = '', ...나머지] = 시킬말.slice(1).trim().split(/\s+/);
+    const 경로인가 = 부른이름.includes('/') || 부른이름.includes('\\');
+    if (부른이름 && !경로인가) {
+      const 인자 = 나머지.join(' ');
+      const 낮춘 = 부른이름.toLowerCase();
+      /*
+       * 붙박이 이름을 **먼저** 본다 — 대화 화면과 차례가 같아야 한다.
+       *
+       * commands.js 는 switch 로 붙박이를 먼저 받고, 못 받은 것만 default 에서
+       * 찾아 쓴다. 그래서 대화 화면의 `/help` 는 언제나 도움말이다. 여기서
+       * 차례를 뒤집으면 이 PC 에 `ralph-loop:help` 같은 플러그인 명령이 깔린
+       * 순간 `deel run /help` 만 딴 것을 부른다 — 같은 글자가 창에 따라 다른
+       * 일을 하는 것이 제일 나쁘다. 깔린 것에 따라 뜻이 흔들리면 안 된다.
+       */
+      const 붙박이 = !!명령들[낮춘];
+      // 찾는 차례는 대화 화면과 같다 — 적은 그대로 · 대소문자 무시 · 꼬리 이름.
+      const 찾은 = 붙박이 ? null : (found.commands.find((x) => x.name === 부른이름)
+        ?? found.commands.find((x) => x.name.toLowerCase() === 낮춘)
+        ?? found.commands.find((x) => x.name.split(':').pop() === 낮춘));
+      if (붙박이) {
+        return 못함('repl-only', `/${부른이름} 은 대화 화면에서만 도는 명령입니다.`
+          + ' 여기서 되는 것은 파일로 적어 둔 슬래시 명령뿐입니다 (.claude/commands · .deel/commands).');
+      } else if (찾은) {
+        const { text, error } = loadCommand(찾은, 인자);
+        if (error) return 못함('command-read', `/${부른이름} 을 읽지 못했습니다 — ${error}`);
+        곁(`  ${c.cyan('⌘')} ${찾은.name} ${c.gray(찾은.source)}`);
+        시킬말 = text;
+      } else {
+        const 비슷 = found.commands
+          .filter((x) => x.name.includes(낮춘) || 낮춘.includes(x.name.split(':').pop()))
+          .slice(0, 5).map((x) => '/' + x.name);
+        return 못함('no-command', `모르는 명령 /${부른이름}`
+          + (비슷.length ? ` — 비슷한 것: ${비슷.join('  ')}` : ' — 이 폴더에서 찾은 슬래시 명령이 없습니다.'));
+      }
+    }
+  }
 
   // ── 물어보는 자리를 전부 막는다 ────────────────────────────────────────
   //

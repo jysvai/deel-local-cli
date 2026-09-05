@@ -69,81 +69,13 @@ import { readTextFull } from './tools/fsutil.js';
 import { 띄우기, 브라우저로 } from './preview/serve.js';
 import { 클립보드그림, 그림앉히기 } from './tools/clipboard.js';
 import { 크기말 } from './backend/vision.js';
+import { 명령들 } from './cmdnames.js';
 const MODES = {
   auto: '자율 — 전부 알아서. 되돌리기가 안전망',
   confirm: '확인 — 되돌릴 수 없는 것만 물어봄',
   strict: '엄격 — 파일 변경·명령 전부 물어봄',
 };
 
-/*
- * 슬래시 명령 목록.
- *
- * ── 왜 설명이 여기 없나 ─────────────────────────────────────────────────
- *
- * 이름과 인자 유무만 여기 두고, **사람이 읽는 글은 i18n/ko.js 에 있다.**
- * 명령 이름은 원래부터 영어였는데(help·model·undo…) 그 옆의 설명이 전부
- * 한글이라, 저장소를 처음 연 영어권 사람은 `/help` 를 쳐 봐도 무엇을 하는
- * 명령인지 알 수가 없었다. 그래서 설명만 갈아 끼울 수 있게 뺐다.
- *
- * desc·arg 를 **게터로** 둔다. 켤 때 한 번 읽어 굳히면 /lang 으로 바꿔도
- * 목록이 안 따라오고, 그러면 바뀐 것처럼 보이다가 안 바뀐 자리가 남는다.
- * 볼 때마다 지금 언어로 읽는 편이 어긋날 자리가 없다.
- *
- * 없는 열쇠는 열쇠 이름이 그대로 나온다 — 빈칸이 아니다. 명령을 새로 넣고
- * ko.js 에 적는 것을 빠뜨리면 `cmd.foo.desc` 가 화면에 찍혀서 바로 눈에 띈다.
- * (검사도 그걸 잡는다.)
- */
-const 명령들 = {
-  help: { arg: false },
-  clear: { arg: false },
-  context: { arg: false },
-  ctx: { arg: true },
-  out: { arg: true },
-  grade: { arg: true },
-  compact: { arg: false },
-  model: { arg: true },
-  think: { arg: true },
-  mode: { arg: true },
-  work: { arg: true },
-  auto: { arg: false },
-  code: { arg: false },
-  plan: { arg: false },
-  architect: { arg: false },
-  debug: { arg: false },
-  ask: { arg: false },
-  orchestrator: { arg: false },
-  undo: { arg: true },
-  diff: { arg: true },
-  preview: { arg: true },
-  tools: { arg: false },
-  skills: { arg: true },
-  plugin: { arg: true },
-  cost: { arg: false },
-  status: { arg: false },
-  scan: { arg: true },
-  thread: { arg: true },
-  learned: { arg: true },
-  pin: { arg: true },
-  evidence: { arg: true },
-  commit: { arg: true },
-  review: { arg: false },
-  paste: { arg: false },
-  sessions: { arg: false },
-  recall: { arg: true },
-  mcp: { arg: false },
-  memory: { arg: true },
-  level: { arg: true },
-  bell: { arg: true },
-  keys: { arg: false },
-  motion: { arg: true },
-  consult: { arg: true },
-  lang: { arg: true },
-  lsp: { arg: true },
-  export: { arg: true },
-  init: { arg: false },
-  exit: { arg: false },
-  quit: { arg: false },
-};
 
 /**
  * 화면에 낼 명령표. desc·arg 는 볼 때마다 지금 언어로 읽는다.
