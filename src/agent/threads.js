@@ -27,6 +27,8 @@
 // 한 줄기로 읽어서, 서로 상관없는 대화가 한 덩어리가 된다.
 
 /** 이름이 없을 때 붙여 줄 이름. 사람이 목록에서 알아볼 수 있으면 된다. */
+import { 파일기억 } from './filemem.js';
+
 function 기본이름(n) { return `갈래 ${n}`; }
 
 export class Threads {
@@ -49,9 +51,20 @@ export class Threads {
      * 돌아오는데 남은 할 일은 안 돌아왔다.
      */
     첫store?.살림따라가기?.(session);
+    /*
+     * 파일기억·filesRead 도 **갈래 것**이다.
+     *
+     * 이 둘은 「messages 안에 무엇이 살아 있나」 의 그림자다. messages 를
+     * 갈래마다 따로 두면서 이것만 세션에 하나로 두면 반드시 어긋나고, 어긋나면
+     * 「앞에서 읽은 그대로입니다」 가 **그 글이 없는 갈래에서** 나온다 —
+     * 모델은 대화 어디에도 없는 글을 가리키는 쪽지를 받고, 다시 읽어도 파일이
+     * 안 바뀌었으니 같은 쪽지를 받는다. 세 번째에 헛돈다고 턴이 죽는다.
+     * (agent/filemem.js 머리말의 「통째로 다시 싣는 것보다 훨씬 나쁘다」)
+     */
     this.갈래들 = [{
       이름: '본줄기', messages: session.messages, usage: session.usage, todos: ctx?.todos ?? null,
       할일: session.할일, 이번요청: session.이번요청, store: 첫store,
+      파일기억: session.파일기억, filesRead: session.filesRead,
     }];
     this.자리 = 0;
     this.센것 = 1;
@@ -72,6 +85,9 @@ export class Threads {
     // 적어 버린다 — 이어받을 때 하지도 않은 일이 본줄기에 남는다.
     g.할일 = this.session.할일;
     g.이번요청 = this.session.이번요청;
+    // 읽은 파일 기억도 같이 — 까닭은 생성자에 적어 뒀다.
+    g.파일기억 = this.session.파일기억;
+    g.filesRead = this.session.filesRead;
   }
 
   /** 갈래 하나를 화면으로 꺼낸다. */
@@ -83,6 +99,15 @@ export class Threads {
     if (this.ctx) this.ctx.todos = g.todos;
     this.session.할일 = g.할일 ?? [];
     this.session.이번요청 = g.이번요청 ?? '';
+    /*
+     * 여기서 session.파일기억 을 통째로 갈아 끼운다.
+     *
+     * 이미 잊기() 를 부르는 자리들(compact.js · loop.js · session.js)은 전부
+     * session.파일기억 을 거치므로 손댈 것이 없다 — 그때그때 지금 갈래의 것을
+     * 잊는다. 문이 하나로 남는다.
+     */
+    if (g.파일기억) this.session.파일기억 = g.파일기억;
+    if (g.filesRead) this.session.filesRead = g.filesRead;
     // 적는 자리도 지금 갈래의 파일로 옮긴다 (agent/store.js 의 살림따라가기).
     g.store?.살림따라가기?.(this.session);
     // 상태줄이 지금 어느 갈래인지 보여 줄 수 있게 남긴다.
@@ -110,6 +135,14 @@ export class Threads {
       할일: [],
       이번요청: '',
       store,
+      /*
+       * 갈라낸 것이면 지금 기억을 **베껴** 물려준다. 같이 쓰면 한쪽에서 파일을
+       * 다시 읽은 것이 다른 쪽 답을 바꾼다 — 갈라낸 쪽에서 v3 을 읽으면
+       * 본줄기가 「안 바뀌었다」 고 답하기 시작한다. 본줄기에 실린 것은 v1 인데도.
+       * 빈 갈래면 빈 기억이다. 대화가 비었으니 기억할 것도 없다.
+       */
+      파일기억: 물려줄것 ? (this.session.파일기억?.베끼기?.() ?? new 파일기억()) : new 파일기억(),
+      filesRead: 물려줄것 ? new Map(this.session.filesRead ?? []) : new Map(),
     };
     this.갈래들.push(g);
     // 갈라낸 것은 지금까지 오간 말을 새 파일에도 적어 둔다. 안 적으면 그 갈래를

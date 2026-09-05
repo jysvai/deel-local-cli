@@ -170,6 +170,73 @@ trace('8-할일이껐다켜도살아남나');
   rmSync(살림root, { recursive: true, force: true });
 }
 
+trace('7-파일기억도-갈래마다');
+
+/*
+ * ── 「앞에서 읽은 그대로입니다」 는 그 갈래에 그 글이 있을 때만 참이다 ────
+ *
+ * 파일기억은 세션에 딱 하나였다. 그런데 messages 는 갈래마다 따로다. 둘이
+ * 어긋나면 이런 일이 난다 —
+ *
+ *   ① 곁가지로 나가면 대화는 0개인데, 거기서 같은 파일을 읽으면
+ *      「앞에서 읽은 그대로입니다 — 앞에 실린 내용을 그대로 쓰세요」 가 온다.
+ *      그 갈래에는 그 글이 한 줄도 없다. 모델은 없는 글을 가리키는 쪽지를
+ *      받고 다시 읽는데, 파일이 안 바뀌었으니 두 번째도 같은 쪽지다.
+ *      세 번째에 loop.js 가 「같은 자리에서 헛돌고 있습니다」 로 턴을 죽인다.
+ *
+ *   ② 더 나쁜 쪽: 본줄기에서 v1 을 읽고 → 곁가지에서 그 파일을 v2 로 고쳐
+ *      읽고 → 본줄기로 돌아와 읽으면, 기억은 v2 를 들고 있어 「안 바뀌었다」
+ *      고 답한다. 그런데 본줄기 대화에 실려 있는 것은 v1 이다. 모델은 옛
+ *      내용을 지금 파일로 믿고 Edit 을 건다.
+ *
+ * filemem.js 머리말이 「통째로 다시 싣는 것보다 훨씬 나쁘다」 고 적어 둔 바로
+ * 그 상태다. 그래서 기억도 messages 와 **같이** 다닌다.
+ */
+{
+  const 긴글 = (v) => Array.from({ length: 200 }, (_, i) => `${i}: ${v} 줄입니다`).join('\n');
+  const s = new Session(conn, { root });
+  const c = { todos: null };
+  const st = new Store(root, 'thr-mem').begin({ model: conn.model, root });
+  const t = new Threads(s, c, () => new Store(root).begin({ model: conn.model, root }), st);
+
+  // 본줄기에서 한 번 읽는다 — 대화에 통째로 실린다.
+  const 첫 = s.파일기억.실을것('/p/a.js', 긴글('v1'));
+  s.push({ role: 'user', content: 첫.글 });
+  check('먼저: 본줄기에서는 통째로 실린다', 첫.어떻게 === 'full', 첫.어떻게);
+
+  // 곁가지로 나간다. 대화는 0개다.
+  t.새로('곁가지');
+  check('먼저: 곁가지 대화는 비어 있다', s.messages.length === 0, String(s.messages.length));
+  const 곁것 = s.파일기억.실을것('/p/a.js', 긴글('v1'));
+  check('★★ 빈 갈래에서 읽으면 통째로 실린다',
+    곁것.어떻게 === 'full' && !/앞에서 읽은 그대로/.test(곁것.글),
+    `${곁것.어떻게} · ${곁것.글.slice(0, 40)}`);
+
+  // 곁가지에서 그 파일이 v2 로 바뀌었다고 치고 읽어 둔다.
+  s.파일기억.실을것('/p/a.js', 긴글('v2'));
+
+  // 본줄기로 돌아온다. 여기 실려 있는 것은 v1 이다.
+  t.옮기기('본줄기');
+  check('먼저: 본줄기 대화가 돌아왔다', s.messages.length === 1, String(s.messages.length));
+  const 돌아와서 = s.파일기억.실을것('/p/a.js', 긴글('v1'));
+  check('★★ 본줄기로 돌아오면 이 갈래가 실은 것으로 견준다',
+    돌아와서.어떻게 === 'same', 돌아와서.어떻게);
+
+  // 갈라내기는 대화를 복사하니 기억도 복사해야 한다 — 공유하면 한쪽이
+  // 고친 것이 다른 쪽 답을 바꾼다.
+  t.갈라내기('복사본');
+  const 복사본것 = s.파일기억.실을것('/p/a.js', 긴글('v1'));
+  check('★ 갈라낸 갈래는 물려받은 기억으로 견준다', 복사본것.어떻게 === 'same', 복사본것.어떻게);
+  s.파일기억.실을것('/p/a.js', 긴글('v3'));
+  t.옮기기('본줄기');
+  const 본줄기다시 = s.파일기억.실을것('/p/a.js', 긴글('v1'));
+  check('★★ 갈라낸 쪽에서 읽은 것이 본줄기 기억을 안 흔든다',
+    본줄기다시.어떻게 === 'same', 본줄기다시.어떻게);
+
+  check('★ /context 가 세는 파일 수도 갈래 것이다',
+    s.filesRead instanceof Map, String(s.filesRead?.constructor?.name));
+}
+
 rmSync(root, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
