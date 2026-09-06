@@ -1228,6 +1228,96 @@ trace('5-9-사실대로-말하는가');
   }
 }
 
+trace('5-11-인증방법을-말하는가');
+
+// ── 5-11. 우리가 어떻게 인증받는지 말하는가 ─────────────────────────────
+//
+// ACP 의 `initialize` 응답에는 `authMethods` 자리가 있다. 여기 아무것도 안
+// 적으면 에디터는 「이 에이전트는 인증이 필요 없다」 로 읽는다. 그런데 deel 은
+// 연결 정보가 없으면 아무 일도 못 한다 — `deel setup` 을 먼저 쳐야 한다.
+//
+// 그러면 에디터에서 처음 붙인 사람은 이렇게 된다:
+//
+//   Zed 에서 deel 추가  →  대화 열기  →  "저장된 연결이 없습니다" 오류
+//   →  이게 인증 문제인지 버그인지 화면만 봐서는 모른다
+//
+// 규격에는 그 자리가 있다. Terminal Auth — 「터미널에서 이 인자로 나를 다시
+// 띄우면 설정이 끝난다」 고 말하는 방법이다. deel 은 그 명령이 이미 있다:
+// `deel setup`. 없는 것을 만드는 게 아니라 **있는 것을 말하는** 일이다.
+//
+// 그리고 이 말은 ACP 레지스트리(agentclientprotocol/registry)에 실리는
+// 조건이기도 하다 — CI 가 initialize 를 불러 authMethods 에 type 이
+// 'agent' 나 'terminal' 인 것이 하나라도 있는지 본다. 빈 배열이면 떨어진다.
+{
+  const e = 에디터();
+  try {
+    const r = await 시간제한(e.요청('initialize', {
+      protocolVersion: 1,
+      clientInfo: { name: 'ACP Registry Validator', version: '1.0.0' },
+      clientCapabilities: { terminal: true, fs: { readTextFile: true, writeTextFile: true } },
+    }), 15000, 'initialize');
+
+    const 방법들 = r?.authMethods;
+    check('★★ 인증 방법을 비워 두지 않는다', Array.isArray(방법들) && 방법들.length > 0,
+      JSON.stringify(방법들));
+
+    // 레지스트리가 보는 조건 그대로 — type 이 agent 나 terminal 인 것이 하나라도.
+    const 쓸만한 = (방법들 ?? []).filter((m) => m?.type === 'agent' || m?.type === 'terminal');
+    check('★★ type 이 agent 나 terminal 인 방법이 있다', 쓸만한.length > 0,
+      JSON.stringify((방법들 ?? []).map((m) => m?.type)));
+
+    const 터미널 = (방법들 ?? []).find((m) => m?.type === 'terminal');
+    check('★ 터미널 인증에 id·name·description 이 다 있다',
+      !!터미널?.id && !!터미널?.name && !!터미널?.description, JSON.stringify(터미널));
+
+    // args 는 **실제로 도는 명령**이어야 한다. 여기가 틀리면 에디터가 사람에게
+    // 없는 명령을 치라고 시킨다.
+    check('★★ 터미널 인증이 가리키는 것이 진짜 deel 명령이다',
+      Array.isArray(터미널?.args) && 터미널.args[0] === 'setup', JSON.stringify(터미널?.args));
+
+    // 규격에 있는 방법이니 불렀을 때 터지면 안 된다.
+    const 답 = await 시간제한(e.요청('authenticate', { methodId: 터미널?.id }), 10000, 'authenticate');
+    check('★ 그 방법으로 authenticate 를 불러도 안 터진다', !!답 && typeof 답 === 'object',
+      JSON.stringify(답));
+  } catch (err) {
+    check('인증 방법 — 통째로 실패', false, String(err?.message ?? err) + ' | ' + e.표준오류().slice(-400));
+  } finally {
+    await e.끝내기();
+  }
+}
+
+trace('5-12-연결이-없으면-인증하라고-하는가');
+
+// ── 5-12. 설정이 없으면 「인증하라」 고 답하는가 ─────────────────────────
+//
+// 위에서 방법을 적어 놓기만 하고, 정작 설정이 없을 때 엉뚱한 오류를 내면
+// 에디터는 그 방법을 띄울 줄 모른다. 규격이 그 자리에 쓰라고 정해 둔 번호가
+// 있다 — AUTH_REQUIRED(-32000). 이 번호를 봐야 에디터가 「인증」 단추를
+// 그린다. 잘못된인자(-32602)로 답하면 그냥 빨간 글씨가 뜬다.
+{
+  // 설정 파일이 없는 빈 집으로 띄운다 — 처음 깐 사람과 같은 상태다.
+  const 빈집 = mkdtempSync(join(tmpdir(), 'deel-acp-noconf-'));
+  const e = 에디터([], { DEEL_HOME: 빈집 });
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    let 잡은것 = null;
+    try {
+      await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    } catch (err) { 잡은것 = err; }
+
+    check('연결이 없으면 세션을 안 연다', !!잡은것, '(열렸다)');
+    check('★★ 인증이 필요하다는 번호로 답한다 (-32000)', 잡은것?.code === -32000,
+      `code=${잡은것?.code} · ${잡은것?.message ?? ''}`);
+    check('★ 무엇을 하면 되는지 같이 적는다', /deel setup/.test(String(잡은것?.message ?? '')),
+      String(잡은것?.message ?? '').slice(0, 120));
+  } catch (err) {
+    check('인증 필요 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+    rmSync(빈집, { recursive: true, force: true });
+  }
+}
+
 trace('5-10-탭마다-MCP-를-다시-띄우나');
 
 /*

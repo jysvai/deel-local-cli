@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-7%2C144%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-7%2C152%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -267,7 +267,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 1.15.0  ⌂ 이 안
+ deel 1.15.1  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -1087,7 +1087,7 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (7,144항목 — 몇몇은 터미널에 따라 갈립니다)
+npm test          전체 검증 (7,152항목 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -1144,7 +1144,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 | `exitcode` · `doorparity` | 7 · 7 | 화면에 적은 종료코드 표가 진짜인가 · 문 **네 개**가 같은 것을 주는가 |
 | `no-bundle` | 21 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
 | `edit-bench` | 20건 | 편집 성공률 |
-| `mutate` | 어긋 10개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
+| `mutate` | 어긋 11개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
 
 > **자세히** — 어디를 밟았는지 · 폴더 구조
 >
@@ -1156,6 +1156,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
+| **[1.15.1](docs/ko/releases/1.15.md#1151)** | 에디터에 우리가 어떻게 인증받는지 말합니다 — ACP 레지스트리 등재 조건 |
 | **[1.15.0](docs/ko/releases/1.15.md#1150)** | 같은 것을 두 번 하지 않습니다 — 프리픽스 캐시를 깨던 조용히 비싼 아홉 자리 |
 | **[1.14.0](docs/ko/releases/1.14.md#1140)** | 적어 둔 것이 참인지 기계가 대신 봅니다 — 초록불과 「깨면 잡힌다」 는 다릅니다 |
 | [1.13.1](docs/ko/releases/1.13.md#1131) | 올라간 물건이 소스와 달랐습니다 — 148개 중 47개가 CRLF 로 나갔습니다 |

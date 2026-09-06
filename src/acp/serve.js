@@ -54,7 +54,7 @@ import { 못박기 } from '../agent/pins.js';
 import { route } from '../agent/route.js';
 import { ORDER as 모드순서, get as getWork, normalize as 모드정리 } from '../agent/modes.js';
 import { 모두끝내기 as 일감모두끝내기 } from '../tools/jobs.js';
-import { 연결, 줄나누기, 모르는방법오류, 잘못된인자오류 } from './jsonrpc.js';
+import { 연결, 줄나누기, 모르는방법오류, 잘못된인자오류, 인증필요오류 } from './jsonrpc.js';
 import { 도구시작, 도구끝남, 도구이름표, 도구갈래, 도구자리, 멈춘까닭, 프롬프트글, 되살린것 } from './map.js';
 
 /** 우리가 말하는 규격 판. 정수 하나이고, 깨지는 변경에서만 올라간다. */
@@ -86,6 +86,35 @@ export function 표준출력잠그기() {
 export async function acp(opts = {}) {
   const 내보내기 = 표준출력잠그기();
   const 로그 = (s) => { try { process.stderr.write(`[acp] ${s}\n`); } catch { /* 여기서 또 터지면 할 게 없다 */ } };
+
+  /*
+   * ── 우리가 어떻게 인증받는지 ────────────────────────────────────────────
+   *
+   * ACP 의 `initialize` 응답에는 authMethods 자리가 있다. 여기를 비워 두면
+   * 에디터는 「이 에이전트는 인증이 필요 없다」 로 읽는다. 그런데 deel 은
+   * 연결 정보가 없으면 아무 일도 못 한다.
+   *
+   * 그래서 처음 붙인 사람은 이렇게 됐다 — 에디터에서 deel 을 고르고, 대화를
+   * 열고, 「저장된 연결이 없습니다」 를 받는다. 화면만 봐서는 이게 인증
+   * 문제인지 버그인지 모른다.
+   *
+   * 규격에는 그 자리가 있다. **Terminal Auth** — 「터미널에서 이 인자로 나를
+   * 다시 띄우면 설정이 끝난다」 고 말하는 방법이다. 그리고 deel 은 그 명령이
+   * 이미 있다: `deel setup`. 없는 것을 만드는 게 아니라 **있는 것을 말하는**
+   * 일이었다.
+   *
+   * args 가 진짜 도는 명령인지는 검사가 지킨다(test/acp.test.js 의 5-11).
+   * 여기가 틀리면 에디터가 사람에게 없는 명령을 치라고 시킨다.
+   */
+  const 인증방법들 = [
+    {
+      id: 'terminal-setup',
+      name: 'Run `deel setup` in a terminal',
+      description: '로컬 런타임(Ollama · LM Studio · llama.cpp)을 고르거나 게이트웨이 주소와 열쇠를 넣습니다.',
+      type: 'terminal',
+      args: ['setup'],
+    },
+  ];
 
   /** 세션 하나. 에디터의 탭 하나에 해당한다. */
   const 방들 = new Map();
@@ -127,7 +156,16 @@ export async function acp(opts = {}) {
     const cfg = load();
     const prof = activeProfile(cfg);
     if (!prof) {
-      throw 잘못된인자오류('저장된 연결이 없습니다. 터미널에서 `deel setup` 을 먼저 실행하세요.');
+      /*
+       * 잘못된인자가 아니라 **인증필요**다.
+       *
+       * 사람이 인자를 잘못 준 것이 아니라 아직 설정을 안 한 것이다. 그 둘은
+       * 에디터에서 하는 일이 다르다 — 인증필요(-32000)를 받으면 위 initialize
+       * 에서 받아 둔 authMethods 를 꺼내 「터미널에서 설정하기」 를 띄우고,
+       * 잘못된인자면 그냥 빨간 글씨만 뜬다. 고칠 방법이 있는데 안 알려 주는
+       * 것이 제일 나쁘다.
+       */
+      throw 인증필요오류('저장된 연결이 없습니다. 터미널에서 `deel setup` 을 먼저 실행하세요.');
     }
 
     /*
@@ -729,13 +767,32 @@ export async function acp(opts = {}) {
             mcpCapabilities: { http: false, sse: false },
           },
           agentInfo: { name: 'deel', title: 'deel (로컬 모델 코딩 에이전트)', version: 판번호() },
-          authMethods: [],   // 연결 설정은 `deel setup` 이 맡는다
+          authMethods: 인증방법들,
         };
       }
 
-      case 'authenticate':
-        // 인증 방법을 하나도 안 걸었으니 여기 올 일이 없다. 와도 조용히 넘긴다.
+      /*
+       * 에디터가 「인증」 을 눌렀다.
+       *
+       * 우리 인증은 터미널에서 도는 것이라(위 인증방법들 머리말), 여기서
+       * 우리가 할 일은 없다 — 에디터가 우리를 `deel setup` 으로 다시 띄우고,
+       * 사람이 거기서 마치고, 그 다음에 이 프로세스가 다시 연결된다.
+       *
+       * 그래도 **끝났는지는 확인해 준다.** 사람이 설정을 안 마치고 창을
+       * 닫았는데 여기서 성공이라고 답하면, 에디터는 인증이 끝난 줄 알고 대화를
+       * 열고, 그 다음 한마디에서야 같은 오류가 난다. 한 번 더 돌아가는 셈이다.
+       */
+      case 'authenticate': {
+        const 골라온것 = String(인자?.methodId ?? '');
+        if (골라온것 && !인증방법들.some((m) => m.id === 골라온것)) {
+          throw 잘못된인자오류(`모르는 인증 방법입니다: ${골라온것}`);
+        }
+        if (!activeProfile(load())) {
+          throw 인증필요오류('아직 설정이 안 끝났습니다. 터미널에서 `deel setup` 을 마치고 다시 시도하세요.');
+        }
+        로그('설정이 확인됐습니다.');
         return {};
+      }
 
       case 'session/new': {
         const 방 = await 방만들기(인자);
