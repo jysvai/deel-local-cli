@@ -84,6 +84,8 @@ process and talks over a real pipe).
 | **A request with `id: 0`** | ACP clients count from zero. Reading `if (msg.id)` treats the very first `initialize` as a notification and never answers — it hangs the moment it connects |
 | **Cancellation reaching a running turn** | Cancellation always arrives while something is running; that is what cancellation is. Awaiting each incoming line in order means it **never arrives** |
 | **When permission cannot be asked** | It is tempting to just run the tool — otherwise nothing works against a client that has not built the approval dialog yet. But that means "if I can't ask, I do as I please". **It does not** |
+| **Not saying how we authenticate** | An empty `authMethods` in the `initialize` reply reads to the editor as "this agent needs no authentication". But deel can do nothing without a saved connection — so a first-time user opens a conversation, gets an error, and **cannot tell from the screen whether it is a setup problem or a bug.** The spec has a place for this (Terminal Auth). Nothing new had to be built; the `deel setup` that already existed just had to be **named** |
+| **The number returned when there is no setup** | Declaring the method above and then answering `-32602` (invalid params) when the setup is missing leaves the editor unable to draw the "Authenticate" button — it just shows red text. The number the spec puts there is **`-32000` (AuthRequired)**. The user did not pass a bad argument; they **have not set up yet**, and the editor does different things about those two |
 
 ### Yesterday's conversation is still there
 

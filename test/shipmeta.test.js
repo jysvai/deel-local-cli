@@ -141,6 +141,41 @@ trace('4-담기는것');
     && /npm test/.test(pkg.scripts?.prepublishOnly ?? ''), pkg.scripts?.prepublishOnly ?? '');
 }
 
+trace('5-에디터-설정-예시');
+
+// ── 5. 문서에 적어 둔 에디터 설정 ───────────────────────────────────────
+//
+// README 의 Zed 설정 예시는 읽는 글이 아니라 **그대로 복사해 붙이는 글**이다.
+// 그래서 여기가 틀리면 읽는 사람이 손해를 본다:
+//
+//   · 꾸러미 이름이 어긋나면  → `npx` 가 없는 것을 받으러 가는 걸 몇 분 본다
+//   · 부르는 말이 어긋나면    → 붙긴 붙는데 ACP 를 안 말해서 조용히 멈춘다
+//   · JSON 이 깨져 있으면     → 붙여 넣은 사람의 설정 **전체**가 무효가 된다
+//
+// 셋 다 붙여 넣은 사람은 자기가 뭘 잘못했는지부터 찾는다. 우리 잘못인데.
+// 그러니 사람이 기억해서 맞추는 대신 여기서 잰다.
+{
+  for (const 파일 of ['README.md', 'README.ko.md']) {
+    const 덩이 = (읽기(파일).match(/```json\n[\s\S]*?```/g) ?? [])
+      .find((b) => b.includes('agent_servers'));
+    check(`★ ${파일} 에 에디터 설정 예시가 있다`, !!덩이, 덩이 ? '(있음)' : '(없음)');
+    if (!덩이) continue;
+
+    let 판독 = null;
+    try {
+      판독 = JSON.parse(덩이.replace(/^```json\n/, '').replace(/```$/, ''));
+    } catch {
+      판독 = null;
+    }
+    check(`★★ ${파일} 의 설정 예시가 진짜 JSON 이다`, !!판독, 판독 ? 'ok' : '(파싱 실패)');
+
+    const 인자 = Object.values(판독?.agent_servers ?? {})[0]?.args ?? [];
+    check(`★★ ${파일} 의 설정 예시가 진짜 꾸러미 이름을 적는다`,
+      인자.includes(pkg.name), `${인자.join(' ')} · ${pkg.name}`);
+    check(`★ ${파일} 의 설정 예시가 acp 로 띄운다`, 인자.includes('acp'), 인자.join(' '));
+  }
+}
+
 // ── 마무리 ──────────────────────────────────────────────────────────────
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n내보내는 판의 숫자  ${D}(문서가 거짓말하면 첫 줄에서 약속이 깨진다)${X}\n`);

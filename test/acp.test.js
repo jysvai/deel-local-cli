@@ -1275,6 +1275,16 @@ trace('5-11-인증방법을-말하는가');
     check('★★ 터미널 인증이 가리키는 것이 진짜 deel 명령이다',
       Array.isArray(터미널?.args) && 터미널.args[0] === 'setup', JSON.stringify(터미널?.args));
 
+    // 이 이름은 **사람이 에디터에서 눈으로 보는 글**이고, 우리 안내문도 그걸
+    // 그대로 옮겨 적어 두었다. 여기를 고치면서 안내문을 안 고치면, 화면에 뜬
+    // 단추와 문서에 적힌 단추의 이름이 달라진다 — 처음 붙인 사람은 자기가 뭘
+    // 잘못했는지부터 찾는다. 그러니 두 글이 같은지 여기서 잰다.
+    for (const 문서 of ['README.md', 'README.ko.md']) {
+      const 적힌것 = readFileSync(join(here, '..', 문서), 'utf8');
+      check(`★ ${문서} 에 적어 둔 인증 방법 이름이 진짜 보내는 이름과 같다`,
+        적힌것.includes(터미널?.name ?? '\u0000'), 터미널?.name ?? '(없음)');
+    }
+
     // 규격에 있는 방법이니 불렀을 때 터지면 안 된다.
     const 답 = await 시간제한(e.요청('authenticate', { methodId: 터미널?.id }), 10000, 'authenticate');
     check('★ 그 방법으로 authenticate 를 불러도 안 터진다', !!답 && typeof 답 === 'object',

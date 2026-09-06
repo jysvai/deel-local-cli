@@ -977,6 +977,23 @@ deel acp
 The editor spawns that as a child process and exchanges newline-delimited JSON-RPC 2.0 over
 stdio. It is not a command you type yourself.
 
+**In Zed, concretely.** Either use `Settings → External Agents → Add Custom Agent` in the
+agent panel, or put this straight into `settings.json`:
+
+```json
+{
+  "agent_servers": {
+    "deel": { "type": "custom", "command": "npx", "args": ["-y", "deel-local-cli", "acp"], "env": {} }
+  }
+}
+```
+
+Then pick **deel** in the agent panel. If you have not run `deel setup` yet, deel tells the
+editor so **the way the spec says to** (ACP's `AuthRequired`), along with the method it sent
+at connect time — ``Run `deel setup` in a terminal``. That is there so a first run is not a
+red error message you cannot tell from a bug. Finish it once in a terminal and the editor
+opens straight into a conversation from then on.
+
 **What you get once it is attached:**
 
 | In the editor | From deel |
@@ -1201,7 +1218,7 @@ so one run tells you everything.
 | `exitcode` · `doorparity` | 7 · 7 | The printed exit-code table is real · all **four** doors hand out the same thing |
 | `no-bundle` | 21 | Nothing foreign in the published package; test-file hygiene |
 | `edit-bench` | 20 cases | Edit success rate |
-| `mutate` | 11 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
+| `mutate` | 12 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
 
 > **More** — Coverage · Layout
 >
