@@ -22,6 +22,11 @@
 // 그래서 임시 폴더로 한 벌 베껴 놓고 거기서만 고친다. 이 저장소는 딸린 꾸러미가
 // 없어서(집안 규칙) src·test·bin·package.json 넷이면 그대로 돌아간다.
 //
+// 문서도 같이 베낀다. 어긋낼 자리가 소스에만 있는 것이 아니기 때문이다 —
+// 「복사해 붙이라」 고 적어 둔 설정도 틀리면 사람이 다치고, 그것을 지키는
+// 검사(shipmeta)는 README 와 docs 를 읽는다. 없으면 그 검사는 어긋내기 전부터
+// 빨개서 '못잼' 으로 빠진다.
+//
 // ── 재기 전에 먼저 초록인지 본다 ─────────────────────────────────────────
 //
 // 어긋내고 빨개진 것을 「잡았다」 로 세려면, 어긋내기 **전에** 초록이어야 한다.
@@ -49,8 +54,8 @@ const { 어긋들 } = JSON.parse(readFileSync(join(뿌리, 'test', 'mutants.json
 
 // ── 일할 폴더 한 벌 ─────────────────────────────────────────────────────
 const 일터 = mkdtempSync(join(tmpdir(), 'deel-mutate-'));
-for (const 것 of ['src', 'test', 'bin']) cpSync(join(뿌리, 것), join(일터, 것), { recursive: true });
-cpSync(join(뿌리, 'package.json'), join(일터, 'package.json'));
+for (const 것 of ['src', 'test', 'bin', 'docs']) cpSync(join(뿌리, 것), join(일터, 것), { recursive: true });
+for (const 것 of ['package.json', 'README.md', 'README.ko.md']) cpSync(join(뿌리, 것), join(일터, 것));
 
 /** 검사 하나를 돌리고 종료코드를 돌려준다. 화면 글은 안 흘린다. */
 function 돌리기(검사) {
