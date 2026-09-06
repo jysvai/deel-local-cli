@@ -14,7 +14,7 @@
 <br>
 
 [![npm](https://img.shields.io/npm/v/deel-local-cli?logo=npm&logoColor=white&label=npm&color=cb3837)](https://www.npmjs.com/package/deel-local-cli)
-[![downloads](https://img.shields.io/npm/dt/deel-local-cli?label=downloads&color=1a7f37)](https://www.npmjs.com/package/deel-local-cli)
+[![downloads](https://img.shields.io/npm/dm/deel-local-cli?label=downloads&color=1a7f37)](https://www.npmjs.com/package/deel-local-cli)
 [![node](https://img.shields.io/node/v/deel-local-cli?logo=nodedotjs&logoColor=white&label=node&color=5FA04E)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/deel-local-cli?label=license&color=0969da)](LICENSE)
 
