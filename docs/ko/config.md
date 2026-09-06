@@ -21,11 +21,20 @@
 | Ollama | `http://localhost:11434` |
 | LM Studio | `http://localhost:1234/v1` |
 | llama.cpp · vLLM · LiteLLM | `http://호스트:포트/v1` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
 
 인증도 자동으로 맞춥니다 — `Authorization: Bearer` → `x-api-key` → `api-key` → 인증 없음.
 Azure 주소는 순서가 다릅니다: `api-key` → `Bearer` → 인증 없음 (`x-api-key` 는 안 씁니다).
 **해 본 방식 중 하나가 되면 그것으로 정합니다** — 첫 401 에서 멈추지 않습니다. Azure 앞단을
 Entra ID 로 감싼 곳은 `api-key` 에 401 을 주고 `Bearer` 를 받기 때문입니다.
+
+### OpenRouter
+
+주소 하나와 열쇠 하나면 됩니다. 설정 화면에서 **주소를 직접 넣기** 를 고르고
+`https://openrouter.ai/api/v1` 를 넣은 다음, OpenRouter 대시보드의 열쇠를 넣으세요.
+인증은 `Authorization: Bearer`, 모델 목록은 `/models`, 컨텍스트 길이는 그 목록에서
+읽습니다 — 따로 맞출 것이 없습니다. 열쇠는 이 기기에 남고, 한 번 붙고 나면 deel 이
+말을 거는 곳은 그 주소 하나뿐입니다.
 
 ### Azure OpenAI
 

@@ -19,11 +19,20 @@ Servers, environment variables, run flags, project rules
 | Ollama | `http://localhost:11434` |
 | LM Studio | `http://localhost:1234/v1` |
 | llama.cpp · vLLM · LiteLLM | `http://host:port/v1` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
 
 Auth style is detected automatically: `Authorization: Bearer` → `x-api-key` → `api-key` → none.
 Azure addresses use a different order: `api-key` → `Bearer` → none (`x-api-key` is not tried).
 **Every style is tried before one is chosen** — the first 401 does not end the search, because an
 Azure front end wrapped in Entra ID answers 401 to `api-key` and accepts `Bearer`.
+
+### OpenRouter
+
+One address and one key. At the setup screen choose **Enter an address directly**, paste
+`https://openrouter.ai/api/v1`, then the key from your OpenRouter dashboard. Auth is
+`Authorization: Bearer`, the model list comes from `/models`, and the context length is read
+from that list — there is nothing else to line up. The key stays on this machine, and once
+connected that address is the only host deel talks to.
 
 ### Azure OpenAI
 
