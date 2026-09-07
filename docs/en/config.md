@@ -201,6 +201,54 @@ opens with this model" — lost their whole gateway. Now they merge: a profile o
 same name is overridden key by key, keys not present stay as this machine set them,
 and `deny` lists from both are combined.
 
+### Bash children do not inherit your keys
+
+A model calling `env | grep -i proxy` is completely normal behaviour — it is
+checking the corporate proxy. But that one line used to bring these along:
+
+```
+OPENAI_API_KEY   ANTHROPIC_API_KEY   GITHUB_TOKEN
+AWS_SECRET_ACCESS_KEY   NPM_TOKEN   DB_PASSWORD
+```
+
+What follows is worse than the printing itself: those values ride out **as a tool
+result inside the conversation**, to the gateway, and onto disk in
+`.deel/sessions/*.jsonl`.
+
+Environment variables whose names look like keys are no longer passed to children.
+The check is on **name segments** — split on `_`, and if any segment is `KEY`,
+`KEYS`, `APIKEY`, `TOKEN`, `TOKENS`, `SECRET`, `SECRETS`, `PASSWORD`,
+`PASSWD`, `PASSPHRASE`, `CREDENTIAL` or `CREDENTIALS`, it is dropped.
+
+Segments are the point. A blanket `*KEY*` glob also catches `MONKEY_PATCH` and
+`KEYBOARD_LAYOUT`, and **that kind of misfire is one nobody can diagnose** — it
+ends as "my script only fails inside deel."
+
+Two are deliberately left out. `PWD` is the current directory on Unix and dropping
+it breaks shell scripts outright; adding `AUTH` would catch `SSH_AUTH_SOCK` and
+break `git push`. Corporate proxy settings (`HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`)
+along with `PATH` and `NODE_ENV` pass through untouched — miss one of those and
+you get "but it works in my terminal."
+
+**You can put one back.** With a private registry, `npm ci` genuinely needs
+`NPM_TOKEN`.
+
+```json
+{ "셸환경": { "남길것": ["NPM_TOKEN", "GITHUB_TOKEN"] } }
+```
+
+Names only, no patterns. A pattern means a single `*` restores everything, which
+is the same as switching the safeguard off — **without anyone noticing they did.**
+
+**What was dropped is said out loud.** When a command fails, the names held back
+are appended to the result. Without that line, `npm ci` dies with a 401 and the
+screen shows nothing but npm's 401 — the person assumes the token expired, fetches
+a new one, and sees exactly the same screen. **Values are never printed.** Naming
+them explains the cause; printing them undoes what was just prevented.
+
+deel's own keys (`DEEL_API_KEY`, `DEEL_KEY_*`) are always dropped and cannot be
+restored. Nothing a child does could need them.
+
 ### Managed policy (what IT sets)
 
 The config file belongs to the person using the tool: it can be edited or deleted, so it is the

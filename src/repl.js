@@ -26,6 +26,7 @@ import { History } from './safety/undo.js';
 import { Audit, 열쇠묻기 } from './safety/audit.js';
 import { activeProfile, load, resolveKey, save as saveCfg, homeDir, 잠금소식, 열쇠탈소식, 프로젝트설정소식 } from './config.js';
 import { 프로젝트설정줄들 } from './safety/trust.js';
+import { 남길것읽기 } from './safety/shellenv.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
@@ -1142,6 +1143,10 @@ export async function chatLoop(opts = {}) {
     get 눈있나() { return !!conn.vision; },
     // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
     규칙들: 규칙모으기(cfg),
+    // Bash 자식에게 되살려 줄 환경변수 이름 (safety/shellenv.js).
+    // 기본은 열쇠처럼 생긴 이름을 다 빼는 것이고, 여기 적은 것만 되살린다 —
+    // 사내 저장소를 쓰는 사람은 npm ci 에 NPM_TOKEN 이 실제로 필요하다.
+    셸남길것: 남길것읽기(cfg),
     history: new History(root),
     audit: new Audit(root, { 열쇠들: 열쇠묻기(conn) }),
     seen: new Set(),

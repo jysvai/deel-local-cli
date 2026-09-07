@@ -31,6 +31,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import { 규칙모으기, 늘허락, 정책읽기 } from '../safety/policy.js';
+import { 남길것읽기 } from '../safety/shellenv.js';
 import { 받기설정 } from '../safety/authcmd.js';
 import { run } from '../agent/loop.js';
 import { Session, repairToolPairs } from '../agent/session.js';
@@ -339,6 +340,10 @@ export async function acp(opts = {}) {
       get 눈있나() { return !!conn.vision; },
       // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
       규칙들: 규칙모으기(cfg),
+      // Bash 자식에게 되살려 줄 환경변수 이름 (safety/shellenv.js).
+      // 에디터 안에서도 같은 값이어야 한다 — 여기만 빠지면 「에디터에서만
+      // 빌드가 된다·안 된다」 가 되고, 그건 원인을 찾을 길이 없다.
+      셸남길것: 남길것읽기(cfg),
       history: new History(root),
       audit: new Audit(root, { 열쇠들: 열쇠묻기(conn) }),
       seen: new Set(),

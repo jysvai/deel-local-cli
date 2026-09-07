@@ -39,6 +39,7 @@ const FILES = [
   'vision.test.js',
   'policy.test.js',
   'trust.test.js',
+  'shellenv.test.js',
   'quota.test.js',
   'review.test.js',
   'task.test.js',

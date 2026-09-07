@@ -26,7 +26,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { decode as decodeBytes, consoleCodepage } from './encoding.js';
 import { 셸명령 } from './shell.js';
-import { 열쇠뺀환경 } from '../backend/mcp.js';
+import { 셸환경 } from '../safety/shellenv.js';
 import { 말, 세말 } from '../i18n/index.js';
 
 /* 결과 한 줄을 잇는다 — 빈 조각은 버린다(tools/index.js 의 이어 와 같은 것). */
@@ -85,12 +85,17 @@ export { 셸명령 };
  * 윈도우에서는 반대로 무리를 안 만든다. detached 는 거기서 새 콘솔 창을
  * 띄우는 쪽으로 작동해서, 조용히 돌아야 할 것이 화면에 튀어나온다.
  */
-export function 띄우기옵션(cwd) {
+export function 띄우기옵션(cwd, { 남길것 = [] } = {}) {
   const win = process.platform === 'win32';
   return {
     cwd,
-    // 열쇠만 빼고 나머지는 그대로 물려준다 (backend/mcp.js 열쇠뺀환경 머리말).
-    env: 열쇠뺀환경(),
+    /*
+     * 열쇠처럼 생긴 것만 빼고 나머지는 그대로 물려준다 (safety/shellenv.js).
+     *
+     * 뒤에서 도는 일감은 Bash 보다 더 샌다 — 출력이 계속 쌓이고 Jobs 로
+     * 언제든 다시 읽히므로, 한 번 찍힌 열쇠는 그 대화가 끝날 때까지 남는다.
+     */
+    env: 셸환경(process.env, { 남길것 }).env,
     windowsHide: true,
     detached: !win,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -489,7 +494,7 @@ function 끝난것치우기() {
  *   돌려준다. 포트가 이미 물려 있는 경우가 제일 흔한데, 그때 "떴습니다" 라고
  *   답하면 모델은 다음 단계로 넘어가고 사용자는 안 뜬 서버를 찾아다닌다.
  */
-export async function 띄우기(명령, { cwd, 설명 = null, 기다림 = 1500 } = {}) {
+export async function 띄우기(명령, { cwd, 설명 = null, 기다림 = 1500, 남길것 = [] } = {}) {
   const 도는것 = [...일감들.values()].filter((j) => j.상태 === '도는중');
   if (도는것.length >= 최대일감) {
     return { error: `뒤에서 도는 명령이 이미 ${도는것.length}개입니다. Jobs 로 안 쓰는 것을 끝내고 다시 하세요.` };
@@ -500,7 +505,7 @@ export async function 띄우기(명령, { cwd, 설명 = null, 기다림 = 1500 }
   let kid;
   try {
     kid = spawn(shell.file, shell.args, {
-      ...띄우기옵션(cwd),
+      ...띄우기옵션(cwd, { 남길것 }),
       windowsVerbatimArguments: shell.verbatim,
     });
   } catch (err) {

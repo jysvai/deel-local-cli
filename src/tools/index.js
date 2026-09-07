@@ -21,7 +21,8 @@ import { DEF_TOOL, REFS_TOOL } from './lsp.js';
 import { 편집후진단, 붙이기 as 진단붙이기, 데우기 } from '../lsp/diag.js';
 import { 프로젝트갈래 } from '../lsp/servers.js';
 import { allow as allowedIn } from '../agent/modes.js';
-import { 도구정의, 이름풀기, 열쇠뺀환경 } from '../backend/mcp.js';
+import { 도구정의, 이름풀기 } from '../backend/mcp.js';
+import { 셸환경 } from '../safety/shellenv.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOldHwp, 옛hwp안내, 문서는못고침 } from './docs.js';
 import { 바꿔볼까, 직접못읽나, 변환기찾기, 글로바꾸기, 못바꿈말 } from './convert.js';
@@ -1839,7 +1840,11 @@ export const TOOLS = {
 
       // 끝나지 않는 명령은 뒤에서 띄운다. 여기서 기다리면 그 턴이 통째로 멈춘다.
       if (args.background === true) {
-        const r = await 띄우기(cmd, { cwd: ctx.scope.root, 설명: args.description ?? null });
+        const r = await 띄우기(cmd, {
+          cwd: ctx.scope.root,
+          설명: args.description ?? null,
+          남길것: ctx.셸남길것 ?? [],
+        });
         if (r.error) return { error: r.error };
         if (!r.떴나) {
           // 지켜보는 사이에 죽었다. 포트가 물려 있거나 명령이 틀린 경우다.
@@ -1871,6 +1876,9 @@ export const TOOLS = {
       const shell = 셸명령(cmd);
 
       const 제한 = args.timeout ?? 120000;
+      // 무엇을 빼고 넘길지 여기서 한 번 정한다. 뺀 이름은 아래에서 명령이
+      // 실패했을 때만 쓴다 — 잘 돌 때마다 적으면 매 부름에 군말이 붙는다.
+      const 셸것 = 셸환경(process.env, { 남길것: ctx.셸남길것 ?? [] });
       return new Promise((끝) => {
         /*
          * 끝맺음은 한 번만. 그리고 **기다리지 않는다.**
@@ -1888,9 +1896,17 @@ export const TOOLS = {
         // '�Ľ� ����' 이 된다. 바이트로 받아 이 컴퓨터가 쓰는 것으로 해독한다.
         const kid = 무리로돌리기(shell.file, shell.args, {
           cwd: ctx.scope.root,
-          // 열쇠만 빼고 나머지는 그대로 물려준다 (backend/mcp.js 열쇠뺀환경 머리말).
-          // 안 빼면 `env` 한 줄이 열쇠를 화면과 대화 기록에 그대로 싣는다.
-          env: 열쇠뺀환경(),
+          /*
+           * 열쇠처럼 생긴 것만 빼고 나머지는 그대로 물려준다 (safety/shellenv.js).
+           *
+           * 여기 도는 것은 **사용자 제 프로젝트**라 PATH·NODE_ENV·사내 프록시가
+           * 다 있어야 한다. 그런데 여태 뺀 것은 우리 열쇠뿐이었고, 그래서
+           * OPENAI_API_KEY·GITHUB_TOKEN·DB_PASSWORD 가 그대로 넘어갔다.
+           * 모델이 `env | grep -i proxy` 한 번 부르면 — 사내 프록시를 확인하는
+           * 아주 정상적인 행동이다 — 그 값들이 도구 결과에 실려 게이트웨이로
+           * 나가고 대화 기록으로 디스크에도 남는다.
+           */
+          env: 셸것.env,
           // 우리 시계(아래 뒷북)가 제한에서 먼저 나무를 끊는다. 이건 그것마저
           // 못 돌았을 때 서는 마지막 그물이라 뒤에 세운다.
           timeout: 제한 + 3000,
@@ -1971,8 +1987,27 @@ export const TOOLS = {
                 + ' `| head -n 200` 처럼 줄이거나 파일로 받아서 다시 부르세요]'
                 : 숫자코드 === null ? `\n\n[${글자코드} — 명령을 아예 못 돌렸습니다]`
                   : `\n\n[종료코드 ${code}]`;
+          /*
+           * 실패했을 때만, 무엇을 빼고 넘겼는지 이름을 적는다.
+           *
+           * 이 한 줄이 이 기능에서 제일 중요하다. 사내 저장소를 쓰는 사람은
+           * `npm ci` 에 NPM_TOKEN 이 필요하다. 우리가 조용히 빼면 npm 이 401 로
+           * 죽고 화면에는 npm 의 401 만 남는다. 사람은 토큰이 만료된 줄 알고
+           * 새로 발급받으러 가고, 새로 받아도 똑같은 화면을 본다.
+           *
+           * 값은 절대 안 적는다. 이름만 적는다 — 이름을 적는 것은 원인을
+           * 알려 주는 일이고, 값을 적는 것은 방금 막은 것을 되돌리는 일이다.
+           *
+           * 잘 돌았을 때는 안 적는다. 매 부름마다 붙으면 아무도 안 읽는 군말이
+           * 되고, 진짜 필요할 때도 안 읽힌다.
+           */
+          const 뺀말 = (!잘됨 && 셸것.뺀것.length)
+            ? `\n[열쇠처럼 생긴 환경변수 ${셸것.뺀것.length}개는 안 넘겼습니다: ${셸것.뺀것.slice(0, 8).join(' · ')}`
+              + `${셸것.뺀것.length > 8 ? ' …' : ''}.`
+              + ' 이 명령에 필요하면 설정에 "셸환경": { "남길것": ["이름"] } 을 적으세요]'
+            : '';
           done({
-            content: clip(out || '(출력 없음)', 실을만큼(ctx)) + 꼬리,
+            content: clip(out || '(출력 없음)', 실을만큼(ctx)) + 꼬리 + 뺀말,
             summary: 잘됨 ? 말('sum.ok')
               : 시그널 ? 말('sum.killedBy', { 시그널 })
                 : 넘침 ? 말('sum.tooMuchOut')

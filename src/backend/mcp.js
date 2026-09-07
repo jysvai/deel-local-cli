@@ -27,7 +27,6 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { VERSION } from '../version.js';
-import { 열쇠환경인가 } from '../config.js';
 
 // 붙는 데 이만큼 넘게 걸리면 포기한다. 시작이 느려지면 안 쓰게 된다.
 export const 붙기제한 = 8000;
@@ -309,35 +308,17 @@ export function 깨끗한환경() {
   return out;
 }
 
-/**
- * 게이트웨이 열쇠**만** 뺀 환경. Bash 와 Jobs 가 자식에게 넘길 것.
+/*
+ * Bash·Jobs 가 자식에게 넘길 환경은 **여기 없다** — safety/shellenv.js 다.
  *
- * 위 깨끗한환경 은 남의 프로그램(MCP 서버)에 주는 것이라 통째로 씻는다.
- * 여기는 다르다 — Bash 로 도는 것은 **사용자 제 프로젝트**다. PATH·NODE_ENV·
- * DEEL_HOME·사내 프록시 설정이 다 있어야 하고(사용자는 이 프로그램의 검사
- * 자체를 Bash 로 돌린다), 하나라도 빠지면 「내 터미널에서는 되는데」 가 된다.
+ * 여기 `열쇠뺀환경()` 이 있었다. 우리 열쇠(DEEL_API_KEY · DEEL_KEY_*)만 빼고
+ * 나머지를 통째로 넘겼는데, 그러면 OPENAI_API_KEY·GITHUB_TOKEN·DB_PASSWORD
+ * 가 그대로 넘어간다. 모델이 `env | grep -i proxy` 를 한 번 부르면 — 사내
+ * 프록시를 확인하는 아주 정상적인 행동이다 — 그 값들이 도구 결과에 실려
+ * 게이트웨이로 나가고 대화 기록으로 디스크에도 남는다.
  *
- * 그래서 딱 하나만 뺀다. 안 빼면 `env` 한 줄로 열쇠가 화면에 찍히고, 그 화면이
- * 대화에 실려 게이트웨이로 나가고 `.deel/sessions/*.jsonl` 로 디스크에도 남는다 —
- * 열쇠를 그 열쇠의 주인에게 보내는 셈이다(guard.js 가 막는 것과 같은 길).
- * 자식이 무엇을 하든 이 값이 필요할 일은 없다. 게이트웨이로 나가는 것은 우리다.
+ * 두 벌로 두지 않고 옮겼다. 같은 판단이 두 자리에 있으면 늘 한쪽만 고쳐진다.
  */
-export function 열쇠뺀환경(env = process.env) {
-  const out = { ...env };
-  /*
-   * 이름을 못 박지 않는다.
-   *
-   * 여기가 `delete out.DEEL_API_KEY` 한 줄이었다. 열쇠 이름은 **둘**인데
-   * (config.js 의 resolveKey), 그중 하나만 지운 것이다. 프로필 열쇠
-   * (`DEEL_KEY_PROD`)를 쓰는 사람은 `env` 한 줄로 그대로 샜다 — 그리고
-   * 그 방법을 우리 심사 명세가 권장으로 적어 뒀다.
-   *
-   * 무엇이 열쇠인지는 **읽는 자에게 묻는다**(열쇠환경인가). 이름이 늘면
-   * 거기만 고친다. 여기서 다시 적으면 반드시 한쪽이 낡는다.
-   */
-  for (const k of Object.keys(out)) if (열쇠환경인가(k)) delete out[k];
-  return out;
-}
 
 /** 우리 도구 이름과 안 부딪히게 앞에 서버 이름을 붙인다. Claude Code 와 같은 꼴이다. */
 export const 도구이름 = (서버, 도구) => `mcp__${서버}__${도구}`;
