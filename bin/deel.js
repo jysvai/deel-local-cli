@@ -223,7 +223,7 @@ function help() {
   say('');
   say(`    ${c.gray('--root <폴더>')}      작업 범위. 기본은 지금 폴더`);
   say(`    ${c.gray('--mode <모드>')}      auto(기본) / confirm / strict`);
-  say(`    ${c.gray('--work <모드>')}      auto(기본·종합) / code / plan / architect / debug / ask / orchestrator`);
+  say(`    ${c.gray('--work <모드>')}      auto(기본·종합) / code / plan / architect / debug / inspect / ask / orchestrator`);
   say(`    ${c.gray('--level <수준>')}     쉬움(기본) / 개발자`);
   say(`    ${c.gray('--ctx <길이>')}       컨텍스트 길이 직접 지정 (655360 · 640k · 128k). 없으면 서버에 맞춤`);
   say(`    ${c.gray('--max-tokens <길이>')} 한 번에 받을 답 길이 상한 (32k). 큰 파일이 잘리면 올린다 — /out 과 같은 값`);

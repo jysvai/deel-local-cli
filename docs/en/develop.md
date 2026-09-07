@@ -105,7 +105,7 @@ src/
 
   agent/loop.js          the agent loop
   agent/session.js       conversation state + context accounting
-  agent/modes.js         work modes (auto · code · plan · architect · debug · ask · orchestrator)
+  agent/modes.js         work modes (auto · code · plan · architect · debug · inspect · ask · orchestrator)
   agent/route.js         picking the mode from what was said
   agent/effort.js        per-stage reasoning effort
   agent/budget.js        shares that follow the window — lines read, description length, steps

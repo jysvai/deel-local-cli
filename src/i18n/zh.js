@@ -57,6 +57,7 @@ export const zh = {
   'cmd.architect.desc': '工作模式 → architect (定结构)',
   'cmd.debug.desc': '工作模式 → debug (找原因)',
   'cmd.ask.desc': '工作模式 → ask (只解释)',
+  'cmd.inspect.desc': '工作模式 → inspect (查找缺陷，不修改)',
   'cmd.orchestrator.desc': '工作模式 → orchestrator (把大活儿拆开)',
   'cmd.undo.desc': '撤销上一轮 — 文件和对话一起',
   'cmd.undo.arg': '[轮数]',

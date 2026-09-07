@@ -57,6 +57,7 @@ export const ja = {
   'cmd.architect.desc': '作業モード → architect (構造を決める)',
   'cmd.debug.desc': '作業モード → debug (原因を突き止める)',
   'cmd.ask.desc': '作業モード → ask (説明だけ)',
+  'cmd.inspect.desc': '作業モード → inspect (欠陥を探す。直さない)',
   'cmd.orchestrator.desc': '作業モード → orchestrator (大きな仕事を分ける)',
   'cmd.undo.desc': '直前のターンを戻す — ファイルと会話をまとめて',
   'cmd.undo.arg': '[ターン数]',

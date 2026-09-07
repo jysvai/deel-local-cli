@@ -248,6 +248,7 @@ Ctrl+C 는 **지금까지 한 것을 통째로 버립니다.** 그런데 대개 
 | 설계 · 구조를 어떻게 · 아키텍처 · 어떻게 나눌까 | ◈ 설계 |
 | 뭐야? · 설명해줘 · 어떻게 동작해 · 차이가 뭐야 | ◇ 묻기 |
 | 전체 · 전부 · 하나씩 · 끝까지 · 통일 | ❋ 총괄 |
+| 분석 · 점검 · 검토 · 리뷰 · 취약점 · 경합 · 데이터 손실 | ◍ 점검 |
 | 고쳐줘 · 만들어줘 · 구현해줘 · 지워줘 | ◆ 코드 |
 
 **애매하면 안 옮깁니다.** "음", "ㅇㅇ", "계속해줘", "아까 그거" 같은 말에는
@@ -422,7 +423,7 @@ $ deel sb<TAB>
 sbom
 
 $ deel --mode <TAB>
-auto  code  architect  ask  debug  plan  orchestrator
+auto  code  architect  ask  debug  inspect  plan  orchestrator
 
 $ deel --think <TAB>
 off  low  medium  high  max

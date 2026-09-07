@@ -250,6 +250,7 @@ are not handed over at all.
 | design · architecture · how should this be structured · how to split | ◈ Architect |
 | what is · explain · how does it work · difference between | ◇ Ask |
 | all of · everything · one by one · to the end · unify | ❋ Orchestrator |
+| analyse · audit · review · vulnerability · race · data loss | ◍ Inspect |
 | fix · add · implement · rename · delete | ◆ Code |
 
 **When it's close, it doesn't switch.** "ok", "go on", "that thing from earlier" leave you
@@ -424,7 +425,7 @@ $ deel sb<TAB>
 sbom
 
 $ deel --mode <TAB>
-auto  code  architect  ask  debug  plan  orchestrator
+auto  code  architect  ask  debug  inspect  plan  orchestrator
 
 $ deel --think <TAB>
 off  low  medium  high  max

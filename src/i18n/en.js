@@ -70,6 +70,7 @@ export const en = {
   'cmd.architect.desc': 'work mode → architect (shapes the structure)',
   'cmd.debug.desc': 'work mode → debug (finds the cause)',
   'cmd.ask.desc': 'work mode → ask (explains only)',
+  'cmd.inspect.desc': 'work mode → inspect (audits for defects, changes nothing)',
   'cmd.orchestrator.desc': 'work mode → orchestrator (splits a big job up)',
   'cmd.undo.desc': 'undo the last turn — files and the conversation together',
   'cmd.undo.arg': '[turns]',

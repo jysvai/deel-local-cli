@@ -33,6 +33,7 @@ export const 명령들 = {
   architect: { arg: false },
   debug: { arg: false },
   ask: { arg: false },
+  inspect: { arg: false },
   orchestrator: { arg: false },
   undo: { arg: true },
   diff: { arg: true },

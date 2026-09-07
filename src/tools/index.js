@@ -28,7 +28,7 @@ import { 바꿔볼까, 직접못읽나, 변환기찾기, 글로바꾸기, 못바
 import { 물음검사 } from '../agent/askcheck.js';
 import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽은말, pdf는못고침, 한쪽도못읽음말 } from './pdf.js';
 import { diffLines } from '../ui/diff.js';
-import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이 } from '../agent/budget.js';
+import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이, 한번에낼글자수 } from '../agent/budget.js';
 import { 도구설명EN } from './desc.en.js';
 import { 그림인가, 그림읽기, 크기말, 기본한도 } from '../backend/vision.js';
 import { 빠르게찾기, 엔진말, 안볼정규식 } from './fastgrep.js';
@@ -94,6 +94,15 @@ function clip(s, n = MAX_OUT) {
   const t = String(s);
   return t.length > n ? t.slice(0, n) + `\n… (${t.length - n}자 잘림)` : t;
 }
+
+/**
+ * 이 창에서 도구 하나가 한 번에 실어 보낼 만큼 (agent/budget.js).
+ *
+ * MAX_OUT 은 창을 모를 때(검사·일회성 호출) 서는 자리로만 남는다. 아는
+ * 창에서는 이 함수가 정한다 — 30,000자는 200k 짜리에는 맞고 8k 짜리에는
+ * 한 번으로 창을 넘기는 양이다.
+ */
+const 실을만큼 = (ctx) => 한번에낼글자수(ctx?.모델컨텍스트);
 
 const 몇KB = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
 
@@ -475,6 +484,7 @@ async function 엑셀읽기(abs, args, ctx) {
     content: clip(
       `${text}\n\n(엑셀 파일을 CSV 로 바꿔서 보여준 것입니다. 이 파일은 Edit/Write 로 고칠 수 없습니다.)`
       + (말.length ? `\n(${말.join(' · ')})` : ''),
+      실을만큼(ctx),
     ),
     summary: excelSummary(r.sheets, r.how) + (잘림.length ? ` · 일부만` : ''),
   };
@@ -523,6 +533,7 @@ async function 빌려읽기(abs, ctx, 원래오류) {
       `${r.text}\n\n(deel 이 직접 못 읽는 형식이라 이 PC 의 ${r.쓴것} 로 글만 뽑아 보여준 것입니다.`
       + ' 원본은 한 글자도 안 바뀌었습니다. 이 파일은 Edit/Write 로 고칠 수 없습니다 —'
       + ` 고쳐야 하면 새 파일에 쓰세요.)\n(원래 못 읽은 까닭: ${String(원래오류).split('\n')[0]})`,
+      실을만큼(ctx),
     ),
     summary: `${r.쓴것} 로 바꿔 읽음 · ${줄수}줄`,
   };
@@ -546,6 +557,7 @@ async function 문서읽기(abs, ctx) {
 (${r.갈래} 문서를 글로 바꿔서 보여준 것입니다. 이 파일은 Edit/Write 로 고칠 수 없습니다.)`
       + (잘림.length ? `
 (${잘림.join(' · ')})` : ''),
+      실을만큼(ctx),
     ),
     summary: docSummary(r) + (잘림.length ? ' · 일부만' : ''),
   };
@@ -584,6 +596,7 @@ function pdf읽기(abs, ctx) {
 (PDF 를 쪽마다 글로 바꿔서 보여준 것입니다. 이 파일은 Edit/Write 로 고칠 수 없습니다.)`
       + (못 ? `\n${못}` : '')
       + (잘림.length ? `\n(${잘림.join(' · ')})` : ''),
+      실을만큼(ctx),
     ),
     summary: pdfSummary(r) + (잘림.length ? ' · 일부만' : ''),
   };
@@ -1203,7 +1216,7 @@ export const TOOLS = {
       const 준줄수 = slice.length;
       const 다못줌 = start + count < lines.length || start > 0;
       const 통째로 = body + more + 줄인것.알림;
-      const 실린것 = clip(통째로);
+      const 실린것 = clip(통째로, 실을만큼(ctx));
       return {
         content: 실린것,
         /*
@@ -1608,7 +1621,7 @@ export const TOOLS = {
         ].filter(Boolean).join(' ');
         const 붙이기2 = (t) => (꼬리2 ? [t, '', 꼬리2].join('\n') : t);
         if (!total) return { content: 붙이기2(`일치 없음: ${args.pattern}`), summary: 이어(세말('hits', 0), 빠른것.엔진) };
-        if (mode === 'content') return { content: 붙이기2(clip(lines.join('\n'))), summary: 이어(세말('hits', total), 빠른것.엔진) };
+        if (mode === 'content') return { content: 붙이기2(clip(lines.join('\n'), 실을만큼(ctx))), summary: 이어(세말('hits', total), 빠른것.엔진) };
         if (mode === 'count') {
           return {
             content: 붙이기2(hitFiles.slice(0, limit).map((f) => `${f.n}\t${f.rel}`).join('\n')),
@@ -1713,7 +1726,7 @@ export const TOOLS = {
           summary: 다못봄 ? `${세말('hits', 0)} (${말('sum.notAllSeen')})` : 세말('hits', 0),
         };
       }
-      if (mode === 'content') return { content: 붙이기(clip(lines.join('\n'))), summary: 세말('hits', total) };
+      if (mode === 'content') return { content: 붙이기(clip(lines.join('\n'), 실을만큼(ctx))), summary: 세말('hits', total) };
       if (mode === 'count') {
         return { content: 붙이기(hitFiles.map((f) => `${f.n}\t${f.rel}`).join('\n')), summary: 세말('files', hitFiles.length) };
       }
@@ -1889,9 +1902,9 @@ export const TOOLS = {
           const stderr = 풀기(stderrBuf);
           const out = [stdout, stderr].filter(Boolean).join('\n').trim();
 
-          if (끊겼나) return done({ error: '사용자가 중단했습니다', content: clip(out) });
+          if (끊겼나) return done({ error: '사용자가 중단했습니다', content: clip(out, 실을만큼(ctx)) });
           if (시간초과 || (err && err.killed)) {
-            return done({ error: `시간 초과로 중단됨 (${제한}ms)`, content: clip(out) });
+            return done({ error: `시간 초과로 중단됨 (${제한}ms)`, content: clip(out, 실을만큼(ctx)) });
           }
 
           /*
@@ -1931,7 +1944,7 @@ export const TOOLS = {
                 : 숫자코드 === null ? `\n\n[${글자코드} — 명령을 아예 못 돌렸습니다]`
                   : `\n\n[종료코드 ${code}]`;
           done({
-            content: clip(out || '(출력 없음)') + 꼬리,
+            content: clip(out || '(출력 없음)', 실을만큼(ctx)) + 꼬리,
             summary: 잘됨 ? 말('sum.ok')
               : 시그널 ? 말('sum.killedBy', { 시그널 })
                 : 넘침 ? 말('sum.tooMuchOut')
@@ -2683,7 +2696,7 @@ async function runMcpTool(name, args, ctx) {
       const 줄 = 글 ? 글.split(/\r?\n/).length : 0;
       return {
         summary: 글 ? 이어(세말('lines', 줄), 말('unit.chars', { n: 글.length.toLocaleString() })) : 말('sum.emptyAnswer'),
-        content: clip(글),
+        content: clip(글, 실을만큼(ctx)),
       };
     } catch (e) {
       return { error: e.message };

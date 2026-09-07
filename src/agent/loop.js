@@ -5,7 +5,7 @@ import { 그림메시지 } from '../backend/vision.js';
 import { 어떻게할까 } from '../safety/policy.js';
 import { toolSchemas, runTool, TOOLS, 파일현황 } from '../tools/index.js';
 import { isMutating } from '../safety/guard.js';
-import { effortFor, tokensFor, fullCap, wasCut, shiftLevel, 자동강도, 인사인가 as 인사말인가 } from './effort.js';
+import { effortFor, tokensFor, fullCap, wasCut, shiftLevel, 자동강도, 천장고르기, 인사인가 as 인사말인가 } from './effort.js';
 import { 배울전선, 카드고치기, 카드저장꼴, 전선붙이기 } from '../backend/wire.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
@@ -407,7 +407,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 한 번 정하면 이 턴 안에서는 안 바꾼다. while 바깥에서 정하는 것이 그
    * 뜻이다 — 걸음마다 흔들리면 그것이 곧 캐시가 매번 새로 엮인다는 말이다.
    */
-  const 천장 = session.thinkSet ? session.think : (모드.think ?? session.think);
+  /*
+   * 모드가 정한 강도는 **가벼운 말에만** 낮춘다 (effort.js 의 천장고르기).
+   *
+   * 묻기 모드는 low 다. "이 함수 뭐야?" 에는 맞는 값이다. 그런데 무엇이
+   * 묻기로 가는지는 낱말이 정하고(route.js), "…설명해줘" 한 마디면 간다.
+   * 그래서 파일 열 개를 읽고 경합 조건을 짚어야 하는 일까지 low 로 돌았다 —
+   * 생각 블록이 0자로 나가고, 답이 그만큼 얕았다.
+   */
+  const 천장 = session.thinkSet ? session.think : 천장고르기(모드.think, session.think, userText);
   const think = 자동강도(userText, 천장, {
     대화크기: session.messages.length,
     켜짐: session.autoThink !== false,

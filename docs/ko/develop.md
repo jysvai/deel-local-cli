@@ -103,7 +103,7 @@ src/
 
   agent/loop.js          에이전트 루프
   agent/session.js       대화 상태 + 컨텍스트 셈
-  agent/modes.js         작업 모드 (종합·코드·계획·설계·디버그·묻기·총괄)
+  agent/modes.js         작업 모드 (종합·코드·계획·설계·디버그·점검·묻기·총괄)
   agent/route.js         말을 보고 알맞은 모드 고르기
   agent/effort.js        단계별 추론 강도 배분
   agent/budget.js        창 크기에 맞춘 몫 — 읽을 줄·설명 길이·걸음 수

@@ -1057,7 +1057,7 @@ export async function handle(line, session, ctx) {
     case 'work':
     case 'auto':
     case 'code': case 'plan': case 'architect':
-    case 'debug': case 'ask': case 'orchestrator': {
+    case 'debug': case 'ask': case 'inspect': case 'orchestrator': {
       // 인자 없이 /work 만 치면 지금 모드와 고를 수 있는 것을 보여 준다.
       if (name === 'work' && !arg.trim()) { showWork(session); return { handled: true }; }
 

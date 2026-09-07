@@ -59,6 +59,7 @@ export const ko = {
   'cmd.architect.desc': '작업 모드 → 설계 (구조를 짠다)',
   'cmd.debug.desc': '작업 모드 → 디버그 (원인을 찾는다)',
   'cmd.ask.desc': '작업 모드 → 묻기 (설명만)',
+  'cmd.inspect.desc': '작업 모드 → 점검 (결함을 찾는다. 안 고침)',
   'cmd.orchestrator.desc': '작업 모드 → 총괄 (큰 일을 쪼개서)',
   'cmd.undo.desc': '직전 작업 되돌리기 — 파일과 대화를 같이',
   'cmd.undo.arg': '[턴수]',
