@@ -200,6 +200,11 @@ for (const f of SRC) {
     const host = m[1].toLowerCase();
     if (/github\.com$/.test(host)) continue;
     if (/(^|\.)example\.|\.(corp|local|test|invalid|example)$/.test(host)) continue;
+    // xmlns 값은 주소처럼 생겼을 뿐 주소가 아니다 — 이름표다.
+    // hwpx(OWPML) 를 쓰려면 hancom.co.kr 네임스페이스를 글자 그대로 적어야 하고,
+    // 그 글자는 아무도 열어보지 않는다. 그래서 **xmlns= 뒤에 붙은 것만** 봐준다.
+    // 호스트 이름으로 봐주면 그 호스트로 진짜 나가는 코드까지 같이 통과한다.
+    if (/xmlns(:[A-Za-z0-9_-]+)?=["']$/.test(text.slice(Math.max(0, m.index - 40), m.index))) continue;
     의심.push(`${f} 안에 박힌 주소: ${host}`);
   }
 }

@@ -116,6 +116,7 @@ const FILES = [
   'commands-more.test.js',
   'xlsx.test.js',
   'docs.test.js',
+  'hwpxwrite.test.js',
   'completion.test.js',
   'clipboard.test.js',
   'steer.test.js',

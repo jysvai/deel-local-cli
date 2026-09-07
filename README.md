@@ -115,7 +115,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Models](docs/en/models.md) | Grade and window size · Korean-model presets · project detection |
 | [The screen](docs/en/interface.md) | The input box · work modes · simple vs developer · what it asks about |
 | [Tools in depth](docs/en/tools.md) | `Outline` · `Verify` · `Task` · `Jobs` · `Append` · `Def`/`Refs` · edit matching |
-| [Korean documents and Excel](docs/en/documents.md) | hwpx/docx/pptx/**PDF** · encoding · Excel → CSV |
+| [Korean documents and Excel](docs/en/documents.md) | hwpx/docx/pptx/**PDF** · **creating an hwpx** · encoding · Excel → CSV |
 | [Extending](docs/en/extend.md) | Skills · plugins · MCP · subagents · hooks · ACP |
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
@@ -665,7 +665,7 @@ Names and arguments match Claude Code, so skills written for that convention wor
 | Tool | What it does |
 |---|---|
 | `Read` | Read a file (line numbers, `offset`/`limit`, **Excel as CSV, hwpx/docx/pptx and PDF as text**) |
-| `Write` | Write / overwrite a file (**several at once via the `files` array**) |
+| `Write` | Write / overwrite a file (**several at once via the `files` array**, **a `.hwpx` that does not exist yet becomes a real Hancom document**) |
 | `Append` | Append to the end of a file — **how large files get written in pieces** |
 | `Edit` | Replace an exact string (`replace_all`; **several sites at once via the `edits` array**) |
 | `Move` | Move / rename files and folders — **how you restructure** (`moves` array; covered by undo) |
@@ -700,6 +700,13 @@ their cost; here is why.
 
 **A file saved as CP949 is written back as CP949.** The encoding is never changed.
 Excel (`.xlsx`) is read as CSV — read-only.
+
+**Creating a Korean document that did not exist does work, though.** `Write` on a
+`.hwpx` path that is not there yet produces a real hwpx to spec (OWPML) — `#`
+becomes a heading, `-` becomes a bullet. That is the spot where "write me the
+report" used to end at one `.md` a person then pasted into Hancom Office. Tables
+are flattened to text, and the docs say plainly that **whether Hancom Office opens
+the file was not verified here.**
 
 To keep a document as **one Markdown file**, use `deel doc2md`. Tables survive as
 real `| name | value |` tables, so a model has far less to guess at than it does
@@ -736,7 +743,7 @@ on this machine** — the same terms on which deel borrows `rg`, and nothing is 
 With no converter it **says so definitively and stops**: what is missing, what you can do about
 it, and not to open the file again. Turn it off with `DEEL_CONVERT=off`.
 
-> **More** — Encoding · Excel · `doc2md` · borrowing a converter
+> **More** — Encoding · Excel · **creating an hwpx** · `doc2md` · borrowing a converter
 >
 > **[Korean documents and Excel read →](docs/en/documents.md#korean-text-and-excel)**
 

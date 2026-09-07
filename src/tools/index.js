@@ -26,6 +26,7 @@ import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { 셸환경 } from '../safety/shellenv.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOldHwp, 옛hwp안내, 문서는못고침 } from './docs.js';
+import { hwpx만들기, 만든말 } from './hwpxwrite.js';
 import { 바꿔볼까, 직접못읽나, 변환기찾기, 글로바꾸기, 못바꿈말 } from './convert.js';
 import { 물음검사 } from '../agent/askcheck.js';
 import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽은말, pdf는못고침, 한쪽도못읽음말 } from './pdf.js';
@@ -824,6 +825,39 @@ async function 여러개옮기기(목록, ctx) {
   };
 }
 
+/** `.hwpx` 인가. 새로 만들 수 있는 유일한 문서 형식이다. */
+const isHwpxPath = (p) => /\.hwpx$/i.test(String(p ?? ''));
+
+/**
+ * 글을 한글 문서로 **새로** 만든다 (tools/hwpxwrite.js).
+ *
+ * 사내에서 오가는 것은 md 가 아니다. 주간보고도 회의록도 검토 의견도 한글
+ * 문서라, 여태 사람이 우리 md 를 한글에 붙여 넣어 서식을 다시 잡았다.
+ *
+ * 바꿔치기한 것은 **반드시 적어 돌려준다.** 표를 줄 글로 폈으면 그렇다고
+ * 적는다 — 조용히 넘기면 사람은 문서를 열어 보고서야 알고, 그때는 이미 그
+ * 문서를 남에게 보낸 뒤다.
+ */
+function hwpx새로만들기(args, ctx, abs) {
+  const 만듦 = hwpx만들기(args.content, { 제목: null });
+  ctx.history.snapshot(abs, 'Write');
+  mkdirSync(dirname(abs), { recursive: true });
+  writeFileSync(abs, 만듦.buf);
+  /*
+   * `seen` 에 안 올린다.
+   *
+   * seen 은 「Edit 로 고쳐도 되는 것을 읽어 뒀다」 는 표다. hwpx 는 만든
+   * 다음에도 고칠 수 없으므로, 올려 두면 모델이 Edit 를 부르고 거절당하고
+   * 또 부른다. Read 쪽이 문서를 seen 에 안 올리는 것과 같은 판단이다.
+   */
+  return {
+    content: `새로 만듦: ${만든말(만듦, ctx.scope.show(abs))}\n`
+      + '  이 문서는 이제 고칠 수 없습니다. 내용을 바꾸려면 Write 로 다시 만드세요.',
+    summary: 이어(세말('lines', 만듦.문단수), 만듦.표몇개 ? `표 ${만듦.표몇개}개는 글로` : ''),
+    changed: abs,
+  };
+}
+
 function 한파일쓰기(args, ctx) {
   const abs = ctx.scope.resolve(args.file_path);
     if (typeof args.content !== 'string') return { error: 'content 가 문자열이 아닙니다' };
@@ -834,6 +868,16 @@ function 한파일쓰기(args, ctx) {
     // 엑셀 파일을 통째로 덮어쓰면 xlsx 가 아니라 그냥 글 파일이 된다.
     // 열리지도 않는 파일이 되고, 원본은 이미 없다. 아예 막는다.
     if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
+    /*
+     * ── hwpx 는 **새로 만드는 것만** 된다 (tools/hwpxwrite.js) ──────────
+     *
+     * 고치기를 막는 까닭은 「글로 왕복시키면 반드시 뭔가 잃는데, 잃은 채로
+     * 저장된 문서는 겉보기에 멀쩡해서 알아차렸을 때는 원본이 없다」 였다.
+     * 새로 만드는 자리에는 **잃을 원본이 없다.** 그래서 여기만 연다.
+     *
+     * 있는 파일이면 그대로 아래 거절로 내려간다 — 덮어쓰기는 여전히 안 된다.
+     */
+    if (isHwpxPath(abs) && !existsSync(abs)) return hwpx새로만들기(args, ctx, abs);
     // 문서(hwpx·docx·pptx)도 같은 이유로 또렷하게 거절한다. 일반 '바이너리'
     // 오류로 넘기면 왜 안 되는지가 안 실려서, 모델이 우회로를 찾는다.
     if (isDocPath(abs)) return { error: 문서는못고침(args.file_path) };
@@ -1289,7 +1333,17 @@ export const TOOLS = {
       description: '파일을 새로 쓰거나 통째로 덮어쓴다. 일부만 고칠 때는 Edit 을 쓴다.'
         + ' **여러 파일을 한 번에 만들 수 있다** — files 에 배열로 넣으면 된다.'
         + ' 폴더 구조를 처음 잡을 때는 그렇게 해라. 한 개씩 부르면 파일 수만큼 모델을'
-        + ' 다시 불러야 해서, 여덟 개짜리 뼈대에 몇 분이 그냥 간다.',
+        + ' 다시 불러야 해서, 여덟 개짜리 뼈대에 몇 분이 그냥 간다.'
+        /*
+         * hwpx 를 여기 적는 까닭.
+         *
+         * 안 적으면 모델은 이 길이 있는 줄 모른다. 사람이 「한글로 줘」 라고
+         * 해도 md 를 만들고 「한글에서 열면 됩니다」 라고 답한다 — 실제로
+         * 그랬다. 도구 목록에 없는 기능은 없는 기능이다.
+         */
+        + ' 이름을 `.hwpx` 로 끝내면 **한글 문서로 만든다** (제목 #·##·### 과 글머리표를 옮긴다).'
+        + ' 사내에 낼 보고서·회의록을 달라고 하면 그렇게 해라. 단 **새로 만들 때만** 되고,'
+        + ' 이미 있는 문서는 못 고친다.',
       parameters: {
         type: 'object',
         properties: {

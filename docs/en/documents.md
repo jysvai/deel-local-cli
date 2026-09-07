@@ -71,6 +71,37 @@ text always loses something. Old-style `.hwp` (OLE) cannot be read directly — 
 the way out (save it as hwpx in Hancom Office) and, if this machine has LibreOffice, borrows
 it to read the file anyway (below).
 
+### Korean documents — creating a new one does work
+
+Editing and creating are different jobs. Editing touches **someone else's formatting**, so
+there is something to lose; creating a file that did not exist has no original to lose. So
+`Write` on a `.hwpx` path **that does not exist yet produces a real hwpx file.**
+
+```
+› Write weekly-report.hwpx
+└ created: weekly-report.hwpx · 12 paragraphs
+    This document cannot be edited from here. To change it, write it again.
+```
+
+This exists because "write me the report" always ended the same way: the model emitted an
+`.md`, and a person pasted it into Hancom Office and redid the headings. Approvals go up as
+hwpx while the tool stopped at Markdown.
+
+The body is written as Markdown. `#`/`##`/`###` become Heading 1/2/3, `-` and `*` become
+bullets, and blocks separated by blank lines become one paragraph each. Continuation lines
+**join into a single paragraph**, the way they do in Hancom Office itself.
+
+**Tables are flattened to text.** An OWPML table nests a paragraph array inside every cell,
+and getting it slightly wrong makes the whole file refuse to open. A file whose tables are
+flat lines beats a file that opens nowhere.
+
+And one thing that could not be measured is stated plainly: **whether Hancom Office opens
+this file was not verified here.** The tests check that it is written to spec (OWPML) and
+that reading it back through deel's own reader returns the same text. There is no Hancom
+Office on this machine, so that last step is unmeasured — and it is not counted as green.
+
+Once written, an hwpx **cannot be edited.** To change it, write it again.
+
 ### Figma designs — `.fig` as structure and text
 
 Handing over a `.fig` with "build this" is a real, frequent thing. And the file
