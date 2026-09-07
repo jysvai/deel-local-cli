@@ -67,6 +67,31 @@ One server crashing, hanging, or talking nonsense does not affect the others. Fa
 swallowed — the reason appears in the header, because a silent drop leaves "why is that tool
 missing?" unanswerable.
 
+### Servers do not start on the second run
+
+Every configured server used to be launched at startup, because that was the only way to
+know what tools to hand the model. But that list **almost never changes** — your wiki
+search tool had the same tool names last month and will next month. Paying for that
+unchanging fact means launching four or five servers, two handshakes each, while the
+person watches an empty screen. Four servers is over two seconds, every single time you
+type `deel`.
+
+The list is now written to `.deel/mcp-tools.json`, and a server starts **when one of its
+tools is actually called.** `/mcp` distinguishes ● running · ◐ waiting · ○ dead —
+collapsing "waiting" into "dead" sends people to fix a problem that does not exist.
+
+Three things keep the written list from drifting away from reality:
+
+| | |
+|---|---|
+| **A different fingerprint is not used** | One changed character in the command, args, cwd, or env makes it a different server. Editing your config and wondering why nothing changed does not happen |
+| **A week old is not used** | Some servers do grow new tools, and a server that never starts never reveals that |
+| **It is checked against the real list** | On a mismatch the file is corrected on the spot, and if the tool that was just called is gone, **that is what you are told** — not a bare "unknown tool" |
+
+`DEEL_MCP_LAZY=off` turns it off. Somewhere there is a review that needs to see every
+server come up at startup, and if there is no way to ask for that, this feature becomes
+the obstacle.
+
 ---
 
 ## Named subagents

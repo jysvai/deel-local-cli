@@ -1281,12 +1281,30 @@ export async function handle(line, session, ctx) {
       }
 
       for (const s of 붙은것) {
-        const 상태 = s.살아있나() ? c.green('●') : c.red('○');
+        /*
+         * 세 가지 상태를 **갈라서** 적는다 (backend/mcp.js 의 지연 로딩).
+         *
+         *   ● 떠 있다      지금 프로세스가 돌고 있다
+         *   ◐ 대기         적어 둔 목록으로 서 있다 — 그 도구를 부르면 뜬다
+         *   ○ 죽었다       띄웠는데 안 됐거나 도중에 죽었다
+         *
+         * 대기를 죽음으로 뭉개면 사람은 없는 탈을 고치러 간다. 반대로 대기를
+         * 초록으로 적으면 「띄워 봤다」 는 말이 거짓이 된다.
+         */
+        const 상태 = s.살아있나() ? c.green('●') : (s.대기 ? c.yellow('◐') : c.red('○'));
         const 이름들 = s.도구.map((t) => t.name);
         say(`  ${상태} ${c.bold(s.이름)}  ${c.gray(s.정보?.name ? `${s.정보.name} ${s.정보.version ?? ''}` : s.설정.command)}`);
         say(`      ${c.gray('도구 ' + s.도구.length + '개')}  ${c.gray(clip(이름들.join(' · '), 60))}`);
+        if (s.대기) say(`      ${c.gray('아직 안 띄웠습니다 — 적어 둔 목록입니다. 이 도구를 부르면 그때 뜹니다.')}`);
         if (s.잘림) say(`      ${mark.warn} ${c.gray(`${s.잘림}개는 뺐습니다 — 한 서버에 ${도구최대}개까지만 받습니다(컨텍스트가 줄어듭니다)`)}`);
-        if (!s.살아있나()) say(`      ${c.red(s.죽음 ?? '죽었습니다')}`);
+        if (s.달라짐) {
+          const 것 = [
+            s.달라짐.늘어난것?.length ? `늘어남 ${s.달라짐.늘어난것.join(' ')}` : null,
+            s.달라짐.없어진것?.length ? `없어짐 ${s.달라짐.없어진것.join(' ')}` : null,
+          ].filter(Boolean).join(' · ');
+          say(`      ${mark.warn} ${c.gray(`띄워 보니 목록이 달랐습니다 — ${것}`)}`);
+        }
+        if (!s.살아있나() && !s.대기) say(`      ${c.red(s.죽음 ?? '죽었습니다')}`);
       }
       say('');
       say(`  ${c.gray('모델에게는')} ${c.white('mcp__<서버>__<도구>')} ${c.gray('라는 이름으로 보입니다.')}`);

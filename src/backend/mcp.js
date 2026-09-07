@@ -24,7 +24,8 @@
  *      제 마음대로 파일을 읽고 쓸 수 있다. /mcp 화면에서 그렇다고 말한다.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { VERSION } from '../version.js';
 
@@ -39,6 +40,78 @@ export const 도구최대 = 24;
 const 줄최대 = 4 * 1024 * 1024;
 
 export const 설정자리 = (root) => join(root, '.deel', 'mcp.json');
+
+/*
+ * ── 도구 목록을 적어 둔다 (지연 로딩) ─────────────────────────────────
+ *
+ * 여태는 켤 때 적힌 서버를 **전부** 띄웠다. 그래야 모델에게 넘길 도구 목록을
+ * 알 수 있으니까. 그런데 그 목록은 **거의 안 바뀐다.** 사내 위키 검색기의
+ * 도구 이름은 지난달에도 같았고 다음달에도 같을 것이다.
+ *
+ * 그 변하지 않는 것을 알자고 매번 서버 네다섯 대를 띄우고, 악수를 두 번씩
+ * 하고, 사람은 그동안 빈 화면을 본다. 서버 넷이면 2초가 넘고, 그건 `deel` 을
+ * 칠 때마다다.
+ *
+ * 그래서 목록을 적어 둔다. 다음부터는 **그 도구를 정말 부를 때** 띄운다.
+ *
+ * 적어 둔 것이 진짜와 어긋나는 자리를 세 겹으로 막는다.
+ *
+ *   1) **지문**이 다르면 안 쓴다. 명령·인자·폴더·환경이 한 글자라도 바뀌었으면
+ *      다른 서버다. 설정을 고치고 「왜 안 바뀌지」 를 겪는 일이 없어야 한다.
+ *   2) **일주일**이 지나면 안 쓴다. 도구가 늘어나는 서버도 있고, 영영 안 띄우면
+ *      그걸 영영 모른다. 늘어나지 않는 것을 전제로 깔면 안 된다.
+ *   3) 정말 띄운 뒤에 **맞춰 본다.** 다르면 그 자리에서 고쳐 적고, 부른 도구가
+ *      없어졌으면 그렇다고 말한다 — 「없는 도구」 로 뭉뚱그리지 않는다.
+ */
+export const 메모자리 = (root) => join(root, '.deel', 'mcp-tools.json');
+/** 적어 둔 목록을 이만큼 지나면 다시 띄워 확인한다. */
+export const 메모유효 = 7 * 24 * 60 * 60 * 1000;
+
+/** 이 서버가 「같은 서버」 인가를 가르는 값. */
+export function 지문(설정) {
+  const 재료 = JSON.stringify([
+    설정.command, 설정.args ?? [], 설정.cwd ?? '',
+    Object.entries(설정.env ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+  ]);
+  return createHash('sha256').update(재료).digest('hex').slice(0, 16);
+}
+
+/** 적어 둔 목록을 읽는다. 못 읽으면 빈 것으로 본다 — 그러면 그냥 띄운다. */
+export function 메모읽기(root) {
+  try {
+    const j = JSON.parse(readFileSync(메모자리(root), 'utf8'));
+    return j?.servers && typeof j.servers === 'object' ? j.servers : {};
+  } catch { return {}; }
+}
+
+/** 적어 둔다. 못 적어도 던지지 않는다 — 다음번에 다시 띄우면 그만이다. */
+export function 메모쓰기(root, 서버들) {
+  const servers = {};
+  for (const s of 서버들) {
+    if (!s.도구?.length) continue;   // 못 띄운 것은 안 적는다
+    servers[s.이름] = {
+      지문: 지문(s.설정),
+      적은때: Date.now(),
+      정보: s.정보 ?? null,
+      잘림: s.잘림 ?? 0,
+      도구: s.도구,
+    };
+  }
+  if (!Object.keys(servers).length) return false;
+  try {
+    mkdirSync(join(root, '.deel'), { recursive: true });
+    writeFileSync(메모자리(root), JSON.stringify({ version: 1, servers }, null, 2) + '\n', 'utf8');
+    return true;
+  } catch { return false; }
+}
+
+/** 이 설정에 쓸 수 있는 메모인가. 아니면 null — 부르는 쪽은 그러면 띄운다. */
+export function 쓸만한메모(메모, 설정, 이제 = Date.now()) {
+  if (!메모 || !Array.isArray(메모.도구) || !메모.도구.length) return null;
+  if (메모.지문 !== 지문(설정)) return null;
+  if (이제 - Number(메모.적은때 ?? 0) >= 메모유효) return null;
+  return 메모;
+}
 
 /**
  * 설정을 읽는다. Claude Code 의 `mcpServers` 모양을 그대로 받는다 —
@@ -122,9 +195,68 @@ export class MCP서버 {
     this.정보 = null;
     this.죽음 = null;      // 왜 죽었나 (사람에게 보여 줄 말)
     this.잘림 = 0;         // 도구최대 를 넘어 자른 개수
+    /*
+     * 적어 둔 목록으로 서 있는 상태 — 아직 안 띄웠다.
+     *
+     * `살아있나()` 와 갈라 둔다. 저건 「지금 프로세스가 떠 있나」 라는 사실이고
+     * 이건 「쓸 수 있나」 라는 판단이다. 하나로 뭉개면 화면이 대기 중인 서버를
+     * 「죽었다」 고 적게 되는데, 그건 사람을 없는 탈로 보낸다.
+     */
+    this.대기 = false;
+    /** 깨우는 중인 약속. 도구 둘을 한꺼번에 불러도 한 번만 띄우려는 것이다. */
+    this.깨우는중 = null;
+    /** 깨우고 나서 목록이 달라졌으면 그 사실. 화면이 이걸 말한다. */
+    this.달라짐 = null;
   }
 
   살아있나() { return !!this.kid && this.kid.exitCode === null && !this.죽음; }
+  /** 지금 도구를 부를 수 있나. 대기 중이면 부르는 순간 뜬다. */
+  쓸수있나() { return this.살아있나() || (this.대기 && !this.죽음); }
+
+  /**
+   * 적어 둔 목록으로 세워 둔다. **안 띄운다.**
+   *
+   * 여기서 하는 일은 「이 서버에 이런 도구가 있다고 지난번에 봤다」 를 들고
+   * 있는 것뿐이다. 진짜로 뜨는 것은 그 도구를 처음 부를 때다(깨우기).
+   */
+  메모로세우기(메모) {
+    this.도구 = 메모.도구 ?? [];
+    this.정보 = 메모.정보 ?? null;
+    this.잘림 = 메모.잘림 ?? 0;
+    this.대기 = true;
+    return this;
+  }
+
+  /**
+   * 대기 중이던 서버를 정말 띄운다.
+   *
+   * 띄운 뒤 목록을 **맞춰 본다.** 적어 둔 것과 다르면 그 사실을 들고 있다가
+   * 화면과 부르는 쪽이 말하게 한다 — 조용히 갈아 끼우면, 모델이 방금 부른
+   * 도구가 왜 없어졌는지 아무도 설명 못 한다.
+   */
+  async 깨우기({ timeout = 붙기제한 } = {}) {
+    if (this.살아있나()) return true;
+    if (this.죽음) return false;
+    if (this.깨우는중) return this.깨우는중;
+    const 적어둔것 = this.도구.map((t) => t.name).join(' ');
+    this.깨우는중 = (async () => {
+      // 죽음 은 붙기() 가 실패하며 남긴다. 다시 붙으려면 지워 두고 시작한다.
+      this.죽음 = null;
+      const ok = await this.붙기({ timeout });
+      this.대기 = false;
+      this.깨우는중 = null;
+      if (!ok) return false;
+      const 지금것 = this.도구.map((t) => t.name).join(' ');
+      if (적어둔것 && 지금것 !== 적어둔것) {
+        this.달라짐 = {
+          늘어난것: this.도구.map((t) => t.name).filter((n) => !적어둔것.split(' ').includes(n)),
+          없어진것: 적어둔것.split(' ').filter((n) => !this.도구.some((t) => t.name === n)),
+        };
+      }
+      return true;
+    })();
+    return this.깨우는중;
+  }
 
   async 붙기({ timeout = 붙기제한 } = {}) {
     try {
@@ -262,6 +394,27 @@ export class MCP서버 {
   }
 
   async 부르기(도구이름, args, { timeout = 부르기제한, signal = null } = {}) {
+    /*
+     * 대기 중이면 **여기서** 띄운다. 이게 지연 로딩의 전부다.
+     *
+     * 첫 부름 하나만 붙는 시간을 치르고, 그 뒤로는 여느 때와 똑같다. 켤 때
+     * 다 띄우던 값을 「그 도구를 실제로 쓰는 사람」 에게만 물리는 셈이다.
+     */
+    if (this.대기) {
+      const ok = await this.깨우기();
+      if (!ok) throw new Error(this.죽음 ?? '띄우지 못했습니다');
+      /*
+       * 띄우고 보니 그 도구가 없어졌으면 **그렇다고 말한다.**
+       *
+       * 여기서 그냥 tools/call 을 보내면 서버가 뭐라고 답할지는 서버 마음이고,
+       * 대개는 「unknown tool」 한 줄이다. 그 줄로는 우리가 옛 목록을 들고
+       * 있었다는 사실을 아무도 못 읽는다.
+       */
+      if (!this.도구.some((t) => t.name === 도구이름)) {
+        throw new Error(`${this.이름} 서버에 ${도구이름} 이 더는 없습니다`
+          + ` — 적어 둔 목록이 옛것이었습니다. 지금 있는 것: ${this.도구.map((t) => t.name).join(' · ') || '(없음)'}`);
+      }
+    }
     const r = await this.보내고기다리기('tools/call', { name: 도구이름, arguments: args ?? {} }, timeout, signal);
     // 규격상 결과는 content 배열이다. 글만 뽑아 모델에게 넘긴다.
     const 조각 = Array.isArray(r?.content) ? r.content : [];
@@ -336,7 +489,7 @@ export function 이름풀기(전체) {
  * 안 뜬 것은 **안 떴다고 말한다.** 조용히 빠지면 "왜 그 도구가 없지" 를
  * 영영 알 수 없다.
  */
-export async function 다붙이기(root, { offline = false, timeout = 붙기제한, audit = null } = {}) {
+export async function 다붙이기(root, { offline = false, timeout = 붙기제한, audit = null, env = process.env } = {}) {
   const 설정 = 설정읽기(root);
   if (설정.오류) return { 서버들: [], 못한것: [{ 이름: '(설정)', 왜: 설정.오류 }], 설정 };
   if (!설정.서버들.length) return { 서버들: [], 못한것: [], 설정 };
@@ -352,12 +505,34 @@ export async function 다붙이기(root, { offline = false, timeout = 붙기제�
     };
   }
 
+  /*
+   * ── 적어 둔 목록이 있으면 안 띄운다 ─────────────────────────────────
+   *
+   * 지문과 나이를 본 다음, 쓸 만하면 그 목록으로 세워 두기만 한다. 그 서버는
+   * 제 도구가 처음 불릴 때 뜬다(MCP서버.깨우기).
+   *
+   * 끄는 길을 둔다 — `DEEL_MCP_LAZY=off`. 사내에서 「켤 때 다 뜨는지」 를
+   * 확인해야 하는 자리가 있고, 그때 끌 방법이 없으면 이 기능이 곧 걸림돌이
+   * 된다. 그리고 무엇이 대기 중인지는 /mcp 가 말한다 — 안 말하면 사람은
+   * 서버가 안 떴다고 여긴다.
+   */
+  const 게으르게 = String(env.DEEL_MCP_LAZY ?? '').trim().toLowerCase() !== 'off';
+  const 메모들 = 게으르게 ? 메모읽기(root) : {};
+
   const 붙은것 = [];
   const 못한것 = [];
+  let 새로띄운게있나 = false;
   await Promise.all(설정.서버들.map(async (s) => {
     const 서버 = new MCP서버(s);
+    const 메모 = 쓸만한메모(메모들[s.이름], s);
+    if (메모) {
+      붙은것.push(서버.메모로세우기(메모));
+      audit?.write?.('mcp', { 이름: s.이름, command: s.command, 도구: 서버.도구.length, 대기: true });
+      return;
+    }
     const ok = await 서버.붙기({ timeout });
     if (ok) {
+      새로띄운게있나 = true;
       붙은것.push(서버);
       audit?.write?.('mcp', { 이름: s.이름, command: s.command, 도구: 서버.도구.length });
     } else {
@@ -366,7 +541,15 @@ export async function 다붙이기(root, { offline = false, timeout = 붙기제�
     }
   }));
   붙은것.sort((a, b) => a.이름.localeCompare(b.이름));
-  return { 서버들: 붙은것, 못한것, 설정 };
+  /*
+   * 이번에 정말 띄운 것이 하나라도 있으면 적어 둔다.
+   *
+   * 대기 중인 것은 이미 적혀 있던 그대로라 다시 안 적는다 — 그러면 적은때가
+   * 매번 새로 찍혀서 「일주일이면 다시 확인한다」 가 영영 안 온다. 그건 세 겹
+   * 그물 중 하나를 우리 손으로 걷는 것이다.
+   */
+  if (게으르게 && 새로띄운게있나) 메모쓰기(root, 붙은것.filter((s) => !s.대기));
+  return { 서버들: 붙은것, 못한것, 설정, 게으르게 };
 }
 
 /** 모델에게 넘길 도구 정의로 바꾼다. */

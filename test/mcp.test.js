@@ -11,11 +11,12 @@
 //      — 자식 프로세스가 어디로 나가는지 우리는 못 막는다
 //   4) 우리 환경변수(게이트웨이 열쇠)를 안 넘기는가
 //   5) 도구가 우리 것과 안 섞이는가
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  설정읽기, 다붙이기, 이름풀기, 도구정의, 도구최대, 살아있는수, 모두닫기, 깨끗한환경 } from '../src/backend/mcp.js';
+  설정읽기, 다붙이기, 이름풀기, 도구정의, 도구최대, 살아있는수, 모두닫기, 깨끗한환경,
+  메모자리, 메모읽기, 메모유효, 지문, 쓸만한메모 } from '../src/backend/mcp.js';
 import { VERSION } from '../src/version.js';
 import { toolSchemas, runTool } from '../src/tools/index.js';
 import { Audit } from '../src/safety/audit.js';
@@ -400,6 +401,125 @@ trace('8-끝');
   }
 }
 
+
+// ══ 지연 로딩 — 적어 둔 목록으로 서 있다가 부를 때 뜬다 ═══════════════
+trace('9-지연로딩');
+{
+  /*
+   * 이 기능은 **안 뜬 것**을 재야 한다. 그런데 「안 떴다」 는 눈에 안 보인다 —
+   * 도구 목록은 그대로 있고 화면도 같다. 그래서 살아있는수() 로 잰다. 그게
+   * 지금 이 프로세스가 실제로 붙들고 있는 자식 수다.
+   */
+  모두닫기();
+  try { rmSync(메모자리(root)); } catch { /* 없으면 됐다 */ }
+  설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
+
+  // 첫 판은 적어 둔 것이 없으니 그냥 띄운다. 그리고 적어 둔다.
+  const 첫판 = await 다붙이기(root, { timeout: 2500 });
+  check('처음에는 띄운다', 살아있는수() === 1, String(살아있는수()));
+  check('★★ 그리고 도구 목록을 적어 둔다', existsSync(메모자리(root)), 메모자리(root));
+  const 적힌것 = 메모읽기(root);
+  check('  적은 것에 도구가 들어 있다', 적힌것['사내위키']?.도구?.length === 2,
+    String(적힌것['사내위키']?.도구?.length));
+  모두닫기();
+
+  // 두 번째 판. 여기가 이 기능의 전부다 — **안 띄운다.**
+  const 둘째 = await 다붙이기(root, { timeout: 2500 });
+  check('★★ 두 번째부터는 안 띄운다', 살아있는수() === 0, String(살아있는수()));
+  const s = 둘째.서버들[0];
+  check('★★ 그래도 도구 목록은 있다', s.도구.length === 2, String(s.도구.length));
+  check('★ 대기 중이라고 안다', s.대기 === true && s.살아있나() === false, '');
+  /*
+   * 「떠 있나」 와 「쓸 수 있나」 는 다른 말이다. 하나로 뭉개면 화면이 대기
+   * 중인 서버를 「죽었다」 고 적고, 사람은 없는 탈을 고치러 간다.
+   */
+  check('★★ 그래도 쓸 수 있다고 안다', s.쓸수있나() === true, '');
+  check('★ 도구 정의도 그대로 나온다',
+    도구정의(둘째.서버들)[0]?.function?.name === 'mcp__사내위키__위키검색', '');
+
+  // 부르는 순간 뜬다. 결과는 처음 판과 똑같아야 한다 — 사람 눈에 달라지면 안 된다.
+  const out = await s.부르기('위키검색', { q: '휴가' });
+  check('★★ 도구를 부르면 그때 뜬다', 살아있는수() === 1, String(살아있는수()));
+  check('★★ 결과는 여느 때와 같다', out.text.startsWith('찾은 것: 휴가'), out.text);
+  check('  이제는 대기가 아니다', s.대기 === false && s.살아있나() === true, '');
+  모두닫기();
+}
+
+trace('10-메모가-어긋날때');
+{
+  /*
+   * 적어 둔 것이 진짜와 어긋나는 자리를 세 겹으로 막는다. 그 세 겹을 잰다.
+   */
+  const 설정 = { 이름: 'x', command: 'node', args: ['a.mjs'], cwd: '/w', env: null };
+
+  // 1) 지문 — 명령이 한 글자라도 바뀌면 다른 서버다.
+  const 메모 = { 지문: 지문(설정), 적은때: Date.now(), 도구: [{ name: 'a' }] };
+  check('★★ 지문이 같으면 쓴다', !!쓸만한메모(메모, 설정), '');
+  check('★★ 인자가 바뀌면 안 쓴다', !쓸만한메모(메모, { ...설정, args: ['b.mjs'] }), '');
+  check('★ 폴더가 바뀌어도 안 쓴다', !쓸만한메모(메모, { ...설정, cwd: '/other' }), '');
+  check('★ 환경이 바뀌어도 안 쓴다', !쓸만한메모(메모, { ...설정, env: { A: '1' } }), '');
+
+  /*
+   * 2) 나이 — 도구가 늘어나는 서버도 있고, 영영 안 띄우면 그걸 영영 모른다.
+   *    늘어나지 않는 것을 전제로 깔면 안 된다.
+   */
+  check('★★ 일주일이 지나면 안 쓴다',
+    !쓸만한메모({ ...메모, 적은때: Date.now() - 메모유효 - 1 }, 설정), '');
+  check('  그 안이면 쓴다', !!쓸만한메모({ ...메모, 적은때: Date.now() - 1000 }, 설정), '');
+
+  check('빈 목록은 안 쓴다', !쓸만한메모({ ...메모, 도구: [] }, 설정), '');
+  check('메모가 아예 없으면 안 쓴다', !쓸만한메모(null, 설정), '');
+}
+
+trace('11-메모가-옛것일때');
+{
+  /*
+   * 3) 정말 띄운 뒤에 **맞춰 본다.**
+   *
+   * 적어 둔 목록에 있던 도구가 없어졌는데 그냥 tools/call 을 보내면, 서버가
+   * 뭐라 답할지는 서버 마음이고 대개 「unknown tool」 한 줄이다. 그 줄로는
+   * 우리가 옛 목록을 들고 있었다는 사실을 아무도 못 읽는다.
+   */
+  모두닫기();
+  설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
+  // 있지도 않은 도구를 적어 둔 것처럼 꾸민다.
+  writeFileSync(메모자리(root), JSON.stringify({
+    version: 1,
+    servers: {
+      사내위키: {
+        지문: 지문({ ...서버설정(), 이름: '사내위키', cwd: root }),
+        적은때: Date.now(),
+        도구: [{ name: '없어진도구', description: '옛것' }],
+      },
+    },
+  }), 'utf8');
+
+  const r = await 다붙이기(root, { timeout: 2500 });
+  const s = r.서버들[0];
+  check('옛 목록으로 서 있다', s.대기 === true && s.도구[0]?.name === '없어진도구', '');
+  let 탈 = null;
+  try { await s.부르기('없어진도구', {}); } catch (e) { 탈 = e; }
+  check('★★ 없어진 도구는 없어졌다고 말한다', /더는 없습니다/.test(탈?.message ?? ''), 탈?.message ?? '(안 던짐)');
+  check('★ 지금 있는 것을 알려 준다', /위키검색/.test(탈?.message ?? ''), 탈?.message ?? '');
+  check('★★ 그리고 목록을 고쳐 든다', s.도구.some((t) => t.name === '위키검색'), s.도구.map((t) => t.name).join(' '));
+  check('★ 무엇이 달라졌는지 들고 있다',
+    s.달라짐?.없어진것?.includes('없어진도구'), JSON.stringify(s.달라짐));
+  모두닫기();
+}
+
+trace('12-끄기');
+{
+  /*
+   * 끄는 길이 있어야 한다. 사내에서 「켤 때 다 뜨는지」 를 확인해야 하는
+   * 자리가 있고, 그때 끌 방법이 없으면 이 기능이 곧 걸림돌이 된다.
+   */
+  모두닫기();
+  설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
+  const r = await 다붙이기(root, { timeout: 2500, env: { DEEL_MCP_LAZY: 'off' } });
+  check('★★ DEEL_MCP_LAZY=off 면 여느 때처럼 띄운다', 살아있는수() === 1, String(살아있는수()));
+  check('  대기가 아니다', r.서버들[0]?.대기 === false, '');
+  모두닫기();
+}
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n밖에서 붙인 도구(MCP) 검사  ${D}(진짜 자식 프로세스를 띄워서)${X}\n`);
