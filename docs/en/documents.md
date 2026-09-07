@@ -71,6 +71,66 @@ text always loses something. Old-style `.hwp` (OLE) cannot be read directly — 
 the way out (save it as hwpx in Hancom Office) and, if this machine has LibreOffice, borrows
 it to read the file anyway (below).
 
+### Figma designs — `.fig` as structure and text
+
+Handing over a `.fig` with "build this" is a real, frequent thing. And the file
+ended right here — "binary file, cannot be read." So a person screenshotted the
+screen, or copied the strings across one at a time.
+
+What is inside is not only pictures. **Frame names, text, sizes and stacking
+order** are all there as characters. That under a frame called "Login" there are
+text boxes reading "Email" and "Password", and that it is 375 wide — that is most
+of what you need in order to write the code.
+
+```
+◧ Read(login.fig)
+  └ fig · 2 pages · 148 nodes
+
+## Login
+
+- FRAME · Login screen 375×812
+  - TEXT · Title "Welcome back"
+  - FRAME · Field 335×48
+    - TEXT · Label "Email"
+  - RECTANGLE · Underline (hidden)
+```
+
+`deel doc2md login.fig` turns it into Markdown, one `## page name` per page.
+There is no writing — a design round-tripped through text is no longer a design.
+
+**Nothing new was pulled in here either.** A `.fig` is a zip, and the
+`canvas.fig` inside it is a format called Kiwi. Normally a binary format like
+this means fetching a schema from somewhere else, and then every release makes
+the copy you hold a little more wrong — and reading with a stale schema returns
+**quietly incorrect values.** That is the worst kind of failure.
+
+Kiwi is different. **The first chunk of the file is how to read that file** —
+definition names, field names, field ids, all of it. So we hold no table of our
+own, nothing can go stale, and if Figma adds a field tomorrow the file says so
+itself.
+
+Three things it holds to.
+
+- **It states what it does not produce** — no colours, shadows or fonts. You must
+  not answer as though you had seen those.
+- **On an unknown field id it stops.** Kiwi records no lengths, so an unknown
+  field cannot be skipped. Guessing onward makes everything after it fiction — and
+  a design that is half right is worse than one that is wrong.
+- **Someone else's number does not decide our memory.** An array count larger
+  than the bytes remaining is false without reading a byte of it.
+
+Recent `.fig` files are compressed with zstd. Node only shipped zstd in **22.15**
+and this program's floor is Node 20, so on a lower version it cannot be unpacked.
+When that happens it does not say "corrupt file" — the file is fine and this Node
+cannot unpack it, and those two call for completely different actions.
+
+```
+zstd-compressed .fig. This Node has no zstd (currently v20.11.0 — it arrived in
+Node 22.15).
+  The file is not corrupt — it just cannot be unpacked here.
+  Fix: move to Node 22.15 or newer and it reads as it is.
+```
+
 ### `deel doc2md` — a document as one Markdown file
 
 Same readers, different **shape on the way out**. Tables become real Markdown tables
@@ -87,7 +147,7 @@ table a model simply knows that the first row is the header and the third cell i
 From lines glued together it has to guess that again every time, and one empty cell throws
 the guess off from there on. For the same bytes, Markdown carries more.
 
-It covers the five formats deel reads itself — `hwpx` · `docx` · `pptx` · `xlsx` · `pdf`.
+It covers the six formats deel reads itself — `hwpx` · `docx` · `pptx` · `xlsx` · `pdf` · `fig`.
 Nothing new is pulled in. Old formats (`.ppt`, `.doc`, `.xls`, `.hwp`) go the same route
 `Read` already takes: borrowed from LibreOffice if this machine has it.
 

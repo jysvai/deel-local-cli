@@ -27,6 +27,7 @@ import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOl
 import { 바꿔볼까, 직접못읽나, 변환기찾기, 글로바꾸기, 못바꿈말 } from './convert.js';
 import { 물음검사 } from '../agent/askcheck.js';
 import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽은말, pdf는못고침, 한쪽도못읽음말 } from './pdf.js';
+import { isFigPath, readFig, summarize as figSummary, fig는못고침 } from './fig.js';
 import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이, 한번에낼글자수 } from '../agent/budget.js';
 import { 도구설명EN } from './desc.en.js';
@@ -539,6 +540,29 @@ async function 빌려읽기(abs, ctx, 원래오류) {
   };
 }
 
+/**
+ * Figma 시안을 글로 읽어 돌려준다.
+ *
+ * 문서·PDF 와 같은 규칙이다. 다른 점은 **무엇을 안 냈는지 먼저 말한다**는
+ * 것 — 색도 그림자도 안 나오므로, 그것까지 다 봤다고 여기고 답하면 안 된다.
+ */
+function fig읽기(abs, ctx) {
+  const r = readFig(abs);
+  if (!r.ok) return { error: r.error, ...(r.끝났다 ? { 끝났다: true } : {}) };
+  const { text, 잘림 } = docText(r.덩이들);
+  return {
+    content: clip(
+      `${text}
+
+(.fig 시안을 짜임과 글로 바꿔서 보여준 것입니다. 그림·색·글꼴은 안 나옵니다.
+ 이 파일은 Edit/Write 로 고칠 수 없습니다.)`
+      + ([...(r.말 ?? []), ...잘림].length ? `\n(${[...(r.말 ?? []), ...잘림].join(' · ')})` : ''),
+      실을만큼(ctx),
+    ),
+    summary: figSummary(r) + (잘림.length ? ' · 일부만' : ''),
+  };
+}
+
 async function 문서읽기(abs, ctx) {
   const r = readDoc(abs);
   if (!r.ok) {
@@ -812,6 +836,7 @@ function 한파일쓰기(args, ctx) {
     // 오류로 넘기면 왜 안 되는지가 안 실려서, 모델이 우회로를 찾는다.
     if (isDocPath(abs)) return { error: 문서는못고침(args.file_path) };
     if (isPdfPath(abs)) return { error: pdf는못고침(args.file_path) };
+    if (isFigPath(abs)) return { error: fig는못고침(args.file_path) };
     // 엑셀만 막아서는 모자란다. hwp·pdf·png·zip 도 똑같이 그 순간 끝난다.
     // 게다가 이런 파일은 되돌리기가 내용을 떠 놓지 못하는 종류라 되살릴 길이 없다.
     // 확장자로 고르지 않고 실제 내용으로 본다 — 사내 파일은 확장자가 제각각이다.
@@ -945,6 +970,7 @@ function 한군데고치기(args, ctx) {
   if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
   if (isDocPath(abs)) return { error: 문서는못고침(args.file_path) };
   if (isPdfPath(abs)) return { error: pdf는못고침(args.file_path) };
+  if (isFigPath(abs)) return { error: fig는못고침(args.file_path) };
   if (!ctx.seen.has(abs)) return { error: `먼저 Read 로 읽어야 합니다: ${args.file_path}` };
   if (args.old_string === args.new_string) return { error: 'old_string 과 new_string 이 같습니다' };
   // 새로 넣을 글에만 본다. old_string 쪽은 **찾는 말**이라 표가 들어 있어도
@@ -1149,6 +1175,8 @@ export const TOOLS = {
       if (isDocPath(abs)) return 문서읽기(abs, ctx);
       // PDF 도 같다. 속은 사전+흐름이라 zlib 만으로 쪽마다 글을 꺼낸다 (pdf.js).
       if (isPdfPath(abs)) return pdf읽기(abs, ctx);
+      // Figma 시안도 같다. 속이 zip + Kiwi 라 이름·글·크기를 꺼낸다 (fig.js).
+      if (isFigPath(abs)) return fig읽기(abs, ctx);
       /*
        * 구형 hwp 는 '바이너리' 로 끝내지 않는다. 그 오류에는 길이 없어서
        * 모델이 우회로(새로 쓰기)를 찾는다 — 실제로 그렇게 원본이 죽은 적이

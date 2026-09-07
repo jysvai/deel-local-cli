@@ -3,9 +3,9 @@
  *
  * ── 왜 글이 아니라 마크다운인가 ─────────────────────────────────────────
  *
- * deel 은 이미 hwpx·docx·pptx·xlsx·pdf 를 제 손으로 읽는다(docs.js · xlsx.js ·
- * pdf.js). 다만 돌려주던 것이 **평평한 글**이었다. 표는 `이름 | 값 | 비고`
- * 한 줄로 펴져 나갔고, 장 구분은 `--- 3장 ---` 이었다.
+ * deel 은 이미 hwpx·docx·pptx·xlsx·pdf 와 Figma `.fig` 를 제 손으로 읽는다
+ * (docs.js · xlsx.js · pdf.js · fig.js). 다만 돌려주던 것이 **평평한 글**이었다.
+ * 표는 `이름 | 값 | 비고` 한 줄로 펴져 나갔고, 장 구분은 `--- 3장 ---` 이었다.
  *
  * 그게 왜 손해인가 — 읽는 쪽이 사람이 아니라 모델이기 때문이다. 마크다운
  * 표는 모델이 「첫 줄이 머리글이고 셋째 칸이 비고」 라는 것을 그냥 안다.
@@ -16,7 +16,7 @@
  *
  * ── 무엇을 새로 들이지 않나 ─────────────────────────────────────────────
  *
- * 아무것도. 읽는 일은 이미 있는 세 읽개가 그대로 하고, 이 파일은 그것이
+ * 아무것도. 읽는 일은 이미 있는 읽개들이 그대로 하고, 이 파일은 그것이
  * 돌려준 것을 **그리기만** 한다. 의존성 0개는 그대로다.
  *
  * ── 표를 언제 표로 안 그리나 ────────────────────────────────────────────
@@ -29,6 +29,7 @@ import { basename, extname } from 'node:path';
 
 import { isDocPath, readDoc, summarize as docSummary } from './docs.js';
 import { isPdfPath, readPdf, summarize as pdfSummary } from './pdf.js';
+import { isFigPath, readFig, summarize as figSummary } from './fig.js';
 import { readXlsx, toCsv } from './xlsx.js';
 import { readFileSync } from 'node:fs';
 
@@ -38,11 +39,11 @@ const 엑셀 = new Set(['.xlsx', '.xlsm']);
 /** 이 길로 마크다운을 만들 수 있는 파일인가. */
 export function 바꿀수있나(경로) {
   const p = String(경로 ?? '');
-  return isDocPath(p) || isPdfPath(p) || 엑셀.has(extname(p).toLowerCase());
+  return isDocPath(p) || isPdfPath(p) || isFigPath(p) || 엑셀.has(extname(p).toLowerCase());
 }
 
 /** 우리가 직접 읽는 갈래 목록 — 화면과 도움말이 같은 곳에서 가져간다. */
-export const 읽는갈래 = ['hwpx', 'docx', 'pptx', 'xlsx', 'pdf'];
+export const 읽는갈래 = ['hwpx', 'docx', 'pptx', 'xlsx', 'pdf', 'fig'];
 
 // 다 실어 봐야 창만 찬다. 글로 낼 때와 같은 상한을 쓴다(docs.js · pdf.js).
 const 최대글자 = 60000;
@@ -90,7 +91,7 @@ export function 표그리기(행들) {
  * 글자 수를 세면서 조각을 담는 자. 넘치면 **넘쳤다고 말하고** 멈춘다.
  *
  * 조용히 자르면 모델은 그게 전부인 줄 알고 "문서에 그런 내용 없다" 고 답한다.
- * 이 파일이 세 읽개에서 그대로 물려받는 규칙이다.
+ * 이 파일이 읽개들에서 그대로 물려받는 규칙이다.
  */
 function 담개(maxChars) {
   const 조각 = [];
@@ -177,6 +178,49 @@ function 엑셀을마크다운(경로, maxChars) {
   return { ok: true, 갈래: 'xlsx', md, 말: [...말, ...(r.notes ?? [])], summary: 시트말 };
 }
 
+/**
+ * Figma 시안을 마크다운으로.
+ *
+ * 쪽마다 `## 쪽이름` 이 되고, 그 밑이 그대로 마크다운 목록이 된다 — 시안의
+ * 짜임이 곧 목록의 들여쓰기라, 옮겨 그릴 것이 없다.
+ */
+function fig를마크다운(경로, maxChars) {
+  const r = readFig(경로);
+  if (!r.ok) return { ok: false, error: r.error, 끝났다: r.끝났다 };
+
+  const 담 = 담개(maxChars);
+  담.담기(제목(경로));
+  for (const d of r.덩이들) {
+    if (!담.담기(`## ${d.이름}`)) break;
+    /*
+     * 나무 줄은 **붙여서** 한 덩이로 낸다.
+     *
+     * 여기만 다른 읽개와 다르다. 문서의 문단은 사이가 벌어져야 문단인데,
+     * 목록은 사이가 벌어지면 들여쓰기가 뜻을 잃는다. 그렇다고 쪽 하나를
+     * 통째로 한 덩이로 만들면, 넘칠 때 그 쪽이 통째로 사라진다 — 조용히
+     * 빠진 자리를 안 만드는 것이 이 파일의 규칙이라 그럴 수는 없다.
+     * 그래서 8천 자쯤에서 끊는다. 자를 자리가 줄 단위로 남는다.
+     */
+    let 뭉치 = [];
+    let 셈 = 0;
+    const 비우기 = () => {
+      if (!뭉치.length) return true;
+      const 글 = 뭉치.join('\n');
+      뭉치 = [];
+      셈 = 0;
+      return 담.담기(글);
+    };
+    for (const 줄 of d.문단들 ?? []) {
+      뭉치.push(String(줄));
+      셈 += String(줄).length + 1;
+      if (셈 >= 8000 && !비우기()) break;
+    }
+    if (!비우기()) break;
+  }
+  const { md, 말 } = 담.끝내기();
+  return { ok: true, 갈래: 'fig', md, 말: [...(r.말 ?? []), ...말], summary: figSummary(r) };
+}
+
 function pdf를마크다운(경로, maxChars) {
   const r = readPdf(경로);
   if (!r.ok) return { ok: false, error: r.error, 끝났다: r.끝났다 };
@@ -202,7 +246,7 @@ function pdf를마크다운(경로, maxChars) {
  * 문서 하나를 마크다운으로.
  *
  * 던지지 않는다. 깨진 파일은 도구 실행 한가운데서 만나는 것이라, 예외가 나면
- * 「문서가 깨졌다」 가 「도구가 터졌다」 로 보고된다 — 세 읽개가 다 지키는 규칙이다.
+ * 「문서가 깨졌다」 가 「도구가 터졌다」 로 보고된다 — 읽개들이 다 지키는 규칙이다.
  *
  * @returns {{ok:true, 갈래:string, md:string, 말:string[], summary:string}
  *          |{ok:false, error:string, 끝났다?:boolean}}
@@ -211,6 +255,7 @@ export function 마크다운(경로, { maxChars = 최대글자 } = {}) {
   const p = String(경로 ?? '');
   if (엑셀.has(extname(p).toLowerCase())) return 엑셀을마크다운(p, maxChars);
   if (isPdfPath(p)) return pdf를마크다운(p, maxChars);
+  if (isFigPath(p)) return fig를마크다운(p, maxChars);
   if (isDocPath(p)) return 문서를마크다운(p, maxChars);
   return {
     ok: false,
