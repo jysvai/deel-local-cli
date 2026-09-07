@@ -12,6 +12,7 @@
 //   여기서 루프를 다시 짜면 두 벌이 되고, 언젠가 한쪽만 고쳐진다.
 import { c, mark, clip } from './ui/ansi.js';
 import { 규칙모으기, 정책읽기 } from './safety/policy.js';
+import { 프로젝트설정줄들 } from './safety/trust.js';
 import { 받기설정 } from './safety/authcmd.js';
 import { run } from './agent/loop.js';
 import { Session } from './agent/session.js';
@@ -19,7 +20,7 @@ import { makeScope } from './safety/guard.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
 import { Audit, 열쇠묻기 } from './safety/audit.js';
-import { activeProfile, load, resolveKey, 잠금소식, 열쇠탈소식 } from './config.js';
+import { activeProfile, load, resolveKey, 잠금소식, 열쇠탈소식, 프로젝트설정소식 } from './config.js';
 import { 말 as 옮긴말 } from './i18n/index.js';
 import { 알림채움 } from './backend/retry.js';
 import { 전선붙이기, 세션이름짓기 } from './backend/wire.js';
@@ -175,6 +176,18 @@ export async function runOnce(opts = {}) {
   // 배치로 부르는 쪽이 stdout 을 JSON 으로 읽고 있을 수 있다.
   const 잠금 = 잠금소식();
   if (잠금) { try { process.stderr.write(`  ${잠금}\n`); } catch { /* 못 써도 그만 */ } }
+
+  /*
+   * 프로젝트 설정을 안 읽었거나 일부를 걷어냈으면 표준오류로 낸다.
+   *
+   * 배치 자리라 더 중요하다 — 사람이 앞에 없으면 「내가 적어 둔 설정이
+   * 안 먹고 있다」 를 알아챌 다른 길이 없다. 표준출력은 JSON 을 읽는
+   * 쪽이 쓰고 있으므로 여기도 섞지 않는다.
+   */
+  for (const 줄 of 프로젝트설정줄들(프로젝트설정소식())) {
+    if (!줄) continue;
+    try { process.stderr.write(줄 + String.fromCharCode(10)); } catch { /* 못 써도 그만 */ }
+  }
 
   const root = opts.root ? String(opts.root) : process.cwd();
   const conn = {

@@ -1,4 +1,5 @@
-// 연결 프로필 저장/읽기.  ~/.deel/config.json  (프로젝트 폴더의 .deel/config.json 이 우선)
+// 연결 프로필 저장/읽기.  ~/.deel/config.json 위에 프로젝트의 .deel/config.json 을 겹친다
+// (믿는 폴더일 때만 — safety/trust.js).
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
@@ -7,6 +8,7 @@ import { 셸정하기 } from './tools/shell.js';
 import { 애저정하기 } from './backend/azure.js';
 import { 정책읽기 } from './safety/policy.js';
 import { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식 } from './safety/keystore.js';
+import { 믿나, 프로젝트거르기 } from './safety/trust.js';
 
 // 설정이 놓이는 자리.
 //
@@ -33,9 +35,17 @@ function projectDir() {
  */
 export function homeDir() { return userDir(); }
 
+/**
+ * 지금 실제로 쓰는 설정 파일.
+ *
+ * 프로젝트 설정이 있어도 **믿는 폴더일 때만** 그쪽을 준다 (safety/trust.js).
+ * 안 읽는 파일에 쓰지도 않아야 한다 — 안 믿어서 무시한 파일에 `deel setup`
+ * 이 값을 적으면, 다음에 켤 때 그 값이 또 무시된다. 사람은 두 번 적고 두 번
+ * 다 안 먹는 것을 보는데, 그때 무엇 때문인지 알 길이 없다.
+ */
 export function configPath() {
   const local = join(projectDir(), 'config.json');
-  if (existsSync(local)) return local;
+  if (existsSync(local) && 믿나(process.cwd())) return local;
   return join(userDir(), 'config.json');
 }
 
@@ -133,15 +143,82 @@ function 정책덮기(cfg) {
   return cfg;
 }
 
-function 읽기() {
-  const p = configPath();
-  if (!existsSync(p)) return structuredClone(EMPTY);
-  try {
-    const raw = JSON.parse(readFileSync(p, 'utf8'));
-    return { ...structuredClone(EMPTY), ...raw };
-  } catch (err) {
-    throw new Error(`설정 파일을 읽지 못했습니다: ${p}\n  ${err.message}`);
+function 한장읽기(p) {
+  try { return JSON.parse(readFileSync(p, 'utf8')); }
+  catch (err) { throw new Error(`설정 파일을 읽지 못했습니다: ${p}\n  ${err.message}`); }
+}
+
+/*
+ * ── 두 장을 겹친다 ─────────────────────────────────────────────────────
+ *
+ * 예전에는 프로젝트 설정이 있으면 이 PC 설정을 **통째로 안 읽었다.** 그래서
+ * 저장소에 `.deel/config.json` 한 줄만 들어 있어도 그 폴더에서는 프로필이
+ * 하나도 없는 것이 됐다 — 「이 저장소는 code 모드로 연다」 를 적으려던 사람이
+ * 제 게이트웨이를 통째로 잃는다. 그러면 사람은 프로젝트 설정을 안 쓴다.
+ *
+ * 이제 겹친다. 규칙은 하나다 — **좁히는 쪽만 이긴다.** 금지(deny)는 두 장을
+ * 합치고, 허락(allow)은 애초에 프로젝트에서 안 읽는다(safety/trust.js).
+ */
+function 겹치기(집, 방) {
+  const cfg = { ...집, ...방 };
+
+  // 프로필은 이름으로 맞춘다. 통째로 갈아치우면 이 PC 프로필이 사라진다.
+  const 이름표 = new Map((집.profiles ?? []).map((x) => [x?.name, x]));
+  for (const p of 방.profiles ?? []) {
+    if (!p?.name) continue;
+    이름표.set(p.name, { ...(이름표.get(p.name) ?? {}), ...p });
   }
+  cfg.profiles = [...이름표.values()];
+
+  // 금지는 합친다. 어느 쪽이 적었든 금지는 금지다.
+  const 금지 = [...(집.permissions?.deny ?? []), ...(방.permissions?.deny ?? [])];
+  cfg.permissions = { ...(집.permissions ?? {}), ...(방.permissions ?? {}) };
+  if (금지.length) cfg.permissions.deny = [...new Set(금지)];
+  // 허락은 이 PC 것만. 프로젝트가 적었어도 위에서 이미 걸러졌지만, 겹치는
+  // 자리에서 한 번 더 못 박는다 — 이 한 줄이 없으면 나중에 누가 프로젝트에
+  // allow 를 허용하도록 고쳤을 때 아무 데서도 안 걸린다.
+  if (Array.isArray(집.permissions?.allow)) cfg.permissions.allow = 집.permissions.allow;
+  else delete cfg.permissions.allow;
+  return cfg;
+}
+
+let 신뢰소식 = null;   // 프로젝트 설정에 대해 할 말. 한 번 읽으면 지워진다.
+
+/**
+ * 프로젝트 설정을 안 읽었거나 일부를 걷어냈으면 그것을 알려 준다.
+ *
+ * 조용히 무시하면 안 된다 — 적어 둔 사람은 걸린 줄 알고, 실제로는 안 걸린
+ * 채로 일이 돈다. 그 어긋남이 설정 전체를 못 믿게 만든다.
+ *
+ * @returns {{갈래:'안믿음', 자리:string, 폴더:string}
+ *          |{갈래:'걸러냄', 자리:string, 걸러낸것:Array<{칸:string,왜:string}>}
+ *          |null}
+ */
+export function 프로젝트설정소식() { const s = 신뢰소식; 신뢰소식 = null; return s; }
+
+function 읽기() {
+  const 집파일 = join(userDir(), 'config.json');
+  const 방파일 = join(projectDir(), 'config.json');
+  const 집 = existsSync(집파일)
+    ? { ...structuredClone(EMPTY), ...한장읽기(집파일) }
+    : structuredClone(EMPTY);
+  if (!existsSync(방파일)) return 집;
+
+  /*
+   * 안 믿는 폴더의 설정은 **안 읽는다.**
+   *
+   * 이 파일은 저장소에 딸려 온다. 남의 저장소 하나를 받은 것만으로 오간 말이
+   * 다른 주소로 가고, 열쇠받기 명령이 이 계정 권한으로 도는 길이 여기다.
+   * 그 명령은 도구 승인 화면보다 **앞**이라 어떤 승인 정책으로도 안 걸린다.
+   */
+  if (!믿나(process.cwd())) {
+    신뢰소식 = { 갈래: '안믿음', 자리: 방파일, 폴더: process.cwd() };
+    return 집;
+  }
+
+  const { 값: 방, 걸러낸것 } = 프로젝트거르기(한장읽기(방파일));
+  if (걸러낸것.length) 신뢰소식 = { 갈래: '걸러냄', 자리: 방파일, 걸러낸것 };
+  return 겹치기(집, 방);
 }
 
 export function save(cfg, { toProject = false } = {}) {

@@ -24,7 +24,8 @@ import { 언어서버있나 } from './tools/index.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
 import { Audit, 열쇠묻기 } from './safety/audit.js';
-import { activeProfile, load, resolveKey, save as saveCfg, homeDir, 잠금소식, 열쇠탈소식 } from './config.js';
+import { activeProfile, load, resolveKey, save as saveCfg, homeDir, 잠금소식, 열쇠탈소식, 프로젝트설정소식 } from './config.js';
+import { 프로젝트설정줄들 } from './safety/trust.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
@@ -171,6 +172,15 @@ export async function chatLoop(opts = {}) {
     바로쓰기('');
     바로쓰기(`  ${mark.ok} ${잠금}`);
   }
+
+  /*
+   * 이 폴더의 프로젝트 설정을 안 읽었거나 일부를 걷어냈으면 그렇다고 한 줄.
+   *
+   * 조용히 무시하면 적어 둔 사람은 걸린 줄 알고, 실제로는 안 걸린 채로 일이
+   * 돈다. 그 어긋남이 설정 전체를 못 믿게 만든다 — 「.deel/config.json 은
+   * 가끔 먹는 파일」 이 되는 순간 아무도 안 쓴다.
+   */
+  for (const 줄 of 프로젝트설정줄들(프로젝트설정소식())) 바로쓰기(줄);
 
   /*
    * 잠근 열쇠를 못 풀었으면 **그 까닭을** 적는다.

@@ -41,6 +41,7 @@ export const 명령들 = [
   { 이름: 'audit', 뜻: '무엇을 했는지 기록을 본다', en: 'show the record of what it did' },
   { 이름: 'doc2md', 뜻: '문서·시안을 마크다운으로 (hwpx·docx·pptx·xlsx·pdf·fig)', en: 'document or design to Markdown (hwpx/docx/pptx/xlsx/pdf/fig)' },
   { 이름: 'sbom', 뜻: '무엇이 들었는지 목록을 낸다', en: 'list what is inside (SBOM)' },
+  { 이름: 'trust', 뜻: '이 폴더의 프로젝트 설정을 읽게 한다', en: "read this folder's project config" },
   { 이름: 'scan', 뜻: '게이트웨이에 어떤 모델이 있나 훑는다', en: 'scan the gateway for available models' },
   { 이름: 'sessions', 뜻: '지난 대화 목록', en: 'list past conversations' },
   { 이름: 'ls', 뜻: 'sessions 와 같다', en: 'same as sessions' },
@@ -101,6 +102,21 @@ const 깃발이름만 = () => 깃발들.map((x) => x.이름);
 
 /** 셸 문자열 안에 그대로 넣어도 되게. 우리 목록은 다 ASCII 라 넉넉하다. */
 const 홑따옴표 = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
+/*
+ * 파워셸의 홑따옴표는 **셈법이 다르다.**
+ *
+ * bash 는 따옴표를 닫고 이스케이프한 따옴표를 붙였다 다시 여는 식이지만
+ * (`'\''`), 파워셸에서 그 글자열은 그냥 역슬래시와 따옴표다. 파워셸은
+ * 홑따옴표를 **두 번 적어서** 하나로 친다.
+ *
+ * 여태 안 터진 것은 설명 글에 아포스트로피가 하나도 없었기 때문이다.
+ * `read this folder's project config` 한 줄을 넣자마자 스크립트가 통째로
+ * 문법 오류가 났다 — 저장한 사람은 셸을 켤 때마다 빨간 글을 보고, 그게
+ * deel 때문인 줄도 모른다. 아포스트로피를 피해 글을 쓰는 것으로 때우면
+ * 다음에 적는 사람이 같은 데 빠진다. 따옴표는 따옴표 짓는 자리에서 짓는다.
+ */
+const 파워셸따옴표 = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
 function bash판({ zsh = false } = {}) {
   const 값깃발 = 깃발들.filter((x) => Array.isArray(x.값));
@@ -179,11 +195,11 @@ complete -F _deel deel
  * (bash·zsh 완성은 설명을 아예 안 보여 주므로 잃는 것이 없다.)
  */
 function 파워셸판() {
-  const 명령목록 = 명령들.map((x) => `    @{ name = ${홑따옴표(x.이름)}; help = ${홑따옴표(x.en)} }`).join('\n');
-  const 깃발목록 = 깃발들.map((x) => `    @{ name = ${홑따옴표(x.이름)}; help = ${홑따옴표(x.en)} }`).join('\n');
+  const 명령목록 = 명령들.map((x) => `    @{ name = ${파워셸따옴표(x.이름)}; help = ${파워셸따옴표(x.en)} }`).join('\n');
+  const 깃발목록 = 깃발들.map((x) => `    @{ name = ${파워셸따옴표(x.이름)}; help = ${파워셸따옴표(x.en)} }`).join('\n');
   const 값목록 = 깃발들
     .filter((x) => Array.isArray(x.값))
-    .map((x) => `    ${홑따옴표(x.이름)} = @(${x.값.map(홑따옴표).join(', ')})`)
+    .map((x) => `    ${파워셸따옴표(x.이름)} = @(${x.값.map(파워셸따옴표).join(', ')})`)
     .join('\n');
 
   // 파워셸은 완성 후보에 설명을 같이 실을 수 있다. 탭을 누르면 뜻이 같이 뜬다.
@@ -210,7 +226,7 @@ ${깃발목록}
   )
   $values = @{
 ${값목록}
-    'completion' = @(${셸들.map(홑따옴표).join(', ')})
+    'completion' = @(${셸들.map(파워셸따옴표).join(', ')})
   }
 
   # Which word comes before the one being typed?

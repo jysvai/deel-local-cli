@@ -16,7 +16,8 @@ import { acp } from '../src/acp/serve.js';
 import { runCompletion } from '../src/completion.js';
 import { runReset } from '../src/reset.js';
 import { 마크다운, 읽는갈래 } from '../src/tools/doc2md.js';
-import { 언어잡기, 언어 } from '../src/i18n/index.js';
+import { 언어잡기, 언어, 말 } from '../src/i18n/index.js';
+import { 믿기, 안믿기, 믿는목록, 프로젝트금지칸 } from '../src/safety/trust.js';
 import { load as 설정읽기 } from '../src/config.js';
 
 const MIN_NODE = 20;
@@ -95,6 +96,57 @@ function runPack(flags) {
     say(`  ${c.gray('One document to read, two to feed a scanner — submit them as they are.')}`);
     say(`  ${c.gray('To see the contents first:')} ${c.cyan('deel audit')}`);
   }
+  say('');
+  return 0;
+}
+
+/*
+ * `deel trust [--off] [--list]` — 이 폴더의 프로젝트 설정을 읽을 것인가.
+ *
+ * 설정 파일 `.deel/config.json` 은 저장소에 딸려 온다. 남의 저장소 하나를
+ * 받은 것만으로 오간 말이 다른 주소로 가고, `열쇠받기` 명령이 이 계정
+ * 권한으로 도는 길이 여기다 — 그 명령은 도구 승인 화면보다 **앞**이라
+ * 어떤 승인 정책으로도 안 걸린다.
+ *
+ * 그래서 기본은 안 읽는 것이고, 읽게 하는 것은 **사람이 먼저 낸 명령**이다.
+ * 켤 때마다 물어보는 길도 있었지만 그 물음은 맨 앞에 뜨고, 앞에 뜨는 물음은
+ * 안 읽힌다 — 사람은 대화를 하러 온 것이지 물음에 답하러 온 것이 아니다.
+ */
+function runTrust(flags) {
+  const 여기 = process.cwd();
+
+  if (flags.list === true || flags.list === 'true') {
+    const 것들 = 믿는목록();
+    say('');
+    say(`  ${c.bold(말('trust.listTitle'))}`);
+    say('');
+    if (!것들.length) say(`  ${c.gray(말('trust.listNone'))}`);
+    for (const x of 것들) say(`  ${c.gray('·')} ${x}`);
+    say('');
+    say(`  ${c.gray(말('trust.blockedTitle'))}`);
+    for (const { 칸, 열쇠 } of 프로젝트금지칸) say(`  ${c.gray('·')} ${c.white(칸)}  ${c.gray(말(열쇠))}`);
+    say('');
+    return 0;
+  }
+
+  if (flags.off === true || flags.off === 'true') {
+    const r = 안믿기(여기);
+    say('');
+    if (!r.ok) { say(`  ${mark.warn} ${말('trust.saveFail')} — ${r.왜}`); say(''); return 1; }
+    say(`  ${mark.ok} ${r.뺐나 ? 말('trust.removed') : 말('trust.notListed')} ${c.gray(여기)}`);
+    // 위 폴더 때문에 아직 믿기는 것을 말 안 하면, 「뺐습니다」 가 거짓말이 된다.
+    if (r.위폴더) say(`  ${mark.warn} ${말('trust.parentStill')} ${c.gray(r.위폴더)}`);
+    say('');
+    return 0;
+  }
+
+  const r = 믿기(여기);
+  say('');
+  if (!r.ok) { say(`  ${mark.warn} ${말('trust.saveFail')} — ${r.왜}`); say(''); return 1; }
+  say(`  ${mark.ok} ${r.이미 ? 말('trust.already') : 말('trust.trusted')} ${c.gray(여기)}`);
+  say('');
+  say(`  ${c.gray(말('trust.blockedTitle'))}`);
+  for (const { 칸, 열쇠 } of 프로젝트금지칸) say(`  ${c.gray('·')} ${c.white(칸)}  ${c.gray(말(열쇠))}`);
   say('');
   return 0;
 }
@@ -261,6 +313,30 @@ function help() {
   say(`    ${c.cyan('deel pack')}                   위 셋 + 소스를 zip 하나로 묶기`);
   say(`    ${c.gray('--out <파일>')}       묶음 파일 이름. 기본은 deel-반입.zip`);
   say('');
+  /*
+   * 이 대목만 영어를 같이 적어 둔다.
+   *
+   * `--help` 는 아직 통째로 한국어다(langleak 검사가 그 줄 수를 못박고 있다).
+   * 그 빚은 따로 갚을 것이고, **여기서 그 빚을 더 키우지는 않는다.** 영어로
+   * 켠 사람이 이 대목을 못 읽으면 「내가 적은 설정이 왜 안 먹지」 를 영영
+   * 모른 채로 남는데, 그건 못 읽어도 되는 줄이 아니다.
+   */
+  if (언어() === 'ko') {
+    say(`  ${c.bold('프로젝트 설정 신뢰')}`);
+    say('');
+    say(`    ${c.cyan('deel trust')}                  이 폴더의 ${c.gray('.deel/config.json')} 을 읽게 합니다`);
+    say(`    ${c.gray('--off')}              다시 안 읽게`);
+    say(`    ${c.gray('--list')}             믿는 폴더와, 믿어도 프로젝트가 못 정하는 칸`);
+    say(`    ${c.gray('설정 파일은 저장소에 딸려 옵니다. 남의 것을 그냥 읽으면 주소도 열쇠 받는 명령도 그쪽이 정합니다.')}`);
+  } else {
+    say(`  ${c.bold('Project config trust')}`);
+    say('');
+    say(`    ${c.cyan('deel trust')}                  Read this folder's ${c.gray('.deel/config.json')}`);
+    say(`    ${c.gray('--off')}              Stop reading it again`);
+    say(`    ${c.gray('--list')}             Trusted folders, and the keys a project may never set`);
+    say(`    ${c.gray('A config file ships with the repository. Read a stranger’s and it picks the endpoint, and the command that fetches your key.')}`);
+  }
+  say('');
   say(`  ${c.bold('대화 시작 옵션')}`);
   say('');
   say(`    ${c.gray('--root <폴더>')}      작업 범위. 기본은 지금 폴더`);
@@ -416,6 +492,8 @@ async function main() {
       return runPack(flags);
     case 'audit':
       return runAudit();
+    case 'trust':
+      return runTrust(flags);
     case 'doc2md':
       return runDoc2md(args, flags);
     case 'sbom':
