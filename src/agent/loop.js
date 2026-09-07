@@ -124,7 +124,20 @@ export function 묶기(calls) {
   return out;
 }
 
-export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 그림들 = null, 끼어들기 = null } = {}) {
+/*
+ * `고쳐쓰기` — 방금 낸 답을 **모양에 맞춰 다시 적으라고** 시키는 턴.
+ *
+ * 새 일이 아니라 같은 일의 뒷정리라, 사람 말로 시작한 턴과 세 가지가 다르다.
+ * 되돌리기 턴을 새로 열지 않고(같은 턴이다), 되밀기를 안 걸고, 기록에도
+ * 사람이 새로 시킨 말이 아니라고 적는다.
+ *
+ * 되밀기를 꼭 꺼야 하는 까닭:
+ *   되밀기는 「시킨 일을 안 하고 끝냈나」 를 본다. 그런데 여기서 시킨 말은
+ *   스키마 설명과 안 맞은 자리 목록이라, 그 안의 낱말들이 「안 한 일」 로
+ *   잡힌다. 그러면 한 번 더 시키려고 부른 자리에서 모델을 **두 번** 부르고,
+ *   그 왕복은 사람이 낸다. 실제로 그랬다 — 되묻기 한 번에 부름이 셋이었다.
+ */
+export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 그림들 = null, 끼어들기 = null, 고쳐쓰기 = false } = {}) {
   /*
    * 되돌리기 턴은 **부모만** 연다.
    *
@@ -136,12 +149,12 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 표시되고, 되감을 때 시킨 말까지 같이 걷힌다. 시킨 말만 남으면 모델은
    * 되돌린 일을 또 하려 든다.
    */
-  if (!깊이) session.턴시작(ctx.history.nextTurn());
+  if (!깊이 && !고쳐쓰기) session.턴시작(ctx.history.nextTurn());
   // @ 로 그림을 지목했으면 그 말과 함께 실어 보낸다 (backend/vision.js).
   session.push(그림들?.length
     ? 그림메시지(session.conn?.kind, { 글: userText, 그림들 })
     : { role: 'user', content: userText });
-  ctx.audit.turn(깊이 ? `[하위작업 ${깊이}겹] ${userText}` : userText);
+  ctx.audit.turn(고쳐쓰기 ? `[다시 쓰기] ${userText}` : 깊이 ? `[하위작업 ${깊이}겹] ${userText}` : userText);
 
   /*
    * 중단 신호를 도구도 볼 수 있게 여기 걸어 둔다.
@@ -496,7 +509,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
 
   /** 이번 답을 되밀까. 밀 이유를 돌려주고, 아니면 null. */
   const 밀어줄까 = (글) => {
-    if (민적 || 깊이) return null;
+    if (민적 || 깊이 || 고쳐쓰기) return null;
     if (인사인가) return null;                            // 시킨 것이 없으면 안 한 것도 없다
     if (손댄파일.size) return null;                       // 뭐라도 바꿨으면 일은 한 것이다
     if (!모드.tools.includes('Write')) return null;         // 안 바꾸는 모드는 그게 맞다
@@ -525,7 +538,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   let 빠뜨림민적 = false;
   const 빠뜨린것 = (글) => {
     // 하위 작업은 사람이 시킨 말이 아니다. 거기 할일은 부모가 이미 쪼개 준 것이다.
-    if (깊이) return [];
+    if (깊이 || 고쳐쓰기) return [];
     return 빠진것({
       요청: userText,
       자국: [

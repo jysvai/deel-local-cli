@@ -13,6 +13,7 @@
 import { c, mark, clip } from './ui/ansi.js';
 import { 규칙모으기, 정책읽기 } from './safety/policy.js';
 import { 프로젝트설정줄들 } from './safety/trust.js';
+import { 스키마읽기, 맞나, 답에서JSON뽑기, 시킬말 as 스키마시킬말 } from './agent/outschema.js';
 import { 남길것읽기 } from './safety/shellenv.js';
 import { 받기설정 } from './safety/authcmd.js';
 import { run } from './agent/loop.js';
@@ -70,6 +71,17 @@ export const EXIT = {
    * 열쇠를 보는 일이고, 거절은 **시킨 말을 바꾸는 일**이다.
    */
   refusal: 6,
+  /*
+   * 답이 --output-schema 에 안 맞았다.
+   *
+   * 여기에도 자기 코드가 있어야 한다. 「모양을 못 박아 달라」 고 한 사람에게
+   * 모양이 안 맞는 것을 0 으로 넘기면, 파이프 뒤 스크립트가 그걸 온전한
+   * 것으로 받아 쓴다 — 그게 이 기능이 없애려던 바로 그 상황이다.
+   *
+   * 오류(1)와도 가른다. 고칠 자리가 다르다 — 오류는 연결을 보는 일이고,
+   * 이건 스키마나 시킨 말을 바꾸는 일이다.
+   */
+  schema: 7,
 };
 
 /**
@@ -133,6 +145,10 @@ export async function runOnce(opts = {}) {
   const 삐끗 = (s = '') => process.stderr.write(s + '\n');
   const 곁 = (s = '') => { if (!quiet) 삐끗(s); };
 
+  // 아래 내놓기 가 이걸 본다 — 그래서 읽기 전에 선언해 둔다. 값은 시킬 말을
+  // 정하기 전에 채운다 (모델을 부르기 전에 스키마부터 읽는 자리).
+  let 출력스키마 = null;
+
   const 내놓기 = (r) => {
     /*
      * 뒤에서 돌던 명령을 반드시 거둔다.
@@ -148,6 +164,23 @@ export async function runOnce(opts = {}) {
     // 껐다는 말부터 하면 "그건 또 뭐냐" 가 된다.
     언어서버다끄기().catch(() => {});
     if (json) process.stdout.write(JSON.stringify(r) + '\n');
+    /*
+     * 모양을 못 박았으면 표준출력은 **그 JSON 하나**다.
+     *
+     * 모델이 낸 글자 그대로가 아니라 우리가 읽어서 다시 적은 것을 낸다.
+     * 그래야 ```울타리나 앞뒤 인사말이 절대 안 섞이고, `| jq` 가 첫 판부터
+     * 그냥 먹는다. 어차피 맞는지 이미 쟀으므로 다시 적어도 잃는 것이 없다.
+     */
+    else if (r.schema !== undefined) process.stdout.write(JSON.stringify(r.schema) + '\n');
+    /*
+     * 모양을 못 박았는데 못 맞췄으면 **표준출력은 비운다.**
+     *
+     * 여기서 모델이 낸 글을 그대로 흘리면, 파이프 뒤 `jq` 는 모양이 안 맞는
+     * JSON 이나 그냥 산문을 받는다. 종료코드는 7 이지만 `cmd | jq` 처럼 쓴
+     * 자리에서는 앞 명령의 코드가 안 보인다. 아무것도 안 주는 쪽이 낫다 —
+     * 무엇이 왔었는지는 표준오류에 이미 적혀 있다.
+     */
+    else if (출력스키마) { /* 일부러 아무것도 안 낸다 */ }
     else if (r.text) process.stdout.write(r.text.endsWith('\n') ? r.text : r.text + '\n');
     return r.code;
   };
@@ -155,10 +188,31 @@ export async function runOnce(opts = {}) {
   const 못함 = (reason, message) => {
     삐끗(`  ${c.red('✗')} ${message}`);
     return 내놓기({
-      ok: false, reason, code: EXIT.error, text: '', why: message,
+      // 갈래에 제 코드가 있으면 그것으로 끝낸다. 없는 갈래(no-config·no-prompt)는
+      // 예전대로 1 이다 — 여기가 EXIT.error 로 못 박혀 있어서, 스키마 파일을
+      // 못 읽은 것과 게이트웨이가 없는 것이 같은 1 로 나갔다. 고칠 자리가
+      // 서로 완전히 다른 둘이라 스크립트가 갈라 대응할 수 없었다.
+      ok: false, reason, code: EXIT[reason] ?? EXIT.error, text: '', why: message,
       tools: 0, steps: 0, usage: { in: 0, out: 0, calls: 0, ms: 0, retries: 0 }, ms: 0,
     });
   };
+
+  /*
+   * 답의 모양을 못 박았으면 **일을 시작하기 전에** 스키마부터 읽는다.
+   *
+   * 다 돌리고 나서 「스키마 파일이 없습니다」 라고 하면 모델을 부른 값을
+   * 통째로 버리는 셈이다. 그리고 그 실패는 사람이 오타 하나 고치면 되는
+   * 것이라, 제일 먼저 알려 줘야 한다.
+   */
+  if (opts.outputSchema) {
+    const r = 스키마읽기(String(opts.outputSchema));
+    if (!r.ok) return 못함('schema', r.왜);
+    출력스키마 = r.스키마;
+    // 우리가 안 보는 열쇠는 안 본다고 말한다. 조용히 넘기면 사람은 잰 줄 안다.
+    if (r.모른것.length) {
+      곁(`  ${mark.warn} ${c.yellow(`스키마에서 안 재는 열쇠가 있습니다: ${r.모른것.join(' · ')}`)}`);
+    }
+  }
 
   // ── 시킬 말 ───────────────────────────────────────────────────────────
   // 인자로 준 것이 먼저다. 없을 때만 표준입력을 읽는다 —
@@ -385,10 +439,13 @@ export async function runOnce(opts = {}) {
   // 거부만 하고 이유를 안 알리면 모델은 같은 호출을 몇 번이고 다시 한다.
   // 사람이 '안 돼요' 라고 한 줄 알고, 다시 물어보면 이번엔 된다고 믿는다.
   // 그러면 걸음 수만 다 쓰고 아무것도 못 한 채 끝난다.
-  const 보낼글 = (승인필요 && !자동승인)
+  const 보낼글바탕 = (승인필요 && !자동승인)
     ? `${시킬말}\n\n(비대화 모드다. 사람이 없어 승인을 물어볼 수 없고, 승인이 필요한 도구 호출은 자동으로 거부된다.`
       + ' 승인 없이 되는 방법을 골라라. 그래도 안 되면 무엇이 막혔는지 말로 알려라.)'
     : 시킬말;
+  // 스키마는 시킨 말 **뒤에** 붙인다. 앞에 붙이면 모델이 「무엇을 하라」 보다
+  // 「어떻게 적으라」 를 먼저 읽고, 일보다 모양에 힘을 쓴다.
+  const 보낼글 = 출력스키마 ? `${보낼글바탕}\n${스키마시킬말(출력스키마)}` : 보낼글바탕;
 
   // ── 컨텍스트 길이 ─────────────────────────────────────────────────────
   //
@@ -664,6 +721,65 @@ export async function runOnce(opts = {}) {
     why = 옮긴말('ev.cutoff');
   }
 
+  /*
+   * ── 답이 정해진 모양에 맞나 ──────────────────────────────────────────
+   *
+   * 「JSON 으로 답해 줘」 라고 부탁만 하고 안 재면, 지키는 날과 안 지키는
+   * 날이 생긴다. 안 지킨 날에 깨지는 것은 우리가 아니라 **뒤에 붙은 남의
+   * 코드**다. 부탁은 계약이 아니다. 계약이라고 부르려면 재야 한다.
+   *
+   * 안 맞으면 무엇이 어떻게 안 맞는지를 그대로 돌려주고 한 번만 더 시킨다.
+   * 두 번 세 번 되풀이하지 않는다 — 한 번에 못 고치는 것은 대개 스키마와
+   * 시킨 말이 서로 안 맞는 것이고, 그건 사람이 볼 일이다.
+   */
+  let 스키마값 = null;
+  if (출력스키마 && reason === 'done') {
+    const 재보기 = (글) => {
+      const 뽑은것 = 답에서JSON뽑기(글);
+      if (!뽑은것.ok) return { ok: false, 탈: [뽑은것.왜] };
+      const r = 맞나(뽑은것.값, 출력스키마);
+      return r.ok ? { ok: true, 값: 뽑은것.값, 군말: 뽑은것.군말 } : r;
+    };
+
+    let 잰것 = 재보기(답 ?? '');
+    if (!잰것.ok) {
+      곁(`  ${mark.warn} ${c.yellow(`답이 스키마에 안 맞습니다 — 한 번 더 시킵니다 (${잰것.탈.length}건)`)}`);
+      for (const t of 잰것.탈.slice(0, 5)) 곁(`    ${c.gray(t)}`);
+
+      /*
+       * 다시 받는 자리는 **글만** 받는다.
+       *
+       * 이건 새 일이 아니라 이미 낸 답을 모양에 맞춰 다시 적는 일이라,
+       * 도구 기록도 걸음 수도 다시 세지 않는다. `고쳐쓰기` 는 그 자리에
+       * 되밀기가 안 걸리게 한다 — 안 끄면 되묻기 한 번에 모델을 두 번 부른다
+       * (agent/loop.js 의 고쳐쓰기 설명).
+       */
+      let 다시글 = '';
+      try {
+        for await (const ev of run(session, ctx, 스키마시킬말(출력스키마, { 다시: 잰것.탈 }), { signal: turn.signal, 고쳐쓰기: true })) {
+          if (ev.type === 'content') 다시글 += ev.text;
+          else if (ev.type === 'done') 다시글 = ev.text ?? 다시글;
+          else if (ev.type === 'error') { why = String(ev.text ?? why); break; }
+        }
+      } catch (err) { why = String(err?.message ?? err); }
+
+      const 두번째 = 재보기(다시글);
+      if (두번째.ok) { 잰것 = 두번째; 답 = 다시글; }
+      else 잰것 = { ok: false, 탈: 두번째.탈 };
+    }
+
+    if (잰것.ok) {
+      스키마값 = 잰것.값;
+      // 울타리나 인사말을 걷어내고 뽑았으면 그렇게 말한다. 조용히 걷어내면
+      // 사람은 모델이 깨끗하게 냈다고 여기고 시킴말을 안 고친다.
+      if (잰것.군말) 곁(`  ${c.gray('· 답에 붙은 군말을 걷어내고 JSON 만 냈습니다.')}`);
+    } else {
+      reason = 'schema';
+      why = `답이 스키마에 안 맞습니다 (${잰것.탈.length}건)\n`
+        + 잰것.탈.slice(0, 8).map((x) => `  - ${x}`).join('\n');
+    }
+  }
+
   const code = EXIT[reason] ?? EXIT.error;
   if (why) 삐끗(`  ${reason === 'done' ? c.gray('·') : c.red('✗')} ${why}`);
   if (!json && !quiet) {
@@ -697,6 +813,9 @@ export async function runOnce(opts = {}) {
       retries: session.usage.retries ?? 0,
     },
     model: conn.model,
+    // 모양을 못 박았을 때만 실린다. --json 으로 받는 쪽은 text 를 다시 파싱할
+    // 필요 없이 이 칸을 그대로 쓰면 된다.
+    ...(스키마값 !== null ? { schema: 스키마값 } : {}),
     ms: Date.now() - t0,
     ...(why ? { why } : {}),
   });

@@ -112,6 +112,67 @@ other way round.
 | Image / audio attachments | Most local models cannot read them. Rather than dropping them silently, deel tells the model what it could not read |
 | MCP servers passed in by the editor | Not launched. That would mean **deel spawning processes named in the editor's config**. "What does this tool launch?" is the first question in a corporate review, and "whatever the editor says" is not an acceptable answer. Only `.deel/mcp.json`, written by a person, is launched |
 
+## Putting deel in a pipeline
+
+### Pin the answer's shape — `deel run --output-schema`
+
+`deel run` produces prose. That is fine for a person to read, but the moment
+you pipe it somewhere the work starts.
+
+```bash
+deel run "pull the term and the termination clauses out of contract.hwpx" | ???
+```
+
+What goes after the pipe? The answer arrives in a different shape every time,
+so you end up parsing it with `grep` or `sed`, and that parser breaks silently
+the day the model words a sentence slightly differently. **Silently** is the
+point — a script that gets an empty value raises nothing and passes the empty
+value down the line.
+
+Pin the shape up front and the whole problem goes away.
+
+```bash
+deel run --output-schema contract.schema.json "pull the term and termination clauses out of contract.hwpx" \
+  | jq -r '.termination[]'
+```
+
+Standard output carries **that one JSON object** and nothing else. If the model
+wraps it in a ```json fence or opens with "Sure, here you go", that is stripped
+— and the fact that it was stripped is written to standard error, because
+stripping it silently would take away your chance to fix the prompt.
+
+### What happens when it does not match
+
+| | |
+|---|---|
+| It asks once more | The mismatches are handed back verbatim and the model rewrites the answer. **Once** — repeating three or four times is forcing a model to do something it cannot, and you pay for every round trip |
+| Still wrong: exit **7** | Letting a mis-shaped JSON out on standard output is the worst thing this feature could do. That is the exact situation it exists to remove |
+| Standard output stays **empty** | In `cmd \| jq` the exit code of the first command is invisible. Handing over nothing is better — what actually arrived is already on standard error |
+| A bad schema file means **no model call at all** | Saying "schema file not found" after a full run throws away everything the run cost. And it is usually a one-character typo |
+
+With `--json`, the validated value also arrives in the result's `schema` field,
+so you never have to re-parse `text`.
+
+### What is not checked says so
+
+This is not a full JSON Schema implementation. It checks `type`, `required`,
+`properties`, `items`, `enum`, `minimum`, `pattern`, `anyOf` and the like; any
+keyword outside that list is **passed over rather than pretended about** — and
+the screen says which ones.
+
+```
+  ⚠ Some keywords in the schema are not checked: format · deprecated
+```
+
+Waving through a rule you do not implement is worse than not implementing it,
+because the person walks away believing it was checked.
+
+**`$ref` never reaches outside.** The spec allows a URL in `$ref` and most
+validators will fetch it. We do not — one schema file must not become the way
+around "there is exactly one outbound address, and a person chose it". A schema
+pointing outward is **refused when it is read**, with a note to move the
+definition inside the same file (`#/$defs/...`).
+
 ---
 
 [← back to README](../../README.md)

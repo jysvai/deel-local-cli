@@ -451,16 +451,25 @@ function help() {
   say(`    ${c.cyan('echo "..." | deel run')}      ${c.gray('시킬 말을 표준입력으로 넣어도 됩니다')}`);
   // 대화 화면에서 손으로 치던 슬래시 명령을 그대로 배치에 옮기는 자리 (src/oneshot.js).
   say(`    ${c.cyan('deel run /배포점검 서버3')}     ${c.gray('.claude/commands 에 적어 둔 슬래시 명령도 그대로')}`);
+  say(`    ${c.cyan('deel run --output-schema out.schema.json "..." | jq -r .term')}`);
   say(`    ${c.gray('deel -p "..." 도 같습니다.')} ${c.gray('위 대화 시작 옵션을 그대로 씁니다.')}`);
   say('');
   say(`    ${c.gray('--json')}             결과를 JSON 한 덩이로 (답·도구 횟수·토큰·끝난 까닭)`);
   say(`    ${c.gray('--quiet')}            도구가 무엇을 했는지 안 적음 (오류는 그래도 적음)`);
   say(`    ${c.gray('--yes')}              승인이 필요한 것도 그냥 실행. ${c.yellow('기본은 거부입니다')}`);
+  /*
+   * 답의 모양을 못 박는 자리 (src/agent/outschema.js).
+   *
+   * 이걸 주면 표준출력은 **그 JSON 하나**다 — 울타리도 인사말도 안 섞인다.
+   * 안 맞으면 한 번 더 시키고, 그래도 안 맞으면 7 로 끝낸다. 파이프 뒤에
+   * `jq` 를 붙일 수 있게 하는 것이 이 깃발의 전부다.
+   */
+  say(`    ${c.gray('--output-schema <파일>')}  답을 JSON Schema 모양으로 받음 ${c.gray('(안 맞으면 7)')}`);
   say(`    ${c.gray('답은 표준출력, 도구 기록은 표준오류로 나갑니다 — 파이프로 넘겨도 답만 넘어갑니다.')}`);
   // 이 줄은 src/oneshot.js 의 EXIT 와 짝이다. test/exitcode.test.js 가 둘이
   // 어긋나면 빨개진다 — 한 판 동안 refusal(6) 이 여기서 빠져 있었고, 그
   // 사실을 말해 주는 자리가 아무 데도 없었다.
-  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단 · 5 말없이끊김 · 6 거절')}`);
+  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단 · 5 말없이끊김 · 6 거절 · 7 모양안맞음')}`);
   say('');
   say(`  ${c.bold('진단 직접 지정')} ${c.gray('— 설정을 남기지 않고 확인만 할 때')}`);
   say('');
@@ -530,6 +539,8 @@ async function main() {
         yes: flags.yes === true || flags.yes === 'true',
         json: flags.json === true || flags.json === 'true',
         quiet: flags.quiet === true || flags.quiet === 'true',
+        // 답의 모양을 못 박는다. 이게 있으면 표준출력은 그 JSON 하나다.
+        outputSchema: flags['output-schema'] ? String(flags['output-schema']) : undefined,
       });
     case '':
     case 'chat':

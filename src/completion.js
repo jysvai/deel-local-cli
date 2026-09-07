@@ -87,6 +87,9 @@ export const 깃발들 = [
   { 이름: '--yes', 뜻: '물어보지 않고 진행', en: 'do not ask, just proceed', 값: false },
   { 이름: '--hard', 뜻: 'reset all 에서 되돌리기·감사기록까지', en: 'with reset all: undo snapshots and the audit log too', 값: false },
   { 이름: '--json', 뜻: '결과를 JSON 으로', en: 'output JSON', 값: false },
+  // 값이 파일이라 셸이 파일을 완성해 줘야 한다. 목록으로 못 준다 —
+  // 스키마 파일 이름은 사람이 짓는 것이라 우리가 알 수가 없다.
+  { 이름: '--output-schema', 뜻: '답을 이 JSON Schema 모양으로', en: 'answer must match this JSON Schema', 값: '파일' },
   { 이름: '--quiet', 뜻: '군말 없이', en: 'no chatter', 값: false },
   { 이름: '--tui', 뜻: '입력 상자를 켠다', en: 'force the input box on', 값: false },
   { 이름: '--no-tui', 뜻: '입력 상자 없이 줄 화면으로', en: 'plain line output, no input box', 값: false },
@@ -122,9 +125,13 @@ const 파워셸따옴표 = (s) => `'${String(s).replace(/'/g, "''")}'`;
 function bash판({ zsh = false } = {}) {
   const 값깃발 = 깃발들.filter((x) => Array.isArray(x.값));
   const 폴더깃발 = 깃발들.filter((x) => x.값 === '폴더').map((x) => x.이름);
+  const 파일깃발 = 깃발들.filter((x) => x.값 === '파일').map((x) => x.이름);
   const 값갈래 = 값깃발.map((x) => `    ${x.이름}) COMPREPLY=( $(compgen -W ${홑따옴표(x.값.join(' '))} -- "$cur") ); return 0 ;;`).join('\n');
   const 폴더갈래 = 폴더깃발.length
     ? `    ${폴더깃발.join('|')}) COMPREPLY=( $(compgen -d -- "$cur") ); return 0 ;;`
+    : '';
+  const 파일갈래 = 파일깃발.length
+    ? `    ${파일깃발.join('|')}) COMPREPLY=( $(compgen -f -- "$cur") ); return 0 ;;`
     : '';
 
   return `# deel 탭 완성 (${zsh ? 'zsh' : 'bash'})
@@ -142,6 +149,7 @@ _deel() {
   case "$prev" in
 ${값갈래}
 ${폴더갈래}
+${파일갈래}
     completion) COMPREPLY=( $(compgen -W ${홑따옴표(셸들.join(' '))} -- "$cur") ); return 0 ;;
   esac
 

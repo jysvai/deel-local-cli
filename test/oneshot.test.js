@@ -175,6 +175,43 @@ const srv = createServer((req, res) => {
         도구한번 = true;
         return 도구답('Jobs', { job: 5 });
       }
+      /*
+       * ── 답의 모양을 못 박은 자리 ─────────────────────────────────────
+       *
+       * 다시 시키는 쪽을 알아보는 것이 요점이다. 우리가 붙이는 되물음 글에는
+       * 「방금 낸 답이 아래에서 안 맞았습니다」 가 들어 있다. 그걸 보고 스텁이
+       * 두 번째 답을 낸다 — 실제로 되묻고 있는지를 그렇게 잰다.
+       */
+      const 다시시킴 = /방금 낸 답이 아래에서 안 맞았습니다/.test(사람말);
+      // 되물을 때는 마지막 사람 말이 되물음 글로 바뀐다. 원래 시킨 말은 그
+      // 앞에 그대로 남아 있으므로, 어떤 갈래인지는 대화 전체에서 찾는다.
+      const 시킨말들 = (json?.messages ?? []).filter((m) => m.role === 'user').map((m) => String(m.content ?? '')).join('\n');
+
+      // 깨끗한 JSON 하나. 이게 되는 것이 기본이다.
+      if (/일부러_스키마깨끗/.test(시킨말들)) {
+        return 답({ role: 'assistant', content: '{"이름":"홍길동","나이":33,"표":["가","나"]}' });
+      }
+      // 울타리와 인사말을 두르고 낸다. 멀쩡한 답을 버리면 안 된다.
+      if (/일부러_스키마울타리/.test(시킨말들)) {
+        return 답({
+          role: 'assistant',
+          content: '네, 아래와 같습니다.\n\n\u0060\u0060\u0060json\n{"이름":"김","나이":1,"표":[]}\n\u0060\u0060\u0060\n\n확인해 주세요.',
+        });
+      }
+      // 처음엔 틀리고, 되물으면 맞게 낸다. 되묻는 길이 진짜로 도는지 재는 자리.
+      if (/일부러_스키마한번틀림/.test(시킨말들)) {
+        if (다시시킴) return 답({ role: 'assistant', content: '{"이름":"둘째","나이":2,"표":[]}' });
+        return 답({ role: 'assistant', content: '{"이름":123,"나이":"둘"}' });
+      }
+      // 되물어도 계속 틀린다. 여기서 0 으로 끝내면 안 된다.
+      if (/일부러_스키마계속틀림/.test(시킨말들)) {
+        return 답({ role: 'assistant', content: '{"나이":-5}' });
+      }
+      // JSON 이 아예 아니다.
+      if (/일부러_스키마JSON아님/.test(시킨말들)) {
+        return 답({ role: 'assistant', content: '죄송합니다, 그 정보는 문서에 없습니다.' });
+      }
+
       if (!도구한번 && /파일/.test(사람말)) {
         도구한번 = true;
         return 도구답('Read', { file_path: '읽을것.txt' });
@@ -732,6 +769,140 @@ trace('8.8-슬래시-명령을-배치에서도');
   const 보낸글 = JSON.stringify(받은요청.map((x) => x.json ?? null));
   check('★ 경로처럼 생긴 것은 명령으로 안 먹는다', r.code === 0 && 보낸글.includes('/mnt/d/일감'),
     `code=${r.code}`);
+}
+
+trace('9-답의모양');
+
+/*
+ * ── 답을 정해진 모양으로 받는다 (`--output-schema`) ─────────────────────
+ *
+ * 이 기능의 값은 전부 **파이프 뒤**에 있다. `| jq -r .이름` 이 첫 판부터 그냥
+ * 먹어야 하고, 안 맞으면 0 이 아닌 값으로 서야 한다. 모양이 안 맞는 JSON 이
+ * 0 으로 흘러 나가는 것이 이 기능이 없애려던 바로 그 상황이다.
+ */
+{
+  const 스키마자리 = join(work, '뽑기.schema.json');
+  writeFileSync(스키마자리, JSON.stringify({
+    type: 'object',
+    required: ['이름', '나이'],
+    properties: {
+      이름: { type: 'string', minLength: 1 },
+      나이: { type: 'integer', minimum: 0 },
+      표: { type: 'array', items: { type: 'string' } },
+    },
+    additionalProperties: false,
+  }, null, 2), 'utf8');
+
+  대본초기화();
+  {
+    const r = await 띄우기(['run', '--output-schema', 스키마자리, '일부러_스키마깨끗']);
+    let 읽힘 = null;
+    try { 읽힘 = JSON.parse(r.out.trim()); } catch { /* 아래 검사가 잡는다 */ }
+    check('★★ 표준출력이 JSON 하나다 — 파이프 뒤에서 바로 읽힌다',
+      r.code === 0 && 읽힘?.이름 === '홍길동' && 읽힘?.나이 === 33,
+      `code=${r.code} out=${r.out.trim().slice(0, 60)}`);
+    // 도구 기록·진행 글이 표준출력에 섞이면 jq 가 첫 줄에서 죽는다.
+    check('★★ 표준출력에 군말이 한 줄도 안 섞인다',
+      r.out.trim().split('\n').length === 1, JSON.stringify(r.out.slice(0, 80)));
+    check('스키마를 시킴말에 실어 보낸다', (() => {
+      const 보낸것 = JSON.stringify(받은요청.map((x) => x.json ?? null));
+      return 보낸것.includes('답의 모양이 정해져 있습니다') && 보낸것.includes('additionalProperties');
+    })(), '');
+  }
+
+  대본초기화();
+  {
+    // 울타리와 인사말을 두르고 온 답. 멀쩡한 답을 버리면 안 된다.
+    const r = await 띄우기(['run', '--output-schema', 스키마자리, '일부러_스키마울타리']);
+    let 읽힘 = null;
+    try { 읽힘 = JSON.parse(r.out.trim()); } catch { /* 아래 검사가 잡는다 */ }
+    check('★ 울타리와 인사말을 걷어내고 JSON 만 낸다',
+      r.code === 0 && 읽힘?.이름 === '김', `code=${r.code} out=${r.out.trim().slice(0, 60)}`);
+    // 조용히 걷어내면 사람은 모델이 깨끗하게 냈다고 여기고 시킴말을 안 고친다.
+    check('걷어냈다고 말은 해 준다', /군말을 걷어내고/.test(r.err), '');
+  }
+
+  대본초기화();
+  {
+    // 처음엔 틀리고 되물으면 맞게 낸다. 되묻는 길이 진짜로 도는지 재는 자리.
+    const r = await 띄우기(['run', '--output-schema', 스키마자리, '일부러_스키마한번틀림']);
+    let 읽힘 = null;
+    try { 읽힘 = JSON.parse(r.out.trim()); } catch { /* 아래 검사가 잡는다 */ }
+    check('★★ 안 맞으면 한 번 더 시켜서 받아 낸다',
+      r.code === 0 && 읽힘?.이름 === '둘째', `code=${r.code} out=${r.out.trim().slice(0, 60)}`);
+    check('★ 무엇이 안 맞았는지 화면에 적는다',
+      /스키마에 안 맞습니다/.test(r.err) && /string 이어야 하는데/.test(r.err),
+      r.err.split('\n').filter((l) => /맞/.test(l)).slice(0, 2).join(' / '));
+    check('되물을 때 틀린 자리를 그대로 실어 보낸다',
+      JSON.stringify(받은요청.map((x) => x.json ?? null)).includes('방금 낸 답이 아래에서 안 맞았습니다'), '');
+  }
+
+  대본초기화();
+  {
+    // 되물어도 계속 틀린다. 여기서 0 으로 끝내면 이 기능은 없느니만 못하다.
+    const r = await 띄우기(['run', '--output-schema', 스키마자리, '일부러_스키마계속틀림']);
+    const 부른수 = 받은요청.filter((x) => x.url === '/v1/chat/completions').length;
+    check('★★ 끝내 안 맞으면 0 이 아닌 값으로 끝낸다', r.code === 7, `code=${r.code}`);
+    check('★★ 안 맞는 JSON 을 표준출력으로 안 흘린다', r.out.trim() === '', JSON.stringify(r.out.slice(0, 80)));
+    check('★ 무엇이 안 맞는지 표준오류에 남긴다',
+      /이름 칸이 없습니다/.test(r.err), r.err.split('\n').filter((l) => /칸이 없/.test(l))[0] ?? '');
+    // 두 번만 부른다. 세 번 네 번 되풀이하면 못 고치는 자리에서 값만 태운다.
+    check('되묻기는 한 번뿐이다', 부른수 === 2, String(부른수));
+  }
+
+  대본초기화();
+  {
+    // 아예 JSON 이 아닌 답. 「문서에 없습니다」 도 사람에겐 쓸모 있는 답이지만,
+    // 모양을 못 박은 자리에서는 그것도 계약 위반이다.
+    const r = await 띄우기(['run', '--output-schema', 스키마자리, '일부러_스키마JSON아님']);
+    check('★ JSON 이 아니면 그렇다고 말하고 실패로 끝낸다',
+      r.code === 7 && /JSON 을 못 찾았습니다/.test(r.err), `code=${r.code}`);
+    check('산문도 표준출력으로 안 흘린다', r.out.trim() === '', JSON.stringify(r.out.slice(0, 80)));
+  }
+
+  대본초기화();
+  {
+    // 스키마 파일이 없으면 **일을 시작하기 전에** 선다. 다 돌리고 나서 말하면
+    // 모델을 부른 값을 통째로 버리는 셈이고, 그건 오타 하나짜리 실수다.
+    const r = await 띄우기(['run', '--output-schema', join(work, '없는스키마.json'), '아무말']);
+    const 부른수 = 받은요청.filter((x) => x.url === '/v1/chat/completions').length;
+    check('★★ 스키마 파일이 없으면 모델을 아예 안 부른다',
+      r.code === 7 && 부른수 === 0, `code=${r.code} 부른수=${부른수}`);
+    check('무엇을 못 읽었는지 말한다', /스키마 파일을 못 읽었습니다/.test(r.err), '');
+  }
+
+  대본초기화();
+  {
+    /*
+     * 스키마가 바깥을 가리키면 안 받는다.
+     *
+     * JSON Schema 는 참조 자리에 주소를 적을 수 있고 검사기 대부분이 그걸
+     * 받아 온다. 우리가 그러면 스키마 파일 하나가 「나가는 주소는 사람이
+     * 정한 하나뿐」 을 깨뜨리는 길이 된다.
+     */
+    const 바깥 = join(work, '바깥.schema.json');
+    writeFileSync(바깥, '{"type":"object","properties":{"a":{"' + '$ref' + '":"https://example.com/x.json"}}}', 'utf8');
+    const r = await 띄우기(['run', '--output-schema', 바깥, '아무말']);
+    const 부른수 = 받은요청.filter((x) => x.url === '/v1/chat/completions').length;
+    check('★★ 바깥을 가리키는 스키마는 안 받는다',
+      r.code === 7 && /바깥을 가리킵니다/.test(r.err), `code=${r.code}`);
+    check('바깥으로 한 번도 안 나갔다', 부른수 === 0, String(부른수));
+  }
+
+  대본초기화();
+  {
+    // 우리가 안 재는 열쇠는 안 잰다고 말한다. 조용히 넘기면 사람은 잰 줄 안다.
+    const 모르는것 = join(work, '모르는것.schema.json');
+    writeFileSync(모르는것, JSON.stringify({
+      type: 'object',
+      properties: { 이름: { type: 'string', format: 'email', deprecated: true } },
+    }), 'utf8');
+    const r = await 띄우기(['run', '--output-schema', 모르는것, '일부러_스키마깨끗']);
+    check('★ 안 재는 열쇠가 있으면 그렇다고 말한다',
+      /안 재는 열쇠가 있습니다/.test(r.err) && /format/.test(r.err),
+      r.err.split('\n').filter((l) => /안 재는/.test(l))[0] ?? '');
+    check('그래도 나머지는 재고 통과시킨다', r.code === 0, `code=${r.code}`);
+  }
 }
 
 
