@@ -26,9 +26,53 @@ export function endpoint(shape) {
   return '/chat/completions';
 }
 
+/*
+ * ── 이 대화가 한 덩어리라고 **머리에** 적는다 ───────────────────────────
+ *
+ * 몸통에도 같은 것을 적는 자리가 있다(buildBody 의 세션이름). 그런데 그 자리는
+ * 규격이 받는 칸이 있을 때만 쓴다 — OpenAI 직통은 `user`, Anthropic 은
+ * `metadata.user_id`. 그 둘이 아닌 곳, 즉 **게이트웨이 뒤**에는 아무것도 안
+ * 나갔다. 문서에 없는 칸을 몸통에 실으면 400 이고, 그 400 은 화면에서 열쇠가
+ * 틀린 것과 구별이 안 되기 때문이다(backend/wire.js 의 세션자리).
+ *
+ * 그래서 몸통이 아니라 **머리**에 적는다. 머리는 모르면 그냥 무시된다 —
+ * 400 이 날 자리가 아니다. 그러니 창구를 가릴 이유도 없고, 「이 창구만 예외」
+ * 라는 갈래가 하나도 안 는다.
+ *
+ * ── 이게 없으면 무슨 일이 나나 ──────────────────────────────────────────
+ *
+ * 게이트웨이는 이름이 없는 요청마다 **새 대화를 하나씩 연다.** 대시보드에
+ * 한 대화가 아홉 줄로 흩어지는 것은 눈에 보이는 쪽이고, 안 보이는 쪽이 훨씬
+ * 비싸다 — 모델 하나 뒤에 창구가 여럿이면(지역이 다른 Bedrock 프로파일 같은
+ * 것) 요청마다 다른 창구로 갈린다. 프롬프트 캐시는 **창구마다 따로** 있으므로,
+ * 갈리는 순간 앞머리가 통째로 다시 나간다. 캐시가 90% 를 넘다가 갑자기 20%
+ * 로 떨어지는 것이 그 모양이다.
+ *
+ * 이름이 있으면 게이트웨이가 그 대화를 첫 요청이 닿은 창구에 붙여 둔다
+ * (LiteLLM 의 session affinity). 그러면 캐시가 한자리에 쌓인다.
+ *
+ * ── 왜 이름을 둘로 적나 ─────────────────────────────────────────────────
+ *
+ *   x-litellm-session-id   문서에 이름이 그대로 적힌 칸이다.
+ *   x-deel-session-id      `x-<우리이름>-session-id` 라는 **일반 규칙**으로도
+ *                          읽어 주는 게이트웨이가 있다. 우리 이름으로 적어 두면
+ *                          남의 도구 이름을 사칭하지 않고도 그 규칙에 걸린다.
+ *
+ * 값은 같다. 둘 다 대화 번호 하나뿐이고 경로·주소·열쇠는 안 들어간다
+ * (backend/wire.js 의 세션이름짓기).
+ */
+function 세션머리(세션이름) {
+  const 이름 = String(세션이름 ?? '').trim();
+  if (!이름) return {};
+  return { 'x-litellm-session-id': 이름, 'x-deel-session-id': 이름 };
+}
+
 /** 이 규격이 더 요구하는 머리. 없으면 빈 것. */
-export function 더할머리(shape) {
-  return shape === 'anthropic' ? { 'anthropic-version': ANTHROPIC_VERSION } : {};
+export function 더할머리(shape, 세션이름 = null) {
+  return {
+    ...(shape === 'anthropic' ? { 'anthropic-version': ANTHROPIC_VERSION } : {}),
+    ...세션머리(세션이름),
+  };
 }
 
 /**
@@ -856,11 +900,18 @@ export function toolMessage(shape, { callId, name, content }) {
  * 안 붙는다. 못 받았다는 것은 부르는 쪽이 onAuth 로 듣고 화면에 적는다.
  */
 async function 머리말짓기(conn, opts, { 다시 = false } = {}) {
+  /*
+   * 대화 이름은 **세 갈래가 다 지나는 자리**에서 한 번만 얹는다.
+   *
+   * 갈래마다 손으로 적게 두면 언젠가 한 곳이 빠지고, 그 한 곳만 새 대화로
+   * 잡힌다 — 하필 열쇠를 새로 받은 뒤의 요청이 그 자리다.
+   */
+  const 이름 = opts.세션이름 ?? conn.세션이름 ?? null;
   const 설정 = conn.열쇠받기 ?? null;
   const 판단 = 쓸수있나(설정, { auth: conn.auth });
   if (!설정 || !판단.된다) {
     if (설정 && 판단.왜) opts.onAuth?.({ ok: false, 왜: 판단.왜, 안부름: true });
-    return headersFor(conn.auth, conn.key ?? '', 더할머리(conn.kind));
+    return headersFor(conn.auth, conn.key ?? '', 더할머리(conn.kind, 이름));
   }
   const r = await 열쇠받아오기(설정, {
     다시, signal: opts.signal ?? null,
@@ -869,10 +920,10 @@ async function 머리말짓기(conn, opts, { 다시 = false } = {}) {
   });
   if (!r.ok) {
     opts.onAuth?.({ ...r, ok: false });
-    return headersFor(conn.auth, conn.key ?? '', 더할머리(conn.kind));
+    return headersFor(conn.auth, conn.key ?? '', 더할머리(conn.kind, 이름));
   }
   if (!r.그대로) opts.onAuth?.({ ok: true, 만료: r.만료, ms: r.ms });
-  return headersFor(conn.auth, r.token, { ...더할머리(conn.kind), ...r.headers });
+  return headersFor(conn.auth, r.token, { ...더할머리(conn.kind, 이름), ...r.headers });
 }
 
 /*

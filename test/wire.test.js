@@ -35,8 +35,10 @@ import {
   카드칸들,
 } from '../src/backend/wire.js';
 import { 조각표, 메시지표식, 시스템블록, 잡힐만한가, 블록에붙이기, 닻문턱 } from '../src/backend/cachemark.js';
-import { buildBody, 보낸토큰 } from '../src/backend/adapter.js';
-import { 자동강도, 인사인가, effortFor, 가벼운강도 } from '../src/agent/effort.js';
+import { buildBody, 보낸토큰, 더할머리, chat } from '../src/backend/adapter.js';
+import { createServer } from 'node:http';
+import { allowEndpoint } from '../src/safety/network.js';
+import { 자동강도, 인사인가, effortFor, 가벼운강도, 천장고르기, 무거운가 } from '../src/agent/effort.js';
 import { 언어정하기, 말모두 } from '../src/i18n/index.js';
 import { trace } from './trace.mjs';
 
@@ -222,6 +224,75 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   check('★ 한글 이름은 지문으로 바뀐다', /^deel-[0-9a-f]{16}$/.test(String(한글것)), String(한글것));
   check('★ 같은 대화는 늘 같은 이름이다', 세션이름짓기('한글만있음') === 한글것, String(한글것));
   check('★ 다른 대화는 다른 이름이다', 세션이름짓기('다른것') !== 한글것, String(세션이름짓기('다른것')));
+}
+
+// ── 5b. 이름은 **머리**로도 나간다 ──────────────────────────────────────
+//
+// ★ 몸통 자리(위 10번)는 규격이 받는 칸이 있을 때만 쓴다. 그러면 게이트웨이
+//   뒤 — 사람들이 실제로 제일 많이 쓰는 자리 — 에는 아무것도 안 나간다.
+//   머리는 모르면 무시되므로 400 이 날 자리가 아니다. 그래서 여기로 보낸다.
+//
+//   이게 없으면 요청마다 새 대화가 열린다. 대시보드가 흩어지는 것은 눈에
+//   보이는 쪽이고, 안 보이는 쪽이 훨씬 비싸다 — 모델 하나 뒤에 창구가
+//   여럿이면 요청마다 다른 창구로 갈리고, 프롬프트 캐시는 창구마다 따로라
+//   갈리는 순간 앞머리가 통째로 다시 나간다.
+{
+  const 머리 = 더할머리('openai', 'deel-20260907-093608');
+  check('★ 이름을 머리에 싣는다',
+    머리['x-litellm-session-id'] === 'deel-20260907-093608', JSON.stringify(머리));
+  check('★ 우리 이름표로도 같이 싣는다 — 일반 규칙으로 읽는 곳이 있다',
+    머리['x-deel-session-id'] === 'deel-20260907-093608', JSON.stringify(머리));
+  check('★ 두 이름표의 값이 같다', 머리['x-litellm-session-id'] === 머리['x-deel-session-id']);
+
+  // 규격을 안 가린다. Anthropic 규격에서도 판 머리와 **같이** 나간다.
+  const 앤 = 더할머리('anthropic', 'deel-abc');
+  check('★ 규격을 안 가린다', 앤['x-litellm-session-id'] === 'deel-abc' && !!앤['anthropic-version'],
+    JSON.stringify(앤));
+
+  // 이름이 없으면 아무것도 안 붙는다 — 진단·한 번 재보기가 그 자리다.
+  check('★ 이름이 없으면 안 붙인다',
+    Object.keys(더할머리('openai')).length === 0 && Object.keys(더할머리('openai', '')).length === 0,
+    JSON.stringify(더할머리('openai', '')));
+}
+
+// ── 5c. 그 머리가 **진짜로** 전선까지 간다 ──────────────────────────────
+//
+// 위는 함수가 뭘 돌려주는지만 봤다. 부르는 자리가 그것을 안 쓰면 아무 일도
+// 안 일어난다 — 실제로 몸통 쪽이 그랬다(요약을 만드는 부름이 이름을 빠뜨렸다).
+// 그래서 여기서는 진짜로 보내 보고 서버가 무엇을 받았는지 본다.
+{
+  let 받은머리 = null;
+  let 받은몸 = null;
+  const srv = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      받은머리 = req.headers;
+      try { 받은몸 = JSON.parse(body); } catch { 받은몸 = null; }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '네' } }] }));
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}/v1`;
+  allowEndpoint(base);
+
+  // 게이트웨이 뒤에 Claude 를 둔 모양 — 몸통에는 이름을 실을 칸이 없는 자리다.
+  const conn = {
+    kind: 'openai', base, auth: 'bearer', key: 'k-1',
+    model: 'bedrock/converse/claude-opus-5',
+    세션이름: 'deel-20260907-093608',
+  };
+  await chat(conn, { messages: [{ role: 'user', content: '안녕' }], maxTokens: 64 });
+  await new Promise((r) => srv.close(r));
+
+  check('★★ 이름이 실제로 전선까지 간다',
+    받은머리?.['x-litellm-session-id'] === 'deel-20260907-093608',
+    String(받은머리?.['x-litellm-session-id']));
+  check('★★ 그러면서 몸통은 그대로 깨끗하다',
+    받은몸 && !('user' in 받은몸) && !('prompt_cache_key' in 받은몸),
+    Object.keys(받은몸 ?? {}).sort().join(', '));
+  적어둘것.push('게이트웨이에 나가는 머리: x-litellm-session-id · x-deel-session-id');
 }
 
 // ── 6. 400 문구에서 배운다 ──────────────────────────────────────────────
@@ -831,6 +902,51 @@ trace('캐시-두이름');
   check('★★ 네 말 모두 못 끈다는 줄이 있다',
     못끈다는줄.length === 4 && !못끈다는줄.includes('think.wireNoOff'),
     `${못끈다는줄.length}개`);
+}
+
+// ── 12. 모드가 강도를 낮추는 자리 ───────────────────────────────────────
+//
+// ★★ 여기가 조용히 제일 비쌌던 자리다.
+//
+// 묻기 모드는 think 가 low 다. "이 함수 뭐야?" 에는 맞는 값이다. 그런데
+// 무엇이 묻기로 가는지는 낱말이 정하고(route.js), "…설명해줘" 한 마디면
+// 간다. 그래서 파일 열 개를 읽고 경합 조건을 짚어야 하는 일까지 low 로
+// 돌았다 — 같은 질문을 깊게 본 쪽과 견주면 생각 블록이 0자 대 165,000자였다.
+//
+// 값이 5분의 1이면 싼 것이지만, 답이 다르면 싼 게 아니다.
+{
+  const 진짜있었던말 = [
+    '이 프로젝트의 공동작업 기능을 분석해서 동시 편집 시 데이터 손실, 덮어쓰기,',
+    '충돌 또는 상태 불일치가 발생할 가능성이 있는 부분을 찾아줘.',
+    '실제 코드 근거가 있는 문제만 제시하고 각 문제마다 관련 파일과 함수를 설명해줘.',
+    '최대 5개까지만 찾아줘.',
+  ].join('\n');
+
+  check('★ 시킨 것이 여럿이면 깊이 볼 일이다', 무거운가(진짜있었던말) === true);
+  check('한 줄짜리 물음은 아니다', 무거운가('이 함수 뭐야?') === false);
+  check('인사도 아니다', 무거운가('안녕') === false);
+  check('짧아도 살펴보라는 말이면 깊이 볼 일이다',
+    무거운가('공동작업 쪽에 경합 조건 있는지 좀 봐줘') === true);
+
+  check('★★ 무거운 말에는 모드가 강도를 못 낮춘다',
+    천장고르기('low', 'medium', 진짜있었던말) === 'medium',
+    천장고르기('low', 'medium', 진짜있었던말));
+  check('★ 가벼운 말에는 여전히 낮춘다 — 그 값이 옳은 자리다',
+    천장고르기('low', 'medium', '이 함수 뭐야?') === 'low',
+    천장고르기('low', 'medium', '이 함수 뭐야?'));
+  check('★ 모드가 더 세게 보라고 하면 그대로 따른다',
+    천장고르기('high', 'medium', '구조 어떻게 바꿔') === 'high');
+  check('모드가 정한 값이 없으면 사람이 정한 값 그대로',
+    천장고르기(null, 'xhigh', '아무 말') === 'xhigh');
+  /*
+   * ★★ 끈 것은 모드가 못 켠다.
+   *
+   * off 는 기본값이 아니라 사람이 고른 값이다. 여기서 켜 주면 "생각 끄기" 가
+   * 모드에 따라 안 지켜지는 셈이고, 그건 화면에 아무 표시도 없이 값이 나가는
+   * 모양이다 — 이 파일이 재는 것이 전부 그런 자리다.
+   */
+  check('★★ 끈 것은 모드가 못 켠다', 천장고르기('high', 'off', '분석해줘') === 'off',
+    천장고르기('high', 'off', '분석해줘'));
 }
 
 // ── 마무리 ──────────────────────────────────────────────────────────────
