@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-7%2C162%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-7%2C844%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -268,7 +268,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 1.16.0  ⌂ 이 안
+ deel 1.17.0  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -1185,7 +1185,7 @@ deel stats                    # 이 폴더에서 실제로 무엇을 했나 (.de
 ## 개발
 
 ```bash
-npm test          전체 검증 (7,346항목 — 몇몇은 터미널에 따라 갈립니다)
+npm test          전체 검증 (7,844항목 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -1254,6 +1254,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
+| **[1.17.0](docs/ko/releases/1.17.md#1170)** | 사내에 들여놓을 때 막히던 자리들 · 믿는 폴더 · mTLS · `doctor` · 훅 · 서브에이전트 · hwpx 쓰기 |
 | **[1.16.0](docs/ko/releases/1.16.md#1160)** | 깊이 봐 달라는 말을 얕게 받던 자리 · 게이트웨이 캐시 · `doc2md` · Figma `.fig` |
 | **[1.15.1](docs/ko/releases/1.15.md#1151)** | 에디터에 우리가 어떻게 인증받는지 말합니다 — ACP 레지스트리 등재 조건 |
 | **[1.15.0](docs/ko/releases/1.15.md#1150)** | 같은 것을 두 번 하지 않습니다 — 프리픽스 캐시를 깨던 조용히 비싼 아홉 자리 |

@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-7%2C162%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-7%2C844%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -339,7 +339,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.16.0  ⌂ inside
+ deel 1.17.0  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1258,7 +1258,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (7,346 checks; a few are TTY-dependent)
+npm test          Full suite (7,844 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1313,6 +1313,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| **[1.17.0](docs/en/releases/1.17.md#1170)** | What blocked it from getting inside a company · trusted folders · mTLS · `doctor` · hooks · subagents · writing hwpx |
 | **[1.16.0](docs/en/releases/1.16.md#1160)** | A deep request no longer lands in a shallow mode · gateway cache · `doc2md` · Figma `.fig` |
 | **[1.15.1](docs/en/releases/1.15.md#1151)** | Telling the editor how we get authenticated — ACP Registry listing requirement |
 | **[1.15.0](docs/en/releases/1.15.md#1150)** | Stop doing the same thing twice — nine quietly expensive places that broke the prefix cache |
