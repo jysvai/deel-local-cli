@@ -1157,7 +1157,7 @@ audit-log spec to write SIEM ingestion rules.
 | File | What |
 |---|---|
 | `import-review.txt` | Dependencies · install scripts · **every network and process-spawn call site found by scanning the source** (file:line) · the three outbound lanes · SHA-256 per file |
-| `sbom.cdx.json` | **SBOM (CycloneDX 1.5).** Feed it straight to a scanner. One component per file with SHA-256; dependencies stated as an **explicit empty array** — "not declared" and "none" are different claims |
+| `sbom.cdx.json` | **SBOM (CycloneDX 1.7).** Feed it straight to a scanner. One component per file with SHA-256 and a license; dependencies stated as an **explicit empty array** — "not declared" and "none" are different claims. All four CISA 2026 minimum elements (hash algorithm, component license, generating tool, generation context) are filled in |
 | `audit-spec.json` | Egress list (per lane: when, where, what, how it's stopped, and the source location) · **audit-log spec** (field names and meanings, plus what is never recorded) · file hashes |
 
 ```bash

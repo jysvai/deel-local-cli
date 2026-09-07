@@ -74,6 +74,53 @@ trace('1-SBOM');
   check('ACP 도 부품 목록에 들어 있다', b.components.some((cmp) => cmp.name === 'src/acp/serve.js'),
     b.components.filter((cmp) => cmp.name.startsWith('src/acp')).map((cmp) => cmp.name).join(' '));
 
+  /*
+   * ── CISA 2026 최소 요소 ──────────────────────────────────────────────
+   *
+   * 2026-07-29 자 「SBOM 최소 요소」 가 2021년 NTIA 문서를 대체하면서 네
+   * 가지가 더해졌다. 이 네 줄이 없으면 스캐너가 아니라 **담당자 검토 대기**
+   * 로 쌓인다 — 라이선스를 모르는 파일 152개 같은 모양으로.
+   *
+   * 그래서 「1.7 이라고 적혀 있다」 를 재는 것이 아니라 네 칸이 실제로
+   * 채워졌는지를 잰다. 판만 올리고 칸이 비면 아무것도 안 고친 것이다.
+   */
+  check('규격 판이 1.7 이다 — 아래 네 칸이 1.5 에는 없다', b.specVersion === '1.7', b.specVersion);
+  /*
+   * `$schema` 는 일부러 안 적는다.
+   *
+   * 규격이 허락하는 칸이지만 그 값은 바깥 주소다. 이 프로그램의 심사 논거는
+   * 「나가는 주소가 사람이 정한 하나뿐」 이고 그 주장은 소스를 grep 해서
+   * 확인된다 — 거기서 안 부르는 주소가 하나 나오면 담당자는 그것부터 물어야
+   * 한다. 실제로 network.test.js 가 이걸 잡았다. 읽는 법은 bomFormat 과
+   * specVersion 이 정하므로 잃는 것도 없다.
+   */
+  check('편하자고 바깥 주소를 심지 않는다', b.$schema === undefined, String(b.$schema));
+
+  check('(CISA 1) 해시 알고리즘을 이름으로 적는다',
+    b.components.every((cmp) => cmp.hashes?.every((h) => h.alg === 'SHA-256')),
+    JSON.stringify(b.components[0]?.hashes));
+  check('(CISA 2) 부품마다 라이선스가 붙어 있다',
+    b.components.length > 0 && b.components.every((cmp) => cmp.licenses?.[0]?.license?.id === a.license),
+    JSON.stringify(b.components[0]?.licenses));
+  check('(CISA 3) 만든 도구를 부품 모양으로 적는다',
+    !Array.isArray(b.metadata.tools)
+      && b.metadata.tools?.components?.[0]?.name === 'deel pack'
+      && b.metadata.tools.components[0].version === a.version,
+    JSON.stringify(b.metadata.tools));
+  check('(CISA 4) 만든 맥락을 적는다 — 소스를 보고 만든 것이다',
+    b.metadata.lifecycles?.[0]?.phase === 'build', JSON.stringify(b.metadata.lifecycles));
+
+  /*
+   * 진위는 주장하지 않고 확인하는 자리만 적는다.
+   *
+   * 우리가 만든 서명을 우리가 넣으면 「우리가 우리를 보증한다」 가 된다.
+   * 담당자에게 값이 없다.
+   */
+  check('서명을 지어내지 않는다', b.signature === undefined, String(b.signature));
+  check('대신 진위를 어디서 확인하는지 적는다',
+    b.metadata.properties.some((x) => x.name === 'deel:provenance' && /npm audit signatures/.test(x.value)),
+    JSON.stringify(b.metadata.properties.find((x) => x.name === 'deel:provenance')));
+
   // JSON 으로 오갈 수 있어야 한다. 못 하면 파일로 못 낸다.
   check('JSON 으로 나갔다 들어온다', (() => {
     try { return JSON.parse(JSON.stringify(b)).components.length === b.components.length; } catch { return false; }

@@ -289,7 +289,7 @@ export function packSelf(outFile, { root = repoRoot(), at = new Date(), lang = �
       '심사 담당자께',
       '  반입심사서.txt   사람이 읽는 심사 자료. 의존성·설치 스크립트·네트워크',
       '                   호출 자리·파일별 SHA-256 이 전부 적혀 있습니다.',
-      '  sbom.cdx.json    SBOM (CycloneDX 1.5). 스캐너에 그대로 넣으시면 됩니다.',
+      '  sbom.cdx.json    SBOM (CycloneDX 1.7). 스캐너에 그대로 넣으시면 됩니다.',
       '  심사명세.json    통신 목록 · 감사기록 사양 · 파일 해시. 기계가 읽는 형식입니다.',
       '',
       '  세 파일 모두 소스를 훑어 자동으로 만든 것입니다. 손으로 적은 값이 아닙니다.',

@@ -28,8 +28,27 @@ import { 보관방식 } from '../safety/keystore.js';
 import { 언어 } from '../i18n/index.js';
 import { specEn, egressEn, keyStorageEn, auditLogEn, specSummaryEn } from './sheet.en.js';
 
-/** 우리가 내놓는 SBOM 규격. 스캐너가 이 숫자를 보고 읽는 법을 정한다. */
-export const CDX판 = '1.5';
+/**
+ * 우리가 내놓는 SBOM 규격. 스캐너가 이 숫자를 보고 읽는 법을 정한다.
+ *
+ * 1.5 에서 1.7 로 올렸다. 판을 올린 것 자체가 목적이 아니라, CISA 가
+ * 2026-07-29 로 「SBOM 최소 요소」 를 새로 냈고(2021년 NTIA 문서를 대체한다)
+ * 거기서 더해진 네 가지를 적을 자리가 1.5 에는 없었다.
+ *
+ *   부품 해시 알고리즘   hashes[].alg      — 1.5 에도 있었고 이미 적고 있었다
+ *   부품 라이선스        components[].licenses
+ *   만든 도구 이름       metadata.tools.components[]
+ *   만든 맥락            metadata.lifecycles[]
+ *
+ * 앞의 두 개는 자리가 있었고 우리가 안 적었다. 뒤의 두 개는 1.5 의 모양이
+ * 다르다 — metadata.tools 가 1.5 에서는 {vendor,name,version} 배열이고
+ * 1.6 부터 부품 목록으로 바뀌었으며, lifecycles 는 아예 없다.
+ *
+ * 판을 안 올리고 필드만 끼워 넣는 길도 있었지만 그러면 규격에 안 맞는
+ * SBOM 이 된다. 스캐너가 1.5 로 검사하다 모르는 열쇠에서 멈추면, 담당자
+ * 화면에는 「이 SBOM 은 읽을 수 없음」 한 줄만 남는다.
+ */
+export const CDX판 = '1.7';
 
 /**
  * CycloneDX SBOM.
@@ -59,6 +78,24 @@ export function sbom(a, { at = new Date(), serial = null, lang = 언어() } = {}
       : 'A coding agent CLI for local models and in-house gateways',
   };
 
+  // 부품마다 붙일 라이선스. CISA 2026 최소 요소의 하나이고, 여태 뿌리
+  // 부품에만 적고 파일에는 안 적었다. 스캐너 쪽에서 보면 「라이선스를 모르는
+  // 파일 152개」 라 검토 대기로 쌓인다.
+  const 라이선스 = a.license ? [{ license: { id: a.license } }] : [];
+
+  /*
+   * `$schema` 는 안 적는다.
+   *
+   * 규격이 허락하는 칸이고 편집기에서 편하기도 하다. 그런데 그 값은 규격을
+   * 내는 곳의 주소이고, 그러면 **우리 소스에 바깥 주소가 하나 생긴다.**
+   * 이 프로그램의 심사 논거는 「나가는 주소가 사람이 정한 하나뿐」
+   * 이고, 그 주장은 소스를 grep 해서 확인된다. 거기서 안 부르는 주소 하나가
+   * 나오면 담당자는 그것부터 물어야 하고, 우리는 「그건 안 부릅니다」 를
+   * 설명해야 한다. 한 줄 편하자고 살 값이 아니다.
+   *
+   * 스캐너가 읽는 법을 정하는 것은 아래 bomFormat + specVersion 이다.
+   * $schema 가 없다고 못 읽는 검사기는 없다.
+   */
   return {
     bomFormat: 'CycloneDX',
     specVersion: CDX판,
@@ -66,13 +103,48 @@ export function sbom(a, { at = new Date(), serial = null, lang = 언어() } = {}
     version: 1,
     metadata: {
       timestamp: at.toISOString(),
+      /*
+       * 만든 맥락 — 이 SBOM 이 **언제 찍힌 것인가**.
+       *
+       * 같은 물건이라도 소스를 보고 만든 것(build)과 돌아가는 것을 훑어 만든
+       * 것(operations)은 내용이 다르다. 그 구별이 없으면 담당자는 두 SBOM 이
+       * 어긋날 때 어느 쪽이 맞는지 정할 근거가 없다.
+       *
+       * 우리 것은 언제나 build 다 — selfpack.js 가 배포될 파일을 그 자리에서
+       * 읽어 해시를 뜬다.
+       */
+      lifecycles: [{ phase: 'build' }],
       component: 본체,
-      tools: [{ vendor: 'deel', name: 'deel pack', version: a.version }],
+      /*
+       * 만든 도구. 1.6 부터 {vendor,name,version} 배열이 아니라 부품 목록이다.
+       *
+       * 옛 모양도 아직 읽히지만 안 쓴다 — 규격이 물러나라고 표시해 둔 자리를
+       * 굳이 쓰면, 그 자리가 사라지는 판에서 조용히 빈칸이 된다.
+       */
+      tools: {
+        components: [{
+          type: 'application',
+          name: 'deel pack',
+          version: a.version,
+          publisher: 'deel',
+        }],
+      },
       properties: [
         { name: 'deel:runtime', value: `node ${a.node}` },
         { name: 'deel:dependencies', value: String(a.deps.length) },
         { name: 'deel:devDependencies', value: String(a.devDeps.length) },
         { name: 'deel:installScripts', value: a.lifecycle.length ? a.lifecycle.join(',') : 'none' },
+        /*
+         * 진위는 여기서 주장하지 않고, **어디서 확인하는지**만 적는다.
+         *
+         * CycloneDX 에는 서명 칸(signature)이 있다. 거기에 우리가 만든 서명을
+         * 넣을 수도 있지만, 그 서명을 검증할 열쇠를 같이 넘겨야 뜻이 있고 —
+         * 그러면 「우리가 우리를 보증한다」 가 된다. 담당자에게 아무 값이 없다.
+         *
+         * 실제 서명은 npm 배포 때 붙는 SLSA 증명이고, 그건 우리 손을 안 거친다.
+         * 확인하는 명령을 적어 두는 편이 서명 한 덩이보다 낫다.
+         */
+        { name: 'deel:provenance', value: `npm audit signatures — ${a.name}@${a.version} (SLSA v1, npm 신뢰 배포)` },
       ],
     },
     // 파일마다 하나씩. 담긴 것이 담겨야 할 것과 같은지 여기서 대조한다.
@@ -80,6 +152,8 @@ export function sbom(a, { at = new Date(), serial = null, lang = 언어() } = {}
       type: 'file',
       'bom-ref': `file:${f.path}`,
       name: f.path,
+      version: a.version,
+      licenses: 라이선스,
       hashes: [{ alg: 'SHA-256', content: f.sha }],
       properties: [{ name: 'deel:bytes', value: String(f.bytes) }],
     })),
