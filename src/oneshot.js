@@ -12,6 +12,7 @@
 //   여기서 루프를 다시 짜면 두 벌이 되고, 언젠가 한쪽만 고쳐진다.
 import { c, mark, clip } from './ui/ansi.js';
 import { 규칙모으기, 정책읽기 } from './safety/policy.js';
+import { 훅읽기 } from './safety/hooks.js';
 import { 프로젝트설정줄들 } from './safety/trust.js';
 import { 스키마읽기, 맞나, 답에서JSON뽑기, 시킬말 as 스키마시킬말 } from './agent/outschema.js';
 import { 남길것읽기 } from './safety/shellenv.js';
@@ -410,6 +411,15 @@ export async function runOnce(opts = {}) {
   // 정말 맡기고 싶은 사람은 --yes 로 그 뜻을 명시한다.
   const 승인필요 = session.mode !== 'auto';
   const 자동승인 = opts.yes === true;
+  /*
+   * 사람이 적어 둔 훅을 읽는다 (safety/hooks.js).
+   *
+   * 여기서 **한 번만** 읽는다. 도구를 부를 때마다 읽으면 대화 도중에 훅
+   * 파일이 바뀌는 것이 곧 「방금 통과한 것이 다음 걸음에 막힌다」 가 되고,
+   * 그건 원인을 찾을 길이 없는 화면이다. 설정을 켤 때 한 번 읽는 것과 같다.
+   */
+  const 훅정보 = 훅읽기(root, { 켜짐: opts.hooks === false ? false : null });
+
   const ctx = {
     scope: makeScope(root),
     // 도구가 한 번에 돌려줄 양을 이 값에서 뽑는다 (agent/budget.js).
@@ -419,6 +429,8 @@ export async function runOnce(opts = {}) {
     get 눈있나() { return !!conn.vision; },
     // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
     규칙들: 규칙모으기(cfg),
+    // 사람이 적어 둔 훅 (safety/hooks.js). 프로젝트 파일은 믿는 폴더에서만 읽는다.
+    훅들: 훅정보.훅들,
     // Bash 자식에게 되살려 줄 환경변수 이름 (safety/shellenv.js).
     // 기본은 열쇠처럼 생긴 이름을 다 빼는 것이고, 여기 적은 것만 되살린다 —
     // 사내 저장소를 쓰는 사람은 npm ci 에 NPM_TOKEN 이 실제로 필요하다.
@@ -637,6 +649,14 @@ export async function runOnce(opts = {}) {
           곁(`  ${c.yellow('⚠')} ${c.gray(ev.멎은초
             ? 옮긴말('ev.stalled', { n: ev.멎은초 })
             : 옮긴말('ev.cutoff'))}`);
+          break;
+
+        case 'hook_note':
+          for (const 줄 of String(ev.말).split('\n').slice(0, 8)) 곁(`  ${c.gray(`· ${줄}`)}`);
+          break;
+
+        case 'hook_block':
+          곁(`  ${c.yellow('✗')} ${c.gray(옮긴말('ev.hookBlock'))}`);
           break;
 
         case 'nudge':

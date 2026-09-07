@@ -2,7 +2,7 @@
 
 # Extending
 
-Skills, plugins, tools from outside (MCP), inside your editor (ACP)
+Skills, plugins, tools from outside (MCP), your own rules (hooks), inside your editor (ACP)
 
 ---
 
@@ -66,6 +66,87 @@ tear down that line with our own hands. So:
 One server crashing, hanging, or talking nonsense does not affect the others. Failures are not
 swallowed — the reason appears in the header, because a silent drop leaves "why is that tool
 missing?" unanswerable.
+
+---
+
+## Your own rules, enforced (hooks)
+
+<sub>Where deel asks something it can never know about</sub>
+
+Every company guards something different. One team must never let `git push` run,
+another needs its in-house formatter after every edit, another has to check what you
+typed for personal identifiers before it goes anywhere.
+
+None of that can live inside this program. Put it in and every team forks, and from
+that moment on our fixes stop reaching them. So we give you **the place**, and you
+write what happens there.
+
+This is a different axis from the permission rules. Those are a table of patterns, so
+they only measure what we already know about. A hook can call any program at all —
+your DLP scanner, your approval service, **something we will never know exists**.
+
+```json
+{
+  "hooks": [
+    { "때": "도구전", "도구": "Bash",       "명령": "python .deel/gate.py", "제한초": 10 },
+    { "때": "도구후", "도구": "Write|Edit", "명령": "npx prettier --write --loglevel warn ." },
+    { "때": "말전",                          "명령": "python .deel/dlp.py" }
+  ]
+}
+```
+
+Write it in `.deel/hooks.json` (this project) or `~/.deel/hooks.json` (this machine).
+Claude Code's `hooks` shape (`PreToolUse`, `matcher`, `{"type":"command"}`) is accepted
+as-is — telling someone who already has that file to rewrite it means they simply will
+not use hooks.
+
+| Event | When | Can it block? |
+|---|---|---|
+| `PreToolUse` `도구전` | Just before a tool runs — after the permission rules, before the approval prompt | **Yes** |
+| `UserPromptSubmit` `말전` | **Before** what you typed enters the conversation | **Yes** |
+| `PostToolUse` `도구후` | Right after a tool finishes; whatever it prints goes to the model | No |
+| `Stop` `턴끝` | When a turn is finished | No |
+
+There is one calling convention. **Everything is handed over on stdin as one line of
+JSON** (`{"자리":"도구전","도구":"Bash","인자":{…}}`), and the answer is the **exit code**.
+
+| Code | Meaning |
+|---|---|
+| `0` | Pass. What it printed goes to the screen and to the model |
+| `2` | **Block.** What it printed becomes the reason, verbatim |
+| anything else | The hook is broken — and on a blocking event that **blocks** (below) |
+
+### A broken hook blocks
+
+A gate with nobody at it is not a locked gate.
+
+The common convention is "exit 2 blocks, every other failure passes through." Then one
+typo in the hook file (`pythno check.py`) leaves that gate quietly open — while the
+screen still says "3 hooks." Telling your security team a control is in place when it
+silently is not is the worst outcome available here.
+
+So **on a blocking event, a broken hook blocks.** It is the same judgement as never
+counting an unmeasured thing as green. To let it through you have to **write it down**:
+`"고장나면": "지나가기"` on that hook. Only what is written passes.
+
+### This is somebody else's program too
+
+| | |
+|---|---|
+| **Off by default** | Nothing runs until you write it in `hooks.json` yourself |
+| **Trusted folders only** | The project file is read only in a folder you ran `deel trust` on. Without that, one `git clone` is enough to run someone else's commands on your machine |
+| **Audited** | What ran, when, and what it blocked. **Including what it let through** — "never ran" and "ran and passed it" are different facts |
+| **Model text never hits the command line** | Tool arguments and your prompt all go over stdin. Splicing them into a command line is the injection hole itself |
+| **You can turn it off** | `deel --no-hooks` for one run, `DEEL_HOOKS=off` for good. A safety device with no visible off switch is not a safety device |
+| **Outside the work scope** | Hooks do not respect our fence. The `/hooks` screen says so |
+| **Still runs under `--offline`** | Unlike MCP. An MCP server is somebody else's program fetched from elsewhere; a hook is **a command you wrote in your own file** — blocking it while leaving the `Bash` tool alone would not be coherent |
+
+A hook does not stand in for approval. Even when a hook passes, `strict` still asks —
+permission is **the rules and the hook and you**.
+
+`/hooks` shows what is armed; `deel doctor` shows why something is not running. The
+most common reason is a folder that was never trusted, and that used to show up nowhere
+at all, so both screens now say it.
 
 ---
 

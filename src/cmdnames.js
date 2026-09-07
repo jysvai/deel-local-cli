@@ -54,6 +54,7 @@ export const 명령들 = {
   sessions: { arg: false },
   recall: { arg: true },
   mcp: { arg: false },
+  hooks: { arg: false },
   memory: { arg: true },
   level: { arg: true },
   bell: { arg: true },

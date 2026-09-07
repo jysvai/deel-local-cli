@@ -333,6 +333,74 @@ check('상한(24회)까지 안 간다', ev4.filter((e) => e.type === 'tool').len
   check('생각 몫은 답 토큰을 안 건드린다', s6.usage.out === 30, String(s6.usage.out));
 }
 
+/*
+ * ── 훅이 루프에 정말 걸려 있나 (safety/hooks.js) ────────────────────────
+ *
+ * 훅 자체는 test/hooks.test.js 가 잰다. 여기서 재는 것은 **배선**이다 —
+ * ctx.훅들 이 실제로 도구 실행 앞을 지나는가, 막으면 도구가 정말 안 도는가.
+ *
+ * 이 배선은 조용히 끊긴다. 훅 모듈은 멀쩡하고 검사도 전부 초록인데, 루프가
+ * ctx.훅들 을 안 보면 아무것도 안 막힌다. 그리고 그건 「막았다」 는 화면이
+ * 아니라 **아무 화면도 없는 것**으로 나타나서, 사람은 훅이 도는 줄 안다.
+ * 사내에 「걸어 뒀습니다」 라고 말해 놓고 안 걸린 상태가 여기서 생긴다.
+ */
+{
+  const { 훅펴기 } = await import('../src/safety/hooks.js');
+  const 노드 = (글) => `node -e "${글.replace(/"/g, '\\"')}"`;
+  const 파일 = join(root, '훅검사.txt');
+  writeFileSync(파일, '원래대로\n', 'utf8');
+
+  turn = 0;
+  script = [
+    { toolCall: { name: 'Write', args: { file_path: '훅검사.txt', content: '고쳐졌다\n' } } },
+    { text: '막혔습니다.' },
+  ];
+  const 훅ctx = {
+    ...ctx,
+    훅들: 훅펴기({
+      hooks: [{ 때: '도구전', 도구: 'Write', 명령: 노드('process.stdout.write("반입 금지 파일입니다");process.exit(2)') }],
+    }, '검사').훅들,
+  };
+  const s7 = new Session(conn, { root, mode: 'auto', think: 'off' });
+  const 훅이벤트 = [];
+  for await (const ev of run(s7, 훅ctx, '파일 하나 써 줘')) 훅이벤트.push(ev);
+
+  const 쓰기 = 훅이벤트.find((e) => e.type === 'tool' && e.name === 'Write');
+  check('★★ 도구전 훅이 루프에서 도구를 막는다', /훅이 막았습니다/.test(쓰기?.result?.error ?? ''),
+    쓰기?.result?.error ?? '(Write 이벤트가 없음)');
+  // 화면 말고 **디스크**로 확인한다. 「막혔다고 적혀 있다」 와 「안 바뀌었다」 는 다른 사실이다.
+  check('★★ 그리고 파일이 실제로 안 바뀐다', readFileSync(파일, 'utf8') === '원래대로\n',
+    readFileSync(파일, 'utf8').trim());
+  // 까닭이 모델에게 가야 한다. 안 가면 모델은 같은 것을 그대로 다시 부른다.
+  const 실은것 = s7.messages.find((m) => m.role === 'tool' && /반입 금지 파일입니다/.test(String(m.content ?? '')));
+  check('★ 훅이 한 말이 그대로 모델에게 간다', !!실은것,
+    JSON.stringify(s7.messages.filter((m) => m.role === 'tool').map((m) => String(m.content).slice(0, 40))));
+
+  /*
+   * 말전 훅은 **사람 말이 대화에 들어가기 전에** 막아야 한다. 넣고 나서
+   * 막으면 그 말이 대화에 남아 다음 요청에 실려 나간다 — 막은 것이 아니라
+   * 늦춘 것뿐이고, 사내 DLP 를 여기 거는 사람이 원하는 것의 정반대다.
+   */
+  turn = 0;
+  script = [{ text: '여기까지 오면 안 된다' }];
+  const 말ctx = {
+    ...ctx,
+    훅들: 훅펴기({ hooks: [{ 때: '말전', 명령: 노드('process.stdout.write("주민번호가 섞여 있습니다");process.exit(2)') }] }, '검사').훅들,
+  };
+  const s8 = new Session(conn, { root, mode: 'auto', think: 'off' });
+  const 앞선요청수 = seenBodies.length;
+  const 말이벤트 = [];
+  for await (const ev of run(s8, 말ctx, '이건 나가면 안 되는 말')) 말이벤트.push(ev);
+
+  check('★★ 말전 훅이 막으면 모델을 아예 안 부른다', seenBodies.length === 앞선요청수,
+    `${seenBodies.length - 앞선요청수}건 나감`);
+  check('★★ 막힌 말은 대화에 안 남는다',
+    !s8.messages.some((m) => String(m.content ?? '').includes('이건 나가면 안 되는 말')),
+    JSON.stringify(s8.messages.map((m) => m.role)));
+  check('★ 왜 막혔는지는 화면에 뜬다',
+    말이벤트.some((e) => e.type === 'hook_block' && /주민번호/.test(e.말 ?? '')), '');
+}
+
 // ── 결과 ───────────────────────────────────────────────────────────
 const W = (s, n) => s + ' '.repeat(Math.max(0, n - [...s].reduce((a, ch) => a + (ch.codePointAt(0) > 0x1100 ? 2 : 1), 0)));
 console.log('');

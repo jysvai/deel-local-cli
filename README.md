@@ -96,6 +96,7 @@ No account, no sign-up, no telemetry. If you already run Ollama or LM Studio,
 - [Auto-compaction](#auto-compaction)
 - [Resuming a conversation](#resuming-a-conversation)
 - [Attaching tools from outside (MCP)](#attaching-tools-from-outside-mcp)
+- [Your own rules, enforced (hooks)](#your-own-rules-enforced-hooks)
 - [Inside your editor (ACP)](#inside-your-editor-acp)
 - [Keeping secrets out of the conversation](#keeping-secrets-out-of-the-conversation)
 - [Safety](#safety)
@@ -115,7 +116,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [The screen](docs/en/interface.md) | The input box · work modes · simple vs developer · what it asks about |
 | [Tools in depth](docs/en/tools.md) | `Outline` · `Verify` · `Task` · `Jobs` · `Append` · `Def`/`Refs` · edit matching |
 | [Korean documents and Excel](docs/en/documents.md) | hwpx/docx/pptx/**PDF** · encoding · Excel → CSV |
-| [Extending](docs/en/extend.md) | Skills · plugins · MCP · ACP |
+| [Extending](docs/en/extend.md) | Skills · plugins · MCP · hooks · ACP |
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
@@ -561,6 +562,7 @@ Names follow Claude Code / Codex conventions.
 | `/recall <text>` | Search past conversations **by content** |
 | `/memory` | What persists across sessions — view, add, delete |
 | `/mcp` | Externally attached tools (MCP servers) |
+| `/hooks` | Configured hooks — where they came from, when they run |
 | `/init` | Create a `DEEL.md` rules file |
 | `/exit` | Quit |
 
@@ -998,6 +1000,37 @@ The model sees it as `mcp__wiki__search`. `/mcp` shows what is attached.
 > **More** — But this is somebody else's program
 >
 > **[Extending read →](docs/en/extend.md#attaching-tools-from-outside-mcp)**
+
+---
+
+## Your own rules, enforced (hooks)
+
+Every company guards something different — one team must never let `git push` run,
+another needs its formatter after every edit. Putting all of it inside the program means
+every team forks, and from then on our fixes stop reaching them. So we give you
+**the place** instead.
+
+Write it in `.deel/hooks.json`. Claude Code's `hooks` shape is accepted as-is:
+
+```json
+{ "hooks": [ { "때": "도구전", "도구": "Bash", "명령": "python .deel/gate.py" } ] }
+```
+
+Everything is handed over as **one line of JSON on stdin**, and the answer is the
+**exit code** — `0` passes, `2` blocks. Four events: `PreToolUse` (can block),
+`UserPromptSubmit` (can block), `PostToolUse`, `Stop`. `/hooks` shows what is armed.
+
+**A broken hook blocks.** The common convention lets every failure but exit 2 pass
+through, so one typo in the hook file leaves the gate quietly open — while the screen
+still says "3 hooks." A gate with nobody at it is not a locked gate.
+
+**The project file is read only in a trusted folder.** Without that, one `git clone`
+is enough to run someone else's commands on your machine. `deel --no-hooks` for one
+run, `DEEL_HOOKS=off` for good.
+
+> **More** — This is somebody else's program too · A broken hook blocks
+>
+> **[Extending read →](docs/en/extend.md#your-own-rules-enforced-hooks)**
 
 ---
 

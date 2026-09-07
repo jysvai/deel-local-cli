@@ -3,6 +3,7 @@
 import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남, 흐름멎음, 보낸토큰, 부른것들, 도구결과인가 } from '../backend/adapter.js';
 import { 그림메시지 } from '../backend/vision.js';
 import { 어떻게할까 } from '../safety/policy.js';
+import { 자리돌리기, 막힘말 } from '../safety/hooks.js';
 import { toolSchemas, runTool, TOOLS, 파일현황 } from '../tools/index.js';
 import { isMutating } from '../safety/guard.js';
 import { effortFor, tokensFor, fullCap, wasCut, shiftLevel, 자동강도, 천장고르기, 인사인가 as 인사말인가 } from './effort.js';
@@ -150,6 +151,31 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 되돌린 일을 또 하려 든다.
    */
   if (!깊이 && !고쳐쓰기) session.턴시작(ctx.history.nextTurn());
+
+  /*
+   * ── 사람 말이 나가기 전에 (safety/hooks.js) ─────────────────────────
+   *
+   * **밀어 넣기 전에** 돈다. 넣고 나서 막으면 막힌 말이 대화에 그대로 남고,
+   * 다음 요청에 실려 나간다 — 막은 것이 아니라 늦춘 것뿐이다. 사내 DLP 훅을
+   * 여기 거는 사람이 원하는 것은 정확히 그 반대다.
+   *
+   * 하위 작업(깊이>0)에서는 안 돈다. 하위가 받은 할일은 사람이 친 말이
+   * 아니라 부모 모델이 쓴 글이고, 그 글의 재료가 된 사람 말은 이미 여기를
+   * 한 번 지나왔다. 다시 돌리면 같은 말을 두 번 재는 셈이다.
+   */
+  if (!깊이 && ctx.훅들?.length) {
+    const 훅 = await 자리돌리기(ctx.훅들, '말전', {
+      넣을것: { 말: String(userText ?? '') }, signal, audit: ctx.audit,
+    });
+    if (훅.막힘) {
+      ctx.audit.blocked('말전 훅이 막음', 훅.막힘.훅.명령);
+      yield { type: 'hook_block', 자리: '말전', 말: 막힘말(훅.막힘), 훅: 훅.막힘.훅 };
+      yield { type: 'done', steps: 0, text: 막힘말(훅.막힘), files: [], 빠진: [], 훅막힘: true };
+      return;
+    }
+    for (const 말 of 훅.말들) yield { type: 'hook_note', 자리: '말전', 말 };
+  }
+
   // @ 로 그림을 지목했으면 그 말과 함께 실어 보낸다 (backend/vision.js).
   session.push(그림들?.length
     ? 그림메시지(session.conn?.kind, { 글: userText, 그림들 })
@@ -1141,6 +1167,23 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         yield { type: 'nudge', why: '요청누락', 빠진, text: msg.content };
         continue;
       }
+      /*
+       * ── 턴이 끝나는 자리 (safety/hooks.js) ────────────────────────────
+       *
+       * 여기도 못 막는다 — 일은 이미 다 끝났다. 여기 훅을 거는 사람이 하려는
+       * 것은 대개 뒷정리다: 검사 한 번 돌리기, 사내 알림 보내기, 바뀐 파일
+       * 목록 적어 두기.
+       *
+       * 하위 작업에서는 안 돈다. 하위가 끝난 것은 사람이 시킨 일이 끝난 것이
+       * 아니라 그 한 덩이가 끝난 것뿐인데, 여기서 돌리면 한 번 시킨 일에
+       * 뒷정리가 세 번 돈다.
+       */
+      if (!깊이 && ctx.훅들?.length) {
+        const 훅 = await 자리돌리기(ctx.훅들, '턴끝', {
+          넣을것: { 걸음: steps, 파일: [...손댄파일] }, signal, audit: ctx.audit,
+        });
+        for (const 말 of 훅.말들) yield { type: 'hook_note', 자리: '턴끝', 말 };
+      }
       // 밀고도 그대로면 조용히 넘어가지 않는다. 사람이 알아야 다음을 정한다.
       yield { type: 'done', steps, text: msg.content, files: 마무리(), 빠진 };
       return;
@@ -1298,6 +1341,37 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
             result: { error: `막힘 — ${판정.출처}의 ${판정.규칙}` },
           };
           continue;
+        }
+
+        /*
+         * ── 사람이 적어 둔 훅 (safety/hooks.js) ──────────────────────────
+         *
+         * 규칙 **다음**, 승인 **앞**이다. 자리가 여기여야 하는 이유가 둘이다.
+         *
+         *   · 규칙으로 이미 막힌 것에 훅을 돌리면 남의 프로그램을 헛돌린다.
+         *   · 승인 앞에 두어야 사내 규칙이 사람을 안 귀찮게 하고 막는다.
+         *     뒤에 두면 「y 를 치고 나서 막혔습니다」 가 되는데, 그건 사람에게
+         *     제 손으로 허락한 것을 빼앗기는 것처럼 보인다.
+         *
+         * 승인을 훅이 대신할 수는 없다. 훅이 통과시켜도 strict 는 여전히
+         * 묻는다 — 그래야 `허락 = 규칙 그리고 훅 그리고 사람` 이 된다.
+         */
+        if (ctx.훅들?.length) {
+          const 훅 = await 자리돌리기(ctx.훅들, '도구전', {
+            도구: call.name, 넣을것: { 인자: call.args ?? {} }, signal, audit: ctx.audit,
+          });
+          if (훅.막힘) {
+            const 까닭 = 막힘말(훅.막힘);
+            ctx.audit?.blocked?.('도구전 훅이 막음', `${call.name} · ${훅.막힘.훅.명령}`);
+            거절(call, 까닭);
+            if (막힘셈(call, '훅 막음')) 멈출까 = '훅이 막은 것을 계속 다시 부르고 있습니다';
+            yield {
+              type: 'tool', name: call.name, args: call.args, showLabel: true,
+              result: { error: `훅이 막았습니다 — ${훅.막힘.훅.이름 ?? 훅.막힘.훅.출처}` },
+            };
+            continue;
+          }
+          for (const 말 of 훅.말들) yield { type: 'hook_note', 자리: '도구전', 도구: call.name, 말 };
         }
 
         // 모드에 따라 물어본다. 기본(auto)은 안 묻고 되돌리기로 대응한다.
@@ -1586,6 +1660,36 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          */
         for (const f of result.바뀐것들 ?? []) 손댄파일.add(f);
 
+        /*
+         * ── 도구가 끝난 뒤 (safety/hooks.js) ─────────────────────────────
+         *
+         * 여기서는 **못 막는다.** 이미 파일이 바뀌었고 명령이 돌았다. 막을 수
+         * 없는 것을 막는 척하면 그게 제일 나쁜 화면이다. 할 수 있는 것은
+         * 모델에게 말해 주는 것뿐이고, 그것만 한다.
+         *
+         * 제일 흔한 쓰임이 포맷터와 검사기다. `Edit` 뒤에 사내 포맷터를 돌리고
+         * 그 결과를 모델에게 돌려주면, 모델이 다음 걸음에서 스스로 맞춘다.
+         *
+         * 훅이 뱉은 글은 **명령 출력**이라 열쇠가 섞여 나오기 쉽다. 아래 비밀
+         * 가리기는 도구 이름으로 갈래를 정하는데(가릴까), 훅은 어느 도구 뒤에도
+         * 붙을 수 있어서 그 갈래를 못 믿는다. 그래서 여기서 한 번 가린다.
+         */
+        let 훅덧말 = '';
+        if (ctx.훅들?.length) {
+          const 훅 = await 자리돌리기(ctx.훅들, '도구후', {
+            도구: call.name,
+            넣을것: { 인자: call.args ?? {}, 실패: !!result.error, 바뀐것: result.changed ?? null },
+            signal,
+            audit: ctx.audit,
+          });
+          if (훅.말들.length) {
+            const 가린 = 가리기(훅.말들.join('\n'), { 열쇠들: [conn.key, ...환경속열쇠들()].filter(Boolean) });
+            const 글 = 가린.글 + (가린.가린것.length ? 가렸다는말(가린.가린것) : '');
+            훅덧말 = `\n\n[도구후 훅]\n${글}`;
+            for (const 말 of 훅.말들) yield { type: 'hook_note', 자리: '도구후', 도구: call.name, 말 };
+          }
+        }
+
         // 앞에서 똑같이 부른 적이 있고 결과도 같으면, 결과를 다시 싣지 않는다.
         let 실을것 = 실을글(result);
         const 날것 = 실을것;   // 되풀이는 도구가 진짜 돌려준 것으로 센다(아래 참고)
@@ -1703,6 +1807,14 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 무엇이 열쇠인지는 config.js 한 곳만 안다 (환경속열쇠들).
          */
         const 아는열쇠들 = [conn.key, ...환경속열쇠들()].filter(Boolean);
+        /*
+         * 훅이 한 말은 **되풀이 판정이 끝난 뒤에** 붙인다.
+         *
+         * 앞에 붙이면 같은 도구를 같은 인자로 두 번 불렀을 때, 훅이 시각이나
+         * 줄 번호를 한 글자만 달리 뱉어도 「결과가 달라졌다」 가 된다. 그러면
+         * 되풀이 그물이 통째로 풀려서, 헛도는 것을 안 잡는다.
+         */
+        if (훅덧말) 실을것 += 훅덧말;
         let 비밀 = [];
         // 바깥으로 나가면 파일에서 읽어 온 글까지 가린다 (safety/secrets.js 의 가릴까).
         const 이번엔가릴까 = 가릴까(call.name, { 바깥: 바깥으로나감 });

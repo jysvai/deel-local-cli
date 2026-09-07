@@ -1,6 +1,7 @@
 // 대화 화면. 루프가 보내는 이벤트를 Claude Code 풍으로 그린다.
 import { createInterface, emitKeypressEvents } from 'node:readline';
 import { 규칙모으기, 정책읽기 } from './safety/policy.js';
+import { 훅읽기 } from './safety/hooks.js';
 import { 받기설정 } from './safety/authcmd.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { homedir } from 'node:os';
@@ -1147,6 +1148,15 @@ export async function chatLoop(opts = {}) {
     for (const x of 빠진) say(`    ${c.gray(`${x.번호}. ${clip(x.글, 68)}`)}`);
   };
 
+  /*
+   * 사람이 적어 둔 훅을 읽는다 (safety/hooks.js).
+   *
+   * 여기서 **한 번만** 읽는다. 도구를 부를 때마다 읽으면 대화 도중에 훅
+   * 파일이 바뀌는 것이 곧 「방금 통과한 것이 다음 걸음에 막힌다」 가 되고,
+   * 그건 원인을 찾을 길이 없는 화면이다. 설정을 켤 때 한 번 읽는 것과 같다.
+   */
+  const 훅정보 = 훅읽기(root, { 켜짐: opts.hooks === false ? false : null });
+
   const ctx = {
     scope: makeScope(root),
     // 도구가 한 번에 돌려줄 양을 이 값에서 뽑는다 (agent/budget.js).
@@ -1156,6 +1166,8 @@ export async function chatLoop(opts = {}) {
     get 눈있나() { return !!conn.vision; },
     // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
     규칙들: 규칙모으기(cfg),
+    // 사람이 적어 둔 훅 (safety/hooks.js). 프로젝트 파일은 믿는 폴더에서만 읽는다.
+    훅들: 훅정보.훅들,
     // Bash 자식에게 되살려 줄 환경변수 이름 (safety/shellenv.js).
     // 기본은 열쇠처럼 생긴 이름을 다 빼는 것이고, 여기 적은 것만 되살린다 —
     // 사내 저장소를 쓰는 사람은 npm ci 에 NPM_TOKEN 이 실제로 필요하다.
@@ -2335,6 +2347,25 @@ export async function chatLoop(opts = {}) {
            * 조용히 밀면 모델이 말을 들은 것인지 우연히 다시 생각한 것인지
            * 구분이 안 된다. 한 줄 적어 둠다 — 또 이러면 사람이 알아볼 수 있어야 한다.
            */
+          /*
+           * 훅이 무슨 말을 했다 (safety/hooks.js).
+           *
+           * 조용히 삼키면 안 된다. 훅은 사람이 제 손으로 건 것이고, 그게
+           * 도는지 안 도는지 볼 길이 없으면 아무도 못 믿는다.
+           */
+          case 'hook_note':
+            clearThinking();
+            for (const 줄 of String(ev.말).split('\n').slice(0, 8)) {
+              say(`  ${c.gray(`· ${clip(줄, 80)}`)}`);
+            }
+            break;
+
+          case 'hook_block':
+            clearThinking();
+            say('');
+            say(`  ${c.yellow('✗')} ${c.white(옮긴말('ev.hookBlock'))} ${c.gray(`(${ev.훅?.이름 ?? ev.훅?.명령 ?? ''})`)}`);
+            break;
+
           case 'nudge':
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }

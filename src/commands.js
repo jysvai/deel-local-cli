@@ -1300,6 +1300,52 @@ export async function handle(line, session, ctx) {
       return { handled: true };
     }
 
+    /*
+     * 적어 둔 훅을 보여 준다 (safety/hooks.js).
+     *
+     * /mcp 와 같은 자리다. 남의 프로그램을 돌리는 것을 켜 놓았으면, 무엇이
+     * 켜져 있는지 볼 화면이 있어야 한다. 없으면 사람은 제가 무엇을 켜 뒀는지
+     * 모른 채로 쓰게 되고, 그건 켠 적 없는 것과 똑같이 위험하다.
+     *
+     * **이번 판이 실제로 들고 있는 것**을 보여 준다. 파일을 다시 읽지 않는다 —
+     * 파일은 대화 도중에 바뀔 수 있고, 그러면 이 화면과 실제로 도는 것이
+     * 달라진다. 화면이 거짓말을 하느니 옛것을 보여 주는 편이 낫다.
+     */
+    case 'hooks':
+    case '훅': {
+      const { 자리들: 훅자리들, 프로젝트자리: 훅프로젝트자리, 이PC자리: 훅이PC자리 } = await import('./safety/hooks.js');
+      const 것들 = ctx?.훅들 ?? [];
+      rule('적어 둔 훅', 70);
+
+      if (!것들.length) {
+        say(`  ${c.gray('걸린 훅이 없습니다.')}`);
+        say('');
+        say(`  ${c.gray('적는 자리 —')} ${c.white(훅프로젝트자리(session.root))} ${c.gray('(이 프로젝트)')}`);
+        say(`  ${c.gray('           ')} ${c.white(훅이PC자리())} ${c.gray('(이 PC 전체)')}`);
+        say(`  ${c.gray('{ "hooks": [ { "때": "도구전", "도구": "Bash", "명령": "python .deel/gate.py" } ] }')}`);
+        say('');
+        say(`  ${c.gray('걸 수 있는 자리 —')} ${c.white(훅자리들.join(' · '))}`);
+        say(`  ${c.yellow('※')} ${c.gray('프로젝트 파일은 믿는 폴더에서만 읽습니다 (deel trust).')}`);
+        say('');
+        return { handled: true };
+      }
+
+      for (const h of 것들) {
+        const 막나 = h.자리 === '도구전' || h.자리 === '말전';
+        say(`  ${c.bold(h.자리)}  ${c.gray(h.무늬글 === '*' ? '(모든 도구)' : h.무늬글)}  ${c.gray(`· ${h.출처}`)}`);
+        say(`      ${c.white(clip(h.명령, 62))}`);
+        say(`      ${c.gray(`${Math.round(h.제한 / 1000)}초 안에 · `)}${막나
+          ? c.gray(h.지나갈까 ? '고장나면 지나감 (적어 두셨습니다)' : '고장나면 막음')
+          : c.gray('여기서는 못 막습니다 — 말만 전합니다')}`);
+      }
+      say('');
+      say(`  ${c.yellow('※')} ${c.gray('훅은 남의 프로그램을 돌립니다 —')} ${c.white(`작업 범위(${session.root}) 를 안 지킵니다.`)}`);
+      say(`  ${c.gray('  무엇이 돌았고 무엇을 막았는지는')} ${c.white('.deel/audit.jsonl')} ${c.gray('에 남습니다.')}`);
+      say(`  ${c.gray('  이번 판만 끄려면')} ${c.white('deel --no-hooks')} ${c.gray('· 아예 끄려면')} ${c.white('DEEL_HOOKS=off')}`);
+      say('');
+      return { handled: true };
+    }
+
     case 'thread':
     case '갈래': return 갈래명령(session, ctx, arg), { handled: true };
 

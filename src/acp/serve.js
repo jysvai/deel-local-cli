@@ -31,6 +31,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import { 규칙모으기, 늘허락, 정책읽기 } from '../safety/policy.js';
+import { 훅읽기 } from '../safety/hooks.js';
 import { 남길것읽기 } from '../safety/shellenv.js';
 import { 받기설정 } from '../safety/authcmd.js';
 import { run } from '../agent/loop.js';
@@ -346,6 +347,9 @@ export async function acp(opts = {}) {
       돌던도구: new Map(),      // 도구 이름 → 아직 안 끝난 호출 아이디들
     };
 
+    // 훅은 방마다 새로 읽는다 — 에디터는 폴더마다 방을 하나씩 여니까 (safety/hooks.js).
+    const 훅정보 = 훅읽기(root, { 켜짐: opts.hooks === false ? false : null });
+
     방.ctx = {
       scope: makeScope(root),
       get 모델컨텍스트() { return conn.ctx ?? null; },
@@ -353,6 +357,9 @@ export async function acp(opts = {}) {
       get 눈있나() { return !!conn.vision; },
       // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
       규칙들: 규칙모으기(cfg),
+      // 사람이 적어 둔 훅 (safety/hooks.js). 에디터 안에서도 같은 것이 돌아야 한다 —
+      // 여기만 빠지면 「터미널에서는 막히고 에디터에서는 안 막힌다」 가 된다.
+      훅들: 훅정보.훅들,
       // Bash 자식에게 되살려 줄 환경변수 이름 (safety/shellenv.js).
       // 에디터 안에서도 같은 값이어야 한다 — 여기만 빠지면 「에디터에서만
       // 빌드가 된다·안 된다」 가 되고, 그건 원인을 찾을 길이 없다.
@@ -571,6 +578,16 @@ export async function acp(opts = {}) {
            */
           case 'cutoff':
             말하기(`\n\n_(${ev.멎은초 ? 옮긴말('ev.stalled', { n: ev.멎은초 }) : 옮긴말('ev.cutoff')})_\n\n`);
+            break;
+
+          // 훅이 무슨 말을 했다 (safety/hooks.js). 에디터에도 적어 둔다 —
+          // 안 적으면 「터미널에서는 뭐라고 하는데 에디터에서는 조용하다」 가 된다.
+          case 'hook_note':
+            말하기(`\n\n_(${옮긴말('ev.hookNote', { 말: String(ev.말).split('\n')[0] })})_\n\n`);
+            break;
+
+          case 'hook_block':
+            말하기(`\n\n_(${옮긴말('ev.hookBlock')})_\n\n`);
             break;
 
           case 'nudge':

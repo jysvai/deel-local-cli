@@ -33,10 +33,13 @@ import { spawn } from 'node:child_process';
  * @param {number} [옵션.timeout] 이 시간을 넘기면 죽이고 실패로 돌려준다
  * @param {number} [옵션.maxBuffer] 나온 글이 이보다 커지면 죽인다
  * @param {AbortSignal|null} [옵션.signal] 눌리면 자식을 죽인다
+ * @param {string|null} [옵션.넣을것] stdin 으로 흘려 줄 글. 다 쓰면 닫는다.
  * @param {object} [옵션.덤] spawn 에 그대로 넘길 것 (windowsVerbatimArguments 같은)
  * @returns {Promise<{error:Error|null, status:number|null, stdout:string, stderr:string}>}
  */
-export function 돌려보기(이름, 인자, { timeout = 20000, maxBuffer = 32 * 1024 * 1024, signal = null, 덤 = {} } = {}) {
+export function 돌려보기(이름, 인자, {
+  timeout = 20000, maxBuffer = 32 * 1024 * 1024, signal = null, 넣을것 = null, 덤 = {},
+} = {}) {
   return new Promise((resolve) => {
     // 이미 눌렸으면 띄우지도 않는다. 여럿을 함께 돌릴 때 뒤엣것이 여기로 온다.
     if (signal?.aborted) { resolve({ error: new Error('중단했습니다'), status: null, stdout: '', stderr: '' }); return; }
@@ -77,6 +80,21 @@ export function 돌려보기(이름, 인자, { timeout = 20000, maxBuffer = 32 *
     }, timeout);
     // 이 타이머가 프로그램을 붙들면 안 된다. 자식의 파이프가 이미 루프를 붙들고 있다.
     시계.unref?.();
+
+    /*
+     * 넘길 것이 있으면 stdin 으로 흘리고 **닫는다.**
+     *
+     * 안 닫으면 자식이 stdin 을 끝까지 읽는 모양일 때 영영 안 끝난다 —
+     * 시한에 걸려 죽을 때까지 기다리게 되고, 사람 눈에는 '훅이 느리다' 로 보인다.
+     *
+     * 자식이 다 읽기 전에 죽으면 EPIPE 가 온다. 그건 우리 탈이 아니다 —
+     * 자식은 제 할 말을 이미 했고, 그 결과는 status 로 온다. 여기서 던지면
+     * 프로그램이 통째로 죽으므로 삼킨다.
+     */
+    if (넣을것 != null) {
+      아이.stdin?.on('error', () => { /* 자식이 먼저 닫았다 — 결과는 status 로 온다 */ });
+      try { 아이.stdin?.end(String(넣을것)); } catch { /* 이미 닫혔다 */ }
+    }
 
     아이.stdout?.setEncoding('utf8');
     아이.stderr?.setEncoding('utf8');

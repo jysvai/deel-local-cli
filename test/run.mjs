@@ -131,6 +131,7 @@ const FILES = [
   'evidence.test.js',
   'recall.test.js',
   'mcp.test.js',
+  'hooks.test.js',
   'memory.test.js',
   'project.test.js',
   'rewind.test.js',

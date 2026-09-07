@@ -27,6 +27,7 @@ import { 프록시설정, 프록시고르기 } from './backend/proxy.js';
 import { 인증서설정, 인증서등록, 인증서찾기, 인증서말 } from './backend/clientcert.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { 믿나 } from './safety/trust.js';
+import { 훅읽기, 훅줄들 } from './safety/hooks.js';
 import { headersFor } from './backend/http.js';
 
 /** 한 줄. `상태` 는 ok · warn · no · unknown 넷뿐이다. */
@@ -139,6 +140,14 @@ export async function 진찰(o = {}) {
       ? 줄('no', 'MCP', mcp자리[0], '읽지 못했습니다 (JSON 이 아닙니다)')
       : 줄('ok', 'MCP', `${mcp자리[0]} · 서버 ${몇}개`, '실제로 띄워 보려면 deel 을 켜고 /mcp'));
   }
+
+  // ── 7.5 훅 ───────────────────────────────────────────────────────────
+  //
+  // 훅은 사람이 적어 둔 명령을 돌리는 것이라, 안 도는 것도 도는 것도 둘 다 사고다.
+  // 안 도는 쪽이 더 나쁘다 — 사내 규칙을 걸어 둔 줄 알고 있는데 실제로는 안 걸린
+  // 상태이기 때문이다. 제일 흔한 까닭이 믿는 폴더가 아니어서인데, 그건 아무 데도 안
+  // 찍힌다. 여기서 말해 준다.
+  for (const 한줄 of 훅줄들(훅읽기(root))) 줄들.push(한줄);
 
   // ── 8. 진짜로 두드려 본다 ───────────────────────────────────────────
   if (!바깥가도되나) {

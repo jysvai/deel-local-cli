@@ -490,7 +490,7 @@ function runSbom(flags) {
 // 실제로 이랬다 — deel run --json "검사 돌려줘" 를 쳤더니 --json 이 뒤의 말을
 // 통째로 삼켰다. 시킬 말이 사라졌으니 "무엇을 시킬지 적어 주세요" 가 떴는데,
 // 화면만 보면 왜 그런지 알 길이 없다. 깃발을 앞에 두는 것은 아주 흔한 습관이다.
-const BOOL = new Set(['help', 'version', 'offline', 'online', 'continue', 'json', 'quiet', 'yes', 'no-tui', 'tui', 'all']);
+const BOOL = new Set(['help', 'version', 'offline', 'online', 'continue', 'json', 'quiet', 'yes', 'no-tui', 'tui', 'all', 'no-hooks']);
 
 function parse(argv) {
   const flags = {};
@@ -619,6 +619,7 @@ function help() {
   say(`    ${c.gray('--think <수준>')}     off / low / medium(기본) / high / xhigh / max`);
   say(`    ${c.gray('--effort <배분>')}    even(균일) / save(절약, 기본) / deep(깊게)`);
   say(`    ${c.gray('--no-tui')}           입력 상자 없이 줄 화면으로 (파이프·기록·좁은 터미널)`);
+  say(`    ${c.gray('--no-hooks')}         이번 판만 훅을 끄고 돕니다 (.deel/hooks.json · /hooks)`);
   // 실행 모드 셋. 기본이 잠겨 있다는 것을 여기서 분명히 말한다 —
   // 「--online 이 있다」 보다 「기본은 안 나간다」 가 사람이 알아야 할 쪽이다.
   say(`    ${c.gray('(기본)')}             ⌂ 이 안 — 바깥 주소면 한 번 물어보고 기억합니다`);
@@ -719,6 +720,7 @@ async function main() {
         offline: flags.offline === true || flags.offline === 'true',
         online: flags.online === true || flags.online === 'true',
         yes: flags.yes === true || flags.yes === 'true',
+        hooks: flags['no-hooks'] === true ? false : undefined,
         json: flags.json === true || flags.json === 'true',
         quiet: flags.quiet === true || flags.quiet === 'true',
         // 답의 모양을 못 박는다. 이게 있으면 표준출력은 그 JSON 하나다.
@@ -739,6 +741,9 @@ async function main() {
         //   --no-tui  입력 상자 없이 줄 화면으로 (파이프·기록·좁은 터미널)
         //   --tui     터미널이면 무조건 입력 상자를 켠다
         tui: flags['no-tui'] === true ? false : (flags.tui === true ? true : null),
+        // 훅을 이번 판만 끈다 (safety/hooks.js). 훅이 망가졌을 때 고칠 길이
+        // 훅 파일을 지우는 것뿐이면 안 된다.
+        hooks: flags['no-hooks'] === true ? false : undefined,
         offline: flags.offline === true || flags.offline === 'true',
         online: flags.online === true || flags.online === 'true',
         continue: flags.continue === true || flags.c === true,
@@ -760,6 +765,7 @@ async function main() {
         maxTokens: flags['max-tokens'] ? parseSize(String(flags['max-tokens'])) : undefined,
         think: flags.think ? String(flags.think) : undefined,
         effort: flags.effort ? String(flags.effort) : undefined,
+        hooks: flags['no-hooks'] === true ? false : undefined,
         offline: flags.offline === true || flags.offline === 'true',
         online: flags.online === true || flags.online === 'true',
       });
