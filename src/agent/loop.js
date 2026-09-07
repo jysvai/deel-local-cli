@@ -1,6 +1,6 @@
 // 에이전트 루프. 모델 → 도구 → 결과 → 모델 을 답이 나올 때까지 돈다.
 // 화면에 그릴 것은 이벤트로 흘려보낸다 — 화면 코드와 섞지 않는다.
-import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남, 보낸토큰, 부른것들, 도구결과인가 } from '../backend/adapter.js';
+import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남, 흐름멎음, 보낸토큰, 부른것들, 도구결과인가 } from '../backend/adapter.js';
 import { 그림메시지 } from '../backend/vision.js';
 import { 어떻게할까 } from '../safety/policy.js';
 import { toolSchemas, runTool, TOOLS, 파일현황 } from '../tools/index.js';
@@ -823,14 +823,18 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           cap: 마지막상한,
           정한값: conn.maxTokens ?? conn.maxOut ?? null,
         };
-      } else if (msg?.stopped === 말없이끝남) {
+      } else if (msg?.stopped === 말없이끝남 || msg?.stopped === 흐름멎음) {
         /*
          * 상한 때문에 잘린 것과는 다른 사고다. 서버가 끝난 까닭을 한 번도 안
          * 주고 흘려보내기를 멈췄다 — 중계 프록시가 몸통을 자르고 연결을 곱게
          * 닫으면 이 모양이 된다. 상한을 올려 다시 부르는 것은 답이 아니라서
          * capped 와 섞으면 엉뚱한 곳(/out)을 고치게 만든다.
+         *
+         * 흐름이 멎어서 **우리가** 끊은 것은 한 겹 더 말해 준다. 그때는 몇 초를
+         * 기다렸는지가 곧 손댈 자리다 — 게이트웨이가 답을 통째로 모았다가 주는
+         * 자리면 잠잠 상한을 올리면 되고, 그걸 모르면 사람은 연결을 의심한다.
          */
-        yield { type: 'cutoff' };
+        yield { type: 'cutoff', 멎은초: msg?.stopped === 흐름멎음 ? (msg.멎은초 ?? null) : null };
       }
 
       /*

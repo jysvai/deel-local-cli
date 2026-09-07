@@ -1200,11 +1200,13 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 | certificate error | `set NODE_EXTRA_CA_CERTS=C:\path\corp-ca.pem` |
 | behind a proxy | `set HTTPS_PROXY=http://proxy:port` (with auth: `http://user:pw@proxy:port`). If the first screen and `/status` show `proxy …`, it is in use. Exclude hosts with `NO_PROXY=.corp.com,10.1.2.3`; turn it off entirely with `"proxy": "none"` in the config |
 | the proxy answers 407 | Put `user:pw@` into the proxy address. Proxies that only accept NTLM · Negotiate are not supported — ask the admin for Basic or an unauthenticated address |
+| the gateway asks for **your** certificate (mTLS) | Put `"clientCert": { "certFile": "...", "keyFile": "..." }` in the profile — a `.pfx` bundle works too. Passphrase via `DEEL_CERT_PASS`. Works behind a proxy. [Config →](docs/en/config.md#when-the-gateway-asks-for-our-certificate-mtls) |
 | 401 / 403 | Wrong key or auth header style (four are tried automatically) |
 | `address not permitted` | The lock did its job — pick a connection with `/model` |
 | Tool calls don't work | Run `deel diagnose`. Small models (1B–3B) often can't |
 | Empty replies | The server ignores streaming. deel retries once, then turns streaming off for the session |
 | Large files cut off mid-write | Check `/out` and raise it — the cap may be sitting at the 16,384 default because it could not be discovered |
+| `Nothing arrived for 60s` | The gateway buffers the whole answer and sends it at once. Set `"streamIdleMs": 180000` in the profile. What did arrive stays on screen |
 | Only `HTTP 400` shows | The server's own message is shown verbatim. If it is a length problem the number is read and applied automatically |
 | `429` · `503` shows | The gateway pushed back for a moment. deel waits and calls again, up to three times (honouring `Retry-After`). If it keeps happening, check your quota |
 | `deel scan` finds nothing | Server is off or on another port — use `--ports` |

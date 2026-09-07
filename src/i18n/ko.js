@@ -489,6 +489,7 @@ export const ko = {
    */
   'ev.capped': '답이 {한계} 토큰에서 잘렸습니다 — /out 으로 상한을 올리거나, 파일은 나눠 쓰게 하세요',
   'ev.cutoff': '서버가 끝났다는 말 없이 답을 멈췄습니다 — 중간에서 끊겼을 수 있습니다',
+  'ev.stalled': '{n}초 동안 아무것도 안 와서 끊었습니다 — 받은 데까지만 보여 드립니다',
   'ev.nudgeMissed': '시킨 것 {n}가지를 빼놓고 끝내려고 해서 한 번 되밀었습니다',
   'ev.nudgeRead': '읽기만 하고 끝내려고 해서 한 번 되밀었습니다',
   'ev.learnedCtx': '서버가 알려 준 컨텍스트 한계 {한계} 로 맞추고 다시 부릅니다',
@@ -539,6 +540,7 @@ export const ko = {
   'status.root': '작업 폴더',
   'status.shell': '셸',
   'status.keyStore': '열쇠 보관',
+  'status.clientCert': '내 인증서',
   'status.rules': '규칙',
   'status.noRules': '없음 (/init 으로 만들 수 있습니다)',
   'status.rulesUnread': '{이름} 이 있는데 못 읽었습니다 ({까닭}) — 이 폴더 규칙이 안 걸려 있습니다',

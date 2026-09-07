@@ -34,6 +34,8 @@
  */
 import { load, activeProfile, resolveKey } from '../config.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
+import { 잠잠기본 } from '../backend/http.js';
+import { 인증서설정 } from '../backend/clientcert.js';
 
 // 컨텍스트를 못 알아냈을 때 쓰는 값. repl.js 와 같은 값을 봐야 한다.
 export const CTX_DEFAULT = 32768;
@@ -56,6 +58,8 @@ export function 연결만들기(prof, { ctx = null, maxTokens = null } = {}) {
     ctx: ctx ?? prof.ctx ?? CTX_DEFAULT,
     maxTokens: maxTokens ?? prof.maxTokens ?? null,
     streaming: prof.streaming ?? false,
+    잠잠: prof.잠잠 ?? prof.streamIdleMs ?? 잠잠기본,
+    인증서: 인증서설정(prof),
     tools: prof.tools ?? false,
     json: prof.json ?? false,
     think: prof.think ?? false,

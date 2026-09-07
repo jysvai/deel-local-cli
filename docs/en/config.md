@@ -323,13 +323,77 @@ denials but not remove the user's own. One line in a policy file must never wide
 may do. A corrupt policy file is treated as absent — but `/mode` says it could not be read, because
 silence would leave the administrator believing it applies and the user running without it.
 
+### When the gateway asks for our certificate (mTLS)
+
+Corporate gateways in finance and government do not open with a key alone. The server
+asks the **client** for a certificate too — a key can be copied off a machine, a
+device certificate is meant not to be. Put it in the profile:
+
+```json
+{
+  "profiles": [{
+    "id": "corp",
+    "baseUrl": "https://ai-gw.example.corp/v1",
+    "clientCert": {
+      "certFile": "C:/certs/client.pem",
+      "keyFile":  "C:/certs/client.key",
+      "caFile":   "C:/certs/corp-root.pem"
+    }
+  }]
+}
+```
+
+**Only file paths go in the config.** Put the material itself in there and the config
+file becomes a private key, and config files travel — backups, sync, screen shares.
+A PKCS#12 bundle (`.pfx` / `.p12`), which is what Windows usually hands you, works
+as well: `"clientCert": { "pfx": "C:/certs/client.pfx" }`.
+
+For the passphrase, `DEEL_CERT_PASS` is checked **first**. A `passphrase` field in the
+config also works, but that is writing a passphrase into a file. Either way it never
+reaches the screen, the logs, or a diagnostic report — `/status` shows only what you
+are connecting with.
+
+| | |
+|---|---|
+| **Only to the address you wrote** | The certificate is offered to the profile's gateway origin and nowhere else. It is not carried across a redirect to another host — the same reason the key header is stripped there. A certificate is an identity, and handing an identity to a stranger must never happen quietly |
+| **Works behind a proxy** | It is presented on the TLS layer inside the proxy's tunnel. Corporate networks usually require both a proxy and a certificate, so either one alone is no use |
+| **A missing file stops the request** | Dropping it silently would leave you with a TLS handshake failure, and that message does not distinguish "no certificate" from "wrong certificate". One typo in a path and you would be looking at firewalls |
+| **A rotated certificate takes effect immediately** | The files are re-read when they change. Having to restart for a certificate that lives a day is the same as not supporting it |
+
+If you only need the corporate root and present no client certificate, `ca` alone is
+enough. It does what `NODE_EXTRA_CA_CERTS` does, except **per profile** — which for
+someone switching between a corporate gateway and a local model on the same machine
+is the difference between working and not.
+
+### How long to wait when the answer stops coming
+
+While streaming, what is measured is not **how long it takes** but **how long it has
+been quiet**. Every chunk that arrives rewinds the clock.
+
+```json
+{ "profiles": [{ "id": "corp", "streamIdleMs": 120000 }] }
+```
+
+The default is 60 seconds. If not one character arrives for that long, the stream is
+treated as stalled and dropped — what did arrive is **kept and shown**, with a line
+saying why it stopped.
+
+This clock starts **after the headers**. An answer that never begins is still handled
+by the overall timeout, or a dead address would hold the terminal for a minute.
+
+Two problems go away together. A long answer from a model that thinks for a while is
+no longer **cut off at five minutes** (the clock keeps rewinding while chunks arrive),
+and a stalled gateway is detected in one minute instead of five. If your gateway
+buffers the whole answer and delivers it in one piece, raise this value.
+
 ### Environment variables
 
 | Variable | Use |
 |---|---|
 | `DEEL_API_KEY` | Keep the key out of the config file (takes precedence) |
 | `DEEL_KEY_<PROFILE_ID>` | Per-profile key |
-| `NODE_EXTRA_CA_CERTS` | Corporate TLS certificate |
+| `NODE_EXTRA_CA_CERTS` | Corporate TLS certificate (for a per-profile root, use `clientCert.caFile` above) |
+| `DEEL_CERT_PASS` | Passphrase for the client certificate. Wins over `passphrase` in the config, and never reaches the screen or the logs |
 | `HTTPS_PROXY` · `HTTP_PROXY` | Behind a proxy — `http://user:pw@proxy:port`. Lower-case names work too. deel opens the CONNECT tunnel itself, so this works on every Node version |
 | `NO_PROXY` | Where not to use the proxy — `.corp.com, 10.1.2.3, intra:8443, *`. This machine (localhost · 127.*) always goes direct. CIDR (`10.0.0.0/8`) is not understood — list addresses one by one, or use a domain suffix |
 | `DEEL_SHELL` | Which shell the `Bash` tool uses on Windows — `auto` (default: bash if Git Bash is installed, else cmd) · `bash` · `cmd` · `powershell`. `"shell"` in the config file works too. The pick shows in `/status` and in the `Shell:` line the model is given |

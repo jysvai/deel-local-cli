@@ -48,6 +48,8 @@ import { allowEndpoint, setOffline } from '../safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from '../safety/runmode.js';
 import { 주소가리기 } from '../safety/secrets.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from '../backend/ctxsize.js';
+import { 잠잠기본 } from '../backend/http.js';
+import { 인증서설정 } from '../backend/clientcert.js';
 import { 다붙이기 } from '../backend/mcp.js';
 import { 배움 } from '../agent/evolve.js';
 import { 카드 } from '../agent/card.js';
@@ -217,6 +219,17 @@ export async function acp(opts = {}) {
        * test/doorparity.test.js 가 세 문의 열쇠 집합을 맞춰 본다.
        */
       vision: prof.vision ?? false,
+    /*
+       * 흘려 받다가 이만큼 잠잠하면 끊는다 (밀리초, backend/http.js).
+       *
+       * 답이 다 오는 데 걸린 시간이 아니라 **아무것도 안 온 시간**이다. 그래서
+       * 30분짜리 답은 안 끊기고 30초 멎은 연결은 30초에 끊긴다. 답을 통째로
+       * 모았다가 한 번에 주는 사내 게이트웨이면 이 값을 올린다.
+       */
+        잠잠: prof.잠잠 ?? prof.streamIdleMs ?? 잠잠기본,
+    // 게이트웨이가 우리 인증서를 요구하면 (mTLS, backend/clientcert.js).
+      // 파일 경로만 싣는다 — 알맹이는 요청 직전에 읽는다.
+        인증서: 인증서설정(prof),
       열쇠받기: 받기설정(prof, { 정책값: 정책읽기().값 }),
     };
     /*
@@ -557,7 +570,7 @@ export async function acp(opts = {}) {
            * 넘어가는데, 정작 답의 뒷부분은 오지도 않았다.
            */
           case 'cutoff':
-            말하기(`\n\n_(${옮긴말('ev.cutoff')})_\n\n`);
+            말하기(`\n\n_(${ev.멎은초 ? 옮긴말('ev.stalled', { n: ev.멎은초 }) : 옮긴말('ev.cutoff')})_\n\n`);
             break;
 
           case 'nudge':

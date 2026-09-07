@@ -30,6 +30,8 @@ import { 말, 말 as 옮긴말, 언어, 언어들, 언어정하기, 언어고르
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
 import { allowTemporarily } from './safety/network.js';
 import { chat, 규격이름, 더할머리 } from './backend/adapter.js';
+import { 잠잠기본 } from './backend/http.js';
+import { 인증서설정, 인증서말 } from './backend/clientcert.js';
 import { 알림채움 } from './backend/retry.js';
 import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
 import { 정한셸 } from './tools/shell.js';
@@ -1035,6 +1037,16 @@ export async function handle(line, session, ctx) {
         say(`  ${c.gray(pad('', 10))} ${c.gray(clip(session.conn.열쇠받기.명령, 56))}`);
       } else if (k.auth !== 'none') {
         say(`  ${c.gray(pad(말('status.keyStore'), 10))} ${열쇠보관(load())}`);
+      }
+      /*
+       * 우리 인증서로 붙고 있으면 그렇다고 적는다.
+       *
+       * 인증서를 둘 이상 가진 사람은 어느 것이 먹었는지 알 길이 없다 — 붙으면
+       * 조용하고 안 붙으면 TLS 악수 실패 한 줄만 온다. **암호는 절대 안 적는다**
+       * (backend/clientcert.js 의 인증서말).
+       */
+      if (session.conn.인증서) {
+        say(`  ${c.gray(pad(말('status.clientCert'), 10))} ${c.gray(인증서말(session.conn.인증서))}`);
       }
       say(`  ${c.gray(pad(말('status.rules'), 10))} ${session.rules ? session.rules.name : 말('status.noRules')}`);
       // 파일이 있는데 못 읽은 것을 '없음' 으로 적으면, 규칙을 적어 둔 사람은
@@ -2794,6 +2806,10 @@ function 연결적용(session, p, ctx = null) {
     kind: p.kind, base: p.baseUrl, auth: p.auth, key: resolveKey(p), model: p.model,
     ctx: p.ctx, maxTokens: p.maxTokens ?? null,
     streaming: p.streaming, tools: p.tools, json: p.json, think: p.think,
+    // 프로필마다 다를 수 있다 — 사내 게이트웨이는 잠잠 상한이 크고 로컬은 작다.
+    잠잠: p.잠잠 ?? p.streamIdleMs ?? 잠잠기본,
+    // 프로필마다 인증서가 다르다. 안 갈아 끼우면 옛 프로필의 신원으로 붙는다.
+    인증서: 인증서설정(p),
     /*
      * ── 이 두 줄이 없어서 회사 토큰이 남의 창구로 나갔다 ────────────────
      *

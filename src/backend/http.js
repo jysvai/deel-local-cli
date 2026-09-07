@@ -5,10 +5,14 @@
 //
 // 길은 둘이고, 둘 다 이 파일 안에만 있다:
 //   · 직접 — Node 의 fetch.
-//   · 프록시 경유 — HTTPS_PROXY 같은 것이 있을 때(backend/proxy.js 가 고른다).
-//     Node 의 fetch 는 그 변수를 **안 본다.** 그래서 여기서 터널을 직접 뚫는다 —
-//     node:http 로 프록시에 CONNECT 를 보내고, 열린 소켓 위에 node:tls 를 올리고,
-//     그 위로 node:https 요청을 보낸다. http 대상은 프록시에 절대 주소로 그냥 보낸다.
+//   · node:http(s) 로 손수 — fetch 로 못 하는 두 가지를 여기서 한다.
+//     ① 프록시 경유. HTTPS_PROXY 같은 것이 있을 때(backend/proxy.js 가 고른다)
+//        Node 의 fetch 는 그 변수를 **안 본다.** 그래서 터널을 직접 뚫는다 —
+//        node:http 로 프록시에 CONNECT 를 보내고, 열린 소켓 위에 node:tls 를
+//        올리고, 그 위로 node:https 요청을 보낸다. http 대상은 프록시에 절대
+//        주소로 그냥 보낸다.
+//     ② 우리 인증서를 낼 때(mTLS). fetch 에는 인증서를 실을 자리가 없다
+//        (backend/clientcert.js). 프록시와 겹치면 터널 위의 TLS 에 얹는다.
 //     소켓을 만지는 코드가 이 파일 밖에 생기면 test/network.test.js 가 잡는다.
 //
 // 되돌림(redirect)은 어느 길이든 **한 홉마다** 문지기를 다시 지난다. fetch 의
@@ -20,6 +24,7 @@ import { connect as tlsConnect } from 'node:tls';
 import { Readable } from 'node:stream';
 import { checkUrl, NetBlocked } from '../safety/network.js';
 import { 프록시고르기 } from './proxy.js';
+import { 인증서찾기 } from './clientcert.js';
 
 export const AUTH_STYLES = [
   { id: 'bearer', label: 'Authorization: Bearer', apply: (h, k) => { h['Authorization'] = `Bearer ${k}`; } },
@@ -74,11 +79,11 @@ export class Aborted extends Error {
  * 부르는 쪽이 사람 말로 된 한 줄을 그대로 보여 주면 되게.
  * 자물쇠(NetBlocked)와 사용자 중단(Aborted)만 던진다. 둘은 통신 실패가 아니다.
  */
-export async function req(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false, signal = null } = {}) {
+export async function req(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false, signal = null, 잠잠 = 0 } = {}) {
   const started = Date.now();
   try {
     const r = await 원시요청(url, {
-      method, headers, timeout, stream, signal,
+      method, headers, timeout, stream, signal, 잠잠,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     // 프록시가 407 로 막은 것은 통신 실패도 서버 답도 아니다. 사람 말 한 줄로 준다.
@@ -112,7 +117,7 @@ const 되돌림상태 = new Set([301, 302, 303, 307, 308]);
  *          아니면       { ok, status, headers, bytes, text, json, ms }
  *          프록시가 407 로 막으면 { ok:false, status:407, error } (몸은 없다)
  */
-export async function 원시요청(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false, signal = null, 되돌림 = null, 최대홉 = 5 } = {}) {
+export async function 원시요청(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false, signal = null, 되돌림 = null, 최대홉 = 5, 잠잠 = 0 } = {}) {
   const started = Date.now();
   let 지금 = String(url);
   let 방법 = method;
@@ -121,9 +126,17 @@ export async function 원시요청(url, { method = 'GET', headers = {}, body, ti
   for (let 홉 = 0; ; 홉++) {
     const 프록시 = 프록시고르기(지금);
     checkUrl(지금, 프록시?.url ?? null);   // 허용된 자리가 아니면 여기서 끝난다. 본문은 만들어지지도 않는다.
-    const r = 프록시
-      ? await 프록시로(지금, { method: 방법, headers: 머리, body: 몸, timeout, stream, signal, 프록시 })
-      : await 직접(지금, { method: 방법, headers: 머리, body: 몸, timeout, stream, signal });
+    /*
+     * 우리 인증서를 내야 하는 주소인가 (backend/clientcert.js).
+     *
+     * **홉마다 다시 본다.** 되돌림을 따라 남의 집으로 가면 여기서 null 이 되어
+     * 인증서가 안 따라간다 — 열쇠 머리말을 떼는 것과 같은 까닭이다. 신원을
+     * 남에게 보여 주는 일이 조용히 일어나면 안 된다.
+     */
+    const 인증서 = 인증서찾기(지금);
+    const r = (프록시 || 인증서)
+      ? await 노드로(지금, { method: 방법, headers: 머리, body: 몸, timeout, stream, signal, 프록시, 인증서, 잠잠 })
+      : await 직접(지금, { method: 방법, headers: 머리, body: 몸, timeout, stream, signal, 잠잠 });
 
     const loc = 되돌림상태.has(r.status) ? r.headers?.get?.('location') : null;
     if (loc && 홉 < 최대홉) {
@@ -179,8 +192,94 @@ function 신호(timeout, signal) {
   return AbortSignal.any ? AbortSignal.any([시계, signal]) : signal;
 }
 
+/*
+ * ── 흘려 받는 동안의 시계는 '다 오는 데 걸린 시간' 이 아니다 ────────────
+ *
+ * `timeout` 하나로 요청 전체를 재면 두 가지가 한꺼번에 틀린다.
+ *
+ *   길게 답하는 모델   5분 상한에 걸려 **답을 잘 하고 있는데** 끊긴다.
+ *                      생각을 많이 하는 모델이나 큰 파일을 고쳐 쓰는 답은
+ *                      5분을 넘긴다. 사람 눈에는 그냥 죽은 것으로 보인다.
+ *   멎어 버린 게이트웨이  10초 만에 멎었는데 5분을 꽉 채우고 나서야 안다.
+ *                      그 5분 동안 화면은 커서만 깜빡인다.
+ *
+ * 둘 다 잘못 재고 있어서 생긴 일이다. 흘려 받는 자리에서 재야 하는 것은
+ * **얼마나 오래 걸리나** 가 아니라 **얼마나 오래 잠잠한가** 다. 조각이 하나
+ * 올 때마다 시계를 되감으면, 30분짜리 답은 안 끊기고 30초 멎은 연결은
+ * 30초에 끊긴다.
+ *
+ * 그래서 시계를 둘로 나눈다.
+ *   · 머리말까지 — `timeout`. 답이 시작조차 안 하는 것은 그냥 실패다.
+ *   · 그 뒤 — `잠잠`. 조각이 올 때마다 되감는다.
+ *
+ * `잠잠` 을 안 주면 예전 그대로 하나의 시계로 잰다. 모델과 이야기하는 자리
+ * (backend/adapter.js)만 이걸 켠다 — WebFetch·플러그인 받기는 몸 크기에
+ * 상한이 있어서 이미 끝이 보장된다.
+ */
+/**
+ * 잠잠 시계의 기본값. 60초 동안 한 글자도 안 오면 멎은 것으로 본다.
+ *
+ * 생각을 오래 하는 모델도 조각은 흘려보내므로 이 값에 안 걸린다. 답을 통째로
+ * 모았다가 한 번에 주는 사내 게이트웨이만 걸리는데, 그건 설정에서 올린다
+ * (프로필의 `잠잠`).
+ */
+export const 잠잠기본 = 60000;
+
+export function 멎음오류(잠잠) {
+  return Object.assign(
+    new Error(`${초로(잠잠)}초 동안 아무것도 안 왔습니다 — 흐름이 멎었습니다`),
+    { name: 'StallError', code: 'STALL', 잠잠 },
+  );
+}
+
+/**
+ * 밀리초를 사람에게 보여 줄 초로.
+ *
+ * 1초 밑으로 내려가도 **0 이라고는 안 한다.** 「0초 동안 아무것도 안 왔습니다」
+ * 는 읽는 사람에게 거짓말이고, 그 한 줄 때문에 사람은 프로그램을 의심한다.
+ */
+export const 초로 = (ms) => Math.max(1, Math.round(ms / 1000));
+
+/**
+ * 흘려 받는 몸에 '잠잠하면 끊는' 시계를 건다.
+ *
+ * 시계가 이기면 밑에 있는 연결도 같이 끊는다(`끊기`). 안 끊으면 소켓이 열린
+ * 채로 남아서, 프로그램이 안 끝나거나 다음 요청이 그 연결을 물려받는다.
+ */
+function 잠잠감시(몸, 잠잠, 끊기, 끝나면 = () => {}) {
+  const reader = 몸.getReader();
+  let 시계 = null;
+  const 끄기 = () => { if (시계) { clearTimeout(시계); 시계 = null; } };
+  return new ReadableStream({
+    async pull(ctrl) {
+      let 멎음 = null;
+      const 읽기 = reader.read();
+      // 시계가 이기면 이 약속은 나중에 끊긴 까닭으로 튕긴다. 아무도 안 받으면
+      // unhandled rejection 으로 프로세스가 시끄러워진다 — 여기서 미리 받아 둔다.
+      읽기.catch(() => {});
+      const 잰다 = new Promise((_, 튕겨) => {
+        시계 = setTimeout(() => { 멎음 = 멎음오류(잠잠); 끊기(멎음); 튕겨(멎음); }, 잠잠);
+      });
+      try {
+        const { done, value } = await Promise.race([읽기, 잰다]);
+        끄기();
+        if (done) { 끝나면(); return ctrl.close(); }
+        ctrl.enqueue(value);
+      } catch (e) {
+        끄기();
+        const 탈 = 멎음 ?? e;
+        끝나면();
+        ctrl.error(탈);
+        throw 탈;
+      }
+    },
+    async cancel(왜) { 끄기(); 끝나면(); try { await reader.cancel(왜); } catch { /* 이미 닫혔으면 그만 */ } },
+  });
+}
+
 // ── 직접 가는 길: fetch ─────────────────────────────────────────────────
-async function 직접(url, { method, headers, body, timeout, stream, signal }) {
+async function 직접(url, { method, headers, body, timeout, stream, signal, 잠잠 = 0 }) {
+  if (stream && 잠잠 > 0) return 직접흘려(url, { method, headers, body, timeout, signal, 잠잠 });
   const res = await fetch(url, { method, headers, body, signal: 신호(timeout, signal), redirect: 'manual' });
   if (stream) {
     return {
@@ -195,26 +294,99 @@ async function 직접(url, { method, headers, body, timeout, stream, signal }) {
   return { ok: res.ok, status: res.status, headers: res.headers, bytes, text, json };
 }
 
-// ── 프록시를 거치는 길: CONNECT 터널 / 절대 주소 ─────────────────────────
-function 프록시로(url, { method, headers, body, timeout, stream, signal, 프록시 }) {
+/**
+ * 직접 가면서 잠잠 시계를 쓰는 길.
+ *
+ * fetch 에 준 신호는 몸까지 같이 끊으므로 `AbortSignal.timeout` 을 그대로
+ * 쓸 수 없다. 손잡이를 직접 쥐고, 머리말이 온 순간 시계를 바꿔 단다.
+ */
+async function 직접흘려(url, { method, headers, body, timeout, signal, 잠잠 }) {
+  const 손 = new AbortController();
+  let 까닭 = null;
+  const 끊기 = (e) => { 까닭 = e; try { 손.abort(e); } catch { /* 이미 끊겼으면 그만 */ } };
+  const 사람이 = () => 끊기(new Aborted());
+  if (signal?.aborted) 사람이();
+  else signal?.addEventListener('abort', 사람이, { once: true });
+  const 귀떼기 = () => signal?.removeEventListener('abort', 사람이);
+
+  const 머리시계 = setTimeout(
+    () => 끊기(Object.assign(new Error('시간 초과 — 응답이 없습니다'), { name: 'TimeoutError', code: 'TimeoutError' })),
+    timeout,
+  );
+  let res;
+  try {
+    res = await fetch(url, { method, headers, body, signal: 손.signal, redirect: 'manual' });
+  } catch (e) {
+    귀떼기();
+    throw 까닭 ?? e;
+  } finally {
+    clearTimeout(머리시계);
+  }
+
+  const 버리기 = async () => { 귀떼기(); try { await res.arrayBuffer(); } catch { /* 그만 */ } };
+  // 몸이 없거나(304·되돌림) 거절이면 감시할 것이 없다. 거절 몸은 부르는 쪽이
+  // res.text() 로 읽으므로 답을 그대로 넘긴다.
+  if (!res.ok || !res.body) return { ok: res.ok, status: res.status, headers: res.headers, res, 버리기 };
+
+  const 몸 = 잠잠감시(res.body, 잠잠, 끊기, 귀떼기);
+  return {
+    ok: true, status: res.status, headers: res.headers,
+    res: { body: 몸, headers: res.headers, text: () => res.text() },
+    버리기,
+  };
+}
+
+/*
+ * ── node:http(s) 로 직접 보내는 길 ──────────────────────────────────────
+ *
+ * 두 자리가 이 길로 온다.
+ *   · 프록시를 거칠 때 — Node 의 fetch 는 HTTPS_PROXY 를 안 본다.
+ *   · 우리 인증서를 낼 때(mTLS) — fetch 에는 인증서를 실을 자리가 없다.
+ *
+ * 둘 다 「fetch 로는 못 하는 것」 이라 길이 같다. 여기가 프록시 전용이던 시절
+ * 이름이 프록시로 였는데, 인증서를 실으면서 아닌 자리가 생겼다.
+ */
+function 노드로(url, { method, headers, body, timeout, stream, signal, 프록시 = null, 인증서 = null, 잠잠 = 0 }) {
   const 대상 = new URL(url);
   const 포트 = Number(대상.port || (대상.protocol === 'https:' ? 443 : 80));
-  const sig = 신호(timeout, signal);
-  // 끊긴 까닭은 신호를 보고 가른다 — 사람이 끊은 것과 시계가 끊은 것은 화면에서 다른 말이다.
-  const 왜끊겼나 = () => (signal?.aborted
-    ? new Aborted()
-    : Object.assign(new Error('시간 초과 — 응답이 없습니다'), { name: 'TimeoutError', code: 'TimeoutError' }));
+  /*
+   * 신호를 손으로 쥔다.
+   *
+   * `AbortSignal.timeout` 을 섞어 버리면 **머리말이 온 뒤에 시계만 떼는** 것을
+   * 못 한다. 잠잠 시계를 걸 자리(직접 가는 길의 직접흘려 와 같은 뜻)가 여기도
+   * 있어야, 같은 게이트웨이인데 프록시를 켠 사람에게만 5분에서 답이 잘리는
+   * — 설명하기 제일 어려운 — 모양이 안 생긴다.
+   */
+  const 손 = new AbortController();
+  const sig = 손.signal;
+  let 멎음 = null;
+  let 시간초과 = false;
+  let 머리시계 = setTimeout(() => { 시간초과 = true; 손.abort(); }, timeout);
+  const 시계끄기 = () => { if (머리시계) { clearTimeout(머리시계); 머리시계 = null; } };
+  const 사람이 = () => 손.abort();
+  if (signal?.aborted) 손.abort();
+  else signal?.addEventListener('abort', 사람이, { once: true });
+  // 끊긴 까닭은 셋을 가른다 — 사람이 끊은 것 · 시계가 끊은 것 · 흐름이 멎은 것.
+  // 화면에서 셋이 다른 말이고, 다시 불러도 되는지도 셋이 다르다.
+  const 왜끊겼나 = () => (signal?.aborted ? new Aborted()
+    : 멎음 ?? (시간초과
+      ? Object.assign(new Error('시간 초과 — 응답이 없습니다'), { name: 'TimeoutError', code: 'TimeoutError' })
+      : new Aborted()));
 
   return new Promise((resolve, reject) => {
     let rq = null;
     let 응답 = null;
     let 끝났나 = false;
-    const 정리 = () => sig.removeEventListener('abort', 끊기);
+    const 정리 = () => {
+      시계끄기();
+      sig.removeEventListener('abort', 끊기);
+      signal?.removeEventListener('abort', 사람이);
+    };
     const 실패 = (e, 프록시탓 = false) => {
       if (끝났나) return;
       끝났나 = true;
       정리();
-      if (프록시탓) e.프록시 = 프록시.url;
+      if (프록시탓 && 프록시) e.프록시 = 프록시.url;
       reject(e);
     };
     const 끊기 = () => {
@@ -247,8 +419,13 @@ function 프록시로(url, { method, headers, body, timeout, stream, signal, 프
          * (평가에서 잡혔다 — 직접 갈 때는 2ms, 프록시로 갈 때는 안 멈췄다).
          * 몸이 다 오거나 끊기면(close) 그때 닫는다.
          */
-        const body = Readable.toWeb(res);
+        let body = Readable.toWeb(res);
         res.once('close', 정리);
+        // 잠잠 시계를 쓰면 머리말까지만 재던 시계는 여기서 끈다.
+        if (잠잠 > 0) {
+          시계끄기();
+          body = 잠잠감시(body, 잠잠, (e) => { 멎음 = e; 손.abort(); });
+        }
         if (!끝났나) { 끝났나 = true; resolve({
           ok, status: res.statusCode, headers: 머리,
           res: { body, headers: 머리, text: () => 다읽기(res) },
@@ -267,8 +444,10 @@ function 프록시로(url, { method, headers, body, timeout, stream, signal, 프
 
     (async () => {
       try {
-        if (대상.protocol === 'https:') {
-          const socket = await 터널(대상.hostname, 포트, 프록시, sig, 왜끊겼나);
+        if (대상.protocol === 'https:' && 프록시) {
+          // 프록시가 뚫어 준 터널 위에 TLS 를 올린다. 우리 인증서도 그 위에서
+          // 낸다 — 프록시 뒤라고 mTLS 가 안 되면 사내에서는 아무 쓸모가 없다.
+          const socket = await 터널(대상.hostname, 포트, 프록시, sig, 왜끊겼나, 인증서);
           if (sig.aborted) { socket.destroy(); return 끊기(); }
           // agent 를 **주지 않아야** createConnection 을 쓴다. agent: false 를 주면 Node 가
           // 새 Agent 를 만들어 제 소켓으로 직접 나가고, 터널 소켓은 열린 채 버려진다 —
@@ -278,11 +457,31 @@ function 프록시로(url, { method, headers, body, timeout, stream, signal, 프
             host: 대상.hostname, port: 포트, path: 대상.pathname + 대상.search, method,
             headers: { ...headers, Host: 대상.host },
           }, 받기);
-        } else {
+        } else if (대상.protocol === 'https:') {
+          /*
+           * 프록시 없이 곧장 가면서 우리 인증서를 낸다.
+           *
+           * `fetch` 로는 이 자리를 못 만든다 — 인증서를 실을 데가 없다. 그래서
+           * 인증서를 쓰는 요청만 이 길로 온다 (backend/clientcert.js 머리말).
+           */
+          rq = httpsRequest({
+            host: 대상.hostname, port: 포트, path: 대상.pathname + 대상.search, method,
+            headers: { ...headers, Host: 대상.host },
+            agent: false,
+            ...(인증서 ?? {}),
+          }, 받기);
+        } else if (프록시) {
           const 머리 = { ...headers, Host: 대상.host };
           if (프록시.auth) 머리['Proxy-Authorization'] = 프록시.auth;
           rq = httpRequest({ host: 프록시.host, port: 프록시.port, agent: false, path: url, method, headers: 머리 }, 받기);
           rq.once('error', (e) => 실패(e, /ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ECONNRESET/.test(e?.code ?? '')));
+        } else {
+          // http 인데 인증서가 등록된 자리. 인증서는 TLS 위에서만 뜻이 있으므로
+          // 실을 것이 없다 — 그냥 평범하게 보낸다.
+          rq = httpRequest({
+            host: 대상.hostname, port: 포트, agent: false,
+            path: 대상.pathname + 대상.search, method, headers: { ...headers, Host: 대상.host },
+          }, 받기);
         }
         if (sig.aborted) return 끊기();
         rq.once('error', (e) => 실패(e));
@@ -299,7 +498,7 @@ function 프록시로(url, { method, headers, body, timeout, stream, signal, 프
  * SNI 는 이름일 때만 붙인다. IP 에 붙이면 Node 가 경고를 낸다(DEP0123). IP 대상은
  * host 로 넘겨서 인증서의 IP SAN 과 견주게 한다.
  */
-function 터널(hostname, port, 프록시, sig, 왜끊겼나) {
+function 터널(hostname, port, 프록시, sig, 왜끊겼나, 인증서 = null) {
   return new Promise((resolve, reject) => {
     const 머리 = { Host: `${hostname}:${port}` };
     if (프록시.auth) 머리['Proxy-Authorization'] = 프록시.auth;
@@ -324,7 +523,9 @@ function 터널(hostname, port, 프록시, sig, 왜끊겼나) {
       }
       if (head?.length) socket.unshift(head);
       const 이름 = /^[\d.]+$|:/.test(hostname) ? undefined : hostname;
-      const tls = tlsConnect({ socket, host: hostname, servername: 이름 }, () => resolve(tls));
+      // 우리 인증서도 이 위에서 낸다 — 프록시 뒤에서 mTLS 가 안 되면
+      // 사내(프록시 필수 + 인증서 필수)에서는 붙는 방법이 아예 없다.
+      const tls = tlsConnect({ socket, host: hostname, servername: 이름, ...(인증서 ?? {}) }, () => resolve(tls));
       tls.once('error', reject);     // 대상 인증서 문제 — 프록시 탓이 아니라 표시를 안 붙인다
       // TLS 층이 닫혀도 밑의 프록시 소켓은 저절로 안 닫힌다. 그대로 두면 요청마다 소켓이
       // 하나씩 남아 프로세스가 안 끝난다 (deel run 이 답을 찍고도 안 나가는 모양이 된다).
@@ -373,6 +574,11 @@ function normalizeError(err) {
   const 코드 = String(오류코드(err) ?? '');
   const 기본 = (() => {
     if (err?.code === 'PROXY_CONNECT') return m;
+    // 우리 인증서 파일을 못 읽은 것. 이건 통신 실패가 아니라 **경로가 틀린**
+    // 것이고, 그 말은 이미 사람 말로 지어 두었다 (backend/clientcert.js).
+    if (err?.code === 'CERT_READ') return m;
+    // 흐름이 멎어서 우리가 끊은 것. 서버가 끊은 것과 다른 말이어야 한다.
+    if (err?.code === 'STALL') return `${m} — 답을 통째로 모았다가 주는 게이트웨이면 프로필의 잠잠 을 올려 보세요`;
     if (err?.name === 'TimeoutError' || 코드 === 'TimeoutError' || /timed? ?out/i.test(m)) return '시간 초과 — 응답이 없습니다';
     if (/ENOTFOUND|EAI_AGAIN/.test(코드) || /ENOTFOUND|getaddrinfo/i.test(m)) return '주소를 찾을 수 없습니다 (DNS)';
     if (코드 === 'ECONNREFUSED' || /ECONNREFUSED/i.test(m)) return '연결이 거부되었습니다 (서버가 꺼져 있거나 포트가 다릅니다)';

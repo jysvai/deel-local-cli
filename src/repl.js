@@ -46,6 +46,8 @@ import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as �
 import { 고른것풀기, 계획답풀기 } from './ui/pick.js';
 import { 이력지킴이 } from './ui/histline.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
+import { 잠잠기본 } from './backend/http.js';
+import { 인증서설정 } from './backend/clientcert.js';
 import { renderDiff, shortStat } from './ui/diff.js';
 import { expand as expandMentions } from './agent/mention.js';
 import { 크기말 } from './backend/vision.js';
@@ -237,6 +239,17 @@ export async function chatLoop(opts = {}) {
     tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
     // 그림을 볼 수 있는 모델인지. 못 보면 바이트를 아예 안 싣는다 (backend/vision.js).
     vision: prof.vision ?? false,
+    /*
+     * 흘려 받다가 이만큼 잠잠하면 끊는다 (밀리초, backend/http.js).
+     *
+     * 답이 다 오는 데 걸린 시간이 아니라 **아무것도 안 온 시간**이다. 그래서
+     * 30분짜리 답은 안 끊기고 30초 멎은 연결은 30초에 끊긴다. 답을 통째로
+     * 모았다가 한 번에 주는 사내 게이트웨이면 이 값을 올린다.
+     */
+    잠잠: prof.잠잠 ?? prof.streamIdleMs ?? 잠잠기본,
+    // 게이트웨이가 우리 인증서를 요구하면 (mTLS, backend/clientcert.js).
+    // 파일 경로만 싣는다 — 알맹이는 요청 직전에 읽는다.
+    인증서: 인증서설정(prof),
   };
 
   // conn 을 짓느라 resolveKey 가 방금 불렸다. 못 푼 것이 있으면 여기서 말한다.
@@ -2227,8 +2240,15 @@ export async function chatLoop(opts = {}) {
           case 'cutoff':
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }
-            say(`  ${mark.warn} ${c.gray('서버가 끝났다는 말 없이 답을 멈췄습니다 — 중간에서 끊겼을 수 있습니다.')}`);
-            say(`     ${c.gray('중계 프록시·게이트웨이를 거치면 나는 일입니다. 같은 것을 다시 물어 보세요.')}`);
+            if (ev.멎은초) {
+              // 흐름이 멎어서 우리가 끊은 자리. 손댈 곳이 다르므로 다른 말을 한다 —
+              // 「다시 물어 보세요」 는 여기서 틀린 조언이다. 같은 게이트웨이면 또 멎는다.
+              say(`  ${mark.warn} ${c.gray(`${ev.멎은초}초 동안 아무것도 안 와서 끊었습니다 — 받은 데까지만 보여 드립니다.`)}`);
+              say(`     ${c.gray('답을 통째로 모았다가 한 번에 주는 게이트웨이면 이렇게 됩니다. 설정의 잠잠 을 올려 보세요.')}`);
+            } else {
+              say(`  ${mark.warn} ${c.gray('서버가 끝났다는 말 없이 답을 멈췄습니다 — 중간에서 끊겼을 수 있습니다.')}`);
+              say(`     ${c.gray('중계 프록시·게이트웨이를 거치면 나는 일입니다. 같은 것을 다시 물어 보세요.')}`);
+            }
             break;
 
           case 'compact_failed':

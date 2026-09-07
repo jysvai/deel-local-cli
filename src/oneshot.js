@@ -33,6 +33,8 @@ import { allowEndpoint, setOffline } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
+import { 잠잠기본 } from './backend/http.js';
+import { 인증서설정 } from './backend/clientcert.js';
 import { route } from './agent/route.js';
 import { get as getWork } from './agent/modes.js';
 import { 모두끝내기 as 일감모두끝내기, 일감인자 } from './tools/jobs.js';
@@ -262,6 +264,17 @@ export async function runOnce(opts = {}) {
     streaming: prof.streaming ?? false,
     tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
     vision: prof.vision ?? false,
+    /*
+     * 흘려 받다가 이만큼 잠잠하면 끊는다 (밀리초, backend/http.js).
+     *
+     * 답이 다 오는 데 걸린 시간이 아니라 **아무것도 안 온 시간**이다. 그래서
+     * 30분짜리 답은 안 끊기고 30초 멎은 연결은 30초에 끊긴다. 답을 통째로
+     * 모았다가 한 번에 주는 사내 게이트웨이면 이 값을 올린다.
+     */
+    잠잠: prof.잠잠 ?? prof.streamIdleMs ?? 잠잠기본,
+    // 게이트웨이가 우리 인증서를 요구하면 (mTLS, backend/clientcert.js).
+    // 파일 경로만 싣는다 — 알맹이는 요청 직전에 읽는다.
+    인증서: 인증서설정(prof),
   };
 
   /*
@@ -621,7 +634,9 @@ export async function runOnce(opts = {}) {
          */
         case 'cutoff':
           말없이끊겼나 = true;
-          곁(`  ${c.yellow('⚠')} ${c.gray(옮긴말('ev.cutoff'))}`);
+          곁(`  ${c.yellow('⚠')} ${c.gray(ev.멎은초
+            ? 옮긴말('ev.stalled', { n: ev.멎은초 })
+            : 옮긴말('ev.cutoff'))}`);
           break;
 
         case 'nudge':

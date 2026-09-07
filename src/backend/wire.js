@@ -34,6 +34,7 @@
 // 캐시가 매번 새로 엮인다. 배워서 값이 바뀌는 것은 예외다 — 그건 안 그러면
 // 그 턴이 죽는 자리라, 한 번 흔들리는 값을 치른다.
 import { 벤더 } from './toolfit.js';
+import { 인증서등록 } from './clientcert.js';
 import { 말 } from '../i18n/index.js';
 
 /** 우리 눈금. agent/effort.js 의 LEVELS 와 같은 차례다 (off 는 따로 다룬다). */
@@ -608,6 +609,15 @@ export function 카드합치기(기본, 남긴것) {
  */
 export function 전선붙이기(conn, 배움 = null) {
   if (!conn) return conn;
+  /*
+   * 이 게이트웨이가 우리 인증서를 요구하면 여기서 매어 둔다 (backend/clientcert.js).
+   *
+   * 문이 넷이라 각 문에서 따로 부르면 언젠가 한 곳이 빠진다 — 그런 일이
+   * 실제로 두 번 있었다(vision·열쇠받기). 네 문이 다 지나는 자리는 여기다.
+   * `/model` 로 프로필을 갈아타도 여기를 다시 지나므로, 옛 프로필의 인증서가
+   * 새 창구로 따라가지 않는다.
+   */
+  인증서등록(conn.base, conn.인증서 ?? null);
   const 기본 = 기본카드(conn);
   let 남긴것 = null;
   try { 남긴것 = 배움?.아는전선?.(conn.model, conn.base, conn.kind) ?? null; } catch { 남긴것 = null; }

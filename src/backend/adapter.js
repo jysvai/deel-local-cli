@@ -2,7 +2,7 @@
 // 진단(probe)과 에이전트 루프가 같은 함수를 쓴다.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { req, headersFor, serverMessage, Aborted } from './http.js';
+import { req, headersFor, serverMessage, Aborted, 잠잠기본, 초로 } from './http.js';
 import { 할당량기억, 미리기다릴까, 마지막할당량, 할당량자리 } from './quota.js';
 import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
 import { 말 } from '../i18n/index.js';
@@ -1110,7 +1110,13 @@ export async function* chatStream(conn, opts) {
       method: 'POST',
       headers: await 머리말짓기(conn, opts),
       body,
+      /*
+       * 흘려 받는 자리에서 `timeout` 은 **머리말까지**다. 그 뒤로는 잠잠한
+       * 시간을 잰다 (backend/http.js 의 잠잠감시). 안 그러면 오래 생각하는
+       * 모델의 답이 5분에서 잘리고, 멎어 버린 게이트웨이는 5분을 꽉 채운다.
+       */
       timeout: opts.timeout ?? 300000,
+      잠잠: conn.잠잠 ?? 잠잠기본,
       stream: true,
       signal: opts.signal ?? null,
     });
@@ -1175,7 +1181,26 @@ export async function* chatStream(conn, opts) {
     let done;
     let value;
     try { ({ done, value } = await reader.read()); }
-    catch (err) { if (opts.signal?.aborted) throw new Aborted(); throw err; }
+    catch (err) {
+      if (opts.signal?.aborted) throw new Aborted();
+      /*
+       * 흐름이 멎어서 우리가 끊은 것.
+       *
+       * 여기까지 온 글자는 **버리지 않는다.** 3천 자를 받아 놓고 마지막에
+       * 멎었다고 통째로 던지면, 사람은 아무것도 못 보고 같은 것을 다시
+       * 시킨다 — 같은 자리에서 또 멎는다. 받은 것은 주고, 왜 멎었는지에
+       * 이름을 붙여 화면이 사실대로 말하게 한다.
+       *
+       * 다만 한 글자도 못 받았으면 그건 그냥 실패다. 빈 답을 '답' 이라고
+       * 부르는 것이 이 파일에서 제일 하면 안 되는 일이다.
+       */
+      if (err?.code === 'STALL' && (acc.content || acc.thinking || acc.toolCalls.length)) {
+        acc.stopped = 흐름멎음;
+        acc.멎은초 = 초로(err.잠잠 ?? 잠잠기본);
+        break;
+      }
+      throw err;
+    }
     // 끝났으면 decoder 에 걸쳐 있던 마지막 글자까지 뱉게 한다(flush).
     buf += done ? dec.decode() : dec.decode(value, { stream: true });
 
@@ -1230,6 +1255,17 @@ export async function* chatStream(conn, opts) {
 
 /** 서버가 끝난 까닭을 안 주고 흘려보내기를 멈춘 것. 'stop' 과 구별해야 한다. */
 export const 말없이끝남 = '말없이끝남';
+
+/**
+ * 흘러오던 것이 **멎어서 우리가 끊은** 것. 말없이끝남 과 구별한다.
+ *
+ * 말없이끝남 은 상대가 연결을 곱게 닫은 것이고, 이쪽은 연결이 살아 있는 채로
+ * 아무것도 안 오는 것이다. 고칠 자리가 다르다 — 앞은 중계 프록시가 몸통을
+ * 자르는 것이고, 뒤는 게이트웨이가 답을 통째로 모았다가 한 번에 주려다
+ * 우리 시계를 넘긴 것(그때는 잠잠 상한을 올리는 것이 답이다).
+ */
+export const 흐름멎음 = '흐름멎음';
+
 
 // 조각 하나를 누적하고, 화면에 흘릴 것만 내보낸다.
 function absorb(shape, obj, acc) {
