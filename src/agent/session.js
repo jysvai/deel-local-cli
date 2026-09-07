@@ -346,7 +346,18 @@ export class Session {
   }
 
   /**
-   * 이 폴더의 규칙 파일. DEEL.md → CLAUDE.md → AGENTS.md 중 먼저 읽히는 하나.
+   * 이 폴더의 규칙 파일. DEEL.md → CLAUDE.md → AGENTS.md → GEMINI.md 중
+   * 먼저 읽히는 하나.
+   *
+   * 남의 이름을 읽는 것이 이 목록의 요점이다. 규칙 파일은 사람이 며칠에 걸쳐
+   * 다듬어 놓은 것이고, 옮겨 오는 사람에게 「그건 못 읽으니 다시 적으세요」
+   * 라고 하면 대부분 안 옮긴다. GEMINI.md 를 뒤에 붙인 것은 Gemini CLI 가
+   * 2026-06-18 로 개인 사용자를 안 받게 되면서 그 파일을 든 채로 갈 곳을
+   * 찾는 사람이 실제로 생겼기 때문이다.
+   *
+   * 순서는 **좁은 것부터**다. DEEL.md 는 우리한테 하는 말이라 제일 세고,
+   * GEMINI.md 는 남한테 하던 말이라 제일 약하다. 두 개가 같이 있는 폴더에서
+   * 우리 이름을 진 파일이 지는 일은 없어야 한다.
    *
    * 없는 것은 그냥 없는 것이라 아무 말도 안 한다. 그런데 **있는데 못 읽는**
    * 것까지 같이 삼키면 안 된다 — 권한이 막혔거나 같은 이름의 폴더가 있으면
@@ -356,7 +367,7 @@ export class Session {
    * 못 읽은 것은 적어 두고 /status 가 '없음' 대신 그 까닭을 말한다.
    */
   #loadRules() {
-    for (const name of ['DEEL.md', 'CLAUDE.md', 'AGENTS.md']) {
+    for (const name of ['DEEL.md', 'CLAUDE.md', 'AGENTS.md', 'GEMINI.md']) {
       try { return { name, text: readFileSync(join(this.root, name), 'utf8').slice(0, 20000) }; }
       catch (err) {
         // 없으면 그냥 없는 것이다 — 말할 일이 아니다. existsSync 로 먼저 보지

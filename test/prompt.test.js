@@ -257,6 +257,37 @@ trace('8-규칙파일은안건드린다');
   })(), '');
 }
 
+// ── 남이 쓰던 이름도 읽는다 ────────────────────────────────────────────
+//
+// 규칙 파일은 사람이 며칠에 걸쳐 다듬어 놓은 것이다. 옮겨 오는 사람에게
+// 「그건 못 읽으니 다시 적으세요」 라고 하면 대부분 안 옮긴다.
+//
+// 순서가 뒤집히면 안 된다 — 우리 이름을 진 파일이 남의 이름에 지면, 두
+// 파일을 다 둔 폴더에서 사람이 방금 고친 DEEL.md 가 조용히 안 걸린다.
+{
+  const fs = await import('node:fs');
+  const 넷 = ['DEEL.md', 'CLAUDE.md', 'AGENTS.md', 'GEMINI.md'];
+
+  for (const 이름 of 넷) {
+    const 방 = join(root, '이름방-' + 이름);
+    fs.mkdirSync(방, { recursive: true });
+    fs.writeFileSync(join(방, 이름), '표식 ' + 이름, 'utf8');
+    const s = new Session(conn(), { root: 방, work: 'code' });
+    check(이름 + ' 하나만 있으면 그것을 읽는다',
+      s.rules?.name === 이름 && s.rules.text.includes('표식 ' + 이름), String(s.rules?.name));
+  }
+
+  // 넷을 다 둔 방. 앞엣것이 이겨야 한다.
+  const 겹방 = join(root, '이름겹침방');
+  fs.mkdirSync(겹방, { recursive: true });
+  for (const 이름 of 넷) fs.writeFileSync(join(겹방, 이름), '표식 ' + 이름, 'utf8');
+  for (let i = 0; i < 넷.length; i++) {
+    const s = new Session(conn(), { root: 겹방, work: 'code' });
+    check(넷[i] + ' 가 뒤엣것을 이긴다', s.rules?.name === 넷[i], String(s.rules?.name));
+    fs.rmSync(join(겹방, 넷[i]));   // 하나씩 걷어 내며 다음 차례를 확인한다
+  }
+}
+
 trace('9-못읽은규칙파일');
 
 // ── 규칙 파일이 있는데 못 읽으면 그렇게 말한다 ──────────────────────────

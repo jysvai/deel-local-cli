@@ -206,8 +206,17 @@ deel --no-tui            Turn the input box off; plain scrolling view (see below
 
 ### Project rules
 
-If the working folder has `DEEL.md`, `CLAUDE.md` or `AGENTS.md`, it is loaded as project rules.
-`/init` scaffolds one.
+If the working folder has `DEEL.md`, `CLAUDE.md`, `AGENTS.md` or `GEMINI.md`,
+it is loaded as project rules. `/init` scaffolds one.
+
+Other tools' names are read because a rules file is something a person spent days
+refining. Telling someone arriving from elsewhere "we can't read that, please
+retype it" mostly means they don't move.
+
+If several are present, **the first one in that order** is used, and nothing else.
+The narrower name wins: `DEEL.md` is addressed to us and `GEMINI.md` was
+addressed to something else, so in a folder holding both, the one just edited must
+not be the one that loses.
 
 ---
 
