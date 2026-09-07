@@ -339,7 +339,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.17.0  ⌂ inside
+ deel 1.17.1  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1313,6 +1313,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| [1.17.1](docs/en/releases/1.17.md#1171) | Two things only green on one machine — writing into a deleted directory · raw NUL in the source |
 | **[1.17.0](docs/en/releases/1.17.md#1170)** | What blocked it from getting inside a company · trusted folders · mTLS · `doctor` · hooks · subagents · writing hwpx |
 | **[1.16.0](docs/en/releases/1.16.md#1160)** | A deep request no longer lands in a shallow mode · gateway cache · `doc2md` · Figma `.fig` |
 | **[1.15.1](docs/en/releases/1.15.md#1151)** | Telling the editor how we get authenticated — ACP Registry listing requirement |
