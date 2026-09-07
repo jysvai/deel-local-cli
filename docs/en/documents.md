@@ -71,6 +71,39 @@ text always loses something. Old-style `.hwp` (OLE) cannot be read directly — 
 the way out (save it as hwpx in Hancom Office) and, if this machine has LibreOffice, borrows
 it to read the file anyway (below).
 
+### `deel doc2md` — a document as one Markdown file
+
+Same readers, different **shape on the way out**. Tables become real Markdown tables
+(`| name | value |`), and sheets and pages become `## Sheet 2` / `## Page 3` headings.
+
+```bash
+deel doc2md report.pptx              # to stdout
+deel doc2md spec.pdf --out spec.md   # to a file
+deel doc2md sheet.xlsx > sheet.md    # a pipe works too
+```
+
+Why Markdown rather than flat text — **the reader is not only a person**. From a Markdown
+table a model simply knows that the first row is the header and the third cell is a note.
+From lines glued together it has to guess that again every time, and one empty cell throws
+the guess off from there on. For the same bytes, Markdown carries more.
+
+It covers the five formats deel reads itself — `hwpx` · `docx` · `pptx` · `xlsx` · `pdf`.
+Nothing new is pulled in. Old formats (`.ppt`, `.doc`, `.xls`, `.hwp`) go the same route
+`Read` already takes: borrowed from LibreOffice if this machine has it.
+
+Two things it holds to.
+
+- **A page it could not read is never silently skipped.** In its place it leaves
+  `> This page could not be read as text — …`. Passing it through as an empty page turns
+  the document into "a document with nothing on that page", and the model answers "there is
+  no such content" on that basis.
+- **Past twelve columns it stops drawing a table.** It becomes a wall running sideways, so
+  the rows drop to a CSV fence and it says why. Changing shape quietly leaves no way to tell
+  whether the missing table is the file's doing or ours.
+
+Text goes to stdout; notes like "truncated at N characters" go to stderr, so
+`> report.md` stays clean.
+
 ### Formats it cannot read: it borrows this machine's converter
 
 `.ppt` · `.doc` · `.xls` · `.rtf` · `.odt` — the old formats deel cannot read itself — are the

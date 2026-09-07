@@ -545,7 +545,7 @@ Names follow Claude Code / Codex conventions.
 | `/mode <mode>` | Approval policy — how much it asks (`auto` · `confirm` · `strict`) |
 | `/work [mode]` | Work mode — what kind of work you are doing |
 | `/auto` | Hand the wheel back — it picks the mode from what you type |
-| `/code` `/plan` `/architect` `/debug` `/ask` `/orchestrator` | Switch work mode directly (pins it) |
+| `/code` `/plan` `/architect` `/debug` `/inspect` `/ask` `/orchestrator` | Switch work mode directly (pins it) |
 | `/level [level]` | How much to show (`simple` · `developer`) |
 | `/motion [plain\|knight\|animal\|office\|off]` | What animates while it works — takes effect at once, and is saved |
 | `/undo [turns]` | Revert file changes |
@@ -601,7 +601,8 @@ Cycle with `Shift+Tab`, or type the name.
 | `/plan` ☰ Plan | Planning first | **No** | Deep (`deep`·high) |
 | `/architect` ◈ Architect | Shaping structure | **No** | Deep (`deep`·high) |
 | `/debug` ◉ Debug | Finding causes | Yes | Deep, more steps (32) |
-| `/ask` ◇ Ask | Explaining only | **No** | Shallow (`low`) |
+| `/inspect` ◍ Inspect | Auditing for defects — with evidence, changing nothing | **No** | Deep (`deep`/high), many steps |
+| `/ask` ◇ Ask | Explaining only | **No** | Shallow (`low`) — not lowered when the ask has several parts |
 | `/orchestrator` ❋ Orchestrator | Breaking up large work | Yes | Many steps (40) |
 
 In read-only modes, `Write`, `Edit` and `Bash` are **never sent to the model at all.**
@@ -689,12 +690,21 @@ their cost; here is why.
 **A file saved as CP949 is written back as CP949.** The encoding is never changed.
 Excel (`.xlsx`) is read as CSV — read-only.
 
+To keep a document as **one Markdown file**, use `deel doc2md`. Tables survive as
+real `| name | value |` tables, so a model has far less to guess at than it does
+with flattened text.
+
+```bash
+deel doc2md report.pptx            # to stdout
+deel doc2md spec.pdf --out spec.md # to a file
+```
+
 Old formats (`.ppt`, `.doc`, `.xls`, `.rtf`) are read by **borrowing the LibreOffice already
 on this machine** — the same terms on which deel borrows `rg`, and nothing is ever installed.
 With no converter it **says so definitively and stops**: what is missing, what you can do about
 it, and not to open the file again. Turn it off with `DEEL_CONVERT=off`.
 
-> **More** — Encoding · Excel · borrowing a converter
+> **More** — Encoding · Excel · `doc2md` · borrowing a converter
 >
 > **[Korean documents and Excel read →](docs/en/documents.md#korean-text-and-excel)**
 
@@ -1002,7 +1012,7 @@ opens straight into a conversation from then on.
 | Tool list with icons and status | `Read` is a read, `Edit` is an edit, `Bash` is an execution — **the kind is sent**, not just a name |
 | Clickable file links | The **absolute path** of every file touched |
 | Approval dialog | deel's safety rails, rendered as the editor's own prompt (`allow once` · `always allow` · `reject`) |
-| Mode picker | deel's seven work modes (auto · code · plan · architect · debug · ask · orchestrator) |
+| Mode picker | deel's eight work modes (auto · code · plan · architect · debug · inspect · ask · orchestrator) |
 | Stop button | Reaches the turn mid-flight, even while waiting on the model |
 | Past conversations | Still there after a restart. They live in the **same place** as the terminal's, so a session started in the editor can be picked up with `deel --resume` |
 

@@ -162,7 +162,14 @@ const 끝이름 = (name) => {
  * "이름값가1" 같은 덩어리가 되는데, 그건 뜻이 사라진 글이라 안 읽은 것보다
  * 나쁘다 — 모델이 그걸 근거로 답한다.
  */
-export function 문단뽑기(xml, 갈래) {
+/**
+ * @param {object} [옵션]
+ * @param {boolean} [옵션.표를따로]  표 행을 { 행: [칸...] } 로 돌려준다.
+ *   기본값은 여태와 똑같이 `a | b` 한 줄이다. 마크다운으로 낼 때만 켠다
+ *   (tools/doc2md.js) — 마크다운 표는 칸이 몇 개인지 알아야 그릴 수 있고,
+ *   이어 붙인 한 줄에서 그걸 되짚으면 글에 든 | 하나에 표가 어긋난다.
+ */
+export function 문단뽑기(xml, 갈래, { 표를따로 = false } = {}) {
   const 표기 = 이름표[갈래];
   const 문단들 = [];
 
@@ -195,7 +202,10 @@ export function 문단뽑기(xml, 갈래) {
     if (이름 === 표기.표) { 표깊이 += t.closing ? -1 : (t.selfClosing ? 0 : 1); continue; }
     if (표깊이 > 0 && 이름 === 표기.행) {
       if (t.closing) {
-        if (행칸들) 문단들.push(행칸들.map((x) => x.trim()).join(' | '));
+        if (행칸들) {
+          const 칸 = 행칸들.map((x) => x.trim());
+          문단들.push(표를따로 ? { 행: 칸 } : 칸.join(' | '));
+        }
         행칸들 = null;
       } else {
         행칸들 = [];
@@ -237,7 +247,7 @@ const 알맹이 = {
  * 던지지 않는다 — 깨진 파일은 도구 실행 한가운데서 만나는 것이라,
  * 예외가 나면 "문서가 깨졌다" 가 "도구가 터졌다" 로 보고된다.
  */
-export function readDoc(경로또는버퍼) {
+export function readDoc(경로또는버퍼, { 표를따로 = false } = {}) {
   const 갈래 = Buffer.isBuffer(경로또는버퍼) ? null : 종류(경로또는버퍼);
   let buf;
   try {
@@ -270,7 +280,7 @@ export function readDoc(경로또는버퍼) {
 
   const 덩이들 = 찾은.map((s, i) => ({
     이름: 구획이름(i, s.번호),
-    문단들: 문단뽑기(s.몸.toString('utf8'), 갈래),
+    문단들: 문단뽑기(s.몸.toString('utf8'), 갈래, { 표를따로 }),
   }));
   return { ok: true, 갈래, 덩이들 };
 }

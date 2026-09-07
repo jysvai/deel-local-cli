@@ -15,6 +15,7 @@ import { runSessions } from '../src/agent/sessionui.js';
 import { acp } from '../src/acp/serve.js';
 import { runCompletion } from '../src/completion.js';
 import { runReset } from '../src/reset.js';
+import { 마크다운, 읽는갈래 } from '../src/tools/doc2md.js';
 import { 언어잡기, 언어 } from '../src/i18n/index.js';
 import { load as 설정읽기 } from '../src/config.js';
 
@@ -112,6 +113,47 @@ function runAudit() {
  * 운영팀은 감사기록 사양을 보고 수집 규칙을 짠다. zip 을 통째로 만들지 않고
  * 그 두 장만 필요할 때가 실제로 더 잦다 — 심사 양식에 첨부하는 자리다.
  */
+/*
+ * `deel doc2md <파일> [--out 이름.md]` — 문서를 마크다운으로.
+ *
+ * 읽는 일은 이미 있는 세 읽개가 그대로 한다(docs.js · xlsx.js · pdf.js).
+ * 여기서 새로 들이는 것은 없다 — 의존성 0개는 그대로다.
+ *
+ * `--out` 이 없으면 표준출력으로 낸다. 파이프에 바로 물리는 자리라
+ * 여기서는 say() 를 안 쓴다 (completion 과 같은 규칙이다).
+ */
+function runDoc2md(args, flags) {
+  const 파일 = args[0];
+  if (!파일) {
+    say(`  ${mark.warn} 바꿀 파일을 주세요: ${c.white('deel doc2md 보고서.pptx')}`);
+    say(`  ${c.gray('직접 읽는 것:')} ${읽는갈래.join(c.gray(' · '))}`);
+    return 1;
+  }
+  const r = 마크다운(파일);
+  if (!r.ok) {
+    say('');
+    for (const 줄 of String(r.error).split('\n')) say(`  ${mark.warn} ${줄}`);
+    say('');
+    return 1;
+  }
+  // 못 읽은 쪽·자른 자리는 **반드시** 말한다. 조용히 자르면 받은 사람은
+  // 그게 문서 전부인 줄 알고 그 위에 판단을 쌓는다.
+  if (flags.out) {
+    const 자리 = String(flags.out);
+    writeFileSync(자리, r.md, 'utf8');
+    say('');
+    say(`  ${mark.ok} ${c.bold(자리)}  ${c.gray(r.summary)}`);
+    for (const 줄 of r.말 ?? []) say(`  ${c.gray(`· ${줄}`)}`);
+    say('');
+    return 0;
+  }
+  // 글은 표준출력, 말은 표준오류로 나눈다. 그래야 `> 보고서.md` 로 받아도
+  // 「몇 자에서 잘랐습니다」 가 파일 안에 섞여 들어가지 않는다.
+  process.stdout.write(`${r.md}\n`);
+  for (const 줄 of r.말 ?? []) process.stderr.write(`${줄}\n`);
+  return 0;
+}
+
 function runSbom(flags) {
   const a = audit();
   const at = new Date();
@@ -374,6 +416,8 @@ async function main() {
       return runPack(flags);
     case 'audit':
       return runAudit();
+    case 'doc2md':
+      return runDoc2md(args, flags);
     case 'sbom':
       return runSbom(flags);
     case 'scan':

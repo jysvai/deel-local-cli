@@ -39,6 +39,7 @@ export const 명령들 = [
   { 이름: 'doctor', 뜻: 'diagnose 와 같다', en: 'same as diagnose' },
   { 이름: 'pack', 뜻: '오프라인 반입용으로 묶는다', en: 'bundle for offline transfer' },
   { 이름: 'audit', 뜻: '무엇을 했는지 기록을 본다', en: 'show the record of what it did' },
+  { 이름: 'doc2md', 뜻: '문서를 마크다운으로 (hwpx·docx·pptx·xlsx·pdf)', en: 'document to Markdown (hwpx/docx/pptx/xlsx/pdf)' },
   { 이름: 'sbom', 뜻: '무엇이 들었는지 목록을 낸다', en: 'list what is inside (SBOM)' },
   { 이름: 'scan', 뜻: '게이트웨이에 어떤 모델이 있나 훑는다', en: 'scan the gateway for available models' },
   { 이름: 'sessions', 뜻: '지난 대화 목록', en: 'list past conversations' },

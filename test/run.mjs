@@ -52,6 +52,8 @@ const FILES = [
   'parallel.test.js',
   'modes.test.js',
   'route.test.js',
+  'modewire.test.js',
+  'doc2md.test.js',
   'planapprove.test.js',
   'resume.test.js',
   'ask.test.js',
