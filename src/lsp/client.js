@@ -394,7 +394,7 @@ export class 언어서버 {
 // 뿌리+언어를 열쇠로 잡아 둔다. 켤 때 값이 들어서 한 번 켠 것은 계속 쓴다.
 
 const 풀 = new Map();
-const 열쇠 = (뿌리, g) => `${뿌리} ${g}`;
+const 열쇠 = (뿌리, g) => `${뿌리}\0${g}`;
 
 /**
  * 이 파일에 맞는 서버를 얻는다. 못 쓰면 null.
@@ -420,7 +420,7 @@ export async function 얻기(뿌리, 파일, { 켜기까지 = true, env = proces
 /** 지금 떠 있는 것들. /lsp 화면과 시험이 쓴다. */
 export function 지금것들() {
   return [...풀.entries()].map(([k, v]) => {
-    const [뿌리, 갈래열쇠] = k.split(' ');
+    const [뿌리, 갈래열쇠] = k.split('\0');
     return { 뿌리, 갈래: 갈래열쇠, 이름: v.서버?.이름, 살았나: v.살았나(), 준비: !!v.능력.ready, 죽음: v.죽음 ?? null };
   });
 }

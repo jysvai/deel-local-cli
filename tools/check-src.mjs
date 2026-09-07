@@ -97,6 +97,29 @@ for (const p of 담길것) {
   탈.push(`${짧게}:${줄번호}: 줄바꿈이 CRLF 입니다 — 배포에는 LF 만 담깁니다`);
 }
 
+// ── 날 제어문자는 안 담는다 ─────────────────────────────────────────────
+//
+// 소스에 NUL 이 네 개 박힌 채로 나갈 뻔했다. 자르개로 쓰려고 적은
+// \0 이 힘터 문서를 지나며 **진짜 0바이트**가 됐고, 프로그램은 멀쩡히
+// 돌아서 검사가 전부 초록이었다.
+//
+// 도는 것과 담아도 되는 것은 다르다. 날 0바이트가 든 파일은 grep 이
+// "Binary file … matches" 로 넘겨 버리고, diff·리뷰·에디터마다 다르게
+// 다룬다. 그러면 그 줄은 사람이 다시는 안 읽는 줄이 된다.
+//
+// 탭·줄바꿈은 글의 일부다. ESC 는 화면 색을 내는 자리에 실제로 쓰인다
+// (ui/ansi.js). 그 둘은 봐주고 나머지를 잡는다.
+const 봐줄것 = new Set([0x09, 0x0a, 0x0d, 0x1b]);
+for (const q of 담길것) {
+  const 바이트 = readFileSync(q);
+  const 자리 = 바이트.findIndex((b) => (b < 0x20 || b === 0x7f) && !봐줄것.has(b));
+  if (자리 === -1) continue;
+  const 줄번호 = 바이트.subarray(0, 자리).toString('utf8').split('\n').length;
+  const 이름 = relative(뿌리, q).replace(/\\/g, '/');
+  const 코드 = '0x' + 바이트[자리].toString(16).padStart(2, '0');
+  탈.push(`${이름}:${줄번호}: 날 제어문자 ${코드} 가 들어 있습니다 — 글자로 적으세요(예: \\0)`);
+}
+
 for (const p of 파일들) {
   const 짧게 = relative(뿌리, p).replace(/\\/g, '/');
   const ext = extname(p).toLowerCase();

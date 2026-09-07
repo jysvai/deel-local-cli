@@ -238,7 +238,7 @@ export class MCP서버 {
     if (this.살아있나()) return true;
     if (this.죽음) return false;
     if (this.깨우는중) return this.깨우는중;
-    const 적어둔것 = this.도구.map((t) => t.name).join(' ');
+    const 적어둔것 = this.도구.map((t) => t.name).join('\0');
     this.깨우는중 = (async () => {
       // 죽음 은 붙기() 가 실패하며 남긴다. 다시 붙으려면 지워 두고 시작한다.
       this.죽음 = null;
@@ -246,11 +246,11 @@ export class MCP서버 {
       this.대기 = false;
       this.깨우는중 = null;
       if (!ok) return false;
-      const 지금것 = this.도구.map((t) => t.name).join(' ');
+      const 지금것 = this.도구.map((t) => t.name).join('\0');
       if (적어둔것 && 지금것 !== 적어둔것) {
         this.달라짐 = {
-          늘어난것: this.도구.map((t) => t.name).filter((n) => !적어둔것.split(' ').includes(n)),
-          없어진것: 적어둔것.split(' ').filter((n) => !this.도구.some((t) => t.name === n)),
+          늘어난것: this.도구.map((t) => t.name).filter((n) => !적어둔것.split('\0').includes(n)),
+          없어진것: 적어둔것.split('\0').filter((n) => !this.도구.some((t) => t.name === n)),
         };
       }
       return true;
