@@ -2,7 +2,7 @@
 // deel 진입점. 외부 의존성 없음 — Node 표준 기능만 씁니다.
 import { join } from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { c, say, mark, rule, clip } from '../src/ui/ansi.js';
+import { c, say, mark, rule, clip, width } from '../src/ui/ansi.js';
 import { runSetup, runDiagnose, showStatus, banner } from '../src/setup.js';
 import { chatLoop } from '../src/repl.js';
 import { runOnce } from '../src/oneshot.js';
@@ -20,6 +20,7 @@ import { 언어잡기, 언어, 말 } from '../src/i18n/index.js';
 import { 믿기, 안믿기, 믿는목록, 프로젝트금지칸 } from '../src/safety/trust.js';
 import { load as 설정읽기 } from '../src/config.js';
 import { 규칙모으기, 어떻게할까, 확인목록, 확인인자, 확인돌리기 } from '../src/safety/policy.js';
+import { 기록자리, 세기, 도구차례, 막힘차례, 셈JSON } from '../src/stats.js';
 
 const MIN_NODE = 20;
 
@@ -97,6 +98,86 @@ function runPack(flags) {
     say(`  ${c.gray('One document to read, two to feed a scanner — submit them as they are.')}`);
     say(`  ${c.gray('To see the contents first:')} ${c.cyan('deel audit')}`);
   }
+  say('');
+  return 0;
+}
+
+/*
+ * `deel stats [--days N] [--all] [--json]` — 이 폴더에서 무엇을 했나.
+ *
+ * 감사기록은 여태 쓰기만 하고 아무도 안 읽는 파일이었다. 무엇을 언제 어떻게
+ * 했는지 전부 남는다고 팔아 놓고, 적힌 것을 사람 말로 되돌려 주는 명령이
+ * 없었다 (src/stats.js 머리말).
+ */
+function runStats(flags) {
+  const 자리 = 기록자리(flags.root ? String(flags.root) : process.cwd());
+  const 전부 = flags.all === true || flags.all === 'true';
+  const 날수 = 전부 ? null : Math.max(1, parseInt(String(flags.days ?? '30'), 10) || 30);
+  const 셈 = 세기(자리, { 날수 });
+  const json = flags.json === true || flags.json === 'true';
+
+  if (json) { process.stdout.write(JSON.stringify(셈JSON(셈)) + '\n'); return 셈.있나 ? 0 : 1; }
+
+  say('');
+  if (!셈.있나) {
+    // 없는 것을 「0회」 로 찍으면 안 쓴 것과 기록이 없는 것이 같아 보인다.
+    say(`  ${mark.warn} ${말('stats.none')}`);
+    say(`  ${c.gray(자리)}`);
+    say('');
+    return 1;
+  }
+
+  const 기간 = 셈.처음 ? `${셈.처음.slice(0, 10)} → ${셈.마지막.slice(0, 10)}` : '(빈 기록)';
+  say(`  ${c.bold(말('stats.title'))}  ${c.gray(자리)}`);
+  say('');
+  /*
+   * 이름 칸은 **화면 칸수**로 맞춘다.
+   *
+   * 한글은 한 글자가 두 칸이라 padEnd 로 맞추면 어긋난다 — 「막힘」 과
+   * 「되돌리기」 가 같은 자리에서 시작하지 않는다. 말을 바꿀 때마다 손으로
+   * 다시 맞추게 되는 것도 같은 까닭이다 (bin/deel.js 의 반입 묶음 화면에
+   * 같은 이야기가 한 번 적혀 있다).
+   */
+  const 칸 = (s) => `  ${c.gray(String(s) + ' '.repeat(Math.max(0, 12 - width(String(s)))))}`;
+  say(`${칸(말('stats.period'))} ${기간}  ${c.gray(말('stats.activeDays', { n: 셈.날.size }))}`
+    + (셈.날수 ? c.gray(`  · ${말('stats.window', { n: 셈.날수 })}`) : ''));
+  say(`${칸(말('stats.turns'))} ${셈.대화.toLocaleString()}  ${c.gray(말('stats.sessions', { n: 셈.세션.size }))}`);
+  const 실패말 = 셈.도구
+    ? c.gray(`  · ${말('stats.failed', { n: 셈.도구실패 })} (${((셈.도구실패 / 셈.도구) * 100).toFixed(1)}%)`)
+    : '';
+  say(`${칸(말('stats.tools'))} ${셈.도구.toLocaleString()}${실패말}`);
+
+  const 표 = 도구차례(셈);
+  if (표.length) {
+    say('');
+    for (const x of 표) {
+      const 실패 = x.실패 ? c.yellow(`  ${말('stats.failed', { n: x.실패 })}`) : '';
+      say(`    ${c.white(x.이름.padEnd(12))} ${String(x.수).padStart(6)}${실패}`);
+    }
+  }
+
+  /*
+   * 막힌 것은 0 이어도 적는다.
+   *
+   * 규칙을 적어 둔 사람이 알아야 하는 것은 「몇 번 막혔나」 보다 **한 번도 안
+   * 걸렸다**는 사실이다. 안 걸리는 규칙은 규칙이 아니라 적어 둔 글이다
+   * (`deel rules check` 가 같은 이야기를 다른 쪽에서 한다).
+   */
+  say('');
+  say(`${칸(말('stats.blocked'))} ${셈.막힘.toLocaleString()}`);
+  for (const x of 막힘차례(셈)) say(`    ${c.gray('·')} ${x.왜} ${c.gray(`${x.수}회`)}`);
+  say(`${칸(말('stats.undos'))} ${셈.되돌림.toLocaleString()}`);
+  if (셈.비밀) say(`${칸(말('stats.masked'))} ${셈.비밀.toLocaleString()}`);
+
+  // 못 읽은 줄을 조용히 넘기면 위 숫자가 통째로 거짓말이 된다.
+  if (셈.깨진줄) {
+    say('');
+    say(`  ${mark.warn} ${c.yellow(말('stats.broken', { n: 셈.깨진줄 }))}`);
+  }
+  if (셈.지난줄) say(`  ${c.gray(말('stats.older', { n: 셈.지난줄 }))}`);
+  // 토큰과 돈은 이 파일에 없다. 없는 것을 지어내지 않고, 어디서 보는지 말한다.
+  say('');
+  say(`  ${c.gray(말('stats.noCost'))}`);
   say('');
   return 0;
 }
@@ -320,7 +401,7 @@ function runSbom(flags) {
 // 실제로 이랬다 — deel run --json "검사 돌려줘" 를 쳤더니 --json 이 뒤의 말을
 // 통째로 삼켰다. 시킬 말이 사라졌으니 "무엇을 시킬지 적어 주세요" 가 떴는데,
 // 화면만 보면 왜 그런지 알 길이 없다. 깃발을 앞에 두는 것은 아주 흔한 습관이다.
-const BOOL = new Set(['help', 'version', 'offline', 'online', 'continue', 'json', 'quiet', 'yes', 'no-tui', 'tui']);
+const BOOL = new Set(['help', 'version', 'offline', 'online', 'continue', 'json', 'quiet', 'yes', 'no-tui', 'tui', 'all']);
 
 function parse(argv) {
   const flags = {};
@@ -412,6 +493,9 @@ function help() {
     say(`    ${c.cyan('deel rules check "<명령>"')}   그 명령을 어느 규칙이 어떻게 정하는지`);
     say(`    ${c.cyan('deel rules check')}            설정에 적어 둔 보기를 다 돌립니다 ${c.gray('(CI 에 겁니다)')}`);
     say(`    ${c.gray('Bash(rm -rf*) 는 sudo rm -rf 를 안 막습니다. 적은 사람은 막힌 줄 알고 지냅니다.')}`);
+    say('');
+    say(`    ${c.cyan('deel stats')}                  이 폴더에서 무엇을 했는지 ${c.gray('(.deel/audit.jsonl 요약)')}`);
+    say(`    ${c.gray('--days N · --all · --json')}  기간을 바꾸거나, 전부, 또는 기계가 읽을 모양으로`);
   } else {
     say(`  ${c.bold('Project config trust')}`);
     say('');
@@ -424,6 +508,9 @@ function help() {
     say(`    ${c.cyan('deel rules check "<cmd>"')}    Which rule decides that command, and how`);
     say(`    ${c.cyan('deel rules check')}            Run the examples from your config ${c.gray('(for CI)')}`);
     say(`    ${c.gray('Bash(rm -rf*) does not stop sudo rm -rf. The person who wrote it believes it does.')}`);
+    say('');
+    say(`    ${c.cyan('deel stats')}                  What happened in this folder ${c.gray('(summarises .deel/audit.jsonl)')}`);
+    say(`    ${c.gray('--days N · --all · --json')}  Change the window, read everything, or emit JSON`);
   }
   say('');
   say(`  ${c.bold('대화 시작 옵션')}`);
@@ -592,6 +679,8 @@ async function main() {
       return runPack(flags);
     case 'audit':
       return runAudit();
+    case 'stats':
+      return runStats(flags);
     case 'trust':
       return runTrust(flags);
     case 'rules':

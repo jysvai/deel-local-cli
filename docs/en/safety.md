@@ -112,7 +112,32 @@ The current state is printed verbatim in the `열쇠 보관` line of `/status` a
 
 ## Corporate review package
 
-<sub>Diagnosing a corporate gateway</sub>
+<sub>What happened in this folder · Diagnosing a corporate gateway</sub>
+
+### What happened in this folder — `deel stats`
+
+The audit log (`.deel/audit.jsonl`) was a **write-only file** — everything deel did was
+recorded there, and nothing read it back.
+
+```bash
+deel stats                 # last 30 days
+deel stats --days 90
+deel stats --all           # no window
+deel stats --json          # one line, for scripts
+```
+
+Once the tool is inside a company, four questions come up immediately — **is it
+actually used** (someone has to decide whether to renew), **what does it mostly do**
+(reading, or really editing), **has anything been blocked** (a rule that never fires
+is not a rule, it is a note), and **has anything been undone** (if undo is the safety
+net, it should have caught something). All four are already on disk.
+
+| | |
+|---|---|
+| **Prompts are not shown** | The log keeps up to 500 characters of what the person typed (masked). Here they are only counted — a screen you open for statistics must not become a screen that shows your conversations to whoever is standing behind you |
+| **Unreadable lines are reported** | Dropping broken lines quietly would let "4 tool calls" really mean "4 of 400 lines parsed", and someone reading that concludes nobody uses this |
+| **"No log" is not "zero"** | With no log at all the command exits non-zero. Never having used it and pointing at the wrong folder call for completely different actions |
+| **No tokens, no cost** | Those numbers are not in this file, and inventing them would be worse than omitting them — the same reason there is no price table baked into the source. For the current conversation, `/cost` measures it |
 
 ### Diagnosing a corporate gateway
 

@@ -1096,6 +1096,7 @@ deel audit                    # 사람이 읽는 심사서만 보기
 deel sbom                     # 기계가 읽는 두 장을 표준출력으로 (deel sbom | jq)
 deel sbom --out 심사.json     # 파일로
 deel sbom --only sbom         # SBOM 한 장만
+deel stats                    # 이 폴더에서 실제로 무엇을 했나 (.deel/audit.jsonl 요약)
 ```
 
 셋 다 손으로 적지 않고 코드가 소스를 훑어서 만듭니다 — 손으로 적으면 언젠가

@@ -42,6 +42,7 @@ export const 명령들 = [
   { 이름: 'doc2md', 뜻: '문서·시안을 마크다운으로 (hwpx·docx·pptx·xlsx·pdf·fig)', en: 'document or design to Markdown (hwpx/docx/pptx/xlsx/pdf/fig)' },
   { 이름: 'sbom', 뜻: '무엇이 들었는지 목록을 낸다', en: 'list what is inside (SBOM)' },
   { 이름: 'trust', 뜻: '이 폴더의 프로젝트 설정을 읽게 한다', en: "read this folder's project config" },
+  { 이름: 'stats', 뜻: '이 폴더에서 무엇을 했나 (감사기록 요약)', en: 'what happened in this folder (audit summary)' },
   { 이름: 'rules', 뜻: '적어 둔 승인 규칙이 진짜 그렇게 도나 확인한다', en: 'check that the approval rules actually do what they say' },
   { 이름: 'scan', 뜻: '게이트웨이에 어떤 모델이 있나 훑는다', en: 'scan the gateway for available models' },
   { 이름: 'sessions', 뜻: '지난 대화 목록', en: 'list past conversations' },
@@ -87,6 +88,8 @@ export const 깃발들 = [
   { 이름: '--yes', 뜻: '물어보지 않고 진행', en: 'do not ask, just proceed', 값: false },
   { 이름: '--hard', 뜻: 'reset all 에서 되돌리기·감사기록까지', en: 'with reset all: undo snapshots and the audit log too', 값: false },
   { 이름: '--json', 뜻: '결과를 JSON 으로', en: 'output JSON', 값: false },
+  { 이름: '--days', 뜻: 'stats 에서 볼 기간(일)', en: 'stats: how many days back', 값: null },
+  { 이름: '--all', 뜻: 'stats 에서 기간을 안 자름', en: 'stats: no time window', 값: false },
   // 값이 파일이라 셸이 파일을 완성해 줘야 한다. 목록으로 못 준다 —
   // 스키마 파일 이름은 사람이 짓는 것이라 우리가 알 수가 없다.
   { 이름: '--output-schema', 뜻: '답을 이 JSON Schema 모양으로', en: 'answer must match this JSON Schema', 값: '파일' },

@@ -1165,6 +1165,7 @@ deel audit                    # the human-readable sheet only
 deel sbom                     # the two machine-readable ones, on stdout (deel sbom | jq)
 deel sbom --out review.json   # to a file
 deel sbom --only sbom         # just the SBOM
+deel stats                    # what this folder actually did (summarises .deel/audit.jsonl)
 ```
 
 With the screen language set to English these three, and the `deel pack` archive itself,

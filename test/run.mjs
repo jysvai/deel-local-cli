@@ -45,6 +45,7 @@ const FILES = [
   'quota.test.js',
   'stall.test.js',
   'clientcert.test.js',
+  'stats.test.js',
   'review.test.js',
   'task.test.js',
   'toolargs.test.js',
