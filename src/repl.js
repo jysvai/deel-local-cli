@@ -2,6 +2,7 @@
 import { createInterface, emitKeypressEvents } from 'node:readline';
 import { 규칙모으기, 정책읽기 } from './safety/policy.js';
 import { 훅읽기 } from './safety/hooks.js';
+import { 에이전트읽기 } from './agent/agents.js';
 import { 받기설정 } from './safety/authcmd.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { homedir } from 'node:os';
@@ -1156,6 +1157,8 @@ export async function chatLoop(opts = {}) {
    * 그건 원인을 찾을 길이 없는 화면이다. 설정을 켤 때 한 번 읽는 것과 같다.
    */
   const 훅정보 = 훅읽기(root, { 켜짐: opts.hooks === false ? false : null });
+  // 이름 붙인 하위 작업 (agent/agents.js). 스킬처럼 켜질 때 한 번 찾는다.
+  const 에이전트정보 = 에이전트읽기(root);
 
   const ctx = {
     scope: makeScope(root),
@@ -1168,6 +1171,8 @@ export async function chatLoop(opts = {}) {
     규칙들: 규칙모으기(cfg),
     // 사람이 적어 둔 훅 (safety/hooks.js). 프로젝트 파일은 믿는 폴더에서만 읽는다.
     훅들: 훅정보.훅들,
+    // 이름 붙인 하위 작업. 목록은 Task 스키마에, 지침은 고른 뒤에만 실린다.
+    에이전트들: 에이전트정보.에이전트들,
     // Bash 자식에게 되살려 줄 환경변수 이름 (safety/shellenv.js).
     // 기본은 열쇠처럼 생긴 이름을 다 빼는 것이고, 여기 적은 것만 되살린다 —
     // 사내 저장소를 쓰는 사람은 npm ci 에 NPM_TOKEN 이 실제로 필요하다.

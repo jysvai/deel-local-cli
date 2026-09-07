@@ -2,7 +2,7 @@
 
 # Extending
 
-Skills, plugins, tools from outside (MCP), your own rules (hooks), inside your editor (ACP)
+Skills, plugins, MCP, named subagents, hooks, inside your editor (ACP)
 
 ---
 
@@ -66,6 +66,76 @@ tear down that line with our own hands. So:
 One server crashing, hanging, or talking nonsense does not affect the others. Failures are not
 swallowed — the reason appears in the header, because a silent drop leaves "why is that tool
 missing?" unanswerable.
+
+---
+
+## Named subagents
+
+<sub>One file holds the mode, the model, the tools, and the instructions</sub>
+
+`Task` already exists. The problem is that **it has to be written out every time** —
+which mode, which model, what to watch for, what counts as finished. Even for the job
+your team runs every day, and so it comes out slightly different every time.
+
+Give that bundle a name and put it in one file.
+
+```json
+// .deel/agents/reviewer.json
+{
+  "description": "read the diff and flag only what cannot be undone",
+  "mode": "inspect",
+  "tools": ["Read", "Grep", "Glob"],
+  "maxSteps": 12,
+  "prompt": "Start from what actually changed. Look at the irreversible things first. Do not comment on taste."
+}
+```
+
+From then on the model only writes this:
+
+```
+Task({ agent: "reviewer", purpose: "sweep this diff", task: "…" })
+```
+
+The filename is the agent's name. Both `.deel/agents/` (this project) and
+`~/.deel/agents/` (this machine) are read — on a name collision **the closer one wins.**
+Claude Code's `.claude/agents/*.md` frontmatter is read as-is. `/agents` shows what is
+defined.
+
+| Field | Meaning |
+|---|---|
+| `description` `설명` | **Required.** This one line is all the parent model has to choose on |
+| `mode` `모드` | `code`, `inspect`, `ask`… defaults to `code` |
+| `model` `모델` | A profile name from your config — hand routine work to a smaller model |
+| `tools` `도구` | What this subagent gets. **Only ever narrows** (below) |
+| `prompt` `지침` | Goes **before** the task, not after |
+| `maxSteps` `걸음` | Step ceiling (max 200) |
+
+### Tools only ever narrow
+
+Architect mode is a promise that no file will change, and people turn on `/architect`
+trusting it. One line of `"tools": ["Write"]` in a definition file must not break that
+promise — the screen would still say architect mode while files change.
+
+So only the names that **the current mode already grants** survive. Anything else is
+dropped, and **the screen says it was dropped** — silently removing it means someone
+believes a tool is running, and when the subagent does not use it they suspect the model
+rather than their own file.
+
+Mode is bounded the same way: a subagent **can never be stronger than its parent.**
+Called from a read-only mode, it drops to read-only even if the definition says `code`.
+
+### What actually rides along on every request
+
+The name and the one-line description, nothing else. The instructions are sent to the
+subagent **after** it is chosen — putting them in the tool schema would ship every
+unused agent's instructions on every request. Same arithmetic as loading skills in
+stages.
+
+Calling a name that does not exist **does not quietly fall back.** If the caller thinks
+"the reviewer looked at this" while an ordinary subagent ran, nothing in the result
+shows the difference. The available names are returned instead.
+
+Turn it off with `DEEL_AGENTS=off`.
 
 ---
 

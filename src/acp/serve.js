@@ -32,6 +32,7 @@ import { join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import { 규칙모으기, 늘허락, 정책읽기 } from '../safety/policy.js';
 import { 훅읽기 } from '../safety/hooks.js';
+import { 에이전트읽기 } from '../agent/agents.js';
 import { 남길것읽기 } from '../safety/shellenv.js';
 import { 받기설정 } from '../safety/authcmd.js';
 import { run } from '../agent/loop.js';
@@ -349,6 +350,7 @@ export async function acp(opts = {}) {
 
     // 훅은 방마다 새로 읽는다 — 에디터는 폴더마다 방을 하나씩 여니까 (safety/hooks.js).
     const 훅정보 = 훅읽기(root, { 켜짐: opts.hooks === false ? false : null });
+    const 에이전트정보 = 에이전트읽기(root);
 
     방.ctx = {
       scope: makeScope(root),
@@ -360,6 +362,7 @@ export async function acp(opts = {}) {
       // 사람이 적어 둔 훅 (safety/hooks.js). 에디터 안에서도 같은 것이 돌아야 한다 —
       // 여기만 빠지면 「터미널에서는 막히고 에디터에서는 안 막힌다」 가 된다.
       훅들: 훅정보.훅들,
+      에이전트들: 에이전트정보.에이전트들,
       // Bash 자식에게 되살려 줄 환경변수 이름 (safety/shellenv.js).
       // 에디터 안에서도 같은 값이어야 한다 — 여기만 빠지면 「에디터에서만
       // 빌드가 된다·안 된다」 가 되고, 그건 원인을 찾을 길이 없다.

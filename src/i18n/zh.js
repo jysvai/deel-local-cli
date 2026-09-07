@@ -91,6 +91,7 @@ export const zh = {
   'cmd.recall.arg': '<文字>',
   'cmd.mcp.desc': '已连接的 MCP 工具服务',
   'cmd.hooks.desc': '查看配置的钩子',
+  'cmd.agents.desc': '查看命名的子任务',
   'cmd.memory.desc': '跨对话保留的东西 — 查看和清除',
   'cmd.memory.arg': '[forget <n>|clear|<要记住的话>]',
   'cmd.level.desc': '使用者级别 (新手/开发者)',

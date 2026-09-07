@@ -401,6 +401,74 @@ check('상한(24회)까지 안 간다', ev4.filter((e) => e.type === 'tool').len
     말이벤트.some((e) => e.type === 'hook_block' && /주민번호/.test(e.말 ?? '')), '');
 }
 
+/*
+ * ── 이름 붙인 하위 작업이 루프에 걸려 있나 (agent/agents.js) ────────────
+ *
+ * 정의를 읽는 것 자체는 test/agents.test.js 가 잰다. 여기서 재는 것은 배선이다 —
+ * 정의가 실제로 하위의 모드·도구·지침을 갈아 끼우는가.
+ *
+ * 특히 **도구를 줄이는 쪽**이 중요하다. 안 걸려 있으면 정의에 적은 도구 제한이
+ * 아무 일도 안 하는데, 화면에는 「리뷰어가 본다」 고 떠 있는 채로 하위가 파일을
+ * 고칠 수 있다. 그건 결과를 읽어도 안 보인다.
+ */
+{
+  const { 한정의 } = await import('../src/agent/agents.js');
+  const 리뷰어 = 한정의('리뷰어', {
+    설명: '고친 데만 본다',
+    모드: 'inspect',
+    도구: ['Read', 'Grep'],
+    지침: '되돌릴 수 없는 것부터 본다.',
+    걸음: 5,
+  }, '검사');
+
+  turn = 0;
+  script = [
+    { toolCall: { name: 'Task', args: { agent: '리뷰어', purpose: '훑기', task: 'app.js 를 봐 줘' } } },
+    { text: '하위를 시켰습니다.' },   // 하위의 첫 걸음
+    { text: '다 봤습니다.' },          // 부모의 마무리
+  ];
+  const 에ctx = { ...ctx, 에이전트들: [리뷰어] };
+  const s9 = new Session(conn, { root, mode: 'auto', think: 'off' });
+  const 에이벤트 = [];
+  for await (const ev of run(s9, 에ctx, '리뷰 좀')) 에이벤트.push(ev);
+
+  const 시작 = 에이벤트.find((e) => e.type === 'task_start');
+  check('★★ 정의가 하위 모드를 정한다', 시작?.모드 === 'inspect', String(시작?.모드));
+  check('★★ 정의가 걸음 수를 정한다', 시작?.steps === 5, String(시작?.steps));
+  check('★ 어느 정의가 한 일인지 화면에 뜬다', 시작?.에이전트 === '리뷰어', String(시작?.에이전트));
+
+  /*
+   * 하위에게 나간 요청을 직접 본다. 이벤트만 보면 「모드를 바꿨다」 까지만
+   * 알 수 있고, 지침이 실제로 실렸는지·도구가 정말 줄었는지는 못 잰다.
+   */
+  const 하위요청 = seenBodies[seenBodies.length - 2];
+  const 하위도구 = (하위요청?.tools ?? []).map((t) => t.function.name);
+  check('★★ 정의에 적은 도구만 쥐여 준다',
+    하위도구.includes('Read') && 하위도구.includes('Grep') && !하위도구.includes('Write'),
+    하위도구.join(' '));
+  const 하위말 = JSON.stringify(하위요청?.messages ?? []);
+  check('★★ 지침이 하위에게 간다', 하위말.includes('되돌릴 수 없는 것부터 본다'), '');
+  check('★ 시킨 일도 같이 간다', 하위말.includes('app.js 를 봐 줘'), '');
+
+  /*
+   * 없는 이름은 **조용히 그냥 돌지 않는다.** 시킨 쪽은 「리뷰어가 본다」 고
+   * 알고 있는데 평범한 하위가 도는 셈이 되면, 그 어긋남은 어디에도 안 뜬다.
+   */
+  turn = 0;
+  script = [
+    { toolCall: { name: 'Task', args: { agent: '없는이름', purpose: 'x', task: 'y' } } },
+    { text: '없다고 합니다.' },
+  ];
+  const s10 = new Session(conn, { root, mode: 'auto', think: 'off' });
+  const 없는이벤트 = [];
+  for await (const ev of run(s10, 에ctx, '없는 것 시켜봐')) 없는이벤트.push(ev);
+  const 튕김 = 없는이벤트.find((e) => e.type === 'tool' && e.name === 'Task');
+  check('★★ 없는 이름은 거절한다', /없는 하위 작업 이름/.test(튕김?.result?.error ?? ''),
+    튕김?.result?.error ?? '(Task 이벤트가 없음)');
+  check('★ 쓸 수 있는 이름을 알려 준다',
+    s10.messages.some((m) => m.role === 'tool' && String(m.content).includes('리뷰어')), '');
+}
+
 // ── 결과 ───────────────────────────────────────────────────────────
 const W = (s, n) => s + ' '.repeat(Math.max(0, n - [...s].reduce((a, ch) => a + (ch.codePointAt(0) > 0x1100 ? 2 : 1), 0)));
 console.log('');

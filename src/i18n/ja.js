@@ -91,6 +91,7 @@ export const ja = {
   'cmd.recall.arg': '<文字列>',
   'cmd.mcp.desc': 'つながっている MCP 道具サーバー',
   'cmd.hooks.desc': '設定したフックを見る',
+  'cmd.agents.desc': '名前を付けた下位タスクを見る',
   'cmd.memory.desc': '会話をまたいで残るもの — 見る・消す',
   'cmd.memory.arg': '[forget <n>|clear|<覚えさせる文>]',
   'cmd.level.desc': '利用者の段階 (かんたん/開発者)',

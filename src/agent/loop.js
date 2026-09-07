@@ -14,6 +14,7 @@ import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박
 import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
 import { Session } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
+import { 찾기 as 에이전트찾기, 할일합치기, 도구줄이기 } from './agents.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './models.js';
 import { allowTemporarily, isOffline } from '../safety/network.js';
 import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴까 } from '../safety/secrets.js';
@@ -404,6 +405,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     work: session.effectiveWork(),                // 작업 모드가 쓰는 것만 (modes.js)
     // 밖에서 붙인 도구(MCP). 붙은 것이 없으면 아무것도 안 는다.
     mcp: ctx.mcp ?? null,
+    // 이름 붙인 하위 작업 (agent/agents.js). 이름과 한 줄 설명만 실린다.
+    에이전트들: 깊이 + 1 >= 최대깊이 ? null : (ctx.에이전트들 ?? null),
     // 이 자리에 언어 서버가 있을 때만 Def·Refs 를 보여 준다 (tools/lsp.js).
     // 없는 자리에서 목록에 세워 두면 모델이 부르고, 실패를 받고, 또 부른다.
     lsp: session.lsp === true,
@@ -1410,7 +1413,33 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       if (실행할것.length === 1 && 실행할것[0].name === 'Task') {
         const call = 실행할것[0];
         const 목적 = String(call.args?.purpose ?? call.args?.목적 ?? '').trim() || '이름 없는 작업';
-        const 할일 = String(call.args?.task ?? call.args?.할일 ?? '').trim();
+        let 할일 = String(call.args?.task ?? call.args?.할일 ?? '').trim();
+
+        /*
+         * ── 이름 붙인 하위 작업 (agent/agents.js) ────────────────────────
+         *
+         * 이름을 골랐으면 그 정의가 모드·모델·도구·지침·걸음 수를 대신 정한다.
+         * 팀에서 늘 같은 일을 시키는데 매번 다르게 적히는 것을 막는 자리다.
+         *
+         * 못 찾으면 **조용히 그냥 돌지 않는다.** 시킨 쪽은 「리뷰어가 본다」 고
+         * 알고 있는데 실제로는 평범한 하위가 도는 셈이 되고, 그 어긋남은 결과를
+         * 읽어도 안 보인다. 모델 이름을 못 찾았을 때와 같은 자세다.
+         */
+        let 정의 = null;
+        const 부른에이전트 = String(call.args?.agent ?? call.args?.에이전트 ?? '').trim();
+        if (부른에이전트) {
+          정의 = 에이전트찾기(ctx.에이전트들, 부른에이전트);
+          if (!정의) {
+            const 있는것 = (ctx.에이전트들 ?? []).map((a) => a.이름).join(' · ') || '(정의해 둔 것이 없습니다)';
+            거절(call, `"${부른에이전트}" 라는 하위 작업 정의가 없습니다. 쓸 수 있는 이름: ${있는것}`);
+            if (막힘셈(call, '없는 에이전트')) 멈출까 = '없는 하위 작업 이름을 계속 부르고 있습니다';
+            yield {
+              type: 'tool', name: 'Task', args: call.args, showLabel: true,
+              result: { error: `"${부른에이전트}" 는 없는 하위 작업 이름입니다` },
+            };
+            continue;
+          }
+        }
 
         // 할 일이 비면 하위는 아무것도 모른 채로 시작한다. 하위는 이 대화를
         // 못 보므로, 여기서 통과시키면 걸음만 태우고 빈손으로 돌아온다.
@@ -1423,7 +1452,20 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           continue;
         }
 
-        const 자식모드 = 하위모드(call.args?.mode ?? call.args?.모드, 모드.id);
+        /*
+         * 정의의 지침은 **빈 할일 검사를 지난 뒤에** 붙인다.
+         *
+         * 먼저 붙이면 지침이 있는 에이전트는 할일을 비워도 그 검사를
+         * 빠져나간다. 그러면 하위는 「어떻게」 만 받고 「무엇을」 은 모른 채로
+         * 시작해서, 걸음만 태우고 빈손으로 돌아온다.
+         */
+        if (정의) 할일 = 할일합치기(정의, 할일);
+
+        /*
+         * 모드도 모델도 정의가 먼저다 — 그러라고 이름을 붙인 것이다.
+         * 다만 부모보다 셀 수는 없다: 하위모드() 를 그대로 지난다(task.js).
+         */
+        const 자식모드 = 하위모드(정의?.모드 ?? call.args?.mode ?? call.args?.모드, 모드.id);
 
         /*
          * ── 다른 모델에게 떼어 주기 ─────────────────────────────────────
@@ -1439,7 +1481,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         let 자식conn = conn;
         let 자리닫기 = null;
         let 모델알림 = null;
-        const 부른모델 = String(call.args?.model ?? call.args?.모델 ?? '').trim();
+        const 부른모델 = String(정의?.모델 ?? call.args?.model ?? call.args?.모델 ?? '').trim();
         if (부른모델) {
           const 찾음 = 프로필찾기(부른모델);
           if (!찾음.ok) {
@@ -1478,19 +1520,27 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           think: session.think,
           effort: session.effort,
           web: session.web,
-          // 부모보다 적게 준다 (budget.js). 사람이 직접 정한 값이 있으면 그 절반.
-          maxSteps: session.stepsSet
+          // 부모보다 적게 준다 (budget.js). 정의에 적힌 것 > 사람이 정한 값의 절반 > 모드.
+          maxSteps: 정의?.걸음 ?? (session.stepsSet
             ? Math.max(4, Math.floor(session.maxSteps / 2))
             // 걸음 수는 **하위가 쓸 창**으로 잰다. 부모 창으로 재면, 작은 모델에게
             // 떼어 준 일이 제 창보다 큰 걸음 수를 받아 중간에 창이 찬 채로 돈다.
-            : 하위걸음수(자식모드, 자식conn.ctx),
+            : 하위걸음수(자식모드, 자식conn.ctx)),
         });
         // 스킬·명령·기억은 부모가 켤 때 한 번 찾아 든 것이다. 하위도 같은 것을 본다.
         자식.skills = session.skills;
         자식.commands = session.commands;
         자식.plugins = session.plugins;
         자식.memory = session.memory;
-        자식.도구제한 = 자식도구;
+        /*
+         * 정의가 적은 도구로 **줄인다.** 늘리지 않는다 (agent/agents.js).
+         *
+         * 자식도구 는 이미 모드가 거른 목록이다. 여기서 교집합을 취하므로,
+         * 정의에 `Write` 를 적어 넣는 것으로 설계 모드의 약속을 깨고 나갈 길은
+         * 안 생긴다. 모드가 안 주는 것을 적어 두면 그것만 무시된다.
+         */
+        const 줄인것 = 도구줄이기(정의, 자식도구);
+        자식.도구제한 = 줄인것.도구;
 
         /*
          * 여닫는 줄에는 깊이를 안 붙인다.
@@ -1508,8 +1558,21 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 있어서 하위가 딴 데로 나가는 것을 모른다. 그러니 이 줄과 감사기록이
          * 그 사실을 남기는 유일한 자리다.
          */
+        /*
+         * 정의에 적혔는데 모드가 안 주는 도구는 **말해 준다.**
+         *
+         * 조용히 빼면 사람은 제가 적은 도구가 도는 줄 알고, 하위가 그걸 안 했을
+         * 때 정의 파일이 아니라 모델을 의심한다. 오타 하나가 며칠이 되는 자리다.
+         */
+        if (줄인것.못준것.length) {
+          yield {
+            type: 'hook_note', 자리: '에이전트',
+            말: `${정의.이름} 정의의 ${줄인것.못준것.join(' · ')} 은 ${자식모드} 모드가 안 주는 도구라 뺀습니다`,
+          };
+        }
         yield {
           type: 'task_start', 목적, 모드: 자식모드, steps: 자식.maxSteps,
+          에이전트: 정의?.이름 ?? null,
           모델: 모델알림?.말 ?? null, 밖으로: 모델알림?.밖으로 ?? false,
         };
         ctx.audit.tool('Task', { 목적, 모드: 자식모드, 모델: 모델알림?.말 ?? null },
@@ -1573,13 +1636,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         session.usage.못잰것 = (session.usage.못잰것 ?? 0) + (자식.usage.못잰것 ?? 0);
 
         const 글 = 하위요약({
-          목적, 모드: 자식모드, 끝, 모델: 모델알림?.말 ?? null,
+          목적, 모드: 자식모드, 끝, 모델: 모델알림?.말 ?? null, 에이전트: 정의?.이름 ?? null,
           글자수: 요약길이(conn.ctx),
           보인이름: (경로) => ctx.scope?.show?.(경로) ?? 경로,
         });
         session.push(toolMessage(conn.kind, { callId: call.id, name: 'Task', content: 글 }));
         ctx.audit.tool('Task', { 목적 }, { summary: 글.slice(0, 300) });
-        yield { type: 'task_done', 목적, 모드: 자식모드, 끝, 모델: 모델알림?.말 ?? null };
+        yield { type: 'task_done', 목적, 모드: 자식모드, 끝, 모델: 모델알림?.말 ?? null, 에이전트: 정의?.이름 ?? null };
 
         // 사용자가 중단했으면 부모도 여기서 멈춘다. 하위만 끊고 이어가면
         // 무엇이 중단된 것인지 알 수 없는 화면이 된다.

@@ -116,7 +116,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [The screen](docs/en/interface.md) | The input box · work modes · simple vs developer · what it asks about |
 | [Tools in depth](docs/en/tools.md) | `Outline` · `Verify` · `Task` · `Jobs` · `Append` · `Def`/`Refs` · edit matching |
 | [Korean documents and Excel](docs/en/documents.md) | hwpx/docx/pptx/**PDF** · encoding · Excel → CSV |
-| [Extending](docs/en/extend.md) | Skills · plugins · MCP · hooks · ACP |
+| [Extending](docs/en/extend.md) | Skills · plugins · MCP · subagents · hooks · ACP |
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
@@ -563,6 +563,7 @@ Names follow Claude Code / Codex conventions.
 | `/memory` | What persists across sessions — view, add, delete |
 | `/mcp` | Externally attached tools (MCP servers) |
 | `/hooks` | Configured hooks — where they came from, when they run |
+| `/agents` | Named subagent definitions |
 | `/init` | Create a `DEEL.md` rules file |
 | `/exit` | Quit |
 

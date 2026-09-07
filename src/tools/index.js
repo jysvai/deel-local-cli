@@ -15,6 +15,7 @@ import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
 import { TODO_TOOL } from './todo.js';
 import { TASK_TOOL } from './task.js';
+import { 고를말 } from '../agent/agents.js';
 import { OUTLINE_TOOL } from './outline.js';
 import { VERIFY_TOOL } from './verify.js';
 import { DEF_TOOL, REFS_TOOL } from './lsp.js';
@@ -2552,7 +2553,7 @@ export function 영어설명(schema, 이름, 쓸말 = 지시말()) {
 
 // 모델에게 넘길 도구 정의 목록.
 // 스킬이 없으면 Skill 도구는 빼서 자리를 아낀다.
-export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null, lsp = false, vision = false } = {}) {
+export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null, lsp = false, vision = false, 에이전트들 = null } = {}) {
   let list = names ?? Object.keys(TOOLS).filter((n) => {
     if (n === 'Skill') return hasSkills;
     if (n === 'WebFetch') return web;
@@ -2607,6 +2608,33 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
    * 한 모드에서 '모르는 것' 을 쥐여 주면 그 약속이 약속이 아니게 된다.
    */
   if (mcp?.length && (!work || allowedIn(work, ['Write']).length)) 우리것.push(...도구정의(mcp));
+
+  /*
+   * 이름 붙인 하위 작업이 있으면 `Task` 에 그 목록을 알려 준다 (agent/agents.js).
+   *
+   * 이름과 한 줄 설명만 싱는다. 지침 본문은 **고른 뒤에** 하위 프롬프트로 가지
+   * 여기 실리지 않는다 — 여기 실으면 안 쓰는 에이전트의 지침까지 매 요청에
+   * 나간다. 스킬을 2단계로 올리는 것과 같은 셈법이다.
+   *
+   * 원본 스키마를 안 건드린다. TOOLS 는 한 벌이라 거기 썼으면 다음 부름에도
+   * 남고, 폴더가 다른 방(ACP)의 목록까지 같이 물들인다.
+   */
+  const 골라말 = 에이전트들?.length ? 고를말(에이전트들) : null;
+  if (골라말) {
+    for (const t of 우리것) {
+      if (t.function?.name !== 'Task') continue;
+      t.function = {
+        ...t.function,
+        parameters: {
+          ...t.function.parameters,
+          properties: {
+            ...t.function.parameters.properties,
+            agent: { type: 'string', description: 골라말 },
+          },
+        },
+      };
+    }
+  }
   return 우리것;
 }
 

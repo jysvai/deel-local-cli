@@ -28,6 +28,7 @@ import { 인증서설정, 인증서등록, 인증서찾기, 인증서말 } from 
 import { 주소가리기 } from './safety/secrets.js';
 import { 믿나 } from './safety/trust.js';
 import { 훅읽기, 훅줄들 } from './safety/hooks.js';
+import { 에이전트읽기, 에이전트줄들 } from './agent/agents.js';
 import { headersFor } from './backend/http.js';
 
 /** 한 줄. `상태` 는 ok · warn · no · unknown 넷뿐이다. */
@@ -148,6 +149,9 @@ export async function 진찰(o = {}) {
   // 상태이기 때문이다. 제일 흔한 까닭이 믿는 폴더가 아니어서인데, 그건 아무 데도 안
   // 찍힌다. 여기서 말해 준다.
   for (const 한줄 of 훅줄들(훅읽기(root))) 줄들.push(한줄);
+
+  // 이름 붙인 하위 작업 (agent/agents.js). 못 읽은 정의를 말해 주는 자리는 여기뿐이다.
+  for (const 한줄 of 에이전트줄들(에이전트읽기(root))) 줄들.push(한줄);
 
   // ── 8. 진짜로 두드려 본다 ───────────────────────────────────────────
   if (!바깥가도되나) {

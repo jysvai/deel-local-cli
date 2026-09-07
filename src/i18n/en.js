@@ -104,6 +104,7 @@ export const en = {
   'cmd.recall.arg': '<text>',
   'cmd.mcp.desc': 'show connected MCP tool servers',
   'cmd.hooks.desc': 'show configured hooks (where they came from, when they run)',
+  'cmd.agents.desc': 'show named subagent definitions',
   'cmd.memory.desc': 'what survives the session — view and clear',
   'cmd.memory.arg': '[forget <n>|clear|<text to remember>]',
   'cmd.level.desc': 'user level (beginner/developer)',

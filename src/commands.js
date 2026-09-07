@@ -1346,6 +1346,51 @@ export async function handle(line, session, ctx) {
       return { handled: true };
     }
 
+    /*
+     * 이름 붙인 하위 작업을 보여 준다 (agent/agents.js).
+     *
+     * 모델이 보는 것은 이름과 한 줄 설명뿐이다. 사람은 그 아래 — 어느 모드로,
+     * 어느 모델에게, 어떤 도구만 쥐여 주는지 — 를 볼 수 있어야 한다. 그게
+     * 안 보이면 「리뷰어를 시켰는데 왜 파일을 고쳤지」 를 알아낼 길이 없다.
+     */
+    case 'agents':
+    case '에이전트': {
+      const { 자리들: 에자리들 } = await import('./agent/agents.js');
+      const 것들 = ctx?.에이전트들 ?? [];
+      rule('이름 붙인 하위 작업', 70);
+
+      if (!것들.length) {
+        say(`  ${c.gray('정의해 둔 것이 없습니다.')}`);
+        say('');
+        say(`  ${c.gray('적는 자리 —')} ${c.white(에자리들(session.root)[0])} ${c.gray('(이 프로젝트)')}`);
+        say(`  ${c.gray('파일 하나가 이름 하나입니다.')} ${c.white('리뷰어.json')}`);
+        say(`  ${c.gray('{ "설명": "고친 코드를 훑고 위험한 데만 짚는다",')}`);
+        say(`  ${c.gray('  "모드": "inspect", "도구": ["Read", "Grep", "Glob"] }')}`);
+        say('');
+        say(`  ${c.gray('부를 때는')} ${c.white('Task({ agent: "리뷰어", … })')} ${c.gray('— 모델이 이름으로 고릅니다.')}`);
+        say('');
+        return { handled: true };
+      }
+
+      for (const a of 것들) {
+        say(`  ${c.bold(a.이름)}  ${c.gray(`· ${a.출처}`)}`);
+        say(`      ${c.white(clip(a.설명, 62))}`);
+        const 곁들 = [
+          a.모드 ? `모드 ${a.모드}` : null,
+          a.모델 ? `모델 ${a.모델}` : null,
+          a.걸음 ? `${a.걸음}걸음` : null,
+          a.도구?.length ? `도구 ${a.도구.join(' ')}` : null,
+          a.지침 ? `지침 ${a.지침.length}자` : null,
+        ].filter(Boolean);
+        if (곁들.length) say(`      ${c.gray(곁들.join('  ·  '))}`);
+      }
+      say('');
+      say(`  ${c.gray('모델에게는')} ${c.white('Task({ agent: "<이름>", … })')} ${c.gray('로 보입니다 — 이름과 설명만 실립니다.')}`);
+      say(`  ${c.gray('도구는')} ${c.white('줄이기만')} ${c.gray('합니다. 지금 모드가 안 주는 것을 적어 두면 그것만 빠집니다.')}`);
+      say('');
+      return { handled: true };
+    }
+
     case 'thread':
     case '갈래': return 갈래명령(session, ctx, arg), { handled: true };
 

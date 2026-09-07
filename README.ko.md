@@ -91,7 +91,7 @@
 | [화면과 조작](docs/ko/interface.md) | 입력칸 · 작업 모드 · 쉬움과 개발자 · 무엇을 묻고 무엇을 그냥 하나 |
 | [도구 자세히](docs/ko/tools.md) | `Outline` · `Verify` · `Task` · `Jobs` · `Append` · `Def`/`Refs` · 편집 매칭 |
 | [한글 문서와 엑셀](docs/ko/documents.md) | hwpx·docx·pptx·**PDF** · 인코딩 · 엑셀 → CSV |
-| [늘려 쓰기](docs/ko/extend.md) | 스킬 · 플러그인 · MCP · 훅 · ACP |
+| [늘려 쓰기](docs/ko/extend.md) | 스킬 · 플러그인 · MCP · 에이전트 · 훅 · ACP |
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
@@ -500,6 +500,7 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 | `/memory` | 대화가 끝나도 남는 기억 — 보기·적기·지우기 |
 | `/mcp` | 밖에서 붙인 도구(MCP) 서버 보기 |
 | `/hooks` | 적어 둔 훅 보기 (어디서 읽었고 언제 도는지) |
+| `/agents` | 이름 붙인 하위 작업 보기 |
 | `/init` | `DEEL.md` 규칙 파일 만들기 |
 | `/exit` | 끝내기 |
 

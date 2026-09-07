@@ -93,6 +93,7 @@ export const ko = {
   'cmd.recall.arg': '<찾을 말>',
   'cmd.mcp.desc': '밖에서 붙인 도구(MCP) 서버 보기',
   'cmd.hooks.desc': '적어 둔 훅 보기 (어디서 읽었고 언제 도는지)',
+  'cmd.agents.desc': '이름 붙인 하위 작업 보기',
   'cmd.memory.desc': '대화가 끝나도 남는 기억 — 보기·지우기',
   'cmd.memory.arg': '[forget <번호>|clear|<적을 말>]',
   'cmd.level.desc': '사용자 수준 (쉬움/개발자)',

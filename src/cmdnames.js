@@ -55,6 +55,7 @@ export const 명령들 = {
   recall: { arg: true },
   mcp: { arg: false },
   hooks: { arg: false },
+  agents: { arg: false },
   memory: { arg: true },
   level: { arg: true },
   bell: { arg: true },
