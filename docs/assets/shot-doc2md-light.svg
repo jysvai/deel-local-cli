@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="427" height="313" viewBox="0 0 427 313" role="img" aria-label="deel doc2md — a table stays a table">
+  <title>deel doc2md — a table stays a table</title>
+  <rect width="427" height="313" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+  <path d="M0 8a8 8 0 0 1 8-8h411a8 8 0 0 1 8 8v26H0z" fill="#f6f8fa"/>
+  <line x1="0" y1="34" x2="427" y2="34" stroke="#d0d7de"/>
+  <circle cx="18" cy="17" r="5.5" fill="#ff5f57"/><circle cx="36" cy="17" r="5.5" fill="#febc2e"/><circle cx="54" cy="17" r="5.5" fill="#28c840"/>
+  <text x="213.5" y="22" fill="#59636e" font-size="12" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,sans-serif">deel doc2md 구매요청.docx</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14">
+    <text x="16.0" y="64" fill="#1f2328" textLength="126.0" lengthAdjust="spacing" xml:space="preserve"># 구매요청.docx</text>
+    <text x="16.0" y="102" fill="#1f2328" textLength="117.6" lengthAdjust="spacing" xml:space="preserve">구매 요청 명세</text>
+    <text x="16.0" y="140" fill="#1f2328" textLength="394.8" lengthAdjust="spacing" xml:space="preserve">아래 표의 값이 그대로 계약 부록으로 들어갑니다.</text>
+    <text x="16.0" y="178" fill="#1f2328" textLength="243.6" lengthAdjust="spacing" xml:space="preserve">| 항목 | 수량 | 단가 | 비고 |</text>
+    <text x="16.0" y="197" fill="#1f2328" textLength="210.0" lengthAdjust="spacing" xml:space="preserve">| --- | --- | --- | --- |</text>
+    <text x="16.0" y="216" fill="#1f2328" textLength="386.4" lengthAdjust="spacing" xml:space="preserve">| 모니터 27" | 12 | 340,000 | 4K · 사내 표준 |</text>
+    <text x="16.0" y="235" fill="#1f2328" textLength="294.0" lengthAdjust="spacing" xml:space="preserve">| 도킹 스테이션 | 12 | 180,000 |  |</text>
+    <text x="16.0" y="254" fill="#1f2328" textLength="369.6" lengthAdjust="spacing" xml:space="preserve">| 보증 연장 | 1 | 900,000 | 3년 · 온사이트 |</text>
+    <text x="16.0" y="292" fill="#1f2328" textLength="210.0" lengthAdjust="spacing" xml:space="preserve">납기는 발주 후 3주입니다.</text>
+  </g>
+</svg>

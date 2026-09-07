@@ -28,6 +28,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { width } from '../src/ui/ansi.js';
+import { makeZip } from '../src/pack/zip.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..');
@@ -458,6 +459,93 @@ try {
       srv.close();
       rmSync(방, { recursive: true, force: true });
       rmSync(집, { recursive: true, force: true });
+    }
+  }
+
+  /*
+   * 4) 작업 모드 고르는 자리.
+   *
+   * 표로 적어 놓으면 여덟 줄이지만, 화면에서는 **지금 어디 서 있는지**가
+   * 같이 보인다. 읽기만 하는 모드가 초록으로 갈라져 있는 것도 표에서는
+   * 안 보이는 것이다 — 그 한 칸이 「왜 파일을 안 고쳤나」 의 답이다.
+   */
+  {
+    const { srv, port, 처음부터 } = await 스텁띄우기();
+    const 방 = join(tmpdir(), 'myproject-work');
+    const 집 = join(tmpdir(), 'deel-shot-home-work');
+    rmSync(방, { recursive: true, force: true });
+    rmSync(집, { recursive: true, force: true });
+    mkdirSync(방, { recursive: true });
+    mkdirSync(집, { recursive: true });
+    try {
+      writeFileSync(join(집, 'config.json'), JSON.stringify({
+        version: 1, active: 'local', level: '개발자',
+        profiles: [{
+          id: 'local', name: 'local', kind: 'openai',
+          baseUrl: `http://127.0.0.1:${port}/v1`, auth: 'none', apiKey: '',
+          model: 'qwen2.5-coder:7b', ctx: 131072, streaming: false, tools: true,
+        }],
+      }, null, 2), 'utf8');
+
+      for (const 말 of ['ko', 'en']) {
+        처음부터(말);
+        const 글 = 길다듬기(await 띄우기(['--no-tui'], {
+          home: 집, cwd: 방, cols: 84, env: { DEEL_LANG: 말 }, 입력: ['/work', '/exit'],
+        }), { home: 집, work: 방 });
+
+        // 머리 상자와 인사말은 빼고 모드 목록부터 잡는다. 이 그림이 답하는
+        // 것은 「어떤 모드가 있나」 이지 「어떻게 켜나」 가 아니다.
+        내기(`shot-work-${말}`, 다듬기(글, {
+          자를것: /작업 모드|Work mode/, 최대줄: 21, 뺄것: [/❯\s*\/exit/, /끝냅니다|Bye/],
+        }),
+          말 === 'en' ? 'deel — eight work modes, and which one you are in'
+            : 'deel — 여덟 가지 일하는 방법, 그리고 지금 어디 서 있나',
+          'deel');
+      }
+    } finally {
+      srv.close();
+      rmSync(방, { recursive: true, force: true });
+      rmSync(집, { recursive: true, force: true });
+    }
+  }
+
+  /*
+   * 5) `deel doc2md` — 문서가 마크다운으로 나오는 자리.
+   *
+   * 이 그림이 있어야 하는 이유는 하나다: **표가 표로 남는다**는 말은
+   * 글로 적으면 안 와닿고, 한 번 보면 끝난다. 여기서 쓰는 문서는 이 자리에서
+   * 진짜 docx 로 만들어 넣는다 — 지어낸 화면이 아니다.
+   */
+  {
+    const 방 = join(tmpdir(), 'myproject-doc');
+    rmSync(방, { recursive: true, force: true });
+    mkdirSync(방, { recursive: true });
+    try {
+      const 칸 = (글) => `<w:tc><w:p><w:r><w:t>${글}</w:t></w:r></w:p></w:tc>`;
+      const 행 = (칸들) => `<w:tr>${칸들.map(칸).join('')}</w:tr>`;
+      const 문단 = (글) => `<w:p><w:r><w:t>${글}</w:t></w:r></w:p>`;
+      const 본문 = `<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+${문단('구매 요청 명세')}
+${문단('아래 표의 값이 그대로 계약 부록으로 들어갑니다.')}
+<w:tbl>${[
+        ['항목', '수량', '단가', '비고'],
+        ['모니터 27"', '12', '340,000', '4K · 사내 표준'],
+        ['도킹 스테이션', '12', '180,000', ''],
+        ['보증 연장', '1', '900,000', '3년 · 온사이트'],
+      ].map(행).join('')}</w:tbl>
+${문단('납기는 발주 후 3주입니다.')}
+</w:body></w:document>`;
+      writeFileSync(join(방, '구매요청.docx'), makeZip([
+        { name: '[Content_Types].xml', data: Buffer.from('<?xml version="1.0"?><Types/>', 'utf8') },
+        { name: 'word/document.xml', data: Buffer.from(본문, 'utf8') },
+      ]));
+
+      const 글 = await 띄우기(['doc2md', '구매요청.docx'], { home, cwd: 방, cols: 78 });
+      내기('shot-doc2md', 다듬기(글, { 최대줄: 22 }),
+        'deel doc2md — a table stays a table', 'deel doc2md 구매요청.docx');
+    } finally {
+      rmSync(방, { recursive: true, force: true });
     }
   }
 } finally {

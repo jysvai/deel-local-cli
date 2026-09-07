@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="746" height="465" viewBox="0 0 746 465" role="img" aria-label="deel — eight work modes, and which one you are in">
+  <title>deel — eight work modes, and which one you are in</title>
+  <rect width="746" height="465" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+  <path d="M0 8a8 8 0 0 1 8-8h730a8 8 0 0 1 8 8v26H0z" fill="#f6f8fa"/>
+  <line x1="0" y1="34" x2="746" y2="34" stroke="#d0d7de"/>
+  <circle cx="18" cy="17" r="5.5" fill="#ff5f57"/><circle cx="36" cy="17" r="5.5" fill="#febc2e"/><circle cx="54" cy="17" r="5.5" fill="#28c840"/>
+  <text x="373" y="22" fill="#59636e" font-size="12" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,sans-serif">deel</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14">
+    <text x="16.0" y="64" fill="#1f2328" textLength="588.0" lengthAdjust="spacing" xml:space="preserve">── Work modes ────────────────────────────────────────────────────────</text>
+    <text x="16.0" y="83" fill="#1f2328" textLength="478.8" lengthAdjust="spacing" xml:space="preserve">  ● ◎ Auto          picks the right mode for what you ask</text>
+    <text x="16.0" y="102" fill="#1f2328" textLength="495.6" lengthAdjust="spacing" xml:space="preserve">        edits files  ·  thinking —·save  ·  up to 192 steps</text>
+    <text x="16.0" y="121" fill="#1f2328" textLength="302.4" lengthAdjust="spacing" xml:space="preserve">  · ◆ Code          edits and builds</text>
+    <text x="16.0" y="140" fill="#1f2328" textLength="495.6" lengthAdjust="spacing" xml:space="preserve">        edits files  ·  thinking —·save  ·  up to 192 steps</text>
+    <text x="16.0" y="159" fill="#1f2328" textLength="453.6" lengthAdjust="spacing" xml:space="preserve">  · ☰ Plan          plan first · run it after approval</text>
+    <text x="16.0" y="178" fill="#1f2328" textLength="495.6" lengthAdjust="spacing" xml:space="preserve">        read-only  ·  thinking high·deep  ·  up to 40 steps</text>
+    <text x="16.0" y="197" fill="#1f2328" textLength="495.6" lengthAdjust="spacing" xml:space="preserve">  · ◈ Architect     shapes the structure · touches no files</text>
+    <text x="16.0" y="216" fill="#1f2328" textLength="495.6" lengthAdjust="spacing" xml:space="preserve">        read-only  ·  thinking high·deep  ·  up to 48 steps</text>
+    <text x="16.0" y="235" fill="#1f2328" textLength="294.0" lengthAdjust="spacing" xml:space="preserve">  · ◉ Debug         finds the cause</text>
+    <text x="16.0" y="254" fill="#1f2328" textLength="520.8" lengthAdjust="spacing" xml:space="preserve">        edits files  ·  thinking high·deep  ·  up to 250 steps</text>
+    <text x="16.0" y="273" fill="#1f2328" textLength="512.4" lengthAdjust="spacing" xml:space="preserve">  · ◍ Inspect       audits code for defects - changes nothing</text>
+    <text x="16.0" y="292" fill="#1f2328" textLength="504.0" lengthAdjust="spacing" xml:space="preserve">        read-only  ·  thinking high·deep  ·  up to 120 steps</text>
+    <text x="16.0" y="311" fill="#1f2328" textLength="428.4" lengthAdjust="spacing" xml:space="preserve">  · ◇ Ask           explains only · changes nothing</text>
+    <text x="16.0" y="330" fill="#1f2328" textLength="487.2" lengthAdjust="spacing" xml:space="preserve">        read-only  ·  thinking low·even  ·  up to 12 steps</text>
+    <text x="16.0" y="349" fill="#1f2328" textLength="470.4" lengthAdjust="spacing" xml:space="preserve">  · ❋ Orchestrator  splits a big job and sees it through</text>
+    <text x="16.0" y="368" fill="#1f2328" textLength="495.6" lengthAdjust="spacing" xml:space="preserve">        edits files  ·  thinking —·save  ·  up to 384 steps</text>
+    <text x="16.0" y="406" fill="#1f2328" textLength="445.2" lengthAdjust="spacing" xml:space="preserve">  To switch: /plan /code /debug …  or Ctrl+O to cycle</text>
+    <text x="16.0" y="425" fill="#1f2328" textLength="714.0" lengthAdjust="spacing" xml:space="preserve">  A different axis from the approval policy (/mode) — what you do / how much it asks.</text>
+  </g>
+</svg>

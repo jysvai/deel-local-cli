@@ -94,7 +94,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.15.x](docs/ko/releases/1.15.md) · [1.14.x](docs/ko/releases/1.14.md) · [1.13.x](docs/ko/releases/1.13.md) · [1.12.x](docs/ko/releases/1.12.md) · [1.10.x](docs/ko/releases/1.10.md) · [1.9.x](docs/ko/releases/1.9.md) · [그 앞](docs/ko/releases.md) |
+| [릴리스 노트](docs/ko/releases.md) | [1.16.x](docs/ko/releases/1.16.md) · [1.15.x](docs/ko/releases/1.15.md) · [1.14.x](docs/ko/releases/1.14.md) · [1.13.x](docs/ko/releases/1.13.md) · [1.12.x](docs/ko/releases/1.12.md) · [1.10.x](docs/ko/releases/1.10.md) · [1.9.x](docs/ko/releases/1.9.md) · [그 앞](docs/ko/releases.md) |
 
 ---
 
@@ -267,7 +267,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 1.15.1  ⌂ 이 안
+ deel 1.16.0  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -525,6 +525,11 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 
 ## 작업 모드
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-work-ko-dark.svg">
+  <img alt="deel 작업 모드 목록 — 모드마다 파일을 바꿀 수 있는지, 생각 강도, 최대 걸음 수" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-work-ko-light.svg" width="900">
+</picture>
+
 무슨 일을 하는 중인지에 따라 **줄 수 있는 도구와 추론 설정이 같이 바뀝니다.**
 `Shift+Tab` 으로 차례로 돌리거나, 이름을 그대로 치면 됩니다.
 
@@ -534,10 +539,13 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 | `/code` ◆ 코드 | 고치고 만든다 | 예 | 보통 (`save`) |
 | `/plan` ☰ 계획 | 먼저 계획만 세운다 | **아니오** | 깊게 (`deep`·high) |
 | `/architect` ◈ 설계 | 구조를 짠다 | **아니오** | 깊게 (`deep`·high) |
-| `/debug` ◉ 디버그 | 원인을 찾는다 | 예 | 깊게 · 단계 많이 (32) |
-| `/inspect` ◍ 점검 | 결함을 찾는다 — 근거를 대고, 안 고친다 | **아니오** | 깊게 (`deep`·high) · 단계 많이 |
+| `/debug` ◉ 디버그 | 원인을 찾는다 | 예 | 깊게 · 걸음 많이 |
+| `/inspect` ◍ 점검 | 결함을 찾는다 — 근거를 대고, 안 고친다 | **아니오** | 깊게 (`deep`·high) · 걸음 많이 |
 | `/ask` ◇ 묻기 | 설명만 한다 | **아니오** | 얕게 (`low`) — 다만 시킨 것이 여럿이면 안 낮춥니다 |
-| `/orchestrator` ❋ 총괄 | 큰 일을 쪼개서 | 예 | 단계 아주 많이 (40) |
+| `/orchestrator` ❋ 총괄 | 큰 일을 쪼개서 | 예 | 걸음 아주 많이 |
+
+걸음 수는 **모델 창 크기를 따라갑니다** — 128k 짜리에서 디버그는 250걸음, 묻기는 12걸음입니다.
+작은 모델에 400걸음을 주면 창이 넘쳐 앞엣말을 잊은 채로 도는 것뿐입니다.
 
 읽기만 하는 모드에서는 `Write`·`Edit`·`Bash` 를 **모델에게 아예 보내지 않습니다.**
 "고치지 마세요" 라고 부탁하지 않습니다 — 모델은 부탁을 잊습니다. 없는 도구는 못 씁니다.
@@ -545,7 +553,7 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 `/mode` 와 헷갈리지 마세요. 둘은 다른 축입니다.
 
 - `/mode` — **얼마나 물어보나** (auto · confirm · strict)
-- `/work` — **무슨 일을 하는 중인가** (위 일곱 가지)
+- `/work` — **무슨 일을 하는 중인가** (위 여덟 가지)
 
 `/think` 나 `/mode` 를 직접 고른 적이 있으면 그 선택이 우선합니다.
 모드가 사람이 고른 값을 덮어쓰지 않습니다.
@@ -634,10 +642,30 @@ PDF 는 **못 읽은 쪽을 못 읽었다고 말합니다.** 스캔본·암호·
 `| 이름 | 값 |` 꼴로 살아 있는 채로 나오기 때문에, 평평한 글보다 모델이 훨씬
 덜 헷갈립니다.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-doc2md-dark.svg">
+  <img alt="deel doc2md 로 docx 를 마크다운으로 — 표가 마크다운 표로 그대로 남는다" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-doc2md-light.svg" width="820">
+</picture>
+
 ```bash
 deel doc2md 보고서.pptx              # 표준출력으로
 deel doc2md 스펙.pdf --out 스펙.md   # 파일로
 ```
+
+**Figma 시안(`.fig`)도 읽습니다.** 「이 시안대로 만들어 줘」 하고 건네받은
+파일이 「이진 파일이라 못 읽습니다」 로 끝나던 자리입니다. 안에는 그림만이
+아니라 **틀 이름 · 글 · 크기 · 겹친 차례**가 다 글자로 들어 있습니다.
+
+```
+- FRAME · 로그인 화면 375×812
+  - TEXT · 제목 "다시 오신 것을 환영합니다"
+  - FRAME · 입력칸 335×48
+    - TEXT · 라벨 "이메일"
+```
+
+색·그림자·글꼴은 안 냅니다 — 그리고 **안 낸다고 먼저 말합니다.** 요즘 `.fig`
+는 zstd 로 눌려 있어 Node 22.15 이상이 필요하고, 낮은 판에서는 「깨진 파일」 이
+아니라 **여기서 못 푼다**고 말합니다.
 
 옛 형식(`.ppt`·`.doc`·`.xls`·`.rtf`)은 **이 PC 에 깔린 LibreOffice 를 빌려서**
 읽습니다 — `rg` 를 빌려 쓰는 것과 같은 원칙으로, 아무것도 설치하지 않습니다.
@@ -1114,7 +1142,7 @@ deel sbom --only sbom         # SBOM 한 장만
 ## 개발
 
 ```bash
-npm test          전체 검증 (7,152항목 — 몇몇은 터미널에 따라 갈립니다)
+npm test          전체 검증 (7,346항목 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -1183,6 +1211,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
+| **[1.16.0](docs/ko/releases/1.16.md#1160)** | 깊이 봐 달라는 말을 얕게 받던 자리 · 게이트웨이 캐시 · `doc2md` · Figma `.fig` |
 | **[1.15.1](docs/ko/releases/1.15.md#1151)** | 에디터에 우리가 어떻게 인증받는지 말합니다 — ACP 레지스트리 등재 조건 |
 | **[1.15.0](docs/ko/releases/1.15.md#1150)** | 같은 것을 두 번 하지 않습니다 — 프리픽스 캐시를 깨던 조용히 비싼 아홉 자리 |
 | **[1.14.0](docs/ko/releases/1.14.md#1140)** | 적어 둔 것이 참인지 기계가 대신 봅니다 — 초록불과 「깨면 잡힌다」 는 다릅니다 |

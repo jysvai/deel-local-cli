@@ -119,7 +119,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
-| [Release notes](docs/en/releases.md) | [1.15.x](docs/en/releases/1.15.md) · [1.14.x](docs/en/releases/1.14.md) · [1.13.x](docs/en/releases/1.13.md) · [1.12.x](docs/en/releases/1.12.md) · [1.10.x](docs/en/releases/1.10.md) · [1.9.x](docs/en/releases/1.9.md) · [older](docs/en/releases.md) |
+| [Release notes](docs/en/releases.md) | [1.16.x](docs/en/releases/1.16.md) · [1.15.x](docs/en/releases/1.15.md) · [1.14.x](docs/en/releases/1.14.md) · [1.13.x](docs/en/releases/1.13.md) · [1.12.x](docs/en/releases/1.12.md) · [1.10.x](docs/en/releases/1.10.md) · [1.9.x](docs/en/releases/1.9.md) · [older](docs/en/releases.md) |
 
 ---
 
@@ -338,7 +338,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.15.1  ⌂ inside
+ deel 1.16.0  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -591,6 +591,11 @@ Korean IME composition, paste, `Ctrl+A/E` and backspace all keep working.
 
 ## Work modes
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-work-en-dark.svg">
+  <img alt="deel work modes: whether each can edit files, its reasoning depth, and its step ceiling" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-work-en-light.svg" width="900">
+</picture>
+
 What you are working on changes **which tools the model is given and how hard it thinks.**
 Cycle with `Shift+Tab`, or type the name.
 
@@ -600,10 +605,13 @@ Cycle with `Shift+Tab`, or type the name.
 | `/code` ◆ Code | Writing and fixing | Yes | Normal (`save`) |
 | `/plan` ☰ Plan | Planning first | **No** | Deep (`deep`·high) |
 | `/architect` ◈ Architect | Shaping structure | **No** | Deep (`deep`·high) |
-| `/debug` ◉ Debug | Finding causes | Yes | Deep, more steps (32) |
+| `/debug` ◉ Debug | Finding causes | Yes | Deep, many steps |
 | `/inspect` ◍ Inspect | Auditing for defects — with evidence, changing nothing | **No** | Deep (`deep`/high), many steps |
 | `/ask` ◇ Ask | Explaining only | **No** | Shallow (`low`) — not lowered when the ask has several parts |
-| `/orchestrator` ❋ Orchestrator | Breaking up large work | Yes | Many steps (40) |
+| `/orchestrator` ❋ Orchestrator | Breaking up large work | Yes | Very many steps |
+
+The step ceiling **follows the model's window** — on a 128k model debug gets 250 steps and ask gets 12.
+Hand a small model 400 steps and it just runs on past the point where its window folded.
 
 In read-only modes, `Write`, `Edit` and `Bash` are **never sent to the model at all.**
 It is not asked politely not to edit — models forget requests. A tool that isn't there can't be used.
@@ -611,7 +619,7 @@ It is not asked politely not to edit — models forget requests. A tool that isn
 Don't confuse this with `/mode`. They are separate axes:
 
 - `/mode` — **how much it asks you** (auto · confirm · strict)
-- `/work` — **what kind of work you are doing** (the seven above)
+- `/work` — **what kind of work you are doing** (the eight above)
 
 If you have explicitly set `/think` or `/mode`, your choice wins. A work mode never
 overrides something a person chose.
@@ -694,10 +702,31 @@ To keep a document as **one Markdown file**, use `deel doc2md`. Tables survive a
 real `| name | value |` tables, so a model has far less to guess at than it does
 with flattened text.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-doc2md-dark.svg">
+  <img alt="deel doc2md turning a docx into Markdown — the table stays a table" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/shot-doc2md-light.svg" width="820">
+</picture>
+
 ```bash
 deel doc2md report.pptx            # to stdout
 deel doc2md spec.pdf --out spec.md # to a file
 ```
+
+**Figma designs (`.fig`) are read too.** Handing over a design with "build this"
+used to end at "binary file, cannot be read". What is inside is not only
+pictures — **frame names, text, sizes and stacking order** are all there as
+characters.
+
+```
+- FRAME · Login screen 375×812
+  - TEXT · Title "Welcome back"
+  - FRAME · Field 335×48
+    - TEXT · Label "Email"
+```
+
+No colours, shadows or fonts — and it **says so up front**. Recent `.fig` files
+are zstd-compressed, which needs Node 22.15 or newer; on an older one it says
+**this Node cannot unpack it**, not "corrupt file".
 
 Old formats (`.ppt`, `.doc`, `.xls`, `.rtf`) are read by **borrowing the LibreOffice already
 on this machine** — the same terms on which deel borrows `rg`, and nothing is ever installed.
@@ -1185,7 +1214,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (7,152 checks; a few are TTY-dependent)
+npm test          Full suite (7,346 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1240,6 +1269,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| **[1.16.0](docs/en/releases/1.16.md#1160)** | A deep request no longer lands in a shallow mode · gateway cache · `doc2md` · Figma `.fig` |
 | **[1.15.1](docs/en/releases/1.15.md#1151)** | Telling the editor how we get authenticated — ACP Registry listing requirement |
 | **[1.15.0](docs/en/releases/1.15.md#1150)** | Stop doing the same thing twice — nine quietly expensive places that broke the prefix cache |
 | **[1.14.0](docs/en/releases/1.14.md#1140)** | A machine now checks that what we wrote down is true — green does not mean guarded |

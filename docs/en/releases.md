@@ -8,6 +8,7 @@ One file per version line — open only the line you need.
 
 | Line | Versions | What changed |
 |---|---|---|
+| **[1.16.x](releases/1.16.md)** | [1.16.0](releases/1.16.md#1160) | A deep request no longer lands in a shallow mode — and designs and documents open as they are |
 | **[1.15.x](releases/1.15.md)** | [1.15.1](releases/1.15.md#1151) · [1.15.0](releases/1.15.md#1150) | Stop doing the same thing twice — nine quietly expensive places |
 | **[1.14.x](releases/1.14.md)** | [1.14.0](releases/1.14.md#1140) | A machine now checks that what we wrote down is true |
 | **[1.13.x](releases/1.13.md)** | [1.13.1](releases/1.13.md#1131) · [1.13.0](releases/1.13.md#1130) | Every place deel touches someone else's endpoint, re-examined |

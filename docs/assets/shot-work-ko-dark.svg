@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="654" height="465" viewBox="0 0 654 465" role="img" aria-label="deel — 여덟 가지 일하는 방법, 그리고 지금 어디 서 있나">
+  <title>deel — 여덟 가지 일하는 방법, 그리고 지금 어디 서 있나</title>
+  <rect width="654" height="465" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <path d="M0 8a8 8 0 0 1 8-8h638a8 8 0 0 1 8 8v26H0z" fill="#161b22"/>
+  <line x1="0" y1="34" x2="654" y2="34" stroke="#30363d"/>
+  <circle cx="18" cy="17" r="5.5" fill="#ff5f57"/><circle cx="36" cy="17" r="5.5" fill="#febc2e"/><circle cx="54" cy="17" r="5.5" fill="#28c840"/>
+  <text x="327" y="22" fill="#8b949e" font-size="12" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,sans-serif">deel</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace" font-size="14">
+    <text x="16.0" y="64" fill="#e6edf3" textLength="588.0" lengthAdjust="spacing" xml:space="preserve">── 작업 모드 ─────────────────────────────────────────────────────────</text>
+    <text x="16.0" y="83" fill="#e6edf3" textLength="445.2" lengthAdjust="spacing" xml:space="preserve">  ● ◎ 종합    Auto          요청에 따라 알맞은 모드로</text>
+    <text x="16.0" y="102" fill="#e6edf3" textLength="420.0" lengthAdjust="spacing" xml:space="preserve">        파일 바꿈  ·  생각 —·save  ·  최대 192걸음</text>
+    <text x="16.0" y="121" fill="#e6edf3" textLength="344.4" lengthAdjust="spacing" xml:space="preserve">  · ◆ 코드    Code          고치고 만든다</text>
+    <text x="16.0" y="140" fill="#e6edf3" textLength="420.0" lengthAdjust="spacing" xml:space="preserve">        파일 바꿈  ·  생각 —·save  ·  최대 192걸음</text>
+    <text x="16.0" y="159" fill="#e6edf3" textLength="436.8" lengthAdjust="spacing" xml:space="preserve">  · ☰ 계획    Plan          먼저 계획 · 승인 뒤 실행</text>
+    <text x="16.0" y="178" fill="#e6edf3" textLength="411.6" lengthAdjust="spacing" xml:space="preserve">        읽기만  ·  생각 high·deep  ·  최대 40걸음</text>
+    <text x="16.0" y="197" fill="#e6edf3" textLength="487.2" lengthAdjust="spacing" xml:space="preserve">  · ◈ 설계    Architect     구조를 짠다 · 파일은 안 건드림</text>
+    <text x="16.0" y="216" fill="#e6edf3" textLength="411.6" lengthAdjust="spacing" xml:space="preserve">        읽기만  ·  생각 high·deep  ·  최대 48걸음</text>
+    <text x="16.0" y="235" fill="#e6edf3" textLength="344.4" lengthAdjust="spacing" xml:space="preserve">  · ◉ 디버그  Debug         원인을 찾는다</text>
+    <text x="16.0" y="254" fill="#e6edf3" textLength="445.2" lengthAdjust="spacing" xml:space="preserve">        파일 바꿈  ·  생각 high·deep  ·  최대 250걸음</text>
+    <text x="16.0" y="273" fill="#e6edf3" textLength="504.0" lengthAdjust="spacing" xml:space="preserve">  · ◍ 점검    Inspect       결함을 찾는다 · 파일은 안 건드림</text>
+    <text x="16.0" y="292" fill="#e6edf3" textLength="420.0" lengthAdjust="spacing" xml:space="preserve">        읽기만  ·  생각 high·deep  ·  최대 120걸음</text>
+    <text x="16.0" y="311" fill="#e6edf3" textLength="445.2" lengthAdjust="spacing" xml:space="preserve">  · ◇ 묻기    Ask           설명만 · 아무것도 안 바꿈</text>
+    <text x="16.0" y="330" fill="#e6edf3" textLength="403.2" lengthAdjust="spacing" xml:space="preserve">        읽기만  ·  생각 low·even  ·  최대 12걸음</text>
+    <text x="16.0" y="349" fill="#e6edf3" textLength="411.6" lengthAdjust="spacing" xml:space="preserve">  · ❋ 총괄    Orchestrator  큰 일을 쪼개서 끝까지</text>
+    <text x="16.0" y="368" fill="#e6edf3" textLength="420.0" lengthAdjust="spacing" xml:space="preserve">        파일 바꿈  ·  생각 —·save  ·  최대 384걸음</text>
+    <text x="16.0" y="406" fill="#e6edf3" textLength="453.6" lengthAdjust="spacing" xml:space="preserve">  바꾸려면 /plan /code /debug …  또는 Ctrl+O 로 차례로</text>
+    <text x="16.0" y="425" fill="#e6edf3" textLength="621.6" lengthAdjust="spacing" xml:space="preserve">  이건 승인 정책(/mode)과 다른 축입니다 — 무엇을 하느냐 / 얼마나 물어보냐.</text>
+  </g>
+</svg>
