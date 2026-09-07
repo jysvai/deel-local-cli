@@ -21,6 +21,8 @@ import { 믿기, 안믿기, 믿는목록, 프로젝트금지칸 } from '../src/s
 import { load as 설정읽기 } from '../src/config.js';
 import { 규칙모으기, 어떻게할까, 확인목록, 확인인자, 확인돌리기 } from '../src/safety/policy.js';
 import { 기록자리, 세기, 도구차례, 막힘차례, 셈JSON } from '../src/stats.js';
+import { 진찰 } from '../src/doctor.js';
+import { 설명, 설명줄들 } from '../src/configexplain.js';
 
 const MIN_NODE = 20;
 
@@ -98,6 +100,93 @@ function runPack(flags) {
     say(`  ${c.gray('One document to read, two to feed a scanner — submit them as they are.')}`);
     say(`  ${c.gray('To see the contents first:')} ${c.cyan('deel audit')}`);
   }
+  say('');
+  return 0;
+}
+
+/*
+ * `deel config explain <칸>` — 이 값은 어디서 왔나 (src/configexplain.js).
+ *
+ * 설정을 읽는 자리가 넷이라(정책·환경변수·프로젝트·이 PC), 「파일에 분명히
+ * 적어 놨는데 안 먹는다」 가 흔하다. 그때 사람은 그 파일만 고치다가 설정이라는
+ * 것을 안 믿게 된다. 층을 열어 보여 주면 5초에 끝나는 일이다.
+ */
+function runConfig(args, flags) {
+  const 무엇 = String(args[0] ?? '');
+  const 칸 = String(args[1] ?? '');
+  if (무엇 !== 'explain' || !칸) {
+    say('');
+    say(`  ${c.cyan('deel config explain <칸>')}  ${c.gray('이 값이 어디서 왔는지')}`);
+    say(`  ${c.gray('보기:')} ${c.white('deel config explain offline')} ${c.gray('·')} ${c.white('deel config explain profiles.사내.model')}`);
+    say('');
+    return 1;
+  }
+  const r = 설명(칸, { root: flags.root ? String(flags.root) : process.cwd() });
+  if (flags.json === true) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+
+  const 표 = { 값: c.bold('='), 없음: c.gray('·'), 이김: mark.ok, 아래: c.gray('·'), 안읽음: c.yellow('⚠'), 참고: c.gray('i') };
+  say('');
+  say(`  ${c.bold(칸)}`);
+  say('');
+  for (const 줄 of 설명줄들(r)) {
+    const 글 = 줄.갈래 === '값' ? c.white(줄.글) : 줄.글;
+    say(`  ${표[줄.갈래] ?? ' '} ${글}${줄.곁 ? `  ${c.gray(줄.곁)}` : ''}`);
+  }
+  say('');
+  return r.이긴층 ? 0 : 0;
+}
+
+/*
+ * `deel doctor` — 붙기 전에 이 자리의 조건을 하나씩 본다 (src/doctor.js).
+ *
+ * 화면 한 장이 그대로 담당자에게 보낼 질문이 되게 하는 것이 목표다. 그래서
+ * 값마다 **어디서 온 값인지**를 같이 적는다 — 환경변수가 파일을 이기고 있는
+ * 것을 모르면 사람은 파일만 백 번 고친다.
+ */
+async function runDoctor(flags) {
+  const { load: 읽기, activeProfile: 고른것, resolveKey: 열쇠풀기, configPath: 설정경로 } =
+    await import('../src/config.js');
+  const { 지금모드, 바깥인가, 나갈수있나 } = await import('../src/safety/runmode.js');
+  const { allowEndpoint } = await import('../src/safety/network.js');
+
+  banner();
+  let cfg = null;
+  try { cfg = 읽기(); } catch { /* 설정이 망가져도 아래에서 말한다 */ }
+  const prof = cfg ? 고른것(cfg) : null;
+
+  /*
+   * 두드려도 되는 자리인지 먼저 본다.
+   *
+   * 진단한다고 자물쇠를 넘어가면 안 된다 — 여기서 한 번 나가 버리면 「나가는
+   * 주소는 사람이 정한 하나뿐」 이 진단 명령 하나로 깨진다.
+   */
+  const 모드 = 지금모드({ online: flags.online === true, offline: !!(flags.offline ?? prof?.offline ?? cfg?.offline) });
+  const 나감 = prof ? 나갈수있나(모드, { 바깥: 바깥인가(prof.baseUrl), 허가: prof.online === true }) : { 물어볼까: false };
+  const 두드려도되나 = !!prof && !나감.물어볼까 && !모드.허가무시;
+  if (두드려도되나) allowEndpoint(prof.baseUrl);
+
+  const { 줄들 } = await 진찰({
+    cfg, prof,
+    root: flags.root ? String(flags.root) : process.cwd(),
+    설정자리: 설정경로(),
+    열쇠: prof ? 열쇠풀기(prof) : '',
+    바깥가도되나: 두드려도되나,
+  });
+
+  const 표 = { ok: mark.ok, warn: mark.warn, no: c.red('✗'), unknown: c.gray('?') };
+  say('');
+  for (const x of 줄들) {
+    const 이름 = String(x.이름) + ' '.repeat(Math.max(0, 14 - width(String(x.이름))));
+    say(`  ${표[x.상태] ?? ' '} ${c.gray(이름)} ${x.값}${x.덧말 ? c.gray(`  — ${x.덧말}`) : ''}`);
+  }
+  say('');
+  const 탈 = 줄들.filter((x) => x.상태 === 'no').length;
+  if (탈) {
+    say(`  ${c.red(`${탈}군데가 막혀 있습니다.`)} ${c.gray('위 줄을 그대로 담당자에게 보내시면 됩니다.')}`);
+    say('');
+    return 1;
+  }
+  say(`  ${c.gray('여기까지는 괜찮습니다. 모델이 도구를 부를 수 있는지는')} ${c.cyan('deel diagnose')}`);
   say('');
   return 0;
 }
@@ -496,6 +585,9 @@ function help() {
     say('');
     say(`    ${c.cyan('deel stats')}                  이 폴더에서 무엇을 했는지 ${c.gray('(.deel/audit.jsonl 요약)')}`);
     say(`    ${c.gray('--days N · --all · --json')}  기간을 바꾸거나, 전부, 또는 기계가 읽을 모양으로`);
+    say('');
+    say(`    ${c.cyan('deel doctor')}                 붙기 전에 무엇이 막고 있는지 ${c.gray('(프록시·인증서·열쇠·모델 목록)')}`);
+    say(`    ${c.cyan('deel config explain <칸>')}    그 값이 어느 층에서 온 것인지 ${c.gray('(정책 · 환경변수 · 프로젝트 · 이 PC)')}`);
   } else {
     say(`  ${c.bold('Project config trust')}`);
     say('');
@@ -511,6 +603,9 @@ function help() {
     say('');
     say(`    ${c.cyan('deel stats')}                  What happened in this folder ${c.gray('(summarises .deel/audit.jsonl)')}`);
     say(`    ${c.gray('--days N · --all · --json')}  Change the window, read everything, or emit JSON`);
+    say('');
+    say(`    ${c.cyan('deel doctor')}                 What is blocking the connection ${c.gray('(proxy · certs · key · model list)')}`);
+    say(`    ${c.cyan('deel config explain <key>')}   Which layer that value came from ${c.gray('(policy · env · project · this PC)')}`);
   }
   say('');
   say(`  ${c.bold('대화 시작 옵션')}`);
@@ -673,14 +768,24 @@ async function main() {
     case 'setup':
       return runSetup();
     case 'diagnose':
-    case 'doctor':
       return runDiagnose(flags);
+    /*
+     * doctor 는 diagnose 의 **앞자락**이다.
+     *
+     * diagnose 는 「모델이 일을 할 수 있나」 를 잰다. 그건 붙은 다음 이야기고,
+     * 사내에서 막히는 자리는 대부분 그 앞이다 — 프록시·사내 루트·열쇠·인증서.
+     * 그래서 자리 조건을 먼저 하나씩 보고, 닿으면 이어서 모델까지 본다.
+     */
+    case 'doctor':
+      return runDoctor(flags);
     case 'pack':
       return runPack(flags);
     case 'audit':
       return runAudit();
     case 'stats':
       return runStats(flags);
+    case 'config':
+      return runConfig(args, flags);
     case 'trust':
       return runTrust(flags);
     case 'rules':

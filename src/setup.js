@@ -11,6 +11,7 @@ import { load, save, upsert, slug, resolveKey, activeProfile, configPath } from 
 import { 보관방식 } from './safety/keystore.js';
 import { 애저풀기, 애저base } from './backend/azure.js';
 import { allowEndpoint } from './safety/network.js';
+import { 인증서설정, 인증서등록 } from './backend/clientcert.js';
 import { 바깥인가 } from './safety/runmode.js';
 import { 제공자들, 제공자고르기, 어디것일까, 주소후보, 막힌까닭 } from './providers/index.js';
 import { writeFileSync } from 'node:fs';
@@ -362,6 +363,14 @@ export async function runDiagnose(flags) {
       return 1;
     }
     say(`  ${c.gray('프로필')} ${c.bold(prof.name)} ${c.gray(configPath())}`);
+    /*
+     * 이 게이트웨이가 우리 인증서를 요구하면 여기서도 매어 둔다.
+     *
+     * 대화·배치·에디터는 전선붙이기() 가 지나는데 진단은 그 길을 안 지난다.
+     * 그래서 여기가 빠지면 **진단만** TLS 악수에서 죽는다 — 사람은 게이트웨이가
+     * 죽은 줄 알고, 정작 대화는 멀쩡히 된다. 그 어긋남이 제일 헷갈린다.
+     */
+    인증서등록(prof.baseUrl, 인증서설정(prof));
     conn = {
       kind: prof.kind, base: prof.baseUrl, auth: prof.auth,
       key: resolveKey(prof), model: flags.model ?? prof.model,

@@ -386,6 +386,51 @@ no longer **cut off at five minutes** (the clock keeps rewinding while chunks ar
 and a stalled gateway is detected in one minute instead of five. If your gateway
 buffers the whole answer and delivers it in one piece, raise this value.
 
+### What is blocking the connection — `deel doctor`
+
+`deel diagnose` measures whether **the model can do the work** — does it call tools,
+does it stream, how wide is the window. That is the story after you are connected.
+
+Inside a company, what blocks you is almost always before that: the proxy is not being
+used, the corporate root is missing, the key cannot be read, there is a typo in a
+certificate path. What you get is one line saying `fetch failed`, and that line does
+not tell you which of six causes it was. You cannot even phrase the question for your
+admin.
+
+Each condition is checked **separately**, and every value says where it came from. The
+goal is that one screen is the message you forward to your admin.
+
+| The distinction | Why |
+|---|---|
+| Reached but 401 · never reached | The first is about the key, the second about the proxy or a firewall. Merge them and people ask the wrong person |
+| Model not in the list · server serves no list | The first is a typo, the second is just that kind of server. Reporting "unknown" as "wrong" sends people to fix something that works |
+| A proxy is configured · **this address** goes through it | One `NO_PROXY` entry changes the answer. Saying only "proxy on" sends people to the proxy team for nothing |
+| Not measured | Behind the network lock nothing is probed, and it is marked `?`. Counting an unmeasured thing as green makes this screen lie |
+
+No secrets are printed — for the key, only **whether it exists and where it came
+from**; for a certificate passphrase, only **where it came from**. This screen gets
+screenshotted into a company chat.
+
+### Where did this value come from — `deel config explain`
+
+Four places can set a setting — managed policy, environment variables, the project
+config, and this machine's config. The precedence rules are written above, but reading
+the rules and **knowing what won right here** are two different things.
+
+```bash
+deel config explain offline
+deel config explain profiles.corp.model
+```
+
+The failure always looks the same: **it is written in the file and it does not take
+effect.** So the file gets edited, and edited again, and eventually the settings stop
+being trusted at all. What actually held the value was one environment variable, or a
+project config in a folder that is not trusted and therefore never read — both of which
+take five seconds to see once something says so.
+
+Key fields show "present" instead of the value, in `--json` output too. Masking the
+screen while piping the real thing is not masking.
+
 ### Environment variables
 
 | Variable | Use |

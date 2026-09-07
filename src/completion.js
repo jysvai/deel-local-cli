@@ -43,6 +43,7 @@ export const 명령들 = [
   { 이름: 'sbom', 뜻: '무엇이 들었는지 목록을 낸다', en: 'list what is inside (SBOM)' },
   { 이름: 'trust', 뜻: '이 폴더의 프로젝트 설정을 읽게 한다', en: "read this folder's project config" },
   { 이름: 'stats', 뜻: '이 폴더에서 무엇을 했나 (감사기록 요약)', en: 'what happened in this folder (audit summary)' },
+  { 이름: 'config', 뜻: '설정 값이 어디서 왔는지 (config explain <칸>)', en: 'where a config value comes from (config explain <key>)' },
   { 이름: 'rules', 뜻: '적어 둔 승인 규칙이 진짜 그렇게 도나 확인한다', en: 'check that the approval rules actually do what they say' },
   { 이름: 'scan', 뜻: '게이트웨이에 어떤 모델이 있나 훑는다', en: 'scan the gateway for available models' },
   { 이름: 'sessions', 뜻: '지난 대화 목록', en: 'list past conversations' },

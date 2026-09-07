@@ -275,8 +275,17 @@ trace('2-상태와진단');
     check('보고서에 판정이 들어간다', /준비됨|제한적|막힘|연결실패/.test(글), 글.slice(0, 60));
   }
 
+  /*
+   * doctor 는 이제 diagnose 의 다른 이름이 아니다 (1.17.0).
+   *
+   * diagnose 는 「모델이 일을 할 수 있나」 를 재고, doctor 는 그 **앞자락** —
+   * 프록시·인증서·열쇠·모델 목록 — 을 하나씩 본다. 사내에서 막히는 자리가
+   * 대부분 그 앞이라 화면을 따로 냈다 (src/doctor.js).
+   */
   const d2 = await 띄우기(['doctor'], { 제한: 60000 });
-  check('doctor 는 diagnose 의 다른 이름이다', !d2.시간초과 && /검사|진단|판정|준비됨|제한적/.test(d2.out), `code=${d2.code}`);
+  check('★ doctor 는 붙기 전 조건을 하나씩 본다',
+    !d2.시간초과 && /프로필/.test(d2.out) && /주소/.test(d2.out) && /도달/.test(d2.out),
+    `code=${d2.code} ${d2.out.split('\n').filter(Boolean).slice(-3).join(' / ')}`);
 }
 
 trace('3-대화화면');

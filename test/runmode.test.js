@@ -241,7 +241,15 @@ trace('6-깃발이-붙어-있나');
   // BOOL 에 없으면 --online 이 뒤의 낱말을 값으로 삼켜 버린다.
   // 실제로 그런 일이 있었다 — deel run --json "..." 이 시킬 말을 통째로 먹었다.
   check('--online 이 값 없는 깃발로 등록됐다', /BOOL = new Set\(\[[^\]]*'online'/.test(bin));
-  check('세 자리(run·chat·acp)에 다 넘긴다', (bin.match(/online: flags\.online/g) ?? []).length === 3,
+  /*
+   * 3 → 4 (1.17.0): `deel doctor` 가 네 번째 자리다.
+   *
+   * doctor 는 게이트웨이를 **실제로 두드린다.** 그러면 「나갈까 말까」 를 정하는
+   * 자리가 하나 더 생긴 것이고, 그 자리가 이 깃발을 안 보면 진단 명령 하나가
+   * 자물쇠를 넘어간다. 세는 수를 올리는 것이 아니라 **지켜야 할 문이 하나
+   * 늘어난 것**이라 여기 같이 적는다.
+   */
+  check('네 자리(run·chat·acp·doctor)에 다 넘긴다', (bin.match(/online: flags\.online/g) ?? []).length === 4,
     String((bin.match(/online: flags\.online/g) ?? []).length));
   check('deel online 이라고 쳐도 된다', /친명령 === 'online'/.test(bin));
   check('도움말이 셋을 다 적는다', /--online/.test(bin) && /⌂ 이 안/.test(bin) && /⛊ 봉인/.test(bin));
