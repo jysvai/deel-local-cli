@@ -41,6 +41,7 @@ const FILES = [
   'trust.test.js',
   'shellenv.test.js',
   'hangul.test.js',
+  'rulescheck.test.js',
   'quota.test.js',
   'review.test.js',
   'task.test.js',

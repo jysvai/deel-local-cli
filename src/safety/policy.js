@@ -207,3 +207,77 @@ export function 규칙말(규칙들) {
   if (규칙들.탈) 조각.push(규칙들.탈);
   return 조각.join(' · ');
 }
+
+/*
+ * ── 규칙이 진짜 그렇게 도나 ─────────────────────────────────────────────
+ *
+ * 규칙은 적어 두면 조용히 돈다. 그래서 **잘못 적은 규칙은 티가 안 난다.**
+ *
+ *     "deny": ["Bash(rm -rf*)"]
+ *
+ * 이건 `rm -rf /` 를 막는다. 그런데 `sudo rm -rf /` 는 안 막는다 — 무늬가
+ * 앞부터 맞아야 하기 때문이다. 적은 사람은 막힌 줄 알고 지낸다. 안 막혔다는
+ * 것은 진짜로 지워진 날에야 안다.
+ *
+ * 그래서 두 가지를 낸다.
+ *
+ *   1) `deel rules check "sudo rm -rf /"` — 이 명령을 어느 규칙이 어떻게
+ *      정하는지 그 자리에서 말한다. 규칙을 적자마자 확인할 수 있어야 한다.
+ *
+ *   2) 설정에 보기를 적어 두면 그것을 돌린다. CI 에 걸 수 있는 모양이다.
+ *
+ *        "permissions": {
+ *          "deny": ["Bash(*rm -rf*)"],
+ *          "확인": [
+ *            { "도구": "Bash", "값": "sudo rm -rf /tmp", "이래야": "deny" },
+ *            { "도구": "Bash", "값": "npm run rf",       "이래야": "모름" }
+ *          ]
+ *        }
+ *
+ * 2번이 있어야 규칙을 **고칠 때** 안전하다. 무늬 하나를 다듬다가 다른 것이
+ * 같이 풀리는 일이 실제로 흔한데, 보기를 적어 두면 그 자리에서 빨개진다.
+ */
+
+/** 설정에 적어 둔 확인 보기들. 없으면 빈 배열. */
+export function 확인목록(cfg) {
+  const 것 = cfg?.permissions?.확인 ?? cfg?.permissions?.checks;
+  if (!Array.isArray(것)) return [];
+  const out = [];
+  for (const x of 것) {
+    if (!x || typeof x !== 'object') continue;
+    const 도구 = String(x.도구 ?? x.tool ?? 'Bash');
+    const 값 = x.값 ?? x.value;
+    const 이래야 = String(x.이래야 ?? x.expect ?? '').trim();
+    if (typeof 값 !== 'string' || !값) continue;
+    if (!['allow', 'deny', '모름'].includes(이래야)) continue;
+    out.push({ 도구, 값, 이래야 });
+  }
+  return out;
+}
+
+/**
+ * 도구 이름에 맞는 인자 모양으로 값을 싼다.
+ *
+ * 걸리나() 는 도구마다 다른 칸을 본다 — Bash 는 command, 파일 도구는
+ * file_path. 확인 보기에서는 사람이 값 하나만 적으므로, 여기서 그 도구가
+ * 보는 칸에 넣어 준다. 안 그러면 보기가 늘 「안 걸림」 으로 나와서, 검사가
+ * 아무것도 안 재면서 초록으로 남는다.
+ */
+export function 확인인자(도구, 값) {
+  if (도구 === 'Bash') return { command: 값 };
+  if (도구 === 'WebFetch') return { url: 값 };
+  if (도구 === 'Grep') return { pattern: 값 };
+  return { file_path: 값 };
+}
+
+/**
+ * 확인 보기를 다 돌린다.
+ *
+ * @returns {Array<{도구,값,이래야,나온것,맞나,규칙,출처}>}
+ */
+export function 확인돌리기(규칙들, 보기들) {
+  return (보기들 ?? []).map((b) => {
+    const r = 어떻게할까(규칙들, b.도구, 확인인자(b.도구, b.값));
+    return { ...b, 나온것: r.답, 맞나: r.답 === b.이래야, 규칙: r.규칙, 출처: r.출처 };
+  });
+}

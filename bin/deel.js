@@ -2,7 +2,7 @@
 // deel 진입점. 외부 의존성 없음 — Node 표준 기능만 씁니다.
 import { join } from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { c, say, mark, rule } from '../src/ui/ansi.js';
+import { c, say, mark, rule, clip } from '../src/ui/ansi.js';
 import { runSetup, runDiagnose, showStatus, banner } from '../src/setup.js';
 import { chatLoop } from '../src/repl.js';
 import { runOnce } from '../src/oneshot.js';
@@ -19,6 +19,7 @@ import { 마크다운, 읽는갈래 } from '../src/tools/doc2md.js';
 import { 언어잡기, 언어, 말 } from '../src/i18n/index.js';
 import { 믿기, 안믿기, 믿는목록, 프로젝트금지칸 } from '../src/safety/trust.js';
 import { load as 설정읽기 } from '../src/config.js';
+import { 규칙모으기, 어떻게할까, 확인목록, 확인인자, 확인돌리기 } from '../src/safety/policy.js';
 
 const MIN_NODE = 20;
 
@@ -147,6 +148,84 @@ function runTrust(flags) {
   say('');
   say(`  ${c.gray(말('trust.blockedTitle'))}`);
   for (const { 칸, 열쇠 } of 프로젝트금지칸) say(`  ${c.gray('·')} ${c.white(칸)}  ${c.gray(말(열쇠))}`);
+  say('');
+  return 0;
+}
+
+/*
+ * `deel rules [check [명령]] [--tool Bash]` — 적어 둔 규칙이 진짜 그렇게 도나.
+ *
+ * 규칙은 적어 두면 조용히 돈다. 그래서 **잘못 적은 규칙은 티가 안 난다.**
+ * `Bash(rm -rf*)` 는 `rm -rf /` 를 막지만 `sudo rm -rf /` 는 안 막는다 —
+ * 무늬가 앞부터 맞아야 하기 때문이다. 적은 사람은 막힌 줄 알고 지내고,
+ * 안 막혔다는 것은 진짜로 지워진 날에야 안다.
+ *
+ * 그래서 이 명령이 있다. 규칙을 적자마자 확인할 수 있어야 한다.
+ */
+function runRules(args, flags) {
+  const cfg = 설정읽기();
+  const 규칙들 = 규칙모으기(cfg);
+  const 어느도구 = flags.tool ? String(flags.tool) : 'Bash';
+
+  // `deel rules check "명령"` — 이 하나를 어느 규칙이 어떻게 정하나.
+  if (args[0] === 'check' && args[1]) {
+    const 값 = args.slice(1).join(' ');
+    const r = 어떻게할까(규칙들, 어느도구, 확인인자(어느도구, 값));
+    const 표 = { deny: c.red('막힙니다'), allow: c.green('묻지 않고 합니다'), 모름: c.yellow('모드가 정합니다') };
+    say('');
+    say(`  ${c.gray(어느도구)} ${c.white(값)}`);
+    say(`    ${표[r.답]}`);
+    // 어느 줄 때문인지까지 말해야 사람이 제 설정을 고칠 수 있다. 「막힙니다」
+    // 만 말하면 무엇을 지워야 풀리는지 알 길이 없다.
+    if (r.규칙) say(`    ${c.gray(`${r.출처}의 ${r.규칙}`)}`);
+    else say(`    ${c.gray('걸리는 규칙이 없습니다')}`);
+    say('');
+    return 0;
+  }
+
+  // `deel rules check` — 설정에 적어 둔 보기를 다 돌린다. CI 에 거는 모양이다.
+  if (args[0] === 'check') {
+    const 보기들 = 확인목록(cfg);
+    if (!보기들.length) {
+      say('');
+      say(`  ${mark.warn} 확인할 보기가 없습니다.`);
+      say(`  ${c.gray('설정의 permissions 에 이렇게 적어 두면 여기서 돌립니다:')}`);
+      say(`  ${c.gray('  "확인": [{ "도구": "Bash", "값": "sudo rm -rf /tmp", "이래야": "deny" }]')}`);
+      say(`  ${c.gray('이래야 는 deny · allow · 모름 셋 중 하나입니다.')}`);
+      say('');
+      return 1;
+    }
+    const 결과 = 확인돌리기(규칙들, 보기들);
+    const 틀린것 = 결과.filter((x) => !x.맞나);
+    say('');
+    for (const x of 결과) {
+      const 표시 = x.맞나 ? c.green('✓') : c.red('✗');
+      const 곁 = x.맞나
+        ? c.gray(x.규칙 ? `${x.출처}의 ${x.규칙}` : '걸리는 규칙 없음')
+        : c.red(`${x.이래야} 이어야 하는데 ${x.나온것}`);
+      say(`  ${표시} ${c.gray(x.도구)} ${c.white(clip(x.값, 44))}  ${곁}`);
+    }
+    say('');
+    say(틀린것.length
+      ? `  ${mark.warn} ${결과.length}개 중 ${틀린것.length}개가 적어 둔 것과 다릅니다.`
+      : `  ${mark.ok} ${결과.length}개 다 적어 둔 대로입니다.`);
+    say('');
+    // 틀리면 0 이 아닌 값으로 끝낸다. CI 가 보는 것은 이 숫자다.
+    return 틀린것.length ? 1 : 0;
+  }
+
+  // 그냥 `deel rules` — 지금 걸려 있는 것을 늘어놓는다.
+  say('');
+  say(`  ${c.bold('적어 둔 규칙')} ${c.gray('— 이건 승인 모드보다 셉니다')}`);
+  say('');
+  if (!규칙들.deny.length && !규칙들.allow.length) say(`  ${c.gray('적어 둔 규칙이 없습니다.')}`);
+  for (const r of 규칙들.deny) say(`  ${c.red('✗')} ${c.white(r.원문)}  ${c.gray(r.출처)}`);
+  for (const r of 규칙들.allow) say(`  ${c.green('✓')} ${c.white(r.원문)}  ${c.gray(r.출처)}`);
+  if (규칙들.정책곳) say(`  ${c.gray(`관리 정책 ${규칙들.정책곳} — 이 파일은 고칠 수 없습니다`)}`);
+  if (규칙들.탈) say(`  ${mark.warn} ${c.yellow(규칙들.탈)}`);
+  say('');
+  say(`  ${c.gray('이 명령이 어떻게 되는지:')} ${c.cyan('deel rules check "sudo rm -rf /tmp"')}`);
+  say(`  ${c.gray('적어 둔 보기를 다 돌리기:')}   ${c.cyan('deel rules check')}`);
   say('');
   return 0;
 }
@@ -328,6 +407,11 @@ function help() {
     say(`    ${c.gray('--off')}              다시 안 읽게`);
     say(`    ${c.gray('--list')}             믿는 폴더와, 믿어도 프로젝트가 못 정하는 칸`);
     say(`    ${c.gray('설정 파일은 저장소에 딸려 옵니다. 남의 것을 그냥 읽으면 주소도 열쇠 받는 명령도 그쪽이 정합니다.')}`);
+    say('');
+    say(`    ${c.cyan('deel rules')}                  적어 둔 승인 규칙을 늘어놓습니다`);
+    say(`    ${c.cyan('deel rules check "<명령>"')}   그 명령을 어느 규칙이 어떻게 정하는지`);
+    say(`    ${c.cyan('deel rules check')}            설정에 적어 둔 보기를 다 돌립니다 ${c.gray('(CI 에 겁니다)')}`);
+    say(`    ${c.gray('Bash(rm -rf*) 는 sudo rm -rf 를 안 막습니다. 적은 사람은 막힌 줄 알고 지냅니다.')}`);
   } else {
     say(`  ${c.bold('Project config trust')}`);
     say('');
@@ -335,6 +419,11 @@ function help() {
     say(`    ${c.gray('--off')}              Stop reading it again`);
     say(`    ${c.gray('--list')}             Trusted folders, and the keys a project may never set`);
     say(`    ${c.gray('A config file ships with the repository. Read a stranger’s and it picks the endpoint, and the command that fetches your key.')}`);
+    say('');
+    say(`    ${c.cyan('deel rules')}                  List the approval rules in force`);
+    say(`    ${c.cyan('deel rules check "<cmd>"')}    Which rule decides that command, and how`);
+    say(`    ${c.cyan('deel rules check')}            Run the examples from your config ${c.gray('(for CI)')}`);
+    say(`    ${c.gray('Bash(rm -rf*) does not stop sudo rm -rf. The person who wrote it believes it does.')}`);
   }
   say('');
   say(`  ${c.bold('대화 시작 옵션')}`);
@@ -494,6 +583,8 @@ async function main() {
       return runAudit();
     case 'trust':
       return runTrust(flags);
+    case 'rules':
+      return runRules(args, flags);
     case 'doc2md':
       return runDoc2md(args, flags);
     case 'sbom':

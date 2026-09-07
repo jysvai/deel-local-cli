@@ -144,6 +144,56 @@ Order is **deny > allow > mode**. If both match, deny wins, and a denied call is
 for approval. A refusal names the rule and **where the rule is written** — without that you cannot
 tell whether to edit your own config or ask an administrator. `/mode` lists everything in force.
 
+#### Checking that the rules do what they say
+
+Rules run silently once written. Which means **a rule written wrong looks exactly
+like a rule written right.**
+
+```json
+{ "permissions": { "deny": ["Bash(rm -rf*)"] } }
+```
+
+That stops `rm -rf /`. It does **not** stop `sudo rm -rf /`, because the pattern
+has to match from the start. The person who wrote it believes they are covered, and
+finds out otherwise on the day something is actually deleted. A safeguard that is
+not engaged is worse than no safeguard: without one you stay careful, with a broken
+one you relax.
+
+```bash
+deel rules                            # the rules currently in force
+deel rules check "sudo rm -rf /tmp"   # which rule decides this command, and how
+deel rules check                      # run the examples written in your config
+```
+
+```
+  Bash sudo rm -rf /tmp
+    모드가 정합니다
+    걸리는 규칙이 없습니다
+```
+
+The fix is a leading star too — `Bash(*rm -rf*)`.
+
+**Write examples down and you can run them in CI.** Editing rules is the genuinely
+dangerous moment: adjusting one pattern often loosens another, and examples turn
+that red on the spot.
+
+```json
+{
+  "permissions": {
+    "deny": ["Bash(*rm -rf*)"],
+    "확인": [
+      { "도구": "Bash", "값": "sudo rm -rf /tmp", "이래야": "deny" },
+      { "도구": "Bash", "값": "npm test",         "이래야": "allow" },
+      { "도구": "Bash", "값": "ls",               "이래야": "모름" }
+    ]
+  }
+}
+```
+
+`이래야` (expect) is one of `deny`, `allow` or `모름` — the last meaning "no rule
+matches, the approval mode decides." If any example disagrees, `deel rules check`
+exits non-zero.
+
 ### A project config is read only in a trusted folder
 
 `.deel/config.json` lives in the working folder — which means **it ships with the
