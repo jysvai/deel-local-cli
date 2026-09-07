@@ -161,6 +161,34 @@ trace('3-효과확인');
   check('없는 모드는 안 바꾼다', s.work === 'architect', s.work);
 }
 
+/*
+ * ★★ 화면에 `undefined` 를 찍지 않는다.
+ *
+ * 걸음 수가 모드 표에서 budget.js 로 옮겨 간 뒤에도 이 두 화면은 옛 자리
+ * (`w.steps`)를 읽고 있었다. 그래서 「최대 undefined걸음」 이 떠 있었다.
+ *
+ * 검사가 이걸 못 잡은 이유가 중요하다 — 여태 **명령이 안 터지는지**만 봤다.
+ * 안 터지는 것과 맞는 것을 보여 주는 것은 다르다. 화면에 나온 글자를 실제로
+ * 읽는 검사가 하나도 없으면, 이런 것은 사진을 찍어 보고서야 안다(실제로 그랬다).
+ */
+{
+  const s = 새세션();
+  const 목록 = await 조용히(() => handle('/work', s, ctx));
+  check('★★ 모드 목록에 undefined 가 안 뜬다', !/undefined/.test(목록.out),
+    (목록.out.match(/.{0,30}undefined.{0,10}/) ?? [''])[0].trim());
+  check('★ 모드마다 걸음 수가 숫자로 뜬다',
+    (목록.out.match(/최대 \d+걸음/g) ?? []).length === 8,
+    `${(목록.out.match(/최대 \d+걸음/g) ?? []).length}개`);
+  check('여덟 모드가 다 뜬다', ['종합', '코드', '계획', '설계', '디버그', '점검', '묻기', '총괄']
+    .every((n) => 목록.out.includes(n)));
+
+  const 하나 = await 조용히(() => handle('/work 점검', s, ctx));
+  check('★★ 모드를 고른 뒤 알림에도 undefined 가 안 뜬다', !/undefined/.test(하나.out),
+    (하나.out.match(/.{0,30}undefined.{0,10}/) ?? [''])[0].trim());
+  check('★ 고른 모드의 걸음 수도 숫자다', /최대 \d+걸음/.test(하나.out),
+    (하나.out.match(/최대 .{0,12}/) ?? [''])[0]);
+}
+
 {
   const s = 새세션();
   await 조용히(() => handle('/level 개발자', s, ctx));

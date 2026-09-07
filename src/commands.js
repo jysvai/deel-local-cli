@@ -16,6 +16,7 @@ import { load, save, 저장시도, resolveKey, upsert, 열쇠보관, configPath 
 import { 지금상태 as 지금열쇠상태, 받기설정, 잊기 as 받은열쇠잊기 } from './safety/authcmd.js';
 // 열쇠받기 명령을 정책이 못박아 뒀을 수 있다 — 받기설정 이 그 값을 같이 본다.
 import { 정책읽기 } from './safety/policy.js';
+import { 걸음수 } from './agent/budget.js';
 import { 제공자고르기 } from './providers/index.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
 /*
@@ -1080,13 +1081,15 @@ export async function handle(line, session, ctx) {
       session.routed = null;
       const w = getWork(골라진);
       say('');
-      say(`  ${c.hcyan(w.glyph)} ${c.bold(보일이름(w.id))} ${c.gray('(' + w.en + ')')}  ${c.gray(보일한줄(w.id))}`);
-      say(`  ${c.gray('도구')}    ${canWrite(골라진) ? c.yellow('읽기 + 파일 바꾸기') : c.green('읽기만 — 파일을 못 바꿉니다')}`);
-      say(`  ${c.gray('생각')}    ${c.white(w.think ?? session.think)}${c.gray('·')}${c.magenta(w.effort)}   ${c.gray('최대 ' + w.steps + '걸음')}`);
+      // 영어 화면에서 이름과 영문 이름은 같은 글자다 — 「Inspect (Inspect)」 를 안 만든다.
+      const 곁이름 = 언어() === 'en' ? '' : ` ${c.gray(`(${w.en})`)}`;
+      say(`  ${c.hcyan(w.glyph)} ${c.bold(보일이름(w.id))}${곁이름}  ${c.gray(보일한줄(w.id))}`);
+      say(`  ${c.gray(pad(말('work.tools'), 6))}  ${canWrite(골라진) ? c.yellow(말('work.toolsWrite')) : c.green(말('work.toolsRead'))}`);
+      say(`  ${c.gray(pad(말('work.think'), 6))}  ${c.white(w.think ?? session.think)}${c.gray('·')}${c.magenta(w.effort)}   ${c.gray(말('work.steps', { n: 걸음수(w.id, session.conn?.ctx) }))}`);
       if (골라진 === 'auto') {
-        say(`  ${c.gray('앞으로는 한마디마다 알맞은 모드로 저절로 옮겨 갑니다.')}`);
+        say(`  ${c.gray(말('work.autoOn'))}`);
       } else {
-        say(`  ${c.gray('직접 고르셨으므로 저절로 바뀌지 않습니다. 다시 맡기려면')} ${c.cyan('/work 종합')}`);
+        say(`  ${c.gray(말('work.pinned'))} ${c.cyan(`/work ${보일이름('auto')}`)}`);
       }
       say('');
       return { handled: true };
@@ -3145,18 +3148,33 @@ const INIT_TEMPLATE = `# DEEL.md
 
 // /work 를 인자 없이 부르면 지금 모드와 고를 수 있는 것들을 보여 준다.
 function showWork(session) {
-  rule('작업 모드', 70);
+  rule(말('work.title'), 70);
+  /*
+   * 이름 칸을 **제일 긴 이름에 맞춰** 잡는다.
+   *
+   * 8칸으로 못 박아 뒀더니 Orchestrator(12자)가 칸을 넘어 다음 칸을 밀었다.
+   * 화면에 `OrchestratorOrchestrator` 라고 붙어 나왔다 — 사진을 찍어 보고서야
+   * 알았다. 목록의 값은 칸이 맞아야 목록이다.
+   */
+  const 이름들 = WORK_ORDER.map((k) => 보일이름(WORK_MODES[k].id));
+  const 칸너비 = Math.max(...이름들.map((n) => width(n))) + 2;
+  // 영어 화면에서는 이름과 영문 이름이 같은 글자다. 같은 것을 두 번 적지 않는다.
+  const 영문칸 = 언어() === 'en' ? 0 : 14;
+
   for (const k of WORK_ORDER) {
     const w = WORK_MODES[k];
     const 지금 = k === (normWork(session.work) ?? WORK_DEFAULT);
     const 표 = 지금 ? c.hgreen('●') : c.gray('·');
-    const 보임 = 보일이름(w.id);
-    const 이름 = 지금 ? c.bold(c.white(pad(보임, 8))) : c.gray(pad(보임, 8));
-    say(`  ${표} ${c.hcyan(w.glyph)} ${이름}${c.gray(pad(w.en, 14))}${c.gray(보일한줄(w.id))}`);
-    say(`        ${canWrite(k) ? c.gray('파일 바꿈') : c.green('읽기만')}${c.gray('  ·  생각 ' + (w.think ?? '그대로') + '·' + w.effort + '  ·  최대 ' + w.steps + '걸음')}`);
+    const 보임 = pad(보일이름(w.id), 칸너비);
+    const 이름 = 지금 ? c.bold(c.white(보임)) : c.gray(보임);
+    say(`  ${표} ${c.hcyan(w.glyph)} ${이름}${영문칸 ? c.gray(pad(w.en, 영문칸)) : ''}${c.gray(보일한줄(w.id))}`);
+    const 강도 = `${w.think ?? '—'}·${w.effort}`;
+    const 걸음 = 말('work.steps', { n: 걸음수(k, session.conn?.ctx) });
+    say(`        ${canWrite(k) ? c.gray(말('work.canEdit')) : c.green(말('work.readOnly'))}`
+      + `${c.gray(`  ·  ${말('work.think')} ${강도}  ·  ${걸음}`)}`);
   }
   say('');
-  say(`  ${c.gray('바꾸려면')} ${c.cyan('/plan')} ${c.cyan('/code')} ${c.cyan('/debug')} ${c.gray('…  또는')} ${c.cyan('Ctrl+O')} ${c.gray('로 차례로')}`);
-  say(`  ${c.gray('이건 승인 정책(')}${c.cyan('/mode')}${c.gray(')과 다른 축입니다 — 무엇을 하느냐 / 얼마나 물어보냐.')}`);
+  say(`  ${c.gray(말('work.howTo', { a: c.cyan('/plan'), b: c.cyan('/code'), c: c.cyan('/debug'), 키: c.cyan('Ctrl+O') }))}`);
+  say(`  ${c.gray(말('work.axis', { 명령: c.cyan('/mode') }))}`);
   say('');
 }

@@ -279,7 +279,7 @@ export const MODES = {
    */
   inspect: {
     id: 'inspect',
-    hintEn: "audits code for defects - changes nothing",
+    hintEn: "finds defects · touches no files",
     sayEn: [
       "This is an **inspection**. You have not been given the tools that change files.",
       "",
