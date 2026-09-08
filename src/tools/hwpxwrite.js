@@ -183,10 +183,11 @@ const HEADER_XML = `${머리}
 <hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" version="1.4" secCnt="1">
 <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
 <hh:refList>
-<hh:fontfaces itemCnt="1">
-<hh:fontface lang="HANGUL" fontCnt="1"><hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0"><hh:typeInfo familyType="FCAT_GOTHIC" weight="0" proportion="0" contrast="0" strokeVariation="0" armStyle="0" letterform="0" midline="0" xHeight="0"/></hh:font></hh:fontface>
+<hh:fontfaces itemCnt="7">
+${['HANGUL', 'LATIN', 'HANJA', 'JAPANESE', 'OTHER', 'SYMBOL', 'USER'].map((갈) => `<hh:fontface lang="${갈}" fontCnt="1"><hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0"><hh:typeInfo familyType="FCAT_GOTHIC" weight="0" proportion="0" contrast="0" strokeVariation="0" armStyle="0" letterform="0" midline="0" xHeight="0"/></hh:font></hh:fontface>`).join('\n')}
 </hh:fontfaces>
 <hh:borderFills itemCnt="1"><hh:borderFill id="1" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="NONE" width="0.1 mm" color="#000000"/><hh:rightBorder type="NONE" width="0.1 mm" color="#000000"/><hh:topBorder type="NONE" width="0.1 mm" color="#000000"/><hh:bottomBorder type="NONE" width="0.1 mm" color="#000000"/><hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/></hh:borderFill></hh:borderFills>
+<hh:tabProperties itemCnt="1"><hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/></hh:tabProperties>
 <hh:charProperties itemCnt="4">
 ${[[0, 10], [1, 16], [2, 14], [3, 12]].map(([id, pt]) => `<hh:charPr id="${id}" height="${pt * PT}" textColor="#000000" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/><hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>${id === 0 ? '' : '<hh:bold/>'}</hh:charPr>`).join('\n')}
 </hh:charProperties>
@@ -199,11 +200,44 @@ ${[['바탕글', 'Normal', 0], ['개요 1', 'Outline 1', 1], ['개요 2', 'Outli
 </hh:refList>
 </hh:head>`;
 
+/*
+ * 구역 속성. 첫 문단의 첫 런 안에 **딱 한 번** 들어간다.
+ *
+ * 이게 없으면 한글이 파일을 통째로 거절한다 — 조판 엔진을 세울 용지·여백이
+ * 없기 때문이다. 우리 읽개(tools/docs.js)는 <hp:t> 만 훑으니 없어도 멀쩡히
+ * 읽혔고, 그래서 검사가 전부 초록인 채로 「한글이 못 여는 파일」 을 냈다.
+ * 다른 눈(Gemini 3.8 Flash)이 규격을 대조해서 짚어 준 자리다.
+ *
+ * 값은 A4 세로다. 단위는 HWPUNIT(1/7200인치) —
+ *   210mm = 59528 · 297mm = 84188 · 좌우 30mm = 8504 · 위 20mm = 5668 · 아래·머리·꼬리 15mm = 4252
+ */
+const SEC_PR = '<hp:secPr id="" textDirection="HORIZONTAL" spaceColumns="1134" tabStop="8000" tabStopVal="4000" tabStopUnit="HWPUNIT" outlineShapeIDRef="0" memoShapeIDRef="0" textVerticalWidthHead="0" masterPageCnt="0">'
+  + '<hp:grid lineGrid="0" charGrid="0" wonggojiFormat="0" strtnum="0"/>'
+  + '<hp:startNum pageStartsOn="BOTH" page="0" pic="0" tbl="0" equation="0"/>'
+  + '<hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" border="SHOW_ALL" fill="SHOW_ALL" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0"/>'
+  + '<hp:lineNumberShape restartType="0" countBy="0" distance="0" startNumber="0"/>'
+  + '<hp:pagePr landscape="WIDELY" width="59528" height="84188" gutterType="LEFT_ONLY">'
+  + '<hp:margin header="4252" footer="4252" gutter="0" left="8504" right="8504" top="5668" bottom="4252"/>'
+  + '</hp:pagePr>'
+  + '<hp:footNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="-1" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="850" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="EACH_COLUMN" beneathText="0"/></hp:footNotePr>'
+  + '<hp:endNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="14692344" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="0" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="END_OF_DOCUMENT" beneathText="0"/></hp:endNotePr>'
+  + '<hp:pageBorderFill type="BOTH" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill>'
+  + '<hp:pageBorderFill type="EVEN" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill>'
+  + '<hp:pageBorderFill type="ODD" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill>'
+  + '</hp:secPr>';
+
+/*
+ * 줄 나눔 캐시(linesegarray)는 **안 적는다.**
+ *
+ * 전에는 문단마다 같은 값 하나를 박아 넣었다. 글자 수도 줄 수도 안 보고 적는
+ * 값이라, 두 줄이 넘는 문단에서는 그 캐시가 사실과 다르다. 규격에서 이 칸은
+ * 선택이고, 없으면 한글이 제 엔진으로 다시 잰다. **모르는 것을 지어내
+ * 적어 두느니 비워 두는 편이 낫다** — 이 저장소가 값을 다루는 방식 그대로다.
+ */
 const 문단XML = (p, 번호) => {
   const id = 갈래[p.갈래] ?? 0;
   return `<hp:p id="${번호}" paraPrIDRef="${id}" styleIDRef="${id}" pageBreak="0" columnBreak="0" merged="0">`
-    + `<hp:run charPrIDRef="${id}"><hp:t>${esc(p.글)}</hp:t></hp:run>`
-    + `<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="42520" flags="393216"/></hp:linesegarray>`
+    + `<hp:run charPrIDRef="${id}">${번호 === 0 ? SEC_PR : ''}<hp:t>${esc(p.글)}</hp:t></hp:run>`
     + '</hp:p>';
 };
 

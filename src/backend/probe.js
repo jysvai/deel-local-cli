@@ -12,6 +12,7 @@ import {
   assistantMessage, toolMessage,
 } from './adapter.js';
 import { 벤더 } from './toolfit.js';
+import { 세션이름짓기 } from './wire.js';
 import { 말 } from '../i18n/index.js';
 
 const READ_TOOL = {
@@ -96,6 +97,19 @@ const SKIPPED = [
   ['ctx', '컨텍스트 길이'],
 ];
 
+/**
+ * 이 진단 한 번을 가리키는 번호.
+ *
+ * agent/store.js 의 대화 번호와 **같은 모양**으로 짓는다(YYYYMMDD-HHMMSS).
+ * 모양이 다르면 세션이름짓기 가 안전한 꼴이 아니라고 보고 지문으로 바꾸는데,
+ * 지문은 사람이 대시보드에서 「아까 그 진단」 을 못 찾게 만든다.
+ */
+function 진단번호(at = new Date()) {
+  const 두 = (n) => String(n).padStart(2, '0');
+  return `${at.getFullYear()}${두(at.getMonth() + 1)}${두(at.getDate())}`
+    + `-${두(at.getHours())}${두(at.getMinutes())}${두(at.getSeconds())}`;
+}
+
 export async function probe(conn, onStep = () => {}) {
   const { kind: shape, base, auth, model } = conn;
   const key = conn.key ?? '';
@@ -106,7 +120,19 @@ export async function probe(conn, onStep = () => {}) {
    * 멀쩡해도 그렇다. 진단 화면은 그 400 을 「연결 실패」 로 적고, 사람은
    * 열쇠를 다시 받으러 간다 — 여덟 칸이 전부 그 한 줄 때문에 빨개진다.
    */
-  const H = () => headersFor(auth, key, 더할머리(shape));
+  /*
+   * 진단도 **제 이름을 달고 나간다.**
+   *
+   * 여기서 나가는 것은 여덟아홉 번의 진짜 채팅 완성이다. 이름이 없으면
+   * 게이트웨이가 그 하나하나를 새 대화로 연다 — 대시보드에는 정체 모를
+   * 단발 요청이 아홉 줄 쌓이고, 그 줄들은 무엇을 하다 생긴 것인지 아무도
+   * 모른다. 「붙는지 봤다」 와 「누가 몰래 두드렸다」 가 화면에서 같아진다.
+   *
+   * 대화가 아니므로 이어받을 이름이 없다. 이 진단 한 번을 한 대화로 묶는
+   * 이름을 여기서 짓는다 — 담기는 것은 여전히 번호 하나뿐이다.
+   */
+  const 진단이름 = 세션이름짓기(진단번호());
+  const H = () => headersFor(auth, key, 더할머리(shape, 진단이름));
   /*
    * 물음표 뒤를 끝에 남겨야 한다 (adapter.js 의 주소붙이기).
    *

@@ -40,6 +40,9 @@ import { createServer } from 'node:http';
 import { allowEndpoint } from '../src/safety/network.js';
 import { 자동강도, 인사인가, effortFor, 가벼운강도, 천장고르기, 무거운가 } from '../src/agent/effort.js';
 import { 언어정하기, 말모두 } from '../src/i18n/index.js';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { join, dirname, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -947,6 +950,67 @@ trace('캐시-두이름');
    */
   check('★★ 끈 것은 모드가 못 켠다', 천장고르기('high', 'off', '분석해줘') === 'off',
     천장고르기('high', 'off', '분석해줘'));
+}
+
+
+// ── 채팅을 보내는 자리는 전부 이름을 단다 (소스 래칫) ────────────────────
+//
+// 위의 검사들은 「이름을 주면 머리에 붙는다」 를 잰다. 그런데 실제로 샌 자리는
+// 그게 아니었다 — **부르는 쪽이 이름을 아예 안 줬다.** probe.js 의 진단 여덟
+// 번과 /consult 한 번이 그랬다. 둘 다 진짜 채팅 완성이고, 둘 다 게이트웨이
+// 대시보드에 정체 모를 단발 요청으로 쌓였다.
+//
+// 그 종류는 단위 검사로 못 잡는다. 함수는 멀쩡했다. 그래서 **소스를 본다** —
+// 더할머리( 를 부르면서 두 번째 인자를 안 주는 자리가 있나.
+//
+// 봐주는 자리를 목록으로 둔다. 목록에 적는 것과 그냥 빠뜨리는 것은 다르다.
+// 적으려면 왜 봐주는지 여기에 한 줄을 쓰게 되고, 그 한 줄이 없으면 다음 사람이
+// 목록을 못 늘린다.
+{
+  // 파일 이름만 적지 않고 **몇 자리인지도 적는다.** 파일로만 봐주면 그 파일에
+  // 채팅을 보내는 자리가 새로 생겨도 조용히 통과한다 — 봐주기가 구멍이 된다.
+  const 봐줄곳 = new Map([
+    // 모델 제원만 묻는다 — /models · /props · /info. 대화가 아니라 세션에
+    // 묶일 것이 없고, 묶으면 오히려 대화 하나에 진단 줄이 섞인다.
+    ['src/backend/ctxsize.js', { 왜: '모델 제원 조회 (/models · /props · /info)', 몇: 1 }],
+    // /model 이 고를 목록을 받아 오는 두 자리 — 여느 목록과 Azure 배포 목록.
+    ['src/commands.js', { 왜: '모델 목록 조회 (/models · Azure 배포 목록)', 몇: 2 }],
+  ]);
+
+  const 뿌리 = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const 훑기 = (d, 모은것 = []) => {
+    for (const 것 of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, 것.name);
+      if (것.isDirectory()) 훑기(p, 모은것);
+      else if (것.name.endsWith('.js')) 모은것.push(p);
+    }
+    return 모은것;
+  };
+
+  const 맨손 = [];
+  const 봐준수 = new Map();
+  for (const p of 훑기(join(뿌리, 'src'))) {
+    const 이름 = relative(뿌리, p).replace(/\\/g, '/');
+    const 글 = readFileSync(p, 'utf8');
+    for (const m of 글.matchAll(/더할머리\(([^)]*)\)/g)) {
+      // 정의하는 자리(export function 더할머리)는 부르는 자리가 아니다.
+      if (/export function/.test(글.slice(Math.max(0, m.index - 20), m.index))) continue;
+      const 인자 = m[1].split(',').map((s) => s.trim()).filter(Boolean);
+      if (인자.length >= 2) continue;
+      if (봐줄곳.has(이름)) { 봐준수.set(이름, (봐준수.get(이름) ?? 0) + 1); continue; }
+      맨손.push(`${이름} — 더할머리(${m[1]})`);
+    }
+  }
+  check('★★ 채팅을 보내는 자리는 전부 대화 이름을 단다', 맨손.length === 0, 맨손.join(' · '));
+
+  // 봐주기 목록이 낡지 않게 — 적어 둔 파일이 없어졌으면 여기서 말한다.
+  const 어긋난것 = [];
+  for (const [f, 것] of 봐줄곳) {
+    if (!existsSync(join(뿌리, f))) { 어긋난것.push(`${f} — 파일이 없어졌습니다`); continue; }
+    const 센것 = 봐준수.get(f) ?? 0;
+    if (센것 !== 것.몇) 어긋난것.push(`${f} — 적어 둔 ${것.몇}자리인데 ${센것}자리`);
+  }
+  check('★ 봐주기 목록이 실제와 맞는다', 어긋난것.length === 0, 어긋난것.join(' · '));
 }
 
 // ── 마무리 ──────────────────────────────────────────────────────────────

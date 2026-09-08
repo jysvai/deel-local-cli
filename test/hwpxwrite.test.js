@@ -216,6 +216,107 @@ trace('6-Write도구');
     /새로 만드는 것은 됩니다/.test(문서는못고침('a.hwpx')) && !/새로 만드는 것은 됩니다/.test(문서는못고침('a.docx')), '');
 }
 
+
+
+// ══ 7. 규격이 요구하는 뼈대와 고아 참조 ════════════════════════════════
+//
+// 6절까지는 「우리 읽개가 되읽는다」 를 잰다. 그런데 그 읽개는 <hp:t> 만
+// 훑는다. 그래서 **한글이 파일을 통째로 거절하는 종류의 잘못**은 하나도
+// 안 걸렸다 — 검사는 전부 초록인데 물건은 안 열리는 상태였다.
+//
+// 실제로 그랬다. 구역 속성(hp:secPr)이 통째로 없었고, 문단마다 사실과 다른
+// 줄나눔 캐시가 박혀 있었고, 글꼴은 한글 하나만 선언해 놓고 일곱 언어군을
+// 참조했고, 탭 모양표는 없는 것을 가리켰다. 다른 눈(Gemini 3.8 Flash)이
+// 규격을 대조해서 짚었고, 넷 다 소스에서 사실로 확인됐다.
+//
+// 여기서 재는 것은 「한글이 연다」 가 아니다 — 그건 이 자리에서 못 잰다.
+// **제 안에서 앞뒤가 맞나**를 잰다. 가리키는 것이 실제로 있나, 규격이
+// 반드시 있으라는 것이 있나. 그 둘은 한글 없이도 잴 수 있다.
+trace('7-뼈대');
+{
+  const r = hwpx만들기('# 제목\n\n본문 하나.\n이어지는 줄.\n\n## 둘째\n\n- 가\n- 나\n');
+  const z = readZip(r.buf);
+  const 구역 = z.files.get('Contents/section0.xml')?.toString('utf8') ?? '';
+  const 머리 = z.files.get('Contents/header.xml')?.toString('utf8') ?? '';
+
+  // ── 구역 속성 ────────────────────────────────────────────────────────
+  // 없으면 한글이 조판 엔진을 못 세워 「손상된 문서」 로 거절한다.
+  const secPr몇 = (구역.match(/<hp:secPr\b/g) ?? []).length;
+  check('★★ 구역 속성(hp:secPr)이 있다', secPr몇 === 1, String(secPr몇));
+  // 규격상 자리가 정해져 있다 — 첫 문단의 첫 런 안이다. 아무 데나 있으면
+  // 있으나 마나다.
+  const 첫런 = 구역.indexOf('<hp:run');
+  const 첫글 = 구역.indexOf('<hp:t>');
+  const secPr자리 = 구역.indexOf('<hp:secPr');
+  check('★★ 첫 런 안에, 첫 글보다 앞에 있다',
+    secPr자리 > 첫런 && secPr자리 < 첫글,
+    'run ' + 첫런 + ' · secPr ' + secPr자리 + ' · t ' + 첫글);
+  check('★ 용지 크기가 들어 있다 (A4 세로)',
+    /<hp:pagePr[^>]*width="59528"[^>]*height="84188"/.test(구역), '');
+  check('★ 여백이 들어 있다', /<hp:margin[^>]*left="\d+"[^>]*right="\d+"/.test(구역), '');
+
+  // ── 지어낸 캐시를 안 적는다 ──────────────────────────────────────────
+  // 줄나눔 캐시는 글자 수와 줄 수를 봐야 적을 수 있는 값이다. 우리는 그걸
+  // 안 재므로 안 적는다. 규격에서 선택이라 없으면 한글이 다시 잰다.
+  check('★★ 줄나눔 캐시를 지어내지 않는다',
+    !/<hp:linesegarray/.test(구역),
+    (구역.match(/<hp:lineseg\b/g) ?? []).length + '개');
+
+  // ── 고아 참조 ────────────────────────────────────────────────────────
+  //
+  // *IDRef 는 「저 번호를 보라」 는 말이다. 그 번호가 없으면 규격 검사에서
+  // 걸리고, 사람이 겪는 화면은 「손상된 문서」 한 줄이다. 이름 하나하나를
+  // 손으로 적어 재면 그 목록이 반드시 낡으므로, **적힌 참조를 전부 긁어서**
+  // 그 종류의 id 가 있는지 본다.
+  const 있는id = (글, 태그) => new Set(
+    [...글.matchAll(new RegExp('<hh:' + 태그 + '\\b[^>]*\\bid="(\\d+)"', 'g'))].map((m) => m[1]),
+  );
+  const 표 = {
+    charPrIDRef: 있는id(머리, 'charPr'),
+    paraPrIDRef: 있는id(머리, 'paraPr'),
+    styleIDRef: 있는id(머리, 'style'),
+    tabPrIDRef: 있는id(머리, 'tabPr'),
+    borderFillIDRef: 있는id(머리, 'borderFill'),
+  };
+  const 고아 = [];
+  for (const 글 of [머리, 구역]) {
+    for (const m of 글.matchAll(/\b(charPrIDRef|paraPrIDRef|styleIDRef|tabPrIDRef|borderFillIDRef)="(\d+)"/g)) {
+      if (!표[m[1]].has(m[2])) 고아.push(m[1] + '=' + m[2]);
+    }
+  }
+  check('★★ 가리키는 번호가 다 실제로 있다', 고아.length === 0,
+    [...new Set(고아)].join(' · '));
+
+  // ── 글꼴 ─────────────────────────────────────────────────────────────
+  //
+  // charPr 의 fontRef 는 언어군마다 따로 글꼴을 가리킨다. 선언한 언어군이
+  // 그보다 적으면, 영문·숫자·한자가 섞인 순간 가리킬 곳이 없다.
+  const 선언한언어 = new Set([...머리.matchAll(/<hh:fontface[^>]*lang="([A-Z]+)"/g)].map((m) => m[1]));
+  const 쓰는언어 = new Set();
+  for (const m of 머리.matchAll(/<hh:fontRef\b([^>]*)\/>/g)) {
+    for (const k of m[1].matchAll(/(\w+)="\d+"/g)) 쓰는언어.add(k[1].toUpperCase());
+  }
+  const 빠진언어 = [...쓰는언어].filter((l) => !선언한언어.has(l));
+  check('★★ 참조하는 언어군의 글꼴이 다 선언돼 있다', 빠진언어.length === 0,
+    빠진언어.join(', ') || ('선언 ' + 선언한언어.size + '개'));
+  check('  itemCnt 가 실제 개수와 같다',
+    new RegExp('<hh:fontfaces itemCnt="' + 선언한언어.size + '"').test(머리),
+    String(선언한언어.size));
+
+  // 뼈대를 고쳤어도 글은 그대로 나와야 한다 — 6절까지가 잰 것을 안 깬다.
+  const 자리 = join(root, '뼈대.hwpx');
+  writeFileSync(자리, r.buf);
+  const 되읽음 = readDoc(자리);
+  check('★ 고친 뒤에도 글이 그대로 되읽힌다',
+    되읽음.ok === true && docText(되읽음.덩이들).text.includes('본문 하나.'),
+    되읽음.error ?? '');
+}
+
+// 쓴 자리는 **맨 끝에서** 치운다.
+//
+// 전에는 6절 뒤에서 치웠다. 그 뒤로 7절이 붙으면서 지운 폴더에 다시 쓰는
+// 지경이 됐다 — mcp 판에서 겪은 것과 같은 자리다. 리눅스에서는 진짜로
+// 지워져서 ENOENT 로 선다. 치우는 자리는 하나고, 그것은 맨 끝이다.
 rmSync(root, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
