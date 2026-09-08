@@ -127,6 +127,7 @@ const FILES = [
   'store.test.js',
   'threads.test.js',
   'evolve.test.js',
+  '신뢰도.test.js',
   'pins.test.js',
   'card.test.js',
   'evidence.test.js',

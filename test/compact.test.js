@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
-import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, 접힘표, 최소이득, 접힌파일열쇠, KEEP_RECENT } from '../src/agent/compact.js';
+import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, FOLD_AT_캐시, 캐시일때비울몫, 접을이득문턱, 접힘표, 최소이득, 접힌파일열쇠, KEEP_RECENT } from '../src/agent/compact.js';
 import { 파일기억 } from '../src/agent/filemem.js';
 import { assistantMessage, toolMessage } from '../src/backend/adapter.js';
 import { repairToolPairs } from '../src/agent/session.js';
@@ -554,6 +554,15 @@ await new Promise((r) => setImmediate(r));
   {
     const 굴리며세기 = () => {
       const x = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 16000, kind: 'openai' }, { root: process.cwd() });
+      /*
+       * **캐시가 안 도는 연결**로 못 박는다 (agent/compact.js 의 캐시가도나).
+       *
+       * 여기서 재는 것은 작은 로컬 모델에서 「몇 걸음에 한 번 접느냐」 다.
+       * 캐시가 도는 연결은 접는 셈 자체가 다르므로(문턱 0.72 · 창의 한 할),
+       * 안 박아 두면 이 검사가 재려던 것과 다른 것을 재게 된다.
+       */
+      x.usage.calls = 9;
+      x.usage.cacheRead = 0;
       x.push({ role: 'user', content: '이 폴더 전체를 훑고 로그 형식을 통일해줘' });
       let 접은걸음 = 0; let 접을만한걸음 = 0; let 접은개수 = 0;
       for (let 턴 = 1; 턴 <= 60; 턴++) {
@@ -805,6 +814,113 @@ await new Promise((r) => setImmediate(r));
   const 오 = foldToolResults({ messages: 이력('openai') }, { 이득문턱: 0 }).접은것;
   const 앤 = foldToolResults({ messages: 이력('anthropic') }, { 이득문턱: 0 }).접은것;
   check('★ 규격이 달라도 접는 개수가 같다', 오 === 앤, `openai ${오} · anthropic ${앤}`);
+}
+
+
+/*
+ * ── 접기 문턱은 **이 연결에 캐시가 도는지**가 가른다 ────────────────────
+ *
+ * 접기는 이력 가운데 글을 바꿔치므로 그 자리 뒤가 전부 새 글이 된다. 캐시가
+ * 없는 자리에서는 잃을 것이 없다 — 어차피 걸음마다 전액 다시 보낸다. 캐시가
+ * 도는 자리에서는 **싸게 읽히던 것을 비싸게 다시 쓴다.** 우리가 잰 게이트웨이
+ * 에서 쓰기는 읽기의 12.5배였다.
+ *
+ * 그래서 여기서 재는 것은 「접나 안 접나」 가 아니라 **「어느 쪽 셈으로 재나」**
+ * 다. 잘못 갈리면 화면에는 아무 일도 안 나고 청구서에서만 보인다.
+ */
+{
+  /*
+   * 부른 횟수도 같이 준다.
+   *
+   * 「캐시가 도나」 는 **읽힌 것을 봤나**로 정하는데, 첫 턴에는 볼 기회가 없다 —
+   * 첫 요청은 캐시를 쓰기만 하고 읽지는 못한다. 그래서 아직 재 볼 기회가 없는
+   * 동안은 「돈다」 고 친다. 그 자리를 이 도우미가 흉내 내야 검사가 실제와 같은
+   * 것을 잰다. 기본값은 「여러 번 불러 봤다」 — 즉 읽힌 것이 0 이면 정말 없는 것.
+   */
+  const 창 = (몫, 캐시읽음 = 0, 부른횟수 = 9) => ({
+    usage: { cacheRead: 캐시읽음, calls: 부른횟수 },
+    breakdown: () => ({ total: 200000, used: Math.round(200000 * 몫) }),
+  });
+
+  // 캐시가 안 도는 연결 — 여태 하던 대로 0.55.
+  check('★ 캐시가 안 도는 연결은 55% 에서 접는다', shouldFold(창(0.56)) === true, '');
+  check('★ 캐시가 안 도는 연결은 50% 에서는 안 접는다', shouldFold(창(0.50)) === false, '');
+
+  /*
+   * 캐시가 도는 연결 — 뒤로 민다.
+   *
+   * 56% 는 200k 창에서 112k 다. 그 자리에서 접으면 112k 를 통째로 다시 쓰는데,
+   * 오래된 도구 결과로 비울 수 있는 것은 대개 그 절반도 안 된다. 손익분기가
+   * 아홉 턴이었고, 그 아홉 턴이 오기 전에 요약 압축이 와서 또 끊겼다.
+   */
+  check('★★ 캐시가 도는 연결은 56% 에서 안 접는다', shouldFold(창(0.56, 1)) === false, '');
+  check('★★ 캐시가 도는 연결도 73% 면 접는다', shouldFold(창(0.73, 1)) === true, '');
+
+  /*
+   * 그래도 **요약 압축보다는 먼저** 와야 한다.
+   *
+   * 접기는 대화를 한 글자도 안 잃는다. 요약은 사람이 한 말도 왜 그렇게 정했는지도
+   * 세 줄로 줄인다. 문턱이 뒤집히면 싼 단계가 영영 안 돌고 늘 비싼 쪽으로 간다 —
+   * 그리고 그 사실은 화면 어디에도 안 나타난다.
+   */
+  check('★★ 캐시가 도는 문턱도 요약 압축보다는 앞이다', FOLD_AT_캐시 < COMPACT_AT,
+    `${FOLD_AT_캐시} < ${COMPACT_AT}`);
+  // 요약 압축에 너무 붙어도 안 된다 — 접고 한두 턴 만에 요약이 오면 캐시를 연달아 두 번 깬다.
+  check('★ 요약 압축과 최소한 5%p 는 떨어져 있다', COMPACT_AT - FOLD_AT_캐시 >= 0.05,
+    `${(COMPACT_AT - FOLD_AT_캐시).toFixed(2)}`);
+
+  /*
+   * 비울 양의 문턱도 갈린다 — 그리고 **창에 견줘** 잰다.
+   *
+   * 2,000토큰은 32k 창에서는 6% 지만 200k 창에서는 1% 다. 1% 를 비우려고
+   * 프리픽스를 통째로 다시 쓰는 것이 여태 하던 일이었다.
+   */
+  check('★ 캐시가 없으면 비울 양 문턱은 고정값 그대로', 접을이득문턱(창(0.6)) === 최소이득,
+    String(접을이득문턱(창(0.6))));
+  check('★★ 캐시가 돌면 비울 양 문턱은 창에 견준다', 접을이득문턱(창(0.6, 1)) === 200000 * 캐시일때비울몫,
+    String(접을이득문턱(창(0.6, 1))));
+  // 창이 작으면 고정값 아래로는 안 내려간다 — 32k 창에서 25% 는 8k 라 문제없지만,
+  // 창을 못 재는 자리(total 0)에서 0 이 되면 무엇이든 접힌다.
+  check('★ 창을 못 재면 고정값으로 물러선다',
+    접을이득문턱({ usage: { cacheRead: 1 }, breakdown: () => ({ total: 0, used: 0 }) }) === 최소이득, '');
+
+  /*
+   * ── 첫 턴에는 「모른다」 가 아니라 「돈다」 다 ────────────────────────
+   *
+   * 첫 요청은 캐시를 쓰기만 하고 읽지는 못한다. 그 자리에서 읽힌 것이 0 이라고
+   * 「캐시가 없다」 로 읽으면, 첫 턴에 큰 파일 몇 개를 읽어 창이 반쯤 찬 대화가
+   * **두 번째 턴 시작하자마자 방금 비싸게 만들어 둔 앞머리를 스스로 부순다.**
+   *
+   * 틀렸을 때 잃는 것이 양쪽으로 다르다 — 없는데 있다고 치면 접기가 좀 늦어질
+   * 뿐이고, 있는데 없다고 치면 방금 만든 캐시를 깬다. 그래서 모르는 쪽은 덜
+   * 잃는 쪽으로 기울인다.
+   */
+  check('★★ 아직 재 볼 기회가 없으면 캐시가 도는 것으로 친다',
+    shouldFold(창(0.56, 0, 1)) === false, '');
+  check('★★ 여러 번 불렀는데도 읽힌 것이 없으면 그때는 없는 것이다',
+    shouldFold(창(0.56, 0, 9)) === true, '');
+
+  /*
+   * 접었으면 **값이 든다는 것도 같이 올린다.**
+   *
+   * 여태 화면에는 「몇 토큰을 비웠다」 는 이득만 나왔다. 대가는 며칠 뒤
+   * 청구서에서 봤다. 캐시가 도는 자리에서만 참이므로 그때만 적는다.
+   */
+  // 접을 것이 넉넉한 이력을 여기서 따로 만든다 — 위 블록의 것은 그 블록 안에만 있다.
+  const 접을이력 = () => {
+    const ms = [{ role: 'system', content: '시킴' }, { role: 'user', content: '해줘' }];
+    for (let i = 0; i < 25; i++) {
+      ms.push(assistantMessage('openai', { content: `${i}번째`, toolCalls: [{ id: `t${i}`, name: 'Read', args: { file_path: `f${i}.js` } }] }));
+      ms.push(toolMessage('openai', { callId: `t${i}`, name: 'Read', content: 'x'.repeat(2400) }));
+    }
+    return ms;
+  };
+  const 캐시판 = { messages: 접을이력(), usage: { cacheRead: 1, calls: 9 } };
+  const 맨판 = { messages: 접을이력(), usage: { cacheRead: 0, calls: 9 } };
+  check('★★ 캐시가 도는 연결에서 접으면 다시 쓴다고 알린다',
+    foldToolResults(캐시판, { 이득문턱: 0 }).캐시다시씀 === true, '');
+  check('★ 캐시가 안 도는 연결에서는 그 말을 안 한다',
+    foldToolResults(맨판, { 이득문턱: 0 }).캐시다시씀 === false, '');
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

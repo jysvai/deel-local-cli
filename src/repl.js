@@ -2120,6 +2120,23 @@ export async function chatLoop(opts = {}) {
             break;
           }
 
+          /*
+           * 게이트웨이가 이번 요청을 **다른 자리로** 보냈다.
+           *
+           * 프리픽스 캐시는 자리마다 따로라, 이 줄이 뜬 턴은 우리가 보낸 것이
+           * 한 글자도 안 달라졌어도 앞머리를 통째로 다시 쓴다. 청구서에서
+           * 「왜 이 한 줄만 열 배냐」 로 보이던 것이 이것이다.
+           *
+           * 값은 안 찍는다 — 사내 배포 이름이나 리전 주소일 수 있다. 우리가
+           * 쓸 것은 「바뀌었다」 하나뿐이다 (backend/adapter.js 의 간자리).
+           */
+          case '자리바뀜':
+            say(`  ${c.hyellow('⇄')} ${c.gray('게이트웨이가 이번 요청을 다른 자리로 보냈습니다 — 앞머리를 캐시에서 못 읽고 다시 씁니다.')}`);
+            if (session.level !== '쉬움') {
+              say(`     ${c.gray('한 대화를 한 자리에 붙여 두는 설정이 게이트웨이 쪽에 있습니다 (세션 고정).')}`);
+            }
+            break;
+
           case 'trimmed':
             say(`  ${c.gray(`(컨텍스트가 차서 오래된 대화 ${ev.dropped}개를 줄였습니다)`)}`);
             break;
@@ -2148,6 +2165,16 @@ export async function chatLoop(opts = {}) {
             clearThinking();
             say(`  ${c.cyan('◲')} ${c.gray(`오래된 도구 결과 ${ev.접은것}개를 접었습니다 — `)}`
               + `${c.white(ev.아낀토큰.toLocaleString())} ${c.gray('토큰을 비웠습니다. 대화는 그대로입니다.')}`);
+            /*
+             * 접기는 **값이 드는 일**이다 (agent/compact.js 의 손익분기).
+             *
+             * 이력 가운데 글을 바꿔치므로 그 자리 뒤가 전부 새 글이 되고,
+             * 캐시가 도는 연결에서는 싸게 읽히던 것을 비싸게 다시 쓴다.
+             * 여태 화면에는 이득만 나왔다 — 대가는 며칠 뒤 청구서에서 봤다.
+             */
+            if (ev.캐시다시씀) {
+              say(`     ${c.gray('이번 턴은 앞머리를 캐시에서 못 읽고 다시 씁니다 — 값과 지연이 한 번 튑니다.')}`);
+            }
             /*
              * 무엇을 접었는지 이름으로 보여 준다.
              *
@@ -2244,7 +2271,7 @@ export async function chatLoop(opts = {}) {
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }
             say(`  ${mark.warn} ${c.gray(`답이 ${c.white(ev.cap.toLocaleString())} 토큰에서 잘렸습니다`)}`
-              + `${ev.정한값 ? c.gray(' (직접 정하신 상한입니다)') : c.gray(' — 더 못 올리는 천장입니다')}`);
+              + `${ev.정한값 ? c.gray(' (직접 정하신 상한입니다)') : c.gray(' — 서버가 알려 준 값이 없어 선 기본 상한입니다')}`);
             say(`     ${c.gray('한 번에 더 길게 받으려면')} ${c.cyan('/out 32k')}${c.gray('. 파일을 쓰는 중이었다면 Append 로 나눠 쓰게 하세요.')}`);
             break;
 
@@ -2478,7 +2505,29 @@ export async function chatLoop(opts = {}) {
     if (tools) bits.push(`${옮긴말('scr.tools')} ${옮긴말('unit.calls', { n: tools })}`);
     const dIn = (session.usage.prompt || session.usage.in) - before.in;
     const dOut = session.usage.out - before.out;
+    const d읽음 = (session.usage.cacheRead ?? 0) - before.cacheRead;
+    const d씀 = (session.usage.cacheWrite ?? 0) - before.cacheWrite;
     if (dIn || dOut) bits.push(`↑${dIn.toLocaleString()} ↓${dOut.toLocaleString()}`);
+    /*
+     * ── ↑ 안을 가른다 ────────────────────────────────────────────────────
+     *
+     * `↑798,620` 한 줄만 보면 그게 다 정가로 나간 것처럼 읽힌다. 실제로는
+     * 그중 대부분이 **캐시에서 읽힌 것**이고, 우리가 재 본 자리에서 읽기는
+     * 쓰기의 1/12.5 였다. 즉 이 두 숫자는 자릿수가 다른 돈이다.
+     *
+     * 이걸 안 가르면 사람이 할 수 있는 판단이 없다. 가르면 바로 보인다 —
+     * 「새로 쓴 것」 이 크면 캐시가 끊긴 것이고(자리가 바뀌었거나 접었거나),
+     * 「캐시에서」 가 크면 대화가 길 뿐 값은 안 나가고 있는 것이다.
+     *
+     * 잰 값이 없으면 안 적는다. 캐시를 안 세어 주는 서버에서 0 을 적어 두면
+     * 「캐시가 하나도 안 걸렸다」 로 읽히는데, 그건 우리가 모르는 것이다.
+     */
+    if (d읽음 > 0 || d씀 > 0) {
+      const 몫 = [];
+      if (d읽음 > 0) 몫.push(`캐시에서 ${d읽음.toLocaleString()}`);
+      if (d씀 > 0) 몫.push(`새로 씀 ${d씀.toLocaleString()}`);
+      bits.push(`↑ 안: ${몫.join(' · ')}`);
+    }
     /*
      * 이번 턴에 나간 돈.
      *
