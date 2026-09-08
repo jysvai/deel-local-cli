@@ -336,8 +336,61 @@ const 눌러 = (b) => zlib.deflateRawSync(b);
 // ══ 5. .fig 한 장을 통째로 읽는다 ═══════════════════════════════════════
 trace('5-읽기');
 
+/*
+ * ── zstd 시험감은 안 눌러서 짓는다 ──────────────────────────────────────
+ *
+ * 여기가 Node 20 에서 이 파일을 통째로 죽이던 자리다. 시험감을
+ * `zlib.zstdCompressSync` 로 만들고 있었는데, 그 함수는 **22.15 부터** 있다.
+ * 이 프로그램의 바닥은 20 이라 거기서는 없는 함수를 부르고 그 자리에서 죽는다.
+ *
+ * 하필 죽는 자리가 「zstd 를 못 풀면 그렇게 말한다」 를 재는 검사다. 그
+ * 갈래는 제품 코드가 제대로 갈라 놨는데(zstd있나), **재려던 자리에 닿기도
+ * 전에** 검사가 죽어서 아무것도 못 쟀다. 20 두 판만 빨갛고 22·24 는 초록이라,
+ * 화면만 보면 「어쩌다 한 판이 이상하다」 로 읽힌다.
+ *
+ * 그래서 틀을 손으로 짠다. zstd 규격(RFC 8878 §3.1)에는 **안 눌린 덩이**
+ * (raw block)가 있다 — 매직 넉 자와 머리 뒤에 원문을 그대로 붙인 것도
+ * 규격에 맞는 zstd 파일이고, 푸는 쪽은 그것을 여느 zstd 와 똑같이 푼다.
+ * 누르는 함수가 없어도 만들 수 있다는 것이 요점이다.
+ *
+ *   매직        28 B5 2F FD
+ *   머리 한 칸  0xA0 — 한 덩이짜리(Single_Segment) · 길이는 넉 자로
+ *   길이 넉 자  원문 길이 (리틀엔디언)
+ *   덩이 머리   세 자 · 0비트=마지막인가 · 1~2비트=갈래(0=안 눌림) · 나머지=길이
+ *
+ * 덩이 하나에 128KB 를 넘길 수 없어서 그보다 크면 나눠 담는다.
+ */
+const zstd한덩이최대 = 128 * 1024;
+
+function zstd틀(글) {
+  const 몸 = Buffer.isBuffer(글) ? 글 : Buffer.from(글);
+  const 머리 = Buffer.alloc(9);
+  머리.writeUInt32LE(0xfd2fb528, 0);   // 매직
+  머리[4] = 0xa0;                       // 한 덩이짜리 · 길이 넉 자
+  머리.writeUInt32LE(몸.length, 5);     // 원문 길이
+
+  const 조각들 = [머리];
+  // 빈 글도 덩이가 하나는 있어야 한다 — 「마지막」 표시를 실을 자리가 없으면
+  // 규격에 안 맞는 틀이 된다.
+  let 자리 = 0;
+  do {
+    const 끊을것 = 몸.subarray(자리, 자리 + zstd한덩이최대);
+    자리 += 끊을것.length;
+    const 마지막 = 자리 >= 몸.length;
+    const 덩이머리 = Buffer.alloc(3);
+    // 0비트 마지막 · 1~2비트 갈래(0 = 안 눌림) · 3비트부터 길이
+    덩이머리.writeUIntLE((마지막 ? 1 : 0) | (끊을것.length << 3), 0, 3);
+    조각들.push(덩이머리, 끊을것);
+  } while (자리 < 몸.length);
+
+  return Buffer.concat(조각들);
+}
+
 function fig만들기(이름, { 눌림 = 'deflate', 메타 = true, 알맹이 = true } = {}) {
-  const 눌리기 = 눌림 === 'zstd' ? (b) => zlib.zstdCompressSync(b) : 눌러;
+  // zstd 가 있는 판에서는 진짜로 누른 것을 쓴다 — 요즘 파일이 그 모양이다.
+  // 없는 판에서는 안 눌린 덩이로 짠 틀을 쓴다. 어느 쪽이든 진짜 zstd 파일이다.
+  const zstd로 = (b) => (zstd있나() ? zlib.zstdCompressSync(b) : zstd틀(b));
+  const 눌리기 = 눌림 === 'zstd' ? zstd로 : 눌러;
   const 항목 = [];
   if (알맹이) {
     항목.push({ name: 'canvas.fig', data: 통짜기(눌리기(스키마몸), 눌리기(알맹이몸)) });
@@ -407,6 +460,38 @@ trace('6-zstd');
     const z = fig만들기('zstd.fig', { 눌림: 'zstd' });
     const r = readFig(z);
     check('★★ zstd 를 못 풀면 그렇게 말한다', r.ok === false && /zstd/.test(r.error), r.error);
+  }
+
+
+  /*
+   * 손으로 짠 틀이 **진짜 zstd 인가.**
+   *
+   * 이 틀은 zstd 가 없는 판에서 쓰는 시험감이다. 그런데 그 판에서는 진짜인지
+   * 확인할 방법이 없다 — 풀 함수가 없으니까. 그래서 **있는 판에서 대신 잰다.**
+   * 여기가 초록이면 없는 판이 쓰는 시험감도 규격에 맞는 것이다.
+   *
+   * 이걸 안 재면 「검사가 도는데 시험감이 가짜」 인 상태가 20 에서만 생기고,
+   * 그건 아무 화면에도 안 나타난다.
+   */
+  if (zstd있나()) {
+    const 재볼길이 = [0, 1, 100, 5000, 70000, 200000];
+    const 어긋난것 = [];
+    for (const n of 재볼길이) {
+      const 원문 = Buffer.alloc(n, 0x41);
+      try {
+        const 되돌린것 = zlib.zstdDecompressSync(zstd틀(원문));
+        if (!되돌린것.equals(원문)) 어긋난것.push(`${n}바이트 — 내용이 다름`);
+      } catch (e) {
+        어긋난것.push(`${n}바이트 — ${e.message}`);
+      }
+    }
+    check('★★ 손으로 짠 zstd 틀이 진짜 zstd 다 (없는 판이 쓸 시험감)',
+      어긋난것.length === 0, 어긋난것.join(' · ') || `${재볼길이.length}가지 길이`);
+    // 128KB 를 넘으면 덩이를 나눈다 — 나눈 것이 실제로 여러 덩이인지도 본다.
+    check('  128KB 를 넘으면 덩이를 나눈다',
+      zstd틀(Buffer.alloc(200000)).length > zstd틀(Buffer.alloc(100000)).length + 100000, '');
+  } else {
+    적어둘것.push('손으로 짠 zstd 틀이 진짜인지는 이 판에서 못 잽니다 — 풀 함수가 없습니다');
   }
 
   const 안내 = zstd안내();
