@@ -247,6 +247,38 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
     머리['x-deel-session-id'] === 'deel-20260907-093608', JSON.stringify(머리));
   check('★ 두 이름표의 값이 같다', 머리['x-litellm-session-id'] === 머리['x-deel-session-id']);
 
+  /*
+   * ── 이름표는 넷이고, 값은 하나다 ──────────────────────────────────────
+   *
+   * 「이 요청들은 한 대화다」 를 적는 표준 이름이 없어서 아는 이름을 다 단다.
+   * 그런데 값이 갈리면 그 순간 **한 대화가 게이트웨이 안에서 둘로 쪼개진다** —
+   * 어떤 기록기는 session 을 보고 어떤 기록기는 trace 를 본다. 이름이 여럿인
+   * 것은 도움이 되지만 값이 여럿인 것은 그냥 고장이다.
+   *
+   * 그리고 **개수를 못 박는다.** 하나 빠뜨려도 나머지가 걸리니 화면에는
+   * 아무 일도 안 일어나고, 그 판을 쓰는 게이트웨이에서만 조용히 안 묶인다.
+   */
+  const 세션표 = Object.entries(더할머리('openai', 'deel-20260907-093608'))
+    .filter(([k]) => /session|trace/i.test(k));
+  const 이름들 = 세션표.map(([k]) => k).sort();
+  const 값들 = new Set(세션표.map(([, v]) => v));
+
+  check('★★ 아는 이름표를 다 단다', 이름들.join(' ')
+    === 'x-deel-session-id x-litellm-session-id x-litellm-trace-id x-session-id',
+    이름들.join(' '));
+  check('★★ 이름표가 넷이라도 값은 하나다', 값들.size === 1,
+    [...값들].join(' · '));
+  // 규격이 다른 쪽에도 똑같이 실린다 — 한쪽만 되면 그건 되는 것이 아니다.
+  const 앤표 = Object.entries(더할머리('anthropic', 'deel-abc'))
+    .filter(([k]) => /session|trace/i.test(k));
+  check('★ Anthropic 규격에도 같은 이름표가 실린다',
+    앤표.length === 이름들.length, String(앤표.length));
+  // 이름이 없으면 하나도 안 단다 — 빈 이름표는 「대화가 없다」 가 아니라
+  // 「이름이 빈 대화」 로 기록돼서, 남의 대화와 한 칸에 뭉친다.
+  check('★★ 이름이 없으면 하나도 안 단다',
+    Object.keys(더할머리('openai', null)).every((k) => !/session|trace/i.test(k)), '');
+
+
   // 규격을 안 가린다. Anthropic 규격에서도 판 머리와 **같이** 나간다.
   const 앤 = 더할머리('anthropic', 'deel-abc');
   check('★ 규격을 안 가린다', 앤['x-litellm-session-id'] === 'deel-abc' && !!앤['anthropic-version'],
@@ -295,7 +327,7 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   check('★★ 그러면서 몸통은 그대로 깨끗하다',
     받은몸 && !('user' in 받은몸) && !('prompt_cache_key' in 받은몸),
     Object.keys(받은몸 ?? {}).sort().join(', '));
-  적어둘것.push('게이트웨이에 나가는 머리: x-litellm-session-id · x-deel-session-id');
+  적어둘것.push('게이트웨이에 나가는 세션 이름표 4개: ' + Object.keys(더할머리('openai','x')).filter((k) => /session|trace/i.test(k)).join(' · '));
 }
 
 // ── 6. 400 문구에서 배운다 ──────────────────────────────────────────────

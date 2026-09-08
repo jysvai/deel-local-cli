@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-7%2C855%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-7%2C861%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -339,7 +339,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.17.2  ⌂ inside
+ deel 1.17.3  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1258,7 +1258,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (7,855 checks; a few are TTY-dependent)
+npm test          Full suite (7,861 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1313,6 +1313,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| [1.17.3](docs/en/releases/1.17.md#1173) | No standard name for "same conversation" — it sends every name it knows |
 | [1.17.2](docs/en/releases/1.17.md#1172) | A second pair of eyes — an hwpx Hancom cannot open · two requests going out unnamed |
 | [1.17.1](docs/en/releases/1.17.md#1171) | Two things only green on one machine — writing into a deleted directory · raw NUL in the source |
 | **[1.17.0](docs/en/releases/1.17.md#1170)** | What blocked it from getting inside a company · trusted folders · mTLS · `doctor` · hooks · subagents · writing hwpx |
