@@ -2137,6 +2137,31 @@ export async function chatLoop(opts = {}) {
             }
             break;
 
+          /*
+           * 종합 모드가 **단계를 옮겼다** (agent/단계.js).
+           *
+           * 이 줄이 없으면 사람은 화면의 모드 표시가 턴 도중에 왜 바뀌었는지
+           * 모른다 — 자기가 누른 적도 없는데 `~디버그` 가 `~코드` 로 바뀌어
+           * 있으면 그건 알림이 아니라 버그처럼 보인다. 그래서 무엇을 보고
+           * 옮겼는지(`왜`) 를 같이 적는다.
+           *
+           * 도구가 늘어난 경우는 한 줄 더 붙인다. 규격이 도구 목록을 앞머리
+           * 맨 앞에 렌더하므로, 도구가 하나 늘면 그 턴은 앞머리를 캐시에서 못
+           * 읽고 다시 쓴다. 접기(folded)에서 그 대가를 적기 시작한 것과 같은
+           * 이유다 — 이득만 보이고 값은 며칠 뒤 청구서에서 보는 일이 없게.
+           */
+          case '단계옮김': {
+            const 왜 = 옮긴말(ev.왜 === '바꿈' ? 'ev.phaseWhyEdit' : 'ev.phaseWhyTodo');
+            say(`  ${c.hcyan('→')} ${c.gray(옮긴말('ev.phaseMove', { 왜, 옛: 보일이름(ev.옛), 새: 보일이름(ev.새) }))}`);
+            if ((ev.늘어난도구?.length ?? 0) > 0 && session.level !== '쉬움') {
+              const 보일수 = Math.min(5, ev.늘어난도구.length);
+              const 이름들 = ev.늘어난도구.slice(0, 보일수).join(' · ')
+                + (ev.늘어난도구.length > 보일수 ? ` +${ev.늘어난도구.length - 보일수}` : '');
+              say(`     ${c.gray(옮긴말('ev.phaseTools', { 도구: 이름들 }))}`);
+            }
+            break;
+          }
+
           case 'trimmed':
             say(`  ${c.gray(`(컨텍스트가 차서 오래된 대화 ${ev.dropped}개를 줄였습니다)`)}`);
             break;

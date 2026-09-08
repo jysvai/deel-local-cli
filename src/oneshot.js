@@ -38,7 +38,7 @@ import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { 잠잠기본 } from './backend/http.js';
 import { 인증서설정 } from './backend/clientcert.js';
 import { route } from './agent/route.js';
-import { get as getWork } from './agent/modes.js';
+import { get as getWork, 보일이름 } from './agent/modes.js';
 import { 모두끝내기 as 일감모두끝내기, 일감인자 } from './tools/jobs.js';
 import { 첫이름 } from './tools/label.js';
 
@@ -610,6 +610,21 @@ export async function runOnce(opts = {}) {
         // 서버가 안 받는 칸이 있어 전선 카드를 고쳤다 (backend/wire.js).
         case 'wire':
           곁(`  ${c.cyan('⚙')} ${c.gray(옮긴말('loop.wire', { 무엇: ev.무엇 }))}`);
+          break;
+
+        /*
+         * 종합 모드가 턴 도중에 단계를 옮겼다 (agent/단계.js).
+         *
+         * 한 방 실행에서 특히 남겨야 하는 줄이다. `deel -p` 는 잡·CI 에서 돌고
+         * 그 기록만 나중에 남는다 — 「계획만 내고 끝날 줄 알았는데 파일이
+         * 바뀌어 있다」 를 되짚을 자리가 여기 말고는 없다.
+         */
+        case '단계옮김':
+          곁(`  ${c.hcyan('→')} ${c.gray(옮긴말('ev.phaseMove', {
+            왜: 옮긴말(ev.왜 === '바꿈' ? 'ev.phaseWhyEdit' : 'ev.phaseWhyTodo'),
+            옛: 보일이름(ev.옛),
+            새: 보일이름(ev.새),
+          }))}`);
           break;
 
         case 'folded':

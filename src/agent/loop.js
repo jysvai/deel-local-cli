@@ -20,6 +20,9 @@ import { allowTemporarily, isOffline } from '../safety/network.js';
 import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴까 } from '../safety/secrets.js';
 import { 바깥인가 } from '../safety/runmode.js';
 import { get as workMode } from './modes.js';
+// 종합 모드에서 단계가 일을 따라간다 (agent/단계.js).
+import { 다음단계 } from './단계.js';
+import { 묻지말라했나, 손대라했나 } from './route.js';
 import { 지시말 } from '../i18n/index.js';
 import { 빠진것, 빠졌다는말 } from './asks.js';
 import { 환경속열쇠들 } from '../config.js';
@@ -102,14 +105,31 @@ function thinkFor(conn, level) {
   return level;
 }
 
-// 아무것도 안 바꾸는 도구들. 이것들만 동시에 돌린다.
-//
-// 왜 이것만인가:
-//   Read 세 개를 동시에 하는 것은 안전하다 — 서로 안 건드린다.
-//   Write·Edit 을 동시에 돌리면 같은 파일을 두 갈래로 고칠 수 있고,
-//   되돌리기 스냅샷 순서도 뒤엉킨다. Bash 는 무슨 짓을 할지 알 수 없다.
-//   그래서 '읽기만 하는 것' 이라고 확실한 도구만 묶는다.
-const 읽기전용 = new Set(['Read', 'Glob', 'Grep', 'Skill', 'WebFetch']);
+/*
+ * 아무것도 안 바꾸는 도구들. **이것들만** 동시에 돌린다.
+ *
+ * 왜 이것만인가:
+ *   Read 세 개를 동시에 하는 것은 안전하다 — 서로 안 건드린다.
+ *   Write·Edit 을 동시에 돌리면 같은 파일을 두 갈래로 고칠 수 있고,
+ *   되돌리기 스냅샷 순서도 뒤엉킨다. Bash 는 무슨 짓을 할지 알 수 없다.
+ *   그래서 '읽기만 하는 것' 이라고 확실한 도구만 묶는다.
+ *
+ * ── 그런데 이 목록이 modes.js 의 읽기 갈래보다 **짧았다** ───────────────
+ *
+ * modes.js 는 읽기만 하는 도구를 열 개로 세는데(Read·Outline·Glob·Grep·Def·
+ * Refs·WebFetch·Skill·Recall·Ask), 여기는 다섯 개만 알고 있었다. 나머지는
+ * 「안전한지 모르겠다」 가 아니라 그냥 **빠져 있었다.**
+ *
+ * 값이 큰 자리다. 시킴말이 남의 코드를 볼 때 **제일 먼저 부르라고 적어 둔
+ * 도구가 Outline** 이고(modes.js 의 읽는법), 그게 여태 한 개씩 돌았다.
+ * Def·Refs 는 언어 서버 왕복이라 기다리는 시간이 곧 사람이 기다리는 시간인데
+ * 그것도 한 줄로 섰다. 파일 여섯 개의 모양을 보는 데 여섯 번을 왕복했다.
+ *
+ * Ask 만 뺀다. 그건 사람에게 묻는 도구다 — 셋을 한꺼번에 물으면 화면에
+ * 물음 셋이 겹쳐 뜨고, 어느 답이 어느 물음의 것인지 사람이 못 가른다.
+ * 읽기 전용인 것은 맞지만 **사람의 차례를 쓰는 도구**라 줄을 세워야 한다.
+ */
+const 읽기전용 = new Set(['Read', 'Outline', 'Glob', 'Grep', 'Def', 'Refs', 'Recall', 'Skill', 'WebFetch']);
 
 /*
  * 잘린 답을 「생각을 줄여」 다시 부를 때 쓰는 두 값.
@@ -414,7 +434,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 여전히 설계 모드라고 떠 있는 채로 파일이 바뀐다. task.js 의 하위모드() 가
    * 모드 쪽에서 한 겹 막고, 여기가 도구 쪽에서 한 겹 더 막는다.
    */
-  const tools = toolSchemas(session.도구제한 ?? null, {
+  let tools = toolSchemas(session.도구제한 ?? null, {
     hasSkills: (session.skills?.length ?? 0) > 0,
     web: session.web !== false && !isOffline(),   // 오프라인이면 웹 도구는 아예 안 보여 준다
     work: session.effectiveWork(),                // 작업 모드가 쓰는 것만 (modes.js)
@@ -440,17 +460,17 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 이름은 그 표에 없어서 undefined 를 읽다 죽는다. MCP 는 이름 목록이 아니라
    * ctx.mcp 로 따로 넘어가므로 하위도 그 길로 똑같이 받는다.
    */
-  const 내도구 = tools.map((t) => t.function.name).filter((n) => !n.startsWith('mcp__'));
+  let 내도구 = tools.map((t) => t.function.name).filter((n) => !n.startsWith('mcp__'));
   /*
    * 깊이 상한. 부모(0) → 하위(1) → 하위의 하위(2) 까지다.
    *
    * 상한에 닿으면 목록에서 Task 를 뺀다. "더 쪼개지 마라" 고 부탁하지 않는다 —
    * 모델은 부탁을 잊고, 잊으면 하위가 하위를 끝없이 낳는다.
    */
-  const 자식도구 = 깊이 + 1 >= 최대깊이 ? 내도구.filter((n) => n !== 'Task') : 내도구;
+  let 자식도구 = 깊이 + 1 >= 최대깊이 ? 내도구.filter((n) => n !== 'Task') : 내도구;
   // 모드마다 생각의 배분과 걸음 수가 다르다. 사용자가 따로 정했으면 그걸 존중한다.
-  const 모드 = workMode(session.effectiveWork());
-  const effort = session.effortSet ? session.effort : (모드.effort ?? session.effort);
+  let 모드 = workMode(session.effectiveWork());
+  let effort = session.effortSet ? session.effort : (모드.effort ?? session.effort);
   /*
    * ── 강도는 **천장**이고, 이번 턴 값은 시킨 말이 정한다 (agent/effort.js) ──
    *
@@ -472,8 +492,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 그래서 파일 열 개를 읽고 경합 조건을 짚어야 하는 일까지 low 로 돌았다 —
    * 생각 블록이 0자로 나가고, 답이 그만큼 얕았다.
    */
-  const 천장 = session.thinkSet ? session.think : 천장고르기(모드.think, session.think, userText);
-  const think = 자동강도(userText, 천장, {
+  let 천장 = session.thinkSet ? session.think : 천장고르기(모드.think, session.think, userText);
+  let think = 자동강도(userText, 천장, {
     대화크기: session.messages.length,
     켜짐: session.autoThink !== false,
   });
@@ -492,7 +512,92 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 없다 — 8k 모델에는 너무 크고, 655k 모델은 여유가 96% 남았는데도 만들다
    * 만 채로 끊겼다. 사람이 직접 준 값이 있으면 그것이 먼저다.
    */
-  const maxSteps = session.stepsSet ? session.maxSteps : 걸음수(모드.id, conn.ctx);
+  let maxSteps = session.stepsSet ? session.maxSteps : 걸음수(모드.id, conn.ctx);
+  /*
+   * ── 단계가 일을 따라간다 (agent/단계.js) ────────────────────────────────
+   *
+   * 종합 모드는 한마디를 보고 단계를 고르는데, 그 고르기가 **턴이 시작할 때 딱
+   * 한 번** 돌았다. 마흔 걸음짜리 턴에서 일의 성격은 몇 번씩 바뀌는데, 시킴말은
+   * 첫 걸음의 것 그대로였다 — 원인을 다 찾고 고치는 중인데도 화면과 시킴말은
+   * 끝까지 「디버그」 였다.
+   *
+   * 여기서 세는 것은 **이미 일어난 일**이다. 모델에게 「지금 무슨 단계냐」 고
+   * 한 번 더 묻지 않는다. 그러면 걸음마다 왕복이 하나 늘고, 그 판단이 더
+   * 나을 까닭도 없다.
+   */
+  const 이번턴본것 = { 할일: false, 바꿈: false };
+  const 묻지말라 = 묻지말라했나(userText);
+  // 계획에서 넘어갈 때만 본다. 「묻지 마라」 는 **어떻게**의 말이고,
+  // 「고쳐라」 는 **무엇을**의 말이다. 범위를 정하는 것은 뒤엣것이다(단계.js).
+  const 손대라 = 손대라했나(userText);
+  const 종합인가 = session.work === 'auto';
+
+  /**
+   * 단계를 옮겨야 하면 옮기고, 옮겼으면 알린다.
+   *
+   * 시킴말은 저절로 따라온다 — session.wire() 가 effectiveWork() 를 매번 보고
+   * 짓기 때문이다(agent/session.js). 여기서 다시 지어야 하는 것은 **도구와
+   * 걸음 수와 생각의 배분**이다.
+   *
+   * @returns {object|null} 알릴 것이 있으면 이벤트, 없으면 null
+   */
+  const 단계옮기기 = () => {
+    const 갈곳 = 다음단계({ 지금: 모드.id, 종합인가, 본것: 이번턴본것, 묻지말라, 손대라 });
+    if (!갈곳) return null;
+    const 옛모드 = 모드.id;
+    session.routed = 갈곳;
+    모드 = workMode(갈곳);
+
+    /*
+     * 도구가 늘면 **앞머리가 바뀐다.** 규격이 tools 를 맨 앞에 렌더하므로,
+     * 도구 하나가 늘어도 그 턴의 캐시는 거기서 끊긴다. 값이 드는 일이라
+     * 조용히 하지 않는다 — 화면에 적는다.
+     */
+    const 옛도구 = new Set(내도구);
+    tools = toolSchemas(session.도구제한 ?? null, {
+      hasSkills: (session.skills?.length ?? 0) > 0,
+      web: session.web !== false && !isOffline(),
+      work: session.effectiveWork(),
+      mcp: ctx.mcp ?? null,
+      에이전트들: 깊이 + 1 >= 최대깊이 ? null : (ctx.에이전트들 ?? null),
+      lsp: session.lsp === true,
+      ctx: conn.ctx ?? null,
+      vision: conn.vision === true,
+    });
+    내도구 = tools.map((t) => t.function.name).filter((n) => !n.startsWith('mcp__'));
+    자식도구 = 깊이 + 1 >= 최대깊이 ? 내도구.filter((n) => n !== 'Task') : 내도구;
+    const 늘어난것 = 내도구.filter((n) => !옛도구.has(n));
+
+    // 생각의 배분도 그 단계 것으로. 사람이 직접 정했으면 그것이 먼저다.
+    if (!session.effortSet) effort = 모드.effort ?? session.effort;
+    if (!session.thinkSet) {
+      천장 = 천장고르기(모드.think, session.think, userText);
+      think = 자동강도(userText, 천장, {
+        대화크기: session.messages.length,
+        켜짐: session.autoThink !== false,
+      });
+    }
+    /*
+     * 걸음 수는 **늘리기만** 한다.
+     *
+     * 계획 모드의 상한은 코드 모드보다 작다. 넘어가면서 그 작은 값을 그대로
+     * 들고 가면 만들다 말고 끊긴다. 반대로 줄이면 이미 지난 걸음 수보다 작아져
+     * 그 자리에서 턴이 끝나 버릴 수도 있다 — 어느 쪽으로도 줄일 이유가 없다.
+     */
+    if (!session.stepsSet) maxSteps = Math.max(maxSteps, 걸음수(모드.id, conn.ctx));
+
+    return {
+      type: '단계옮김',
+      옛: 옛모드,
+      새: 갈곳,
+      // 화면 글이 아니라 **까닭 이름**을 낸다. 옮겨 적는 것은 화면의 몫이다
+      // (i18n/*.js 의 ev.phaseWhy*). 여기서 한국어를 내면 영어 화면에 섞인다.
+      왜: 이번턴본것.바꿈 ? '바꿈' : '할일',
+      늘어난도구: 늘어난것,
+      걸음: maxSteps,
+    };
+  };
+
   const attempted = new Set();   // 같은 변경성 명령을 두 번 실행하지 않기 위한 기록
   let steps = 0;
   let lastToolFailed = false;    // 직전 단계에서 도구가 오류를 냈나 → 다음 판단은 세게
@@ -687,6 +792,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
 
   while (steps < maxSteps) {
     steps++;
+
+    /*
+     * 단계를 **부르기 전에** 다시 본다 (위 단계옮기기).
+     *
+     * 부른 뒤에 옮기면 이번 걸음은 옛 시킴말로 나가고, 옮긴 보람이 한 걸음
+     * 늦는다. 마흔 걸음짜리 턴에서 그 한 걸음이 파일 내용 한 벌씩이다.
+     */
+    const 옮김 = 단계옮기기();
+    if (옮김) yield 옮김;
 
     // 부르기 **전에** 자리를 본다. 왜 여기인지는 자리만들기() 머리말에.
     yield* 자리만들기();
@@ -1817,6 +1931,18 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         if (call.name === 'Read' && result.content) session.noteRead(call.args.file_path, result.content);
         // 실제로 파일이 바뀐 것만 적는다. 턴 끝에 이 목록을 디스크와 견준다.
         if (result.changed) 손댄파일.add(result.changed);
+        /*
+         * 단계도 이걸 본다 (agent/단계.js).
+         *
+         * 「바꾸기 시작했다」 는 조사가 끝났다는 뜻이다. 손댄파일 로 재도
+         * 되지만 그 집합은 하위 작업이 바꾼 것까지 담으므로, 이 턴에서
+         * **내가** 바꿨나를 따로 센다. 하위가 바꿨다고 부모의 단계가
+         * 넘어가면, 부모는 아직 조사 중인데 시킴말만 바뀐다.
+         */
+        if (result.changed || result.여럿?.some((f) => f.ok) || result.바뀐것들?.length) {
+          이번턴본것.바꿈 = true;
+        }
+        if (call.name === 'TodoWrite' && !result.error) 이번턴본것.할일 = true;
         // 한 번에 여러 개를 쓴 경우. changed 하나만 보면 나머지가 조용히 빠져서,
         // 턴 끝에 "만들어졌다" 고 확인해 주는 파일이 넷 중 하나만 나온다.
         for (const f of result.여럿 ?? []) if (f.ok && f.path) 손댄파일.add(f.path);

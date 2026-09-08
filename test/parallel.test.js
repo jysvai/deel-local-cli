@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { 묶기 } from '../src/agent/loop.js';
+import { 읽기도구 } from '../src/agent/modes.js';
 import { run } from '../src/agent/loop.js';
 import { Session } from '../src/agent/session.js';
 import { makeScope } from '../src/safety/guard.js';
@@ -41,6 +42,38 @@ check('앞뒤로 갈라 묶음', g.length === 3
   JSON.stringify(g.map((x) => x.calls.map((y) => y.name))));
 
 check('빈 목록은 빈 결과', 묶기([]).length === 0);
+
+/*
+ * ── 두 목록이 어긋나면 조용히 느려진다 ─────────────────────────────────
+ *
+ * 동시에 돌릴 도구 목록(loop.js)과 읽기 갈래(modes.js)는 서로 다른 파일에
+ * 손으로 적혀 있었고, 실제로 어긋나 있었다 — 읽기 갈래는 열 개인데 동시에
+ * 돌린 것은 다섯 개뿐이었다. Outline·Def·Refs·Recall 이 몇 달 동안 한 개씩
+ * 줄을 서서 돌았다.
+ *
+ * 이런 어긋남은 **오류를 안 낸다.** 화면은 멀쩡하고 답도 맞다. 그냥 느리다.
+ * 그래서 사람이 알아챌 길이 없고, 검사만이 잡을 수 있다.
+ *
+ * Ask 는 일부러 뺀다. 읽기 전용인 것은 맞지만 사람에게 묻는 도구라 —
+ * 셋을 한꺼번에 물으면 어느 답이 어느 물음의 것인지 사람이 못 가른다.
+ */
+for (const 이름 of 읽기도구) {
+  const 한덩어리 = 묶기([c(이름), c(이름)]);
+  if (이름 === 'Ask') {
+    check('★★ Ask 는 사람에게 묻는 도구라 줄을 세운다',
+      한덩어리.length === 2 && !한덩어리[0].parallel, JSON.stringify(한덩어리.map((x) => x.parallel)));
+  } else {
+    check(`★★ ${이름} 은 읽기 갈래이니 동시에 돈다`,
+      한덩어리.length === 1 && 한덩어리[0].parallel === true,
+      JSON.stringify(한덩어리.map((x) => x.parallel)));
+  }
+}
+
+// 반대 방향. 읽기 갈래에 없는 것이 동시에 도는 목록에 들어가면 그건 더 위험하다.
+for (const 이름 of ['Write', 'Edit', 'Append', 'Bash', 'Task', 'TodoWrite', 'Remember', 'Verify']) {
+  check(`★★★ ${이름} 은 절대 동시에 안 돈다`,
+    묶기([c(이름), c(이름)]).every((x) => !x.parallel), '');
+}
 
 // ── 2. 진짜로 동시에 도는가 ─────────────────────────────────────────────
 const root = mkdtempSync(join(tmpdir(), 'deel-par-'));

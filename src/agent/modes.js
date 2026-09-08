@@ -18,7 +18,10 @@
 // Ask 는 **모든 모드**에 있다(읽기 갈래에 둔 이유가 그것이다). 갈림길은
 // 어느 모드에서나 생기고, 물어볼 길이 없으면 모델은 글로 "알려주세요" 하고
 // 턴을 끝내 버린다 — 그러면 여태 조사한 것이 통째로 버려진다.
-const 읽기 = ['Read', 'Outline', 'Glob', 'Grep', 'Def', 'Refs', 'WebFetch', 'Skill', 'Recall', 'Ask'];
+// 내보낸다 — loop.js 의 동시에 돌릴 목록이 이것보다 짧아지면 검사가 잡게(test/parallel.test.js).
+// 두 곳에 같은 목록을 따로 적어 둔 탓에 다섯 개가 몇 달 동안 줄을 서서 돌았다.
+export const 읽기도구 = ['Read', 'Outline', 'Glob', 'Grep', 'Def', 'Refs', 'WebFetch', 'Skill', 'Recall', 'Ask'];
+const 읽기 = 읽기도구;
 // 계획을 적는 도구. 파일을 안 건드리므로 읽기 전용 모드에서도 준다.
 //
 // Remember 도 여기 있다. 기억은 사용자의 소스를 안 건드리고 .deel/memory.md
