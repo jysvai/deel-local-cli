@@ -34,7 +34,7 @@
  */
 import { load, activeProfile, resolveKey } from '../config.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
-import { 잠잠기본, 무소식기본 } from '../backend/http.js';
+import { 잠잠기본, 무소식기본, 연결기본 } from '../backend/http.js';
 import { 인증서설정 } from '../backend/clientcert.js';
 
 // 컨텍스트를 못 알아냈을 때 쓰는 값. repl.js 와 같은 값을 봐야 한다.
@@ -61,6 +61,8 @@ export function 연결만들기(prof, { ctx = null, maxTokens = null } = {}) {
     잠잠: prof.잠잠 ?? prof.streamIdleMs ?? 잠잠기본,
     // 바이트는 오는데 내용이 안 올 때의 전체 상한 (backend/http.js 의 무소식기본).
     무소식: prof.무소식 ?? prof.streamNoNewsMs ?? 무소식기본,
+    // 소켓을 **얻는 데까지** 줄 시간. 못 붙은 것은 다시 부른다 (backend/retry.js).
+    연결: prof.연결 ?? prof.connectMs ?? 연결기본,
     인증서: 인증서설정(prof),
     tools: prof.tools ?? false,
     json: prof.json ?? false,

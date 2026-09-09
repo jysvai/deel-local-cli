@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  req, headersFor, serverMessage, Aborted, 잠잠기본, 초로,
+  req, headersFor, serverMessage, Aborted, 잠잠기본, 연결기본, 초로,
   무소식기본, 무소식알림기본, 소식없음오류,
 } from './http.js';
 import { 할당량기억, 미리기다릴까, 마지막할당량, 할당량자리 } from './quota.js';
@@ -1086,6 +1086,7 @@ export async function chat(conn, opts) {
       headers: await 머리말짓기(conn, opts),
       body,
       timeout: opts.timeout ?? 300000,
+      연결: conn.연결 ?? 연결기본,
       signal: opts.signal ?? null,
     });
     // 서버가 남았다고 말해 준 할당량을 적어 둔다 (backend/quota.js).
@@ -1192,6 +1193,8 @@ export async function* chatStream(conn, opts) {
        * 모델의 답이 5분에서 잘리고, 멎어 버린 게이트웨이는 5분을 꽉 채운다.
        */
       timeout: opts.timeout ?? 300000,
+      // 붙는 데까지만 재는 시계. 못 붙은 것은 다시 부른다 (backend/retry.js).
+      연결: conn.연결 ?? 연결기본,
       잠잠: conn.잠잠 ?? 잠잠기본,
       stream: true,
       signal: opts.signal ?? null,

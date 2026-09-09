@@ -79,11 +79,11 @@ export class Aborted extends Error {
  * 부르는 쪽이 사람 말로 된 한 줄을 그대로 보여 주면 되게.
  * 자물쇠(NetBlocked)와 사용자 중단(Aborted)만 던진다. 둘은 통신 실패가 아니다.
  */
-export async function req(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false, signal = null, 잠잠 = 0 } = {}) {
+export async function req(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false, signal = null, 잠잠 = 0, 연결 = 연결기본 } = {}) {
   const started = Date.now();
   try {
     const r = await 원시요청(url, {
-      method, headers, timeout, stream, signal, 잠잠,
+      method, headers, timeout, stream, signal, 잠잠, 연결,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     // 프록시가 407 로 막은 것은 통신 실패도 서버 답도 아니다. 사람 말 한 줄로 준다.
@@ -117,7 +117,7 @@ const 되돌림상태 = new Set([301, 302, 303, 307, 308]);
  *          아니면       { ok, status, headers, bytes, text, json, ms }
  *          프록시가 407 로 막으면 { ok:false, status:407, error } (몸은 없다)
  */
-export async function 원시요청(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false, signal = null, 되돌림 = null, 최대홉 = 5, 잠잠 = 0 } = {}) {
+export async function 원시요청(url, { method = 'GET', headers = {}, body, timeout = 20000, stream = false, signal = null, 되돌림 = null, 최대홉 = 5, 잠잠 = 0, 연결 = 연결기본 } = {}) {
   const started = Date.now();
   let 지금 = String(url);
   let 방법 = method;
@@ -135,7 +135,7 @@ export async function 원시요청(url, { method = 'GET', headers = {}, body, ti
      */
     const 인증서 = 인증서찾기(지금);
     const r = (프록시 || 인증서)
-      ? await 노드로(지금, { method: 방법, headers: 머리, body: 몸, timeout, stream, signal, 프록시, 인증서, 잠잠 })
+      ? await 노드로(지금, { method: 방법, headers: 머리, body: 몸, timeout, stream, signal, 프록시, 인증서, 잠잠, 연결 })
       : await 직접(지금, { method: 방법, headers: 머리, body: 몸, timeout, stream, signal, 잠잠 });
 
     const loc = 되돌림상태.has(r.status) ? r.headers?.get?.('location') : null;
@@ -276,6 +276,36 @@ export const 무소식알림기본 = 90000;
  */
 export const 무소식기본 = 600000;
 
+/**
+ * 소켓을 **얻는 데까지** 줄 시간.
+ *
+ * 위의 두 시계는 붙은 뒤를 잰다. 이건 붙기 전을 잰다 — 셋이 재는 자리가 다르다.
+ *
+ * ── 왜 따로 있어야 하나 ────────────────────────────────────────────────
+ *
+ * 곧장 가는 길(fetch)에는 원래 이 시계가 있다. undici 가 10초를 세고
+ * `UND_ERR_CONNECT_TIMEOUT` 을 준다. 그런데 **프록시·인증서를 쓰는 길**
+ * (노드로)에는 없었다. 거기서는 머리말 시계 하나가 「붙는 시간」 과 「답을
+ * 기다리는 시간」 을 같이 재고 있었고, 그 시계는 5분이다.
+ *
+ * 그래서 같은 게이트웨이인데 프록시를 켠 사람만, 망이 잠깐 끊긴 자리에서
+ * **5분을 다 쓰고 나서** 턴이 죽었다. 곧장 가는 사람은 10초 만에 알고
+ * 다시 붙는데 말이다. 설명하기 제일 어려운 종류의 차이다.
+ *
+ * 그래서 10초로 맞춘다. 두 길이 같은 자리에서 같은 말을 하게 하는 것이
+ * 이 상수가 있는 이유고, 그러면 다시 부르는 규칙(backend/retry.js)도
+ * 두 길에 똑같이 걸린다.
+ */
+export const 연결기본 = 10000;
+
+/** 붙지도 못한 것. 다시 불러도 되는 자리라 코드를 따로 준다 (backend/retry.js). */
+export function 못붙음오류(연결) {
+  return Object.assign(
+    new Error(`${초로(연결)}초 안에 연결하지 못했습니다`),
+    { name: 'ConnectTimeoutError', code: 'CONNECT_TIMEOUT', 연결 },
+  );
+}
+
 export function 소식없음오류(무소식) {
   return Object.assign(
     new Error(`${초로(무소식)}초 동안 살아 있다는 신호만 오고 내용이 안 왔습니다`),
@@ -397,7 +427,7 @@ async function 직접흘려(url, { method, headers, body, timeout, signal, 잠�
  * 둘 다 「fetch 로는 못 하는 것」 이라 길이 같다. 여기가 프록시 전용이던 시절
  * 이름이 프록시로 였는데, 인증서를 실으면서 아닌 자리가 생겼다.
  */
-function 노드로(url, { method, headers, body, timeout, stream, signal, 프록시 = null, 인증서 = null, 잠잠 = 0 }) {
+function 노드로(url, { method, headers, body, timeout, stream, signal, 프록시 = null, 인증서 = null, 잠잠 = 0, 연결 = 연결기본 }) {
   const 대상 = new URL(url);
   const 포트 = Number(대상.port || (대상.protocol === 'https:' ? 443 : 80));
   /*
@@ -412,17 +442,32 @@ function 노드로(url, { method, headers, body, timeout, stream, signal, 프록
   const sig = 손.signal;
   let 멎음 = null;
   let 시간초과 = false;
+  let 못붙음 = false;
   let 머리시계 = setTimeout(() => { 시간초과 = true; 손.abort(); }, timeout);
   const 시계끄기 = () => { if (머리시계) { clearTimeout(머리시계); 머리시계 = null; } };
+  /*
+   * ── 붙는 데까지만 재는 시계 ──────────────────────────────────────────
+   *
+   * 곧장 가는 길에는 undici 가 이걸 갖고 있다(10초). 여기엔 없어서, 프록시를
+   * 켠 사람만 망이 끊긴 자리에서 **머리말 시계 5분을 통째로** 쓰고 죽었다.
+   * 두 길이 같은 자리에서 같은 말을 하게 맞춘다 (연결기본).
+   *
+   * 소켓을 얻는 순간 끈다. 그 뒤로 오래 걸리는 것은 「못 붙은 것」 이 아니라
+   * 「생각하는 중」 이고, 그건 머리말 시계와 잠잠 시계가 맡는 자리다.
+   */
+  let 연결시계 = 연결 > 0 ? setTimeout(() => { 못붙음 = true; 손.abort(); }, 연결) : null;
+  const 붙었다 = () => { if (연결시계) { clearTimeout(연결시계); 연결시계 = null; } };
   const 사람이 = () => 손.abort();
   if (signal?.aborted) 손.abort();
   else signal?.addEventListener('abort', 사람이, { once: true });
-  // 끊긴 까닭은 셋을 가른다 — 사람이 끊은 것 · 시계가 끊은 것 · 흐름이 멎은 것.
-  // 화면에서 셋이 다른 말이고, 다시 불러도 되는지도 셋이 다르다.
+  // 끊긴 까닭을 가른다 — 사람이 끊은 것 · 못 붙은 것 · 시계가 끊은 것 · 흐름이 멎은 것.
+  // 화면에서 넷이 다른 말이고, 다시 불러도 되는지도 넷이 다르다.
   const 왜끊겼나 = () => (signal?.aborted ? new Aborted()
-    : 멎음 ?? (시간초과
-      ? Object.assign(new Error('시간 초과 — 응답이 없습니다'), { name: 'TimeoutError', code: 'TimeoutError' })
-      : new Aborted()));
+    : 멎음 ?? (못붙음
+      ? 못붙음오류(연결)
+      : 시간초과
+        ? Object.assign(new Error('시간 초과 — 응답이 없습니다'), { name: 'TimeoutError', code: 'TimeoutError' })
+        : new Aborted()));
 
   return new Promise((resolve, reject) => {
     let rq = null;
@@ -430,6 +475,7 @@ function 노드로(url, { method, headers, body, timeout, stream, signal, 프록
     let 끝났나 = false;
     const 정리 = () => {
       시계끄기();
+      붙었다();
       sig.removeEventListener('abort', 끊기);
       signal?.removeEventListener('abort', 사람이);
     };
@@ -535,6 +581,19 @@ function 노드로(url, { method, headers, body, timeout, stream, signal, 프록
           }, 받기);
         }
         if (sig.aborted) return 끊기();
+        /*
+         * 소켓을 얻는 순간 연결 시계는 할 일이 끝났다.
+         *
+         * 터널로 받은 소켓은 이미 붙어 있다(createConnection) — `connecting` 이
+         * 거짓이라 그 자리에서 바로 꺼진다. 새로 붙는 소켓은 TCP 면 `connect`,
+         * TLS 면 `secureConnect` 에서 꺼진다. 둘 다 걸어 두면 어느 길로 와도
+         * 한 번은 꺼진다.
+         */
+        rq.once('socket', (sock) => {
+          if (!sock || sock.connecting !== true) return 붙었다();
+          sock.once('connect', 붙었다);
+          sock.once('secureConnect', 붙었다);
+        });
         rq.once('error', (e) => 실패(e));
         if (body !== undefined) rq.write(body);
         rq.end();
@@ -630,6 +689,15 @@ function normalizeError(err) {
     if (err?.code === 'CERT_READ') return m;
     // 흐름이 멎어서 우리가 끊은 것. 서버가 끊은 것과 다른 말이어야 한다.
     if (err?.code === 'STALL') return `${m} — 답을 통째로 모았다가 주는 게이트웨이면 프로필의 잠잠 을 올려 보세요`;
+    /*
+     * 아직 **붙지도 못한** 것. 아래의 「응답이 없습니다」 와 반드시 갈라야 한다 —
+     * 저건 서버가 받아 놓고 답을 안 한 것이고, 이건 서버까지 가지도 못한 것이다.
+     * 사람이 볼 자리가 다르고(망·프록시 대 게이트웨이), 다시 불러도 되는지도
+     * 다르다 (backend/retry.js 의 못붙은코드).
+     */
+    if (코드 === 'CONNECT_TIMEOUT' || 코드 === 'UND_ERR_CONNECT_TIMEOUT') {
+      return '연결하지 못했습니다 — 망이나 프록시를 확인하세요 (잠시 뒤 다시 해 봅니다)';
+    }
     if (err?.name === 'TimeoutError' || 코드 === 'TimeoutError' || /timed? ?out/i.test(m)) return '시간 초과 — 응답이 없습니다';
     if (/ENOTFOUND|EAI_AGAIN/.test(코드) || /ENOTFOUND|getaddrinfo/i.test(m)) return '주소를 찾을 수 없습니다 (DNS)';
     if (코드 === 'ECONNREFUSED' || /ECONNREFUSED/i.test(m)) return '연결이 거부되었습니다 (서버가 꺼져 있거나 포트가 다릅니다)';

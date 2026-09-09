@@ -419,6 +419,33 @@ and you get to decide whether to keep waiting.
 What counts as news is not only text on screen. Tool-call arguments arrive split into
 fragments and produce no screen output at all, so those count as progress too.
 
+### When it never connected at all
+
+The two clocks above measure what happens **after** the socket exists. This one
+measures getting the socket.
+
+```json
+{ "profiles": [{ "id": "corp", "connectMs": 10000 }] }
+```
+
+The default is 10 seconds. Set it to `0` to turn the clock off.
+
+It is separate because a failure to connect is **worth retrying and the others are
+not**. No socket was ever opened, so nothing reached the gateway — there is no
+half-streamed answer to duplicate and no partial text to reconcile. So this one
+failure quietly reconnects and the turn carries on. Wi-Fi dropping for a moment, a
+laptop waking up, a VPN reattaching: all of it lands here.
+
+A **header timeout (5 minutes) is not retried**, by contrast. There the gateway
+accepted the request and never answered, and waiting another five minutes is not a
+reasonable thing to do to you. A wrong hostname is not retried either — asking a
+hundred times gives the same answer.
+
+Proxy and client-certificate connections had no such clock before. That meant that on
+the same gateway and the same network, **only the people behind a proxy** burned the
+full 5-minute header timeout and then lost the whole turn. Both paths now behave the
+same way in the same place.
+
 ### What is blocking the connection — `deel doctor`
 
 `deel diagnose` measures whether **the model can do the work** — does it call tools,

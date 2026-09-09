@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-8%2C032%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-8%2C095%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -374,7 +374,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.17.7  ⌂ inside
+ deel 1.17.8  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1293,7 +1293,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (8,032 checks; a few are TTY-dependent)
+npm test          Full suite (8,095 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1348,6 +1348,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| [1.17.8](docs/en/releases/1.17.md#1178) | A long brief got the opposite of what it asked for — and one network blip threw the turn away |
 | [1.17.7](docs/en/releases/1.17.md#1177) | We measured it side by side, and fixed the row we lost |
 | [1.17.6](docs/en/releases/1.17.md#1176) | Only keep-alive and no content used to mean waiting forever |
 | [1.17.5](docs/en/releases/1.17.md#1175) | The phase now follows the work inside a turn — and four read tools had been queueing up |
