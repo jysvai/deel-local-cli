@@ -64,6 +64,7 @@ const FILES = [
   '단계.test.js',
   'modewire.test.js',
   'doc2md.test.js',
+  '확인법.test.js',
   'fig.test.js',
   'planapprove.test.js',
   'resume.test.js',

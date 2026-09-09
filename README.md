@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-8%2C011%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-8%2C032%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -57,6 +57,41 @@ Then you give it work, and it goes and does it:
 Every number in that image is real — the tools ran against real files. Only the model is a
 stub on `127.0.0.1`, so the capture is reproducible; the tool calls, the diff and the file
 summary are what deel actually printed.
+
+---
+
+### So what is actually different — we put them side by side
+
+Same project, same job, same model (Claude Opus 5 via AWS Bedrock). Both were asked to
+**find and fix a data-loss defect** in a collaborative editor.
+
+|  | Claude CLI | deel |
+|---|---|---|
+| Observed cost | $7.90 | **$6.57**  ·  -16.8% |
+| Wall time | 38m 00s | **36m 59s**  ·  -2.7% |
+| Composite index | 97.9% | 98.5% |
+| Extras | `claude-token-saver` (separate npm) | **none — built-in only** |
+
+In one line: **quality came out effectively equal, and it cost less without bolting on
+a savings package.**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/benchmark-dark.svg">
+  <img alt="Claude CLI and deel benchmark — relative index by dimension" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/benchmark-light.svg" width="900">
+</picture>
+
+The two runs did not find the same bug twice. Each removed **a different failure
+path** — one where the base value is corrupted mid-IME-composition, one a TOCTOU race
+where input is overwritten across an `await`. Both reproduced the defect before fixing
+it, and carried the minimal fix through regression verification.
+
+> **What this data cannot say, stated plainly.** The sample is two runs. The Claude
+> side had an external savings package attached, so **the gap cannot be attributed to
+> engine efficiency.** And **Claude covered more regression scope** — that is the row
+> we lost, and it is what made 1.17.7 fix `Verify` to find every way a project checks
+> itself, not just one.
+
+→ [Full record and methodology](docs/en/benchmark.md) · [source PDF](pdf/cli_benchmark_anonymized_v4.pdf)
 
 ---
 
@@ -339,7 +374,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.17.6  ⌂ inside
+ deel 1.17.7  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1258,7 +1293,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (8,011 checks; a few are TTY-dependent)
+npm test          Full suite (8,032 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1313,6 +1348,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| [1.17.7](docs/en/releases/1.17.md#1177) | We measured it side by side, and fixed the row we lost |
 | [1.17.6](docs/en/releases/1.17.md#1176) | Only keep-alive and no content used to mean waiting forever |
 | [1.17.5](docs/en/releases/1.17.md#1175) | The phase now follows the work inside a turn — and four read tools had been queueing up |
 | [1.17.4](docs/en/releases/1.17.md#1174) | The places that sent the same request twice — and where what it learned sealed itself in |

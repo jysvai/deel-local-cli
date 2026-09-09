@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-8%2C011%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-8%2C032%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -50,6 +50,39 @@
 > 이 그림은 **진짜로 돌려서 찍은 것**입니다. 손으로 그린 화면은 판이 바뀌어도
 > 안 바뀌어서 조용히 거짓말이 됩니다. `node tools/shot.mjs` 로 다시 만듭니다.
 > (모델 자리는 127.0.0.1 에 띄운 스텁입니다. 도구는 진짜 파일을 읽고 고칩니다.)
+
+---
+
+### 그래서 뭐가 다른데 — 나란히 세워 재 봤습니다
+
+같은 프로젝트, 같은 일, 같은 모델(AWS Bedrock · Claude Opus 5). 양쪽 다 공동
+편집기의 **데이터 손실 결함을 찾아 고치게** 했습니다.
+
+|  | Claude CLI | deel |
+|---|---|---|
+| 관측 비용 | $7.90 | **$6.57**  ·  -16.8% |
+| 소요 시간 | 38분 00초 | **36분 59초**  ·  -2.7% |
+| 종합 상대지수 | 97.9% | 98.5% |
+| 곁들인 것 | `claude-token-saver` (별도 npm) | **없음 — 자체 기능만** |
+
+한 줄로 줄이면: **품질은 사실상 동급인데, 절감 패키지를 안 붙이고도 더 쌌습니다.**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/benchmark-dark.svg">
+  <img alt="Claude CLI 와 deel 벤치마크 — 항목별 상대지수" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/benchmark-light.svg" width="900">
+</picture>
+
+두 실행은 같은 버그를 두 번 찾은 게 아닙니다. **서로 다른 실패 경로**를 하나씩
+없앴습니다 — 한쪽은 한글 조합 중 기준값이 오염되는 길, 한쪽은 `await` 사이에
+입력이 덮이는 경쟁 상태(TOCTOU). 둘 다 고치기 전에 재현했고, 최소 수정 뒤
+회귀 검증까지 갔습니다.
+
+> **이 자료로 말할 수 없는 것도 적어 둡니다.** 표본이 2회입니다. Claude 쪽에는
+> 외부 절감 패키지가 붙어 있어서 **엔진 자체의 효율 차이라고 단정할 수 없습니다.**
+> 그리고 **전체 회귀 범위는 Claude 가 넓었습니다** — 우리가 진 항목이고, 그것이
+> 1.17.7 에서 `Verify` 를 고치게 만들었습니다(확인 방법을 하나가 아니라 전부 찾습니다).
+
+→ [전체 기록과 방법론](docs/ko/benchmark.md) · [원본 PDF](pdf/cli_benchmark_anonymized_v4.pdf)
 
 ---
 
@@ -268,7 +301,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 1.17.6  ⌂ 이 안
+ deel 1.17.7  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -1185,7 +1218,7 @@ deel stats                    # 이 폴더에서 실제로 무엇을 했나 (.de
 ## 개발
 
 ```bash
-npm test          전체 검증 (8,011항목 — 몇몇은 터미널에 따라 갈립니다)
+npm test          전체 검증 (8,032항목 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -1254,6 +1287,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
+| [1.17.7](docs/ko/releases/1.17.md#1177) | 나란히 세워 재 봤고, 진 항목을 고쳤습니다 |
 | [1.17.6](docs/ko/releases/1.17.md#1176) | 살아 있다는 신호만 오고 내용이 안 오면, 여태 영원히 기다렸습니다 |
 | [1.17.5](docs/ko/releases/1.17.md#1175) | 한 턴 안에서 단계가 일을 따라갑니다 — 그리고 읽기 도구 넷이 여태 줄을 서 있었습니다 |
 | [1.17.4](docs/ko/releases/1.17.md#1174) | 같은 요청을 한 번 더 보내던 자리들 — 그리고 배운 것이 스스로를 봉인하던 자리 |

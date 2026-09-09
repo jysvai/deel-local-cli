@@ -30,9 +30,10 @@
  */
 import { existsSync, statSync, readFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
-import { extname, dirname, join, resolve } from 'node:path';
+import { extname, dirname, resolve } from 'node:path';
 import { walk, SKIP_DIRS, 내부살림 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
+import { 확인법들 } from './확인법.js';
 import { decode, looksBinary } from './encoding.js';
 import { checkCommand } from '../safety/guard.js';
 import { 말 } from '../i18n/index.js';
@@ -315,10 +316,24 @@ export const VERIFY_TOOL = {
      * 검사가 걸려 있기 때문이다. 이 도구가 몰래 돌리면 strict 모드에서
      * "물어보고 실행한다" 는 약속이 이 자리에서만 깨진다.
      */
-    const 있는명령 = 프로젝트확인법(뿌리);
-    if (있는명령) {
+    const 확인들 = 확인법들(뿌리);
+    if (확인들.length) {
       줄.push('');
-      줄.push(`이 프로젝트에는 ${있는명령} 가 있습니다. 진짜로 도는지 보려면 Bash 로 돌려라.`);
+      if (확인들.length === 1) {
+        줄.push(`이 프로젝트에는 ${확인들[0].명령} 가 있습니다. 진짜로 도는지 보려면 Bash 로 돌려라.`);
+      } else {
+        /*
+         * **하나만 알려 주면 하나만 돈다.**
+         *
+         * 벤치마크에서 진 자리가 여기다 — 검사가 셋인 프로젝트에서 우리는
+         * 하나만 알려 줬고, 그래서 하나만 돌았고, 회귀 범위가 좁았다.
+         * 고른 하나가 아니라 **찾은 전부**를 준다. 무엇을 돌릴지는 모델이
+         * 정하되, 있는 줄도 몰라서 못 도는 일은 없어야 한다.
+         */
+        줄.push(`이 프로젝트의 확인 방법은 ${확인들.length}가지입니다. 고친 곳과 닿는 것은 **전부** Bash 로 돌려라 —`);
+        for (const { 명령, 어디서 } of 확인들) 줄.push(`  ${명령}   (${어디서})`);
+        줄.push('하나만 돌리고 "회귀 검증했다" 고 말하지 마라. 안 돌린 것은 안 돌렸다고 적어라.');
+      }
     }
 
     const 다됐나 = !탈난것.length;
@@ -339,20 +354,4 @@ export const VERIFY_TOOL = {
   },
 };
 
-/**
- * 이 프로젝트가 스스로 정해 둔 확인 방법.
- *
- * package.json 에 test 가 있으면 그것이 답이다. 없는 것을 지어내지는 않는다 —
- * 없으면 null 이고, 그러면 파일별 확인만 한 것이 전부다.
- * 돌리지는 않는다. 알려 주기만 한다 (위 머리말 참고).
- */
-function 프로젝트확인법(뿌리) {
-  const pkg = join(뿌리, 'package.json');
-  if (!existsSync(pkg)) return null;
-  try {
-    const j = JSON.parse(readFileSync(pkg, 'utf8'));
-    if (j.scripts?.test) return 'npm test';
-    if (j.scripts?.build) return 'npm run build';
-  } catch { /* 망가진 package.json 은 아래 파일 확인에서 잡힌다 */ }
-  return null;
-}
+// 확인 방법 찾기는 tools/확인법.js 로 옮겼다 — 찾을 자리가 늘어 파일이 무거워졌다.

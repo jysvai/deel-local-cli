@@ -1,0 +1,163 @@
+// 이 프로젝트의 확인 방법을 **전부** 찾나.
+//
+// ── 왜 이 검사가 생겼나 ─────────────────────────────────────────────────
+//
+// 벤치마크에서 진 자리다(docs/ko/benchmark.md). 같은 프로젝트에 같은 일을
+// 시킨 비교에서 품질은 거의 동급이었는데 **전체 회귀 범위**만 낮았다.
+//
+// 까닭은 단순했다. 그 프로젝트의 검사는 `scripts/` 밑의 독립 실행 파일 셋
+// (`qa-collaboration.js` · `qa-presets.js` · `qa-design-studio.js`)이었는데,
+// 우리는 `package.json` 의 `test` 한 칸만 보고 있었다. 못 본 검사는 안 돌고,
+// 안 돈 검사는 회귀를 못 잡는다.
+//
+// ── 여기서 제일 조심할 것 ───────────────────────────────────────────────
+//
+// **없는 것을 지어내면 안 된다.** 있을 법한 이름을 채워 주면 모델이 그걸
+// 부르고, 실패를 받고, 또 부른다 — 걸음만 태우고 사람은 왜 헤매는지 모른다.
+// 그래서 3·4번(안 담는 쪽)이 이 파일의 알맹이다.
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { 확인법들, 최대 } from '../src/tools/확인법.js';
+import { trace } from './trace.mjs';
+
+const pass = [];
+const fail = [];
+const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
+
+const 뿌리들 = [];
+function 판(짓기) {
+  const 뿌리 = mkdtempSync(join(tmpdir(), 'deel-확인법-'));
+  뿌리들.push(뿌리);
+  짓기({
+    파일: (이름, 글) => {
+      const 곳 = join(뿌리, 이름);
+      mkdirSync(join(곳, '..'), { recursive: true });
+      writeFileSync(곳, 글, 'utf8');
+    },
+    pkg: (o) => writeFileSync(join(뿌리, 'package.json'), JSON.stringify(o), 'utf8'),
+  });
+  return 뿌리;
+}
+const 명령들 = (뿌리) => 확인법들(뿌리).map((x) => x.명령);
+
+// ── 1. 벤치마크에서 놓친 그 모양 ────────────────────────────────────────
+trace('1-독립검사파일');
+{
+  /*
+   * npm 스크립트로 등록되지 않은 채 node 로 직접 도는 검사들. 이걸 못 찾아서
+   * 회귀 범위가 좁았다.
+   */
+  const 뿌리 = 판(({ 파일 }) => {
+    파일('scripts/qa-collaboration.js', '// 검사');
+    파일('scripts/qa-presets.js', '// 검사');
+    파일('scripts/qa-design-studio.js', '// 검사');
+    파일('collab-server.js', '// 서버');
+  });
+  const 것 = 명령들(뿌리);
+
+  check('★★★ scripts/ 밑 독립 검사 셋을 다 찾는다 (벤치마크에서 놓친 자리)',
+    것.length === 3, JSON.stringify(것));
+  check('★★ node 로 부르는 법까지 적어 준다',
+    것.includes('node scripts/qa-collaboration.js'), JSON.stringify(것));
+  check('★★★ 검사 아닌 파일은 안 담는다', !것.some((c) => c.includes('collab-server')), JSON.stringify(것));
+}
+
+// ── 2. package.json 의 확인 칸을 넓게 본다 ──────────────────────────────
+trace('2-npm스크립트');
+{
+  const 뿌리 = 판(({ pkg }) => pkg({
+    scripts: { test: 'x', lint: 'x', typecheck: 'x', 'test:e2e': 'x', build: 'x', dev: 'x', start: 'x' },
+  }));
+  const 것 = 명령들(뿌리);
+
+  check('★★ test 는 npm test 로 부른다', 것.includes('npm test'), JSON.stringify(것));
+  check('★★ 나머지는 npm run 을 붙인다', 것.includes('npm run lint'), JSON.stringify(것));
+  check('★★ 형 검사·e2e 도 확인으로 센다',
+    것.includes('npm run typecheck') && 것.includes('npm run test:e2e'), JSON.stringify(것));
+  check('★★★ dev·start 는 확인이 아니라 안 담는다',
+    !것.some((c) => c.includes('dev') || c.includes('start')), JSON.stringify(것));
+  // build 는 확인은 아니지만 깨지면 아무것도 안 되므로 **맨 뒤**에 붙인다.
+  check('★ build 는 담되 맨 뒤로 민다', 것[것.length - 1] === 'npm run build', JSON.stringify(것));
+}
+
+// ── 3. 없는 것은 지어내지 않는다 ────────────────────────────────────────
+trace('3-안지어냄');
+{
+  const 빈곳 = 판(() => {});
+  check('★★★ 아무것도 없으면 빈 목록이다', 확인법들(빈곳).length === 0, JSON.stringify(명령들(빈곳)));
+
+  const 스크립트없음 = 판(({ pkg }) => pkg({ name: 'x', version: '1.0.0' }));
+  check('★★★ scripts 가 없는 package.json 에 npm test 를 지어내지 않는다',
+    확인법들(스크립트없음).length === 0, JSON.stringify(명령들(스크립트없음)));
+
+  const 망가진 = 판(({ 파일 }) => 파일('package.json', '{ 이건 JSON 이 아니다'));
+  check('★★ 망가진 package.json 에도 안 죽는다', Array.isArray(확인법들(망가진)), '');
+
+  /*
+   * Makefile 은 `test:` 칸이 **진짜로 있을 때만**. 있을 법하다고 넣으면
+   * `make test` 가 없는 저장소에서 모델이 그걸 부르고 실패한다.
+   */
+  const make없음 = 판(({ 파일 }) => 파일('Makefile', 'build:\n\tcc a.c\n'));
+  check('★★★ Makefile 에 test 칸이 없으면 make test 를 안 담는다',
+    !명령들(make없음).includes('make test'), JSON.stringify(명령들(make없음)));
+
+  const make있음 = 판(({ 파일 }) => 파일('Makefile', 'build:\n\tcc a.c\ntest:\n\t./run\n'));
+  check('★★ test 칸이 있으면 담는다', 명령들(make있음).includes('make test'), JSON.stringify(명령들(make있음)));
+}
+
+// ── 4. 다른 생태계도 표식이 있을 때만 ───────────────────────────────────
+trace('4-생태계');
+{
+  const rust = 판(({ 파일 }) => 파일('Cargo.toml', '[package]\nname="x"\n'));
+  check('★★ Cargo.toml 이 있으면 cargo test', 명령들(rust).includes('cargo test'), JSON.stringify(명령들(rust)));
+
+  const go = 판(({ 파일 }) => 파일('go.mod', 'module x\n'));
+  check('★★ go.mod 가 있으면 go test', 명령들(go).includes('go test ./...'), JSON.stringify(명령들(go)));
+
+  const py = 판(({ 파일 }) => 파일('pytest.ini', '[pytest]\n'));
+  check('★★ pytest 설정이 있으면 pytest', 명령들(py).includes('pytest'), JSON.stringify(명령들(py)));
+
+  /*
+   * 파이썬 프로젝트인데 검사 폴더가 없으면 pytest 를 안 담는다. 파이썬이라는
+   * 것과 검사가 있다는 것은 다른 이야기다.
+   */
+  const py검사없음 = 판(({ 파일 }) => 파일('pyproject.toml', '[project]\nname="x"\n'));
+  check('★★★ tests/ 가 없는 파이썬 프로젝트에 pytest 를 지어내지 않는다',
+    !명령들(py검사없음).includes('pytest'), JSON.stringify(명령들(py검사없음)));
+}
+
+// ── 5. 목록이 소음이 되지 않게 ──────────────────────────────────────────
+trace('5-상한');
+{
+  const 많음 = 판(({ 파일 }) => {
+    for (let i = 0; i < 30; i++) 파일(`scripts/qa-${i}.js`, '// 검사');
+  });
+  const 것 = 확인법들(많음);
+  check('★★ 스무 개를 늘어놓지 않는다 — 상한이 있다', 것.length === 최대, String(것.length));
+  check('★ 중복은 한 번만 담는다',
+    new Set(것.map((x) => x.명령)).size === 것.length, String(것.length));
+}
+
+// ── 6. 어디서 찾았는지 같이 준다 ────────────────────────────────────────
+trace('6-출처');
+{
+  const 뿌리 = 판(({ 파일, pkg }) => {
+    pkg({ scripts: { test: 'x' } });
+    파일('scripts/qa-a.js', '// 검사');
+  });
+  const 것 = 확인법들(뿌리);
+  check('★★ 출처를 적어 준다 — 사람이 목록을 믿을 수 있어야 한다',
+    것.every((x) => !!x.어디서), JSON.stringify(것));
+  check('★ npm 것과 파일 것이 같이 나온다', 것.length === 2, JSON.stringify(것.map((x) => x.명령)));
+}
+
+for (const 뿌리 of 뿌리들) { try { rmSync(뿌리, { recursive: true, force: true }); } catch { /* 그만 */ } }
+
+const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
+console.log(`\n확인 방법 찾기 검사  ${D}(전부 찾되, 없는 것은 지어내지 않기)${X}\n`);
+for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
+for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
+console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
+trace('끝-정상종료');
+process.exitCode = fail.length ? 1 : 0;
