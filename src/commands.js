@@ -30,7 +30,7 @@ import { 말, 말 as 옮긴말, 언어, 언어들, 언어정하기, 언어고르
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
 import { allowTemporarily } from './safety/network.js';
 import { chat, 규격이름, 더할머리 } from './backend/adapter.js';
-import { 잠잠기본 } from './backend/http.js';
+import { 잠잠기본, 무소식기본 } from './backend/http.js';
 import { 인증서설정, 인증서말 } from './backend/clientcert.js';
 import { 알림채움 } from './backend/retry.js';
 import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
@@ -2944,6 +2944,8 @@ function 연결적용(session, p, ctx = null) {
     streaming: p.streaming, tools: p.tools, json: p.json, think: p.think,
     // 프로필마다 다를 수 있다 — 사내 게이트웨이는 잠잠 상한이 크고 로컬은 작다.
     잠잠: p.잠잠 ?? p.streamIdleMs ?? 잠잠기본,
+    // 바이트는 오는데 내용이 안 올 때의 전체 상한 (backend/http.js 의 무소식기본).
+    무소식: p.무소식 ?? p.streamNoNewsMs ?? 무소식기본,
     // 프로필마다 인증서가 다르다. 안 갈아 끼우면 옛 프로필의 신원으로 붙는다.
     인증서: 인증서설정(p),
     /*

@@ -2,7 +2,10 @@
 // 진단(probe)과 에이전트 루프가 같은 함수를 쓴다.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { req, headersFor, serverMessage, Aborted, 잠잠기본, 초로 } from './http.js';
+import {
+  req, headersFor, serverMessage, Aborted, 잠잠기본, 초로,
+  무소식기본, 무소식알림기본, 소식없음오류,
+} from './http.js';
 import { 할당량기억, 미리기다릴까, 마지막할당량, 할당량자리 } from './quota.js';
 import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
 import { 말 } from '../i18n/index.js';
@@ -1224,6 +1227,32 @@ export async function* chatStream(conn, opts) {
   let buf = '';
 
   /*
+   * ── 바이트 말고 **소식**을 잰다 (backend/http.js 의 무소식기본) ─────────
+   *
+   * 잠잠 시계는 조각이 오면 되감긴다. 그런데 keep-alive(`: ping`)와 빈 delta
+   * 는 조각이면서 내용이 없다 — 되감기기만 하고 화면에는 아무것도 안 남는다.
+   * 그 둘만 오는 동안은 천장이 사라진다.
+   *
+   * 여기서 세는 것은 **acc 가 자랐나** 다. 이벤트 수가 아니다 — 도구 인자는
+   * 글자로 쪼개져 와서 acc._raw 에만 쌓이고 이벤트를 안 낸다(mergeDeltaCalls).
+   * 이벤트만 세면 도구 호출을 길게 쓰는 중인 정상 흐름을 우리가 끊는다.
+   */
+  const 자란만큼 = () =>
+    acc.content.length
+    + acc.thinking.length
+    + (acc.거절글?.length ?? 0)
+    + (acc._raw?.reduce(
+      (n, c) => n + 1 + (c?.name?.length ?? 0) + (c?.args?.length ?? 0), 0) ?? 0)
+    + (acc.usage?.잰것 ? 1 : 0)
+    + (acc.stopped ? 1 : 0);
+
+  const 무소식 = conn.무소식 ?? 무소식기본;
+  const 무소식알림 = Math.min(conn.무소식알림 ?? 무소식알림기본, 무소식 > 0 ? 무소식 / 2 : Infinity);
+  let 마지막소식 = Date.now();
+  let 본만큼 = 자란만큼();
+  let 알렸나 = false;
+
+  /*
    * 한 줄을 읽는 규칙. 루프 안에서도, **끝난 뒤에도** 같은 것을 쓴다.
    *
    * 여태 이 규칙이 `while` 안에만 있었고, 스트림이 끝나면 남은 버퍼를 그냥
@@ -1291,6 +1320,51 @@ export async function* chatStream(conn, opts) {
       buf = '';
       yield* 한줄(꼬리);
       break;
+    }
+
+    /*
+     * 이번 조각으로 acc 가 자랐나. 자랐으면 시계를 되감고, 안 자랐으면 얼마나
+     * 오래 그랬는지 본다.
+     *
+     * 알림이 먼저고 끊기는 나중이다. 순서가 중요하다 — 끊기부터 만들면
+     * 「원래 이런 게이트웨이」 를 우리가 죽이면서 그 사실을 아무도 못 본다.
+     */
+    const 이번만큼 = 자란만큼();
+    if (이번만큼 !== 본만큼) {
+      본만큼 = 이번만큼;
+      마지막소식 = Date.now();
+      알렸나 = false;
+    } else {
+      const 흐른 = Date.now() - 마지막소식;
+      if (무소식 > 0 && 흐른 >= 무소식) {
+        /*
+         * 끊을 때는 **소켓도 같이 닫는다.**
+         *
+         * 안 닫으면 게이트웨이는 우리가 간 줄도 모르고 핑을 계속 보낸다. 그
+         * 연결이 프로그램이 끝날 때까지 남아서 겪을 때마다 하나씩 쌓인다.
+         * 잠잠 시계는 제 손으로 소켓을 끊고 있다(http.js 의 끊기) — 여기만
+         * 안 하면 같은 일을 반쪽만 하는 것이다. 검사에서 프로세스가 안 끝나서
+         * 잡혔다.
+         */
+        try { await reader.cancel(); } catch { /* 이미 닫혔으면 그만 */ }
+        /*
+         * 여기까지 받은 글은 **버리지 않는다.** 세 문단을 받아 놓고 그 뒤로
+         * keep-alive 만 오는 자리가 있다 — 통째로 던지면 사람은 아무것도 못
+         * 보고 같은 것을 다시 시킨다. 잠잠 시계가 하는 것과 같은 규칙이다.
+         *
+         * 한 글자도 못 받았으면 그건 그냥 실패다. 빈 답을 답이라고 부르지 않는다.
+         */
+        if (acc.content || acc.thinking || acc.toolCalls.length) {
+          acc.stopped = 흐름멎음;
+          acc.멎은초 = 초로(흐른);
+          break;
+        }
+        throw 소식없음오류(무소식);
+      }
+      if (!알렸나 && 흐른 >= 무소식알림) {
+        알렸나 = true;
+        yield { type: '소식없음', 초: 초로(흐른), 상한초: 무소식 > 0 ? 초로(무소식) : null };
+      }
     }
   }
   /*

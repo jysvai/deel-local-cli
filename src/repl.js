@@ -48,7 +48,7 @@ import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as �
 import { 고른것풀기, 계획답풀기 } from './ui/pick.js';
 import { 이력지킴이 } from './ui/histline.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
-import { 잠잠기본 } from './backend/http.js';
+import { 잠잠기본, 무소식기본 } from './backend/http.js';
 import { 인증서설정 } from './backend/clientcert.js';
 import { renderDiff, shortStat } from './ui/diff.js';
 import { expand as expandMentions } from './agent/mention.js';
@@ -249,6 +249,8 @@ export async function chatLoop(opts = {}) {
      * 모았다가 한 번에 주는 사내 게이트웨이면 이 값을 올린다.
      */
     잠잠: prof.잠잠 ?? prof.streamIdleMs ?? 잠잠기본,
+    // 바이트는 오는데 내용이 안 올 때의 전체 상한 (backend/http.js 의 무소식기본).
+    무소식: prof.무소식 ?? prof.streamNoNewsMs ?? 무소식기본,
     // 게이트웨이가 우리 인증서를 요구하면 (mTLS, backend/clientcert.js).
     // 파일 경로만 싣는다 — 알맹이는 요청 직전에 읽는다.
     인증서: 인증서설정(prof),
@@ -2161,6 +2163,23 @@ export async function chatLoop(opts = {}) {
             }
             break;
           }
+
+          /*
+           * 바이트는 오는데 **내용이 안 온다** (backend/adapter.js).
+           *
+           * 여기가 없으면 화면에는 스피너만 돈다. 실제로 15분 넘게 그랬고,
+           * 사람은 프로그램이 멎은 줄 알았다. 멎은 게 아니라 기다릴 이유가
+           * 없어지는 순간이 안 온 것이라, 그걸 그대로 적어 준다.
+           *
+           * 끊지 않는다는 것도 같이 말한다 — 추론을 감추는 게이트웨이는 원래
+           * 이 모양으로 정상 동작하므로, 사람이 기다릴지 ESC 할지 고르게 한다.
+           */
+          case '소식없음':
+            say(`  ${c.yellow('⧗')} ${c.gray(옮긴말('ev.noNews', { 초: ev.초 }))}`);
+            if (ev.상한초) {
+              say(`     ${c.gray(옮긴말('ev.noNewsCap', { 상한초: ev.상한초 }))}`);
+            }
+            break;
 
           case 'trimmed':
             say(`  ${c.gray(`(컨텍스트가 차서 오래된 대화 ${ev.dropped}개를 줄였습니다)`)}`);

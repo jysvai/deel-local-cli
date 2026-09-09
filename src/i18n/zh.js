@@ -436,6 +436,8 @@ export const zh = {
   'ev.phaseWhyEdit': '开始修改文件了',
   'ev.phaseWhyTodo': '要做的事已经列完了',
   'ev.phaseTools': '工具变多了 ({도구}) — 前缀要重写一次',
+  'ev.noNews': '{초} 秒内只有保活信号，没有内容 — 网关可能还在等上游模型',
+  'ev.noNewsCap': '到 {상한초} 秒就断开。如果确实慢，请调高配置中的 streamNoNewsMs',
   'ev.cutoff': '服务端没说结束就停下了 — 回答可能是中途断的',
   'ev.stalled': '{n} 秒没有任何数据，已断开 — 只显示已收到的部分',
   'ev.nudgeMissed': '还剩你交代的 {n} 件事没做就要收尾，已经推回去一次',

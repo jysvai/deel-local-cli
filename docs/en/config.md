@@ -386,6 +386,39 @@ no longer **cut off at five minutes** (the clock keeps rewinding while chunks ar
 and a stalled gateway is detected in one minute instead of five. If your gateway
 buffers the whole answer and delivers it in one piece, raise this value.
 
+### When only keep-alive arrives and no content
+
+The clock above measures **bytes**. But SSE has frames that carry no content — the
+comment line the spec defines (`: ping`) and an empty delta. Both are bytes, so both
+rewind that clock, and neither leaves anything on screen.
+
+The clock that covered the headers is switched off the moment headers arrive. That
+leaves **no ceiling at all.** Behind a gateway this ran for over fifteen minutes with
+no error, nothing on screen but a spinner.
+
+So there is a second clock. It measures **news**, not bytes.
+
+```json
+{ "profiles": [{ "id": "corp", "streamNoNewsMs": 600000 }] }
+```
+
+The default is ten minutes. Set `0` to switch this ceiling off.
+
+**It speaks before it cuts.** After 90 seconds with no content it prints one line:
+
+```
+  ⧗ Only keep-alive for 92s, no content yet — the gateway may still be waiting on the upstream model
+     Giving up at 600s. If this is genuinely slow, raise streamNoNewsMs in the profile
+```
+
+Telling you first is deliberate. **A gateway that hides reasoning behaves exactly like
+this while working correctly** — it emits keep-alive while the upstream model thinks.
+Cutting that off eagerly would kill a healthy connection. So the default is generous
+and you get to decide whether to keep waiting.
+
+What counts as news is not only text on screen. Tool-call arguments arrive split into
+fragments and produce no screen output at all, so those count as progress too.
+
 ### What is blocking the connection — `deel doctor`
 
 `deel diagnose` measures whether **the model can do the work** — does it call tools,

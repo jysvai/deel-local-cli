@@ -44,6 +44,7 @@ const FILES = [
   'rulescheck.test.js',
   'quota.test.js',
   'stall.test.js',
+  '무소식.test.js',
   'clientcert.test.js',
   'stats.test.js',
   'doctor.test.js',

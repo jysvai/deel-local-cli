@@ -50,7 +50,7 @@ import { allowEndpoint, setOffline } from '../safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from '../safety/runmode.js';
 import { 주소가리기 } from '../safety/secrets.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from '../backend/ctxsize.js';
-import { 잠잠기본 } from '../backend/http.js';
+import { 잠잠기본, 무소식기본 } from '../backend/http.js';
 import { 인증서설정 } from '../backend/clientcert.js';
 import { 다붙이기 } from '../backend/mcp.js';
 import { 배움 } from '../agent/evolve.js';
@@ -229,6 +229,8 @@ export async function acp(opts = {}) {
        * 모았다가 한 번에 주는 사내 게이트웨이면 이 값을 올린다.
        */
         잠잠: prof.잠잠 ?? prof.streamIdleMs ?? 잠잠기본,
+        // 바이트는 오는데 내용이 안 올 때의 전체 상한 (backend/http.js 의 무소식기본).
+        무소식: prof.무소식 ?? prof.streamNoNewsMs ?? 무소식기본,
     // 게이트웨이가 우리 인증서를 요구하면 (mTLS, backend/clientcert.js).
       // 파일 경로만 싣는다 — 알맹이는 요청 직전에 읽는다.
         인증서: 인증서설정(prof),

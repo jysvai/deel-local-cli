@@ -478,6 +478,8 @@ export const en = {
   'ev.phaseWhyEdit': 'Started changing files',
   'ev.phaseWhyTodo': 'The plan is written down',
   'ev.phaseTools': 'More tools from here ({도구}) — the prefix gets written once more',
+  'ev.noNews': 'Only keep-alive for {초}s, no content yet — the gateway may still be waiting on the upstream model',
+  'ev.noNewsCap': 'Giving up at {상한초}s. If this is genuinely slow, raise streamNoNewsMs in the profile',
   'ev.cutoff': 'The server stopped the answer without saying it had finished — it may have been cut mid-way',
   'ev.stalled': 'Nothing arrived for {n}s, so the connection was dropped — this is what came through',
   'ev.nudgeMissed': 'It was about to finish leaving {n} of the things you asked for undone — pushed back once',
