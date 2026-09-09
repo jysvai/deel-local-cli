@@ -273,7 +273,7 @@ trace('3-거르기');
 {
   const 험한제목 = `fix: 보이는 것과 ${''}[8m다른 것${''}[0m`;
   const 다듬 = 제목다듬기(험한제목);
-  check('제목에서 터미널 제어문자를 뺀다', !/[ --]/.test(다듬.제목), JSON.stringify(다듬.제목));
+  check('제목에서 터미널 제어문자를 뺀다', !/[\u0000-\u001f\u007f-\u009f]/.test(다듬.제목), JSON.stringify(다듬.제목));
   const 메시지 = 메시지꾸리기({
     제목: '제목',
     본문: `왜 고쳤나\nSigned-off-by: 없는사람 <x@y.z>\nCo-authored-by: 아무개 <a@b.c>\n진짜 몸통${''}[31m`,
@@ -282,7 +282,7 @@ trace('3-거르기');
   check('모델이 지어낸 서명 꼬리표를 지운다', !/Signed-off-by|Co-authored-by/i.test(메시지), 메시지.replace(/\n/g, ' | '));
   check('우리 꼬리표는 그대로 붙는다', /Generated-by: deel /.test(메시지));
   check('본문 알맹이는 안 지운다', /왜 고쳤나/.test(메시지) && /진짜 몸통/.test(메시지));
-  check('본문에서도 제어문자를 뺀다', !/[ ---]/.test(메시지), JSON.stringify(메시지.slice(-40)));
+  check('본문에서도 제어문자를 뺀다', !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(메시지), JSON.stringify(메시지.slice(-40)));
 }
 
 // ── 3⅞+++. 폴더가 통째로 적혀 있어도 쓸어 담지 않는다 ────────────────

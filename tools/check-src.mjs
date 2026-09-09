@@ -109,14 +109,24 @@ for (const p of 담길것) {
 //
 // 탭·줄바꿈은 글의 일부다. ESC 는 화면 색을 내는 자리에 실제로 쓰인다
 // (ui/ansi.js). 그 둘은 봐주고 나머지를 잡는다.
+//
+// C1(U+0080~U+009F)도 같이 본다. 여기를 안 보다가 U+009F 한 글자를 놓쳤다 —
+// 정규식 범위의 끝이라 지워졌으면 범위가 통째로 달라졌을 자리인데, 눈으로도
+// grep 으로도 안 보였다. 안 보이는 것은 다 같은 위험이다.
 const 봐줄것 = new Set([0x09, 0x0a, 0x0d, 0x1b]);
+const 날것인가 = (c) => (c < 0x20 || c === 0x7f || (c >= 0x80 && c <= 0x9f)) && !봐줄것.has(c);
 for (const q of 담길것) {
   const 바이트 = readFileSync(q);
-  const 자리 = 바이트.findIndex((b) => (b < 0x20 || b === 0x7f) && !봐줄것.has(b));
+  // C1 은 UTF-8 에서 두 바이트라 바이트로는 못 센다. 글자로 읽어서 본다.
+  const 글자 = 바이트.toString('utf8');
+  let 자리 = -1;
+  for (let i = 0; i < 글자.length; i += 1) {
+    if (날것인가(글자.charCodeAt(i))) { 자리 = i; break; }
+  }
   if (자리 === -1) continue;
-  const 줄번호 = 바이트.subarray(0, 자리).toString('utf8').split('\n').length;
+  const 줄번호 = 글자.slice(0, 자리).split('\n').length;
   const 이름 = relative(뿌리, q).replace(/\\/g, '/');
-  const 코드 = '0x' + 바이트[자리].toString(16).padStart(2, '0');
+  const 코드 = '0x' + 글자.charCodeAt(자리).toString(16).padStart(2, '0');
   탈.push(`${이름}:${줄번호}: 날 제어문자 ${코드} 가 들어 있습니다 — 글자로 적으세요(예: \\0)`);
 }
 

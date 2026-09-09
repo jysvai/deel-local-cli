@@ -426,7 +426,6 @@ export const en = {
   'sum.justDone': '{n} just now',
   'sum.noChange': 'unchanged',
   'sum.verified': '{n} checked',
-  'sum.readAs': 'read via {쓴것}',
   'sum.encGuess': '{인코딩} (guessed)',
   'sum.linesOf': '{준}/{전체} lines',
   'sum.countOf': '{n}/{전체}',
@@ -496,7 +495,6 @@ export const en = {
   'paste.pasted': 'Pasted {n} lines — Enter sends them all at once',
   'run.thinking': 'thinking…',
   'run.thinkingChars': 'thinking… {n} chars',
-  'run.turnFoot': '{초}s · {n} tool calls · ↑{입력} ↓{출력}',
   'run.bye': 'Bye.',
   'run.byeStats': '{n} model calls · {초}s in tools · ↑{입력} ↓{출력}',
   'run.notMade': '— was not created',
@@ -596,9 +594,5 @@ export const en = {
   'undo.wayDeleted': 'deleted (did not exist before)',
 
   // ── Common ────────────────────────────────────────────────────────────
-  'common.unknownCommand': 'Unknown command',
-  'common.seeHelp': 'Run /help for the list',
-  'common.yes': 'yes',
-  'common.no': 'no',
   'common.cfgSaveFailed': 'Could not write the setting to disk ({왜}) — it applies now but reverts on restart.',
 };

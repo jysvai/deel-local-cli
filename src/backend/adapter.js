@@ -249,7 +249,8 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
     const 박은것 = 나머지.length ? 메시지표식(나머지, 칸) : 나머지;
     if (시킴) {
       const 나눔 = 시킴[조각표];
-      const 블록 = 시스템블록(Array.isArray(나눔) && 나눔.length > 1 ? 나눔 : [시킴.content], true, 칸);
+      const 블록 = 시스템블록(Array.isArray(나눔) && 나눔.length > 1 ? 나눔 : [시킴.content], true, 칸,
+        { 긴수명: 카드?.긴수명 !== false });
       대화 = [Array.isArray(블록) ? { ...시킴, content: 블록 } : 시킴, ...박은것];
     } else {
       대화 = 박은것;
@@ -414,7 +415,7 @@ function anthropic몸({ model, messages, tools, stream, json, think, maxTokens, 
   const body = { model, messages: 대화, stream: !!stream, max_tokens: maxTokens };
   if (머리말.length) {
     body.system = 표식쓰나
-      ? 시스템블록(조각들 ?? 머리말, true, 칸)
+      ? 시스템블록(조각들 ?? 머리말, true, 칸, { 긴수명: 카드?.긴수명 !== false })
       : 머리말.join('\n\n');
   }
 
@@ -855,11 +856,6 @@ export function 본문글(m) {
     .map((b) => (typeof b === 'string' ? b : (b?.type === 'text' || b?.text != null ? String(b.text ?? '') : '')))
     .filter(Boolean)
     .join('\n');
-}
-
-/** 이 메시지가 도구를 불렀나. */
-export function 도구불렀나(m) {
-  return 부른것들(m).length > 0;
 }
 
 /**

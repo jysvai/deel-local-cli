@@ -29,6 +29,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { 치수읽기, 픽셀한도 } from '../backend/vision.js';
 
 /** 이보다 큰 그림은 안 받는다. 화면 캡처 한 장은 보통 1MB 안쪽이다. */
 export const 그림한도 = 12 * 1024 * 1024;
@@ -152,12 +153,38 @@ export function 클립보드그림({ platform = process.platform } = {}) {
   }
 }
 
-/** 크기를 여기서 한 번만 잰다 — 운영체제마다 따로 재면 한 군데를 빠뜨린다. */
-function 잰다(r) {
+/*
+ * 크기를 여기서 한 번만 잰다 — 운영체제마다 따로 재면 한 군데를 빠뜨린다.
+ *
+ * 내보내는 까닭은 **검사 때문**이다. 위 클립보드그림 은 운영체제 명령을 부르니
+ * 검사판에서 부를 수가 없고, 그러면 이 자리는 영영 안 재진다. 실제로 그랬다 —
+ * 세션을 통째로 죽이는 그림을 막는 유일한 문지기인데 검사가 한 줄도 없었다.
+ * 부르는 쪽이 재기 어려우면 재지는 조각을 내놓는 것이 맞다.
+ */
+export function 잰다(r) {
   if (!r?.ok) return r;
   if (!r.buf?.length) return { ok: false, 없음: true };
   if (r.buf.length > 그림한도) {
     return { ok: false, 왜: `그림이 너무 큽니다 (${(r.buf.length / 1048576).toFixed(1)}MB · 한도 ${그림한도 / 1048576}MB)` };
+  }
+  /*
+   * 픽셀도 잰다. **바이트와 픽셀은 따로 논다** — 화면을 길게 찍은 캡처는 잘
+   * 압축돼서 12000×3000 이어도 12MB 를 한참 밑돈다.
+   *
+   * 여기가 특히 중요한 자리다. 이 길로 들어오는 것이 전부 **화면 캡처**라,
+   * 세로로 긴 페이지를 통째로 찍으면 그냥 한도를 넘는다. 그런데 붙는 순간에는
+   * 아무 일도 안 나고, 그 그림이 대화에 실린 **다음 턴부터** 무슨 말을 걸어도
+   * 400 이 난다 — 세션이 통째로 죽는다 (backend/vision.js 의 픽셀한도).
+   *
+   * 그러니 붙기 전에 막는다. 한 번 실려 들어가면 그 뒤는 늦다.
+   */
+  const 잰것 = 치수읽기(r.buf, r.mime ?? null);
+  if (잰것 && (잰것.가로 > 픽셀한도 || 잰것.세로 > 픽셀한도)) {
+    return {
+      ok: false,
+      왜: `그림의 한 변이 깁니다 (${잰것.가로}×${잰것.세로} · 한 변 한도 ${픽셀한도}px)`
+        + ' — 화면 전체를 길게 찍으면 여기 걸립니다. 필요한 부분만 잘라서 다시 찍어 주세요.',
+    };
   }
   return r;
 }

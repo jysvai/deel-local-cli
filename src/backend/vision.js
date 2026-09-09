@@ -29,6 +29,31 @@ const 확장자 = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 /** 한 장 최대 크기. 창 크기와 상관없이 이 위로는 안 싣는다. */
 export const 기본한도 = 4 * 1024 * 1024;
 
+/**
+ * 한 변의 최대 픽셀. 이 위로는 서버가 400 을 준다.
+ *
+ * ── 왜 바이트만으로는 안 되나 ───────────────────────────────────────────
+ *
+ * 여태 크기만 보고 있었다. 그런데 **바이트와 픽셀은 따로 논다** — 화면을 길게
+ * 찍은 스크린샷은 잘 압축돼서 12000×3000 이어도 4MB 를 한참 밑돈다. 그래서
+ * 크기 검사를 멀쩡히 통과하고, 게이트웨이에서 이렇게 튕겼다.
+ *
+ *   messages.8.content.1.image.source.bytes:
+ *   At least one of the image dimensions exceed max allowed size: 8000 pixels
+ *
+ * ── 그리고 이건 그 턴 하나로 안 끝난다 ──────────────────────────────────
+ *
+ * 튕긴 뒤에도 그 그림은 **대화에 남는다.** 다음에 무슨 말을 걸어도 같은
+ * 메시지가 같이 나가서 같은 400 을 받는다. 「대시보드 실행해줘」 처럼 그림과
+ * 아무 상관 없는 말까지 안 된다 — 세션이 통째로 죽는다. 사람이 보기에는
+ * 프로그램이 갑자기 고장 난 것이고, 원인은 아홉 번째 메시지에 있다.
+ *
+ * 그러니 **들어오기 전에 막아야 한다.** 한 번 실려 들어가면 그 뒤는 늦다.
+ *
+ * 8000 은 Bedrock 이 거절한 값이고 Anthropic 규격이 적어 둔 값과 같다.
+ */
+export const 픽셀한도 = 8000;
+
 /** 경로만 보고 그림인지. 실제로 그림인지는 그림읽기() 가 속을 보고 정한다. */
 export function 그림인가(경로) {
   const s = String(경로 ?? '').toLowerCase();
@@ -107,7 +132,91 @@ export function 그림읽기(abs, { 한도 = 기본한도 } = {}) {
         + ' 내려받다 만 파일이거나, 로그인 화면 HTML 이 그림 이름으로 저장된 것일 수 있습니다.',
     };
   }
-  return { ok: true, b64: buf.toString('base64'), mime, bytes };
+
+  /*
+   * 치수를 본다. 못 읽으면 **막지 않는다** — 우리가 못 읽는 모양이라고 서버도
+   * 못 읽는다는 뜻은 아니다. 모르는 것을 이유로 막으면 멀쩡한 그림이 안 실린다.
+   */
+  const 잰것 = 치수읽기(buf, mime);
+  if (잰것 && (잰것.가로 > 픽셀한도 || 잰것.세로 > 픽셀한도)) {
+    return {
+      ok: false,
+      bytes,
+      가로: 잰것.가로,
+      세로: 잰것.세로,
+      왜: `그림의 한 변이 깁니다 (${잰것.가로}×${잰것.세로} · 한 변 한도 ${픽셀한도}px) —`
+        + ' 잘라서 저장한 뒤 다시 주세요. 화면 전체를 길게 찍은 사진이 흔히 여기 걸립니다.'
+        + ' 여기서는 크기를 줄이지 않습니다. 줄이려면 다른 프로그램이 필요한데,'
+        + ' 이 도구는 아무것도 안 깔고 도는 것이 규칙입니다.',
+    };
+  }
+  return { ok: true, b64: buf.toString('base64'), mime, bytes, ...(잰것 ?? {}) };
+}
+
+/**
+ * 그림의 가로·세로를 **머리말만 읽어서** 잰다. 못 알아보면 null.
+ *
+ * 파일을 통째로 해석하지 않는다. 각 형식이 앞쪽에 치수를 적어 두므로 그 자리만
+ * 본다 — 의존성 0개를 지키면서 픽셀을 아는 유일한 길이다.
+ */
+export function 치수읽기(buf, mime = null) {
+  // 10 은 형식들 가운데 제일 짧은 머리말(GIF)이다. 그보다 크게 잡으면 GIF 가
+  // 형식별 검사에 닿기도 전에 잘린다 — 실제로 그랬다.
+  if (!buf || buf.length < 10) return null;
+  const 꼴 = mime ?? 그림종류(buf);
+  try {
+    // PNG: 서명 8바이트 + 길이 4 + 'IHDR' 4 뒤에 가로·세로가 빅엔디안 4바이트씩.
+    if (꼴 === 'image/png') {
+      if (buf.length < 24 || buf.toString('ascii', 12, 16) !== 'IHDR') return null;
+      return { 가로: buf.readUInt32BE(16), 세로: buf.readUInt32BE(20) };
+    }
+    // GIF: 머리말 6바이트 뒤에 가로·세로가 리틀엔디안 2바이트씩.
+    if (꼴 === 'image/gif') {
+      if (buf.length < 10) return null;
+      return { 가로: buf.readUInt16LE(6), 세로: buf.readUInt16LE(8) };
+    }
+    if (꼴 === 'image/webp') return webp치수(buf);
+    if (꼴 === 'image/jpeg') return jpeg치수(buf);
+  } catch { /* 잘린 파일이면 그냥 모르는 것으로 둔다 */ }
+  return null;
+}
+
+/*
+ * JPEG 는 치수가 고정된 자리에 없다. SOF 표시를 찾아 그 안에서 읽는다.
+ *
+ * SOF 는 0xFFC0~0xFFCF 인데 C4(허프만표)·C8·CC 는 SOF 가 아니다. 그 셋을 빼야
+ * 엉뚱한 토막에서 숫자를 읽고 「3×1 그림」 같은 답을 내지 않는다.
+ */
+function jpeg치수(buf) {
+  let i = 2;                                   // 0xFFD8 다음부터
+  while (i + 9 < buf.length) {
+    if (buf[i] !== 0xff) { i += 1; continue; } // 채움 바이트를 건너뛴다
+    const 표시 = buf[i + 1];
+    if (표시 === 0xd8 || 표시 === 0x01 || (표시 >= 0xd0 && 표시 <= 0xd7)) { i += 2; continue; }
+    const 길이 = buf.readUInt16BE(i + 2);
+    if (길이 < 2) return null;
+    const SOF = 표시 >= 0xc0 && 표시 <= 0xcf && 표시 !== 0xc4 && 표시 !== 0xc8 && 표시 !== 0xcc;
+    if (SOF) return { 가로: buf.readUInt16BE(i + 7), 세로: buf.readUInt16BE(i + 5) };
+    i += 2 + 길이;
+  }
+  return null;
+}
+
+/* WebP 는 속이 셋(VP8 · VP8L · VP8X)이고 치수가 저마다 다른 자리에 다르게 담긴다. */
+function webp치수(buf) {
+  if (buf.length < 30) return null;
+  const 갈래 = buf.toString('ascii', 12, 16);
+  if (갈래 === 'VP8 ') return { 가로: buf.readUInt16LE(26) & 0x3fff, 세로: buf.readUInt16LE(28) & 0x3fff };
+  if (갈래 === 'VP8L') {
+    const b = buf.readUInt32LE(21);
+    return { 가로: (b & 0x3fff) + 1, 세로: ((b >> 14) & 0x3fff) + 1 };
+  }
+  if (갈래 === 'VP8X') {
+    // 24비트 리틀엔디안으로 '한 변 - 1' 이 적혀 있다.
+    const 셋 = (at) => (buf[at] | (buf[at + 1] << 8) | (buf[at + 2] << 16)) + 1;
+    return { 가로: 셋(24), 세로: 셋(27) };
+  }
+  return null;
 }
 
 /*

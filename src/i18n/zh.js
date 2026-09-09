@@ -386,7 +386,6 @@ export const zh = {
   'sum.justDone': '刚完成{n}个',
   'sum.noChange': '没有变化',
   'sum.verified': '核对{n}项',
-  'sum.readAs': '用 {쓴것} 转换后读取',
   'sum.encGuess': '{인코딩}（推测）',
   'sum.linesOf': '{준}/{전체}行',
   'sum.countOf': '{n}/{전체}个',
@@ -454,7 +453,6 @@ export const zh = {
   'paste.pasted': '已粘贴 {n} 行 — 按 Enter 一次发送',
   'run.thinking': '思考中…',
   'run.thinkingChars': '思考中… {n}字',
-  'run.turnFoot': '{초}秒 · 工具{n}次 · ↑{입력} ↓{출력}',
   'run.bye': '结束。',
   'run.byeStats': '模型调用{n}次 · 工具耗时{초}秒 · ↑{입력} ↓{출력}',
   'run.notMade': '— 没有被创建',
@@ -549,9 +547,5 @@ export const zh = {
   'undo.wayRestored': '已还原',
   'undo.wayDeleted': '已删除（原本不存在的文件）',
 
-  'common.unknownCommand': '不认识的命令',
-  'common.seeHelp': '用 /help 看命令列表',
-  'common.yes': '是',
-  'common.no': '否',
   'common.cfgSaveFailed': '设置没能写入文件（{왜}）— 本次有效，重开就会恢复原样。',
 };

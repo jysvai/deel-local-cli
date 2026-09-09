@@ -386,7 +386,6 @@ export const ja = {
   'sum.justDone': 'たった今{n}個',
   'sum.noChange': '変更なし',
   'sum.verified': '確認{n}個',
-  'sum.readAs': '{쓴것} で変換して読み込み',
   'sum.encGuess': '{인코딩}（推定）',
   'sum.linesOf': '{준}/{전체}行',
   'sum.countOf': '{n}/{전체}個',
@@ -454,7 +453,6 @@ export const ja = {
   'paste.pasted': '{n}行を貼り付けました — Enter で一度に送ります',
   'run.thinking': '考え中…',
   'run.thinkingChars': '考え中… {n}文字',
-  'run.turnFoot': '{초}秒 · ツール{n}回 · ↑{입력} ↓{출력}',
   'run.bye': '終了します。',
   'run.byeStats': 'モデル呼び出し{n}回 · ツール時間{초}秒 · ↑{입력} ↓{출력}',
   'run.notMade': '— 作られませんでした',
@@ -549,9 +547,5 @@ export const ja = {
   'undo.wayRestored': '戻しました',
   'undo.wayDeleted': '削除（元々なかったファイル）',
 
-  'common.unknownCommand': '知らないコマンド',
-  'common.seeHelp': '/help で一覧が出ます',
-  'common.yes': 'はい',
-  'common.no': 'いいえ',
   'common.cfgSaveFailed': '設定をファイルに保存できませんでした（{왜}）— 今回は効きますが、開き直すと元に戻ります。',
 };

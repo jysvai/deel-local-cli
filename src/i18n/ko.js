@@ -445,7 +445,6 @@ export const ko = {
   'sum.justDone': '방금 {n}개',
   'sum.noChange': '그대로 (바뀐 것 없음)',
   'sum.verified': '확인 {n}개',
-  'sum.readAs': '{쓴것} 로 바꿔 읽음',
   'sum.encGuess': '{인코딩} (추정)',
   'sum.linesOf': '{준}/{전체}줄',
   'sum.countOf': '{n}/{전체}개',
@@ -542,7 +541,6 @@ export const ko = {
   'paste.pasted': '{n}줄을 붙여넣었습니다 — Enter 로 한 번에 보냅니다',
   'run.thinking': '생각 중…',
   'run.thinkingChars': '생각 중… {n}자',
-  'run.turnFoot': '{초}초 · 도구 {n}회 · ↑{입력} ↓{출력}',
   'run.bye': '끝냅니다.',
   'run.byeStats': '모델 호출 {n}회 · 도구 시간 {초}초 · ↑{입력} ↓{출력}',
   'run.notMade': '— 만들어지지 않았습니다',
@@ -643,9 +641,5 @@ export const ko = {
   'undo.wayDeleted': '삭제됨(원래 없던 파일)',
 
   // ── 자주 나오는 것 ────────────────────────────────────────────────────
-  'common.unknownCommand': '모르는 명령입니다',
-  'common.seeHelp': '명령 목록은 /help',
-  'common.yes': '네',
-  'common.no': '아니요',
   'common.cfgSaveFailed': '설정을 파일에 남기지 못했습니다 ({왜}) — 이번 판에는 먹지만 다시 켜면 돌아갑니다.',
 };

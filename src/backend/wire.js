@@ -164,6 +164,18 @@ export function 기본카드(conn) {
     // 캐시 표식이 잡히는 최소 크기 (그 아래면 붙여도 안 잡힌다 — 탈은 아니다)
     캐시최소: 1024,
     /*
+     * 굳은 앞머리를 **한 시간** 살릴까 (backend/cachemark.js 의 표식긴것).
+     *
+     * 기본으로 켠다. 코딩 에이전트는 검사 한 번에 6분을 쓰는 일이 흔한데,
+     * 5분 수명은 그 틈을 못 넘긴다 — 그러면 도구가 돌 때마다 앞머리를 통째로
+     * 다시 쓴다. 나란히 재 봤을 때 캐시 쓰기가 여섯 배로 나온 자리다.
+     *
+     * 안 받는 창구는 400 으로 말해 주고, 그러면 아래 배울전선 이 이 칸만
+     * 끈다 — 캐시 자체를 끄지 않는다. 그 둘을 섞으면 `ttl` 하나를 모르는
+     * 창구에서 캐시를 통째로 잃는다.
+     */
+    긴수명: true,
+    /*
      * 출력 상한을 **어느 이름으로** 싣나 — '둘다' · '새것' · '옛것'
      *
      * 옛 규격은 `max_tokens` 하나였다. 추론 모델(o 계열·GPT-5 계열)은 그
@@ -474,6 +486,20 @@ export function 배울전선(문구, 규격) {
    * 조용히 비싸지는 쪽이라 화면에 아무 표시도 안 난다 — 이 파일이 없애려던
    * 바로 그 고장이다.
    */
+  /*
+   * ── `ttl` 만 모르는 창구 ────────────────────────────────────────────
+   *
+   * 이 갈래가 아래 `cache_control` 갈래보다 **먼저** 와야 한다. 순서가
+   * 바뀌면 수명 칸 하나를 모르는 창구에서 **캐시를 통째로 끈다** — 받을 수
+   * 있었던 것까지 잃고, 그건 조용히 비싸지는 쪽이라 화면에 아무 표시도
+   * 안 난다.
+   *
+   * 한 시간 수명은 정식 기능이지만 게이트웨이가 몸통을 그대로 넘겨 주지
+   * 않고 제 스키마로 검사하는 자리가 있어서, 거기서는 이 칸만 튕긴다.
+   */
+  if (/\bttl\b/i.test(s) && 거절.test(s)) {
+    return { 무엇: '긴수명', 값: false, 왜: 짧게(s) };
+  }
   if (/cache_control/i.test(s) && 거절.test(s)) {
     /*
      * 다른 이름으로 바꿔 보는 것은 **OpenAI 규격일 때만** 이다.
@@ -494,14 +520,38 @@ export function 배울전선(문구, 규격) {
     if (규격 === 'anthropic') return { 무엇: '캐시', 값: 'none', 왜: 짧게(s) };
     return { 무엇: '표식칸', 값: 'prompt_cache_breakpoint', 왜: 짧게(s) };
   }
-  if (/prompt_cache_breakpoint|prompt_cache_key|cache_creation/i.test(s) && 거절.test(s)) {
+  /*
+   * 여기 `cache_creation` 도 적혀 있었다. 지워야 하는 낱말이었다.
+   *
+   * 우리는 그런 이름의 칸을 **보내지 않는다.** 그 낱말이 실제로 나오는 자리는
+   * 답장의 셈판 하나뿐이다 — `cache_creation_input_tokens`(adapter.js 의 씀).
+   * 그러니 이 갈래는 우리가 보낸 것을 두고는 영영 안 걸리고, 대신 창구가 답장
+   * 칸 이름을 오류 문장에 얹어 주는 날 **엉뚱하게 걸린다.** 그리고 걸리면 캐시를
+   * 통째로 끄고 그 값은 디스크에 남는다. 안 걸리는 규칙은 없느니만 못하고,
+   * 엉뚱하게 걸리는 규칙은 없는 것보다 나쁘다.
+   */
+  if (/prompt_cache_breakpoint|prompt_cache_key/i.test(s) && 거절.test(s)) {
     return { 무엇: '캐시', 값: 'none', 왜: 짧게(s) };
   }
 
   // ── 세션 이름 ───────────────────────────────────────────────────────
   // 'user' 는 흔한 낱말이라 **칸 이야기일 때만** 본다. 안 그러면 아무
   // 오류 문장에나 걸려서 멀쩡한 칸을 꺼 버린다.
-  if (/(?:parameter|property|field|argument)[^\n]{0,24}['"`]?(?:user|metadata)['"`]?/i.test(s) && 거절.test(s)) {
+  /*
+   * 낱말 경계가 있어야 한다. 없으면 **이름 안에 든 것까지** 걸린다.
+   *
+   *   Unrecognized request argument supplied: username        → 걸렸다
+   *   Invalid property 'browser_metadata_extra' in request    → 걸렸다
+   *   Unrecognized request argument supplied: user_agent      → 걸렸다
+   *
+   * 셋 다 세션 이름과 아무 상관이 없는 칸이다. 그런데 걸리면 「이 창구는
+   * 세션 이름을 안 받는구나」 로 배우고 **그 값을 디스크에 남긴다.** 멀쩡히
+   * 되던 기능이 그 창구에서 영영 꺼지고, 되돌릴 길은 화면에 안 보인다.
+   *
+   * 밑줄은 낱말 글자라 `\b` 가 제 일을 한다 — `user_agent` 의 `user` 뒤는
+   * 경계가 아니고, `username` 도 마찬가지다. 따옴표·빈칸·점 앞에서만 걸린다.
+   */
+  if (/(?:parameter|property|field|argument)[^\n]{0,24}['"`]?\b(?:user|metadata)\b['"`]?/i.test(s) && 거절.test(s)) {
     return { 무엇: '세션자리', 값: null, 왜: 짧게(s) };
   }
   if (/['"`](?:user|metadata)['"`][^\n]{0,40}(?:not supported|unsupported|unknown|unexpected|invalid)/i.test(s)) {
@@ -562,7 +612,7 @@ export function 카드고치기(카드, 고침) {
   return 새;
 }
 
-export const 카드칸들 = ['생각형식', '눈금', '끄는말', '효력칸', '캐시', '표식칸', '출력칸', '세션자리', '스트림usage'];
+export const 카드칸들 = ['생각형식', '눈금', '끄는말', '효력칸', '캐시', '표식칸', '긴수명', '출력칸', '세션자리', '스트림usage'];
 
 /**
  * 집 파일에 적을 만한 것만. 주소·모델은 부르는 쪽이 열쇠로 쓴다.

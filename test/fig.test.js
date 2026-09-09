@@ -321,7 +321,7 @@ const 눌러 = (b) => zlib.deflateRawSync(b);
   const g = 통가르기(통);
   check('★ fig-kiwi 머리를 알아본다', g.판 === 15 && g.덩이들.length === 2);
 
-  const 나쁨 = Buffer.concat([Buffer.from('PKabcd', 'latin1'), Buffer.alloc(8)]);
+  const 나쁨 = Buffer.concat([Buffer.from('PK\u0003\u0004abcd', 'latin1'), Buffer.alloc(8)]);
   let 말 = '';
   try { 통가르기(나쁨); } catch (err) { 말 = err.message; }
   check('★ Figma 알맹이가 아니면 앞머리를 그대로 보여 준다', /앞머리가/.test(말), 말);
