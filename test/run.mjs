@@ -46,6 +46,7 @@ const FILES = [
   'stall.test.js',
   '무소식.test.js',
   '못붙음.test.js',
+  '막힘.test.js',
   'clientcert.test.js',
   'stats.test.js',
   'doctor.test.js',

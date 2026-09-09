@@ -43,7 +43,7 @@ import { History } from '../safety/undo.js';
 import { Audit, 열쇠묻기 } from '../safety/audit.js';
 import { activeProfile, load, resolveKey, homeDir, save as saveCfg } from '../config.js';
 import { 말 as 옮긴말 } from '../i18n/index.js';
-import { 알림채움 } from '../backend/retry.js';
+import { 알림채움, 알림말 } from '../backend/retry.js';
 import { 전선붙이기, 세션이름짓기 } from '../backend/wire.js';
 import { discover } from '../skills/discover.js';
 import { allowEndpoint, setOffline } from '../safety/network.js';
@@ -631,7 +631,7 @@ export async function acp(opts = {}) {
           // 서버가 잠깐 막아 기다리는 중. 아직 흘러간 글이 없으니 답을 새로 시작하지는 않는다.
           case 'backoff':
             말하기(`\n\n_(${ev.미리
-              ? 옮긴말('loop.quotaAhead', { 초: 알림채움(ev).초 })
+              ? 옮긴말(알림말(ev), { 초: 알림채움(ev).초 })
               : 옮긴말('loop.backoff', 알림채움(ev))})_\n\n`);
             break;
 

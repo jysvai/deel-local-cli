@@ -419,6 +419,82 @@ and you get to decide whether to keep waiting.
 What counts as news is not only text on screen. Tool-call arguments arrive split into
 fragments and produce no screen output at all, so those count as progress too.
 
+### When you hit a rate limit (429)
+
+A `429` does not mean "the server hiccuped." It means **"you have used your
+allowance."** So it gets a different ladder from `502` / `503`.
+
+| | 1st | 2nd | 3rd |
+|---|---|---|---|
+| `502` / `503` / dropped | 1s | 2s | 4s |
+| **`429`** | **5s** | **15s** | **30s** |
+
+```json
+{ "profiles": [{ "id": "corp", "retry": { "막힘base": [5000, 15000, 30000] } }] }
+```
+
+Retrying one second later is almost certain to be rejected again, and a good number
+of gateways **count the rejected request against your limit too** — knocking faster
+digs the hole deeper. Three attempts add up to 50 seconds of waiting, which clears
+most of a typical one-minute window.
+
+If the server sends `Retry-After`, **that always wins.** The ladder above is only the
+guess for when the server says nothing.
+
+**One rejection also spaces out the next call.** The ladder only applies within a
+single call. In a 200-step turn, step 41 going straight back at it means the limit
+never recovers — so for 5 seconds after a rejection the next request waits, or as long
+as the server's reset time says (up to 60s). One success clears the mark.
+
+This is not guessing the server's window; it is **slowing our own cadence**. Those are
+different things.
+
+The change came from seeing this:
+
+```
+litellm.RateLimitError: BedrockException - Too many requests sent to ApplyGuardrail:
+On-demand ApplyGuardrail sensitive information policy text units per second limit exceeded.
+... LiteLLM Retried: 2 times, LiteLLM Max Retries: 2
+```
+
+Two things are visible there. The limit is **per second** — not per minute, so a large
+prompt can exhaust that second's allowance in one request. And **the gateway had
+already retried twice**, meaning three requests went out before we ever saw the answer.
+Adding 1s / 2s / 4s on top of that is six requests in seven seconds.
+
+`retry.막힘최대` raises the attempt count for 429 alone. `retry.총상한` (5 minutes by
+default) still fences the total time spent waiting within one request.
+
+#### The 429 that clears on its own, and the one that doesn't
+
+They are different, and the screen tells them apart for you.
+
+A **per-minute limit** (`tokens per minute`, `RPM`) clears itself once the window rolls
+over. Waiting is the right answer.
+
+A **guardrail limit** does not clear by waiting.
+
+```
+Too many requests sent to ApplyGuardrail: On-demand ApplyGuardrail
+sensitive information policy text units per second limit exceeded.
+```
+
+This is **not a model token limit**. It is the amount of **text** a guardrail attached
+to the gateway scans, measured in text units per second (roughly 1,000 characters
+each). Which means:
+
+- **Every request grows as the conversation grows.** Once it crosses the threshold it
+  fails **every time** from then on — that is what "it was fine and then suddenly" is.
+- **Prompt caching does not help.** Caching is a model-side thing; the guardrail scans
+  the full text every time regardless.
+- **Lifting RPM/TPM entirely changes nothing.** `InvokeModel` and `ApplyGuardrail` are
+  different APIs with separate quotas. This is where people get stuck longest.
+
+For immediate relief, `/compact` shrinks the conversation. The real fix is for whoever
+runs the gateway to raise the `Text units per second for ApplyGuardrail` quota, or to
+stop applying the guardrail to input. Guardrails are attached per key or per team in
+the LiteLLM config, so **being limited by one you did not know was attached is common.**
+
 ### When it never connected at all
 
 The two clocks above measure what happens **after** the socket exists. This one

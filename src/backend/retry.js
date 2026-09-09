@@ -47,8 +47,39 @@ import { Aborted } from './http.js';
  * 여기서 멎는다 — 얼마나 기다릴지 모르는 채로 붙드는 일이 없어야 한다.
  */
 export function 기본정책() {
-  return { 최대: 3, 막힘최대: null, base: [1000, 2000, 4000], 흔들림: 0.3, 상한: 60000, 총상한: 300000 };
+  return {
+    최대: 3, 막힘최대: null, base: [1000, 2000, 4000],
+    막힘base: [5000, 15000, 30000],
+    흔들림: 0.3, 상한: 60000, 총상한: 300000,
+  };
 }
+
+/*
+ * ── 429 는 사다리가 따로여야 한다 ───────────────────────────────────────
+ *
+ * 502·503 은 「서버가 딸꾹질했다」 다. 1초 뒤에 다시 보내면 대개 된다.
+ * 429 는 **「네 몫을 다 썼다」** 다. 1초 뒤에 보내면 거의 확실히 또 막히고,
+ * 게이트웨이 상당수는 **막아서 돌려보낸 요청도 한도에 센다** — 빨리 두드릴수록
+ * 구덩이가 깊어진다. 같은 사다리를 쓰면 안 되는 까닭이 이것이다.
+ *
+ * 실제로 본 것(사내 LiteLLM → Bedrock):
+ *
+ *   litellm.RateLimitError: BedrockException - Too many requests sent to
+ *   ApplyGuardrail: On-demand ApplyGuardrail sensitive information policy
+ *   text units per second limit exceeded.
+ *   ... LiteLLM Retried: 2 times, LiteLLM Max Retries: 2
+ *
+ * 두 가지가 보인다.
+ *
+ *   · 한도가 **초당**이다. 분당이 아니라 초당이라, 프롬프트가 크면 한 번의
+ *     요청만으로도 그 초의 몫을 다 쓴다.
+ *   · **게이트웨이가 이미 두 번 다시 불렀다.** 우리가 그 답을 보기 전에 벌써
+ *     세 번 나간 것이다. 거기에 1초·2초·4초를 얹으면 7초 안에 여섯 번이다.
+ *
+ * 그래서 5초 · 15초 · 30초로 시작한다. 흔한 한도 창이 1분이라, 세 번째면
+ * 50초를 기다린 셈이 되어 창 하나를 거의 넘긴다. 서버가 `Retry-After` 로
+ * 말해 주면 **그 말이 언제나 이긴다** — 아래 기다릴시간 의 첫 줄이다.
+ */
 
 // 잠깐 막힌 것으로 보는 상태 코드. 529 는 Anthropic 계열 게이트웨이의 '과부하' 다.
 const 다시부를상태 = new Set([408, 429, 500, 502, 503, 504, 529]);
@@ -113,13 +144,17 @@ export function 못붙은것인가(code) {
  * 몇 ms 기다릴까. 서버가 말해 준 것이 있으면 그것, 없으면 사다리.
  * @param {{attempt?: number, retryAfter?: string|number|null}} 자리
  */
-export function 기다릴시간({ attempt = 1, retryAfter = null } = {}, 정책 = 기본정책()) {
+export function 기다릴시간({ attempt = 1, retryAfter = null, status = 0 } = {}, 정책 = 기본정책()) {
   const 서버말 = retryAfter읽기(retryAfter);
   if (서버말 !== null) return Math.min(서버말, 정책.상한);
+  // 429 는 제 사다리를 쓴다. 안 정해 뒀으면 기본 사다리로 떨어진다 — 예전
+  // 설정을 그대로 쓰는 사람에게 갑자기 다른 박자가 생기지는 않는다.
+  const 막힘인가 = Number(status) === 429;
+  const 고른것 = 막힘인가 ? (정책.막힘base ?? 정책.base) : 정책.base;
   // 사다리가 비었으면(설정이 이상하면) 기본 사다리로 — NaN 초를 기다릴 수는 없다.
-  const 사다리 = Array.isArray(정책.base) && 정책.base.some(Number.isFinite)
-    ? 정책.base.filter(Number.isFinite)
-    : 기본정책().base;
+  const 사다리 = Array.isArray(고른것) && 고른것.some(Number.isFinite)
+    ? 고른것.filter(Number.isFinite)
+    : (막힘인가 ? 기본정책().막힘base : 기본정책().base);
   const 칸 = 사다리[Math.min(attempt, 사다리.length) - 1] ?? 사다리[사다리.length - 1];
   return Math.min(정책.상한, Math.round(칸 * (1 + Math.random() * 정책.흔들림)));
 }
@@ -164,7 +199,7 @@ export function 다시부를지(r, attempt, 정책 = 기본정책(), 쌓인 = 0)
   const code = r?.code ?? null;
   if (!다시부를까({ status, code, attempt }, 정책)) return null;
   const retryAfter = r?.headers?.get?.('retry-after') ?? r?.res?.headers?.get?.('retry-after') ?? null;
-  const wait = 기다릴시간({ attempt, retryAfter }, 정책);
+  const wait = 기다릴시간({ attempt, retryAfter, status }, 정책);
   /*
    * 한 요청에서 기다린 것을 다 더해 울타리를 친다.
    *
@@ -189,6 +224,26 @@ export function 다시부를지(r, attempt, 정책 = 기본정책(), 쌓인 = 0)
  * 알림 한 덩이를 화면 말(i18n 의 loop.backoff)에 끼울 자리로 바꾼다.
  * 세 화면(repl · deel run · acp)이 같은 것을 본다 — 한 군데만 고치면 셋이 어긋난다.
  */
+/**
+ * 이 알림에 쓸 화면 말 열쇠.
+ *
+ * 세 가지가 다른 말이라 세 열쇠다.
+ *
+ *   loop.backoff     서버가 밀어냈다 — 기다렸다 **다시** 부른다 (n/max 가 있다)
+ *   loop.quotaAhead  남은 것이 0 이라고 **서버가 말해 줬다** — 보내기 전에 비킨다
+ *   loop.limitAhead  방금 429 를 맞았다. 남은 수는 모른다 — 우리 박자를 늦춘다
+ *
+ * 뒤의 둘을 한 말로 합치면 화면이 거짓말을 한다. 「할당량이 바닥났다」 는 서버가
+ * 그렇게 말해 줬을 때만 할 수 있는 말이다.
+ *
+ * 다섯 자리(repl · deel run · acp · consult 둘)가 이걸 같이 쓴다. 각자 갈라 놓으면
+ * 언젠가 하나가 빠지고, 빠진 자리는 `(0/0)` 을 찍는다 — 실제로 그랬다.
+ */
+export function 알림말(ev) {
+  if (!ev?.미리) return 'loop.backoff';
+  return ev.왜 === '막힘' ? 'loop.limitAhead' : 'loop.quotaAhead';
+}
+
 export function 알림채움(ev) {
   const 초 = (ev?.wait ?? 0) / 1000;
   return {

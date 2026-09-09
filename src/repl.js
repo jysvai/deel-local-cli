@@ -12,7 +12,7 @@ import { headerLines } from './ui/status.js';
 import { 종, 창제목, 제목되돌리기, 알릴까, 제목글 } from './ui/notify.js';
 import { 보이기 as 인트로, 기본곁말 } from './ui/intro.js';
 import { 언어잡기, 말 as 옮긴말, 세말 } from './i18n/index.js';
-import { 알림채움 } from './backend/retry.js';
+import { 알림채움, 알림말 } from './backend/retry.js';
 import { 전선붙이기, 세션이름짓기 } from './backend/wire.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
@@ -1877,7 +1877,7 @@ export async function chatLoop(opts = {}) {
           case 'backoff':
             clearThinking();
             say(ev.미리
-              ? `  ${c.yellow('⏸')} ${c.gray(옮긴말('loop.quotaAhead', { 초: 알림채움(ev).초 }))}`
+              ? `  ${c.yellow('⏸')} ${c.gray(옮긴말(알림말(ev), { 초: 알림채움(ev).초 }))}`
               : `  ${c.yellow('↻')} ${c.gray(옮긴말('loop.backoff', 알림채움(ev)))}`);
             break;
 

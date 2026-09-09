@@ -558,6 +558,9 @@ export const en = {
   'think.wireNoOff': 'this endpoint never told us its off value — the field is omitted, so the server default applies',
   'loop.wire': 'The server does not take that field — retrying with it adjusted ({무엇})',
   'loop.quotaAhead': 'Quota is empty — waiting {초}s before sending',
+  'loop.limitAhead': 'Just rate-limited — spacing this out by {초}s',
+  'net.limit.guardrail': 'This is a guardrail limit on the gateway, not a model token limit. It counts text scanned per second (text units, roughly 1,000 characters each), so as the conversation grows every request gets bigger and past some point it fails every time. Prompt caching does not help here — the guardrail scans the full text every time regardless. Raising the model per-minute request/token limits (RPM/TPM) does nothing to it: different API, different quota. /compact shrinks the conversation for immediate relief; the real fix is for whoever runs the gateway to raise the guardrail quota or stop applying it to input.',
+  'net.limit.perMinute': 'This is a per-minute limit — it clears itself once the window rolls over. Waiting is the right answer here.',
   'cost.quota': 'Server quota',
   'cost.quotaAge': 'as of {초}s ago',
 

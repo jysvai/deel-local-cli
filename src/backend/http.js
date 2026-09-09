@@ -25,6 +25,7 @@ import { Readable } from 'node:stream';
 import { checkUrl, NetBlocked } from '../safety/network.js';
 import { 프록시고르기 } from './proxy.js';
 import { 인증서찾기 } from './clientcert.js';
+import { 말 as 옮긴말 } from '../i18n/index.js';
 
 export const AUTH_STYLES = [
   { id: 'bearer', label: 'Authorization: Bearer', apply: (h, k) => { h['Authorization'] = `Bearer ${k}`; } },
@@ -768,6 +769,41 @@ export function 프록시힌트(말) {
   return `게이트웨이 앞단 프록시가 '${도구}' 를 돌리다 실패했습니다 — 모델이 아니라 프록시 쪽 문제입니다.`;
 }
 
+/**
+ * 429 본문을 보고 **무슨 한도인지** 알아본다.
+ *
+ * ── 왜 이게 필요한가 ────────────────────────────────────────────────────
+ *
+ * 화면에 「서버가 잠시 막았습니다 (HTTP 429)」 만 뜨면, 사람이 할 수 있는 것이
+ * 기다리는 것밖에 없다. 그런데 429 는 **한 가지가 아니다.** 어떤 것은 1분 뒤에
+ * 저절로 풀리고, 어떤 것은 관리자가 할당량을 올려 주기 전까지 안 풀린다. 그
+ * 둘에 같은 말을 하면 사람은 30분을 기다리다 포기한다.
+ *
+ * 실제로 이런 것이 왔다.
+ *
+ *   Too many requests sent to ApplyGuardrail: On-demand ApplyGuardrail
+ *   sensitive information policy text units per second limit exceeded.
+ *
+ * 이건 모델 토큰 한도가 아니다. **가드레일이 훑는 글의 양**이고, 단위가 초당
+ * text unit(1 TU 는 1,000자쯤)이다. 그래서 대화가 자랄수록 매 요청이 커지고,
+ * 어느 순간부터 **매번** 걸린다 — 「잘하다가 갑자기」 가 이 모양이다.
+ *
+ * 그리고 프리픽스 캐시가 여기서는 하나도 안 듣는다. 캐시는 모델 쪽 이야기고,
+ * 가드레일은 캐시와 무관하게 매번 전체 글을 훑는다. 이걸 모르면 「캐시가 걸리는데
+ * 왜 한도에 걸리지」 에서 막힌다.
+ *
+ * 원문은 지우지 않고 뒤에 남긴다 — 사내 담당자에게 그대로 보여 줘야 할 때가
+ * 있다. 프록시힌트 와 같은 자세다.
+ */
+export function 막힘힌트(글) {
+  const s = String(글 ?? '');
+  // 가드레일: 초당 **글의 양**. 기다린다고 안 풀리고, 프롬프트를 줄이거나 한도를 올려야 한다.
+  if (/guardrail/i.test(s) && /text\s*units?/i.test(s)) return 옮긴말('net.limit.guardrail');
+  // 분당 한도: 창이 새로 열린다. 여기서는 기다리는 것이 맞는 답이다.
+  if (/per\s*minute|\bTPM\b|\bRPM\b/i.test(s)) return 옮긴말('net.limit.perMinute');
+  return null;
+}
+
 // 서버가 준 오류 본문에서 사람이 읽을 문장만 뽑는다.
 export function serverMessage(r) {
   if (r.error) return r.error;
@@ -780,6 +816,6 @@ export function serverMessage(r) {
   else return `HTTP ${r.status}`;
   // 알아본 것이 있으면 원문 대신 그것을 앞에 세운다. 원문은 뒤에 한 줄로 남긴다 —
   // 사내 담당자에게 그대로 보여 줘야 할 때가 있다.
-  const 힌트 = 프록시힌트(말);
+  const 힌트 = 프록시힌트(말) ?? (Number(r.status) === 429 ? 막힘힌트(말) : null);
   return 힌트 ? `${힌트}\n원문: ${말.slice(0, 160)}` : 말;
 }

@@ -6,7 +6,7 @@ import {
   req, headersFor, serverMessage, Aborted, 잠잠기본, 연결기본, 초로,
   무소식기본, 무소식알림기본, 소식없음오류,
 } from './http.js';
-import { 할당량기억, 미리기다릴까, 마지막할당량, 할당량자리 } from './quota.js';
+import { 할당량기억, 미리기다릴까, 왜띄우나, 마지막할당량, 할당량자리 } from './quota.js';
 import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
 import { 말 } from '../i18n/index.js';
 import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
@@ -1011,9 +1011,10 @@ function 몸덤프(body) {
  */
 async function 미리비키기(opts, conn) {
   // **이 창구** 것만 본다. 옆 창구가 바닥났다고 이쪽이 기다리면 안 된다.
-  const ms = 미리기다릴까(마지막할당량(할당량자리(conn)));
+  const 것 = 마지막할당량(할당량자리(conn));
+  const ms = 미리기다릴까(것);
   if (!ms) return 0;
-  opts.onBackoff?.({ type: 'backoff', status: 429, code: null, wait: ms, attempt: 0, max: 0, 미리: true });
+  opts.onBackoff?.({ type: 'backoff', status: 429, code: null, wait: ms, attempt: 0, max: 0, 미리: true, 왜: 왜띄우나(것) });
   await 기다리기(ms, opts.signal ?? null);
   return ms;
 }
@@ -1091,7 +1092,8 @@ export async function chat(conn, opts) {
     });
     // 서버가 남았다고 말해 준 할당량을 적어 둔다 (backend/quota.js).
     // 429 를 맞고 나서야 아는 것과, 맞기 전에 아는 것은 사람이 할 일이 다르다.
-    할당량기억(r.headers, 할당량자리(conn));
+    // 막힌 것이면 그 사실도 적는다 — 다음 부름이 이걸 보고 띄운다 (backend/quota.js).
+    할당량기억(r.headers, 할당량자리(conn), { 막힘: r.status === 429 });
     // 다듬느라 이름을 고쳤으면 여기서 되돌린다. 밖에서는 그런 일이 있었는지
     // 모른 채로 원래 이름을 받는다.
     if (r.ok) {
@@ -1175,9 +1177,10 @@ export async function* chatStream(conn, opts) {
   let 열쇠다시받음 = false;
   let 쌓인대기 = 0;
   {
-    const 미리 = 미리기다릴까(마지막할당량(할당량자리(conn)));
+    const 잰것 = 마지막할당량(할당량자리(conn));
+    const 미리 = 미리기다릴까(잰것);
     if (미리) {
-      yield { type: 'backoff', status: 429, code: null, wait: 미리, attempt: 0, max: 0, 미리: true };
+      yield { type: 'backoff', status: 429, code: null, wait: 미리, attempt: 0, max: 0, 미리: true, 왜: 왜띄우나(잰것) };
       await 기다리기(미리, opts.signal ?? null);
       쌓인대기 += 미리;
     }
@@ -1199,7 +1202,7 @@ export async function* chatStream(conn, opts) {
       stream: true,
       signal: opts.signal ?? null,
     });
-    할당량기억(r.headers ?? r.res?.headers, 할당량자리(conn));
+    할당량기억(r.headers ?? r.res?.headers, 할당량자리(conn), { 막힘: r.status === 429 });
     if (r.ok && r.res?.body) break;
     const 거절 = await 거절읽기(r);
     // 위 chat() 과 같은 규칙. 몸을 먼저 읽고(거절읽기) 나서 다시 부른다 —

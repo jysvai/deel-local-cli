@@ -26,7 +26,7 @@ import { History } from './safety/undo.js';
 import { Audit, 열쇠묻기 } from './safety/audit.js';
 import { activeProfile, load, resolveKey, 잠금소식, 열쇠탈소식, 프로젝트설정소식 } from './config.js';
 import { 말 as 옮긴말 } from './i18n/index.js';
-import { 알림채움 } from './backend/retry.js';
+import { 알림채움, 알림말 } from './backend/retry.js';
 import { 전선붙이기, 세션이름짓기 } from './backend/wire.js';
 import { newId } from './agent/store.js';
 import { discover, loadCommand } from './skills/discover.js';
@@ -605,7 +605,7 @@ export async function runOnce(opts = {}) {
           // 맞고 물러난 것과 맞기 전에 비킨 것은 다른 일이다. 같은 말로 적으면
           // 있지도 않은 429 가 배치 기록에 남는다.
           곁(ev.미리
-            ? `  ${c.yellow('⏸')} ${c.gray(옮긴말('loop.quotaAhead', { 초: 알림채움(ev).초 }))}`
+            ? `  ${c.yellow('⏸')} ${c.gray(옮긴말(알림말(ev), { 초: 알림채움(ev).초 }))}`
             : `  ${c.yellow('↻')} ${c.gray(옮긴말('loop.backoff', 알림채움(ev)))}`);
           break;
 

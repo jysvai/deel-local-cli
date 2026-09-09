@@ -26,6 +26,7 @@ import { run } from '../src/agent/loop.js';
 import { chat } from '../src/backend/adapter.js';
 import { allowEndpoint } from '../src/safety/network.js';
 import { 다시부를까, 기다릴시간, 기다리기, 기본정책, 다시부를지 } from '../src/backend/retry.js';
+import { 할당량잊기 } from '../src/backend/quota.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -178,14 +179,29 @@ function 새연결(추가 = {}) {
   return {
     kind: 'openai', base, auth: 'bearer', key: 'test-key', model: 'fake-llm',
     ctx: 32768, streaming: true, tools: true, json: true, think: false,
-    // 검사가 7초를 기다릴 일은 아니다. 사다리를 짧게 준다 — 모양은 같다.
-    retry: { base: [40, 80, 160] },
+    /*
+     * 검사가 7초를 기다릴 일은 아니다. 사다리를 짧게 준다 — 모양은 같다.
+     *
+     * 429 사다리(막힘base)도 같이 줄인다. 진짜 값은 5초·15초·30초라서, 안 줄이면
+     * 이 파일 하나가 1분을 넘게 쓴다. **비율은 그대로 둔다** — 429 쪽이 여전히
+     * 딸꾹질 쪽보다 확실히 느리다. 그 차이가 이 사다리가 둘인 이유다.
+     */
+    retry: { base: [40, 80, 160], 막힘base: [60, 120, 240] },
     ...추가,
   };
 }
 
 async function 돌리기(대본, { conn = 새연결(), signal = null, 중간에 = null } = {}) {
   script = 대본; turn = 0; hits.length = 0;
+  /*
+   * 창구별 할당량 기억을 비운다 (backend/quota.js).
+   *
+   * 그 표는 모듈 하나에 살아서 검사 칸막이를 넘는다. 앞 칸에서 429 를 맞으면
+   * 「방금 막혔다」 가 적히고, 다음 칸의 첫 부름이 그걸 보고 **띄운다** — 제품에서는
+   * 그게 맞는 동작이지만(그러라고 넣은 것이다), 여기서는 앞 칸이 뒤 칸을 흔드는 것이다.
+   * 한 칸이 한 가지만 재게 비우고 시작한다.
+   */
+  할당량잊기();
   const session = new Session(conn, { root, mode: 'auto', think: 'off' });
   const events = [];
   const t0 = Date.now();
@@ -363,7 +379,10 @@ trace('9-400');
    * 여기서 null 을 돌려주는 것이 곧 「사실대로 말하고 끝낸다」 다. 조용히
    * 계속 기다리면 화면이 멈춘 것과 구별이 안 된다.
    */
-  const 짧은정책 = { ...정책, base: [1000, 1000, 1000], 흔들림: 0, 총상한: 2500 };
+  // 재는 것은 총상한 울타리다. 429 로 재고 있으니 429 쪽 사다리(막힘base)를 줘야
+  // 한다 — 안 주면 진짜 사다리(5초)가 울타리(2.5초)를 첫 칸에서 넘어, 울타리가
+  // 아니라 사다리를 재는 검사가 된다.
+  const 짧은정책 = { ...정책, base: [1000, 1000, 1000], 막힘base: [1000, 1000, 1000], 흔들림: 0, 총상한: 2500 };
   check('★ 아직 여유가 있으면 부른다',
     다시부를지({ status: 429 }, 1, 짧은정책, 0) !== null);
   check('★ 총상한을 넘으면 안 부른다',

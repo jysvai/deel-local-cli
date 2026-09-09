@@ -32,7 +32,7 @@ import { allowTemporarily } from './safety/network.js';
 import { chat, 규격이름, 더할머리 } from './backend/adapter.js';
 import { 잠잠기본, 무소식기본 } from './backend/http.js';
 import { 인증서설정, 인증서말 } from './backend/clientcert.js';
-import { 알림채움 } from './backend/retry.js';
+import { 알림채움, 알림말 } from './backend/retry.js';
 import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
 import { 정한셸 } from './tools/shell.js';
 import { TOOLS, 영어설명 } from './tools/index.js';
@@ -277,7 +277,9 @@ export async function handle(line, session, ctx) {
           temperature: 0.3,
           // 서버가 잠깐 막으면 돌림표 뒤에 숨기지 않고 말한다 — 왜 오래 걸리는지 보여야 한다.
           onBackoff: (알림) => {
-            돌림.stop(`  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`);
+            돌림.stop((알림.미리
+              ? `  ${c.yellow('⏸')} ${c.gray(말(알림말(알림), { 초: 알림채움(알림).초 }))}`
+              : `  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`));
             돌림 = spin(말('consult.asking', { 모델: 새conn.model }));
           },
         });
@@ -644,7 +646,9 @@ export async function handle(line, session, ctx) {
       let s = spin('앞선 대화를 요약해 접는 중…');
       const r = await compact(session, {
         onBackoff: (알림) => {
-          s.stop(`  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`);
+          s.stop((알림.미리
+              ? `  ${c.yellow('⏸')} ${c.gray(말(알림말(알림), { 초: 알림채움(알림).초 }))}`
+              : `  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`));
           s = spin('앞선 대화를 요약해 접는 중…');
         },
       });
@@ -2289,7 +2293,9 @@ async function 커밋명령(session, ctx, arg = '') {
     전부,
     제목: 준제목,
     onBackoff: (알림) => {
-      돌림.stop(`  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`);
+      돌림.stop((알림.미리
+              ? `  ${c.yellow('⏸')} ${c.gray(말(알림말(알림), { 초: 알림채움(알림).초 }))}`
+              : `  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`));
       돌림 = spin(도는말);
     },
   });
