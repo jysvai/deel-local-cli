@@ -150,6 +150,9 @@ trace('4-멀쩡한범위');
 trace('5-길면짧게');
 {
   const { 길이규칙, 짧게다시할까, 두판돌리기 } = await import('../tools/리뷰길이.mjs');
+  // 집안규칙의 보고 형식 줄. 두 판의 형식이 어긋나면 모델은 하나를 버린다.
+  const 집안규칙형식 = readFileSync(new URL('../tools/review2.mjs', import.meta.url), 'utf8')
+    .split('\n').find((줄) => /보고 형식/.test(줄)) ?? '';
 
   const 첫판 = 길이규칙(1).join('\n');
   const 둘째 = 길이규칙(2).join('\n');
@@ -187,6 +190,13 @@ trace('5-길면짧게');
   for (const 말 of [
     'connection cut off by peer', 'stream cut off', 'socket cut off',
     'ECONNRESET', 'socket hang up', 'read ETIMEDOUT',
+    /*
+     * 9차 리뷰. 「무엇이 잘렸나」 를 낱말 하나로만 봐서, `response` 가
+     * 들어간 망 끊김이 그대로 다시 물어졌다. 잘린 것은 **답**이지
+     * 연결이나 흐름이 아니다.
+     */
+    'response stream cut off by peer', 'output stream cut off',
+    'the response connection was cut off by the proxy',
   ]) {
     check(`★★★ 망이 끊긴 것은 다시 안 묻는다 — "${말}"`,
       짧게다시할까({ status: 'ERROR', error: 말 }, '') === false, 말);
@@ -209,7 +219,15 @@ trace('5-길면짧게');
    * 두 번째 판 규칙이 「두 줄」 만 적고 심각도 자리를 안 줬다(8차 리뷰).
    * 모델은 둘 중 하나를 버릴 수밖에 없다.
    */
-  check('★★★ 두 번째 판도 심각도 자리를 준다', /심각도/.test(둘째), 둘째);
+  /*
+   * 낱말이 어딘가 있기만 하면 되는 것이 아니다 — **형식 줄**에 있어야
+   * 모델이 그 자리에 적는다(9차 리뷰). 형식을 적은 줄에서 찾는다.
+   */
+  const 형식줄 = 길이규칙(2).find((줄) => /파일:줄/.test(줄)) ?? '';
+  check('★★★ 두 번째 판도 형식 줄에 심각도 자리를 준다',
+    /심각도/.test(형식줄), 형식줄 || 둘째);
+  check('★★★ 두 판의 형식이 어긋나지 않는다',
+    /심각도/.test(형식줄) === /심각도/.test(집안규칙형식), `${형식줄} / ${집안규칙형식}`);
 
   /*
    * ── 재시도 배선 자체를 잰다 ──────────────────────────────────────────
@@ -228,6 +246,7 @@ trace('5-길면짧게');
     check('★★★ 답이 오면 한 판만 돈다',
       부른판.join(',') === '1' && 한판이면.답 === '· a.js:1 · 뭔가' && 한판이면.걸린초 === 3,
       `${부른판} · ${JSON.stringify(한판이면.답)} · ${한판이면.걸린초}`);
+    check('★★ 한 판만 돌았다고 말한다', 한판이면.두판 === false, String(한판이면.두판));
 
     부른판.length = 0;
     let 몇번 = 0;
@@ -241,6 +260,7 @@ trace('5-길면짧게');
     check('★★★ 길어서 버려지면 두 번째 판을 부른다', 부른판.join(',') === '1,2', String(부른판));
     check('★★★ 두 번째 판 답으로 갈아 낀다', 두판.답 === '· b.js:2 · 짧게', JSON.stringify(두판.답));
     check('★★★ 걸린 시간은 두 판을 더한다', 두판.걸린초 === 15, String(두판.걸린초));
+    check('★★ 두 판 돌았다고 말한다', 두판.두판 === true, String(두판.두판));
 
     부른판.length = 0;
     const 알린것 = [];
@@ -260,8 +280,12 @@ trace('5-길면짧게');
    */
   {
     const 본문 = readFileSync(new URL('../tools/review2.mjs', import.meta.url), 'utf8');
-    check('★★★ review2 가 두판돌리기를 쓴다',
-      /두판돌리기/.test(본문) && /from '\.\/리뷰길이\.mjs'/.test(본문),
+    /*
+     * **부르는지**를 봐야 한다. 이름만 찾으면 import 한 줄로 초록이 되고,
+     * 정작 부르는 자리를 지워도 안 빨개진다(9차 리뷰).
+     */
+    check('★★★ review2 가 두판돌리기를 부른다',
+      /두판돌리기\s*\(/.test(본문) && /from '\.\/리뷰길이\.mjs'/.test(본문),
       본문.split('\n').filter((줄) => /리뷰길이|두판돌리기/.test(줄)).join(' / '));
   }
 }

@@ -67,6 +67,16 @@ export function 길이규칙(판 = 1) {
  * 보냈다. 주석에는 안 그런다고 적어 놓고서다. **무엇이** 잘렸는지를 같이
  * 본다 — 여기서 잘린 것은 답이지 연결이 아니다.
  *
+ * 낱말 하나를 앞에 두는 것으로는 모자랐다(9차 리뷰). `output` · `response`
+ * 가 마흔 자 안에 있기만 하면 됐으니 —
+ *
+ *     "response stream cut off by peer"
+ *     "the response connection was cut off by the proxy"
+ *
+ * 가 다시 걸렸다. 답이 잘렸다는 말은 **그 낱말이 바로 앞에 있는** 꼴이다
+ * (`response was cut off` · `output truncated`). 사이에 다른 이름씨가
+ * 끼면 잘린 것은 그 이름씨지 답이 아니다.
+ *
  * @param {{status?: string, error?: unknown}|null} 끝맺음 agy 의 마지막 result 사건
  * @param {string} 답 받아 낸 글
  * @returns {boolean}
@@ -74,7 +84,7 @@ export function 길이규칙(판 = 1) {
 export function 짧게다시할까(끝맺음, 답) {
   if (String(답 ?? '').trim()) return false;
   const 말 = String(끝맺음?.error ?? '');
-  return /output token limit|exceeded the output|\b(?:output|response|answer)\b[^\n]{0,40}\bcut off\b/i.test(말);
+  return /output token limit|exceeded the output|\b(?:output|response|answer)\s+(?:was\s+|is\s+|got\s+)?(?:cut off|truncated)\b/i.test(말);
 }
 
 /**
