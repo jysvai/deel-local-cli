@@ -588,16 +588,33 @@ export class Session {
   listedSkills() {
     const rank = { project: 0, user: 1, builtin: 2, plugin: 3 };
     const 자리 = (x) => rank[x.source] ?? 9;
-    const 켜진것 = this.skills.filter((s) => s.enabled);
-    const 내장 = 켜진것.filter((s) => s.source === 'builtin').slice(0, this.maxSkillsListed);
-    const 나머지 = 켜진것
-      .filter((s) => s.source !== 'builtin')
-      .slice()
-      .sort((a, b) => 자리(a) - 자리(b))
-      .slice(0, Math.max(0, this.maxSkillsListed - 내장.length));
+    const 줄세운것 = this.skills.filter((s) => s.enabled).slice()
+      .sort((a, b) => 자리(a) - 자리(b));
+    /*
+     * 내장 몫은 **상한의 1/4 까지**다.
+     *
+     * 처음에는 상한까지 무조건 먼저 뗐다. 그랬더니 살리려던 것이 굶기는
+     * 쪽이 됐다 — 2차 리뷰가 재 준 자리다.
+     *
+     *     상한 10 · project 10개 + builtin 7개  →  project 3개 · builtin 7개
+     *
+     * 자리표가 말하는 순서(프로젝트 > 사용자 > 내장 > 플러그인)와 정반대다.
+     * 그리고 그 때문에 스킬자리.test.js 의 자리표 검사가 **죽은 검사**였다 —
+     * 내장은 자리표를 안 거치고 뽑혀 올라오니, rank 에서 builtin 을 지워도
+     * 빨개지지 않았다. 구멍을 막으려고 넣은 것이 또 다른 구멍을 만들었다.
+     *
+     * 기본 상한 40 에서는 몫이 10칸이라 일곱이 다 들어간다 — 지금과 같다.
+     * 상한이 좁을 때만 가까운 것에게 자리를 돌려준다. 매어 두는 값은
+     * 「통째로 사라지지 않는다」 이지 「무조건 다 실린다」 가 아니다.
+     */
+    const 몫 = Math.max(1, Math.floor(this.maxSkillsListed / 4));
+    const 매어둔것 = new Set(줄세운것.filter((s) => s.source === 'builtin').slice(0, 몫));
+    const 나머지 = 줄세운것
+      .filter((s) => !매어둔것.has(s))
+      .slice(0, Math.max(0, this.maxSkillsListed - 매어둔것.size));
     // 목록 안에서도 가까운 것이 먼저 보이게 다시 세운다. 같은 갈래끼리는
     // 원래 차례 그대로다(sort 가 안정적이다).
-    return [...나머지, ...내장].sort((a, b) => 자리(a) - 자리(b));
+    return [...나머지, ...매어둔것].sort((a, b) => 자리(a) - 자리(b));
   }
 
   /*

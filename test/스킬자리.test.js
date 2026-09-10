@@ -113,6 +113,47 @@ trace('3-내장남음');
     l2.filter((x) => x.source === 'builtin').length === 내장이름들.length, '');
 }
 
+// ── 3-나. 내장이 가까운 것을 굶기지 않는다 ───────────────────
+//
+// 2차 리뷰가 짚었고, 돌려 보니 맞았다.
+//
+//     상한 10 · project 10개 + builtin 7개  →  project 3개 · builtin 7개
+//
+// 내장을 상한까지 **무조건 먼저** 떼어 둔 탓이다. 그러면 내장을
+// 살리려다 가까운 것을 굶기는 꼴이 된다 — 자리표가 말하는 순서
+// (프로젝트 > 사용자 > 내장 > 플러그인)와 정반대로 뒤집힌다.
+//
+// 그리고 그 때문에 위의 2번 검사가 **죽은 검사**였다 — 내장은 자리표를
+// 거치지 않고 뿑혀 올라오므로, `rank` 에서 `builtin` 을 지워도 빨개지지
+// 않았다. 구멍을 막으려고 넣은 것이 또 다른 구멍을 만들고 있었다.
+//
+// 몴을 상한의 1/4 로 둔다. 기본 상한 40 에서는 10칸이라 일곱이 다
+// 들어가고(지금과 같다), 상한이 좁을 때만 가까운 것에게 자리를 돌려준다.
+trace('3나-굶지않기');
+{
+  const 만들기 = (n, source) => Array.from({ length: n }, (_, i) => ({
+    name: `${source}-${i}`, description: '', source, enabled: true,
+  }));
+  const 내장 = 내장이름들.map((n) => ({ name: n, description: '', source: 'builtin', enabled: true }));
+
+  const s = 세션만들기();
+  s.skills = [...만들기(10, 'project'), ...내장];
+  s.maxSkillsListed = 10;
+  const l = s.listedSkills();
+  const 셈 = l.reduce((a, x) => ({ ...a, [x.source]: (a[x.source] ?? 0) + 1 }), {});
+  check('★★★ 상한이 좁으면 내장이 프로젝트를 굶기지 않는다',
+    (셈.project ?? 0) >= 7, JSON.stringify(셈));
+  check('★★★ 그래도 내장이 통째로 사라지지는 않는다',
+    (셈.builtin ?? 0) >= 1, JSON.stringify(셈));
+  check('★★ 상한은 그대로 지킨다', l.length === 10, String(l.length));
+
+  // 기본 상한(40)에서는 일곱이 전부 들어간다 — 몴이 10칸이다.
+  const s2 = 세션만들기();
+  s2.skills = [...만들기(11, 'user'), ...만들기(300, 'plugin'), ...내장];
+  check('★★★ 기본 상한에서는 내장 일곱이 전부 실린다',
+    s2.listedSkills().filter((x) => x.source === 'builtin').length === 내장이름들.length, '');
+}
+
 // ── 4. 빈 일터에서도 내장이 프롬프트에 보인다 ───────────────────────────
 //
 // 위 셋이 다 초록이어도 이어 붙이는 자리에서 어긋날 수 있다.
