@@ -485,6 +485,77 @@ trace('4-짝맞추기');
   }
 }
 
+// ── 5. 긴 명세에서 **지나가는 낱말**이 모드를 정하지 않는다 ──────────────
+//
+// 1.16 에서 한 번 고쳤다. 5,254자짜리 「빈 폴더에 웹 앱을 만들어라」 가
+// `fails` 한 낱말 때문에 디버그로 갔고, 그래서 긴 글에는 문턱을 2 올렸다.
+//
+// 그런데 올린 문턱은 **낱말 하나**만 막는다. 실제 벤치마크 지시문을 그대로
+// 넣어 보니 두 개가 걸렸다 —
+//
+//     "… handle duplicate requests, stale requests, unexpected server errors."   +3
+//     "… A failed operation must not leave state silently inconsistent."          +3
+//
+// 둘 다 증상이 아니라 **요구사항 조건절**이다. 고장 난 것이 하나도 없는
+// 빈 폴더에서 시작하는 지시문인데, 합이 6이라 3+2 문턱을 넘어 디버그가 됐다.
+// 디버그 모드는 「증상을 한 문장으로 다시 적어라 · 재현 방법부터 확보해라」
+// 를 시킨다. 아직 아무것도 없는 자리에서 재현할 증상을 찾는다.
+//
+// 눈금을 또 올려도 세 낱말이면 그대로 뚫린다. 그래서 눈금이 아니라 **견줌**
+// 으로 본다 — 같은 글에서 설계가 8점, 디버그가 6점이었다. 그 글이 말하는
+// 바는 설계·구현이지 원인 찾기가 아니다. 「고치라는 말이라 설계로는 안
+// 보낸다」 는 맞지만, 그렇다고 그 글이 디버그가 되지는 않는다. 종합에 둔다.
+{
+  // 실제 벤치마크 지시문에서 뜻이 같은 대목만 추린 것. 1,500자를 넘겨야 한다.
+  const 채움 = 'The application must support creating, listing, and updating work '
+    + 'requests with title, description, requester, assignee, priority, status, '
+    + 'created, updated, due date, and tags. Every state change must be recorded '
+    + 'in an audit trail. Approvers may approve or reject with a reason. Roles are '
+    + 'enforced on the server, never trusted from the client. Provide search, '
+    + 'filter, and sort. Provide an administrator dashboard with a summary '
+    + 'visualization. Data must persist across restarts. Write automated tests and '
+    + 'actually run them; do not weaken a test to make it pass. Handle loading, '
+    + 'empty, and error states in the interface, and confirm destructive actions. ';
+  const 벤치 = 'You are starting from a completely empty working directory. Your task '
+    + 'is to independently design, implement, test, verify, and complete a '
+    + 'production-oriented web application. Treat this as a completely new project. '
+    + 'Determine the architecture, technology choices, data model, API structure, and '
+    + 'state management yourself. Do not stop after producing a plan. '
+    + 채움 + 채움
+    + 'The server must safely handle duplicate requests, stale requests, and '
+    + 'unexpected server errors. A failed operation must not leave state silently '
+    + 'inconsistent.';
+
+  check('★ 긴 벤치마크 지시문이 1,500자를 넘는다', 벤치.length >= 1500, `${벤치.length}자`);
+
+  const r = route(벤치);
+  check('★★★ 빈 폴더에 만들라는 긴 명세가 디버그로 안 간다',
+    r.mode !== 'debug', `${r.mode} — ${r.why} · ${JSON.stringify(r.점수들)}`);
+  check('★★★ 그 명세는 읽기 전용 모드로도 안 간다',
+    !읽기만하는모드.has(r.mode), `${r.mode} — ${r.why}`);
+
+  /*
+   * 뒤집어 재 본다 — 진짜 긴 버그 보고서는 여전히 디버그로 가야 한다.
+   * 위 규칙이 「긴 글은 무조건 종합」 이 되어 버리면 이 검사가 잡는다.
+   */
+  const 버그보고 = '결제 화면이 왜 안 되는지 봐줘. 어제부터 계속 터진다. '
+    + '스택 트레이스를 같이 붙인다. TypeError: cannot read properties of undefined. '
+    + '재현은 장바구니에 두 개 담고 쿠폰을 적용하면 100% 난다. '
+    + '로그를 보면 결제 직전에 예외가 나고 그대로 죽는다. 원인을 좀 찾아줘. '.repeat(12);
+  const b = route(버그보고);
+  check('★★★ 긴 버그 보고서는 그대로 디버그로 간다',
+    b.mode === 'debug', `${b.mode} — ${b.why} · ${JSON.stringify(b.점수들)}`);
+
+  /*
+   * 짧은 글은 손대지 않는다. 「지나가는 낱말」 규칙은 긴 명세에서만 돈다.
+   * 짧은 말에서는 낱말 하나가 곧 뜻이다 — 이 파일 맨 위의 전제 그대로다.
+   */
+  const 짧은고장 = '로그인이 왜 안 되지 에러 나는데 좀 고쳐줘';
+  check('★★ 짧은 고장 신고는 그대로 디버그다',
+    route(짧은고장).mode === 'debug', `${route(짧은고장).mode}`);
+}
+
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n자동 모드 하네스  ${D}(규칙이 있는 것과 걸리는 것은 다르다)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
