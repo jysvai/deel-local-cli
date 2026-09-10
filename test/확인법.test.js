@@ -240,6 +240,12 @@ trace('9-뒤에붙는관례');
     // 밑줄로 이은 `spec` 도 뒤에 붙는 관례다(루비·파이썬 쪽). 붙임표로 이은
     // `api-spec` 과 헷갈리기 쉬워서, 둘을 나란히 재 둔다.
     ['test/api_spec.mjs', 'node test/api_spec.mjs'],
+    // 앞쪽 관례도 밑줄로 잇는다 — 주석에는 그렇게 적어 놓고 붙임표만 재고
+    // 있었다(5차 리뷰). `[-_]` 를 `[-]` 로 좁혀도 안 빨개졌다.
+    ['scripts/test_helpers.py', 'python scripts/test_helpers.py'],
+    ['scripts/qa_roles.mjs', 'node scripts/qa_roles.mjs'],
+    // 앞쪽 검사말도 복수형을 받는다.
+    ['scripts/specs-roles.mjs', 'node scripts/specs-roles.mjs'],
   ];
   for (const [이름, 나와야] of 찾아야) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
@@ -282,11 +288,18 @@ trace('9-뒤에붙는관례');
     'test/spec.d.ts',
     'scripts/verify.config.mjs',
     /*
-     * 무늬에서 뺀 갈래가 되살아나면 여기서 잡힌다 — 고 적어 뒀는데,
-     * `tsx` 는 애초에 검사끝에 없어서 무늬를 되돌려도 안 빨개진다(4차
-     * 리뷰). 아는 확장자로 재야 뜻이 생긴다.
+     * `.+` 가 점까지 삼켜서, 앞쪽 관례 뒤에 설정·번들 꼬리표가 붙어도
+     * 그대로 검사로 잡혔다(5차 리뷰). 점을 뺀 것은 **구분자 자리**였지
+     * 뒤에 오는 마디가 아니었다.
      */
-    'test/roles.spec.tsx',
+    'scripts/qa-roles.d.ts',
+    'scripts/test-helper.bundle.js',
+    'scripts/check_util.min.js',
+    /*
+     * `tsx` 는 애초에 검사끝에 없어서 무늬를 되돌려도 안 빨개진다 — 4차
+     * 리뷰가 그걸 짚었는데 검사는 그대로 뒀다(5차 리뷰가 다시 짚었다).
+     * 지운다. 무늬와 부르는법이 어긋나는지는 이 파일 끝에서 따로 잰다.
+     */
   ];
   for (const 이름 of 안찾아야) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
@@ -318,7 +331,11 @@ trace('9-뒤에붙는관례');
    * 받는다 — 붙임표로 이은 `api-spec` 은 낱말 합성이지 검사 파일이 아니다.
    * 주석에는 그렇게 적어 놓고 재는 자리가 없었다(4차 리뷰).
    */
-  for (const 이름 of ['test/approvalXtest.js', 'test/api-spec.js', 'test/roles-spec.ts']) {
+  for (const 이름 of [
+    'test/approvalXtest.js', 'test/api-spec.js', 'test/roles-spec.ts',
+    // `test` 갈래는 무관한 글자만 재고 정작 헷갈리는 붙임표를 안 쟀다(5차 리뷰).
+    'test/approval-test.js', 'test/handler-tests.js',
+  ]) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
     check(`★★★ 구분자가 점·밑줄이 아니면 검사가 아니다 — ${이름}`,
       확인법들(뿌리).length === 0, JSON.stringify(확인법들(뿌리).map((x) => x.명령)));
