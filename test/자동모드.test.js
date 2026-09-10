@@ -851,6 +851,15 @@ trace('7.5-읽기영어');
     check(`★★★ ${어느} ${바람}점이어야 한다 — "${글.slice(0, 40)}"`,
       (점[어느] ?? 0) === 바람, `${어느}=${점[어느] ?? 0} · ${JSON.stringify(점)}`);
   }
+  /*
+   * 위 마디의 「0점이어야 한다」 는 ask 만 쟀다. 주석은 「물음·검토
+   * 점수가 붙으면 안 된다」 고 적어 놓고서다(8차 리뷰). inspect 도 잰다.
+   */
+  for (const 글 of ['Fix what is broken in route.js', 'Rewrite what is left of the parser.',
+    'Fix how this works.', 'Fix how to handle errors']) {
+    check(`★★★ 고치라는 말에 검토 점수도 안 붙는다 — "${글.slice(0, 40)}"`,
+      (route(글).점수들.inspect ?? 0) === 0, JSON.stringify(route(글).점수들));
+  }
 
   /*
    * 규칙마다 **혼자 걸리는 문장**으로 잰다. 한 문장에 두 규칙이 걸리면
@@ -864,10 +873,31 @@ trace('7.5-읽기영어');
     ['Explain the approval workflow.', 'ask', 5],
     ['What does this function do?', 'ask', 5],
     ['How to run this?', 'ask', 5],
+    /*
+     * 8차 리뷰. 새로 넣은 물음 문장이 **전부 물음표로 끝나서**, 보조동사
+     * 갈래를 통째로 지워도 물음표 갈래에 얹혀 초록이었다. 물음표 없는
+     * 꼴을 같이 잰다.
+     */
+    ['How does this function work', 'ask', 5],
+    ["How's this feature implemented", 'ask', 5],
+    ['What parameters does this function take', 'ask', 5],
+    ['Give an explanation of this code', 'ask', 5],
+    ['Tell me how the approval workflow works.', 'ask', 5],
+    // 이름 안의 마침표에서 끊기면 안 된다.
+    ['What parameters does route.js take?', 'ask', 5],
+    ['How does route.js pick a mode?', 'ask', 5],
+    // 글 첫머리의 들여쓰기는 받는다 — 쓰기 갈래는 이미 그렇다.
+    ['  What does this function do?', 'ask', 5],
   ]) {
     const 점 = route(글).점수들;
+    /*
+     * 재는 모드 말고 **다른 모드가 0점인지**도 같이 본다. 안 그러면 한
+     * 문장에 두 규칙이 걸려도 못 알아챈다(8차 리뷰).
+     */
+    const 나머지 = Object.entries(점).filter(([m]) => m !== 어느 && m !== 'debug');
     check(`★★★ 혼자서도 ${바람}점이다 — "${글}"`,
-      (점[어느] ?? 0) === 바람, `${어느}=${점[어느] ?? 0} · ${JSON.stringify(점)}`);
+      (점[어느] ?? 0) === 바람 && 나머지.every(([, n]) => n === 0),
+      `${어느}=${점[어느] ?? 0} · ${JSON.stringify(점)}`);
   }
 
   for (const [한, 영] of 짝들) {
@@ -890,6 +920,16 @@ trace('7.5-읽기영어');
     'Fix what is broken in route.js',
     'Rewrite what is left of the parser.',
     'Fix how this works.',
+    /*
+     * 8차 리뷰. 위 셋은 넓힌 낱말이 **아니었다** — `this works` 는
+     * 새로 받은 말꼴이 아니라 원래도 안 걸리던 것이다. 진짜로 넓힌
+     * `how to` · `how does` · `how can` 이 든 쓰기 지시문을 넣어야
+     * 이 마디가 구현을 지킨다.
+     */
+    'Fix how to handle errors',
+    'Rewrite how to build the bundle.',
+    'Refactor how does the parser split tokens',
+    'Update what parameters this function takes',
   ]) {
     const 점 = route(글).점수들;
     check(`★★★ 쓰기 지시문에는 읽기 점수가 안 붙는다 — "${글.slice(0, 34)}"`,
