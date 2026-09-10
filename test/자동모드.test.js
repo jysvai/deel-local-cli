@@ -1056,6 +1056,19 @@ trace('7.6-계획거리');
     'Generate a roadmap for Q3.',
     'Update the plan.',
     'Create a strategy for the migration.',
+    /*
+     * 9차 리뷰. 동사와 계획거리 사이에 **꾸미는 말**이 오면 못 잡았다.
+     * 관사·대명사만 받아 뒀는데, 실제로 사람이 쓰는 말은 이쪽이 더 흔하다.
+     */
+    'Create a migration plan.',
+    'Make a detailed plan.',
+    'Create an action plan.',
+    'Make this plan.',
+    'Generate the deployment roadmap for Q3.',
+    // 고쳐 쓰는 말도 같다 — 계획을 고치라는 것은 계획 일이다.
+    'Change the plan.',
+    'Modify the rollout plan.',
+    'Develop a strategy for Q3.',
   ]) {
     check(`★★★ 계획을 만들라는 말은 손대라는 말이 아니다 — "${글}"`,
       손대라했나(글) === false, `손대라=${손대라했나(글)} · ${JSON.stringify(route(글).점수들)}`);
@@ -1070,9 +1083,28 @@ trace('7.6-계획거리');
   for (const 글 of [
     'Build a button.', 'Write a test.', 'Create the schema.',
     'Make the login form.', 'Generate the client from the spec.',
-    // `plan` 이 목적어가 아니라 **딸린 이름씨**인 자리. 이건 코드다.
+    /*
+     * `plan` 이 **뒤 이름씨를 꾸미는 자리**. 이건 코드다.
+     *
+     * 9차 리뷰. 앞 판은 2번 갈래(`add`·`rename`)로만 재서, 정작 이번에
+     * 울타리를 세운 1번 갈래(`create`·`make`·`build`)의 과차단을 못 봤다.
+     * `Create a plan table.` 이 계획 요청으로 읽혀 파일을 못 고쳤다.
+     */
     'Add a plan field to the schema.',
     'Rename the plan column.',
+    'Create a plan table.',
+    'Make the plan parser.',
+    'Build a roadmap widget.',
+    'Write the plans migration.',
+    /*
+     * 그리고 `plan.md` — 낱말 경계가 마침표 앞에서도 서기 때문에 계획
+     * **파일**을 고치라는 말이 계획 요청으로 읽혔다. 계획 문서를 고치는
+     * 것은 디스크를 고치는 일이다.
+     */
+    'Update plan.md',
+    'Update the plan.md file.',
+    'Rewrite roadmap.md',
+    // 계획을 **실행**하라는 말도 코드다. 이건 딸린 이름씨가 아니라 목적어다.
     'Implement the plan we agreed on.',
   ]) {
     check(`★★★ 계획이 아니면 그대로 손대라는 말이다 — "${글}"`,
@@ -1083,9 +1115,20 @@ trace('7.6-계획거리');
     ['계획 세워 줘', 'Make a plan for this.'],
     ['로드맵 그려 줘', 'Generate a roadmap for this.'],
     ['버튼 만들어줘', 'Build a button.'],
+    ['이전 계획 정리해 줘', 'Update the plan.'],
+    ['구현 계획 짜 줘', 'Create a migration plan.'],
   ]) {
     check(`★★★ 계획말도 같은 뜻이면 같은 모드로 — "${영}"`,
       route(한).mode === route(영).mode, `한국어 ${route(한).mode} · 영어 ${route(영).mode}`);
+  }
+  /*
+   * 「code 가 아니다」 만 재면 헐겁다 — 구현이 망가져 ask 나 종합으로 떨어져도
+   * 초록이다(9차 리뷰). 계획 요청은 **계획 모드**로 가야 한다.
+   */
+  for (const 글 of ['Make a plan for this.', 'Create a plan for the migration.',
+    'Update the plan.', 'Create a migration plan.', 'Change the plan.']) {
+    check(`★★★ 계획 요청은 plan 으로 간다 — "${글}"`,
+      route(글).mode === 'plan', `${route(글).mode} · ${JSON.stringify(route(글).점수들)}`);
   }
 }
 
