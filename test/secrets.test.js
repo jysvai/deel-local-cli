@@ -261,6 +261,51 @@ trace('2-멀쩡한글');
   }
 
   /*
+   * **값이 아닌 것을 가리면 안 된다.** 8차 리뷰가 짚었다 — 맨 낱말
+   * 갈래가 등호 뒤 첫 토막만 보고 멈춰서, `await` 같은 낱말과 참조
+   * 이름이 비밀값으로 읽혔다. 게다가 가렸다는 표시가 붙어 **가려진
+   * 줄로 보인다.** 가릴 것이 없는 줄은 손대지 않은 그대로여야 한다.
+   */
+  for (const 글 of [
+    'const API_KEY = await getToken();',
+    'const API_KEY = ENVIRONMENT || fallback;',
+    'const API_KEY = isProd ? process.env.KEY : process.env.DEV;',
+    'const API_KEY = ENV_KEY || fallbackValue;',
+    'const API_KEY = cached ?? getToken();',
+    'const API_KEY = config[key];',
+    'const API_KEY = auth.getToken();',
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 값이 아닌 것은 안 가린다: ${글.slice(0, 44)}`,
+      r.글 === 글 && !r.글.includes('«가림'), r.글);
+  }
+
+  /*
+   * 반대쪽. 맨 낱말 갈래가 **진짜로 있어야 하는 자리**는 `.env` 와 YAML 이다 —
+   * 거기서는 따옴표 없이 값이 그냥 온다. 위에서 「값이 거기서 끝나야 한다」 로
+   * 죄었으니, 죈 것이 이쪽까지 잡아먹지 않았는지 같이 잰다.
+   *
+   * 이 마디가 없으면 못 잰다. 다른 `.env` 검사들은 값이 `sk-proj-…` 라
+   * openai 갈래가 먼저 가려서, 맨 낱말 갈래가 죽어도 초록이다.
+   */
+  for (const [글, 남아야] of [
+    ['API_KEY=abcd1234', ''],
+    ['API_KEY=abcd1234\n', '\n'],
+    ['API_KEY=abcd1234 # 바꿔야 함', ' # 바꿔야 함'],
+    ['API_KEY: abcd1234', ''],
+    ['API_KEY: abcd1234\nPORT: 3000', '\nPORT: 3000'],
+    ['DEEL_TOKEN=abcd1234\r\nNEXT=1', '\r\nNEXT=1'],
+    ['export API_KEY=abcd1234;', ';'],
+    ['call(API_KEY = abcd1234)', ''],
+    ['{ API_KEY: abcd1234, a: 1 }', ', a: 1 }'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 따옴표 없는 값은 그대로 가린다: ${JSON.stringify(글).slice(0, 40)}`,
+      !r.글.includes('abcd1234') && r.글.includes('«가림:환경변수»') && r.글.endsWith(남아야),
+      JSON.stringify(r.글));
+  }
+
+  /*
    * 값 뒤에 무엇이 오든 **빗나가지 않는다.** 6차 리뷰가 짚은 자리다 —
    * 끝을 「뒤에 오는 글자」 로 잡으니 목록에 없는 글자 하나에 통째로
    * 새어 나갔다. 이제 값 자체가 어디까지인지로 잡는다.

@@ -213,10 +213,41 @@ export const 갈래 = [
      * **타입처럼 생긴 것 + 등호**가 오면 그 전부를 구분자로 친다. 타입처럼
      * 생겼다는 것은 대문자로 시작하거나 아는 밑바탕 타입이라는 뜻이다 —
      * `{ API_KEY: value, B: y = 1 }` 의 `value` 까지 삼키지 않으려는 것이다.
+     *
+     * ── 값의 첫 토막만 보고 멈췄다 ───────────────────────────────────
+     *
+     * 8차 리뷰. 맨 낱말 갈래가 등호 뒤 **첫 토막**을 잡고 거기서 끝냈다.
+     * 값 하나만 오는 줄에서는 맞는데, 식이 오면 통째로 어긋난다.
+     *
+     *     const API_KEY = isProd ? "secret12345" : "default";
+     *       → const API_KEY = «가림:환경변수» ? "secret12345" : "default";
+     *     const API_KEY = ENV_KEY || "secret12345";
+     *       → const API_KEY = «가림:환경변수» || "secret12345";
+     *     const API_KEY = await getToken();
+     *       → const API_KEY = «가림:환경변수» getToken();
+     *
+     * 가린 것이 값이 아니다. 게다가 가렸다는 표시가 붙어서, 보는 사람은
+     * 가려진 줄로 안다 — 위 「가장 나쁜 짝」 과 같은 부류다.
+     *
+     * 그래서 맨 낱말은 **거기서 값이 끝나야** 값으로 친다. 뒤에 세미콜론·
+     * 쉼표·닫는 괄호·줄바꿈·주석표가 와야 한다. `await` 도 `ENVIRONMENT` 도
+     * 뒤에 말이 더 있으니 값이 아니다. `.env` · YAML 처럼 맨 낱말이 진짜
+     * 값인 자리는 원래 줄 끝이거나 주석표 앞이라 그대로 걸린다.
+     *
+     * ── 그렇다고 식 뒤의 글자값까지 쫓아가지는 않는다 ────────────────
+     *
+     * 고치다 보니 `ENV_KEY || "secret12345"` 의 뒤엣것도 가리고 싶어진다.
+     * 그런데 그건 이 파일이 **일부러 그렇게 둔 것**이다 — 위 「돌려주는
+     * 값은 그대로 둔다」 와 검사(`돌려주는 값은 보이게 남긴다`) 가 그
+     * 자리다. 되돌림 값은 참조가 아니라 박아 넣은 값이고, 보안 점검이
+     * 잡아야 할 자리라서 보이게 남긴다.
+     *
+     * 여기서 고치는 것은 **값이 아닌 것을 가리던 것**뿐이다. 정해 둔 것을
+     * 고치는 김에 슬쩍 뒤집으면, 그건 고침이 아니라 다른 결정이다.
      */
     // 값 자리가 또 환경변수를 읽는 것이면 참조다 — Node · Vite · 파이썬 · Deno.
     id: '환경변수',
-    re: /\b([A-Z][A-Z0-9_]{2,}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(["']?\s*(?::\s*(?:[A-Z][\w$<>[\]|.,\s]{0,30}|string|number|boolean|bigint|symbol|any|unknown)\s*=|[:=])\s*)((?:\(\s*)+)?(?:(["'])(?!«)((?:(?!\4)[^\n]){4,}?)\4|(?!«)(?![\w$.]+\s*[([])(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;]{4,}))((?:\s*\))+)?/g,
+    re: /\b([A-Z][A-Z0-9_]{2,}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(["']?\s*(?::\s*(?:[A-Z][\w$<>[\]|.,\s]{0,30}|string|number|boolean|bigint|symbol|any|unknown)\s*=|[:=])\s*)((?:\(\s*)+)?(?:(["'])(?!«)((?:(?!\4)[^\n]){4,}?)\4|(?!«)(?![\w$.]+\s*[([])(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;]{4,})(?=[ \t\r]*(?:[;,)\]}\n#]|$)))((?:\s*\))+)?/g,
     바꾸기: (m, 이름, 사이, 여는, 따옴표, 값1, 값2, 닫는) =>
       `${이름}${사이}${여는 ?? ''}${표('환경변수')}${닫는 ?? ''}`,
   },
