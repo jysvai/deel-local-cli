@@ -77,6 +77,25 @@ export function 길이규칙(판 = 1) {
  * (`response was cut off` · `output truncated`). 사이에 다른 이름씨가
  * 끼면 잘린 것은 그 이름씨지 답이 아니다.
  *
+ * 10차 리뷰가 그 사이로 하나 더 넣었다 — 끼는 이름씨가 **없는** 꼴이다.
+ *
+ *     "response cut off by peer"       "answer truncated by remote"
+ *
+ * 앞이 아니라 **뒤**를 봐야 하는 자리다. `by peer` · `by the proxy` ·
+ * `ECONNRESET` 은 누가 끊었는지를 말한다. 그러니 무엇이 잘렸는지를 재기
+ * 전에, 끊은 쪽이 적혀 있으면 그 판은 망이다.
+ *
+ * 반대쪽으로는 무늬가 너무 좁았다. 낱말 사이를 빈칸으로만 봐서
+ * `output: truncated` · `output (truncated)` 를 놓쳤고, `the` 를 박아 둬서
+ * `exceeded output limit` 도 놓쳤다. 관사는 늘 붙는 것이 아니다.
+ *
+ * ── 답이 조금이라도 왔으면 다시 안 묻는다 ───────────────────────────────
+ *
+ * 잘린 채로도 발견이 몇 건 들어 있는 답이 있다. 그걸 버리고 40분을 더
+ * 쓰는 것보다 있는 것을 쓰는 편이 낫다 — 여기서 막는 것은 **빈 답**이
+ * 조용히 「지적할 것이 없다」 로 보이는 자리다. 그래서 첫 줄은 까닭을
+ * 보기 전에 답부터 본다. 이건 고장이 아니라 **정해 둔 것**이다.
+ *
  * @param {{status?: string, error?: unknown}|null} 끝맺음 agy 의 마지막 result 사건
  * @param {string} 답 받아 낸 글
  * @returns {boolean}
@@ -84,8 +103,12 @@ export function 길이규칙(판 = 1) {
 export function 짧게다시할까(끝맺음, 답) {
   if (String(답 ?? '').trim()) return false;
   const 말 = String(끝맺음?.error ?? '');
-  return /output token limit|exceeded the output|\b(?:output|response|answer)\s+(?:was\s+|is\s+|got\s+)?(?:cut off|truncated)\b/i.test(말);
+  if (망끊김.test(말)) return false;
+  return /output token limit|exceeded\s+(?:the\s+)?output|\b(?:output|response|answer)[\s:(-]+(?:was\s+|is\s+|got\s+)?(?:cut off|truncated)\b/i.test(말);
 }
+
+/** 끊은 쪽이 적혀 있으면 그 판은 답이 아니라 망이 잘린 것이다. */
+const 망끊김 = /\bby\s+(?:the\s+)?(?:peer|proxy|remote|server|client|gateway)\b|\bECONN(?:RESET|ABORTED|REFUSED)\b|\bEPIPE\b|\bsocket\s+hang\s+up\b/i;
 
 /**
  * 한 판 돌리고, **길어서 버려졌으면** 짧게 한 판 더 돌린다.

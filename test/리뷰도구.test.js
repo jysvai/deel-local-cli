@@ -150,9 +150,15 @@ trace('4-멀쩡한범위');
 trace('5-길면짧게');
 {
   const { 길이규칙, 짧게다시할까, 두판돌리기 } = await import('../tools/리뷰길이.mjs');
-  // 집안규칙의 보고 형식 줄. 두 판의 형식이 어긋나면 모델은 하나를 버린다.
+  /*
+   * 집안규칙의 보고 형식 줄. 두 판의 형식이 어긋나면 모델은 하나를 버린다.
+   *
+   * 「보고 형식」 이라는 말은 쪽지에 두 번 나온다 — 형식을 **적는** 줄과
+   * "위에 적은 그대로다" 라고 **가리키는** 줄이다(10차 리뷰). 앞엣것을
+   * 집어야 하므로 형식 자체(`파일:줄`)가 같이 있는 줄로 좁힌다.
+   */
   const 집안규칙형식 = readFileSync(new URL('../tools/review2.mjs', import.meta.url), 'utf8')
-    .split('\n').find((줄) => /보고 형식/.test(줄)) ?? '';
+    .split('\n').find((줄) => /보고 형식/.test(줄) && /파일:줄/.test(줄)) ?? '';
 
   const 첫판 = 길이규칙(1).join('\n');
   const 둘째 = 길이규칙(2).join('\n');
@@ -197,6 +203,12 @@ trace('5-길면짧게');
      */
     'response stream cut off by peer', 'output stream cut off',
     'the response connection was cut off by the proxy',
+    /*
+     * 10차 리뷰. 끼는 이름씨가 없으면 그대로 걸렸다 — `by peer` 는
+     * **누가 끊었나**를 말한다. 답이 길어서 버려진 것과는 다른 일이다.
+     */
+    'response cut off by peer', 'output cut off by the proxy',
+    'answer truncated by remote', 'output cut off (ECONNRESET)',
   ]) {
     check(`★★★ 망이 끊긴 것은 다시 안 묻는다 — "${말}"`,
       짧게다시할까({ status: 'ERROR', error: 말 }, '') === false, 말);
@@ -209,6 +221,11 @@ trace('5-길면짧게');
     'Your previous response exceeded the output token limit',
     'the output was cut off',
     'response was cut off before it finished',
+    /*
+     * 10차 리뷰. 낱말 사이를 빈칸으로만 봐서, 실제 도구가 흔히 내는
+     * 쌍점·괄호꼴을 못 잡았다. 관사도 늘 붙는 것이 아니다.
+     */
+    'output: truncated', 'output (truncated)', 'exceeded output limit',
   ]) {
     check(`★★★ 답이 잘린 것은 다시 묻는다 — "${말.slice(0, 40)}"`,
       짧게다시할까({ status: 'ERROR', error: 말 }, '') === true, 말);
@@ -226,8 +243,17 @@ trace('5-길면짧게');
   const 형식줄 = 길이규칙(2).find((줄) => /파일:줄/.test(줄)) ?? '';
   check('★★★ 두 번째 판도 형식 줄에 심각도 자리를 준다',
     /심각도/.test(형식줄), 형식줄 || 둘째);
-  check('★★★ 두 판의 형식이 어긋나지 않는다',
-    /심각도/.test(형식줄) === /심각도/.test(집안규칙형식), `${형식줄} / ${집안규칙형식}`);
+  /*
+   * 낱말 하나가 **양쪽에 있느냐**를 참거짓으로 견주면, 양쪽 다 없어도
+   * 초록이고 나머지 칸이 통째로 달라도 초록이다(10차 리뷰). 칸을 세어
+   * 견주고, **빈 것은 같아도 안 맞은 것**으로 본다.
+   *
+   * 이름도 고친다 — 여기서 견주는 것은 1판 규칙이 아니라 집안규칙이다.
+   */
+  const 형식칸 = (줄) => ['파일:줄', '심각도', '재현'].filter((칸) => 줄.includes(칸)).join('·');
+  check('★★★ 두 번째 판 형식이 집안규칙과 어긋나지 않는다',
+    형식칸(형식줄) !== '' && 형식칸(형식줄) === 형식칸(집안규칙형식),
+    `${형식칸(형식줄)} / ${형식칸(집안규칙형식)}`);
 
   /*
    * ── 재시도 배선 자체를 잰다 ──────────────────────────────────────────
@@ -279,7 +305,12 @@ trace('5-길면짧게');
    * 위 검사는 전부 초록인데 도구는 여전히 한 판만 돈다.
    */
   {
-    const 본문 = readFileSync(new URL('../tools/review2.mjs', import.meta.url), 'utf8');
+    /*
+     * 주석 줄은 빼고 본다 — 부르는 자리를 `//` 로 막아도 무늬는 그대로
+     * 걸린다(10차 리뷰). 막힌 부름은 안 부르는 것과 같다.
+     */
+    const 본문 = readFileSync(new URL('../tools/review2.mjs', import.meta.url), 'utf8')
+      .split('\n').filter((줄) => !/^\s*(?:\/\/|\*|\/\*)/.test(줄)).join('\n');
     /*
      * **부르는지**를 봐야 한다. 이름만 찾으면 import 한 줄로 초록이 되고,
      * 정작 부르는 자리를 지워도 안 빨개진다(9차 리뷰).
