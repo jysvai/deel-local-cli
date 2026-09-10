@@ -1046,7 +1046,7 @@ trace('7.3-로그오독');
   }
 }
 
-// ── 7.4 이번엔 한국어 쪽이 비어 있었다 ─────────────────────────────────// ── 7.4 이번엔 한국어 쪽이 비어 있었다 ─────────────────────────────────
+// ── 7.4 이번엔 한국어 쪽이 비어 있었다 ─────────────────────────────────
 //
 // 7·7.5 에서 영어를 한국어에 맞춰 놓고, 같은 뜻 짝 스물여섯을 죽 재 봤다.
 // 그랬더니 이번엔 **한국어가 지는 자리**가 나왔다.
@@ -1200,6 +1200,16 @@ trace('7.6-계획거리');
     'Change the plan.',
     'Modify the rollout plan.',
     'Develop a strategy for Q3.',
+    /*
+     * 10차 리뷰. 계획거리 뒤를 「문장 끝 또는 전치사」 로만 열어 뒀더니,
+     * 때를 가리키는 말 한 마디만 붙어도 울타리를 빠져나갔다. 붙임표로
+     * 이은 계획거리와 사이를 띄운 줄표도 같은 자리다.
+     */
+    'Update the plan now.',
+    'Create a plan today.',
+    'Make a plan first.',
+    'Create an action-plan.',
+    'Make a plan - urgently',
   ]) {
     check(`★★★ 계획을 만들라는 말은 손대라는 말이 아니다 — "${글}"`,
       손대라했나(글) === false, `손대라=${손대라했나(글)} · ${JSON.stringify(route(글).점수들)}`);
@@ -1237,6 +1247,12 @@ trace('7.6-계획거리');
     'Rewrite roadmap.md',
     // 계획을 **실행**하라는 말도 코드다. 이건 딸린 이름씨가 아니라 목적어다.
     'Implement the plan we agreed on.',
+    /*
+     * 위에서 붙임표 계획거리(`action-plan`)를 받기로 했으니, 반대쪽도
+     * 못박아 둔다 — 붙임표 **뒤**에 다른 말이 오면 그건 계획거리가 아니다.
+     */
+    'Update the plan-file.',
+    'Build a plan-driven scheduler.',
   ]) {
     check(`★★★ 계획이 아니면 그대로 손대라는 말이다 — "${글}"`,
       손대라했나(글) === true, `손대라=${손대라했나(글)} · ${JSON.stringify(route(글).점수들)}`);
@@ -1381,9 +1397,35 @@ trace('8-마침표뒤빈칸');
     "Build error: cannot find module 'express'", 'Build failure: exit code 1',
     'Build: failed with exit code 1.', 'Build - failed', 'Build timeout after 30s',
     'Update timed out after 30s.', 'Create crashed during migration.',
+    /*
+     * 10차 리뷰. 1번 갈래는 줄표꼴을 막는데 2·3번은 쌍점과 여는 괄호만
+     * 막았다 — 같은 로그가 어느 동사로 시작하느냐로 갈렸다.
+     */
+    'Build broken - exit status 1', 'Rewrite broken - exit status 1',
+    'Delete broken - pipe', 'Modify errors - see the log',
   ]) {
     check(`★★★ 빌드 오류 로그는 시킴말이 아니다 — "${글.slice(0, 40)}"`,
       code점(글) < 3 && 손대라했나(글) === false, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+
+  /*
+   * ⑥-나. 그 반대쪽. 실패말 뒤의 마침표·붙임표를 통째로 「로그 구분자」 로
+   * 쳤더니, 실패말이 **파일 이름의 일부**인 지시문이 죽었다(10차 리뷰).
+   *
+   *     Build errors.json        → 0점   `.json` 의 점을 문장 끝으로 읽었다
+   *     Create error-handler.js  → 0점   붙임표를 로그 구분자로 읽었다
+   *
+   * 8번 ① 이 마침표에서 배운 것과 같은 이야기다 — 점 뒤에 낱말이 붙어
+   * 있으면 그건 문장 끝이 아니다. 줄표도 **사이를 띄웠을 때**만 구분자다.
+   */
+  for (const 글 of [
+    'Build errors.json', 'Generate errors.json', 'Create error-handler.js',
+    'Update crash-report.md', 'Build broken-files.txt', 'Delete broken-files.txt',
+    // 동사 바로 뒤에 전치사가 오는 흔한 지시문도 같이 못박는다.
+    'Write to file.js', 'Build for linux', 'Migrate to ESM',
+  ]) {
+    check(`★★★ 실패말이 이름의 일부면 시킴말이다 — "${글}"`,
+      code점(글) >= 3 && 손대라했나(글) === true, `code=${code점(글)} 손대라=${손대라했나(글)}`);
   }
 
   /*

@@ -98,14 +98,15 @@
  *
  * ── 약자 목록에는 「뒤에 말이 이어지는 것」만 ───────────────────────────
  *
- * 8차 리뷰가 셋을 짚었고, 같은 부류를 하나 더 찾아 넷을 뺐다. 약자 목록을 넓히면서 **문장을 맺는 자리에 더 자주
- * 오는 말**을 같이 넣어 버렸다.
+ * 8차 리뷰가 셋을 짚었고, 같은 부류를 하나 더 찾아 넷을 뺐다. 약자 목록을
+ * 넓히면서 **문장을 맺는 자리에 더 자주 오는 말**을 같이 넣어 버렸다.
  *
  *     "No. Fix the bug."                        → `No.` 가 약자
  *     "Install git, node, etc. Build it."       → `etc.` 가 약자
  *     "Ship it to Acme Inc. Create the report." → `Inc.` 가 약자
+ *     "Sold to Acme Ltd. Build the invoice."    → `Ltd.` 가 약자
  *
- * 셋 다 마침표가 진짜 문장 끝인데 약자로 읽혀 **뒤 문장이 통째로 죽었다.**
+ * 넷 다 마침표가 진짜 문장 끝인데 약자로 읽혀 **뒤 문장이 통째로 죽었다.**
  *
  * 남길 것과 뺄 것을 가르는 것은 **그 마침표 뒤에 무엇이 오느냐**다.
  * `e.g.` · `i.e.` · `Fig.` · `Dr.` · `Mr.` 는 뒤에 말이 이어지는 자리에 오는
@@ -192,13 +193,45 @@
  * 못 받아 `Rewrite the plan.` 이 코드로 갔다(9차 리뷰) — `write` 와 짝이
  * 맞아야 하는 자리다.
  *
- * 짓는 갈래(1번)에만 건다. 2번의 `implement`·`add` 는 반대다 —
- * "Implement the plan we agreed on." 은 계획을 **실행**하라는 말이고,
- * "Add a plan field to the schema." 의 plan 은 목적어가 아니라 딸린
- * 이름씨다. 둘 다 코드가 맞다.
+ * 짓는 갈래(1번)와 고쳐 쓰는 갈래(2번)에 건다. 3번의 `implement`·`add` 는
+ * 반대다 — "Implement the plan we agreed on." 은 계획을 **실행**하라는
+ * 말이고, "Add a plan field to the schema." 의 plan 은 목적어가 아니라
+ * 딸린 이름씨다. 둘 다 코드가 맞다.
+ *
+ * ── 계획거리 뒤에 무엇이 와야 계획인가 ──────────────────────────────────
+ *
+ * 그 울타리를 「문장 끝 또는 전치사」 로만 열어 뒀더니, 때를 가리키는 말
+ * 한 마디만 붙어도 빠져나갔다(10차 리뷰).
+ *
+ *     "Update the plan now."   "Create a plan today."   "Make a plan first."
+ *
+ * 때말 여덟과 **사이를 띄운 줄표**(`Make a plan - urgently`)를 같이 받는다.
+ * 줄표는 띄웠을 때만 구분자다 — `Update the plan-file.` 은 그대로 코드다.
+ * 계획거리 앞에 붙임표가 오는 꼴(`an action-plan`)도 계획거리로 친다.
+ *
+ * ── 실패말이 이름의 일부면 그건 로그가 아니다 ───────────────────────────
+ *
+ * 실패말 목록은 두 층이다. 움직씨꼴(`failed`·`crashed`)은 뒤에 아무 문장
+ * 부호나 와도 로그로 치고, 이름씨꼴(`errors`·`broken`)은 1번 갈래에서만
+ * 막았다. 그런데 그 이름씨 층이 마침표와 붙임표를 통째로 구분자로 쳤다.
+ *
+ *     "Build errors.json"        → 0점   `.json` 의 점을 문장 끝으로 읽었다
+ *     "Create error-handler.js"  → 0점   붙임표를 로그 구분자로 읽었다
+ *     "Update crash-report.md"   → 0점
+ *
+ * 이 파일 위쪽이 마침표에서 배운 것과 같다 — **점 뒤에 낱말이 붙어 있으면
+ * 그건 문장 끝이 아니다.** 줄표도 사이를 띄웠을 때만 구분자다.
+ *
+ * 반대쪽으로는 2·3번 갈래가 쌍점과 여는 괄호만 막고 있어서, 같은 로그가
+ * 어느 동사로 시작하느냐로 갈렸다.
+ *
+ *     "Build broken - exit status 1"     → 안 걸림 (1번 갈래)
+ *     "Rewrite broken - exit status 1"   → **걸림**  (2번 갈래)
+ *
+ * 세 갈래에 같은 「띄운 줄표」 잣대를 넣어 맞춘다.
  */
 const 영어시킴말 =
-  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:(?:first|then|next|after\s+that|also|now|finally|second|third|lastly|afterwards?)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out|failures?|errors?|broken|crash|crashes|timeouts?)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:modify|change|develop|rewrite)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?|broken)\b\s*[:(]))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:implement|add|fix|refactor|remove|delete|rename|scaffold)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?|broken)\b\s*[:(])))(?!\()(?![-\w]*[ \t]*:)(?![ \t]+[\w.-]+[ \t]*:[ \t])/im;
+  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:(?:first|then|next|after\s+that|also|now|finally|second|third|lastly|afterwards?)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|broken|crash|crashes|timeouts?)\b(?=\s*(?:[,:;!?()\[\]]|$)|\s*\.(?!\w)|\s+-\s|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:[\w']+-)*(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+-[ \t]|[ \t]+(?:now|today|tonight|tomorrow|first|soon|asap|again)\b|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:modify|change|develop|rewrite)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?|broken)\b(?:\s*[:(]|\s+-\s)))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:[\w']+-)*(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+-[ \t]|[ \t]+(?:now|today|tonight|tomorrow|first|soon|asap|again)\b|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:implement|add|fix|refactor|remove|delete|rename|scaffold)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?|broken)\b(?:\s*[:(]|\s+-\s))))(?!\()(?![-\w]*[ \t]*:)(?![ \t]+[\w.-]+[ \t]*:[ \t])/im;
 
 export const 표 = {
   debug: [
