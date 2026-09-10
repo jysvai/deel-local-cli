@@ -607,14 +607,25 @@ export class Session {
      * 상한이 좁을 때만 가까운 것에게 자리를 돌려준다. 매어 두는 값은
      * 「통째로 사라지지 않는다」 이지 「무조건 다 실린다」 가 아니다.
      */
-    const 몫 = Math.max(1, Math.floor(this.maxSkillsListed / 4));
+    /*
+     * 하한을 두지 않는다. `Math.max(1, …)` 로 「적어도 하나」 를 매어 뒀더니
+     * 상한이 1일 때 내장이 그 한 칸을 차지해 **최우선인 프로젝트가 밀렸고**,
+     * 상한이 0인데도 하나가 나왔다. 「상한의 1/4」 이라고 적어 놓고 하는 일은
+     * 그게 아니었던 것이다 — 적은 말과 어긋난 쪽은 코드였다.
+     * 상한이 넷보다 작으면 몫은 0이고, 그때는 자리표가 그냥 정하면 된다.
+     */
+    const 몫 = Math.floor(this.maxSkillsListed / 4);
     const 매어둔것 = new Set(줄세운것.filter((s) => s.source === 'builtin').slice(0, 몫));
-    const 나머지 = 줄세운것
+    const 나머지 = new Set(줄세운것
       .filter((s) => !매어둔것.has(s))
-      .slice(0, Math.max(0, this.maxSkillsListed - 매어둔것.size));
-    // 목록 안에서도 가까운 것이 먼저 보이게 다시 세운다. 같은 갈래끼리는
-    // 원래 차례 그대로다(sort 가 안정적이다).
-    return [...나머지, ...매어둔것].sort((a, b) => 자리(a) - 자리(b));
+      .slice(0, Math.max(0, this.maxSkillsListed - 매어둔것.size)));
+    /*
+     * 줄세운 것에서 **골라내기만** 한다. 두 덩이로 쪼개 이어 붙였더니 앞
+     * 번호 내장이 뒤 번호 내장 뒤로 밀려, 같은 갈래 안에서 차례가 뒤집혔다
+     * (b2 b3 b4 b5 b6 b0 b1). 「안정 정렬이라 원래 차례 그대로」 라고 적어 둔
+     * 주석이 그 자리에서 거짓이 됐다. 한 줄에서 거르면 그럴 일이 없다.
+     */
+    return 줄세운것.filter((s) => 매어둔것.has(s) || 나머지.has(s));
   }
 
   /*

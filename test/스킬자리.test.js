@@ -172,6 +172,69 @@ trace('4-프롬프트');
     `안 보임: ${안보이는것.join(' · ')} (스킬 ${found.skills.length}개 중 ${s.listedSkills().length}개 실림)`);
 }
 
+// ── 5. 몫이 상한을 잡아먹지 않는다 · 차례가 안 뒤집힌다 ─────────────────
+//
+// 3차 리뷰가 셋을 짚었고 돌려 보니 다 맞았다.
+//
+//   ① 상한 1 · project 1 + builtin 1  →  ["builtin"]   ← 최우선이 밀렸다
+//   ② 상한 0                            →  ["builtin"]   ← 0인데 하나 나왔다
+//   ③ 상한 10 · builtin 7               →  b2 b3 b4 b5 b6 **b0 b1**
+//
+// ①②는 `Math.max(1, …)` 탓이다. 「몫은 상한의 1/4」 이라고 적어 놓고 하한
+// 1을 두었으니, 상한이 4보다 작으면 1/4을 넘고 1이면 통째로 차지한다.
+// 적은 말과 하는 일이 어긋난 것이고, 어긋난 쪽은 코드였다.
+//
+// ③은 목록을 둘로 쪼갠 탓이다. 앞 번호 내장을 떼어 뒤에 붙였으니 같은
+// 갈래 안에서 차례가 뒤집힌다 — 「안정 정렬이라 원래 차례 그대로」 라고
+// 적어 둔 주석이 거짓이 된다.
+trace('5-몫과차례');
+{
+  const 짓기 = (n, source) => Array.from({ length: n }, (_, i) => ({
+    name: `${source}${i}`, description: '', source, enabled: true,
+  }));
+  const 이름들 = (s) => s.listedSkills().map((x) => x.name);
+
+  const s1 = 세션만들기();
+  s1.maxSkillsListed = 1;
+  s1.skills = [...짓기(1, 'project'), ...짓기(1, 'builtin')];
+  check('★★★ 상한이 1이면 최우선(프로젝트)이 그 자리를 갖는다',
+    이름들(s1).join(',') === 'project0', JSON.stringify(이름들(s1)));
+
+  const s2 = 세션만들기();
+  s2.maxSkillsListed = 0;
+  s2.skills = 짓기(1, 'builtin');
+  check('★★★ 상한이 0이면 하나도 안 싣는다', 이름들(s2).length === 0, JSON.stringify(이름들(s2)));
+
+  const s3 = 세션만들기();
+  s3.maxSkillsListed = 10;
+  s3.skills = 짓기(7, 'builtin');
+  check('★★★ 같은 갈래 안에서 차례가 안 뒤집힌다',
+    이름들(s3).join(',') === 'builtin0,builtin1,builtin2,builtin3,builtin4,builtin5,builtin6',
+    JSON.stringify(이름들(s3)));
+
+  /*
+   * 몫이 실제로 지켜 주는지 — 사용자 것이 상한을 넘길 만큼 많을 때만
+   * 알 수 있다. 열한 개로는 40칸에 다 들어가서 몫이 있으나 없으나 같다
+   * (3차 리뷰가 「죽은 검사」 라고 짚은 자리).
+   */
+  const s4 = 세션만들기();
+  s4.skills = [...짓기(60, 'user'), ...짓기(7, 'builtin')];
+  const l4 = s4.listedSkills();
+  check('★★★ 사용자 것이 상한을 넘겨도 내장 몫이 남는다',
+    l4.filter((x) => x.source === 'builtin').length === 7, JSON.stringify(l4.length));
+  check('★★ 그래도 상한은 지킨다', l4.length === s4.maxSkillsListed, String(l4.length));
+  check('★★★ 목록에서 사용자 것이 내장보다 앞선다',
+    l4.findIndex((x) => x.source === 'builtin') > l4.findLastIndex((x) => x.source === 'user'),
+    `user 끝 ${l4.findLastIndex((x) => x.source === 'user')} · builtin 처음 ${l4.findIndex((x) => x.source === 'builtin')}`);
+
+  // 자리표가 실제로 차례를 정하는지 — 플러그인이 내장보다 뒤여야 한다.
+  const s5 = 세션만들기();
+  s5.skills = [...짓기(3, 'plugin'), ...짓기(3, 'builtin')];
+  const 갈래차례 = [...new Set(s5.listedSkills().map((x) => x.source))];
+  check('★★★ 자리표대로 내장이 플러그인보다 앞선다',
+    갈래차례.join('>') === 'builtin>plugin', 갈래차례.join('>'));
+}
+
 const G = '[32m'; const R = '[31m'; const D = '[90m'; const X = '[0m';
 console.log(`${String.fromCharCode(10)}스킬 자리 검사  ${D}(남의 플러그인이 deel 의 방법을 밀어내지 않는다)${X}${String.fromCharCode(10)}`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
