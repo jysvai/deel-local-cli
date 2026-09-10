@@ -72,6 +72,7 @@ const FILES = [
   'route.test.js',
   '단계.test.js',
   '긴명세.test.js',
+  '스킬자리.test.js',
   'modewire.test.js',
   'doc2md.test.js',
   '확인법.test.js',

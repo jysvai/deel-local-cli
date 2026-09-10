@@ -565,14 +565,39 @@ export class Session {
   /** 모델이 읽는 시스템 글 전체. 조각을 그대로 이어 붙인 것이다. */
   systemPrompt() { return this.시스템조각().join(''); }
 
-  // 프롬프트에 실제로 올릴 스킬: 가까운 자리(프로젝트 > 사용자 > 플러그인) 순으로 상한까지.
+  /*
+   * 프롬프트에 실제로 올릴 스킬: 가까운 자리부터 상한까지.
+   *
+   * ── 갈래 하나를 안 적었다 ────────────────────────────────
+   *
+   * 자리표가 `{ project, user, plugin }` 이었고 거기에 **`builtin` 이 없었다.**
+   * 그래서 내장 스킬은 `?? 맨뒤` 로 떨어져 모르는 갈래와 한 덩어리가
+   * 됐고, 앞이 40칸을 채우면 통째로 잘렸다.
+   *
+   * 빈 폴더에서 그대로 재 봤다. 시스템 프롬프트 9,399자 중 6,700자가
+   * 스킬 목록이었는데 그 40개 안에 내장은 **한 개도 없었다** — 사용자
+   * 것 11개와 남의 플러그인 29개였다. 잘린 일곱은 하필 deel 이 무엇인지를
+   * 적어 둔 것들이다 — 검사-먼저 · 끝까지-하기 · 스스로-검토 …
+   * 플러그인을 많이 까은 PC 일수록 deel 은 조용히 제 방법을 잃었다.
+   *
+   * 그래서 둘을 한다. 자리표에 `builtin` 을 적고, **먼저 떼어 둔다.**
+   * 자리만 주면 사용자 스킬이 40개를 넘는 PC 에서 같은 구멍이 다시 생긴다 —
+   * 숫자를 올리는 것으로는 막을 수 없는 부류다. 내장은 일곩 뿐이고
+   * deel 의 방법 그 자체라, 그 일곩은 자리를 따로 매어 둔다.
+   */
   listedSkills() {
-    const rank = { project: 0, user: 1, plugin: 2 };
-    return this.skills
-      .filter((s) => s.enabled)
+    const rank = { project: 0, user: 1, builtin: 2, plugin: 3 };
+    const 자리 = (x) => rank[x.source] ?? 9;
+    const 켜진것 = this.skills.filter((s) => s.enabled);
+    const 내장 = 켜진것.filter((s) => s.source === 'builtin').slice(0, this.maxSkillsListed);
+    const 나머지 = 켜진것
+      .filter((s) => s.source !== 'builtin')
       .slice()
-      .sort((a, b) => (rank[a.source] ?? 3) - (rank[b.source] ?? 3))
-      .slice(0, this.maxSkillsListed);
+      .sort((a, b) => 자리(a) - 자리(b))
+      .slice(0, Math.max(0, this.maxSkillsListed - 내장.length));
+    // 목록 안에서도 가까운 것이 먼저 보이게 다시 세운다. 같은 갈래끼리는
+    // 원래 차례 그대로다(sort 가 안정적이다).
+    return [...나머지, ...내장].sort((a, b) => 자리(a) - 자리(b));
   }
 
   /*
