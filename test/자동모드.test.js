@@ -614,6 +614,82 @@ trace('4-짝맞추기');
   }
 }
 
+// ── 7. 영어 시킴말이 code 표에서 점수를 받는다 ───────────────
+//
+// 2차 리뷰가 「설계 낙말이 없는 명세는 그대로 디버그로 간다」 고 짚었고,
+// 돌려 보니 맞았다. 그런데 그것은 증상이지 뿌리가 아니었다.
+//
+// 영어 시킴말 14개를 재 봤다. **열 개가 code 표에서 0점**이다 —
+// Build · Create · Make · Develop · Scaffold · Refactor · Remove · Set up ·
+// Migrate … 전부 손대라했나 가 참으로 아는 말인데도 그렇다.
+// 한국어 쪽은 '만들어' · '고쳐' 가 4점, '구현해' 가 5점인데 영어는
+// `implement|add|fix|write` 네 낱말이 2점씩이 전부다. code 문턴은 3이라
+// 2점짜리 하나로는 **절대** 못 넘는다.
+//
+// 그래서 「웹 앱을 만들어라」 는 긴 명세가 code 2점이고, 지나가던
+// `error`·`failed` 가 6점이라 디버그가 이긴다. 점수를 맞추면 1·2등이
+// 붙어 원래 있던 「비기면 안 고른다」 규칙이 알아서 받아 낸다.
+trace('7-영어시킴말');
+{
+  const 문턱넘어야 = [
+    'Build a complete work request and approval management web application.',
+    'Create the database schema.',
+    'Make the dashboard responsive.',
+    'Develop a production-oriented web application.',
+    'Scaffold the project structure.',
+    'Refactor the approval module.',
+    'Remove the unused files.',
+    'Set up the test runner.',
+    'Migrate the schema.',
+    'Implement the approval workflow.',
+  ];
+  for (const 글 of 문턱넘어야) {
+    let 합 = 0;
+    for (const [re, 점] of 표.code) if (re.test(글)) 합 += 점;
+    check(`★★★ 영어 시킴말이 code 문턴(3)을 넘는다 — "${글.slice(0, 34)}"`,
+      합 >= 3, `${합}점`);
+  }
+
+  /*
+   * 반대쪽 — 넣어서는 안 되는 것. 문장 가운데 낱말은 시킴말이
+   * 아니다. 이걸 넣으면 「the build is broken」 이 code 로 간다.
+   */
+  for (const 글 of [
+    'Explain how the build system works.',
+    'The build is broken and I want to understand why.',
+    'What does the create handler do?',
+    'This module writes to the audit table.',
+  ]) {
+    let 합 = 0;
+    for (const [re, 점] of 표.code) if (re.test(글)) 합 += 점;
+    check(`★★★ 문장 가운데 낱말은 code 가 아니다 — "${글.slice(0, 34)}"`,
+      합 < 3, `${합}점`);
+  }
+
+  /*
+   * 그래서 실제로 뭐가 달라지나 — 설계 낙말이 하나도 없는
+   * 「빈 폴더에 만들어라」 긴 명세. 2차 리뷰가 짚은 바로 그 자리다.
+   */
+  const 채움 = 'The application must support creating, listing, and updating work '
+    + 'requests with title, description, requester, assignee, priority, status, '
+    + 'created, updated, due date, and tags. Every state change must be recorded '
+    + 'in an audit trail. Approvers may approve or reject with a reason. Roles are '
+    + 'enforced on the server, never trusted from the client. Provide search, '
+    + 'filter, and sort. Data must persist across restarts. Write automated tests '
+    + 'and actually run them; do not weaken a test to make it pass. ';
+  const 설계없는명세 = 'You are starting from a completely empty working directory. '
+    + 'Build a production-oriented work request and approval web application. '
+    + 채움 + 채움
+    + 'The server must safely handle duplicate requests, stale requests, and '
+    + 'unexpected server errors. A failed operation must not leave state silently '
+    + 'inconsistent.';
+  const r = route(설계없는명세);
+  check('★★★ 설계 낙말이 없는 명세도 디버그로 안 간다',
+    r.mode !== 'debug', `${r.mode} — ${r.why} · ${JSON.stringify(r.점수들)}`);
+  check('★★ 그 명세는 읽기 전용으로도 안 간다',
+    !읽기만하는모드.has(r.mode), `${r.mode}`);
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n자동 모드 하네스  ${D}(규칙이 있는 것과 걸리는 것은 다르다)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

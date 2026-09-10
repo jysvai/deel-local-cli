@@ -40,6 +40,39 @@
  * "점검 이력" 이 「점검 이」 로 걸리는 식으로 넓어진다 — 가르는 자리가
  * 미묘해서, 여는 것도 좁게 연다.
  */
+/*
+ * ── 영어 시킴말 ─────────────────────────────────────────────────────────
+ *
+ * 여기 한 번만 적고 두 자리에서 쓴다 — 아래 code 점수표와, 파일 맨 아래의
+ * 손대라했나. 두 벌로 두면 한쪽만 늘어나고, 실제로 그렇게 어긋나 있었다.
+ *
+ * 손대라했나 는 build·create·make·develop·scaffold 를 다 알았다. 그런데
+ * code 점수표의 영어는 `implement|add|fix|write` 넷이 2점씩인 것이 전부였다.
+ * code 문턱은 3이라 **2점짜리 하나로는 절대 못 넘는다.**
+ *
+ *     "Build a complete work request and approval web application."
+ *       손대라했나 → 참        code 점수 → 0
+ *
+ * 열네 개를 재 보니 열 개가 0점이었다. 그래서 영어로 시킨 일은 무슨 말이든
+ * 종합에 남았고 — 그것만이면 탈이 없다 — **긴 명세에서는 졌다.** 지나가던
+ * `error`·`failed` 가 6점이라, 만들라는 3,577자 지시문이 디버그로 갔다.
+ * 2차 리뷰가 「설계 낱말이 없는 명세는 그대로 디버그로 간다」 고 짚은 자리가
+ * 이것이고, 증상이 아니라 이쪽이 뿌리였다.
+ *
+ * 점수를 맞춰 두면 1·2등이 붙어서, 원래 있던 「비기면 안 고른다」 규칙이
+ * 알아서 받아 낸다. 새 울타리를 하나 더 세우는 것보다 이쪽이 낫다.
+ *
+ * 넓히되 자리는 그대로다. 첫머리에서만 본다 — 문장 가운데 낱말은 시킴말이
+ * 아니다. 「the build is broken」 이 code 로 가면 넓힌 것이 아니라 망가뜨린
+ * 것이다. 번호·목록 표시 뒤도 첫머리로 친다 — 붙여 넣는 명세가 그 꼴이다.
+ *
+ * 정규식 리터럴로 적는다. 글자열을 이어 붙여 new RegExp 에 넣으면 홑따옴표
+ * 안에서 역빗금이 사라지고 낱말 경계가 백스페이스 글자가 된다 — 검사에서
+ * 잡히기 전까지 조용히 아무것도 안 맞는다. 실제로 그렇게 났다.
+ */
+const 영어시킴말 =
+  /(?:^|[.!?\n]\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s+)?(?:build|implement|create|write|make|add|fix|refactor|remove|delete|rename|migrate|update|modify|change|generate|scaffold|set\s+up|develop)\b/im;
+
 export const 표 = {
   debug: [
     // 고장은 신호가 뚜렷하다. 그리고 디버그는 파일을 고칠 수 있으므로
@@ -160,6 +193,9 @@ export const 표 = {
     [/이름\s*바꿔|리네임|rename/i, 3],
     [/옮겨(줘)?/, 2],
     [/리팩터(링)?(해|\s*좀)/, 3],
+    // 첫머리 시킴말. 한국어의 '만들어'·'고쳐'(4점)와 같은 무게로 둔다 —
+    // 같은 말을 어느 말로 했느냐로 모드가 갈리면 안 된다.
+    [영어시킴말, 4],
     [/\bimplement\b|\badd\b|\bfix\b|\bwrite\b/i, 2],
     [/써(줘|주세요)/, 3],
   ],
@@ -382,8 +418,8 @@ export const 읽기만하는모드 = new Set(['architect', 'plan', 'ask', 'inspe
  * 안에서 `\s` 의 역슬래시가 사라지고 `\b` 는 백스페이스 글자가 된다 —
  * 검사에서 잡히기 전까지 조용히 아무것도 안 맞는다. 실제로 그렇게 났다.
  */
-const 영어손대라 =
-  /(?:^|[.!?\n]\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s+)?(?:build|implement|create|write|make|add|fix|refactor|remove|delete|rename|migrate|update|modify|change|generate|scaffold|set\s+up|develop)\b/im;
+// 위에서 세운 공용 무늘 그대로다. 두 벌로 두면 한쪽만 늘어난다.
+const 영어손대라 = 영어시킴말;
 
 /** 파일을 손대라는 말이 들었나. */
 export function 손대라했나(text) {
