@@ -344,10 +344,71 @@ trace('2-멀쩡한글');
     ['const API_KEY: Map<string, Set<string>> = "secret12345";', 'secret12345'],
     ['const API_KEY: MyVeryLongModuleNamespaceFooBarBazQux.AuthenticationServiceSecretTokenConfiguration = "secret12345";',
       'secret12345'],
+    /*
+     * 10차 리뷰. 「따옴표·등호·세미콜론이 없으면 타입 자리」 로 좁혔더니
+     * 그 셋이 **타입 안에도 있는** 꼴 넷이 그대로 샜다.
+     */
+    ['const API_KEY: { token: string; id: number } = "secret12345";', 'secret12345'],
+    ['const API_KEY: () => string = "secret12345";', 'secret12345'],
+    ['const API_KEY: [string, number] | null = "secret12345";', 'secret12345'],
+    ['const API_KEY: Record<"token" | "key", string> = "secret12345";', 'secret12345'],
+    ["const API_KEY: 'bearer' | 'basic' = \"secret12345\";", 'secret12345'],
   ]) {
     const r = 가리기(글);
     check(`★★★ 타입 표기 뒤의 진짜 값이 가려진다: ${글.slice(0, 46)}`,
       !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * 「가장 나쁜 짝」 이 다시 났다(10차 리뷰). 타입 안에 따옴표가 있으면
+   * 타입 갈래가 통째로 빗나가고, 맨 쌍점 갈래가 그 **따옴표를 값으로**
+   * 잡는다. 타입이 가려지고 비밀은 그대로 나간다.
+   *
+   *     const API_KEY: 'bearer' | 'basic' = "secret12345";
+   *       → const API_KEY: «가림:환경변수» | 'basic' = "secret12345";
+   */
+  for (const [글, 남아야] of [
+    ["const API_KEY: 'bearer' | 'basic' = \"secret12345\";", "'bearer' | 'basic'"],
+    ['const API_KEY: Record<"token" | "key", string> = "secret12345";',
+      'Record<"token" | "key", string>'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 타입은 가리지 않는다: ${글.slice(0, 46)}`,
+      r.글.includes(남아야) && !r.글.includes('secret12345'), r.글);
+  }
+  /*
+   * 구조 분해에서 이름을 바꿔 받으면 닫는 중괄호가 등호 앞에 서서, 타입
+   * 갈래가 **옆 칸이 아니라 대입 오른쪽**을 삼켰다(10차 리뷰).
+   *
+   *     const { API_KEY: secretKey, other } = options;
+   *       → const { API_KEY: secretKey, other } = «가림:환경변수»;
+   *
+   * `options` 는 비밀이 아니라 읽어 오는 곳이다. 가려 놓으면 그 줄은
+   * 못 읽는 줄이 된다 — 이 파일 머리말이 말하는 「더 나쁜 고장」 이다.
+   */
+  for (const 글 of [
+    'const { API_KEY: secretKey, other } = options;',
+    'const { API_KEY: sk, other } = options;',
+    'const { API_KEY: renamedToken } = options;',
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 구조 분해의 오른쪽은 안 가린다: ${글.slice(0, 46)}`,
+      r.글.endsWith('= options;'), r.글);
+  }
+  /*
+   * 두 번 가려도 같아야 한다. 가린 글이 다시 이 길을 지나가는 일은
+   * 흔하다(도구 출력을 가리고, 그 대화를 다시 가린다). 두 번째 판에서
+   * 타입이 값으로 잡히면 위 「가장 나쁜 짝」 이 뒷문으로 돌아온다.
+   */
+  for (const 글 of [
+    "const API_KEY: 'bearer' | 'basic' = \"secret12345\";",
+    'const API_KEY: Record<"token" | "key", string> = "secret12345";',
+    'const API_KEY: string = "secret12345";',
+    'const cfg = { API_KEY: value, other: z = "secret12345" };',
+    'API_KEY=abcd1234efgh',
+  ]) {
+    const 한판 = 가리기(글).글;
+    check(`★★★ 두 번 가려도 같다: ${글.slice(0, 46)}`,
+      가리기(한판).글 === 한판, `${한판}  →  ${가리기(한판).글}`);
   }
   /*
    * 그 쉼표를 안 지키면 **옆 칸까지 삼킨다.** 타입 자리에 소문자를
