@@ -41,7 +41,7 @@ export function 길이규칙(판 = 1) {
       '',
       '앞 판은 말이 길어 답이 **통째로 버려졌다.** 이번엔 짧게 써라:',
       '  · 제일 위험한 것 **최대 5건**. 나머지는 버려라.',
-      '  · 한 건은 **두 줄** — `파일:줄 · 한 문장 결함` 과 `재현 입력` 한 줄.',
+      '  · 한 건은 **두 줄** — `파일:줄 · 한 문장 결함 · 심각도` 와 `재현 입력` 한 줄.',
       '  · 코드 조각·머리말·맺음말·요약을 쓰지 마라.',
       '  · 짧게 못 쓰겠으면 건수를 더 줄여라. 긴 답은 여기서 없는 답이다.',
     ];
@@ -62,6 +62,11 @@ export function 길이규칙(판 = 1) {
  * 같은 자리에서 막힌다. 그때 또 부르면 시간만 두 배로 쓰고 화면에는 실패가
  * 두 번 찍힌다.
  *
+ * `cut off` 를 맨낱말로 잡았더니 바로 그 자리가 뚫렸다(8차 리뷰) —
+ * `connection cut off by peer` 가 걸려서, 망이 끊긴 판을 40분짜리 재시도로
+ * 보냈다. 주석에는 안 그런다고 적어 놓고서다. **무엇이** 잘렸는지를 같이
+ * 본다 — 여기서 잘린 것은 답이지 연결이 아니다.
+ *
  * @param {{status?: string, error?: unknown}|null} 끝맺음 agy 의 마지막 result 사건
  * @param {string} 답 받아 낸 글
  * @returns {boolean}
@@ -69,5 +74,25 @@ export function 길이규칙(판 = 1) {
 export function 짧게다시할까(끝맺음, 답) {
   if (String(답 ?? '').trim()) return false;
   const 말 = String(끝맺음?.error ?? '');
-  return /output token limit|exceeded the output|cut off/i.test(말);
+  return /output token limit|exceeded the output|\b(?:output|response|answer)\b[^\n]{0,40}\bcut off\b/i.test(말);
+}
+
+/**
+ * 한 판 돌리고, **길어서 버려졌으면** 짧게 한 판 더 돌린다.
+ *
+ * 판을 도는 자리를 여기로 뺀 까닭은 검사다. 앞 판은 위 두 함수만 재고
+ * **그걸 쓰는 자리**는 안 쟀다 — review2.mjs 에서 재시도 토막을 통째로
+ * 지워도 검사가 초록이었다(8차 리뷰). 모델을 부르는 일은 `한판` 이 하고
+ * 여기는 판단만 하므로, 가짜 `한판` 을 넣으면 밖으로 안 나가고 잴 수 있다.
+ *
+ * @param {(판: number) => {r: any, 끝맺음: any, 답: string, 걸린초: number}} 한판
+ * @param {(걸린초: number) => void} [알림] 다시 묻기 직전에 사람에게 할 말
+ * @returns {{r: any, 끝맺음: any, 답: string, 걸린초: number, 두판: boolean}}
+ */
+export function 두판돌리기(한판, 알림) {
+  const 첫판 = 한판(1);
+  if (!짧게다시할까(첫판.끝맺음, 첫판.답)) return { ...첫판, 두판: false };
+  알림?.(첫판.걸린초);
+  const 둘째 = 한판(2);
+  return { ...둘째, 걸린초: 첫판.걸린초 + 둘째.걸린초, 두판: true };
 }

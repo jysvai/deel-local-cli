@@ -19,7 +19,7 @@
 // 혹시 새어 나가면 그 자리에서 터지도록, 아이한테는 agy 를 못 찾는 PATH 를
 // 준다 — 이 저장소 규칙상 검사는 밖으로 한 줄도 안 내보낸다.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -149,7 +149,7 @@ trace('4-멀쩡한범위');
 // 아니라 도박이 된다.
 trace('5-길면짧게');
 {
-  const { 길이규칙, 짧게다시할까 } = await import('../tools/리뷰길이.mjs');
+  const { 길이규칙, 짧게다시할까, 두판돌리기 } = await import('../tools/리뷰길이.mjs');
 
   const 첫판 = 길이규칙(1).join('\n');
   const 둘째 = 길이규칙(2).join('\n');
@@ -179,6 +179,91 @@ trace('5-길면짧게');
   check('★★★ 끝맺음이 아예 없어도 안 묻는다', 짧게다시할까(null, '') === false);
   check('★★★ 답이 있으면 안 묻는다', 짧게다시할까(잘림, '· route.js:1 · 뭔가 있다') === false);
   check('★★★ 답이 빈칸뿐이어도 빈 답으로 본다', 짧게다시할까(잘림, '   \n  ') === true);
+  /*
+   * 8차 리뷰. 주석은 「연결 끊김은 다시 안 묻는다」 고 적어 놓고 `cut off` 를
+   * 맨낱말로 잡아서, 망이 끊긴 것까지 40분짜리 재시도로 보냈다. 잘린 것은
+   * **답이** 잘린 것이지 연결이 끊긴 것이 아니다.
+   */
+  for (const 말 of [
+    'connection cut off by peer', 'stream cut off', 'socket cut off',
+    'ECONNRESET', 'socket hang up', 'read ETIMEDOUT',
+  ]) {
+    check(`★★★ 망이 끊긴 것은 다시 안 묻는다 — "${말}"`,
+      짧게다시할까({ status: 'ERROR', error: 말 }, '') === false, 말);
+  }
+  /*
+   * 갈래마다 **혼자 걸리는 말**로 잰다. 한 문장에 세 갈래가 다 들어 있으면
+   * 두 갈래가 죽어도 나머지 하나에 얹혀 초록이다(8차 리뷰).
+   */
+  for (const 말 of [
+    'Your previous response exceeded the output token limit',
+    'the output was cut off',
+    'response was cut off before it finished',
+  ]) {
+    check(`★★★ 답이 잘린 것은 다시 묻는다 — "${말.slice(0, 40)}"`,
+      짧게다시할까({ status: 'ERROR', error: 말 }, '') === true, 말);
+  }
+
+  /*
+   * 쪽지끼리 어긋나면 안 된다. 집안규칙은 발견마다 심각도를 요구하는데,
+   * 두 번째 판 규칙이 「두 줄」 만 적고 심각도 자리를 안 줬다(8차 리뷰).
+   * 모델은 둘 중 하나를 버릴 수밖에 없다.
+   */
+  check('★★★ 두 번째 판도 심각도 자리를 준다', /심각도/.test(둘째), 둘째);
+
+  /*
+   * ── 재시도 배선 자체를 잰다 ──────────────────────────────────────────
+   *
+   * 앞 판은 순수 함수 둘만 재고 **그걸 쓰는 자리**는 안 쟀다. 그래서
+   * review2.mjs 에서 재시도 토막을 통째로 지워도 이 파일은 초록이었다
+   * (8차 리뷰). 판을 도는 자리를 함수로 빼서 가짜 판을 넣어 잰다.
+   */
+  {
+    const 부른판 = [];
+    const 가짜 = (답, 오류 = null, 초 = 1) => (판) => {
+      부른판.push(판);
+      return { r: { status: 0 }, 끝맺음: 오류 ? { status: 'ERROR', error: 오류 } : null, 답, 걸린초: 초 };
+    };
+    const 한판이면 = 두판돌리기(가짜('· a.js:1 · 뭔가', null, 3));
+    check('★★★ 답이 오면 한 판만 돈다',
+      부른판.join(',') === '1' && 한판이면.답 === '· a.js:1 · 뭔가' && 한판이면.걸린초 === 3,
+      `${부른판} · ${JSON.stringify(한판이면.답)} · ${한판이면.걸린초}`);
+
+    부른판.length = 0;
+    let 몇번 = 0;
+    const 두판 = 두판돌리기((판) => {
+      부른판.push(판);
+      몇번 += 1;
+      return 몇번 === 1
+        ? { r: { status: 0 }, 끝맺음: { status: 'ERROR', error: 'exceeded the output token limit' }, 답: '', 걸린초: 10 }
+        : { r: { status: 0 }, 끝맺음: null, 답: '· b.js:2 · 짧게', 걸린초: 5 };
+    });
+    check('★★★ 길어서 버려지면 두 번째 판을 부른다', 부른판.join(',') === '1,2', String(부른판));
+    check('★★★ 두 번째 판 답으로 갈아 낀다', 두판.답 === '· b.js:2 · 짧게', JSON.stringify(두판.답));
+    check('★★★ 걸린 시간은 두 판을 더한다', 두판.걸린초 === 15, String(두판.걸린초));
+
+    부른판.length = 0;
+    const 알린것 = [];
+    두판돌리기((판) => (판 === 1
+      ? { r: {}, 끝맺음: { status: 'ERROR', error: 'exceeded the output token limit' }, 답: '', 걸린초: 7 }
+      : { r: {}, 끝맺음: null, 답: 'x', 걸린초: 1 }), (초) => 알린것.push(초));
+    check('★★★ 다시 물을 때 사람에게 말한다', 알린것.length === 1 && 알린것[0] === 7, String(알린것));
+
+    부른판.length = 0;
+    두판돌리기(가짜('', 'a tool required the read_file permission'));
+    check('★★★ 도구가 거절된 판은 두 번 안 돈다', 부른판.join(',') === '1', String(부른판));
+  }
+
+  /*
+   * 그리고 review2.mjs 가 **그 함수를 쓰는지**도 본다. 함수만 있고 안 쓰면
+   * 위 검사는 전부 초록인데 도구는 여전히 한 판만 돈다.
+   */
+  {
+    const 본문 = readFileSync(new URL('../tools/review2.mjs', import.meta.url), 'utf8');
+    check('★★★ review2 가 두판돌리기를 쓴다',
+      /두판돌리기/.test(본문) && /from '\.\/리뷰길이\.mjs'/.test(본문),
+      본문.split('\n').filter((줄) => /리뷰길이|두판돌리기/.test(줄)).join(' / '));
+  }
 }
 
 rmSync(집, { recursive: true, force: true });
