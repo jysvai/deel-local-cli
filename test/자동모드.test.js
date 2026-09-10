@@ -860,7 +860,10 @@ trace('7.5-읽기영어');
    * 점수가 붙으면 안 된다」 고 적어 놓고서다(8차 리뷰). inspect 도 잰다.
    */
   for (const 글 of ['Fix what is broken in route.js', 'Rewrite what is left of the parser.',
-    'Fix how this works.', 'Fix how to handle errors']) {
+    'Fix how this works.', 'Fix how to handle errors',
+    // 9차 리뷰. 아래 목록에만 있고 이쪽에 빠져 있던 셋.
+    'Rewrite how to build the bundle.', 'Refactor how does the parser split tokens',
+    'Update what parameters this function takes']) {
     check(`★★★ 고치라는 말에 검토 점수도 안 붙는다 — "${글.slice(0, 40)}"`,
       (route(글).점수들.inspect ?? 0) === 0, JSON.stringify(route(글).점수들));
   }
@@ -885,8 +888,29 @@ trace('7.5-읽기영어');
     ['How does this function work', 'ask', 5],
     ["How's this feature implemented", 'ask', 5],
     ['What parameters does this function take', 'ask', 5],
-    ['Give an explanation of this code', 'ask', 5],
     ['Tell me how the approval workflow works.', 'ask', 5],
+    /*
+     * 갈래마다 **혼자 걸리는 문장**으로 잰다. `tell me` 만 재고 나머지
+     * 넷을 안 재서, 지워도 안 빨개졌다(9차 리뷰).
+     */
+    ['Show me what the parser does.', 'ask', 5],
+    ['Tell us where this is used.', 'ask', 5],
+    ['Walk me through the approval flow.', 'ask', 5],
+    ['Walk us through this module.', 'ask', 5],
+    /*
+     * 물음표 없는 꼴. 앞 판은 `how to` 검사가 물음표로 끝나서, `to` 갈래를
+     * 지워도 물음표 갈래에 얹혀 초록이었다(9차 리뷰).
+     */
+    ['How to run the tests', 'ask', 5],
+    ['What to run next', 'ask', 5],
+    ['What should I run first', 'ask', 5],
+    /*
+     * 이름 안의 마침표. 앞 판 문장은 둘 다 `does` 갈래에 먼저 걸려서,
+     * `\.(?=\w)` 를 지워도 안 빨개졌다(9차 리뷰). 물음표 갈래만 걸리는
+     * 문장으로 잰다 — 보조동사가 하나도 없는 물음이다.
+     */
+    ['What in route.js sets the mode?', 'ask', 5],
+    ['How about ./route.js?', 'ask', 5],
     // 이름 안의 마침표에서 끊기면 안 된다.
     ['What parameters does route.js take?', 'ask', 5],
     ['How does route.js pick a mode?', 'ask', 5],
@@ -898,7 +922,11 @@ trace('7.5-읽기영어');
      * 재는 모드 말고 **다른 모드가 0점인지**도 같이 본다. 안 그러면 한
      * 문장에 두 규칙이 걸려도 못 알아챈다(8차 리뷰).
      */
-    const 나머지 = Object.entries(점).filter(([m]) => m !== 어느 && m !== 'debug');
+    /*
+     * debug 도 함께 본다. 앞 판은 빼 뒀는데, 여기 문장들에는 고장 낱말이
+     * 하나도 없어서 뺄 까닭이 없었다(9차 리뷰).
+     */
+    const 나머지 = Object.entries(점).filter(([m]) => m !== 어느);
     check(`★★★ 혼자서도 ${바람}점이다 — "${글}"`,
       (점[어느] ?? 0) === 바람 && 나머지.every(([, n]) => n === 0),
       `${어느}=${점[어느] ?? 0} · ${JSON.stringify(점)}`);
@@ -934,6 +962,17 @@ trace('7.5-읽기영어');
     'Rewrite how to build the bundle.',
     'Refactor how does the parser split tokens',
     'Update what parameters this function takes',
+    // 주석에 적어 놓고 빠뜨린 `how can`(9차 리뷰).
+    'Rewrite how can users reset a password',
+    'Fix how should this be cached',
+    /*
+     * 9차 리뷰. 「말해 줘」 부류에 첫머리 못이 없어, 쓰기 지시문의 딸린
+     * 마디에 들어가면 파일을 못 고치는 모드로 갔다.
+     */
+    'Rewrite this function to show me the result.',
+    'Write the docs and tell me what changed.',
+    'Add an explanation to the README.',
+    'Update the guide and walk me through it.',
   ]) {
     const 점 = route(글).점수들;
     check(`★★★ 쓰기 지시문에는 읽기 점수가 안 붙는다 — "${글.slice(0, 34)}"`,

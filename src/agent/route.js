@@ -330,6 +330,23 @@ export const 표 = {
      * `explain` 은 첫머리가 아니어도 된다 — "Explain how …" 처럼 그 자체가
      * 시킴말이고, 한국어 '설명해' 도 자리를 안 가린다.
      *
+     * ── 「말해 줘」 부류에는 첫머리 못이 있어야 한다 ──────────────────
+     *
+     * 9차 리뷰. `tell me` · `show me` · `walk me through` 를 자리 안 가리고
+     * 넣었더니, 쓰기 지시문의 딸린 마디가 물음이 됐다.
+     *
+     *     "Rewrite this function to show me the result."   → ask 5점
+     *     "Write the docs and tell me what changed."       → ask 5점
+     *
+     * `explain` 과 다르다. `explain` 은 그 자체가 문장의 시킴말이라 어디
+     * 있든 묻는 말인데, 이 셋은 **딸린 마디에 더 자주 온다.** 그래서 못을 박는다.
+     *
+     * 이름씨 `explanation` 은 아예 뺀다. 8차에 사소 하나(「이름씨꼴이
+     * 없다」)를 메우려고 넣었는데, 그 값으로 `"Add an explanation to the
+     * README."` 가 물음이 됐다 — 사소를 메우려다 심각을 냈다. 첫머리에
+     * 못을 박으면 정작 쓸모 있는 "Give an explanation of …" 가 죽고,
+     * 안 박으면 위가 샌다. 얻는 것보다 잃는 것이 크면 안 넣는 것이 맞다.
+     *
      * ── 못박아 놓고 한쪽만 못박혔다 ──────────────────────────────────
      *
      * 8차 리뷰. `how` 규칙을 `(첫머리)how…\?|how (to|does|…)` 로 적었다.
@@ -358,6 +375,11 @@ export const 표 = {
      *   · `What <이름씨> does …`  보조동사가 `what` 바로 뒤에만 오는 줄
      *     알아서, 물음표가 없으면 통째로 0점이었다.
      *   · `How's …`  `what` 에는 준 줄임꼴을 `how` 에는 안 줬다.
+     *   · 거꾸로 `how` 에만 준 `to` · `can` · `should` 를 `what` 에는 안
+     *     줬다(9차 리뷰). "What to run next" · "What should I run first" 가
+     *     물음표 없이는 0점이었다.
+     *   · 이름 안 마침표 예외를 `\.(?=\w)` 로 적어 유닉스 상대 경로
+     *     (`./route.js`)가 빠졌다. 슬래시도 낱말 글자로 친다.
      *   · `explanation`  `inspect` 는 이름씨꼴까지 받는데 여기만 안 받았다.
      *
      * 그리고 `Tell me how …` 는 첫머리 못 때문에 0점인데, 이건 자리
@@ -365,9 +387,9 @@ export const 표 = {
      * 물음 시킴말이라 그쪽에 넣는다 — 못을 뽑으면 위의 `Rewrite how to` 가
      * 도로 열린다.
      */
-    [/\bexplain(?:s|ing|ed)?\b|\bexplanations?\b|\b(?:tell|show)\s+(?:me|us)\b|\bwalk\s+(?:me|us)\s+through\b/i, 5],
-    [/(?:^\s*|[.!?]\s+|\n\s*)what\b(?:(?:[^.!?\n]|\.(?=\w))*\?|(?:'s|(?:\s+\w+){0,3}\s+(?:is|are|was|were|does|do|did))\b)/im, 5],
-    [/(?:^\s*|[.!?]\s+|\n\s*)how\b(?:(?:[^.!?\n]|\.(?=\w))*\?|'s\b|\s+(?:to\b|does|do|did|is|are|was|were|can|should)\b)/im, 5],
+    [/\bexplain(?:s|ing|ed)?\b|(?:^\s*|[.!?]\s+|\n\s*)(?:(?:tell|show)\s+(?:me|us)\b|walk\s+(?:me|us)\s+through\b)/im, 5],
+    [/(?:^\s*|[.!?]\s+|\n\s*)what\b(?:(?:[^.!?\n]|\.(?=[\w/]))*\?|(?:'s|(?:\s+\w+){0,3}\s+(?:is|are|was|were|does|do|did|can|should)|\s+to)\b)/im, 5],
+    [/(?:^\s*|[.!?]\s+|\n\s*)how\b(?:(?:[^.!?\n]|\.(?=[\w/]))*\?|'s\b|\s+(?:to\b|does|do|did|is|are|was|were|can|should)\b)/im, 5],
     [/읽어(만)?\s*보고\s*(설명|알려)/, 4],
   ],
 
