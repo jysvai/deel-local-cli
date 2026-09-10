@@ -197,9 +197,16 @@ trace('4-명령표');
 {
   const { 명령들 } = await import('../src/cmdnames.js');
   const 이름들 = Object.keys(명령들);
+  /*
+   * 이름이 **낱말째로** 있어야 한다. 그냥 들었나 로 보면 짧은 이름이 긴
+   * 이름에 얹혀 간다 — `/mode` 는 `/model` 안에 통째로 들어 있다. 그러면
+   * `/mode` 줄을 지워도 `/model` 줄 덕분에 이 검사가 계속 초록이고,
+   * 빠진 사실을 영영 못 잡는다. (지금 52개 중 그런 짝이 하나 있다.)
+   */
+  const 낱말째로 = (글, n) => new RegExp(`/${n}(?![A-Za-z0-9가-힣_-])`).test(글);
   for (const [파일, 언어] of [['README.md', 'en'], ['README.ko.md', 'ko']]) {
     const 글 = 읽기(파일);
-    const 빠진것 = 이름들.filter((n) => !글.includes(`/${n}`));
+    const 빠진것 = 이름들.filter((n) => !낱말째로(글, n));
     check(`★★★ ${파일} 이 명령 ${이름들.length}개를 다 적는다 (${언어})`,
       빠진것.length === 0, 빠진것.map((n) => `/${n}`).join(' · '));
   }

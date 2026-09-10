@@ -375,10 +375,27 @@ rmSync(빈PC, { recursive: true, force: true });
  */
 {
   const 목록 = readFileSync(join(here, 'run.mjs'), 'utf8');
+
+  /*
+   * 주석 줄은 목록이 아니다.
+   *
+   * `// 'foo.test.js',` 로 「잠깐 꺼 두자」 한 것이 「목록에 있다」 로 읽히면,
+   * **끄는 순간 이 검사가 눈을 감는다.** 그러면 꺼 둔 검사를 다시 켜는 것을
+   * 아무도 안 물어보게 된다 — 이 검사가 막으려던 상태 그 자체다.
+   *
+   * 아래 새 검사만 이렇게 고치고 이 자리는 그대로 뒀었다. 같은 함정을 한
+   * 파일 안에서 한쪽만 막아 둔 셈이라, 남은 쪽이 더 안 보인다.
+   */
+  const 코드만 = (글) => 글.split('\n')
+    .filter((l) => { const t = l.trim(); return !(t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')); })
+    .join('\n');
+  const 산목록 = 코드만(목록);
+
   const 빠진것 = readdirSync(here)
     .filter((f) => f.endsWith('.test.js'))
-    .filter((f) => !목록.includes(`'${f}'`));
-  check('만들어 놓고 안 돌리는 검사가 없다', 빠진것.length === 0, 빠진것.join(' · '));
+    .filter((f) => !산목록.includes(`'${f}'`));
+  check('만들어 놓고 안 돌리는 검사가 없다 (주석으로 꺼 둔 것도 안 도는 것이다)',
+    빠진것.length === 0, 빠진것.join(' · '));
 
   /*
    * ── 이름이 `.test.js` 가 아니면 위 검사를 통째로 빠져나간다 ────────────
@@ -398,19 +415,10 @@ rmSync(빈PC, { recursive: true, force: true });
    * 셋 다 아니면 그 파일은 아무도 안 돌린다. 그런 검사는 없느니만 못하다 —
    * 위 머리말 그대로다.
    *
-   * 목록에서 **주석 줄은 뺀다.** 안 그러면 `// 'smoke.js',` 로 잠깐 꺼 둔
-   * 것이 「목록에 있다」 로 읽혀서, 끄는 순간 이 검사가 눈을 감는다.
-   */
-  /*
    * 주석은 **부르는 것이 아니다.** 이 파일이 바로 그 함정에 빠졌었다 —
    * 위 머리말에 `smoke.js` 라고 적어 뒀더니, 그 글자가 「누군가 부른다」 로
-   * 읽혀서 검사가 스스로 눈을 감았다. 코드 줄만 센다.
+   * 읽혀서 검사가 스스로 눈을 감았다. 그래서 위의 코드만() 을 여기서도 쓴다.
    */
-  const 코드만 = (글) => 글.split('\n')
-    .filter((l) => { const t = l.trim(); return !(t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')); })
-    .join('\n');
-
-  const 산목록 = 코드만(목록);
   const 부르는곳 = [
     readFileSync(join(here, '..', 'package.json'), 'utf8'),
     ...readdirSync(here).filter((f) => f.endsWith('.test.js'))
@@ -429,6 +437,67 @@ rmSync(빈PC, { recursive: true, force: true });
     .filter((f) => !산목록.includes(`'${f}'`) && !부르는곳.includes(f));
   check('★★★ 판정하는 파일 중 아무도 안 돌리는 것이 없다 (.test.js 가 아니어도)',
     안도는하네스.length === 0, 안도는하네스.join(' · '));
+
+  /*
+   * ── `tools/` 도 같은 함정에 빠진다 ──────────────────────────────────
+   *
+   * 위 검사는 `test/` 만 본다. 그런데 만들어 놓고 잊는 일은 `tools/` 에서
+   * 더 잘 난다 — 여기 있는 것은 검사가 아니라 **판을 도는 도구**라 안 돌아도
+   * 아무도 빨간불을 못 본다.
+   *
+   * 실제로 그랬다. 2차 리뷰 하네스(review2.mjs)를 만들어 놓고 npm 스크립트로
+   * 안 걸었더니, 그것이 있다는 사실이 이 대화 밖으로 안 나갔다. 기억하는
+   * 사람이 없어지는 순간 없는 것과 같다.
+   *
+   * 그래서 `tools/` 의 모든 것은 셋 중 하나여야 한다 — npm 스크립트로
+   * 걸려 있거나, 개발 문서(docs/ko·en 의 develop.md)에 「이렇게 돌린다」 가
+   * 적혀 있거나, 다른 도구가 부르거나. 셋 다 아니면 아무도 안 돌린다.
+   *
+   * 주석은 여기서도 부르는 것이 아니다 — 위와 같은 까닭으로 코드만() 을 쓴다.
+   */
+  const 도구자리 = join(here, '..', 'tools');
+  const 도구들 = readdirSync(도구자리).filter((f) => /\.m?js$/.test(f));
+  const 바깥에서부르는곳 = [
+    readFileSync(join(here, '..', 'package.json'), 'utf8'),
+    ...['ko', 'en'].map((L) => {
+      try { return readFileSync(join(here, '..', 'docs', L, 'develop.md'), 'utf8'); } catch { return ''; }
+    }),
+    ...(() => {
+      const d = join(here, '..', '.github', 'workflows');
+      try { return readdirSync(d).map((f) => readFileSync(join(d, f), 'utf8')); } catch { return []; }
+    })(),
+  ].join('\n');
+  /*
+   * 이름은 **낱말째로** 찾는다. 그냥 들었나 로 보면 짧은 이름이 긴 이름에
+   * 얹혀 간다 — `docs.mjs` 라는 도구를 새로 만들면 `check-docs.mjs` 를 적어 둔
+   * 줄이 그것도 부르는 것처럼 읽힌다. shipmeta 의 명령표 검사가 방금 같은
+   * 함정에서 나왔다(`/mode` 가 `/model` 에 얹혀 갔다).
+   */
+  const 낱말째로 = (글, 이름) => new RegExp(`(^|[^A-Za-z0-9_.-])${이름.replace(/\./g, '\\.')}`).test(글);
+  // 제 파일이 제 이름을 적어 둔 것(쓰는 법 머리말)은 부르는 것이 아니다.
+  // 그래서 도구끼리는 **저를 뺀 나머지** 안에서만 찾는다.
+  const 도구코드 = new Map(도구들.map((f) => [f, 코드만(readFileSync(join(도구자리, f), 'utf8'))]));
+  const 안부르는도구 = 도구들.filter((f) => {
+    const 남들 = 도구들.filter((g) => g !== f).map((g) => 도구코드.get(g)).join('\n');
+    return !낱말째로(바깥에서부르는곳, f) && !낱말째로(남들, f);
+  });
+  check('★★★ tools/ 에 아무도 안 부르는 것이 없다 (npm 스크립트나 개발 문서에 있어야 한다)',
+    안부르는도구.length === 0, 안부르는도구.join(' · '));
+
+  /*
+   * 그리고 **읽히기는 하는지** 본다.
+   *
+   * `npm run check` 는 src/ 만 훑는다. tools/ 는 아무도 안 읽으므로, 문법이
+   * 깨져도 그 도구를 손으로 돌리는 날까지 아무 일도 안 난다 — 그날은 대개
+   * 무언가 급할 때다. 실제로 여기서 `docs/` + `*` + `/` 가 주석을 한가운데서
+   * 닫아 버린 판이 있었다.
+   */
+  const 안읽히는도구 = 도구들.filter((f) => {
+    try { execFileSync(process.execPath, ['--check', join(도구자리, f)], { stdio: 'pipe' }); return false; }
+    catch { return true; }
+  });
+  check('★★ tools/ 가 전부 문법이 성하다 (npm run check 는 src/ 만 본다)',
+    안읽히는도구.length === 0, 안읽히는도구.join(' · '));
 }
 
 // --- 결과 ---------------------------------------------------------------

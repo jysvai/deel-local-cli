@@ -27,6 +27,10 @@
 // 검사(shipmeta)는 README 와 docs 를 읽는다. 없으면 그 검사는 어긋내기 전부터
 // 빨개서 '못잼' 으로 빠진다.
 //
+// 같은 까닭으로 `tools/` 와 라이선스도 베낀다. 저장소 전체를 훑는 검사가
+// 있고(자동모드·죽은규칙), 묶음을 재는 검사는 라이선스까지 본다. 한 벌 베끼는
+// 값보다 「못잼」 으로 빠지는 값어치가 훨씬 크다 — 못 재면 그 자리는 그냥 빈다.
+//
 // ── 재기 전에 먼저 초록인지 본다 ─────────────────────────────────────────
 //
 // 어긋내고 빨개진 것을 「잡았다」 로 세려면, 어긋내기 **전에** 초록이어야 한다.
@@ -54,8 +58,10 @@ const { 어긋들 } = JSON.parse(readFileSync(join(뿌리, 'test', 'mutants.json
 
 // ── 일할 폴더 한 벌 ─────────────────────────────────────────────────────
 const 일터 = mkdtempSync(join(tmpdir(), 'deel-mutate-'));
-for (const 것 of ['src', 'test', 'bin', 'docs']) cpSync(join(뿌리, 것), join(일터, 것), { recursive: true });
-for (const 것 of ['package.json', 'README.md', 'README.ko.md']) cpSync(join(뿌리, 것), join(일터, 것));
+for (const 것 of ['src', 'test', 'bin', 'docs', 'tools']) cpSync(join(뿌리, 것), join(일터, 것), { recursive: true });
+for (const 것 of ['package.json', 'README.md', 'README.ko.md', 'LICENSE']) {
+  try { cpSync(join(뿌리, 것), join(일터, 것)); } catch { /* 없으면 그냥 안 베낀다 */ }
+}
 
 /** 검사 하나를 돌리고 종료코드를 돌려준다. 화면 글은 안 흘린다. */
 function 돌리기(검사) {
