@@ -229,7 +229,7 @@ trace('8-뒤에붙는이름');
 //   ③ 무늬에 `tsx` 를 넣었는데 부르는법에는 없다
 //      명령이 깨지지는 않는다(부르는법에 없으면 건너뛴다). 대신 **아무
 //      데도 안 닿는 갈래**가 무늬에 남는다. 두 목록을 맞춰 둔다.
-trace('9-뒤에붙는관례');
+trace('9-앞뒤관례');
 {
   const 찾아야 = [
     ['test/test.js', 'node test/test.js'],
@@ -242,10 +242,20 @@ trace('9-뒤에붙는관례');
     ['test/api_spec.mjs', 'node test/api_spec.mjs'],
     // 앞쪽 관례도 밑줄로 잇는다 — 주석에는 그렇게 적어 놓고 붙임표만 재고
     // 있었다(5차 리뷰). `[-_]` 를 `[-]` 로 좁혀도 안 빨개졌다.
-    ['scripts/test_helpers.py', 'python scripts/test_helpers.py'],
+    //
+    // 이름은 `test_roles.py` 로 둔다. 앞 판은 `test_helpers.py` 였는데,
+    // 그건 「돌리는 검사」 가 아니라 「검사가 쓰는 살림」 이라 아래
+    // `test-helper.bundle.js` 를 안 찾는 것과 말이 어긋난다(8차 리뷰).
+    ['scripts/test_roles.py', 'python scripts/test_roles.py'],
     ['scripts/qa_roles.mjs', 'node scripts/qa_roles.mjs'],
-    // 앞쪽 검사말도 복수형을 받는다.
+    /*
+     * 복수형은 **`test` 와 `spec` 만** 받는다. 앞 판 주석은 「앞쪽 검사말도
+     * 복수형을 받는다」 고 뭉뚱그려 적어서, `checks-` · `benches-` 도 되는
+     * 줄 읽힌다(8차 리뷰). 되는 둘과 안 되는 둘을 나란히 못박아 둔다.
+     */
     ['scripts/specs-roles.mjs', 'node scripts/specs-roles.mjs'],
+    ['scripts/tests-roles.mjs', 'node scripts/tests-roles.mjs'],
+    ['scripts/spec-roles.mjs', 'node scripts/spec-roles.mjs'],
   ];
   for (const [이름, 나와야] of 찾아야) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
@@ -285,8 +295,13 @@ trace('9-뒤에붙는관례');
     'scripts/check.config.js',
     'scripts/test.min.js',
     'scripts/qa.bundle.js',
+    // 검사끝에 없는 확장자. 앞쪽 구분자와는 상관없는 자리다 — `.+` 시절에도
+    // 안 걸렸으니 구분자를 되돌려도 이건 안 빨개진다(8차 리뷰).
     'test/spec.d.ts',
     'scripts/verify.config.mjs',
+    // 복수형을 받는 것은 test·spec 둘뿐이다. 이 둘이 걸리면 넓힌 것이다.
+    'scripts/checks-roles.mjs',
+    'scripts/benches-roles.py',
     /*
      * `.+` 가 점까지 삼켜서, 앞쪽 관례 뒤에 설정·번들 꼬리표가 붙어도
      * 그대로 검사로 잡혔다(5차 리뷰). 점을 뺀 것은 **구분자 자리**였지
@@ -332,9 +347,13 @@ trace('9-뒤에붙는관례');
    * 주석에는 그렇게 적어 놓고 재는 자리가 없었다(4차 리뷰).
    */
   for (const 이름 of [
-    'test/approvalXtest.js', 'test/api-spec.js', 'test/roles-spec.ts',
+    'test/api-spec.js', 'test/roles-spec.ts',
     // `test` 갈래는 무관한 글자만 재고 정작 헷갈리는 붙임표를 안 쟀다(5차 리뷰).
-    'test/approval-test.js', 'test/handler-tests.js',
+    // 무관한 글자 쪽(`approvalXtest.js`)도 남긴다 — 구분자를 `.` 로 넓히는
+    // 것과 아무 글자로 넓히는 것은 다른 고장이라 둘 다 재야 한다.
+    'test/approvalXtest.js', 'test/approval-test.js', 'test/handler-tests.js',
+    // `spec` 갈래는 단수만 재고 복수형 붙임표를 안 쟀다(8차 리뷰).
+    'test/approval-specs.js', 'test/roles-specs.ts',
   ]) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
     check(`★★★ 구분자가 점·밑줄이 아니면 검사가 아니다 — ${이름}`,
