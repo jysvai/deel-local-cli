@@ -506,6 +506,9 @@ export async function runOnce(opts = {}) {
       session.routed = 골라진.mode;
       const w = getWork(골라진.mode);
       곁(`  ${c.hcyan(w.glyph)} ${c.gray(`${w.name} (${w.en}) — 말 속에 ${골라진.why} 가 있어서`)}`);
+    } else if (골라진.일부러) {
+      // 일부러 안 보낸 자리만 말한다. 대화 화면과 같은 규칙이다 (repl.js 참고).
+      곁(`  ${c.gray(`◇ 종합 그대로 — ${골라진.why}`)}`);
     }
   }
 

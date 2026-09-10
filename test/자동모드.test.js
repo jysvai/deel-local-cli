@@ -556,6 +556,64 @@ trace('4-짝맞추기');
 }
 
 
+// ── 6. 일부러 안 고른 것은 사람에게 말한다 ──────────────────────────────
+//
+// 이 파일 맨 위 route.js 가 스스로 약속한 것이 있다 —
+//
+//     2) 왜 그렇게 봤는지 남긴다. **화면에 그 이유가 같이 뜬다.**
+//
+// 그런데 못 골랐을 때(mode === null) repl.js 도 oneshot.js 도 `if (골라진.mode)`
+// 안에서만 찍는다. route.js 는 그 자리에 쓸 말을 세 갈래나 지어 두고 —
+//
+//     "architect·plan·inspect 신호가 있었지만 고치라는 말이라 안 보냄"
+//     "글이 길어 debug 신호 하나로는 안 정함"
+//     "글이 길고 architect(8점) 가 debug(6점) 보다 세서 debug 로 안 봄"
+//
+// — 셋 다 화면에 한 글자도 안 떴다. 바로 윗줄 주석이 「"설계로 갈 뻔했는데
+// 고치라는 말이라 안 보냈다" 와 "그냥 모르겠다" 는 사람에게 아주 다른
+// 말이다」 라고 적어 둔 그 구분이, 화면에서는 통째로 없었다.
+//
+// 그렇다고 전부 찍으면 안 된다. 보통 한마디는 거의 다 mode === null 이고
+// 까닭은 「무슨 일인지 뚜렷하지 않음」 이다. 그걸 매번 찍으면 소음이다.
+// 그래서 **일부러 안 골랐나**를 route 가 직접 갈라 준다.
+{
+  const 일부러인것 = [
+    ['고치라는 말이라 읽기 전용을 뺐다', '폴더 구조 개선해줘'],
+  ];
+  for (const [무엇, 말] of 일부러인것) {
+    const r = route(말);
+    check(`★★★ 일부러 안 고른 것에 표가 선다 — ${무엇}`,
+      r.mode === null && r.일부러 === true, `mode=${r.mode} 일부러=${r.일부러} — ${r.why}`);
+  }
+
+  // 긴 명세 두 갈래도 일부러다.
+  const 긴것 = 'You are starting from a completely empty working directory. '
+    + 'Determine the architecture and design the data model yourself. '
+    + 'Build and test a production web application. '.repeat(40)
+    + 'Handle unexpected server errors. A failed operation must not corrupt state.';
+  const g = route(긴것);
+  check('★★★ 긴 명세에서 안 고른 것도 일부러다',
+    g.mode === null && g.일부러 === true, `mode=${g.mode} 일부러=${g.일부러} — ${g.why}`);
+
+  // 반대쪽 — 그냥 모르겠는 것은 일부러가 아니다. 화면에 안 뜬다.
+  for (const 말 of ['ㅇㅇ', '고마워', '그거 어제 얘기한 거']) {
+    const r = route(말);
+    check(`★★★ 그냥 모르겠는 것은 표가 안 선다 — "${말}"`,
+      r.mode === null && !r.일부러, `mode=${r.mode} 일부러=${r.일부러} — ${r.why}`);
+  }
+
+  /*
+   * 화면 쪽 배선. route 가 표를 세워도 부르는 쪽이 안 보면 약속은 그대로
+   * 안 지켜진다 — 이 결함이 바로 그 모양이었다(까닭은 만들어 놓고 안 찍음).
+   * 그래서 두 부르는 자리가 실제로 이 표를 본다는 것을 여기서 잰다.
+   */
+  for (const 파일 of ['src/repl.js', 'src/oneshot.js']) {
+    const 글 = readFileSync(join(뿌리, 파일), 'utf8');
+    check(`★★★ ${파일} 가 일부러 표를 본다`,
+      /골라진\.일부러/.test(글), '못 골랐을 때 까닭을 안 찍고 있습니다');
+  }
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n자동 모드 하네스  ${D}(규칙이 있는 것과 걸리는 것은 다르다)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
