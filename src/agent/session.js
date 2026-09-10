@@ -619,9 +619,22 @@ export class Session {
      * 이 -1 이고 `slice(0, -1)` 은 「끝 하나만 뺀 전부」 라, 0 개를 실어야 할
      * 자리에서 넷이 실렸다(8차 리뷰). 음수 상한은 「싣지 마라」 는 뜻이지
      * 「뒤에서 하나 빼고 다」 가 아니다.
+     *
+     * 그 울타리를 `Number.isFinite` 로 세웠더니 옮긴 자리에 틈이 났다
+     * (9차 리뷰). 그 함수는 **숫자꼴 글자열과 무한대를 함께 내친다.**
+     *
+     *     maxSkillsListed = '10'        → 0개  (앞 판은 10개)
+     *     maxSkillsListed = Infinity    → 0개  (앞 판은 전부)
+     *
+     * 설정 파일에서 온 값은 글자열이기 쉽고, 무한대는 「상한을 두지 마라」
+     * 는 뜻이다. 둘 다 스킬을 통째로 지워 버렸다 — 막으려던 것보다 나쁘다.
+     *
+     * 그래서 **먼저 숫자로 읽고**, 숫자가 아닐 때만 0 으로 본다.
+     * `Math.floor(Infinity)` 은 Infinity 이고 `slice(0, Infinity)` 는 전부라,
+     * 무한대는 저절로 「상한 없음」 이 된다.
      */
-    const 상한 = Number.isFinite(this.maxSkillsListed)
-      ? Math.max(0, Math.floor(this.maxSkillsListed)) : 0;
+    const 잰값 = Number(this.maxSkillsListed);
+    const 상한 = Number.isNaN(잰값) ? 0 : Math.max(0, Math.floor(잰값));
     const 몫 = Math.floor(상한 / 4);
     const 매어둔것 = new Set(줄세운것.filter((s) => s.source === 'builtin').slice(0, 몫));
     const 나머지 = new Set(줄세운것
