@@ -256,6 +256,15 @@ trace('9-앞뒤관례');
     ['scripts/specs-roles.mjs', 'node scripts/specs-roles.mjs'],
     ['scripts/tests-roles.mjs', 'node scripts/tests-roles.mjs'],
     ['scripts/spec-roles.mjs', 'node scripts/spec-roles.mjs'],
+    /*
+     * 구분자는 낱말마다 따로 재야 한다. 앞 판은 `test` 를 밑줄로만,
+     * `spec` 을 붙임표로만 재서 한쪽으로 좁혀도 못 잡았다(9차 리뷰).
+     */
+    ['scripts/test-roles.mjs', 'node scripts/test-roles.mjs'],
+    ['scripts/spec_roles.mjs', 'node scripts/spec_roles.mjs'],
+    // 뒤에 붙는 관례의 복수형. 되는데 아무도 안 재고 있었다.
+    ['test/approval.specs.js', 'node test/approval.specs.js'],
+    ['test/handler.tests.js', 'node test/handler.tests.js'],
   ];
   for (const [이름, 나와야] of 찾아야) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
@@ -299,9 +308,10 @@ trace('9-앞뒤관례');
     // 안 걸렸으니 구분자를 되돌려도 이건 안 빨개진다(8차 리뷰).
     'test/spec.d.ts',
     'scripts/verify.config.mjs',
-    // 복수형을 받는 것은 test·spec 둘뿐이다. 이 둘이 걸리면 넓힌 것이다.
+    // 복수형을 받는 것은 test·spec 둘뿐이다. 이 셋이 걸리면 넓힌 것이다.
     'scripts/checks-roles.mjs',
     'scripts/benches-roles.py',
+    'scripts/qas-roles.mjs',
     /*
      * `.+` 가 점까지 삼켜서, 앞쪽 관례 뒤에 설정·번들 꼬리표가 붙어도
      * 그대로 검사로 잡혔다(5차 리뷰). 점을 뺀 것은 **구분자 자리**였지
@@ -354,6 +364,8 @@ trace('9-앞뒤관례');
     'test/approvalXtest.js', 'test/approval-test.js', 'test/handler-tests.js',
     // `spec` 갈래는 단수만 재고 복수형 붙임표를 안 쟀다(8차 리뷰).
     'test/approval-specs.js', 'test/roles-specs.ts',
+    // 무관한 글자도 `spec` 쪽은 안 쟀다(9차 리뷰). 이스케이프는 낱말마다 죽는다.
+    'test/approvalXspec.js', 'test/rolesXspecs.js',
   ]) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
     check(`★★★ 구분자가 점·밑줄이 아니면 검사가 아니다 — ${이름}`,
