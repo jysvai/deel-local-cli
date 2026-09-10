@@ -43,6 +43,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 // 길이 규칙과 「다시 물을까」 판단은 따로 뒀다 — 검사가 모델을 안 부르고 잴 수 있게.
 import { 길이규칙, 두판돌리기 } from './리뷰길이.mjs';
+import { 낯선옵션, 쓰는법 } from './리뷰인자.mjs';
 
 const 인자 = process.argv.slice(2);
 const 값 = (이름, 기본 = null) => {
@@ -50,6 +51,27 @@ const 값 = (이름, 기본 = null) => {
   return i >= 0 && 인자[i + 1] ? 인자[i + 1] : 기본;
 };
 const 있나 = (이름) => 인자.includes(이름);
+
+/*
+ * ── 모르는 옵션은 조용히 흘리지 않는다 ──────────────────────────────────
+ *
+ * 위 `값`·`있나` 는 찾기만 한다. 그래서 목록에 없는 말은 없는 것이 됐고,
+ * `--help` 를 친 사람에게 **도움말 대신 40분짜리 리뷰**가 돌았다. 오타도
+ * 같다 — `--sinse HEAD~3` 은 아무 말 없이 「HEAD 까지 전부」 가 된다.
+ * 아래 `볼것()` 이 옵션이 어긋날 때 멈추는 것과 같은 까닭이다.
+ */
+if (있나('--help')) {
+  for (const 줄 of 쓰는법()) console.log(줄);
+  process.exit(0);
+}
+{
+  const 낯선 = 낯선옵션(인자);
+  if (낯선.length) {
+    console.error(`\n\x1b[31m✗ 모르는 옵션입니다: ${낯선.join(' ')}\x1b[0m`);
+    console.error('  --help 로 쓰는 법을 보세요.\n');
+    process.exit(2);
+  }
+}
 const 그레이 = (s) => `\x1b[90m${s}\x1b[0m`;
 
 // 모델은 3.8 Flash (High). pro 는 쓰지 않는다.
