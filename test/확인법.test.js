@@ -210,6 +210,83 @@ trace('8-뒤에붙는이름');
     확인법들(뿌리4).length === 0, JSON.stringify(확인법들(뿌리4).map((x) => x.명령)));
 }
 
+// ── 9. 뒤에 붙는 이름은 **검사 파일 관례**만 본다 ───────────────────────
+//
+// 8번을 넣고 2차 리뷰를 돌렸더니 세 가지가 나왔고, 돌려 보니 다 맞았다.
+//
+//   ① `test/test.js` · `test/spec.js` 를 못 찾는다
+//      무늬가 양쪽 갈래 모두 「구분자 + 뒤에 뭔가」 를 요구해서, 이름이
+//      낱말 하나뿐인 파일은 어느 갈래에도 안 걸린다.
+//
+//   ② `type-check.js` · `health-check.js` · `api-spec.ts` 를 검사로 오인한다
+//      뒤에 붙는 갈래를 검사말 전부로 열어 둔 탓이다. 그런데 **앞에 붙는
+//      것과 뒤에 붙는 것은 서로 다른 관례**다 —
+//        앞: 스크립트 이름   `qa-roles.mjs` · `test-approval.mjs` · `check-src.mjs`
+//        뒤: 검사 파일 이름  `approval.test.js` · `roles.spec.ts` · `handler_test.go`
+//      뒤쪽 관례에 check·verify·e2e·bench 는 없다. 그리고 붙임표로 이은
+//      `api-spec` 은 낱말 합성이지 검사 파일이 아니다 — 점·밑줄만 본다.
+//
+//   ③ 무늬에 `tsx` 를 넣었는데 부르는법에는 없다
+//      명령이 깨지지는 않는다(부르는법에 없으면 건너뛴다). 대신 **아무
+//      데도 안 닿는 갈래**가 무늬에 남는다. 두 목록을 맞춰 둔다.
+trace('9-뒤에붙는관례');
+{
+  const 찾아야 = [
+    ['test/test.js', 'node test/test.js'],
+    ['test/spec.js', 'node test/spec.js'],
+    ['test/approval.test.js', 'node test/approval.test.js'],
+    ['test/roles.spec.ts', 'node test/roles.spec.ts'],
+    ['test/handler_test.js', 'node test/handler_test.js'],
+  ];
+  for (const [이름, 나와야] of 찾아야) {
+    const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
+    const 것 = 확인법들(뿌리).map((x) => x.명령);
+    check(`★★★ 찾는다 — ${이름}`, 것.includes(나와야), JSON.stringify(것));
+  }
+
+  const 안찾아야 = [
+    'scripts/type-check.js',
+    'scripts/health-check.js',
+    'scripts/api-spec.ts',
+    'scripts/build-verify.js',
+    'test/latest.js',
+    'test/contest.js',
+  ];
+  for (const 이름 of 안찾아야) {
+    const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
+    const 것 = 확인법들(뿌리).map((x) => x.명령);
+    check(`★★★ 안 담는다 — ${이름}`, 것.length === 0, JSON.stringify(것));
+  }
+
+  /*
+   * 확장자 앞의 점이 **진짜 점**인가. 템플릿 글 안에서 한 겹으로 적으면
+   * 자바스크립트가 역빗금을 먼저 먹어서, 정규식에 닿는 것은 아무 글자나
+   * 맞는 `.` 이 된다. 두 번 그랬다 — 눈으로는 안 보이고 이 검사만 잡는다.
+   */
+  for (const 이름 of ['test/roles.specXts', 'test/a.testZjs', 'test/approvalXtestZjs']) {
+    const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
+    check(`★★★ 점 자리에 아무 글자나 오면 검사가 아니다 — ${이름}`,
+      확인법들(뿌리).length === 0, JSON.stringify(확인법들(뿌리).map((x) => x.명령)));
+  }
+
+  // 앞에 붙는 관례는 그대로 산다. 좁히다 이쪽을 죽이면 8번이 되돌아온다.
+  for (const 이름 of ['scripts/qa-roles.mjs', 'scripts/test-approval.mjs', 'scripts/check-src.js']) {
+    const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
+    check(`★★★ 앞에 붙는 관례는 그대로 — ${이름}`,
+      확인법들(뿌리).length === 1, JSON.stringify(확인법들(뿌리).map((x) => x.명령)));
+  }
+
+  /*
+   * 무늬와 부르는법이 어긋나지 않는다 — 무늬가 아는 확장자는 부르는법도
+   * 알아야 한다. 어긋나면 그 갈래는 아무 데도 안 닿는 죽은 규칙이 된다.
+   */
+  for (const 끝 of ['.js', '.mjs', '.cjs', '.ts', '.py', '.sh']) {
+    const 뿌리 = 판(({ 파일 }) => { 파일(`test/roles.spec${끝}`, '// ...'); });
+    check(`★★ 무늬가 아는 확장자는 부르는법도 안다 — ${끝}`,
+      확인법들(뿌리).length === 1, JSON.stringify(확인법들(뿌리).map((x) => x.명령)));
+  }
+}
+
 for (const 뿌리 of 뿌리들) { try { rmSync(뿌리, { recursive: true, force: true }); } catch { /* 그만 */ } }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
