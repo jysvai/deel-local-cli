@@ -61,8 +61,27 @@ const git = (...args) => spawnSync('git', args, { encoding: 'utf8', maxBuffer: 6
 function 볼것() {
   const i = 인자.indexOf('--files');
   if (i >= 0) {
-    const 파일들 = 인자.slice(i + 1).filter((x) => !x.startsWith('--'));
-    return { 무엇: `파일 ${파일들.length}개`, diff: git('diff', 'HEAD', '--', ...파일들).stdout };
+    /*
+     * 다음 `--` 에서 **멈춘다.** 걸러 내기만 하면 그 옵션의 **값**이 파일
+     * 목록에 남는다 — `--files a.js --out 보고.md` 에서 `--out` 은 빠지고
+     * `보고.md` 가 파일로 들어간다. 2차 리뷰가 짚은 자리다.
+     *
+     * 재 봤더니 git 은 여기서 **안 죽는다.** 안 맞는 경로는 그냥 아무것도
+     * 안 내놓는다. 그래서 더 나쁘다 — 아무 말 없이 남의 파일이 리뷰 거리에
+     * 섞이거나(그 이름의 파일이 진짜 있으면), 조용히 빠진다.
+     * 죽을 때를 대비해 종료코드도 같이 본다.
+     */
+    const 파일들 = [];
+    for (const x of 인자.slice(i + 1)) {
+      if (x.startsWith('--')) break;
+      파일들.push(x);
+    }
+    const r = git('diff', 'HEAD', '--', ...파일들);
+    if (r.status !== 0) {
+      console.error(`\n\x1b[31m✗ 그 파일들을 못 읽었습니다\x1b[0m\n  ${String(r.stderr ?? '').trim().split('\n')[0]}\n`);
+      process.exit(2);
+    }
+    return { 무엇: `파일 ${파일들.length}개`, diff: r.stdout };
   }
   if (부터) return { 무엇: `${부터}..HEAD`, diff: git('diff', `${부터}..HEAD`).stdout };
   const 안커밋 = git('diff', 'HEAD').stdout;
@@ -100,6 +119,23 @@ const 집안규칙 = [
   '보고 형식: 발견마다 `파일:줄` · 한 문장 결함 · **구체적인 재현 입력** · 심각도(심각/보통/사소).',
   '추측이면 추측이라고 적어라. 확신 없는 것을 확신처럼 적지 마라. 없으면 없다고 해라.',
   '고칠 코드를 통째로 써 주지 마라 — 무엇이 왜 틀렸는지만 적어라.',
+  /*
+   * ── 길이를 못박는다 ──────────────────────────────────────────────────
+   *
+   * 안 박았더니 답이 출력 한도를 넘겨 **통째로 버려졌다.**
+   *
+   *     "error": "Your previous response was cut off because it exceeded
+   *               the output token limit … Retries remaining: 3"
+   *
+   * 그리고 다시 시도하다 결국 빈 손으로 끝났다. 긴 답은 여기서 「좋은 답」 이
+   * 아니라 「아예 없는 답」 이다. 그래서 위험한 것부터 세어서 끊게 한다 —
+   * 열두 건을 넘길 만큼 나오면 그 판은 어차피 사람이 한 번에 못 고친다.
+   */
+  '',
+  '길이를 지켜라. 이걸 어기면 답이 통째로 버려진다:',
+  '  · 심각한 것부터 **최대 12건**. 그 아래는 버려라.',
+  '  · 한 건은 **네 줄 안**. 코드 조각은 한 줄을 넘기지 마라.',
+  '  · 머리말·맺음말·요약표를 쓰지 마라. 발견만 죽 적어라.',
 ].join('\n');
 
 const { 무엇, diff } = 볼것();

@@ -472,8 +472,24 @@ rmSync(빈PC, { recursive: true, force: true });
    * 얹혀 간다 — `docs.mjs` 라는 도구를 새로 만들면 `check-docs.mjs` 를 적어 둔
    * 줄이 그것도 부르는 것처럼 읽힌다. shipmeta 의 명령표 검사가 방금 같은
    * 함정에서 나왔다(`/mode` 가 `/model` 에 얹혀 갔다).
+   *
+   * ── 경계는 **양쪽**에 둔다 ──────────────────────────────────────────
+   *
+   * 처음에 앞쪽만 막아 뒀더니 2차 리뷰가 뒤쪽을 짚었다. `package.js` 라는
+   * 도구를 두면 `package.json` 을 적어 둔 줄에 그대로 걸린다 — 아무도
+   * 안 부르는데 「부른다」 로 읽힌다. 「긴 이름에 얹혀 간다」 를 고치겠다고
+   * 적어 놓고 한쪽만 막은 셈이라, 남은 쪽이 더 안 보인다.
+   *
+   * 뒤쪽 경계에서 마침표는 뺀다. 문서가 「node tools/shot.mjs.」 처럼 문장을
+   * 끝내는 일이 있고, 그건 부르는 것이 맞다.
    */
-  const 낱말째로 = (글, 이름) => new RegExp(`(^|[^A-Za-z0-9_.-])${이름.replace(/\./g, '\\.')}`).test(글);
+  const 낱말째로 = (글, 이름) => new RegExp(`(^|[^A-Za-z0-9_.-])${이름.replace(/\./g, '\\.')}(?![A-Za-z0-9_-])`).test(글);
+  // 이 자가 스스로 무엇을 하는지 여기서 못박는다 — 위 두 함정 그대로다.
+  check('★★ 낱말째로: 긴 이름에 얹혀 가지 않는다 (앞뒤 양쪽)',
+    !낱말째로('npm run x package.json', 'package.js')
+    && !낱말째로('node tools/check-docs.mjs', 'docs.mjs')
+    && 낱말째로('node tools/shot.mjs 를 돌립니다', 'shot.mjs')
+    && 낱말째로('node tools/shot.mjs.', 'shot.mjs'));
   // 제 파일이 제 이름을 적어 둔 것(쓰는 법 머리말)은 부르는 것이 아니다.
   // 그래서 도구끼리는 **저를 뺀 나머지** 안에서만 찾는다.
   const 도구코드 = new Map(도구들.map((f) => [f, 코드만(readFileSync(join(도구자리, f), 'utf8'))]));
