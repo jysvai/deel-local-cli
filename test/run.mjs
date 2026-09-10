@@ -53,6 +53,7 @@ const FILES = [
   '오류말.test.js',
   '죽은말.test.js',
   '닻자리.test.js',
+  '자동모드.test.js',
   'clientcert.test.js',
   'stats.test.js',
   'doctor.test.js',
