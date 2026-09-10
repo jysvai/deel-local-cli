@@ -1011,6 +1011,84 @@ trace('8-마침표뒤빈칸');
     check(`★★★ 문장 가운데 시킴말은 여전히 ${점}점 — "${글.slice(0, 34)}"`,
       code점(글) === 점, `${code점(글)}점`);
   }
+
+  /*
+   * ⑬ 실패말을 둘로 나눈다. 6차 리뷰가 짚었다 — 「로그 주어가 되는
+   * 동사냐」 하나로는 `Delete failed: permission denied` 를 못 걸렀다.
+   * 그렇다고 그 동사에 막이를 그대로 붙이면 `Fix errors.` 가 도로 죽는다.
+   *
+   *     풀이말만 되는 것   failed · crashed · timed out · succeeded
+   *     목적어도 되는 것   errors · failure · broken · crash · timeout
+   *
+   * 로그 주어가 되는 동사는 둘 다 막고, 나머지는 풀이말만 막는다.
+   */
+  for (const 글 of [
+    'Delete failed: permission denied', 'Rename failed - file in use',
+    'Setup failed (exit code 1)', 'Change failed after retry.',
+    'Build failed to compile.', 'Build failed before step 2.',
+    'Update failed since yesterday.',
+  ]) {
+    check(`★★★ 풀이말 실패말은 로그다 — "${글}"`,
+      code점(글) < 3 && 손대라했나(글) === false, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+  for (const 글 of [
+    'Fix errors.', 'Fix crashes.', 'Delete failed jobs.',
+    'Remove broken links in docs.', 'Rename failed jobs.',
+  ]) {
+    check(`★★★ 목적어 실패말은 시킴말이다 — "${글}"`,
+      code점(글) >= 3 && 손대라했나(글) === true, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+
+  /*
+   * ⑭ 공손말 주어와 어순. `you` 만 알고 `we` 를 몰랐고, `Please could
+   * you` 어순도 몰랐다. 그리고 겹침 막이가 `you` 를 통째로 막아서 문장
+   * 가운데의 `you fix` 가 죽었다 — 막을 것은 **첫머리 공손말 덩이**였다.
+   */
+  const 공손2 = ['Can we build a button?', 'Can we fix a button?',
+    'Please could you build the app?', 'Please could you fix the app?',
+    'Would we update the schema?'].map((글) => [글, code점(글)]);
+  check('★★★ 공손말 주어와 어순을 다 받는다',
+    공손2.every(([, n]) => n >= 3), JSON.stringify(공손2.filter(([, n]) => n < 3)));
+  check('★★★ 공손말끼리도 점수가 같다',
+    new Set(공손2.map(([, n]) => n)).size === 1, JSON.stringify(공손2));
+  for (const [글, 점] of [
+    ['I hope you fix this soon.', 2],
+    ['It would help if you add a guard here.', 2],
+  ]) {
+    check(`★★★ 문장 가운데 you 뒤의 시킴말은 산다 — "${글.slice(0, 34)}"`,
+      code점(글) === 점, `${code점(글)}점`);
+  }
+
+  /*
+   * ⑮ 약자는 **목록**으로 안다. 무늬(`점 + 홑글자`)로 잡았더니 홑글자
+   * 확장자가 같이 걸려 다음 문장이 통째로 죽었다 — 낱말로는 못 가르는
+   * 자리라, 아는 약자만 적어 두는 편이 정확하다.
+   */
+  for (const [글, 시킴말이냐] of [
+    ['Check a.c. Build the project.', true],
+    ['Read util.h. Update the header.', true],
+    ['Open Makefile.am. Create the rule.', true],
+    ['e.g. create a table.', false],
+    ['What does i.e. update mean?', false],
+    // 약자 바로 뒤가 시킴말인 자리를 재야 목록이 뜻을 갖는다. `Fig. 3.` 은
+    // 마침표가 둘이고 뒤엣것은 **진짜 문장 끝**이라 시킴말이 맞다.
+    ['See Fig. build the chart from it.', false],
+    ['See Fig. 3. Build the chart.', true],
+  ]) {
+    check(`★★★ 약자만 거른다 — "${글.slice(0, 36)}"`,
+      (code점(글) >= 3) === 시킴말이냐, `code=${code점(글)} (바람: ${시킴말이냐})`);
+  }
+
+  /*
+   * ⑯ 맨낱말 `rename` 이 첫머리 갈래와 겹쳐 그 동사만 8점이었다 —
+   * 5차에서 고친 동사 어긋남이 하나 남아 있었다. 한국어 '이름 바꿔' 는
+   * 그대로 3점이다.
+   */
+  const 동사점 = ['Rename', 'Delete', 'Build', 'Fix'].map((v) => [v, code점(`${v} the file.`)]);
+  check('★★★ rename 도 다른 동사와 같은 점수다',
+    new Set(동사점.map(([, n]) => n)).size === 1, JSON.stringify(동사점));
+  check('★★★ 한국어 이름 바꾸기는 그대로 code 로 간다',
+    route('이 파일 이름 바꿔줘').mode === 'code', String(route('이 파일 이름 바꿔줘').mode));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
