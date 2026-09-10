@@ -78,6 +78,16 @@ const 볼폴더 = ['scripts', 'script', 'test', 'tests', 'qa', 'tools', 'bin'];
  * 주석에는 「test.js·spec.js 만」 이라고 적어 놓고서다. 단독으로 쓰이는
  * 검사 파일 이름은 test·spec 이지 check·bench 가 아니다.
  *
+ * 앞에 붙는 갈래의 구분자에서 **점을 뺀다.** 4차 리뷰가 짚었다 —
+ * 점을 받아 두니 검사말로 시작하는 온갖 살림 파일이 검사로 잡혔다.
+ *
+ *     check.config.js · test.min.js · qa.bundle.js · spec.d.ts
+ *
+ * 앞쪽 관례는 스크립트 이름이고, 스크립트 이름은 `qa-roles.mjs` ·
+ * `test_helpers.py` 처럼 붙임표·밑줄로 잇는다. 점으로 이으면 그건 이름이
+ * 아니라 **설정·번들 꼬리표**다. 「검사를 돌려 봤습니다」 하고 설정 파일을
+ * 실행하면, 안 돌린 검사를 돌렸다고 말하는 셈이다.
+ *
  * 넓히되 **검사라고 적힌 것만** 담는다. 마디를 가르는 자리를 점·밑줄·붙임표로
  * 못박아서 `latest.js` 가 `test` 로 읽히거나 `contest.js` 가 딸려오지 않게 한다 —
  * 없는 것을 지어내면 모델이 그걸 부르고, 실패를 받고, 또 부른다.
@@ -94,7 +104,7 @@ const 검사말 = '(?:qa|tests?|check|verify|e2e|spec|bench)';
 const 뒤에붙는말 = '(?:tests?|specs?)';
 const 검사끝 = '(m?js|cjs|ts|py|sh)';
 const 검사파일 = new RegExp(
-  `^(?:${검사말}[-_.].+|.+[._]${뒤에붙는말}|${뒤에붙는말})\\.${검사끝}$`, 'i');
+  `^(?:${검사말}[-_].+|.+[._]${뒤에붙는말}|${뒤에붙는말})\\.${검사끝}$`, 'i');
 const 부르는법 = { '.js': 'node', '.mjs': 'node', '.cjs': 'node', '.ts': 'node', '.py': 'python', '.sh': 'sh' };
 
 /*

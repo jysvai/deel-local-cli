@@ -237,6 +237,9 @@ trace('9-뒤에붙는관례');
     ['test/approval.test.js', 'node test/approval.test.js'],
     ['test/roles.spec.ts', 'node test/roles.spec.ts'],
     ['test/handler_test.js', 'node test/handler_test.js'],
+    // 밑줄로 이은 `spec` 도 뒤에 붙는 관례다(루비·파이썬 쪽). 붙임표로 이은
+    // `api-spec` 과 헷갈리기 쉬워서, 둘을 나란히 재 둔다.
+    ['test/api_spec.mjs', 'node test/api_spec.mjs'],
   ];
   for (const [이름, 나와야] of 찾아야) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
@@ -263,7 +266,26 @@ trace('9-뒤에붙는관례');
     'scripts/verify.js',
     'scripts/e2e.js',
     'scripts/qa.js',
-    // 무늬에서 뺀 갈래가 되살아나면 여기서 잡힌다.
+    /*
+     * 4차 리뷰가 짚었다 — 앞에 붙는 갈래의 구분자에 **점**이 들어 있어서,
+     * 검사말로 시작하는 온갖 살림 파일이 검사로 잡혔다.
+     *
+     *     check.config.js · test.min.js · qa.bundle.js · spec.d.ts
+     *
+     * 앞쪽 관례는 스크립트 이름이고, 스크립트 이름은 `qa-roles.mjs` ·
+     * `test_helpers.py` 처럼 붙임표·밑줄로 잇는다. 점으로 이으면 그건
+     * 이름이 아니라 **설정·번들 꼬리표**다. 그래서 점을 뺀다.
+     */
+    'scripts/check.config.js',
+    'scripts/test.min.js',
+    'scripts/qa.bundle.js',
+    'test/spec.d.ts',
+    'scripts/verify.config.mjs',
+    /*
+     * 무늬에서 뺀 갈래가 되살아나면 여기서 잡힌다 — 고 적어 뒀는데,
+     * `tsx` 는 애초에 검사끝에 없어서 무늬를 되돌려도 안 빨개진다(4차
+     * 리뷰). 아는 확장자로 재야 뜻이 생긴다.
+     */
     'test/roles.spec.tsx',
   ];
   for (const 이름 of 안찾아야) {
@@ -277,9 +299,28 @@ trace('9-뒤에붙는관례');
    * 자바스크립트가 역빗금을 먼저 먹어서, 정규식에 닿는 것은 아무 글자나
    * 맞는 `.` 이 된다. 두 번 그랬다 — 눈으로는 안 보이고 이 검사만 잡는다.
    */
-  for (const 이름 of ['test/roles.specXts', 'test/approval.testZjs', 'test/handler_testZjs']) {
+  /*
+   * 세 갈래가 다 있어야 한다 — 4차 리뷰가 짚었다. 뒤에 붙는 갈래만 재고
+   * 앞에 붙는 갈래와 단독 갈래는 안 재고 있었다. 갈래마다 확장자 앞의
+   * 점을 한 번씩 다른 글자로 바꿔 본다.
+   */
+  for (const 이름 of [
+    'test/roles.specXts', 'test/approval.testZjs', 'test/handler_testZjs',
+    'scripts/qa-rolesXmjs', 'test/testZjs', 'test/specXjs',
+  ]) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
     check(`★★★ 점 자리에 아무 글자나 오면 검사가 아니다 — ${이름}`,
+      확인법들(뿌리).length === 0, JSON.stringify(확인법들(뿌리).map((x) => x.명령)));
+  }
+
+  /*
+   * 이름과 검사말 사이의 구분자도 마찬가지다. 뒤에 붙는 갈래는 점·밑줄만
+   * 받는다 — 붙임표로 이은 `api-spec` 은 낱말 합성이지 검사 파일이 아니다.
+   * 주석에는 그렇게 적어 놓고 재는 자리가 없었다(4차 리뷰).
+   */
+  for (const 이름 of ['test/approvalXtest.js', 'test/api-spec.js', 'test/roles-spec.ts']) {
+    const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
+    check(`★★★ 구분자가 점·밑줄이 아니면 검사가 아니다 — ${이름}`,
       확인법들(뿌리).length === 0, JSON.stringify(확인법들(뿌리).map((x) => x.명령)));
   }
 
