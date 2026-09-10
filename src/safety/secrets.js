@@ -120,12 +120,30 @@ export const 갈래 = [
      * 코드로 보고 고치려 든다 — 가림이 하려던 일과 정반대다.
      *
      * 그래서 뒤에 무엇이 오는지가 아니라 **머리가 무엇인지**로 본다.
-     * `process.env` · `import.meta.env` · `os.environ` · `os.getenv` ·
-     * `ENV` · `Deno.env` · `Bun.env`, 그리고 괄호로 감싼 것까지.
+     * `process.env` · `import.meta.env` · `globalThis.process.env` ·
+     * `globalThis.env` · `os.environ` · `os.getenv` · `ENV` · `Deno.env` ·
+     * `Bun.env` 아홉이고, 괄호로 감싼 것까지 받는다.
+     *
+     * ── 넓히다 진짜 값을 놓쳤다 ──────────────────────────────────────
+     *
+     * 4차 리뷰가 그 자리를 찾아냈다. 줄이 망가지는 것보다 **안 가려지는
+     * 것**이 훨씬 나쁘다 — 그 값이 그대로 모델에 간다.
+     *
+     *     const API_KEY = "ENV-PROD-SECRET-KEY-12345";   → 안 가려졌다
+     *
+     * `ENV\[` 를 `ENV\b` 로 넓힌 탓이다. `ENV` 로 **시작하는 글자**가 전부
+     * 참조 취급을 받았다. 참조는 `ENV[…]` · `ENV.…` 처럼 **뭔가를 꺼내는
+     * 모양**이지, ENV 로 시작하는 아무 글자가 아니다. 그래서 뒤에 `[` · `.`
+     * · `(` 가 오는 것만 참조로 본다.
+     *
+     * 괄호도 하나만 봤다. `((process.env.X))` 는 참조인 줄 모르고 가렸고,
+     * 거꾸로 `("진짜값")` 은 따옴표에 막혀 **아예 안 걸렸다.** 그래서 여는
+     * 괄호를 따로 잡고 닫는 괄호까지 같이 먹는다 — 가린 자리에 부스러기가
+     * 안 남는다.
      */
     // 값 자리가 또 환경변수를 읽는 것이면 참조다 — Node · Vite · 파이썬 · Deno.
     id: '환경변수',
-    re: /\b([A-Z][A-Z0-9_]{2,}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(\s*[:=]\s*)(["']?)(?!«)(?!\(?(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV|Deno\.env|Bun\.env)\b)([^\s"']{4,})\3/g,
+    re: /\b([A-Z][A-Z0-9_]{2,}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(\s*[:=]\s*)(\(\s*)?(["']?)(?!«)(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"']{4,})\4(\s*\))?/g,
     바꾸기: (m, 이름, 사이) => `${이름}${사이}${표('환경변수')}`,
   },
 ];

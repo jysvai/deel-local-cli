@@ -127,6 +127,17 @@ trace('2-멀쩡한글');
     'API_KEY = os.getenv("API_KEY")',
     'API_KEY = ENV.fetch("API_KEY")',
     'const API_KEY = process.env;',
+    /*
+     * 4차 리뷰가 둘을 더 짚었다. 무늬에는 넣어 놓고 검사 목록에 없었다 —
+     * 지워도 초록인 자리다.
+     */
+    'const API_KEY = Bun.env.API_KEY;',
+    'const API_KEY = globalThis.env.API_KEY;',
+    /*
+     * 괄호는 하나만 봤다. 겹치면 참조인 줄 모르고 가려서 **줄이 망가진다.**
+     */
+    'const API_KEY = ((process.env.API_KEY));',
+    'const API_KEY = ( process.env.API_KEY );',
   ];
   for (const 글 of 참조들) {
     const r = 가리기(글);
@@ -143,13 +154,44 @@ trace('2-멀쩡한글');
     ['JWT_SECRET=abcd1234efgh5678', true],
     ['ADMIN_PASSWORD=hunter2', true],
     ['AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', true],
+    /*
+     * 참조를 빼 주는 무늬를 **넓히다가 진짜 값을 놓친 자리**들이다.
+     * 4차 리뷰가 찾았다. 안 가리면 그 값이 그대로 모델에 간다 —
+     * 줄이 망가지는 것보다 이쪽이 훨씬 나쁘다.
+     *
+     *   · `ENV` 를 낱말 경계로만 막았더니 `ENV-` 로 시작하는 값이 통째로
+     *     참조 취급을 받았다. 참조는 `ENV[…]` · `ENV.…` 처럼 **뭔가를
+     *     꺼내는 모양**이지, 그냥 ENV 로 시작하는 글자가 아니다.
+     *   · 괄호로 싸인 값은 아예 안 걸렸다.
+     */
+    ['const API_KEY = "ENV-PROD-SECRET-KEY-12345";', true],
+    ['const API_KEY = ENV-PROD-SECRET-KEY-12345;', true],
+    ['const API_TOKEN = "Deno-abcdefg-123456";', true],
+    ['const API_KEY = ("my-secret-token-12345");', true],
     // 이름이 `S` 한 글자면 애초에 비밀 이름 무늬에 안 걸린다 — 되돌려도
     // 초록인 헛검사였다(3차 리뷰). 진짜 비밀 이름으로 재야 뜻이 생긴다.
     ["const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';", false],
   ]) {
     const r = 가리기(글);
-    check(`★★ 진짜 값은 그대로 가린다: ${글.slice(0, 42)}`,
+    /*
+     * 검사 이름이 그 줄이 하려는 말과 반대면 실패 화면이 사람을 속인다 —
+     * 「진짜 값은 그대로 가린다: … process.env.X」 라고 뜬다(4차 리뷰).
+     */
+    check(`★★ ${가려야 ? '진짜 값은 그대로 가린다' : '참조는 손대지 않는다'}: ${글.slice(0, 42)}`,
       (r.글 !== 글) === 가려야, r.글.slice(0, 80));
+  }
+  /*
+   * 가린 자리가 **줄을 안 망가뜨리는지**도 본다. 안 보면 「가려지긴 했다」
+   * 로 초록인데 화면에는 `«가림»'API_KEY'];` 같은 부스러기가 남는다.
+   */
+  for (const 글 of ['const API_KEY = ("my-secret-token-12345");', 'const API_KEY = "ENV-PROD-SECRET-KEY-12345";']) {
+    const r = 가리기(글);
+    /*
+     * 「가려졌다」 를 같이 못박는다. 안 그러면 **아예 안 가려졌을 때**도
+     * 부스러기가 없으니 초록이다 — 재려는 것과 정반대 상태에서 통과한다.
+     */
+    check(`★★★ 가린 뒤에도 줄이 멀쩡하다: ${글.slice(0, 40)}`,
+      r.글.includes('«가림') && !/[^\s]«|»[^\s;,)]/.test(r.글) && r.글.endsWith(';'), r.글);
   }
   const 되돌림 = 가리기(
     "const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';",
