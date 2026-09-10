@@ -154,7 +154,15 @@ const BLOCKED = [
     re: /Remove-Item\b[^|;&]*\s-(Recurse|r)\b[^|;&]*\s(?:-?[a-z]+\s+)*([a-z]:\\?|~|\$HOME|\$env:USERPROFILE)\s*$/i,
     why: '드라이브나 집 폴더를 통째로 지웁니다',
   },
-  { re: /git\s+push\b[^|;&]*--force(?!-with-lease)/i, why: '원격 이력을 덮어씁니다 (--force-with-lease 를 쓰세요)' },
+  /*
+   * `--force` 만 보고 있었다. 짧은 꼴 `-f` 는 그대로 나갔다 —
+   * `git push -f origin main` 은 사람이 실제로 더 많이 치는 쪽이다.
+   * 긴 꼴만 막으면 「막았다」 가 아니라 「긴 꼴로 적은 사람만 막았다」 다.
+   */
+  {
+    re: /git\s+push\b[^|;&]*(?:--force(?!-with-lease)|\s-[a-z]*f[a-z]*\b)/i,
+    why: '원격 이력을 덮어씁니다 (--force-with-lease 를 쓰세요)',
+  },
   // 낱말만 보면 안 된다. `node scripts/shutdown.js` 나 `npm run reboot` 이
   // '시스템을 끕니다' 로 막히고 감사기록에까지 남았다. 명령의 **첫 낱말**일 때만 본다.
   { re: /(^|[|;&]\s*)(sudo\s+)?(shutdown|reboot|halt|poweroff)\b/i, why: '시스템을 끕니다' },
@@ -186,10 +194,43 @@ const BLOCKED = [
   { re: /\biwr\b[^|]*\|\s*iex\b/i, why: '받은 스크립트를 그대로 실행합니다' },
 ];
 
+/*
+ * ── 뒤에 한 마디만 붙이면 울타리가 통째로 열렸다 ────────────────────────
+ *
+ * 위 규칙 여럿이 `\s*$` 로 **글 끝**에 못을 박는다. `rm -rf /` 가 글 끝일
+ * 때만 걸린다는 뜻이다. 그런데 셸은 한 줄에 여러 마디를 넣는다.
+ *
+ *     rm -rf /                 막힘
+ *     rm -rf / ; echo done     통과 ←
+ *     rm -rf / && echo done    통과 ←
+ *     rm -rf ~ ; ls            통과 ←
+ *     del /f /s /q C:\ & echo done            통과 ←
+ *     Remove-Item -Recurse -Force C:\ ; ...   통과 ←
+ *
+ * 셸은 두 마디를 **둘 다** 실행한다. 즉 `; echo done` 여덟 글자로 이 파일이
+ * 파는 약속이 통째로 깨졌다. 앞에 붙이는 것은 막혔고(`echo hi && rm -rf /`
+ * 는 걸린다) 뒤에 붙이는 것만 샜다 — 한쪽만 막힌 울타리라 더 안 보였다.
+ *
+ * 그래서 **마디로 갈라 각 마디를 따로 본다.** 규칙은 그대로 두고 보는 자리만
+ * 늘린다 — 전체 글도 여전히 본다. 막는 쪽으로만 늘어나므로 여태 통과하던
+ * 것이 새로 막히는 일은 「위험한 것이 마디 안에 있었다」 뿐이다.
+ *
+ * 따옴표 안은 안 가린다. 가려서 얻는 것(`echo "rm -rf / ; x"` 를 안 막기)보다
+ * 잃는 것(`sh -c "rm -rf / ; x"` 를 못 막기)이 크다. 이 목록은 되돌릴 수
+ * 없는 것만 담으므로, 애매하면 막고 사람이 다시 적는 편이 낫다.
+ */
+const 마디로 = (s) => s
+  .split(/(?:\|\||&&|[;&|\n\r])+/)
+  .map((x) => x.trim())
+  .filter(Boolean);
+
 export function checkCommand(cmd) {
   const s = String(cmd);
+  const 볼것 = [s, ...(마디로(s).length > 1 ? 마디로(s) : [])];
   for (const b of BLOCKED) {
-    if (b.re.test(s)) throw new BlockedError(`${b.why}\n  막힌 명령: ${s.slice(0, 120)}`);
+    for (const 하나 of 볼것) {
+      if (b.re.test(하나)) throw new BlockedError(`${b.why}\n  막힌 명령: ${s.slice(0, 120)}`);
+    }
   }
   return true;
 }
