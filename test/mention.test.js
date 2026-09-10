@@ -252,6 +252,51 @@ rmSync(root, { recursive: true, force: true });
   }
 }
 
+trace('10-대소문자');
+
+/*
+ * ★★★ 대소문자만 바꾸면 그대로 열렸다.
+ *
+ * ── 왜 통과했나 ─────────────────────────────────────────────────────────
+ *
+ * 막는 자가 `조각.lastIndexOf('.deel')` 로 찾았다 — **정확히 소문자**일
+ * 때만 맞는다. 그런데 이 프로그램이 주로 도는 윈도우(NTFS)와 맥(APFS 기본)
+ * 은 파일 이름의 대소문자를 **안 가린다.** 이름은 안 맞는데 파일은 열린다.
+ *
+ *     .deel/config.json   막힘
+ *     .DEEL/config.json   통과 ← 같은 파일이 열린다
+ *
+ * 그 파일에 게이트웨이 열쇠가 들어 있다. 열쇠는 대화에 실려 게이트웨이로
+ * 나가고 세션 기록으로 디스크에도 남는다 — 「나가는 문은 하나」 라는 약속이
+ * 그 문으로 열쇠를 내보내는 꼴이 된다. 커밋 쪽은 이미 막고 있었는데
+ * (test/commit.test.js 3⅞+절) **읽는 쪽만** 안 막고 있었다.
+ *
+ * 리눅스에서 `.DEEL` 은 진짜 다른 폴더다. 그래도 막는다 — 그 이름을 쓰는
+ * 사람은 사실상 없고, 안 막아서 잃는 것과 견줄 수가 없다.
+ */
+{
+  const 윗집 = join('C:', 'Users', 'x').replace(/\\/g, '/');
+  const 살림 = (p) => 내부살림(`${윗집}/${p}`);
+
+  for (const p of [
+    '.DEEL/config.json',
+    '.Deel/config.json',
+    '.deel/CONFIG.JSON',
+    '.DEEL/mcp.json',
+    '.DEEL/history/1.json',
+  ]) {
+    check(`★★★ ${p} 도 막는다`, !!살림(p), '대소문자만 바꿨더니 통과함');
+  }
+
+  // 남의 도구 살림도 같은 까닭으로 같이 막는다.
+  check('★★ .CLAUDE/history.jsonl 도 막는다', !!살림('.CLAUDE/history.jsonl'), '통과해 버림');
+  check('★★ .Codex/history.jsonl 도 막는다', !!살림('.Codex/history.jsonl'), '통과해 버림');
+
+  // 넓히다 반대로 베면 안 된다.
+  check('★ deelignore 같은 이름은 안 막는다', 살림('.deelignore') === null, String(살림('.deelignore')).slice(0, 40));
+  check('★ 남의 config.json 은 그대로 통과한다', 살림('프로젝트/config.json') === null, String(살림('프로젝트/config.json')).slice(0, 40));
+}
+
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n@파일 지목  ${D}(아닌 것을 파일로 오해하지 않는 게 절반이다)${X}\n`);

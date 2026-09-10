@@ -85,7 +85,7 @@ export const SKIP_DIRS = new Set([
 export function 내부살림(abs) {
   const 편 = String(abs ?? '').replace(/\\/g, '/');
   const 조각 = 편.split('/');
-  const 이름 = 조각[조각.length - 1] ?? '';
+  const 이름 = (조각[조각.length - 1] ?? '').toLowerCase();
   /*
    * 살림 자리를 `.deel` 이라는 **글자**로 찾고 있었다.
    *
@@ -99,7 +99,24 @@ export function 내부살림(abs) {
    * 기본 이름도 계속 본다. 옮겨 쓰다가 되돌린 사람, 프로젝트 안에 둔 `.deel`,
    * 남의 PC 에서 옮겨 온 폴더가 다 그 이름이다.
    */
-  let i = 조각.lastIndexOf('.deel');
+  /*
+   * ── 대소문자를 가려서는 안 된다 ─────────────────────────────────────
+   *
+   * `조각.lastIndexOf('.deel')` 는 **정확히 소문자**일 때만 찾았다. 그런데
+   * 이 프로그램이 주로 도는 윈도우(NTFS)와 맥(APFS 기본)은 파일 이름의
+   * 대소문자를 **안 가린다.** 즉 이름은 안 맞는데 파일은 열린다.
+   *
+   *     .deel/config.json   막힘
+   *     .DEEL/config.json   통과 ← 같은 파일이 열린다 (열쇠가 그대로 나온다)
+   *
+   * 실제로 재 봤다. Read 도 Bash 의 checkPaths 도 둘 다 통과였다. 열쇠는
+   * 대화에 실려 게이트웨이로 나가고 세션 기록으로 디스크에도 남는다 —
+   * 「나가는 문은 하나」 라는 약속이 그 문으로 열쇠를 내보내는 꼴이다.
+   *
+   * 리눅스에서는 `.DEEL` 이 진짜 다른 폴더지만, 그 이름을 쓰는 사람은
+   * 사실상 없다. 막아서 잃는 것보다 안 막아서 잃는 것이 비교가 안 된다.
+   */
+  let i = 조각.map((x) => x.toLowerCase()).lastIndexOf('.deel');
   if (i < 0) {
     try {
       const 집 = String(homeDir()).replace(/\\/g, '/').replace(/[/]+$/, '');
@@ -111,7 +128,9 @@ export function 내부살림(abs) {
     } catch { /* 집을 못 물어봐도 아래 이름 검사는 그대로 돈다 */ }
   }
   if (i >= 0) {
-    const 안 = 조각.slice(i + 1);
+    // 폴더 이름과 같은 까닭으로 **안쪽 이름도** 대소문자를 안 가린다.
+    // `.deel/CONFIG.JSON` 은 윈도우·맥에서 같은 파일이다.
+    const 안 = 조각.slice(i + 1).map((x) => x.toLowerCase());
     /*
      * ── 폴더 **자체**를 가리키면 그것도 막는다 ──────────────────────────
      *
@@ -158,7 +177,9 @@ export function 내부살림(abs) {
     }
   }
   // 남의 도구 살림. 목록은 남의도구살림 한 곳에만 있다 — 훑는 쪽과 같은 것을 본다.
-  const 걸린것 = 조각.find((seg) => 남의도구살림.has(seg)) ?? (남의도구파일.test(이름) ? 이름 : null);
+  // 여기도 대소문자를 안 가린다 — `.CLAUDE/history.jsonl` 은 윈도우·맥에서 같은 파일이다.
+  const 걸린것 = 조각.find((seg) => 남의도구살림.has(String(seg).toLowerCase()))
+    ?? (남의도구파일.test(이름) ? 이름 : null);
   if (걸린것) {
     return `${걸린것} 은 다른 코딩 도구가 제 기록을 넣어 두는 자리입니다.`
       + ' 지난 대화·명령 이력·열쇠 같은 것이라 이 작업과 상관이 없고, 읽으면 컨텍스트만 찹니다.'
