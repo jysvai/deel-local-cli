@@ -185,10 +185,19 @@ export const 표 = {
      * 그래서 한국어와 같은 모양으로 쪼개고 같은 무게를 준다. `audit` 만
      * 4점인 것은 한국어 '감사' 가 4점이라 그렇다 — 짝을 맞춘 것이다.
      */
-    [/\breview\b|\binspect\b/i, 5],
-    [/\banaly[sz]e\b|\banalysis\b/i, 5],
+    /*
+     * 활용형까지 받는다. `\b` 로 딱 닫아 두니 `Analyzing` · `reviews` ·
+     * `inspection` 이 0점이었다(7차 리뷰). 한국어는 '분석해·분석을·분석이'
+     * 를 다 받는데 영어만 원형 하나였다.
+     *
+     * `audit` 도 5점으로 올린다. 4점으로 둔 까닭을 「한국어 '감사' 가
+     * 4점이라」 고 적었는데, 한국어 '감사' 가 낮은 것은 **인사말과 겹뜻**
+     * 이어서다. 영어 audit 에는 그 겹뜻이 없다 — 엉뚱한 근거였다.
+     */
+    [/\breview(?:s|ing|ed)?\b|\binspect(?:s|ing|ion|ions|ed)?\b/i, 5],
+    [/\banaly[sz]e(?:s|d)?\b|\banaly[sz]ing\b|\banalysis\b/i, 5],
     [/\bvulnerab/i, 5],
-    [/\baudit\b/i, 4],
+    [/\baudit(?:s|ing|ed)?\b/i, 5],
     [/\bdata\s*loss\b|\bdeadlock\b|\blost\s*update\b/i, 4],
   ],
 
@@ -219,9 +228,23 @@ export const 표 = {
      * "What does this function do?" 가 0점이었다. 한국어 '뭐 하는 거야'
      * 는 5점으로 아는 말이다.
      */
-    [/\bexplain\b/i, 5],
-    [/\bwhat(?:'s|\s+(?:is|are|does|do|was|were))\b/i, 5],
-    [/\bhow\s+(?:does|do|did|is|are)\b/i, 5],
+    /*
+     * ── 묻는 말은 **문장 첫머리**에 있어야 묻는 말이다 ────────────────
+     *
+     * 넓히자마자 반대쪽이 샜다(7차 리뷰).
+     *
+     *     "Fix what is broken in route.js"  → ask 5점
+     *
+     * 고치라는 말이 물음과 비겨서 종합에 떨어졌다. 한국어 '뭐야' 규칙은
+     * 줄 끝(`\s*\??$`)에 못박혀 있어서 이런 일이 없다 — 영어도 첫머리로
+     * 못박는다. 물음표로 끝나는 문장은 낱말을 안 가리고 다 받는다.
+     *
+     * `explain` 은 첫머리가 아니어도 된다 — "Explain how …" 처럼 그 자체가
+     * 시킴말이고, 한국어 '설명해' 도 자리를 안 가린다.
+     */
+    [/\bexplain(?:s|ing|ed)?\b/i, 5],
+    [/(?:^|[.!?]\s+|\n\s*)what\b(?:[^.!?\n]*\?|(?:'s|\s+(?:is|are|was|were|does|do|did))\b)/im, 5],
+    [/(?:^|[.!?]\s+|\n\s*)how\b[^.!?\n]*\?|\bhow\s+(?:to\b|does|do|did|is|are|was|were|can|should)\b/im, 5],
     [/읽어(만)?\s*보고\s*(설명|알려)/, 4],
   ],
 

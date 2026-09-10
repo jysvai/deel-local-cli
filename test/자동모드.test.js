@@ -186,12 +186,13 @@ trace('1-죽은규칙');
      * 읽기 쪽 영어. 여기 없으면 바로 아래 「규칙이 전부 걸린다」 검사가
      * 잡는다 — 규칙만 늘리고 재는 문장을 안 넣으면 죽은 규칙이 된다.
      */
-    'Review this code and tell me what is wrong.',
+    'Review this code.',
     'Analyze the performance of this endpoint.',
-    'Audit this app for authorization vulnerabilities.',
-    'Explain how the approval workflow works.',
+    'Audit this app.',
+    'Any vulnerabilities in this module?',
+    'Explain the approval workflow.',
     'What does this function do?',
-    'How does the approval workflow work?',
+    'How to run this test?',
     'fix the typo in the header',
     'README 에 설치 방법 좀 써줘',
   ];
@@ -817,6 +818,58 @@ trace('7.5-읽기영어');
     ['이 프로젝트 구조 설계해 줘', 'Design the architecture for this project.'],
     ['로그인 폼 만들어줘', 'Build the login form.'],
   ];
+  /*
+   * 7차 리뷰가 이 마디를 통째로 다시 봤다. 짝을 맞추긴 했는데 **낱말이
+   * 얇았고**, 재는 문장이 다른 규칙에 얹혀 가고 있었다.
+   *
+   *   · `audit` 만 4점이라 "Audit this code." 는 종합에 남았다. 한국어
+   *     '감사' 가 4점인 것은 인사말과 헷갈려서인데, 영어 audit 에는 그런
+   *     겹뜻이 없다 — 짝을 맞춘다며 엉뚱한 근거를 댔다.
+   *   · `how to` · `what did` · `how was` · `Analyzing` · `What <이름씨>`
+   *     가 전부 0점이었다.
+   *   · 그리고 반대로 **쓰기 지시문에 물음 점수가 붙었다** —
+   *     "Fix what is broken in route.js" 가 ask 5점을 받아, 고치라는 말이
+   *     비겨서 종합에 떨어졌다. 한국어 '뭐야' 규칙은 줄 끝에 못박혀 있어서
+   *     이런 일이 없다. 영어도 **문장 첫머리**로 못박는다.
+   */
+  for (const [글, 어느, 바람] of [
+    ['Audit this code.', 'inspect', 5],
+    ['Reviewing this module.', 'inspect', 5],
+    ['Run an inspection on the module.', 'inspect', 5],
+    ['Analyzing performance of this endpoint.', 'inspect', 5],
+    ['How to run this test?', 'ask', 5],
+    ['What did this commit change?', 'ask', 5],
+    ['How was this calculated?', 'ask', 5],
+    ['What parameters does this function take?', 'ask', 5],
+    ['How the approval workflow works?', 'ask', 5],
+    // 반대쪽 — 고치라는 말에 물음·검토 점수가 붙으면 안 된다.
+    ['Fix what is broken in route.js', 'ask', 0],
+    ['Rewrite what is left of the parser.', 'ask', 0],
+    ['Fix how this works.', 'ask', 0],
+  ]) {
+    const 점 = route(글).점수들;
+    check(`★★★ ${어느} ${바람}점이어야 한다 — "${글.slice(0, 40)}"`,
+      (점[어느] ?? 0) === 바람, `${어느}=${점[어느] ?? 0} · ${JSON.stringify(점)}`);
+  }
+
+  /*
+   * 규칙마다 **혼자 걸리는 문장**으로 잰다. 한 문장에 두 규칙이 걸리면
+   * 한쪽이 죽어도 다른 쪽에 얹혀 초록이다 — 7차 리뷰가 셋을 짚었다.
+   */
+  for (const [글, 어느, 바람] of [
+    ['Review this code.', 'inspect', 5],
+    ['Analyze the performance.', 'inspect', 5],
+    ['Audit this app.', 'inspect', 5],
+    ['Any vulnerabilities here?', 'inspect', 5],
+    ['Explain the approval workflow.', 'ask', 5],
+    ['What does this function do?', 'ask', 5],
+    ['How to run this?', 'ask', 5],
+  ]) {
+    const 점 = route(글).점수들;
+    check(`★★★ 혼자서도 ${바람}점이다 — "${글}"`,
+      (점[어느] ?? 0) === 바람, `${어느}=${점[어느] ?? 0} · ${JSON.stringify(점)}`);
+  }
+
   for (const [한, 영] of 짝들) {
     const a = route(한).mode;
     const b = route(영).mode;
@@ -833,6 +886,10 @@ trace('7.5-읽기영어');
     'Fix the broken login form.',
     'Create the schema and write tests.',
     'Refactor the approval module.',
+    // 이번에 넓힌 낱말이 든 쓰기 지시문. 안 넣으면 회귀를 못 잰다(7차 리뷰).
+    'Fix what is broken in route.js',
+    'Rewrite what is left of the parser.',
+    'Fix how this works.',
   ]) {
     const 점 = route(글).점수들;
     check(`★★★ 쓰기 지시문에는 읽기 점수가 안 붙는다 — "${글.slice(0, 34)}"`,
