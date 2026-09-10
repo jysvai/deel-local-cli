@@ -168,6 +168,20 @@ trace('2-멀쩡한글');
     ['const API_KEY = ENV-PROD-SECRET-KEY-12345;', true],
     ['const API_TOKEN = "Deno-abcdefg-123456";', true],
     ['const API_KEY = ("my-secret-token-12345");', true],
+    /*
+     * 5차 리뷰가 더 찾았다. 참조 무늬를 넓히다 **진짜 값**을 또 놓쳤다.
+     *   · 겹괄호로 싸인 값은 아예 안 걸렸다.
+     *   · `process.env` 로 **시작하는 글자**가 참조 취급을 받았다. ENV
+     *     하나만 고치고 나머지 여덟은 그대로 뒀던 탓이다.
+     *   · 따옴표 안은 **글자값**이지 참조가 아니다. 참조처럼 생겼다고
+     *     빼 주면 `"ENV.PROD.SECRET.KEY.12345"` 가 그대로 나간다.
+     */
+    ['const API_KEY = (("my-secret-token-12345"));', true],
+    ['const API_KEY = "process.env-prod-secret-12345";', true],
+    ['const API_KEY = "ENV.PROD.SECRET.KEY.12345";', true],
+    ['const API_KEY = ("my-secret-token-12345" + salt);', true],
+    ['call(API_KEY = "secret12345");', true],
+    ['connect(API_KEY="abc123456")', true],
     // 이름이 `S` 한 글자면 애초에 비밀 이름 무늬에 안 걸린다 — 되돌려도
     // 초록인 헛검사였다(3차 리뷰). 진짜 비밀 이름으로 재야 뜻이 생긴다.
     ["const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';", false],
@@ -184,14 +198,27 @@ trace('2-멀쩡한글');
    * 가린 자리가 **줄을 안 망가뜨리는지**도 본다. 안 보면 「가려지긴 했다」
    * 로 초록인데 화면에는 `«가림»'API_KEY'];` 같은 부스러기가 남는다.
    */
-  for (const 글 of ['const API_KEY = ("my-secret-token-12345");', 'const API_KEY = "ENV-PROD-SECRET-KEY-12345";']) {
+  /*
+   * 가린 자리가 **줄을 안 망가뜨리는가.** 5차 리뷰가 이 검사도 짚었다 —
+   * 부스러기 무늬(`»[^\s;,)]`)에 `)` 를 넣어 뒀더니 **닫는 괄호만 남는**
+   * 바로 그 결함을 허용하고 있었다. 부스러기를 무늬로 세지 말고
+   * **괄호 짝**과 **끝 글자**를 그대로 세는 편이 속지 않는다.
+   */
+  const 괄호짝 = (t) => [...t].reduce((n, c) => n + (c === '(' ? 1 : c === ')' ? -1 : 0), 0);
+  for (const 글 of [
+    'const API_KEY = ("my-secret-token-12345");',
+    'const API_KEY = "ENV-PROD-SECRET-KEY-12345";',
+    // 따옴표 없는 값은 마침 자리까지 삼켜 세미콜론을 지웠다(5차 리뷰).
+    'const API_KEY = ENV-PROD-SECRET-KEY-12345;',
+    // 파이썬·자바스크립트에서 흔한 꼴이다. 여는 괄호가 훨씬 앞에 있다.
+    'call(API_KEY = "secret12345");',
+    'connect(API_KEY="abc123456")',
+    'const API_KEY = ("my-secret-token-12345" + salt);',
+  ]) {
     const r = 가리기(글);
-    /*
-     * 「가려졌다」 를 같이 못박는다. 안 그러면 **아예 안 가려졌을 때**도
-     * 부스러기가 없으니 초록이다 — 재려는 것과 정반대 상태에서 통과한다.
-     */
     check(`★★★ 가린 뒤에도 줄이 멀쩡하다: ${글.slice(0, 40)}`,
-      r.글.includes('«가림') && !/[^\s]«|»[^\s;,)]/.test(r.글) && r.글.endsWith(';'), r.글);
+      r.글.includes('«가림') && 괄호짝(r.글) === 괄호짝(글)
+        && r.글.endsWith(글.slice(-1)), r.글);
   }
   const 되돌림 = 가리기(
     "const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';",
