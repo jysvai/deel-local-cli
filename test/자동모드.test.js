@@ -1267,8 +1267,19 @@ trace('8-마침표뒤빈칸');
     'Delete error: permission denied', 'Rename failure: file in use',
     'Change timeout: 30s', 'Delete crash (core dumped)',
   ]) {
-    check(`★★★ 로그꼴 쌍점이 붙은 실패말은 로그다 — "${글}"`,
+    check(`★★★ 로그꼴 쌍점·괄호가 붙은 실패말은 로그다 — "${글}"`,
       code점(글) < 3 && 손대라했나(글) === false, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+  /*
+   * 살려 둬야 할 쪽. 2번 갈래에 이름씨꼴 차단을 「쌍점·괄호가 뒤따를 때만」
+   * 건 까닭이 이것인데, 정작 이쪽을 재는 검사가 없었다(8차 리뷰).
+   */
+  for (const 글 of [
+    'Fix errors.', 'Fix error in auth module.', 'Fix the crash in the parser.',
+    'Delete failures from the report.', 'Change timeouts to 60s.',
+  ]) {
+    check(`★★★ 쌍점·괄호가 없으면 그냥 지시문이다 — "${글}"`,
+      손대라했나(글) === true, `손대라=${손대라했나(글)} · ${JSON.stringify(route(글).점수들)}`);
   }
   for (const 글 of [
     'Delete failed: permission denied', 'Rename failed - file in use',
@@ -1298,7 +1309,11 @@ trace('8-마침표뒤빈칸');
     // 쉼표가 붙은 공손말. `please\s+` 로 빈칸만 받아 통째로 0점이었다(8차 리뷰).
     'Please, could you build the app?', 'Please, could you fix the app?',
     'Please, build the app.', 'Please, fix the app.',
-    'Could you, please, build the app?'].map((글) => [글, code점(글)]);
+    'Could you, please, build the app?',
+    // 8차 리뷰. `build` 짝만 넣고 `fix` 짝을 빼먹어서, 겹침 막는 자리의
+    // 쉼표를 되돌려도 빨개지지 않았다.
+    'Could you, fix the app?', 'Could you, please, fix the app?',
+    'Can we, please, rename this?'].map((글) => [글, code점(글)]);
   check('★★★ 공손말 주어와 어순을 다 받는다',
     공손2.every(([, n]) => n >= 3), JSON.stringify(공손2.filter(([, n]) => n < 3)));
   check('★★★ 공손말끼리도 점수가 같다',
@@ -1329,12 +1344,17 @@ trace('8-마침표뒤빈칸');
      * 8차 리뷰. 약자 목록에 **문장 끝에 자주 오는 말**을 넣어 뒀더니 그
      * 뒤 문장이 통째로 죽었다. `No.` 는 거절이지 번호가 아니고, `etc.` ·
      * `Inc.` · `Ltd.` 는 문장을 맺는 자리에 훨씬 자주 온다.
-     * 약자 목록은 **뒤에 문장이 이어지지 않는 말**만 담아야 한다.
+     * 약자 목록은 **뒤에 말이 이어지는 약자**만 담아야 한다.
      */
     ['No. Fix the bug.', true],
     ['No! Build the project.', true],
     ['Install git, node, etc. Build the project.', true],
     ['Ship it to Acme Inc. Create the report.', true],
+    ['Sold to Acme Ltd. Build the invoice page.', true],
+    // 남긴 약자는 그대로 약자다. 넷을 뺀 김에 나머지까지 흔들리면 안 된다.
+    ['See Fig. create the chart from it.', false],
+    ['Use e.g. build tools for this.', false],
+    ['Ask Dr. build a plan with them.', false],
     ['See Fig. 3. Build the chart.', true],
   ]) {
     check(`★★★ 약자만 거른다 — "${글.slice(0, 36)}"`,
