@@ -897,6 +897,61 @@ trace('7.5-읽기영어');
   }
 }
 
+// ── 7.6 「계획을 만들어 달라」 는 계획이지 손대라는 말이 아니다 ─────────
+//
+// 7·7.5 에서 낱말을 맞추고 나서 같은 뜻 짝 26개를 죽 재 봤더니 여기가
+// 갈렸다. 한국어 '계획 세워 줘' 는 plan 으로 가는데 영어 "Make a plan
+// for this." 는 **code** 로 갔다 — 파일을 고치는 모드다.
+//
+// 까닭은 영어시킴말이 `Make` 하나만 보고 손대라는 말로 친 것이다. 손대라는
+// 말이면 읽기 전용 모드(plan·architect·ask·inspect)가 후보에서 통째로
+// 빠지므로, 계획을 달라는 말에 계획 모드가 남을 수가 없었다.
+//
+// 시킴꼴이 맞다. 다만 **무엇을** 만들라는지가 다르다 — 만들 것이 계획이면
+// 그건 계획 모드가 내놓는 것이지 파일을 고쳐서 되는 일이 아니다.
+trace('7.6-계획거리');
+{
+  for (const 글 of [
+    'Make a plan for this.',
+    'Create a plan for the migration.',
+    'Build a plan to split this module.',
+    'Write a plan for the rollout.',
+    'Generate a roadmap for Q3.',
+    'Update the plan.',
+    'Create a strategy for the migration.',
+  ]) {
+    check(`★★★ 계획을 만들라는 말은 손대라는 말이 아니다 — "${글}"`,
+      손대라했나(글) === false, `손대라=${손대라했나(글)} · ${JSON.stringify(route(글).점수들)}`);
+    check(`★★★ 계획을 만들라는 말은 code 로 안 간다 — "${글}"`,
+      route(글).mode !== 'code', `${route(글).mode} · ${JSON.stringify(route(글).점수들)}`);
+  }
+  /*
+   * 반대쪽. 만들 것이 계획이 아니면 그건 그대로 손대라는 말이다. 여기를
+   * 넓히면 「만들어 달라」 가 통째로 안 걸려서, 이 파일이 7번에서 메운
+   * 구멍이 도로 열린다.
+   */
+  for (const 글 of [
+    'Build a button.', 'Write a test.', 'Create the schema.',
+    'Make the login form.', 'Generate the client from the spec.',
+    // `plan` 이 목적어가 아니라 **딸린 이름씨**인 자리. 이건 코드다.
+    'Add a plan field to the schema.',
+    'Rename the plan column.',
+    'Implement the plan we agreed on.',
+  ]) {
+    check(`★★★ 계획이 아니면 그대로 손대라는 말이다 — "${글}"`,
+      손대라했나(글) === true, `손대라=${손대라했나(글)} · ${JSON.stringify(route(글).점수들)}`);
+  }
+  // 그리고 한국어와 같은 자리로 간다.
+  for (const [한, 영] of [
+    ['계획 세워 줘', 'Make a plan for this.'],
+    ['로드맵 그려 줘', 'Generate a roadmap for this.'],
+    ['버튼 만들어줘', 'Build a button.'],
+  ]) {
+    check(`★★★ 계획말도 같은 뜻이면 같은 모드로 — "${영}"`,
+      route(한).mode === route(영).mode, `한국어 ${route(한).mode} · 영어 ${route(영).mode}`);
+  }
+}
+
 // ── 8. 마침표 뒤에 **빈칸이 있어야** 다음 문장이다 ──────────────────────
 //
 // 3차 리뷰가 짚었고, 돌려 보니 제일 나쁜 자리였다.
