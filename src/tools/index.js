@@ -877,7 +877,24 @@ function 한파일쓰기(args, ctx) {
      *
      * 있는 파일이면 그대로 아래 거절로 내려간다 — 덮어쓰기는 여전히 안 된다.
      */
-    if (isHwpxPath(abs) && !existsSync(abs)) return hwpx새로만들기(args, ctx, abs);
+    if (isHwpxPath(abs) && !existsSync(abs)) {
+      /*
+       * ── 가린 비밀 검사가 이 갈래만 빠져 있었다 ────────────────────────
+       *
+       * 아래 평범한 쓰기 길은 쓰기 직전에 `가린표되돌리나` 로 «가림:…» 표식이
+       * 새 내용에 섞였는지 본다. 그런데 hwpx 를 **새로 만드는** 이 갈래는 그
+       * 검사보다 위에서 돌아서 통째로 건너뛰었다.
+       *
+       * 모델이 Bash 로 환경변수를 읽으면 값이 가려진 채로 온다. 그 표식을
+       * 진짜 값으로 알고 보고서에 옮겨 적으면, 다른 형식은 그 자리에서
+       * 막히는데 hwpx 만 「새로 만듦」 이라고 답하고 조용히 만들어졌다.
+       * 사내 보고서를 만드는 것이 이 도구의 주된 쓰임이라 하필 제일 나쁜
+       * 자리다 — 사람은 문서를 열어 보기 전까지 모른다.
+       */
+      const 표막기 = 가린표되돌리나(ctx.scope.show(abs), args.content);
+      if (표막기) return { error: 표막기 };
+      return hwpx새로만들기(args, ctx, abs);
+    }
     // 문서(hwpx·docx·pptx)도 같은 이유로 또렷하게 거절한다. 일반 '바이너리'
     // 오류로 넘기면 왜 안 되는지가 안 실려서, 모델이 우회로를 찾는다.
     if (isDocPath(abs)) return { error: 문서는못고침(args.file_path) };

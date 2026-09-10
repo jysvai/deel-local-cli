@@ -14,7 +14,7 @@
 // 우리 손으로 지우는 셈이다. 그래서 파일 내용은 **안 가린다.**
 //
 // 이 검사는 그 둘을 갈라 놓는다.
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { 가리기, 훑기, 가렸다는말, 봤다는말, 아는열쇠, 가릴도구, 표몇군데, 가릴까 } from '../src/safety/secrets.js';
@@ -261,6 +261,28 @@ trace('6-2-가린표가-파일로-되돌아가나');
     // "안 됩니다" 만 하면 모델은 표를 지우고 빈 값으로 써서 결국 열쇠를 없앤다.
     check(`${이름} 은 어떻게 하라는지도 말한다`, /사용자에게 물어보|Edit/.test(String(r.error ?? '')),
       String(r.error ?? '').split('\n').at(-1)?.trim().slice(0, 70));
+  }
+
+  /*
+   * ── 새로 만드는 hwpx 도 같은 문을 지나야 한다 ──────────────────────────
+   *
+   * 위 셋은 「있는 파일을 고치는」 길이라, 막는 값이 「진짜 열쇠를 지킨다」 다.
+   * hwpx 새로 만들기는 잃을 원본이 없어서 그 값은 없다. 대신 다른 값이 있다 —
+   * **가짜가 든 문서가 만들어져서 남에게 나간다.**
+   *
+   * 이 갈래는 가림표 검사보다 위에서 돌아 통째로 건너뛰고 있었다. 다른
+   * 형식은 그 자리에서 막히는데 hwpx 만 「새로 만듦」 이라고 답했다. 사내
+   * 보고서를 만드는 것이 이 도구의 주된 쓰임이라 하필 제일 나쁜 자리다.
+   */
+  {
+    const r = await runTool('Write', { file_path: '보고.hwpx', content: `요약\n${모델이본것}\n` }, ctx());
+    check('★★★ 새로 만드는 hwpx 에도 가린 표를 못 쓴다', !!r.error,
+      JSON.stringify(r.error ?? r.content ?? '').slice(0, 90));
+    check('★★★ 그래서 그 문서가 만들어지지 않는다', !existsSync(join(방, '보고.hwpx')));
+    // 표가 없으면 여전히 만들어져야 한다 — 막는 것이 여기서 그쳐야 한다.
+    const r2 = await runTool('Write', { file_path: '멀쩡.hwpx', content: '요약\n평범한 글입니다.\n' }, ctx());
+    check('★★ 표가 없는 hwpx 는 그대로 만들어진다', !r2.error && existsSync(join(방, '멀쩡.hwpx')),
+      JSON.stringify(r2.error ?? '').slice(0, 80));
   }
 
   /*
