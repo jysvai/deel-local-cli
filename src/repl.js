@@ -26,7 +26,7 @@ import { 언어서버있나 } from './tools/index.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
 import { History } from './safety/undo.js';
 import { Audit, 열쇠묻기 } from './safety/audit.js';
-import { activeProfile, load, resolveKey, save as saveCfg, homeDir, 잠금소식, 열쇠탈소식, 프로젝트설정소식 } from './config.js';
+import { activeProfile, load, resolveKey, save as saveCfg, 저장시도, homeDir, 잠금소식, 열쇠탈소식, 프로젝트설정소식 } from './config.js';
 import { 프로젝트설정줄들 } from './safety/trust.js';
 import { 남길것읽기 } from './safety/shellenv.js';
 import { discover } from './skills/discover.js';
@@ -1439,7 +1439,21 @@ export async function chatLoop(opts = {}) {
       // 알아낸 값은 프로필에 남긴다. 다음에 켤 때 화면이 곧바로 맞게 뜬다.
       if (prof.ctx !== r.value) {
         prof.ctx = r.value;
-        try { const cfg2 = load(); const t = cfg2.profiles.find((p) => p.id === prof.id); if (t) { t.ctx = r.value; saveCfg(cfg2); } } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+        /*
+         * 못 남기면 **말한다.**
+         *
+         * 여기는 `try { … saveCfg(cfg2) } catch {}` 였다. 그런데 바로 다음
+         * 줄이 「컨텍스트를 32,768 → 128,000 로 맞췄습니다」 를 찍는다.
+         * 홈이 읽기 전용이거나 디스크가 차 있으면 그 말이 **그 자리에서만**
+         * 참이고, 다음에 켜면 옛 값으로 돌아가 있다. 사람은 왜 그런지 알
+         * 길이 없다 — commands.js 의 설정남기기() 가 아홉 자리에서 없앤
+         * 바로 그 꼴인데, 이 자리만 옛 모양으로 남아 있었다.
+         */
+        let 남김 = { ok: true };
+        const cfg2 = (() => { try { return load(); } catch (e) { 남김 = { ok: false, 왜: e?.message ?? String(e) }; return null; } })();
+        const t = cfg2?.profiles?.find((p) => p.id === prof.id);
+        if (t) { t.ctx = r.value; 남김 = 저장시도(cfg2); }
+        if (!남김.ok) 길이경고.push(옮긴말('common.cfgSaveFailed', { 왜: String(남김.왜 ?? '').slice(0, 70) }));
       }
       if (전 !== r.value) 길이알림.push(`컨텍스트를 ${전.toLocaleString()} ${c.gray('→')} ${c.white(r.value.toLocaleString())} 로 맞췄습니다 ${c.gray('(' + (r.source ?? '서버') + '에서 읽음)')}`);
       if (r.max && r.loaded && r.max > r.loaded) {

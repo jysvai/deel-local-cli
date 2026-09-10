@@ -12,7 +12,7 @@ import { allowEndpoint } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { pick, confirm } from './ui/prompt.js';
-import { load, save, 저장시도, resolveKey, upsert, 열쇠보관, configPath } from './config.js';
+import { load, 저장시도, resolveKey, upsert, 열쇠보관, configPath } from './config.js';
 import { 지금상태 as 지금열쇠상태, 받기설정, 잊기 as 받은열쇠잊기 } from './safety/authcmd.js';
 // 열쇠받기 명령을 정책이 못박아 뒀을 수 있다 — 받기설정 이 그 값을 같이 본다.
 import { 정책읽기 } from './safety/policy.js';
@@ -1142,7 +1142,9 @@ export async function handle(line, session, ctx) {
         const cfg2 = load();
         const ps = toProfiles(found, cfg2.profiles);
         for (const x of ps) upsert(cfg2, x);
-        save(cfg2);
+        // 설정남기기() 를 안 쓰고 있었다 — 못 남기면 명령이 그 자리에서 죽고,
+        // 남겼는데도 뭐가 틀리면 「등록했습니다」 만 보고 다음에 없는 것을 본다.
+        if (!설정남기기(cfg2)) return { handled: true };
         say(`  ${mark.ok} ${ps.length}개 등록했습니다. ${c.cyan('/model')} 로 고르세요.`);
       } else {
         say(`  ${c.gray('등록하려면')} ${c.cyan('/scan save')}   ${c.gray('고르려면')} ${c.cyan('/model')}`);
@@ -1829,11 +1831,16 @@ function showLevel(session, arg) {
     return;
   }
   session.level = 골라진;
+  /*
+   * 못 남기면 말한다. 바로 아래가 `✓ 개발자` 를 찍는데, 못 남긴 판에서는
+   * 그 말이 이번 판에서만 참이다 — 설정남기기() 가 아홉 자리에서 없앤 그
+   * 꼴인데 이 자리만 옛 모양으로 남아 있었다.
+   */
   try {
     const cfg = load();
     cfg.level = 골라진;
-    save(cfg);
-  } catch { /* 못 남겨도 이번 세션에는 먹는다 */ }
+    설정남기기(cfg);
+  } catch { /* 설정을 못 읽는 것은 위에서 따로 말한다 */ }
   const lv = LEVELS[골라진];
   say('');
   say(`  ${mark.ok} ${c.bold(lv.name)} ${c.gray('— ' + lv.hint)}`);
@@ -2845,11 +2852,12 @@ async function ctxLength(session, arg = '') {
     session.conn.ctx = 값;
     const cfg = load();
     const prof = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
-    if (prof) { prof.ctx = 값; save(cfg); }
+    // 못 남기면 아래 「프로필에 저장했습니다」 가 거짓말이 된다. 살아있는지 들고 간다.
+    const 남김 = prof ? (prof.ctx = 값, 설정남기기(cfg)) : false;
     const b = session.breakdown();
     say(`  ${mark.ok} 컨텍스트 ${c.bold(값.toLocaleString())} 토큰 ${c.gray(`(${fmtSize(값)}) — ${어디서}`)}`);
     say(`     ${c.gray('지금 찬 양')} ${c.white(b.used.toLocaleString())} ${c.gray('· 남음')} ${c.white(b.left.toLocaleString())}`);
-    if (prof) say(`     ${c.gray('프로필에 저장했습니다. 다음에 켤 때도 이 값입니다.')}`);
+    if (남김) say(`     ${c.gray('프로필에 저장했습니다. 다음에 켤 때도 이 값입니다.')}`);
     say('');
   };
 
