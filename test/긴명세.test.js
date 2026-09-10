@@ -153,8 +153,24 @@ trace('4-긴글');
    * 그래서 **길다고 말했는가**를 본다.
    */
   check('★★ 왜 안 정했는지 사람에게 말한다', /글이 길/.test(String(r.why)), String(r.why));
-  check('★★ 까닭에 견준 모드와 점수가 같이 나온다',
-    !/보다 세서/.test(String(r.why)) || /\(\d+점\)/.test(String(r.why)), String(r.why));
+  /*
+   * 2차 리뷰가 짚었다 — 이 단언은 **죽은 검사**였다. `명세` 의 까닭에는
+   * '보다 세서' 가 없으므로 앞 항이 언제나 참이고, 뒤 항은 한 번도 안 돈다.
+   * `route.js` 에서 `(${뺀최고}점)` 을 통째로 지워도 초록이었다.
+   *
+   * 그래서 **그 말이 실제로 나오는 글**을 따로 만들어 잰다. 조건부 단언은
+   * 조건이 안 서는 글로 재면 아무것도 안 재는 것과 같다.
+   */
+  const 견줌 = route(
+    'You are starting from a completely empty working directory. '
+    + 'Determine the architecture and design the data model yourself. '
+    + 'Build and test a production web application. '.repeat(40)
+    + 'Handle unexpected server errors. A failed operation must not corrupt state.',
+  );
+  check('★★★ 견줘서 안 고른 까닭에는 두 모드와 두 점수가 다 나온다',
+    /보다 세서/.test(String(견줌.why))
+      && (String(견줌.why).match(/\(\d+점\)/g) ?? []).length === 2,
+    String(견줌.why));
 
   // 짧은 말은 예전 그대로여야 한다. 길이 규칙이 짧은 말까지 무디게 만들면
   // 그건 고친 것이 아니라 라우터를 꺼 버린 것이다.
