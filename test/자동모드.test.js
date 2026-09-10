@@ -182,6 +182,16 @@ trace('1-죽은규칙');
      * 규칙은 살아 있는데 재는 것이 없는 꼴이다. 그래서 여기 하나 둔다.
      */
     'We should add validation to the approval form.',
+    /*
+     * 읽기 쪽 영어. 여기 없으면 바로 아래 「규칙이 전부 걸린다」 검사가
+     * 잡는다 — 규칙만 늘리고 재는 문장을 안 넣으면 죽은 규칙이 된다.
+     */
+    'Review this code and tell me what is wrong.',
+    'Analyze the performance of this endpoint.',
+    'Audit this app for authorization vulnerabilities.',
+    'Explain how the approval workflow works.',
+    'What does this function do?',
+    'How does the approval workflow work?',
     'fix the typo in the header',
     'README 에 설치 방법 좀 써줘',
   ];
@@ -783,6 +793,51 @@ trace('7-영어시킴말');
     r.mode !== 'debug', `${r.mode} — ${r.why} · ${JSON.stringify(r.점수들)}`);
   check('★★ 그 명세는 읽기 전용으로도 안 간다',
     !읽기만하는모드.has(r.mode), `${r.mode}`);
+}
+
+// ── 7.5 읽기 쪽 영어도 한국어와 같은 모드로 간다 ───────────────────────
+//
+// 쓰기 쪽 낱말 구멍은 7번에서 메웠다. 그런데 **읽기 쪽은 그대로였다.**
+// 같은 뜻을 한국어로 하면 inspect·ask 로 가고 영어로 하면 종합에 남았다 —
+// 한국어 '검토·분석·설명' 이 5점인데 영어 `review|analyze|explain` 은
+// 4점 한 덩이라 문턱에 하나 모자랐기 때문이다.
+//
+// 이 파일 맨 위의 전제 그대로다: **같은 말을 어느 말로 했느냐로 모드가
+// 갈리면 안 된다.** 쓰기에서 그랬듯 읽기에서도 그렇다.
+trace('7.5-읽기영어');
+{
+  const 짝들 = [
+    ['이 코드 검토해 줘', 'Review this code.'],
+    ['이 코드 검토해 줘', 'Inspect this code.'],
+    ['이 엔드포인트 성능 분석해 줘', 'Analyze the performance of this endpoint.'],
+    ['이 앱 권한 취약점 점검해 줘', 'Audit this app for authorization vulnerabilities.'],
+    ['이 워크플로 어떻게 도는지 설명해 줘', 'Explain how the approval workflow works.'],
+    ['이 함수 뭐 하는 거야?', 'What does this function do?'],
+    ['이게 무슨 뜻이야?', "What's this supposed to mean?"],
+    ['이 프로젝트 구조 설계해 줘', 'Design the architecture for this project.'],
+    ['로그인 폼 만들어줘', 'Build the login form.'],
+  ];
+  for (const [한, 영] of 짝들) {
+    const a = route(한).mode;
+    const b = route(영).mode;
+    check(`★★★ 같은 뜻은 같은 모드로 — "${영.slice(0, 40)}"`,
+      a === b, `한국어 ${a} · 영어 ${b} — "${한}"`);
+  }
+
+  /*
+   * 반대쪽. 읽기 낱말을 세게 주다가 **쓰기 지시문에 읽기 점수가 붙으면**
+   * 만들라는 말이 검토로 간다 — 이 파일이 처음부터 막으려던 그 자리다.
+   */
+  for (const 글 of [
+    'Build a production-oriented web application.',
+    'Fix the broken login form.',
+    'Create the schema and write tests.',
+    'Refactor the approval module.',
+  ]) {
+    const 점 = route(글).점수들;
+    check(`★★★ 쓰기 지시문에는 읽기 점수가 안 붙는다 — "${글.slice(0, 34)}"`,
+      (점.inspect ?? 0) + (점.ask ?? 0) === 0, JSON.stringify(점));
+  }
 }
 
 // ── 8. 마침표 뒤에 **빈칸이 있어야** 다음 문장이다 ──────────────────────
