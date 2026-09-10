@@ -138,15 +138,23 @@
       "곳": "src/safety/guard.js",
       "무엇": "마디가 둘 이상일 때만 마디를 보게 되돌린다",
       "그러면": "`rm -rf / ;` 처럼 구분자만 덜렁 붙이면 빈 마디가 걸러져 마디가 하나가 되고, 그러면 마디 목록이 통째로 버려져 글 끝에 못 박은 규칙이 빗나간다 — 셸은 그대로 지운다",
-      "찾을것": "  const 볼것 = [s, ...마디로(s)];",
-      "바꿀것": "  const 볼것 = [s, ...(마디로(s).length > 1 ? 마디로(s) : [])];",
+      "찾을것": "  const 마디들 = 마디로(s);",
+      "바꿀것": "  const 마디들 = 마디로(s).length > 1 ? 마디로(s) : [];",
       "검사": "test/guard.test.js"
     },
     {
       "곳": "src/safety/guard.js",
-      "무엇": "Remove-Item 규칙을 우리가 적어 둔 어순·역빗금만 보게 되돌린다",
-      "그러면": "`Remove-Item C:\\ -Recurse -Force`(파워셸의 흔한 어순)와 `Remove-Item -Recurse -Force C:/`(빗금)가 그대로 나간다 — 드라이브를 통째로 민다",
-      "찾을것": "    re: /Remove-Item\\b(?=[^|;&]*\\s-(?:Recurse|r)\\b)[^|;&]*\\s(?:\\$env:USERPROFILE|\\$HOME|[a-z]:|~)[\\\\/]?(?=\\s|$)/i,",
+      "무엇": "따옴표를 떼고 한 번 더 보는 것을 없앤다",
+      "그러면": "`rm -rf \"/\"` 처럼 경로에 따옴표만 둘러도 규칙이 통째로 빗나간다 — 셸에서 뜻은 하나도 안 바뀌는데 울타리만 열린다",
+      "찾을것": "  const 따옴표뺀 = (x) => x.replace(/[\"'`]/g, '');",
+      "바꿀것": "  const 따옴표뺀 = (x) => x;",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "Remove-Item 규칙을 우리가 적어 둔 어순·철자만 보게 되돌린다",
+      "그러면": "파워셸의 흔한 어순(`Remove-Item C:\\ -Recurse -Force`)·빗금(`C:/`)·줄임꼴(`-rec`)·드라이브 없는 뿌리(`/`)가 전부 그대로 나간다 — 드라이브를 통째로 민다",
+      "찾을것": "    re: /Remove-Item\\b(?=[^|;&]*\\s-r[a-z]*\\b)[^|;&]*\\s(?:(?:\\$env:USERPROFILE|\\$HOME|[a-z]:|~)[\\\\/]?|[\\\\/])(?=\\s|$)/i,",
       "바꿀것": "    re: /Remove-Item\\b[^|;&]*\\s-(Recurse|r)\\b[^|;&]*\\s(?:-?[a-z]+\\s+)*([a-z]:\\\\?|~|\\$HOME|\\$env:USERPROFILE)\\s*$/i,",
       "검사": "test/guard.test.js"
     },

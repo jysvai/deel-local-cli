@@ -73,13 +73,34 @@ function 볼것() {
      */
     const 파일들 = [];
     for (const x of 인자.slice(i + 1)) {
-      if (x.startsWith('--')) break;
+      if (x.startsWith('-')) break;
       파일들.push(x);
+    }
+    /*
+     * 하나도 안 남으면 **여기서 멈춘다.** 그냥 두면 `git diff HEAD --` 가
+     * 되어 **저장소 전체**가 나오는데, 화면에는 「파일 0개」 라고 적힌다 —
+     * 몇 개를 콕 집었다고 믿는 사람에게 통째로 보여 주는 꼴이다.
+     * 2차 리뷰가 짚었다.
+     */
+    if (!파일들.length) {
+      console.error('\n\x1b[31m✗ --files 뒤에 파일이 없습니다\x1b[0m');
+      console.error('  그냥 두면 저장소 전체가 나갑니다. 전체를 보려면 --files 를 빼세요.\n');
+      process.exit(2);
     }
     const r = git('diff', 'HEAD', '--', ...파일들);
     if (r.status !== 0) {
       console.error(`\n\x1b[31m✗ 그 파일들을 못 읽었습니다\x1b[0m\n  ${String(r.stderr ?? '').trim().split('\n')[0]}\n`);
       process.exit(2);
+    }
+    /*
+     * 빈 diff 는 두 가지 뜻이다 — 「안 바뀌었다」 와 「이름을 잘못 적었다」.
+     * git 은 둘을 구별해 주지 않으므로(안 맞는 경로에도 0 으로 끝난다) 우리가
+     * 이름을 되읊어 준다. 잘못 적은 사람이 그 자리에서 알아본다.
+     */
+    if (!r.stdout.trim()) {
+      console.log(`\n볼 것이 없습니다 — 이 파일들에 바뀐 자리가 없습니다.\n  ${파일들.join('\n  ')}`);
+      console.log('\x1b[90m  (이름을 잘못 적어도 똑같이 보입니다 — 위 이름을 한 번 보세요)\x1b[0m\n');
+      process.exit(0);
     }
     return { 무엇: `파일 ${파일들.length}개`, diff: r.stdout };
   }

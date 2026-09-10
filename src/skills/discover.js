@@ -8,7 +8,7 @@
 // 시킨 것만 겨우 하고 끝나는 얄팍한 결과가 거기서 나온다.
 // 품고 다니는 것은 **가장 낮은 자리**에 둔다. 같은 이름을 사용자가 만들면 그쪽이 이긴다.
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { join, basename, dirname } from 'node:path';
+import { join, basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 // 저장소에 딸려 온 스킬·명령이 시스템 글에 실리지 않게 한다 (discover 안구절 머리말).
@@ -244,11 +244,18 @@ export function discover(root, opts = {}) {
    * 몇 번 겪으면 사람이 그 줄을 안 읽게 되고, 그때는 진짜로 안 읽은 판에서도
    * 안 읽는다.
    */
-  const 같은자리 = (a, b) => String(a).replace(/[\\/]+$/, '').toLowerCase()
-    === String(b).replace(/[\\/]+$/, '').toLowerCase();
+  // 견주기 전에 **푼다.** `.` 이나 `..` 로 들어오면 글자로는 절대 안 같아서
+  // 집에서 켠 것을 못 알아본다 (2차 리뷰가 짚었다).
+  const 같은자리 = (a, b) => resolve(String(a)).replace(/[\\/]+$/, '').toLowerCase()
+    === resolve(String(b)).replace(/[\\/]+$/, '').toLowerCase();
   const 프로젝트스킬자리 = ['.deel', '.claude'].map((d) => join(root, d, 'skills'));
   const 프로젝트것있음 = !같은자리(root, home) && 프로젝트스킬자리.some((p) => {
-    try { return readdirSync(p).length > 0; } catch { return false; }
+    /*
+     * 못 읽은 것과 없는 것을 가른다. 없으면(ENOENT) 안 읽은 것도 없으니
+     * 조용하고, **못 읽은 것**이면 그건 안 읽은 것이므로 말해야 한다 —
+     * 모든 예외를 false 로 삼키면 권한이 막힌 폴더가 통째로 없는 셈이 된다.
+     */
+    try { return readdirSync(p).length > 0; } catch (e) { return e?.code !== 'ENOENT'; }
   });
 
   // 2) 사용자  3) 프로젝트

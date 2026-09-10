@@ -480,14 +480,20 @@ rmSync(빈PC, { recursive: true, force: true });
    * 안 부르는데 「부른다」 로 읽힌다. 「긴 이름에 얹혀 간다」 를 고치겠다고
    * 적어 놓고 한쪽만 막은 셈이라, 남은 쪽이 더 안 보인다.
    *
-   * 뒤쪽 경계에서 마침표는 뺀다. 문서가 「node tools/shot.mjs.」 처럼 문장을
-   * 끝내는 일이 있고, 그건 부르는 것이 맞다.
+   * 뒤쪽 경계에서 마침표는 **글 끝일 때만** 봐준다. 문서가 「node
+   * tools/shot.mjs.」 처럼 문장을 끝내는 일이 있고 그건 부르는 것이 맞지만,
+   * 마침표를 통째로 봐줬더니 `shot.mjs.bak` · `shot.mjs.map` 까지 얹혀
+   * 갔다(2차 리뷰가 짚었다). 마침표 **뒤에 글자가 이어지면** 다른 파일이다.
    */
-  const 낱말째로 = (글, 이름) => new RegExp(`(^|[^A-Za-z0-9_.-])${이름.replace(/\./g, '\\.')}(?![A-Za-z0-9_-])`).test(글);
-  // 이 자가 스스로 무엇을 하는지 여기서 못박는다 — 위 두 함정 그대로다.
-  check('★★ 낱말째로: 긴 이름에 얹혀 가지 않는다 (앞뒤 양쪽)',
+  const 낱말째로 = (글, 이름) => new RegExp(
+    `(^|[^A-Za-z0-9_.-])${이름.replace(/\./g, '\\.')}(?![A-Za-z0-9_-])(?!\\.[A-Za-z0-9])`,
+  ).test(글);
+  // 이 자가 스스로 무엇을 하는지 여기서 못박는다 — 위 함정들 그대로다.
+  check('★★ 낱말째로: 긴 이름에 얹혀 가지 않는다 (앞뒤 양쪽 · 덧붙은 확장자까지)',
     !낱말째로('npm run x package.json', 'package.js')
     && !낱말째로('node tools/check-docs.mjs', 'docs.mjs')
+    && !낱말째로('node tools/shot.mjs.bak', 'shot.mjs')
+    && !낱말째로('node tools/shot.mjs.map 을 지운다', 'shot.mjs')
     && 낱말째로('node tools/shot.mjs 를 돌립니다', 'shot.mjs')
     && 낱말째로('node tools/shot.mjs.', 'shot.mjs'));
   // 제 파일이 제 이름을 적어 둔 것(쓰는 법 머리말)은 부르는 것이 아니다.

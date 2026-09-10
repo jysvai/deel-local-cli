@@ -818,9 +818,68 @@ trace('10-뒤에한마디');
     'Remove-Item ~ -Recurse -Force',
     'Remove-Item -Recurse -Force ~/',
     'Remove-Item $env:USERPROFILE -Recurse -Force',
+    'Remove-Item $HOME -Recurse -Force',
     'Remove-Item -r -Force C:\\',
   ]) {
     check(`★★★ ${cmd} 를 막는다`, !!막히나(cmd), '어순·빗금만 바꿨더니 통과함');
+  }
+
+  /*
+   * ★★★ 파워셸은 매개변수를 **줄여서** 받는다.
+   *
+   * 2차 리뷰가 짚었다. `-(?:Recurse|r)\b` 로 못박아 뒀는데, 파워셸은 헷갈리지
+   * 않는 한 앞글자만 적어도 받는다 — Remove-Item 에서 `r` 로 시작하는
+   * 매개변수는 `-Recurse` 하나뿐이라 `-rec` · `-recur` 가 다 통한다.
+   * 또 `/` 와 `\` 하나만 적으면 **지금 드라이브의 뿌리**다.
+   *
+   *     Remove-Item -rec C:\               통과 ←
+   *     Remove-Item -Recurse -Force /      통과 ←
+   */
+  for (const cmd of [
+    'Remove-Item -rec C:\\',
+    'Remove-Item -recur C:\\',
+    'Remove-Item -Recurs C:\\',
+    'Remove-Item -Recurse -Force /',
+    'Remove-Item -Recurse -Force \\',
+  ]) {
+    check(`★★★ ${cmd} 를 막는다 (줄임꼴·드라이브 없는 뿌리)`, !!막히나(cmd), '통과해 버림');
+  }
+
+  /*
+   * ★★★ 따옴표 하나로 울타리가 통째로 열렸다.
+   *
+   * ── 2차 리뷰가 잡은 자리다 ────────────────────────────────────────────
+   *
+   * 규칙들은 경로가 **맨몸**으로 올 때만 봤다. 그런데 셸에서 경로에 따옴표를
+   * 두르는 것은 예사고, 뜻은 하나도 안 바뀐다.
+   *
+   *     rm -rf /                막힘
+   *     rm -rf "/"              통과 ←   같은 일을 한다
+   *     Remove-Item -Recurse "C:\"   통과 ←
+   *
+   * 이 파일 위쪽 주석은 이미 「따옴표 안은 안 가린다」 고 적어 뒀다 —
+   * `sh -c "rm -rf /"` 를 놓치지 않으려는 뜻이었다. 그런데 **가리지 않는
+   * 것과 따옴표를 떼고 보는 것은 다르다.** 안 가리기만 했지 떼 보지는
+   * 않아서, 따옴표가 낀 자리에서 규칙이 그대로 빗나갔다.
+   */
+  for (const cmd of [
+    'rm -rf "/"',
+    "rm -rf '/'",
+    'Remove-Item -Recurse "C:\\"',
+    "Remove-Item -Recurse 'C:\\'",
+    'Remove-Item -Recurse -Force "~"',
+    'sh -c "rm -rf /"',
+  ]) {
+    check(`★★★ ${cmd} 를 막는다 (따옴표를 떼고도 본다)`, !!막히나(cmd), '따옴표 둘렀더니 통과함');
+  }
+
+  // 떼고 보는 쪽으로만 늘린다 — 원래 통과하던 평범한 것이 새로 막히면 안 된다.
+  for (const cmd of [
+    'echo "결과" > out/report.txt',
+    'git commit -m "rm 정리"',
+    'node -e "console.log(1)"',
+  ]) {
+    check(`★ ${cmd} 는 안 막는다`, 막히나(cmd) === null, 막히나(cmd)?.split('\n')[0] ?? '');
   }
 
   // 넓히다 반대로 베면 안 된다. 폴더 하나 지우는 평범한 것까지 막으면 도구를 못 쓴다.
