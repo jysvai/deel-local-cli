@@ -352,6 +352,12 @@ trace('2-멀쩡한글');
     ['const API_KEY: () => string = "secret12345";', 'secret12345'],
     ['const API_KEY: [string, number] | null = "secret12345";', 'secret12345'],
     ['const API_KEY: Record<"token" | "key", string> = "secret12345";', 'secret12345'],
+    /*
+     * 11차 리뷰. 맨 쌍점 갈래는 괄호로 감싼 값을 받는데, 타입 갈래는
+     * 따옴표로 바로 가서 못 받았다. 같은 줄이 타입을 적었느냐로 갈렸다.
+     */
+    ['const API_KEY: string = ("secret12345");', 'secret12345'],
+    ['const API_KEY: { a: string } = (("secret12345"));', 'secret12345'],
     ["const API_KEY: 'bearer' | 'basic' = \"secret12345\";", 'secret12345'],
   ]) {
     const r = 가리기(글);
@@ -370,8 +376,8 @@ trace('2-멀쩡한글');
    * `.env` 와 YAML 인데, 거기 오는 값은 밑바탕 타입 이름이 아니고 점으로
    * 이은 이름도 아니다. 둘을 덜어 낸다.
    *
-   * 점 갈래는 **등호 앞에 빈칸이 있을 때만** 덜어 낸다 — `.env` 는
-   * `NAME=값` 으로 붙여 쓰고, 빈칸을 둔 것은 코드다.
+   * 점 갈래는 **값 앞에 빈칸이 있을 때만** 덜어 낸다 — `.env` 는
+   * `NAME=값` 으로 붙여 쓰고, 등호·쌍점 뒤에 빈칸을 둔 것은 코드다.
    */
   for (const 글 of [
     'interface Cfg { API_KEY: string; TIMEOUT: number }',
