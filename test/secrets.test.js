@@ -333,6 +333,17 @@ trace('2-멀쩡한글');
     ['const API_KEY: Record<string, Record<string, string>> = "secret12345";', 'secret12345'],
     ['const { API_KEY: key = "default1234" } = options;', 'default1234'],
     ['const { API_KEY: Key = "default1234" } = options;', 'default1234'],
+    /*
+     * 9차 리뷰. 「타입처럼 생긴 글자」 를 줄여 적었더니 목록 밖의 여섯 꼴이
+     * 그대로 샜다. 적는 쪽이 지는 싸움이라 이제 **끝나는 자리**만 본다.
+     */
+    ['const API_KEY: (string) = "secret12345";', 'secret12345'],
+    ['const API_KEY: { token: string } = "secret12345";', 'secret12345'],
+    ['const API_KEY: [string, number] = "secret12345";', 'secret12345'],
+    ['const API_KEY: A<B<C<D<string>>>> = "secret12345";', 'secret12345'],
+    ['const API_KEY: Map<string, Set<string>> = "secret12345";', 'secret12345'],
+    ['const API_KEY: MyVeryLongModuleNamespaceFooBarBazQux.AuthenticationServiceSecretTokenConfiguration = "secret12345";',
+      'secret12345'],
   ]) {
     const r = 가리기(글);
     check(`★★★ 타입 표기 뒤의 진짜 값이 가려진다: ${글.slice(0, 46)}`,
@@ -350,10 +361,16 @@ trace('2-멀쩡한글');
   for (const [글, 그대로] of [
     ['const cfg = { API_KEY: Value, nextKey: x = 12345 };', ', nextKey: x = 12345 };'],
     ['const cfg = { API_KEY: value, B: y = 1 };', ', B: y = 1 };'],
+    // 옆 칸 값이 길어도(가릴 만해도) 그 칸은 이 규칙의 것이 아니다.
+    ['const cfg = { API_KEY: value, other: z = "secret12345" };', ', other: z = "secret12345" };'],
   ]) {
     const r = 가리기(글);
+    /*
+     * 「끝이 그대로다」 만 재면 **아무것도 안 바뀌어도 통과한다**(9차 리뷰).
+     * 앞 칸이 가려졌는지도 같이 본다.
+     */
     check(`★★★ 쉼표 뒤 칸은 그대로 둔다: ${글.slice(0, 46)}`,
-      r.글.endsWith(그대로), r.글);
+      r.글.endsWith(그대로) && r.글.includes('«가림:환경변수»'), r.글);
   }
   /*
    * 따옴표 안의 **달아난 따옴표**. 닫는 따옴표로 오인해 거기서 끊으면
@@ -365,7 +382,8 @@ trace('2-멀쩡한글');
   ]) {
     const r = 가리기(글);
     check(`★★★ 달아난 따옴표에서 안 끊긴다: ${글.slice(0, 40)}`,
-      !r.글.includes(사라져야) && r.글.endsWith(';'), JSON.stringify(r.글));
+      !r.글.includes(사라져야) && r.글.endsWith(';') && r.글.includes('«가림:환경변수»'),
+      JSON.stringify(r.글));
   }
 
   /*
