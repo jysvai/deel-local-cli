@@ -77,6 +77,61 @@ would look like it caught everything.
 
 CI runs one pass after `npm test`. A single survivor fails the run.
 
+### Second review — by a different model than the one that wrote it
+
+```bash
+npm run review2                           what is not committed yet
+node tools/review2.mjs --since HEAD~3     the last three commits
+node tools/review2.mjs --files a.js b.js
+node tools/review2.mjs --out report.md    write it down
+node tools/review2.mjs --model <see: agy models>         a different one
+```
+
+The bugs that keep coming back in this repo are all one family: **having a rule
+is not the same as the rule firing.** A pattern that is written down but never
+matches real input. A test that exists but nobody runs. A fix that is recorded
+but not actually held.
+
+That family survives because **the person who wrote the code also wrote the
+test.** Whoever got the pattern wrong picks the assertion with the same
+misunderstanding. Put the same mistake in both places and they pass each other.
+
+So the first pass is done by the side that wrote it, and the **second pass by a
+different model** — currently Gemini. It does not know this repo, so the house
+rules (Korean identifiers, zero dependencies, exactly one outbound door) are
+handed to it along with the diff. Without them it flags those three every time,
+and filtering that out costs human time — which is exactly what the second review
+was supposed to buy.
+
+It is not called from our source. `agy` (the Antigravity CLI) is **spawned as a
+process**, the same way rg and git are borrowed. Calling it from source would
+break the "the only outbound door is `src/backend/http.js`" rule. It runs with
+`--mode plan`, so the second reviewer can only read.
+
+The house rules and the diff go into a temp file and only the path is passed as
+an argument. Command lines have a length cap (about 8k on Windows cmd), so a diff
+passed as an argument dies on the spot with `ENAMETOOLONG`.
+
+This is **an eye, not a gate.** It writes down what it found and blocks nothing —
+make the second review a red light and people start silencing it first, and then
+there is one eye fewer.
+
+### Run by hand, once in a while
+
+The files in `tools/` that are not npm scripts. They are the run-once-and-commit-
+the-result kind, so nothing runs them automatically.
+
+```bash
+node tools/make-hero.mjs     the README header art - rerun when the banner font changes
+node tools/split-docs.mjs    move the bulk of a fat README out into docs/
+node tools/polish-docs.mjs   fix the links and "see above" that the split broke
+node tools/shot.mjs          take the terminal screenshots the docs use
+```
+
+A new file in `tools/` must be either an npm script or listed here. Neither, and
+the `no-bundle` test flags it as "nobody calls this" — this repo already has
+several harnesses that were written and then forgotten.
+
 ### Watching it with your own eyes
 
 The tests run through a pipe, so they never see the real screen. These three do.

@@ -54,6 +54,7 @@
     "check": "node tools/check-src.mjs",
     "coverage": "node test/coverage.mjs",
     "mutate": "node tools/mutate.mjs",
+    "review2": "node tools/review2.mjs",
     "prepublishOnly": "npm run check && npm test"
   },
   "dependencies": {},

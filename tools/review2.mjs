@@ -1,0 +1,264 @@
+// 2차 리뷰 — 만든 모델과 **다른 모델**에게 한 번 더 보인다.
+//
+// ── 왜 이게 있나 ────────────────────────────────────────────────────────
+//
+// 이 저장소에서 되풀이해 나온 고장은 한 부류다. 「있는 것과 걸리는 것은
+// 다르다」 — 규칙을 넣어 두고 그 규칙이 한 번도 안 걸린 자리, 검사를 만들어
+// 두고 아무도 안 돌린 자리, 고쳤다고 적어 두고 그 고침이 안 지켜지는 자리.
+//
+// 그 부류가 왜 오래 사나: **만든 사람이 검사도 짜기 때문이다.** 무늬를 잘못
+// 적은 사람은 그 무늬를 재는 문장도 같은 오해로 고른다. 잘못이 두 곳에
+// 똑같이 들어가면 둘이 서로를 통과시킨다.
+//
+// 그래서 1차는 만든 쪽(Claude)이 보고, **2차는 다른 모델(Gemini)이 본다.**
+// 다른 모델은 같은 맹점을 안 갖는다 — 대신 저장소 사정을 모르므로, 여기서
+// 집안 규칙을 같이 넘겨 준다.
+//
+// ── 왜 우리 소스에서 부르지 않나 ────────────────────────────────────────
+//
+// 집안 규칙 「나가는 문은 하나(src/backend/http.js)」 를 깨지 않으려면, 이건
+// **우리 프로그램이 아니어야** 한다. 그래서 CLI 를 프로세스로 띄운다 —
+// rg·git 을 빌려 쓰는 것과 같은 취급이다. `tools/` 는 배포에 안 담기므로
+// (no-bundle.test.js) 반입 심사 대상도 아니다.
+//
+// 부르는 CLI 는 **agy**(Antigravity CLI) 다. 이 PC 에서 Gemini 계정이 붙어
+// 있는 자리가 거기다 — `@google/gemini-cli` 는 따로 열쇠를 넣어야 하고,
+// 안 넣은 채로는 「Auth 방법을 정하라」 한 줄만 돌려준다.
+//
+// ── 쓰는 법 ─────────────────────────────────────────────────────────────
+//
+//   npm run review2                        아직 커밋 안 한 것
+//   node tools/review2.mjs --since HEAD~3  최근 세 판
+//   node tools/review2.mjs --files a.js b.js
+//   node tools/review2.mjs --model <agy models 로 목록을 본다>
+//   node tools/review2.mjs --timeout 90m   더 오래 기다린다
+//   node tools/review2.mjs --out 보고.md   글로 남긴다
+//
+// 이건 **문지기가 아니라 눈이다.** 찾은 것을 적을 뿐 아무것도 안 막는다 —
+// 2차 리뷰가 빨간불이 되면 사람이 그것부터 끄게 되고, 그러면 눈이 하나 준다.
+import { spawnSync } from 'node:child_process';
+import { existsSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+const 인자 = process.argv.slice(2);
+const 값 = (이름, 기본 = null) => {
+  const i = 인자.indexOf(이름);
+  return i >= 0 && 인자[i + 1] ? 인자[i + 1] : 기본;
+};
+const 있나 = (이름) => 인자.includes(이름);
+const 그레이 = (s) => `\x1b[90m${s}\x1b[0m`;
+
+// 모델은 3.8 Flash (High). pro 는 쓰지 않는다.
+const 모델 = 값('--model', 'gemini-3.8-flash-high');
+const 부터 = 값('--since', null);
+const 낼곳 = 값('--out', null);
+const 조용히 = 있나('--quiet');
+
+const git = (...args) => spawnSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+
+/** 무엇을 보일 것인가. 아무것도 안 바뀌었으면 그렇다고 말하고 끝낸다. */
+function 볼것() {
+  const i = 인자.indexOf('--files');
+  if (i >= 0) {
+    const 파일들 = 인자.slice(i + 1).filter((x) => !x.startsWith('--'));
+    return { 무엇: `파일 ${파일들.length}개`, diff: git('diff', 'HEAD', '--', ...파일들).stdout };
+  }
+  if (부터) return { 무엇: `${부터}..HEAD`, diff: git('diff', `${부터}..HEAD`).stdout };
+  const 안커밋 = git('diff', 'HEAD').stdout;
+  if (안커밋.trim()) return { 무엇: '아직 커밋 안 한 것', diff: 안커밋 };
+  return { 무엇: '마지막 판(HEAD~1..HEAD)', diff: git('diff', 'HEAD~1..HEAD').stdout };
+}
+
+/*
+ * 집안 규칙을 같이 넘긴다. 이걸 안 주면 2차 리뷰가 매번 같은 것을 지적한다 —
+ * 「한글 식별자를 영어로 바꿔라」 · 「의존성을 써라」 · 「주석이 너무 길다」.
+ * 셋 다 이 저장소에서는 **일부러 그런 것**이라, 그 말을 걸러 내는 데 사람의
+ * 시간이 들면 2차 리뷰의 값이 그만큼 깎인다.
+ */
+const 집안규칙 = [
+  'deel — 사내망·로컬 모델용 코딩 에이전트 CLI. Node 20+ · ESM.',
+  '',
+  '일부러 그렇게 한 것들이다. 이걸 지적하지 마라:',
+  '  · 소스 식별자와 주석이 한국어다 (집안 스타일)',
+  '  · 주석이 길고 서술적이다 — 겪은 고장과 까닭을 적어 두는 자리다',
+  '  · 의존성이 0개다. 꾸러미를 쓰라는 제안은 규칙상 불가하다',
+  '  · 나가는 문은 src/backend/http.js 하나뿐이다',
+  '  · 승인 창 대신 되돌리기(/undo)가 안전망이다',
+  '',
+  '이 저장소에서 실제로 되풀이된 고장 부류다. 이걸 우선해서 찾아라:',
+  '  1. 있는데 안 걸리는 규칙 — 정규식·조건이 넣어져 있지만 실제 입력에 한 번도 안 맞는 자리.',
+  '     특히 글자열/템플릿으로 지은 정규식의 이스케이프(\\s 를 한 겹으로 적어 글자 s 가 된 것),',
+  '     낱말 경계 없이 잡아 엉뚱한 것까지 걸리는 것, 글 끝 앵커(\\s*$) 때문에 뒤에 한 마디만',
+  '     붙이면 통째로 빠져나가는 것.',
+  '  2. 조용한 실패 — catch 로 삼키고 화면은 성공을 말하는 자리. 특히 디스크에 남는 잘못된 학습.',
+  '  3. 검사가 안 지키는 자리 — 고친 것을 되돌려도 빨개지지 않는 검사, 구현을 그대로 베낀 단언,',
+  '     여러 갈래 중 한 갈래만 재고 나머지는 다른 갈래에 얹혀 가는 검사.',
+  '  4. 주석·문서가 코드와 어긋난 자리 — 숫자·이름·「이 검사가 지킨다」 는 말이 사실이 아닌 것.',
+  '  5. 신뢰 경계 — 저장소에 딸려 오는 것(설정·훅·MCP·스킬)이 사람 손을 안 거치고 실리는 자리.',
+  '',
+  '보고 형식: 발견마다 `파일:줄` · 한 문장 결함 · **구체적인 재현 입력** · 심각도(심각/보통/사소).',
+  '추측이면 추측이라고 적어라. 확신 없는 것을 확신처럼 적지 마라. 없으면 없다고 해라.',
+  '고칠 코드를 통째로 써 주지 마라 — 무엇이 왜 틀렸는지만 적어라.',
+].join('\n');
+
+const { 무엇, diff } = 볼것();
+if (!diff.trim()) {
+  console.log('\n볼 것이 없습니다 — 바뀐 자리가 없습니다.\n');
+  process.exit(0);
+}
+
+/*
+ * 너무 길면 자른다. 모델 창이 넘치면 앞부분만 읽고 뒤를 못 본 채 「없다」 고
+ * 답하는데, 그 답은 안 본 것과 구별이 안 된다. 자른 사실을 쪽지에도 적는다.
+ */
+const 최대 = 400_000;
+const 잘림 = diff.length > 최대;
+const 보일diff = 잘림 ? diff.slice(0, 최대) : diff;
+
+/*
+ * ── 긴 것은 **stdin 으로** 넣는다. 두 번 헛디딘 자리다 ──────────────────
+ *
+ * 1) 처음에 diff 를 통째로 `-p` 인자에 실었다. 윈도우에서 그 자리에서 죽었다 —
+ *    `spawnSync … ENAMETOOLONG`. 명령줄 길이에는 한도가 있고(윈도우는 32,767
+ *    글자), diff 는 그 두 배가 예사다.
+ *
+ * 2) 그래서 쪽지를 임시 파일에 적어 두고 **경로만** 넘겼다. 그랬더니 종료코드
+ *    0 에 **빈 답**이 왔다. `--output-format json` 으로 받아 보고서야 까닭을
+ *    알았다:
+ *
+ *      "denied_actions":[{"action":"read_file","display_name":"ViewFile"}]
+ *      jetski: no output produced — a tool required the "read_file" permission
+ *              that headless mode cannot prompt for, so it was auto-denied.
+ *
+ *    사람에게 물어볼 수 없는 판이라 파일 읽기를 **저절로 거절**한 것이다.
+ *    거절하고 나서 아무 말도 안 하고 0 으로 끝난다 — 우리가 여기서 잡으려는
+ *    바로 그 부류(조용한 실패)를, 잡으러 온 도구가 밟았다.
+ *
+ * 그래서 파일을 안 만든다. `--input-format stream-json` 으로 stdin 에 NDJSON
+ * 한 줄을 넣으면 쪽지가 그대로 첫 마디가 된다 — 길이 한도도, 파일 읽기 권한도
+ * 지나갈 일이 없다. 답은 마지막 `result` 사건에 통째로 들어 온다.
+ */
+const 쪽지 = [
+  집안규칙,
+  '',
+  `아래는 ${무엇} 의 diff 다.${잘림 ? ' (너무 길어 앞부분만 실었다 — 뒤가 잘렸다고 가정하고 본 것만 말해라)' : ''}`,
+  '',
+  '```diff',
+  보일diff,
+  '```',
+  '',
+  '위 집안 규칙을 지킨 채로 이 diff 를 2차 리뷰해라. 보고 형식은 위에 적은 그대로다.',
+  '파일을 열어 보려 하지 마라 — 이 판에서는 파일 읽기가 저절로 거절된다. 위 글만 보고 말해라.',
+].join('\n');
+
+const 넣을것 = `${JSON.stringify({
+  event: 'user',
+  message: { role: 'user', content: [{ type: 'text', text: 쪽지 }] },
+})}\n`;
+
+/*
+ * ── 셸을 거치지 않는다 ──────────────────────────────────────────────────
+ *
+ * node 는 `shell: true` 일 때 인자를 **따옴표 없이 그냥 이어 붙인다.** 그러면
+ * `-p "긴 한국어 문장"` 이 셸에서 다시 쪼개져 낱말 하나하나가 위치 인자가
+ * 된다. gemini CLI 로 붙였을 때 「Cannot use both a positional prompt and the
+ * --prompt (-p) flag together」 가 나온 까닭이 이것이었다 — -p 는 하나만 줬는데도.
+ *
+ * agy 는 `.exe` 라 셸 없이 그대로 띄울 수 있다. PATH 에 있어도 node 는
+ * 윈도우에서 PATHEXT 를 안 따지므로, 깔리는 자리를 먼저 본다.
+ */
+function 어디있나() {
+  const 후보 = [
+    join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'agy', 'bin', 'agy.exe'),
+    join(homedir(), '.local', 'bin', 'agy'),
+    '/usr/local/bin/agy',
+  ];
+  for (const p of 후보) if (existsSync(p)) return p;
+  return null;
+}
+
+const agy = 어디있나();
+if (!agy) {
+  console.error('\n\x1b[31m✗ agy 를 못 찾았습니다\x1b[0m');
+  console.error('  2차 리뷰는 Antigravity CLI(agy)로 부릅니다. 깔고 나서 다시 돌려 주세요.\n');
+  process.exit(2);
+}
+
+if (!조용히) {
+  console.log(`\n2차 리뷰  \x1b[90m(${무엇} · ${모델} · ${(diff.length / 1024).toFixed(1)}KB${잘림 ? ' — 잘림' : ''})\x1b[0m\n`);
+}
+
+/*
+ * 읽기만 시킨다(`--mode plan`). 2차 리뷰어가 파일을 고치면 그건 리뷰가 아니라
+ * 두 번째 작성자다 — 누가 무엇을 했는지 아무도 못 가린다.
+ *
+ * 기다리는 시간을 크게 잡는다. 기본은 5분인데, 60KB 짜리 diff 를 위 다섯
+ * 부류로 꼼꼼히 보면 8분 언저리가 예사고 더 걸린 적도 있다.
+ */
+const 기다림 = 값('--timeout', '40m');
+const t0 = Date.now();
+const r = spawnSync(agy, [
+  '--input-format', 'stream-json',
+  '--output-format', 'stream-json',
+  '--mode', 'plan',
+  '--model', 모델,
+  '--print-timeout', 기다림,
+], { encoding: 'utf8', input: 넣을것, maxBuffer: 64 * 1024 * 1024 });
+const 걸린초 = (Date.now() - t0) / 1000;
+
+if (r.error) {
+  console.error(`\n\x1b[31m✗ agy 를 못 띄웠습니다\x1b[0m\n  ${r.error.message}\n`);
+  process.exit(2);
+}
+
+/*
+ * ── 끝맺음 사건 하나만 본다 ────────────────────────────────────────────
+ *
+ * stream-json 은 걸음마다 한 줄씩 나오고, **마지막 한 줄**이 결과다.
+ * 거기에 status·response·denied_actions 가 다 들어 있다. 화면 글을 긁는
+ * 것보다 이쪽이 정확하다 — 종료코드는 잘못돼도 0 이 나오기 때문이다.
+ */
+const 끝맺음 = String(r.stdout ?? '').split('\n')
+  .map((줄) => { try { return JSON.parse(줄); } catch { return null; } })
+  .filter((x) => x?.event === 'result').at(-1)?.result ?? null;
+
+const 답 = String(끝맺음?.response ?? '').trim();
+
+/*
+ * ── 빈 답은 「없다」 가 아니다 ──────────────────────────────────────────
+ *
+ * 여기서 제 발등을 찍었다. agy 는 파일 읽기 권한을 저절로 거절하고 나서
+ * **종료코드 0 에 빈 글자**를 준다. 그걸 그대로 찍었더니 화면에는
+ *
+ *     2차 리뷰  (아직 커밋 안 한 것 · … · 58.5KB)
+ *     (빈 줄)
+ *     보고.md 에 적어 뒀습니다.
+ *
+ * 만 나왔다. 「지적할 것이 없다」 와 「한 번도 안 봤다」 가 화면에서 **똑같이
+ * 생겼다.** 이 저장소가 되풀이해 고치는 부류(조용한 실패)를, 그 부류를
+ * 잡으려고 만든 도구가 제 안에 그대로 갖고 있었던 셈이다.
+ *
+ * 그래서 빈 답은 실패로 친다. 리뷰어가 정말 아무것도 못 찾았으면 「없다」 고
+ * 적으라고 쪽지에 시켜 뒀으니, 빈 것은 말 그대로 안 온 것이다.
+ * 거절당한 도구가 있으면 그것도 같이 적는다 — 그게 대개 까닭이다.
+ */
+if (!답 || 끝맺음?.status !== 'SUCCESS') {
+  console.error(`\n\x1b[31m✗ 2차 리뷰가 빈 채로 돌아왔습니다\x1b[0m ${그레이(`(${걸린초.toFixed(0)}초 · 한도 ${기다림})`)}`);
+  if (끝맺음?.status && 끝맺음.status !== 'SUCCESS') console.error(`  상태: ${끝맺음.status}`);
+  if (끝맺음?.error) console.error(`  ${String(끝맺음.error).slice(0, 300)}`);
+  const 거절 = (끝맺음?.denied_actions ?? []).map((a) => a.display_name ?? a.action).join(', ');
+  if (거절) console.error(`  거절된 도구: ${거절} — 사람에게 못 물어보는 판이라 저절로 거절됩니다`);
+  const 남긴말 = String(r.stderr ?? '').trim();
+  if (남긴말) console.error(`  ${남긴말.split('\n').slice(0, 3).join('\n  ')}`);
+  console.error(`\n  다시 해 보려면: node tools/review2.mjs --timeout 90m`);
+  console.error('  쪼개서 보려면: node tools/review2.mjs --files <파일 몇 개>\n');
+  process.exit(2);
+}
+
+if (!조용히) console.log(`${그레이(`${걸린초.toFixed(0)}초 걸렸습니다`)}\n`);
+console.log(`${답}\n`);
+if (낼곳) {
+  writeFileSync(낼곳, `# 2차 리뷰 (${무엇} · ${모델})\n\n${답}\n`, 'utf8');
+  console.log(`\x1b[90m${낼곳} 에 적어 뒀습니다.\x1b[0m\n`);
+}
