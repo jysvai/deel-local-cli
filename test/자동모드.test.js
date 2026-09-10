@@ -1066,10 +1066,36 @@ trace('7.55-rewrite');
       손대라했나(글) === true && route(글).mode === route(짝).mode,
       `손대라=${손대라했나(글)} · ${route(글).mode} vs ${route(짝).mode}`);
   }
-  // 그렇다고 낱말 가운데가 걸리면 안 된다.
-  for (const 글 of ['The rewriter is broken.', 'See the rewrites in git log.']) {
+  /*
+   * 그렇다고 낱말 가운데가 걸리면 안 된다.
+   *
+   * 9차 리뷰. 앞 판 문장은 `The ` · `See the ` 로 시작해서 **첫머리 못에
+   * 먼저 걸렸다.** `rewrite` 에서 낱말 경계를 지워도 안 빨개진다.
+   * 첫머리에 놓아야 낱말 경계를 잰다.
+   */
+  for (const 글 of ['Rewriter crashed on startup.', 'Rewrites are listed in git log.',
+    'Rewriting is not scheduled.']) {
     check(`★★★ 낱말 가운데는 안 걸린다 — "${글}"`,
       손대라했나(글) === false, `손대라=${손대라했나(글)}`);
+  }
+  /*
+   * 그리고 `rewrite` 는 **계획 울타리가 있는 갈래**에 있어야 한다. 앞 판은
+   * 손대는 갈래에 뒀는데, 그러면 계획 문서를 다시 쓰라는 말이 코드로 간다
+   * (9차 리뷰). `write` 와 짝이 맞아야 하는 자리다.
+   */
+  for (const [글, 짝] of [
+    ['Rewrite the plan.', 'Write the plan.'],
+    ['Rewrite the rollout roadmap.', 'Write the rollout roadmap.'],
+  ]) {
+    check(`★★★ rewrite 도 계획거리를 가린다 — "${글}"`,
+      route(글).mode === route(짝).mode && route(글).mode === 'plan',
+      `${route(글).mode} vs ${route(짝).mode}`);
+  }
+  // 계획거리가 아니면 그대로 코드다.
+  for (const 글 of ['Rewrite roadmap.md', 'Rewrite the plan parser.',
+    'Rewrite what is left of the parser.']) {
+    check(`★★★ 계획거리가 아니면 그대로 코드다 — "${글}"`,
+      손대라했나(글) === true, `손대라=${손대라했나(글)} · ${route(글).mode}`);
   }
 }
 
@@ -1426,9 +1452,26 @@ trace('8-마침표뒤빈칸');
   for (const 글 of [
     'Fix errors.', 'Fix error in auth module.', 'Fix the crash in the parser.',
     'Delete failures from the report.', 'Change timeouts to 60s.',
+    // 9차 리뷰. 홑셈꼴과 관사 없는 꼴이 빠져 있었다.
+    'Fix crash in parser.', 'Delete failure from the report.', 'Change timeout to 60s.',
   ]) {
+    /*
+     * 「손대라」 만 재면 반쪽이다(9차 리뷰). 시킴말이면 code 점수도 받아야
+     * 한다 — 둘은 같은 무늬에서 나오지만 쓰는 자리가 다르다.
+     */
     check(`★★★ 쌍점·괄호가 없으면 그냥 지시문이다 — "${글}"`,
-      손대라했나(글) === true, `손대라=${손대라했나(글)} · ${JSON.stringify(route(글).점수들)}`);
+      손대라했나(글) === true && code점(글) >= 3,
+      `손대라=${손대라했나(글)} · ${JSON.stringify(route(글).점수들)}`);
+  }
+  // 그리고 `broken` 도 로그꼴이면 로그다. 1번 갈래만 알고 있었다(9차 리뷰).
+  for (const 글 of ['Rewrite broken: exit status 1', 'Delete broken: pipe',
+    'Change broken (see log)']) {
+    check(`★★★ 로그꼴 broken 도 로그다 — "${글}"`,
+      손대라했나(글) === false, `손대라=${손대라했나(글)} · ${JSON.stringify(route(글).점수들)}`);
+  }
+  for (const 글 of ['Fix broken tests.', 'Rewrite the broken parser.']) {
+    check(`★★★ 그래도 「망가진 것을 고쳐라」 는 지시문이다 — "${글}"`,
+      손대라했나(글) === true, `손대라=${손대라했나(글)}`);
   }
   for (const 글 of [
     'Delete failed: permission denied', 'Rename failed - file in use',
@@ -1462,6 +1505,8 @@ trace('8-마침표뒤빈칸');
     // 8차 리뷰. `build` 짝만 넣고 `fix` 짝을 빼먹어서, 겹침 막는 자리의
     // 쉼표를 되돌려도 빨개지지 않았다.
     'Could you, fix the app?', 'Could you, please, fix the app?',
+    // build 짝도 같이 둔다 — 한쪽만 재면 다른 쪽이 갈려도 모른다(9차 리뷰).
+    'Could you, build the app?', 'Can we, build the app?',
     'Can we, please, rename this?'].map((글) => [글, code점(글)]);
   check('★★★ 공손말 주어와 어순을 다 받는다',
     공손2.every(([, n]) => n >= 3), JSON.stringify(공손2.filter(([, n]) => n < 3)));

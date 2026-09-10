@@ -98,7 +98,7 @@
  *
  * ── 약자 목록에는 「뒤에 말이 이어지는 것」만 ───────────────────────────
  *
- * 8차 리뷰가 셋을 짚었다. 약자 목록을 넓히면서 **문장을 맺는 자리에 더 자주
+ * 8차 리뷰가 셋을 짚었고, 같은 부류를 하나 더 찾아 넷을 뺐다. 약자 목록을 넓히면서 **문장을 맺는 자리에 더 자주
  * 오는 말**을 같이 넣어 버렸다.
  *
  *     "No. Fix the bug."                        → `No.` 가 약자
@@ -108,7 +108,7 @@
  * 셋 다 마침표가 진짜 문장 끝인데 약자로 읽혀 **뒤 문장이 통째로 죽었다.**
  *
  * 남길 것과 뺄 것을 가르는 것은 **그 마침표 뒤에 무엇이 오느냐**다.
- * `e.g.` · `i.e.` · `Fig.` · `Mr.` 는 뒤에 말이 이어지는 자리에 오는
+ * `e.g.` · `i.e.` · `Fig.` · `Dr.` · `Mr.` 는 뒤에 말이 이어지는 자리에 오는
  * 약자라 마침표를 문장 끝으로 읽으면 안 된다. `No.` · `etc.` · `Inc.` ·
  * `Ltd.` 는 반대로 **문장을 맺는 자리**에 훨씬 자주 온다 — 지키려던 것보다
  * 잃는 것이 크면 그건 울타리가 아니라 벽이다. 그래서 뺀다.
@@ -134,6 +134,8 @@
  * 갈라 주는 것은 **뒤에 오는 쌍점·여는 괄호**다. 로그는 `error:` ·
  * `crash (core dumped)` 꼴로 적히고, 지시문은 그렇게 안 적힌다.
  * 그래서 2번 갈래의 이름씨꼴 차단은 `[:(]` 가 뒤따를 때만 건다.
+ * 그 목록에서 `broken` 이 빠져 있었다(9차 리뷰) — 1번 갈래는 아는 낱말인데
+ * 여기만 몰라서 `Rewrite broken: exit status 1` 이 지시로 읽혔다.
  *
  * ── 만들 것이 계획이면 그건 계획이다 ────────────────────────────────────
  *
@@ -157,7 +159,10 @@
  *
  * 0점이면 「읽기 점수가 안 붙는다」 가 언제나 참이라, 그 검사는 이 낱말에
  * 대해 아무것도 안 재고 있었다. 고치는 것은 있는 자리에 넣는 일이다 —
- * 다시 쓰는 것은 있는 것을 고치는 일이라 2번 갈래다.
+ * 다시 쓰는 것은 있는 것을 고치는 일이라
+ * 「고쳐 쓰는 말」 갈래다. 처음엔 손대는 갈래에 뒀는데, 그러면 계획 울타리를
+ * 못 받아 `Rewrite the plan.` 이 코드로 갔다(9차 리뷰) — `write` 와 짝이
+ * 맞아야 하는 자리다.
  *
  * 짓는 갈래(1번)에만 건다. 2번의 `implement`·`add` 는 반대다 —
  * "Implement the plan we agreed on." 은 계획을 **실행**하라는 말이고,
@@ -165,7 +170,7 @@
  * 이름씨다. 둘 다 코드가 맞다.
  */
 const 영어시킴말 =
-  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out|failures?|errors?|broken|crash|crashes|timeouts?)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:modify|change|develop)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?)\b\s*[:(]))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:implement|add|fix|refactor|rewrite|remove|delete|rename|scaffold)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?)\b\s*[:(])))/im;
+  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out|failures?|errors?|broken|crash|crashes|timeouts?)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:modify|change|develop|rewrite)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?|broken)\b\s*[:(]))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:implement|add|fix|refactor|remove|delete|rename|scaffold)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?|broken)\b\s*[:(])))/im;
 
 export const 표 = {
   debug: [
