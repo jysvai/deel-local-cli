@@ -1403,6 +1403,14 @@ trace('8-마침표뒤빈칸');
      */
     'Build broken - exit status 1', 'Rewrite broken - exit status 1',
     'Delete broken - pipe', 'Modify errors - see the log',
+    /*
+     * 붙여 넣는 것이 로그만은 아니다. SQL 도 시킴꼴로 시작한다 —
+     * 「이 쿼리가 왜 이러냐」 고 물으려고 붙였는데 파일을 고치는 모드로
+     * 갔다. 손대라는 말로 읽히면 읽기 전용 모드가 후보에서 통째로 빠진다.
+     */
+    'delete from users where id = 1;', 'DELETE FROM orders WHERE id > 10',
+    'delete from sessions;', 'update users set name = 42',
+    'UPDATE accounts SET balance = 0 WHERE id = 3',
   ]) {
     check(`★★★ 빌드 오류 로그는 시킴말이 아니다 — "${글.slice(0, 40)}"`,
       code점(글) < 3 && 손대라했나(글) === false, `code=${code점(글)} 손대라=${손대라했나(글)}`);
@@ -1423,6 +1431,12 @@ trace('8-마침표뒤빈칸');
     'Update crash-report.md', 'Build broken-files.txt', 'Delete broken-files.txt',
     // 동사 바로 뒤에 전치사가 오는 흔한 지시문도 같이 못박는다.
     'Write to file.js', 'Build for linux', 'Migrate to ESM',
+    /*
+     * SQL 울타리 반대쪽. 같은 낱말이 오는 멀쩡한 지시문을 죽이면 안 된다.
+     * 갈라 주는 것은 `from` 이 아니라 **뒤에 SQL 이 이어지느냐**다.
+     */
+    'Delete from the list.', 'Delete the row from users.',
+    'Update the config file.', 'Update settings for the app.',
   ]) {
     check(`★★★ 실패말이 이름의 일부면 시킴말이다 — "${글}"`,
       code점(글) >= 3 && 손대라했나(글) === true, `code=${code점(글)} 손대라=${손대라했나(글)}`);

@@ -156,6 +156,21 @@
  * 쌍점은 **첫 낱말 바로 뒤**일 때만 꼬리표다. `Fix the bug: it is in the
  * parser.` 처럼 목적어를 끼고 오는 쌍점은 그냥 지시문이다.
  *
+ * ── 붙여 넣는 것이 로그만은 아니다 ─────────────────────────────────────
+ *
+ * SQL 도 시킴꼴로 시작한다.
+ *
+ *     delete from users where id = 1;
+ *     update accounts set balance = 0 where id = 3
+ *
+ * 「이 쿼리가 왜 이러냐」 고 물으려고 붙였는데 파일을 고치는 모드로 갔다.
+ * 손대라는 말로 읽히면 읽기 전용 모드가 후보에서 통째로 빠진다.
+ *
+ * 갈라 주는 것은 `from` 이 아니라 **뒤에 SQL 이 이어지느냐**다.
+ * `Delete from the list.` 는 그대로 지시문이고, `delete from users where`
+ * 는 아니다. 두 동사(`delete`·`update`)만 우리 목록과 겹치므로 그 둘에만
+ * 건다 — `insert`·`select` 는 애초에 여기 없다.
+ *
  * ── 이음말 뒤도 첫머리다 ───────────────────────────────────────────────
  *
  * 같은 자리에서 반대쪽 구멍이 하나 나왔다.
@@ -231,7 +246,7 @@
  * 세 갈래에 같은 「띄운 줄표」 잣대를 넣어 맞춘다.
  */
 const 영어시킴말 =
-  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:(?:first|then|next|after\s+that|also|now|finally|second|third|lastly|afterwards?)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|broken|crash|crashes|timeouts?)\b(?=\s*(?:[,:;!?()\[\]]|$)|\s*\.(?!\w)|\s+-\s|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:[\w']+-)*(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+-[ \t]|[ \t]+(?:now|today|tonight|tomorrow|first|soon|asap|again)\b|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:modify|change|develop|rewrite)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?|broken)\b(?:\s*[:(]|\s+-\s)))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:[\w']+-)*(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+-[ \t]|[ \t]+(?:now|today|tonight|tomorrow|first|soon|asap|again)\b|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:implement|add|fix|refactor|remove|delete|rename|scaffold)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?|broken)\b(?:\s*[:(]|\s+-\s))))(?!\()(?![-\w]*[ \t]*:)(?![ \t]+[\w.-]+[ \t]*:[ \t])/im;
+  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:(?:first|then|next|after\s+that|also|now|finally|second|third|lastly|afterwards?)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|broken|crash|crashes|timeouts?)\b(?=\s*(?:[,:;!?()\[\]]|$)|\s*\.(?!\w)|\s+-\s|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:[\w']+-)*(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+-[ \t]|[ \t]+(?:now|today|tonight|tomorrow|first|soon|asap|again)\b|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:modify|change|develop|rewrite)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?|broken)\b(?:\s*[:(]|\s+-\s)))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:[\w']+-)*(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+-[ \t]|[ \t]+(?:now|today|tonight|tomorrow|first|soon|asap|again)\b|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:implement|add|fix|refactor|remove|delete|rename|scaffold)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?|broken)\b(?:\s*[:(]|\s+-\s))))(?!\()(?![-\w]*[ \t]*:)(?![ \t]+[\w.-]+[ \t]*:[ \t])(?!(?<=\bdelete)\s+from\s+[\w."`]+\s*(?:where\b|order\s+by\b|limit\b|;|$))(?!(?<=\bupdate)\s+[\w."`]+\s+set\b)/im;
 
 export const 표 = {
   debug: [
