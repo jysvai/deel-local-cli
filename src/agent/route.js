@@ -97,7 +97,7 @@
  * 잡히기 전까지 조용히 아무것도 안 맞는다. 실제로 그렇게 났다.
  */
 const 영어시킴말 =
-  /(?:^\s*|(?<!\.[A-Za-z])[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s+)?(?:build|implement|create|write|make|add|fix|refactor|remove|delete|rename|migrate|update|modify|change|generate|scaffold|set\s*up|develop)\b(?![\s:-]+(?:failed|failing|fails|failures?|errors?|errored|broke|broken|crashe[ds]|crash|timeout|timed\s+out|succeeded|succeeds)\b(?=\s*(?:[.,:;!?)\]]|$)|\s+(?:with|at|after|in|on|during|because|due|while|when|for)\b))/im;
+  /(?:^\s*|(?<!\b[A-Za-z]\.[A-Za-z])[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:(?:could|can|would|will)\s+you\s+)?(?:please\s+)?(?:(?:build|make|create|update|write|migrate|generate)\b(?![\s:-]+(?:failed|failing|fails|failures?|errors?|errored|broke|broken|crashe[ds]|crash|timeouts?|timed[\s-]+out|succeeded|succeeds)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|during|because|due|while|when|for)\b))|(?:implement|add|fix|refactor|remove|delete|rename|modify|change|scaffold|set\s*up|develop)\b)/im;
 
 export const 표 = {
   debug: [
@@ -242,7 +242,7 @@ export const 표 = {
      * 그래서 **앞에 낱말이 있어야** 이 규칙이 돈다. `please` 는 첫머리
      * 갈래가 이미 세는 말이라 따로 뺀다.
      */
-    [/(?<=[a-z,;)\]]\s{1,3})(?<!\bplease\s)(?:implement|add|fix|write)\b/i, 2],
+    [/(?<=[a-z,;:)\]]\s{1,3})(?<!\b(?:please|you)\s{1,3})(?:implement|add|fix|write)\b/i, 2],
     [/써(줘|주세요)/, 3],
   ],
 };

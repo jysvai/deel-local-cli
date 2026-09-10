@@ -940,9 +940,76 @@ trace('8-마침표뒤빈칸');
     ['Is it A? Build it.', true],
     ['e.g. create a table.', false],
     ['What does i.e. update mean?', false],
+    /*
+     * 5차 리뷰가 짚었다 — 약자를 「점 + 홑글자」 로 봤더니 홑글자 확장자가
+     * 같이 걸렸다. `main.c.` 의 `c` 는 약자가 아니라 파일 이름의 꼬리다.
+     * 약자는 `e.g.` 처럼 **앞도 홑글자**다.
+     */
+    ['Check main.c. Build the project.', true],
+    ['Read util.h. Update the header.', true],
   ]) {
     check(`★★★ 홑글자 뒤 마침표 — "${글.slice(0, 36)}"`,
       (code점(글) >= 3) === 시킴말이냐, `code=${code점(글)} (바람: ${시킴말이냐})`);
+  }
+
+  /*
+   * ⑩ 실패말이 **그 자체로 목적어**일 때. 5차 리뷰가 짚었다.
+   *
+   * 앞 판에서는 「뒤에 이름씨가 오느냐」 로 갈랐는데, `Fix errors.` 는
+   * 실패말이 곧 목적어라 그 잣대로는 못 가른다. `Fix error in auth
+   * module.` 은 더 나쁘다 — 뒤에 전치사가 와서 로그와 모양이 똑같다.
+   *
+   * 그래서 잣대를 하나 더 둔다: **그 동사가 로그의 주어가 될 수 있는가.**
+   * `Build failed` · `Update failed` 의 build·update 는 이름씨이기도 하다.
+   * `fix` · `remove` · `delete` 는 로그의 주어가 되지 않는다 — 그런 동사
+   * 뒤의 실패말은 언제나 목적어다.
+   */
+  for (const 글 of [
+    'Fix errors.', 'Fix crashes.', 'Fix error in auth module.',
+    'Remove broken links in docs.', 'Delete failed jobs.',
+  ]) {
+    check(`★★★ 로그 주어가 못 되는 동사 뒤의 실패말은 목적어다 — "${글}"`,
+      code점(글) >= 3 && 손대라했나(글) === true, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+  for (const 글 of [
+    'Build failed (exit code 1)', 'Build failed - exit code 1',
+    'Build timeouts after 30s', 'Build timed-out after 30s',
+    'Update failed (see log)', 'Create failures: 3',
+  ]) {
+    check(`★★★ 로그 주어가 되는 동사 뒤의 실패말은 로그다 — "${글}"`,
+      code점(글) < 3 && 손대라했나(글) === false, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+
+  /*
+   * ⑪ 공손말. 영어 지시문은 `Could you please …` 로 오는 일이 잦은데
+   * 통째로 0점이었다 — 첫머리 갈래는 `please` 만 알았고, 가운데 갈래는
+   * `please` 를 겹침 막이로 빼 놨기 때문이다(5차 리뷰).
+   *
+   * 여기서도 같은 잣대다 — **어느 동사를 골랐느냐로 갈리면 안 된다.**
+   */
+  const 공손 = [
+    'Could you please fix this bug?', 'Could you please build this app?',
+    'Can you add a button?', 'Can you build a button?',
+    'Would you update the schema?', 'Will you create the table?',
+    'Please fix the web app.', 'Please build the web app.',
+    'Please  fix the web app.',
+  ].map((글) => [글, code점(글)]);
+  check('★★★ 공손말이 붙어도 첫머리 시킴말이다',
+    공손.every(([, n]) => n >= 3), JSON.stringify(공손.filter(([, n]) => n < 3)));
+  check('★★★ 공손말에서도 동사끼리 점수가 같다',
+    new Set(공손.map(([, n]) => n)).size === 1, JSON.stringify(공손));
+
+  /*
+   * ⑫ 그래도 문장 가운데 갈래는 살아 있어야 한다. 겹침을 막다가 이쪽을
+   * 죽이면 「we should add …」 가 통째로 0점이 된다.
+   */
+  for (const [글, 점] of [
+    ['We should add validation to the approval form.', 2],
+    ['I want to add caching here.', 2],
+    ['TODO: fix the authentication bug', 2],
+  ]) {
+    check(`★★★ 문장 가운데 시킴말은 여전히 ${점}점 — "${글.slice(0, 34)}"`,
+      code점(글) === 점, `${code점(글)}점`);
   }
 }
 
