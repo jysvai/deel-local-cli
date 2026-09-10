@@ -29,6 +29,7 @@
 //
 //   npm run review2                        아직 커밋 안 한 것
 //   node tools/review2.mjs --since HEAD~3  최근 세 판
+//   node tools/review2.mjs --since HEAD~4 --to HEAD~3   그 한 판만
 //   node tools/review2.mjs --files a.js b.js
 //   node tools/review2.mjs --model <agy models 로 목록을 본다>
 //   node tools/review2.mjs --timeout 90m   더 오래 기다린다
@@ -52,6 +53,22 @@ const 그레이 = (s) => `\x1b[90m${s}\x1b[0m`;
 // 모델은 3.8 Flash (High). pro 는 쓰지 않는다.
 const 모델 = 값('--model', 'gemini-3.8-flash-high');
 const 부터 = 값('--since', null);
+/*
+ * ── 커밋한 뒤에는 한 판씩 봐야 한다 ────────────────────────────────────
+ *
+ * `--since` 는 언제나 HEAD 까지다. 그래서 네 판을 올린 뒤에 2차 리뷰를
+ * 돌리면 21.8KB 가 통째로 나가고, Gemini 가 **출력 한도**에 걸려 빈 답을
+ * 준다(실제로 그렇게 났다). 찾은 것이 없어서가 아니라 다 못 적어서다.
+ *
+ * `--files` 는 이 자리에서 도움이 안 된다 — `git diff HEAD -- 파일` 은
+ * 커밋한 것을 안 보여 주므로 「바뀐 자리가 없습니다」 만 나온다.
+ *
+ * 그래서 끝을 정할 수 있게 한다. 커밋을 이야기 단위로 쪼개 올렸으면
+ * 리뷰도 그 단위로 보는 것이 맞다 — 한 판이 한 이야기다.
+ *
+ *   node tools/review2.mjs --since HEAD~4 --to HEAD~3
+ */
+const 까지 = 값('--to', 'HEAD');
 const 낼곳 = 값('--out', null);
 const 조용히 = 있나('--quiet');
 
@@ -104,7 +121,7 @@ function 볼것() {
     }
     return { 무엇: `파일 ${파일들.length}개`, diff: r.stdout };
   }
-  if (부터) return { 무엇: `${부터}..HEAD`, diff: git('diff', `${부터}..HEAD`).stdout };
+  if (부터) return { 무엇: `${부터}..${까지}`, diff: git('diff', `${부터}..${까지}`).stdout };
   const 안커밋 = git('diff', 'HEAD').stdout;
   if (안커밋.trim()) return { 무엇: '아직 커밋 안 한 것', diff: 안커밋 };
   return { 무엇: '마지막 판(HEAD~1..HEAD)', diff: git('diff', 'HEAD~1..HEAD').stdout };
