@@ -265,6 +265,14 @@ trace('9-앞뒤관례');
     // 뒤에 붙는 관례의 복수형. 되는데 아무도 안 재고 있었다.
     ['test/approval.specs.js', 'node test/approval.specs.js'],
     ['test/handler.tests.js', 'node test/handler.tests.js'],
+    /*
+     * 10차 리뷰. 구분자를 낱말마다 따로 잰다고 해 놓고 **복수형은 한쪽
+     * 구분자만** 쟀다. 앞쪽은 붙임표만, 뒤쪽은 점만 재고 있었다.
+     */
+    ['scripts/tests_roles.mjs', 'node scripts/tests_roles.mjs'],
+    ['scripts/specs_roles.mjs', 'node scripts/specs_roles.mjs'],
+    ['test/approval_specs.js', 'node test/approval_specs.js'],
+    ['test/handler_tests.js', 'node test/handler_tests.js'],
   ];
   for (const [이름, 나와야] of 찾아야) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
@@ -366,6 +374,8 @@ trace('9-앞뒤관례');
     'test/approval-specs.js', 'test/roles-specs.ts',
     // 무관한 글자도 `spec` 쪽은 안 쟀다(9차 리뷰). 이스케이프는 낱말마다 죽는다.
     'test/approvalXspec.js', 'test/rolesXspecs.js',
+    // 복수형 `tests` 쪽 무관한 글자는 아직 안 쟀다(10차 리뷰).
+    'test/handlerXtests.js',
   ]) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
     check(`★★★ 구분자가 점·밑줄이 아니면 검사가 아니다 — ${이름}`,
