@@ -146,13 +146,23 @@
  * 갈라 주는 것은 동사가 아니라 **목적어**다. 만들 것이 계획·로드맵·
  * 전략이면 그건 계획 모드가 내놓는 것이지 파일을 고쳐서 되는 일이 아니다.
  *
+ * ── 검사에 쓰던 낱말이 목록에 없었다 ────────────────────────────────────
+ *
+ * 8차 리뷰를 재 보다 찾았다. 검사 쪽이 `Rewrite what is left of the parser.`
+ * 를 **쓰기 지시문의 보기**로 쓰고 있는데, 정작 `rewrite` 가 목록에 없어
+ * 0점이었다. `write` 는 있지만 낱말 경계 때문에 `rewrite` 안에서는 안 걸린다.
+ *
+ * 0점이면 「읽기 점수가 안 붙는다」 가 언제나 참이라, 그 검사는 이 낱말에
+ * 대해 아무것도 안 재고 있었다. 고치는 것은 있는 자리에 넣는 일이다 —
+ * 다시 쓰는 것은 있는 것을 고치는 일이라 2번 갈래다.
+ *
  * 짓는 갈래(1번)에만 건다. 2번의 `implement`·`add` 는 반대다 —
  * "Implement the plan we agreed on." 은 계획을 **실행**하라는 말이고,
  * "Add a plan field to the schema." 의 plan 은 목적어가 아니라 딸린
  * 이름씨다. 둘 다 코드가 맞다.
  */
 const 영어시킴말 =
-  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out|failures?|errors?|broken|crash|crashes|timeouts?)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))(?!(?:\s+(?:an?|the|out|up|us|me|my|our|your))*\s+(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)\b)|(?:implement|add|fix|refactor|remove|delete|rename|modify|change|scaffold|develop)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?)\b\s*[:(])))/im;
+  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out|failures?|errors?|broken|crash|crashes|timeouts?)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))(?!(?:\s+(?:an?|the|out|up|us|me|my|our|your))*\s+(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)\b)|(?:implement|add|fix|refactor|rewrite|remove|delete|rename|modify|change|scaffold|develop)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?)\b\s*[:(])))/im;
 
 export const 표 = {
   debug: [

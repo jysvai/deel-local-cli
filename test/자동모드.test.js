@@ -937,6 +937,36 @@ trace('7.5-읽기영어');
   }
 }
 
+// ── 7.55 검사 문장으로 쓰던 낱말이 정작 점수표에 없었다 ────────────────
+//
+// 7.5 는 `Rewrite what is left of the parser.` 를 **쓰기 지시문의 보기**로
+// 써서 「여기엔 읽기 점수가 안 붙는다」 를 쟀다. 그런데 재 보니 그 문장은
+// 아무 점수도 안 받는다 — `rewrite` 가 영어 시킴말 목록에 없다.
+//
+//     "Write the parser."     → code 5점 · 손대라 참
+//     "Rewrite the parser."   → 0점 · 손대라 거짓
+//
+// 0점이라 「읽기 점수가 안 붙는다」 는 언제나 참이고, 그래서 그 마디는
+// 이 낱말에 대해서는 아무것도 안 재고 있었다. 검사에 쓰는 낱말은 점수표가
+// 아는 낱말이어야 한다.
+trace('7.55-rewrite');
+{
+  for (const [글, 짝] of [
+    ['Rewrite the parser.', 'Write the parser.'],
+    ['Rewrite this module.', 'Update this module.'],
+    ['Rewrite the approval flow.', 'Refactor the approval flow.'],
+  ]) {
+    check(`★★★ rewrite 도 시킴말이다 — "${글}"`,
+      손대라했나(글) === true && route(글).mode === route(짝).mode,
+      `손대라=${손대라했나(글)} · ${route(글).mode} vs ${route(짝).mode}`);
+  }
+  // 그렇다고 낱말 가운데가 걸리면 안 된다.
+  for (const 글 of ['The rewriter is broken.', 'See the rewrites in git log.']) {
+    check(`★★★ 낱말 가운데는 안 걸린다 — "${글}"`,
+      손대라했나(글) === false, `손대라=${손대라했나(글)}`);
+  }
+}
+
 // ── 7.6 「계획을 만들어 달라」 는 계획이지 손대라는 말이 아니다 ─────────
 //
 // 7·7.5 에서 낱말을 맞추고 나서 같은 뜻 짝 26개를 죽 재 봤더니 여기가
