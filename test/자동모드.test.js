@@ -980,7 +980,73 @@ trace('7.5-읽기영어');
   }
 }
 
-// ── 7.4 이번엔 한국어 쪽이 비어 있었다 ─────────────────────────────────
+// ── 7.3 붙여 넣는 로그가 시킴말로 읽혔다 ───────────────────────────────
+//
+// 리뷰를 기다리는 사이에 **붙여 넣을 법한 글 서른여덟 줄**을 죽 재 봤다.
+// 빌드 로그·스택 트레이스·커밋 메시지·SQL·설명문 — 사람이 실제로 창에
+// 던져 넣는 것들이다. 일곱이 시킴말로 읽혔다.
+//
+//     "fix: 값이 아닌 것을 가렸습니다"      ← 이 저장소의 커밋 메시지다
+//     "Change-Id: I8f2c1a"                git 꼬리표
+//     "Remove-Item : Cannot find path"    파워셸 오류
+//     "Update available: 1.2.3 → 1.3.0"   npm 알림
+//     "add(a, b) { return a + b; }"       코드 한 줄
+//
+// 다섯이 한 가지 모양이다 — **동사 뒤에 쌍점이나 여는 괄호**가 온다.
+// 그건 시킴말이 아니라 **꼬리표**거나 **부르는 짓**이다. 시킴말 뒤에는
+// 목적어가 오지 쌍점이 오지 않는다.
+//
+// 그리고 반대쪽 구멍도 하나 나왔다 — 「First, …」 · 「Then …」 처럼 앞에
+// 이음말이 붙으면 첫머리로 안 쳤다. 붙여 넣는 명세가 딱 그 꼴이다.
+trace('7.3-로그오독');
+{
+  for (const 글 of [
+    'fix: 값이 아닌 것을 가렸습니다',
+    'feat: add the retry loop',
+    'refactor: split the parser',
+    'Change-Id: I8f2c1a',
+    'Remove-Item : Cannot find path',
+    'Update available: 1.2.3',
+    'add(a, b) { return a + b; }',
+    'create(name) { return new Session(name); }',
+    'Fix: the parser was wrong',
+  ]) {
+    check(`★★★ 꼬리표·부르는 짓은 시킴말이 아니다 — "${글.slice(0, 40)}"`,
+      손대라했나(글) === false, `손대라=${손대라했나(글)} · ${route(글).mode}`);
+  }
+  /*
+   * 그렇다고 쌍점이 뒤에 오기만 하면 다 막으면 안 된다. **첫 낱말 바로
+   * 뒤**에 붙을 때만 꼬리표다.
+   */
+  for (const 글 of [
+    'Fix the bug: it is in the parser.',
+    'Build the app: use vite for it.',
+    'Write the docs: start with the README.',
+    'Set up CI for this repo.',
+  ]) {
+    check(`★★★ 목적어를 낀 쌍점은 그냥 지시문이다 — "${글.slice(0, 40)}"`,
+      손대라했나(글) === true, `손대라=${손대라했나(글)} · ${route(글).mode}`);
+  }
+  // 앞에 이음말이 붙어도 첫머리다.
+  for (const 글 of [
+    'First, set up the project.',
+    'First, set up the project. Then add tests.',
+    'Next, create the schema.',
+    'Then build the client.',
+    'Finally, write the docs.',
+    'Now add the retry loop.',
+  ]) {
+    check(`★★★ 이음말 뒤도 첫머리다 — "${글.slice(0, 40)}"`,
+      손대라했나(글) === true, `손대라=${손대라했나(글)} · ${route(글).mode}`);
+  }
+  // 이음말 뒤가 동사가 아니면 그냥 문장이다.
+  for (const 글 of ['Now the build is broken.', 'Then the parser failed.']) {
+    check(`★★★ 이음말 뒤가 동사가 아니면 아니다 — "${글}"`,
+      손대라했나(글) === false, `손대라=${손대라했나(글)}`);
+  }
+}
+
+// ── 7.4 이번엔 한국어 쪽이 비어 있었다 ─────────────────────────────────// ── 7.4 이번엔 한국어 쪽이 비어 있었다 ─────────────────────────────────
 //
 // 7·7.5 에서 영어를 한국어에 맞춰 놓고, 같은 뜻 짝 스물여섯을 죽 재 봤다.
 // 그랬더니 이번엔 **한국어가 지는 자리**가 나왔다.
