@@ -1378,7 +1378,13 @@ trace('5-10-탭마다-MCP-를-다시-띄우나');
     mcpServers: { 탭스텁: { command: process.execPath, args: [서버파일] } },
   }, null, 2), 'utf8');
 
-  const e = 에디터();
+  /*
+   * 임시 폴더는 당연히 「안 믿는 폴더」 다. 그런데 MCP 는 이제 믿는 폴더에서만
+   * 띄운다 — 남의 저장소에 딸려 온 mcp.json 으로 남의 프로그램이 돌면 안 된다
+   * (backend/mcp.js). 여기서 재려는 것은 「탭을 여럿 열어도 한 벌만 뜨나」 이므로
+   * 그 문은 여기서 명시적으로 열어 둔다.
+   */
+  const e = 에디터([], { DEEL_TRUST_ALL: '1' });
   try {
     await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
     const 방들 = [];

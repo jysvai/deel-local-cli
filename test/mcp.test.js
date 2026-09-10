@@ -28,6 +28,17 @@ const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
 
 const root = mkdtempSync(join(tmpdir(), 'deel-mcp-'));
+/*
+ * 이 검사 폴더는 **믿는 폴더로 친다.**
+ *
+ * 다붙이기() 는 이제 믿는 폴더에서만 서버를 띄운다 — 남의 저장소에 딸려 온
+ * mcp.json 으로 남의 프로그램이 돌면 안 되기 때문이다(backend/mcp.js).
+ * 임시 폴더는 당연히 안 믿는 폴더라, 여기서는 그 문을 명시적으로 연다.
+ *
+ * 사용자의 진짜 trusted.json 은 안 건드린다 — 파일에 적는 대신 이 환경변수
+ * 하나로만 연다. 안 믿을 때 어떻게 되는지는 따로 아래에서 잰다.
+ */
+const 믿는env = { ...process.env, DEEL_TRUST_ALL: '1' };
 mkdirSync(join(root, '.deel'), { recursive: true });
 
 trace('1-스텁서버만들기');
@@ -120,7 +131,7 @@ trace('3-붙기');
 
 {
   설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
-  const r = await 다붙이기(root, { audit: new Audit(root) });
+  const r = await 다붙이기(root, { audit: new Audit(root), env: 믿는env });
   check('서버가 붙는다', r.서버들.length === 1, JSON.stringify(r.못한것));
   const s = r.서버들[0];
   check('서버 정보를 받아온다', s.정보?.name === '스텁MCP', JSON.stringify(s.정보));
@@ -167,7 +178,7 @@ trace('4-못된서버');
 // 멈추거나 죽으면, 붙일 수가 없는 기능이 된다.
 {
   설정쓰기({ mcpServers: { 죽는놈: 서버설정('crash'), 멀쩡이: 서버설정() } });
-  const r = await 다붙이기(root, { timeout: 2500 });
+  const r = await 다붙이기(root, { timeout: 2500, env: 믿는env });
   check('죽는 서버가 있어도 나머지는 붙는다', r.서버들.length === 1 && r.서버들[0].이름 === '멀쩡이',
     JSON.stringify(r.서버들.map((s) => s.이름)));
   check('못 붙은 것을 조용히 넘기지 않는다', r.못한것.length === 1 && r.못한것[0].이름 === '죽는놈',
@@ -180,7 +191,7 @@ trace('4-못된서버');
   // 아무 답도 안 하는 서버. 시간 제한이 없으면 여기서 영영 멈춘다.
   설정쓰기({ mcpServers: { 벙어리: 서버설정('silent') } });
   const t0 = Date.now();
-  const r = await 다붙이기(root, { timeout: 1200 });
+  const r = await 다붙이기(root, { timeout: 1200, env: 믿는env });
   const 걸린시간 = Date.now() - t0;
   check('답 없는 서버에서 안 멈춘다', 걸린시간 < 6000, `${(걸린시간 / 1000).toFixed(1)}초`);
   check('답 없는 서버는 못 붙었다고 한다', r.서버들.length === 0 && r.못한것.length === 1, JSON.stringify(r.못한것));
@@ -190,7 +201,7 @@ trace('4-못된서버');
 {
   // stdout 에 JSON 아닌 것을 쏟는 서버. 로그를 그냥 찍는 서버가 실제로 흔하다.
   설정쓰기({ mcpServers: { 수다쟁이: 서버설정('garbage') } });
-  const r = await 다붙이기(root, { timeout: 2500 });
+  const r = await 다붙이기(root, { timeout: 2500, env: 믿는env });
   check('규격 밖의 잡소리는 버리고 계속 간다', r.서버들.length === 1, JSON.stringify(r.못한것));
   for (const s of r.서버들) s.닫기();
 }
@@ -199,7 +210,7 @@ trace('4-못된서버');
   // 도구를 40개 주는 서버. 스키마가 통째로 매 요청에 실리므로 무한정 받으면
   // 컨텍스트가 조용히 줄어든다. 자르되 **잘랐다고 말한다.**
   설정쓰기({ mcpServers: { 욕심쟁이: 서버설정('many') } });
-  const r = await 다붙이기(root, { timeout: 2500 });
+  const r = await 다붙이기(root, { timeout: 2500, env: 믿는env });
   const s = r.서버들[0];
   check('도구가 너무 많으면 자른다', s.도구.length === 도구최대, String(s.도구.length));
   check('자른 것을 조용히 안 넘긴다', s.잘림 === 40 - 도구최대, String(s.잘림));
@@ -214,9 +225,40 @@ trace('5-자물쇠와열쇠');
 // **막을 수 없는 것을 막았다고 말하지 않는다.**
 {
   설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
-  const r = await 다붙이기(root, { offline: true });
+  const r = await 다붙이기(root, { offline: true, env: 믿는env });
   check('오프라인이면 안 띄운다', r.서버들.length === 0 && r.잠김 === true);
   check('왜 안 띄웠는지 말한다', /오프라인/.test(r.못한것[0]?.왜 ?? ''), r.못한것[0]?.왜);
+}
+
+trace('5b-안믿는폴더');
+
+/*
+ * ── 안 믿는 폴더에서는 아예 안 띄운다 ───────────────────────────────────
+ *
+ * `mcp.json` 은 프로젝트 폴더에 있고, 그러니 **저장소에 같이 딸려 온다.**
+ * 남의 저장소를 clone 하고 그 안에서 deel 을 켜면 거기 적힌 `command` 가
+ * 이 계정 권한으로 자식 프로세스가 됐다 — 도구 승인 화면도 안 거치고,
+ * 사람이 아무것도 안 쳤는데 돈다.
+ *
+ * 훅(safety/hooks.js)은 정확히 이 위협에 `믿나(root)` 를 강제하면서 제
+ * 머리말에 「MCP 와 같은 무게로 다룬다」 고 적어 두었는데, 정작 무게를
+ * 견주던 쪽에는 그 문이 없었다.
+ *
+ * 안 믿으면 **조용히 넘어가지 않는다.** 못 붙였다고 말하고 어떻게 하면
+ * 되는지(deel trust)까지 같이 말한다 — 제가 적은 서버가 왜 안 뜨는지
+ * 모르는 것이 두 번째로 나쁜 일이다.
+ */
+{
+  설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
+  const 안믿는env = { ...process.env, DEEL_TRUST_ALL: '0' };
+  const r = await 다붙이기(root, { timeout: 2500, env: 안믿는env });
+  check('★★★ 안 믿는 폴더에서는 남의 프로그램을 안 띄운다',
+    r.서버들.length === 0 && r.안믿음 === true, JSON.stringify({ n: r.서버들.length, 안믿음: r.안믿음 }));
+  check('★★★ 안 띄운 서버를 이름과 함께 말한다',
+    r.못한것.length === 1 && r.못한것[0].이름 === '사내위키', JSON.stringify(r.못한것));
+  check('★★ 어떻게 하면 되는지 같이 말한다',
+    /deel trust/.test(r.못한것[0]?.왜 ?? ''), r.못한것[0]?.왜);
+  check('★★ 프로세스를 하나도 안 띄웠다', 살아있는수() === 0, String(살아있는수()));
 }
 
 // ── 우리 환경변수를 남의 프로세스에 넘기지 않는다 ───────────────────────
@@ -226,7 +268,7 @@ trace('5-자물쇠와열쇠');
 {
   process.env.DEEL_SECRET_TEST = '열쇠-절대-새면-안-됨';
   설정쓰기({ mcpServers: { 환경보는놈: { ...서버설정(), env: { 내가준값: '이건괜찮다' } } } });
-  const r = await 다붙이기(root, { timeout: 2500 });
+  const r = await 다붙이기(root, { timeout: 2500, env: 믿는env });
   const ctx = { scope: makeScope(root), audit: new Audit(root), mcp: r.서버들, seen: new Set() };
   const 결과 = await runTool('mcp__환경보는놈__환경보기', {}, ctx);
   const 환경 = 결과.content ?? '';
@@ -243,7 +285,7 @@ trace('6-도구목록에섞기');
 // ── 우리 도구 목록에 어떻게 섞이는가 ────────────────────────────────────
 {
   설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
-  const r = await 다붙이기(root, { timeout: 2500 });
+  const r = await 다붙이기(root, { timeout: 2500, env: 믿는env });
 
   const 없이 = toolSchemas(null, { web: true }).length;
   const 함께 = toolSchemas(null, { web: true, mcp: r.서버들 }).length;
@@ -273,7 +315,7 @@ trace('6-도구목록에섞기');
 // 서버가 죽은 뒤에 부르면 오류로 돌려준다 (매달리지 않는다).
 {
   설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
-  const r = await 다붙이기(root, { timeout: 2500 });
+  const r = await 다붙이기(root, { timeout: 2500, env: 믿는env });
   const ctx = { scope: makeScope(root), audit: new Audit(root), mcp: r.서버들, seen: new Set() };
   for (const s of r.서버들) s.닫기();
   const 결과 = await runTool('mcp__사내위키__위키검색', { q: 'x' }, ctx);
@@ -290,7 +332,7 @@ trace('7-판번호');
 // 판 번호는 한 곳에서만 읽는다(src/version.js) — 그 약속을 여기서 지킨다.
 {
   설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
-  const r = await 다붙이기(root, { timeout: 2500 });
+  const r = await 다붙이기(root, { timeout: 2500, env: 믿는env });
 
   const 인사 = JSON.parse(readFileSync(인사파일, 'utf8'));
   const 진짜판 = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -328,7 +370,7 @@ trace('7.5-끝날때-남기지않는가');
  */
 {
   설정쓰기({ mcpServers: { 하나: 서버설정(), 둘: 서버설정() } });
-  const r = await 다붙이기(root, { timeout: 2500 });
+  const r = await 다붙이기(root, { timeout: 2500, env: 믿는env });
   check('두 대가 붙었다', r.서버들.length === 2, String(r.서버들.length));
   check('★ 띄운 것을 세고 있다', 살아있는수() === 2, `명부 ${살아있는수()}`);
 
@@ -413,7 +455,7 @@ trace('9-지연로딩');
   설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
 
   // 첫 판은 적어 둔 것이 없으니 그냥 띄운다. 그리고 적어 둔다.
-  const 첫판 = await 다붙이기(root, { timeout: 2500 });
+  const 첫판 = await 다붙이기(root, { timeout: 2500, env: 믿는env });
   check('처음에는 띄운다', 살아있는수() === 1, String(살아있는수()));
   check('★★ 그리고 도구 목록을 적어 둔다', existsSync(메모자리(root)), 메모자리(root));
   const 적힌것 = 메모읽기(root);
@@ -422,7 +464,7 @@ trace('9-지연로딩');
   모두닫기();
 
   // 두 번째 판. 여기가 이 기능의 전부다 — **안 띄운다.**
-  const 둘째 = await 다붙이기(root, { timeout: 2500 });
+  const 둘째 = await 다붙이기(root, { timeout: 2500, env: 믿는env });
   check('★★ 두 번째부터는 안 띄운다', 살아있는수() === 0, String(살아있는수()));
   const s = 둘째.서버들[0];
   check('★★ 그래도 도구 목록은 있다', s.도구.length === 2, String(s.도구.length));
@@ -492,7 +534,7 @@ trace('11-메모가-옛것일때');
     },
   }), 'utf8');
 
-  const r = await 다붙이기(root, { timeout: 2500 });
+  const r = await 다붙이기(root, { timeout: 2500, env: 믿는env });
   const s = r.서버들[0];
   check('옛 목록으로 서 있다', s.대기 === true && s.도구[0]?.name === '없어진도구', '');
   let 탈 = null;
@@ -513,7 +555,7 @@ trace('12-끄기');
    */
   모두닫기();
   설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
-  const r = await 다붙이기(root, { timeout: 2500, env: { DEEL_MCP_LAZY: 'off' } });
+  const r = await 다붙이기(root, { timeout: 2500, env: { ...믿는env, DEEL_MCP_LAZY: 'off' } });
   check('★★ DEEL_MCP_LAZY=off 면 여느 때처럼 띄운다', 살아있는수() === 1, String(살아있는수()));
   check('  대기가 아니다', r.서버들[0]?.대기 === false, '');
   모두닫기();

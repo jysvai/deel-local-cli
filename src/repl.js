@@ -1529,6 +1529,14 @@ export async function chatLoop(opts = {}) {
   }
   // 안 뜬 것은 조용히 빠지면 안 된다. "왜 그 도구가 없지" 를 영영 알 수 없다.
   for (const m of mcp붙임.못한것) warn.push(`MCP ${c.white(m.이름)} 을 못 붙였습니다 — ${m.왜}`);
+  /*
+   * 이 폴더에 스킬을 적어 뒀는데 안 믿는 폴더라 안 읽었다. **말해야 한다** —
+   * 제가 적은 스킬이 왜 안 뜨는지 모르는 것이 두 번째로 나쁜 일이다
+   * (safety/hooks.js 의 안믿음 과 같은 방식).
+   */
+  if (found.안믿음) {
+    warn.push(`이 폴더의 스킬은 안 읽었습니다 — 믿는 폴더가 아닙니다. 읽게 하려면 ${c.cyan('deel trust')}`);
+  }
   if (!conn.tools) warn.push(옮긴말('run.noTools'));
   if (!conn.streaming) warn.push(옮긴말('run.noStream'));
   warn.push(...길이경고);
