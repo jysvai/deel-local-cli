@@ -245,6 +245,22 @@ trace('2-멀쩡한글');
   }
 
   /*
+   * 가린 자리에 **진짜 값이 남아 있지 않은가.** 7차 리뷰가 짚은 자리다 —
+   * 타입 표기를 대입으로 읽은 탓에 타입 이름만 가리고 비밀은 그대로
+   * 내보냈는데, 「가려졌다」 만 보는 검사는 그걸 초록으로 통과시킨다.
+   */
+  for (const [글, 사라져야] of [
+    ['const API_KEY: string = "secret12345";', 'secret12345'],
+    ['{"API_KEY":"secret12345"}', 'secret12345'],
+    [`const API_KEY = "don't-leak-secret-12345";`, 'leak-secret'],
+    ['const API_KEY = "secret12345".trim();', 'secret12345'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 가린 뒤에 진짜 값이 안 남는다: ${글.slice(0, 40)}`,
+      !r.글.includes(사라져야), r.글);
+  }
+
+  /*
    * 값 뒤에 무엇이 오든 **빗나가지 않는다.** 6차 리뷰가 짚은 자리다 —
    * 끝을 「뒤에 오는 글자」 로 잡으니 목록에 없는 글자 하나에 통째로
    * 새어 나갔다. 이제 값 자체가 어디까지인지로 잡는다.
@@ -252,9 +268,31 @@ trace('2-멀쩡한글');
   for (const [글, 가려야] of [
     ['const API_KEY = getToken();', false],
     ['const API_KEY = obj[key];', false],
+    /*
+     * `obj` 는 세 글자라 길이 하한에 걸려 우연히 안 가려진 것이었다 —
+     * 네 글자를 넘으면 그대로 깨진다(7차 리뷰). 부르는 꼴도 이름 하나만
+     * 봐서 `service.getToken()` 이 값으로 잡혔다.
+     */
+    ['const API_KEY = config[key];', false],
+    ['const API_KEY = service.getToken();', false],
+    ['const API_KEY = this.settings.token();', false],
     ['const API_KEY = "secret12345" + salt;', true],
     ['const cfg = { API_KEY: "secret12345" };', true],
+    /*
+     * 7차 리뷰. 따옴표 갈래를 `[^"'\n]` 로 적어 두 따옴표를 다 뺐더니,
+     * **아포스트로피가 든 값**이 통째로 새어 나갔다. 닫는 따옴표만 빼야
+     * 한다 — 작은따옴표는 큰따옴표 안에서 그냥 글자다.
+     */
+    [`const API_KEY = "don't-leak-secret-12345";`, true],
+    ["const API_KEY = 'say \"no\" to leaks 12345';", true],
     ['const cfg = [{ API_KEY: "secret12345" }];', true],
+    /*
+     * 타입 표기의 쌍점을 **대입**으로 읽어서, 타입 이름을 가리고 정작
+     * 진짜 값은 그대로 내보냈다(7차 리뷰). 가장 나쁜 짝이다 — 줄은
+     * 망가지고 비밀은 남는다.
+     */
+    ['const API_KEY: string = "secret12345";', true],
+    ['const API_KEY: Record<string, string> = "secret12345";', true],
     ['{ "API_KEY": "secret12345", "b": 1 }', true],
   ]) {
     const r = 가리기(글);
