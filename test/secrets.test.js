@@ -359,6 +359,45 @@ trace('2-멀쩡한글');
       !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
   }
   /*
+   * 10차 판을 올리고 나서 붙여 넣을 법한 코드 줄 스물다섯을 죽 쓸어봤다.
+   * 다섯이 가려졌는데, 셋은 비밀이 아니라 **타입 이름과 참조**였다.
+   *
+   *     interface Cfg { API_KEY: string; TIMEOUT: number }
+   *     API_KEY: string;
+   *     const API_KEY = config.apiKey;
+   *
+   * 맨 낱말 갈래가 하는 일이다. 그 갈래가 진짜로 있어야 하는 자리는
+   * `.env` 와 YAML 인데, 거기 오는 값은 밑바탕 타입 이름이 아니고 점으로
+   * 이은 이름도 아니다. 둘을 덜어 낸다.
+   *
+   * 점 갈래는 **등호 앞에 빈칸이 있을 때만** 덜어 낸다 — `.env` 는
+   * `NAME=값` 으로 붙여 쓰고, 빈칸을 둔 것은 코드다.
+   */
+  for (const 글 of [
+    'interface Cfg { API_KEY: string; TIMEOUT: number }',
+    'API_KEY: string;',
+    'let API_KEY: number;',
+    'API_KEY: boolean',
+    'const API_KEY = config.apiKey;',
+    'const API_KEY = opts.auth.token;',
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 타입 이름과 점으로 이은 이름은 값이 아니다 — ${글.slice(0, 46)}`,
+      r.글 === 글, r.글);
+  }
+  // 그 덜어냄이 `.env` · YAML 을 죽이면 안 된다. 이쪽은 그대로 가려야 한다.
+  for (const [글, 사라져야] of [
+    ['API_KEY=abcd1234efgh', 'abcd1234efgh'],
+    ['API_KEY: abcd1234efgh', 'abcd1234efgh'],
+    ['API_KEY=my.secret.value', 'my.secret.value'],
+    ['DB_PASSWORD=hunter2hunter2', 'hunter2hunter2'],
+    ['export CLIENT_SECRET=abcdef123456', 'abcdef123456'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ .env · YAML 은 그대로 가린다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
    * 「가장 나쁜 짝」 이 다시 났다(10차 리뷰). 타입 안에 따옴표가 있으면
    * 타입 갈래가 통째로 빗나가고, 맨 쌍점 갈래가 그 **따옴표를 값으로**
    * 잡는다. 타입이 가려지고 비밀은 그대로 나간다.
@@ -393,6 +432,30 @@ trace('2-멀쩡한글');
     const r = 가리기(글);
     check(`★★★ 구조 분해의 오른쪽은 안 가린다: ${글.slice(0, 46)}`,
       r.글.endsWith('= options;'), r.글);
+  }
+  /*
+   * 왼쪽도 마찬가지다. 이름을 바꿔 받는 자리는 **묶는 이름**이지 값이
+   * 아니다 — 가려 놓으면 그 줄은 못 읽는 줄이 된다.
+   *
+   * 갈라 주는 것은 중괄호가 등호의 **어느 쪽**에 있느냐다. 오른쪽에 있으면
+   * 그건 물건이고(`= { API_KEY: Value }`), 왼쪽에 있으면 풀어 받는 자리다
+   * (`const { API_KEY: name } = …`). 뒤에 `} =` 가 오는지로 가른다.
+   */
+  for (const 글 of [
+    'const { API_KEY: secretKey, other } = options;',
+    'const { API_KEY: token } = await loadConfig();',
+    'const { API_KEY: renamedToken } = options;',
+    'function f({ API_KEY: apiKey }) { return apiKey; }',
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 구조 분해의 왼쪽 이름도 값이 아니다: ${글.slice(0, 46)}`,
+      r.글 === 글, r.글);
+  }
+  // 그런데 물건 안의 이름씨는 그대로다 — `.env` · YAML 을 받는 자리라서다.
+  for (const 글 of ['const cfg = { API_KEY: Value, nextKey: x = 12345 };']) {
+    const r = 가리기(글);
+    check(`★★★ 물건 안의 이름씨는 여전히 가린다: ${글.slice(0, 46)}`,
+      r.글.includes('«가림:환경변수»') && r.글.endsWith(', nextKey: x = 12345 };'), r.글);
   }
   /*
    * 두 번 가려도 같아야 한다. 가린 글이 다시 이 길을 지나가는 일은
