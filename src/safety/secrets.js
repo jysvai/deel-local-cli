@@ -107,10 +107,25 @@ export const 갈래 = [
      * 돌려주는 값(`|| 'dev-secret'`)은 그대로 둔다 — 그건 참조가 아니라
      * 진짜 값이고, 보안 점검이 잡아야 할 자리다. 셸의 `$VAR` 는 안 뺀다 —
      * 명령 출력에서는 그 자리에 진짜 값이 찍혀 나오기 때문이다.
+     *
+     * ── 「점으로 이어지는 것」 만 보면 일곱 꼴이 샌다 ─────────────────
+     *
+     * 처음엔 `process\.env\.` 처럼 **뒤에 점이 오는 것**만 뺐다. 3차 리뷰가
+     * 재 보니 대괄호·물음표점·괄호·다른 말의 관용구가 전부 새어 나갔다.
+     *
+     *     const API_KEY = process.env['API_KEY'];
+     *       → const API_KEY = «가림:환경변수»'API_KEY'];
+     *
+     * 새면 그냥 가려지는 것이 아니라 **줄이 망가진다.** 모델은 이걸 고장 난
+     * 코드로 보고 고치려 든다 — 가림이 하려던 일과 정반대다.
+     *
+     * 그래서 뒤에 무엇이 오는지가 아니라 **머리가 무엇인지**로 본다.
+     * `process.env` · `import.meta.env` · `os.environ` · `os.getenv` ·
+     * `ENV` · `Deno.env` · `Bun.env`, 그리고 괄호로 감싼 것까지.
      */
     // 값 자리가 또 환경변수를 읽는 것이면 참조다 — Node · Vite · 파이썬 · Deno.
     id: '환경변수',
-    re: /\b([A-Z][A-Z0-9_]{2,}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(\s*[:=]\s*)(["']?)(?!«)(?!(?:process\.env|import\.meta\.env|globalThis\.process\.env)\.|os\.environ|ENV\[|Deno\.env\.get)([^\s"']{4,})\3/g,
+    re: /\b([A-Z][A-Z0-9_]{2,}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(\s*[:=]\s*)(["']?)(?!«)(?!\(?(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV|Deno\.env|Bun\.env)\b)([^\s"']{4,})\3/g,
     바꾸기: (m, 이름, 사이) => `${이름}${사이}${표('환경변수')}`,
   },
 ];

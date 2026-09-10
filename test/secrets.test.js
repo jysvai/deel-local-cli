@@ -111,6 +111,22 @@ trace('2-멀쩡한글');
     'const DB_PASSWORD = import.meta.env.DB_PASSWORD;',
     'ADMIN_TOKEN = os.environ["ADMIN_TOKEN"]',
     'const COOKIE_SECRET = Deno.env.get("COOKIE_SECRET");',
+    'const API_KEY = globalThis.process.env.API_KEY;',
+    /*
+     * 3차 리뷰가 아래 일곱을 찾아냈다. 앞머리를 「점으로 이어지는 것」 으로만
+     * 봐서, 대괄호·물음표점·괄호·다른 말의 관용구가 전부 새어 나갔다.
+     * 새면 그냥 가려지는 것이 아니라 **줄이 망가진다** —
+     *   const API_KEY = process.env['API_KEY'];
+     *     → const API_KEY = «가림:환경변수»'API_KEY'];
+     * 모델은 이걸 고장 난 코드로 보고 고치려 든다.
+     */
+    "const API_KEY = process.env['API_KEY'];",
+    'const VITE_API_KEY = import.meta.env["VITE_API_KEY"];',
+    'const API_KEY = (process.env.API_KEY);',
+    'const API_KEY = process.env?.API_KEY;',
+    'API_KEY = os.getenv("API_KEY")',
+    'API_KEY = ENV.fetch("API_KEY")',
+    'const API_KEY = process.env;',
   ];
   for (const 글 of 참조들) {
     const r = 가리기(글);
@@ -119,7 +135,7 @@ trace('2-멀쩡한글');
   }
 
   /*
-   * 반대쪽 — 진짜 값은 그대로 가려야 한다. 이것이 이 규칙의 본녕이다.
+   * 반대쪽 — 진짜 값은 그대로 가려야 한다. 이것이 이 규칙의 본령이다.
    * 돌려주는 값(`|| 'dev-secret'`)은 그대로 남아야 한다 — 그것이 바로
    * 보안 점검에서 잡아야 할 자리다.
    */
@@ -127,13 +143,17 @@ trace('2-멀쩡한글');
     ['JWT_SECRET=abcd1234efgh5678', true],
     ['ADMIN_PASSWORD=hunter2', true],
     ['AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', true],
-    ["const S = process.env.SESSION_SECRET || 'dev-secret-change-me';", false],
+    // 이름이 `S` 한 글자면 애초에 비밀 이름 무늬에 안 걸린다 — 되돌려도
+    // 초록인 헛검사였다(3차 리뷰). 진짜 비밀 이름으로 재야 뜻이 생긴다.
+    ["const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';", false],
   ]) {
     const r = 가리기(글);
     check(`★★ 진짜 값은 그대로 가린다: ${글.slice(0, 42)}`,
       (r.글 !== 글) === 가려야, r.글.slice(0, 80));
   }
-  const 되돌림 = 가리기("const S = process.env.SESSION_SECRET || 'dev-secret-change-me';");
+  const 되돌림 = 가리기(
+    "const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';",
+  );
   check('★★★ 돌려주는 값은 보이게 남긴다 (보안 점검이 잡을 자리)',
     되돌림.글.includes('dev-secret-change-me'), 되돌림.글);
 }
