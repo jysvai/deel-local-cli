@@ -50,7 +50,29 @@ const 뒤에붙일것 = /^build(:|$)/i;
  * 않은 채 `node` 로 직접 도는 파일들.
  */
 const 볼폴더 = ['scripts', 'script', 'test', 'tests', 'qa', 'tools', 'bin'];
-const 검사파일 = /^(qa|test|tests|check|verify|e2e|spec|bench)[-_.].+\.(m?js|cjs|ts|py|sh)$/i;
+/*
+ * 이름이 **앞에 붙든 뒤에 붙든** 검사다.
+ *
+ * 예전엔 앞머리만 봤다(`^(qa|test|…)[-_.]`). 그래서
+ * `test-approval.mjs` 는 찾고 `approval.test.js` 는 못 찾았다 — 그런데
+ * 자바스크립트 쪽에서 흔한 것은 **뒤에 붙는 쪽**이다.
+ * Jest · Vitest · node:test 가 전부 `*.test.js` · `*.spec.ts` 를 기본값으로
+ * 쓴다. deel 자기 저장소도 `test/guard.test.js` 꼴이다 — 제 검사를
+ * 제가 못 찾고 있었다(package.json 의 `test` 칸이 가려 줘서 안 보였다).
+ *
+ * 넓히되 **검사라고 적힌 것만** 담는다. 마디를 가르는 자리를 점·밑줄·
+ * 붙임표로 못박아서, `latest.js` 가 `test` 로 읽히거나 `helpers.js` 가
+ * 딸려오지 않게 한다 — 없는 것을 지어내면 모델이 그걸 부르고 걸음만 태운다.
+ */
+const 검사말 = '(?:qa|tests?|check|verify|e2e|spec|bench)';
+/*
+ * 점은 두 겹으로 적는다. 템플릿 글 안에서 `\.` 은 자바스크립트가
+ * 먼저 먹어서 정규식에 닿는 것은 그냥 `.` 이다 — 아무 글자나 맞는 점.
+ * 그러면 `a.testZjs` 같은 것이 검사 파일로 읽힌다. 실제로 그러썼고,
+ * 자동모드.test.js 의 이스케이프 검사가 잡는 부류가 바로 이것이다.
+ */
+const 검사파일 = new RegExp(
+  `^(?:${검사말}[-_.].+|.+[-_.]${검사말})\\.(m?js|cjs|ts|tsx|py|sh)$`, 'i');
 const 부르는법 = { '.js': 'node', '.mjs': 'node', '.cjs': 'node', '.ts': 'node', '.py': 'python', '.sh': 'sh' };
 
 /*

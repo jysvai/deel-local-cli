@@ -152,6 +152,64 @@ trace('6-출처');
   check('★ npm 것과 파일 것이 같이 나온다', 것.length === 2, JSON.stringify(것.map((x) => x.명령)));
 }
 
+
+// ── 8. 이름이 뒤에 붙는 것도 검사다 ──────────────────────────
+//
+// 벤치마크 지시문을 빈 폴더에 그대로 넣고 재 보다 걸렸다.
+//
+//     test/approval.test.js · test/roles.test.js 가 있고
+//     package.json 에 test 칸은 없는 프로젝트  →  찾은 것 **0개**
+//
+// 무달가 `^(qa|test|…)[-_.]` 로 **앞머리만** 봤다. 그래서
+// `test-approval.mjs` 는 찾고 `approval.test.js` 는 못 찾는다. 그런데
+// 자바스크립트 쪽에서 흔한 것은 **뒤에 붙는 쪽**이다 — Jest · Vitest ·
+// node:test 가 전부 `*.test.js` · `*.spec.ts` 를 기본값으로 쓴다.
+// deel 자기 저장소도 `test/guard.test.js` 꼴이다.
+//
+// 이 파일 머리말에 적은 그대로다 — 못 본 검사는 안 돌고, 안 돌 검사는
+// 회귀를 못 잡는다. 범위를 넓히되 **검사라고 적힌 것만** 담는다.
+trace('8-뒤에붙는이름');
+{
+  const 뿌리 = 판(({ 파일, pkg }) => {
+    pkg({ name: 'wr', scripts: { dev: 'node server.js', start: 'node server.js' } });
+    파일('test/approval.test.js', '// ...');
+    파일('test/roles.test.js', '// ...');
+  });
+  const 것 = 확인법들(뿌리).map((x) => x.명령);
+  check('★★★ approval.test.js 같은 뒤에 붙는 이름도 찾는다',
+    것.length === 2 && 것.every((c) => /^node test\//.test(c)), JSON.stringify(것));
+
+  // .spec 도 같은 관례다.
+  const 뿌리2 = 판(({ 파일 }) => {
+    파일('tests/roles.spec.ts', '// ...');
+    파일('tests/audit.spec.js', '// ...');
+  });
+  check('★★ .spec 꼴도 찾는다',
+    확인법들(뿌리2).length === 2, JSON.stringify(확인법들(뿌리2).map((x) => x.명령)));
+
+  // 망가진 package.json 에서도 파일 쪽은 살아야 한다.
+  // 확인법.js 의 catch 주석이 실제로 약속하는 것이 이것이다.
+  const 뿌리3 = 판(({ 파일 }) => {
+    파일('package.json', '{ this is not json');
+    파일('test/approval.test.js', '// ...');
+  });
+  check('★★★ package.json 이 망가져도 파일 검사는 찾는다',
+    확인법들(뿌리3).length === 1, JSON.stringify(확인법들(뿌리3).map((x) => x.명령)));
+
+  /*
+   * 반대쪽 — 넓히면 아무 소스 파일이나 다 검사가 된다.
+   * 없는 것을 지어내는 것이 이 파일이 제일 경계하는 일이다.
+   */
+  const 뿌리4 = 판(({ 파일 }) => {
+    파일('scripts/deploy.mjs', '// ...');
+    파일('scripts/latest.js', '// ...');
+    파일('test/helpers.js', '// ...');
+    파일('test/fixtures.js', '// ...');
+  });
+  check('★★★ 검사라고 안 적힌 파일은 그대로 안 담는다',
+    확인법들(뿌리4).length === 0, JSON.stringify(확인법들(뿌리4).map((x) => x.명령)));
+}
+
 for (const 뿌리 of 뿌리들) { try { rmSync(뿌리, { recursive: true, force: true }); } catch { /* 그만 */ } }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
