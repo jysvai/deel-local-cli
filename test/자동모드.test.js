@@ -176,6 +176,12 @@ trace('1-죽은규칙');
     '이 파일 이름 바꿔줘',
     '이 함수 다른 파일로 옮겨줘',
     '이 부분 리팩터링해 줘',
+    /*
+     * 문장 **가운데**의 영어 시킴말. 첫머리 갈래(5점)와 겹치지 않게 앞을
+     * 막아 놓았으니, 첫머리 문장만 있으면 이 가지는 아무 데도 안 걸린다 —
+     * 규칙은 살아 있는데 재는 것이 없는 꼴이다. 그래서 여기 하나 둔다.
+     */
+    'We should add validation to the approval form.',
     'fix the typo in the header',
     'README 에 설치 방법 좀 써줘',
   ];
@@ -702,7 +708,7 @@ trace('4-짝맞추기');
 // Build · Create · Make · Develop · Scaffold · Refactor · Remove · Set up ·
 // Migrate … 전부 손대라했나 가 참으로 아는 말인데도 그렇다.
 // 한국어 쪽은 '만들어' · '고쳐' 가 4점, '구현해' 가 5점인데 영어는
-// `implement|add|fix|write` 네 낱말이 2점씩이 전부다. code 문턴은 3이라
+// `implement|add|fix|write` 네 낱말이 2점씩이 전부다. code 문턱은 3이라
 // 2점짜리 하나로는 **절대** 못 넘는다.
 //
 // 그래서 「웹 앱을 만들어라」 는 긴 명세가 code 2점이고, 지나가던
@@ -725,7 +731,7 @@ trace('7-영어시킴말');
   for (const 글 of 문턱넘어야) {
     let 합 = 0;
     for (const [re, 점] of 표.code) if (re.test(글)) 합 += 점;
-    check(`★★★ 영어 시킴말이 code 문턴(3)을 넘는다 — "${글.slice(0, 34)}"`,
+    check(`★★★ 영어 시킴말이 code 문턱(3)을 넘는다 — "${글.slice(0, 34)}"`,
       합 >= 3, `${합}점`);
   }
 
@@ -838,7 +844,7 @@ trace('8-마침표뒤빈칸');
 
   /*
    * ④ 무늬가 아는 동사가 **하나도 빠짐없이** 문턱을 넘는다.
-   *    열 개만 재고 있었다 — 안 재는 동사는 없는 것과 같다(이 파일의 1번과 같은 뜻).
+   *    처음엔 열넷 중 열 개가 0점이었다 — 안 재는 동사는 없는 것과 같다.
    */
   const 동사들 = ['build', 'implement', 'create', 'write', 'make', 'add', 'fix', 'refactor',
     'remove', 'delete', 'rename', 'migrate', 'update', 'modify', 'change', 'generate',
@@ -848,6 +854,96 @@ trace('8-마침표뒤빈칸');
     return code점(글) < 3 || !손대라했나(글);
   });
   check('★★★ 무늬가 아는 동사가 전부 문턱을 넘는다', 못넘는것.length === 0, 못넘는것.join(' · '));
+
+  /*
+   * ④-나. 첫머리 갈래는 다섯인데 맨앞 하나만 재고 있었다 — 4차 리뷰가
+   * 짚었다. 나머지 넷(마침표 뒤 · 줄바꿈 뒤 · 번호 · 글머리표)과 `please`
+   * 가 죽어도 위 검사는 초록이다. 갈래마다 스무 동사를 다 태운다.
+   */
+  const 갈래들 = [
+    ['맨 앞', (v) => `${v} the approval module.`],
+    ['마침표 뒤', (v) => `The schema is ready. ${v} the approval module.`],
+    ['줄바꿈 뒤', (v) => `The schema is ready.\n${v} the approval module.`],
+    ['번호 매김', (v) => `1. ${v} the approval module.`],
+    ['글머리표', (v) => `- ${v} the approval module.`],
+    ['please', (v) => `Please ${v.toLowerCase()} the approval module.`],
+  ];
+  for (const [이름, 짓기] of 갈래들) {
+    const 샌것 = 동사들.filter((v) => {
+      const 글 = 짓기(`${v[0].toUpperCase()}${v.slice(1)}`);
+      return code점(글) < 3 || !손대라했나(글);
+    });
+    check(`★★★ ${이름} 갈래도 스무 동사를 다 받는다`, 샌것.length === 0, 샌것.join(' · '));
+  }
+
+  /*
+   * ⑤ 실패말이 **목적어**면 그건 여전히 고치라는 말이다.
+   *
+   * 4차 리뷰가 짚은 자리다. 실패말을 통째로 뺐더니 반대쪽이 죽었다 —
+   * `Fix broken tests.` 가 시킴말이 아니게 되어 디버그로 갔다. 갈림길은
+   * 실패말이 있느냐가 아니라 **뒤에 이름씨가 오느냐**다.
+   *
+   *     Build failed with exit code 1.   → 실패말이 풀이말 (고장 신고)
+   *     Fix broken tests.                → 실패말이 꾸밈말 (고쳐 달라는 말)
+   */
+  for (const 글 of [
+    'Fix broken tests.', 'Fix failing pipeline.', 'Remove broken symlinks.',
+    'Update failing snapshots.', 'Fix the broken login form.',
+  ]) {
+    check(`★★★ 실패말이 목적어면 시킴말이다 — "${글}"`,
+      code점(글) >= 3 && 손대라했나(글) === true, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+
+  /*
+   * ⑥ 빌드 오류 로그는 붙임표·쌍점으로도 온다. `\s+` 만 보면 `Build:
+   * failed` 가 그대로 만들기 지시가 된다. 그리고 로그에 제일 흔한 낱말은
+   * `errored` 가 아니라 `error`·`failure`·`timeout` 이다.
+   */
+  for (const 글 of [
+    "Build error: cannot find module 'express'", 'Build failure: exit code 1',
+    'Build: failed with exit code 1.', 'Build - failed', 'Build timeout after 30s',
+    'Update timed out after 30s.', 'Create crashed during migration.',
+  ]) {
+    check(`★★★ 빌드 오류 로그는 시킴말이 아니다 — "${글.slice(0, 40)}"`,
+      code점(글) < 3 && 손대라했나(글) === false, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+
+  /*
+   * ⑦ `timed` 하나만 빼 놓으면 멀쩡한 지시문이 죽는다. 「시간 맞춰 도는」
+   * 이라는 뜻이 훨씬 흔하다 — 실패말은 `timed out` 두 낱말짜리다.
+   */
+  for (const 글 of ['Create timed backup job.', 'Add timed retries.']) {
+    check(`★★★ timed 는 실패말이 아니다 — "${글}"`,
+      code점(글) >= 3 && 손대라했나(글) === true, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+
+  /*
+   * ⑧ 같은 뜻인데 어느 동사를 골랐느냐로 점수가 갈리면 안 된다. 문장
+   * 가운데 규칙(2점)이 첫머리 규칙(5점)과 겹쳐서 `Fix` 만 7점이었다.
+   */
+  const 점수들 = ['Fix', 'Build', 'Implement', 'Create', 'Write', 'Add']
+    .map((v) => [v, code점(`${v} the web app.`)]);
+  check('★★★ 첫머리 동사는 어느 것이든 같은 점수다',
+    new Set(점수들.map(([, n]) => n)).size === 1, JSON.stringify(점수들));
+  check('★★★ 문장 가운데 시킴말은 여전히 센다',
+    code점('We should add validation to the approval form.') === 2,
+    `${code점('We should add validation to the approval form.')}점`);
+
+  /*
+   * ⑨ 홑글자 뒤의 마침표를 통째로 약자로 치면 목록 표시가 죽는다.
+   * 약자는 `e.g.` 처럼 **점 뒤에 붙은** 글자다 — 빈칸 뒤의 홑글자는
+   * 목록 번호이거나 이름 첫 글자다.
+   */
+  for (const [글, 시킴말이냐] of [
+    ['Choose option A. Build the frontend.', true],
+    ['  A. Create schema.', true],
+    ['Is it A? Build it.', true],
+    ['e.g. create a table.', false],
+    ['What does i.e. update mean?', false],
+  ]) {
+    check(`★★★ 홑글자 뒤 마침표 — "${글.slice(0, 36)}"`,
+      (code점(글) >= 3) === 시킴말이냐, `code=${code점(글)} (바람: ${시킴말이냐})`);
+  }
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

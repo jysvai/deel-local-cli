@@ -49,7 +49,8 @@
  * 손대라했나 는 build·create·make·develop·scaffold 를 다 알았다. 그런데
  * code 점수표의 영어는 `implement|add|fix|write` 넷이 2점씩인 것과, 따로 선
  * `rename` 3점이 전부였다. code 문턱은 3이라 **2점짜리 하나로는 절대 못
- * 넘는다** — 열네 개를 재 보니 `rename` 만 넘고 나머지 열 개가 0점이었다.
+ * 넘는다** — 무늬가 아는 동사 스무 개를 재 보니 `rename` 하나만 넘고,
+ * 저 넷이 2점, 나머지 열다섯이 0점이었다.
  *
  *     "Build a complete work request and approval web application."
  *       손대라했나 → 참        code 점수 → 0
@@ -96,7 +97,7 @@
  * 잡히기 전까지 조용히 아무것도 안 맞는다. 실제로 그렇게 났다.
  */
 const 영어시킴말 =
-  /(?:^\s*|(?<![.\s][A-Za-z])[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s+)?(?:build|implement|create|write|make|add|fix|refactor|remove|delete|rename|migrate|update|modify|change|generate|scaffold|set\s*up|develop)\b(?!\s+(?:failed|failing|fails|errored|broke|broken|crashed|timed|succeeded|succeeds)\b)/im;
+  /(?:^\s*|(?<!\.[A-Za-z])[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s+)?(?:build|implement|create|write|make|add|fix|refactor|remove|delete|rename|migrate|update|modify|change|generate|scaffold|set\s*up|develop)\b(?![\s:-]+(?:failed|failing|fails|failures?|errors?|errored|broke|broken|crashe[ds]|crash|timeout|timed\s+out|succeeded|succeeds)\b(?=\s*(?:[.,:;!?)\]]|$)|\s+(?:with|at|after|in|on|during|because|due|while|when|for)\b))/im;
 
 export const 표 = {
   debug: [
@@ -232,7 +233,16 @@ export const 표 = {
      * 새 울타리를 세우지 않고 눈금만 맞추는 것이 이 자리의 고침이다.
      */
     [영어시킴말, 5],
-    [/\bimplement\b|\badd\b|\bfix\b|\bwrite\b/i, 2],
+    /*
+     * 문장 가운데의 시킴말. 첫머리 갈래(5점)와 **겹치지 않게** 앞을 막는다.
+     * 안 막았더니 `Fix the web app.` 은 7점(5+2)이고 `Build the web app.` 은
+     * 5점이었다 — 같은 뜻인데 어느 동사를 골랐느냐로 점수가 갈렸다. 긴
+     * 명세에서는 그 2점이 모드를 바꾼다(하나는 code, 하나는 종합).
+     *
+     * 그래서 **앞에 낱말이 있어야** 이 규칙이 돈다. `please` 는 첫머리
+     * 갈래가 이미 세는 말이라 따로 뺀다.
+     */
+    [/(?<=[a-z,;)\]]\s{1,3})(?<!\bplease\s)(?:implement|add|fix|write)\b/i, 2],
     [/써(줘|주세요)/, 3],
   ],
 };
