@@ -1408,6 +1408,13 @@ trace('8-마침표뒤빈칸');
      * 「이 쿼리가 왜 이러냐」 고 물으려고 붙였는데 파일을 고치는 모드로
      * 갔다. 손대라는 말로 읽히면 읽기 전용 모드가 후보에서 통째로 빠진다.
      */
+    /*
+     * 11차 리뷰. `broken` 은 이름씨가 아니라 그림씨라 2·3번 갈래에서도
+     * 1번 갈래와 같은 잣대를 받아야 한다. 쌍점·줄표만 보다가 마침표와
+     * 전치사꼴 로그를 놓쳤다.
+     */
+    'Rewrite broken with exit code 1', 'Modify broken.', 'Delete broken.',
+    'Rewrite broken after 3 tries', 'Change broken (2)',
     'delete from users where id = 1;', 'DELETE FROM orders WHERE id > 10',
     'delete from sessions;', 'update users set name = 42',
     'UPDATE accounts SET balance = 0 WHERE id = 3',
@@ -1437,6 +1444,9 @@ trace('8-마침표뒤빈칸');
      */
     'Delete from the list.', 'Delete the row from users.',
     'Update the config file.', 'Update settings for the app.',
+    // `broken` 울타리 반대쪽. 뒤에 이름씨가 오면 그건 여전히 꾸밈말이다.
+    'Fix broken tests.', 'Remove broken symlinks.', 'Delete broken files.',
+    'Fix the broken login form.', 'Delete broken-files.txt',
   ]) {
     check(`★★★ 실패말이 이름의 일부면 시킴말이다 — "${글}"`,
       code점(글) >= 3 && 손대라했나(글) === true, `code=${code점(글)} 손대라=${손대라했나(글)}`);
