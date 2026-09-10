@@ -379,6 +379,56 @@ rmSync(빈PC, { recursive: true, force: true });
     .filter((f) => f.endsWith('.test.js'))
     .filter((f) => !목록.includes(`'${f}'`));
   check('만들어 놓고 안 돌리는 검사가 없다', 빠진것.length === 0, 빠진것.join(' · '));
+
+  /*
+   * ── 이름이 `.test.js` 가 아니면 위 검사를 통째로 빠져나간다 ────────────
+   *
+   * 위 검사는 **이름**으로 고른다. 그런데 이 폴더에는 판정을 하면서 이름이
+   * `.test.js` 가 아닌 파일이 이미 둘 있다 — `smoke.js`(도구 여섯 종과
+   * 안전망을 모델 없이 재는 24항목)와 `edit-bench.js`. 둘 다 지금은 목록에
+   * 들어 있지만, 그건 넣은 사람이 기억해서 넣은 것이지 **지켜져서** 그런 게
+   * 아니다. 같은 이름꼴로 하나 더 만들고 목록에 안 적으면 위 검사는 초록인
+   * 채로 그 파일은 한 번도 안 돈다.
+   *
+   * 그래서 이름이 아니라 **하는 일**로 본다. 통과·실패를 정하는 파일
+   * (`process.exitCode` 를 세우는 파일)은 셋 중 하나여야 한다 —
+   * run.mjs 목록에 있거나, 다른 검사가 띄우는 새끼 프로세스거나,
+   * package.json·워크플로가 부르는 진입점이거나.
+   *
+   * 셋 다 아니면 그 파일은 아무도 안 돌린다. 그런 검사는 없느니만 못하다 —
+   * 위 머리말 그대로다.
+   *
+   * 목록에서 **주석 줄은 뺀다.** 안 그러면 `// 'smoke.js',` 로 잠깐 꺼 둔
+   * 것이 「목록에 있다」 로 읽혀서, 끄는 순간 이 검사가 눈을 감는다.
+   */
+  /*
+   * 주석은 **부르는 것이 아니다.** 이 파일이 바로 그 함정에 빠졌었다 —
+   * 위 머리말에 `smoke.js` 라고 적어 뒀더니, 그 글자가 「누군가 부른다」 로
+   * 읽혀서 검사가 스스로 눈을 감았다. 코드 줄만 센다.
+   */
+  const 코드만 = (글) => 글.split('\n')
+    .filter((l) => { const t = l.trim(); return !(t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')); })
+    .join('\n');
+
+  const 산목록 = 코드만(목록);
+  const 부르는곳 = [
+    readFileSync(join(here, '..', 'package.json'), 'utf8'),
+    ...readdirSync(here).filter((f) => f.endsWith('.test.js'))
+      .map((f) => 코드만(readFileSync(join(here, f), 'utf8'))),
+    ...(() => {
+      const d = join(here, '..', '.github', 'workflows');
+      try {
+        return readdirSync(d).map((f) => readFileSync(join(d, f), 'utf8'));
+      } catch { return []; }
+    })(),
+  ].join('\n');
+
+  const 안도는하네스 = readdirSync(here)
+    .filter((f) => /\.m?js$/.test(f) && !f.endsWith('.test.js') && f !== 'run.mjs')
+    .filter((f) => readFileSync(join(here, f), 'utf8').includes('process.exitCode'))
+    .filter((f) => !산목록.includes(`'${f}'`) && !부르는곳.includes(f));
+  check('★★★ 판정하는 파일 중 아무도 안 돌리는 것이 없다 (.test.js 가 아니어도)',
+    안도는하네스.length === 0, 안도는하네스.join(' · '));
 }
 
 // --- 결과 ---------------------------------------------------------------

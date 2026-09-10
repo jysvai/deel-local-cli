@@ -572,6 +572,7 @@ Names follow Claude Code / Codex conventions.
 | `/pin <text>` | Pin a line — folding and compaction **cannot reach it** |
 | `/evidence [file]` | Evidence — what changed, and what proves it. **What is unproven is listed too** |
 | `/commit [all\|preview\|title]` | Commits only what this session changed; message from the diff and the evidence. **Never pushes** |
+| `/review` | Re-reads what you changed **in a fresh context** — reports findings only, changes nothing |
 | `/model` | Switch connection / model |
 | `/model card` | Model card — what this model has actually done here, and what deel changed because of it |
 | `/think <level>` | Reasoning level (`off·low·medium·high·xhigh·max`) — a rung this endpoint does not accept is lowered to one it does |
@@ -587,6 +588,7 @@ Names follow Claude Code / Codex conventions.
 | `/undo [turns]` | Revert file changes |
 | `/diff [file]` | Files changed this session, and the changed lines |
 | `/preview [folder\|file\|off]` | Serve what you built, right here — a browser opens with it |
+| `/paste` | Attach the screenshot sitting in the clipboard (capture, then `/paste`) |
 | `/tools` | Available tools |
 | `/skills [query\|all\|off]` | Browse, search, load skills |
 | `/plugin [install\|remove\|pack]` | Manage plugins |
@@ -600,7 +602,7 @@ Names follow Claude Code / Codex conventions.
 | `/hooks` | Configured hooks — where they came from, when they run |
 | `/agents` | Named subagent definitions |
 | `/init` | Create a `DEEL.md` rules file |
-| `/exit` | Quit |
+| `/exit` `/quit` | Quit |
 
 Discovered plugin commands are invoked as `/<plugin>:<name>`, with `$ARGUMENTS` substituted.
 

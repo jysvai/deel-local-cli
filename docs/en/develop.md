@@ -77,6 +77,22 @@ would look like it caught everything.
 
 CI runs one pass after `npm test`. A single survivor fails the run.
 
+### Watching it with your own eyes
+
+The tests run through a pipe, so they never see the real screen. These three do.
+
+```bash
+npm run demo                 One short task - tools, todo list, undo, the tally
+node test/demo-tui.mjs       The input box border - one column off and you see it
+node test/demo-bigfile.mjs   Where a large file gets cut - a fake gateway that really enforces the cap
+```
+
+All three replace the model with a fake gateway and keep their settings in a
+temporary home (`DEEL_HOME`) - your real connection is never used. `npm run demo`
+had never actually run: it did not set that temporary home, so it printed one
+line ("no saved connection") and exited 0, and nobody asked. It now says so when
+it does not run.
+
 ### Layout
 
 ```
@@ -84,7 +100,7 @@ bin/deel.js              entry point
 src/
   repl.js                the conversation screen — what a person faces
   oneshot.js             run once and exit (-p)
-  commands.js            49 slash commands
+  commands.js            52 slash commands
   cmdnames.js            just their names - batch mode reads it too
   setup.js               first-run connection setup
   config.js              reading and writing config

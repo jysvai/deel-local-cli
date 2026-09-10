@@ -85,8 +85,22 @@ mkdirSync(join(work, 'src'), { recursive: true });
 writeFileSync(join(work, 'src', 'runner.js'), 'function run(id) {\n  console.log("start " + id)\n  return go(id)\n}\n', 'utf8');
 writeFileSync(join(work, 'src', 'util.js'), 'export const noop = () => {}\n', 'utf8');
 writeFileSync(join(work, 'src', 'db.js'), 'export function open(url) {\n  console.log("db " + url)\n  return connect(url)\n}\n', 'utf8');
-mkdirSync(join(work, '.deel'), { recursive: true });
-writeFileSync(join(work, '.deel', 'config.json'), JSON.stringify({
+/*
+ * ── 설정은 **DEEL_HOME** 에 둔다. 폴더 안의 `.deel/` 이 아니다 ──────────
+ *
+ * 여기가 여태 `<임시폴더>/.deel/config.json` 이었다. 그런데 deel 이 설정을
+ * 읽는 자리는 `DEEL_HOME` 아니면 `~/.deel` 이다(src/config.js). 그래서 이
+ * 데모는 **한 번도 안 돌았다** — 띄우자마자 「저장된 연결이 없습니다」 한 줄만
+ * 찍고 끝났고, 종료코드는 0 이라 아무도 안 물어봤다.
+ *
+ * 그냥 안 도는 것보다 나쁜 쪽도 있었다. 설정이 있는 PC 에서는 `~/.deel` 이
+ * 읽히므로, 데모가 가짜 게이트웨이가 아니라 **진짜 창구**에 말을 건다.
+ * 그래서 임시 집을 따로 주고, 나갈 수 있는 주소도 그 가짜 하나로 못 박는다
+ * (demo-bigfile.mjs 와 같은 방식).
+ */
+const 설정집 = join(work, 'home');
+mkdirSync(설정집, { recursive: true });
+writeFileSync(join(설정집, 'config.json'), JSON.stringify({
   version: 1, active: 'gw',
   profiles: [{
     id: 'gw', name: '사내게이트웨이', kind: 'openai',
@@ -107,12 +121,41 @@ const input = [
 
 const child = spawn(process.execPath, [join(process.cwd(), 'bin', 'deel.js')], {
   cwd: work,
-  env: { ...process.env, FORCE_COLOR: '1' },
-  stdio: ['pipe', 'inherit', 'inherit'],
+  env: {
+    ...process.env,
+    FORCE_COLOR: '1',
+    DEEL_HOME: 설정집,
+    DEEL_NET_ALLOW: `http://127.0.0.1:${port}/v1`,
+    DEEL_NO_OPEN: '1',
+  },
+  stdio: ['pipe', 'pipe', 'pipe'],
 });
+
+/*
+ * ── 화면을 흘려보내면서 **동시에 들고 있는다** ──────────────────────────
+ *
+ * 여태 `inherit` 이라 이쪽에서는 아무것도 못 봤다. 그래서 데모가 「저장된
+ * 연결이 없습니다」 한 줄만 찍고 끝난 동안에도 종료코드는 0 이었고, 아무도
+ * 안 물어봤다. 눈으로 보는 데모라도 **안 돌았으면 안 돌았다고** 말해야 한다.
+ */
+let 화면 = '';
+child.stdout.on('data', (d) => { 화면 += d.toString('utf8'); process.stdout.write(d); });
+child.stderr.on('data', (d) => { 화면 += d.toString('utf8'); process.stderr.write(d); });
 child.stdin.write(input);
 child.stdin.end();
 await new Promise((r) => child.on('close', r));
 
 server.close();
 rmSync(work, { recursive: true, force: true });
+
+// ── 정말로 돌았나 ───────────────────────────────────────────────────────
+const 탈 = [];
+if (turn === 0) 탈.push('가짜 게이트웨이가 한 번도 안 불렸습니다 — 설정을 못 읽었을 때 이렇게 됩니다');
+if (!화면.includes('sec-llm-01')) 탈.push('화면에 이 데모의 모델 이름(sec-llm-01)이 없습니다');
+if (/저장된 연결이 없습니다|deel setup/.test(화면)) 탈.push('설정을 못 찾아 setup 안내만 나왔습니다');
+if (탈.length) {
+  console.error(`\n\x1b[31m✗ 데모가 안 돌았습니다\x1b[0m\n  ${탈.join('\n  ')}\n`);
+  process.exitCode = 1;
+} else {
+  console.log(`\n\x1b[32m✓\x1b[0m 데모가 끝까지 돌았습니다 \x1b[90m(모델 호출 ${turn}회)\x1b[0m\n`);
+}
