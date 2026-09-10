@@ -306,6 +306,69 @@ trace('2-멀쩡한글');
   }
 
   /*
+   * ── 타입 표기가 한 꼴만 아는 탓에 비밀이 새 나갔다 ──────────────────
+   *
+   * 8차 리뷰. 타입 자리를 「대문자로 시작하는 30자」 나 「아는 밑바탕
+   * 타입 낱말 하나」 로만 봤다. 그래서 조금만 벗어나면 타입 갈래가
+   * 통째로 빗나가고, 비밀은 **평문 그대로** 나갔다.
+   *
+   *     const API_KEY: string | null = "secret12345";     안 가려짐
+   *     const API_KEY: string[] = "secret12345";          안 가려짐
+   *     const API_KEY: Record<string, Record<…>> = "…";   타입만 가려짐
+   *     const { API_KEY: key = "default1234" } = opts;    안 가려짐
+   *
+   * 그리고 타입 글자에 **쉼표를 넣어 둔 탓**에 반대로 너무 삼켰다 —
+   * `{ API_KEY: Value, nextKey: x = 12345 }` 에서 쉼표를 건너뛰고 다음
+   * 등호까지 가서 두 칸을 하나로 뭉갰다.
+   *
+   * 쉼표는 **홑화살괄호 안에서만** 타입의 일부다. 밖에서는 칸을 가르는
+   * 글자다 — 바로 그 자리에서 위 주석이 걱정한 `{ API_KEY: value, B: y = 1 }`
+   * 가 갈린다. 그러니 쉼표로 가르고 나면 첫 글자가 대문자냐 아니냐는
+   * 더 볼 것이 없다. 구조 분해의 `key = "기본값"` 도 같은 꼴이라 같이 걸린다.
+   */
+  for (const [글, 사라져야] of [
+    ['const API_KEY: string | null = "secret12345";', 'secret12345'],
+    ['const API_KEY: string[] = "secret12345";', 'secret12345'],
+    ['const API_KEY: Array<string> = "secret12345";', 'secret12345'],
+    ['const API_KEY: Record<string, Record<string, string>> = "secret12345";', 'secret12345'],
+    ['const { API_KEY: key = "default1234" } = options;', 'default1234'],
+    ['const { API_KEY: Key = "default1234" } = options;', 'default1234'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 타입 표기 뒤의 진짜 값이 가려진다: ${글.slice(0, 46)}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * 그 쉼표를 안 지키면 **옆 칸까지 삼킨다.** 타입 자리에 소문자를
+   * 받아 주는 순간 `{ API_KEY: value, B: y = 1 }` 의 `value, B: y ` 가
+   * 통째로 구분자가 되고, 가려지는 것은 옆 칸의 `1` 이 된다. 위 주석이
+   * 걱정한 자리가 정확히 이것이라 회귀로 못박아 둔다.
+   *
+   * (앞 칸의 이름씨가 가려지는 것은 맨 낱말 갈래가 하는 일이고 `.env` ·
+   *  YAML 을 받으려면 있어야 한다. 여기서 재는 것은 **쉼표 뒤가 그대로냐**다.)
+   */
+  for (const [글, 그대로] of [
+    ['const cfg = { API_KEY: Value, nextKey: x = 12345 };', ', nextKey: x = 12345 };'],
+    ['const cfg = { API_KEY: value, B: y = 1 };', ', B: y = 1 };'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 쉼표 뒤 칸은 그대로 둔다: ${글.slice(0, 46)}`,
+      r.글.endsWith(그대로), r.글);
+  }
+  /*
+   * 따옴표 안의 **달아난 따옴표**. 닫는 따옴표로 오인해 거기서 끊으면
+   * 뒤가 통째로 남고 줄의 따옴표 짝까지 깨진다.
+   */
+  for (const [글, 사라져야] of [
+    ["const API_KEY = 'it\\'s_a_secret_12345';", 's_a_secret_12345'],
+    ['const API_KEY = "say \\\"no\\\" secret12345";', 'secret12345'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 달아난 따옴표에서 안 끊긴다: ${글.slice(0, 40)}`,
+      !r.글.includes(사라져야) && r.글.endsWith(';'), JSON.stringify(r.글));
+  }
+
+  /*
    * 값 뒤에 무엇이 오든 **빗나가지 않는다.** 6차 리뷰가 짚은 자리다 —
    * 끝을 「뒤에 오는 글자」 로 잡으니 목록에 없는 글자 하나에 통째로
    * 새어 나갔다. 이제 값 자체가 어디까지인지로 잡는다.
