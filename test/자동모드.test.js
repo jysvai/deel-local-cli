@@ -666,7 +666,7 @@ trace('4-짝맞추기');
 
 // ── 7. 영어 시킴말이 code 표에서 점수를 받는다 ───────────────
 //
-// 2차 리뷰가 「설계 낙말이 없는 명세는 그대로 디버그로 간다」 고 짚었고,
+// 2차 리뷰가 「설계 낱말이 없는 명세는 그대로 디버그로 간다」 고 짚었고,
 // 돌려 보니 맞았다. 그런데 그것은 증상이지 뿌리가 아니었다.
 //
 // 영어 시킴말 14개를 재 봤다. **열 개가 code 표에서 0점**이다 —
@@ -717,7 +717,7 @@ trace('7-영어시킴말');
   }
 
   /*
-   * 그래서 실제로 뭐가 달라지나 — 설계 낙말이 하나도 없는
+   * 그래서 실제로 뭐가 달라지나 — 설계 낱말이 하나도 없는
    * 「빈 폴더에 만들어라」 긴 명세. 2차 리뷰가 짚은 바로 그 자리다.
    */
   const 채움 = 'The application must support creating, listing, and updating work '
@@ -725,19 +725,100 @@ trace('7-영어시킴말');
     + 'created, updated, due date, and tags. Every state change must be recorded '
     + 'in an audit trail. Approvers may approve or reject with a reason. Roles are '
     + 'enforced on the server, never trusted from the client. Provide search, '
-    + 'filter, and sort. Data must persist across restarts. Write automated tests '
-    + 'and actually run them; do not weaken a test to make it pass. ';
+    + 'filter, and sort. Data must persist across restarts. Automated tests must '
+    + 'exist and must actually run; a test may never be weakened to pass. ';
   const 설계없는명세 = 'You are starting from a completely empty working directory. '
     + 'Build a production-oriented work request and approval web application. '
     + 채움 + 채움
     + 'The server must safely handle duplicate requests, stale requests, and '
     + 'unexpected server errors. A failed operation must not leave state silently '
     + 'inconsistent.';
+  /*
+   * 채움 글에서 시킴말을 걷어 냈다. 3차 리뷰가 짚었다 — 원래는 채움에 우연히
+   * 든 `Write automated tests` 가 점수를 주고 있어서, 재려던 `Build` 를
+   * 무늘에서 통째로 지워도 이 검사가 초록이었다. 딴 데서 온 점수에 얹혀
+   * 가는 검사는 재는 것이 아니라 지나가는 것이다.
+   */
+  const 시킴말샘 = 설계없는명세.match(/(?:^|[.!?]\s+)(?:Build|Write|Create|Make|Add|Fix)\b/g) ?? [];
+  check('★ 이 명세에서 점수를 주는 시킴말은 맨 앞 Build 하나뿐이다',
+    시킴말샘.length === 1, JSON.stringify(시킴말샘));
+
   const r = route(설계없는명세);
-  check('★★★ 설계 낙말이 없는 명세도 디버그로 안 간다',
+  check('★★★ 설계 낱말이 없는 명세도 디버그로 안 간다',
     r.mode !== 'debug', `${r.mode} — ${r.why} · ${JSON.stringify(r.점수들)}`);
   check('★★ 그 명세는 읽기 전용으로도 안 간다',
     !읽기만하는모드.has(r.mode), `${r.mode}`);
+}
+
+// ── 8. 마침표 뒤에 **빈칸이 있어야** 다음 문장이다 ──────────────────────
+//
+// 3차 리뷰가 짚었고, 돌려 보니 제일 나쁜 자리였다.
+//
+//     "Explain user.delete in detail."   →  code 모드
+//
+// 첫머리 무늬가 `[.!?\n]\s*` 라 마침표 뒤 **빈칸 0개**도 문장 첫머리로 쳤다.
+// 그래서 `user.delete` 의 `delete` 가 시킴말이 되고, 설명해 달라는 말이
+// 파일을 고치는 모드로 간다. 묻기(ask) 점수는 4점이나 있었는데 「고치라는
+// 말」 로 잡혀 후보에서 빠졌다 — 이 파일 맨 위가 걱정한 바로 그 모양이다.
+//
+// 이건 손대라했나 에 원래 있던 틈인데, 점수까지 주게 되면서 드러났다.
+// 넓힌 것이 잘못이 아니라, 넓히니 원래 있던 틈이 보인 것이다.
+//
+// ── 그리고 「Build failed」 는 시킴말이 아니다 ───────────────────────────
+//
+// `Build failed with exit code 1.` 이 code 4점을 받아 디버그(3점)를 눌렀다.
+// 붙여 넣는 빌드 오류 로그의 첫 줄이 정확히 이 모양이다. 영어에서 시킴말
+// 뒤에는 목적어가 오지, 과거분사가 오지 않는다 — 그 자리가 갈림길이다.
+trace('8-마침표뒤빈칸');
+{
+  const code점 = (글) => 표.code.reduce((a, [re, 점]) => a + (re.test(글) ? 점 : 0), 0);
+
+  // ① 마침표 뒤에 빈칸이 없으면 문장 첫머리가 아니다.
+  for (const 글 of [
+    'Explain user.delete in detail.',
+    'What does e.g. create handler do?',
+    'The value of config.update is read once.',
+    'It calls db.remove and then returns.',
+  ]) {
+    check(`★★★ 마침표에 붙은 낱말은 시킴말이 아니다 — "${글.slice(0, 36)}"`,
+      code점(글) < 3 && 손대라했나(글) === false, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+
+  // ② 시킴말 뒤에 실패말이 오면 그건 주어다.
+  for (const 글 of [
+    'Build failed with exit code 1.',
+    'Update failed: connection reset.',
+    'Create failed because the table already exists.',
+  ]) {
+    check(`★★★ 「동사 + 실패말」 은 시킴말이 아니다 — "${글.slice(0, 36)}"`,
+      code점(글) < 3 && 손대라했나(글) === false, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+    check(`★★★ 그런 줄은 디버그로 간다 — "${글.slice(0, 30)}"`,
+      route(글).mode === 'debug', `${route(글).mode} · ${JSON.stringify(route(글).점수들)}`);
+  }
+
+  // ③ 그래도 진짜 시킴말은 그대로 산다. 좁히다 이쪽을 죽이면 7번이 되돌아온다.
+  for (const 글 of [
+    'Build a production-oriented web application.',
+    'Fix the bug. Create the schema too.',
+    '  Build a production-oriented web application.',
+    'Setup the project structure.',
+  ]) {
+    check(`★★★ 진짜 시킴말은 그대로 — "${글.slice(0, 40)}"`,
+      code점(글) >= 3 && 손대라했나(글) === true, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
+
+  /*
+   * ④ 무늬가 아는 동사가 **하나도 빠짐없이** 문턱을 넘는다.
+   *    열 개만 재고 있었다 — 안 재는 동사는 없는 것과 같다(이 파일의 1번과 같은 뜻).
+   */
+  const 동사들 = ['build', 'implement', 'create', 'write', 'make', 'add', 'fix', 'refactor',
+    'remove', 'delete', 'rename', 'migrate', 'update', 'modify', 'change', 'generate',
+    'scaffold', 'set up', 'setup', 'develop'];
+  const 못넘는것 = 동사들.filter((v) => {
+    const 글 = `${v[0].toUpperCase()}${v.slice(1)} the approval module.`;
+    return code점(글) < 3 || !손대라했나(글);
+  });
+  check('★★★ 무늬가 아는 동사가 전부 문턱을 넘는다', 못넘는것.length === 0, 못넘는것.join(' · '));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
