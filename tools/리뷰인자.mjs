@@ -46,6 +46,28 @@ export function 낯선옵션(인자, 아는것 = 아는옵션) {
   return 낯선;
 }
 
+/**
+ * 값을 받아야 하는데 **값이 없는** 옵션을 죽 찾아 돌려준다.
+ *
+ * `--since` 만 치면 조용히 「안 올린 것 전부」 가 된다(11차 리뷰). 사람은
+ * 범위를 줬다고 믿는데 도구는 다른 것을 본다 — `--files` 뒤가 비었을 때
+ * 이미 한 번 고친 부류다. 다음 칸이 없거나 그 칸이 또 옵션이면 값이 없다.
+ *
+ * @param {string[]} 인자
+ * @returns {string[]}
+ */
+export function 값빠진옵션(인자) {
+  const 빈것 = [];
+  for (let i = 0; i < 인자.length; i += 1) {
+    const 칸 = String(인자[i] ?? '');
+    if (!값받는옵션.has(칸)) continue;
+    const 다음 = 인자[i + 1];
+    if (다음 === undefined || 아는옵션.includes(String(다음))) 빈것.push(칸);
+    else i += 1;
+  }
+  return 빈것;
+}
+
 /** `--help` 에 찍을 글. 쓰는 법 주석과 한자리에 두려고 여기 둔다. */
 export function 쓰는법() {
   return [

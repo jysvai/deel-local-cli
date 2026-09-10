@@ -43,7 +43,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 // 길이 규칙과 「다시 물을까」 판단은 따로 뒀다 — 검사가 모델을 안 부르고 잴 수 있게.
 import { 길이규칙, 두판돌리기 } from './리뷰길이.mjs';
-import { 낯선옵션, 쓰는법 } from './리뷰인자.mjs';
+import { 낯선옵션, 값빠진옵션, 쓰는법 } from './리뷰인자.mjs';
 
 const 인자 = process.argv.slice(2);
 const 값 = (이름, 기본 = null) => {
@@ -65,6 +65,12 @@ if (있나('--help')) {
   process.exit(0);
 }
 {
+  const 빈것 = 값빠진옵션(인자);
+  if (빈것.length) {
+    console.error(`\n\x1b[31m✗ 값이 없는 옵션입니다: ${빈것.join(' ')}\x1b[0m`);
+    console.error('  --help 로 쓰는 법을 보세요.\n');
+    process.exit(2);
+  }
   const 낯선 = 낯선옵션(인자);
   if (낯선.length) {
     console.error(`\n\x1b[31m✗ 모르는 옵션입니다: ${낯선.join(' ')}\x1b[0m`);
