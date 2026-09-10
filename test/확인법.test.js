@@ -222,7 +222,7 @@ trace('8-뒤에붙는이름');
 //      뒤에 붙는 갈래를 검사말 전부로 열어 둔 탓이다. 그런데 **앞에 붙는
 //      것과 뒤에 붙는 것은 서로 다른 관례**다 —
 //        앞: 스크립트 이름   `qa-roles.mjs` · `test-approval.mjs` · `check-src.mjs`
-//        뒤: 검사 파일 이름  `approval.test.js` · `roles.spec.ts` · `handler_test.go`
+//        뒤: 검사 파일 이름  `approval.test.js` · `roles.spec.ts` · `handler_test.js`
 //      뒤쪽 관례에 check·verify·e2e·bench 는 없다. 그리고 붙임표로 이은
 //      `api-spec` 은 낱말 합성이지 검사 파일이 아니다 — 점·밑줄만 본다.
 //
@@ -251,6 +251,20 @@ trace('9-뒤에붙는관례');
     'scripts/build-verify.js',
     'test/latest.js',
     'test/contest.js',
+    /*
+     * 3차 리뷰가 짚었다 — 단독 이름 갈래에 검사말 전부를 넣어서
+     * `scripts/check.js` · `bench.js` · `verify.js` · `e2e.js` 가 검사로
+     * 잡혔다. 주석에는 「test.js·spec.js 만 담는다」 고 적어 놓고서다.
+     * 단독으로 쓰이는 검사 파일 이름은 test·spec 이지, check·bench 가
+     * 아니다 — 그건 앞에 붙는 스크립트 이름 쪽 낱말이다.
+     */
+    'scripts/check.js',
+    'scripts/bench.js',
+    'scripts/verify.js',
+    'scripts/e2e.js',
+    'scripts/qa.js',
+    // 무늬에서 뺀 갈래가 되살아나면 여기서 잡힌다.
+    'test/roles.spec.tsx',
   ];
   for (const 이름 of 안찾아야) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
@@ -263,7 +277,7 @@ trace('9-뒤에붙는관례');
    * 자바스크립트가 역빗금을 먼저 먹어서, 정규식에 닿는 것은 아무 글자나
    * 맞는 `.` 이 된다. 두 번 그랬다 — 눈으로는 안 보이고 이 검사만 잡는다.
    */
-  for (const 이름 of ['test/roles.specXts', 'test/a.testZjs', 'test/approvalXtestZjs']) {
+  for (const 이름 of ['test/roles.specXts', 'test/approval.testZjs', 'test/handler_testZjs']) {
     const 뿌리 = 판(({ 파일 }) => { 파일(이름, '// ...'); });
     check(`★★★ 점 자리에 아무 글자나 오면 검사가 아니다 — ${이름}`,
       확인법들(뿌리).length === 0, JSON.stringify(확인법들(뿌리).map((x) => x.명령)));
