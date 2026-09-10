@@ -190,6 +190,10 @@ trace('1-죽은규칙');
     'Analyze the performance of this endpoint.',
     'Audit this app.',
     'Any vulnerabilities in this module?',
+    // 7.4 에서 넣은 한국어 낱말들.
+    '테스트가 깨져서 못 돌리겠어',
+    '이거 어떻게 쓰는 거야?',
+    '검사 짜 줘',
     'Explain the approval workflow.',
     'What does this function do?',
     'How to run this test?',
@@ -934,6 +938,69 @@ trace('7.5-읽기영어');
     const 점 = route(글).점수들;
     check(`★★★ 쓰기 지시문에는 읽기 점수가 안 붙는다 — "${글.slice(0, 34)}"`,
       (점.inspect ?? 0) + (점.ask ?? 0) === 0, JSON.stringify(점));
+  }
+}
+
+// ── 7.4 이번엔 한국어 쪽이 비어 있었다 ─────────────────────────────────
+//
+// 7·7.5 에서 영어를 한국어에 맞춰 놓고, 같은 뜻 짝 스물여섯을 죽 재 봤다.
+// 그랬더니 이번엔 **한국어가 지는 자리**가 나왔다.
+//
+//     "이 코드 살펴봐 줘"   → 0점        "Inspect this code."     → inspect
+//     "어떻게 돌리는 거야?" → 0점        "How do I run this?"     → ask
+//     "테스트가 깨져"       → 0점        "The tests are failing." → debug
+//     "검사 짜 줘"          → 0점        "Write a test."          → code
+//
+// 이 파일 맨 위의 전제는 「같은 말을 어느 말로 했느냐로 모드가 갈리면
+// 안 된다」 이고, 그건 한쪽 방향만 뜻하는 말이 아니다. 게다가 여기는
+// 한국어를 먼저 쓰는 도구라, 한국어가 비는 쪽이 더 자주 아프다.
+trace('7.4-한국어낱말');
+{
+  for (const [글, 어느, 바람] of [
+    ['이 코드 살펴봐 줘', 'inspect', 5],
+    ['이 파일 좀 살펴보고 알려 줘', 'inspect', 5],
+    ['어떻게 돌리는 거야?', 'ask', 5],
+    ['이거 어떻게 쓰는 거야?', 'ask', 5],
+    ['어떻게 설정해?', 'ask', 5],
+    ['테스트가 깨져', 'debug', 3],
+    ['빌드가 깨졌어', 'debug', 3],
+    ['검사 짜 줘', 'code', 3],
+    ['코드 짜 줘', 'code', 3],
+  ]) {
+    const 점 = route(글).점수들;
+    check(`★★★ ${어느} ${바람}점이어야 한다 — "${글}"`,
+      (점[어느] ?? 0) >= 바람, `${어느}=${점[어느] ?? 0} · ${JSON.stringify(점)}`);
+  }
+  // 그리고 같은 뜻 짝이 같은 모드로 간다.
+  for (const [한, 영] of [
+    ['이 코드 살펴봐 줘', 'Inspect this code.'],
+    ['어떻게 돌리는 거야?', 'How do I run this?'],
+    ['테스트가 깨져', 'The tests are failing.'],
+    ['검사 짜 줘', 'Write a test.'],
+  ]) {
+    check(`★★★ 같은 뜻은 같은 모드로 — "${한}"`,
+      route(한).mode === route(영).mode, `한국어 ${route(한).mode} · 영어 ${route(영).mode}`);
+  }
+  /*
+   * 반대쪽. 넓힌 낱말이 **다른 모드의 말을 빼앗으면** 안 된다.
+   *
+   *   · '원인 살펴봐' 는 고장을 쫓는 말이라 debug 다. 이걸 inspect(읽기 전용)
+   *     로 보내면 사람은 원인만 듣고 고침을 못 받는다.
+   *   · '계획 짜 줘' · '순서 짜 줘' · '구조 짜 줘' 는 각각 plan · architect 다.
+   */
+  for (const [글, 안될모드] of [
+    ['원인 좀 살펴봐 줘', 'inspect'],
+    ['왜 안 되는지 원인 살펴봐', 'inspect'],
+    ['계획 짜 줘', 'code'],
+    ['구조 어떻게 짜지?', 'code'],
+  ]) {
+    check(`★★★ 넓힌 낱말이 남의 자리를 안 뺏는다 — "${글}"`,
+      route(글).mode !== 안될모드, `${route(글).mode} · ${JSON.stringify(route(글).점수들)}`);
+  }
+  for (const [글, 어느] of [['계획 짜 줘', 'plan'], ['구조 어떻게 짜지?', 'architect'],
+    ['원인 좀 살펴봐 줘', 'debug']]) {
+    check(`★★★ 그리고 제자리로 간다 — "${글}" → ${어느}`,
+      route(글).mode === 어느, `${route(글).mode} · ${JSON.stringify(route(글).점수들)}`);
   }
 }
 
