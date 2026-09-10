@@ -735,6 +735,28 @@ trace('10-뒤에한마디');
   check('★ echo hi && rm -rf / 도 그대로 막는다', !!막히나('echo hi && rm -rf /'));
 
   /*
+   * ★★★ 구분자만 덜렁 붙인 것.
+   *
+   * ── 2차 리뷰가 잡은 자리다 ────────────────────────────────────────────
+   *
+   * 마디로 가른 뒤 `마디로(s).length > 1` 일 때만 마디를 봤다. 그런데
+   * `rm -rf / ;` 는 마디가 **하나**다 — 뒤가 빈 마디라 걸러지기 때문이다.
+   * 그래서 마디 목록이 통째로 버려지고, 남은 전체 글은 `\s*$` 에 안 걸린다.
+   *
+   *     rm -rf /        막힘
+   *     rm -rf / ;      통과 ←  같은 일을 한다
+   *
+   * 「뒤에 한 마디 붙이면 샌다」 를 고치면서 **뒤에 반 마디 붙이면 새는**
+   * 자리를 새로 만든 셈이다. 울타리를 옮기면 옮긴 자리에 틈이 생긴다.
+   *
+   * 고치는 법은 단순하다 — 셀 것 없이 늘 마디도 같이 본다. 마디가 하나뿐일
+   * 때 그 마디는 전체 글과 (앞뒤 빈칸만 빼면) 같으므로 잃을 것이 없다.
+   */
+  for (const cmd of ['rm -rf / ;', 'rm -rf / &', 'rm -rf /;', 'rm -rf ~ ;', 'del /f /s /q C:\\ &', 'rm -rf / | ']) {
+    check(`★★★ ${cmd} 를 막는다 (구분자만 덜렁 붙인 것)`, !!막히나(cmd), '반 마디 붙였더니 통과함');
+  }
+
+  /*
    * 마디로 가르면 **파이프를 건너 걸리던 규칙**이 쪼개진다. `curl … | sh`
    * 는 두 마디로 갈리면 각 마디만 봐서는 아무것도 아니다. 그래서 전체 글도
    * 계속 본다 — 그 사실을 여기서 못박는다. 이걸 빼면 넓히려다 뚫는다.
@@ -770,6 +792,47 @@ trace('10-뒤에한마디');
   check('★ git push --follow-tags 는 안 막는다', 막히나('git push --follow-tags origin main') === null);
   check('★ git push origin feature-fix 는 안 막는다', 막히나('git push origin feature-fix') === null);
   check('★ git push origin main -q 는 안 막는다', 막히나('git push origin main -q') === null);
+
+  /*
+   * ★★★ 파워셸은 우리가 적어 둔 어순으로만 쓰지 않는다.
+   *
+   * ── 2차 리뷰가 잡은 자리다 ────────────────────────────────────────────
+   *
+   * `Remove-Item` 규칙은 두 가지를 못박고 있었다 — 플래그가 **경로보다
+   * 앞**에 오고, 드라이브 뒤가 **역빗금**일 것. 둘 다 그냥 우리가 예로 적은
+   * 모양이었지, 파워셸이 요구하는 것이 아니다.
+   *
+   *     Remove-Item -Recurse -Force C:\    막힘   ← 예로 적어 둔 모양
+   *     Remove-Item C:\ -Recurse -Force    통과 ← 파워셸의 흔한 어순
+   *     Remove-Item -Recurse -Force C:/    통과 ← 파워셸은 빗금도 받는다
+   *     Remove-Item ~ -Recurse -Force      통과 ←
+   *
+   * 셋 다 드라이브나 집을 통째로 밉니다. 「막았다」 가 아니라 「내가 적은
+   * 모양으로 적은 사람만 막았다」 였다 — git push 의 긴 꼴·짧은 꼴과 같은
+   * 부류인데, 같은 판에서 한쪽만 보고 다른 쪽을 놓쳤다.
+   */
+  for (const cmd of [
+    'Remove-Item C:\\ -Recurse -Force',
+    'Remove-Item -Recurse -Force C:/',
+    'Remove-Item C:/ -Recurse -Force',
+    'Remove-Item ~ -Recurse -Force',
+    'Remove-Item -Recurse -Force ~/',
+    'Remove-Item $env:USERPROFILE -Recurse -Force',
+    'Remove-Item -r -Force C:\\',
+  ]) {
+    check(`★★★ ${cmd} 를 막는다`, !!막히나(cmd), '어순·빗금만 바꿨더니 통과함');
+  }
+
+  // 넓히다 반대로 베면 안 된다. 폴더 하나 지우는 평범한 것까지 막으면 도구를 못 쓴다.
+  for (const cmd of [
+    'Remove-Item -Recurse -Force C:\\proj\\tmp',
+    'Remove-Item -Recurse -Force ./build',
+    'Remove-Item -Recurse -Force ~/Downloads/old',
+    'Remove-Item C:\\proj\\dist -Recurse -Force',
+    'Remove-Item -Force a.txt',
+  ]) {
+    check(`★ ${cmd} 는 안 막는다`, 막히나(cmd) === null, 막히나(cmd)?.split('\n')[0] ?? '');
+  }
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
