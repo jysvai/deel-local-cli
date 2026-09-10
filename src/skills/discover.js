@@ -229,8 +229,27 @@ export function discover(root, opts = {}) {
    * 치게 된다 — 그러면 정작 막아야 할 자리에서도 그냥 친다.
    */
   const 믿는가 = opts.믿나 ? opts.믿나(root) : 믿나(root);
+  /*
+   * ── 안 읽은 것이 **있을 때만** 말한다 ─────────────────────────────────
+   *
+   * 처음에는 폴더가 있기만 하면 「안 읽었습니다」 를 띄웠다. 2차 리뷰가 두
+   * 가지를 짚었다.
+   *
+   *   · 빈 `.claude/skills` 폴더만 있어도 띄웠다. 안 읽은 것이 없는데
+   *     안 읽었다고 말하는 셈이다.
+   *   · 집에서 deel 을 켜면(`root === home`) 사용자 스킬로 이미 다 읽어
+   *     놓고도 프로젝트 갈래에서 「안 읽었다」 고 말했다.
+   *
+   * 둘 다 없는 고장을 말하는 쪽이다. 거짓 경고는 진짜 경고를 죽인다 —
+   * 몇 번 겪으면 사람이 그 줄을 안 읽게 되고, 그때는 진짜로 안 읽은 판에서도
+   * 안 읽는다.
+   */
+  const 같은자리 = (a, b) => String(a).replace(/[\\/]+$/, '').toLowerCase()
+    === String(b).replace(/[\\/]+$/, '').toLowerCase();
   const 프로젝트스킬자리 = ['.deel', '.claude'].map((d) => join(root, d, 'skills'));
-  const 프로젝트것있음 = 프로젝트스킬자리.some((p) => existsSync(p));
+  const 프로젝트것있음 = !같은자리(root, home) && 프로젝트스킬자리.some((p) => {
+    try { return readdirSync(p).length > 0; } catch { return false; }
+  });
 
   // 2) 사용자  3) 프로젝트
   for (const [base, source] of [[home, 'user'], [root, 'project']]) {

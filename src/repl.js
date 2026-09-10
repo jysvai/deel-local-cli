@@ -1452,7 +1452,15 @@ export async function chatLoop(opts = {}) {
         let 남김 = { ok: true };
         const cfg2 = (() => { try { return load(); } catch (e) { 남김 = { ok: false, 왜: e?.message ?? String(e) }; return null; } })();
         const t = cfg2?.profiles?.find((p) => p.id === prof.id);
+        /*
+         * 프로필을 못 찾으면 **그것도 못 남긴 것이다.** 처음 고칠 때 `if (t)`
+         * 하나로 끝냈더니, 못 찾은 판에서는 아무것도 안 남기고 `남김.ok` 가
+         * 처음값 그대로 참이라 경고도 안 나갔다 — 없애려던 그 모양이 한 갈래에
+         * 그대로 남아 있었다(2차 리뷰가 짚었다). 디스크의 설정이 이 판과 어긋난
+         * 때(다른 창에서 프로필을 지운 뒤)가 그 자리다.
+         */
         if (t) { t.ctx = r.value; 남김 = 저장시도(cfg2); }
+        else if (cfg2) 남김 = { ok: false, 왜: '설정에서 이 프로필을 못 찾았습니다' };
         if (!남김.ok) 길이경고.push(옮긴말('common.cfgSaveFailed', { 왜: String(남김.왜 ?? '').slice(0, 70) }));
       }
       if (전 !== r.value) 길이알림.push(`컨텍스트를 ${전.toLocaleString()} ${c.gray('→')} ${c.white(r.value.toLocaleString())} 로 맞췄습니다 ${c.gray('(' + (r.source ?? '서버') + '에서 읽음)')}`);

@@ -547,6 +547,28 @@ trace('5b-믿는폴더');
     믿을때.skills.some((x) => x.name === 'helper') && 믿을때.안믿음 === false,
     JSON.stringify(믿을때.skills.map((x) => x.name)));
 
+  /*
+   * ── 없는 고장을 말하지 않는다 ────────────────────────────────────────
+   *
+   * 2차 리뷰가 짚은 두 자리다. 처음에는 폴더가 **있기만** 하면 「안 읽었다」
+   * 고 말했다.
+   *
+   *   · 빈 폴더 — 안 읽은 것이 없는데 안 읽었다고 말한다.
+   *   · 집에서 켠 판 — 사용자 스킬로 이미 다 읽어 놓고 또 안 읽었다고 한다.
+   *
+   * 거짓 경고는 진짜 경고를 죽인다. 몇 번 겪으면 사람이 그 줄을 안 읽게
+   * 되고, 그때는 진짜로 안 읽은 판에서도 안 읽는다.
+   */
+  const 빈방 = mkdtempSync(join(tmpdir(), 'deel-trust-empty-'));
+  mkdirSync(join(빈방, '.claude', 'skills'), { recursive: true });
+  const 빈것 = discover(빈방, { home: 집, 내장: false, 믿나: () => false });
+  check('★★★ 빈 스킬 폴더만 있으면 안 읽었다고 안 한다', 빈것.안믿음 === false, String(빈것.안믿음));
+
+  const 집것 = discover(집, { home: 집, 내장: false, 믿나: () => false });
+  check('★★★ 집에서 켜면 안 읽었다고 안 한다 (사용자 스킬로 이미 읽었다)',
+    집것.안믿음 === false, String(집것.안믿음));
+
+  rmSync(빈방, { recursive: true, force: true });
   rmSync(방, { recursive: true, force: true });
   rmSync(집, { recursive: true, force: true });
 }
