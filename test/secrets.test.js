@@ -138,6 +138,8 @@ trace('2-멀쩡한글');
      */
     'const API_KEY = ((process.env.API_KEY));',
     'const API_KEY = ( process.env.API_KEY );',
+    // 참조 뒤에 논리 연산자가 오면 참조가 아닌 줄 알았다(6차 리뷰).
+    'const API_KEY = process.env || fallback;',
   ];
   for (const 글 of 참조들) {
     const r = 가리기(글);
@@ -182,6 +184,13 @@ trace('2-멀쩡한글');
     ['const API_KEY = ("my-secret-token-12345" + salt);', true],
     ['call(API_KEY = "secret12345");', true],
     ['connect(API_KEY="abc123456")', true],
+    /*
+     * 6차 리뷰. 값 뒤에 무엇이 오느냐로 값의 끝을 잡았더니, 그 「무엇」 에
+     * 없는 글자가 오면 통째로 빗나갔다.
+     */
+    ['{"API_KEY":"secret12345"}', true],
+    ['const API_KEY = "secret12345".trim();', true],
+    ['const API_KEY = ( ( "secret12345" ) );', true],
     // 이름이 `S` 한 글자면 애초에 비밀 이름 무늬에 안 걸린다 — 되돌려도
     // 초록인 헛검사였다(3차 리뷰). 진짜 비밀 이름으로 재야 뜻이 생긴다.
     ["const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';", false],
@@ -204,7 +213,13 @@ trace('2-멀쩡한글');
    * 바로 그 결함을 허용하고 있었다. 부스러기를 무늬로 세지 말고
    * **괄호 짝**과 **끝 글자**를 그대로 세는 편이 속지 않는다.
    */
-  const 괄호짝 = (t) => [...t].reduce((n, c) => n + (c === '(' ? 1 : c === ')' ? -1 : 0), 0);
+  const 괄호짝 = (t, 여 = '(', 닫 = ')') => [...t].reduce((n, c) => n + (c === 여 ? 1 : c === 닫 ? -1 : 0), 0);
+  // 개수만 같고 순서가 뒤집힌 `)(` 도 잡는다 — 왼쪽부터 세며 음수로 안 내려가야 한다.
+  const 짝맞나 = (t, 여, 닫) => {
+    let n = 0;
+    for (const c of t) { if (c === 여) n += 1; else if (c === 닫) n -= 1; if (n < 0) return false; }
+    return true;
+  };
   for (const 글 of [
     'const API_KEY = ("my-secret-token-12345");',
     'const API_KEY = "ENV-PROD-SECRET-KEY-12345";',
@@ -214,10 +229,38 @@ trace('2-멀쩡한글');
     'call(API_KEY = "secret12345");',
     'connect(API_KEY="abc123456")',
     'const API_KEY = ("my-secret-token-12345" + salt);',
+    'const API_KEY = "secret12345".trim();',
+    '{"API_KEY":"secret12345"}',
   ]) {
     const r = 가리기(글);
+    /*
+     * 괄호만 세면 `)(` 처럼 뒤집힌 것과 대괄호·중괄호가 깨진 것을 놓친다
+     * (6차 리뷰). 세 짝을 다 세고, 순서까지 보게 **왼쪽부터 세면서 음수로
+     * 내려가지 않는지**를 같이 본다.
+     */
     check(`★★★ 가린 뒤에도 줄이 멀쩡하다: ${글.slice(0, 40)}`,
-      r.글.includes('«가림') && 괄호짝(r.글) === 괄호짝(글)
+      r.글.includes('«가림')
+        && [['(', ')'], ['[', ']'], ['{', '}']].every(([여, 닫]) => 짝맞나(r.글, 여, 닫) && 괄호짝(r.글, 여, 닫) === 괄호짝(글, 여, 닫))
+        && r.글.endsWith(글.slice(-1)), r.글);
+  }
+
+  /*
+   * 값 뒤에 무엇이 오든 **빗나가지 않는다.** 6차 리뷰가 짚은 자리다 —
+   * 끝을 「뒤에 오는 글자」 로 잡으니 목록에 없는 글자 하나에 통째로
+   * 새어 나갔다. 이제 값 자체가 어디까지인지로 잡는다.
+   */
+  for (const [글, 가려야] of [
+    ['const API_KEY = getToken();', false],
+    ['const API_KEY = obj[key];', false],
+    ['const API_KEY = "secret12345" + salt;', true],
+    ['const cfg = { API_KEY: "secret12345" };', true],
+    ['const cfg = [{ API_KEY: "secret12345" }];', true],
+    ['{ "API_KEY": "secret12345", "b": 1 }', true],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 값 뒤가 무엇이든 줄은 멀쩡하다: ${글.slice(0, 40)}`,
+      (r.글 !== 글) === 가려야
+        && [['(', ')'], ['[', ']'], ['{', '}']].every(([여, 닫]) => 짝맞나(r.글, 여, 닫) && 괄호짝(r.글, 여, 닫) === 괄호짝(글, 여, 닫))
         && r.글.endsWith(글.slice(-1)), r.글);
   }
   const 되돌림 = 가리기(
