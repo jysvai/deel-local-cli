@@ -87,6 +87,57 @@ trace('2-멀쩡한글');
   }
 }
 
+
+// ── 환경변수를 **읽는 줄**은 값이 아니다 ──────────────────────
+//
+// 벤치마크 지시문대로 웹 앱을 놓고 재 보다 걸렸다.
+//
+//     const JWT_SECRET = process.env.JWT_SECRET;
+//       → const JWT_SECRET = «가림:환경변수»
+//
+// 가림이 하는 일은 **값**을 숨기는 것인데, `process.env.X` 는 값이
+// 아니라 **참조**다. 거기 숨겨진 비밀은 없다 — 환경변수 이름은
+// 비밀이 아니고, deel 문서도 `DEEL_API_KEY` 를 그대로 적는다.
+//
+// 이 파일 위쪽이 적어 둔 그대로다 — 「넓게 잡아 코드에 흔한 글자를
+// 비밀로 오인하면, 모델이 보는 코드가 조용히 달라진다.」 Node 앱에서
+// 이 꼴은 드물지 않다 — 설정을 묶는 자리마다 나온다. 그것이 가려지면
+// 모델은 값이 어디서 오는지를 몰라 생각보다 쉽게 박아 넣는 쪽으로 간다.
+{
+  const 참조들 = [
+    'const JWT_SECRET = process.env.JWT_SECRET;',
+    'const API_KEY = process.env.API_KEY',
+    'SESSION_SECRET: process.env.SESSION_SECRET,',
+    'const DB_PASSWORD = import.meta.env.DB_PASSWORD;',
+    'ADMIN_TOKEN = os.environ["ADMIN_TOKEN"]',
+    'const COOKIE_SECRET = Deno.env.get("COOKIE_SECRET");',
+  ];
+  for (const 글 of 참조들) {
+    const r = 가리기(글);
+    check(`★★★ 환경변수 읽는 줄은 안 가린다: ${글.slice(0, 44)}`,
+      r.글 === 글 && r.가린것.length === 0, r.글.slice(0, 80));
+  }
+
+  /*
+   * 반대쪽 — 진짜 값은 그대로 가려야 한다. 이것이 이 규칙의 본녕이다.
+   * 돌려주는 값(`|| 'dev-secret'`)은 그대로 남아야 한다 — 그것이 바로
+   * 보안 점검에서 잡아야 할 자리다.
+   */
+  for (const [글, 가려야] of [
+    ['JWT_SECRET=abcd1234efgh5678', true],
+    ['ADMIN_PASSWORD=hunter2', true],
+    ['AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', true],
+    ["const S = process.env.SESSION_SECRET || 'dev-secret-change-me';", false],
+  ]) {
+    const r = 가리기(글);
+    check(`★★ 진짜 값은 그대로 가린다: ${글.slice(0, 42)}`,
+      (r.글 !== 글) === 가려야, r.글.slice(0, 80));
+  }
+  const 되돌림 = 가리기("const S = process.env.SESSION_SECRET || 'dev-secret-change-me';");
+  check('★★★ 돌려주는 값은 보이게 남긴다 (보안 점검이 잡을 자리)',
+    되돌림.글.includes('dev-secret-change-me'), 되돌림.글);
+}
+
 trace('3-아는열쇠');
 
 // ── 아는 값은 짐작보다 먼저 ─────────────────────────────────────────────
