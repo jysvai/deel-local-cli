@@ -167,10 +167,16 @@ trace('4-긴글');
     + 'Build and test a production web application. '.repeat(40)
     + 'Handle unexpected server errors. A failed operation must not corrupt state.',
   );
+  /*
+   * 3차 리뷰가 또 짚었다 — 이름은 「두 모드와 두 점수」 라고 해 놓고
+   * `(8점)` 이 두 번 나오는지만 셌다. 모드 이름이 통째로 빠진
+   * `"(8점) 가 (6점) 보다 세서"` 도 초록이다. 점수 앞에 **이름이 붙어
+   * 있는지**를 같이 봐야 이름이 그 말을 지킨다.
+   */
+  const 이름점수 = String(견줌.why).match(/([a-z][a-z·]*)\((\d+)점\)/g) ?? [];
   check('★★★ 견줘서 안 고른 까닭에는 두 모드와 두 점수가 다 나온다',
-    /보다 세서/.test(String(견줌.why))
-      && (String(견줌.why).match(/\(\d+점\)/g) ?? []).length === 2,
-    String(견줌.why));
+    /보다 세서/.test(String(견줌.why)) && 이름점수.length === 2,
+    `${견줌.why} · 이름붙은점수=${JSON.stringify(이름점수)}`);
 
   // 짧은 말은 예전 그대로여야 한다. 길이 규칙이 짧은 말까지 무디게 만들면
   // 그건 고친 것이 아니라 라우터를 꺼 버린 것이다.
