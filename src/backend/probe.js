@@ -41,7 +41,7 @@ const READ_TOOL = {
  *   · 도구가 {type:'function', function:{…}} 모양으로 간다
  *   · 답을 choices[0].message 에서 찾는다 (실제로는 content 블록 배열)
  *
- * 첫 칸(기본 대화)이 400 으로 죽으면 나머지 일곱 칸은 전부 「확인 불가」 로
+ * 첫 칸(기본 대화)이 400 으로 죽으면 나머지 여덟 칸은 전부 「확인 불가」 로
  * 건너뛴다. 그 결과 `deel setup` 이 저장하는 프로필에 streaming·tools·json·
  * vision 이 **다 false** 로 적힌다 — Claude 를 붙였는데 도구를 아예 안 쓰는
  * 연결이 만들어진다. 붙기는 붙으니 아무도 고장이라고 생각하지 않는다.
@@ -140,7 +140,7 @@ export async function probe(conn, onStep = () => {}) {
    * 붙어 있어서, 그대로 이으면
    * `.../deployments/gpt-4o?api-version=2024-10-21/chat/completions` 가 된다.
    * 그러면 **설치 화면이 제 검사에 통째로 실패한다** — 기본 대화가 안 되니
-   * 나머지 일곱 칸이 다 '확인 불가' 로 건너뛰어지고, 프로필에는 스트리밍도
+   * 나머지 여덟 칸이 다 '확인 불가' 로 건너뛰어지고, 프로필에는 스트리밍도
    * 도구 호출도 안 된다고 적힌다. 붙기는 붙는데 반쪽짜리로 붙는다.
    */
   const url = (p) => 주소붙이기(base, p);

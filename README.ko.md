@@ -523,7 +523,7 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 | `/undo [턴수]` | 파일 변경 되돌리기 |
 | `/diff [파일]` | 이번 대화에서 바뀐 파일 · 바뀐 자리 보기 |
 | `/preview [폴더\|파일\|off]` | 만든 웹을 이 자리에서 띄워 보기 — 브라우저가 같이 열립니다 |
-| `/paste` | 클립보드에 든 화면 캐프쳐 붙이기 (캐프처 → `/paste`) |
+| `/paste` | 클립보드에 든 화면 캡처 붙이기 (캡처 → `/paste`) |
 | `/tools` | 쓸 수 있는 도구 |
 | `/skills [검색어\|all\|off]` | 스킬 보기·검색·골라 올리기 |
 | `/plugin [install\|remove\|pack]` | 플러그인 관리 |
