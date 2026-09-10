@@ -95,9 +95,45 @@
  * 정규식 리터럴로 적는다. 글자열을 이어 붙여 new RegExp 에 넣으면 홑따옴표
  * 안에서 역빗금이 사라지고 낱말 경계가 백스페이스 글자가 된다 — 검사에서
  * 잡히기 전까지 조용히 아무것도 안 맞는다. 실제로 그렇게 났다.
+ *
+ * ── 약자 목록에는 「뒤가 없는 말」만 ────────────────────────────────────
+ *
+ * 8차 리뷰가 셋을 짚었다. 약자 목록을 넓히면서 **문장을 맺는 자리에 더 자주
+ * 오는 말**을 같이 넣어 버렸다.
+ *
+ *     "No. Fix the bug."                        → `No.` 가 약자
+ *     "Install git, node, etc. Build it."       → `etc.` 가 약자
+ *     "Ship it to Acme Inc. Create the report." → `Inc.` 가 약자
+ *
+ * 셋 다 마침표가 진짜 문장 끝인데 약자로 읽혀 **뒤 문장이 통째로 죽었다.**
+ * `e.g.` · `i.e.` · `Fig.` · `Mr.` 는 뒤에 말이 이어지는 약자라 남길 값이
+ * 있지만, `No.` · `etc.` · `Inc.` · `Ltd.` 는 반대다 — 지키려던 것보다
+ * 잃는 것이 크면 그건 울타리가 아니라 벽이다. 그래서 뺀다.
+ *
+ * ── 공손말에 쉼표가 붙는다 ──────────────────────────────────────────────
+ *
+ * `please\s+` 는 빈칸만 받았다. 그런데 영어에서 제일 흔한 공손꼴이
+ * `Please, could you …` 다 — 쉼표가 하나 붙었다고 0점이 됐다.
+ * `please\s*,?\s+` 로 쉼표를 받아 준다. `could you` 뒤도 마찬가지다.
+ *
+ * ── 2번 갈래의 실패말은 로그꼴일 때만 막는다 ────────────────────────────
+ *
+ * 실패말 차단 목록이 두 갈래에서 달랐다. 1번 갈래(`build`·`create`…)는
+ * 이름씨꼴(`errors` · `failure` · `crash` · `timeout`)까지 막는데, 2번
+ * 갈래(`delete`·`rename`·`change`…)는 움직씨꼴만 막았다. 그래서
+ *
+ *     "Delete error: permission denied"   → 시킴말
+ *
+ * 같은 로그 첫 줄이 지시로 읽혔다. 그렇다고 2번 갈래에 이름씨꼴을 그냥
+ * 넣으면 안 된다 — `Fix errors.` · `Fix error in auth module.` 은 **진짜
+ * 지시**다. 1번 갈래와 달리 2번 갈래의 낱말들은 그 이름씨를 목적어로 받는다.
+ *
+ * 갈라 주는 것은 **뒤에 오는 쌍점·여는 괄호**다. 로그는 `error:` ·
+ * `crash (core dumped)` 꼴로 적히고, 지시문은 그렇게 안 적힌다.
+ * 그래서 2번 갈래의 이름씨꼴 차단은 `[:(]` 가 뒤따를 때만 건다.
  */
 const 영어시킴말 =
-  /(?:^\s*|(?<!\b(?:e\.g|i\.e|etc|vs|cf|approx|Fig|No|Dr|Mr|Mrs|Ms|St|Jr|Sr|Inc|Ltd))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s+)?(?:please\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out|failures?|errors?|broken|crash|crashes|timeouts?)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))|(?:implement|add|fix|refactor|remove|delete|rename|modify|change|scaffold|develop)\b(?![\s:-]+(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)))/im;
+  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out|failures?|errors?|broken|crash|crashes|timeouts?)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))|(?:implement|add|fix|refactor|remove|delete|rename|modify|change|scaffold|develop)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|crash|crashes|timeouts?)\b\s*[:(])))/im;
 
 export const 표 = {
   debug: [
@@ -300,8 +336,12 @@ export const 표 = {
      *
      * 그래서 **앞에 낱말이 있어야** 이 규칙이 돈다. `please` 는 첫머리
      * 갈래가 이미 세는 말이라 따로 뺀다.
+     *
+     * 빼는 자리에도 쉼표를 받는다. 첫머리 갈래가 `Please, fix …` 를 세게
+     * 되자 여기가 또 2점을 얹어 `Please, build …`(5) 와 갈렸다 —
+     * 겹침을 막는 자리는 겹치는 쪽과 **같은 꼴**을 봐야 한다.
      */
-    [/(?<=[a-z,;:)\]]\s{1,3})(?<!\b(?:could|can|would|will)\s{1,3}(?:you|we)\s{1,3})(?<!\bplease\s{1,3})(?:implement|add|fix|write|rename)\b/i, 2],
+    [/(?<=[a-z,;:)\]]\s{1,3})(?<!\b(?:could|can|would|will)\s{1,3}(?:you|we)[\s,]{1,4})(?<!\bplease[\s,]{1,4})(?:implement|add|fix|write|rename)\b/i, 2],
     [/써(줘|주세요)/, 3],
   ],
 };

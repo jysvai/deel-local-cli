@@ -1134,6 +1134,17 @@ trace('8-마침표뒤빈칸');
    *
    * 로그 주어가 되는 동사는 둘 다 막고, 나머지는 풀이말만 막는다.
    */
+  /*
+   * 목적어도 되는 실패말이라도 **로그꼴 쌍점·괄호**가 뒤에 오면 그건
+   * 로그다(8차 리뷰). `Fix errors.` 처럼 문장을 맺는 자리와는 다르다.
+   */
+  for (const 글 of [
+    'Delete error: permission denied', 'Rename failure: file in use',
+    'Change timeout: 30s', 'Delete crash (core dumped)',
+  ]) {
+    check(`★★★ 로그꼴 쌍점이 붙은 실패말은 로그다 — "${글}"`,
+      code점(글) < 3 && 손대라했나(글) === false, `code=${code점(글)} 손대라=${손대라했나(글)}`);
+  }
   for (const 글 of [
     'Delete failed: permission denied', 'Rename failed - file in use',
     'Setup failed (exit code 1)', 'Change failed after retry.',
@@ -1158,7 +1169,11 @@ trace('8-마침표뒤빈칸');
    */
   const 공손2 = ['Can we build a button?', 'Can we fix a button?',
     'Please could you build the app?', 'Please could you fix the app?',
-    'Would we update the schema?'].map((글) => [글, code점(글)]);
+    'Would we update the schema?',
+    // 쉼표가 붙은 공손말. `please\s+` 로 빈칸만 받아 통째로 0점이었다(8차 리뷰).
+    'Please, could you build the app?', 'Please, could you fix the app?',
+    'Please, build the app.', 'Please, fix the app.',
+    'Could you, please, build the app?'].map((글) => [글, code점(글)]);
   check('★★★ 공손말 주어와 어순을 다 받는다',
     공손2.every(([, n]) => n >= 3), JSON.stringify(공손2.filter(([, n]) => n < 3)));
   check('★★★ 공손말끼리도 점수가 같다',
@@ -1185,6 +1200,16 @@ trace('8-마침표뒤빈칸');
     // 약자 바로 뒤가 시킴말인 자리를 재야 목록이 뜻을 갖는다. `Fig. 3.` 은
     // 마침표가 둘이고 뒤엣것은 **진짜 문장 끝**이라 시킴말이 맞다.
     ['See Fig. build the chart from it.', false],
+    /*
+     * 8차 리뷰. 약자 목록에 **문장 끝에 자주 오는 말**을 넣어 뒀더니 그
+     * 뒤 문장이 통째로 죽었다. `No.` 는 거절이지 번호가 아니고, `etc.` ·
+     * `Inc.` · `Ltd.` 는 문장을 맺는 자리에 훨씬 자주 온다.
+     * 약자 목록은 **뒤에 문장이 이어지지 않는 말**만 담아야 한다.
+     */
+    ['No. Fix the bug.', true],
+    ['No! Build the project.', true],
+    ['Install git, node, etc. Build the project.', true],
+    ['Ship it to Acme Inc. Create the report.', true],
     ['See Fig. 3. Build the chart.', true],
   ]) {
     check(`★★★ 약자만 거른다 — "${글.slice(0, 36)}"`,
