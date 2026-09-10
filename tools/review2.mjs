@@ -41,6 +41,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+// 길이 규칙과 「다시 물을까」 판단은 따로 뒀다 — 검사가 모델을 안 부르고 잴 수 있게.
+import { 길이규칙, 짧게다시할까 } from './리뷰길이.mjs';
 
 const 인자 = process.argv.slice(2);
 const 값 = (이름, 기본 = null) => {
@@ -195,23 +197,6 @@ const 집안규칙 = [
   '보고 형식: 발견마다 `파일:줄` · 한 문장 결함 · **구체적인 재현 입력** · 심각도(심각/보통/사소).',
   '추측이면 추측이라고 적어라. 확신 없는 것을 확신처럼 적지 마라. 없으면 없다고 해라.',
   '고칠 코드를 통째로 써 주지 마라 — 무엇이 왜 틀렸는지만 적어라.',
-  /*
-   * ── 길이를 못박는다 ──────────────────────────────────────────────────
-   *
-   * 안 박았더니 답이 출력 한도를 넘겨 **통째로 버려졌다.**
-   *
-   *     "error": "Your previous response was cut off because it exceeded
-   *               the output token limit … Retries remaining: 3"
-   *
-   * 그리고 다시 시도하다 결국 빈 손으로 끝났다. 긴 답은 여기서 「좋은 답」 이
-   * 아니라 「아예 없는 답」 이다. 그래서 위험한 것부터 세어서 끊게 한다 —
-   * 열두 건을 넘길 만큼 나오면 그 판은 어차피 사람이 한 번에 못 고친다.
-   */
-  '',
-  '길이를 지켜라. 이걸 어기면 답이 통째로 버려진다:',
-  '  · 심각한 것부터 **최대 12건**. 그 아래는 버려라.',
-  '  · 한 건은 **네 줄 안**. 코드 조각은 한 줄을 넘기지 마라.',
-  '  · 머리말·맺음말·요약표를 쓰지 마라. 발견만 죽 적어라.',
 ].join('\n');
 
 const { 무엇, diff } = 볼것();
@@ -251,8 +236,9 @@ const 보일diff = 잘림 ? diff.slice(0, 최대) : diff;
  * 한 줄을 넣으면 쪽지가 그대로 첫 마디가 된다 — 길이 한도도, 파일 읽기 권한도
  * 지나갈 일이 없다. 답은 마지막 `result` 사건에 통째로 들어 온다.
  */
-const 쪽지 = [
+const 쪽지짓기 = (판) => [
   집안규칙,
+  ...길이규칙(판),
   '',
   `아래는 ${무엇} 의 diff 다.${잘림 ? ' (너무 길어 앞부분만 실었다 — 뒤가 잘렸다고 가정하고 본 것만 말해라)' : ''}`,
   '',
@@ -264,9 +250,9 @@ const 쪽지 = [
   '파일을 열어 보려 하지 마라 — 이 판에서는 파일 읽기가 저절로 거절된다. 위 글만 보고 말해라.',
 ].join('\n');
 
-const 넣을것 = `${JSON.stringify({
+const 넣을것짓기 = (판) => `${JSON.stringify({
   event: 'user',
-  message: { role: 'user', content: [{ type: 'text', text: 쪽지 }] },
+  message: { role: 'user', content: [{ type: 'text', text: 쪽지짓기(판) }] },
 })}\n`;
 
 /*
@@ -309,33 +295,55 @@ if (!조용히) {
  * 부류로 꼼꼼히 보면 8분 언저리가 예사고 더 걸린 적도 있다.
  */
 const 기다림 = 값('--timeout', '40m');
-const t0 = Date.now();
-const r = spawnSync(agy, [
-  '--input-format', 'stream-json',
-  '--output-format', 'stream-json',
-  '--mode', 'plan',
-  '--model', 모델,
-  '--print-timeout', 기다림,
-], { encoding: 'utf8', input: 넣을것, maxBuffer: 64 * 1024 * 1024 });
-const 걸린초 = (Date.now() - t0) / 1000;
 
-if (r.error) {
-  console.error(`\n\x1b[31m✗ agy 를 못 띄웠습니다\x1b[0m\n  ${r.error.message}\n`);
-  process.exit(2);
+/** 한 판 부른다. 끝맺음 사건과 받아 낸 글을 같이 돌려준다. */
+function 한판(판) {
+  const t0 = Date.now();
+  const r = spawnSync(agy, [
+    '--input-format', 'stream-json',
+    '--output-format', 'stream-json',
+    '--mode', 'plan',
+    '--model', 모델,
+    '--print-timeout', 기다림,
+  ], { encoding: 'utf8', input: 넣을것짓기(판), maxBuffer: 64 * 1024 * 1024 });
+  if (r.error) {
+    console.error(`\n\x1b[31m✗ agy 를 못 띄웠습니다\x1b[0m\n  ${r.error.message}\n`);
+    process.exit(2);
+  }
+  /*
+   * ── 끝맺음 사건 하나만 본다 ──────────────────────────────────────
+   *
+   * stream-json 은 걸음마다 한 줄씩 나오고, **마지막 한 줄**이 결과다.
+   * 거기에 status·response·denied_actions 가 다 들어 있다. 화면 글을 긁는
+   * 것보다 이쪽이 정확하다 — 종료코드는 잘못돼도 0 이 나오기 때문이다.
+   */
+  const 끝맺음 = String(r.stdout ?? '').split('\n')
+    .map((줄) => { try { return JSON.parse(줄); } catch { return null; } })
+    .filter((x) => x?.event === 'result').at(-1)?.result ?? null;
+  return { r, 끝맺음, 답: String(끝맺음?.response ?? '').trim(), 걸린초: (Date.now() - t0) / 1000 };
 }
 
-/*
- * ── 끝맺음 사건 하나만 본다 ────────────────────────────────────────────
- *
- * stream-json 은 걸음마다 한 줄씩 나오고, **마지막 한 줄**이 결과다.
- * 거기에 status·response·denied_actions 가 다 들어 있다. 화면 글을 긁는
- * 것보다 이쪽이 정확하다 — 종료코드는 잘못돼도 0 이 나오기 때문이다.
- */
-const 끝맺음 = String(r.stdout ?? '').split('\n')
-  .map((줄) => { try { return JSON.parse(줄); } catch { return null; } })
-  .filter((x) => x?.event === 'result').at(-1)?.result ?? null;
+let { r, 끝맺음, 답, 걸린초 } = 한판(1);
 
-const 답 = String(끝맺음?.response ?? '').trim();
+/*
+ * ── 길어서 버려졌으면 짧게 다시 묻는다 ─────────────────────────────────
+ *
+ * 일곱 판을 돌리는 동안 **네 번** 빈 손으로 돌아왔고 셋이 같은 까닭이었다 —
+ * 답이 출력 한도를 넘겨 통째로 버려졌다. 쪽지에 「최대 12건」 이라고 못박아
+ * 뒀는데도 그랬다.
+ *
+ * 사람이 손으로 다시 돌리면 되는 일인데, 그 사이에 사람이 자리를 뜨면 그
+ * 판은 **영영 안 본 판**이 된다. 그리고 빈 답은 「지적할 것이 없다」 와
+ * 화면에서 똑같이 생긴다 — 이 도구가 잡으러 온 바로 그 부류다.
+ */
+if (짧게다시할까(끝맺음, 답)) {
+  if (!조용히) {
+    console.log(그레이(`답이 길어 버려졌습니다 — 짧게 다시 묻습니다 (${걸린초.toFixed(0)}초 썼습니다)`));
+  }
+  const 두번째 = 한판(2);
+  ({ r, 끝맺음, 답 } = 두번째);
+  걸린초 += 두번째.걸린초;
+}
 
 /*
  * ── 빈 답은 「없다」 가 아니다 ──────────────────────────────────────────
