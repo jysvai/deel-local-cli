@@ -76,6 +76,7 @@ const FILES = [
   'modewire.test.js',
   'doc2md.test.js',
   '확인법.test.js',
+  '리뷰도구.test.js',
   'fig.test.js',
   'planapprove.test.js',
   'resume.test.js',

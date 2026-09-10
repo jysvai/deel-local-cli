@@ -76,6 +76,31 @@ const git = (...args) => spawnSync('git', args, { encoding: 'utf8', maxBuffer: 6
 
 /** 무엇을 보일 것인가. 아무것도 안 바뀌었으면 그렇다고 말하고 끝낸다. */
 function 볼것() {
+  /*
+   * ── 옵션이 어긋났을 때는 고르지 말고 멈춘다 ──────────────────────────
+   *
+   * 3차 리뷰가 셋을 짚었다. 셋 다 한 가지 탈이다 — **조용히 다른 것을 본다.**
+   *
+   *   · `--to` 만 주면 아래 `if (부터)` 에 안 걸려 통째로 무시되고, 화면에는
+   *     「아직 커밋 안 한 것」 이라고 적힌 채 엉뚱한 것이 리뷰로 나간다.
+   *   · `--files` 갈래가 먼저 돌아가서, `--files` 와 범위를 같이 주면
+   *     범위가 소리 없이 사라진다.
+   *
+   * 리뷰 도구가 엉뚱한 자리를 리뷰하는 것은 안 도는 것보다 나쁘다. 사람은
+   * 초록을 보고 그 자리를 다 봤다고 믿고 넘어간다. 그래서 조용히 하나를
+   * 고르는 대신, 멈춰서 되묻는다.
+   */
+  if (있나('--files') && (있나('--since') || 있나('--to'))) {
+    console.error('\n\x1b[31m✗ --files 와 --since/--to 는 같이 못 씁니다\x1b[0m');
+    console.error('  파일을 콕 집는 것과 커밋 범위를 보는 것은 다른 일입니다.');
+    console.error('  둘 중 하나만 주세요.\n');
+    process.exit(2);
+  }
+  if (있나('--to') && !부터) {
+    console.error('\n\x1b[31m✗ --to 는 --since 와 같이 써야 합니다\x1b[0m');
+    console.error(`  어디부터인지가 없습니다. 예: --since HEAD~3 --to ${까지}\n`);
+    process.exit(2);
+  }
   const i = 인자.indexOf('--files');
   if (i >= 0) {
     /*
@@ -121,7 +146,20 @@ function 볼것() {
     }
     return { 무엇: `파일 ${파일들.length}개`, diff: r.stdout };
   }
-  if (부터) return { 무엇: `${부터}..${까지}`, diff: git('diff', `${부터}..${까지}`).stdout };
+  if (부터) {
+    /*
+     * 범위가 비었는데도 그대로 보내고 있었다 — 빈 몸통으로 모델을 부르면
+     * 돈과 시간만 쓰고 「지적할 것 없음」 이 돌아온다. 사람은 그걸 **다 봤는데
+     * 깨끗하다** 로 읽는다. 파일 갈래는 이미 이렇게 막고 있었는데 여기만
+     * 안 막혀 있었다 — 같은 도구 안에서 두 갈래가 서로 달랐다.
+     */
+    const 사이 = git('diff', `${부터}..${까지}`).stdout;
+    if (!사이.trim()) {
+      console.log(`\n볼 것이 없습니다 — ${부터}..${까지} 사이에 바뀐 자리가 없습니다.\n`);
+      process.exit(0);
+    }
+    return { 무엇: `${부터}..${까지}`, diff: 사이 };
+  }
   const 안커밋 = git('diff', 'HEAD').stdout;
   if (안커밋.trim()) return { 무엇: '아직 커밋 안 한 것', diff: 안커밋 };
   return { 무엇: '마지막 판(HEAD~1..HEAD)', diff: git('diff', 'HEAD~1..HEAD').stdout };
