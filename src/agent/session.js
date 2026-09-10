@@ -614,11 +614,19 @@ export class Session {
      * 그게 아니었던 것이다 — 적은 말과 어긋난 쪽은 코드였다.
      * 상한이 넷보다 작으면 몫은 0이고, 그때는 자리표가 그냥 정하면 된다.
      */
-    const 몫 = Math.floor(this.maxSkillsListed / 4);
+    /*
+     * 상한을 **먼저 성한 수로 만든다.** 음수가 들어오면 `Math.floor(-1/4)`
+     * 이 -1 이고 `slice(0, -1)` 은 「끝 하나만 뺀 전부」 라, 0 개를 실어야 할
+     * 자리에서 넷이 실렸다(8차 리뷰). 음수 상한은 「싣지 마라」 는 뜻이지
+     * 「뒤에서 하나 빼고 다」 가 아니다.
+     */
+    const 상한 = Number.isFinite(this.maxSkillsListed)
+      ? Math.max(0, Math.floor(this.maxSkillsListed)) : 0;
+    const 몫 = Math.floor(상한 / 4);
     const 매어둔것 = new Set(줄세운것.filter((s) => s.source === 'builtin').slice(0, 몫));
     const 나머지 = new Set(줄세운것
       .filter((s) => !매어둔것.has(s))
-      .slice(0, Math.max(0, this.maxSkillsListed - 매어둔것.size)));
+      .slice(0, Math.max(0, 상한 - 매어둔것.size)));
     /*
      * 줄세운 것에서 **골라내기만** 한다. 두 덩이로 쪼개 이어 붙였더니 앞
      * 번호 내장이 뒤 번호 내장 뒤로 밀려, 같은 갈래 안에서 차례가 뒤집혔다

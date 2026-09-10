@@ -202,14 +202,30 @@ trace('5-몫과차례');
 
   const s2 = 세션만들기();
   s2.maxSkillsListed = 0;
-  s2.skills = 짓기(1, 'builtin');
+  // 갈래를 섞어 둔다. 한 갈래만 넣으면 몫 계산이 죽어도 다른 이유로 0이 된다.
+  s2.skills = [...짓기(1, 'project'), ...짓기(1, 'builtin'), ...짓기(1, 'plugin')];
   check('★★★ 상한이 0이면 하나도 안 싣는다', 이름들(s2).length === 0, JSON.stringify(이름들(s2)));
+
+  /*
+   * 8차 리뷰. 상한이 **음수**면 `Math.floor(-1/4)` 가 -1 이 되고
+   * `slice(0, -1)` 은 「끝 하나만 뺀 전부」 다. 0 개를 실어야 할 자리에서
+   * 넷이 실렸다. 상한이 숫자가 아닐 때도 조용히 빈 목록이 나왔다 —
+   * 둘 다 「상한을 지킨다」 는 말이 거짓이 되는 자리다.
+   */
+  for (const 상한 of [-1, -10, NaN, undefined, null, '열개']) {
+    const s = 세션만들기();
+    s.maxSkillsListed = 상한;
+    s.skills = [...짓기(5, 'builtin'), ...짓기(5, 'project')];
+    check(`★★★ 상한이 숫자가 아니거나 음수면 하나도 안 싣는다 — ${String(상한)}`,
+      이름들(s).length === 0, JSON.stringify(이름들(s)));
+  }
 
   const s3 = 세션만들기();
   s3.maxSkillsListed = 10;
-  s3.skills = 짓기(7, 'builtin');
+  // 갈래를 섞는다. 한 갈래만 넣으면 정렬이 갈래를 넘나들며 뒤집는 것을 못 잡는다.
+  s3.skills = [...짓기(3, 'user'), ...짓기(7, 'builtin')];
   check('★★★ 같은 갈래 안에서 차례가 안 뒤집힌다',
-    이름들(s3).join(',') === 'builtin0,builtin1,builtin2,builtin3,builtin4,builtin5,builtin6',
+    이름들(s3).join(',') === 'user0,user1,user2,builtin0,builtin1,builtin2,builtin3,builtin4,builtin5,builtin6',
     JSON.stringify(이름들(s3)));
 
   /*
@@ -218,21 +234,39 @@ trace('5-몫과차례');
    * (3차 리뷰가 「죽은 검사」 라고 짚은 자리).
    */
   const s4 = 세션만들기();
-  s4.skills = [...짓기(60, 'user'), ...짓기(7, 'builtin')];
+  /*
+   * 내장을 **몫보다 많이** 넣는다. 상한 40 의 몫은 10칸인데 앞 판은 내장을
+   * 일곱만 넣어서, 몫을 `7` 이나 `상한` 으로 바꿔 놔도 초록이었다(8차 리뷰).
+   * 열둘을 넣으면 열만 남는 것이 몫이 하는 유일한 일이다.
+   */
+  s4.skills = [...짓기(60, 'user'), ...짓기(12, 'builtin')];
   const l4 = s4.listedSkills();
-  check('★★★ 사용자 것이 상한을 넘겨도 내장 몫이 남는다',
-    l4.filter((x) => x.source === 'builtin').length === 7, JSON.stringify(l4.length));
+  const 내장것 = l4.filter((x) => x.source === 'builtin');
+  check('★★★ 내장 몫은 상한의 1/4 까지다',
+    내장것.length === Math.floor(s4.maxSkillsListed / 4),
+    `내장 ${내장것.length}개 · 상한 ${s4.maxSkillsListed}`);
   check('★★ 그래도 상한은 지킨다', l4.length === s4.maxSkillsListed, String(l4.length));
   check('★★★ 목록에서 사용자 것이 내장보다 앞선다',
     l4.findIndex((x) => x.source === 'builtin') > l4.findLastIndex((x) => x.source === 'user'),
     `user 끝 ${l4.findLastIndex((x) => x.source === 'user')} · builtin 처음 ${l4.findIndex((x) => x.source === 'builtin')}`);
+  check('★★★ 몫으로 뽑힌 내장도 앞 번호부터다',
+    내장것.map((x) => x.name).join(',')
+      === Array.from({ length: 내장것.length }, (_, i) => `builtin${i}`).join(','),
+    JSON.stringify(내장것.map((x) => x.name)));
 
-  // 자리표가 실제로 차례를 정하는지 — 플러그인이 내장보다 뒤여야 한다.
+  /*
+   * 자리표가 실제로 차례를 정하는지. 앞 판은 여섯 개를 40칸에 넣고 `new Set`
+   * 으로 갈래만 봤다 — 상한에 한참 못 미쳐 몫이 하나도 안 돌고, 갈래가
+   * 중간에 뒤섞여도 맨 앞만 내장이면 초록이었다(8차 리뷰).
+   * 상한을 넘기고, 늘어선 그대로를 본다.
+   */
   const s5 = 세션만들기();
-  s5.skills = [...짓기(3, 'plugin'), ...짓기(3, 'builtin')];
-  const 갈래차례 = [...new Set(s5.listedSkills().map((x) => x.source))];
-  check('★★★ 자리표대로 내장이 플러그인보다 앞선다',
-    갈래차례.join('>') === 'builtin>plugin', 갈래차례.join('>'));
+  s5.maxSkillsListed = 8;
+  s5.skills = [...짓기(6, 'plugin'), ...짓기(6, 'builtin')];
+  const 갈래줄 = s5.listedSkills().map((x) => x.source);
+  check('★★★ 자리표대로 내장이 플러그인보다 앞선다 — 중간에 안 섞인다',
+    갈래줄.join(',') === [...Array(6).fill('builtin'), ...Array(2).fill('plugin')].join(','),
+    갈래줄.join(','));
 }
 
 const G = '[32m'; const R = '[31m'; const D = '[90m'; const X = '[0m';
