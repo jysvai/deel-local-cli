@@ -38,7 +38,7 @@
 // 이건 **문지기가 아니라 눈이다.** 찾은 것을 적을 뿐 아무것도 안 막는다 —
 // 2차 리뷰가 빨간불이 되면 사람이 그것부터 끄게 되고, 그러면 눈이 하나 준다.
 import { spawnSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 // 길이 규칙과 「다시 물을까」 판단은 따로 뒀다 — 검사가 모델을 안 부르고 잴 수 있게.
@@ -102,6 +102,34 @@ const 까지 = 값('--to', 'HEAD');
 const 낼곳 = 값('--out', null);
 const 조용히 = 있나('--quiet');
 
+/*
+ * ── 낼 곳은 모델을 부르기 **전에** 본다 ────────────────────────────────
+ *
+ * `--out` 에 폴더를 주면 쪽지를 적는 자리에서 EISDIR 로 터진다. 그 자리는
+ * 모델을 부른 **뒤**라, 기다린 시간과 토큰을 다 쓰고 받아 온 쪽지가 그대로
+ * 사라진다. 12차 리뷰를 돌리다 실제로 세 판을 그렇게 잃었다.
+ *
+ * 도움말이 「쪽지를 담을 폴더」 라고 적혀 있어 폴더를 주게 만들고 있었다.
+ * 받는 것은 **파일 하나**다. 도움말도 같이 고친다.
+ *
+ * 그러니 인자를 읽는 이 자리에서 본다 — 비싼 일을 하기 전에.
+ */
+if (낼곳) {
+  const 왜 = (() => {
+    try {
+      if (statSync(낼곳).isDirectory()) return '폴더입니다 — 파일 이름까지 주세요';
+    } catch { /* 없는 파일은 새로 만들면 되니 탈이 아니다 */ }
+    const 어미 = 낼곳.replace(/[\\/][^\\/]*$/, '');
+    if (어미 && 어미 !== 낼곳 && !existsSync(어미)) return `그 폴더가 없습니다 — ${어미}`;
+    return null;
+  })();
+  if (왜) {
+    console.error(`\n\x1b[31m✗ --out 에 못 적습니다: ${왜}\x1b[0m`);
+    console.error('  예: --out 보고.md\n');
+    process.exit(2);
+  }
+}
+
 const git = (...args) => spawnSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
 /** 무엇을 보일 것인가. 아무것도 안 바뀌었으면 그렇다고 말하고 끝낸다. */
@@ -120,12 +148,6 @@ function 볼것() {
    * 초록을 보고 그 자리를 다 봤다고 믿고 넘어간다. 그래서 조용히 하나를
    * 고르는 대신, 멈춰서 되묻는다.
    */
-  if (있나('--files') && (있나('--since') || 있나('--to'))) {
-    console.error('\n\x1b[31m✗ --files 와 --since/--to 는 같이 못 씁니다\x1b[0m');
-    console.error('  파일을 콕 집는 것과 커밋 범위를 보는 것은 다른 일입니다.');
-    console.error('  둘 중 하나만 주세요.\n');
-    process.exit(2);
-  }
   if (있나('--to') && !부터) {
     console.error('\n\x1b[31m✗ --to 는 --since 와 같이 써야 합니다\x1b[0m');
     console.error(`  어디부터인지가 없습니다. 예: --since HEAD~3 --to ${까지}\n`);
@@ -159,7 +181,13 @@ function 볼것() {
       console.error('  그냥 두면 저장소 전체가 나갑니다. 전체를 보려면 --files 를 빼세요.\n');
       process.exit(2);
     }
-    const r = git('diff', 'HEAD', '--', ...파일들);
+    /*
+     * 범위를 같이 주면 그 범위 안에서 그 파일만 본다(12차 리뷰). 한 판이
+     * 출력 한도에 걸렸을 때 도구가 내놓던 「쪼개서 보라」 는 말이, 여태
+     * 커밋된 판에는 쓸 수가 없었다 — `--files` 가 늘 안 올린 것만 봤다.
+     */
+    const 범위 = 부터 ? `${부터}..${까지}` : 'HEAD'
+    const r = git('diff', 범위, '--', ...파일들);
     if (r.status !== 0) {
       console.error(`\n\x1b[31m✗ 그 파일들을 못 읽었습니다\x1b[0m\n  ${String(r.stderr ?? '').trim().split('\n')[0]}\n`);
       process.exit(2);
@@ -174,7 +202,7 @@ function 볼것() {
       console.log('\x1b[90m  (이름을 잘못 적어도 똑같이 보입니다 — 위 이름을 한 번 보세요)\x1b[0m\n');
       process.exit(0);
     }
-    return { 무엇: `파일 ${파일들.length}개`, diff: r.stdout };
+    return { 무엇: 부터 ? `파일 ${파일들.length}개 · ${범위}` : `파일 ${파일들.length}개`, diff: r.stdout };
   }
   if (부터) {
     /*
@@ -398,7 +426,7 @@ if (!답 || 끝맺음?.status !== 'SUCCESS') {
   const 남긴말 = String(r.stderr ?? '').trim();
   if (남긴말) console.error(`  ${남긴말.split('\n').slice(0, 3).join('\n  ')}`);
   console.error(`\n  다시 해 보려면: node tools/review2.mjs --timeout 90m`);
-  console.error('  쪼개서 보려면: node tools/review2.mjs --files <파일 몇 개>\n');
+  console.error(`  쪼개서 보려면: node tools/review2.mjs ${부터 ? `--since ${부터} --to ${까지} ` : ''}--files <파일 몇 개>\n`);
   process.exit(2);
 }
 

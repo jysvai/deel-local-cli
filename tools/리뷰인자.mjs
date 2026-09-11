@@ -51,7 +51,26 @@ export function 낯선옵션(인자, 아는것 = 아는옵션) {
  *
  * `--since` 만 치면 조용히 「안 올린 것 전부」 가 된다(11차 리뷰). 사람은
  * 범위를 줬다고 믿는데 도구는 다른 것을 본다 — `--files` 뒤가 비었을 때
- * 이미 한 번 고친 부류다. 다음 칸이 없거나 그 칸이 또 옵션이면 값이 없다.
+ * 이미 한 번 고친 부류다.
+ *
+ * ── 「값이 있다」 를 너무 넓게 봤다 ────────────────────────────────────
+ *
+ * 처음엔 「다음 칸이 **아는 옵션**이면 값이 없다」 로 적었다. 12차 리뷰가
+ * 그 자리에 남은 틈 셋을 짚었고 셋 다 재현됐다.
+ *
+ *     --since --unknown     오타 옵션이 값으로 먹혔다
+ *     --since ""            셸에서 빈 변수가 오면 값으로 먹혔다
+ *     --since -- a.js       POSIX 의 「옵션 끝」 표시가 값으로 먹혔다
+ *
+ * 셋 다 멈추는 대신 조용히 「안 올린 것 전부」 로 갔다. 이 함수가 막으려던
+ * 바로 그 자리다 — 아는 옵션만 볼 것이 아니라 **값처럼 안 생겼나**를
+ * 봐야 한다. 붙임표로 시작하면 값이 아니다.
+ *
+ * 되짚을 자리가 없다: 이 도구가 값으로 받는 것은 커밋 이름·모델 이름·
+ * 시간·파일 이름뿐이고 넷 다 붙임표로 시작하지 않는다.
+ *
+ * 같은 옵션을 두 번 비워 쳐도 이름은 한 번만 적는다 — 화면에
+ * 「--since --since」 라고 찍히면 읽는 사람이 제 오타를 못 알아본다.
  *
  * @param {string[]} 인자
  * @returns {string[]}
@@ -62,8 +81,12 @@ export function 값빠진옵션(인자) {
     const 칸 = String(인자[i] ?? '');
     if (!값받는옵션.has(칸)) continue;
     const 다음 = 인자[i + 1];
-    if (다음 === undefined || 아는옵션.includes(String(다음))) 빈것.push(칸);
-    else i += 1;
+    const 값없다 = 다음 === undefined
+      || String(다음).trim() === ''
+      || String(다음).startsWith('-');
+    if (값없다) {
+      if (!빈것.includes(칸)) 빈것.push(칸);
+    } else i += 1;
   }
   return 빈것;
 }
@@ -77,11 +100,13 @@ export function 쓰는법() {
     '  node tools/review2.mjs                     안 올린 판을 본다',
     '  node tools/review2.mjs --since HEAD~3      최근 세 판을 한 판씩',
     '  node tools/review2.mjs --since HEAD~4 --to HEAD~3   그 한 판만',
-    '  node tools/review2.mjs --files a.js b.js   그 파일만 (--since 와 못 씀)',
+    '  node tools/review2.mjs --files a.js b.js   그 파일만',
+    '  node tools/review2.mjs --since HEAD~4 --to HEAD~3 --files a.js',
+    '                                             그 판에서 그 파일만',
     '',
     '  --model <이름>    기본 gemini-3.8-flash-high (pro 는 쓰지 않는다)',
     '  --timeout <초>    한 판 기다리는 시간',
-    '  --out <자리>      쪽지를 담을 폴더',
+    '  --out <파일>      쪽지를 적을 파일 (예: --out 보고.md)',
     '  --quiet           지나가는 말을 안 찍는다',
     '  --help            이 글',
     '',
