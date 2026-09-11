@@ -1425,6 +1425,21 @@ trace('8-마침표뒤빈칸');
     'Rewrite broken -- exit status 1', 'Build broken -- exit 1',
     'Fix broken -- see log',
     'Change broken (2)', 'Build broken (exit 1)', 'Rewrite broken (see log)',
+    /*
+     * 13차 리뷰. 위 괄호 잣대를 「끝나는 괄호만」 으로 좁혔더니 **괄호 뒤에
+     * 말이 이어지는 로그가 통째로 샜다.** 울타리를 옮긴 자리에 그대로 틈이
+     * 났다 — 이번엔 내가 냈다.
+     *
+     * 괄호를 투명하게 본다. 끼어 있으면 건너뛰고 그 뒤에 같은 잣대를 다시
+     * 댄다. 그러면 괄호가 있든 없든 「뒤에 오는 것」 하나로 갈린다.
+     */
+    'Build broken (exit 1) on main', 'Fix broken (exit 1) in CI',
+    'Rewrite broken (exit status 1) -- see log',
+    'Build broken (exit 1):', 'Build broken (exit 1);',
+    // 줄표로 글이 끝나는 꼴. 뒤 빈칸을 꼭 받게 해서 놓치고 있었다.
+    'Build broken --', 'Build broken -', 'Fix broken --',
+    // 각괄호도 같은 잣대다. 여태 검사에 한 줄도 없었다.
+    'Build broken [exit 1]', 'Rewrite broken [see log] on main',
     'delete from users where id = 1;', 'DELETE FROM orders WHERE id > 10',
     'delete from sessions;', 'update users set name = 42',
     'UPDATE accounts SET balance = 0 WHERE id = 3',
@@ -1473,6 +1488,8 @@ trace('8-마침표뒤빈칸');
      */
     'Delete broken (old) files.', 'Fix broken (legacy) tests.',
     'Build broken (v1) links.', 'Rewrite broken (old) imports.',
+    // 각괄호 반대쪽(13차 리뷰) — 뒤에 이름씨가 오면 그건 곁말이다.
+    'Delete broken [old] files.', 'Fix broken [legacy] tests.',
   ]) {
     check(`★★★ 실패말이 이름의 일부면 시킴말이다 — "${글}"`,
       code점(글) >= 3 && 손대라했나(글) === true, `code=${code점(글)} 손대라=${손대라했나(글)}`);
