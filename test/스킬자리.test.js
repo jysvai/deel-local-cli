@@ -291,15 +291,57 @@ trace('5-몫과차례');
    * 12차 리뷰. 이 자리 이름이 「몫과차례」 인데 차례는 아무도 안 쟀다.
    * 자리표(프로젝트 > 사용자 > 내장 > 플러그인)가 뒤집혀도 개수만 맞으면
    * 초록이다 — 1.19.0 에서 실제로 뒤집혀 있던 자리다.
+   *
+   * 13차 리뷰가 그 고침도 약하다고 짚었고 셋 다 맞았다.
+   *   · `new Set` 으로 겹침을 지우고 재면 **섞여 나와도** 첫 자리만 맞으면
+   *     초록이다 — 뭉쳐 나오는지를 재야 한다.
+   *   · 총합 20 에 상한 20 이라 **넘칠 때 아래 순위가 떨어지는지**를 못 잰다.
+   *   · 실린 개수 단언이 없어 열여섯이 사라져도 초록이다.
    */
   {
     const s = 세션만들기();
     s.maxSkillsListed = 20;
     s.skills = [...짓기(5, 'plugin'), ...짓기(5, 'builtin'),
       ...짓기(5, 'user'), ...짓기(5, 'project')];
-    const 차례 = [...new Set(s.listedSkills().map((x) => x.source))];
+    const 실린것 = s.listedSkills();
+    const 줄 = 실린것.map((x) => x.source);
+    const 뭉침 = [...new Set(줄)];
     check('★★★ 실리는 차례가 자리표를 따른다',
-      차례.join('>') === 'project>user>builtin>plugin', 차례.join('>'));
+      뭉침.join('>') === 'project>user>builtin>plugin', 뭉침.join('>'));
+    check('★★★ 출처가 섞이지 않고 뭉쳐 나온다',
+      줄.join(',') === 뭉침.flatMap((v) => Array(5).fill(v)).join(','), 줄.join(','));
+    check('★★★ 스무 개가 다 실린다', 실린것.length === 20, `${실린것.length}개`);
+  }
+  /*
+   * 상한을 넘으면 아래 순위부터 떨어진다. 위 줄은 총합과 상한이 같아서
+   * 이것을 아예 안 쟀다(13차 리뷰).
+   */
+  for (const [상한, 바람] of [
+    [15, { project: 5, user: 5, builtin: 5 }],
+    [8, { project: 5, user: 1, builtin: 2 }],
+  ]) {
+    const s = 세션만들기();
+    s.maxSkillsListed = 상한;
+    s.skills = [...짓기(5, 'plugin'), ...짓기(5, 'builtin'),
+      ...짓기(5, 'user'), ...짓기(5, 'project')];
+    const 몫 = {};
+    for (const x of s.listedSkills()) 몫[x.source] = (몫[x.source] ?? 0) + 1;
+    check(`★★★ 상한을 넘으면 아래 순위부터 떨어진다 — 상한 ${상한}`,
+      JSON.stringify(몫) === JSON.stringify(바람), JSON.stringify(몫));
+  }
+  /*
+   * 13차 리뷰가 「조금만 다투면 자리가 빈다」 고 짚었는데 재 보니 아니었다.
+   * 내장 몫은 **천장이 아니라 바닥**이라 남는 자리를 도로 채운다. 그 자리를
+   * 못박아 둔다 — 되짚은 것도 검사로 남겨야 다음에 또 안 헤맨다.
+   */
+  {
+    const s = 세션만들기();
+    s.maxSkillsListed = 40;
+    s.skills = [...짓기(1, 'user'), ...짓기(40, 'builtin')];
+    const 실린것 = s.listedSkills();
+    const 내장 = 실린것.filter((x) => x.source === 'builtin').length;
+    check('★★★ 조금만 다퉈도 자리가 안 빈다',
+      실린것.length === 40 && 내장 === 39, `전부 ${실린것.length} · 내장 ${내장}`);
   }
 
   const s3 = 세션만들기();
