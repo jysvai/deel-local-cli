@@ -1414,7 +1414,17 @@ trace('8-마침표뒤빈칸');
      * 전치사꼴 로그를 놓쳤다.
      */
     'Rewrite broken with exit code 1', 'Modify broken.', 'Delete broken.',
-    'Rewrite broken after 3 tries', 'Change broken (2)',
+    'Rewrite broken after 3 tries',
+    /*
+     * 12차 리뷰. 위를 「띄운 줄표」 로 맞췄는데 CI 도구가 흔히 쓰는
+     * **겹줄표**가 남아 있었다. 세 갈래 다 샜다 — 갈래 문제가 아니라
+     * 잣대 자체가 홑줄표만 보고 있었다.
+     *
+     * 괄호는 **끝나는 괄호**만 로그로 친다. 아래 ⑥-나에 그 반대쪽을 뒀다.
+     */
+    'Rewrite broken -- exit status 1', 'Build broken -- exit 1',
+    'Fix broken -- see log',
+    'Change broken (2)', 'Build broken (exit 1)', 'Rewrite broken (see log)',
     'delete from users where id = 1;', 'DELETE FROM orders WHERE id > 10',
     'delete from sessions;', 'update users set name = 42',
     'UPDATE accounts SET balance = 0 WHERE id = 3',
@@ -1444,9 +1454,25 @@ trace('8-마침표뒤빈칸');
      */
     'Delete from the list.', 'Delete the row from users.',
     'Update the config file.', 'Update settings for the app.',
-    // `broken` 울타리 반대쪽. 뒤에 이름씨가 오면 그건 여전히 꾸밈말이다.
+    /*
+     * `broken` 울타리 반대쪽. 뒤에 이름씨가 오면 그건 여전히 꾸밈말이다.
+     *
+     * 12차 리뷰가 이 줄들이 **3번 갈래 동사뿐**이라고 짚었다 — 2번 갈래의
+     * `broken` 처리가 깨져도 안 빨개진다. 세 갈래를 다 넣는다.
+     * `Fix the broken login form.` 은 사이에 `the` 가 껴서 울타리를 아예
+     * 안 건드린다는 것도 같이 짚었다. 맞는 말이라 그대로 두되, 울타리를
+     * 진짜로 거치는 줄을 옆에 세운다.
+     */
     'Fix broken tests.', 'Remove broken symlinks.', 'Delete broken files.',
     'Fix the broken login form.', 'Delete broken-files.txt',
+    'Build broken links.', 'Create broken tests.',
+    'Modify broken tests.', 'Rewrite broken imports.', 'Change broken links.',
+    /*
+     * 12차 리뷰. 괄호를 통째로 로그 구분자로 쳐서 **괄호로 곁말을 단
+     * 멀쩡한 지시문**이 세 갈래 다 죽어 있었다. 끝나는 괄호만 로그다.
+     */
+    'Delete broken (old) files.', 'Fix broken (legacy) tests.',
+    'Build broken (v1) links.', 'Rewrite broken (old) imports.',
   ]) {
     check(`★★★ 실패말이 이름의 일부면 시킴말이다 — "${글}"`,
       code점(글) >= 3 && 손대라했나(글) === true, `code=${code점(글)} 손대라=${손대라했나(글)}`);
