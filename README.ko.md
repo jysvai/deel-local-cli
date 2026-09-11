@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-9%2C093%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-9%2C122%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -301,7 +301,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 1.19.0  ⌂ 이 안
+ deel 1.19.1  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -1289,6 +1289,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
+| [1.19.1](docs/ko/releases/1.19.md#1191) | 열두 번째 눈이 본 것, 그리고 오탐 열넷 — 지적 27건 중 13건이 진짜였습니다 |
 | [1.19.0](docs/ko/releases/1.19.md#1190) | 한쪽을 맞히면 반대쪽이 틀렸습니다 — 검사 9,093개로 양쪽을 같이 잽니다 |
 | [1.18.0](docs/ko/releases/1.18.md#1180) | 있는 것과 걸리는 것은 다릅니다 — 검사 8,404개가 초록인 채로 열려 있던 자리들 |
 | [1.17.9](docs/ko/releases/1.17.md#1179) | 한도에 걸렸는데 1초 뒤에 또 두드리고 있었습니다 |
