@@ -356,6 +356,12 @@ trace('2-멀쩡한글');
      * 11차 리뷰. 맨 쌍점 갈래는 괄호로 감싼 값을 받는데, 타입 갈래는
      * 따옴표로 바로 가서 못 받았다. 같은 줄이 타입을 적었느냐로 갈렸다.
      */
+    /*
+     * 13차 리뷰. 괄호는 받게 해 놓고 **백틱**은 안 받았다. 템플릿 리터럴은
+     * 따옴표와 같은 글자값이라 같이 받아야 한다.
+     */
+    ['const API_KEY: string = (`secret12345`);', 'secret12345'],
+    ['const API_KEY = `secret12345`;', 'secret12345'],
     ['const API_KEY: string = ("secret12345");', 'secret12345'],
     ['const API_KEY: { a: string } = (("secret12345"));', 'secret12345'],
     ["const API_KEY: 'bearer' | 'basic' = \"secret12345\";", 'secret12345'],
