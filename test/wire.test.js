@@ -83,6 +83,40 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   check('추론형오픈AI: o3 는 참', 추론형오픈AI('o3-mini') === true);
   check('★ 추론형오픈AI: gpt-4o 는 거짓', 추론형오픈AI('gpt-4o') === false, '4o 에 실으면 400 이다');
   check('추론형오픈AI: gpt-4-turbo 는 거짓', 추론형오픈AI('gpt-4-turbo') === false);
+  /*
+   * ── 크기 표기를 세대로 읽으면 안 된다 ─────────────────────────────────
+   *
+   * `custom-gpt-50b-chat` 의 `50b` 는 판 번호가 아니라 **매개수**다. 뒤 경계가
+   * 없으면 거기서 `gpt-5` 가 보인다며 추론형으로 읽고, 그 모델에
+   * reasoning_effort 를 실어 보내 그 턴이 400 이 된다.
+   *
+   * 이 파일의 출력칸 갈래는 이미 뒤 경계를 갖고 있었다 — 한 파일 안 두 갈래가
+   * 같은 이름을 두고 서로 다르게 판정하고 있었다(30차 리뷰). 그래서 **둘이
+   * 같은 답을 내는지**까지 잰다.
+   */
+  for (const [이름, 바람] of [
+    ['custom-gpt-50b-chat', false], ['gpt-50b', false], ['my-gpt-512-tune', false],
+    ['gpt-5', true], ['gpt5', true], ['openai/gpt-5-mini', true], ['azure-gpt-6-preview', true],
+    ['o3', true], ['llama-o1', true], ['my-o2b', false],
+  ]) {
+    check(`★★ 추론형오픈AI: ${이름} → ${바람}`, 추론형오픈AI(이름) === 바람, String(추론형오픈AI(이름)));
+  }
+  /*
+   * ── 두 갈래가 같은 답을 내는가 ────────────────────────────────────────
+   *
+   * 「추론 시대 OpenAI 모델인가」 를 두 자리에서 따로 물으면 반드시 어긋난다.
+   * 처음엔 세 이름만 재서 초록이었는데, 넓혀 보니 **세 자리가 어긋나 있었다**
+   * (31차 리뷰) — `gpt5`·`gpt6` 는 한쪽만, `gpt-7` 은 다른 쪽만 참이었다.
+   * 좁게 재고 초록을 보는 것이 안 재는 것보다 나쁘다. 그래서 넓게 잰다.
+   */
+  for (const 이름 of [
+    'o1', 'o3', 'o4-mini', 'gpt-5', 'gpt5', 'gpt-6', 'gpt6', 'gpt-7', 'gpt-9',
+    'gpt-4o', 'gpt-4-turbo', 'custom-gpt-50b-chat', 'claude-opus-5',
+  ]) {
+    const 새이름칸 = 기본카드({ kind: 'openai', model: 이름, base: 'https://api.openai.com/v1' }).출력칸 === '새것';
+    check(`★★★ 추론형 판정과 출력칸 판정이 같은 답을 낸다 — ${이름}`,
+      추론형오픈AI(이름) === 새이름칸, `추론형=${추론형오픈AI(이름)} 새이름칸=${새이름칸}`);
+  }
 }
 
 // ── 2. 회사마다 받는 눈금이 다르다 ──────────────────────────────────────
@@ -134,10 +168,48 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
     눈금맞추기(맨틀, 'max') === 'max', String(눈금맞추기(맨틀, 'max')));
   check('★★ 같은 Bedrock 이라도 OpenAI 몸에는 안 쓴다',
     눈금맞추기(베드락오픈AI, 'max') === 'high', String(눈금맞추기(베드락오픈AI, 'max')));
-  check('★★ 그 창구 눈금은 OpenAI 것이다',
-    베드락오픈AI.눈금.join('·') === 'minimal·low·medium·high', 베드락오픈AI.눈금.join('·'));
+  /*
+   * ── 이 줄은 **틀린 약속**을 못 박고 있었다 ─────────────────────────────
+   *
+   * 위 머리말이 「잘못 넓히면 손해가 그 턴이 죽는다」 고 적어 놓고, 정작 여기서
+   * `minimal` 을 하나 더 얹은 것을 초록으로 굳혀 뒀다. `minimal` 은 OpenAI
+   * 전용 눈금이라 Claude 에는 그 말이 없다 — 실어 보내면 400 이다(30차 리뷰).
+   *
+   * 좁힌 쪽만 재면 반대로 너무 좁혔을 때를 못 잡으니 **양쪽을 다 잰다.**
+   */
+  check('★★ 그 창구 Claude 에는 OpenAI 전용 minimal 을 안 얹는다',
+    베드락오픈AI.눈금.join('·') === 'low·medium·high', 베드락오픈AI.눈금.join('·'));
+  check('★★ 눈금맞추기도 minimal 을 안 내놓는다',
+    눈금맞추기(베드락오픈AI, 'minimal') === null, String(눈금맞추기(베드락오픈AI, 'minimal')));
+  {
+    // 반대쪽 — Claude 가 아니면 그 창구는 여전히 OpenAI 눈금 그대로다.
+    const 베드락GPT = 기본카드(연결('https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1', 'openai', 'openai.gpt-oss-120b-1:0'));
+    check('★★ 같은 창구라도 Claude 가 아니면 OpenAI 눈금 그대로다',
+      베드락GPT.눈금.join('·') === 'minimal·low·medium·high', 베드락GPT.눈금.join('·'));
+  }
 
   check('우리 눈금 차례가 뒤집히지 않았다', 눈금차례.join('·') === 'low·medium·high·xhigh·max', 눈금차례.join('·'));
+
+  /*
+   * ── 카드는 제 눈금을 가져야 한다 ──────────────────────────────────────
+   *
+   * 모듈 표를 그대로 물리면 카드 하나를 손댄 것이 **그 회사 표 전체**를 고친다.
+   * 그러면 그 다음에 켜는 세션이 조용히 다른 눈금을 갖는다 — 고장이 난 자리와
+   * 드러나는 자리가 달라서 제일 찾기 어려운 부류다(31차 리뷰).
+   *
+   * 회사를 알아본 길·anthropic 길·bedrock 의 OpenAI 길 세 자리가 다 표를
+   * 내주므로 셋을 다 잰다.
+   */
+  for (const [이름, conn] of [
+    ['openai', 연결('https://api.openai.com/v1', 'openai', 'gpt-5')],
+    ['anthropic', 연결('https://api.anthropic.com/v1', 'anthropic', 'claude-opus-5')],
+    ['bedrock+openai', 연결('https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1', 'openai', 'openai.gpt-oss-120b-1:0')],
+  ]) {
+    const 먼저 = 기본카드(conn).눈금.join('·');
+    기본카드(conn).눈금.pop();
+    check(`★★★ 카드 눈금을 손대도 다음 카드가 안 바뀐다 — ${이름}`,
+      기본카드(conn).눈금.join('·') === 먼저, `${먼저} → ${기본카드(conn).눈금.join('·')}`);
+  }
 }
 
 // ── 3. 생각을 어느 칸에 싣나 ────────────────────────────────────────────
@@ -335,17 +407,35 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
 // 표를 박아 두면 그 표는 반드시 낡는다. 서버가 안 된다고 말해 주면 그 말에서
 // 읽는다 — 이 프로그램이 컨텍스트 길이와 답 길이를 배우는 방식과 같다.
 {
+  /*
+   * 규격을 **같이 준다.** 여태 안 주고 불렀는데, 진짜 부르는 자리
+   * (agent/loop.js)는 늘 `conn.kind` 를 준다 — 검사가 아무도 안 쓰는 방식으로
+   * 부르고 있었다. 그러면 규격을 보고 갈라야 하는 규칙을 이 검사로는 못 잰다.
+   */
   const 봐야할것 = [
-    ['budget_tokens: Extended thinking with budget_tokens is not supported', '생각형식'],
-    ['Input tag `thinking.budget_tokens` is deprecated', '생각형식'],
-    ["Invalid value for 'reasoning_effort': must be one of: minimal, low, medium, high", '눈금'],
-    ['Unrecognized request argument supplied: prompt_cache_key', '캐시'],
-    ['metadata.user_id: unsupported field', '세션자리'],
+    ['budget_tokens: Extended thinking with budget_tokens is not supported', 'anthropic', '생각형식'],
+    ['Input tag `thinking.budget_tokens` is deprecated', 'anthropic', '생각형식'],
+    ["Invalid value for 'reasoning_effort': must be one of: minimal, low, medium, high", 'openai', '눈금'],
+    ['Unrecognized request argument supplied: prompt_cache_key', 'openai', '캐시'],
+    ['metadata.user_id: unsupported field', 'anthropic', '세션자리'],
   ];
-  for (const [문구, 무엇] of 봐야할것) {
-    const 배운것 = 배울전선(문구);
+  for (const [문구, 규격, 무엇] of 봐야할것) {
+    const 배운것 = 배울전선(문구, 규격);
     check(`배운다: ${무엇} (${문구.slice(0, 34)}…)`, 배운것?.무엇 === 무엇, JSON.stringify(배운것));
   }
+
+  /*
+   * ── 같은 문장이라도 규격이 다르면 배울 것이 다르다 ────────────────────
+   *
+   * `budget_tokens` 는 Anthropic 칸이다. OpenAI 규격으로 붙인 프록시가 우리
+   * `reasoning_effort` 를 제 나름대로 그 칸으로 옮겨 올리고 상단이 거절하면
+   * 그 문장이 내려온다. 그걸 그대로 배우면 `생각형식` 이 `adaptive` 가 되고 —
+   * OpenAI 몸에는 그 형식이 없어서 **그 뒤로 세기가 아예 안 나간다.** 그 턴은
+   * 200 이라 아무도 안 알아챈다(31차 하네스).
+   */
+  check('★★★ budget_tokens 를 OpenAI 규격에 adaptive 로 안 배운다',
+    배울전선('thinking.budget_tokens: Extra inputs are not permitted', 'openai')?.값 !== 'adaptive',
+    JSON.stringify(배울전선('thinking.budget_tokens: Extra inputs are not permitted', 'openai')));
 
   // ★ 모르는 400 은 배운 척하지 않는다. 지어낸 배움은 다음 요청부터 계속 틀린다.
   check('★ 모르는 400 에서는 아무것도 안 배운다',
@@ -361,7 +451,7 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   check('★ 배우면 그 눈금으로 맞춘다', 눈금맞추기(고친것, 'max') === 'high', String(눈금맞추기(고친것, 'max')));
 
   const 생각끈것 = 카드고치기(기본카드(연결('https://api.anthropic.com/v1', 'anthropic', 'claude-opus-5')),
-    배울전선('thinking.budget_tokens is deprecated'));
+    배울전선('thinking.budget_tokens is deprecated', 'anthropic'));
   check('생각 형식도 배운다', 생각끈것.생각형식 === 'adaptive', 생각끈것.생각형식);
 }
 
@@ -384,10 +474,18 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   const 배운카드 = 카드고치기(기본, 배울전선('Unsupported parameter: stream_options'));
   const 남길것 = 카드저장꼴(배운카드);
   check('저장꼴은 JSON 으로 오간다', typeof JSON.parse(JSON.stringify(남길것)) === 'object');
-  check('★ 배운 칸만 남는다', Object.keys(남길것).join(',') === '스트림usage',
-    Object.keys(남길것).join(','));
+  /*
+   * 남는 것은 **배운 카드 칸**뿐이다. 거기에 「누가 껐는지」 표 하나가 따라간다
+   * (`서버가말한칸`) — 그건 카드 칸이 아니라 장부다. 그 표가 안 남으면 다시 켤
+   * 때마다 표가 사라져서, 서버가 안 받는다고 말해 준 칸이 되살아난다(30차 리뷰).
+   * 그래서 카드 칸과 장부를 갈라서 잰다 — 장부에 짐작이 섞여도 잡히게.
+   */
+  const 카드칸남긴것 = Object.keys(남길것).filter((k) => k !== '서버가말한칸');
+  check('★ 배운 칸만 남는다', 카드칸남긴것.join(',') === '스트림usage', Object.keys(남길것).join(','));
   check('★ 짐작한 칸은 안 따라간다', 남길것.눈금 === undefined && 남길것.캐시 === undefined,
     JSON.stringify(남길것));
+  check('★ 누가 껐는지 표에도 배운 칸만 든다',
+    (남길것.서버가말한칸 ?? []).join(',') === '스트림usage', JSON.stringify(남길것.서버가말한칸));
 
   // 되살리면 배운 칸은 배운 대로, 나머지는 그날의 짐작으로 선다.
   const 되살린것 = 카드합치기(기본카드(연결('https://api.openai.com/v1', 'openai', 'gpt-5')), 남길것);
@@ -707,7 +805,7 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   // 그러면서 **진짜 「안 받는다」 는 그대로 배워야** 한다. 값 탓을 가리려다
   // 배울 것까지 못 배우면, 이번에는 같은 400 을 세션마다 다시 맞는다.
   const 배울것들 = [
-    ['thinking.budget_tokens is deprecated', '생각형식', 'adaptive'],
+    ['thinking.budget_tokens is deprecated', '생각형식', 'adaptive', 'anthropic'],
     ['Unrecognized request argument supplied: reasoning_effort', '생각형식', 'none'],
     ['Unsupported parameter: stream_options', '스트림usage', false],
     // cache_control 은 바로 끄지 않는다 — 같은 뜻의 다른 이름을 한 번 더 본다.
@@ -715,10 +813,209 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
     ['ValidationException: prompt_cache_breakpoint is not supported', '캐시', 'none'],
     ['The parameter `user` is not allowed', '세션자리', null],
   ];
-  for (const [말, 무엇, 값] of 배울것들) {
-    const 배운 = 배울전선(말);
+  for (const [말, 무엇, 값, 규격] of 배울것들) {
+    const 배운 = 배울전선(말, 규격);
     check(`★ 안 받는다는 말은 그대로 배운다 — ${무엇}`,
       배운?.무엇 === 무엇 && 배운?.값 === 값, JSON.stringify(배운));
+  }
+
+  /*
+   * ── 30차 리뷰: 여기 남아 있던 네 가지 잘못 배움 ────────────────────────
+   *
+   * 넷 다 「잘못 배우는 것은 못 배우는 것보다 나쁘다」 의 판이다. 값이 디스크에
+   * 남아서, 사람이 배움 파일을 지우기 전에는 안 낫는다.
+   */
+  {
+    /*
+     * ① 서버가 **쓸 이름을 말해 줬는데 반대를 배웠다.**
+     *
+     * 아래 첫 줄은 OpenAI 가 o1·gpt-5 계열에 실제로 내는 문구다. 두 이름이
+     * 한 줄에 같이 있어서, `max_completion_tokens` 가 보인다는 이유로
+     * 「옛것으로 갈아타라」 고 읽었다. 그 창구는 그때부터 매 턴 400 이다.
+     */
+    const 방향 = [
+      ["Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", '새것'],
+      ['max_tokens is not supported. max_completion_tokens must be used instead.', '새것'],
+      ["Unsupported parameter: 'max_completion_tokens' is not supported. Use 'max_tokens' instead.", '옛것'],
+      ['Unknown parameter: max_tokens', '새것'],
+      ['Unknown parameter: max_completion_tokens', '옛것'],
+    ];
+    for (const [말, 값] of 방향) {
+      const 배운 = 배울전선(말, 'openai');
+      check(`★★★ 서버가 쓰라는 이름을 그대로 배운다 — ${값}`,
+        배운?.무엇 === '출력칸' && 배운?.값 === 값, `${JSON.stringify(배운?.값)} ← ${말.slice(0, 56)}`);
+    }
+
+    /*
+     * ② `adaptive` 는 낱말만으로 배우면 안 된다. 둘로 틀렸다 — 할당량 이야기를
+     *    칸 이야기로 읽었고, Anthropic 전용 형식을 OpenAI 규격에 적어 뒀다.
+     */
+    for (const 말 of [
+      'Adaptive rate limit exceeded: request not allowed',
+      'Adaptive capacity temporarily unavailable, please retry',
+    ]) {
+      check(`★★★ 칸 이야기가 아니면 생각형식을 안 배운다 — ${말.slice(0, 30)}`,
+        배울전선(말, 'anthropic') === null, JSON.stringify(배울전선(말, 'anthropic')));
+    }
+    check('★★★ budget 은 OpenAI 규격에 안 배운다',
+      배울전선('Unknown parameter: adaptive', 'openai') === null,
+      JSON.stringify(배울전선('Unknown parameter: adaptive', 'openai')));
+    check('★★ 그래도 Anthropic 규격에서는 그대로 배운다',
+      배울전선('Unknown parameter: adaptive', 'anthropic')?.값 === 'budget',
+      JSON.stringify(배울전선('Unknown parameter: adaptive', 'anthropic')));
+
+    /*
+     * ── 여기까지 고친 다음 **제 고침 안에 남은 틈** 둘 (31차 리뷰) ─────────
+     *
+     * ㉮ 처음엔 `규격 !== 'openai'` 로 적었다. 「아닌 것 하나를 뺀다」 는 식은
+     *    남은 것을 다 받아 준다 — gemini·ollama·규격 모름 에도 Anthropic 전용
+     *    형식을 배웠다. **맞는 것 하나만** 이어야 한다.
+     * ㉯ 칸 이야기인지 보는 무늬에 `not permitted`·`unrecognized` 를 같이 넣었다.
+     *    그 둘은 거절 낱말이라 두 울타리가 같은 것을 보게 됐고, 그러면 새 울타리는
+     *    없는 것과 같다 — 할당량 문구가 그대로 새어 나갔다.
+     */
+    for (const 규격 of ['gemini', 'ollama', undefined]) {
+      check(`★★★ Anthropic 이 아닌 규격에는 budget 을 안 배운다 — ${String(규격)}`,
+        배울전선('Invalid parameter: adaptive', 규격) === null,
+        JSON.stringify(배울전선('Invalid parameter: adaptive', 규격)));
+    }
+    for (const 말 of [
+      'Adaptive rate limit exceeded: request not permitted',
+      'Adaptive quota unrecognized for this account',
+    ]) {
+      check(`★★★ 칸 이야기 무늬에 거절 낱말을 안 섞는다 — ${말.slice(-24)}`,
+        배울전선(말, 'anthropic') === null, JSON.stringify(배울전선(말, 'anthropic')));
+    }
+
+    /*
+     * ── 제일 헐거운 갈래가 위에 있으면 아래가 안 보인다 (31차 하네스) ──────
+     *
+     * `thinking` 한 낱말이 사다리 위쪽에 있었다. 그런데 그 낱말은 **모델 이름
+     * 에도** 든다 — LiteLLM 계열은 오류 문장 끝에 모델 이름을 붙여 준다.
+     * 그러면 두 가지가 같이 일어났다.
+     *
+     *   ① 진짜 원인(`stream_options` 등)을 안 껐으니 같은 400 이 매 턴 다시
+     *      뜬다 — 화면에 「배웠습니다」 가 떠도 안 낫는다.
+     *   ② 그러면서 생각이 꺼지고 그 값이 디스크에 남는다.
+     *
+     * 못 고친 오류 하나에 멀쩡한 기능 하나가 딸려 죽는 자리였다.
+     */
+    for (const [말, 무엇] of [
+      ['Unrecognized request argument supplied: stream_options (Received Model Group=qwen3-235b-a22b-thinking-2507)', '스트림usage'],
+      ['Unrecognized request argument supplied: user (model: glm-4.6-thinking)', '세션자리'],
+      ['Unrecognized request argument supplied: cache_control · model=deepseek-r1-thinking', '표식칸'],
+      ['Unrecognized request argument supplied: max_completion_tokens · model_name="glm-4.6-thinking"', '출력칸'],
+    ]) {
+      const 배운 = 배울전선(말, 'openai');
+      check(`★★★ 모델 이름의 thinking 이 진짜 원인을 안 가린다 — ${무엇}`,
+        배운?.무엇 === 무엇, `${JSON.stringify(배운)} ← ${말.slice(0, 50)}`);
+    }
+    /*
+     * 반대쪽도 같이 잰다. **울타리를 조이다 멀쩡한 것을 막으면** 이번에는 같은
+     * 400 을 매 턴 다시 맞는다. 실제로 여기 `칸이야기` 를 한 번 걸었다가 뺐다 —
+     * 그걸 걸면 `Extended thinking is not supported` 처럼 칸을 가리키는 낱말이
+     * 없는 **진짜 거절**까지 막혔다. 이름만 걸린 판과 진짜 거절이 갈리는지
+     * 양쪽을 나란히 못 박아야 다음에 한쪽만 고치는 일이 안 생긴다.
+     */
+    for (const [말, 바람] of [
+      ['Unrecognized request argument supplied: thinking', 'none'],
+      ['Extended thinking is not supported on this model', 'none'],
+      ['Thinking is not supported for this deployment', 'none'],
+      // 아래 둘은 이름에만 들었다 — 칸 이야기가 아니라 배울 것이 없다.
+      ['Invalid request for model=glm-4.6-thinking', null],
+      ['Invalid request body (model_name="qwen3-235b-thinking")', null],
+    ]) {
+      const 배운 = 배울전선(말, 'openai');
+      const 잰것 = 배운 ? (배운.무엇 === '생각형식' ? 배운.값 : 배운.무엇) : null;
+      check(`★★★ 생각 거절과 이름만 걸린 것을 가른다 — ${String(바람)} ← ${말.slice(0, 34)}`,
+        잰것 === 바람, `${String(잰것)} · ${JSON.stringify(배운)}`);
+    }
+
+    /*
+     * ── 「제일 값진 문장」 이 제일 흔한 창구에서 한 번도 안 걸렸다 ─────────
+     *
+     * 받는 값을 세어 주는 문장은 짐작을 사실로 갈아탈 수 있는 유일한 문장이다.
+     * 그런데 그 갈래가 문장 앞에 `reasoning_effort` 가 **적혀 있어야** 걸렸고,
+     * OpenAI 규격은 칸 이름을 문장이 아니라 형제 칸에 담는다. 게다가 실제
+     * 말투(`Supported values are:`)가 목록에 없었다. 그 문장은 아래로 굴러
+     * 떨어져 「칸을 안 받는다」 가 됐다 — 생각이 통째로 꺼졌다.
+     */
+    for (const [말, 바람] of [
+      ["Invalid value: 'minimal'. Supported values are: 'none', 'low', 'medium', and 'high'.", 'none,low,medium,high'],
+      ['reasoning_effort: allowed values are low, medium, high', 'low,medium,high'],
+      ['reasoning_effort must be one of: minimal, low, medium, high', 'minimal,low,medium,high'],
+      ["Invalid value: 'medium'. Supported values are: 'low' and 'high'.", 'low,high'],
+    ]) {
+      const 배운 = 배울전선(말, 'openai');
+      check(`★★★ 값을 세어 주면 눈금으로 배운다 — ${바람}`,
+        배운?.무엇 === '눈금' && 배운.값.join(',') === 바람, JSON.stringify(배운));
+    }
+    /*
+     * 칸 이름 조건을 뗀 대신 **아는 눈금 말인지**를 본다. 그 조건이 없으면
+     * 아무 열거 문장이나(도구 이름·모델 이름 목록) 눈금으로 주워 담는다.
+     */
+    for (const 말 of [
+      'tool_choice must be one of: auto, none, required',
+      'Supported values are: gpt-4o, gpt-4o-mini, o3',
+    ]) {
+      check(`★★★ 눈금 말이 아닌 목록은 안 주워 담는다 — ${말.slice(0, 34)}`,
+        배울전선(말, 'openai')?.무엇 !== '눈금', JSON.stringify(배울전선(말, 'openai')));
+    }
+
+    /*
+     * 열거형 **값** 오류를 「칸을 안 받는다」 로 읽으면 안 된다. 서버가 거절한
+     * 것은 값 하나인데 생각형식이 꺼지고 눈금까지 비워 디스크에 남았다 —
+     * 그 모델에서 `/think` 는 그날부터 아무 일도 안 한다.
+     */
+    for (const 말 of [
+      'Unsupported value: reasoning_effort does not support medium',
+      'reasoning_effort must be "low" or "high"',
+      "Invalid value 'medium' for reasoning_effort",
+    ]) {
+      check(`★★★ 값 탓을 칸 탓으로 안 읽는다 — ${말.slice(0, 38)}`,
+        배울전선(말, 'openai')?.값 !== 'none', JSON.stringify(배울전선(말, 'openai')));
+    }
+
+    /*
+     * ── 「값이 틀렸다」 에도 두 종류가 있다 ────────────────────────────────
+     *
+     *   Unsupported value: reasoning_effort does not support medium
+     *     → 눈금 하나가 틀린 것. 칸을 끄면 그 모델에서 /think 가 죽는다.
+     *   Invalid value: thinking.type 'adaptive' is not supported by this model
+     *     → 우리가 **고른 형식**이 틀린 것. 이건 갈아타야 배운 것이 된다.
+     *
+     * 둘을 한 자리에서 막았다가 뒤엣것까지 막았고, **죽은규칙 검사가** 그걸
+     * 잡았다 — 안 걸리는 규칙을 재는 판이 제 고침을 잡은 셈이다. 그리고 그
+     * 문장은 칸 이름을 낱말이 아니라 **경로로**(`thinking.type`) 적어 준다.
+     * 두 종류를 나란히 못 박아 다음에 한쪽만 조이는 일을 막는다.
+     */
+    for (const [말, 규격, 바람] of [
+      ["Invalid value: thinking.type 'adaptive' is not supported by this model", 'anthropic', 'budget'],
+      ['Unsupported value: reasoning_effort does not support medium', 'openai', null],
+      ['thinking.budget_tokens must be greater than or equal to 1024', 'anthropic', null],
+    ]) {
+      const 배운 = 배울전선(말, 규격);
+      const 잰것 = 배운 ? (배운.무엇 === '생각형식' ? 배운.값 : 배운.무엇) : null;
+      check(`★★★ 형식이 틀린 것과 값이 틀린 것을 가른다 — ${String(바람)}`,
+        잰것 === 바람, `${String(잰것)} ← ${말.slice(0, 56)}`);
+    }
+
+    /*
+     * ③ 붙임표는 낱말 글자가 아니라 `\b` 가 걸린다. 게이트웨이가 헤더 이름을
+     *    오류 문장에 얹어 주면, 멀쩡히 되던 세션 이름이 꺼진 채 디스크에 남았다.
+     */
+    for (const 말 of [
+      'Unrecognized request argument supplied: user-agent',
+      'Unrecognized request argument supplied: user_agent',
+      "Invalid property 'browser-metadata-extra' in request",
+    ]) {
+      check(`★★★ 이름 안에 든 user·metadata 로는 세션자리를 안 끈다 — ${말.slice(-18)}`,
+        배울전선(말) === null, JSON.stringify(배울전선(말)));
+    }
+    // 반대쪽 — 진짜 그 칸을 두고 한 말은 그대로 배워야 한다.
+    check('★★★ 진짜 user 칸 거절은 그대로 배운다',
+      배울전선("Unrecognized request argument supplied: 'user'")?.무엇 === '세션자리',
+      JSON.stringify(배울전선("Unrecognized request argument supplied: 'user'")));
   }
 
   /*
@@ -746,9 +1043,37 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
     기본카드(연결('https://gw.example.com/v1', 'anthropic', 'claude-opus-5')),
     배울전선('Unrecognized request argument supplied: output_config'));
   check('먼저 효력칸을 껐다', 효력끈것.효력칸 === null, String(효력끈것.효력칸));
-  const 그뒤 = 카드고치기(효력끈것, 배울전선('thinking.budget_tokens is deprecated'));
+  const 그뒤 = 카드고치기(효력끈것, 배울전선('thinking.budget_tokens is deprecated', 'anthropic'));
   check('★★ 껐던 칸을 도로 안 켠다', 그뒤.효력칸 === null, String(그뒤.효력칸));
   check('생각형식은 그대로 배운다', 그뒤.생각형식 === 'adaptive', String(그뒤.생각형식));
+
+  /*
+   * ── 그런데 위 규칙이 **우리가 딸려 끈 것에도** 걸리고 있었다 ────────────
+   *
+   * 딸린 자리를 맞추는 줄이 생각형식을 배울 때마다 효력칸도 「배운 것」 으로
+   * 적는다. 그래서 처음 budget 을 배운 순간(효력칸 null) 그 표가 달리고, 그
+   * 뒤에 adaptive 를 배워도 효력칸이 **영영 null 로 굳었다** — adaptive 인데
+   * 눈금을 실을 칸이 없으니 생각 세기가 조용히 안 나간다(30차 리뷰).
+   *
+   * 서버가 껐을 때(위)와 우리가 딸려 껐을 때(아래)를 둘 다 재야 한다. 한쪽만
+   * 재면 고치면서 다른 쪽을 잃는다.
+   */
+  {
+    const 기본 = 기본카드(연결('https://gw.example.com/v1', 'anthropic', 'claude-sonnet-4-5'));
+    const budget로 = 카드고치기(기본, { 무엇: '생각형식', 값: 'budget' });
+    check('budget 을 배우면 효력칸은 비어야 한다', budget로.효력칸 === null, String(budget로.효력칸));
+    const adaptive로 = 카드고치기(budget로, { 무엇: '생각형식', 값: 'adaptive' });
+    check('★★★ 우리가 딸려 끈 것은 도로 켤 수 있다',
+      adaptive로.효력칸 === 'output_config', String(adaptive로.효력칸));
+
+    // 되살린 뒤에도 서버가 껐다는 표는 살아 있어야 한다 — 안 그러면 켤 때마다
+    // 400 을 한 판씩 더 맞는다.
+    const 남긴것 = 카드저장꼴(그뒤);
+    const 되살린것 = 카드합치기(기본, 남긴것);
+    const 되살린뒤 = 카드고치기(되살린것, { 무엇: '생각형식', 값: 'adaptive' });
+    check('★★★ 서버가 껐다는 표는 저장을 건너가서도 산다',
+      되살린뒤.효력칸 === null, `${String(되살린뒤.효력칸)} · 표=${JSON.stringify(남긴것?.서버가말한칸)}`);
+  }
 }
 
 // ── 11. 강도가 시킨 말을 따라간다 ───────────────────────────────────────
@@ -800,6 +1125,27 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   check('전선 줄에 생각 형식이 있다', 줄.includes('adaptive'), 줄);
   check('전선 줄에 눈금이 있다', 줄.includes('xhigh'), 줄);
   check('빈 카드면 빈 줄', 전선말(null) === '', 전선말(null));
+
+  /*
+   * ── 생각을 안 켠 전선이 눈금 넷을 광고했다 ─────────────────────────────
+   *
+   * `gpt-4o` 카드는 생각형식이 none 인데 회사 눈금을 그대로 들고 있어서
+   * 「생각 없음 · 눈금 minimal·low·medium·high」 라고 떴다. 읽는 사람은 눈금을
+   * 고를 수 있다고 믿지만 나가는 칸이 아예 없다.
+   *
+   * 배워서 none 이 된 카드는 눈금을 비우고(카드고치기) 짐작으로 none 인 카드는
+   * 안 비워서, 같은 파일 두 갈래가 화면에 서로 다른 말을 했다(30차 리뷰).
+   */
+  const 사오 = 기본카드(연결('https://api.openai.com/v1', 'openai', 'gpt-4o'));
+  const 사오줄 = 전선말(사오);
+  check('생각 없음이면 눈금을 안 적는다',
+    사오.생각형식 === 'none' && !/minimal|low|medium|high/.test(사오줄), `${사오.생각형식} · ${사오줄}`);
+  check('★★★ 값은 안 지운다 — 나중에 켜면 다시 뜻이 있다',
+    사오.눈금.length > 0, JSON.stringify(사오.눈금));
+  // 반대쪽 — 생각을 켠 전선에서는 눈금이 그대로 보여야 한다.
+  const 오 = 기본카드(연결('https://api.openai.com/v1', 'openai', 'gpt-5'));
+  check('생각을 켜면 눈금이 보인다',
+    오.생각형식 === 'effort' && /minimal/.test(전선말(오)), `${오.생각형식} · ${전선말(오)}`);
   적어둘것.push('전선 줄: ' + 줄);
 
   // ★ 전선에 나가는 글자는 옮기지 않는다 — 옮기면 화면과 몸이 달라진다.

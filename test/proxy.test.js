@@ -132,17 +132,27 @@ const tls = httpsServer({ key, cert }, (rq, rs) => {
       setTimeout(() => { rs.write('data: 2\n\n'); rs.write('data: [DONE]\n\n'); rs.end(); }, 20);
       return;
     }
+    // 붙기는 다 붙었는데 **생각이 긴** 게이트웨이. 연결 시계가 제때 꺼졌는지
+    // 재는 자리다 — 안 꺼졌으면 이 멀쩡한 답이 오기 전에 끊긴다.
+    if (rq.url === '/v1/slow') {
+      setTimeout(() => {
+        rs.writeHead(200, { 'Content-Type': 'application/json' });
+        rs.end(JSON.stringify({ data: [{ id: 'slow-model' }] }));
+      }, 400);
+      return;
+    }
     rs.writeHead(200, { 'Content-Type': 'application/json' });
     rs.end(JSON.stringify({ data: [{ id: 'tls-model' }] }));
   });
 });
 
-function 가짜프록시({ 인증 = false, 먹통 = false } = {}) {
+function 가짜프록시({ 인증 = false, 먹통 = false, 벙어리 = false, 도전 = 'Basic realm="corp"' } = {}) {
   const 본것 = [];
+  const 터널소켓 = [];
   const p = httpServer((rq, rs) => {
     본것.push(`${rq.method} ${rq.url}`);
     if (인증 && !rq.headers['proxy-authorization']) {
-      rs.writeHead(407, { 'Proxy-Authenticate': 'Basic realm="corp"' });
+      rs.writeHead(407, { 'Proxy-Authenticate': 도전 });
       return rs.end();
     }
     if (rq.headers['proxy-authorization']) 본것.push(`auth ${rq.headers['proxy-authorization']}`);
@@ -157,9 +167,14 @@ function 가짜프록시({ 인증 = false, 먹통 = false } = {}) {
   });
   p.on('connect', (rq, socket, head) => {
     본것.push(`CONNECT ${rq.url}`);
+    터널소켓.push(socket);
+    socket.on('error', () => {});
     if (먹통) return;                       // 영영 대답 안 한다 — 끊기 검사용
+    // 터널은 열어 주고 뒷단은 안 잇는다 — TLS 가 영영 안 선다. 그 사이의 끊기 검사용.
+    // resume 은 있어야 한다 — 진짜 프록시는 읽는다. 안 읽으면 상대가 끊은 것도 못 본다.
+    if (벙어리) { socket.resume(); return void socket.write('HTTP/1.1 200 Connection Established\r\n\r\n'); }
     if (인증 && !rq.headers['proxy-authorization']) {
-      socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="corp"\r\nContent-Length: 0\r\n\r\n');
+      socket.end(`HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: ${도전}\r\nContent-Length: 0\r\n\r\n`);
       return;
     }
     if (rq.headers['proxy-authorization']) 본것.push(`auth ${rq.headers['proxy-authorization']}`);
@@ -175,13 +190,19 @@ function 가짜프록시({ 인증 = false, 먹통 = false } = {}) {
     뒤.on('error', () => socket.destroy());
     socket.on('error', () => 뒤.destroy());
   });
-  return { p, 본것 };
+  return { p, 본것, 터널소켓 };
 }
 const { p: proxy, 본것: 프록시본것 } = 가짜프록시();
 const { p: authProxy, 본것: 인증프록시본것 } = 가짜프록시({ 인증: true });
 const { p: 먹통프록시 } = 가짜프록시({ 먹통: true });
+const { p: 벙어리프록시, 터널소켓: 벙어리소켓 } = 가짜프록시({ 벙어리: true });
+// 사내 프록시는 흔히 여러 방식을 한꺼번에 내민다. 앞엣것만 보고 포기하면 안 된다.
+const { p: 다중인증프록시 } = 가짜프록시({ 인증: true, 도전: 'Negotiate, Basic realm="corp"' });
+const { p: 협상만프록시 } = 가짜프록시({ 인증: true, 도전: 'Negotiate' });
+// realm 값 안의 쉼표는 방식을 나누는 쉼표가 아니다.
+const { p: 따옴표프록시 } = 가짜프록시({ 인증: true, 도전: 'Negotiate realm="internal, basic auth"' });
 
-for (const s of [target, 몰래, tls, proxy, authProxy, 먹통프록시]) await new Promise((r) => s.listen(0, '127.0.0.1', r));
+for (const s of [target, 몰래, tls, proxy, authProxy, 먹통프록시, 벙어리프록시, 다중인증프록시, 협상만프록시, 따옴표프록시]) await new Promise((r) => s.listen(0, '127.0.0.1', r));
 const 대상포트 = target.address().port;
 const 프록시포트 = proxy.address().port;
 
@@ -235,6 +256,36 @@ trace('2-http경유');
   인증프록시본것.length = 0;
   const 인증됨 = await req(`http://127.0.0.1:${대상포트}/v1/models`, { timeout: 3000 });
   check('user:pw 를 주면 Proxy-Authorization 을 붙여 통한다', 인증됨.ok && 인증프록시본것.some((x) => x.startsWith('auth Basic ')), 인증프록시본것.join(' · '));
+
+  /*
+   * 여러 방식을 한꺼번에 내미는 프록시 — Negotiate 는 못 하지만 Basic 은 된다.
+   * 앞엣것만 보고 "지원하지 않습니다, 담당자에게 문의하세요" 로 끝내면 되는 길을
+   * 두고 사람을 돌려보낸다. 여기서 갈리는 것은 **칠 수 있는 명령이 있느냐** 다.
+   */
+  프록시정하기({ env: { HTTP_PROXY: `http://127.0.0.1:${다중인증프록시.address().port}` }, 로컬우회: false });
+  const 둘다 = await req(`http://127.0.0.1:${대상포트}/v1/models`, { timeout: 3000 });
+  check('Negotiate 와 Basic 을 같이 내밀면 Basic 길을 알려 준다',
+    !둘다.ok && 둘다.status === 407 && /user:pw@/.test(둘다.error ?? '') && !/담당자에게 문의/.test(둘다.error ?? ''),
+    String(둘다.error).slice(0, 110));
+  /*
+   * 여기서 `/Negotiate/` 를 재면 **가짜 단언**이 된다 — 안내문이 헤더 원문
+   * (`Negotiate, Basic realm="corp"`)을 그대로 되울리므로, 못 한다고 짚어 주는
+   * 말을 통째로 지워도 그 단언은 참이다(29차가 잡았다). 지우면 사라지는 말로 잰다.
+   */
+  check('그래도 Negotiate 는 못 한다고 짚어 준다',
+    /Negotiate 도 같이 요구하지만 그건 못 합니다/.test(둘다.error ?? ''), String(둘다.error).slice(0, 160));
+  // 따옴표 속 쉼표는 방식을 나누는 쉼표가 아니다 — 그것만으로 Basic 이 있다고 보면 안 된다.
+  프록시정하기({ env: { HTTP_PROXY: `http://127.0.0.1:${따옴표프록시.address().port}` }, 로컬우회: false });
+  const 따옴표 = await req(`http://127.0.0.1:${대상포트}/v1/models`, { timeout: 3000 });
+  check('realm 안의 쉼표를 방식 구분으로 읽지 않는다',
+    !따옴표.ok && /지원하지 않습니다/.test(따옴표.error ?? '') && !/user:pw@/.test(따옴표.error ?? ''),
+    String(따옴표.error).slice(0, 130));
+  // 진짜로 Basic 이 없으면 여태처럼 못 한다고 말해야 한다 — 울타리를 넓히다 이걸 잃으면 안 된다.
+  프록시정하기({ env: { HTTP_PROXY: `http://127.0.0.1:${협상만프록시.address().port}` }, 로컬우회: false });
+  const 협상만 = await req(`http://127.0.0.1:${대상포트}/v1/models`, { timeout: 3000 });
+  check('Negotiate 만 내밀면 여전히 못 한다고 말한다',
+    !협상만.ok && /지원하지 않습니다/.test(협상만.error ?? '') && !/user:pw@/.test(협상만.error ?? ''),
+    String(협상만.error).slice(0, 110));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -274,6 +325,32 @@ trace('4-끊기');
   const t1 = Date.now();
   const 시간 = await req(`https://localhost:${tls.address().port}/v1/models`, { timeout: 300 });
   check('CONNECT 가 안 오면 시간 제한으로 끝난다', !시간.ok && /시간 초과/.test(시간.error ?? '') && Date.now() - t1 < 3000, JSON.stringify({ error: 시간.error, ms: Date.now() - t1 }));
+
+  /*
+   * CONNECT 에는 200 을 주고 그 뒤로 입을 다무는 프록시 — TLS 가 영영 안 선다.
+   *
+   * 여기서 끊으면 **부르는 쪽은 제때 깨진다**(바깥에 끊기 귀가 따로 있다). 그런데
+   * 터널 소켓은 아무도 안 치운다. 그러면 답을 찍고도 프로세스가 안 끝난다 —
+   * 이 저장소가 한 번 겪은 모양이라 http.js 에 주석까지 남아 있는 자리다.
+   */
+  프록시정하기({ env: { HTTPS_PROXY: `http://127.0.0.1:${벙어리프록시.address().port}` }, 로컬우회: false });
+  resetNet();
+  allowEndpoint(`https://localhost:${tls.address().port}`);
+  const ac2 = new AbortController();
+  setTimeout(() => ac2.abort(), 80);
+  const t2 = Date.now();
+  let 끊김2 = null;
+  try { await req(`https://localhost:${tls.address().port}/v1/models`, { signal: ac2.signal, timeout: 10000 }); } catch (e) { 끊김2 = e; }
+  check('TLS 를 올리는 중에 끊어도 바로 Aborted', 끊김2 instanceof Aborted && Date.now() - t2 < 1500, `${끊김2?.name} · ${Date.now() - t2}ms`);
+  await new Promise((r) => setTimeout(r, 200));
+  // 프록시 쪽에서 잰다 — 우리가 소켓을 정말 끊었으면 상대는 끝(FIN)을 본다.
+  // 프록시가 쥔 소켓이 destroyed 인지로 재면 안 된다: 저쪽은 half-open 으로 남을 수 있어
+  // 우리가 안 끊었을 때와 모양이 같다 ("있는 것과 걸리는 것은 다르다").
+  const 안끊긴것 = 벙어리소켓.filter((s) => !s.readableEnded && !s.destroyed).length;
+  check('TLS 를 올리는 중에 끊으면 터널 소켓도 끊는다', 벙어리소켓.length > 0 && 안끊긴것 === 0, `받은 ${벙어리소켓.length}개 · 안 끊긴 것 ${안끊긴것}개`);
+  // 재고 나서는 우리가 치운다. 안 치우면 이 검사가 빨개지는 대신 **멎는다** —
+  // 어긋내기 판에서 실패 하나가 180초를 먹었다. 빨간 것은 빨리 빨개야 한다.
+  for (const s of 벙어리소켓) s.destroy();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -411,6 +488,6 @@ console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 
 프록시지우기();
 resetNet();
-for (const s of [target, 몰래, tls, proxy, authProxy, 먹통프록시]) { s.closeAllConnections?.(); s.close(); }
+for (const s of [target, 몰래, tls, proxy, authProxy, 먹통프록시, 벙어리프록시, 다중인증프록시, 협상만프록시, 따옴표프록시]) { s.closeAllConnections?.(); s.close(); }
 await new Promise((r) => setImmediate(r));
 process.exitCode = fail.length ? 1 : 0;

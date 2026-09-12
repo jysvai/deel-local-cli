@@ -54,7 +54,26 @@ const 색없나 = process.env.NO_COLOR || !process.stdout.isTTY;
 const 색 = (c, s) => (색없나 ? s : `${c}${s}${X}`);
 const 말 = (s = '') => { if (!json) console.log(s); };
 
-const { 어긋들 } = JSON.parse(readFileSync(join(뿌리, 'test', 'mutants.json'), 'utf8'));
+const { 어긋들: 모든어긋 } = JSON.parse(readFileSync(join(뿌리, 'test', 'mutants.json'), 'utf8'));
+
+/*
+ * 한 자리만 재는 길 — `npm run mutate -- src/backend/http.js`.
+ *
+ * 전부 돌리면 열다섯 분이 넘는다. 방금 넓힌 울타리 하나를 재려고 그걸 매번
+ * 기다리면 **안 재게 된다** — 그러면 이 판이 있으나 없으나 같아진다. 그래서
+ * 곳·무엇에 걸리는 것만 골라 돌리는 길을 둔다. 걸러 냈다는 것은 화면에 적는다
+ * (몇 개를 안 봤는지 모르고 초록을 보면 그게 제일 나쁘다).
+ */
+// 윈도우에서 탭 자동완성으로 경로를 넣으면 역슬래시로 온다(`src\backend\http.js`).
+// 목록의 `곳` 은 늘 슬래시라, 안 맞춰 주면 **하나도 못 찾고 종료코드 2** 로 끝난다.
+const 걸러 = 인자.filter((a) => !a.startsWith('--')).map((a) => a.replace(/\\/g, '/'));
+const 어긋들 = 걸러.length === 0
+  ? 모든어긋
+  : 모든어긋.filter((x) => 걸러.some((말) => x.곳.includes(말) || x.무엇.includes(말)));
+if (걸러.length > 0 && 어긋들.length === 0) {
+  console.error(`  걸러낼 것이 하나도 안 맞습니다: ${걸러.join(' · ')}`);
+  process.exit(2);
+}
 
 // ── 일할 폴더 한 벌 ─────────────────────────────────────────────────────
 const 일터 = mkdtempSync(join(tmpdir(), 'deel-mutate-'));
@@ -83,6 +102,9 @@ try {
   // ── 1) 맨 것부터. 원래 빨간 검사로는 아무것도 못 잰다 ─────────────────
   말('');
   말(`  어긋내기  ${색(D, `(${어긋들.length}개를 일부러 어긋내고 검사가 잡는지 봅니다)`)}`);
+  if (어긋들.length !== 모든어긋.length) {
+    말(`  ${색(Y, `골라 돌립니다 — ${모든어긋.length}개 중 ${어긋들.length}개만 봅니다 (${걸러.join(' · ')})`)}`);
+  }
   말('');
   const 맨것 = new Map();
   for (const 검사 of [...new Set(어긋들.map((x) => x.검사))]) {

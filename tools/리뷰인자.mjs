@@ -19,7 +19,7 @@
 export const 값받는옵션 = new Set(['--since', '--to', '--model', '--timeout', '--out']);
 
 /** 도구가 아는 옵션 전부. 검사가 review2.mjs 가 실제로 읽는 것과 견준다. */
-export const 아는옵션 = [...값받는옵션, '--files', '--quiet', '--help'];
+export const 아는옵션 = [...값받는옵션, '--files', '--온통', '--quiet', '--help'];
 
 /**
  * 모르는 옵션을 죽 찾아 돌려준다.
@@ -100,7 +100,9 @@ export function 쓰는법() {
     '  node tools/review2.mjs                     안 올린 판을 본다',
     '  node tools/review2.mjs --since HEAD~3      최근 세 판을 한 판씩',
     '  node tools/review2.mjs --since HEAD~4 --to HEAD~3   그 한 판만',
-    '  node tools/review2.mjs --files a.js b.js   그 파일만',
+    '  node tools/review2.mjs --files a.js b.js   그 파일만 (바뀐 자리)',
+    '  node tools/review2.mjs --온통 src/backend/wire.js',
+    '                                             안 건드린 파일을 통째로',
     '  node tools/review2.mjs --since HEAD~4 --to HEAD~3 --files a.js',
     '                                             그 판에서 그 파일만',
     '',

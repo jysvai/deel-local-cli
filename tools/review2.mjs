@@ -207,6 +207,42 @@ function 볼것() {
     console.error(`  어디부터인지가 없습니다. 예: --since HEAD~3 --to ${까지}\n`);
     process.exit(2);
   }
+  /*
+   * ── 안 건드린 파일을 통째로 보는 길 (`--온통 <파일…>`) ─────────────────
+   *
+   * 여태 이 도구는 **변경분**만 봤다. 그래서 「방금 고친 자리」 는 몇 번씩
+   * 보는데, 한 번도 안 고친 46,048줄은 한 번도 안 봤다. 오래 사는 결함은
+   * 오히려 거기 있다 — 안 고쳤다는 것은 아무도 안 들여다봤다는 뜻이다.
+   *
+   * 빈 것과 견주는 틀은 이미 있다(새파일diff). 그걸 그대로 쓴다.
+   */
+  const w = 인자.indexOf('--온통');
+  if (w >= 0) {
+    const 파일들 = [];
+    for (const x of 인자.slice(w + 1)) {
+      if (x.startsWith('-')) break;
+      파일들.push(x);
+    }
+    if (!파일들.length) {
+      console.error('\n\x1b[31m✗ --온통 뒤에 파일이 없습니다\x1b[0m');
+      console.error('  통째로 볼 파일을 적으세요. 예: --온통 src/backend/wire.js\n');
+      process.exit(2);
+    }
+    const 조각 = [];
+    for (const f of 파일들) {
+      if (!existsSync(f)) {
+        console.error(`\n\x1b[31m✗ 그런 파일이 없습니다: ${f}\x1b[0m\n`);
+        process.exit(2);
+      }
+      조각.push(git('diff', '--no-index', '--', 빈것, f).stdout);
+    }
+    const diff = 조각.join('');
+    if (!diff.trim()) {
+      console.error(`\n\x1b[31m✗ 읽었는데 한 줄도 안 나왔습니다\x1b[0m\n  ${파일들.join('\n  ')}\n`);
+      process.exit(2);
+    }
+    return { 무엇: `온통 ${파일들.length}개 파일`, diff };
+  }
   const i = 인자.indexOf('--files');
   if (i >= 0) {
     /*

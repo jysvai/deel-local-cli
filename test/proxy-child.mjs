@@ -29,6 +29,19 @@ try {
   보고('터널 안에서 흘려 받기도 된다', /data: 1[\s\S]*data: 2[\s\S]*\[DONE\]/.test(글), 글.slice(0, 80));
   보고('머리말을 읽을 수 있다', s.res?.headers?.get?.('content-type')?.includes('text/event-stream'), String(s.res?.headers?.get?.('content-type')));
 
+  /*
+   * 터널로 받은 소켓은 **이미 붙어 있다.** 그래도 연결 시계는 꺼져야 한다.
+   *
+   * 안 꺼지면 「생각이 긴 게이트웨이」 를 멀쩡한데도 끊는다 — 붙는 데까지만
+   * 재라고 둔 시계가 생각하는 시간까지 재는 셈이 된다. 연결 을 400ms 답보다
+   * 짧게(150ms) 주고, 그래도 답이 오는지 본다. 시계가 안 꺼졌으면 여기서
+   * 「연결하지 못했습니다」 가 난다.
+   */
+  const 느린것 = await req(`https://localhost:${대상포트}/v1/slow`, { timeout: 8000, 연결: 150 });
+  보고('터널로 받은 소켓에서도 연결 시계가 꺼진다 (생각이 긴 답을 안 끊는다)',
+    느린것.ok && 느린것.json?.data?.[0]?.id === 'slow-model',
+    JSON.stringify({ ok: 느린것.ok, status: 느린것.status, error: 느린것.error }));
+
   // 허용 안 된 https 대상 — 프록시에 CONNECT 조차 안 간다 (부모가 프록시 기록으로 확인)
   let 막힘 = null;
   try { await req(`https://localhost:${Number(대상포트) + 1}/v1/models`, { timeout: 3000 }); } catch (e) { 막힘 = e; }

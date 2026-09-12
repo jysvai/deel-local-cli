@@ -115,6 +115,8 @@ const 되돌림상태 = new Set([301, 302, 303, 307, 308]);
  *   되돌림(다음URL) — 되돌림을 따라가기 **전에** 부른다. 던지면 안 따라간다.
  *                    부르는 쪽이 제 규칙(사내망 거절 등)을 여기서 건다.
  * @returns 흘려 받기면 { ok, status, headers, res: { body(getReader), headers, text() }, ms }
+ *          — 다만 **실패한 응답에는 body 가 없다** (읽을 것이 흐름이 아니라 거절 글이다).
+ *            부르는 쪽은 `ok` 를 먼저 보고 body 를 만져야 한다 (adapter 의 거절읽기 참고).
  *          아니면       { ok, status, headers, bytes, text, json, ms }
  *          프록시가 407 로 막으면 { ok:false, status:407, error } (몸은 없다)
  */
@@ -617,13 +619,28 @@ function 터널(hostname, port, 프록시, sig, 왜끊겼나, 인증서 = null) 
       host: 프록시.host, port: 프록시.port, agent: false,
       method: 'CONNECT', path: `${hostname}:${port}`, headers: 머리,
     });
-    const 끊기 = () => rq.destroy(왜끊겼나());
+    /*
+     * 중단이 닿아야 할 자리가 판마다 다르다.
+     *
+     *   · CONNECT 를 기다리는 동안 → 요청
+     *   · 그 위에 TLS 를 올리는 동안 → 터널 소켓
+     *
+     * 예전에는 CONNECT 답을 받은 **그 자리에서** 귀를 떼 버렸다. 그래서 200 만
+     * 주고 입을 다무는 프록시를 만나면(뒷단이 죽은 프록시·들여다보는 프록시)
+     * 중단도 시계도 그 소켓에 안 닿았다. 부르는 쪽은 제때 깨지는데 소켓이 남아
+     * — 답을 찍고도 프로세스가 안 끝나는 모양이 됐다(아래 close 머리말과 같은 탈).
+     * 귀는 그대로 두고 **끊을 자리만 바꿔** 쥔다.
+     */
+    let 끊을것 = () => rq.destroy(왜끊겼나());
+    const 끊기 = () => 끊을것();
     sig.addEventListener('abort', 끊기, { once: true });
     const 정리 = () => sig.removeEventListener('abort', 끊기);
 
     rq.once('connect', (res, socket, head) => {
-      정리();
+      // 끊긴 뒤에 답이 도착한 판 — 소켓을 받아 놓고 아무도 안 쥐면 그대로 남는다.
+      if (sig.aborted) { 정리(); socket.destroy(); return reject(왜끊겼나()); }
       if (res.statusCode !== 200) {
+        정리();
         socket.destroy();
         const e = new Error(res.statusCode === 407
           ? 인증말(res.headers['proxy-authenticate'], 프록시)
@@ -636,8 +653,10 @@ function 터널(hostname, port, 프록시, sig, 왜끊겼나, 인증서 = null) 
       const 이름 = /^[\d.]+$|:/.test(hostname) ? undefined : hostname;
       // 우리 인증서도 이 위에서 낸다 — 프록시 뒤에서 mTLS 가 안 되면
       // 사내(프록시 필수 + 인증서 필수)에서는 붙는 방법이 아예 없다.
-      const tls = tlsConnect({ socket, host: hostname, servername: 이름, ...(인증서 ?? {}) }, () => resolve(tls));
-      tls.once('error', reject);     // 대상 인증서 문제 — 프록시 탓이 아니라 표시를 안 붙인다
+      const tls = tlsConnect({ socket, host: hostname, servername: 이름, ...(인증서 ?? {}) }, () => { 정리(); resolve(tls); });
+      // 이제부터 중단은 **이 소켓**을 끊어야 한다 (위 머리말).
+      끊을것 = () => { const e = 왜끊겼나(); tls.destroy(e); socket.destroy(); reject(e); };
+      tls.once('error', (e) => { 정리(); reject(e); });     // 대상 인증서 문제 — 프록시 탓이 아니라 표시를 안 붙인다
       // TLS 층이 닫혀도 밑의 프록시 소켓은 저절로 안 닫힌다. 그대로 두면 요청마다 소켓이
       // 하나씩 남아 프로세스가 안 끝난다 (deel run 이 답을 찍고도 안 나가는 모양이 된다).
       tls.once('close', () => socket.destroy());
@@ -661,8 +680,22 @@ function 다읽기(res) {
 // 고치라고 하면 고쳐도 안 바뀐다 (평가에서 잡혔다).
 function 인증말(도전, 프록시) {
   const s = String(도전 ?? '');
-  if (/ntlm|negotiate/i.test(s)) {
-    return `프록시(${프록시.url})가 ${/ntlm/i.test(s) ? 'NTLM' : 'Negotiate'} 인증을 요구합니다 — 이 방식은 지원하지 않습니다.`
+  /*
+   * 사내 프록시는 흔히 **여러 방식을 한꺼번에** 내민다 —
+   *   Proxy-Authenticate: Negotiate, Basic realm="corp"
+   * 앞엣것만 보고 "이 방식은 지원하지 않습니다, 담당자에게 문의하세요" 로 끝내면,
+   * 바로 옆에 우리가 갈 수 있는 Basic 이 열려 있는데도 사람을 돌려보내는 셈이다.
+   * 이 파일이 애초에 생긴 까닭이 그거다 — 적힌 탈출구가 막혀 있는 것이 제일 나쁘다.
+   *
+   * 방식 이름은 쉼표로 나뉜 **앞자리**에만 온다. realm="basic-corp" 같은 글에
+   * 걸리면 안 되니 자리까지 본다. 그리고 자리를 보려면 **따옴표 속을 먼저
+   * 지워야** 한다 — realm="internal, basic auth" 의 쉼표는 방식을 나누는
+   * 쉼표가 아닌데, 안 지우면 그것만으로 「Basic 도 준다」 로 읽힌다.
+   */
+  const 베이직 = /(?:^|,)\s*basic\b/i.test(s.replace(/"[^"]*"/g, '""'));
+  const 못하는것 = /ntlm/i.test(s) ? 'NTLM' : (/negotiate/i.test(s) ? 'Negotiate' : null);
+  if (못하는것 && !베이직) {
+    return `프록시(${프록시.url})가 ${못하는것} 인증을 요구합니다 — 이 방식은 지원하지 않습니다.`
       + ' 사내 담당자에게 Basic 인증이나 인증 없는 프록시 주소를 문의하세요.';
   }
   const 주소 = `http://user:pw@${프록시.host}:${프록시.port}`;
@@ -670,7 +703,8 @@ function 인증말(도전, 프록시) {
     ? `설정 파일의 "proxy": "${주소}"`
     : `${프록시.출처 ?? 'HTTPS_PROXY'}=${주소}`;
   return `프록시(${프록시.url})가 인증을 요구합니다 (407${s ? ` · ${s.slice(0, 60)}` : ''})`
-    + ` — 프록시 주소에 user:pw@ 를 넣으세요: ${자리}`;
+    + ` — 프록시 주소에 user:pw@ 를 넣으세요: ${자리}`
+    + (못하는것 ? ` (${못하는것} 도 같이 요구하지만 그건 못 합니다 — Basic 으로 가세요)` : '');
 }
 
 // fetch 가 던진 것에서 코드 하나를 뽑는다. undici 는 원인을 cause 에 싸서 준다.
@@ -739,7 +773,17 @@ export function normalizeError(err) {
      * 그래서 두 가지를 한 자리에서 잡아 **우리 문장으로 갈아 끼운다.** 원문을
      * 안 보여 주는 것이 여기서는 친절이 아니라 안전이다.
      */
-    if (/ByteString|character at index|invalid header (value|name)/i.test(m)) return '열쇠(또는 헤더)에 한글·특수문자가 섞여 있습니다 — API 키는 영문·숫자만 실립니다. 붙여넣을 때 따옴표나 줄바꿈이 딸려 오지 않았는지 보세요';
+    /*
+     * 셋째 말투 — **프록시를 켠 사람만 다른 답을 받고 있었다.**
+     *
+     * 곧장 가는 길은 fetch(undici)라 위의 두 말투가 나온다. 그런데 프록시를 켜면
+     * node:http 로 가고, 거기서는 말투가 아예 다르다:
+     *   Invalid character in header content ["Authorization"]   (code ERR_INVALID_CHAR)
+     * 열쇠 값은 안 들어 있어 새지는 않는다. 대신 **안내가 안 뜬다** — 같은 열쇠,
+     * 같은 실수인데 프록시가 있고 없고에 따라 한 쪽만 한국어 안내를 받았다.
+     */
+    if (/ByteString|character at index|invalid header (value|name)|invalid character in header|must be a valid HTTP token/i.test(m)
+      || /^ERR_INVALID_(CHAR|HTTP_TOKEN)$/.test(코드)) return '열쇠(또는 헤더)에 한글·특수문자가 섞여 있습니다 — API 키는 영문·숫자만 실립니다. 붙여넣을 때 따옴표나 줄바꿈이 딸려 오지 않았는지 보세요';
     if (/fetch failed/i.test(m)) return '연결 실패 — 주소·포트·프록시를 확인하세요';
     return m;
   })();

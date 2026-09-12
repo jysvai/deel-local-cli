@@ -389,6 +389,254 @@
       "찾을것": "const 까닭자리 = ['status', 'error', 'reason', 'finishReason', 'finish_reason',",
       "바꿀것": "const 까닭자리 = ['status', 'error', 'finishReason', 'finish_reason',",
       "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "src/backend/http.js",
+      "무엇": "Basic 도 같이 내밀었는지 안 보고 포기한다",
+      "그러면": "Negotiate, Basic 을 같이 내미는 사내 프록시에서 쓸 수 있는 Basic 을 두고 담당자를 찾아가게 만든다",
+      "찾을것": "  if (못하는것 && !베이직) {",
+      "바꿀것": "  if (못하는것) {",
+      "검사": "test/proxy.test.js"
+    },
+    {
+      "곳": "src/backend/http.js",
+      "무엇": "터널이 CONNECT 를 받은 자리에서 중단 귀를 바로 뗀다",
+      "그러면": "CONNECT 에 200 만 주고 입 다무는 프록시에서 터널 소켓이 남아 답을 찍고도 프로세스가 안 끝난다",
+      "찾을것": "      if (sig.aborted) { 정리(); socket.destroy(); return reject(왜끊겼나()); }",
+      "바꿀것": "      정리();   // 예전처럼 여기서 뗀다",
+      "검사": "test/proxy.test.js"
+    },
+    {
+      "곳": "src/backend/http.js",
+      "무엇": "TLS 를 올리는 동안 끊을 자리를 안 바꿔 쥔다",
+      "그러면": "중단이 요청에만 닿고 터널 소켓엔 안 닿아, 핸드셰이크가 멈춘 판에서 소켓이 그대로 남는다",
+      "찾을것": "      끊을것 = () => { const e = 왜끊겼나(); tls.destroy(e); socket.destroy(); reject(e); };",
+      "바꿀것": "      // 끊을것 을 안 바꾼다",
+      "검사": "test/proxy.test.js"
+    },
+    {
+      "곳": "src/backend/http.js",
+      "무엇": "연결 시계를 끄는 갈림길을 뒤집는다",
+      "그러면": "터널로 받은 **이미 붙은** 소켓에서 시계가 안 꺼져, 10초 넘게 생각하는 게이트웨이를 멀쩡한데도 끊는다",
+      "찾을것": "          if (!sock || sock.connecting !== true) return 붙었다();",
+      "바꿀것": "          if (!sock || sock.connecting === true) return 붙었다();",
+      "검사": "test/proxy.test.js"
+    },
+    {
+      "곳": "src/backend/http.js",
+      "무엇": "못 하는 방식을 짚어 주는 말을 지운다",
+      "그러면": "Negotiate 도 같이 요구받은 사람이 Basic 안내만 받고, 왜 Negotiate 로는 안 되는지 모른 채 그것부터 시도한다",
+      "찾을것": "    + (못하는것 ? ` (${못하는것} 도 같이 요구하지만 그건 못 합니다 — Basic 으로 가세요)` : '');",
+      "바꿀것": "    + '';",
+      "검사": "test/proxy.test.js"
+    },
+    {
+      "곳": "src/backend/http.js",
+      "무엇": "방식을 가릴 때 따옴표 속을 안 지운다",
+      "그러면": "realm=\"internal, basic auth\" 처럼 realm 값에 쉼표가 든 것만으로 「Basic 도 준다」 로 읽어, 안 되는 길을 알려 준다",
+      "찾을것": "  const 베이직 = /(?:^|,)\\s*basic\\b/i.test(s.replace(/\"[^\"]*\"/g, '\"\"'));",
+      "바꿀것": "  const 베이직 = /(?:^|,)\\s*basic\\b/i.test(s);",
+      "검사": "test/proxy.test.js"
+    },
+    {
+      "곳": "src/backend/http.js",
+      "무엇": "헤더 울타리에서 말 무늬 갈래만 뺀다",
+      "그러면": "코드가 안 실려 오는 판(undici 의 ByteString 오류 등)에서 원문이 그대로 나간다 — 그 원문에 열쇠가 들어 있다",
+      "찾을것": "    if (/ByteString|character at index|invalid header (value|name)|invalid character in header|must be a valid HTTP token/i.test(m)\n      || /^ERR_INVALID_(CHAR|HTTP_TOKEN)$/.test(코드)) return",
+      "바꿀것": "    if (/^NEVER_MATCHES_MESSAGE$/i.test(m)\n      || /^ERR_INVALID_(CHAR|HTTP_TOKEN)$/.test(코드)) return",
+      "검사": "test/오류말.test.js"
+    },
+    {
+      "곳": "src/backend/http.js",
+      "무엇": "헤더 울타리에서 코드 갈래만 뺀다",
+      "그러면": "말이 우리 무늬와 다른 런타임 판에서 안내가 안 뜨고 영어 원문이 나간다",
+      "찾을것": "      || /^ERR_INVALID_(CHAR|HTTP_TOKEN)$/.test(코드)) return '열쇠",
+      "바꿀것": "      || /^ERR_NEVER_A_CODE$/.test(코드)) return '열쇠",
+      "검사": "test/오류말.test.js"
+    },
+    {
+      "곳": "tools/mutate.mjs",
+      "무엇": "걸러낼 말에서 역슬래시를 안 맞춰 준다",
+      "그러면": "윈도우에서 자동완성 경로(src\\backend\\http.js)를 주면 하나도 못 찾고 종료코드 2 로 끝난다 — 잰 줄 알고 넘어간다",
+      "찾을것": "const 걸러 = 인자.filter((a) => !a.startsWith('--')).map((a) => a.replace(/\\\\/g, '/'));",
+      "바꿀것": "const 걸러 = 인자.filter((a) => !a.startsWith('--'));",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰인자.mjs",
+      "무엇": "아는 옵션 목록에서 --온통 을 뺀다",
+      "그러면": "멀쩡한 옵션이 「모르는 옵션입니다」 로 막혀 도구가 아예 안 돈다 — 등록을 잊는 것이 실제로 일어난 실수다",
+      "찾을것": "export const 아는옵션 = [...값받는옵션, '--files', '--온통', '--quiet', '--help'];",
+      "바꿀것": "export const 아는옵션 = [...값받는옵션, '--files', '--quiet', '--help'];",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "test/리뷰도구.test.js",
+      "무엇": "옵션 대조에서 indexOf 갈래를 다시 뺀다",
+      "그러면": "`--files`·`--온통` 처럼 indexOf 로 읽는 옵션이 목록에서 빠져도 검사가 초록이라, 도구가 안 도는 것을 아무도 안 막는다",
+      "찾을것": "      ...[...본문.matchAll(/indexOf\\(\\s*'(--[^']+)'/g)].map((m) => m[1]),",
+      "바꿀것": "      // indexOf 갈래를 안 본다",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/review2.mjs",
+      "무엇": "--온통 에 파일이 안 붙어도 그냥 간다",
+      "그러면": "빈 목록으로 내려가 아무것도 못 보고, 화면에는 무엇을 봤다는 말만 남는다 — `--files` 에서 이미 한 번 고친 부류다",
+      "찾을것": "      console.error('\\n\\x1b[31m✗ --온통 뒤에 파일이 없습니다\\x1b[0m');",
+      "바꿀것": "      // 멈추지 않는다",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "서버가 쓰라는 출력칸 이름을 안 읽는다",
+      "그러면": "OpenAI 가 o1·gpt-5 에 내는 실제 문구에서 **반대**를 배우고 디스크에 남긴다 — 그 창구는 매 턴 400 이고 배움 파일을 지울 때까지 안 낫는다",
+      "찾을것": "  if (쓰라는것 && 거절.test(s)) {",
+      "바꿀것": "  if (false && 쓰라는것 && 거절.test(s)) {",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "adaptive 를 칸 이야기인지 안 보고 배운다",
+      "그러면": "「Adaptive rate limit exceeded」 같은 할당량 문구로 생각형식을 바꿔 버리고, 그 값이 디스크에 남아 멀쩡한 설정이 꺼진 채 굳는다",
+      "찾을것": "  if (/adaptive/i.test(s) && 거절.test(s) && 칸이야기.test(s) && 규격 === 'anthropic') {",
+      "바꿀것": "  if (/adaptive/i.test(s) && 거절.test(s)) {",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "세션자리 무늬에서 붙임표 막이를 뺀다",
+      "그러면": "`user-agent` 처럼 이름 안에 든 낱말로 세션 이름을 끄고 디스크에 남긴다 — 멀쩡히 되던 기능이 그 창구에서 영영 꺼진다",
+      "찾을것": "['\"`]?(?<!-)\\b(?:user|metadata)\\b(?!-)['\"`]?",
+      "바꿀것": "['\"`]?\\b(?:user|metadata)\\b['\"`]?",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "추론형 판정에서 뒤 경계를 뺀다",
+      "그러면": "`custom-gpt-50b-chat` 의 크기 표기를 세대로 읽어 추론형으로 보고, 그 모델에 reasoning_effort 를 실어 그 턴이 400 이 된다",
+      "찾을것": "  return /(^|[^a-z0-9])o[1-9]([^a-z0-9]|$)|(^|[^a-z0-9])gpt-?[5-9]([^a-z0-9]|$)/.test(s);",
+      "바꿀것": "  return /(^|[^a-z])o[1-9]([^a-z]|$)|gpt-?5|gpt-?6/.test(s);",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "Bedrock 의 OpenAI 창구에서 Claude 에도 minimal 을 얹는다",
+      "그러면": "`minimal` 은 OpenAI 전용 눈금이라 Claude 에 실어 보내면 그 턴이 400 이다 — 좁히려고 둔 줄이 되레 하나를 얹는다",
+      "찾을것": "        ? 회사눈금.openai.filter((x) => x !== 'minimal')",
+      "바꿀것": "        ? 회사눈금.openai",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "서버가 끈 것과 우리가 딸려 끈 것을 다시 섞는다",
+      "그러면": "생각형식을 처음 배우는 순간 효력칸에 표가 달려, 그 뒤 adaptive 를 배워도 효력칸이 영영 null 로 굳는다 — 생각 세기가 조용히 안 나간다",
+      "찾을것": "    const 서버가껐나 = (카드.서버가말한칸 ?? []).includes('효력칸');",
+      "바꿀것": "    const 서버가껐나 = (카드.배운칸 ?? []).includes('효력칸') && 카드.효력칸 === null;",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "누가 껐는지 표를 저장에 안 남긴다",
+      "그러면": "다시 켤 때마다 표가 사라져, 서버가 안 받는다고 말해 준 칸이 되살아난다 — 켤 때마다 400 을 한 판씩 더 맞는다",
+      "찾을것": "  if (끈것.length) 남길것.서버가말한칸 = 끈것;",
+      "바꿀것": "  // 표는 안 남긴다",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "생각 없음인데 눈금을 화면에 적는다",
+      "그러면": "「생각 없음 · 눈금 minimal·low·medium·high」 로 떠서, 읽는 사람이 고를 수 있다고 믿는데 나가는 칸이 아예 없다",
+      "찾을것": "  if (카드.생각형식 !== 'none' && 카드.눈금?.length) 조각.push",
+      "바꿀것": "  if (카드.눈금?.length) 조각.push",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "budget 을 Anthropic 아닌 규격에도 배운다",
+      "그러면": "gemini·ollama·규격 모름 창구에도 Anthropic 전용 형식을 배워 남긴다 — 「아닌 것 하나를 뺀다」 는 식은 남은 것을 다 받아 준다",
+      "찾을것": "칸이야기.test(s) && 규격 === 'anthropic') {",
+      "바꿀것": "칸이야기.test(s) && 규격 !== 'openai') {",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "칸 이야기 무늬에 거절 낱말을 다시 섞는다",
+      "그러면": "두 울타리가 같은 것을 보게 되어 새 울타리가 없는 것과 같아진다 — 할당량 문구로 생각형식을 배워 남긴다",
+      "찾을것": "  const 칸낱말 = /\\b(?:parameter|property|field|argument|attribute|input|tag)s?\\b|extra inputs|does not match any of the expected/i;",
+      "바꿀것": "  const 칸낱말 = /\\b(?:parameter|property|field|argument|attribute|input|tag)s?\\b|extra inputs|not permitted|unrecognized|does not match any of the expected/i;",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "출력칸 판정에 무늬를 따로 또 적는다",
+      "그러면": "「추론 시대 OpenAI 모델인가」 를 두 자리에서 따로 물어 `gpt5`·`gpt-7` 이 갈래마다 다르게 읽힌다 — 고칠 곳이 둘이 된다",
+      "찾을것": "  if (추론형오픈AI(모델)) 카드.출력칸 = '새것';",
+      "바꿀것": "  if (/(^|[^a-z0-9])(o[1-9]|gpt-[5-9])([^a-z0-9]|$)/i.test(모델)) 카드.출력칸 = '새것';",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "모듈 눈금 표를 카드에 그대로 물린다",
+      "그러면": "카드 하나를 손댄 것이 그 회사 표 전체를 고쳐, 다음에 켜는 세션이 조용히 다른 눈금을 갖는다",
+      "찾을것": "    눈금: 회사 ? [...(회사눈금[회사] ?? [])] : [],",
+      "바꿀것": "    눈금: 회사 ? (회사눈금[회사] ?? []) : [],",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "칸 갈래가 생각 낱말에 비켜 준다",
+      "그러면": "진짜 원인인 stream_options 를 안 끄고 생각을 끈다 — 같은 400 이 매 턴 다시 뜨는데 화면에는 「배웠습니다」 가 뜨고, 멀쩡한 기능 하나가 딸려 죽는다",
+      "찾을것": "  if (/stream_options/i.test(s) && 거절.test(s)) {\n    return { 무엇: '스트림usage', 값: false, 왜: 짧게(s) };\n  }",
+      "바꿀것": "  if (/stream_options/i.test(s) && 거절.test(s) && !/thinking/i.test(s)) {\n    return { 무엇: '스트림usage', 값: false, 왜: 짧게(s) };\n  }",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "오류 문장에서 모델 이름 토막을 안 잘라낸다",
+      "그러면": "`Model Group=qwen3-…-thinking-2507` 의 이름이 판정에 섞여, 그 모델을 쓰는 사람만 생각이 꺼진다",
+      "찾을것": "  const 이름토막뺀것 = s\n",
+      "바꿀것": "  const 이름토막뺀것 = s; void 0 ||\n",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "budget_tokens 를 규격 안 보고 배운다",
+      "그러면": "OpenAI 규격 프록시가 우리 칸을 번역해 올리다 거절당한 문장으로 adaptive 를 배워, 그 뒤로 세기가 아예 안 나간다 — 그 턴은 200 이라 아무도 안 알아챈다",
+      "찾을것": "  if (/budget_tokens/i.test(s) && 거절.test(s) && 규격 === 'anthropic') {",
+      "바꿀것": "  if (/budget_tokens/i.test(s) && 거절.test(s)) {",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "열거형 값 오류를 값 탓으로 안 센다",
+      "그러면": "서버가 거절한 것은 값 하나인데 생각형식이 꺼지고 눈금까지 비워 디스크에 남는다 — 그 모델에서 /think 가 아무 일도 안 한다",
+      "찾을것": "  if (값탓열거.test(s)) return null;",
+      "바꿀것": "  if (false) return null;",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "값 세는 말투에서 OpenAI 것을 뺀다",
+      "그러면": "「제일 값진 문장」 이 제일 흔한 창구에서 한 번도 안 걸리고, 그 문장이 「칸을 안 받는다」 로 굴러떨어져 생각이 통째로 꺼진다",
+      "찾을것": "|supported values are|allowed values(?: are)?|permitted values(?: are)?)",
+      "바꿀것": ")",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "값 목록이 눈금 말인지 안 보고 배운다",
+      "그러면": "`tool_choice must be one of: auto, none, required` 같은 아무 열거 문장이나 눈금으로 주워 담아, 그 뒤로 엉뚱한 눈금이 화면에 뜨고 전선에 나간다",
+      "찾을것": "    if (값들.length >= 2 && 눈금말.length >= 2) return { 무엇: '눈금', 값: 값들, 왜: 짧게(s) };",
+      "바꿀것": "    if (값들.length >= 2) return { 무엇: '눈금', 값: 값들, 왜: 짧게(s) };",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "칸 이름을 경로로 적어 주는 문장을 안 본다",
+      "그러면": "`thinking.type 'adaptive' 는 안 된다` 처럼 칸을 경로로 적어 주는 정직한 문장을 못 배운다 — 그 창구는 같은 400 을 매 턴 다시 맞는다",
+      "찾을것": "  const 칸이야기 = { test: (글) => 칸낱말.test(글) || 칸경로.test(글) };",
+      "바꿀것": "  const 칸이야기 = 칸낱말;",
+      "검사": "test/죽은규칙.test.js"
     }
   ]
 }

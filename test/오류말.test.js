@@ -67,6 +67,38 @@ trace('1-열쇠');
   }
   const 말 = normalizeError(오류(`Headers.append: "${진짜열쇠}" is an invalid header value.`));
   check('★★★ 대신 무엇을 고쳐야 하는지 말해 준다', /열쇠|한글|따옴표/.test(말), 말.slice(0, 60));
+
+  /*
+   * 프록시를 켜면 fetch 가 아니라 node:http 로 간다. 말투가 아예 다르다 —
+   * 열쇠는 안 새지만 **안내도 안 떴다.** 같은 실수인데 프록시가 있고 없고에
+   * 따라 한 쪽만 한국어 안내를 받는 것이 여기서 잡으려는 자리다.
+   * 아래 두 줄은 지어낸 것이 아니라 node 가 실제로 낸 말이다.
+   */
+  const 노드말투 = [
+    ['헤더 값이 못 실릴 때 (node:http)',
+      오류('Invalid character in header content ["Authorization"]', { code: 'ERR_INVALID_CHAR' })],
+    ['헤더 이름이 잘못됐을 때 (node:http)',
+      오류('Header name must be a valid HTTP token ["x key"]', { code: 'ERR_INVALID_HTTP_TOKEN' })],
+  ];
+  for (const [이름, e] of 노드말투) {
+    const 답 = normalizeError(e);
+    check(`★★★ ${이름} — 같은 한국어 안내가 뜬다`, /열쇠|한글|따옴표/.test(답), 답.slice(0, 60));
+    check(`★★★ ${이름} — 영어 원문을 그대로 안 내보낸다`, 답 !== e.message, 답.slice(0, 50));
+  }
+
+  /*
+   * 위 두 판은 **말과 코드를 동시에** 만족한다. 그래서 둘 중 한 갈래를 통째로
+   * 지워도 통과한다 — 한쪽이 다른 쪽에 얹혀 가는 것이고, 어긋내기 판에서 실제로
+   * 두 변이가 샜다(29차도 같은 자리를 짚었다). 갈래마다 **혼자** 재야
+   * 「둘 다 있다」 를 지킬 수 있다.
+   */
+  const 말만 = normalizeError(오류('Invalid character in header content ["Authorization"]'));
+  check('★★ 말만 맞아도 (코드 없이) 안내가 뜬다', /열쇠|한글|따옴표/.test(말만), 말만.slice(0, 60));
+  const 코드만 = normalizeError(오류('write EPROTO deadbeef:error:0A000152', { code: 'ERR_INVALID_CHAR' }));
+  check('★★ 코드만 맞아도 (말이 달라도) 안내가 뜬다', /열쇠|한글|따옴표/.test(코드만), 코드만.slice(0, 60));
+  // 말도 코드도 안 맞으면 아무것도 안 갈아 끼운다 — 울타리를 넓히다 이걸 잃으면 안 된다.
+  check('말도 코드도 안 맞으면 안 갈아 끼운다',
+    normalizeError(오류('Something else entirely', { code: 'ERR_OTHER' })) === 'Something else entirely');
 }
 
 // ── 2. 못 붙은 것과 답이 없는 것을 가른다 ───────────────────────────────
