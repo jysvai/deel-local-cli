@@ -170,8 +170,8 @@
       "곳": "src/safety/secrets.js",
       "무엇": "점으로 이은 값을 다시 「빈칸이 있으면 코드」 로 가르게 되돌린다",
       "그러면": "YAML 은 문법이 쌍점 뒤 빈칸을 요구하므로 `API_KEY: token.v1.secret` 이 통째로 안 가려진다 — 그 값이 그대로 모델로 나가고 세션 기록에도 남는다",
-      "찾을것": "  return !코드표시.test(줄);",
-      "바꿀것": "  return !/[ \t]/.test(전체[자리 + 값.length] ?? '') && !코드표시.test(줄);",
+      "찾을것": "  return !코드표시.test(주석떼기(줄떼기(전체, 자리)));",
+      "바꿀것": "  return !/[ \\t]/.test(전체[자리 + 값.length] ?? '') && !코드표시.test(주석떼기(줄떼기(전체, 자리)));",
       "검사": "test/secrets.test.js"
     },
     {
@@ -186,16 +186,16 @@
       "곳": "src/safety/secrets.js",
       "무엇": "줄 뒤 `#` 주석을 안 떼고 줄 통째로 「코드인가」 를 묻게 만든다",
       "그러면": "`API_KEY: token.v1.secret # https://api.example.com` 처럼 주소나 괄호가 든 주석을 달면 그 줄이 코드로 읽혀 비밀이 평문으로 나간다",
-      "찾을것": "const 주석 = /(?:^|[ \\t])#.*$/;",
-      "바꿀것": "const 주석 = /(?!)/;",
+      "찾을것": "    if (자 === '#' && 줄[i - 1] !== '.') return 줄.slice(0, i);",
+      "바꿀것": "    if (false) return 줄.slice(0, i);",
       "검사": "test/secrets.test.js"
     },
     {
       "곳": "src/safety/secrets.js",
-      "무엇": "줄을 떼어 낼 때 줄 끝 `\\r` 을 안 떼게 되돌린다",
-      "그러면": "윈도우 줄바꿈(CRLF)으로 적힌 `.env`·YAML 에서 주석 떼기가 통째로 헛돈다 — 주석에 주소나 괄호가 있으면 그 줄의 비밀이 평문으로 나간다",
-      "찾을것": "  const 줄 = 전체.slice(앞, 뒤 < 0 ? 전체.length : 뒤).replace(/\\r$/, '').replace(주석, '');",
-      "바꿀것": "  const 줄 = 전체.slice(앞, 뒤 < 0 ? 전체.length : 뒤).replace(주석, '');",
+      "무엇": "줄을 떼어 낼 때 `\\r` 을 줄바꿈으로 안 세게 되돌린다",
+      "그러면": "윈도우 줄바꿈(CRLF)으로 적힌 `.env`·YAML 에서 줄 끝을 보는 규칙이 통째로 헛돈다 — 주석에 주소나 괄호가 있으면 그 줄의 비밀이 평문으로 나간다",
+      "찾을것": "  const 남은 = 전체.slice(자리).search(/[\\r\\n]/);",
+      "바꿀것": "  const 남은 = 전체.slice(자리).indexOf('\\n');",
       "검사": "test/secrets.test.js"
     }
   ]
