@@ -58,7 +58,15 @@ export function normalize(v) {
     '쉬움': '쉬움', '초보': '쉬움', '초보자': '쉬움', 'beginner': '쉬움', 'easy': '쉬움', 'b': '쉬움',
     '개발자': '개발자', '고급': '개발자', 'developer': '개발자', 'dev': '개발자', 'advanced': '개발자', 'd': '개발자',
   };
-  return 별명[s] ?? (LEVELS[v] ? v : null);
+  /*
+   * 표에 **제 것으로 있는** 열쇠만 본다.
+   *
+   * `별명[s]` 는 물려받은 열쇠에도 값을 준다. `/level constructor` 면 함수
+   * 하나가 수준 이름으로 통과해서, 그 뒤 shows() 가 `lv.show` 를 읽다가
+   * 터진다 — 명령 목록을 그리는 자리라 대화가 통째로 끝난다.
+   */
+  if (Object.hasOwn(별명, s)) return 별명[s];
+  return Object.hasOwn(LEVELS, v) ? v : null;
 }
 
 export function get(id) {

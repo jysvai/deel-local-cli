@@ -42,6 +42,7 @@ export const en = {
   // ── /think screen ──────────────────────────────────────────────────
   'run.noTools': 'Tool calling is unconfirmed — check with deel diagnose',
   'think.effort': 'Effort',
+  'think.unknown': 'No such effort level: {값}',
   'think.profile': 'Profile',
   'think.detail': 'detail',
   'think.harder': 'harder',
@@ -98,7 +99,7 @@ export const en = {
   'cmd.commit.desc': 'commit — stages only what this session changed; message from the diff and the evidence',
   'cmd.review.desc': 'review the changes in a fresh context — reports findings only, changes nothing',
   'cmd.paste.desc': 'attach the screenshot sitting in the clipboard (capture, then /paste)',
-  'cmd.commit.arg': '[all|preview|title]',
+  'cmd.commit.arg': '[all] [title|preview]',
   'cmd.sessions.desc': 'past sessions in this folder',
   'cmd.recall.desc': 'search past sessions — by what was said, not by title',
   'cmd.recall.arg': '<text>',

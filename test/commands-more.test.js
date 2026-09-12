@@ -504,6 +504,190 @@ trace('13-밖에서붙인도구');
   check('죽은 서버는 왜 죽었는지 적는다', /ENOENT/.test(색빼기(r2.out)), 색빼기(r2.out).trim().slice(0, 120));
 }
 
+trace('13b-지우려다-적고-마는-자리');
+
+// ── 지우려는 명령이 **지우지 않고 다른 일을 하던** 자리들 ─────────────
+//
+// 여기 모은 것은 전부 한 갈래다: 사람이 무언가를 없애거나 고르려고 쳤는데,
+// 명령이 그 말을 못 알아듣고 **다른 일을 한 다음 ✓ 를 찍는다.** 실패가
+// 화면에 뜨면 다시 치면 그만이지만, 성공 표시를 보면 아무도 다시 안 친다.
+{
+  const s = 새세션();
+  const ctx = 새ctx();
+  const M = await import('../src/agent/memory.js');
+
+  // 1) /memory 지우기 — 번호를 안 붙이면 '지우기' 가 기억으로 적혔다.
+  M.비우기(root);
+  s.memory = M.프롬프트토막(root);
+  await 조용히(() => handle('/memory 사내 문서는 CP949 로 읽는다', s, ctx));
+  const 지움 = await 조용히(() => handle('/memory 지우기', s, ctx));
+  const 줄들 = M.읽기(root).줄들;
+  check('★ /memory 지우기 가 「지우기」 를 기억으로 안 적는다',
+    !줄들.some((l) => l.trim() === '지우기'), 줄들.join(' | '));
+  check('★ 지우려던 사람에게 번호를 물어본다', /번호/.test(색빼기(지움.out)),
+    색빼기(지움.out).trim().slice(0, 60));
+  check('★ 지울 것을 고르라고 목록을 같이 보여 준다', /CP949/.test(색빼기(지움.out)), '');
+  check('멀쩡한 기억은 그대로 있다', 줄들.length === 1, String(줄들.length));
+  for (const 말 of ['rm', '잊어', 'forget']) {
+    await 조용히(() => handle(`/memory ${말}`, s, ctx));
+  }
+  check('★ rm·잊어·forget 도 마찬가지다', M.읽기(root).줄들.length === 1,
+    M.읽기(root).줄들.join(' | '));
+  M.비우기(root);
+
+  // 2) /undo — 못 읽는 수로 조용히 한 턴을 되돌리지 않는다.
+  const u1 = await 조용히(() => handle('/undo 다섯', s, 새ctx()));
+  check('★ /undo 다섯 은 숫자를 물어본다', /숫자/.test(색빼기(u1.out)),
+    색빼기(u1.out).trim().slice(0, 60));
+  check('되돌리지 않는다', !/되돌렸습니다/.test(색빼기(u1.out)), '');
+  const u2 = await 조용히(() => handle('/undo -2', s, 새ctx()));
+  check('★ 음수도 마찬가지다', /숫자/.test(색빼기(u2.out)), 색빼기(u2.out).trim().slice(0, 40));
+
+  // 3) /skills on <안 걸리는 말> — 가지고 있던 것까지 내리면 안 된다.
+  const sk = 새ctx();
+  const s2 = 새세션();
+  s2.skills = [
+    { name: '리뷰하기', description: '코드를 본다', enabled: true },
+    { name: '배포하기', description: '올린다', enabled: true },
+  ];
+  const r만 = await 조용히(() => handle('/skills on 없는말', s2, sk));
+  check('★ 안 걸리면 올라간 것을 안 내린다', s2.skills.every((x) => x.enabled === true),
+    s2.skills.map((x) => `${x.name}:${x.enabled}`).join(' '));
+  check('★ 안 걸린다고 말해 준다', /걸리는 스킬이 없습니다/.test(색빼기(r만.out)),
+    색빼기(r만.out).trim().slice(0, 60));
+  check('✓ 로 성공한 척하지 않는다', !/개만 올립니다/.test(색빼기(r만.out)), '');
+  await 조용히(() => handle('/skills on 리뷰', s2, sk));
+  check('걸리면 그것만 올린다',
+    s2.skills[0].enabled === true && s2.skills[1].enabled === false,
+    s2.skills.map((x) => `${x.name}:${x.enabled}`).join(' '));
+
+  // 4) /learned 전선 — 지우는 말을 적어야 지운다.
+  let 지운것 = [];
+  const 배움 = {
+    지우기: (무엇) => 지운것.push(무엇),
+    현황: () => ({ 명령: [], 모델: null, 모델이름: '가모델' }),
+  };
+  const lc = 새ctx({ 배움 });
+  const l1 = await 조용히(() => handle('/learned 전선', s, lc));
+  check('★ /learned 전선 만으로는 안 지운다', 지운것.length === 0, 지운것.join(','));
+  check('★ 지우는 명령을 알려 준다', /전선 지우기/.test(색빼기(l1.out)),
+    색빼기(l1.out).trim().slice(0, 70));
+  await 조용히(() => handle('/learned 전선 지우기', s, lc));
+  check('적어 주면 지운다', 지운것.includes('전선'), 지운것.join(','));
+}
+
+trace('13c-오타가-조용히-먹던-자리');
+
+// ── 못 알아들은 인자를 **못 알아들었다고 말하는가** ────────────────────
+//
+// /work 는 「그런 모드는 없습니다」 를 먼저 말한다. 같은 저장소 안에서
+// /grade·/think 만 오류 없이 지금 상태 표를 띄웠다 — 사람은 정해진 줄로
+// 읽고 그대로 쓴다.
+//
+// 물려받은 열쇠(constructor·__proto__)도 여기서 같이 막는다. 표를 `표[값]`
+// 으로 찾으면 그 이름들이 전부 참이라, /mode 는 **아무것도 안 물어보는**
+// 상태로 들어가고 /level 은 명령 목록을 그리다 터진다.
+{
+  const s = 새세션();
+  const ctx = 새ctx();
+
+  const g1 = await 조용히(() => handle('/grade 크게', s, ctx));
+  check('★ /grade 오타를 못 알아들었다고 말한다', /그런 급은 없습니다/.test(색빼기(g1.out)),
+    색빼기(g1.out).trim().slice(0, 60));
+  check('오타로는 급이 안 바뀐다', s.급정한것 == null, String(s.급정한것));
+
+  const t1 = await 조용히(() => handle('/think hgih', s, ctx));
+  check('★ /think 오타를 못 알아들었다고 말한다', /없습니다/.test(색빼기(t1.out)),
+    색빼기(t1.out).trim().slice(0, 60));
+  check('오타로는 강도가 안 바뀐다', s.think === 'medium', String(s.think));
+
+  // /think auto 켬 — /bell 은 받는 말인데 여기만 안 받아서 **꺼졌다.**
+  s.autoThink = false;
+  await 조용히(() => handle('/think auto 켬', s, ctx));
+  check('★ /think auto 켬 이 켠다', s.autoThink === true, String(s.autoThink));
+  await 조용히(() => handle('/think auto 끔', s, ctx));
+  check('/think auto 끔 은 끈다', s.autoThink === false, String(s.autoThink));
+
+  for (const 이름 of ['constructor', '__proto__', 'toString']) {
+    const 앞모드 = s.mode;
+    const m = await 조용히(() => handle(`/mode ${이름}`, s, ctx));
+    check(`★ /mode ${이름} 로는 승인 방식이 안 바뀐다`, s.mode === 앞모드,
+      `${앞모드} → ${s.mode}`);
+    check(`/mode ${이름} 는 목록을 보여 준다`, /승인 방식/.test(색빼기(m.out)),
+      색빼기(m.out).trim().slice(0, 40));
+
+    const 앞급 = s.급정한것;
+    await 조용히(() => handle(`/grade ${이름}`, s, ctx));
+    check(`★ /grade ${이름} 로는 급이 안 바뀐다`, s.급정한것 === 앞급, String(s.급정한것));
+
+    const 앞수준 = s.level;
+    const lv = await 조용히(() => handle(`/level ${이름}`, s, ctx));
+    check(`★ /level ${이름} 가 안 터진다`, typeof s.level === 'string' && s.level === 앞수준,
+      `${앞수준} → ${String(s.level)}`);
+    check(`/level ${이름} 뒤에도 명령 목록이 그려진다`,
+      색빼기((await 조용히(() => handle('/help', s, ctx))).out).includes('/model'), '');
+  }
+}
+
+trace('13e-종소리');
+
+// ── /bell 이 **이 세션에도** 먹나 ───────────────────────────────────────
+//
+// 명령은 설정 파일만 고쳤다. 울릴지 말지는 repl 이 켤 때 한 번 읽어 둔
+// 값이 정하므로, `/bell off` 를 쳐도 그 세션 내내 계속 울렸다 — 화면은
+// 「이 세션에도 바로 먹습니다」 라고 적으면서. 회의 중에 끄러 들어온
+// 사람이 껐다고 믿고 나간다.
+{
+  const s = 새세션();
+  const 종알림 = { 켬: true, 폴더: 'x' };
+  const ctx = 새ctx({ 종알림 });
+
+  const r1 = await 조용히(() => handle('/bell off', s, ctx));
+  check('★ /bell off 가 이 세션의 종을 바로 끈다', 종알림.켬 === false, String(종알림.켬));
+  check('껐다고 말한다', /껐|off/i.test(색빼기(r1.out)), 색빼기(r1.out).trim().slice(0, 40));
+
+  const r2 = await 조용히(() => handle('/bell', s, ctx));
+  check('★ 상태도 이 세션 값을 말한다 — 설정 파일이 아니라',
+    !/켜져/.test(색빼기(r2.out)), 색빼기(r2.out).trim().slice(0, 60));
+
+  await 조용히(() => handle('/bell on', s, ctx));
+  check('★ /bell on 도 바로 먹는다', 종알림.켬 === true, String(종알림.켬));
+
+  // 그릇이 없는 자리(oneshot 등)에서도 안 터져야 한다.
+  const r3 = await 조용히(() => handle('/bell off', s, 새ctx()));
+  check('그릇이 없어도 안 터진다', r3.v?.handled === true, JSON.stringify(r3.v));
+}
+
+trace('13d-슬래시-경로');
+
+/*
+ * `/tmp` 처럼 **슬래시가 하나뿐인 진짜 경로**를 명령으로 오해하면 안 된다.
+ *
+ * 여러 마디짜리 경로는 낱말 안에 슬래시가 있어서 바로 위 갈래가 잡는다.
+ * 여기서 재는 것은 마디가 하나뿐이라 **그 자리가 있나 봐야만** 아는 경우다 —
+ * 앞 슬래시를 떼고 보면 지금 폴더의 상대 경로를 찾게 되어 한 번도 안 맞는다.
+ */
+{
+  const s = 새세션();
+  const ctx = 새ctx();
+  // 이 컴퓨터에 실제로 있는 한 마디짜리 뿌리 폴더를 고른다(윈도는 지금 드라이브 기준).
+  const 뿌리한마디 = tmpdir().replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+    .split('/').filter(Boolean)[0] ?? '';
+  const 절대 = `/${뿌리한마디}`;
+  if (뿌리한마디 && existsSync(절대) && !existsSync(뿌리한마디)) {
+    const r = await 조용히(() => handle(절대, s, ctx));
+    // 경로로 봤으면 모델에게 넘긴다(handled=false). 명령으로 봤으면 여기서 잡아먹는다.
+    check('★ 한 마디짜리 진짜 경로를 명령으로 안 본다', r.v?.handled === false,
+      `${절대} → ${JSON.stringify(r.v)}`);
+  } else {
+    check('한 마디짜리 뿌리 폴더를 못 골라 건너뜀', true, 절대);
+  }
+  // 여러 마디짜리는 여태처럼 그대로 넘어간다.
+  const 여러마디 = root.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '');
+  const r2 = await 조용히(() => handle(여러마디, s, ctx));
+  check('여러 마디짜리 경로도 그대로 경로다', r2.v?.handled === false, 여러마디);
+}
+
 trace('14-치움');
 srv.close();
 resetNet();

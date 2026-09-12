@@ -533,6 +533,20 @@ trace('3-효과확인');
     check('서버 주소는 그대로다', s.conn.base === base, s.conn.base);
     const cfg2 = load();
     check('다음에도 쓰도록 남겨 둔다', cfg2.profiles.some((p) => p.model === 'gw-llama-70b'), cfg2.profiles.map((p) => p.model).join(', '));
+    /*
+     * ★ 남겨 두는 것만으로는 모자란다 — **지금 쓰는 것**으로도 못 박아야 한다.
+     *
+     * upsert 는 active 가 비었을 때만 채운다. 그래서 새 프로필을 넣기만 하고
+     * active 는 옛 모델에 그대로 남았다. 화면은 「바꿨습니다」 인데 다음에 켜면
+     * 옛 모델로 열리고, /model list 의 ● 도 옛것에 붙어 있다. 그 사이에 친
+     * /ctx·/out 은 active 를 보고 **엉뚱한 프로필**에 값을 적는다.
+     */
+    const 지금것 = cfg2.profiles.find((p) => p.id === cfg2.active);
+    check('★ 바꾼 모델이 다음에 켤 때의 것이 된다', 지금것?.model === 'gw-llama-70b',
+      `active=${cfg2.active} → ${지금것?.model}`);
+    const r2 = await 조용히(() => handle('/model list', s, ctx));
+    const 지금줄 = r2.out.split('\n').find((l) => l.includes('●')) ?? '';
+    check('★ 목록의 ● 도 바꾼 것에 붙는다', 지금줄.includes('gw-llama-70b'), 지금줄.trim());
   }
 
   {

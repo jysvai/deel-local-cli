@@ -36,6 +36,9 @@ import { load, activeProfile, resolveKey } from '../config.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
 import { 잠잠기본, 무소식기본, 연결기본 } from '../backend/http.js';
 import { 인증서설정 } from '../backend/clientcert.js';
+import { 받기설정 } from '../safety/authcmd.js';
+// 열쇠받기 명령을 정책이 못박아 뒀을 수 있다 — 받기설정 이 그 값을 같이 본다.
+import { 정책읽기 } from '../safety/policy.js';
 
 // 컨텍스트를 못 알아냈을 때 쓰는 값. repl.js 와 같은 값을 봐야 한다.
 export const CTX_DEFAULT = 32768;
@@ -67,6 +70,25 @@ export function 연결만들기(prof, { ctx = null, maxTokens = null } = {}) {
     tools: prof.tools ?? false,
     json: prof.json ?? false,
     think: prof.think ?? false,
+    /*
+     * ── 이 두 줄을 빼면 회사 프로필로는 물어볼 수가 없다 ────────────────
+     *
+     * conn 을 짓는 자리는 다섯이다 — repl.js · oneshot.js · acp/serve.js ·
+     * commands.js 의 연결적용, 그리고 여기. 앞의 넷은 이 둘을 넣는데 여기만
+     * 빠져 있었다. 이 함수를 쓰는 자리가 둘인데 **둘 다 남에게 넘기는
+     * 자리**다 — /consult 로 한 번 물어보기, Task 로 하위에 떼어 주기.
+     *
+     * 열쇠를 명령으로 받아 오는 프로필(SSO 토큰)은 prof.key 가 비어 있다.
+     * 그래서 열쇠받기 없이 지으면 Authorization 이 안 실려 401 이 나고,
+     * 열쇠를 다시 받는 길도 잠긴다(adapter.js 의 열쇠다시받을까 는
+     * conn.열쇠받기 를 본다). `/model 회사창구` 는 되는데 `/consult
+     * 회사창구` 만 안 되는, 까닭이 화면에 안 적히는 꼴이 된다.
+     *
+     * vision 도 같다 — 안 넣으면 그림을 볼 수 있는 모델에 하위 작업을
+     * 떼어 주면서 그림을 못 보는 것으로 친다.
+     */
+    열쇠받기: 받기설정(prof, { 정책값: 정책읽기().값 }),
+    vision: prof.vision ?? false,
   };
 }
 

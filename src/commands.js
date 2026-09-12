@@ -110,7 +110,15 @@ function 경로처럼보이나(line) {
   if (첫낱말.includes('/') || 첫낱말.includes('\\')) return true;
   // `/tmp` 처럼 슬래시가 하나뿐이어도, 실제로 있는 자리면 경로로 본다.
   if (첫낱말 && !COMMANDS[첫낱말.toLowerCase()]) {
-    try { if (existsSync(line.slice(1).trim())) return true; } catch { /* 못 보면 아닌 걸로 */ }
+    /*
+     * **적힌 그대로**도 보고, 앞 슬래시를 뗀 것도 본다.
+     *
+     * 앞서는 뗀 것만 봤다. 그러면 `/tmp` 가 지금 폴더의 `tmp` 를 찾다 못 찾아,
+     * 바로 위 머리글이 적어 둔 그 자리가 한 번도 안 먹었다. 둘 다 보면 여태
+     * 되던 것(지금 폴더의 이름)도 그대로 된다.
+     */
+    const 통째 = line.trim();
+    try { if (existsSync(통째) || existsSync(통째.slice(1))) return true; } catch { /* 못 보면 아닌 걸로 */ }
   }
   return false;
 }
@@ -504,7 +512,8 @@ export async function handle(line, session, ctx) {
       const 끄는말 = ['off', '끔', '꺼', '끄기', 'n', 'no', 'ㄴ'];
       const 값 = String(arg ?? '').trim().toLowerCase();
       if (!값) {
-        const 켜져있나 = cfg.bell !== false;
+        // 지금 세션이 참이다. 설정 파일은 '다음에 켤 때' 값일 뿐이다.
+        const 켜져있나 = ctx?.종알림 ? ctx.종알림.켬 !== false : cfg.bell !== false;
         const 상태 = 켜져있나 ? c.hgreen(말('bell.stateOn')) : c.gray(말('bell.stateOff'));
         say('');
         say(`  ${c.gray(말('bell.now', { 상태 }))}`);
@@ -522,6 +531,9 @@ export async function handle(line, session, ctx) {
       }
       cfg.bell = 켜는말.includes(값);
       설정남기기(cfg);
+      // 이 세션에도 바로 먹여야 한다 — 아래 줄이 그렇게 적는다.
+      // repl 은 켤 때 읽어 둔 그릇으로 울릴지 말지를 정한다(repl.js 의 알림).
+      if (ctx?.종알림) ctx.종알림.켬 = cfg.bell;
       say('');
       say(`  ${mark.ok} ${말(cfg.bell ? 'bell.turnedOn' : 'bell.turnedOff')}`);
       // 켤 때는 한 번 울려 준다. "켰다는데 소리가 나나?" 를 그 자리에서 확인하게.
@@ -726,7 +738,9 @@ export async function handle(line, session, ctx) {
        */
       if (/^(auto|자동)(\s|$)/.test(말)) {
         const 값 = 말.replace(/^(auto|자동)\s*/, '').trim().toLowerCase();
-        const 켤까 = 값 === '' ? session.autoThink === false : /^(on|켜|켜기|true)$/.test(값);
+        // `켬` 도 켜는 말이다. /bell 은 받는데 여기만 빠져 있어서, `/think auto 켬`
+        // 이 **끄는** 명령이 됐다 — 켜려고 친 말로 꺼지고 화면은 「껐습니다」 였다.
+        const 켤까 = 값 === '' ? session.autoThink === false : /^(on|켬|켜|켜기|true|y|yes|ㅇ)$/.test(값);
         session.autoThink = 켤까;
         say(`  ${mark.ok} ${옮긴말(켤까 ? 'think.autoOn' : 'think.autoOff')}`);
         showThink(session);
@@ -745,6 +759,12 @@ export async function handle(line, session, ctx) {
       }
 
       if (!THINK_LEVELS.includes(말)) {
+        // 못 알아들은 값은 못 알아들었다고 먼저 말한다. 안 그러면 `/think hgih`
+        // 가 오류 없이 표만 띄워서, 강도를 올린 줄 알고 그대로 쓰게 된다.
+        if (말) {
+          say('');
+          say(`  ${mark.no} ${c.gray(옮긴말('think.unknown', { 값: 말 }))}`);
+        }
         showThink(session);
         return { handled: true };
       }
@@ -769,7 +789,16 @@ export async function handle(line, session, ctx) {
      */
     case 'mode': {
       const { 승인, 차례: 승인차례, 표시: 승인표시 } = await import('./ui/approve.js');
-      if (!MODES[arg]) {
+      /*
+       * 표에 **제 것으로 있는** 이름만 받는다.
+       *
+       * `MODES[arg]` 는 물려받은 열쇠에도 참이다. `/mode constructor` 를
+       * 치면 목록으로 안 빠지고 그대로 session.mode 에 들어가는데, 그 값은
+       * strict 도 confirm 도 아니라 **아무것도 안 물어보는** 상태가 된다
+       * (agent/loop.js 의 needsOk). 화면에는 `엄격 → undefined` 가 찍힌다.
+       * `--work` 오타가 가장 센 모드로 돌던 것과 같은 자리다.
+       */
+      if (!Object.hasOwn(MODES, arg)) {
         rule('승인 방식 — 무엇을 물어볼까', 70);
         for (const k of 승인차례) {
           const 지금 = k === session.mode;
@@ -820,7 +849,23 @@ export async function handle(line, session, ctx) {
      * 되돌린 것이 다음 순간 되살아난다.
      */
     case 'undo': {
-      const n = Math.max(1, parseInt(arg, 10) || 1);
+      /*
+       * 못 읽는 인자로 **말없이 한 턴을 되돌리지 않는다.**
+       *
+       * parseInt 는 `다섯`·`abc` 를 NaN, `-2` 를 음수로 준다. 앞서는 둘 다
+       * 1 로 깎아서, 다섯 턴을 되돌리려던 사람이 한 턴만 되돌아간 화면을
+       * 봤다. 되돌리기는 **파일을 실제로 되돌리는** 명령이라 잘못 읽은 수로
+       * 도는 값이 다른 명령보다 비싸다. /work 가 오타를 먼저 말하는 것과
+       * 같은 잣대다.
+       */
+      const 준말 = String(arg ?? '').trim();
+      if (준말 && !/^[0-9]+$/.test(준말)) {
+        say(`  ${mark.no} ${c.gray('몇 턴을 되돌릴지 숫자로 적어 주세요.')} ${c.cyan('/undo 3')}`);
+        say(`  ${c.gray('그냥')} ${c.cyan('/undo')} ${c.gray('만 치면 한 턴을 되돌립니다.')}`);
+        say('');
+        return { handled: true };
+      }
+      const n = Math.max(1, parseInt(준말, 10) || 1);
       const r = ctx.history.undo(n);
       /*
        * 세는 수는 **진짜로 되돌아간 것**이다.
@@ -832,8 +877,17 @@ export async function handle(line, session, ctx) {
        */
       const 되돌린수 = r.되돌린수 ?? r.restored.length;
       ctx.audit.undo({ turns: r.turns, files: 되돌린수 });
-      if (!r.restored.length) {
+      /*
+       * **하나도 안 되돌아갔으면** 되돌렸다고 하지 않는다.
+       *
+       * restored 에는 못 되돌린 것과 손대지 않은 것(바이너리처럼 내용을 못
+       * 떠 둔 파일)도 들어 있다. 그 길이만 보면, 되돌아간 파일이 0개인
+       * 판에도 `✓ … 파일 0개를 되돌렸습니다` 를 찍고 그 밑에 못 되돌린
+       * 파일 목록을 성공 목록처럼 늘어놓았다.
+       */
+      if (!되돌린수) {
         say(`  ${c.gray(말('undo.nothing'))}`);
+        if (r.못한것?.length) say(`  ${mark.warn} ${말('undo.failed', { n: r.못한것.length })}`);
         say('');
         return { handled: true };
       }
@@ -1233,6 +1287,33 @@ export async function handle(line, session, ctx) {
         else {
           session.memory = M.프롬프트토막(session.root);
           say(`  ${mark.ok} 잊었습니다: ${c.gray(clip(r.뺀것, 60))}`);
+        }
+        say('');
+        return { handled: true };
+      }
+
+      /*
+       * 지우려다 **적고 마는** 자리를 막는다.
+       *
+       * `/memory 지우기` 처럼 번호를 안 붙이면 위 무늬에 안 걸리고 아래
+       * 「이걸 기억해라」 로 떨어졌다. 그래서 `지우기` 라는 낱말이 기억 파일에
+       * **영영 적히고**, 화면에는 「기억했습니다」 라고 떴다. 그 줄은 그 뒤로
+       * 매 요청마다 모델에게 같이 나간다. 지우려던 사람이 쓰레기를 하나 더
+       * 심는 꼴이고, 그것도 성공 표시를 보면서 그렇게 된다.
+       */
+      // 낱말 끝은 `\\b` 로 못 잡는다 — 한글은 \\w 가 아니라 `지우기` 뒤에 낱말
+      // 경계가 안 생긴다. 실제로 이 무늬로 고쳤다가 한글만 그대로 새 나갔다.
+      if (/^(지우기|잊어|forget|rm)(\s|$)/i.test(말)) {
+        const 있는것 = M.읽기(session.root).줄들;
+        say(`  ${mark.no} ${c.gray('몇 번째 줄을 지울지 번호를 적어 주세요.')}`);
+        if (있는것.length) {
+          for (const [i, l] of 있는것.entries()) {
+            say(`  ${c.gray(String(i + 1).padStart(2))}  ${c.white(clip(l, 82))}`);
+          }
+          say('');
+          say(`  ${c.cyan('/memory 지우기 1')}   ${c.gray('한 줄만')}      ${c.cyan('/memory 비우기')}   ${c.gray('전부')}`);
+        } else {
+          say(`  ${c.gray('지금은 기억해 둔 것이 없습니다.')}`);
         }
         say('');
         return { handled: true };
@@ -1745,12 +1826,23 @@ function showSkills(session, arg) {
   }
   if (q.startsWith('on ')) {
     const term = q.slice(3).trim().toLowerCase();
-    let n = 0;
-    for (const s of all) {
-      s.enabled = 낮게(s.name).includes(term) || 낮게(s.description).includes(term);
-      if (s.enabled) n++;
+    const 걸린것 = all.filter((s) => 낮게(s.name).includes(term) || 낮게(s.description).includes(term));
+    /*
+     * 한 개도 안 걸리면 **아무것도 안 건드린다.**
+     *
+     * 앞서는 걸림 여부를 그대로 enabled 에 넣었다. 그래서 오타 하나면 전부
+     * false 가 되고, 화면에는 `✓ "리뷰" 에 걸리는 0개만 올립니다` 가 떴다.
+     * 올리려고 친 명령이 가지고 있던 것까지 다 내려 버리는데, 표시는 ✓ 다.
+     * 그다음 모델이 스킬을 못 쓰는 것을 보고 사람은 스킬이 깨진 줄 안다.
+     */
+    if (!걸린것.length) {
+      say(`  ${mark.no} "${term}" 에 걸리는 스킬이 없습니다 ${c.gray('— 올라간 것은 그대로 둡니다.')}`);
+      say(`  ${c.gray('무엇이 있는지 보려면')} ${c.cyan('/skills')}`);
+      say('');
+      return;
     }
-    say(`  ${mark.ok} "${term}" 에 걸리는 ${n}개만 올립니다.`);
+    for (const s of all) s.enabled = 걸린것.includes(s);
+    say(`  ${mark.ok} "${term}" 에 걸리는 ${걸린것.length}개만 올립니다.`);
     say('');
     return;
   }
@@ -2295,9 +2387,18 @@ async function 리뷰명령(session, ctx) {
 
 async function 커밋명령(session, ctx, arg = '') {
   const 말한것 = String(arg ?? '').trim();
-  const 전부 = /^(전부|all)$/i.test(말한것);
-  const 미리보기 = /^(미리보기|preview|dry|--dry-run)$/i.test(말한것);
-  const 준제목 = 전부 || 미리보기 ? null : (말한것 || null);
+  /*
+   * `전부` 뒤에 제목을 같이 적을 수 있다.
+   *
+   * 앞서는 `^(전부|all)$` 라 `/commit 전부 버그 수정` 이 **둘 다** 어긋났다 —
+   * 전부가 거짓이 되어 폴더째 바뀐 파일이 빠지고, `전부 버그 수정` 이 통째로
+   * 커밋 제목이 됐다. 어느 쪽도 화면에 안 적힌다.
+   */
+  const 전부친것 = /^(전부|all)(\s+|$)/i.exec(말한것);
+  const 전부 = !!전부친것;
+  const 남은말 = 전부 ? 말한것.slice(전부친것[0].length).trim() : 말한것;
+  const 미리보기 = /^(미리보기|preview|dry|--dry-run)$/i.test(남은말);
+  const 준제목 = 미리보기 ? null : (남은말 || null);
 
   say('');
   rule('커밋', 70);
@@ -2532,7 +2633,21 @@ function 배움명령(session, ctx, arg = '') {
    * 몇 주 쌓은 명령 겪음까지 같이 날아갔다 — 그게 아까워서 사람은 안 비우고,
    * 안 비우니 꺼진 기능을 그냥 안고 쓴다. 전선만 지우면 잃을 것이 없다.
    */
-  if (/^(전선|wire)\s*(지우기|clear|forget|비우기)?$/i.test(String(arg).trim())) {
+  /*
+   * 지우는 말은 **반드시 적어야** 한다.
+   *
+   * 앞서는 `\s*(…)?` 라 `/learned 전선` 만 쳐도 곧바로 지웠다. 화면이 알려
+   * 주는 명령은 `/learned 전선 지우기` 라 그 짧은 꼴은 어디에도 안 적혀
+   * 있는데, 「전선에서 뭘 배웠나 보자」 는 마음으로 치면 그것이 지우는
+   * 명령이 됐다. 지우는 명령은 지우겠다고 적었을 때만 지운다.
+   */
+  if (/^(전선|wire)$/i.test(String(arg).trim())) {
+    say(`  ${c.gray('전선에서 배운 것만 비우려면')} ${c.cyan('/learned 전선 지우기')}`);
+    say(`  ${c.gray('쌓인 것을 보려면')} ${c.cyan('/learned')}`);
+    say('');
+    return;
+  }
+  if (/^(전선|wire)\s+(지우기|clear|forget|비우기)$/i.test(String(arg).trim())) {
     배움.지우기('전선');
     if (session.conn) 전선붙이기(session.conn, 배움);
     say(`  ${mark.ok} ${c.gray('전선에서 배운 것만 비웠습니다 — 다음 요청부터 짐작으로 다시 시작합니다.')}`);
@@ -2838,7 +2953,7 @@ function 모델급(session, arg = '') {
     return;
   }
 
-  if (값 && 별명[값]) {
+  if (값 && Object.hasOwn(별명, 값)) {
     session.급정한것 = 별명[값];
     session.급다시재기?.();
     const v = session.급값();
@@ -2847,6 +2962,19 @@ function 모델급(session, arg = '') {
     say(`     ${c.gray(`한 번에 만들 파일 ${v.한번에쓸파일}개 · ${v.나눠쓰기줄}줄 넘으면 나눠 쓰기`)}`);
     say(`     ${c.gray('/grade auto 로 되돌리면 다시 스스로 잡습니다.')}`);
     return;
+  }
+
+  /*
+   * 못 알아들은 값은 **못 알아들었다고 말한다.**
+   *
+   * 앞서는 `/grade 크게` 같은 오타가 오류 한 줄 없이 지금 상태 표로
+   * 떨어졌다. 사람은 정해진 줄로 읽고 그대로 쓴다. 바로 옆 `/work` 는
+   * 「그런 모드는 없습니다」 를 먼저 말한다 — 잣대를 같게 맞춘다.
+   */
+  if (값) {
+    say('');
+    say(`  ${mark.no} ${c.gray('그런 급은 없습니다:')} ${c.white(값)}`);
+    say(`  ${c.gray('고를 수 있는 것:')} ${c.cyan('작음')} ${c.gray('·')} ${c.cyan('보통')} ${c.gray('·')} ${c.cyan('큼')} ${c.gray('·')} ${c.cyan('auto')}`);
   }
 
   // 인자가 없으면 지금 상태를 보여 준다.
@@ -3255,8 +3383,17 @@ async function 모델만바꾸기(session, cfg, 모델, ctx = null) {
   // 서버는 그대로지만 문은 같이 지난다. 등록 안 된 서버로 옮겨 가는 길도
   // 여기라서, 여기를 열어 두면 자물쇠에 구멍이 하나 남는다.
   if (!await 나가도되나묻기(session, p)) return;
-  if (!이미) 설정남기기(upsert(cfg, p));
-  else { cfg.active = p.id; 설정남기기(cfg); }
+  /*
+   * 새로 만든 프로필도 **지금 쓰는 것**으로 못 박는다.
+   *
+   * upsert 는 active 가 비어 있을 때만 채운다. 여기서는 이미 차 있으므로,
+   * 새 프로필을 넣기만 하고 active 는 옛 모델에 그대로 남았다 — 화면에는
+   * 「모델을 X 로 바꿨습니다」 라고 적히고, 다음에 켜면 옛 모델로 돌아온다.
+   * 이미 있는 프로필로 갈아탈 때(아래 갈래)는 제대로 하고 있었다.
+   */
+  if (!이미) upsert(cfg, p);
+  cfg.active = p.id;
+  설정남기기(cfg);
   연결적용(session, p, ctx);
   say(`  ${mark.ok} 모델을 ${c.bold(모델)} 로 바꿨습니다. ${c.gray('서버는 그대로입니다.')}`);
   await 길이맞추기(session, cfg, p);

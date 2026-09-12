@@ -1157,6 +1157,102 @@
       "찾을것": "    const 멎은지 = Date.now() - (this.일감.바뀐때 ?? this.일감.시작);",
       "바꿀것": "    const 멎은지 = 지난;",
       "검사": "test/tui.test.js"
+    },
+    {
+      "곳": "src/agent/models.js",
+      "무엇": "남에게 넘기는 연결에 열쇠받기를 안 싣는다",
+      "그러면": "열쇠를 명령으로 받는 회사 프로필은 Authorization 이 안 붙어 401 만 돌아온다 — /model 로는 되는데 /consult·하위 작업만 안 되고 까닭이 화면에 없다",
+      "찾을것": "    열쇠받기: 받기설정(prof, { 정책값: 정책읽기().값 }),",
+      "바꿀것": "    열쇠받기: null,",
+      "검사": "test/models.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "새로 만든 프로필을 '지금 쓰는 것' 으로 안 박는다",
+      "그러면": "화면은 「바꿨습니다」 인데 다음에 켜면 옛 모델로 열린다. 그 사이 /ctx·/out 은 엉뚱한 프로필에 값을 적는다",
+      "찾을것": "  if (!이미) upsert(cfg, p);\n  cfg.active = p.id;\n  설정남기기(cfg);",
+      "바꿀것": "  if (!이미) upsert(cfg, p);\n  설정남기기(cfg);",
+      "검사": "test/commands.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "지우려는 말을 '이걸 기억해라' 로 받는다",
+      "그러면": "`/memory 지우기` 가 「지우기」 라는 낱말을 기억 파일에 영영 적고, 화면에는 「기억했습니다」 가 뜬다 — 그 줄이 매 요청마다 같이 나간다",
+      "찾을것": "      if (/^(지우기|잊어|forget|rm)(\\s|$)/i.test(말)) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "지우는 말을 안 적어도 전선 배움을 지운다",
+      "그러면": "`/learned 전선` 만 쳐도 배운 것이 날아간다 — 화면이 알려 주는 명령은 `전선 지우기` 인데 그 짧은 꼴이 지우는 명령이 된다",
+      "찾을것": "  if (/^(전선|wire)$/i.test(String(arg).trim())) {",
+      "바꿀것": "  if (false) {",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "종을 설정 파일에만 적고 이 세션에는 안 먹인다",
+      "그러면": "`/bell off` 를 쳐도 그 세션 내내 계속 울린다 — 화면은 「이 세션에도 바로 먹습니다」 라고 적는다",
+      "찾을것": "      if (ctx?.종알림) ctx.종알림.켬 = cfg.bell;",
+      "바꿀것": "      if (false) ctx.종알림.켬 = cfg.bell;",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "안 걸리는 말로도 스킬을 전부 내린다",
+      "그러면": "`/skills on 오타` 한 번에 올라가 있던 스킬이 다 내려가고 화면에는 ✓ 가 뜬다 — 모델이 스킬을 못 쓰는 것을 보고 사람은 스킬이 깨진 줄 안다",
+      "찾을것": "    if (!걸린것.length) {",
+      "바꿀것": "    if (false) {",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "못 읽는 수로도 조용히 한 턴을 되돌린다",
+      "그러면": "`/undo 다섯` 이 오류 없이 한 턴만 되돌린다 — 파일을 실제로 되돌리는 명령이라 잘못 읽은 수로 도는 값이 비싸다",
+      "찾을것": "      if (준말 && !/^[0-9]+$/.test(준말)) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "승인 방식 이름을 물려받은 열쇠까지 훑어 찾는다",
+      "그러면": "`/mode constructor` 가 그대로 들어가 strict 도 confirm 도 아닌 **아무것도 안 물어보는** 상태가 된다",
+      "찾을것": "      if (!Object.hasOwn(MODES, arg)) {",
+      "바꿀것": "      if (!MODES[arg]) {",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "모델 급 이름도 물려받은 열쇠까지 훑어 찾는다",
+      "그러면": "`/grade constructor` 가 함수 하나를 급으로 삼고 「정했습니다」 를 찍는다",
+      "찾을것": "  if (값 && Object.hasOwn(별명, 값)) {",
+      "바꿀것": "  if (값 && 별명[값]) {",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/ui/level.js",
+      "무엇": "수준 이름을 물려받은 열쇠까지 훑어 찾는다",
+      "그러면": "`/level constructor` 뒤에 명령 목록을 그리다 터진다 — 목록 하나 보려다 대화가 끝난다",
+      "찾을것": "  if (Object.hasOwn(별명, s)) return 별명[s];",
+      "바꿀것": "  if (별명[s]) return 별명[s];",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "'켬' 을 켜는 말로 안 받는다",
+      "그러면": "`/think auto 켬` 이 **끄는** 명령이 된다 — 켜려고 친 말로 꺼지고 화면은 「껐습니다」 라고 적는다",
+      "찾을것": "        const 켤까 = 값 === '' ? session.autoThink === false : /^(on|켬|켜|켜기|true|y|yes|ㅇ)$/.test(값);",
+      "바꿀것": "        const 켤까 = 값 === '' ? session.autoThink === false : /^(on|켜|켜기|true)$/.test(값);",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "슬래시를 떼고 나서 그 자리가 있나 본다",
+      "그러면": "`/tmp` 가 지금 폴더의 `tmp` 를 찾다 못 찾아, 있는 경로가 명령으로 오해된다",
+      "찾을것": "    try { if (existsSync(통째) || existsSync(통째.slice(1))) return true; } catch { /* 못 보면 아닌 걸로 */ }",
+      "바꿀것": "    try { if (existsSync(통째.slice(1))) return true; } catch { /* 못 보면 아닌 걸로 */ }",
+      "검사": "test/commands-more.test.js"
     }
   ]
 }

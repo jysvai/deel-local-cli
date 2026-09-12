@@ -77,6 +77,28 @@ trace('2-연결만들기');
   check('안 적힌 것은 기본값', 연결만들기({ kind: 'openai', baseUrl: 'http://x/v1' }).ctx === CTX_DEFAULT);
   check('직접 준 값이 이긴다', 연결만들기(프로필찾기('small', 설정).prof, { ctx: 8192 }).ctx === 8192);
   check('없는 프로필이면 null', 연결만들기(null) === null);
+
+  /*
+   * ★ 남에게 넘기는 자리도 **열쇠를 들고 가야** 한다.
+   *
+   * 이 함수를 쓰는 자리는 둘이고 둘 다 남에게 넘긴다 — /consult 로 한 번
+   * 물어보기, Task 로 하위에 떼어 주기. 열쇠를 명령으로 받아 오는 프로필은
+   * apiKey 가 비어 있어서, 열쇠받기를 안 실으면 Authorization 이 아예 안
+   * 붙는다. 401 만 돌아오고 다시 받는 길도 잠긴다(adapter.js 의
+   * 열쇠다시받을까 는 conn.열쇠받기 를 본다).
+   */
+  const 회사 = {
+    id: 'corp', kind: 'openai', baseUrl: 'https://gw.example.com/v1', auth: 'bearer',
+    apiKey: '', model: 'gpt-4o', 열쇠받기: { 명령: 'aws sso get-token', 수명: 3300 }, vision: true,
+  };
+  const c회사 = 연결만들기(회사);
+  check('★ 열쇠를 명령으로 받는 프로필이면 그 명령도 같이 싣는다',
+    !!c회사.열쇠받기 && /aws sso/.test(c회사.열쇠받기.명령 ?? ''),
+    JSON.stringify(c회사.열쇠받기 ?? null));
+  check('★ 그림을 볼 수 있는지도 같이 싣는다', c회사.vision === true, String(c회사.vision));
+  check('열쇠받기가 없는 프로필은 null 이다',
+    연결만들기({ kind: 'openai', baseUrl: 'http://127.0.0.1:1/v1', model: 'm' }).열쇠받기 == null,
+    JSON.stringify(연결만들기({ kind: 'openai', baseUrl: 'http://127.0.0.1:1/v1', model: 'm' }).열쇠받기));
 }
 
 trace('3-오프라인잠금');
