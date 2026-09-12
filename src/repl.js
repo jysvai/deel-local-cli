@@ -1709,7 +1709,28 @@ export async function chatLoop(opts = {}) {
       }
     }
 
-    const cmd = await handle(text, session, ctx);
+    /*
+     * ── 명령 하나가 대화를 끝내면 안 된다 ──────────────────────────────
+     *
+     * 여기는 어떤 try 안에도 없었다. 슬래시 명령 안에서 파일을 쓰다 던지면
+     * (`.deel` 이 읽기 전용이거나 디스크가 찼을 때 writeFileSync 가 그렇다)
+     * 그대로 위로 새어 나가 **프로세스가 끝났다.** `/memory 어쩌구` 한 줄에
+     * 대화가 통째로 사라지는 것이다 — 오간 말도, 이어 갈 자리도 같이.
+     *
+     * 보이는 실패이긴 하지만 대가가 대화 전체다. 여기서 받아 한 줄 적고
+     * 이어 간다. 무엇 때문인지도 같이 적는다 — 안 적으면 그 사람은 명령이
+     * 왜 안 먹는지 영영 모른다.
+     */
+    let cmd;
+    try {
+      cmd = await handle(text, session, ctx);
+    } catch (e) {
+      say('');
+      say(`  ${c.red('✗')} ${c.gray('명령을 처리하다 막혔습니다')} ${c.gray('— ' + clip(String(e?.message ?? e), 90))}`);
+      say(`  ${c.gray('대화는 그대로입니다. 다른 명령을 치거나 그냥 이어서 말씀하세요.')}`);
+      say('');
+      continue;
+    }
     if (cmd.exit) break;
     if (cmd.handled) continue;
     const toSend = cmd.text ?? text;   // 슬래시 명령이면 펼쳐진 내용을 보낸다

@@ -629,6 +629,102 @@ trace('13c-오타가-조용히-먹던-자리');
   }
 }
 
+trace('13f-못한-까닭을-버리지-않나');
+
+// ── 못 했으면 **왜 못 했는지**까지 적는가 ──────────────────────────────
+//
+// 「못 남겼습니다」 만 뜨면 디스크가 찼는지, 폴더가 읽기 전용인지, 경로가
+// 너무 긴지 알 길이 없다. 이 저장소의 저장시도()(config.js)는 이미 까닭을
+// 돌려준다 — 파일을 쓰는 다른 두 자리만 옛 모양이었다.
+//
+// 못 쓰게 만드는 법: **파일**을 하나 만들고 그것을 폴더인 양 준다.
+// mkdir 이 ENOTDIR 로 막힌다 — 어느 운영체제에서나 같다.
+{
+  const { 증거적기 } = await import('../src/agent/evidence.js');
+  const { 보고서적기 } = await import('../src/ui/export.js');
+  const 막힌자리 = join(root, '이건파일이다');
+  writeFileSync(막힌자리, 'x', 'utf8');
+
+  const 탈1 = {};
+  const 자리1 = 증거적기(막힌자리, { 바꾼것: [], 돌린것: [], 증명안된것: [] }, 'x', 탈1);
+  check('★ 증거를 못 적으면 까닭을 돌려준다', 자리1 === null && !!탈1.왜, JSON.stringify(탈1));
+
+  const 탈2 = {};
+  const 자리2 = 보고서적기(막힌자리, 새세션(), {}, 탈2);
+  check('★ 보고서를 못 적어도 까닭을 돌려준다', 자리2 === null && !!탈2.왜, JSON.stringify(탈2));
+
+  // 그릇을 안 줘도 여태처럼 조용히 null 이어야 한다 (옛 부르는 자리들).
+  check('그릇을 안 주면 여태처럼 null',
+    증거적기(막힌자리, { 바꾼것: [], 돌린것: [], 증명안된것: [] }, 'x') === null, '');
+
+  /*
+   * 화면에도 그 까닭이 적히나.
+   *
+   * 증거가 비어 있으면 명령이 일찍 끝나 파일을 쓰지도 않는다 — 그러면 이
+   * 검사가 **아무것도 안 재고 통과한다.** 그래서 감사기록을 하나 남겨
+   * 증거를 채운 뒤에 부른다.
+   */
+  const s점 = 새세션();
+  s점.root = 막힌자리;
+  const ctx점 = 새ctx();
+  ctx점.audit.tool('Bash', { command: 'npm test' }, { ok: true, summary: '9,762개 통과' });
+  const r = await 조용히(() => handle('/evidence 파일', s점, ctx점));
+  const 글 = 색빼기(r.out);
+  check('증거가 비어 있지 않다 — 그래야 파일을 쓴다',
+    /못 남겼습니다|남겼습니다/.test(글), 글.trim().slice(-60));
+  check('★ 화면에도 못 적은 까닭이 뜬다',
+    /ENOTDIR|ENOENT|EACCES|EPERM|ENAMETOOLONG/i.test(글), 글.trim().slice(-100));
+}
+
+trace('13g-엉뚱한-프로필에-안-적나');
+
+// ── `/ctx` 가 **지금 쓰는 연결**에 적는가 ──────────────────────────────
+//
+// 여태 `active 로 찾고 없으면 첫 번째` 였다. active 가 어긋나 있으면
+// `/ctx 655360` 이 엉뚱한 연결에 박히고 화면은 「프로필에 저장했습니다」 를
+// 찍는다. 8k 서버 프로필에 655,360 이 적히면 다음에 켤 때 그 값을 믿고
+// 시작해서, 긴 대화에서 서버가 거절한다 — 까닭을 짚을 자리가 화면에 없다.
+{
+  const { load, save } = await import('../src/config.js');
+  const 원래설정 = load();
+  const 다른곳 = 'http://127.0.0.1:59999/v1';
+  save({
+    version: 1, active: '없는아이디',
+    profiles: [
+      { id: '남의것', name: '남의 것', kind: 'openai', baseUrl: 다른곳, auth: 'none', apiKey: '', model: '남의모델', ctx: 8192 },
+      { id: '내것', name: '내 것', kind: 'openai', baseUrl: base, auth: 'none', apiKey: '', model: '가모델', ctx: 32768 },
+    ],
+  });
+  await 조용히(() => handle('/ctx 65536', 새세션(), 새ctx()));
+  const 뒤 = load();
+  const 남의것 = 뒤.profiles.find((x) => x.id === '남의것');
+  const 내것 = 뒤.profiles.find((x) => x.id === '내것');
+  check('★ active 가 어긋나도 엉뚱한 연결에 안 적는다', 남의것.ctx === 8192,
+    `남의것 ctx=${남의것.ctx}`);
+  check('★ 지금 붙어 있는 연결에 적는다', 내것.ctx === 65536, `내것 ctx=${내것.ctx}`);
+
+  /*
+   * 어느 프로필도 아닌 연결에 붙어 있으면 — **아무 데도 안 적는다.**
+   *
+   * 여기가 옛 폴백이 물리던 자리다. 못 찾았으면 첫 번째에 쓰는 것이 아니라,
+   * 못 찾았다고 말해야 한다. 안 그러면 남의 연결에 값이 박히고 화면은
+   * 「저장했습니다」 를 찍는다.
+   */
+  const 낯선 = 새세션();
+  낯선.conn.base = 'http://127.0.0.1:59998/v1';
+  낯선.conn.model = '어디에도-없는-모델';
+  const r낯선 = await 조용히(() => handle('/ctx 131072', 낯선, 새ctx()));
+  const 뒤2 = load();
+  check('★ 모르는 연결이면 어느 프로필에도 안 적는다',
+    뒤2.profiles.every((x) => x.ctx !== 131072),
+    뒤2.profiles.map((x) => `${x.id}:${x.ctx}`).join(' '));
+  check('★ 못 남겼다고 말한다', /못 남겼습니다|못 찾아/.test(색빼기(r낯선.out)),
+    색빼기(r낯선.out).trim().slice(-90));
+  check('그래도 이번 대화에는 먹는다', 낯선.conn.ctx === 131072, String(낯선.conn.ctx));
+
+  save(원래설정);
+}
+
 trace('13e-종소리');
 
 // ── /bell 이 **이 세션에도** 먹나 ───────────────────────────────────────

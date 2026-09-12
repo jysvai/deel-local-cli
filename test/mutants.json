@@ -1253,6 +1253,30 @@
       "찾을것": "    try { if (existsSync(통째) || existsSync(통째.slice(1))) return true; } catch { /* 못 보면 아닌 걸로 */ }",
       "바꿀것": "    try { if (existsSync(통째.slice(1))) return true; } catch { /* 못 보면 아닌 걸로 */ }",
       "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "지금 붙어 있는 연결을 못 찾으면 첫 번째 프로필에 적는다",
+      "그러면": "`/ctx 655360` 이 엉뚱한 연결에 박히고 화면은 「프로필에 저장했습니다」 를 찍는다 — 8k 서버를 655,360 으로 믿고 다음 판을 연다",
+      "찾을것": "  return 있는것.find((p) => p.baseUrl === base && p.model === model) ?? null;",
+      "바꿀것": "  return 있는것.find((p) => p.baseUrl === base && p.model === model) ?? 있는것[0] ?? null;",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/agent/evidence.js",
+      "무엇": "증거를 못 적은 까닭을 버린다",
+      "그러면": "화면에 「파일로 못 남겼습니다」 만 뜬다 — 디스크가 찼는지 폴더가 읽기 전용인지 알 길이 없다",
+      "찾을것": "    if (탈받을것) 탈받을것.왜 = String(e?.message ?? e);",
+      "바꿀것": "    if (false) 탈받을것.왜 = String(e?.message ?? e);",
+      "검사": "test/commands-more.test.js"
+    },
+    {
+      "곳": "src/ui/export.js",
+      "무엇": "보고서를 못 적은 까닭을 버린다",
+      "그러면": "「보고서를 못 남겼습니다」 만 뜬다 — 무엇을 고쳐야 남길 수 있는지 화면에 없다",
+      "찾을것": "    if (탈받을것) 탈받을것.왜 = String(e?.message ?? e);",
+      "바꿀것": "    if (false) 탈받을것.왜 = String(e?.message ?? e);",
+      "검사": "test/commands-more.test.js"
     }
   ]
 }

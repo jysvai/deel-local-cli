@@ -176,13 +176,23 @@ export function 증거글(증거, { 제목 = '작업 증거' } = {}) {
  * 파일로 남긴다. 화면은 스크롤로 사라지고, 검토는 나중에 다른 사람이 한다.
  *
  * @returns {string|null} 적은 자리. 못 적었으면 null — 못 적어도 대화는 계속된다.
+ *
+ * 못 적은 **까닭**은 버리지 않는다. 디스크가 찼는지, `.deel` 이 읽기 전용인지,
+ * 경로가 너무 긴지는 화면에 적혀야 사람이 손을 쓸 수 있다. 이 저장소의
+ * 저장시도()(config.js)가 이미 그렇게 한다 — 여기만 옛 모양이었다.
+ * 받을 그릇을 주면 거기 `왜` 를 담는다. 안 주면 여태처럼 조용히 null 이다.
+ *
+ * @param {{왜?: string}} [탈받을것]
  */
-export function 증거적기(root, 증거, 이름 = '증거') {
+export function 증거적기(root, 증거, 이름 = '증거', 탈받을것 = null) {
   try {
     const dir = join(root, '.deel', '증거');
     mkdirSync(dir, { recursive: true });
     const 자리 = join(dir, `${String(이름).replace(/[^\w가-힣.-]/g, '_')}.md`);
     writeFileSync(자리, 증거글(증거), 'utf8');
     return 자리;
-  } catch { return null; }
+  } catch (e) {
+    if (탈받을것) 탈받을것.왜 = String(e?.message ?? e);
+    return null;
+  }
 }

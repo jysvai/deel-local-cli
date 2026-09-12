@@ -214,7 +214,7 @@ ${조각.join('\n')}
  *
  * @returns {string|null} 적은 자리. 못 적었으면 null — 못 적어도 대화는 계속된다.
  */
-export function 보고서적기(root, session, opts = {}) {
+export function 보고서적기(root, session, opts = {}, 탈받을것 = null) {
   try {
     const 폴더 = join(root, '.deel', 'export');
     mkdirSync(폴더, { recursive: true });
@@ -227,7 +227,10 @@ export function 보고서적기(root, session, opts = {}) {
     const 자리 = join(폴더, 이름);
     writeFileSync(자리, 보고서짓기(session, opts), 'utf8');
     return 자리;
-  } catch {
+  } catch (e) {
+    // 못 적은 까닭을 버리지 않는다 — 화면에 「못 남겼습니다」 만 뜨면 디스크가
+    // 찼는지 폴더가 읽기 전용인지 알 길이 없다. 받을 그릇을 준 쪽에만 담는다.
+    if (탈받을것) 탈받을것.왜 = String(e?.message ?? e);
     return null;
   }
 }

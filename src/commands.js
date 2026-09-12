@@ -141,6 +141,29 @@ function 설정남기기(cfg, 옵션 = {}) {
   return r.ok;
 }
 
+/**
+ * **지금 이 연결이 온 프로필**을 찾는다. 못 찾으면 null 이다.
+ *
+ * 여태 `cfg.profiles.find(p => p.id === cfg.active) ?? cfg.profiles[0]` 였다.
+ * 그 뒤 갈래가 「못 찾았으면 첫 번째에 쓴다」 라, active 가 어긋나 있으면
+ * `/ctx 655360` 이 **엉뚱한 연결**에 박히고 화면에는 「프로필에 저장했습니다」
+ * 가 뜬다. 8k 서버 프로필에 655,360 이 적히면 다음에 켤 때 그 서버를
+ * 655,360 으로 믿고 시작한다 — 긴 대화에서 서버가 거절하고, 그 까닭을
+ * 짚을 자리가 화면에 하나도 없다.
+ *
+ * 그래서 두 번 본다. active 로 찾고, 없으면 **지금 붙어 있는 주소·모델**로
+ * 찾는다. 그래도 없으면 못 찾았다고 하고 아무 데도 안 적는다 (repl.js 의
+ * 길이 되살리기가 이미 그렇게 한다).
+ */
+function 이연결의프로필(cfg, session) {
+  const 있는것 = Array.isArray(cfg?.profiles) ? cfg.profiles : [];
+  const 딱 = 있는것.find((p) => p.id === cfg.active);
+  if (딱) return 딱;
+  const base = session?.conn?.base;
+  const model = session?.conn?.model;
+  return 있는것.find((p) => p.baseUrl === base && p.model === model) ?? null;
+}
+
 /** /mode 아래에 규칙을 늘어놓는다. 아무것도 안 걸려 있으면 아무 말도 안 한다. */
 function 규칙보이기(규칙들) {
   if (!규칙들) return;
@@ -428,13 +451,17 @@ export async function handle(line, session, ctx) {
      * 결재는 첨부로 돌고, 보고는 한 장으로 한다.
      */
     case 'export': {
-      const 자리 = 보고서적기(ctx.scope.root, session, { scope: ctx.scope, audit: ctx.audit });
+      // 못 남긴 까닭을 받아 온다 — 디스크가 찼는지, 폴더가 읽기 전용인지는
+      // 화면에 적혀야 손을 쓸 수 있다.
+      const 탈 = {};
+      const 자리 = 보고서적기(ctx.scope.root, session, { scope: ctx.scope, audit: ctx.audit }, 탈);
       say('');
       if (자리) {
         say(`  ${mark.ok} ${말('export.saved')} ${c.white(ctx.scope.show(자리))}`);
         say(`     ${c.gray(말('export.openHint'))}`);
       } else {
         say(`  ${c.red('✗')} ${말('export.failed')}`);
+        if (탈.왜) say(`     ${c.gray(clip(탈.왜, 90))}`);
       }
       say('');
       return { handled: true };
@@ -1932,7 +1959,15 @@ function showLevel(session, arg) {
     const cfg = load();
     cfg.level = 골라진;
     설정남기기(cfg);
-  } catch { /* 설정을 못 읽는 것은 위에서 따로 말한다 */ }
+  } catch (e) {
+    /*
+     * 설정 파일 자체를 못 읽는 경우다(JSON 이 깨졌다). 바로 위 머리글이
+     * 「못 남기면 말한다」 라고 적어 놓고 여기만 통째로 삼키고 있었다.
+     * 켤 때는 repl 이 말해 주지만 **대화 도중에 깨진 경우는 아무도 안 말한다** —
+     * 화면은 `✓ 개발자` 를 찍고 다음에 켜면 그대로 쉬움이다.
+     */
+    say(`  ${mark.warn} ${c.yellow(말('common.cfgSaveFailed', { 왜: clip(String(e?.message ?? e), 70) }))}`);
+  }
   const lv = LEVELS[골라진];
   say('');
   say(`  ${mark.ok} ${c.bold(lv.name)} ${c.gray('— ' + lv.hint)}`);
@@ -2254,9 +2289,13 @@ function 증거명령(session, ctx, arg = '') {
 
   if (/^(파일|file|저장|save)$/i.test(말)) {
     const 이름 = `${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}`;
-    const 자리 = 증거적기(session.root, e, 이름);
+    const 탈 = {};
+    const 자리 = 증거적기(session.root, e, 이름, 탈);
     if (자리) say(`  ${mark.ok} ${c.gray('남겼습니다 —')} ${c.cyan(자리)}`);
-    else say(`  ${c.gray('파일로 못 남겼습니다. 화면 것만 쓰세요.')}`);
+    else {
+      say(`  ${c.gray('파일로 못 남겼습니다. 화면 것만 쓰세요.')}`);
+      if (탈.왜) say(`  ${c.gray(clip(탈.왜, 90))}`);
+    }
     say('');
   } else {
     say(`  ${c.gray('파일로 남기려면')} ${c.cyan('/evidence 파일')}`);
@@ -2873,13 +2912,15 @@ async function 출력상한(session, arg = '') {
   const { parseSize } = await import('./backend/ctxsize.js');
   const 말 = String(arg ?? '').trim().toLowerCase();
   const cfg = load();
-  const prof = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
+  const prof = 이연결의프로필(cfg, session);
   const 알아낸것 = session.conn.maxOut ?? null;
 
   if (말 === 'auto' || 말 === '자동') {
     session.conn.maxTokens = null;
-    if (prof) { delete prof.maxTokens; 설정남기기(cfg); }
-    say(`  ${mark.ok} 직접 정한 값을 지웠습니다.`);
+    const 지웠나 = prof ? (delete prof.maxTokens, 설정남기기(cfg)) : false;
+    say(`  ${mark.ok} 직접 정한 값을 지웠습니다. ${c.gray('이번 대화에 바로 먹습니다.')}`);
+    // 프로필을 못 찾으면 다음에 켤 때 그 값이 되살아난다. 숨기면 안 된다.
+    if (!지웠나) say(`     ${mark.warn} ${c.yellow('설정에서 이 연결을 못 찾아 파일에는 못 남겼습니다 — 다음에 켜면 옛 값입니다.')}`);
     say(`     ${c.gray(알아낸것 ? `서버에서 알아낸 ${알아낸것.toLocaleString()} 토큰을 씁니다.` : '모르는 값이라 16,384 토큰으로 갑니다.')}`);
     say('');
     return;
@@ -3025,13 +3066,15 @@ async function ctxLength(session, arg = '') {
   const 남기기 = (값, 어디서) => {
     session.conn.ctx = 값;
     const cfg = load();
-    const prof = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
+    const prof = 이연결의프로필(cfg, session);
     // 못 남기면 아래 「프로필에 저장했습니다」 가 거짓말이 된다. 살아있는지 들고 간다.
     const 남김 = prof ? (prof.ctx = 값, 설정남기기(cfg)) : false;
     const b = session.breakdown();
     say(`  ${mark.ok} 컨텍스트 ${c.bold(값.toLocaleString())} 토큰 ${c.gray(`(${fmtSize(값)}) — ${어디서}`)}`);
     say(`     ${c.gray('지금 찬 양')} ${c.white(b.used.toLocaleString())} ${c.gray('· 남음')} ${c.white(b.left.toLocaleString())}`);
     if (남김) say(`     ${c.gray('프로필에 저장했습니다. 다음에 켤 때도 이 값입니다.')}`);
+    // 못 남긴 까닭이 '설정을 못 찾음' 이면 설정남기기() 가 아무 말도 안 한다.
+    else if (!prof) say(`     ${mark.warn} ${c.yellow('설정에서 이 연결을 못 찾아 파일에는 못 남겼습니다 — 다음에 켜면 옛 값입니다.')}`);
     say('');
   };
 
@@ -3212,6 +3255,15 @@ async function 서버모델들(conn) {
   const { req, headersFor } = await import('./backend/http.js');
   if (conn.kind === 'ollama') {
     const r = await req(`${conn.base.replace(/\/v1\/?$/, '')}/api/tags`, { timeout: 4000 });
+    /*
+     * **못 받은 것**과 **안 내주는 것**은 다르다.
+     *
+     * req 는 통신 실패에 안 던지고 `{ok:false, status, error}` 를 준다. 여기만
+     * 그 ok 를 안 보고 빈 배열을 돌려줘서, 404·500·시간초과·프록시 거절이
+     * 전부 「이 서버는 모델 목록을 내주지 않습니다」 가 됐다. 다른 갈래는
+     * 아래처럼 null 을 준다 — 같은 함수가 갈래마다 다른 약속을 하고 있었다.
+     */
+    if (!r.ok) return null;
     return (r.json?.models ?? []).map((m) => m.name ?? m.model).filter(Boolean);
   }
   /*
@@ -3285,7 +3337,12 @@ async function switchModel(session, ctx, arg = '') {
       say('');
       return;
     }
-    say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 연결도 모델도 없습니다.')}`);
+    // 목록을 **못 받은** 것을 「없다」 로 적으면, 사람은 있는 모델을 찾아 헤맨다.
+    if (있는것 == null) {
+      say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 연결이 없고, 서버에는 물어봤지만 목록을 못 받았습니다.')}`);
+    } else {
+      say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 연결도 모델도 없습니다.')}`);
+    }
     say(`  ${c.gray('무엇이 있는지 보려면')} ${c.cyan('/model list')}${c.gray(', 서버에 물어보려면')} ${c.cyan('/model models')}`);
     say('');
     return;
@@ -3410,14 +3467,29 @@ async function 모델만바꾸기(session, cfg, 모델, ctx = null) {
 async function 길이맞추기(session, cfg, prof) {
   const { probeCtx, fmtSize, 기본값 } = await import('./backend/ctxsize.js');
   let r = null;
-  try { r = await probeCtx(session.conn, { timeout: 8000 }); } catch { /* 못 물어보면 아래에서 기본값 */ }
+  // 물어보다 **터진 것**과 서버가 값을 **안 준 것**은 다르다. 아래에서 갈라 적는다.
+  let 못물어본까닭 = null;
+  try { r = await probeCtx(session.conn, { timeout: 8000 }); }
+  catch (e) { 못물어본까닭 = String(e?.message ?? e); }
   const 값 = r?.value ?? prof.ctx ?? 기본값;
   session.conn.ctx = 값;
   if (prof) {
     prof.ctx = 값;
     설정남기기(cfg);
   }
-  say(`     ${c.gray('컨텍스트')} ${c.white(값.toLocaleString())} ${c.gray('토큰 (' + fmtSize(값) + ') — ' + (r?.source ? r.source + '에서 읽음' : '서버가 안 알려줘 기본값'))}`);
+  /*
+   * 어디서 온 값인지 **세 가지를 갈라** 적는다.
+   *
+   * 앞서는 물어보다 터진 것도, 서버가 안 준 것도, 프로필에 적혀 있던 값을
+   * 물려받은 것도 전부 「서버가 안 알려줘 기본값」 이었다. 값이 655,360 인데
+   * 출처는 「기본값」 이라고 적히는 판이 실제로 난다 — /ctx 화면은 출처를
+   * 정성껏 가르는데 이 줄만 뭉갰다.
+   */
+  const 어디서 = r?.source ? r.source + '에서 읽음'
+    : 못물어본까닭 ? '못 물어봤습니다 — ' + clip(못물어본까닭, 50)
+      : r?.value == null && prof?.ctx ? '이 프로필에 적혀 있던 값'
+        : '서버가 안 알려줘 기본값';
+  say(`     ${c.gray('컨텍스트')} ${c.white(값.toLocaleString())} ${c.gray('토큰 (' + fmtSize(값) + ') — ' + 어디서)}`);
   if (r?.max && r?.loaded && r.max > r.loaded) {
     say(`     ${c.yellow('이 모델은 ' + r.max.toLocaleString() + ' 까지 됩니다.')} ${c.gray('서버에서 더 올린 뒤')} ${c.cyan('/ctx auto')}`);
   } else if (!r?.value) {
@@ -3441,10 +3513,21 @@ function 연결목록(cfg, session) {
 async function 서버모델고르기(session, ctx, cfg) {
   const s = spin('서버에 모델 목록을 물어보는 중…');
   let 있는것;
-  try { 있는것 = await 서버모델들(session.conn); } catch { 있는것 = null; }
+  /*
+   * 무엇 때문에 못 받았는지를 **버리지 않는다.**
+   *
+   * 여기 catch 는 오프라인 잠금(NetBlocked)까지 삼켰다. 그러면 자물쇠가 막은
+   * 것을 「이 서버는 목록을 안 내줍니다」 라고 서버 탓으로 돌리게 된다 —
+   * 잠금이 화면에서 사라지는 것은 이 저장소가 여러 군데서 막으려던 그 꼴이다.
+   */
+  let 못받은까닭 = null;
+  try { 있는것 = await 서버모델들(session.conn); }
+  catch (e) { 있는것 = null; 못받은까닭 = String(e?.message ?? e); }
   s.stop('');
   if (!있는것 || !있는것.length) {
-    say(`  ${mark.warn} 이 서버는 모델 목록을 내주지 않습니다.`);
+    if (못받은까닭) say(`  ${mark.warn} 모델 목록을 못 받았습니다 ${c.gray('— ' + clip(못받은까닭, 70))}`);
+    else if (있는것 == null) say(`  ${mark.warn} 모델 목록을 못 받았습니다 ${c.gray('— 서버가 답을 안 주거나 주소·열쇠가 안 맞습니다.')}`);
+    else say(`  ${mark.warn} 이 서버는 모델 목록을 내주지 않습니다.`);
     say(`  ${c.gray('목록이 없는 게이트웨이도 있습니다. 그때는')} ${c.cyan('deel setup')} ${c.gray('에서 모델 이름을 직접 넣으세요.')}`);
     say('');
     return;
