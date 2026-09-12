@@ -63,17 +63,19 @@ const 표 = (종류) => `«가림:${종류}»`;
  * 있어야 몰래칸이다. 안 넘기면 그 선언 줄이 통째로 잘려 나가고, 남은 빈 줄에
  * 코드의 표시가 없어 멀쩡한 코드가 가려진다(17차 리뷰).
  *
- * 앞에 수식하는 낱말이 붙어도 줄머리로 친다 — `static` · `readonly` ·
- * `accessor` · `override`. `static` 만 멀쩡했던 것은 그 낱말이 마침
- * `코드표시` 목록에 있어서였다. 목록에 없는 낱말(`accessor`)에서는 그대로
- * 뭉갰다(19차 리뷰). 글자와 빈칸만 있는 앞자리는 코드의 수식어로 본다 —
- * 설정 줄이라면 그 자리에 `:` 나 `=` 가 있다.
+ * 앞에 수식하는 것이 붙어도 줄머리로 친다 — `static` · `readonly` ·
+ * `accessor` · `override`, 그리고 꾸밈표(`@inject`)와 별표(`*#gen()`).
+ * `static` 만 멀쩡했던 것은 그 낱말이 마침 `코드표시` 목록에 있어서였다.
+ * 목록에 없는 낱말(`accessor`)에서는 그대로 뭉갰다(19차 리뷰).
+ *
+ * 글자·빈칸·`@`·`*` 만 있는 앞자리는 코드의 수식어로 본다. 설정 줄이라면
+ * 그 자리에 `:` 나 `=` 나 숫자가 있다 — 글자만 있을 수가 없다.
  *
  * 줄머리 `#` 을 안 잘라도 설정 줄은 안 상한다 — `# API_KEY: 값` 은 잘라도
  * 안 잘라도 코드의 표시가 없어 어차피 가려진다.
  */
 const 몰래칸 = (줄, i) => /^[\p{L}_$]/u.test(줄[i + 1] ?? '')
-  && (줄[i - 1] === '.' || /^[ \t]*(?:[A-Za-z]+[ \t]+)*$/.test(줄.slice(0, i)));
+  && (줄[i - 1] === '.' || /^[@*A-Za-z \t]*$/.test(줄.slice(0, i)));
 
 const 주석떼기 = (줄) => {
   let 따 = '';
@@ -561,8 +563,10 @@ export const 갈래 = [
      * - 붙임표로 **시작하는** 낱말 — `\b` 가 `-` 뒤에서 끊고 들어가면
      *   `id-token` 의 `token` 만 집게 된다. 그건 깃허브 액션 문법이다.
      *
-     * 붙임표로 **이은 이름 전체**(`github-token`)는 다르다. 그건 진짜 비밀
-     * 이름이다. 그래서 이름으로는 받고, **따옴표 없는 맨 값일 때만** 물린다
+     * 붙임표로 **이은 이름 전체**(`github-token` · `aws-access-token`)는
+     * 다르다. 마디가 몇이든 받는다 — 마디 하나만 받았더니 `aws-access-token`
+     * 이 통째로 샜다(20차 리뷰). 대소문자도 안 가린다(`db-PWD` · `auth_TOKEN`).
+     * 그래서 이름으로는 받고, **따옴표 없는 맨 값일 때만** 물린다
      * (아래 `바꾸기` 를 보라) — `id-token: write` 의 `write` 가 맨 값이고,
      * `github-token: 'abc123'` 의 값은 따옴표에 싸여 있다. 19차 리뷰.
      *
@@ -577,7 +581,7 @@ export const 갈래 = [
      * 것보다 낫다(1.19.0). 검사로 못 박아 둔다.
      */
     id: '환경변수',
-    re: /\b(?<!-)(_?(?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]*[A-Z0-9]_?KEY|[A-Z0-9_]*_PWD|[A-Za-z][A-Za-z0-9]*(?:[-_](?:key|token|secret|password|passwd|pwd|credentials?)|-(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?:password|secret|token|passwd|credentials?)))(?:(["']?[ \t]*(?::[^\n,;]{0,200}?|:[^\n]{0,200}?[>\])}][^\n,;]{0,80}?)[ \t]*=(?!=|>)\s*)((?:\(\s*)+)?(["'`])(?!«)((?:\\[^\n]|(?!\4)[^\n]){4,}?)\4((?:\s*\))+)?|(["']?\s*(?::(?![^\n]{0,200}?=[ \t]*«가림:)|=)\s*)((?:\(\s*)+)?(?:(["'`])(?!«)((?:\\[^\n]|(?!\9)[^\n]){4,}?)\9|(?!«)(?![\w$.]+\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\b)(?![^\n]{0,200}?}[ \t]*(?:=(?!=|>)|\)))(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;<>]{4,})(?=[ \t]*(?:[;,)\]}\r\n#]|$)))((?:\s*\))+)?)/g,
+    re: /\b(?<!-)(_?(?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]*[A-Z0-9]_?KEY|[A-Z0-9_]*_PWD|[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*(?:[-_](?:key|token|secret|password|passwd|pwd|credentials?|KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?:password|secret|token|passwd|credentials?)))(?:(["']?[ \t]*(?::[^\n,;]{0,200}?|:[^\n]{0,200}?[>\])}][^\n,;]{0,80}?)[ \t]*=(?!=|>)\s*)((?:\(\s*)+)?(["'`])(?!«)((?:\\[^\n]|(?!\4)[^\n]){4,}?)\4((?:\s*\))+)?|(["']?\s*(?::(?![^\n]{0,200}?=[ \t]*«가림:)|=)\s*)((?:\(\s*)+)?(?:(["'`])(?!«)((?:\\[^\n]|(?!\9)[^\n]){4,}?)\9|(?!«)(?![\w$.]+\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\b)(?![^\n]{0,200}?}[ \t]*(?:=(?!=|>)|\)))(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;<>]{4,})(?=[ \t]*(?:[;,)\]}\r\n#]|$)))((?:\s*\))+)?)/g,
     바꾸기: (m, 이름, 타입사이, 타입여는, 따A, 값A, 타입닫는,
     민사이, 여는, 따B, 값B, 값C, 닫는, 자리, 전체) => {
       // 따옴표 없는 맨 값만 「코드가 가리키는 이름인가」 를 되묻는다.

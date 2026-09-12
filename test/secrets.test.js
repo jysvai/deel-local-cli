@@ -624,6 +624,33 @@ trace('2-멀쩡한글');
       !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
   }
   /*
+   * ── 붙임표 마디가 둘 이상이면 (20차 리뷰) ───────────────────────────
+   *
+   * 19차에 붙임표 이름을 받게 하면서 마디를 하나만 봤다. 그래서
+   * `aws-access-token` 처럼 마디가 둘인 이름이 통째로 샜다. 대문자
+   * 갈래에는 `PWD` 도 밑줄도 빠져 있었다.
+   */
+  for (const [글, 사라져야] of [
+    ["aws-access-token: 'sk-1234567890'", 'sk-1234567890'],
+    ["my-aws-access-key: 'abcdef123456'", 'abcdef123456'],
+    ["db-PWD: 'secret1234'", 'secret1234'],
+    ["auth_TOKEN: 'secret1234'", 'secret1234'],
+    ["api_KEY: 'secret1234'", 'secret1234'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 마디가 몇이든 대소문자가 뭐든 비밀 이름이다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * 알고 치르는 값: 깃허브 액션 값에 따옴표를 두르면 가려진다.
+   * `id-token: "write"` 와 `github-token: "abc123"` 은 글자로 안 갈린다.
+   */
+  {
+    const r = 가리기('id-token: "write"');
+    check('★★ 따옴표 두른 액션 값은 가려진다 — 알고 치르는 값',
+      r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
    * ── 몰래칸 앞에 수식어가 붙어도 (19차 리뷰) ─────────────────────────
    *
    * `static #apiKey` 만 멀쩡했던 것은 `static` 이 마침 코드의 표시 목록에
@@ -633,6 +660,9 @@ trace('2-멀쩡한글');
     'class C {\n  accessor #apiKey = config.apiKey;\n}',
     'class C {\n  override #apiKey = config.apiKey;\n}',
     'class C {\n  static #apiKey = config.apiKey;\n}',
+    // 꾸밈표와 별표도 수식어다 (20차 리뷰).
+    'class C {\n  @inject #apiKey = config.apiKey;\n}',
+    'class C {\n  *#generateKey() {\n    return config.apiKey;\n  }\n}',
   ]) {
     check(`★★★ 수식어가 붙어도 몰래칸이다 — ${글.replace(/\n/g, ' / ')}`,
       가리기(글).글 === 글, 가리기(글).글);

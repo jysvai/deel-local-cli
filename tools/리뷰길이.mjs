@@ -118,8 +118,21 @@ export function 짧게다시할까(끝맺음, 답) {
   if (String(답 ?? '').trim()) return false;
   const 말 = String(끝맺음?.error ?? '');
   if (망끊김.test(말)) return false;
-  return /output token limit|exceeded\s+(?:the\s+)?output|\b(?:output|response|answer)[\s:(-]+(?:was\s+|is\s+|got\s+)?(?:cut off|truncated)\b/i.test(말);
+  return 길이초과.test(말);
 }
+
+/**
+ * 「길어서 잘렸다」 를 알리는 말은 하나가 아니다.
+ *
+ * agy 는 사람 말로 적어 주지만(`exceeded the output token limit`), 밑에
+ * 깔린 API 는 마침 까닭을 낱말로 준다 — `finishReason: MAX_TOKENS`,
+ * `finish_reason: length`. 그 둘을 못 알아보면 짧게 다시 묻지도 않고
+ * 화면에는 「쪼개서 보라」 만 남는다(20차 리뷰).
+ *
+ * `length` 는 홀로 두면 넓다(`content length` · `array length`). 까닭을
+ * 적는 자리와 붙어 있을 때만 본다.
+ */
+const 길이초과 = /output token limit|exceeded\s+(?:the\s+)?output|\b(?:output|response|answer)[\s:(-]+(?:was\s+|is\s+|got\s+)?(?:cut off|truncated)\b|\bMAX_TOKENS\b|\bfinish(?:_|\s*)reason[\s:="'-]*(?:max_tokens|length)\b/i;
 
 /** 끊은 쪽이 적혀 있으면 그 판은 답이 아니라 망이 잘린 것이다. */
 const 망끊김 = /\bby\s+(?:the\s+)?(?:peer|proxy|remote|server|client|gateway)\b|\bECONN(?:RESET|ABORTED|REFUSED)\b|\bEPIPE\b|\bsocket\s+hang\s+up\b/i;
@@ -172,7 +185,7 @@ export function 두판돌리기(한판, 알림, 끝판 = 3) {
  * @returns {string[]} 화면에 한 줄씩 찍을 말
  */
 export function 줄일말({ 무엇 = '', 까닭 = '', 부터 = '', 까지 = '' }) {
-  const 넘침 = /output token limit|exceeded the output|too long/i.test(까닭);
+  const 넘침 = 길이초과.test(까닭) || /too long/i.test(까닭);
   const 파일하나 = /파일 1개/.test(무엇);
   const 말 = [`다시 해 보려면: node tools/review2.mjs --timeout 90m`];
   if (!넘침) {

@@ -492,6 +492,27 @@ trace('10-셋째판');
   const { 길이규칙: 규칙, 두판돌리기: 돌리기 } = await import('../tools/리뷰길이.mjs');
   const 넘침 = { status: 'ERROR', error: 'exceeded the output token limit' };
 
+  /*
+   * 「길어서 잘렸다」 를 알리는 말은 하나가 아니다. 밑에 깔린 API 는
+   * 마침 까닭을 낱말로 준다 — 그걸 못 알아보면 짧게 다시 묻지도 않고
+   * 화면에는 쪼갤 수 없는 방법만 남는다(20차 리뷰).
+   */
+  const { 짧게다시할까: 다시할까 } = await import('../tools/리뷰길이.mjs');
+  const { 줄일말: 말고르기 } = await import('../tools/리뷰길이.mjs');
+  for (const 까닭 of ['finishReason: MAX_TOKENS', 'finish_reason: length', 'finish_reason="MAX_TOKENS"']) {
+    check(`★★★ 길이 초과를 알아본다 — ${까닭}`, 다시할까({ error: 까닭 }, ''), 까닭);
+    check(`★★★ 그때 하는 말도 잘림 쪽이다 — ${까닭}`,
+      /잘렸습니다/.test(말고르기({ 무엇: '파일 1개', 까닭 }).join(' ')), 까닭);
+  }
+  // 그렇다고 망이 끊긴 판까지 다시 묻지는 않는다.
+  for (const 까닭 of ['socket hang up', 'connection cut off by peer', 'ECONNRESET']) {
+    check(`★★★ 망이 끊긴 것은 길이 초과가 아니다 — ${까닭}`, !다시할까({ error: 까닭 }, ''), 까닭);
+  }
+  // `length` 를 홀로 두면 넓다 — 까닭을 적는 자리와 붙어 있을 때만 본다.
+  for (const 까닭 of ['content length mismatch', 'array length 0']) {
+    check(`★★★ 아무 length 나 잡지 않는다 — ${까닭}`, !다시할까({ error: 까닭 }, ''), 까닭);
+  }
+
   const 셋째 = 규칙(3).join('\n');
   check('★★★ 셋째 판은 건수를 더 줄인다', /최대 3건/.test(셋째), 셋째.replace(/\n/g, ' / '));
   check('★★★ 셋째 판은 한 줄로 적으라 한다', /한 줄/.test(셋째), 셋째.replace(/\n/g, ' / '));
