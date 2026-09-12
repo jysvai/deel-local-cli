@@ -155,6 +155,45 @@ trace('4-화면계산');
   check('짧으면 안 자른다', clip('가나', 10) === '가나', clip('가나', 10));
   check('자르면 표시를 남긴다', /…/.test(clip('가나다라마바사', 6)), clip('가나다라마바사', 6));
 
+  /*
+   * 색이 든 줄을 자를 때.
+   *
+   * 색 코드는 화면에서 자리를 차지하지 않는다. 그걸 한 칸씩 세면 두 가지가
+   * 한꺼번에 틀린다 — 보이는 글자가 폭보다 훨씬 짧게 남고, 잘린 자리가
+   * 명령 토막(`ESC [ 3 8 ; 5 ;`)이 되어 터미널이 뒤 글자를 먹는다.
+   * 실제로 상태줄(색 코드 66개)을 70칸에 맞추면 14칸만 남았다.
+   *
+   * 여기 색은 손으로 짠다. c.red 는 파이프로 넘길 때 색을 안 붙이므로
+   * (NO_COLOR·isTTY) 검사에서는 색이 하나도 없는 글자가 되어 버린다.
+   */
+  const ESC = String.fromCharCode(27);
+  const 회색 = `${ESC}[38;5;245m`;
+  const 빨강 = `${ESC}[31m`;
+  const 되돌림 = `${ESC}[0m`;
+  {
+    const 온통색 = `${회색}가나다라마바사아자차카타파하${되돌림}`;
+    const 자른것 = clip(온통색, 12);
+    // 폭 12 에 한글이니 11 이나 12 — 한 칸만 남으면(옛 셈) 실패한다.
+    check('색 코드는 폭에서 빼고 센다', width(자른것) >= 11 && width(자른것) <= 12,
+      `폭 ${width(자른것)} · 보이는 글자 ${JSON.stringify(색빼기(자른것))}`);
+    check('색 코드 가운데를 자르지 않는다', !색빼기(자른것).includes(ESC),
+      JSON.stringify(색빼기(자른것).replace(new RegExp(ESC, 'g'), '<ESC>')));
+    check('자른 자리에서 색을 되돌린다', 자른것.includes(되돌림),
+      '안 되돌리면 뒤에 찍는 줄까지 회색이 된다');
+
+    const 가운데색 = `abcdefg ${빨강}붉은말${되돌림} hijklmnop`;
+    const ㄱ = clip(가운데색, 12);
+    check('색이 가운데 있어도 토막이 안 남는다', !색빼기(ㄱ).includes(ESC) && width(ㄱ) <= 12,
+      `폭 ${width(ㄱ)} · ${JSON.stringify(색빼기(ㄱ))}`);
+
+    const 색없음 = clip('abcdefghijklmnop', 8);
+    check('색이 없으면 되돌림을 안 붙인다', !색없음.includes(ESC), JSON.stringify(색없음));
+    const 이미닫힘 = clip(`${빨강}ab${되돌림}cdefghijklmnop`, 8);
+    check('색이 이미 닫혔으면 되돌림을 더 붙이지 않는다',
+      (이미닫힘.match(new RegExp(`${ESC}\\[0m`, 'g')) || []).length === 1,
+      JSON.stringify(이미닫힘.replace(new RegExp(ESC, 'g'), '<ESC>')));
+  }
+
   check('채울 때도 두 칸으로 센다', width(pad('가나', 8)) === 8, String(width(pad('가나', 8))));
   check('오른쪽 채우기', pad('1', 4, 'right').startsWith(' '), JSON.stringify(pad('1', 4, 'right')));
   check('넘치면 안 채운다', width(pad('가나다라마', 4)) >= 4, String(width(pad('가나다라마', 4))));

@@ -899,8 +899,18 @@ export class Session {
       { label: 옮긴말('ctx.toolResults', { n: this.filesRead.size }), n: files },
     ];
     const used = rows.reduce((a, r) => a + r.n, 0);
+    /*
+     * 창 크기를 **알아낸 것인지**도 같이 내놓는다.
+     *
+     * 안 알려 주는 창구에서는 32k 로 둔다(그래야 무엇이든 돌아간다). 그런데
+     * 화면이 그 값을 잰 것과 똑같은 낯으로 `5.6k/32k · 17%` 라고 적으면,
+     * 실제 창이 8k 인 자리에서 답이 잘리는 동안 게이지는 초록이다. 같은
+     * 상태줄이 모델 급은 짐작일 때 `◈ 보통?` 으로 흐리게 적는다 — 창 크기도
+     * 같은 규칙을 따라야 한다(ui/status.js).
+     */
+    const 잰것 = this.conn.ctx != null;
     const total = this.conn.ctx ?? 32768;
-    return { rows, used, total, left: Math.max(0, total - used) };
+    return { rows, used, total, 총잰것: 잰것, left: Math.max(0, total - used) };
   }
 
   /**
@@ -918,6 +928,7 @@ export class Session {
       rows,
       used,
       total: 날것.total,
+      총잰것: 날것.총잰것,
       left: Math.max(0, 날것.total - used),
       보정: this.보정,
       보정잰것: this.보정잰것,

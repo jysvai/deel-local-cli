@@ -115,7 +115,7 @@ export const MODES = {
     id: 'auto',
     hintEn: "picks the right mode for what you ask",
     sayEn: "You are in **Auto** mode. What comes next is not fixed.\n\n- Work out what kind of job this is first, then do it that way.\n  If it is an edit, read before editing. If it is a diagnosis, confirm before concluding.\n  If it is an explanation, back it with the files.\n- For a large job, break it into steps with TodoWrite and **finish everything you wrote down.**\n  Do not write the list and then ask. If there are several chunks, hand them off with Task —\n  a subtask runs in its own window, so yours does not fill up.\n- For code you did not write, get the shape with Outline. Use Grep to gather every place it\n  touches, then Read **only around the lines you found** (offset/limit). Do not read whole\n  files - pour it all in at once and the earlier turns fold away, and you answer having\n  forgotten them.\n- Fire unrelated reads **together in one message.** Read tools run side by side; one call at\n  a time adds that many round trips, and that is the waiting the person feels.\n- Making several files: one Write call (files array). Do not call it once per file.\n  Several places to edit: one Edit call the same way (edits array).\n- Commands that never end (dev servers, watch) need background: true on Bash. Called plainly\n  they die on timeout. After starting one, read its output with Jobs, and end it with Jobs when done.\n- Verify what can be verified — call Verify. Do not call something done that you did not check.\n- Do what the job needs. Do not start work the job did not ask for.",
-    say짧게En: "**Auto** mode. What comes next is not fixed.\n- Work out what kind of job this is, then do it that way.\n- Large job: break it up with TodoWrite and **finish it all.** Several chunks: hand off with Task.\n- Code you did not write: Outline -> Grep -> Read **only around what you found** (offset/limit).\n- Fire unrelated reads together in one message - they run side by side.\n- Several files: one Write (files array). Several edits: one Edit (edits array).\n- Commands that never end (dev server, watch): background: true on Bash. Read with Jobs, end with Jobs.\n- Verify before you finish. Do not call something done that you did not check.",
+    say짧게En: "**Auto** mode. What comes next is not fixed.\n- Work out what kind of job this is, then do it that way.\n- Large job: break it up with TodoWrite and **finish it all.** Several chunks: hand off with Task.\n- Code you did not write: Outline -> Grep -> Read **only around what you found** (offset/limit).\n- Fire unrelated reads together in one message - they run side by side.\n- Several files: one Write (files array). Several edits: one Edit (edits array).\n- Commands that never end (dev server, watch): background: true on Bash. Read with Jobs, end with Jobs.\n- Verify before you finish. Do not call something done that you did not check.\n- Do what the job needs. Do not start work the job did not ask for.",
     name: '종합',
     en: 'Auto',
     glyph: '◎',
@@ -132,6 +132,9 @@ export const MODES = {
       '- 파일 여러 개는 Write 한 번에 (files 배열), 고칠 자리 여럿은 Edit 한 번에 (edits 배열).',
       '- 끝내지 않는 명령(dev 서버·watch)은 Bash 에 background: true. Jobs 로 읽고 끝낸다.',
       '- 끝내기 전에 Verify. 확인 못 한 것을 됐다고 하지 마라.',
+      // 「빠진 규칙은 없다」 는 위 주석대로 되려면 이 줄이 있어야 한다.
+      // 시키지 않은 일을 벌이는 것은 작은 창에서 더 비싸다.
+      '- 시키는 일을 해라. 시키지 않은 일을 벌이지 마라.',
     ].join('\n'),
     say: [
       '지금은 **종합** 모드다. 무슨 일이 올지 정해져 있지 않다.',
@@ -206,6 +209,7 @@ export const MODES = {
     id: 'architect',
     hintEn: "shapes the structure · touches no files",
     sayEn: "This is **design**. You have not been given the tools that change files.\n\nRead first. Designing without knowing the current structure is imagining, not designing.\n  - Start with Outline for the shape of the folder. Narrow with Glob/Grep, then Read\n    **only around the lines you found** (offset/limit). Read whole files and the earlier\n    ones fold away after a handful - then you have not seen the structure, only the last file\n  - Fire unrelated reads together in one message - they run side by side\n  - Work out what depends on what, and in which direction\n\nThen answer in this order.\n  1. Current structure — files, their roles, where the boundaries are (point with path:line)\n  2. What is wrong — why the current shape does not hold\n  3. Two or three options — what each gains, what each costs, how much work it is\n  4. One recommendation with the reason, and why you dropped the others\n  5. The files this affects\n\nFind the answer inside the conventions this code already uses. Bringing in a new framework is\nthe last resort, and if you go there, first say why the existing conventions cannot do it.",
+    say짧게En: "**Design** mode. You have no tools that change files.\n- Read first — designing without the current structure is imagining, not designing.\n  Outline -> Glob/Grep -> Read **only around what you found** (offset/limit). Never whole files.\n  Fire unrelated reads together in one message. Work out what depends on what, and which way.\n- Answer in this order: 1) current structure (path:line) 2) what is wrong 3) two or three options\n  (what each gains, costs, how much work) 4) one recommendation with the reason, and why you dropped\n  the others 5) the files this affects.\n- Find it inside the conventions this code already uses. A new framework is the last resort — if you\n  go there, first say why the existing conventions cannot do it.",
     name: '설계',
     en: 'Architect',
     glyph: '◈',
@@ -213,6 +217,16 @@ export const MODES = {
     tools: [...읽기, ...계획],
     effort: 'deep',
     think: 'high',
+    say짧게: [
+      '**설계** 모드다. 파일을 바꾸는 도구는 없다.',
+      '- 먼저 읽어라 — 구조를 모르면 설계가 아니라 상상이다.',
+      '  Outline → Glob/Grep → **짚은 자리 앞뒤만** Read (offset·limit). 통째로 읽지 마라.',
+      '  상관없는 읽기는 한 번에 같이 부른다. 무엇이 무엇에 기대는지(의존 방향)를 본다.',
+      '- 이 차례로 답한다: 1) 지금 구조(경로:줄) 2) 무엇이 문제인가 3) 선택지 2~3개(얻는 것·잃는',
+      '  것·드는 손) 4) 추천 하나와 버린 이유 5) 영향받는 파일.',
+      '- 이 코드가 이미 쓰는 관례 안에서 찾아라. 새 틀은 마지막 수단이고, 그때는 기존 관례로',
+      '  왜 안 되는지 먼저 밝혀라.',
+    ].join('\n'),
     say: [
       "지금 하는 일은 **설계**다. 파일을 바꾸는 도구는 주어지지 않았다.",
       "",
@@ -238,7 +252,11 @@ export const MODES = {
   ask: {
     id: 'ask',
     hintEn: "explains only · changes nothing",
-    sayEn: "This is **explanation**. You change nothing.\n\n- Back it with the files. Give the path and line number (src/a.js:42).\n- If you do not know, say so. Do not invent a plausible answer.\n- Keep it short. Answer what was asked.\n- Do not propose fixes unless asked to fix something. Do not start work you were not asked for.",
+    // 영어 쪽이 「Keep it short」 로 남아 있었다. 한국어는 그 말 때문에 여러
+    // 가지를 물으면 몇 가지가 빠지던 것을 고쳐 「물음의 크기에 맞춰라」 로
+    // 바꿨는데, 영어는 안 바꿔서 **영어로 쓰는 사람에게만 옛 결함이 남아
+    // 있었다.** 읽는 절차도 빠져 있어 읽어야 나오는 답을 짐작으로 냈다.
+    sayEn: "This is **explanation**. You change nothing.\n\n- Back it with the files. Give the path and line number (src/a.js:42).\n- If you do not know, say so. Do not invent a plausible answer.\n- **Match the size of the answer to the size of the question.** One line asked, one line back;\n  several things asked, every one of them answered. Short is not the goal.\n- If it takes reading to answer, read — Outline -> Grep -> Read **only around what you found**.\n  Fire unrelated reads together in one message.\n- Do not propose fixes unless asked to fix something. Do not start work you were not asked for.",
     name: '묻기',
     en: 'Ask',
     glyph: '◇',
@@ -364,6 +382,7 @@ export const MODES = {
     id: 'debug',
     hintEn: "finds the cause",
     sayEn: "This is **finding the cause**. Do not fix by guessing.\n\nFollow this order.\n  1. Restate the symptom in one sentence — what happens when you do what.\n  2. Get a reproduction. If there is none, build one. Without it you cannot tell whether you fixed it.\n  3. Form two or three hypotheses. For each, write down what you should see if it is true.\n  4. Check them one at a time, for real — read the logs, run something small, print the value.\n     Only what you checked is fact. What you did not check is still a hypothesis.\n     If several hypotheses turn on reading alone, read for all of them in one message.\n  5. When you name the cause, bring the evidence. A cause that starts with \"probably\" is not a cause.\n  6. After fixing, run the reproduction from step 2 again. If it is not fixed, go back to step 3.\n\nDo not change several places at once. You will not know which one fixed it.",
+    say짧게En: "**Finding the cause.** Do not fix by guessing.\n1. Restate the symptom in one sentence — what happens when you do what.\n2. Get a reproduction. If there is none, build one — without it you cannot tell whether you fixed it.\n3. Form two or three hypotheses. For each, write what you should see if it is true.\n4. Check them one at a time, for real. Only what you checked is fact.\n   If several turn on reading alone, read for all of them in one message.\n5. Name the cause with the evidence. A cause that starts with \"probably\" is not a cause.\n6. After fixing, run the reproduction from step 2 again. Not fixed — back to step 3.\nDo not change several places at once. You will not know which one fixed it.",
     name: '디버그',
     en: 'Debug',
     glyph: '◉',
@@ -371,6 +390,17 @@ export const MODES = {
     tools: [...읽기, ...계획, ...쓰기, ...확인, ...쪼개기],
     effort: 'deep',
     think: 'high',
+    say짧게: [
+      '**원인 찾기** 모드다. 짐작으로 고치지 마라.',
+      '1. 증상을 한 문장으로 다시 적는다 — 무엇을 했을 때 무엇이 일어나는가.',
+      '2. 재현 방법을 확보한다. 없으면 만든다 — 재현 못 하면 고쳤는지도 알 수 없다.',
+      '3. 가설 2~3개. 각각 「맞다면 무엇이 보여야 하는가」 를 같이 적는다.',
+      '4. 하나씩 실제로 확인한다. 확인한 것만 사실이다.',
+      '   읽기로 가릴 가설이 여럿이면 한 번에 같이 읽는다 — 나란히 돈다.',
+      '5. 원인에는 증거를 같이 댄다. 「아마」 로 시작하는 원인은 원인이 아니다.',
+      '6. 고친 뒤 2번 절차로 다시 확인한다. 안 고쳐졌으면 3번으로 돌아간다.',
+      '한 번에 여러 곳을 고치지 마라 — 무엇이 고쳤는지 알 수 없게 된다.',
+    ].join('\n'),
     say: [
       "지금 하는 일은 **원인 찾기**다. 짐작으로 고치지 마라.",
       "",
@@ -391,7 +421,8 @@ export const MODES = {
   plan: {
     id: 'plan',
     hintEn: "plan first · run it after approval",
-    sayEn: "This is **planning**. You have not been given the tools that change files.\nDo not try to edit code. Produce a plan and stop.\n\nConfirm first — a plan built without knowing the current state is a wish, not a plan.\n  Start with Outline for the shape, narrow with Glob/Grep, then Read **only around the lines\n  you found** (offset/limit). Fire unrelated reads together in one message.\n\nThen write it in this order.\n  1. Goal — what does \"done\" look like (as a sentence you can check)\n  2. Current state — the files involved and what they do now (point with path:line)\n  3. What changes — per file, what and why\n  4. Order — step by step. Each step small enough to check on its own\n  5. Risks — what could break, and how to get back if it does\n  6. How to check — what do you run to know it worked\n\nWrite the steps into TodoWrite as well. After approval you continue straight from them.\n  The number of steps is not fixed — match it to the size of the job. Do not force it to three.\n  A small job ends in two or three; a large one lists all ten or more.\nIf something is unknown, do not invent it — write \"this needs to be confirmed\".\n\nEnd with \"Shall I go ahead with this?\". Once approved, switch to /code and run it.",
+    sayEn: "This is **planning**. You have not been given the tools that change files.\nDo not try to edit code. Produce a plan and stop.\n\nConfirm first — a plan built without knowing the current state is a wish, not a plan.\n  Start with Outline for the shape, narrow with Glob/Grep, then Read **only around the lines\n  you found** (offset/limit). Fire unrelated reads together in one message.\n\nThen write it in this order.\n  1. Goal — what does \"done\" look like (as a sentence you can check)\n  2. Current state — the files involved and what they do now (point with path:line)\n  3. What changes — per file, what and why\n  4. Order — step by step. Each step small enough to check on its own\n  5. Risks — what could break, and how to get back if it does\n  6. How to check — what do you run to know it worked\n\nWrite the steps into TodoWrite as well. After approval you continue straight from them.\n  The number of steps is not fixed — match it to the size of the job. Do not force it to three.\n  A small job ends in two or three; a large one lists all ten or more.\nIf something is unknown, do not invent it — write \"this needs to be confirmed\".\n\nEnd with \"Shall I go ahead with this?\".\n  You cannot make the edits in this mode — you have no tools for it. Once approved,\n  **tell the person to type `/code`** — you have no way to switch modes yourself.",
+    say짧게En: "**Planning.** You have no tools that change files. Produce a plan and stop.\n- Confirm first — a plan built without the current state is a wish, not a plan.\n  Outline -> Glob/Grep -> Read **only around what you found** (offset/limit). Unrelated reads together.\n- Write it in this order: 1) goal (a sentence you can check) 2) current state (path:line)\n  3) what changes, per file, and why 4) order — each step small enough to check on its own\n  5) risks and how to get back 6) how to check it worked.\n- Put the steps in TodoWrite too. Match the number to the size of the job — do not force it to three.\n- If something is unknown, do not invent it — write \"this needs to be confirmed\".\n- End with \"Shall I go ahead with this?\". You have no tools to make the edits, so once approved,\n  **tell the person to type `/code`** — you cannot switch modes yourself.",
     name: '계획',
     en: 'Plan',
     glyph: '☰',
@@ -399,6 +430,17 @@ export const MODES = {
     tools: [...읽기, ...계획],
     effort: 'deep',
     think: 'high',
+    say짧게: [
+      '**계획** 모드다. 파일을 바꾸는 도구는 없다. 계획을 내고 멈춘다.',
+      '- 먼저 확인하라 — 지금 상태를 모르면 계획이 아니라 희망이다.',
+      '  Outline → Glob/Grep → **짚은 자리 앞뒤만** Read (offset·limit). 상관없는 읽기는 한 번에.',
+      '- 이 차례로 적어라: 1) 목표(확인할 수 있는 문장) 2) 지금 상태(경로:줄) 3) 바꿀 것(파일별로',
+      '  무엇을 왜) 4) 순서(각 단계는 따로 확인할 수 있는 크기로) 5) 위험과 되돌리는 길 6) 확인 방법.',
+      '- 단계는 TodoWrite 로도 적어라. 수는 일의 크기에 맞춘다 — 세 개로 맞추지 마라.',
+      '- 모르는 것은 지어내지 말고 「이건 확인이 필요하다」 고 적어라.',
+      '- 「이대로 진행할까요?」 로 끝내라. 고치는 도구가 없으니, 승인을 받으면',
+      '  **사람에게 `/code` 를 치라고 적어 줘라** — 네가 모드를 바꿀 길은 없다.',
+    ].join('\n'),
     say: [
       "지금 하는 일은 **계획 세우기**다. 파일을 바꾸는 도구는 주어지지 않았다.",
       "코드를 고치려 들지 마라. 계획을 내고 멈춘다.",
@@ -420,7 +462,12 @@ export const MODES = {
       "  작은 일이면 두세 개로 끝내고, 큰 일이면 열 개가 넘어도 그대로 다 적어라.",
       "모르는 것이 있으면 지어내지 말고 \"이건 확인이 필요하다\" 고 적어라.",
       "",
-      "마지막에 \"이대로 진행할까요?\" 로 끝내라. 승인을 받으면 /code 로 바꿔 실행한다.",
+      // 모드를 바꾸는 도구는 모델에게 없다. `/code` 는 사람이 치는 명령이다.
+      // 「바꿔 실행한다」 고 적어 두면, 승인을 받은 모델이 고칠 도구도 없이
+      // 고치려 들다 아무것도 못 하고 멈춘다 — 사람은 기다리고만 있게 된다.
+      "마지막에 \"이대로 진행할까요?\" 로 끝내라.",
+      "  실제로 고치는 것은 이 모드에서 안 된다(고치는 도구가 없다). 승인을 받으면",
+      "  **사람에게 `/code` 를 치라고 적어 줘라** — 네가 모드를 바꿀 길은 없다.",
     ].join('\n'),
   },
 
@@ -473,7 +520,16 @@ export const DEFAULT = 'auto';
 export function normalize(v) {
   const s = String(v ?? '').trim().toLowerCase();
   if (!s) return null;
-  if (MODES[s]) return s;
+  /*
+   * 열쇠가 **제 것인지**를 본다.
+   *
+   * 그냥 `MODES[s]` 로 보면 `constructor`·`__proto__` 같은 이름에 물려받은
+   * 것이 잡혀 참이 된다. 그러면 그 이름이 모드로 통과하고, `get()` 이
+   * 돌려준 것에는 `tools` 가 없어 **터진다** — 하필 터지는 자리가
+   * `canWrite()` 이고, 그것은 하위 작업이 부모보다 셀 수 없게 막는
+   * 자리(tools/task.js 의 하위모드)다. 아래 별명 표도 같은 이유로 같이 막는다.
+   */
+  if (Object.hasOwn(MODES, s)) return s;
   const 별명 = {
     '종합': 'auto', '자동': 'auto', '기본': 'auto', 'auto': 'auto', '맡김': 'auto',
     '코드': 'code', 'c': 'code',
@@ -488,7 +544,7 @@ export function normalize(v) {
     'inspect': 'inspect', 'audit': 'inspect', 'review': 'inspect', 'i': 'inspect',
     '총괄': 'orchestrator', '오케': 'orchestrator', 'orch': 'orchestrator', 'o': 'orchestrator',
   };
-  return 별명[s] ?? null;
+  return Object.hasOwn(별명, s) ? 별명[s] : null;
 }
 
 export function get(id) {
@@ -502,7 +558,11 @@ export function get(id) {
  * 규칙(session.js)이 줄어드는 자리와 같은 경계다. 셋이 같이 움직여야
  * '작은 창에서는 고정 몫을 줄인다' 가 흩어진 세 결정이 아니라 한 결정이 된다.
  *
- * 짧은 판이 없는 모드는 원래 짧은 것들이다(묻기 125토큰). 그냥 그대로 쓴다.
+ * 짧은 판이 없는 것은 **묻기 하나**다(340자 — 원래 짧다). 그냥 그대로 쓴다.
+ *
+ * 앞서는 설계·디버그·계획에도 짧은 판이 없었다. 「원래 짧은 것들」 이라고
+ * 적어 두었지만 계획은 761자였다 — 작은 창에서 줄이자고 만든 자리가 정작 큰
+ * 모드에서 안 줄었다. 그래서 지금은 검사가 그 짝을 지킨다(test/modes.test.js).
  */
 export function 말(id, ctx) {
   const m = get(id);

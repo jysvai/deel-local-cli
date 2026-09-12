@@ -126,19 +126,41 @@ export function pad(str, target, align = 'left') {
   return str + ' '.repeat(gap);
 }
 
-// 색 코드를 건드리지 않고 보이는 폭 기준으로 자른다.
+/**
+ * 색 코드를 건드리지 않고 보이는 폭 기준으로 자른다.
+ *
+ * 색 코드는 화면에서 자리를 차지하지 않으므로 폭에서 빼야 하고, 그 가운데를
+ * 자르면 안 된다. 한 글자씩 셈에 넣으면 둘 다 어긋난다 — 회색 한 줄
+ * `\x1b[38;5;245m…\x1b[0m` 은 색 코드만으로 열두 칸을 먹어서, 폭 12 로
+ * 자르면 보이는 글자가 한 칸만 남고 잘린 자리가 `\x1b[38;5;` 라는 토막이
+ * 된다. 터미널은 그 토막을 명령의 시작으로 보고 뒤따르는 글자를 먹는다.
+ *
+ * 그래서 색 코드는 통째로 넘기고 폭 0 으로 센다. 자른 자리에서 색이 켜져
+ * 있으면 되돌림을 붙인다 — 안 붙이면 그 색이 뒤에 찍는 모든 줄로 번진다.
+ */
 export function clip(str, max, tail = '…') {
   if (width(str) <= max) return str;
+  const budget = max - width(tail);
   let out = '';
   let w = 0;
-  const budget = max - width(tail);
-  for (const ch of String(str)) {
-    const cw = width(ch);
-    if (w + cw > budget) break;
-    out += ch;
-    w += cw;
+  let 색켜짐 = false;
+  let 찼다 = false;
+  for (const 조각 of String(str).split(/(\x1b\[[0-9;]*m)/)) {
+    if (!조각) continue;
+    if (찼다) break;
+    if (조각.charCodeAt(0) === 0x1b) {
+      out += 조각;
+      색켜짐 = !/^\x1b\[0?m$/.test(조각);
+      continue;
+    }
+    for (const ch of 조각) {
+      const cw = width(ch);
+      if (w + cw > budget) { 찼다 = true; break; }
+      out += ch;
+      w += cw;
+    }
   }
-  return out + tail;
+  return out + (색켜짐 ? '\x1b[0m' : '') + tail;
 }
 
 // 터미널 가로 폭. 파이프로 넘어가면 알 수 없으니 넉넉히 잡는다.

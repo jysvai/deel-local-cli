@@ -142,7 +142,11 @@ export const SEGMENTS = {
     get desc() { return 말('seg.ctx'); },
     make: (s) => {
       const { r, pct, tone, b } = 참값(s);
-      return `${눈금게이지(r, 10, [FOLD_AT, COMPACT_AT])} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + short(b.total))}`;
+      // 창 크기를 서버가 안 알려 줬으면 `32k?` 로 적는다 — 바로 옆 모델 급이
+      // 짐작일 때 `◈ 보통?` 인 것과 같은 규칙이다. 짐작을 잰 것처럼 적으면,
+      // 실제 창이 8k 라서 답이 잘리는 동안에도 게이지는 초록이다.
+      const 창말 = short(b.total) + (b.총잰것 === false ? '?' : '');
+      return `${눈금게이지(r, 10, [FOLD_AT, COMPACT_AT])} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + 창말)}`;
     },
     // 자리가 모자라면 정확한 숫자를 접는다. 게이지와 %가 이미 같은 말을 하고 있다.
     short: (s) => {
@@ -222,7 +226,17 @@ export const SEGMENTS = {
     make: (s) => {
       const 돈 = 돈셈(s.usage, 세션요금(s));
       if (!돈 || !(돈.달러 > 0)) return null;
-      return c.gray(돈말(돈.달러));
+      /*
+       * 확정된 금액이 아닐 때는 물음표를 붙인다.
+       *
+       * 두 가지가 그렇게 만든다. 창구가 usage 를 안 준 부름(`못잰것`)은 그
+       * 몫이 **덜 세어졌고**, 캐시를 썼는데 캐시 요금을 모르는 경우
+       * (`캐시모름`)는 제값으로 세어 **더 많게** 나온다. `/cost` 는 이미
+       * 둘 다 적는다 — 그런데 늘 떠 있는 이 자리가 더 확정적으로 보이면
+       * 사람은 이쪽을 믿는다. 두 화면이 다른 말을 하면 안 된다.
+       */
+      const 흐린가 = (s.usage?.못잰것 ?? 0) > 0 || 돈.캐시모름 === true;
+      return c.gray(돈말(돈.달러) + (흐린가 ? '?' : ''));
     },
   },
 
@@ -457,7 +471,16 @@ export function statusLine(session, { segments = null, max = cols() - 2 } = {}) 
   // 여전히 모자라면 뒤에서부터 떨군다. 앞쪽(폴더·모델·컨텍스트)이 마지막까지 남는다.
   while (parts.length > 1 && !맞나(parts)) parts.pop();
 
-  return ` ${c.gray('▏')}${parts.join(칸막이)}`;
+  /*
+   * 덩이가 **하나만 남아도** 폭을 넘을 수 있다.
+   *
+   * 위 고리는 `parts.length > 1` 에서 멈추므로, 첫 덩이 하나가 폭보다 넓으면
+   * 그대로 나간다 — 30칸으로 좁힌 창에서 32칸이 나왔다. 넘친 줄은 터미널이
+   * 두 줄로 접는데 입력 상자는 한 줄로 세고, 그만큼 커서를 덜 올려 위쪽
+   * 대화를 한 줄씩 갉아먹는다(ui/inputbox.js 의 프레임).
+   */
+  const 줄 = ` ${c.gray('▏')}${parts.join(칸막이)}`;
+  return width(줄) > max ? clip(줄, max) : 줄;
 }
 
 // 컨텍스트가 위험하면 한마디 붙인다. 상태줄만 보고 넘기지 않도록.

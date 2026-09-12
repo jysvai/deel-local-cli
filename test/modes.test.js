@@ -36,6 +36,54 @@ check('줄임말', normalize('d') === 'debug');
 check('대소문자 무시', normalize('CODE') === 'code');
 check('모르는 이름은 null', normalize('없는모드') === null);
 check('빈 값도 null', normalize('') === null);
+/*
+ * 물려받은 열쇠 이름 — `constructor`·`__proto__`.
+ *
+ * 그냥 `MODES[s]` 로 보면 이 이름들이 참이 되어 모드로 통과한다. 그리고
+ * `get()` 이 돌려준 것에는 `tools` 가 없어 **터진다** — 하필 터지는 자리가
+ * 하위 작업이 부모보다 셀 수 없게 막는 자리(tools/task.js 의 하위모드)다.
+ * 모델이 모드 이름을 내놓는 자리라 아주 못 올 값도 아니다.
+ */
+for (const 이름 of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
+  check(`★ 물려받은 이름은 모드가 아니다 (${이름})`, normalize(이름) === null, JSON.stringify(normalize(이름)));
+  let 터졌나 = false;
+  try { canWrite(이름); } catch { 터졌나 = true; }
+  check(`★ 그 이름으로 물어도 안 터진다 (${이름})`, 터졌나 === false);
+}
+
+// ── 1b. ★ 작은 창용 짧은 판이 빠진 모드가 없나 ─────────────────────────
+/*
+ * 24k 아래에서는 고정 몫을 줄인다 — 도구 설명·기본 규칙·모드 글 셋이 같이
+ * 움직여야 한 결정이 된다. 그런데 짧은 판은 **없어도 아무 일도 안 일어난다**
+ * (그냥 긴 글이 그대로 나간다). 그래서 여기서 짝을 지키지 않으면, 모드 글을
+ * 길게 고친 사람이 짧은 판을 안 만들어도 아무도 안 막는다.
+ *
+ * 「묻기」 만 빼 둔다. 340자짜리를 더 줄일 것이 없다 — 그것도 수치로 재 둔다.
+ */
+{
+  const 짧은거없어도되는것 = new Set(['ask']);
+  for (const [k, m] of Object.entries(MODES)) {
+    if (짧은거없어도되는것.has(k)) {
+      // 두 언어를 다 본다. 한쪽만 재면 영어만 길어진 것을 아무도 안 막는다.
+      check(`${k}: 원래 짧아서 짧은 판이 없다`,
+        m.say.length < 700 && (m.sayEn?.length ?? 0) < 700 && !m.say짧게 && !m.say짧게En,
+        `한국어 ${m.say.length}자 · 영어 ${m.sayEn?.length ?? 0}자`);
+      continue;
+    }
+    check(`★ ${k}: 작은 창용 짧은 판이 있다 (한국어)`, typeof m.say짧게 === 'string' && m.say짧게.length > 0,
+      `${m.say.length}자인데 짧은 판이 없다`);
+    check(`★ ${k}: 작은 창용 짧은 판이 있다 (영어)`, typeof m.say짧게En === 'string' && m.say짧게En.length > 0,
+      `${m.sayEn?.length ?? 0}자인데 짧은 판이 없다`);
+    if (m.say짧게) {
+      check(`${k}: 짧은 판이 실제로 더 짧다 (한국어)`, m.say짧게.length < m.say.length,
+        `${m.say짧게.length} / ${m.say.length}`);
+    }
+    if (m.say짧게En && m.sayEn) {
+      check(`${k}: 짧은 판이 실제로 더 짧다 (영어)`, m.say짧게En.length < m.sayEn.length,
+        `${m.say짧게En.length} / ${m.sayEn.length}`);
+    }
+  }
+}
 
 // ── 2. 차례로 돌리기 (Shift+Tab) ────────────────────────────────────────
 {

@@ -661,6 +661,30 @@ trace('7-반입묶음');
   check('audit 이 의존성 0개를 못 박는다', /의존성|0개|없음/.test(a.out), a.out.slice(0, 100));
 }
 
+// ── 9. ★ `--work` 에 오타를 치면 ───────────────────────────────────────
+/*
+ * 모르는 모드 이름은 조용히 기본값(종합)으로 떨어진다. 종합은 Write·Edit·
+ * Bash 를 다 가진 모드다 — 「파일은 안 건드리는」 모드로 켠 줄 알고 고칠 수
+ * 있는 상태로 도는 것이, 안 켜지는 것보다 훨씬 나쁘다.
+ *
+ * 판 번호·도움말은 무엇을 잘못 쳤든 답해야 한다. 그 둘도 같이 잰다.
+ */
+trace('9-모드오타');
+{
+  const 오타 = await 띄우기(['--work', 'architcet', '-p', '안녕'], { 제한: 25000 });
+  check('★ 모드 이름 오타에 멈춘다', 오타.code === 2, `code=${오타.code}`);
+  check('★ 무엇을 잘못 쳤는지 적는다', /architcet/.test(오타.out + 오타.err), (오타.out + 오타.err).slice(0, 120));
+  check('★ 있는 모드를 같이 보여 준다', /설계\(architect\)/.test(오타.out + 오타.err), (오타.out + 오타.err).slice(0, 200));
+  check('★ 그냥 켜면 고칠 수 있는 모드라고 알려 준다',
+    /파일을 고칠 수 있는 모드/.test(오타.out + 오타.err), (오타.out + 오타.err).slice(0, 240));
+
+  const 판 = await 띄우기(['--work', 'architcet', '--version'], { 제한: 25000 });
+  check('판 번호는 오타에도 답한다', 판.code === 0 && /deel \d+\.\d+\.\d+/.test(판.out), `code=${판.code} · ${판.out.slice(0, 60)}`);
+
+  const 맞는것 = await 띄우기(['--work', '설계', '--version'], { 제한: 25000 });
+  check('맞는 이름은 그대로 지나간다', 맞는것.code === 0, `code=${맞는것.code}`);
+}
+
 trace('8-치움');
 srv.close();
 rmSync(home, { recursive: true, force: true });

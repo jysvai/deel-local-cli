@@ -914,7 +914,7 @@
       "곳": "src/tools/pdf.js",
       "무엇": "두 자리로 적힌 유니코드 목적지를 뒤로 메운다",
       "그러면": "`<41>`('A') 이 `4100` — 곧 「䄀」 이라는 없는 한자가 되어 글에 섞인다",
-      "찾을것": "  const 짝 = 남 ? s.slice(0, s.length - 남) + s.slice(s.length - 남).padStart(4, '0') : s;",
+      "찾을것": "  const 짝 = 남 ? s.padStart(s.length + (4 - 남), '0') : s;",
       "바꿀것": "  const 짝 = 남 ? s.padEnd(Math.ceil(s.length / 4) * 4, '0') : s;",
       "검사": "test/pdf.test.js"
     },
@@ -997,6 +997,158 @@
       "찾을것": "      const m = /(\\d+)\\s+\\d+\\s+obj\\s*<<(?:(?!endobj)[\\s\\S]){0,400}?\\/Type\\s*\\/Catalog/",
       "바꿀것": "      const m = /(\\d+)\\s+\\d+\\s+obj\\s*<<[^>]{0,400}?\\/Type\\s*\\/Catalog/",
       "검사": "test/pdf.test.js"
+    },
+    {
+      "곳": "src/i18n/en.js",
+      "무엇": "영어 열쇠 이름에 오타를 낸다",
+      "그러면": "영어로 쓰는 사람 화면에 그 줄만 한국어로 나온다 — 오류도 안 나고, 한국어를 쓰는 나는 영영 못 본다",
+      "찾을것": "  'wire.learned': 'learned',",
+      "바꿀것": "  'wire.learnd': 'learned',",
+      "검사": "test/i18n.test.js"
+    },
+    {
+      "곳": "src/i18n/en.js",
+      "무엇": "영어 말의 채움 자리 이름을 바꾼다",
+      "그러면": "`{모델}` 자리에 아무것도 안 끼워져 「asking {모델}…」 이 그대로 화면에 뜬다",
+      "찾을것": "  'consult.asking': 'asking {모델}…',",
+      "바꿀것": "  'consult.asking': 'asking {model}…',",
+      "검사": "test/i18n.test.js"
+    },
+    {
+      "곳": "src/tools/pdf.js",
+      "무엇": "최신 xref 가 낱개로 정한 객체를 옛 묶음이 덮게 한다",
+      "그러면": "눌린 PDF(요즘 PDF 는 대개 이 꼴)를 고쳐 저장하면 고치기 전 값을 읽는다 — 자리는 최신으로 지켜 놓고 묶음만 안 지킨, 반쪽만 고친 꼴이 된다",
+      "찾을것": "        if (this.xref정함.has(객체번호)) continue;",
+      "바꿀것": "        if (false) continue;",
+      "검사": "test/pdf.test.js"
+    },
+    {
+      "곳": "src/tools/pdf.js",
+      "무엇": "모자란 16진수 자리를 뒤 토막에만 메운다",
+      "그러면": "`<410042>` 가 `4100`·`0042` 로 끊겨 첫 글자가 「䄀」 이 된다 — 두 자리 목적지를 고친 자리가 도로 살아난다",
+      "찾을것": "  const 짝 = 남 ? s.padStart(s.length + (4 - 남), '0') : s;",
+      "바꿀것": "  const 짝 = 남 ? s.slice(0, s.length - 남) + s.slice(s.length - 남).padStart(4, '0') : s;",
+      "검사": "test/pdf.test.js"
+    },
+    {
+      "곳": "src/agent/modes.js",
+      "무엇": "모드 이름을 물려받은 열쇠까지 훑어 찾는다",
+      "그러면": "`constructor`·`__proto__` 가 모드 이름으로 통과하고, 하위 작업이 부모보다 셀 수 없게 막는 자리(canWrite)가 **터진다**",
+      "찾을것": "  if (Object.hasOwn(MODES, s)) return s;",
+      "바꿀것": "  if (MODES[s]) return s;",
+      "검사": "test/modes.test.js"
+    },
+    {
+      "곳": "src/agent/modes.js",
+      "무엇": "별명 표도 물려받은 열쇠까지 훑어 찾는다",
+      "그러면": "위와 같다 — 위 자리만 막으면 이 자리로 빠져나가 같은 곳에서 터진다",
+      "찾을것": "  return Object.hasOwn(별명, s) ? 별명[s] : null;",
+      "바꿀것": "  return 별명[s] ?? null;",
+      "검사": "test/modes.test.js"
+    },
+    {
+      "곳": "src/ui/ansi.js",
+      "무엇": "색 코드를 따로 떼지 않고 한 글자씩 센다",
+      "그러면": "색 코드가 폭을 먹어 보이는 글자가 몇 칸만 남고, 자른 자리에 명령 토막이 남는다 — 상태줄(색 66개)을 70칸에 맞추면 14칸만 남았다",
+      "찾을것": "  for (const 조각 of String(str).split(/(\\x1b\\[[0-9;]*m)/)) {",
+      "바꿀것": "  for (const 조각 of [String(str)]) {",
+      "검사": "test/ui.test.js"
+    },
+    {
+      "곳": "src/ui/ansi.js",
+      "무엇": "자른 자리에서 색을 되돌리지 않는다",
+      "그러면": "켜 둔 색이 아래로 찍는 모든 줄로 번진다 — 한 줄 자른 뒤 화면 전체가 회색이 된다",
+      "찾을것": "  return out + (색켜짐 ? '\\x1b[0m' : '') + tail;",
+      "바꿀것": "  return out + tail;",
+      "검사": "test/ui.test.js"
+    },
+    {
+      "곳": "src/ui/ansi.js",
+      "무엇": "되돌림 코드도 '색을 켠 것' 으로 센다",
+      "그러면": "색이 이미 닫힌 줄에도 되돌림을 또 붙인다 — 없어도 되는 코드가 줄마다 쌓인다",
+      "찾을것": "      색켜짐 = !/^\\x1b\\[0?m$/.test(조각);",
+      "바꿀것": "      색켜짐 = true;",
+      "검사": "test/ui.test.js"
+    },
+    {
+      "곳": "src/ui/inputbox.js",
+      "무엇": "일감의 말이 폭보다 길어도 안 자른다",
+      "그러면": "터미널은 두 줄로 접고 상자는 한 줄로 세서, 키를 칠 때마다 위쪽 대화가 한 줄씩 갉여 나간다",
+      "찾을것": "    const 안 = 남 >= 2 ? `${왼쪽}${' '.repeat(남)}${오른쪽}` : clip(왼쪽, 일안쪽);",
+      "바꿀것": "    const 안 = 남 >= 2 ? `${왼쪽}${' '.repeat(남)}${오른쪽}` : 왼쪽;",
+      "검사": "test/office.test.js"
+    },
+    {
+      "곳": "src/ui/inputbox.js",
+      "무엇": "미리 치는 중 안내 문구를 안 자른다",
+      "그러면": "43칸 문구가 좁은 창에서 접혀 같은 손해가 난다 — 폭 36·24 에서 줄 셈이 어긋난다",
+      "찾을것": "    if (일감.대기) 줄들.push(clip(` ${c.gray('Enter 를 치면 지금 일이 끝난 뒤에 보냅니다')}`, 칸));",
+      "바꿀것": "    if (일감.대기) 줄들.push(` ${c.gray('Enter 를 치면 지금 일이 끝난 뒤에 보냅니다')}`);",
+      "검사": "test/office.test.js"
+    },
+    {
+      "곳": "src/ui/inputbox.js",
+      "무엇": "미리 쳐 둔 글을 앞에서 세 줄 보인다",
+      "그러면": "사람은 끝에서 치는데 화면에는 첫 세 줄이 붙어 있다 — 네 줄째부터 친 글자가 아무 데도 안 나타난다",
+      "찾을것": "    const 대기보일 = 대기줄들.slice(-대기최대);",
+      "바꿀것": "    const 대기보일 = 대기줄들.slice(0, 대기최대);",
+      "검사": "test/office.test.js"
+    },
+    {
+      "곳": "src/ui/inputbox.js",
+      "무엇": "곁말을 폭 안에 안 넣는다",
+      "그러면": "긴 도움말 한 줄이 좁은 창에서 접혀 상자의 줄 셈이 어긋난다",
+      "찾을것": "  if (곁말) 줄들.push(clip(` ${c.gray(곁말)}`, 칸));",
+      "바꿀것": "  if (곁말) 줄들.push(` ${c.gray(곁말)}`);",
+      "검사": "test/office.test.js"
+    },
+    {
+      "곳": "src/ui/office.js",
+      "무엇": "하늘을 지금 창이 아니라 여태 쓴 토큰 총량으로 그린다",
+      "그러면": "상태줄은 18% 인데 하늘은 100% 한밤이 된다 — /clear 를 해도 안 밝아진다",
+      "찾을것": "  const 창비율 = 예산 && 예산.total > 0 ? Math.min(1, 예산.used / 예산.total) : 0;",
+      "바꿀것": "  const 창비율 = 예산 && 예산.total > 0 ? Math.min(1, ((s.usage?.input ?? 0) + (s.usage?.output ?? 0)) / 예산.total) : 0;",
+      "검사": "test/office.test.js"
+    },
+    {
+      "곳": "src/ui/status.js",
+      "무엇": "창 크기를 재 본 적 없어도 아는 것처럼 적는다",
+      "그러면": "짐작한 32k 가 잰 값처럼 보인다 — 화면은 아는 것만 적어야 한다",
+      "찾을것": "      const 창말 = short(b.total) + (b.총잰것 === false ? '?' : '');",
+      "바꿀것": "      const 창말 = short(b.total);",
+      "검사": "test/statusbar.test.js"
+    },
+    {
+      "곳": "src/ui/status.js",
+      "무엇": "못 센 부름이 있어도 요금을 딱 떨어지는 값으로 적는다",
+      "그러면": "/cost 는 '못 잰 부름이 있다' 는데 상태줄은 $0.60 이라고 단언한다",
+      "찾을것": "      const 흐린가 = (s.usage?.못잰것 ?? 0) > 0 || 돈.캐시모름 === true;",
+      "바꿀것": "      const 흐린가 = false;",
+      "검사": "test/statusbar.test.js"
+    },
+    {
+      "곳": "src/ui/inputbox.js",
+      "무엇": "상태줄을 폭 안에 안 넣고 그대로 얹는다",
+      "그러면": "덩이 하나가 폭보다 넓으면 그대로 나가 상자의 줄 셈이 어긋난다",
+      "찾을것": "  if (상태) 줄들.push(clip(상태, 칸));",
+      "바꿀것": "  if (상태) 줄들.push(상태);",
+      "검사": "test/office.test.js"
+    },
+    {
+      "곳": "src/ui/inputbox.js",
+      "무엇": "긴 글에서 보이는 자리가 커서를 안 따라간다",
+      "그러면": "붙여넣고 Ctrl+A 로 맨 앞에 가면 커서가 든 줄이 화면에 없다 — 키가 안 먹는 것처럼 보인다",
+      "찾을것": "    ? Math.min(Math.max(0, 커서앞줄수 - 안쪽최대), 안쪽줄.length - 안쪽최대)",
+      "바꿀것": "    ? 안쪽줄.length - 안쪽최대",
+      "검사": "test/office.test.js"
+    },
+    {
+      "곳": "src/ui/inputbox.js",
+      "무엇": "폭이 바뀔 때 상자 맨 윗줄로 안 올라가고 그 자리에서 쓸어낸다",
+      "그러면": "커서 위쪽 절반(사무실·상태줄·윗테두리)이 유령으로 남고 새 상자가 그 아래 또 그려진다 — 상자가 두 개로 보인다",
+      "찾을것": "          process.stdout.write('\\r' + 위로(Math.max(0, this.그린줄 - 1 - this.커서위)) + '\\x1b[J');",
+      "바꿀것": "          process.stdout.write('\\r\\x1b[J');",
+      "검사": "test/resize.test.js"
     }
   ]
 }

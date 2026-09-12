@@ -701,6 +701,33 @@ async function main() {
 
   if (flags.help || cmd === 'help') { help(); return 0; }
 
+  /*
+   * `--work` 에 오타가 났으면 **여기서 멈춘다.**
+   *
+   * 모르는 이름은 조용히 기본값(종합)으로 떨어진다. 그런데 종합은 Write·Edit·
+   * Bash 를 다 가진 모드다 — `deel --work architcet` 한 번으로, 파일을 안
+   * 건드리는 모드로 켠 줄 알고 **고칠 수 있는 상태**로 돌게 된다. 화면에
+   * 남는 단서는 상태줄 글자 하나뿐이다.
+   *
+   * 대화 중에 치는 `/work` 는 관대하게 받아도 된다(틀리면 바로 화면에 뜨고
+   * 다시 치면 된다). 깃발은 한 번 켜면 그 세션이 끝까지 그걸로 간다.
+   *
+   * 판 번호·도움말보다 뒤에 둔다 — 그 둘은 무엇을 잘못 쳤든 답해야 한다.
+   */
+  if (flags.work !== undefined && flags.work !== true) {
+    const { normalize: 모드이름, MODES: 모드들, 보일이름: 모드보임 } = await import('../src/agent/modes.js');
+    if (!모드이름(String(flags.work))) {
+      const 있는것 = Object.keys(모드들).map((k) => `${모드보임(k)}(${k})`).join(' · ');
+      say('');
+      say(`  그런 작업 모드가 없습니다: ${String(flags.work)}`);
+      say(`  있는 것: ${있는것}`);
+      say('');
+      say('  그냥 켜면 「종합」 으로 돕니다 — 그건 파일을 고칠 수 있는 모드입니다.');
+      say('');
+      return 2;
+    }
+  }
+
   switch (cmd) {
     // 한 번만 돌고 끝난다. 스크립트·배치에서 부르는 자리다.
     //
