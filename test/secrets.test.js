@@ -429,6 +429,94 @@ trace('2-멀쩡한글');
       !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
   }
   /*
+   * ── 주석 안은 코드가 아니다 (14차 리뷰) ─────────────────────────────
+   *
+   * 「이 줄이 코드인가」 를 줄 통째로 물으면, 설정 줄 뒤에 붙인 `#` 주석이
+   * 증거가 되어 버린다 — 주소의 `//`, 부연 설명의 괄호, `type` 같은 낱말이
+   * 전부 「코드」 로 읽혀 **그 줄의 비밀이 평문으로 나갔다**.
+   */
+  for (const [글, 사라져야] of [
+    ['API_KEY: token.v1.secret # https://api.example.com', 'token.v1.secret'],
+    ['API_KEY: token.v1.secret # (운영환경용)', 'token.v1.secret'],
+    ['API_KEY: token.v1.secret # type: bearer', 'token.v1.secret'],
+    ['API_KEY=prod.v1.secret  # 운영 (2026-09)', 'prod.v1.secret'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 줄 뒤 주석은 코드의 표시가 아니다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  // 그렇다고 진짜 코드 주석까지 풀리면 안 된다 — `//` 는 여전히 코드다.
+  for (const 글 of ['// API_KEY: config.api_key', '  // API_KEY: config.api_key']) {
+    check(`★★★ JS 주석은 그대로 둔다 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
+  }
+  /*
+   * ── YAML 흐름 표기의 중괄호 (14차 리뷰) ─────────────────────────────
+   *
+   * `{ API_KEY: 값 }` 은 YAML 표준 문법이다. 중괄호를 「코드」 의 증거로
+   * 삼는 동안 이 한 줄이 통째로 샜다. 중괄호를 증거에서 뺀다 — 그 값으로
+   * 한 줄짜리 물건(`{ API_KEY: config.apiKey }`)은 가려지는데, 줄이
+   * 뭉개지는 것이 비밀이 나가는 것보다 낫다.
+   */
+  for (const [글, 사라져야] of [
+    ['{ API_KEY: token.v1.secret }', 'token.v1.secret'],
+    ['{API_KEY: tok.v1.x}', 'tok.v1.x'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ YAML 흐름 표기도 가린다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * ── 줄 끝 쉼표는 거꾸로 코드의 표시다 (14차 리뷰) ───────────────────
+   *
+   * YAML 블록 매핑은 줄 끝에 쉼표를 안 찍고, 여러 줄 물건은 찍는다.
+   * 그래서 쉼표로 끝나는 줄은 코드로 본다 — 아니면 객체 속성이 뭉개진다.
+   */
+  for (const 글 of [
+    'const cfg = {\n  API_KEY: config.api_key,\n};',
+    'const cfg = {\n  API_KEY: types.ApiKey,   \n};',
+  ]) {
+    check(`★★★ 쉼표로 끝나는 줄은 코드다 — ${글.replace(/\n/g, ' / ')}`,
+      가리기(글).글 === 글, 가리기(글).글);
+  }
+  /*
+   * ── 여기까지가 갈리는 데다 (14차 리뷰에서 못 받은 지적들) ───────────
+   *
+   * 2차 리뷰가 둘을 더 짚었는데, 재 보니 **이미 박혀 있는 검사와 정면으로
+   * 부딪힌다** — 글자만 보고는 갈릴 수 없는 짝들이다.
+   *
+   * (가) 쌍반점. `.env` 값 끝에 쌍반점이 붙어 오면(셸에서 베껴 오면 그렇게
+   *     된다) 그 줄은 **샌다.** 그런데 그것과 한 줄짜리 타입 표기는 꼴이
+   *     같다 — 점으로 이은 값 뒤에 쌍반점 하나다.
+   *
+   *       API_KEY=prod.v1.secret;    이건 새고
+   *       API_KEY: types.ApiKey;     이건 그대로 둬야 한다
+   *
+   *     쌍반점을 증거에서 빼면 뒤쪽이 뭉개진다. `X.API_KEY = y.z;` 같은
+   *     예사 대입도 같이 뭉개진다 — 그쪽이 훨씬 흔하다. 그래서 남겨 둔다.
+   *     쌍반점이 값에 붙은 `.env` 는 어차피 dotenv 가 그 쌍반점까지 값으로
+   *     읽어 비밀 자체가 깨진 채다.
+   *
+   * (나) 점 없는 한 낱말. `const API_KEY = apiKey;` 는 뭉개지지 말아야
+   *     한다는데, `const API_KEY = ENV-PROD-SECRET-KEY-12345;` 는 이 저장소가
+   *     **가리라고** 박아 뒀다. 점 없는 한 낱말은 이름씨일 수도 비밀일 수도
+   *     있고, 그 둘은 여기서 갈리지 않는다. 가리는 쪽으로 남긴다.
+   *
+   * 이 줄들이 빨개지면 「갈릴 수 없다」 는 판단이 뒤집힌 것이니, 무엇으로
+   * 갈랐는지 확인하고 위 검사들을 같이 다시 봐야 한다.
+   */
+  for (const 글 of ['API_KEY=prod.v1.secret;', 'API_KEY: types.ApiKey;',
+    'const API_KEY = config.apiKey;', 'config.API_KEY = process.env.API_KEY;']) {
+    check(`★★ 쌍반점이 있는 줄은 코드로 본다 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
+  }
+  for (const [글, 사라져야] of [
+    ['const API_KEY = apiKey;', 'apiKey'],
+    ['const API_KEY = ENV-PROD-SECRET-KEY-12345;', 'ENV-PROD-SECRET-KEY-12345'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★ 점 없는 한 낱말은 가리는 쪽으로 둔다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
    * 줄은 **줄 단위로** 본다. 앞뒤 줄이 코드여도 이 줄이 설정이면 가린다.
    * 통째로 훑는 무늬라 여기서 헛디디면 옆 줄 때문에 비밀이 샌다(13차 리뷰).
    */

@@ -8,7 +8,7 @@ One file per version line — open only the line you need.
 
 | Line | Versions | What changed |
 |---|---|---|
-| **[1.19.x](releases/1.19.md)** | [1.19.3](releases/1.19.md#1193) · [1.19.2](releases/1.19.md#1192) · [1.19.1](releases/1.19.md#1191) · [1.19.0](releases/1.19.md#1190) | Getting one side right broke the other — thirteen rounds of second review, and the gap left where a fence moved |
+| **[1.19.x](releases/1.19.md)** | [1.19.4](releases/1.19.md#1194) · [1.19.3](releases/1.19.md#1193) · [1.19.2](releases/1.19.md#1192) · [1.19.1](releases/1.19.md#1191) · [1.19.0](releases/1.19.md#1190) | Getting one side right broke the other — thirteen rounds of second review, and the gap left where a fence moved |
 | **[1.18.x](releases/1.18.md)** | [1.18.0](releases/1.18.md#1180) | Having a rule is not the same as the rule firing — what green was not guarding, and a second reviewer |
 | **[1.17.x](releases/1.17.md)** | [1.17.9](releases/1.17.md#1179) · [1.17.8](releases/1.17.md#1178) · [1.17.7](releases/1.17.md#1177) · [1.17.6](releases/1.17.md#1176) · [1.17.5](releases/1.17.md#1175) · [1.17.4](releases/1.17.md#1174) · [1.17.3](releases/1.17.md#1173) · [1.17.2](releases/1.17.md#1172) · [1.17.1](releases/1.17.md#1171) · [1.17.0](releases/1.17.md#1170) | The things that blocked it from getting inside a company — and the company writes what to do |
 | **[1.16.x](releases/1.16.md)** | [1.16.0](releases/1.16.md#1160) | A deep request no longer lands in a shallow mode — and designs and documents open as they are |
