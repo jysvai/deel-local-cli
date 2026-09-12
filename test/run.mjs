@@ -120,6 +120,7 @@ const FILES = [
   'setup.test.js',
   'guard.test.js',
   'secrets.test.js',
+  'secrets-corpus.test.js',
   'audit.test.js',
   'sbom.test.js',
   'undo.test.js',
