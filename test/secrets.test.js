@@ -636,6 +636,10 @@ trace('2-멀쩡한글');
     ["db-PWD: 'secret1234'", 'secret1234'],
     ["auth_TOKEN: 'secret1234'", 'secret1234'],
     ["api_KEY: 'secret1234'", 'secret1234'],
+    // 21차: 밑줄로 이은 여러 마디. 파이썬·테라폼에서 제일 흔한 꼴이다.
+    ["aws_access_token: 'abcdef123456'", 'abcdef123456'],
+    ["custom_auth_token: 'abcdef123456'", 'abcdef123456'],
+    ["aws-access-Token: 'abcdef123456'", 'abcdef123456'],
   ]) {
     const r = 가리기(글);
     check(`★★★ 마디가 몇이든 대소문자가 뭐든 비밀 이름이다 — ${글}`,

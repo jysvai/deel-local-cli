@@ -565,7 +565,10 @@ export const 갈래 = [
      *
      * 붙임표로 **이은 이름 전체**(`github-token` · `aws-access-token`)는
      * 다르다. 마디가 몇이든 받는다 — 마디 하나만 받았더니 `aws-access-token`
-     * 이 통째로 샜다(20차 리뷰). 대소문자도 안 가린다(`db-PWD` · `auth_TOKEN`).
+     * 이 통째로 샜다(20차 리뷰). **밑줄로 이은 여러 마디도 마디다** —
+     * 붙임표만 세었더니 `aws_access_token` · `custom_auth_token` 이 샜다
+     * (21차 리뷰). 파이썬·테라폼에서 제일 흔한 꼴이다.
+     * 대소문자도 안 가린다 — `db-PWD` · `auth_TOKEN` · `aws-access-Token`.
      * 그래서 이름으로는 받고, **따옴표 없는 맨 값일 때만** 물린다
      * (아래 `바꾸기` 를 보라) — `id-token: write` 의 `write` 가 맨 값이고,
      * `github-token: 'abc123'` 의 값은 따옴표에 싸여 있다. 19차 리뷰.
@@ -581,7 +584,7 @@ export const 갈래 = [
      * 것보다 낫다(1.19.0). 검사로 못 박아 둔다.
      */
     id: '환경변수',
-    re: /\b(?<!-)(_?(?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]*[A-Z0-9]_?KEY|[A-Z0-9_]*_PWD|[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*(?:[-_](?:key|token|secret|password|passwd|pwd|credentials?|KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?:password|secret|token|passwd|credentials?)))(?:(["']?[ \t]*(?::[^\n,;]{0,200}?|:[^\n]{0,200}?[>\])}][^\n,;]{0,80}?)[ \t]*=(?!=|>)\s*)((?:\(\s*)+)?(["'`])(?!«)((?:\\[^\n]|(?!\4)[^\n]){4,}?)\4((?:\s*\))+)?|(["']?\s*(?::(?![^\n]{0,200}?=[ \t]*«가림:)|=)\s*)((?:\(\s*)+)?(?:(["'`])(?!«)((?:\\[^\n]|(?!\9)[^\n]){4,}?)\9|(?!«)(?![\w$.]+\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\b)(?![^\n]{0,200}?}[ \t]*(?:=(?!=|>)|\)))(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;<>]{4,})(?=[ \t]*(?:[;,)\]}\r\n#]|$)))((?:\s*\))+)?)/g,
+    re: /\b(?<!-)(_?(?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]*[A-Z0-9]_?KEY|[A-Z0-9_]*_PWD|[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*(?:[-_](?:key|token|secret|password|passwd|pwd|credentials?|KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?:password|secret|token|passwd|credentials?)))(?:(["']?[ \t]*(?::[^\n,;]{0,200}?|:[^\n]{0,200}?[>\])}][^\n,;]{0,80}?)[ \t]*=(?!=|>)\s*)((?:\(\s*)+)?(["'`])(?!«)((?:\\[^\n]|(?!\4)[^\n]){4,}?)\4((?:\s*\))+)?|(["']?\s*(?::(?![^\n]{0,200}?=[ \t]*«가림:)|=)\s*)((?:\(\s*)+)?(?:(["'`])(?!«)((?:\\[^\n]|(?!\9)[^\n]){4,}?)\9|(?!«)(?![\w$.]+\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\b)(?![^\n]{0,200}?}[ \t]*(?:=(?!=|>)|\)))(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;<>]{4,})(?=[ \t]*(?:[;,)\]}\r\n#]|$)))((?:\s*\))+)?)/g,
     바꾸기: (m, 이름, 타입사이, 타입여는, 따A, 값A, 타입닫는,
     민사이, 여는, 따B, 값B, 값C, 닫는, 자리, 전체) => {
       // 따옴표 없는 맨 값만 「코드가 가리키는 이름인가」 를 되묻는다.

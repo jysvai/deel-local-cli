@@ -116,7 +116,7 @@ export function 길이규칙(판 = 1) {
  */
 export function 짧게다시할까(끝맺음, 답) {
   if (String(답 ?? '').trim()) return false;
-  const 말 = String(끝맺음?.error ?? '');
+  const 말 = 끝난까닭(끝맺음);
   if (망끊김.test(말)) return false;
   return 길이초과.test(말);
 }
@@ -130,9 +130,27 @@ export function 짧게다시할까(끝맺음, 답) {
  * 화면에는 「쪼개서 보라」 만 남는다(20차 리뷰).
  *
  * `length` 는 홀로 두면 넓다(`content length` · `array length`). 까닭을
- * 적는 자리와 붙어 있을 때만 본다.
+ * 적는 자리와 붙어 있을 때만 본다 — 그 자리 이름이 `finish` 든 `done` 이든
+ * `stop` 이든. 속성으로 곧장 온 `length` 하나만은 예외다(`^length$`).
  */
-const 길이초과 = /output token limit|exceeded\s+(?:the\s+)?output|\b(?:output|response|answer)[\s:(-]+(?:was\s+|is\s+|got\s+)?(?:cut off|truncated)\b|\bMAX_TOKENS\b|\bfinish(?:_|\s*)reason[\s:="'-]*(?:max_tokens|length)\b/i;
+const 길이초과 = /output token limit|exceeded\s+(?:the\s+)?output|\b(?:output|response|answer)[\s:(-]+(?:was\s+|is\s+|got\s+)?(?:cut off|truncated)\b|\bMAX_TOKENS\b|\b(?:finish|done|stop)(?:_|\s*)reason[\s:="'-]*(?:max_tokens|length)\b|^length$/i;
+
+/**
+ * 끝맺음에서 **까닭이 적힌 자리**를 다 긁는다.
+ *
+ * agy 는 사람 말로 `error` 에 적어 준다. 그런데 밑에 깔린 것이 무엇이냐에
+ * 따라 까닭이 **속성 이름**으로 올라오기도 한다 — `finishReason`(제미나이),
+ * `finish_reason`(오픈AI 꼴), `done_reason`(오라마). 하나만 보면 나머지는
+ * 못 알아보고, 못 알아보면 짧게 다시 묻지도 않는다(21차 리뷰).
+ *
+ * 끝맺음을 통째로 글자로 만들지는 않는다 — 거기엔 모델이 쓴 **답**도 들어
+ * 있어서, 답 안에 `MAX_TOKENS` 라고 적힌 판을 잘린 것으로 오해한다.
+ * 까닭이 적히는 자리만 골라 본다.
+ */
+const 끝난까닭 = (끝맺음) => [
+  끝맺음?.error, 끝맺음?.finishReason, 끝맺음?.finish_reason,
+  끝맺음?.doneReason, 끝맺음?.done_reason, 끝맺음?.stopReason, 끝맺음?.stop_reason,
+].filter((x) => x != null).map(String).join(' · ');
 
 /** 끊은 쪽이 적혀 있으면 그 판은 답이 아니라 망이 잘린 것이다. */
 const 망끊김 = /\bby\s+(?:the\s+)?(?:peer|proxy|remote|server|client|gateway)\b|\bECONN(?:RESET|ABORTED|REFUSED)\b|\bEPIPE\b|\bsocket\s+hang\s+up\b/i;

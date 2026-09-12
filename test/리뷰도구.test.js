@@ -499,11 +499,31 @@ trace('10-셋째판');
    */
   const { 짧게다시할까: 다시할까 } = await import('../tools/리뷰길이.mjs');
   const { 줄일말: 말고르기 } = await import('../tools/리뷰길이.mjs');
-  for (const 까닭 of ['finishReason: MAX_TOKENS', 'finish_reason: length', 'finish_reason="MAX_TOKENS"']) {
+  for (const 까닭 of ['finishReason: MAX_TOKENS', 'finish_reason: length', 'finish_reason="MAX_TOKENS"',
+    '{"done_reason": "length"}', 'stop_reason: max_tokens']) {
     check(`★★★ 길이 초과를 알아본다 — ${까닭}`, 다시할까({ error: 까닭 }, ''), 까닭);
     check(`★★★ 그때 하는 말도 잘림 쪽이다 — ${까닭}`,
       /잘렸습니다/.test(말고르기({ 무엇: '파일 1개', 까닭 }).join(' ')), 까닭);
   }
+  /*
+   * 까닭이 글이 아니라 **속성 이름**으로 올라오기도 한다 — 밑에 깔린 것이
+   * 무엇이냐에 따라 다르다. 하나만 보면 나머지는 못 알아본다(21차 리뷰).
+   */
+  for (const 끝맺음 of [
+    { finishReason: 'MAX_TOKENS' }, { finish_reason: 'length' },
+    { done_reason: 'length' }, { stopReason: 'max_tokens' },
+  ]) {
+    check(`★★★ 속성으로 온 까닭도 알아본다 — ${JSON.stringify(끝맺음)}`,
+      다시할까(끝맺음, ''), JSON.stringify(끝맺음));
+  }
+  /*
+   * 끝맺음을 통째로 글자로 만들면 안 된다 — 거기엔 모델이 쓴 **답**도
+   * 들어 있어서, 답 안에 `MAX_TOKENS` 라고 적힌 판을 잘린 것으로 오해한다.
+   */
+  check('★★★ 답에 적힌 낱말을 까닭으로 오해하지 않는다',
+    !다시할까({ status: 'SUCCESS', response: 'MAX_TOKENS 를 조심하세요' }, ''),
+    'response 안의 MAX_TOKENS');
+
   // 그렇다고 망이 끊긴 판까지 다시 묻지는 않는다.
   for (const 까닭 of ['socket hang up', 'connection cut off by peer', 'ECONNRESET']) {
     check(`★★★ 망이 끊긴 것은 길이 초과가 아니다 — ${까닭}`, !다시할까({ error: 까닭 }, ''), 까닭);
