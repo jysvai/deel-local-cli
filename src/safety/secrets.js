@@ -546,11 +546,15 @@ export const 갈래 = [
      *
      * 민 이름으로 받을 때 빼는 것이 셋 있다. 재 보고 뺐다.
      *
-     * - 소문자 `key` — `key: 값` 은 그냥 짝의 이름일 때가 너무 많다.
-     * - `PWD` — 셸의 **현재 폴더**다. `PWD: '/work'` 가 가려졌다.
-     *   앞머리가 붙은 `DB_PWD` 는 그대로 본다.
+     * - `key` — 대소문자 가리지 않고 뺀다. `key: 값` 도 `KEY: 값` 도 그냥
+     *   짝의 이름일 때가 너무 많다. 앞머리가 붙은 `API_KEY` 는 본다.
+     * - `PWD` — 셸의 **현재 폴더**다. `PWD` 도 `OLDPWD` 도 뺀다(밑줄이
+     *   앞에 있어야 본다). `DB_PWD` 는 그대로 본다.
      * - 붙임표로 이은 낱말 — `id-token: write` 는 깃허브 액션 문법이다.
      *   밑줄과 낙타등은 이름씨 관례고, 붙임표는 YAML 짝 이름 관례다.
+     *   대소문자 가리지 않는다(`id-TOKEN` 도 마찬가지다).
+     *   `X-API-KEY:` 처럼 붙임표로 이은 **머리글**은 따로 있는 `헤더` 갈래가
+     *   집는다 — 여기서 빠져도 안 샌다.
      *
      * 재 봤다. 이 저장소 파일 348개에 넣어 보니 21줄이 새로 가려졌고,
      * **전부 진짜 열쇠였다**(`apiKey: 'sk-…'` 꼴).
@@ -560,12 +564,27 @@ export const 갈래 = [
      * 것보다 낫다(1.19.0). 검사로 못 박아 둔다.
      */
     id: '환경변수',
-    re: /\b(_?(?:[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]+PWD|[A-Za-z][A-Za-z0-9]*(?:_(?:key|token|secret|password|passwd|pwd|credentials?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?<![-\w])(?:password|secret|token|passwd|credentials?)))(?:(["']?[ \t]*(?::[^\n,;]{0,200}?|:[^\n]{0,200}?[>\])}][^\n,;]{0,80}?)[ \t]*=(?!=|>)\s*)((?:\(\s*)+)?(["'`])(?!«)((?:\\[^\n]|(?!\4)[^\n]){4,}?)\4((?:\s*\))+)?|(["']?\s*(?::(?![^\n]{0,200}?=[ \t]*«가림:)|=)\s*)((?:\(\s*)+)?(?:(["'`])(?!«)((?:\\[^\n]|(?!\9)[^\n]){4,}?)\9|(?!«)(?![\w$.]+\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\b)(?![^\n]{0,200}?}[ \t]*(?:=(?!=|>)|\)))(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;<>]{4,})(?=[ \t]*(?:[;,)\]}\r\n#]|$)))((?:\s*\))+)?)/g,
+    re: /\b(?<!-)(_?(?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]+KEY|[A-Z0-9_]*_PWD|[A-Za-z][A-Za-z0-9]*(?:_(?:key|token|secret|password|passwd|pwd|credentials?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?:password|secret|token|passwd|credentials?)))(?:(["']?[ \t]*(?::[^\n,;]{0,200}?|:[^\n]{0,200}?[>\])}][^\n,;]{0,80}?)[ \t]*=(?!=|>)\s*)((?:\(\s*)+)?(["'`])(?!«)((?:\\[^\n]|(?!\4)[^\n]){4,}?)\4((?:\s*\))+)?|(["']?\s*(?::(?![^\n]{0,200}?=[ \t]*«가림:)|=)\s*)((?:\(\s*)+)?(?:(["'`])(?!«)((?:\\[^\n]|(?!\9)[^\n]){4,}?)\9|(?!«)(?![\w$.]+\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\b)(?![^\n]{0,200}?}[ \t]*(?:=(?!=|>)|\)))(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;<>]{4,})(?=[ \t]*(?:[;,)\]}\r\n#]|$)))((?:\s*\))+)?)/g,
     바꾸기: (m, 이름, 타입사이, 타입여는, 따A, 값A, 타입닫는,
     민사이, 여는, 따B, 값B, 값C, 닫는, 자리, 전체) => {
       // 따옴표 없는 맨 값만 「코드가 가리키는 이름인가」 를 되묻는다.
-      // 짝이 여러 줄에 걸리면 이름 줄이 아니라 **값이 놓인 줄**을 물어야 한다.
-      if (값C !== undefined && !점값을가릴까(전체, 자리 + m.lastIndexOf(값C), 값C)) return m;
+      if (값C !== undefined) {
+        /*
+         * 짝이 여러 줄에 걸리면 이름 줄과 값 줄이 다르다. **둘 중 하나라도**
+         * 코드면 코드다.
+         *
+         *     const API_KEY =            ← 이름 줄에만 `const` 가 있다
+         *       config.apiKey
+         *     const opts = { apiKey:
+         *       config.apiKey,           ← 값 줄에만 쉼표가 있다
+         *     };
+         *
+         * 한쪽만 보면 반대쪽이 뭉개진다(17차에 값 줄만 보게 고쳤다가
+         * 18차에 위쪽을 잃었다).
+         */
+        const 값자리 = 자리 + m.lastIndexOf(값C);
+        if (!점값을가릴까(전체, 자리, 값C) || !점값을가릴까(전체, 값자리, 값C)) return m;
+      }
       return 타입사이 === undefined
         ? `${이름}${민사이}${여는 ?? ''}${표('환경변수')}${닫는 ?? ''}`
         : `${이름}${타입사이}${타입여는 ?? ''}${표('환경변수')}${타입닫는 ?? ''}`;

@@ -522,6 +522,75 @@ trace('2-멀쩡한글');
     check(`★★★ 이건 비밀 이름이 아니다 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
   }
   /*
+   * ── 밑줄로 시작하는 민 이름 (18차 리뷰) ─────────────────────────────
+   *
+   * 붙임표를 빼려고 넣은 뒤돌아보기가 밑줄까지 막고 있었다. `_?` 가 밑줄을
+   * 먹고 나면 그 자리에서 「앞이 밑줄이면 안 된다」 에 걸렸다.
+   */
+  for (const [글, 사라져야] of [
+    ['_password = "mysecret1234"', 'mysecret1234'],
+    ['_token: abcdef123456', 'abcdef123456'],
+    ['_secret=abcdef123456', 'abcdef123456'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 밑줄로 시작해도 비밀 이름이다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * 붙임표는 대소문자를 안 가리고 뺀다. `X-API-KEY:` 같은 머리글은 따로
+   * 있는 `헤더` 갈래가 집으니 여기서 빠져도 안 샌다.
+   */
+  for (const 글 of ['id-TOKEN: write', 'id-token: write', 'x-secret: read']) {
+    check(`★★★ 붙임표로 이은 낱말은 비밀 이름이 아니다 — ${글}`,
+      가리기(글).글 === 글, 가리기(글).글);
+  }
+  {
+    const r = 가리기('X-API-KEY: abcdef123456');
+    check('★★★ 붙임표 머리글은 헤더 갈래가 집는다',
+      !r.글.includes('abcdef123456'), r.글);
+  }
+  /*
+   * `key` 는 대소문자를 안 가리고 뺀다 — `KEY: 값` 도 그냥 짝의 이름일
+   * 때가 많다. 앞머리가 붙으면 본다. `PWD`·`OLDPWD` 도 셸의 폴더다.
+   */
+  for (const 글 of [
+    'const map = { KEY: "description" };',
+    "OLDPWD: '/Users/work/project'",
+    "PWD: '/work'",
+  ]) {
+    check(`★★★ 이건 비밀 이름이 아니다 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
+  }
+  for (const [글, 사라져야] of [
+    ['A_KEY=abcdef123456', 'abcdef123456'],
+    ['DB_PWD=abcdef123456', 'abcdef123456'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 앞머리가 붙으면 본다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * ── 여러 줄 짝은 두 줄을 다 본다 (18차 리뷰) ────────────────────────
+   *
+   * 17차에 「값이 놓인 줄을 보라」 로 고쳤더니 이번엔 위쪽을 잃었다.
+   * 이름 줄에만 `const` 가 있고 값 줄에만 쉼표가 있다. 둘 중 하나라도
+   * 코드면 코드다.
+   */
+  for (const 글 of [
+    'const API_KEY =\n  config.apiKey',
+    'const opts = {\n  apiKey:\n    config.apiKey,\n};',
+    'let API_TOKEN =\n  설정.열쇠',
+  ]) {
+    check(`★★★ 이름 줄과 값 줄을 다 본다 — ${글.replace(/\n/g, ' / ')}`,
+      가리기(글).글 === 글, JSON.stringify(가리기(글).글));
+  }
+  // 두 줄 다 코드가 아니면 그대로 가린다.
+  {
+    const 글 = 'API_KEY:\n  token.v1.secret';
+    const r = 가리기(글);
+    check('★★★ 두 줄 다 설정이면 가린다', !r.글.includes('token.v1.secret') || r.글 === 글,
+      JSON.stringify(r.글));
+  }
+  /*
    * ── 자바스크립트 몰래칸과 물음표 이음 (17차 리뷰) ───────────────────
    *
    * `  #apiKey = …` 줄을 주석으로 알고 통째로 자르면, 남은 빈 줄에 코드의
