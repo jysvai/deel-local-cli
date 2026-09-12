@@ -569,6 +569,75 @@ trace('2-멀쩡한글');
       !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
   }
   /*
+   * ── 붙임표로 이은 이름 (19차 리뷰) ──────────────────────────────────
+   *
+   * 18차에 `id-token: write` 를 빼려고 붙임표를 통째로 막았더니, 진짜
+   * 비밀 이름인 `github-token:` 까지 같이 막혔다. 이름으로는 안 갈린다.
+   *
+   * 값으로 갈린다. 깃허브 액션의 값은 늘 맨 낱말(`write`·`read`)이고,
+   * 비밀은 따옴표에 싸여 온다. 그래서 붙임표 이름은 **따옴표에 싸인
+   * 값일 때만** 가린다.
+   */
+  for (const [글, 사라져야] of [
+    ["github-token: 'mysecretvalue123'", 'mysecretvalue123'],
+    ['api-secret: "abcdef123456"', 'abcdef123456'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 붙임표 이름도 따옴표 값이면 가린다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  // 머리글 꼴(`x-auth-token:`)은 앞자리 `헤더` 갈래가 먼저 집는다 — 갈래는
+  // 달라도 새지 않는다는 것이 여기서 재는 것이다.
+  {
+    const r = 가리기("x-auth-token: 'abcdef123456'");
+    check('★★★ 머리글 꼴은 헤더 갈래가 집는다',
+      !r.글.includes('abcdef123456') && r.글.includes('«가림:'), r.글);
+  }
+  for (const 글 of ['id-token: write', 'id-TOKEN: write', 'github-token: mysecretvalue123']) {
+    check(`★★★ 붙임표 이름에 맨 값이면 안 가린다 — ${글}`,
+      가리기(글).글 === 글, 가리기(글).글);
+  }
+  /*
+   * 알고 치르는 값: 붙임표 이름에 따옴표 없이 적은 비밀은 샌다.
+   * `id-token: write` 와 글자로 안 갈린다. 모양을 아는 열쇠는 그래도 잡힌다.
+   */
+  {
+    const r = 가리기("github-token: 'ghp_1234567890abcdef'");
+    check('★★★ 모양을 아는 열쇠는 붙임표든 뭐든 잡는다',
+      !r.글.includes('ghp_1234567890abcdef'), r.글);
+  }
+  /*
+   * `_KEY` 는 밑줄뿐이라 민 `KEY` 와 다를 것이 없는데 잡히고 있었다.
+   * 앞머리에 글자가 하나는 있어야 본다.
+   */
+  for (const 글 of ["_KEY: 'sk-1234567890abcdef'", "_key: 'sk-1234567890abcdef'"]) {
+    check(`★★★ 앞머리가 밑줄뿐이면 비밀 이름이 아니다 — ${글}`,
+      가리기(글).글 === 글, 가리기(글).글);
+  }
+  for (const [글, 사라져야] of [
+    ['A_KEY=abcdef123456', 'abcdef123456'],
+    ['APIKEY=abcdef123456', 'abcdef123456'],
+    ['SECRET_KEY=abcdef123456', 'abcdef123456'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 앞머리에 글자가 있으면 본다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * ── 몰래칸 앞에 수식어가 붙어도 (19차 리뷰) ─────────────────────────
+   *
+   * `static #apiKey` 만 멀쩡했던 것은 `static` 이 마침 코드의 표시 목록에
+   * 있어서였다. 목록에 없는 `accessor` 에서는 그대로 뭉갰다.
+   */
+  for (const 글 of [
+    'class C {\n  accessor #apiKey = config.apiKey;\n}',
+    'class C {\n  override #apiKey = config.apiKey;\n}',
+    'class C {\n  static #apiKey = config.apiKey;\n}',
+  ]) {
+    check(`★★★ 수식어가 붙어도 몰래칸이다 — ${글.replace(/\n/g, ' / ')}`,
+      가리기(글).글 === 글, 가리기(글).글);
+  }
+  /*
    * ── 여러 줄 짝은 두 줄을 다 본다 (18차 리뷰) ────────────────────────
    *
    * 17차에 「값이 놓인 줄을 보라」 로 고쳤더니 이번엔 위쪽을 잃었다.

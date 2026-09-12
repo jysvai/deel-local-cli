@@ -482,6 +482,99 @@ rmSync(집, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n2차 리뷰 도구 검사  ${D}(엉뚱한 것을 리뷰하느니 멈추기)${X}\n`);
+// ── 두 판을 다 잃으면 한 판 더 간다 ────────────────────────────────────
+//
+// 둘째 판(5건·두 줄)도 넘기는 커밋이 있었다 — 19차 리뷰에서 3.8KB 짜리
+// diff 하나를 두 판 다 잃고 **아무것도 못 남겼다.** 들어간 것이 작아도
+// 나오는 말이 길면 똑같이 버려진다. 한 건이라도 받는 것이 낫다.
+trace('10-셋째판');
+{
+  const { 길이규칙: 규칙, 두판돌리기: 돌리기 } = await import('../tools/리뷰길이.mjs');
+  const 넘침 = { status: 'ERROR', error: 'exceeded the output token limit' };
+
+  const 셋째 = 규칙(3).join('\n');
+  check('★★★ 셋째 판은 건수를 더 줄인다', /최대 3건/.test(셋째), 셋째.replace(/\n/g, ' / '));
+  check('★★★ 셋째 판은 한 줄로 적으라 한다', /한 줄/.test(셋째), 셋째.replace(/\n/g, ' / '));
+  check('★★★ 셋째 판이 둘째 판보다 짧게 시킨다',
+    Number((셋째.match(/최대 (\d+)건/) ?? [])[1]) < Number((규칙(2).join(' ').match(/최대 (\d+)건/) ?? [])[1]),
+    `${(규칙(2).join(' ').match(/최대 \d+건/) ?? [])[0]} → ${(셋째.match(/최대 \d+건/) ?? [])[0]}`);
+
+  {
+    const 본판 = [];
+    const 끝 = 돌리기((판) => {
+      본판.push(판);
+      return 판 === 3
+        ? { r: {}, 끝맺음: { status: 'SUCCESS' }, 답: '· a.js:1 · 뭔가', 걸린초: 1 }
+        : { r: {}, 끝맺음: 넘침, 답: '', 걸린초: 1 };
+    });
+    check('★★★ 두 판을 잃으면 셋째 판까지 간다', 본판.join(',') === '1,2,3', 본판.join(','));
+    check('★★★ 셋째 판이 준 답을 그대로 돌려준다', 끝.답 === '· a.js:1 · 뭔가', String(끝.답));
+    check('★★★ 걸린 시간을 다 더한다', 끝.걸린초 === 3, String(끝.걸린초));
+    check('★★★ 몇 판째였는지 말해 준다', 끝.몇판 === 3, String(끝.몇판));
+  }
+  {
+    const 본판 = [];
+    돌리기((판) => {
+      본판.push(판);
+      return { r: {}, 끝맺음: 넘침, 답: '', 걸린초: 1 };
+    });
+    check('★★★ 끝판을 넘겨서 되풀이하지 않는다', 본판.join(',') === '1,2,3', 본판.join(','));
+  }
+  {
+    const 본판 = [];
+    돌리기((판) => {
+      본판.push(판);
+      return { r: {}, 끝맺음: { status: 'ERROR', error: 'socket hang up' }, 답: '', 걸린초: 1 };
+    });
+    check('★★★ 망이 끊긴 판은 한 번만 부른다', 본판.join(',') === '1', 본판.join(','));
+  }
+  {
+    const 알린것 = [];
+    돌리기((판) => (판 === 2
+      ? { r: {}, 끝맺음: { status: 'SUCCESS' }, 답: '· a.js:1 · 뭔가', 걸린초: 1 }
+      : { r: {}, 끝맺음: 넘침, 답: '', 걸린초: 1 }), (초, 다음판) => 알린것.push(다음판));
+    check('★★★ 몇 판째를 다시 묻는지 알려 준다', 알린것.join(',') === '2', 알린것.join(','));
+  }
+}
+
+// ── 빈 손으로 왔을 때 하는 말이 이 판에서 쓸 수 있는 말인가 ─────────────
+//
+// 답이 출력 한도에 걸려 잘려도 「빈 채로 돌아왔다」 로 보인다. 그때 여태
+// 「--files 로 쪼개 보라」 고만 했는데, 이미 파일 하나를 준 판에서는 쪼갤
+// 것이 없다 — 19차 리뷰를 그렇게 한 판 잃고 화면에는 못 쓸 방법만 남았다.
+trace('9-줄일말');
+{
+  const { 줄일말 } = await import('../tools/리뷰길이.mjs');
+  const 넘친까닭 = 'Your previous response was cut off because it exceeded the output token limit';
+
+  {
+    const 다 = 줄일말({ 무엇: '파일 1개 · HEAD~2..HEAD~1', 까닭: 넘친까닭, 부터: 'HEAD~2', 까지: 'HEAD~1' }).join('\n');
+    check('★★★ 잘렸으면 잘렸다고 말한다', /잘렸습니다/.test(다), 다.replace(/\n/g, ' / '));
+    check('★★★ 파일이 하나면 파일을 나누라고 안 한다', !/--files/.test(다), 다.replace(/\n/g, ' / '));
+    check('★★★ 파일이 하나라는 것을 짚어 준다', /파일이 이미 하나/.test(다), 다.replace(/\n/g, ' / '));
+    check('★★★ 지금 보고 있는 판을 되읊는다', /HEAD~2\.\.HEAD~1/.test(다), 다.replace(/\n/g, ' / '));
+  }
+  {
+    const 다 = 줄일말({ 무엇: '파일 7개', 까닭: 넘친까닭 }).join('\n');
+    check('★★★ 파일이 여럿이면 나누라고 한다', /--files/.test(다), 다.replace(/\n/g, ' / '));
+    check('★★★ 그때는 「이미 하나」 소리를 안 한다', !/이미 하나/.test(다), 다.replace(/\n/g, ' / '));
+  }
+  {
+    const 다 = 줄일말({ 무엇: '파일 1개', 까닭: 'agy 를 못 띄웠습니다' }).join('\n');
+    check('★★★ 잘린 게 아니면 잘렸다고 안 한다', !/잘렸습니다/.test(다), 다.replace(/\n/g, ' / '));
+    check('★★★ 그때는 여태 하던 말을 그대로 한다', /쪼개서 보려면/.test(다), 다.replace(/\n/g, ' / '));
+  }
+  {
+    const 다 = 줄일말({ 무엇: '', 까닭: '' }).join('\n');
+    check('★★★ 아무것도 없어도 다시 하는 법은 말한다', /--timeout 90m/.test(다), 다.replace(/\n/g, ' / '));
+  }
+  // 함수만 있고 안 쓰면 화면은 그대로다.
+  const 본문 = readFileSync(new URL('../tools/review2.mjs', import.meta.url), 'utf8');
+  check('★★★ review2 가 줄일말을 부른다',
+    /import \{[^}]*줄일말[^}]*\} from '\.\/리뷰길이\.mjs'/.test(본문) && /줄일말\(\{/.test(본문),
+    본문.split('\n').find((l) => l.includes('줄일말({'))?.trim() ?? '');
+}
+
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);

@@ -22,6 +22,8 @@ import { 가리기 } from '../src/safety/secrets.js';
 
 const 넣을것 = fileURLToPath(new URL('./fixtures/secrets-corpus.txt', import.meta.url));
 const 적어둔것 = fileURLToPath(new URL('./fixtures/secrets-corpus.masked.txt', import.meta.url));
+const 판넣을것 = fileURLToPath(new URL('./fixtures/secrets-corpus-blocks.txt', import.meta.url));
+const 판적어둔것 = fileURLToPath(new URL('./fixtures/secrets-corpus-blocks.masked.txt', import.meta.url));
 
 /** 이름표 줄(`#` 로 시작)과 빈 줄은 재는 대상이 아니다. */
 const 잴줄인가 = (줄) => 줄.trim() !== '' && !줄.startsWith('#');
@@ -29,6 +31,18 @@ const 잴줄인가 = (줄) => 줄.trim() !== '' && !줄.startsWith('#');
 const 줄들 = readFileSync(넣을것, 'utf8').split(/\r?\n/);
 const 잰것 = 줄들.map((줄) => (잴줄인가(줄) ? 가리기(줄).글 : 줄)).join('\n');
 const 잰줄수 = 줄들.filter(잴줄인가).length;
+
+/*
+ * 여러 줄에 걸친 판. `~~~` 한 줄이 판과 판 사이고, 눈금자 제 주석은 `#!`
+ * 로 시작한다 — 판 안의 `#` 주석 줄을 살려야 하기 때문이다. 한 줄짜리로는
+ * 이걸 못 재는데, 최근 흠 셋 중 둘이 여러 줄에 걸친 자리였다 — 이름과
+ * 값이 다른 줄에 있을 때 어느 줄을 보느냐가 매번 문제였다.
+ */
+const 판나누기 = (글) => 글.split(/\r?\n/).filter((줄) => !줄.startsWith('#!')).join('\n')
+  .split(/^~~~$/m).map((판) => 판.replace(/^\n+|\n+$/g, '')).filter((판) => 판 !== '');
+
+const 판들 = 판나누기(readFileSync(판넣을것, 'utf8'));
+const 잰판 = 판들.map((판) => 가리기(판).글).join('\n~~~\n');
 
 let 통과 = 0;
 let 실패 = 0;
@@ -71,6 +85,29 @@ const 재기 = () => {
 
   check(`★★★ 가린 결과가 적어 둔 것과 같다 — ${잰줄수}줄`, 어긋 === 0, `${어긋}줄이 다릅니다`);
 
+  let 판적힌것;
+  try {
+    판적힌것 = readFileSync(판적어둔것, 'utf8');
+  } catch {
+    console.log('  \x1b[31m✗\x1b[0m 여러 줄 판을 적어 둔 것이 없습니다 — --기록 으로 먼저 적으세요');
+    실패 += 1;
+    return;
+  }
+  const C = 판적힌것.replace(/\n$/, '').split('\n');
+  const D = 잰판.split('\n');
+  let 판어긋 = 0;
+  for (let i = 0; i < Math.max(C.length, D.length); i += 1) {
+    if (C[i] === D[i]) continue;
+    판어긋 += 1;
+    if (판어긋 <= 20) {
+      console.log(`      \x1b[31m여러 줄 판 ${i + 1}번째 줄\x1b[0m`);
+      console.log(`        적힌 것 ${JSON.stringify(C[i] ?? null)}`);
+      console.log(`        잰 것   ${JSON.stringify(D[i] ?? null)}`);
+    }
+  }
+  check(`★★★ 여러 줄 판도 적어 둔 것과 같다 — ${판들.length}판`,
+    판어긋 === 0, `${판어긋}줄이 다릅니다`);
+
   if (어긋 > 0) {
     console.log('\n  \x1b[90m어긋난 줄마다 **왜** 달라졌는지 말할 수 있어야 다시 적습니다.\x1b[0m');
     console.log('  \x1b[90mnode test/secrets-corpus.test.js --기록\x1b[0m');
@@ -79,8 +116,10 @@ const 재기 = () => {
 
 if (process.argv.includes('--기록')) {
   writeFileSync(적어둔것, 잰것.endsWith('\n') ? 잰것 : `${잰것}\n`, 'utf8');
+  writeFileSync(판적어둔것, `${잰판}\n`, 'utf8');
   console.log(`  적었습니다 — ${적어둔것}`);
-  console.log(`  잰 줄 ${잰줄수}개`);
+  console.log(`             ${판적어둔것}`);
+  console.log(`  잰 줄 ${잰줄수}개 · 여러 줄 판 ${판들.length}개`);
 } else {
   재기();
   console.log(`\n  ${통과}개 통과 · ${실패}개 실패`);

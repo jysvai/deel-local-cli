@@ -63,11 +63,17 @@ const 표 = (종류) => `«가림:${종류}»`;
  * 있어야 몰래칸이다. 안 넘기면 그 선언 줄이 통째로 잘려 나가고, 남은 빈 줄에
  * 코드의 표시가 없어 멀쩡한 코드가 가려진다(17차 리뷰).
  *
+ * 앞에 수식하는 낱말이 붙어도 줄머리로 친다 — `static` · `readonly` ·
+ * `accessor` · `override`. `static` 만 멀쩡했던 것은 그 낱말이 마침
+ * `코드표시` 목록에 있어서였다. 목록에 없는 낱말(`accessor`)에서는 그대로
+ * 뭉갰다(19차 리뷰). 글자와 빈칸만 있는 앞자리는 코드의 수식어로 본다 —
+ * 설정 줄이라면 그 자리에 `:` 나 `=` 가 있다.
+ *
  * 줄머리 `#` 을 안 잘라도 설정 줄은 안 상한다 — `# API_KEY: 값` 은 잘라도
  * 안 잘라도 코드의 표시가 없어 어차피 가려진다.
  */
 const 몰래칸 = (줄, i) => /^[\p{L}_$]/u.test(줄[i + 1] ?? '')
-  && (줄[i - 1] === '.' || /^[ \t]*$/.test(줄.slice(0, i)));
+  && (줄[i - 1] === '.' || /^[ \t]*(?:[A-Za-z]+[ \t]+)*$/.test(줄.slice(0, i)));
 
 const 주석떼기 = (줄) => {
   let 따 = '';
@@ -547,14 +553,21 @@ export const 갈래 = [
      * 민 이름으로 받을 때 빼는 것이 셋 있다. 재 보고 뺐다.
      *
      * - `key` — 대소문자 가리지 않고 뺀다. `key: 값` 도 `KEY: 값` 도 그냥
-     *   짝의 이름일 때가 너무 많다. 앞머리가 붙은 `API_KEY` 는 본다.
+     *   짝의 이름일 때가 너무 많다. 앞머리가 붙은 `API_KEY` · `A_KEY` 는
+     *   본다. 앞머리에 글자가 하나는 있어야 한다 — `_KEY` 는 밑줄뿐이라
+     *   민 `KEY` 와 다를 것이 없는데 잡히고 있었다(19차 리뷰).
      * - `PWD` — 셸의 **현재 폴더**다. `PWD` 도 `OLDPWD` 도 뺀다(밑줄이
      *   앞에 있어야 본다). `DB_PWD` 는 그대로 본다.
-     * - 붙임표로 이은 낱말 — `id-token: write` 는 깃허브 액션 문법이다.
-     *   밑줄과 낙타등은 이름씨 관례고, 붙임표는 YAML 짝 이름 관례다.
-     *   대소문자 가리지 않는다(`id-TOKEN` 도 마찬가지다).
-     *   `X-API-KEY:` 처럼 붙임표로 이은 **머리글**은 따로 있는 `헤더` 갈래가
-     *   집는다 — 여기서 빠져도 안 샌다.
+     * - 붙임표로 **시작하는** 낱말 — `\b` 가 `-` 뒤에서 끊고 들어가면
+     *   `id-token` 의 `token` 만 집게 된다. 그건 깃허브 액션 문법이다.
+     *
+     * 붙임표로 **이은 이름 전체**(`github-token`)는 다르다. 그건 진짜 비밀
+     * 이름이다. 그래서 이름으로는 받고, **따옴표 없는 맨 값일 때만** 물린다
+     * (아래 `바꾸기` 를 보라) — `id-token: write` 의 `write` 가 맨 값이고,
+     * `github-token: 'abc123'` 의 값은 따옴표에 싸여 있다. 19차 리뷰.
+     *
+     * `X-API-KEY:` 처럼 붙임표로 이은 **머리글**은 앞자리 `헤더` 갈래가
+     * 먼저 집는다.
      *
      * 재 봤다. 이 저장소 파일 348개에 넣어 보니 21줄이 새로 가려졌고,
      * **전부 진짜 열쇠였다**(`apiKey: 'sk-…'` 꼴).
@@ -564,10 +577,16 @@ export const 갈래 = [
      * 것보다 낫다(1.19.0). 검사로 못 박아 둔다.
      */
     id: '환경변수',
-    re: /\b(?<!-)(_?(?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]+KEY|[A-Z0-9_]*_PWD|[A-Za-z][A-Za-z0-9]*(?:_(?:key|token|secret|password|passwd|pwd|credentials?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?:password|secret|token|passwd|credentials?)))(?:(["']?[ \t]*(?::[^\n,;]{0,200}?|:[^\n]{0,200}?[>\])}][^\n,;]{0,80}?)[ \t]*=(?!=|>)\s*)((?:\(\s*)+)?(["'`])(?!«)((?:\\[^\n]|(?!\4)[^\n]){4,}?)\4((?:\s*\))+)?|(["']?\s*(?::(?![^\n]{0,200}?=[ \t]*«가림:)|=)\s*)((?:\(\s*)+)?(?:(["'`])(?!«)((?:\\[^\n]|(?!\9)[^\n]){4,}?)\9|(?!«)(?![\w$.]+\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\b)(?![^\n]{0,200}?}[ \t]*(?:=(?!=|>)|\)))(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;<>]{4,})(?=[ \t]*(?:[;,)\]}\r\n#]|$)))((?:\s*\))+)?)/g,
+    re: /\b(?<!-)(_?(?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]*[A-Z0-9]_?KEY|[A-Z0-9_]*_PWD|[A-Za-z][A-Za-z0-9]*(?:[-_](?:key|token|secret|password|passwd|pwd|credentials?)|-(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?:password|secret|token|passwd|credentials?)))(?:(["']?[ \t]*(?::[^\n,;]{0,200}?|:[^\n]{0,200}?[>\])}][^\n,;]{0,80}?)[ \t]*=(?!=|>)\s*)((?:\(\s*)+)?(["'`])(?!«)((?:\\[^\n]|(?!\4)[^\n]){4,}?)\4((?:\s*\))+)?|(["']?\s*(?::(?![^\n]{0,200}?=[ \t]*«가림:)|=)\s*)((?:\(\s*)+)?(?:(["'`])(?!«)((?:\\[^\n]|(?!\9)[^\n]){4,}?)\9|(?!«)(?![\w$.]+\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\b)(?![^\n]{0,200}?}[ \t]*(?:=(?!=|>)|\)))(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;<>]{4,})(?=[ \t]*(?:[;,)\]}\r\n#]|$)))((?:\s*\))+)?)/g,
     바꾸기: (m, 이름, 타입사이, 타입여는, 따A, 값A, 타입닫는,
     민사이, 여는, 따B, 값B, 값C, 닫는, 자리, 전체) => {
       // 따옴표 없는 맨 값만 「코드가 가리키는 이름인가」 를 되묻는다.
+      /*
+       * 붙임표로 이은 이름은 **따옴표에 싸인 값**일 때만 가린다.
+       * `id-token: write`(깃허브 액션)와 `github-token: 'abc123'`(진짜 비밀)이
+       * 이름으로는 안 갈리는데, 앞것의 값은 늘 맨 낱말이다.
+       */
+      if (값C !== undefined && 이름.includes('-')) return m;
       if (값C !== undefined) {
         /*
          * 짝이 여러 줄에 걸리면 이름 줄과 값 줄이 다르다. **둘 중 하나라도**

@@ -42,7 +42,7 @@ import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 // 길이 규칙과 「다시 물을까」 판단은 따로 뒀다 — 검사가 모델을 안 부르고 잴 수 있게.
-import { 길이규칙, 두판돌리기 } from './리뷰길이.mjs';
+import { 길이규칙, 두판돌리기, 줄일말 } from './리뷰길이.mjs';
 import { 낯선옵션, 값빠진옵션, 쓰는법 } from './리뷰인자.mjs';
 
 const 인자 = process.argv.slice(2);
@@ -415,9 +415,9 @@ function 한판(판) {
  * 판을 도는 자리는 리뷰길이 쪽에 있다. 여기에 두면 모델을 안 부르고는 못
  * 재서, 이 토막을 통째로 지워도 검사가 초록이었다(8차 리뷰).
  */
-const { r, 끝맺음, 답, 걸린초 } = 두판돌리기(한판, (초) => {
+const { r, 끝맺음, 답, 걸린초 } = 두판돌리기(한판, (초, 다음판) => {
   if (!조용히) {
-    console.log(그레이(`답이 길어 버려졌습니다 — 짧게 다시 묻습니다 (${초.toFixed(0)}초 썼습니다)`));
+    console.log(그레이(`답이 길어 버려졌습니다 — 더 짧게 다시 묻습니다 (${다음판}판째 · ${초.toFixed(0)}초 썼습니다)`));
   }
 });
 
@@ -447,8 +447,16 @@ if (!답 || 끝맺음?.status !== 'SUCCESS') {
   if (거절) console.error(`  거절된 도구: ${거절} — 사람에게 못 물어보는 판이라 저절로 거절됩니다`);
   const 남긴말 = String(r.stderr ?? '').trim();
   if (남긴말) console.error(`  ${남긴말.split('\n').slice(0, 3).join('\n  ')}`);
-  console.error(`\n  다시 해 보려면: node tools/review2.mjs --timeout 90m`);
-  console.error(`  쪼개서 보려면: node tools/review2.mjs ${부터 ? `--since ${부터} --to ${까지} ` : ''}--files <파일 몇 개>\n`);
+  /*
+   * ── 「쪼개서 보라」 가 쪼갤 것이 없을 때 ────────────────────────────
+   *
+   * 무엇을 줄일 수 있는지는 판마다 다르다. 고르는 일은 `줄일말` 이 한다 —
+   * 화면 글이라 눈으로만 보고 넘어가기 쉬운 자리라, 따로 떼어 재 둔다.
+   */
+  for (const 줄 of 줄일말({ 무엇, 까닭: `${끝맺음?.error ?? ''}\n${남긴말}`, 부터, 까지 })) {
+    console.error(`  ${줄}`);
+  }
+  console.error('');
   process.exit(2);
 }
 
