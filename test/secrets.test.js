@@ -485,6 +485,72 @@ trace('2-멀쩡한글');
       !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
   }
   /*
+   * ── 민 이름이 하나도 안 잡히고 있었다 (17차 리뷰) ───────────────────
+   *
+   * 이름 앞에 무언가가 붙어 있어야 잡혔다. 그런데 `.env` 에서 제일 흔한
+   * 이름이 바로 앞머리 없는 `PASSWORD=` · `SECRET=` · `TOKEN=` 이다.
+   * 짧은 앞머리(`A_KEY`)와 밑줄로 시작하는 이름(`_apiKey`)도 같이 샜다.
+   */
+  for (const [글, 사라져야] of [
+    ['PASSWORD="prod_password_1234"', 'prod_password_1234'],
+    ['SECRET=prod_secret_value_12', 'prod_secret_value_12'],
+    ['TOKEN: abcdef123456', 'abcdef123456'],
+    ['CREDENTIALS=abcdef123456', 'abcdef123456'],
+    ['secret: "top_secret_token"', 'top_secret_token'],
+    ['password: "hunter2hunter2"', 'hunter2hunter2'],
+    ['A_KEY=abcdef123456', 'abcdef123456'],
+    ["const _apiKey = 'sk-prod-secret-1234';", 'sk-prod-secret-1234'],
+    ['DB_PWD=abcdef123456', 'abcdef123456'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 앞머리가 없어도 비밀 이름이다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * 민 이름으로 받을 때 뺀 셋. 재 보고 뺐다 — 이 저장소 파일 406개에
+   * 넣어 보니 이 둘이 걸려 나왔다.
+   *
+   *   PWD: '/work'        셸의 현재 폴더지 암호가 아니다
+   *   id-token: write     깃허브 액션 문법이다
+   */
+  for (const 글 of [
+    "PWD: '/work'",
+    'id-token: write',
+    "key: 'plain-value'",
+    'contents: read',
+  ]) {
+    check(`★★★ 이건 비밀 이름이 아니다 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
+  }
+  /*
+   * ── 자바스크립트 몰래칸과 물음표 이음 (17차 리뷰) ───────────────────
+   *
+   * `  #apiKey = …` 줄을 주석으로 알고 통째로 자르면, 남은 빈 줄에 코드의
+   * 표시가 없어 멀쩡한 선언이 가려졌다. 물음표 이음도 이름씨로 안 봤다.
+   */
+  for (const 글 of [
+    'class C {\n  #apiKey = config.apiKey;\n}',
+    'const API_KEY = config?.apiKey;',
+    'const API_KEY = config?.열쇠?.값;',
+  ]) {
+    check(`★★★ 이것도 코드가 가리키는 이름이다 — ${글.replace(/\n/g, ' / ')}`,
+      가리기(글).글 === 글, 가리기(글).글);
+  }
+  // 줄머리 `#` 을 안 잘라도 설정 줄은 그대로 가려진다.
+  {
+    const r = 가리기('# API_KEY: token.v1.secret');
+    check('★★★ 주석으로 적어 둔 설정 줄도 가린다', r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * ── 짝이 여러 줄에 걸리면 값이 놓인 줄을 본다 (17차 리뷰) ───────────
+   *
+   * 이름과 값이 다른 줄에 있으면 이름 줄만 보게 되어, 값 줄에 있는 쉼표·
+   * 쌍반점을 못 보고 멀쩡한 객체 속성이 가려졌다.
+   */
+  {
+    const 글 = 'const opts = {\n  apiKey:\n    config.apiKey,\n};';
+    check('★★★ 값이 다음 줄이어도 그 줄을 본다', 가리기(글).글 === 글, JSON.stringify(가리기(글).글));
+  }
+  /*
    * ── 이름씨는 영문만이 아니다 (16차 리뷰) ────────────────────────────
    *
    * 이 저장소 집안 스타일이 한글 이름씨다. 점으로 이은 값을 영문으로만

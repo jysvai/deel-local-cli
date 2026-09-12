@@ -186,7 +186,7 @@
       "곳": "src/safety/secrets.js",
       "무엇": "줄 뒤 `#` 주석을 안 떼고 줄 통째로 「코드인가」 를 묻게 만든다",
       "그러면": "`API_KEY: token.v1.secret # https://api.example.com` 처럼 주소나 괄호가 든 주석을 달면 그 줄이 코드로 읽혀 비밀이 평문으로 나간다",
-      "찾을것": "    if (자 === '#' && 줄[i - 1] !== '.') return 줄.slice(0, i);",
+      "찾을것": "    if (자 === '#' && !몰래칸(줄, i)) return 줄.slice(0, i);",
       "바꿀것": "    if (false) return 줄.slice(0, i);",
       "검사": "test/secrets.test.js"
     },
@@ -196,6 +196,14 @@
       "그러면": "윈도우 줄바꿈(CRLF)으로 적힌 `.env`·YAML 에서 줄 끝을 보는 규칙이 통째로 헛돈다 — 주석에 주소나 괄호가 있으면 그 줄의 비밀이 평문으로 나간다",
       "찾을것": "  const 남은 = 전체.slice(자리).search(/[\\r\\n]/);",
       "바꿀것": "  const 남은 = 전체.slice(자리).indexOf('\\n');",
+      "검사": "test/secrets.test.js"
+    },
+    {
+      "곳": "src/safety/secrets.js",
+      "무엇": "비밀 이름을 다시 앞머리가 붙은 것만 보게 되돌린다",
+      "그러면": "`.env` 에서 제일 흔한 `PASSWORD=` · `SECRET=` · `TOKEN=` 이 하나도 안 잡혀 그대로 모델로 나간다",
+      "찾을것": "    re: /\\b(_?(?:[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]+PWD|[A-Za-z][A-Za-z0-9]*(?:_(?:key|token|secret|password|passwd|pwd|credentials?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?<![-\\w])(?:password|secret|token|passwd|credentials?)))(?:([\"']?[ \\t]*(?::[^\\n,;]{0,200}?|:[^\\n]{0,200}?[>\\])}][^\\n,;]{0,80}?)[ \\t]*=(?!=|>)\\s*)((?:\\(\\s*)+)?([\"'`])(?!«)((?:\\\\[^\\n]|(?!\\4)[^\\n]){4,}?)\\4((?:\\s*\\))+)?|([\"']?\\s*(?::(?![^\\n]{0,200}?=[ \\t]*«가림:)|=)\\s*)((?:\\(\\s*)+)?(?:([\"'`])(?!«)((?:\\\\[^\\n]|(?!\\9)[^\\n]){4,}?)\\9|(?!«)(?![\\w$.]+\\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\\b)(?![^\\n]{0,200}?}[ \\t]*(?:=(?!=|>)|\\)))(?!\\(*\\s*(?:process\\.env|import\\.meta\\.env|globalThis\\.process\\.env|globalThis\\.env|os\\.environ|os\\.getenv|ENV(?=\\s*[[.(])|Deno\\.env|Bun\\.env)\\b)([^\\s\"'()[\\]{},;<>]{4,})(?=[ \\t]*(?:[;,)\\]}\\r\\n#]|$)))((?:\\s*\\))+)?)/g,",
+      "바꿀것": "    re: /\\b(_?(?:[A-Z][A-Z0-9_]{2,}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]+PWD|[A-Za-z][A-Za-z0-9]*(?:_(?:key|token|secret|password|passwd|pwd|credentials?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?<![-\\w])(?:password|secret|token|passwd|credentials?)))(?:([\"']?[ \\t]*(?::[^\\n,;]{0,200}?|:[^\\n]{0,200}?[>\\])}][^\\n,;]{0,80}?)[ \\t]*=(?!=|>)\\s*)((?:\\(\\s*)+)?([\"'`])(?!«)((?:\\\\[^\\n]|(?!\\4)[^\\n]){4,}?)\\4((?:\\s*\\))+)?|([\"']?\\s*(?::(?![^\\n]{0,200}?=[ \\t]*«가림:)|=)\\s*)((?:\\(\\s*)+)?(?:([\"'`])(?!«)((?:\\\\[^\\n]|(?!\\9)[^\\n]){4,}?)\\9|(?!«)(?![\\w$.]+\\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\\b)(?![^\\n]{0,200}?}[ \\t]*(?:=(?!=|>)|\\)))(?!\\(*\\s*(?:process\\.env|import\\.meta\\.env|globalThis\\.process\\.env|globalThis\\.env|os\\.environ|os\\.getenv|ENV(?=\\s*[[.(])|Deno\\.env|Bun\\.env)\\b)([^\\s\"'()[\\]{},;<>]{4,})(?=[ \\t]*(?:[;,)\\]}\\r\\n#]|$)))((?:\\s*\\))+)?)/g,",
       "검사": "test/secrets.test.js"
     }
   ]

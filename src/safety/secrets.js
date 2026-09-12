@@ -57,8 +57,18 @@ const 표 = (종류) => `«가림:${종류}»`;
  *   안의 `#` 부터 잘려 뒤쪽 `;` 이 사라지고, 멀쩡한 코드가 가려진다.
  *
  * 그래서 따옴표를 세면서 걷는다. **따옴표 밖**의 첫 `#` 부터가 주석이다.
- * 앞 글자가 점이면 넘긴다 — 자바스크립트의 `obj.#몰래칸` 이다.
+ *
+ * 자바스크립트의 몰래칸(`#`)은 넘긴다 — `obj.#몰래칸` 처럼 점 뒤에 오거나,
+ * `  #apiKey = config.apiKey;` 처럼 줄머리에 온다. 뒤에 이름씨 글자가 붙어
+ * 있어야 몰래칸이다. 안 넘기면 그 선언 줄이 통째로 잘려 나가고, 남은 빈 줄에
+ * 코드의 표시가 없어 멀쩡한 코드가 가려진다(17차 리뷰).
+ *
+ * 줄머리 `#` 을 안 잘라도 설정 줄은 안 상한다 — `# API_KEY: 값` 은 잘라도
+ * 안 잘라도 코드의 표시가 없어 어차피 가려진다.
  */
+const 몰래칸 = (줄, i) => /^[\p{L}_$]/u.test(줄[i + 1] ?? '')
+  && (줄[i - 1] === '.' || /^[ \t]*$/.test(줄.slice(0, i)));
+
 const 주석떼기 = (줄) => {
   let 따 = '';
   for (let i = 0; i < 줄.length; i += 1) {
@@ -69,7 +79,7 @@ const 주석떼기 = (줄) => {
       continue;
     }
     if (자 === '"' || 자 === "'" || 자 === '`') { 따 = 자; continue; }
-    if (자 === '#' && 줄[i - 1] !== '.') return 줄.slice(0, i);
+    if (자 === '#' && !몰래칸(줄, i)) return 줄.slice(0, i);
   }
   return 줄;
 };
@@ -139,7 +149,7 @@ const 코드표시 = /[()]|=>|\/\/|\/\*|;|,[ \t]*$|\b(?:const|let|var|interface|
  * 낱말을 점으로 이은 꼴이다. 그러니 값 모양으로 가를 수 있다는 생각을
  * 버린다. 갈리지 않는 것을 갈리는 척하면 그게 더 위험하다.
  *
- * 점 뒤의 `#` 도 이름씨의 한 조각이다 — `obj.#몰래칸` 은 자바스크립트다.
+ * 점 뒤의 `#` 도, 물음표 이음(`config?.apiKey`)도 이름씨의 한 조각이다.
  *
  * 이름씨는 영문만이 아니다. `설정.비밀번호` 를 이름씨로 안 보면
  * `const API_KEY = 설정.비밀번호;` 가 가려진다 — 이 저장소 집안 스타일이
@@ -176,7 +186,7 @@ const 코드표시 = /[()]|=>|\/\/|\/\*|;|,[ \t]*$|\b(?:const|let|var|interface|
  * @returns {boolean} 가릴까
  */
 const 점값을가릴까 = (전체, 자리, 값) => {
-  if (!/^[\p{L}_$][\p{L}\p{N}_$]*(?:\.#?[\p{L}_$][\p{L}\p{N}_$]*)+$/u.test(값)) return true;
+  if (!/^[\p{L}_$][\p{L}\p{N}_$]*(?:\??\.#?[\p{L}_$][\p{L}\p{N}_$]*)+$/u.test(값)) return true;
   return !코드표시.test(주석떼기(줄떼기(전체, 자리)));
 };
 
@@ -529,6 +539,19 @@ export const 갈래 = [
      * 한다 — `_key` 아니면 `Key`. 그냥 소문자 `key` 로 끝나는 것까지 받으면
      * `monkey` · `hotkey` 가 걸린다.
      *
+     * 앞머리는 있어도 없어도 된다. `PASSWORD=` · `SECRET=` · `TOKEN=` 은
+     * `.env` 에서 제일 흔한 이름인데 **앞머리를 요구하는 바람에 하나도 안
+     * 잡히고 있었다**(17차 리뷰). 짧은 앞머리(`A_KEY`)와 밑줄로 시작하는
+     * 이름(`_apiKey`)도 같은 까닭으로 샜다.
+     *
+     * 민 이름으로 받을 때 빼는 것이 셋 있다. 재 보고 뺐다.
+     *
+     * - 소문자 `key` — `key: 값` 은 그냥 짝의 이름일 때가 너무 많다.
+     * - `PWD` — 셸의 **현재 폴더**다. `PWD: '/work'` 가 가려졌다.
+     *   앞머리가 붙은 `DB_PWD` 는 그대로 본다.
+     * - 붙임표로 이은 낱말 — `id-token: write` 는 깃허브 액션 문법이다.
+     *   밑줄과 낙타등은 이름씨 관례고, 붙임표는 YAML 짝 이름 관례다.
+     *
      * 재 봤다. 이 저장소 파일 348개에 넣어 보니 21줄이 새로 가려졌고,
      * **전부 진짜 열쇠였다**(`apiKey: 'sk-…'` 꼴).
      *
@@ -537,11 +560,12 @@ export const 갈래 = [
      * 것보다 낫다(1.19.0). 검사로 못 박아 둔다.
      */
     id: '환경변수',
-    re: /\b((?:[A-Z][A-Z0-9_]{2,}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?)|[A-Za-z][A-Za-z0-9]*(?:_(?:key|token|secret|password|passwd|pwd|credentials?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)))(?:(["']?[ \t]*(?::[^\n,;]{0,200}?|:[^\n]{0,200}?[>\])}][^\n,;]{0,80}?)[ \t]*=(?!=|>)\s*)((?:\(\s*)+)?(["'`])(?!«)((?:\\[^\n]|(?!\4)[^\n]){4,}?)\4((?:\s*\))+)?|(["']?\s*(?::(?![^\n]{0,200}?=[ \t]*«가림:)|=)\s*)((?:\(\s*)+)?(?:(["'`])(?!«)((?:\\[^\n]|(?!\9)[^\n]){4,}?)\9|(?!«)(?![\w$.]+\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\b)(?![^\n]{0,200}?}[ \t]*(?:=(?!=|>)|\)))(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;<>]{4,})(?=[ \t]*(?:[;,)\]}\r\n#]|$)))((?:\s*\))+)?)/g,
+    re: /\b(_?(?:[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]+PWD|[A-Za-z][A-Za-z0-9]*(?:_(?:key|token|secret|password|passwd|pwd|credentials?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?<![-\w])(?:password|secret|token|passwd|credentials?)))(?:(["']?[ \t]*(?::[^\n,;]{0,200}?|:[^\n]{0,200}?[>\])}][^\n,;]{0,80}?)[ \t]*=(?!=|>)\s*)((?:\(\s*)+)?(["'`])(?!«)((?:\\[^\n]|(?!\4)[^\n]){4,}?)\4((?:\s*\))+)?|(["']?\s*(?::(?![^\n]{0,200}?=[ \t]*«가림:)|=)\s*)((?:\(\s*)+)?(?:(["'`])(?!«)((?:\\[^\n]|(?!\9)[^\n]){4,}?)\9|(?!«)(?![\w$.]+\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\b)(?![^\n]{0,200}?}[ \t]*(?:=(?!=|>)|\)))(?!\(*\s*(?:process\.env|import\.meta\.env|globalThis\.process\.env|globalThis\.env|os\.environ|os\.getenv|ENV(?=\s*[[.(])|Deno\.env|Bun\.env)\b)([^\s"'()[\]{},;<>]{4,})(?=[ \t]*(?:[;,)\]}\r\n#]|$)))((?:\s*\))+)?)/g,
     바꾸기: (m, 이름, 타입사이, 타입여는, 따A, 값A, 타입닫는,
     민사이, 여는, 따B, 값B, 값C, 닫는, 자리, 전체) => {
       // 따옴표 없는 맨 값만 「코드가 가리키는 이름인가」 를 되묻는다.
-      if (값C !== undefined && !점값을가릴까(전체, 자리, 값C)) return m;
+      // 짝이 여러 줄에 걸리면 이름 줄이 아니라 **값이 놓인 줄**을 물어야 한다.
+      if (값C !== undefined && !점값을가릴까(전체, 자리 + m.lastIndexOf(값C), 값C)) return m;
       return 타입사이 === undefined
         ? `${이름}${민사이}${여는 ?? ''}${표('환경변수')}${닫는 ?? ''}`
         : `${이름}${타입사이}${타입여는 ?? ''}${표('환경변수')}${타입닫는 ?? ''}`;

@@ -108,6 +108,54 @@ turns it off and leaves file permissions as the only protection.
 
 The current state is printed verbatim in the `열쇠 보관` line of `/status` and in the diagnostic report.
 
+### Masked before it goes to the model
+
+When a file is read into the conversation, anything shaped like a key is replaced
+with `«가림:kind»` before it is sent. It reaches neither the model nor the session
+log on disk.
+
+```
+API_KEY=sk-real-1234        →  API_KEY=«가림:openai»
+apiKey: 'ghp_abcdefgh…'     →  apiKey: '«가림:github»'
+Authorization: Bearer eyJ…  →  Authorization: «가림:헤더»
+```
+
+What it knows is decided by **shape**, not by name — private-key blocks,
+`sk-ant-…`, `sk-…`, `ghp_…` / `github_pat_…`, `xox…`, `AKIA…` / `ASIA…`, `AIza…`,
+JWTs, keys embedded in a URL, the `Authorization` header. On top of that it reads
+**config lines whose name is shaped like a key**.
+
+**Masked spots are counted.** You get one line saying what was masked and how many
+times — change the text silently and the model reads something wrong with nobody
+the wiser.
+
+#### Config lines and code lines are told apart
+
+`API_KEY: prod.v1.secret` is a secret; `API_KEY: types.ApiKey` is a type
+annotation. On the characters alone they look the same. So the question asked is
+**whether the line is code** — a semicolon, a parenthesis, an arrow, a comment
+marker, or a declaration keyword (`const`, `interface`, `def`, …) makes it code.
+What is inside a `#` comment does not count. `export` is not evidence — `.env`
+files write `export FOO=bar` too.
+
+Names are not capitals only. camelCase (`apiKey`) and underscore (`api_key`) count
+as well — but only with a break between the words, or `monkey` gets caught.
+
+#### What cannot be told apart
+
+**Nothing pretends to separate what does not separate.** These are known costs.
+
+| A line like this | is | because |
+|---|---|---|
+| `API_KEY = config.api_key` (Python) | masked | with no semicolon it looks exactly like a config line |
+| `cacheKey: 'user:12345'` | masked | the name alone does not separate it from `apiKey` |
+| `API_KEY=prod.v1.secret;` (.env) | not masked | it has the same shape as `API_KEY: types.ApiKey;` |
+| `// API_KEY=prod.v1.secret` | not masked | inside a comment, secret and code do not separate |
+
+A masked line still **reads** — `API_KEY = «가림:환경변수»` shows that something
+was there. A secret going out is far worse than a mangled line, so where they do
+not separate, it masks.
+
 ---
 
 ## Corporate review package
