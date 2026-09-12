@@ -19,7 +19,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 import {
-  readPdf, toText, summarize, 못읽은말, isPdfPath, looksPdf, 유니코드표읽기, 흐름풀기, pdf는못고침,
+  readPdf, toText, summarize, 못읽은말, isPdfPath, looksPdf, 유니코드표읽기, 흐름풀기, 값읽기, pdf는못고침,
 } from '../src/tools/pdf.js';
 import { TOOLS } from '../src/tools/index.js';
 import { makeScope } from '../src/safety/guard.js';
@@ -40,7 +40,10 @@ const root = mkdtempSync(join(tmpdir(), 'deel-pdf-'));
  * 현장의 PDF 는 xref 와 /Length 가 틀린 것이 정말 흔해서, 그걸 견디는지가
  * 「읽힌다/안 읽힌다」를 가른다.
  */
-function 만들기(객체들, { 트레일러 = '', xref틀림 = false, 길이틀림 = false, 판 = '1.4' } = {}) {
+function 만들기(객체들, {
+  트레일러 = '', xref틀림 = false, 길이틀림 = false, 판 = '1.4',
+  사이 = ' ', 짧은줄 = false, 증분 = [],
+} = {}) {
   const 조각 = [Buffer.from(`%PDF-${판}\n%\xe2\xe3\xcf\xd3\n`, 'latin1')];
   let 길이 = 조각[0].length;
   const 자리표 = new Map();
@@ -50,24 +53,47 @@ function 만들기(객체들, { 트레일러 = '', xref틀림 = false, 길이틀
     if (o.흐름 !== undefined) {
       const L = 길이틀림 ? o.흐름.length + 13 : o.흐름.length;
       몸 = Buffer.concat([
-        Buffer.from(`${o.번호} 0 obj\n<< ${o.사전 ?? ''} /Length ${L} >>\nstream\n`, 'latin1'),
+        Buffer.from(`${o.번호} 0${사이}obj\n<< ${o.사전 ?? ''} /Length ${L} >>\nstream\n`, 'latin1'),
         o.흐름,
         Buffer.from('\nendstream\nendobj\n', 'latin1'),
       ]);
     } else {
-      몸 = Buffer.from(`${o.번호} 0 obj\n${o.글}\nendobj\n`, 'latin1');
+      몸 = Buffer.from(`${o.번호} 0${사이}obj\n${o.글}\nendobj\n`, 'latin1');
     }
     조각.push(몸); 길이 += 몸.length;
   }
   const xref자리 = 길이;
   const 최대 = Math.max(...객체들.map((o) => o.번호));
-  const 줄 = ['xref', `0 ${최대 + 1}`, '0000000000 65535 f '];
+  const 꼬리 = 짧은줄 ? '' : ' ';                 // 줄을 19자로 쓰는 프로그램이 있다
+  const 줄 = ['xref', `0 ${최대 + 1}`, `0000000000 65535 f${꼬리}`];
   for (let n = 1; n <= 최대; n += 1) {
     const off = xref틀림 ? 7 : (자리표.get(n) ?? 0);
-    줄.push(`${String(off).padStart(10, '0')} 00000 ${자리표.has(n) ? 'n' : 'f'} `);
+    줄.push(`${String(off).padStart(10, '0')} 00000 ${자리표.has(n) ? 'n' : 'f'}${꼬리}`);
   }
   줄.push('trailer', `<< /Size ${최대 + 1} /Root 1 0 R ${트레일러} >>`, 'startxref', String(xref자리), '%%EOF');
-  조각.push(Buffer.from(`${줄.join('\n')}\n`, 'latin1'));
+  const 표 = Buffer.from(`${줄.join('\n')}\n`, 'latin1');
+  조각.push(표); 길이 += 표.length;
+
+  /*
+   * 증분 저장 — 고친 객체를 **파일 뒤에 덧붙이고** 새 xref 가 옛 xref 를
+   * /Prev 로 가리킨다. 폼을 채워 저장하거나 주석을 달면 실제로 이 꼴이 된다.
+   * 옛 객체는 파일 안에 그대로 남아 있다.
+   */
+  if (증분.length) {
+    let 덧 = '';
+    const 덧자리 = [];
+    for (const o of 증분) {
+      덧자리.push([o.번호, 길이 + 덧.length]);
+      덧 += o.흐름 !== undefined
+        ? `${o.번호} 0 obj\n<< /Length ${o.흐름.length} >>\nstream\n${o.흐름.toString('latin1')}\nendstream\nendobj\n`
+        : `${o.번호} 0 obj\n${o.글}\nendobj\n`;
+    }
+    let 둘째 = `xref\n0 1\n0000000000 65535 f \n`;
+    for (const [번호, off] of 덧자리) 둘째 += `${번호} 1\n${String(off).padStart(10, '0')} 00000 n \n`;
+    둘째 += `trailer\n<< /Size ${최대 + 1} /Root 1 0 R /Prev ${xref자리} >>\n`
+      + `startxref\n${길이 + 덧.length}\n%%EOF\n`;
+    조각.push(Buffer.from(덧 + 둘째, 'latin1'));
+  }
   return Buffer.concat(조각);
 }
 
@@ -478,6 +504,187 @@ trace('17-도구');
   check('Write 도 거절한다', /고칠 수 없습니다/.test(w.error ?? ''), w.error);
   check('거절 뒤에도 원본이 그대로다', Buffer.compare(앞, readFileSync(파일)) === 0);
   check('못고침 안내가 파일 이름을 담는다', /명세\.pdf/.test(pdf는못고침('명세.pdf')), pdf는못고침('명세.pdf'));
+}
+
+// ── 18. ★ 못 읽는 것이 아니라 「다른 것이」 읽히던 자리들 ──────────────
+trace('18-다른것');
+{
+  /*
+   * 여기 모인 것은 못 읽는 결함이 아니다. **다른 것이 읽히는** 결함이다.
+   *
+   * 못 읽으면 화면에 「이 쪽은 글로 못 읽었습니다」가 뜬다. 그런데 고치기 전
+   * 값, 엉뚱한 한자, 사라진 뒷부분은 아무 말 없이 지나간다 — 글이 그럴듯하게
+   * 나오니 사람도 모델도 볼 길이 없다. 그래서 이 절은 전부 「무엇이 나왔나」
+   * 를 글자까지 맞춘다.
+   */
+
+  // ① 증분 저장 — 폼을 채우고 저장하면 옛 객체가 파일에 그대로 남는다.
+  {
+    const 뼈대 = (글) => [
+      { 번호: 1, 글: '<< /Type /Catalog /Pages 2 0 R >>' },
+      { 번호: 2, 글: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+      { 번호: 3, 글: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>' },
+      { 번호: 4, 흐름: 흐름으로(`BT /F1 12 Tf 72 700 Td (${글}) Tj ET`) },
+      { 번호: 5, 글: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' },
+    ];
+    const b = 만들기(뼈대('OLD price 1000'), {
+      증분: [{ 번호: 4, 흐름: 흐름으로('BT /F1 12 Tf 72 700 Td (NEW price 2000) Tj ET') }],
+    });
+    const t = 글만(readPdf(b));
+    check('★ 증분 저장한 PDF 가 고친 값을 읽는다', /NEW price 2000/.test(t), JSON.stringify(t));
+    check('★ 그때 옛 값이 섞이지 않는다', !/OLD/.test(t), JSON.stringify(t));
+  }
+
+  // ② 객체 머리에 줄바꿈이 낀 파일 — xref 까지 틀리면 훑기가 마지막 안전망이다.
+  for (const [이름, 사이] of [['줄바꿈', '\r\n'], ['빈칸 두 칸', '  ']]) {
+    const b = 한쪽짜리({
+      내용: 흐름으로('BT /F1 12 Tf 72 700 Td (Scanned in) Tj ET'),
+      옵션: { 사이, xref틀림: true },
+    });
+    const r = readPdf(b);
+    check(`★ 머리에 ${이름}이 끼고 xref 도 틀린 파일을 읽는다`,
+      r.ok && /Scanned in/.test(글만(r)), r.ok ? JSON.stringify(글만(r)) : r.error);
+  }
+
+  // ③ xref 줄이 19자인 파일 — 표를 잃으면 trailer 도 같이 잃는다.
+  {
+    const b = 한쪽짜리({
+      내용: 흐름으로('BT /F1 12 Tf 72 700 Td (Secret) Tj ET'),
+      옵션: { 짧은줄: true, 트레일러: '/Encrypt 9 0 R' },
+    });
+    const r = readPdf(b);
+    check('★ 19자 xref 줄에서도 trailer 를 읽는다 (암호를 놓치지 않는다)',
+      r.ok === false && /암호가 걸린/.test(r.error ?? ''), r.ok ? JSON.stringify(글만(r)) : r.error);
+  }
+
+  // ③b xref 줄이 19자이고, 글 속에 PDF 문법이 적힌 문서.
+  {
+    /*
+     * 「3 0 obj」 라는 글자가 본문에 실린 문서(PDF 규격을 설명하는 문서가
+     * 그렇다)는 훑기가 그 자리를 객체 3 으로 잘못 짚는다. 뒤에 나온 것이
+     * 이기기 때문이다. 그때 제자리를 아는 것은 xref 표 하나뿐이다 — 표를
+     * 한 줄이라도 잃으면 쪽이 통째로 사라진다.
+     */
+    const b = 한쪽짜리({
+      내용: 흐름으로('BT /F1 12 Tf 72 700 Td (A header looks like 3 0 obj in the file) Tj ET'),
+      옵션: { 짧은줄: true },
+    });
+    const r = readPdf(b);
+    check('★ 19자 xref 표가 본문 속 가짜 머리를 바로잡는다',
+      r.ok && /A header looks like/.test(글만(r)), r.ok ? JSON.stringify(글만(r)) : r.error);
+  }
+
+  // ④ 두 자리로 적힌 목적지 — 뒤를 메우면 없는 한자가 된다.
+  {
+    const { 표 } = 유니코드표읽기('1 beginbfchar\n<01> <41>\nendbfchar');
+    check('두 자리 목적지를 앞으로 메운다', 표.get(1) === 'A', JSON.stringify(표.get(1) ?? null));
+  }
+
+  // ⑤ 배열 꼴 뒤에 엉뚱한 범위가 생기지 않는다.
+  {
+    const { 표 } = 유니코드표읽기('1 beginbfrange\n<0020> <0022> [<0041> <0042> <0043>]\nendbfrange');
+    check('배열 꼴은 배열 꼴로만 읽는다', 표.get(0x20) === 'A' && 표.get(0x22) === 'C', JSON.stringify([...표]));
+    check('★ 대괄호 안을 또 다른 범위로 읽지 않는다', !표.has(0x41) && !표.has(0x42), JSON.stringify([...표]));
+  }
+
+  // ⑥ `<0000>` 은 글자가 아니다.
+  {
+    const a = 유니코드표읽기('1 beginbfchar\n<01> <0000>\nendbfchar');
+    const b = 유니코드표읽기('1 beginbfrange\n<03> <05> <0000>\nendbfrange');
+    const 다 = [...a.표.values(), ...b.표.values()].join('');
+    check('NUL 을 글에 섞지 않는다', !다.includes(String.fromCharCode(0)), JSON.stringify(다));
+  }
+
+  // ⑦ 붙박이 그림 자료 안의 `EI` — 그 뒤의 글이 통째로 사라졌다.
+  {
+    const 그림 = Buffer.from([0x9a, 0x45, 0x49, 0x28, 0x7f, 0x03, 0xe1, 0x28, 0x11]);  // … EI ( …
+    const 내용 = Buffer.concat([
+      흐름으로('BT /F1 12 Tf 72 700 Td (before) Tj ET\nBI /W 3 /H 3 /CS /G /BPC 8 ID '),
+      그림,
+      흐름으로('\nEI\nBT /F1 12 Tf 72 400 Td (after) Tj ET\n'),
+    ]);
+    const t = 글만(readPdf(한쪽짜리({ 내용 })));
+    check('★ 그림 자료 안의 EI 에서 끊지 않는다', /before/.test(t) && /after/.test(t), JSON.stringify(t));
+  }
+
+  // ⑧ 낱말마다 BT/ET 를 끊는 조판 — 한 줄이 낱말마다 쪼개졌다.
+  {
+    // 낱말 사이 빈칸은 글 쪽에 실려 있다 (조판 프로그램이 그렇게 쓴다).
+    // 여기서 재는 것은 ET 가 줄을 가르는지 하나다.
+    const 내용 = 흐름으로([
+      'BT /F1 12 Tf 72 700 Td (Total ) Tj ET',
+      'BT /F1 12 Tf 105 700 Td (1,000,000 ) Tj ET',
+      'BT /F1 12 Tf 165 700 Td (won) Tj ET',
+      'BT /F1 12 Tf 72 680 Td (Next line) Tj ET',
+    ].join('\n'));
+    const t = 글만(readPdf(한쪽짜리({ 내용 })));
+    check('★ BT/ET 가 줄을 가르지 않는다', /Total 1,000,000 won/.test(t), JSON.stringify(t));
+    check('★ 그래도 세로로 움직이면 줄을 바꾼다', /\nNext line/.test(t), JSON.stringify(t));
+  }
+
+  // ⑨ 카탈로그 앞에 속사전이 있는 파일 — 자원을 물려 둔 한글 문서에서 드러난다.
+  {
+    const 표 = ['/CIDInit /ProcSet findresource begin',
+      '1 begincodespacerange <0000> <FFFF> endcodespacerange',
+      '2 beginbfchar', '<0001> <D55C>', '<0002> <AE00>', 'endbfchar', 'end'].join('\n');
+    const 글꼴 = '<< /Type /Font /Subtype /Type0 /BaseFont /T /Encoding /Identity-H '
+      + '/DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /T /DW 1000 >>] /ToUnicode 6 0 R >>';
+    const b = 만들기([
+      { 번호: 1, 글: '<< /ViewerPreferences << /FitWindow true >> /Type /Catalog /Pages 2 0 R >>' },
+      // 자원을 쪽나무에 물려 둔다 — 쪽만 주워 오는 길로 빠지면 같이 사라진다.
+      { 번호: 2, 글: '<< /Type /Pages /Kids [3 0 R] /Count 1 /Resources << /Font << /F1 5 0 R >> >> >>' },
+      { 번호: 3, 글: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>' },
+      { 번호: 4, 흐름: 흐름으로('BT /F1 12 Tf 72 700 Td <00010002> Tj ET') },
+      { 번호: 5, 글: 글꼴 },
+      { 번호: 6, 흐름: 흐름으로(표) },
+    ]);
+    // trailer 의 /Root 를 지워 「카탈로그를 직접 찾는」 길만 남긴다.
+    const 망친것 = Buffer.from(b.toString('latin1').replace('/Root 1 0 R', '             '), 'latin1');
+    const r = readPdf(망친것);
+    check('★ 속사전이 먼저 와도 카탈로그를 찾는다', r.ok && 글만(r) === '한글',
+      r.ok ? JSON.stringify(글만(r)) + JSON.stringify(r.못읽은쪽) : r.error);
+  }
+
+  // ⑩ 자원에 /XObject 가 있을 뿐인 빈 쪽 — OCR 은 할 일이 없다.
+  {
+    const b = 한쪽짜리({
+      내용: 흐름으로('q 1 0 0 1 0 0 cm Q'),
+      자원: '/Font << /F1 5 0 R >> /XObject << /Im0 5 0 R >>',
+    });
+    const r = readPdf(b);
+    check('★ 아무것도 안 그린 빈 쪽을 스캔본이라 하지 않는다',
+      !/OCR/.test(r.못읽은쪽?.[0]?.왜 ?? ''), r.못읽은쪽?.[0]?.왜);
+    check('그래도 글이 없다고는 말한다', /글이 없는 쪽/.test(r.못읽은쪽?.[0]?.왜 ?? ''), r.못읽은쪽?.[0]?.왜);
+  }
+
+  // ⑪ 이름 안의 `#` 은 두 자리여야 한다.
+  {
+    const [값] = 값읽기(Buffer.from('<< /A#1/B 2 >>', 'latin1'), 0);
+    check('#1 이 뒤 낱말을 삼키지 않는다', 값?.['A#1']?.이름 === 'B', JSON.stringify(값));
+    const [값2] = 값읽기(Buffer.from('<< /A#41 2 >>', 'latin1'), 0);
+    check('#41 은 여태처럼 A 로 읽는다', 값2?.AA === 2, JSON.stringify(값2));
+  }
+
+  // ⑫ 두 바이트 글꼴에 홀수 바이트가 오면 — 없는 글리프를 만들지 않는다.
+  {
+    const 표 = ['/CIDInit /ProcSet findresource begin',
+      '1 begincodespacerange <0000> <FFFF> endcodespacerange',
+      '2 beginbfchar', '<0001> <D55C>', '<4100> <AE00>', 'endbfchar', 'end'].join('\n');
+    const 글꼴 = '<< /Type /Font /Subtype /Type0 /BaseFont /T /Encoding /Identity-H '
+      + '/DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /T /DW 1000 >>] /ToUnicode 6 0 R >>';
+    // <000141> — 세 바이트다. 마지막 0x41 에 0 을 붙이면 <4100> 이 되어 「글」이 나온다.
+    const b = 한쪽짜리({
+      내용: 흐름으로('BT /F1 12 Tf 72 700 Td <000141> Tj ET'),
+      글꼴,
+      더: [{ 번호: 6, 흐름: 흐름으로(표) }],
+    });
+    const r = readPdf(b);
+    // 여기선 글 자체를 본다 — toText 는 「일부만 읽었다」 알림을 같이 싣는다.
+    const 뽑힌것 = (r.덩이들?.[0]?.문단들 ?? []).join('');
+    check('★ 반 토막 난 코드로 글자를 지어내지 않는다', 뽑힌것 === '한', JSON.stringify(뽑힌것));
+    check('그 쪽을 일부만 읽었다고 말한다',
+      (r.못읽은쪽 ?? []).some((x) => x.일부 && /1자를 못 되돌렸습니다/.test(x.왜)), JSON.stringify(r.못읽은쪽));
+  }
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

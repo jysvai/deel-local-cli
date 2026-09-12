@@ -87,8 +87,10 @@ function 이름읽기(b, i) {
   const 조각 = [];
   while (i < b.length && !끝인가(b[i])) {
     if (b[i] === 0x23 && i + 2 < b.length) {
-      const h = parseInt(String.fromCharCode(b[i + 1], b[i + 2]), 16);
-      if (Number.isFinite(h)) { 조각.push(h); i += 3; continue; }
+      // 두 자리 다 16진수여야 한다. `parseInt('1/',16)` 은 1 을 돌려주므로,
+      // 그것만 보면 뒤따라온 구분자 `/` 까지 삼켜 다음 낱말이 사라진다.
+      const 두자리 = String.fromCharCode(b[i + 1], b[i + 2]);
+      if (/^[0-9A-Fa-f]{2}$/.test(두자리)) { 조각.push(parseInt(두자리, 16)); i += 3; continue; }
     }
     조각.push(b[i]); i += 1;
   }
@@ -423,6 +425,7 @@ class 문서 {
     this.자리 = new Map();          // 객체번호 → 파일 위치
     this.푼것 = new Map();          // 객체번호 → 읽어 둔 값
     this.묶음속 = new Map();        // 객체번호 → ObjStm 안에서 읽은 값
+    this.xref정함 = new Set();      // 최신 xref 가 자리를 정해 준 객체 (옛 판이 못 덮는다)
     this.trailer = {};
     this.훑기();
     this.xref읽기();
@@ -435,9 +438,37 @@ class 문서 {
     const 무늬 = /(?:^|[\s>\]])(\d+)\s+(\d+)\s+obj\b/g;
     let m;
     while ((m = 무늬.exec(s)) !== null) {
-      const 자리 = m.index + m[0].length - `${m[1]} ${m[2]} obj`.length;
-      this.자리.set(Number(m[1]), 자리);
+      /*
+       * 무늬가 앞 글자 한 칸을 같이 물었는지만 보면 된다.
+       *
+       * 여기서 `${m[1]} ${m[2]} obj`.length 를 빼는 셈을 하면 **공백이 한 칸일
+       * 때만** 맞는다. `4 0\r\nobj` 처럼 줄바꿈이 끼면 자리가 한 칸 밀려
+       * 「0\r\nobj」 를 가리키고, 그러면 그 객체를 못 읽는다. xref 까지 틀린
+       * 파일에서는 이 훑기가 마지막 안전망인데 그 안전망에 구멍이 났다.
+       */
+      this.자리.set(Number(m[1]), m.index + (/^\d/.test(m[0]) ? 0 : 1));
     }
+  }
+
+  /**
+   * xref 가 말하는 자리를 받아 적는다.
+   *
+   * xref 는 **최신 판부터** 거슬러 읽는다(startxref → /Prev). 그래서 한 번
+   * 정해진 객체를 나중에(= 더 옛 판에서) 다시 적으면 안 된다. 증분 저장한
+   * PDF 는 고친 객체가 파일 뒤에 새로 붙고 옛것이 그대로 남아 있는데, 옛
+   * 자리로 덮으면 **고치기 전 값을 읽는다** — 폼에 채운 값이 빈칸으로,
+   * 고친 금액이 옛 금액으로 돌아간다. 빈 글은 보이지만 옛 글은 안 보인다.
+   */
+  자리정하기(번호, 자리) {
+    if (this.xref정함.has(번호)) return;
+    // 훑기가 찾은 자리를 못 믿을 때만 xref 를 쓴다. 둘 다 있으면 그 자리에
+    // 진짜 `N obj` 가 있는 쪽을 고른다.
+    if (this.진짜객체인가(자리, 번호)) {
+      this.자리.set(번호, 자리);
+      this.xref정함.add(번호);
+      return;
+    }
+    if (!this.자리.has(번호)) this.자리.set(번호, 자리);
   }
 
   /** ② xref 를 따라가며 trailer 를 모은다. */
@@ -460,7 +491,10 @@ class 문서 {
     }
     if (!this.trailer.Root) {
       // trailer 를 못 찾았으면 카탈로그를 직접 찾는다.
-      const m = /(\d+)\s+\d+\s+obj\s*<<[^>]{0,400}?\/Type\s*\/Catalog/.exec(this.b.toString('latin1'));
+      // `[^>]` 로 막으면 카탈로그 앞에 속사전(`<< … >>`)이 하나라도 있으면
+      // 못 찾는다. endobj 만 넘지 않도록 해서 그 안쪽까지 본다.
+      const m = /(\d+)\s+\d+\s+obj\s*<<(?:(?!endobj)[\s\S]){0,400}?\/Type\s*\/Catalog/
+        .exec(this.b.toString('latin1'));
       if (m) this.trailer.Root = { 참조: Number(m[1]), 세대: 0 };
     }
   }
@@ -482,23 +516,25 @@ class 문서 {
         let 번호 = Number(m[1]);
         const 수 = Number(m[2]);
         i = 건너뛰기(this.b, i + m[0].length);
-        for (let k = 0; k < 수; k += 1) {
-          const 줄 = this.b.toString('latin1', i, i + 20);
-          const mm = /^(\d{10})\s(\d{5})\s([nf])/.exec(줄);
-          if (mm && mm[3] === 'n') {
-            const off = Number(mm[1]);
-            // 훑기가 찾은 자리를 못 믿을 때만 xref 를 쓴다. 둘 다 있으면
-            // 그 자리에 진짜 `N obj` 가 있는 쪽을 고른다.
-            if (this.진짜객체인가(off, 번호)) this.자리.set(번호, off);
-            else if (!this.자리.has(번호)) this.자리.set(번호, off);
+        /*
+         * 한 줄은 20자라고 규격에 적혀 있지만 19자로 쓰는 프로그램이 있다
+         * (줄 끝을 `\n` 하나로 적는다). 그래서 20 씩 더하지 않고 **줄을 읽은
+         * 만큼** 나아간다. 앞서 20 씩 더하던 코드는 19자 파일에서 둘째 줄부터
+         * 한 자씩 밀려 표 전체를 잃었고, 뒤에 붙어 있던 「줄을 맞춘다」 는
+         * 그 자리에서 곧바로 빠져나가 한 번도 맞춰 준 적이 없다.
+         */
+        for (let k = 0; k < 수 && i < this.b.length; k += 1) {
+          while (i < this.b.length && 공백인가(this.b[i])) i += 1;
+          const mm = /^(\d{10})\s(\d{5})\s([nf])/.exec(this.b.toString('latin1', i, i + 20));
+          if (!mm) {
+            // 규격에서 벗어난 줄 — 다음 줄머리로 넘긴다.
+            while (i < this.b.length && this.b[i] !== 0x0a && this.b[i] !== 0x0d) i += 1;
+            번호 += 1;
+            continue;
           }
+          if (mm[3] === 'n') this.자리정하기(번호, Number(mm[1]));
           번호 += 1;
-          i += 20;
-          // 줄이 19자인 파일도 있다. 다음 줄 머리를 보고 맞춘다.
-          while (i < this.b.length && 공백인가(this.b[i]) && !/\d/.test(String.fromCharCode(this.b[i]))) {
-            if (this.b[i] === 0x0a || this.b[i] === 0x0d || this.b[i] === 0x20) break;
-            i += 1;
-          }
+          i += mm[0].length;
         }
       }
     }
@@ -539,9 +575,12 @@ class 문서 {
           밭.push(w === 0 ? null : v);
         }
         const 갈래 = 밭[0] === null ? 1 : 밭[0];
-        if (갈래 === 1 && this.진짜객체인가(밭[1], 번호)) this.자리.set(번호, 밭[1]);
-        else if (갈래 === 1 && !this.자리.has(번호)) this.자리.set(번호, 밭[1]);
-        else if (갈래 === 2) this.묶음자리 = this.묶음자리 ?? new Map(), this.묶음자리.set(번호, 밭[1]);
+        if (갈래 === 1) this.자리정하기(번호, 밭[1]);
+        else if (갈래 === 2) {
+          // 여기도 최신 판이 이긴다 — 옛 ObjStm 이 고친 객체를 덮으면 안 된다.
+          this.묶음자리 = this.묶음자리 ?? new Map();
+          if (!this.묶음자리.has(번호)) this.묶음자리.set(번호, 밭[1]);
+        }
         번호 += 1;
       }
     }
@@ -708,13 +747,25 @@ function 열여섯값(글) {
   return s ? parseInt(s, 16) : null;
 }
 
-/** `<0041>` 을 유니코드 글자로 (UTF-16BE 여러 글자일 수 있다). */
+/**
+ * `<0041>` 을 유니코드 글자로 (UTF-16BE 여러 글자일 수 있다).
+ *
+ * 넷씩 끊어 읽고, 모자란 자리는 **앞**을 0 으로 메운다. 뒤를 메우면
+ * `<41>`('A') 가 `4100` — 곧 「䄀」 이라는 엉뚱한 한자가 된다. 두 자리로 적는
+ * 파일이 규격 위반이긴 하지만, 위반을 만났을 때 없는 한자를 만들어 내는 것과
+ * 「A」 를 돌려주는 것 중에 무엇이 나은지는 분명하다.
+ */
 function 열여섯글자(글) {
   const s = String(글 ?? '').replace(/[^0-9A-Fa-f]/g, '');
   if (!s) return '';
-  const 짝 = s.length % 4 ? s.padEnd(Math.ceil(s.length / 4) * 4, '0') : s;
+  const 남 = s.length % 4;
+  const 짝 = 남 ? s.slice(0, s.length - 남) + s.slice(s.length - 남).padStart(4, '0') : s;
   let 나온것 = '';
-  for (let i = 0; i < 짝.length; i += 4) 나온것 += String.fromCharCode(parseInt(짝.slice(i, i + 4), 16));
+  for (let i = 0; i < 짝.length; i += 4) {
+    const v = parseInt(짝.slice(i, i + 4), 16);
+    // `<0000>` 은 「글자 없음」 이다. 글에 NUL 을 섞으면 화면과 모델 쪽이 같이 깨진다.
+    if (v) 나온것 += String.fromCharCode(v);
+  }
   return 나온것;
 }
 
@@ -742,14 +793,24 @@ export function 유니코드표읽기(글) {
     }
   }
   for (const m of s.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
-    const 몸 = m[1];
+    const 배열꼴 = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[([\s\S]*?)\]/g;
     // `<시작> <끝> [<a> <b> …]` 꼴
-    for (const p of 몸.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[([\s\S]*?)\]/g)) {
+    for (const p of m[1].matchAll(배열꼴)) {
       const 시작 = 열여섯값(p[1]);
       코드폭.add(Math.ceil(p[1].length / 2));
       const 것들 = [...p[3].matchAll(/<([0-9A-Fa-f]+)>/g)].map((x) => 열여섯글자(x[1]));
       것들.forEach((글자, k) => 표.set(시작 + k, 글자));
     }
+    /*
+     * 배열 꼴을 읽은 자리는 지우고 넘긴다.
+     *
+     * 남겨 두면 아래 무늬가 **대괄호 안의 글자 셋을 또 하나의 범위로** 읽는다.
+     * `<0020> <0022> [<0041> <0042> <0043>]` 에서 `<0041> <0042> <0043>` 이
+     * 다시 걸려, 코드 0x41·0x42 에 「C」「D」 라는 없는 매핑이 생긴다.
+     * Identity-H 문서에서 0x41 은 글리프 번호이므로 — 못 읽은 글자가 되는
+     * 대신 **엉뚱한 글자로 읽힌다.** 빠진 글자는 보이지만 틀린 글자는 안 보인다.
+     */
+    const 몸 = m[1].replace(배열꼴, ' ');
     // `<시작> <끝> <첫글자>` 꼴
     for (const p of 몸.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
       const 시작 = 열여섯값(p[1]);
@@ -757,6 +818,7 @@ export function 유니코드표읽기(글) {
       const 첫 = 열여섯글자(p[3]);
       코드폭.add(Math.ceil(p[1].length / 2));
       if (시작 === null || 끝 === null || 끝 < 시작 || 끝 - 시작 > 65535) continue;
+      if (!첫) continue;                        // `<0000>` 에서 시작하는 범위 — 셀 밑자리가 없다
       const 밑 = 첫.charCodeAt(첫.length - 1);
       for (let k = 0; k <= 끝 - 시작; k += 1) {
         if (표.has(시작 + k)) continue;
@@ -906,11 +968,8 @@ function 글자로(글꼴, 바이트들) {
   let 글 = '';
   let 못읽음 = 0;
   let 나아감 = 0;
-  for (let i = 0; i + 폭 <= 바이트들.length + (폭 - 1); i += 폭) {
-    const 코드 = 폭 === 2
-      ? ((바이트들[i] << 8) | (바이트들[i + 1] ?? 0))
-      : 바이트들[i];
-    if (코드 === undefined) break;
+  for (let i = 0; i + 폭 <= 바이트들.length; i += 폭) {
+    const 코드 = 폭 === 2 ? ((바이트들[i] << 8) | 바이트들[i + 1]) : 바이트들[i];
     const g = 글꼴?.표?.get(코드);
     let 찍은것 = null;
     if (g !== undefined && g !== null && g !== '') { 글 += g; 찍은것 = g; }
@@ -922,6 +981,14 @@ function 글자로(글꼴, 바이트들) {
     else if (typeof 너비기본 === 'number') 나아감 += 너비기본;
     else 나아감 += 찍은것 ? 글자너비비율(찍은것) : 넓은글자;
   }
+  /*
+   * 반 토막 난 마지막 코드.
+   *
+   * 두 바이트 글꼴에 홀수 길이 글자열이 오면 규격 위반이다. 여기에 0 을 붙여
+   * 두 바이트로 만들면 **없는 글리프 번호**가 생기고, 그것이 어쩌다 표에
+   * 있으면 엉뚱한 글자가 글에 섞인다. 못 읽은 것으로 세는 쪽이 정직하다.
+   */
+  if (바이트들.length % 폭) 못읽음 += 1;
   return { 글, 못읽음, 나아감 };
 }
 
@@ -961,6 +1028,27 @@ function 곱하기(m, n) {
 }
 
 /**
+ * 붙박이 그림(BI … ID … EI)이 끝나는 자리를 찾는다.
+ *
+ * 그림 자료는 눌린 바이트라 그 안에 우연히 `EI` 두 글자가 들어 있을 수 있다.
+ * 그 자리에서 끊으면 그림 한가운데부터 낱말을 읽기 시작하고, 자료 안의 `(`
+ * 를 글자 시작으로 잘못 읽어 **그 쪽에 남은 글을 통째로 삼킨다.** 그러면서
+ * 앞부분은 읽혔으니 「못 읽은 쪽」에도 안 들어간다 — 아무 말 없이 사라진다.
+ *
+ * 규격대로 앞이 공백이고 뒤가 공백·구분자인 자리만 끝으로 본다. 그런 자리가
+ * 없으면 여태처럼 첫 `EI` 로 물러선다(끊긴 그림이 있는 파일).
+ */
+function 그림끝(b, i) {
+  let k = i;
+  for (;;) {
+    k = b.indexOf('EI', k, 'latin1');
+    if (k < 0) return -1;
+    if (공백인가(b[k - 1]) && 끝인가(b[k + 2])) return k + 2;
+    k += 2;
+  }
+}
+
+/**
  * 내용 흐름 하나에서 글을 뽑는다.
  *
  * 자리(행렬)를 따라가며 세로로 움직이면 줄을 바꾼다. 정확한 조판을 흉내내는
@@ -975,6 +1063,7 @@ function 흐름에서글(문, 자료, 자원, 깊이 = 0) {
   let 펜x = null;   // 붓이 지금 어디까지 갔다고 보는가 (자리바뀜 참고)
   let 못읽은코드 = 0;
   let 글낸적 = false;
+  let 그림낸적 = false;
   const 글꼴통 = new Map();
 
   let Tm = [1, 0, 0, 1, 0, 0];
@@ -1029,9 +1118,10 @@ function 흐름에서글(문, 자료, 자원, 깊이 = 0) {
 
     // 붙박이 그림은 통째로 건너뛴다. 안 그러면 그림 자료를 낱말로 읽는다.
     if (b[i] === 0x42 && b[i + 1] === 0x49 && 끝인가(b[i + 2])) {   // 'BI'
-      const 끝 = b.indexOf('EI', i, 'latin1');
-      i = 끝 < 0 ? b.length : 끝 + 2;
-      글낸적 = 글낸적 || false;
+      const 끝 = 그림끝(b, i);
+      const 물러선것 = 끝 < 0 ? b.indexOf('EI', i, 'latin1') : -1;
+      i = 끝 >= 0 ? 끝 : (물러선것 < 0 ? b.length : 물러선것 + 2);
+      그림낸적 = true;
       continue;
     }
 
@@ -1046,8 +1136,17 @@ function 흐름에서글(문, 자료, 자원, 깊이 = 0) {
     쌓임.length = 0;
 
     switch (op) {
-      case 'BT': Tm = [1, 0, 0, 1, 0, 0]; Tlm = Tm.slice(); 앞y = null; 앞x = null; break;
-      case 'ET': 줄맺기(); break;
+      /*
+       * BT·ET 는 줄이 아니다.
+       *
+       * 한 줄 안에서 낱말 하나만 굵게 하거나 색을 바꾸려면 그 낱말만 BT…ET
+       * 로 따로 싣는 조판이 흔하다. 그때 ET 마다 줄을 맺으면
+       * 「Total 1,000,000 won」 이 세 줄로 쪼개진다. 줄이 바뀌었는지는 ET 가
+       * 아니라 **세로로 움직였는지**가 말해 준다 — 그래서 앞자리를 그대로
+       * 들고 다음 덩이의 첫 자리와 견준다.
+       */
+      case 'BT': Tm = [1, 0, 0, 1, 0, 0]; Tlm = Tm.slice(); break;
+      case 'ET': break;
       case 'TL': TL = Number(인자[0]) || 0; break;
       case 'Td': {
         const tx = Number(인자[0]) || 0; const ty = Number(인자[1]) || 0;
@@ -1092,14 +1191,17 @@ function 흐름에서글(문, 자료, 자원, 깊이 = 0) {
         break;
       }
       case 'Do': {
-        // 폼 XObject 안에도 글이 있다 (머리말·표·도장). 깊이는 막아 둔다.
-        if (깊이 >= 4) break;
         const 이름 = 인자[0]?.이름;
         if (!이름) break;
         const 것들 = 문.꺼내기(자원, 'XObject');
         const 하나 = 문.풀기((것들?.사전 ?? 것들)?.[이름]);
+        // 폼이 아니면 그림(또는 알 수 없는 것)을 그린 것이다. 그리기를 본
+        // 이 자리가 「스캔본인가」 를 아는 유일한 자리다 — 자원에 /XObject 가
+        // 있다는 것만으로는 **그렸는지**를 알 수 없다.
+        if (문.풀기(하나?.사전?.Subtype)?.이름 !== 'Form') { 그림낸적 = true; break; }
+        // 폼 XObject 안에도 글이 있다 (머리말·표·도장). 깊이는 막아 둔다.
+        if (깊이 >= 4) break;
         if (!하나?.날것) break;
-        if (문.풀기(하나.사전?.Subtype)?.이름 !== 'Form') break;
         const r = 흐름풀기(하나, (x) => 문.풀기(x));
         if (!r.ok) break;
         const 속자원 = 문.풀기(하나.사전?.Resources) ?? 자원;
@@ -1108,13 +1210,14 @@ function 흐름에서글(문, 자료, 자원, 깊이 = 0) {
         줄들.push(...안것.줄들);
         못읽은코드 += 안것.못읽은코드;
         글낸적 = 글낸적 || 안것.글낸적;
+        그림낸적 = 그림낸적 || 안것.그림낸적;
         break;
       }
       default: break;
     }
   }
   줄맺기();
-  return { 줄들, 못읽은코드, 글낸적 };
+  return { 줄들, 못읽은코드, 글낸적, 그림낸적 };
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -1228,8 +1331,15 @@ export function readPdf(경로또는버퍼) {
        * 글이 하나도 안 나온 쪽. 왜인지 갈라서 말한다 — 스캔본과 글꼴 문제는
        * 사람이 할 일이 다르다(전자는 OCR, 후자는 다시 뽑기).
        */
-      const 그림있나 = /\/Subtype\s*\/Image|\bDo\b/.test(Buffer.concat(자료들).toString('latin1').slice(0, 20000))
-        || !!문.꺼내기(자원, 'XObject');
+      /*
+       * 「그림은 그렸고 글은 없다」 = 스캔본일 수 있다 → OCR.
+       * 「아무것도 안 그렸다」 = 그냥 빈 쪽이다 → OCR 은 할 일이 없다.
+       *
+       * 앞서는 자원 사전에 /XObject 가 **있기만 해도** 스캔본으로 적었다.
+       * 머리말 로고가 위쪽 자원에 물려 있으면 정말 빈 쪽도 「OCR 이 필요」
+       * 가 됐다. 그린 것을 본 쪽은 파서다.
+       */
+      const 그림있나 = 뽑은것.그림낸적;
       못읽은쪽.push({
         번호,
         왜: 뽑은것.못읽은코드
