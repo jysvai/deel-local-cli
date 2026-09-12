@@ -187,7 +187,10 @@ export async function probeCtx(conn, { timeout = 6000 } = {}) {
       tried.push({ label, url, status: r.status ?? 0, ok: !!r.ok });
       return { label, json: r.ok ? r.json : null };
     } catch (err) {
-      tried.push({ label, url, status: 0, ok: false, why: String(err?.message ?? err) });
+      // **누가 막았나**를 같이 적는다. 우리 문지기(safety/network.js)가 막은 것과
+      // 서버가 죽은 것은 사람이 할 일이 전혀 다르다 — 앞엣것은 허락을 주면 되고
+      // 뒤엣것은 서버를 봐야 한다. 아래에서 이 표시로 갈라 말한다.
+      tried.push({ label, url, status: 0, ok: false, why: String(err?.message ?? err), 막힘: err?.name === 'NetBlocked' });
       return { label, json: null };
     }
   };
@@ -247,9 +250,20 @@ export async function probeCtx(conn, { timeout = 6000 } = {}) {
 
   // 실제로 쓸 값: 올려 둔 길이가 있으면 그것. 없으면 모델 최대.
   const value = loaded ?? max ?? null;
+  /*
+   * 못 알아낸 까닭. **서버 탓으로 뭉개지 않는다.**
+   *
+   * 두드린 자리가 전부 우리 문지기에 막혔으면 서버는 이 물음을 **받아 본 적도
+   * 없다.** 그런데 여태 이 자리는 그때도 「아무 응답도 못 받았습니다」 였고,
+   * repl 은 그걸 「서버가 안 알려줍니다」 로 옮겼다 — 켤 때 바깥 연결을 처음
+   * 붙이는 사람이 보는 첫 문장이 이것이다. 허락을 아직 안 준 것뿐인데 서버가
+   * 이상한 줄 알고 서버를 뒤진다.
+   */
+  const 문지기가막음 = tried.length > 0 && tried.every((t) => t.막힘);
   const why = value ? null
-    : tried.some((t) => t.ok) ? '서버가 응답은 했지만 길이를 안 알려 줍니다'
-      : '두드린 자리에서 아무 응답도 못 받았습니다';
+    : 문지기가막음 ? '이 주소로 나갈 허락이 아직 없어서 물어보지도 못했습니다'
+      : tried.some((t) => t.ok) ? '서버가 응답은 했지만 길이를 안 알려 줍니다'
+        : '두드린 자리에서 아무 응답도 못 받았습니다';
 
   return { value, max, loaded, out, source, outSource, maxKey, loadedKey, tried, why };
 }

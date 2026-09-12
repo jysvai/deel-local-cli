@@ -94,6 +94,7 @@ const FILES = [
   'pastechip.test.js',
   'histline.test.js',
   'runmode.test.js',
+  '바깥허락.test.js',
   'providers.test.js',
   'price.test.js',
   'anthropic.test.js',

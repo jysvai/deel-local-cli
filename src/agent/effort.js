@@ -101,9 +101,32 @@ export const MAX_CAP = 16384;
 
 const ALIAS = { 균일: 'even', 절약: 'save', 깊게: 'deep', uniform: 'even', thrifty: 'save' };
 
+/*
+ * 배분 이름을 표의 열쇠로 되돌린다.
+ *
+ * ── 있는지 없는지는 hasOwn 으로만 묻는다 ──────────────────────────────
+ *
+ * `PROFILES[k] ?` 는 **없는 이름에도 참**이 된다. 모든 객체가 물려받는
+ * `constructor` · `toString` · `valueOf` 가 그 자리다. 그래서:
+ *
+ *   /think 배분 constructor
+ *     -> 「모르는 배분입니다」 가 아니라 `✓ 배분 Object — undefined` 가 찍힌다.
+ *        session.effort 에 'constructor' 가 박히고, 곧바로 단계표를 그리다
+ *        p.shift[stage] 에서 터진다.
+ *   /think 배분 toString
+ *     -> ALIAS 쪽이 **함수**를 돌려준다. `?? null` 은 함수를 못 거른다.
+ *        PROFILES[함수] 는 undefined 라 이름을 찍다 그 자리에서 터진다.
+ *
+ * 터지는 것만 문제가 아니다. 앞엣것은 **✓ 를 먼저 찍는다.** 사람은 배분을
+ * 바꿨다고 믿고, 그 판의 남은 턴은 전부 걸음 예산 계산에서 터진다.
+ * modes.js · /mode · /grade · ui/level.js 에서 같은 함정을 이미 닫았는데
+ * 여기만 옛 모양으로 남아 있었다.
+ */
 export function normalizeProfile(v) {
-  const k = String(v ?? '').trim().toLowerCase();
-  return PROFILES[k] ? k : (ALIAS[String(v ?? '').trim()] ?? null);
+  const 친것 = String(v ?? '').trim();
+  const k = 친것.toLowerCase();
+  if (Object.hasOwn(PROFILES, k)) return k;
+  return Object.hasOwn(ALIAS, 친것) ? ALIAS[친것] : null;
 }
 
 // 기준 강도에서 몇 칸 옮긴다. 끝을 넘지 않는다.

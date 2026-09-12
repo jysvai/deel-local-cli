@@ -96,7 +96,7 @@ await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 const 주소 = `http://127.0.0.1:${srv.address().port}/v1`;
 
 /** deel 을 띄우고 줄을 하나씩 넣는다. 기다리는 법은 planapprove 와 같다. */
-async function 띄우기(줄들) {
+async function 띄우기(줄들, { 더줄인자 = [] } = {}) {
   도구번호 = 1;
   이은말 = null;
   const root = mkdtempSync(join(tmpdir(), 'deel-resume-'));
@@ -111,7 +111,7 @@ async function 띄우기(줄들) {
 
   // ctx 를 8k 로 잡으면 code 모드의 걸음 상한이 16이다 — 검사가 몇 초로 끝난다.
   const kid = spawn(process.execPath,
-    [join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline', '--ctx', '8192', '--no-tui'],
+    [join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline', '--ctx', '8192', '--no-tui', ...더줄인자],
     { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, DEEL_HOME: home } });
 
   let out = '';
@@ -226,7 +226,15 @@ trace('4-배선');
    * 답해야 하고, 계획이 반만 나온 것을 두고 "이대로 진행할까요?" 를
    * 묻는 꼴이 난다.
    */
-  check('★ 계획 승인과 한 자리에서 갈린다', /\} else if \(끊긴할일\) \{/.test(소스));
+  /*
+   * 빈 배열은 「이어갈 것이 있다」 가 아니다.
+   *
+   * `끊긴할일 = ev.남은할일 ?? []` 라, 할 일이 0개인 채 걸음 상한에 걸려도
+   * 이 갈래가 참이 됐다. 그러면 물음이 뜨고 ⏎ 한 번에 「하던 자리에서
+   * 이어서 해라」 로 모델을 한 판 더 부른다 — 이어갈 자리가 없는데.
+   * 그래서 `?.length` 로 본다.
+   */
+  check('★ 계획 승인과 한 자리에서 갈린다', /\} else if \(끊긴할일\?\.length\) \{/.test(소스));
   /*
    * 끝난 것을 빼는 자리가 **둘**이다 — loop.js 가 남은할일 을 만들 때 한 번,
    * repl.js 가 이을 말을 지을 때 한 번. 겹쳐 보이지만 재는 것이 다르다.
@@ -245,6 +253,29 @@ trace('4-배선');
 trace('5-끝');
 
 srv.close();
+
+trace('5-못-이어받았으면-말한다');
+
+// ── 못 이어받았는데 **아무 말도 안 하던** 자리 ──────────────────────────
+//
+// `deel --resume <오타난 id>` 를 치면 화면에 한 줄도 안 나오고 곧바로
+// 머리말이 떴다. 그러고는 그 id 로 **새 파일이 만들어진다.** 사람은
+// 이어받은 줄 알고 「이어서 해줘」 라고 하는데 모델은 아무것도 모른다.
+//
+// store.load() 는 못 읽은 까닭을 이미 돌려준다(agent/store.js 의 못읽음).
+// repl 은 구조분해에서 messages 만 꺼내고 그걸 버리고 있었다.
+{
+  const r = await 띄우기([], { 더줄인자: ['--resume', '없는대화아이디'] });
+  check('★★ 못 이어받았다고 말한다', /그런 대화가 없거나 비어 있습니다|못 읽었습니다/.test(r.out),
+    r.out.split('\n').filter((l) => /대화/.test(l)).slice(0, 2).join(' | ').slice(0, 120));
+  check('★ 새로 시작한다는 것을 알려 준다', /새 대화로 시작합니다/.test(r.out),
+    r.out.split('\n').filter((l) => /새 대화/.test(l)).join(' | ').slice(0, 100));
+  check('★ 이어할 것을 찾는 길을 준다', /\/sessions/.test(r.out), '');
+  check('이어받았다고는 안 한다', !/개를 이어 받았습니다/.test(r.out),
+    r.out.split('\n').filter((l) => /이어 받았/.test(l)).join(' | ').slice(0, 100));
+  rmSync(r.root, { recursive: true, force: true });
+  rmSync(r.home, { recursive: true, force: true });
+}
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n끊긴 자리 잇기 검사  ${D}(걸음을 다 써도 ⏎ 하나로 이어지는가)${X}\n`);

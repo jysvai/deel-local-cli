@@ -92,7 +92,9 @@ export function 설명(칸, { root = process.cwd(), env = process.env } = {}) {
         여기 = 여기.find((x) => x?.name === 이름 || x?.id === 이름);
         continue;
       }
-      여기 = 여기[이름];
+      // 물려받은 이름(`constructor` · `toString`)으로 파고들면 **없는 칸이
+      // 있는 것이 된다.** 여기서 막아야 아래 세 층이 다 안전하다.
+      여기 = (여기 && typeof 여기 === 'object' && Object.hasOwn(여기, 이름)) ? 여기[이름] : undefined;
     }
     return 여기;
   };
@@ -124,7 +126,14 @@ export function 설명(칸, { root = process.cwd(), env = process.env } = {}) {
 
   // ── 3. 환경변수 ─────────────────────────────────────────────────────
   const 끝칸 = 조각[조각.length - 1] ?? '';
-  const 볼환경 = 환경변수[끝칸] ?? [];
+  /*
+   * `환경변수[끝칸] ?? []` 였다.
+   *
+   * `deel config explain constructor` 는 배열이 아니라 **함수**를 받아
+   * 바로 다음 줄에서 터졌다 — 화면에 뜬 말은 「오류 볼환경.filter is not a
+   * function」 이다. 없는 칸을 물었으면 없다고 해야 한다.
+   */
+  const 볼환경 = Object.hasOwn(환경변수, 끝칸) ? 환경변수[끝칸] : [];
   const 켜진환경 = 볼환경.filter((이름) => !이름.includes('<') && env[이름]);
   if (켜진환경.length) {
     층들.push({
@@ -136,7 +145,10 @@ export function 설명(칸, { root = process.cwd(), env = process.env } = {}) {
   // ── 4. 관리 정책 (제일 위) ──────────────────────────────────────────
   const 정책 = 정책읽기({ env, 다시: true });
   if (정책.값 && typeof 정책.값 === 'object') {
-    const 그값 = 정책.값[끝칸];
+    // 정책 파일은 JSON 이라 프로토타입을 그대로 물려받는다. hasOwn 없이 보면
+    // 정책에 없는 칸이 「관리 정책에 이렇게 적혀 있습니다」 로 한 줄 올라온다 —
+    // 관리자에게 따지러 갈 근거가 통째로 거짓이 되는 자리다.
+    const 그값 = Object.hasOwn(정책.값, 끝칸) ? 정책.값[끝칸] : undefined;
     if (그값 !== undefined) {
       층들.push({ 층: '관리 정책', 자리: 정책.곳 ?? 정책자리(env)[0], 읽나: true, 값: 지운값(끝칸, 그값) });
     }

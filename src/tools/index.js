@@ -2769,7 +2769,17 @@ export async function runTool(name, args, ctx) {
   // 섞이면 "이 폴더 밖은 못 건드린다" 는 말이 거짓이 된다.
   if (name.startsWith('mcp__')) return await runMcpTool(name, args, ctx);
 
-  const t = TOOLS[name];
+  /*
+   * 있는 도구인지는 hasOwn 으로만 묻는다.
+   *
+   * 이름은 **모델이 지어서 보낸 것**이다. `constructor` · `toString` 으로
+   * 오면 `TOOLS[name]` 이 물려받은 함수라 참이 되어 이 관문을 통과하고,
+   * 조금 아래 `t.run(...)` 에서 터진다. 화면에 남는 말은 「모르는 도구:
+   * toString」 이 아니라 `t.run is not a function` 이다 — 사람도 모델도
+   * 무엇이 잘못됐는지 알 수 없는 글이고, 모델은 고칠 실마리가 없으니
+   * 같은 이름으로 또 부른다.
+   */
+  const t = Object.hasOwn(TOOLS, name) ? TOOLS[name] : null;
   if (!t) return { error: `모르는 도구: ${name}` };
 
   /*

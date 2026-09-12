@@ -784,6 +784,52 @@ trace('13d-슬래시-경로');
   check('여러 마디짜리 경로도 그대로 경로다', r2.v?.handled === false, 여러마디);
 }
 
+trace('13h-물려받은-이름을-있는-것으로-읽지-않나');
+
+// ── `표[값]` 이 **없는 이름에도 참**이 되던 자리 ────────────────────────
+//
+// 모든 객체는 `constructor` · `toString` · `valueOf` 를 물려받는다. 그래서
+// `PROFILES[k] ? k : …` 는 아무도 정한 적 없는 이름에 참을 낸다. 이 저장소는
+// 같은 함정을 modes.js · /mode · /grade · ui/level.js 에서 이미 닫았는데
+// 배분(effort) 표 하나가 옛 모양으로 남아 있었다.
+//
+// 고치기 전 화면은 이랬다 — **✓ 를 먼저 찍고 나서** 표를 그리다 터진다:
+//   /think 배분 constructor  ->  ✓ 배분 Object — undefined
+//                                (그 뒤 p.shift[stage] 에서 TypeError)
+//   /think 배분 toString     ->  ALIAS 가 **함수**를 돌려줘 이름 찍다 TypeError
+//
+// 터지는 것만 문제가 아니다. session.effort 에 그 이름이 박히면 그 판의
+// 남은 턴이 전부 걸음 예산 계산에서 터진다 — 사람은 배분을 바꿨다고 믿고 있다.
+{
+  const { normalizeProfile } = await import('../src/agent/effort.js');
+
+  for (const 나쁜 of ['constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+    check(`★ normalizeProfile('${나쁜}') 은 null`, normalizeProfile(나쁜) === null,
+      String(typeof normalizeProfile(나쁜)));
+  }
+  // 멀쩡한 것은 그대로여야 한다. 막느라 있는 이름까지 막으면 안 된다.
+  check('제 이름은 그대로', normalizeProfile('save') === 'save' && normalizeProfile('절약') === 'save',
+    `${normalizeProfile('save')} · ${normalizeProfile('절약')}`);
+  check('대소문자도 그대로', normalizeProfile('DEEP') === 'deep', String(normalizeProfile('DEEP')));
+
+  // 명령까지 와서 무엇이 보이나.
+  const s배분 = 새세션();
+  const r배분 = await 조용히(() => handle('/think 배분 constructor', s배분, 새ctx()));
+  const 글배분 = 색빼기(r배분.out);
+  check('★ 모르는 배분이면 값이 안 바뀐다', s배분.effort === 'save', String(s배분.effort));
+  check('★ Object 라고 안 찍는다', !/배분 Object|— undefined/.test(글배분), 글배분.trim().slice(0, 80));
+  check('★ 고를 수 있는 배분을 보여 준다', /even|save|deep/.test(글배분), 글배분.trim().slice(0, 80));
+
+  const s투 = 새세션();
+  await 조용히(() => handle('/think 배분 toString', s투, 새ctx()));
+  check('★ toString 도 값이 안 바뀐다', s투.effort === 'save', String(s투.effort));
+
+  // 진짜로 바꾸는 길은 살아 있나.
+  const s된것 = 새세션();
+  await 조용히(() => handle('/think 배분 깊게', s된것, 새ctx()));
+  check('제대로 친 배분은 먹는다', s된것.effort === 'deep', String(s된것.effort));
+}
+
 trace('14-치움');
 srv.close();
 resetNet();

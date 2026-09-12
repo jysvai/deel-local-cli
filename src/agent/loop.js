@@ -1523,7 +1523,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           continue;
         }
 
-        if (!TOOLS[call.name]) {
+        // 물려받은 이름(`constructor` 등)이면 여기가 참이 되어 「모르는 도구」
+        // 관문을 그냥 통과했다. hasOwn 으로만 묻는다 (tools/index.js 도 같다).
+        if (!Object.hasOwn(TOOLS, call.name)) {
           거절(call, `모르는 도구입니다. 쓸 수 있는 것: ${Object.keys(TOOLS).join(', ')}`);
           // 이것도 세야 한다. 없는 이름을 계속 부르며 걸음 수를 다 쓰는 길이 있었다 —
           // 71초 증상과 겉모습이 똑같은데 문만 다르다. 아래 거부·중복도 마찬가지다.

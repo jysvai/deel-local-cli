@@ -531,6 +531,60 @@ trace('8-남을-기다리는-자리');
   rmSync(방, { recursive: true, force: true });
 }
 
+trace('9-모델이-지어낸-도구-이름');
+
+// ── 도구 이름은 **모델이 지어서 보낸 것**이다 ──────────────────────────
+//
+// `TOOLS[name]` 로 있는지 물으면 아무도 만든 적 없는 도구가 있는 것이 된다 —
+// 모든 객체가 물려받는 `constructor` · `toString` · `valueOf` 가 그 자리다.
+// 그러면 「모르는 도구」 관문을 통과하고 조금 아래 `t.run(...)` 에서 터진다.
+//
+//   고치기 전  { error: 't.run is not a function' }
+//   고친 뒤    { error: '모르는 도구: toString' }
+//
+// 앞엣것은 사람도 모델도 무엇이 잘못됐는지 알 수 없는 글이다. 모델은 고칠
+// 실마리가 없으니 같은 이름으로 또 부르고, 걸음만 태운다.
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-proto-'));
+  const ctx = 판(방);
+  for (const 지어낸것 of ['constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+    let r = null;
+    let 터짐 = null;
+    try { r = await runTool(지어낸것, {}, ctx); } catch (e) { 터짐 = e; }
+    check(`★ ${지어낸것} 을 불러도 안 터진다`, 터짐 === null, 터짐 ? String(터짐.message) : '');
+    check(`★ ${지어낸것} 은 모르는 도구라고 말한다`,
+      !!r && /모르는 도구/.test(String(r.error ?? '')), JSON.stringify(r));
+    check(`★ ${지어낸것} 에 자바스크립트 속내를 안 내보인다`,
+      !!r && !/is not a function|undefined/.test(String(r.error ?? '')), JSON.stringify(r?.error));
+  }
+  // 진짜 도구는 그대로 돌아야 한다. 막느라 있는 것까지 막으면 안 된다.
+  const 진짜 = await runTool('Glob', { pattern: '*' }, 판(방));
+  check('있는 도구는 그대로 돈다', !/모르는 도구/.test(String(진짜?.error ?? '')),
+    JSON.stringify(진짜?.error ?? '(탈 없음)'));
+  rmSync(방, { recursive: true, force: true });
+
+  /*
+   * ── 같은 함정이 있는 다른 두 자리 ────────────────────────────────────
+   *
+   * runTool 앞에도 뒤에도 같은 표를 대괄호로 여는 자리가 있다. 이 둘은
+   * 스텁 모델이 `toString` 이라는 이름으로 도구를 부르게 만들어야만 밟히는데,
+   * 그 판을 짜는 비용이 이 한 줄이 지키는 것보다 크다. 그래서 여기서는
+   * **글자로** 못 박는다 — 되돌리는 사람을 막는 것이 목적이다.
+   *
+   *   loop.js   : 모르는 도구 관문. 물려받은 이름이 통과하면 걸음만 태운다
+   *   repl.js   : 도구 줄의 글자. TOOL_GLYPH['constructor'] 는 **함수**라
+   *               `?? ` 가 안 걸리고 `function Object() { [native code] }` 가 찍힌다
+   */
+  const loop소스 = readFileSync(new URL('../src/agent/loop.js', import.meta.url), 'utf8');
+  const repl소스 = readFileSync(new URL('../src/repl.js', import.meta.url), 'utf8');
+  check('★ loop 의 모르는 도구 관문도 hasOwn 으로 본다',
+    /if \(!Object\.hasOwn\(TOOLS, call\.name\)\)/.test(loop소스),
+    loop소스.split('\n').find((l) => /TOOLS\[call\.name\]|hasOwn\(TOOLS/.test(l))?.trim() ?? '못 찾음');
+  check('★ 도구 줄 글자도 hasOwn 으로 고른다',
+    /Object\.hasOwn\(TOOL_GLYPH, name\)/.test(repl소스),
+    repl소스.split('\n').find((l) => /TOOL_GLYPH\[/.test(l))?.trim() ?? '못 찾음');
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const Y = '\x1b[33m'; const X = '\x1b[0m';
 console.log(`\n멈춤 검사  ${D}(멈추라면 멈추는가 · 멈추는 동안 귀가 열려 있는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

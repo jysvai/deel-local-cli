@@ -235,6 +235,41 @@ trace('2c-못알아냈을때');
   srv.close();
 }
 
+trace('2d-누가-막았나');
+
+// ── 「문지기가 막았다」 와 「서버가 안 준다」 는 다른 말이다 ──────────────
+//
+// 우리 문지기(safety/network.js)는 허락 안 한 주소를 NetBlocked 로 막는다.
+// 그 판에서 서버는 이 물음을 **받아 본 적도 없다.** 그런데 여태 why 는
+// 「두드린 자리에서 아무 응답도 못 받았습니다」 였고, repl 은 그걸
+// 「컨텍스트를 서버가 안 알려줍니다」 로 옮겨 찍었다.
+//
+// 바깥 연결을 처음 붙이는 사람이 켤 때 보는 첫 문장이 이것이다. 허락을
+// 아직 안 준 것뿐인데 멀쩡한 서버를 뒤지러 간다.
+{
+  const { resetNet } = await import('../src/safety/network.js');
+  const { srv, port } = await 띄우기(() => ({ context_length: 131072 }));
+  const base = `http://127.0.0.1:${port}/v1`;
+
+  // 열어 두면 알아낸다 — 서버는 멀쩡하다는 것을 먼저 못 박는다.
+  allowEndpoint(base);
+  const 열렸을때 = await probeCtx({ kind: 'openai', base, auth: 'none', key: '', model: 'qwen' }, { timeout: 3000 });
+  check('문을 열면 알아낸다 (서버는 멀쩡하다)', 열렸을때.value === 131072, String(열렸을때.value));
+
+  // 같은 서버, 문만 닫는다.
+  resetNet();
+  const 막혔을때 = await probeCtx({ kind: 'openai', base, auth: 'none', key: '', model: 'qwen' }, { timeout: 3000 });
+  check('★ 막히면 값이 없다', 막혔을때.value === null, String(막혔을때.value));
+  check('★ 서버 탓으로 안 돌린다', !/응답/.test(String(막혔을때.why)), String(막혔을때.why));
+  check('★ 허락이 없다고 말한다', /허락/.test(String(막혔을때.why)), String(막혔을때.why));
+  check('★ 두드린 자리마다 막힘 표시가 붙는다',
+    막혔을때.tried.length > 0 && 막혔을때.tried.every((t) => t.막힘 === true),
+    막혔을때.tried.map((t) => `${t.label}:${t.막힘}`).join(' '));
+
+  allowEndpoint(base);
+  srv.close();
+}
+
 trace('3-Ollama');
 
 {

@@ -120,6 +120,34 @@ trace('3-내폴더에무슨일이');
   check('탈이 있으면 빨강', SEGMENTS.verify.make(s).includes('\x1b[91m') || !SEGMENTS.verify.make(s).includes('\x1b['));
   check('좁으면 탈만 남긴다', 민글(SEGMENTS.verify.short(s)) === '✗1', 민글(SEGMENTS.verify.short(s)));
 
+  /*
+   * ── 「확인 0 · 못 확인 5」 를 초록 ✓0 으로 그리면 안 된다 ──────────────
+   *
+   * 이 표시의 뜻은 status.js 스스로 못박아 두었다 — 「화면에 초록 ✓ 가
+   * 없으면 아직 아무도 안 돌려 본 것이다」. 뒤집으면 초록이 떴다는 것은
+   * 돌려 봤고 탈이 없다는 뜻이다. 그런데 갈래가 둘(탈 있으면 빨강, 아니면
+   * 초록)뿐이라, **다섯 가지를 확인조차 못 한 판**이 초록으로 떴다.
+   */
+  s.검증 = { 돈횟수: 1, 확인: 0, 탈: 0, 못확인: 5 };
+  check('★ 못 확인한 것은 초록이 아니다', !SEGMENTS.verify.make(s).includes('\x1b[92m'),
+    JSON.stringify(SEGMENTS.verify.make(s)));
+  check('★ 못 확인한 개수를 적는다', 민글(SEGMENTS.verify.make(s)) === '✓0 ?5',
+    민글(SEGMENTS.verify.make(s)));
+  check('★ 좁아도 못 확인을 안 숨긴다', 민글(SEGMENTS.verify.short(s)) === '?5',
+    민글(SEGMENTS.verify.short(s)));
+  // 탈이 있으면 그쪽이 먼저다 — 노랑이 빨강을 가리면 안 된다.
+  s.검증 = { 돈횟수: 2, 확인: 1, 탈: 2, 못확인: 3 };
+  check('탈이 있으면 탈을 먼저 보인다', 민글(SEGMENTS.verify.make(s)) === '✓1 ✗2',
+    민글(SEGMENTS.verify.make(s)));
+  // 다 확인했으면 여태처럼 초록이어야 한다. 색은 위 검사들과 같은 기준으로 본다 —
+  // 색을 끈 판에서도 돌아야 하므로 「초록이거나, 아예 색이 없거나」 로 잰다.
+  s.검증 = { 돈횟수: 1, 확인: 4, 탈: 0, 못확인: 0 };
+  check('다 확인했으면 그대로 초록', 민글(SEGMENTS.verify.make(s)) === '✓4'
+    && (SEGMENTS.verify.make(s).includes('\x1b[92m') || !SEGMENTS.verify.make(s).includes('\x1b[')),
+    민글(SEGMENTS.verify.make(s)));
+  // 아래 검사들이 보던 값으로 돌려 놓는다. 안 돌려 놓으면 이 절이 뒤엣것을 깬다.
+  s.검증 = { 돈횟수: 2, 확인: 3, 탈: 1, 못확인: 0 };
+
   s.되돌릴턴 = 4;
   check('되돌릴 턴 수를 보인다', 민글(SEGMENTS.undoable.make(s)) === '↩ 4', 민글(SEGMENTS.undoable.make(s)));
   s.되돌릴턴 = 0;

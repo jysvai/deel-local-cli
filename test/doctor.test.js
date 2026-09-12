@@ -199,6 +199,32 @@ trace('7-설명');
       JSON.stringify(r.이긴층));
     check('★ 아래 층도 같이 보여 준다 — 무엇이 덮였는지 알아야 한다',
       r.층들.some((x) => x.층 === '이 PC 설정'), JSON.stringify(r.층들.map((x) => x.층)));
+
+    /*
+     * ── 물려받은 이름도 「없는 칸」 이다 ──────────────────────────────
+     *
+     * 정책이 깔린 채로 물어야 이 검사가 뜻이 있다. 정책 파일은 JSON 이라
+     * `정책.값['constructor']` 가 **함수**로 참이 되고, 그러면 정책에 없는
+     * 칸이 「관리 정책」 한 줄로 올라온다 — 관리자에게 따지러 갈 근거가
+     * 통째로 거짓이 되는 자리다.
+     *
+     * 환경변수 표 쪽은 그보다 먼저 터졌다. 고치기 전 화면은 이랬다:
+     *   deel config explain constructor
+     *     오류 볼환경.filter is not a function
+     */
+    for (const 나쁜 of ['constructor', 'toString', 'valueOf']) {
+      let 터짐 = null;
+      let r나쁜 = null;
+      try { r나쁜 = 설명(나쁜, { root: 방, env: process.env }); } catch (e) { 터짐 = e; }
+      check(`★ config explain ${나쁜} 이 안 터진다`, 터짐 === null,
+        터짐 ? String(터짐.message) : '');
+      check(`★ ${나쁜} 은 이긴 층이 없다`, !!r나쁜 && r나쁜.이긴층 === null,
+        JSON.stringify(r나쁜?.이긴층));
+      check(`★ ${나쁜} 에 관리 정책 층을 지어내지 않는다`,
+        !!r나쁜 && !(r나쁜.층들 ?? []).some((x) => x.층 === '관리 정책'),
+        (r나쁜?.층들 ?? []).map((x) => x.층).join(' · '));
+    }
+
     delete process.env.DEEL_POLICY;
   }
 

@@ -39,12 +39,12 @@ import { 못박기 } from './agent/pins.js';
 import { 카드 } from './agent/card.js';
 import { 배움 } from './agent/evolve.js';
 import { 마크다운 } from './ui/md.js';
-import { askHidden, confirm } from './ui/prompt.js';
+import { askHidden } from './ui/prompt.js';
 import { explain, shows as levelShows } from './ui/level.js';
 import { 고르기 as 승인고르기, 다음 as 승인다음 } from './ui/approve.js';
 import { 추천, 채울글 } from './ui/complete.js';
 import { 접어쓰기 } from './ui/wrap.js';
-import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들, 남길글 } from './ui/pastechip.js';
+import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들, 남길글, 안쪽최대 as 붙임안쪽최대 } from './ui/pastechip.js';
 import { 고른것풀기, 계획답풀기 } from './ui/pick.js';
 import { 이력지킴이 } from './ui/histline.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
@@ -80,7 +80,7 @@ const TOOL_GLYPH = {
 function toolLabel(name, args) {
   const a = args ?? {};
   // 이름 차례는 tools/label.js 한 곳에서 온다 (다섯 벌이던 것을 모았다).
-  // 여기서 더 하는 일은 화면 사정뿐이다 — 52자에서 자른다.
+  // 여기서 더 하는 일은 화면 사정뿐이다 — 56자에서 자른다.
   const first =
     첫이름(a) ??
     (a.command ? String(a.command).replace(/\s+/g, ' ').slice(0, 52) : null) ??
@@ -105,7 +105,11 @@ function toolLabel(name, args) {
     (Array.isArray(a.paths) && a.paths.length ? 세말('count', a.paths.length) : null) ??
     // 할 일 목록은 보여줄 경로가 없다. 빈 괄호를 띄우느니 개수를 적는다.
     (Array.isArray(a.todos) ? 세말('hits', a.todos.length) : null) ?? '';
-  const g = TOOL_GLYPH[name] ?? c.cyan('⏺');
+  // 물려받은 이름으로 오면 `?? ` 가 안 걸린다 — TOOL_GLYPH['constructor'] 는
+  // 함수라서 참이고, 그대로 글로 바뀌어 `function Object() { [native code] }`
+  // 가 도구 줄에 찍힌다. 모델이 그런 이름으로 도구를 부르면 실제로 여기 온다
+  // (loop.js 가 모르는 도구도 showLabel 로 올린다).
+  const g = Object.hasOwn(TOOL_GLYPH, name) ? TOOL_GLYPH[name] : c.cyan('⏺');
   const 안 = clip(String(first ?? ''), 56);
   return `${g} ${c.bold(name)}${안 ? `${c.gray('(')}${c.gray(안)}${c.gray(')')}` : ''}`;
 }
@@ -352,7 +356,20 @@ export async function chatLoop(opts = {}) {
       say(`  ${mark.warn} ${c.gray('이 연결은 열쇠를 받아 옵니다. 아래 명령을 띄웁니다:')}`);
       say(`  ${c.white(clip(설정.명령, 88))}`);
       say(`  ${c.gray('받은 열쇠는 이 판이 도는 동안 메모리에만 있고, 파일로 안 적습니다.')}`);
-      const 예 = await confirm('  띄울까요?', true);
+      /*
+       * 이 자리는 repl 자신의 ask() 를 쓴다.
+       *
+       * 여기 있던 것은 ui/prompt.js 의 confirm 이었는데, 그 파일이 스스로
+       * 「REPL 은 readline 이 stdin 을 쥐고 있어서 위의 ask 를 그대로 못
+       * 쓴다」 고 못박아 두었다(그래서 암호는 askHidden 을 따로 만들었다).
+       * 이 한 자리만 옛 길로 남아 셋을 한꺼번에 깨고 있었다 —
+       *   · readline 도 같은 바이트를 받아 그 'y' 가 큐에 쌓인다
+       *   · 끝나면서 raw 모드를 꺼서 ESC·Shift+Tab 이 그때부터 안 먹는다
+       *   · 여기서 Ctrl+C 를 누르면 prompt.js 의 process.exit(130) 이 돌아
+       *     MCP·언어 서버·뒤에서 돌던 명령을 하나도 안 거두고 죽는다
+       */
+      const 답 = String(await ask('띄울까요?', { def: 'y', 끝나면: 'n', 멈추면: 'n' })).trim().toLowerCase();
+      const 예 = !['n', 'no', 'ㄴ', '아니', '아니요', '아니오', '취소', '그만'].includes(답);
       say('');
       return 예;
     };
@@ -381,7 +398,7 @@ export async function chatLoop(opts = {}) {
       say(`  ${c.gray('이어할 대화가 없습니다. 새로 시작합니다.')}`);
     } else {
       store = new Store(root, target);
-      const { messages: 적힌것 } = store.load();
+      const { messages: 적힌것, 못읽음 } = store.load();
       /*
        * 도구가 도는 중에 죽었으면 호출만 적히고 결과가 없다. 그대로 보내면
        * 규격 서버가 400 을 내서 이어받자마자 첫 마디에서 죽는다. 손봐서 받는다.
@@ -394,6 +411,29 @@ export async function chatLoop(opts = {}) {
         if (고친것) {
           say(`  ${c.gray(`중단된 도구 호출 ${고친것}개를 걷어냈습니다 — 그때 하던 일은 다시 시켜 주세요.`)}`);
         }
+      } else {
+        /*
+         * ── 못 이어받았으면 **말한다** ──────────────────────────────────
+         *
+         * 여태 이 갈래가 통째로 없었다. `--resume 오타난아이디` 를 치면
+         * 화면에 **아무 줄도 안 나오고** 곧바로 머리말이 뜬다. 그러고는
+         * 그 아이디로 새 파일이 만들어져서, 사람이 「이어서 해줘」 라고
+         * 하면 모델은 아무것도 모른다 — 이어받은 줄 알고 말을 잇는데
+         * 상대는 처음 보는 대화다.
+         *
+         * store.load() 는 못 읽은 까닭을 이미 돌려준다(agent/store.js 의
+         * 못읽음). 그것도 여기서 버리고 있었다 — 권한 때문인지 다른
+         * 프로그램이 잡고 있어서인지 화면 어디에도 안 남았다.
+         */
+        say('');
+        if (못읽음) {
+          say(`  ${mark.warn} ${c.bold(target)} ${c.gray('— 그 대화를 못 읽었습니다')} ${c.gray('(' + 못읽음 + ')')}`);
+        } else if (고친것) {
+          say(`  ${mark.warn} ${c.bold(target)} ${c.gray(`— 남은 것이 중단된 도구 호출 ${고친것}개뿐이라 이어받을 말이 없습니다.`)}`);
+        } else {
+          say(`  ${mark.warn} ${c.bold(target)} ${c.gray('— 그런 대화가 없거나 비어 있습니다.')}`);
+        }
+        say(`  ${c.gray('새 대화로 시작합니다. 이어할 것을 찾으려면')} ${c.cyan('/sessions')}`);
       }
       /*
        * 못 박아 둔 것도 같이 되살린다 (agent/pins.js).
@@ -410,7 +450,17 @@ export async function chatLoop(opts = {}) {
   }
   if (!store) store = new Store(root);
   store.begin({ model: conn.model, base: 주소가리기(conn.base), root });
-  try { prune(root); } catch {}
+  // 머리말보다 먼저 일어난 탈은 여기 모았다가 아래 경고 자리에서 같이 찍는다.
+  const 켤때경고 = [];
+  // 되돌리기 이력을 못 읽는다는 말은 한 판에 한 번만 한다 — 턴마다 세는 자리라
+  // 안 막으면 같은 줄이 턴 수만큼 쌓인다.
+  let 되돌리기못읽음말했나 = false;
+  /*
+   * 정리가 실패해도 켜는 것은 막지 않는다. 다만 **삼키지는 않는다.**
+   * 계속 실패하면 .deel/sessions 가 끝없이 커지는데 화면에는 영영 안 떴다.
+   * 쓰기 실패는 store 가 세어서 알리는데(아래 저장 경고) 이 자리만 옛 모양이었다.
+   */
+  try { prune(root); } catch (e) { 켤때경고.push(`오래된 대화 정리를 못 했습니다 — ${clip(String(e?.message ?? e), 60)}`); }
 
   /*
    * 밖에서 붙인 도구(MCP) 서버를 띄운다.
@@ -646,6 +696,17 @@ export async function chatLoop(opts = {}) {
         // 상자를 걷어내고, 사람이 보낸 글을 대화에 남긴다. 안 남기면 스크롤을
         // 올렸을 때 답만 있고 무엇을 물었는지가 없다.
         const 이었나 = 이어쓰기줄들 !== null;
+        /*
+         * **지우기 전에** 챙긴다.
+         *
+         * 아래 스물몇 줄 뒤에서 `이어쓴것` 을 보고 「앞줄은 이미 찍혔으니
+         * 마지막 줄만 이어 찍는다」 를 고르는데, 그 값이 바로 여기서 거짓으로
+         * 지워지고 있었다. 그래서 그 갈래는 **한 번도 안 골렸다** — 백틱으로
+         * 이어 쓰면 줄쌓기() 가 이미 찍어 둔 앞줄이 통째로 다시 찍혔다.
+         * 바로 그 자리의 주석이 「안 그러면 같은 줄이 두 번 보인다」 고
+         * 적어 둔 것인데, 코드가 정확히 그것을 하고 있었다.
+         */
+        const 백틱으로이었나 = 이어쓴것;
         보낼것 = 이었나 ? [...이어쓰기줄들, l].join('\n') : l;
         이어쓰기줄들 = null; 이어쓴것 = false;
         화면.입력지움();
@@ -666,10 +727,10 @@ export async function chatLoop(opts = {}) {
          * 백틱으로 이어 쓴 경우에는 앞줄이 이미 찍혀 있으므로 마지막 줄만
          * 이어 찍는다 — 안 그러면 같은 줄이 두 번 보인다.
          */
-        const 찍을것 = 남길글(이어쓴것 ? l : 보낼것, 붙인것들);
+        const 찍을것 = 남길글(백틱으로이었나 ? l : 보낼것, 붙인것들);
         if (찍을것.trim() || 이었나) {
           for (const [i, 한줄] of String(찍을것).split('\n').entries()) {
-            say(`${i === 0 && !이어쓴것 ? ` ${c.hcyan('❯')} ` : '   '}${c.white(한줄)}`);
+            say(`${i === 0 && !백틱으로이었나 ? ` ${c.hcyan('❯')} ` : '   '}${c.white(한줄)}`);
           }
         }
       } else if (l.trim() || 이어쓰기줄들 !== null) {
@@ -1077,7 +1138,42 @@ export async function chatLoop(opts = {}) {
      * y 를 쳐도 화면에 아무것도 안 나타난다 — 먹은 건지 안 먹은 건지 모른다.
      */
     묻는중 = 상자쓰나 ? 앞 : null;
-    이어쓰기줄들 = null; 이어쓴것 = false;   // 되묻는 사이에 걸쳐 있던 미완성 이어쓰기는 버린다
+    /*
+     * 쌓아 둔 이어쓰기를 버릴 때는 **말한다.**
+     *
+     * SIGINT 쪽(아래)은 「이어쓰던 것을 버렸습니다」 를 반드시 찍는데 여기만
+     * 조용했다. 일하는 도중에 줄 끝 백틱으로 여러 줄을 쌓아 두면 그 글은
+     * 화면에 안 찍힌 채 버퍼에만 있다 — 그 사이 물음이 뜨면 통째로 사라지고,
+     * 사람은 자기가 친 세 줄이 어디로 갔는지 알 길이 없다.
+     */
+    if (이어쓰기줄들 !== null) {
+      const 버린줄수 = 이어쓰기줄들.length;
+      이어쓰기줄들 = null; 이어쓴것 = false;
+      say(`  ${c.gray(`쌓아 두던 ${버린줄수}줄은 버렸습니다 — 물음이 끼어들었습니다.`)}`);
+    }
+    /*
+     * ── 물음이 뜨기 **전에** 쳐 둔 줄은 이 물음의 답이 아니다 ────────────
+     *
+     * nextLine 은 큐에 뭐가 있으면 그것부터 준다. 그래서 일하는 동안 미리
+     * 쳐 둔 「다음은 테스트도 돌려줘」 가, 30초 뒤에 뜬 「실행할까요?」 의
+     * 답으로 튀어나왔다. y 가 아니니 거부로 읽히고, 그 지시는 큐에서
+     * 사라져 모델에게 **영영 안 간다.** 화면에는 사람이 답한 것과 똑같은
+     * 모양이 남는다 — 무엇이 답으로 쓰였는지 아무 데도 안 적힌다.
+     *
+     * Ask 도구는 더 나쁘다. 「3번 파일도 고쳐줘」 의 앞머리 숫자를 골라진
+     * 항목으로 읽어서, 사람이 3번을 고른 것과 똑같은 화면이 된다.
+     *
+     * 잠깐 빼 뒀다가 되돌려 놓는다. 버리는 것이 아니다 — 턴이 끝나면
+     * 평소대로 처리돼야 한다.
+     *
+     * ── 파이프는 다르다 ────────────────────────────────────────────────
+     *
+     * 손으로 치는 자리가 없으면 **미리 넣는 것 말고는 답할 길이 없다.**
+     * 답을 미리 실어 보내는 것(`echo y | deel`)이 정상 사용이고,
+     * 여기서 그것까지 빼 두면 물음이 영영 안 끝난다. 사람이 앞에 앉아
+     * 있을 때만 「먼저 친 줄은 답이 아니다」 가 참이다.
+     */
+    const 미리쳐둔 = process.stdin.isTTY ? queue.splice(0) : [];
     const 멈춤 = o.signal ?? turn?.signal ?? null;
     try {
       const a = await nextLine(멈춤);
@@ -1087,9 +1183,21 @@ export async function chatLoop(opts = {}) {
         say(`  ${c.gray(옮긴말('ask.stopped'))}`);
         return o.멈추면 ?? '';
       }
-      if (a === null) return o.def ?? '';
+      /*
+       * 입력이 **끝난 것**과 사람이 그냥 Enter 를 친 것은 다르다.
+       *
+       * 여태 둘 다 `def` 였다. 파이프로 들어왔거나 Ctrl+D 를 누르면 아무도
+       * 답하지 않았는데 기본값이 답으로 잡힌다 — 「나가도 될까요?」 의 def 는
+       * 'y' 라, 사람이 한 글자도 안 친 판에서 바깥 연결이 허락된다.
+       * 부르는 쪽이 `끝나면` 으로 그 경우를 따로 정할 수 있게 한다.
+       */
+      if (a === null) return o.끝나면 ?? o.def ?? '';
       return a.trim() || o.def || '';
-    } finally { 묻는중 = null; }
+    } finally {
+      묻는중 = null;
+      // 빼 뒀던 것을 앞에 되돌린다. 차례가 바뀌면 안 된다.
+      if (미리쳐둔.length) queue.unshift(...미리쳐둔);
+    }
   };
 
   /**
@@ -1436,7 +1544,22 @@ export async function chatLoop(opts = {}) {
   // --ctx 로 직접 주신 값이 있으면 안 건드린다. 사람이 고른 것을 뒤집지 않는다.
   const 길이알림 = [];   // 잘 된 소식
   const 길이경고 = [];   // 손을 봐야 하는 것
-  if (opts.ctx == null) {
+  /*
+   * ── 부르는 자리가 둘이라 함수로 뺀다 ──────────────────────────────────
+   *
+   * 바깥 연결에 아직 허락을 안 준 판에서는 이 두드림이 **우리 문지기에**
+   * 막힌다(safety/network.js). 아래 「나가도 될까요?」 에 답해야 문이 열리는데,
+   * 그 물음은 머리말 다음에 있어야 해서 여기보다 한참 뒤다.
+   *
+   * 그래서 여태 바깥 프로필을 처음 붙이는 사람은 **언제나** 이 줄을 봤다:
+   *   ⚠ 컨텍스트를 서버가 안 알려줍니다 — 우선 32,768 으로 잡았습니다
+   * 서버는 이 물음을 받아 본 적도 없다. 그리고 허락한 뒤에도 다시 안 물어봐서,
+   * 128k 짜리 모델을 그 판 내내 32,768 로 알고 쓴다 — 화면 어디에도 그 말이 없다.
+   *
+   * 매개변수 이름을 바깥 것과 똑같이 둔 것은 일부러다. 몸통이 그대로 먹는다.
+   */
+  const 길이알아내기 = async (길이알림, 길이경고) => {
+    if (opts.ctx != null) return;
     // 이 컴퓨터 안의 서버면 눈 깜짝할 새다. 사내 게이트웨이는 몇 초 걸릴 수 있어
     // 무슨 일이 일어나는 중인지 알려 준다 — 멈춘 것처럼 보이면 안 된다.
     화면.돌리기(옮긴말('run.ctxProbe'));
@@ -1493,9 +1616,36 @@ export async function chatLoop(opts = {}) {
           + `\n     너무 길면 서버가 알려 주는 값으로 저절로 맞춥니다. 아는 값이 있으면 ${c.cyan('/ctx 8192')} 처럼 직접 정하세요`);
       }
     } else if (prof.ctx == null) {
-      길이경고.push(`컨텍스트를 서버가 안 알려줍니다 — 우선 ${CTX_DEFAULT.toLocaleString()} 으로 잡았습니다. ${c.cyan('/ctx 655360')} 처럼 직접 지정하세요`);
+      /*
+       * **왜** 못 알아냈는지까지 적는다.
+       *
+       * probeCtx 는 그 까닭을 이미 들고 온다(backend/ctxsize.js 의 why) —
+       * 「나갈 허락이 없다」 · 「응답은 왔는데 길이를 안 준다」 · 「아무 응답도
+       * 없다」 는 사람이 할 일이 셋 다 다르다. 여태 이 자리에서 그걸 버리고
+       * 늘 「서버가 안 알려줍니다」 한 문장으로 뭉갰다.
+       */
+      길이경고.push(`컨텍스트를 못 알아냈습니다 ${c.gray('(' + (r?.why ?? '까닭 모름') + ')')} — 우선 ${CTX_DEFAULT.toLocaleString()} 으로 잡았습니다. ${c.cyan('/ctx 655360')} 처럼 직접 지정하세요`);
+    } else if (r?.why && !r?.tried?.some((t) => t.ok)) {
+      /*
+       * 프로필에 값이 적혀 있으면 **아무 말도 안 하던** 자리다.
+       *
+       * 이 블록 맨 위에 적어 둔 약속이 「켤 때마다 서버에 물어본다. 저장된
+       * 값을 그대로 믿지 않는다」 인데, 못 물어본 판에서는 그 약속이 그냥
+       * 거짓이 된다 — 머리말에는 저장된 숫자가 **방금 서버에서 확인한 값**
+       * 처럼 뜬다. 서버에서 창을 줄여 놨어도 알 길이 없다.
+       *
+       * 서버가 **응답은 했는데 길이만 안 주는** 흔한 판에서는 조용히 있는다
+       * (tried 에 ok 가 하나라도 있으면 그 경우다). 그건 늘 그런 것이라,
+       * 켤 때마다 경고를 붙이면 곧 아무도 안 읽는다. 여기서 말하는 것은
+       * **아무 데서도 대답을 못 받은** 판뿐이다.
+       */
+      길이경고.push(`컨텍스트를 서버에 못 물어봤습니다 ${c.gray('(' + r.why + ')')}`
+        + ` — 프로필에 적힌 ${c.white(Number(prof.ctx).toLocaleString())} 을 그대로 씁니다. 서버에서 바뀌었으면 ${c.cyan('/ctx auto')}`);
     }
-  }
+  };
+
+  // 허락을 물어야 하는 연결이면 여기서 안 두드린다 — 묻고 난 뒤에 부른다.
+  if (!나감.물어볼까) await 길이알아내기(길이알림, 길이경고);
 
   /*
    * ── 켤 때 도는 글자 모션 ──────────────────────────────────────────────
@@ -1557,6 +1707,7 @@ export async function chatLoop(opts = {}) {
   }
   if (!conn.tools) warn.push(옮긴말('run.noTools'));
   if (!conn.streaming) warn.push(옮긴말('run.noStream'));
+  warn.push(...켤때경고);
   warn.push(...길이경고);
   // 잘 된 것은 경고 표시를 달지 않는다. ⚠ 가 붙으면 뭘 고쳐야 하나 싶어진다.
   for (const l of 길이알림) say(`  ${mark.ok} ${c.gray(l)}`);
@@ -1576,6 +1727,22 @@ export async function chatLoop(opts = {}) {
    * 뒤집으면서 쓰던 사람을 안 깨뜨리는 길이 이것이다. 막는 것이 목적이 아니라
    * **모르고 나가는 것**을 없애는 것이 목적이다.
    */
+  /*
+   * 여기서 나가도 **띄운 것은 거둔다.**
+   *
+   * 이 자리의 `rl.close(); return 0;` 은 맨 아래 정리 블록을 통째로 건너뛰었다.
+   * MCP 서버는 이미 떠 있다(위의 다붙이기) — 남의 프로세스가 그대로 남는다.
+   * 「deel 을 껐는데도 그 서버가 계속 돌고 있게 된다」 는 바로 그 자리의
+   * 주석이 없애겠다고 적어 둔 것인데, 이 길로 나가면 그대로 일어났다.
+   */
+  const 일찍끝내기 = (코드) => {
+    rl.close();
+    for (const 서버 of mcp붙임.서버들) 서버.닫기();
+    언어서버다끄기().catch(() => {});
+    화면.close();
+    return 코드;
+  };
+
   if (나감.물어볼까) {
     const 어디 = (() => { try { return new URL(conn.base).host; } catch { return conn.base; } })();
     say('');
@@ -1584,14 +1751,39 @@ export async function chatLoop(opts = {}) {
     say(`     ${c.gray('보내는 것 — 시킨 말, 그리고 모델이 읽은 파일의 내용입니다.')}`);
     say(`     ${c.gray('로컬 모델(127.0.0.1)이나 사내망 주소였다면 이 물음이 안 나옵니다.')}`);
     say('');
-    const 답 = String(await ask(`나가도 될까요? ${c.gray('⏎ 허락하고 기억 · n 그만')}`, { def: 'y' }))
+
+    /*
+     * ── 답할 사람이 없으면 **묻지 않는다** ────────────────────────────
+     *
+     * 이 자리가 이 프로그램이 파는 단 하나의 약속이다 — 「모르고 나가는
+     * 것을 없앤다」. 그런데 파이프로 들어오면 그 약속이 조용히 꺼졌다:
+     *
+     *   echo "이 폴더 요약해줘" | deel
+     *     › 나가도 될까요? ⏎ 허락하고 기억 · n 그만 [y] 이 폴더 요약해줘
+     *     허락을 적어 뒀습니다 — 이 프로필은 다음부터 안 묻습니다.
+     *
+     * 사람은 한 글자도 답하지 않았다. 시킨 말이 답으로 먹혔고(그래서
+     * 모델에게 가지도 않았다), online: true 가 설정 파일에 박혀 그 프로필은
+     * 앞으로 영영 안 묻는다. 빈 파이프여도 같다 — EOF 가 def 'y' 로 잡혔다.
+     *
+     * 손으로 켠 판에서만 묻는다. 그 밖에는 안 나간다 — 미리 허락해 두는
+     * 길(설정의 online, --online)이 이미 있고, 그 길은 사람이 마음먹고
+     * 지나가는 자리다.
+     */
+    if (!process.stdin.isTTY) {
+      say(`  ${mark.warn} ${c.gray('파이프로 들어와 있어 물어볼 수가 없습니다 — 나가지 않았습니다.')}`);
+      say(`  ${c.gray('내보내려면 먼저 손으로 한 번 켜서 허락하거나,')} ${c.cyan('--online')} ${c.gray('을 붙이세요.')}`);
+      return 일찍끝내기(0);
+    }
+
+    // 멈춤(ESC)도 입력 끝(Ctrl+D)도 **허락이 아니다.** def 로 물러나면 둘 다 'y' 가 된다.
+    const 답 = String(await ask(`나가도 될까요? ${c.gray('⏎ 허락하고 기억 · n 그만')}`, { def: 'y', 끝나면: 'n', 멈추면: 'n' }))
       .trim().toLowerCase();
     if (['n', 'no', 'ㄴ', '아니', '아니요', '아니오', '취소', '그만'].includes(답)) {
       say('');
       say(`  ${c.gray('나가지 않았습니다. 아무것도 안 보냈습니다.')}`);
       say(`  ${c.gray('이 컴퓨터 안의 모델을 붙이려면')} ${c.cyan('deel setup')} ${c.gray('또는')} ${c.cyan('deel scan --save')} ${c.gray('를 쓰세요.')}`);
-      rl.close();
-      return 0;
+      return 일찍끝내기(0);
     }
     prof.online = true;
     try {
@@ -1603,6 +1795,18 @@ export async function chatLoop(opts = {}) {
       say(`  ${mark.warn} ${c.gray(`허락을 저장하지 못했습니다 (${e.message}). 이번에만 나갑니다.`)}`);
     }
     allowEndpoint(conn.base);
+
+    /*
+     * 이제야 문이 열렸다. 컨텍스트 길이는 **여기서** 알아본다.
+     *
+     * 위쪽 자리에서 두드렸다면 방금 연 이 문 때문에 전부 막혀 있었다.
+     * 늦게 찍히는 만큼 자리를 따로 잡아 준다 — 머리말에 섞여 들어가면
+     * 방금 답한 물음과 아무 상관 없는 줄로 보인다.
+     */
+    const 늦은알림 = []; const 늦은경고 = [];
+    await 길이알아내기(늦은알림, 늦은경고);
+    for (const l of 늦은알림) say(`  ${mark.ok} ${c.gray(l)}`);
+    for (const w of 늦은경고) say(`  ${mark.warn} ${c.gray(w)}`);
   }
 
   /*
@@ -1704,8 +1908,30 @@ export async function chatLoop(opts = {}) {
       text = line.trim();
       if (!text) continue;
       if (예약이었나 && 상자쓰나) {
+        /*
+         * ── 통째로 쏟지 않는다 ──────────────────────────────────────────
+         *
+         * 큐에 든 것은 **펼쳐진 원문**이다(위 붙임펼치기). 여기서 그대로
+         * say 하면 도구가 도는 사이에 붙여넣은 50줄이 그 자리에 쏟아진다.
+         * 기다릴 때 보낸 것은 남길글() 로 `[붙여넣기 #1 · 47줄 · 2.1KB]` 로
+         * 줄여 남기는데 이 길만 옛 모양이었다.
+         *
+         * 넓이도 지켜야 한다. 상자는 아래 몇 줄을 제 자리로 잡아 두고 거기에
+         * 다시 그리는데, 터미널보다 넓은 줄을 밀어 넣으면 그 줄이 접히면서
+         * 줄 셈이 어긋나고 위쪽 대화를 갉아먹는다.
+         */
+        const 폭 = Math.max(20, (process.stdout.columns ?? 80) - 8);
+        const 줄들 = String(text).split('\n');
+        const 넘치나 = 줄들.length > 붙임안쪽최대;
+        const 보일것 = 넘치나 ? 줄들.slice(0, 2) : 줄들;
         화면.입력지움();
-        say(` ${c.hcyan('❯')} ${c.white(text)}  ${c.gray('(미리 쳐 둔 것)')}`);
+        for (const [i, 한줄] of 보일것.entries()) {
+          say(`${i === 0 ? ` ${c.hcyan('❯')} ` : '   '}${c.white(clip(한줄, 폭))}`
+            + `${i === 0 ? `  ${c.gray('(미리 쳐 둔 것)')}` : ''}`);
+        }
+        if (넘치나) {
+          say(`   ${c.gray(`… 그 밖에 ${줄들.length - 2}줄 — 통째로 보냈습니다.`)}`);
+        }
       }
     }
 
@@ -1839,6 +2065,9 @@ export async function chatLoop(opts = {}) {
     // 이 턴이 탈 없이 끝났나. 끊겼거나 터진 뒤에 승인 창을 띄우면 안 된다 —
     // 계획이 반만 나온 것을 두고 "이대로 진행할까요?" 를 묻는 꼴이 된다.
     let 턴탈났나 = false;
+    // 이 턴에 TodoWrite 가 실제로 돌았나. ctx.todos 는 세션 내내 살아 있어서
+    // 이걸 안 세면 지난 턴의 남은 할 일을 이번 계획으로 착각한다 (아래 계획 승인).
+    let 이번턴할일적었나 = false;
     /*
      * 걸음을 다 써서 중간에 끊긴 턴인가. 끊겼을 때 남은 할 일을 여기 담는다.
      *
@@ -2045,6 +2274,7 @@ export async function chatLoop(opts = {}) {
             // 같이 돈 것은 이름을 다시 적어 준다. 안 그러면 어느 결과인지 모른다.
             if (ev.parallel || ev.showLabel) say(`  ${toolLabel(ev.name, ev.args)}`);
             if (ev.name === 'TodoWrite' && ev.result?.todos) {
+              이번턴할일적었나 = true;
               // 사무실 화이트보드도 이걸 본다. 할 일은 세션이 아니라 턴 문맥에
               // 있어서 상자가 스스로 못 읽는다 — 아는 자리에서 넣어 준다.
               화면.할일갱신(ev.result.todos);
@@ -2082,10 +2312,24 @@ export async function chatLoop(opts = {}) {
                * 다른 일이다. 화면에 초록 ✓ 가 없으면 아직 아무도 안 돌려 본
                * 것이고, 그 구분이 상태줄에 있어야 사람이 속지 않는다.
                */
-              if (ev.name === 'Verify' && ev.result) {
+              /*
+               * ── 안 돈 것을 돌았다고 세지 않는다 ──────────────────────────
+               *
+               * `ev.result` 만 보면 `{error:'거부됨'}` · `{error:'모르는 도구'}`
+               * 에도 돈횟수 가 오른다. 상태줄은 돈횟수 가 0 이 아니고 탈 이
+               * 없으면 **초록 ✓0** 을 그리는데(ui/status.js), 그 표시의 뜻은
+               * 같은 파일이 「초록 ✓ 가 없으면 아직 아무도 안 돌려 본 것이다」
+               * 라고 못박아 두었다. 거부된 Verify 가 초록 ✓ 로 뜨면 그 문장이
+               * 거꾸로 선다 — 안 돌려 본 것을 돌려 봤다고 읽게 된다.
+               *
+               * 못 확인한 것도 센다. 도구 한 줄에서는 노랑으로 보여 주면서
+               * 쌓는 자리에서만 사라지고 있었다.
+               */
+              if (ev.name === 'Verify' && ev.result && !ev.result.error) {
                 session.검증.돈횟수 += 1;
                 session.검증.확인 += ev.result.확인됨 ?? 0;
                 session.검증.탈 += ev.result.탈 ?? 0;
+                session.검증.못확인 = (session.검증.못확인 ?? 0) + (ev.result.못확인 ?? 0);
               }
               if (ev.result?.되돌릴것?.length) {
                 const 것들 = ev.result.되돌릴것;
@@ -2385,7 +2629,24 @@ export async function chatLoop(opts = {}) {
            * (오류로 끝나면 뒤에 done 이 없다), 무엇이 잘렸는지 보라고 띄운
            * 경고가 정작 그 답의 마지막 줄보다 **위에** 찍힌다.
            */
+          /*
+           * ── 이 넷도 「탈 없이 끝난 턴」 이 아니다 ────────────────────────
+           *
+           * 아래 계획 승인은 `계획승인받나 && !턴탈났나` 로 걸린다. 그 규칙을
+           * 적어 둔 주석은 「계획이 반만 나온 것을 두고 이대로 진행할까요? 를
+           * 묻는 꼴이 된다」 였는데, 정작 **계획이 반만 나오는 대표 사건 넷**이
+           * 이 깃발을 안 세우고 있었다:
+           *   capped  — 출력 상한에서 글이 잘렸다
+           *   cutoff  — 서버가 끝난 까닭도 없이 흐름을 멈췄다
+           *   limit   — 걸음 수를 다 썼다
+           *   refusal — 모델이 거절했다. 계획이 아예 없다
+           * 넷 다 for-await 는 예외 없이 끝나므로 깃발은 거짓인 채 남았다.
+           * 그래서 3단계에서 잘린 반쪽에 `⏎ 그대로 진행` 이 뜨고, 창 제목은
+           * 「끝남」 이었다. limit 은 한 술 더 떠서, 이 갈래가 이겨 버리는 바람에
+           * 「끊긴 자리에서 이어서」 물음(else if)이 아예 안 돌았다.
+           */
           case 'capped':
+            턴탈났나 = true;
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }
             say(`  ${mark.warn} ${c.gray(`답이 ${c.white(ev.cap.toLocaleString())} 토큰에서 잘렸습니다`)}`
@@ -2400,6 +2661,7 @@ export async function chatLoop(opts = {}) {
            * /out 을 권하면 안 된다 — 상한 얘기가 아니라 연결 얘기다.
            */
           case 'cutoff':
+            턴탈났나 = true;
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }
             if (ev.멎은초) {
@@ -2419,6 +2681,7 @@ export async function chatLoop(opts = {}) {
             break;
 
           case 'limit':
+            턴탈났나 = true;
             끊긴할일 = ev.남은할일 ?? [];
             say('');
             say(`  ${mark.warn} 도구 호출 ${ev.steps}회에서 멈췄습니다.`);
@@ -2510,10 +2773,25 @@ export async function chatLoop(opts = {}) {
             }
             break;
 
+          /*
+           * 훅이 막았다. **왜 막았는지**까지 적는다.
+           *
+           * 여태 `ev.말` 을 안 썼다. 거기에는 safety/hooks.js 의 막힘말 이
+           * 들어 있고, 그 안에 두 가지가 담긴다 — 훅이 뱉은 진짜 사유와,
+           * 「훅을 못 돌렸습니다 — <오류>」·「훅이 <코드> 로 끝났습니다」.
+           * 그걸 버리면 화면은 `✗ 훅이 막았습니다 (dlp-check)` 한 줄뿐이라,
+           * 사내 정책이 진짜로 막은 것인지 훅 파일이 없어져 못 돈 것인지
+           * 구별할 수가 없다. 뒤엣것은 사람이 고칠 수 있는 탈인데도.
+           */
           case 'hook_block':
             clearThinking();
             say('');
             say(`  ${c.yellow('✗')} ${c.white(옮긴말('ev.hookBlock'))} ${c.gray(`(${ev.훅?.이름 ?? ev.훅?.명령 ?? ''})`)}`);
+            if (ev.말) {
+              for (const 한줄 of String(ev.말).split('\n').slice(0, 4)) {
+                if (한줄.trim()) say(`     ${c.gray(clip(한줄.trim(), 88))}`);
+              }
+            }
             break;
 
           case 'nudge':
@@ -2533,6 +2811,7 @@ export async function chatLoop(opts = {}) {
            * 또 거절이고, 요금만 두 배가 된다. 거절은 거절이라고 적는다.
            */
           case 'refusal': {
+            턴탈났나 = true;
             clearThinking();
             // 아래에서 볼 값이라 **지우기 전에** 챙긴다. 순서를 놓치면
             // `!streamed` 가 늘 참이 되어 화면에 이미 있는 답을 또 찍는다.
@@ -2592,6 +2871,10 @@ export async function chatLoop(opts = {}) {
     // 중간에 끊겨도 자리는 비운다. 안 비우면 다음 턴이 시작될 때까지
     // 아무도 안 도는 방에 사람이 앉아 있다.
     화면.함께갱신(0);
+    // 화면만 비우면 안 된다. 세는 값도 같이 내린다 — 하위 작업이 도는 중에
+    // 턴이 터지면 task_done 이 안 오고, 그 1 이 남아서 다음 턴의 첫 하위
+    // 작업이 2 로 뜬다. 사무실에 앉은 사람 수가 실제와 어긋난다.
+    도는하위 = 0;
     화면.하위갱신(0);
     clearInterval(제목시계);
     /*
@@ -2606,7 +2889,24 @@ export async function chatLoop(opts = {}) {
      * 다시 그려지고, 거기서 이력 파일을 열면 타이핑이 끊긴다. 턴 경계에서
      * 한 번 세어 두면 화면은 그 숫자만 읽으면 된다.
      */
-    try { session.되돌릴턴 = ctx.history.turns().length; } catch { /* 못 세면 그냥 둔다 */ }
+    /*
+     * 못 세면 **옛 숫자를 지운다.**
+     *
+     * 여태 `catch {}` 라 직전 값이 그대로 남았고, 상태줄은 계속 `↩ 3` 을
+     * 그렸다. 그 숫자를 status.js 는 「안전망의 잔량」 이라고 부른다 —
+     * 이력을 못 읽는 상태는 곧 /undo 도 못 하는 상태인데, 화면에는 되돌릴
+     * 것이 셋 남았다고 떠 있는 셈이다. 한 번은 말하고, 숫자는 내린다.
+     */
+    try {
+      session.되돌릴턴 = ctx.history.turns().length;
+    } catch (e) {
+      session.되돌릴턴 = 0;
+      if (!되돌리기못읽음말했나) {
+        되돌리기못읽음말했나 = true;
+        say(`  ${mark.warn} ${c.gray('되돌리기 이력을 못 읽었습니다')} ${c.gray('— ' + clip(String(e?.message ?? e), 60))}`);
+        say(`  ${c.gray('이 판에서는')} ${c.cyan('/undo')} ${c.gray('가 안 될 수 있습니다.')}`);
+      }
+    }
     if (알릴까({ 걸린밀리초: Date.now() - started, 켬: 알림.켬 })) 종();
     창제목(제목글(턴탈났나 ? '탈남' : '끝남', { 폴더: 알림.폴더 }));
     turn = null;
@@ -2675,7 +2975,23 @@ export async function chatLoop(opts = {}) {
      * 애초에 계획 같은 걸 안 보려 든다.
      */
     if (계획승인받나 && !턴탈났나) {
-      const 할일 = (ctx.todos ?? []).filter((t) => t.state !== 'done');
+      /*
+       * ── 이번 턴에 적은 계획만 이번 계획이다 ──────────────────────────
+       *
+       * `ctx` 는 켤 때 한 번 만들어 세션 내내 쓰이고, `ctx.todos` 를 비우는
+       * 자리는 어디에도 없다. 그래서 이런 판이 난다:
+       *
+       *   턴 A  로그인 작업이 걸음 상한에 걸려 안 끝난 할 일 둘이 남는다
+       *   턴 B  「결제 모듈 설계하고 만들어줘」 → 겹침이라 계획 승인이 켜진다
+       *         모델은 TodoWrite 없이 산문으로만 설계를 낸다
+       *   화면  ┌ 계획 / 1. 로그인 폼 만들기 / 2. 세션 쿠키 / ⏎ 그대로 진행
+       *
+       * ⏎ 를 누르면 그 **지난 턴 목록**이 「방금 낸 계획」 이라는 이름표를
+       * 달고 모델에게 실려 나간다. 이 파일은 「TodoWrite 를 안 쓴 계획도
+       * 있다」 를 이미 대비해 뒀지만(할일.length === 0 갈래), 목록이 **비지
+       * 않고 옛것으로 차 있는** 경우가 그 그물을 통과했다.
+       */
+      const 할일 = 이번턴할일적었나 ? (ctx.todos ?? []).filter((t) => t.state !== 'done') : [];
       say('');
       계획상자(할일);
       say('');
@@ -2754,7 +3070,15 @@ export async function chatLoop(opts = {}) {
           ? 옮긴말('plan.replanStep', { 단계: 계획답.단계 })
           : 옮긴말('plan.replan'))}`);
       }
-    } else if (끊긴할일) {
+      /*
+       * 빈 배열은 「이어갈 것이 있다」 가 아니다.
+       *
+       * `끊긴할일 = ev.남은할일 ?? []` 라 할 일이 0개인 채 걸음 상한에
+       * 걸려도 여기가 참이 됐다. 그러면 물음이 뜨고, ⏎ 한 번에 「하던
+       * 자리에서 이어서 해라」 로 모델을 한 판 더 부른다 — 이어갈 자리가
+       * 없는데.
+       */
+    } else if (끊긴할일?.length) {
       /*
        * ── 끊긴 자리에서 ⏎ 하나로 잇는다 ────────────────────────────────
        *
