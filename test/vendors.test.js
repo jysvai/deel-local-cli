@@ -1061,6 +1061,159 @@ trace('9-2-연결진단');
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+trace('9-2-2-못잰것');
+
+/*
+ * ── 「못 쟀다」 를 「안 된다」 로 적지 않는가 ────────────────────────────
+ *
+ * 진단이 낸 답은 그대로 프로필에 적히고, 그 뒤로 그 연결은 적힌 대로만
+ * 산다. 그래서 **재지 못한 것을 안 된다고 적는 것**이 이 화면에서 제일 비싼
+ * 실수다. 여기는 그 두 자리를 잰다 (34차 리뷰).
+ *
+ *   1. 사고를 글로 안 내주는 추론 모델 — 본문이 비고 사고도 비어서
+ *      「응답이 비어 있습니다 — 모델 이름을 확인하세요」 가 되고, 나머지 여덟
+ *      줄이 전부 건너뛰기가 됐다. 주소·열쇠·이름은 처음부터 다 맞았다.
+ *   2. usage 를 안 주는 창구 — 두 강도의 숫자가 다 0 이라 「차이 없음」 이
+ *      되고, `think: false` 가 프로필에 남아 `/think` 가 막혔다.
+ */
+{
+  // 1. 256토큰을 생각에 다 쓰고 본문을 못 내는 창구. 넉넉히 주면 답한다.
+  let 물은수 = 0;
+  const srv = createServer((r, res) => {
+    let 글 = '';
+    r.on('data', (c) => (글 += c));
+    r.on('end', () => {
+      const 보내기 = (코드, 것) => {
+        res.writeHead(코드, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(것));
+      };
+      if (r.method === 'GET') return 보내기(200, { data: [{ id: 'm-1', context_length: 200000 }] });
+      물은수++;
+      let 몸 = null;
+      try { 몸 = JSON.parse(글 || '{}'); } catch { 몸 = null; }
+      const 상한 = Number(몸?.max_completion_tokens ?? 몸?.max_tokens ?? 0);
+      // 256 으로 물으면 생각에 다 쓰고 빈 본문 + length. 사고 글은 안 준다.
+      if (상한 <= 256) {
+        return 보내기(200, {
+          choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'length' }],
+          usage: {
+            prompt_tokens: 20, completion_tokens: 256,
+            completion_tokens_details: { reasoning_tokens: 256 },
+          },
+        });
+      }
+      보내기(200, {
+        choices: [{ message: { role: 'assistant', content: '2' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 20, completion_tokens: 1 },
+      });
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}/v1`;
+  allowEndpoint(base);
+
+  const { facts, results } = await probe({ kind: 'openai', base, auth: 'none', key: '', model: 'm-1' });
+  const 기본칸 = results.find((x) => x.id === 'chat');
+  check('★★ 사고를 글로 안 주는 추론 모델도 기본 대화가 된다', 기본칸?.status === 'ok',
+    `${기본칸?.status} · ${기본칸?.detail}`);
+  check('★★ 「모델 이름을 확인하세요」 로 끝내지 않는다',
+    !/모델 이름을 확인/.test(기본칸?.detail ?? ''), 기본칸?.detail);
+  /*
+   * 「기본 대화가 안 되어 확인 불가」 가 하나도 없어야 한다. 다른 까닭으로
+   * 건너뛴 칸(도구를 안 주는 창구의 도구 결과 칸)은 정직한 건너뛰기다 —
+   * 그것까지 없다고 하면 검사가 엉뚱한 것을 지킨다.
+   */
+  const 무너진것 = results.filter((x) => /기본 대화가 안 되어/.test(x.detail ?? ''));
+  check('★★ 나머지 칸이 건너뛰기로 안 무너진다', 무너진것.length === 0,
+    무너진것.map((x) => x.id).join(','));
+  check('★ 추론 모델로 알아본다', facts.thinkingModel === true, String(facts.thinkingModel));
+  check('★ 넉넉히 한 번 더 물었다', 물은수 >= 2, `${물은수}번`);
+  srv.close();
+
+  // 2. usage 를 아예 안 주는 창구. 사고도 글로 안 준다 — 잴 칸이 없다.
+  const srv2 = createServer((r, res) => {
+    let 글 = '';
+    r.on('data', (c) => (글 += c));
+    r.on('end', () => {
+      const 보내기 = (코드, 것) => {
+        res.writeHead(코드, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(것));
+      };
+      if (r.method === 'GET') return 보내기(200, { data: [{ id: 'm-1', context_length: 200000 }] });
+      // usage 칸이 통째로 없다 — 「안 왔다」 와 「0」 은 다르다.
+      보내기(200, { choices: [{ message: { role: 'assistant', content: '391' }, finish_reason: 'stop' }] });
+    });
+  });
+  await new Promise((r) => srv2.listen(0, '127.0.0.1', r));
+  const base2 = `http://127.0.0.1:${srv2.address().port}/v1`;
+  allowEndpoint(base2);
+
+  const r2 = await probe({ kind: 'openai', base: base2, auth: 'none', key: '', model: 'm-1' });
+  const 생각칸 = r2.results.find((x) => x.id === 'think');
+  check('★★ usage 를 안 주면 「차이 없음」 이라고 안 한다',
+    !/차이 없음/.test(생각칸?.detail ?? ''), 생각칸?.detail);
+  check('★★ 못 쟀다고 적는다', /못 쟀습니다/.test(생각칸?.detail ?? ''), 생각칸?.detail);
+  check('★★ 그러고도 조절은 켠 채로 둔다', r2.facts.think === true, String(r2.facts.think));
+  check('★ 숫자를 지어내지 않는다 — 0토큰이라고 적지 않는다',
+    !/0토큰/.test(생각칸?.detail ?? ''), 생각칸?.detail);
+  srv2.close();
+
+  /*
+   * 3. 인자 JSON 이 **우리 상한에** 잘려 온 판.
+   *
+   * normalizeCalls 가 argsBroken 을 세우고 원문을 rawArgs 에 담는데, 도구 칸이
+   * 그것을 안 보고 「인자가 부정확, 편집 신뢰성 작업이 더 필요합니다」 로 적었다.
+   * 모델은 경로를 제대로 쓰고 있었다 — 우리가 만든 잘림을 남의 흠으로 적던 셈이다.
+   */
+  const srv3 = createServer((r, res) => {
+    let 글 = '';
+    r.on('data', (c) => (글 += c));
+    r.on('end', () => {
+      const 보내기 = (코드, 것) => {
+        res.writeHead(코드, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(것));
+      };
+      if (r.method === 'GET') return 보내기(200, { data: [{ id: 'm-1', context_length: 200000 }] });
+      let 몸 = null;
+      try { 몸 = JSON.parse(글 || '{}'); } catch { 몸 = null; }
+      if (몸?.tools?.length) {
+        // 마지막 중괄호가 안 온 인자 — 경로는 제대로 적혀 있다.
+        return 보내기(200, {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [{
+                id: 'c1', type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"config.json' },
+              }],
+            },
+            finish_reason: 'length',
+          }],
+          usage: { prompt_tokens: 20, completion_tokens: 512 },
+        });
+      }
+      보내기(200, {
+        choices: [{ message: { role: 'assistant', content: '2' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 20, completion_tokens: 1 },
+      });
+    });
+  });
+  await new Promise((r) => srv3.listen(0, '127.0.0.1', r));
+  const base3 = `http://127.0.0.1:${srv3.address().port}/v1`;
+  allowEndpoint(base3);
+
+  const r3 = await probe({ kind: 'openai', base: base3, auth: 'none', key: '', model: 'm-1' });
+  const 도구칸 = r3.results.find((x) => x.id === 'tools');
+  check('★★ 우리 상한에 잘린 것을 모델 탓으로 안 적는다',
+    !/인자가 부정확/.test(도구칸?.detail ?? ''), 도구칸?.detail);
+  check('★★ 잘렸을 뿐이라고 적는다', /잘렸을 뿐/.test(도구칸?.detail ?? ''), 도구칸?.detail);
+  check('★ 도구 호출 자체는 된 것으로 본다', 도구칸?.status === 'ok' && r3.facts.tools === true,
+    `${도구칸?.status} · ${r3.facts.tools}`);
+  srv3.close();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 trace('9-3-코덱스');
 /*
  * ── 9-3. 이 문으로는 안 나오는 모델 (Codex 계열) ────────────────────────

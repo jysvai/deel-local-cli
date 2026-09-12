@@ -198,6 +198,33 @@ trace('7-못써도안죽는다');
     JSON.stringify(다시.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')) === 전);
 
   /*
+   * ── 전선만 되돌리는 길 ─────────────────────────────────────────────────
+   *
+   * 전선 모양은 쌓인 것 중 **틀리게 배울 수 있는 유일한 것**이다
+   * (backend/wire.js: 잘못 배우는 것은 못 배우는 것보다 나쁘다). 게이트웨이가
+   * 한동안 잘못 답했거나 우리가 문구를 잘못 읽으면 멀쩡한 기능이 꺼진 채
+   * 디스크에 굳는다.
+   *
+   * 그런데 되돌릴 길이 **「전부 비우기」 하나**였다. 그러면 몇 주 걸려 쌓은
+   * 명령 겪음과 토큰 보정까지 같이 날아간다 — 그 값이 아까워서 사람은 안
+   * 비우고, 안 비우니 꺼진 기능을 그냥 안고 쓴다 (34차 리뷰).
+   */
+  다시.명령본것('npm test', true);
+  다시.명령본것('npm test', true);
+  const 겪은것 = JSON.stringify(다시.현황('claude-opus-5').명령);
+  다시.지우기('전선');
+  check('★★ 전선만 지운다', 다시.아는전선('claude-opus-5', 'https://api.anthropic.com/v1') === null,
+    JSON.stringify(다시.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')));
+  check('★★ 겪어 본 것은 그대로 둔다',
+    JSON.stringify(다시.현황('claude-opus-5').명령) === 겪은것,
+    JSON.stringify(다시.현황('claude-opus-5').명령));
+  // 디스크에도 남아야 뜻이 있다 — 다시 켰을 때 되살아나면 지운 것이 아니다.
+  const 또다시 = new 배움(r2, h2);
+  check('★ 껐다 켜도 안 되살아난다',
+    또다시.아는전선('claude-opus-5', 'https://api.anthropic.com/v1') === null,
+    JSON.stringify(또다시.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')));
+
+  /*
    * ── 한 호스트에 창구가 둘인 자리 ────────────────────────────────────
    *
    * 경로를 뺐더니 mantle 이 걸렸다 — `/openai/v1` 과 `/anthropic/v1` 이

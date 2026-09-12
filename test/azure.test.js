@@ -144,6 +144,19 @@ trace('4-요청주소');
   check('보통 주소는 하던 그대로 (회귀)', 요청주소({ kind: 'openai', base: 'http://h/v1' }) === 'http://h/v1/chat/completions');
   check('Ollama 도 그대로 (회귀)', 요청주소({ kind: 'ollama', base: 'http://h' }) === 'http://h/api/chat');
   check('끝의 슬래시를 하나로 정리한다', 요청주소({ kind: 'openai', base: 'http://h/v1/?x=1' }) === 'http://h/v1/chat/completions?x=1');
+  /*
+   * 물음표가 없는 주소에서는 안 정리하고 있었다 — 그쪽이 훨씬 흔한 주소다.
+   *
+   * `//` 는 게이트웨이마다 다른 길이라 404 이고, 그 404 는 화면에서 모델
+   * 이름을 잘못 적은 것과 구별이 안 된다. 물음표 있고 없고에 따라 같은
+   * 주소를 다르게 다듬으면 안 된다 (33차 리뷰).
+   */
+  check('★★ 물음표가 없어도 끝의 슬래시를 정리한다',
+    요청주소({ kind: 'openai', base: 'http://h/v1/' }) === 'http://h/v1/chat/completions',
+    요청주소({ kind: 'openai', base: 'http://h/v1/' }));
+  check('★ 슬래시가 여럿이어도 하나도 안 남긴다',
+    요청주소({ kind: 'ollama', base: 'http://h///' }) === 'http://h/api/chat',
+    요청주소({ kind: 'ollama', base: 'http://h///' }));
 }
 
 // ── 가짜 Azure ─────────────────────────────────────────────────────────

@@ -168,7 +168,27 @@ export async function probe(conn, onStep = () => {}) {
   let thinkingModel = false;
   let retried = false;
 
-  if (basic.ok && !got.content && got.thinking) {
+  /*
+   * ── 사고를 **글로 안 내주는** 모델도 여기로 온다 ──────────────────────
+   *
+   * 갈래가 `got.thinking` — 즉 사고가 글로 보일 때만 열렸다. 그런데 요즘
+   * 추론 모델 중에는 사고를 아예 안 내주는 쪽이 더 흔하다(게이트웨이 뒤
+   * OpenAI 계열). 그쪽은 본문도 비고 사고도 비어서 이 갈래에 못 들어오고,
+   * 바로 아래에서 **「응답이 비어 있습니다 — 모델 이름을 확인하세요」** 가 된다.
+   * 그러고는 남은 여덟 줄이 전부 「기본 대화가 안 되어 확인 불가」 로 건너뛰고,
+   * 그 판정이 프로필에 `streaming·tools·json·think·vision` 전부 false 로 남는다.
+   *
+   * 주소·열쇠·모델 이름은 처음부터 다 맞았다. 256토큰이 생각에 다 쓰인 것뿐이다.
+   * 사람은 맞는 이름을 몇 번씩 다시 넣어 본다 — 이 파일 머리말이 「붙기는
+   * 붙으니 아무도 고장이라고 생각하지 않는다」 고 적어 둔 그 모양이다.
+   *
+   * 손에 이미 증거가 있다. **상한에 걸려 끝났다**(stopped)거나 **생각 토큰을
+   * 썼다**(usage.reasoning)면 빈 답의 까닭이 이름이 아니다.
+   */
+  const 상한에걸렸나 = (e) => e?.stopped === 'length' || e?.stopped === 'max_tokens';
+  const 생각만했나 = (e) => !!e?.thinking || 상한에걸렸나(e) || (e?.usage?.reasoning ?? 0) > 0;
+
+  if (basic.ok && !got.content && 생각만했나(got)) {
     thinkingModel = true;
     retried = true;
     const second = await call({ ...ASK, maxTokens: 1024, think: false, timeout: 90000 });
@@ -196,7 +216,7 @@ export async function probe(conn, onStep = () => {}) {
     detail: basicOk
       ? `응답 "${basicText.trim().slice(0, 24)}"` + (thinkingModel ? c_note(retried) : '')
       : basic.ok
-        ? got.thinking
+        ? got.thinking || 생각만했나(got)
           ? '사고만 나오고 본문이 안 나옵니다 — 토큰 상한을 크게 올려야 합니다'
           : '응답이 비어 있습니다 — 모델 이름을 확인하세요'
         // 못 붙은 까닭을 아는 자리가 하나 있다. 상태 코드만 남기면 사람은
@@ -296,12 +316,28 @@ export async function probe(conn, onStep = () => {}) {
   // 예전에는 여기서 OpenAI 날모양(function.arguments)을 직접 팠다 —
   // 그러면 Anthropic 은 도구를 제대로 불러도 「안 불렀다」 로 읽힌다.
   const argOk = gotCall && JSON.stringify(tcalls[0]?.args ?? '').includes('config');
+  /*
+   * ── 우리 상한에 잘린 것을 모델 탓으로 적었다 ──────────────────────────
+   *
+   * 인자 JSON 이 위 `maxTokens: 512` 안에서 잘리면 normalizeCalls 가
+   * `args = {}` 로 두고 **`argsBroken` 을 세운다.** 그러면 여기서 `config` 를
+   * 못 찾아 「인자가 부정확, 편집 신뢰성 작업이 더 필요합니다」 가 된다 —
+   * 모델은 경로를 제대로 쓰고 있었고 원문은 `rawArgs` 에 그대로 있다.
+   *
+   * 그 한 줄이 이 모델의 인자 품질 판정으로 보고서에 남는다. 우리가 만든
+   * 잘림을 남의 흠으로 적지 않는다 (34차 리뷰).
+   */
+  const 잘린인자 = gotCall && tcalls[0]?.argsBroken === true;
+  const 원문에있나 = 잘린인자 && String(tcalls[0]?.rawArgs ?? '').includes('config');
   add({
     id: 'tools',
     label: '도구 호출',
-    status: gotCall ? (argOk ? 'ok' : 'warn') : 'no',
+    status: gotCall ? (argOk || 원문에있나 ? 'ok' : 'warn') : 'no',
     detail: gotCall
-      ? `${tcalls[0]?.name} 호출됨${argOk ? '' : ' — 인자가 부정확, 편집 신뢰성 작업이 더 필요합니다'}`
+      ? `${tcalls[0]?.name} 호출됨${argOk ? ''
+        : 원문에있나 ? ` — 인자가 우리 상한(${512}토큰)에 잘렸을 뿐, 값은 제대로 왔습니다`
+          : 잘린인자 ? ' — 인자 JSON 이 잘려 왔습니다 (상한을 올려 다시 보세요)'
+            : ' — 인자가 부정확, 편집 신뢰성 작업이 더 필요합니다'}`
       : tl.ok ? '도구를 안 부르고 글로만 답합니다' : serverMessage(tl),
     ms: tl.ms,
   });
@@ -409,25 +445,63 @@ export async function probe(conn, onStep = () => {}) {
    * 알고 싶은 것은 **서버가 그림이 든 메시지를 받아 주느냐** 하나다.
    * 못 받는 서버는 400 이나 415 로 거절한다.
    */
-  const 눈 = await call({
+  let 눈 = await call({
     ...quiet,
     messages: [눈검사메시지(shape)],
     maxTokens: 32,
     timeout: 60000,
   });
-  const 눈있음 = !!(눈.ok && 읽기(눈).content);
+  /*
+   * ── 32토큰 상한에 걸린 것을 「안 보인다」 로 적었다 ────────────────────
+   *
+   * 위 머리말이 「답의 내용은 안 본다 — 알고 싶은 것은 서버가 그림이 든
+   * 메시지를 받아 주느냐 하나다」 라고 적어 놓고, 아래에서 **본문이 비면 못
+   * 보는 것**으로 단정했다. 추론 모델은 그 32토큰을 생각에 다 쓰므로 본문이
+   * 빈다 — 400 도 415 도 안 났는데, 즉 **받아 준 것인데** 안 보인다고 적혔다.
+   *
+   * 그 판정은 프로필에 `vision: false` 로 남고, 그 뒤로 화면 사진을 영영 안
+   * 보낸다(agent/loop.js 가 Read 설명에서 그림 이야기를 뺀다). 노란 경고 한
+   * 줄이라 고장으로 안 읽힌다.
+   *
+   * 상한에 걸린 것이면 한 번 더 넉넉히 묻는다 — 기본 대화 칸이 이미 그렇게
+   * 한다. 그래도 비면 그때는 못 쟀다고 적는다(아래).
+   */
+  let 눈읽은것 = 읽기(눈);
+  if (눈.ok && !눈읽은것.content && 상한에걸렸나(눈읽은것)) {
+    const 다시 = await call({
+      ...quiet, messages: [눈검사메시지(shape)], maxTokens: 512, think: false, timeout: 90000,
+    });
+    if (다시.ok) { 눈 = 다시; 눈읽은것 = 읽기(다시); }
+  }
+  const 눈있음 = !!(눈.ok && 눈읽은것.content);
+  // 받아 주긴 했는데 본문을 못 본 판 — 「안 보인다」 와 다르다.
+  const 눈못쟀나 = !눈있음 && 눈.ok && 상한에걸렸나(눈읽은것);
   add({
     id: 'vision',
     label: '그림 보기',
     status: 눈있음 ? 'ok' : 눈.ok ? 'warn' : 'no',
     detail: 눈있음
       ? `1×1 PNG 를 받아서 답함 — Read·@ 로 화면 사진을 보여 줄 수 있습니다`
-      : 눈.ok
-        ? '그림을 받긴 했는데 답이 비었습니다 — 안 보이는 것으로 칩니다'
-        : `${serverMessage(눈)} — 그림은 안 보냅니다`,
+      : 눈못쟀나
+        ? '그림이 든 메시지는 받아 줬는데 답이 토큰 상한에 걸려 못 쟀습니다 — 켠 채로 둡니다'
+        : 눈.ok
+          ? '그림을 받긴 했는데 답이 비었습니다 — 안 보이는 것으로 칩니다'
+          : `${serverMessage(눈)} — 그림은 안 보냅니다`,
     ms: 눈.ms ?? 0,
   });
-  facts.vision = 눈있음;
+  /*
+   * 못 쟀으면 **켠 채로** 둔다.
+   *
+   * 둘 중 하나는 틀릴 수밖에 없는 자리다. 틀리는 값이 다르다 —
+   *
+   *   false 로 적으면  볼 수 있는 모델에 그림을 영영 안 보낸다. 사람은 왜
+   *                    화면 사진이 안 먹는지 알 길이 없다(되돌릴 길도 없다).
+   *   true 로 적으면   못 보는 서버가 400·415 로 말해 주고, 그 한 번으로
+   *                    화면에 까닭이 뜬다.
+   *
+   * 되돌아올 수 있는 쪽으로 틀린다.
+   */
+  facts.vision = 눈있음 || 눈못쟀나;
 
   /*
    * 7. 추론 강도 조절 — 낮음/높음이 실제로 다른 결과를 내느냐.
@@ -458,7 +532,10 @@ export async function probe(conn, onStep = () => {}) {
         // 토큰 수와 끝난 까닭도 규격마다 이름이 다르다. 읽는 자리를 하나로 모은다 —
         // 여기서 OpenAI 이름만 보면 Anthropic 은 늘 0 이고 늘 '안 잘림' 이 된다.
         out: e.usage?.out ?? 0,
-        capped: e.stopped === 'length' || e.stopped === 'max_tokens',
+        // 「안 왔다」 와 「0」 을 가른다 (adapter.js 의 잰것). 이걸 안 보면
+        // usage 를 안 주는 창구에서 못 잰 것을 「차이 없음」 으로 적는다.
+        잰것: e.usage?.잰것 === true,
+        capped: 상한에걸렸나(e),
       });
     } else {
       seen.push({ lv, ms: r.ms, err: serverMessage(r) });
@@ -471,7 +548,20 @@ export async function probe(conn, onStep = () => {}) {
   const outGap = bothOk ? Math.abs(seen[0].out - seen[1].out) : 0;
   const differs = bothOk && !capped &&
     (thoughtGap > Math.max(80, seen[0].thought * 0.2) || outGap > Math.max(20, seen[0].out * 0.2));
-  const fmt = (s) => `${s.lv === 'low' ? '낮음' : '높음'} 사고 ${s.thought}자/출력 ${s.out}토큰/${s.ms}ms`;
+  /*
+   * ── 잴 칸이 없었던 판 ──────────────────────────────────────────────────
+   *
+   * 사고도 글로 안 오고 usage 도 안 오는 창구가 있다(호환 게이트웨이·프록시).
+   * 그러면 `thought` 와 `out` 이 넷 다 0 이고 `thoughtGap = outGap = 0` 이라
+   * **「차이 없음」** 이 된다 — 두 요청의 걸린 시간이 세 배로 벌어져 있어도
+   * 그렇다. 강도는 먹고 있었고 우리가 잴 칸이 없었을 뿐이다.
+   *
+   * 그 판정이 프로필에 `think: false` 로 남으면 `/think` 가 「이 모델은 조절
+   * 안 됩니다」 라고 하고 상태줄도 회색으로 굳는다. 안 되는 것을 안 된다고
+   * 적는 것과, **못 쟀는데 안 된다고 적는 것**은 다르다.
+   */
+  const 잴것이있었나 = bothOk && seen.every((s) => s.잰것 || s.thought > 0);
+  const fmt = (s) => `${s.lv === 'low' ? '낮음' : '높음'} 사고 ${s.thought}자/출력 ${s.잰것 ? `${s.out}토큰` : '토큰 안 옴'}/${s.ms}ms`;
   add({
     id: 'think',
     label: '추론 강도 조절',
@@ -482,10 +572,14 @@ export async function probe(conn, onStep = () => {}) {
         ? `둘 다 토큰 상한(${THINK_CAP})에 걸려 비교 불가 — 루프 층에서 조절합니다`
         : differs
           ? `${fmt(seen[0])} · ${fmt(seen[1])}`
-          : `차이 없음 (${fmt(seen[0])} · ${fmt(seen[1])}) — 루프 층에서 조절합니다`,
+          : 잴것이있었나
+            ? `차이 없음 (${fmt(seen[0])} · ${fmt(seen[1])}) — 루프 층에서 조절합니다`
+            : `못 쟀습니다 — 사고도 usage 도 안 주는 창구입니다 (${fmt(seen[0])} · ${fmt(seen[1])}).`
+              + ' 조절은 켠 채로 둡니다 — 안 받는 창구면 서버가 거절하면서 말해 주고, 그때 배웁니다.',
     ms: seen.reduce((a, s) => a + (s.ms ?? 0), 0),
   });
-  facts.think = differs;
+  // 못 쟀으면 켠 채로 둔다 — 되돌아올 수 있는 쪽으로 틀린다 (위 그림 칸 머리말).
+  facts.think = differs || !잴것이있었나;
 
   // 8. 컨텍스트 길이 — 파일을 몇 개까지 한 번에 읽힐 수 있느냐.
   //

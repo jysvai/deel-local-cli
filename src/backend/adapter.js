@@ -120,7 +120,16 @@ export function 규격이름(shape) {
 export function 주소붙이기(base, 길) {
   const b2 = String(base ?? '');
   const i = b2.indexOf('?');
-  if (i < 0) return b2 + 길;
+  /*
+   * 끝 빗금은 **물음표가 있을 때만** 떼고 있었다.
+   *
+   * 사람이 주소를 적을 때 `…/v1/` 처럼 끝에 빗금을 하나 붙이는 것은 흔한
+   * 일이고, 그러면 `…/v1//chat/completions` 가 나갔다.
+   * `//` 는 게이트웨이마다 **다른 길**이라 404 다 — 그리고 그 404 는 화면에서
+   * 모델 이름을 잘못 적은 것과 구별이 안 된다. 물음표가 있는 쪽에서는 이미
+   * 떼고 있었으니, 같은 주소를 물음표 있고 없고에 따라 다르게 다듬던 셈이다.
+   */
+  if (i < 0) return b2.replace(/\/+$/, '') + 길;
   return b2.slice(0, i).replace(/\/+$/, '') + 길 + b2.slice(i);
 }
 
@@ -174,7 +183,7 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
      */
     else if (think === 'off') body.think = false;
     else if (think !== undefined) {
-      const 눈금 = 강도말(think);
+      const 눈금 = 나가는눈금(shape, 카드, think);
       if (눈금) body.think = 눈금;
     }
     return body;
@@ -272,7 +281,7 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
      * 전선에서도 high 밖에 못 나간다 — 화면에는 max 라고 떠 있는 채로.
      * 카드가 있으면 카드가 아는 눈금으로, 없으면 여태처럼 좁은 쪽으로 맞춘다.
      */
-    const 눈금 = 카드 ? (카드.생각형식 === 'effort' ? 눈금맞추기(카드, think) : null) : 강도말(think);
+    const 눈금 = 나가는눈금(shape, 카드, think);
     if (눈금) body.reasoning_effort = 눈금;
   }
   /*
@@ -369,6 +378,52 @@ export function 강도말(강도) {
   return 전선눈금[String(강도)] ?? null;
 }
 
+/**
+ * 이 전선에 **눈금 글자가 정말로 실려 나가나** — 나가면 그 글자, 안 나가면 null.
+ *
+ * ── 왜 따로 함수인가 ────────────────────────────────────────────────────
+ *
+ * `/think` 화면이 「지금 나가는 값 high」 를 적으려면 이것을 알아야 하는데,
+ * 여태 화면은 `눈금맞추기(카드, 강도)` 를 직접 불렀다. 그 함수는 **카드가 아는
+ * 눈금으로 낮추는 일**만 한다 — 그 눈금이 실릴 칸이 있는지는 모른다. 그래서
+ * 화면은 이런 자리에서 거짓을 적었다.
+ *
+ *   budget (Anthropic 옛 판)  눈금이 아니라 **토큰 수**가 나간다
+ *   boolean (ollama)          카드 눈금 표를 안 쓴다 — 이 규격이 아는 말로 옮긴다
+ *   none                      실을 칸이 아예 없다
+ *   adaptive + 효력칸 null    서버가 output_config 를 안 받는다고 말해 준 판
+ *
+ * 앞의 세 자리에서 화면은 「지금 나가는 값 high」 라고 적고 전선에는 아무
+ * 눈금도 안 나갔다. `/think high` 를 치고 화면이 받아 준 것을 본 사람은 그
+ * 값이 먹었다고 믿는다 — 안 먹은 것보다 나쁘다.
+ *
+ * 그래서 **몸을 만드는 세 갈래가 모두 이 함수를 부른다.** 화면도 이 함수를
+ * 부른다. 둘이 갈라질 수 없는 모양으로 묶어 두는 것이 이 함수의 목적이라,
+ * 여기 갈래를 늘릴 때는 buildBody 쪽에 같은 갈래를 또 적지 않는다.
+ *
+ * @param {string|null} 규격 conn.kind — 눈금이 실릴 칸은 규격이 정한다
+ * @param {object|null} 카드 backend/wire.js 의 전선 카드 (없으면 짐작)
+ * @param {*} 강도 사람이 정한 세기 ('off' · 'low' … 'max' · 참거짓 · undefined)
+ * @returns {string|null}
+ */
+export function 나가는눈금(규격, 카드, 강도) {
+  // 안 정했거나 참거짓이면 눈금 글자가 나갈 일이 없다 (참거짓은 켜고 끄는 말이다).
+  if (강도 === undefined || typeof 강도 === 'boolean') return null;
+  // 이 규격은 카드 눈금 표를 안 쓴다 — 위 ollama 갈래가 강도말() 로 옮겨 싣는다.
+  if (규격 === 'ollama') return 강도 === 'off' ? null : 강도말(강도);
+  if (규격 === 'anthropic') {
+    // 끄라는 말에는 thinking 칸 자체를 안 싣는다 — 눈금도 같이 안 나간다.
+    if (강도 === 'off') return null;
+    // budget 은 눈금이 아니라 숫자로 준다(생각예산). 눈금은 그 숫자를 고르는 데만 쓴다.
+    if ((카드?.생각형식 ?? 'budget') !== 'adaptive') return null;
+    if (카드?.효력칸 !== 'output_config') return null;
+    return 눈금맞추기(카드, 강도);
+  }
+  // openai 꼴. 카드가 없으면(검사·진단) 여태처럼 좁은 쪽으로 맞춘다.
+  if (!카드) return 강도말(강도);
+  return 카드.생각형식 === 'effort' ? 눈금맞추기(카드, 강도) : null;
+}
+
 export function 생각예산(강도, maxTokens) {
   const 바라는것 = 강도별예산[String(강도)];
   if (!바라는것) return 0;
@@ -434,8 +489,9 @@ function anthropic몸({ model, messages, tools, stream, json, think, maxTokens, 
   if (형식 === 'adaptive') {
     if (think !== undefined && think !== false && think !== 'off') {
       body.thinking = { type: 'adaptive' };
-      const 눈금 = 눈금맞추기(카드, think);
-      if (눈금 && 카드?.효력칸 === 'output_config') body.output_config = { effort: 눈금 };
+      // 효력칸을 볼지 말지도 나가는눈금() 이 안다 — 여기서 또 보면 둘이 갈라진다.
+      const 눈금 = 나가는눈금('anthropic', 카드, think);
+      if (눈금) body.output_config = { effort: 눈금 };
     }
   } else if (형식 === 'budget') {
     const 예산 = 생각예산(think, maxTokens);
@@ -746,7 +802,18 @@ export function assistantMessage(shape, { content = '', thinking = '', toolCalls
     if (toolCalls.length) m.tool_calls = toolCalls.map((t) => ({ function: { name: t.name, arguments: t.args } }));
     return m;
   }
-  const m = { role: 'assistant', content: content || null };
+  /*
+   * `content: null` 은 **도구를 부를 때만** 옳다.
+   *
+   * 이 규격에서 assistant 의 content 는 「tool_calls 가 없으면 있어야 하는」
+   * 칸이다. 그런데 빈 답에 도구도 없는 턴(거절·상한에 걸려 아무 말도 못 한
+   * 턴)에서 `content: null` 만 실어 이력에 넣었고, 그 이력을 다음 요청에
+   * 그대로 보내면 그 턴이 거절된다. 옆 갈래(anthropic)는 같은 자리에서
+   * 자리표시를 넣어 막아 뒀는데 이쪽만 안 막혀 있었다.
+   *
+   * 없는 말을 지어 넣지는 않는다 — 빈 글자로 칸만 채운다.
+   */
+  const m = { role: 'assistant', content: content || (toolCalls.length ? null : '') };
   if (toolCalls.length) {
     m.tool_calls = toolCalls.map((t) => ({
       id: t.id, type: 'function',
@@ -1490,7 +1557,14 @@ function anthropic흡수(obj, acc, out) {
       // 캐시 수치는 여기 한 번만 온다. message_delta 에는 안 실린다 —
       // 여기서 안 챙기면 흘려받기에서는 캐시가 영영 0 으로 보인다.
       const c = 캐시읽기(u);
-      acc.usage = { in: u.input_tokens ?? 0, out: u.output_tokens ?? 0, cacheRead: c.읽음, cacheWrite: c.씀 };
+      /*
+       * `잰것` 을 여기만 안 적고 있었다 — ollama·openai 갈래는 둘 다 적는다.
+       *
+       * 이 값은 **usage 가 진짜로 왔나**를 뜻한다. 잠잠한지 보는 자(자란만큼)가
+       * 그걸 「살아 있다」 의 한 표로 세는데, Anthropic 흘려받기에서는 usage 가
+       * 제일 먼저 오는 소식이라 하필 그 한 표를 못 셌다.
+       */
+      acc.usage = { 잰것: true, in: u.input_tokens ?? 0, out: u.output_tokens ?? 0, cacheRead: c.읽음, cacheWrite: c.씀 };
     }
     return out;
   }
@@ -1586,8 +1660,18 @@ function 도구마무리(acc) {
   // 스트리밍은 마지막 조각이 안 오면 여기서 늘 깨진 채로 끝난다.
   acc.toolCalls = acc._raw.filter(Boolean).map((c, i) => {
     const call = { id: c.id ?? `call_${i + 1}`, name: c.name, args: {} };
-    if (!c.args) return call;
-    try { call.args = JSON.parse(c.args); }
+    /*
+     * 빈 것은 깨진 것이 아니다 — 인자가 아예 없는 도구가 있다.
+     *
+     * 한 번에 받는 쪽(normalizeCalls)은 `trim()` 을 하고 나서 비었나 보는데
+     * 여기는 안 했다. 그래서 창구가 인자 자리에 공백 한 칸(`" "` · `"\n"`)을
+     * 흘려 주면 흘려받을 때만 **깨진 도구 부름**이 됐다 — 같은 모델, 같은
+     * 도구인데 흘려받나 아니냐로 갈렸다. 같은 일을 하는 두 자가 같은 것을
+     * 빈 것으로 봐야 한다.
+     */
+    const 원문 = typeof c.args === 'string' ? c.args.trim() : c.args;
+    if (!원문) return call;
+    try { call.args = JSON.parse(원문); }
     catch { call.argsBroken = true; call.rawArgs = c.args; }
     return call;
   });

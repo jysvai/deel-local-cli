@@ -477,6 +477,50 @@ await new Promise((r) => setImmediate(r));
   check('★ 옛 할 일 목록은 접는다 — 새것이 나오면 틀린 것이다', !다.includes('옛 목록입니다'));
   check('그 밖의 오래된 결과는 그대로 접는다', ru.접은것 >= 3, `${ru.접은것}개`);
 
+  /*
+   * ── ★★ 한 턴에 도구 둘을 부른 판 ──────────────────────────────────────
+   *
+   * Anthropic 꼴은 한 턴의 도구 결과 **둘을 한 메시지**에 싣는다. 그런데 위
+   * 지킴 판정이 그 메시지의 **첫 결과 이름**만 봤다. 그래서 모델이 `Read` 와
+   * `TodoWrite` 를 같이 부르면 — 흔한 조합이다 — 이름이 'Read' 로 잡혀 할 일
+   * 목록이 지킴 목록에서 빠지고, 그 자리가 접히면서 남은 항목이 어디에도
+   * 없어졌다. 바로 위 검사가 지키려던 것이 도구를 둘 부른 판에서만 조용히
+   * 무너지고 있었다 (35차 리뷰).
+   */
+  {
+    const 앤 = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'anthropic' }, { root: process.cwd() });
+    앤.push({ role: 'user', content: '네 가지 해줘' });
+    // 한 턴에 Read 와 TodoWrite 를 같이 부른다 — Read 가 먼저다.
+    앤.push({
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', id: 'a1', name: 'Read', input: { file_path: 'src/앞.js' } },
+        { type: 'tool_use', id: 'a2', name: 'TodoWrite', input: { todos: [] } },
+      ],
+    });
+    앤.push({
+      role: 'user',
+      content: [
+        { type: 'tool_result', tool_use_id: 'a1', content: 긴글(60) },
+        { type: 'tool_result', tool_use_id: 'a2', content: 목록글('| ☐ | 3. 요청 누락 막기 |') },
+      ],
+    });
+    // 뒤에 결과를 넉넉히 쌓아 접기가 실제로 돌게 한다.
+    for (let i = 1; i <= 10; i++) {
+      앤.push({ role: 'assistant', content: [{ type: 'tool_use', id: `x${i}`, name: 'Read', input: { file_path: `src/뒤${i}.js` } }] });
+      앤.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: `x${i}`, content: 긴글(60) }] });
+    }
+
+    const r앤 = 접기(앤);
+    const 글다 = JSON.stringify(앤.messages);
+    check('★★ 같은 메시지에 딸려 온 할 일 목록도 지킨다', 글다.includes('3. 요청 누락 막기'),
+      `접은 것 ${r앤.접은것}개`);
+    check('★ 그래도 나머지는 접는다', r앤.접은것 >= 3, `${r앤.접은것}개`);
+    // 짝이 깨지면 다음 요청이 400 이다. 접은 뒤에도 id 가 다 살아 있어야 한다.
+    const 남은id = (JSON.stringify(앤.messages).match(/tool_use_id/g) ?? []).length;
+    check('★★ 접은 뒤에도 짝지어 주는 id 가 다 살아 있다', 남은id === 12, `${남은id}개`);
+  }
+
   // 작은 결과는 접어도 자리가 안 준다. 오히려 무엇을 했는지만 잃는다.
   const t = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai' }, { root: process.cwd() });
   for (let i = 1; i <= 8; i++) { t.push(호출(`d${i}`, `a${i}.js`)); t.push(결과(`d${i}`, '1군데 고쳤습니다')); }
@@ -516,6 +560,46 @@ await new Promise((r) => setImmediate(r));
     check('★★ 모이면 그때 한 번에 접는다', 접음.접은것 >= 8, `${접음.접은것}개`);
     check('★★ 그때 비우는 양이 문턱을 넘는다', 접음.아낀토큰 >= 최소이득,
       `${접음.아낀토큰.toLocaleString()} ≥ ${최소이득.toLocaleString()}`);
+
+    /*
+     * ── ★★ 기다리는 것이 더 비싼 판 ────────────────────────────────────
+     *
+     * 개수 문턱은 「3천 토큰 아끼려고 앞머리를 깨지 말라」 는 말이다. 맞는
+     * 말인데, **아낄 것이 3만 토큰일 때도** 똑같이 기다렸다. 큰 파일 읽기
+     * 셋이 쌓인 판에서 미루면 그 다음 안전망은 80% 요약 압축이고, 그쪽은
+     * 대화를 통째로 요약으로 갈아 치우는 훨씬 비싼 일이다 — 개수를 기다리다
+     * 더 큰 것을 치른다 (35차 리뷰).
+     *
+     * 그래서 기다림을 **값으로** 판단한다. 앞머리를 깨는 값은 접는 자리 뒤에
+     * 남는 토큰이고, 아끼는 것이 그보다 크면 지금 접는 것이 이득이다.
+     */
+    const 큰것셋 = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 200000, kind: 'openai' }, { root: process.cwd() });
+    큰것셋.push({ role: 'user', content: '큰 파일 셋만 봐줘' });
+    // 앞의 셋은 아주 크고, 뒤는 최근이라 어차피 남는다 — 그래서 접을 것은 셋뿐이고
+    // 개수 문턱(KEEP_RECENT)에 못 미친다. 그런데 아낄 것이 3만 토큰이 넘는다.
+    for (let i = 1; i <= 3; i++) { 큰것셋.push(호출(`h${i}`, `src/큰${i}.js`)); 큰것셋.push(결과(`h${i}`, 긴글(2500))); }
+    for (let i = 1; i <= KEEP_RECENT; i++) { 큰것셋.push(호출(`n${i}`, `src/새${i}.js`)); 큰것셋.push(결과(`n${i}`, '한 줄 고쳤습니다')); }
+    const 큰것결과 = foldToolResults(큰것셋);
+    check('★★ 아낄 것이 깨는 값보다 크면 개수를 안 기다린다',
+      큰것결과.접은것 === 3, `${큰것결과.접은것}개 · 미룸 ${큰것결과.미룸}`);
+    check('★ 최근 것은 그대로 남는다',
+      큰것셋.messages.filter((m) => m.content === '한 줄 고쳤습니다').length === KEEP_RECENT,
+      `${큰것셋.messages.filter((m) => m.content === '한 줄 고쳤습니다').length}개 남음`);
+
+    /*
+     * 반대쪽 — 아끼는 것이 깨는 값보다 작으면 여태처럼 기다린다. 이 줄이
+     * 없으면 위 고침을 「개수 문턱을 없앤다」 로 넓혀도 초록이고, 그러면
+     * 걸음마다 앞머리를 깨던 옛 모양으로 돌아간다.
+     */
+    const 작은것셋 = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 200000, kind: 'openai' }, { root: process.cwd() });
+    작은것셋.push({ role: 'user', content: '봐줘' });
+    for (let i = 1; i <= 3; i++) { 작은것셋.push(호출(`k${i}`, `src/앞${i}.js`)); 작은것셋.push(결과(`k${i}`, 긴글(300))); }
+    // 뒤에 큰 글을 쌓아 「깨는 값」 을 크게 만든다 — 그러면 기다리는 것이 맞다.
+    작은것셋.push({ role: 'assistant', content: '설명'.repeat(4000) });
+    const 작은것결과 = foldToolResults(작은것셋);
+    check('★★ 깨는 값이 더 크면 여태처럼 기다린다',
+      작은것결과.접은것 === 0 && 작은것결과.미룸 === true,
+      `${작은것결과.접은것}개 · 미룸 ${작은것결과.미룸}`);
   }
 
   /*

@@ -542,6 +542,7 @@ export const en = {
   'wire.cacheMarked': 'marked',
   'wire.cacheKey': 'key',
   'wire.cacheAuto': 'server-side',
+  'wire.learned': 'learned',
   'cost.cache': 'Cache',
   'cost.think': 'Thinking',
   'cost.thinkLine': '{토큰} tokens · {몫}% of output',

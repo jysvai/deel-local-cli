@@ -281,6 +281,22 @@ trace('5-이력-되돌리기');
   check('★ 빈 블록 배열을 안 만든다', 빈것.content.length === 1 && 빈것.content[0].text !== '',
     JSON.stringify(빈것));
 
+  /*
+   * 옆 규격도 같은 자리를 막았나.
+   *
+   * 이 규격은 위에서 자리표시로 막아 뒀는데 OpenAI 꼴은 안 막혀 있었다 —
+   * 도구도 없고 글도 없는 턴이 `content: null` 로 이력에 들어가고, 그 이력을
+   * 다음 요청에 보내면 그 턴이 거절된다(그 규격에서 content 는 tool_calls 가
+   * 없으면 있어야 하는 칸이다). 같은 고장을 한 규격에서만 막아 두면 나머지
+   * 규격을 쓰는 사람에게는 안 고친 것이다 (33차 리뷰).
+   */
+  const 빈오픈 = assistantMessage('openai', { content: '', toolCalls: [] });
+  check('★★ OpenAI 꼴도 도구 없는 빈 답에 content 를 남긴다', 빈오픈.content === '',
+    JSON.stringify(빈오픈));
+  const 도구만 = assistantMessage('openai', { content: '', toolCalls: [{ id: 'c1', name: 'R', args: {} }] });
+  check('★ 도구를 부를 때는 content 가 null 인 것이 맞다 (회귀)',
+    도구만.content === null && 도구만.tool_calls?.length === 1, JSON.stringify(도구만));
+
   // 도구 결과는 사람 차례로 간다. role:'tool' 은 이 규격에 없다.
   const t = toolMessage('anthropic', { callId: 'toolu_1', name: 'Read', content: '내용' });
   check('★ 도구 결과가 사람 차례로 간다', t.role === 'user', t.role);
@@ -396,6 +412,74 @@ trace('6-흘려받기');
     JSON.stringify(생각블록?.signature));
   check('★ 생각 글도 그 블록에 담긴다', 생각블록?.thinking === '생각',
     JSON.stringify(생각블록?.thinking));
+
+  /*
+   * ★★ 「usage 를 진짜로 받았다」 는 표.
+   *
+   * ollama·openai 흘려받기는 둘 다 이 표를 달고 이 규격만 안 달았다. 이
+   * 값은 잠잠한지 보는 자(자란만큼)가 「살아 있다」 의 한 표로 세는데,
+   * 이 규격에서 usage 는 **제일 먼저 오는 소식**이라 하필 그 한 표를 못
+   * 셌다 (33차 리뷰).
+   */
+  check('★★ usage 를 받았다는 표를 남긴다', 끝?.usage?.잰것 === true, String(끝?.usage?.잰것));
+
+  srv.close();
+}
+
+/*
+ * ── 인자 없는 도구를 흘려받을 때 ────────────────────────────────────────
+ *
+ * 인자가 아예 없는 도구는 흔하다. 한 번에 받는 쪽(normalizeCalls)은 인자를
+ * `trim()` 하고 나서 비었나 보는데, 흘려받는 쪽은 안 했다. 그래서 창구가
+ * 인자 자리에 공백 한 칸을 흘려 주면 **흘려받을 때만** 깨진 부름이 됐다 —
+ * 같은 모델·같은 도구인데 흘려받나 아니냐로 갈렸다 (33차 리뷰).
+ */
+{
+  const 사건들 = [
+    { type: 'message_start', message: { usage: { input_tokens: 3, output_tokens: 1 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_e', name: 'Now' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: ' ' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '\n' } },
+    { type: 'content_block_stop', index: 0 },
+    // 마지막 조각이 안 온 부름. 이것은 **진짜로** 깨진 것이라 깨진 채로 남아야 한다.
+    { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_f', name: 'Read' } },
+    { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"p":' } },
+    { type: 'content_block_stop', index: 1 },
+    { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 2 } },
+    { type: 'message_stop' },
+  ];
+  const srv = createServer((req, res) => {
+    req.on('data', () => {});
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      for (const e of 사건들) res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+      res.end();
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}/v1`;
+  allowEndpoint(base);
+
+  let 끝 = null;
+  for await (const ev of chatStream(
+    { kind: 'anthropic', base, auth: 'x-api-key', key: 'k', model: 'claude-x' },
+    { messages: [{ role: 'user', content: '지금 몇 시' }], maxTokens: 128 },
+  )) if (ev.type === 'done') 끝 = ev.message;
+
+  const 부름 = 끝?.toolCalls?.[0];
+  check('★★ 공백만 온 인자를 깨진 것으로 세지 않는다', !부름?.argsBroken, JSON.stringify(부름));
+  check('★ 인자는 빈 것으로 둔다', 부름 && Object.keys(부름.args ?? {}).length === 0, JSON.stringify(부름?.args));
+  check('★ 도구 이름과 번호는 그대로', 부름?.name === 'Now' && 부름?.id === 'toolu_e', JSON.stringify(부름));
+  /*
+   * 진짜로 망가진 인자는 여전히 깨진 것으로 센다.
+   *
+   * 위 검사만 있으면 「아무것도 안 깨진 것으로 본다」 로 넓혀도 초록이다 —
+   * 그러면 잘린 인자를 그대로 도구에 넘긴다. 같은 스트림에 둘을 같이 넣어
+   * **한쪽만** 깨진 것을 잰다.
+   */
+  const 깨진것 = 끝?.toolCalls?.[1];
+  check('★★ 잘린 인자는 그대로 깨진 것으로 남는다', 깨진것?.argsBroken === true, JSON.stringify(깨진것));
+  check('★ 깨진 부름의 원문을 남겨 둔다', 깨진것?.rawArgs === '{"p":', JSON.stringify(깨진것?.rawArgs));
 
   srv.close();
 }

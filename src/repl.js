@@ -2279,8 +2279,9 @@ export async function chatLoop(opts = {}) {
 
           case 'images_folded': {
             clearThinking();
-            const 장수 = (ev.뺀것들 ?? []).reduce((a2, x) => a2 + x.장수, 0);
-            say(`  ${c.cyan('◲')} ${c.gray(`오래된 그림 ${장수}장을 뺐습니다 — 사람이 쓴 말은 그대로입니다.`)}`);
+            // 장수는 접는 쪽이 세어 준다 (agent/compact.js 의 foldImages).
+            // 여기서 또 세면 한쪽만 고쳐지고, 그때부터 화면이 다른 수를 적는다.
+            say(`  ${c.cyan('◲')} ${c.gray(`오래된 그림 ${ev.뺀것}장을 뺐습니다 — 사람이 쓴 말은 그대로입니다.`)}`);
             break;
           }
 

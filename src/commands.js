@@ -29,7 +29,7 @@ import { 종, 알릴만한초 } from './ui/notify.js';
 import { 말, 말 as 옮긴말, 언어, 언어들, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
 import { allowTemporarily } from './safety/network.js';
-import { chat, 규격이름, 더할머리 } from './backend/adapter.js';
+import { chat, 규격이름, 더할머리, 나가는눈금 } from './backend/adapter.js';
 import { 잠잠기본, 무소식기본 } from './backend/http.js';
 import { 인증서설정, 인증서말 } from './backend/clientcert.js';
 import { 알림채움, 알림말 } from './backend/retry.js';
@@ -64,7 +64,7 @@ export function 적용하기(고른것) {
   끔설정(값 === '끔');
 }
 import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable, 가벼운강도, shiftLevel } from './agent/effort.js';
-import { 전선붙이기, 전선말, 눈금맞추기 } from './backend/wire.js';
+import { 전선붙이기, 전선말 } from './backend/wire.js';
 import { scanLocal, toProfiles } from './backend/scan.js';
 import { list as listSessions } from './agent/store.js';
 import { MODES as WORK_MODES, ORDER as WORK_ORDER, DEFAULT as WORK_DEFAULT, normalize as normWork, get as getWork, canWrite, 보일이름, 보일한줄 } from './agent/modes.js';
@@ -1934,7 +1934,15 @@ function showThink(session, { 자세히 = false } = {}) {
   }
   if (session.conn?.전선) {
     const 카드 = session.conn.전선;
-    const 나가는것 = 눈금맞추기(카드, session.think);
+    /*
+     * **정말로 나가는 것만** 적는다.
+     *
+     * 여태 여기서 `눈금맞추기()` 를 직접 불렀다. 그 함수는 카드가 아는 눈금으로
+     * 낮추는 일만 하고 그 눈금이 실릴 칸이 있는지는 모른다 — 그래서 눈금이
+     * 아예 안 나가는 전선(budget·boolean·none)에서도 「지금 나가는 값 high」
+     * 가 떴다. 몸을 만드는 자리와 같은 함수를 쓴다(backend/adapter.js).
+     */
+    const 나가는것 = 나가는눈금(session.conn.kind, 카드, session.think);
     /*
      * ── 「끈다」 가 정말로 꺼지는 창구인가 ────────────────────────────
      *
@@ -2516,6 +2524,23 @@ function 배움명령(session, ctx, arg = '') {
     return;
   }
 
+  /*
+   * ── 전선만 지우는 길 ────────────────────────────────────────────────────
+   *
+   * 전선 모양은 틀리게 배울 수 있는 유일한 것이고(backend/wire.js), 틀리면
+   * 멀쩡한 기능이 꺼진 채 굳는다. 그런데 되돌릴 길이 「전부 비우기」 하나라,
+   * 몇 주 쌓은 명령 겪음까지 같이 날아갔다 — 그게 아까워서 사람은 안 비우고,
+   * 안 비우니 꺼진 기능을 그냥 안고 쓴다. 전선만 지우면 잃을 것이 없다.
+   */
+  if (/^(전선|wire)\s*(지우기|clear|forget|비우기)?$/i.test(String(arg).trim())) {
+    배움.지우기('전선');
+    if (session.conn) 전선붙이기(session.conn, 배움);
+    say(`  ${mark.ok} ${c.gray('전선에서 배운 것만 비웠습니다 — 다음 요청부터 짐작으로 다시 시작합니다.')}`);
+    say(`  ${c.gray('겪어 본 명령과 토큰 보정은 그대로 둡니다.')}`);
+    say('');
+    return;
+  }
+
   if (/^(지우기|clear|forget|비우기)$/i.test(String(arg).trim())) {
     배움.지우기('전부');
     session.배움요약 = null;
@@ -2580,8 +2605,29 @@ function 배움명령(session, ctx, arg = '') {
   } else {
     say(`  ${c.gray('아직 프롬프트에 실을 만큼 확실한 것은 없습니다 — 두 번 이상 겪어야 싣습니다.')}`);
   }
+  /*
+   * ── 전선에서 배운 것도 여기 보인다 ──────────────────────────────────────
+   *
+   * 쌓인 것 중 **제일 크게 작용하는 것**이 전선 모양인데(무엇을 실어 보낼지
+   * 가 여기서 갈린다) 이 화면에 아예 안 떴다. 그래서 잘못 배운 판에서 사람이
+   * 「배운 것을 보자」 고 여기를 열면, 정작 문제인 줄만 안 보였다.
+   */
+  const 전선 = session.conn?.전선;
+  if (전선) {
+    const 배운칸 = 전선.배운칸 ?? [];
+    say(`  ${c.bold('이 창구에 실어 보내는 모양')}`);
+    say(`    ${c.gray(전선말(전선))}`);
+    if (배운칸.length) {
+      say(`    ${c.gray('「배움」 은 짐작이 아니라 서버가 거절해서 고친 자리입니다 — 틀릴 수도 있습니다.')}`);
+    }
+    say('');
+  }
+
   say('');
   say(`  ${c.gray('지우려면')} ${c.cyan('/learned 지우기')}`);
+  if (전선?.배운칸?.length) {
+    say(`  ${c.gray('전선에서 배운 것만 되돌리려면')} ${c.cyan('/learned 전선 지우기')}`);
+  }
   say('');
 }
 

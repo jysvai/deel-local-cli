@@ -342,6 +342,46 @@ trace('8-빼기');
   check('남긴 것은 안 건드린다', 그림장수(s.messages[2]) === 1 && 그림장수(s.messages[3]) === 1);
   check('그림 없는 사람 말은 손 안 댄다', s.messages[0].content === '처음 부탁');
 
+  /*
+   * ── 남기는 것은 **장수**다, 메시지 수가 아니다 ─────────────────────────
+   *
+   * `KEEP_IMAGES` 는 「최근 몇 장」 인데 자리를 메시지 단위로 세고 거기서
+   * keep 을 빼고 있었다. 그래서 한 메시지에 다섯 장이 실린 판 —
+   * `@a.png @b.png @c.png` 처럼 한 줄로 붙이면 그렇게 된다 — 에서는 자리가
+   * 하나뿐이라 **한 장도 안 빠졌다.** 몇 MB 짜리 다섯 장이 대화에 그대로
+   * 남고, 함수는 「뺀 것 0」 을 돌려준다 (35차 리뷰).
+   */
+  {
+    const 여러장 = (n, 몇) => 그림메시지('openai', {
+      글: `${n}번째 화면 ${몇}장`,
+      그림들: Array.from({ length: 몇 }, () => ({ b64: 한점PNG, mime: 'image/png' })),
+    });
+    // 석 장 실린 덩이 + 한 장 실린 덩이. 자리가 둘이라 여태는 한 장도 안 뺐다 —
+    // 「최근 두 장만 남긴다」 는 이름 아래 넉 장이 남아 있었다.
+    const s5 = { messages: [{ role: 'user', content: '봐줘' }, 여러장(1, 3), 여러장(2, 1)] };
+    const r5 = foldImages(s5);
+    check('★★ 앞 덩이가 크면 그 덩이를 뺀다', r5.뺀것 === 3, `${r5.뺀것}장 뺌`);
+    check('★★ 정말로 빠졌다', 그림장수(s5.messages[1]) === 0, `${그림장수(s5.messages[1])}장 남음`);
+    check('★ 무엇이었는지는 남는다', /그림 3장은 자리를 비우려고 뺐습니다/.test(s5.messages[1].content),
+      s5.messages[1].content);
+    check('★★ 최근 덩이는 그대로', 그림장수(s5.messages[2]) === 1, `${그림장수(s5.messages[2])}장`);
+
+    /*
+     * 반대쪽 — **마지막 덩이는 몇 장이든 남긴다.** 위 고침을 「장수만 보고
+     * 자른다」 로 넓히면 방금 보여 준 사진이 그 턴에서 사라져 헛턴이 된다.
+     */
+    const s6 = { messages: [{ role: 'user', content: '봐줘' }, 여러장(1, 5)] };
+    const r6 = foldImages(s6);
+    check('★★ 마지막 덩이는 여러 장이어도 남긴다', r6.뺀것 === 0 && 그림장수(s6.messages[1]) === 5,
+      `${r6.뺀것}장 뺌 · ${그림장수(s6.messages[1])}장 남음`);
+
+    // 한 장씩 실린 메시지 넷이면 앞의 둘이 빠진다 — 여태와 같다.
+    const 한장 = (n) => 그림메시지('openai', { 글: `${n}번`, 그림들: [{ b64: 한점PNG, mime: 'image/png' }] });
+    check('★ 한 장씩이면 여태와 같다',
+      foldImages({ messages: [한장(1), 한장(2), 한장(3), 한장(4)] }).뺀것 === 2,
+      String(foldImages({ messages: [한장(1), 한장(2), 한장(3), 한장(4)] }).뺀것));
+  }
+
   // Ollama 규격도 images 를 지워야 한다 — 안 지우면 뺐다면서 안 뺀 것이 된다.
   const o = { messages: [그림메시지('ollama', { 글: '옛것', 그림들: [{ b64: 한점PNG }] }), 그림메시지('ollama', { 글: 'a', 그림들: [{ b64: 한점PNG }] }), 그림메시지('ollama', { 글: 'b', 그림들: [{ b64: 한점PNG }] })] };
   foldImages(o);
@@ -398,6 +438,112 @@ trace('10-눈검사');
   check('그림은 안 보낸다고 알린다', /그림은 안 보냅니다/.test(눈칸2?.detail ?? ''), 눈칸2?.detail);
 
   s2.close();
+}
+
+/*
+ * ── 11. 상한에 걸린 것을 「안 보인다」 로 적었다 ────────────────────────
+ *
+ * 눈 검사는 32토큰으로 묻는다. 추론 모델은 그 32토큰을 생각에 다 쓰므로
+ * 본문이 빈다 — 400 도 415 도 안 났으니 **서버는 그림을 받아 준 것**인데,
+ * 그 판이 「그림을 받긴 했는데 답이 비었습니다 — 안 보이는 것으로 칩니다」 로
+ * 적혔다. 이 칸 머리말이 「답의 내용은 안 본다」 라고 스스로 적어 놓은 자리다.
+ *
+ * 그 판정은 프로필에 `vision: false` 로 남고, 그 뒤로 화면 사진을 영영 안
+ * 보낸다 — 노란 경고 한 줄이라 고장으로 안 읽힌다 (34차 리뷰).
+ */
+trace('11-상한에걸린눈');
+{
+  let 그림받은수 = 0;
+  const s3 = createServer((q, res) => {
+    let body = '';
+    q.on('data', (d) => (body += d));
+    q.on('end', () => {
+      const 보내 = (코드, 것) => { res.writeHead(코드, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(것)); };
+      const 그림인가 = /image_url|"images"/.test(body);
+      if (그림인가) 그림받은수++;
+      // 그림이 든 물음에는 32토큰이면 상한에 걸려 본문이 비고, 넉넉히 주면 답한다.
+      const 좁은가 = /"max_tokens":\s*32|"max_completion_tokens":\s*32/.test(body);
+      if (그림인가 && 좁은가) {
+        return 보내(200, {
+          choices: [{ message: { content: '' }, finish_reason: 'length' }],
+          usage: { prompt_tokens: 20, completion_tokens: 32, completion_tokens_details: { reasoning_tokens: 32 } },
+        });
+      }
+      보내(200, { choices: [{ message: { content: '점' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    });
+  });
+  await new Promise((r) => s3.listen(0, '127.0.0.1', r));
+  const b3 = `http://127.0.0.1:${s3.address().port}/v1`;
+  allowEndpoint(b3);
+
+  const r3 = await probe({ kind: 'openai', base: b3, auth: 'none', key: '', model: 'fake' });
+  const 눈칸3 = r3.results.find((x) => x.id === 'vision');
+  check('★★ 상한에 걸리면 넉넉히 한 번 더 묻는다', 그림받은수 >= 2, `${그림받은수}번 물음`);
+  check('★★ 그 판을 「안 보인다」 로 적지 않는다', r3.facts.vision === true,
+    `${r3.facts.vision} · ${눈칸3?.detail}`);
+
+  /*
+   * 두 번 물어도 끝내 상한에 걸리는 서버 — 그때는 **못 쟀다**고 적는다.
+   * 안 보인다고 적으면 볼 수 있는 모델에 그림을 영영 안 보낸다. 켠 채로 두면
+   * 못 보는 서버가 400·415 로 말해 주고 그 한 번으로 화면에 까닭이 뜬다.
+   */
+  그림받은수 = 0;
+  const s4 = createServer((q, res) => {
+    let body = '';
+    q.on('data', (d) => (body += d));
+    q.on('end', () => {
+      const 보내 = (코드, 것) => { res.writeHead(코드, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(것)); };
+      if (/image_url|"images"/.test(body)) {
+        그림받은수++;
+        return 보내(200, {
+          choices: [{ message: { content: '' }, finish_reason: 'length' }],
+          usage: { prompt_tokens: 20, completion_tokens: 512, completion_tokens_details: { reasoning_tokens: 512 } },
+        });
+      }
+      보내(200, { choices: [{ message: { content: '점' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    });
+  });
+  await new Promise((r) => s4.listen(0, '127.0.0.1', r));
+  const b4 = `http://127.0.0.1:${s4.address().port}/v1`;
+  allowEndpoint(b4);
+
+  const r4 = await probe({ kind: 'openai', base: b4, auth: 'none', key: '', model: 'fake' });
+  const 눈칸4 = r4.results.find((x) => x.id === 'vision');
+  check('★★ 끝내 못 재면 못 쟀다고 적는다', /못 쟀습니다/.test(눈칸4?.detail ?? ''), 눈칸4?.detail);
+  check('★★ 그러고도 켠 채로 둔다 — 되돌아올 수 있는 쪽으로 틀린다',
+    r4.facts.vision === true, String(r4.facts.vision));
+  /*
+   * 반대쪽 — **상한도 아닌데** 빈 답을 주는 서버는 여전히 「안 보인다」 다.
+   * 이 줄이 없으면 위 고침을 「늘 켠 채로 둔다」 로 넓혀도 초록이고, 그러면
+   * 그림 블록을 조용히 버리는 게이트웨이에 사진을 계속 보낸다.
+   */
+  const s5 = createServer((q, res) => {
+    let body = '';
+    q.on('data', (d) => (body += d));
+    q.on('end', () => {
+      const 보내 = (코드, 것) => { res.writeHead(코드, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(것)); };
+      if (/image_url|"images"/.test(body)) {
+        return 보내(200, {
+          choices: [{ message: { content: '' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 20, completion_tokens: 0 },
+        });
+      }
+      보내(200, { choices: [{ message: { content: '점' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    });
+  });
+  await new Promise((r) => s5.listen(0, '127.0.0.1', r));
+  const b5 = `http://127.0.0.1:${s5.address().port}/v1`;
+  allowEndpoint(b5);
+
+  const r5 = await probe({ kind: 'openai', base: b5, auth: 'none', key: '', model: 'fake' });
+  const 눈칸5 = r5.results.find((x) => x.id === 'vision');
+  check('★★ 상한도 아닌 빈 답은 여전히 눈 없음', r5.facts.vision === false,
+    `${r5.facts.vision} · ${눈칸5?.detail}`);
+  check('★ 그 말도 그대로', /안 보이는 것으로 칩니다/.test(눈칸5?.detail ?? ''), 눈칸5?.detail);
+
+  s3.close();
+  s4.close();
+  s5.close();
 }
 
 server.close();

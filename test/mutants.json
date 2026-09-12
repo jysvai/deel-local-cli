@@ -637,6 +637,246 @@
       "찾을것": "  const 칸이야기 = { test: (글) => 칸낱말.test(글) || 칸경로.test(글) };",
       "바꿀것": "  const 칸이야기 = 칸낱말;",
       "검사": "test/죽은규칙.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "물음표 없는 주소의 끝 빗금을 안 뗀다",
+      "그러면": "`…/v1/` 처럼 끝에 빗금을 붙여 적은 사람은 `//chat/completions` 로 나가 404 를 맞는다 — 화면에서 모델 이름을 잘못 적은 것과 구별이 안 된다",
+      "찾을것": "  if (i < 0) return b2.replace(/\\/+$/, '') + 길;",
+      "바꿀것": "  if (i < 0) return b2 + 길;",
+      "검사": "test/azure.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "Anthropic 흘려받기에서 usage 를 받았다는 표를 안 남긴다",
+      "그러면": "잠잠한지 보는 자가 제일 먼저 오는 소식을 「살아 있다」 로 안 센다 — 세 규격 중 이 규격만 다르게 센다",
+      "찾을것": "      acc.usage = { 잰것: true, in: u.input_tokens ?? 0, out: u.output_tokens ?? 0, cacheRead: c.읽음, cacheWrite: c.씀 };",
+      "바꿀것": "      acc.usage = { in: u.input_tokens ?? 0, out: u.output_tokens ?? 0, cacheRead: c.읽음, cacheWrite: c.씀 };",
+      "검사": "test/anthropic.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "흘려받은 도구 인자를 다듬지 않고 비었나 본다",
+      "그러면": "인자 자리에 공백 한 칸이 온 도구가 흘려받을 때만 깨진 부름이 된다 — 한 번에 받으면 멀쩡하다",
+      "찾을것": "    const 원문 = typeof c.args === 'string' ? c.args.trim() : c.args;",
+      "바꿀것": "    const 원문 = c.args;",
+      "검사": "test/anthropic.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "도구 없는 빈 답에도 content 를 null 로 싣는다",
+      "그러면": "그 규격에서 content 는 tool_calls 가 없으면 있어야 하는 칸이라, 빈 답이 한 번 나온 뒤로는 그 대화가 매 턴 거절된다",
+      "찾을것": "  const m = { role: 'assistant', content: content || (toolCalls.length ? null : '') };",
+      "바꿀것": "  const m = { role: 'assistant', content: content || null };",
+      "검사": "test/anthropic.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "눈금이 실릴 칸이 있는지 안 보고 내놓는다",
+      "그러면": "눈금이 아예 안 나가는 전선(budget·boolean·none)에서도 화면이 「지금 나가는 값 high」 를 적는다 — 안 먹은 설정을 먹었다고 믿는다",
+      "찾을것": "    if ((카드?.생각형식 ?? 'budget') !== 'adaptive') return null;",
+      "바꿀것": "    if (false) return null;",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "서버가 껐다고 한 효력칸을 안 본다",
+      "그러면": "서버가 output_config 를 안 받는다고 말해 준 창구에서도 화면이 눈금을 적는다",
+      "찾을것": "    if (카드?.효력칸 !== 'output_config') return null;",
+      "바꿀것": "    if (false) return null;",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "none 전선에서도 눈금을 내놓는다",
+      "그러면": "생각을 안 켠 전선에서 화면이 눈금 값을 적는다 — 나가는 칸이 아예 없는데도",
+      "찾을것": "  return 카드.생각형식 === 'effort' ? 눈금맞추기(카드, 강도) : null;",
+      "바꿀것": "  return 눈금맞추기(카드, 강도);",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "화면이 전선 규격을 안 보고 눈금을 적는다",
+      "그러면": "ollama·anthropic 전선에서 화면이 openai 꼴 셈으로 값을 적는다 — 전선과 화면이 갈라진다",
+      "찾을것": "    const 나가는것 = 나가는눈금(session.conn.kind, 카드, session.think);",
+      "바꿀것": "    const 나가는것 = 나가는눈금('openai', 카드, session.think);",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/tools/jobs.js",
+      "무엇": "혼자 넘치는 조각을 안 줄인다",
+      "그러면": "아무것도 안 버리고 잘렸다고 적는다 — 멀쩡한 글에 「앞이 잘렸습니다」 가 붙고 읽은 자리가 0 으로 돌아간다",
+      "찾을것": "    if (this.바이트 > 출력상한 && this.조각들.length === 1) {",
+      "바꿀것": "    if (false) {",
+      "검사": "test/jobs.test.js"
+    },
+    {
+      "곳": "src/tools/jobs.js",
+      "무엇": "안 죽은 놈의 파이프도 끊는다",
+      "그러면": "목록에는 도는중 으로 남는데 그놈이 뱉는 말은 다시 안 들어온다 — 남겨 둔 까닭이 사라진다",
+      "찾을것": "  const 죽었나 = !아직사나(j.kid);\n  if (죽었나) 파이프끊기(j.kid);",
+      "바꿀것": "  const 죽었나 = !아직사나(j.kid);\n  파이프끊기(j.kid);",
+      "검사": "test/jobs.test.js"
+    },
+    {
+      "곳": "src/tools/jobs.js",
+      "무엇": "몇 개만 모르는 인자를 말 없이 버린다",
+      "그러면": "`{job:1, action:'stop'}` 이 조용히 읽기로 바뀌어 성공으로 돌아간다 — 끄라고 시킨 모델은 껐다고 여기는데 서버는 그대로 돈다",
+      "찾을것": "    const 버린말 = 받은것.모르는것.length",
+      "바꿀것": "    const 버린말 = false",
+      "검사": "test/jobs.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "안 받은 서버를 말없이 버린다",
+      "그러면": "적어 둔 서버가 화면 어디에도 안 나온다 — 목록이 완전해 보여서 「왜 그 도구가 없지」 를 영영 알 수 없다",
+      "찾을것": "      못받은것.push({ 이름, 왜: `\"${v.type}\" 규격은 아직 못 붙입니다 — stdio(command 로 띄우는 서버)만 받습니다` });\n      continue;",
+      "바꿀것": "      continue;",
+      "검사": "test/mcp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "안 받은 것을 붙이는 자리까지 안 실어 보낸다",
+      "그러면": "설정읽기 는 알려 주는데 화면이 못 받는다 — 경고가 한 줄도 안 뜬다",
+      "찾을것": "  const 못한것 = [...안받은것];",
+      "바꿀것": "  const 못한것 = [];",
+      "검사": "test/mcp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "메모를 겹쳐 쓰지 않고 통째로 새로 쓴다",
+      "그러면": "대기 중이던 서버의 메모가 날아가, 그 뒤로 매번 한 대가 반드시 즉시 뜬다 — 지연 로딩이 영구히 무력해진다",
+      "찾을것": "  for (const [이름, 것] of Object.entries(있던것)) {\n    if (남길이름 && !남길이름.includes(이름)) continue;\n    servers[이름] = 것;\n  }",
+      "바꿀것": "",
+      "검사": "test/mcp.test.js"
+    },
+    {
+      "곳": "src/backend/probe.js",
+      "무엇": "사고가 글로 안 올 때는 다시 안 묻는다",
+      "그러면": "사고를 글로 안 내주는 추론 모델이 「모델 이름을 확인하세요」 가 되고 나머지 여덟 줄이 전부 건너뛰기가 된다",
+      "찾을것": "  const 생각만했나 = (e) => !!e?.thinking || 상한에걸렸나(e) || (e?.usage?.reasoning ?? 0) > 0;",
+      "바꿀것": "  const 생각만했나 = (e) => !!e?.thinking;",
+      "검사": "test/vendors.test.js"
+    },
+    {
+      "곳": "src/backend/probe.js",
+      "무엇": "상한에 걸린 그림 답을 다시 안 묻는다",
+      "그러면": "32토큰을 생각에 다 쓴 모델이 「안 보인다」 로 적히고, 그 뒤로 화면 사진을 영영 안 보낸다",
+      "찾을것": "  if (눈.ok && !눈읽은것.content && 상한에걸렸나(눈읽은것)) {",
+      "바꿀것": "  if (false) {",
+      "검사": "test/vision.test.js"
+    },
+    {
+      "곳": "src/backend/probe.js",
+      "무엇": "못 잰 그림 칸을 안 보이는 것으로 적는다",
+      "그러면": "받아 주긴 한 서버에 그림을 영영 안 보낸다 — 되돌릴 길이 화면에 없다",
+      "찾을것": "  facts.vision = 눈있음 || 눈못쟀나;",
+      "바꿀것": "  facts.vision = 눈있음;",
+      "검사": "test/vision.test.js"
+    },
+    {
+      "곳": "src/backend/probe.js",
+      "무엇": "usage 가 안 온 것을 0 으로 세어 판정한다",
+      "그러면": "usage 를 안 주는 창구에서 못 잰 것을 「차이 없음」 으로 적고, 프로필에 조절 안 됨 으로 굳는다",
+      "찾을것": "  const 잴것이있었나 = bothOk && seen.every((s) => s.잰것 || s.thought > 0);",
+      "바꿀것": "  const 잴것이있었나 = bothOk;",
+      "검사": "test/vendors.test.js"
+    },
+    {
+      "곳": "src/backend/probe.js",
+      "무엇": "못 쟀는데 조절이 안 된다고 적는다",
+      "그러면": "`/think` 가 막히고 상태줄이 회색으로 굳는다 — 되돌릴 길이 없다",
+      "찾을것": "  facts.think = differs || !잴것이있었나;",
+      "바꿀것": "  facts.think = differs;",
+      "검사": "test/vendors.test.js"
+    },
+    {
+      "곳": "src/agent/evolve.js",
+      "무엇": "전선만 지우는 길을 막는다",
+      "그러면": "잘못 배운 전선을 되돌리려면 몇 주 쌓은 겪음까지 다 버려야 한다 — 아까워서 안 버리고 꺼진 기능을 안고 쓴다",
+      "찾을것": "    if (어디 === '전선') { this.집.전선 = {}; this.#저장집(); }",
+      "바꿀것": "",
+      "검사": "test/evolve.test.js"
+    },
+    {
+      "곳": "src/backend/wire.js",
+      "무엇": "짐작한 것과 배운 것을 화면에서 안 가른다",
+      "그러면": "「이 모델은 생각을 안 한다」 와 「3주 전 400 한 번을 그렇게 읽었다」 가 구별이 안 된다 — 틀렸을 때 알아볼 단서가 없다",
+      "찾을것": "  if (배운이름.length) 조각.push(`${말('wire.learned')} ${배운이름.join('·')}`);",
+      "바꿀것": "",
+      "검사": "test/wire.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "맞춰 본 목록을 디스크에 안 고쳐 적는다",
+      "그러면": "옛 목록이 매 실행마다 다시 모델에게 나간다 — 지문이 같고 이레가 안 지났으니 같은 실패를 되풀이한다",
+      "찾을것": "      if (this.뿌리) { try { 메모쓰기(this.뿌리, [this]); } catch { /* 못 적어도 대화는 계속된다 */ } }",
+      "바꿀것": "",
+      "검사": "test/mcp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "이름만 견주고 속이 달라진 도구를 안 본다",
+      "그러면": "필수 인자가 하나 늘어난 도구를 옛 스키마로 부르고, 서버가 기본값으로 넘어가면 그럴듯한 엉뚱한 결과가 돌아온다",
+      "찾을것": "      if (바뀐것.length) this.달라짐 = { 늘어난것: [], 없어진것: [], ...(this.달라짐 ?? {}), 바뀐것 };",
+      "바꿀것": "",
+      "검사": "test/mcp.test.js"
+    },
+    {
+      "곳": "src/backend/probe.js",
+      "무엇": "우리 상한에 잘린 인자를 모델 탓으로 적는다",
+      "그러면": "경로를 제대로 쓴 모델이 「인자가 부정확」 으로 보고서에 남는다 — 우리가 만든 잘림을 남의 흠으로 적는다",
+      "찾을것": "  const 원문에있나 = 잘린인자 && String(tcalls[0]?.rawArgs ?? '').includes('config');",
+      "바꿀것": "  const 원문에있나 = false;",
+      "검사": "test/vendors.test.js"
+    },
+    {
+      "곳": "src/agent/compact.js",
+      "무엇": "한 메시지에 실린 이름 중 첫 것만 본다",
+      "그러면": "한 턴에 Read 와 TodoWrite 를 같이 부른 판에서 할 일 목록이 지킴 목록에서 빠져 접힌다 — 남은 항목이 어디에도 없어진다",
+      "찾을것": "  const 지킬할일 = 자리.filter((x) => x.이름들.includes('TodoWrite')).at(-1)?.i ?? -1;",
+      "바꿀것": "  const 지킬할일 = 자리.filter((x) => x.이름 === 'TodoWrite').at(-1)?.i ?? -1;",
+      "검사": "test/compact.test.js"
+    },
+    {
+      "곳": "src/agent/compact.js",
+      "무엇": "아낄 것이 아무리 커도 개수를 기다린다",
+      "그러면": "큰 파일 읽기 셋이 쌓인 판에서 접기를 미루고, 훨씬 비싼 80% 요약 압축으로 직행한다",
+      "찾을것": "  const 기다릴까 = 접을것.length < keep && 예상이득 <= 깨는값;",
+      "바꿀것": "  const 기다릴까 = 접을것.length < keep;",
+      "검사": "test/compact.test.js"
+    },
+    {
+      "곳": "src/agent/compact.js",
+      "무엇": "접을 글 자체를 깨는 값으로 센다",
+      "그러면": "대가가 늘 이득보다 커져 값 판단이 죽는다 — 개수 문턱만 남고 위 고침이 무력해진다",
+      "찾을것": "    ), 0) - 예상이득);",
+      "바꿀것": "    ), 0));",
+      "검사": "test/compact.test.js"
+    },
+    {
+      "곳": "src/agent/compact.js",
+      "무엇": "그림을 메시지 수로 세어 남긴다",
+      "그러면": "「최근 두 장만 남긴다」 면서 몇 MB 짜리 덩이가 그대로 남는다 — 자리가 둘이면 한 장도 안 뺀다",
+      "찾을것": "    if (k < 자리.length - 1 && 남긴장수 + 이번장수 > keep) break;",
+      "바꿀것": "    if (k < 자리.length - keep) break;",
+      "검사": "test/vision.test.js"
+    },
+    {
+      "곳": "src/agent/compact.js",
+      "무엇": "마지막 그림 덩이도 장수로 자른다",
+      "그러면": "방금 보여 준 사진이 그 턴에서 사라진다 — 그 턴이 헛턴이 된다",
+      "찾을것": "    if (k < 자리.length - 1 && 남긴장수 + 이번장수 > keep) break;",
+      "바꿀것": "    if (남긴장수 + 이번장수 > keep) break;",
+      "검사": "test/vision.test.js"
+    },
+    {
+      "곳": "src/agent/compact.js",
+      "무엇": "뺀 그림 수를 메시지 수로 돌려준다",
+      "그러면": "화면이 「그림 1장을 뺐습니다」 라고 적는데 실제로는 넉 장이 빠졌다 — 사람이 세어 볼 수 있는 숫자가 틀린다",
+      "찾을것": "  return { 뺀것: 뺀것들.reduce((a, x) => a + x.장수, 0), 뺀메시지: 뺄것.length, 뺀것들 };",
+      "바꿀것": "  return { 뺀것: 뺄것.length, 뺀메시지: 뺄것.length, 뺀것들 };",
+      "검사": "test/vision.test.js"
     }
   ]
 }

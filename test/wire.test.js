@@ -35,7 +35,7 @@ import {
   카드칸들,
 } from '../src/backend/wire.js';
 import { 조각표, 메시지표식, 시스템블록, 잡힐만한가, 블록에붙이기, 닻문턱 } from '../src/backend/cachemark.js';
-import { buildBody, 보낸토큰, 더할머리, chat } from '../src/backend/adapter.js';
+import { buildBody, 보낸토큰, 더할머리, chat, 나가는눈금 } from '../src/backend/adapter.js';
 import { createServer } from 'node:http';
 import { allowEndpoint } from '../src/safety/network.js';
 import { 자동강도, 인사인가, effortFor, 가벼운강도, 천장고르기, 무거운가 } from '../src/agent/effort.js';
@@ -1148,6 +1148,28 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
     오.생각형식 === 'effort' && /minimal/.test(전선말(오)), `${오.생각형식} · ${전선말(오)}`);
   적어둘것.push('전선 줄: ' + 줄);
 
+  /*
+   * ── 짐작한 것과 배운 것이 화면에서 갈리나 ──────────────────────────────
+   *
+   * 이 줄은 둘을 똑같이 보여 줬다. 그러면 「이 모델은 생각을 안 한다」 와
+   * 「3주 전 400 한 번을 우리가 그렇게 읽었다」 가 구별이 안 된다. 뒤쪽은
+   * 틀릴 수 있는 것이고(배울전선 머리말: 잘못 배우는 것은 못 배우는 것보다
+   * 나쁘다), 틀렸을 때 사람이 알아볼 단서가 이 표뿐이다.
+   */
+  check('★ 짐작만 한 카드에는 배움 표가 없다', !전선말(클로드).includes('배움'), 전선말(클로드));
+  const 배운카드 = 카드고치기(오, { 무엇: '생각형식', 값: 'none', 왜: '거절' });
+  const 배운줄 = 전선말(배운카드);
+  check('★★ 배운 카드에는 무엇을 배웠는지 적는다', /배움/.test(배운줄), 배운줄);
+  /*
+   * 이름표를 여기 적어 두지 않는다 — 적어 두면 말 하나를 고칠 때 검사만
+   * 깨지거나, 더 나쁘게는 검사가 옛 이름을 지키느라 화면을 못 고치게 한다.
+   * 줄 맨 앞에 이미 나온 그 이름표와 **같은 글자**인지만 본다.
+   */
+  const 이름표 = 배운줄.split(' ')[0];
+  check('★★ 배운 칸 이름을 적는다 — 위에서 옮긴 이름표 그대로',
+    (배운줄.split('배움 ')[1] ?? '').split('·').includes(이름표), 배운줄);
+  적어둘것.push('배운 줄: ' + 배운줄);
+
   // ★ 전선에 나가는 글자는 옮기지 않는다 — 옮기면 화면과 몸이 달라진다.
   언어정하기('en');
   const 영어줄 = 전선말(클로드);
@@ -1389,6 +1411,116 @@ trace('캐시-두이름');
     if (센것 !== 것.몇) 어긋난것.push(`${f} — 적어 둔 ${것.몇}자리인데 ${센것}자리`);
   }
   check('★ 봐주기 목록이 실제와 맞는다', 어긋난것.length === 0, 어긋난것.join(' · '));
+}
+
+/*
+ * ── 화면이 적는 값과 전선에 나가는 값이 같은가 ──────────────────────────
+ *
+ * `/think` 화면의 「지금 나가는 값 X」 는 사람이 **정했다고 믿는 근거**다.
+ * 그 줄이 거짓이면 안 먹은 설정을 먹었다고 믿고 하루를 쓴다.
+ *
+ * 여태 화면은 `눈금맞추기()` 를 직접 불렀다 — 그 함수는 카드가 아는 눈금으로
+ * 낮추는 일만 하고, 그 눈금이 실릴 칸이 있는지는 모른다. 그래서 눈금이 아예
+ * 안 나가는 전선에서도 값을 적었다.
+ *
+ * 여기서는 **몸을 만들어 그 속을 들여다보고** 나가는눈금() 이 말한 것과
+ * 맞는지 본다. 한쪽만 고치면 이 검사가 깨진다 — 그게 목적이다.
+ */
+{
+  const 값넣기 = (규격, 카드, 강도) => {
+    const b = buildBody(규격, {
+      model: 'x', messages: [{ role: 'user', content: '가' }], think: 강도, maxTokens: 32000, 카드,
+    });
+    // 눈금 글자가 실리는 자리는 규격이 정한다. 참거짓은 눈금이 아니다.
+    const 것 = 규격 === 'ollama' ? b.think
+      : 규격 === 'anthropic' ? b.output_config?.effort
+        : b.reasoning_effort;
+    return typeof 것 === 'string' ? 것 : null;
+  };
+
+  const 눈금다 = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+  const 카드들 = [
+    ['none 카드', { 규격: 'openai', 생각형식: 'none', 눈금: [...눈금다], 효력칸: null }],
+    ['effort 카드', { 규격: 'openai', 생각형식: 'effort', 눈금: ['low', 'medium', 'high'], 효력칸: null }],
+    /*
+     * budget 카드에 효력칸이 **달려 있는** 판을 쓴다.
+     *
+     * 둘 다 null 이면 다음 줄(효력칸 보는 줄)이 먼저 막아 버려서 「형식이
+     * budget 이면 눈금이 안 나간다」 는 줄을 지워도 검사가 초록이다 —
+     * 어긋내기가 그걸 잡아 줬다. 지난 판이 적어 둔 배움 파일에는 실제로
+     * 이 짝이 남아 있을 수 있고(카드합치기는 적힌 것을 그대로 물린다),
+     * 그때 화면만 거짓을 적는다.
+     */
+    ['budget 카드', { 규격: 'anthropic', 생각형식: 'budget', 눈금: [...눈금다], 효력칸: 'output_config' }],
+    ['adaptive 카드', { 규격: 'anthropic', 생각형식: 'adaptive', 눈금: ['low', 'medium', 'high', 'xhigh', 'max'], 효력칸: 'output_config' }],
+    ['서버가 output_config 를 껐다', { 규격: 'anthropic', 생각형식: 'adaptive', 눈금: ['low', 'high'], 효력칸: null }],
+    ['boolean 카드', { 규격: 'ollama', 생각형식: 'boolean', 눈금: [...눈금다], 효력칸: null }],
+    ['카드 없음', null],
+  ];
+
+  const 어긋난것 = [];
+  for (const [이름, 카드] of 카드들) {
+    for (const 규격 of ['openai', 'anthropic', 'ollama']) {
+      for (const 강도 of ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']) {
+        const 말한것 = 나가는눈금(규격, 카드, 강도);
+        const 나간것 = 값넣기(규격, 카드, 강도);
+        if (말한것 !== 나간것) 어긋난것.push(`${이름}/${규격}/${강도} — 화면 ${말한것} · 전선 ${나간것}`);
+      }
+    }
+  }
+  check('★★ 화면이 적는 눈금과 전선에 나가는 눈금이 한 글자도 안 다르다',
+    어긋난것.length === 0, 어긋난것.slice(0, 4).join(' · '));
+
+  // 위 표가 다 null 이면 어긋날 일도 없다 — 실제로 나가는 판이 있어야 뜻이 있다.
+  const 나가는판 = 카드들.flatMap(([, 카드]) => ['openai', 'anthropic', 'ollama']
+    .flatMap((규격) => 눈금다.map((강도) => 나가는눈금(규격, 카드, 강도))))
+    .filter(Boolean);
+  check('★ 그 표에 정말로 나가는 판이 섞여 있다', 나가는판.length >= 20, `${나가는판.length}판`);
+
+  // 이제 한 자리씩. 안 나가는 전선에서 값을 적지 않는 것이 이번에 고친 자리다.
+  const 찾기 = (이름) => 카드들.find(([n]) => n === 이름)[1];
+  check('★★ budget 전선은 눈금을 안 내놓는다 — 토큰 수로 나간다',
+    나가는눈금('anthropic', 찾기('budget 카드'), 'high') === null,
+    String(나가는눈금('anthropic', 찾기('budget 카드'), 'high')));
+  check('★ 그래도 budget 전선은 생각을 한다(예산이 나간다)',
+    buildBody('anthropic', { model: 'x', messages: [], think: 'high', maxTokens: 32000, 카드: 찾기('budget 카드') })
+      .thinking?.budget_tokens > 0);
+  check('★★ none 전선은 눈금을 안 내놓는다',
+    나가는눈금('openai', 찾기('none 카드'), 'high') === null,
+    String(나가는눈금('openai', 찾기('none 카드'), 'high')));
+  check('★★ 서버가 output_config 를 껐으면 눈금을 안 내놓는다',
+    나가는눈금('anthropic', 찾기('서버가 output_config 를 껐다'), 'high') === null,
+    String(나가는눈금('anthropic', 찾기('서버가 output_config 를 껐다'), 'high')));
+  check('★ 켜진 adaptive 전선은 내놓는다',
+    나가는눈금('anthropic', 찾기('adaptive 카드'), 'max') === 'max',
+    String(나가는눈금('anthropic', 찾기('adaptive 카드'), 'max')));
+  check('★ effort 전선은 카드가 아는 눈금으로 낮춰 내놓는다',
+    나가는눈금('openai', 찾기('effort 카드'), 'max') === 'high',
+    String(나가는눈금('openai', 찾기('effort 카드'), 'max')));
+  check('★ ollama 는 카드 눈금 표가 아니라 제 아는 말로 내놓는다',
+    나가는눈금('ollama', 찾기('effort 카드'), 'xhigh') === 'high',
+    String(나가는눈금('ollama', 찾기('effort 카드'), 'xhigh')));
+  check('★ ollama 에서 끄라는 말은 눈금이 아니다',
+    나가는눈금('ollama', 찾기('boolean 카드'), 'off') === null,
+    String(나가는눈금('ollama', 찾기('boolean 카드'), 'off')));
+  check('★ 참거짓은 눈금이 아니다',
+    나가는눈금('ollama', 찾기('boolean 카드'), true) === null && 나가는눈금('openai', 찾기('effort 카드'), false) === null);
+  check('★ 안 정했으면 아무것도 안 내놓는다',
+    나가는눈금('openai', 찾기('effort 카드'), undefined) === null);
+  check('★ 카드가 없으면(검사·진단) 좁은 쪽으로 맞춘다',
+    나가는눈금('openai', null, 'max') === 'high', String(나가는눈금('openai', null, 'max')));
+
+  /*
+   * 화면 쪽이 이 함수를 **정말로 부르나.**
+   *
+   * 위 검사는 함수가 옳다는 것만 말한다. 화면이 그 함수를 안 부르고 제
+   * 갈래를 다시 적으면 검사는 초록인데 화면은 여전히 거짓을 적는다 —
+   * 이번에 고친 것이 바로 그 모양이었다.
+   */
+  const 집 = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const 화면 = readFileSync(join(집, 'src', 'commands.js'), 'utf8');
+  check('★★ /think 화면이 나가는눈금() 을 부른다', /나가는눈금\(\s*session\.conn\.kind/.test(화면));
+  check('★★ /think 화면이 눈금맞추기() 를 따로 부르지 않는다', !/눈금맞추기\(/.test(화면.replace(/\/\*[\s\S]*?\*\//g, '')));
 }
 
 // ── 마무리 ──────────────────────────────────────────────────────────────

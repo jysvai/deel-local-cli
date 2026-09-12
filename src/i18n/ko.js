@@ -589,6 +589,7 @@ export const ko = {
   'wire.cacheMarked': '표식',
   'wire.cacheKey': '열쇠',
   'wire.cacheAuto': '서버자동',
+  'wire.learned': '배움',
   'cost.cache': '캐시',
   'cost.think': '생각',
   'cost.thinkLine': '{토큰} 토큰 · 답의 {몫}%',
