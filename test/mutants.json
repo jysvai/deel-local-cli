@@ -178,7 +178,7 @@
       "곳": "tools/review2.mjs",
       "무엇": "--timeout 에 단위가 없어도 그냥 지나가게 만든다",
       "그러면": "생숫자를 주면 agy 가 missing unit 으로 거적하는데 도구는 그걸 「빈 답」 으로 받는다 — 기다린 시간과 토큰을 다 쓰고 까닭도 모르게 한 판을 버린다",
-      "찾을것": "if (!/^(?:\\d+(?:\\.\\d+)?(?:ns|us|µs|ms|s|m|h))+$/.test(기다림)) {",
+      "찾을것": "if (!/^(?:\\d+(?:\\.\\d+)?(?:ns|us|µs|μs|ms|s|m|h))+$/.test(기다림)) {",
       "바꿀것": "if (false) {",
       "검사": "test/리뷰도구.test.js"
     },
@@ -188,6 +188,14 @@
       "그러면": "`API_KEY: token.v1.secret # https://api.example.com` 처럼 주소나 괄호가 든 주석을 달면 그 줄이 코드로 읽혀 비밀이 평문으로 나간다",
       "찾을것": "const 주석 = /(?:^|[ \\t])#.*$/;",
       "바꿀것": "const 주석 = /(?!)/;",
+      "검사": "test/secrets.test.js"
+    },
+    {
+      "곳": "src/safety/secrets.js",
+      "무엇": "줄을 떼어 낼 때 줄 끝 `\\r` 을 안 떼게 되돌린다",
+      "그러면": "윈도우 줄바꿈(CRLF)으로 적힌 `.env`·YAML 에서 주석 떼기가 통째로 헛돈다 — 주석에 주소나 괄호가 있으면 그 줄의 비밀이 평문으로 나간다",
+      "찾을것": "  const 줄 = 전체.slice(앞, 뒤 < 0 ? 전체.length : 뒤).replace(/\\r$/, '').replace(주석, '');",
+      "바꿀것": "  const 줄 = 전체.slice(앞, 뒤 < 0 ? 전체.length : 뒤).replace(주석, '');",
       "검사": "test/secrets.test.js"
     }
   ]

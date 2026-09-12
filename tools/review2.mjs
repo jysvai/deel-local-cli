@@ -139,10 +139,13 @@ if (낼곳) {
  * `--timeout 900` 으로 돌렸다가 실제로 한 판을 그렇게 버렸다.
  *
  * 도움말이 `--timeout <초>` 로 적혀 있어 생숫자를 주게 만들고 있었다.
- * 도움말도 같이 고친다.
+ * 도움말(`tools/리뷰인자.mjs` 의 `쓰는법`)도 같이 고친다.
+ *
+ * 마이크로초는 두 글자로 온다 — `µs`(U+00B5)와 `μs`(U+03BC). Go 가 둘 다
+ * 받으므로 여기서도 둘 다 받는다.
  */
 const 기다림 = 값('--timeout', '40m');
-if (!/^(?:\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h))+$/.test(기다림)) {
+if (!/^(?:\d+(?:\.\d+)?(?:ns|us|µs|μs|ms|s|m|h))+$/.test(기다림)) {
   console.error(`\n\x1b[31m✗ --timeout 에는 단위를 붙여 주세요: ${기다림}\x1b[0m`);
   console.error('  예: --timeout 40m · --timeout 90m · --timeout 900s\n');
   process.exit(2);

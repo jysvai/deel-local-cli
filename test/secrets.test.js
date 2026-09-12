@@ -450,6 +450,30 @@ trace('2-멀쩡한글');
     check(`★★★ JS 주석은 그대로 둔다 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
   }
   /*
+   * ── 윈도우 줄바꿈에서 헛돌던 자리 (15차 리뷰) ───────────────────────
+   *
+   * 주석을 떼는 무늬가 `$` 로 끝나는데, `$` 는 글 끝에만 붙고 `.` 은 `\r` 을
+   * 안 먹는다. 그래서 CRLF 로 적힌 줄에서는 **주석이 하나도 안 떼어졌다** —
+   * 위 고침이 통째로 헛돌았다. 이 저장소가 도는 자리가 윈도우다.
+   */
+  for (const [글, 사라져야] of [
+    ['API_KEY=prod.v1.secret # (운영환경용)\r\n', 'prod.v1.secret'],
+    ['API_KEY: token.v1.secret # https://a.example.com\r\n', 'token.v1.secret'],
+    ['x = 1;\r\nAPI_KEY: tok.v1.x # (운영)\r\ny = 2;\r\n', 'tok.v1.x'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ CRLF 여도 주석을 뗀다 — ${JSON.stringify(글)}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), JSON.stringify(r.글));
+  }
+  // 반대쪽도 같이 본다 — 줄 끝 쉼표 규칙도 `\r` 때문에 헛돌았다.
+  for (const 글 of [
+    'const cfg = {\r\n  API_KEY: config.apiKey,\r\n};\r\n',
+    'const cfg = {\r\n  API_KEY: types.ApiKey,  \r\n};\r\n',
+  ]) {
+    check(`★★★ CRLF 여도 줄 끝 쉼표는 코드다 — ${JSON.stringify(글)}`,
+      가리기(글).글 === 글, JSON.stringify(가리기(글).글));
+  }
+  /*
    * ── YAML 흐름 표기의 중괄호 (14차 리뷰) ─────────────────────────────
    *
    * `{ API_KEY: 값 }` 은 YAML 표준 문법이다. 중괄호를 「코드」 의 증거로
