@@ -574,10 +574,84 @@ trace('18-다른것');
       r.ok && /A header looks like/.test(글만(r)), r.ok ? JSON.stringify(글만(r)) : r.error);
   }
 
+  // ③c 눌린 PDF(ObjStm)를 고쳐 저장한 꼴 — 고친 객체만 낱개로 덧붙는다.
+  {
+    /*
+     * 요즘 PDF 는 사전들이 ObjStm 안에 눌려 있다. 그걸 고쳐 저장하면 고친
+     * 객체만 **낱개로** 뒤에 붙고 옛 묶음은 파일에 그대로 남는다. 자리만
+     * 최신으로 지켜 놓고 묶음 쪽을 안 지키면, 묶음을 먼저 보는 탓에 **고치기
+     * 전 값**을 읽는다 — 자리를 지킨 것이 반쪽만 고친 것이 된다.
+     */
+    const 쪽사전 = (내용번호) => '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] '
+      + `/Resources << /Font << /F1 5 0 R >> >> /Contents ${내용번호} 0 R >>`;
+    // 고칠 객체(쪽 사전 3)가 **묶음 안에** 들어 있는 꼴이다. 주석을 달거나
+    // 내용을 갈아 끼우면 그 쪽 사전이 낱개로 다시 붙는다.
+    const 속객체 = [
+      { 번호: 1, 글: '<< /Type /Catalog /Pages 2 0 R >>' },
+      { 번호: 2, 글: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+      { 번호: 3, 글: 쪽사전(4) },
+      { 번호: 5, 글: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' },
+    ];
+    let 몸 = '';
+    const 머리조각 = [];
+    for (const o of 속객체) { 머리조각.push(`${o.번호} ${몸.length}`); 몸 += `${o.글} `; }
+    const 머리 = `${머리조각.join(' ')} `;
+    const objstm = deflateSync(Buffer.from(머리 + 몸, 'latin1'));
+    const 옛내용 = 흐름으로('BT /F1 12 Tf 72 700 Td (OLD in objstm) Tj ET');
+    const 새내용 = 흐름으로('BT /F1 12 Tf 72 700 Td (NEW loose object) Tj ET');
+
+    const 조각 = [Buffer.from('%PDF-1.5\n%\xe2\xe3\xcf\xd3\n', 'latin1')];
+    let 길이 = 조각[0].length;
+    const 자리 = {};
+    const 넣기 = (번호, buf) => { 자리[번호] = 길이; 조각.push(buf); 길이 += buf.length; };
+    const 붙이기 = (s) => { const b2 = Buffer.from(s, 'latin1'); 조각.push(b2); 길이 += b2.length; };
+    const 흐름객체 = (번호, 사전, 몸통) => Buffer.concat([
+      Buffer.from(`${번호} 0 obj\n<< ${사전} /Length ${몸통.length} >>\nstream\n`, 'latin1'),
+      몸통, Buffer.from('\nendstream\nendobj\n', 'latin1'),
+    ]);
+    // xref 흐름 한 줄: [갈래 1바이트][자리 4바이트][곁 2바이트]
+    const xref줄 = (갈래, a, b2) => {
+      const buf = Buffer.alloc(7);
+      buf[0] = 갈래; buf.writeUInt32BE(a, 1); buf.writeUInt16BE(b2, 5);
+      return buf;
+    };
+
+    넣기(4, 흐름객체(4, '', 옛내용));
+    넣기(6, 흐름객체(6, `/Type /ObjStm /N ${속객체.length} /First ${머리.length} /Filter /FlateDecode`, objstm));
+    const 첫xref = 길이;
+    const 옛표 = deflateSync(Buffer.concat([
+      xref줄(0, 0, 65535),
+      xref줄(2, 6, 0), xref줄(2, 6, 1), xref줄(2, 6, 2),   // 1·2·3 은 묶음 안
+      xref줄(1, 자리[4], 0),                                // 4 는 낱개
+      xref줄(2, 6, 3),                                      // 5 도 묶음 안
+      xref줄(1, 자리[6], 0),
+    ]));
+    넣기(7, 흐름객체(7, '/Type /XRef /Size 8 /W [1 4 2] /Root 1 0 R /Filter /FlateDecode', 옛표));
+    붙이기(`startxref\n${첫xref}\n%%EOF\n`);
+
+    // ── 고쳐 저장: 쪽 사전 3 을 낱개로 다시 붙이고, 새 내용 9 를 가리킨다 ──
+    const 새쪽자리 = 길이;
+    붙이기(`3 0 obj\n${쪽사전(9)}\nendobj\n`);
+    const 새내용자리 = 길이;
+    넣기(9, 흐름객체(9, '', 새내용));
+    const 둘째xref = 길이;
+    const 새표 = deflateSync(Buffer.concat([xref줄(1, 새쪽자리, 0), xref줄(1, 새내용자리, 0)]));
+    조각.push(흐름객체(8, `/Type /XRef /Size 10 /Index [3 1 9 1] /W [1 4 2] /Root 1 0 R /Prev ${첫xref} /Filter /FlateDecode`, 새표));
+    조각.push(Buffer.from(`startxref\n${둘째xref}\n%%EOF\n`, 'latin1'));
+
+    const r = readPdf(Buffer.concat(조각));
+    const t = r.ok ? 글만(r) : r.error;
+    check('★ 눌린 PDF 를 고쳐 저장해도 고친 값을 읽는다', /NEW loose object/.test(t), JSON.stringify(t));
+    check('★ 그때 묶음 속 옛 값이 이기지 않는다', !/OLD/.test(t), JSON.stringify(t));
+  }
+
   // ④ 두 자리로 적힌 목적지 — 뒤를 메우면 없는 한자가 된다.
   {
     const { 표 } = 유니코드표읽기('1 beginbfchar\n<01> <41>\nendbfchar');
     check('두 자리 목적지를 앞으로 메운다', 표.get(1) === 'A', JSON.stringify(표.get(1) ?? null));
+    // 메우는 자리가 맨 앞 한 곳이어야 한다 — 뒤 토막만 메우면 첫 글자가 도로 한자가 된다.
+    const b2 = 유니코드표읽기('1 beginbfchar\n<02> <410042>\nendbfchar');
+    check('★ 세 바이트 목적지도 앞으로 메운다', b2.표.get(2) === 'AB', JSON.stringify(b2.표.get(2) ?? null));
   }
 
   // ⑤ 배열 꼴 뒤에 엉뚱한 범위가 생기지 않는다.
