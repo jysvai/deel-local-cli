@@ -222,7 +222,7 @@ trace('4-멀쩡한범위');
 // 아니라 도박이 된다.
 trace('5-길면짧게');
 {
-  const { 길이규칙, 짧게다시할까, 두판돌리기 } = await import('../tools/리뷰길이.mjs');
+  const { 길이규칙, 짧게다시할까, 왜다시, 두판돌리기 } = await import('../tools/리뷰길이.mjs');
   const { 아는옵션, 낯선옵션, 값빠진옵션 } = await import('../tools/리뷰인자.mjs');
   /*
    * 집안규칙의 보고 형식 줄. 두 판의 형식이 어긋나면 모델은 하나를 버린다.
@@ -252,13 +252,20 @@ trace('5-길면짧게');
     /버려졌다/.test(둘째), 둘째.split('\n')[1] ?? '');
 
   /*
-   * **길어서** 버려졌을 때만 다시 묻는다. 도구 거절·연결 끊김으로 빈 답이
-   * 온 것은 다시 물어도 같은 자리에 막히고, 그때 또 부르면 시간만 두 배다.
+   * 빈 답으로 끝난 판은 **까닭에 따라** 다시 묻는다.
+   *
+   * 여태는 「길어서 잘린 것만」 다시 물었다. 도구 거절은 다시 물어도 같은
+   * 자리에 막힌다고 봤기 때문이다. **재 보니 아니었다** — 같은 diff 를 같은
+   * 설정으로 다섯 번 돌렸더니 길이초과 한 번, 도구거절 한 번이 났다.
+   * 판마다 나는 것이 아니라 **흔들리는 것**이라, 다시 부르면 그만큼 산다
+   * (22차 눈금 · `pass@k`). 연결이 끊긴 판만 다시 안 묻는다.
    */
   const 잘림 = { status: 'ERROR', error: 'Your previous response was cut off because it exceeded the output token limit' };
+  const 막힘 = { status: 'ERROR', error: 'jetski: no output produced — a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied.' };
   check('★★★ 길어서 버려졌으면 다시 묻는다', 짧게다시할까(잘림, '') === true);
-  check('★★★ 도구가 거절돼 빈 답이면 안 묻는다',
-    짧게다시할까({ status: 'ERROR', error: 'a tool required the read_file permission' }, '') === false);
+  check('★★★ 도구가 막혀 멈춘 판도 다시 묻는다', 왜다시(막힘, '') === '막힘');
+  check('★★★ 까닭을 갈라서 말해 준다', 왜다시(잘림, '') === '길이');
+  check('★★★ 「짧게 다시」 는 길이일 때만이다', 짧게다시할까(막힘, '') === false);
   check('★★★ 끝맺음이 아예 없어도 안 묻는다', 짧게다시할까(null, '') === false);
   check('★★★ 답이 있으면 안 묻는다', 짧게다시할까(잘림, '· route.js:1 · 뭔가 있다') === false);
   check('★★★ 답이 빈칸뿐이어도 빈 답으로 본다', 짧게다시할까(잘림, '   \n  ') === true);
@@ -371,7 +378,11 @@ trace('5-길면짧게');
 
     부른판.length = 0;
     두판돌리기(가짜('', 'a tool required the read_file permission'));
-    check('★★★ 도구가 거절된 판은 두 번 안 돈다', 부른판.join(',') === '1', String(부른판));
+    check('★★★ 도구가 거절된 판도 끝판까지 돈다', 부른판.join(',') === '1,2,3', String(부른판));
+
+    부른판.length = 0;
+    두판돌리기(가짜('', 'socket hang up'));
+    check('★★★ 망이 끊긴 판만 한 번 돌고 만다', 부른판.join(',') === '1', String(부른판));
   }
 
   /*
@@ -497,7 +508,240 @@ trace('10-셋째판');
    * 마침 까닭을 낱말로 준다 — 그걸 못 알아보면 짧게 다시 묻지도 않고
    * 화면에는 쪼갤 수 없는 방법만 남는다(20차 리뷰).
    */
-  const { 짧게다시할까: 다시할까 } = await import('../tools/리뷰길이.mjs');
+  const { 짧게다시할까: 다시할까, 왜다시: 왜다시2, 끝난까닭, 실패갈래, 길이규칙: 길이규칙2, 두판돌리기: 두판돌리기2 } = await import('../tools/리뷰길이.mjs');
+
+  /*
+   * ── 까닭을 값만 이어 붙이면 자리 이름이 사라진다 ──────────────────
+   *
+   * `finish_reason: 'length'` 를 값만 뽑아 이으면 `"length"` 하나가 된다.
+   * 그러면 무늬가 `^length$` 로만 잡을 수 있고, 옆에 `error` 하나만 더
+   * 있어도 `"error: … · length"` 가 돼 못 잡는다. 22차 리뷰가 짚었고
+   * 손으로 재 보니 여섯 중 넷이 샜다. 자리 이름을 같이 싣는다.
+   */
+  for (const [이름, 끝맺음] of [
+    ['error 와 같이', { error: 'agy failed', finish_reason: 'length' }],
+    ['빈 error 와 같이', { error: '', finish_reason: 'length' }],
+    ['자리가 둘', { finishReason: 'length', finish_reason: 'length' }],
+    ['오라마 꼴 + error', { error: 'oops', done_reason: 'length' }],
+    ['멈춘 쪽 + error', { error: 'oops', stop_reason: 'max_tokens' }],
+  ]) {
+    check(`★★★ 자리가 둘이어도 길이 초과를 알아본다 — ${이름}`,
+      다시할까(끝맺음, ''), 끝난까닭(끝맺음));
+  }
+  check('★★★ 까닭에 자리 이름을 싣는다',
+    끝난까닭({ error: 'x', finish_reason: 'length' }) === 'error: x · finish_reason: length',
+    끝난까닭({ error: 'x', finish_reason: 'length' }));
+  check('★★★ 빈 자리는 빼고 싣는다',
+    끝난까닭({ error: '', finish_reason: 'length' }) === 'finish_reason: length',
+    끝난까닭({ error: '', finish_reason: 'length' }));
+  check('★★★ 그래도 답은 안 긁는다',
+    !/MAX_TOKENS/.test(끝난까닭({ status: 'SUCCESS', response: 'MAX_TOKENS 를 조심하세요' })),
+    끝난까닭({ status: 'SUCCESS', response: 'MAX_TOKENS 를 조심하세요' }) || '(빈 것)');
+
+  /*
+   * 거절 말이 **따옴표를 달고 오리라고 믿지 않는다.** `required the
+   * "command" permission` 만 보게 했더니 따옴표 없는 꼴과 짧은 꼴이
+   * 그대로 샜다(23차 리뷰). 넓게 잡는 쪽으로 기운다 — 아닌 것을 막힘으로
+   * 보면 두 판 더 부르고 끝나지만, 막힌 것을 놓치면 그 판이 통째로 없어진다.
+   */
+  for (const [이름, 말] of [
+    ['따옴표 있는 진짜 말', 'a tool required the "command" permission that headless mode cannot prompt for'],
+    ['따옴표 없는 말', 'a tool required the read_file permission'],
+    ['짧은 거절', 'RunCommand was denied'],
+    ['저절로 거절', 'so it was auto-denied'],
+    ['빈 손이라고만', 'jetski: no output produced'],
+  ]) {
+    check(`★★★ 거절 말을 꼴을 안 가리고 알아본다 — ${이름}`,
+      왜다시2({ error: 말 }, '') === '막힘', 말);
+  }
+
+  /*
+   * 자리 이름을 싣게 되면서 `^length$` 가 안 맞게 됐는데, 그 무늬만 지우고
+   * 새 꼴을 안 넣어 `{error: 'length'}` 가 한동안 샜다 — **내가 낸 회귀**를
+   * 23차 리뷰가 잡았다. 자리가 하나일 때는 `<자리>: length` 통째로 본다.
+   */
+  check('★★★ 자리가 하나뿐이고 값이 length 여도 알아본다',
+    왜다시2({ error: 'length' }, '') === '길이');
+  check('★★★ 그래도 앞에 말이 붙은 length 는 안 잡는다',
+    왜다시2({ error: 'content length mismatch' }, '') === false);
+  check('★★★ 자리 이름이 달라도 마찬가지다',
+    왜다시2({ stop_reason: 'length' }, '') === '길이');
+
+  /*
+   * ── 이어 붙인 뒤에 재면 앵커가 옆 칸 때문에 무너진다 ────────────────
+   *
+   * 같은 실수를 세 판 내리 했다 — 값만 이으면 자리 이름이 사라지고(22차),
+   * 이름을 실으면 `^length$` 가 안 맞고(23차), 새 앵커를 넣었더니 자리가
+   * 둘일 때 또 안 맞았다(24차). 이제 **칸마다** 잰다.
+   */
+  for (const [이름, 끝맺음] of [
+    ['자리 하나', { error: 'length' }],
+    ['뒤에 딴 자리가 붙어도', { error: 'length', finish_reason: 'stop' }],
+    ['앞에 딴 자리가 붙어도', { finishReason: 'stop', error: 'length' }],
+    ['자리 셋', { error: 'length', finishReason: 'stop', done_reason: 'ok' }],
+  ]) {
+    check(`★★★ 옆 칸이 있어도 길이 초과를 알아본다 — ${이름}`,
+      왜다시2(끝맺음, '') === '길이', 끝난까닭(끝맺음));
+  }
+  check('★★★ 그래도 앞에 말이 붙은 length 는 안 잡는다',
+    왜다시2({ error: 'content length mismatch', finish_reason: 'stop' }, '') === false);
+  /*
+   * **앞 칸이 있을 때**가 이어 붙이기와 칸마다 재기를 가르는 자리다.
+   * `^<자리>: length` 는 글 맨 앞만 보므로, 이어 붙이면 앞에 칸이 하나만
+   * 있어도 안 맞는다. `{status: 'ERROR', error: '…'}` 는 agy 가 늘 주는
+   * 꼴이라 이게 진짜 판이다.
+   *
+   * 어긋내기가 이 자리를 짚어 줬다 — 끝 앵커를 `$` 에서 `\b` 로 풀면서
+   * 앞엣 검사들이 둘을 **더는 못 가르게** 됐는데, 그걸 아무도 몰랐다.
+   */
+  check('★★★ 앞에 딴 칸이 있어도 길이 초과를 알아본다',
+    왜다시2({ status: 'ERROR', error: 'length' }, '') === '길이',
+    끝난까닭({ status: 'ERROR', error: 'length' }));
+  check('★★★ 앞 칸이 둘이어도 마찬가지다',
+    왜다시2({ status: 'ERROR', error: 'oops', stop_reason: 'length' }, '') === '길이');
+  /*
+   * 「한도를 넘겼다」 를 적는 낱말은 **꼬리가 붙어서** 오기도 한다.
+   * `MAX_TOKENS` 뒤에 `\b` 를 박았더니 `MAX_TOKENS_EXCEEDED` 가 빠졌고
+   * (밑줄은 낱말 경계가 아니다), `context_length_exceeded` 는 오픈AI 가
+   * 실제로 주는 오류 이름인데 어느 갈래에도 안 걸렸다(27차 리뷰).
+   */
+  for (const [이름, 끝맺음] of [
+    ['MAX_TOKENS_EXCEEDED', { error: 'MAX_TOKENS_EXCEEDED' }],
+    ['context_length_exceeded', { error: 'context_length_exceeded' }],
+    ['reason 한 자리', { reason: 'length' }],
+  ]) {
+    check(`★★★ 꼬리 붙은 한도 낱말도 알아본다 — ${이름}`,
+      왜다시2(끝맺음, '') === '길이', 끝난까닭(끝맺음));
+  }
+  check('★★★ reason: stop 은 다시 안 묻는다', 왜다시2({ reason: 'stop' }, '') === false);
+
+  /*
+   * 까닭 자리에 글자가 아닌 것이 올 수 있다. `String({message: …})` 는
+   * `[object Object]` 라, 무늬가 조용히 빗나가고 그 판을 버린다(24차 리뷰).
+   */
+  for (const [이름, 끝맺음, 바람] of [
+    ['객체 속 message', { error: { message: 'exceeded the output token limit' } }, '길이'],
+    ['객체 속 reason', { error: { reason: 'auto-denied' } }, '막힘'],
+    ['통째로 객체', { error: { code: 42, detail: 'MAX_TOKENS' } }, '길이'],
+    ['숫자', { error: 500 }, false],
+  ]) {
+    check(`★★★ 글자가 아닌 까닭도 읽는다 — ${이름}`, 왜다시2(끝맺음, '') === 바람, JSON.stringify(끝맺음));
+  }
+
+  /*
+   * 권한 이름에 점이 박힌 꼴(`file.read`)이 있다. 사이를 `[^.]` 로 뒀더니
+   * 그 꼴이 통째로 빠졌다(24차 리뷰).
+   */
+  for (const 말 of ['a tool required the file.read permission',
+    'a tool required the fs.write.all permission',
+    'blocked by a permission that headless mode cannot prompt for']) {
+    check(`★★★ 점 박힌 권한 이름도 알아본다 — ${말.slice(0, 40)}`,
+      왜다시2({ error: 말 }, '') === '막힘', 말);
+  }
+
+  /*
+   * 까닭이 **상태 한 칸으로만** 오기도 한다. `까닭자리` 에 `status` 가
+   * 없어서 `{status: 'MAX_TOKENS'}` 로 끝난 판은 칸이 하나도 안 잡혀
+   * 다시 묻지도 않고 끝났다(26차 리뷰).
+   */
+  check('★★★ 상태 한 칸으로 온 까닭도 읽는다', 왜다시2({ status: 'MAX_TOKENS' }, '') === '길이');
+  check('★★★ 상태로 온 거절도 읽는다', 왜다시2({ status: 'DENIED' }, '') === '막힘');
+  check('★★★ 뜻 없는 상태는 다시 안 묻는다', 왜다시2({ status: 'ERROR' }, '') === false);
+
+  /*
+   * `length` 뒤에 말이 붙는 꼴이 있다(`length exceeded`). 끝을 `$` 로
+   * 막았더니 그 꼴이 빠졌다(26차 리뷰).
+   */
+  check('★★★ length 뒤에 말이 붙어도 잡는다', 왜다시2({ error: 'length exceeded' }, '') === '길이');
+  check('★★★ 그래도 content length 는 안 잡는다', 왜다시2({ error: 'content length mismatch' }, '') === false);
+
+  /*
+   * 가르기(무엇이 잘못됐나)와 다시 묻기(또 물을까)는 다른 물음이다.
+   * 한 자리로 모으면서 「답이 있으면 안 묻는다」 를 덮어썼던 자리다.
+   */
+  check('★★★ 갈래는 답이 있어도 왜 죽었는지 말한다',
+    실패갈래({ status: 'ERROR', error: 'exceeded the output token limit' }, '· a.js:1 · 뭔가') === '길이초과');
+  check('★★★ 그래도 답이 있으면 다시 안 묻는다',
+    왜다시2({ status: 'ERROR', error: 'exceeded the output token limit' }, '· a.js:1 · 뭔가') === false);
+  for (const [이름, 끝맺음, 답, 바람] of [
+    ['성공', { status: 'SUCCESS' }, '· a.js:1 · 뭔가', '성공'],
+    ['길이초과', { finish_reason: 'length' }, '', '길이초과'],
+    ['도구거절', { error: 'RunCommand was denied' }, '', '도구거절'],
+    ['망끊김', { error: 'connection closed by peer' }, '', '망끊김'],
+    ['그밖에', { error: 'disk full' }, '', '그밖에'],
+  ]) {
+    check(`★★★ 갈래를 한 낱말로 가른다 — ${이름}`, 실패갈래(끝맺음, 답) === 바람, 실패갈래(끝맺음, 답));
+  }
+
+  /*
+   * 막힌 판은 「더 짧게 써라」 가 아니라 「멈추지 말고 적어라」 라고 물어야
+   * 한다. 까닭이 판마다 다르니 다시 묻는 말도 달라야 한다.
+   *
+   * **왜 잃었나와 몇 판 잃었나는 따로다.** 한 덩이로 묶어 뒀더니 첫 판을
+   * 길이로, 둘째 판을 도구로 잃은 판에서 셋째 판이 조이기를 통째로 못
+   * 받았다(23차 리뷰). 셋째 판은 마지막이라 조이기가 빠지면 또 잃는다.
+   */
+  const 몇건세기 = (t) => Number((t.match(/최대 (\d+)건/) ?? [])[1] ?? NaN);
+  for (const [판, 까닭, 바람건수, 도구얘기] of [
+    [2, '길이', 5, false],
+    [3, '길이', 3, false],
+    [2, '막힘', 5, true],
+    [3, '막힘', 3, true],
+  ]) {
+    const 글 = 길이규칙2(판, 까닭).join('\n');
+    check(`★★★ ${판}판·${까닭} 은 ${바람건수}건까지 조인다`, 몇건세기(글) === 바람건수, `${몇건세기(글)}건`);
+    check(`★★★ ${판}판·${까닭} 의 머리말이 까닭에 맞는다`,
+      /도구를 쓰려다 거절/.test(글) === 도구얘기, 글.split('\n')[1] ?? '');
+  }
+  /*
+   * 조이기는 **까닭을 안 탄다** — 몇 판 잃었느냐로만 정한다. 그래서 막힌
+   * 판 쪽지에도 건수 얘기가 같이 들어간다. 이게 맞다(23차에서 그렇게
+   * 고쳤다). 주석에는 「도구 얘기만 한다」 고 적혀 있었고 검사는
+   * `!/짧게 써라/` 만 봐서 그 어긋남을 못 잡았다(24차 리뷰).
+   */
+  check('★★★ 막힌 판에도 조이기가 붙는다',
+    /최대 5건/.test(길이규칙2(2, '막힘').join('\n')));
+  check('★★★ 막힌 판 머리말은 길이 얘기로 시작하지 않는다',
+    !/말이 길어/.test(길이규칙2(2, '막힘').join('\n')));
+  const 막힘쪽지 = 길이규칙2(2, '막힘').join('\n');
+  check('★★★ 막힌 판에는 도구 얘기를 한다', /도구를 쓰려다 거절/.test(막힘쪽지), 막힘쪽지.split('\n')[1] ?? '');
+  /*
+   * 여기 「막힌 판에 『짧게 써라』 라고 안 한다」 가 있었다. **틀린 약속을
+   * 재고 있었다** — 조이기는 까닭을 안 타고 늘 붙는 것이 맞다(23차). 바로
+   * 위 두 줄이 진짜 약속을 잰다: 조이기는 붙고, 머리말만 까닭을 탄다.
+   */
+  check('★★★ 길이일 때는 여태 하던 말 그대로', /짧게 써라/.test(길이규칙2(2, '길이').join('\n')));
+  check('★★★ 까닭을 안 주면 길이로 본다', /짧게 써라/.test(길이규칙2(2).join('\n')));
+
+  /*
+   * 되풀이하는 자리가 두 까닭을 다 봐야 한다. 한쪽만 보면 나머지 한쪽은
+   * 한 판 부르고 버려진다 — 22차의 파일 하나짜리 판이 그렇게 199초 만에
+   * 끝났다(세 판이 아니라 한 판이었다).
+   */
+  for (const [이름, 말, 바람판] of [
+    ['길이초과', 'exceeded the output token limit', 3],
+    ['도구 막힘', 'jetski: no output produced — auto-denied', 3],
+    ['망 끊김', 'socket hang up', 1],
+  ]) {
+    const r = 두판돌리기2(() => ({ 끝맺음: { error: 말 }, 답: '', 걸린초: 1 }), () => {});
+    check(`★★★ 막힌 판도 끝판까지 간다 — ${이름}`, r.몇판 === 바람판, `${r.몇판}판`);
+  }
+  {
+    const 받은 = [];
+    두판돌리기2((판, 까닭) => { 받은.push(까닭); return { 끝맺음: { error: 'auto-denied' }, 답: '', 걸린초: 1 }; }, () => {});
+    check('★★★ 왜 다시 묻는지를 한판에 넘긴다', 받은[1] === '막힘' && 받은[2] === '막힘', JSON.stringify(받은));
+  }
+  {
+    const 알린까닭 = [];
+    두판돌리기2(() => ({ 끝맺음: { error: 'auto-denied' }, 답: '', 걸린초: 1 }), (초, 판, 까닭) => 알린까닭.push(까닭));
+    /*
+     * `[].every(...)` 는 참이다 — 알림을 아예 안 불러도 초록이었다.
+     * **몇 번 불렸는지 먼저 못 박는다**(24차 리뷰).
+     */
+    check('★★★ 다시 묻는 판마다 알린다', 알린까닭.length === 2, `${알린까닭.length}번`);
+    check('★★★ 화면에도 왜 다시 묻는지 알린다',
+      알린까닭.length > 0 && 알린까닭.every((x) => x === '막힘'), JSON.stringify(알린까닭));
+  }
   const { 줄일말: 말고르기 } = await import('../tools/리뷰길이.mjs');
   for (const 까닭 of ['finishReason: MAX_TOKENS', 'finish_reason: length', 'finish_reason="MAX_TOKENS"',
     '{"done_reason": "length"}', 'stop_reason: max_tokens']) {
@@ -611,6 +855,75 @@ trace('9-줄일말');
   }
   // 함수만 있고 안 쓰면 화면은 그대로다.
   const 본문 = readFileSync(new URL('../tools/review2.mjs', import.meta.url), 'utf8');
+  /*
+   * 화면에 까닭 적는 줄이 `error` 한 자리만 보고 있었다 — 다시 물을지
+   * 정하는 갈래는 일곱 자리를 보는데(24차 리뷰). 같은 도구 안 두 갈래가
+   * 어긋나면 한쪽만 고쳐 놓고 고쳤다고 여기게 된다.
+   */
+  check('★★★ 화면 까닭도 끝난까닭으로 읽는다',
+    /const 까닭글 = 끝난까닭\(끝맺음\);/.test(본문)
+      && !/String\(끝맺음\.error\)/.test(본문));
+  /*
+   * `git diff` 는 아직 add 안 한 파일을 한 줄도 안 보여 준다 — 새로 만든
+   * 파일은 2차 리뷰를 **한 번도 안 거치고** 들어갔다(24차 리뷰).
+   */
+  check('★★★ 안 올린 파일도 볼 것에 싣는다',
+    /ls-files', '--others', '--exclude-standard'/.test(본문)
+      && /새파일diff\(\)/.test(본문));
+  check('★★★ 빈 것과 견줄 때 판마다 다른 이름을 쓴다',
+    /win32' \? 'NUL' : '\/dev\/null'/.test(본문));
+
+  /*
+   * 새 파일을 싣는 자리를 **빈 검사 뒤**에 뒀더니, `--files <새 파일>` 이
+   * 여전히 한 줄도 안 보고 나갔다 — 화면에는 「이름을 잘못 적었나」 라고까지
+   * 적혔다(25차 리뷰). 고친 자리 바로 옆에 낸 틈이다.
+   */
+  {
+    const 새것줄 = 본문.indexOf('const 새것 = 부터 ?');
+    const 빈검사줄 = 본문.indexOf('볼 것이 없습니다 — 이 파일들에');
+    check('★★★ 새 파일을 실은 뒤에 빈 검사를 한다',
+      새것줄 > 0 && 빈검사줄 > 0 && 새것줄 < 빈검사줄,
+      `새것 ${새것줄} · 빈검사 ${빈검사줄}`);
+    check('★★★ 빈 검사가 새 파일까지 더해서 본다',
+      /if \(!\(r\.stdout \+ 새것\)\.trim\(\)\)/.test(본문));
+  }
+
+  /*
+   * **잘린 답은 빈 답이 아니다.** 답이 왔는데 상태가 나쁜 판을 통째로
+   * 버리면서 화면에는 「빈 채로 돌아왔습니다」 라고 적고 있었다. 다시 묻는
+   * 자리는 「답이 조금이라도 오면 다시 안 묻는다」 고 정해 둔 채라, 둘을
+   * 합치면 그 판은 **다시 묻지도 않고 받은 것도 안 보여 주는** 자리가 된다.
+   */
+  check('★★★ 답이 왔으면 상태가 나빠도 보여 준다',
+    /if \(답 && 끝맺음\?\.status !== 'SUCCESS'\)/.test(본문)
+      && /답이 끝까지 오지 않았습니다/.test(본문));
+  check('★★★ 빈 답일 때만 실패로 친다', /^if \(!답\) \{$/m.test(본문));
+
+  /*
+   * 재는 쪽이 재이는 쪽보다 덜 보면 안 된다 — 눈금이 `error` 한 자리만
+   * 읽어서, `finish_reason` 에만 까닭이 온 판을 「그밖에」 로 뭉갰다.
+   */
+  {
+    const 눈금 = readFileSync(new URL('../tools/리뷰눈금.mjs', import.meta.url), 'utf8');
+    /*
+     * 눈금이 **제 무늬를 따로 갖지 않는다.** 한때 갖고 있었고 셋이 다
+     * 도구 쪽보다 좁아서, `finish_reason: length` 도 `denied` 홀로도
+     * `by peer` 도 「그밖에」 로 뭉갰다(26차 리뷰). 재는 쪽이 재이는 쪽보다
+     * 덜 보면 그 표는 거짓말이고, 그 표를 근거로 한 판단이 전부 틀린다.
+     */
+    check('★★★ 눈금이 도구의 가르기를 그대로 쓴다',
+      /import \{[^}]*실패갈래[^}]*\} from '\.\/리뷰길이\.mjs'/.test(눈금)
+        && /실패갈래\(/.test(눈금),
+      눈금.split('\n').find((l) => l.includes('리뷰길이.mjs')) ?? '');
+    check('★★★ 눈금이 제 무늬를 따로 갖지 않는다',
+      !/output token limit\|MAX_TOKENS/.test(눈금)
+        && !/ECONN\|socket hang up/.test(눈금));
+    check('★★★ 있는지만 보는데 파일을 통째로 읽지 않는다',
+      /existsSync\(p\)/.test(눈금) && !/readFileSync\(p, \{ flag: 'r' \}\)/.test(눈금));
+    check('★★★ 눈금은 모델을 하나로 못박는다',
+      /const 모델 = 'gemini-3\.8-flash-high';/.test(눈금));
+  }
+
   check('★★★ review2 가 줄일말을 부른다',
     /import \{[^}]*줄일말[^}]*\} from '\.\/리뷰길이\.mjs'/.test(본문) && /줄일말\(\{/.test(본문),
     본문.split('\n').find((l) => l.includes('줄일말({'))?.trim() ?? '');

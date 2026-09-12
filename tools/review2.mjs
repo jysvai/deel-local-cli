@@ -42,7 +42,7 @@ import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 // 길이 규칙과 「다시 물을까」 판단은 따로 뒀다 — 검사가 모델을 안 부르고 잴 수 있게.
-import { 길이규칙, 두판돌리기, 줄일말 } from './리뷰길이.mjs';
+import { 길이규칙, 끝난까닭, 두판돌리기, 줄일말 } from './리뷰길이.mjs';
 import { 낯선옵션, 값빠진옵션, 쓰는법 } from './리뷰인자.mjs';
 
 const 인자 = process.argv.slice(2);
@@ -121,6 +121,17 @@ if (낼곳) {
     } catch { /* 없는 파일은 새로 만들면 되니 탈이 아니다 */ }
     const 어미 = 낼곳.replace(/[\\/][^\\/]*$/, '');
     if (어미 && 어미 !== 낼곳 && !existsSync(어미)) return `그 폴더가 없습니다 — ${어미}`;
+    /*
+     * 윈도우에서 `/dev/null` 은 장치가 아니라 **그냥 경로**다. 버리려고
+     * 준 이름이 `nul` 이라는 파일이 돼서 저장소에 떨어졌고, 그 판의 리뷰를
+     * 아무도 안 읽었다. 「간 줄 알았는데 안 갔다」 — 이 도구가 잡으러 온
+     * 바로 그 부류를 제가 갖고 있었다.
+     */
+    if (/^(?:\/dev\/null|nul|NUL)$/.test(낼곳.trim())) {
+      return process.platform === 'win32'
+        ? '윈도우에는 /dev/null 이 없습니다 — 그 이름으로 파일이 만들어집니다. 버리려면 --out 을 빼세요'
+        : '버리려면 --out 을 아예 빼세요 — 화면에는 그대로 찍힙니다';
+    }
     return null;
   })();
   if (왜) {
@@ -152,6 +163,28 @@ if (!/^(?:\d+(?:\.\d+)?(?:ns|us|µs|μs|ms|s|m|h))+$/.test(기다림)) {
 }
 
 const git = (...args) => spawnSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+
+/*
+ * ── 아직 add 안 한 파일은 `git diff` 에 한 줄도 안 나온다 ────────────────
+ *
+ * 그래서 **새로 만든 파일은 2차 리뷰를 한 번도 안 거치고 들어갔다.** 새
+ * 파일이야말로 새 실수가 사는 자리인데, 여기만 통째로 비어 있었다.
+ * 24차 리뷰가 「`리뷰눈금.mjs` 가 diff 에 없다」 고 짚어서 알았다 — 그 판이
+ * 정말로 그 파일을 못 보고 있었다.
+ *
+ * 색인을 건드리지 않고 보려면 빈 것과 견준다(`--no-index`). 이건 다른 데가
+ * 있으면 종료코드 1 을 내므로 성공 여부로 가르면 안 된다 — 나온 글만 쓴다.
+ */
+const 빈것 = process.platform === 'win32' ? 'NUL' : '/dev/null';
+
+function 새파일diff(파일들 = []) {
+  const 목록 = git('ls-files', '--others', '--exclude-standard').stdout
+    .split('\n').map((줄) => 줄.trim()).filter(Boolean)
+    // `git ls-files` 는 늘 `/` 로 준다. 사람이 `tools\새것.js` 라고 치면
+    // 글자가 안 맞아 그 파일만 조용히 빠졌다(26차 리뷰).
+    .filter((f) => 파일들.length === 0 || 파일들.some((줄) => 줄.replace(/\\/g, '/') === f));
+  return 목록.map((f) => git('diff', '--no-index', '--', 빈것, f).stdout).join('');
+}
 
 /** 무엇을 보일 것인가. 아무것도 안 바뀌었으면 그렇다고 말하고 끝낸다. */
 function 볼것() {
@@ -218,12 +251,13 @@ function 볼것() {
      * git 은 둘을 구별해 주지 않으므로(안 맞는 경로에도 0 으로 끝난다) 우리가
      * 이름을 되읊어 준다. 잘못 적은 사람이 그 자리에서 알아본다.
      */
-    if (!r.stdout.trim()) {
+    const 새것 = 부터 ? '' : 새파일diff(파일들);
+    if (!(r.stdout + 새것).trim()) {
       console.log(`\n볼 것이 없습니다 — 이 파일들에 바뀐 자리가 없습니다.\n  ${파일들.join('\n  ')}`);
       console.log('\x1b[90m  (이름을 잘못 적어도 똑같이 보입니다 — 위 이름을 한 번 보세요)\x1b[0m\n');
       process.exit(0);
     }
-    return { 무엇: 부터 ? `파일 ${파일들.length}개 · ${범위}` : `파일 ${파일들.length}개`, diff: r.stdout };
+    return { 무엇: 부터 ? `파일 ${파일들.length}개 · ${범위}` : `파일 ${파일들.length}개`, diff: r.stdout + 새것 };
   }
   if (부터) {
     /*
@@ -239,7 +273,7 @@ function 볼것() {
     }
     return { 무엇: `${부터}..${까지}`, diff: 사이 };
   }
-  const 안커밋 = git('diff', 'HEAD').stdout;
+  const 안커밋 = git('diff', 'HEAD').stdout + 새파일diff();
   if (안커밋.trim()) return { 무엇: '아직 커밋 안 한 것', diff: 안커밋 };
   return { 무엇: '마지막 판(HEAD~1..HEAD)', diff: git('diff', 'HEAD~1..HEAD').stdout };
 }
@@ -313,9 +347,9 @@ const 보일diff = 잘림 ? diff.slice(0, 최대) : diff;
  * 한 줄을 넣으면 쪽지가 그대로 첫 마디가 된다 — 길이 한도도, 파일 읽기 권한도
  * 지나갈 일이 없다. 답은 마지막 `result` 사건에 통째로 들어 온다.
  */
-const 쪽지짓기 = (판) => [
+const 쪽지짓기 = (판, 까닭) => [
   집안규칙,
-  ...길이규칙(판),
+  ...길이규칙(판, 까닭),
   '',
   `아래는 ${무엇} 의 diff 다.${잘림 ? ' (너무 길어 앞부분만 실었다 — 뒤가 잘렸다고 가정하고 본 것만 말해라)' : ''}`,
   '',
@@ -328,9 +362,9 @@ const 쪽지짓기 = (판) => [
   '거절당하면 거기서 멈추지 말고, 위 diff 만 보고 아는 만큼 적어라. 빈 답이 제일 나쁘다.',
 ].join('\n');
 
-const 넣을것짓기 = (판) => `${JSON.stringify({
+const 넣을것짓기 = (판, 까닭) => `${JSON.stringify({
   event: 'user',
-  message: { role: 'user', content: [{ type: 'text', text: 쪽지짓기(판) }] },
+  message: { role: 'user', content: [{ type: 'text', text: 쪽지짓기(판, 까닭) }] },
 })}\n`;
 
 /*
@@ -375,7 +409,7 @@ if (!조용히) {
  */
 
 /** 한 판 부른다. 끝맺음 사건과 받아 낸 글을 같이 돌려준다. */
-function 한판(판) {
+function 한판(판, 까닭) {
   const t0 = Date.now();
   const r = spawnSync(agy, [
     '--input-format', 'stream-json',
@@ -383,7 +417,7 @@ function 한판(판) {
     '--mode', 'plan',
     '--model', 모델,
     '--print-timeout', 기다림,
-  ], { encoding: 'utf8', input: 넣을것짓기(판), maxBuffer: 64 * 1024 * 1024 });
+  ], { encoding: 'utf8', input: 넣을것짓기(판, 까닭), maxBuffer: 64 * 1024 * 1024 });
   if (r.error) {
     console.error(`\n\x1b[31m✗ agy 를 못 띄웠습니다\x1b[0m\n  ${r.error.message}\n`);
     process.exit(2);
@@ -415,9 +449,10 @@ function 한판(판) {
  * 판을 도는 자리는 리뷰길이 쪽에 있다. 여기에 두면 모델을 안 부르고는 못
  * 재서, 이 토막을 통째로 지워도 검사가 초록이었다(8차 리뷰).
  */
-const { r, 끝맺음, 답, 걸린초 } = 두판돌리기(한판, (초, 다음판) => {
+const { r, 끝맺음, 답, 걸린초 } = 두판돌리기(한판, (초, 다음판, 까닭) => {
   if (!조용히) {
-    console.log(그레이(`답이 길어 버려졌습니다 — 더 짧게 다시 묻습니다 (${다음판}판째 · ${초.toFixed(0)}초 썼습니다)`));
+    const 앞말 = 까닭 === '막힘' ? '도구가 막혀 멈췄습니다 — 도구 없이 다시 묻습니다' : '답이 길어 버려졌습니다 — 더 짧게 다시 묻습니다';
+    console.log(그레이(`${앞말} (${다음판}판째 · ${초.toFixed(0)}초 썼습니다)`));
   }
 });
 
@@ -439,10 +474,35 @@ const { r, 끝맺음, 답, 걸린초 } = 두판돌리기(한판, (초, 다음판
  * 적으라고 쪽지에 시켜 뒀으니, 빈 것은 말 그대로 안 온 것이다.
  * 거절당한 도구가 있으면 그것도 같이 적는다 — 그게 대개 까닭이다.
  */
-if (!답 || 끝맺음?.status !== 'SUCCESS') {
+/*
+ * ── 잘린 답은 **빈 답이 아니다** ────────────────────────────────────────
+ *
+ * 여기서 `답 && status !== 'SUCCESS'` 인 판을 통째로 버리고 있었다. 그런데
+ * 다시 묻는 자리는 「답이 조금이라도 왔으면 다시 안 묻는다」 고 **정해 둔**
+ * 채다. 둘을 합치면 답이 온 실패 판은 **다시 묻지도 않고 받은 것도 안
+ * 보여 주는** 자리가 된다 — 화면에는 「빈 채로 돌아왔습니다」 만 남는다.
+ *
+ * 있는 것을 쓴다는 쪽이 이 도구가 적어 둔 정책이다. 잘렸으면 잘렸다고
+ * 말하고 **받은 것은 보여 준다.**
+ */
+if (답 && 끝맺음?.status !== 'SUCCESS') {
+  console.error(`\n\x1b[33m⚠ 답이 끝까지 오지 않았습니다\x1b[0m ${그레이(`(${걸린초.toFixed(0)}초 · 상태 ${끝맺음?.status ?? '없음'})`)}`);
+  console.error(`  ${그레이('받은 데까지만 아래에 싣습니다 — 뒤가 잘렸을 수 있습니다.')}`);
+  const 까닭줄 = 끝난까닭(끝맺음);
+  if (까닭줄) console.error(`  ${그레이(까닭줄.slice(0, 200))}`);
+  console.error('');
+}
+
+if (!답) {
   console.error(`\n\x1b[31m✗ 2차 리뷰가 빈 채로 돌아왔습니다\x1b[0m ${그레이(`(${걸린초.toFixed(0)}초 · 한도 ${기다림})`)}`);
   if (끝맺음?.status && 끝맺음.status !== 'SUCCESS') console.error(`  상태: ${끝맺음.status}`);
-  if (끝맺음?.error) console.error(`  ${String(끝맺음.error).slice(0, 300)}`);
+  /*
+   * 까닭을 `error` 한 자리에서만 읽고 있었다 — 다시 물을지 정하는 갈래는
+   * 일곱 자리를 보는데 화면에 적는 갈래는 하나만 봤다. `finish_reason` 에만
+   * 까닭이 온 판은 화면에 **아무 까닭도 안 찍혔다**(24차 리뷰).
+   */
+  const 까닭글 = 끝난까닭(끝맺음);
+  if (까닭글) console.error(`  ${까닭글.slice(0, 300)}`);
   const 거절 = (끝맺음?.denied_actions ?? []).map((a) => a.display_name ?? a.action).join(', ');
   if (거절) console.error(`  거절된 도구: ${거절} — 사람에게 못 물어보는 판이라 저절로 거절됩니다`);
   const 남긴말 = String(r.stderr ?? '').trim();
@@ -453,7 +513,7 @@ if (!답 || 끝맺음?.status !== 'SUCCESS') {
    * 무엇을 줄일 수 있는지는 판마다 다르다. 고르는 일은 `줄일말` 이 한다 —
    * 화면 글이라 눈으로만 보고 넘어가기 쉬운 자리라, 따로 떼어 재 둔다.
    */
-  for (const 줄 of 줄일말({ 무엇, 까닭: `${끝맺음?.error ?? ''}\n${남긴말}`, 부터, 까지 })) {
+  for (const 줄 of 줄일말({ 무엇, 까닭: `${끝난까닭(끝맺음)}\n${남긴말}`, 부터, 까지 })) {
     console.error(`  ${줄}`);
   }
   console.error('');

@@ -229,6 +229,166 @@
       "찾을것": "    re: /\\b(?<!-)(_?(?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]*[A-Z0-9]_?KEY|[A-Z0-9_]*_PWD|[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*(?:[-_](?:key|token|secret|password|passwd|pwd|credentials?|KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?:password|secret|token|passwd|credentials?)))(?:([\"']?[ \\t]*(?::[^\\n,;]{0,200}?|:[^\\n]{0,200}?[>\\])}][^\\n,;]{0,80}?)[ \\t]*=(?!=|>)\\s*)((?:\\(\\s*)+)?([\"'`])(?!«)((?:\\\\[^\\n]|(?!\\4)[^\\n]){4,}?)\\4((?:\\s*\\))+)?|([\"']?\\s*(?::(?![^\\n]{0,200}?=[ \\t]*«가림:)|=)\\s*)((?:\\(\\s*)+)?(?:([\"'`])(?!«)((?:\\\\[^\\n]|(?!\\9)[^\\n]){4,}?)\\9|(?!«)(?![\\w$.]+\\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\\b)(?![^\\n]{0,200}?}[ \\t]*(?:=(?!=|>)|\\)))(?!\\(*\\s*(?:process\\.env|import\\.meta\\.env|globalThis\\.process\\.env|globalThis\\.env|os\\.environ|os\\.getenv|ENV(?=\\s*[[.(])|Deno\\.env|Bun\\.env)\\b)([^\\s\"'()[\\]{},;<>]{4,})(?=[ \\t]*(?:[;,)\\]}\\r\\n#]|$)))((?:\\s*\\))+)?)/g,",
       "바꿀것": "    re: /\\b(?<!-)(_?(?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?)|[A-Z0-9_]*[A-Z0-9]_?KEY|[A-Z0-9_]*_PWD|[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*(?:[-_](?:key|token|secret|password|passwd|pwd|credentials?|KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|Key|Token|Secret|Password|Passwd|Pwd|Credentials?)|(?:password|secret|token|passwd|credentials?)))(?:([\"']?[ \\t]*(?::[^\\n,;]{0,200}?|:[^\\n]{0,200}?[>\\])}][^\\n,;]{0,80}?)[ \\t]*=(?!=|>)\\s*)((?:\\(\\s*)+)?([\"'`])(?!«)((?:\\\\[^\\n]|(?!\\4)[^\\n]){4,}?)\\4((?:\\s*\\))+)?|([\"']?\\s*(?::(?![^\\n]{0,200}?=[ \\t]*«가림:)|=)\\s*)((?:\\(\\s*)+)?(?:([\"'`])(?!«)((?:\\\\[^\\n]|(?!\\9)[^\\n]){4,}?)\\9|(?!«)(?![\\w$.]+\\s*[([])(?!(?:string|number|boolean|bigint|symbol|object|unknown|never|void|null|undefined|true|false)\\b)(?![^\\n]{0,200}?}[ \\t]*(?:=(?!=|>)|\\)))(?!\\(*\\s*(?:process\\.env|import\\.meta\\.env|globalThis\\.process\\.env|globalThis\\.env|os\\.environ|os\\.getenv|ENV(?=\\s*[[.(])|Deno\\.env|Bun\\.env)\\b)([^\\s\"'()[\\]{},;<>]{4,})(?=[ \\t]*(?:[;,)\\]}\\r\\n#]|$)))((?:\\s*\\))+)?)/g,",
       "검사": "test/secrets.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "도구가 막혀 멈춘 판을 다시 안 묻게 되돌린다",
+      "그러면": "도구 거절은 판마다 나는 것이 아니라 흔들리는 것이라(다섯에 한 번), 한 판 부르고 버리면 그 판이 영영 안 본 판이 된다",
+      "찾을것": "  if (칸들.some((칸) => 도구막힘.test(칸))) return '도구거절';",
+      "바꿀것": "  if (false) return '도구거절';",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "거절 말이 따옴표를 달고 온다고 믿게 되돌린다",
+      "그러면": "`required the read_file permission` 처럼 따옴표 없는 꼴과 `RunCommand was denied` 같은 짧은 꼴을 못 알아봐, 막힌 판을 한 번 부르고 버린다",
+      "찾을것": "const 도구막힘 = /\\bno output produced\\b|\\brequired the\\b[^\\n]{0,60}?\\bpermission\\b|\\bpermission that headless mode\\b|\\b(?:auto-)?denied\\b/i;",
+      "바꿀것": "const 도구막힘 = /\\bno output produced\\b|required the \"[^\"]*\" permission|\\bpermission that headless mode\\b|\\bauto-denied\\b/i;",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "자리 하나에 length 만 온 판을 다시 못 알아보게 만든다",
+      "그러면": "`{error: 'length'}` 로 끝난 판이 길이 초과로 안 잡혀 짧게 다시 묻지 않는다 — 자리 이름을 싣게 바꾸면서 실제로 한동안 샜던 자리다",
+      "찾을것": "const 길이초과 = /output token limit|exceeded\\s+(?:the\\s+)?output|\\b(?:output|response|answer)[\\s:(-]+(?:was\\s+|is\\s+|got\\s+)?(?:cut off|truncated)\\b|\\bMAX_TOKENS|\\bcontext_length_exceeded\\b|\\b(?:finish|done|stop)(?:_|\\s*)reason[\\s:=\"'-]*(?:max_tokens|length)\\b|^[A-Za-z_]+:\\s*length\\b/i;",
+      "바꿀것": "const 길이초과 = /output token limit|exceeded\\s+(?:the\\s+)?output|\\b(?:output|response|answer)[\\s:(-]+(?:was\\s+|is\\s+|got\\s+)?(?:cut off|truncated)\\b|\\bMAX_TOKENS|\\bcontext_length_exceeded\\b|\\b(?:finish|done|stop)(?:_|\\s*)reason[\\s:=\"'-]*(?:max_tokens|length)\\b/i;",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "셋째 판 조이기를 까닭이 막힘이면 건너뛰게 되돌린다",
+      "그러면": "첫 판을 길이로 둘째 판을 도구로 잃으면 마지막 판이 3건·한 줄 조이기를 못 받아, 그 판마저 길이로 잃는다",
+      "찾을것": "  return ['', ...왜또묻나(까닭), ...얼마나조이나(판)];",
+      "바꿀것": "  return ['', ...왜또묻나(까닭), ...(까닭 === '막힘' ? [] : 얼마나조이나(판))];",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "막힌 판 머리말을 길이 얘기로 되돌린다",
+      "그러면": "도구에 막혀 멈춘 판에 대고 길이 얘기만 하면, 그 판이 못 한 것(멈추지 않고 적는 것)을 아무도 안 시킨다",
+      "찾을것": "const 왜또묻나 = (까닭) => (까닭 === '막힘'",
+      "바꿀것": "const 왜또묻나 = (까닭) => (false",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "까닭 칸에서 자리 이름을 떼고 값만 싣게 되돌린다",
+      "그러면": "`finish_reason: 'length'` 가 `length` 한 낱말이 돼, 무엇의 length 인지 사라지고 길이 초과를 못 알아본다",
+      "찾을것": "  .map(([이름, 값]) => `${이름}: ${값}`);",
+      "바꿀것": "  .map(([, 값]) => `${값}`);",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "칸마다 재던 것을 다시 이어 붙여 한 번에 재게 되돌린다",
+      "그러면": "`{error: 'length', finish_reason: 'stop'}` 처럼 자리가 둘만 돼도 끝 앵커가 옆 칸 때문에 안 맞아 길이 초과를 놓친다 — 같은 부류로 세 판을 내리 샜던 자리다",
+      "찾을것": "  if (칸들.some((칸) => 길이초과.test(칸))) return '길이초과';",
+      "바꿀것": "  if (길이초과.test(칸들.join(' · '))) return '길이초과';",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "까닭이 객체로 와도 그냥 String 으로 찍게 되돌린다",
+      "그러면": "`{error: {message: '…output token limit'}}` 이 `[object Object]` 가 돼 무늬가 조용히 빗나가고, 다시 물어야 할 판을 까닭 모른 채 버린다",
+      "찾을것": "  if (typeof 값 === 'object') {",
+      "바꿀것": "  if (false) {",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "거절 말 사이에서 점을 다시 빼고 본다",
+      "그러면": "`file.read permission` 처럼 점 박힌 권한 이름이 빠져 그 판을 한 번 부르고 버린다",
+      "찾을것": "const 도구막힘 = /\\bno output produced\\b|\\brequired the\\b[^\\n]{0,60}?\\bpermission\\b|\\bpermission that headless mode\\b|\\b(?:auto-)?denied\\b/i;",
+      "바꿀것": "const 도구막힘 = /\\bno output produced\\b|\\brequired the\\b[^.]{0,60}?\\bpermission\\b|\\bpermission that headless mode\\b|\\b(?:auto-)?denied\\b/i;",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/review2.mjs",
+      "무엇": "화면에 적는 까닭을 다시 error 한 자리만 보게 되돌린다",
+      "그러면": "`finish_reason` 에만 까닭이 온 판은 화면에 아무 까닭도 안 찍혀, 사람이 왜 빈 손인지 모른 채 넘어간다",
+      "찾을것": "  const 까닭글 = 끝난까닭(끝맺음);",
+      "바꿀것": "  const 까닭글 = String(끝맺음?.error ?? '');",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/review2.mjs",
+      "무엇": "안 올린 파일을 다시 볼 것에서 빼 버린다",
+      "그러면": "새로 만든 파일이 2차 리뷰를 한 번도 안 거치고 들어간다 — 새 파일이야말로 새 실수가 사는 자리다",
+      "찾을것": "  const 안커밋 = git('diff', 'HEAD').stdout + 새파일diff();",
+      "바꿀것": "  const 안커밋 = git('diff', 'HEAD').stdout;",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/review2.mjs",
+      "무엇": "새 파일을 싣기 전에 빈 검사를 하도록 되돌린다",
+      "그러면": "`--files <새 파일>` 이 한 줄도 안 보고 「볼 것이 없습니다」 로 끝난다 — 게다가 화면에는 「이름을 잘못 적었나」 라고까지 적힌다",
+      "찾을것": "    if (!(r.stdout + 새것).trim()) {",
+      "바꿀것": "    if (!r.stdout.trim()) {",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/review2.mjs",
+      "무엇": "잘린 답을 다시 통째로 버리게 되돌린다",
+      "그러면": "답이 왔는데 상태가 나쁜 판을 버리면서 화면엔 「빈 채로 돌아왔습니다」 라고 적는다 — 다시 묻지도 않는 자리라(답이 있으면 안 묻는다) 그 판의 발견이 통째로 없어진다",
+      "찾을것": "if (답 && 끝맺음?.status !== 'SUCCESS') {",
+      "바꿀것": "if (false) {",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "까닭 자리에서 status 를 다시 뺀다",
+      "그러면": "까닭이 상태 한 칸으로만 온 판(`{status: 'MAX_TOKENS'}`)은 칸이 하나도 안 잡혀 다시 묻지도 않고 끝난다",
+      "찾을것": "const 까닭자리 = ['status', 'error', 'reason', 'finishReason', 'finish_reason',",
+      "바꿀것": "const 까닭자리 = ['error', 'reason', 'finishReason', 'finish_reason',",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "length 뒤에 말이 붙으면 못 잡게 끝을 다시 막는다",
+      "그러면": "`error: 'length exceeded'` 처럼 뒤에 말이 붙은 꼴이 빠져 그 판을 다시 안 묻는다",
+      "찾을것": "const 길이초과 = /output token limit|exceeded\\s+(?:the\\s+)?output|\\b(?:output|response|answer)[\\s:(-]+(?:was\\s+|is\\s+|got\\s+)?(?:cut off|truncated)\\b|\\bMAX_TOKENS|\\bcontext_length_exceeded\\b|\\b(?:finish|done|stop)(?:_|\\s*)reason[\\s:=\"'-]*(?:max_tokens|length)\\b|^[A-Za-z_]+:\\s*length\\b/i;",
+      "바꿀것": "const 길이초과 = /output token limit|exceeded\\s+(?:the\\s+)?output|\\b(?:output|response|answer)[\\s:(-]+(?:was\\s+|is\\s+|got\\s+)?(?:cut off|truncated)\\b|\\bMAX_TOKENS|\\bcontext_length_exceeded\\b|\\b(?:finish|done|stop)(?:_|\\s*)reason[\\s:=\"'-]*(?:max_tokens|length)\\b|^[A-Za-z_]+:\\s*length$/i;",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "답이 조금 왔어도 다시 묻게 만든다",
+      "그러면": "잘린 채로도 발견이 든 답을 버리고 40분을 더 쓴다 — 가르기와 다시 묻기를 한 자리로 모으면서 실제로 한 번 덮어썼던 줄이다",
+      "찾을것": "  if (String(답 ?? '').trim()) return false;\n  const 갈래 = 실패갈래(끝맺음, 답);",
+      "바꿀것": "  const 갈래 = 실패갈래(끝맺음, 답);",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰눈금.mjs",
+      "무엇": "눈금이 다시 제 무늬로 갈래를 나누게 되돌린다",
+      "그러면": "재는 쪽이 재이는 쪽보다 덜 봐서 `finish_reason: length` · `denied` 홀로 · `by peer` 가 「그밖에」 로 뭉개진다 — 그 표를 근거로 한 판단이 전부 틀린다",
+      "찾을것": "      const 판정 = 실패갈래(끝맺음, 답);",
+      "바꿀것": "      const 판정 = /output token limit/i.test(String(끝?.error ?? '')) ? '길이초과' : '그밖에';",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰눈금.mjs",
+      "무엇": "있는지만 보는데 파일을 다시 통째로 읽게 만든다",
+      "그러면": "184MB 짜리 exe 를 메모리에 통째로 올린다 — 재기도 전에 재는 쪽이 무거워진다",
+      "찾을것": "  return 후보.find((p) => existsSync(p)) ?? 'agy';",
+      "바꿀것": "  return 후보.find((p) => { try { readFileSync(p, { flag: 'r' }); return true; } catch { return false; } }) ?? 'agy';",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "한도 낱말에 꼬리가 붙으면 못 잡게 되돌린다",
+      "그러면": "`MAX_TOKENS_EXCEEDED` 와 `context_length_exceeded`(오픈AI 가 실제로 주는 이름)가 어느 갈래에도 안 걸려, 길이로 죽은 판을 다시 안 묻는다",
+      "찾을것": "const 길이초과 = /output token limit|exceeded\\s+(?:the\\s+)?output|\\b(?:output|response|answer)[\\s:(-]+(?:was\\s+|is\\s+|got\\s+)?(?:cut off|truncated)\\b|\\bMAX_TOKENS|\\bcontext_length_exceeded\\b|\\b(?:finish|done|stop)(?:_|\\s*)reason[\\s:=\"'-]*(?:max_tokens|length)\\b|^[A-Za-z_]+:\\s*length\\b/i;",
+      "바꿀것": "const 길이초과 = /output token limit|exceeded\\s+(?:the\\s+)?output|\\b(?:output|response|answer)[\\s:(-]+(?:was\\s+|is\\s+|got\\s+)?(?:cut off|truncated)\\b|\\bMAX_TOKENS\\b|\\b(?:finish|done|stop)(?:_|\\s*)reason[\\s:=\"'-]*(?:max_tokens|length)\\b|^[A-Za-z_]+:\\s*length\\b/i;",
+      "검사": "test/리뷰도구.test.js"
+    },
+    {
+      "곳": "tools/리뷰길이.mjs",
+      "무엇": "까닭 자리에서 reason 을 다시 뺀다",
+      "그러면": "`글자로` 는 객체 속 `reason` 을 읽는데 자리 목록엔 없어서, 까닭을 최상위 `reason` 으로 주는 판은 칸이 하나도 안 잡힌다",
+      "찾을것": "const 까닭자리 = ['status', 'error', 'reason', 'finishReason', 'finish_reason',",
+      "바꿀것": "const 까닭자리 = ['status', 'error', 'finishReason', 'finish_reason',",
+      "검사": "test/리뷰도구.test.js"
     }
   ]
 }
