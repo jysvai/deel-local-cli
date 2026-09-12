@@ -165,6 +165,14 @@
       "찾을것": "  let i = 조각.map((x) => x.toLowerCase()).lastIndexOf('.deel');",
       "바꿀것": "  let i = 조각.lastIndexOf('.deel');",
       "검사": "test/mention.test.js"
+    },
+    {
+      "곳": "src/safety/secrets.js",
+      "무엇": "점으로 이은 값을 다시 「빈칸이 있으면 코드」 로 가르게 되돌린다",
+      "그러면": "YAML 은 문법이 쌍점 뒤 빈칸을 요구하므로 `API_KEY: token.v1.secret` 이 통째로 안 가려진다 — 그 값이 그대로 모델로 나가고 세션 기록에도 남는다",
+      "찾을것": "  return !코드표시.test(줄);",
+      "바꿀것": "  return !/[ \t]/.test(전체[자리 + 값.length] ?? '') && !코드표시.test(줄);",
+      "검사": "test/secrets.test.js"
     }
   ]
 }

@@ -382,8 +382,10 @@ trace('2-멀쩡한글');
    * `.env` 와 YAML 인데, 거기 오는 값은 밑바탕 타입 이름이 아니고 점으로
    * 이은 이름도 아니다. 둘을 덜어 낸다.
    *
-   * 점 갈래는 **값 앞에 빈칸이 있을 때만** 덜어 낸다 — `.env` 는
-   * `NAME=값` 으로 붙여 쓰고, 등호·쌍점 뒤에 빈칸을 둔 것은 코드다.
+   * 점 갈래를 덜어내는 잣대는 **그 줄이 코드인가**다(13차 리뷰). 여태
+   * 「값 앞에 빈칸이 있으면 코드」 로 갈랐는데 넷 중 하나만 맞혔다 —
+   * YAML 은 문법이 쌍점 뒤 빈칸을 요구하므로 YAML 비밀이 통째로 샜고,
+   * 붙여 쓴 타입(`API_KEY:types.ApiKey`)은 거꾸로 가려졌다.
    */
   for (const 글 of [
     'interface Cfg { API_KEY: string; TIMEOUT: number }',
@@ -392,6 +394,12 @@ trace('2-멀쩡한글');
     'API_KEY: boolean',
     'const API_KEY = config.apiKey;',
     'const API_KEY = opts.auth.token;',
+    // 13차 리뷰. 빈칸이 아니라 줄에 있는 코드 표시로 가른다.
+    'interface Cfg { API_KEY:types.ApiKey; }',
+    'API_KEY: types.ApiKey;',
+    'String API_KEY = props.getKey();',
+    '// API_KEY: config.api_key',
+    'const API_KEY = configuration.credentials.token;',
   ]) {
     const r = 가리기(글);
     check(`★★★ 타입 이름과 점으로 이은 이름은 값이 아니다 — ${글.slice(0, 46)}`,
@@ -404,10 +412,45 @@ trace('2-멀쩡한글');
     ['API_KEY=my.secret.value', 'my.secret.value'],
     ['DB_PASSWORD=hunter2hunter2', 'hunter2hunter2'],
     ['export CLIENT_SECRET=abcdef123456', 'abcdef123456'],
+    /*
+     * 13차 리뷰가 짚은 자리들. 점이 든 값이 설정 줄에 오면 **가려야** 한다.
+     * YAML 은 쌍점 뒤 빈칸이 문법상 필수라, 빈칸을 코드의 표시로 읽는 한
+     * 이 셋이 통째로 샌다.
+     */
+    ['API_KEY: token.v1.secret', 'token.v1.secret'],
+    ['API_KEY= prod.v1.secret', 'prod.v1.secret'],
+    ['  API_TOKEN: tok.v2.abcdefghij', 'tok.v2.abcdefghij'],
+    // 숫자도 긴 마디도 없는 비밀 — 값 모양으로는 못 가른다.
+    ['API_KEY: eyJhbGc.eyJzdWIiOiIx.SflKxwRJ', 'eyJhbGc.eyJzdWIiOiIx.SflKxwRJ'],
+    ['export API_KEY=prod.v1.secret', 'prod.v1.secret'],
   ]) {
     const r = 가리기(글);
     check(`★★★ .env · YAML 은 그대로 가린다 — ${글}`,
       !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * 줄은 **줄 단위로** 본다. 앞뒤 줄이 코드여도 이 줄이 설정이면 가린다.
+   * 통째로 훑는 무늬라 여기서 헛디디면 옆 줄 때문에 비밀이 샌다(13차 리뷰).
+   */
+  for (const [글, 사라져야] of [
+    ['const x = 1;\nAPI_KEY: token.v1.secret', 'token.v1.secret'],
+    ['API_KEY: token.v1.secret\nconst y = 2;', 'token.v1.secret'],
+    ['const A = b.c;\nAPI_KEY: tok.v1.x', 'tok.v1.x'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 옆 줄이 코드여도 이 줄은 따로 본다 — ${글.replace(/\n/g, ' / ')}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»'), r.글);
+  }
+  /*
+   * 알고 치르는 값. 세미콜론이 없는 파이썬 대입은 설정 줄과 똑같이 생겨서
+   * 가려진다. 문법으로 갈릴 자리가 아니고, **줄이 망가지는 것보다 비밀이
+   * 나가는 것이 훨씬 나쁘다**(1.19.0). 모르고 그러는 것과 알고 그러는 것은
+   * 다르므로 여기 못박아 둔다 — 나중에 갈라내려면 이 줄이 먼저 빨개진다.
+   */
+  {
+    const r = 가리기('API_KEY = config.api_key');
+    check('★★★ 세미콜론 없는 파이썬 대입은 가려진다 — 알고 치르는 값',
+      r.글 === 'API_KEY = «가림:환경변수»', r.글);
   }
   /*
    * 「가장 나쁜 짝」 이 다시 났다(10차 리뷰). 타입 안에 따옴표가 있으면
