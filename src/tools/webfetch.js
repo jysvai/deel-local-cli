@@ -65,8 +65,13 @@ const 집간격 = 400;              // 같은 집을 다시 두드리기 전에 
  * 안 먹은 것과 똑같이 보인다 — 제보받은 그 증상이다.
  */
 const 잠깐 = (ms, signal = null) => new Promise((풀기) => {
-  const t = setTimeout(풀기, ms);
-  signal?.addEventListener?.('abort', () => { clearTimeout(t); 풀기(); }, { once: true });
+  // 이미 멈춘 신호를 들고 오면 abort 는 **다시 안 터진다.** 그 판에서
+  // 그냥 잠들면 ESC 를 누른 뒤에도 이 잠을 끝까지 잔다 — 고치려던 그 증상이
+  // 그대로 돌아온다.
+  if (signal?.aborted) return 풀기();
+  const 깨우기 = () => { clearTimeout(t); 풀기(); };
+  const t = setTimeout(() => { signal?.removeEventListener?.('abort', 깨우기); 풀기(); }, ms);
+  signal?.addEventListener?.('abort', 깨우기, { once: true });
 });
 
 function 한집씩(origin, 일, signal = null) {
@@ -79,8 +84,15 @@ function 한집씩(origin, 일, signal = null) {
       if (signal?.aborted) throw new Error('중단했습니다');
       return 일();
     });
-  // 다음 사람이 기다리는 것은 '내가 끝났다' 뿐이다. 내가 실패해도 줄은 넘어간다.
-  집줄.set(origin, 내차례.then(() => {}, () => {}));
+  /*
+   * 다음 사람이 기다리는 것은 '내가 끝났다' 뿐이다. 내가 실패해도 줄은 넘어간다.
+   *
+   * 끝나면 **줄에서 뺀다.** 안 빼면 한참 뒤에 혼자 부르는 요청도 앞사람이
+   * 있는 것으로 보여 400ms 를 그냥 잔다 — 줄이 비어 있는데 서 있는 셈이다.
+   */
+  const 끝나면 = 내차례.then(() => {}, () => {});
+  집줄.set(origin, 끝나면);
+  끝나면.then(() => { if (집줄.get(origin) === 끝나면) 집줄.delete(origin); });
   return 내차례;
 }
 
@@ -133,15 +145,26 @@ function 태그벗기기(html) {
     if (글 === 전) break;
   }
   return 글
-    .replace(/<\/(p|div|section|article|li|tr|h[1-6]|br)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
+    // 닫는 태그만 줄로 바꾸면, 닫는 태그를 안 적은 페이지가 통째로 한 줄이
+    // 된다 — `<p>첫째<p>둘째` 나 `<ul><li>하나<li>둘</ul>` 이 흔하다.
+    // HTML 이 그것을 허락하므로 옛 사내 페이지에는 정말로 그렇게 적혀 있다.
+    // 여는 태그도 같이 줄로 바꾼다.
+    .replace(/<\/?(p|div|section|article|li|tr|h[1-6]|br)\b[^>]*>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
     // 한 번에 찾아서 한 번에 바꾼다 — 차례로 바꾸면(`&amp;` 를 먼저 `&` 로
     // 풀고 나서 `&lt;` 를 다시 찾는 식) `&amp;lt;` 처럼 두 겹 씌운 것이
     // 두 번 풀려서 `<` 로 튀어나온다(글자로 남아야 하는데 태그처럼 보이게 됨).
-    .replace(/&(nbsp|amp|lt|gt|quot|#39);/g, (_, 이름) => ({
-      nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'",
-    }[이름]))
+    // 숫자 꼴(`&#48712;` · `&#x27;`)과 `&apos;` 도 같은 한 판에서 푼다.
+    // 안 풀면 한글 페이지 하나가 통째로 숫자 나열로 모델에게 간다.
+    .replace(/&(nbsp|amp|lt|gt|quot|apos|#\d{1,7}|#x[0-9a-f]{1,6});/gi, (온것, 이름) => {
+      const 표 = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+      const 키 = 이름.toLowerCase();
+      if (표[키] !== undefined) return 표[키];
+      const 번호 = 키.startsWith('#x') ? parseInt(키.slice(2), 16) : parseInt(키.slice(1), 10);
+      // 못 읽을 번호면 **손대지 않는다.** 지어낸 글자를 넣느니 원문이 낫다.
+      if (!Number.isFinite(번호) || 번호 < 32 || 번호 > 0x10ffff) return 온것;
+      try { return String.fromCodePoint(번호); } catch { return 온것; }
+    })
     .replace(/[ \t]+/g, ' ')
     .replace(/\n\s*\n\s*\n+/g, '\n\n')
     .trim();
@@ -243,6 +266,15 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
   // 되돌림(redirect)으로 옮겨 간 집도 그 한 번만 연다. 한 홉마다 문지기를 지나므로
   // 여기서 열어 주지 않으면 막힌다 — 그리고 사내망으로 되돌리는 것은 열지 않는다.
   const 열어둔 = [];
+  /*
+   * 되돌림을 따라가면 **정말 답한 곳**은 처음 주소가 아니다.
+   *
+   * 여태 기록에도 오류 문구에도 처음 주소만 적혔다. 그래서 짧은주소 하나가
+   * 302 로 딴 집에 보내 놓고 429 를 뱉으면, 화면에는 짧은주소가 힘들어한다고
+   * 뜬다 — 사람도 모델도 엉뚱한 쪽을 붙잡는다. 심사서에 남는 「어디로 나갔나」
+   * 도 마찬가지로 처음 주소만 남아서, 실제로 통신한 집이 빠진다.
+   */
+  let 닿은곳 = u;
   try {
     // 같은 집이면 줄을 서고, 잠시 뒤 되는 오류면 쉬었다 다시 부른다.
     let res = null;
@@ -264,10 +296,19 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
         stream: true,                             // 상한까지만 받는다 — 다 받아 놓고 버리지 않는다
         되돌림: async (다음) => {
           await 웹되돌림검사(다음, { allowPrivate });
+          닿은곳 = 다음;
+          방문기록.push({ url: 다음.href, status: 0, at: new Date().toISOString(), 되돌림: true });
           열어둔.push(allowTemporarily(다음.origin));
         },
       }), signal);
-      방문기록.push({ url: u.href, status: res.status, at: new Date().toISOString() });
+      방문기록.push({
+        url: u.href,
+        status: res.status,
+        at: new Date().toISOString(),
+        // 되돌림을 탔으면 **정말 답한 곳**도 같이 적는다. 처음 주소만 남기면
+        // 심사서의 「어디로 나갔나」 에서 실제로 통신한 집이 빠진다.
+        ...(닿은곳.href === u.href ? {} : { 닿은곳: 닿은곳.href }),
+      });
       if (res.ok || !다시할것.has(res.status) || 회차 >= 다시횟수) break;
       await res.버리기?.();
       const 초 = 얼마나쉬라나(res.headers.get('retry-after'), 회차);
@@ -282,14 +323,14 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
        * 오류를 그냥 번호로만 던지면 모델은 할 수 있는 게 없다. 실제로 그랬다 —
        * `✗ HTTP 429` 만 보고 그 자료를 포기했다. 무엇을 하면 되는지 같이 준다.
        */
-      const 집 = u.hostname;
+      const 집 = 닿은곳.hostname;
       if (res.status === 429) {
         return { error: `HTTP 429 — ${집} 가 "너무 자주 부른다" 고 합니다.`
           + `\n  ${다시횟수}번 쉬었다 다시 불러 봤습니다(${쉰시간}초). 그래도 같습니다.`
           + '\n  한꺼번에 여러 개를 부르지 말고 하나씩 부르거나, 잠시 뒤에 다시 해 보세요.'
           + '\n  키가 있는 API 면 키를 붙인 주소를 쓰면 한도가 늘어납니다.' };
       }
-      if (res.status === 404) return { error: `HTTP 404 — 그런 쪽이 없습니다: ${u.href}\n  주소를 다시 확인하세요.` };
+      if (res.status === 404) return { error: `HTTP 404 — 그런 쪽이 없습니다: ${닿은곳.href}\n  주소를 다시 확인하세요.` };
       if (res.status === 401 || res.status === 403) {
         return { error: `HTTP ${res.status} — ${집} 가 접근을 막았습니다.\n  로그인이나 키가 있어야 하는 쪽입니다. 이 도구로는 못 읽습니다.` };
       }
@@ -297,11 +338,23 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
         return { error: `HTTP ${res.status} — ${집} 가 지금 힘들어합니다.`
           + `\n  ${다시횟수}번 다시 불러 봤습니다(${쉰시간}초). 잠시 뒤에 다시 해 보세요.` };
       }
-      return { error: `HTTP ${res.status} — ${u.href}` };
+      return { error: `HTTP ${res.status} — ${닿은곳.href}` };
     }
 
     const type = (res.headers.get('content-type') ?? '').toLowerCase();
-    if (!/text|json|xml|javascript/.test(type)) {
+    /*
+     * 갈래는 **낱말로** 본다.
+     *
+     * 그냥 `/text|json|xml|javascript/` 로 보면 두 쪽에서 틀린다.
+     * `application/octet-stream; name="context.bin"` 은 'context' 안의 text 에
+     * 걸려 통과하고(내려받은 바이너리가 모델에게 간다), `application/yaml` 이나
+     * `application/toml` 같은 멀쩡한 글은 낱말이 없어서 거절당한다.
+     */
+    const 갈래 = type.split(';')[0].trim();
+    const 뒷말 = 갈래.split('/')[1] ?? '';
+    const 글인가 = /^text\//.test(갈래)
+      || /(^|[-+.])(json|xml|javascript|ecmascript|yaml|toml|csv|ndjson|graphql)$/.test(뒷말);
+    if (!글인가) {
       await res.버리기?.();
       return { error: `글이 아닌 내용입니다 (${type || '알 수 없음'}). 이 도구는 글만 읽습니다.` };
     }
@@ -323,12 +376,23 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
     const 머리글 = /charset=["']?([\w-]+)/i.exec(type)?.[1]?.toLowerCase() ?? null;
     let text = 웹글읽기(buf, 머리글);
     if (/html/.test(type)) text = 태그벗기기(text);
-    // <meta charset> 이 머리글과 다르게 적혀 있는 페이지가 있다. 깨졌으면 그걸 믿고 다시 읽는다.
-    if (!머리글 && text.includes('�')) {
+    /*
+     * `<meta charset>` 이 머리글과 **다르게** 적혀 있는 페이지가 있다.
+     *
+     * 여기 `!머리글` 이 붙어 있어서, 정작 그 판 — 머리글이 있는데 틀린 판 —
+     * 에서는 한 번도 안 돌았다. 서버가 기본값으로 `charset=utf-8` 을 붙이고
+     * 본문은 EUC-KR 인 옛 사내 위키가 딱 그렇다. 깨진 글이 그대로 모델에게
+     * 가고, 모델은 깨진 채로 요약한다.
+     *
+     * 다시 읽어서 **덜 깨진 쪽**을 쓴다. 세어 보고 고르니 더 나빠질 일이 없다.
+     */
+    const 깨진수 = (그것) => (그것.match(/�/g) ?? []).length;
+    if (깨진수(text)) {
       const meta = /<meta[^>]+charset=["']?([\w-]+)/i.exec(buf.toString('latin1').slice(0, 2000))?.[1]?.toLowerCase();
-      if (meta) {
-        text = 웹글읽기(buf, meta);
-        if (/html/.test(type)) text = 태그벗기기(text);
+      if (meta && meta !== 머리글) {
+        let 다시 = 웹글읽기(buf, meta);
+        if (/html/.test(type)) 다시 = 태그벗기기(다시);
+        if (깨진수(다시) < 깨진수(text)) text = 다시;
       }
     }
     /*
@@ -365,7 +429,7 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
         ? `\n\n(여기서 잘렸습니다 — ${남은것}자가 더 있습니다.`
           + '\n 잘린 JSON 은 그대로 읽을 수 없습니다. 다음 중 하나를 하세요:'
           + '\n  · 범위를 좁혀 다시 부른다 (per_page·ids·days 같은 조건을 붙인다)'
-          + `\n  · 같은 주소를 max_chars 를 올려 다시 부른다 (지금 ${max.toLocaleString()}, 최대 100,000))`
+          + `\n  · 같은 주소를 max_chars 를 올려 다시 부른다 (지금 ${max.toLocaleString()}, 최대 120,000)`
         : `\n\n(뒤쪽 ${남은것}자는 잘렸습니다. 더 필요하면 max_chars 를 올려 다시 부르세요.)`;
     }
 

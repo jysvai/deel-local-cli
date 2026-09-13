@@ -6,10 +6,13 @@
 //   3) 도구 호출과 결과의 짝이 되살릴 때도 안 깨지는가
 //   4) 압축이 일어난 뒤에도 파일이 대화와 맞는가
 //   5) 목록에서 어떤 대화인지 알아볼 수 있는가
-import { mkdtempSync, mkdirSync, rmSync, appendFileSync, existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, rmSync, appendFileSync, existsSync, readFileSync,
+  writeFileSync, statSync, chmodSync, readdirSync, utimesSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Store, list, latest, remove, newId, prune, sessionsDir } from '../src/agent/store.js';
+import { Store, list, latest, remove, newId, freeId, prune, sessionsDir } from '../src/agent/store.js';
 import { repairToolPairs, Session, 못박을것 } from '../src/agent/session.js';
 
 const pass = [];
@@ -276,9 +279,24 @@ check('id 가 파일 이름으로 안전함', /^[0-9-]+$/.test(id));
   // 멀쩡히 이어할 수 있는 나머지 대화까지 사람 눈에서 사라진다.
   check('못 읽은 까닭을 담아 돌려준다', new Store(막힌곳, '막힘').load().못읽음 === 'EISDIR',
     String(new Store(막힌곳, '막힘').load().못읽음));
+  /*
+   * 그렇다고 **없는 셈** 쳐도 안 된다. 여태 못 읽는 대화는 목록에서 통째로
+   * 빠졌고, 그런 것뿐이면 화면은 「아직 없습니다. 지금 이 대화가 첫
+   * 번째입니다」 라고 말했다 — 어제 한 일이 그대로 있는데 없다고 한 것이다.
+   * 이어할 수는 없어도 거기 있다는 것은 말해야 사람이 손을 쓴다.
+   */
+  // 못 읽는 것이 **가장 최근**일 때가 진짜 판이다 — --continue 가 집는 자리다.
+  const 이따가 = new Date(Date.now() + 60000);
+  utimesSync(join(sessionsDir(막힌곳), '막힘.jsonl'), 이따가, 이따가);
   const 목록 = list(막힌곳);
-  check('못 읽는 대화가 섞여도 목록은 뜬다', 목록.length === 1 && 목록[0].id === '멀쩡',
-    목록.map((r) => r.id).join(' '));
+  check('★ 못 읽는 대화도 목록에 올린다', 목록.length === 2, 목록.map((r) => r.id).join(' '));
+  check('  그리고 그것이 맨 위다', 목록[0]?.id === '막힘', 목록.map((r) => r.id).join(' '));
+  const 막힌줄 = 목록.find((r) => r.id === '막힘');
+  check('★★ 못 읽었다는 것을 그 줄에 적는다', 막힌줄?.못읽음 === 'EISDIR' && /못 읽었습니다/.test(막힌줄?.first ?? ''),
+    JSON.stringify(막힌줄?.first));
+  check('멀쩡한 것은 그대로 읽힌다', 목록.find((r) => r.id === '멀쩡')?.turns === 1);
+  // --continue 가 못 읽는 것을 집어 오면 빈 대화가 열린다. 사람은 이어진 줄 안다.
+  check('★★ --continue 는 못 읽는 것을 안 집는다', latest(막힌곳)?.id === '멀쩡', JSON.stringify(latest(막힌곳)?.id));
 
   rmSync(막힌곳, { recursive: true, force: true });
 }
@@ -378,8 +396,13 @@ rmSync(빈폴더, { recursive: true, force: true });
   s.begin({ model: 'm', base: 'http://127.0.0.1:1', root: 방 });
   s.append({ role: 'user', content: '사내 계정 비번은 …' });
   const 파일 = join(sessionsDir(방), 'perm-001.jsonl');
-  // 이 한 줄은 어느 판에서든 잰다 — 걸었다는 사실 자체는 밖에서 보여야 한다.
-  check('★ 대화 파일에 0600 을 건다', s.잠금?.모드 === 0o600, JSON.stringify(s.잠금));
+  /*
+   * 건 결과는 어느 판에서든 남긴다. 다만 **윈도우에서 성공으로 남기면 안
+   * 된다** — 거기서 chmod 는 아무 일도 안 하고 성공한다. 그 성공을 그대로
+   * 적으면 바로 위 머리말이 스스로 금지한 「잠근 척」 이 된다.
+   */
+  const 잠금맞나 = (v) => (process.platform === 'win32' ? v?.못함 === 'windows' : v?.모드 === 0o600);
+  check('★ 건 결과를 밖에서 볼 수 있게 남긴다', 잠금맞나(s.잠금), JSON.stringify(s.잠금));
   check('파일이 실제로 있다 (건 자리가 허공이 아니다)', existsSync(파일), 파일);
   if (process.platform === 'win32') {
     check('윈도우에서는 모드를 안 잰다 (NTFS 는 ACL 이라 chmod 가 아무 일도 안 한다)',
@@ -392,13 +415,176 @@ rmSync(빈폴더, { recursive: true, force: true });
   // 압축이 일어나면 파일을 통째로 다시 쓴다. 그때 잠금이 풀리면 안 된다.
   s.잠금 = null;
   s.replace([{ role: 'user', content: '줄인 것' }], '압축');
-  check('★ 통째로 다시 쓴 뒤에 다시 건다', s.잠금?.모드 === 0o600, JSON.stringify(s.잠금));
+  check('★ 통째로 다시 쓴 뒤에 다시 건다', 잠금맞나(s.잠금), JSON.stringify(s.잠금));
   if (process.platform !== 'win32') {
     check('★ 다시 쓴 뒤에도 정말 0600 이다', (statSync(파일).mode & 0o777) === 0o600,
       '0' + (statSync(파일).mode & 0o777).toString(8));
   } else {
     check('다시 쓴 뒤에도 대화가 성하다', new Store(방, 'perm-001').load().messages.length === 1);
   }
+  rmSync(방, { recursive: true, force: true });
+}
+
+
+// ── 9. 못 적은 것을 적은 셈 치지 않는다 ─────────────────────────────────
+//
+// 여기가 남은 할 일과 시킨 말이 **조용히 영영** 없어지던 길이다. 못 적었는데
+// 적은 셈으로 표시해 두면, 디스크가 다시 나아져도 그 값은 이미 「안 바뀐 것」
+// 이라 두 번 다시 안 적힌다. 잠깐 막힌 것이 영구 손실이 되는 자리다.
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-살림-'));
+  const st = new Store(방, 'ㅅ1');
+  st.begin({ model: 'm', root: 방 });
+  const session = { 할일: [{ 무엇: '가' }], 이번요청: '처음 시킨 말' };
+  st.살림따라가기(session);
+
+  chmodSync(st.file, 0o444);              // 못 쓰게 막는다
+  session.할일 = [{ 무엇: '나' }];
+  session.이번요청 = '바꿔 시킨 말';
+  st.살림적기();
+  check('못 적은 것을 센다', st.못쓴것()?.수 >= 1, JSON.stringify(st.못쓴것()));
+
+  chmodSync(st.file, 0o666);              // 다시 쓸 수 있게 된다
+  st.살림적기();
+  const 살린것 = new Store(방, 'ㅅ1').load();
+  check('★★ 다시 쓸 수 있게 되면 못 적었던 할 일이 들어간다',
+    JSON.stringify(살린것.할일) === JSON.stringify([{ 무엇: '나' }]), JSON.stringify(살린것.할일));
+  check('★★ 시킨 말도 마찬가지다', 살린것.이번요청 === '바꿔 시킨 말', JSON.stringify(살린것.이번요청));
+  rmSync(방, { recursive: true, force: true });
+}
+
+// ── 10. 접는 자리는 옆에 쓰고 갈아 끼운다 ───────────────────────────────
+//
+// 이 파일 머리말이 jsonl 을 고른 까닭이 「통째로 다시 쓰면 그 순간 파일이
+// 깨진다」 인데, 정작 통째로 다시 쓰는 자리가 replace() 였다. 반쯤 쓰다 죽으면
+// 원본은 이미 잘려 있고 새것은 안 끝났다 — 그 한 번에 대화 전체가 없어진다.
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-접기-'));
+  const st = new Store(방, 'ㅈ1');
+  st.begin({ model: 'm', root: 방 });
+  for (let i = 0; i < 5; i++) st.append({ role: 'user', content: '중요한 말 ' + i });
+  st.replace([{ role: 'user', content: '줄인 것' }], '압축');
+  check('접으면 새 내용으로 바뀐다', new Store(방, 'ㅈ1').load().messages.length === 1);
+  check('★ 옆에 쓰던 것을 안 남긴다',
+    readdirSync(sessionsDir(방)).every((n) => n.endsWith('.jsonl')), readdirSync(sessionsDir(방)).join(' '));
+
+  // 옆에 쓸 자리를 막아 둔다 — 디스크가 차거나 폴더가 막힌 판과 같은 꼴이다.
+  mkdirSync(st.file + '.새로');
+  const 접기전 = new Store(방, 'ㅈ1').load().messages.length;
+  st.replace([{ role: 'user', content: '더 줄인 것' }], '압축');
+  check('★★ 옆에 못 쓰면 원본을 안 건드린다',
+    new Store(방, 'ㅈ1').load().messages.length === 접기전, String(new Store(방, 'ㅈ1').load().messages.length));
+  check('★★ 그리고 못 썼다고 센다', st.못쓴것()?.수 >= 1, JSON.stringify(st.못쓴것()));
+  rmSync(방, { recursive: true, force: true });
+}
+
+// ── 11. 정리·이름·첫 마디 ───────────────────────────────────────────────
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-정리-'));
+  const dir = sessionsDir(방);
+  mkdirSync(dir, { recursive: true });
+  const 이제 = Date.now();
+  /*
+   * 개수를 1000 으로 끊어 놓으면 정작 **제일 오래된 것들**이 그 뒤에 있어서
+   * 영영 안 지워진다. 폴더가 끝없이 자라지 말라고 있는 함수가 딱 그 일을
+   * 못 하게 된다 — 그래서 몇 달 쓴 사람만 디스크가 찬다.
+   */
+  for (let i = 0; i < 1005; i++) {
+    const f = join(dir, `2026-${String(i).padStart(4, '0')}.jsonl`);
+    writeFileSync(f, JSON.stringify({ t: 'msg', m: { role: 'user', content: 'x' } }) + '\n', 'utf8');
+    const 때 = new Date(이제 - (i >= 1000 ? 400 : 1) * 86400000 - i * 1000);
+    utimesSync(f, 때, 때);
+  }
+  const 지운수 = prune(방, { keep: 30, days: 30 });
+  check('★★ 대화가 1000개를 넘어도 오래된 것을 지운다', 지운수 === 5, `${지운수}개`);
+  check('  실제로 그만큼 줄었다', list(방, { limit: 9999, 속까지: false }).length === 1000,
+    String(list(방, { limit: 9999, 속까지: false }).length));
+
+  // 못 지운 것을 지웠다고 세면, 폴더가 왜 안 줄어드는지 아무도 못 찾는다.
+  const 막힌곳 = mkdtempSync(join(tmpdir(), 'deel-정리2-'));
+  mkdirSync(sessionsDir(막힌곳), { recursive: true });
+  const 옛날 = new Date(이제 - 400 * 86400000);
+  writeFileSync(join(sessionsDir(막힌곳), 'ㄱ.jsonl'), '{}' + '\n', 'utf8');
+  utimesSync(join(sessionsDir(막힌곳), 'ㄱ.jsonl'), 옛날, 옛날);
+  mkdirSync(join(sessionsDir(막힌곳), 'ㄴ.jsonl'));      // 이건 못 지운다
+  utimesSync(join(sessionsDir(막힌곳), 'ㄴ.jsonl'), 옛날, 옛날);
+  check('★ 못 지운 것은 지웠다고 안 센다', prune(막힌곳, { keep: 0, days: 30 }) === 1,
+    String(prune(막힌곳, { keep: 0, days: 30 })));
+  rmSync(막힌곳, { recursive: true, force: true });
+
+  rmSync(방, { recursive: true, force: true });
+}
+
+{
+  // 대괄호로 여는 것은 우리가 끼워 넣은 글이라 건너뛴다. 그런데 사람도
+  // 「[급함] 로그인이 안 됩니다」 처럼 적는다 — 그 대화가 목록에서 「(빈 대화)」
+  // 가 됐다. 있는 대화를 없다고 적은 것이다.
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-첫마디-'));
+  const st = new Store(방, 'ㅁ1');
+  st.begin({ model: 'm', root: 방 });
+  st.append({ role: 'user', content: '[급함] 로그인이 안 됩니다' });
+  check('★ 대괄호로 연 진짜 질문을 「빈 대화」 라고 안 한다',
+    list(방)[0]?.first === '[급함] 로그인이 안 됩니다', JSON.stringify(list(방)[0]?.first));
+  rmSync(방, { recursive: true, force: true });
+}
+
+{
+  /*
+   * `deel sessions --rm ../../어딘가` 는 대화 폴더 **밖**을 지우고도 화면에는
+   * 「지웠습니다」 라고 적었다. 무엇을 지웠는지 사람이 못 알아본다.
+   */
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-이름-'));
+  mkdirSync(sessionsDir(방), { recursive: true });
+  const 밖 = join(방, '남의것.jsonl');
+  writeFileSync(밖, '지우면 안 되는 것', 'utf8');
+  const r = remove(방, '../../남의것');
+  check('★★ 대화 폴더 밖은 안 지운다', !!r.error && existsSync(밖), JSON.stringify(r));
+  rmSync(방, { recursive: true, force: true });
+}
+
+{
+  /*
+   * 폴더를 못 만들었으면 **연 것이 아니다.** 연 것으로 적어 두면 잠깐 막혔던
+   * 것이 풀린 뒤에도 두 번 다시 안 만들어 본다 — 그 대화는 끝까지 한 줄도
+   * 안 남는다.
+   */
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-폴더-'));
+  mkdirSync(join(방, '.deel'), { recursive: true });
+  writeFileSync(sessionsDir(방), '폴더 자리를 파일이 막고 있다', 'utf8');
+  const st = new Store(방, 'ㅍ1');
+  st.append({ role: 'user', content: '첫 줄' });
+  check('폴더를 못 만들면 못 적었다고 센다', st.못쓴것()?.수 >= 1, JSON.stringify(st.못쓴것()));
+  rmSync(sessionsDir(방));                 // 막고 있던 것을 치운다
+  st.append({ role: 'user', content: '둘째 줄' });
+  check('★★ 막힌 것이 풀리면 그때부터는 적는다',
+    new Store(방, 'ㅍ1').load().messages.length === 1, String(new Store(방, 'ㅍ1').load().messages.length));
+  rmSync(방, { recursive: true, force: true });
+}
+
+{
+  /*
+   * 이름을 못 잡으면 begin() 은 쉰 번을 되풀이하다 **아무 파일도 없이** 돌아왔다.
+   * 화면은 「계속 저장되고 있습니다」 라고 말하는데 파일은 하나도 없다.
+   */
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-이름겹침-'));
+  const dir = sessionsDir(방);
+  mkdirSync(dir, { recursive: true });
+  // 시각을 못 박는다. 파일 천 개를 만드는 사이에 초가 넘어가면 겹칠 일이
+  // 없어져서, 재려던 판이 조용히 사라진다.
+  const 이제 = new Date(2026, 0, 1, 12, 0, 0);
+  const 밑 = newId(이제);
+  writeFileSync(join(dir, `${밑}.jsonl`), '{}' + '\n', 'utf8');
+  for (let n = 2; n < 1000; n++) writeFileSync(join(dir, `${밑}-${n}.jsonl`), '{}' + '\n', 'utf8');
+  writeFileSync(join(dir, `${밑}-${process.pid}.jsonl`), '{}' + '\n', 'utf8');
+  const 고른것 = freeId(dir, 이제);
+  check('★★ 이름이 다 차 있어도 안 쓰는 이름을 고른다',
+    !existsSync(join(dir, `${고른것}.jsonl`)), 고른것);
+  const st = new Store(방, 고른것);
+  st.begin({ model: 'm', root: 방 });
+  st.append({ role: 'user', content: '이 말은 남아야 한다' });
+  check('★★ 그 이름으로 정말 적힌다',
+    st.못쓴것() === null && new Store(방, st.id).load().messages.length === 1,
+    `${st.id} · ${JSON.stringify(st.못쓴것())}`);
   rmSync(방, { recursive: true, force: true });
 }
 

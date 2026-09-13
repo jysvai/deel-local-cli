@@ -23,7 +23,7 @@ export const ko = {
   'cmd.compact.desc': '오래된 대화 줄이기',
   'cmd.model.desc': '연결·모델 바꾸기 · `카드` 면 이 모델을 겪어 본 결과',
   'cmd.model.arg': '[이름|list|models|카드]',
-  'cmd.think.desc': '추론 강도 (off/low/medium/high/max)',
+  'cmd.think.desc': '추론 강도 (off/low/medium/high/xhigh/max)',
   'cmd.think.arg': '<수준>',
 
   // ── /think 화면 ────────────────────────────────────────────────────
@@ -104,8 +104,8 @@ export const ko = {
   'cmd.bell.arg': '[on|off]',
   'cmd.motion.desc': '일하는 동안 뭐가 도나 — 기사·동물·사무실',
   'cmd.motion.arg': '[기사|동물|사무실|기본|끔]',
-  'cmd.lang.desc': '화면 말 — 한국어 / English',
-  'cmd.lang.arg': '[ko|en] [시킬말]',
+  'cmd.lang.desc': '화면 말 — 한국어 / English / 日本語 / 中文',
+  'cmd.lang.arg': '[ko|en|ja|zh] [시킬말]',
   'cmd.init.desc': 'DEEL.md 규칙 파일 만들기',
   'cmd.exit.desc': '끝내기',
   'cmd.quit.desc': '끝내기',
@@ -242,7 +242,7 @@ export const ko = {
   'lang.en': 'English (영어)',
   'lang.howto': '바꾸려면',
   'lang.changed': '화면 말을 {이름:으로} 바꿨습니다.',
-  'lang.unknown': 'ko 나 en 으로 적어 주세요.',
+  'lang.unknown': 'ko · en · ja · zh 가운데 하나로 적어 주세요.',
   'lang.progress': '{언어}: {옮김}/{전체} 마디가 옮겨져 있습니다. 나머지는 한국어로 나옵니다.',
   'lang.partial': '아직 다 안 옮겼습니다 — 빈칸을 내는 대신 한국어를 그대로 냅니다.',
   'lang.codeStays': '따로 안 정하면 모델이 읽는 글도 화면 말을 따라갑니다. 코드와 도구·인자 이름은 그대로입니다.',

@@ -90,6 +90,21 @@ export function 지금모드({ online = false, offline = false } = {}) {
 }
 
 /**
+ * 봉인이 켜져 있나 — 깃발·프로필·설정 **셋 중 하나라도** 켜져 있으면 켜진 것이다.
+ *
+ * 여태 부르는 자리마다 `깃발 ?? prof.offline ?? cfg.offline` 으로 골랐다.
+ * `??` 는 null·undefined 에서만 다음 칸으로 넘어가는데, 부르는 쪽이 깃발을
+ * **언제나 boolean 으로** 넘겼다 (bin/deel.js 의 `flags.offline === true || …`).
+ * 그래서 첫 칸이 늘 false 로 차 있었고 뒤의 둘은 한 번도 안 읽혔다 —
+ * 관리자가 정책에 못 박아 둔 봉인도, 사람이 제 손으로 설정에 적은 봉인도
+ * 아무 데도 안 붙어 있었다. 정책은 켜기만 하므로 여기서는 OR 로 모은다.
+ */
+export function 봉인됐나({ 깃발 = undefined, prof = null, cfg = null } = {}) {
+  return 깃발 === true || 깃발 === 'true'
+    || prof?.offline === true || cfg?.offline === true;
+}
+
+/**
  * 이 주소가 바깥인가.
  *
  * 못 읽는 주소는 바깥으로 친다. 모르면 조이는 쪽이다 — 읽을 수 없는 주소를

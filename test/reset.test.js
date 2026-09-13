@@ -19,6 +19,7 @@ import { tmpdir, homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { 살펴보기, 지우기, 울타리안인가, 설정살피기, 갈래들 } from '../src/reset.js';
+import { pluginsDir } from '../src/plugins/manage.js';
 import { trace } from './trace.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -328,6 +329,121 @@ trace('7-CLI');
     check('지울 것이 없다고 말한다', /지울 것이 없었습니다|없습니다/.test(r.out), 한줄(r.out));
     check('빈 PC 에서 폴더를 새로 만들지 않는다',
       readdirSync(home).length === 0, readdirSync(home).join(','));
+  }
+}
+
+
+trace('7b-깃발이-뒤-낱말을-삼키나');
+
+/*
+ * ── `deel reset --hard all --yes` 가 아무것도 안 지우고 0 으로 끝났다 ──
+ *
+ * 값을 안 받는 깃발은 bin/deel.js 의 BOOL 목록에 적어 둬야 한다. 거기에
+ * `hard` 가 빠져 있었다. 그래서 `--hard` 가 뒤의 `all` 을 제 값으로 삼켰고,
+ * 지울 갈래가 사라졌다 — 화면은 「무엇을 지울지 같이 주세요」 를 찍고
+ * **종료코드 0** 으로 끝났다.
+ *
+ * 사람이 손으로 칠 때는 갈래를 다시 물어 주니까 잘 안 걸린다. 스크립트에서만
+ * 걸리고, 스크립트는 0 을 보고 「전체 초기화됐다」 로 알고 다음 줄로 간다.
+ */
+{
+  const { home, work, 집, 일 } = 차리기();
+  const r = await 띄우기(['reset', '--hard', 'all', '--yes'], { home, work });
+  check('★★ 깃발을 앞에 둬도 갈래를 안 삼킨다',
+    !있나(집('config.json')) && !있나(일('sessions')), `${r.code} ${한줄(r.out)}`);
+  check('★★ --hard 가 앞에 있어도 굳은 것까지 지운다',
+    !있나(일('history')) && !있나(일('audit.jsonl')), 한줄(r.out));
+  check('  그리고 0 으로 끝난다', r.code === 0, String(r.code));
+  check('★ 그래도 사람이 적은 것은 남는다', 있나(일('mcp.json')));
+}
+
+trace('7c-못-읽은-것을-0-으로-적나');
+
+{
+  /*
+   * 못 읽은 것을 `0` 으로 적으면, 지우기 **전** 확인 화면이 「기억 0줄 →
+   * 돌아오지 않습니다」 라고 말한다. 사람은 잃을 것이 없다고 읽고 넘기는데,
+   * 바로 다음 줄에서 그 자리가 통째로 사라진다.
+   */
+  const { home, work, 일 } = 차리기();
+  rmSync(일('memory.md'), { force: true });
+  mkdirSync(일('memory.md'), { recursive: true });        // 파일 자리에 폴더 — 못 읽는 판
+  writeFileSync(join(일('memory.md'), '안엣것.md'), '지워지면 안 되는 글\n', 'utf8');
+
+  const 본것 = 살펴보기({ home, root: work });
+  check('★★ 못 읽은 것을 0 이라고 안 한다',
+    본것.항목.find((x) => x.키 === 'memory').몇 === null,
+    String(본것.항목.find((x) => x.키 === 'memory').몇));
+
+  // 폴더를 세는 자리도 같다 — 폴더 자리에 파일이 있으면 못 센 것이다.
+  rmSync(일('sessions'), { recursive: true, force: true });
+  writeFileSync(일('sessions'), '여기는 폴더가 아니다', 'utf8');
+  // 증거 폴더도 하나 막아 둔다 — 여러 자리를 합쳐 세는 칸이 따로 있다.
+  rmSync(일('증거'), { recursive: true, force: true });
+  writeFileSync(일('증거'), '여기도 폴더가 아니다', 'utf8');
+  const 본것2 = 살펴보기({ home, root: work });
+  check('★ 폴더를 못 세도 0 이라고 안 한다',
+    본것2.항목.find((x) => x.키 === 'sessions').몇 === null,
+    String(본것2.항목.find((x) => x.키 === 'sessions').몇));
+  check('★ 여러 자리를 합쳐 셀 때 한 자리만 못 세도 못 센 것이다',
+    본것2.항목.find((x) => x.키 === '만든것').몇 === null,
+    String(본것2.항목.find((x) => x.키 === '만든것').몇));
+
+  const r = await 띄우기(['reset', 'memory', '--yes'], { home, work });
+  check('★ 화면에 「알 수 없음」 으로 뜬다', /알 수 없음/.test(r.out), 한줄(r.out));
+  check('  없는 것은 그대로 0 이다',
+    살펴보기({ home: mkdtempSync(join(tmpdir(), 'deel-빈-')), root: work }).항목
+      .find((x) => x.키 === 'learned').몇 !== null);
+}
+
+trace('7d-저장소에-손으로-적은-설정');
+
+{
+  /*
+   * 저장소의 `.deel/config.json` 에는 프로필 대신 `mode` 나
+   * `permissions.deny` 만 적어 두는 쓰임이 있다 — config.js 가 권하는 쓰임이다.
+   * 그 파일을 `deel reset model` 이 통째로 지우면, 사람이 손으로 적어 둔
+   * **금지 규칙**이 초기화 한 번에 없어진다.
+   */
+  const { home, work, 일 } = 차리기();
+  writeFileSync(일('config.json'), JSON.stringify({
+    mode: 'code', permissions: { deny: ['Bash(curl*)'] },
+  }), 'utf8');
+  const r = await 띄우기(['reset', 'model', '--yes'], { home, work });
+  check('★★ 손으로 적은 저장소 설정은 안 지운다', 있나(일('config.json')), 한줄(r.out));
+  check('★ 안 지운다고 화면에 적는다', /config\.json/.test(r.out), 한줄(r.out));
+  check('  집 설정은 그대로 지운다', !있나(join(home, 'config.json')));
+
+  // 프로필만 적힌 저장소 설정은 연결이 맞으니 그대로 지운다.
+  const 둘째 = 차리기();
+  writeFileSync(둘째.일('config.json'), JSON.stringify({
+    profiles: [{ id: 'repo', baseUrl: 'http://127.0.0.1:1' }],
+  }), 'utf8');
+  await 띄우기(['reset', 'model', '--yes'], { home: 둘째.home, work: 둘째.work });
+  check('★ 연결만 적힌 저장소 설정은 지운다', !있나(둘째.일('config.json')));
+}
+
+trace('7e-플러그인이-깔리는-자리와-지우는-자리');
+
+{
+  /*
+   * `DEEL_HOME` 을 쓰는 휴대용 설치(USB·공유폴더)에서 두 자리가 갈려 있었다.
+   * 깔리는 쪽은 OS 집 폴더를 보고, 지우는 쪽은 `DEEL_HOME` 을 봤다. 그래서
+   * `deel reset plugins` 는 「플러그인 0개 · 이미 비어 있습니다」 를 찍고
+   * 종료코드 0 으로 끝나는데 플러그인은 그대로 살아 있었다.
+   */
+  const 살림 = mkdtempSync(join(tmpdir(), 'deel-살림-'));
+  치울것.push(살림);
+  const 옛DEEL = process.env.DEEL_HOME;
+  process.env.DEEL_HOME = 살림;
+  try {
+    check('★★ 깔리는 자리와 지우는 자리가 같다',
+      pluginsDir() === 살펴보기({ root: process.cwd() }).항목.find((x) => x.키 === 'plugins').자리[0],
+      `${pluginsDir()}`);
+    check('  그 자리가 살림 폴더 안이다', pluginsDir().startsWith(살림), pluginsDir());
+  } finally {
+    if (옛DEEL === undefined) delete process.env.DEEL_HOME;
+    else process.env.DEEL_HOME = 옛DEEL;
   }
 }
 

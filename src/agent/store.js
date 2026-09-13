@@ -14,7 +14,7 @@
 //   마지막 줄까지는 성하다. 통째로 다시 쓰는 방식이면 그 순간 파일이 깨진다.
 import {
   existsSync, mkdirSync, readdirSync, readFileSync,
-  appendFileSync, writeFileSync, statSync, rmSync, chmodSync,
+  appendFileSync, writeFileSync, statSync, rmSync, chmodSync, renameSync,
 } from 'node:fs';
 import { join } from 'node:path';
 
@@ -41,7 +41,14 @@ export function freeId(dir, at = new Date()) {
     const id = `${base}-${n}`;
     if (!existsSync(join(dir, `${id}.jsonl`))) return id;
   }
-  return `${base}-${process.pid}`;
+  // 여기까지 왔으면 마지막 이름도 비어 있는지 봐야 한다. 안 보고 돌려주면
+  // begin() 이 같은 이름으로 쉰 번을 되풀이하다 **아무 파일도 없이** 대화를
+  // 시작한다 — 저장한다고 적어 놓고 한 줄도 안 남는 판이 그때 만들어진다.
+  for (let n = 0; n < 1000; n++) {
+    const id = n ? `${base}-${process.pid}-${n}` : `${base}-${process.pid}`;
+    if (!existsSync(join(dir, `${id}.jsonl`))) return id;
+  }
+  return `${base}-${process.pid}-${Date.now().toString(36)}`;
 }
 
 export class Store {
@@ -86,6 +93,12 @@ export class Store {
   #잠그기() {
     if (this.#잠갔나) return;
     this.#잠갔나 = true;
+    /*
+     * 윈도우에서 chmod 는 **아무 일도 안 하고 성공한다.** 그 성공을 그대로
+     * 적으면 바로 위 머리말이 스스로 금지한 「잠근 척」 이 된다 — 같은 PC 를
+     * 여럿이 쓰는 사람이 화면만 보고 안심한다. 안 걸었으면 안 걸었다고 적는다.
+     */
+    if (process.platform === 'win32') { this.잠금 = { 못함: 'windows' }; return; }
     try { chmodSync(this.file, 0o600); this.잠금 = { 모드: 0o600 }; }
     catch (err) { this.잠금 = { 못함: err?.code ?? String(err) }; }
   }
@@ -96,8 +109,10 @@ export class Store {
     // 끊긴다 — 기록을 남기려다 작업을 죽이면 본말이 뒤집힌다.
     // 조용히 넘기는 것도 아니다: 폴더가 없으면 바로 아래 쓰기가 깨지고,
     // 그 자리에서 세어 화면에 오른다.
-    try { mkdirSync(this.dir, { recursive: true }); } catch { /* 아래 쓰기가 센다 */ }
-    this.opened = true;
+    // 못 만들었으면 **연 것이 아니다.** 연 것으로 적어 두면 잠깐 막혔던 것이
+    // 풀린 뒤에도 두 번 다시 안 만들어 본다 — 그 대화는 끝까지 한 줄도 안 남는다.
+    try { mkdirSync(this.dir, { recursive: true }); this.opened = true; }
+    catch { /* 아래 쓰기가 센다. 다음 줄에서 다시 만들어 본다 */ }
   }
 
   /*
@@ -161,14 +176,19 @@ export class Store {
         this.#use(freeId(this.dir));               // 누가 채 갔다. 옆자리로.
       }
     }
+    // 쉰 번을 다 써도 자리를 못 잡았다. 여기서 잠자코 돌아가면 화면은
+    // 「계속 저장되고 있습니다」 라고 말하는데 파일은 하나도 없다.
+    this.#못썼다({ code: 'EEXIST' });
     return this;
   }
 
+  /** 한 줄 적는다. 적었으면 true. 못 적었으면 false 이고 셈에 오른다. */
   #write(obj) {
     try {
       appendFileSync(this.file, JSON.stringify(obj) + '\n', 'utf8');
       this.#잠그기();
-    } catch (err) { this.#못썼다(err); }   // 계속은 하되, 몇 줄을 잃었는지는 센다
+      return true;
+    } catch (err) { this.#못썼다(err); return false; }   // 계속은 하되, 몇 줄을 잃었는지는 센다
   }
 
   // 메시지 하나를 덧붙인다. 대화가 진행되는 대로 즉시 남긴다.
@@ -225,17 +245,24 @@ export class Store {
    * 그 값은 매번 사람이 기다리는 시간이다. pins 를 사람이 고칠 때만 적는
    * 것과 같은 뜻이다.
    */
+  /*
+   * 적은 것으로 치는 것은 **정말 적힌 뒤**다.
+   *
+   * 못 적었는데 적은 셈으로 표시해 두면, 디스크가 다시 나아져도 그 값은 이미
+   * 「안 바뀐 것」 이라 두 번 다시 안 적힌다. 잠깐 막혔던 것이 영영 사라지는
+   * 자리다 — 여기가 바로 남은 할 일과 시킨 말이 조용히 없어지던 길이다.
+   */
   살림적기(session = this.따라갈세션) {
     if (!session) return;
     const 할일 = JSON.stringify(session.할일 ?? []);
-    if (할일 !== this.적은할일) {
+    if (할일 !== this.적은할일
+      && this.#write({ t: 'todo', at: new Date().toISOString(), 목록: session.할일 ?? [] })) {
       this.적은할일 = 할일;
-      this.#write({ t: 'todo', at: new Date().toISOString(), 목록: session.할일 ?? [] });
     }
     const 요청 = String(session.이번요청 ?? '');
-    if (요청 !== this.적은요청) {
+    if (요청 !== this.적은요청
+      && this.#write({ t: 'request', at: new Date().toISOString(), 글: 요청 })) {
       this.적은요청 = 요청;
-      this.#write({ t: 'request', at: new Date().toISOString(), 글: 요청 });
     }
   }
 
@@ -289,15 +316,28 @@ export class Store {
     if (이번요청) lines.push(JSON.stringify({ t: 'request', at: new Date().toISOString(), 글: 이번요청 }));
     for (const m of messages) lines.push(JSON.stringify({ t: 'msg', m }));
     /*
-     * 통째로 다시 쓰면 파일이 새로 만들어진다 — 그때 잠금도 다시 걸어야 한다.
-     * 그리고 여기서 깨지면 앞의 append 들이 남긴 것까지 통째로 못 고친 셈이
-     * 된다. 제일 크게 잃는 자리라 더더욱 조용히 넘길 수 없다.
+     * 옆에 다 쓰고 나서 **한 번에 갈아 끼운다.**
+     *
+     * 이 파일 머리말이 jsonl 을 고른 까닭이 「통째로 다시 쓰면 그 순간 파일이
+     * 깨진다」 인데, 정작 통째로 다시 쓰는 자리가 여기다. 디스크가 반쯤 쓰다
+     * 차면 원본은 이미 잘려 있고 새것은 안 끝났다 — 그 한 번에 대화 전체가
+     * 없어진다. 옆에 써 두고 이름만 바꾸면 성한 쪽 아니면 성한 쪽이다.
+     *
+     * 실패하면 옆에 쓴 것을 치운다. 안 치우면 폴더에 부스러기가 쌓이고,
+     * 다음에 볼 사람은 그게 대화인지 찌꺼기인지 모른다.
      */
+    const 옆 = `${this.file}.새로`;
     try {
-      writeFileSync(this.file, lines.join('\n') + '\n', 'utf8');
+      writeFileSync(옆, lines.join('\n') + '\n', 'utf8');
+      // 윈도우에서는 읽기 전용 파일 위로 이름을 못 바꾼다. 우리 파일이니 푼다.
+      try { chmodSync(this.file, 0o600); } catch { /* 없거나 이미 쓸 수 있다 */ }
+      renameSync(옆, this.file);
       this.#잠갔나 = false;
       this.#잠그기();
-    } catch (err) { this.#못썼다(err); }
+    } catch (err) {
+      try { rmSync(옆, { force: true }); } catch { /* 못 치워도 원본은 성하다 */ }
+      this.#못썼다(err);
+    }
   }
 
   readMeta() {
@@ -343,8 +383,16 @@ export class Store {
 
 // 사람에게 보여줄 첫 마디. 이게 목록에서 대화를 알아보는 유일한 단서다.
 function firstAsk(messages) {
-  const m = messages.find((x) => x.role === 'user' && typeof x.content === 'string'
-    && x.content.trim() && !x.content.startsWith('['));
+  const 쓸만한 = messages.filter((x) => x.role === 'user' && typeof x.content === 'string' && x.content.trim());
+  /*
+   * 대괄호로 여는 것은 우리가 끼워 넣은 글이라 건너뛴다. 그런데 사람도
+   * 「[급함] 로그인이 안 됩니다」 처럼 적는다 — 그 대화는 목록에서 「(빈
+   * 대화)」 가 됐다. 있는 대화를 없다고 적은 것이다.
+   *
+   * 그래서 건너뛰되, 남는 것이 하나도 없으면 첫 마디를 그대로 쓴다.
+   * 알아보기 어려운 제목이 「빈 대화」 라는 거짓말보다 낫다.
+   */
+  const m = 쓸만한.find((x) => !x.content.trim().startsWith('[')) ?? 쓸만한[0];
   return m ? m.content.replace(/\s+/g, ' ').trim() : '(빈 대화)';
 }
 
@@ -387,29 +435,73 @@ export function list(root, { limit = 20, 속까지 = true } = {}) {
   const out = [];
   for (const c of 후보) {
     if (out.length >= limit) break;
-    const { meta, messages } = new Store(root, c.id).load();
-    if (!messages.length) continue;      // 빈 파일은 목록에 안 올린다
-    out.push({
-      ...c,
-      model: meta?.model ?? '?',
-      turns: messages.filter((m) => m.role === 'user').length,
-      messages: messages.length,
-      first: firstAsk(messages),
-    });
+    const 줄 = 한줄(root, c);
+    if (줄) out.push(줄);
   }
   return out;
 }
 
+/**
+ * 후보 하나를 열어 목록 한 줄로 만든다. 빈 파일이면 null.
+ *
+ * **못 읽은 것은 없는 것이 아니다.**
+ *
+ * load() 는 까닭을 담아 돌려주는데 부르는 쪽이 그것을 버리고 있었다. 그래서
+ * 권한이 막히거나 다른 프로그램이 잡고 있는 대화는 목록에서 통째로 사라졌고,
+ * 그런 것뿐이면 화면은 「아직 없습니다. 지금 이 대화가 첫 번째입니다」 라고
+ * 말했다 — 어제 한 일이 그대로 있는데 없다고 한 것이다. 이어할 수는 없어도
+ * **거기 있다는 것**은 말해야 사람이 손을 쓴다.
+ */
+function 한줄(root, c) {
+  const { meta, messages, 못읽음 } = new Store(root, c.id).load();
+  if (못읽음) {
+    return { ...c, 못읽음, model: '?', turns: 0, messages: 0, first: `못 읽었습니다 — ${못읽음}` };
+  }
+  if (!messages.length) return null;      // 빈 파일은 목록에 안 올린다
+  return {
+    ...c,
+    model: meta?.model ?? '?',
+    turns: messages.filter((m) => m.role === 'user').length,
+    messages: messages.length,
+    first: firstAsk(messages),
+  };
+}
+
 export function remove(root, id) {
+  /*
+   * 이름에 상위 경로가 섞이면 대화 폴더 **밖**을 지운다.
+   * `deel sessions --rm ../../어딘가` 는 화면에 「지웠습니다」 라고 적고
+   * 엉뚱한 파일을 없앤다 — 무엇을 지웠는지 사람이 못 알아본다.
+   */
+  if (!/^[^\\/:*?"<>|]+$/.test(String(id)) || String(id).includes('..')) {
+    return { error: `대화 이름이 아닙니다: ${id}` };
+  }
   const f = join(sessionsDir(root), `${id}.jsonl`);
   if (!existsSync(f)) return { error: `그런 대화가 없습니다: ${id}` };
-  rmSync(f, { force: true });
+  try { rmSync(f, { force: true }); }
+  catch (err) { return { error: `못 지웠습니다: ${id} — ${err?.code ?? err?.message ?? String(err)}` }; }
   return { removed: id };
 }
 
-/** 가장 최근 대화. --continue 가 집어 오는 것. */
+/**
+ * 가장 최근 대화. --continue 가 집어 오는 것.
+ *
+ * 못 읽는 것은 건너뛴다. 그것을 집어 오면 --continue 가 **빈 대화**로 열리고,
+ * 사람은 어제 하던 것이 이어진 줄 알고 말을 건다.
+ */
 export function latest(root) {
-  return list(root, { limit: 1 })[0] ?? null;
+  /*
+   * **한 개씩 열어 보고 첫 성한 것에서 멈춘다.**
+   *
+   * `list(root, { limit: 20 })` 로 스무 개를 통째로 읽으면 안 된다 — 이 파일이
+   * 위에서 경고한 그 자리다. 대화 파일 하나가 수 MB 이고, 이건 켤 때마다 돈다.
+   * 보통은 첫 파일 하나만 읽고 끝난다.
+   */
+  for (const c of list(root, { limit: 20, 속까지: false })) {
+    const 줄 = 한줄(root, c);
+    if (줄 && !줄.못읽음) return 줄;
+  }
+  return null;
 }
 
 /**
@@ -417,10 +509,18 @@ export function latest(root) {
  * 최근 keep 개는 무조건 남기고, 그보다 오래되고 days 를 넘긴 것만 지운다.
  */
 export function prune(root, { keep = 30, days = 30 } = {}) {
-  // 지울지 말지는 파일 시각만 보면 안다. 내용은 필요 없다 —
-  // 여기서 전부 읽던 것이 켤 때 몇 초씩 멈추던 원인이었다.
-  const all = list(root, { limit: 1000, 속까지: false });
+  /*
+   * 지울지 말지는 파일 시각만 보면 안다. 내용은 필요 없다 —
+   * 여기서 전부 읽던 것이 켤 때 몇 초씩 멈추던 원인이었다.
+   *
+   * 개수를 1000 으로 끊어 놓으면 정작 **제일 오래된 것들**이 그 뒤에 있어서
+   * 영영 안 지워진다. 폴더가 끝없이 자라지 말라고 있는 함수가 딱 그 일을
+   * 못 하게 된다. 열지도 않고 시각만 보는 목록이라 전부 봐도 싸다.
+   */
+  const all = list(root, { limit: Infinity, 속까지: false });
   const 자를것 = all.slice(keep).filter((s) => (Date.now() - s.at.getTime()) > days * 86400000);
-  for (const s of 자를것) { try { rmSync(s.file, { force: true }); } catch {} }
-  return 자를것.length;
+  // 지웠다고 세는 것은 **정말 지워진 것**만이다.
+  let 지운수 = 0;
+  for (const s of 자를것) { try { rmSync(s.file, { force: true }); 지운수 += 1; } catch { /* 잡혀 있으면 다음에 */ } }
+  return 지운수;
 }

@@ -22,6 +22,7 @@ import { zh } from '../src/i18n/zh.js';
 /** 말 표를 이름으로 본다. 검사 안에서만 쓴다. */
 const 표보기 = (l) => ({ ko, en, ja, zh })[l] ?? {};
 import { COMMANDS } from '../src/commands.js';
+import { LEVELS as THINK_LEVELS } from '../src/agent/effort.js';
 import { SEGMENTS } from '../src/ui/status.js';
 import { 기본곁말 } from '../src/ui/intro.js';
 import { trace } from './trace.mjs';
@@ -413,6 +414,46 @@ trace('조사');
 
   // 안 준 자리는 그대로 둔다 — 조사를 적어 뒀어도 그렇다.
   check('안 준 자리는 중괄호째 남는다', 말('motion.set', {}).includes('{것:으로}'), 말('motion.set', {}));
+}
+
+
+trace('N-고를수있다고-적은-목록이-사실인가');
+
+/*
+ * ── 「이것만 됩니다」 는 **되는 것과 같아야 한다** ──────────────────────
+ *
+ * /lang 은 ko·en·ja·zh 를 다 받는다(i18n/index.js 의 언어고르기). 화면 말도
+ * 524개 가운데 522개가 옮겨져 있다. 그런데 **한국어·영어 화면에서만**
+ * 「ko 나 en 으로 적어 주세요」 가 떴고, /help 의 인자 안내도 `[ko|en]` 이었다.
+ * ja.js·zh.js 는 넷을 다 적어 뒀다 — 나중에 만든 두 파일만 맞고, 먼저 있던
+ * 두 파일을 안 고친 것이다. 그래서 하필 일본어·중국어를 쓸 사람이 읽는
+ * 자리에서 그 두 말이 없는 것이 됐다.
+ *
+ * /think 도 같다. LEVELS 에 xhigh 가 있고 `/think xhigh` 는 그대로 먹는데
+ * 설명에는 네 언어 전부 xhigh 가 빠져 있었다.
+ *
+ * 목록을 손으로 두 군데 적으면 반드시 어긋난다. 그래서 여기서 **진짜 목록**과
+ * 맞대 둔다 — 새 말이나 새 강도를 넣는 사람이 안내를 안 고치면 여기가 빨개진다.
+ */
+{
+  const 원래 = 언어();
+  for (const l of 언어들) {
+    언어정하기(l);
+    const 인자 = 말('cmd.lang.arg');
+    const 모름 = 말('lang.unknown');
+    const 빠진인자 = 언어들.filter((code) => !인자.includes(code));
+    const 빠진모름 = 언어들.filter((code) => !모름.includes(code));
+    check(`[${l}] /help 의 /lang 인자에 되는 말이 다 적혀 있다`, 빠진인자.length === 0,
+      `${인자}  빠짐: ${빠진인자.join(' ') || '없음'}`);
+    check(`[${l}] 모르는 말을 냈을 때 되는 말을 다 알려 준다`, 빠진모름.length === 0,
+      `${모름}  빠짐: ${빠진모름.join(' ') || '없음'}`);
+
+    const 강도 = 말('cmd.think.desc');
+    const 빠진강도 = THINK_LEVELS.filter((v) => !new RegExp(`(^|[^a-z])${v}([^a-z]|$)`).test(강도));
+    check(`[${l}] /help 의 /think 설명에 되는 강도가 다 적혀 있다`, 빠진강도.length === 0,
+      `${강도}  빠짐: ${빠진강도.join(' ') || '없음'}`);
+  }
+  언어정하기(원래);
 }
 
 언어정하기(원래언어);

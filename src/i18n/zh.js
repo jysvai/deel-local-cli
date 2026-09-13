@@ -20,7 +20,7 @@ export const zh = {
   'cmd.compact.desc': '折叠较早的对话',
   'cmd.model.desc': '切换连接与模型 · `card` 显示这个模型在这里做过什么',
   'cmd.model.arg': '[名称|list|models|card]',
-  'cmd.think.desc': '推理力度 (off/low/medium/high/max)',
+  'cmd.think.desc': '推理力度 (off/low/medium/high/xhigh/max)',
   'cmd.think.arg': '<级别>',
 
   // ── /think 画面 ─────────────────────────────────────────────────────

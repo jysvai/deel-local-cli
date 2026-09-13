@@ -11,6 +11,8 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+import { homeDir } from '../config.js';
+import { pluginsDir } from '../plugins/manage.js';
 // 저장소에 딸려 온 스킬·명령이 시스템 글에 실리지 않게 한다 (discover 안구절 머리말).
 import { 믿나 } from '../safety/trust.js';
 
@@ -163,6 +165,7 @@ function countSkillDirs(rootDir) {
  */
 export function discover(root, opts = {}) {
   const home = opts.home ?? homedir();
+  const 살림 = opts.살림 ?? (opts.home ? join(opts.home, '.deel') : homeDir());
   const caps = { skills: opts.maxSkills ?? 400, commands: opts.maxCommands ?? 400 };
   const skills = [];
   const commands = [];
@@ -177,7 +180,13 @@ export function discover(root, opts = {}) {
   // 같은 플러그인이 cache/ 와 marketplaces/ 양쪽에 있을 수 있다.
   // 이름이 같으면 알맹이가 더 많은 쪽 하나만 쓴다.
   const roots = [];
-  for (const base of [join(home, '.deel', 'plugins'), join(home, '.claude', 'plugins')]) {
+  /*
+   * 우리 플러그인은 **살림 자리** 밑이다 (`~/.deel` 또는 `DEEL_HOME`).
+   * OS 집 폴더에 `.deel` 을 직접 붙이면 `DEEL_HOME` 을 쓰는 휴대용 설치에서
+   * 깔아 놓은 플러그인의 스킬이 안 보인다 — 깔리는 자리(plugins/manage.js)와
+   * 여기가 갈리기 때문이다. 클로드 것(.claude)은 그쪽 규칙이라 집 폴더 그대로다.
+   */
+  for (const base of [pluginsDir(살림), join(home, '.claude', 'plugins')]) {
     if (existsSync(base)) roots.push(...findPluginRoots(base));
   }
   const best = new Map();

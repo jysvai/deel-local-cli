@@ -3,7 +3,7 @@
 // 온라인 기기에서 /plugin install 로 받고, /plugin pack 으로 묶어
 // 오프라인 기기에 반입한다. 오프라인에서는 압축만 풀면 그대로 인식된다.
 import { execFile } from 'node:child_process';
-import { homedir } from 'node:os';
+import { homeDir } from '../config.js';
 import { join, dirname, basename, resolve, sep } from 'node:path';
 import {
   existsSync, mkdirSync, writeFileSync, readFileSync, rmSync,
@@ -26,7 +26,16 @@ export function 플러그인되돌림(다음) {
 }
 import { copyDir } from '../tools/fsutil.js';
 
-export const pluginsDir = (home = homedir()) => join(home, '.deel', 'plugins');
+/*
+ * 플러그인이 깔리는 자리.
+ *
+ * 여기 넘기는 `home` 은 **살림 자리**(`~/.deel` 또는 `DEEL_HOME`)다. 예전에는
+ * OS 의 집 폴더를 받아 `.deel` 을 직접 붙였는데, 그러면 `DEEL_HOME` 이 안
+ * 먹었다 — 휴대용 설치(USB·공유폴더)에서 설정은 USB 로 가고 플러그인만
+ * 로밍 프로필에 남았고, `deel reset plugins` 는 엉뚱한 데를 보며 「0개 ·
+ * 이미 비어 있습니다」 를 찍었다. 살림 자리 하나로 모은다.
+ */
+export const pluginsDir = (home = homeDir()) => join(home, 'plugins');
 
 // owner/repo · owner/repo#가지 · 전체 URL 을 모두 받는다.
 export function parseSpec(spec) {
@@ -243,7 +252,7 @@ function walkCount(dir, match, depth = 5) {
   return n;
 }
 
-export async function install(spec, { home = homedir(), onStep } = {}) {
+export async function install(spec, { home = homeDir(), onStep } = {}) {
   const base = pluginsDir(home);
 
   // 이미 풀어 놓은 폴더를 그대로 넣는 길. 오프라인 기기에서 이쪽을 쓴다.
@@ -312,7 +321,7 @@ export async function install(spec, { home = homedir(), onStep } = {}) {
   return { name, version: info?.version ?? '', license: info?.license ?? null, path: dest, ...counts, how: got.how };
 }
 
-export function list({ home = homedir() } = {}) {
+export function list({ home = homeDir() } = {}) {
   const base = pluginsDir(home);
   if (!existsSync(base)) return [];
   const out = [];
@@ -335,7 +344,7 @@ export function list({ home = homedir() } = {}) {
   return out.sort((a, b) => b.skills - a.skills);
 }
 
-export function remove(name, { home = homedir() } = {}) {
+export function remove(name, { home = homeDir() } = {}) {
   /*
    * 지우는 자리도 이름으로 정해진다. 그러니 여기도 한 칸으로 자른다.
    *
@@ -357,7 +366,7 @@ export function remove(name, { home = homedir() } = {}) {
 const PACK_SKIP_DIRS = new Set(['node_modules', '.git', 'test', 'tests', '__pycache__', '.github']);
 const PACK_SKIP_EXT = /\.(js|cjs|mjs|sh|ps1|cmd|bat|py|exe|dll|so|dylib)$/i;
 
-export function pack(outFile, { home = homedir(), only = null } = {}) {
+export function pack(outFile, { home = homeDir(), only = null } = {}) {
   const base = pluginsDir(home);
   if (!existsSync(base)) return { error: '설치된 플러그인이 없습니다.' };
 

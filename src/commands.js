@@ -1672,11 +1672,18 @@ export async function handle(line, session, ctx) {
         return { handled: true };
       }
       for (const [i, r] of rows.entries()) {
-        say(`  ${i === 0 ? c.hgreen('●') : c.gray('·')} ${c.bold(pad(r.id, 17))}${c.gray(pad(`${r.turns}턴`, 6, 'right'))}  ${c.gray(clip(r.model, 22))}`);
-        say(`      ${c.gray(clip(r.first, 66))}`);
+        // 못 읽은 것도 올린다 (agent/store.js 의 list). 없는 것과 못 여는 것은 다르다.
+        const 앞 = r.못읽음 ? c.yellow(mark.warn) : i === 0 ? c.hgreen('●') : c.gray('·');
+        say(`  ${앞} ${c.bold(pad(r.id, 17))}${c.gray(pad(r.못읽음 ? '' : `${r.turns}턴`, 6, 'right'))}  ${c.gray(clip(r.model, 22))}`);
+        say(`      ${r.못읽음 ? c.yellow(clip(r.first, 66)) : c.gray(clip(r.first, 66))}`);
       }
       say('');
-      say(`  ${c.gray('이어하려면 나갔다가')} ${c.cyan('deel --continue')} ${c.gray('또는')} ${c.cyan(`deel --resume ${rows[0].id}`)}`);
+      const 읽히는것 = rows.filter((r) => !r.못읽음);
+      if (읽히는것.length) {
+        say(`  ${c.gray('이어하려면 나갔다가')} ${c.cyan('deel --continue')} ${c.gray('또는')} ${c.cyan(`deel --resume ${읽히는것[0].id}`)}`);
+      } else {
+        say(`  ${mark.warn} ${c.yellow('여기 있는 대화를 하나도 못 열었습니다 — 이어할 수 없습니다.')}`);
+      }
       /*
        * 바로 아래 줄이 약속이다. 못 지키고 있으면 약속을 되풀이하면 안 된다.
        *
@@ -2583,6 +2590,18 @@ async function 커밋명령(session, ctx, arg = '') {
   if (r.사실로만) {
     say('');
     say(`  ${c.yellow('모델이 메시지를 못 만들어 바뀐 것만 적었습니다.')}`);
+  }
+  /*
+   * diff 를 못 읽고 지은 메시지라면 그렇다고 적는다.
+   *
+   * 담긴 것이 64MB 를 넘으면 git 이 몸통을 못 뱉는다. 파일 목록은 멀쩡해서
+   * 커밋은 그대로 이어지는데, 그때 메시지는 **내용을 한 줄도 안 보고** 지은
+   * 것이다. 그 사실이 화면에 없으면 사람은 여느 메시지와 똑같이 믿는다.
+   */
+  if (r.diff못읽음) {
+    say('');
+    say(`  ${c.yellow('내용(diff)을 못 읽고 지은 메시지입니다')} ${c.gray(`— ${clip(r.diff못읽음, 60)}`)}`);
+    say(`  ${c.gray('파일 이름과 줄 수만 보고 썼습니다. 찍기 전에 한 번 읽어 주세요.')}`);
   }
 
   const 상태줄 = r.상태 ? r.상태.split('\n') : [];

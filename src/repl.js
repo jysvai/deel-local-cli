@@ -31,7 +31,7 @@ import { 프로젝트설정줄들 } from './safety/trust.js';
 import { 남길것읽기 } from './safety/shellenv.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
-import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
+import { 지금모드, 바깥인가, 나갈수있나, 봉인됐나 } from './safety/runmode.js';
 import { 세션요금, 돈셈, 돈말 } from './backend/price.js';
 import { Store, latest, prune } from './agent/store.js';
 import { Threads } from './agent/threads.js';
@@ -280,7 +280,8 @@ export async function chatLoop(opts = {}) {
   const 실행모드 = 지금모드({
     online: opts.online === true,
     // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
-    offline: !!(opts.offline ?? prof.offline ?? cfg?.offline),
+    // 셋 중 하나라도 켜져 있으면 켜진 것이다 (safety/runmode.js 의 봉인됐나).
+    offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),
   });
   const 나감 = 나갈수있나(실행모드, { 바깥: 바깥연결, 허가: prof.online === true });
   // 이 자리 하나만 연다. 다른 어디로도 나가지 못한다.

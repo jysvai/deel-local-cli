@@ -36,7 +36,7 @@ export const en = {
   'cmd.compact.desc': 'shrink older turns',
   'cmd.model.desc': 'switch connection/model · `card` shows what this model has done here',
   'cmd.model.arg': '[name|list|models|card]',
-  'cmd.think.desc': 'reasoning effort (off/low/medium/high/max)',
+  'cmd.think.desc': 'reasoning effort (off/low/medium/high/xhigh/max)',
   'cmd.think.arg': '<level>',
 
   // ── /think screen ──────────────────────────────────────────────────
@@ -115,8 +115,8 @@ export const en = {
   'cmd.bell.arg': '[on|off]',
   'cmd.motion.desc': 'what moves while deel works — knight, animals, office',
   'cmd.motion.arg': '[knight|animal|office|default|off]',
-  'cmd.lang.desc': 'screen language — 한국어 / English',
-  'cmd.lang.arg': '[ko|en] [prompt lang]',
+  'cmd.lang.desc': 'screen language — 한국어 / English / 日本語 / 中文',
+  'cmd.lang.arg': '[ko|en|ja|zh] [prompt lang]',
   'cmd.init.desc': 'create a DEEL.md rules file',
   'cmd.exit.desc': 'quit',
   'cmd.quit.desc': 'quit',
@@ -253,7 +253,7 @@ export const en = {
   'lang.en': 'English',
   'lang.howto': 'To change it',
   'lang.changed': 'Screen language is now {이름}.',
-  'lang.unknown': 'Please say ko or en.',
+  'lang.unknown': 'Please say one of ko, en, ja or zh.',
   'lang.progress': '{언어}: {옮김} of {전체} strings translated. The rest come through in Korean.',
   'lang.partial': 'Not everything is translated yet — untranslated lines show Korean rather than a blank.',
   'lang.codeStays': 'Unless you set it separately, what the model reads follows the screen. Code, tool names and argument names stay as they are.',

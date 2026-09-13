@@ -5,9 +5,16 @@
 //
 // 제일 중요한 것은 이것이다: **글을 잃지 않는다.** 꾸미다가 한 글자라도
 // 흘리면 모델이 한 말과 화면에 뜬 말이 달라진다. 색이 예쁜 것보다 그게 먼저다.
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { 인라인, 한줄, 마크다운, 그리기, 표그리기 } from '../src/ui/md.js';
 import { c, width } from '../src/ui/ansi.js';
 import { trace } from './trace.mjs';
+
+const 뿌리 = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const pass = [];
 const fail = [];
@@ -311,6 +318,190 @@ trace('10-폭이좁아도');
   const md2 = new 마크다운({ 폭: -5 });
   const 줄들2 = [...md2.넣기('- 목록\n'), ...md2.끝()].map((x) => (typeof x === 'string' ? x : x.이어붙임));
   check('폭이 음수여도 안 죽는다', 줄들2.length > 0, JSON.stringify(줄들2.map(벗기기)));
+}
+
+trace('11-울타리와별표');
+
+// ── 한 줄에 다 적은 코드 울타리 ─────────────────────────────────────────
+//
+// 모델은 ```` ```js console.log(1)``` ```` 처럼 한 줄에 다 적기도 한다. 그것을
+// 울타리 여는 줄로 읽으면 **닫는 줄이 영영 안 온다** — 그 뒤의 답 전체가 코드
+// 상자 안에 들어간다. 제목도 굵기도 목록도 다 사라지는데 화면은 멀쩡해 보인다.
+{
+  const 줄들 = 그리기('```js console.log(1)```\n## 다음 제목\n**굵게**\n').map(벗기기);
+  check('★★ 한 줄에 다 적은 울타리가 그 뒤를 코드로 삼키지 않는다',
+    줄들.some((l) => l.includes('다음 제목')) && !줄들.some((l) => /^│ ## /.test(l)),
+    JSON.stringify(줄들));
+  check('★ 그 뒤의 굵기도 살아 있다', 줄들.some((l) => l === '굵게'), JSON.stringify(줄들));
+  check('  그 줄 자체는 코드로 그린다', 줄들[0] === 'js console.log(1)', JSON.stringify(줄들[0]));
+
+  // 백틱 넷으로 연 울타리는 그대로 울타리다 — 넷째 백틱이 언어 이름이 되면 안 된다.
+  const 넷 = 그리기('````\n코드 한 줄\n````\n## 제목\n').map(벗기기);
+  check('★ 백틱 넷짜리 울타리에 백틱이 안 남는다', !넷.some((l) => l.includes('`')), JSON.stringify(넷));
+  check('  백틱 넷도 울타리로 열리고 닫힌다',
+    넷.some((l) => l.startsWith('┌')) && 넷.some((l) => l.startsWith('└')) && 넷.includes('▍ 제목'),
+    JSON.stringify(넷));
+
+  /*
+   * 마크다운 문서를 보여 주려고 백틱 넷으로 열고 그 안에 ```js 를 적는 일이 흔하다.
+   * 닫는 울타리의 규칙(언어를 못 갖고, 연 것보다 짧을 수 없다)을 안 보면 안쪽
+   * ```js 가 상자를 일찍 닫는다 — 나머지 코드가 코드가 아닌 것으로 그려지고,
+   * 상자는 열자마자 닫힌 빈 상자가 된다.
+   */
+  const 겹 = 그리기('````\n```js\nconsole.log(1)\n```\n````\n## 뒤 제목\n').map(벗기기);
+  check('★★ 울타리 안의 짧은 울타리가 상자를 일찍 안 닫는다',
+    겹.filter((l) => l.startsWith('┌')).length === 1 && 겹.filter((l) => l.startsWith('└')).length === 1,
+    JSON.stringify(겹));
+  check('  안쪽 코드는 상자 안에 그대로 남는다',
+    겹.filter((l) => l.startsWith('│')).length === 3, JSON.stringify(겹));
+  check('  상자 뒤의 제목은 제목으로 돌아온다', 겹[겹.length - 1] === '▍ 뒤 제목', JSON.stringify(겹));
+  check('★ 닫는 울타리에 언어가 붙으면 안 닫는다',
+    한줄('```js', { 펜스: true, 울타리길이: 3 }).상태.펜스 === true, '');
+
+  // 겹백틱 코드. 백틱을 하나만 보면 바깥 백틱이 화면에 그대로 남는다.
+  check('★ 겹백틱으로 감싼 코드도 백틱이 안 남는다',
+    벗기기(인라인('``겹백틱`` 를 보세요')) === '겹백틱 를 보세요', 벗기기(인라인('``겹백틱`` 를 보세요')));
+  // 겹백틱을 쓰는 까닭은 안에 백틱을 넣으려는 것이다. 안쪽 것은 글자로 남아야 한다.
+  check('  안에 든 백틱은 글자로 남는다',
+    벗기기(인라인('``a`b`` 를 보세요')) === 'a`b 를 보세요', 벗기기(인라인('``a`b`` 를 보세요')));
+}
+
+// ── 별표를 잘못 먹으면 글자가 사라진다 ──────────────────────────────────
+{
+  // `2 ** 3 ** 4` 의 가운데를 굵게로 먹으면 화면에는 `2  3  4` 가 뜬다.
+  // 별표가 소리 없이 사라지고, 사람은 모델이 그렇게 말한 줄 안다.
+  const 거듭 = 벗기기(인라인('2 ** 3 ** 4 입니다'));
+  check('★★ 공백 낀 별표를 굵게로 안 먹는다', 거듭 === '2 ** 3 ** 4 입니다', JSON.stringify(거듭));
+  check('  그래도 진짜 굵게는 그대로', 벗기기(인라인('**굵게** 그대로')) === '굵게 그대로');
+
+  // 한국어는 조사가 바로 붙는다. 닫는 별표 뒤를 공백·마침표로 좁혀 두면
+  // `*중요*입니다` 가 별표째로 화면에 뜬다.
+  for (const [글, 바람] of [['*중요*입니다', '중요입니다'], ['*주의*!', '주의!'], ['*참고*: 여기', '참고: 여기']]) {
+    check(`★ 조사·문장부호가 붙어도 기울임이 걸린다 — ${글}`,
+      벗기기(인라인(글)) === 바람, JSON.stringify(벗기기(인라인(글))));
+  }
+
+  // 기울임도 굵게와 같다 — 안쪽이 공백으로 끝나면 기울임이 아니다.
+  for (const 글 of ['5 *x * y', '*공백 *']) {
+    check(`★ 공백으로 끝나는 별표를 기울임으로 안 먹는다 — ${글}`,
+      벗기기(인라인(글)) === 글, JSON.stringify(벗기기(인라인(글))));
+  }
+}
+
+trace('12-표의이음매');
+
+// ── 표가 상한을 넘을 때 ─────────────────────────────────────────────────
+//
+// 200줄에서 끊어 내보내고 나면 다음 묶음에는 가름줄이 없다. 그러면 그 뒤부터는
+// 표로 안 읽혀 테두리 없는 딴 모양으로 나간다 — 같은 표인데 위아래가 다르게
+// 생긴다. 사람은 아래쪽이 표가 아닌 줄 안다.
+{
+  // 뒷동강에만 긴 글을 넣는다. 묶음마다 폭을 다시 재면 여기서 어긋난다 —
+  // 길이가 고른 자료로 재면 우연히 맞아서 아무것도 안 재는 검사가 된다.
+  const 원 = ['| 번호 | 이름 |', '|---|---|'];
+  for (let i = 0; i < 205; i += 1) 원.push(`| ${i} | ${i < 199 ? '짧' : '아주긴설명이여기부터들어옵니다'} |`);
+  const md = new 마크다운({ 폭: 80 });
+  const 나온것 = [];
+  for (const 줄 of 원) for (const x of md.넣기(`${줄}\n`)) 나온것.push(typeof x === 'string' ? x : x.이어붙임);
+  for (const x of md.끝()) 나온것.push(typeof x === 'string' ? x : x.이어붙임);
+  const 폭들 = [...new Set(나온것.map((l) => width(l)))];
+  check('★★ 200줄이 넘는 표도 끝까지 같은 폭이다', 폭들.length === 1, `${폭들.length}가지: ${폭들}`);
+  // 물려받은 폭보다 긴 글은 잘리지 않고 접힌다. 표에서 글자가 사라지면 그 줄은
+  // 아예 못 읽는다 — 줄이 늘어나는 편이 낫다.
+  const 알맹이 = 나온것.map(벗기기).join('').replace(/[│┌┐└┘├┤┬┴┼─\s]/g, '');
+  check('  뒷동강의 긴 글도 안 잃는다',
+    알맹이.includes('아주긴설명이여기부터들어옵니다'), 알맹이.slice(-40));
+  check('★ 끊긴 자리에 머리줄을 다시 얹는다',
+    나온것.filter((l) => 벗기기(l).includes('번호')).length === 2,
+    `머리줄 ${나온것.filter((l) => 벗기기(l).includes('번호')).length}번`);
+  check('  마지막 줄까지 표 안에 있다', /^│/.test(벗기기(나온것[나온것.length - 2] ?? '')),
+    JSON.stringify(벗기기(나온것[나온것.length - 2] ?? '')));
+}
+
+// 상한에 걸려 끊긴 **직후에 진짜 새 표**가 시작되면, 앞 표의 머리줄을 얹으면 안
+// 된다. 얹으면 두 표가 섞여서 새 표의 가름줄이 `---` 라는 글자로 화면에 뜬다.
+{
+  const 원 = ['| 번호 | 이름 |', '|---|---|'];
+  for (let i = 0; i < 199; i += 1) 원.push(`| ${i} | 이름${i} |`);
+  원.push('| A | B |', '|---|---|', '| 1 | 2 |');
+  const md = new 마크다운({ 폭: 80 });
+  const 나온것 = [];
+  for (const 줄 of 원) for (const x of md.넣기(`${줄}\n`)) 나온것.push(typeof x === 'string' ? x : x.이어붙임);
+  for (const x of md.끝()) 나온것.push(typeof x === 'string' ? x : x.이어붙임);
+  check('★ 끊긴 자리 뒤에 새 표가 오면 남의 머리줄을 안 얹는다',
+    !나온것.some((l) => /│\s*---/.test(벗기기(l))),
+    JSON.stringify(나온것.slice(-4).map(벗기기)));
+  check('  새 표의 머리줄은 제 것이다', 나온것.some((l) => /│\s*A\s*│\s*B\s*│/.test(벗기기(l))),
+    JSON.stringify(나온것.slice(-4).map(벗기기)));
+}
+
+// ── 표를 붙들고 있는 사이에 온 긴 산문 ──────────────────────────────────
+//
+// 「표를 붙들고 있으면 무조건 줄 끝을 기다린다」 로 두면, 표 뒤에 이어지는 긴
+// 문단이 줄이 끝날 때까지 한 글자도 안 나온다 — 답이 멈춘 것으로 보인다.
+{
+  const md = new 마크다운({ 폭: 80 });
+  md.넣기('| a | b |\n|---|---|\n| 1 | 2 |\n');
+  const 나온것 = md.넣기('이제 표가 끝나고 아주 긴 산문이 이어집니다. '.repeat(6));
+  check('★★ 표 뒤의 긴 산문이 줄이 안 끝나도 흘러나온다', 나온것.length > 0, `${나온것.length}개`);
+  check('  표가 산문보다 먼저 나간다', typeof 나온것[0] === 'string' && /^┌/.test(벗기기(나온것[0])),
+    JSON.stringify(벗기기(typeof 나온것[0] === 'string' ? 나온것[0] : 나온것[0]?.이어붙임 ?? '')));
+}
+
+// ── 칸이 하나뿐인 표 ────────────────────────────────────────────────────
+{
+  const r = 표그리기(['| 항목 |', '| --- |', '| 내용 |'], 80);
+  check('★ 칸이 하나여도 표로 그린다', Array.isArray(r) && r.length === 5, JSON.stringify(r?.map(벗기기)));
+  const 통 = 그리기('| 항목 |\n| --- |\n| 내용 |\n').map(벗기기);
+  check('  가름줄의 작대기가 화면에 안 남는다', !통.some((l) => l.includes('---')), JSON.stringify(통));
+}
+
+// ── 뒤에 글이 없는 할 일 ────────────────────────────────────────────────
+{
+  const 줄들 = 그리기('- [ ]\n- [x]\n- [ ] 할 것\n').map(벗기기);
+  check('★ 빈 할 일도 네모로 그린다', 줄들[0] === '☐' && 줄들[1] === '☑', JSON.stringify(줄들));
+  check('  대괄호가 화면에 안 남는다', !줄들.some((l) => l.includes('[')), JSON.stringify(줄들));
+  // 대괄호에 글이 바로 붙은 것은 할 일이 아니다 — 마크다운도 그렇게 안 읽는다.
+  const 붙은것 = 그리기('- [ ]foo\n').map(벗기기);
+  check('  대괄호에 글이 붙은 것은 할 일이 아니다', 붙은것[0] === '• [ ]foo', JSON.stringify(붙은것));
+}
+
+// ── 제목 안의 코드 ──────────────────────────────────────────────────────
+//
+// 굵기는 색 코드로만 드러난다. 이 검사는 파이프로 도는 일이 많고 그때는 색이
+// 아예 꺼지므로, **색을 켠 새 프로세스**에서 한 번 재고 그 값을 본다.
+// 안 그러면 이 검사는 CI 에서 아무것도 안 재는 빈 검사가 된다.
+{
+  const 자리 = mkdtempSync(join(tmpdir(), 'deel-md-'));
+  const 잼 = join(자리, '재기.mjs');
+  writeFileSync(잼, [
+    `import { 한줄 } from ${JSON.stringify(pathToFileURL(join(뿌리, 'src/ui/md.js')).href)};`,
+    "process.stdout.write(JSON.stringify(한줄('# `deel run` 을 씁니다').글));",
+  ].join('\n'), 'utf8');
+  let r;
+  try {
+    r = JSON.parse(execFileSync(process.execPath, [잼], {
+      encoding: 'utf8', env: { ...process.env, FORCE_COLOR: '1', NO_COLOR: undefined },
+    }));
+  } finally {
+    rmSync(자리, { recursive: true, force: true });
+  }
+  check('★ 제목 안 코드 뒤에도 굵기가 이어진다', /\x1b\[0m\x1b\[1m/.test(r), JSON.stringify(r));
+  check('  제목에 백틱은 안 남는다', !벗기기(r).includes('`'), JSON.stringify(벗기기(r)));
+}
+
+// ── 통째로 그릴 때 끝의 긴 줄 ───────────────────────────────────────────
+//
+// 흘려보내는 자리가 아니므로 줄이 안 끝날 일이 없다. 그런데 마지막 줄에 개행이
+// 없으면 「아직 안 끝난 줄」 로 보여 그 줄만 날것으로 나갔다 — 답 전체에서 그
+// 줄에만 별표가 남는다.
+{
+  const 긴 = '**굵게** 로 적은 아주 긴 마지막 줄입니다. '.repeat(4);
+  const 줄들 = 그리기(`## 제목\n${긴}`);
+  check('★ 개행 없이 끝나는 긴 줄도 꾸며진다', !줄들.some((l) => l.includes('**')),
+    JSON.stringify(줄들.map(벗기기).map((l) => l.slice(0, 30))));
+  check('  줄 수도 안 늘어난다', 줄들.length === 2, `${줄들.length}줄`);
+  check('  글자는 그대로', 벗기기(줄들.join('\n')).includes('굵게 로 적은'), '');
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

@@ -592,6 +592,32 @@ trace('9-줄화면의임시글');
   process.stdout.write = 진짜쓰기;
   check('줄화면은 입력갱신에 아무것도 안 한다', 갱신글 === '', JSON.stringify(갱신글));
 
+  /*
+   * ── 입력 자리를 그리기 전에도 걷나 ──────────────────────────────────────
+   *
+   * 상자화면 쪽 같은 이름 메서드는 임시지움() 을 먼저 부르는데 줄화면만
+   * 안 불렀다. 아래에서 쓰는 say('') 는 이 화면의 줄() 이 아니라 ansi.js 의
+   * say 라, 임시글을 걷는 문이 통째로 안 열려 있었다.
+   *
+   * 기다림() 은 `\r` 로 커서만 앞으로 보낸다. 그 뒤에 줄바꿈이 나가면
+   * 커서만 내려가고 「생각 중…」 은 화면에 남는다 — 그 아래 상태줄이
+   * 붙으니, 끝난 일의 문구가 입력칸 위에 붙박인 것처럼 보인다.
+   */
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+  const 새것 = new LineScreen();
+  본것 = 잡기();
+  새것.기다림('첫 판단·medium 생각 중…');
+  const 기다린만큼 = 본것().length;
+  // 상태줄은 진짜 세션이 있어야 그려진다. 여기서 재는 것은 **그것을 그리기
+  // 전에 임시글을 걷나** 하나뿐이라, 그 뒤가 터지는 것은 상관없다.
+  try { 새것.입력자리(null); } catch { /* 상태줄까지는 안 본다 */ }
+  const 입력자리글 = 본것().slice(기다린만큼);
+  process.stdout.write = 진짜쓰기;
+  check(제어켜짐 ? '★★ 입력 자리를 그리기 전에 기다림 글을 걷는다' : '색을 껐으면 여기서도 안 낸다',
+    제어켜짐 ? 입력자리글.includes('\x1b[2K') : !입력자리글.includes('\x1b[2K'),
+    JSON.stringify(입력자리글.slice(0, 24)));
+  check('걷었다고 표에도 적는다', 새것.임시중 === false);
+
   Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
 }
 

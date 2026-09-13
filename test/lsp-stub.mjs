@@ -25,6 +25,18 @@ const 늦게 = 몫.has('--slow');             // 아주 늦게 답한다
 const 죽음 = 몫.has('--die');              // initialize 를 받고 바로 죽는다
 const 늦은색인 = 몫.has('--lateindex');    // 처음 두 번은 심볼을 못 찾은 척한다
 /*
+ * 물음을 받으면 **같은 번호로** 우리 쪽에서도 하나 묻고 나서 답한다.
+ *
+ * 진짜 서버가 이렇게 한다. LSP 는 오가는 번호를 양쪽이 따로 세고, vscode-jsonrpc
+ * 를 쓰는 서버(pyright · rust-analyzer)는 1부터 센다 — 우리도 1부터 센다.
+ * 번호로만 가르면 서버의 물음이 우리 물음의 답으로 소비된다.
+ */
+const 번호겹침 = 몫.has('--collide');
+// 첫 판 진단을 아주 늦게 낸다 — 둘째 판이 나간 뒤에 도착하도록. 판 번호를 붙인다.
+const 옛판 = 몫.has('--stale');
+const 판센것 = new Map();   // 파일마다 따로 센다 — 전역으로 세면 둘째 파일부터 첫 판이 늦어진다
+const 열린것 = new Set();   // didOpen 으로 연 파일들
+/*
  * 파이프가 닫혀도 안 죽는다 — 진짜 언어 서버 중에 이런 것이 있다.
  *
  * 이걸 쓰는 자리는 하나다. 「부모가 죽을 때 아이도 데려가나」 를 재려면,
@@ -74,6 +86,11 @@ process.stdin.on('data', (d) => {
 function 다루기(통) {
   const { id, method, params } = 통;
 
+  // 답하기 전에 같은 번호로 되묻는다. 번호로만 가르는 쪽은 여기서 걸린다.
+  if (번호겹침 && id !== undefined && method !== 'shutdown') {
+    보내기({ jsonrpc: '2.0', id, method: 'window/workDoneProgress/create', params: { token: `t${id}` } });
+  }
+
   if (method === 'initialize') {
     뿌리 = params?.rootUri ? fileURLToPath(params.rootUri) : process.cwd();
     if (죽음) { 보내기({ jsonrpc: '2.0', id, result: { capabilities: {} } }); process.exit(3); }
@@ -104,6 +121,14 @@ function 다루기(통) {
 
   if (method === 'textDocument/didOpen' || method === 'textDocument/didChange') {
     const uri = params?.textDocument?.uri;
+    /*
+     * 안 연 파일의 didChange 는 **조용히 버린다.** 진짜 서버가 그렇게 한다 —
+     * LSP 는 didOpen 으로 연 것만 편집기 쪽 내용으로 들고 있어서, 모르는 파일이
+     * 바뀌었다고 하면 무시한다. 그래서 우리가 판 번호를 잘못 이어 세면
+     * 진단이 영영 안 오고, 아무 말 없음은 이 프로그램에서 성하다는 뜻이 된다.
+     */
+    if (method === 'textDocument/didOpen') 열린것.add(uri);
+    else if (!열린것.has(uri)) return;
     const 글 = params?.contentChanges?.[0]?.text ?? params?.textDocument?.text ?? '';
     // 글 안에 `틀린것` 이 있으면 오류를 하나 만들어 보낸다.
     // 파일을 실제로 읽어서 정하는 것이 아니라 **받은 내용**으로 정한다 —
@@ -127,11 +152,19 @@ function 다루기(통) {
       }
     });
     // 일부러 어긋난 주소로 낸다 — 진짜 서버가 그렇게 한다. 위 어긋난주소() 참고.
+    const 판 = params?.textDocument?.version;
     const 내기 = () => 보내기({
       jsonrpc: '2.0',
       method: 'textDocument/publishDiagnostics',
-      params: { uri: 어긋난주소(uri), diagnostics: 진단 },
+      params: { uri: 어긋난주소(uri), version: 판, diagnostics: 진단 },
     });
+    if (옛판) {
+      // 첫 판은 아주 늦게, 둘째 판은 바로. 그래서 옛 판이 **뒤에** 도착한다.
+      const 몇번째 = (판센것.get(uri) ?? 0) + 1;
+      판센것.set(uri, 몇번째);
+      setTimeout(내기, 몇번째 === 1 ? 400 : 900);
+      return;
+    }
     if (늦게) setTimeout(내기, 8000);
     else 내기();
     return;

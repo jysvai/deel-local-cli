@@ -7,7 +7,7 @@
 // 노릇을 하며 Bash 를 부르게 하고, 그 명령이 진짜로 안 돌았다는 것을
 // **파일이 안 생긴 것**으로 잰다. 화면에 무슨 말이 떴는지가 아니라.
 import { createServer } from 'node:http';
-import { mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -280,6 +280,34 @@ trace('6-덮기');
   check('정책은 오프라인을 켤 수 있다', cfg.offline === true, String(cfg.offline));
   check('사용자 금지는 그대로 살아 있다', cfg.permissions.deny.includes('WebFetch'), JSON.stringify(cfg.permissions.deny));
   check('정책 금지가 더해진다', cfg.permissions.deny.includes('Bash(curl*)'), JSON.stringify(cfg.permissions.deny));
+
+  /*
+   * ── 정책은 덮는 것이지, 사람 파일을 고쳐 쓰는 것이 아니다 ────────────
+   *
+   * load() 가 얹은 값을 그대로 저장하는 자리가 넷이었다(setup · /model ·
+   * scan · 설정남기기). 그러면 사람이 적어 둔 주소는 사라지고 정책 주소가
+   * 제 파일에 박힌다. 관리자가 나중에 정책을 걷어도 그 값은 남고, 그때
+   * `deel config explain` 은 「이 PC 설정 = …」 이라며 **사람 본인을 범인으로
+   * 가리킨다.**
+   */
+  const { save } = await import('../src/config.js');
+  const 앞열쇠통 = process.env.DEEL_KEYSTORE;
+  process.env.DEEL_KEYSTORE = 'off';
+  save(cfg);
+  process.env.DEEL_KEYSTORE = 앞열쇠통 === undefined ? '' : 앞열쇠통;
+  if (앞열쇠통 === undefined) delete process.env.DEEL_KEYSTORE;
+  const 적힌것 = JSON.parse(readFileSync(join(집, 'config.json'), 'utf8'));
+  check('★★ 저장해도 내가 적은 주소가 그대로다',
+    적힌것.profiles[0].baseUrl === 'https://사용자가적은곳.example/v1', 적힌것.profiles[0].baseUrl);
+  check('★★ 정책이 켠 봉인이 내 파일에 안 박힌다',
+    적힌것.offline === false, JSON.stringify(적힌것.offline));
+  check('★★ 정책 금지가 내 파일에 안 박힌다',
+    !(적힌것.permissions?.deny ?? []).includes('Bash(curl*)'), JSON.stringify(적힌것.permissions?.deny));
+  check('  내 금지는 그대로 남는다',
+    (적힌것.permissions?.deny ?? []).includes('WebFetch'), JSON.stringify(적힌것.permissions?.deny));
+  check('★ 흔적 칸(정책주소)도 안 적는다', 적힌것.정책주소 === undefined, JSON.stringify(적힌것.정책주소));
+  check('  다른 칸은 그대로 적힌다', 적힌것.profiles[0].model === 'm' && 적힌것.active === 'a',
+    JSON.stringify({ m: 적힌것.profiles[0].model, a: 적힌것.active }));
 
   // 정책은 넓히지 못한다 — offline 을 끄지도, 사용자 금지를 지우지도 못한다.
   writeFileSync(정책파일, JSON.stringify({ offline: false }), 'utf8');

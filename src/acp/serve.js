@@ -47,7 +47,7 @@ import { 알림채움, 알림말 } from '../backend/retry.js';
 import { 전선붙이기, 세션이름짓기 } from '../backend/wire.js';
 import { discover } from '../skills/discover.js';
 import { allowEndpoint, setOffline } from '../safety/network.js';
-import { 지금모드, 바깥인가, 나갈수있나 } from '../safety/runmode.js';
+import { 지금모드, 바깥인가, 나갈수있나, 봉인됐나 } from '../safety/runmode.js';
 import { 주소가리기 } from '../safety/secrets.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from '../backend/ctxsize.js';
 import { 잠잠기본, 무소식기본 } from '../backend/http.js';
@@ -247,7 +247,8 @@ export async function acp(opts = {}) {
     const 실행모드 = 지금모드({
       online: opts.online === true,
       // 관리 정책이 offline 을 못박아 뒀으면 옵션과 상관없이 켠다 (safety/policy.js).
-      offline: !!(opts.offline ?? prof.offline ?? cfg?.offline),
+      // 셋 중 하나라도 켜져 있으면 켜진 것이다 (safety/runmode.js 의 봉인됐나).
+      offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),
     });
     const 나감 = 나갈수있나(실행모드, { 바깥: 바깥연결, 허가: prof.online === true });
     if (나감.물어볼까) {
@@ -314,7 +315,8 @@ export async function acp(opts = {}) {
     const 캐시열쇠 = resolve(root);
     if (!mcp캐시.has(캐시열쇠)) {
       mcp캐시.set(캐시열쇠, 다붙이기(root, {
-        offline: !!(opts.offline ?? prof.offline),
+        // 봉인은 MCP 를 붙이는 자리에도 그대로 걸린다 (safety/runmode.js 의 봉인됐나).
+        offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),
         audit: null,
       }).then((붙임) => {
         /*

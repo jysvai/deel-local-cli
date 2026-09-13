@@ -18,6 +18,19 @@ const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
 
 // 받은 요청을 통째로 기록하는 서버. 본문이 실려 오면 바로 들킨다.
+// EUC-KR 로 적힌 「한글이 그대로 보입니다」 — Node 는 EUC-KR 로 **쓰지는**
+// 못해서 바이트를 그대로 적어 둔다.
+// Shift_JIS 로 적힌 「日本語のページです」.
+const sjis일본어 = Buffer.from([
+  0x93, 0xfa, 0x96, 0x7b, 0x8c, 0xea, 0x82, 0xcc, 0x83, 0x79, 0x81, 0x5b,
+  0x83, 0x57, 0x82, 0xc5, 0x82, 0xb7,
+]);
+
+const euckr한글 = Buffer.from([
+  0xc7, 0xd1, 0xb1, 0xdb, 0xc0, 0xcc, 0x20, 0xb1, 0xd7, 0xb4, 0xeb, 0xb7, 0xce,
+  0x20, 0xba, 0xb8, 0xc0, 0xd4, 0xb4, 0xcf, 0xb4, 0xd9,
+]);
+
 const 받은요청 = [];
 const server = createServer((req, res) => {
   let body = '';
@@ -47,6 +60,57 @@ const server = createServer((req, res) => {
     }
     if (req.url === '/goto-file') {
       res.writeHead(302, { Location: 'file:///etc/passwd' });
+      return res.end('');
+    }
+
+    // ── 머리글은 utf-8 이라는데 알맹이는 EUC-KR ────────────────────────
+    // 옛 사내 위키·공공기관 페이지가 이렇다. 서버 기본값이 utf-8 로 붙는다.
+    if (req.url === '/badcharset') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(Buffer.concat([
+        Buffer.from('<html><head><meta charset="euc-kr"></head><body><p>', 'latin1'),
+        euckr한글,
+        Buffer.from('</p></body></html>', 'latin1'),
+      ]));
+    }
+    // 머리글이 **다른 실제 인코딩**을 가리키는 판. 그러면 그 이름으로 읽혀
+    // 버려서 글자가 깨진 채로 남는다 — meta 에 적힌 진짜 이름이 유일한 단서다.
+    if (req.url === '/wrongheader') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=shift_jis' });
+      return res.end(Buffer.concat([
+        Buffer.from('<html><head><meta charset="euc-kr"></head><body><p>', 'latin1'),
+        euckr한글,
+        Buffer.from('</p></body></html>', 'latin1'),
+      ]));
+    }
+    // 머리글은 utf-8, 알맹이는 Shift_JIS, meta 에만 진짜가 적힌 일본어 페이지.
+    // 내용만 보고 짐작하는 쪽(encoding.js)은 우리말 쪽으로 기울어 있어 여기서 깨진다.
+    if (req.url === '/sjis') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(Buffer.concat([
+        Buffer.from('<html><head><meta charset="shift_jis"></head><body><p>', 'latin1'),
+        sjis일본어,
+        Buffer.from('</p></body></html>', 'latin1'),
+      ]));
+    }
+    // 이름에 text 가 든 바이너리. 갈래를 낱말로 안 보면 그냥 통과한다.
+    if (req.url === '/namehastext') {
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream; name="context.bin"' });
+      return res.end(Buffer.from([0x00, 0x01, 0x02, 0x03]));
+    }
+    // 낱말은 없지만 멀쩡한 글. 여태 이걸 거절했다.
+    if (req.url === '/yaml') {
+      res.writeHead(200, { 'Content-Type': 'application/yaml' });
+      return res.end('이름: 값' + '\n' + '목록:' + '\n' + '  - 하나' + '\n');
+    }
+    // 닫는 태그를 안 적은 옛 페이지. HTML 이 그것을 허락한다.
+    if (req.url === '/unclosed') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end('<body><p>첫째 문단<p>둘째 문단<ul><li>하나<li>둘</ul></body>');
+    }
+    // 되돌림 뒤에 죽는 판. 어느 집이 죽었다고 적히나.
+    if (req.url === '/shorturl') {
+      res.writeHead(302, { Location: `http://127.0.0.1:${port}/always429` });
       return res.end('');
     }
 
@@ -299,6 +363,126 @@ check('다녀온 곳이 기록에 남음', 방문기록.length > 0, `${방문기
   const 정상 = await webFetch({ url: `http://127.0.0.1:${port}/goto` }, { allowPrivate: true });
   check('보통 되돌림은 그대로 따라간다', /본문 첫 줄/.test(정상.content ?? ''),
     정상.error ?? (정상.content ?? '').slice(0, 40));
+}
+
+// ── 인코딩·갈래·태그 ────────────────────────────────────────────────────
+{
+  /*
+   * 머리글에 적힌 charset 이 **틀린** 페이지가 있다. 서버가 기본값으로
+   * utf-8 을 붙이고 본문은 EUC-KR 인 옛 사내 위키가 딱 그렇다.
+   *
+   * 되읽는 자리에 `!머리글` 이 붙어 있어서, 정작 그 판에서는 한 번도 안 돌았다.
+   * 깨진 글이 그대로 모델에게 가고, 모델은 깨진 채로 요약한다 — 사람은 왜
+   * 엉뚱한 답이 나오는지 알 길이 없다.
+   */
+  const r = await webFetch({ url: `http://127.0.0.1:${port}/badcharset` }, { allowPrivate: true });
+  check('★★ 머리글이 틀리게 적혀 있어도 한글이 안 깨진다',
+    /한글이 그대로 보입니다/.test(r.content ?? ''), JSON.stringify((r.content ?? r.error ?? '').slice(0, 60)));
+  check('  깨진 글자가 하나도 없다', !/\ufffd/.test(r.content ?? ''), JSON.stringify(r.content?.slice(0, 40)));
+
+  /*
+   * 우리말이 아니면 내용만 보고 짐작하는 쪽이 못 맞힌다. 그때 meta 에 적힌
+   * 이름이 유일한 단서인데, 머리글이 있으면 그 단서를 아예 안 봤다.
+   */
+  /*
+   * 머리글이 **다른 실제 인코딩**을 가리키면 그 이름으로 읽혀 버린다. 그때만은
+   * meta 가 유일한 단서인데, 여태 머리글이 있으면 그 단서를 아예 안 봤다.
+   */
+  const 틀린머리글 = await webFetch({ url: `http://127.0.0.1:${port}/wrongheader` }, { allowPrivate: true });
+  check('★★ 머리글이 다른 인코딩을 가리켜도 meta 를 보고 되읽는다',
+    /한글이 그대로 보입니다/.test(틀린머리글.content ?? ''),
+    JSON.stringify((틀린머리글.content ?? 틀린머리글.error ?? '').slice(-40)));
+
+  const 일본 = await webFetch({ url: `http://127.0.0.1:${port}/sjis` }, { allowPrivate: true });
+  check('★★ 머리글이 틀린 일본어 페이지도 안 깨진다',
+    /日本語のページです/.test(일본.content ?? ''),
+    JSON.stringify((일본.content ?? 일본.error ?? '').slice(-40)));
+}
+
+{
+  /*
+   * 갈래를 낱말로 안 보면 두 쪽에서 틀린다. `application/octet-stream;
+   * name="context.bin"` 은 'context' 안의 text 에 걸려 통과하고(바이너리가
+   * 모델에게 간다), `application/yaml` 같은 멀쩡한 글은 거절당한다.
+   */
+  const 바이너리 = await webFetch({ url: `http://127.0.0.1:${port}/namehastext` }, { allowPrivate: true });
+  check('★★ 이름에 text 가 든 바이너리는 안 읽는다',
+    /글이 아닌 내용/.test(바이너리.error ?? ''), JSON.stringify((바이너리.error ?? 바이너리.content ?? '').slice(0, 60)));
+  const yaml = await webFetch({ url: `http://127.0.0.1:${port}/yaml` }, { allowPrivate: true });
+  check('★★ yaml 처럼 낱말 없는 글은 읽는다',
+    /이름: 값/.test(yaml.content ?? ''), JSON.stringify((yaml.error ?? yaml.content ?? '').slice(0, 60)));
+}
+
+{
+  // 닫는 태그만 줄로 바꾸면, 안 적은 페이지가 통째로 한 줄이 된다.
+  const r = await webFetch({ url: `http://127.0.0.1:${port}/unclosed` }, { allowPrivate: true });
+  const 줄수 = (r.content ?? '').split('\n').filter((l) => l.trim()).length;
+  check('★ 닫는 태그를 안 적은 페이지도 줄이 갈린다', 줄수 >= 4, `${줄수}줄 · ${JSON.stringify(r.content)}`);
+}
+
+{
+  /*
+   * 되돌림을 따라가면 **정말 답한 곳**은 처음 주소가 아니다. 처음 주소만
+   * 적으면 짧은주소가 힘들어한다고 뜬다 — 사람도 모델도 엉뚱한 쪽을 붙잡고,
+   * 심사서의 「어디로 나갔나」 에서도 실제로 통신한 집이 빠진다.
+   */
+  const 앞기록 = 방문기록.length;
+  const r = await webFetch({ url: `http://127.0.0.1:${port}/shorturl` }, { allowPrivate: true });
+  const 새로적힌것 = 방문기록.slice(앞기록).map((x) => x.url);
+  check('★★ 되돌려 간 곳도 기록에 남는다',
+    새로적힌것.some((x) => /always429/.test(x)), JSON.stringify(새로적힌것));
+  check('  처음 주소도 그대로 남는다',
+    새로적힌것.some((x) => /shorturl/.test(x)), JSON.stringify(새로적힌것));
+  check('★ 오류에도 처음 주소가 아니라 닿은 곳이 적힌다',
+    /always429/.test(r.error ?? '') || !/shorturl/.test(r.error ?? ''), JSON.stringify(r.error?.slice(0, 80)));
+}
+
+{
+  // 안내에 적힌 상한이 실제와 달랐다 — 모델이 그 수를 믿고 max_chars 를 정한다.
+  const 글 = JSON.stringify(toolSchemas().find((t) => t.function?.name === 'WebFetch') ?? {});
+  check('★ 도구 설명의 상한과 실제 상한이 같다',
+    !/100,000|100000/.test(글) || /120000/.test(글), '');
+}
+
+// ── 멈춤과 줄 서기 ──────────────────────────────────────────────────────
+{
+  /*
+   * 이미 멈춘 신호를 들고 오면 `abort` 는 **다시 안 터진다.** 그 판에서 그냥
+   * 잠들면 ESC 를 누른 뒤에도 그 잠을 끝까지 잔다 — 화면에는 「멈추는 중…」 이
+   * 그대로 떠 있고, 사람 눈에는 ESC 가 안 먹은 것과 똑같이 보인다.
+   */
+  /*
+   * 닿는 길은 **줄 서 있는 사이에 멈추는** 것이다. webFetch 는 들어올 때 한 번
+   * 신호를 보므로, 처음부터 멈춰 있으면 잠까지 가지도 않는다. 줄을 선 뒤에
+   * 멈추면 제 차례가 왔을 때 신호는 이미 멈춘 상태다 — 거기가 그 자리다.
+   */
+  const 잰것 = [];
+  for (let i = 0; i < 3; i++) {
+    const ac = new AbortController();
+    const t0 = Date.now();
+    const 앞 = webFetch({ url: `http://127.0.0.1:${port}/slow` }, { allowPrivate: true, signal: ac.signal });
+    const 뒤 = webFetch({ url: `http://127.0.0.1:${port}/page` }, { allowPrivate: true, signal: ac.signal });
+    setTimeout(() => ac.abort(), 20);
+    await Promise.allSettled([앞, 뒤]);
+    잰것.push(Date.now() - t0);
+  }
+  const 제일빠른것 = Math.min(...잰것);
+  // 줄 서는 잠이 400ms 다. 안 자면 앞사람이 끊긴 그 자리에서 바로 끝난다.
+  check('★★ 줄 서 있는 사이에 멈추면 그 잠을 안 잔다', 제일빠른것 < 250, `${제일빠른것}ms · ${잰것.join('/')}ms`);
+
+  /*
+   * 줄에서 빠지지 않으면, 한참 뒤에 혼자 부르는 요청도 앞사람이 있는 것으로
+   * 보여 400ms 를 그냥 잔다 — 줄이 비어 있는데 서 있는 셈이다.
+   */
+  await webFetch({ url: `http://127.0.0.1:${port}/page` }, { allowPrivate: true });
+  const 혼자잰것 = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = Date.now();
+    await webFetch({ url: `http://127.0.0.1:${port}/page` }, { allowPrivate: true });
+    혼자잰것.push(Date.now() - t0);
+  }
+  const 혼자 = Math.min(...혼자잰것);
+  check('★ 줄이 비면 다음 사람이 안 기다린다', 혼자 < 200, `${혼자}ms · ${혼자잰것.join('/')}ms`);
 }
 
 server.closeAllConnections?.();

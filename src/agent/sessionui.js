@@ -43,14 +43,24 @@ export function runSessions(flags = {}) {
 
   const wId = Math.max(...rows.map((r) => width(r.id)));
   for (const [i, r] of rows.entries()) {
-    const 최근 = i === 0 ? c.hgreen('●') : c.gray('·');
+    // 못 읽은 것도 목록에 올린다. 안 올리면 「없다」 가 되는데, 없는 것과
+    // 못 여는 것은 사람이 할 일이 다르다 (agent/store.js 의 list).
+    const 최근 = r.못읽음 ? c.yellow(mark.warn) : i === 0 ? c.hgreen('●') : c.gray('·');
     say(`  ${최근} ${c.bold(pad(r.id, wId))}  ${c.gray(pad(언제(r.at), 9))}`
-      + `${c.gray(pad(`${r.turns}턴`, 6, 'right'))}  ${c.gray(pad(clip(r.model, 22), 24))}`);
-    say(`    ${c.gray('  ')}${clip(r.first, 68)}`);
+      + `${c.gray(pad(r.못읽음 ? '' : `${r.turns}턴`, 6, 'right'))}  ${c.gray(pad(clip(r.model, 22), 24))}`);
+    say(`    ${c.gray('  ')}${r.못읽음 ? c.yellow(clip(r.first, 68)) : clip(r.first, 68)}`);
   }
   say('');
+  const 읽히는것 = rows.filter((r) => !r.못읽음);
+  if (!읽히는것.length) {
+    say(`  ${mark.warn} ${c.yellow('여기 있는 대화를 하나도 못 열었습니다.')} ${c.gray('권한이나 다른 프로그램이 잡고 있는지 보세요.')}`);
+    say('');
+    say(`  ${c.gray(`저장 위치: ${sessionsDir(root)}  (.gitignore 에 들어 있어 깃에 안 올라갑니다)`)}`);
+    say('');
+    return 1;
+  }
   say(`  ${c.gray('가장 최근 것 이어하기')}   ${c.cyan('deel --continue')}`);
-  say(`  ${c.gray('골라서 이어하기')}         ${c.cyan(`deel --resume ${rows[0].id}`)}`);
+  say(`  ${c.gray('골라서 이어하기')}         ${c.cyan(`deel --resume ${읽히는것[0].id}`)}`);
   say(`  ${c.gray('하나 지우기')}             ${c.cyan(`deel sessions --rm ${rows.at(-1).id}`)}`);
   say('');
   say(`  ${c.gray(`저장 위치: ${sessionsDir(root)}  (.gitignore 에 들어 있어 깃에 안 올라갑니다)`)}`);

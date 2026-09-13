@@ -12,7 +12,7 @@ import { 보관방식 } from './safety/keystore.js';
 import { 애저풀기, 애저base } from './backend/azure.js';
 import { allowEndpoint } from './safety/network.js';
 import { 인증서설정, 인증서등록 } from './backend/clientcert.js';
-import { 바깥인가 } from './safety/runmode.js';
+import { 바깥인가, 봉인됐나 } from './safety/runmode.js';
 import { 제공자들, 제공자고르기, 어디것일까, 주소후보, 막힌까닭 } from './providers/index.js';
 import { writeFileSync } from 'node:fs';
 
@@ -107,8 +107,21 @@ async function chooseModel(found) {
   return items[i].label;
 }
 
-// 진단을 돌리고 결과를 화면에 그린다.
-export async function runProbe(conn, { out = null } = {}) {
+/*
+ * 진단을 돌리고 결과를 화면에 그린다.
+ *
+ * **봉인은 진단에도 걸린다.** 여기가 빠져 있었다 — 관리자가 정책으로 밖을
+ * 막아 둔 PC 에서도 `deel diagnose` 는 그냥 나갔다. 자물쇠가 명령 하나로
+ * 열리면 자물쇠가 아니다. 사내망 주소는 봉인에서도 그대로 간다.
+ */
+export async function runProbe(conn, { out = null, 봉인 = false } = {}) {
+  if (봉인 && 바깥인가(conn.base)) {
+    say('');
+    say(`  ${mark.no} ${c.red('봉인되어 있어 이 주소는 안 두드립니다.')} ${c.gray(conn.base)}`);
+    say(`     ${c.gray('관리 정책이나 설정에 offline 이 켜져 있습니다. 사내망 주소는 그대로 됩니다.')}`);
+    say('');
+    return { facts: null, results: null, v: null, 봉인: true };
+  }
   allowEndpoint(conn.base);   // 진단도 이 주소 하나로만 나간다
   renderHeader({ shape: conn.kind, base: conn.base, auth: conn.auth, model: conn.model });
   const { facts, results } = await probe(conn, renderLine);
@@ -344,9 +357,11 @@ export async function runSetup() {
 export async function runDiagnose(flags) {
   banner();
   let conn;
+  let 쓴설정 = null;
+  let 쓴프로필 = null;
 
   if (flags.url) {
-    load();      // 설정의 api-version 을 먼저 읽는다 (runSetup 과 같은 이유)
+    쓴설정 = load();      // 설정의 api-version 을 먼저 읽는다 (runSetup 과 같은 이유)
     const key = flags.key ?? process.env.DEEL_API_KEY ?? '';
     const found = await connect(flags.url, key);
     if (!found) return 1;
@@ -356,6 +371,8 @@ export async function runDiagnose(flags) {
   } else {
     const cfg = load();
     const prof = activeProfile(cfg);
+    쓴설정 = cfg;
+    쓴프로필 = prof;
     if (!prof) {
       say(`  ${mark.warn} 저장된 연결이 없습니다. ${c.cyan('deel setup')} 을 먼저 실행하세요.`);
       say(`     ${c.gray('또는')} deel diagnose --url <주소> --key <키> --model <모델>`);
@@ -377,7 +394,11 @@ export async function runDiagnose(flags) {
     };
   }
 
-  await runProbe(conn, { out: flags.out ?? null });
+  /*
+   * 봉인은 --url 로 주소를 직접 준 갈래에도 걸린다. 오히려 그쪽이 더 위험하다
+   * — 설정에 없는 주소를 그 자리에서 두드리는 길이기 때문이다.
+   */
+  await runProbe(conn, { out: flags.out ?? null, 봉인: 봉인됐나({ 깃발: flags.offline, prof: 쓴프로필, cfg: 쓴설정 }) });
   return 0;
 }
 

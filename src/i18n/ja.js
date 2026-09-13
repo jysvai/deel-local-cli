@@ -20,7 +20,7 @@ export const ja = {
   'cmd.compact.desc': '古いやり取りを畳む',
   'cmd.model.desc': '接続とモデルの切り替え · `card` はこのモデルがここで何をしたかを見せる',
   'cmd.model.arg': '[名前|list|models|card]',
-  'cmd.think.desc': '思考の量 (off/low/medium/high/max)',
+  'cmd.think.desc': '思考の量 (off/low/medium/high/xhigh/max)',
   'cmd.think.arg': '<段階>',
 
   // ── /think 画面 ─────────────────────────────────────────────────────

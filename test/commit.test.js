@@ -26,6 +26,7 @@ import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import {
   깃, 깃있나, 저장소뿌리, 이번에바꾼것, 담긴것, 최근제목들,
   답가르기, 제목다듬기, 메시지꾸리기, 사실로만, 커밋준비, 커밋실행, 제목상한,
+  꼬리표걸러내기, 메시지짓기,
 } from '../src/agent/commit.js';
 import { VERSION } from '../src/version.js';
 import { trace } from './trace.mjs';
@@ -581,6 +582,154 @@ trace('10-말투');
     String(담김.diff).slice(0, 160));
   rmSync(빈저장소, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
+}
+
+
+trace('11-못-읽은-것을-없는-것으로-적지-않나');
+
+/*
+ * ── git 이 **답을 못 한 것**과 **답이 없는 것**은 다르다 ────────────────
+ *
+ * 담긴것() 이 git 을 세 번 부르면서 ok 를 한 번도 안 봤다. 그래서 실패가
+ * 전부 빈 값으로 내려갔고, 부르는 쪽이 그것을 「바뀐 것이 없다」 로 읽었다.
+ *
+ *   · index 가 깨지면 목록부터 죽는다 → 화면에 「담을 것이 없습니다 —
+ *     바뀐 내용이 없습니다」. 사람은 제 일이 안 담긴 줄 알고 다시 담으러
+ *     가는데, 실제로 할 일은 저장소를 손보는 것이다.
+ *   · 담긴 diff 가 64MB 를 넘으면 몸통만 죽는다(spawnSync 의 maxBuffer).
+ *     목록은 멀쩡하니 커밋은 그대로 이어지고, **빈 diff 를 받은 모델**이
+ *     「무엇을 바꿨는지는 diff 에 이미 있다」 는 지시 아래 메시지를 짓는다.
+ */
+{
+  const root = 저장소만들기();
+  쓰기(root, 'a.js', '1' + '\n');
+  깃(root, ['add', '-A']);
+  const 멀쩡 = 담긴것(root);
+  check('멀쩡할 때는 못 읽은 것이 없다', 멀쩡.못읽음.length === 0, JSON.stringify(멀쩡.못읽음));
+
+  // index 를 깨뜨린다 — 읽기 전용 판·잠긴 저장소와 같은 꼴이다.
+  writeFileSync(join(root, '.git', 'index'), 'not an index');
+  const 깨짐 = 담긴것(root);
+  check('★★ 목록을 못 읽으면 못 읽었다고 한다',
+    깨짐.못읽음.some((x) => x.무엇 === '목록'), JSON.stringify(깨짐.못읽음).slice(0, 90));
+
+  rmSync(root, { recursive: true, force: true });
+}
+
+/*
+ * ── 목록은 읽히는데 **몸통만** 못 읽는 판 ───────────────────────────────
+ *
+ * 실제로 겪는 것은 담긴 diff 가 64MB 를 넘을 때다(spawnSync 의 maxBuffer).
+ * 큰 데이터 덤프·묶은 번들은 이 도구가 실제로 만드는 것들이다. 여기서는
+ * 70MB 를 쓰는 대신 알맹이 하나를 깨뜨려 같은 꼴을 만든다 — git 은 이름은
+ * 대되 내용은 못 편다.
+ *
+ * 그때 커밋은 그대로 이어진다. 문제는 **빈 diff 를 받은 모델**이
+ * 「무엇을 바꿨는지는 diff 에 이미 있다」 는 지시 아래 메시지를 짓는 것이다.
+ * 볼 것이 없으니 지어낸다. 그래서 모델에게도 화면에도 못 봤다고 말해야 한다.
+ */
+{
+  const root = 저장소만들기();
+  쓰기(root, 'a.js', '한 줄\n');
+  깃(root, ['add', '-A']);
+  깃(root, ['config', 'diff.external', '안깔린도구xyz']);
+
+  const 담김 = 담긴것(root);
+  check('목록은 그대로 읽힌다', 담김.파일들.length === 1, JSON.stringify(담김.파일들));
+  check('★ 몸통을 못 읽은 것을 따로 적는다',
+    담김.못읽음.some((x) => x.무엇 === 'diff'), JSON.stringify(담김.못읽음).slice(0, 80));
+
+  const s = 판만들기(root, ['a.js']);
+  const r = await 커밋준비(s, ctx만들기(root), {});
+  check('★★ 커밋은 이어 가되 못 봤다고 돌려준다',
+    r.ok === true && !!r.diff못읽음, `ok=${r.ok} · why=${r.why} · 못읽음=${r.diff못읽음}`);
+  check('★★ 모델에게도 못 봤다고 말한다',
+    /diff 를 못 읽었습니다/.test(JSON.stringify(마지막요청 ?? {})),
+    JSON.stringify(마지막요청 ?? {}).slice(0, 120));
+  rmSync(root, { recursive: true, force: true });
+}
+
+/*
+ * 증거를 재는 쪽이 셈 칸을 못 채우고 돌려줄 때가 있다(잰 파일이 하나도
+ * 없을 때). 그때 `증거.셈.파일` 로 파고들면 커밋이 TypeError 로 통째로
+ * 죽는다 — 사람이 한 일은 다 담긴 채로 남고, 화면에는 무슨 소리인지 모를
+ * 오류만 뜬다.
+ */
+{
+  const root = 저장소만들기();
+  쓰기(root, 'a.js', 'x\n');
+  깃(root, ['add', '-A']);
+  let 터짐 = null;
+  const r = await 메시지짓기(판만들기(root, ['a.js']), {
+    뿌리: root, diff: 'x', 통계: '', 파일들: ['a.js'], 증거: {},
+  }).catch((e) => { 터짐 = e; return null; });
+  check('★ 증거에 셈 칸이 없어도 안 터진다', 터짐 === null && !!r, String(터짐?.message ?? '').slice(0, 60));
+  rmSync(root, { recursive: true, force: true });
+}
+
+/*
+ * 가지가 커밋이 아닌 것을 가리키게 되면(어긋난 ref) `git add` 는 그대로
+ * 되는데 diff 셋이 다 죽는다. 목록이 비어서 내려오므로, 안 보고 그대로
+ * 믿으면 「바뀐 내용이 없습니다」 가 뜬다 — 사람은 제 일이 안 담긴 줄 알고
+ * 다시 담으러 가는데, 실제로 할 일은 저장소를 손보는 것이다.
+ */
+{
+  const root = 저장소만들기();
+  쓰기(root, 'a.js', 'x' + '\n');
+  깃(root, ['add', '-A']);
+  깃(root, ['commit', '-m', '처음', '--no-gpg-sign']);
+  const 가지 = 깃(root, ['symbolic-ref', 'HEAD']).out.trim();
+  const 알맹이 = 깃(root, ['rev-parse', ':a.js']).out.trim();
+  쓰기(root, 'b.js', 'y' + '\n');
+  writeFileSync(join(root, '.git', 가지), 알맹이 + '\n');
+
+  const 담김 = 담긴것(root);
+  check('★ 목록을 못 읽은 것을 따로 적는다',
+    담김.파일들.length === 0 && 담김.못읽음.some((x) => x.무엇 === '목록'),
+    JSON.stringify(담김.못읽음).slice(0, 70));
+
+  const r = await 커밋준비(판만들기(root, ['b.js']), ctx만들기(root), {});
+  check('★★ 못 읽은 것을 「바뀐 내용이 없습니다」 로 안 적는다',
+    r.ok === false && /못 읽었습니다/.test(String(r.why)) && !/바뀐 내용이 없습니다/.test(String(r.why)),
+    String(r.why).slice(0, 70));
+  rmSync(root, { recursive: true, force: true });
+}
+
+trace('12-다른-드라이브·꼬리표·전각콜론');
+
+{
+  // 윈도우에서 드라이브가 다르면 relative() 가 상대경로 대신 절대경로를 준다.
+  // 그러면 저장소 밖 경로가 git add 에 실려 /commit 이 통째로 죽는다.
+  const root = 저장소만들기();
+  const s = { changes: new Map([['D:' + '\\' + '남의폴더' + '\\' + 'a.txt', {}]]) };
+  check('★ 다른 드라이브에 있는 파일은 안 담는다',
+    이번에바꾼것(s, root).length === 0, JSON.stringify(이번에바꾼것(s, root)));
+  rmSync(root, { recursive: true, force: true });
+}
+
+{
+  /*
+   * `Closes #123` 이 기본 가지에 실리면 **깃허브가 그 이슈를 진짜로 닫는다.**
+   * 모델이 지어낸 번호면 남의 이슈가 닫히고, 커밋을 되돌려도 안 열린다.
+   * 걸러내는 목록에 closes·fixes 가 들어 있었는데 끝에 콜론이 붙어 있어서,
+   * 정작 깃허브가 알아보는 꼴만 한 번도 안 걸렸다.
+   */
+  check('★★ 이슈를 닫는 줄을 걸러낸다',
+    꼬리표걸러내기('왜 고쳤나' + '\n' + 'Closes #123' + '\n' + 'Fixes #456' + '\n' + 'Resolves https://x/y/1') === '왜 고쳤나',
+    JSON.stringify(꼬리표걸러내기('왜 고쳤나' + '\n' + 'Closes #123' + '\n' + 'Fixes #456')));
+  check('★ 본문에 든 진짜 문장은 안 지운다',
+    /Fixes the crash/.test(꼬리표걸러내기('Fixes the crash when the index is broken.' + '\n' + '마무리')),
+    꼬리표걸러내기('Fixes the crash when the index is broken.' + '\n' + '마무리'));
+  check('사람 서명 꼴은 그대로 걸러낸다',
+    꼬리표걸러내기('본문' + '\n' + 'Signed-off-by: 아무개 <a@b.c>') === '본문');
+}
+
+{
+  // 작은 모델이 전각 콜론을 쓴다. `[::]` 는 반각 두 개라 `[:]` 와 같았고,
+  // 그래서 라벨이 그대로 제목에 남아 「제목： …」 이라는 커밋이 찍혔다.
+  const r = 답가르기('제목： 로그인 고침' + '\n' + '본문： 왜 고쳤나');
+  check('★ 전각 콜론으로 적어도 제목·본문을 가른다',
+    r?.제목 === '로그인 고침' && r?.본문 === '왜 고쳤나', JSON.stringify(r));
 }
 
 server.close();

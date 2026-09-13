@@ -31,6 +31,7 @@ import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { c, say, mark, rule, pad } from './ui/ansi.js';
 import { ask, confirm } from './ui/prompt.js';
 import { homeDir } from './config.js';
+import { pluginsDir } from './plugins/manage.js';
 import { 잠긴것인가, 잠금지우기, 보관방식 } from './safety/keystore.js';
 
 /** 사람이 칠 수 있는 이름. bin/deel.js 의 도움말·완성 목록과 같아야 한다. */
@@ -41,15 +42,27 @@ export const 갈래들 = ['model', 'memory', 'sessions', 'learned', 'plugins', '
 // 세다가 나는 탈은 전부 삼킨다. 이건 '무엇이 있나' 를 보여 주려는 것이지
 // 검사가 아니다 — 한 줄 못 셌다고 초기화 자체를 못 하게 하면 안 된다.
 
+/*
+ * 다만 **없는 것과 못 읽은 것은 가른다.** 둘 다 0 으로 적으면, 지우기 전
+ * 확인 화면이 「기억 0줄 → 돌아오지 않습니다」 라고 말한다. 사람은 잃을 것이
+ * 없다고 읽고 넘기는데, 바로 다음 줄에서 폴더가 통째로 사라진다.
+ * 없으면 0, 못 읽으면 null 이다 — null 은 화면에서 「알 수 없음」 으로 뜬다
+ * (설정살피기 가 이미 그렇게 하고 있다).
+ */
 function 줄수(파일) {
+  if (!existsSync(파일)) return 0;
   try { return readFileSync(파일, 'utf8').split('\n').filter((l) => l.trim()).length; }
-  catch { return 0; }
+  catch { return null; }
 }
 
 function 안에것(폴더, 거르기 = () => true) {
+  if (!existsSync(폴더)) return 0;
   try { return readdirSync(폴더, { withFileTypes: true }).filter(거르기).length; }
-  catch { return 0; }
+  catch { return null; }
 }
+
+/** 여러 자리를 센 것을 하나로 모은다. 한 자리라도 못 셌으면 못 센 것이다. */
+const 셈모으기 = (값들) => (값들.some((n) => n === null) ? null : 값들.reduce((a, n) => a + n, 0));
 
 /**
  * 설정을 읽어 본다. **깨져 있어도 답한다.**
@@ -68,10 +81,21 @@ export function 설정살피기(파일) {
     return { 있나: true, 프로필: null, 잠긴열쇠: [], 왜: `읽을 수 없습니다 (${한줄})` };
   }
   const 목록 = Array.isArray(j?.profiles) ? j.profiles : [];
+  /*
+   * 연결 말고 **다른 것**이 이 파일에 적혀 있나.
+   *
+   * 저장소의 `.deel/config.json` 에는 프로필 대신 `mode` 나
+   * `permissions.deny` 만 적어 두는 쓰임이 있다 (config.js 가 권하는 그
+   * 쓰임이다). 그런 파일을 `deel reset model` 이 통째로 지우면, 사람이 손으로
+   * 적어 둔 **금지 규칙**이 초기화 한 번에 없어진다. 이 파일 머리말이
+   * 「사람이 손으로 적은 것은 어떤 길로도 안 지운다」 고 적어 둔 그 약속이다.
+   */
+  const 연결칸 = new Set(['profiles', 'active', '정책주소', 'api-version']);
   return {
     있나: true,
     프로필: 목록.length,
     잠긴열쇠: 목록.map((p) => p?.apiKey).filter((k) => 잠긴것인가(k)),
+    다른것: Object.keys(j ?? {}).filter((k) => !연결칸.has(k)),
     왜: '',
   };
 }
@@ -91,12 +115,15 @@ export function 살펴보기({ home = homeDir(), root = process.cwd() } = {}) {
   const 집설정 = 설정살피기(집('config.json'));
   const 일설정 = 설정살피기(일('config.json'));
   const 열쇠들 = [...집설정.잠긴열쇠, ...일설정.잠긴열쇠];
+  // 저장소 설정에 연결 말고 다른 것이 적혀 있으면 그 파일은 안 건드린다.
+  const 일설정남길까 = 일설정.있나 && (일설정.프로필 === null || (일설정.다른것?.length ?? 0) > 0);
+  const 플러그인자리 = pluginsDir(home);
 
   const 항목 = [
     {
       키: 'model',
       이름: '연결·프로필',
-      자리: [집('config.json'), 일('config.json')],
+      자리: [집('config.json'), ...(일설정남길까 ? [] : [일('config.json')])],
       몇: 집설정.프로필 === null || 일설정.프로필 === null
         ? null : (집설정.프로필 ?? 0) + (일설정.프로필 ?? 0),
       단위: '개',
@@ -139,7 +166,7 @@ export function 살펴보기({ home = homeDir(), root = process.cwd() } = {}) {
       키: '만든것',
       이름: '증거·내보낸 것·임시',
       자리: [일('증거'), 일('export'), 일('tmp'), 일('붙인그림')],
-      몇: [일('증거'), 일('export'), 일('tmp'), 일('붙인그림')].reduce((n, p) => n + 안에것(p), 0),
+      몇: 셈모으기([일('증거'), 일('export'), 일('tmp'), 일('붙인그림')].map((p) => 안에것(p))),
       단위: '개',
       뒤: '안전합니다',
       all: true,
@@ -148,8 +175,11 @@ export function 살펴보기({ home = homeDir(), root = process.cwd() } = {}) {
     {
       키: 'plugins',
       이름: '플러그인',
-      자리: [집('plugins')],
-      몇: 안에것(집('plugins'), (e) => e.isDirectory() && !e.name.startsWith('.')),
+      // 깔리는 자리와 **같은 함수**로 고른다 (plugins/manage.js 의 pluginsDir).
+      // 두 자리가 갈리면 화면이 「0개 · 이미 비어 있습니다」 를 찍는데
+      // 플러그인은 그대로 살아 있다.
+      자리: [플러그인자리],
+      몇: 안에것(플러그인자리, (e) => e.isDirectory() && !e.name.startsWith('.')),
       단위: '개',
       뒤: c.yellow('다시 설치해야 합니다'),
       // 따로 고를 때만 지운다. 다시 받는 데 시간이 걸리고, 사람이 초기화하려는
@@ -181,6 +211,7 @@ export function 살펴보기({ home = homeDir(), root = process.cwd() } = {}) {
   // 어떤 길로도 안 지우는 것. 화면에 이름을 적어 둔다 — 「왜 이건 안 지웠지」
   // 를 나중에 묻게 하지 않으려고.
   const 안건드림 = [
+    { 이름: '.deel/config.json (연결 말고 다른 것이 적혀 있습니다)', 있나: 일설정남길까 },
     { 이름: '.deel/mcp.json', 있나: existsSync(일('mcp.json')) },
     { 이름: '.deelignore', 있나: existsSync(join(root, '.deelignore')) },
     { 이름: 'DEEL.md', 있나: existsSync(join(root, 'DEEL.md')) },

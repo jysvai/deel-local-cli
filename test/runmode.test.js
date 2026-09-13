@@ -17,8 +17,12 @@
 //   4. 물어볼 사람이 없는 자리(run · acp)에서는 묻는 대신 **멈추고 말한다.**
 //   5. 대화 도중 /model 로 갈아탈 때도 같은 문을 지난다.
 //   6. 화면 첫 줄에 판 번호와 지금 모드가 뜬다.
-import { readFileSync } from 'node:fs';
-import { 모드들, 모드고르기, 지금모드, 바깥인가, 나갈수있나, 모드글 } from '../src/safety/runmode.js';
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { 모드들, 모드고르기, 지금모드, 바깥인가, 나갈수있나, 모드글, 봉인됐나 } from '../src/safety/runmode.js';
 import { headerLines, statusLine } from '../src/ui/status.js';
 import { VERSION } from '../src/version.js';
 import { trace } from './trace.mjs';
@@ -137,11 +141,11 @@ trace('4-켜는-자리마다-이-문을-지나나');
  * 연결을 여는 자리는 넷이다 — 대화(repl) · 한 번만(oneshot) · 에디터(acp) ·
  * 도중에 갈아타기(commands 의 /model). 하나라도 빠지면 그 길로 그냥 나간다.
  */
-{
-  const 소스 = Object.fromEntries(
-    ['src/repl.js', 'src/oneshot.js', 'src/acp/serve.js', 'src/commands.js', 'src/setup.js']
-      .map((f) => [f, readFileSync(new URL(`../${f}`, import.meta.url), 'utf8')]));
+const 소스 = Object.fromEntries(
+  ['src/repl.js', 'src/oneshot.js', 'src/acp/serve.js', 'src/commands.js', 'src/setup.js']
+    .map((f) => [f, readFileSync(new URL(`../${f}`, import.meta.url), 'utf8')]));
 
+{
   for (const f of ['src/repl.js', 'src/oneshot.js', 'src/acp/serve.js']) {
     check(`${f} 가 문을 지난다`, /나갈수있나\(실행모드/.test(소스[f]));
     // 허가를 물어야 하는데 그냥 열어 버리면 문을 지난 것이 아니다.
@@ -165,6 +169,111 @@ trace('4-켜는-자리마다-이-문을-지나나');
   check('run 이 무엇을 하면 되는지 알려 준다', /--online 을 붙이거나/.test(소스['src/oneshot.js']));
   check('★ acp 도 묻는 대신 또렷하게 거절한다',
     /잘못된인자오류\([\s\S]{0,200}?이 컴퓨터 밖으로 나갑니다/.test(소스['src/acp/serve.js']));
+}
+
+
+trace('4-2-정책과-설정에-적은-봉인이-정말-거나');
+
+/*
+ * ── 켠다고 적힌 자물쇠가 아무 데도 안 붙어 있었다 ──────────────────────
+ *
+ * 봉인을 켜는 길은 셋이다 — `--offline` 깃발, 프로필의 `offline`, 그리고
+ * 관리 정책(`policy.json`). 그런데 부르는 자리마다 이렇게 골랐다:
+ *
+ *     offline: !!(opts.offline ?? prof.offline ?? cfg?.offline)
+ *
+ * `??` 는 null·undefined 에서만 다음 칸으로 넘어간다. 그런데 부르는 쪽
+ * (bin/deel.js)이 깃발을 **언제나 boolean 으로** 넘겼다. 그래서 첫 칸이 늘
+ * false 로 차 있었고 뒤의 둘은 한 번도 안 읽혔다.
+ *
+ * 관리자가 회사 PC 를 봉인했다고 믿는 그 설정이, 실제로는 아무것도 안 막고
+ * 있었다는 뜻이다. 화면도 그렇게 말했다 — /mode 는 「정책으로 오프라인이
+ * 켜져 있습니다」 를 찍는데 `deel run` 은 그대로 바깥으로 나갔다.
+ */
+{
+  const 판 = [
+    ['아무 데도 안 켰다', { 깃발: false, prof: {}, cfg: {} }, false],
+    ['깃발로 켰다', { 깃발: true, prof: {}, cfg: {} }, true],
+    ["깃발을 글자 'true' 로 받았다", { 깃발: 'true', prof: {}, cfg: {} }, true],
+    ['★ 깃발은 false 인데 설정에 켜져 있다', { 깃발: false, prof: {}, cfg: { offline: true } }, true],
+    ['★ 깃발은 false 인데 프로필에 켜져 있다', { 깃발: false, prof: { offline: true }, cfg: {} }, true],
+    ['깃발을 안 줬고 설정에 켜져 있다', { prof: {}, cfg: { offline: true } }, true],
+    ['설정에 false 라고 적혀 있다', { 깃발: false, prof: {}, cfg: { offline: false } }, false],
+  ];
+  for (const [이름, 넣을것, 바람] of 판) {
+    check(`봉인됐나 — ${이름} → ${바람}`, 봉인됐나(넣을것) === 바람, String(봉인됐나(넣을것)));
+  }
+
+  // 표가 맞아도 부르는 데가 없으면 사람에게는 하나도 안 고쳐졌다.
+  for (const f of ['src/repl.js', 'src/oneshot.js', 'src/acp/serve.js']) {
+    check(`${f} 가 봉인됐나 를 쓴다`, /봉인됐나\(\{ 깃발:/.test(소스[f]));
+    check(`  ${f} 에 옛 ?? 사슬이 안 남았다`, !/offline \?\? prof/.test(소스[f]));
+  }
+  const bin = readFileSync(new URL('../bin/deel.js', import.meta.url), 'utf8');
+  check('deel doctor 도 봉인됐나 를 쓴다', /봉인됐나\(\{ 깃발: flags.offline/.test(bin));
+  check('  거기도 옛 ?? 사슬이 안 남았다', !/flags.offline \?\? prof/.test(bin));
+  // 진단은 두드려 보는 명령이라 이 자리가 제일 쉽게 빠진다. 자물쇠가 명령
+  // 하나로 열리면 자물쇠가 아니다.
+  check('★ diagnose 도 봉인이면 안 두드린다',
+    /봉인 && 바깥인가\(conn\.base\)/.test(소스['src/setup.js']));
+}
+
+trace('4-3-정말-안-나가나-진짜로-돌려서');
+
+/*
+ * 위는 글자를 봤다. 여기서는 **진짜로 돌린다.**
+ *
+ * 바깥 주소로 `.invalid` 를 쓴다 — 어떤 DNS 도 답하지 않기로 정해진 이름이라
+ * 실제로 어딘가에 닿는 일이 없다. 봉인되면 주소를 풀기도 전에 막히고, 안 되면
+ * 이름을 풀려다 죽는다. 두 오류가 달라서 그것으로 가린다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-봉인-'));
+  const 집 = join(방, 'home');
+  const 일 = join(방, 'work');
+  mkdirSync(집, { recursive: true });
+  mkdirSync(일, { recursive: true });
+  const 바깥주소 = 'https://no-such-host-deel-test.invalid/v1';
+  const 설정적기 = (덧 = {}) => writeFileSync(join(집, 'config.json'), JSON.stringify({
+    active: 'gw', ...덧,
+    profiles: [{ id: 'gw', name: 'gw', online: true, baseUrl: 바깥주소, model: 'm', apiKey: 'sk-x' }],
+  }), 'utf8');
+  writeFileSync(join(방, 'pol.json'), JSON.stringify({ offline: true }), 'utf8');
+
+  const 돌리기 = (인자, 환경덧 = {}) => {
+    const r = spawnSync(process.execPath, [fileURLToPath(new URL('../bin/deel.js', import.meta.url)), ...인자], {
+      cwd: 일, encoding: 'utf8', timeout: 120000,
+      env: { ...process.env, DEEL_HOME: 집, DEEL_NO_MOTION: '1', NO_COLOR: '1', ...환경덧 },
+    });
+    return ((r.stdout ?? '') + (r.stderr ?? '')).replace(/\x1b\[[0-9;]*m/g, '');
+  };
+  const 막혔나 = (글) => /오프라인 모드입니다|안 두드립니다/.test(글);
+  const 나갔나 = (글) => /주소를 찾을 수 없습니다|ENOTFOUND|getaddrinfo/.test(글);
+
+  설정적기();
+  const 정책 = { DEEL_POLICY: join(방, 'pol.json') };
+  const 정책run = 돌리기(['run', '안녕'], 정책);
+  check('★★ 관리 정책에 적은 봉인이 deel run 을 막는다',
+    막혔나(정책run) && !나갔나(정책run), 정책run.trim().split('\n').filter(Boolean).slice(-2).join(' / ').slice(0, 90));
+  const 정책진단 = 돌리기(['diagnose'], 정책);
+  check('★★ 같은 정책이 deel diagnose 도 막는다',
+    막혔나(정책진단) && !나갔나(정책진단), 정책진단.trim().split('\n').filter(Boolean).slice(-2).join(' / ').slice(0, 90));
+
+  설정적기({ offline: true });
+  const 내설정 = 돌리기(['run', '안녕']);
+  check('★★ 사람이 제 설정에 적은 봉인도 먹는다',
+    막혔나(내설정) && !나갔나(내설정), 내설정.trim().split('\n').filter(Boolean).slice(-2).join(' / ').slice(0, 90));
+
+  /*
+   * 반대쪽도 잰다. 안 켰는데 막히면 그건 고친 것이 아니라 부순 것이다 —
+   * 자물쇠가 너무 세면 사람들은 자물쇠를 끄는 법부터 배운다.
+   */
+  설정적기();
+  const 안켰을때 = 돌리기(['run', '안녕']);
+  check('★ 안 켰으면 그대로 나간다 (지나치게 막지 않는다)',
+    나갔나(안켰을때) && !막혔나(안켰을때), 안켰을때.trim().split('\n').filter(Boolean).slice(-2).join(' / ').slice(0, 90));
+
+  rmSync(방, { recursive: true, force: true });
 }
 
 trace('5-화면에-판과-모드가-뜨나');

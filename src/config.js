@@ -126,12 +126,25 @@ export function load() {
  * 없고, 금지를 더할 수는 있어도 사용자가 적어 둔 금지를 지우지는 못한다.
  * 정책 파일 한 줄로 안전장치가 헐거워지는 길을 안 낸다.
  */
+/*
+ * 정책이 덮기 **전**의 값. 저장할 때 되돌려 놓으려고 들고 있는다.
+ *
+ * Symbol 로 단 까닭: JSON.stringify 가 Symbol 칸을 안 적는다. 보통 칸으로
+ * 두면 이 흔적 자체가 설정 파일에 적혀 나간다.
+ */
+const 정책흔적 = Symbol('정책이덮은것');
+
 function 정책덮기(cfg) {
   const 정책 = 정책읽기().값;
   if (!정책 || typeof 정책 !== 'object') return cfg;
 
+  const 덮기전 = { 주소: new Map(), offline: cfg.offline, deny: cfg.permissions?.deny };
+
   if (typeof 정책.baseUrl === 'string' && 정책.baseUrl.trim()) {
-    for (const 프로필 of cfg.profiles ?? []) 프로필.baseUrl = 정책.baseUrl.trim();
+    for (const 프로필 of cfg.profiles ?? []) {
+      덮기전.주소.set(프로필, 프로필.baseUrl);
+      프로필.baseUrl = 정책.baseUrl.trim();
+    }
     cfg.정책주소 = 정책.baseUrl.trim();
   }
   if (정책.offline === true) cfg.offline = true;      // 끄지는 못한다 — 켜기만
@@ -140,7 +153,39 @@ function 정책덮기(cfg) {
     const 있던것 = Array.isArray(cfg.permissions.deny) ? cfg.permissions.deny : [];
     cfg.permissions.deny = [...new Set([...있던것, ...정책.permissions.deny])];
   }
+  cfg[정책흔적] = 덮기전;
   return cfg;
+}
+
+/*
+ * 저장하기 전에 **정책이 얹은 것을 도로 벗긴다.**
+ *
+ * 정책은 덮는 것이지 사람 설정을 고쳐 쓰는 것이 아니다. 그런데 load() 가
+ * 얹은 값을 그대로 저장하는 자리가 넷이었다(setup · /model · scan · 설정남기기).
+ * 그러면 사람이 적어 둔 주소는 사라지고 정책 주소가 제 파일에 박힌다.
+ * 관리자가 나중에 정책을 걷어도 그 값은 남고, 그때 `deel config explain` 은
+ * 「이 PC 설정 = …」 이라며 **사람 본인을 범인으로 가리킨다.**
+ */
+function 정책벗기기(cfg) {
+  const 덮기전 = cfg?.[정책흔적];
+  if (!덮기전) return cfg;
+  const 사본 = { ...cfg };
+  delete 사본.정책주소;
+  사본.profiles = (cfg.profiles ?? []).map((p) => {
+    if (!덮기전.주소.has(p)) return p;
+    const q = { ...p };
+    const 원래 = 덮기전.주소.get(p);
+    if (원래 === undefined) delete q.baseUrl; else q.baseUrl = 원래;
+    return q;
+  });
+  if (덮기전.offline === undefined) delete 사본.offline; else 사본.offline = 덮기전.offline;
+  if (cfg.permissions) {
+    사본.permissions = { ...cfg.permissions };
+    if (덮기전.deny === undefined) delete 사본.permissions.deny;
+    else 사본.permissions.deny = 덮기전.deny;
+    if (!Object.keys(사본.permissions).length) delete 사본.permissions;
+  }
+  return 사본;
 }
 
 function 한장읽기(p) {
@@ -162,13 +207,36 @@ function 한장읽기(p) {
 function 겹치기(집, 방) {
   const cfg = { ...집, ...방 };
 
-  // 프로필은 이름으로 맞춘다. 통째로 갈아치우면 이 PC 프로필이 사라진다.
-  const 이름표 = new Map((집.profiles ?? []).map((x) => [x?.name, x]));
+  /*
+   * 프로필은 **id 로** 맞춘다. 통째로 갈아치우면 이 PC 프로필이 사라진다.
+   *
+   * 여기만 `name` 으로 맞췄다. 나머지는 전부 id 로 돈다 — activeProfile 도,
+   * upsert 도, 열쇠 푸는 자리도. 그래서 세 가지가 조용히 어긋났다:
+   *
+   *   · id 만 적은 저장소 프로필은 `continue` 로 **통째로 버려졌다.**
+   *   · 이름을 새로 붙이면 id 가 같은 프로필이 **두 개**가 되고 집 것이 이겼다.
+   *   · id 없이 이름만 적으면(문서의 예시 모양이 그렇다) 그 프로필은
+   *     영영 active 가 못 된다.
+   *
+   * 셋 다 화면에 한마디도 안 나왔다. 그리고 `deel config explain` 은 저장소
+   * 값이 이겼다고 그려 줬다 — 실제로 모델에 붙는 값은 집 것인데.
+   *
+   * 옛 저장소 설정이 이름으로만 적어 둔 경우가 있어 이름도 받아 준다.
+   */
+  const 집것 = 집.profiles ?? [];
+  const 자리표 = new Map(집것.map((x, i) => [x?.id ?? `#${i}`, i]));
+  const 이름자리 = new Map(집것.map((x, i) => [x?.name, i]).filter(([k]) => k));
+  const 모음 = [...집것];
+  const 이름없는것 = [];
   for (const p of 방.profiles ?? []) {
-    if (!p?.name) continue;
-    이름표.set(p.name, { ...(이름표.get(p.name) ?? {}), ...p });
+    const 자리 = p?.id != null && 자리표.has(p.id) ? 자리표.get(p.id)
+      : (p?.name != null && 이름자리.has(p.name) ? 이름자리.get(p.name) : null);
+    if (자리 != null) { 모음[자리] = { ...모음[자리], ...p }; continue; }
+    if (p?.id == null && p?.name == null) { 이름없는것.push(p); continue; }
+    모음.push({ ...p });
   }
-  cfg.profiles = [...이름표.values()];
+  cfg.profiles = 모음;
+  if (이름없는것.length) 버린프로필 = 이름없는것.length;
 
   // 금지는 합친다. 어느 쪽이 적었든 금지는 금지다.
   const 금지 = [...(집.permissions?.deny ?? []), ...(방.permissions?.deny ?? [])];
@@ -183,6 +251,8 @@ function 겹치기(집, 방) {
 }
 
 let 신뢰소식 = null;   // 프로젝트 설정에 대해 할 말. 한 번 읽으면 지워진다.
+// id 도 name 도 없어서 못 붙인 저장소 프로필 수. 조용히 버리면 안 된다.
+let 버린프로필 = 0;
 
 /**
  * 프로젝트 설정을 안 읽었거나 일부를 걷어냈으면 그것을 알려 준다.
@@ -217,8 +287,15 @@ function 읽기() {
   }
 
   const { 값: 방, 걸러낸것 } = 프로젝트거르기(한장읽기(방파일));
-  if (걸러낸것.length) 신뢰소식 = { 갈래: '걸러냄', 자리: 방파일, 걸러낸것 };
-  return 겹치기(집, 방);
+  버린프로필 = 0;
+  const 겹친것 = 겹치기(집, 방);
+  const 다걸러낸것 = [
+    ...걸러낸것,
+    // id 도 name 도 없으면 어느 프로필을 고치라는 것인지 알 수 없다. 버리되 말한다.
+    ...(버린프로필 ? [{ 칸: 'profiles', 왜: `id 도 name 도 없는 것 ${버린프로필}개는 못 붙였습니다` }] : []),
+  ];
+  if (다걸러낸것.length) 신뢰소식 = { 갈래: '걸러냄', 자리: 방파일, 걸러낸것: 다걸러낸것 };
+  return 겹친것;
 }
 
 export function save(cfg, { toProject = false } = {}) {
@@ -235,7 +312,8 @@ export function save(cfg, { toProject = false } = {}) {
       if (잠근것) 프로필.apiKey = 잠근것;
     }
   }
-  writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+  // 정책이 얹은 값은 사람 파일에 안 적는다 (정책벗기기).
+  writeFileSync(p, JSON.stringify(정책벗기기(cfg), null, 2) + '\n', 'utf8');
   // 키가 들어 있는 파일이므로 가능한 환경에서는 본인만 읽게 잠근다.
   try { chmodSync(p, 0o600); } catch {}
   return p;

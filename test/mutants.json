@@ -1669,6 +1669,558 @@
       "찾을것": "    if (!this.깊이) return say(s);\n    const 안내 = this.#안내();\n    say(String(s).split('\\n').map((l) => 안내 + l).join('\\n'));",
       "바꿀것": "    say(this.깊이 && s ? this.#안내() + s : s);",
       "검사": "test/tui.test.js"
+    },
+    {
+      "곳": "src/ui/screen.js",
+      "무엇": "입력 자리를 그리기 전에 임시글을 안 걷는다",
+      "그러면": "기다림() 이 `\\r` 로 커서만 앞으로 보내 놓은 상태에서 줄바꿈이 나가므로 「생각 중…」 이 화면에 그대로 남는다. 그 아래 상태줄이 붙어, 끝난 일의 문구가 입력칸 위에 붙박인 것처럼 보인다. 상자화면 쪽 같은 이름 메서드는 이걸 하고 있다",
+      "찾을것": "    this.임시지움();\n    say('');\n    say(statusLine(session));",
+      "바꿀것": "    // 어긋: 임시글을 안 걷는다\n    say('');\n    say(statusLine(session));",
+      "검사": "test/tui.test.js"
+    },
+    {
+      "곳": "src/i18n/ko.js",
+      "무엇": "되는 화면 말 넷 가운데 둘만 알려 준다",
+      "그러면": "ja·zh 가 다 되는데 /help 는 [ko|en] 만 적는다. 일본어·중국어를 쓸 사람이 그 말이 없다고 알고 손을 뗀다 — 화면 말은 524개 가운데 522개가 옮겨져 있는데",
+      "찾을것": "  'cmd.lang.arg': '[ko|en|ja|zh] [시킬말]',",
+      "바꿀것": "  'cmd.lang.arg': '[ko|en] [시킬말]',",
+      "검사": "test/i18n.test.js"
+    },
+    {
+      "곳": "src/i18n/ko.js",
+      "무엇": "모르는 말을 냈을 때 되는 말을 반만 알려 준다",
+      "그러면": "「ko 나 en 으로 적어 주세요」 가 뜬다. 되는 것은 넷인데 둘만 말하므로, 그 화면을 읽은 사람은 나머지 둘이 없다고 믿는다",
+      "찾을것": "  'lang.unknown': 'ko · en · ja · zh 가운데 하나로 적어 주세요.',",
+      "바꿀것": "  'lang.unknown': 'ko 나 en 으로 적어 주세요.',",
+      "검사": "test/i18n.test.js"
+    },
+    {
+      "곳": "src/i18n/en.js",
+      "무엇": "영어 화면에서도 되는 말 넷 가운데 둘만 알려 준다",
+      "그러면": "ko.js 와 en.js 만 옛 목록이었다. ja.js·zh.js 는 넷을 다 적어 뒀다 — 나중에 만든 파일만 맞고 먼저 있던 둘을 안 고친 것이다",
+      "찾을것": "  'lang.unknown': 'Please say one of ko, en, ja or zh.',",
+      "바꿀것": "  'lang.unknown': 'Please say ko or en.',",
+      "검사": "test/i18n.test.js"
+    },
+    {
+      "곳": "src/i18n/ko.js",
+      "무엇": "되는 추론 강도 여섯 가운데 다섯만 적는다",
+      "그러면": "/think xhigh 는 그대로 먹는데 /help 설명에는 없다. 있는 기능이 안내에서만 사라진다",
+      "찾을것": "  'cmd.think.desc': '추론 강도 (off/low/medium/high/xhigh/max)',",
+      "바꿀것": "  'cmd.think.desc': '추론 강도 (off/low/medium/high/max)',",
+      "검사": "test/i18n.test.js"
+    },
+    {
+      "곳": "src/agent/commit.js",
+      "무엇": "다른 드라이브에 있는 파일도 담을 것에 넣는다",
+      "그러면": "윈도우에서 드라이브가 다르면 relative() 가 상대경로 대신 절대경로를 준다. 저장소 밖 경로가 git add 에 실려 /commit 이 통째로 죽는다",
+      "찾을것": "    if (!rel || rel.startsWith('../') || rel === '..' || isAbsolute(rel)) continue;",
+      "바꿀것": "    if (!rel || rel.startsWith('../') || rel === '..') continue;",
+      "검사": "test/commit.test.js"
+    },
+    {
+      "곳": "src/agent/commit.js",
+      "무엇": "git 이 몸통을 못 읽은 것을 안 적는다",
+      "그러면": "실패가 빈 값으로 내려간다. 부르는 쪽은 그것을 「바뀐 것이 없다」 로 읽고, 모델은 빈 diff 를 받고도 무엇을 바꿨는지 지어낸다",
+      "찾을것": "  적기('diff', 몸통);",
+      "바꿀것": "  // 어긋: 적기('diff', 몸통);",
+      "검사": "test/commit.test.js"
+    },
+    {
+      "곳": "src/agent/commit.js",
+      "무엇": "목록을 못 읽은 것을 「바뀐 내용이 없습니다」 로 적는다",
+      "그러면": "index 가 깨져도 화면에는 「담을 것이 없습니다 — 바뀐 내용이 없습니다」 가 뜬다. 사람은 제 일이 안 담긴 줄 알고 다시 담으러 가는데, 할 일은 저장소를 손보는 것이다",
+      "찾을것": "  const 목록못읽음 = 못읽음.find((x) => x.무엇 === '목록');",
+      "바꿀것": "  const 목록못읽음 = null; // 어긋",
+      "검사": "test/commit.test.js"
+    },
+    {
+      "곳": "src/agent/commit.js",
+      "무엇": "몸통을 못 읽고도 못 읽었다는 말을 안 돌려준다",
+      "그러면": "커밋은 그대로 이어지는데 화면에도 모델에게도 아무 말이 없다. 사람은 diff 를 다 보고 지은 메시지인 줄 안다",
+      "찾을것": "  const diff못읽음 = 못읽음.find((x) => x.무엇 === 'diff')?.왜 ?? null;",
+      "바꿀것": "  const diff못읽음 = null; // 어긋",
+      "검사": "test/commit.test.js"
+    },
+    {
+      "곳": "src/agent/commit.js",
+      "무엇": "모델에게 diff 를 못 읽었다는 말을 안 한다",
+      "그러면": "「diff 에서 실제로 보이는 것만 써라」 는 지시만 남고 볼 것은 없다. 볼 것이 없으니 지어낸다",
+      "찾을것": "    ? `(diff 를 못 읽었습니다: ${diff못읽음})\\n`",
+      "바꿀것": "    ? `${diff못읽음 ? '' : ''}` // 어긋",
+      "검사": "test/commit.test.js"
+    },
+    {
+      "곳": "src/agent/commit.js",
+      "무엇": "증거에 셈 칸이 없어도 있는 셈 치고 파고든다",
+      "그러면": "메시지짓기() 는 밖에서도 부른다. 셈 칸 없는 증거가 들어오면 TypeError 로 커밋이 통째로 죽는다 — 사람이 한 일은 다 담긴 채로 남고 화면에는 무슨 소리인지 모를 오류만 뜬다",
+      "찾을것": "  if (증거?.셈) {",
+      "바꿀것": "  if (증거) {",
+      "검사": "test/commit.test.js"
+    },
+    {
+      "곳": "src/agent/commit.js",
+      "무엇": "전각 콜론으로 적은 제목을 못 가른다",
+      "그러면": "작은 모델은 전각 콜론을 쓴다. 라벨이 그대로 제목에 남아 「제목： 로그인 고침」 이라는 커밋이 영영 남는다",
+      "찾을것": "  const 표 = s.match(/^\\s*제목\\s*[:：]\\s*(.+?)\\s*$/m);",
+      "바꿀것": "  const 표 = s.match(/^\\s*제목\\s*[:]\\s*(.+?)\\s*$/m);",
+      "검사": "test/commit.test.js"
+    },
+    {
+      "곳": "src/agent/commit.js",
+      "무엇": "이슈를 닫는 줄을 그대로 실어 보낸다",
+      "그러면": "`Closes #123` 이 기본 가지에 실리면 깃허브가 그 이슈를 진짜로 닫는다. 모델이 지어낸 번호면 남의 이슈가 닫히고, 커밋을 되돌려도 안 열린다",
+      "찾을것": "    .filter((줄) => !가짜꼬리표.test(줄) && !닫는말.test(줄))",
+      "바꿀것": "    .filter((줄) => !가짜꼬리표.test(줄))",
+      "검사": "test/commit.test.js"
+    },
+    {
+      "곳": "src/safety/hooks.js",
+      "무엇": "「자리」 로 적은 오타를 화면에 안 보여 준다",
+      "그러면": "세 이름을 다 보고 골라 놓고 무엇이 틀렸는지 적을 때만 하나를 뺐다. `{자리: '오타'}` 로 적어 둔 사람은 「모르는 자리: (없음)」 을 받는다 — 제가 적은 글자가 안 나오니 어디를 고칠지 알 수 없다",
+      "찾을것": "      if (!자리) { 버린것.push(`모르는 자리: ${x?.때 ?? x?.자리 ?? x?.event ?? '(없음)'}`); continue; }",
+      "바꿀것": "      if (!자리) { 버린것.push(`모르는 자리: ${x?.때 ?? x?.event ?? '(없음)'}`); continue; }",
+      "검사": "test/hooks.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "못 읽은 대화를 목록에서 통째로 뺀다",
+      "그러면": "권한이 막히거나 다른 프로그램이 잡고 있는 대화가 화면에서 사라진다. 그런 것뿐이면 「아직 없습니다. 지금 이 대화가 첫 번째입니다」 가 뜬다 — 어제 한 일이 그대로 있는데 없다고 하는 것이다",
+      "찾을것": "  if (못읽음) {",
+      "바꿀것": "  if (false && 못읽음) { // 어긋",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "--continue 가 못 읽는 대화를 집어 온다",
+      "그러면": "빈 대화가 열린다. 사람은 어제 하던 것이 이어진 줄 알고 그 위에서 말을 잇는다",
+      "찾을것": "  for (const c of list(root, { limit: 20, 속까지: false })) {\n    const 줄 = 한줄(root, c);\n    if (줄 && !줄.못읽음) return 줄;\n  }\n  return null;",
+      "바꿀것": "  return list(root, { limit: 1 })[0] ?? null;",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "못 적은 할 일을 적은 셈 친다",
+      "그러면": "디스크가 다시 나아져도 그 값은 이미 「안 바뀐 것」 이라 두 번 다시 안 적힌다. 잠깐 막힌 것이 영구 손실이 된다",
+      "찾을것": "    if (할일 !== this.적은할일\n      && this.#write({ t: 'todo', at: new Date().toISOString(), 목록: session.할일 ?? [] })) {\n      this.적은할일 = 할일;\n    }",
+      "바꿀것": "    if (할일 !== this.적은할일) {\n      this.적은할일 = 할일;\n      this.#write({ t: 'todo', at: new Date().toISOString(), 목록: session.할일 ?? [] });\n    }",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "못 적은 「시킨 말」 도 적은 셈 친다",
+      "그러면": "할 일과 같다. 사람이 시킨 말 원문이 파일에서 영영 빠진 채로 이어받기가 된다",
+      "찾을것": "    if (요청 !== this.적은요청\n      && this.#write({ t: 'request', at: new Date().toISOString(), 글: 요청 })) {\n      this.적은요청 = 요청;\n    }",
+      "바꿀것": "    if (요청 !== this.적은요청) {\n      this.적은요청 = 요청;\n      this.#write({ t: 'request', at: new Date().toISOString(), 글: 요청 });\n    }",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "접을 때 옆에 안 쓰고 원본에 바로 덮어쓴다",
+      "그러면": "반쯤 쓰다 디스크가 차면 원본은 이미 잘려 있고 새것은 안 끝났다. 그 한 번에 대화 전체가 없어진다 — 이 파일이 jsonl 을 고른 까닭이 바로 그것이다",
+      "찾을것": "      renameSync(옆, this.file);",
+      "바꿀것": "      writeFileSync(this.file, lines.join('\\n') + '\\n', 'utf8'); // 어긋",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "정리할 때 최근 1000개만 본다",
+      "그러면": "제일 오래된 것들이 그 뒤에 있어서 영영 안 지워진다. 폴더가 끝없이 자라지 말라고 있는 함수가 딱 그 일을 못 하게 된다",
+      "찾을것": "  const all = list(root, { limit: Infinity, 속까지: false });",
+      "바꿀것": "  const all = list(root, { limit: 1000, 속까지: false });",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "못 지운 것을 지웠다고 센다",
+      "그러면": "폴더가 왜 안 줄어드는지 아무도 못 찾는다. 세는 값이 「하려던 수」 이지 「된 수」 가 아니다",
+      "찾을것": "  return 지운수;",
+      "바꿀것": "  return 자를것.length; // 어긋",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "대괄호로 연 진짜 질문을 「빈 대화」 라고 적는다",
+      "그러면": "「[급함] 로그인이 안 됩니다」 로 시작한 대화가 목록에서 알아볼 수 없게 된다. 있는 대화를 없다고 적은 것이다",
+      "찾을것": "  const m = 쓸만한.find((x) => !x.content.trim().startsWith('[')) ?? 쓸만한[0];",
+      "바꿀것": "  const m = 쓸만한.find((x) => !x.content.startsWith('['));",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "대화 이름에 상위 경로가 섞여도 그대로 지운다",
+      "그러면": "`deel sessions --rm ../../어딘가` 가 대화 폴더 밖 파일을 지우고도 화면에는 「지웠습니다」 라고 적는다",
+      "찾을것": "  if (!/^[^\\\\/:*?\"<>|]+$/.test(String(id)) || String(id).includes('..')) {",
+      "바꿀것": "  if (false) { // 어긋",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "폴더를 못 만들고도 연 것으로 적어 둔다",
+      "그러면": "잠깐 막혔던 것이 풀린 뒤에도 두 번 다시 안 만들어 본다. 그 대화는 끝까지 한 줄도 안 남는다",
+      "찾을것": "    try { mkdirSync(this.dir, { recursive: true }); this.opened = true; }\n    catch { /* 아래 쓰기가 센다. 다음 줄에서 다시 만들어 본다 */ }",
+      "바꿀것": "    try { mkdirSync(this.dir, { recursive: true }); } catch { /* 어긋 */ }\n    this.opened = true;",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "이름이 다 차 있을 때 이미 쓰는 이름을 돌려준다",
+      "그러면": "begin() 이 같은 이름으로 쉰 번을 되풀이하다 아무 파일도 없이 대화를 시작한다. 화면은 「계속 저장되고 있습니다」 라고 말하는데 파일은 하나도 없다",
+      "찾을것": "  for (let n = 0; n < 1000; n++) {\n    const id = n ? `${base}-${process.pid}-${n}` : `${base}-${process.pid}`;\n    if (!existsSync(join(dir, `${id}.jsonl`))) return id;\n  }\n  return `${base}-${process.pid}-${Date.now().toString(36)}`;",
+      "바꿀것": "  return `${base}-${process.pid}`;",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/safety/runmode.js",
+      "무엇": "봉인을 고를 때 첫 칸에서 멈춘다",
+      "그러면": "부르는 쪽이 깃발을 언제나 boolean 으로 넘기므로 첫 칸이 늘 false 로 차 있다. 관리 정책에 못 박은 봉인도, 사람이 설정에 적은 봉인도 한 번도 안 읽힌다 — 봉인했다고 믿는 PC 가 그대로 바깥으로 나간다",
+      "찾을것": "  return 깃발 === true || 깃발 === 'true'\n    || prof?.offline === true || cfg?.offline === true;",
+      "바꿀것": "  return !!(깃발 ?? prof?.offline ?? cfg?.offline);",
+      "검사": "test/runmode.test.js"
+    },
+    {
+      "곳": "src/repl.js",
+      "무엇": "대화에서 정책·설정에 적은 봉인을 안 읽는다",
+      "그러면": "관리자가 봉인해 둔 PC 에서 대화가 그대로 바깥으로 나간다",
+      "찾을것": "    offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),",
+      "바꿀것": "    offline: !!(opts.offline ?? prof.offline ?? cfg?.offline),",
+      "검사": "test/runmode.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "deel run 에서 정책·설정에 적은 봉인을 안 읽는다",
+      "그러면": "스크립트·배치가 봉인된 PC 에서 그대로 바깥으로 나간다. 사람이 안 보는 자리라 더 오래 안 들킨다",
+      "찾을것": "    offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),",
+      "바꿀것": "    offline: !!(opts.offline ?? prof.offline ?? cfg?.offline),",
+      "검사": "test/runmode.test.js"
+    },
+    {
+      "곳": "src/acp/serve.js",
+      "무엇": "에디터(acp)에서 정책·설정에 적은 봉인을 안 읽는다",
+      "그러면": "에디터에 붙여 쓰는 길로 봉인이 통째로 새어 나간다",
+      "찾을것": "\n      offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),",
+      "바꿀것": "\n      offline: !!(opts.offline ?? prof.offline ?? cfg?.offline),",
+      "검사": "test/runmode.test.js"
+    },
+    {
+      "곳": "src/acp/serve.js",
+      "무엇": "에디터에서 MCP 를 붙일 때 봉인을 안 읽는다",
+      "그러면": "대화는 막혀도 MCP 서버는 봉인을 모르고 붙는다. 자물쇠가 반쪽이면 자물쇠가 아니다",
+      "찾을것": "\n        offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),",
+      "바꿀것": "\n        offline: !!(opts.offline ?? prof.offline),",
+      "검사": "test/runmode.test.js"
+    },
+    {
+      "곳": "src/setup.js",
+      "무엇": "진단은 봉인을 넘어서 두드린다",
+      "그러면": "자물쇠가 명령 하나로 열린다. `deel diagnose` 한 번이면 봉인된 PC 에서도 바깥 게이트웨이에 닿는다",
+      "찾을것": "  if (봉인 && 바깥인가(conn.base)) {",
+      "바꿀것": "  if (false && 봉인 && 바깥인가(conn.base)) {",
+      "검사": "test/runmode.test.js"
+    },
+    {
+      "곳": "bin/deel.js",
+      "무엇": "deel doctor 가 봉인을 첫 칸에서 멈춰 고른다",
+      "그러면": "화면은 「안 두드렸습니다」 라고 말해야 하는 자리에서 실제로 두드린다",
+      "찾을것": "  const 모드 = 지금모드({ online: flags.online === true, offline: 봉인됐나({ 깃발: flags.offline, prof, cfg }) });",
+      "바꿀것": "  const 모드 = 지금모드({ online: flags.online === true, offline: !!(flags.offline ?? prof?.offline ?? cfg?.offline) });",
+      "검사": "test/runmode.test.js"
+    },
+    {
+      "곳": "bin/deel.js",
+      "무엇": "--hard 가 뒤 낱말을 제 값으로 삼킨다",
+      "그러면": "`deel reset --hard all --yes` 가 지울 갈래를 잃는다. 화면은 「무엇을 지울지 같이 주세요」 를 찍고 종료코드 0 으로 끝나는데, 스크립트는 전체 초기화가 된 줄 알고 다음 줄로 간다",
+      "찾을것": "  'hard',\n]);",
+      "바꿀것": "  // 어긋: 'hard',\n]);",
+      "검사": "test/reset.test.js"
+    },
+    {
+      "곳": "src/reset.js",
+      "무엇": "못 읽은 파일을 0줄이라고 적는다",
+      "그러면": "지우기 전 확인 화면이 「기억 0줄 → 돌아오지 않습니다」 라고 말한다. 사람은 잃을 것이 없다고 읽고 넘기는데, 바로 다음 줄에서 그 자리가 통째로 사라진다",
+      "찾을것": "  if (!existsSync(파일)) return 0;\n  try { return readFileSync(파일, 'utf8').split('\\n').filter((l) => l.trim()).length; }\n  catch { return null; }",
+      "바꿀것": "  try { return readFileSync(파일, 'utf8').split('\\n').filter((l) => l.trim()).length; }\n  catch { return 0; }",
+      "검사": "test/reset.test.js"
+    },
+    {
+      "곳": "src/reset.js",
+      "무엇": "못 읽은 폴더를 0개라고 적는다",
+      "그러면": "대화 기록·증거가 얼마나 있는지 못 읽었는데 「0개」 로 뜬다. 지워도 잃을 것이 없어 보인다",
+      "찾을것": "  if (!existsSync(폴더)) return 0;\n  try { return readdirSync(폴더, { withFileTypes: true }).filter(거르기).length; }\n  catch { return null; }",
+      "바꿀것": "  try { return readdirSync(폴더, { withFileTypes: true }).filter(거르기).length; }\n  catch { return 0; }",
+      "검사": "test/reset.test.js"
+    },
+    {
+      "곳": "src/reset.js",
+      "무엇": "여러 자리를 합쳐 셀 때 못 센 자리를 0 으로 친다",
+      "그러면": "네 자리 가운데 하나를 못 읽어도 나머지 셋만 더해서 적는다. 화면의 수가 실제보다 적다",
+      "찾을것": "const 셈모으기 = (값들) => (값들.some((n) => n === null) ? null : 값들.reduce((a, n) => a + n, 0));",
+      "바꿀것": "const 셈모으기 = (값들) => 값들.reduce((a, n) => a + (n ?? 0), 0);",
+      "검사": "test/reset.test.js"
+    },
+    {
+      "곳": "src/reset.js",
+      "무엇": "손으로 적은 저장소 설정도 통째로 지운다",
+      "그러면": "저장소 `.deel/config.json` 에 금지 규칙(permissions.deny)만 적어 둔 사람이 `deel reset model` 한 번에 그 규칙을 잃는다. 이 파일 머리말이 「사람이 손으로 적은 것은 어떤 길로도 안 지운다」 고 적어 둔 그 약속이 깨진다",
+      "찾을것": "  const 일설정남길까 = 일설정.있나 && (일설정.프로필 === null || (일설정.다른것?.length ?? 0) > 0);",
+      "바꿀것": "  const 일설정남길까 = false; // 어긋",
+      "검사": "test/reset.test.js"
+    },
+    {
+      "곳": "src/plugins/manage.js",
+      "무엇": "플러그인이 DEEL_HOME 을 안 보고 깔린다",
+      "그러면": "휴대용 설치(USB·공유폴더)에서 설정은 USB 로 가고 플러그인만 로밍 프로필에 남는다. `deel reset plugins` 는 엉뚱한 데를 보며 「0개 · 이미 비어 있습니다」 를 찍고 종료코드 0 으로 끝나는데 플러그인은 그대로 산다",
+      "찾을것": "export const pluginsDir = (home = homeDir()) => join(home, 'plugins');",
+      "바꿀것": "export const pluginsDir = (home = homeDir()) => join(home, '.deel', 'plugins');",
+      "검사": "test/reset.test.js"
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "저장소 프로필을 이름으로 맞춘다",
+      "그러면": "나머지 코드는 전부 id 로 돈다. id 만 적은 저장소 프로필은 통째로 버려지고, 이름을 새로 붙이면 같은 id 가 둘이 되어 집 것이 이긴다 — 화면은 저장소 값이 이겼다고 그리는데 실제로 붙는 값은 집 것이다",
+      "찾을것": "    const 자리 = p?.id != null && 자리표.has(p.id) ? 자리표.get(p.id)\n      : (p?.name != null && 이름자리.has(p.name) ? 이름자리.get(p.name) : null);",
+      "바꿀것": "    const 자리 = p?.name != null && 이름자리.has(p.name) ? 이름자리.get(p.name) : null;",
+      "검사": "test/trust.test.js"
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "붙일 데 없는 저장소 프로필을 조용히 버린다",
+      "그러면": "적어 둔 사람은 걸린 줄 아는데 아무 데도 안 걸려 있다. 왜 안 먹는지 알 자리가 없다",
+      "찾을것": "  if (이름없는것.length) 버린프로필 = 이름없는것.length;",
+      "바꿀것": "  // 어긋: 조용히 버린다",
+      "검사": "test/trust.test.js"
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "정책이 얹은 값을 사람 설정 파일에 그대로 적는다",
+      "그러면": "사람이 적어 둔 주소가 사라지고 정책 주소가 제 파일에 박힌다. 관리자가 정책을 걷어도 남고, 그때 `config explain` 은 「이 PC 설정」 이라며 사람 본인을 범인으로 가리킨다",
+      "찾을것": "  writeFileSync(p, JSON.stringify(정책벗기기(cfg), null, 2) + '\\n', 'utf8');",
+      "바꿀것": "  writeFileSync(p, JSON.stringify(cfg, null, 2) + '\\n', 'utf8');",
+      "검사": "test/policy.test.js"
+    },
+    {
+      "곳": "src/tools/webfetch.js",
+      "무엇": "머리글이 있으면 meta charset 을 안 본다",
+      "그러면": "서버가 기본값으로 charset=utf-8 을 붙이고 본문은 EUC-KR 인 옛 사내 위키에서 한글이 통째로 깨진다. 깨진 글이 그대로 모델에게 가고 모델은 깨진 채로 요약한다",
+      "찾을것": "    if (깨진수(text)) {",
+      "바꿀것": "    if (!머리글 && 깨진수(text)) {",
+      "검사": "test/web.test.js"
+    },
+    {
+      "곳": "src/tools/webfetch.js",
+      "무엇": "내용 갈래를 낱말 경계 없이 본다",
+      "그러면": "`application/octet-stream; name=\"context.bin\"` 이 'context' 안의 text 에 걸려 통과한다. 내려받은 바이너리가 그대로 모델에게 간다",
+      "찾을것": "    const 글인가 = /^text\\//.test(갈래)\n      || /(^|[-+.])(json|xml|javascript|ecmascript|yaml|toml|csv|ndjson|graphql)$/.test(뒷말);",
+      "바꿀것": "    const 글인가 = /text|json|xml|javascript/.test(type);",
+      "검사": "test/web.test.js"
+    },
+    {
+      "곳": "src/tools/webfetch.js",
+      "무엇": "닫는 태그만 줄로 바꾼다",
+      "그러면": "`<p>첫째<p>둘째` 처럼 닫는 태그를 안 적은 페이지가 통째로 한 줄이 된다. HTML 이 그것을 허락하므로 옛 사내 페이지에는 정말로 그렇게 적혀 있다",
+      "찾을것": "    .replace(/<\\/?(p|div|section|article|li|tr|h[1-6]|br)\\b[^>]*>/gi, '\\n')",
+      "바꿀것": "    .replace(/<\\/(p|div|section|article|li|tr|h[1-6]|br)>/gi, '\\n').replace(/<br\\s*\\/?>/gi, '\\n')",
+      "검사": "test/web.test.js"
+    },
+    {
+      "곳": "src/tools/webfetch.js",
+      "무엇": "되돌려 간 곳을 기록에 안 남긴다",
+      "그러면": "짧은주소 하나가 302 로 딴 집에 보내면, 심사서의 「어디로 나갔나」 에 실제로 통신한 집이 안 남는다",
+      "찾을것": "          방문기록.push({ url: 다음.href, status: 0, at: new Date().toISOString(), 되돌림: true });",
+      "바꿀것": "          // 어긋: 되돌려 간 곳은 안 적는다",
+      "검사": "test/web.test.js"
+    },
+    {
+      "곳": "src/tools/webfetch.js",
+      "무엇": "이미 멈춘 신호를 안 보고 잠든다",
+      "그러면": "abort 는 이미 터진 뒤라 다시 안 터진다. ESC 를 누른 뒤에도 그 잠을 끝까지 잔다 — 화면에는 「멈추는 중…」 이 그대로 떠 있고 사람 눈에는 ESC 가 안 먹은 것과 같다",
+      "찾을것": "  if (signal?.aborted) return 풀기();",
+      "바꿀것": "  // 어긋: 이미 멈춘 신호를 안 본다",
+      "검사": "test/web.test.js"
+    },
+    {
+      "곳": "src/tools/webfetch.js",
+      "무엇": "끝난 사람을 줄에서 안 뺀다",
+      "그러면": "한참 뒤에 혼자 부르는 요청도 앞사람이 있는 것으로 보여 400ms 를 그냥 잔다. 줄이 비어 있는데 서 있는 셈이다",
+      "찾을것": "  끝나면.then(() => { if (집줄.get(origin) === 끝나면) 집줄.delete(origin); });",
+      "바꿀것": "  // 어긋: 줄에서 안 뺀다",
+      "검사": "test/web.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "언어 자리에 백틱이 들어도 울타리로 연다",
+      "그러면": "모델이 한 줄에 다 적은 ```js console.log(1)``` 가 울타리를 열기만 하고 닫는 줄이 안 온다. 그 뒤의 답 전체가 코드 상자에 들어가 제목도 굵기도 목록도 다 사라진다",
+      "찾을것": "  const 울타리 = s.match(/^\\s*(`{3,})[ \\t]*([^`]*?)[ \\t]*$/);",
+      "바꿀것": "  const 울타리 = s.match(/^\\s*```(.*)$/); // 어긋",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "백틱을 하나씩만 짝짓는다",
+      "그러면": "``겹백틱`` 처럼 겹쳐 적은 코드에서 바깥 백틱이 화면에 그대로 남는다",
+      "찾을것": "  s = s.replace(/(`+)([\\s\\S]+?)\\1/g, (_, __, 안) => {",
+      "바꿀것": "  s = s.replace(/`([^`]+)`/g, (_, 안) => { // 어긋",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "공백으로 시작·끝나는 별표도 굵게로 먹는다",
+      "그러면": "파이썬 거듭제곱을 적은 `2 ** 3 ** 4` 가 화면에서 `2  3  4` 가 된다. 별표가 소리 없이 사라지고 사람은 모델이 그렇게 말한 줄 안다",
+      "찾을것": "  s = s.replace(/\\*\\*([^*\\s](?:[^*]*[^*\\s])?)\\*\\*/g, (_, 안) => 굵게(안));",
+      "바꿀것": "  s = s.replace(/\\*\\*([^*]+)\\*\\*/g, (_, 안) => 굵게(안));",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "닫는 별표 뒤에 공백·마침표만 허락한다",
+      "그러면": "조사가 바로 붙는 한국어(`*중요*입니다`)와 `*주의*!` 에서 기울임이 안 걸리고 별표가 화면에 그대로 뜬다",
+      "찾을것": "\\*(?=$|[^*])/g, (_, 앞, 안)",
+      "바꿀것": "\\*(?=$|[\\s.,)])/g, (_, 앞, 안)",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "뒤에 글이 있어야 할 일로 본다",
+      "그러면": "`- [ ]` 처럼 아직 안 적은 빈 할 일이 그냥 글머리표로 빠져서 화면에 `• [ ]` 라고 대괄호가 그대로 뜬다",
+      "찾을것": "\\[([ xX])\\](\\s+.*)?$/);",
+      "바꿀것": "\\[([ xX])\\](\\s+.*)$/);",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "제목을 이어굵게 대신 그냥 굵게로 감싼다",
+      "그러면": "제목 안의 코드가 제 색을 끝내면서 굵기까지 꺼 버려서, 코드 뒷부분만 가늘어진다",
+      "찾을것": "    const 글자 = 이어굵게(인라인(제목[2]));",
+      "바꿀것": "    const 글자 = c.bold(인라인(제목[2]));",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "칸이 둘 이상이어야 가름줄로 본다",
+      "그러면": "칸이 하나뿐인 표(`| 항목 |`)가 표로 안 읽혀 테두리 없이 세로줄만 그어지고, 가름줄의 작대기가 화면에 그대로 남는다",
+      "찾을것": "  행들.findIndex((행) => 행.length > 0 && 행.every(가름칸인가));",
+      "바꿀것": "  행들.findIndex((행) => 행.length > 1 && 행.every(가름칸인가));",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "상한에 걸려 끊긴 표의 머리줄을 다시 안 얹는다",
+      "그러면": "200줄이 넘는 표의 뒷부분에 가름줄이 없어 표로 안 읽힌다. 같은 표인데 200번째 줄부터 갑자기 테두리 없는 딴 모양으로 나간다",
+      "찾을것": "    if (!그린것 && this.이어갈머리) {\n      쓴것 = [...this.이어갈머리, ...줄들];\n      그린것 = 표그리기(쓴것, this.폭, { 너비고정: this.표너비 });\n    }\n",
+      "바꿀것": "",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "표를 붙들고 있으면 무조건 줄 끝을 기다린다",
+      "그러면": "표 뒤에 이어지는 긴 문단이 줄이 끝날 때까지 한 글자도 안 나온다. 사람 눈에는 답이 멈춘 것으로 보인다",
+      "찾을것": "        && /^\\s*\\|/.test(this.담긴것)",
+      "바꿀것": "        && (this.표줄들.length > 0 || /^\\s*\\|/.test(this.담긴것))",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "통째로 그릴 때 마지막 줄에 개행을 안 얹는다",
+      "그러면": "개행 없이 끝나는 마지막 줄이 폭을 넘으면 「아직 안 끝난 줄」 로 보여 그 줄만 날것으로 나간다. 답 전체에서 그 줄에만 별표와 우물정자가 남고, 줄 수도 하나 더 는다",
+      "찾을것": "md.넣기(s && !s.endsWith('\\n') ? `${s}\\n` : s)",
+      "바꿀것": "md.넣기(s)",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "닫는 울타리의 길이·언어를 안 본다",
+      "그러면": "마크다운 문서를 보여 주려고 백틱 넷으로 열고 안에 ```js 를 적으면, 그 안쪽 울타리가 상자를 일찍 닫는다. 나머지 코드가 코드가 아닌 것으로 그려지고 상자는 열자마자 닫힌 빈 상자가 된다",
+      "찾을것": "      if (안쪽 || 길이 < (상태.울타리길이 ?? 길이)) return { 글: `${c.gray('│')} ${c.white(s)}`, 상태 };",
+      "바꿀것": "      // 어긋: 길이도 언어도 안 보고 그냥 닫는다",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "대괄호에 글이 바로 붙어도 할 일로 본다",
+      "그러면": "`- [ ]foo` 가 할 일로 읽혀 화면에 없던 공백이 끼고 대괄호가 사라진다. 마크다운은 그것을 할 일로 안 읽는다",
+      "찾을것": "  const 할일 = s.match(/^(\\s*)[-*+]\\s+\\[([ xX])\\](\\s+.*)?$/);",
+      "바꿀것": "  const 할일 = s.match(/^(\\s*)[-*+]\\s+\\[([ xX])\\]\\s*(.*)$/);",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "기울임 안쪽이 공백으로 끝나도 먹는다",
+      "그러면": "`5 *x * y` 의 별표를 기울임으로 먹어서 화면에서 별표가 사라진다. 사람은 모델이 그렇게 말한 줄 안다",
+      "찾을것": "  s = s.replace(/(^|[\\s(])\\*([^*\\s](?:[^*]*[^*\\s])?)\\*(?=$|[^*])/g,",
+      "바꿀것": "  s = s.replace(/(^|[\\s(])\\*([^*\\s][^*]*)\\*(?=$|[^*])/g,",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "끊긴 표의 뒷동강이 칸 너비를 다시 잰다",
+      "그러면": "200줄이 넘는 표에서 뒷동강에만 긴 글이 있으면 위아래 폭이 달라진다. 같은 표인데 이음매에서 세로줄이 어긋난다",
+      "찾을것": "  const 물려받나 = Array.isArray(너비고정) && 너비고정.length === 열수;",
+      "바꿀것": "  const 물려받나 = false; // 어긋",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/ui/md.js",
+      "무엇": "제 가름줄이 있어도 앞 표의 머리줄을 얹는다",
+      "그러면": "상한에 걸려 끊긴 직후에 진짜 새 표가 시작되면 두 표가 섞인다. 새 표의 가름줄이 `---` 라는 글자로 화면에 뜬다",
+      "찾을것": "    let 그린것 = 표그리기(줄들, this.폭, { 너비고정: this.표너비 });",
+      "바꿀것": "    let 그린것 = null; // 어긋: 늘 머리줄을 얹고 본다",
+      "검사": "test/md.test.js"
+    },
+    {
+      "곳": "src/lsp/client.js",
+      "무엇": "번호부터 보고 답인지 가른다",
+      "그러면": "서버도 1번부터 세므로 번호가 겹친다. 서버의 물음(configuration·workDoneProgress/create)이 우리 물음의 답으로 소비돼서, 서버가 3곳을 줬는데도 화면에는 「쓰는 자리가 없습니다」 가 뜬다. 서버는 제 물음의 답을 영영 못 받아 그 자리에서 멈춘다",
+      "찾을것": "    if (통.method) {",
+      "바꿀것": "    if (통.method && !this.기다림.has(통.id)) { // 어긋",
+      "검사": "test/lsp.test.js"
+    },
+    {
+      "곳": "src/lsp/client.js",
+      "무엇": "진단의 판 번호를 안 본다",
+      "그러면": "한 파일을 1~2초 안에 두 번 고치면 첫 판 결과가 둘째 판 뒤에 도착한다. 그것을 받아 적으면 방금 쓴 탈난 파일을 「아무 말 없음 = 성하다」 로 답하게 된다",
+      "찾을것": "        if (typeof p.version === 'number' && typeof 지금판 === 'number' && p.version < 지금판) return;",
+      "바꿀것": "        // 어긋: 판을 안 본다",
+      "검사": "test/lsp.test.js"
+    },
+    {
+      "곳": "src/lsp/client.js",
+      "무엇": "판 번호를 주소 글자 그대로 센다",
+      "그러면": "서버가 주소를 다르게 적어 돌려주면(pyright 의 `file:///c%3A/…`) 진단이 몇 판 것인지 못 찾는다. 옛 판을 지금 판으로 받아 적게 된다",
+      "찾을것": "    const 열쇠 = 열쇠주소(uri);\n    const 판 = (this.연것.get(열쇠) ?? 0) + 1;\n    this.연것.set(열쇠, 판);",
+      "바꿀것": "    const 판 = (this.연것.get(uri) ?? 0) + 1;\n    this.연것.set(uri, 판);",
+      "검사": "test/lsp.test.js"
+    },
+    {
+      "곳": "src/lsp/client.js",
+      "무엇": "옛 아이의 exit 으로 지금 서버를 무너뜨린다",
+      "그러면": "우리가 끈 것을 「서버가 스스로 끝났습니다」 로 적고 죽음을 세운다. 그 뒤로 Def·Refs 는 「언어 서버가 이 자리에 없습니다」 라고 하고, 고친 뒤 진단은 세션 끝까지 조용해진다 — 조용한 것은 성하다는 뜻이다",
+      "찾을것": "        if (내아이인가() && !this.끄는중) this.#무너짐(`서버가 스스로 끝났습니다 (코드 ${code})`);",
+      "바꿀것": "        if (!this.끄는중) this.#무너짐(`서버가 스스로 끝났습니다 (코드 ${code})`);",
+      "검사": "test/lsp.test.js"
+    },
+    {
+      "곳": "src/lsp/client.js",
+      "무엇": "끌 때 열어 둔 판을 안 지운다",
+      "그러면": "놀림시계로 껐다가 다시 켜면, 새 서버에게 didOpen 없이 `didChange 2판` 을 보낸다. 서버는 모르는 파일이라며 조용히 버려서 진단이 영영 안 온다",
+      "찾을것": "    this.연것.clear();\n    this.진단.clear();\n",
+      "바꿀것": "",
+      "검사": "test/lsp.test.js"
+    },
+    {
+      "곳": "src/lsp/client.js",
+      "무엇": "파이프에 오류 손을 안 단다",
+      "그러면": "언어 서버가 죽는 찰나에 쓰면 EPIPE 가 비동기로 터지고, 아무도 안 받아서 deel 이 통째로 죽는다. 언어 서버가 죽었을 뿐인데 하던 답이 그 자리에서 날아간다",
+      "찾을것": "      for (const 관 of [this.아이.stdin, this.아이.stdout, this.아이.stderr]) 관?.on('error', () => {});\n",
+      "바꿀것": "",
+      "검사": "test/lsp.test.js"
+    },
+    {
+      "곳": "src/lsp/client.js",
+      "무엇": "옛 아이가 남긴 바이트도 새 서버의 관에 넣는다",
+      "그러면": "받개는 하나뿐이라 통 경계가 어긋난다. 길이만 적힌 반쪽 머리말 하나면 그 뒤 답이 전부 안 열려서, 물음마다 시한까지 기다리다 빈손으로 돌아온다 — 어디가 잘못됐는지는 화면에 안 뜬다",
+      "찾을것": "        if (내아이인가()) for (const 통 of this.받개.넣기(d)) this.#받음(통);",
+      "바꿀것": "        for (const 통 of this.받개.넣기(d)) this.#받음(통);",
+      "검사": "test/lsp.test.js"
     }
   ]
 }

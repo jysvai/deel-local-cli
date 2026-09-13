@@ -164,9 +164,17 @@ export function 이번에바꾼것(session, 뿌리) {
   for (const p of (session?.changes?.keys?.() ?? [])) {
     const abs = 진짜(isAbsolute(p) ? p : join(기준, p));
     const rel = relative(기준, abs).replace(/\\/g, '/');
-    // 저장소 밖은 담지 않는다. `..` 로 시작하면 밖이다.
-    // (지워진 파일도 여기서 안 새어 나간다 — 진짜() 가 있는 데까지 풀어 준다.)
-    if (!rel || rel.startsWith('../') || rel === '..') continue;
+    /*
+     * 저장소 밖은 담지 않는다. `..` 로 시작하면 밖이다.
+     * (지워진 파일도 여기서 안 새어 나간다 — 진짜() 가 있는 데까지 풀어 준다.)
+     *
+     * 절대경로도 밖이다. 윈도우에서 **드라이브가 다르면** relative() 가
+     * `..` 를 못 만들고 상대경로 대신 `D:\남의폴더\a.txt` 를 그대로 돌려준다.
+     * 그러면 위 두 검사를 그냥 지나가서, 저장소 밖 경로가 `git add` 에 실린다 —
+     * git 이 `fatal: … is outside repository` 로 죽고 /commit 이 통째로 안 된다.
+     * 담지 말아야 할 것 하나 때문에 담아야 할 것도 다 못 담는 꼴이다.
+     */
+    if (!rel || rel.startsWith('../') || rel === '..' || isAbsolute(rel)) continue;
     if (살림경로인가(rel) || 살림에닿나(abs)) continue;
     let 폴더인가 = false;
     try { 폴더인가 = statSync(abs).isDirectory(); } catch { /* 지워진 것은 파일로 친다 */ }
@@ -217,13 +225,41 @@ export function 살림도로빼기(뿌리, 파일들) {
   return { 샌것, 못뺀것: 아직 };
 }
 
-/** 지금 담겨 있는 것. */
+/**
+ * 지금 담겨 있는 것.
+ *
+ * ── git 이 **답을 못 한 것**과 **답이 없는 것**은 다르다 ──────────────────
+ *
+ * 세 번 부르면서 ok 를 한 번도 안 봤다. 그래서 실패가 전부 「빈 값」 으로
+ * 내려가고, 부르는 쪽은 그것을 「바뀐 것이 없다」 로 읽었다. 실제로 겪는 꼴이
+ * 둘 있다.
+ *
+ *   · 담긴 diff 가 64MB 를 넘으면 몸통만 ENOBUFS 로 죽는다(spawnSync 의
+ *     maxBuffer). 파일 목록은 멀쩡히 오므로 커밋은 그대로 이어지고,
+ *     **빈 diff 를 받은 모델**이 「무엇을 바꿨는지는 diff 에 이미 있다」 는
+ *     지시 아래 메시지를 짓는다 — 볼 것이 없으니 지어낸다. 큰 데이터 덤프나
+ *     묶은 번들은 이 도구가 실제로 만드는 것들이다.
+ *   · `.git/index` 가 깨지면 이름 목록부터 죽는다. 그러면 화면에 「담을 것이
+ *     없습니다 — 바뀐 내용이 없습니다」 가 뜬다. 사람은 제 일이 안 담긴 줄
+ *     알고 다시 담으러 가는데, 실제로 필요한 것은 저장소 손보기다.
+ *
+ * 그래서 못 읽은 것을 못 읽었다고 같이 돌려준다.
+ *
+ * @returns {{파일들:string[], 통계:string, diff:string, 못읽음:Array<{무엇:string,왜:string}>}}
+ */
 export function 담긴것(뿌리) {
   const 이름 = 깃(뿌리, ['diff', '--cached', '--name-only']);
   const 통계 = 깃(뿌리, ['diff', '--cached', '--stat']);
   const 몸통 = 깃(뿌리, ['diff', '--cached']);
   const 파일들 = 이름.out.split('\n').map((x) => x.trim()).filter(Boolean);
-  return { 파일들, 통계: 통계.out.trimEnd(), diff: 몸통.out };
+  const 못읽음 = [];
+  const 적기 = (무엇, r) => {
+    if (!r.ok) 못읽음.push({ 무엇, 왜: (r.err || r.out || `git ${무엇} 실패`).trim().split('\n')[0] });
+  };
+  적기('목록', 이름);
+  적기('통계', 통계);
+  적기('diff', 몸통);
+  return { 파일들, 통계: 통계.out.trimEnd(), diff: 몸통.out, 못읽음 };
 }
 
 /** 저장소가 쓰던 말투를 흉내 내라고 최근 제목을 보여 준다. */
@@ -283,10 +319,10 @@ export function 답가르기(글) {
     } catch { /* JSON 인 척한 것뿐이면 아래로 */ }
   }
 
-  const 표 = s.match(/^\s*제목\s*[::]\s*(.+?)\s*$/m);
+  const 표 = s.match(/^\s*제목\s*[:：]\s*(.+?)\s*$/m);
   if (표) {
     const 뒤 = s.slice(s.indexOf(표[0]) + 표[0].length);
-    const 본문표 = 뒤.match(/^\s*본문\s*[::]\s*/m);
+    const 본문표 = 뒤.match(/^\s*본문\s*[:：]\s*/m);
     const 본문 = 본문표 ? 뒤.slice(뒤.indexOf(본문표[0]) + 본문표[0].length) : 뒤;
     return { 제목: 표[1].trim(), 본문: 본문.trim() };
   }
@@ -332,12 +368,29 @@ export function 제어글자빼기(글) {
  * 진짜로 읽는다. 우리 꼬리표(Generated-by)는 우리가 따로 붙이므로, 모델이
  * 꼬리표를 쓸 이유가 아예 없다.
  */
-const 가짜꼬리표 = /^\s*(signed-off-by|co-authored-by|reviewed-by|acked-by|tested-by|generated-by|claude-session|closes|fixes)\s*:/i;
+const 가짜꼬리표 = /^\s*(signed-off-by|co-authored-by|reviewed-by|acked-by|tested-by|generated-by|claude-session)\s*:/i;
+
+/*
+ * 이슈를 **닫는** 낱말은 콜론이 없다.
+ *
+ * 위 목록에 closes·fixes 를 같이 넣어 두고 있었는데, 끝에 `\s*:` 가 붙어 있어
+ * 정작 깃허브가 알아보는 꼴(`Closes #123`)은 한 번도 안 걸렸다. 걸러내려던
+ * 바로 그것만 통과한 셈이다.
+ *
+ * 이게 왜 중요하냐면, 이 줄이 기본 가지에 실리는 순간 **깃허브가 그 이슈를
+ * 진짜로 닫는다.** 모델이 지어낸 번호면 남의 이슈가 닫힌다 — 커밋을 되돌려도
+ * 닫힌 이슈는 안 열린다.
+ *
+ * 그렇다고 `Fixes` 로 시작하는 줄을 통째로 지우면 안 된다. 「Fixes the crash
+ * when …」 은 본문에 있어야 할 진짜 문장이다. 그래서 **뒤에 `#숫자`나 주소만
+ * 달랑 오는 꼴**일 때만 지운다.
+ */
+const 닫는말 = /^\s*(clos(e|es|ed)|fix(|es|ed)|resolv(e|es|ed))\s*:?\s*(#\d+|https?:\/\/\S+)\s*$/i;
 
 export function 꼬리표걸러내기(본문) {
   return String(본문 ?? '')
     .split('\n')
-    .filter((줄) => !가짜꼬리표.test(줄))
+    .filter((줄) => !가짜꼬리표.test(줄) && !닫는말.test(줄))
     .join('\n')
     .trim();
 }
@@ -388,18 +441,32 @@ export function 메시지꾸리기({ 제목, 본문 = '', 확인 = 0, 미확인 
  * 대화를 통째로 보내면 창을 두 번 먹고, 모델은 제가 한 말을 근거로 제
  * 커밋 메시지를 쓰게 된다. 커밋에 실릴 것은 **코드가 말하는 것**이어야 한다.
  */
-export async function 메시지짓기(session, { 뿌리, diff, 통계, 파일들, 증거, 제목 = null, signal = null, onBackoff = null } = {}) {
-  const 자른diff = diff.length > DIFF상한
-    ? `${diff.slice(0, DIFF상한)}\n… (diff 가 길어 여기서 잘랐습니다 — 나머지는 통계로만 보세요)`
-    : diff;
+export async function 메시지짓기(session, { 뿌리, diff, 통계, 파일들, 증거, 제목 = null, signal = null, onBackoff = null, diff못읽음 = null } = {}) {
+  /*
+   * diff 를 **못 읽은 것**을 「없는 것」 으로 주면 모델은 지어낸다.
+   *
+   * 지시문이 「무엇을 바꿨는지는 diff 에 이미 있다」 라고 못을 박아 두었다.
+   * 그 상태로 빈 diff 를 주면 모델은 통계 줄만 보고 그럴듯한 이야기를 만든다.
+   * 못 봤으면 못 봤다고 말해야 「diff 에서 실제로 보이는 것만 써라」 가 지켜진다.
+   */
+  const 자른diff = diff못읽음
+    ? `(diff 를 못 읽었습니다: ${diff못읽음})\n`
+      + '내용을 한 줄도 못 봤습니다. 아래 통계에 적힌 파일 이름과 줄 수만 보고 쓰고,\n'
+      + '내용에 대해서는 아무것도 단정하지 마라.'
+    : diff.length > DIFF상한
+      ? `${diff.slice(0, DIFF상한)}\n… (diff 가 길어 여기서 잘랐습니다 — 나머지는 통계로만 보세요)`
+      : diff;
   const 최근 = 최근제목들(뿌리 ?? process.cwd());
 
   const 몫 = [];
   if (최근.length) 몫.push(`이 저장소의 최근 커밋 제목:\n${최근.map((x) => `- ${x}`).join('\n')}`);
-  if (증거) {
-    const 확인 = 증거.셈.파일 - 증거.셈.증명안됨;
-    몫.push(`이번에 돌린 것: ${증거.셈.돌린것}개${증거.셈.실패한것 ? ` (실패 ${증거.셈.실패한것}개)` : ''}`
-      + `\n확인된 파일 ${확인}개 · 확인 안 된 파일 ${증거.셈.증명안됨}개`);
+  // 증거는 있는데 셈 칸이 없을 수 있다. 바로 아래 커밋준비() 는 `증거?.셈?.` 으로
+  // 읽으면서 여기만 맨몸이었다 — 한쪽이 조심하고 한쪽이 안 하면 언젠가 터진다.
+  if (증거?.셈) {
+    const 셈 = 증거.셈;
+    const 확인 = (셈.파일 ?? 0) - (셈.증명안됨 ?? 0);
+    몫.push(`이번에 돌린 것: ${셈.돌린것 ?? 0}개${셈.실패한것 ? ` (실패 ${셈.실패한것}개)` : ''}`
+      + `\n확인된 파일 ${확인}개 · 확인 안 된 파일 ${셈.증명안됨 ?? 0}개`);
   }
   몫.push(`바뀐 파일:\n${통계 || 파일들.map((f) => `- ${f}`).join('\n')}`);
   몫.push(`----- diff -----\n${자른diff}`);
@@ -424,7 +491,7 @@ export async function 메시지짓기(session, { 뿌리, diff, 통계, 파일들
     if (제목) {
       // 본문만 달라고 했어도 작은 모델은 `제목:`/`본문:` 꼴을 그대로 흉내 낸다.
       // 그걸 그대로 본문에 넣으면 커밋 안에 '제목:' 이라는 줄이 남는다.
-      const 갈린 = /^\s*제목\s*[::]/m.test(글) ? 답가르기(글) : null;
+      const 갈린 = /^\s*제목\s*[:：]/m.test(글) ? 답가르기(글) : null;
       return { 제목, 본문: 갈린?.본문 ?? 껍질벗기기(글) };
     }
     return 답가르기(글);
@@ -465,14 +532,28 @@ export async function 커밋준비(session, ctx, { 전부 = false, 제목 = null
     return { ok: false, why: `열쇠가 든 자리(${뺀것.못뺀것.join(', ')})가 담긴 채로 안 빠집니다 — 커밋하지 않았습니다.` };
   }
 
-  const { 파일들, 통계, diff } = 담긴것(뿌리);
+  const { 파일들, 통계, diff, 못읽음 } = 담긴것(뿌리);
+  /*
+   * **목록**을 못 읽었으면 「없다」 가 아니다.
+   *
+   * 깨진 index·잠긴 저장소에서 이 자리는 여태 「바뀐 내용이 없습니다」 를
+   * 냈다. 사람은 제 일이 안 담긴 줄 알고 다시 담으러 가는데, 실제로 할 일은
+   * 저장소를 손보는 것이다. 까닭을 그대로 옮긴다.
+   */
+  const 목록못읽음 = 못읽음.find((x) => x.무엇 === '목록');
+  if (목록못읽음) {
+    return { ok: false, why: `git 이 담긴 것을 못 읽었습니다 — ${목록못읽음.왜}` };
+  }
   if (!파일들.length) return { ok: false, why: '담을 것이 없습니다 — 바뀐 내용이 없습니다.' };
+  // 몸통(diff)만 죽는 판이 따로 있다 — 64MB 를 넘으면 그렇다. 파일 목록은
+  // 멀쩡하므로 커밋 자체는 이어 가되, **모델에게도 화면에도** 못 봤다고 말한다.
+  const diff못읽음 = 못읽음.find((x) => x.무엇 === 'diff')?.왜 ?? null;
 
   const 증거 = (() => { try { return 증거모으기(session, { audit: ctx?.audit }); } catch { return null; } })();
   const 미확인 = 증거?.셈?.증명안됨 ?? 0;
-  const 확인 = 증거 ? 증거.셈.파일 - 미확인 : 0;
+  const 확인 = 증거?.셈 ? (증거.셈.파일 ?? 0) - 미확인 : 0;
 
-  const 지은것 = await 메시지짓기(session, { 뿌리, diff, 통계, 파일들, 증거, 제목, signal, onBackoff });
+  const 지은것 = await 메시지짓기(session, { 뿌리, diff, 통계, 파일들, 증거, 제목, signal, onBackoff, diff못읽음 });
   if (지은것?.중단) return { ok: false, why: '중단했습니다 — 담긴 것은 그대로 둡니다.', aborted: true };
 
   const 사실 = !지은것;
@@ -506,6 +587,9 @@ export async function 커밋준비(session, ctx, { 전부 = false, 제목 = null
     살림뺌: 살림바뀜 || 뺀것.샌것.length > 0,
     링크로샌것: 뺀것.샌것,
     폴더통째: 전부 ? [] : (내것.폴더 ?? []),
+    // git 이 답을 못 한 것. 화면이 그대로 말한다 — 못 본 것을 안 본 척하면
+    // 메시지가 무엇을 근거로 쓰였는지가 사라진다.
+    diff못읽음,
     // 물어보는 사이에 담긴 것이 바뀌었는지 다시 보라고. 보여 준 것과 다른 것을
     // 찍으면 승인을 받은 뜻이 없어진다.
     다시확인: () => 담긴것(뿌리).파일들,

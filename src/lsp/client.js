@@ -151,14 +151,40 @@ export class 언어서버 {
        */
       this.#놓기();
 
-      this.아이.on('error', (e) => this.#무너짐(`못 띄웠습니다: ${e.message}`));
+      /*
+       * 파이프마다 손을 달아 둔다.
+       *
+       * 아이가 죽는 **바로 그때** 쓰면 EPIPE 가 비동기로 터진다. 그 찰나에는
+       * `stdin.writable` 이 아직 true 라 #보내기 의 검사도, 그 안의 try/catch 도
+       * 못 막는다 — 오류가 한 박자 뒤에 소켓에서 튀어나오기 때문이다. 손이
+       * 없으면 그것을 아무도 안 받아서 **deel 이 통째로 죽는다.** 언어 서버가
+       * 죽었을 뿐인데 하던 답이 그 자리에서 날아간다.
+       */
+      for (const 관 of [this.아이.stdin, this.아이.stdout, this.아이.stderr]) 관?.on('error', () => {});
+
+      /*
+       * 이 손은 **이 아이**의 것이다.
+       *
+       * exit 은 kill() 뒤에 한 박자 늦게 온다. 그 사이에 다시 켜면 옛 아이의
+       * exit 이 새 아이를 무너뜨린다 — 「서버가 스스로 끝났습니다」 라고 적고
+       * 죽음을 세워서, 멀쩡한 서버를 세션이 끝날 때까지 못 쓰게 만든다.
+       * 그러면 Def·Refs 는 「언어 서버가 이 자리에 없습니다」 라고 하고,
+       * 고친 뒤 진단은 조용해진다 — 이 프로그램에서 조용한 것은 성하다는 뜻이다.
+       */
+      const 이아이 = this.아이;
+      const 내아이인가 = () => this.아이 === 이아이;
+      this.아이.on('error', (e) => { if (내아이인가()) this.#무너짐(`못 띄웠습니다: ${e.message}`); });
       this.아이.on('exit', (code) => {
         // 우리가 끈 것이 아니면 무너진 것이다. 기다리던 물음을 다 풀어 준다 —
         // 안 풀면 그 자리에서 시한까지 통째로 멎는다.
-        if (!this.끄는중) this.#무너짐(`서버가 스스로 끝났습니다 (코드 ${code})`);
+        if (내아이인가() && !this.끄는중) this.#무너짐(`서버가 스스로 끝났습니다 (코드 ${code})`);
       });
       this.아이.stdout.on('data', (d) => {
-        for (const 통 of this.받개.넣기(d)) this.#받음(통);
+        // 옛 아이가 죽으면서 남긴 바이트가 뒤늦게 올 수 있다. 받개는 하나뿐이라
+        // 그것을 넣으면 **새 서버의 통 경계가 어긋난다** — 길이만 적힌 반쪽
+        // 머리말 하나면 그 뒤 답이 전부 안 열려서, 물음마다 시한까지 기다리다
+        // 빈손으로 돌아온다. 어디가 잘못됐는지는 화면에 안 뜬다.
+        if (내아이인가()) for (const 통 of this.받개.넣기(d)) this.#받음(통);
       });
       // stderr 는 읽되 버린다. 안 읽으면 파이프가 차서 서버가 멎는다 —
       // 언어 서버는 진행 상황을 stderr 로 꽤 많이 쏟는다.
@@ -237,26 +263,50 @@ export class 언어서버 {
   // ── 주고받기 ──────────────────────────────────────────────────────────
 
   #받음(통) {
+    /*
+     * 답인지 물음인지는 **method 로** 가른다 — 답에는 method 가 없다.
+     *
+     * 번호로 먼저 가르면 안 된다. 오가는 번호는 양쪽이 **따로** 세고, 서버도
+     * 우리처럼 1부터 센다. 번호가 겹치는 순간 서버의 물음(configuration ·
+     * registerCapability · workDoneProgress/create)이 우리 물음의 답으로
+     * 소비된다. 그 물음은 `{값: undefined}` 로 풀려서 화면에는 「쓰는 자리가
+     * 없습니다」 가 뜨고 — 서버는 3곳을 줬는데도 — 서버는 제 물음의 답을 영영
+     * 못 받아 그 자리에서 멈춘다.
+     */
+    if (통.method) {
+      // 서버가 우리에게 묻는 것. 안 답하면 서버가 거기서 멈춰 버리는 것이 있어서
+      // (configuration 이 그렇다) 빈 답이라도 반드시 돌려준다.
+      if (통.id !== undefined) {
+        const 값 = 통.method === 'workspace/configuration'
+          ? (통.params?.items ?? []).map(() => ({}))
+          : null;
+        this.#보내기({ jsonrpc: '2.0', id: 통.id, result: 값 });
+        return;
+      }
+      if (통.method === 'textDocument/publishDiagnostics') {
+        const p = 통.params ?? {};
+        if (!p.uri) return;
+        /*
+         * 옛 판 진단을 지금 판의 답으로 내주면 안 된다.
+         *
+         * 서버는 디바운스를 두므로, 한 파일을 1~2초 안에 두 번 고치면 첫 판
+         * 결과가 둘째 판 뒤에 도착한다. 그것을 받아 적으면 방금 쓴 파일을
+         * 「아무 말 없음 = 성하다」 로 말하게 된다 — 확인 안 한 것을 확인했다고
+         * 하는 셈이다. 판을 안 주는 서버는 어쩔 수 없이 그대로 받는다.
+         */
+        const 열쇠 = 열쇠주소(p.uri);
+        const 지금판 = this.연것.get(열쇠);
+        if (typeof p.version === 'number' && typeof 지금판 === 'number' && p.version < 지금판) return;
+        this.진단.set(열쇠, Array.isArray(p.diagnostics) ? p.diagnostics : []);
+      }
+      return;
+    }
     if (통.id !== undefined && this.기다림.has(통.id)) {
       const 것 = this.기다림.get(통.id);
       this.기다림.delete(통.id);
       clearTimeout(것.시계);
       this.#놓기();
       것.풀기(통.error ? { 오류: 통.error.message ?? String(통.error.code) } : { 값: 통.result });
-      return;
-    }
-    // 서버가 우리에게 묻는 것. 안 답하면 서버가 거기서 멈춰 버리는 것이 있어서
-    // (configuration 이 그렇다) 빈 답이라도 반드시 돌려준다.
-    if (통.id !== undefined && 통.method) {
-      const 값 = 통.method === 'workspace/configuration'
-        ? (통.params?.items ?? []).map(() => ({}))
-        : null;
-      this.#보내기({ jsonrpc: '2.0', id: 통.id, result: 값 });
-      return;
-    }
-    if (통.method === 'textDocument/publishDiagnostics') {
-      const p = 통.params ?? {};
-      if (p.uri) this.진단.set(열쇠주소(p.uri), Array.isArray(p.diagnostics) ? p.diagnostics : []);
     }
   }
 
@@ -318,8 +368,12 @@ export class 언어서버 {
     if (내용 == null) {
       try { 내용 = readFileSync(abs, 'utf8'); } catch { return null; }
     }
-    const 판 = (this.연것.get(uri) ?? 0) + 1;
-    this.연것.set(uri, 판);
+    // 판 번호는 **경로**로 센다. 서버가 주소를 다르게 적어 돌려주므로
+    // (pyright 의 `file:///c%3A/…`), 글자 그대로 열쇠를 삼으면 진단이 왔을 때
+    // 그 판이 몇 판이었는지 못 찾는다 — 옛 판을 지금 판으로 받아 적게 된다.
+    const 열쇠 = 열쇠주소(uri);
+    const 판 = (this.연것.get(열쇠) ?? 0) + 1;
+    this.연것.set(열쇠, 판);
     if (판 === 1) {
       this.알림('textDocument/didOpen', {
         textDocument: { uri, languageId: 언어아이디(abs), version: 판, text: 내용 },
@@ -384,6 +438,15 @@ export class 언어서버 {
     try { this.아이.kill(); } catch { /* 이미 갔다 */ }
     this.아이 = null;
     this.기다림.clear();
+    /*
+     * 열어 뒀던 것도 같이 잊는다.
+     *
+     * 놀림시계로 끈 것은 풀에 그대로 남아서 다음에 다시 켜진다. 판 번호를
+     * 안 지우면 새 서버에게 didOpen 없이 `didChange 2판` 을 보내게 되고,
+     * 서버는 모르는 파일이라며 조용히 버린다 — 진단이 영영 안 온다.
+     */
+    this.연것.clear();
+    this.진단.clear();
     this.끄는중 = false;
   }
 }

@@ -43,7 +43,7 @@ process.env.DEEL_KEYSTORE = 'off';
 
 const { 믿나, 믿기, 안믿기, 믿는목록, 고른경로, 프로젝트거르기, 프로젝트금지칸, 프로젝트설정줄들 }
   = await import('../src/safety/trust.js');
-const { load, configPath, 프로젝트설정소식 } = await import('../src/config.js');
+const { load, configPath, 프로젝트설정소식, activeProfile } = await import('../src/config.js');
 const { 말, 언어정하기, 언어 } = await import('../src/i18n/index.js');
 
 const 원래말 = 언어();
@@ -188,6 +188,89 @@ trace('3-믿는폴더');
 
   process.chdir(원래여기);
   rmSync(우리방, { recursive: true, force: true });
+}
+
+
+trace('3b-저장소-프로필을-무엇으로-맞추나');
+
+/*
+ * ── id 로 맞춰야 한다 ──────────────────────────────────────────────────
+ *
+ * 겹치는 자리만 `name` 으로 맞췄다. 나머지는 전부 `id` 로 돈다 —
+ * activeProfile 도, upsert 도, 열쇠 푸는 자리도. 그래서 셋이 조용히 어긋났다:
+ *
+ *   · id 만 적은 저장소 프로필은 **통째로 버려졌다.**
+ *   · 이름을 새로 붙이면 id 가 같은 프로필이 **두 개**가 되고 집 것이 이겼다.
+ *   · id 도 name 도 없으면 아무 말 없이 사라졌다.
+ *
+ * 셋 다 화면에 한마디도 안 나왔다. 그리고 `deel config explain` 은 저장소
+ * 값이 이겼다고 그려 줬다 — 실제로 모델에 붙는 값은 집 것인데.
+ */
+{
+  const 방1 = 작업방('id만적은것', {
+    profiles: [{ id: 'gw', model: '저장소모델' }],
+  });
+  process.chdir(방1);
+  믿기(방1);
+  const cfg1 = load();
+  check('★★ id 만 적어도 저장소 값이 먹는다',
+    cfg1.profiles.find((p) => p.id === 'gw')?.model === '저장소모델',
+    JSON.stringify(cfg1.profiles.map((p) => ({ id: p.id, model: p.model }))));
+  check('  프로필이 둘로 안 늘어난다',
+    cfg1.profiles.filter((p) => p.id === 'gw').length === 1, String(cfg1.profiles.length));
+  process.chdir(원래여기);
+  rmSync(방1, { recursive: true, force: true });
+
+  /*
+   * 저장소에서 프로필 이름만 우리 팀 것으로 바꿔 부르는 일이 흔하다. 그때
+   * id 가 같으면 **한 프로필**이어야 한다. 이름으로 맞추면 둘이 되고, 집 것이
+   * 먼저 있어서 집 것이 이긴다 — 적은 사람은 제 값이 먹는 줄 안다.
+   */
+  집설정({
+    version: 1,
+    active: 'gw',
+    profiles: [{ id: 'gw', name: '게이트웨이', kind: 'openai', baseUrl: 'http://127.0.0.1:1/v1', model: '집모델' }],
+  });
+  const 방2 = 작업방('이름을바꾼것', {
+    profiles: [{ id: 'gw', name: '우리팀', model: '저장소모델' }],
+  });
+  process.chdir(방2);
+  믿기(방2);
+  const cfg2 = load();
+  check('★★ 이름을 새로 붙여도 id 가 같으면 한 개다',
+    cfg2.profiles.filter((p) => p.id === 'gw').length === 1,
+    JSON.stringify(cfg2.profiles.map((x) => ({ id: x.id, name: x.name }))));
+  // 실제로 모델에 붙는 값이 요점이다 — 여기가 어긋나면 `config explain` 이 거짓말이다.
+  check('★★ 정말 붙는 값이 저장소 값이다', activeProfile(cfg2)?.model === '저장소모델',
+    String(activeProfile(cfg2)?.model));
+  check('  안 겹치는 칸은 집 것이 남는다',
+    activeProfile(cfg2)?.baseUrl === 'http://127.0.0.1:1/v1', String(activeProfile(cfg2)?.baseUrl));
+  process.chdir(원래여기);
+  rmSync(방2, { recursive: true, force: true });
+
+  const 방3 = 작업방('이름도id도없는것', {
+    profiles: [{ model: '저장소모델', baseUrl: 'http://127.0.0.1:9/v1' }],
+  });
+  process.chdir(방3);
+  믿기(방3);
+  const cfg3 = load();
+  const 소식3 = 프로젝트설정소식();
+  check('★★ 붙일 데가 없는 프로필은 버리되 말한다',
+    소식3?.갈래 === '걸러냄' && 소식3.걸러낸것.some((x) => /id 도 name 도 없는/.test(x.왜)),
+    JSON.stringify(소식3));
+  check('  그런 것을 몰래 싣지 않는다',
+    !cfg3.profiles.some((p) => p.model === '저장소모델'),
+    JSON.stringify(cfg3.profiles.map((p) => p.id ?? p.name)));
+  process.chdir(원래여기);
+  rmSync(방3, { recursive: true, force: true });
+
+  // 이 칸에서 집 설정을 갈아 끼웠으니 원래대로 되돌려 둔다.
+  집설정({
+    version: 1,
+    active: '집것',
+    profiles: [{ name: '집것', kind: 'openai', baseUrl: 'http://127.0.0.1:1/v1', model: '집모델', apiKey: 'sk-집' }],
+    permissions: { allow: ['Bash(npm test*)'], deny: ['Bash(curl*)'] },
+  });
 }
 
 trace('4-믿어도못정하는칸');

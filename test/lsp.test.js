@@ -289,6 +289,128 @@ trace('4b-진짜서버가하는것');
   서버박기('ts', { cmd: process.execPath, args: [흉내], 이름: '흉내서버', 경로: process.execPath });
 }
 
+// ══ 4c. 서버도 우리처럼 1번부터 센다 ════════════════════════════════════
+//
+// LSP 는 오가는 번호를 **양쪽이 따로** 센다. vscode-jsonrpc 를 쓰는 서버
+// (pyright · rust-analyzer)는 1부터 세고, 우리도 1부터 센다. 번호로 먼저
+// 가르면 서버의 물음이 우리 물음의 답으로 소비된다 — 답에는 method 가 없고
+// 물음에는 있으니, 그것으로 갈라야 한다.
+trace('4c-번호가겹칠때');
+{
+  const 겹침 = new 언어서버(root, { cmd: process.execPath, args: [흉내, '--collide'], 이름: '번호겹침' });
+  const 켜졌나 = await 겹침.켜기();
+
+  /*
+   * 악수부터 걸린다. initialize 의 답을 서버의 물음이 가로채면 `{값: undefined}`
+   * 로 풀리고, 능력이 통째로 빈 채 **준비됨**으로 표시된다. `/lsp` 는 초록으로
+   * 「준비됨」 을 보여 주는데 정작 그 뒤 물음은 전부 빈손으로 돌아온다.
+   */
+  check('★★ 번호가 겹쳐도 악수가 제대로 끝난다', 켜졌나 === true, String(겹침.죽음 ?? ''));
+  check('★★ 서버 능력을 빈손으로 안 적는다', 겹침.능력.referencesProvider === true,
+    JSON.stringify(겹침.능력).slice(0, 120));
+
+  /*
+   * 진짜 쓰는 자리. 서버는 3곳을 줬는데 화면에는 「쓰는 자리가 없습니다」 가
+   * 뜬다 — 모델은 그 말을 믿고 함수를 지운다.
+   */
+  const r = await 겹침.물어보기('textDocument/references', {
+    textDocument: { uri: pathToFileURL(join(root, 'src', '셈.js')).href },
+    position: { line: 3, character: 16 },
+    context: { includeDeclaration: false },
+  });
+  check('★★ 서버가 준 답이 서버의 물음에 안 먹힌다', Array.isArray(r.값) && r.값.length === 3,
+    JSON.stringify(r).slice(0, 120));
+  await 겹침.끄기();
+}
+
+// ══ 4d. 한 파일을 잇달아 고칠 때 ════════════════════════════════════════
+//
+// 서버는 디바운스를 둔다. 1~2초 안에 두 번 고치면 **첫 판** 결과가 둘째 판
+// 뒤에 도착한다. 판을 안 보고 받아 적으면, 방금 쓴 파일을 「아무 말 없음」
+// 으로 답하게 된다 — 이 프로그램에서 아무 말 없음은 성하다는 뜻이다.
+trace('4d-옛판진단');
+{
+  const 옛판서버 = new 언어서버(root, { cmd: process.execPath, args: [흉내, '--stale'], 이름: '옛판' });
+  await 옛판서버.켜기();
+  const 자리 = join(root, 'src', '셈.js');
+  const uri = 옛판서버.보여주기(자리, 'const a = 1;' + String.fromCharCode(10));   // 1판 — 성하다
+  옛판서버.보여주기(자리, 'const a = 틀린것;' + String.fromCharCode(10));          // 2판 — 탈났다
+  const 것들 = await 옛판서버.진단기다리기(uri, 2500);
+  check('★★ 옛 판 진단을 지금 판의 답으로 안 내준다',
+    Array.isArray(것들) && 것들.length === 1, JSON.stringify(것들));
+  await 옛판서버.끄기();
+}
+
+// ══ 4e. 우리가 끈 것을 「스스로 끝났다」 고 적지 않는다 ═══════════════════
+//
+// 놀림시계(5분)가 끄면 그 인스턴스는 풀에 그대로 남는다. 끈 것을 무너진 것으로
+// 적으면 죽음이 서서 **다시는 안 켜진다** — Def·Refs 는 「언어 서버가 이 자리에
+// 없습니다」 라고 하고, 고친 뒤 진단은 세션 끝까지 조용해진다.
+trace('4e-끈뒤에도살아난다');
+{
+  const 다시 = new 언어서버(root, { cmd: process.execPath, args: [흉내], 이름: '다시켤것' });
+  await 다시.켜기();
+  다시.보여주기(join(root, 'src', '셈.js'), 'const a = 1;' + String.fromCharCode(10));
+  await 다시.끄기();
+  // exit 은 kill() 뒤에 한 박자 늦게 온다. 그 손이 돌기를 기다렸다가 잰다.
+  // (여기서는 unref 를 안 한다 — 위에서 뜬 것이 다 정리돼서 프로세스가 그냥 나간다)
+  await new Promise((r) => { setTimeout(r, 250); });
+  check('★★ 우리가 끈 것은 죽음으로 안 적는다', 다시.죽음 === null, String(다시.죽음));
+  check('★★ 껐다가 다시 켜진다', await 다시.켜기() === true, String(다시.죽음));
+  // 다시 켠 서버는 파일을 모른다. 판을 안 지우면 didOpen 없이 2판을 보내서
+  // 서버가 조용히 버린다 — 진단이 영영 안 온다.
+  const uri2 = 다시.보여주기(join(root, 'src', '셈.js'), 'const a = 틀린것;' + String.fromCharCode(10));
+  const 것들2 = await 다시.진단기다리기(uri2, 2500);
+  check('★ 다시 켠 뒤에도 진단이 온다', Array.isArray(것들2) && 것들2.length === 1, JSON.stringify(것들2));
+  await 다시.끄기();
+}
+
+// ══ 4g. 옛 아이가 남긴 바이트가 뒤늦게 올 때 ═════════════════════════════
+//
+// 받개(통 경계 맞추는 것)는 하나뿐이다. 옛 아이의 stdout 에 남아 있던 바이트가
+// 다시 켠 뒤에 도착하면 그것이 **새 서버의 통 경계를 어긋내고**, 그 뒤 답이
+// 전부 안 열린다. 물음마다 시한까지 기다리다 빈손으로 돌아오는데, 어디가
+// 잘못됐는지는 화면에 안 뜬다.
+trace('4g-옛아이의바이트');
+{
+  const 이어켤것 = new 언어서버(root, { cmd: process.execPath, args: [흉내], 이름: '옛바이트' });
+  await 이어켤것.켜기();
+  const 옛아이 = 이어켤것.아이;
+  await 이어켤것.끄기();
+  await 이어켤것.켜기();
+  // 길이만 적힌 반쪽 머리말. 이것 하나면 그 뒤 통이 영영 안 열린다.
+  옛아이.stdout.emit('data', Buffer.from('Content-Length: 999999\r\n\r\n', 'utf8'));
+  const r = await 이어켤것.물어보기('workspace/symbol', { query: '셈하기' }, 2000);
+  check('★★ 옛 아이가 남긴 바이트가 새 서버의 답을 안 삼킨다',
+    Array.isArray(r.값) && r.값.length === 1, JSON.stringify(r).slice(0, 100));
+  await 이어켤것.끄기();
+}
+
+// ══ 4f. 언어 서버가 죽는 바로 그 찰나에 쓰면 ════════════════════════════
+//
+// 그 찰나에는 `stdin.writable` 이 아직 true 라 #보내기 의 검사도, 그 안의
+// try/catch 도 못 막는다 — EPIPE 가 한 박자 뒤에 소켓에서 튀어나오기 때문이다.
+// 아무도 안 받으면 **deel 이 통째로 죽는다.** 언어 서버가 죽었을 뿐인데 하던
+// 답이 그 자리에서 날아간다.
+trace('4f-죽는찰나에쓰기');
+{
+  const 끊길것 = new 언어서버(root, { cmd: process.execPath, args: [흉내], 이름: '끊긴관' });
+  await 끊길것.켜기();
+  끊길것.아이.kill('SIGKILL');
+  // 죽이고 **곧바로** 쓴다. 조금이라도 자면 writable 이 false 로 바뀌어
+  // #보내기 가 먼저 막아 버려서, 아무것도 안 재는 검사가 된다.
+  const 큰글 = 'x'.repeat(200_000);
+  for (let i = 0; i < 3; i += 1) {
+    끊길것.알림('textDocument/didOpen', {
+      textDocument: { uri: pathToFileURL(join(root, 'src', '셈.js')).href, languageId: 'js', version: 1, text: 큰글 },
+    });
+  }
+  await new Promise((r) => { setTimeout(r, 400); });
+  // 여기까지 왔다는 것 자체가 재는 값이다. 손이 없으면 위에서 프로세스가 죽는다.
+  check('★★ 언어 서버가 죽는 찰나에 써도 deel 이 안 죽는다', true, '400ms 뒤에도 살아 있습니다');
+  await 끊길것.끄기();
+}
+
 // ══ 5. Def · Refs ═══════════════════════════════════════════════════════
 trace('5-도구');
 {
