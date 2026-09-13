@@ -31,6 +31,9 @@ Loading everything would blow the context window.
 unzip import.zip -d ~/.deel/plugins/
 ```
 
+With a portable install (`DEEL_HOME` on a USB stick or share), plugins live under it too
+(`$DEEL_HOME/plugins`) — the config never travels while the plugins stay behind in the home folder.
+
 `/plugin pack` omits `.js` `.sh` `.ps1` `.py` and friends, and includes a plain-text manifest
 with a licence table — ready to hand to a security reviewer.
 

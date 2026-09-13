@@ -318,9 +318,11 @@ wrong place for "for this rollout, only this gateway". That goes somewhere the u
 }
 ```
 
-Policy **beats** config, but it cannot **loosen**: it can turn offline on but not off, and add
-denials but not remove the user's own. One line in a policy file must never widen what the tool
-may do. A corrupt policy file is treated as absent — but `/mode` says it could not be read, because
+Policy **beats** config. Offline, once on, holds in all four places — the chat, `deel run`,
+the editor (ACP) and `deel diagnose`; no single command unlocks it. But policy cannot **loosen**:
+it can turn offline on but not off, and add denials but not remove the user's own. One line in a
+policy file must never widen what the tool may do. What policy imposes is never written back into
+the user's own config file — lift the policy and the values the person wrote come straight back. A corrupt policy file is treated as absent — but `/mode` says it could not be read, because
 silence would leave the administrator believing it applies and the user running without it.
 
 ### When the gateway asks for our certificate (mTLS)

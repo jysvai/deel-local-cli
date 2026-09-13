@@ -146,7 +146,7 @@ function runConfig(args, flags) {
 async function runDoctor(flags) {
   const { load: 읽기, activeProfile: 고른것, resolveKey: 열쇠풀기, configPath: 설정경로 } =
     await import('../src/config.js');
-  const { 지금모드, 바깥인가, 나갈수있나 } = await import('../src/safety/runmode.js');
+  const { 지금모드, 바깥인가, 나갈수있나, 봉인됐나 } = await import('../src/safety/runmode.js');
   const { allowEndpoint } = await import('../src/safety/network.js');
 
   banner();
@@ -160,7 +160,7 @@ async function runDoctor(flags) {
    * 진단한다고 자물쇠를 넘어가면 안 된다 — 여기서 한 번 나가 버리면 「나가는
    * 주소는 사람이 정한 하나뿐」 이 진단 명령 하나로 깨진다.
    */
-  const 모드 = 지금모드({ online: flags.online === true, offline: !!(flags.offline ?? prof?.offline ?? cfg?.offline) });
+  const 모드 = 지금모드({ online: flags.online === true, offline: 봉인됐나({ 깃발: flags.offline, prof, cfg }) });
   const 나감 = prof ? 나갈수있나(모드, { 바깥: 바깥인가(prof.baseUrl), 허가: prof.online === true }) : { 물어볼까: false };
   const 두드려도되나 = !!prof && !나감.물어볼까 && !모드.허가무시;
   if (두드려도되나) allowEndpoint(prof.baseUrl);
@@ -490,7 +490,17 @@ function runSbom(flags) {
 // 실제로 이랬다 — deel run --json "검사 돌려줘" 를 쳤더니 --json 이 뒤의 말을
 // 통째로 삼켰다. 시킬 말이 사라졌으니 "무엇을 시킬지 적어 주세요" 가 떴는데,
 // 화면만 보면 왜 그런지 알 길이 없다. 깃발을 앞에 두는 것은 아주 흔한 습관이다.
-const BOOL = new Set(['help', 'version', 'offline', 'online', 'continue', 'json', 'quiet', 'yes', 'no-tui', 'tui', 'all', 'no-hooks']);
+const BOOL = new Set([
+  'help', 'version', 'offline', 'online', 'continue', 'json', 'quiet', 'yes',
+  'no-tui', 'tui', 'all', 'no-hooks',
+  /*
+   * `hard` 가 여기 빠져 있었다. 그래서 `deel reset --hard all --yes` 는
+   * `--hard` 가 뒤의 `all` 을 제 값으로 삼켰다 — 지울 갈래가 사라지니 화면은
+   * 「무엇을 지울지 같이 주세요」 를 찍고 **종료코드 0** 으로 끝났다.
+   * 스크립트는 전체 초기화가 된 줄 알고 다음 줄로 넘어간다.
+   */
+  'hard',
+]);
 
 function parse(argv) {
   const flags = {};
