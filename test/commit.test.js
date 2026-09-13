@@ -698,12 +698,27 @@ trace('11-못-읽은-것을-없는-것으로-적지-않나');
 trace('12-다른-드라이브·꼬리표·전각콜론');
 
 {
-  // 윈도우에서 드라이브가 다르면 relative() 가 상대경로 대신 절대경로를 준다.
-  // 그러면 저장소 밖 경로가 git add 에 실려 /commit 이 통째로 죽는다.
+  /*
+   * 저장소 밖 경로가 `git add` 에 실리면 git 이
+   * `fatal: … is outside repository` 로 죽고 /commit 이 통째로 안 된다.
+   * 담지 말아야 할 것 하나 때문에 담아야 할 것도 다 못 담는 꼴이다.
+   */
   const root = 저장소만들기();
-  const s = { changes: new Map([['D:' + '\\' + '남의폴더' + '\\' + 'a.txt', {}]]) };
-  check('★ 다른 드라이브에 있는 파일은 안 담는다',
+  const 밖 = join(tmpdir(), '남의폴더', 'a.txt');
+  const s = { changes: new Map([[밖, {}]]) };
+  check('★ 저장소 밖에 있는 파일은 안 담는다',
     이번에바꾼것(s, root).length === 0, JSON.stringify(이번에바꾼것(s, root)));
+
+  /*
+   * 윈도우에서 **드라이브가 다르면** relative() 가 `..` 를 못 만들고 절대경로를
+   * 그대로 돌려준다. 그래서 위의 `..` 검사를 그냥 지나간다. 리눅스·맥에는
+   * 드라이브 글자가 없어서 `D:\…` 가 그냥 파일 이름이므로 여기서만 잰다.
+   */
+  if (process.platform === 'win32') {
+    const 딴드라이브 = { changes: new Map([['D:' + '\\' + '남의폴더' + '\\' + 'a.txt', {}]]) };
+    check('★ 다른 드라이브에 있는 파일도 안 담는다',
+      이번에바꾼것(딴드라이브, root).length === 0, JSON.stringify(이번에바꾼것(딴드라이브, root)));
+  }
   rmSync(root, { recursive: true, force: true });
 }
 

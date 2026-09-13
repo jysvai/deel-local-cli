@@ -1712,10 +1712,10 @@
     },
     {
       "곳": "src/agent/commit.js",
-      "무엇": "다른 드라이브에 있는 파일도 담을 것에 넣는다",
-      "그러면": "윈도우에서 드라이브가 다르면 relative() 가 상대경로 대신 절대경로를 준다. 저장소 밖 경로가 git add 에 실려 /commit 이 통째로 죽는다",
+      "무엇": "저장소 밖 경로도 담을 것에 넣는다",
+      "그러면": "저장소 밖 경로가 `git add` 에 실려 git 이 `fatal: … is outside repository` 로 죽는다. 담지 말아야 할 것 하나 때문에 담아야 할 것도 다 못 담고 /commit 이 통째로 안 된다",
       "찾을것": "    if (!rel || rel.startsWith('../') || rel === '..' || isAbsolute(rel)) continue;",
-      "바꿀것": "    if (!rel || rel.startsWith('../') || rel === '..') continue;",
+      "바꿀것": "    if (!rel) continue;",
       "검사": "test/commit.test.js"
     },
     {
