@@ -445,7 +445,7 @@ export async function acp(opts = {}) {
           title: 도구이름표(이름, 인자),
           kind: 도구갈래(이름),
           status: 'pending',
-          locations: 도구자리(이름, 인자, null),
+          locations: 도구자리(이름, 인자, null, { 뿌리: 방.root }),
           rawInput: 인자 ?? {},
         },
         options: [
@@ -643,17 +643,17 @@ export async function acp(opts = {}) {
             break;
 
           case 'tool_start':
-            보내기(도구시작(도구맡기기(방, ev.name), ev.name, ev.args));
+            보내기(도구시작(도구맡기기(방, ev.name), ev.name, ev.args, { 뿌리: 방.root }));
             break;
 
           case 'tools_start':
             for (const 이름 of ev.names ?? []) {
-              보내기(도구시작(도구맡기기(방, 이름), 이름, null));
+              보내기(도구시작(도구맡기기(방, 이름), 이름, null, { 뿌리: 방.root }));
             }
             break;
 
           case 'tool':
-            보내기(도구끝남(도구찾기(방, ev.name), ev));
+            보내기(도구끝남(도구찾기(방, ev.name), ev, { 뿌리: 방.root }));
             적기();
             break;
 
@@ -882,7 +882,7 @@ export async function acp(opts = {}) {
         } catch { /* 못 읽으면 기억하고 있는 것으로 그린다 */ }
 
         let 흘린것 = 0;
-        for (const update of 되살린것(그릴것)) {
+        for (const update of 되살린것(그릴것, { 뿌리: 방.root })) {
           관.알림('session/update', { sessionId: 방.id, update });
           흘린것++;
         }

@@ -25,6 +25,8 @@
 //
 // 읽기만 하는 순수 함수를 들여오는 것은 순수함을 안 깬다. 규격을 읽는 규칙은
 // backend/adapter.js 한 곳에만 있어야 한다 (집안 규칙: 자는 한 벌).
+import { isAbsolute, resolve } from 'node:path';
+
 import { 부른것들, 결과들, 본문글 } from '../backend/adapter.js';
 import { 첫이름 } from '../tools/label.js';
 
@@ -40,9 +42,12 @@ const 갈래표 = {
   Write: 'edit',
   Append: 'edit',
   Edit: 'edit',
+  Move: 'move',
   Glob: 'search',
   Grep: 'search',
   Recall: 'search',
+  Def: 'search',
+  Refs: 'search',
   Bash: 'execute',
   Jobs: 'execute',
   Verify: 'execute',
@@ -50,6 +55,7 @@ const 갈래표 = {
   Task: 'think',
   TodoWrite: 'think',
   Skill: 'think',
+  Ask: 'other',
   Remember: 'other',
 };
 
@@ -77,8 +83,15 @@ export function 도구이름표(이름, 인자) {
       : null)
     ?? (Array.isArray(a.paths) && a.paths.length ? `${a.paths.length}개` : null)
     ?? (Array.isArray(a.todos) ? `${a.todos.length}건` : null);
-  const 안 = 첫 == null ? '' : 자르기(String(첫), 80);
-  return 안 ? `${이름}(${안})` : String(이름 ?? '도구');
+  /*
+   * 이름표는 에디터의 **한 줄** 머리다. 본문 줄이는 자르기() 를 쓰면 그 끝에
+   * `\n… (N자 줄임)` 이 붙어서 머리가 두 줄이 되고, 한 줄을 미리 정해 둔
+   * 자리라 그 줄이 깨진다. 긴 명령 하나면 바로 그렇게 된다.
+   */
+  const 안 = 첫 == null ? '' : 한줄로(String(첫), 80);
+  // 이름이 없으면 「도구」 다. 앞칸만 채우면 화면에 `undefined(a.js)` 가 뜬다.
+  const 이름글 = String(이름 ?? '').trim() || '도구';
+  return 안 ? `${이름글}(${안})` : 이름글;
 }
 
 /**
@@ -88,11 +101,21 @@ export function 도구이름표(이름, 인자) {
  * 있는데, 에디터는 절대 경로라야 연다. 인자만 보고 넘기면 눌러도 안 열리는
  * 링크가 되고, 그건 없느니만 못하다.
  */
-export function 도구자리(이름, 인자, 결과) {
+export function 도구자리(이름, 인자, 결과, { 뿌리 = null } = {}) {
   const 모은것 = [];
   const 넣기 = (p) => {
     const s = typeof p === 'string' ? p.trim() : '';
-    if (s && !모은것.includes(s)) 모은것.push(s);
+    if (!s) return;
+    /*
+     * 상대 경로는 **여기서** 절대 경로로 편다.
+     *
+     * 에디터는 절대 경로라야 연다. 상대 경로를 그대로 주면 눌러도 아무 일이
+     * 안 일어나는데, 화면에는 멀쩡한 링크로 보인다 — 없느니만 못하다.
+     * 도는 중(tool_call)에는 결과가 아직 없어서 인자에 적힌 상대 경로뿐이라,
+     * 이 자리를 안 펴면 도구가 도는 내내 링크가 다 죽어 있다.
+     */
+    const 편것 = 뿌리 && !isAbsolute(s) ? resolve(뿌리, s) : s;
+    if (!모은것.includes(편것)) 모은것.push(편것);
   };
 
   넣기(결과?.changed);
@@ -141,7 +164,7 @@ export function 도구내용(결과, 최대 = 2000) {
  * @param {string} 아이디  이 세션 안에서 유일한 번호
  * @param {object} ev      loop.js 가 흘린 `tool` 이벤트
  */
-export function 도구끝남(아이디, ev) {
+export function 도구끝남(아이디, ev, { 뿌리 = null } = {}) {
   return {
     sessionUpdate: 'tool_call_update',
     toolCallId: 아이디,
@@ -149,12 +172,12 @@ export function 도구끝남(아이디, ev) {
     kind: 도구갈래(ev?.name),
     status: 도구탈났나(ev?.result) ? 'failed' : 'completed',
     content: 도구내용(ev?.result),
-    locations: 도구자리(ev?.name, ev?.args, ev?.result),
+    locations: 도구자리(ev?.name, ev?.args, ev?.result, { 뿌리 }),
   };
 }
 
 /** 이제 막 시작한 도구 호출. */
-export function 도구시작(아이디, 이름, 인자) {
+export function 도구시작(아이디, 이름, 인자, { 뿌리 = null } = {}) {
   return {
     sessionUpdate: 'tool_call',
     toolCallId: 아이디,
@@ -162,7 +185,7 @@ export function 도구시작(아이디, 이름, 인자) {
     kind: 도구갈래(이름),
     status: 'in_progress',
     content: [],
-    locations: 도구자리(이름, 인자, null),
+    locations: 도구자리(이름, 인자, null, { 뿌리 }),
   };
 }
 
@@ -227,7 +250,7 @@ function 인자풀기(x) {
  * @param {object[]} messages  store.js 가 읽어 온 대화
  * @returns {object[]} session/update 의 update 자리에 그대로 넣을 것들
  */
-export function 되살린것(messages, { 최대내용 = 2000 } = {}) {
+export function 되살린것(messages, { 최대내용 = 2000, 뿌리 = null } = {}) {
   const 줄 = Array.isArray(messages) ? messages : [];
 
   /*
@@ -315,7 +338,7 @@ export function 되살린것(messages, { 최대내용 = 2000 } = {}) {
         content: 없음
           ? [{ type: 'content', content: { type: 'text', text: '결과가 안 남았습니다 — 이 도구가 도는 중에 끊겼습니다.' } }]
           : [{ type: 'content', content: { type: 'text', text: 자르기(String(답), 최대내용) } }],
-        locations: 도구자리(이름, 인자, null),
+        locations: 도구자리(이름, 인자, null, { 뿌리 }),
       });
     }
   }
@@ -364,4 +387,10 @@ export function 프롬프트글(덩이들) {
 function 자르기(s, n) {
   const t = String(s ?? '');
   return t.length > n ? `${t.slice(0, n)}\n… (${t.length - n}자 줄임)` : t;
+}
+
+/** 한 줄짜리 자리(이름표)에 쓴다. 줄바꿈을 빈칸으로 눕히고 말줄임만 붙인다. */
+function 한줄로(s, n) {
+  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
 }

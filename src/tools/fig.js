@@ -241,7 +241,7 @@ function 가지풀기(뿌리, 자식표, 줄들, 깊이, 셈) {
  * @returns {{ok:true, 갈래:'fig', 덩이들:[{이름,문단들}], 말:string[], 노드수:number}
  *          |{ok:false, error:string, 끝났다?:boolean}}
  */
-export function readFig(경로또는버퍼) {
+export function readFig(경로또는버퍼, { 최대노드 = 노드최대 } = {}) {
   let buf;
   try {
     buf = Buffer.isBuffer(경로또는버퍼) ? 경로또는버퍼 : readFileSync(경로또는버퍼);
@@ -341,7 +341,8 @@ export function readFig(경로또는버퍼) {
   const 문서 = 뿌리들.find((n) => n.type === 'DOCUMENT') ?? 뿌리들[0];
   const 쪽들 = (자식표.get(열쇠(문서?.guid)) ?? []).filter((n) => n.type === 'CANVAS');
 
-  const 셈 = { 남은: 노드최대 };
+  const 상한노드 = Math.max(1, Number(최대노드) || 노드최대);
+  const 셈 = { 남은: 상한노드 };
   const 덩이들 = [];
 
   const 개요 = [];
@@ -355,11 +356,24 @@ export function readFig(경로또는버퍼) {
 
   if (쪽들.length) {
     for (const 쪽 of 쪽들) {
+      const 아이들 = 자식표.get(열쇠(쪽.guid)) ?? [];
       const 줄들 = [];
-      for (const 아이 of 자식표.get(열쇠(쪽.guid)) ?? []) 가지풀기(아이, 자식표, 줄들, 0, 셈);
+      for (const 아이 of 아이들) 가지풀기(아이, 자식표, 줄들, 0, 셈);
+      /*
+       * 상한에 걸려 못 편 쪽을 「비어 있습니다」 라고 적으면 안 된다.
+       *
+       * 앞쪽 쪽에서 상한을 다 써 버리면 뒤쪽은 한 줄도 안 나온다. 그때 「비어
+       * 있다」 고 적으면, 시안에 멀쩡히 들어 있는 화면을 사람도 모델도 없는
+       * 것으로 읽는다 — 없는 화면을 새로 그리게 된다. 안 폈다고 말한다.
+       */
+      const 못편것 = !줄들.length && 아이들.length > 0;
       덩이들.push({
         이름: String(쪽.name ?? '').trim() || '이름 없는 쪽',
-        문단들: 줄들.length ? 줄들 : ['(이 쪽은 비어 있습니다.)'],
+        문단들: 줄들.length
+          ? 줄들
+          : [못편것
+            ? `(도형 ${상한노드.toLocaleString('en-US')}개 상한에 걸려 이 쪽은 못 폈습니다 — 비어 있는 것이 아닙니다.)`
+            : '(이 쪽은 비어 있습니다.)'],
       });
     }
   } else {
@@ -370,7 +384,7 @@ export function readFig(경로또는버퍼) {
   }
 
   if (셈.남은 <= 0) {
-    말.push(`도형이 ${노드최대.toLocaleString('en-US')}개를 넘어 거기까지만 폈습니다 — 뒷부분은 안 실렸습니다`);
+    말.push(`도형이 ${상한노드.toLocaleString('en-US')}개를 넘어 거기까지만 폈습니다 — 뒷부분은 안 실렸습니다`);
   }
 
   return { ok: true, 갈래: 'fig', 덩이들, 말, 노드수: 노드들.length };

@@ -396,6 +396,164 @@ trace('8-손대라는말');
   check('★ 영어 겹침도 그대로', 겹친요청('plan and then build it').겹침 === true);
 
   /*
+   * ★★★ 빈칸 한 칸으로 시킴말이 통째로 사라지면 안 된다.
+   *
+   * 「수정해 줘」 는 맞춤법대로 띄어 쓴 꼴이다. 이게 안 걸리면 모드도 갈리고,
+   * 「무슨 일을 할까요?」 를 안 묻게 막는 자리(askcheck)도 같이 뚫린다.
+   */
+  check('★★★ 띄어 쓴 시킴말도 손대라는 말이다',
+    손대라했나('코드 수정해 줘') === true && 손대라했나('이 파일 고쳐 주세요') === true,
+    `${손대라했나('코드 수정해 줘')} / ${손대라했나('이 파일 고쳐 주세요')}`);
+  check('★★ 붙여 쓰나 띄어 쓰나 같은 모드로 간다',
+    route('이 구조를 살펴보고 코드 수정해줘').mode === route('이 구조를 살펴보고 코드 수정해 줘').mode,
+    `${route('이 구조를 살펴보고 코드 수정해줘').mode} / ${route('이 구조를 살펴보고 코드 수정해 줘').mode}`);
+  check('  그래도 세 글자 넘게 떨어지면 아니다',
+    손대라했나('나누는 설계만 봐줘') === false);
+
+  /*
+   * ★★★ 「…해 보고」 는 한국말에서 제일 흔한 「먼저 보고 나서」 꼴이다.
+   *
+   * 이게 빠져 있어서 "살펴보고 만들어줘" 가 계획 한 줄 없이 파일부터 만들었다.
+   * "정리하고 만들어줘" 와 같은 말인데 이음꼴 하나로 갈렸다.
+   */
+  check('★★★ 「살펴보고 만들어줘」 도 겹침이다', 겹친요청('살펴보고 만들어줘').겹침 === true,
+    겹친요청('살펴보고 만들어줘').why);
+  check('★★ 「알아보고 구현해줘」 도 겹침이다', 겹친요청('알아보고 구현해줘').겹침 === true);
+  check('★★ 「살펴본 다음 만들어줘」 도 겹침이다', 겹친요청('살펴본 다음 만들어줘').겹침 === true);
+  check('★★ 「보고서」 는 이음말이 아니다', 겹친요청('검토 보고서를 만들어줘').겹침 === false,
+    겹친요청('검토 보고서를 만들어줘').why);
+
+  /*
+   * ★★★ 영어 쉼표 열거를 차례로 읽으면 안 된다.
+   *
+   * 「이것들을 다 해라」 를 「설계하고 나서 만들어라」 로 읽으면 계획 모드로
+   * 가서 계획만 내고 멈춘다 — 시킨 것과 정반대다.
+   */
+  check('★★★ 쉼표 열거는 겹침이 아니다',
+    겹친요청('independently design, implement, test, and build the feature').겹침 === false,
+    겹친요청('independently design, implement, test, and build the feature').why);
+  check('★★ 차례를 적어 두면 쉼표가 있어도 겹침이다',
+    겹친요청('Plan the migration, then implement it').겹침 === true);
+  check('★★ 쉼표 없이 and 로 이으면 그대로 겹침이다',
+    겹친요청('Design and implement the auth module.').겹침 === true);
+  /*
+   * ★★ 쉼표를 아예 못 넘게 막았더니 이번엔 차례가 안 걸렸다.
+   *
+   * 영어는 `and` 앞에 쉼표를 찍는 것이 그냥 흔하다. 열거와 갈리는 자리는
+   * 쉼표가 **몇 개냐** 다 — 열거는 여러 번, 차례는 많아야 한 번.
+   */
+  check('★★ 쉼표 하나 뒤의 and 는 차례다',
+    겹친요청('Plan the migration, and implement it').겹침 === true,
+    겹친요청('Plan the migration, and implement it').why);
+
+  /*
+   * ★★★ 「고치지 마라」 는 고치라는 말이 아니다.
+   *
+   * 사이가 세 글자라 '지 마' 가 통째로 들어앉고 남은 '라' 가 시킴꼴로 읽혔다.
+   * 하지 말라는 말이 하라는 말이 되는 것이라 뒤집힘이 제일 크다.
+   */
+  for (const 글 of ['이 파일은 절대 고치지 마라', '이 파일은 절대 고치지마라',
+    '만들지 마', '고치지 말고 알려 줘', '삭제하지 마세요']) {
+    check(`★★★ 하지 말라는 말은 시킴말이 아니다 — "${글}"`,
+      손대라했나(글) === false, `손대라=${손대라했나(글)}`);
+  }
+  /*
+   * ★★ 씨끝마다 빈칸 사정이 다르다.
+   *
+   * 빈칸을 넘어야 하는 것은 도움움직씨 '주다' 뿐이다. '하자·해라' 는 줄기에서
+   * 안 떨어진다 — 전부에 빈칸을 열었더니 이름씨 '하자(결함)' 가 걸렸다.
+   */
+  check('★★ 이름씨 「하자」 는 씨끝이 아니다',
+    손대라했나('추가 하자 있는 부분 알려줘') === false,
+    `손대라=${손대라했나('추가 하자 있는 부분 알려줘')}`);
+  check('  붙여 쓴 「정리하자」 는 그대로 시킴말이다', 손대라했나('정리하자') === true);
+  check('★ 「고쳐 줄래」 도 시킴말이다',
+    손대라했나('코드 고쳐 줄래?') === true && 손대라했나('코드 고쳐줄래?') === true);
+
+  check('★★ 계획거리와 동사 사이에 「좀」 이 껴도 예외다',
+    손대라했나('계획 좀 수정해 줘') === false, `손대라=${손대라했나('계획 좀 수정해 줘')}`);
+
+  /*
+   * ★★ 「검토해 보고」 「살펴보고서」 — '보고' 를 이름씨와 가르는 자리.
+   *
+   * 뒤에 뭐가 오느냐만 봐서는 못 가른다. 앞을 봐야 갈린다 — 움직씨 줄기에
+   * 붙어 있으면 이음말이고, 빈칸 뒤에 홀로 섰으면 이름씨다.
+   */
+  check('★★ 「검토해 보고 만들어줘」 도 겹침이다', 겹친요청('검토해 보고 만들어줘').겹침 === true,
+    겹친요청('검토해 보고 만들어줘').why);
+  check('★★ 「살펴보고서」 의 -고서 는 이음씨끝이다', 겹친요청('살펴보고서 만들어줘').겹침 === true,
+    겹친요청('살펴보고서 만들어줘').why);
+  check('★★ 그래도 「계획 보고서 만들어줘」 는 겹침이 아니다',
+    겹친요청('계획 보고서 만들어줘').겹침 === false, 겹친요청('계획 보고서 만들어줘').why);
+  /*
+   * ★★★ 가르는 것은 빈칸이 아니라 **앞말의 품사**다.
+   *
+   * 붙어 있으면 이음말로 쳤더니 「검토보고서」 가 통째로 겹침이 됐다.
+   * '살펴·알아' 는 움직씨 줄기라 뒤의 '보고' 가 도움움직씨이고,
+   * '검토·분석' 은 이름씨라 '보고' 가 붙으면 한 낱말이 된다.
+   */
+  for (const 글 of ['검토보고서 작성해줘', '분석보고서 만들어줘', '분석해 보고서를 작성해 줘',
+    '분석 보고도 작성해줘', '검토 보고는 오늘까지 만들어줘']) {
+    check(`★★★ 이름씨 '보고' 는 이음말이 아니다 — "${글}"`,
+      겹친요청(글).겹침 === false, 겹친요청(글).why);
+  }
+  for (const 글 of ['살펴보고 만들어줘', '살펴보고서 만들어줘', '살펴 보고 만들어줘',
+    '검토해 보고 만들어줘', '알아보고 구현해줘', '살펴본 다음 만들어줘']) {
+    check(`★★ 움직씨 줄기 뒤의 '보고' 는 이음말이다 — "${글}"`,
+      겹친요청(글).겹침 === true, 겹친요청(글).why);
+  }
+
+  /*
+   * ★★★ `the design` 은 계획을 세우라는 말이 아니다.
+   *
+   * 이 네 낱말은 움직씨이자 이름씨다. 앞에 관사가 붙으면 이름씨다 — 그때는
+   * 무엇을 가리키는 말이지 계획을 세우라는 말이 아니다. 둘째 보기는 사람이
+   * **이미 승인됐다고 적어 놨는데** 또 계획을 내고 승인을 물었다.
+   */
+  for (const 글 of ['The design is fine. Run the linter and write the changelog.',
+    'Our plan is approved. Open the file and make the change.',
+    'Read the design doc and implement the parser.']) {
+    check(`★★★ 관사가 붙으면 이름씨다 — "${글.slice(0, 34)}…"`,
+      겹친요청(글).겹침 === false, 겹친요청(글).why);
+  }
+  check('★★ 맨 and 갈래가 빈칸으로 예순 자 잣대를 못 뚫는다',
+    겹친요청(`plan${' '.repeat(300)}and build it`).겹침 === false);
+  /*
+   * ★★★ 맨 `and` 는 **문장 끝**도 못 넘는다.
+   *
+   * 쉼표는 막아 놓고 그보다 센 구분자인 마침표는 지나갔다. 그러면 한 문장짜리
+   * 규칙이 글 전체를 훑는다 — 관사가 없어 위의 이름씨 규칙이 안 걸리는 자리라,
+   * 문장 끝을 안 막으면 여기가 그대로 열린다.
+   */
+  for (const 글 of ['Design it carefully. Run the linter and write the changelog.',
+    'Plan it out. Open the file and make the change.',
+    'Draft it quickly! Then run the tests and write the docs.']) {
+    check(`★★★ 마침표 건너편과는 안 짝짓는다 — "${글.slice(0, 30)}…"`,
+      겹친요청(글).겹침 === false, 겹친요청(글).why);
+  }
+
+  /*
+   * ★★★ 맨 「라」 는 시킴꼴이기도 하고 서술격조사이기도 하다.
+   *
+   * 「개선이라」 가 시킴말로 읽혀서, 검토해 달라는 물음이 「고치라는 말」 이
+   * 됐다. 그러면 화면에 거꾸로 된 까닭이 뜬다 — 고치라고 한 적이 없는데
+   * 「고치라는 말이라 읽기 전용 모드로 안 보냄」.
+   */
+  for (const 글 of ['이걸 개선이라 볼 수 있는지 검토해 줘', '이 커밋이 리팩터라 불릴 만한지 분석해 줘',
+    '이걸 배포라 부르는 게 맞나? 설명해 줘', '지금 구조가 분리라 할 수 있는지 살펴봐 줘']) {
+    check(`★★★ '-이라' 는 시킴꼴이 아니다 — "${글.slice(0, 22)}…"`,
+      손대라했나(글) === false, `손대라=${손대라했나(글)}`);
+  }
+  for (const 글 of ['임시 파일 지워라', '바꿔라 지금 해줘', '재현 테스트를 먼저 만들어라', '통일해라']) {
+    check(`★★ 그래도 해라체는 시킴말이다 — "${글}"`, 손대라했나(글) === true);
+  }
+
+  check('★★ 계획거리와 동사 사이에 어찌씨가 껴도 예외다',
+    손대라했나('이전 계획 다시 정리해 줘') === false && 손대라했나('계획 좀 더 정리해줘') === false,
+    `${손대라했나('이전 계획 다시 정리해 줘')} / ${손대라했나('계획 좀 더 정리해줘')}`);
+  check('  그래도 「계획 파일 수정해 줘」 는 시킴말이다', 손대라했나('계획 파일 수정해 줘') === true);
+
+  /*
    * ★★ 묻지 말라고 적어 둔 사람에게는 승인 창을 안 띄운다.
    *
    * 겹침의 값은 「계획을 보여 주고 승인을 받는다」 인데, 받지 말라고 글로
@@ -412,9 +570,6 @@ trace('6-치움');
 rmSync(root, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
-console.log(`\n모드 자동 전환 검사  ${D}(요청을 보고 알맞은 모드로 옮겨 가는가)${X}\n`);
-for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
-for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 // ── 점검으로 간다 ───────────────────────────────────────────────────────
 //
 // ★★ 이 갈래가 없던 동안 이런 말이 전부 묻기로 갔다. 묻기는 짧게 답하고,
@@ -445,6 +600,86 @@ for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
     String(route('감사합니다').mode));
 }
 
+// ── 묻는 말을 못 알아보면 답만 하면 되는 턴이 고칠 수 있는 모드로 돈다 ──
+{
+  /*
+   * ★★ 물음표 뒤에 한마디를 더 붙였다고 물음이 아니게 되면 안 된다.
+   *
+   * 붙인 「알려줘」 는 더 설명해 달라는 말인데 점수가 되레 깎여서(5 → 3)
+   * 문턱을 못 넘었다.
+   */
+  check('★★ 물음표 뒤에 말이 붙어도 묻기다', route('이거 뭐야? 알려줘').mode === 'ask',
+    `${route('이거 뭐야? 알려줘').mode} (${route('이거 뭐야? 알려줘').점수들?.ask ?? 0}점)`);
+  check('★ 물음표가 없으면 줄 끝이어야 한다는 것은 그대로',
+    route('이거 뭐야').mode === 'ask');
+
+  /*
+   * ★★ 공손하게 물을수록 물음으로 안 읽히면 안 된다.
+   *
+   * 첫머리 못을 `^\s*` 로 박아 두면 빈칸 말고는 아무것도 앞에 못 온다.
+   * 그런데 영어로 묻는 사람은 그 자리에 거의 항상 한마디를 붙인다.
+   */
+  check('★★ 「Please tell me …」 도 묻기다',
+    route('Please tell me what this does').mode === 'ask',
+    String(route('Please tell me what this does').mode));
+  check('★★ 「Could you …」 도 묻기다',
+    route('Could you tell me what this does').mode === 'ask',
+    String(route('Could you tell me what this does').mode));
+  check('★ 「Please show me how to …」 도 묻기다',
+    route('Please show me how to run this').mode === 'ask');
+  /*
+   * ★★ 공손말은 한 마디가 아니라 두 마디가 붙기도 한다.
+   *
+   * 세로줄로 갈라 두면 둘 중 하나만 먹고 나머지가 남아 통째로 0점이 된다.
+   */
+  check('★★ 공손말이 둘 붙어도 묻기다',
+    route('Please could you tell me what this does').mode === 'ask',
+    String(route('Please could you tell me what this does').mode));
+  /*
+   * ★★★ 물어보고 **나서 고치라**는 한 문장은 묻기가 아니다.
+   *
+   * 공손말을 받아 주자 이것들이 5점을 꽉 채워 묻기 모드로 갔다. 묻기는 파일을
+   * 못 고치는 모드라, 사람은 설명만 받고 이름은 그대로다. 공손말을 받기
+   * 전에는 종합(고칠 수 있는 자리)에 남아 있었으니 없던 자리를 만든 셈이다.
+   */
+  for (const 글 of ['Please show me the config and rename it to config.json.',
+    'Could you tell me what changed and update the changelog?',
+    'Please tell me which files are unused and delete them.']) {
+    check(`★★★ 이어 붙은 시킴 마디가 있으면 묻기가 아니다 — "${글.slice(0, 34)}…"`,
+      route(글).mode !== 'ask', String(route(글).mode));
+  }
+  check('★★ 움직씨가 아닌 and 는 안 건드린다',
+    route('Please tell me what to fix and why').mode === 'ask',
+    String(route('Please tell me what to fix and why').mode));
+
+  /*
+   * ★★★ 못을 뽑은 것이 아니다 — 딸린 마디의 「show me」 는 여전히 물음이
+   * 아니다. 여기가 새면 고치라는 말이 파일을 못 고치는 모드로 간다.
+   */
+  check('★★★ 딸린 마디의 「show me」 는 묻기가 아니다',
+    route('Rewrite this function to show me the result.').mode !== 'ask',
+    String(route('Rewrite this function to show me the result.').mode));
+  check('★★ 「Write the docs and tell me …」 도 묻기가 아니다',
+    route('Write the docs and tell me what changed.').mode !== 'ask',
+    String(route('Write the docs and tell me what changed.').mode));
+  check('★★ 공손말을 붙여도 고치라는 말은 묻기가 아니다',
+    route('Please rewrite how to build it.').mode !== 'ask',
+    String(route('Please rewrite how to build it.').mode));
+}
+
+
+/*
+ * ── 셈에는 들어가는데 이름은 안 나오던 검사들 ───────────────────────────
+ *
+ * 이 두 줄이 파일 중간에 있었다. 그 아래에서 검사를 열여덟 개 더 하는데,
+ * 목록은 이미 찍힌 뒤였다. 그래서 그 검사가 깨지면 **끝의 숫자만 1 늘고
+ * 어느 검사인지는 아무 데도 안 나왔다.** 무엇이 깨졌는지 모르는 빨간불이다.
+ *
+ * 검사를 다 끝낸 자리에서 찍는다.
+ */
+console.log(`\n모드 자동 전환 검사  ${D}(요청을 보고 알맞은 모드로 옮겨 가는가)${X}\n`);
+for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
+for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 trace('끝-정상종료');

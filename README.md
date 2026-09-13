@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-10%2C125%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-10%2C215%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -374,7 +374,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.20.12  ⌂ inside
+ deel 1.20.13  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1350,6 +1350,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| [1.20.13](docs/en/releases/1.20.md#12013) | One space hid the whole instruction |
 | [1.20.12](docs/en/releases/1.20.md#12012) | The lock we said was on was not attached to anything |
 | [1.20.11](docs/en/releases/1.20.md#12011) | The safety net said it was there when it wasn't |
 | [1.20.10](docs/en/releases/1.20.md#12010) | Nobody answered, yet an answer had been given |

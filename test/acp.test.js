@@ -25,8 +25,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { 줄나누기, 연결, 오류번호, 모르는방법오류 } from '../src/acp/jsonrpc.js';
 import {
   도구갈래, 도구이름표, 도구자리, 도구탈났나, 도구내용,
-  도구끝남, 멈춘까닭, 프롬프트글, 되살린것,
+  도구끝남, 도구시작, 멈춘까닭, 프롬프트글, 되살린것,
 } from '../src/acp/map.js';
+import { toolSchemas } from '../src/tools/index.js';
 import { trace } from './trace.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -215,6 +216,25 @@ trace('3-옮기기');
   check('명령은 execute', 도구갈래('Bash') === 'execute');
   check('밖에서 가져오는 것은 fetch', 도구갈래('WebFetch') === 'fetch');
   check('모르는 도구는 other — 낱말을 지어내지 않는다', 도구갈래('mcp__무엇__무엇') === 'other');
+  check('★ 옮기는 도구는 move', 도구갈래('Move') === 'move', 도구갈래('Move'));
+  check('★ 언어 서버에 묻는 것도 search', 도구갈래('Def') === 'search' && 도구갈래('Refs') === 'search',
+    `${도구갈래('Def')} · ${도구갈래('Refs')}`);
+
+  /*
+   * 갈래를 안 주면 에디터는 **전부 똑같은 회색 점**으로 그린다. 도구가 하나
+   * 늘 때마다 이 표에 한 줄을 더해야 하는데, 안 더해도 아무 데서도 안 터진다 —
+   * 화면만 조용히 밋밋해진다. 그래서 여기서 목록째로 견준다.
+   *
+   * 정말 갈래가 없는 것(사람에게 묻기·기억하기)만 여기 적어 둔다.
+   */
+  {
+    const 갈래없어도되는것 = new Set(['Ask', 'Remember']);
+    const 이름들 = toolSchemas(null, { hasSkills: true, web: true, lsp: true, vision: true })
+      .map((t) => t.function?.name).filter(Boolean);
+    const 회색 = 이름들.filter((n) => !갈래없어도되는것.has(n) && 도구갈래(n) === 'other');
+    check('★★ 도구 목록에 갈래를 안 준 것이 없다', 회색.length === 0,
+      회색.length ? `회색 점으로 그려질 것: ${회색.join(' · ')}` : `${이름들.length}개 전부 갈래가 있습니다`);
+  }
 
   check('이름표에 무엇을 만졌는지 넣는다', 도구이름표('Read', { file_path: 'src/runner.js' }) === 'Read(src/runner.js)',
     도구이름표('Read', { file_path: 'src/runner.js' }));
@@ -235,6 +255,75 @@ trace('3-옮기기');
     check('인자 쪽도 같이 담는다', 자리.some((x) => x.path === 'src/runner.js'), JSON.stringify(자리));
   }
   check('만진 파일이 없으면 빈 목록', 도구자리('Bash', { command: 'ls' }, { summary: 'ok' }).length === 0);
+
+  /*
+   * 도는 중(tool_call)에는 결과가 아직 없다. 그때 실리는 것은 인자에 적힌
+   * **상대 경로뿐**이고, 에디터는 절대 경로라야 연다. 뿌리를 주면 여기서 편다 —
+   * 안 펴면 도구가 도는 내내 링크가 다 죽어 있는데 화면에는 멀쩡해 보인다.
+   */
+  {
+    const 뿌리 = join(tmpdir(), '내프로젝트');
+    const 편것 = 도구자리('Edit', { file_path: 'src/runner.js' }, null, { 뿌리 });
+    check('★★ 도는 중에도 링크가 열리는 절대 경로다',
+      편것[0]?.path === join(뿌리, 'src', 'runner.js'), JSON.stringify(편것));
+    check('★ 도구시작에도 그대로 실린다',
+      도구시작('t1', 'Edit', { file_path: 'src/runner.js' }, { 뿌리 })
+        .locations[0]?.path === join(뿌리, 'src', 'runner.js'),
+      JSON.stringify(도구시작('t1', 'Edit', { file_path: 'src/runner.js' }, { 뿌리 }).locations));
+
+    // 결과의 절대 경로와 인자의 상대 경로가 같은 파일이면 한 줄이어야 한다.
+    // 안 그러면 열리는 링크와 안 열리는 링크가 나란히 뜬다.
+    const 겹친것 = 도구자리('Edit', { file_path: 'src/runner.js' },
+      { changed: join(뿌리, 'src', 'runner.js') }, { 뿌리 });
+    check('★ 같은 파일이 두 줄로 안 뜬다', 겹친것.length === 1, JSON.stringify(겹친것));
+
+    // 되살린 화면에서도 같다 — 지난 대화의 링크가 다 죽어 있으면 안 된다.
+    const 되 = 되살린것([
+      { role: 'assistant', content: '', tool_calls: [{ id: 'x1', type: 'function', function: { name: 'Edit', arguments: JSON.stringify({ file_path: 'src/runner.js' }) } }] },
+      { role: 'tool', tool_call_id: 'x1', content: '고쳤습니다' },
+    ], { 뿌리 });
+    check('★★ 되살린 도구의 링크도 열린다',
+      되[0]?.locations?.[0]?.path === join(뿌리, 'src', 'runner.js'), JSON.stringify(되[0]?.locations));
+  }
+
+  /*
+   * ★★★ 펼 줄 아는 것과 **펴라고 시키는 것**은 다른 자리다.
+   *
+   * 위의 검사는 map.js 가 뿌리를 받으면 편다는 것만 잰다. 그런데 뿌리를
+   * 넘기는 쪽은 serve.js 이고, 거기서 한 자리만 빠져도 그 길로 나가는 링크는
+   * 전부 죽는다 — map.js 는 그대로 초록이고 화면에도 아무 말이 없다.
+   *
+   * 부르는 자리가 다섯이라 눈으로는 못 지킨다. 글로 지킨다.
+   */
+  {
+    const serve소스 = readFileSync(new URL('../src/acp/serve.js', import.meta.url), 'utf8');
+    const 부르는것 = /(도구자리|도구시작|도구끝남|되살린것)\s*\(/g;
+    const 뿌리없는것 = [];
+    for (const m of serve소스.matchAll(부르는것)) {
+      // 여는 괄호부터 짝이 맞는 닫는 괄호까지를 잘라 그 안에 뿌리가 있나 본다.
+      let 깊이 = 0;
+      let i = m.index + m[0].length - 1;
+      for (; i < serve소스.length; i += 1) {
+        if (serve소스[i] === '(') 깊이 += 1;
+        else if (serve소스[i] === ')') { 깊이 -= 1; if (깊이 === 0) break; }
+      }
+      const 인자 = serve소스.slice(m.index, i + 1);
+      if (!인자.includes('뿌리')) 뿌리없는것.push(`${m[1]} — ${인자.slice(0, 60)}`);
+    }
+    check(`★★★ serve 가 map 을 부르는 자리 ${[...serve소스.matchAll(부르는것)].length}곳이 전부 뿌리를 넘긴다`,
+      뿌리없는것.length === 0, 뿌리없는것.join(' · '));
+  }
+
+  /*
+   * 이름표는 에디터의 **한 줄** 머리다. 본문 줄이는 자르기() 를 쓰면 끝에
+   * `\n… (N자 줄임)` 이 붙어 머리가 두 줄이 되고, 한 줄로 자리를 잡아 둔
+   * 쪽에서 그 줄이 깨진다.
+   */
+  check('★ 이름표에 줄바꿈이 안 들어간다',
+    !도구이름표('Bash', { command: `echo ${'a'.repeat(90)}` }).includes('\n'),
+    JSON.stringify(도구이름표('Bash', { command: `echo ${'a'.repeat(90)}` })));
+  check('★ 이름이 없어도 undefined 라고 안 적는다',
+    도구이름표(undefined, { path: 'a.js' }) === '도구(a.js)', 도구이름표(undefined, { path: 'a.js' }));
 
   /*
    * 탈이 났는지는 error 만 보면 안 된다.
