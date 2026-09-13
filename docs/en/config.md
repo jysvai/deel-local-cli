@@ -581,7 +581,7 @@ screen while piping the real thing is not masking.
 | `DEEL_KEYSTORE=off` | Keep the key in the file instead of handing it to the machine keystore (Windows DPAPI · macOS keychain). For places where policy blocks PowerShell — whatever it ends up doing is printed verbatim in the `열쇠 보관` line of `/status` |
 | `DEEL_DEBUG=1` | Verbose errors |
 | `NO_COLOR` | Disable colour |
-| `DEEL_NO_MOTION=1` | Turn off the working animation (falls back to a one-cell spinner) |
+| `DEEL_NO_MOTION=1` | Turn off the working animation (falls back to a one-cell spinner). `0`, `false`, `off`, `no` and an empty value read as "don't" |
 | `DEEL_MOTION` | Change that animation — `knight` · `animal`. For this run only; `/motion` is better for keeping it. [See](interface.md#changing-the-drawing) |
 | `DEEL_OFFICE=1` | Pin a twelve-row office above the input box (same as `/motion office`). [See](interface.md#the-office--what-is-running-drawn-as-a-room) |
 

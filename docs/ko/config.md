@@ -592,7 +592,7 @@ deel config explain profiles.사내.model
 | `DEEL_KEYSTORE=off` | 열쇠를 이 PC 잠금장치(윈도우 DPAPI · 맥 키체인)에 안 맡기고 파일에 그대로 둡니다. 파워셸이 정책으로 막힌 곳에서 쓰세요 — 어디에 어떻게 두고 있는지는 `/status` 의 `열쇠 보관` 줄에 그대로 나옵니다 |
 | `DEEL_DEBUG=1` | 자세한 오류 |
 | `NO_COLOR` | 색 끄기 |
-| `DEEL_NO_MOTION=1` | 일하는 중 그림 끄기 (한 칸짜리 돌림표로) |
+| `DEEL_NO_MOTION=1` | 일하는 중 그림 끄기 (한 칸짜리 돌림표로). `0`·`false`·`off`·`no`·빈 값은 「끄지 마라」 로 읽습니다 |
 | `DEEL_MOTION` | 그 그림 바꾸기 — `기사`(knight) · `동물`(animal). 이 한 번만 다르게 볼 때 씁니다. 늘 그렇게 두려면 `/motion` 이 낫습니다. [보기](interface.md#그림을-바꾸고-싶다면) |
 | `DEEL_OFFICE=1` | 입력 상자 위에 사무실 12줄. 지금 무슨 일이 도는지를 방으로 (`/motion 사무실` 과 같음). [보기](interface.md#사무실--지금-무슨-일이-도는지를-방-하나로) |
 
