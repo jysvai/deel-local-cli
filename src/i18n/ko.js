@@ -229,6 +229,8 @@ export const ko = {
   'motion.unknown': '"{값}"{~값:은는} 모르는 그림입니다.',
   'motion.pickOne': '고를 수 있는 것:',
   'motion.envWins': '환경변수(DEEL_MOTION·DEEL_OFFICE)가 켜져 있어 그쪽이 이깁니다.',
+  'motion.envUnknown': 'DEEL_MOTION 에 적힌 "{값}" — 모르는 이름이라 무시했습니다. 설정에 고른 것이 그대로 쓰입니다.',
+  'motion.envOff': 'DEEL_NO_MOTION 이 켜져 있어 그림은 안 돕니다. 고른 것은 적어 뒀고, 그 환경변수를 치우면 그때 살아납니다.',
   'motion.tooSmall': '이 터미널은 {줄}줄 × {칸}칸입니다 — 사무실은 {최소줄}줄 × {최소칸}칸부터 뜹니다.',
   'motion.appleTerminal': '맥 기본 터미널은 줄 간격이 넓어 방에 가로줄이 그어집니다 — 터미널 › 설정 › 프로파일 › 텍스트 › 글꼴 「변경」 › 행간을 1.0 으로. (iTerm2 는 기본이 1.0 이라 멀쩡합니다)',
 
@@ -622,7 +624,7 @@ export const ko = {
   'ctx.skills': '스킬 목록 ({실림}/{전체}개)',
   'ctx.tools': '도구 정의',
   'ctx.history': '대화 이력',
-  'ctx.toolResults': '도구 결과 (파일 {n}개)',
+  'ctx.toolResults': '도구 결과 ({n}개)',
   'ctx.left': '남음',
   'ctx.compactHint': '대화 줄이기',
   'ctx.clearHint': '통째로 비우기',

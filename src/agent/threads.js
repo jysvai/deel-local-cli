@@ -68,7 +68,52 @@ export class Threads {
     }];
     this.자리 = 0;
     this.센것 = 1;
+    /*
+     * ── 닫은 갈래가 **쓴 돈**은 어디로 가나 ────────────────────────
+     *
+     * 여태 아무 데도 안 갔다. 닫기() 는 갈래를 splice 로 빼기만 했고,
+     * 그 갈래가 태운 토큰·호출·시간은 그 자리에서 사라졌다. 곁가지에서
+     * 오래 헤매다 닫고 본줄기로 돌아오면 `/cost` 는 그 값을 못 본다 —
+     * **실제로 낸 돈보다 적은 금액**이 화면에 뜬다.
+     *
+     * 갈래를 지운다고 청구서가 지워지지는 않는다. 그래서 여기에 쌓는다.
+     */
+    this.닫힌셈 = { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, 못잰것: 0 };
+    this.닫힌수 = 0;
   }
+
+  /**
+   * **모든 갈래**가 지금까지 쓴 것을 합친다. 닫은 갈래 것까지 센다.
+   *
+   * `/cost` 가 session.usage 하나만 보고 있었다. 그건 지금 갈래 것이다.
+   * 갈래를 셋 굴리면 화면의 금액은 그중 하나 몫이고, 갈래를 바꾸는
+   * 것만으로 숫자가 내려간다 — 돈은 그대로 나가는데.
+   *
+   * 지금 갈래 값은 **session 쪽**에서 가져온다.
+   *
+   * 처음에 여기 「갈래 표에 담긴 것은 마지막으로 옮길 때 담아 둔 값이라
+   * 이번 턴 것이 빠져 있다」 라고 적어 뒀는데, **그건 사실이 아니다.**
+   * #꺼내기() 가 `session.usage = g.usage` 로 **같은 객체를 물려** 주고,
+   * session 쪽에서 그 객체를 갈아 끼우는 자리는 생성자 말고는 없다.
+   * 그러니 지금은 둘이 늘 같은 값이다 — 어긋내기 판이 이 줄을 표 쪽으로
+   * 바꿔도 검사가 안 빨개져서 그걸로 알았다.
+   *
+   * 그래도 session 쪽을 읽는다. 언젠가 누가 usage 를 통째로 갈아 끼우면
+   * (되감기·이어받기가 그럴 만한 자리다) 표 쪽만 읽는 코드는 그 순간부터
+   * 조용히 적은 금액을 적는다. 값을 두 군데서 들고 있을 때는 **살아 있는
+   * 쪽**을 읽는 것이 맞다.
+   */
+  전체usage() {
+    const 합 = { ...this.닫힌셈 };
+    for (let i = 0; i < this.갈래들.length; i++) {
+      const u = (i === this.자리 ? this.session.usage : this.갈래들[i].usage) ?? {};
+      for (const k of Object.keys(합)) 합[k] += Number(u[k] ?? 0);
+    }
+    return 합;
+  }
+
+  /** 지금 갈래 것과 전부의 것이 다른가. 다를 때만 화면에 두 줄이 필요하다. */
+  갈래여럿인가() { return this.갈래들.length > 1 || this.닫힌수 > 0; }
 
   현재() { return this.갈래들[this.자리]; }
   현재store() { return this.현재().store; }
@@ -128,7 +173,10 @@ export class Threads {
     const g = {
       이름: String(이름 ?? '').trim() || 기본이름(this.센것),
       messages: 물려줄것 ? [...물려줄것] : [],
-      usage: { in: 0, out: 0, calls: 0, ms: 0, retries: 0 },
+      // session.usage 와 **같은 모양**이어야 한다. 여태 다섯 칸만 있어서
+      // 갈래에서는 캐시·생각·못잰것 칸이 아예 없었다. 더하는 자리들이 전부
+      // `?? 0` 을 써서 터지지는 않았지만, 모양이 둘인 것 자체가 다음 사람의 함정이다.
+      usage: { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, 못잰것: 0 },
       todos: null,
       // 할 일도 todos 와 같이 비워서 시작한다. 곁가지는 다른 일을 하러 나가는
       // 것이고, 물려받으면 본줄기의 남은 일을 곁가지 파일에도 적게 된다.
@@ -191,6 +239,9 @@ export class Threads {
     if (i < 0) return { ok: false, why: '그런 갈래가 없습니다.' };
     if (i === this.자리) this.#담아두기();
     const [닫은것] = this.갈래들.splice(i, 1);
+    // 갈래는 지워도 그 갈래가 낸 돈은 안 지워진다 (생성자의 닫힌셈).
+    for (const k of Object.keys(this.닫힌셈)) this.닫힌셈[k] += Number(닫은것.usage?.[k] ?? 0);
+    this.닫힌수 += 1;
     // 닫힌 자리보다 뒤에 있었으면 번호가 하나 당겨진다.
     const 다음 = i === this.자리 ? Math.max(0, i - 1) : (this.자리 > i ? this.자리 - 1 : this.자리);
     this.자리 = 다음;

@@ -555,9 +555,30 @@ export function 켜달라했나() {
   return 설정으로켰나;
 }
 
+/*
+ * `DEEL_NO_MOTION` 을 「끄라는 말」 로 읽어도 되나.
+ *
+ * `!!process.env.DEEL_NO_MOTION` 로 두고 있었다. 그러면 `DEEL_NO_MOTION=0` 도
+ * 끈다 — **끄지 말라고 적은 값이 끄는 것이다.** 바로 위 켜달라했나() 는 값을
+ * 읽어서 `DEEL_OFFICE=0` 을 껐다로 보므로, 같은 .env 에 둘을 나란히 적으면
+ * 하나만 말을 듣고 다른 하나는 반대로 간다. 그런데 화면에는 아무 말도 안 뜬다.
+ *
+ * 그래서 여기도 값을 읽는다. 안 적혀 있거나 0·false·off·no·빈 값이면 안 끈다.
+ * 그 밖의 값(1·true·yes·아무 글자)은 다 끄는 것으로 본다 — 끄려고 적었는데
+ * 철자가 달라서 안 꺼지는 쪽이 더 나쁘다.
+ *
+ * 이 자리에 두는 까닭: 이 값을 읽는 데가 셋(여기·motion.js·intro.js)인데,
+ * motion.js 가 이 파일을 가져다 쓰므로 반대로 가져오면 고리가 생긴다.
+ */
+const 안끄는값 = new Set(['', '0', 'false', 'off', 'no']);
+export function 끄라는값인가(raw = process.env.DEEL_NO_MOTION) {
+  if (raw === undefined || raw === null) return false;
+  return !안끄는값.has(String(raw).trim().toLowerCase());
+}
+
 export function 켜나(rows = process.stdout.rows, cols = process.stdout.columns) {
   if (!켜달라했나()) return false;
-  if (process.env.DEEL_NO_MOTION) return false;
+  if (끄라는값인가()) return false;
   if (!색충분한가()) return false;
   if ((cols ?? 0) < 최소폭) return false;
   return (rows ?? 0) >= 최소높이;

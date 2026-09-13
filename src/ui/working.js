@@ -119,7 +119,10 @@ export function 갈래고르기(도구이름) {
  */
 export function 문구고르기(갈래, 회차 = 0) {
   const 목록 = 문구[갈래] ?? 문구.기본;
-  const i = ((Math.trunc(회차) % 목록.length) + 목록.length) % 목록.length;
+  // `|| 0` 은 NaN 막이다. 바로 옆에서 같이 불리는 motion.js 의 그림고르기 는
+  // 이걸 하고 있었는데 여기만 안 했다 — 둘이 같은 값을 받는 자리라, 한쪽만
+  // undefined 를 돌려주면 그림은 도는데 문구 자리만 빈다.
+  const i = (((Math.trunc(회차) || 0) % 목록.length) + 목록.length) % 목록.length;
   return 목록[i];
 }
 

@@ -35,6 +35,7 @@
 import { c, cursor, width } from './ansi.js';
 import { 말 } from '../i18n/index.js';
 import * as 큰이름 from './banner.js';
+import { 끄라는값인가 } from './office.js';
 
 const 앞 = 'deel';
 const 꼬리 = '-local';
@@ -42,7 +43,7 @@ const 이름폭 = 앞.length + 꼬리.length;   // 10
 const 들여 = '  ';
 
 /** 모션을 끄는 스위치. 그림 돌림표(motion.js)와 같은 스위치를 함께 본다. */
-export const 끔 = () => !!(process.env.DEEL_NO_INTRO || process.env.DEEL_NO_MOTION);
+export const 끔 = () => 끄라는값인가(process.env.DEEL_NO_INTRO) || 끄라는값인가();
 
 /**
  * 한 틀에 얼마나 머무나.

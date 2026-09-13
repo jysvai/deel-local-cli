@@ -240,6 +240,8 @@ export const en = {
   'motion.unknown': '"{값}" is not one of the drawings.',
   'motion.pickOne': 'Pick one of:',
   'motion.envWins': 'DEEL_MOTION / DEEL_OFFICE is set, and the environment wins.',
+  'motion.envUnknown': 'DEEL_MOTION is set to "{값}", which is not a name we know — it was ignored, and your saved choice is what applies.',
+  'motion.envOff': 'DEEL_NO_MOTION is set, so nothing is drawn. Your choice is saved and takes effect once you clear that variable.',
   'motion.tooSmall': 'This terminal is {줄} x {칸} — the office needs at least {최소줄} rows and {최소칸} columns.',
   'motion.appleTerminal': "macOS Terminal spaces lines apart, so the room gets horizontal seams — Terminal › Settings › Profiles › Text › Font \"Change\" › set Line Spacing to 1.0. (iTerm2 defaults to 1.0, which is why it looks right there)",
 
@@ -575,7 +577,7 @@ export const en = {
   'ctx.skills': 'Skill list ({실림}/{전체})',
   'ctx.tools': 'Tool definitions',
   'ctx.history': 'Conversation',
-  'ctx.toolResults': 'Tool results ({n} files)',
+  'ctx.toolResults': 'Tool results ({n})',
   'ctx.left': 'Left',
   'ctx.compactHint': 'shrink the conversation',
   'ctx.clearHint': 'clear it all',

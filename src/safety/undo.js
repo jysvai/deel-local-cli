@@ -122,18 +122,54 @@ export class History {
   #maybePrune() {
     this.#writes = (this.#writes ?? 0) + 1;
     if (this.#writes % 20 !== 0) return;
+    // 앞서 못 줄였으면 한참 쉬었다가 다시 본다 (prune 의 주석).
+    if (this.#writes < this.#다음줄이기) return;
     try {
       if (statSync(this.file).size < MAX_BYTES) return;
     } catch { return; }
-    this.prune();
+    /*
+     * 줄이다 터져도 **고치던 파일까지 말려들면 안 된다.**
+     *
+     * 이 함수는 snapshot() 안에서 돈다 — 즉 Write·Edit 이 파일을 쓰기
+     * 직전이다. prune() 이 이력을 읽다 던지면(EACCES·EBUSY) 그 예외가
+     * 도구 밖으로 새어 나가, 사람은 고치려던 파일과 아무 상관 없는
+     * 「EACCES: …/edits.jsonl」 을 보게 된다. 이력을 못 줄인 것은
+     * 위쪽(줄이기못함)에 남기고, 고치는 일은 그대로 이어 간다.
+     */
+    try { this.prune(); }
+    catch (err) {
+      this.줄이기못함 = err?.message ?? String(err);
+      this.#다음줄이기 = this.#writes + 500;
+    }
   }
+
+  #다음줄이기 = 0;
+  /** 이력을 못 줄였으면 그 까닭. 못 줄이면 안전망이 제 무게로 무너진다. */
+  줄이기못함 = null;
 
   #writes = 0;
 
   /** 최근 keep 개 턴만 남기고 자른다. 버린 줄 수를 돌려준다. */
   prune({ keep = KEEP_TURNS } = {}) {
-    const recs = this.all();
-    const turns = this.turns();
+    /*
+     * ── **읽다 터지는 것**도 못 줄인 것이다 ────────────────────────────
+     *
+     * 아래 쓰기만 감싸 두고 여기 읽기는 맨몸이었다. 그런데 이력을 못 읽는
+     * 판(권한·잠김·자리가 폴더로 바뀜)은 못 쓰는 판만큼이나 흔하고, 그때
+     * 예외가 여기를 뚫고 나가면 부르는 쪽 — 파일을 쓰던 Write·Edit — 이
+     * 고치려던 파일과 아무 상관 없는 오류를 뒤집어쓴다.
+     *
+     * 못 줄인 것은 못 줄였다고 위쪽(줄이기못함)에 남기고 0을 돌려준다.
+     * 그게 이 함수가 실패를 말하는 유일한 방식이라 여기서도 같아야 한다.
+     */
+    let recs;
+    let turns;
+    try { recs = this.all(); turns = this.turns(); }
+    catch (err) {
+      this.줄이기못함 = err?.message ?? String(err);
+      this.#다음줄이기 = (this.#writes ?? 0) + 500;
+      return 0;
+    }
     if (turns.length <= keep) return 0;
     const 남길턴 = new Set(turns.slice(-keep));
     const 남길것 = recs.filter((r) => 남길턴.has(r.turn));
@@ -143,7 +179,22 @@ export class History {
       writeFileSync(this.file, 남길것.map((r) => JSON.stringify(r)).join('\n') + (남길것.length ? '\n' : ''), 'utf8');
       // 통째로 다시 쓰면 새 파일일 수 있다 — 빗장을 다시 건다 (agent/store.js 도 같다).
       this.#잠갔나 = false; this.#잠그기();
-    } catch { return 0; }
+      this.줄이기못함 = null;
+    } catch (err) {
+      /*
+       * 못 줄인 것을 **0개 버렸다**와 같은 값으로 돌려주고 있었다.
+       *
+       * 부르는 쪽은 둘을 구별할 길이 없다. 그리고 실패는 대개 이어진다 —
+       * 읽기 전용이거나 디스크가 찬 것이라 다음 번에도 같다. 그러면 이력은
+       * 32MB 를 넘긴 채 끝없이 자라는데 화면에는 영영 안 뜬다.
+       *
+       * 곧바로 또 시도하지도 않는다. 32MB 짜리 파일을 스무 번 쓸 때마다
+       * 통째로 다시 읽는 셈이라, 실패가 이어지면 그 자체가 느려지는 원인이 된다.
+       */
+      this.줄이기못함 = err?.message ?? String(err);
+      this.#다음줄이기 = (this.#writes ?? 0) + 500;
+      return 0;
+    }
     return 버린수;
   }
 
@@ -152,12 +203,30 @@ export class History {
     try { return statSync(this.file).size; } catch { return 0; }
   }
 
+  /*
+   * ── 깨진 줄은 **되돌릴 수 없는 파일**이다 ────────────────────────────
+   *
+   * 여태 `catch { return null }` 로 조용히 버렸다. 그런데 이 파일의 한 줄은
+   * 곧 한 파일의 원문이다 — 줄이 깨졌다는 것은 그 파일을 되돌릴 길이
+   * 사라졌다는 뜻이다. 그걸 안 세면 `/undo` 는 「파일 3개를 되돌렸습니다」
+   * 라고만 하고, 넷째 파일이 왜 안 돌아왔는지는 아무 데도 안 남는다.
+   *
+   * 줄은 실제로 깨진다. 쓰다 죽으면 마지막 줄이 반만 적히고, 같은 폴더에서
+   * 창을 둘 띄워 놓으면 큰 줄 둘이 서로 끼어든다(appendFileSync 는 긴 줄을
+   * 통째로 보장하지 않는다).
+   */
+  /** 마지막으로 읽을 때 깨져 있던 줄 수. 0 이 아니면 그만큼 못 되돌린다. */
+  깨진줄 = 0;
+
   all() {
     if (!existsSync(this.file)) return [];
-    return readFileSync(this.file, 'utf8')
+    let 깨진 = 0;
+    const 것들 = readFileSync(this.file, 'utf8')
       .split('\n').filter(Boolean)
-      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .map((l) => { try { return JSON.parse(l); } catch { 깨진 += 1; return null; } })
       .filter(Boolean);
+    this.깨진줄 = 깨진;
+    return 것들;
   }
 
   turns() {
@@ -232,10 +301,31 @@ export class History {
      */
     const 못한것 = new Set(restored.filter((x) => x.ok === false).map((x) => x.path));
     const keep = recs.filter((r) => !turns.includes(r.turn) || 못한것.has(r.path));
-    writeFileSync(this.file, keep.map((r) => JSON.stringify(r)).join('\n') + (keep.length ? '\n' : ''), 'utf8');
-    this.#잠갔나 = false; this.#잠그기();
+    /*
+     * ── 여기가 터지면 **파일은 이미 되돌아가 있다** ────────────────────
+     *
+     * 감싸지 않은 쓰기였다. 던지면 위에서 받아 「명령을 처리하다 막혔습니다」
+     * 한 줄만 남는다 — 그런데 디스크의 파일들은 방금 되돌아갔다. 화면이
+     * 실패라고 말하는데 실제로는 성공한, 이 저장소가 계속 잡아 온 어긋남이
+     * 방향만 뒤집힌 꼴이다.
+     *
+     * 게다가 이력을 못 줄였으니 그 턴이 그대로 남는다. 사람이 「실패했으니
+     * 다시」 하고 /undo 를 또 치면 **같은 턴**을 또 되돌린다 — 두 턴을
+     * 되돌린 줄 알지만 한 턴이다.
+     */
+    let 이력줄임 = { ok: true };
+    try {
+      writeFileSync(this.file, keep.map((r) => JSON.stringify(r)).join('\n') + (keep.length ? '\n' : ''), 'utf8');
+      this.#잠갔나 = false; this.#잠그기();
+    } catch (err) {
+      이력줄임 = { ok: false, 왜: err?.message ?? String(err) };
+    }
     return {
       restored,
+      // 이력에서 그 턴을 지웠나. 못 지웠으면 같은 턴이 그대로 남아 있다.
+      이력줄임,
+      // 이력에서 못 읽은 줄 수. 그만큼은 되돌릴 길이 애초에 없었다.
+      깨진줄: this.깨진줄,
       // 화면·감사기록이 쓰는 수. **진짜로 되돌아간 것만** 센다.
       되돌린수: restored.filter((x) => x.ok === true).length,
       못한것: restored.filter((x) => x.ok === false),

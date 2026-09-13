@@ -185,10 +185,36 @@ function 기본규칙(ctx) {
     ? (짧게 ? BASE_RULES_짧게_EN : BASE_RULES_EN)
     : (짧게 ? BASE_RULES_짧게 : BASE_RULES);
   if (시키는말 === 언어()) return 글;
+  /*
+   * ── 말이 넷인데 갈래가 둘이었다 ──────────────────────────────────────
+   *
+   * 화면 말은 ko·en·ja·zh 넷이다(i18n/index.js 의 언어들). 그런데 여기는
+   * 「한국어면 한국어, 아니면 영어」 두 갈래였다. 그래서 일본어로 켠 사람은
+   * 규칙 끝에 이런 꼬리를 받았다 —
+   *
+   *   **Answer in English.** The rules above are in Korean…
+   *
+   * 두 군데가 틀렸다. 답은 일본어여야 하고, 위 규칙은 (시키는말이 en 이라)
+   * 한국어가 아니라 영어다. 화면은 일본어인데 모델은 영어로 답한다 —
+   * 실패가 아니라 **다른 것을 해 놓고 아무 말도 안 하는** 쪽이라, 쓰는
+   * 사람은 이게 설정 탓인지 모델 탓인지 알 길이 없다.
+   */
+  const 말이름 = { ko: '한국어', en: 'English', ja: '日本語', zh: '中文' };
+  const 규칙말 = 말이름[시키는말] ?? 시키는말;
+  const 답할말 = 말이름[언어()] ?? 언어();
   return `${글}\n\n${언어() === 'ko'
-    ? '**답은 한국어로 해라.** 위 규칙이 영어로 적혀 있어도 사용자에게 하는 말은 한국어다.'
-    : '**Answer in English.** The rules above are in Korean, but what you say to the user is English.'}`;
+    ? `**답은 한국어로 해라.** 위 규칙이 ${규칙말} 로 적혀 있어도 사용자에게 하는 말은 한국어다.`
+    : `**Answer in ${답할말}.** The rules above are in ${규칙말}, but what you say to the user is ${답할말}.`}`;
 }
+
+/**
+ * 규칙 파일에서 프롬프트에 실을 최대 글자 수.
+ *
+ * 여기 실리는 글은 **매 요청에 통째로** 나간다. 상한이 없으면 규칙 파일
+ * 하나가 8k 모델의 창을 다 먹는다. 그래서 상한은 두되, 넘으면 반드시
+ * 말한다 (#loadRules 의 규칙잘림).
+ */
+const 규칙최대 = 20000;
 
 export class Session {
   constructor(conn, { root, mode = 'auto', work = null, level = null, think = 'medium', effort = 'save', web = true, maxSteps = null } = {}) {
@@ -325,6 +351,13 @@ export class Session {
     this.startedAt = Date.now();
     /** 규칙 파일이 있는데 못 읽었나. `{이름, 까닭}` — /status 가 이걸 말한다. */
     this.규칙못읽음 = null;
+    /**
+     * 규칙 파일을 **잘라서** 실었나. `{이름, 원본, 실린}`
+     *
+     * 못 읽은 것과 반만 읽은 것은 사람에게 같은 상태다 — 적어 뒀는데 안
+     * 걸렸다. 그래서 옆자리에 나란히 둔다.
+     */
+    this.규칙잘림 = null;
     this.rules = this.#loadRules();
     /*
      * 이 폴더가 무슨 프로젝트인가 (agent/project.js).
@@ -365,10 +398,40 @@ export class Session {
    * 안 걸린 채로 일이 돈다. 「운영 DB 는 건드리지 마라」 를 적어 놓고 그게
    * 안 걸린 것이 여기서 나올 수 있는 제일 나쁜 모양이다.
    * 못 읽은 것은 적어 두고 /status 가 '없음' 대신 그 까닭을 말한다.
+   *
+   * ── **반만 읽는 것**도 같은 모양이다 ──────────────────────────────────
+   *
+   * 바로 위 문단이 「운영 DB 는 건드리지 마라 를 적어 놓고 그게 안 걸린
+   * 것이 여기서 나올 수 있는 제일 나쁜 모양이다」 라고 적어 두고서, 정작
+   * 2만 자에서 자르는 것은 아무 데도 안 알렸다. 21,000자짜리 DEEL.md 의
+   * 마지막 줄에 그 문장이 있으면 모델에게는 **한 글자도 안 간다.**
+   *
+   *   /status  → 규칙  DEEL.md          (이름만. 잘렸다는 말이 없다)
+   *   /context → 규칙 (DEEL.md) 19,998  (자른 뒤 크기라 표도 멀쩡하다)
+   *   규칙못읽음 → null                  (이 칸은 오류만 담는다)
+   *
+   * 상한 자체는 그대로 둔다 — 여기 실리는 글은 매 요청에 통째로 나가서,
+   * 8k 모델이면 규칙 하나가 창을 다 먹는다. 대신 잘랐으면 **화면에도
+   * 모델에게도** 말한다.
    */
   #loadRules() {
     for (const name of ['DEEL.md', 'CLAUDE.md', 'AGENTS.md', 'GEMINI.md']) {
-      try { return { name, text: readFileSync(join(this.root, name), 'utf8').slice(0, 20000) }; }
+      try {
+        const 통째 = readFileSync(join(this.root, name), 'utf8');
+        if (통째.length <= 규칙최대) return { name, text: 통째 };
+        this.규칙잘림 = { 이름: name, 원본: 통째.length, 실린: 규칙최대 };
+        /*
+         * 자른 자리에 **모델도 읽을 한 줄**을 남긴다.
+         *
+         * 화면에만 적으면 모델은 제가 반쪽 규칙을 들고 있다는 것을 모른다.
+         * 그러면 안 실린 규칙을 어긴 뒤에도 「규칙대로 했다」 고 말한다.
+         */
+        return {
+          name,
+          text: `${통째.slice(0, 규칙최대)}\n\n(이 규칙 파일은 ${통째.length.toLocaleString()}자라 앞 ${규칙최대.toLocaleString()}자만 실렸다.`
+            + ' 뒷부분에 적힌 규칙은 지금 네게 안 보인다 — 규칙에 걸릴 만한 일을 하기 전에 사용자에게 확인해라.)',
+        };
+      }
       catch (err) {
         // 없으면 그냥 없는 것이다 — 말할 일이 아니다. existsSync 로 먼저 보지
         // 않는 이유도 여기 있다: 보고 나서 읽는 사이에 지워지면 그 ENOENT 를
@@ -732,7 +795,48 @@ export class Session {
      * 적어 보내게 된다. 여기서 한 줄 지우면 그냥 통째로 다시 읽는다.
      */
     this.파일기억?.잊기();
+    /*
+     * 남은 할 일과 시킨 말도 같이 버린다 — clear() 와 **똑같은 까닭**이다.
+     *
+     * 바로 위 문단이 「clear() 가 하는 것과 같은 까닭이다」 라고 적어 놓고
+     * 정작 이 둘은 안 버리고 있었다. 이 둘은 접거나 줄일 때 다시 박히는
+     * 것들이라(못박을것), 되감은 뒤에도 들고 있으면 **되돌린 그 일**이
+     * 첫 접힘에서 되살아나 프롬프트에 붙는다. 모델은 그걸 지금 시킨
+     * 것으로 알고 방금 되돌린 일을 다시 하러 간다 — /undo 를 안 한 것만
+     * 못하다.
+     *
+     * 이번요청은 다음 턴에 loop.js 가 새 말로 덮지만, 그 사이에 /compact
+     * 를 치면 그대로 박힌다. 할 일 목록은 턴을 넘어 사는 값이라 덮이지도
+     * 않는다 — 이쪽이 실제로 밟히는 길이다.
+     */
+    this.할일 = [];
+    this.이번요청 = '';
+    this.검증확인지우기();
+    /*
+     * 읽은 파일 표도 같이 턴다.
+     *
+     * 파일기억 은 바로 위에서 잊었는데 이 표는 남아 있었다. 사무실 화면이
+     * 「읽은 파일 N개」 를 이 표의 크기로 적으므로(ui/office.js), 걷어낸
+     * 대화에서 읽은 파일이 계속 세어진다.
+     */
+    this.filesRead?.clear?.();
     return { 걷은것: 전 - this.messages.length, 고친것: 고침.고친것, 사람말, 턴: 표들.map((x) => x.턴) };
+  }
+
+  /**
+   * 「확인했다」 표시를 지운다 (/clear · /undo).
+   *
+   * 상태줄의 초록 `✓5` 는 「돌려 봤고 아무 탈 없었다」 는 뜻이다. 그런데
+   * 그 확인은 **그때 그 코드**를 확인한 것이라, 대화를 비우거나(/clear)
+   * 되돌리면(/undo) 확인한 대상이 사라진다. 그대로 두면 새로 시작한 일의
+   * 화면에, 그리고 방금 없앤 코드에 대해 초록 체크가 그대로 서 있다.
+   *
+   * 돈(usage)과 바뀐 파일(changes)은 안 지운다 — 돈은 실제로 썼고 파일은
+   * 실제로 바뀐 채다. 검증만 다르다.
+   */
+  검증확인지우기() {
+    if (this.검증) this.검증 = { 돈횟수: 0, 확인: 0, 탈: 0, 못확인: 0 };
+    return this;
   }
 
   push(msg) {
@@ -755,6 +859,7 @@ export class Session {
      */
     this.할일 = [];
     this.이번요청 = '';
+    this.검증확인지우기();
     this.#턴표 = [];
     this.#다음턴 = null;
     return this;
@@ -769,10 +874,27 @@ export class Session {
    * 스무 번 고치면 그것만으로 수십 MB 다. 여기서는 숫자만 센다.
    */
   noteChange(path, d) {
-    if (!path || !d) return;
+    if (!path) return;
+    /*
+     * ── 「몇 줄인지 모른다」 와 「안 바뀌었다」 는 다르다 ────────────────
+     *
+     * `!d` 로 같이 걸러 내고 있었다. 그런데 바뀐 **경로는 주는데 몇 줄인지
+     * 안 주는** 도구가 있다 — Move(파일 하나)와 hwpx Write 가 그렇다.
+     * 파일은 진짜로 옮겨졌는데 이 집합에 안 들어가고, 그러면
+     *
+     *   /diff   목록에 없다
+     *   상태줄  ✎ 수에 안 든다
+     *   /commit 담는 목록에 없다 (commit.js 가 이 집합만 본다)
+     *
+     * 커밋은 초록으로 끝나는데 옮긴 파일만 안 담긴다. 실패가 아니라
+     * **다른 것을 해 놓고 아무 말도 안 하는** 쪽이라 알아채기가 어렵다.
+     *
+     * 셈을 모르면 0으로 적는다 — 0줄 바뀐 것이 아니라 「몇 줄인지 못 셌다」
+     * 는 뜻이고, 바뀌었다는 사실 자체는 남는다.
+     */
     const 앞 = this.changes.get(path) ?? { added: 0, removed: 0, times: 0 };
-    앞.added += d.added ?? 0;
-    앞.removed += d.removed ?? 0;
+    앞.added += d?.added ?? 0;
+    앞.removed += d?.removed ?? 0;
     앞.times += 1;
     this.changes.set(path, 앞);
   }
@@ -831,7 +953,24 @@ export class Session {
     const 추정 = this.#원추정().used;
     if (추정 < 200) return null;
     const 비율 = n / 추정;
-    if (비율 < 0.5 || 비율 > 2) return null;
+    /*
+     * 못 믿을 표본은 안 쓴다 — 그런데 **버린 것도 센다.**
+     *
+     * 여태 그냥 return 이었다. 그래서 두 가지가 화면에서 똑같아졌다 —
+     *
+     *   ① 아직 한 번도 못 재 봤다 (usage 를 안 주는 창구)
+     *   ② 재 봤는데 우리 추정의 세 배라 못 믿어서 안 썼다
+     *
+     * 둘 다 `/context` 에 「추정입니다」 한 줄로 뜬다. ②는 우리 추정이
+     * 크게 틀렸다는 **단서**인데, 그것이 매번 조용히 버려지니 게이지는
+     * 영영 짐작인 채로 돈다. 바로 위 못잰것 칸이 「0 을 더하면 합계는
+     * 그대로라 화면에 아무 표가 안 난다」 고 적어 둔 것과 같은 잣대다.
+     */
+    if (비율 < 0.5 || 비율 > 2) {
+      this.보정버림 = (this.보정버림 ?? 0) + 1;
+      this.보정마지막버린비율 = 비율;
+      return null;
+    }
     // 첫 번은 그대로 받고, 그 뒤로는 천천히 따라간다. 한 번 튄 값에 안 휘둘린다.
     this.보정 = this.보정잰것 ? this.보정 + (비율 - this.보정) * 0.3 : 비율;
     this.보정잰것++;
@@ -840,20 +979,49 @@ export class Session {
 
   /** 보정을 안 먹인 날 추정. 배운다() 가 견주는 값이다. */
   #원추정() {
-    // 폴더 지문도 매 요청에 통째로 나간다. 시스템 프롬프트 쪽에 같이 센다 —
-    // 안 세면 '남은 자리' 가 그만큼 뻥튀기되고, effort.js 가 그 값으로 출력
-    // 상한을 잡으므로 답이 조용히 잘리기 시작한다.
-    const sys = estimateTokens(기본규칙(this.conn?.ctx)) + estimateTokens(`작업 폴더: ${this.root}`)
-      + estimateTokens(모드말(this.effectiveWork(), this.conn?.ctx) ?? '')
-      + estimateTokens(this.프로젝트 ?? '');
     const rules = this.rules ? estimateTokens(this.rules.text) : 0;
     const listed = this.listedSkills();
     const skills = listed.length
       ? estimateTokens(listed.map((s) => `${s.name}: ${String(s.description ?? '').slice(0, this.maxSkillDesc)}`).join('\n'))
       : 0;
+    const 배움 = this.배움요약 ? estimateTokens(this.배움요약) : 0;
+    // 기억도 매 요청에 통째로 나간다 — 아래 시스템 칸에서 빼려면 여기서 먼저 잰다.
+    const 기억 = this.memory ? estimateTokens(this.memory) : 0;
+    const 기억줄 = this.memory ? this.memory.split('\n').filter((l) => l.startsWith('- ')).length : 0;
+
+    /*
+     * ── 시스템 칸은 **실제로 나가는 글**에서 잰다 ──────────────────────
+     *
+     * 여태 여기서 조각을 손으로 다시 나열했다. 그리고 셋이 빠져 있었다 —
+     * 셸 안내, 급말(작은 모델에 붙는 문단), 그리고 **사람이 못 박은 글**.
+     * 못 박은 글은 사람이 얼마든지 길게 쓸 수 있는 자리다.
+     *
+     * 바로 이 자리 주석이 「안 세면 남은 자리가 뻥튀기되고, effort.js 가 그
+     * 값으로 출력 상한을 잡으므로 답이 조용히 잘리기 시작한다」 라고 적어
+     * 두고서 셋을 빠뜨렸다. 손으로 나열하는 한 또 빠진다 — 프롬프트에
+     * 한 줄을 더할 때 이 자리를 같이 고칠 사람은 없다.
+     *
+     * 그래서 **한 곳만 본다.** 진짜 시스템 글을 통째로 재고, 아래 표에서
+     * 따로 줄을 갖는 것들(규칙·기억·배움·스킬)을 빼면 남는 것이 시스템
+     * 칸이다. 앞으로 무엇이 더 붙어도 저절로 세어진다.
+     */
+    const sys = Math.max(0, estimateTokens(this.systemPrompt()) - (rules + 기억 + 배움 + skills));
 
     let history = 0;
     let files = 0;
+    /*
+     * 도구 결과가 **몇 개**인지도 센다.
+     *
+     * 표의 라벨에 `this.filesRead.size` 를 넘기고 있었다. 그건 Read 로 연
+     * 파일 수다. 그런데 토큰 합(files)은 Bash·Grep·Glob 을 포함한 **모든**
+     * 도구 결과다. Bash 만 열 번 돌린 판에서 표는 이렇게 나온다 —
+     *
+     *   도구 결과 (파일 0개)   2,150
+     *
+     * 무엇을 접어야 할지 보라고 만든 표가 「0개인데 2,150토큰」 이라고
+     * 말한다. 세는 것과 적는 것이 달랐다.
+     */
+    let 도구결과수 = 0;
     for (const m of this.messages) {
       /*
        * 그림은 글자 수로 세지 않는다.
@@ -871,16 +1039,12 @@ export class Session {
       // 도구 결과는 규격마다 다른 자리에 온다. `role` 만 보면 Anthropic 에서는
       // 도구 결과가 통째로 '대화' 로 세어져서, /context 가 「도구 결과 0 토큰」
       // 이라고 적는다 — 무엇을 접어야 할지 보라고 만든 표가 거꾸로 가리킨다.
-      if (도구결과인가(m)) files += t; else history += t;
+      if (도구결과인가(m)) { files += t; 도구결과수 += 1; } else history += t;
     }
 
     // 도구 정의도 매 요청에 실려 나간다. 세는 값이라기보다 '이미 나간 값' 이다.
     const 도구 = this.#도구토큰();
 
-    // 기억도 매 요청에 통째로 나간다. 안 세면 '남은 자리' 가 그만큼 뻥튀기되고,
-    // effort.js 가 그 값으로 출력 상한을 잡으므로 답이 조용히 잘리기 시작한다.
-    const 기억 = this.memory ? estimateTokens(this.memory) : 0;
-    const 기억줄 = this.memory ? this.memory.split('\n').filter((l) => l.startsWith('- ')).length : 0;
 
     /*
      * 이름은 화면에 그대로 나간다(`/context`). 그래서 여기서 말 표를 거친다.
@@ -892,11 +1056,13 @@ export class Session {
       { label: 옮긴말('ctx.system'), n: sys },
       { label: this.rules ? 옮긴말('ctx.rules', { 이름: this.rules.name }) : 옮긴말('ctx.rulesNone'), n: rules },
       { label: 옮긴말('ctx.memory', { n: 기억줄 }), n: 기억 },
-      { label: 옮긴말('ctx.learned'), n: this.배움요약 ? estimateTokens(this.배움요약) : 0 },
-      { label: 옮긴말('ctx.skills', { 실림: listed.length, 전체: this.skills.length }), n: skills },
+      { label: 옮긴말('ctx.learned'), n: 배움 },
+      // 전체는 **켜 둔 것**만 센다. 시스템 글에 실릴 수 있는 것이 그것뿐이라,
+      // 꺼 둔 스킬까지 세면 「40개 중 12개 실림」 처럼 영영 안 채워질 수가 뜬다.
+      { label: 옮긴말('ctx.skills', { 실림: listed.length, 전체: this.skills.filter((s) => s.enabled !== false).length }), n: skills },
       { label: 옮긴말('ctx.tools'), n: 도구 },
       { label: 옮긴말('ctx.history'), n: history },
-      { label: 옮긴말('ctx.toolResults', { n: this.filesRead.size }), n: files },
+      { label: 옮긴말('ctx.toolResults', { n: 도구결과수 }), n: files },
     ];
     const used = rows.reduce((a, r) => a + r.n, 0);
     /*
@@ -908,8 +1074,10 @@ export class Session {
      * 상태줄이 모델 급은 짐작일 때 `◈ 보통?` 으로 흐리게 적는다 — 창 크기도
      * 같은 규칙을 따라야 한다(ui/status.js).
      */
-    const 잰것 = this.conn.ctx != null;
-    const total = this.conn.ctx ?? 32768;
+    // 이 자리만 `?.` 가 빠져 있었다 — 다른 다섯 자리는 전부 this.conn?.ctx 다.
+    // conn 없이 만든 세션에서 breakdown() 이 TypeError 로 죽는다.
+    const 잰것 = this.conn?.ctx != null;
+    const total = this.conn?.ctx ?? 32768;
     return { rows, used, total, 총잰것: 잰것, left: Math.max(0, total - used) };
   }
 
@@ -921,7 +1089,15 @@ export class Session {
    */
   breakdown() {
     const 날것 = this.#원추정();
-    if (!(this.보정잰것 > 0) || this.보정 === 1) return 날것;
+    /*
+     * 보정이 1 이어도 **잰 것은 잰 것**이다.
+     *
+     * 여기서 날것을 그대로 돌려주면 그 객체에는 보정잰것 칸이 없다. 그래서
+     * 디스크에 남은 배수가 정확히 1.0 인 판에서는 /context 가 「추정입니다」
+     * 갈래로 간다 — 숫자는 맞는데 얼마나 믿을 값인지만 틀리게 적힌다.
+     */
+    if (!(this.보정잰것 > 0)) return 날것;
+    if (this.보정 === 1) return { ...날것, 보정: 1, 보정잰것: this.보정잰것 };
     const rows = 날것.rows.map((r) => ({ ...r, n: Math.round(r.n * this.보정) }));
     const used = rows.reduce((a, r) => a + r.n, 0);
     return {
@@ -947,7 +1123,9 @@ export class Session {
     const mcp수 = (this.mcp ?? []).reduce((n, s) => n + (s.도구?.length ?? 0), 0);
     // 창 크기도 열쇠에 넣는다. 설명을 창에 맞춰 줄여 싣기 때문에(budget.js),
     // /ctx 로 창을 다시 잡으면 이 값도 달라져야 한다. 안 넣으면 옛 값이 남는다.
-    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${this.web !== false ? 'web' : ''}|${this.lsp ? 'lsp' : ''}|mcp${mcp수}|c${this.conn?.ctx ?? 0}`;
+    // 눈 유무도 열쇠에 넣는다. 아래에서 vision 을 넘겨 쓰기 때문에 그 값이
+    // 바뀌면 스키마 크기도 바뀐다 — 안 넣으면 모델을 갈아 끼워도 옛 값이 남는다.
+    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${this.web !== false ? 'web' : ''}|${this.lsp ? 'lsp' : ''}|mcp${mcp수}|c${this.conn?.ctx ?? 0}|v${this.conn?.vision === true ? 1 : 0}`;
     if (this.#도구잰것.has(열쇠)) return this.#도구잰것.get(열쇠);
     let n = 0;
     try {
@@ -964,7 +1142,30 @@ export class Session {
         vision: this.conn?.vision === true,
       });
       n = estimateTokens(JSON.stringify(list));
-    } catch { n = 0; }
+      this.도구못쟀나 = null;
+    } catch (err) {
+      /*
+       * 못 잰 것을 **0 으로** 넘기고 있었다.
+       *
+       * 도구 정의는 매 요청에 통째로 실려 나간다. 여기가 0 이면 /context 는
+       * 그만큼 빈자리가 있다고 말하고, effort.js 는 그 값으로 출력 상한을
+       * 잡는다 — 바로 위 주석이 「답이 이유 없이 짧아진다」 고 적어 둔 그
+       * 길이다. 던지는 자리는 MCP 서버가 이상한 스키마를 준 판이라
+       * 드물지도 않다.
+       *
+       * 0 대신 **못 쟀다고 남긴다.** 값은 여전히 0 이지만, 0 인 것과 못
+       * 잰 것이 구별된다 (/status 가 이 표를 읽는다).
+       */
+      /*
+       * 실패값은 **캐시에 굳히지 않는다.**
+       *
+       * 여기서 같이 넣어 두면 그 세션에서 이 열쇠는 영영 0 이다. MCP 서버가
+       * 다시 붙어 스키마가 멀쩡해져도 0 이 나온다 — 고쳐진 뒤에도 안 고쳐진
+       * 값을 쓴다. 다음 번에 한 번 더 재 보는 값이 훨씬 싸다.
+       */
+      this.도구못쟀나 = String(err?.message ?? err);
+      return 0;
+    }
     this.#도구잰것.set(열쇠, n);
     return n;
   }
@@ -1073,11 +1274,27 @@ export function safeCut(messages, i) {
  * 머리 쪽 자르는 자리.
  * 머리가 '결과를 기다리는 도구 호출' 로 끝나면 그 결과가 접혀 없어져 짝이 깨진다.
  * 그런 assistant 는 머리에서 뺀다 — 접히는 쪽에 같이 넘긴다.
+ *
+ * ── **결과 한가운데**에서 끊는 것도 같은 고장이다 ──────────────────────
+ *
+ * 여태 부름만 보고 물러섰다. 그런데 한 번에 여러 도구를 부르면 결과도
+ * 여러 줄이라, 그 사이에서 끊기면 부름 둘에 결과 하나가 남는다.
+ *
+ *   [사람, assistant(A,B), 결과A, 결과B, …] 에서 safeHead(_, 3)
+ *     → messages[2] 는 결과A 라 부름이 0개 → 그대로 멈춤
+ *     → 머리 = 사람 + assistant(A,B) + 결과A   ← 결과B 가 없다
+ *
+ * 그 뒤 요청은 통째로 400 이다. 접기가 물러설 자리로 쓰는 길이라,
+ * 서버가 흔들릴 때 하필 여기서 대화가 죽는다.
+ *
+ * 결과 줄에서도 물러선다. 그러면 반드시 부름 앞까지 밀려나므로, 머리는
+ * 언제나 **짝이 온전한 자리**에서 끝난다. 머리에서 한둘 더 빠지는 값은
+ * 치른다 — 그쪽으로 틀리는 편이 낫다.
  */
 export function safeHead(messages, k) {
   let h = Math.max(0, Math.min(k, messages.length));
-  // 부름이 담긴 자리도 규격마다 다르다 — safeCut 과 같은 까닭이다.
-  while (h > 0 && 부른것들(messages[h - 1]).length) h--;
+  // 부름도 결과도 규격마다 다른 자리에 온다 — safeCut 과 같은 까닭이다.
+  while (h > 0 && (부른것들(messages[h - 1]).length || 도구결과인가(messages[h - 1]))) h--;
   return h;
 }
 
@@ -1107,12 +1324,41 @@ export function safeHead(messages, k) {
  *
  * @returns {{messages: object[], 고친것: number}} 고친것 = 걷어낸 호출·결과 수
  */
-/** 남길 부름만 남긴 새 메시지. 규격마다 부름이 담긴 자리가 다르다. */
-function 부름줄이기(m, 남길id) {
+/**
+ * 남길 부름만 남긴 새 메시지. 규격마다 부름이 담긴 자리가 다르다.
+ *
+ * ── **id 가 아예 없는 규격**이 있다 ────────────────────────────────────
+ *
+ * Ollama 는 도구 부름에 id 를 안 붙인다. 그래서 위에서 짝지을 때도
+ * `부름.slice(0, 결과.length)` 로 **순서**를 봤다. 그런데 여기는 id 로만
+ * 걸렀다 — id 가 없으니 `남길id` 는 늘 비어 있고, 필터는 전부 떨어진다.
+ *
+ *   assistant(bash, read) + tool(bash) 하나
+ *     → 남길부름 = [bash]  (여기까지는 맞다)
+ *     → 남길id   = {}      (id 가 없으니까)
+ *     → 결과      = 부름 0개짜리 assistant + 결과 1개
+ *
+ * 짝 깨짐을 없애겠다는 함수가 짝 깨짐을 **만들어** 내고 있었다. 그 이력을
+ * 그대로 보내면 서버가 400 으로 거절하고, 사람 눈에는 이어하기가 고장 난
+ * 것으로 보인다.
+ *
+ * 그래서 짝지을 때와 **같은 잣대**로 고른다 — id 가 있으면 id 로, 없으면
+ * 앞에서부터 남길수 개로.
+ */
+function 부름줄이기(m, 남길id, 남길수) {
+  const 순서로 = 남길id.size === 0;
+  const 고르기 = (있는것, 부름인가) => {
+    let 센것 = 0;
+    return 있는것.filter((x) => {
+      if (!부름인가(x)) return true;
+      if (순서로) return 센것++ < 남길수;
+      return 남길id.has(x?.id);
+    });
+  };
   if (Array.isArray(m.content)) {
-    return { ...m, content: m.content.filter((b) => b?.type !== 'tool_use' || 남길id.has(b.id)) };
+    return { ...m, content: 고르기(m.content, (b) => b?.type === 'tool_use') };
   }
-  return { ...m, tool_calls: (m.tool_calls ?? []).filter((c) => 남길id.has(c?.id)) };
+  return { ...m, tool_calls: 고르기(m.tool_calls ?? [], () => true) };
 }
 
 /** 이 메시지가 사람에게 한 말만. 부름 블록은 뺀다. */
@@ -1174,7 +1420,7 @@ export function repairToolPairs(messages) {
     고친것 += (부름.length - 남길부름.length) + (결과.length - 남길결과.length);
 
     if (남길부름.length) {
-      out.push(남길부름.length === 부름.length ? m : 부름줄이기(m, 남길id));
+      out.push(남길부름.length === 부름.length ? m : 부름줄이기(m, 남길id, 남길부름.length));
       out.push(...남길결과);
       continue;
     }

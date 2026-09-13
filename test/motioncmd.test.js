@@ -96,7 +96,95 @@ trace('3-끄는-길-둘이-안-싸우나');
   환경치우기();
 }
 
-trace('4-끝');
+trace('4-화면이-하는-말이-사실인가');
+
+/*
+ * ── 고른 것이 안 먹히는 판에서 **안 먹힌다고 말하나** ────────────────────
+ *
+ * 위 3번은 「환경변수가 이긴다」 는 **동작**을 잰다. 동작은 맞았다. 틀린 것은
+ * 그때 화면이 하는 말이었다 —
+ *
+ *   DEEL_NO_MOTION=1 인 채로 /motion 기사
+ *     ✓ 기사로 바꿨습니다. — 중세 기사가 칼을 휘두릅니다
+ *        다음 판부터 바로 보입니다. 설정에도 남았습니다.     ← 안 보인다
+ *
+ * 바로 위에서 사무실이 작은 터미널에 안 뜬다고 굳이 알려 주면서(「켰다고
+ * 말해 놓고 안 보이면 그게 고장이다」), 같은 일이 환경변수로 일어날 때는
+ * 아무 말도 안 했다.
+ *
+ * 그리고 반대쪽 — `DEEL_MOTION=cat` 은 **안 이기는데** 「환경변수가
+ * 이깁니다」 라고 적혔다. 사람은 설정을 바꿔도 소용없다고 믿고 손을 뗀다.
+ */
+import { handle } from '../src/commands.js';
+import { Session } from '../src/agent/session.js';
+import { makeScope } from '../src/safety/guard.js';
+import { History } from '../src/safety/undo.js';
+import { Audit } from '../src/safety/audit.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+{
+  process.env.DEEL_HOME = mkdtempSync(join(tmpdir(), 'deel-motion-home-'));
+  const 뿌리 = mkdtempSync(join(tmpdir(), 'deel-motion-'));
+  const conn = { kind: 'openai', base: 'http://127.0.0.1:1/v1', auth: 'none', key: null,
+    model: '검사용', ctx: 32768, streaming: false, tools: false, json: false, think: false };
+  const ctx = { scope: makeScope(뿌리), history: new History(뿌리), audit: new Audit(뿌리), seen: new Set() };
+  const session = new Session(conn, { root: 뿌리, mode: 'auto', think: 'medium', effort: 'save' });
+
+  const 눌러보기 = async (줄) => {
+    const 원래 = process.stdout.write.bind(process.stdout);
+    let 담김 = '';
+    process.stdout.write = (조각) => { 담김 += String(조각); return true; };
+    try { await handle(줄, session, ctx); } finally { process.stdout.write = 원래; }
+    return 담김.replace(/\[[0-9;]*m/g, '');
+  };
+
+  환경치우기();
+  process.env.DEEL_NO_MOTION = '1';
+  const 껐을때 = await 눌러보기('/motion 기사');
+  check('★★ 환경변수가 꺼 놨으면 안 돈다고 말한다', /DEEL_NO_MOTION/.test(껐을때),
+    껐을때.split('\n').filter((l) => l.trim()).join(' / ').slice(0, 110));
+  check('★★ 그 판에서 「바로 보입니다」 라고 안 한다', !/바로 보입니다/.test(껐을때));
+  check('고른 것 자체는 적어 둔다', 테마이름() === '기사', 테마이름());
+
+  환경치우기();
+  적용하기('동물');
+  process.env.DEEL_MOTION = 'cat';
+  const 모를때 = await 눌러보기('/motion 동물');
+  check('환경변수가 정말로 안 이긴다', 테마이름() === '동물', 테마이름());
+  check('★★ 안 이기는데 이긴다고 안 한다', !/그쪽이 이깁니다/.test(모를때),
+    모를때.split('\n').filter((l) => l.trim()).join(' / ').slice(0, 110));
+  check('★ 모르는 이름이라 무시했다고 말한다', /모르는 이름/.test(모를때));
+
+  환경치우기();
+  적용하기('동물');
+  process.env.DEEL_MOTION = 'knight';
+  const 이길때 = await 눌러보기('/motion 동물');
+  check('진짜로 이길 때는 이긴다고 말한다', /그쪽이 이깁니다/.test(이길때),
+    이길때.split('\n').filter((l) => l.trim()).join(' / ').slice(0, 110));
+  check('그리고 실제로 이긴다', 테마이름() === '기사', 테마이름());
+
+  /*
+   * `DEEL_NO_MOTION=0` 은 **끄지 말라는 말**이다.
+   *
+   * `!!process.env.DEEL_NO_MOTION` 로 두면 그 값도 끈다. 바로 옆 DEEL_OFFICE 는
+   * 값을 읽어서 0 을 껐다로 보므로(위 2번), 같은 .env 에 둘을 나란히 적으면
+   * 하나만 말을 듣고 다른 하나는 반대로 간다 — 화면에는 아무 말도 없이.
+   */
+  환경치우기();
+  for (const [값, 바라는것] of [['0', false], ['false', false], ['off', false], ['', false],
+    ['1', true], ['true', true], ['yes', true]]) {
+    process.env.DEEL_NO_MOTION = 값;
+    적용하기('기사');
+    check(`DEEL_NO_MOTION=${JSON.stringify(값)} → ${바라는것 ? '끈다' : '안 끈다'}`,
+      끔() === 바라는것, `끔()=${끔()}`);
+  }
+  환경치우기();
+  적용하기('기본');
+}
+
+trace('5-끝');
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n/motion 명령  ${D}(고른 것이 실제로 화면에 물리나)${X}\n`);

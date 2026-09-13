@@ -297,6 +297,8 @@ const 한숨 = () => new Promise((풀기) => setImmediate(풀기));
 export async function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS, ignore = true, signal = null } = {}) {
   const out = [];
   const 건너뜀 = { 폴더: 0, 파일: 0 };
+  // .gitignore 로 건너뛴 것과 다르다 — 이쪽은 우리가 늘 안 보는 살림 폴더다.
+  const 건너뛴살림 = [];
   let 끊김 = false;
   let 본것 = 0;
   const stack = [{ dir: root, rel: '', 규칙: ignore ? 뿌리규칙읽기(root) : [] }];
@@ -315,7 +317,10 @@ export async function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS,
       const full = join(dir, e.name);
       const erel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
-        if (skipDirs.has(e.name)) continue;
+        // 살림 폴더(node_modules·.git·dist…)는 안 훑는다. 다만 **몇 개를
+        // 안 봤는지는 센다** — Move 가 폴더를 통째로 옮길 때 이 수를 모르면
+        // 「폴더 12개 파일」 이라고 말해 놓고 3만 개를 옮기게 된다.
+        if (skipDirs.has(e.name)) { 건너뛴살림.push(erel); continue; }
         if (여기규칙.length && 걸리나(erel, true, 여기규칙)) { 건너뜀.폴더 += 1; continue; }
         stack.push({ dir: full, rel: erel, 규칙: 여기규칙 });
       } else if (e.isFile()) {
@@ -335,6 +340,7 @@ export async function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS,
     if (끊김) break;
   }
   Object.defineProperty(out, '건너뜀', { value: 건너뜀, enumerable: false });
+  Object.defineProperty(out, '건너뛴살림', { value: 건너뛴살림, enumerable: false });
   // 상한까지 찼으면 "여기서 멈췄다" 고 표시한다. 딱 맞아떨어져 끝난 경우까지
   // 잘렸다고 하게 되지만, 그쪽으로 틀리는 편이 낫다 — 덜 봤다고 말하는 것은
   // 사람을 한 번 더 보게 만들 뿐이고, 다 봤다고 말하는 것은 못 보게 만든다.

@@ -73,6 +73,28 @@ trace('1-켤지말지');
   흉내({ ci: '1' });
   check('CI 면 안 켠다', 상자쓸까({ tui: null }) === false);
 
+  /*
+   * ── `--tui` 는 **무엇이든 하나는 해야 한다** ────────────────────────────
+   *
+   * 이 깃발이 아무 데도 안 붙어 있었다. `if (tui === true) return true;` 가
+   * 아래 세 짐작(dumb·CI·좁은 창)을 **전부 지난 뒤**에 있었고 그 다음 줄이
+   * 무조건 `return true` 였다 — 켜지는 자리에서는 어차피 켜지고, 안 켜지는
+   * 자리에서는 줘도 안 켜졌다. 그런데 `deel --help` 와 자동완성은 「입력
+   * 상자를 켠다(force the input box on)」 라고 적어 두고 있다.
+   *
+   * 넘어야 할 것과 못 넘을 것을 갈라서 잰다. 파이프는 못 넘는다(위에서
+   * 이미 쟀다) — 그릴 데가 아예 없기 때문이다. 나머지 셋은 「대개 이럴
+   * 것」 이라는 짐작이고, 짐작을 사람이 손으로 뒤집겠다고 한 자리다.
+   */
+  흉내({ ci: '1' });
+  check('★★ CI 라도 --tui 면 켠다', 상자쓸까({ tui: true }) === true);
+  흉내({ term: 'dumb' });
+  check('★ 옛 콘솔이라도 --tui 면 켠다', 상자쓸까({ tui: true }) === true);
+  흉내({ cols: 30 });
+  check('★ 좁아도 --tui 면 켠다 (달라고 해서 준 것이다)', 상자쓸까({ tui: true }) === true);
+  흉내({ out: false });
+  check('그래도 파이프는 못 넘는다', 상자쓸까({ tui: true }) === false);
+
   // 되돌린다. 뒤 검사들이 이 값을 본다.
   흉내({ out: 원래.out, in: 원래.in, cols: 원래.cols, rows: 원래.rows, term: 원래.term, ci: 원래.ci });
   check('줄화면은 언제나 만들어진다', new LineScreen().kind === 'line');
@@ -287,6 +309,13 @@ trace('6.5-일하는중');
   check('회차가 늘면 문구가 바뀐다', 첫째 !== 둘째, `${첫째} → ${둘째}`);
   check('한 바퀴 돌면 처음으로', 문구고르기('읽기', 문구.읽기.length) === 첫째);
   check('없는 갈래는 기본으로 떨어진다', 문구.기본.includes(문구고르기('없는갈래', 0)));
+  // 회차가 수가 아니면 나머지 셈이 NaN 이 되고 목록[NaN] 은 undefined 다.
+  // 바로 옆에서 같은 값으로 불리는 motion.js 의 그림고르기 는 이걸 막고
+  // 있었는데 여기만 안 막았다 — 그림은 도는데 문구 자리만 비게 된다.
+  for (const 못쓸것 of [NaN, undefined, null, '셋째']) {
+    check(`회차가 ${String(못쓸것)} 이어도 문구가 나온다`,
+      문구.읽기.includes(문구고르기('읽기', 못쓸것)), String(문구고르기('읽기', 못쓸것)));
+  }
   check('문구가 다 말이 된다', Object.values(문구).flat().every((t) => /중$|더$/.test(t)),
     Object.values(문구).flat().filter((t) => !/중$|더$/.test(t)).join(','));
 
@@ -564,6 +593,46 @@ trace('9-줄화면의임시글');
   check('줄화면은 입력갱신에 아무것도 안 한다', 갱신글 === '', JSON.stringify(갱신글));
 
   Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
+}
+
+trace('9.1-하위-작업-세로줄이-안-끊기나');
+
+/*
+ * ── 세로줄은 **끊기면 뜻이 없다** ───────────────────────────────────────
+ *
+ * 하위 작업이 도는 동안 왼쪽에 `│` 를 세운다. 여기부터 저기까지가 떼어 낸
+ * 일이라는 표시고, 적어 둔 이유가 「훑는 것만으로 구간이 잡힌다」 이다.
+ *
+ * 그런데 빈 줄에는 안 붙었다. repl.js 는 도구가 하나 뜰 때마다 그 앞에
+ * `say('')` 를 한 번씩 넣으므로, 줄이 **도구마다 끊겨 점선**이 됐다.
+ * 여러 줄짜리 글도 첫 줄에만 붙어서 나머지가 구간 밖으로 삐져나왔다.
+ */
+{
+  const s = new LineScreen();
+  const 진짜쓰기 = process.stdout.write.bind(process.stdout);
+  let 담김 = '';
+  const 받기 = (부르기) => {
+    담김 = '';
+    process.stdout.write = (b) => { 담김 += b; return true; };
+    try { 부르기(); } finally { process.stdout.write = 진짜쓰기; }
+    return 담김.replace(/\[[0-9;]*m/g, '').split('\n').slice(0, -1);
+  };
+
+  s.들여쓰기(1);
+  const 줄들 = 받기(() => { s.줄(''); s.줄('  ⏺ Read(a.js)'); s.줄(''); s.줄('  ⏺ Read(b.js)'); });
+  check('★★ 하위 구간에서는 빈 줄에도 세로줄이 선다',
+    줄들.length === 4 && 줄들.every((l) => l.startsWith(' │')),
+    JSON.stringify(줄들));
+
+  const 여러줄 = 받기(() => s.줄('첫째\n둘째\n셋째'));
+  check('★ 여러 줄짜리 글도 줄마다 선다',
+    여러줄.length === 3 && 여러줄.every((l) => l.startsWith(' │')),
+    JSON.stringify(여러줄));
+
+  s.들여쓰기(0);
+  const 바깥 = 받기(() => { s.줄(''); s.줄('바깥 줄'); });
+  check('하위 밖에서는 아무것도 안 붙는다',
+    바깥.join('|') === '|바깥 줄', JSON.stringify(바깥));
 }
 
 trace('9.2-줄화면도-멈춘다고-말하나');

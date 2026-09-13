@@ -95,6 +95,8 @@ const FILES = [
   'histline.test.js',
   'runmode.test.js',
   '바깥허락.test.js',
+  '도구정직.test.js',
+  '대화셈.test.js',
   'providers.test.js',
   'price.test.js',
   'anthropic.test.js',

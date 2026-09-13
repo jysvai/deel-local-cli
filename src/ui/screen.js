@@ -46,13 +46,39 @@ import { spin } from './spinner.js';
  */
 export function 상자쓸까({ tui = null } = {}) {
   if (tui === false) return false;              // deel --no-tui
-  if (!process.stdout.isTTY) return false;      // 파이프·기록·CI
+
+  /*
+   * ── 여기까지가 **그릴 데가 아예 없는** 자리다 ──────────────────────────
+   *
+   * 앞자리가 터미널이 아니면 커서를 위로 올릴 수가 없다. 제어문자가 글에
+   * 그대로 섞여 파이프·기록을 망친다. `--tui` 로도 못 넘는다 — bin/deel.js 의
+   * 설명도 「**터미널이면** 무조건」 이라고 적어 두고 있다.
+   */
+  if (!process.stdout.isTTY) return false;      // 파이프·기록
   if (!process.stdin.isTTY) return false;       // 입력이 파이프로 들어옴 (검사·데모)
+
+  /*
+   * ── 아래는 「아마 아닐 것」 인 자리다. `--tui` 는 여기를 넘으라고 있다 ──
+   *
+   * 이 줄이 없었다. `if (tui === true) return true;` 가 아래 세 가지를 **전부
+   * 지난 뒤**에 있었고, 그 바로 다음 줄이 무조건 `return true` 였다. 그러니
+   * `--tui` 는 어디에도 안 붙어 있었다 — 켜지는 자리에서는 어차피 켜지고,
+   * 안 켜지는 자리에서는 줘도 안 켜졌다.
+   *
+   * 그런데 이 깃발은 `deel --help` 에도 자동완성에도 「입력 상자를 켠다」
+   * (completion.js: force the input box on) 라고 적혀 있다. CI 값이 남아 있는
+   * 터미널이나 39칸짜리 창에서 `deel --tui` 를 치면 아무 말 없이 줄 화면이
+   * 뜬다. 스위치가 있다고 적어 놓고 선이 안 이어져 있던 것이다.
+   *
+   * 넘게 두는 것이 맞다. 셋 다 「대개 이럴 것」 이라는 짐작이고, 짐작을
+   * 사람이 손으로 뒤집겠다고 한 자리다. 좁은 창에서 테두리가 어긋나 보이는
+   * 것은 달라고 해서 준 결과이니 놀랄 일이 아니다.
+   */
+  if (tui === true) return true;
   if (process.env.TERM === 'dumb') return false;
   if (process.env.CI) return false;
   // 너무 좁으면 상자 안에 남는 자리가 없다. 테두리만 남고 글이 안 보인다.
   if ((process.stdout.columns ?? 0) < 40) return false;
-  if (tui === true) return true;
   return true;
 }
 
@@ -100,8 +126,25 @@ export class LineScreen {
    */
   #안내() { return this.깊이 ? c.gray(' │').repeat(this.깊이) : ''; }
 
-  /** 한 줄. 이미 색이 입혀진 글을 받는다. */
-  줄(s = '') { this.임시지움(); say(this.깊이 && s ? this.#안내() + s : s); }
+  /**
+   * 한 줄. 이미 색이 입혀진 글을 받는다.
+   *
+   * 하위 작업 구간에서는 **빈 줄과 여러 줄에도** 세로줄을 세운다.
+   *
+   * 처음에는 `this.깊이 && s` 였다. 그래서 빈 줄에는 안 붙었는데, repl.js 는
+   * 도구가 뜰 때마다 `say('')` 를 한 번씩 넣는다 — 세로줄이 도구마다 끊겨
+   * 점선이 됐다. 여러 줄짜리 글도 첫 줄에만 붙어서, 하위가 뱉은 나머지 줄이
+   * 구간 밖으로 삐져나왔다.
+   *
+   * 「훑는 것만으로 구간이 잡힌다」 가 이 줄을 그리는 이유다. 끊겨 있으면
+   * 그 이유가 사라진다.
+   */
+  줄(s = '') {
+    this.임시지움();
+    if (!this.깊이) return say(s);
+    const 안내 = this.#안내();
+    say(String(s).split('\n').map((l) => 안내 + l).join('\n'));
+  }
 
   /** 줄바꿈 없이 이어 붙인다 — 스트리밍으로 오는 답. */
   붙임(s) { this.임시지움(); process.stdout.write(s); }

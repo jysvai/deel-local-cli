@@ -90,8 +90,25 @@ function 빈답인가(msg) {
  *   3) 둘 다 없으면 **없다고 말한다.** 침묵은 지어내기를 부른다.
  */
 export function 실을글(result) {
-  if (result?.error) return `오류: ${result.error}`;
   const 글 = result?.content;
+  /*
+   * ── 오류에도 **알아낸 것이 딸려 온다** ──────────────────────────
+   *
+   * 여태 오류면 그 한 줄만 싣고 content 를 버렸다. 그런데 오류와 글이
+   * 같이 오는 자리가 셋이나 된다 —
+   *
+   *   · 끊긴 Bash 가 죽기 직전에 뱉은 몇 줄
+   *   · 시간 초과로 끊긴 명령이 그때까지 찍은 것
+   *   · 여덟 개를 서로 다른 까닭으로 다 실패한 Write·Edit 의 줄별 사유
+   *
+   * 마지막 것이 제일 아프다. 결과에는 여덟 줄이 다 적혀 있는데 모델은
+   * **첫 줄 하나**만 받고, 나머지 일곱은 왜 안 됐는지 모른 채 그대로
+   * 다시 보낸다. 오류는 오류대로 말하고, 알아낸 것은 같이 싣는다.
+   */
+  if (result?.error) {
+    const 딸린것 = String(글 ?? '').trim();
+    return 딸린것 ? `오류: ${result.error}\n${딸린것}` : `오류: ${result.error}`;
+  }
   if (String(글 ?? '').trim()) return String(글);
   const 요약 = String(result?.summary ?? '').trim();
   if (요약) return 요약;
@@ -288,14 +305,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   const 이카드 = ctx?.카드 ?? null;
   const MAX_SAME = 이카드?.조정?.같은것한계 ?? 3;
   let 멈출까 = null;
-  const 막힘셈 = (call, 이유) => {
+  const 막힘셈 = (call, 이유, { 몫 = 1 } = {}) => {
     // 파일 하나가 아니라 **그 파일** 을 센다. 이름만 세면 서로 다른 파일 세 개를
     // 고치다 실패한 것이 한 덩어리로 뭉쳐 턴이 죽는다. 다섯 군데 중 두 군데만
     // 고쳐 놓고 '헛돌고 있어 멈췄습니다' 가 되는 것이 그 모습이다.
     const 어디 = call.args?.file_path ?? call.args?.path ?? call.args?.pattern ?? call.args?.command
       ?? call.args?.purpose ?? call.args?.목적 ?? '';
     const 서명 = `${call.name}|${이유}|${String(어디).slice(0, 200)}`;
-    const n = (막힘.get(서명) ?? 0) + 1;
+    // 몫: 도구가 「다시 해도 같다」(끝났다)고 말했으면 한 번을 두 번으로 센다.
+    const n = (막힘.get(서명) ?? 0) + 몫;
     막힘.set(서명, n);
     return n >= MAX_SAME;
   };
@@ -1932,7 +1950,24 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           // 같은 도구가 같은 이유로 계속 실패하면 헛돌고 있는 것이다.
           // 오류의 첫 줄만 본다 — 뒤에 붙는 경로·숫자는 매번 달라도 원인은 같다.
           const 이유 = String(result.error).split('\n')[0].slice(0, 60);
-          if (막힘셈(call, 이유)) 멈출까 = `${call.name} 이 같은 이유로 계속 실패합니다 — ${이유}`;
+          /*
+           * ── `끝났다` 는 **아무도 안 읽고 있었다** ──────────────────
+           *
+           * 도구 쪽 열대여섯 자리가 이 표를 달아 보낸다. 뜻은 「다시 물어도
+           * 답이 같다」 — 옛 hwp, 못 읽는 확장자, 없는 폴더처럼 되풀이가
+           * 아무 소용 없는 자리들이다. tools/index.js 의 주석은 아예
+           * `끝났다: true → 되풀이 억제가 걸린다` 라고 적어 뒀는데,
+           * 저장소를 통틀어 이 값을 **읽는 자리가 한 곳도 없었다.**
+           * 걸린다고 적어 놓고 아무것도 안 걸고 있었다.
+           *
+           * 그래서 여기서 읽는다. 세 번을 기다리지 않고 두 몫으로 센다 —
+           * 도구가 스스로 「이건 끝이다」 라고 말한 것이라, 같은 자리를 한
+           * 번 더 두드리면 그것으로 충분하다. 그래도 곧바로 멈추지는
+           * 않는다. 모델이 다른 길로 갈 여지는 남겨 둔다.
+           */
+          if (막힘셈(call, 이유, { 몫: result.끝났다 ? 2 : 1 })) {
+            멈출까 = `${call.name} 이 같은 이유로 계속 실패합니다 — ${이유}`;
+          }
         }
         if (call.name === 'Read' && result.content) session.noteRead(call.args.file_path, result.content);
         // 실제로 파일이 바뀐 것만 적는다. 턴 끝에 이 목록을 디스크와 견준다.

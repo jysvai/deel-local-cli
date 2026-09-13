@@ -455,6 +455,8 @@ export async function chatLoop(opts = {}) {
   // 되돌리기 이력을 못 읽는다는 말은 한 판에 한 번만 한다 — 턴마다 세는 자리라
   // 안 막으면 같은 줄이 턴 수만큼 쌓인다.
   let 되돌리기못읽음말했나 = false;
+  // 이력이 커졌는데 못 줄인 것·깨진 줄. 둘 다 한 판에 한 번만 말한다.
+  let 이력탈말했나 = false;
   /*
    * 정리가 실패해도 켜는 것은 막지 않는다. 다만 **삼키지는 않는다.**
    * 계속 실패하면 .deel/sessions 가 끝없이 커지는데 화면에는 영영 안 떴다.
@@ -2335,6 +2337,21 @@ export async function chatLoop(opts = {}) {
                 const 것들 = ev.result.되돌릴것;
                 say(`      ${c.gray(`↩ ${것들.slice(0, 3).join(' · ')}${것들.length > 3 ? ` 외 ${것들.length - 3}개` : ''} 는 떠 뒀습니다 — /undo 로 되돌아갑니다`)}`);
               }
+              /*
+               * ── 못 뜬 것은 **되돌아가지 않는다** ──────────────────────
+               *
+               * 위 한 줄만 있을 때, `rm 로고.png` 는 「로고.png 는 떠 뒀습니다
+               * — /undo 로 되돌아갑니다」 를 찍었다. 그림·xlsx·zip 은 내용을
+               * 못 떠서 /undo 가 손도 안 대는데도 그랬다. 파일은 이미 없고,
+               * 안전망이 있다는 말만 남는다.
+               */
+              if (ev.result?.못뜬것?.length) {
+                const 못 = ev.result.못뜬것;
+                say(`      ${mark.warn} ${c.gray(`${못.slice(0, 3).join(' · ')}${못.length > 3 ? ` 외 ${못.length - 3}개` : ''} 는 못 떠 뒀습니다 — /undo 로 안 돌아옵니다`)}`);
+              }
+              if (ev.result?.스냅샷상한걸림) {
+                say(`      ${mark.warn} ${c.gray(`대상이 많아 앞 ${ev.result.되돌릴것?.length ?? 0}개만 떠 뒀습니다 — 나머지는 /undo 로 안 돌아옵니다`)}`);
+              }
               // 파일을 고쳤으면 무엇이 바뀌었는지 바로 보여 준다.
               //
               // auto 모드는 안 물어보고 고친다. 여기서 안 보여주면 사람이
@@ -2383,6 +2400,20 @@ export async function chatLoop(opts = {}) {
                  * 줄 수는 0 이다 — 옮긴 것이지 고친 것이 아니다.
                  */
                 for (const f of ev.result.바뀐것들) session.noteChange(f, { added: 0, removed: 0 });
+              } else if (ev.result?.changed) {
+                /*
+                 * ── 바뀐 **경로만** 주는 도구가 있다 ─────────────────────
+                 *
+                 * 파일 하나짜리 Move 와 hwpx Write 가 그렇다. 옮긴 것·새로 만든
+                 * 문서라 「몇 줄 바뀌었나」 가 없다. 그런데 위 세 갈래가 전부
+                 * diff·여럿·바뀐것들 을 보므로 셋 다 안 걸리고, 그러면
+                 * noteChange 가 **아예 안 불린다.**
+                 *
+                 * 파일은 진짜로 옮겨졌는데 /diff 목록에 없고, 상태줄 ✎ 에도 안
+                 * 들고, /commit 이 담는 목록에도 없다. 커밋은 초록으로 끝나고
+                 * 옮긴 파일만 안 담긴다 — 나중에 원격에서만 깨진다.
+                 */
+                session.noteChange(ev.result.changed, { added: 0, removed: 0 });
               }
             }
             flush();   // 도구가 하나 끝날 때마다 적어 둔다
@@ -2899,6 +2930,27 @@ export async function chatLoop(opts = {}) {
      */
     try {
       session.되돌릴턴 = ctx.history.turns().length;
+      /*
+       * ── 안전망이 **제 무게로 무너지는** 것도 여기서 잡힌다 ──────────
+       *
+       * 되돌리기 이력은 파일 내용을 통째로 담아서 금방 수십 MB 가 된다.
+       * 32MB 를 넘으면 오래된 턴부터 버리는데, 그 버리기가 실패하면
+       * (읽기 전용·디스크 참) 이력은 끝없이 자라고 화면에는 영영 안 떴다.
+       * 실패는 대개 이어지는 종류라 저절로 낫지도 않는다.
+       *
+       * 깨진 줄도 같다. 이력 한 줄이 곧 한 파일의 원문이라, 줄이 깨졌다는
+       * 것은 그 파일을 되돌릴 길이 사라졌다는 뜻이다. 상태줄의 `↩ 3` 은
+       * 그 셋이 다 되돌아간다는 말인데, 깨진 줄이 있으면 그게 아니다.
+       */
+      if (!이력탈말했나 && (ctx.history.줄이기못함 || ctx.history.깨진줄)) {
+        이력탈말했나 = true;
+        if (ctx.history.줄이기못함) {
+          say(`  ${mark.warn} ${c.gray('되돌리기 이력이 커졌는데 못 줄였습니다')} ${c.gray('— ' + clip(String(ctx.history.줄이기못함), 60))}`);
+        }
+        if (ctx.history.깨진줄) {
+          say(`  ${mark.warn} ${c.gray(`되돌리기 이력에서 ${ctx.history.깨진줄}줄을 못 읽었습니다 — 그만큼은 ${'/undo'} 로 안 돌아옵니다.`)}`);
+        }
+      }
     } catch (e) {
       session.되돌릴턴 = 0;
       if (!되돌리기못읽음말했나) {

@@ -42,8 +42,8 @@
       "곳": "src/tools/index.js",
       "무엇": "셸이 파일에 쓰는 것을 스냅샷 대상에서 뺀다",
       "그러면": "echo x > a.js 로 바뀐 파일은 /undo 가 모른다 — 되돌리면 엉뚱한 턴의 것이 되돌아간다",
-      "찾을것": "if (!isMutating(cmd) && !셸쓰기) return [];",
-      "바꿀것": "if (!isMutating(cmd)) return [];",
+      "찾을것": "if (!isMutating(cmd) && !셸쓰기) return { 뜬것: [], 못뜬것: [], 상한걸림: false };",
+      "바꿀것": "if (!isMutating(cmd)) return { 뜬것: [], 못뜬것: [], 상한걸림: false };",
       "검사": "test/undo.test.js"
     },
     {
@@ -1405,6 +1405,270 @@
       "찾을것": "    } else if (r?.why && !r?.tried?.some((t) => t.ok)) {",
       "바꿀것": "    } else if (false) {",
       "검사": "test/바깥허락.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Bash 스냅샷이 못 뜬 파일도 「떠 뒀다」 목록에 넣는다",
+      "그러면": "rm 로고.png 한 줄에 화면은 「떠 뒀습니다 — /undo 로 되돌아갑니다」 를 찍는다. 그림은 내용을 못 떠서 /undo 가 손도 안 대는데도 그렇다 — 파일은 이미 없고 영영 안 돌아온다",
+      "찾을것": "      if (rec?.skipped) 못뜬것.push(`${ctx.scope.show(abs)} (${rec.skipped})`);",
+      "바꿀것": "      if (false) 못뜬것.push(`${ctx.scope.show(abs)} (${rec.skipped})`);",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "스냅샷 상한에 걸려도 걸렸다고 안 한다",
+      "그러면": "대상이 24개를 넘으면 뒤엣것은 이력에 안 남는데, 화면에는 앞의 24개만 「떠 뒀습니다」 로 뜬다. 사람은 마흔 개가 다 되돌아갈 줄 안다",
+      "찾을것": "    if (뜬것.length + 못뜬것.length >= 스냅샷상한) { 넘쳤나 = true; break; }",
+      "바꿀것": "    if (뜬것.length + 못뜬것.length >= 스냅샷상한) { break; }",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Move 배열이 던지는 것을 안 받는다",
+      "그러면": "범위 밖 경로 하나가 던지면 앞서 실제로 옮겨진 파일이 결과에서 통째로 사라진다. 디스크는 움직였는데 턴 끝 목록도 /commit 도 「아무 일도 없었다」 로 안다",
+      "찾을것": "    try { r = await 한개옮기기(하나, ctx); }\n    catch (err) { r = { error: String(err?.message ?? err) }; }",
+      "바꿀것": "    r = await 한개옮기기(하나, ctx);",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Glob·Grep 이 없는 폴더를 「없음」 으로 단정한다",
+      "그러면": "오타 난 경로가 빈 배열이 되어 「찾은 파일 없음」 이 뜬다. 한 군데도 안 찾아봤는데 모델은 「이 프로젝트에 그런 것이 없다」 로 답을 맺는다",
+      "찾을것": "  if (!existsSync(root)) {\n    return {\n      error: `그런 자리가 없습니다: ${보인이름}\\n`",
+      "바꿀것": "  if (false) {\n    return {\n      error: `그런 자리가 없습니다: ${보인이름}\\n`",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Recall 이 찾아낸 대화를 모델에게 안 준다",
+      "그러면": "모델이 받는 것은 「12건 중 8건」 요약 한 줄뿐이고 여덟 건의 내용은 한 글자도 안 간다. 못 찾은 것보다 나쁘다 — 찾았다고 들었는데 내용이 없으면 지어내기 딱 좋다",
+      "찾을것": "        content: `${찾은말}\\n${줄들.join('\\n')}`,",
+      "바꿀것": "        content: '',",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "0바이트 빈 파일을 1줄로 센다",
+      "그러면": "Append 로 큰 파일을 만드는 내내 하나 더 많은 줄 수가 모델에게 간다. 그 값은 줄기억에 캐시로 남아 끝까지 따라다닌다",
+      "찾을것": "    if (t.length === 0) return { 줄: 0, 끝줄바꿈 };",
+      "바꿀것": "    if (false) return { 줄: 0, 끝줄바꿈 };",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "고친 군데 수를 사람이 읽을 요약 글에서 되뽑는다",
+      "그러면": "요약은 toLocaleString 을 타므로 1,234군데가 `1,234군데` 가 되고 정규식은 1 만 집는다. 디스크에서는 1,234군데가 바뀌었는데 화면과 모델은 1군데를 받는다",
+      "찾을것": "        군데: r.군데 ?? Number(String(r.summary).replace(/,/g, '').match(/^(\\d+)/)?.[1] ?? 1),",
+      "바꿀것": "        군데: Number(String(r.summary).match(/^(\\d+)/)?.[1] ?? 1),",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Append 가 없는 hwpx·그림 이름을 안 막는다",
+      "그러면": "확장자만 hwpx 인 UTF-8 글 파일이 만들어지고 「새로 만듦: 주간보고.hwpx (+40줄)」 이 뜬다. 한글에서는 안 열린다",
+      "찾을것": "      if (그림인가(abs)) {\n        return { error: `${ctx.scope.show(abs)} 는 그림 파일 이름입니다 — 글을 이어 붙이면 열리지 않는 파일이 됩니다.`, 끝났다: true };\n      }",
+      "바꿀것": "      // 어긋: Append 그림 검사를 뺀다",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Write 가 그림 이름으로 글 파일을 만든다",
+      "그러면": "`로고.png (1줄)` 이 「새로 만듦」 으로 뜨고, 그 뒤 Read 는 그림으로 열려다 실패한다",
+      "찾을것": "    if (그림인가(abs)) {\n      return { error: `${ctx.scope.show(abs)} 는 그림 파일 이름입니다 — 글로는 만들 수 없습니다.`, 끝났다: true };\n    }",
+      "바꿀것": "    // 어긋: Write 그림 검사를 뺀다",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Write 에 폴더를 주면 날 EISDIR 이 나간다",
+      "그러면": "되돌리기가 폴더를 readFileSync 하다 터진 오류가 그대로 모델에게 간다. 무엇을 잘못했는지 짚을 실마리가 없다",
+      "찾을것": "    if (existsSync(abs) && statSync(abs).isDirectory()) {\n      return { error: `폴더입니다: ${args.file_path}. 파일 이름까지 적어 주세요.`, 끝났다: true };\n    }",
+      "바꿀것": "    // 어긋: Write 폴더 검사를 뺀다",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Write 가 쓰기 전에 스냅샷을 뜬다",
+      "그러면": "인코딩 거절로 끝나는 턴이 이력에 남는다. /undo 는 같은 내용을 다시 써 놓고 「1개 되돌렸습니다」 를 찍고, 정작 되돌리려던 앞 턴의 진짜 변경은 그대로 남는다",
+      "찾을것": "     */\n    const existed = existsSync(abs);",
+      "바꿀것": "     */\n    ctx.history.snapshot(abs, 'Write');   // 어긋: 거절 갈래보다 앞에서 뜬다\n    const existed = existsSync(abs);",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/safety/undo.js",
+      "무엇": "이력에서 깨진 줄을 조용히 버린다",
+      "그러면": "이력 한 줄이 곧 한 파일의 원문이라 깨진 줄은 못 되돌리는 파일이다. /undo 는 「3개를 되돌렸습니다」 만 하고 넷째가 왜 안 왔는지는 아무 데도 안 남는다",
+      "찾을것": "      .map((l) => { try { return JSON.parse(l); } catch { 깨진 += 1; return null; } })",
+      "바꿀것": "      .map((l) => { try { return JSON.parse(l); } catch { return null; } })",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/safety/undo.js",
+      "무엇": "이력을 못 줄인 것을 「0개 버렸다」 와 같은 값으로 돌려준다",
+      "그러면": "부르는 쪽은 둘을 구별할 길이 없다. 실패는 대개 이어지는 종류라 이력은 32MB 를 넘긴 채 끝없이 자라는데 화면에는 영영 안 뜬다",
+      "찾을것": "      this.줄이기못함 = err?.message ?? String(err);\n      this.#다음줄이기 = (this.#writes ?? 0) + 500;\n      return 0;\n    }\n    return 버린수;",
+      "바꿀것": "      // 어긋: 못 줄인 것을 안 남긴다\n      return 0;\n    }\n    return 버린수;",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/safety/undo.js",
+      "무엇": "되돌린 뒤 이력 쓰기 실패를 안 돌려준다",
+      "그러면": "파일은 이미 되돌아갔는데 그 턴이 이력에 남는다. 사람이 /undo 를 또 치면 같은 턴을 또 되돌린다 — 두 턴을 되돌린 줄 알지만 한 턴이다",
+      "찾을것": "      // 이력에서 그 턴을 지웠나. 못 지웠으면 같은 턴이 그대로 남아 있다.\n      이력줄임,",
+      "바꿀것": "      이력줄임: { ok: true },",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "오류에 딸려 온 글을 버린다",
+      "그러면": "여덟 개를 서로 다른 까닭으로 다 실패했는데 모델은 첫 줄 하나만 받는다. 나머지 일곱은 왜 안 됐는지 모른 채 그대로 다시 보낸다",
+      "찾을것": "    return 딸린것 ? `오류: ${result.error}\\n${딸린것}` : `오류: ${result.error}`;",
+      "바꿀것": "    return `오류: ${result.error}`;",
+      "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "id 없는 규격에서 부름을 통째로 날린다",
+      "그러면": "Ollama 이력을 이어받으면 부름 0개짜리 assistant 뒤에 결과만 남는다. 짝 깨짐을 없애겠다는 함수가 짝 깨짐을 만들고, 첫 요청이 400 이다",
+      "찾을것": "  const 순서로 = 남길id.size === 0;",
+      "바꿀것": "  const 순서로 = false;",
+      "검사": "test/대화셈.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "머리를 도구 결과 한가운데서 끊는다",
+      "그러면": "한 번에 둘을 부른 자리에서 부름 2개에 결과 1개가 남는다. 접기가 물러설 자리로 쓰는 길이라, 서버가 흔들릴 때 하필 여기서 대화가 통째로 400 이 된다",
+      "찾을것": "  while (h > 0 && (부른것들(messages[h - 1]).length || 도구결과인가(messages[h - 1]))) h--;",
+      "바꿀것": "  while (h > 0 && 부른것들(messages[h - 1]).length) h--;",
+      "검사": "test/대화셈.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "되감아도 되돌린 턴의 할 일·시킨 말이 남는다",
+      "그러면": "되돌린 그 일이 첫 접힘에서 프롬프트에 되살아나 붙는다. 모델은 그걸 지금 시킨 것으로 알고 방금 되돌린 일을 다시 하러 간다",
+      "찾을것": "    this.할일 = [];\n    this.이번요청 = '';\n    this.검증확인지우기();\n    /*",
+      "바꿀것": "    // 어긋: 되돌린 턴의 할 일·시킨 말을 안 지운다\n    this.검증확인지우기();\n    /*",
+      "검사": "test/대화셈.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "없어진 코드에 초록 확인 표시가 남는다",
+      "그러면": "/clear 로 비운 새 일의 화면에, /undo 로 걷어낸 없어진 코드에 「돌려 봤고 아무 탈 없었다」 는 초록 ✓ 가 그대로 서 있다",
+      "찾을것": "    if (this.검증) this.검증 = { 돈횟수: 0, 확인: 0, 탈: 0, 못확인: 0 };",
+      "바꿀것": "    // 어긋: 확인 표시를 안 지운다",
+      "검사": "test/대화셈.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "시스템 칸을 조각 나열로 다시 센다",
+      "그러면": "셸 안내·급말·못 박은 글이 안 세어져 남은 자리가 뻥튀기된다. effort.js 가 그 값으로 출력 상한을 잡으므로 답이 조용히 잘리기 시작한다",
+      "찾을것": "    const sys = Math.max(0, estimateTokens(this.systemPrompt()) - (rules + 기억 + 배움 + skills));",
+      "바꿀것": "    const sys = estimateTokens(기본규칙(this.conn?.ctx)) + estimateTokens(`작업 폴더: ${this.root}`);",
+      "검사": "test/대화셈.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "도구 결과 개수 자리에 읽은 파일 수를 적는다",
+      "그러면": "Bash 만 열 번 돌린 판에서 「도구 결과 (0개) 2,150토큰」 이 뜬다. 무엇을 접어야 할지 보라고 만든 표가 거꾸로 가리킨다",
+      "찾을것": "      { label: 옮긴말('ctx.toolResults', { n: 도구결과수 }), n: files },",
+      "바꿀것": "      { label: 옮긴말('ctx.toolResults', { n: this.filesRead.size }), n: files },",
+      "검사": "test/대화셈.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "규칙 파일을 2만 자에서 자르면서 아무 말도 안 한다",
+      "그러면": "「운영 DB 는 절대 건드리지 마라」 가 뒷부분에 있으면 모델에게 한 글자도 안 가는데 /status 는 파일 이름만 적는다. 사람은 규칙이 걸려 있다고 믿는다",
+      "찾을것": "        this.규칙잘림 = { 이름: name, 원본: 통째.length, 실린: 규칙최대 };",
+      "바꿀것": "        // 어긋: 잘랐다는 사실을 안 남긴다",
+      "검사": "test/대화셈.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "셈을 모르는 변경을 「안 바뀌었다」 로 뭉갠다",
+      "그러면": "파일 하나짜리 Move 와 hwpx Write 가 /diff·상태줄 ✎·/commit 목록에서 통째로 빠진다. 커밋은 초록으로 끝나고 옮긴 파일만 안 담긴다",
+      "찾을것": "    if (!path) return;",
+      "바꿀것": "    if (!path || !d) return;",
+      "검사": "test/대화셈.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "못 믿을 표본을 세지도 않고 버린다",
+      "그러면": "「아직 한 번도 못 재 봤다」 와 「재 봤는데 세 배가 나와서 못 믿었다」 가 화면에서 똑같아진다. 게이지는 영영 짐작인 채로 도는데 그 사실을 아무도 모른다",
+      "찾을것": "      this.보정버림 = (this.보정버림 ?? 0) + 1;",
+      "바꿀것": "      // 어긋: 버린 것을 안 센다",
+      "검사": "test/대화셈.test.js"
+    },
+    {
+      "곳": "src/agent/threads.js",
+      "무엇": "닫은 갈래가 쓴 돈이 사라진다",
+      "그러면": "곁가지에서 오래 헤매다 닫고 돌아오면 /cost 는 그 값을 못 본다. 실제로 낸 돈보다 적은 금액이 화면에 뜬다",
+      "찾을것": "    for (const k of Object.keys(this.닫힌셈)) this.닫힌셈[k] += Number(닫은것.usage?.[k] ?? 0);",
+      "바꿀것": "    // 어긋: 닫은 갈래의 셈을 안 남긴다",
+      "검사": "test/대화셈.test.js"
+    },
+    {
+      "곳": "src/ui/office.js",
+      "무엇": "DEEL_NO_MOTION 값을 안 읽고 있기만 하면 끈다",
+      "그러면": "DEEL_NO_MOTION=0 이 그림을 끈다 — 끄지 말라고 적은 값이 끄는 것이다. 바로 옆 DEEL_OFFICE 는 값을 읽으므로, 같은 .env 에 둘을 나란히 적으면 하나만 말을 듣는다",
+      "찾을것": "  return !안끄는값.has(String(raw).trim().toLowerCase());",
+      "바꿀것": "  return !!raw;   // 어긋: 값을 안 읽는다",
+      "검사": "test/motioncmd.test.js"
+    },
+    {
+      "곳": "src/ui/motion.js",
+      "무엇": "DEEL_MOTION 에 적히기만 하면 이긴다고 한다",
+      "그러면": "DEEL_MOTION=cat 은 무시되고 설정 파일이 그대로 쓰이는데 /motion 은 「환경변수가 이깁니다」 라고 적는다. 사람은 설정을 바꿔도 소용없다고 믿고 손을 뗀다",
+      "찾을것": "  const 이름 = 이름표[값.toLowerCase()] ?? null;\n  return { 값, 이름, 이김: 이름 !== null };",
+      "바꿀것": "  const 이름 = 이름표[값.toLowerCase()] ?? null;\n  return { 값, 이름, 이김: true };   // 어긋: 적혀만 있으면 이긴다",
+      "검사": "test/motioncmd.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "/motion 이 DEEL_NO_MOTION 을 통째로 안 본다",
+      "그러면": "환경변수가 꺼 놓은 판에서 「기사로 바꿨습니다」 만 뜨고 왜 안 바뀌는지는 아무 데도 안 적힌다. 바로 위에서 사무실이 작은 창에 안 뜬다고 굳이 알려 주는 것과 같은 자리인데 여기만 조용하다",
+      "찾을것": "  if (환경으로껐나()) 말들.push(c.gray(말('motion.envOff')));",
+      "바꿀것": "  // 어긋: DEEL_NO_MOTION 을 안 본다",
+      "검사": "test/motioncmd.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "안 바뀌는 판에서도 「바로 보입니다」 라고 적는다",
+      "그러면": "DEEL_NO_MOTION 이 켜져 있으면 무엇을 골라도 한 칸짜리 돌림표가 도는데 화면은 다음 판부터 보인다고 말한다. 화면이 하는 말이 사실이 아니다",
+      "찾을것": "      if (!환경으로껐나()) say(`     ${c.gray(말('motion.appliesNow'))}`);",
+      "바꿀것": "      say(`     ${c.gray(말('motion.appliesNow'))}`);",
+      "검사": "test/motioncmd.test.js"
+    },
+    {
+      "곳": "src/ui/screen.js",
+      "무엇": "--tui 를 짐작들 뒤로 미룬다",
+      "그러면": "`deel --help` 와 자동완성이 「입력 상자를 켠다」 라고 적어 둔 깃발이 아무 데도 안 붙는다. CI 값이 남은 터미널이나 좁은 창에서 --tui 를 줘도 아무 말 없이 줄 화면이 뜬다",
+      "찾을것": "  if (tui === true) return true;\n  if (process.env.TERM === 'dumb') return false;\n  if (process.env.CI) return false;",
+      "바꿀것": "  if (process.env.TERM === 'dumb') return false;\n  if (process.env.CI) return false;\n  if (tui === true) return true;   // 어긋: 짐작들 뒤로 민다",
+      "검사": "test/tui.test.js"
+    },
+    {
+      "곳": "src/ui/working.js",
+      "무엇": "문구 고르기에서 NaN 막이를 뺀다",
+      "그러면": "회차가 수가 아니면 목록[NaN] 이 undefined 라 상자 안 문구 자리가 빈다. 바로 옆에서 같은 값으로 불리는 그림고르기 는 이걸 막고 있어서 그림만 돌고 글자는 사라진다",
+      "찾을것": "  const i = (((Math.trunc(회차) || 0) % 목록.length) + 목록.length) % 목록.length;",
+      "바꿀것": "  const i = ((Math.trunc(회차) % 목록.length) + 목록.length) % 목록.length;",
+      "검사": "test/tui.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "인코딩을 글자 한가운데서 자른 채로 잰다",
+      "그러면": "64KB 를 넘는 UTF-8 한글 파일이 CP936 으로 판정된다. 파일도 글자도 멀쩡한데 「그 인코딩에 없는 글자가 있습니다」 라며 이어 붙이기가 통째로 거절된다 — 한글은 UTF-8 로 세 바이트라 자를 자리 셋 중 둘이 글자 한가운데다",
+      "찾을것": "    return decodeBytes(글자경계까지(buf, buf.length >= 인코딩볼바이트)).encoding;",
+      "바꿀것": "    return decodeBytes(buf).encoding;   // 어긋: 글자 한가운데서 자른 채로 잰다",
+      "검사": "test/bigfile.test.js"
+    },
+    {
+      "곳": "src/ui/screen.js",
+      "무엇": "하위 구간 세로줄을 빈 줄과 뒷줄에 안 세운다",
+      "그러면": "repl.js 가 도구 하나마다 앞에 빈 줄을 넣으므로 세로줄이 도구마다 끊겨 점선이 된다. 여러 줄짜리 글은 첫 줄에만 붙어 나머지가 구간 밖으로 삐져나온다 — 「훑는 것만으로 구간이 잡힌다」 가 그 줄을 그리는 이유인데, 끊기면 그 이유가 없다",
+      "찾을것": "    if (!this.깊이) return say(s);\n    const 안내 = this.#안내();\n    say(String(s).split('\\n').map((l) => 안내 + l).join('\\n'));",
+      "바꿀것": "    say(this.깊이 && s ? this.#안내() + s : s);",
+      "검사": "test/tui.test.js"
     }
   ]
 }

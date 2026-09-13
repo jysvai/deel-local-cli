@@ -278,9 +278,57 @@ function 바이너리인가(abs) {
     + '  정말 이 자리를 바꿔야 한다면 사용자에게 직접 물어보고, 다른 이름으로 새로 만드세요.';
 }
 
-/** 이 파일이 무슨 인코딩인지. 아직 Read 로 안 읽은 파일을 이어 쓸 때 쓴다. */
+/**
+ * 이 파일이 무슨 인코딩인지. 아직 Read 로 안 읽은 파일을 이어 쓸 때 쓴다.
+ *
+ * **앞머리만 본다.** 여태 readFileSync 로 통째로 읽었는데, 인코딩 판정은
+ * 바이트 무늬를 보는 일이라 앞부분이면 충분하다 — 바로 위 바이너리인가()
+ * 도 같은 잣대로 앞 8000바이트만 본다. 30MB 로그에 다섯 줄 붙이자고 30MB 를
+ * 다시 읽을 이유가 없다 (test/bigfile.test.js 의 「이어 붙이는 값」).
+ *
+ * 앞머리를 좀 넉넉히 잡는다. CP949 와 CP932 는 바이트 범위가 겹쳐서 짧게
+ * 볼수록 자주 뒤집힌다. 64KB 면 판정이 흔들리지 않으면서도 크기와 상관없다.
+ */
+const 인코딩볼바이트 = 64 * 1024;
+
+/*
+ * 자른 자리가 **글자 한가운데**면 안 된다.
+ *
+ * 64KB 에서 뚝 자르면 마지막 글자의 바이트 일부만 남는 일이 잦다. 한글은
+ * UTF-8 로 한 글자에 세 바이트라 자를 자리 셋 중 둘이 그렇다. 그 부스러기
+ * 하나 때문에 「UTF-8 규칙에 안 맞는다」 로 판정이 뒤집히고, 멀쩡한 UTF-8
+ * 한글 파일이 CP936 으로 읽힌다.
+ *
+ * 실제로 그렇게 됐다. **64KB 를 넘는 UTF-8 한글 파일에는 Append 가 통째로
+ * 거절됐다** — 「이 파일은 CP936 로 되어 있는데 그 인코딩에 없는 글자가
+ * 있습니다」. 파일은 UTF-8 이고 글자도 멀쩡한데.
+ *
+ * 그런데 그 자리를 지키라고 세워 둔 검사(bigfile.test.js 의 「이어 붙이는
+ * 값」)는 **초록이었다.** 걸린 시간만 쟀지 돌아온 결과를 안 봤기 때문이다.
+ * 거절은 빠르니 값도 좋아 보였다.
+ *
+ * 그래서 끝에서 최대 세 바이트를 물러나 글자 경계에 맞춘다. 파일이 앞머리보다
+ * 짧으면 자른 것이 아니므로 손대지 않는다 — 거기서 물러나면 진짜 마지막
+ * 글자를 깎는 것이 된다.
+ */
+function 글자경계까지(buf, 잘렸나) {
+  if (!잘렸나) return buf;
+  for (let 뒤 = 1; 뒤 <= 3 && 뒤 <= buf.length; 뒤++) {
+    const b = buf[buf.length - 뒤];
+    if ((b & 0xc0) === 0x80) continue;   // 이어지는 바이트 — 더 물러난다
+    if (b < 0x80) return buf;            // 아스키로 끝났다 — 성한 자리다
+    const 글자길이 = b >= 0xf0 ? 4 : b >= 0xe0 ? 3 : b >= 0xc0 ? 2 : 1;
+    return 글자길이 > 뒤 ? buf.subarray(0, buf.length - 뒤) : buf;
+  }
+  return buf;
+}
+
 function 재는인코딩(abs) {
-  try { return decodeBytes(readFileSync(abs)).encoding; } catch { return 'utf-8'; }
+  try {
+    const buf = 앞머리(abs, 인코딩볼바이트);
+    if (!buf) return 'utf-8';
+    return decodeBytes(글자경계까지(buf, buf.length >= 인코딩볼바이트)).encoding;
+  } catch { return 'utf-8'; }
 }
 
 /**
@@ -342,7 +390,10 @@ function 뜰만한낱말(cmd) {
  * 스크립트 안에서 지우는 것, 폴더 통째는 여기서 안 보인다. 그래서 결과에
  * '이건 되돌릴 수 있다' 는 말을 붙이지 않고, 뜬 개수만 사실대로 넘긴다.
  *
- * @returns {string[]} 떠 둔 파일들의 보인 이름
+ * @returns {{뜬것: string[], 못뜬것: string[], 상한걸림: boolean}}
+ *   뜬것   — 되돌릴 수 있다
+ *   못뜬것 — 손은 댔는데 되돌릴 수 없다 (바이너리 등)
+ *   상한걸림 — 대상이 너무 많아 뒤엣것은 보지도 못했다
  */
 function 바꾸기전스냅샷(cmd, ctx) {
   /*
@@ -363,10 +414,12 @@ function 바꾸기전스냅샷(cmd, ctx) {
    * (safety/guard.js).
    */
   const 셸쓰기 = 셸이파일에쓰나(cmd);
-  if (!isMutating(cmd) && !셸쓰기) return [];
+  if (!isMutating(cmd) && !셸쓰기) return { 뜬것: [], 못뜬것: [], 상한걸림: false };
   const 뜬것 = [];
+  const 못뜬것 = [];
+  let 넘쳤나 = false;
   for (const t of 뜰만한낱말(cmd)) {
-    if (뜬것.length >= 스냅샷상한) break;
+    if (뜬것.length + 못뜬것.length >= 스냅샷상한) { 넘쳤나 = true; break; }
     let abs;
     // 범위 밖은 어차피 checkPaths 가 이미 막았다. 여기서 터지면 안 된다 —
     // 뜨는 데 실패했다고 명령 자체를 막으면 안 되는 명령까지 막힌다.
@@ -385,11 +438,33 @@ function 바꾸기전스냅샷(cmd, ctx) {
        * 한 번에 이력이 쓰레기로 찬다. 그래서 이 갈래는 쓰는 꼴에만 연다.
        */
       if (!있나 && !셸쓰기) continue;
-      ctx.history.snapshot(abs, 'Bash');
-      뜬것.push(ctx.scope.show(abs));
+      /*
+       * ── 뜬 것과 **못 뜬 것**을 갈라 담는다 ──────────────────────────
+       *
+       * snapshot() 의 답을 버리고 무조건 「떴다」 목록에 넣고 있었다.
+       * 그런데 그림·xlsx·zip·hwp 는 safeRead 가 내용을 못 떠서
+       * `skipped` 로 돌아오고, /undo 는 그런 기록을 만나면 **그 파일을
+       * 아예 안 건드린다**(undo.js). 즉 되돌릴 수 없다.
+       *
+       * 그 사실을 안 갈라서, `rm 로고.png` 한 줄에 화면은
+       * 「↩ 로고.png 는 떠 뒀습니다 — /undo 로 되돌아갑니다」 를 찍었다.
+       * 파일은 이미 없고 영영 안 돌아온다. 이 프로그램에서 제일 나쁜 꼴 —
+       * **안전망이 있다고 말하는데 없는 것**이다.
+       */
+      const rec = ctx.history.snapshot(abs, 'Bash');
+      if (rec?.skipped) 못뜬것.push(`${ctx.scope.show(abs)} (${rec.skipped})`);
+      else 뜬것.push(ctx.scope.show(abs));
     } catch { /* 못 뜨면 그냥 넘어간다. 명령은 돌아야 한다 */ }
   }
-  return 뜬것;
+  /*
+   * 상한에 걸려 **뒤엣것을 아예 안 봤으면** 그것도 못 뜬 것이다.
+   *
+   * `sed -i … f1.js … f40.js` 처럼 대상이 상한을 넘으면 뒤의 것은 이력에
+   * 안 남는다. 그런데 화면에는 앞의 24개만 「떠 뒀습니다」 로 뜨고, 사람은
+   * 마흔 개가 다 되돌아갈 줄 안다. Move 가 같은 자리에서 이미 말해 준다
+   * (되돌리기반쪽) — 여기만 안 말하고 있었다.
+   */
+  return { 뜬것, 못뜬것, 상한걸림: 넘쳤나 };
 }
 
 /** 지금 파일이 몇 줄인가. 붙인 뒤 '얼마나 찼는지' 를 사실로 말해 주려고 센다. */
@@ -407,6 +482,16 @@ function 줄재기(abs, 인코딩) {
     if (looksBinary(buf)) return { 줄: 0, 끝줄바꿈: true };
     const t = 인코딩 && 인코딩 !== 'utf-8' ? decodeBytes(buf).text : buf.toString('utf8');
     const 끝줄바꿈 = t.length === 0 || t.endsWith('\n');
+    /*
+     * 빈 파일은 **0줄**이다.
+     *
+     * 끝줄바꿈 쪽은 `t.length === 0` 을 이미 봐 두고, 줄 세는 쪽은
+     * `t.endsWith('\n')` 만 봤다. 그래서 0바이트 파일이 `''.split()` →
+     * 1줄이 됐다. Append 로 큰 파일을 만드는 것이 이 도구의 쓰임인데,
+     * 첫 줄부터 하나가 더 얹히고 그 값이 줄기억에 캐시로 남아 **끝까지
+     * 하나 더 많은 수**가 모델에게 간다.
+     */
+    if (t.length === 0) return { 줄: 0, 끝줄바꿈 };
     return { 줄: t.split('\n').length - (t.endsWith('\n') ? 1 : 0), 끝줄바꿈 };
   } catch { return { 줄: 0, 끝줄바꿈: true }; }
 }
@@ -737,6 +822,23 @@ async function 한개옮기기({ from, to, overwrite = false }, ctx) {
    * 앞의 2만 개만 되돌린다. 그걸 말 안 하면 사람은 되돌렸다고 믿고 넘어간다.
    */
   const 되돌리기반쪽 = !!훑은것?.잘림;
+  /*
+   * ── 살림 폴더는 **옮겨지는데 세지도 뜨지도 않는다** ────────────────
+   *
+   * walk 는 node_modules·.git·dist 를 안 훑는다. 그런데 실제 이동은
+   * renameSync 라 **전부** 옮겨진다. 그래서 두 가지가 어긋났다 —
+   *
+   *   · 결과문의 `폴더 12개 파일` 은 훑힌 것만 센 수다. 모델이 받는
+   *     숫자가 사실이 아니다.
+   *   · /undo 를 누르면 훑힌 12개만 옛 자리로 돌아가고 `.git` 은 새
+   *     자리에 남는다. 소스와 .git 이 갈라진 저장소가 되고, 화면은
+   *     초록색 성공을 찍는다.
+   *
+   * 안 뜨는 것 자체는 그대로 둔다 — 되돌리자고 3만 개를 뜨는 쪽이 훨씬
+   * 나쁘다. 대신 **말은 한다.** 바로 아래 되돌리기반쪽 이 같은 성격의
+   * 누락을 이미 말해 주고 있어서, 한쪽만 말하는 것이 그 자체로 어긋남이다.
+   */
+  const 안뜬살림 = 폴더인가 ? (훑은것?.건너뛴살림 ?? []) : [];
   for (const [a, b] of 짝들) {
     ctx.history.snapshot(a, 'Move');
     ctx.history.snapshot(b, 'Move');
@@ -763,8 +865,14 @@ async function 한개옮기기({ from, to, overwrite = false }, ctx) {
   }
 
   for (const [, b] of 짝들) ctx.seen.add(b);
-  const 무엇 = 폴더인가 ? `폴더 ${짝들.length}개 파일` : '';
-  const 경고 = (되돌리기반쪽
+  const 무엇 = 폴더인가
+    ? `폴더 ${짝들.length}개 파일${안뜬살림.length ? ' + 살림 폴더' : ''}`
+    : '';
+  const 경고 = (안뜬살림.length
+    ? `\n(${안뜬살림.slice(0, 3).join(' · ')}${안뜬살림.length > 3 ? ` 외 ${안뜬살림.length - 3}개` : ''} 도 같이 옮겨졌지만 되돌리기에는 안 떴습니다`
+      + ' — /undo 를 하면 이것들만 새 자리에 남습니다)'
+    : '')
+    + (되돌리기반쪽
     ? `\n(파일이 ${훑은것.상한.toLocaleString('en-US')}개를 넘어 되돌리기에는 앞부분만 떴습니다 — 옮기기는 전부 됐지만 /undo 는 다 못 되돌립니다)`
     : '')
     + (원본남음
@@ -803,7 +911,22 @@ async function 여러개옮기기(목록, ctx) {
    */
   const 바뀐것들 = [];
   for (const 하나 of 목록) {
-    const r = await 한개옮기기(하나, ctx);
+    /*
+     * ── 던지는 것도 **하나가 실패한 것**이다 ────────────────────────
+     *
+     * try 없이 부르고 있었다. 그런데 한개옮기기() 안의 scope.resolve 는
+     * 범위 밖이면 던지고, mkdirSync 는 길 중간이 파일이면 ENOTDIR 로
+     * 던진다. 그 예외가 여기를 뚫고 나가면 **앞서 실제로 옮겨진 파일이
+     * 결과에서 통째로 사라진다** — 디스크는 움직였는데 된것·바뀐것들 이
+     * 버려져서, 턴 끝 목록도 /commit 도 「아무 일도 없었다」 로 안다.
+     * 모델은 실패로 알고 같은 배열을 다시 보낸다.
+     *
+     * 형제 함수 둘(여러파일쓰기·여러군데고치기)은 이미 이 까닭으로
+     * 감싸고 있다. 여기만 빠져 있었다.
+     */
+    let r;
+    try { r = await 한개옮기기(하나, ctx); }
+    catch (err) { r = { error: String(err?.message ?? err) }; }
     if (r.error) { 안된것.push(`${하나.from ?? '?'} → ${하나.to ?? '?'}: ${r.error}`); continue; }
     된것.push(r.content);
     // 폴더를 옮겼으면 그 안의 파일 하나하나가, 아니면 옮겨 간 자리가 답이다.
@@ -865,6 +988,28 @@ function 한파일쓰기(args, ctx) {
     // 제 설정(.deel/config.json)을 덮어쓰면 연결이 통째로 날아간다.
     const 못쓰는이유 = 내부살림(abs);
     if (못쓰는이유) return { error: 못쓰는이유 };
+    /*
+     * 폴더 이름을 주면 **날 오류**가 그대로 나갔다.
+     *
+     * `EISDIR: illegal operation on a directory, read` — 되돌리기가
+     * 스냅샷을 뜨려고 폴더를 readFileSync 하다 터진 것이라, 모델은 제가
+     * 무엇을 잘못했는지 짚을 실마리를 못 얻는다. Read 도 Append 도 같은
+     * 자리에서 사람 말로 거절한다. Write 만 그 밖에 있었다.
+     */
+    if (existsSync(abs) && statSync(abs).isDirectory()) {
+      return { error: `폴더입니다: ${args.file_path}. 파일 이름까지 적어 주세요.`, 끝났다: true };
+    }
+    /*
+     * 그림 이름으로 **새 글 파일**을 만드는 것도 막는다.
+     *
+     * 바이너리 검사는 이미 있는 파일만 본다(바이너리인가 는 없는 파일에
+     * null 을 준다). 그래서 `Write('로고.png', '…')` 는 검사를 통째로
+     * 비껴가 확장자만 png 인 글 파일을 만들었고, 화면에는 `새로 만듦:
+     * 로고.png (1줄)` 이 떴다. 그 뒤 Read 는 그림으로 열려다 실패한다.
+     */
+    if (그림인가(abs)) {
+      return { error: `${ctx.scope.show(abs)} 는 그림 파일 이름입니다 — 글로는 만들 수 없습니다.`, 끝났다: true };
+    }
     // 엑셀 파일을 통째로 덮어쓰면 xlsx 가 아니라 그냥 글 파일이 된다.
     // 열리지도 않는 파일이 되고, 원본은 이미 없다. 아예 막는다.
     if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
@@ -911,7 +1056,19 @@ function 한파일쓰기(args, ctx) {
     // 우리가 가린 비밀도 마찬가지다 (가린표되돌리나 머리말).
     const 표막기 = 가린표되돌리나(ctx.scope.show(abs), args.content);
     if (표막기) return { error: 표막기 };
-    ctx.history.snapshot(abs, 'Write');
+    /*
+     * ── 스냅샷은 **정말 쓰기 직전**에 뜬다 ─────────────────────────
+     *
+     * 여기서 먼저 뜨고, 그 아래 인코딩 검사에서 거절당하는 길이 있었다.
+     * 파일은 한 글자도 안 바뀌었는데 되돌리기 이력에는 그 턴이 남는다.
+     * 그러면 turns() 가 그 턴을 세고, `/undo` 는 **같은 내용을 다시 써
+     * 놓고** 「파일 1개를 되돌렸습니다」 를 찍는다. 정작 사람이 되돌리려던
+     * 앞 턴의 진짜 변경은 그대로 남는다.
+     *
+     * 바꾸기전스냅샷 의 머리말이 「기록이 없으면 /undo 가 엉뚱한 턴을
+     * 되돌린다」 를 적어 뒀다. 이건 그 거울상 — **기록만 있고 변경이 없는
+     * 턴**이다. 아래로 내려서 거절 갈래를 다 지난 뒤에 뜬다.
+     */
     const existed = existsSync(abs);
     // 덮어쓰기 전 내용. 바뀐 자리를 보여주려면 지금 떠 놔야 한다.
     // 읽다 터지는 파일(바이너리 등)이면 그냥 없던 셈 친다 — 쓰는 것 자체는 막지 않는다.
@@ -947,6 +1104,16 @@ function 한파일쓰기(args, ctx) {
      * 있는 자리에서는 잰 값이 이긴다. Edit 도 이미 그렇게 한다.
      */
     const 원래 = 읽음?.encoding ?? 'utf-8';
+    /*
+     * 잰 것이 **짐작인지**도 같이 든다.
+     *
+     * 인코딩은 바이트 무늬를 보고 점수를 매기는 것이라 CP949 와 CP932 는
+     * 짧은 파일에서 자주 뒤집힌다. Read 는 그 확신도를 이미 「짐작」 으로
+     * 적어 준다. 그런데 여기 Write 는 같은 값을 손에 쥐고도 안 봐서,
+     * `· CP949` 를 사실처럼 찍고 파일 **전체**를 그 인코딩으로 다시 썼다.
+     * 되돌려 쓰는 쪽이 읽는 쪽보다 위험한데 말은 더 단정했다.
+     */
+    const 짐작이다 = !!(읽음 && 읽음.sure === false);
     const 만든것 = encode(args.content, 원래);
     if (만든것.lost.length) {
       return {
@@ -955,13 +1122,17 @@ function 한파일쓰기(args, ctx) {
              + `  그대로 쓰면 그 글자들이 뭉개집니다. 해당 글자를 빼거나, 파일을 UTF-8 로 바꿔도 되는지 사용자에게 물어보세요.`,
       };
     }
+    ctx.history.snapshot(abs, 'Write');
     writeFileSync(abs, 만든것.buf);
     ctx.seen.add(abs);
     const n = args.content.split('\n').length;
-    const 표기 = 원래 !== 'utf-8' ? ` · ${encLabel(원래)}` : '';
+    const 표기 = 원래 !== 'utf-8' ? ` · ${encLabel(원래)}${짐작이다 ? ' (짐작)' : ''}` : '';
     return {
       content: `${existed ? '덮어씀' : '새로 만듦'}: ${ctx.scope.show(abs)} (${n}줄${표기})`,
-      summary: 이어(세말('lines', n), 원래 !== 'utf-8' ? encLabel(원래) : ''),
+      summary: 이어(
+        세말('lines', n),
+        원래 === 'utf-8' ? '' : 짐작이다 ? 말('sum.encGuess', { 인코딩: encLabel(원래) }) : encLabel(원래),
+      ),
       changed: abs,
       diff: 바뀐자리(이전, args.content),
     };
@@ -1063,7 +1234,6 @@ function 한군데고치기(args, ctx) {
     return { error: `찾지 못했습니다.${hint}` };
   }
 
-  ctx.history.snapshot(abs, 'Edit');
   const next = applySpans(text, m.spans, (matched) =>
     m.tier === 'exact' ? args.new_string : reindent(args.new_string, matched, args.old_string));
 
@@ -1076,10 +1246,15 @@ function 한군데고치기(args, ctx) {
            + `  그대로 쓰면 그 글자들이 뭉개집니다. 다른 표현을 쓰거나, 파일을 UTF-8 로 바꿔도 되는지 사용자에게 물어보세요.`,
     };
   }
+  // 스냅샷은 **정말 쓰기 직전**에 뜬다 (한파일쓰기 의 같은 자리 머리말).
+  // 위 인코딩 거절로 끝나는 길에서 뜨면, 아무것도 안 바꾼 턴이 이력에 남아
+  // /undo 한 번을 통째로 먹는다.
+  ctx.history.snapshot(abs, 'Edit');
   writeFileSync(abs, 만든것.buf);
 
   const n = m.spans.length;
   const how = m.tier === 'exact' ? '' : ` · ${TIER_LABELS[m.tier]}`;
+  // 진짜 숫자를 그대로 내보낸다 — 아래 배열 갈래가 요약 글에서 되뽑지 않게.
   const 표기 = 읽음.encoding !== 'utf-8' ? ` · ${encLabel(읽음.encoding)}` : '';
   return {
     content: `고침: ${ctx.scope.show(abs)} (${n}군데${how}${표기})`,
@@ -1091,6 +1266,7 @@ function 한군데고치기(args, ctx) {
     ),
     changed: abs,
     tier: m.tier,
+    군데: n,
     diff: 바뀐자리(text, next),
   };
 }
@@ -1124,7 +1300,18 @@ function 여러군데고치기(목록, ctx) {
         path: r.changed,
         보인이름: ctx.scope.show(r.changed),
         ok: true,
-        군데: Number(String(r.summary).match(/^(\d+)/)?.[1] ?? 1),
+        /*
+         * 사람이 읽을 요약 글에서 숫자를 **되뽑고** 있었다.
+         *
+         * 그 글은 세말() 이 만들고, 그 안에서 toLocaleString() 을 탄다.
+         * 1,000군데를 넘으면 `1,234군데` 가 되고 /^(\d+)/ 는 `1` 만 집는다.
+         * 디스크에서는 1,234군데가 바뀌었는데 화면과 모델은 `1군데` 를
+         * 받았다. 파일 수 집계도 같이 틀어진다.
+         *
+         * tier·diff 는 객체로 잘 넘기면서 숫자만 글에서 뽑고 있었다.
+         * 이제 한군데고치기() 가 m.spans.length 를 그대로 준다.
+         */
+        군데: r.군데 ?? Number(String(r.summary).replace(/,/g, '').match(/^(\d+)/)?.[1] ?? 1),
         tier: r.tier,
         diff: r.diff,
       });
@@ -1201,6 +1388,47 @@ function 그림보기(abs, ctx) {
     // 루프가 이걸 보고 사람 말 자리에 그림을 붙인다. 모델에게 가는 글이 아니다.
     그림: { b64: 것.b64, mime: 것.mime, bytes: 것.bytes, show },
   };
+}
+
+/**
+ * 찾기 시작할 자리가 **정말 있나.**
+ *
+ * ── 왜 필요한가 ────────────────────────────────────────────────────────
+ *
+ * Glob·Grep 은 `scope.resolve(path)` 만 하고 그 자리가 있는지를 안 봤다.
+ * walk() 는 readdirSync 실패를 `catch { continue }` 로 삼키므로, 없는
+ * 폴더·오타 난 경로·권한 없는 폴더가 전부 **빈 배열**이 됐다. 잘림도
+ * 건너뜀도 0이라 꼬리말조차 안 붙는다.
+ *
+ *   Glob 에 path:'srcs' 처럼 오타 난 폴더를 주면
+ *   → 찾은 파일 없음
+ *
+ * 한 군데도 안 찾아봤는데 「없음」 이다. 모델은 그걸 사실로 받아
+ * 「이 프로젝트에는 X 가 없습니다」 로 답을 맺는다. 이 파일의 다른
+ * 자리들은 「못 찾은 것과 안 본 것은 다르다」 를 세 번이나 적어 뒀는데,
+ * 정작 **뿌리 경로가 없는 경우**만 아무도 안 봤다.
+ *
+ * rg 길도 못 막는다 — 없는 자리면 rg 가 죽고 빠르게찾기() 가 null 을
+ * 돌려주며 그대로 이 아래 자바스크립트 길로 내려온다.
+ */
+function 찾을자리없나(root, 준것, ctx, { 폴더여야 = false } = {}) {
+  const 보인이름 = 준것 ?? ctx.scope.show(root);
+  if (!existsSync(root)) {
+    return {
+      error: `그런 자리가 없습니다: ${보인이름}\n`
+        + '  한 글자도 안 찾아봤습니다 — 「그런 파일이 없다」 가 아닙니다.'
+        + ' 경로를 다시 확인하거나, path 를 빼고 폴더 전체에서 찾으세요.',
+      끝났다: true,
+    };
+  }
+  if (폴더여야) {
+    try {
+      if (!statSync(root).isDirectory()) {
+        return { error: `폴더가 아니라 파일입니다: ${보인이름}. 안을 보려면 Read, 내용을 찾으려면 Grep 을 쓰세요.`, 끝났다: true };
+      }
+    } catch (err) { return { error: `${보인이름} 을 못 열었습니다 — ${err?.message ?? err}`, 끝났다: true }; }
+  }
+  return null;
 }
 
 export const TOOLS = {
@@ -1422,6 +1650,25 @@ export const TOOLS = {
       const 못쓰는이유 = 내부살림(abs);
       if (못쓰는이유) return { error: 못쓰는이유 };
       if (isExcelPath(abs)) return { error: 엑셀은못고침(args.file_path) };
+      /*
+       * ── **없는 파일**은 바이너리 검사가 통째로 없다 ────────────────
+       *
+       * 바이너리인가() 는 existsSync 가 거짓이면 null 을 준다. 즉 아직
+       * 없는 `.hwpx`·`.pdf`·`.png` 는 아무 검사도 안 거치고, 확장자만
+       * 그것인 UTF-8 글 파일이 만들어진다. 화면에는 `새로 만듦:
+       * 주간보고.hwpx (+40줄)` 이 뜨고, 한글에서는 안 열린다.
+       *
+       * Write 는 같은 자리에서 이 갈래를 다 막고, hwpx 만 제대로 만드는
+       * 길(hwpx새로만들기)을 따로 낸다. Append 설명문은 「큰 파일은 이렇게
+       * 나눠서 만든다」 고 시키고 있으니, 두 지시가 만나는 이 자리에
+       * 검사가 없으면 안 된다.
+       */
+      if (isDocPath(abs)) return { error: 문서는못고침(args.file_path) };
+      if (isPdfPath(abs)) return { error: pdf는못고침(args.file_path) };
+      if (isFigPath(abs)) return { error: fig는못고침(args.file_path) };
+      if (그림인가(abs)) {
+        return { error: `${ctx.scope.show(abs)} 는 그림 파일 이름입니다 — 글을 이어 붙이면 열리지 않는 파일이 됩니다.`, 끝났다: true };
+      }
       const 바이너리막기 = 바이너리인가(abs);
       if (바이너리막기) return { error: 바이너리막기 };
 
@@ -1439,9 +1686,33 @@ export const TOOLS = {
       // 원래 있던 파일이면 그 파일이 쓰던 인코딩 그대로 이어 붙인다.
       // 이어 붙이는 조각에는 앞머리 표식(BOM)이 들어가면 안 된다 — 파일 한가운데에
       // BOM 이 박히면 그 자리가 이상한 글자로 보인다. 그래서 표식 없는 이름으로 바꾼다.
-      const 원래 = existed ? (ctx.enc?.get(abs) ?? 재는인코딩(abs)) : 'utf-8';
-      // 잰 것은 적어 둔다 — Read 가 하는 것과 같은 자리다. 안 적어 두면 이 파일에
-      // 붙일 때마다 인코딩을 다시 재느라 파일을 통째로 또 읽는다.
+      /*
+       * ── 캐시를 **먼저** 보고 있었다 ────────────────────────────────
+       *
+       * Write 의 같은 자리 머리말이 이미 결론을 내려 뒀다 — 「캐시가 낡으면
+       * 남이 이미 UTF-8 로 바꿔 둔 파일을 CP949 라고 우긴다. 재는 값이 있는
+       * 자리에서는 잰 값이 이긴다」. Append 만 그 반대로 돌고 있었다.
+       *
+       *   Read 로 CP949 로 읽는다      → 캐시에 CP949
+       *   Bash iconv 로 UTF-8 로 바꾼다 → 캐시는 그대로 CP949
+       *   Append 한 줄                 → CP949 바이트를 UTF-8 파일 꼬리에
+       *
+       * 오류는 안 난다. 파일 뒤쪽만 깨지고, 결과에는 `이어 붙임 · CP949`
+       * 가 사실처럼 뜬다.
+       *
+       * 그렇다고 붙일 때마다 통째로 다시 읽지도 않는다. 파일 크기가
+       * 그대로면 남이 안 건드린 것이라 캐시를 그대로 쓴다 — 줄기억 이
+       * 같은 잣대를 이미 쓰고 있다.
+       */
+      const 잰것캐시 = ctx.enc재기 ?? (ctx.enc재기 = new Map());
+      const 지금크기 = existed ? 파일크기(abs) : -1;
+      const 든것 = 잰것캐시.get(abs);
+      const 원래 = !existed ? 'utf-8'
+        : (든것 && 든것.바이트 === 지금크기) ? 든것.인코딩
+          : 재는인코딩(abs);
+      // 여기서 넣어 두면 **다음 번에 반드시 빗나간다** — 붙이고 나면 크기가
+      // 달라지기 때문이다. 넣는 자리는 붙인 **뒤**다 (아래 참고).
+      // Read·Write 가 보는 표에도 맞춰 둔다. 안 맞추면 두 표가 서로 다른 답을 낸다.
       ctx.enc?.set?.(abs, 원래);
       const 조각인코딩 = 원래 === 'utf-8-bom' ? 'utf-8' : 원래;
       const 만든것 = encode(args.content, 조각인코딩);
@@ -1472,6 +1743,9 @@ export const TOOLS = {
       mkdirSync(dirname(abs), { recursive: true });
       if (existed) appendFileSync(abs, 만든것.buf);
       else writeFileSync(abs, 만든것.buf);
+      // 붙인 **뒤** 크기로 적어 둔다. 다음 Append 는 이 크기와 맞으면 그대로
+      // 쓰고, 그 사이 남이 파일을 건드렸으면 크기가 어긋나 다시 잰다.
+      잰것캐시.set(abs, { 바이트: 파일크기(abs), 인코딩: 원래 });
       ctx.seen.add(abs);
 
       const 붙인줄 = args.content.split('\n').length - (args.content.endsWith('\n') ? 1 : 0);
@@ -1611,6 +1885,8 @@ export const TOOLS = {
     },
     async run(args, ctx) {
       const root = args.path ? ctx.scope.resolve(args.path) : ctx.scope.root;
+      const 없나 = 찾을자리없나(root, args.path, ctx, { 폴더여야: true });
+      if (없나) return 없나;
       const re = globToRegex(args.pattern);
       const 전부 = await walk(root, { signal: ctx.signal });
       // 훑다 말고 나왔으면 그렇다고 말한다. 조용히 적게 주면 「그런 파일이 없다」가 된다.
@@ -1668,7 +1944,9 @@ export const TOOLS = {
       catch (err) { return { error: `정규식이 잘못됐습니다: ${err.message}` }; }
 
       const root = args.path ? ctx.scope.resolve(args.path) : ctx.scope.root;
-      const isFile = existsSync(root) && statSync(root).isFile();
+      const 없나 = 찾을자리없나(root, args.path, ctx);
+      if (없나) return 없나;
+      const isFile = statSync(root).isFile();
 
       const mode = args.output_mode ?? 'files_with_matches';
       const limit = args.head_limit ?? 찾을줄수(ctx.모델컨텍스트);
@@ -1715,8 +1993,24 @@ export const TOOLS = {
          * 숫자를 안 알려준다. 그러면 **모르는 것을 안 적는다** — 지어낸 숫자를
          * 적느니 안 셌다고 말하는 편이 낫다.
          */
+        /*
+         * ── 여기서도 **잘랐으면 잘랐다고 한다** ─────────────────────
+         *
+         * 위 `빠른것.잘림` 은 rg 자체의 상한에 걸렸을 때만 참이다. 그
+         * 안쪽에서 우리가 limit 으로 다시 자르는 것은 아무 데도 안 적혔다.
+         * 8k 모델이면 찾을줄수가 80이라, 300개 파일이 걸려도 모델은 80줄을
+         * 받고 **그게 전부라고 믿는다.** 요약에만 `300개 파일` 이 뜬다.
+         * 「전부 고쳤습니다」 가 여기서 나온다.
+         *
+         * 자바스크립트 길과 Glob 은 이 경우를 이미 말해 준다. rg 길만
+         * 그 규칙 밖에 있었다.
+         */
+        const 파일잘림 = mode !== 'content' && hitFiles.length > limit;
+        const 줄잘림 = mode === 'content' && total > lines.length;
         const 꼬리2 = [
           빠른것.잘림 ? '(결과가 많아 앞부분만 봤습니다 — 더 있을 수 있습니다)' : '',
+          파일잘림 ? `(맞은 파일 ${hitFiles.length}개 중 앞 ${limit}개만 적었습니다)` : '',
+          줄잘림 ? `(맞은 줄 ${total}개 중 앞 ${lines.length}개만 적었습니다)` : '',
           엔진말(빠른것.엔진),
           '(.gitignore·.deelignore 는 지켰습니다. 건너뛴 수는 안 셌습니다)',
         ].filter(Boolean).join(' ');
@@ -1816,6 +2110,11 @@ export const TOOLS = {
       const 꼬리 = [
         멈춤 === '중단' ? '(중단하셔서 여기까지만 찾았습니다)' : '',
         멈춤 === '상한' ? `(${limit}개에서 멈췄습니다 — 더 있을 수 있습니다)` : '',
+        // content 갈래는 `lines.length < limit` 으로 조용히 담기를 멈춘다.
+        // 그 자리도 잘린 것이다 — clip() 의 「N자 잘림」 은 글자 수 상한일 뿐,
+        // 줄 수로 잘린 것은 못 알린다.
+        mode === 'content' && total > lines.length
+          ? `(맞은 줄 ${total}개 중 앞 ${lines.length}개만 적었습니다)` : '',
         건너뛴것 ? `(글이 아니거나 너무 큰 파일 ${건너뛴것}개는 건너뛰었습니다)` : '',
         안본것,
       ].filter(Boolean).join(' ');
@@ -1908,7 +2207,17 @@ export const TOOLS = {
        * 여기서 안 보인다. 그래서 '전부 되돌아간다' 고 말하지 않는다.
        * 그래도 손으로 옮기고 지우는 흔한 자리는 이걸로 덮인다.
        */
-      const 뜬것 = 바꾸기전스냅샷(cmd, ctx);
+      const 떠본것 = 바꾸기전스냅샷(cmd, ctx);
+      const 뜬것 = 떠본것.뜬것;
+      /*
+       * 못 뜬 것과 상한에 걸린 것은 **결과에 실어 보낸다.**
+       *
+       * 화면이 「떠 뒀습니다 — /undo 로 되돌아갑니다」 를 찍는 자리가
+       * 하나뿐이라(repl.js), 여기서 안 갈라 주면 그 한 줄이 되돌릴 수
+       * 없는 파일까지 되돌릴 수 있다고 말하게 된다.
+       */
+      const 못뜬것 = 떠본것.못뜬것;
+      const 스냅샷상한걸림 = 떠본것.상한걸림;
 
       // 끝나지 않는 명령은 뒤에서 띄운다. 여기서 기다리면 그 턴이 통째로 멈춘다.
       if (args.background === true) {
@@ -1940,6 +2249,8 @@ export const TOOLS = {
           일감번호: r.번호,
           뒤에서: true,
           되돌릴것: 뜬것,
+          못뜬것,
+          스냅샷상한걸림,
         };
       }
 
@@ -2018,9 +2329,25 @@ export const TOOLS = {
           const stderr = 풀기(stderrBuf);
           const out = [stdout, stderr].filter(Boolean).join('\n').trim();
 
-          if (끊겼나) return done({ error: '사용자가 중단했습니다', content: clip(out, 실을만큼(ctx)) });
+          /*
+           * 끊겼든 시간이 넘었든 **떠 둔 것은 그대로 말해 준다.**
+           *
+           * `rm -r dist && npm run build` 를 돌리다 끊으면 dist 는 이미
+           * 지워져 있다. 여기서 되돌릴것 을 빼면 화면에도 모델에도 그
+           * 사실이 한 글자도 안 남는다 — 되돌릴 수 있는데 되돌릴 수
+           * 있다는 것을 아무도 모르는 상태가 제일 나쁘다.
+           */
+          if (끊겼나) {
+            return done({
+              error: '사용자가 중단했습니다', content: clip(out, 실을만큼(ctx)),
+              되돌릴것: 뜬것, 못뜬것, 스냅샷상한걸림,
+            });
+          }
           if (시간초과 || (err && err.killed)) {
-            return done({ error: `시간 초과로 중단됨 (${제한}ms)`, content: clip(out, 실을만큼(ctx)) });
+            return done({
+              error: `시간 초과로 중단됨 (${제한}ms)`, content: clip(out, 실을만큼(ctx)),
+              되돌릴것: 뜬것, 못뜬것, 스냅샷상한걸림,
+            });
           }
 
           /*
@@ -2090,6 +2417,10 @@ export const TOOLS = {
             signal: 시그널,
             // 무엇을 떠 뒀는지 화면이 알아야 '되돌릴 수 있다' 를 사실대로 적는다.
             되돌릴것: 뜬것,
+            // 그리고 **못 뜬 것도** 알아야 한다. 이것만 빠지면 화면은
+            // 되돌릴 수 없는 파일까지 되돌아간다고 말한다.
+            못뜬것,
+            스냅샷상한걸림,
           });
         });
 
@@ -2174,8 +2505,21 @@ export const TOOLS = {
           // Ctrl+C 는 짧게 — 사람이 지금 돌려받으려고 누른 것이다.
           죽이기({ 더줄까: 1200 });
           clearTimeout(뒷북);
-          // 콜백을 기다리지 않는다. 손자가 파이프를 물고 있으면 안 불릴 수도 있다.
-          done({ error: '사용자가 중단했습니다' });
+          /*
+           * ── 곧장 끝맺으면 **나온 말이 통째로 버려진다** ────────────────
+           *
+           * 여태 여기서 바로 done() 을 불렀다. done 은 한 번만 먹히므로,
+           * 그 아래 콜백의 `if (끊겼나) … content: clip(out …)` 은 **닿을
+           * 수 없는 줄**이었다. 끊긴 명령이 죽기 직전에 뱉은 몇 줄 —
+           * 대개 그게 제일 중요한 줄이다 — 이 매번 사라졌다.
+           * 바로 위 시간 초과 갈래는 이미 그 몇 줄을 받으려고 기다린다.
+           *
+           * 그렇다고 마냥 기다리지도 않는다. 손자가 파이프를 물고 있으면
+           * 콜백이 영영 안 올 수 있어서, 짧은 그물을 하나 두고 그때까지만
+           * 준다. 사람이 지금 돌려받으려고 누른 것이라 길게 잡지 않는다.
+           */
+          const 그물 = setTimeout(() => done({ error: '사용자가 중단했습니다', 되돌릴것: 뜬것, 못뜬것, 스냅샷상한걸림 }), 400);
+          그물.unref?.();
         };
         if (ctx.signal?.aborted) 끊기();
         else ctx.signal?.addEventListener?.('abort', 끊기, { once: true });
@@ -2412,9 +2756,24 @@ export const TOOLS = {
         const 날 = h.언제 instanceof Date ? h.언제.toISOString().slice(0, 16).replace('T', ' ') : '';
         return `[${h.세션} · ${날} · ${h.누구}] ${h.토막}`;
       });
+      /*
+       * ── **찾아 놓고 아무한테도 안 주고 있었다** ────────────────────
+       *
+       * 못 찾은 갈래는 바로 위에서 이미 고쳤다 — 「content 를 반드시
+       * 채운다. 대화에 실리는 것은 content 다」. 그런데 **찾은** 갈래는
+       * 그대로였다. 맞은 것을 `text` 에 담아 돌려주는데, loop.js 의
+       * 실을글() 이 보는 것은 content → summary 차례이고 `text`·`hits`
+       * 를 읽는 자리는 저장소 어디에도 없다.
+       *
+       * 그래서 모델이 받은 것은 요약 한 줄 — 「지난 대화 12건 중 8건」.
+       * **여덟 건의 내용은 한 글자도 안 갔다.** 못 찾은 것보다 나쁘다.
+       * 찾았다고 들었는데 내용이 없으면 지어내기 딱 좋은 자리가 된다.
+       */
+      const 찾은말 = 말('sum.recall', { 전체: r.전체맞음, 맞음: r.맞은것.length })
+        + (r.예산초과 ? ` (${r.전체파일}개 중 ${r.본파일}개만 뒤짐)` : '');
       return {
-        summary: 말('sum.recall', { 전체: r.전체맞음, 맞음: r.맞은것.length })
-          + (r.예산초과 ? ` (${r.전체파일}개 중 ${r.본파일}개만 뒤짐)` : ''),
+        content: `${찾은말}\n${줄들.join('\n')}`,
+        summary: 찾은말,
         hits: r.맞은것.map((h) => ({ session: h.세션, when: h.언제, who: h.누구, text: h.토막 })),
         text: 줄들.join('\n'),
         searched: r.본파일,
@@ -2451,7 +2810,22 @@ export const TOOLS = {
     async run(args, ctx) {
       const { 더하기 } = await import('../agent/memory.js');
       const r = 더하기(ctx.scope.root, args.text);
-      if (!r.ok) return { summary: r.why, remembered: false };
+      /*
+       * 안 적힌 것을 **안 적혔다고** 말한다.
+       *
+       * 여태 `{ summary, remembered:false }` 만 돌려줬다. error 도 content 도
+       * 없으니 화면에는 여느 성공과 똑같이 `✓ Remember` 가 뜬다 — 한 글자도
+       * 안 적혔는데 적힌 것처럼 보인다. 기억은 **다음 대화에서야** 없는 것을
+       * 알게 되는 종류라, 이 자리에서 조용하면 아무도 못 알아챈다.
+       *
+       * 둘을 가른다. 빈 글은 부른 쪽이 잘못한 것이라 오류다. 이미 있는
+       * 말은 잘못이 아니지만 **새로 적힌 것도 아니라서**, 적힌 것처럼
+       * 보이지 않게 그 사실을 글로 돌려준다.
+       */
+      if (!r.ok) {
+        if (!String(args.text ?? '').trim()) return { error: r.why, 끝났다: true, remembered: false };
+        return { content: `안 적었습니다: ${r.why}`, summary: r.why, remembered: false };
+      }
       return {
         summary: 이어(말('sum.remembered', { n: r.줄수 }), r.넘침 ? 말('sum.rememberFull') : ''),
         remembered: true,
@@ -2826,17 +3200,40 @@ export async function runTool(name, args, ctx) {
      * 바뀐것들·여럿 이 있으면 여러 개를 바꾼 것이다.
      */
     if (ctx.signal?.aborted) {
+      /*
+       * Bash 는 `changed` 를 **절대 안 낸다.** 파일을 바꾸는 도구 중
+       * 유일하게 그렇다 — 무엇이 바뀌는지 명령줄만 보고는 모르기
+       * 때문이다. 대신 떠 둔 목록(되돌릴것)을 낸다. 그것도 「이미
+       * 손댔다」 는 증거다.
+       *
+       * 이 줄이 없을 때 `rm -r dist && npm run build` 를 돌리다 ESC 를
+       * 누르면, dist 는 지워졌는데 화면도 모델도 「중단했습니다」 한 줄만
+       * 받았다. 되돌릴 수 있다는 사실도 같이 사라졌다.
+       */
       const 바꿔놨나 = !!(r.changed
         || r.바뀐것들?.length
+        || r.되돌릴것?.length
         || (Array.isArray(r.여럿) && r.여럿.some((x) => x?.ok && x.path)));
-      if (!바꿔놨나 || r.error) {
+      /*
+       * `|| r.error` 로 같이 걷어내고 있었다. 그런데 끊긴 Bash 의 결과는
+       * **언제나** error 를 달고 온다('사용자가 중단했습니다'). 그래서 위
+       * 판정이 참이어도 이 줄에서 다시 버려졌다. 오류는 오류대로 남기고,
+       * 이미 손댄 것은 손댄 대로 넘긴다 — 둘은 같이 참일 수 있다.
+       */
+      if (!바꿔놨나) {
         return { error: '중단했습니다.', 끝났다: true, 중단됨: true };
       }
       return { ...r, 중단됨: true, 중단전에끝남: true };
     }
     return await 고친뒤진단(name, r, ctx);
   } catch (err) {
-    const r = { error: err.message };
+    /*
+     * `err.message` 만 쓰면 Error 가 아닌 것이 올라올 때 undefined 가
+     * 된다. 그러면 부르는 쪽의 `if (result.error)` 가 거짓이 되어
+     * **실패가 성공으로 세어진다.** 같은 파일의 형제 자리들과 loop.js 는
+     * 이미 String(err?.message ?? err) 를 쓴다. 여기만 달랐다.
+     */
+    const r = { error: String(err?.message ?? err) };
     ctx.audit.tool(name, args, r);
     return r;
   }

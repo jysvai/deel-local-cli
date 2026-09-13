@@ -42,7 +42,7 @@ import { 보고서적기 } from './ui/export.js';
 import { loadCommand, discover } from './skills/discover.js';
 import { install, list, remove, pack } from './plugins/manage.js';
 import { spin } from './ui/spinner.js';
-import { 그림고르기설정, 끔설정 } from './ui/motion.js';
+import { 그림고르기설정, 끔설정, 환경그림, 환경으로껐나 } from './ui/motion.js';
 import { 사무실설정, 최소높이, 최소폭 } from './ui/office.js';
 
 /**
@@ -62,6 +62,28 @@ export function 적용하기(고른것) {
   // 환경변수(DEEL_NO_MOTION)는 안 건드린다 — 사람이 직접 넣어 둔 것을 명령이
   // 지워 버리면, 껐다고 믿는 자리에서 그림이 다시 돈다. 설정용 값은 따로 둔다.
   끔설정(값 === '끔');
+}
+
+/**
+ * `/motion` 이 환경변수에 대해 해야 하는 말. 없으면 빈 배열.
+ *
+ * 여태 이 자리는 「DEEL_MOTION·DEEL_OFFICE 가 켜져 있으면 그쪽이 이깁니다」
+ * 한 줄이 전부였다. 그래서 두 가지를 틀리게 말했다.
+ *
+ *   · **DEEL_NO_MOTION 을 통째로 안 봤다.** 그게 켜져 있으면 무엇을 골라도
+ *     한 칸짜리 돌림표가 도는데, 화면은 「기사로 바꿨습니다 · 그 자리에서
+ *     바뀝니다」 라고 말한다. 아무것도 안 바뀐다.
+ *   · **모르는 값도 이긴다고 말했다.** `DEEL_MOTION=cat` 은 무시되고 설정
+ *     파일이 그대로 쓰이는데, 「환경변수가 이깁니다」 라고 적혔다. 사람은
+ *     설정을 바꿔도 소용없다고 믿는다 — 사실은 그 설정이 이기고 있는데.
+ */
+function 환경이하는말() {
+  const 말들 = [];
+  const 그림 = 환경그림();
+  if (그림?.이김 || process.env.DEEL_OFFICE) 말들.push(c.gray(말('motion.envWins')));
+  if (그림 && !그림.이김) 말들.push(c.gray(말('motion.envUnknown', { 값: 그림.값 })));
+  if (환경으로껐나()) 말들.push(c.gray(말('motion.envOff')));
+  return 말들;
 }
 import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable, 가벼운강도, shiftLevel } from './agent/effort.js';
 import { 전선붙이기, 전선말 } from './backend/wire.js';
@@ -607,10 +629,8 @@ export async function handle(line, session, ctx) {
           say(`  ${c.yellow(mark.warn)} ${c.gray(말('motion.tooSmall', { 줄, 칸, 최소줄: 최소높이, 최소칸: 최소폭 }))}`);
           say('');
         }
-        if (process.env.DEEL_MOTION || process.env.DEEL_OFFICE) {
-          say(`  ${c.gray(말('motion.envWins'))}`);
-          say('');
-        }
+        const 환경말 = 환경이하는말();
+        if (환경말.length) { for (const 줄 of 환경말) say(`  ${줄}`); say(''); }
         return { handled: true };
       }
 
@@ -652,10 +672,17 @@ export async function handle(line, session, ctx) {
           say(`     ${c.yellow(mark.warn)} ${c.gray(말('motion.appleTerminal'))}`);
         }
       }
-      if (process.env.DEEL_MOTION || process.env.DEEL_OFFICE) {
-        say(`     ${c.yellow(mark.warn)} ${c.gray(말('motion.envWins'))}`);
-      }
-      say(`     ${c.gray(말('motion.appliesNow'))}`);
+      for (const 줄 of 환경이하는말()) say(`     ${c.yellow(mark.warn)} ${줄}`);
+      /*
+       * 「그 자리에서 바뀝니다」 는 **정말로 바뀔 때만** 적는다.
+       *
+       * DEEL_NO_MOTION 이 켜져 있으면 무엇을 골라도 한 칸짜리 돌림표가 돈다.
+       * 그런데 이 자리는 그걸 안 보고 늘 「바뀝니다」 를 적고 있었다. 바로
+       * 위에서 사무실이 작은 터미널에 안 뜬다고 굳이 말해 주는 것과 같은
+       * 까닭인데(「켰다고 말해 놓고 안 보이면 그게 고장이다」), 정작 같은
+       * 일이 환경변수로 일어날 때는 아무 말도 안 했다.
+       */
+      if (!환경으로껐나()) say(`     ${c.gray(말('motion.appliesNow'))}`);
       say('');
       return { handled: true };
     }
@@ -929,9 +956,40 @@ export async function handle(line, session, ctx) {
       // 사람도 되돌아간 줄 모른다. **되돌아간 것만** 뺀다 — 못 되돌린 파일을
       // 여기서 빼면 진짜로 바뀌어 있는 파일이 /diff 에서도 사라진다.
       for (const f of r.restored) if (f.ok === true) session.changes.delete(f.path);
+      /*
+       * ── 되돌리기는 됐는데 **이력을 못 지웠으면** 그것도 말한다 ──────────
+       *
+       * 파일은 이미 되돌아가 있다. 그런데 그 턴이 이력에 그대로 남으면,
+       * 사람이 /undo 를 한 번 더 쳤을 때 **같은 턴**이 또 되돌아간다.
+       * 두 턴을 되돌린 줄 알지만 한 턴이다 (safety/undo.js 의 이력줄임).
+       */
+      if (r.이력줄임 && r.이력줄임.ok === false) {
+        say(`  ${mark.warn} ${c.gray('파일은 되돌렸지만 되돌리기 기록을 못 지웠습니다')} ${c.gray(`— ${r.이력줄임.왜}`)}`);
+        say(`    ${c.gray('그래서 이 턴이 기록에 그대로 남아 있습니다. 여기서')} ${c.cyan('/undo')} ${c.gray('를 또 치면 같은 턴을 또 되돌립니다.')}`);
+      }
+      /*
+       * 깨진 줄은 **되돌릴 수 없는 파일**이다.
+       *
+       * 이력 한 줄이 곧 한 파일의 원문이라, 줄이 깨졌다는 것은 그 파일을
+       * 되돌릴 길이 사라졌다는 뜻이다. 안 말하면 「파일 3개를 되돌렸습니다」
+       * 만 남고 넷째가 왜 안 돌아왔는지는 아무 데도 안 적힌다.
+       */
+      if (r.깨진줄) {
+        say(`  ${mark.warn} ${c.gray(`되돌리기 기록에서 ${r.깨진줄}줄을 못 읽었습니다 — 그 줄에 걸린 파일은 되돌릴 길이 없습니다.`)}`);
+      }
+
       // 상태줄의 '되돌릴 턴' 도 여기서 줄여 준다. 안 줄이면 방금 되돌린 것을
       // 아직 되돌릴 수 있는 것처럼 세고 있게 된다.
-      try { session.되돌릴턴 = ctx.history.turns().length; } catch { /* 못 세면 그냥 둔다 */ }
+      /*
+       * 못 세면 **모른다고 말한다.** 그냥 두면 방금 되돌린 턴이 상태줄에
+       * 그대로 남아, 아직 되돌릴 수 있는 것처럼 보인다 (repl.js 에서 같은
+       * 자리를 이미 고쳤다 — 안전망 숫자가 조용히 틀리면 안 된다).
+       */
+      try { session.되돌릴턴 = ctx.history.turns().length; }
+      catch (e) {
+        session.되돌릴턴 = null;
+        say(`  ${mark.warn} ${c.gray(`되돌릴 턴이 몇 개 남았는지 못 셌습니다 — ${e?.message ?? e}`)}`);
+      }
 
       const 되감음 = session.되감기(r.turnIds ?? []);
       if (되감음.걷은것) {
@@ -1037,6 +1095,22 @@ export async function handle(line, session, ctx) {
       // 서버가 잠깐 막아 다시 부른 횟수. 0 이면 안 적는다 — 없는 일을 줄로 남기면 표만 길어진다.
       if (session.usage.retries) say(`  ${c.gray(pad(말('cost.retries'), 14))} ${말('unit.calls', { n: session.usage.retries })}`);
       say(`  ${c.gray(pad(말('cost.elapsed'), 14))} ${말('unit.min', { n: mins })}`);
+      /*
+       * ── 갈래를 쓰면 이 위의 숫자는 **한 갈래 것**이다 ────────────────
+       *
+       * session.usage 는 지금 갈래의 셈이다. 갈래를 셋 굴리면 화면의
+       * 금액은 그중 하나 몫이고, 갈래를 바꾸는 것만으로 숫자가 내려간다 —
+       * 돈은 그대로 나가는데. 닫은 갈래 것은 아예 안 보였다.
+       *
+       * 위 줄들을 갈래 합으로 바꾸지는 않는다. 「이 갈래에서 뭘 했나」 도
+       * 봐야 하는 값이라서다. 대신 **다를 때만** 한 줄을 더 붙인다.
+       */
+      const 갈래셈 = ctx?.갈래?.갈래여럿인가?.() ? ctx.갈래.전체usage() : null;
+      if (갈래셈) {
+        const 갈래수 = (ctx.갈래.개수?.() ?? 1) + (ctx.갈래.닫힌수 ?? 0);
+        say(`  ${c.gray(pad('갈래 전부', 14))} ${c.gray(`${갈래수}갈래 · 호출 ${갈래셈.calls.toLocaleString()} · 입력 ${갈래셈.in.toLocaleString()} · 출력 ${갈래셈.out.toLocaleString()}`)}`);
+        say(`  ${c.gray(pad('', 14))} ${c.gray('위 숫자는 지금 갈래 것입니다.')}`);
+      }
       /*
        * 돈.
        *
@@ -1152,6 +1226,29 @@ export async function handle(line, session, ctx) {
         say(`  ${c.gray(pad('', 10))} ${mark.warn} ${c.yellow(말('status.rulesUnread', {
           이름: session.규칙못읽음.이름, 까닭: session.규칙못읽음.까닭,
         }))}`);
+      }
+      /*
+       * 반만 실린 것도 같은 자리에서 말한다.
+       *
+       * 이름만 적으면 사람은 규칙이 통째로 걸려 있다고 믿는다. 2만 자를
+       * 넘긴 규칙 파일의 뒷부분은 모델에게 한 글자도 안 간다 — 「운영 DB 는
+       * 건드리지 마라」 가 하필 그 뒤에 있으면 그게 제일 나쁜 모양이다.
+       */
+      if (session.규칙잘림) {
+        const j = session.규칙잘림;
+        say(`  ${c.gray(pad('', 10))} ${mark.warn} ${c.yellow(`${j.이름} 은 ${j.원본.toLocaleString()}자라 앞 ${j.실린.toLocaleString()}자만 실렸습니다`)}`);
+        say(`  ${c.gray(pad('', 10))} ${c.gray('그 뒤에 적은 규칙은 모델에게 안 갑니다. 중요한 것을 앞으로 옮기세요.')}`);
+      }
+      /*
+       * 도구 정의를 못 쟀으면 그것도 적는다.
+       *
+       * 도구 정의는 매 요청에 통째로 실려 나간다. 못 재면 /context 는 그만큼
+       * 빈자리가 있다고 말하고, 그 값으로 출력 상한이 잡혀 답이 이유 없이
+       * 짧아진다. MCP 서버가 이상한 스키마를 주면 실제로 나는 일이다.
+       */
+      if (session.도구못쟀나) {
+        say(`  ${c.gray(pad('', 10))} ${mark.warn} ${c.yellow(`도구 정의 크기를 못 쟀습니다 — ${String(session.도구못쟀나).slice(0, 60)}`)}`);
+        say(`  ${c.gray(pad('', 10))} ${c.gray('/context 의 도구 칸이 0 으로 나오고, 답이 이유 없이 짧아질 수 있습니다.')}`);
       }
       const caps = [
         k.tools ? c.green(말('status.capTools')) : c.red(말('status.capTools')),
@@ -2811,6 +2908,23 @@ function showContext(session) {
     say(`  ${c.gray(말('ctx.calibrated', { 부호: 차이 >= 0 ? '+' : '', 퍼센트: 차이, 번: b.보정잰것 }))}`);
   } else {
     say(`  ${c.gray(말('ctx.estimate'))}`);
+  }
+  /*
+   * 재 봤는데 **못 믿어서 안 쓴** 것도 말한다.
+   *
+   * session.배운다() 는 서버가 알려 준 값이 우리 추정의 절반 아래거나 두 배
+   * 위면 표본을 버린다. 튄 값 하나에 게이지가 휘둘리면 안 되니 버리는 것은
+   * 맞다. 그런데 버린 것을 아무 데도 안 남기면, 「아직 한 번도 못 재 봤다」 와
+   * 「재 봤는데 세 배가 나와서 못 믿었다」 가 화면에서 똑같아진다.
+   *
+   * 뒤엣것은 우리 추정이 크게 틀렸다는 단서다. 그 말을 안 하면 게이지는 영영
+   * 짐작인 채로 도는데 사람은 그저 「추정입니다」 만 읽는다.
+   */
+  if (session?.보정버림 > 0) {
+    const 배 = session.보정마지막버린비율;
+    say(`  ${c.gray(`서버가 알려 준 값이 우리 추정과 너무 달라 ${session.보정버림}번은 안 썼습니다`
+      + (배 ? ` (마지막에 잰 것은 추정의 ${배.toFixed(1)}배)` : ''))}`);
+    say(`  ${c.gray('이 창구에서는 위 숫자가 실제와 크게 다를 수 있습니다.')}`);
   }
   say('');
 }
