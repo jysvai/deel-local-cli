@@ -39,7 +39,7 @@ delete process.env.DEEL_KEYSTORE;
  */
 process.env.DEEL_KEYCHAIN_NAME = `deel-검사-${process.pid}-${Date.now()}`;
 
-const { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식, 마지막명령줄, 잠금지우기, 키체인이름, 기본키체인이름 } = await import('../src/safety/keystore.js');
+const { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식, 마지막명령줄, 잠금지우기, 키체인이름, 기본키체인이름, 잠그다실패한까닭 } = await import('../src/safety/keystore.js');
 const { load, save, resolveKey, 잠금소식, 열쇠탈소식, 열쇠보관, configPath } = await import('../src/config.js');
 const { 열쇠명세 } = await import('../src/pack/sbom.js');
 
@@ -394,17 +394,48 @@ trace('11-0600-은-윈도우에서-거짓말');
  * 남으면 그 판 내내 살아서 앞의 검사들이 보는 말을 바꾼다.
  */
 {
+  /*
+   * ── 「해 볼 것이 없었다」 를 「해 봤는데 졌다」 로 적고 있었다 (16회차) ──
+   *
+   * 리눅스에서 이 절이 통째로 빨개졌다. 앞 1절의 `잠그기(열쇠)` 하나가
+   * 「이 운영체제에는 잠금장치가 없습니다」 를 **실패 기록으로** 남기고,
+   * 그 기록이 판이 끝날 때까지 살아서 보관방식() 의 말을 전부 바꿨다 —
+   *
+   *     껐는데도    「파일에 평문 + 권한 0600 — 잠그려다 실패했습니다: …」
+   *     그냥 리눅스  「…                     — 잠그려다 실패했습니다: …」
+   *
+   * 둘 다 안 한 일을 했다고 적은 것이고, 앞의 것은 사람이 **스스로 끈** 사실
+   * 까지 덮었다. 그래서 잠그기() 가 「해 봤는지」 를 같이 적게 하고, 보관방식()
+   * 은 해 본 것만 시도로 말한다 (safety/keystore.js 의 해보고졌나).
+   */
+  const 껐을때앞 = 보관방식('sk-평문으로둔것');
+  check('★★ 잠금장치가 없는 판은 「잠그려다 실패」 라고 안 한다',
+    process.platform === 'win32' || process.platform === 'darwin' || !/잠그려다 실패/.test(껐을때앞),
+    껐을때앞);
+
   process.env.DEEL_KEYSTORE = 'off';
   const 못쓸때 = 보관방식('sk-평문으로둔것');
   const 못쓸때영 = 보관방식('sk-평문으로둔것', { lang: 'en' });
+  delete process.env.DEEL_KEYSTORE;
 
-  // 실제로 잠그다 실패한 적이 있는 상태도 같은 말을 한다 (같은 함수의 다른 갈래).
+  /*
+   * 실제로 잠그다 실패한 적이 있는 상태도 같은 말을 한다 (같은 함수의 다른 갈래).
+   *
+   * **이 판에 없는 쪽** 잠금장치로 몰아넣어 진짜로 지게 만든다 — 윈도우·리눅스에는
+   * `security` 가 없고 맥에는 파워셸이 없다. 예전에는 'linux' 로 몰아넣었는데,
+   * 그 갈래는 이제 (바르게) 시도로 안 세므로 여기서 잴 것이 없어진다.
+   */
   const 원래platform = process.platform;
-  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+  const 없는쪽 = 원래platform === 'darwin' ? 'win32' : 'darwin';
+  Object.defineProperty(process, 'platform', { value: 없는쪽, configurable: true });
   잠그기('sk-여기서는-못잠근다');
   Object.defineProperty(process, 'platform', { value: 원래platform, configurable: true });
   const 실패뒤 = 보관방식('sk-평문으로둔것');
   const 실패뒤영 = 보관방식('sk-평문으로둔것', { lang: 'en' });
+
+  // 그 실패 기록이 남은 뒤에도 **끈 것이 더 세다.** 껐으면 아무것도 안 해 봤다.
+  process.env.DEEL_KEYSTORE = 'off';
+  const 껐는데실패기록 = 보관방식('sk-평문으로둔것');
   delete process.env.DEEL_KEYSTORE;
 
   const 넷 = [못쓸때, 못쓸때영, 실패뒤, 실패뒤영];
@@ -416,6 +447,10 @@ trace('11-0600-은-윈도우에서-거짓말');
   check('★ 어느 쪽이든 평문이라는 것과 까닭은 말한다',
     /평문/.test(못쓸때) && /꺼 두었습니다/.test(못쓸때) && /평문/.test(실패뒤) && /실패했습니다/.test(실패뒤),
     `${못쓸때} / ${실패뒤}`);
+  check('★★★ 껐다고 했으면 묵은 실패 기록보다 그 말이 먼저다',
+    /꺼 두었습니다/.test(껐는데실패기록) && !/잠그려다 실패/.test(껐는데실패기록), 껐는데실패기록);
+  check('★ 그래도 까닭을 통째로 잃지는 않는다 (config.js 가 쓴다)',
+    typeof 잠그다실패한까닭() === 'string' && 잠그다실패한까닭().length > 0, String(잠그다실패한까닭()));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

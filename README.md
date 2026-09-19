@@ -1334,7 +1334,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (13,900 checks; a few are TTY-dependent)
+npm test          Full suite (13,912 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1378,7 +1378,7 @@ so one run tells you everything.
 | `exitcode` · `doorparity` | 7 · 19 | The printed exit-code table is real · all **four** doors hand out the same thing |
 | `no-bundle` | 28 | Nothing foreign in the published package; test-file hygiene |
 | `edit-bench` | 15 cases | Edit success rate |
-| `mutate` | 1,650 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
+| `mutate` | 1,654 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
 
 > **More** — Coverage · Layout
 >
@@ -1400,7 +1400,7 @@ so one run tells you everything.
 </p>
 
 The 2.0.0 fixes did not come from reading the code. They came from repeating one
-procedure — **CHA, Cyclic Hostile Harnessing** — fifteen times. One lap of this ring
+procedure — **CHA, Cyclic Hostile Harnessing** — sixteen times. One lap of this ring
 is one round, and three models take turns at step 3.
 
 2.0.0 is the large release where the name changed. Everything before it — 1.2.0 through 1.20.13 —

@@ -45,7 +45,7 @@ import { Audit } from '../src/safety/audit.js';
 import { TOOLS, bash제한시간 } from '../src/tools/index.js';
 import { decode as 풀기, consoleCodepage } from '../src/tools/encoding.js';
 import {
-  띄우기, 목록, 하나, 읽기, 끝내기, 모두끝내기, 비우기, 셸명령, 띄우기옵션, 최대일감, 나무끊기, 잘렸나, JOBS_TOOL, 일감인자, 무리살아있나, 나무죽이기,
+  띄우기, 목록, 하나, 읽기, 끝내기, 모두끝내기, 비우기, 셸명령, 띄우기옵션, 최대일감, 나무끊기, 잘렸나, JOBS_TOOL, 일감인자, 무리살아있나, 나무죽이기, 나무죽이기기다려,
 } from '../src/tools/jobs.js';
 import { 정한셸 } from '../src/tools/shell.js';
 import { trace } from './trace.mjs';
@@ -1474,6 +1474,84 @@ trace('17-상한이-무리끊기까지-간다');
     check('★★ (8회차) 나무죽이기의 상한이 유닉스 갈래에서도 지켜진다', 걸린 < 600, `${걸린}ms (고치기 전 1,250ms)`);
     check('  그래도 곱게 말한 뒤 끊는다 (SIGTERM → SIGKILL)',
       받은신호.includes('SIGTERM') && 받은신호.includes('SIGKILL'), [...new Set(받은신호)].join(','));
+  } finally {
+    Object.defineProperty(process, 'platform', { value: 원래판, configurable: true });
+    process.kill = 원래죽이기;
+  }
+}
+
+trace('17b-못-재는-기다림은-짧게-못-박는다');
+
+/*
+ * ── 「보통은 거의 안 기다린다」 가 유닉스에서 거짓말이었다 (16회차) ──────
+ *
+ * 무리끊기 의 지켜보기 고리 머리말은 「얌전히 끝나는 무리는 첫 20ms 에
+ * 사라지므로 보통은 거의 안 기다린다」 고 적어 뒀다. 유닉스에서는 한 번도
+ * 그런 적이 없다 — 우리가 띄운 자식은 죽어도 **우리가 거두기 전까지 좀비**로
+ * 남고, 거두는 일은 이벤트 루프에서만 일어난다. 그 고리는 `Atomics.wait` 로
+ * 루프를 세워 놓고 물으므로 답이 영영 안 바뀌고, **늘 상한을 다 썼다.**
+ * 리눅스 CI 에서 「오래된 것에는 안 머문다」(400ms 아래)가 6,037ms 로 빨개진
+ * 것이 이것이다 — 사람이 「끝내」 를 칠 때마다 6초였다.
+ *
+ * 세 가지를 같이 잰다. 하나만 재면 「전부 짧게 끊으면 초록」 이 되거나
+ * 「전부 오래 기다리면 초록」 이 된다.
+ *
+ * ── 시계가 아니라 **몇 번 물었나**를 잰다 ─────────────────────────────
+ *
+ * 처음에는 걸린 ms 로 쟀다. 혼자 돌리면 초록인데 검사 156개를 한꺼번에 돌리면
+ * 셋 다 빨개졌다 — 20ms 한 조각이 바쁜 기계에서 수백 ms 로 늘어나기 때문이다.
+ * 그러면 잣대가 약속이 아니라 **부하**를 재는 셈이다.
+ *
+ * 우리가 약속한 것은 「몇 조각을 쓰나」 다. 그 수는 부하와 상관없다. 그래서
+ * 물어본 횟수를 센다 — 이 파일이 여러 번 배운 것과 같은 수다(화면 글 대신
+ * 서버가 몇 번 불렸나를 세는 것).
+ */
+{
+  const 원래판 = process.platform;
+  const 원래죽이기 = process.kill;
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+  try {
+    const 신호들 = [];
+    let 물은수 = 0;
+    // 무엇을 물어도 탈 없이 돌아온다 = 그 무리는 끝까지 살아 있다(안 죽는 놈).
+    const 안죽는놈 = (pid, 신호) => { 신호들.push(신호); if (신호 === 0) 물은수 += 1; };
+
+    // 1) 못 재는 동기 자리(프로그램이 끝나는 길)는 **모두가 내는 값**이라 짧다.
+    //    400ms / 20ms = 스무 조각. 고치기 전에는 6,000 / 20 = 삼백 조각이었다.
+    process.kill = 안죽는놈;
+    const t0 = Date.now();
+    나무죽이기({ pid: 424243, kill() {}, unref() {} }, { 파이프끊기: false, 상한: 6000 });
+    const 동기걸림 = Date.now() - t0;
+    check('★★★ 못 재는 동기 기다림은 6초를 달라 해도 짧게 끊는다', 물은수 > 0 && 물은수 <= 40,
+      `${물은수}번 물음 (고치기 전 300번) · ${동기걸림}ms`);
+
+    // 2) 기다릴 수 있는 자리는 부르는 쪽이 정한 상한을 그대로 쓴다 —
+    //    700 / 20 = 서른다섯 조각. 위 스무 조각 바닥보다 많아야 「그대로」 다.
+    신호들.length = 0;
+    const 동기조각 = 물은수;
+    물은수 = 0;
+    const t1 = Date.now();
+    await 나무죽이기기다려({ pid: 424244, kill() {}, unref() {} }, { 파이프끊기: false, 상한: 700 });
+    const 비동기걸림 = Date.now() - t1;
+    check('★★ 기다릴 수 있는 판은 부르는 쪽 상한을 그대로 쓴다',
+      물은수 > 동기조각 && 물은수 >= 30 && 물은수 <= 40,
+      `${물은수}번 물음 (시킨 값 700ms = 35조각 · 동기 바닥은 ${동기조각}조각) · ${비동기걸림}ms`);
+    check('  거기서도 곱게 말한 뒤 끊는다 (SIGTERM → SIGKILL)',
+      신호들.includes('SIGTERM') && 신호들.includes('SIGKILL'), [...new Set(신호들)].join(','));
+
+    // 3) 그런데 **얌전히 끝난 무리는 기다리지 않는다.** 이게 그 고리가 있는 까닭이다.
+    //    (2 만 재면 「늘 상한을 다 쓴다」 는 옛 고장이 그대로 초록이 된다.)
+    물은수 = 0;
+    process.kill = (pid, 신호) => {
+      if (신호 !== 0) return;
+      물은수 += 1;
+      if (물은수 > 2) { const e = new Error('ESRCH'); e.code = 'ESRCH'; throw e; }
+    };
+    const t2 = Date.now();
+    await 나무죽이기기다려({ pid: 424245, kill() {}, unref() {} }, { 파이프끊기: false, 상한: 5000 });
+    const 얌전히 = Date.now() - t2;
+    check('★★★ 얌전히 끝난 무리는 상한을 안 쓰고 곧장 돌아온다', 물은수 <= 6,
+      `${물은수}번 물음 (상한 5,000ms = 250조각) · ${얌전히}ms`);
   } finally {
     Object.defineProperty(process, 'platform', { value: 원래판, configurable: true });
     process.kill = 원래죽이기;
