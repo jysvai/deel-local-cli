@@ -13245,6 +13245,22 @@
       "찾을것": "    if (!무리살아있나(pid)) return;\n    await new Promise((r) => setTimeout(r, 조각));",
       "바꿀것": "    await new Promise((r) => setTimeout(r, 조각));",
       "검사": "test/jobs.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "생각이 자리를 먹었는지 안 보고 다시 부른다",
+      "그러면": "상한도 못 올리고 생각도 0인 자리에서 같은 상한으로 한 번 더 부른다 — 앞머리 전액이 헛되이 다시 나가고 같은 자리에서 또 잘린다",
+      "찾을것": "      const 다시부를까 = wasCut(msg) && (full > cap || (낮춘생각 !== level && 생각이자리를먹었나));",
+      "바꿀것": "      const 다시부를까 = wasCut(msg) && (full > cap || 낮춘생각 !== level);",
+      "검사": "test/cli.test.js"
+    },
+    {
+      "곳": "src/tools/spawn.js",
+      "무엇": "앞 도구가 자식을 띄우기 직전에 귀를 막는다",
+      "그러면": "자식이 도는 동안은 심장이 멀쩡히 뛰는데 그 앞에서 400ms 를 통째로 막는다 — 낸 답은 한 글자도 안 달라지고 그 사이 ESC 만 안 들린다. 박동만 세는 잣대는 이걸 놓친다",
+      "찾을것": "  const 아이 = spawn(파일, 인자, {",
+      "바꿀것": "  { const 끝날때 = Date.now() + 400; while (Date.now() < 끝날때) { /* 어긋: 띄우기 전에 귀를 막는다 */ } }\n  const 아이 = spawn(파일, 인자, {",
+      "검사": "test/abort-tools.test.js"
     }
   ]
 }

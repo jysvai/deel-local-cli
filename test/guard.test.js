@@ -7,10 +7,10 @@
 // 이 자리들의 공통점: 실패해도 대화가 이어져야 한다. 도구 결과 자리를 비우면
 // 짝이 깨져서 다음 턴에 게이트웨이가 통째로 거절한다.
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { makeScope, checkPaths, checkCommand, 경로낱말, 봐주는자리, isMutating, 셸이파일에쓰나 } from '../src/safety/guard.js';
+import { join, resolve } from 'node:path';
+import { makeScope, checkPaths, checkCommand, 경로낱말, 봐주는자리, isMutating, 셸이파일에쓰나, 코드조각인가 } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
@@ -967,12 +967,39 @@ trace('10-뒤에한마디');
     'npm test -- --reporter=dot', 'git log --format=%h/%s', 'node --max-old-space-size=4096 x.js',
     'NODE_ENV=production node x.js', 'git commit --message=fix/foo',
     // 스위치를 낱말째 봐야 `force`·`verbose` 의 r 이 재귀로 안 읽힌다. rsync 는 마지막이 받는 쪽.
-    'rm --force /a', 'rm -f --verbose ./a', 'rsync -a --delete / backup/', 'chmod -r ./a',
+    /*
+     * `rm --force /a` 였다. 그런데 한 마디짜리 뿌리 경로는 **디스크에 있을
+     * 때만** 경로로 본다(guard.js 코드조각인가). 깃허브 윈도우 러너는 일터가
+     * `D:\\a\\…` 라 `/a` 가 **진짜로 있고**, 거기서는 막는 것이 맞다 —
+     * 그런데 이 줄은 「안 막는다」 를 단언했다. 재는 것이 스위치 가르기인데
+     * 기계의 파일 시스템이 답을 정하고 있었다. 없을 것이 확실한 이름으로 바꾼다.
+     */
+    'rm --force /없는최상위-9f3c1d', 'rm -f --verbose ./a', 'rsync -a --delete / backup/', 'chmod -r ./a',
     // 글 옵션의 값과 컨테이너 쪽 볼륨 자리는 이 PC 경로가 아니다.
     'git commit --message=../notes', 'docker run -v ./x:/app img', 'docker run -v ./x:/app:ro img',
   ]) {
     check(`★ ${cmd} 는 안 막는다 (3회차)`, 둘다막히나(cmd) === null, 둘다막히나(cmd)?.split('\n')[0] ?? '');
   }
+  /*
+   * ── 「한 마디짜리 뿌리 경로」 규칙 자체를 두 방향으로 잰다 (17회차) ────
+   *
+   * guard.js 는 `/div` 같은 잘린 태그를 경로로 안 보려고, 한 마디짜리 절대
+   * 경로는 **디스크에 있을 때만** 경로로 본다. 그 규칙을 `/etc` 처럼 이름을
+   * 박아 재면 윈도우에서는 없는 이름이라 아무것도 안 재고 지나간다. 그래서
+   * **이 판의 뿌리에서 실제로 하나 골라** 잰다 — 어느 기계든 답이 있다.
+   */
+  const 뿌리것들 = (() => { try { return readdirSync(resolve('/')); } catch { return []; } })();
+  // 윈도우 뿌리에는 `$Recycle.Bin` 처럼 못 읽는 이름이 섞인다. 그건 건너뛴다.
+  const 있는한마디 = 뿌리것들.find((n) => n && n[0] !== '$' && !/[\\/]/.test(n));
+  if (있는한마디) {
+    check('★★ 있는 한 마디짜리 뿌리 경로는 경로로 본다 (17회차)',
+      코드조각인가(`/${있는한마디}`) === false, `/${있는한마디}`);
+  } else {
+    건너뜀.push('뿌리를 못 읽어 「있는 한 마디」 를 못 쟀다');
+  }
+  check('★★ 없는 한 마디는 코드 조각으로 넘긴다 (</div> 같은 것)',
+    코드조각인가('/없는최상위-9f3c1d') === true, '');
+
   rmSync(방3, { recursive: true, force: true });
 }
 
