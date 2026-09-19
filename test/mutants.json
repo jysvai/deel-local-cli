@@ -7130,8 +7130,8 @@
       "곳": "src/tools/webfetch.js",
       "무엇": "주석·script·style 을 한 무늬로 왼쪽부터 안 지우고 차례로 지운다 (6회차 웹받기 W4)",
       "그러면": "주석 안 <script> 가 뒤 </script> 까지 본문을 먹고 <!-- 가 남는다",
-      "찾을것": "    글 = 글.replace(/<!--[\\s\\S]*?-->|<script\\b[\\s\\S]*?<\\/script\\s*>|<style\\b[\\s\\S]*?<\\/style\\s*>/gi, ' ');",
-      "바꿀것": "    글 = 글.replace(/<script[\\s\\S]*?<\\/script\\s*>/gi, ' ').replace(/<style[\\s\\S]*?<\\/style\\s*>/gi, ' ').replace(/<!--[\\s\\S]*?-->/g, ' ');",
+      "찾을것": "    글 = 글.replace(/<!--[\\s\\S]*?-->|<script\\b[\\s\\S]*?<\\/script(?:[\\s/][^>]*)?>|<style\\b[\\s\\S]*?<\\/style(?:[\\s/][^>]*)?>/gi, ' ');",
+      "바꿀것": "    글 = 글.replace(/<script\\b[\\s\\S]*?<\\/script(?:[\\s/][^>]*)?>/gi, ' ').replace(/<style\\b[\\s\\S]*?<\\/style(?:[\\s/][^>]*)?>/gi, ' ').replace(/<!--[\\s\\S]*?-->/g, ' ');",
       "검사": "test/web.test.js"
     },
     {
@@ -7458,8 +7458,8 @@
       "곳": "src/tools/verify.js",
       "무엇": "참조를 주석 속에서도 찾는다 (6회차 검증6 VA3)",
       "그러면": "주석으로 막은 script src 를 없는 파일로 적는다",
-      "찾을것": "  const 참조볼글 = String(글)\n    .replace(/<!--[\\s\\S]*?-->/g, '')\n    .replace(/(<(script|style)\\b[^>]*>)[\\s\\S]*?(<\\/\\2\\s*>)/gi, '$1$3');",
-      "바꿀것": "  const 참조볼글 = String(글)\n    .replace(/(<(script|style)\\b[^>]*>)[\\s\\S]*?(<\\/\\2\\s*>)/gi, '$1$3');",
+      "찾을것": "  const 참조볼글 = String(글)\n    .replace(/<!--[\\s\\S]*?-->/g, '')",
+      "바꿀것": "  const 참조볼글 = String(글)\n    .replace(/(?!)/g, '')",
       "검사": "test/outline.test.js"
     },
     {
@@ -12698,8 +12698,8 @@
       "곳": "src/tools/verify.js",
       "무엇": "script·style 안의 자바스크립트에서도 src·href 참조를 찾는다",
       "그러면": "인라인 스크립트의 img.src = 'a.png' 같은 줄을 파일 참조로 읽고 「없는 파일」 이라는 거짓 탈을 낸다",
-      "찾을것": "  const 참조볼글 = String(글)\n    .replace(/<!--[\\s\\S]*?-->/g, '')\n    .replace(/(<(script|style)\\b[^>]*>)[\\s\\S]*?(<\\/\\2\\s*>)/gi, '$1$3');",
-      "바꿀것": "  const 참조볼글 = String(글)\n    .replace(/<!--[\\s\\S]*?-->/g, '');",
+      "찾을것": "    .replace(/(<(script|style)\\b[^>]*>)[\\s\\S]*?<\\/\\2(?:[\\s/][^>]*)?>/gi, '$1</$2>');",
+      "바꿀것": "    .replace(/(?!)/gi, '$1');",
       "검사": "test/outline.test.js"
     },
     {
@@ -13002,8 +13002,8 @@
       "곳": "src/safety/guard.js",
       "무엇": "파이프 뒤 셸을 맨 이름으로만 본다",
       "그러면": "`curl … | /bin/bash` 처럼 셸을 자리째 적으면 받은 스크립트가 그대로 돈다",
-      "찾을것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:[\"']?(?:[^|\"'\\s]*[\\\\/])?(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:-\\S+\\s+|\\S+=\\S+\\s+)*)*[\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
-      "바꿀것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:[\"']?(?:[^|\"'\\s]*[\\\\/])?(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:-\\S+\\s+|\\S+=\\S+\\s+)*)*(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
+      "찾을것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:[\"']?(?:[^|\"'\\s]*[\\\\/])?(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:(?![\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$))\\S+\\s+)*)?[\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
+      "바꿀것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:[\"']?(?:[^|\"'\\s]*[\\\\/])?(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:(?!(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$))\\S+\\s+)*)?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
       "검사": "test/guard.test.js"
     },
     {
@@ -13082,8 +13082,8 @@
       "곳": "src/safety/guard.js",
       "무엇": "셸 자리의 낱말에서 달러를 뺀다",
       "그러면": "`curl … | \\\\wsl$\\Ubuntu\\bin\\bash` 가 그대로 지나간다 — WSL 의 UNC 자리에는 `$` 가 든다",
-      "찾을것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:[\"']?(?:[^|\"'\\s]*[\\\\/])?(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:-\\S+\\s+|\\S+=\\S+\\s+)*)*[\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
-      "바꿀것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:[\"']?(?:[\\w.-]*[\\\\/])?(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:-\\S+\\s+|\\S+=\\S+\\s+)*)*[\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
+      "찾을것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:[\"']?(?:[^|\"'\\s]*[\\\\/])?(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:(?![\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$))\\S+\\s+)*)?[\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
+      "바꿀것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:[\"']?(?:[\\w.-]*[\\\\/])?(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:(?![\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$))\\S+\\s+)*)?[\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
       "검사": "test/guard.test.js"
     },
     {
@@ -13114,8 +13114,8 @@
       "곳": "src/safety/guard.js",
       "무엇": "감싸는 낱말을 맨 이름으로만 본다",
       "그러면": "`curl … | /usr/bin/env bash` 가 그대로 지나간다 — 감싸는 것도 자리째 적을 수 있다",
-      "찾을것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:[\"']?(?:[^|\"'\\s]*[\\\\/])?(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:-\\S+\\s+|\\S+=\\S+\\s+)*)*[\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
-      "바꿀것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:-\\S+\\s+|\\S+=\\S+\\s+)*)*[\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
+      "찾을것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:[\"']?(?:[^|\"'\\s]*[\\\\/])?(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:(?![\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$))\\S+\\s+)*)?[\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
+      "바꿀것": "    re: /\\b(?:curl|wget|fetch|aria2c)\\b[^|]*\\|\\s*(?:(?:sudo|doas|env|nohup|command)[\"']?\\s+(?:(?![\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$))\\S+\\s+)*)?[\"']?(?:[^|\"'\\n]*[\\\\/])?(?:ba|z|k|da|c|tc|fi)?sh(?:\\.exe)?(?=[\"'\\s]|$)/i,",
       "검사": "test/guard.test.js"
     },
     {

@@ -293,6 +293,30 @@ export interface 모양 { a: number }
     html보기('<div><script>if (a < b) {}</script></div>').join(' / '));
   check('html: 주석 안엣것도 태그가 아니다', html보기('<div><!-- <p> --></div>').length === 0);
   /*
+   * ── 닫는 태그는 `</script>` 만이 아니다 (19회차 2차 눈) ─────────────────
+   *
+   * 브라우저는 `</script foo>` 도 `</script/>` 도 닫는 것으로 본다. 참조를
+   * 훑는 쪽이 그 꼴을 모르면 두 가지로 틀린다 —
+   *
+   *   1. 닫는 태그를 못 찾아 그 뒤 본문을 통째로 script 속으로 읽는다
+   *   2. 닫는 태그를 **그대로 남겨** 그 안의 src 를 진짜 참조로 센다 (거짓 탈)
+   *
+   * 둘 다 재현해 보고 고쳤다. 여기서 그 자리를 지킨다.
+   */
+  const 없는것으로 = (글) => html보기(글, { 있는파일: () => false });
+  check('★★★ 닫는 태그 속의 src 는 참조가 아니다 (거짓 탈)',
+    없는것으로('<script>let a=1;</script src="missing-xyz.js">').length === 0,
+    없는것으로('<script>let a=1;</script src="missing-xyz.js">').join(' / '));
+  check('★★ 빗금으로 닫은 script 뒤의 본문은 살아 있다',
+    없는것으로('<script>let a=1;</script/><img src="없는그림.png">').length === 1,
+    없는것으로('<script>let a=1;</script/><img src="없는그림.png">').join(' / '));
+  check('★ 평범한 닫는 태그는 그대로다',
+    없는것으로('<script>let a=1;</script><img src="없는그림.png">').length === 1,
+    없는것으로('<script>let a=1;</script><img src="없는그림.png">').join(' / '));
+  check('★ script 속의 src 는 여전히 안 센다',
+    없는것으로('<script>img.src = "안볼것.js";</script>').length === 0,
+    없는것으로('<script>img.src = "안볼것.js";</script>').join(' / '));
+  /*
    * ★ 거짓 탈 둘 (막판 훑기). 둘 다 `failed: true` 를 세워서 걸음이 거기서 안 끝나고,
    * 모델이 멀쩡한 줄을 고치러 간다 — html보기 머리말이 「확인 안 하는 것보다 나쁘다」
    * 고 적어 둔 그 자리다.
