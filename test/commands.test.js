@@ -570,7 +570,6 @@ trace('3-효과확인');
     save({ ...load(), active: 'corp-key', profiles: [회사, 남의곳] });
 
     const s = 새세션();
-    const cfg2 = load();
     // 회사 프로필로 시작한 모양을 만든다 — 다른 세 문이 하는 그대로.
     Object.assign(s.conn, {
       kind: 회사.kind, base: 회사.baseUrl, auth: 회사.auth, key: '', model: 회사.model,

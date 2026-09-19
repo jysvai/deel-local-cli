@@ -1070,16 +1070,14 @@ function 글꼴만들기(문, 글꼴사전) {
   const 너비 = 너비표읽기(문, 안, 두바이트);
 
   // ① /ToUnicode 가 있으면 그것이 가장 정확하다.
-  let 표 = new Map();
   let 폭 = 두바이트 ? 2 : 1;
   const 투 = 문.풀기(안.ToUnicode);
   if (투?.날것) {
     const r = 흐름풀기(투, (x) => 문.풀기(x));
     if (r.ok) {
       const 읽은것 = 유니코드표읽기(r.자료.toString('latin1'));
-      표 = 읽은것.표;
       if (읽은것.폭) 폭 = 읽은것.폭;
-      if (표.size) return { 폭, 표, 읽나: true, 너비 };
+      if (읽은것.표.size) return { 폭, 표: 읽은것.표, 읽나: true, 너비 };
     }
   }
 

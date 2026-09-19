@@ -592,7 +592,7 @@ trace('9-지연로딩');
   설정쓰기({ mcpServers: { 사내위키: 서버설정() } });
 
   // 첫 판은 적어 둔 것이 없으니 그냥 띄운다. 그리고 적어 둔다.
-  const 첫판 = await 다붙이기(root, { timeout: 2500, env: 믿는env });
+  await 다붙이기(root, { timeout: 2500, env: 믿는env });
   check('처음에는 띄운다', 살아있는수() === 1, String(살아있는수()));
   check('★★ 그리고 도구 목록을 적어 둔다', existsSync(메모자리(root)), 메모자리(root));
   const 적힌것 = 메모읽기(root);

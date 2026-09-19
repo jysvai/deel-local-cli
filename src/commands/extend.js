@@ -3,7 +3,6 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { c, say, rule, pad, mark, clip } from '../ui/ansi.js';
-import { 말 } from '../i18n/index.js';
 import { discover } from '../skills/discover.js';
 import { install, list, remove, pack } from '../plugins/manage.js';
 import { spin } from '../ui/spinner.js';

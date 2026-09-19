@@ -132,9 +132,20 @@ const 말들 = {
   en: { 파일: 'README.md', 되돌아: '← back to README', 자세히: 'More', 읽기: 'read' },
 };
 
-/** `<b>자세히</b> — A · B` 에서 글자만. 링크 이름표로 쓴다. */
+/**
+ * `<b>자세히</b> — A · B` 에서 글자만. 링크 이름표로 쓴다.
+ *
+ * 한 번만 벗기면 `<scr<b>ipt>` 처럼 겹친 꼴이 벗긴 뒤에 되살아난다.
+ * 없어질 때까지 돌린다 — webfetch.js 의 script 벗기기와 같은 잣대다.
+ */
 function 이름표(s) {
-  return s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  let 글 = String(s);
+  for (let i = 0; i < 5; i += 1) {
+    const 전 = 글;
+    글 = 글.replace(/<[^>]+>/g, '');
+    if (글 === 전) break;
+  }
+  return 글.replace(/\s+/g, ' ').trim();
 }
 
 /**

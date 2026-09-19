@@ -293,12 +293,12 @@ trace('머리말-별부탁');
 
   tty로(true);
   const 상자판 = headerLines(s, 없는것, true).map(벗기기).join('\n');
-  check('켤 때 별 부탁이 뜬다', /github\.com\/jysvai\/deel-local-cli/.test(상자판),
+  check('켤 때 별 부탁이 뜬다', String(상자판).includes('github.com/jysvai/deel-local-cli'),
     상자판.split('\n').slice(-1)[0]?.trim() ?? '');
 
   tty로(false);
   const 파이프판 = headerLines(s, 없는것, false).map(벗기기).join('\n');
-  check('파이프·CI 기록에는 안 나간다', !/github\.com/.test(파이프판));
+  check('파이프·CI 기록에는 안 나간다', !String(파이프판).includes('github.com'));
   tty로(true);
 
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -307,7 +307,7 @@ trace('머리말-별부탁');
 
   // 부탁은 맨 아래다 — 소스가 어디로 나가는지 읽는 줄들을 밀어내면 안 된다.
   const 줄들 = headerLines(s, 없는것, true).map(벗기기);
-  const 별줄 = 줄들.findIndex((l) => /github\.com/.test(l));
+  const 별줄 = 줄들.findIndex((l) => String(l).includes('github.com'));
   const 보냄줄 = 줄들.findIndex((l) => /이 컴퓨터 안|바깥|sends to|this machine/.test(l));
   check('부탁은 「보냄」 줄보다 아래다', 별줄 > 보냄줄 && 보냄줄 >= 0, `별 ${별줄} · 보냄 ${보냄줄}`);
   tty로(원래tty);

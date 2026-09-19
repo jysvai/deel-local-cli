@@ -276,7 +276,7 @@ function 볼것() {
      * 출력 한도에 걸렸을 때 도구가 내놓던 「쪼개서 보라」 는 말이, 여태
      * 커밋된 판에는 쓸 수가 없었다 — `--files` 가 늘 안 올린 것만 봤다.
      */
-    const 범위 = 부터 ? `${부터}..${까지}` : 'HEAD'
+    const 범위 = 부터 ? `${부터}..${까지}` : 'HEAD';
     const r = git('diff', 범위, '--', ...파일들);
     if (r.status !== 0) {
       console.error(`\n\x1b[31m✗ 그 파일들을 못 읽었습니다\x1b[0m\n  ${String(r.stderr ?? '').trim().split('\n')[0]}\n`);

@@ -124,7 +124,7 @@ trace('1-담는범위');
   const 몸 = 마지막메시지(root);
   check('모델이 준 제목이 그대로 들어갔다', 몸.startsWith('fix: 로그 형식을 하나로'), 몸.split('\n')[0]);
   check('본문도 들어갔다', /필터가 안 걸렸다/.test(몸));
-  check(`꼬리표가 붙었다 (deel ${VERSION} · fake-7b)`, new RegExp(`Generated-by: deel ${VERSION.replace(/\./g, '\\.')} · fake-7b`).test(몸), 몸.trim().split('\n').pop());
+  check(`꼬리표가 붙었다 (deel ${VERSION} · fake-7b)`, new RegExp(`Generated-by: deel ${VERSION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · fake-7b`).test(몸), 몸.trim().split('\n').pop());
   check('감사기록에 커밋이 남는다', ctx.audit.recent(50).some((x) => x.kind === 'commit' && x.hash === 찍음.hash));
 
   // 대화를 안 보낸다 — 담긴 diff 와 증거만 간다.

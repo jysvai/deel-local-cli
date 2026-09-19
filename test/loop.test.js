@@ -441,7 +441,7 @@ check('상한(24회)까지 안 간다', ev4.filter((e) => e.type === 'tool').len
  */
 {
   const { 훅펴기 } = await import('../src/safety/hooks.js');
-  const 노드 = (글) => `node -e "${글.replace(/"/g, '\\"')}"`;
+  const 노드 = (글) => `node -e "${글.replace(/[\\"]/g, '\\$&')}"`;
   const 파일 = join(root, '훅검사.txt');
   writeFileSync(파일, '원래대로\n', 'utf8');
 

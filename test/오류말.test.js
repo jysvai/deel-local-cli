@@ -260,7 +260,7 @@ trace('5-막힘힌트');
   check('★★★ 다시 로그인할 명령까지 지어 준다 — 이게 없으면 알아본 뜻이 없다',
     /databricks auth login/.test(로그인만료 ?? ''), String(로그인만료).slice(0, 120));
   check('★★★ 어느 호스트·프로필인지 짚어 준다 (사내엔 여러 개다)',
-    /dbc-1234\.cloud\.databricks\.com/.test(로그인만료 ?? '') && /work/.test(로그인만료 ?? ''),
+    String(로그인만료 ?? '').includes('dbc-1234.cloud.databricks.com') && String(로그인만료 ?? '').includes('work'),
     String(로그인만료).slice(-70));
 
   // 모르는 도구여도 「프록시 쪽 문제」 라는 것만은 짚어 준다.

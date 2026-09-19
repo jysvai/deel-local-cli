@@ -115,7 +115,10 @@ function 풀기(글) {
   return 줄들;
 }
 
-const 감싸기 = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// 속성 안에도 들어간다(aria-label·title). 따옴표를 안 벗기면 제목에 " 하나가
+// 섞이는 날 속성이 거기서 닫히고 SVG 가 통째로 깨진다.
+const 감싸기 = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 /**
  * 줄들을 SVG 한 장으로.
@@ -334,6 +337,26 @@ mkdirSync(나갈곳, { recursive: true });
 const home = mkdtempSync(join(tmpdir(), 'deel-shot-home-'));
 const work = mkdtempSync(join(tmpdir(), 'deel-shot-work-'));
 
+/*
+ * ── 이름을 못 박은 임시 자리는 **남이 먼저 차지할 수 있다** ───────────────
+ *
+ * 아래 화면들은 `/tmp/myproject` 처럼 **이름이 정해진** 자리에서 찍는다. 머리
+ * 상자의 「폴더」 줄이 그 이름으로 나와야 하고, mkdtemp 가 붙이는 무작위 꼬리가
+ * 들어가면 그 줄이 잘려 나중에 바꿔 칠 글자가 안 남기 때문이다(아래 머리말).
+ *
+ * 그런데 여럿이 쓰는 기계라면 그 이름은 **아무나 먼저 만들 수 있는 이름**이다.
+ * 남이 그 자리에 다른 데를 가리키는 링크를 걸어 두면 우리가 거기에 적는다.
+ * `mkdirSync(..., { recursive: true })` 는 이미 있어도 잠자코 넘어가서, 차지당한
+ * 것과 우리가 만든 것을 **구별하지 않았다** (2.0.0 CodeQL js/insecure-temporary-file).
+ *
+ * 그래서 치우고 나서 `recursive` 없이 만든다. 그 사이에 누가 끼어들면 EEXIST 로
+ * 멈춘다 — 남의 자리에 조용히 적는 것보다 멈추는 편이 낫다.
+ */
+function 새자리(p) {
+  rmSync(p, { recursive: true, force: true });   // 링크면 링크만 지운다 — 가리키던 곳은 그대로다
+  mkdirSync(p);                                   // 이미 있으면 EEXIST 로 멈춘다
+}
+
 try {
   /*
    * 1) `deel reset` — 무엇이 얼마나 있는지.
@@ -396,10 +419,8 @@ try {
      */
     const 방 = join(tmpdir(), 'myproject');
     const 집 = join(tmpdir(), 'deel-shot-home');
-    rmSync(방, { recursive: true, force: true });
-    rmSync(집, { recursive: true, force: true });
-    mkdirSync(방, { recursive: true });
-    mkdirSync(집, { recursive: true });
+    새자리(방);
+    새자리(집);
     try {
       mkdirSync(join(방, 'src'), { recursive: true });
       writeFileSync(join(방, 'src', 'runner.js'),
@@ -476,10 +497,8 @@ try {
     const { srv, port, 처음부터 } = await 스텁띄우기();
     const 방 = join(tmpdir(), 'myproject-work');
     const 집 = join(tmpdir(), 'deel-shot-home-work');
-    rmSync(방, { recursive: true, force: true });
-    rmSync(집, { recursive: true, force: true });
-    mkdirSync(방, { recursive: true });
-    mkdirSync(집, { recursive: true });
+    새자리(방);
+    새자리(집);
     try {
       writeFileSync(join(집, 'config.json'), JSON.stringify({
         version: 1, active: 'local', level: '개발자',
@@ -521,8 +540,7 @@ try {
    */
   {
     const 방 = join(tmpdir(), 'myproject-doc');
-    rmSync(방, { recursive: true, force: true });
-    mkdirSync(방, { recursive: true });
+    새자리(방);
     try {
       const 칸 = (글) => `<w:tc><w:p><w:r><w:t>${글}</w:t></w:r></w:p></w:tc>`;
       const 행 = (칸들) => `<w:tr>${칸들.map(칸).join('')}</w:tr>`;

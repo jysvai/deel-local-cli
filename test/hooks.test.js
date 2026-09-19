@@ -168,7 +168,7 @@ trace('4-진짜로돌리기');
    * 명령은 `node -e` 하나로 통일한다. 이 검사가 도는 자리에는 node 가 반드시
    * 있고(우리가 그 위에서 돈다), python 이나 sh 는 그렇지 않다.
    */
-  const 노드 = (글) => `node -e "${글.replace(/"/g, '\\"')}"`;
+  const 노드 = (글) => `node -e "${글.replace(/[\\"]/g, '\\$&')}"`;
   const 훅 = (o) => 훅펴기({ hooks: [{ 때: '도구전', 명령: o.명령, ...o }] }, '검사').훅들[0];
 
   const 통과 = await 훅돌리기(훅({ 명령: 노드('process.stdout.write(\'괜찮습니다\')') }), { 도구: 'Bash' });
@@ -218,7 +218,7 @@ trace('5-stdin');
    * 같은지 본다. 명령줄로 갔다면 이 값은 절대 안 맞는다.
    */
   const 되뱉기 = 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>process.stdout.write(s.trim()))';
-  const h = 훅펴기({ hooks: [{ 때: '도구전', 명령: `node -e "${되뱉기.replace(/"/g, '\\"')}"` }] }, '검사').훅들[0];
+  const h = 훅펴기({ hooks: [{ 때: '도구전', 명령: `node -e "${되뱉기.replace(/[\\"]/g, '\\$&')}"` }] }, '검사').훅들[0];
 
   const 짓궂은인자 = { command: 'echo "; rm -rf /" `whoami` $(id)' };
   const r = await 훅돌리기(h, { 도구: 'Bash', 인자: 짓궂은인자 });
@@ -234,7 +234,7 @@ trace('5-stdin');
 // ══ 6. 한 자리를 통째로 돌린다 ═════════════════════════════════════════
 trace('6-자리돌리기');
 {
-  const 노드 = (글) => `node -e "${글.replace(/"/g, '\\"')}"`;
+  const 노드 = (글) => `node -e "${글.replace(/[\\"]/g, '\\$&')}"`;
   const 훅들 = 훅펴기({
     hooks: [
       { 때: '도구전', 도구: 'Bash', 명령: 노드('process.stdout.write("첫째")') },

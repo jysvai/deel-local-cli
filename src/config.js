@@ -637,8 +637,8 @@ export function save(cfg) {
  *
  * @returns {{ok: true, 자리: string} | {ok: false, 왜: string}}
  */
-export function 저장시도(cfg, 옵션 = {}) {
-  try { return { ok: true, 자리: save(cfg, 옵션) }; }
+export function 저장시도(cfg) {
+  try { return { ok: true, 자리: save(cfg) }; }
   catch (err) { return { ok: false, 왜: err?.message ?? String(err) }; }
 }
 

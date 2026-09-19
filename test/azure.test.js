@@ -212,7 +212,7 @@ trace('5-detect');
   check('api-key 방식을 고른다', found.auth === 'api-key', found.auth);
   check('배포 목록을 모델 목록으로 준다', found.models.map((m) => m.id).join(',') === '사내-gpt4o,사내-mini', JSON.stringify(found.models));
   check('base 에 판이 붙어 있다', /\/openai\/deployments\/%EC%82%AC%EB%82%B4-gpt4o\?api-version=/.test(found.base) || /\/openai\/deployments\/사내-gpt4o\?api-version=/.test(decodeURIComponent(found.base)), found.base);
-  check('/v1/models 같은 자리는 두드리지도 않는다', !받은것.some((x) => /\/v1|\/models$/.test(x.길)), 받은것.map((x) => x.길).join(' '));
+  check('/v1/models 같은 자리는 두드리지도 않는다', !받은것.some((x) => /(?:\/v1)|(?:\/models$)/.test(x.길)), 받은것.map((x) => x.길).join(' '));
   check('목록을 물을 때도 판을 붙인다', 받은것[0]?.판 === 기본판, String(받은것[0]?.판));
 
   // 배포 이름 없이 회사 주소만 준 경우 — 목록에서 첫 배포로 이어 준다.

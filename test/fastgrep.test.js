@@ -123,7 +123,7 @@ if (엔진.rg) {
   const 판 = r.줄들.map(줄가르기).filter(Boolean);
   const 파일들 = [...new Set(판.map((x) => x.파일.replace(/\\/g, '/').replace(root.replace(/\\/g, '/'), '.')))].sort();
   check('한글·빈칸이 든 경로도 온전히 온다', 파일들.includes('./src/깊은 폴더/b.js'), 파일들.join(' '));
-  check('번들·지도는 안 뒤진다 (안 볼 확장자)', !파일들.some((f) => /min\.js|\.map$/.test(f)), 파일들.join(' '));
+  check('번들·지도는 안 뒤진다 (안 볼 확장자)', !파일들.some((f) => /(?:min\.js)|(?:\.map$)/.test(f)), 파일들.join(' '));
   check('한 파일에 두 줄이면 두 줄로 온다', 판.filter((x) => /a\.js$/.test(x.파일)).length === 2, String(판.length));
   check('★ rg 는 경로 끝을 NUL 로 찍게 부른다 (6회차 빠른찾기6)', r.줄들.length > 0 && r.줄들.every((l) => l.includes(String.fromCharCode(0))),
     JSON.stringify(r.줄들[0] ?? '').slice(0, 80));

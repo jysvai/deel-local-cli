@@ -550,7 +550,7 @@ trace('5-1b-참거짓을글자로보낸다');
   check('★ 그래도 읽기는 해 준다', !글자거짓.error && /도는중/.test(글자거짓.content ?? ''),
     (글자거짓.content ?? 글자거짓.error ?? '').slice(0, 120));
 
-  const 글자0 = await JOBS_TOOL.run({ job: r.번호, stop: '0' });
+  await JOBS_TOOL.run({ job: r.번호, stop: '0' });
   check('★★ stop:"0" 으로도 안 끈다', 하나(r.번호)?.상태 === '도는중', String(하나(r.번호)?.상태));
 
   // 못 알아들은 값으로도 끄지 않는다. 대신 무엇을 받았는지 적는다 —

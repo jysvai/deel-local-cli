@@ -69,13 +69,12 @@ function 주소살펴보기(주소) {
  * 이 자리의 조건을 다 본다. 화면 그리기는 안 한다 — 부르는 쪽이 그린다.
  *
  * @param {object} o
- * @param {object|null} o.cfg   읽은 설정
  * @param {object|null} o.prof  고른 프로필
  * @param {string} o.root       작업 폴더
  * @param {boolean} o.바깥가도되나  네트워크를 실제로 두드려도 되나
  */
 export async function 진찰(o = {}) {
-  const { cfg = null, prof = null, root = process.cwd(), 바깥가도되나 = true, 설정자리 = null, 설정탈 = null } = o;
+  const { prof = null, root = process.cwd(), 바깥가도되나 = true, 설정자리 = null, 설정탈 = null } = o;
   const 줄들 = [];
 
   // ── 1. 이 프로그램이 도는 자리 ───────────────────────────────────────

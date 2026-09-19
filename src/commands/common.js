@@ -28,8 +28,8 @@ export const COMMANDS = Object.fromEntries(Object.entries(명령들).map(([이�
  *
  * @returns {boolean} 남겼나
  */
-export function 설정남기기(cfg, 옵션 = {}) {
-  const r = 저장시도(cfg, 옵션);
+export function 설정남기기(cfg) {
+  const r = 저장시도(cfg);
   if (!r.ok) say(`  ${mark.warn} ${c.yellow(말('common.cfgSaveFailed', { 왜: clip(r.왜, 70) }))}`);
   return r.ok;
 }

@@ -123,7 +123,8 @@ export function 설명(칸, { root = process.cwd(), env = process.env } = {}) {
       }
       // 물려받은 이름(`constructor` · `toString`)으로 파고들면 **없는 칸이
       // 있는 것이 된다.** 여기서 막아야 아래 세 층이 다 안전하다.
-      여기 = (여기 && typeof 여기 === 'object' && Object.hasOwn(여기, 이름)) ? 여기[이름] : undefined;
+      // 위 루프 머리에서 여기가 object 임을 이미 봤다 — 또 보지 않는다.
+      여기 = Object.hasOwn(여기, 이름) ? 여기[이름] : undefined;
     }
     return 여기;
   };

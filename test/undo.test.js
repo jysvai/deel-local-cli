@@ -966,7 +966,11 @@ trace('복사한-폴더에서-되돌리기');
 
 {
   // 폴더째 복사한 저장소. 복사본에서 /undo 하면 **원본**을 되돌리고 있었다.
-  const { cpSync } = await import('node:fs');
+  //
+  // fs.cpSync 로 베끼다가 이 검사 파일이 윈도우 + Node 22 에서 아무 말 없이
+  // 0xC0000409 로 죽었다 — 임시 폴더 이름에 한글('복사')이 들어 있어서다.
+  // 제품 쪽도 같은 자리에서 죽고 있었다(src/tools/index.js 의 안전복사).
+  const { copyDir } = await import('../src/tools/fsutil.js');
   const 바탕 = mkdtempSync(join(tmpdir(), 'deel-undo-복사-'));
   const A = join(바탕, 'A');
   const B = join(바탕, 'B');
@@ -979,7 +983,7 @@ trace('복사한-폴더에서-되돌리기');
   const 적힌것 = JSON.parse(readFileSync(h.file, 'utf8').trim().split('\n')[0]);
   check('★ 새 기록은 작업 폴더 기준 상대 경로를 적는다', 적힌것.rel === 'src/app.js', JSON.stringify(적힌것.rel));
 
-  cpSync(A, B, { recursive: true });
+  copyDir(A, B);
   writeFileSync(join(A, 'src', 'app.js'), 'v3 — 원본에서 새로 한 일', 'utf8');
   const hB = new History(B);
   check('  읽을 때는 지금 폴더의 절대 경로로 준다 (/diff 가 그 경로로 찾는다)', hB.all()[0]?.path === join(B, 'src', 'app.js'),

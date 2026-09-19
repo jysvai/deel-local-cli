@@ -296,7 +296,7 @@ for (const f of SRC) {
   for (const m of text.matchAll(/https?:\/\/([a-z0-9.-]+\.[a-z]{2,})/gi)) {
     const host = m[1].toLowerCase();
     if (/github\.com$/.test(host)) continue;
-    if (/(^|\.)example\.|\.(corp|local|test|invalid|example)$/.test(host)) continue;
+    if (/(?:(?:^|\.)example\.)|(?:\.(?:corp|local|test|invalid|example)$)/.test(host)) continue;
     // xmlns 값은 주소처럼 생겼을 뿐 주소가 아니다 — 이름표다.
     // hwpx(OWPML) 를 쓰려면 hancom.co.kr 네임스페이스를 글자 그대로 적어야 하고,
     // 그 글자는 아무도 열어보지 않는다. 그래서 **xmlns= 뒤에 붙은 것만** 봐준다.

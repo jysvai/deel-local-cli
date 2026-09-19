@@ -439,7 +439,7 @@ const 메뉴번호 = (id) => {
   const 글 = 색빼기(out);
   check('★ 앞머리로 어디 열쇠인지 알아본다', /Anthropic/.test(글), 글.slice(-300).split('\n').filter(Boolean).slice(0, 2).join(' / '));
   check('★ 다른 데는 안 묻는다고 말한다', /여기저기 던지지 않습니다/.test(글), '');
-  check('열쇠 받는 곳도 알려 준다', /console\.anthropic\.com/.test(글), '');
+  check('열쇠 받는 곳도 알려 준다', String(글).includes('console.anthropic.com'), '');
   /*
    * ★ 봉인이 실제로 막는다.
    *

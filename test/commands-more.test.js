@@ -773,7 +773,7 @@ trace('13c-오타가-조용히-먹던-자리');
     check(`★ /grade ${이름} 로는 급이 안 바뀐다`, s.급정한것 === 앞급, String(s.급정한것));
 
     const 앞수준 = s.level;
-    const lv = await 조용히(() => handle(`/level ${이름}`, s, ctx));
+    await 조용히(() => handle(`/level ${이름}`, s, ctx));
     check(`★ /level ${이름} 가 안 터진다`, typeof s.level === 'string' && s.level === 앞수준,
       `${앞수준} → ${String(s.level)}`);
     check(`/level ${이름} 뒤에도 명령 목록이 그려진다`,

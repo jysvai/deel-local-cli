@@ -9,7 +9,6 @@ import { load, resolveKey, upsert } from '../config.js';
 import { 받기설정, 잊기 as 받은열쇠잊기 } from '../safety/authcmd.js';
 // 열쇠받기 명령을 정책이 못박아 뒀을 수 있다 — 받기설정 이 그 값을 같이 본다.
 import { 정책읽기 } from '../safety/policy.js';
-import { 말 } from '../i18n/index.js';
 import { 더할머리, 규격이름 } from '../backend/adapter.js';
 import { 규격맞추기, 규격갈래 } from '../agent/session.js';
 import { 잠잠기본, 무소식기본 } from '../backend/http.js';
@@ -43,7 +42,7 @@ export async function 출력상한(session, arg = '') {
 
   if (말 === 'auto' || 말 === '자동') {
     session.conn.maxTokens = null;
-    const 지웠나 = prof ? (delete prof.maxTokens, 설정남기기(cfg)) : false;
+    if (prof) { delete prof.maxTokens; 설정남기기(cfg); }
     say(`  ${mark.ok} 직접 정한 값을 지웠습니다. ${c.gray('이번 대화에 바로 먹습니다.')}`);
     /*
      * 프로필을 못 찾으면 다음에 켤 때 그 값이 되살아난다. 숨기면 안 된다.
