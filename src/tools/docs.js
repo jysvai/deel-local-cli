@@ -110,6 +110,19 @@ export function 겉속다름말(갈래, 속) {
       + '  파일이 깨졌을 수 있습니다. 이 파일로는 더 해 볼 것이 없으니 사용자에게 알리세요.';
   }
   if (속.startsWith('옛 Office')) {
+    /*
+     * hwpx 만 길이 다르다. OLE 복합문서 서명은 옛 hwp 와 옛 Office 가 **똑같아서**,
+     * 이름만 hwpx 인 것은 십중팔구 옛 hwp 다. 그런데 soffice 에는 hwpx 로 바꾸는
+     * 길이 없다 — 없는 길을 알려 주면 모델은 그 명령을 실제로 불러 보고 실패하고,
+     * 사람은 그 왕복을 고스란히 문다. 진짜 길은 바로 아래 옛hwp안내 가 적어 둔
+     * 그것이다 (한글에서 hwpx 로 저장).
+     */
+    if (갈래 === 'hwpx') {
+      return `${머리} — 실제로는 옛 형식(OLE 복합문서)입니다. 옛 hwp 이거나 옛 Office 파일입니다.\n`
+        + '  한글(한컴오피스)에서 열어 **hwpx 로 저장**하면 그대로 읽을 수 있습니다\n'
+        + '  (다른 이름으로 저장 → 파일 형식에서 hwpx 선택).\n'
+        + '  soffice 로는 hwpx 로 못 바꿉니다 — 그 길은 없습니다.';
+    }
     return `${머리} — 실제로는 ${속} 입니다.\n`
       + `  이름만 ${갈래} 로 바뀐 옛 형식이라 이 도구로는 못 읽습니다.\n`
       + `  PowerPoint·Word 에서 열어 ${갈래} 로 다시 저장하거나,\n`
@@ -175,8 +188,33 @@ export function 문단뽑기(xml, 갈래, { 표를따로 = false } = {}) {
 
   let 글모음 = [];        // 지금 문단의 글 조각들
   let 표깊이 = 0;
-  let 행칸들 = null;      // 표 행 안일 때: 칸 글들
-  let 칸글 = null;        // 표 칸 안일 때: 그 칸의 글 조각들
+  /*
+   * ── 표 안의 표가 바깥 행을 통째로 지웠다 ────────────────────────────
+   *
+   * 사람이 본 것 —
+   *
+   *   ◧ Read(사업계획서.docx)
+   *     └ 담당 | 과장 | 부장
+   *
+   * 결재란만 나오고 「사업명」도 「예산」도 없다. 그런데 오류도, 잘림 알림도
+   * 없다. 나온 글은 멀쩡한 문장이라 **뭔가 빠졌다는 표가 아무 데도 안 난다.**
+   * 모델은 그게 문서 전부인 줄 알고 "그런 항목은 없습니다" 라고 답했다.
+   *
+   * 속에서 벌어진 일 — 표깊이는 세면서 그릇(행칸들·칸글)은 하나뿐이었다.
+   * 바깥 칸이 '사업명' 을 모으는 중에 안쪽 <tr> 이 행칸들을 새 [] 로, 안쪽
+   * <tc> 가 칸글을 새 [] 로 갈아 치웠다. 그 순간 '사업명' 이 사라졌고, 안쪽
+   * </tr> 이 행칸들을 null 로 되돌려 놓아서 바깥 </tc>·</tr> 은 담을 그릇이
+   * 없다며 아무것도 안 밀어 넣었다. 한국 관공서 양식은 표 안에 결재란을 두는
+   * 것이 표준이라, 하필 **값이 든 바깥 표**만 골라서 없어진 셈이다.
+   *
+   * 이제 지키는 규칙: 그릇은 표 깊이마다 따로 둔다. 안쪽 표가 무엇을 하든
+   * 바깥 층의 칸은 건드리지 않는다. 안쪽 행이 먼저 나오고 그 뒤에 바깥 행이
+   * 나오지만, 사라지는 것은 없다.
+   */
+  const 행칸들쌓임 = [];  // 깊이마다: 그 층 행에 담긴 칸 글들
+  const 칸글쌓임 = [];    // 깊이마다: 그 층 칸의 글 조각들
+  const 지금행칸들 = () => 행칸들쌓임[표깊이] ?? null;
+  const 지금칸글 = () => 칸글쌓임[표깊이] ?? null;
   let 글안 = false;       // <t> 안인가 — 글 태그 밖의 지시문·수식 글을 안 줍기 위해
 
   const 문단닫기 = () => {
@@ -189,40 +227,44 @@ export function 문단뽑기(xml, 갈래, { 표를따로 = false } = {}) {
     if (t.text !== undefined) {
       if (!글안 || t.blank) continue;
       const 글 = unescapeXml(t.text);
-      if (칸글) 칸글.push(글);
+      const 칸 = 지금칸글();
+      if (칸) 칸.push(글);
       else 글모음.push(글);
       continue;
     }
     const 이름 = 끝이름(t.name);
 
     if (이름 === 표기.글) { 글안 = !t.closing && !t.selfClosing; continue; }
-    if (표기.탭 && 이름 === 표기.탭 && !t.closing) { (칸글 ?? 글모음).push('\t'); continue; }
-    if (표기.줄바꿈 && 이름 === 표기.줄바꿈 && !t.closing) { (칸글 ?? 글모음).push('\n'); continue; }
+    if (표기.탭 && 이름 === 표기.탭 && !t.closing) { (지금칸글() ?? 글모음).push('\t'); continue; }
+    if (표기.줄바꿈 && 이름 === 표기.줄바꿈 && !t.closing) { (지금칸글() ?? 글모음).push('\n'); continue; }
 
     if (이름 === 표기.표) { 표깊이 += t.closing ? -1 : (t.selfClosing ? 0 : 1); continue; }
     if (표깊이 > 0 && 이름 === 표기.행) {
       if (t.closing) {
-        if (행칸들) {
-          const 칸 = 행칸들.map((x) => x.trim());
+        const 담긴것 = 지금행칸들();
+        if (담긴것) {
+          const 칸 = 담긴것.map((x) => x.trim());
           문단들.push(표를따로 ? { 행: 칸 } : 칸.join(' | '));
         }
-        행칸들 = null;
+        행칸들쌓임[표깊이] = null;
       } else {
-        행칸들 = [];
+        행칸들쌓임[표깊이] = [];
       }
       continue;
     }
     if (표깊이 > 0 && 이름 === 표기.칸) {
       if (t.closing) {
-        if (행칸들 && 칸글) 행칸들.push(칸글.join(''));
-        칸글 = null;
+        const 담긴것 = 지금행칸들();
+        const 모은글 = 지금칸글();
+        if (담긴것 && 모은글) 담긴것.push(모은글.join(''));
+        칸글쌓임[표깊이] = null;
       } else {
-        칸글 = [];
+        칸글쌓임[표깊이] = [];
       }
       continue;
     }
 
-    if (이름 === 표기.문단 && t.closing && !칸글) 문단닫기();
+    if (이름 === 표기.문단 && t.closing && !지금칸글()) 문단닫기();
   }
   문단닫기();   // 안 닫힌 채 끝나는 문서도 있다. 마지막 글을 버리지 않는다.
   return 문단들;
@@ -240,6 +282,16 @@ const 알맹이 = {
   pptx: { 골라 : /^ppt\/slides\/slide(\d+)\.xml$/i, 구획이름: (n, 번호) => `${번호}장` },
 };
 
+/** 꾸러미 속 이름표로 갈래를 짚는다. 경로 없이 버퍼만 받았을 때 쓴다. 모르면 null. */
+function 꾸러미갈래(꾸러미) {
+  for (const [갈, { 골라 }] of Object.entries(알맹이)) {
+    for (const 이름 of 꾸러미.files.keys()) {
+      if (골라.test(이름.replace(/\\/g, '/'))) return 갈;
+    }
+  }
+  return null;
+}
+
 /**
  * 문서 하나를 읽는다.
  *
@@ -248,16 +300,19 @@ const 알맹이 = {
  * 예외가 나면 "문서가 깨졌다" 가 "도구가 터졌다" 로 보고된다.
  */
 export function readDoc(경로또는버퍼, { 표를따로 = false } = {}) {
-  const 갈래 = Buffer.isBuffer(경로또는버퍼) ? null : 종류(경로또는버퍼);
+  const 버퍼로왔나 = Buffer.isBuffer(경로또는버퍼);
+  let 갈래 = 버퍼로왔나 ? null : 종류(경로또는버퍼);
   let buf;
   try {
-    buf = Buffer.isBuffer(경로또는버퍼) ? 경로또는버퍼 : readFileSync(경로또는버퍼);
+    buf = 버퍼로왔나 ? 경로또는버퍼 : readFileSync(경로또는버퍼);
   } catch (err) {
     return { ok: false, error: `못 읽었습니다: ${err.message}` };
   }
-  if (!갈래) return { ok: false, error: '어떤 문서인지 모르는 경로입니다' };
+  if (!갈래 && !버퍼로왔나) return { ok: false, error: '어떤 문서인지 모르는 경로입니다' };
   if (!looksZip(buf)) {
-    return { ok: false, error: 겉속다름말(갈래, 속내용(buf)), 끝났다: true };
+    return 갈래
+      ? { ok: false, error: 겉속다름말(갈래, 속내용(buf)), 끝났다: true }
+      : { ok: false, error: `문서 꾸러미가 아닙니다 — ${속내용(buf) ?? '무엇인지 알아보지 못했습니다'}`, 끝났다: true };
   }
 
   let 꾸러미;
@@ -266,12 +321,33 @@ export function readDoc(경로또는버퍼, { 표를따로 = false } = {}) {
   } catch (err) {
     return { ok: false, error: `꾸러미를 풀지 못했습니다 — ${err.message}` };
   }
+  /*
+   * 버퍼로 온 것은 **꾸러미 속을 보고** 갈래를 짚는다.
+   *
+   * 인자 이름이 `경로또는버퍼` 고 버퍼를 읽는 갈래까지 있는데 갈래는 경로의
+   * 확장자로만 정해서, 버퍼로 부르면 언제나 「어떤 문서인지 모르는 경로입니다」
+   * 였다 — 있는 척만 하는 죽은 길이다 (8회차). 확장자가 없으면 알맹이 이름표가
+   * 유일한 단서고, 셋은 서로 겹치지 않는다.
+   */
+  if (!갈래) 갈래 = 꾸러미갈래(꾸러미);
+  if (!갈래) {
+    return { ok: false, error: '어떤 문서인지 모르는 꾸러미입니다 — hwpx·docx·pptx 의 본문이 없습니다' };
+  }
 
   const { 골라, 구획이름 } = 알맹이[갈래];
   const 찾은 = [];
   for (const [이름, 몸] of 꾸러미.files) {
     const m = 골라.exec(이름.replace(/\\/g, '/'));
     if (m) 찾은.push({ 번호: m[1] ? Number(m[1]) : 0, 몸 });
+  }
+  /*
+   * 목록에는 있는데 **못 푼** 구획 (2.0.0 3회차 사냥). readZip 이 건너뛴 것을 안 봐서, 석 장 중 한 장이 깨진
+   * 발표가 두 장짜리 온전한 글처럼 나갔다 — 모델은 그대로 「두 장입니다」 라고 요약한다. 그 자리에 못 읽었다는
+   * 문단을 세운다. 몇째 구획인지가 남아야 사람이 원본의 어디를 열어 볼지 안다.
+   */
+  for (const s of 꾸러미.skipped ?? []) {
+    const m = 골라.exec(String(s.name).replace(/\\/g, '/'));
+    if (m) 찾은.push({ 번호: m[1] ? Number(m[1]) : 0, 몸: null, 못푼까닭: s.why });
   }
   if (!찾은.length) {
     return { ok: false, error: `${갈래} 꾸러미인데 본문을 찾지 못했습니다. 깨졌거나 비정상 파일입니다.` };
@@ -280,7 +356,7 @@ export function readDoc(경로또는버퍼, { 표를따로 = false } = {}) {
 
   const 덩이들 = 찾은.map((s, i) => ({
     이름: 구획이름(i, s.번호),
-    문단들: 문단뽑기(s.몸.toString('utf8'), 갈래, { 표를따로 }),
+    문단들: s.몸 ? 문단뽑기(s.몸.toString('utf8'), 갈래, { 표를따로 }) : [`(이 구획은 못 읽었습니다 — ${s.못푼까닭})`],
   }));
   return { ok: true, 갈래, 덩이들 };
 }

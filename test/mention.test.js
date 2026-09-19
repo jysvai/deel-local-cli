@@ -30,6 +30,8 @@ writeFileSync(join(root, '자료 폴더', '표.csv'), 'ㄱ,ㄴ\n1,2\n', 'utf8');
 writeFileSync(join(root, '큰것.txt'), 'x'.repeat(50000), 'utf8');
 // CP949 파일 — 사내에 흔하다. UTF-8 로 읽으면 다 깨진다.
 writeFileSync(join(root, 'cp949.txt'), Buffer.from([0xB0, 0xA1, 0xB3, 0xAA, 0x0A]));
+// 그림 — 못 보는 모델에는 바이트를 아예 안 싣는다.
+writeFileSync(join(root, '화면.png'), Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4]));
 
 const 붙임 = (text, opts = {}) => expand(text, { scope, ...opts });
 
@@ -45,6 +47,15 @@ trace('1-찾기');
   check('@ 뒤가 비면 안 잡는다', findMentions('값이 @ 이다').length === 0, '');
   check('따옴표로 묶으면 통째로 잡는다', findMentions('@"한글 이름.txt" 읽어')[0]?.path === '한글 이름.txt',
     JSON.stringify(findMentions('@"한글 이름.txt" 읽어')));
+  // ★ (6회차 붙임6af M1·M2) 감싼 지목. 닫는 백틱(경로 끝)·닫는 낫표(뒤에붙는것)는 알면서
+  // 여는 쪽을 앞자리로 안 받아, 마크다운 버릇으로 쓴 `@경로` 가 조용히 안 붙었다.
+  check('★ (6회차 붙임6af M1) 백틱으로 감싼 지목도 찾는다', findMentions('`@src/a.js` 봐줘')[0]?.path === 'src/a.js',
+    JSON.stringify(findMentions('`@src/a.js` 봐줘')));
+  check('★ (6회차 붙임6af M2) 낫표로 감싼 지목도 찾는다',
+    findMentions('「@src/a.js」 와 『@src/b.js』').map((m) => m.path.replace(/[」』]+$/, '')).join(' ') === 'src/a.js src/b.js',
+    JSON.stringify(findMentions('「@src/a.js」 와 『@src/b.js』')));
+  check('(M1·M2 짝) 글자에 붙은 @ 는 여전히 안 잡는다', findMentions('값@src/a.js 와 a`b@c').length === 0,
+    JSON.stringify(findMentions('값@src/a.js 와 a`b@c')));
 }
 
 trace('2-붙이기');
@@ -204,6 +215,31 @@ trace('7-읽은것으로치기');
   check('잘렸으면 읽은 것으로 안 친다', seen.size === 0, String(seen.size));
 }
 
+trace('7.5-못붙인것');
+
+/*
+ * ── 안 붙은 것을 「이미 읽은 것으로 치고」 라고 하지 않는다 (2.0.0 8회차 스키마) ──
+ *
+ * 그림을 못 보는 모델에는 바이트를 아예 안 싣는다. 그런데 그 파일도 attached 에 세어져
+ * 머리말이 「지목한 파일입니다. 이미 읽은 것으로 치고 답하세요」 로 붙었다. 모델에게는
+ * 「이 파일은 이미 봤다」 는 말이라, Read 도 안 하고 안 본 파일의 내용을 지어낸다.
+ */
+{
+  const r = 붙임('@화면.png 이거 뭐야?');
+  check('그림을 못 보는 모델에는 그림을 안 싣는다', r.그림들.length === 0 && /못 봅니다/.test(r.text), r.text.slice(-160));
+  check('★★ (8회차) 못 붙인 파일을 「이미 읽은 것으로 치고」 라고 안 한다',
+    !/이미 읽은 것으로 치고/.test(r.text), r.text.split('\n').filter((l) => /지목한 파일/.test(l))[0] ?? '');
+  check('  대신 지어내지 말라고 말한다', /지어내지/.test(r.text), r.text.split('\n').filter((l) => /지목한 파일/.test(l))[0] ?? '');
+  const r2 = 붙임('@화면.png 랑 @src/a.js 봐줘');
+  check('★ (8회차) 섞여 있으면 진짜 붙은 것만 센다',
+    /지목한 파일입니다\. 이미 읽은 것으로 치고/.test(r2.text) && !/파일 2개입니다/.test(r2.text),
+    r2.text.split('\n').filter((l) => /지목한 파일/.test(l))[0] ?? '');
+  const r3 = 붙임('@src/a.js 랑 @src/b.js 봐줘');
+  check('짝: 둘 다 붙었으면 그대로 2개라고 센다', /파일 2개입니다\. 이미 읽은 것으로 치고/.test(r3.text),
+    r3.text.split('\n').filter((l) => /지목한 파일/.test(l))[0] ?? '');
+  check('짝: 못 붙였어도 화면에는 그대로 알린다', r.attached.length === 1, JSON.stringify(r.attached));
+}
+
 trace('8-이상한것');
 
 // ── 이상한 값 ───────────────────────────────────────────────────────────
@@ -295,6 +331,58 @@ trace('10-대소문자');
   // 넓히다 반대로 베면 안 된다.
   check('★ deelignore 같은 이름은 안 막는다', 살림('.deelignore') === null, String(살림('.deelignore')).slice(0, 40));
   check('★ 남의 config.json 은 그대로 통과한다', 살림('프로젝트/config.json') === null, String(살림('프로젝트/config.json')).slice(0, 40));
+}
+
+
+trace('11-이름만같은남의파일');
+
+/*
+ * ── 「이름만 audit.jsonl」 은 **남의 파일**이다 ──────────────────────
+ *
+ * 막는 자의 마지막 줄이 자리를 안 보고 이름만 봤다 — `이름 === 'audit.jsonl'`.
+ * 그래서 프로젝트가 제 감사 기록을 그 이름으로 쓰면 제 파일을 못 읽었다:
+ *
+ *     Read src/audit.jsonl   「deel 자신의 기록입니다」
+ *
+ * 거짓 경고도 결함이다. 모델은 그 파일이 없는 것으로 치고 일하거나, 없는
+ * 권한 문제를 찾아 헤맨다. deel 이 이 이름을 쓰는 자리는 제 살림 폴더 안
+ * 하나뿐이고(safety/audit.js · stats.js), 그 자리는 위 `.deel`·집 폴더
+ * 갈래가 이미 잡는다.
+ *
+ * **넓히다 살림이 새면 훨씬 큰 사고다.** 그래서 같은 절에서 진짜 살림이
+ * 여전히 막히는지를 함께 못 박는다.
+ */
+{
+  // 안 막아야 할 것 — 프로젝트 제 파일.
+  check('★★ 프로젝트 제 파일 src/audit.jsonl 은 안 막는다',
+    내부살림('C:/work/proj/src/audit.jsonl') === null, String(내부살림('C:/work/proj/src/audit.jsonl')).slice(0, 40));
+  check('★ 로그 폴더에 둔 audit.jsonl 도 안 막는다',
+    내부살림('/home/u/proj/logs/audit.jsonl') === null, String(내부살림('/home/u/proj/logs/audit.jsonl')).slice(0, 40));
+  /*
+   * 자리를 「점으로 시작하나」 로만 보던 때, 프로젝트의 숨은 폴더가 통째로 살림이 됐다.
+   * `.github/` · `.ci/` · `.circleci/` 는 프로젝트 제 폴더다 — 거기 둔 제 기록을 못 읽었다.
+   */
+  for (const 곳 of ['.github', '.ci', '.circleci']) {
+    const 길 = `C:/work/proj/${곳}/audit.jsonl`;
+    check(`★★ 숨은 프로젝트 폴더(${곳})의 audit.jsonl 도 안 막는다`,
+      내부살림(길) === null, String(내부살림(길)).slice(0, 40));
+  }
+
+  // 여전히 막아야 할 것 — 진짜 살림.
+  check('★★ .deel/audit.jsonl 은 여전히 막는다', !!내부살림('C:/Users/x/.deel/audit.jsonl'));
+  check('★★ .DEEL/audit.jsonl 도 여전히 막는다', !!내부살림('C:/Users/x/.DEEL/audit.jsonl'));
+  check('★ .deel/sessions/1.jsonl 도 여전히 막는다', !!내부살림('C:/Users/x/.deel/sessions/1.jsonl'));
+  check('★★ .deel/config.json 은 여전히 막는다', !!내부살림('C:/Users/x/.deel/config.json'));
+
+  const 옇집 = process.env.DEEL_HOME;
+  const 딴집 = join(tmpdir(), 'deel-옴긴살림');
+  process.env.DEEL_HOME = 딴집;
+  try {
+    check('★★ 옮긴 살림(DEEL_HOME)의 audit.jsonl 도 여전히 막는다',
+      !!내부살림(join(딴집, 'audit.jsonl')), String(내부살림(join(딴집, 'audit.jsonl'))).slice(0, 40));
+  } finally {
+    if (옇집 == null) delete process.env.DEEL_HOME; else process.env.DEEL_HOME = 옇집;
+  }
 }
 
 

@@ -31,6 +31,8 @@ import {
 import { 증명서만들기 } from './mkcert.mjs';
 import { plainReport } from '../src/report.js';
 import { 플러그인되돌림 } from '../src/plugins/manage.js';
+import { webFetch } from '../src/tools/webfetch.js';
+import { gzipSync } from 'node:zlib';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -56,6 +58,17 @@ trace('1-고르기');
   check('IPv4 그대로', 우회할까('10.1.2.3', 80, ['10.1.2.3']) && !우회할까('10.1.2.30', 80, ['10.1.2.3']));
   check('*.internal 꼴도', 우회할까('a.internal', 443, ['*.internal']));
 
+  /*
+   * 사냥4 W14 — NO_PROXY 의 IPv6 대괄호 꼴과 CIDR 꼴.
+   * `[fd00::5]` 는 대괄호를 안 벗겨서, `[fd00::5]:8080` 은 포트 가르기를 IPv6 로 오인해서,
+   * `10.0.0.0/8` 은 글자 비교라서 셋 다 안 맞았다 — 사내 대역이 프록시로 돌아 나갔다.
+   */
+  check('★ NO_PROXY [fd00::5] 대괄호 꼴이 맞는다', 우회할까('[fd00::5]', 443, ['[fd00::5]']) && 우회할까('fd00::5', 443, ['[fd00::5]']));
+  check('★ NO_PROXY [fd00::5]:8080 은 포트까지 본다', 우회할까('fd00::5', 8080, ['[fd00::5]:8080']) && !우회할까('fd00::5', 443, ['[fd00::5]:8080']));
+  check('★ NO_PROXY CIDR(10.0.0.0/8)에 든 IPv4 가 맞는다', 우회할까('10.1.2.3', 443, ['10.0.0.0/8']) && !우회할까('11.1.2.3', 443, ['10.0.0.0/8']));
+  check('★ NO_PROXY IPv6 CIDR(fd00::/8)도 맞는다', 우회할까('[fd12::1]', 443, ['fd00::/8']) && !우회할까('[fe80::1]', 443, ['fd00::/8']));
+  check('  CIDR 은 이름에는 안 걸린다', !우회할까('10.example.com', 443, ['10.0.0.0/8']));
+
   const env = { HTTPS_PROXY: 'http://10.0.0.1:8080', http_proxy: 'http://10.0.0.2:3128', NO_PROXY: '.corp.com' };
   프록시정하기({ env });
   check('https 대상은 HTTPS_PROXY', 프록시고르기('https://ai-gw.example.net/v1')?.url === 'http://10.0.0.1:8080');
@@ -77,6 +90,30 @@ trace('1-고르기');
   프록시정하기({ env: {} });
   check('아무것도 없으면 꺼짐', !프록시설정().켜짐 && 프록시고르기('https://a.example.net/') === null);
   check('비밀번호는 화면용 설정에 안 나온다', !JSON.stringify(프록시정하기({ env: { HTTPS_PROXY: 'http://u:secret@h:1' } })).includes('secret'));
+
+  /*
+   * 사냥4 W15 — 루프백을 **글자 앞머리**로 봤다.
+   * `127.example.com` 은 이름인데 루프백으로 읽혀 프록시를 건너뛰었고(사내에서는 못 나간다),
+   * `[::ffff:127.0.0.1]` 은 진짜 루프백인데 프록시로 나갔다. network.js 가 먼저 고친 그 자리다.
+   */
+  프록시정하기({ env: { HTTPS_PROXY: 'http://proxy.corp:8080' } });
+  check('★ 127. 로 시작하는 이름은 루프백이 아니다 — 프록시로 간다', 프록시고르기('https://127.example.com/')?.url === 'http://proxy.corp:8080',
+    String(프록시고르기('https://127.example.com/')?.url ?? 'DIRECT'));
+  check('★ [::ffff:127.0.0.1] 은 루프백이다 — 직접 간다', 프록시고르기('https://[::ffff:127.0.0.1]/') === null,
+    String(프록시고르기('https://[::ffff:127.0.0.1]/')?.url ?? 'DIRECT'));
+  check('  127.0.0.1 · localhost 는 그대로 직접', 프록시고르기('https://127.0.0.1/') === null && 프록시고르기('https://localhost/') === null);
+
+  /*
+   * 사냥4 W6 — 비밀번호에 맨 `%` 가 있으면 decodeURIComponent 가 URIError 를 던졌고,
+   * 그 던짐이 config.load 까지 올라가 **모든 실행이** 「URI malformed」 한 줄로 죽었다.
+   * 적어 둔 대로 {탈} 로 남기고 직접 간다. 탈 글에 비밀번호를 싣지 않는다.
+   */
+  let 퍼센트탈 = null;
+  let 퍼센트설정 = null;
+  try { 퍼센트설정 = 프록시정하기({ env: { HTTPS_PROXY: 'http://user:p%zz@proxy.corp:8080' } }); } catch (e) { 퍼센트탈 = e; }
+  check('★★ 비밀번호에 맨 % 가 있어도 안 던진다', 퍼센트탈 === null, 퍼센트탈 ? `${퍼센트탈.name}: ${퍼센트탈.message}` : '');
+  check('★ 그 프록시는 탈로 남고 켜지지 않는다', !!퍼센트설정?.탈 && 퍼센트설정?.켜짐 === false, JSON.stringify(퍼센트설정));
+  check('★ 탈 글에 비밀번호가 안 실린다', !/p%zz/.test(퍼센트설정?.탈 ?? '') && /%25/.test(퍼센트설정?.탈 ?? ''), String(퍼센트설정?.탈));
   프록시지우기();
 }
 
@@ -84,6 +121,23 @@ trace('1-고르기');
 // 가짜 프록시 둘 (하나는 인증 요구) + http 대상 + https 대상
 // ═══════════════════════════════════════════════════════════════════════
 const 대상본것 = [];
+// 받는 쪽이 끊으면 쓰기가 막히고 소켓이 닫혀 여기서 멈춘다. 다 받아서 버리면 끝까지 나간다.
+const 큰몸 = 96 * 1024 * 1024;
+const 보낸양 = {};
+function 붓기(rs, 열쇠) {
+  const 조각 = Buffer.alloc(1024 * 1024, 0x42);
+  보낸양[열쇠] = 0;
+  let 닫힘 = false;
+  rs.on('close', () => { 닫힘 = true; });
+  const 쓰기 = () => {
+    while (!닫힘 && 보낸양[열쇠] < 큰몸) {
+      보낸양[열쇠] += 조각.length;
+      if (!rs.write(조각)) { rs.once('drain', 쓰기); return; }
+    }
+    if (!닫힘) rs.end();
+  };
+  쓰기();
+}
 const 터널포트 = [];   // 프록시가 뚫어 준 터널의 뒷단 포트 — TLS 서버가 본 상대 포트와 맞아야 한다
 const target = httpServer((rq, rs) => {
   let body = '';
@@ -111,6 +165,14 @@ const target = httpServer((rq, rs) => {
       rs.writeHead(302, { Location: '/v1/models' });
       return rs.end();
     }
+    // 사냥4 W8 — 받는 쪽이 청하지 않아도 gzip 으로 주는 서버. 곧장 가는 길(fetch)은 풀어 준다.
+    if (rq.url === '/gz') {
+      rs.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Encoding': 'gzip' });
+      return rs.end(gzipSync(Buffer.from('<html><body><p>' + '압축된 한글 본문입니다. '.repeat(20) + '</p></body></html>', 'utf8')));
+    }
+    // 사냥4 W2 — 버릴 몸이 아주 큰 답. 실제로 얼마나 내보냈나를 센다.
+    if (rq.url === '/404-big') { rs.writeHead(404, { 'Content-Type': 'text/plain' }); return 붓기(rs, rq.url); }
+    if (rq.url === '/png-big') { rs.writeHead(200, { 'Content-Type': 'image/png' }); return 붓기(rs, rq.url); }
     rs.writeHead(200, { 'Content-Type': 'application/json', 'X-Seen-Body': String(body.length) });
     rs.end(JSON.stringify({ data: [{ id: 'proxied-model' }], echo: body ? JSON.parse(body) : null }));
   });
@@ -307,6 +369,37 @@ for (const 길 of ['직접', '프록시']) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// 3½. 프록시로 가는 웹 읽기 — gzip 을 풀고, 버릴 몸은 안 받는다 (사냥4 W8 · W2)
+// ═══════════════════════════════════════════════════════════════════════
+trace('3반-웹읽기경유');
+{
+  프록시정하기({ env: { HTTP_PROXY: `http://127.0.0.1:${프록시포트}` }, 로컬우회: false });
+  resetNet();
+  프록시본것.length = 0;
+  /*
+   * W8 — 곧장 가는 길(fetch)은 gzip 을 풀어 주는데, 프록시 길(node:http)은 안 풀었다.
+   * 그래서 같은 페이지가 프록시 뒤에서만 압축 바이트 그대로 모델에게 갔다.
+   */
+  const gz = await webFetch({ url: `http://127.0.0.1:${대상포트}/gz` }, { allowPrivate: true });
+  check('★★ 프록시로 받아도 gzip 몸을 풀어 읽는다', /압축된 한글 본문입니다/.test(gz.content ?? ''),
+    JSON.stringify((gz.content ?? gz.error ?? '').slice(62, 120)));
+  check('  그 요청은 정말 프록시를 지났다', 프록시본것.some((x) => x.includes('/gz')), 프록시본것.join(' · '));
+
+  /*
+   * W2 — 프록시 길은 거절 답(404)의 몸을 **통째로** 읽고 나서 돌려줬다(다읽기).
+   * 300MB 짜리 404 하나에 800MB 가까이 올라갔다. 흘려 받는데 ok 가 아닌 것도,
+   * 흘려 받다 버리는 것(res.resume)도 끝까지 받기는 마찬가지였다.
+   */
+  for (const [길, 이름] of [['/404-big', '404'], ['/png-big', '글이 아닌 것']]) {
+    const r = await webFetch({ url: `http://127.0.0.1:${대상포트}${길}` }, { allowPrivate: true });
+    await new Promise((x) => setTimeout(x, 200));
+    check(`★★ 프록시 길도 ${이름} 의 큰 몸을 끝까지 안 받는다`, (보낸양[길] ?? 0) < 큰몸 / 2,
+      `보낸 것 ${Math.round((보낸양[길] ?? 0) / 1048576)}MB / ${큰몸 / 1048576}MB · ${JSON.stringify((r.error ?? r.summary ?? '').slice(0, 40))}`);
+  }
+  프록시지우기();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // 4. 터널을 여는 중에 끊기
 // ═══════════════════════════════════════════════════════════════════════
 trace('4-끊기');
@@ -416,6 +509,19 @@ trace('4반반-말과열쇠');
   const 보고서2 = plainReport({ shape: 'openai', base: 'https://gw.example.net/v1', auth: 'bearer', model: 'm', ctx: 1 }, [], { level: 'ready', notes: [] });
   check('못 쓰는 프록시는 보고서에 까닭이 적힌다', /프록시\s+못 씀 — .*socks5/.test(보고서2), 보고서2.split('\n').find((l) => /프록시/.test(l)));
 
+  // 프록시를 어차피 안 거치는 주소(루프백 · NO_PROXY)에는 그 줄도 없다 — 로컬 모델이 안 붙는
+  // 까닭을 찾는 사람을 상관없는 프록시 쪽으로 보낸다 (2.0.0 6회차 RP1).
+  // 보고서를 짓는 동안 설정을 읽으며 프록시를 다시 정하므로, 보고서마다 먼저 정해 둔다.
+  프록시정하기({ env: { HTTPS_PROXY: 'socks5://127.0.0.1:1080' } });
+  const 보고서3 = plainReport({ shape: 'openai', base: 'http://127.0.0.1:11434/v1', auth: 'none', model: 'm', ctx: 1 }, [], { level: 'ready', notes: [] });
+  check('루프백 주소의 보고서에는 못 쓰는 프록시 줄이 없다', !/프록시\s+못 씀/.test(보고서3), 보고서3.split('\n').find((l) => /프록시/.test(l)));
+  프록시정하기({ env: { HTTPS_PROXY: 'socks5://127.0.0.1:1080', NO_PROXY: 'gw.example.net' } });
+  const 보고서4 = plainReport({ shape: 'openai', base: 'https://gw.example.net/v1', auth: 'bearer', model: 'm', ctx: 1 }, [], { level: 'ready', notes: [] });
+  check('NO_PROXY 로 비켜 가는 주소의 보고서에도 못 쓰는 프록시 줄이 없다', !/프록시\s+못 씀/.test(보고서4), 보고서4.split('\n').find((l) => /프록시/.test(l)));
+  프록시정하기({ env: { HTTPS_PROXY: 'socks5://127.0.0.1:1080', NO_PROXY: 'gw.example.net' } });
+  const 보고서5 = plainReport({ shape: 'openai', base: 'https://other.example.net/v1', auth: 'bearer', model: 'm', ctx: 1 }, [], { level: 'ready', notes: [] });
+  check('비켜 가지 않는 주소에는 못 쓰는 프록시 줄이 그대로 있다', /프록시\s+못 씀 — .*socks5/.test(보고서5), 보고서5.split('\n').find((l) => /프록시/.test(l)));
+
   // 다른 집으로 되돌릴 때 열쇠 머리말을 뗀다 — 두 집을 다 열어 두고 본다.
   프록시지우기();
   resetNet();
@@ -480,6 +586,122 @@ trace('5-https터널');
 }
 
 // ── 결과 ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// 5반. 되돌림 규칙 · 이미 끊긴 신호 · realm 속 글자 (2.0.0 6회차 Gemini 전송6)
+// ═══════════════════════════════════════════════════════════════════════
+trace('5반-전송6');
+{
+  프록시지우기();
+  resetNet();
+  const 받은것 = [];
+  const 되돌개 = httpServer((q, s) => {
+    let b = '';
+    q.on('data', (c) => { b += c; });
+    q.on('end', () => {
+      받은것.push({ url: q.url, method: q.method, ct: q.headers['content-type'] ?? null, 몸: b.length });
+      const 가 = (code, loc) => { s.writeHead(code, loc ? { location: loc } : {}); s.end(); };
+      if (q.url === '/put302') return 가(302, '/end');
+      if (q.url === '/head303') return 가(303, '/end');
+      if (q.url === '/post302') return 가(302, '/end');
+      if (q.url === '/post303') return 가(303, '/end');
+      if (q.url === '/loop') return 가(302, '/loop');
+      s.writeHead(200, { 'content-type': 'application/json' });
+      s.end('{"ok":1}');
+    });
+  });
+  await new Promise((r) => 되돌개.listen(0, '127.0.0.1', r));
+  const 밑 = `http://127.0.0.1:${되돌개.address().port}`;
+  allowEndpoint(밑);
+  const 끝요청 = () => 받은것.find((x) => x.url === '/end');
+  const 제이슨 = { 'Content-Type': 'application/json' };
+
+  // 머리말은 「fetch 가 하는 대로」 라 적었지만 PUT·DELETE 의 301·302 와 HEAD 의 303 까지 GET 으로 바꿨다.
+  받은것.length = 0;
+  await req(`${밑}/put302`, { method: 'PUT', headers: 제이슨, body: { a: 1 }, timeout: 5000 });
+  check('★ PUT 의 302 는 PUT 그대로 몸과 함께 따라간다 (fetch 규격 · 6회차 전송6)', 끝요청()?.method === 'PUT' && 끝요청()?.몸 > 0, JSON.stringify(받은것));
+  받은것.length = 0;
+  await req(`${밑}/head303`, { method: 'HEAD', timeout: 5000 });
+  check('★ HEAD 의 303 은 HEAD 그대로 따라간다', 끝요청()?.method === 'HEAD', JSON.stringify(받은것));
+  받은것.length = 0;
+  await req(`${밑}/post302`, { method: 'POST', headers: 제이슨, body: { a: 1 }, timeout: 5000 });
+  check('  POST 의 302 는 여전히 몸 없는 GET 으로', 끝요청()?.method === 'GET' && 끝요청()?.몸 === 0, JSON.stringify(받은것));
+  // 몸을 떼면서 몸을 설명하는 머리말은 남기면, 몸 없는 GET 에 Content-Type 이 따라간다.
+  받은것.length = 0;
+  await req(`${밑}/post303`, { method: 'POST', headers: 제이슨, body: { a: 1 }, timeout: 5000 });
+  check('★ GET 으로 바꿀 때 본문 머리말(Content-Type)도 뗀다', 끝요청()?.method === 'GET' && 끝요청()?.ct === null, JSON.stringify(받은것));
+  // 원시요청 은 멈춘 까닭(되돌림탈)을 붙이는데 req() 가 버려서, 모델 창구가 제자리를 돌면 「302」 만 보였다.
+  const 고리 = await req(`${밑}/loop`, { timeout: 5000 });
+  check('★ req() 도 되돌림이 멈춘 까닭을 오류 말로 넘겨준다', !고리.ok && /되돌림/.test(고리.error ?? ''), JSON.stringify({ status: 고리.status, error: 고리.error }));
+  await new Promise((r) => 되돌개.close(r));
+
+  // 이미 끊긴 신호로 부르면 abort 가 다시는 안 울린다. 프록시가 CONNECT 에 말이 없으면 시계도 못 깨워 영영 섰다.
+  프록시정하기({ env: { HTTPS_PROXY: `http://127.0.0.1:${먹통프록시.address().port}` }, 로컬우회: false });
+  resetNet();
+  allowEndpoint(`https://127.0.0.1:${tls.address().port}`);
+  const 끊은손 = new AbortController();
+  끊은손.abort();
+  const 잰때 = Date.now();
+  const 결과 = await Promise.race([
+    req(`https://127.0.0.1:${tls.address().port}/v1/models`, { signal: 끊은손.signal, timeout: 3000, 연결: 3000 }).catch((e) => e),
+    new Promise((r) => setTimeout(() => r('안 끝남'), 6000)),
+  ]);
+  check('★ 이미 끊긴 신호면 말없는 프록시 앞에서도 곧장 멈춘다 (6회차 전송6)', 결과 instanceof Aborted, `${결과?.name ?? 결과} · ${Date.now() - 잰때}ms`);
+
+  // realm 값 속 글자를 방식 이름으로 읽었다 — Basic 만 내미는데 「NTLM 도 요구하지만 못 한다」 가 붙었다.
+  const { p: 따옴표엔티 } = 가짜프록시({ 인증: true, 도전: 'Basic realm="ntlm-gateway"' });
+  await new Promise((r) => 따옴표엔티.listen(0, '127.0.0.1', r));
+  프록시정하기({ env: { HTTP_PROXY: `http://127.0.0.1:${따옴표엔티.address().port}` }, 로컬우회: false });
+  resetNet();
+  allowEndpoint(`http://127.0.0.1:${대상포트}`);
+  const 엔티 = await req(`http://127.0.0.1:${대상포트}/v1/models`, { timeout: 5000 });
+  check('★ realm 속 ntlm 글자를 NTLM 요구로 읽지 않는다 (6회차 전송6)', 엔티.status === 407 && /user:pw@/.test(엔티.error ?? '') && !/NTLM/.test(엔티.error ?? ''), 엔티.error);
+  따옴표엔티.closeAllConnections?.();
+  따옴표엔티.close();
+
+  /*
+   * (8회차 뒷단-전선) 따옴표를 **안 두른** realm 도 같다.
+   *
+   * 앞선 고침은 따옴표 속을 지우는 것까지만 했다. 그런데 realm 값에 따옴표를 안 두르는
+   * 프록시가 있고(RFC 는 token 이면 허용한다), `Basic realm=ntlm` · `Basic realm=corp-ntlm`
+   * 은 지울 따옴표가 없어 그대로 `\bntlm\b` 에 걸렸다. Basic 하나만 내미는 프록시인데
+   * 안내문 끝에 「NTLM 도 같이 요구하지만 그건 못 합니다」 가 붙는다 — 사람은 열쇠를
+   * 넣어 보기 전에 「우리 프록시는 안 되는구나」 로 읽고 손을 뗀다.
+   *
+   * 방식 이름은 쉼표로 나뉜 **앞자리**에만 온다. 베이직 검사는 이미 그 자리를 보는데
+   * 못하는것 검사만 안 봤다.
+   */
+  // 안내문은 머리말 원문을 되울리므로 낱말이 들어 있는 것만 봐서는 못 잰다 —
+  // **못 한다고 짚는 문구**가 붙었나를 본다 (위 Negotiate 자리와 같은 까닭).
+  const 못한다는말 = /도 같이 요구하지만 그건 못 합니다|이 방식은 지원하지 않습니다/;
+  for (const 도전 of ['Basic realm=ntlm', 'Basic realm=corp-ntlm', 'Basic realm=negotiate']) {
+    const { p: 민낯 } = 가짜프록시({ 인증: true, 도전 });
+    await new Promise((r) => 민낯.listen(0, '127.0.0.1', r));
+    프록시정하기({ env: { HTTP_PROXY: `http://127.0.0.1:${민낯.address().port}` }, 로컬우회: false });
+    resetNet();
+    allowEndpoint(`http://127.0.0.1:${대상포트}`);
+    const 받은것 = await req(`http://127.0.0.1:${대상포트}/v1/models`, { timeout: 5000 });
+    check(`★ 따옴표 없는 realm 속 글자도 방식으로 안 읽는다 — '${도전}'`,
+      받은것.status === 407 && /user:pw@/.test(받은것.error ?? '') && !못한다는말.test(받은것.error ?? ''),
+      받은것.error);
+    민낯.closeAllConnections?.();
+    민낯.close();
+  }
+  // 진짜로 앞자리에 온 방식은 여전히 짚어 준다 — 자리 검사를 붙이다 이걸 죽이면 안 된다.
+  const { p: 진짜엔티 } = 가짜프록시({ 인증: true, 도전: 'NTLM, Basic realm="corp"' });
+  await new Promise((r) => 진짜엔티.listen(0, '127.0.0.1', r));
+  프록시정하기({ env: { HTTP_PROXY: `http://127.0.0.1:${진짜엔티.address().port}` }, 로컬우회: false });
+  resetNet();
+  allowEndpoint(`http://127.0.0.1:${대상포트}`);
+  const 진짜받은것 = await req(`http://127.0.0.1:${대상포트}/v1/models`, { timeout: 5000 });
+  check('★ 앞자리에 온 NTLM 은 그대로 짚어 준다',
+    /NTLM 도 같이 요구하지만 그건 못 합니다/.test(진짜받은것.error ?? ''), 진짜받은것.error);
+  진짜엔티.closeAllConnections?.();
+  진짜엔티.close();
+
+  프록시지우기();
+  resetNet();
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log('\n프록시 검사 — 프록시 뒤에서도 닿고, 자물쇠는 그대로인가\n');
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}`);

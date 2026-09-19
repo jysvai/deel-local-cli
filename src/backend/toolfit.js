@@ -163,8 +163,13 @@ function 이름다듬기(원래, 쓴것) {
    */
   const 원본 = String(원래 ?? '');
   let 새것 = 원본.replace(/[^a-zA-Z0-9_-]+/g, '_');
-  if (새것 !== 원본) 새것 = `${새것.replace(/_+$/, '')}_${지문(원본)}`;
-  if (!새것 || !/[a-zA-Z0-9]/.test(새것)) 새것 = `tool_${지문(원본)}`;
+  /*
+   * 영숫자가 하나도 안 남는 이름(`검색` → `_`)은 `tool_지문` 으로. 여태 지문을 먼저 붙인 **뒤에** 영숫자를
+   * 봐서, 지문 자체가 영숫자라 늘 통과했고 `_fxrcde` 처럼 밑줄로 시작하는 이름이 나갔다 — 이 줄이
+   * 하려던 것과 거꾸로다 (6회차 Gemini 도구맞춤6 T4).
+   */
+  if (!/[a-zA-Z0-9]/.test(새것)) 새것 = `tool_${지문(원본)}`;
+  else if (새것 !== 원본) 새것 = `${새것.replace(/_+$/, '')}_${지문(원본)}`;
   if (새것.length > 이름최대) {
     /*
      * 앞뒤를 남기고 가운데를 지문으로 접는다.
@@ -221,20 +226,103 @@ function 지문(글, 자릿수 = 6) {
  * 그대로 두면 그 마디가 뜻 없는 빈 것이 되므로, 남은 것을 보고 갈래를
  * 되짚어 준다. 되짚을 것조차 없으면 string 으로 둔다 — 없는 것보다 낫다.
  */
-function 제미니스키마(값) {
-  if (Array.isArray(값)) return 값.map(제미니스키마);
+/*
+ * ── $ref 는 가리키는 정의로 풀어 적는다 ─────────────────────────────────
+ *
+ * pydantic 같은 도구가 만든 MCP 스키마는 중첩 모델을 `$defs` + `$ref` 로 적는다.
+ * Gemini 스키마는 $ref 를 모른다. 여태 그 열쇠를 빼기만 해서 마디가 비었고, 빈
+ * 마디는 아래에서 **string** 으로 떨어졌다 — 객체를 받는 인자에 모델이 글을
+ * 넣어 부르고, 도구는 인자가 틀렸다고만 한다. 뜻이 얕아지는 것이 아니라 뒤집힌다.
+ *
+ * 같은 스키마 안(`#/…`)만 푼다. 바깥 파일·주소는 따라가지 않는다 — 읽을 길도
+ * 없고, 보내기 직전에 남의 주소를 두드리면 안 된다.
+ *
+ * 자기를 가리키는 정의(나무 모양)는 끝이 없으므로 **몇 겹까지만** 푼다. 그 뒤로는
+ * 정의의 갈래(type)만 남긴다. 속까지는 못 적어도 「객체다」 는 안 뒤집힌다.
+ * 다섯 겹이면 가지가 셋인 나무도 수백 마디에서 멎는다 — 너무 큰 스키마는 그것대로
+ * 거절당한다.
+ */
+const 참조최대 = 5;
+
+function 참조찾기(뿌리, 참조) {
+  if (typeof 참조 !== 'string' || !참조.startsWith('#/')) return null;
+  let 곳 = 뿌리;
+  for (const 조각 of 참조.slice(2).split('/')) {
+    let 이름;
+    try { 이름 = decodeURIComponent(조각).replace(/~1/g, '/').replace(/~0/g, '~'); } catch { return null; }
+    if (!곳 || typeof 곳 !== 'object' || !Object.hasOwn(곳, 이름)) return null;
+    곳 = 곳[이름];
+  }
+  return 곳 && typeof 곳 === 'object' && !Array.isArray(곳) ? 곳 : null;
+}
+
+function 제미니스키마(값, 뿌리 = 값, 풀린수 = 0) {
+  if (Array.isArray(값)) return 값.map((v) => 제미니스키마(v, 뿌리, 풀린수));
   if (!값 || typeof 값 !== 'object') return 값;
+
+  if (typeof 값.$ref === 'string') {
+    const 정의 = 참조찾기(뿌리, 값.$ref);
+    // 곁에 적힌 열쇠(설명 등)가 정의보다 앞선다 — 그 자리에 맞춰 적은 말이다.
+    const 곁 = { ...값 };
+    delete 곁.$ref;
+    if (정의 && 풀린수 < 참조최대) return 제미니스키마({ ...정의, ...곁 }, 뿌리, 풀린수 + 1);
+    if (정의?.type) return 제미니스키마({ type: 정의.type, ...곁 }, 뿌리, 풀린수);
+  }
+  const 안쪽 = (v) => 제미니스키마(v, 뿌리, 풀린수);
+
+  /*
+   * allOf 는 버리기 전에 **객체 갈래의 속성을 펼쳐 싣는다.**
+   *
+   * Gemini 스키마는 allOf 를 모른다(제미니열쇠). 그냥 거르면 그 안에 적힌 속성이 통째로
+   * 사라지고 바깥 `required` 만 남는다 — 그러면 Gemini 는 「없는 속성을 required 에 적었다」
+   * 로 스키마째 거절하고, 모델은 그 인자가 있는 줄도 모른다(4회차 Gemini 리뷰 · 실행 확인).
+   * 바깥에 적힌 속성이 이긴다. 갈래끼리 겹치면 앞 갈래가 이긴다. 객체가 아닌 갈래는 못 합친다.
+   */
+  if (Array.isArray(값.allOf)) {
+    const 펼친 = { ...값, properties: { ...(값.properties ?? {}) }, required: [...(Array.isArray(값.required) ? 값.required : [])] };
+    delete 펼친.allOf;
+    /*
+     * 갈래는 **끝까지** 푼다. 한 번만 풀었더니 `$ref → $ref` 로 이어진 갈래(`A` 가 `B` 를 가리킴)는 `{ $ref }`
+     * 만 남고, 갈래 안에 또 `allOf` 가 든 것(상속을 두 겹 받은 모델)은 그 안쪽을 안 봐서 속성이 통째로
+     * 사라졌다 — 바깥 `{type:'object'}` 만 나가 모델은 인자가 있는 줄도 모른다 (6회차 Gemini 도구맞춤6 G3).
+     * 앞 갈래가 이기는 차례는 그대로다(깊이 먼저). 참조가 돌거나 너무 깊으면 8겹에서 멈춘다.
+     */
+    const 갈래풀기 = (갈래, 깊이 = 0) => {
+      let g = 갈래;
+      for (let i = 0; i < 8 && g && typeof g.$ref === 'string'; i++) g = 참조찾기(뿌리, g.$ref) ?? null;
+      if (!g || typeof g !== 'object' || Array.isArray(g) || typeof g.$ref === 'string') return [];
+      return [g, ...(Array.isArray(g.allOf) && 깊이 < 8 ? g.allOf.flatMap((x) => 갈래풀기(x, 깊이 + 1)) : [])];
+    };
+    for (const 풀린갈래 of 값.allOf.flatMap((x) => 갈래풀기(x))) {
+      for (const [n, s] of Object.entries(풀린갈래.properties ?? {})) if (!Object.hasOwn(펼친.properties, n)) 펼친.properties[n] = s;
+      if (Array.isArray(풀린갈래.required)) 펼친.required.push(...풀린갈래.required);
+    }
+    if (!Object.keys(펼친.properties).length && 값.properties === undefined) delete 펼친.properties;
+    펼친.required = [...new Set(펼친.required)];
+    if (!펼친.required.length && 값.required === undefined) delete 펼친.required;
+    return 제미니스키마(펼친, 뿌리, 풀린수);
+  }
 
   const 새것 = {};
   for (const [k, v] of Object.entries(값)) {
+    /*
+     * oneOf 는 버리지 않고 anyOf 로 옮겨 적는다.
+     *
+     * 이 스키마는 oneOf 를 모르고 anyOf 는 안다. 그런데 oneOf 를 그냥 빼면 그
+     * 자리가 빈 마디가 되어 아래에서 **string** 으로 떨어졌다. 갈래가 객체 둘이면
+     * 뜻이 뒤집힌다 — 모델은 객체 대신 글을 넣어 부르고, 도구는 인자가 틀렸다고만
+     * 한다. 「정확히 하나」 가 「하나 이상」 으로 느슨해질 뿐 받는 모양은 남는다.
+     * anyOf 가 이미 있으면 그쪽을 믿고 oneOf 는 버린다 — 둘을 섞으면 뜻이 바뀐다.
+     */
+    if (k === 'oneOf' && Array.isArray(v) && 값.anyOf === undefined) { 새것.anyOf = 안쪽(v); continue; }
     if (!제미니열쇠.has(k)) continue;
     if (k === 'properties' && v && typeof v === 'object') {
       const 속성 = {};
-      for (const [n, s] of Object.entries(v)) 속성[n] = 제미니스키마(s);
+      for (const [n, s] of Object.entries(v)) 속성[n] = 안쪽(s);
       새것.properties = 속성;
       continue;
     }
-    if (k === 'items' || k === 'anyOf') { 새것[k] = 제미니스키마(v); continue; }
+    if (k === 'items' || k === 'anyOf') { 새것[k] = 안쪽(v); continue; }
     새것[k] = v;
   }
 
@@ -246,19 +334,86 @@ function 제미니스키마(값) {
   if (Array.isArray(새것.type)) {
     const 진짜 = 새것.type.filter((t) => t !== 'null');
     if (새것.type.length !== 진짜.length) 새것.nullable = true;
-    새것.type = 진짜[0] ?? 'string';
+    /*
+     * 갈래가 둘 이상 남으면(`['string','number']`) 첫 갈래로 좁히지 않고 anyOf 로 옮긴다. 좁히면 수도 받는
+     * 칸에 모델이 늘 글자만 넣는다 (6회차 Gemini 도구맞춤6 G1). 속성·항목이 붙은 칸은 갈래마다 나눌 수
+     * 없어 전처럼 첫 갈래로 둔다. anyOf 만 있는 마디는 아래에서 갈래를 안 채운다.
+     */
+    if (진짜.length > 1 && 새것.anyOf === undefined && !새것.properties && !새것.items) {
+      새것.anyOf = 진짜.map((t) => ({ type: t }));
+      delete 새것.type;
+    } else 새것.type = 진짜[0] ?? 'string';
   }
 
-  if (새것.format !== undefined) {
-    const 받는것 = 제미니format[String(새것.type)];
-    if (!받는것 || !받는것.has(String(새것.format))) delete 새것.format;
+  /*
+   * ── enum 은 **글자 목록**뿐이다 ─────────────────────────────────────────
+   *
+   * API 참조의 Schema 가 `"enum": [ string ]` 이라고 못 박는다. MCP 스키마에는
+   * `{ type:'integer', enum:[1,2,3] }` 이 흔한데, 그대로 실으면 그 목록이 거절되고
+   * 그 턴이 통째로 죽는다 — 화면에서는 열쇠가 틀린 것과 구별이 안 되는 400 이다.
+   *
+   * 글자 칸의 글자 목록은 그대로 둔다. 그 밖의 목록은 enum 을 빼고 **받는 값을
+   * 설명에 옮겨 적는다.** 칸의 갈래(integer·number)는 그대로라 값이 숫자로 나가고,
+   * 그러니 되돌릴 것이 없다. 모델은 설명을 읽고 여전히 무엇을 넣을지 안다.
+   *
+   * 목록 속 null 은 「비워도 된다」 는 뜻이니 nullable 로 옮긴다. const 는 값 하나짜리
+   * 목록이다 — 빼기만 하면 「이 값만」 이라는 뜻이 사라진다. 갈래 없이 숫자 목록만
+   * 적힌 자리는 아래에서 string 으로 떨어지므로, 여기서 숫자 갈래를 먼저 되짚는다.
+   */
+  /*
+   * `required` 에는 `properties` 에 **있는 이름만** 남긴다.
+   *
+   * Gemini 는 없는 속성을 required 에 적은 스키마를 「property is not defined」 로 통째로
+   * 거절한다 — 그 도구 하나가 아니라 그 요청이 죽는다. MCP 서버가 적은 스키마가 원래
+   * 어긋나 있기도 하고, 위에서 모르는 열쇠를 거르다 속성이 빠지기도 한다. 이름이 없는
+   * 필수 칸은 모델이 채울 길도 없으니, 빼도 잃는 뜻이 없다.
+   */
+  if (Array.isArray(새것.required)) {
+    const 있는속성 = 새것.properties && typeof 새것.properties === 'object' ? 새것.properties : {};
+    const 남길이름 = [...new Set(새것.required.filter((n) => typeof n === 'string' && Object.hasOwn(있는속성, n)))];
+    // 원래 빈 목록(`required: []`)은 그대로 둔다 — 우리 도구가 그렇게 적고, 건드리면 「안 깎는다」 약속이 깨진다.
+    if (남길이름.length || !새것.required.length) 새것.required = 남길이름;
+    else delete 새것.required;
+  }
+
+  if (값.const !== undefined && 새것.enum === undefined) 새것.enum = [값.const];
+  if (Array.isArray(새것.enum)) {
+    const 널뺀것 = 새것.enum.filter((v) => v !== null);
+    if (널뺀것.length !== 새것.enum.length) 새것.nullable = true;
+    if (새것.type === undefined && 널뺀것.length && 널뺀것.every((v) => typeof v === 'number')) {
+      새것.type = 널뺀것.every(Number.isInteger) ? 'integer' : 'number';
+    }
+    if (널뺀것.length && 널뺀것.every((v) => typeof v === 'string') && (새것.type === undefined || 새것.type === 'string')) {
+      새것.enum = 널뺀것;
+    } else {
+      delete 새것.enum;
+      if (널뺀것.length) {
+        const 받는값 = `allowed values: ${널뺀것.map((v) => (typeof v === 'string' ? v : JSON.stringify(v))).join(', ')}`;
+        새것.description = 새것.description ? `${새것.description} (${받는값})` : 받는값;
+      }
+    }
   }
 
   if (새것.type === undefined) {
-    if (새것.properties) 새것.type = 'object';
+    // 속성 없이 additionalProperties 만 적은 자리는 「아무 키나 받는 객체」 다. string 으로
+    // 떨어뜨리면 모델이 객체 대신 글을 넣어 부르고, 그 도구는 인자가 틀렸다고만 한다.
+    if (새것.properties || 값.additionalProperties !== undefined || 값.patternProperties !== undefined) 새것.type = 'object';
     else if (새것.items) 새것.type = 'array';
     else if (새것.anyOf) { /* anyOf 는 갈래를 안 적어도 된다 */ }
     else 새것.type = 'string';
+  }
+
+  /*
+   * format 은 **갈래가 정해진 뒤에** 본다.
+   *
+   * 앞에서 보고 있었더니 `{format:'date-time'}` 처럼 갈래를 안 적은 칸이
+   * `제미니format[undefined]` 에 걸려 format 을 잃었다 — 바로 다음 줄에서
+   * string 으로 정해지는 자리라, 제미니가 받는 조합(string + date-time)을
+   * 우리가 먼저 깎은 셈이다. 차례만 바꾸면 된다.
+   */
+  if (새것.format !== undefined) {
+    const 받는것 = 제미니format[String(새것.type)];
+    if (!받는것 || !받는것.has(String(새것.format))) delete 새것.format;
   }
   return 새것;
 }
@@ -288,6 +443,17 @@ export function 도구맞추기(tools, conn) {
 
   const 되돌림 = new Map();
   const 쓴것 = new Set();
+  /*
+   * 규칙에 맞아 **그대로 나갈** 이름을 먼저 모은다.
+   *
+   * 고친 이름은 앞에서 쓴 이름(쓴것)만 피하고 있었다. 그래서 고칠 도구가 앞에 오고
+   * 그 고친 이름(`a_b_4m7u2a`)을 제 이름으로 쓰는 도구가 뒤에 오면, 둘이 같은
+   * 이름으로 나갔다. 이름이 겹친 목록은 창구가 통째로 거절하거나, 되돌림이 모델이
+   * 부른 것을 엉뚱한 도구로 돌려준다. 그대로 나갈 이름은 차례와 상관없이 처음부터
+   * 비워 둔다 — 고친 쪽이 뒤에 번호를 달고 비킨다(이름다듬기).
+   */
+  const 그대로나갈것 = new Set(tools.map((t) => String((t?.function ?? t)?.name ?? '')).filter((n) => 이름규칙.test(n)));
+  const 못쓸것 = { has: (n) => 쓴것.has(n) || 그대로나갈것.has(n) };
   let 이름손봄 = 0;
   let 스키마손봄 = 0;
 
@@ -296,26 +462,42 @@ export function 도구맞추기(tools, conn) {
     const 원래이름 = String(f?.name ?? '');
     let 이름 = 원래이름;
     if (!이름규칙.test(이름)) {
-      이름 = 이름다듬기(원래이름, 쓴것);
+      이름 = 이름다듬기(원래이름, 못쓸것);
       되돌림.set(이름, 원래이름);
       이름손봄++;
     }
     쓴것.add(이름);
 
-    let 인자 = f?.parameters ?? f?.input_schema ?? null;
-    if (v === 'gemini') {
-      const 다듬은것 = 객체로(제미니스키마(인자));
-      if (JSON.stringify(다듬은것) !== JSON.stringify(인자)) 스키마손봄++;
-      인자 = 다듬은것;
-    } else if (v === 'anthropic' || v === 'bedrock') {
+    const 원래인자 = f?.parameters ?? f?.input_schema ?? null;
+    let 인자 = 원래인자;
+    /*
+     * 인자 칸이 **원래 없던** 도구는 손대지 않는다.
+     *
+     * 아래 「원래 없던 인자 칸을 만들어 두지 않는다」 는 약속을 `객체로(null)`
+     * 이 어기고 있었다 — 빈 객체를 지어 놓으니, 인자를 아예 안 받는 MCP 도구가
+     * 「인자 없는 객체를 받는 도구」 로 바뀌어 나갔고 스키마손봄 도 1 로 세어졌다.
+     * 깎을 것이 없던 자리인데 깎았다고 적은 숫자다.
+     */
+    if (인자 != null) {
+      let 다듬은것 = null;
+      if (v === 'gemini') 다듬은것 = 객체로(제미니스키마(인자));
       // 이 둘은 「인자는 객체」 를 규격으로 못 박는다. 나머지 열쇠는 안 건드린다 —
       // 확인 못 한 것을 깎으면, 멀쩡히 쓰던 MCP 도구의 뜻이 조용히 얕아진다.
-      const 다듬은것 = 객체로(인자);
-      if (다듬은것 !== 인자) 스키마손봄++;
-      인자 = 다듬은것;
+      else if (v === 'anthropic' || v === 'bedrock') 다듬은것 = 객체로(인자);
+      /*
+       * 값이 같으면 **원래 객체를 그대로 둔다.**
+       *
+       * 아래 「안 바뀌었으면 그대로 돌려준다」 가 참조 동일성이라, 제미니 갈래
+       * 처럼 값이 같아도 새 객체를 지으면 요청마다 도구 목록 전체가 통째로
+       * 복제된다. 값은 같으니 어느 검사도 안 울리고, 스키마손봄 만 0 으로 남는다.
+       */
+      if (다듬은것 !== null && JSON.stringify(다듬은것) !== JSON.stringify(인자)) {
+        스키마손봄++;
+        인자 = 다듬은것;
+      }
     }
 
-    if (이름 === 원래이름 && 인자 === (f?.parameters ?? f?.input_schema ?? null)) return t;
+    if (이름 === 원래이름 && 인자 === 원래인자) return t;
     // 원래 없던 인자 칸을 만들어 두지 않는다. 이름만 고친 도구에 빈 칸이
     // 새로 생기면, 그 자리가 무엇이었는지 밖에서 알 길이 없어진다.
     const 새함수 = { ...f, name: 이름 };

@@ -20,8 +20,10 @@
  *   기억은 **매 요청마다** 통째로 나간다. 백 줄이면 백 줄이 매번 나간다.
  *   그래서 자리를 정해 두고, 넘으면 넘었다고 말한다.
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { 믿나, 신뢰자리, 고른경로, BOM떼기 } from '../safety/trust.js';
 
 // 기억 전체가 차지할 수 있는 최대 글자.
 //
@@ -44,30 +46,132 @@ const 머리말 = `# 기억
 직접 고치셔도 됩니다. 틀린 줄은 지우세요. 지우면 그걸로 끝입니다.
 `;
 
-/** 파일에서 기억 줄을 읽어 온다. 머리말과 빈 줄은 뺀다. */
-export function 읽기(root) {
+/*
+ * ── 남의 저장소에 딸려 온 memory.md 는 싣지 않는다 (2.0.0 4회차 사냥) ─────
+ *
+ * 이 파일은 **저장소 안**에 있다. 그래서 저장소에 딸려 온다 — 남의 저장소를
+ * clone 하고 켜기만 하면, 남이 적어 둔 줄이 아래 프롬프트토막() 의 머리
+ * 「지난 대화에서 정한 것. 사용자가 다시 말하지 않아도 지킨다」 를 달고 매 턴
+ * 시스템 글에 실렸다. 사람이 한 번도 말한 적 없는 것을 「사람이 정한 것」 이라고
+ * 모델에게 우기는 자리다. 스킬·훅·프로젝트 설정은 이미 믿는 폴더에서만 읽는다
+ * (skills/discover.js · safety/hooks.js · safety/trust.js).
+ *
+ * 그런데 믿는 폴더만 읽으면 **기억이라는 기능이 죽는다.** 사람은 제 폴더에서
+ * `deel trust` 를 안 치고도 기억을 쓴다 — Remember 로 적고, 다음 대화에서 안
+ * 실리면 「기억했습니다」 는 거짓말이 된다.
+ *
+ * 그래서 둘을 가르는 것은 **누가 적었나**다. 이 PC 의 deel 이 파일을 쓸 때마다
+ * 그 글의 지문을 살림 자리(`~/.deel/memory-own.json`)에 적어 둔다. 살림 자리는
+ * 저장소가 못 건드리므로, 지문이 맞는 파일은 이 PC 에서 적은 그대로다.
+ *
+ *   믿는 폴더                      → 싣는다 (손으로 고친 것도)
+ *   안 믿는 폴더 · 지문이 맞다      → 싣는다 (이 PC 의 deel 이 적은 그대로)
+ *   안 믿는 폴더 · 지문이 안 맞다   → 안 싣고, 안 실었다고 말한다
+ *
+ * 남의 줄이 든 파일에 한 줄 **더해서** 쓸 때는 지문을 안 적는다. 적으면 남의
+ * 줄이 내 줄 틈에 끼어 「이 PC 가 적은 것」 으로 세탁된다.
+ */
+export const 내것표자리 = (env = process.env) => join(dirname(신뢰자리(env)), 'memory-own.json');
+/** 지문을 들고 있는 폴더 수. 넘으면 오래 안 쓴 것부터 뺀다 — 빠진 폴더는 믿기 전까지 안 실릴 뿐이다. */
+const 내것표최대 = 200;
+/*
+ * 지문은 **줄끝과 BOM 을 고른 뒤** 뜬다.
+ *
+ * git 체크아웃(core.autocrlf)이나 윈도 편집기는 LF 를 CRLF 로 바꾸고, 파워셸은 BOM 을 붙인다.
+ * 바이트 그대로 떴더니 내용은 한 글자도 안 바뀐 내 기억이 안 믿는 폴더에서 안 실렸다
+ * (4회차 Gemini 리뷰). 줄끝·BOM 은 뜻이 아니라서 남이 이것으로 줄을 끼워 넣을 수는 없다.
+ */
+const 지문뜨기 = (글) => createHash('sha256').update(BOM떼기(String(글)).replace(/\r\n?/g, '\n')).digest('hex');
+
+function 내것표읽기(env) {
+  try {
+    const j = JSON.parse(BOM떼기(readFileSync(내것표자리(env), 'utf8')));
+    return j && typeof j === 'object' && !Array.isArray(j) ? j : {};
+  } catch { return {}; }
+}
+
+function 내것적기(p, 글, env) {
+  const 표자리 = 내것표자리(env);
+  const 임시 = `${표자리}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    const 표 = 내것표읽기(env);
+    const 열쇠 = 고른경로(p);
+    delete 표[열쇠];                 // 지웠다 다시 넣어 맨 뒤(최근)로 보낸다
+    표[열쇠] = 지문뜨기(글);
+    const 열쇠들 = Object.keys(표);
+    for (const k of 열쇠들.slice(0, Math.max(0, 열쇠들.length - 내것표최대))) delete 표[k];
+    mkdirSync(dirname(표자리), { recursive: true });
+    // 옆에 쓰고 이름을 바꾼다. 반쯤 쓴 표를 다른 deel 이 읽으면 모든 기억이 남의 것이 된다.
+    writeFileSync(임시, JSON.stringify(표, null, 2) + '\n', 'utf8');
+    renameSync(임시, 표자리);
+  } catch {
+    // 못 적으면 다음 대화에서 안 믿는 폴더면 안 실릴 뿐이고, 그때 안 실었다고 말한다.
+    try { rmSync(임시, { force: true }); } catch { /* 남아도 표는 멀쩡하다 */ }
+  }
+}
+
+/**
+ * 파일에서 기억 줄을 읽어 온다. 머리말과 빈 줄은 뺀다.
+ *
+ * 줄들은 **걸러지지 않은 그대로**다 — 사람이 /memory 로 보고 번호로 지우는 자리라
+ * 파일에 있는 것은 다 보여야 한다. 모델에게 실어도 되는지는 `믿음` 이 말한다.
+ *
+ * @returns {{줄들:string[], 자리:string, 있음:boolean, 믿음:boolean, 안믿음:boolean}}
+ */
+export function 읽기(root, { env = process.env } = {}) {
   const p = 자리(root);
-  if (!existsSync(p)) return { 줄들: [], 자리: p, 있음: false };
+  const 없음 = { 줄들: [], 자리: p, 있음: false, 믿음: true, 안믿음: false };
+  if (!existsSync(p)) return 없음;
   let 글;
-  try { 글 = readFileSync(p, 'utf8'); } catch { return { 줄들: [], 자리: p, 있음: false }; }
+  try { 글 = readFileSync(p, 'utf8'); } catch { return 없음; }
   const 줄들 = [];
+  /*
+   * 머리말 문장은 **그 문장의 앞머리**로 가른다 (2.0.0 6회차 · Gemini 기억6z-a A2).
+   *
+   * `이 파일은` · `매 요청마다` · `직접 고치` 두세 마디로 가르고 있었다. 이 파일은 머리에
+   * 「직접 고치셔도 됩니다」 라고 적어 둔 글이라 사람이 `- ` 없이 손으로 줄을 적는데,
+   * 「매 요청마다 테스트를 돌린다」 같은 흔한 줄이 머리말로 걸러져 조용히 빠졌다 — /memory
+   * 목록에도 안 떠 왜 안 지켜지는지 볼 길이 없다. 머리말 세 줄은 처음부터 한 글자도 안
+   * 바뀌었으므로(git 이력) 긴 앞머리로 좁혀도 옛 파일의 머리말은 그대로 걸러진다.
+   */
+  const 머리말앞머리 = ['이 파일은 deel 이 대화 사이에', '매 요청마다 모델에게 통째로', '직접 고치셔도 됩니다'];
   for (const raw of 글.split(/\r?\n/)) {
     const l = raw.trim();
     if (!l) continue;
-    if (l.startsWith('#')) continue;                 // 머리말
-    if (l.startsWith('이 파일은') || l.startsWith('매 요청마다')) continue;
-    if (l.startsWith('직접 고치셔도') || l.startsWith('직접 고치')) continue;
-    줄들.push(l.replace(/^[-*]\s*/, ''));            // 목록 표시는 떼고 담는다
+    /*
+     * 머리말은 **마크다운 제목 꼴**로 가른다 (2.0.0 8회차 스키마). `#` 한 글자만 보았더니
+     * 손으로 적은 `#include <stdio.h>` · `#!/bin/sh` 줄이 제목으로 걸러져 통째로 사라졌다 —
+     * /memory 목록에도 안 떠 왜 안 지켜지는지 볼 길이 없다 (A2 와 같은 꼴의 조용한 버림).
+     */
+    if (/^#{1,6}(\s|$)/.test(l)) continue;           // 머리말
+    if (머리말앞머리.some((x) => l.startsWith(x))) continue;
+    /*
+     * 목록 표시는 **뒤에 빈칸이 있을 때만** 뗀다 (2.0.0 8회차 스키마). `\s*` 가 빈칸 0개에도
+     * 걸려 `-O3` 은 `O3`, `*args` 는 `args` 로 실렸다 — 매 요청마다 틀린 깃발 이름이 나갔다.
+     * 표시만 남은 줄(`-`)은 아래에서 빈 기억으로 안 세야 하므로 줄 끝도 같이 받는다 (6회차 A3).
+     */
+    const 줄 = l.replace(/^[-*](?:\s+|$)/, '');      // 목록 표시는 떼고 담는다
+    // 표시만 남은 줄(`-`)은 빈 기억이 아니다 (6회차 A3). 담으면 번호 하나를 먹고 빈 `- ` 가 실린다.
+    if (줄) 줄들.push(줄);
   }
-  return { 줄들, 자리: p, 있음: true };
+  const 믿음 = 믿나(root, { env }) || 내것표읽기(env)[고른경로(p)] === 지문뜨기(글);
+  // 실을 줄이 없으면 안 실은 것도 없다 — 빈 파일로 「안 실었습니다」 를 띄우지 않는다.
+  return { 줄들, 자리: p, 있음: true, 믿음, 안믿음: !믿음 && 줄들.length > 0 };
 }
 
-/** 줄들을 파일로 되돌려 쓴다. */
-export function 쓰기(root, 줄들) {
+/**
+ * 줄들을 파일로 되돌려 쓴다.
+ *
+ * `내것` 이 참이면 이 PC 가 적은 것으로 지문을 남긴다. 남의 줄이 섞인 채로 쓰는
+ * 자리(안 믿는 폴더의 남의 파일에 더하기·지우기)는 거짓으로 부른다.
+ */
+export function 쓰기(root, 줄들, { env = process.env, 내것 = true } = {}) {
   const p = 자리(root);
   mkdirSync(dirname(p), { recursive: true });
   const 몸 = 줄들.map((l) => `- ${l}`).join('\n');
-  writeFileSync(p, `${머리말}\n${몸}\n`, 'utf8');
+  const 글 = `${머리말}\n${몸}\n`;
+  writeFileSync(p, 글, 'utf8');
+  if (내것) 내것적기(p, 글, env);
   return p;
 }
 
@@ -79,11 +183,11 @@ export function 쓰기(root, 줄들) {
  *
  * @returns {{ok: boolean, why?: string, 줄: string, 줄수: number, 넘침?: boolean}}
  */
-export function 더하기(root, 글) {
+export function 더하기(root, 글, { env = process.env } = {}) {
   const 줄 = 다듬기(글);
   if (!줄) return { ok: false, why: '적을 내용이 비었습니다', 줄: '', 줄수: 0 };
 
-  const { 줄들 } = 읽기(root);
+  const { 줄들, 믿음 } = 읽기(root, { env });
   if (줄들.some((x) => 같은말(x, 줄))) {
     return { ok: false, why: '이미 기억하고 있습니다', 줄, 줄수: 줄들.length };
   }
@@ -96,31 +200,41 @@ export function 더하기(root, 글) {
     새것.shift();
     넘침 = true;
   }
-  쓰기(root, 새것);
-  return { ok: true, 줄, 줄수: 새것.length, 넘침 };
+  // 남의 줄이 든 파일이면 지문을 안 남긴다 — 위 내것표 머리말의 「세탁」 이다.
+  /*
+   * 남의 줄이 **하나도 없으면**(머리말만 남은 파일 · 남의 줄을 다 지운 뒤) 새로 쓰는 글은
+   * 이 PC 가 적은 줄뿐이다 — 쓰기() 가 머리말까지 새로 쓰므로 남의 글자는 한 자도 안 남는다.
+   * 그런데도 지문을 안 남겨, 「기억했습니다」 뒤로 한 번도 안 실렸다 (2.0.0 6회차 · Gemini
+   * 기억6z-b Z1·Z2). 비우기() 의 「남은 줄이 없으니 남의 것도 없다」 와 같은 셈이다.
+   */
+  const 내것 = 믿음 || 줄들.length === 0;
+  쓰기(root, 새것, { env, 내것 });
+  // 안실림: 적기는 했지만 믿는 폴더가 아니고 남의 줄이 섞여 있어 다음 요청에 안 실린다.
+  return { ok: true, 줄, 줄수: 새것.length, 넘침, 안실림: !내것 };
 }
 
 /** 번호로 지운다(1부터). 사람이 /memory 화면을 보고 고르는 자리다. */
-export function 지우기(root, 번호) {
-  const { 줄들 } = 읽기(root);
+export function 지우기(root, 번호, { env = process.env } = {}) {
+  const { 줄들, 믿음 } = 읽기(root, { env });
   const i = Number(번호) - 1;
   if (!Number.isInteger(i) || i < 0 || i >= 줄들.length) return { ok: false, why: '그런 번호가 없습니다' };
   const 뺀것 = 줄들[i];
   const 남은것 = 줄들.filter((_, n) => n !== i);
-  쓰기(root, 남은것);
+  쓰기(root, 남은것, { env, 내것: 믿음 });
   return { ok: true, 뺀것, 줄수: 남은것.length };
 }
 
-/** 통째로 비운다. */
-export function 비우기(root) {
-  쓰기(root, []);
+/** 통째로 비운다. 남은 줄이 없으니 남의 것도 없다 — 이 PC 것으로 적는다. */
+export function 비우기(root, { env = process.env } = {}) {
+  쓰기(root, [], { env });
   return { ok: true };
 }
 
 /** 한 줄로 다듬는다 — 줄바꿈을 없애고 길이를 자른다. */
 function 다듬기(글) {
   let s = String(글 ?? '').replace(/\s+/g, ' ').trim();
-  s = s.replace(/^[-*]\s*/, '');
+  // 읽기() 와 같은 무늬 — 빈칸 없이 붙은 `-O3` 의 첫 글자를 먹지 않는다 (2.0.0 8회차 스키마).
+  s = s.replace(/^[-*](?:\s+|$)/, '');
   if (s.length > 한줄최대) s = s.slice(0, 한줄최대) + '…';
   return s;
 }
@@ -132,8 +246,20 @@ function 다듬기(글) {
  * 공백·조사·문장부호를 털고 견준다. 완벽할 필요는 없다 —
  * 여기서 하려는 것은 '똑같은 말이 쌓이는 것' 을 막는 것뿐이다.
  */
+// 낱말 끝에서 터는 조사. 긴 것부터 적어야 「으로」 가 「로」 로 먼저 잘리지 않는다.
+const 조사끝 = /(?:으로|에서|에게|부터|까지|보다|은|는|이|가|을|를|의|에|와|과|로|도|만)$/;
 function 같은말(a, b) {
-  const 털기 = (s) => String(s).toLowerCase().replace(/[\s.,!?~·'"()[\]]/g, '');
+  const 털기 = (s) => String(s).toLowerCase()
+    .replace(/[.,!?~·'"()[\]]/g, ' ')
+    /*
+     * 조사는 **낱말 끝에서만** 턴다 (2.0.0 8회차 스키마). 여태 위 머리말이 「조사를 턴다」 고
+     * 적어 두고 안 털어, 「검증 포트는 7080 이다」 와 「검증 포트가 7080 이다」 가 두 줄로
+     * 쌓였다 — 이 함수가 막으려던 바로 그 꼴이다. 낱말 통째로인 한 글자는 안 턴다.
+     * 「이 파일」 의 「이」 는 조사가 아니다.
+     */
+    .split(/\s+/)
+    .map((낱말) => 낱말.replace(/[가-힣]{2,}$/, (끝) => 끝.replace(조사끝, '')))
+    .join('');
   const x = 털기(a);
   const y = 털기(b);
   if (x === y) return true;
@@ -147,10 +273,31 @@ function 같은말(a, b) {
  *
  * 없으면 빈 글을 돌려준다 — "기억: (없음)" 같은 줄을 넣으면 그 자체가
  * 매 요청마다 나가는 쓰레기가 된다.
+ *
+ * 안 믿는 폴더에서 이 PC 가 적은 그대로가 아니면 **안 싣는다** (위 내것표 머리말).
+ * 안 실었다는 말은 읽기() 의 `안믿음` 으로 화면이 한다.
+ *
+ * ── 읽을 때도 자리를 지킨다 (2.0.0 4회차 사냥) ─────────────────────────
+ *
+ * 상한(기억최대·줄최대·한줄최대)은 더하기() 에만 걸려 있었다. 그런데 이 파일은
+ * 「직접 고치셔도 됩니다」 라고 머리에 적어 둔 글이다. 사람이 3,000줄을 붙여 넣으면
+ * 30만 자가 **매 요청마다** 통째로 나갔다 — 머리말이 「왜 상한을 두나」 에 적어 둔
+ * 바로 그 일이다. 그래서 싣는 자리에서 한 번 더 자른다. 더하기() 와 같은 셈으로
+ * **최근 것(뒤쪽)** 을 남기고, 안 실은 줄이 있으면 몇 줄인지 말한다.
  */
-export function 프롬프트토막(root) {
-  const { 줄들 } = 읽기(root);
-  if (!줄들.length) return '';
+export function 프롬프트토막(root, { env = process.env } = {}) {
+  const { 줄들, 믿음 } = 읽기(root, { env });
+  if (!줄들.length || !믿음) return '';
+  const 다듬은 = 줄들.map((l) => (l.length > 한줄최대 ? `${l.slice(0, 한줄최대)}…` : l));
+  const 실을것 = [];
+  let 합 = -1;                                     // 줄 사이 '\n' 을 같이 센다 (더하기 의 join 과 같은 셈)
+  for (let i = 다듬은.length - 1; i >= 0; i--) {
+    if (실을것.length >= 줄최대 || 합 + 다듬은[i].length + 1 > 기억최대) break;
+    실을것.unshift(다듬은[i]);
+    합 += 다듬은[i].length + 1;
+  }
+  const 뺀수 = 다듬은.length - 실을것.length;
   return '\n--- 기억 (지난 대화에서 정한 것. 사용자가 다시 말하지 않아도 지킨다) ---\n'
-    + 줄들.map((l) => `- ${l}`).join('\n');
+    + (뺀수 ? `(자리가 넘쳐 앞의 ${뺀수}줄은 안 실었습니다 — /memory 로 정리하세요)\n` : '')
+    + 실을것.map((l) => `- ${l}`).join('\n');
 }

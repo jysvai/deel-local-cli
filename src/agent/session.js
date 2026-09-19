@@ -1,11 +1,12 @@
 // 대화 상태와 컨텍스트 셈. /context 가 보여주는 숫자가 여기서 나온다.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { 그림장수, 글만, 그림한장토큰 } from '../backend/vision.js';
-import { 부른것들, 결과들, 도구결과인가 } from '../backend/adapter.js';
+import { 그림장수, 글만, 그림한장토큰, 그림메시지 } from '../backend/vision.js';
+import { 부른것들, 결과들, 도구결과인가, assistantMessage, toolMessage, 본문글 } from '../backend/adapter.js';
 import { 조각표 } from '../backend/cachemark.js';
 import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './modes.js';
 import { toolSchemas } from '../tools/index.js';
+import { isOffline } from '../safety/network.js';
 import { normalize as normLevel, DEFAULT as LEVEL_DEFAULT } from '../ui/level.js';
 import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
 import { 지문 } from './project.js';
@@ -614,6 +615,27 @@ export class Session {
       ? `\n--- current mode: ${w.en} ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`
       : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`);
     /*
+     * 기본 규칙(BASE_RULES)은 **모든 모드에서** 「Remember 로 남긴다」 · 「끝내기 전에 Verify」
+     * 를 시킨다. 그 도구가 없는 모드(묻기·계획 …)에서는 없는 도구를 부르라는 말이 된다 —
+     * 부르면 loop.js 가 모드에 없다고 거절하고 한 걸음이 헛간다. 굳은 부분은 모드와 상관없이
+     * 캐시되는 자리라 거기서 빼지 않고, 여기 모드 절에서 바로잡는다.
+     */
+    // 하위 작업은 모드 말고 에이전트 정의가 도구를 줄인다(도구제한). 그쪽도 같이 본다(2.0.0 2차 리뷰).
+    const 도구제한 = this.도구제한 ? [...this.도구제한] : null;
+    const 모드가뺐나 = (n) => Array.isArray(w.tools) && !w.tools.includes(n);
+    const 없는도구 = ['Remember', 'Verify'].filter((n) => 모드가뺐나(n) || (도구제한 && !도구제한.includes(n)));
+    if (없는도구.length) {
+      const 영남김 = 없는도구.includes('Remember') ? ' Tell the user in your answer what is worth keeping.' : '';
+      const 영확인 = 없는도구.includes('Verify') ? ' Say plainly what you could not check.' : '';
+      const 남김 = 없는도구.includes('Remember') ? ' 남길 만한 규칙은 답에 적어 사람에게 알린다.' : '';
+      const 확인 = 없는도구.includes('Verify') ? ' 확인 못 한 것은 확인 못 했다고 말한다.' : '';
+      변함.push(영
+        // 모드 탓인지 작업 탓인지는 안 가른다. 둘이 섞이면(모드에 Verify 없음 · 작업에 Remember 없음)
+        // 「이 모드에는 Remember 가 없다」 는 거짓말이 된다 — 모델이 알아야 할 것은 「지금 없다」 뿐이다.
+        ? `No ${없는도구.join(' or ')} tool is available here. Where the rules above say to call it, do not.${영남김}${영확인}`
+        : `지금은 ${없는도구.join('·')} 도구가 없다. 위 규칙이 부르라고 해도 부르지 마라.${남김}${확인}`);
+    }
+    /*
      * 못 박은 것은 **맨 끝**에 붙인다 (agent/pins.js).
      *
      * 긴 글의 가운데는 흘려 읽힌다 — 'lost in the middle' 이라 부르는 것이고,
@@ -740,7 +762,27 @@ export class Session {
     this.#턴표 = this.#턴표.filter((x) => this.messages.includes(x.표));
     if (this.#턴표.length > Session.#표최대) this.#턴표 = this.#턴표.slice(-Session.#표최대);
     this.#다음턴 = 턴;
+    this.#지금턴 = 턴;
     return this;
+  }
+
+  /*
+   * ── 줄이기·접기가 박은 쪽지는 **어느 턴에서** 박혔나 ──────────────────────
+   *
+   * 줄이기(trim)·접기(compact)·비우기(loop.js)는 앞선 대화 자리에 시킨 말 원문과
+   * 남은 할 일을 「빠짐없이 하세요」 와 함께 다시 박는다(아래 못박을것). 그 쪽지는
+   * 그 턴의 자리표보다 **앞**에 놓인다. 그래서 그 턴을 /undo 로 되감으면 자리표부터
+   * 뒤만 걷히고 쪽지는 남았다 — 파일은 되돌아갔는데 다음 턴이 되돌린 일을 다시
+   * 시켰다. 아래 되감기() 가 이 표를 보고, 되감은 턴에서 박힌 쪽지만 뺀다.
+   *
+   * 메시지 객체를 열쇠로 든다(턴표와 같은 까닭 — 접기가 자리 번호를 바꾼다).
+   * WeakMap 이라 접혀 없어진 쪽지는 저절로 빠진다.
+   */
+  #지금턴 = null;
+  #박은쪽지 = new WeakMap();
+  박은쪽지표시(메시지, 쪽지) {
+    if (!메시지 || typeof 메시지 !== 'object' || !쪽지 || this.#지금턴 == null) return;
+    this.#박은쪽지.set(메시지, { 턴: this.#지금턴, 쪽지 });
   }
 
   /** 살아 있는 턴 표시들. 접혀 사라진 것은 빠진다. @returns {{턴:number, 자리:number}[]} */
@@ -771,14 +813,41 @@ export class Session {
     if (!찾을것.size) return 빈것;
 
     const 표들 = this.턴자리().filter((x) => 찾을것.has(x.턴));
-    if (!표들.length) return 빈것;
+    if (!표들.length) {
+      /*
+       * 자리표가 하나도 없어 대화는 못 걷는다. 그래도 **그 턴이 박은 쪽지**는 뺀다.
+       *
+       * 자리가 차서 턴 안에서 비우면(loop.js 의 비우기) 그 턴의 사람 말까지 비워서
+       * 자리표가 없다. 여기서 그냥 돌아가면 비운 자리에 박힌 「이번에 시킨 말 —
+       * 빠짐없이 하세요」 가 남아, 파일은 되돌아갔는데 다음 턴이 되돌린 일을 다시
+       * 시켰다. 쪽지는 턴 표를 들고 있으니 자리표 없이도 가려 뺄 수 있다.
+       * 메시지는 제자리에서 바꾼다 — 배열째 갈면 적는 자리가 세던 수가 어긋날 수 있다.
+       */
+      let 뺀쪽지 = 0;
+      for (let i = 0; i < this.messages.length; i++) {
+        const 새것 = this.#쪽지빼기(this.messages[i], 찾을것);
+        if (새것 !== this.messages[i]) { this.messages[i] = 새것; 뺀쪽지++; }
+      }
+      return { ...빈것, 뺀쪽지 };
+    }
 
     const 자리 = 표들[0].자리;
     const 첫말 = this.messages[자리];
     const 사람말 = 첫말?.role === 'user' && typeof 첫말.content === 'string' ? 첫말.content : null;
+    /*
+     * **못 걷은 턴.** 되돌리라고 받았는데 자리표가 접혀 없는 턴 가운데, 가장 이른
+     * 자리표보다 **앞선** 것들이다. 그 턴의 말은 요약 속에 남는다. 가장 이른 자리표보다
+     * 뒤에서 접힌 턴은 그 요약째 아래에서 걷히므로 여기 안 든다 — 턴 번호는 늘기만
+     * 한다(safety/undo.js 의 nextTurn). 부르는 쪽(commands.js)이 「반만 걷었다」 를
+     * 말하는 데 쓴다.
+     */
+    const 찾은턴 = new Set(표들.map((x) => x.턴));
+    const 못걷은턴 = [...찾을것].filter((t) => !찾은턴.has(t) && t < 표들[0].턴);
 
     const 전 = this.messages.length;
-    const 고침 = repairToolPairs(this.messages.slice(0, 자리));
+    // 걷히는 턴들 — 받은 것과, 가장 이른 자리표 뒤에서 시작해 같이 걷히는 턴들.
+    const 걷는턴 = new Set([...찾을것, ...this.턴자리().filter((x) => x.자리 >= 자리).map((x) => x.턴)]);
+    const 고침 = repairToolPairs(this.messages.slice(0, 자리).map((m) => this.#쪽지빼기(m, 걷는턴)));
     this.messages = 고침.messages;
     this.#턴표 = this.#턴표.filter((x) => this.messages.includes(x.표));
     this.#다음턴 = null;
@@ -820,7 +889,31 @@ export class Session {
      * 대화에서 읽은 파일이 계속 세어진다.
      */
     this.filesRead?.clear?.();
-    return { 걷은것: 전 - this.messages.length, 고친것: 고침.고친것, 사람말, 턴: 표들.map((x) => x.턴) };
+    return { 걷은것: 전 - this.messages.length, 고친것: 고침.고친것, 사람말, 턴: 표들.map((x) => x.턴), 못걷은턴 };
+  }
+
+  /*
+   * 걷는 턴에서 박힌 쪽지를 이 메시지에서 뺀다. 아니면 **같은 객체를 그대로** 준다.
+   *
+   * 새 객체를 지으면 턴표·박은쪽지 표가 그 메시지를 못 알아본다. 뺄 것이 있을 때만
+   * 새로 짓고, 그 메시지는 이제 쪽지가 없으니 표에서도 뺀다.
+   */
+  #쪽지빼기(m, 걷는턴) {
+    const 표 = m && typeof m === 'object' ? this.#박은쪽지.get(m) : null;
+    if (!표 || !걷는턴.has(표.턴) || typeof m.content !== 'string' || !m.content.includes(표.쪽지)) return m;
+    const 새것 = { ...m, content: m.content.replace(표.쪽지, '') };
+    /*
+     * 새 객체를 지었으면 **턴표도 그 객체를 가리키게 옮긴다** (2.0.0 8회차 판정).
+     *
+     * 바로 위 머리말이 「새 객체를 지으면 턴표·박은쪽지 표가 그 메시지를 못
+     * 알아본다」 고 적어 두고, 박은쪽지 쪽만 챙겼다. 턴표는 안 옮겼다.
+     * 그래서 부르는 쪽의 `#턴표.filter((x) => this.messages.includes(x.표))` 가
+     * 그 턴을 통째로 떨어뜨렸고, **다음 `/undo` 가 아무것도 못 걷었다** —
+     * 메시지는 멀쩡히 남아 있는데 걷을 자리를 못 찾는다.
+     */
+    this.#박은쪽지.delete(m);
+    for (const x of this.#턴표) if (x.표 === m) x.표 = 새것;
+    return 새것;
   }
 
   /**
@@ -896,6 +989,17 @@ export class Session {
     앞.added += d?.added ?? 0;
     앞.removed += d?.removed ?? 0;
     앞.times += 1;
+    /*
+     * **파일마다** 마지막으로 고친 때를 남긴다 (2.0.0 8회차 판정).
+     *
+     * 증거 모으기(agent/evidence.js)는 「고친 뒤에 돌린 확인만 증거로 친다」 고
+     * 적어 두고, 그 기준 시각을 부르는 쪽이 넘겨 주기를 기다렸다. 부르는 자리
+     * 셋(commit·work·export)이 하나도 안 넘겼다 — 아무도 안 넘기는 인자는 없는
+     * 것과 같아서, 고치기 **전**에 돌린 검사가 그대로 증거가 됐다. 게다가 그
+     * 기준이 하나뿐이라 파일 A 뒤에 돈 검사가 파일 B 의 증명으로 복제됐다.
+     * 여기서 파일별로 남겨 두면 부르는 쪽이 아무것도 안 넘겨도 순서를 가린다.
+     */
+    앞.at = Date.now();
     this.changes.set(path, 앞);
   }
 
@@ -912,7 +1016,19 @@ export class Session {
      * 에서 400 을 만든다. JSON.stringify 는 Symbol 열쇠를 아예 안 본다.
      */
     if (조각[1]) 머리[조각표] = 조각;
-    return [머리, ...this.messages];
+    /*
+     * 보낼 **사본만** 지금 규격으로 맞춘다 (아래 규격맞추기).
+     *
+     * 규격을 옮기는 문은 /model(commands/model.js)과 이어받기(threads.js · acp/serve.js)다.
+     * 그런데 연결을 짓는 자리가 넷이라, 그 문을 안 지나고 규격이 바뀌는 길이 하나라도
+     * 생기면 옛 모양이 그대로 나가 400 이다. 여기가 마지막 울타리다.
+     *
+     * 이력(this.messages)은 안 건드린다. 턴마다 파일에 적는 자리가 **메시지 수**로
+     * 어디까지 적었는지 세는데(repl 의 saved · ACP 의 적은데까지), 옮기면 수가 바뀔
+     * 수 있다. 이미 맞는 대화면 받은 배열이 그대로 돌아오고, 맞는 메시지는 같은 객체라
+     * 캐시 앞머리도 그대로다.
+     */
+    return [머리, ...규격맞추기(this.messages, this.conn?.kind).messages];
   }
 
   /**
@@ -1076,8 +1192,14 @@ export class Session {
      */
     // 이 자리만 `?.` 가 빠져 있었다 — 다른 다섯 자리는 전부 this.conn?.ctx 다.
     // conn 없이 만든 세션에서 breakdown() 이 TypeError 로 죽는다.
-    const 잰것 = this.conn?.ctx != null;
-    const total = this.conn?.ctx ?? 32768;
+    /*
+     * 0·음수·숫자 아님은 「안 잰 것」 이다 (사냥5 L5-6). 연결을 짓는 자리(models.js 의
+     * 양수크기)가 거르지만 conn 은 그 밖에서도 지어진다. 창 0 을 그대로 믿으면 표가
+     * 「0 토큰 중 22만」 이 되고, 접기·요약은 몇 퍼센트인지 못 재어 영영 안 돈다.
+     */
+    const 창 = Number(this.conn?.ctx);
+    const 잰것 = this.conn?.ctx != null && Number.isFinite(창) && 창 > 0;
+    const total = 잰것 ? 창 : 32768;
     return { rows, used, total, 총잰것: 잰것, left: Math.max(0, total - used) };
   }
 
@@ -1125,13 +1247,39 @@ export class Session {
     // /ctx 로 창을 다시 잡으면 이 값도 달라져야 한다. 안 넣으면 옛 값이 남는다.
     // 눈 유무도 열쇠에 넣는다. 아래에서 vision 을 넘겨 쓰기 때문에 그 값이
     // 바뀌면 스키마 크기도 바뀐다 — 안 넣으면 모델을 갈아 끼워도 옛 값이 남는다.
-    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${this.web !== false ? 'web' : ''}|${this.lsp ? 'lsp' : ''}|mcp${mcp수}|c${this.conn?.ctx ?? 0}|v${this.conn?.vision === true ? 1 : 0}`;
+    /*
+     * 실제로 나가는 목록(loop.js 의 toolSchemas)과 **같은 것**을 잰다. 여기는 도구제한(하위
+     * 작업)·오프라인(웹 도구가 빠진다)·이름 붙인 에이전트 목록을 안 넘겨서, /context 가
+     * 나가지도 않는 도구까지 세어 보였다. 셋이 달라지면 값도 달라지게 열쇠에도 넣는다.
+     */
+    const 웹 = this.web !== false && !isOffline();
+    const 에이전트들 = this.실린에이전트들 ?? null;
+    /*
+     * 그 셋은 **무엇이 다른지까지** 열쇠에 넣는다 (2.0.0 8회차 판정).
+     *
+     * 이 값은 한 번 재면 열쇠에 굳고 다시 안 잰다. 그래서 열쇠가 못 가르는 차이는
+     * 「값이 조금 틀리다」 가 아니라 **남의 값을 그대로 집어 오는 것**이다. 아래 두 자리가
+     * 그랬다.
+     *
+     *   · 도구제한 — `null`(제한 없음)과 `[]`(0개)이 둘 다 빈 글로 합쳐졌다. 도구를 다 잃은
+     *     하위 작업이 부모의 전체 도구 값을 그대로 받는다. 없는 것과 0개는 다른 목록이라
+     *     제한 없음은 `*` 로 따로 적는다 — 도구 이름에 `*` 는 안 들어간다.
+     *   · 에이전트 목록 — **개수**로만 갈랐다. 스키마에 실리는 것은 개수가 아니라 이름과
+     *     설명 전문이다(agents.js 의 고를말). 개수가 같으면 설명이 아무리 달라도 앞 값이 돌아왔다.
+     *
+     * 남는 열쇠 조각이 길어지지만, 여기 굳는 것은 세션당 몇 개뿐이고 틀린 값 하나가
+     * effort.js 의 출력 상한까지 끌고 간다.
+     */
+    const 제한열쇠 = this.도구제한 ? [...this.도구제한].join(',') : '*';
+    const 에이전트열쇠 = (에이전트들 ?? []).map((a) => `${a?.이름}(${a?.설명})`).join('·');
+    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${웹 ? 'web' : ''}|${this.lsp ? 'lsp' : ''}|mcp${mcp수}|c${this.conn?.ctx ?? 0}|v${this.conn?.vision === true ? 1 : 0}|t${제한열쇠}|a${에이전트열쇠}`;
     if (this.#도구잰것.has(열쇠)) return this.#도구잰것.get(열쇠);
     let n = 0;
     try {
-      const list = toolSchemas(null, {
+      const list = toolSchemas(this.도구제한 ?? null, {
         hasSkills: (this.skills?.length ?? 0) > 0,
-        web: this.web !== false,
+        web: 웹,
+        에이전트들,
         work: this.effectiveWork(),
         mcp: this.mcp ?? null,
         lsp: this.lsp === true,
@@ -1187,9 +1335,8 @@ export class Session {
     const keepTail = safeCut(this.messages, this.messages.length - Math.floor(this.messages.length / 2));
     const dropped = keepTail - keepHead;
     if (dropped <= 0) return 0;
-    this.messages = [
-      ...this.messages.slice(0, keepHead),
-      {
+    const 쪽지 = 못박을것(this);
+    const 줄인말 = {
         role: 'user',
         /*
          * 줄일 때도 시킨 말과 남은 할 일을 다시 박는다.
@@ -1200,10 +1347,11 @@ export class Session {
          * 그 네 가지가 그냥 사라진다. 접기(compact) 쪽에만 못 박아 두면
          * 정작 제일 자주 지나가는 길에서만 조용히 어긋난다.
          */
-        content: `(앞선 대화 ${dropped}개를 줄였습니다. 필요하면 파일을 다시 읽으세요.)\n\n` + 못박을것(this),
-      },
-      ...this.messages.slice(keepTail),
-    ];
+        content: `(앞선 대화 ${dropped}개를 줄였습니다. 필요하면 파일을 다시 읽으세요.)\n\n` + 쪽지,
+    };
+    // 어느 턴의 시킨 말을 박았는지 적어 둔다 — 그 턴을 되감으면 이 쪽지도 빠져야 한다(박은쪽지표시).
+    this.박은쪽지표시(줄인말, 쪽지);
+    this.messages = [...this.messages.slice(0, keepHead), 줄인말, ...this.messages.slice(keepTail)];
     return dropped;
   }
 }
@@ -1226,19 +1374,43 @@ export class Session {
  * 접기와 줄이기가 **같은 것**을 박아야 하고, 한쪽만 고치면 물러서는 순간
  * 대화가 어긋난다.
  */
-const 못박을길이 = 1200;
+export const 못박을길이 = 1200;
+
+/** 박아 넣으면서 시킨 말 뒤가 잘리나. oneshot.js 가 「잘린 채로 끝까지 했다」 를 막는 데 쓴다. */
+export function 요청잘리나(session) {
+  return String(session?.이번요청 ?? '').trim().length > 못박을길이;
+}
 
 export function 못박은요청(session) {
   const 원문 = String(session?.이번요청 ?? '').trim();
   if (!원문) return '';
-  const 실을것 = 원문.length > 못박을길이
-    ? `${원문.slice(0, 못박을길이)}\n…(뒷부분 줄임)`
-    : 원문;
-  return `[이번에 시킨 말 — 요약이 아니라 원문 그대로입니다. 여기 적힌 것을 빠짐없이 하세요.]\n${실을것}\n\n`;
+  /*
+   * 잘랐으면 머리말부터 **잘랐다고** 말한다 (사냥5 B5-01).
+   *
+   * 여기는 앞 1,200자만 싣고도 「요약이 아니라 원문 그대로입니다. 여기 적힌 것을
+   * 빠짐없이 하세요」 라고 적었다. 모델은 그 말대로 앞부분을 시킨 일 **전부**로 믿고
+   * 끝까지 했고, `deel run --json` 은 ok:true 로 끝났다 — 뒷부분은 한 번도 못 본 채로.
+   * 잘린 줄 모르는 모델은 모자란 줄도 모른다. 모자라다고 알려야 뒤를 지어내지 않는다.
+   */
+  if (원문.length > 못박을길이) {
+    return `[이번에 시킨 말 — 자리가 모자라 앞 ${못박을길이.toLocaleString('en-US')}자만 옮겼고 뒤는 잘렸습니다.`
+      + ' 잘린 뒤쪽을 짐작해 채우지 말고, 모자라서 못 한 것은 못 했다고 말하세요.]\n'
+      + `${원문.slice(0, 못박을길이)}\n…(뒷부분 줄임)\n\n`;
+  }
+  return `[이번에 시킨 말 — 요약이 아니라 원문 그대로입니다. 여기 적힌 것을 빠짐없이 하세요.]\n${원문}\n\n`;
 }
 
 export function 못박은할일(session) {
-  const 남은 = (session?.할일 ?? []).filter((x) => x?.state !== 'done');
+  /*
+   * 빈 칸은 **거르개에서** 걷는다 (2.0.0 8회차 판정).
+   *
+   * 여기는 `x?.state` 로 null 을 조심해 놓고, 바로 아래 map 은 `x.state` 였다. 그래서
+   * 목록에 낀 `null` 하나가 거르개를 「안 끝난 것」 으로 통과한 뒤 map 에서 던졌다 —
+   * 던지는 자리가 접기·줄이기라, 자리가 차는 순간 그 대화는 더 안 이어진다.
+   * 목록은 대화 파일에서 그대로 돌아오므로(store.js 의 `{"t":"todo"}`) 반쯤 적힌 줄이나
+   * 손으로 고친 파일이면 빈 칸이 낀다. 빈 칸은 할 일이 아니다 — 빈 줄로 박지도 않는다.
+   */
+  const 남은 = (session?.할일 ?? []).filter((x) => x && typeof x === 'object' && x.state !== 'done');
   if (!남은.length) return '';
   const 줄 = 남은.map((x) => `${x.state === 'doing' ? '▶ (하는 중)' : '☐'} ${String(x.text ?? '').trim()}`);
   return `[아직 안 끝난 할 일 — 접히기 전 목록 그대로입니다. 이걸 이어서 하세요.]\n${줄.join('\n')}\n\n`;
@@ -1361,6 +1533,21 @@ function 부름줄이기(m, 남길id, 남길수) {
   return { ...m, tool_calls: 고르기(m.tool_calls ?? [], () => true) };
 }
 
+/**
+ * 결과 메시지에서 **결과 블록을 걷고 남는 사람 차례**. 남는 것이 없으면 null.
+ *
+ * Anthropic 꼴에는 도구 차례가 없어서 결과가 사람 차례에 실리고, 도구가 도는 사이
+ * 사람이 끼어든 말도 같은 메시지에 text 블록으로 붙는다(adapter.js 의 결과들).
+ * repairToolPairs 가 메시지째 걷던 동안 결과가 짝을 잃으면 그 옆의 사람 말도 같이
+ * 없어졌다 — 고치려던 것은 짝이지 사람 말이 아니다. OpenAI·Ollama 의 결과는 글
+ * 하나(role:'tool')라 사람 말이 섞일 자리가 없어서 늘 null 이다.
+ */
+function 사람몫(m) {
+  if (!Array.isArray(m?.content)) return null;
+  const 남은 = m.content.filter((b) => b?.type !== 'tool_result');
+  return 남은.length ? { ...m, role: 'user', content: 남은 } : null;
+}
+
 /** 이 메시지가 사람에게 한 말만. 부름 블록은 뺀다. */
 function 글자만(m) {
   if (typeof m.content === 'string') return m.content.trim();
@@ -1388,7 +1575,13 @@ export function repairToolPairs(messages) {
     if (!m || typeof m !== 'object' || typeof m.role !== 'string') { 고친것++; continue; }
 
     // 호출 없이 굴러다니는 결과. 앞이 잘려 나간 이력이다.
-    if (도구결과인가(m)) { 고친것++; continue; }
+    // 걷는 것은 **결과 블록뿐**이다 — 같은 메시지에 사람이 한 말이 붙어 있으면 그건 남긴다(아래 사람몫).
+    if (도구결과인가(m)) {
+      고친것++;
+      const 사람 = 사람몫(m);
+      if (사람) out.push(사람);
+      continue;
+    }
 
     /*
      * 부름이 담긴 자리는 규격마다 다르다(backend/adapter.js 의 부른것들).
@@ -1413,21 +1606,254 @@ export function repairToolPairs(messages) {
       ? 부름.filter((c) => 있는id.has(c?.id))
       : 부름.slice(0, 결과.length);              // id 가 없는 규격 — 순서로 본다
     const 남길id = new Set(남길부름.map((c) => c?.id).filter(Boolean));
-    const 남길결과 = 있는id.size
-      ? 결과.filter((r) => 결과id(r).some((x) => 남길id.has(x)))
-      : 결과.slice(0, 남길부름.length);
+    /*
+     * 결과도 **블록 단위로** 가른다 (위 사람몫).
+     *
+     *   · 짝이 하나도 없는 결과 메시지 — 결과 블록은 걷고, 사람이 한 말은 결과들 **뒤에**
+     *     사람 차례로 남긴다. 결과 블록이 사람 글보다 앞이어야 하는 규격이 있다.
+     *   · 짝 있는 결과와 짝 없는 결과가 한 메시지에 섞였다 — 짝 없는 블록만 걷는다.
+     *     메시지째 남기면 그 블록 하나로 400 이고, 메시지째 걷으면 짝 있는 결과가 없어진다.
+     */
+    const 남길결과 = [];
+    const 남길사람말 = [];
+    /*
+     * 같은 id 의 결과는 **먼저 온 하나만.** 반쯤 적힌 JSONL 을 이어 열면 같은 결과가 두 번
+     * 실려 있을 수 있는데, 여기가 짝 있는지만 보던 동안 둘 다 남고 「고친 것 0」 이었다 —
+     * Anthropic 은 보내기 직전 차례합치기 로 한 사람 차례에 같은 tool_use_id 둘이 실려 거절한다.
+     * (6회차 Gemini 대화고침6a S1)
+     */
+    const 본id = new Set();
+    결과.forEach((r, k) => {
+      const 짝있나 = 있는id.size ? 결과id(r).some((x) => 남길id.has(x) && !본id.has(x)) : k < 남길부름.length;
+      if (!짝있나) {
+        고친것++;
+        const 사람 = 사람몫(r);
+        if (사람) 남길사람말.push(사람);
+        return;
+      }
+      if (있는id.size && Array.isArray(r.content)) {
+        let 뺀블록 = 0;
+        const 남길블록 = r.content.filter((b) => {
+          if (b?.type !== 'tool_result') return true;
+          if (!남길id.has(b.tool_use_id) || 본id.has(b.tool_use_id)) { 뺀블록++; return false; }
+          본id.add(b.tool_use_id);
+          return true;
+        });
+        if (뺀블록) {
+          고친것 += 뺀블록;
+          남길결과.push({ ...r, content: 남길블록 });
+          return;
+        }
+      } else if (있는id.size) {
+        for (const x of 결과id(r)) 본id.add(x);
+      }
+      남길결과.push(r);
+    });
 
-    고친것 += (부름.length - 남길부름.length) + (결과.length - 남길결과.length);
+    고친것 += 부름.length - 남길부름.length;
 
     if (남길부름.length) {
       out.push(남길부름.length === 부름.length ? m : 부름줄이기(m, 남길id, 남길부름.length));
-      out.push(...남길결과);
+      out.push(...남길결과, ...남길사람말);
       continue;
     }
-    // 남은 호출이 없다. 할 말이라도 있으면 그건 살린다.
+    // 남은 호출이 없다. 할 말이라도 있으면 그건 살린다 — 모델이 한 말도, 사람이 한 말도.
     const 글 = 글자만(m);
     if (글) out.push(부름빼기(m, 글));
+    out.push(...남길사람말);
   }
 
   return { messages: out, 고친것 };
+}
+
+/*
+ * ── 다른 규격으로 적힌 대화를 **지금 규격으로** 옮겨 적는다 ────────────────
+ *
+ * 대화 이력은 쓰던 규격의 모양 그대로 쌓인다(backend/adapter.js 의
+ * assistantMessage·toolMessage). 그런데 규격이 도중에 바뀌는 길이 둘 있다.
+ *
+ *   `/model`    Anthropic 프로필에서 OpenAI 호환 프로필로 갈아탄다
+ *   이어받기    어제 Anthropic 으로 한 대화를 오늘 로컬 Ollama 로 --resume 한다
+ *               (저장 파일 머리글에는 규격이 없다)
+ *
+ * 둘 다 옛 모양을 그대로 보냈다. 서버는 모르는 모양에 400 을 준다 —
+ *
+ *   OpenAI 에   tool_use · tool_result 블록
+ *   Anthropic 에 `role:'tool'` · `content:null` · tool_calls
+ *   OpenAI 에   Ollama 의 id 없는 부름 · 객체 인자
+ *
+ * 읽는 것은 adapter.js 의 규격을 안 가리는 자(부른것들·결과들·본문글)로, 쓰는
+ * 것은 같은 파일의 규격별 짓는 자로 한다. 규칙이 여기 새로 생기지 않는다.
+ *
+ * **이미 맞는 메시지는 손대지 않는다 — 같은 객체를 그대로 둔다.** 턴 자리표
+ * (되감기)와 박은 쪽지 표가 메시지 객체를 열쇠로 들고 있어서, 새로 지으면
+ * 옮기는 순간 /undo 가 대화를 못 걷는다. 사람 말은 어느 규격에서나 글 하나라
+ * 거의 늘 그대로 남는다.
+ *
+ * id 가 없는 부름(Ollama)은 **차례로** 짝을 짓고 id 를 지어 붙인다 — 그 규격이
+ * 원래 차례로 짝짓는다. 옮길 수 없는 것(주소만 있는 그림, 서명 붙은 생각 블록)은
+ * 빼고 셈에 올린다. 부르는 쪽이 무엇을 뺐는지 화면에 말한다.
+ *
+ * @returns {{messages:object[], 바꾼것:number, 뺀것:{그림:number, 생각:number}}}
+ *          바꾼 것이 없으면 받은 배열을 그대로 돌려준다.
+ */
+export function 규격갈래(kind) {
+  return kind === 'anthropic' || kind === 'ollama' ? kind : 'openai';
+}
+
+const 앤블록 = new Set(['text', 'image', 'tool_use', 'tool_result', 'thinking', 'redacted_thinking', 'document']);
+
+/** 이 메시지가 이 규격에 **그대로 보내도 되는** 모양인가. */
+function 규격에맞나(m, 규격) {
+  const 블록 = Array.isArray(m.content) ? m.content : null;
+  if (규격 === 'anthropic') {
+    /*
+     * `thinking` 칸도 본다 (2.0.0 8회차 판정).
+     *
+     * 최상위 `thinking` 은 Ollama 가 적는 자리다(adapter.js 의 assistantMessage). 이 규격은
+     * 생각을 **블록**으로 나르지 최상위 칸으로 안 나른다 — 모르는 칸 하나에 400 을 준다.
+     * 아래 openai 갈래는 같은 줄에서 이 칸을 이미 보고 있었고, 여기만 빠져 있었다.
+     * 그래서 Ollama 로 하던 대화를 이 규격으로 이어받으면(--resume · /model) 그 답이
+     * 「맞는 모양」 으로 통과해 그대로 나갔다.
+     */
+    if (m.role === 'tool' || 'tool_calls' in m || 'images' in m || 'thinking' in m || m.content == null) return false;
+    /*
+     * 이 규격은 빈 차례를 거절한다 — 답이든 사람 말이든(adapter.js 의 assistantMessage 가
+     * 자리표시를 넣고, 아래 사람말옮기기 가 `(빈 말)` 을 넣는 까닭). 여기가 빈 글 **답**만 보던
+     * 동안 이 규격 모양의 빈 사람 말 `''` 과 빈 블록 `[]`(`every` 가 빈 배열에 참)은 그대로
+     * 지나갔다. (6회차 Gemini 대화고침6b G1·G2)
+     */
+    if (블록) return 블록.length > 0 && 블록.every((b) => 앤블록.has(b?.type));
+    return String(m.content).trim() !== '';
+  }
+  if (규격 === 'ollama') {
+    if (블록 || m.content == null) return false;
+    if (m.role === 'tool') return typeof m.tool_name === 'string';
+    return (m.tool_calls ?? []).every((t) => t?.function && typeof t.function.arguments === 'object' && t.function.arguments !== null);
+  }
+  if (m.role === 'tool') return typeof m.tool_call_id === 'string' && m.tool_call_id !== '' && typeof m.content === 'string';
+  if ('images' in m || 'thinking' in m) return false;
+  if (m.role === 'assistant') {
+    if (블록) return false;
+    if (m.content == null && !m.tool_calls?.length) return false;
+    return (m.tool_calls ?? []).every((t) => t?.id && typeof t?.function?.arguments === 'string');
+  }
+  /*
+   * 사람·시스템 차례도 `content == null` 을 본다 (2.0.0 8회차 판정).
+   *
+   * 바로 위 답 차례는 보고 있었고 여기만 빠져 있었다. 블록이 아니면 `!블록` 이 참이라
+   * `content: null` 인 사람 말이 「맞는 모양」 으로 통과해 그대로 나갔다 — 이 규격에서
+   * 사람 차례의 content 는 없어도 되는 칸이 아니라 400 이다. 반쯤 적힌 JSONL 을 이어
+   * 열거나(store.js) 다른 규격 이력을 이어받으면 나온다. 아래 사람말옮기기 가 빈 글로 채운다.
+   */
+  if (m.content == null) return false;
+  return !블록 || 블록.every((b) => b?.type === 'text' || b?.type === 'image_url');
+}
+
+/**
+ * 옮기면서 **생각을 버리게 되나**. 부르는 쪽이 무엇을 뺐는지 화면에 말한다.
+ *
+ * 생각이 실리는 자리가 규격마다 다르다 — Anthropic 은 서명 붙은 블록, Ollama 는 최상위
+ * `thinking` 칸, OpenAI 는 아예 자리가 없다. 그래서 어느 쪽으로 옮기든 옮겨 갈 자리가
+ * 없으면 그냥 사라진다. 블록 쪽만 세던 동안 최상위 칸은 소리 없이 없어졌다.
+ */
+function 생각버리나(m, 규격) {
+  // 서명이 붙은 블록은 그 규격 밖으로 못 나른다(adapter.js 의 assistantMessage).
+  if (규격 !== 'anthropic' && Array.isArray(m.content)
+    && m.content.some((b) => b?.type === 'thinking' || b?.type === 'redacted_thinking')) return true;
+  // 최상위 칸은 Ollama 로 갈 때만 그대로 실린다.
+  return 규격 !== 'ollama' && typeof m.thinking === 'string' && m.thinking.trim() !== '';
+}
+
+/** base64 머리로 그림 종류를 알아낸다. Ollama 는 종류를 안 적어 둔다. */
+function 그림종류(b64) {
+  const s = String(b64 ?? '');
+  if (s.startsWith('/9j/')) return 'image/jpeg';
+  if (s.startsWith('iVBOR')) return 'image/png';
+  if (s.startsWith('R0lGOD')) return 'image/gif';
+  if (s.startsWith('UklGR')) return 'image/webp';
+  return null;
+}
+
+/** 사람 차례(도구 결과가 아닌 것)를 이 규격 모양으로. 그림은 옮길 수 있는 만큼 옮긴다. */
+function 사람말옮기기(m, 규격, 뺀것) {
+  const 그림들 = [];
+  for (const b64 of Array.isArray(m.images) ? m.images : []) {
+    const mime = 그림종류(b64);
+    if (mime) 그림들.push({ mime, b64 }); else 뺀것.그림++;
+  }
+  for (const b of Array.isArray(m.content) ? m.content : []) {
+    if (b?.type === 'image') {
+      if (b.source?.type === 'base64' && b.source.data) 그림들.push({ mime: b.source.media_type, b64: b.source.data });
+      else 뺀것.그림++;
+    } else if (b?.type === 'image_url') {
+      const 맞음 = /^data:([^;,]+);base64,(.+)$/s.exec(String(b.image_url?.url ?? b.image_url ?? ''));
+      if (맞음) 그림들.push({ mime: 맞음[1], b64: 맞음[2] }); else 뺀것.그림++;
+    }
+  }
+  const 글 = 본문글(m);
+  if (그림들.length) return { ...그림메시지(규격, { 글, 그림들 }), role: m.role };
+  // 그림이 하나도 없는데 글도 비면 이 규격은 빈 사람 차례를 거절한다. 칸만 채운다.
+  if (!글.trim() && 규격 === 'anthropic') return { role: m.role, content: '(빈 말)' };
+  return { role: m.role, content: 글 };
+}
+
+export function 규격맞추기(messages, kind) {
+  const 규격 = 규격갈래(kind);
+  const 뺀것 = { 그림: 0, 생각: 0 };
+  if (!Array.isArray(messages)) return { messages: [], 바꾼것: 0, 뺀것 };
+  const out = [];
+  let 바꾼것 = 0;
+  let 지은수 = 0;
+  // 바로 앞 부름들. 결과를 짝지을 때 쓴다 — id 가 없는 규격은 차례로 짝짓는다.
+  let 대기 = [];
+  let 대기자리 = 0;
+
+  for (const m of messages) {
+    if (!m || typeof m !== 'object' || typeof m.role !== 'string') { out.push(m); continue; }
+
+    const 부름 = 부른것들(m);
+    if (부름.length) {
+      대기 = 부름.map((x) => ({ id: x.id || `call_deel_${++지은수}`, name: x.name, args: x.args ?? {} }));
+      대기자리 = 0;
+      if (규격에맞나(m, 규격)) { out.push(m); continue; }
+      if (생각버리나(m, 규격)) 뺀것.생각++;
+      out.push(assistantMessage(규격, {
+        content: 본문글(m),
+        thinking: 규격 === 'ollama' && typeof m.thinking === 'string' ? m.thinking : '',
+        toolCalls: 대기,
+      }));
+      바꾼것++;
+      continue;
+    }
+
+    if (도구결과인가(m)) {
+      const 것들 = 결과들(m).map((r) => {
+        let 짝 = r.id ? 대기.find((x) => x.id === r.id) : 대기[대기자리];
+        if (짝) 대기자리 = 대기.indexOf(짝) + 1;
+        return { id: r.id ?? 짝?.id ?? `call_deel_${++지은수}`, name: r.name ?? 짝?.name ?? '?', 글: r.글 };
+      });
+      if (규격에맞나(m, 규격)) { out.push(m); continue; }
+      for (const r of 것들) out.push(toolMessage(규격, { callId: r.id, name: r.name, content: r.글 }));
+      // 결과 블록 옆에 사람 글·그림이 같이 실려 있었으면 그건 결과들 **뒤에** 사람 차례로 붙인다.
+      const 나머지 = Array.isArray(m.content) ? m.content.filter((b) => b?.type !== 'tool_result') : [];
+      if (나머지.length) out.push(사람말옮기기({ role: 'user', content: 나머지 }, 규격, 뺀것));
+      바꾼것++;
+      continue;
+    }
+
+    if (규격에맞나(m, 규격)) { out.push(m); continue; }
+    if (m.role === 'assistant') {
+      if (생각버리나(m, 규격)) 뺀것.생각++;
+      out.push(assistantMessage(규격, {
+        content: 본문글(m),
+        thinking: 규격 === 'ollama' && typeof m.thinking === 'string' ? m.thinking : '',
+      }));
+    } else {
+      out.push(사람말옮기기(m, 규격, 뺀것));
+    }
+    바꾼것++;
+  }
+
+  return 바꾼것 ? { messages: out, 바꾼것, 뺀것 } : { messages, 바꾼것: 0, 뺀것 };
 }

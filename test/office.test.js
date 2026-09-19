@@ -340,6 +340,20 @@ trace('3.5-하루가가나');
   check('한 바퀴 돌면 제자리', 시계(3) === 시계(63), '3초 vs 63초');
   // 좁은 터미널에는 시계 걸 자리가 없다. 없다고 터지면 안 된다.
   check('좁아도 안 터진다', 사무실줄들(상태만들기({}, { 갈래: '쓰기', 시작: Date.now() }, 0), 60).length === 줄수);
+
+  /*
+   * ★ 바늘 끝이 **테두리에 묻히지 않나.**
+   *
+   * 시계판은 7×5 인데 테두리가 C.검정 이고 바늘도 C.검정 이다. 12시·6시만
+   * 바늘 끝이 가운데서 두 픽셀 떨어져 맨 윗줄·맨 아랫줄(테두리)에 얹혔고,
+   * 검정 위에 검정이라 **아무것도 안 그린 것과 똑같은 그림**이 나왔다 —
+   * 0초 판과 30초 판이 한 글자도 안 달랐다. 여덟 자리가 여덟 그림인지 잰다.
+   */
+  const 바늘판 = (초) => 사무실줄들({ 일꾼들: [{ 갈래: '쓰기' }], 틱: 0, 걸린초: 초 }, 100).slice(0, 3).join('|');
+  const 여덟자리 = [0, 8, 15, 23, 30, 38, 45, 53].map(바늘판);
+  check('★ 바늘 여덟 자리가 다 다르게 보인다', new Set(여덟자리).size === 8,
+    `서로 다른 그림 ${new Set(여덟자리).size}개`);
+  check('★ 12시와 6시가 같은 그림이 아니다', 여덟자리[0] !== 여덟자리[4], '0초 vs 30초');
 }
 
 trace('3.6-동시에도는만큼-자리가차나');
@@ -405,6 +419,33 @@ trace('3.7-계획이있으면-방이-찬다');
   const 끝난것 = 상태만들기({}, { 갈래: '쓰기', 시작: Date.now() }, 0,
     [{ state: 'done' }, { state: 'done' }]);
   check('끝난 할 일은 자리를 안 차지한다', 끝난것.일꾼들.length === 1, `${끝난것.일꾼들.length}`);
+
+  /*
+   * 지금 도는 할 일은 **켜진 자리로 이미 앉아 있다.**
+   *
+   * 남은 일을 `state !== 'done'` 으로만 세면 도는 중(doing)인 그 일이 꺼진 화면으로 한 번 더
+   * 앉는다 — 한 사람이 둘이 되고, 「꺼진 화면은 아직 차례가 안 온 것」 이라는 이 방의 약속이
+   * 거짓이 된다 (2.0.0 6회차 사무실6ck-f OF4). 화이트보드 쪽지 셈(할일)은 남은 일 그대로다.
+   */
+  const 도는중 = 상태만들기({}, { 갈래: '쓰기', 시작: Date.now() }, 0,
+    [{ state: 'doing' }, { state: 'todo' }, { state: 'done' }]);
+  check('도는 할 일은 기다림 자리로 또 안 앉는다', 도는중.일꾼들.length === 2, JSON.stringify(도는중.일꾼들));
+  check('기다림 자리는 아직 안 잡은 일만', 도는중.일꾼들.filter((x) => x.갈래 === '기다림').length === 1,
+    JSON.stringify(도는중.일꾼들));
+  check('쪽지 셈은 남은 일 그대로다', 도는중.할일 === 2 && 도는중.끝난일 === 1, `${도는중.할일}/${도는중.끝난일}`);
+
+  /*
+   * ★ 반대쪽 — **도는 일감이 없는데** doing 인 할 일이 있을 때.
+   *
+   * 바로 위 규칙은 '그 일은 켜진 화면으로 이미 앉혔으니 빼라' 는 뜻인데,
+   * 앉힌 사람이 없을 때도 똑같이 뺐다. 그래서 하던 일이 방에서 **증발했다** —
+   * 화이트보드에는 쪽지가 붙어 있는데 방은 아무도 없는 그림이다.
+   */
+  const 일감없이 = 상태만들기({}, null, 0, [{ state: 'doing' }, { state: 'todo' }]);
+  check('★ 일감이 없으면 도는 할 일도 방에 남는다', 일감없이.일꾼들.length === 2,
+    JSON.stringify(일감없이.일꾼들));
+  check('★ 그 자리는 차례를 기다리는 자리다',
+    일감없이.일꾼들.every((x) => x.갈래 === '기다림'), JSON.stringify(일감없이.일꾼들));
 
   /*
    * 사람이 늘면 화면도 달라져야 한다. 여기서 값만 재고 그림을 안 보면,
@@ -522,6 +563,35 @@ trace('5-켜고끄기');
   check('화면이 낮아도 상자 그림 규칙은 안 흔들린다',
     켜나(10, 80) === false && [...그림고르기('쓰기', 0)].length === 1);
 
+  /*
+   * ★ 윈도우 전용 값 두 개(WT_SESSION·ConEmuANSI)가 **어느 판에서 도나.**
+   *
+   * 색충분한가() 는 win32 면 무조건 켠다고 먼저 답한다. 그래서 그 아래 두
+   * 줄은 윈도우에서는 한 번도 안 돈다 — 「윈도우 터미널」 이라고 적힌 주석만
+   * 보면 죽은 줄로 읽힌다. 실제로 저 줄이 사는 자리는 윈도우가 **아닌** 판,
+   * 곧 WSL 이다(윈도우 터미널이 WSLENV 로 WT_SESSION 을 건너보낸다).
+   * 죽은 줄이라고 지우면 WSL 에서 사무실이 안 켜진다. 그래서 못 박는다.
+   */
+  const 원래판 = process.platform;
+  const 원래텀 = process.env.TERM;
+  const 판바꾸기 = (v) => Object.defineProperty(process, 'platform', { value: v, configurable: true });
+  const 색신호비우기 = () => {
+    for (const k of ['NO_COLOR', 'FORCE_COLOR', 'COLORTERM', 'WT_SESSION', 'TERM_PROGRAM', 'ConEmuANSI']) {
+      delete process.env[k];
+    }
+    process.env.TERM = 'xterm';
+  };
+  process.env.DEEL_OFFICE = '1';
+  색신호비우기(); 판바꾸기('win32');
+  check('윈도우는 다른 색 신호가 없어도 켠다', 켜나(50, 80) === true);
+  색신호비우기(); 판바꾸기('linux');
+  check('윈도우가 아니고 색 신호도 없으면 안 켠다', 켜나(50, 80) === false);
+  process.env.WT_SESSION = '1';
+  check('★ WT_SESSION 은 윈도우 밖(WSL)에서 켠다', 켜나(50, 80) === true);
+  판바꾸기(원래판);
+  색신호비우기();
+  if (원래텀 === undefined) delete process.env.TERM; else process.env.TERM = 원래텀;
+
   환경되돌리기();
 }
 
@@ -529,5 +599,17 @@ const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1
 console.log(`\n붙박이 사무실 검사  ${D}(열두 줄이 전부 진짜 숫자인가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
+{
+  /*
+   * 전수 어긋내기 #132 생존 — 일감의 말이 폭보다 길면 왼쪽을 일안쪽으로 자른다. 안 잘라도 끝의 폭안이
+   * 줄을 자르므로 「폭을 안 넘는다」 검사는 초록이었다. 그런데 그러면 오른쪽 테두리가 잘려 나간다 — 그걸 잰다.
+   */
+  for (const 폭 of [30, 44]) {
+    const { 줄들 } = 프레임({ 일감: { 말: '아주 긴 하위 작업 목적 '.repeat(6), 곁: '12초 · Esc 중단' }, 폭 });
+    const 일줄 = 줄들.map(벗기기).find((l) => l.includes('⠋')) ?? '';
+    check(`일하는 중 긴 말도 오른쪽 테두리가 남는다 — 폭 ${폭}`, 일줄.trimEnd().endsWith('│') && width(일줄) <= 폭, JSON.stringify(일줄));
+  }
+}
+
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 if (fail.length) process.exitCode = 1;

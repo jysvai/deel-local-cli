@@ -23,8 +23,8 @@
 // 남이 미리 담아 둔 것(index)을 풀지도 않는다 — 남의 준비를 말없이 흩는
 // 것이 커밋을 하나 더 만드는 것보다 나쁘다. 대신 화면에 같이 적는다.
 import { spawnSync } from 'node:child_process';
-import { writeFileSync, unlinkSync, statSync } from 'node:fs';
-import { join, relative, isAbsolute } from 'node:path';
+import { writeFileSync, unlinkSync, statSync, existsSync } from 'node:fs';
+import { join, relative, isAbsolute, dirname } from 'node:path';
 import { 진짜자리 } from '../safety/guard.js';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -133,6 +133,18 @@ export function 살림에닿나(abs) {
 /** 담을 때 git 에게도 빼 달라고 하는 자리. 어느 깊이든, 대소문자 상관없이. */
 const 살림빼기 = [':(exclude,icase,glob)**/.deel/**', ':(exclude,icase,glob)**/.deel'];
 
+/*
+ * ── 파일 이름은 글자 그대로 넘긴다 (사냥5 H5-4) ─────────────────────────────
+ *
+ * `git add -- <경로>` 의 경로 자리는 **패스스펙**이다. git 은 거기 적힌 `[ab].txt` 를
+ * 그 이름의 파일로도, 「a.txt 나 b.txt」 라는 글롭으로도 푼다. 그래서 이번 대화가
+ * `[ab].txt` 하나만 만들었는데 옆 창에서 고치던 a.txt·b.txt 가 같이 담겨 커밋에
+ * 실렸다 — 이 파일이 없애려고 만든 `git add -A` 사고가 이름 한 글자로 되돌아온다.
+ * `:(literal)` 을 붙이면 그 한 자리만 글자 그대로 읽는다. 위 살림빼기는 일부러
+ * 글롭이라(어느 깊이든) 그대로 둔다 — 패스스펙마다 따로 읽히므로 섞어도 된다.
+ */
+export const 글자그대로 = (경로) => `:(literal)${경로}`;
+
 /**
  * 링크를 다 푼 진짜 자리 — 자는 울타리와 **같은 것**을 쓴다.
  *
@@ -157,10 +169,73 @@ const 진짜 = 진짜자리;
  * 없애려던 `git add -A` 사고를 이름만 바꿔 다시 내는 셈이다. 안 담은 폴더는
  * 목록으로 돌려주고, 화면이 그렇게 말한다.
  */
+/**
+ * 이 파일이 **딴 저장소** 안인가 — 서브모듈이나, 안쪽에 따로 `git init` 한 폴더.
+ *
+ * 그 안 경로를 `git add` 에 실으면 서브모듈은 `fatal: Pathspec … is in submodule`
+ * 로 죽고, 같이 실은 바깥 파일까지 못 담아 /commit 이 통째로 안 된다. 등록 안 된
+ * 안쪽 저장소는 거꾸로 add 가 0 으로 끝나고 아무것도 안 담는다 — 말없이 빠진다.
+ * 뿌리와 파일 사이 폴더에 `.git`(서브모듈은 파일, 안쪽 저장소는 폴더)이 있으면 딴 저장소다.
+ * (6회차 Gemini 커밋 C2)
+ *
+ * @returns {string|null} 그 저장소 폴더 — 저장소 뿌리 기준 상대경로(`/`)
+ */
+function 딴저장소자리(abs, 기준) {
+  for (let d = dirname(abs); d.length > 기준.length && d !== dirname(d); d = dirname(d)) {
+    if (existsSync(join(d, '.git'))) return relative(기준, d).replace(/\\/g, '/');
+  }
+  return null;
+}
+
+/** git 의 index 가 이 이름으로 내놓는 것들. 못 물어봤으면 null — 「없다」 와 다르다. */
+function 깃이아는것(기준, rel) {
+  const r = 깃(기준, ['ls-files', '-z', '--', 글자그대로(rel)]);
+  if (!r.ok) return null;
+  return r.out.split(String.fromCharCode(0)).filter(Boolean);
+}
+
+/**
+ * 지워진 뒤에는 stat 이 폴더였는지 안 알려 준다 — git 의 index 에 물어본다.
+ *
+ * 폴더는 담을 목록에서 뺀다(바로 아래). 그런데 **지워진** 폴더만 그 그물을
+ * 빠져나갔다. statSync 가 던지면 「지워진 것은 파일로 친다」 쪽으로 갔고, 그
+ * 이름이 그대로 `git add -A -- :(literal)<폴더>` 에 실렸다. git 은 폴더를 받으면
+ * 그 아래 **전부**를 담는다 — 옆 창에서 고치던 남의 파일까지. 이 파일이 없애려고
+ * 만들어진 바로 그 `git add -A` 사고가 이름만 바꿔 되돌아온 것이다. (8회차 커밋 1)
+ *
+ * index 가 그 이름 **아래**의 것들을 내놓으면 폴더였다. 그 이름 자체가 나오면
+ * 파일이고, 아무것도 안 나오면 git 이 모르던 것이라 여태대로 파일로 친다.
+ */
+function 지워진폴더인가(기준, rel) {
+  const 든것 = 깃이아는것(기준, rel);
+  return !!든것 && 든것.length > 0 && !든것.includes(rel);
+}
+
+/**
+ * 지워졌는데 git 이 그 이름을 **한 번도 본 적이 없나** — 담을 수 없는 이름인가.
+ *
+ * 이번 대화가 만들었다 지운 임시 파일이 이렇다. 추적된 적이 없으니 index 에도
+ * 없고, 작업 폴더에도 이제 없다. 그 이름이 `git add -A -- :(literal)<이름>` 에
+ * 실리면 git 은 `fatal: pathspec … did not match any files` 로 죽는데, add 는
+ * 하나라도 못 맞추면 **아무것도 안 담고** 끝난다 — 같이 실은 진짜 변경까지
+ * 전부. 그래서 /commit 이 통째로 안 됐다. 담을 수 없는 이름 하나 때문에 담을
+ * 수 있는 것까지 못 담는 것이 제일 나쁘다. 이 이름만 빼고 나머지는 담는다.
+ * (8회차 커밋2)
+ *
+ * 못 물어봤으면(`null`) 여태대로 담아 본다 — 모르면서 빼면 사람이 담긴 줄 알고
+ * 넘어간다. 추적하던 파일의 삭제는 index 에 그 이름이 있으므로 여기 안 걸린다.
+ */
+function 깃이모르나(기준, rel) {
+  const 든것 = 깃이아는것(기준, rel);
+  return !!든것 && 든것.length === 0;
+}
+
 export function 이번에바꾼것(session, 뿌리) {
   const 기준 = 진짜(뿌리);
   const 것들 = [];
   const 폴더들 = [];
+  const 딴저장소 = [];
+  const 모르는이름 = [];
   for (const p of (session?.changes?.keys?.() ?? [])) {
     const abs = 진짜(isAbsolute(p) ? p : join(기준, p));
     const rel = relative(기준, abs).replace(/\\/g, '/');
@@ -176,13 +251,21 @@ export function 이번에바꾼것(session, 뿌리) {
      */
     if (!rel || rel.startsWith('../') || rel === '..' || isAbsolute(rel)) continue;
     if (살림경로인가(rel) || 살림에닿나(abs)) continue;
+    const 딴곳 = 딴저장소자리(abs, 기준);
+    if (딴곳 !== null) { if (!딴저장소.includes(딴곳)) 딴저장소.push(딴곳); continue; }
     let 폴더인가 = false;
-    try { 폴더인가 = statSync(abs).isDirectory(); } catch { /* 지워진 것은 파일로 친다 */ }
+    // 지워졌으면 stat 이 폴더였는지 못 알려 준다 — git 에게 묻는다 (8회차 커밋 1).
+    try { 폴더인가 = statSync(abs).isDirectory(); } catch { 폴더인가 = 지워진폴더인가(기준, rel); }
     if (폴더인가) { if (!폴더들.includes(rel)) 폴더들.push(rel); continue; }
+    // 지금 없고 git 도 모르는 이름은 담을 수가 없다 — 그것만 빼고 나머지는 담는다 (8회차 커밋2).
+    if (!existsSync(abs) && 깃이모르나(기준, rel)) { if (!모르는이름.includes(rel)) 모르는이름.push(rel); continue; }
     if (!것들.includes(rel)) 것들.push(rel);
   }
   것들.sort();
   Object.defineProperty(것들, '폴더', { value: 폴더들.sort(), enumerable: false });
+  Object.defineProperty(것들, '딴저장소', { value: 딴저장소.sort(), enumerable: false });
+  // 만들었다 지워서 git 이 끝내 못 본 이름 — 안 담았다고 화면이 말한다 (8회차 커밋2).
+  Object.defineProperty(것들, '모르는이름', { value: 모르는이름.sort(), enumerable: false });
   return 것들;
 }
 
@@ -201,9 +284,10 @@ export function 담기(뿌리, 경로들, { 전부 = false, 안쪽 = '' } = {}) 
    * 담기고 — 그 내용이 커밋 메시지를 지으러 모델에게도 나간다. 사람은
    * "이 폴더에서 일하는 중" 이라고 알고 있었다.
    */
-  if (전부) return 깃(뿌리, ['add', '-A', '--', 안쪽 || '.', ...살림빼기]);
+  // 작업 폴더 이름도 글자 그대로다 — `sub[1]` 폴더에서 켰는데 옆의 `sub1` 이 담기면 안 된다.
+  if (전부) return 깃(뿌리, ['add', '-A', '--', 안쪽 ? 글자그대로(안쪽) : '.', ...살림빼기]);
   if (!경로들.length) return { ok: true, code: 0, out: '', err: '' };
-  return 깃(뿌리, ['add', '-A', '--', ...경로들, ...살림빼기]);
+  return 깃(뿌리, ['add', '-A', '--', ...경로들.map(글자그대로), ...살림빼기]);
 }
 
 /**
@@ -219,8 +303,9 @@ export function 살림도로빼기(뿌리, 파일들) {
   const 샌것 = 파일들.filter((f) => 살림에닿나(join(뿌리, f)));
   if (!샌것.length) return { 샌것, 못뺀것: [] };
   // 첫 커밋 전이면 HEAD 가 없어 restore 가 안 된다. 그때는 index 에서 지운다.
-  const r = 깃(뿌리, ['restore', '--staged', '--', ...샌것]);
-  if (!r.ok) 깃(뿌리, ['rm', '--cached', '-q', '-r', '--', ...샌것]);
+  // 도로 빼는 것도 글자 그대로 — 글롭으로 풀리면 남이 담아 둔 것까지 풀어 버린다 (사냥5 H5-4).
+  const r = 깃(뿌리, ['restore', '--staged', '--', ...샌것.map(글자그대로)]);
+  if (!r.ok) 깃(뿌리, ['rm', '--cached', '-q', '-r', '--', ...샌것.map(글자그대로)]);
   const 아직 = 담긴것(뿌리).파일들.filter((f) => 살림에닿나(join(뿌리, f)));
   return { 샌것, 못뺀것: 아직 };
 }
@@ -248,10 +333,17 @@ export function 살림도로빼기(뿌리, 파일들) {
  * @returns {{파일들:string[], 통계:string, diff:string, 못읽음:Array<{무엇:string,왜:string}>}}
  */
 export function 담긴것(뿌리) {
-  const 이름 = 깃(뿌리, ['diff', '--cached', '--name-only']);
+  const 이름 = 깃(뿌리, ['diff', '--cached', '--name-only', '-z']);
   const 통계 = 깃(뿌리, ['diff', '--cached', '--stat']);
   const 몸통 = 깃(뿌리, ['diff', '--cached']);
-  const 파일들 = 이름.out.split('\n').map((x) => x.trim()).filter(Boolean);
+  /*
+   * 이름은 NUL 로 끊어 받는다 (6회차 커밋 C5).
+   *
+   * 줄로 받아 줄마다 trim 하면 ` a.txt` 가 `a.txt` 로 적혀, 살림도로빼기 가 없는
+   * 이름으로 링크를 보고 화면·감사기록도 다른 이름을 적는다. 리눅스에서는 탭·따옴표·
+   * 줄바꿈이 든 이름이 quotepath 를 꺼도 C 따옴표로 싸여 온다. `-z` 면 손대지 않고 온다.
+   */
+  const 파일들 = 이름.out.split(String.fromCharCode(0)).filter(Boolean);
   const 못읽음 = [];
   const 적기 = (무엇, r) => {
     if (!r.ok) 못읽음.push({ 무엇, 왜: (r.err || r.out || `git ${무엇} 실패`).trim().split('\n')[0] });
@@ -293,9 +385,24 @@ const 답형식 = `아래 두 줄 형식으로만 답하라. 다른 말은 붙�
 
 /** 코드울타리·따옴표를 벗긴다. 작은 모델이 자주 씌운다. */
 function 껍질벗기기(글) {
-  let s = String(글 ?? '').trim();
+  // CRLF 로 답하는 게이트웨이·모델이 있다. 줄바꿈을 먼저 LF 로 맞춰야 울타리 무늬가 걸린다 —
+  // 안 걸리면 JSON 답이 줄글로 갈라져 커밋 제목이 ```json 이 된다 (6회차 커밋 C6).
+  let s = String(글 ?? '').replace(/\r\n?/g, '\n').trim();
   const 울타리 = s.match(/^```[a-z]*\n([\s\S]*?)\n?```$/i);
   if (울타리) s = 울타리[1].trim();
+  /*
+   * 따옴표도 벗긴다 — 머리말은 벗긴다고 적어 두고 안 벗기고 있었다 (8회차 커밋 5).
+   *
+   * 답을 통째로 따옴표로 싸서 주는 모델이 있다. 그러면 첫 줄이 `"제목: …` 이 되어
+   * `제목:` 무늬가 안 걸리고, 줄글로 읽혀 **라벨째** 커밋 제목이 된다.
+   * 안쪽에 같은 따옴표가 또 있으면 껍질이 아니라 인용문이다 — 그때는 그냥 둔다.
+   */
+  const 짝 = { '"': '"', "'": "'", '`': '`', '「': '」', '『': '』' };
+  const 닫는 = 짝[s[0]];
+  if (닫는 && s.length >= 2 && s.endsWith(닫는)) {
+    const 속 = s.slice(1, -1);
+    if (!속.includes(s[0]) && !속.includes(닫는)) s = 속.trim();
+  }
   return s;
 }
 
@@ -323,7 +430,9 @@ export function 답가르기(글) {
   if (표) {
     const 뒤 = s.slice(s.indexOf(표[0]) + 표[0].length);
     const 본문표 = 뒤.match(/^\s*본문\s*[:：]\s*/m);
-    const 본문 = 본문표 ? 뒤.slice(뒤.indexOf(본문표[0]) + 본문표[0].length) : 뒤;
+    // 자리는 무늬가 찾은 그 자리다. indexOf 로 다시 뒤지면 앞줄 사족에 낀 같은
+    // 글자가 먼저 걸려, 진짜 `본문:` 라벨이 본문에 그대로 남는다 (8회차 커밋 4).
+    const 본문 = 본문표 ? 뒤.slice(본문표.index + 본문표[0].length) : 뒤;
     return { 제목: 표[1].trim(), 본문: 본문.trim() };
   }
 
@@ -384,8 +493,12 @@ const 가짜꼬리표 = /^\s*(signed-off-by|co-authored-by|reviewed-by|acked-by|
  * 그렇다고 `Fixes` 로 시작하는 줄을 통째로 지우면 안 된다. 「Fixes the crash
  * when …」 은 본문에 있어야 할 진짜 문장이다. 그래서 **뒤에 `#숫자`나 주소만
  * 달랑 오는 꼴**일 때만 지운다.
+ *
+ * 끝에 온점·쉼표가 붙어도 깃허브는 그 이슈를 닫는다. 그런데 무늬가 `#123` 뒤에
+ * 곧바로 줄 끝을 요구해서, 문장처럼 쓴 `Fixes #123.` 은 안 걸리고 통과했다 —
+ * 걸러내려던 바로 그것이 온점 하나로 다시 통과한 셈이다. (8회차 커밋 3)
  */
-const 닫는말 = /^\s*(clos(e|es|ed)|fix(|es|ed)|resolv(e|es|ed))\s*:?\s*(#\d+|https?:\/\/\S+)\s*$/i;
+const 닫는말 = /^\s*(clos(e|es|ed)|fix(|es|ed)|resolv(e|es|ed))\s*:?\s*(#\d+|https?:\/\/\S+)\s*[.,;!]*\s*$/i;
 
 export function 꼬리표걸러내기(본문) {
   return String(본문 ?? '')
@@ -405,7 +518,14 @@ export function 제목다듬기(글) {
   const 앞 = 글자.slice(0, 제목상한).join('');
   const 빈칸 = 앞.lastIndexOf(' ');
   const 자를자리 = 빈칸 > 제목상한 * 0.5 ? 빈칸 : 앞.length;
-  return { 제목: 앞.slice(0, 자를자리).trim(), 남은것: t.slice(자를자리).trim() };
+  /*
+   * 자른 끝에도 마침표를 안 남긴다 (8회차 커밋 6).
+   *
+   * 위에서 뗀 것은 **자르기 전** 끝이었다. 문장 경계에서 잘리면 그 자리의
+   * 마침표가 그대로 남아, 지시문이 못 박은 「마침표 없이」 를 잘린 제목만 어겼다.
+   */
+  const 자른것 = 앞.slice(0, 자를자리).trim().replace(/[.。]+$/, '').trim();
+  return { 제목: 자른것, 남은것: t.slice(자를자리).trim() };
 }
 
 /** 모델이 못 만들었을 때 — 지어내는 대신 사실만 적는다. */
@@ -492,7 +612,8 @@ export async function 메시지짓기(session, { 뿌리, diff, 통계, 파일들
       // 본문만 달라고 했어도 작은 모델은 `제목:`/`본문:` 꼴을 그대로 흉내 낸다.
       // 그걸 그대로 본문에 넣으면 커밋 안에 '제목:' 이라는 줄이 남는다.
       const 갈린 = /^\s*제목\s*[:：]/m.test(글) ? 답가르기(글) : null;
-      return { 제목, 본문: 갈린?.본문 ?? 껍질벗기기(글) };
+      // `제목:` 없이 `본문:` 표식만 붙여 답하기도 한다 — 그 표식도 떼야 커밋 첫 줄에 안 남는다 (6회차 커밋 C9).
+      return { 제목, 본문: 갈린?.본문 ?? 껍질벗기기(글).replace(/^\s*본문\s*[:：]\s*/, '') };
     }
     return 답가르기(글);
   } catch (err) {
@@ -516,13 +637,21 @@ export async function 커밋준비(session, ctx, { 전부 = false, 제목 = null
 
   const 미리담긴 = 담긴것(뿌리).파일들;      // 남이 먼저 담아 둔 것. 풀지 않고 알리기만 한다.
   const 내것 = 이번에바꾼것(session, 뿌리);
+  // 딴 저장소 안만 바꿨으면 「바꾼 파일이 없다」 가 아니다 — 어디서 커밋해야 하는지 말한다 (6회차 커밋 C2).
+  if (!전부 && !내것.length && !미리담긴.length && 내것.딴저장소.length) {
+    return { ok: false, why: `딴 저장소(${내것.딴저장소.slice(0, 4).join(', ')}) 안에서만 바꿨습니다 — 서브모듈·안쪽 저장소는 그 폴더에서 따로 커밋하세요.` };
+  }
+  // 만들었다 지운 것뿐이면 「바꾼 파일이 없다」 가 아니다 — 무엇을 왜 못 담는지 말한다 (8회차 커밋2).
+  if (!전부 && !내것.length && !미리담긴.length && 내것.모르는이름.length) {
+    return { ok: false, why: `이번 대화가 만들었다 지운 것(${내것.모르는이름.slice(0, 4).join(', ')})뿐입니다 — git 이 한 번도 본 적 없는 이름이라 담을 것이 없습니다.` };
+  }
   if (!전부 && !내것.length && !미리담긴.length) {
     return { ok: false, why: '이번 대화에서 바꾼 파일이 없습니다 — 작업 폴더 전부를 담으려면 `/commit 전부`.' };
   }
 
   // `전부` 가 미칠 자리 = 작업 폴더. 저장소 뿌리가 아니다 (담기() 머리말).
   const 안쪽 = relative(뿌리, 여기).replace(/\\/g, '/');
-  const 살림바뀜 = !!깃(뿌리, ['status', '--short', '--', 안쪽 ? `${안쪽}/${살림폴더}` : 살림폴더]).out.trim();
+  const 살림바뀜 = !!깃(뿌리, ['status', '--short', '--', 글자그대로(안쪽 ? `${안쪽}/${살림폴더}` : 살림폴더)]).out.trim();
   const 담은결과 = 담기(뿌리, 내것, { 전부, 안쪽 });
   if (!담은결과.ok) return { ok: false, why: `담지 못했습니다 — ${(담은결과.err || '').trim() || 'git add 실패'}` };
 
@@ -558,7 +687,20 @@ export async function 커밋준비(session, ctx, { 전부 = false, 제목 = null
 
   const 사실 = !지은것;
   const { 제목: 날제목, 본문: 날본문 } = 지은것 ?? 사실로만(파일들, 통계);
-  const 다듬 = 제목다듬기(제목 ?? 날제목);
+  /*
+   * 모델이 지은 제목에도 꼬리표를 건다 (8회차 커밋 2).
+   *
+   * 본문은 메시지꾸리기() 가 거르는데 제목만 맨몸으로 나갔다. 모델이
+   * `Fixes #123` 한 줄을 제목으로 주면 그게 커밋 첫 줄이 되고, 그 커밋이 기본
+   * 가지에 실리는 순간 **깃허브가 그 이슈를 진짜로 닫는다** — 지어낸 번호면 남의
+   * 이슈가 닫히고, 커밋을 되돌려도 닫힌 이슈는 안 열린다.
+   * 걸러 내고 남는 것이 없으면 지어낸 제목 대신 사실만 적는다.
+   *
+   * 사람이 제 손으로 준 제목(`제목`)은 안 건드린다 — 그건 사람 뜻이고, 화면에
+   * 미리 보여 준 것과 찍히는 것이 달라지면 승인을 받은 뜻이 없어진다.
+   */
+  const 고른제목 = 제목 ?? (꼬리표걸러내기(날제목) || 사실로만(파일들, 통계).제목);
+  const 다듬 = 제목다듬기(고른제목);
   if (!다듬.제목) return { ok: false, why: '커밋 제목을 만들지 못했습니다.' };
   const 본문 = [다듬.남은것, 날본문].filter(Boolean).join('\n\n');
 
@@ -587,6 +729,16 @@ export async function 커밋준비(session, ctx, { 전부 = false, 제목 = null
     살림뺌: 살림바뀜 || 뺀것.샌것.length > 0,
     링크로샌것: 뺀것.샌것,
     폴더통째: 전부 ? [] : (내것.폴더 ?? []),
+    // 서브모듈·안쪽 저장소 안에서 바뀐 것 — 안 담았다고 화면이 말한다 (6회차 커밋 C2).
+    딴저장소: 전부 ? [] : (내것.딴저장소 ?? []),
+    /*
+     * 만들었다 지워서 git 이 끝내 못 본 이름 — 조용히 빼면 사람은 담긴 줄 안다 (8회차 커밋2).
+     *
+     * 담긴 것에 이미 들어 있는 이름은 여기서 뺀다. 삭제가 **먼저 담겨 있던**
+     * 파일은 index 에서도 이름이 사라져 위 그물에 같이 걸리는데, 그건 이번
+     * 커밋에 제대로 실린다 — 실린 것을 「안 담았습니다」 라고 말하면 그것도 거짓이다.
+     */
+    모르는이름: 전부 ? [] : (내것.모르는이름 ?? []).filter((f) => !파일들.includes(f)),
     // git 이 답을 못 한 것. 화면이 그대로 말한다 — 못 본 것을 안 본 척하면
     // 메시지가 무엇을 근거로 쓰였는지가 사라진다.
     diff못읽음,

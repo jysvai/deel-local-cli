@@ -80,8 +80,19 @@ export function 줄나누기(한줄) {
      */
     let 자리;
     while ((자리 = 남은것.indexOf('\n')) >= 0) {
-      const 줄 = 남은것.slice(0, 자리).replace(/\r$/, '');
+      let 줄 = 남은것.slice(0, 자리).replace(/\r$/, '');
       남은것 = 남은것.slice(자리 + 1);
+      /*
+       * ── 줄 앞의 BOM 을 뗀다 (사냥5 H5-9) ──────────────────────────────────
+       *
+       * .NET 의 `StreamWriter(Encoding.UTF8)` 처럼 첫 바이트에 BOM(U+FEFF) 을 붙여
+       * 쓰는 클라이언트가 있다. 그 글자는 JSON 이 받지 않아서 **첫 줄 = initialize**
+       * 가 -32700 · id null 로 떨어졌고, 저쪽은 initialize 답을 영영 기다렸다 —
+       * 붙자마자 멈추는데 우리 로그에는 「읽을 수 없는 JSON」 한 줄뿐이다.
+       * 줄마다 보는 것은, 메시지마다 새 writer 를 여는 클라이언트면 BOM 이 매 줄 앞에
+       * 오기 때문이다. 글자는 번호로 비교한다 — 소스에 보이지 않는 글자를 안 둔다.
+       */
+      if (줄.charCodeAt(0) === 0xfeff) 줄 = 줄.slice(1);
       if (줄.trim()) 한줄(줄);   // 빈 줄은 그냥 넘긴다. 오류로 칠 것이 아니다
     }
   };
@@ -117,12 +128,34 @@ export class 연결 {
     this.보내기줄(JSON.stringify(덩이) + '\n');
   }
 
-  /** 저쪽에 요청을 걸고 답을 기다린다. */
-  요청(방법, 인자) {
+  /**
+   * 저쪽에 요청을 걸고 답을 기다린다.
+   *
+   * ── 기다림에도 끊는 줄이 있어야 한다 (사냥5 H5-3) ───────────────────────
+   *
+   * 승인 창을 띄워 두고 사람이 안 누른 채 턴을 취소하면, 여기 기다림은 끊기는 줄을
+   * 몰라서 **답이 올 때까지** 서 있었다. 그 턴은 취소된 뒤에도 살아 있고, 한참 뒤에
+   * 옛 창의 「이번만 실행」 이 닿으면 그대로 도구를 돌렸다. signal 을 주면 끊기는
+   * 순간 기다림을 거둔다 — 표에서도 지우므로 늦게 온 답은 「이미 포기한 것」 으로
+   * 조용히 버려진다.
+   *
+   * @param {object} [o]
+   * @param {AbortSignal|null} [o.signal]  끊기면 기다림을 거두고 `거둠: true` 오류로 깬다
+   */
+  요청(방법, 인자, { signal = null } = {}) {
     const id = this.다음번호++;
     return new Promise((풀기, 깨기) => {
       if (this.닫혔나) { 깨기(new Error('관이 닫혔습니다')); return; }
-      this.기다리는것.set(id, { 풀기, 깨기 });
+      const 거둔오류 = () => Object.assign(new Error('기다리던 요청을 거뒀습니다 — 턴이 끊겼습니다'), { 거둠: true });
+      // 이미 끊긴 턴의 물음은 내보내지도 않는다. 에디터에 답할 수 없는 창만 남는다.
+      if (signal?.aborted) { 깨기(거둔오류()); return; }
+      const 거두기 = () => { if (this.기다리는것.delete(id)) 깨기(거둔오류()); };
+      signal?.addEventListener?.('abort', 거두기, { once: true });
+      const 떼기 = () => signal?.removeEventListener?.('abort', 거두기);
+      this.기다리는것.set(id, {
+        풀기: (값) => { 떼기(); 풀기(값); },
+        깨기: (오류) => { 떼기(); 깨기(오류); },
+      });
       this.#쓰기({ jsonrpc: '2.0', id, method: 방법, params: 인자 ?? {} });
     });
   }
@@ -148,6 +181,18 @@ export class 연결 {
       this.#쓰기({ jsonrpc: '2.0', id: null, error: { code: 오류번호.파싱, message: '읽을 수 없는 JSON 입니다' } });
       return;
     }
+    /*
+     * 묶음(batch) — `[{…}, {…}]` 한 줄.
+     *
+     * 배열도 typeof 로는 'object' 라 바로 아래 갈래를 지나쳤다. 그 뒤로는 method 도
+     * id 도 없는 것으로 읽혀 **답이 한 줄도 안 나갔다** — 저쪽은 영영 기다린다.
+     * ACP 는 묶음을 쓰지 않고 우리도 안 받는다. 안 받는다고 답한다. 안에 든 id 를
+     * 골라 답하지 않는 것은, 받지 않은 요청에 답이 붙으면 저쪽이 된 줄 알기 때문이다.
+     */
+    if (Array.isArray(온것)) {
+      this.#쓰기({ jsonrpc: '2.0', id: null, error: { code: 오류번호.잘못된요청, message: '묶음(batch)은 받지 않습니다 — 한 줄에 요청 하나씩 보내 주세요' } });
+      return;
+    }
     if (!온것 || typeof 온것 !== 'object') {
       this.#쓰기({ jsonrpc: '2.0', id: null, error: { code: 오류번호.잘못된요청, message: '객체가 아닙니다' } });
       return;
@@ -157,7 +202,18 @@ export class 연결 {
     //
     // 'id' in 온것 으로 본다. id 가 0 일 수 있기 때문이다 — ACP 클라이언트는
     // 실제로 0번부터 센다. 여기서 truthy 로 보면 첫 요청의 답을 통째로 잃는다.
-    if ('id' in 온것 && !온것.method) {
+    //
+    // method 도 **칸이 있나**로 본다 (사냥5 H5-10). `!온것.method` 는 빈 글도 거짓으로
+    // 쳐서 `{"id":77,"method":""}` 가 이 답 갈래로 왔다 — 77번에는 아무 답도 안 나가
+    // 저쪽이 영영 기다렸고, 같은 번호의 우리 요청이 있으면 그게 엉뚱하게 풀렸다.
+    // id 와 method 가 같이 있으면 요청이다. 빈 method 는 아래에서 -32600 으로 답한다.
+    //
+    // 그리고 **result·error 칸이 있어야** 답이다 (8회차 ACP-3). method 칸이 아예
+    // 없는 줄은 위 빈 method 검사에 안 걸려 그대로 답 갈래로 갔고, result 가 없으니
+    // 기다리던 우리 요청이 `풀기(undefined)` 로 풀렸다 — 승인 묻기가 이 길로 오므로
+    // 답이 아닌 줄 하나가 승인 결과를 「아무것도 안 고름」 으로 만든다. 그 id 에는
+    // 답도 안 나가 저쪽도 영영 기다렸다. 무엇이 답인가는 규격이 정해 두었다.
+    if ('id' in 온것 && !('method' in 온것) && ('result' in 온것 || 'error' in 온것)) {
       const 기다림 = this.기다리는것.get(온것.id);
       if (!기다림) return;   // 이미 포기한 것. 늦게 온 답은 조용히 버린다
       this.기다리는것.delete(온것.id);
@@ -172,14 +228,38 @@ export class 연결 {
       return;
     }
 
-    if (typeof 온것.method !== 'string') {
+    if (typeof 온것.method !== 'string' || !온것.method) {
+      /*
+       * ── 우리 기다림을 **영영 매달아 두지 않는다** (사냥6 막판-뒷단) ───────
+       *
+       * 위 ACP-3 고침이 「result·error 가 없으면 답이 아니다」 로 막으면서, 그런 줄이
+       * 여기로 굴러떨어지게 됐다. 그런데 여기서는 저쪽에만 -32600 을 답하고 끝난다 —
+       * 그 번호를 기다리던 **우리** 요청은 아무도 안 깨운다. 요청() 에는 시계가 없어서
+       * 턴을 사람이 취소하기 전까지 서 있는다(재 봤다: pending 인 채로 남는다).
+       * 승인 묻기가 이 길로 오므로, 규격을 어긴 줄 하나에 화면이 말없이 멎는다 —
+       * 바로 위 문단이 「저쪽도 영영 기다렸다」 고 적어 둔 것의 우리 쪽 판이다.
+       *
+       * 깨뜨리면 serve.js 의 승인묻기 가 받아 「못 물어봐서 거부했습니다」 를 로그에
+       * 적고 안 한다. 못 물어본 것을 못 물어봤다고 말하는 것이 이 프로그램의 자세다.
+       * 깨뜨리는 것은 **method 칸이 아예 없는** 줄뿐이다. 빈 method 는 H5-10 이 정한
+       * 대로 「요청」 이라, 저쪽이 빈 글자 하나로 우리 승인 물음을 마음대로 끊게 된다 —
+       * 끊긴 물음의 답은 거부라 위험하진 않지만, 남이 끊을 수 있는 자리를 열어 줄 까닭이
+       * 없다. 칸째 없는 줄만 답이 깨진 것으로 본다.
+       */
       if ('id' in 온것) {
+        const 기다림 = 'method' in 온것 ? null : this.기다리는것.get(온것.id);
+        if (기다림) {
+          this.기다리는것.delete(온것.id);
+          try { 기다림.깨기(new Error('저쪽 답에 result·error 가 없습니다 — 규격에 맞는 답이 아닙니다')); } catch { /* 이미 정리된 것 */ }
+        }
         this.#쓰기({ jsonrpc: '2.0', id: 온것.id, error: { code: 오류번호.잘못된요청, message: 'method 가 없습니다' } });
       }
       return;
     }
 
-    const 알림인가 = !('id' in 온것) || 온것.id === null;
+    // 알림은 id **칸이 없는** 요청이다(JSON-RPC 2.0). id 가 null 이어도 요청이라 답한다 —
+    // null 을 알림으로 쳤더니 답이 한 줄도 안 나가 저쪽이 영영 기다렸다 (6회차 규약6ai-b J2).
+    const 알림인가 = !('id' in 온것);
 
     Promise.resolve()
       .then(() => this.다루기(온것.method, 온것.params ?? {}))

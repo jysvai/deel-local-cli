@@ -62,6 +62,20 @@ const 출력이름 = [
   'num_predict', 'n_predict', 'max_output_length',
 ];
 
+/*
+ * 이름 **앞에 뭐가 붙어 와도** 같은 뜻으로 본다 (`qwen3.context_length` · `llm.n_ctx`).
+ *
+ * 잣대를 목록마다 따로 둔다. 전에는 최대 쪽 잣대 하나뿐이라 `llm.n_ctx` 가
+ * 「모델 최대」 로만 걸리고 「올린 길이」 에서는 안 걸렸다 — 숫자 하나가
+ * 「최대 8,192 · 올린 길이 모름」 이 되고, /ctx 자세히 가 그대로 찍었다.
+ * 글자 덩어리 쪽(글에서찾기)은 원래 앞에 붙은 것을 넘기고 읽는다. 두 잣대가
+ * 갈리면 '객체로 오면 못 찾고 글로 오면 찾는' 설명 못 할 상태가 된다.
+ */
+const 꼬리잣대 = new Map([
+  [최대이름, /(^|[._])(context_length|context_window|n_ctx)$/i],
+  [올린이름, /(^|[._])(loaded_context_length|num_ctx|n_ctx)$/i],
+]);
+
 // 사람이 알아볼 수 없는 값은 안 받는다. 512 미만은 오독, 1000만 초과는 단위 착각.
 const 최소 = 512;
 const 최대허용 = 10_000_000;
@@ -114,9 +128,10 @@ export function 파보기(obj, 이름들, { 글도 = true, depth = 0 } = {}) {
     const v = 성한수(obj[key]);
     if (v) return { value: v, key };
   }
+  const 꼬리 = 꼬리잣대.get(이름들);
   for (const [k, v] of Object.entries(obj)) {
-    // 이름이 정확히 안 맞으면 '…context_length' 처럼 끝나는 것도 본다 (Ollama).
-    if (이름들 === 최대이름 && /(^|[._])(context_length|context_window|n_ctx)$/i.test(k)) {
+    // 이름이 정확히 안 맞으면 '…context_length' 처럼 끝나는 것도 본다 (Ollama · 꼬리잣대 머리말).
+    if (꼬리 && 꼬리.test(k)) {
       const n = 성한수(v);
       if (n) return { value: n, key: k };
     }
@@ -229,7 +244,9 @@ export async function probeCtx(conn, { timeout = 6000 } = {}) {
   const 답들 = await Promise.all(자리.map(([label, url, opts]) => 본다(label, url, opts)));
 
   let max = null; let loaded = null; let out = null;
-  let source = null; let outSource = null; let maxKey = null; let loadedKey = null;
+  let outSource = null; let maxKey = null; let loadedKey = null;
+  // 값마다 어느 창구에서 왔는지 따로 든다 — 아래에서 **채택한 값**의 창구만 내보낸다.
+  let 최대창구 = null; let 올린창구 = null;
 
   for (const [i, [label]] of 자리.entries()) {
     const json = 답들[i].json;
@@ -241,15 +258,24 @@ export async function probeCtx(conn, { timeout = 6000 } = {}) {
     const m = 파보기(대상, 최대이름);
     const l = 파보기(대상, 올린이름);
     const o = 파보기(대상, 출력이름);
-    if (m && !max) { max = m.value; maxKey = m.key; source = label; }
-    if (l && !loaded) { loaded = l.value; loadedKey = l.key; }
+    if (m && !max) { max = m.value; maxKey = m.key; 최대창구 = label; }
+    if (l && !loaded) { loaded = l.value; loadedKey = l.key; 올린창구 = label; }
     // llama.cpp 의 n_ctx 는 '지금 올린 길이' 다. 그 서버에서는 최대도 그 값으로 본다.
-    if (올린것도 && m && !loaded) { loaded = m.value; loadedKey = m.key; }
+    if (올린것도 && m && !loaded) { loaded = m.value; loadedKey = m.key; 올린창구 = label; }
     if (o && !out) { out = o.value; outSource = label; }
   }
 
   // 실제로 쓸 값: 올려 둔 길이가 있으면 그것. 없으면 모델 최대.
   const value = loaded ?? max ?? null;
+  /*
+   * source 는 **채택한 값**이 어디서 왔는지다.
+   *
+   * 여태는 최대를 준 창구 이름을 적었다. 모델 상세가 655,360(최대)을, LM Studio 가
+   * 8,192(올린 길이)를 주면 쓰는 값은 8,192 인데 화면은 「모델 상세에서 읽음」 이라
+   * 적었다 (repl.js · commands/model.js 가 이 칸을 그대로 찍는다). 값이 이상할 때
+   * 사람이 뒤지러 가는 자리가 바로 이 이름이라, 틀리면 엉뚱한 창구를 판다.
+   */
+  const source = loaded ? 올린창구 : (max ? 최대창구 : null);
   /*
    * 못 알아낸 까닭. **서버 탓으로 뭉개지 않는다.**
    *
@@ -260,10 +286,20 @@ export async function probeCtx(conn, { timeout = 6000 } = {}) {
    * 이상한 줄 알고 서버를 뒤진다.
    */
   const 문지기가막음 = tried.length > 0 && tried.every((t) => t.막힘);
+  /*
+   * 404 로 **답한** 것과 아무 말도 없는 것도 다르다.
+   *
+   * 여섯 자리가 전부 404 를 돌려줬는데 이 자리는 「아무 응답도 못 받았습니다」 였다.
+   * 서버는 또박또박 「그런 문은 없다」 고 말했는데, 사람은 서버가 죽었거나
+   * 방화벽이 삼킨 줄 알고 서버를 뒤지러 간다. 받은 코드를 그대로 적으면
+   * 「길이를 알려 주는 문이 없는 서버」 라는 것이 한눈에 보인다.
+   */
+  const 답한코드 = [...new Set(tried.filter((t) => t.status > 0).map((t) => t.status))];
   const why = value ? null
     : 문지기가막음 ? '이 주소로 나갈 허락이 아직 없어서 물어보지도 못했습니다'
       : tried.some((t) => t.ok) ? '서버가 응답은 했지만 길이를 안 알려 줍니다'
-        : '두드린 자리에서 아무 응답도 못 받았습니다';
+        : 답한코드.length ? `서버는 답했지만 길이를 알려 주는 문이 없습니다 (HTTP ${답한코드.join('·')})`
+          : '두드린 자리에서 아무 응답도 못 받았습니다';
 
   return { value, max, loaded, out, source, outSource, maxKey, loadedKey, tried, why };
 }
@@ -281,7 +317,7 @@ export function parseSize(text) {
   return 성한수(Number(m[1]) * mult);
 }
 
-/** 33k · 655k · 1.0M — 화면에 넣을 짧은 표기 */
+/** 32k · 640k · 1.0M — 화면에 넣을 짧은 표기 */
 export function fmtSize(n) {
   const v = Number(n) || 0;
   if (v < 1000) return String(v);
@@ -289,5 +325,16 @@ export function fmtSize(n) {
   return (v / (1024 * 1024)).toFixed(1) + 'M';
 }
 
-/** 서버가 끝내 안 알려 줄 때 쓰는 값. 옛날 32768 보다는 요즘 기본에 가깝다. */
+/*
+ * 서버가 끝내 안 알려 줄 때 쓰는 값.
+ *
+ * **더 안 올린다.** 요즘 로컬 창구가 실제로 **올려 두는** 길이는 이보다 작다 —
+ * Ollama 의 num_ctx, llama.cpp 서버의 --ctx-size, LM Studio 가 처음 올릴 때 잡는
+ * 값이 다 4,096 언저리다. 모델이 655,360 까지 된다는 것과 서버가 그만큼 올려
+ * 뒀다는 것은 다른 말이다(맨 위 머리말).
+ *
+ * 여기는 **아무것도 못 알아냈을 때** 쓰는 값이라 큰 쪽으로 틀리면 매 요청이
+ * 거절당하고, 작은 쪽으로 틀리면 덜 쓸 뿐이다. 그리고 덜 쓰는 쪽은 3겹
+ * (backend/learn.js)이 서버의 거절문에서 곧 배워 올린다 — 반대쪽은 못 배운다.
+ */
 export const 기본값 = 32768;

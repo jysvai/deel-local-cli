@@ -207,6 +207,16 @@ const srv = createServer((req, res) => {
       if (/일부러_스키마계속틀림/.test(시킨말들)) {
         return 답({ role: 'assistant', content: '{"나이":-5}' });
       }
+      /*
+       * 첫 답은 모양이 틀리고, **되물음은 HTTP 오류로 죽는다.**
+       *
+       * 이 갈래가 없으면 되물음이 터지는 자리를 아무도 안 잰다 — 터진 까닭이
+       * 「모양이 안 맞는다」 로 덮여 사라져도 검사는 초록이다.
+       */
+      if (/일부러_되물음터짐/.test(시킨말들)) {
+        if (다시시킴) return 보냄({ error: { message: '스텁이 되물음에서 낸 500 입니다' } }, 500);
+        return 답({ role: 'assistant', content: '{"나이":-5}' });
+      }
       // JSON 이 아예 아니다.
       if (/일부러_스키마JSON아님/.test(시킨말들)) {
         return 답({ role: 'assistant', content: '죄송합니다, 그 정보는 문서에 없습니다.' });
@@ -582,6 +592,32 @@ trace('5-물어볼사람이없을때');
   rmSync(join(work, '한번만쓴것.txt'), { force: true });
 }
 
+{
+  /*
+   * ── 거부 안내는 **기본 모드에서도** 붙어야 한다 (8회차 그밖 한번쓰기2) ──
+   *
+   * 안내를 붙일지를 `session.mode !== 'auto'` 로 골랐는데 `deel run` 의 기본
+   * 모드가 바로 auto 다. 그래서 이 안내가 붙는 판이 하나도 없었다 — confirm 은
+   * 모드를 안 보고 `--yes` 가 아니면 무조건 거부하는데, 모델은 왜 거부됐는지
+   * 모른 채 같은 호출을 되풀이하고 걸음 수만 태운다.
+   */
+  대본초기화();
+  const r = await 띄우기(['run', '아무 말이나']);
+  const 보낸사람말 = JSON.stringify((받은요청.find((x) => x.url === '/v1/chat/completions')?.json?.messages ?? [])
+    .filter((m) => m.role === 'user').map((m) => m.content));
+  check('★★ 기본 모드에서도 거부 안내를 모델에게 미리 알린다', /비대화 모드다/.test(보낸사람말),
+    보낸사람말.slice(0, 160));
+  check('★ 안내를 붙여도 평범하게 끝난다', r.code === 0, `code=${r.code}`);
+
+  대본초기화();
+  const y = await 띄우기(['run', '--yes', '아무 말이나']);
+  const 보낸사람말2 = JSON.stringify((받은요청.find((x) => x.url === '/v1/chat/completions')?.json?.messages ?? [])
+    .filter((m) => m.role === 'user').map((m) => m.content));
+  check('★ --yes 면 거부 안내를 안 붙인다 — 거부하지 않으니까', !/비대화 모드다/.test(보낸사람말2),
+    보낸사람말2.slice(0, 160));
+  check('--yes 로도 평범하게 끝난다', y.code === 0, `code=${y.code}`);
+}
+
 trace('6-표준출력이깨끗한가');
 
 {
@@ -763,6 +799,54 @@ trace('8.8-슬래시-명령을-배치에서도');
 }
 
 {
+  /*
+   * ── 홑슬래시 `/` 하나는 **모델에게 날것으로 가면 안 된다** (8회차 그밖 한번쓰기1) ──
+   *
+   * `부른이름` 이 빈 문자열이면 갈래를 통째로 건너뛰어, 위 머리말이 막겠다고
+   * 적어 둔 바로 그 결말(슬래시 낱말이 그냥 글자로 모델에게 가고 0 으로 끝남)이
+   * 그대로 났다. 스크립트가 `/$CMD` 를 만들다 CMD 가 비면 이 자리로 온다.
+   */
+  대본초기화();
+  const r = await 띄우기(['run', '/']);
+  check('★★ 홑슬래시는 모델을 아예 안 부른다',
+    !받은요청.some((x) => x.url === '/v1/chat/completions'), `요청 ${받은요청.length}건`);
+  check('★★ 홑슬래시는 0 으로 안 끝난다', r.code !== 0, `code=${r.code}`);
+  check('무엇이 문제인지 곁에 적는다', /명령/.test(r.err), r.err.replace(/\s+/g, ' ').slice(-120));
+
+  대본초기화();
+  const r2 = await 띄우기(['run', '/   ']);
+  check('★ 뒤에 빈 칸만 붙어도 마찬가지다',
+    r2.code !== 0 && !받은요청.some((x) => x.url === '/v1/chat/completions'),
+    `code=${r2.code} · 요청 ${받은요청.length}건`);
+}
+
+{
+  /*
+   * ── 꼬리 이름에 대문자가 들어도 찾아진다 (commands.js:1757 과 쌍둥이) ──
+   *
+   * 찾는 마지막 칸이 `x.name.split(':').pop() === 낮춘` 이라, 왼쪽은 파일에
+   * 적힌 그대로고 오른쪽은 낮춘 말이었다. `ext:ReviewCode` 는 어느 쪽으로 쳐도
+   * 「모르는 명령」 이고 배치는 1 로 선다 — 있는 명령이 없는 것이 된다.
+   */
+  const 플러그인 = join(home, 'plugins', 'ext');
+  mkdirSync(join(플러그인, 'commands'), { recursive: true });
+  mkdirSync(join(플러그인, '.claude-plugin'), { recursive: true });
+  writeFileSync(join(플러그인, '.claude-plugin', 'plugin.json'),
+    JSON.stringify({ name: 'ext', version: '1.0.0' }), 'utf8');
+  writeFileSync(join(플러그인, 'commands', 'ReviewCode.md'), '코드를 검토해라.\n', 'utf8');
+
+  for (const 친것 of ['/ReviewCode', '/reviewcode', '/ext:ReviewCode']) {
+    대본초기화();
+    const r = await 띄우기(['run', 친것]);
+    const 보낸글 = JSON.stringify(받은요청.map((x) => x.json ?? null));
+    check(`★★ 꼬리에 대문자가 든 명령을 ${친것} 로 편다`,
+      r.code === 0 && 보낸글.includes('코드를 검토해라'), `code=${r.code} · ${r.err.replace(/\s+/g, ' ').slice(-120)}`);
+  }
+
+  rmSync(join(home, 'plugins'), { recursive: true, force: true });
+}
+
+{
   // 슬래시로 시작한다고 다 명령은 아니다. 경로는 시킨 말 그대로 둔다.
   대본초기화();
   const r = await 띄우기(['run', '/mnt/d/일감 을 봐줘']);
@@ -852,6 +936,25 @@ trace('9-답의모양');
 
   대본초기화();
   {
+    /*
+     * ── 되물음이 **HTTP 오류로 죽으면** 그 까닭이 남아야 한다 (8회차 그밖 한번쓰기3) ──
+     *
+     * 되물음이 500 으로 죽어도 `다시글` 이 빈 채로 아래 재보기에 들어가, 끝맺음이
+     * 「답이 스키마에 안 맞습니다 — 답이 비었습니다」 로 덮이고 7 로 끝났다. 진짜
+     * 까닭(서버가 500 을 냈다)이 화면에서 통째로 사라진다 — 스키마를 아무리 손봐도
+     * 안 고쳐지는 자리라, 사람은 엉뚱한 데를 몇 시간 판다.
+     */
+    const r = await 띄우기(['run', '--output-schema', 스키마자리, '일부러_되물음터짐']);
+    check('★★ 되물음이 터진 까닭을 화면에 남긴다', /500|스텁이 되물음에서 낸/.test(r.err),
+      r.err.replace(/\s+/g, ' ').slice(0, 220));
+    check('★★ 터진 것을 「모양이 안 맞는다」 로 덮지 않는다',
+      !/답이 비었습니다/.test(r.err), r.err.replace(/\s+/g, ' ').slice(0, 220));
+    check('★ 0 으로는 끝내지 않는다', r.code !== 0, `code=${r.code}`);
+    check('안 맞는 답을 표준출력으로 안 흘린다', r.out.trim() === '', JSON.stringify(r.out.slice(0, 80)));
+  }
+
+  대본초기화();
+  {
     // 아예 JSON 이 아닌 답. 「문서에 없습니다」 도 사람에겐 쓸모 있는 답이지만,
     // 모양을 못 박은 자리에서는 그것도 계약 위반이다.
     const r = await 띄우기(['run', '--output-schema', 스키마자리, '일부러_스키마JSON아님']);
@@ -905,6 +1008,307 @@ trace('9-답의모양');
   }
 }
 
+trace('9.1-사냥5');
+
+/*
+ * ── 사냥5 — 답의 모양 · 실패의 모양 · 되물음 중 끊기 · 창보다 큰 시킬 말 ────
+ *
+ * 스키마 알맹이(outschema.js)는 여기서 곧장 부른다. 검사판 목록(run.mjs)에 새 파일을
+ * 올리지 않고, --output-schema 를 끝-끝으로 재는 이 파일 곁에 둔다.
+ */
+{
+  const { 스키마읽기: 읽기, 맞나: 재기, 답에서JSON뽑기: 뽑기 } = await import('../src/agent/outschema.js');
+  const 챗수 = () => 받은요청.filter((x) => x.url === '/v1/chat/completions').length;
+  const 한덩이 = (out) => {
+    const 줄 = String(out).trim().split('\n').filter(Boolean);
+    try { return 줄.length === 1 ? JSON.parse(줄[0]) : null; } catch { return null; }
+  };
+
+  // B5-05 — 메모장은 UTF-8 에 BOM 을 붙여 저장한다.
+  {
+    const BOM = String.fromCharCode(0xfeff);
+    const 자리 = join(work, '봄.schema.json');
+    writeFileSync(자리, BOM + JSON.stringify({ type: 'object', required: ['이름'] }), 'utf8');
+    const 읽힘 = 읽기(자리);
+    check('★★ BOM 이 붙은 스키마 파일도 읽는다 (사냥5 B5-05)', 읽힘.ok === true && 읽힘.스키마?.required?.[0] === '이름',
+      JSON.stringify(읽힘).slice(0, 120));
+    대본초기화();
+    const r = await 띄우기(['run', '--output-schema', 자리, '일부러_스키마깨끗']);
+    check('  BOM 붙은 스키마로 끝까지 돈다', r.code === 0, `code=${r.code} · ${r.err.replace(/\s+/g, ' ').slice(0, 120)}`);
+  }
+
+  // B5-06 · L5-4 — 앞에 헛괄호가 있거나 울타리가 둘인 답.
+  {
+    for (const 글 of ['See [docs] below. {"a":"x"}', '- [x] done\n{"a":"x"}', 'Use {placeholder} syntax. {"a":"x"}', 'Result [final]:\n{"a":"x"}']) {
+      const r = 뽑기(글);
+      check(`★★ 앞에 JSON 아닌 괄호가 있어도 뒤의 JSON 을 찾는다 — ${JSON.stringify(글.slice(0, 18))} (사냥5 B5-06)`,
+        r.ok === true && r.값?.a === 'x', JSON.stringify(r));
+    }
+    const 두 = 뽑기('Example:\n```json\n{"a":"example"}\n```\nAnswer:\n```json\n{"a":"real"}\n```');
+    check('★★ 울타리가 둘이면 앞의 예시가 아니라 마지막 답을 고른다 (사냥5 L5-4)', 두.ok === true && 두.값?.a === 'real', JSON.stringify(두));
+    const 스키마로 = 뽑기('```json\n{"a":1}\n```\n목록으로는:\n```json\n[1]\n```', { 스키마: { type: 'object', required: ['a'] } });
+    check('★ 스키마가 있으면 스키마에 맞는 쪽을 고른다', 스키마로.ok === true && 스키마로.값?.a === 1, JSON.stringify(스키마로));
+    const 겹 = 뽑기('답: {"a":{"b":[1,2]},"c":"}"} 끝');
+    check('  겹친 JSON 은 안쪽이 아니라 통째로 뽑는다', 겹.ok === true && 겹.값?.a?.b?.[1] === 2 && 겹.값?.c === '}', JSON.stringify(겹));
+    check('  JSON 이 없으면 여전히 못 찾았다고 한다', 뽑기('괄호 [하나] {둘} 뿐').ok === false, JSON.stringify(뽑기('괄호 [하나] {둘} 뿐')));
+  }
+
+  // L5-3 — 제자리를 도는 참조.
+  {
+    const 도는것들 = [
+      ['#', { $ref: '#' }],
+      ['a→b→a', { $defs: { a: { $ref: '#/$defs/b' }, b: { $ref: '#/$defs/a' } }, $ref: '#/$defs/a' }],
+      ['allOf 안에서 #', { allOf: [{ $ref: '#' }] }],
+    ];
+    도는것들.forEach(([이름, s], i) => {
+      let 잰것;
+      try { 잰것 = 재기(1, s); } catch (e) { 잰것 = { 던짐: `${e?.name}: ${e?.message}` }; }
+      check(`★★ 제자리를 도는 참조에 안 터진다 — ${이름} (사냥5 L5-3)`, 잰것?.ok === false && Array.isArray(잰것.탈),
+        JSON.stringify(잰것).slice(0, 120));
+      const 자리 = join(work, `도는것-${i}.schema.json`);
+      writeFileSync(자리, JSON.stringify(s), 'utf8');
+      const 읽힘 = 읽기(자리);
+      check(`★ 읽는 자리에서 막는다 — ${이름}`, 읽힘.ok === false && /제자리/.test(읽힘.왜 ?? ''), JSON.stringify(읽힘).slice(0, 120));
+    });
+    const 나무 = { type: 'object', properties: { 아이: { type: 'array', items: { $ref: '#' } } } };
+    check('★ 값을 파고드는 재귀 스키마는 그대로 잰다',
+      재기({ 아이: [{ 아이: [] }] }, 나무).ok === true && 재기({ 아이: [{ 아이: 3 }] }, 나무).ok === false,
+      JSON.stringify(재기({ 아이: [{ 아이: 3 }] }, 나무)));
+    const 나무자리 = join(work, '나무.schema.json');
+    writeFileSync(나무자리, JSON.stringify(나무), 'utf8');
+    check('  재귀 스키마 파일은 읽을 때 안 막는다', 읽기(나무자리).ok === true, JSON.stringify(읽기(나무자리)).slice(0, 120));
+
+    const 도는자리 = join(work, '도는것-0.schema.json');
+    대본초기화();
+    const r = await 띄우기(['run', '--json', '--output-schema', 도는자리, '일부러_스키마깨끗']);
+    const o = 한덩이(r.out);
+    check('★★ 제자리를 도는 스키마면 7 로 서고 표준출력은 JSON 한 덩이다',
+      r.code === 7 && o?.reason === 'schema' && 챗수() === 0 && !/Maximum call stack/.test(r.out + r.err),
+      `code=${r.code} out=${JSON.stringify(r.out.slice(0, 100))}`);
+    대본초기화();
+    const r2 = await 띄우기(['run', '--output-schema', 도는자리, '일부러_스키마깨끗']);
+    check('  --json 이 아니어도 표준출력에 맨 오류를 안 찍는다', r2.code === 7 && r2.out.trim() === '',
+      `code=${r2.code} out=${JSON.stringify(r2.out.slice(0, 100))}`);
+  }
+
+  // B5-10 — 모델을 부르기 전에 선 실패도 성공과 같은 모양.
+  {
+    대본초기화();
+    const 된것 = 한덩이((await 띄우기(['run', '--json', '안녕'])).out);
+    const 열쇠들 = (o) => [
+      ...Object.keys(o ?? {}).filter((k) => k !== 'why' && k !== 'schema'),
+      ...Object.keys(o?.usage ?? {}).map((k) => `usage.${k}`),
+    ].sort().join(',');
+    const 기준 = 열쇠들(된것);
+    const 빈집 = mkdtempSync(join(tmpdir(), 'deel-one-nocfg-'));
+    const 판들 = [
+      ['64 · 모르는 깃발', ['run', '--json', '--jsn', '안녕'], {}],
+      ['7 · 스키마 못 읽음', ['run', '--json', '--output-schema', join(work, '없는스키마.json'), '안녕'], {}],
+      ['시킬 말 없음', ['run', '--json'], {}],
+      ['없는 --root', ['run', '--json', '--root', join(work, '없는폴더-모양'), '안녕'], {}],
+      ['대화 화면 전용 명령', ['run', '--json', '/help'], {}],
+      ['연결 없음', ['run', '--json', '안녕'], { env: { DEEL_HOME: 빈집 } }],
+    ];
+    for (const [이름, 인자, 옵션] of 판들) {
+      const r = await 띄우기(인자, 옵션);
+      const o = 한덩이(r.out);
+      check(`★★ 실패해도 --json 모양이 성공과 같다 — ${이름} (사냥5 B5-10)`,
+        !!된것 && o?.ok === false && 열쇠들(o) === 기준,
+        o ? `${열쇠들(o)} ≠ ${기준}` : JSON.stringify(r.out.slice(0, 100)));
+    }
+    rmSync(빈집, { recursive: true, force: true });
+  }
+
+  // B5-02 — 「모양을 고쳐 다시 내라」 되물음 도중의 Ctrl+C.
+  {
+    /*
+     * 윈도우에는 진짜 SIGINT 를 보낼 수 없어서, 아이 안에서 process.emit('SIGINT') 로
+     * 같은 손들을 부른다. 재는 것은 「그 순간 누가 SIGINT 를 쥐고 있나」 다 — 한 방
+     * 실행이 손을 먼저 떼면 언어 서버 쪽 손이 신호를 되쏘아 프로그램째 죽는다.
+     */
+    const 자식 = join(work, '스키마끊기-자식.mjs');
+    const 한방 = new URL('../src/oneshot.js', import.meta.url).href;
+    writeFileSync(자식, [
+      "import { createServer } from 'node:http';",
+      "import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';",
+      "import { tmpdir } from 'node:os';",
+      "import { join } from 'node:path';",
+      'let n = 0;',
+      'const srv = createServer((req, res) => {',
+      '  req.resume();',
+      "  req.on('end', () => {",
+      "    if (req.url.split('?')[0] !== '/v1/chat/completions') { res.writeHead(404); return res.end('{}'); }",
+      '    n += 1;',
+      "    const content = n === 1 ? 'not json at all' : JSON.stringify({ a: 'x' });",
+      "    const 답 = () => { try { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content } }], usage: { prompt_tokens: 5, completion_tokens: 2 } })); } catch {} };",
+      "    if (n === 2) { process.emit('SIGINT'); setTimeout(답, 1500); } else 답();",
+      '  });',
+      '});',
+      "await new Promise((r) => srv.listen(0, '127.0.0.1', r));",
+      "const home = mkdtempSync(join(tmpdir(), 'deel-one-sig-'));",
+      "writeFileSync(join(home, 'config.json'), JSON.stringify({ version: 1, active: 's', profiles: [{ id: 's', name: 's', kind: 'openai', baseUrl: 'http://127.0.0.1:' + srv.address().port + '/v1', auth: 'none', model: 'm', ctx: 32768, streaming: false, tools: false }] }));",
+      "writeFileSync(join(home, 's.json'), JSON.stringify({ type: 'object', required: ['a'] }));",
+      'process.env.DEEL_HOME = home;',
+      `const { runOnce } = await import(${JSON.stringify(한방)});`,
+      "const code = await runOnce({ prompt: 'give json', outputSchema: join(home, 's.json'), json: true, quiet: true, ctx: 32768 });",
+      'srv.close();',
+      'setTimeout(() => { try { rmSync(home, { recursive: true, force: true }); } catch {} process.exit(code); }, 50);',
+    ].join('\n'), 'utf8');
+    const r = await new Promise((done) => {
+      const kid = spawn(process.execPath, [자식], { cwd: work, env: { ...process.env, NO_COLOR: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = ''; let err = '';
+      kid.stdout.on('data', (b) => { out += b; });
+      kid.stderr.on('data', (b) => { err += b; });
+      const 시계 = setTimeout(() => kid.kill('SIGKILL'), 30000);
+      kid.on('close', (code) => { clearTimeout(시계); done({ code, out, err }); });
+    });
+    const o = 한덩이(r.out);
+    check('★★ 모양 고치기 되물음 도중에 끊겨도 4 와 JSON 한 덩이로 끝난다 (사냥5 B5-02)',
+      r.code === 4 && o?.reason === 'aborted',
+      `code=${r.code} out=${JSON.stringify(r.out.slice(0, 120))} err=${JSON.stringify(r.err.slice(-160))}`);
+    rmSync(자식, { force: true });
+  }
+
+  // B5-01 — 창보다 큰 시킬 말.
+  {
+    대본초기화();
+    const 큰말 = 'TASK-START 줄을 세어라\n' + 'lorem ipsum dolor sit amet\n'.repeat(6000) + 'TASK-END';
+    const r = await 띄우기(['run', '--json', '--ctx', '32768'], { 입력: 큰말, 제한: 60000 });
+    const o = 한덩이(r.out);
+    check('★★★ 창에 안 들어가는 시킬 말은 ok:true 로 안 끝낸다 (사냥5 B5-01)', r.code !== 0 && o?.ok === false,
+      `code=${r.code} reason=${o?.reason}`);
+    check('★★ 앞 1,200자만 잘라 모델에 보내지 않는다 — 부르기 전에 선다', 챗수() === 0, `부름 ${챗수()}번`);
+    // 루프도 부르기 전에 잘림을 알아채고 서지만, 그쪽 말은 「대화를 비우고 이어갑니다 … 앞 1,200자만 봤습니다」 다 —
+    // 부르지도 않았는데 본 것처럼 말한다. 부르기 전에 선 자리의 말(창보다 큽니다 · 토큰 수)이어야 한다 (6회차 어긋내기).
+    check('  무엇이 모자랐는지 표준오류에 적는다 — 비우는 척 없이 창보다 크다고',
+      /컨텍스트 창보다 큽니다/.test(r.err) && !/비우고 이어갑니다|앞 1,200자만 봤습니다/.test(r.err), r.err.replace(/\s+/g, ' ').slice(0, 160));
+
+    대본초기화();
+    const 빠듯 = 'TASK-START 줄을 세어라\n' + 'lorem ipsum dolor sit amet\n'.repeat(4100) + 'TASK-END';
+    const r2 = await 띄우기(['run', '--json', '--ctx', '32768'], { 입력: 빠듯, 제한: 60000 });
+    const o2 = 한덩이(r2.out);
+    check('★★ 창 문턱에서 비우느라 시킬 말 뒤가 잘렸으면 ok:true 로 안 끝낸다', r2.code !== 0 && o2?.ok === false,
+      `code=${r2.code} reason=${o2?.reason} 부름=${챗수()} · ${r2.err.replace(/\s+/g, ' ').slice(0, 120)}`);
+  }
+
+  // L5-6 — 프로필에 maxTokens: 0 이면 모든 요청이 바닥값 512 로 묶였다.
+  {
+    const 영집 = mkdtempSync(join(tmpdir(), 'deel-one-max0-'));
+    writeFileSync(join(영집, 'config.json'), JSON.stringify({
+      version: 1, active: 'stub',
+      profiles: [{ id: 'stub', name: '스텁', kind: 'openai', baseUrl: base, auth: 'none', model: '스텁모델', ctx: 32768, maxTokens: 0, tools: true }],
+    }), 'utf8');
+    대본초기화();
+    const r = await 띄우기(['run', '--ctx', '32768', '안녕'], { env: { DEEL_HOME: 영집 } });
+    const 첫 = 받은요청.find((x) => x.url === '/v1/chat/completions')?.json ?? {};
+    const 상한 = 첫.max_tokens ?? 첫.max_completion_tokens ?? null;
+    check('★★ 프로필 maxTokens: 0 은 안 적은 것으로 친다 — 답 상한이 512 로 안 묶인다 (사냥5 L5-6)',
+      r.code === 0 && (상한 === null || 상한 > 512), `code=${r.code} 상한=${상한}`);
+    rmSync(영집, { recursive: true, force: true });
+  }
+
+  /*
+   * 2.0.0 6회차 · Gemini 모양6 — 값 칸(default·const·examples·enum)은 **스키마가 아니라 데이터**다.
+   * 그 속의 `$ref` 를 바깥 스키마로 보고 읽기를 거절했고, 그 속의 이름(host·port)을 「안 재는 열쇠」
+   * 로 셌다. `$ref` 에 날 `%` 가 있으면 decodeURIComponent 가 던져 --output-schema 가 통째로 죽었다.
+   */
+  {
+    const { 모르는열쇠: 모른것들 } = await import('../src/agent/outschema.js');
+    const 값칸스키마 = join(work, '값칸.schema.json');
+    writeFileSync(값칸스키마, JSON.stringify({
+      type: 'object',
+      properties: { 주소: { type: 'object', default: { $ref: 'http://example.com/x', host: 'localhost' }, examples: [{ port: 1 }] } },
+    }), 'utf8');
+    const 읽힘 = 읽기(값칸스키마);
+    check('★ default 값 속 $ref 를 바깥 스키마로 보고 거절하지 않는다 (6회차 모양6)', 읽힘.ok === true, JSON.stringify(읽힘).slice(0, 120));
+    const 이름default = join(work, '이름default.schema.json');
+    writeFileSync(이름default, JSON.stringify({ type: 'object', properties: { default: { $ref: 'http://example.com/x' } } }), 'utf8');
+    const 이름읽힘 = 읽기(이름default);
+    check('  그래도 칸 이름이 default 인 스키마 속 바깥 $ref 는 거절한다', 이름읽힘.ok === false && /바깥/.test(이름읽힘.왜), JSON.stringify(이름읽힘).slice(0, 120));
+    const 모른 = 모른것들({ type: 'object', properties: { a: { type: 'object', default: { host: 'localhost' }, examples: [{ port: 1 }] } } });
+    check('★ default·examples 속 데이터 이름을 안 재는 열쇠로 안 센다 (6회차 모양6)', 모른.length === 0, JSON.stringify(모른));
+    const 퍼센트 = { $defs: { 'rate%': { type: 'string' } }, type: 'object', properties: { a: { $ref: '#/$defs/rate%' } } };
+    let 던짐 = null;
+    let 잰것 = null;
+    try { 잰것 = 재기({ a: 1 }, 퍼센트); } catch (e) { 던짐 = e; }
+    check('★ $ref 에 날 % 가 있어도 안 던지고 그 자리를 따라가 잰다 (6회차 모양6)',
+      던짐 === null && 잰것?.ok === false, 던짐 ? 던짐.message : JSON.stringify(잰것));
+    const 퍼센트자리 = join(work, '퍼센트.schema.json');
+    writeFileSync(퍼센트자리, JSON.stringify(퍼센트), 'utf8');
+    let 읽기던짐 = null;
+    try { 읽기(퍼센트자리); } catch (e) { 읽기던짐 = e; }
+    check('★ 날 % 든 $ref 스키마 파일을 읽어도 안 던진다 (6회차 모양6)', 읽기던짐 === null, 읽기던짐?.message ?? '');
+
+    // 6회차 모양6 뒤 절반 — 규격대로 맞는 값을 거절하던 넷(키 순서 · patternProperties · \p{…} · prefixItems).
+    const 키순서 = 재기({ b: 2, a: 1 }, { const: { a: 1, b: 2 } });
+    check('★ const 객체는 키 순서가 달라도 같으면 맞다 (6회차 모양6뒤)', 키순서.ok === true, JSON.stringify(키순서));
+    check('  enum 도 키 순서를 안 본다', 재기({ b: 2, a: 1 }, { enum: [{ a: 1, b: 2 }] }).ok === true);
+    check('  값이 다르면 여전히 틀리다', 재기({ a: 1, b: 3 }, { const: { a: 1, b: 2 } }).ok === false && 재기({ a: 1 }, { const: { a: 1, b: 2 } }).ok === false);
+    const 무늬칸 = { type: 'object', patternProperties: { '^x_': { type: 'integer' } }, additionalProperties: false };
+    const 무늬맞음 = 재기({ x_1: 1 }, 무늬칸);
+    check('★ patternProperties 에 맞는 칸은 additionalProperties:false 에 안 걸린다 (6회차 모양6뒤)', 무늬맞음.ok === true, JSON.stringify(무늬맞음));
+    check('  무늬에 맞는 칸의 값도 잰다', 재기({ x_1: 'a' }, 무늬칸).ok === false);
+    check('  무늬에도 안 맞는 칸은 여전히 거절한다', 재기({ y: 1 }, 무늬칸).ok === false);
+    check('  무늬 이름을 안 재는 열쇠로 안 센다', JSON.stringify(모른것들(무늬칸)) === '[]', JSON.stringify(모른것들(무늬칸)));
+    const 글자무늬 = { type: 'string', pattern: '^\\p{L}+$' };
+    check('★ pattern 의 \\p{L} 을 유니코드 무늬로 잰다 (6회차 모양6뒤)', 재기('가나', 글자무늬).ok === true && 재기('1', 글자무늬).ok === false, JSON.stringify(재기('가나', 글자무늬)));
+    const 앞칸 = { type: 'array', prefixItems: [{ type: 'string' }], items: { type: 'number' } };
+    check('★ prefixItems 는 앞자리를, items 는 그 뒤를 잰다 (6회차 모양6뒤)',
+      재기(['a', 1], 앞칸).ok === true && 재기([1, 1], 앞칸).ok === false && 재기(['a', 'b'], 앞칸).ok === false, JSON.stringify(재기(['a', 1], 앞칸)));
+    check('  prefixItems 를 안 재는 열쇠로 안 센다', JSON.stringify(모른것들(앞칸)) === '[]', JSON.stringify(모른것들(앞칸)));
+
+    // 6회차 모양6좁 — 울타리 속 예시가 스키마 갈래와도 다르면 맨글의 같은 갈래 답을 골라야 되묻는 탈이 진짜 답 이야기가 된다.
+    const { 답에서JSON뽑기: 뽑기6뒤 } = await import('../src/agent/outschema.js');
+    const 두꼴스키마 = { 스키마: { type: 'object', required: ['a', 'b'] } };
+    const 예시와답 = 뽑기6뒤('예시:\n```json\n[1, 2]\n```\n답: {"a": 1}', 두꼴스키마);
+    check('★ 울타리 속 예시가 갈래도 다르면 맨글의 같은 갈래 답을 고른다 (6회차 모양6좁)', JSON.stringify(예시와답.값) === '{"a":1}', JSON.stringify(예시와답));
+    const 울타리먼저 = 뽑기6뒤('```json\n{"a": 1}\n```\n그리고 {"b": 2}', 두꼴스키마);
+    check('  울타리 속 같은 갈래가 있으면 여전히 울타리 것을 고른다', JSON.stringify(울타리먼저.값) === '{"a":1}', JSON.stringify(울타리먼저));
+    // 앞 산문의 `item[0]` … 하나하나가 멀쩡한 JSON 배열이라 시작 자리 256번 상한을 다 써 버리고 끝의 답에 못 닿았다.
+    const 괄호많은산문 = `${Array.from({ length: 300 }, (_, k) => `item[${k}]`).join(' ')} 최종 답: {"a": 1}`;
+    const 끝답 = 뽑기6뒤(괄호많은산문, { 스키마: { type: 'object' } });
+    check('★ 앞 산문에 괄호가 수백 개여도 끝의 답까지 훑는다 (6회차 모양6좁)', JSON.stringify(끝답.값) === '{"a":1}', JSON.stringify(끝답));
+    // 묶음을 시작 자리 수에서 훑은 글자 수로 바꿨으니, 묶음이 여전히 있는지도 본다. 짝 없는 `{` 20만 개는
+    // 묶음이 없으면 자리마다 글 끝까지 훑어 수십 초가 걸리고, 있으면 순식간에 멈춘다.
+    const 짝없는시작 = Date.now();
+    뽑기6뒤(`${'{'.repeat(200000)} 끝`, { 스키마: { type: 'object' } });
+    const 짝없는시간 = Date.now() - 짝없는시작;
+    check('  짝 없는 괄호 20만 개도 훑기 묶음에서 멈춘다', 짝없는시간 < 5000, `${짝없는시간}ms`);
+
+    /*
+     * 2.0.0 8회차 스키마 — JSON 포인터의 **빈 조각**과 참/거짓 스키마를 가리키는 `$ref`.
+     *
+     * `#/` 는 뿌리가 아니라 「이름이 빈 칸」 이다 (RFC 6901 §3 — 포인터 `/` 의 조각은 `""` 하나).
+     * 빈 조각을 지우면 `#/` 가 뿌리로 돌아가 엉뚱한 자리를 재고, 그 탈이 사람에게는
+     * 「스키마가 틀렸다」 로 보인다. 그리고 `$defs` 아래가 `false` 면 규격이 「무엇도
+     * 안 된다」 고 못 박은 자리인데, 없는 자리로 보고 「스키마 안에 … 가 없습니다」 로 끝냈다.
+     */
+    const 빈이름 = { type: 'object', properties: { a: { $ref: '#/' } }, '': { type: 'integer' } };
+    check('★★ #/ 는 뿌리가 아니라 이름이 빈 칸을 가리킨다 (8회차 스키마)',
+      재기({ a: 5 }, 빈이름).ok === true && 재기({ a: '다섯' }, 빈이름).ok === false,
+      JSON.stringify(재기({ a: 5 }, 빈이름)));
+    const 빈조각 = { type: 'object', properties: { a: { $ref: '#/$defs/' } }, $defs: { '': { type: 'string' } } };
+    check('  가운데·끝의 빈 조각도 이름이 빈 칸으로 따라간다', 재기({ a: 5 }, 빈조각).ok === false, JSON.stringify(재기({ a: 5 }, 빈조각)));
+    const 뿌리가리킴 = { type: 'object', properties: { 아이: { $ref: '#' } } };
+    check('  뿌리를 가리키는 # 하나는 그대로 뿌리다',
+      재기({ 아이: {} }, 뿌리가리킴).ok === true && 재기({ 아이: 3 }, 뿌리가리킴).ok === false,
+      JSON.stringify(재기({ 아이: {} }, 뿌리가리킴)));
+
+    const 거짓ref = { type: 'object', properties: { a: { $ref: '#/$defs/없음' } }, $defs: { 없음: false } };
+    const 거짓잰것 = 재기({ a: 5 }, 거짓ref);
+    check('★★ $ref 가 false 스키마를 가리키면 없는 자리로 치지 않는다 (8회차 스키마)',
+      거짓잰것.ok === false && 거짓잰것.탈.some((t) => /아무 값도 올 수 없습니다/.test(t)) && !거짓잰것.탈.some((t) => /스키마 안에/.test(t)),
+      JSON.stringify(거짓잰것));
+    const 참ref = { type: 'object', properties: { a: { $ref: '#/$defs/아무' } }, $defs: { 아무: true } };
+    check('  true 를 가리키면 무엇이든 통과한다', 재기({ a: 5 }, 참ref).ok === true, JSON.stringify(재기({ a: 5 }, 참ref)));
+    const 진짜없음 = 재기({ a: 5 }, { type: 'object', properties: { a: { $ref: '#/$defs/진짜없음' } } });
+    check('  진짜로 없는 자리는 여전히 없다고 한다', 진짜없음.ok === false && 진짜없음.탈.some((t) => /스키마 안에/.test(t)), JSON.stringify(진짜없음));
+    const 참거짓자리 = join(work, '참거짓.schema.json');
+    writeFileSync(참거짓자리, JSON.stringify(거짓ref), 'utf8');
+    check('  참·거짓 스키마가 든 파일도 그냥 읽힌다', 읽기(참거짓자리).ok === true, JSON.stringify(읽기(참거짓자리)).slice(0, 120));
+  }
+}
+
 
 // ── 9.5 일부러 안 고른 까닭이 **화면에 실제로 뜨는가** ──────────────────
 //
@@ -941,6 +1345,283 @@ trace('9.5-안고른까닭이화면에');
     !/종합 그대로/.test(String(r2.err)), String(r2.err).split('\n').filter((l) => l.trim())[0] ?? '');
 }
 
+// ── 9.6 물어볼 사람이 없는데 「계획부터 내고 승인받는」 자리로 가지 않는가 ──
+//
+// ★★★ 이 파일의 머리글이 그대로 걸리는 자리다 — 「물어볼 사람이 없는
+// 자리에서 서지 않고 끝나는가」.
+//
+// 겹친 요청(계획과 실행이 한 말에 같이 든 것)의 값은 「계획을 보여 주고
+// **승인을 받아** 그대로 잇는다」 다. 그 값은 승인할 사람이 있어야 생긴다.
+// 여기서는 승인 창이 뜰 자리도, 이어 갈 턴도 없다. 그런데도 계획 모드로
+// 보내면 계획 한 장을 찍고 끝난다 — 계획 모드는 파일을 고치는 도구가 없다.
+//
+// 오류는 안 난다. 종료코드도 0이다. 사용자는 시킨 일의 절반도 못 받는다.
+trace('9.6-물어볼사람없는자리');
+{
+  const r = await 띄우기(['run', '--work', 'auto', '이 폴더 정리해서 만들어줘']);
+  const 곁 = String(r.err);
+  check('★★★ 계획 모드로 안 보낸다 — 물어볼 사람이 없다',
+    !/계획 \(plan\)/.test(곁), 곁.split('\n').filter((l) => l.trim()).slice(0, 3).join(' / '));
+  check('★★★ 파일을 고칠 수 있는 모드로 간다',
+    /코드 \(Code\)/i.test(곁), 곁.split('\n').filter((l) => /—/.test(l))[0] ?? '(모드 줄 없음)');
+  /*
+   * 다르게 했으면 다르게 했다고 적어야 한다. 안 적으면 계획을 먼저 볼 줄
+   * 알았던 사람이 파일이 이미 바뀐 것을 나중에 본다.
+   */
+  check('★★★ 다르게 한다는 것을 말해 준다',
+    /승인받을 사람이 없어/.test(곁), 곁.split('\n').filter((l) => /◇/.test(l))[0] ?? '(안내 없음)');
+  check('★★ 정상 종료한다', r.code === 0, `code=${r.code}`);
+
+  // 반대쪽 — 겹치지 않은 한마디에는 이 안내가 뜨면 안 된다.
+  const r2 = await 띄우기(['run', '--work', 'auto', '이 파일 고쳐줘']);
+  check('★★ 반대쪽도 정상 종료한다', r2.code === 0, `code=${r2.code}`);
+  check('★★ 안 겹친 한마디에는 안 뜬다',
+    !/승인받을 사람이 없어/.test(String(r2.err)),
+    String(r2.err).split('\n').filter((l) => /◇/.test(l))[0] ?? '');
+}
+
+trace('8z-연결이-없어도-소식은-낸다');
+
+{
+  /*
+   * 연결이 없으면 「deel setup 을 먼저」 한 줄로 끝났다. 모아 둔 소식은 그보다 아래에서
+   * 비우니 한 줄도 안 나왔다 — 설정을 해 뒀는데 왜 없다고 하는지 찾는 사람에게는
+   * 「이 폴더 설정은 안 믿어서 안 읽었다」 가 바로 그 까닭일 수 있다.
+   */
+  const 빈집 = mkdtempSync(join(tmpdir(), 'deel-one-noconf-'));
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-one-noconf-work-'));
+  mkdirSync(join(방, '.deel'), { recursive: true });
+  writeFileSync(join(방, '.deel', 'config.json'),
+    JSON.stringify({ profiles: [{ id: 'r', baseUrl: 'http://127.0.0.1:1', model: 'm' }] }), 'utf8');
+  const r = await 띄우기(['run', '안녕'], { 폴더: 방, env: { DEEL_HOME: 빈집 } });
+  check('연결이 없으면 실패로 끝난다', r.code !== 0 && !r.시간초과, `code=${r.code}`);
+  check('★★ 연결이 없어도 모아 둔 소식(안 믿는 폴더 설정)을 낸다', /deel trust/.test(String(r.err)),
+    String(r.err).replace(/\s+/g, ' ').slice(0, 120));
+  rmSync(빈집, { recursive: true, force: true });
+  rmSync(방, { recursive: true, force: true });
+}
+
+trace('9.7-인자와-설정의-끝자락');
+
+/*
+ * ── 인자 한 칸·설정 한 줄이 배치를 딴 길로 보내던 자리들 ───────────────
+ *
+ * 사냥에서 전부 재현했다. 공통점은 **틀렸는데 0 으로 끝나거나, 틀린 까닭을
+ * 엉뚱한 말로 적는 것**이다. 배치는 사람이 안 보는 자리라 둘 다 오래 간다.
+ */
+{
+  const 부른수 = () => 받은요청.filter((x) => x.url === '/v1/chat/completions').length;
+  const 쓴것 = join(work, '한번만쓴것.txt');
+
+  // `--mode Strict` 는 대문자 하나로 승인이 통째로 꺼져 있었다 — Write 가 묻지 않고 돌았다.
+  대본초기화();
+  rmSync(쓴것, { force: true });
+  {
+    const r = await 띄우기(['run', '--mode', 'Strict', '일부러_고쳐 줘'], { 제한: 25000 });
+    check('★★★ --mode Strict 도 엄격으로 돈다 — 승인 없이 안 고친다',
+      !existsSync(쓴것) && /거부/.test(r.err), `code=${r.code} · ${r.err.slice(0, 160)}`);
+  }
+  rmSync(쓴것, { force: true });
+  for (const 이름 of ['stirct', '엄격']) {
+    대본초기화();
+    const r = await 띄우기(['run', '--mode', 이름, '일부러_고쳐 줘'], { 제한: 25000 });
+    check(`★★★ --mode ${이름} 은 모르는 이름이라 64 로 멈춘다`,
+      r.code === 64 && !existsSync(쓴것) && 부른수() === 0, `code=${r.code} · 부름 ${부른수()} · ${(r.out + r.err).slice(0, 120)}`);
+    check(`  --mode ${이름} — 있는 이름을 같이 보여 준다`, /strict/.test(r.err), r.err.slice(0, 160));
+    rmSync(쓴것, { force: true });
+  }
+
+  // `--` 뒤는 시킬 말이다. 여태는 `--` 가 깃발 이름 없는 깃발이 되어 뒤의 말을 삼켰다.
+  대본초기화();
+  {
+    const r = await 띄우기(['run', '--', '--json 은 깃발이 아니라 말입니다']);
+    const 간말 = JSON.stringify(받은요청.map((x) => x.json?.messages ?? []));
+    check('★★ -- 뒤는 전부 시킬 말로 받는다', r.code === 0 && 간말.includes('--json 은 깃발이 아니라 말입니다'),
+      `code=${r.code} · ${r.err.slice(0, 120)}`);
+  }
+
+  // 모르는 깃발은 뒤의 낱말을 값으로 삼키고 「무엇을 시킬지」 로 끝났다.
+  대본초기화();
+  {
+    const r = await 띄우기(['run', '--jsn', '안녕']);
+    check('★★ 모르는 깃발은 64 로 멈추고 그 이름을 적는다',
+      r.code === 64 && /--jsn/.test(r.err) && !/무엇을 시킬지/.test(r.err) && 부른수() === 0,
+      `code=${r.code} · ${r.err.slice(0, 160)}`);
+    check('★ 가까운 깃발 이름을 짚어 준다', /--json/.test(r.err), r.err.replace(/\s+/g, ' ').slice(0, 160));
+    const j = await 띄우기(['run', '--json', '--jsn', '안녕']);
+    let o = null;
+    try { o = JSON.parse(j.out.trim()); } catch { /* 아래에서 잰다 */ }
+    check('★★ --json 이면 인자 탈도 표준출력은 JSON 한 덩이다',
+      !!o && o.ok === false && o.code === 64 && j.code === 64, JSON.stringify(j.out.slice(0, 160)));
+  }
+
+  /*
+   * 대시 하나짜리 낱말(`-x` · `-jq`)은 시킬 말에 조용히 섞였다 (4회차 직접 사냥).
+   * `deel run -n 5 고쳐` 를 치면 모델은 「-n 5 고쳐」 를 받는다. 긴 깃발과 같은 문을 지난다.
+   * `-p` 는 명령 이름이라 맨 앞에서는 된다.
+   */
+  대본초기화();
+  {
+    const r = await 띄우기(['run', '-x', '안녕']);
+    check('★★ 모르는 한 대시 깃발도 64 로 멈추고 이름을 적는다',
+      r.code === 64 && /-x/.test(r.err) && 부른수() === 0, `code=${r.code} · 부름 ${부른수()} · ${r.err.slice(0, 120)}`);
+    대본초기화();
+    const p = await 띄우기(['-p', '안녕']);
+    check('  맨 앞의 -p 는 명령 이름이라 그대로 돈다', p.code === 0 && 부른수() === 1, `code=${p.code} · 부름 ${부른수()}`);
+  }
+
+  // 켜고 끄는 깃발에 `=값` 을 붙이면 그 글자가 그대로 값이 됐다 — `--json=yes` 는 JSON 을 안 냈고 0 으로 끝났다.
+  대본초기화();
+  {
+    const y = await 띄우기(['run', '--json=yes', '안녕']);
+    check('★★ --json=yes 는 64 로 멈춘다 (켜진 줄 알고 JSON 을 기다리지 않게)',
+      y.code === 64 && /--json/.test(y.err) && 부른수() === 0, `code=${y.code} · 부름 ${부른수()} · ${y.err.slice(0, 120)}`);
+    대본초기화();
+    const t = await 띄우기(['run', '--json=true', '안녕']);
+    let o = null;
+    try { o = JSON.parse(t.out.trim()); } catch { /* 아래에서 잰다 */ }
+    check('  --json=true 는 켠 것이다', t.code === 0 && o?.ok === true, JSON.stringify(t.out.slice(0, 120)));
+    대본초기화();
+    const f = await 띄우기(['run', '--json=false', '안녕']);
+    check('  --json=false 는 끈 것이다 — 표준출력이 JSON 이 아니다', f.code === 0 && !/^\s*\{/.test(f.out),
+      `code=${f.code} · ${JSON.stringify(f.out.slice(0, 80))}`);
+  }
+
+  // 값 깃발이 맨 끝에 값 없이 오면 "true" 가 값이 됐다 — ./true 폴더가 생겼다.
+  대본초기화();
+  {
+    const r = await 띄우기(['run', '안녕', '--root']);
+    check('★★ 값 없는 --root 는 64 로 멈춘다', r.code === 64 && /--root/.test(r.err), `code=${r.code} · ${r.err.slice(0, 120)}`);
+    check('★★ ./true 폴더를 안 만든다', !existsSync(join(work, 'true')), '');
+    // `--root=` 는 64 인데 `--root ""` 는 빈 값을 받아 조용히 지금 폴더에서 돌았다 (4회차 Gemini #9).
+    대본초기화();
+    const e = await 띄우기(['run', '--root', '', '안녕']);
+    check('★ --root "" 도 --root= 처럼 64 로 멈춘다', e.code === 64 && 부른수() === 0, `code=${e.code} · 부름 ${부른수()}`);
+    rmSync(join(work, 'true'), { recursive: true, force: true });
+    대본초기화();
+    const w = await 띄우기(['run', '--work', '--json', '안녕']);
+    check('★★ 값 없는 --work 도 오타 막이를 건너뛰지 않는다', w.code === 64 && 부른수() === 0, `code=${w.code}`);
+  }
+
+  // 없는 --root 를 만들어 놓고 그 안에서 일을 했다.
+  대본초기화();
+  {
+    const 없는곳 = join(work, '없는폴더', '더깊이');
+    const r = await 띄우기(['run', '--root', 없는곳, '안녕']);
+    check('★★ 없는 --root 는 거절한다', r.code === 1 && !existsSync(join(work, '없는폴더')) && 부른수() === 0,
+      `code=${r.code} · ${r.err.slice(0, 120)}`);
+    check('  어느 폴더인지 적는다', r.err.includes('더깊이'), r.err.slice(0, 160));
+    rmSync(join(work, '없는폴더'), { recursive: true, force: true });
+  }
+
+  // `--ctx junk` 는 조용히 버려졌다. 대화 중 `/ctx junk` 는 거절하는데.
+  대본초기화();
+  {
+    const r = await 띄우기(['run', '--ctx', 'junk', '안녕']);
+    check('★ 못 읽는 --ctx 는 64 로 멈춘다', r.code === 64 && /junk/.test(r.err) && 부른수() === 0, `code=${r.code} · ${r.err.slice(0, 120)}`);
+  }
+
+  /*
+   * 이 PC 설정의 `mode` 를 `deel run` 이 안 읽었다 (사냥 T11).
+   *
+   * `"mode": "strict"` 라고 적어 둔 사람의 배치가 Write 를 묻지 않고 돌렸다. 적은
+   * 사람은 막힌 줄 안다. 차례는 깃발 > 이 PC 설정 > auto 이고, 모르는 이름이면
+   * 가장 헐거운 auto 로 떨어지지 않고 켜지 않는다.
+   */
+  {
+    const 모드집 = mkdtempSync(join(tmpdir(), 'deel-one-modehome-'));
+    const 설정적기 = (mode) => writeFileSync(join(모드집, 'config.json'), JSON.stringify({
+      version: 1, active: 'stub', mode,
+      profiles: [{ id: 'stub', name: '스텁', kind: 'openai', baseUrl: base, auth: 'none', model: '스텁모델', ctx: 32768, tools: true }],
+    }), 'utf8');
+    설정적기('strict');
+    대본초기화();
+    rmSync(쓴것, { force: true });
+    const r = await 띄우기(['run', '일부러_고쳐 줘'], { env: { DEEL_HOME: 모드집 } });
+    check('★★★ 이 PC 설정의 mode:strict 를 run 이 따른다', !existsSync(쓴것) && /거부/.test(r.err),
+      `code=${r.code} · ${r.err.replace(/\s+/g, ' ').slice(0, 160)}`);
+    대본초기화();
+    rmSync(쓴것, { force: true });
+    const r2 = await 띄우기(['run', '--mode', 'auto', '일부러_고쳐 줘'], { env: { DEEL_HOME: 모드집 } });
+    check('★★ 깃발이 설정의 mode 를 이긴다', existsSync(쓴것) && r2.code === 0, `code=${r2.code}`);
+    rmSync(쓴것, { force: true });
+    설정적기('stirct');
+    대본초기화();
+    const r3 = await 띄우기(['run', '일부러_고쳐 줘'], { env: { DEEL_HOME: 모드집 } });
+    check('★★ 설정의 mode 가 모르는 이름이면 켜지 않는다',
+      r3.code === 1 && !existsSync(쓴것) && 부른수() === 0 && /stirct/.test(r3.err),
+      `code=${r3.code} · ${r3.err.replace(/\s+/g, ' ').slice(0, 160)}`);
+    rmSync(쓴것, { force: true });
+    rmSync(모드집, { recursive: true, force: true });
+  }
+
+  // 깨진 설정 + --json — 표준출력에 맨 글이 섞여 JSON 을 읽는 쪽이 통째로 깨졌다.
+  {
+    const 깨진집 = mkdtempSync(join(tmpdir(), 'deel-one-broken-'));
+    writeFileSync(join(깨진집, 'config.json'), '{ "profiles": [ ,', 'utf8');
+    const r = await 띄우기(['run', '--json', '안녕'], { env: { DEEL_HOME: 깨진집 } });
+    let o = null;
+    try { o = JSON.parse(r.out.trim()); } catch { /* 아래에서 잰다 */ }
+    // reason 까지 잰다 — 이 문이 못 받고 던지면 bin/deel.js 의 마지막 catch 가 같은 모양을 `error` 로
+    // 내서 여태 검사가 초록이었다(전수 어긋내기 #384 생존). 스크립트는 reason 으로 갈라 대응한다.
+    check('★★ 깨진 설정이어도 --json 표준출력은 JSON 한 덩이다', !!o && o.ok === false && r.code === 1 && o.reason === 'config',
+      JSON.stringify(r.out.slice(0, 160)));
+    check('  까닭은 표준오류에 적는다', /설정 파일/.test(r.err), r.err.slice(0, 160));
+
+    // {"profiles":null} — 「Cannot read properties of null」 로 죽었다.
+    writeFileSync(join(깨진집, 'config.json'), '{"version":1,"profiles":null}', 'utf8');
+    const n = await 띄우기(['run', '안녕'], { env: { DEEL_HOME: 깨진집 } });
+    check('★ profiles 가 null 이면 연결이 없는 것으로 친다',
+      n.code === 1 && /저장된 연결이 없습니다/.test(n.err) && !/Cannot read/.test(n.out + n.err),
+      (n.out + n.err).replace(/\s+/g, ' ').slice(0, 160));
+    rmSync(깨진집, { recursive: true, force: true });
+  }
+
+  /*
+   * 관리 정책에 `"offline": "true"` 라고 따옴표를 붙여 적으면 봉인이 안 걸렸다.
+   * 깃발은 글자 'true' 를 받는데 정책을 덮는 자리(config.js)는 true 만 봤다.
+   * 바깥 주소는 .invalid 라 막이 없어도 실제로는 못 나간다 — 막은 것이 봉인인지만 잰다.
+   */
+  {
+    const 정책집 = mkdtempSync(join(tmpdir(), 'deel-one-policy-'));
+    writeFileSync(join(정책집, 'config.json'), JSON.stringify({
+      version: 1, active: 'out',
+      profiles: [{ id: 'out', name: '바깥', kind: 'openai', baseUrl: 'https://no-such-host-deel-test.invalid/v1', auth: 'none', model: 'm', ctx: 32768, online: true }],
+    }), 'utf8');
+    const 정책파일 = join(정책집, 'policy.json');
+    writeFileSync(정책파일, '{"offline":"true"}', 'utf8');
+    const r = await 띄우기(['run', '--online', '--ctx', '32768', '안녕'], { env: { DEEL_HOME: 정책집, DEEL_POLICY: 정책파일 } });
+    check('★★ 정책의 offline:"true" 도 봉인으로 걸린다', r.code !== 0 && /오프라인|봉인/.test(r.err),
+      `code=${r.code} · ${r.err.replace(/\s+/g, ' ').slice(0, 160)}`);
+    rmSync(정책집, { recursive: true, force: true });
+  }
+
+  /*
+   * 집 폴더에서 켜면 `<집>/.deel/config.json` 이 곧 이 PC 설정이다. 그걸 「안 믿는
+   * 프로젝트 설정」 으로 읽어 `deel trust` 를 권했고, 권한 대로 하면 집 아래
+   * 저장소가 전부 믿기게 됐다.
+   */
+  {
+    const 방 = mkdtempSync(join(tmpdir(), 'deel-one-homecwd-'));
+    const 집 = join(방, '.deel');
+    mkdirSync(집, { recursive: true });
+    writeFileSync(join(집, 'config.json'), JSON.stringify({
+      version: 1, active: 'stub',
+      permissions: { allow: ['Bash(git status*)'] },
+      profiles: [{ id: 'stub', name: '스텁', kind: 'openai', baseUrl: base, auth: 'none', model: '스텁모델', ctx: 32768, tools: true }],
+    }), 'utf8');
+    대본초기화();
+    const r = await 띄우기(['run', '안녕'], { 폴더: 방, env: { DEEL_HOME: 집 } });
+    check('★★ 집 폴더에서 켜면 제 설정을 「안 믿는 프로젝트 설정」 이라 안 한다',
+      r.code === 0 && !/deel trust/.test(r.err), `code=${r.code} · ${r.err.replace(/\s+/g, ' ').slice(0, 160)}`);
+    writeFileSync(join(집, 'trusted.json'), JSON.stringify({ version: 1, trusted: [방] }), 'utf8');
+    const r2 = await 띄우기(['run', '안녕'], { 폴더: 방, env: { DEEL_HOME: 집 } });
+    check('★★ 믿어 둬도 제 설정의 allow 를 걷어냈다고 거짓말하지 않는다',
+      r2.code === 0 && !/걷어냈습니다/.test(r2.err), `code=${r2.code} · ${r2.err.replace(/\s+/g, ' ').slice(0, 160)}`);
+    rmSync(방, { recursive: true, force: true });
+  }
+}
+
 trace('9-치움');
 srv.close();
 rmSync(home, { recursive: true, force: true });
@@ -951,6 +1632,17 @@ console.log(`\n한 번만 돌리기  ${D}(물어볼 사람이 없는 자리에�
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 for (const 글 of 건너뜀) console.log(`  ${Y}⚠${X} ${글}`);
+{
+  // 6회차 Gemini 백엔드5역 — 울타리 안에 예시, 울타리 밖에 스키마에 맞는 답. 울타리 것만 봐서 예시를 답으로 냈다.
+  const { 답에서JSON뽑기: 뽑기6 } = await import('../src/agent/outschema.js');
+  const 스키마6 = { type: 'object', required: ['target'], properties: { target: { type: 'number' } } };
+  const 울 = '```';
+  const r6 = 뽑기6(`예시는 이렇습니다:\n${울}json\n{"example":true}\n${울}\n실제 답: {"target":123}`, { 스키마: 스키마6 });
+  check('★ 울타리 안 예시가 스키마에 안 맞으면 울타리 밖의 맞는 답을 고른다', r6.ok && r6.값?.target === 123, JSON.stringify(r6));
+  const r7 = 뽑기6(`${울}json\n{"target":1}\n${울}\n그리고 {"target":2}`, { 스키마: 스키마6 });
+  check('  울타리 안 것이 맞으면 여전히 울타리 것', r7.ok && r7.값?.target === 1, JSON.stringify(r7));
+}
+
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패`
   + (건너뜀.length ? ` · ${Y}${건너뜀.length}개 건너뜀${X}` : '') + '\n');
 trace('끝-정상종료');

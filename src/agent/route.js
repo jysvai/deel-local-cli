@@ -255,7 +255,36 @@
  * 세 갈래에 같은 「띄운 줄표」 잣대를 넣어 맞춘다.
  */
 const 영어시킴말 =
-  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:(?:first|then|next|after\s+that|also|now|finally|second|third|lastly|afterwards?)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|broken|crash|crashes|timeouts?)\b(?=(?:[ \t]*[([][^)\]\n]*[)\]])?(?:\s*(?:[,:;!?)\]]|$)|\s*\.(?!\w)|\s+-{1,2}(?:\s|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:[\w']+-)*(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+-{1,2}(?:[ \t]|$)|[ \t]+(?:now|today|tonight|tomorrow|first|soon|asap|again)\b|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:modify|change|develop|rewrite)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|broken\b(?=(?:[ \t]*[([][^)\]\n]*[)\]])?(?:\s*(?:[,:;!?)\]]|$)|\s*\.(?!\w)|\s+-{1,2}(?:\s|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))|(?:failures?|errors?|crash|crashes|timeouts?)\b(?:\s*[:(]|\s+-{1,2}(?:\s|$))))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:[\w']+-)*(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+-{1,2}(?:[ \t]|$)|[ \t]+(?:now|today|tonight|tomorrow|first|soon|asap|again)\b|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:implement|add|fix|refactor|remove|delete|rename|scaffold)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|broken\b(?=(?:[ \t]*[([][^)\]\n]*[)\]])?(?:\s*(?:[,:;!?)\]]|$)|\s*\.(?!\w)|\s+-{1,2}(?:\s|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))|(?:failures?|errors?|crash|crashes|timeouts?)\b(?:\s*[:(]|\s+-{1,2}(?:\s|$)))))(?!\()(?![-\w]*[ \t]*:)(?![ \t]+[\w.-]+[ \t]*:[ \t])(?!(?<=\bdelete)\s+from\s+[\w."`]+\s*(?:where\b|order\s+by\b|limit\b|;|$))(?!(?<=\bupdate)\s+[\w."`]+\s+set\b)/im;
+  /(?:^\s*|(?<!\b(?:e\.g|i\.e|vs|cf|approx|Fig|Dr|Mr|Mrs|Ms|St|Jr|Sr))[.!?]\s+|\n\s*|^\s*\d+[.)]\s*|^\s*[-*]\s*)(?:(?:first|then|next|after\s+that|also|now|finally|second|third|lastly|afterwards?)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:could|can|would|will)\s+(?:you|we)\s*,?\s+)?(?:please\s*,?\s+)?(?:(?:build|make|create|update|write|migrate|generate|set\s*up)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|(?:failures?|errors?|broken|crash|crashes|timeouts?)\b(?=(?:[ \t]*[([][^)\]\n]*[)\]])?(?:\s*(?:[,:;!?)\]]|$)|\s*\.(?!\w)|\s+-{1,2}(?:\s|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:[\w']+-)*(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+-{1,2}(?:[ \t]|$)|[ \t]+(?:now|today|tonight|tomorrow|first|soon|asap|again)\b|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:modify|change|develop|rewrite)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|broken\b(?=(?:[ \t]*[([][^)\]\n]*[)\]])?(?:\s*(?:[,:;!?)\]]|$)|\s*\.(?!\w)|\s+-{1,2}(?:\s|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))|(?:failures?|errors?|crash|crashes|timeouts?)\b(?:\s*[:(]|\s+-{1,2}(?:\s|$))))(?!(?:[ \t]+[\w'-]+){0,3}[ \t]+(?:[\w']+-)*(?:plans?|roadmaps?|strateg(?:y|ies)|outlines?)(?=[ \t]*(?:[!?,;:)]|\.(?!\w)|$)|[ \t]+-{1,2}(?:[ \t]|$)|[ \t]+(?:now|today|tonight|tomorrow|first|soon|asap|again)\b|[ \t]+(?:for|to|of|on|about|around|that|which|we|with|before|after|regarding|covering)\b))|(?:implement|add|fix|refactor|remove|delete|rename|scaffold)\b(?![\s:-]+(?:(?:failed|failing|fails|errored|broke|crashed|succeeded|succeeds|timed[\s-]+out)\b(?=\s*(?:[.,:;!?()\[\]-]|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b)|broken\b(?=(?:[ \t]*[([][^)\]\n]*[)\]])?(?:\s*(?:[,:;!?)\]]|$)|\s*\.(?!\w)|\s+-{1,2}(?:\s|$)|\s+(?:with|at|after|in|on|to|before|during|because|due|while|when|for|since|from)\b))|(?:failures?|errors?|crash|crashes|timeouts?)\b(?:\s*[:(]|\s+-{1,2}(?:\s|$)))))(?!\.\w)(?!\()(?![-\w]*[ \t]*:)(?![ \t]+[\w.-]+[ \t]*:[ \t])(?!(?<=\bdelete)\s+from\s+[\w."`]+\s*(?:where\b|order\s+by\b|limit\b|;|$))(?!(?<=\bupdate)\s+[\w."`]+\s+set\b)/im;
+
+/*
+ * 「그 계획을 **따라 하라**」 는 말. 계획을 달라는 말이 아니다.
+ *
+ * 한 자리에 모아 두어야 계획·플랜·로드맵 셋에 똑같이 걸린다. 흩어 적었더니
+ * 한글에만 붙고 영어에는 안 붙는 자리가 났다(아래 plan 표 머리말).
+ *
+ * 토씨는 있어도 없어도 된다 — 「계획 따라」 · 「계획을 따라」 · 「계획에 따라」
+ * 가 다 같은 말이다.
+ */
+const 계획말고 = '(?!\\s*(?:대로|처럼|[을를에]?\\s*따라))';
+/*
+ * ── 「그 계획은 **이미 승인됐다**」 도 계획을 달라는 말이 아니다 ──────────
+ *
+ * 아래 영어겹침 이 같은 잣대를 이미 쓴다 — 뒤에 is·was 가 오면 그 낱말은 시킴이
+ * 아니라 이미 있는 것을 가리키는 말이다. 그런데 그 잣대가 **겹침 갈래에만** 붙어
+ * 있었다. 점수표의 `plan` 5점은 그대로라, 승인 창만 안 뜨고 모드는 여전히 계획이었다:
+ *
+ *   "Our plan is approved. Open the file and make the change."  → 계획 모드
+ *
+ * 계획 모드에는 파일을 바꾸는 도구가 없다. 게다가 겹침을 끄면서 승인 뒤에 code 로
+ * 잇는 길(repl.js 의 이어갈모드)까지 없어져, 사람은 이미 승인됐다고 적어 놓고
+ * 계획서 한 장을 다시 받고 끝난다 — 고치기 전보다 나빠진 자리다.
+ *
+ * 한글 낱말에는 안 건다. 영어 낱말 뒤에는 한글 토씨가 붙어 오므로(`plan대로` ·
+ * `roadmap에 따라`) 위 토씨 갈래는 그대로 같이 쓴다.
+ */
+const 이름씨꼴영어 = '(?!\\s+(?:is|was|are|were|has|have|had|looks?|seems?|got)\\b)';
+const 계획말고영어 = `${계획말고}${이름씨꼴영어}`;
 
 export const 표 = {
   debug: [
@@ -282,11 +311,45 @@ export const 표 = {
 
   plan: [
     // '먼저' 와 붙어야 계획이다. 그냥 '어떻게' 는 설명일 수도 있다.
-    [/계획/, 5], [/플랜|\bplan\b/i, 5],
+    /*
+     * ── 「계획대로」 는 계획을 달라는 말이 아니다 ──────────────────────
+     *
+     * 계획을 받아 본 사람이 다음에 치는 말이 「위 계획대로 진행해줘」 다.
+     * 그런데 그 말에 '계획' 이 들어 있어서 **또 계획 모드로** 갔다. 계획
+     * 모드는 파일을 고치는 도구가 없으니, 사람은 계획을 두 장 받고 파일은
+     * 그대로다. 승인한 값이 통째로 사라진다.
+     *
+     * 대화 화면은 승인 창 바로 뒤에만 이 자리를 피한다(`이어갈모드`). 그
+     * 자리를 벗어나면 대화 화면에서도 갇히고, 에디터·`deel run` 에는 그
+     * 장치가 아예 없다.
+     *
+     * '-대로' 는 「그것에 따라 하라」 는 뜻이다. 계획을 달라는 말과 정반대다.
+     *
+     * ── 그런데 두 군데가 새고 있었다 ──────────────────────────────────
+     *
+     * 하나는 **갈래 나누기의 힘 차이**다. `플랜(?!…)|\bplan\b` 는 「(플랜에
+     * 뒤보기) 또는 (plan)」 으로 읽힌다 — `|` 가 뒤보기보다 넓게 갈라서
+     * 영어 낱말에는 뒤보기가 안 붙었다. 그래서 이랬다:
+     *
+     *     위 계획대로 진행해줘     종합   (맞다)
+     *     plan대로 진행해줘        계획 ← 5점이 그대로 붙는다
+     *     roadmap대로 진행해줘     계획 ←
+     *
+     * 다른 하나는 **적어 둔 토씨만 막은 것**이다. 뒤보기에 `에\s*따라` 만
+     * 적어 뒀는데, 사람은 토씨를 흔히 뺀다:
+     *
+     *     위 계획 따라 진행해줘     계획 ←
+     *     세운 계획을 따라 만들어줘  계획 5점 (실행 낱말 덕에 겨우 code 로 감)
+     *
+     * 뒤보기를 한 자리에 모아 두 낱말에 똑같이 씌운다. '따라' 앞에 오는
+     * 토씨는 없거나 `에`·`을`·`를`·`대로` 다.
+     */
+    [new RegExp(`계획${계획말고}`), 5],
+    [new RegExp(`플랜${계획말고}|\\bplan\\b${계획말고영어}`, 'i'), 5],
     [/먼저\s*(정리|생각|살펴|파악|검토|짜|세)/, 4],
     [/어떤\s*순서/, 4], [/순서(를|대로)?\s*(정|짜|잡)/, 3],
     [/단계(를|로)?\s*(나눠|쪼개|정리)/, 3],
-    [/로드맵|\broadmap\b/i, 5],
+    [new RegExp(`로드맵${계획말고}|\\broadmap\\b${계획말고영어}`, 'i'), 5],
     [/방향(을|만)?\s*(잡|정)/, 3],
     [/하기\s*전에\s*(정리|살펴|검토)/, 3],
     [/무엇부터|뭐부터/, 3],
@@ -327,8 +390,20 @@ export const 표 = {
      *
      * 앞에 「원인」 이 붙으면 뺀다. 그건 고장을 쫓는 말이라 debug 자리고,
      * 여기로 보내면 파일을 못 고치는 모드에서 원인만 듣고 끝난다.
+     *
+     * ── 토씨 목록에 한 짝의 절반만 적었다 ──────────────────────────
+     *
+     * `[을이은는]` 이라 「이유를」 「이유가」 가 빠졌다. 목적격·주격 토씨는
+     * 받침 있는 말에 을·이, 없는 말에 를·가 가 붙는 **한 짝**인데 앞짝만
+     * 적었다. '이유' 는 받침이 없어서 사람이 쓰는 꼴이 언제나 뒷짝이다 —
+     *
+     *   "원인을 살펴봐줘"   → debug   (빠진다)
+     *   "이유를 살펴봐줘"   → inspect (안 빠진다)
+     *
+     * 같은 말인데 낱말 하나로 갈렸고, 하필 더 흔한 쪽이 **파일을 못 고치는**
+     * 모드로 갔다.
      */
-    [/(?<!(?:원인|까닭|이유)[을이은는]?\s{0,2}(?:좀\s{0,2})?)살펴\s*(봐|보고|보자|봐야|주)/, 5],
+    [/(?<!(?:원인|까닭|이유)[을를이가은는]?\s{0,2}(?:좀\s{0,2})?)살펴\s*(봐|보고|보자|봐야|주)/, 5],
     [/취약(점|한|성)/, 5], [/보안\s*(점검|검토|문제|취약|구멍)/, 5],
     [/경합|레이스\s*컨디션|race\s*condition/i, 5],
     [/데이터\s*(손실|유실)|덮어쓰(기|면)|유실/, 4],
@@ -367,7 +442,8 @@ export const 표 = {
     [/\breview(?:s|ing|ed)?\b|\binspect(?:s|ing|ion|ions|ed)?\b/i, 5],
     [/\banaly[sz]e(?:s|d)?\b|\banaly[sz]ing\b|\banalysis\b/i, 5],
     [/\bvulnerab/i, 5],
-    [/\baudit(?:s|ing|ed)?\b/i, 5],
+    // `npm audit fix` · `yarn audit fix` 는 고치라는 명령이다. 읽기 전용 점검으로 보내면 못 돌린다 (6회차 Gemini 길고르기6 b1).
+    [/\baudit(?:s|ing|ed)?\b(?!\s+fix\b)/i, 5],
     [/\bdata\s*loss\b|\bdeadlock\b|\blost\s*update\b/i, 4],
   ],
 
@@ -401,7 +477,8 @@ export const 표 = {
      */
     [/뭐\s*하는\s*(파일|함수|코드|모듈|클래스|녀석|건|거|것)/, 5],
     [/뭐\s*하(는|나|니|냐)/, 3], [/무슨\s*(일|역할)/, 3],
-    [/설명(해|\s*좀|을)/, 5], [/알려\s*(줘|주세요|줄래)/, 3],
+    // 「설명만 해줘」 — 설명 뒤 「만」 을 안 받아 0점이었다. 설명만 달라는 말은 가장 뚜렷한 묻기다 (6회차 Gemini 길고르기6 b4).
+    [/설명(해|\s*좀|을|만)/, 5], [/알려\s*(줘|주세요|줄래)/, 3],
     [/어떻게\s*(동작|작동|돌아가)/, 5],
     /*
      * 「어떻게 …?」 는 영어 `how to` 와 같은 물음인데 '동작·작동·돌아가'
@@ -529,9 +606,23 @@ export const 표 = {
      * `and`·`then` 으로 이은 시킴 마디가 같은 문장에 있으면 이 규칙을 끈다.
      * 「and why」 「and how it works」 처럼 움직씨가 아닌 것은 안 건드린다.
      */
-    [/(?:\bexplain(?:s|ing|ed)?\b|(?:^\s*|[.!?]\s+|\n\s*)(?:(?:please|pls)\s*,?\s+)?(?:(?:could|can|would|will)\s+you\s+)?(?:please\s*,?\s+)?(?:(?:tell|show)\s+(?:me|us)\b|walk\s+(?:me|us)\s+through\b))(?![^.!?\n]*\b(?:and|then)\s+(?:also\s+)?(?:implement|add|fix|write|rename|update|delete|remove|create|build|make|refactor|rewrite)\b)/im, 5],
-    [/(?:^\s*|[.!?]\s+|\n\s*)(?:(?:please|pls)\s*,?\s+)?what\b(?:(?:[^.!?\n]|\.(?=[\w/]))*\?|(?:'s|(?:\s+\w+){0,3}\s+(?:is|are|was|were|does|do|did|can|should)|\s+to)\b)/im, 5],
-    [/(?:^\s*|[.!?]\s+|\n\s*)(?:(?:please|pls)\s*,?\s+)?how\b(?:(?:[^.!?\n]|\.(?=[\w/]))*\?|'s\b|\s+(?:to\b|does|do|did|is|are|was|were|can|should)\b)/im, 5],
+    [/(?:\bexplain(?:s|ing|ed)?\b|(?:^\s*|[.!?]\s+|\n\s*)(?:(?:please|pls)\s*,?\s+)?(?:(?:could|can|would|will)\s+you\s+)?(?:please\s*,?\s+)?(?:(?:tell|show)\s+(?:me|us)\b|walk\s+(?:me|us)\s+through\b))(?!(?:[^.!?\n]|\.(?=[\w/]))*\b(?:and|then)\s+(?:also\s+)?(?:implement|add|fix|write|rename|update|delete|remove|create|build|make|refactor|rewrite)\b)/im, 5],
+    /*
+     * ── 물음표를 삼킨 뒤에서는 이미 지나온 자리를 못 본다 ────────────────
+     *
+     * 위 explain 과 같은 문을 `what`·`how` 에도 달아 뒀는데, 물음표까지 삼키는
+     * 갈래가 이기면 그 문이 **삼킨 자리 뒤**에서 열린다 — 이미 지나온
+     * 「and fix」 에 닿을 수가 없었다. 물음표 하나로 이렇게 갈렸다 —
+     *
+     *     "What is broken and fix it."   → 막힌다
+     *     "What is broken and fix it?"   → 묻기 5점, 묻기 모드
+     *
+     * 그래서 낱말 바로 뒤에도 같은 문을 단다. 뒤의 문도 그대로 둔다 —
+     * 「What is this? Then fix it.」 은 앞의 문이 물음표에서 멈춰 못 보는
+     * 자리라, 둘이 서로 다른 데를 지킨다.
+     */
+    [/(?:^\s*|[.!?]\s+|\n\s*)(?:(?:please|pls)\s*,?\s+)?what\b(?!(?:[^.!?\n]|\.(?=[\w/]))*\b(?:and|then)\s+(?:also\s+)?(?:implement|add|fix|write|rename|update|delete|remove|create|build|make|refactor|rewrite)\b)(?:(?:[^.!?\n]|\.(?=[\w/]))*\?|(?:'s|(?:\s+\w+){0,3}\s+(?:is|are|was|were|does|do|did|can|should)|\s+to)\b)(?!(?:[^.!?\n]|\.(?=[\w/]))*\b(?:and|then)\s+(?:also\s+)?(?:implement|add|fix|write|rename|update|delete|remove|create|build|make|refactor|rewrite)\b)/im, 5],
+    [/(?:^\s*|[.!?]\s+|\n\s*)(?:(?:please|pls)\s*,?\s+)?how\b(?!(?:[^.!?\n]|\.(?=[\w/]))*\b(?:and|then)\s+(?:also\s+)?(?:implement|add|fix|write|rename|update|delete|remove|create|build|make|refactor|rewrite)\b)(?:(?:[^.!?\n]|\.(?=[\w/]))*\?|'s\b|\s+(?:to\b|does|do|did|is|are|was|were|can|should)\b)(?!(?:[^.!?\n]|\.(?=[\w/]))*\b(?:and|then)\s+(?:also\s+)?(?:implement|add|fix|write|rename|update|delete|remove|create|build|make|refactor|rewrite)\b)/im, 5],
     [/읽어(만)?\s*보고\s*(설명|알려)/, 4],
   ],
 
@@ -551,8 +642,21 @@ export const 표 = {
   ],
 
   code: [
-    [/고쳐|고쳐줘|수정(해|\s*좀)/, 4],
-    [/만들어|추가(해|\s*좀)|넣어(줘|주세요)/, 4],
+    // 「고쳐주지 마」(부정) · 「고쳐지지 않는」(입음)은 고치라는 말이 아니다 — 여태 4점으로 code 문턱을 넘었다 (6회차 Gemini 길고르기6 c1).
+    [/고쳐(?!지|\s*주?지\s*(?:마|말|않))|수정(해|\s*좀)/, 4],
+    /*
+     * ── 도움움직씨 앞은 띄어 쓴다 ──────────────────────────────────
+     *
+     * 「넣어 주세요」 「써 줘」 는 맞춤법대로 띄어 쓴 꼴인데 붙여 쓴 것만
+     * 봤다. 그래서 같은 부탁이 이렇게 갈렸다 —
+     *
+     *   "로그 한 줄 넣어줘"    → code
+     *   "로그 한 줄 넣어 줘"   → 종합 (0점)
+     *
+     * 아래 손대라는말 이 「수정해 줘」 에서 이미 배운 것인데, 점수표만
+     * 그대로 남아 있었다. 띄어 쓴 사람만 시킨 것이 안 읽혔다.
+     */
+    [/만들어|추가(해|\s*좀)|넣어\s*(줘|주세요)/, 4],
     [/구현(해|\s*좀)/, 5],
     [/바꿔(줘|주세요)?|변경(해|\s*좀)/, 3],
     [/지워(줘)?|삭제(해|\s*좀)/, 3],
@@ -593,7 +697,7 @@ export const 표 = {
      * 겹침을 막는 자리는 겹치는 쪽과 **같은 꼴**을 봐야 한다.
      */
     [/(?<=[a-z,;:)\]]\s{1,3})(?<!\b(?:could|can|would|will)\s{1,3}(?:you|we)[\s,]{1,4})(?<!\bplease[\s,]{1,4})(?:implement|add|fix|write|rename)\b/i, 2],
-    [/써(줘|주세요)/, 3],
+    [/써\s*(줘|주세요)/, 3],
     /*
      * 「짜다」 는 코드·검사를 만들라는 한국어에서 제일 흔한 말인데
      * '써 줘' 만 있었다. 계획·순서·구조를 짜는 것은 각각 plan·architect
@@ -680,7 +784,13 @@ const 이름씨아님 = '(?![서를가에의는도만까와과])';
 const 잇는말 = '해\\s*주고|해\\s*놓고|하고\\s*나서|하고서|한\\s*다음|한\\s*뒤|한\\s*후|하고|해서|잡고|짜고|세우고|낸\\s*뒤|낸\\s*다음'
   + `|(?<=(?:살펴|알아)\\s{0,1})보고|해\\s*보고${이름씨아님}`
   + '|(?<=(?:살펴|알아)\\s{0,1})본\\s*(?:다음|뒤|후)|해\\s*본\\s*(?:다음|뒤|후)';
-const 실행말 = /만들어|만들자|만들어라|구현|작성|추가(해|하)|생성|써\s*(줘|주세요)|짜\s*(줘|주세요)|고쳐|세팅|설치|배포/;
+/*
+ * 이름씨 뿌리(구현·작성·생성·세팅·설치·배포)는 **해·하·좀** 이 붙어야 실행말이다. 맨 뿌리로 두었더니
+ * 「살펴보고 작성자 확인해줘」 의 작성자, 「검토하고 설치 경로 알려줘」 의 설치 가 걸려 조회가 겹친 요청
+ * (계획 모드 + 승인 창)이 됐다 (6회차 Gemini 길고르기6 c3). 사이에 토씨 하나(을·은·도·까지·만)는 넘는다 —
+ * 「구현은 해줘」 「배포까지 해줘」.
+ */
+const 실행말 = /만들어|만들자|만들어라|(?:구현|작성|생성|세팅|설치|배포)(?=\s*(?:을|를|은|는|도|까지|만)?\s*(?:해|하|좀))|추가(해|하)|써\s*(줘|주세요)|짜\s*(줘|주세요)|고쳐/;
 const 계획먼저 = new RegExp(`(${계획말})\\s*(?:을|를)?\\s*(?:${잇는말})`);
 /*
  * 영어도 같이 본다 — "plan and then build it" 처럼 붙여 넣는 일이 있다.
@@ -726,6 +836,17 @@ const 계획먼저 = new RegExp(`(${계획말})\\s*(?:을|를)?\\s*(?:${잇는�
  * 흔해서다. 열거와 갈리는 자리는 **쉼표가 몇 개냐** 다 — 열거는 `and` 에
  * 닿기까지 쉼표를 여러 번 넘어야 하고, 차례는 많아야 한 번이다.
  *
+ * ── 차례말 **뒤**에도 쉼표가 붙는다 ────────────────────────────────────
+ *
+ * 위는 차례말 **앞**의 쉼표 이야기였다. 정작 흔한 것은 뒤에 붙는 쪽이다 —
+ *
+ *   "Plan the migration. After approval, implement it."
+ *   "Draft the schema. Then, write the migration."
+ *
+ * 차례말 다음을 `\s+` 로만 받아서, 쉼표 하나에 겹침이 아니게 됐다. 사람이
+ * 「승인 뒤에」 라고 **적어 둔** 자리인데 계획을 보여 달라는 절반이 통째로
+ * 사라진다. 앞에서 받아 준 것과 같은 쉼표라 같이 받는다.
+ *
  * ── `the design` 은 계획을 세우라는 말이 아니다 ─────────────────────────
  *
  * 이 네 낱말은 움직씨이기도 하고 이름씨이기도 하다. 앞에 관사가 붙으면
@@ -741,7 +862,16 @@ const 계획먼저 = new RegExp(`(${계획말})\\s*(?:을|를)?\\s*(?:${잇는�
  * 마침표·물음표·줄바꿈을 다 지나갔다. 그리고 `\s*` 는 상한이 없어서 예순 자
  * 잣대가 빈칸으로 뚫렸다 — `[ \t]*` 로 좁힌다.
  */
-const 영어겹침 = /(?<!\b(?:the|a|an|this|that|our|your|my|its|their)\s)\b(plan|design|outline|draft)\b(?:[\s\S]{0,60}?\b(?:and\s+then|then|after\s+(?:that|approval)|before\s+you)|[^,.!?\n]{0,60}?,?[ \t]{0,2}\band)\s+(?:then\s+)?\b(build|implement|create|write|make|code)\b/i;
+/*
+ * ── 건너뛰라는 말 · 이미 끝났다는 말 ─────────────────────────────────────
+ *
+ * 「Skip design and write the code」 · 「Plan is approved, then implement it」 이 겹침으로 잡혀 계획 모드
+ * (읽기 전용 + 승인 창)로 갔다. 앞은 설계를 **하지 말라**는 말이고, 뒤는 계획이 **이미 승인됐다**는
+ * 말이다 — 둘 다 곧장 만들라는 말인데 계획서를 또 내고 또 물었다 (6회차 Gemini 길고르기6 c4).
+ * 관사를 막은 것과 같은 까닭이다: 앞에 skip·no·without 이 오거나 뒤에 is·was·has 가 오면 그 낱말은
+ * 시킴이 아니다.
+ */
+const 영어겹침 = /(?<!\b(?:the|a|an|this|that|our|your|my|its|their)\s)(?<!\b(?:skip|skipping|skipped|no|without|forget|drop)\s+)\b(plan|design|outline|draft)\b(?!\s+(?:is|was|are|were|has|have|had|looks?|seems?|got)\b)(?:[\s\S]{0,60}?\b(?:and\s+then|then|after\s+(?:that|approval)|before\s+you)|[^,.!?\n]{0,60}?,?[ \t]{0,2}\band)\s*,?\s+(?:then\s+)?\b(build|implement|create|write|make|code)\b/i;
 
 /*
  * ── 두 말이 **얼마나 붙어 있어야** 겹침인가 ─────────────────────────────
@@ -807,6 +937,30 @@ export function 겹친요청(text) {
   const 남은것 = s.slice(앞.index + 앞[0].length, 앞.index + 앞[0].length + 겹침거리);
   const 뒤 = 남은것.match(실행말);
   if (!뒤) return { 겹침: false, why: '' };
+  /*
+   * 실행말 **바로 뒤에 부정**이 붙으면 실행하라는 말이 아니다. 「설계하고 구현은 하지 마」 「정리하고
+   * 추가하지 마」 가 겹침으로 잡혀 계획 모드 + 승인 창으로 갔다 — 하지 말라는 것을 할지 물었다
+   * (6회차 Gemini 길고르기6 c2).
+   *
+   * ── 부정은 **잘린 토막**이 아니라 글 전체에서 읽는다 ──────────────────────────
+   *
+   * 실행말은 예순 자 안에서 찾는 것이 맞다(위 겹침거리 머리말). 그런데 그 뒤에 오는
+   * 부정까지 같은 토막 안에서만 찾았다. 실행말이 토막 가장자리에 걸리면 「하지 마」 가
+   * 통째로 잘려 나가고, 하지 말라는 것을 할지 묻는 승인 창이 떴다 —
+   *
+   *   "설계하고 … 정리해 두되 구현은 하지 마"   ← 구현이 쉰아홉 자째
+   *
+   * 거리를 재는 것은 **두 말이 한 문장 안인가**를 보려는 것이고, 부정은 이미 찾은
+   * 실행말에 바로 붙은 것만 본다 — 잣대가 다르니 재는 자리도 다르다. 글 전체에서 읽는다.
+   *
+   * ── 「하지는 마」 · 「하진 마」 · 「하지도 마」 ─────────────────────────────────
+   *
+   * '지' 와 '마' 사이에 토씨가 끼거나(하지는·하지도) 줄어들면(하진) 못 읽었다. 하지
+   * 말라는 말이 하라는 말이 되는 자리라 뒤집힘이 제일 크다. 「하지만」 은 그대로 안
+   * 걸린다 — 뒤에 오는 것이 마·말·않 일 때만 부정이다.
+   */
+  const 실행말뒤 = s.slice(앞.index + 앞[0].length + 뒤.index + 뒤[0].length);
+  if (/^\s*(?:(?:은|는|을|를|도)\s*)?(?:(?:해\s*주|해|하|주)\s*)?(?:지[는도를은]?|진)\s*(?:마|말|않)/.test(실행말뒤)) return { 겹침: false, why: '' };
   return { 겹침: true, why: `'${앞[0].trim()}' 뒤에 '${뒤[0].trim()}'` };
 }
 
@@ -989,6 +1143,38 @@ const 손대라는말 = new RegExp(`(?:${[
   계획도손대는동사 && `${계획거리뒤}(?:${계획도손대는동사})`,
 ].filter(Boolean).join('|')})${하지마}(?:\\S{0,3}(?:${붙는끝})|[^\\n]{0,3}(?:${띄는끝}))`);
 
+/*
+ * ── 반말로 시킨 말이 통째로 빠져 있었다 ─────────────────────────────────
+ *
+ * 끝맺음 목록에 해라체(해라·어라)와 부탁(줘·주세요)은 있는데, 제일 흔한
+ * **반말 시킴꼴**(「수정해」 「고쳐」 「만들어」)이 없었다. 그래서 같은 말이
+ * 이렇게 갈렸다 —
+ *
+ *   "리뷰 결과 반영해서 정리해"      → inspect (읽기 전용 — 고칠 수가 없다)
+ *   "보안 점검 결과대로 수정해"      → 종합   ("…수정해줘" 는 code)
+ *   "리뷰 결과대로 고쳐"             → 종합   (inspect 5 · code 4 비슷함)
+ *
+ * 반말은 서술·물음과 꼴이 같아서 넓게 열면 안 된다. 그래서 세 겹으로 좁힌다 —
+ *   (1) 동사 바로 뒤에 반말꼴이 **정확히** 붙고(「수정해」 「고쳐」), 그 뒤가
+ *       글 끝·줄 끝·마침표뿐일 때만 — 「고쳐졌어」 「수정해도」 「구현해 본 적」
+ *       「수정해?」 는 안 걸린다.
+ *   (2) 바로 앞이 「안·못」 이면 아니다 — 「안 고쳐」 는 안 고친다는 말이다.
+ *   (3) 같은 문장 앞쪽에 물음말(어떻게·왜·뭘…)이 있으면 아니다 — 「이 에러
+ *       어떻게 수정해」 는 물음표를 안 쳤을 뿐 묻는 말이다.
+ * 계획거리 예외(「계획 좀 수정해」)는 위 무늬와 같은 자리에 같이 건다.
+ * (6회차 Gemini 길고르기6d 지적을 실행으로 확인.)
+ */
+const 반말꼴 = (v) => (해붙는동사.has(v) ? `${v}해` : v === '만들' ? '만들어' : /[어아워쳐꿔겨눠봐]$/.test(v) ? v : null);
+const 반말로 = (목록) => 목록.map(반말꼴).filter(Boolean).join('|');
+const 계획말고반말 = 반말로(동사들.filter((v) => !계획손질.has(v)));
+const 계획도반말 = 반말로(동사들.filter((v) => 계획손질.has(v)));
+const 반말앞 = '(?<!(?:안|못)\\s?)(?<!(?:어떻게|왜|뭘|뭐|무엇을|어디를?|언제|어느)[^.!?\\n]{0,20})';
+const 반말끝맺음 = '(?=[.!~]*[ \\t]*(?:\\n|$)|[.!~]+\\s)';
+const 반말시킴 = new RegExp(`${반말앞}(?:${[
+  계획말고반말 && `(?:${계획말고반말})`,
+  계획도반말 && `${계획거리뒤}(?:${계획도반말})`,
+].filter(Boolean).join('|')})${반말끝맺음}`);
+
 // 파일을 못 고치는 모드. modes.js 에서 쓰기 도구를 안 주는 것들과 같아야 한다.
 export const 읽기만하는모드 = new Set(['architect', 'plan', 'ask', 'inspect']);
 
@@ -1021,24 +1207,45 @@ const 영어손대라 = 영어시킴말;
 /** 파일을 손대라는 말이 들었나. */
 export function 손대라했나(text) {
   const s = String(text ?? '');
-  return 손대라는말.test(s) || 영어손대라.test(s);
+  return 손대라는말.test(s) || 반말시킴.test(s) || 영어손대라.test(s);
 }
+
+/*
+ * ── 승인받을 사람이 없는 자리 ───────────────────────────────────────────
+ *
+ * 겹침의 값은 「계획을 보여 주고 **승인을 받아** 그대로 잇는다」 다. 그 값은
+ * 승인할 사람이 있어야 생긴다.
+ *
+ * `deel run` 은 물어볼 사람이 없는 자리다(그 검사 파일의 머리글이 바로 「물어볼
+ * 사람이 없는 자리에서 서지 않고 끝나는가」 다). 거기서 겹침을 계획 모드로
+ * 보내면 계획을 한 장 찍고 끝난다 — 계획 모드는 파일을 고치는 도구가 없다.
+ * 승인 창은 뜰 자리가 없고, 이어 갈 턴도 없다. 시킨 일의 절반도 못 준다.
+ *
+ * 그래서 부르는 쪽이 「여기는 승인받을 수 있는 자리인가」 를 말한다. 없다고
+ * 하면 겹침 갈래를 건너뛰고 점수표대로 고른다 — 「정리해서 만들어줘」 는
+ * 코드 모드로 가서 정리도 하고 만들기도 한다.
+ *
+ * 겹쳤다는 사실 자체는 그대로 돌려준다. 부르는 쪽이 「계획도 같이 달라는
+ * 말이었다」 고 한 줄 적을 수 있어야 한다.
+ */
 
 /**
  * 이 한마디가 무슨 일인지 고른다.
  *
  * @param {string} text 사용자가 친 말
+ * @param {{승인받을수있나?: boolean}} [어떻게] 승인받을수있나 가 false 면
+ *        겹친 요청을 계획 모드로 안 보낸다 (물어볼 사람이 없는 자리).
  * @returns {{ mode: string|null, score: number, why: string, 겹침: boolean, 점수들: object }}
  *          mode 가 null 이면 '모르겠다' 는 뜻이다 — 종합 모드에 그대로 둔다.
  *          겹침이 true 면 계획을 내고 승인을 받아 실행까지 이어야 한다는 뜻이다.
  */
-export function route(text) {
+export function route(text, { 승인받을수있나 = true } = {}) {
   const s = String(text ?? '');
 
   // 겹친 요청은 점수표보다 먼저 본다. 점수표에 맡기면 '만들어' 가 이겨서
   // 계획을 건너뛴다 — 그게 바로 이 길을 만든 이유다.
   const 겹 = 겹친요청(s);
-  if (겹.겹침) return { mode: 'plan', score: 0, why: 겹.why, 겹침: true, 점수들: {} };
+  if (겹.겹침 && 승인받을수있나) return { mode: 'plan', score: 0, why: 겹.why, 겹침: true, 점수들: {} };
 
   const 점수들 = {};
   const 근거 = {};
@@ -1063,7 +1270,20 @@ export function route(text) {
    * 되고, 그 눈금은 아무도 못 지킨다. 여기서 가르는 것은 정도의 문제가 아니라
    * 종류의 문제다 — 고칠 수 있는 자리인가 아닌가.
    */
-  const 손대라 = 손대라했나(s);
+  /*
+   * 승인받을 자리가 없는데 겹친 요청이면 여기서도 뺀다.
+   *
+   * 겹쳤다는 것은 「실행하라는 절반이 분명히 있다」 는 뜻이다. 그런데 물어볼
+   * 사람이 없으면 계획 모드는 계획 한 장으로 끝난다. 「plan and then build
+   * it」 이 그랬다 — 겹침 갈래를 건너뛰어도 점수표의 `plan` 5점이 이겨서
+   * 그대로 읽기 전용 모드로 갔다. 건너뛰는 것만으로는 모자란다.
+   */
+  const 손대라했다 = 손대라했나(s);
+  const 승인자리없다 = 겹.겹침 && !승인받을수있나;
+  const 손대라 = 손대라했다 || 승인자리없다;
+  // 왜 뺐는지는 화면에 그대로 뜬다. 두 까닭은 사람에게 아주 다른 말이라,
+  // 하나로 뭉뚱그리면 「고치라고 한 적 없는데」 하고 막힌다.
+  const 뺀까닭 = 손대라했다 ? '고치라는 말이라' : '승인받을 자리가 없어서';
   const 뺀것 = [];
   let 순위 = Object.entries(점수들).sort((a, b) => b[1] - a[1]);
   if (손대라) {
@@ -1086,7 +1306,7 @@ export function route(text) {
    *
    * 그래서 글이 길면 **더 뚜렷할 때만** 고른다. 못 고르면 종합에 그대로
    * 두는데, 긴 명세에는 그게 오히려 맞는 답이다 — 종합은 걸음마다 단계를
-   * 따라가므로(agent/단계.js) 계획에서 시작해 만들기로 알아서 넘어간다.
+   * 따라가므로(agent/phase.js) 계획에서 시작해 만들기로 알아서 넘어간다.
    */
   const 긴글 = s.length >= 1500;
   const 더줘야 = 긴글 ? 2 : 0;
@@ -1114,12 +1334,19 @@ export function route(text) {
    * 안 보낸다」 는 그대로 맞다 — 그런데 그것은 **설계로 보내지 말라**는 말
    * 이지, 그 글이 디버그라는 말이 아니다. 뺀 것이 남은 으뜸보다 세다면 이
    * 글이 무엇인지는 아직 안 정해진 것이다. 종합에 둔다 — 종합은 걸음마다
-   * 단계를 따라가므로(agent/단계.js) 계획에서 시작해 만들기로 넘어간다.
+   * 단계를 따라가므로(agent/phase.js) 계획에서 시작해 만들기로 넘어간다.
    *
    * 짧은 말에는 안 건다. 짧은 말에서는 낱말 하나가 곧 뜻이다.
    */
   const 뺀최고 = Math.max(0, ...뺀것.map((m) => 점수들[m] ?? 0));
-  const 지나가는말 = 긴글 && Boolean(으뜸) && 점수 < 뺀최고;
+  /*
+   * 동점도 지나가는 말이다. 「뺀 것이 남은 으뜸보다 세면 안 정해진 것」 이라 적어 놓고 `<` 로 재서, 설계 10 ·
+   * 디버그 10 인 긴 글이 디버그로 갔다 — 같은 세기면 더더욱 안 정해진 것이다. 그리고 남은 으뜸이 **0점**이면
+   * 그건 으뜸이 아니다: 화면이 「architect(10점) 가 debug(0점) 보다 세서 debug 로 안 봄」 이라고, 신호가
+   * 하나도 없던 모드를 견준 것처럼 적었다 (6회차 Gemini 길고르기6 e3·e4). 0점이면 아래 「신호가 있었지만
+   * 고치라는 말이라」 갈래로 간다.
+   */
+  const 지나가는말 = 긴글 && Boolean(으뜸) && 점수 > 0 && 점수 <= 뺀최고;
 
   // 골랐어야 할 만한 신호가 있었는데 일부러 안 보낸 자리인가.
   const 일부러 = Boolean(지나가는말 || 뺀것.length
@@ -1134,7 +1361,7 @@ export function route(text) {
       : 긴글 && 으뜸 && 점수 >= (문턱[으뜸] ?? 4)
         ? `글이 길어 ${으뜸} 신호 하나로는 안 정함 — 종합에서 단계를 따라갑니다`
         : 뺀것.length
-          ? `${뺀것.join('·')} 신호가 있었지만 고치라는 말이라 읽기 전용 모드로 안 보냄`
+          ? `${뺀것.join('·')} 신호가 있었지만 ${뺀까닭} 읽기 전용 모드로 안 보냄`
           : '무슨 일인지 뚜렷하지 않음';
     /*
      * ── 「일부러 안 골랐다」 와 「그냥 모르겠다」 는 다른 말이다 ─────────
@@ -1149,7 +1376,7 @@ export function route(text) {
      * 그래서 **가르는 일을 여기서 한다.** 부르는 쪽이 `뺀것.length` 니
      * `글이 길` 이니를 다시 헤아리게 두면 두 자리에서 따로 어긋난다.
      */
-    return { mode: null, score: 점수, why: 왜, 겹침: false, 점수들, 뺀것, 일부러 };
+    return { mode: null, score: 점수, why: 왜, 겹침: 겹.겹침, 점수들, 뺀것, 일부러 };
   }
 
   // 1·2등이 붙으면 고르지 않는다. 반반인 것을 억지로 정하면 절반은 틀린다.
@@ -1157,7 +1384,7 @@ export function route(text) {
   if (점수 - 둘째 < 2 && 둘째 >= (문턱[순위[1][0]] ?? 4)) {
     return {
       mode: null, score: 점수, why: `${으뜸} 과 ${순위[1][0]} 가 비슷함`,
-      겹침: false, 점수들, 뺀것, 일부러: true,
+      겹침: 겹.겹침, 점수들, 뺀것, 일부러: true,
     };
   }
 
@@ -1165,8 +1392,8 @@ export function route(text) {
     mode: 으뜸,
     score: 점수,
     why: [근거[으뜸].slice(0, 2).map((x) => `'${x}'`).join(', '),
-      뺀것.length ? `(${뺀것.join('·')} 는 고치라는 말이라 뺐습니다)` : ''].filter(Boolean).join(' '),
-    겹침: false,
+      뺀것.length ? `(${뺀것.join('·')} 는 ${뺀까닭} 뺐습니다)` : ''].filter(Boolean).join(' '),
+    겹침: 겹.겹침,
     점수들,
   };
 }

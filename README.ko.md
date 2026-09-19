@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-10%2C215%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-13%2C900%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -128,7 +128,7 @@
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
-| [릴리스 노트](docs/ko/releases.md) | [1.16.x](docs/ko/releases/1.16.md) · [1.15.x](docs/ko/releases/1.15.md) · [1.14.x](docs/ko/releases/1.14.md) · [1.13.x](docs/ko/releases/1.13.md) · [1.12.x](docs/ko/releases/1.12.md) · [1.10.x](docs/ko/releases/1.10.md) · [1.9.x](docs/ko/releases/1.9.md) · [그 앞](docs/ko/releases.md) |
+| [릴리스 노트](docs/ko/releases.md) | [1.16.x](docs/ko/releases/1.x.md#116x) · [1.15.x](docs/ko/releases/1.x.md#115x) · [1.14.x](docs/ko/releases/1.x.md#114x) · [1.13.x](docs/ko/releases/1.x.md#113x) · [1.12.x](docs/ko/releases/1.x.md#112x) · [1.10.x](docs/ko/releases/1.x.md#110x) · [1.9.x](docs/ko/releases/1.x.md#19x) · [그 앞](docs/ko/releases.md) |
 
 ---
 
@@ -223,6 +223,16 @@ Model Context Protocol 과 Agent Client Protocol 은 둘 다 표준입출력으�
 만든 겁니다. 손으로 적은 서류는 언젠가 실제와 어긋나고, 담당자가 그걸 한 번
 발견하면 나머지 서류도 안 믿습니다.
 
+#### 한마디가 어떻게 도나
+
+길고르기가 모드를 정하고, 그 모드가 모델에게 보일 도구를 정하고, 도구를 부를 때마다
+모드 관문과 승인 관문을 지납니다. 걸리면 거기서 멈춥니다.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-flow-ko-dark.svg">
+  <img alt="한마디가 도는 길 — 사람 말에서 길고르기, 모드의 도구 목록, 모델, 모드 관문과 승인 관문, 도구 실행, 확인(Verify), 답까지. 도구 결과는 모델로 돌아가 걸음 상한까지 되풀이한다" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-flow-ko-light.svg" width="760">
+</picture>
+
 ---
 
 ## 빠른 시작
@@ -274,6 +284,11 @@ deel
 말로 보장하는 대신 코드가 막습니다 — `src/safety/network.js` 가 요청마다 확인하고,
 허용 목록에 없으면 요청을 만들지도 않습니다.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-trust-ko-dark.svg">
+  <img alt="글이 갈 수 있는 자리 — 작업 폴더와 .deel/ 은 이 컴퓨터 안에 있고 선을 넘는 길은 모델 게이트웨이·WebFetch·플러그인 받기·MCP 서버 넷뿐이다. 열쇠와 감사 기록·되돌리기·대화는 선을 안 넘고, 봉인은 뒤의 셋을 잠근다" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-trust-ko-light.svg" width="900">
+</picture>
+
 ```
  [A] 모델 게이트웨이 ─── 소스 코드가 나가는 유일한 길
      setup 에서 정한 한 자리만. 모델을 바꾸면 이전 자리는 닫힙니다.
@@ -301,7 +316,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 1.20.13  ⌂ 이 안
+ deel 2.0.0  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -326,7 +341,7 @@ deel --offline
 수집·전송하는 것이 없습니다. 텔레메트리, 사용 통계, 오류 보고 전부 없습니다.
 대화 기록·되돌리기 이력·설정은 작업 폴더의 `.deel/` 안에만 남습니다.
 
-> 검증: `npm test` 의 network·web·mcp 검사 186항목. 허용되지 않은 서버에 실제로
+> 검증: `npm test` 의 network·web·mcp 검사 350항목. 허용되지 않은 서버에 실제로
 > 요청이 **한 건도 닿지 않는지**, `--offline` 일 때 MCP 서버가 **한 번도 안
 > 뜨는지**까지 진짜 서버를 띄워서 확인합니다.
 
@@ -367,7 +382,7 @@ deel setup
 
 Bedrock 은 리전을 고릅니다 — 서울(`ap-northeast-2`) 포함 다섯 곳과 「직접 입력」.
 Claude 는 몸통 규격이 달라서 여섯 자리를 따로 흡수했습니다
-([1.7.0 릴리스 노트](docs/ko/releases/1.7.md#170)).
+([1.7.0 릴리스 노트](docs/ko/releases/1.x.md#170)).
 
 ### 바깥에 붙으면 파일 속 비밀도 가립니다
 
@@ -457,7 +472,7 @@ $ deel scan
   ◆ llama.cpp   127.0.0.1:8080     OpenAI 호환    7ms
       · gemma-3-4b-it
 
-  합계  서버 3곳 · 모델 6개
+  합계  서버 3곳 · 모델 4개
 
   추천  Ollama · qwen2.5-coder:7b
         코딩용 모델 · 도구 호출을 잘하는 계열
@@ -587,6 +602,11 @@ LM Studio 는 `/api/v0/models`, llama.cpp 는 `/props`. 못 알아보면 `(추�
 
 읽기만 하는 모드에서는 `Write`·`Edit`·`Bash` 를 **모델에게 아예 보내지 않습니다.**
 "고치지 마세요" 라고 부탁하지 않습니다 — 모델은 부탁을 잊습니다. 없는 도구는 못 씁니다.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-modes-ko-dark.svg">
+  <img alt="여덟 가지 작업 모드를 한 판에 — 모드마다 표시와 이름, 파일을 바꿀 수 있는지, 생각 강도, 128k 모델에서의 걸음 상한, 무슨 일일 때 쓰는지" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-modes-ko-light.svg" width="760">
+</picture>
 
 `/mode` 와 헷갈리지 마세요. 둘은 다른 축입니다.
 
@@ -785,7 +805,7 @@ deel doc2md 스펙.pdf --out 스펙.md   # 파일로
 | `코드-줄이기` | 동작은 그대로 두고 읽기 쉽게 |
 | `스스로-검토` | 다 됐다고 말하기 전에. 못 잰 것까지 말하게 |
 
-목록으로 늘 나가는 몫은 354토큰입니다(8k 창의 4%). 본문은 `Skill` 로 부를 때만 나갑니다.
+목록으로 늘 나가는 몫은 404토큰입니다(8k 창의 5%). 본문은 `Skill` 로 부를 때만 나갑니다.
 같은 이름을 직접 만들면 그쪽이 이깁니다 — 품고 다니는 것이 제일 낮은 자리입니다.
 
 ```
@@ -1139,12 +1159,12 @@ deel pack --out deel-반입.zip
 ```
 ── 반입 묶음 ───────────────────────────────────────────────────
   ✓ deel-반입.zip
-     94개 파일 · 509.6KB
+     175개 파일 · 1607.2KB
 
   의존성          0개
   설치 스크립트   없음
   외부 import     0건
-  네트워크 호출   3곳 (설정한 주소로만)
+  네트워크 호출   8곳 (설정한 주소로만)
   포트 열기       1곳 (/preview 만)
 ```
 
@@ -1162,7 +1182,7 @@ zip 안에는 **사람이 읽을 것 한 장, 기계가 읽을 것 두 장**이 
 
 | 파일 | 무엇 |
 |---|---|
-| `반입심사서.txt` | 의존성 · 설치 스크립트 · **소스를 훑어 찾은 네트워크·외부 명령 호출 자리 전부**(파일:줄) · 나가는 길 세 갈래 · 파일별 SHA-256 |
+| `반입심사서.txt` | 의존성 · 설치 스크립트 · **소스를 훑어 찾은 네트워크·외부 명령 호출 자리 전부**(파일:줄) · 나가는 길 네 갈래 · 파일별 SHA-256 |
 | `sbom.cdx.json` | **SBOM (CycloneDX 1.7).** 스캐너에 그대로 넣습니다. 파일마다 부품 하나에 SHA-256 과 라이선스, 의존성은 **빈 배열로 명시** — 안 적어 낸 것과 없는 것은 다릅니다. CISA 2026 최소 요소(해시 알고리즘 · 부품 라이선스 · 만든 도구 · 만든 맥락) 네 칸이 다 차 있습니다 |
 | `심사명세.json` | 통신 목록(갈래마다 언제·어디로·무엇이·막는법·소스 자리) · **감사기록 사양**(칸 이름과 뜻, 안 남기는 것) · 파일 해시 |
 
@@ -1220,7 +1240,7 @@ deel stats                    # 이 폴더에서 실제로 무엇을 했나 (.de
 ## 개발
 
 ```bash
-npm test          전체 검증 (8,140항목 — 몇몇은 터미널에 따라 갈립니다)
+npm test          전체 검증 (13,900항목 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -1254,30 +1274,30 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 검증 | 항목 | 무엇을 |
 |---|---|---|
-| `smoke` | 24 | 도구·작업범위·되돌리기·감사로그 |
-| `loop` | 28 | 에이전트 루프·스트리밍·도구 호출 |
-| `guard` | 113 | **안 하는 자리** — 거부·모르는 도구·두 번 실행·범위 밖·`.deel` 울타리 |
-| `network` | 70 | 정해진 자리 밖으로 새지 않는가 |
-| `web` | 56 | 웹 읽기가 읽기만 하는가 |
-| `abort` · `steer` | 22 · 15 | Ctrl+C 로 끊어도 대화가 성한가 · 도중에 낀 말이 다음 부름에 실리는가 |
-| `parallel` | 23 | 읽기만 동시에 도는가 · 할 일 목록 |
-| `cli` · `oneshot` | 84 · 82 | **진짜 `deel` 을 띄워** 끝까지 돌려 본다 · 배치 모드와 종료코드 |
-| `setup` | 60 | 첫 실행 마법사 (가짜 TTY 로 사람처럼 입력) |
-| `detect` | 85 | 주소 한 줄로 규격·인증을 짚어내는가 |
-| `modes` · `route` | 120 · 72 | 작업 모드 · 종합에서 알맞은 모드로 옮겨 가는가 |
-| `ctxsize` | 56 | 모델에 걸린 컨텍스트 길이를 긁어오는가 |
-| `commands` · `commands-more` | 221 · 93 | 슬래시 명령 전부 |
-| `ui` · `ui2` | 89 · 40 | 암호 가림·한글 폭·상태줄·대화 목록·엑셀→글 |
-| `encoding` · `xlsx` | 77 · 72 | 한글 인코딩 판별 · 엑셀 읽기 |
-| `compact` | 101 | 요약 압축·짝 안 깨짐·실패 시 물러섬 |
-| `stuck` · `undo` | 48 · 58 | 헛도는 것과 일이 되는 것을 가르는가 · 셸이 쓴 파일도 되돌려지는가 |
-| `store` | 75 | 대화 저장·이어하기·중간에 죽어도 복구 |
-| `scan` | 30 | 여러 런타임을 구분해 찾는가 |
-| `plugins` | 79 | 플러그인 받기·묶기·ZIP/TAR |
-| `exitcode` · `doorparity` | 7 · 7 | 화면에 적은 종료코드 표가 진짜인가 · 문 **네 개**가 같은 것을 주는가 |
-| `no-bundle` | 21 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
-| `edit-bench` | 20건 | 편집 성공률 |
-| `mutate` | 어긋 12개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
+| `smoke` | 25 | 도구·작업범위·되돌리기·감사로그 |
+| `loop` | 85 | 에이전트 루프·스트리밍·도구 호출 |
+| `guard` | 323 | **안 하는 자리** — 거부·모르는 도구·두 번 실행·범위 밖·`.deel` 울타리 |
+| `network` | 110 | 정해진 자리 밖으로 새지 않는가 |
+| `web` | 99 | 웹 읽기가 읽기만 하는가 |
+| `abort` · `steer` | 22 · 18 | Ctrl+C 로 끊어도 대화가 성한가 · 도중에 낀 말이 다음 부름에 실리는가 |
+| `parallel` | 41 | 읽기만 동시에 도는가 · 할 일 목록 |
+| `cli` · `oneshot` | 124 · 220 | **진짜 `deel` 을 띄워** 끝까지 돌려 본다 · 배치 모드와 종료코드 |
+| `setup` | 109 | 첫 실행 마법사 (가짜 TTY 로 사람처럼 입력) |
+| `detect` | 123 | 주소 한 줄로 규격·인증을 짚어내는가 |
+| `modes` · `route` | 207 · 221 | 작업 모드 · 종합에서 알맞은 모드로 옮겨 가는가 |
+| `ctxsize` | 71 | 모델에 걸린 컨텍스트 길이를 긁어오는가 |
+| `commands` · `commands-more` | 274 · 195 | 슬래시 명령 전부 |
+| `ui` · `ui2` | 126 · 40 | 암호 가림·한글 폭·상태줄·대화 목록·엑셀→글 |
+| `encoding` · `xlsx` | 159 · 106 | 한글 인코딩 판별 · 엑셀 읽기 |
+| `compact` | 153 | 요약 압축·짝 안 깨짐·실패 시 물러섬 |
+| `stuck` · `undo` | 76 · 138 | 헛도는 것과 일이 되는 것을 가르는가 · 셸이 쓴 파일도 되돌려지는가 |
+| `store` | 135 | 대화 저장·이어하기·중간에 죽어도 복구 |
+| `scan` | 66 | 여러 런타임을 구분해 찾는가 |
+| `plugins` | 197 | 플러그인 받기·묶기·ZIP/TAR |
+| `exitcode` · `doorparity` | 7 · 19 | 화면에 적은 종료코드 표가 진짜인가 · 문 **네 개**가 같은 것을 주는가 |
+| `no-bundle` | 28 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
+| `edit-bench` | 15건 | 편집 성공률 |
+| `mutate` | 어긋 1,650개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
 
 > **자세히** — 어디를 밟았는지 · 폴더 구조
 >
@@ -1289,49 +1309,47 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| [1.20.13](docs/ko/releases/1.20.md#12013) | 띄어쓰기 한 칸이 시킨 말을 통째로 숨겼습니다 |
-| [1.20.12](docs/ko/releases/1.20.md#12012) | 켠다고 적은 자물쇠가 아무것도 안 잠그고 있었습니다 |
-| [1.20.11](docs/ko/releases/1.20.md#12011) | 안전망이 있다고 말하는데 없었습니다 |
-| [1.20.10](docs/ko/releases/1.20.md#12010) | 답하지 않았는데 답한 것이 되어 있었습니다 |
-| [1.20.9](docs/ko/releases/1.20.md#1209) | 안 보이는 것이 아니라 다른 것이 보이고 있었습니다 |
-| [1.20.8](docs/ko/releases/1.20.md#1208) | 못 쟀다는 것을 안 된다고 적고 있었습니다 |
-| [1.20.7](docs/ko/releases/1.20.md#1207) | 서버가 말해 준 것과 반대를 배우고 있었습니다 |
-| [1.20.6](docs/ko/releases/1.20.md#1206) | 2차 리뷰가 판을 조용히 잃고 있었습니다 |
-| [1.20.5](docs/ko/releases/1.20.md#1205) | `aws_access_token` 이 안 잡히고 있었습니다 |
-| [1.20.4](docs/ko/releases/1.20.md#1204) | 붙임표 마디를 하나만 세고 있었습니다 |
-| [1.20.3](docs/ko/releases/1.20.md#1203) | 울타리를 옮긴 자리가 어디까지 흔들렸는지 한 판에 보이게 했습니다 |
-| [1.20.2](docs/ko/releases/1.20.md#1202) | 앞 판이 막으려던 자리를 앞 판이 막고 있었습니다 |
-| [1.20.1](docs/ko/releases/1.20.md#1201) | `PASSWORD=` 는 한 번도 안 잡히고 있었습니다 |
-| [1.20.0](docs/ko/releases/1.20.md#1200) | 대문자로 안 적은 열쇠는 그대로 나가고 있었습니다 |
-| [1.19.5](docs/ko/releases/1.19.md#1195) | 윈도우 줄바꿈에서는 앞 판의 고침이 통째로 헛돌고 있었습니다 |
-| [1.19.4](docs/ko/releases/1.19.md#1194) | 주석을 달아 둔 자리에서 비밀이 또 샜습니다 |
-| [1.19.3](docs/ko/releases/1.19.md#1193) | YAML 에 적은 비밀이 평문으로 나가고 있었습니다 |
-| [1.19.2](docs/ko/releases/1.19.md#1192) | 울타리를 옮긴 자리에 틈이 생겼습니다 — 1.19.1 이 낸 구멍을 막습니다 |
-| [1.19.1](docs/ko/releases/1.19.md#1191) | 열두 번째 눈이 본 것, 그리고 오탐 열넷 — 지적 27건 중 13건이 진짜였습니다 |
-| [1.19.0](docs/ko/releases/1.19.md#1190) | 한쪽을 맞히면 반대쪽이 틀렸습니다 — 검사 9,093개로 양쪽을 같이 잽니다 |
-| [1.18.0](docs/ko/releases/1.18.md#1180) | 있는 것과 걸리는 것은 다릅니다 — 검사 8,404개가 초록인 채로 열려 있던 자리들 |
-| [1.17.9](docs/ko/releases/1.17.md#1179) | 한도에 걸렸는데 1초 뒤에 또 두드리고 있었습니다 |
-| [1.17.8](docs/ko/releases/1.17.md#1178) | 긴 지시문을 통째로 붙여 넣으면 시킨 것과 반대로 갔습니다 — 그리고 망이 한 번 끊기면 턴이 사라졌습니다 |
-| [1.17.7](docs/ko/releases/1.17.md#1177) | 나란히 세워 재 봤고, 진 항목을 고쳤습니다 |
-| [1.17.6](docs/ko/releases/1.17.md#1176) | 살아 있다는 신호만 오고 내용이 안 오면, 여태 영원히 기다렸습니다 |
-| [1.17.5](docs/ko/releases/1.17.md#1175) | 한 턴 안에서 단계가 일을 따라갑니다 — 그리고 읽기 도구 넷이 여태 줄을 서 있었습니다 |
-| [1.17.4](docs/ko/releases/1.17.md#1174) | 같은 요청을 한 번 더 보내던 자리들 — 그리고 배운 것이 스스로를 봉인하던 자리 |
-| [1.17.3](docs/ko/releases/1.17.md#1173) | 「같은 대화다」 를 적는 표준 이름이 없습니다 — 아는 이름을 다 답니다 |
-| [1.17.2](docs/ko/releases/1.17.md#1172) | 다른 눈으로 한 번 더 — 한글이 못 여는 hwpx · 이름 없이 나가던 요청 둘 |
-| [1.17.1](docs/ko/releases/1.17.md#1171) | 내 PC 에서만 초록이던 것 둘 — 지운 폴더에 쓰기 · 소스에 박힌 날 NUL |
-| **[1.17.0](docs/ko/releases/1.17.md#1170)** | 사내에 들여놓을 때 막히던 자리들 · 믿는 폴더 · mTLS · `doctor` · 훅 · 서브에이전트 · hwpx 쓰기 |
-| **[1.16.0](docs/ko/releases/1.16.md#1160)** | 깊이 봐 달라는 말을 얕게 받던 자리 · 게이트웨이 캐시 · `doc2md` · Figma `.fig` |
-| **[1.15.1](docs/ko/releases/1.15.md#1151)** | 에디터에 우리가 어떻게 인증받는지 말합니다 — ACP 레지스트리 등재 조건 |
-| **[1.15.0](docs/ko/releases/1.15.md#1150)** | 같은 것을 두 번 하지 않습니다 — 프리픽스 캐시를 깨던 조용히 비싼 아홉 자리 |
-| **[1.14.0](docs/ko/releases/1.14.md#1140)** | 적어 둔 것이 참인지 기계가 대신 봅니다 — 초록불과 「깨면 잡힌다」 는 다릅니다 |
-| [1.13.1](docs/ko/releases/1.13.md#1131) | 올라간 물건이 소스와 달랐습니다 — 148개 중 47개가 CRLF 로 나갔습니다 |
-| **[1.13.0](docs/ko/releases/1.13.md#1130)** | 바깥 창구와 붙는 자리를 전부 다시 봤습니다 — 서로 못 보는 검수자 셋, 셋이 같이 짚은 것 넷 |
-| **[1.12.0](docs/ko/releases/1.12.md#1120)** | 같은 앞머리를 걸음마다 다시 보내고 있었습니다 |
-| **[1.10.0](docs/ko/releases/1.10.md#1100)** | ESC 가 진짜로 멈춥니다 · 자리가 다 차도 그 턴 안에서 이어 갑니다 · 회사별 창구를 여덟 자리 전부 쟀습니다 |
-| [1.9.2](docs/ko/releases/1.9.md#192) | 막고 있다고 적어 둔 것이 실제로는 안 막고 있던 자리들 · 접히면 시킨 말과 남은 할 일이 사라지던 것 |
-| **[1.9.0](docs/ko/releases/1.9.md#190)** | 표를 표로 그린다 · Claude·Bedrock 에 추론 강도가 실제로 걸린다 · 회사별 도구 규격 · 바뀐 자리만 다시 싣기 |
+| **[2.0.0](docs/ko/releases/2.0.md#200)** | 있다고 적힌 울타리마다 실제로 걸리는지 다시 봤습니다 — 바뀐 것 전부·어디를 어떻게 고쳤나·어떻게 찾았나(CHA) |
 
-가까운 다섯 판만 적었습니다. 나머지 전부와 무엇이 왜 바뀌었는지는 **[릴리스 노트](docs/ko/releases.md)** 에 있습니다.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-cha-ko-dark.svg">
+    <img alt="CHA 한 판이 도는 아홉 걸음 — 움직이는 그림. 사냥·브리핑·2차 눈·판정·빨간 검사 먼저·고침·어긋내기·관문·기록 아홉 칸을 표시가 하나씩 짚으며 돌고, 9번에서 다시 1번으로 돌아간다. 3번 자리에는 세 눈이 선다 — Claude 는 쓰고 Gemini 와 codex 는 읽기만 한다. 움직임을 줄이는 설정이면 멈춘 그림으로 바뀐다" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-cha-ko-light.svg" width="860">
+  </picture>
+</p>
+
+2.0.0 의 고침은 코드를 읽어서 나온 것이 아닙니다. **CHA — 순환형 적대적 하네싱** 한 가지
+절차를 열다섯 판 되풀이해서 나온 것입니다. 이 고리 한 바퀴가 한 판이고, 3번 자리에는
+세 모델이 차례로 섭니다.
+
+2.0.0 은 이름이 바뀐 큰 판입니다. 그 앞의 1.2.0 ~ 1.20.13 은
+**[1.x 모음](docs/ko/releases/1.x.md)** 한 파일에 판마다 한 줄씩 있습니다.
+
+<details>
+<summary>1.x 줄기 한눈에 (18줄기)</summary>
+
+| 줄기 | 무엇이 바뀌었나 |
+|---|---|
+| [1.20.x](docs/ko/releases/1.x.md#120x) | 띄어쓰기 한 칸이 시킨 말을 통째로 숨겼습니다 |
+| [1.19.x](docs/ko/releases/1.x.md#119x) | 한쪽을 맞히면 반대쪽이 틀렸습니다 — 2차 리뷰 열세 판, 그리고 옮긴 자리에 난 틈 |
+| [1.18.x](docs/ko/releases/1.x.md#118x) | 있는 것과 걸리는 것은 다릅니다 — 초록불이 지키지 않던 자리들, 그리고 2차 리뷰 |
+| [1.17.x](docs/ko/releases/1.x.md#117x) | 회사 안에 들여놓을 때 막히던 자리들, 그리고 무엇을 할지는 그 회사가 적습니다 |
+| [1.16.x](docs/ko/releases/1.x.md#116x) | 깊이 봐 달라는 말을 얕게 받던 자리, 그리고 시안·문서를 그대로 읽습니다 |
+| [1.15.x](docs/ko/releases/1.x.md#115x) | 같은 것을 두 번 하지 않습니다 — 조용히 비싼 아홉 자리 |
+| [1.14.x](docs/ko/releases/1.x.md#114x) | 적어 둔 것이 참인지 기계가 대신 봅니다 — 초록불과 「깨면 잡힌다」 는 다릅니다 |
+| [1.13.x](docs/ko/releases/1.x.md#113x) | 바깥 창구와 붙는 자리를 전부 다시 봤습니다 |
+| [1.12.x](docs/ko/releases/1.x.md#112x) | 같은 앞머리를 매번 다시 보내고 있었습니다 |
+| [1.10.x](docs/ko/releases/1.x.md#110x) | ESC 가 진짜로 멈추고, 자리가 다 차도 하던 일을 이어 갑니다 |
+| [1.9.x](docs/ko/releases/1.x.md#19x) | 화면이 읽히고, 회사 API 가 제 말을 알아듣습니다 |
+| [1.8.x](docs/ko/releases/1.x.md#18x) | 한 시간짜리 토큰을 쓰는 사내 게이트웨이에서 하루를 보낼 수 있습니다 |
+| [1.7.x](docs/ko/releases/1.x.md#17x) | 로컬은 그대로 두고, 말했을 때만 바깥으로 나갑니다 |
+| [1.6.x](docs/ko/releases/1.x.md#16x) | 일이 되고 있는데 헛돈다고 끊던 자리 |
+| [1.5.x](docs/ko/releases/1.x.md#15x) | 5MB 문서를 919줄 중 8줄만 보고 있었습니다 |
+| [1.4.x](docs/ko/releases/1.x.md#14x) | README 가 왜 다른지 말하고, 심사서의 빠진 한 줄을 채운다 |
+| [1.3.x](docs/ko/releases/1.x.md#13x) | 말 대신 증거, 터미널 대신 에디터 |
+| [1.2.x](docs/ko/releases/1.x.md#12x) | 대화가 끊기지 않게 |
+
+</details>
 
 ---
 

@@ -136,6 +136,55 @@ trace('4-pdf');
     /못 읽었습니다/.test(그림만.md ?? ''), (그림만.md ?? '').split('\n').pop());
   check('★ 왜 못 읽었는지도 적는다', /스캔|OCR/.test(그림만.md ?? ''),
     (그림만.md ?? '').split('\n').pop());
+
+  /*
+   * ★★★ 쪽이 **통째로 빠진** 것은 마크다운 **안에** 적혀야 한다.
+   *
+   * 못 읽은 쪽은 `## 3쪽` 자리에 「못 읽었습니다」 가 남지만, 쪽 나무가 끊겨
+   * 아예 안 걸린 쪽은 남길 자리조차 없다. 그 말이 `summary` 한 줄에만 있으면,
+   * `.md` 로 떨어뜨려 둔 다음부터는 **아무 데도 없다** — 문서가 제 입으로 3쪽
+   * 이라고 적어 뒀는데 1쪽짜리 온전한 문서로 남는다.
+   */
+  const 반쪽 = join(root, '반쪽나무.pdf');
+  writeFileSync(반쪽, 반쪽나무pdf());
+  const r반 = 마크다운(반쪽);
+  check('★★★ 마크다운 안에 「몇 쪽을 못 건졌다」 가 적힌다',
+    r반.ok && /못 건짐/.test(r반.md ?? ''), (r반.md ?? r반.error ?? '').split('\n').slice(0, 3).join(' / '));
+  check('★★★ 문서가 적어 둔 쪽 수도 같이 적힌다',
+    /3쪽이라고 적어 두었는데/.test(r반.md ?? ''), (r반.md ?? '').split('\n')[1]);
+  check('★★ 「없다고 답하지 마세요」 도 같이 간다',
+    /답하지 마세요/.test(r반.md ?? ''), (r반.md ?? '').split('\n')[3]);
+  // 멀쩡한 문서에 이 말이 붙으면 거짓 경고다 — 안 하느니만 못하다.
+  check('  (짝) 온전한 문서에는 안 붙는다',
+    !/못 건짐|답하지 마세요/.test(글있는것.md ?? ''), (글있는것.md ?? '').split('\n')[1]);
+}
+
+/**
+ * /Kids 셋 중 둘이 끊긴 PDF 를 바이트로 짓는다 (pdf.test.js 의 `반쪽나무` 와 같은 꼴).
+ *
+ * 덧붙여 저장하다 끊긴 계약서·서명 PDF 에 정말 흔한 모양이라, 자료 파일로
+ * 두지 않고 여기서 짓는다 — 어디가 어긋나 있는지가 눈에 보여야 한다.
+ */
+function 반쪽나무pdf() {
+  const 흐름 = 'BT /F1 12 Tf 72 720 Td (FIRST PAGE ONLY) Tj ET';
+  const 객체 = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R 7 0 R 8 0 R] /Count 3 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${흐름.length} >>\nstream\n${흐름}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let 글 = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n';
+  const 자리 = [];
+  객체.forEach((몸, i) => {
+    자리.push(글.length);
+    글 += `${i + 1} 0 obj\n${몸}\nendobj\n`;
+  });
+  const xref자리 = 글.length;
+  글 += `xref\n0 ${객체.length + 1}\n0000000000 65535 f \n`;
+  for (const off of 자리) 글 += `${String(off).padStart(10, '0')} 00000 n \n`;
+  글 += `trailer\n<< /Size ${객체.length + 1} /Root 1 0 R >>\nstartxref\n${xref자리}\n%%EOF\n`;
+  return Buffer.from(글, 'latin1');
 }
 
 // ══ 5. 자를 때는 잘랐다고 말한다 ════════════════════════════════════════

@@ -27,8 +27,8 @@
 // 그래서 여기서 process.stdout.write 를 통째로 바꿔 끼운다. 부르는 자리를
 // 하나하나 찾아 막는 방법도 있지만, 그건 앞으로 새로 쓰는 코드까지 계속
 // 조심해야 한다는 뜻이다 — 언젠가 반드시 한 군데를 빠뜨린다.
-import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, statSync } from 'node:fs';
+import { isAbsolute, join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import { 규칙모으기, 늘허락, 정책읽기 } from '../safety/policy.js';
 import { 훅읽기 } from '../safety/hooks.js';
@@ -36,12 +36,12 @@ import { 에이전트읽기 } from '../agent/agents.js';
 import { 남길것읽기 } from '../safety/shellenv.js';
 import { 받기설정 } from '../safety/authcmd.js';
 import { run } from '../agent/loop.js';
-import { Session, repairToolPairs } from '../agent/session.js';
-import { Store, sessionsDir, prune } from '../agent/store.js';
+import { Session, repairToolPairs, 규격맞추기 } from '../agent/session.js';
+import { Store, sessionsDir, prune, 대화이름인가 } from '../agent/store.js';
 import { makeScope } from '../safety/guard.js';
 import { History } from '../safety/undo.js';
 import { Audit, 열쇠묻기 } from '../safety/audit.js';
-import { activeProfile, load, resolveKey, homeDir, save as saveCfg } from '../config.js';
+import { activeProfile, load, resolveKey, homeDir, save as saveCfg, 소식줄들 } from '../config.js';
 import { 말 as 옮긴말 } from '../i18n/index.js';
 import { 알림채움, 알림말 } from '../backend/retry.js';
 import { 전선붙이기, 세션이름짓기 } from '../backend/wire.js';
@@ -57,7 +57,7 @@ import { 배움 } from '../agent/evolve.js';
 import { 카드 } from '../agent/card.js';
 import { 못박기 } from '../agent/pins.js';
 import { route } from '../agent/route.js';
-import { ORDER as 모드순서, get as getWork, normalize as 모드정리 } from '../agent/modes.js';
+import { ORDER as 모드순서, get as getWork, normalize as 모드정리, 보일이름 } from '../agent/modes.js';
 import { 모두끝내기 as 일감모두끝내기 } from '../tools/jobs.js';
 import { 연결, 줄나누기, 모르는방법오류, 잘못된인자오류, 인증필요오류 } from './jsonrpc.js';
 import { 도구시작, 도구끝남, 도구이름표, 도구갈래, 도구자리, 멈춘까닭, 프롬프트글, 되살린것 } from './map.js';
@@ -125,6 +125,43 @@ export async function acp(opts = {}) {
   const 방들 = new Map();
 
   /*
+   * ── 이 프로세스가 연 연결 주소 전부 (6회차 N9) ──────────────────────────
+   *
+   * 문지기(safety/network.js)의 allowEndpoint 는 「이전에 올린 것은 지운다」 — 부르는
+   * 쪽이 **지금 열려 있어야 할 것 전부**를 한 번에 말하라는 약속이다. 여기는 방마다
+   * 제 주소 하나만 말했다. 에디터에서 연결이 다른 프로젝트 둘을 열면 둘째 탭을 여는
+   * 순간 첫 탭의 주소가 지워져, 첫 탭의 다음 한마디가 「허용되지 않은 주소입니다」 로
+   * 막혔다.
+   *
+   * 방들 에서 모으지 않는 까닭: 방은 **다 만들어진 뒤에야** 방들 에 들어간다(아래 열린자리
+   * 머리말). 겹쳐 온 session/new 둘이 서로 상대 주소를 못 보고 지운다. 그래서 허락을
+   * 통과한 그 자리에서 바로 적는다. 넓어지는 것이 아니다 — 여기 오르는 주소는 저마다
+   * 이 프로세스의 봉인·허락 검사를 지난 것뿐이다.
+   */
+  const 열린주소 = new Set();
+
+  /*
+   * ── 이 프로세스가 내준 대화 이름 → 그 폴더 (사냥5 H5-1) ──────────────────
+   *
+   * 대화 이름은 초 단위이고, 빈 이름인지는 **그 폴더의 대화 파일**로만 봤다. 그런데
+   * 에디터 하나가 이 프로세스로 여러 프로젝트를 연다. 두 프로젝트를 같은 초에 열면
+   * 두 폴더 다 그 이름의 파일이 없어서 두 방이 같은 sessionId 를 받았고, 방들 에는
+   * 뒤엣것만 남았다. 그 뒤로 A 탭에 한 말이 B 폴더의 대화 파일에 적히고, 모델은 B 를
+   * 작업 폴더로 알았다 — 파일을 고치면 **남의 프로젝트**를 고친다.
+   *
+   * sessionId 는 에디터가 방을 찾는 유일한 열쇠이고, 껐다 켤 때 파일을 찾는 이름이기도
+   * 해서 폴더를 섞어 지을 수 없다. 그래서 이 프로세스 안에서는 **안 겹치게** 짓고,
+   * 이미 다른 폴더로 연 이름을 또 다른 폴더로 되살리라면 거절한다.
+   * 방들 에는 방이 **다 만들어진 뒤에야** 들어가므로(그 사이 MCP 를 붙이느라 기다린다)
+   * 겹쳐 온 session/new 둘을 가르려면 이름을 짓는 그 자리에서 바로 적어 둬야 한다.
+   */
+  const 열린자리 = new Map();
+  const 같은자리 = (가, 나) => {
+    const 편 = (p) => { const r = resolve(String(p)); return process.platform === 'win32' ? r.toLowerCase() : r; };
+    return 편(가) === 편(나);
+  };
+
+  /*
    * 폴더 → MCP 붙임. **폴더 하나에 한 벌**이다.
    *
    * 에디터에서 `session/new` 는 탭 하나다. 사람은 한 프로젝트를 열어 놓고 탭을
@@ -158,9 +195,44 @@ export async function acp(opts = {}) {
    * @param {string|null} o.아이디  이어할 대화 이름. 주면 그 파일에 이어 쓴다
    */
   async function 방만들기(요청, { 아이디 = null } = {}) {
-    const cfg = load();
+    /*
+     * 작업 폴더를 **설정보다 먼저** 정한다.
+     *
+     * 여기는 `load()` 가 위에 있었다. 그러면 설정·신뢰·승인 규칙은 이
+     * 프로세스를 띄운 자리(process.cwd())를 기준으로 읽히고, 파일을 고치는
+     * 쪽만 아래에서 정한 `root` 를 쓴다 — 한 세션 안에서 두 폴더가 섞인다.
+     * 자세한 것은 config.js 의 projectDir 머리말에 적어 뒀다.
+     */
+    /*
+     * 에디터가 준 cwd 는 **있는 절대 경로**여야 한다 — 아래 「작업 폴더는 에디터가 정한다」.
+     *
+     * 여기가 받은 글을 그대로 썼다. 상대 경로(`rel/dir`)면 에디터가 연 프로젝트가 아니라
+     * **이 프로세스를 띄운 자리** 기준으로 풀려서, 그 아래 머리말이 「제일 무서운 종류의
+     * 실수」 라고 적은 그대로 엉뚱한 폴더를 고친다. 없는 절대 경로면 대화 폴더를 만들다
+     * 그 경로를 통째로 새로 만들었다. 둘 다 에디터가 잘못 준 것이니 잘못된 인자로 답한다.
+     * 안 주면 예전처럼 --root(없으면 띄운 자리)를 쓴다 — 그건 사람이 띄울 때 정한 것이다.
+     */
+    const 준자리 = typeof 요청?.cwd === 'string' && 요청.cwd ? 요청.cwd : null;
+    if (준자리 != null) {
+      if (!isAbsolute(준자리)) throw 잘못된인자오류(`cwd 는 절대 경로여야 합니다: ${준자리}`);
+      let 폴더인가 = false;
+      try { 폴더인가 = statSync(준자리).isDirectory(); } catch { /* 없다 */ }
+      if (!폴더인가) throw 잘못된인자오류(`cwd 가 있는 폴더가 아닙니다: ${준자리}`);
+    }
+    const root = 준자리 ?? (opts.root ?? process.cwd());
+    const cfg = load({ root });
+    // 모아 둔 소식을 로그로 비운다 (아래 conn 을 지은 자리의 머리말). 색 제어문자는 뺀다.
+    const 소식로그 = () => {
+      for (const 줄 of 소식줄들(cfg)) {
+        const 맨글 = String(줄).replace(/\x1b\[[0-9;]*m/g, '').trim();
+        if (맨글) 로그(맨글);
+      }
+    };
     const prof = activeProfile(cfg);
     if (!prof) {
+      // 연결이 없어 여기서 끝나도 소식은 로그에 남긴다 — 「이 폴더 설정은 안 믿어서
+      // 안 읽었다」 가 바로 연결이 없는 까닭일 수 있다.
+      소식로그();
       /*
        * 잘못된인자가 아니라 **인증필요**다.
        *
@@ -181,7 +253,6 @@ export async function acp(opts = {}) {
      * 띄운 자리를 기준으로 파일을 찾게 된다. 그러면 도구는 멀쩡히 도는데
      * 엉뚱한 폴더를 고친다. 그게 제일 무서운 종류의 실수다.
      */
-    const root = typeof 요청?.cwd === 'string' && 요청.cwd ? 요청.cwd : (opts.root ?? process.cwd());
 
     /*
      * 대화는 폴더 안(.deel/sessions/)에 남는다 — 터미널에서 하던 것과 같은 자리다.
@@ -194,7 +265,12 @@ export async function acp(opts = {}) {
     if (아이디 && !existsSync(join(sessionsDir(root), `${아이디}.jsonl`))) {
       throw 잘못된인자오류(`그런 대화가 없습니다: ${아이디} (${root})`);
     }
-    const store = new Store(root, 아이디);
+    // 이 이름이 이 프로세스에서 이미 다른 폴더로 열려 있으면 되살리지 않는다 (위 열린자리 머리말).
+    const 먼저연곳 = 아이디 ? 열린자리.get(아이디) : undefined;
+    if (먼저연곳 !== undefined && !같은자리(먼저연곳, root)) {
+      throw 잘못된인자오류(`이 대화 이름은 이 창에서 이미 다른 폴더로 열려 있습니다: ${아이디} (${먼저연곳}) — 폴더가 다른 두 대화를 한 이름으로 섞지 않습니다.`);
+    }
+    const store = new Store(root, 아이디, { 피할것: (id) => 열린자리.has(id) });
 
     const conn = {
       kind: prof.kind, base: prof.baseUrl, auth: prof.auth,
@@ -237,6 +313,16 @@ export async function acp(opts = {}) {
       열쇠받기: 받기설정(prof, { 정책값: 정책읽기().값 }),
     };
     /*
+     * 모아 둔 소식을 로그로 비운다 (config.js 의 소식줄들).
+     *
+     * 이 문은 넷 중 하나도 안 당겼다. 에디터 화면에는 안 뜨지만 에디터의 로그
+     * 창에는 남는다 — 안 비우면 관리 정책이 깨지거나 이 폴더 설정을 걷어내도
+     * 어디에도 흔적이 없다. 열쇠탈은 resolveKey 뒤라야 생기므로 conn 을 지은 여기서.
+     * 로그에는 색 제어문자를 뺀다.
+     */
+    소식로그();
+
+    /*
      * 바깥으로 나가는 연결은 허가가 있어야 연다 (safety/runmode.js).
      *
      * 에디터에는 승인 창이 있지만 그건 **도구 실행**을 묻는 창이고, 「이 대화가
@@ -257,7 +343,9 @@ export async function acp(opts = {}) {
         `이 연결은 이 컴퓨터 밖으로 나갑니다 (${주소가리기(어디)}).`
         + ' 터미널에서 deel 을 한 번 켜서 허락하거나, deel acp --online 으로 띄우세요.');
     }
-    allowEndpoint(conn.base);
+    // 제 주소만 말하면 옆 탭의 주소가 지워진다 — 연 주소 전부를 한 번에 (위 열린주소 머리말).
+    열린주소.add(conn.base);
+    allowEndpoint([...열린주소]);
     if (실행모드.허가무시) setOffline(true);
 
     const session = new Session(conn, {
@@ -272,6 +360,30 @@ export async function acp(opts = {}) {
     // 지금 어느 실행 모드인가. 화면이 첫 줄에 이걸 그린다(ui/status.js).
     // session 에 실어 두는 까닭은, 대화 도중 /model 로 옮겨도 같은 자리를 보게 하려는 것이다.
     session.실행모드 = 실행모드;
+
+    /*
+     * 열쇠를 받아 오는 명령 (safety/authcmd.js). oneshot.js 와 같은 까닭으로 건다 —
+     * 안 걸면 명령이 아무 말 없이 돌고 못 받은 까닭이 사라진다.
+     *
+     * 에디터의 승인 창은 **도구 호출**을 묻는 자리라 여기 쓰지 않는다. 무엇을
+     * 띄우는지 로그에 먼저 적고 띄운다. 명령은 이 PC 설정·관리 정책에서만 온다.
+     */
+    if (conn.열쇠받기) {
+      session.열쇠물어보기 = async (설정) => {
+        로그(`열쇠를 받아 오는 명령을 띄웁니다: ${String(설정?.명령 ?? '').slice(0, 160)}`);
+        return true;
+      };
+      session.onAuth = (것) => {
+        if (것?.type === '시작') return 로그(옮긴말('auth.waiting'));
+        if (것?.type === '끝') return undefined;
+        if (것?.ok) {
+          const 분 = 것.만료 ? Math.max(0, Math.round((것.만료 - Date.now()) / 60000)) : '?';
+          return 로그(옮긴말('auth.got', { 분 }));
+        }
+        로그(`${옮긴말('auth.failed', { 왜: 것?.왜 ?? '?' })}${것?.보인것 ? ` — ${String(것.보인것).slice(0, 160)}` : ''}`);
+        return undefined;
+      };
+    }
 
     const found = discover(root);
     session.skills = found.skills;
@@ -288,18 +400,53 @@ export async function acp(opts = {}) {
      */
     if (아이디) {
       const { messages: 적힌것 } = store.load();
-      const { messages, 고친것 } = repairToolPairs(적힌것);
+      const { messages: 짝맞춘것, 고친것 } = repairToolPairs(적힌것);
+      /*
+       * 다른 규격으로 적힌 대화면 지금 규격으로 옮겨 적는다 (agent/session.js 의 규격맞추기).
+       * 저장 파일 머리글에는 규격이 없어서, 어제 Anthropic 으로 한 대화를 오늘 OpenAI
+       * 호환 프로필로 열면 tool_use 블록이 그대로 나가 첫 마디가 400 이었다.
+       * 터미널은 threads.js 가 같은 것을 한다.
+       */
+      const 옮김 = 규격맞추기(짝맞춘것, conn.kind);
+      const messages = 옮김.messages;
       session.messages = messages;
+      if (옮김.바꾼것) 로그(`${store.id} — 다른 규격으로 적힌 메시지 ${옮김.바꾼것}개를 ${conn.kind} 모양으로 옮겨 적었습니다.`);
       // 못 박아 둔 것도 같이 되살린다 (agent/pins.js). 이걸 빠뜨리면 '접어도
       // 안 지워진다' 가 에디터를 닫았다 여는 한 번에 거짓이 된다.
       const 박힌것 = store.못박은것읽기();
-      if (박힌것.length) session.못박은것 = new 못박기(박힌것);
+      if (박힌것.length) {
+        session.못박은것 = new 못박기(박힌것);
+        // 다 안 실리면 적는다 (6회차 못박기6u W4 — repl.js 되살리기와 같은 까닭).
+        const 실림 = session.못박은것.실린것();
+        if (실림.개수 < 박힌것.length) 로그(`${store.id} — 못 박아 둔 것 ${박힌것.length}개 가운데 ${실림.개수}개만 프롬프트에 실립니다 (개수·자리 상한). /pin 으로 줄이세요.`);
+      }
       로그(`${store.id} — 메시지 ${messages.length}개를 이어 받았습니다${고친것 ? ` (끊긴 도구 호출 ${고친것}개는 걷어냈습니다)` : ''}.`);
     }
     // 주소는 가려서 적는다. 열쇠가 주소에 박혀 오는 게이트웨이가 있어서,
     // 그대로 적으면 대화 기록 파일에 열쇠가 남는다 (safety/secrets.js).
     store.begin({ model: conn.model, base: 주소가리기(conn.base), root });
-    try { prune(root); } catch { /* 정리는 못 해도 대화는 된다 */ }
+    // begin() 이 이름을 옮겼을 수 있으니 그 뒤에 적는다. Store 를 지은 자리부터 여기까지
+    // 기다림이 없어서, 겹쳐 온 session/new 도 이 적힌 것을 보고 이름을 피한다.
+    열린자리.set(store.id, root);
+    /*
+     * 남은 할 일과 시킨 말 원문도 이 파일과 묶는다 (agent/store.js 의 살림따라가기).
+     *
+     * 이걸 거는 자리가 터미널(agent/threads.js)에만 있었다. 그래서 에디터로 연 대화는
+     * todo·request 줄을 한 번도 안 적었고, session/load 로 되살려도 할 일이 안 돌아왔다 —
+     * store.js 가 「따로 부르는 자리를 만들면 그 길로 들어온 사람만 이어하기가 반쪽이
+     * 된다」 고 적어 둔 바로 그 모양이다. 이어하기면 여기서 할 일·시킨 말을 되살리고,
+     * 그 뒤로는 적기() 의 append 마다 바뀐 만큼 적힌다. 첫 한마디 전인 여기여야 한다.
+     */
+    store.살림따라가기(session);
+    /*
+     * 열어 둔 대화는 정리에서 뺀다 (사냥5 H5-2, agent/store.js 의 prune 머리말).
+     *
+     * 한 달 넘은 대화를 session/load 로 되살리면 그 파일은 시각이 옛날 그대로라, 바로
+     * 여기서 지워지고 다음 한 줄이 머리글도 옛 대화도 없는 새 파일에 적혔다. 같은
+     * 폴더에 탭을 하나 더 열어도 이 정리가 또 도므로, 이 방 하나가 아니라 **이
+     * 프로세스가 연 대화 전부**를 넘긴다. 다른 폴더의 이름이 섞여도 잃는 것은 없다.
+     */
+    try { prune(root, { 남길것: [...열린자리.keys()] }); } catch { /* 정리는 못 해도 대화는 된다 */ }
 
     /*
      * 밖에서 붙인 도구(MCP).
@@ -434,6 +581,20 @@ export async function acp(opts = {}) {
   // 안 붙는 것의 차이가 크다 — 안 붙으면 위험한 명령을 물어볼 데가 없어서
   // 무조건 거부하게 되고, 그러면 에디터 안에서는 아무 일도 못 하는 도구가 된다.
   async function 승인묻기(방, 이름, 인자) {
+    /*
+     * ── 끊긴 턴의 승인은 없다 (사냥5 H5-3) ─────────────────────────────────
+     *
+     * 승인 창을 띄워 두고 사람이 안 누른 채 취소했다. 여기 기다림이 턴의 끊기 신호를
+     * 안 봐서, 그 턴은 취소된 뒤에도 **답이 올 때까지** 서 있었다. 한참 뒤 옛 창의
+     * 「이번만 실행」 이 닿자 취소한 턴이 그대로 파일을 썼다. 사람은 취소를 눌렀는데.
+     *
+     * 그래서 기다림을 지금 도는 턴의 신호에 묶고(끊기면 거둔다), 답이 온 **뒤에도**
+     * 한 번 더 본다 — 답과 취소가 엇갈려 닿으면 허락이 이긴 채로 돌아갈 수 있다.
+     * 신호는 방.도는신호 에서 읽는다. 한 방의 턴은 앞 턴이 끝나야 도므로(한턴 머리말)
+     * 이 물음을 부른 턴이 곧 그 신호의 턴이다.
+     */
+    const 신호 = 방.도는신호 ?? null;
+    if (신호?.aborted) return false;
     if (방.늘허락.has(이름)) return true;
 
     const 아이디 = `t${++방.도구번호}`;
@@ -453,8 +614,10 @@ export async function acp(opts = {}) {
           { optionId: 'allow_always', name: `${이름} 은 앞으로 묻지 않기`, kind: 'allow_always' },
           { optionId: 'reject_once', name: '하지 않기', kind: 'reject_once' },
         ],
-      });
+      }, { signal: 신호 });
 
+      // 답을 기다리는 사이에 턴이 끊겼으면 허락이 와도 안 한다 (위 머리말).
+      if (신호?.aborted) return false;
       const 결과 = 답?.outcome ?? {};
       if (결과.outcome !== 'selected') return false;   // cancelled 도 여기로 온다
       if (결과.optionId === 'allow_always') {
@@ -470,7 +633,9 @@ export async function acp(opts = {}) {
          * 허락으로 보여서, 사람이 풀린 줄 안다.
          */
         try {
-          const cfg = load();
+          // 이 방의 폴더로 읽는다. 그냥 load() 는 에디터를 띄운 자리의 설정과
+          // 금지를 봐서, 열어 둔 프로젝트의 deny 와 부딪치는지를 엉뚱하게 갈랐다.
+          const cfg = load({ root: 방.root });
           const r = 늘허락(cfg, 이름, 규칙모으기(cfg));
           if (r.ok) saveCfg(cfg);
         } catch { /* 못 적어도 이번 켠 동안은 먹는다 */ }
@@ -478,6 +643,11 @@ export async function acp(opts = {}) {
       }
       return 결과.optionId === 'allow_once';
     } catch (err) {
+      // 턴이 끊겨 기다림을 거둔 것이면 「못 물어봤다」 가 아니다. 그렇게 적으면 로그를 읽는 사람이 에디터 탓을 한다.
+      if (신호?.aborted || err?.거둠) {
+        로그(`턴이 끊겨 승인 기다림을 거뒀습니다 (${이름}) — 하지 않습니다.`);
+        return false;
+      }
       /*
        * 못 물어봤으면 안 한다.
        *
@@ -499,10 +669,42 @@ export async function acp(opts = {}) {
     // 앞 턴이 아직 돌고 있으면 끊고 시작한다. 규격은 턴을 겹쳐 보내지 말라고
     // 하지만, 안 지키는 클라이언트가 있을 때 두 턴이 같은 세션을 같이 밟으면
     // 오간 말이 뒤엉킨다. 그건 나중에 원인을 찾을 수 없는 종류의 고장이다.
-    if (방.턴 && !방.턴.signal.aborted) 방.턴.abort();
-
+    /*
+     * ── 끊기만 하고 안 기다렸다 (사냥5 H5-3) ───────────────────────────────
+     *
+     * abort() 는 「그만하라」 는 말이지 「그만뒀다」 가 아니다. 앞 턴은 승인 답이나
+     * 도구가 끝나기를 기다리는 중일 수 있고, 그 사이에 새 턴을 바로 시작하면 두 턴이
+     * 한 대화를 같이 밟았다 — 대화 파일에 새 턴의 말이 두 번 적히고, 앞 턴의 도구
+     * 결과가 제 부름에서 떨어진 자리에 적혔다(되살리면 규격 서버가 400 을 준다).
+     *
+     * 그래서 끊은 뒤 **앞 턴이 적기까지 마치고 물러날 때까지** 기다린다. 앞 턴의
+     * 기다림(승인·모델)은 끊기 신호에 묶여 있어 곧 끝난다. 기다리는 사이에 또 새
+     * 말이 오면 이 턴도 끊기므로, 끊는 줄(방.턴)은 여기서 바로 넘기고 차례(방.턴끝)는
+     * 사슬로 잇는다 — 마지막에 온 말만 돈다.
+     */
     const 턴 = new AbortController();
+    const 앞턴 = 방.턴;
     방.턴 = 턴;
+    if (앞턴 && !앞턴.signal.aborted) 앞턴.abort();
+    const 앞끝 = 방.턴끝;
+    let 끝알림 = () => {};
+    const 이번끝 = new Promise((풀기) => { 끝알림 = 풀기; });
+    방.턴끝 = 이번끝;
+    try {
+      if (앞끝) await 앞끝;
+      if (턴.signal.aborted) return { stopReason: 멈춘까닭('aborted') };
+      return await 턴돌리기(방, 글, 턴);
+    } finally {
+      if (방.턴 === 턴) 방.턴 = null;
+      if (방.턴끝 === 이번끝) 방.턴끝 = null;
+      끝알림();
+    }
+  }
+
+  /** 한 턴의 몸통. 차례를 받은 뒤에만 부른다 (위 한턴). */
+  async function 턴돌리기(방, 글, 턴) {
+    // 승인 물음이 이 턴의 끊기 신호를 보게 한다 (승인묻기 머리말, 사냥5 H5-3).
+    방.도는신호 = 턴.signal;
     방.ctx.카드다시();
 
     const 보내기 = (update) => 관.알림('session/update', { sessionId: 방.id, update });
@@ -512,11 +714,40 @@ export async function acp(opts = {}) {
       messageId: `m${방.메시지번호}`,
     });
 
-    // 종합 모드면 이 한마디를 보고 알맞은 작업 모드로 옮긴다. 대화 화면과 같다.
+    /*
+     * 종합 모드면 이 한마디를 보고 알맞은 작업 모드로 옮긴다.
+     *
+     * ── 옮기고 아무 말도 안 했다 ──────────────────────────────────────
+     *
+     * 대화 화면과 `deel run` 은 어느 모드로 갔는지, 무슨 말 때문인지 찍는다.
+     * 여기만 조용히 옮겼다. 에디터 쪽 사람은 **파일을 못 고치는 모드**로
+     * 바뀐 것을 모른 채 「왜 안 고쳐?」 를 본다. 모드는 이 턴에 파일이
+     * 바뀌는지를 정하는 값이라, 안 말하면 안 되는 값이다.
+     *
+     * ── 여기서도 승인받을 자리가 없다 ─────────────────────────────────
+     *
+     * 겹친 요청을 계획 모드로 보내는 값은 「계획을 보여 주고 승인을 받아
+     * 그대로 잇는다」 인데, 이어 가는 길(`이어갈모드`)은 repl.js 에만 있다.
+     * 에디터에서 사람이 제일 자연스럽게 쓰는 승인말이 되레 갇힌다 —
+     * 「위 계획대로 진행해줘」 에는 '계획' 이 들어 있어서 route 가 또 계획
+     * 모드를 고른다. 계획을 두 장 받고 파일은 그대로다.
+     *
+     * 이을 수 없으면 계획부터 내지 않는다. 그리고 그렇게 한다고 말한다.
+     */
     방.session.routed = null;
     if (방.session.work === 'auto') {
-      const 골라진 = route(글);
-      if (골라진.mode) 방.session.routed = 골라진.mode;
+      const 골라진 = route(글, { 승인받을수있나: false });
+      if (골라진.mode) {
+        방.session.routed = 골라진.mode;
+        말하기(`◆ ${보일이름(골라진.mode)} — 말 속에 ${골라진.why} 가 있어서\n`);
+      } else if (골라진.일부러 && !골라진.겹침) {
+        // 겹쳤을 때는 안 찍는다 — 바로 아래가 같은 이야기를 더 온전히 한다.
+        말하기(`◇ 종합 그대로 — ${골라진.why}\n`);
+      }
+      if (골라진.겹침) {
+        말하기('◇ 계획과 실행이 같이 있지만 에디터에서는 승인받고 이어 갈 길이 없어'
+          + ' 한 번에 끝까지 합니다. 계획을 먼저 보시려면 터미널 대화 화면에서 하세요.\n');
+      }
     }
 
     let 까닭 = 'done';
@@ -534,6 +765,24 @@ export async function acp(opts = {}) {
     const 적기 = () => {
       for (const m of 방.session.messages.slice(적은데까지)) 방.store.append(m);
       적은데까지 = 방.session.messages.length;
+      저장샘알리기();
+    };
+    /*
+     * ── 못 적은 것을 아무에게도 안 말했다 (사냥5 H5-6) ───────────────────────
+     *
+     * 에디터 창 둘이 같은 대화를 되살리면, 뒤에 적는 쪽은 두 대화를 섞지 않으려고
+     * **안 적고 센다**(agent/store.js 의 OTHER_WINDOW). 디스크가 차거나 권한이 막혀도
+     * 같은 셈에 오른다. 대화 화면은 그 셈을 한 번 말해 주는데(repl.js 의 저장샘) 여기는
+     * store.못쓴것 을 한 번도 안 봤다. 둘째 창에서 한 말은 조용히 버려졌고, 사람은
+     * 다음에 되살릴 때에야 그 말이 없다는 것을 알았다 — 이미 늦은 자리다.
+     * 처음 한 번만 말한다(처음못쓴것). 로그와 에디터 화면 둘 다에.
+     */
+    const 저장샘알리기 = () => {
+      const 샘 = 방.store.처음못쓴것?.();
+      if (!샘) return;
+      const 알림글 = 옮긴말('store.notSaving', { n: 샘.수, 까닭: 샘.까닭 });
+      로그(`${방.id} — ${알림글}`);
+      try { 말하기(`\n\n_(${알림글})_\n\n`); } catch { /* 관이 닫혔으면 로그만 남는다 */ }
     };
 
     try {
@@ -673,10 +922,13 @@ export async function acp(opts = {}) {
               : 옮긴말('ev.resetBare', { 버린수: ev.dropped })})_\n\n`);
             방.store.replace(방.session.messages, `자리부족 — 앞선 대화 ${ev.dropped}개를 비움`);
             적은데까지 = 방.session.messages.length;
+            저장샘알리기();
             break;
           case 'compacted':
-            방.store.replace(방.session.messages, `압축 — ${ev.folded}개를 요약으로`);
+            방.store.replace(방.session.messages,
+              ev.fallback ? `압축 못 함 — 옛 대화 ${ev.folded}개를 잘라 냄` : `압축 — ${ev.folded}개를 요약으로`);
             적은데까지 = 방.session.messages.length;
+            저장샘알리기();
             break;
 
           /*
@@ -745,6 +997,7 @@ export async function acp(opts = {}) {
       왜 = String(err?.message ?? err);
     } finally {
       if (방.턴 === 턴) 방.턴 = null;
+      if (방.도는신호 === 턴.signal) 방.도는신호 = null;
       방.돌던도구.clear();
       // 끊겼든 터졌든 여기까지 오간 것은 남긴다. 끊긴 턴이야말로 다음에
       // 되살려서 이어가고 싶은 자리다.
@@ -825,9 +1078,17 @@ export async function acp(opts = {}) {
        * 열고, 그 다음 한마디에서야 같은 오류가 난다. 한 번 더 돌아가는 셈이다.
        */
       case 'authenticate': {
+        /*
+         * 빈 methodId 도 **모르는 방법**이다 (8회차 ACP-5).
+         *
+         * `골라온것 &&` 로 시작하던 때는 빈 글이 검사 자체를 건너뛰어 그냥 성공으로
+         * 돌아갔다 — jsonrpc.js 의 빈 method 와 같은 꼴이다. methodId 는 규격이 반드시
+         * 주라고 한 칸이고, 빈 글은 위 인증방법들 중 어느 것도 아니다. 성공이라 답하면
+         * 에디터는 있지도 않은 방법으로 인증이 끝난 줄 알고 그 뒤를 잇는다.
+         */
         const 골라온것 = String(인자?.methodId ?? '');
-        if (골라온것 && !인증방법들.some((m) => m.id === 골라온것)) {
-          throw 잘못된인자오류(`모르는 인증 방법입니다: ${골라온것}`);
+        if (!인증방법들.some((m) => m.id === 골라온것)) {
+          throw 잘못된인자오류(`모르는 인증 방법입니다: ${골라온것 || '(빈 칸)'} (쓸 수 있는 것: ${인증방법들.map((m) => m.id).join(', ')})`);
         }
         if (!activeProfile(load())) {
           throw 인증필요오류('아직 설정이 안 끝났습니다. 터미널에서 `deel setup` 을 마치고 다시 시도하세요.');
@@ -859,10 +1120,22 @@ export async function acp(opts = {}) {
       case 'session/load': {
         const 아이디 = String(인자?.sessionId ?? '').trim();
         if (!아이디) throw 잘못된인자오류('sessionId 가 없습니다.');
+        /*
+         * 이름이 곧 파일 경로의 한 조각이다. `../../evil/x` 를 그대로 받으면 대화 폴더
+         * 밖의 파일을 대화로 읽고, 한 턴이 돌면 거기에 대화를 적었다. Store 도 막지만
+         * 그건 조용히 빈 대화로 여는 것이라, 에디터에는 **잘못된 인자**로 또렷하게 답한다.
+         */
+        if (!대화이름인가(아이디)) throw 잘못된인자오류(`대화 이름이 아닙니다: ${아이디}`);
 
         // 이 프로세스가 이미 열어 둔 방이면 그대로 쓴다. 다시 만들면 같은
         // 대화를 두 곳에서 밟게 되고, 그때부터 어느 쪽이 참인지 알 수 없다.
-        const 방 = 방들.get(아이디) ?? await 방만들기(인자, { 아이디 });
+        //
+        // 단 **같은 폴더**일 때만이다 (사냥5 H5-1). 이름만 보고 돌려주면 B 폴더의 그
+        // 이름 대화를 되살리라는데 A 폴더 방이 나가서, 그 뒤 한 말이 A 에 적히고 A 를
+        // 고친다. 폴더가 다르면 방만들기 로 보내고, 거기서 또렷하게 거절한다.
+        const 있던방 = 방들.get(아이디);
+        const 바란자리 = typeof 인자?.cwd === 'string' && 인자.cwd ? 인자.cwd : (opts.root ?? process.cwd());
+        const 방 = 있던방 && 같은자리(있던방.root, 바란자리) ? 있던방 : await 방만들기(인자, { 아이디 });
 
         /*
          * 화면에 그릴 것과 모델에게 줄 것이 다르다.
@@ -904,7 +1177,16 @@ export async function acp(opts = {}) {
 
       case 'session/set_mode': {
         const 방 = 방찾기(인자?.sessionId);
-        const 고른것 = 모드정리(String(인자?.modeId ?? ''));
+        const 준것 = String(인자?.modeId ?? '');
+        const 고른것 = 모드정리(준것);
+        /*
+         * 모르는 이름은 **잘못된 인자**다.
+         *
+         * 정리하면 null 이 나오는 이름을 그대로 넣었다. 답은 `{}` (성공), 모드는
+         * null(종합으로 떨어짐), 로그는 「작업 모드를 null 로 바꿨습니다」. 에디터는
+         * 누른 단추가 먹힌 줄 알고 그 모드로 칠해 둔다 — 화면과 실제가 어긋난다.
+         */
+        if (!고른것) throw 잘못된인자오류(`그런 작업 모드가 없습니다: ${준것} (쓸 수 있는 것: ${모드순서.join(', ')})`);
         방.session.work = 고른것;
         방.session.routed = null;
         로그(`작업 모드를 ${고른것} 로 바꿨습니다.`);
@@ -940,6 +1222,18 @@ export async function acp(opts = {}) {
 
   await new Promise((끝) => {
     const 마무리 = () => {
+      /*
+       * ── 돌던 턴부터 끊는다 (사냥5 H5-8) ─────────────────────────────────
+       *
+       * 여기는 관만 닫았다. 느린 모델을 기다리던 턴은 끊는 줄을 못 받아 **답이 올
+       * 때까지** 살아 있었고, 프로세스도 그만큼 안 끝났다(재 보니 모델이 15초
+       * 걸리면 13초 넘게). 에디터는 이미 닫혔는데 그 뒤에 온 답이 대화 파일에
+       * 적혔다 — 아무도 못 본 답이다. 관을 닫기 전에 끊어야 기다리던 승인 물음도
+       * 「끊겨서 거뒀다」 로 정리된다.
+       */
+      for (const 방 of 방들.values()) {
+        if (방.턴 && !방.턴.signal.aborted) 방.턴.abort();
+      }
       관.닫기('에디터와의 관이 닫혔습니다');
       끝();
     };
@@ -947,6 +1241,20 @@ export async function acp(opts = {}) {
     process.stdin.on('close', 마무리);
     process.stdin.on('error', 마무리);
   });
+
+  /*
+   * 끊은 턴이 여기까지 오간 것을 적고 물러날 때까지 **잠깐만** 기다린다. 끊긴 턴이야말로
+   * 다음에 되살려 잇고 싶은 자리라(한턴 의 적기) 안 기다리고 나가면 그게 빠진다.
+   * 끊기 신호를 안 듣는 도구가 붙들고 있으면 3초에서 그만둔다 — 닫힌 에디터 앞에서
+   * 서 있는 것이 고치려던 고장이다.
+   */
+  const 끝날턴들 = [...방들.values()].map((방) => 방.턴끝).filter(Boolean);
+  if (끝날턴들.length) {
+    await Promise.race([
+      Promise.allSettled(끝날턴들),
+      new Promise((풀기) => { setTimeout(풀기, 3000).unref?.(); }),
+    ]);
+  }
 
   /*
    * 뒤에서 돌던 명령을 반드시 거둔다.

@@ -35,16 +35,34 @@ const 메시지최대 = 200 * 1024;
  * (의존성 0). 이 정도만 해도 "인코딩을 어떻게" 로 "인코딩" 을 찾아낸다.
  */
 export function 낱말쪼개기(물음) {
+  return 낱말묶기(물음).flat();
+}
+
+/**
+ * 같은 낱말의 여러 꼴을 **한 묶음**으로 쪼갠다 — `[['인코딩을','인코딩'], ['어떻게']]`.
+ *
+ * 점수는 「몇 낱말이 맞았나」 로 매기는데(찾기 의 점수 머리말), 꼴을 낱낱이 세면
+ * 조사 하나가 낱말 하나로 셈된다. `인코딩을 어떻게` 는 낱말이 **셋**(인코딩을 ·
+ * 인코딩 · 어떻게)이 되어, 본문이 `인코딩 어떻게` 라고 적힌 — 사람이 찾던 바로
+ * 그 — 글이 「다 맞음」 에 못 들었다. 조사를 똑같이 붙여 적은 글만 12점을 받았다.
+ * 묶음으로 세면 조사가 무엇이든 같은 낱말이다.
+ */
+export function 낱말묶기(물음) {
   const 조사 = /(을|를|이|가|은|는|에|에서|으로|로|와|과|의|도|만|까지|부터|에게|한테|보다|처럼|랑|이랑)$/;
   const 본 = String(물음 ?? '').toLowerCase().split(/[\s,.;:!?()[\]{}"'`]+/).filter(Boolean);
-  const 낱말 = new Set();
+  const 묶음 = [];
+  const 본것 = new Set();
   for (const w of 본) {
     if (w.length < 2) continue;         // 한 글자는 아무 데나 걸린다
-    낱말.add(w);
     const 짧은 = w.replace(조사, '');
-    if (짧은.length >= 2 && 짧은 !== w) 낱말.add(짧은);
+    // 긴 꼴을 앞에 둔다 — 셀 때 제일 긴 것 하나만 센다(찾기).
+    const 꼴 = 짧은.length >= 2 && 짧은 !== w ? [w, 짧은] : [w];
+    const 열쇠 = 꼴.at(-1);             // 조사를 뗀 꼴이 그 낱말의 이름이다
+    if (본것.has(열쇠)) continue;
+    본것.add(열쇠);
+    묶음.push(꼴);
   }
-  return [...낱말];
+  return 묶음;
 }
 
 /** 맞은 자리 앞뒤를 잘라 보여 줄 토막을 만든다. */
@@ -105,7 +123,10 @@ function 때(meta) {
  *
  * @param {string} root 작업 폴더
  * @param {string} 물음
- * @param {{limit?: number, 예산?: number, 지금세션?: string, 도구결과까지?: boolean}} o
+ * 적는 옵션은 **여기서 실제로 읽는 것**만이다. 안 읽는 이름을 적어 두면 부르는 쪽이
+ * 그것을 넘기고, 넘겼으니 걸러진 줄 알고 지낸다 — `지금세션` 이 그랬다 (2.0.0 8회차 스키마).
+ *
+ * @param {{limit?: number, 예산?: number, 도구결과까지?: boolean}} o
  * @returns {{맞은것: object[], 본파일: number, 전체파일: number, 읽은바이트: number, 예산초과: boolean, 낱말: string[]}}
  */
 export function 찾기(root, 물음, o = {}) {
@@ -113,6 +134,7 @@ export function 찾기(root, 물음, o = {}) {
   const 예산 = o.예산 ?? 읽기예산;
   const 도구결과까지 = o.도구결과까지 ?? false;
   const 낱말 = 낱말쪼개기(물음);
+  const 묶음 = 낱말묶기(물음);
   const dir = sessionsDir(root);
 
   const 빈결과 = { 맞은것: [], 본파일: 0, 전체파일: 0, 읽은바이트: 0, 예산초과: false, 낱말 };
@@ -165,10 +187,19 @@ export function 찾기(root, 물음, o = {}) {
 
       let 맞은낱말 = 0;
       let 횟수 = 0;
-      for (const w of 낱말) {
+      for (const 그룹 of 묶음) {
+        /*
+         * 한 낱말의 여러 꼴은 **한 낱말**이다. 긴 꼴부터 보고 맞는 것 하나만 센다 —
+         * 둘 다 세면 `인코딩을` 이 든 글은 `인코딩` 까지 같이 맞아 횟수가 부풀고,
+         * 조사를 똑같이 붙여 적은 글만 위로 올라간다.
+         */
         let n = 0;
-        let i = 낮은.indexOf(w);
-        while (i >= 0 && n < 50) { n += 1; i = 낮은.indexOf(w, i + w.length); }
+        for (const w of 그룹) {
+          let c = 0;
+          let i = 낮은.indexOf(w);
+          while (i >= 0 && c < 50) { c += 1; i = 낮은.indexOf(w, i + w.length); }
+          if (c) { n = c; break; }
+        }
         if (n) { 맞은낱말 += 1; 횟수 += n; }
       }
       if (!맞은낱말) continue;
@@ -179,7 +210,7 @@ export function 찾기(root, 물음, o = {}) {
        *   한 낱말이 열 번 나오는 글보다 거의 언제나 원하는 것이다.
        *   최근일수록 조금 올린다. 같은 것을 두 번 물어본 경우 최근 답이 낫다.
        */
-      const 다맞음 = 맞은낱말 === 낱말.length ? 12 : 0;
+      const 다맞음 = 맞은낱말 === 묶음.length ? 12 : 0;
       const 오래됨 = Math.max(0, (가장최근 - f.at.getTime()) / (1000 * 60 * 60 * 24));
       const 최근점 = Math.max(0, 6 - 오래됨 / 7);
       맞은것.push({

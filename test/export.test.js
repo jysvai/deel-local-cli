@@ -156,9 +156,96 @@ trace('6-파일');
   check('★ 제목이 첫 사람 말에서 나온다', /설정 파일 좀 봐줘/.test(글2), '');
 }
 
+// ══ 7. 보고서에 열쇠가 안 실린다 ═══════════════════════════════════════
+trace('7-가리기');
+/*
+ * 보고서는 남에게 가는 글이다. 감사기록은 같은 명령줄을 가려서 적는데 보고서는
+ * 사람 말·모델 말·도구 줄을 **그대로** 실었다 — 결재 첨부로 토큰이 나간다.
+ */
+{
+  const 토큰 = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  const 프로젝트열쇠 = 'sk-proj-' + 'FAKEfakeFAKEfakeFAKEfakeFAKEfake1234';
+  const 아는열쇠 = 'DEELGW-사내-9f8e7d6c5b4a3210';
+  const s = new Session({ ...conn, key: 아는열쇠 }, { root, work: 'code' });
+  s.push({ role: 'user', content: `내 토큰 ${토큰} 로 올려줘` });
+  s.push({
+    role: 'assistant', content: '확인합니다',
+    tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Bash', arguments: JSON.stringify({ command: `curl -H "Authorization: Bearer ${프로젝트열쇠}" https://api.x/v1` }) } }],
+  });
+  s.push({ role: 'tool', tool_call_id: 'c1', content: 'ok' });
+  s.push({ role: 'assistant', content: `적용했습니다. 게이트웨이 열쇠는 ${아는열쇠} 입니다.` });
+  const html = 보고서짓기(s, {});
+  const 몸 = html.slice(html.indexOf('<main>'));
+  check('★★ 사람 말의 토큰이 보고서에 안 실린다', !html.includes(토큰), '');
+  check('★★ 도구 줄의 열쇠가 조각으로도 안 실린다', !html.includes(프로젝트열쇠.slice(0, 16)), (몸.match(/<div class="t">[^\n]*/) ?? [''])[0].slice(0, 160));
+  check('★★ 설정에 든 열쇠는 꼴을 몰라도 모델 말에서 지운다', !html.includes(아는열쇠), '');
+  check('  가렸다는 표는 남는다', html.includes('«가림:'), '');
+  check('  무엇을 했는지는 읽힌다', /curl/.test(몸) && /올려줘/.test(몸), '');
+}
+
+// ══ 8. 같은 분에 백 번 넘게 적어도 안 덮는다 ═══════════════════════════
+trace('8-안덮기');
+{
+  const { mkdirSync, writeFileSync, readdirSync } = await import('node:fs');
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-export-백-'));
+  const 폴더 = join(방, '.deel', 'export');
+  mkdirSync(폴더, { recursive: true });
+  const 이름 = (t, n) => `${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, '0')}${String(t.getDate()).padStart(2, '0')}`
+    + `-${String(t.getHours()).padStart(2, '0')}${String(t.getMinutes()).padStart(2, '0')}` + (n ? `-${n}` : '') + '.html';
+  const 이제 = new Date();
+  // 분이 넘어가는 순간에 걸려도 재는 것이 같게, 이번 분과 다음 분을 둘 다 채운다.
+  for (const t of [이제, new Date(이제.getTime() + 60000)]) {
+    for (let n = 0; n < 100; n++) writeFileSync(join(폴더, 이름(t, n)), `옛 보고서 ${n}`, 'utf8');
+  }
+  const 앞수 = readdirSync(폴더).length;
+  const 자리 = 보고서적기(방, 세션꾸미기(), {});
+  const 옛것들 = readdirSync(폴더).filter((f) => f !== String(자리).split(/[\\/]/).pop());
+  const 덮인것 = 옛것들.filter((f) => !readFileSync(join(폴더, f), 'utf8').startsWith('옛 보고서'));
+  check('★★ 같은 분에 백 번 넘게 적어도 앞엣것을 안 덮는다',
+    !!자리 && readdirSync(폴더).length === 앞수 + 1 && 덮인것.length === 0,
+    `${String(자리).split(/[\\/]/).pop()} · ${앞수}→${readdirSync(폴더).length} · 덮인것 ${덮인것.length}`);
+  check('  새 자리에는 새 보고서가 있다', !!자리 && readFileSync(자리, 'utf8').includes('대시보드'), '');
+  rmSync(방, { recursive: true, force: true });
+}
+
 rmSync(root, { recursive: true, force: true });
 
 // ── 마무리 ──────────────────────────────────────────────────────────────
+trace('이름준자리');
+
+/*
+ * 도움말이 `[파일이름]` 이라고 적어 둔 그 인자.
+ *
+ * 오래도록 `case 'export'` 가 그 인자를 한 번도 안 읽어서, 무엇을 적어 주든
+ * 늘 시각으로 지은 이름으로 남았다 — 적힌 대로 안 되는 자리였다.
+ * 이름을 받되 **폴더는 안 받는다.** 준 글에서 이름 한 칸만 떼어 쓴다.
+ */
+{
+  const 뿌리 = mkdtempSync(join(tmpdir(), 'deel-내보내기이름-'));
+  const 세션 = new Session(conn, { root: 뿌리, work: 'code' });
+  세션.push({ role: 'user', content: '안녕' });
+
+  const 준것 = 보고서적기(뿌리, 세션, { 이름: '보고서' });
+  check('★★★ 이름을 주면 그 이름으로 남는다',
+    !!준것 && /[\\/]보고서\.html$/.test(준것), String(준것));
+
+  const 밖 = 보고서적기(뿌리, 세션, { 이름: '../../밖으로.html' });
+  check('★★★ 폴더를 섞어 줘도 내보내는 자리를 못 벗어난다',
+    !!밖 && /[\\/]\.deel[\\/]export[\\/]밖으로\.html$/.test(밖)
+      && !existsSync(join(뿌리, '..', '밖으로.html')), String(밖));
+
+  const 탈 = {};
+  const 또 = 보고서적기(뿌리, 세션, { 이름: '보고서' }, 탈);
+  check('★★ 같은 이름을 또 주면 덮지 않고 까닭을 말한다',
+    또 === null && String(탈.왜 ?? '').includes('보고서.html'), `${또} · ${탈.왜}`);
+
+  const 없이 = 보고서적기(뿌리, 세션, {});
+  check('★★ 이름을 안 주면 여태처럼 시각으로 짓는다',
+    !!없이 && /[\\/]\d{8}-\d{4}(-\d+)?\.html$/.test(없이), String(없이));
+
+  rmSync(뿌리, { recursive: true, force: true });
+}
+
 const C = (n, s) => (process.stdout.isTTY || process.env.FORCE_COLOR ? `\x1b[${n}m${s}\x1b[0m` : s);
 console.log('');
 for (const f of fail) console.log(`  ${C(31, '✗')} ${f.name}${f.note ? C(90, `  ${f.note}`) : ''}`);

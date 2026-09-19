@@ -242,6 +242,15 @@ statements.
 | `permissions.allow` | It **widens** the approval rules. A `deny`, which narrows them, is still read — a repository tightening its own safety is always welcome |
 | `profiles[].apiKey` | A key written into a repository file is not a setting, it is a leak. Reading it would cement the leak |
 | `profiles[].열쇠받기` | It runs before the first request — ahead of tool approval, so nothing catches it |
+| `profiles[].baseUrl·kind·auth·제공자` (when layered onto this machine's profile) | Changing only the address sends **this machine's key wherever the repository chooses**. A profile the repository adds may carry an address — that profile never receives `DEEL_API_KEY` |
+| `profiles[].online` | Permission to go outside is only granted where a person chooses it |
+| `active` (when it names a profile the repository added) | It switches the connection to the repository's address. Picking this machine's profile is still read |
+| `offline: false` | It lifts the seal this machine turned on. `true` is still read |
+| `proxy` | Every request, key header included, would pass through that proxy |
+| `셸환경` · `shellEnv` | It hands secret environment variables back to shell commands |
+
+Saving in a trusted folder (`deel setup` · `/model` · `/ctx` …) writes **only this machine's own values** to this
+machine's file. Profiles, denies and keys the repository added stay in the repository.
 
 When something is dropped, the screen says what was dropped and why.
 
@@ -308,7 +317,7 @@ wrong place for "for this rollout, only this gateway". That goes somewhere the u
 |---|---|
 | Windows | `%ProgramData%\deel\policy.json` |
 | macOS · Linux | `/etc/deel/policy.json` |
-| Testing | point `DEEL_POLICY` at a file |
+| Testing | point `DEEL_POLICY` at a file — read **only when** no policy file exists at the OS location above; if one exists it wins, so a user cannot swap out the managed policy with an environment variable |
 
 ```json
 {
@@ -569,6 +578,16 @@ take five seconds to see once something says so.
 Key fields show "present" instead of the value, in `--json` output too. Masking the
 screen while piping the real thing is not masking.
 
+Deny and allow rules (`permissions` · `permissions.deny` · `permissions.allow`) do not win or
+lose. The rules written on this machine, in the project and in managed policy are **combined, and
+all of them apply.** So instead of marking one layer as the winner, explain says the rules from
+two places are combined — this machine's config + managed policy.
+
+The managed-policy layer also shows only what policy **actually applies**. `offline:false` (policy
+cannot turn the seal off), an empty `baseUrl`, a `열쇠받기` with an empty command, and fields deel
+never reads from policy (such as `shell`) do not show up as "managed policy wins" just because
+they are in the policy file — the evidence you take to an administrator must not be false.
+
 ### Environment variables
 
 | Variable | Use |
@@ -594,11 +613,11 @@ The proxy can also be set in the config file — `"proxy": "http://user:pw@proxy
 ```bash
 deel --root <folder>     Working scope. Defaults to the current folder
 deel --mode <mode>       auto (default) / confirm / strict
-deel --work <mode>       auto (default) / code / plan / architect / debug / ask / orchestrator
+deel --work <mode>       auto (default) / code / plan / architect / debug / inspect / ask / orchestrator
 deel --level <level>     쉬움 (simple) / 개발자 (developer)
 deel --ctx <length>      Set the context length yourself (655360 · 640k · 128k)
 deel --max-tokens <len>  Cap on a single reply (32k) — same value as /out
-deel --think <level>     off / low / medium (default) / high / max
+deel --think <level>     off / low / medium (default) / high / xhigh / max
 deel --effort <profile>  even / save (default) / deep
 deel --offline           Nothing leaves this machine
 deel --continue          Resume the most recent conversation

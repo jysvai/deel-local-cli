@@ -26,11 +26,11 @@
 // 설정을 먼저 읽는다. 그래서 이 파일은 config.js 의 load() 를 안 쓴다 —
 // 파일을 직접 읽고, 못 읽으면 못 읽었다고 적은 채로 계속 간다.
 // (`deel --version` 을 연결 없이 답하게 만든 것과 같은 이유다.)
-import { join, resolve, sep } from 'node:path';
-import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { join, resolve, sep, dirname, basename } from 'node:path';
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, realpathSync } from 'node:fs';
 import { c, say, mark, rule, pad } from './ui/ansi.js';
 import { ask, confirm } from './ui/prompt.js';
-import { homeDir } from './config.js';
+import { homeDir, 소식줄들 } from './config.js';
 import { pluginsDir } from './plugins/manage.js';
 import { 잠긴것인가, 잠금지우기, 보관방식 } from './safety/keystore.js';
 
@@ -64,6 +64,12 @@ function 안에것(폴더, 거르기 = () => true) {
 /** 여러 자리를 센 것을 하나로 모은다. 한 자리라도 못 셌으면 못 센 것이다. */
 const 셈모으기 = (값들) => (값들.some((n) => n === null) ? null : 값들.reduce((a, n) => a + n, 0));
 
+/** 두 경로가 같은 파일인가. 윈도우는 대소문자를 안 가린다. */
+const 같은자리 = (a, b) => {
+  const [x, y] = [resolve(a), resolve(b)];
+  return process.platform === 'win32' ? x.toLowerCase() === y.toLowerCase() : x === y;
+};
+
 /**
  * 설정을 읽어 본다. **깨져 있어도 답한다.**
  *
@@ -90,12 +96,24 @@ export function 설정살피기(파일) {
    * 적어 둔 **금지 규칙**이 초기화 한 번에 없어진다. 이 파일 머리말이
    * 「사람이 손으로 적은 것은 어떤 길로도 안 지운다」 고 적어 둔 그 약속이다.
    */
-  const 연결칸 = new Set(['profiles', 'active', '정책주소', 'api-version']);
+  /*
+   * `apiVersion` 은 Azure 판 번호가 실제로 읽히는 이름이다(backend/azure.js).
+   * 여기에 `api-version` 만 있어서 그 칸이 「사람이 적은 다른 것」 으로 잡혔다.
+   * `version` 은 이 프로그램이 파일 모양 번호로 적는 칸이라 사람 것이 아니다 —
+   * 이걸 세면 한 번이라도 저장한 집 설정은 언제나 「다른 것이 있다」 가 된다.
+   */
+  const 연결칸 = new Set(['profiles', 'active', '정책주소', 'api-version', 'apiVersion']);
+  const 구조칸 = new Set(['version']);
+  const 객체 = j && typeof j === 'object' && !Array.isArray(j) ? j : {};
   return {
     있나: true,
     프로필: 목록.length,
     잠긴열쇠: 목록.map((p) => p?.apiKey).filter((k) => 잠긴것인가(k)),
-    다른것: Object.keys(j ?? {}).filter((k) => !연결칸.has(k)),
+    다른것: Object.keys(객체).filter((k) => !연결칸.has(k) && !구조칸.has(k)),
+    // 걷을 연결 칸이 하나라도 있나. 없으면 되쓸 것도 지웠다고 할 것도 없다.
+    연결있나: Object.keys(객체).some((k) => 연결칸.has(k)),
+    // 연결 칸만 걷고 남길 때 적을 모양. 구조 칸은 같이 남긴다.
+    남길값: Object.fromEntries(Object.entries(객체).filter(([k]) => !연결칸.has(k))),
     왜: '',
   };
 }
@@ -113,23 +131,51 @@ export function 살펴보기({ home = homeDir(), root = process.cwd() } = {}) {
   const 일 = (...n) => join(root, '.deel', ...n);
 
   const 집설정 = 설정살피기(집('config.json'));
-  const 일설정 = 설정살피기(일('config.json'));
-  const 열쇠들 = [...집설정.잠긴열쇠, ...일설정.잠긴열쇠];
-  // 저장소 설정에 연결 말고 다른 것이 적혀 있으면 그 파일은 안 건드린다.
+  /*
+   * DEEL_HOME 이 곧 이 폴더의 .deel 이면(홈 폴더에서 돌리면 그렇다) 두 자리는 **한 파일**이다.
+   * 따로 읽으면 프로필을 두 번 세고 지울 자리에도 두 번 적는다. 그때는 집 설정으로만 본다.
+   */
+  const 한파일 = 같은자리(집('config.json'), 일('config.json'));
+  const 일설정 = 한파일 ? { 있나: false, 프로필: 0, 잠긴열쇠: [], 왜: '' } : 설정살피기(일('config.json'));
+  // 저장소 설정에 연결 말고 다른 것이 적혀 있거나 못 읽으면 그 파일은 안 건드린다.
   const 일설정남길까 = 일설정.있나 && (일설정.프로필 === null || (일설정.다른것?.length ?? 0) > 0);
+  // 남기는 파일이 가리키는 열쇠는 잠금장치에서도 안 지운다 — 파일만 남고 열쇠가 사라진다.
+  const 열쇠들 = [...집설정.잠긴열쇠, ...(일설정남길까 ? [] : 일설정.잠긴열쇠)];
+  /*
+   * 집 설정은 사정이 다르다 — 이건 이 PC 의 연결이라 초기화하려는 바로 그것이다.
+   * 그런데 같은 파일에 사람이 건 금지·봉인·셸도 산다. 통째로 지우면 「연결
+   * 초기화」 에 그것들이 딸려 사라졌다. 그래서 파일은 남기고 **연결 칸만** 걷는다.
+   *
+   * 깨졌으면(프로필 null) 통째로 지운다. 깨진 설정이야말로 지우려는 것이고,
+   * 못 읽으면 무엇이 사람 것인지 가를 수도 없다.
+   */
+  const 집설정다듬기 = 집설정.있나 && 집설정.프로필 !== null && 집설정.연결있나 && (집설정.다른것?.length ?? 0) > 0;
+  // 걷을 연결 칸이 아예 없고 사람 칸만 있으면 파일을 **안 건드린다.** 되쓰면 바뀐 것도
+  // 없이 「연결·프로필 0개 지웠습니다」 가 뜨고, 지우는 쪽으로 가면 사람 칸이 없어진다.
+  const 집설정그대로 = 집설정.있나 && 집설정.프로필 !== null && !집설정.연결있나 && (집설정.다른것?.length ?? 0) > 0;
   const 플러그인자리 = pluginsDir(home);
+  // 배운 것도 홈 폴더에서 켜면 두 자리가 **한 파일**이다 — 위 `한파일` 과 같은 판인데 여기만 빠져
+  // 「배운 것 2곳」 으로 셌다 (2.0.0 6회차 · Gemini 되돌림6ab-a R2).
+  const 배운자리 = 같은자리(집('배운것.json'), 일('배운것.json')) ? [집('배운것.json')] : [집('배운것.json'), 일('배운것.json')];
 
   const 항목 = [
     {
       키: 'model',
       이름: '연결·프로필',
-      자리: [집('config.json'), ...(일설정남길까 ? [] : [일('config.json')])],
-      몇: 집설정.프로필 === null || 일설정.프로필 === null
-        ? null : (집설정.프로필 ?? 0) + (일설정.프로필 ?? 0),
+      자리: [
+        ...(집설정그대로 ? [] : [집('config.json')]),
+        ...(일설정남길까 || 한파일 ? [] : [일('config.json')]),
+      ],
+      // 남기는 저장소 설정의 프로필은 **안 센다.** 세면 「3개 → 지웁니다」 라고
+      // 적어 놓고 2개만 지운다. 셈과 지우는 것이 같은 목록을 봐야 한다.
+      몇: 집설정.프로필 === null
+        ? null : (집설정.프로필 ?? 0) + (일설정남길까 ? 0 : (일설정.프로필 ?? 0)),
       단위: '개',
       탈: 집설정.왜 || 일설정.왜,
       뒤: 'deel setup 을 다시 하게 됩니다',
       all: true,
+      // 지우지 않고 연결 칸만 걷어 되쓰는 자리.
+      다듬기: 집설정다듬기 ? [{ 자리: 집('config.json'), 남길값: 집설정.남길값, 남긴칸: 집설정.다른것 }] : [],
       // 설정 파일을 지우기 **전에** 잠금장치를 먼저 손봐야 한다. 파일을
       // 지우고 나면 어느 열쇠가 잠겨 있었는지 알 길이 없다.
       열쇠: 열쇠들,
@@ -155,8 +201,8 @@ export function 살펴보기({ home = homeDir(), root = process.cwd() } = {}) {
     {
       키: 'learned',
       이름: '배운 것',
-      자리: [집('배운것.json'), 일('배운것.json')],
-      몇: [집('배운것.json'), 일('배운것.json')].filter((p) => existsSync(p)).length,
+      자리: 배운자리,
+      몇: 배운자리.filter((p) => existsSync(p)).length,
       단위: '곳',
       뒤: '다시 배웁니다',
       all: true,
@@ -211,7 +257,14 @@ export function 살펴보기({ home = homeDir(), root = process.cwd() } = {}) {
   // 어떤 길로도 안 지우는 것. 화면에 이름을 적어 둔다 — 「왜 이건 안 지웠지」
   // 를 나중에 묻게 하지 않으려고.
   const 안건드림 = [
-    { 이름: '.deel/config.json (연결 말고 다른 것이 적혀 있습니다)', 있나: 일설정남길까 },
+    {
+      이름: 일설정.프로필 === null
+        ? '.deel/config.json (읽을 수 없어서 안 건드립니다 — 저장소에 딸린 파일입니다)'
+        : '.deel/config.json (연결 말고 다른 것이 적혀 있습니다)',
+      있나: 일설정남길까,
+    },
+    { 이름: `이 PC 설정의 ${(집설정.다른것 ?? []).join(' · ')} (연결 칸만 걷습니다)`, 있나: 집설정다듬기 },
+    { 이름: `이 PC 설정의 ${(집설정.다른것 ?? []).join(' · ')} (걷을 연결 칸이 없습니다)`, 있나: 집설정그대로 },
     { 이름: '.deel/mcp.json', 있나: existsSync(일('mcp.json')) },
     { 이름: '.deelignore', 있나: existsSync(join(root, '.deelignore')) },
     { 이름: 'DEEL.md', 있나: existsSync(join(root, 'DEEL.md')) },
@@ -229,12 +282,42 @@ export function 살펴보기({ home = homeDir(), root = process.cwd() } = {}) {
  * 것까지 딸려 가면 이 기능을 못 믿게 된다.
  */
 export function 울타리안인가(경로, 울타리들) {
-  const p = resolve(경로);
+  const p = 윗자리풀기(경로);
   return 울타리들.some((u) => {
     const r = resolve(u);
     return p !== r && p.startsWith(r + sep);
   });
 }
+
+/*
+ * ── 링크를 따라간 진짜 자리로 본다 (2.0.0 6회차 · Gemini 되돌림6ab-b R4) ────────────
+ *
+ * resolve 는 글자만 푼다. 작업 폴더의 `.deel` 이 다른 폴더로 가는 링크면(리눅스·맥 git 은 받은
+ * 저장소의 링크를 그대로 푼다) 그 너머의 memory.md · tmp · export 가 「작업 폴더 안」 으로 읽혀
+ * 통째로 지워졌다 — 임시 폴더로 실행해 확인. 그래서 **윗자리들**을 진짜 경로로 푼 뒤 본다.
+ *
+ * 자리 그 자체는 안 푼다. 그것이 링크면 rmSync 는 링크만 지우고 너머는 그대로다(검사로 확인).
+ * 없는 자리는 있는 데까지 올라가 푼 뒤 나머지 이름을 붙인다 — 글자만 준 검사도 그대로 돈다.
+ */
+function 윗자리풀기(경로) {
+  const p = resolve(경로);
+  const 꼬리 = [basename(p)];
+  let 위 = dirname(p);
+  for (;;) {
+    try { return join(realpathSync.native(위), ...꼬리); } catch {
+      const 더위 = dirname(위);
+      if (더위 === 위) return p;
+      꼬리.unshift(basename(위));
+      위 = 더위;
+    }
+  }
+}
+
+/*
+ * 울타리 쪽 풀기. 살림 자리(home)는 끝까지 푼다 — 사람이 DEEL_HOME 을 링크로 옮겨 둔 것은
+ * 그 사람의 뜻이다. 작업 폴더는 폴더까지만 풀고 `.deel` 은 **안 따라간다** — 거기가 R4 의 문이다.
+ */
+const 실경로 = (p) => { try { return realpathSync.native(p); } catch { return resolve(p); } };
 
 /**
  * 고른 것을 지운다.
@@ -245,7 +328,8 @@ export function 울타리안인가(경로, 울타리들) {
  */
 export function 지우기(무엇, { home = homeDir(), root = process.cwd(), hard = false } = {}) {
   const 본것 = 살펴보기({ home, root });
-  const 울타리 = [home, join(root, '.deel')];
+  // 울타리도 진짜 경로로 — 자리 쪽을 윗자리까지 푸는 것과 짝이다 (6회차 R4 · 위 실경로 머리말).
+  const 울타리 = [실경로(home), join(실경로(root), '.deel')];
 
   const 고른것 = 무엇 === 'all'
     ? [...본것.항목.filter((x) => x.all), ...(hard ? 본것.굳은것 : [])]
@@ -254,11 +338,27 @@ export function 지우기(무엇, { home = homeDir(), root = process.cwd(), hard
   const 지운것 = [];
   const 못한것 = [];
   let 열쇠 = null;
+  let 열쇠들 = [];
 
   for (const 것 of 고른것) {
     // 설정을 지우기 전에 잠금장치부터. 순서가 반대면 어느 열쇠였는지 잃는다.
+    /*
+     * ── 첫 열쇠 하나만 지우고 있었다 ────────────────────────────────────
+     *
+     * 여기가 `잠금지우기(것.열쇠[0])` 였다. 프로필마다 키체인 자리를 따로 쓰니
+     * (safety/keystore.js 의 키체인이름) 잠긴 열쇠는 여럿일 수 있는데, 두 번째부터는
+     * 키체인에 그대로 남고 화면은 「잠금장치의 열쇠 ✓」 한 줄이었다.
+     * 전부 지우고 하나하나 무엇을 했는지 돌려준다. 같은 태그는 한 번만 — 두 번째는
+     * 「이미 없습니다」 로 돌아와 못 지운 것처럼 읽힌다.
+     * `열쇠` 는 모아 본 답이다. 하나라도 못 지웠으면 지웠다고 안 한다.
+     */
     if (것.키 === 'model' && 것.열쇠?.length) {
-      열쇠 = 잠금지우기(것.열쇠[0]);
+      열쇠들 = [...new Set(것.열쇠)].map((태그) => {
+        const 갈래 = /^keychain:(.*)$/s.exec(String(태그));
+        return { 이름: 갈래 ? 갈래[1] : null, ...잠금지우기(태그) };
+      });
+      const 못한 = 열쇠들.find((x) => !x.지움);
+      열쇠 = { 지움: !못한, 방식: (못한 ?? 열쇠들[0]).방식, 왜: 못한?.왜 ?? '' };
     }
     // 한 갈래가 여러 자리에 걸쳐 있다 (배운 것은 이 PC 와 이 폴더 둘 다).
     // 화면에는 **갈래 하나로** 적는다 — 자리마다 한 줄씩 내면 「배운 것 2곳」
@@ -271,9 +371,16 @@ export function 지우기(무엇, { home = homeDir(), root = process.cwd(), hard
         못한것.push({ 이름: 것.이름, 자리, 왜: '작업 폴더 밖이라 안 건드렸습니다' });
         continue;
       }
+      const 다듬 = (것.다듬기 ?? []).find((x) => x.자리 === 자리);
       try {
-        rmSync(자리, { recursive: true, force: true });
-        지운자리.push(자리);
+        if (다듬) {
+          writeFileSync(자리, JSON.stringify(다듬.남길값, null, 2) + '\n', 'utf8');
+          try { chmodSync(자리, 0o600); } catch { /* 안 먹는 파일 체계가 있다 — 원래 모드 그대로다 */ }
+          지운자리.push(`${자리}  (연결 칸만 — ${다듬.남긴칸.join(' · ')} 은 남겼습니다)`);
+        } else {
+          rmSync(자리, { recursive: true, force: true });
+          지운자리.push(자리);
+        }
       } catch (err) {
         못한것.push({ 이름: 것.이름, 자리, 왜: String(err.message).slice(0, 80) });
       }
@@ -282,7 +389,7 @@ export function 지우기(무엇, { home = homeDir(), root = process.cwd(), hard
       지운것.push({ 키: 것.키, 이름: 것.이름, 몇: 것.몇, 단위: 것.단위, 자리들: 지운자리 });
     }
   }
-  return { 지운것, 못한것, 열쇠 };
+  return { 지운것, 못한것, 열쇠, 열쇠들 };
 }
 
 // ── 화면 ────────────────────────────────────────────────────────────────
@@ -322,7 +429,15 @@ function 보여주기(본것) {
 function 지운뒤적기(결과) {
   say('');
   // 「완료」 한 줄은 확인이 안 된다. 무엇이 몇 개 없어졌는지 적는다.
-  if (!결과.지운것.length) {
+  /*
+   * **못 지운 것이 있으면 「비어 있다」 고 하지 않는다.**
+   *
+   * 지운 것이 0 이라는 것만 보고 있어서, 있는데 못 지운 판에서도 이 줄이 그대로
+   * 나갔다 — 화면에는 「⚠ 이미 비어 있습니다」 와 「✗ … 안 건드렸습니다」 가 나란히
+   * 붙었다. 앞줄을 믿은 사람은 지워진 줄 알고 그 PC 를 넘기고, 지우려던 것은 그대로
+   * 남는다. 「없어서 안 지웠다」 와 「있는데 못 지웠다」 는 사람이 할 일이 정반대다.
+   */
+  if (!결과.지운것.length && !결과.못한것.length) {
     say(`  ${mark.warn} ${c.gray('지울 것이 없었습니다 — 이미 비어 있습니다.')}`);
   }
   for (const x of 결과.지운것) {
@@ -330,10 +445,15 @@ function 지운뒤적기(결과) {
     say(`  ${mark.ok} ${c.bold(x.이름)}${셈}`);
     for (const 자리 of x.자리들) say(`     ${c.gray(자리)}`);
   }
-  if (결과.열쇠) {
-    say(결과.열쇠.지움
-      ? `  ${mark.ok} ${c.bold('잠금장치의 열쇠')}  ${c.gray(결과.열쇠.방식)}`
-      : `  ${mark.warn} ${c.gray(`잠금장치 — ${결과.열쇠.왜}`)}`);
+  // 열쇠마다 한 줄. 모아서 한 줄로 적으면 둘 중 하나만 지운 것이 「✓」 뒤에 숨는다.
+  // 같은 말(DPAPI 는 전부 「설정 파일 안에」)은 한 번만 적는다.
+  const 적은줄 = new Set();
+  for (const k of 결과.열쇠들 ?? (결과.열쇠 ? [결과.열쇠] : [])) {
+    const 이름 = k.이름 ? ` ${k.이름}` : '';
+    const 줄 = k.지움
+      ? `  ${mark.ok} ${c.bold('잠금장치의 열쇠')}  ${c.gray(`${k.방식}${이름}`)}`
+      : `  ${mark.warn} ${c.gray(`잠금장치${이름} — ${k.왜}`)}`;
+    if (!적은줄.has(줄)) { 적은줄.add(줄); say(줄); }
   }
   for (const x of 결과.못한것) {
     say(`  ${mark.no} ${x.이름} ${c.gray(x.자리)}`);
@@ -364,6 +484,12 @@ export async function runReset(args = [], flags = {}) {
   }
 
   const 본것 = 살펴보기({ home, root });
+  /*
+   * 모아 둔 소식을 비운다 (config.js 의 소식줄들). 이 문은 설정을 안 읽으므로
+   * 대개 관리 정책이 깨졌다는 말 하나다 — 초기화를 찾는 사람이 「왜 설정이
+   * 안 먹나」 를 쫓고 있다면 제일 먼저 봐야 할 줄이다.
+   */
+  for (const 줄 of 소식줄들()) say(줄);
   보여주기(본것);
 
   if (!무엇) {

@@ -35,7 +35,13 @@
 export const 도구설명EN = {
   Read: {
     desc: 'Read one file. Line numbers come back with it. You must read a file before editing it.'
-      + ' Excel files (.xlsx/.xlsm/.xls) can be read directly too — they come back as CSV per sheet.'
+      // 한글 쪽(index.js 의 Read 스키마)과 **같은 약속**이어야 한다. 옛 .xls(OLE)는
+      // 우리가 직접 못 읽어서 이 PC 의 엑셀이나 LibreOffice 를 빌려 읽는다.
+      // 한 묶음으로 적어 두면, 그 둘이 없는 PC 에서는 모델이 사용자에게 그 파일을
+      // 달라고 해 놓고 못 읽어 걸음 하나를 버린다.
+      + ' Excel files (.xlsx/.xlsm) can be read directly too — they come back as CSV per sheet.'
+      + ' The old .xls format needs Excel or LibreOffice on this machine —'
+      + ' without one it says it cannot read the file.'
       + ' Korean HWP, Word and PowerPoint documents (.hwpx/.docx/.pptx) read directly as well —'
       + ' they come back as plain text. There is no need to ask the user to export anything.'
       + ' All of these are read-only here, though.',
@@ -49,17 +55,39 @@ export const 도구설명EN = {
     desc: 'Create a file, or overwrite one completely. Use Edit to change part of a file.'
       + ' **You can create several files in one call** — pass them as an array in files.'
       + ' Do that when you are laying out a folder structure. One call per file means one model'
-      + ' round trip per file, and an eight-file skeleton loses minutes to that.',
+      + ' round trip per file, and an eight-file skeleton loses minutes to that.'
+      // 한글 쪽(index.js 의 Write 스키마)과 **같은 약속**이어야 한다. 이 표는 설명을
+      // 통째로 갈아 끼우니, 여기 없는 줄은 안 옮겨진 것이 아니라 **지워진 것**이다 —
+      // 지시말이 ko 가 아니면 한글 문서를 만드는 길이 아예 안 나가고, 사내에 낼
+      // 보고서를 달라고 해도 모델은 .md 를 쓰고 끝낸다 (tools/hwpxwrite.js 가 안 닿는다).
+      + ' A path ending in `.hwpx` is written as a **Korean HWP document** (# / ## / ### headings'
+      + ' and bullet lists carry over). Do that when you are asked for a report or minutes to hand'
+      + ' round a Korean office. It works only when creating a new file — an existing document'
+      + ' cannot be edited.',
     params: {
       file_path: 'path to write (single file)',
       content: 'the whole file content (single file)',
       files: 'several files at once. When you use this, leave file_path and content out.',
     },
+    /*
+     * ── 배열 **속** 칸은 따로 적는다 ──────────────────────────────────────
+     *
+     * 안 적으면 그 칸만 한국어로 나간다. 하필 이 도구들이 제일 세게 미는 길이
+     * 배열 쪽이다 — 「여러 군데는 edits 로 한 번에」 「스무 개를 옮기려고 스무 번
+     * 부르지 마라」. 영어로 켠 사람은 제일 비싼 길의 설명서만 못 읽고 있었다.
+     *
+     * 겉의 말을 그대로 물려주지 않는 까닭은, 겉이 `(single file)` 처럼 **한
+     * 개짜리 길**을 가리키는 말이라서다. 그대로 쓰면 배열 안에서 틀린 말이 된다.
+     */
+    items: {
+      files: { file_path: 'path to write', content: 'the whole file content' },
+    },
   },
   Append: {
     desc: 'Append to the end of a file. This is how you build a large file — Write the first part,'
       + ' then call Append repeatedly until it is complete. Splitting it and landing it for certain'
-      + ' beats trying to fit it in one call and getting cut off. No Read needed first — you are only'
+      + ' beats trying to fit it in one call and getting cut off. Never resend the part you already'
+      + ' wrote — send only what comes next. No Read needed first — you are only'
       + ' adding to the end, so there is nothing to read.',
     params: {
       file_path: 'path of the file to append to',
@@ -77,6 +105,14 @@ export const 도구설명EN = {
       new_string: 'what to replace it with',
       replace_all: 'true to replace every occurrence',
       edits: 'several places at once, applied in the order given. When you use this, leave the arguments above out.',
+    },
+    items: {
+      edits: {
+        file_path: 'path of the file to edit',
+        old_string: 'what to replace',
+        new_string: 'what to replace it with',
+        replace_all: 'true to replace every occurrence',
+      },
     },
   },
   Glob: {
@@ -122,8 +158,9 @@ export const 도구설명EN = {
       + ' cut, narrow the request or raise max_chars and call again.',
     params: {
       url: 'address to read (http/https)',
-      max_chars: 'maximum characters to pull. Left out, it is sized to the model. Raise it if the'
-        + ' material comes back cut (max 120000)',
+      // The limit sits in the first sentence — narrow windows keep only the first sentences.
+      max_chars: 'maximum characters to pull (max 120000). Left out, it is sized to the model. Raise it if the'
+        + ' material comes back cut',
     },
   },
   Move: {
@@ -135,6 +172,9 @@ export const 도구설명EN = {
       to: 'where it goes. Missing folders are created (single form)',
       moves: 'several at once. With this, from/to are unused',
       overwrite: 'overwrite the destination if it already exists. Default false, so a clash is refused',
+    },
+    items: {
+      moves: { from: 'the file or folder to move', to: 'where it goes. Missing folders are created' },
     },
   },
   Ask: {
@@ -174,6 +214,9 @@ export const 도구설명EN = {
       + ' is set by the size of the job — there is no fixed count and no cap. Do not squeeze unrelated'
       + ' work into one line to hit a number. Write each step small enough to check on its own.',
     params: { todos: 'the whole todo list. No cap — as many as the job needs' },
+    items: {
+      todos: { text: 'one line on what to do', state: 'todo / doing / done' },
+    },
   },
   Verify: {
     desc: 'Check that what you made actually works. Call this **before** you finish, without fail.'

@@ -33,7 +33,9 @@ import { basename, extname, join } from 'node:path';
 
 /** 변환해서 읽어 볼 만한 확장자. 여기 없는 것은 손대지 않는다. */
 const 바꿔볼확장자 = new Set([
-  '.ppt', '.doc', '.xls',      // 옛 Office (OLE 복합문서)
+  // 옛 Office (OLE 복합문서). .xlt 는 .xls 의 서식판 — 아래 직접못읽는확장자 에만 있어서
+  // 변환기가 있어도 안 불렀다 (2.0.0 6회차 CV1). 그 표는 이 표의 부분집합이어야 한다.
+  '.ppt', '.doc', '.xls', '.xlt',
   '.rtf', '.odt', '.odp', '.ods', '.wpd',
   '.pptx', '.docx', '.xlsx',   // 겉만 그 이름이고 속이 다른 것
   '.hwp',                       // 구형 한글 — soffice 가 읽는 판이 있다
@@ -103,6 +105,22 @@ function 명령짓기(cmd, 인자) {
 }
 
 /*
+ * ── 윈도우에서는 이름 하나만 물어봐서는 **못 찾는다** ──────────────────
+ *
+ * scoop·choco 로 깔면 PATH 에 놓이는 것은 `soffice.cmd` 껍데기다. Node 의
+ * spawn 은 PATHEXT 를 안 보므로 `soffice` 로 물으면 ENOENT 가 나고(그 껍데기를
+ * 그냥 부르면 EINVAL 이다), 그러면 우리는 사람이 눈앞에서 쓰고 있는 프로그램을
+ * 두고 「이 PC 에 변환기가 없습니다」 라고 말한다 — 바로 위 명령짓기 머리말이
+ * 다루겠다고 적어 둔 그 껍데기다. 찾을 때도 확장자까지 붙여 물어본다.
+ * 부르는 것은 이미 된다 — `.cmd`·`.bat` 는 명령짓기 가 cmd.exe 로 감싼다.
+ */
+export function soffice이름들(platform = process.platform) {
+  return platform === 'win32'
+    ? ['soffice.exe', 'soffice.com', 'soffice.cmd', 'soffice.bat', 'soffice']
+    : ['soffice'];
+}
+
+/*
  * 변환은 **비동기로** 부른다.
  *
  * soffice 는 처음 뜰 때 20초, 큰 문서면 그 이상 걸린다. 전에는 이 자리가
@@ -146,8 +164,10 @@ export function 변환기찾기({ 다시 = false, env = process.env, platform = 
     return 본것;
   }
   let soffice = null;
-  if (돌아가나('soffice', ['--version'])) soffice = 'soffice';
-  else {
+  for (const 이름 of soffice이름들(platform)) {
+    if (돌아가나(이름, ['--version'])) { soffice = 이름; break; }
+  }
+  if (!soffice) {
     for (const p of soffice자리) {
       if (existsSync(p) && 돌아가나(p, ['--version'])) { soffice = p; break; }
     }
@@ -184,22 +204,36 @@ export function 변환기말(찾은것 = 변환기찾기()) {
  */
 export function 못바꿈말(보인이름, 확장자, 찾은것 = 변환기찾기()) {
   const 갈래 = String(확장자 ?? '').replace(/^\./, '').toLowerCase();
-  const 없다 = !찾은것.soffice && !찾은것.textutil;
-  const 길 = 없다
-    ? '이 PC 에 LibreOffice(soffice)가 없어서 바꿔 읽을 수도 없습니다.'
-    : '이 PC 의 변환기로 바꿔 봤지만 글이 안 나왔습니다.';
+  /*
+   * 「바꿔 봤다」 는 **이 갈래를 받는 변환기가 있을 때만** 적는다 (2.0.0 6회차 CV3·CV4).
+   *
+   * 변환기가 하나라도 있으면 해 본 것으로 쳤다. 맥은 textutil 이 늘 있는데 textutil 은
+   * doc·rtf·odt·docx 만 받는다 — 그래서 맥의 .ppt·.xls·.hwp 가 전부 **안 해 본 것**을
+   * 「바꿔 봤지만 글이 안 나왔습니다」 로 받았고 LibreOffice 안내도 빠졌다. 그리고
+   * DEEL_CONVERT=off 로 일부러 끈 사람에게 「설치하면 빌려 씁니다」 라고 했다.
+   */
+  const 껐나 = !찾은것.soffice && !찾은것.textutil && /DEEL_CONVERT=off/.test(String(찾은것.왜 ?? ''));
+  const 받는것있나 = !!찾은것.soffice || (!!찾은것.textutil && textutil갈래.has(`.${갈래}`));
+  const 길 = 껐나 ? `${찾은것.왜} — 그래서 바꿔 읽지 않았습니다.`
+    : 받는것있나 ? '이 PC 의 변환기로 바꿔 봤지만 글이 안 나왔습니다.'
+      : 찾은것.textutil ? '이 PC 의 textutil 은 이 형식을 못 바꾸고, LibreOffice(soffice)는 없습니다.'
+        : '이 PC 에 LibreOffice(soffice)가 없어서 바꿔 읽을 수도 없습니다.';
   return `${보인이름} 은 deel 이 직접 못 읽는 형식입니다 (.${갈래}).\n`
     + `${길}\n`
     + `해결: 원래 프로그램에서 ${새이름(갈래)} 로 저장한 뒤 다시 주세요.`
-    + (없다 ? ' 또는 LibreOffice 를 설치하면 deel 이 빌려 씁니다.' : '')
+    + (!껐나 && !받는것있나 ? ' 또는 LibreOffice 를 설치하면 deel 이 빌려 씁니다.' : '')
     + '\n**같은 파일을 다시 Read 하지 마세요. 결과는 같습니다.**';
 }
+
+/** textutil(맥)이 받는 갈래. 글로바꾸기 와 못바꿈말 이 같은 표를 본다 — 따로 적으면 한쪽만 고쳐진다. */
+const textutil갈래 = new Set(['.doc', '.rtf', '.odt', '.docx']);
 
 /** 그 갈래를 무엇으로 저장하면 읽히는지. */
 function 새이름(갈래) {
   if (갈래 === 'ppt') return 'pptx';
   if (갈래 === 'doc' || 갈래 === 'rtf' || 갈래 === 'odt' || 갈래 === 'wpd') return 'docx';
-  if (갈래 === 'xls' || 갈래 === 'ods') return 'xlsx';
+  // .xlt 는 .xls 의 서식판이다 — 「pdf 나 txt」 로 떨어지면 표가 사라진다 (CV1).
+  if (갈래 === 'xls' || 갈래 === 'xlt' || 갈래 === 'ods') return 'xlsx';
   if (갈래 === 'odp') return 'pptx';
   if (갈래 === 'hwp') return 'hwpx';
   return 'pdf 나 txt';
@@ -236,7 +270,7 @@ export async function 글로바꾸기(abs, root, { timeout = 90000, 찾은것 = 
    * OS 에 붙어 있는 것이라 곧바로 답한다. 둘 다 되는 자리면 빠른 쪽이 맞다.
    */
   const 확장자 = extname(abs).toLowerCase();
-  if (있는것.textutil && ['.doc', '.rtf', '.odt', '.docx'].includes(확장자)) {
+  if (있는것.textutil && textutil갈래.has(확장자)) {
     const 나온것 = join(받을곳, `${basename(abs, 확장자)}.txt`);
     const r = await 부르기('textutil', ['-convert', 'txt', '-output', 나온것, abs], { timeout, signal });
     if (!r.error && r.status === 0 && existsSync(나온것)) {
@@ -259,44 +293,91 @@ export async function 글로바꾸기(abs, root, { timeout = 90000, 찾은것 = 
    * 있으면 새 부탁을 그쪽에 넘기고 **곧바로 끝나 버린다.** 사람이 LibreOffice 를
    * 열어 둔 PC 에서 변환이 조용히 아무것도 안 하는 것이 그 모습이다. 우리 몫의
    * 프로필을 따로 주면 그 일이 안 생긴다.
+   *
+   * ── 성공과 실패를 무엇으로 가르나 ──────────────────────────────────
+   *
+   * **종료코드 0 과 결과 파일, 둘 다** 있어야 성공이다. textutil 쪽이 이미
+   * 그 규칙이고(`status === 0 && existsSync`), 여기만 한쪽씩 봤다가 두 자리가
+   * 서로 **반대 방향**으로 틀려 있었다 (8회차) —
+   *
+   *   · 종료코드 1 로 죽으면서 반쪽 txt 를 남긴 것을 `ok:true` 로 돌려줬다.
+   *     그 깨진 글이 그대로 모델에게 갔고, 모델은 그것이 문서 전부인 줄 안다.
+   *   · 멀쩡히 끝냈는데 받을곳에 **지난번 같은 이름 txt** 가 남아 있으면
+   *     늘어난 것이 없다며 「글을 못 뽑았습니다」 — 성공을 실패로 뒤집었다.
+   *
+   * 그래서 넣기 전에 우리가 지난번에 남긴 같은 이름 txt 를 먼저 치운다. 결과를
+   * 그 이름으로 **찾지는 않는다** — 치우는 것은 우리 사본이고, 나온 것을 찾는
+   * 일은 여전히 늘어난 파일로 한다.
    */
   const 프로필 = join(받을곳, '.soffice-profile');
+  try { rmSync(join(받을곳, `${basename(abs, 확장자)}.txt`), { force: true }); } catch { /* 못 지우면 아래에서 걸린다 */ }
   const 전 = new Set(existsSync(받을곳) ? readdirSync(받을곳) : []);
-  const r = await 부르기(있는것.soffice, [
-    `-env:UserInstallation=file:///${프로필.replace(/\\/g, '/').replace(/^\/+/, '')}`,
-    '--headless', '--norestore',
-    '--convert-to', 'txt:Text',
-    '--outdir', 받을곳,
-    abs,
-  ], { timeout, signal });
+  try {
+    const r = await 부르기(있는것.soffice, [
+      `-env:UserInstallation=file:///${프로필.replace(/\\/g, '/').replace(/^\/+/, '')}`,
+      '--headless', '--norestore',
+      '--convert-to', 'txt:Text',
+      '--outdir', 받을곳,
+      abs,
+    ], { timeout, signal });
 
-  if (r.error) {
-    return { ok: false, 왜: `변환기를 못 돌렸습니다: ${r.error.message}` };
-  }
-  const 새로생긴것 = (existsSync(받을곳) ? readdirSync(받을곳) : [])
-    .filter((f) => !전.has(f) && f.toLowerCase().endsWith('.txt'));
-  if (!새로생긴것.length) {
+    if (r.error) {
+      return { ok: false, 왜: `변환기를 못 돌렸습니다: ${r.error.message}` };
+    }
+    const 새로생긴것 = (existsSync(받을곳) ? readdirSync(받을곳) : [])
+      .filter((f) => !전.has(f) && f.toLowerCase().endsWith('.txt'));
     const 끄트머리 = String(r.stderr || r.stdout || '').trim().split('\n').slice(-2).join(' ').slice(0, 200);
-    return { ok: false, 왜: `변환기가 글을 못 뽑았습니다${끄트머리 ? ` (${끄트머리})` : ''}` };
-  }
-  const 나온것 = join(받을곳, 새로생긴것[0]);
-  let text = '';
-  try { text = readFileSync(나온것, 'utf8'); } catch (err) {
-    return { ok: false, 왜: `바꾼 글을 못 읽었습니다: ${err.message}` };
+    if (r.status !== 0) {
+      // 죽으면서 남긴 반쪽 글도 **사람 문서의 조각**이다. 실패한 자리에 남기지 않는다.
+      for (const f of 새로생긴것) { try { rmSync(join(받을곳, f), { force: true }); } catch { /* 임시치우기가 거둔다 */ } }
+      return { ok: false, 왜: `변환기가 종료 ${r.status ?? '알 수 없음'} 로 끝났습니다${끄트머리 ? ` (${끄트머리})` : ''}` };
+    }
+    if (!새로생긴것.length) {
+      return { ok: false, 왜: `변환기가 글을 못 뽑았습니다${끄트머리 ? ` (${끄트머리})` : ''}` };
+    }
+    const 나온것 = join(받을곳, 새로생긴것[0]);
+    let text = '';
+    try { text = readFileSync(나온것, 'utf8'); } catch (err) {
+      return { ok: false, 왜: `바꾼 글을 못 읽었습니다: ${err.message}` };
+    } finally {
+      /*
+       * 읽었으면 곧바로 지운다.
+       *
+       * 글은 이미 손에 있다. 남겨 두면 **사람 문서의 알맹이가 사본으로 작업
+       * 폴더에 쌓인다** — 그대로 커밋되거나 압축되어 나갈 수 있는 자리다.
+       * 나중에 거두겠다는 약속은 세션이 죽으면 안 지켜진다. 지금 지운다.
+       */
+      try { rmSync(나온것, { force: true }); } catch { /* 못 지우면 임시치우기가 거둔다 */ }
+    }
+    return { ok: true, text, 쓴것: 'soffice', 파일: 나온것 };
   } finally {
     /*
-     * 읽었으면 곧바로 지운다.
-     *
-     * 글은 이미 손에 있다. 남겨 두면 **사람 문서의 알맹이가 사본으로 작업
-     * 폴더에 쌓인다** — 그대로 커밋되거나 압축되어 나갈 수 있는 자리다.
-     * 나중에 거두겠다는 약속은 세션이 죽으면 안 지켜진다. 지금 지운다.
+     * 프로필도 **여기서** 거둔다. 지우는 것이 txt 하나뿐이던 때, 그 안에는
+     * 방금 연 문서의 캐시(user/registrymodifications.xcu·backup 따위)가 그대로
+     * 남아 작업 폴더에 쌓였다 — 글은 지워 놓고 그 글의 캐시를 남긴 셈이다.
+     * 성공하든 실패하든 중단이든 한 번은 지나가라고 finally 에 둔다.
      */
-    try { rmSync(나온것, { force: true }); } catch { /* 못 지우면 임시치우기가 거둔다 */ }
+    try { rmSync(프로필, { recursive: true, force: true }); } catch { /* 못 지우면 임시치우기가 거둔다 */ }
   }
-  return { ok: true, text, 쓴것: 'soffice', 파일: 나온것 };
 }
 
-/** 떨궈 둔 것을 거둔다. 검사와 세션 끝에서 부른다. */
+/**
+ * 떨궈 둔 것을 거둔다.
+ *
+ * 「검사와 세션 끝에서 부른다」 고 적혀 있었는데 한동안 **부르는 자리가 검사뿐**이었다.
+ * 위 rmSync 들에 붙은 「못 지우면 임시치우기가 거둔다」 가 그래서 빈말이었고, 잠겨서
+ * 못 지운 임시 파일은 `.deel/tmp` 에 그대로 쌓였다(윈도우에서 soffice 가 물고 있으면
+ * 실제로 그렇게 된다). 앞선 판은 그 사실을 주석에만 적고 부르는 자리를 안 세웠다 —
+ * 거짓말하는 주석을 고쳐도 파일은 그대로 쌓인다.
+ *
+ * 이제 두 모드의 끝맺음이 이 자를 부른다: `src/repl.js` 의 정리 블록과
+ * `src/oneshot.js` 의 `내놓기`. 둘 다 조용히 부르고, 못 거둬도 끝맺음은 그대로 간다.
+ * (검사: test/convert.test.js 의 「거두는자리」)
+ *
+ * 우리가 떨군 것만 거둔다 — soffice 프로필과 `.txt` 뿐이다. 이 둘이 이 폴더에
+ * 우리가 만드는 것의 **전부**라, 사람이 여기 `.txt` 를 손수 넣어 두지 않는 한
+ * 남의 것은 안 건드린다. (`.deel/` 는 우리 살림 폴더고 git 도 안 본다.)
+ */
 export function 임시치우기(root) {
   const 자리 = 임시자리(root);
   if (!existsSync(자리)) return 0;

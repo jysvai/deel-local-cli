@@ -905,6 +905,222 @@ trace('9-흘려받기');
     srv.close();
     할당량잊기();
   }
+
+  /*
+   * ── 흐름 속 오류 · 규격대로 읽기 · 창구마다 다른 도구 조각 ────────────────
+   *
+   * 아래는 전부 **200 으로 받아 놓고** 몸 안에서 갈리는 자리다. 머리말이 멀쩡하니
+   * 상태 코드로는 아무것도 안 보이고, 잘못 읽으면 빈 답이나 엉뚱한 부름이 된다.
+   */
+  const 흘려보기 = async (kind, 줄들, 타입 = 'text/event-stream') => {
+    const srv = createServer(async (req2, res) => {
+      res.writeHead(200, { 'content-type': 타입 });
+      // 조각 사이를 조금 띄운다 — 줄 끝(\r|\n)이 조각 경계에 걸리는 자리를 만든다.
+      for (const l of 줄들) { res.write(l); await new Promise((r) => setTimeout(r, 3)); }
+      res.end();
+    });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${srv.address().port}${kind === 'ollama' ? '' : '/v1'}`;
+    allowEndpoint(base);
+    const 나온것 = [];
+    let 끝 = null;
+    let 탈 = null;
+    try {
+      for await (const ev of chatStream({ kind, base, auth: 'none', key: '', model: 'm' }, { messages: 사람말, maxTokens: 128 })) {
+        if (ev.type === 'done') 끝 = ev.message; else 나온것.push(ev);
+      }
+    } catch (e) { 탈 = e; }
+    srv.close();
+    const 모음 = (t) => 나온것.filter((e) => e.type === t).map((e) => e.text).join('');
+    return { 끝, 탈, 나온것, 글: 모음('content'), 생각: 모음('thinking') };
+  };
+  const 조각 = (o) => `data: ${JSON.stringify(o)}\n\n`;
+  const 델타 = (delta, fin = null) => ({ choices: [{ index: 0, delta, finish_reason: fin }] });
+  const 줄 = (o) => `${JSON.stringify(o)}\n`;
+
+  // ★★★ 흐름 속 error 조각 — 빈 답으로 삼키지 않는다 (retry.test.js 가 루프 쪽을 잰다).
+  {
+    const 앞 = await 흘려보기('openai', [조각({ error: { message: 'Provider returned error' }, choices: [{ index: 0, delta: {}, finish_reason: 'error' }] }), 'data: [DONE]\n\n']);
+    check('★★★ openai: 글 전에 온 error 조각이 서버 말로 드러난다', /Provider returned error/.test(앞.탈?.message ?? ''),
+      `${앞.탈?.message ?? '(안 던짐)'} · ${JSON.stringify(앞.끝)}`);
+    const 뒤 = await 흘려보기('openai', [조각(델타({ content: '반쯤' })), 조각({ error: { message: 'upstream reset' } })]);
+    check('★★★ openai: 글 뒤에 온 error 조각도 까닭이 남는다 — 「말없이끝남」 으로 안 넘긴다',
+      /upstream reset/.test(뒤.탈?.message ?? '') && 뒤.글 === '반쯤', `${뒤.탈?.message ?? '(안 던짐)'} · ${JSON.stringify(뒤.끝)}`);
+    const 러너 = await 흘려보기('ollama', [줄({ message: { content: '부분' }, done: false }), 줄({ error: 'model runner has unexpectedly stopped, this may be due to resource limitations' })], 'application/x-ndjson');
+    check('★★★ ollama: 흐름 속 {"error"} 줄(러너 죽음)이 드러난다', /runner has unexpectedly stopped/.test(러너.탈?.message ?? ''),
+      `${러너.탈?.message ?? '(안 던짐)'} · ${JSON.stringify(러너.끝)}`);
+    const 첫줄 = await 흘려보기('ollama', [줄({ error: 'model "foo" not found, try pulling it first' })], 'application/x-ndjson');
+    check('★★ ollama: 첫 줄부터 error 면 그 말로 실패한다', /not found/.test(첫줄.탈?.message ?? ''), `${첫줄.탈?.message ?? '(안 던짐)'}`);
+  }
+
+  // ★★ 생각 칸 이름이 `reasoning` 인 창구 (OpenRouter · Ollama /v1 · vLLM 새 판).
+  {
+    const r = await 흘려보기('openai', [조각(델타({ reasoning: '생각1' })), 조각(델타({ reasoning: '생각2' })), 조각(델타({ content: '답' }, 'stop'))]);
+    check('★★ openai: delta.reasoning 을 생각으로 읽고 흘린다', r.끝?.thinking === '생각1생각2' && r.생각 === '생각1생각2',
+      JSON.stringify({ thinking: r.끝?.thinking, 흘린: r.생각 }));
+    // 두 이름에 같은 글을 같이 싣는 판이 있다. 두 번 붙이면 생각이 두 벌이 된다.
+    const 둘다 = await 흘려보기('openai', [조각(델타({ reasoning_content: '한번', reasoning: '한번' })), 조각(델타({ content: '답' }, 'stop'))]);
+    check('★ 두 칸에 같이 오면 한 번만 붙인다', 둘다.끝?.thinking === '한번', JSON.stringify(둘다.끝?.thinking));
+  }
+
+  // ★★★ index 없이 오는 도구 부름 — id 로 가른다 (Gemini 의 OpenAI 호환 창구 꼴).
+  {
+    const 한조각 = await 흘려보기('openai', [
+      조각(델타({ tool_calls: [
+        { id: 'g1', type: 'function', function: { name: 'Read', arguments: '{"p":"a"}' } },
+        { id: 'g2', type: 'function', function: { name: 'Grep', arguments: '{"q":"b"}' } },
+      ] })),
+      조각(델타({}, 'tool_calls')),
+    ]);
+    const t = 한조각.끝?.toolCalls ?? [];
+    check('★★★ index 없는 부름 둘(한 조각)이 하나로 안 섞인다',
+      t.length === 2 && t[0].name === 'Read' && t[0].args.p === 'a' && t[1].name === 'Grep' && t[1].args.q === 'b', JSON.stringify(t));
+    const 따로 = await 흘려보기('openai', [
+      조각(델타({ tool_calls: [{ id: 'g1', type: 'function', function: { name: 'Read', arguments: '{"p":' } }] })),
+      조각(델타({ tool_calls: [{ function: { arguments: '"a"}' } }] })),
+      조각(델타({ tool_calls: [{ id: 'g2', type: 'function', function: { name: 'Grep', arguments: '{"q":"b"}' } }] })),
+      조각(델타({}, 'tool_calls')),
+    ]);
+    const t2 = 따로.끝?.toolCalls ?? [];
+    check('★★ index 없는 부름이 조각마다 오면 id 로 가르고, id 없는 이음 조각은 방금 것에 붙인다',
+      t2.length === 2 && t2[0].id === 'g1' && t2[0].args.p === 'a' && t2[1].id === 'g2' && t2[1].args.q === 'b', JSON.stringify(t2));
+  }
+
+  // ★★ 이름을 조각마다 되풀이하는 창구 · 진짜로 쪼개 보내는 창구.
+  {
+    const 되풀이 = await 흘려보기('openai', [
+      조각(델타({ tool_calls: [{ index: 0, id: 'r', type: 'function', function: { name: 'Read', arguments: '{"p":' } }] })),
+      조각(델타({ tool_calls: [{ index: 0, id: 'r', type: 'function', function: { name: 'Read', arguments: '"a"}' } }] })),
+      조각(델타({}, 'tool_calls')),
+    ]);
+    check('★★ 조각마다 되풀이된 이름을 이어 붙이지 않는다 (ReadRead 가 아니다)',
+      되풀이.끝?.toolCalls?.[0]?.name === 'Read' && 되풀이.끝?.toolCalls?.[0]?.args?.p === 'a', JSON.stringify(되풀이.끝?.toolCalls));
+    const 쪼갬 = await 흘려보기('openai', [
+      조각(델타({ tool_calls: [{ index: 0, id: 'c', function: { name: 'Re' } }] })),
+      조각(델타({ tool_calls: [{ index: 0, function: { name: 'ad', arguments: '{}' } }] })),
+      조각(델타({}, 'tool_calls')),
+    ]);
+    check('★ 진짜로 쪼개 온 이름은 여전히 잇는다', 쪼갬.끝?.toolCalls?.[0]?.name === 'Read', JSON.stringify(쪼갬.끝?.toolCalls));
+    /*
+     * ★★★ 쪼개 온 조각이 **여태 모인 이름과 같은 글자**일 때.
+     *
+     * 「모인 이름과 같으면 되풀이」 로만 가르면 `s`·`s`·`h` 의 둘째 `s` 가 버려져
+     * `ssh` 가 `sh` 가 된다. 없는 도구 이름이라 그 부름은 통째로 죽고, 화면에는
+     * 모델이 엉뚱한 도구를 불렀다고 나온다 — 원인과 상관없는 말이다.
+     *
+     * 되풀이하는 창구는 **인자 조각에 이름을 얹어** 보낸다(위 되풀이). 이름만 든
+     * 조각은 진짜 쪼갬이라 같은 글자여도 이어야 한다.
+     */
+    const 이름조각 = (n) => 조각(델타({ tool_calls: [{ index: 0, id: 'sh1', function: { name: n } }] }));
+    const 같은글자 = await 흘려보기('openai', [
+      이름조각('s'), 이름조각('s'), 이름조각('h'),
+      조각(델타({ tool_calls: [{ index: 0, function: { arguments: '{}' } }] })),
+      조각(델타({}, 'tool_calls')),
+    ]);
+    check('★★★ 같은 글자가 이어진 이름 조각도 버리지 않는다 (ssh 가 sh 가 되면 안 된다)',
+      같은글자.끝?.toolCalls?.[0]?.name === 'ssh', JSON.stringify(같은글자.끝?.toolCalls));
+  }
+
+  /*
+   * ★★★ 거절 글만 오고 **끝 사건 없이** 끊긴 흐름.
+   *
+   * 거절 글을 답 자리로 옮기는 일이 「왜 끝났는지」 를 정하는 자리보다 뒤에 있었다.
+   * 그래서 그 자리에서는 답이 아직 비어 있고, 잘린 거절 답이 `stopped=null`(= 멀쩡히
+   * 끝남)로 나갔다. 중계 프록시가 몸통을 자른 것과 모델이 할 말을 다 한 것이 화면에서
+   * 같아진다 — 사람은 답이 온 줄 알고 그대로 읽는다.
+   */
+  {
+    const 끊김 = await 흘려보기('openai', [조각(델타({ refusal: 'I cannot help with that.' }))]);
+    check('★★★ 거절만 오고 말없이 끊긴 것을 「멀쩡히 끝남」 으로 넘기지 않는다',
+      끊김.끝?.stopped === 말없이끝남, `${String(끊김.끝?.stopped)} · ${JSON.stringify(끊김.끝?.content)}`);
+    check('★★ 그 거절 글은 답 자리에 남는다',
+      끊김.끝?.content === 'I cannot help with that.', JSON.stringify(끊김.끝?.content));
+  }
+
+  /*
+   * ★★★ `finish_reason: 'refusal'` 만 오고 `delta.refusal` 글은 한 조각도 안 오는 창구.
+   *
+   * Anthropic 갈래는 `stop_reason:'refusal'` 하나로 거절을 세운다(anthropic흡수).
+   * OpenAI 갈래는 글이 있을 때만 세워서, 글 없이 사유만 주는 창구에서는 거절이
+   * 「빈 답」 이 됐다 — 루프는 되밀고, 같은 판정에 같은 요금이 한 번 더 나간다.
+   */
+  {
+    const 사유만 = await 흘려보기('openai', [조각(델타({}, 'refusal')), 'data: [DONE]\n\n']);
+    check('★★★ 글 없이 finish_reason 만 refusal 이어도 거절로 읽는다 (Anthropic 갈래와 같게)',
+      사유만.끝?.거절?.type === 'refusal', `${String(사유만.끝?.stopped)} · ${JSON.stringify(사유만.끝?.거절)}`);
+  }
+
+  // ★★ 흘려받기에서 arguments 가 글이 아니라 객체로 오는 창구 — 한 번에 받는 길(normalizeCalls)과 같게.
+  {
+    const r = await 흘려보기('openai', [
+      조각(델타({ tool_calls: [{ index: 0, id: 'x', function: { name: 'Read', arguments: { p: 'a.txt' } } }] })),
+      조각(델타({}, 'tool_calls')),
+    ]);
+    const t = r.끝?.toolCalls?.[0];
+    check('★★ 객체로 온 인자를 [object Object] 로 깨뜨리지 않는다', t?.args?.p === 'a.txt' && !t?.argsBroken, JSON.stringify(t));
+  }
+
+  // ★★ SSE 규격대로 읽기 — \r 만 쓰는 줄 끝 · 한 사건의 data 가 여러 줄.
+  {
+    const 씨알 = (s) => s.replace(/\n/g, '\r');
+    const cr = await 흘려보기('openai', [씨알(조각(델타({ content: 'A' }))), 씨알(조각(델타({ content: 'B' }, 'stop'))), 'data: [DONE]\r\r']);
+    check('★★ 줄 끝이 \\r 뿐이어도 읽는다 (SSE 규격이 허락한다)', cr.끝?.content === 'AB' && cr.끝?.stopped === 'stop', JSON.stringify(cr.끝));
+    const j = JSON.stringify(델타({ content: 'SPLIT' }, 'stop'));
+    // 규격대로 — 낱말 사이(쉼표 뒤)에서 끊는다. \n 으로 이으면 그대로 JSON 이다.
+    const 쉼표 = j.indexOf(',"finish_reason"') + 1;
+    const 여러줄 = await 흘려보기('openai', [`data: ${j.slice(0, 쉼표)}\ndata: ${j.slice(쉼표)}\n\n`]);
+    check('★★ 한 사건의 data 가 두 줄이면 \\n 으로 이어 읽는다', 여러줄.끝?.content === 'SPLIT', JSON.stringify(여러줄.끝));
+    // 글자 수로 끊는 중계기 — 문자열 가운데서 끊겨도 읽는다.
+    const 반 = j.indexOf('SPLIT') + 2;
+    const 가운데 = await 흘려보기('openai', [`data: ${j.slice(0, 반)}\ndata: ${j.slice(반)}\n\n`]);
+    check('★ 문자열 가운데서 끊어 data 두 줄에 실어도 읽는다', 가운데.끝?.content === 'SPLIT', JSON.stringify(가운데.끝));
+    // \r\n 이 조각 경계에서 갈라져도 빈 줄 하나를 더 만들지 않는다.
+    const 갈림 = await 흘려보기('openai', [`data: ${JSON.stringify(델타({ content: 'A' }))}\r`, `\n\r\ndata: ${JSON.stringify(델타({ content: 'B' }, 'stop'))}\r\n\r\n`]);
+    check('★ \\r\\n 이 조각 경계에서 갈려도 읽는다', 갈림.끝?.content === 'AB', JSON.stringify(갈림.끝));
+    // 빈 줄 없이 data 줄마다 JSON 을 하나씩 싣는 창구 — 여태 읽던 것이라 계속 읽어야 한다.
+    const 붙음 = await 흘려보기('openai', [`data: ${JSON.stringify(델타({ content: 'A' }))}\ndata: ${JSON.stringify(델타({ content: 'B' }, 'stop'))}\n\n`]);
+    check('★ 빈 줄 없이 이어 온 data 줄도 하나씩 읽는다', 붙음.끝?.content === 'AB', JSON.stringify(붙음.끝));
+  }
+
+  // ★ Ollama 는 부름에 id 를 안 준다. 줄마다 따로 온 부름이 같은 id 로 겹치면 짝이 섞인다.
+  {
+    const r = await 흘려보기('ollama', [
+      줄({ message: { content: '', tool_calls: [{ function: { name: 'Read', arguments: { p: 'a' } } }] }, done: false }),
+      줄({ message: { content: '', tool_calls: [{ function: { name: 'Grep', arguments: { q: 'b' } } }] }, done: false }),
+      줄({ message: { content: '' }, done: true, done_reason: 'stop' }),
+    ], 'application/x-ndjson');
+    const t = r.끝?.toolCalls ?? [];
+    check('★ ollama: 줄마다 온 부름의 id 가 서로 다르다', t.length === 2 && t[0].id !== t[1].id, JSON.stringify(t.map((x) => x.id)));
+  }
+
+  /*
+   * ★★ 도구 인자를 조각마다 통째로 다시 읽지 않는다.
+   *
+   * 여태 조각이 올 때마다 **여태 모인 인자 전체**를 다듬고 JSON.parse 했다. 80KB
+   * 인자면 1.6초, 200KB 면 8초 동안 이벤트 루프가 막혔다 — 그동안 Ctrl+C 도
+   * 화면도 멈춘다. 벽시계로 재면 컴퓨터마다 달라서, **큰 글을 몇 번 읽었나**를 센다.
+   */
+  {
+    const 본문 = 'x'.repeat(40000);
+    const 인자 = JSON.stringify({ path: 'a.txt', content: 본문 });
+    const 줄들 = [조각(델타({ tool_calls: [{ index: 0, id: 'w', type: 'function', function: { name: 'Write', arguments: '' } }] }))];
+    const 묶음 = [];
+    for (let i = 0; i < 인자.length; i += 100) 묶음.push(조각(델타({ tool_calls: [{ index: 0, function: { arguments: 인자.slice(i, i + 100) } }] })));
+    for (let i = 0; i < 묶음.length; i += 50) 줄들.push(묶음.slice(i, i + 50).join(''));
+    줄들.push(조각(델타({}, 'tool_calls')));
+    const 원래읽기 = JSON.parse;
+    let 큰읽기 = 0;
+    JSON.parse = function (s, ...나머지) { if (typeof s === 'string' && s.length > 20000) 큰읽기++; return 원래읽기.call(this, s, ...나머지); };
+    let r;
+    try { r = await 흘려보기('openai', 줄들); } finally { JSON.parse = 원래읽기; }
+    check('★★ 큰 도구 인자는 끝에서 한 번만 읽는다', 큰읽기 <= 1 && r.끝?.toolCalls?.[0]?.args?.content?.length === 40000,
+      `${큰읽기}번 읽음 · ${r.끝?.toolCalls?.[0]?.args?.content?.length}`);
+
+    // 끝 사건 없이 끊겨도 모아 둔 부름은 묶는다 (도구마무리를 끝에서만 하게 된 뒤에도).
+    const 끊김 = await 흘려보기('openai', [조각(델타({ tool_calls: [{ index: 0, id: 'k', function: { name: 'Read', arguments: '{"p":1}' } }] }))]);
+    check('★★ 끝을 안 알리고 끊겨도 도구 부름이 사라지지 않는다',
+      끊김.끝?.toolCalls?.[0]?.args?.p === 1 && 끊김.끝?.stopped === 말없이끝남, JSON.stringify(끊김.끝));
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1159,6 +1375,140 @@ trace('9-2-2-못잰것');
   srv2.close();
 
   /*
+   * ── 6회차 Gemini 더듬6 — 진단이 능력을 거꾸로 저장하던 판들 ───────────────
+   *
+   * setup.js 는 진단 결과를 `facts.x ?? false` 로 프로필에 적는다. 그래서 여기서 틀린 false 는 그 연결의
+   * 도구·구조적 출력·스트리밍을 영영 끈다.
+   *   생각 · 1500 토큰 아래로 물으면 생각에 다 써 본문이 비는 추론 모델. 기본 대화는 2048 로 되는데
+   *          뒤 칸들이 128·256·512 로 물어 도구·JSON·스트리밍이 전부 false 로 적혔다 (P2).
+   *   거부 · 추론 강도 칸을 400 으로 거절했는데 think 가 true 로 적혔다 (B1).
+   *   바쁨 · 추론 강도 칸이 계속 503 — 거절이 아니라 못 잰 것이니 켠 채로 둔다 (B1 의 반대쪽).
+   *   막힘 · 첫 요청 하나가 429 — 나머지 여덟 칸이 「확인 불가」 로 무너지고 전부 false 였다 (P5).
+   */
+  {
+    const 창구 = async (판, 모델 = 'm-1') => {
+      let 몇번 = 0;
+      const s = createServer((q, res) => {
+        let 글 = '';
+        q.on('data', (d) => (글 += d));
+        q.on('end', () => {
+          const 답 = (code, o, 머리 = {}) => { res.writeHead(code, { 'content-type': 'application/json', ...머리 }); res.end(JSON.stringify(o)); };
+          if (q.method === 'GET') return 답(404, { error: { message: 'no' } });
+          몇번 += 1;
+          const b = JSON.parse(글 || '{}');
+          const 상한 = b.max_completion_tokens ?? b.max_tokens ?? 4096;
+          const 말 = (content) => 답(200, { choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 5 } });
+          if (판 === '막힘' && 몇번 === 1) return 답(429, { error: { message: 'Rate limit reached' } }, { 'retry-after': '1' });
+          if (판 === '거부' && 'reasoning_effort' in b) return 답(400, { error: { message: 'Unrecognized request argument supplied: reasoning_effort' } });
+          if (판 === '바쁨' && 'reasoning_effort' in b) return 답(503, { error: { message: 'upstream busy' } });
+          if (판 === '생각' && 상한 < 1500) {
+            if (b.stream) {
+              res.writeHead(200, { 'content-type': 'text/event-stream' });
+              res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'length' }] })}\n\n`);
+              res.write('data: [DONE]\n\n');
+              return res.end();
+            }
+            return 답(200, { choices: [{ index: 0, message: { role: 'assistant', content: '' }, finish_reason: 'length' }], usage: { prompt_tokens: 5, completion_tokens: 상한, completion_tokens_details: { reasoning_tokens: 상한 } } });
+          }
+          if (b.stream) {
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            for (let i = 1; i <= 20; i++) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: `${i} ` } }] })}\n\n`);
+            res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            return res.end();
+          }
+          if (b.messages?.some((m) => m.role === 'tool')) return 말('7099');
+          if (b.tools) return 답(200, { choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{"path":"config.json"}' } }] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 5 } });
+          if (b.response_format) return 말('{"answer":21}');
+          if (b.messages?.some((m) => m.role === 'system')) return 말('DEEL');
+          return 말('2');
+        });
+      });
+      await new Promise((r) => s.listen(0, '127.0.0.1', r));
+      const 주소 = `http://127.0.0.1:${s.address().port}/v1`;
+      allowEndpoint(주소);
+      const 결과 = await probe({ kind: 'openai', base: 주소, auth: 'none', key: '', model: 모델 });
+      s.closeAllConnections?.();
+      s.close();
+      const 칸 = (id) => 결과.results.find((x) => x.id === id);
+      return { ...결과, 칸, 몇번 };
+    };
+    const 보기 = (r, ids) => ids.map((id) => `${id}:${r.칸(id)?.status}`).join(' ') + ` · ${JSON.stringify({ streaming: r.facts.streaming, tools: r.facts.tools, json: r.facts.json, think: r.facts.think })}`;
+
+    const 생각 = await 창구('생각');
+    check('★★ 기본 대화를 2048 로 겨우 받은 추론 모델은 뒤 칸도 그만큼 준다 — 도구·JSON·스트리밍을 false 로 안 적는다',
+      생각.facts.thinkingModel === true && 생각.facts.tools === true && 생각.facts.json === true && 생각.facts.streaming === true
+        && 생각.칸('tools')?.status === 'ok' && 생각.칸('system')?.status === 'ok',
+      보기(생각, ['chat', 'system', 'stream', 'tools', 'json']));
+
+    const 거부 = await 창구('거부', 'o3-mini');
+    check('★ 추론 강도를 400 으로 거절한 창구는 think 를 false 로 적는다',
+      거부.칸('think')?.status === 'no' && 거부.facts.think === false, `${거부.칸('think')?.detail} · think ${거부.facts.think}`);
+
+    const 바쁨 = await 창구('바쁨', 'o3-mini');
+    check('  추론 강도 칸이 계속 503 이면 거절이 아니다 — 켠 채로 두고 거부됐다고 안 적는다',
+      바쁨.facts.think === true && !/거부됨/.test(바쁨.칸('think')?.detail ?? ''), `${바쁨.칸('think')?.status} · ${바쁨.칸('think')?.detail} · think ${바쁨.facts.think}`);
+
+    const 막힘 = await 창구('막힘');
+    check('★★ 첫 요청 하나가 429 여도 쉬었다 다시 물어 여덟 칸을 다 잰다',
+      막힘.칸('chat')?.status === 'ok' && 막힘.facts.tools === true && 막힘.facts.streaming === true && 막힘.몇번 >= 2,
+      `${막힘.몇번}번 · ${보기(막힘, ['chat', 'tools'])}`);
+  }
+
+  /*
+   * ── 흘러오는 것을 **우리가** 못 읽은 것은 「스트리밍 안 된다」 가 아니다 (사냥6 막판-뒷단) ──
+   *
+   * probe.js 의 스트리밍 칸은 빈 catch 를 고치면서 화면 글을 「흘러오는 것을 읽지
+   * 못했습니다」 로 바꿨다. 그 머리말이 「우리 잘못이 서버 진단으로 둔갑하는 것이다 —
+   * 사람은 멀쩡한 창구를 스트리밍 안 되는 창구로 알고 쓴다」 고 적었는데, 정작 **프로필에
+   * 남는 값**(`facts.streaming`)은 안 고쳤다. 같은 파일의 그림 칸·추론 칸은 같은 판에서
+   * 「못 쟀으면 켠 채로 둔다 — 되돌아올 수 있는 쪽으로 틀린다」 를 적용했는데 이 칸만 빠졌다.
+   * setup.js 가 `facts.streaming ?? false` 로 적으므로, 그 false 는 그 연결의 스트리밍을
+   * 영영 끈다 — 화면은 한 번에 통째로 뜨고, 왜 그런지 알 길이 없다.
+   */
+  {
+    const 말하기 = (res, content) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 5 } }));
+    };
+    const s2 = createServer((q, res) => {
+      let 글 = '';
+      q.on('data', (d) => (글 += d));
+      q.on('end', () => {
+        if (q.method === 'GET') { res.writeHead(404); return res.end('{}'); }
+        const b = JSON.parse(글 || '{}');
+        if (b.stream) {
+          // 200 머리말만 주고 한 조각도 안 준 채 소켓을 끊는다 — 읽는 쪽이 터진다.
+          res.writeHead(200, { 'content-type': 'text/event-stream', 'content-length': '100' });
+          res.flushHeaders();
+          setTimeout(() => res.socket?.destroy(), 30);
+          return;
+        }
+        if (b.messages?.some((m) => m.role === 'tool')) return 말하기(res, '7099');
+        if (b.tools) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          return res.end(JSON.stringify({ choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a"}' } }] }, finish_reason: 'tool_calls' }], usage: {} }));
+        }
+        if (b.response_format) return 말하기(res, '{"answer":21}');
+        if (b.messages?.some((m) => m.role === 'system')) return 말하기(res, 'DEEL');
+        return 말하기(res, '2');
+      });
+    });
+    await new Promise((r) => s2.listen(0, '127.0.0.1', r));
+    const 주소 = `http://127.0.0.1:${s2.address().port}/v1`;
+    allowEndpoint(주소);
+    const { facts, results } = await probe({ kind: 'openai', base: 주소, auth: 'none', key: '', model: 'm-1' });
+    s2.closeAllConnections?.();
+    s2.close();
+    const 칸 = results.find((x) => x.id === 'stream');
+    check('흘러오는 것을 못 읽었다고 화면에 적는다', /읽지 못했습니다/.test(칸?.detail ?? ''), `${칸?.status} · ${칸?.detail}`);
+    check('★★★ 못 쟀으면 프로필에도 켠 채로 적는다 — 「스트리밍 안 되는 창구」 로 굳히지 않는다',
+      facts.streaming === true, `streaming=${facts.streaming} · ${칸?.status} · ${칸?.detail}`);
+    check('  못 쟀다는 것은 「안 된다」 가 아니다 — 칸도 ✗ 가 아니다',
+      칸?.status === 'warn', `${칸?.status}`);
+  }
+
+  /*
    * 3. 인자 JSON 이 **우리 상한에** 잘려 온 판.
    *
    * normalizeCalls 가 argsBroken 을 세우고 원문을 rawArgs 에 담는데, 도구 칸이
@@ -1211,9 +1561,367 @@ trace('9-2-2-못잰것');
   check('★ 도구 호출 자체는 된 것으로 본다', 도구칸?.status === 'ok' && r3.facts.tools === true,
     `${도구칸?.status} · ${r3.facts.tools}`);
   srv3.close();
+
+  /*
+   * 4. 인자 JSON 이 **끝까지 왔는데 모양이 틀린** 판 (사냥5 L5-5 뒤).
+   *
+   * 어댑터가 이제 잘린 앞토막과 끝까지 온 틀린 JSON 을 argsCut 으로 가른다. 도구 칸은 argsBroken 만
+   * 보고 원문에 config 가 있으면 「우리 상한에 잘렸을 뿐」 · ok 로 적었다 — 홑따옴표로 적는 모델을
+   * 우리 탓으로 덮고 좋은 모델로 판정한다. 그건 모델 쪽 흠이다.
+   */
+  const srv4 = createServer((r, res) => {
+    let 글 = '';
+    r.on('data', (c) => (글 += c));
+    r.on('end', () => {
+      const 보내기 = (코드, 것) => { res.writeHead(코드, { 'content-type': 'application/json' }); res.end(JSON.stringify(것)); };
+      if (r.method === 'GET') return 보내기(200, { data: [{ id: 'm-1', context_length: 200000 }] });
+      let 몸 = null;
+      try { 몸 = JSON.parse(글 || '{}'); } catch { 몸 = null; }
+      if (몸?.tools?.length) {
+        return 보내기(200, {
+          choices: [{
+            message: { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: "{'path': 'config.json'}" } }] },
+            finish_reason: 'tool_calls',
+          }],
+          usage: { prompt_tokens: 20, completion_tokens: 12 },
+        });
+      }
+      보내기(200, { choices: [{ message: { role: 'assistant', content: '2' }, finish_reason: 'stop' }], usage: { prompt_tokens: 20, completion_tokens: 1 } });
+    });
+  });
+  await new Promise((r) => srv4.listen(0, '127.0.0.1', r));
+  const base4 = `http://127.0.0.1:${srv4.address().port}/v1`;
+  allowEndpoint(base4);
+  const r4 = await probe({ kind: 'openai', base: base4, auth: 'none', key: '', model: 'm-1' });
+  const 도구칸4 = r4.results.find((x) => x.id === 'tools');
+  check('★★ 끝까지 온 틀린 JSON 을 「상한에 잘렸을 뿐」 으로 덮지 않는다', !/잘렸을 뿐|잘려 왔습니다/.test(도구칸4?.detail ?? ''), 도구칸4?.detail);
+  check('★ 모양이 틀렸다고 적고 경고로 둔다', /모양/.test(도구칸4?.detail ?? '') && 도구칸4?.status === 'warn', `${도구칸4?.status} · ${도구칸4?.detail}`);
+  srv4.close();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+trace('9-2-5-뒷단배우기');
+/*
+ * ── 8회차 뒷단-배우기 · 진단이 제 손으로 능력을 지우던 자리들 ─────────────
+ *
+ * setup.js 는 여기서 나온 facts 를 `facts.x ?? false` 로 프로필에 적는다.
+ * 그래서 이 파일에서 틀린 false 하나가 그 연결의 도구·스트리밍·그림·추론을
+ * **영영** 끈다. 아래 네 판은 전부 그 false 를 만들던 자리다.
+ */
+{
+  const 요청들 = [];
+  const 어느칸 = (몸) => {
+    const 글 = JSON.stringify(몸?.messages ?? '');
+    if (/1\+1/.test(글)) return 'chat';
+    if (/DEEL/.test(글)) return 'system';
+    if (/1부터 20/.test(글)) return 'stream';
+    if (/port 값이/.test(글)) return 'toolresult';
+    if (/config\.json/.test(글)) return 'tools';
+    if (/3 곱하기 7/.test(글)) return 'json';
+    if (/17 곱하기 23/.test(글)) return 'think';
+    return 'vision';
+  };
+
+  /*
+   * ── 1. `think:false` 를 **400 으로 거절하는** Ollama 창구 ───────────────
+   *
+   * 기본 대화 갈래는 256 → (사고 끄고) 1024 → 2048 셋이다. 그런데 세 번째
+   * 걸음이 `if (second.ok)` 안에 갇혀 있어서, 서버가 그 칸을 거절해 버리면
+   * **거기에 못 닿았다.** 사고를 못 끄는 모델은 상한만 올리면 답하는데,
+   * 그 길이 400 하나로 막혀 여덟 칸이 전부 「확인 불가」 가 됐다.
+   *
+   * 그리고 같은 판에 두 번째 고장이 딸려 있다 — 그 창구가 거절한 칸을 뒤 검사
+   * 여덟 번에 **계속 실어 보낸다**(quiet). 첫 고장을 고치고 나면 두 번째가 그
+   * 자리를 그대로 이어받아 여덟 칸을 다 400 으로 만든다.
+   */
+  {
+    요청들.length = 0;
+    const s = createServer((q, res) => {
+      let 글 = '';
+      q.on('data', (d) => (글 += d));
+      q.on('end', () => {
+        const 답 = (코드, 것) => { res.writeHead(코드, { 'content-type': 'application/json' }); res.end(JSON.stringify(것)); };
+        if (q.url.includes('/api/show')) return 답(200, { model_info: { 'general.context_length': 32768 } });
+        let 몸 = null;
+        try { 몸 = JSON.parse(글 || '{}'); } catch { 몸 = null; }
+        const np = Number(몸?.options?.num_predict ?? 0);
+        요청들.push({ 칸: 어느칸(몸), np, think: 몸?.think });
+        // 이 모델은 사고를 끌 수가 없다 — 그 칸을 아예 안 받는다.
+        if (몸?.think === false) return 답(400, { error: 'unknown parameter "think"' });
+        if (np <= 1024) {
+          return 답(200, { message: { role: 'assistant', content: '' }, done_reason: 'length', prompt_eval_count: 20, eval_count: np });
+        }
+        if (몸?.stream) {
+          res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+          for (let i = 1; i <= 6; i += 1) res.write(`${JSON.stringify({ message: { content: `${i} ` }, done: false })}\n`);
+          res.write(`${JSON.stringify({ message: { content: '' }, done: true, done_reason: 'stop' })}\n`);
+          return res.end();
+        }
+        if (몸?.tools?.length && !몸.messages.some((m) => m.role === 'tool')) {
+          return 답(200, { message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_file', arguments: { path: 'config.json' } } }] }, done_reason: 'stop', prompt_eval_count: 20, eval_count: 9 });
+        }
+        if (몸?.format) return 답(200, { message: { role: 'assistant', content: '{"answer":21}' }, done_reason: 'stop', prompt_eval_count: 20, eval_count: 9 });
+        답(200, { message: { role: 'assistant', content: '7099 DEEL 2' }, done_reason: 'stop', prompt_eval_count: 20, eval_count: 9 });
+      });
+    });
+    await new Promise((r) => s.listen(0, '127.0.0.1', r));
+    const 주소 = `http://127.0.0.1:${s.address().port}`;
+    allowEndpoint(주소);
+    const { facts, results } = await probe({ kind: 'ollama', base: 주소, auth: 'none', key: '', model: 'm-1' });
+    const 기본칸 = results.find((x) => x.id === 'chat');
+    check('★★★ think:false 를 400 으로 거절해도 상한만 올린 걸음에 닿는다',
+      기본칸?.status === 'ok', `${기본칸?.status} · ${기본칸?.detail} · ${요청들.length}번`);
+    const 무너진것 = results.filter((x) => /기본 대화가 안 되어/.test(x.detail ?? ''));
+    check('★★★ 여덟 칸이 「확인 불가」 로 안 무너진다', 무너진것.length === 0,
+      무너진것.map((x) => x.id).join(','));
+    /*
+     * 뒤 칸에도 그 칸을 실으면 여덟 번이 다 400 이다. 서버가 안 받는다고 말한
+     * 칸은 그 뒤로 안 보낸다 — 「사고를 끌 수 있는 모델이면 꺼서 아낀다」 는
+     * 주석의 뜻이 그것이다.
+     */
+    const 뒤에실린것 = 요청들.filter((x) => x.칸 !== 'chat' && x.think === false);
+    check('★★★ 서버가 거절한 think 칸을 뒤 검사에 다시 안 싣는다', 뒤에실린것.length === 0,
+      뒤에실린것.map((x) => x.칸).join(','));
+    check('★★ 그래서 도구·구조적 출력·스트리밍이 false 로 안 적힌다',
+      facts.tools === true && facts.json === true && facts.streaming === true,
+      JSON.stringify({ tools: facts.tools, json: facts.json, streaming: facts.streaming }));
+    s.closeAllConnections?.();
+    s.close();
+  }
+
+  /*
+   * ── 2. 첫 답에 **본문이 있는** 추론 모델 ───────────────────────────────
+   *
+   * 추론 모델인지 보는 갈래가 `!got.content` 안에 있었다. 그러면 1+1 처럼 쉬운
+   * 물음에는 256 안에서 생각도 하고 답도 내는 모델이 **보통 모델로 적힌다.**
+   * 그 뒤 칸들은 128·32 로 물어지고, 그 상한은 생각에 다 나가서 본문이 빈다 —
+   * 시스템 메시지·스트리밍·그림이 전부 못 한다고 적힌다. 모델이 못 한 것이
+   * 아니라 우리가 말할 자리를 안 준 것이다(probe.js 248–261줄).
+   *
+   * 증거는 첫 답에 이미 있다 — 생각 토큰을 썼다고 usage 가 말해 준다.
+   */
+  {
+    const s = createServer((q, res) => {
+      let 글 = '';
+      q.on('data', (d) => (글 += d));
+      q.on('end', () => {
+        const 답 = (코드, 것) => { res.writeHead(코드, { 'content-type': 'application/json' }); res.end(JSON.stringify(것)); };
+        if (q.method === 'GET') return 답(200, { data: [{ id: 'm-1', context_length: 200000 }] });
+        let 몸 = null;
+        try { 몸 = JSON.parse(글 || '{}'); } catch { 몸 = null; }
+        const 상한 = Number(몸?.max_completion_tokens ?? 몸?.max_tokens ?? 0);
+        const 칸 = 어느칸(몸);
+        // 1+1 은 쉬워서 256 안에 생각과 답이 다 들어간다 — 그래도 추론 모델이다.
+        if (칸 === 'chat') {
+          return 답(200, { choices: [{ message: { role: 'assistant', content: '2' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 9, completion_tokens: 210, completion_tokens_details: { reasoning_tokens: 200 } } });
+        }
+        if (상한 < 256) {
+          // 좁게 물으면 그 상한을 생각에 다 쓴다.
+          if (몸?.stream) {
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'length' }] })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            return res.end();
+          }
+          return 답(200, { choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'length' }],
+            usage: { prompt_tokens: 9, completion_tokens: 상한, completion_tokens_details: { reasoning_tokens: 상한 } } });
+        }
+        if (몸?.stream) {
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          for (let i = 1; i <= 20; i += 1) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: `${i} ` } }] })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          return res.end();
+        }
+        if (몸?.tools?.length && !몸.messages.some((m) => m.role === 'tool')) {
+          return 답(200, { choices: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"config.json"}' } }] }, finish_reason: 'tool_calls' }] });
+        }
+        if (몸?.response_format) return 답(200, { choices: [{ message: { role: 'assistant', content: '{"answer":21}' }, finish_reason: 'stop' }] });
+        답(200, { choices: [{ message: { role: 'assistant', content: 'DEEL 7099' }, finish_reason: 'stop' }] });
+      });
+    });
+    await new Promise((r) => s.listen(0, '127.0.0.1', r));
+    const 주소 = `http://127.0.0.1:${s.address().port}/v1`;
+    allowEndpoint(주소);
+    const { facts, results } = await probe({ kind: 'openai', base: 주소, auth: 'none', key: '', model: 'm-1' });
+    const 칸 = (id) => results.find((x) => x.id === id);
+    check('★★★ 첫 답에 본문이 있어도 생각 토큰을 썼으면 추론 모델로 본다',
+      facts.thinkingModel === true, String(facts.thinkingModel));
+    check('★★★ 그래서 뒤 칸도 그 상한 아래로 안 물어 — 시스템·스트리밍·그림이 false 로 안 적힌다',
+      칸('system')?.status === 'ok' && facts.streaming === true && 칸('vision')?.status === 'ok',
+      `system:${칸('system')?.status} stream:${칸('stream')?.status} vision:${칸('vision')?.status}`);
+    s.closeAllConnections?.();
+    s.close();
+  }
+
+  /*
+   * ── 3. 평문 청크 스트림 · 도구 상한 표기 · 스키마 재시도 · 둘 다 상한 ──
+   *
+   * 한 창구에 네 가지가 같이 있다. 넷 다 **우리가 지어낸 숫자나 안 한 일**이다.
+   */
+  {
+    const 셈 = {};
+    const s = createServer((q, res) => {
+      let 글 = '';
+      q.on('data', (d) => (글 += d));
+      q.on('end', () => {
+        const 답 = (코드, 것) => { res.writeHead(코드, { 'content-type': 'application/json' }); res.end(JSON.stringify(것)); };
+        if (q.method === 'GET') return 답(200, { data: [{ id: 'm-1', context_length: 200000 }] });
+        let 몸 = null;
+        try { 몸 = JSON.parse(글 || '{}'); } catch { 몸 = null; }
+        const 칸 = 어느칸(몸);
+        const 상한 = Number(몸?.max_completion_tokens ?? 몸?.max_tokens ?? 0);
+        셈[칸] = (셈[칸] ?? 0) + 1;
+        if (칸 === 'chat') {
+          // 256 은 생각에 다 쓰고, 1024 에서 답한다 — 넉넉 = 1024 가 된다.
+          if (상한 <= 256) {
+            return 답(200, { choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'length' }],
+              usage: { prompt_tokens: 9, completion_tokens: 256, completion_tokens_details: { reasoning_tokens: 256 } } });
+          }
+          return 답(200, { choices: [{ message: { role: 'assistant', content: '2' }, finish_reason: 'stop' }], usage: { prompt_tokens: 9, completion_tokens: 1 } });
+        }
+        if (칸 === 'stream') {
+          // `data:` 도 `"done":` 도 안 쓰는 평문 청크 스트림. 실제로 이렇게 흘리는 창구가 있다.
+          res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+          res.flushHeaders?.();
+          let i = 0;
+          const 시계 = setInterval(() => {
+            if (i >= 5) { clearInterval(시계); return res.end(); }
+            i += 1;
+            res.write(`${i} `);
+          }, 50);
+          return;
+        }
+        if (칸 === 'tools') {
+          // 인자가 상한에 잘려 왔다 — 원문에는 경로가 그대로 있다.
+          return 답(200, { choices: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path": "config.js' } }] }, finish_reason: 'length' }], usage: { prompt_tokens: 9, completion_tokens: 12 } });
+        }
+        // JSON 으로는 읽히는데 스키마를 어긴다 (answer 가 없다).
+        if (칸 === 'json') return 답(200, { choices: [{ message: { role: 'assistant', content: '{"result": 21}' }, finish_reason: 'stop' }] });
+        // 두 강도 다 상한에 걸린다 — 비교할 수가 없다.
+        if (칸 === 'think') {
+          return 답(200, { choices: [{ message: { role: 'assistant', content: '계산 중…' }, finish_reason: 'length' }],
+            usage: { prompt_tokens: 9, completion_tokens: 상한, completion_tokens_details: { reasoning_tokens: 상한 } } });
+        }
+        답(200, { choices: [{ message: { role: 'assistant', content: 'DEEL 7099' }, finish_reason: 'stop' }] });
+      });
+    });
+    await new Promise((r) => s.listen(0, '127.0.0.1', r));
+    const 주소 = `http://127.0.0.1:${s.address().port}/v1`;
+    allowEndpoint(주소);
+    const { facts, results } = await probe({ kind: 'openai', base: 주소, auth: 'none', key: '', model: 'm-1' });
+    const 칸 = (id) => results.find((x) => x.id === id);
+
+    // (a) 평문 스트림에서 「첫 응답 0ms」 는 잰 값이 아니라 지어낸 값이다.
+    check('★★ 평문 청크 스트림에서 첫 응답 시각을 지어내지 않는다',
+      !/첫 응답 0ms/.test(칸('stream')?.detail ?? '') && /첫 응답 \d+ms/.test(칸('stream')?.detail ?? ''),
+      칸('stream')?.detail);
+
+    /*
+     * (b) 도구 칸이 적는 상한은 **실제로 쓴 값**이어야 한다. 추론 모델이면
+     *     512 가 아니라 상한(512) = 1024 로 물었다. 512 라고 적으면 사람이
+     *     「512 면 그럴 만하지」 로 읽고 엉뚱한 자리를 올린다.
+     */
+    check('★★ 도구 칸이 적는 상한은 실제로 쓴 값(1024)이다 — 박아 둔 512 가 아니라',
+      /상한\(1,?024토큰\)/.test(칸('tools')?.detail ?? ''), 칸('tools')?.detail);
+
+    /*
+     * (c) 「한 번은 흔들릴 수 있으므로 실패하면 한 번만 더 본다」 고 적어 두고,
+     *     JSON 으로 읽히기만 하면 스키마를 어겨도 다시 안 물었다.
+     */
+    check('★★ 스키마를 어기면 한 번 더 물어본다', 셈.json === 2, `${셈.json}번`);
+
+    /*
+     * (d) 둘 다 상한에 걸리면 **못 잰 것**이다. 못 쟀으면 켠 채로 둔다 —
+     *     되돌아올 수 있는 쪽으로 틀린다(probe.js 그림 칸 머리말).
+     */
+    check('★★★ 둘 다 상한에 걸려 비교 불가면 조절을 끄지 않는다', facts.think === true,
+      `${facts.think} · ${칸('think')?.detail}`);
+    check('★★ 그리고 못 쟀다고 적는다 — 「조절합니다」 라고 적고 끄지 않는다',
+      /켠 채로/.test(칸('think')?.detail ?? '') && !/루프 층에서 조절/.test(칸('think')?.detail ?? ''),
+      칸('think')?.detail);
+    s.closeAllConnections?.();
+    s.close();
+  }
+
+  /*
+   * ── 4. 잴 것은 있었는데 **차이가 없던** 판 ─────────────────────────────
+   *
+   * 여기는 판정이 정직하다 — 강도를 바꿔도 답이 안 바뀌었으니 `think:false` 가
+   * 맞다. 틀린 것은 **화면에 적은 말**이다. 「루프 층에서 조절합니다」 라고
+   * 적고 같은 줄에서 조절을 껐다. 그 줄을 읽은 사람은 `/think` 가 「이 모델은
+   * 조절 안 됩니다」 라고 하는 까닭을 어디에서도 못 찾는다.
+   */
+  {
+    const s = createServer((q, res) => {
+      let 글 = '';
+      q.on('data', (d) => (글 += d));
+      q.on('end', () => {
+        const 답 = (코드, 것) => { res.writeHead(코드, { 'content-type': 'application/json' }); res.end(JSON.stringify(것)); };
+        if (q.method === 'GET') return 답(200, { data: [{ id: 'm-1', context_length: 200000 }] });
+        let 몸 = null;
+        try { 몸 = JSON.parse(글 || '{}'); } catch { 몸 = null; }
+        if (몸?.stream) {
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          for (let i = 1; i <= 8; i += 1) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: `${i} ` } }] })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          return res.end();
+        }
+        // 강도를 무시한다 — 두 번 다 똑같은 셈판. 상한에는 안 걸린다.
+        답(200, { choices: [{ message: { role: 'assistant', content: '391' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 9, completion_tokens: 40 } });
+      });
+    });
+    await new Promise((r) => s.listen(0, '127.0.0.1', r));
+    const 주소 = `http://127.0.0.1:${s.address().port}/v1`;
+    allowEndpoint(주소);
+    const { facts, results } = await probe({ kind: 'openai', base: 주소, auth: 'none', key: '', model: 'm-1' });
+    const 생각칸 = results.find((x) => x.id === 'think');
+    check('  차이가 없으면 조절은 여전히 false 로 적는다 (잰 대로다)', facts.think === false, String(facts.think));
+    check('★★ 그러면서 「루프 층에서 조절합니다」 라고 적지는 않는다',
+      /차이 없음/.test(생각칸?.detail ?? '') && !/루프 층에서 조절/.test(생각칸?.detail ?? ''),
+      생각칸?.detail);
+    s.closeAllConnections?.();
+    s.close();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+{
+  /*
+   * ★ 진단도 카드를 들고 몸통을 짓는다.
+   *
+   * 카드 없이 지으면 출력 상한을 옛 이름·새 이름 둘 다 싣는다. 추론 모델(gpt-5)은 옛 이름을
+   * 튕기므로 첫 칸이 400 으로 죽고, 나머지가 「확인 불가」 로 건너뛰어져 setup 이
+   * streaming·tools·json 을 전부 false 로 **저장**했다.
+   */
+  const srv = createServer((r, res) => {
+    let 글 = '';
+    r.on('data', (c) => (글 += c));
+    r.on('end', () => {
+      const 보내기 = (코드, 것) => { res.writeHead(코드, { 'content-type': 'application/json' }); res.end(JSON.stringify(것)); };
+      if (r.method === 'GET') return 보내기(200, { data: [{ id: 'gpt-5', context_length: 200000 }] });
+      let 몸 = null;
+      try { 몸 = JSON.parse(글 || '{}'); } catch { 몸 = null; }
+      if (몸?.max_tokens !== undefined) {
+        return 보내기(400, { error: { message: "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead." } });
+      }
+      보내기(200, {
+        choices: [{ message: { role: 'assistant', content: '2' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 20, completion_tokens: 1 },
+      });
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}/v1`;
+  allowEndpoint(base);
+  const { results } = await probe({ kind: 'openai', base, auth: 'none', key: '', model: 'gpt-5' });
+  const 기본칸 = results.find((x) => x.id === 'chat');
+  check('★★ 옛 이름을 튕기는 추론 모델도 진단의 기본 대화가 된다', 기본칸?.status === 'ok',
+    `${기본칸?.status} · ${기본칸?.detail}`);
+  srv.close();
+}
+
 trace('9-3-코덱스');
 /*
  * ── 9-3. 이 문으로는 안 나오는 모델 (Codex 계열) ────────────────────────

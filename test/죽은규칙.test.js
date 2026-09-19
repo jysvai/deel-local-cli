@@ -25,9 +25,10 @@
 //
 // 그래서 「규칙이 있다」 가 아니라 **「규칙이 실제로 걸린다」** 를 재야 한다.
 // 이 파일이 하는 일이 그것이다.
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { dirname } from 'node:path';
 import { 배울전선 } from '../src/backend/wire.js';
 import { trace } from './trace.mjs';
@@ -100,6 +101,14 @@ trace('2-실제로걸림');
     ['Unrecognized request argument supplied: ttl', 'openai', '긴수명', false],
     ['Extra inputs are not permitted: cache_control', 'anthropic', '캐시', 'none'],
     ['Extra inputs are not permitted: cache_control', 'openai', '표식칸', 'prompt_cache_breakpoint'],
+    /*
+     * `prompt_cache_breakpoint` 는 **OpenAI 스키마의 칸**이다. 그러니 바꿔 보는 것도
+     * OpenAI 규격일 때만이어야 하는데, 갈래가 「anthropic 만 빼고」 로 적혀 있어서
+     * ollama·gemini 창구에도 그 이름을 배워 **디스크에 적었다.** 그 창구는 그때부터
+     * 있지도 않은 칸을 싣는다 (8회차 뒷단-배우기).
+     */
+    ['Extra inputs are not permitted: cache_control', 'ollama', '캐시', 'none'],
+    ['Unrecognized request argument supplied: cache_control', 'gemini', '캐시', 'none'],
     ['Unrecognized request argument supplied: prompt_cache_breakpoint', 'openai', '캐시', 'none'],
     ['budget_tokens is not supported', 'anthropic', '생각형식', 'adaptive'],
     ['Unrecognized request argument supplied: reasoning_effort', 'openai', '생각형식', 'none'],
@@ -113,6 +122,13 @@ trace('2-실제로걸림');
      */
     ["Invalid value: thinking.type 'adaptive' is not supported by this model",
       'anthropic', '생각형식', 'budget'],
+    /*
+     * 칸 경로에 **숫자 인덱스**가 낀 창구. `messages.0.content` 는 wire.js 주석이
+     * 칸 경로의 보기로 직접 적어 둔 꼴인데, 정작 무늬가 숫자로 시작하는 토막을
+     * 안 받아서 이 문장은 칸 이야기로 안 읽혔다 — 정직하게 말해 주는 400 을
+     * 한 줄도 못 배웠다 (8회차 뒷단-배우기).
+     */
+    ['messages.0.content: adaptive is not supported', 'anthropic', '생각형식', 'budget'],
     ['Extra inputs are not permitted: thinking', 'anthropic', '생각형식', 'none'],
     ['Unrecognized request argument supplied: prompt_cache_key', 'openai', '캐시', 'none'],
     // 이름이 따옴표로 먼저 오고 까닭이 뒤에 오는 창구. 앞의 두 무늬가 못 잡는다.
@@ -156,11 +172,18 @@ trace('3-오작동');
    * 읽혔다. 그리고 그 값은 디스크에 남아서, 멀쩡히 되던 기능이 그 창구에서
    * 영영 꺼진 채로 굳는다.
    */
+  /*
+   * `user_id` 갈래에는 **칸 이야기 울타리가 없었다.** 그래서 낱말 하나와 거절
+   * 낱말만 있으면 세션자리를 껐다 — 아래 둘은 열쇠·권한 이야기지 칸 이야기가
+   * 아니다. 그리고 그 배움은 디스크에 남아 영영 안 돌아온다 (8회차 뒷단-배우기).
+   */
   for (const 글 of [
     'Unrecognized request argument supplied: username',
     "Invalid property 'browser_metadata_extra' in request",
     'Unrecognized request argument supplied: user_agent',
     'Unrecognized request argument supplied: metadata_version',
+    'Invalid user_id: authentication failed',
+    'Unknown user_id — please sign in again',
   ]) {
     const 것 = 배울전선(글, 'openai');
     check(`★★★ "${글.slice(0, 46)}…" 로는 세션 이름을 안 끈다`,
@@ -222,6 +245,117 @@ trace('4-정규식');
     });
   }
   check('★★★ 정규식이 든 줄에 제어문자가 없다', 걸린것.length === 0, 걸린것.join(' · '));
+}
+
+
+// ── 5. 있는데 아무도 안 돌리는 검사 ────────────────────────────────────
+trace('5-안도는검사');
+{
+  /*
+   * 검사 파일이 있는데 **아무도 안 돌리는** 자리.
+   *
+   * `test/run.mjs` 의 `FILES` 는 손으로 적는 목록이다. 새 검사를 만들고 그 줄을
+   * 안 보태면 파일은 남아 있는데 초록도 빨강도 안 뜬다 — 지키는 게 하나도 없는
+   * 검사가 된다. 파일이 있으니 아무도 없어진 줄 모른다.
+   *
+   * 그래서 디스크에 있는 `*.test.js` 가 전부 그 목록에 들어 있는지 본다.
+   * 반대로 목록에만 있고 파일이 없는 이름도 잡는다 — 그건 조용히 건너뛴다.
+   */
+  const 달림 = readFileSync(join(뿌리, 'test', 'run.mjs'), 'utf8');
+  const m = 달림.match(/const FILES = \[([\s\S]*?)\n\];/);
+  check('★★ run.mjs 에서 검사 목록을 찾는다', !!m, m ? '' : '목록 모양이 바뀌었다');
+  if (m) {
+    const 적힌 = new Set([...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]));
+    const 있는 = readdirSync(join(뿌리, 'test')).filter((f) => f.endsWith('.test.js'));
+    const 빠진 = 있는.filter((f) => !적힌.has(f));
+    check('★★★ 검사 파일이 전부 run.mjs 목록에 들어 있다', 빠진.length === 0,
+      빠진.length ? `npm test 가 안 도는 검사: ${빠진.join(' · ')}` : `${있는.length}개`);
+    const 이름만 = [...적힌].filter((f) => !existsSync(join(뿌리, 'test', f)));
+    check('★★ 목록에 적힌 이름이 전부 실제 파일이다', 이름만.length === 0,
+      이름만.join(' · '));
+  }
+}
+
+
+// ── 6. 어긋내기가 붙을 자리를 잃은 것 ──────────────────────────────────
+trace('6-낡은앵커');
+{
+  /*
+   * 어긋(변이)은 소스에서 글자 그대로 뜬 토막(`찾을것`)을 찾아 바꿔 넣는다.
+   * 그 자리를 나중에 누가 고치면 토막이 **안 맞게** 되고, `tools/mutate.mjs` 는
+   * 그 어긋을 `못 잼` 으로 건너뛴다. 건너뛰는 것은 실패로 안 세어지니,
+   * 전면 주행은 초록인데 **지키던 자리가 하나 줄어 있다.**
+   *
+   * 어긋 주행은 몇 분씩 걸려 `npm test` 에 넣을 수 없다. 그래서 여기서는
+   * 돌리지 않고 **붙을 자리가 남아 있는지만** 센다 — mutate.mjs 와 똑같이
+   * 통글자로 갈라 세고, 딱 한 번 나와야 한다.
+   */
+  const 어긋들 = JSON.parse(readFileSync(join(뿌리, 'test', 'mutants.json'), 'utf8')).어긋들;
+  const 원본 = new Map();
+  const 잃은것 = [];
+  for (const 어긋 of 어긋들) {
+    const 길 = join(뿌리, 어긋.곳);
+    if (!원본.has(어긋.곳)) {
+      원본.set(어긋.곳, existsSync(길) ? readFileSync(길, 'utf8') : null);
+    }
+    const 글 = 원본.get(어긋.곳);
+    if (글 === null) { 잃은것.push(`${어긋.곳} (파일 없음) — ${어긋.무엇}`); continue; }
+    const 몇번 = 글.split(어긋.찾을것).length - 1;
+    if (몇번 !== 1) 잃은것.push(`${어긋.곳} ${몇번}군데 — ${어긋.무엇}`);
+  }
+  check('★★★ 어긋내기가 전부 붙을 자리를 갖고 있다', 잃은것.length === 0,
+    잃은것.length ? 잃은것.join(' · ') : `${어긋들.length}개`);
+}
+
+// ── 7. 나눠 돌리다 통째로 빠지는 것 ──────────────────────────────────
+trace('7-조각나눔');
+
+/*
+ * 관문은 어긋내기를 **여덟 조각으로 나눠** 돌린다 (.github/workflows/test.yml).
+ * 한 줄로 돌리면 몇 시간이라 그렇게 했는데, 나눠 돌리기에는 조용한 고장이 있다.
+ *
+ * 어떤 어긋이 **어느 조각에도 안 들어가면** 조각마다 초록이라 관문 전체가
+ * 초록이다. 지키던 자리가 줄었는데 화면에는 아무 말도 안 난다 — 이 파일이
+ * 내내 쫓던 그 모양이다.
+ *
+ * 그래서 조각들에게 「무엇을 맡았나」 를 물어보고, 합쳐서 전부를 덮는지 본다.
+ * 조각 수도 워크플로에서 읽는다 — 거기서 16으로 바꾸고 여기가 8로 남아 있으면
+ * 절반을 안 보면서 초록일 테니.
+ */
+{
+  const 워크 = join(뿌리, '.github', 'workflows', 'test.yml');
+  const 글 = existsSync(워크) ? readFileSync(워크, 'utf8') : '';
+  const m = /--조각 \$\{\{ matrix\.shard \}\}\/(\d+)/.exec(글);
+  const 조각목록 = /shard:\s*\[([^\]]*)\]/.exec(글);
+  check('★★ 관문이 어긋내기를 조각내어 돌린다', !!m && !!조각목록,
+    m ? '' : '`--조각 ${{ matrix.shard }}/N` 을 못 찾음');
+
+  if (m && 조각목록) {
+    const 몇 = Number(m[1]);
+    const 적힌것 = 조각목록[1].split(',').map((x) => Number(x.trim())).filter((x) => Number.isFinite(x));
+    check('★★ 워크플로의 조각 목록과 나눈 수가 맞는다',
+      적힌것.length === 몇 && 적힌것.every((x, i) => x === i + 1),
+      `목록 [${적힌것.join(',')}] · 나눔 ${몇}`);
+
+    const 전체 = JSON.parse(readFileSync(join(뿌리, 'test', 'mutants.json'), 'utf8')).어긋들;
+    const 본것 = new Set();
+    let 합 = 0;
+    let 탈 = null;
+    for (let i = 1; i <= 몇 && !탈; i++) {
+      const r = spawnSync(process.execPath,
+        [join(뿌리, 'tools', 'mutate.mjs'), '--세어만', '--조각', `${i}/${몇}`],
+        { encoding: 'utf8' });
+      if (r.status !== 0) { 탈 = `조각 ${i}/${몇} 가 종료코드 ${r.status}`; break; }
+      try {
+        const j = JSON.parse(r.stdout);
+        합 += j.맡은것;
+        for (const n of j.이름들) 본것.add(n);
+      } catch { 탈 = `조각 ${i}/${몇} 의 답을 못 읽음`; }
+    }
+    check('★★★ 조각을 다 합치면 어긋내기 전부를 덮는다',
+      !탈 && 합 === 전체.length && 본것.size === 전체.length,
+      탈 ?? `합 ${합} · 고유 ${본것.size} · 전체 ${전체.length}`);
+  }
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

@@ -51,6 +51,27 @@ trace('1-고르기');
     s2.verbatim === true && s2.명령('node -e "1"').at(-1) === '"node -e "1""' && s2.명령('x').slice(0, 3).join(' ') === '/d /s /c');
   check('후보에 System32 가 없다', !배시후보(envA, 윈).some((p) => /system32/i.test(p)), 배시후보(envA, 윈).join(' · '));
 
+  /*
+   * ★★★ PATH 의 **상대 칸**은 지금 폴더 — 곧 받아 온 저장소 — 를 가리킨다 (막판 훑기).
+   *
+   * `.` · `bin` · 안 풀린 `%CD%` 같은 칸이 남아 있으면 후보가 `bash.exe` 라는 맨 이름이
+   * 되고, 그 이름은 `existsSync` 가 **작업 폴더** 기준으로 푼다. 저장소 뿌리에 bash.exe
+   * 를 심어 두면 Bash 도구와 Jobs 의 모든 명령이 그것을 거쳐 나간다.
+   *
+   * 같은 판의 tools/verify.js 경로에서찾기 가 이미 같은 위협을 같은 말로 막아 뒀다 —
+   * 「그 자리의 파일은 저장소가 심을 수 있다」. 셸을 고르는 쪽만 그 자를 안 썼다.
+   */
+  for (const 칸 of ['.', 'bin', 'sub/bin', '%CD%', '..']) {
+    const 것 = 배시후보({ PATH: 칸 }, 윈);
+    check(`★★★ PATH 의 상대 칸은 후보로 안 삼는다 — ${칸}`, 것.length === 0, JSON.stringify(것));
+  }
+  check('  (짝) 절대 칸은 그대로 후보다',
+    배시후보({ PATH: 'C:\\tools' }, 윈).includes('C:\\tools\\bash.exe'),
+    배시후보({ PATH: 'C:\\tools' }, 윈).join(' · '));
+  check('  (짝) 리눅스 절대 칸도 그대로',
+    배시후보({ PATH: '/usr/bin' }, 'linux').includes('/usr/bin/bash.exe'),
+    배시후보({ PATH: '/usr/bin' }, 'linux').join(' · '));
+
   const s3 = 셸고르기({ env: envA, platform: 윈, exists: 있음('C:\\tools\\bash.exe') });
   check('PATH 의 bash.exe 도 찾는다', s3.id === 'bash' && s3.file === 'C:\\tools\\bash.exe', s3.file);
   const s3b = 셸고르기({ env: { ...envA, ProgramFiles: '', LOCALAPPDATA: 'C:\\U\\me\\AppData\\Local', PATH: '' }, platform: 윈, exists: 있음('C:\\U\\me\\AppData\\Local\\Programs\\Git\\bin\\bash.exe') });
@@ -72,6 +93,14 @@ trace('1-고르기');
   check('윈도우가 아니면 /bin/sh', s10.id === 'sh' && s10.file === '/bin/sh' && s10.명령('ls').join('|') === '-c|ls');
   const s11 = 셸고르기({ env: { ...envA, DEEL_SHELL: '' }, platform: 윈, exists: 있음('C:\\PF\\Git\\bin\\bash.exe') });
   check('빈 DEEL_SHELL 은 안 정한 것과 같다', s11.id === 'bash' && !s11.경고, s11.경고 ?? '');
+  // (6회차 Gemini 셸고르기6) 빈 COMSPEC 은 `??` 를 지나 파일 이름이 빈 글이 됐다 — 명령마다 ENOENT.
+  const s12 = 셸고르기({ env: { ...envA, COMSPEC: '' }, platform: 윈, exists: () => false });
+  check('★ 빈 COMSPEC 은 안 정한 것과 같다 — 셸 파일 이름이 빈 글이 되지 않는다', s12.id === 'cmd' && s12.file === 'cmd.exe', JSON.stringify(s12.file));
+  // PATH 칸은 따옴표로 쌀 수 있다(cmd 가 그렇게 읽는다). 싼 채로 이으면 `.\"C:\…\bin"\bash.exe` 가 되어 Git Bash 를 놓쳤다.
+  const 따옴PATH = { ...envA, ProgramFiles: '', PATH: '"C:\\Program Files\\Git\\bin";"C:\\Windows\\System32"' };
+  const s13 = 셸고르기({ env: 따옴PATH, platform: 윈, exists: 있음('C:\\Program Files\\Git\\bin\\bash.exe') });
+  check('★ 따옴표로 싼 PATH 칸의 Git Bash 도 찾는다', s13.id === 'bash' && s13.file === 'C:\\Program Files\\Git\\bin\\bash.exe', s13.file);
+  check('  따옴표로 싼 System32 도 후보에서 뺀다 (WSL 띄우개)', !배시후보(따옴PATH, 윈).some((p) => /system32/i.test(p)), 배시후보(따옴PATH, 윈).join(' · '));
 
   // 모델에게 주는 한 줄.
   for (const [이름, 셸] of [['bash', s], ['cmd', s2], ['powershell', s5], ['sh', s10]]) {

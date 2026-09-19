@@ -4,7 +4,7 @@
 // 오프라인 기기에 반입한다. 오프라인에서는 압축만 풀면 그대로 인식된다.
 import { execFile } from 'node:child_process';
 import { homeDir } from '../config.js';
-import { join, dirname, basename, resolve, sep } from 'node:path';
+import { join, dirname, basename, resolve, relative, sep } from 'node:path';
 import {
   existsSync, mkdirSync, writeFileSync, readFileSync, rmSync,
   readdirSync, statSync,
@@ -25,6 +25,7 @@ export function 플러그인되돌림(다음) {
   }
 }
 import { copyDir } from '../tools/fsutil.js';
+import { BOM떼기 } from '../safety/trust.js';
 
 /*
  * 플러그인이 깔리는 자리.
@@ -92,6 +93,36 @@ export function 묶음풀기(dest, files) {
   const 밖엣것 = 밖을가리키는것(dest, files);
   if (밖엣것.length) {
     return { error: `묶음 안에 플러그인 폴더 밖을 가리키는 이름이 있습니다 — 풀지 않았습니다: ${밖엣것[0].name}` };
+  }
+  /*
+   * ── 안쪽이어도 **못 쓰는** 이름은 지우기 전에 거른다 (2.0.0 3회차 사냥) ──
+   *
+   * 위는 밖으로 나가는 것만 본다. 안쪽인데 쓰다가 넘어지는 이름이 셋 있었다:
+   *
+   *   `a/..`          풀 자리 그 자체 → EISDIR
+   *   `x` 와 `x/y`    파일과 폴더가 같은 이름 → EEXIST
+   *   `Doc.md` · `doc.md`  윈도우·맥에서는 한 파일 → 하나가 말없이 사라진다
+   *
+   * 앞의 둘은 **rmSync 뒤에** 던져서 풀 자리를 비운 채 날것 오류(EISDIR)로 끝났고, 셋째는 「2개 풀었다」
+   * 고 하고 하나만 남겼다. 쓰기 전에 전부 재 보고 사람 말로 거절한다.
+   */
+  const 뿌리 = resolve(dest);
+  const 자리들 = new Map();                 // 소문자 상대 자리 → 적힌 이름
+  for (const f of files) {
+    const 상대 = relative(뿌리, resolve(뿌리, String(f.name ?? '').replace(/\\/g, '/'))).replace(/\\/g, '/');
+    if (!상대) return { error: `묶음 안에 풀 폴더 그 자체를 가리키는 파일이 있습니다 — 풀지 않았습니다: ${f.name}` };
+    const 열쇠 = 상대.toLowerCase();
+    if (자리들.has(열쇠)) {
+      return { error: `묶음 안에 같은 자리를 가리키는 이름이 둘 있습니다(대소문자만 다를 수 있음) — 풀지 않았습니다: ${자리들.get(열쇠)} · ${f.name}` };
+    }
+    자리들.set(열쇠, f.name);
+  }
+  for (const [열쇠, 이름] of 자리들) {
+    const 마디 = 열쇠.split('/');
+    for (let i = 1; i < 마디.length; i++) {
+      const 윗자리 = 마디.slice(0, i).join('/');
+      if (자리들.has(윗자리)) return { error: `묶음 안에 파일과 폴더가 같은 이름입니다 — 풀지 않았습니다: ${자리들.get(윗자리)} · ${이름}` };
+    }
   }
   rmSync(dest, { recursive: true, force: true });
   for (const f of files) {
@@ -193,6 +224,19 @@ export function 이름한칸(이름) {
   if (!한칸 || 한칸 === '.' || 한칸 === '..') return null;
   // 드라이브 글자·칸막이가 남아 있으면 이름이 아니다.
   if (/[/:]/.test(한칸)) return null;
+  /*
+   * ── 윈도우가 폴더 이름으로 못 쓰는 것도 이름이 아니다 (2.0.0 4회차 사냥) ──
+   *
+   * 칸막이만 막았더니 `a*b` · `a?b` · NUL 글자 같은 이름이 통과해 install() 이 mkdir 에서
+   * **던지고** `.tmp-*` 를 남겼다. `keep.` 은 윈도우가 끝 점을 떼어 `keep` 자리에 깔려
+   * 옆 플러그인과 겹쳤고, `CON` · `nul.txt` 는 장치 이름이라 파일이 딴 데로 간다.
+   * 리눅스에서는 쓸 수 있는 이름도 막는다 — 묶음(pack)은 윈도우 PC 로 반입된다.
+   * 막힌 이름이면 부르는 쪽이 우리가 아는 이름(폴더·저장소 이름)으로 간다.
+   */
+  if (/[<>"|?*]/.test(한칸) || [...한칸].some((ch) => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127)) return null;
+  if (/[. ]$/.test(한칸)) return null;
+  if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i.test(한칸)) return null;
+  if (한칸.length > 100) return null;
   return 한칸;
 }
 
@@ -211,7 +255,8 @@ export function 플러그인자리인가(base, dest) {
 function manifestOf(dir) {
   const f = join(dir, '.claude-plugin', 'plugin.json');
   if (!existsSync(f)) return null;
-  try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return null; }
+  // BOM 을 뗀다 — 윈도우에서 저장한 plugin.json 이 이름·판·라이선스 없이 읽혔다(2.0.0 3회차).
+  try { return JSON.parse(BOM떼기(readFileSync(f, 'utf8'))); } catch { return null; }
 }
 
 function countIn(dir) {
@@ -252,7 +297,22 @@ function walkCount(dir, match, depth = 5) {
   return n;
 }
 
-export async function install(spec, { home = homeDir(), onStep } = {}) {
+/*
+ * 설치는 **던지지 않는다.** 이름을 걸러도 디스크가 넘어질 자리(권한·꽉 찬 디스크·긴 경로)는
+ * 남는다. 던지면 `/plugin install` 이 통째로 죽고 `.tmp-*` 가 남아, 다음 설치가 그 찌꺼기
+ * 위에서 돈다(2.0.0 4회차 사냥). 받은 오류는 사람 말로 돌려주고 임시 폴더를 치운다.
+ */
+export async function install(spec, 옵션 = {}) {
+  const 치울것 = [];
+  try {
+    return await 설치하기(spec, 옵션, 치울것);
+  } catch (err) {
+    for (const p of 치울것) { try { rmSync(p, { recursive: true, force: true }); } catch { /* 못 치우면 다음 설치가 먼저 지운다 */ } }
+    return { error: `플러그인을 설치하지 못했습니다 — ${String(err?.message ?? err)}` };
+  }
+}
+
+async function 설치하기(spec, { home = homeDir(), onStep } = {}, 치울것 = []) {
   const base = pluginsDir(home);
 
   // 이미 풀어 놓은 폴더를 그대로 넣는 길. 오프라인 기기에서 이쪽을 쓴다.
@@ -265,12 +325,31 @@ export async function install(spec, { home = homeDir(), onStep } = {}) {
   }
 
   const tmp = join(base, `.tmp-${isLocal ? 'local' : parsed.repo}`);
+  치울것.push(tmp);
+  /*
+   * ── copyDir 이 건너뛴 것을 아무도 안 읽고 있었다 ──────────────────────
+   *
+   * copyDir(tools/fsutil.js)은 심볼릭 링크와 파일도 폴더도 아닌 것을
+   * **말없이 건너뛴다.** 그러라고 `skipped` 배열까지 내주는데, 여기
+   * 두 군데 부르는 자리가 둘 다 그 값을 안 받았다.
+   *
+   * 링크로 SKILL.md 를 나눠 쓰는 것은 흔한 꼴이다(맥·리눅스에서 스킬
+   * 여러 개가 같은 뼈대를 가리키게 하는 것). 그런 플러그인을 넣으면
+   * 화면에는 `✓ myplugin 1.0.0 (MIT) · 스킬 3개 명령 2개` 가 뜨고,
+   * 실제로 깔린 것은 2개다.
+   *
+   * 세는 자리도 어긋나 있었다. countIn 을 **복사하기 전** 임시 폴더에서
+   * 부르므로, 복사하다 빠진 것이 개수에 안 잡힌다. 나중에 `/plugin` 으로
+   * 목록을 보면 list() 는 진짜 폴더를 세니 숫자가 다르다 — 같은 상태를
+   * 두 자리에서 따로 세는 바로 그 모양이다.
+   */
+  const 건너뛴것 = [];
   let got;
   if (isLocal) {
     onStep?.('폴더 복사');
     rmSync(tmp, { recursive: true, force: true });
     mkdirSync(dirname(tmp), { recursive: true });
-    copyDir(asPath, tmp);
+    copyDir(asPath, tmp, { skipped: 건너뛴것 });
     rmSync(join(tmp, '.git'), { recursive: true, force: true });
     got = { how: '폴더', from: asPath };
   } else {
@@ -298,16 +377,18 @@ export async function install(spec, { home = homeDir(), onStep } = {}) {
     return { error: `설치할 자리가 플러그인 폴더 밖입니다 — 설치하지 않았습니다 (${name}).` };
   }
 
-  const counts = countIn(tmp);
-  if (!counts.skills && !counts.commands) {
+  const 담을것 = countIn(tmp);
+  if (!담을것.skills && !담을것.commands) {
     rmSync(tmp, { recursive: true, force: true });
     return { error: `스킬도 명령도 없습니다. 플러그인이 맞는지 확인하세요 (${isLocal ? asPath : parsed.owner + '/' + parsed.repo})` };
   }
 
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dirname(dest), { recursive: true });
-  copyDir(tmp, dest);
+  copyDir(tmp, dest, { skipped: 건너뛴것 });
   rmSync(tmp, { recursive: true, force: true });
+  // 개수는 **깔린 자리**에서 다시 센다. 복사하다 빠진 것이 여기서 빠진다.
+  const counts = countIn(dest);
 
   // 어디서 왔는지 남긴다 — 나중에 반입 심사에서 출처를 물어본다.
   writeFileSync(join(dest, '.deel-source.json'), JSON.stringify({
@@ -318,7 +399,16 @@ export async function install(spec, { home = homeDir(), onStep } = {}) {
     license: info?.license ?? null,
   }, null, 2) + '\n', 'utf8');
 
-  return { name, version: info?.version ?? '', license: info?.license ?? null, path: dest, ...counts, how: got.how };
+  return {
+    name, version: info?.version ?? '', license: info?.license ?? null, path: dest,
+    ...counts, how: got.how,
+    // 건너뛴 것이 있으면 **개수와 함께** 올린다. 부르는 쪽이 이걸 안 적으면
+    // 「스킬 3개」 라고 해 놓고 2개만 깔린 상태가 그대로 초록으로 보인다.
+    건너뜀: 건너뛴것,
+    // 세기 전과 후가 다르면 그것도 말한다 — 무엇이 빠졌는지 짚어 주는 값이다.
+    ...(담을것.skills !== counts.skills || 담을것.commands !== counts.commands
+      ? { 덜깔림: { 담을것, 깔린것: counts } } : {}),
+  };
 }
 
 export function list({ home = homeDir() } = {}) {
@@ -331,9 +421,16 @@ export function list({ home = homeDir() } = {}) {
     const info = manifestOf(dir);
     let src = null;
     const sf = join(dir, '.deel-source.json');
-    if (existsSync(sf)) { try { src = JSON.parse(readFileSync(sf, 'utf8')); } catch {} }
+    if (existsSync(sf)) { try { src = JSON.parse(BOM떼기(readFileSync(sf, 'utf8'))); } catch {} }
+    /*
+     * 매니페스트 이름이 폴더 이름으로 못 쓸 것(`..` · `keep.`)이면 **폴더 이름**을 보인다.
+     * 목록이 보여 준 이름으로 remove() 가 못 찾으면 사람은 지울 길이 없다(2.0.0 4회차 사냥).
+     * 쓸 수 있는 이름이면 매니페스트 이름 그대로다 — 폴더와 달라도 remove() 가 그 이름으로 찾는다.
+     */
+    const 적힌 = typeof info?.name === 'string' ? info.name : '';
     out.push({
-      name: info?.name || e.name,
+      name: 적힌 && 이름한칸(적힌) === 적힌 ? 적힌 : e.name,
+      폴더: e.name,
       version: info?.version ?? '',
       license: info?.license ?? src?.license ?? null,
       from: src?.from ?? '(직접 넣음)',
@@ -354,12 +451,55 @@ export function remove(name, { home = homeDir() } = {}) {
    */
   const base = pluginsDir(home);
   const 한칸 = 이름한칸(name);
-  const dir = 한칸 ? join(base, 한칸) : null;
-  if (!dir || !플러그인자리인가(base, dir) || !existsSync(dir)) {
-    return { error: `설치돼 있지 않습니다: ${name}` };
+  const 찾는이름 = String(name ?? '').trim();
+  /*
+   * 폴더 이름으로 못 찾으면 **매니페스트 이름**으로 찾는다. 목록(list)은 매니페스트
+   * 이름을 보여 주는데, 손으로 넣은 플러그인은 폴더 이름과 다르다. 찾는 대상은
+   * 플러그인 폴더를 읽어 나온 칸뿐이라 밖으로 나갈 길이 없다. 둘 이상 걸리면 아무것도
+   * 안 지운다 — 어느 것인지 우리가 고르면 사람이 안 고른 것을 지우게 된다.
+   */
+  const 이름으로찾기 = () => {
+    try {
+      return readdirSync(base, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith('.') && 찾는이름
+          && manifestOf(join(base, e.name))?.name === 찾는이름)
+        .map((e) => e.name);
+    } catch { return []; }   // 플러그인 폴더가 없다 — 아래에서 없다고 말한다
+  };
+  let dir = 한칸 ? join(base, 한칸) : null;
+  if (dir && 플러그인자리인가(base, dir) && existsSync(dir)) {
+    /*
+     * ── 폴더로 찾았어도 **목록 이름**과 겹치는지 본다 (6회차 Gemini 플러그인 P6) ──
+     *
+     * 목록은 매니페스트 이름을 보여 준다. 폴더 `foo` 의 이름이 `bar` 이고 딴 폴더
+     * `plugin-a` 의 이름이 `foo` 면, 사람이 목록에서 보고 친 `foo` 는 plugin-a 다.
+     * 그런데 폴더부터 찾아 **bar 를** 지웠다. 두 가지로 읽히면 아무것도 안 지운다.
+     */
+    /*
+     * 앞에 `manifestOf(dir)?.name === 찾는이름 ? [] :` 이 붙어 있었다 (8회차 판정).
+     *
+     * 폴더 이름과 그 폴더의 매니페스트 이름이 **같기만 하면** 삼항 앞쪽이 위 검사를
+     * 통째로 껐다. 그런데 딴 폴더가 목록에 같은 이름으로 떠 있을 수 있다 —
+     * 재 보니 폴더 `foo`(이름 foo) 와 폴더 `plugin-a`(이름 foo) 가 같이 있을 때
+     * `remove('foo')` 가 아무 말 없이 `foo` 를 지웠다. 바로 위 주석이 「두 가지로
+     * 읽히면 아무것도 안 지운다」 라고 적어 둔 그 자리다. 반쪽 붙은 고침이었다.
+     *
+     * 지금 폴더를 뺀 나머지에 같은 이름이 있으면, 폴더 이름이 무엇이든 두 가지다.
+     */
+    const 딴것 = 이름으로찾기().filter((n) => n !== basename(dir));
+    if (딴것.length) {
+      return { error: `${찾는이름} 이 두 플러그인으로 읽힙니다 — 폴더 이름이 ${찾는이름} 인 것과 목록 이름이 ${찾는이름} 인 ${딴것.join(' · ')}. 목록에 보인 딴 이름이나 겹치지 않는 폴더 이름으로 지우세요` };
+    }
+  } else {
+    const 같은것 = 이름으로찾기();
+    if (같은것.length > 1) {
+      return { error: `이름이 ${찾는이름} 인 플러그인이 ${같은것.length}개입니다 — 폴더 이름으로 지우세요: ${같은것.join(' · ')}` };
+    }
+    if (!같은것.length) return { error: `설치돼 있지 않습니다: ${name}` };
+    dir = join(base, 같은것[0]);
   }
   rmSync(dir, { recursive: true, force: true });
-  return { removed: 한칸 };
+  return { removed: basename(dir) };
 }
 
 // 반입용 묶음. 실행 스크립트는 빼고 스킬·명령만 담는다.
@@ -373,6 +513,7 @@ export function pack(outFile, { home = homeDir(), only = null } = {}) {
   const entries = [];
   const included = [];
   let skipped = 0;
+  let 안담은링크 = 0;
 
   for (const p of list({ home })) {
     if (only?.length && !only.includes(p.name)) continue;
@@ -386,6 +527,15 @@ export function pack(outFile, { home = homeDir(), only = null } = {}) {
           if (!PACK_SKIP_DIRS.has(e.name)) stack.push(full);
           continue;
         }
+        /*
+         * 폴더도 파일도 아닌 것은 담지 않는다 (6회차 Gemini 플러그인 P10).
+         *
+         * 폴더를 가리키는 링크(윈도 정션·심볼릭 링크)는 isDirectory() 가 거짓이라 파일로
+         * 읽다가 EISDIR 로 던졌다 — /plugin pack 이 통째로 죽었다. 따라가도 안 된다:
+         * 링크는 플러그인 폴더 밖을 가리킬 수 있고, 이 묶음은 딴 PC 로 반입된다.
+         * (손으로 넣은 플러그인에만 있다 — install 의 copyDir 은 링크를 이미 건너뛴다.)
+         */
+        if (!e.isFile()) { 안담은링크++; continue; }
         if (PACK_SKIP_EXT.test(e.name)) { skipped++; continue; }
         const rel = full.slice(base.length + 1).split(/[\\/]/).join('/');
         entries.push({ name: rel, data: readFileSync(full), mtime: statSync(full).mtime });
@@ -404,6 +554,7 @@ export function pack(outFile, { home = homeDir(), only = null } = {}) {
     `플러그인   ${included.length}개`,
     `파일       ${entries.length}개`,
     `제외한 실행 스크립트  ${skipped}개 (js·sh·ps1·py 등은 담지 않습니다)`,
+    ...(안담은링크 ? [`제외한 링크  ${안담은링크}개 (플러그인 폴더 밖을 가리킬 수 있어 담지 않습니다)`] : []),
     '',
     '이름'.padEnd(24) + '판'.padEnd(10) + '라이선스'.padEnd(16) + '스킬  명령  출처',
     '-'.repeat(96),

@@ -24,12 +24,12 @@
  *      제 마음대로 파일을 읽고 쓸 수 있다. /mcp 화면에서 그렇다고 말한다.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
+import { join, normalize, isAbsolute, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 // 남의 저장소에 딸려 온 mcp.json 으로 남의 프로그램을 띄우지 않는다 (다붙이기 머리말).
-import { 믿나 } from '../safety/trust.js';
+import { 믿나, BOM떼기 } from '../safety/trust.js';
 
 // 붙는 데 이만큼 넘게 걸리면 포기한다. 시작이 느려지면 안 쓰게 된다.
 export const 붙기제한 = 8000;
@@ -40,6 +40,8 @@ export const 부르기제한 = 60000;
 export const 도구최대 = 24;
 // 한 줄(JSON 한 통)의 최대 크기. 미친 서버가 stdout 을 쏟아부어도 안 죽게.
 const 줄최대 = 4 * 1024 * 1024;
+// tools/list 를 몇 쪽까지 따라갈까. 끝없이 다음 쪽을 주는 서버에 붙들리지 않게.
+const 목록쪽최대 = 10;
 
 export const 설정자리 = (root) => join(root, '.deel', 'mcp.json');
 
@@ -81,7 +83,12 @@ export function 지문(설정) {
 /** 적어 둔 목록을 읽는다. 못 읽으면 빈 것으로 본다 — 그러면 그냥 띄운다. */
 export function 메모읽기(root) {
   try {
-    const j = JSON.parse(readFileSync(메모자리(root), 'utf8'));
+    /*
+     * BOM 을 뗀다(safety/trust.js 의 BOM떼기). 못 읽으면 빈 것으로 보는 자리라
+     * 넘어져도 아무 말이 없다 — 대신 **매번 서버를 다시 띄워서** 지연 로딩이
+     * 조용히 꺼진다. 메모를 편집기나 스크립트로 한 번 만지면 앞에 U+FEFF 가 붙는다.
+     */
+    const j = JSON.parse(BOM떼기(readFileSync(메모자리(root), 'utf8')));
     return j?.servers && typeof j.servers === 'object' ? j.servers : {};
   } catch { return {}; }
 }
@@ -125,7 +132,16 @@ export function 메모쓰기(root, 서버들, { 남길이름 = null } = {}) {
       도구: s.도구,
     };
   }
-  if (!Object.keys(servers).length) return false;
+  /*
+   * 남는 것이 하나도 없어도 **적힌 것이 있었으면 적는다.**
+   *
+   * 여기서 그냥 돌아섰다. 그런데 이 함수는 적기만 하는 것이 아니라 위에서 설정에서
+   * 빠진 서버를 **걷기도** 한다. 걷고 나서 아무것도 안 남는 판(설정의 서버를 다
+   * 빼거나, 남은 한 대가 도구 0개로 떴을 때)에서는 그 걷기가 통째로 취소돼서 지운
+   * 서버의 메모가 파일에 영영 남았다 — 다음 판에 지연 로딩이 그 이름으로 도구 목록을
+   * 도로 세운다. 처음부터 아무것도 안 적혀 있던 때만 안 적는다.
+   */
+  if (!Object.keys(servers).length && !Object.keys(있던것).length) return false;
   try {
     mkdirSync(join(root, '.deel'), { recursive: true });
     writeFileSync(메모자리(root), JSON.stringify({ version: 1, servers }, null, 2) + '\n', 'utf8');
@@ -149,10 +165,24 @@ export function 설정읽기(root) {
   const p = 설정자리(root);
   if (!existsSync(p)) return { 서버들: [], 자리: p, 있음: false };
   let j;
-  try { j = JSON.parse(readFileSync(p, 'utf8')); } catch (e) {
+  // BOM 을 뗀다 — 파워셸 5.1 로 저장한 mcp.json 이 「못 읽었습니다」 가 되어 서버가 통째로 안 떴다.
+  // 설정·훅·정책은 이미 떼고 있었고 여기만 빠져 있었다(safety/trust.js 의 BOM떼기).
+  try { j = JSON.parse(BOM떼기(readFileSync(p, 'utf8'))); } catch (e) {
     return { 서버들: [], 자리: p, 있음: true, 오류: `mcp.json 을 못 읽었습니다: ${e.message}` };
   }
+  /*
+   * JSON 으로는 멀쩡해도 **표가 아닐** 수 있다 (6회차 Gemini 엠씨피 M5).
+   *
+   * `null` 은 위 parse 를 지나 `null.mcpServers` 에서 TypeError 로 던졌다 — 이 함수를 부르는
+   * 자리가 통째로 넘어진다. `"mcpServers": [ … ]` 는 배열 번호 `0` 이 서버 이름이 됐다.
+   * 깨진 JSON 과 같이 「못 읽었습니다」 로 까닭을 돌려준다.
+   */
+  const 표아님 = (v) => v === null || typeof v !== 'object' || Array.isArray(v);
+  if (표아님(j)) return { 서버들: [], 자리: p, 있음: true, 오류: 'mcp.json 을 못 읽었습니다: 맨 바깥이 { … } 표가 아닙니다' };
   const 표 = j.mcpServers ?? j.servers ?? {};
+  if (표아님(표)) {
+    return { 서버들: [], 자리: p, 있음: true, 오류: 'mcp.json 을 못 읽었습니다: mcpServers 는 { "이름": { "command": … } } 모양의 표여야 합니다' };
+  }
   const 서버들 = [];
   /*
    * ── 안 받는 항목도 **적어서 내놓는다** ────────────────────────────────
@@ -184,6 +214,21 @@ export function 설정읽기(root) {
           ? 'url 로 붙는 서버는 아직 못 붙입니다 — command 로 띄우는 stdio 서버만 받습니다'
           : 'command 가 없습니다 — 무엇을 띄울지 적어야 합니다',
       });
+      continue;
+    }
+    /*
+     * ── 도로 못 가르는 이름은 안 받는다 (사냥4 W13) ──────────────────────
+     *
+     * 모델에게는 `mcp__<서버>__<도구>` 로 보이고, 부르면 이름풀기 가 그 이름을 도로
+     * 가른다. 서버 이름에 `__` 가 들었거나 `_` 로 시작·끝나면 가르는 자리가 어긋난다 —
+     * `my__srv` 의 도구는 「my 서버가 붙어 있지 않습니다」, `_srv` 는 「MCP 도구 이름
+     * 꼴이 아닙니다」 가 됐다. 목록에는 멀쩡히 서고 부르면 없다고 하는, 제일 알아채기
+     * 어려운 꼴이다. 이름풀기 가 받는 꼴(밑줄 **하나로만** 이은 낱말)과 같은 잣대로 거른다.
+     * 이름풀기 를 느슨하게 고치는 대신 여기서 막는 까닭 — 도구 이름에도 `__` 가 올 수 있어
+     * (`a_b` 서버의 `c__d`) 어느 쪽 `__` 에서 갈라야 할지 이름만으로는 영영 모른다.
+     */
+    if (!/^[^_]+(?:_[^_]+)*$/.test(이름)) {
+      못받은것.push({ 이름, 왜: '서버 이름에 `__` 가 들었거나 `_` 로 시작·끝납니다 — 모델에게 보이는 mcp__<서버>__<도구> 를 도로 가를 수 없어 부를 수 없습니다. 이름을 바꿔 주세요' });
       continue;
     }
     서버들.push({
@@ -250,6 +295,8 @@ export class MCP서버 {
     this.정보 = null;
     this.죽음 = null;      // 왜 죽었나 (사람에게 보여 줄 말)
     this.잘림 = 0;         // 도구최대 를 넘어 자른 개수
+    this.넘침 = false;     // 한 통이 줄최대 를 넘어 귀를 닫았나 (받음)
+    this.셸로띄움 = false; // 윈도우에서 cmd.exe 를 거쳐 띄웠나 (띄울모양 · 닫기)
     /*
      * 적어 둔 목록으로 서 있는 상태 — 아직 안 띄웠다.
      *
@@ -298,9 +345,16 @@ export class MCP서버 {
    * 도구가 왜 없어졌는지 아무도 설명 못 한다.
    */
   async 깨우기({ timeout = 붙기제한 } = {}) {
+    /*
+     * 깨우는 중인지를 **먼저** 본다 (6회차 Gemini 엠씨피 MB1).
+     *
+     * 붙기 첫 줄에서 아이는 이미 떠 있어서, 인사(initialize)에 답이 오기 전에도 `살아있나()` 는
+     * 참이다. 그걸 먼저 봤더니 함께 들어온 두 번째 부름이 곧장 true 를 받아 tools/call 을
+     * 인사보다 먼저 보냈다 — 모델이 도구를 한꺼번에 둘 부르면 늘 나는 꼴이다.
+     */
+    if (this.깨우는중) return this.깨우는중;
     if (this.살아있나()) return true;
     if (this.죽음) return false;
-    if (this.깨우는중) return this.깨우는중;
     const 적어둔것 = this.도구.map((t) => t.name).join('\0');
     // 속까지 견주려면 정의를 그대로 들고 있어야 한다 (아래 바뀐것).
     const 적어둔도구 = this.도구;
@@ -310,7 +364,18 @@ export class MCP서버 {
       const ok = await this.붙기({ timeout });
       this.대기 = false;
       this.깨우는중 = null;
-      if (!ok) return false;
+      if (!ok) {
+        /*
+         * 못 깨웠으면 **거둔다** (사냥4 W12).
+         *
+         * 켤 때 붙는 길(다붙이기)은 실패하면 닫기() 를 부르는데, 여기는 안 불렀다. 그래서
+         * initialize 에 끝내 답을 안 하는 서버는 「못 띄웠습니다」 로 끝난 **뒤에도** 살아
+         * 명부에 남았다. 죽음 이 서서 다시 깨울 일도 없으니, 세션 내내 아무도 안 쓰는
+         * 남의 프로세스 하나를 붙들고 있는 셈이다.
+         */
+        this.닫기();
+        return false;
+      }
       const 지금것 = this.도구.map((t) => t.name).join('\0');
       if (적어둔것 && 지금것 !== 적어둔것) {
         this.달라짐 = {
@@ -351,14 +416,19 @@ export class MCP서버 {
 
   async 붙기({ timeout = 붙기제한 } = {}) {
     try {
-      this.kid = spawn(this.설정.command, this.설정.args, {
+      // 설정에 적힌 env 만 얹는다. 우리 환경변수를 통째로 넘기면
+      // 게이트웨이 열쇠(DEEL_*)까지 남의 프로세스로 넘어간다.
+      const 환경 = { ...깨끗한환경(), ...(this.설정.env ?? {}) };
+      // 윈도우의 .cmd · 확장자 없이 적은 `npx` 는 그대로는 못 띄운다 (띄울모양 머리말).
+      const 모양 = 띄울모양(this.설정.command, this.설정.args, 환경, this.설정.cwd);
+      this.셸로띄움 = 모양.셸;
+      this.kid = spawn(모양.파일, 모양.인자, {
         cwd: this.설정.cwd,
-        // 설정에 적힌 env 만 얹는다. 우리 환경변수를 통째로 넘기면
-        // 게이트웨이 열쇠(DEEL_*)까지 남의 프로세스로 넘어간다.
-        env: { ...깨끗한환경(), ...(this.설정.env ?? {}) },
+        env: 환경,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
         shell: false,
+        ...모양.옵션,
       });
     } catch (e) {
       this.죽음 = `띄우지 못했습니다: ${e.message}`;
@@ -391,10 +461,48 @@ export class MCP서버 {
     }
 
     try {
-      const r = await this.보내고기다리기('tools/list', {}, timeout);
-      const 다 = Array.isArray(r?.tools) ? r.tools : [];
+      /*
+       * ── 목록이 여러 쪽으로 오는 서버 (사냥4 W10) ────────────────────────
+       *
+       * 규격상 tools/list 는 `nextCursor` 로 다음 쪽이 있다고 알린다. 첫 쪽만 받고
+       * 끝냈더니, 도구를 쪽으로 나눠 주는 서버의 뒷쪽 도구가 **조용히** 빠졌다 — 잘림 도
+       * 0 이라 /mcp 에도 「다 받았다」 로 보였다. 끝까지 따라가되, 같은 커서를 또 주거나
+       * 끝없이 주는 서버에 붙들리지 않게 쪽 수(목록쪽최대)와 시한을 같이 건다. 거기서
+       * 멈추면 뒤에 더 있다는 뜻으로 잘림 을 하나 더 센다 — 「다 받았다」 로 안 보이게.
+       */
+      const 다 = [];
+      const 본커서 = new Set();
+      const 마감 = Date.now() + timeout;
+      let 커서 = null;
+      let 덜받음 = false;
+      for (let 쪽 = 0; ; 쪽++) {
+        let r;
+        /*
+         * 쪽을 넘기다 탈이 나면 **받아 둔 것까지 버리지는 않는다.**
+         *
+         * 이 되풀이가 통째로 바깥 try 안에 있어서, 첫 쪽을 다 받아 놓고도 둘째 쪽에서
+         * 시한이 지나면 그 예외가 아래 catch 로 가 서버가 통째로 안 붙었다. 쪽을 나눠
+         * 주는 것은 대개 도구가 많은 큰 서버다 — 뒷쪽 하나가 늦다고 그 서버의 도구를
+         * 한 개도 안 쓰는 것은, 이 파일의 「하나가 안 떠도 나머지는 쓴다」 와 반대다.
+         * 받은 데까지 쓰고 뒤에 더 있다고 적는다(잘림). 첫 쪽부터 못 받았으면 받은 것이
+         * 없으니 여느 때처럼 통째로 실패다.
+         */
+        try {
+          r = await this.보내고기다리기('tools/list', 커서 ? { cursor: 커서 } : {}, Math.max(1000, 마감 - Date.now()));
+        } catch (e) {
+          if (!다.length) throw e;
+          덜받음 = true;
+          break;
+        }
+        if (Array.isArray(r?.tools)) 다.push(...r.tools);
+        const 다음 = typeof r?.nextCursor === 'string' && r.nextCursor ? r.nextCursor : null;
+        if (!다음 || 본커서.has(다음)) break;
+        if (쪽 + 1 >= 목록쪽최대) { 덜받음 = true; break; }
+        본커서.add(다음);
+        커서 = 다음;
+      }
       this.도구 = 다.slice(0, 도구최대);
-      this.잘림 = Math.max(0, 다.length - this.도구.length);
+      this.잘림 = Math.max(0, 다.length - this.도구.length) + (덜받음 ? 1 : 0);
     } catch (e) {
       this.끝냄(`도구 목록을 못 받았습니다: ${e.message}`);
       return false;
@@ -403,11 +511,9 @@ export class MCP서버 {
   }
 
   받음(덩이) {
+    // 넘친 뒤로는 받지 않는다 (아래 머리말).
+    if (this.넘침) return;
     this.찌꺼기 += 덩이;
-    if (this.찌꺼기.length > 줄최대) {
-      this.끝냄('한 통이 너무 큽니다 — 규격에 안 맞는 서버입니다');
-      return;
-    }
     let i = this.찌꺼기.indexOf('\n');
     while (i >= 0) {
       const 줄 = this.찌꺼기.slice(0, i).trim();
@@ -415,12 +521,44 @@ export class MCP서버 {
       if (줄) this.한통(줄);
       i = this.찌꺼기.indexOf('\n');
     }
+    /*
+     * ── 넘치면 **귀를 닫고 거둔다** (사냥4 W1) ─────────────────────────────
+     *
+     * 여기는 넘치면 끝냄() 만 부르고 돌아갔다. 그런데 귀(stdout 의 data)는 그대로 열려
+     * 있어서 다음 조각이 오면 또 이어 붙였고, 끝냄() 은 두 번째부터 아무것도 안 한다.
+     * 줄바꿈 없이 끝없이 쏟는 서버 하나에 버퍼가 몇백 MB 로 자라다 **RangeError 로
+     * deel 이 통째로 죽었다** — 남의 프로그램이 멋대로 굴어도 우리는 안 죽는다는 이
+     * 파일의 약속이 거기서 깨졌다. 넘친 서버는 쓸 수 없으니 버퍼를 비우고, 더 안 읽고,
+     * 프로세스까지 거둔다(닫기).
+     */
+    if (this.찌꺼기.length > 줄최대) {
+      this.넘침 = true;
+      this.찌꺼기 = '';
+      this.끝냄('한 통이 너무 큽니다 — 규격에 안 맞는 서버입니다');
+      try { this.kid?.stdout?.destroy(); } catch { /* 이미 닫혔으면 그만 */ }
+      this.닫기();
+    }
   }
 
   한통(줄) {
     let j;
     try { j = JSON.parse(줄); } catch { return; }   // 규격 밖의 잡소리는 버린다
-    if (j.id == null) return;                        // 알림은 아직 안 쓴다
+    // `null` · 숫자 한 줄도 JSON 이다. 거기서 j.id 를 읽으면 받는 귀에서 던져 deel 이 죽는다.
+    if (!j || typeof j !== 'object') return;
+    /*
+     * ── 답인지 물음인지는 **method 로** 가른다 (사냥4 W5) ──────────────────
+     *
+     * JSON-RPC 의 번호는 **양쪽이 따로** 센다. 서버가 우리에게 ping 을 물으면서 제 번호
+     * 1 을 쓰면, 그 1 은 우리가 보낸 tools/call 의 1 과 겹친다. 번호만 보고 갈랐더니
+     * 서버의 ping 이 우리 물음의 답으로 먹혀 **빈 결과**가 모델에게 갔고, ping 에는 아무도
+     * 답을 안 해서 서버는 진짜 답을 끝내 안 줬다. 답에는 method 가 없고 물음에는 있다 —
+     * 언어 서버 쪽(lsp/client.js)이 이미 이렇게 가른다.
+     */
+    if (j.method !== undefined) {
+      if (j.id != null) this.물음에답(j);
+      return;                                        // 알림은 아직 안 쓴다
+    }
+    if (j.id == null) return;
     const 기다림 = this.기다리는것.get(j.id);
     if (!기다림) return;
     this.기다리는것.delete(j.id);
@@ -444,7 +582,14 @@ export class MCP서버 {
    */
   보내고기다리기(method, params, timeout = 부르기제한, signal = null) {
     return new Promise((성공, 실패) => {
-      if (!this.kid || this.kid.exitCode !== null) return 실패(new Error(this.죽음 ?? '연결이 없습니다'));
+      /*
+       * 죽은 것은 세 가지로 알아본다 (6회차 Gemini 엠씨피 MB2). 시그널로 죽은 아이는 exitCode 가
+       * null 이라 그것만 보면 지나간다 — 죽은 관에 써 놓고, 아래 시한은 unref 라 아무것도 안 붙든
+       * 판에서는 영영 안 풀렸다(검사 프로세스가 「안 끝난 await」 로 끝났다). 끝냄 이 적은 죽음 도 본다.
+       */
+      if (!this.kid || this.kid.exitCode !== null || this.kid.signalCode !== null || this.죽음) {
+        return 실패(new Error(this.죽음 ?? '연결이 없습니다'));
+      }
       // 이미 멈췄으면 보내지도 않는다. 보내 놓고 버리면 남의 서버는 그 일을 끝까지 한다.
       if (signal?.aborted) return 실패(new Error('중단했습니다'));
       const id = this.다음번호++;
@@ -484,6 +629,19 @@ export class MCP서버 {
     try { this.kid?.stdin?.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n'); } catch { /* 죽었으면 어차피 끝이다 */ }
   }
 
+  /**
+   * 서버가 **우리에게** 묻는 것에 답한다. ping 은 받고, 나머지는 「안 받습니다」 로.
+   *
+   * 말없이 두면 서버는 그 답을 기다리느라 우리 물음에 답을 안 할 수 있다. 우리는
+   * roots·sampling 같은 능력을 안 댔으니(initialize 의 capabilities) 규격대로 -32601 이다.
+   */
+  물음에답(j) {
+    const 답 = j.method === 'ping'
+      ? { jsonrpc: '2.0', id: j.id, result: {} }
+      : { jsonrpc: '2.0', id: j.id, error: { code: -32601, message: `deel 은 ${String(j.method).slice(0, 80)} 을(를) 받지 않습니다` } };
+    try { this.kid?.stdin?.write(JSON.stringify(답) + '\n'); } catch { /* 죽었으면 어차피 끝이다 */ }
+  }
+
   async 부르기(도구이름, args, { timeout = 부르기제한, signal = null } = {}) {
     /*
      * 대기 중이면 **여기서** 띄운다. 이게 지연 로딩의 전부다.
@@ -509,10 +667,28 @@ export class MCP서버 {
     const r = await this.보내고기다리기('tools/call', { name: 도구이름, arguments: args ?? {} }, timeout, signal);
     // 규격상 결과는 content 배열이다. 글만 뽑아 모델에게 넘긴다.
     const 조각 = Array.isArray(r?.content) ? r.content : [];
+    /*
+     * ── 글이 들어 있는데 한 낱말로 줄이지 않는다 (사냥4 W11) ─────────────────
+     *
+     * text 가 아닌 조각은 전부 `[갈래]` 로 줄였다. 그런데 박힌 자원(resource)은 제
+     * 글(resource.text)을 **통째로** 들고 온다 — 파일 읽기·문서 조회 서버가 흔히 이렇게
+     * 준다. 그걸 「[resource]」 한 낱말로 바꿔 모델에게 줬으니, 모델은 받은 것이 없는
+     * 줄 알고 같은 도구를 또 불렀다. 그리고 결과를 structuredContent 로만 주는 서버는
+     * 빈 글이 됐다(「빈 답」 으로 찍혔다). 둘 다 들어 있는 것을 싣는다.
+     */
     const 글 = 조각
-      .map((p) => (p?.type === 'text' ? p.text : p?.type ? `[${p.type}]` : ''))
+      .map((p) => {
+        if (p?.type === 'text') return p.text;
+        if (p?.type === 'resource') {
+          return typeof p.resource?.text === 'string' ? p.resource.text : `[resource ${p.resource?.uri ?? ''}]`;
+        }
+        if (p?.type === 'resource_link') return `[resource_link ${p.uri ?? ''}]`;
+        return p?.type ? `[${p.type}]` : '';
+      })
       .filter(Boolean).join('\n');
-    return { text: 글, isError: r?.isError === true };
+    // 규격은 structuredContent 를 준 서버에게 같은 것을 text 로도 주라고 **권할** 뿐이다.
+    const 구조 = !글 && r?.structuredContent != null ? JSON.stringify(r.structuredContent) : '';
+    return { text: 글 || 구조, isError: r?.isError === true };
   }
 
   끝냄(왜) {
@@ -531,7 +707,23 @@ export class MCP서버 {
     띄운것들.delete(this);
     try {
       this.kid?.stdin?.end();
-      this.kid?.kill();
+      /*
+       * cmd.exe 를 거쳐 띄운 것(.cmd · npx)은 **나무째** 거둔다 (사냥4 W7 과 같이).
+       * kill() 은 cmd.exe 하나만 죽이고 그 밑의 진짜 서버(node …)는 살아남는다 — 도는
+       * 동안 닫은 서버가 작업 관리자에 하나씩 쌓인다. taskkill /T 는 부모가 살아 있어야
+       * 나무를 따라가므로 kill() 은 그 뒤에 한다. (프로그램이 끝날 때는 libuv 의 job 이
+       * 나무째 거둔다 — 이건 도는 동안의 몫이다.)
+       */
+      const 아이 = this.kid;
+      if (this.셸로띄움 && process.platform === 'win32' && 아이?.pid && 아이.exitCode === null) {
+        const 뒤에죽이기 = () => { try { 아이.kill(); } catch { /* 이미 죽었다 */ } };
+        const 나무 = spawn('taskkill', ['/pid', String(아이.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+        나무.once('error', 뒤에죽이기);
+        나무.once('exit', 뒤에죽이기);
+        나무.unref();
+      } else {
+        this.kid?.kill();
+      }
       // 자식이 살아 있으면 우리 프로그램이 안 끝난다.
       this.kid?.unref?.();
     } catch { /* 이미 죽었다 */ }
@@ -550,6 +742,123 @@ export function 깨끗한환경() {
   const out = {};
   for (const k of 남길것) if (process.env[k] != null) out[k] = process.env[k];
   return out;
+}
+
+/*
+ * ── 윈도우에서 무엇을 어떻게 띄우나 (사냥4 W7) ─────────────────────────
+ *
+ * 복사해 붙이는 mcp.json 의 절반이 `"command": "npx"` 다. 그런데 윈도우에서 둘 다 안 떴다.
+ *
+ *   `npx`             셸 없이 띄우면 PATHEXT 를 안 본다 → `npx.cmd` 를 못 찾아 ENOENT
+ *   `C:\…\x.cmd`      노드는 셸 없이 .cmd·.bat 를 안 띄운다(CVE-2024-27980 뒤로) → EINVAL
+ *
+ * 화면에는 「띄우지 못했습니다: spawn EINVAL」 한 줄뿐이라, 사람은 명령이 틀린 줄 안다.
+ *
+ * `shell: true` 로 넘기면 되긴 한다. 그런데 그러면 인자가 **안 감싸진 채** 이어 붙어서
+ * (노드가 DEP0190 으로 경고하는 그 자리) 빈칸·`&`·`%` 가 든 경로가 깨지고, 인자 하나로
+ * cmd.exe 명령을 이어 붙일 수 있게 된다. 그래서 언어 서버 쪽(lsp/client.js)처럼 **.cmd ·
+ * .bat 만** cmd.exe 로 직접 부르되, 인자는 cmd.exe 가 다시 해석해도 뜻이 안 바뀌게 감싼다
+ * (cross-spawn 이 오래 다듬어 온 규칙 그대로다 — 따옴표·역슬래시를 먼저 겹치고, 통째로
+ * 따옴표로 두른 뒤 cmd 특수 글자에 ^ 를 단다. npm 이 만든 node_modules\.bin 의 .cmd 는
+ * 안에서 한 번 더 해석하므로 ^ 를 두 겹 단다). 언어 서버 쪽은 인자가 우리 표에서 오지만
+ * 여기는 사람이 적은 설정에서 오므로 더 촘촘히 감싼다.
+ *
+ * 이름만 적은 명령은 **PATH 에서 우리가 찾아** 전체 경로로 넘긴다. cmd.exe 에게 찾게 두면
+ * 지금 폴더(cwd — 남의 저장소일 수 있다)를 PATH 보다 먼저 뒤진다.
+ */
+const cmd특수 = /([()\][%!^"`<>&|;, *?])/g;
+
+/** @returns {{ 파일: string, 인자: string[], 옵션: object, 셸: boolean }} */
+export function 띄울모양(command, args = [], env = process.env, cwd = process.cwd(), platform = process.platform) {
+  const 인자 = (args ?? []).map(String);
+  if (platform !== 'win32') return { 파일: command, 인자, 옵션: {}, 셸: false };
+  const 찾은것 = 윈도우명령찾기(String(command), env ?? {}, cwd) ?? String(command);
+  if (!/\.(cmd|bat)$/i.test(찾은것)) return { 파일: 찾은것, 인자, 옵션: {}, 셸: false };
+  /*
+   * ── 줄바꿈 든 인자는 cmd.exe 로 못 넘긴다 (Gemini 웹4) ─────────────────────
+   *
+   * cmd.exe 는 명령줄을 줄바꿈에서 끊는다. 재어 보니 `["a<LF>b", "after"]` 가 `["a"]` 하나로 왔다 —
+   * 뒤 인자가 **말없이 통째로** 사라지고, CR 은 그냥 지워진다. 감쌀 길이 없다. 틀린 인자로 서버를
+   * 띄워 엉뚱하게 도는 것보다, 안 띄우고 까닭을 말하는 편이 낫다(붙기 가 죽음 으로 보여 준다).
+   */
+  const 줄바꿈자리 = 인자.findIndex((a) => /[\r\n]/.test(a));
+  if (줄바꿈자리 !== -1) {
+    throw new Error(`${줄바꿈자리 + 1}번째 인자에 줄바꿈이 있어 .cmd·.bat 로는 그대로 넘길 수 없습니다 — cmd.exe 가 그 자리에서 명령줄을 끊습니다`);
+  }
+  const 두겹 = 배치가다시읽나(찾은것);
+  const 줄 = [normalize(찾은것).replace(cmd특수, '^$1'), ...인자.map((a) => cmd인자감싸기(a, 두겹))].join(' ');
+  return {
+    파일: process.env.ComSpec || 'cmd.exe',
+    // /s /c 는 바깥 따옴표 한 쌍을 떼고 나머지를 그대로 돌린다 — 그래서 한 겹 두른다.
+    인자: ['/d', '/s', '/c', `"${줄}"`],
+    옵션: { windowsVerbatimArguments: true },
+    셸: true,
+  };
+}
+
+/*
+ * ── ^ 를 두 겹 다는 배치 (Gemini 웹4) ─────────────────────────────────────
+ *
+ * `%*` 로 받은 인자를 넘기는 배치는 그 줄을 **한 번 더** 해석한다. cross-spawn 을 따라
+ * node_modules\.bin 의 .cmd 만 두 겹으로 봤는데, 전역 npx.cmd(Node 설치 폴더)·npm 전역 설치
+ * 쉼(%APPDATA%\npm)·pnpm 쉼도 똑같이 `%*` 로 넘긴다 — `"command": "npx"` 가 가는 곳이 바로 거기다.
+ *
+ * 한 겹이면 cmd 가 모르는 `\"` 가 든 인자 하나가 따옴표 상태를 뒤집어, **그 뒤 인자의 & 가 명령으로
+ * 돌았다**(재어 봄: `["a\"b", "p & echo made>MARK.txt"]` → MARK.txt 가 생겼다) · 뒤 인자의 ^ 는
+ * 사라졌다. 거꾸로 `%~1` 로 받는 배치는 두 겹이면 ^ 가 글자로 남아 인자가 전부 틀린다.
+ *
+ * 그래서 배치 글을 보고 가른다 — `%*` 가 있으면 두 겹, 없으면 한 겹. 못 읽거나 지나치게 크면
+ * 예전 규칙(node_modules\.bin)으로 간다. `CALL x.cmd %*` 처럼 한 번 더 넘기는 배치는 cmd 가 ^ 를
+ * 다시 겹치고 % 를 또 풀어서 어느 쪽으로도 못 맞춘다 — 그런 쉼은 드물다.
+ */
+function 배치가다시읽나(파일) {
+  if (/node_modules[\\/]\.bin[\\/][^\\/]+\.cmd$/i.test(파일)) return true;
+  try {
+    if (statSync(파일).size > 1024 * 1024) return false;
+    // REM · :: 줄은 뺀다 — 쓰는 법을 적은 주석의 %* 에 속아 %~1 배치에 두 겹을 달았다(Gemini 화면5).
+    return readFileSync(파일, 'latin1').split(/\r?\n/)
+      .some((줄) => !/^\s*@?\s*(?:rem(?:\s|$)|::)/i.test(줄) && 줄.includes('%*'));
+  } catch {
+    return false;
+  }
+}
+
+function cmd인자감싸기(a, 두겹) {
+  const 겹친 = String(a)
+    .replace(/(\\*)"/g, '$1$1\\"')   // 따옴표 앞 역슬래시는 두 배로, 따옴표는 \" 로
+    .replace(/(\\*)$/, '$1$1');      // 끝 역슬래시는 두 배로 — 곧 붙일 닫는 따옴표를 안 먹게
+  const 한겹 = `"${겹친}"`.replace(cmd특수, '^$1');
+  return 두겹 ? 한겹.replace(cmd특수, '^$1') : 한겹;
+}
+
+/** 윈도우가 실제로 돌릴 파일을 찾는다. 확장자 붙은 것을 먼저 본다 (lsp/servers.js 의 어디있나 와 같은 순서). */
+function 윈도우명령찾기(명령, env, cwd) {
+  /*
+   * 빈 PATHEXT 는 **안 적은 것과 같이** 본다 (lsp/servers.js 의 어디있나 와 같은 자리).
+   *
+   * `??` 는 빈 글을 안 막는다. `PATHEXT=` 로 비워 둔 판(또는 `;;` 만 든 판)에서는 이
+   * 목록이 통째로 비고, 그러면 아래 붙여보기 의 되풀이가 **한 번도 안 돌아** 무엇을
+   * 물어도 null 이었다 — `npx` 는 못 찾아 ENOENT 로 안 뜨고, `x.cmd` 처럼 확장자까지
+   * 적은 완전한 이름조차 못 찾아(`이미붙음` 도 빈 목록에서는 거짓이다) 전체 경로 대신
+   * 이름만 cmd.exe 로 넘어간다. 그러면 위 머리말이 막으려던 자리로 되돌아간다 —
+   * cmd.exe 는 PATH 보다 지금 폴더(남의 저장소일 수 있다)를 먼저 뒤진다.
+   */
+  const 기본확장 = '.COM;.EXE;.BAT;.CMD';
+  const 적힌것 = String(env.PATHEXT ?? process.env.PATHEXT ?? 기본확장).split(';').filter(Boolean);
+  const 확장들 = 적힌것.length ? 적힌것 : 기본확장.split(';');
+  const 파일인가 = (p) => { try { return statSync(p).isFile(); } catch { return false; } };
+  const 이미붙음 = 확장들.some((e) => 명령.toLowerCase().endsWith(e.toLowerCase()));
+  const 붙여보기 = (밑) => {
+    if (이미붙음 && 파일인가(밑)) return 밑;
+    for (const e of 확장들) if (파일인가(밑 + e)) return 밑 + e;
+    return null;
+  };
+  if (/[\\/]/.test(명령) || isAbsolute(명령)) return 붙여보기(resolve(cwd ?? process.cwd(), 명령));
+  for (const 길 of String(env.PATH ?? env.Path ?? '').split(';').filter(Boolean)) {
+    const 찾음 = 붙여보기(join(길.replace(/^"|"$/g, ''), 명령));
+    if (찾음) return 찾음;
+  }
+  return null;
 }
 
 /*

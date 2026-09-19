@@ -35,7 +35,7 @@
 //
 // 갈래 차례가 한 칸만 어긋나도 못 붙은 것이 「시간 초과」 로 읽힌다. 그러면
 // 다시 부르면 될 것을 안 부르거나, 그 반대로 두 번 시킨다.
-import { normalizeError, 막힘힌트, 프록시힌트 } from '../src/backend/http.js';
+import { normalizeError, 막힘힌트, 프록시힌트, serverMessage } from '../src/backend/http.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -130,6 +130,31 @@ trace('2-못붙음대시간초과');
   const 섞인것 = normalizeError(오류('Connect Timeout Error: timeout after 10000ms', { code: 'CONNECT_TIMEOUT' }));
   check('★★★ 글에 timeout 이 있어도 코드가 못 붙음이면 못 붙음이다',
     /연결하지 못했습니다/.test(섞인것), 섞인것);
+
+  /*
+   * (8회차 뒷단-전선) `ETIMEDOUT` 은 **OS 가 TCP 연결에서 손을 뗀 것**이다 — 보낸 것이
+   * 없다. 그런데 글이 `connect ETIMEDOUT 10.0.0.1:443` 이라 아래 `/timed? ?out/` 갈래에
+   * 걸려 「응답이 없습니다」 가 됐다. 바로 위 두 줄이 「반드시 갈라야 한다」 고 적어 둔 그
+   * 자리인데, 다시 불러도 되는지(retry.js 의 못붙은코드)는 ETIMEDOUT 을 **못 붙음**으로
+   * 세고 있었다 — 화면과 재시도 규칙이 서로 딴 소리를 했다.
+   */
+  const 오에스시계 = normalizeError(오류('connect ETIMEDOUT 10.0.0.1:443', { code: 'ETIMEDOUT' }));
+  check('★★★ ETIMEDOUT 은 붙지도 못한 것이다 — 「응답이 없습니다」 가 아니다',
+    /연결하지 못했습니다/.test(오에스시계) && !/응답이 없습니다/.test(오에스시계), 오에스시계);
+  check('★★ 그래서 못 붙음 갈래와 같은 말을 한다', 오에스시계 === 못붙음, `${오에스시계} / ${못붙음}`);
+  /*
+   * 다만 **붙은 뒤에** 난 `ETIMEDOUT` 은 이야기가 반대다 (제미니 2차 눈).
+   *
+   * `read ETIMEDOUT` 은 소켓이 붙어 있고 요청도 나간 뒤, OS 가 재전송을 포기한 것이다.
+   * 서버는 받아 놓고 답을 안 했다 — 그건 위에서 가른 「시간 초과」 쪽이다. 코드만 보고
+   * 통째로 못 붙음으로 밀면, 화면이 「망이나 프록시를 확인하세요」 라고 엉뚱한 데를 짚는다.
+   * 붙는 중에 난 것은 `syscall:'connect'` 이거나 글이 `connect ETIMEDOUT …` 이다.
+   */
+  const 읽다난것 = normalizeError(오류('read ETIMEDOUT', { code: 'ETIMEDOUT', syscall: 'read' }));
+  check('★★ 붙은 뒤 읽다가 난 ETIMEDOUT 은 「응답이 없습니다」 다',
+    /응답이 없습니다/.test(읽다난것) && !/연결하지 못했습니다/.test(읽다난것), 읽다난것);
+  check('  fetch 가 cause 에 싸서 줘도 붙는 중인 것은 못 붙음이다',
+    /연결하지 못했습니다/.test(normalizeError(오류('fetch failed', { cause: { code: 'ETIMEDOUT', syscall: 'connect', message: 'connect ETIMEDOUT 10.0.0.1:443' } }))), '');
 }
 
 // ── 3. 나머지 갈래도 다 걸린다 ──────────────────────────────────────────
@@ -154,6 +179,31 @@ trace('3-나머지');
     const 말 = normalizeError(err);
     check(`★★★ ${이름} — 사람 말로 갈아 끼운다`, 바라는것.test(말), 말.slice(0, 70));
   }
+
+  /*
+   * (8회차 뒷단-전선) TLS 경보는 **코드로 올 때도 있고 글로만 올 때도 있다.**
+   *
+   * 바로 위 두 갈래(클라이언트 인증서 요구 · 개인키 암호)는 `코드` 와 글을 둘 다
+   * 보는데, 경보 갈래만 `코드` 만 봤다. 그래서 코드 없이 글에만 실려 온 경보는
+   * 맨 아래 한 줄로 떨어져 「사내 인증서라면 NODE_EXTRA_CA_CERTS 가 필요합니다」 —
+   * **서버를 믿는 문제**의 답 — 가 나갔다. 실제로는 게이트웨이가 **우리 인증서**를
+   * 안 받아 준 것이고, 볼 자리는 프로필의 "인증서" 칸이다. 안내를 따라 환경변수만
+   * 늘리고 여전히 못 붙는다.
+   */
+  const 경보판 = [
+    ['bad certificate (42)', 'write EPROTO 1:error:0A000412:SSL routines:ssl3_read_bytes:sslv3 alert bad certificate:../ssl/record/rec_layer_s3.c:1590:SSL alert number 42'],
+    ['unknown ca (48)', 'write EPROTO 1:error:0A000418:SSL routines:ssl3_read_bytes:tlsv1 alert unknown ca:../ssl/record/rec_layer_s3.c:1590:SSL alert number 48'],
+    ['certificate expired (45)', 'write EPROTO 1:error:0A00042D:SSL routines:ssl3_read_bytes:tlsv1 alert certificate expired:../ssl/record/rec_layer_s3.c:1590:SSL alert number 45'],
+    ['certificate revoked (44)', 'write EPROTO 1:error:0A00042C:SSL routines:ssl3_read_bytes:tlsv1 alert certificate revoked:../ssl/record/rec_layer_s3.c:1590:SSL alert number 44'],
+  ];
+  for (const [이름, 글] of 경보판) {
+    const 말 = normalizeError(오류(글));
+    check(`★★ TLS 경보가 코드 없이 글로만 와도 우리 인증서 이야기다 — ${이름}`,
+      /클라이언트 인증서를 받지 않았습니다/.test(말) && !/NODE_EXTRA_CA_CERTS/.test(말), 말.slice(0, 70));
+  }
+  // 서버를 못 믿는 것은 그대로 둔다 — 그건 진짜로 NODE_EXTRA_CA_CERTS 의 자리다.
+  check('  서버 인증서를 못 믿는 것은 여전히 CA 안내다',
+    /NODE_EXTRA_CA_CERTS/.test(normalizeError(오류('self signed certificate in certificate chain'))), '');
 
   // 서버가 끊은 것과 서버가 꺼진 것은 다른 말이어야 한다. 「주소를 확인하라」 는
   // 서버가 받아 놓고 끊은 자리에서는 틀린 조언이고, 사람을 엉뚱한 데로 보낸다.
@@ -221,6 +271,48 @@ trace('5-막힘힌트');
   check('★★★ 아무 글에나 프록시 탓을 안 한다',
     프록시힌트('internal server error') === null
     && 프록시힌트('Proxy Authentication Required') === null, '');
+}
+
+// ── 6. 빈 문장을 문장이라고 내보내지 않는다 ─────────────────────────────
+//
+// 사람이 본 것: 실패한 줄이 **통째로 비어 있었다.** `✗` 하나 찍히고 그 옆이
+// 빈 칸이다. 상태 코드도 없으니 어디를 봐야 하는지도 모른다.
+//
+// 안전 필터로 막는 게이트웨이 중에 코드만 넣고 문장은 비워 보내는 곳이 있다
+// (`{"error":{"message":"","code":"content_filter"}}`). `??` 사다리는 그
+// 빈 글자를 **값이 있는 것**으로 받아 넘겼다 — `??` 가 막는 것은 null·undefined
+// 뿐이다. 그래서 `HTTP 400` 이라는 마지막 대비책까지 갈 길이 없었다.
+//
+// 이 값은 adapter·detect·probe 가 그대로 `new Error(말)` 에 넣는다. 메시지가
+// 빈 Error 는 화면에도 진단 보고서에도 빈 줄로 남는다.
+trace('6-빈말');
+{
+  const 빈것 = serverMessage({ status: 400, json: { error: { message: '', code: 'content_filter' } } });
+  check('★★★ message 가 빈 글자면 상태 코드라도 말한다', 빈것 === 'HTTP 400', JSON.stringify(빈것));
+  check('★★★ 그 값으로 만든 Error 가 빈 줄이 아니다',
+    new Error(빈것).message.trim() !== '', JSON.stringify(new Error(빈것).message));
+
+  check('★★ 공백뿐인 문장도 없는 것으로 친다',
+    serverMessage({ status: 500, json: { error: { message: '   ' } } }) === 'HTTP 500',
+    JSON.stringify(serverMessage({ status: 500, json: { error: { message: '   ' } } })));
+  check('★★ 본문이 공백뿐이어도 마찬가지',
+    serverMessage({ status: 502, text: '  \n ' }) === 'HTTP 502',
+    JSON.stringify(serverMessage({ status: 502, text: '  \n ' })));
+
+  /*
+   * ★★★ 빈 문장을 건너뛰되 **다음 자리는 봐야 한다.** 여기서 곧장 상태 코드로
+   * 가 버리면, 정작 답이 적힌 본문을 우리가 버리는 셈이다.
+   */
+  check('★★★ message 가 비었으면 본문을 본다',
+    serverMessage({ status: 400, text: '진짜 까닭은 여기 적혀 있다', json: { error: { message: '' } } })
+      === '진짜 까닭은 여기 적혀 있다', '');
+
+  // 멀쩡한 문장은 그대로 둔다 — 위 검사들이 「늘 상태 코드만」 으로 고쳐도 통과하면 안 된다.
+  check('★★ 멀쩡한 문장은 그대로 내보낸다',
+    serverMessage({ status: 400, json: { error: { message: 'model not found: x' } } }) === 'model not found: x', '');
+  check('★★ 글이 아닌 오류 덩이는 여전히 적어서 보여 준다',
+    serverMessage({ status: 400, json: { error: { code: 'x' } } }) === '{"code":"x"}',
+    serverMessage({ status: 400, json: { error: { code: 'x' } } }));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

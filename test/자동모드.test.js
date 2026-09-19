@@ -302,22 +302,26 @@ trace('2-이스케이프');
     let 줄 = 1;
     let 앞글자 = '';
     const 쌓임 = [];
+    // 들어간 템플릿이 String.raw 였나 — `${…}` 를 나와 템플릿으로 되돌아갈 때 이어 받는다.
+    const 날것쌓임 = [];
     let 중괄호 = 0;
 
     // 글자열 하나를 먹는다. 템플릿이면 `${` 에서 멈추고 코드로 돌아간다.
-    const 글자열먹기 = (끝, 시작) => {
+    // 날것(String.raw 템플릿)이면 백슬래시가 그대로 남으므로 한 겹이 맞다 — 안 잡는다.
+    const 글자열먹기 = (끝, 시작, 날것 = false) => {
       let j = 시작;
       while (j < n) {
         const d = 글[j];
         if (d === '\\') {
           const e = 글[j + 1];
-          if (위험한글자.has(e)) 걸린것.push({ 줄, 무엇: `\\${e}` });
+          if (!날것 && 위험한글자.has(e)) 걸린것.push({ 줄, 무엇: `\\${e}` });
           if (e === '\n') 줄 += 1;
           j += 2; continue;
         }
         if (d === '\n') { 줄 += 1; j += 1; continue; }
         if (끝 === '`' && d === '$' && 글[j + 1] === '{') {
           쌓임.push(중괄호);
+          날것쌓임.push(날것);
           중괄호 = 0;
           return { 다음: j + 2, 안으로: true };
         }
@@ -351,7 +355,8 @@ trace('2-이스케이프');
         if (닫힘) { i = j + 1; 앞글자 = '/'; continue; }
       }
       if (c === "'" || c === '"' || c === '`') {
-        const r = 글자열먹기(c, i + 1);
+        const 날것 = c === '`' && /String\.raw\s*$/.test(글.slice(Math.max(0, i - 24), i));
+        const r = 글자열먹기(c, i + 1, 날것);
         i = r.다음;
         앞글자 = r.안으로 ? '' : c;
         continue;
@@ -360,7 +365,7 @@ trace('2-이스케이프');
       if (c === '}') {
         if (중괄호 === 0 && 쌓임.length) {
           중괄호 = 쌓임.pop();
-          const r = 글자열먹기('`', i + 1);   // 템플릿 안으로 되돌아간다
+          const r = 글자열먹기('`', i + 1, 날것쌓임.pop());   // 템플릿 안으로 되돌아간다 (날것이었으면 그대로)
           i = r.다음;
           앞글자 = '`';
           continue;
@@ -408,6 +413,15 @@ trace('2-이스케이프');
   const 안잡아야 = 훑기('const y = /\\s+/g;\nconst z = `${String(a).replace(/\\s/g, "")}`;');
   check('★★ 정규식 리터럴은 안 잡는다 (템플릿 안의 것도)',
     안잡아야.length === 0, JSON.stringify(안잡아야));
+  /*
+   * `String.raw` 템플릿은 백슬래시를 **그대로** 둔다 — 한 겹이 맞는 자리다. guard.js 가 뿌리 규칙을
+   * `new RegExp(String.raw`…`)` 로 짓는데(3회차), 검사기가 그걸 몰라 멀쩡한 줄을 걸었다.
+   * 날것 템플릿 안의 `${…}` 는 다시 코드라, 거기 든 여느 글자열은 여전히 잡아야 한다.
+   */
+  const 날것템플릿 = 훑기('const r = new RegExp(String.raw`\\brm\\b\\s${뿌리}`);\nconst q = String.raw `\\d+`;');
+  check('★★ String.raw 템플릿의 한 겹은 안 잡는다', 날것템플릿.length === 0, JSON.stringify(날것템플릿));
+  const 날것속코드 = 훑기("const r = String.raw`\\w${'\\s'}`;");
+  check('★ String.raw 템플릿 안 ${…} 의 여느 글자열은 잡는다', 날것속코드.length === 1, JSON.stringify(날것속코드));
 }
 
 // ── 3. 손대는 동사 목록이 통째로 살아 있다 ──────────────────────────────
@@ -1758,6 +1772,95 @@ trace('8-마침표뒤빈칸');
     new Set(동사점.map(([, n]) => n)).size === 1, JSON.stringify(동사점));
   check('★★★ 한국어 이름 바꾸기는 그대로 code 로 간다',
     route('이 파일 이름 바꿔줘').mode === 'code', String(route('이 파일 이름 바꿔줘').mode));
+}
+
+/*
+ * ── 6회차 Gemini 길고르기6 — 실행으로 참이 난 문장들 ─────────────────────
+ *
+ * 읽기 전용 모드(architect·plan·ask·inspect)로 잘못 가면 사람은 「왜 안 고쳐?」 하고 막히고, 반대로 고치지
+ * 말라는 말이 고치는 모드로 가면 시킨 것과 거꾸로다. 각 줄 옆에 **여전히 걸려야 하는 짝**을 같이 잰다 —
+ * 규칙을 통째로 꺼서 초록이 되는 판을 막는다.
+ */
+trace('9-길고르기6');
+{
+  const 읽기전용 = new Set(['architect', 'plan', 'ask', 'inspect']);
+  const 보기 = (말) => { const r = route(말); return `${r.mode} · 겹침 ${r.겹침} · ${r.why}`; };
+
+  // a1 · 첫머리 파일 이름 `build.gradle` 을 build 시킴말로 읽었다.
+  check('★ "build.gradle 설명해줘" 는 code 가 아니다 — 파일 이름이다', route('build.gradle 설명해줘').mode !== 'code', 보기('build.gradle 설명해줘'));
+  check('  "Build the chart." 는 여전히 code', route('Build the chart.').mode === 'code', 보기('Build the chart.'));
+
+  // b1 · `npm audit fix` 는 고치라는 명령인데 audit 5점으로 읽기 전용 점검에 갔다.
+  check('★ "npm audit fix 실행해줘" 를 읽기 전용 점검으로 안 보낸다', !읽기전용.has(route('npm audit fix 실행해줘').mode), 보기('npm audit fix 실행해줘'));
+  check('  "Audit the auth module for vulnerabilities" 는 여전히 inspect', route('Audit the auth module for vulnerabilities').mode === 'inspect', 보기('Audit the auth module for vulnerabilities'));
+
+  // b3 · what 에는 「and fix it」 문이 없어 고치라는 말이 묻기로 갔다.
+  check('★ "What is broken in route.js and fix it" 을 묻기로 안 보낸다', route('What is broken in route.js and fix it').mode !== 'ask', 보기('What is broken in route.js and fix it'));
+  check('★ "How does the parser work and then refactor it" 도', route('How does the parser work and then refactor it').mode !== 'ask', 보기('How does the parser work and then refactor it'));
+  check('  "What is broken in route.js?" 는 여전히 ask', route('What is broken in route.js?').mode === 'ask', 보기('What is broken in route.js?'));
+  // 문은 둘이다 — 낱말 바로 뒤의 문은 물음표에서 멈추고, 물음표 건너편은 뒤에 단 문만 본다.
+  check('★ 물음표 건너편의 「And rewrite it」 도 묻기로 안 보낸다', route('What about the parser? And rewrite it.').mode !== 'ask', 보기('What about the parser? And rewrite it.'));
+  check('★ how 쪽도 마찬가지', route('How about the cache? And rewrite it.').mode !== 'ask', 보기('How about the cache? And rewrite it.'));
+
+  // b4 · 「설명만」 — 설명 뒤 「만」 을 안 받아 0점이었다.
+  check('★ "이 코드 설명만 해줘" 는 ask', route('이 코드 설명만 해줘').mode === 'ask', 보기('이 코드 설명만 해줘'));
+
+  // c1 · 「고쳐주지 마」 가 code 4점.
+  check('★ "코드 고쳐주지 마" 는 code 가 아니다', route('코드 고쳐주지 마').mode !== 'code', 보기('코드 고쳐주지 마'));
+  // (「이 버그 고쳐줘」 는 짝으로 못 쓴다 — 「버그」 가 디버그 낱말이라 원래부터 code·debug 비슷함이다.)
+  check('  "코드 고쳐줘" 는 여전히 code', route('코드 고쳐줘').mode === 'code', 보기('코드 고쳐줘'));
+
+  // c2 · 실행말에 부정이 붙었는데 겹침(계획 → 실행)으로 읽었다.
+  for (const 말 of ['설계하고 구현은 하지 마', '정리하고 추가하지 마']) {
+    check(`★ "${말}" 은 겹친 요청이 아니다 — 실행하지 말라는 말이다`, route(말).겹침 === false, 보기(말));
+  }
+  // c3 · 이름씨 뿌리(작성자 · 설치 경로)를 실행말로 읽었다.
+  for (const 말 of ['코드 살펴보고 작성자 확인해줘', '설정 검토하고 설치 경로 알려줘']) {
+    check(`★ "${말}" 은 겹친 요청이 아니다 — 이름씨다`, route(말).겹침 === false, 보기(말));
+  }
+  // c4 · 건너뛰라는 말 · 이미 승인됐다는 말.
+  for (const 말 of ['Skip design and write the code', 'Plan is approved, then implement it']) {
+    check(`★ "${말}" 은 겹친 요청이 아니다`, route(말).겹침 === false, 보기(말));
+  }
+  // 짝: 진짜 겹친 요청은 그대로 겹친다.
+  for (const 말 of ['설계하고 구현해줘', '정리해서 만들어줘', '검토하고 배포까지 해줘', '살펴보고 작성해줘', 'Design and implement the login page', 'Plan the migration, then implement it']) {
+    check(`  "${말}" 은 여전히 겹친 요청`, route(말).겹침 === true, 보기(말));
+  }
+
+  /*
+   * e3·e4 · 1,500자 넘는 글. 고치라는 말이 있어 설계를 뺐는데 남은 디버그가 **같은 세기**면 디버그로 정했고,
+   * 남은 것이 0점이면 화면이 「debug(0점) 보다 세서」 라고 적었다.
+   */
+  const 채움 = '가나다라마바사 아자차카타파하 이 줄은 아무 뜻이 없는 채움 글입니다. '.repeat(40);
+  const 동점글 = `${채움}폴더 구조 개선이 필요하고 설계를 다시 봐야 합니다. 로그에 에러가 나고 테스트가 실패합니다. error 도 찍힙니다. 이 부분 수정해줘.`;
+  const 동점 = route(동점글);
+  check('★ 긴 글에서 뺀 설계와 남은 디버그가 동점이면 디버그로 정하지 않는다 — 종합',
+    동점.mode === null && 동점.점수들?.architect > 0 && 동점.점수들?.architect === 동점.점수들?.debug,
+    `${동점.mode} · ${JSON.stringify(동점.점수들)} · ${동점.why}`);
+  const 영점 = route(`${채움}폴더 구조와 설계와 아키텍처를 다시 봐야 합니다. 모듈을 분리해줘.`);
+  check('★ 남은 것이 0점이면 「0점보다 세서」 라고 안 적는다 — 신호가 있었지만 고치라는 말이라 안 보냄',
+    영점.mode === null && !/\(0점\)/.test(영점.why) && /architect/.test(영점.why), 영점.why);
+  const 더셈 = route(`${채움}폴더 구조 개선이 필요하고 설계를 다시 봐야 합니다. 에러가 나고 실패합니다 왜 안 되는지 모르겠어요. 이 부분 수정해줘.`);
+  check('  남은 디버그가 뚜렷이 더 세면 여전히 디버그', 더셈.mode === 'debug', `${더셈.mode} · ${JSON.stringify(더셈.점수들)}`);
+  const 덜셈 = route(`${채움}폴더 구조 개선이 필요하고 설계를 다시 봐야 합니다. 로그에 에러가 나고 테스트가 실패합니다. 이 부분 수정해줘.`);
+  check('  뺀 설계가 더 세면 여전히 「… 보다 세서」 로 종합', 덜셈.mode === null && /보다 세서/.test(덜셈.why), 덜셈.why);
+
+  /*
+   * d · 반말로 시킨 말(「정리해」 「고쳐」 「만들어」)이 손대라는 말로 안 읽혀서,
+   * 고쳐 달라는 말이 읽기 전용 모드로 가거나 「비슷함」 으로 떨어졌다.
+   */
+  const 정리해 = route('리뷰 결과 반영해서 정리해');
+  check('★ 「리뷰 결과 반영해서 정리해」 는 읽기 전용 모드로 안 간다',
+    !읽기만하는모드.has(정리해.mode) && 손대라했나('리뷰 결과 반영해서 정리해') === true, `${정리해.mode} · ${정리해.why}`);
+  for (const 말 of ['리뷰 결과대로 고쳐', '점검 결과대로 바꿔', '설계대로 만들어', '검토한 대로 지워.', '보안 점검 결과대로 수정해', '로그 수정해\n테스트도 돌려', '이 부분 리팩터링해!']) {
+    check(`★ 반말 시킴 「${말.replace('\n', ' ')}」 은 손대라는 말`, 손대라했나(말) === true && !읽기만하는모드.has(route(말).mode), `${손대라했나(말)} · ${route(말).mode}`);
+  }
+  check('  반말과 부탁말이 같은 모드로 간다', route('보안 점검 결과대로 수정해').mode === route('보안 점검 결과대로 수정해줘').mode,
+    `${route('보안 점검 결과대로 수정해').mode} vs ${route('보안 점검 결과대로 수정해줘').mode}`);
+  for (const 말 of ['이 에러 어떻게 수정해', '왜 이렇게 구현해', '버그가 고쳐졌어', '어제 만들었어', '안 고쳐', '못 바꿔', '수정안해',
+    '이거 수정해?', '구현해 본 적 있어?', '수정해도 되는지 검토해줘', '수정해야 할 곳을 점검해줘', '계획 좀 수정해', '이전 계획 다시 정리해']) {
+    check(`  「${말}」 는 손대라는 말이 아니다`, 손대라했나(말) === false);
+  }
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

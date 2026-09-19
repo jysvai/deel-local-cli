@@ -43,6 +43,21 @@ import { 정책읽기 } from '../safety/policy.js';
 // 컨텍스트를 못 알아냈을 때 쓰는 값. repl.js 와 같은 값을 봐야 한다.
 export const CTX_DEFAULT = 32768;
 
+/*
+ * 크기 칸(ctx · maxTokens)은 **양의 유한수만** 받는다 (사냥5 L5-6).
+ *
+ * `ctx: 0` 이 그대로 conn 에 실리면 접기·요약이 영영 안 돈다 — 창 0 에서 몇 퍼센트를
+ * 썼는지 못 재기 때문이다. `maxTokens: 0` 은 모든 요청을 바닥값 512 로 묶는다. 설정
+ * 파일 한 칸의 실수가 「답이 짧다」 · 「창이 넘쳐 400」 으로만 보이고 까닭은 어디에도
+ * 안 뜬다. 0·음수·NaN·글자·참거짓은 「안 적은 것」 으로 치고 다음 차례로 넘긴다.
+ * oneshot.js 도 conn 을 지을 때 이걸 쓴다 — 두 벌이면 한쪽만 고쳐진다.
+ */
+export function 양수크기(v) {
+  if (v === null || v === undefined || typeof v === 'boolean' || (typeof v === 'string' && !v.trim())) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 /**
  * 프로필 하나로 연결을 만든다.
  *
@@ -58,8 +73,8 @@ export function 연결만들기(prof, { ctx = null, maxTokens = null } = {}) {
     auth: prof.auth,
     key: resolveKey(prof),
     model: prof.model,
-    ctx: ctx ?? prof.ctx ?? CTX_DEFAULT,
-    maxTokens: maxTokens ?? prof.maxTokens ?? null,
+    ctx: 양수크기(ctx) ?? 양수크기(prof.ctx) ?? CTX_DEFAULT,
+    maxTokens: 양수크기(maxTokens) ?? 양수크기(prof.maxTokens) ?? null,
     streaming: prof.streaming ?? false,
     잠잠: prof.잠잠 ?? prof.streamIdleMs ?? 잠잠기본,
     // 바이트는 오는데 내용이 안 올 때의 전체 상한 (backend/http.js 의 무소식기본).
@@ -100,10 +115,12 @@ export function 프로필들(cfg = load()) {
 /**
  * 이름으로 프로필 찾기.
  *
- * id → 이름 → 모델 이름 → 앞부분 일치 순으로 본다. 사람은 `/ask small ...`
- * 처럼 기억나는 대로 치지, 설정에 적은 id 를 외우고 있지 않다.
+ * id → 이름 → 모델 이름이 딱 맞는지 보고, 없으면 셋 가운데 어디에든 **들어 있는지**
+ * (부분 일치) 본다. 사람은 `/ask small ...` · `/ask coder ...` 처럼 기억나는 대로
+ * 치지, 설정에 적은 id 를 외우고 있지 않다. 여기 전에는 「앞부분 일치」 라고 적혀
+ * 있었는데 코드는 처음부터 부분 일치였다 — 말을 코드에 맞췄다 (6회차 여러모델6aw-b MD1).
  *
- * 앞부분 일치에서 **둘 이상 걸리면 고르지 않는다.** 아무거나 골라 주면
+ * 부분 일치에서 **둘 이상 걸리면 고르지 않는다.** 아무거나 골라 주면
  * 물어본 사람은 어느 모델이 답했는지 모른 채로 그 답을 믿게 된다.
  */
 export function 프로필찾기(이름, cfg = load()) {
@@ -112,7 +129,12 @@ export function 프로필찾기(이름, cfg = load()) {
   const 목록 = 프로필들(cfg);
   if (!목록.length) return { ok: false, why: '설정에 프로필이 하나도 없습니다', 후보: [] };
 
-  const 딱 = 목록.find((p) => String(p.id).toLowerCase() === q)
+  /*
+   * 없는 칸은 **빈 글자**다 (2.0.0 8회차 스키마). `String(p.id)` 가 id 를 안 적은 프로필을
+   * 글자 "undefined" 로 만들어, 빈 값이 이름 자리로 흘러든 `/ask undefined …` 가 그 프로필에
+   * 「딱 맞는 것」 으로 걸렸다. 아래 부분 일치 줄은 처음부터 `?? ''` 였다.
+   */
+  const 딱 = 목록.find((p) => String(p.id ?? '').toLowerCase() === q)
     ?? 목록.find((p) => String(p.name ?? '').toLowerCase() === q)
     ?? 목록.find((p) => String(p.model ?? '').toLowerCase() === q);
   if (딱) return { ok: true, prof: 딱, 후보: [딱] };
@@ -193,7 +215,9 @@ export function 목록보기(cfg = load()) {
       model: p.model ?? '',
       어디,
       로컬,
-      지금: 지금?.id === p.id,
+      // 같은 프로필인지는 **같은 객체**로 본다. id 만 견주면 이름만 적은(id 없는) 프로필이 둘일 때
+      // undefined === undefined 로 둘 다 지금이 됐다 (6회차 여러모델6aw-b MD3).
+      지금: 지금 != null && (지금 === p || (p.id != null && 지금.id === p.id)),
     };
   });
 }

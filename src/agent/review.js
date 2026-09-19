@@ -16,7 +16,9 @@
 // 리뷰가 제 손으로 고치기 시작하면 사람이 무엇을 승인한 것인지 흐려지고,
 // 찾은 것 중 무엇이 진짜인지 가릴 기회가 없어진다. 고칠지 말지는 사람이
 // 정한다 — 그게 리뷰의 전부다.
-import { 깃, 저장소뿌리, 이번에바꾼것 } from './commit.js';
+import { readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { 깃, 저장소뿌리, 이번에바꾼것, 글자그대로, 살림경로인가, 살림에닿나 } from './commit.js';
 import { chat } from '../backend/adapter.js';
 
 /** 모델에게 보여 줄 diff 길이 상한(글자). 넘으면 자르고 잘랐다고 적는다. */
@@ -78,16 +80,98 @@ export function 볼것(session, ctx) {
   // 이번 대화가 손댄 파일 (agent/commit.js 가 쓰는 것과 같은 셈법 — 살림 폴더와
   // 저장소 밖은 빠지고, 폴더째 적힌 것은 안 딸려 온다).
   const 안쪽 = [...이번에바꾼것(session, 뿌리)];
+  // 경로는 글자 그대로 넘긴다 — `[ab].txt` 가 글롭으로 풀려 남의 a.txt 가 딸려 오면 안 된다
+  // (commit.js 의 글자그대로 머리말, 사냥5 H5-4).
+  const 경로 = 안쪽.map(글자그대로);
 
-  const 인자 = 안쪽.length
-    ? ['diff', 'HEAD', '--', ...안쪽]
-    : ['diff', 'HEAD'];
-  const 몸통 = 깃(뿌리, 인자, {});
-  const 통계 = 깃(뿌리, [...인자.slice(0, 2), '--stat', ...인자.slice(2)], {});
-  const 이름 = 깃(뿌리, [...인자.slice(0, 2), '--name-only', ...인자.slice(2)], {});
-  const 파일들 = 이름.out.split('\n').map((x) => x.trim()).filter(Boolean);
+  /*
+   * ── 「바뀐 것이 없다」 로 잘못 답하던 세 자리 (사냥5 H5-5) ─────────────────
+   *
+   * 여기는 `git diff HEAD` 한 벌만 보고, 빈 글이 오면 「볼 것이 없습니다」 라고 했다.
+   *
+   *   1) 첫 커밋 전 저장소 — HEAD 가 없어 git 이 오류로 죽는다. 빈 나무와 견준다.
+   *   2) git 이 답을 못 했다 — index 가 깨졌거나 diff 가 64MB 를 넘으면(ENOBUFS)
+   *      빈 글이 온다. 못 읽은 것은 **못 읽었다고** 돌려준다. 사람은 「없다」 를
+   *      보면 리뷰를 접고, 「못 읽었다」 를 보면 저장소를 손본다.
+   *   3) 대화가 새로 만든 파일 — git 이 아직 모르는 파일은 diff 에 아예 안 나온다.
+   *      아래에서 따로 싣는다.
+   *
+   * 셋 다 리뷰가 제일 봐야 할 자리다. 새 파일 하나에 eval(받은글) 을 넣어 두고
+   * 리뷰를 시켰는데 「볼 것이 없습니다」 를 받던 꼴이다.
+   */
+  let 기준 = 'HEAD';
+  if (!깃(뿌리, ['rev-parse', '--verify', '-q', 'HEAD'], {}).ok) {
+    // 빈 나무는 git 이 따로 안 적어 둬도 아는 물건이다. 해시는 저장소 방식(SHA-1·256)마다 달라 물어서 쓴다.
+    const 빈나무 = 깃(뿌리, ['hash-object', '-t', 'tree', '--stdin'], { 입력: '' });
+    if (빈나무.ok && 빈나무.out.trim()) 기준 = 빈나무.out.trim();
+  }
+  /*
+   * ── 살림을 **이름부터** 턴다 (2.0.0 8회차 판정) ─────────────────────────
+   *
+   * 여기는 `git diff 기준 -- ...경로` 한 벌이었다. `경로` 는 이번 대화가 손댄
+   * 파일인데, **아무것도 안 손댔으면 빈 배열**이다. 그러면 git 은 경로 제한 없이
+   * 저장소 전체를 뜬다 — 거기 `.deel/config.json` 이 추적 중이면 게이트웨이
+   * 열쇠가 그대로 diff 에 실린다. 리뷰는 그 글을 **바깥 모델로 보내는** 기능이다.
+   *
+   * 아래 새 파일 쪽은 이미 같은 막이를 걸며 그 위험을 주석으로 적어 뒀다
+   * (「.deel/config.json 이 안 무시된 저장소면 열쇠가 리뷰로 나간다」). 한쪽에만
+   * 붙은 고침이었다 — 새 파일은 막고 **이미 추적 중인 살림은 그냥 나갔다.**
+   *
+   * 그래서 이름을 먼저 받아 살림을 턴 다음, 남은 것으로만 몸통·통계를 받는다.
+   * 자는 새 파일 쪽과 같은 것(`살림경로인가`·`살림에닿나`)을 쓴다 — 두 벌을 두면
+   * 한쪽만 고쳐진다.
+   */
+  const 이름 = 깃(뿌리, ['diff', 기준, '--name-only', '-z', '--', ...경로], {});
+  const 모름 = 깃(뿌리, ['ls-files', '--others', '--exclude-standard', '-z', '--', ...경로], {});
+  const 볼파일 = !이름.ok ? [] : 이름.out.split(String.fromCharCode(0)).filter(Boolean)
+    .filter((f) => !살림경로인가(f) && !살림에닿나(join(뿌리, f)));
+  const 빈것 = { ok: true, out: '', err: '' };
+  const 몸통 = 볼파일.length ? 깃(뿌리, ['diff', 기준, '--', ...볼파일.map(글자그대로)], {}) : 빈것;
+  const 통계 = 볼파일.length ? 깃(뿌리, ['diff', 기준, '--stat', '--', ...볼파일.map(글자그대로)], {}) : 빈것;
+  const 탈 = [몸통, 이름, 모름].find((r) => !r.ok);
+  if (탈) {
+    const 까닭 = String(탈.err || 탈.out || 'git 이 실패했습니다').trim().split('\n')[0];
+    return { ok: false, 왜: `git 이 바뀐 것을 못 읽었습니다 — ${까닭}` };
+  }
+  // 이름 목록도 NUL 로 끊는다. 줄로 받아 trim 하면 ` a.js` 가 `a.js` 로 적히고,
+  // 리눅스에서는 탭·따옴표 든 이름이 C 따옴표로 싸여 온다 (6회차 커밋 C5).
+  const 파일들 = 볼파일;
 
-  if (!몸통.out.trim()) {
+  // 3) 새 파일. 살림은 여기서도 뺀다 — .deel/config.json 이 안 무시된 저장소면 열쇠가 리뷰로 나간다.
+  const 새것들 = 모름.out.split(String.fromCharCode(0)).filter(Boolean)
+    .filter((f) => !살림경로인가(f) && !살림에닿나(join(뿌리, f)));
+  const 새몸 = [];
+  const 새통계 = [];
+  let 실은길이 = 몸통.out.length;
+  for (const f of 새것들) {
+    let st;
+    try { st = statSync(join(뿌리, f)); } catch { continue; }
+    if (!st.isFile()) continue;
+    if (!파일들.includes(f)) 파일들.push(f);
+    const 머리 = `diff --git a/${f} b/${f}\nnew file mode 100644\n`;
+    // 다 싣지 않는다. 어차피 보낼것() 이 DIFF상한 에서 자르므로, 넘친 뒤로는 이름만 남긴다.
+    if (실은길이 >= DIFF상한 || st.size > 1024 * 1024) {
+      새몸.push(`${머리}(새 파일 ${st.size}바이트 — 길어서 내용은 안 실었습니다)\n`);
+      새통계.push(` ${f} | 새 파일 (내용 안 실음)`);
+      continue;
+    }
+    let 버퍼;
+    try { 버퍼 = readFileSync(join(뿌리, f)); } catch { continue; }
+    if (버퍼.includes(0)) {
+      새몸.push(`${머리}Binary files /dev/null and b/${f} differ\n`);
+      새통계.push(` ${f} | Bin (새 파일)`);
+      continue;
+    }
+    const 줄들 = 버퍼.toString('utf8').split('\n');
+    if (줄들.length && 줄들[줄들.length - 1] === '') 줄들.pop();
+    const 조각 = `${머리}--- /dev/null\n+++ b/${f}\n@@ -0,0 +1,${줄들.length} @@\n${줄들.map((l) => `+${l}`).join('\n')}\n`;
+    새몸.push(조각);
+    새통계.push(` ${f} | ${줄들.length} + (새 파일)`);
+    실은길이 += 조각.length;
+  }
+  const diff = 몸통.out + 새몸.join('');
+
+  if (!diff.trim()) {
     return {
       ok: false,
       왜: 안쪽.length
@@ -98,8 +182,8 @@ export function 볼것(session, ctx) {
   return {
     ok: true,
     어디: 안쪽.length ? '이번 대화가 바꾼 것' : '저장소의 바뀐 것 전부',
-    diff: 몸통.out,
-    통계: 통계.out.trimEnd(),
+    diff,
+    통계: [통계.out.trimEnd(), ...새통계].filter(Boolean).join('\n'),
     파일들,
   };
 }
@@ -185,8 +269,54 @@ export async function 리뷰받기(session, 것, { signal = null, onBackoff = nu
   }
 }
 
+/*
+ * ── `경로:줄` 찾기 ─────────────────────────────────────────────────────
+ *
+ * 보낼것() 은 리뷰어에게 「자리를 못 짚겠으면 그 지적은 쓰지 마라」 고 시킨다.
+ * 그러면 **받는 쪽이 못 알아보는 것**은 리뷰어가 제대로 짚어도 버려진 것과 같다.
+ *
+ * 여기는 `.확장자` 가 있어야만 자리로 봤다 (2.0.0 8회차 판정). 그래서 셋이 샜다.
+ *
+ *   Makefile:12 · Dockerfile:3   확장자가 없다
+ *   .env:7                       점으로 열고 뒤가 없다
+ *   app/[id]/page.tsx:42         대괄호가 글자표에 없어 `/page.tsx` 만 남았다
+ *
+ * 그래서 **모양이 아니라 자리로** 가른다 — 글자 토막에 경로 가름표나 점이 있으면
+ * 파일이고, 아무것도 없으면 대문자로 여는 이름(Makefile 꼴)만 파일로 본다.
+ * 반대쪽도 그대로 지킨다: 「3:14 는 원주율」 · 「오후 3:14」 는 자리가 아니다.
+ */
+const 자리표 = /([A-Za-z0-9_.가-힣@+~\u00c0-\u024f\[\]()-]+(?:[/\\][A-Za-z0-9_.가-힣@+~\u00c0-\u024f\[\]()-]+)*):(\d+)/g;
+
+/**
+ * 이 토막이 파일 이름처럼 생겼나. 맨 숫자와 **점도 경로도 없는** 이름을 걸러 낸다.
+ *
+ * 여기서 가를 수 있는 것은 거기까지다. `localhost:8080` 은 점이 없어 걸리지만
+ * `example.com:8080` 은 점이 있어 `a.js` 와 모양이 같다 — 그건 아래 자리찾기 가
+ * 주소를 통째로 지워서 가른다. 머리말에 「호스트 이름을 걸러 낸다」 고 적어 두고
+ * 점 없는 것만 걸렀던 자리다 (막판 훑기).
+ */
+function 파일같나(파일) {
+  const 끝 = 파일.split(/[/\\]/).pop();
+  if (!/[A-Za-z가-힣_]/.test(끝)) return false;                 // 3:14 — 맨 숫자는 자리가 아니다
+  if (파일.includes('/') || 파일.includes('\\')) return true;   // 경로가 붙었으면 파일이다
+  if (끝.includes('.')) return true;                           // a.js · .env
+  return /^[A-Z]/.test(끝);                                    // Makefile · Dockerfile · Jenkinsfile
+}
+
+/*
+ * 주소 속 `host:port` 는 자리가 아니다.
+ *
+ * `https://api.example.com:8080` 의 호스트는 점이 있어 위 파일같나 를 그냥 지난다.
+ * 그러면 리뷰가 적은 주소 하나가 「example.com 파일의 8080번째 줄」 이라는 자리로
+ * 굳어, 사람은 없는 파일을 찾아가고 그 지적이 정말 어디를 가리키는지는 못 본다.
+ * 주소 토막을 통째로 지운 뒤에 찾는다 — askcheck.js 의 물음글 과 같은 자다.
+ */
+const 주소토막 = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
+
 /** `경로:줄` 을 찾는다. 못 찾으면 null — 지어내지 않는다. */
 export function 자리찾기(줄) {
-  const m = /([\w./\\가-힣-]+\.[A-Za-z0-9]{1,8}):(\d+)/.exec(String(줄 ?? ''));
-  return m ? { 파일: m[1], 줄: Number(m[2]) } : null;
+  for (const m of String(줄 ?? '').replace(주소토막, ' ').matchAll(자리표)) {
+    if (파일같나(m[1])) return { 파일: m[1], 줄: Number(m[2]) };
+  }
+  return null;
 }

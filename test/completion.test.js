@@ -11,7 +11,7 @@
 // 안 보이는 탈이 있다. 실제로 파워셸 쪽에서 두 개가 그렇게 잡혔다 —
 // 문법이 틀린 줄 하나와, 빈칸까지 친 자리에서 앞 낱말을 하나 더 앞으로 본 것.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { 명령들, 숨은명령, 깃발들, 셸들, 완성스크립트, runCompletion } from '../src/completion.js';
@@ -163,6 +163,36 @@ if (있나('bash', ['-c', 'echo ok'])) {
   check('★ 깃발을 치는 중이면 깃발만 나온다', 눌러보기(['deel', '--js'], 1) === '--json', 눌러보기(['deel', '--js'], 1));
   check('명령을 이미 골랐으면 명령을 또 안 낸다',
     !눌러보기(['deel', 'run', ''], 2).split(' ').includes('sbom'), 눌러보기(['deel', 'run', ''], 2));
+
+  /*
+   * ── ★★ (사냥5 H5-11) 빈칸이 든 이름을 조각내 냈다 ──────────────────────
+   *
+   * `COMPREPLY=( $(compgen -f -- "$cur") )` 는 compgen 이 낸 줄을 **빈칸에서도**
+   * 자른다. `my file.txt` 는 `my` 와 `file.txt` 두 후보가 되고, 탭을 누르면 없는
+   * 파일 이름이 들어간다. 위 검사는 `${COMPREPLY[*]}` 로 한 줄에 이어 붙여 봐서
+   * 자른 것과 안 자른 것이 똑같이 보였다 — 여기서는 후보를 **하나씩** 꺼내 본다.
+   */
+  {
+    const 놀이터 = mkdtempSync(join(tmpdir(), 'deel-comp-sp-'));
+    writeFileSync(join(놀이터, 'my file.txt'), '', 'utf8');
+    mkdirSync(join(놀이터, 'my dir'));
+    const 낱낱이 = (낱말들, 자리) => {
+      const 셸 = `source '${파일}'\n`
+        + `COMP_WORDS=(${낱말들.map((w) => `'${w}'`).join(' ')})\n`
+        + `COMP_CWORD=${자리}\n`
+        + '_deel\n'
+        + 'for x in "${COMPREPLY[@]}"; do printf "[%s]\\n" "$x"; done\n';
+      const r = spawnSync('bash', ['-c', 셸], { cwd: 놀이터, encoding: 'utf8', timeout: 15000, windowsHide: true });
+      return (r.stdout ?? '').split(/\r?\n/).filter(Boolean).sort();
+    };
+    const 파일후보 = 낱낱이(['deel', 'run', 'my'], 2);
+    check('★★ (사냥5 H5-11) bash: 빈칸이 든 파일·폴더 이름을 통째로 낸다',
+      JSON.stringify(파일후보) === JSON.stringify(['[my dir]', '[my file.txt]']), 파일후보.join(' '));
+    const 폴더후보 = 낱낱이(['deel', '--root', 'my'], 2);
+    check('★★ (사냥5 H5-11) bash: --root 다음 폴더 이름도 통째로 낸다',
+      JSON.stringify(폴더후보) === JSON.stringify(['[my dir]']), 폴더후보.join(' '));
+    rmSync(놀이터, { recursive: true, force: true });
+  }
 } else {
   건너뜀('진짜 bash 에 넣고 눌러 보기', '이 PC 에 bash 가 없습니다');
 }
@@ -194,6 +224,35 @@ if (process.platform === 'win32' && 있나('powershell', ['-NoProfile', '-Comman
   check('★ 파워셸: --think 다음에는 단계만', 단계.글 === LEVELS.join(' '), 단계.글);
   const 깃발 = 눌러보기('deel --js');
   check('★ 파워셸: 깃발도 좁혀진다', 깃발.글 === '--json', 깃발.글);
+
+  /*
+   * ── ★★ (사냥5 H5-12) 경로를 받는 자리에 명령 이름을 냈다 ────────────────
+   *
+   * 파워셸 판에는 「그 밖이면 명령」 갈래 하나뿐이었다. 그래서 `deel --root <탭>` 에
+   * 폴더 대신 명령 스물두 개가 떴고, `deel sessions <탭>` 처럼 명령을 이미 고른
+   * 뒤에도 또 명령을 냈다. bash 판은 그 두 자리에서 셸에게 파일 완성을 맡긴다.
+   * 파워셸은 완성기가 아무것도 안 내면 제 파일 완성으로 돌아간다 — 그걸 쓴다.
+   */
+  {
+    const 놀이터 = mkdtempSync(join(tmpdir(), 'deel-comp-ps-sp-'));
+    writeFileSync(join(놀이터, 'my file.txt'), '', 'utf8');
+    const 줄들 = ['deel --root ', 'deel --output-schema ', 'deel sessions '];
+    const 스크립트 = `$ErrorActionPreference='Stop'\n. '${파일.replace(/'/g, "''")}'\n`
+      + `Set-Location -LiteralPath '${놀이터.replace(/'/g, "''")}'\n`
+      + 줄들.map((줄) => `$r = TabExpansion2 -inputScript ${JSON.stringify(줄)} -cursorColumn ${줄.length}\n`
+        + "'=' + (($r.CompletionMatches | ForEach-Object { $_.CompletionText }) -join '|')\n").join('');
+    const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 스크립트], {
+      encoding: 'utf8', timeout: 60000, windowsHide: true,
+    });
+    const 나온 = (r.stdout ?? '').split(/\r?\n/).filter((l) => l.startsWith('='));
+    줄들.forEach((줄, i) => {
+      const 글 = 나온[i] ?? '(안 나옴)';
+      check(`★★ (사냥5 H5-12) 파워셸: "${줄.trim()}" 다음에 명령 이름을 안 낸다`,
+        나온.length === 줄들.length && !/(^|[=|])(sbom|setup|sessions)(\||$)/.test(글), `${글.slice(0, 80)} ${(r.stderr ?? '').split('\n')[0]}`);
+    });
+    check('★ (사냥5 H5-12) 파워셸: --root 다음에는 파일 자리를 완성한다', /my file\.txt/.test(나온[0] ?? ''), 나온[0] ?? '(안 나옴)');
+    rmSync(놀이터, { recursive: true, force: true });
+  }
 } else {
   건너뜀('진짜 파워셸에 넣고 눌러 보기', '윈도우가 아니거나 powershell 이 없습니다');
 }

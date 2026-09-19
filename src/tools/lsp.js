@@ -29,18 +29,35 @@ import { 갈래, 프로젝트갈래 } from '../lsp/servers.js';
 import { 찾을개수 } from '../agent/budget.js';
 import { 말, 세말 } from '../i18n/index.js';
 
-/** 한 자리를 사람이 읽을 한 줄로. 그 줄의 글까지 붙여야 열어 보지 않고도 안다. */
-function 한줄(scope, uri, 범위) {
+/**
+ * 한 자리를 사람이 읽을 한 줄로. 그 줄의 글까지 붙여야 열어 보지 않고도 안다.
+ *
+ * ── 파일은 파일마다 **한 번** (사냥4 W3) ─────────────────────────────────
+ *
+ * 여기가 **자리 하나마다** 그 파일을 통째로 다시 읽었다. 4만 줄짜리 파일에 참조가
+ * 5000곳이면 5000번을 읽는다. 게다가 `trim()` 으로 뗀 줄은 V8 에서 원래 글의 **조각**
+ * 이라, 그 한 줄이 파일 전체를 붙들고 놓지 않았다 — 5000줄이 5000벌을 붙들어 힙이 넘쳤다.
+ *
+ * 그래서 한 번 부를 동안 같은 파일은 줄표 에서 꺼내 쓰고, 뗀 글은 **새 글로 옮겨 적는다**
+ * (Buffer 를 거치면 조각이 아니라 제 몸을 가진 글이 된다). 부르는 쪽(Refs)은 창에 안 실을
+ * 자리는 아예 여기로 안 보낸다.
+ *
+ * @param 줄표 한 번 부를 동안 같이 쓰는 표 (파일 → 줄들 | null). 안 주면 그 자리에서 읽는다.
+ */
+function 한줄(scope, uri, 범위, 줄표 = new Map()) {
   let abs;
   try { abs = fileURLToPath(uri); } catch { abs = String(uri); }
   const 줄번호 = (범위?.start?.line ?? 0) + 1;
-  let 글 = '';
-  try {
-    const 줄들 = readFileSync(abs, 'utf8').split(/\r?\n/);
-    글 = (줄들[줄번호 - 1] ?? '').trim();
-  } catch { /* 못 읽으면 자리만 준다 */ }
+  // 윈도우는 서버가 드라이브 글자를 소문자로 적어 온다(c%3A) — 같은 파일을 두 번 읽지 않게.
+  const 열쇠 = process.platform === 'win32' ? abs.toLowerCase() : abs;
+  if (!줄표.has(열쇠)) {
+    try { 줄표.set(열쇠, readFileSync(abs, 'utf8').split(/\r?\n/)); } catch { 줄표.set(열쇠, null); /* 못 읽으면 자리만 준다 */ }
+  }
+  let 글 = (줄표.get(열쇠)?.[줄번호 - 1] ?? '').trim();
+  if (글.length > 160) 글 = 글.slice(0, 160) + '…';
+  글 = Buffer.from(글, 'utf8').toString('utf8');
   const 보일 = scope?.show ? (() => { try { return scope.show(abs); } catch { return abs; } })() : abs;
-  return { 파일: 보일, 줄: 줄번호, 글: 글.length > 160 ? 글.slice(0, 160) + '…' : 글, abs };
+  return { 파일: 보일, 줄: 줄번호, 글, abs };
 }
 
 /** LSP 의 답은 하나일 수도, 목록일 수도, LocationLink 일 수도 있다. 다 같은 모양으로 편다. */
@@ -121,9 +138,16 @@ async function 자리잡기(서버, scope, { 이름, 파일, 줄 }) {
   }
   if (답.오류) return { 오류: 답.오류 };
   const 것들 = (Array.isArray(답.값) ? 답.값 : []).filter((s) => s?.name);
-  // 이름이 똑같은 것만. 서버는 대개 부분 일치까지 준다.
+  /*
+   * 이름이 똑같은 것만. 서버는 대개 부분 일치까지 준다.
+   *
+   * 똑같은 것이 없을 때 **아무 부분 일치나** 받았다 — `셈` 을 물으면 `셈하기` 를 짚고 답은
+   * 「셈 — 정의 1곳」 이었다 (2.0.0 6회차 LS1). 남의 정의를 내 것처럼 준 것이다. 되받는 것은
+   * 이름이 **낱말로 들어 있는** 것뿐이다 — 서버에 따라 `Cls.foo` · `foo(int)` 처럼 이름을 꾸며
+   * 주기 때문이다. 되받았으면 무엇을 짚었는지 같이 돌려준다 (닮은이름).
+   */
   const 딱맞는 = 것들.filter((s) => s.name === 이름);
-  const 쓸것 = 딱맞는.length ? 딱맞는 : 것들;
+  const 쓸것 = 딱맞는.length ? 딱맞는 : 것들.filter((s) => 칸찾기(String(s.name), 이름) >= 0);
   if (!쓸것.length) {
     return {
       오류: `${이름} 을(를) 못 찾았습니다`
@@ -163,7 +187,25 @@ async function 자리잡기(서버, scope, { 이름, 파일, 줄 }) {
     서버.보여주기(abs);
   } catch { /* 그대로 간다 */ }
 
-  return { 자리: { uri: 첫.uri, position }, 후보 };
+  return { 자리: { uri: 첫.uri, position }, 후보, 닮은이름: 딱맞는.length ? null : 첫.이름 };
+}
+
+/**
+ * 모델이 준 줄 번호. **따옴표가 붙어 와도 숫자로 본다.**
+ *
+ * 스키마에 number 라고 적어 두어도 `"line": "42"` 로 보내는 모델이 있다.
+ * `Number.isFinite('42')` 는 false 라 그 줄이 통째로 버려졌고, 자리잡기 는
+ * 줄을 안 준 것으로 보고 **파일 처음부터** 이름을 찾았다 — 문자열 42 는 4번
+ * 줄을, 숫자 42 는 41번 줄을 짚었다. 엉뚱한 줄을 짚어 놓고 찾았다고 답하므로
+ * 잘못됐다는 신호가 어디에도 안 남는다.
+ *
+ * 빈 값·빈 글자는 「안 준 것」 이다. Number('') 가 0 이라 그냥 넘기면 0번 줄을
+ * 짚으려 든다.
+ */
+function 줄값(값) {
+  if (값 === null || 값 === undefined) return null;
+  const n = typeof 값 === 'string' ? (값.trim() === '' ? NaN : Number(값)) : 값;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
 /** 두 도구가 같은 앞머리를 쓴다 — 서버 얻고 자리 잡는 데까지. */
@@ -187,19 +229,44 @@ async function 채비(args, ctx) {
   if (!서버) return { 오류: '언어 서버가 이 자리에 없습니다. Grep · Outline 을 쓰세요.' };
 
   const 잡음 = await 자리잡기(서버, ctx.scope, {
-    이름, 파일, 줄: Number.isFinite(args.line) ? Number(args.line) : null,
+    이름, 파일, 줄: 줄값(args.line),
   });
   if (잡음.오류) return { 오류: 잡음.오류 };
-  return { 이름, 서버, 자리: 잡음.자리, 후보: 잡음.후보 ?? [] };
+  return { 이름, 서버, 자리: 잡음.자리, 후보: 잡음.후보 ?? [], 닮은이름: 잡음.닮은이름 ?? null };
 }
 
-/** 여러 곳에 같은 이름이 있으면 그대로 알려 준다. 하나를 골라 주고 아닌 척하지 않는다. */
+/**
+ * 여러 곳에 같은 이름이 있으면 그대로 알려 준다. 하나를 골라 주고 아닌 척하지 않는다.
+ *
+ * 가르는 열쇠는 **파일과 컨테이너**다. 파일만 봤더니 한 파일 안의 서로 다른 둘(`server.go` 의
+ * `Server.Run` · `Worker.Run`)을 하나로 쳐서 말이 없었다 (2.0.0 6회차 LS2). 보기가 두 **파일**
+ * (`A.go` · `B.go`)로 적혀 있었는데, 그건 파일만 봐도 갈리는 판이라 설명하는 고장과 어긋났다.
+ * 그렇다고 줄마다 세면, 겹쳐쓰기(overload)처럼 같은
+ * 것이 여러 줄로 오는 흔한 자리에서 거짓 경고가 난다 — 컨테이너까지 같으면 같은 것으로 친다.
+ */
 function 여럿이면(후보, scope) {
   if (!Array.isArray(후보) || 후보.length < 2) return null;
-  const 파일들 = new Set(후보.map((c) => { try { return scope.show(fileURLToPath(c.uri)); } catch { return c.uri; } }));
-  if (파일들.size < 2) return null;
-  return `같은 이름이 ${파일들.size}곳에 있습니다: ${[...파일들].slice(0, 5).join(' · ')}`
-    + `${파일들.size > 5 ? ' …' : ''}. 다른 것을 뜻했다면 file_path 로 짚어 주세요.`;
+  const 곳들 = new Map();   // [파일, 컨테이너] → 보일 이름
+  const 파일들 = new Set();
+  for (const c of 후보) {
+    let 파일;
+    try { 파일 = scope.show(fileURLToPath(c.uri)); } catch { 파일 = c.uri; }
+    파일들.add(파일);
+    const 컨테이너 = String(c.컨테이너 ?? '');
+    곳들.set(JSON.stringify([파일, 컨테이너]), 컨테이너 ? `${파일} (${컨테이너})` : 파일);
+  }
+  if (곳들.size < 2) return null;
+  const 보일것 = [...곳들.values()];
+  // 한 파일 안에서 갈리면 file_path 로는 못 좁힌다 — 줄까지 짚어야 한다.
+  const 짚는법 = 파일들.size < 2 ? 'file_path 와 line 으로' : 'file_path 로';
+  return `같은 이름이 ${보일것.length}곳에 있습니다: ${보일것.slice(0, 5).join(' · ')}`
+    + `${보일것.length > 5 ? ' …' : ''}. 다른 것을 뜻했다면 ${짚는법} 짚어 주세요.`;
+}
+
+/** 이름이 똑같은 것이 없어 낱말로 든 다른 이름(`Cls.foo` 같은)을 짚었으면 그 이름을 말한다 (자리잡기 의 닮은이름, LS1). */
+function 닮은말(이름, 닮은이름) {
+  if (!닮은이름 || 닮은이름 === 이름) return null;
+  return `「${이름}」 — 이름이 똑같은 것은 없어 「${닮은이름}」 자리를 짚었습니다. 다른 것을 뜻했다면 Grep 으로 보세요.`;
 }
 
 export const DEF_TOOL = {
@@ -233,23 +300,50 @@ export const DEF_TOOL = {
     });
     if (답.오류) return { error: `언어 서버: ${답.오류}` };
 
-    let 곳들 = 자리들펴기(답.값).map((x) => 한줄(ctx.scope, x.uri, x.range));
+    const 줄표 = new Map();   // 같은 파일은 한 번만 읽는다 (한줄 머리말)
+    let 곳들 = 자리들펴기(답.값).map((x) => 한줄(ctx.scope, x.uri, x.range, 줄표));
     // 서버가 정의를 못 주면(선언만 있는 자리 등) 심볼 검색으로 잡은 자리를 준다.
     // 빈손으로 돌려보내는 것보다 낫고, 어디서 온 값인지 같이 말해 준다.
     let 어디서 = 'definition';
     if (!곳들.length && 후보.length) {
-      곳들 = 후보.map((c) => 한줄(ctx.scope, c.uri, c.range));
+      곳들 = 후보.map((c) => 한줄(ctx.scope, c.uri, c.range, 줄표));
       어디서 = 'workspace/symbol';
     }
     if (!곳들.length) return { summary: `${이름}: ${말('lsp.noDef')}`, found: 0 };
 
+    /*
+     * ── 「골라 준 것이 아니다」 는 말은 **모델에게** 가야 한다 ────────────
+     *
+     * 이 말을 summary 에만 붙여 놨었다. 그런데 모델이 받는 글은 content 다 —
+     * loop.js 의 실을글() 은 content 가 비지 않으면 그것만 싣고, 비었을 때만
+     * summary 로 내려간다. 즉 **줄 자리가 있을 때는 이 말이 절대 안 갔다.**
+     *
+     * 사람 화면에는 「같은 이름이 2곳에 있습니다」 가 멀쩡히 찍히니 아무도
+     * 눈치를 못 챈다. 정작 모델은 자리 하나만 받고 그게 유일한 정의인 줄
+     * 알고, 남의 파일에 있는 같은 이름을 고쳐 놓고 답을 맺는다. 이 도구가
+     * 하나를 골라 주고 아닌 척하지 않겠다고 한 약속이 그 자리에서 깨진다.
+     *
+     * 두 곳에 다 적는다. 사람이 본 말과 모델이 받은 말이 같아야 한다.
+     */
     const 여럿 = 여럿이면(후보, ctx.scope);
+    /*
+     * 이름이 똑같은 것이 없어 꾸민 이름을 짚었거나(LS1), 정의를 못 받아 심볼 검색 자리를
+     * 줬으면(LS3) 그렇다고 **모델이 받는 글에도** 적는다 — 바로 위와 같은 까닭이다.
+     * 출처를 `source` 칸에만 두었더니 사람에게도 모델에게도 안 갔다 (2.0.0 6회차).
+     */
+    const 덧말 = [
+      닮은말(이름, 준비.닮은이름),
+      어디서 === 'workspace/symbol'
+        ? '언어 서버가 정의를 못 줘서 심볼 검색으로 찾은 자리입니다 — 정의가 아니라 선언일 수 있습니다.' : null,
+      여럿,
+    ].filter(Boolean);
+    const 글 = 곳들.map((l) => `${l.파일}:${l.줄}  ${l.글}`).join('\n');
     return {
-      summary: `${이름} — ${말('lsp.defs', { n: 세말('places', 곳들.length) })}${여럿 ? `\n${여럿}` : ''}`,
+      summary: `${이름} — ${말('lsp.defs', { n: 세말('places', 곳들.length) })}${덧말.length ? `\n${덧말.join('\n')}` : ''}`,
       found: 곳들.length,
       source: 어디서,
       locations: 곳들,
-      content: 곳들.map((l) => `${l.파일}:${l.줄}  ${l.글}`).join('\n'),
+      content: 덧말.length ? `${글}\n\n${덧말.join('\n')}` : 글,
     };
   },
 };
@@ -286,12 +380,22 @@ export const REFS_TOOL = {
     });
     if (답.오류) return { error: `언어 서버: ${답.오류}` };
 
-    const 곳들 = 자리들펴기(답.값).map((x) => 한줄(ctx.scope, x.uri, x.range));
+    // 여기서는 자리만 편다. 줄 글은 창에 실을 것만 아래에서 읽는다 (한줄 머리말, 사냥4 W3).
+    const 곳들 = 자리들펴기(답.값);
+    const 여럿 = 여럿이면(후보, ctx.scope);
+    const 닮은 = 닮은말(이름, 준비.닮은이름);
     if (!곳들.length) {
+      /*
+       * 「안 쓴다」 는 **짚은 하나**에 대한 답이다. 같은 이름이 다른 곳에도 있으면 그 말을 같이
+       * 해야 한다 — 빼면 모델은 지워도 되는 줄 알고 멀쩡히 쓰이는 쪽을 지운다 (2.0.0 6회차 LS5).
+       */
       return {
-        summary: `${이름}: ${말('lsp.noRefs')}`
-          + ' 정말 안 쓰는 것일 수도 있고, 언어 서버가 아직 색인 중일 수도 있습니다 —'
-          + ' 지우기 전에 Grep 으로 한 번 더 보세요.',
+        summary: [
+          `${이름}: ${말('lsp.noRefs')}`
+            + ' 정말 안 쓰는 것일 수도 있고, 언어 서버가 아직 색인 중일 수도 있습니다 —'
+            + ' 지우기 전에 Grep 으로 한 번 더 보세요.',
+          닮은, 여럿,
+        ].filter(Boolean).join('\n'),
         found: 0,
       };
     }
@@ -299,7 +403,9 @@ export const REFS_TOOL = {
     // 창에 맞춰 자른다. 자른 것은 자랐다고 말한다 — 조용히 자르면 모델은
     // 그게 전부인 줄 알고 나머지 자리를 안 고친다.
     const 한도 = 찾을개수(ctx.모델컨텍스트 ?? null);
-    const 보일것 = 곳들.slice(0, 한도);
+    // 자르고 **나서** 읽는다. 창에 안 실을 70곳의 파일까지 열 까닭이 없다.
+    const 줄표 = new Map();
+    const 보일것 = 곳들.slice(0, 한도).map((x) => 한줄(ctx.scope, x.uri, x.range, 줄표));
     const 남은 = 곳들.length - 보일것.length;
 
     // 파일별로 묶어야 읽힌다. 같은 파일 열 줄이 흩어져 있으면 몇 파일을
@@ -313,16 +419,42 @@ export const REFS_TOOL = {
       .map(([f, 줄들]) => `${f} (${줄들.length})\n` + 줄들.map((l) => `  ${l.줄}: ${l.글}`).join('\n'))
       .join('\n');
 
-    const 여럿 = 여럿이면(후보, ctx.scope);
+    /*
+     * ── 「70곳은 안 실었습니다」 가 모델에게는 안 갔다 ────────────────────
+     *
+     * 바로 위에서 "자른 것은 자랐다고 말한다" 고 해 놓고, 그 말을 summary
+     * 에만 붙였다. 모델이 받는 글은 content 이고(loop.js 의 실을글), content
+     * 가 비지 않으면 summary 는 아예 안 실린다. 그러니 **자를 것이 있을 때는
+     * 반드시** 이 말이 빠졌다 — 잘랐다는 것을 알려야 할 바로 그때만.
+     *
+     * 8k 모델이면 한도가 50이다(budget.js 의 찾을개수는 작은 모델에서 50에서
+     * 바닥을 친다). 참조 120곳 중 50곳을 받은 모델은 그 50곳을 고치고
+     * 「모든 참조를 고쳤습니다」 로 답을 맺는다. 남은 70곳은 돌려 본 뒤에야
+     * 드러나고, 그때는 이미 다른 것도 같이 고쳐 놓은 뒤다.
+     *
+     * 사람 화면(summary)에는 그대로 두고, 글 끝에도 같이 적는다. 같은 말을
+     * 두 번 적는 것이 아니라, 여태 **한쪽에만** 적혀 있던 것을 마저 적는 것이다.
+     */
+    const 잘림말 = 남은 ? `(${남은}곳은 자리가 모자라 안 실었습니다)` : '';
+    /*
+     * 파일 수는 **자르기 전 전체**로 센다. 보인 50곳(묶음)으로 셌더니 두 파일에 걸친 120곳이
+     * 「120곳 · 1개 파일」 이 됐다 (2.0.0 6회차 LS4) — 몇 파일을 고쳐야 하는지 먼저 말하는
+     * 줄이 틀린 수를 준다. 줄 글은 안 읽고 주소만 본다.
+     */
+    const 파일수 = new Set(곳들.map((x) => {
+      try { return ctx.scope.show(fileURLToPath(x.uri)); } catch { return x.uri; }
+    })).size;
+    const 덧말 = [잘림말, 닮은, 여럿].filter(Boolean);
     return {
-      summary: `${이름} — ${말('lsp.refs', { 자리: 세말('places', 곳들.length), 파일: 세말('files', 묶음.size) })}`
-        + (남은 ? ` (${남은}곳은 자리가 모자라 안 실었습니다)` : '')
+      summary: `${이름} — ${말('lsp.refs', { 자리: 세말('places', 곳들.length), 파일: 세말('files', 파일수) })}`
+        + (잘림말 ? ` ${잘림말}` : '')
+        + (닮은 ? `\n${닮은}` : '')
         + (여럿 ? `\n${여럿}` : ''),
       found: 곳들.length,
-      files: 묶음.size,
+      files: 파일수,
       truncated: 남은 > 0,
       locations: 보일것,
-      content: 글,
+      content: 덧말.length ? `${글}\n\n${덧말.join('\n')}` : 글,
     };
   },
 };

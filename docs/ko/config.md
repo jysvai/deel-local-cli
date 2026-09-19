@@ -236,6 +236,15 @@ deel trust --list   # 믿는 폴더와, 믿어도 못 정하는 칸
 | `permissions.allow` | 승인 규칙을 **넓히는** 칸입니다. 좁히는 `deny` 는 그대로 읽습니다 — 저장소가 제 안전장치를 조이는 것은 언제나 좋은 일입니다 |
 | `profiles[].apiKey` | 열쇠가 저장소 파일에 적혀 있으면 그건 설정이 아니라 유출입니다. 읽어 주면 유출을 굳혀 줍니다 |
 | `profiles[].열쇠받기` | 첫 요청 전에 명령이 돕니다 — 도구 승인보다 앞이라 안 걸립니다 |
+| `profiles[].baseUrl·kind·auth·제공자` (이 PC 프로필에 겹칠 때) | 주소만 바꿔도 **이 PC 열쇠가 저장소가 고른 곳으로** 갑니다. 저장소가 더한 프로필은 주소를 적어도 됩니다 — 그 프로필은 `DEEL_API_KEY` 를 안 받습니다 |
+| `profiles[].online` | 「바깥으로 나가도 된다」 허가는 사람이 고른 자리에서만 붙습니다 |
+| `active` (저장소가 더한 프로필을 가리킬 때) | 연결을 저장소 주소로 돌리는 칸입니다. 이 PC 프로필을 고르는 것은 읽습니다 |
+| `offline: false` | 이 PC 가 켠 봉인을 푸는 쪽입니다. `true` 는 그대로 읽습니다 |
+| `proxy` | 모든 요청이 열쇠 머리말째 그 프록시를 지납니다 |
+| `셸환경` · `shellEnv` | 명령 창에 비밀 환경변수를 도로 물려줍니다 |
+
+믿는 폴더에서 설정을 저장해도(`deel setup` · `/model` · `/ctx` …) **이 PC 파일에는 이 PC 것만** 적힙니다.
+저장소가 더한 프로필·금지·칸은 저장소에만 남습니다.
 
 걷어냈으면 무엇을 왜 걷어냈는지 화면에 적습니다.
 
@@ -300,7 +309,7 @@ deel 자신의 열쇠(`DEEL_API_KEY` · `DEEL_KEY_*`)는 언제나 빠지고 되
 |---|---|
 | 윈도우 | `%ProgramData%\deel\policy.json` |
 | 맥·리눅스 | `/etc/deel/policy.json` |
-| 시험용 | `DEEL_POLICY` 환경변수로 자리를 직접 지정 |
+| 시험용 | `DEEL_POLICY` 환경변수로 자리를 직접 지정 — 위 OS 자리에 정책 파일이 **없을 때만** 읽습니다. 있으면 그것이 이깁니다(사용자가 환경변수로 관리 정책을 갈아 끼울 수 없게) |
 
 ```json
 {
@@ -581,6 +590,14 @@ deel config explain profiles.사내.model
 열쇠 칸은 값을 안 보여 주고 「적혀 있음」 만 적습니다. `--json` 으로 받아도 마찬가지입니다 —
 화면만 가려 놓고 파이프로 날것을 흘리면 가린 것이 아닙니다.
 
+금지·허락(`permissions` · `permissions.deny` · `permissions.allow`)은 이기고 지는 칸이 아닙니다.
+이 PC · 프로젝트 · 관리 정책에 적힌 규칙이 **합쳐져 다 걸립니다.** 그래서 한 곳이 이겼다고
+그리지 않고 「2곳에 적힌 규칙이 합쳐져 다 걸립니다 — 이 PC 설정 + 관리 정책」 처럼 적습니다.
+
+관리 정책 층도 정책이 **실제로 얹는 것**만 그립니다. 끌 수 없는 `offline:false`, 빈 `baseUrl`,
+명령이 빈 `열쇠받기`, deel 이 정책에서 읽지 않는 칸(`shell` 같은)은 정책 파일에 적혀 있어도
+「관리 정책이 이긴다」 로 뜨지 않습니다 — 관리자에게 따지러 갈 근거가 거짓이면 안 됩니다.
+
 ### 환경변수
 
 | 변수 | 쓰임 |
@@ -606,11 +623,11 @@ deel config explain profiles.사내.model
 ```bash
 deel --root <폴더>       작업 범위. 기본은 지금 폴더
 deel --mode <모드>       auto(기본) / confirm / strict
-deel --work <모드>       auto(기본·종합) / code / plan / architect / debug / ask / orchestrator
+deel --work <모드>       auto(기본·종합) / code / plan / architect / debug / inspect / ask / orchestrator
 deel --level <수준>      쉬움 / 개발자
 deel --ctx <길이>        컨텍스트 길이 직접 지정 (655360 · 640k · 128k)
 deel --max-tokens <길이> 한 번에 받을 답 길이 상한 (32k) — /out 과 같은 값
-deel --think <강도>      off / low / medium(기본) / high / max
+deel --think <강도>      off / low / medium(기본) / high / xhigh / max
 deel --effort <배분>     even / save(기본) / deep
 deel --offline           이 컴퓨터 밖으로 아무것도 안 보냄
 deel --continue          가장 최근 대화 이어하기

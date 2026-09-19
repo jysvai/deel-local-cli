@@ -28,7 +28,7 @@
 import { basename, extname } from 'node:path';
 
 import { isDocPath, readDoc, summarize as docSummary } from './docs.js';
-import { isPdfPath, readPdf, summarize as pdfSummary } from './pdf.js';
+import { isPdfPath, readPdf, summarize as pdfSummary, 못읽은말 } from './pdf.js';
 import { isFigPath, readFig, summarize as figSummary } from './fig.js';
 import { readXlsx, toCsv } from './xlsx.js';
 import { readFileSync } from 'node:fs';
@@ -227,6 +227,16 @@ function pdf를마크다운(경로, maxChars) {
 
   const 담 = 담개(maxChars);
   담.담기(제목(경로));
+  /*
+   * 쪽이 통째로 빠진 것·쪽 차례를 못 믿는 것을 **마크다운 안에** 적는다.
+   *
+   * 여태 이 둘은 `summary` 한 줄에만 있었다. 그런데 doc2md 의 결과물은 파일로
+   * 남아 나중에 그것만 읽히는 물건이다 — 요약은 그때 이미 없다. /Count 가 12쪽
+   * 이라는데 8쪽만 건진 문서가 「8쪽짜리 온전한 문서」로 남아, 모델이 빠진 쪽을
+   * 근거로 「문서에 그런 조항은 없습니다」 라고 답하는 자리가 바로 여기다.
+   */
+  const 머리말 = 못읽은말({ ...r, 못읽은쪽: [] });
+  if (머리말) 담.담기(머리말.split('\n').map((줄) => `> ${줄.trim()}`).join('\n'));
   const 왜표 = new Map((r.못읽은쪽 ?? []).map((x) => [x.번호, x]));
   for (const d of r.덩이들) {
     const 번호 = Number((d.이름.match(/^(\d+)/) ?? [])[1]);

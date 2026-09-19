@@ -77,25 +77,36 @@ const 쪼개기 = ['Task'];
  * 두 번째 줄(나란히 부르기)은 값이 아니라 **시간**이다. 읽기 도구는 같이
  * 돌게 되어 있는데(loop.js 의 묶기), 한 개씩 부르면 그 수만큼 왕복이 는다.
  */
-const 읽는법 = [
+/*
+ * 아래 넷은 **검사가 잣대로 쓰라고** 내보낸다 (test/modes.test.js).
+ *
+ * 영문 모드 글(`sayEn` · `say짧게En`)은 배열이 아니라 긴 문자열이라 이 상수를
+ * 펴 넣을 수가 없다 — 그래서 같은 문장을 손으로 옮겨 적는다. 옮기면 떨어진다.
+ * 실제로 2.0.0 8회차에 다섯 자리에서 「Never whole files.」 가 빠져 있었고,
+ * 작은 창을 영어로 켠 사람만 그 규칙을 한 번도 못 받았다.
+ *
+ * 그래서 잣대를 여기 한 벌만 두고, 검사가 한국어 판과 영문 판이 **같은 규칙을**
+ * 싣고 있는지 짝을 맞춰 본다. 안 쓰는 export 로 보인다고 지우면 그 짝이 죽는다.
+ */
+export const 읽는법 = [
   '- 남의 코드는 Outline 으로 모양부터 본다. Grep 으로 그 말이 닿는 자리를 다 모은 뒤,',
   '  **짚은 자리 앞뒤만** Read 한다 (offset·limit). 통째로 읽지 마라 — 한 번에 다',
   '  부어 넣으면 뒤로 갈수록 앞엣것이 접혀 나가고, 잊은 채로 「없다」 고 답하게 된다.',
   '- 서로 상관없는 읽기는 **한 번에 같이 부른다.** 읽기 도구는 나란히 돈다.',
   '  한 개씩 부르면 그 수만큼 왕복이 늘고, 그게 그대로 사람이 기다리는 시간이다.',
 ];
-const 읽는법짧게 = [
+export const 읽는법짧게 = [
   '- 남의 코드는 Outline → Grep → **짚은 자리 앞뒤만** Read (offset·limit). 통째로 읽지 마라.',
   '- 상관없는 읽기는 한 번에 같이 부른다 — 나란히 돈다.',
 ];
-const 읽는법En = [
+export const 읽는법En = [
   '- For code you did not write, get the shape with Outline. Use Grep to gather every place it touches,',
   '  then Read **only around the lines you found** (offset/limit). Do not read whole files - pour it all',
   '  in at once and the earlier turns fold away, and you answer having forgotten them.',
   '- Fire unrelated reads **together in one message.** Read tools run side by side; one call at a time',
   '  adds that many round trips, and that is the waiting the person feels.',
 ];
-const 읽는법짧게En = [
+export const 읽는법짧게En = [
   '- Code you did not write: Outline -> Grep -> Read **only around what you found** (offset/limit). Never whole files.',
   '- Fire unrelated reads together in one message - they run side by side.',
 ];
@@ -115,7 +126,7 @@ export const MODES = {
     id: 'auto',
     hintEn: "picks the right mode for what you ask",
     sayEn: "You are in **Auto** mode. What comes next is not fixed.\n\n- Work out what kind of job this is first, then do it that way.\n  If it is an edit, read before editing. If it is a diagnosis, confirm before concluding.\n  If it is an explanation, back it with the files.\n- For a large job, break it into steps with TodoWrite and **finish everything you wrote down.**\n  Do not write the list and then ask. If there are several chunks, hand them off with Task —\n  a subtask runs in its own window, so yours does not fill up.\n- For code you did not write, get the shape with Outline. Use Grep to gather every place it\n  touches, then Read **only around the lines you found** (offset/limit). Do not read whole\n  files - pour it all in at once and the earlier turns fold away, and you answer having\n  forgotten them.\n- Fire unrelated reads **together in one message.** Read tools run side by side; one call at\n  a time adds that many round trips, and that is the waiting the person feels.\n- Making several files: one Write call (files array). Do not call it once per file.\n  Several places to edit: one Edit call the same way (edits array).\n- Commands that never end (dev servers, watch) need background: true on Bash. Called plainly\n  they die on timeout. After starting one, read its output with Jobs, and end it with Jobs when done.\n- Verify what can be verified — call Verify. Do not call something done that you did not check.\n- Do what the job needs. Do not start work the job did not ask for.",
-    say짧게En: "**Auto** mode. What comes next is not fixed.\n- Work out what kind of job this is, then do it that way.\n- Large job: break it up with TodoWrite and **finish it all.** Several chunks: hand off with Task.\n- Code you did not write: Outline -> Grep -> Read **only around what you found** (offset/limit).\n- Fire unrelated reads together in one message - they run side by side.\n- Several files: one Write (files array). Several edits: one Edit (edits array).\n- Commands that never end (dev server, watch): background: true on Bash. Read with Jobs, end with Jobs.\n- Verify before you finish. Do not call something done that you did not check.\n- Do what the job needs. Do not start work the job did not ask for.",
+    say짧게En: "**Auto** mode. What comes next is not fixed.\n- Work out what kind of job this is, then do it that way.\n- Large job: break it up with TodoWrite and **finish it all.** Several chunks: hand off with Task.\n- Code you did not write: Outline -> Grep -> Read **only around what you found** (offset/limit). Never whole files.\n- Fire unrelated reads together in one message - they run side by side.\n- Several files: one Write (files array). Several edits: one Edit (edits array).\n- Commands that never end (dev server, watch): background: true on Bash. Read with Jobs, end with Jobs.\n- Verify before you finish. Do not call something done that you did not check.\n- Do what the job needs. Do not start work the job did not ask for.",
     name: '종합',
     en: 'Auto',
     glyph: '◎',
@@ -124,6 +135,10 @@ export const MODES = {
     effort: 'save',
     think: null,
     // 작은 창용 짧은 판. 빠진 규칙은 없고 설득하는 문장만 없다 — 아래 말() 참고.
+    //
+    // 손으로 옮겨 적는 글이라 옮기며 한 마디씩 떨어진다 (2.0.0 8회차 판정). 다섯 자리에서
+    // 「통째로 읽지 마라 / Never whole files.」 가 빠져 있었다 — 작은 창을 영어로 켠 사람만
+    // 그 규칙을 한 번도 못 받았다. test/modes.test.js 가 한국어 짧은 판과 짝을 맞춰 본다.
     say짧게: [
       '**종합** 모드다. 무슨 일이 올지 정해져 있지 않다.',
       '- 무슨 일인지 먼저 가늠하고 그에 맞게 해라.',
@@ -158,7 +173,7 @@ export const MODES = {
     id: 'code',
     hintEn: "edits and builds",
     sayEn: "This is **implementation**. Follow this order.\n\n1. For code you did not write, look at the **shape first** with Outline - a folder through\n   Outline is a fraction of the size. Grep to gather every place the thing you are changing\n   touches, then Read **only around the lines you found** (offset/limit). Never whole files.\n   Fire unrelated reads **together in one message** - read tools run side by side.\n2. Always Read a file before editing it. The tool refuses an edit to a file you have not read.\n3. Follow the conventions of the surrounding code — naming, error handling, comment density.\n   Do not import a new convention. Do what this code already does.\n4. Make and change every file the job needs. Do not touch one file and stop.\n   For something new, lay out the folder structure first and create **several files in one Write**\n   (files array). Several places to change go in **one Edit** (edits array).\n   One call per item adds that many round trips, and minutes go with them.\n5. If the work splits into separate strands, hand a chunk off with Task.\n   A subtask runs in its own window and returns only a summary — your window does not fill up.\n6. **Call Verify before you finish.** A file existing and a file working are different things.\n   Fix what comes back and call it again. Say \"I could not verify this\" for anything you did not check.\n   For things you only learn by running (dev servers, watch), give Bash **background: true**.\n   Called plainly they never end and die on timeout. Read output with Jobs, and always end it\n   with Jobs when done — otherwise that server keeps holding the port.\n7. When done, say what you changed and why in a line or two. Do not paste the code back.",
-    say짧게En: "**Implementation.** Follow this order.\n1. Code you did not write: Outline -> Grep -> Read **only around what you found** (offset/limit).\n   Fire unrelated reads together in one message - they run side by side.\n2. Always Read a file before editing it.\n3. Follow the surrounding conventions. Do not import a new one.\n4. Several files: one Write (files array). Several edits: one Edit (edits array).\n5. Several strands: hand off with Task.\n6. **Verify before you finish.** Fix what comes back and call it again.\n   If it must be run, Bash with background: true — called plainly it dies on timeout. Read with Jobs, end with Jobs.\n7. Say what changed and why in a line or two. Do not paste code.",
+    say짧게En: "**Implementation.** Follow this order.\n1. Code you did not write: Outline -> Grep -> Read **only around what you found** (offset/limit). Never whole files.\n   Fire unrelated reads together in one message - they run side by side.\n2. Always Read a file before editing it.\n3. Follow the surrounding conventions. Do not import a new one.\n4. Several files: one Write (files array). Several edits: one Edit (edits array).\n5. Several strands: hand off with Task.\n6. **Verify before you finish.** Fix what comes back and call it again.\n   If it must be run, Bash with background: true — called plainly it dies on timeout. Read with Jobs, end with Jobs.\n7. Say what changed and why in a line or two. Do not paste code.",
     name: '코드',
     en: 'Code',
     glyph: '◆',
@@ -328,7 +343,7 @@ export const MODES = {
     ].join('\n'),
     say짧게En: [
       "**Inspection.** You change nothing.",
-      "1. Outline -> Grep every place it touches -> Read **only around what you found** (offset/limit).",
+      "1. Outline -> Grep every place it touches -> Read **only around what you found** (offset/limit). Never whole files.",
       "   Fire unrelated reads together - they run side by side.",
       "2. Per finding: what - where (path:line + function) - the order of events that triggers it - why - what it costs.",
       "3. **Only what the code shows.** No guesses. Say what you could not look at.",
@@ -344,7 +359,7 @@ export const MODES = {
     think: 'high',
     say짧게: [
       '**점검**이다. 아무것도 바꾸지 않는다.',
-      '1. Outline → 그 말이 닿는 자리를 Grep 으로 **다** 모으기 → 짚은 자리 앞뒤만 Read (offset·limit).',
+      '1. Outline → 그 말이 닿는 자리를 Grep 으로 **다** 모으기 → 짚은 자리 앞뒤만 Read (offset·limit). 통째로 읽지 마라.',
       '   상관없는 읽기는 한 번에 같이 부른다 — 나란히 돈다.',
       '2. 찾은 것마다: 무엇 · 어디(경로:줄 과 함수) · 일어나는 차례 · 왜 · 무엇을 잃나.',
       '3. **코드에 있는 것만.** 짐작은 적지 마라. 못 본 자리는 못 봤다고 적어라.',
@@ -422,7 +437,7 @@ export const MODES = {
     id: 'plan',
     hintEn: "plan first · run it after approval",
     sayEn: "This is **planning**. You have not been given the tools that change files.\nDo not try to edit code. Produce a plan and stop.\n\nConfirm first — a plan built without knowing the current state is a wish, not a plan.\n  Start with Outline for the shape, narrow with Glob/Grep, then Read **only around the lines\n  you found** (offset/limit). Fire unrelated reads together in one message.\n\nThen write it in this order.\n  1. Goal — what does \"done\" look like (as a sentence you can check)\n  2. Current state — the files involved and what they do now (point with path:line)\n  3. What changes — per file, what and why\n  4. Order — step by step. Each step small enough to check on its own\n  5. Risks — what could break, and how to get back if it does\n  6. How to check — what do you run to know it worked\n\nWrite the steps into TodoWrite as well. After approval you continue straight from them.\n  The number of steps is not fixed — match it to the size of the job. Do not force it to three.\n  A small job ends in two or three; a large one lists all ten or more.\nIf something is unknown, do not invent it — write \"this needs to be confirmed\".\n\nEnd with \"Shall I go ahead with this?\".\n  You cannot make the edits in this mode — you have no tools for it. Once approved,\n  **tell the person to type `/code`** — you have no way to switch modes yourself.",
-    say짧게En: "**Planning.** You have no tools that change files. Produce a plan and stop.\n- Confirm first — a plan built without the current state is a wish, not a plan.\n  Outline -> Glob/Grep -> Read **only around what you found** (offset/limit). Unrelated reads together.\n- Write it in this order: 1) goal (a sentence you can check) 2) current state (path:line)\n  3) what changes, per file, and why 4) order — each step small enough to check on its own\n  5) risks and how to get back 6) how to check it worked.\n- Put the steps in TodoWrite too. Match the number to the size of the job — do not force it to three.\n- If something is unknown, do not invent it — write \"this needs to be confirmed\".\n- End with \"Shall I go ahead with this?\". You have no tools to make the edits, so once approved,\n  **tell the person to type `/code`** — you cannot switch modes yourself.",
+    say짧게En: "**Planning.** You have no tools that change files. Produce a plan and stop.\n- Confirm first — a plan built without the current state is a wish, not a plan.\n  Outline -> Glob/Grep -> Read **only around what you found** (offset/limit). Never whole files. Unrelated reads together.\n- Write it in this order: 1) goal (a sentence you can check) 2) current state (path:line)\n  3) what changes, per file, and why 4) order — each step small enough to check on its own\n  5) risks and how to get back 6) how to check it worked.\n- Put the steps in TodoWrite too. Match the number to the size of the job — do not force it to three.\n- If something is unknown, do not invent it — write \"this needs to be confirmed\".\n- End with \"Shall I go ahead with this?\". You have no tools to make the edits, so once approved,\n  **tell the person to type `/code`** — you cannot switch modes yourself.",
     name: '계획',
     en: 'Plan',
     glyph: '☰',
@@ -433,7 +448,7 @@ export const MODES = {
     say짧게: [
       '**계획** 모드다. 파일을 바꾸는 도구는 없다. 계획을 내고 멈춘다.',
       '- 먼저 확인하라 — 지금 상태를 모르면 계획이 아니라 희망이다.',
-      '  Outline → Glob/Grep → **짚은 자리 앞뒤만** Read (offset·limit). 상관없는 읽기는 한 번에.',
+      '  Outline → Glob/Grep → **짚은 자리 앞뒤만** Read (offset·limit). 통째로 읽지 마라. 상관없는 읽기는 한 번에.',
       '- 이 차례로 적어라: 1) 목표(확인할 수 있는 문장) 2) 지금 상태(경로:줄) 3) 바꿀 것(파일별로',
       '  무엇을 왜) 4) 순서(각 단계는 따로 확인할 수 있는 크기로) 5) 위험과 되돌리는 길 6) 확인 방법.',
       '- 단계는 TodoWrite 로도 적어라. 수는 일의 크기에 맞춘다 — 세 개로 맞추지 마라.',

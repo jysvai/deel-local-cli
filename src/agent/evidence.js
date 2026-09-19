@@ -33,7 +33,35 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** 이 명령들은 '확인했다' 로 친다. 돌렸다고 다 증거가 되는 것은 아니다. */
-const 확인하는명령 = /(^|[\s|;&])(npm|pnpm|yarn|bun)\s+(test|run\s+(test|check|lint|build|verify|typecheck))|(^|[\s|;&])(pytest|jest|vitest|mocha|go\s+test|cargo\s+test|mvn\s+test|gradle\s+test|dotnet\s+test|tsc|eslint|ruff|mypy)\b/i;
+const 확인하는명령 = /^(npm|pnpm|yarn|bun)\s+(test|run\s+(test|check|lint|build|verify|typecheck))\b|^(pnpm|yarn|bun)\s+(check|lint|build|verify|typecheck)\b|^(pytest|jest|vitest|mocha|go\s+test|cargo\s+test|mvn\s+test|gradle\s+test|dotnet\s+test|tsc|eslint|ruff|mypy)\b/i;
+/*
+ * `run` 없이 쓰는 꼴도 잡는다 (2.0.0 8회차 판정).
+ *
+ * npm 만 스크립트에 `run` 이 있어야 하고 pnpm·yarn·bun 은 없어도 된다. 앞은 npm 규약
+ * 하나만 알고 있어서 `pnpm check` · `yarn lint` 가 「안 돌린 것」 으로 떨어졌다 — pnpm 을
+ * 쓰는 곳은 확인을 아무리 돌려도 보고서가 늘 「증명 안 됨」 이었다. 두 번째 갈래가 그
+ * 세 도구에 한해 맨 이름을 받는다. `pnpm install` 처럼 확인이 아닌 것은 여전히 안 잡힌다.
+ */
+/*
+ * 명령 이름은 **조각 맨 앞**에서만 본다 (6회차 근거6at EV2).
+ *
+ * 앞에 빈칸만 있으면 되던 때는 인자 자리도 잡았다 — `cat eslint.config.js` 는 파일을
+ * 읽었을 뿐인데 「확인한 것」 칸에 올랐다. 그래서 `&& || ; | &` 로 조각내고, 앞에 붙는
+ * 것(환경변수 · npx · pnpm exec · python -m · uv/poetry run · sh -c · timeout · 여는
+ * 괄호·따옴표)을 뗀 뒤 맨 앞만 본다. `cd app && npm test` · `npx jest` 는 그대로 잡힌다.
+ */
+const 앞에붙는것 = /^(?:[A-Za-z_]\w*=\S*\s+|(?:npx|bunx|env|time)\s+|timeout\s+\S+\s+|(?:pnpm|yarn)\s+(?:exec|dlx)\s+|python3?\s+-m\s+|(?:uv|poetry|pipenv)\s+run\s+|(?:ba)?sh\s+-c\s+|[("'`]+\s*)/i;
+function 확인하는명령인가(명령) {
+  return String(명령 ?? '').split(/&&|\|\||[;|&\n]/).some((조각) => {
+    let 앞 = 조각.trim();
+    for (let 번 = 0; 번 < 8; 번 += 1) {
+      const 뗀것 = 앞.replace(앞에붙는것, '');
+      if (뗀것 === 앞) break;
+      앞 = 뗀것;
+    }
+    return 확인하는명령.test(앞);
+  });
+}
 
 /** 우리 쪽 확인 도구. Bash 를 안 거치고 확인하는 길이다. */
 const 확인하는도구 = new Set(['Verify', 'Test']);
@@ -70,11 +98,13 @@ export function 증거모으기(session, { audit = null, 최근 = 400, 바꾼때
     if (도구 !== 'Bash' && !확인하는도구.has(도구)) continue;
     돌린것.push({
       도구,
-      무엇: String(r.target ?? ''),
+      // target 이 비면 도구 이름으로 적는다. Verify 는 인자 없이 부르는 것이 보통이라(required: [])
+      // 비워 두면 통과한 확인이 「증명 없음」 으로 버려졌다 (6회차 근거6at EV3).
+      무엇: String(r.target ?? '') || 도구,
       됐나: r.ok !== false,
       남긴말: r.ok === false ? `실패 — ${String(r.note ?? '').slice(0, 120)}` : String(r.note ?? '').slice(0, 120),
       때: r.at ?? null,
-      확인인가: 확인하는도구.has(도구) || 확인하는명령.test(String(r.target ?? '')),
+      확인인가: 확인하는도구.has(도구) || 확인하는명령인가(r.target),
     });
   }
 
@@ -84,10 +114,20 @@ export function 증거모으기(session, { audit = null, 최근 = 400, 바꾼때
   const 바꾼것 = [];
   const 증명안된것 = [];
   for (const [파일, d] of session?.changes ?? new Map()) {
-    // 고친 **뒤에** 돌린 확인만 본다.
+    /*
+     * 고친 **뒤에** 돌린 확인만 본다 — 그리고 그 「고친 때」 는 **파일마다** 다르다
+     * (2.0.0 8회차 판정).
+     *
+     * 여기는 `언제고쳤나` 하나만 봤다. 그 값은 부르는 쪽이 넘겨 줘야 했는데
+     * 세 자리(commit·work·export) 중 아무도 안 넘겼다 — 늘 null 이라 순서를 한 번도
+     * 안 따졌고, 고치기 **전**에 돌린 검사가 그대로 증거가 됐다. 그리고 기준이
+     * 하나뿐이라, 파일 A 를 고치고 검사한 뒤 파일 B 를 고쳐도 B 에까지 그 초록이
+     * 복제됐다. 이제 세션이 파일마다 `at` 을 남긴다(session.js 의 noteChange).
+     */
+    const 이파일고친때 = 언제고쳤나 ?? (Number.isFinite(d?.at) ? d.at : null);
     const 쓸것 = 확인시도.filter((x) => {
-      if (언제고쳤나 == null || !x.때) return true;   // 시각을 모르면 순서를 안 따진다
-      return new Date(x.때).getTime() >= 언제고쳤나;
+      if (이파일고친때 == null || !x.때) return true;   // 시각을 모르면 순서를 안 따진다
+      return new Date(x.때).getTime() >= 이파일고친때;
     });
     /*
      * **마지막** 확인이 증거다. 성공한 것 중 마지막이 아니다.
@@ -103,7 +143,7 @@ export function 증거모으기(session, { audit = null, 최근 = 400, 바꾼때
     if (!증명) {
       증명안된것.push({
         파일,
-        왜: 왜못믿나(돌린것, 마지막, 언제고쳤나),
+        왜: 왜못믿나(돌린것, 마지막, 이파일고친때),
       });
     }
   }
@@ -162,6 +202,22 @@ export function 증거글(증거, { 제목 = '작업 증거' } = {}) {
   }
 
   // 이 절이 이 글의 요점이다. 비어 있으면 비어 있다고 분명히 적는다.
+  /*
+   * 기록이 샜으면 **글에도** 적는다 (2.0.0 8회차 판정).
+   *
+   * 위에서 「짧은 채로 내보내면 안 된다」 고 적어 두고 `기록못씀` 을 모으기만 했다.
+   * 화면(work.js)은 말해 줬지만 파일로 남는 것은 이 글이다 — 나중에 이 글만 보는 사람은
+   * 위 표가 **전부**인 줄 안다. 몇 줄이 빠졌는지 모르면 표의 「없음」 도 못 믿는다.
+   */
+  const 샘 = 증거?.기록못씀;
+  const 샌수 = Number(샘?.수 ?? 샘?.count ?? 0);
+  if (샘 && (샌수 > 0 || 샘.까닭 || 샘.why)) {
+    const 까닭 = 샘.까닭 ?? 샘.why ?? null;
+    줄.push(`## 이 보고서는 온전하지 않습니다`, ``);
+    줄.push(`- 감사기록을 **${샌수 || `몇`}줄** 못 적었습니다${까닭 ? ` — ${까닭}` : ``}.`);
+    줄.push(`- 그만큼 위의 「돌린 것」 이 실제보다 적습니다. 「없음」 이 정말 안 돌렸다는 뜻이 아닐 수 있습니다.`, ``);
+  }
+
   줄.push('## 증명 안 된 것', '');
   if (!e.증명안된것?.length) 줄.push('없습니다 — 바꾼 것마다 뒤에 돌린 확인이 있습니다.', '');
   else {

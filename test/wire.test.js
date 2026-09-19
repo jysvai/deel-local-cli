@@ -34,7 +34,7 @@ import {
   배울전선, 카드고치기, 카드저장꼴, 카드합치기, 전선붙이기, 세션이름짓기, 전선말,
   카드칸들,
 } from '../src/backend/wire.js';
-import { 조각표, 메시지표식, 시스템블록, 잡힐만한가, 블록에붙이기, 닻문턱 } from '../src/backend/cachemark.js';
+import { 조각표, 메시지표식, 시스템블록, 잡힐만한가, 블록에붙이기, 닻문턱, 표식칸들 } from '../src/backend/cachemark.js';
 import { buildBody, 보낸토큰, 더할머리, chat, 나가는눈금 } from '../src/backend/adapter.js';
 import { createServer } from 'node:http';
 import { allowEndpoint } from '../src/safety/network.js';
@@ -266,8 +266,15 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
    */
   check('★ mantle 을 Bedrock 으로 알아본다', 맨틀.회사 === 'bedrock', String(맨틀.회사));
   check('★ mantle 에서도 표식은 우리가 붙인다', 맨틀.캐시 === 'explicit', 맨틀.캐시);
-  check('★ Bedrock 의 표식 최소 크기는 4096 이다', 맨틀.캐시최소 === 4096, String(맨틀.캐시최소));
-  check('Anthropic 직통은 1024 다', 직통.캐시최소 === 1024, String(직통.캐시최소));
+  /*
+   * 표식 최소 크기는 **모델이** 정한다. 주소로 정하면 같은 모델도 게이트웨이 뒤에서 값이
+   * 달라진다. 문턱 아래 표식은 오류 없이 캐시만 안 되므로 낮게 잡는 쪽이 잃는 것이 없다.
+   */
+  check('★ 표식 최소 크기는 주소가 아니라 모델이 정한다 — Bedrock 이어도 같다',
+    맨틀.캐시최소 === 직통.캐시최소, `${맨틀.캐시최소} / ${직통.캐시최소}`);
+  check('★ 5 세대 Claude 는 512 다', 직통.캐시최소 === 512, String(직통.캐시최소));
+  const 옛판 = 기본카드(연결('https://api.anthropic.com/v1', 'anthropic', 'claude-opus-4-8'));
+  check('옛 판(4.8)은 1024 다', 옛판.캐시최소 === 1024, String(옛판.캐시최소));
 }
 
 // ── 5. 세션 이름은 밖으로 나간다 ────────────────────────────────────────
@@ -637,6 +644,26 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   check('★ 원래 글과도 같다', 글자만(붙일때) === 조각.join(''), 글자만(붙일때));
   check('붙일 때는 블록으로 나간다', Array.isArray(붙일때) && 붙일때.length === 2, String(붙일때?.length));
   check('★ 표식은 굳은 쪽 끝에 붙는다', !!붙일때[0].cache_control && !붙일때[1]?.cache_control);
+
+  /*
+   * ── 빈칸만 든 조각은 **블록이 못 된다** (8회차 · 뒷단) ─────────────────────
+   *
+   * 거르는 잣대가 `x.length` 였다. 그러면 `'   '` · `'\n'` 처럼 빈칸만 든 조각이
+   * 그대로 지나 `{type:'text', text:'  '}` 블록이 된다. Anthropic 은 빈칸만 든
+   * 글 블록을 400 으로 튕긴다 — 화면에서는 열쇠가 틀린 것과 구별이 안 되는 400 이다.
+   *
+   * 조각이 전부 빈칸이면 **첫 조각에 캐시 표식까지 붙어서** 나갔다. 굳은 부분이
+   * 아직 안 지어진 판(모드가 막 바뀐 첫 턴)에서 그렇게 된다.
+   */
+  const 빈칸섞임 = 시스템블록(['굳은 부분입니다.\n', '   \n  '], true);
+  check('★★★ 빈칸만 든 조각은 블록으로 안 나간다',
+    Array.isArray(빈칸섞임) && 빈칸섞임.every((b) => b.text.trim().length), JSON.stringify(빈칸섞임));
+  check('★★ 표식을 안 붙일 때도 같은 잣대다 — 두 길의 글자가 갈리면 앞머리가 새로 엮인다',
+    시스템블록(['굳은 부분입니다.\n', '   \n  '], false)
+      === (Array.isArray(빈칸섞임) ? 빈칸섞임.map((b) => b.text).join('') : null),
+    JSON.stringify(시스템블록(['굳은 부분입니다.\n', '   \n  '], false)));
+  check('★★ 조각이 전부 빈칸이면 아무것도 안 만든다 — 표식 붙은 빈 블록이 안 나가게',
+    시스템블록(['  ', '\n'], true) === null, JSON.stringify(시스템블록(['  ', '\n'], true)));
 }
 
 // ── 10. 몸에 실제로 실리는가 ────────────────────────────────────────────
@@ -1112,10 +1139,50 @@ const 연결 = (base, kind, model) => ({ base, kind, model });
   check('인사인가: 안녕', 인사인가('안녕') === true);
   check('인사인가: 파일 이름이 있으면 아니다', 인사인가('안녕 src/a.js 좀 봐줘') === false);
 
+  /*
+   * ── ★ 「고맙습니다」 도 인사다 ──────────────────────────────────────────
+   *
+   * 낱말 앞머리를 `고마` 로 잡아 뒀는데, 한국어에서 이 말은 ㅂ 불규칙이라
+   * 정중하게 쓸수록 `고맙-` 으로 바뀐다. 그래서 반말(`고마워`)만 걸리고
+   * 존댓말(`고맙습니다`)은 안 걸렸다 — 하필 **더 흔히 쓰는 쪽**이다.
+   *
+   * 값이 새는 것이 아니라 거꾸로다. 「고맙습니다」 한 마디에 max 로 생각하면
+   * 그 한 마디가 그 판에서 제일 비싼 토큰이 된다.
+   */
+  for (const 말 of ['고맙습니다', '고맙다', '고맙습니다!', '고마워', '고마워요']) {
+    check(`★ 인사인가: ${말}`, 인사인가(말) === true, String(인사인가(말)));
+  }
+  check('★ 고맙다는 존댓말도 낮게', 자동강도('고맙습니다', 'max') === 'low', 자동강도('고맙습니다', 'max'));
+  // 인사말 꼴이 아니면 그대로 아니다 — 넓히느라 일까지 가볍게 만들면 안 된다.
+  check('고마운 일이 시킨 말이면 인사가 아니다', 인사인가('고맙습니다 이제 src/a.js 고쳐줘') === false);
+
   // 밖으로 나가는 턴에서는 강도를 고정한다 — 그 사이 값이 흔들리면
   // 프리픽스가 흔들린다.
   check('★ 고정하면 모드가 안 올린다', effortFor('max', '깊게', 'work', { 고정: true }) === 'max',
     effortFor('max', '깊게', 'work', { 고정: true }));
+
+  /*
+   * ── ★★ 「깊게」 는 전 단계를 올려야 한다 ───────────────────────────────
+   *
+   * 배분 이름 옆에 적힌 설명이 「전 단계 한 칸씩 위로」 이고 README 도 두
+   * 판(ko·en) 다 그렇게 말한다. 그런데 이어가기(work)만 0 칸이었다 — 깊게를
+   * 골라도 그 단계는 균일과 똑같이 돌았다.
+   *
+   * 화면 한 장에서 앞뒤가 안 맞는다: `/think` 표는 설명에 「전 단계 한 칸씩
+   * 위로」 를 적어 놓고 바로 아래 이어가기 줄에 옮김 0 을 찍는다. 그리고
+   * 이어가기는 **파일을 쓰는 호출이 대개 나오는 단계**다 — 어려운 일에만
+   * 쓰라고 만든 배분이 정작 일하는 자리에서 안 깊어졌다.
+   */
+  check('★★ 깊게: 첫 판단이 한 칸 위', effortFor('medium', 'deep', 'plan') === 'high',
+    effortFor('medium', 'deep', 'plan'));
+  check('★★ 깊게: 이어가기도 한 칸 위', effortFor('medium', 'deep', 'work') === 'high',
+    effortFor('medium', 'deep', 'work'));
+  check('★★ 깊게: 막혔을 때도 한 칸 위', effortFor('medium', 'deep', 'fix') === 'high',
+    effortFor('medium', 'deep', 'fix'));
+  check('★ 깊게는 균일과 다르다', effortFor('medium', 'deep', 'work') !== effortFor('medium', 'even', 'work'),
+    `${effortFor('medium', 'deep', 'work')} vs ${effortFor('medium', 'even', 'work')}`);
+  check('★ 끝을 넘지는 않는다', effortFor('max', 'deep', 'work') === 'max', effortFor('max', 'deep', 'work'));
+  check('★ 끈 것은 안 켠다', effortFor('off', 'deep', 'work') === 'off', effortFor('off', 'deep', 'work'));
 }
 
 // ── 12. 화면 한 줄이 전선과 같은 말을 하는가 ────────────────────────────
@@ -1194,7 +1261,7 @@ trace('캐시-모델로가른다');
 {
   const 만틀 = 기본카드(연결('https://bedrock-mantle.us-west-2.api.aws/openai/v1', 'openai', 'anthropic.claude-opus-5'));
   check('★★ OpenAI 꼴이어도 Claude 면 표식을 붙인다', 만틀.캐시 === 'explicit', 만틀.캐시);
-  check('그 창구의 최소 크기도 따라간다', 만틀.캐시최소 === 4096, String(만틀.캐시최소));
+  check('최소 크기는 창구가 아니라 모델을 따라간다', 만틀.캐시최소 === 512, String(만틀.캐시최소));
 
   // 모르는 사내 게이트웨이도 마찬가지다 — 아는 것은 모델 이름뿐이고, 그거면 된다.
   const 사내 = 기본카드(연결('https://llm.내회사.example/v1', 'openai', 'claude-opus-5'));
@@ -1374,7 +1441,7 @@ trace('캐시-두이름');
     // 묶일 것이 없고, 묶으면 오히려 대화 하나에 진단 줄이 섞인다.
     ['src/backend/ctxsize.js', { 왜: '모델 제원 조회 (/models · /props · /info)', 몇: 1 }],
     // /model 이 고를 목록을 받아 오는 두 자리 — 여느 목록과 Azure 배포 목록.
-    ['src/commands.js', { 왜: '모델 목록 조회 (/models · Azure 배포 목록)', 몇: 2 }],
+    ['src/commands/model.js', { 왜: '모델 목록 조회 (/models · Azure 배포 목록)', 몇: 2 }],
   ]);
 
   const 뿌리 = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -1518,13 +1585,82 @@ trace('캐시-두이름');
    * 이번에 고친 것이 바로 그 모양이었다.
    */
   const 집 = join(dirname(fileURLToPath(import.meta.url)), '..');
-  const 화면 = readFileSync(join(집, 'src', 'commands.js'), 'utf8');
+  // /think 를 가르는 자리(commands.js)와 그 화면(commands/view.js)을 한 덩이로 본다.
+  const 화면 = [join(집, 'src', 'commands.js'), join(집, 'src', 'commands', 'view.js')]
+    .map((p) => readFileSync(p, 'utf8')).join('\n');
   check('★★ /think 화면이 나가는눈금() 을 부른다', /나가는눈금\(\s*session\.conn\.kind/.test(화면));
   check('★★ /think 화면이 눈금맞추기() 를 따로 부르지 않는다', !/눈금맞추기\(/.test(화면.replace(/\/\*[\s\S]*?\*\//g, '')));
 }
 
 // ── 마무리 ──────────────────────────────────────────────────────────────
 const C = (n, s) => (process.stdout.isTTY || process.env.FORCE_COLOR ? `\x1b[${n}m${s}\x1b[0m` : s);
+trace('전선6');
+/*
+ * 2.0.0 6회차 · Gemini 전선6 — 400 문구를 거꾸로 읽거나 엉뚱한 것을 배우던 넷.
+ *
+ *   받는 값 목록 뒤 설명(`… 'high' for parameter reasoning_effort`)의 낱말이 눈금에 섞였다.
+ *   `'max_tokens' cannot be used` · `Did you mean 'max_completion_tokens'?` 를 「max_tokens 를 써라」 로 읽어
+ *   옛것으로 갈아탔다 — 서버가 말한 것과 반대이고, 디스크에 남아 매 턴 400 이 된다.
+ *   대화 내용 오류 `Message with role 'user' is invalid` 에 세션자리를 껐다.
+ */
+{
+  const w6 = await import('../src/backend/wire.js');
+  const 목록 = w6.배울전선("Invalid value 'max'. Supported values are: 'low', 'medium', 'high' for parameter reasoning_effort", 'openai');
+  check('★ 따옴표로 센 받는 값 목록에 뒤 설명 낱말을 안 섞는다 (6회차 전선6)', JSON.stringify(목록?.값) === '["low","medium","high"]', JSON.stringify(목록));
+  const 맨목록 = w6.배울전선('reasoning_effort must be one of: low, medium, high', 'openai');
+  check('  따옴표 없이 센 목록은 그대로 받는다', JSON.stringify(맨목록?.값) === '["low","medium","high"]', JSON.stringify(맨목록));
+  const 못씀 = w6.배울전선("'max_tokens' cannot be used with this model.", 'openai');
+  check('★★ 「max_tokens cannot be used」 는 새 이름으로 갈아탄다 (6회차 전선6)', 못씀?.무엇 === '출력칸' && 못씀.값 === '새것', JSON.stringify(못씀));
+  const 뜻 = w6.배울전선("Unsupported parameter: 'max_tokens'. Did you mean 'max_completion_tokens'?", 'openai');
+  check('★★ 「Did you mean max_completion_tokens」 는 새 이름으로 갈아탄다 (6회차 전선6)', 뜻?.무엇 === '출력칸' && 뜻.값 === '새것', JSON.stringify(뜻));
+  const 쓰라 = w6.배울전선("Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", 'openai');
+  check('  「Use max_completion_tokens instead」 는 그대로 새것', 쓰라?.값 === '새것', JSON.stringify(쓰라));
+  const 반대 = w6.배울전선("Unsupported parameter: 'max_completion_tokens'. Did you mean 'max_tokens'?", 'openai');
+  check('  반대로 말해 주면 옛것', 반대?.값 === '옛것', JSON.stringify(반대));
+  const 역할 = w6.배울전선("Message with role 'user' is invalid: content must not be empty", 'openai');
+  check("★ 대화 내용 오류의 role 'user' 에 세션자리를 안 끈다 (6회차 전선6)", 역할?.무엇 !== '세션자리', JSON.stringify(역할));
+  const 진짜세션 = w6.배울전선("'user' is not supported for this model", 'openai');
+  check("  칸 이름으로 적힌 'user' 거절은 여전히 세션자리를 끈다", 진짜세션?.무엇 === '세션자리', JSON.stringify(진짜세션));
+}
+
+/*
+ * ── 「표식칸들」 이 정말 정본인가 (2.0.0 8회차 · 안 쓰는 코드 감사) ───────
+ *
+ * `backend/cachemark.js` 는 `표식칸들` 을 내보내면서 그 위에 「어느 것도 업체별
+ * 예외가 아니다」 라고 적어 둔다. wire.js 도 세 군데 주석에서 그 배열을 근거로
+ * 든다(191·687·296줄). 그런데 **아무도 그 배열을 읽지 않는다.** 실제 규칙은
+ * 두 파일에 흩어진 글자 여섯 곳 이상으로 살아 있다.
+ *
+ * 값을 [0]·[1] 로 바꿔 끼우지 않은 것은 일부러다 — 그러면 「차례가 뜻을 가진다」
+ * 는 새 규약이 아무 데도 안 적힌 채로 생긴다. 대신 **글자는 그대로 두고, 그 글자와
+ * 배열이 갈라지면 여기가 빨개지게** 했다. 셋째 칸을 표식칸들에만 보태고 wire 에
+ * 안 가르치면 이 칸이 잡는다.
+ */
+{
+  const w6 = await import('../src/backend/wire.js');
+  const 카드 = w6.기본카드({ base: 'https://api.anthropic.com/v1', 규격: 'anthropic' });
+  check('★★ 카드가 기본으로 쓰는 표식칸은 표식칸들 안에 있다',
+    표식칸들.includes(카드.표식칸), `${카드.표식칸} ∉ ${표식칸들.join(' · ')}`);
+
+  // 표식칸들 의 칸 이름이 400 으로 거절당하면, 배울전선 이 **무엇이든** 판단을 내놔야 한다.
+  // 안 내놓으면 그 칸은 영영 안 꺼지고 매 턴이 같은 400 으로 죽는다.
+  for (const 칸 of 표식칸들) {
+    const 문구 = `Extra inputs are not permitted: '${칸}' is not supported for this model`;
+    const 안 = w6.배울전선(문구, 'anthropic');
+    const 오 = w6.배울전선(문구, 'openai');
+    check(`★★★ 표식칸들 의 「${칸}」 이 거절당하면 배울전선 이 답을 낸다 (anthropic)`,
+      !!안, JSON.stringify(안));
+    check(`★★★ 표식칸들 의 「${칸}」 이 거절당하면 배울전선 이 답을 낸다 (openai)`,
+      !!오, JSON.stringify(오));
+  }
+
+  // 갈아탈 칸으로 내놓는 이름도 그 배열 안이어야 한다 — 배열에 없는 이름으로
+  // 갈아타면 그 다음 400 은 「배웠다」 며 또 나고, 끄지도 못한다.
+  const 갈아탐 = w6.배울전선("Extra inputs are not permitted: 'cache_control'", 'openai');
+  check('★★★ 갈아탈 표식칸으로 내놓는 이름도 표식칸들 안이다',
+    갈아탐?.무엇 !== '표식칸' || 표식칸들.includes(갈아탐.값), JSON.stringify(갈아탐));
+}
+
 console.log('');
 for (const f of fail) console.log(`  ${C(31, '✗')} ${f.name}${f.note ? C(90, `  ${f.note}`) : ''}`);
 for (const 글 of 적어둘것) console.log(`  ${C(90, `· ${글}`)}`);

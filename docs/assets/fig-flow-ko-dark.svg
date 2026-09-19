@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="930" height="752" viewBox="0 0 930 752" role="img" aria-label="deel — 한마디가 도는 길">
+  <title>deel — 한마디가 도는 길</title>
+  <desc>사람 말을 받아 길고르기가 모드를 정하고, 그 모드가 허락한 도구만 목록에 실려 모델에게 간다. 도구를 부를 때는 모드 관문과 승인 관문을 지나야 하고, 걸리면 거기서 멈춘다. 결과는 모델에게 돌아가 걸음 상한까지 되풀이하고, 끝에 Verify 로 확인한 뒤 답한다.</desc>
+  <rect width="930" height="752" rx="10" fill="#0d1117" stroke="#30363d"/>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
+    <text x="44.0" y="36.0" fill="#e6edf3" font-size="16" font-weight="600" textLength="153.6" lengthAdjust="spacing" xml:space="preserve">한마디가 도는 길</text>
+    <text x="44.0" y="58.0" fill="#8b949e" font-size="11.5" textLength="358.8" lengthAdjust="spacing" xml:space="preserve">사람이 친 한 줄이 답이 되기까지 — 관문이 어디 있는지</text>
+    <rect x="44.0" y="88.0" width="380.0" height="56.0" rx="9" fill="#161b22" stroke="#30363d" stroke-width="1.4"/>
+    <text x="58.0" y="122.0" fill="#58a6ff" font-size="15" font-weight="600" textLength="9.0" lengthAdjust="spacing" xml:space="preserve">❯</text>
+    <text x="86.0" y="112.0" fill="#e6edf3" font-size="12.5" font-weight="600" textLength="52.5" lengthAdjust="spacing" xml:space="preserve">사람 말</text>
+    <text x="86.0" y="130.0" fill="#8b949e" font-size="11" textLength="171.6" lengthAdjust="spacing" xml:space="preserve">&quot;로그를 logger 로 바꿔 줘&quot;</text>
+    <line x1="234.0" y1="146.0" x2="234.0" y2="152.0" stroke="#8b949e" stroke-width="1.5" stroke-linecap="round"/><path d="M234.0 161.0 L229.6 152.0 L238.4 152.0 Z" fill="#8b949e"/>
+    <rect x="44.0" y="164.0" width="380.0" height="56.0" rx="9" fill="#161b22" stroke="#30363d" stroke-width="1.4"/>
+    <text x="58.0" y="198.0" fill="#bc8cff" font-size="15" font-weight="600" textLength="9.0" lengthAdjust="spacing" xml:space="preserve">⇄</text>
+    <text x="86.0" y="188.0" fill="#e6edf3" font-size="12.5" font-weight="600" textLength="120.0" lengthAdjust="spacing" xml:space="preserve">길고르기 (route)</text>
+    <text x="86.0" y="206.0" fill="#8b949e" font-size="11" textLength="270.6" lengthAdjust="spacing" xml:space="preserve">낱말로 모드를 고른다 · 애매하면 안 바꾼다</text>
+    <line x1="234.0" y1="222.0" x2="234.0" y2="228.0" stroke="#8b949e" stroke-width="1.5" stroke-linecap="round"/><path d="M234.0 237.0 L229.6 228.0 L238.4 228.0 Z" fill="#8b949e"/>
+    <text x="456.0" y="180.0" fill="#8b949e" font-size="11" textLength="290.4" lengthAdjust="spacing" xml:space="preserve">사람이 /code 로 고르면 자동 고르기는 멈춘다.</text>
+    <text x="456.0" y="195.0" fill="#8b949e" font-size="11" textLength="204.6" lengthAdjust="spacing" xml:space="preserve">사람이 고른 것을 뒤집지 않는다.</text>
+    <rect x="44.0" y="240.0" width="380.0" height="56.0" rx="9" fill="#161b22" stroke="#30363d" stroke-width="1.4"/>
+    <text x="58.0" y="274.0" fill="#58a6ff" font-size="15" font-weight="600" textLength="9.0" lengthAdjust="spacing" xml:space="preserve">◆</text>
+    <text x="86.0" y="264.0" fill="#e6edf3" font-size="12.5" font-weight="600" textLength="120.0" lengthAdjust="spacing" xml:space="preserve">모드 — 도구 목록</text>
+    <text x="86.0" y="282.0" fill="#8b949e" font-size="11" textLength="283.8" lengthAdjust="spacing" xml:space="preserve">코드 ◆ · 읽기 · 계획 · 쓰기 · 확인 · 쪼개기</text>
+    <line x1="234.0" y1="298.0" x2="234.0" y2="304.0" stroke="#8b949e" stroke-width="1.5" stroke-linecap="round"/><path d="M234.0 313.0 L229.6 304.0 L238.4 304.0 Z" fill="#8b949e"/>
+    <text x="456.0" y="256.0" fill="#8b949e" font-size="11" textLength="270.6" lengthAdjust="spacing" xml:space="preserve">모드에 없는 도구는 목록에 아예 안 실린다.</text>
+    <text x="456.0" y="271.0" fill="#8b949e" font-size="11" textLength="297.0" lengthAdjust="spacing" xml:space="preserve">부탁이 아니라 목록이라 모델이 잊을 것이 없다.</text>
+    <rect x="44.0" y="316.0" width="380.0" height="56.0" rx="9" fill="#161b22" stroke="#30363d" stroke-width="1.4"/>
+    <text x="58.0" y="350.0" fill="#39c5cf" font-size="15" font-weight="600" textLength="9.0" lengthAdjust="spacing" xml:space="preserve">◍</text>
+    <text x="86.0" y="340.0" fill="#e6edf3" font-size="12.5" font-weight="600" textLength="30.0" lengthAdjust="spacing" xml:space="preserve">모델</text>
+    <text x="86.0" y="358.0" fill="#8b949e" font-size="11" textLength="211.2" lengthAdjust="spacing" xml:space="preserve">이 PC 또는 사내 게이트웨이 한 곳</text>
+    <line x1="234.0" y1="374.0" x2="234.0" y2="380.0" stroke="#8b949e" stroke-width="1.5" stroke-linecap="round"/><path d="M234.0 389.0 L229.6 380.0 L238.4 380.0 Z" fill="#8b949e"/>
+    <text x="456.0" y="332.0" fill="#8b949e" font-size="11" textLength="303.6" lengthAdjust="spacing" xml:space="preserve">나가는 주소는 첫 화면에 늘 적힌다 (⌂ · ↗ · ⛊).</text>
+    <rect x="44.0" y="392.0" width="380.0" height="40.0" rx="8" fill="#d29922" fill-opacity="0.1" stroke="#d29922" stroke-width="1.4"/>
+    <text x="58.0" y="417.0" fill="#d29922" font-size="13" font-weight="600" textLength="7.8" lengthAdjust="spacing" xml:space="preserve">①</text>
+    <text x="80.0" y="417.0" fill="#e6edf3" font-size="12" textLength="252.0" lengthAdjust="spacing" xml:space="preserve">모드 관문 · 목록에 없는 도구는 거절</text>
+    <text x="372.4" y="417.0" fill="#ff7b72" font-size="11" textLength="39.6" lengthAdjust="spacing" xml:space="preserve">✕ 거절</text>
+    <line x1="234.0" y1="434.0" x2="234.0" y2="440.0" stroke="#8b949e" stroke-width="1.5" stroke-linecap="round"/><path d="M234.0 449.0 L229.6 440.0 L238.4 440.0 Z" fill="#8b949e"/>
+    <text x="456.0" y="408.0" fill="#8b949e" font-size="11" textLength="270.6" lengthAdjust="spacing" xml:space="preserve">모델이 이름을 지어 불러도 여기서 안 돈다.</text>
+    <rect x="44.0" y="452.0" width="380.0" height="40.0" rx="8" fill="#d29922" fill-opacity="0.1" stroke="#d29922" stroke-width="1.4"/>
+    <text x="58.0" y="477.0" fill="#d29922" font-size="13" font-weight="600" textLength="7.8" lengthAdjust="spacing" xml:space="preserve">②</text>
+    <text x="80.0" y="477.0" fill="#e6edf3" font-size="12" textLength="252.0" lengthAdjust="spacing" xml:space="preserve">승인 관문 · auto · confirm · strict</text>
+    <text x="372.4" y="477.0" fill="#ff7b72" font-size="11" textLength="39.6" lengthAdjust="spacing" xml:space="preserve">✕ 멈춤</text>
+    <line x1="234.0" y1="494.0" x2="234.0" y2="500.0" stroke="#8b949e" stroke-width="1.5" stroke-linecap="round"/><path d="M234.0 509.0 L229.6 500.0 L238.4 500.0 Z" fill="#8b949e"/>
+    <text x="456.0" y="468.0" fill="#8b949e" font-size="11" textLength="310.2" lengthAdjust="spacing" xml:space="preserve">auto 는 안 묻고(되돌리기가 안전망) · confirm 은</text>
+    <text x="456.0" y="483.0" fill="#8b949e" font-size="11" textLength="356.4" lengthAdjust="spacing" xml:space="preserve">되돌릴 수 없는 명령만 · strict 는 파일 변경·명령 전부.</text>
+    <text x="456.0" y="498.0" fill="#8b949e" font-size="11" textLength="270.6" lengthAdjust="spacing" xml:space="preserve">금지(deny) 규칙은 물어보지도 않고 막는다.</text>
+    <rect x="44.0" y="512.0" width="380.0" height="56.0" rx="9" fill="#161b22" stroke="#30363d" stroke-width="1.4"/>
+    <text x="58.0" y="546.0" fill="#bc8cff" font-size="15" font-weight="600" textLength="9.0" lengthAdjust="spacing" xml:space="preserve">▣</text>
+    <text x="86.0" y="536.0" fill="#e6edf3" font-size="12.5" font-weight="600" textLength="67.5" lengthAdjust="spacing" xml:space="preserve">도구 실행</text>
+    <text x="86.0" y="554.0" fill="#8b949e" font-size="11" textLength="178.2" lengthAdjust="spacing" xml:space="preserve">Read · Grep · Edit · Bash …</text>
+    <line x1="234.0" y1="570.0" x2="234.0" y2="576.0" stroke="#8b949e" stroke-width="1.5" stroke-linecap="round"/><path d="M234.0 585.0 L229.6 576.0 L238.4 576.0 Z" fill="#8b949e"/>
+    <text x="456.0" y="528.0" fill="#8b949e" font-size="11" textLength="270.6" lengthAdjust="spacing" xml:space="preserve">바꾼 것은 되돌리기 기록에 남는다 (/undo).</text>
+    <text x="456.0" y="543.0" fill="#8b949e" font-size="11" textLength="264.0" lengthAdjust="spacing" xml:space="preserve">도구 부름은 .deel/audit.jsonl 에 적힌다.</text>
+    <text x="456.0" y="558.0" fill="#8b949e" font-size="11" textLength="316.8" lengthAdjust="spacing" xml:space="preserve">결과는 모델에게 돌아가 걸음 상한까지 되풀이한다.</text>
+    <rect x="44.0" y="588.0" width="380.0" height="56.0" rx="9" fill="#161b22" stroke="#30363d" stroke-width="1.4"/>
+    <text x="58.0" y="622.0" fill="#3fb950" font-size="15" font-weight="600" textLength="9.0" lengthAdjust="spacing" xml:space="preserve">✓</text>
+    <text x="86.0" y="612.0" fill="#e6edf3" font-size="12.5" font-weight="600" textLength="97.5" lengthAdjust="spacing" xml:space="preserve">확인 (Verify)</text>
+    <text x="86.0" y="630.0" fill="#8b949e" font-size="11" textLength="217.8" lengthAdjust="spacing" xml:space="preserve">만든 것이 실제로 도는지 돌려 본다</text>
+    <line x1="234.0" y1="646.0" x2="234.0" y2="652.0" stroke="#8b949e" stroke-width="1.5" stroke-linecap="round"/><path d="M234.0 661.0 L229.6 652.0 L238.4 652.0 Z" fill="#8b949e"/>
+    <text x="456.0" y="604.0" fill="#8b949e" font-size="11" textLength="231.0" lengthAdjust="spacing" xml:space="preserve">확인 못 한 것을 됐다고 하지 않는다.</text>
+    <rect x="44.0" y="664.0" width="380.0" height="56.0" rx="9" fill="#161b22" stroke="#30363d" stroke-width="1.4"/>
+    <text x="58.0" y="698.0" fill="#3fb950" font-size="15" font-weight="600" textLength="9.0" lengthAdjust="spacing" xml:space="preserve">✦</text>
+    <text x="86.0" y="688.0" fill="#e6edf3" font-size="12.5" font-weight="600" textLength="15.0" lengthAdjust="spacing" xml:space="preserve">답</text>
+    <text x="86.0" y="706.0" fill="#8b949e" font-size="11" textLength="171.6" lengthAdjust="spacing" xml:space="preserve">무엇을 왜 바꿨는지 한두 줄</text>
+    <path d="M426.0 540.0 L436.0 540.0 L436.0 344.0 L435.0 344.0" fill="none" stroke="#39c5cf" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/><path d="M426.0 344.0 L435.0 339.6 L435.0 348.4 Z" fill="#39c5cf"/>
+    <circle cx="436" cy="442.0" r="9" fill="#0d1117" stroke="#39c5cf" stroke-width="1.2"/>
+    <text x="432.7" y="446.0" fill="#39c5cf" font-size="11" textLength="6.6" lengthAdjust="spacing" xml:space="preserve">⟳</text>
+  </g>
+</svg>

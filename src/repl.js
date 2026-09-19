@@ -7,7 +7,7 @@ import { 받기설정 } from './safety/authcmd.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { homedir } from 'node:os';
 import { resolve, basename } from 'node:path';
-import { c, say as 바로쓰기, mark, clip } from './ui/ansi.js';
+import { c, say as 바로쓰기, mark, clip, 화면글거르기 } from './ui/ansi.js';
 import { headerLines } from './ui/status.js';
 import { 종, 창제목, 제목되돌리기, 알릴까, 제목글 } from './ui/notify.js';
 import { 보이기 as 인트로, 기본곁말 } from './ui/intro.js';
@@ -24,10 +24,10 @@ import { Session, repairToolPairs } from './agent/session.js';
 import { makeScope } from './safety/guard.js';
 import { 언어서버있나 } from './tools/index.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
+import { 임시치우기 } from './tools/convert.js';
 import { History } from './safety/undo.js';
 import { Audit, 열쇠묻기 } from './safety/audit.js';
-import { activeProfile, load, resolveKey, save as saveCfg, 저장시도, homeDir, 잠금소식, 열쇠탈소식, 프로젝트설정소식 } from './config.js';
-import { 프로젝트설정줄들 } from './safety/trust.js';
+import { activeProfile, load, resolveKey, save as saveCfg, 저장시도, homeDir, 열쇠탈소식, 소식줄들 } from './config.js';
 import { 남길것읽기 } from './safety/shellenv.js';
 import { discover } from './skills/discover.js';
 import { allowEndpoint, setOffline, isOffline } from './safety/network.js';
@@ -39,10 +39,10 @@ import { 못박기 } from './agent/pins.js';
 import { 카드 } from './agent/card.js';
 import { 배움 } from './agent/evolve.js';
 import { 마크다운 } from './ui/md.js';
-import { askHidden } from './ui/prompt.js';
+import { askHidden, 가림중 } from './ui/prompt.js';
 import { explain, shows as levelShows } from './ui/level.js';
 import { 고르기 as 승인고르기, 다음 as 승인다음 } from './ui/approve.js';
-import { 추천, 채울글 } from './ui/complete.js';
+import { 추천, 채울글, 붙임탭완성기 } from './ui/complete.js';
 import { 접어쓰기 } from './ui/wrap.js';
 import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들, 남길글, 안쪽최대 as 붙임안쪽최대 } from './ui/pastechip.js';
 import { 고른것풀기, 계획답풀기 } from './ui/pick.js';
@@ -110,13 +110,15 @@ function toolLabel(name, args) {
   // 가 도구 줄에 찍힌다. 모델이 그런 이름으로 도구를 부르면 실제로 여기 온다
   // (loop.js 가 모르는 도구도 showLabel 로 올린다).
   const g = Object.hasOwn(TOOL_GLYPH, name) ? TOOL_GLYPH[name] : c.cyan('⏺');
-  const 안 = clip(String(first ?? ''), 56);
+  // 경로·명령은 모델이 적은 글이다. 섞인 제어 순서는 화면에 닿기 전에 뗀다(ansi.js 화면글거르기).
+  const 안 = clip(화면글거르기(first), 56);
   return `${g} ${c.bold(name)}${안 ? `${c.gray('(')}${c.gray(안)}${c.gray(')')}` : ''}`;
 }
 
 function toolResultLine(result, ms) {
   const t = ms > 700 ? c.gray(`  ${옮긴말('unit.sec', { n: (ms / 1000).toFixed(1) })}`) : '';
-  if (result?.error) return `${c.red('└')} ${c.red(clip(String(result.error).split('\n')[0], 80))}${t}`;
+  // 오류·요약에는 파일 이름과 도구 출력이 섞여 온다 — 제어 순서를 뗀 뒤 자른다.
+  if (result?.error) return `${c.red('└')} ${c.red(clip(화면글거르기(result.error).split('\n')[0], 80))}${t}`;
 
   /*
    * 확인 결과는 색으로 갈라 준다.
@@ -136,7 +138,7 @@ function toolResultLine(result, ms) {
 
   // 고친 자리는 몇 줄이 늘고 줄었는지를 요약 옆에 붙인다.
   const 셈 = result?.diff ? ` ${shortStat(result.diff)}` : '';
-  return `${c.gray('└')} ${c.gray(clip(result?.summary ?? 옮긴말('sum.done'), 80))}${셈}${t}`;
+  return `${c.gray('└')} ${c.gray(clip(화면글거르기(result?.summary ?? 옮긴말('sum.done')), 80))}${셈}${t}`;
 }
 
 // 수준별로 몇 줄까지 펼칠지. 초보에게 60줄을 쏟으면 아무것도 안 읽는다.
@@ -164,32 +166,32 @@ export const 이어쓰기표시 = (l) =>
 
 export async function chatLoop(opts = {}) {
   const cfg = load();
+  // 모아 둔 소식을 비운다 (아래 「한 자리에서 비운다」 머리말).
+  const 소식쓰기 = () => { for (const 줄 of 소식줄들(cfg)) 바로쓰기(줄); };
   const prof = activeProfile(cfg);
   // 연결이 없으면 화면을 세우기 전에 끝난다. 세운 뒤에 나가면 상자를
   // 그렸다 지우는 제어문자가 이 안내 사이에 끼어 화면이 지저분해진다.
   if (!prof) {
+    // 연결이 없어도 모아 둔 소식은 낸다 — 「이 폴더 설정은 안 믿어서 안 읽었다」 가
+    // 바로 연결이 없는 까닭일 수 있다. 아래에서 비우면 여기서 끝나는 판에는 안 나온다.
+    소식쓰기();
     바로쓰기('');
     바로쓰기(`  ${mark.warn} 저장된 연결이 없습니다. ${c.cyan('deel setup')} 을 먼저 실행하세요.`);
     바로쓰기('');
     return 1;
   }
 
-  // 평문으로 있던 열쇠를 방금 잠갔으면 그렇다고 한 줄. 조용히 바꾸면
-  // 나중에 설정 파일을 열어 본 사람이 제 열쇠가 사라진 줄 안다.
-  const 잠금 = 잠금소식();
-  if (잠금) {
-    바로쓰기('');
-    바로쓰기(`  ${mark.ok} ${잠금}`);
-  }
-
   /*
-   * 이 폴더의 프로젝트 설정을 안 읽었거나 일부를 걷어냈으면 그렇다고 한 줄.
+   * 모아 둔 소식을 한 자리에서 비운다 (config.js 의 소식줄들).
    *
-   * 조용히 무시하면 적어 둔 사람은 걸린 줄 알고, 실제로는 안 걸린 채로 일이
-   * 돈다. 그 어긋남이 설정 전체를 못 믿게 만든다 — 「.deel/config.json 은
-   * 가끔 먹는 파일」 이 되는 순간 아무도 안 쓴다.
+   * 여기는 열쇠를 방금 잠갔다는 말과 프로젝트 설정을 안 읽었다는 말을 **따로**
+   * 당기고 있었다. 넷 중 둘만 당겼으니 관리 정책 파일이 깨져도 대화 화면에는
+   * 한 줄도 안 나왔다 — 관리자가 건 금지가 통째로 안 걸리는 채로 일이 돈다.
+   * 문마다 따로 당기면 이렇게 하나씩 빠진다.
+   *
+   * 잠근 열쇠를 못 푼 까닭(열쇠탈)은 resolveKey 뒤라야 생기므로 아래에서 한 번 더 본다.
    */
-  for (const 줄 of 프로젝트설정줄들(프로젝트설정소식())) 바로쓰기(줄);
+  소식쓰기();
 
   /*
    * 잠근 열쇠를 못 풀었으면 **그 까닭을** 적는다.
@@ -206,21 +208,6 @@ export async function chatLoop(opts = {}) {
     바로쓰기('');
     바로쓰기(`  ${mark.warn} ${탈}`);
   };
-
-  /*
-   * 여기서부터 화면에 나가는 것은 전부 `화면` 을 거친다.
-   *
-   * `say` 를 지역 이름으로 다시 묶은 이유: 이 함수 안에 출력이 79군데 있었다.
-   * 이름을 60번 바꿔 적으면 그중 한둘은 반드시 어긋나고, 어긋난 자리는
-   * 화면에서만 티가 난다. 이름은 그대로 두고 **가는 곳만** 바꾼다.
-   * 그러면 갈라내기가 옳은지를 지금 있는 검사들이 그대로 재 준다 —
-   * 글자 하나라도 달라지면 검사가 잡는다.
-   *
-   * 이 파일 밖으로 나가는 이름이 아니다. 화면을 세우기 전에 쓰는 자리는
-   * 위처럼 `바로쓰기` 를 쓴다.
-   */
-  const 화면 = await 화면고르기({ tui: opts.tui });
-  const say = (s = '') => 화면.줄(s);
 
   const root = opts.root ? opts.root : process.cwd();
   const conn = {
@@ -312,6 +299,29 @@ export async function chatLoop(opts = {}) {
    * `DEEL_LANG=en deel` 로 할 수 있어야 하기 때문이다. (i18n/index.js)
    */
   언어잡기({ cfg });
+
+  /*
+   * ── 화면은 여기서 세운다. 여기서부터 나가는 것은 전부 `화면` 을 거친다 ──
+   *
+   * 이 줄은 위(열쇠탈보이기 앞)에 있었다. 그러면 위에 적힌 두 약속이 둘 다
+   * 거짓이 된다 — 바로 아래 「화면을 세우기 전에 쓰는 자리는 바로쓰기를 쓴다」
+   * 인데 정작 `열쇠탈보이기()` 가 화면을 세운 **뒤**에 바로쓰기로 찍고 있었고,
+   * `그림적용` 에 붙은 「화면을 세우기 전에 해야 첫 판부터 맞다」 도 마찬가지였다.
+   * 그림·사무실·말은 화면이 그릴 때 읽는 값이라, 정하는 자리가 세우는 자리보다
+   * 뒤면 첫 판이 무엇으로 그려질지가 화면 구현에 딸려 간다. 세우기 전에 다
+   * 정해 두면 그 물음 자체가 없어진다.
+   *
+   * `say` 를 지역 이름으로 다시 묶은 이유: 이 함수 안에 출력이 79군데 있었다.
+   * 이름을 60번 바꿔 적으면 그중 한둘은 반드시 어긋나고, 어긋난 자리는
+   * 화면에서만 티가 난다. 이름은 그대로 두고 **가는 곳만** 바꾼다.
+   * 그러면 갈라내기가 옳은지를 지금 있는 검사들이 그대로 재 준다 —
+   * 글자 하나라도 달라지면 검사가 잡는다.
+   *
+   * 이 파일 밖으로 나가는 이름이 아니다. 화면을 세우기 전에 쓰는 자리는
+   * 위 열쇠탈보이기() 처럼 `바로쓰기` 를 쓴다.
+   */
+  const 화면 = await 화면고르기({ tui: opts.tui });
+  const say = (s = '') => 화면.줄(s);
 
   const session = new Session(conn, {
     root,
@@ -405,7 +415,10 @@ export async function chatLoop(opts = {}) {
        * 규격 서버가 400 을 내서 이어받자마자 첫 마디에서 죽는다. 손봐서 받는다.
        */
       const { messages, 고친것 } = repairToolPairs(적힌것);
+      // 진짜로 이어받았나. 아니면 아래에서 이 store 를 놓는다.
+      let 이어받았나 = false;
       if (messages.length) {
+        이어받았나 = true;
         session.messages = messages;
         say('');
         say(`  ${mark.ok} ${c.bold(target)} ${c.gray(`— 메시지 ${messages.length}개를 이어 받았습니다.`)}`);
@@ -445,12 +458,63 @@ export async function chatLoop(opts = {}) {
       const 박힌것 = store.못박은것읽기();
       if (박힌것.length) {
         session.못박은것 = new 못박기(박힌것);
-        say(`  ${c.gray(`못 박아 둔 것 ${session.못박은것.개수()}개도 그대로 이어 받았습니다 —`)} ${c.cyan('/pin')}`);
+        /*
+         * 되살린 것이 다 실리는지 본다 (2.0.0 6회차 · Gemini 못박기6u W4). 되살리기는
+         * 더하기 를 안 거쳐 개수·토큰 상한 검사가 안 닿는다 — 1.20.x 에서 박아 둔 긴 핀
+         * 14개가 개수 상한에서 12개, 프롬프트에는 3개만 실리는데 화면은 「12개도 그대로
+         * 이어 받았습니다」 였다. 사람은 다 지켜진다고 믿고 모델은 9개를 못 받는다.
+         */
+        const 실림 = session.못박은것.실린것();
+        if (실림.개수 < 박힌것.length) {
+          say(`  ${mark.warn} ${c.yellow(`못 박아 둔 것 ${박힌것.length}개 가운데 ${실림.개수}개만 프롬프트에 실립니다 — 개수·자리 상한을 넘었습니다.`)} ${c.gray('보고 줄이거나 빼려면')} ${c.cyan('/pin')}`);
+        } else {
+          say(`  ${c.gray(`못 박아 둔 것 ${session.못박은것.개수()}개도 그대로 이어 받았습니다 —`)} ${c.cyan('/pin')}`);
+        }
       }
+      /*
+       * ── 못 이어받았으면 **그 이름을 놓는다** ──────────────────────────
+       *
+       * 화면은 「새 대화로 시작합니다」 라고 말해 놓고, store 는 방금 못 읽은
+       * 그 id 를 그대로 쥐고 있었다. 아래 `if (!store)` 가 참이 아니니 새
+       * 대화가 안 열리고, store.begin() 이 **오타난 그 이름으로** 파일을
+       * 하나 만든다. 그러면 `/sessions` 목록에 오타가 진짜 대화처럼 끼고,
+       * 같은 오타로 한 번 더 이어하면 이번에는 「이어 받았습니다」 가 뜬다 —
+       * 사람이 이어받았다고 믿는 대화가 사실은 제 오타로 생긴 빈 파일이다.
+       *
+       * 못 읽은 까닭이 권한이나 다른 프로그램의 잠금이면 더 나쁘다. 그 자리에
+       * 우리가 새로 적기 시작하면 아직 성한 옛 대화 위에 덮어쓸 수도 있다.
+       * 못 읽었으면 **안 건드리는 것**이 맞다.
+       *
+       * 되살린 핀은 그대로 둔다 — 그건 이미 session 에 실렸고, 새로 열리는
+       * 대화에 같이 적힌다. 여기서 놓는 것은 **적을 자리**뿐이다.
+       */
+      if (!이어받았나) store = null;
     }
   }
+  // 이어받은 자리를 그대로 쓰는가, 새 파일을 여는가. 아래 못 박기 옮겨 적기가 이걸 본다.
+  const 이어쓰는자리 = store;
   if (!store) store = new Store(root);
   store.begin({ model: conn.model, base: 주소가리기(conn.base), root });
+  /*
+   * 되살린 못 박기를 **새로 연 대화에 옮겨 적는다** (막판 훑기).
+   *
+   * 바로 위 머리말이 「되살린 핀은 그대로 둔다 — 새로 열리는 대화에 같이
+   * 적힌다」 고 적어 뒀는데, **적는 자리가 없었다.** `begin()` 은 meta 한 줄만
+   * 쓰고, `못박기목록` 을 부르는 데는 `/pin` 하나뿐이다(commands/work.js).
+   *
+   * 그래서 못 이어받은 판 — 파일은 있는데 남은 말이 중단된 도구 호출뿐이라
+   * 새 대화로 넘어가는 자리 — 에서 핀이 **이 판에서만** 살아 있었다. 화면은
+   * 「그대로 이어 받았습니다」 라고 말해 놓고, 다음에 그 새 대화를 `--resume`
+   * 하면 핀이 하나도 없다. 사람은 이미 말했다고 믿으니 다시 말하지 않는다 —
+   * 핀을 되살리는 까닭으로 위에 적어 둔 바로 그 고장이다.
+   *
+   * 이어쓰는 자리면 안 적는다. 그 파일에는 이미 그 목록이 있고, 같은 줄을
+   * 한 번 더 얹을 까닭이 없다.
+   */
+  if (!이어쓰는자리 && session.못박은것?.개수?.()) {
+    try { store.못박기목록(session.못박은것.직렬화()); }
+    catch { /* 못 적어도 이 판은 돈다 — 다음 이어받기에서만 아쉽다 */ }
+  }
   // 머리말보다 먼저 일어난 탈은 여기 모았다가 아래 경고 자리에서 같이 찍는다.
   const 켤때경고 = [];
   // 되돌리기 이력을 못 읽는다는 말은 한 판에 한 번만 한다 — 턴마다 세는 자리라
@@ -463,7 +527,12 @@ export async function chatLoop(opts = {}) {
    * 계속 실패하면 .deel/sessions 가 끝없이 커지는데 화면에는 영영 안 떴다.
    * 쓰기 실패는 store 가 세어서 알리는데(아래 저장 경고) 이 자리만 옛 모양이었다.
    */
-  try { prune(root); } catch (e) { 켤때경고.push(`오래된 대화 정리를 못 했습니다 — ${clip(String(e?.message ?? e), 60)}`); }
+  /*
+   * 지금 이어받은 대화는 정리에서 뺀다 (사냥5 H5-2, agent/store.js 의 prune 머리말).
+   * 한 달 넘은 대화를 --resume 하면 그 파일은 아직 시각이 옛날이라, 바로 여기서
+   * 지워지고 다음 한 줄이 머리글도 옛 대화도 없는 새 파일에 적혔다.
+   */
+  try { prune(root, { 남길것: [store.id] }); } catch (e) { 켤때경고.push(`오래된 대화 정리를 못 했습니다 — ${clip(String(e?.message ?? e), 60)}`); }
 
   /*
    * 밖에서 붙인 도구(MCP) 서버를 띄운다.
@@ -537,7 +606,8 @@ export async function chatLoop(opts = {}) {
      * 그래서 readline 에게서는 '줄을 안 건드림' 만 받고, 무엇을 채울지는 우리가
      * rl.write 로 직접 정한다. rl.write 는 공개 API 라 한글도 안 깨진다.
      */
-    completer: 상자쓰나 ? (line) => [[], line] : undefined,
+    // 빈 완성기이되 붙여넣은 조각 끝의 탭은 살린다 — readline 이 그 탭을 Tab 키로 보고 삼켰다(ui/complete.js).
+    completer: 상자쓰나 ? 붙임탭완성기(process.stdin) : undefined,
   });
 
   // 입력을 큐로 받는다. rl.question 을 겹쳐 쓰면 파이프로 넣을 때 닫혀 버린다.
@@ -673,6 +743,18 @@ export async function chatLoop(opts = {}) {
     // 상자 안에서 바꾼 줄을 여기서 진짜 줄바꿈으로 되돌린다. 아래 코드는
     // 전부 평범한 \n 만 본다 — 줄표가 이 아래로는 한 글자도 안 새어 나간다.
     const l = 펴기(원래줄);
+    /*
+     * ── 암호 줄은 아무 데도 안 거친다 ──────────────────────────────────
+     *
+     * 엑셀 암호는 일하는 도중에 묻는다(ui/prompt.js 의 askHidden). 그 줄이 여기 아래를 그대로
+     * 지나가면: 파이프 입력에서는 되비추기로 **글자 그대로 찍히고**, 줄 끝이 백틱이면 「이어 쓰기」
+     * 로 쌓여 다음에 친 말과 붙어 모델에게 가고, 입력 상자는 「예약됨」 으로 센다. 받는 쪽에 곧장
+     * 넘긴다.
+     */
+    if (가림중(rl)) {
+      if (waiter) { const w = waiter; waiter = null; w(l); } else queue.push(l);
+      return;
+    }
     if (echo) say(c.gray(l));
     /*
      * 붙여넣는 도중의 줄바꿈은 **사람이 Enter 를 친 것이 아니다.**
@@ -1084,8 +1166,11 @@ export async function chatLoop(opts = {}) {
            *
            * 답이 흘러나오는 동안(줄 중간)에는 그려도 답 줄을 덮으므로,
            * 상자 쪽에서 알아서 넘긴다. 글은 그대로 살아 있다.
+           *
+           * 암호를 받는 중이면 그 글을 그리지 않는다 — 친 글자 수만큼 ● 만 보인다. 여기는
+           * readline 의 되비추기(askHidden 이 가로채는 곳)를 안 거치고 rl.line 을 곧장 그린다.
            */
-          화면.대기갱신(펴기(rl.line), queue.length);
+          화면.대기갱신(가림중(rl) ? '●'.repeat([...펴기(rl.line)].length) : 펴기(rl.line), queue.length);
         }
       });
     });
@@ -1132,7 +1217,9 @@ export async function chatLoop(opts = {}) {
    * 승인으로 읽힌다.
    */
   const ask = async (label, o = {}) => {
-    const 앞 = `  ${c.gray('›')} ${label} ${o.def ? c.gray(`[${o.def}] `) : ''}`;
+    // 승인 물음에는 모델이 내민 명령·경로가 실린다. 거기 섞인 `ESC [2K \r` 로 물음을 덮어써 다른 명령을
+    // 승인하게 만들 수 있다 — 물음을 그리기 전에 뗀다(ansi.js 화면글거르기 머리말).
+    const 앞 = `  ${c.gray('›')} ${화면글거르기(label, { 색남김: true })} ${o.def ? c.gray(`[${o.def}] `) : ''}`;
     화면.붙임(앞);
     /*
      * 되묻는 자리는 상자를 안 쓴다 — '실행할까요? (y/n)' 에 테두리를 두르면
@@ -1314,8 +1401,21 @@ export async function chatLoop(opts = {}) {
     // 설정에도, 세션 기록에도, 감사기록에도, 명령줄에도 안 남는다.
     askPassword: async (label) => {
       if (closed) return null;
-      const pw = await askHidden(rl, label, nextLine);
-      return pw === null || pw === '' ? null : pw;
+      /*
+       * 일하는 도중 미리 쳐 둔 줄은 **암호가 아니다** (4회차 이월).
+       *
+       * nextLine 은 큐에 뭐가 있으면 그것부터 준다. 그래서 「다음은 테스트도 돌려줘」 가 엑셀 암호로
+       * 쓰였다 — 틀린 암호로 한 번을 날리고, 그 지시는 모델에게 영영 안 간다. 위 ask 의 「물음이 뜨기
+       * 전에 쳐 둔 줄은 이 물음의 답이 아니다」 와 같은 까닭·같은 모양이다(파이프는 미리 넣는 것 말고
+       * 답할 길이 없어서 빼지 않는다). 다 묻고 나면 차례 그대로 되돌린다.
+       */
+      const 미리쳐둔 = process.stdin.isTTY ? queue.splice(0) : [];
+      try {
+        const pw = await askHidden(rl, label, nextLine);
+        return pw === null || pw === '' ? null : pw;
+      } finally {
+        if (미리쳐둔.length) queue.unshift(...미리쳐둔);
+      }
     },
     /*
      * ── 이 터미널이 무슨 바이트를 보내는지 본다 (/keys) ──────────────────
@@ -1438,9 +1538,13 @@ export async function chatLoop(opts = {}) {
       // 막혀 있는 것은 기다린 만큼 그대로 손해다. confirm 과 같은 이유로 알린다.
       if (알릴까({ 물어봄: true, 켬: 알림.켬 })) 종();
       창제목(제목글('물어봄', { 폴더: 알림.폴더 }));
+      /*
+       * 입력이 끝났으면 **안 고른 것**이다. `끝나면` 이 없어 def 인 '1' 로 떨어지면,
+       * 아무도 안 고른 판에서 1번을 「사람이 골랐다」 로 모델에게 실어 보낸다.
+       */
       const 답 = String(await ask(
         고를것.length ? 옮긴말('ask.pickPrompt', { 끝: 고를것.length }) : 옮긴말('ask.freePrompt'),
-        { def: 고를것.length ? '1' : '' },
+        { def: 고를것.length ? '1' : '', 끝나면: '' },
       )).trim();
       창제목(제목글('도는중', { 폴더: 알림.폴더 }));
 
@@ -1474,8 +1578,20 @@ export async function chatLoop(opts = {}) {
        */
       if (알릴까({ 물어봄: true, 켬: 알림.켬 })) 종();
       창제목(제목글('물어봄', { 폴더: 알림.폴더 }));
-      // 멈추라고 누른 것은 **거절**이다. def 인 'y' 로 물러나면 ESC 가 승인이 된다.
-      const a = (await ask('실행할까요? (y/n)', { def: 'y', 멈추면: 'n' })).toLowerCase();
+      /*
+       * 멈추라고 누른 것은 **거절**이다. def 인 'y' 로 물러나면 ESC 가 승인이 된다.
+       *
+       * 입력이 **끝난 것**(파이프·Ctrl+D)도 마찬가지로 거절이다. 여태 이 물음만
+       * `끝나면` 이 없어서 `끝나면 ?? def` 가 'y' 로 떨어졌다 — 앞에 사람이 없는
+       * 자리에서 물음이 뜨자마자 저절로 승인되고 명령이 그냥 돌았다. 같은 파일의
+       * 「띄울까요?」·「나가도 될까요?」 는 처음부터 `끝나면: 'n'` 이었다.
+       *
+       * (한동안 여기 「여기만 옛 모양으로 남아 있었다」 고 적혀 있었는데 거짓이었다 —
+       * 계획 승인·이어하기·Ask 도구 셋이 그대로 남아 있었고, 그중 계획 승인은 도구
+       * 하나가 아니라 **계획 전체**를 아무도 답하지 않은 채 승인했다. 지금은 넷 다
+       * 막았다.) 승인은 **답한 사람이 있을 때만** 나는 것이다.
+       */
+      const a = (await ask('실행할까요? (y/n)', { def: 'y', 끝나면: 'n', 멈추면: 'n' })).toLowerCase();
       창제목(제목글('도는중', { 폴더: 알림.폴더 }));
       return a === 'y' || a === 'yes' || a === 'ㅇ';
     },
@@ -1567,7 +1683,19 @@ export async function chatLoop(opts = {}) {
     // 무슨 일이 일어나는 중인지 알려 준다 — 멈춘 것처럼 보이면 안 된다.
     화면.돌리기(옮긴말('run.ctxProbe'));
     let r = null;
-    try { r = await probeCtx(conn, { timeout: 6000 }); } catch { /* 못 물어보면 아래에서 처리 */ }
+    /*
+     * 던진 까닭을 **들고 있는다.**
+     *
+     * 여기는 까닭을 안 받고 삼키면서 「못 물어보면 아래에서 처리」 라고 적어
+     * 두었는데, 아래는 그걸 처리할 수가 없었다 — 던지면 r 이 null 이라 `r?.why` 가
+     * 통째로 안 걸린다. 프로필에 ctx 가 적혀 있는 판에서는 그래서 **경고가 한
+     * 줄도 안 나갔고**, 저장된 숫자가 방금 서버에서 확인한 값처럼 머리말에 떴다.
+     * probeCtx 는 두드리다 난 탈은 스스로 삼키지만, 두드릴 자리를 짓는 자리
+     * (모델 이름을 주소에 싣는 encodeURIComponent)는 그 밖이라 여기로 던진다.
+     */
+    let 던진탈 = null;
+    try { r = await probeCtx(conn, { timeout: 6000 }); } catch (e) { 던진탈 = String(e?.message ?? e); }
+    const 못한까닭 = r?.why ?? 던진탈;
     화면.돌림멈춤('');
     if (r?.value) {
       const 전 = conn.ctx;
@@ -1627,8 +1755,8 @@ export async function chatLoop(opts = {}) {
        * 없다」 는 사람이 할 일이 셋 다 다르다. 여태 이 자리에서 그걸 버리고
        * 늘 「서버가 안 알려줍니다」 한 문장으로 뭉갰다.
        */
-      길이경고.push(`컨텍스트를 못 알아냈습니다 ${c.gray('(' + (r?.why ?? '까닭 모름') + ')')} — 우선 ${CTX_DEFAULT.toLocaleString()} 으로 잡았습니다. ${c.cyan('/ctx 655360')} 처럼 직접 지정하세요`);
-    } else if (r?.why && !r?.tried?.some((t) => t.ok)) {
+      길이경고.push(`컨텍스트를 못 알아냈습니다 ${c.gray('(' + (못한까닭 ?? '까닭 모름') + ')')} — 우선 ${CTX_DEFAULT.toLocaleString()} 으로 잡았습니다. ${c.cyan('/ctx 655360')} 처럼 직접 지정하세요`);
+    } else if (못한까닭 && !r?.tried?.some((t) => t.ok)) {
       /*
        * 프로필에 값이 적혀 있으면 **아무 말도 안 하던** 자리다.
        *
@@ -1642,7 +1770,7 @@ export async function chatLoop(opts = {}) {
        * 켤 때마다 경고를 붙이면 곧 아무도 안 읽는다. 여기서 말하는 것은
        * **아무 데서도 대답을 못 받은** 판뿐이다.
        */
-      길이경고.push(`컨텍스트를 서버에 못 물어봤습니다 ${c.gray('(' + r.why + ')')}`
+      길이경고.push(`컨텍스트를 서버에 못 물어봤습니다 ${c.gray('(' + 못한까닭 + ')')}`
         + ` — 프로필에 적힌 ${c.white(Number(prof.ctx).toLocaleString())} 을 그대로 씁니다. 서버에서 바뀌었으면 ${c.cyan('/ctx auto')}`);
     }
   };
@@ -1692,7 +1820,9 @@ export async function chatLoop(opts = {}) {
   // 안 알려준 것을 아는지 모른다 — 그게 불안하다.
   {
     const 기억 = 기억읽기(root);
-    if (기억.줄들.length) 길이알림.push(`지난 대화에서 정한 것 ${기억.줄들.length}개를 들고 시작합니다 — ${c.cyan('/memory')}`);
+    // 안 믿는 폴더에 딸려 온 기억은 안 싣는다(agent/memory.js). 그때 「들고 시작합니다」 는 거짓말이다.
+    if (기억.안믿음) warn.push(`이 폴더의 기억(.deel/memory.md)은 안 실었습니다 — 믿는 폴더가 아니고 이 PC 의 deel 이 적은 그대로도 아닙니다. 실으려면 ${c.cyan('deel trust')}`);
+    else if (기억.줄들.length) 길이알림.push(`지난 대화에서 정한 것 ${기억.줄들.length}개를 들고 시작합니다 — ${c.cyan('/memory')}`);
   }
   if (mcp붙임.서버들.length) {
     const 도구수 = mcp붙임.서버들.reduce((n, s) => n + s.도구.length, 0);
@@ -1707,6 +1837,13 @@ export async function chatLoop(opts = {}) {
    */
   if (found.안믿음) {
     warn.push(`이 폴더의 스킬은 안 읽었습니다 — 믿는 폴더가 아닙니다. 읽게 하려면 ${c.cyan('deel trust')}`);
+  }
+  // 에이전트 정의와 내 명령을 덮으려던 저장소 명령도 같은 문을 지났다 (agent/agents.js · skills/discover.js).
+  if (에이전트정보.안믿음) {
+    warn.push(`이 폴더의 에이전트 정의는 안 읽었습니다 — 믿는 폴더가 아닙니다. 읽게 하려면 ${c.cyan('deel trust')}`);
+  }
+  if (found.안믿은명령?.length) {
+    warn.push(`이 폴더의 명령 ${found.안믿은명령.map((n) => c.white(`/${n}`)).join(' · ')} 은 내 명령과 이름이 겹쳐 안 읽었습니다 — 믿는 폴더가 아닙니다`);
   }
   if (!conn.tools) warn.push(옮긴말('run.noTools'));
   if (!conn.streaming) warn.push(옮긴말('run.noStream'));
@@ -2100,7 +2237,20 @@ export async function chatLoop(opts = {}) {
     let 접는중 = false;
     const 접기멈춤 = () => { if (접는중) { 화면.돌림멈춤(); 접는중 = false; } };
 
-    const clearThinking = () => { 화면.임시지움(); thinkingShown = false; };
+    /*
+     * 생각이 끝나면 **몇 자 생각했는지 한 줄 남긴다.**
+     *
+     * 도는 동안의 줄(화면.생각)은 임시라 곧 지워지고, 파이프·기록에서는 아예 안 그려진다.
+     * 그래서 모델이 생각을 했는지조차 화면에 남지 않았다 — 느린 턴의 까닭이 안 보인다.
+     */
+    let 생각남긴수 = 0;
+    const clearThinking = () => {
+      화면.임시지움(); thinkingShown = false;
+      if (thinkChars > 생각남긴수) {
+        say(`  ${mark.think} ${c.gray(옮긴말('run.thoughtChars', { n: thinkChars.toLocaleString() }))}`);
+        생각남긴수 = thinkChars;
+      }
+    };
     // 단계 꼬리표 — 붙을 때만 뒤에 한 칸을 같이 붙인다. 쉬움 수준에서는 빈 글자라
     // '생각 중…' 앞에 빈칸 두 개가 뜨는 일이 없다.
     const 꼬리표 = (ev) => { const t = stageTag(ev, session.level); return t ? t + ' ' : ''; };
@@ -2156,6 +2306,7 @@ export async function chatLoop(opts = {}) {
           case 'stage':
             stage = ev;
             thinkChars = 0;
+            생각남긴수 = 0;
             break;
 
           // 다시 부르는 이유. 쉬움 수준에서는 토큰 숫자를 안 꺼낸다 —
@@ -2430,12 +2581,23 @@ export async function chatLoop(opts = {}) {
           case 'task_start':
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }
-            화면.일바꿈('하위', clip(ev.목적, 24));
+            /*
+             * 목적은 **모델이 적은 글**이다 — 그리기 전에 제어 순서를 뗀다.
+             *
+             * 이 파일은 모델이 적은 경로·명령·요약을 화면에 올릴 때마다 원천에서
+             * 걸러 왔다(112·120·140줄). 여기 셋만 날것으로 나갔다. 지금은 받는
+             * 쪽이 둘 다 막고 있어 새지는 않지만(inputbox.js 의 걸러 · ansi.js 의
+             * say), 그 둘은 **우리 색은 남긴다** — 모델이 적어 넣은 ESC[3xm 은
+             * 그대로 통과해 뒤따르는 줄까지 물들인다. 한 줄 요약이 화면 색을
+             * 바꿀 까닭이 없다. 막는 자리가 하나 더 있어서 나쁠 것도 없다.
+             */
+            const 하위목적 = 화면글거르기(String(ev.목적 ?? ''));
+            화면.일바꿈('하위', clip(하위목적, 24));
             // 사무실은 도는 하위 작업 수만큼 자리를 채운다.
             도는하위 += 1;
             화면.하위갱신(도는하위);
             say('');
-            say(`  ${c.hmagenta('⌥')} ${c.bold('하위 작업')} ${c.white(clip(ev.목적, 60))}`
+            say(`  ${c.hmagenta('⌥')} ${c.bold('하위 작업')} ${c.white(clip(하위목적, 60))}`
               + ` ${c.gray(`· ${보일이름(ev.모드)} · 최대 ${ev.steps}걸음`)}`);
             say(`  ${c.gray('여기서부터는 따로 떨어진 대화입니다 — 결과 요약만 위로 올라옵니다.')}`);
             /*
@@ -2463,7 +2625,7 @@ export async function chatLoop(opts = {}) {
               stuck: '헛돌아서 스스로 멈췄습니다 — 다 못 했습니다',
               aborted: '중단했습니다' }[끝.type] ?? '끝난 이유를 알 수 없습니다';
             say('');
-            say(`  ${잘됨 ? c.green('✓') : c.yellow('⚠')} ${c.gray('하위 작업')} ${c.white(clip(ev.목적, 50))}`
+            say(`  ${잘됨 ? c.green('✓') : c.yellow('⚠')} ${c.gray('하위 작업')} ${c.white(clip(화면글거르기(String(ev.목적 ?? '')), 50))}`
               + ` ${c.gray(`— ${왜}`)} ${c.gray(`(${끝.steps ?? 0}걸음${ev.모델 ? ` · ${ev.모델}` : ''})`)}`);
             // 무엇이 실제로 생겼는지는 하위가 한 말이 아니라 디스크가 말한다.
             만든파일보이기(끝.files);
@@ -2489,7 +2651,7 @@ export async function chatLoop(opts = {}) {
             break;
 
           /*
-           * 종합 모드가 **단계를 옮겼다** (agent/단계.js).
+           * 종합 모드가 **단계를 옮겼다** (agent/phase.js).
            *
            * 이 줄이 없으면 사람은 화면의 모드 표시가 턴 도중에 왜 바뀌었는지
            * 모른다 — 자기가 누른 적도 없는데 `~디버그` 가 `~코드` 로 바뀌어
@@ -2595,12 +2757,21 @@ export async function chatLoop(opts = {}) {
           case 'compacted': {
             접기멈춤();
             const 줄인 = ev.before - ev.after;
-            say(`  ${c.cyan('◱')} ${c.gray(`대화 ${ev.folded}개를 요약으로 접었습니다 — `)}` +
+            /*
+             * 요약을 못 받고 옛 대화를 **잘라 낸** 것을 「요약으로 접었습니다」 라고 먼저 적고
+             * 그 아래 노란 줄로 뒤집고 있었다. 첫 줄만 읽는 사람은 요약이 남은 줄 안다 —
+             * 실제로는 앞선 대화가 없어졌다. 한 일을 첫 줄에 적고, 못 받은 까닭을 붙인다.
+             */
+            const 한일 = ev.fallback
+              ? c.yellow(`요약을 못 받아 옛 대화 ${ev.folded}개를 잘라 냈습니다 — `)
+              : c.gray(`대화 ${ev.folded}개를 요약으로 접었습니다 — `);
+            say(`  ${c.cyan('◱')} ${한일}` +
                 `${c.gray(ev.before.toLocaleString())} ${c.gray('→')} ${c.white(ev.after.toLocaleString())} ${c.gray('토큰')} ` +
                 `${c.green(`(${Math.round((줄인 / Math.max(1, ev.before)) * 100)}% 줄어듦)`)}`);
-            if (ev.fallback) say(`     ${c.yellow('요약을 못 받아 그냥 줄였습니다.')}`);
+            if (ev.fallback && ev.why) say(`     ${c.gray(clip(String(ev.why), 100))}`);
             // 접히면 이력이 통째로 바뀐다. 덧붙이기로는 못 맞추니 새로 적는다.
-            ctx.갈래.현재store().replace(session.messages, `압축 — ${ev.folded}개를 요약으로`);
+            ctx.갈래.현재store().replace(session.messages,
+              ev.fallback ? `압축 못 함 — 옛 대화 ${ev.folded}개를 잘라 냄` : `압축 — ${ev.folded}개를 요약으로`);
             saved = session.messages.length;
             break;
           }
@@ -3051,9 +3222,18 @@ export async function chatLoop(opts = {}) {
       // 계획을 다 내놓고 사람 답을 기다리는 자리다. 위 confirm 과 같은 이유로 알린다.
       if (알릴까({ 물어봄: true, 켬: 알림.켬 })) 종();
       창제목(제목글('물어봄', { 폴더: 알림.폴더 }));
+      /*
+       * 입력이 **끝난 것**(파이프·Ctrl+D)은 승인이 아니다 — 위 「실행할까요?」 와 같다.
+       *
+       * 그쪽 머리말이 「같은 파일의 다른 물음들은 처음부터 끝나면:'n' 이었고 여기만
+       * 옛 모양으로 남아 있었다」 고 적으며 고쳤는데, 그 말이 사실이 아니었다.
+       * 계획 승인은 그대로 남아 `끝나면 ?? def` 가 'y' 로 떨어졌다 — 도구 하나
+       * 승인받는 자리는 막아 놓고 계획 **전체**를 승인하는 자리가 열려 있었다.
+       * 재 보니 아무도 답하지 않은 판에서 계획이 승인되고 파일이 만들어졌다.
+       */
       const 답 = String(await ask(
         `${옮긴말('plan.ask')} ${c.gray(옮긴말('plan.hint'))}`,
-        { def: 'y' },
+        { def: 'y', 끝나면: 'n', 멈추면: 'n' },
       )).trim();
       /*
        * ── 골라진 것 + 하고 싶은 말 ────────────────────────────────────
@@ -3153,9 +3333,10 @@ export async function chatLoop(opts = {}) {
       say('');
       if (알릴까({ 물어봄: true, 켬: 알림.켬 })) 종();
       창제목(제목글('물어봄', { 폴더: 알림.폴더 }));
+      // 여기도 같다 — 아무도 답하지 않은 판에서 모델을 한 판 더 부르면 안 된다.
       const 답 = String(await ask(
         `이어서 할까요? ${c.gray('⏎ 이어서 · n 그만')}`,
-        { def: 'y' },
+        { def: 'y', 끝나면: 'n', 멈추면: 'n' },
       )).trim().toLowerCase();
 
       if (['n', 'no', 'ㄴ', '취소', '그만', '아니', '아니요', '아니오'].includes(답)) {
@@ -3201,6 +3382,18 @@ export async function chatLoop(opts = {}) {
     const 껐다 = await 미리보기끄기();
     if (껐다) say(`  ${mark.ok} ${c.gray(`미리보기를 껐습니다 (${껐다.서버.url}).`)}`);
   }
+  /*
+   * 문서를 글로 바꾸며 떨군 임시 파일도 거둔다.
+   *
+   * convert.js 는 바꾼 글을 읽자마자 그 자리에서 지운다. 그런데 윈도우에서
+   * soffice 가 파일을 아직 물고 있으면 그 rmSync 가 실패하고, 거기 붙은 주석은
+   * 「못 지우면 임시치우기가 거둔다」 였다. **거두는 자를 부르는 데가 한 군데도
+   * 없었다.** 그래서 사람 문서의 알맹이가 든 .txt 가 `.deel/tmp` 에 그대로 쌓였다.
+   *
+   * 아무 말도 안 한다. 우리가 떨군 것을 우리가 치우는 일이라 사람이 알 일이 없고,
+   * 못 거둬도 다음 세션이 다시 지나간다.
+   */
+  try { 임시치우기(root); } catch { /* 못 거둬도 대화를 끝내는 데는 지장 없다 */ }
   // 끝맺음은 화면을 접기 **전에** 그린다. close() 가 상자를 걷어내므로,
   // 그 뒤에 찍으면 걷어낸 자리에 뜬금없이 한 줄이 남는다.
   say('');

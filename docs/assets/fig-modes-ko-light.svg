@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="744" height="444" viewBox="0 0 744 444" role="img" aria-label="deel — 여덟 가지 작업 모드">
+  <title>deel — 여덟 가지 작업 모드</title>
+  <desc>모드마다 파일을 바꿀 수 있는지, 생각 강도가 얼마인지, 한 턴에 몇 걸음까지 도는지가 다르다. 읽기 전용 모드에는 파일을 바꾸는 도구가 아예 목록에 없다.</desc>
+  <rect width="744" height="444" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
+    <text x="36.0" y="36.0" fill="#1f2328" font-size="16" font-weight="600" textLength="182.4" lengthAdjust="spacing" xml:space="preserve">여덟 가지 작업 모드</text>
+    <text x="36.0" y="58.0" fill="#59636e" font-size="11.5" textLength="462.3" lengthAdjust="spacing" xml:space="preserve">무슨 일을 하는 중인가에 따라 도구 · 생각 · 걸음이 한꺼번에 바뀝니다</text>
+    <rect x="36.0" y="84.0" width="671.3" height="270.0" rx="9" fill="none" stroke="#d0d7de" stroke-width="1.4"/>
+    <text x="76.9" y="104.0" fill="#59636e" font-size="10.5" textLength="25.2" lengthAdjust="spacing" xml:space="preserve">모드</text>
+    <text x="237.1" y="104.0" fill="#59636e" font-size="10.5" textLength="25.2" lengthAdjust="spacing" xml:space="preserve">파일</text>
+    <text x="296.5" y="104.0" fill="#59636e" font-size="10.5" textLength="69.3" lengthAdjust="spacing" xml:space="preserve">생각 · 강도</text>
+    <text x="390.4" y="104.0" fill="#59636e" font-size="10.5" textLength="56.7" lengthAdjust="spacing" xml:space="preserve">걸음 상한</text>
+    <text x="470.5" y="104.0" fill="#59636e" font-size="10.5" textLength="75.6" lengthAdjust="spacing" xml:space="preserve">무슨 일일 때</text>
+    <line x1="36" y1="114" x2="707.3" y2="114" stroke="#d0d7de" stroke-width="1"/>
+    <text x="52.0" y="133.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◎</text>
+    <text x="76.9" y="133.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">종합</text>
+    <text x="136.3" y="133.0" fill="#1f2328" font-size="11.5" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">Auto</text>
+    <text x="237.1" y="133.0" fill="#9a6700" font-size="11.5" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">바꿈</text>
+    <text x="296.5" y="133.0" fill="#1f2328" font-size="11.5" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">—·save</text>
+    <text x="390.4" y="133.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">192</text>
+    <text x="470.5" y="133.0" fill="#59636e" font-size="11.5" textLength="172.5" lengthAdjust="spacing" xml:space="preserve">요청에 따라 알맞은 모드로</text>
+    <rect x="37" y="144.0" width="669.3" height="30" fill="#f6f8fa"/>
+    <text x="52.0" y="163.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◆</text>
+    <text x="76.9" y="163.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">코드</text>
+    <text x="136.3" y="163.0" fill="#1f2328" font-size="11.5" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">Code</text>
+    <text x="237.1" y="163.0" fill="#9a6700" font-size="11.5" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">바꿈</text>
+    <text x="296.5" y="163.0" fill="#1f2328" font-size="11.5" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">—·save</text>
+    <text x="390.4" y="163.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">192</text>
+    <text x="470.5" y="163.0" fill="#59636e" font-size="11.5" textLength="89.7" lengthAdjust="spacing" xml:space="preserve">고치고 만든다</text>
+    <text x="52.0" y="193.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">☰</text>
+    <text x="76.9" y="193.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">계획</text>
+    <text x="136.3" y="193.0" fill="#1f2328" font-size="11.5" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">Plan</text>
+    <text x="237.1" y="193.0" fill="#1a7f37" font-size="11.5" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">읽기만</text>
+    <text x="296.5" y="193.0" fill="#1f2328" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">high·deep</text>
+    <text x="390.4" y="193.0" fill="#1f2328" font-size="11.5" textLength="13.8" lengthAdjust="spacing" xml:space="preserve">40</text>
+    <text x="470.5" y="193.0" fill="#59636e" font-size="11.5" textLength="165.6" lengthAdjust="spacing" xml:space="preserve">먼저 계획 · 승인 뒤 실행</text>
+    <rect x="37" y="204.0" width="669.3" height="30" fill="#f6f8fa"/>
+    <text x="52.0" y="223.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◈</text>
+    <text x="76.9" y="223.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">설계</text>
+    <text x="136.3" y="223.0" fill="#1f2328" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">Architect</text>
+    <text x="237.1" y="223.0" fill="#1a7f37" font-size="11.5" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">읽기만</text>
+    <text x="296.5" y="223.0" fill="#1f2328" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">high·deep</text>
+    <text x="390.4" y="223.0" fill="#1f2328" font-size="11.5" textLength="13.8" lengthAdjust="spacing" xml:space="preserve">48</text>
+    <text x="470.5" y="223.0" fill="#59636e" font-size="11.5" textLength="207.0" lengthAdjust="spacing" xml:space="preserve">구조를 짠다 · 파일은 안 건드림</text>
+    <text x="52.0" y="253.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◉</text>
+    <text x="76.9" y="253.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">디버그</text>
+    <text x="136.3" y="253.0" fill="#1f2328" font-size="11.5" textLength="34.5" lengthAdjust="spacing" xml:space="preserve">Debug</text>
+    <text x="237.1" y="253.0" fill="#9a6700" font-size="11.5" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">바꿈</text>
+    <text x="296.5" y="253.0" fill="#1f2328" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">high·deep</text>
+    <text x="390.4" y="253.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">250</text>
+    <text x="470.5" y="253.0" fill="#59636e" font-size="11.5" textLength="89.7" lengthAdjust="spacing" xml:space="preserve">원인을 찾는다</text>
+    <rect x="37" y="264.0" width="669.3" height="30" fill="#f6f8fa"/>
+    <text x="52.0" y="283.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◍</text>
+    <text x="76.9" y="283.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">점검</text>
+    <text x="136.3" y="283.0" fill="#1f2328" font-size="11.5" textLength="48.3" lengthAdjust="spacing" xml:space="preserve">Inspect</text>
+    <text x="237.1" y="283.0" fill="#1a7f37" font-size="11.5" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">읽기만</text>
+    <text x="296.5" y="283.0" fill="#1f2328" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">high·deep</text>
+    <text x="390.4" y="283.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">120</text>
+    <text x="470.5" y="283.0" fill="#59636e" font-size="11.5" textLength="220.8" lengthAdjust="spacing" xml:space="preserve">결함을 찾는다 · 파일은 안 건드림</text>
+    <text x="52.0" y="313.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◇</text>
+    <text x="76.9" y="313.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">묻기</text>
+    <text x="136.3" y="313.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">Ask</text>
+    <text x="237.1" y="313.0" fill="#1a7f37" font-size="11.5" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">읽기만</text>
+    <text x="296.5" y="313.0" fill="#1f2328" font-size="11.5" textLength="55.2" lengthAdjust="spacing" xml:space="preserve">low·even</text>
+    <text x="390.4" y="313.0" fill="#1f2328" font-size="11.5" textLength="13.8" lengthAdjust="spacing" xml:space="preserve">12</text>
+    <text x="470.5" y="313.0" fill="#59636e" font-size="11.5" textLength="172.5" lengthAdjust="spacing" xml:space="preserve">설명만 · 아무것도 안 바꿈</text>
+    <rect x="37" y="324.0" width="669.3" height="30" fill="#f6f8fa"/>
+    <text x="52.0" y="343.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">❋</text>
+    <text x="76.9" y="343.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">총괄</text>
+    <text x="136.3" y="343.0" fill="#1f2328" font-size="11.5" textLength="82.8" lengthAdjust="spacing" xml:space="preserve">Orchestrator</text>
+    <text x="237.1" y="343.0" fill="#9a6700" font-size="11.5" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">바꿈</text>
+    <text x="296.5" y="343.0" fill="#1f2328" font-size="11.5" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">—·save</text>
+    <text x="390.4" y="343.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">384</text>
+    <text x="470.5" y="343.0" fill="#59636e" font-size="11.5" textLength="144.9" lengthAdjust="spacing" xml:space="preserve">큰 일을 쪼개서 끝까지</text>
+    <text x="36.0" y="380.0" fill="#59636e" font-size="10.5" textLength="434.7" lengthAdjust="spacing" xml:space="preserve">걸음 상한은 모델 창 크기에 따라 달라집니다 — 위 값은 128k 기준입니다.</text>
+    <text x="36.0" y="398.0" fill="#59636e" font-size="10.5" textLength="459.9" lengthAdjust="spacing" xml:space="preserve">이건 승인 정책(/mode — 얼마나 물어보나)과 다른 축입니다. 둘은 곱해집니다.</text>
+    <text x="36.0" y="416.0" fill="#59636e" font-size="10.5" textLength="434.7" lengthAdjust="spacing" xml:space="preserve">값은 src/agent/modes.js · src/agent/budget.js 에서 읽어다 그렸습니다.</text>
+  </g>
+</svg>

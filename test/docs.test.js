@@ -18,7 +18,7 @@
  *   · 구형 hwp 는 못 읽는다고 말하고 **어떻게 하면 되는지**를 같이 준다
  *   · 깨진 파일은 깨졌다고 말한다 — 빈 글을 돌려주지 않는다
  */
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeZip } from '../src/pack/zip.js';
@@ -130,6 +130,65 @@ trace('4-pptx');
     text.indexOf('첫 장') < text.indexOf('둘째 장') && text.indexOf('둘째 장') < text.indexOf('열째 장'), '');
   check('pptx: 장이 구획으로 갈린다', r.덩이들.length === 3, String(r.덩이들.length));
   check('pptx: 구획 이름에 장 번호가 있다', r.덩이들.some((d) => /2/.test(d.이름)), r.덩이들.map((d) => d.이름).join());
+
+  /*
+   * 한 장을 **못 풀었을 때** (2.0.0 3회차 사냥). readZip 이 건너뛴 것을 안 보고 있어서, 석 장 중 두 장만
+   * 온전한 글처럼 나갔다 — 모델은 발표가 두 장이라고 요약한다. 목록의 푼 크기를 거짓으로 적어 둘째 장만 못 풀게 만든다.
+   */
+  const 묶음 = Buffer.from(makeZip([
+    ['[Content_Types].xml', '<Types/>'],
+    ['ppt/slides/slide1.xml', 판('<a:p><a:r><a:t>첫 장</a:t></a:r></a:p>')],
+    ['ppt/slides/slide2.xml', 판(`<a:p><a:r><a:t>${'둘째 장 '.repeat(200)}</a:t></a:r></a:p>`)],
+    ['ppt/slides/slide3.xml', 판('<a:p><a:r><a:t>셋째 장</a:t></a:r></a:p>')],
+  ].map(([p, 글]) => ({ name: p, data: Buffer.from(글, 'utf8') }))));
+  let 자리 = 묶음.readUInt32LE(묶음.length - 22 + 16);
+  for (let i = 0; i < 4; i++) {
+    const 이름길이 = 묶음.readUInt16LE(자리 + 28);
+    const 이름 = 묶음.subarray(자리 + 46, 자리 + 46 + 이름길이).toString('utf8');
+    if (이름 === 'ppt/slides/slide2.xml') 묶음.writeUInt32LE(8, 자리 + 24);   // 푼 크기 = 8B 라고 우긴다
+    자리 += 46 + 이름길이 + 묶음.readUInt16LE(자리 + 30) + 묶음.readUInt16LE(자리 + 32);
+  }
+  writeFileSync(join(root, '문서/한장깨짐.pptx'), 묶음);
+  const 깨짐 = readDoc(join(root, '문서/한장깨짐.pptx'));
+  const 깨짐글 = 깨짐.ok ? docText(깨짐.덩이들).text : String(깨짐.error);
+  check('★★ 못 푼 장이 있으면 말한다 (조용히 빼지 않는다)', /slide2|2/.test(깨짐글) && /못 (읽|풀)/.test(깨짐글), 깨짐글.slice(0, 200));
+  check('  나머지 장은 그대로 읽힌다', 깨짐글.includes('첫 장') && 깨짐글.includes('셋째 장'), 깨짐글.slice(0, 200));
+}
+
+// ══ 4b. 표 안의 표 — 바깥 표가 사라지면 안 된다 ═════════════════════════
+//
+// 관공서 기안문은 표 한 칸에 결재란(또 다른 표)을 넣는 것이 표준 꼴이다.
+// 그릇을 깊이마다 안 두면 안쪽 표가 바깥 칸을 갈아 치워서 **값이 든 바깥
+// 표만** 통째로 없어진다. 남은 글은 멀쩡한 문장이라 오류도 잘림 알림도 안
+// 뜬다 — 검사가 아니면 아무도 못 본다.
+trace('4b-표속표');
+{
+  const 결재란 = '<w:tbl><w:tr>'
+    + '<w:tc><w:p><w:r><w:t>담당</w:t></w:r></w:p></w:tc>'
+    + '<w:tc><w:p><w:r><w:t>과장</w:t></w:r></w:p></w:tc>'
+    + '</w:tr></w:tbl>';
+  담기('문서/기안.docx', [
+    ['[Content_Types].xml', '<Types/>'],
+    ['word/document.xml',
+      '<?xml version="1.0"?><w:document xmlns:w="x"><w:body>'
+      + '<w:tbl><w:tr>'
+      + `<w:tc><w:p><w:r><w:t>사업명</w:t></w:r></w:p>${결재란}</w:tc>`
+      + '<w:tc><w:p><w:r><w:t>2026년 정보화</w:t></w:r></w:p></w:tc>'
+      + '</w:tr></w:tbl>'
+      + '</w:body></w:document>'],
+  ]);
+  const r = readDoc(join(root, '문서/기안.docx'));
+  const { text } = docText(r.덩이들);
+  check('★ 표 속 표: 바깥 표의 값이 안 사라진다', /사업명\s*\|\s*2026년 정보화/.test(text), JSON.stringify(text));
+  const 표줄 = text.split('\n').filter((l) => l.includes(' | '));
+  check('★ 표 속 표: 안팎 두 행이 다 나온다', 표줄.length === 2 && 표줄.includes('담당 | 과장'), JSON.stringify(표줄));
+
+  // 마크다운 길(표를따로)도 같은 것을 본다 — 행이 하나면 표가 통째로 어긋난다.
+  const r2 = readDoc(join(root, '문서/기안.docx'), { 표를따로: true });
+  const 행들 = (r2.덩이들?.[0]?.문단들 ?? []).filter((p) => p?.행);
+  check('★ 표 속 표: 표를따로 에서도 행이 둘 다 온다', 행들.length === 2, JSON.stringify(행들));
+  check('표 속 표: 바깥 행의 칸이 제자리에 둘',
+    행들.some((p) => p.행.length === 2 && p.행[0] === '사업명' && p.행[1] === '2026년 정보화'), JSON.stringify(행들));
 }
 
 // ══ 5. Read 도구로 ══════════════════════════════════════════════════════
@@ -173,6 +232,42 @@ trace('6-안되는것');
   담기('문서/그냥.docx', [['readme.txt', '문서 아님']]);
   const r3 = readDoc(join(root, '문서/그냥.docx'));
   check('알맹이 없는 꾸러미: 오류로 말한다', r3.ok === false && /찾지 못|없습니다/.test(r3.error ?? ''), r3.error);
+
+  /*
+   * ★ 이름만 hwpx 인 옛 hwp 에 **못 하는 길**을 알려 주지 않는다 (8회차).
+   *
+   * OLE 복합문서 서명은 옛 hwp 와 옛 Office 가 똑같다. 그래서 `보고서.hwpx`
+   * 인데 속이 OLE 이면 십중팔구 옛 hwp 인데, 안내는 「soffice --convert-to
+   * hwpx」 를 시켰다 — soffice 에 그런 길이 없다. 모델은 그 명령을 실제로
+   * 불러 보고 실패하고, 사람은 그 왕복을 고스란히 문다. 진짜 길(한글에서
+   * hwpx 로 저장)은 바로 옆 옛hwp안내 가 이미 적어 두고 있었다.
+   */
+  writeFileSync(join(root, '문서/이름만.hwpx'), Buffer.concat([ole, Buffer.alloc(600)]));
+  const r옛 = readDoc(join(root, '문서/이름만.hwpx'));
+  check('★★ hwpx 인데 속이 OLE 이면 없는 길(soffice --convert-to hwpx)을 안 준다',
+    r옛.ok === false && !/convert-to hwpx/.test(r옛.error ?? ''), (r옛.error ?? '').split('\n').pop());
+  check('★ 그 자리에서 진짜 길(한글에서 hwpx 로 저장)을 준다',
+    /한글\(한컴오피스\)/.test(r옛.error ?? '') && /hwpx 로 저장/.test(r옛.error ?? ''), r옛.error ?? '');
+  // docx·pptx 는 여태대로다 — 그쪽은 정말 Word·PowerPoint 나 soffice 로 바꾸면 된다.
+  writeFileSync(join(root, '문서/이름만.docx'), Buffer.concat([ole, Buffer.alloc(600)]));
+  const r옛d = readDoc(join(root, '문서/이름만.docx'));
+  check('  docx 는 여태대로 soffice 길을 준다', /convert-to docx/.test(r옛d.error ?? ''), (r옛d.error ?? '').split('\n').pop());
+
+  /*
+   * ★ 버퍼로 줘도 읽는다 (8회차).
+   *
+   * 인자 이름이 `경로또는버퍼` 고 버퍼를 읽는 갈래까지 있는데, 갈래를 **경로
+   * 확장자로만** 정해서 버퍼로 부르면 언제나 「어떤 문서인지 모르는 경로입니다」
+   * 였다 — 있는 척만 하는 죽은 길이다. 꾸러미 안을 보면 무엇인지 알 수 있다.
+   */
+  const 버퍼r = readDoc(readFileSync(join(root, '문서/보고.hwpx')));
+  check('★★ 버퍼로 줘도 읽는다', 버퍼r.ok === true, 버퍼r.error ?? '');
+  check('★ 꾸러미 속을 보고 갈래를 짚는다', 버퍼r.갈래 === 'hwpx', String(버퍼r.갈래));
+  const 버퍼d = readDoc(readFileSync(join(root, '문서/공문.docx')));
+  check('  docx 버퍼도 갈래를 짚는다', 버퍼d.ok === true && 버퍼d.갈래 === 'docx', String(버퍼d.갈래));
+  const 모를것 = readDoc(makeZip([{ name: 'readme.txt', data: Buffer.from('문서 아님') }]));
+  check('★ 모르는 꾸러미는 모른다고 한다 (빈 글로 안 돌려준다)',
+    모를것.ok === false && !!모를것.error, JSON.stringify(모를것).slice(0, 80));
 
   // 빈 문단뿐인 문서. 오류가 아니라 '빈 문서' 다 — 둘은 다르다.
   담기('문서/빈것.hwpx', [['Contents/section0.xml', '<hs:sec><hp:p></hp:p></hs:sec>']]);

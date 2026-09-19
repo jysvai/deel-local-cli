@@ -21,7 +21,7 @@
 //   3. 이미 끝낸 것은 다시 하지 말라고 못 박는다.
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -96,10 +96,12 @@ await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 const 주소 = `http://127.0.0.1:${srv.address().port}/v1`;
 
 /** deel 을 띄우고 줄을 하나씩 넣는다. 기다리는 법은 planapprove 와 같다. */
-async function 띄우기(줄들, { 더줄인자 = [] } = {}) {
+async function 띄우기(줄들, { 더줄인자 = [], 차리기 = null } = {}) {
   도구번호 = 1;
   이은말 = null;
   const root = mkdtempSync(join(tmpdir(), 'deel-resume-'));
+  // 띄우기 전에 폴더에 무엇을 깔아 둘 자리 (지난 대화 파일 같은 것).
+  if (차리기) 차리기(root);
   const home = mkdtempSync(join(tmpdir(), 'deel-resume-home-'));
   writeFileSync(join(home, 'config.json'), JSON.stringify({
     version: 1, active: 'stub', level: '개발자',
@@ -273,11 +275,100 @@ trace('5-못-이어받았으면-말한다');
   check('★ 이어할 것을 찾는 길을 준다', /\/sessions/.test(r.out), '');
   check('이어받았다고는 안 한다', !/개를 이어 받았습니다/.test(r.out),
     r.out.split('\n').filter((l) => /이어 받았/.test(l)).join(' | ').slice(0, 100));
+  /*
+   * ── ★★ 「새 대화로 시작합니다」 라고 해 놓고 **그 id 로** 파일을 만들었다 ──
+   *
+   * 못 읽었어도 store 는 그 id 를 쥔 채로 남아 있었다. 아래 `if (!store)` 는
+   * 참이 아니니 새 대화가 안 열리고, store.begin() 이 **오타난 그 이름으로**
+   * .deel/sessions 에 파일을 하나 만든다. 그러면 다음번 `/sessions` 목록에
+   * 오타가 진짜 대화처럼 끼고, 같은 오타로 한 번 더 이어하면 이번에는
+   * 「이어 받았습니다」 가 뜬다 — 사람이 이어받았다고 믿는 대화가 사실은
+   * 자기 오타로 생긴 빈 파일이다.
+   *
+   * 화면 문구가 아니라 **폴더에 무엇이 남았나**를 본다.
+   */
+  const 대화들 = existsSync(join(r.root, '.deel', 'sessions'))
+    ? readdirSync(join(r.root, '.deel', 'sessions')) : [];
+  check('★★ 못 이어받은 id 로 대화 파일을 안 만든다',
+    !대화들.includes('없는대화아이디.jsonl'), 대화들.join(' · ').slice(0, 120));
+  check('★ 그래도 새 대화는 열린다 (한 판이 통째로 안 적히면 안 된다)',
+    대화들.some((f) => f.endsWith('.jsonl')), 대화들.join(' · ').slice(0, 120));
   rmSync(r.root, { recursive: true, force: true });
   rmSync(r.home, { recursive: true, force: true });
 }
 
-const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
+trace('6-이어받은-대화를-정리가-안-지운다');
+
+// ── ★★ (사냥5 H5-2) 이어받자마자 그 대화 파일을 지우던 자리 ────────────────
+//
+// 정리(prune)는 파일 시각만 본다 — 최근 30개를 남기고 30일 넘은 것을 지운다.
+// 한 달 넘은 대화를 `--resume` 으로 이어받으면 그 파일은 아직 한 줄도 안 늘어서
+// 시각이 옛날 그대로다. 그런데 이어받기 **바로 뒤에** 정리가 돌아 그 파일을 지웠다.
+// 화면에는 「이어 받았습니다」 가 뜨고, 다음 한 줄은 머리글도 옛 대화도 없는 새
+// 파일에 적힌다 — 다음에 이어받으면 어제 한 말만 남아 있다.
+{
+  const 옛이름 = '20260102-080000';
+  let 옛파일 = '';
+  const r = await 띄우기([], {
+    더줄인자: ['--resume', 옛이름],
+    차리기: (root) => {
+      const 곳 = join(root, '.deel', 'sessions');
+      mkdirSync(곳, { recursive: true });
+      const 줄 = (o) => JSON.stringify(o) + '\n';
+      for (let i = 0; i < 31; i++) {
+        writeFileSync(join(곳, `20260901-0000${String(i).padStart(2, '0')}.jsonl`),
+          줄({ t: 'meta', model: '스텁모델' }) + 줄({ t: 'msg', m: { role: 'user', content: `최근 대화 ${i}` } }), 'utf8');
+      }
+      옛파일 = join(곳, `${옛이름}.jsonl`);
+      writeFileSync(옛파일, 줄({ t: 'meta', model: '스텁모델' })
+        + 줄({ t: 'msg', m: { role: 'user', content: '옛-대화의-물음' } })
+        + 줄({ t: 'msg', m: { role: 'assistant', content: '옛-대화의-답' } }), 'utf8');
+      const 예전 = new Date(Date.now() - 45 * 86400000);
+      utimesSync(옛파일, 예전, 예전);
+    },
+  });
+  check('(사냥5 H5-2) 옛 대화를 이어받았다고 말한다', /개를 이어 받았습니다/.test(r.out),
+    r.out.split('\n').filter((l) => /이어 받았|대화/.test(l)).slice(0, 2).join(' | ').slice(0, 120));
+  const 글 = existsSync(옛파일) ? readFileSync(옛파일, 'utf8') : '';
+  check('★★ (사냥5 H5-2) 이어받은 오래된 대화 파일을 켜자마자 정리가 지우지 않는다',
+    existsSync(옛파일) && 글.includes('"t":"meta"') && 글.includes('옛-대화의-물음'),
+    existsSync(옛파일) ? 글.slice(0, 80) : '(파일이 없어졌다)');
+  rmSync(r.root, { recursive: true, force: true });
+  rmSync(r.home, { recursive: true, force: true });
+}
+
+// ── 되살린 핀이 다 실린다고 말했다 (6회차 못박기6u W4) ──────────────────
+//
+// 1.20.x 에서 박아 둔 긴 핀이 기록에 그대로 남아 있을 수 있다. 되살리기(생성자)는
+// 더하기 를 안 거쳐 토큰 상한 검사가 안 닿는다. 저장 14개 → 개수 상한에서 12개 →
+// 프롬프트에는 3개인데, 화면은 「12개도 그대로 이어 받았습니다」 였다.
+{
+  const 줄 = (o) => JSON.stringify(o) + '\n';
+  const 판 = (이름, 핀들) => 띄우기([], {
+    더줄인자: ['--resume', 이름],
+    차리기: (root) => {
+      const 곳 = join(root, '.deel', 'sessions');
+      mkdirSync(곳, { recursive: true });
+      writeFileSync(join(곳, `${이름}.jsonl`), 줄({ t: 'meta', model: '스텁모델' })
+        + 줄({ t: 'msg', m: { role: 'user', content: '핀-물음' } })
+        + 줄({ t: 'msg', m: { role: 'assistant', content: '핀-답' } })
+        + 줄({ t: 'pins', 목록: 핀들.map((말, i) => ({ 번호: i + 1, 말 })) }), 'utf8');
+    },
+  });
+  const 긴것 = await 판('20260915-100000', Array.from({ length: 14 }, (_, i) => `rule ${i} ${'x'.repeat(190)}`));
+  check('★ (6회차 W4) 되살린 핀이 다 안 실리면 다 이어 받았다고 하지 않고 몇 개만 실리는지 말한다',
+    !/12개도 그대로/.test(긴것.out) && /14개 가운데 3개만/.test(긴것.out),
+    긴것.out.split('\n').filter((l) => /못 박아/.test(l)).join(' | ').slice(0, 160));
+  rmSync(긴것.root, { recursive: true, force: true });
+  rmSync(긴것.home, { recursive: true, force: true });
+  const 짧은것 = await 판('20260915-100100', ['운영 DB 는 건드리지 마라', '빌드는 npm run b']);
+  check('짝: 다 실리면 그대로 이어 받았다고 한다', /2개도 그대로 이어 받았습니다/.test(짧은것.out) && !/가운데/.test(짧은것.out),
+    짧은것.out.split('\n').filter((l) => /못 박아/.test(l)).join(' | ').slice(0, 160));
+  rmSync(짧은것.root, { recursive: true, force: true });
+  rmSync(짧은것.home, { recursive: true, force: true });
+}
+
+const G ='\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n끊긴 자리 잇기 검사  ${D}(걸음을 다 써도 ⏎ 하나로 이어지는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);

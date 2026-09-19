@@ -50,6 +50,50 @@ trace('1-명령배우기');
   check('됐다 안 됐다 하는 것은 안 싣는다', !/git push/.test(b.요약() ?? ''), b.요약() ?? '');
 }
 
+trace('1b-없던-프로그램이-생겼을-때');
+
+/*
+ * ── ★★ 없던 프로그램이 생기면 「안 된다」 가 풀려야 한다 ────────────────
+ *
+ * 실패는 첫 낱말로 세고(`pnpm`) 성공은 두 낱말로 센다(`pnpm install`). 그래서
+ * 오늘 pnpm 을 깔아 세 번 성공해도 그 성공은 **다른 칸**에 쌓이고, `pnpm` 칸의
+ * 「안 된다」 는 아무도 안 푼다. 프롬프트가 같은 화면에 「되는 명령: pnpm
+ * install」 과 「안 되는 명령(다시 부르지 마라): pnpm」 을 나란히 싣는다.
+ *
+ * 그리고 모델은 뒤엣것을 믿는다 — 부르지 말라는 쪽이 더 센 말이라서.
+ * 삭힘(confidence.js)이 언젠가 풀어 주긴 하지만, 그건 **안 겪었을 때** 얘기다.
+ * 오늘 눈앞에서 된 것을 못 본 척하는 것은 삭힘이 고칠 수 있는 일이 아니다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-evolve-프로그램-'));
+  const b = new 배움(방, null, '2026-08-26T00:00:00Z');
+  b.명령본것('pnpm install', false, "'pnpm' is not recognized as an internal or external command");
+  b.명령본것('pnpm add x', false, 'spawn pnpm ENOENT');
+  check('없는 프로그램은 첫 낱말로 「안 된다」 가 된다', /안 되는 명령.*`pnpm`/.test(b.요약() ?? ''),
+    b.요약() ?? '없음');
+
+  // 오늘 깔았다. 같은 날 세 번 됐다.
+  b.명령본것('pnpm install', true);
+  b.명령본것('pnpm install', true);
+  b.명령본것('pnpm install', true);
+  const 요약 = b.요약() ?? '';
+  check('★★ 된 것을 보면 프로그램 칸의 「안 된다」 도 풀린다',
+    !/안 되는 명령/.test(요약), 요약 || '없음');
+  check('★ 되는 쪽은 그대로 말한다', /되는 명령.*pnpm install/.test(요약), 요약 || '없음');
+  check('★ 같은 화면에 「된다」 와 「안 된다」 를 같이 싣지 않는다',
+    !(/되는 명령/.test(요약) && /안 되는 명령/.test(요약)), 요약 || '없음');
+
+  // 안 겪은 칸을 새로 만들지는 않는다 — 겪은 척하는 것이 된다.
+  const 방2 = mkdtempSync(join(tmpdir(), 'deel-evolve-프로그램2-'));
+  const c = new 배움(방2, null, '2026-08-26T00:00:00Z');
+  c.명령본것('npm test', true);
+  check('겪은 적 없는 프로그램 칸을 새로 만들지 않는다', !Object.hasOwn(c.폴더.명령, 'npm'),
+    Object.keys(c.폴더.명령).join(' | '));
+
+  rmSync(방, { recursive: true, force: true });
+  rmSync(방2, { recursive: true, force: true });
+}
+
 trace('2-모델버릇');
 
 // ── 모델 버릇 ───────────────────────────────────────────────────────────
@@ -65,6 +109,54 @@ trace('2-모델버릇');
   check('걸음이 쌓이면 버릇을 말한다', /잘라 먹/.test(b.요약(모델) ?? ''), b.요약(모델) ?? '없음');
   check('무엇을 하라고까지 적는다', /Append/.test(b.요약(모델) ?? ''));
   check('다른 모델 얘기는 안 한다', b.요약('딴모델') === null || !/잘라 먹/.test(b.요약('딴모델') ?? ''));
+}
+
+trace('2b-버릇도-늙는다');
+
+/*
+ * ── ★★ 오늘 한 걸음이 석 달 묵은 버릇을 되살리면 안 된다 ────────────────
+ *
+ * 버릇 셈은 `{걸음, 잘린인자, …, at}` 한 칸에 모여 있고, 셈을 적을 때마다
+ * `at` 이 **오늘로** 옮겨 간다. 그런데 셈 자체는 안 삭히고 그냥 더했다.
+ * 그러면 석 달 쉰 모델에 오늘 한 걸음을 세는 순간, 요약도 카드도 그 칸을
+ * 「오늘 잰 것」 으로 읽는다 — 석 달 전 버릇이 100% 로 부활한다.
+ *
+ * 나이를 보고 삭히는 쪽(요약)만 고쳐서는 안 된다. 카드(agent/card.js)는
+ * 이 칸을 **나이 없이** 그대로 받아 하네스를 바꾼다. 그러니 셈을 적는
+ * 자리에서 삭혀 둬야 둘이 같은 것을 본다.
+ */
+{
+  const h = mkdtempSync(join(tmpdir(), 'deel-evolve-늙음-'));
+  const 옛것 = new 배움(null, h, '2026-05-26T00:00:00Z');   // 석 달 전
+  옛것.모델본것('늙은모델', '걸음', 100);
+  옛것.모델본것('늙은모델', '잘린인자', 50);
+
+  const 오늘 = new 배움(null, h, '2026-08-26T00:00:00Z');
+  오늘.모델본것('늙은모델', '걸음');                        // 오늘 딱 한 걸음
+  const 칸 = 오늘.집.모델.늙은모델;
+  check('★★ 오늘 한 걸음이 석 달 묵은 셈을 그대로 되살리지 않는다', 칸.걸음 < 20,
+    `걸음 ${칸.걸음}`);
+  check('★ 잘린 셈도 같이 삭는다', (칸.잘린인자 ?? 0) < 10, `잘린인자 ${칸.잘린인자}`);
+  check('★ 오늘 센 한 걸음은 남는다', 칸.걸음 >= 1, `걸음 ${칸.걸음}`);
+  check('★ 석 달 쉰 버릇은 프롬프트에 안 실린다', !/잘라 먹/.test(오늘.요약('늙은모델') ?? ''),
+    오늘.요약('늙은모델') ?? '없음');
+
+  // 토큰 보정은 셈이 아니라 배수다 — 삭히면 추정이 통째로 틀어진다.
+  옛것.보정본것('늙은모델', 1.4);
+  const 또오늘 = new 배움(null, h, '2026-08-26T00:00:00Z');
+  또오늘.모델본것('늙은모델', '걸음');
+  check('★ 보정 배수는 안 삭힌다', Math.abs((또오늘.아는보정('늙은모델') ?? 0) - 1.4) < 0.01,
+    String(또오늘.아는보정('늙은모델')));
+
+  // 같은 날 이어 세는 것은 그대로 쌓여야 한다 — 삭힐 날이 없다.
+  const h2 = mkdtempSync(join(tmpdir(), 'deel-evolve-늙음2-'));
+  const 같은날 = new 배움(null, h2, '2026-08-26T00:00:00Z');
+  같은날.모델본것('m', '걸음', 10);
+  같은날.모델본것('m', '걸음', 10);
+  check('같은 날 센 것은 안 깎인다', 같은날.집.모델.m.걸음 === 20, String(같은날.집.모델.m.걸음));
+
+  rmSync(h, { recursive: true, force: true });
+  rmSync(h2, { recursive: true, force: true });
 }
 
 trace('3-토큰보정이어받기');
@@ -253,6 +345,55 @@ trace('7-못써도안죽는다');
     다시.아는전선('claude-opus-5', `${맨틀}/anthropic/v1`) === null,
     JSON.stringify(다시.아는전선('claude-opus-5', `${맨틀}/anthropic/v1`)));
 
+  /*
+   * ── ★★ 반쪽 열쇠는 안 적는다 ──────────────────────────────────────────
+   *
+   * 열쇠는 `모델@host#규격` 이다. 둘 중 하나가 비면 `@host#규격` · `모델@` 가
+   * 되는데, 그건 「어느 모델인지 모르는 카드」 거나 「어느 창구인지 모르는
+   * 카드」 다. 둘 다 다음번에 **다른 것에 얹힐** 열쇠다 — 주소를 못 읽어
+   * 빈 host 로 적힌 카드는, 다음에 또 주소를 못 읽은 전혀 다른 창구가
+   * 그대로 집어 간다. 전선은 틀리게 배우면 멀쩡한 기능이 조용히 꺼진다.
+   *
+   * 여태 `열쇠 === '@'` 하나만 막았다. 규격이 붙으면 `@host#openai` 라 그
+   * 문을 그냥 지나간다.
+   */
+  const 반쪽 = new 배움(null, mkdtempSync(join(tmpdir(), 'deel-evolve-반쪽-')));
+  반쪽.전선본것('', 'https://gw.example/v1', { 생각형식: 'effort' }, 'openai');
+  반쪽.전선본것('gpt-y', '주소아님', { 생각형식: 'effort' }, 'openai');
+  반쪽.전선본것('', '', { 생각형식: 'effort' }, 'openai');
+  check('★★ 모델 이름이 없으면 안 적는다', !Object.keys(반쪽.집.전선 ?? {}).some((k) => k.startsWith('@')),
+    JSON.stringify(Object.keys(반쪽.집.전선 ?? {})));
+  check('★★ 주소를 못 읽으면 안 적는다', !Object.keys(반쪽.집.전선 ?? {}).some((k) => /@(#|$)/.test(k)),
+    JSON.stringify(Object.keys(반쪽.집.전선 ?? {})));
+  check('★ 반쪽 열쇠는 하나도 안 남는다', Object.keys(반쪽.집.전선 ?? {}).length === 0,
+    JSON.stringify(Object.keys(반쪽.집.전선 ?? {})));
+
+  /*
+   * ── ★★ 「모델 것만 지우기」 가 전선 카드까지 날리면 안 된다 ────────────
+   *
+   * `지우기('모델')` 이 집을 통째로 빈것() 으로 갈아 끼웠다. 빈것() 에는
+   * 전선 칸이 아예 없으니, 버릇 셈만 지우려던 사람이 창구마다 400 을 맞아
+   * 가며 알아낸 전선 모양까지 같이 잃는다. 바로 위에서 「전선만 지우는 길」
+   * 을 따로 낸 것과 같은 까닭이다 — 지우는 범위는 적힌 그대로여야 한다.
+   */
+  const 둘다 = new 배움(null, mkdtempSync(join(tmpdir(), 'deel-evolve-모델지우기-')), '2026-08-26T00:00:00Z');
+  둘다.전선본것('claude-opus-5', 'https://api.anthropic.com/v1', 카드);
+  둘다.모델본것('claude-opus-5', '걸음', 30);
+  둘다.보정본것('claude-opus-5', 1.3);
+  둘다.지우기('모델');
+  check('★ 모델 버릇은 지워진다', !둘다.집.모델?.['claude-opus-5'], JSON.stringify(둘다.집.모델));
+  check('★ 토큰 보정도 같이 지워진다', 둘다.아는보정('claude-opus-5') === null, String(둘다.아는보정('claude-opus-5')));
+  check('★★ 전선 카드는 남는다',
+    JSON.stringify(둘다.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')) === JSON.stringify(카드),
+    JSON.stringify(둘다.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')));
+
+  // 「전부」 는 말 그대로 전부다.
+  const 전부 = new 배움(null, mkdtempSync(join(tmpdir(), 'deel-evolve-전부-')), '2026-08-26T00:00:00Z');
+  전부.전선본것('claude-opus-5', 'https://api.anthropic.com/v1', 카드);
+  전부.지우기('전부');
+  check('★ 「전부」 는 전선도 지운다', 전부.아는전선('claude-opus-5', 'https://api.anthropic.com/v1') === null,
+    JSON.stringify(전부.아는전선('claude-opus-5', 'https://api.anthropic.com/v1')));
+
   rmSync(r2, { recursive: true, force: true });
   rmSync(h2, { recursive: true, force: true });
 }
@@ -408,10 +549,54 @@ trace('5-오염방지');
   }
 }
 
+trace('9-모양이-틀린-파일');
+
+/*
+ * ── JSON 은 맞는데 모양이 틀린 배운것.json ─────────────────────────────
+ *
+ * 명령 표만 거르고 모델·전선 표는 안 걸렀다. `{"모델":null}` 이나 `{"전선":"x"}`
+ * 한 줄이면 모델본것·전선본것이 TypeError 로 던졌고, 그 자리(loop.js)는 안 감싸
+ * 있어서 대화가 그대로 죽었다. 이 파일은 사람이 손으로 고치는 파일이다.
+ */
+{
+  const 이상한것들 = [
+    { 모델: null }, { 모델: 'abc' }, { 모델: 5 }, { 모델: [1, 2] }, { 모델: { 'gpt-x': 'str' } },
+    { 전선: 'x' }, { 전선: 5 }, { 전선: { 'gpt-x@gw.example#openai': 'str' } },
+  ];
+  for (const 이상한것 of 이상한것들) {
+    const h = mkdtempSync(join(tmpdir(), 'deel-evolve-shape-'));
+    writeFileSync(join(h, '배운것.json'), JSON.stringify(이상한것), 'utf8');
+    let 탈 = null;
+    try {
+      const b = new 배움(null, h, '2026-08-26T00:00:00Z');
+      b.모델본것('gpt-x', '걸음');
+      b.보정본것('gpt-x', 1.1);
+      b.전선본것('gpt-x', 'https://gw.example/v1', { 생각형식: 'effort' }, 'openai');
+      b.아는전선('gpt-x', 'https://gw.example/v1', 'openai');
+      b.요약('gpt-x');
+      b.현황('gpt-x');
+    } catch (e) { 탈 = e; }
+    check(`★★ 모양이 틀린 배운것.json(${JSON.stringify(이상한것)})에서 안 죽는다`, 탈 === null, String(탈?.message ?? ''));
+    rmSync(h, { recursive: true, force: true });
+  }
+
+  // 성한 칸은 틀린 칸 옆에서도 그대로 이어받는다.
+  const h = mkdtempSync(join(tmpdir(), 'deel-evolve-shape2-'));
+  writeFileSync(join(h, '배운것.json'), JSON.stringify({
+    모델: { 'gpt-x': { 걸음: 3, 보정: 1.2, at: '2026-08-26T00:00:00Z' }, 망친것: 'str' },
+    전선: { 'gpt-x@gw.example#openai': { 생각형식: 'effort', at: '2026-08-26T00:00:00Z' }, 망친것: 7 },
+  }), 'utf8');
+  const b = new 배움(null, h, '2026-08-26T00:00:00Z');
+  check('★ 성한 모델 칸은 걸러내지 않는다', b.아는보정('gpt-x') === 1.2, String(b.아는보정('gpt-x')));
+  check('★ 성한 전선 칸은 걸러내지 않는다', b.아는전선('gpt-x', 'https://gw.example/v1', 'openai')?.생각형식 === 'effort',
+    JSON.stringify(b.아는전선('gpt-x', 'https://gw.example/v1', 'openai')));
+  rmSync(h, { recursive: true, force: true });
+}
+
 rmSync(root, { recursive: true, force: true });
 rmSync(home, { recursive: true, force: true });
 
-const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
+const G ='\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n겪어 본 것 검사  ${D}(쓸수록 이 PC 에 맞춰 나아지는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);

@@ -20,7 +20,7 @@
 //      겹치기 쉽다. 조용히 덮으면 그 파일은 그 자리에서 없어진다.
 //   3. 폴더를 **제 안으로** 옮기려 할 때 막는가 (`mv a a/b` — 통째로 사라진다).
 //   4. 작업 폴더 밖으로 못 나가는가.
-import { mkdtempSync, writeFileSync, existsSync, readFileSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, readFileSync, mkdirSync, rmSync, readdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -315,6 +315,175 @@ trace('9-드라이브가다를때');
     JSON.stringify(원본남음));
 
   rmSync(방, { recursive: true, force: true });
+}
+
+trace('9-2-못-옮긴-것은-흔적이-없다');
+
+/*
+ * ── ★ 못 옮겼으면 되돌리기 이력에도 **아무것도 안 남아야** 한다 ────────────
+ *
+ * 스냅샷을 먼저 뜨고 옮기다 실패하는 길이 있었다(길 중간이 파일 · 폴더를 있는
+ * 폴더 자리에 덮어쓰기 · 대소문자만 다른 제 안). 파일은 한 글자도 안 움직였는데
+ * 그 턴이 이력에 남는다. 그러면 /undo 는 **그 헛턴을 되돌리고** 「되돌린수=1」
+ * 을 찍는다 — 사람이 되돌리려던 앞 턴의 진짜 변경은 그대로 남는다.
+ * 한파일쓰기 머리말이 Write·Edit 에서 이미 막아 둔 그 꼴이다.
+ */
+const 감싸서 = async (일) => { try { return await 일(); } catch (e) { return { error: `(던짐) ${e.message}` }; } };
+{
+  const { root, ctx } = 판깔기();
+  await TOOLS.Write.run({ file_path: 'doc.txt', content: 'v1\n' }, ctx);   // 앞 턴 — 진짜 변경
+  ctx.history.nextTurn();
+  writeFileSync(join(root, 'a.txt'), 'A', 'utf8');
+  writeFileSync(join(root, 'f.txt'), 'F', 'utf8');
+  const 턴수 = ctx.history.turns().length;
+  const 막힘 = await 감싸서(() => TOOLS.Move.run({ from: 'a.txt', to: 'f.txt/b.txt' }, ctx));
+  check('길 중간이 파일이면 못 옮긴다', !!막힘.error && existsSync(join(root, 'a.txt')), 막힘.error ?? '(옮겨졌다)');
+  check('★ 그 말이 날 오류로 튀어나가지 않는다', !/^\(던짐\)/.test(막힘.error ?? ''), 막힘.error ?? '');
+  check('★★ 못 옮긴 것은 되돌리기 이력에 턴을 안 남긴다', ctx.history.turns().length === 턴수, `${턴수} → ${ctx.history.turns().length}`);
+  const u = ctx.history.undo(1);
+  check('★★ 그 뒤 /undo 한 번은 앞 턴의 진짜 변경을 되돌린다', !existsSync(join(root, 'doc.txt')),
+    `되돌린수=${u.되돌린수} doc남음=${existsSync(join(root, 'doc.txt'))}`);
+  rmSync(root, { recursive: true, force: true });
+}
+{
+  const { root, ctx } = 판깔기();
+  mkdirSync(join(root, 'a')); writeFileSync(join(root, 'a', 'x.txt'), 'X');
+  mkdirSync(join(root, 'b')); writeFileSync(join(root, 'b', 'y.txt'), 'Y');
+  writeFileSync(join(root, 'f.txt'), 'F');
+  const 폴더위 = await 감싸서(() => TOOLS.Move.run({ from: 'a', to: 'b', overwrite: true }, ctx));
+  check('★ 폴더를 있는 폴더 자리에 덮어쓰려 하면 사람 말로 거절한다',
+    !!폴더위.error && !/EPERM|ENOTEMPTY|EISDIR|ENOTDIR|던짐/.test(폴더위.error) && existsSync(join(root, 'b', 'y.txt')) && existsSync(join(root, 'a', 'x.txt')),
+    폴더위.error ?? '(옮겨졌다)');
+  const 파일을폴더위 = await 감싸서(() => TOOLS.Move.run({ from: 'f.txt', to: 'b', overwrite: true }, ctx));
+  check('★ 파일을 폴더 자리에 덮어쓰려 해도 사람 말로 거절한다',
+    !!파일을폴더위.error && !/EPERM|EISDIR|던짐/.test(파일을폴더위.error) && existsSync(join(root, 'b', 'y.txt')), 파일을폴더위.error ?? '(옮겨졌다)');
+  check('★★ 그 둘도 이력에 턴을 안 남긴다', ctx.history.turns().length === 0, `turns=${ctx.history.turns().length}`);
+
+  /*
+   * ── 첫 안내가 **안 되는 길**을 알려 주면 안 된다 ──────────────────────
+   *
+   * overwrite 없이 있는 폴더 위로 옮기면 「덮어쓰려면 overwrite: true 를
+   * 주세요」 가 나왔다. 그대로 하면 바로 위 검사가 재는 「이미 있는 폴더라
+   * 덮어쓸 수 없습니다」 로 막힌다 — 같은 도구가 시킨 대로 했는데 거절이다.
+   *
+   * 모델은 그 한 걸음을 반드시 밟는다(그러라고 적혀 있으니). 걸음 하나를
+   * 통째로 버리고, 작은 모델은 거기서 같은 자리를 맴돈다. 첫 안내부터
+   * 되는 길을 적어야 한다 — 그 안으로 넣으려면 to 에 이름까지 적는 것.
+   */
+  const 폴더위덮기없이 = await 감싸서(() => TOOLS.Move.run({ from: 'a', to: 'b' }, ctx));
+  check('★ 있는 폴더 위로 옮기면 처음부터 안 된다고 한다',
+    !!폴더위덮기없이.error && /덮어쓸 수 없습니다/.test(폴더위덮기없이.error), 폴더위덮기없이.error ?? '(옮겨졌다)');
+  check('★ 안 되는 길(overwrite: true)을 시키지 않는다',
+    !/overwrite/.test(폴더위덮기없이.error ?? ''), 폴더위덮기없이.error ?? '');
+  check('  대신 되는 길을 알려 준다', /이름까지 적어/.test(폴더위덮기없이.error ?? ''), 폴더위덮기없이.error ?? '');
+
+  const 파일을폴더위덮기없이 = await 감싸서(() => TOOLS.Move.run({ from: 'f.txt', to: 'b' }, ctx));
+  check('  파일 → 있는 폴더도 같다', !!파일을폴더위덮기없이.error && !/overwrite/.test(파일을폴더위덮기없이.error),
+    파일을폴더위덮기없이.error ?? '(옮겨졌다)');
+
+  /*
+   * 짝: **파일** 위로 덮어쓰는 것은 진짜로 되는 길이다. 여기까지 막으면
+   * 안내를 없앤 것이 아니라 기능을 없앤 것이 된다.
+   */
+  writeFileSync(join(root, 'g.txt'), 'G');
+  const 파일위 = await 감싸서(() => TOOLS.Move.run({ from: 'f.txt', to: 'g.txt' }, ctx));
+  check('  짝: 파일 위에는 overwrite 를 알려 준다', /overwrite/.test(파일위.error ?? ''), 파일위.error ?? '(덮어썼다)');
+
+  rmSync(root, { recursive: true, force: true });
+}
+
+trace('9-3-링크');
+
+/*
+ * ── ★★ 링크를 옮기고 /undo 하면 **링크 너머의 진짜 파일**이 지워졌다 ─────
+ *
+ * 폴더 링크(윈도우 정션 · 심볼릭 링크)는 walk 가 그 안을 따라 들어가 파일을
+ * 짝지어 뜬다. 옮기는 것은 링크 하나인데, 되돌릴 때는 「새 자리의 x.txt 는
+ * 원래 없던 것」 이라며 지운다 — 새 자리는 여전히 진짜 폴더를 가리키고 있으니
+ * **진짜 파일이 지워진다.** 안전망이 파일을 지우는 꼴이다.
+ */
+{
+  const { root, ctx } = 판깔기();
+  mkdirSync(join(root, 'real')); writeFileSync(join(root, 'real', 'x.txt'), 'REAL');
+  let 링크됨 = true;
+  try { symlinkSync(join(root, 'real'), join(root, 'link'), process.platform === 'win32' ? 'junction' : 'dir'); } catch { 링크됨 = false; }
+  if (링크됨) {
+    const r = await 감싸서(() => TOOLS.Move.run({ from: 'link', to: 'link2' }, ctx));
+    if (!r.error) ctx.history.undo(1);
+    check('★★ 링크를 옮기고 되돌려도 링크가 가리키던 진짜 파일은 남는다', existsSync(join(root, 'real', 'x.txt')),
+      `${r.error ?? r.content} · real=${readdirSync(join(root, 'real')).join(',')}`);
+    check('★ 링크 자체는 옮기지 않는다고 까닭과 함께 말한다', !!r.error && /링크/.test(r.error) && !/던짐/.test(r.error), r.error ?? r.content);
+    check('거절했으면 이력도 안 남긴다', ctx.history.turns().length === 0, `turns=${ctx.history.turns().length}`);
+  }
+  rmSync(root, { recursive: true, force: true });
+}
+
+trace('9-4-대소문자');
+
+/*
+ * ── 대소문자만 다른 이름 (윈도우·맥) ──────────────────────────────────────
+ *
+ * 이 파일 시스템들은 `a.txt` 와 `A.txt` 를 같은 파일로 친다. 그래서
+ *
+ *   Move a.txt → A.txt      「이미 있습니다: A.txt」   (자기 자신과 겹친다고 했다)
+ *   Move src → SRC/inner    「EINVAL: invalid argument」 (제 안이라는 것을 못 알아봤다)
+ *
+ * 둘째는 이력에 헛턴까지 남겼다. 대소문자를 가리는 판(리눅스)에서는 둘 다
+ * 서로 다른 이름이라 이 갈래가 없다 — 그래서 가리는지 먼저 재고 돈다.
+ */
+{
+  const { root, ctx } = 판깔기();
+  writeFileSync(join(root, 'probe.tmp'), '');
+  const 안가림 = existsSync(join(root, 'PROBE.TMP'));
+  rmSync(join(root, 'probe.tmp'), { force: true });
+  if (안가림) {
+    const 이름들 = () => readdirSync(root).filter((x) => x !== '.deel');
+    writeFileSync(join(root, 'a.txt'), 'A');
+    const r = await 감싸서(() => TOOLS.Move.run({ from: 'a.txt', to: 'A.txt' }, ctx));
+    check('★ 대소문자만 바꾸는 이름 바꾸기가 된다', !r.error && 이름들().includes('A.txt') && !이름들().includes('a.txt'),
+      `${r.error ?? r.content} → ${이름들().join(',')}`);
+    check('이름만 바뀌고 내용은 그대로다', existsSync(join(root, 'A.txt')) && readFileSync(join(root, 'A.txt'), 'utf8') === 'A');
+    ctx.history.undo(1);
+    check('★ /undo 하면 이름도 되돌아온다', 이름들().includes('a.txt') && !이름들().includes('A.txt')
+      && readFileSync(join(root, 'a.txt'), 'utf8') === 'A', 이름들().join(','));
+
+    // 같은 턴에 먼저 고친 파일 — 되돌리면 이름은 몰라도 **내용은** 잃으면 안 된다.
+    ctx.history.nextTurn();
+    writeFileSync(join(root, 'b.txt'), 'B0');
+    ctx.history.nextTurn();
+    await TOOLS.Write.run({ file_path: 'b.txt', content: 'B1' }, ctx);
+    const r2 = await 감싸서(() => TOOLS.Move.run({ from: 'b.txt', to: 'B.txt' }, ctx));
+    ctx.history.undo(1);
+    const 남은b = 이름들().find((x) => x.toLowerCase() === 'b.txt');
+    check('★★ 같은 턴에 고친 파일의 이름을 바꾸고 되돌려도 내용을 잃지 않는다',
+      !!남은b && readFileSync(join(root, 남은b), 'utf8') === 'B0', `${r2.error ?? r2.content} → ${남은b ?? '(없어짐)'}`);
+    check('★★ 같은 턴에 고친 파일이어도 /undo 가 이름의 대소문자까지 되돌린다', 남은b === 'b.txt', `${r2.content ?? r2.error} → ${남은b}`);
+
+    // 같은 턴에 새로 만든 파일의 이름만 바꾸고 되돌리면 — 원래 없던 파일이니 없어져야 한다.
+    ctx.history.nextTurn();
+    await TOOLS.Write.run({ file_path: 'c.txt', content: 'C' }, ctx);
+    await 감싸서(() => TOOLS.Move.run({ from: 'c.txt', to: 'C.txt' }, ctx));
+    ctx.history.undo(1);
+    check('★ 같은 턴에 만든 파일은 이름을 바꿨어도 /undo 뒤에 없다', !이름들().some((x) => x.toLowerCase() === 'c.txt'), 이름들().join(','));
+
+    // 폴더의 대소문자만 바꾸기 — 안의 파일뿐 아니라 폴더 이름도 돌아와야 한다.
+    mkdirSync(join(root, 'dir')); writeFileSync(join(root, 'dir', 'x.txt'), 'X');
+    ctx.history.nextTurn();
+    const 폴더 = await 감싸서(() => TOOLS.Move.run({ from: 'dir', to: 'DIR' }, ctx));
+    check('★ 폴더의 대소문자만 바꾸는 이름 바꾸기가 된다', !폴더.error && 이름들().includes('DIR'), `${폴더.error ?? 폴더.content} → ${이름들().join(',')}`);
+    ctx.history.undo(1);
+    check('★★ /undo 하면 폴더 이름의 대소문자도 되돌아온다', 이름들().includes('dir') && !이름들().includes('DIR')
+      && existsSync(join(root, 'dir', 'x.txt')) && readdirSync(join(root, 'dir')).includes('x.txt'), 이름들().join(','));
+
+    mkdirSync(join(root, 'src')); writeFileSync(join(root, 'src', 'x.txt'), 'X');
+    ctx.history.nextTurn();
+    const 턴수 = ctx.history.turns().length;
+    const 제안 = await 감싸서(() => TOOLS.Move.run({ from: 'src', to: 'SRC/inner' }, ctx));
+    check('★ 대소문자만 다른 제 안으로 옮기는 것도 알아보고 거절한다', /제 안/.test(제안.error ?? '') && existsSync(join(root, 'src', 'x.txt')),
+      제안.error ?? '(옮겨졌다)');
+    check('★ 그것도 이력에 턴을 안 남긴다', ctx.history.turns().length === 턴수, `${턴수} → ${ctx.history.turns().length}`);
+  }
+  rmSync(root, { recursive: true, force: true });
 }
 
 trace('10-끝');

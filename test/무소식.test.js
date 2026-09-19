@@ -219,6 +219,135 @@ trace('7-빈delta');
   check('★★★ 빈 delta 만 오는 것도 끊는다', r.탈?.code === 'NONEWS', String(r.탈?.code));
 }
 
+// ── 8. 생각 글이 `reasoning` 칸으로 오는 창구 ───────────────────────────
+trace('8-reasoning칸');
+{
+  /*
+   * 생각 글을 싣는 칸 이름이 창구마다 다르다 — `reasoning_content`(DeepSeek ·
+   * vLLM 옛 판)와 `reasoning`(OpenRouter · Ollama 의 /v1 · vLLM 새 판). 여태
+   * 앞엣것만 읽었다.
+   *
+   * 뒤엣것으로 오면 화면에 생각이 안 나오는 데서 끝나지 않는다. acc 가 안
+   * 자라니 이 파일의 시계가 **멀쩡히 생각하는 중인 흐름**을 「내용이 안 온다」
+   * 로 보고 끊는다 — 오래 생각하는 모델일수록 확실히 끊긴다.
+   */
+  const 생각조각 = (글) => `data: ${JSON.stringify({ choices: [{ delta: { reasoning: 글 } }] })}\n\n`;
+  const { srv, base } = await 세우기({
+    앞에: ['하나 ', '둘 ', '셋 ', '넷 ', '다섯 ', '여섯'].map(생각조각), 핑수: 0, 사이: 80, 뒤에: 글조각('답'),
+  });
+  const r = await 부르기(base, { 잠잠: 5000, 무소식: 300 });
+  srv.closeAllConnections(); srv.close();
+
+  check('★★★ reasoning 칸으로 생각이 흐르는 동안은 안 끊는다', r.탈 === null, String(r.탈?.code ?? ''));
+  check('★★ 그 생각을 모은다', r.끝?.thinking === '하나 둘 셋 넷 다섯 여섯', JSON.stringify(r.끝?.thinking));
+  check('★ 헛알림도 안 뜬다', r.알림.length === 0, String(r.알림.length));
+}
+
+// ── 9. 도구 인자만 받아 놓고 핑만 오면 — 받은 부름을 살린다 ─────────────
+trace('9-도구인자뒤핑');
+{
+  /*
+   * 도구 인자는 조각마다가 아니라 **끝에서 한 번** 묶는다(80KB 인자를 조각마다
+   * 다시 읽느라 이벤트 루프가 몇 초씩 막혔다). 그러면 흐름 가운데에는 묶인 부름이
+   * 아직 없다 — 여기서 「받은 것이 있나」 를 묶인 부름으로만 보면, 인자를 다
+   * 받아 놓고 핑만 오는 자리에서 받은 것을 버리고 NONEWS 를 던진다.
+   */
+  const 인자 = ['{"file', '_path":', '"a.js"}'].map(도구조각);
+  const { srv, base } = await 세우기({ 앞에: 인자, 핑수: 100000, 사이: 25 });
+  const r = await 부르기(base, { 잠잠: 5000, 무소식: 400 });
+  srv.closeAllConnections(); srv.close();
+
+  check('★★★ 인자만 받고 멎어도 오류로 던지지 않는다', r.탈 === null, String(r.탈?.code ?? ''));
+  check('★★ 받아 둔 부름을 묶어서 준다', r.끝?.toolCalls?.[0]?.args?.file_path === 'a.js', JSON.stringify(r.끝?.toolCalls));
+  check('★ 끝난 까닭에 이름을 붙인다', r.끝?.stopped === 흐름멎음, String(r.끝?.stopped));
+}
+
+// ── 10. Ollama 가 도구 부름 줄만 흘려보낼 때 ─────────────────────────────
+trace('10-ollama도구줄');
+{
+  /*
+   * Ollama 는 도구 부름을 글자로 쪼개지 않고 **줄마다 통째로** 준다. 그래서 그
+   * 부름은 모으는 칸(acc._raw)이 아니라 묶인 부름(acc.toolCalls)에 바로 쌓인다.
+   * 자란만큼이 그 자리를 안 셌다 — 부름이 줄줄이 오는 멀쩡한 흐름을 「내용이
+   * 안 온다」 로 보고 알림을 띄우고, 상한에서 「흐름멎음」 으로 잘랐다.
+   */
+  const srv = createServer((req, res) => {
+    req.on('data', () => {});
+    req.on('end', async () => {
+      res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
+      res.flushHeaders();
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 80));
+        if (res.destroyed) return;
+        res.write(`${JSON.stringify({ message: { content: '', tool_calls: [{ function: { name: 'Read', arguments: { p: String(i) } } }] }, done: false })}\n`);
+      }
+      res.end(`${JSON.stringify({ message: { content: '' }, done: true, done_reason: 'stop' })}\n`);
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  resetNet();
+  allowEndpoint(base);
+  const 알림 = [];
+  let 끝 = null;
+  let 탈 = null;
+  try {
+    for await (const ev of chatStream({ kind: 'ollama', base, auth: 'none', key: '', model: 'fake', ctx: 8000, 잠잠: 5000, 무소식: 300 },
+      { messages: [{ role: 'user', content: 'x' }], maxTokens: 10 })) {
+      if (ev.type === '소식없음') 알림.push(ev);
+      else if (ev.type === 'done') 끝 = ev.message;
+    }
+  } catch (e) { 탈 = e; }
+  srv.closeAllConnections(); srv.close();
+
+  check('★★★ 도구 부름 줄만 오는 동안은 안 끊는다', 탈 === null && 끝?.stopped === 'stop' && 끝?.toolCalls?.length === 8,
+    `${String(탈?.code ?? '')} · ${String(끝?.stopped)} · ${끝?.toolCalls?.length}`);
+  check('★★ 헛알림도 안 뜬다', 알림.length === 0, String(알림.length));
+}
+
+// ── 11. 조각이 드물게 오면 — 그래도 끊기 전에 먼저 말한다 ───────────────
+trace('11-드문조각');
+{
+  /*
+   * 알림 시계(300ms)와 끊기 시계(1초) **둘 다** 넘긴 뒤에야 조각 하나가 오는 자리.
+   *
+   * 위 3번은 핑이 촘촘해서(25ms) 알림 시계만 먼저 넘는다 — 그러니 검사 차례가
+   * 뒤바뀌어도 초록이다. 여기는 한 조각이 두 시계를 **한꺼번에** 넘긴다. 끊기를
+   * 먼저 보면 알림은 한 번도 못 나오고, 사람은 왜 끊겼는지 한 마디도 못 듣는다.
+   * 「원래 이런 게이트웨이」 를 우리가 죽이면서 그 사실을 아무도 못 보는 자리다.
+   */
+  const { srv, base } = await 세우기({ 앞에: [글조각('하나')], 핑수: 3, 사이: 1600 });
+  const r = await 부르기(base, { 잠잠: 5000, 무소식: 1000, 무소식알림: 300 });
+  srv.closeAllConnections(); srv.close();
+
+  check('★★★ 한 조각이 두 시계를 함께 넘겨도 알림이 먼저 나온다', r.알림.length === 1, String(r.알림.length));
+  check('★★ 알린 다음에 끊는다', r.끝?.stopped === 흐름멎음, String(r.끝?.stopped));
+  check('★ 받아 둔 글은 그대로 준다', r.글 === '하나', JSON.stringify(r.글));
+}
+
+// ── 12. 거절만 받고 멎으면 — 그 거절문을 버리지 않는다 ──────────────────
+trace('12-거절만');
+{
+  /*
+   * 이 규격은 거절을 `content` 가 아니라 `refusal` 로 흘려보낸다. 그래서 거절문은
+   * 살릴 것이 있나 세는 자리(받은것있나)의 어느 칸에도 안 담겼다 — 거절만 받고
+   * 핑만 오면 그 글을 통째로 버리고 「내용이 안 왔습니다」 로 던졌다.
+   *
+   * 사람은 **왜** 거절당했는지 한 글자도 못 보고, 오류만 보고 같은 말을 또 친다.
+   * 판정은 같으니 또 거절이고 값만 두 배가 된다. 잠잠한지 세는 자(자란만큼)는
+   * 진작 거절글을 세고 있었다 — 둘이 같은 것을 봐야 한다.
+   */
+  const 거절조각 = `data: ${JSON.stringify({ choices: [{ delta: { refusal: '그 일은 도와드릴 수 없습니다.' } }] })}\n\n`;
+  const { srv, base } = await 세우기({ 앞에: [거절조각], 핑수: 100000, 사이: 25 });
+  const r = await 부르기(base, { 잠잠: 5000, 무소식: 700 });
+  srv.closeAllConnections(); srv.close();
+
+  check('★★★ 거절만 받고 멎어도 오류로 던지지 않는다', r.탈 === null, String(r.탈?.code ?? ''));
+  check('★★★ 받아 둔 거절문을 답 자리에 살려서 준다',
+    r.끝?.content === '그 일은 도와드릴 수 없습니다.', JSON.stringify(r.끝?.content));
+  check('★★ 끝난 까닭에 이름을 붙인다', r.끝?.stopped === 흐름멎음, String(r.끝?.stopped));
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n소식 없음 검사  ${D}(바이트는 오는데 내용이 안 올 때)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

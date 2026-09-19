@@ -1,6 +1,6 @@
 // 파일 훑기와 glob 매칭. 외부 패키지 없이 직접 구현한다.
 import { readdirSync, statSync, readFileSync, mkdirSync, copyFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative as 경로상대, basename as 끝이름, sep as 경로가름, resolve as 경로풀기 } from 'node:path';
 import { decode, looksBinary } from './encoding.js';
 import { 뿌리규칙읽기, 파일규칙읽기, 걸리나 } from './ignore.js';
 // 살림이 **어디** 있는지는 config.js 한 곳만 안다 (DEEL_HOME 으로 옮길 수 있다).
@@ -22,6 +22,21 @@ import { homeDir } from '../config.js';
  * 하는 일이 뻔해서 읽으면 다 보인다. 그게 이 프로젝트가 원하는 것이다.
  */
 export function copyDir(from, to, { skipped = [] } = {}) {
+  /*
+   * 담을 곳이 **원본 안**이면 시작도 안 한다.
+   *
+   * 담을 곳을 먼저 만들고 원본을 훑으니, 담을 곳이 원본 안이면 방금 담은 것을 또 훑어 또
+   * 담는다. 끝이 없다. `cd ~` 에서 `/plugin install .` 한 번이면 그렇게 된다 — 임시 자리
+   * `~/.deel/plugins/.tmp-local` 이 원본 안이라서다. 재어 보니 2분 만에 3,341단이었고
+   * 디스크가 찰 때까지 안 멈춘다(2.0.0 6회차 사냥). 윈도우는 대소문자를 안 가르므로 낮춰 견준다.
+   */
+  const 견줄꼴 = (p) => { const r = 경로풀기(p); return process.platform === 'win32' ? r.toLowerCase() : r; };
+  const 원 = 견줄꼴(from);
+  const 곳 = 견줄꼴(to);
+  const 원끝 = 원.endsWith(경로가름) ? 원 : 원 + 경로가름;
+  if (곳 === 원 || 곳.startsWith(원끝)) {
+    throw new Error(`담을 곳이 원본 폴더 안이라 복사하지 않습니다 — 끝없이 제 안으로 복사하게 됩니다: ${to}`);
+  }
   mkdirSync(to, { recursive: true });
   for (const e of readdirSync(from, { withFileTypes: true })) {
     const s = join(from, e.name);
@@ -84,7 +99,20 @@ export const SKIP_DIRS = new Set([
  */
 export function 내부살림(abs) {
   const 편 = String(abs ?? '').replace(/\\/g, '/');
-  const 조각 = 편.split('/');
+  /*
+   * ── 조각마다 `:스트림` 꼬리를 벗기고 본다 (사냥6 F6-2) ───────────────────
+   *
+   * 윈도우(NTFS)는 `config.json::$DATA` 를 config.json **본체**로, `config.json:이름` 을 그
+   * 파일에 붙은 딴 스트림으로 연다. 이 자는 조각을 글자 그대로 견줘서 그 철자가 전부 비켜 갔다 —
+   *
+   *     Read  .deel/config.json::$DATA     열쇠가 그대로 나왔다
+   *     Write .deel/config.json::$DATA     **설정 본체를 덮어썼다**
+   *     cat   .deel/audit.jsonl::$DATA     checkPaths 통과
+   *
+   * 드라이브 조각(`C:`)만 빼고 첫 `:` 뒤를 버린다. 유닉스에서 `:` 는 그냥 글자라 막는 쪽으로
+   * 넓어질 뿐이다(`history:x` 라는 살림 이름을 따로 쓸 까닭이 없다).
+   */
+  const 조각 = 편.split('/').map((x, 몇째) => (몇째 === 0 && /^[A-Za-z]:$/.test(x) ? x : x.replace(/:.*$/s, '')));
   const 이름 = (조각[조각.length - 1] ?? '').toLowerCase();
   /*
    * 살림 자리를 `.deel` 이라는 **글자**로 찾고 있었다.
@@ -120,7 +148,7 @@ export function 내부살림(abs) {
   if (i < 0) {
     try {
       const 집 = String(homeDir()).replace(/\\/g, '/').replace(/[/]+$/, '');
-      const 낮은 = 편.toLowerCase();
+      const 낮은 = 조각.join('/').toLowerCase();
       const 집낮은 = 집.toLowerCase();
       if (집 && (낮은 === 집낮은 || 낮은.startsWith(집낮은 + '/'))) {
         i = 집.split('/').length - 1;
@@ -185,7 +213,38 @@ export function 내부살림(abs) {
       + ' 지난 대화·명령 이력·열쇠 같은 것이라 이 작업과 상관이 없고, 읽으면 컨텍스트만 찹니다.'
       + ' 정말 그 안의 내용이 필요하면 사용자에게 직접 물어보세요.';
   }
-  if (이름 === 'audit.jsonl') {
+  /*
+   * ── 이름만 보고 막지 않는다 ──────────────────────────────────────────
+   *
+   * 여기가 `이름 === 'audit.jsonl'` 한 줄이었다. **자리를 안 봤다.** 그래서
+   * 프로젝트가 제 감사 기록을 그 이름으로 쓰면 제 파일을 못 읽었다 —
+   *
+   *     Read src/audit.jsonl   「deel 자신의 기록입니다」
+   *
+   * 거짓 경고도 결함이다. 모델은 그 파일이 없는 것으로 치고 일하거나, 있지도
+   * 않은 권한 문제를 찾아 헤맨다. 막는 것과 숨기는 것이 다르다고 적어 둔
+   * 이 자가, 남의 파일을 제 것이라며 숨기고 있었다.
+   *
+   * deel 이 이 이름을 쓰는 자리는 **제 살림 폴더 안 하나뿐이다**
+   * (safety/audit.js 의 join(dir, 'audit.jsonl') · stats.js 의
+   * `.deel/audit.jsonl`). 그 자리는 위 `.deel` 갈래와 집 폴더 갈래가 이미
+   * 잡는다 — DEEL_HOME 으로 옮겨도 그렇다. 이 줄은 그 둘이 다 빗나간 자리
+   * (집을 못 물어본 판)를 위한 마지막 그물이다.
+   *
+   * 그 그물을 「숨은 폴더 안이면 살림」 으로 쳤더니 **또 남의 파일을 막았다.**
+   * 「프로젝트의 소스·로그 폴더는 점으로 시작하지 않는다」 고 적어 뒀는데 그게
+   * 틀렸다 — `.github/` · `.ci/` · `.circleci/` 는 프로젝트 제 폴더다.
+   *
+   *     Read .github/audit.jsonl   「deel 자신의 기록입니다」
+   *
+   * 이름만 보던 것을 자리까지 보게 고치면서, 자리를 「점으로 시작하나」 로만
+   * 봐서 반만 고쳐져 있었다. 그래서 **살림 폴더 이름일 때만** 친다. 집을 못
+   * 물어본 판에서도 DEEL_HOME 은 그대로 읽히니 옮긴 살림도 놓치지 않는다.
+   */
+  const 담긴곳 = (조각[조각.length - 2] ?? '').toLowerCase();
+  const 살림꼬리 = String(process.env.DEEL_HOME ?? '').replace(/\\/g, '/').replace(/[/]+$/, '')
+    .split('/').pop()?.toLowerCase() || null;
+  if (이름 === 'audit.jsonl' && (담긴곳 === '.deel' || (살림꼬리 && 담긴곳 === 살림꼬리))) {
     return 'deel 자신의 기록입니다. 읽어도 지금 하는 일에 도움이 안 됩니다.';
   }
   return null;
@@ -195,7 +254,14 @@ export function 내부살림(abs) {
 export function globToRegex(pattern) {
   let re = '';
   let i = 0;
-  const p = pattern.replace(/\\/g, '/');
+  /*
+   * 앞머리 `./` 는 뗀다.
+   *
+   * 맞춰 보는 대상은 `src/a.js` 꼴의 상대경로라 `./src/*.js` 는 한 파일에도
+   * 안 맞았다. 사람도 모델도 셸 버릇대로 `./` 를 붙여 적는데, 그러면
+   * 「찾은 파일 없음」 이 뜨고 모델은 그 폴더에 파일이 없다고 믿는다.
+   */
+  const p = pattern.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '');
   while (i < p.length) {
     const ch = p[i];
     if (ch === '*') {
@@ -209,17 +275,84 @@ export function globToRegex(pattern) {
       const end = p.indexOf('}', i);
       if (end < 0) { re += '\\{'; i += 1; }
       else {
-        const parts = p.slice(i + 1, end).split(',').map(escapeLiteral);
+        /*
+         * 갈래 **안쪽도 glob 이다.**
+         *
+         * 여기가 `escapeLiteral` 한 자였다. 그래서 `{*.js,*.ts}` 가 「`*.js` 라는
+         * 이름의 파일」 이 됐다 — 그런 파일은 없으니 **늘 0건**이었다. 밖에 쓴
+         * `*.{js,ts}` 는 되고 안에 쓴 것만 안 되니, 사람도 모델도 무늬가 틀렸다고
+         * 생각하지 않고 「그 폴더에 그런 파일이 없다」 고 믿었다. 조용히 틀린 답을
+         * 주는 자리라 못 찾았다고 말하는 것보다 나쁘다.
+         *
+         * 그래서 갈래마다 이 자를 다시 태운다. `*` · `?` · `[…]` · 겹친 중괄호가
+         * 한 벌로 같이 풀린다. 앞뒤 닻(`^`·`$`)만 떼고 알맹이를 쓴다.
+         */
+        const parts = p.slice(i + 1, end).split(',')
+          .map((조각) => globToRegex(조각).source.replace(/^\^/, '').replace(/\$$/, ''));
         re += `(?:${parts.join('|')})`;
         i = end + 1;
       }
     } else if (ch === '[') {
       const end = p.indexOf(']', i);
       if (end < 0) { re += '\\['; i += 1; }
-      else { re += p.slice(i, end + 1); i = end + 1; }
+      else {
+        /*
+         * glob 의 빼기는 `[!…]` 다. 정규식은 `[^…]` 다.
+         *
+         * 대괄호를 통째로 옮겨 적고 있어서 `file[!0-9].txt` 가 `[!0-9]` —
+         * 「느낌표나 숫자」 — 가 됐다. 빼라고 한 file1.txt 가 걸리고 filea.txt
+         * 는 빠졌다. 정반대 답이다. .gitignore 쪽(tools/ignore.js)은 이미
+         * 바꿔 적고 있었고, rg 도 `[!…]` 를 빼기로 읽어서 Grep 은 엔진에
+         * 따라 답이 뒤집혔다.
+         */
+        let 안 = p.slice(i + 1, end);
+        if (안.startsWith('!')) 안 = `^${안.slice(1)}`;
+        re += `[${안}]`;
+        i = end + 1;
+      }
     } else { re += escapeLiteral(ch); i += 1; }
   }
   return new RegExp(`^${re}$`, process.platform === 'win32' ? 'i' : '');
+}
+
+/*
+ * ── glob 하나로 파일을 거르는 **한 벌뿐인** 자 ────────────────────────────
+ *
+ * Grep 의 glob 을 rg 는 제 작업 폴더 기준으로, 자바스크립트 길은 찾는 폴더
+ * 기준 상대경로 · 파일 이름으로 맞췄다. 그래서 같은 명령이 이렇게 갈렸다:
+ *
+ *   glob=src/*.js                rg 가 있는 PC  →  (0건)       없는 PC → src/a.js
+ *   path=src glob=src/**\/*.js    두 PC 다        →  (0건)       — 파일은 있다
+ *   glob=!src/**                 rg → src 밖 파일들              JS → (0건, `!` 를 글자로)
+ *
+ * 규칙을 하나로 정한다. rg 쪽도 같은 규칙으로 인자를 만든다(fastgrep.js 의 rg글로브들).
+ *
+ *   · `!` 로 시작하면 **빼기**다 (rg · .gitignore 와 같다)
+ *   · `/` 로 시작하면 작업 폴더(뿌리)에 묶는다 — 뿌리 기준 상대경로와만 견준다
+ *   · 그 밖에는 찾는 폴더 기준 상대경로 · 파일 이름 · (빗금이 있으면) 뿌리 기준
+ *     상대경로 중 하나라도 맞으면 맞는다
+ *
+ * @returns {(abs:string) => boolean}
+ */
+export function glob거르개(glob, { 뿌리 = null, 자리 = null } = {}) {
+  if (!glob) return () => true;
+  const 빼기 = glob.startsWith('!');
+  let 몸 = 빼기 ? glob.slice(1) : glob;
+  const 뿌리에묶임 = 몸.startsWith('/');
+  if (뿌리에묶임) 몸 = 몸.replace(/^\/+/, '');
+  const re = globToRegex(몸);
+  const 빗금 = 몸.includes('/');
+  const 상대 = (기준, p) => 경로상대(기준, p).split(경로가름).join('/');
+  return (abs) => {
+    let 맞음;
+    if (뿌리에묶임) 맞음 = !!뿌리 && re.test(상대(뿌리, abs));
+    else {
+      맞음 = re.test(끝이름(abs))
+        || (!!자리 && re.test(상대(자리, abs)))
+        || (빗금 && !!뿌리 && re.test(상대(뿌리, abs)));
+    }
+    return 빼기 ? !맞음 : 맞음;
+  };
 }
 
 function escapeLiteral(s) {
@@ -231,8 +364,9 @@ function escapeLiteral(s) {
  *
  * `ignore` 가 켜져 있으면(기본) .gitignore 가 건너뛰라는 것은 건너뛴다 (tools/ignore.js).
  * skipDirs 는 그 아래의 바닥이다 — .gitignore 가 없어도 node_modules 는 늘 건너뛴다.
- * 돌려주는 배열에는 `건너뜀 = { 폴더, 파일 }` 이 (열거되지 않게) 붙어 있다. 부르는 쪽이 그 수를
- * 화면에 적는다 — 조용히 빼면 "그 파일이 없다" 로 읽힌다.
+ * 돌려주는 배열에는 `건너뜀 = { 폴더, 파일, 못연폴더, 못연파일 }` 이 (열거되지 않게) 붙어 있다.
+ * 앞의 둘은 .gitignore 가 빼라고 해서 뺀 수고, 뒤의 둘은 **열려다 실패한** 수다. 부르는 쪽이 그
+ * 수를 화면에 적는다 — 조용히 빼면 "그 파일이 없다" 로 읽힌다.
  * 폴더를 통째로 옮기거나 복사할 때는 `ignore: false` 로 — 그때는 다 있어야 한다.
  *
  * `잘림` 도 같이 붙는다 — **상한에서 멈췄다는 뜻이다.**
@@ -296,17 +430,64 @@ const 한숨 = () => new Promise((풀기) => setImmediate(풀기));
  */
 export async function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS, ignore = true, signal = null } = {}) {
   const out = [];
-  const 건너뜀 = { 폴더: 0, 파일: 0 };
+  /*
+   * ── 안 본 것은 셋이다: 규칙으로 뺀 것 · 살림 폴더 · **못 연 것** ───────
+   *
+   * `폴더`·`파일` 은 .gitignore 가 빼라고 해서 뺀 수다. 우리가 보고 뺀 것이라
+   * 셀 수 있었다. 그런데 **열다가 실패한 것**은 아무 데도 안 셌다 — 아래 두
+   * catch 가 그냥 `continue` 였다.
+   *
+   * 그래서 이런 일이 있었다. 윈도우 ACL 이 막아 놓은 폴더 하나가 섞인
+   * 저장소에서 Grep 을 돌리면 —
+   *
+   *     일치 없음: TODO
+   *
+   * 꼬리말도 없다. 건너뜀이 0이고 잘림도 거짓이니 `건너뜀말` 이 낼 줄이
+   * 하나도 없어서다. 그 폴더 밑의 200개 파일은 **한 번도 안 열어 봤는데**
+   * 화면에는 다 찾아본 것과 똑같이 뜬다. 사람도 모델도 "이 프로젝트엔
+   * 그런 게 없다" 로 읽는다.
+   *
+   * 막는 자리는 흔하다 — ACL 로 막힌 폴더, 아직 안 내려받은 OneDrive
+   * 자리표, 대상이 사라진 정션, 다른 프로그램이 잡고 있는 폴더.
+   *
+   * 이제 그 수를 따로 센다. **못 찾은 것과 못 본 것은 다르다**, 이 파일이
+   * 잘림에 대고 이미 세 번 적어 둔 그 규칙이 여기에도 그대로 적용된다.
+   * 같은 통에 담아 보내는 까닭은 부르는 쪽(Glob·Grep·Outline·Verify)이
+   * 전부 이 통 하나를 `건너뜀말` 에 넘기기 때문이다 — 통을 새로 만들면
+   * 넘기는 자리를 하나 빠뜨리는 날이 오고, 그날 이 말은 또 조용해진다.
+   */
+  const 건너뜀 = { 폴더: 0, 파일: 0, 못연폴더: 0, 못연파일: 0 };
   // .gitignore 로 건너뛴 것과 다르다 — 이쪽은 우리가 늘 안 보는 살림 폴더다.
   const 건너뛴살림 = [];
   let 끊김 = false;
   let 본것 = 0;
-  const stack = [{ dir: root, rel: '', 규칙: ignore ? 뿌리규칙읽기(root) : [] }];
+  /*
+   * ── 살림은 **훑다가 흘러 들어와도** 안 내놓는다 (사냥6 F6-1) ──────────────
+   *
+   * 살림 폴더는 이름(skipDirs)으로만 건너뛰었다. 그래서 훑기를 `.deel` **안에서** 시작하면
+   * (Glob·Grep·Outline 의 path) config.json·mcp.json 이 목록과 내용으로 그대로 나왔고,
+   * 폴더가 아니라 파일로 흘리는 남의 도구 기록(`.aider.chat.history.md`)은 어디서 시작하든
+   * 걸러지지 않았다. Read 는 같은 자리를 내부살림() 으로 막는데 훑는 쪽만 그 자를 안 썼다 —
+   * 이 파일 머리말이 「목록은 한 곳에만」 이라고 적어 둔 까닭 그대로다.
+   *
+   * 그래서 시작 자리와 폴더·파일 하나하나를 **같은 자**로 본다. 건너뛴 것은 건너뛴살림 에
+   * 넣는다 — Move 가 「안 뜬 것」 을 말할 때 이 목록을 쓴다.
+   *
+   * **시작 자리도 그 목록에 넣는다.** 여태 시작 자리만 빼고 있었다 — 안 훑기만 하고
+   * 아무것도 안 남겼다. 그러면 살림 폴더를 통째로 옮길 때 Move 는 「안 뜬 것」 을 말할
+   * 근거가 하나도 없어서 `폴더 0개 파일` 이라고 적고 넘어간다. 바로 윗줄이 이 목록의
+   * 쓰임을 적어 놓고, 정작 제일 큰 한 덩이에서 비어 있었다.
+   */
+  const stack = 내부살림(root) ? [] : [{ dir: root, rel: '', 규칙: ignore ? 뿌리규칙읽기(root) : [] }];
+  // 시작 자리가 살림이라 담을 것이 없으면 **그 사실도 남긴다** (바로 위 머리말).
+  if (!stack.length) 건너뛴살림.push(끝이름(root));
   while (stack.length && out.length < limit) {
     if (signal?.aborted) { 끊김 = true; break; }
     const { dir, rel, 규칙 } = stack.pop();
     let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    // 못 열면 그 폴더 밑은 통째로 안 본 것이다. 세어 두지 않으면 그 사실이
+    // 아무 데도 안 남는다 — 위 건너뜀 선언에 왜 그게 나쁜지 적어 두었다.
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { 건너뜀.못연폴더 += 1; continue; }
     // 이 폴더에 .gitignore 가 있으면 그 아래에만 더한다 (뿌리 것은 위에서 읽었다).
     let 여기규칙 = 규칙;
     if (ignore && rel && entries.some((e) => e.name === '.gitignore' && e.isFile())) {
@@ -314,27 +495,58 @@ export async function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS,
       if (추가.length) 여기규칙 = [...규칙, ...추가];
     }
     for (const e of entries) {
+      /*
+       * 본 것을 **거르기 앞에서** 센다 — 걸러낸 것도 readdirSync·걸리나 값을 이미 치렀다.
+       *
+       * 세기가 이 반복의 맨 끝에 있었다. 그런데 .gitignore·살림으로 거른 항목은 그 앞에서
+       * continue 로 빠져나가 한 번도 안 셌다. 그래서 로그·빌드 찌꺼기가 수만 개 쌓인 폴더는
+       * 숨 한 번 안 쉬고 끝까지 돌았고, 그동안 누른 ESC 는 다 돈 뒤에야 들렸다(2.0.0 6회차 사냥).
+       */
+      본것 += 1;
+      if (본것 % 숨쉴간격 === 0) {
+        await 한숨();
+        if (signal?.aborted) { 끊김 = true; break; }
+      }
       const full = join(dir, e.name);
       const erel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         // 살림 폴더(node_modules·.git·dist…)는 안 훑는다. 다만 **몇 개를
         // 안 봤는지는 센다** — Move 가 폴더를 통째로 옮길 때 이 수를 모르면
         // 「폴더 12개 파일」 이라고 말해 놓고 3만 개를 옮기게 된다.
-        if (skipDirs.has(e.name)) { 건너뛴살림.push(erel); continue; }
+        if (skipDirs.has(e.name) || 내부살림(full)) { 건너뛴살림.push(erel); continue; }
         if (여기규칙.length && 걸리나(erel, true, 여기규칙)) { 건너뜀.폴더 += 1; continue; }
         stack.push({ dir: full, rel: erel, 규칙: 여기규칙 });
       } else if (e.isFile()) {
+        if (내부살림(full)) { 건너뛴살림.push(erel); continue; }
         if (여기규칙.length && 걸리나(erel, false, 여기규칙)) { 건너뜀.파일 += 1; continue; }
         let st;
-        try { st = statSync(full); } catch { continue; }
+        // 목록에는 있는데 물어보면 없다고 하는 파일이 있다 — 잠겨 있거나,
+        // 아직 안 내려받은 자리표거나, 방금 사라진 것이다. 여기서 조용히
+        // 빼면 그 파일은 처음부터 없던 것이 된다.
+        try { st = statSync(full); } catch { 건너뜀.못연파일 += 1; continue; }
         out.push({ path: full, rel: erel, mtime: st.mtimeMs, size: st.size });
         if (out.length >= limit) break;
-      }
-      // 본 것을 다 센다 — 걸러낸 것도 readdirSync·걸리나 값을 이미 치렀다.
-      본것 += 1;
-      if (본것 % 숨쉴간격 === 0) {
-        await 한숨();
-        if (signal?.aborted) { 끊김 = true; break; }
+      } else {
+        /*
+         * ── 폴더도 파일도 아닌 것 — **여기서 조용히 사라지고 있었다** ────────
+         *
+         * readdir 은 lstat 으로 본다. 그래서 심볼릭 링크와 윈도우 정션은
+         * isDirectory·isFile 이 **둘 다 false** 다. 위 두 갈래 어디에도 안 들어가니
+         * 걸러지지도 세어지지도 않고 그냥 없어졌다 — 바로 위 건너뜀 선언이
+         * 「대상이 사라진 정션」 을 못 본 자리로 꼽아 놓고, 정작 그것만 한 번도
+         * 안 셌다. 재 보니 정션 하나가 끊긴 폴더에서도 `{"폴더":0,"파일":0,
+         * "못연폴더":0,"못연파일":0}` 이라 꼬리말이 한 줄도 안 붙었다.
+         *
+         * **따라 들어가지는 않는다.** 바깥을 가리키는 링크 하나가 훑는 범위를
+         * 통째로 넓히고, 제 안을 가리키면 끝없이 돈다 (copyDir 머리말과 같은
+         * 자세다). 대신 **안 본 것으로 센다** — 못 찾은 것과 못 본 것은 다르다.
+         * 무엇으로 셀지만 대상에게 물어본다. 대상이 사라졌으면 폴더 쪽으로 센다
+         * (끊긴 정션은 거의 다 폴더를 가리키던 것이다).
+         */
+        let 딸린것;
+        try { 딸린것 = statSync(full); } catch { 딸린것 = null; }
+        if (딸린것?.isFile()) 건너뜀.못연파일 += 1;
+        else 건너뜀.못연폴더 += 1;
       }
     }
     if (끊김) break;
@@ -365,7 +577,9 @@ export function readTextFull(path) {
     throw err;
   }
   const r = decode(buf);
-  return { text: r.text, encoding: r.encoding, sure: r.sure, bom: r.bom ?? 0 };
+  // 읽은 바이트도 같이 준다. 되돌려 쓸 때 안 바뀐 자리는 **이 바이트 그대로** 둬야
+  // 한다 — 옛 인코딩은 한 글자에 바이트 자리가 둘인 것이 있다 (encoding.js 의 바꾼데만쓰기).
+  return { text: r.text, encoding: r.encoding, sure: r.sure, bom: r.bom ?? 0, buf };
 }
 
 /** 글만 필요할 때. 예전 부르던 자리를 그대로 두기 위해 남긴다. */

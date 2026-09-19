@@ -45,7 +45,10 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { 돌려보기 } from '../tools/spawn.js';
 import { 셸고르기 } from '../tools/shell.js';
-import { 믿나 } from './trust.js';
+import { 믿나, BOM떼기, 고른경로 } from './trust.js';
+import { 셸환경, 남길것읽기 } from './shellenv.js';
+import { 가리기 } from './secrets.js';
+import { 환경속열쇠들 } from '../config.js';
 
 /** 훅이 이 시간 안에 안 끝나면 죽인다. 사람이 훅마다 따로 정할 수 있다. */
 export const 제한기본 = 15000;
@@ -104,6 +107,21 @@ function 자리풀기(값) {
  * 삼키면 그 훅은 있으나 마나가 되는데, 화면에는 여전히 세어져 있다.
  */
 export function 무늬짓기(값) {
+  /*
+   * 이름 목록(`["Bash","Write"]`)도 받는다 (2.0.0 4회차 사냥).
+   *
+   * 전에는 String() 이 목록을 `Bash,Write` 로 바꿔 그대로 무늬가 됐다 — 아무 도구에도 안
+   * 걸리는데 버렸다는 말도 없이 「훅 1개」 로 세어졌다. 목록의 한 칸은 글 무늬 하나와 같게
+   * 친다(`Write|Edit` 를 한 칸에 적어도 뜻이 같다). 글이 아닌 칸·빈 목록·글도 목록도 아닌
+   * 값(`{Bash:true}` → `[object Object]` 무늬)은 null — 부르는 쪽이 버렸다고 적는다.
+   */
+  if (Array.isArray(값)) {
+    const 칸들 = 값.map((x) => (typeof x === 'string' ? x.trim() : ''));
+    if (!칸들.length || 칸들.some((x) => !x)) return null;
+    if (칸들.includes('*')) return { 다냐: true, re: null };
+    try { return { 다냐: false, re: new RegExp(`^(?:${칸들.map((x) => `(?:${x})`).join('|')})$`) }; } catch { return null; }
+  }
+  if (값 != null && typeof 값 !== 'string') return null;
   const s = String(값 ?? '').trim();
   if (!s || s === '*') return { 다냐: true, re: null };
   try { return { 다냐: false, re: new RegExp(`^(?:${s})$`) }; } catch { return null; }
@@ -130,7 +148,7 @@ function 한훅(자리, 무늬글, 것, 출처) {
   const 고장나면 = String(것?.고장나면 ?? 것?.onError ?? '').trim();
   return {
     자리,
-    무늬글: String(무늬글 ?? '*'),
+    무늬글: Array.isArray(무늬글) ? 무늬글.join('|') : String(무늬글 ?? '*'),
     무늬,
     명령,
     제한: Number.isFinite(초) && 초 > 0 ? Math.min(초 * 1000, 120000) : 제한기본,
@@ -186,7 +204,8 @@ export function 훅펴기(raw, 출처) {
 function 파일하나(경로, 출처) {
   if (!existsSync(경로)) return { 훅들: [], 버린것: [], 있음: false, 자리: 경로 };
   let j;
-  try { j = JSON.parse(readFileSync(경로, 'utf8')); } catch (e) {
+  // BOM 을 뗀다 — 파워셸 5.1 로 저장한 훅 파일이 「못 읽음」 으로 떨어져 훅이 통째로 빠졌다(2.0.0 3회차).
+  try { j = JSON.parse(BOM떼기(readFileSync(경로, 'utf8'))); } catch (e) {
     return { 훅들: [], 버린것: [], 있음: true, 자리: 경로, 오류: `못 읽었습니다: ${e.message}` };
   }
   return { ...훅펴기(j, 출처), 있음: true, 자리: 경로 };
@@ -201,11 +220,21 @@ function 파일하나(경로, 출처) {
  *
  * @returns {{훅들, 켜짐, 왜꺼짐, 이PC, 프로젝트, 안믿음}}
  */
-export function 훅읽기(root, { env = process.env, 집 = homedir(), 켜짐 = null } = {}) {
+export function 훅읽기(root, { env = process.env, 집 = homedir(), 켜짐 = null, 남길것 = null } = {}) {
   const 끔 = String(env.DEEL_HOOKS ?? '').trim().toLowerCase();
   const 꺼짐 = 켜짐 === false || 끔 === 'off' || 끔 === '0' || 끔 === 'false';
 
-  const 이PC = 파일하나(이PC자리(집, env), '이 PC');
+  const 이PC파일 = 이PC자리(집, env);
+  const 이PC = 파일하나(이PC파일, '이 PC');
+  /*
+   * ── 집에서 켜면 두 자리가 **같은 파일**이다 (2.0.0 4회차 사냥) ─────────
+   *
+   * DEEL_HOME 이 없으면 이 PC 자리는 `~/.deel/hooks.json`, 프로젝트 자리는
+   * `<root>/.deel/hooks.json` 이라 root 가 집이면 둘이 한 파일이다. 두 번 읽어 훅이 두 번
+   * 돌았다 — 포맷터는 두 번 고치고, 막는 훅은 두 번 묻고, 감사기록은 두 줄씩 남는다.
+   * 견주기는 믿는 목록과 같은 모양으로 한다(safety/trust.js 의 고른경로).
+   */
+  const 같은파일 = 고른경로(프로젝트자리(root)) === 고른경로(이PC파일);
   /*
    * 프로젝트 파일은 **믿는 폴더에서만** 읽는다.
    *
@@ -215,11 +244,20 @@ export function 훅읽기(root, { env = process.env, 집 = homedir(), 켜짐 = n
    * 규칙이고(safety/trust.js), 여기가 그 규칙이 제일 필요한 자리다.
    */
   const 믿는가 = 믿나(root, { env });
-  const 프로젝트 = 믿는가
-    ? 파일하나(프로젝트자리(root), '프로젝트')
-    : { 훅들: [], 버린것: [], 있음: existsSync(프로젝트자리(root)), 자리: 프로젝트자리(root) };
+  const 프로젝트 = 같은파일
+    ? { 훅들: [], 버린것: [], 있음: false, 자리: 프로젝트자리(root) }
+    : 믿는가
+      ? 파일하나(프로젝트자리(root), '프로젝트')
+      : { 훅들: [], 버린것: [], 있음: existsSync(프로젝트자리(root)), 자리: 프로젝트자리(root) };
 
-  const 다 = [...이PC.훅들, ...프로젝트.훅들].slice(0, 훅최대);
+  /*
+   * 훅 자식에게 되살려 줄 환경변수 이름 — Bash 와 **같은 칸**(`셸환경.남길것`)을 쓴다.
+   * 이 PC 설정에서만 읽는다. 프로젝트 설정의 그 칸은 믿는 폴더에서도 걷힌다
+   * (safety/trust.js 의 프로젝트금지칸) — 저장소가 제 훅에 내 열쇠를 도로 물려주면 안 된다.
+   * 훅 하나하나에 붙여 둔다. 돌리는 자리(agent/loop.js)가 설정을 몰라도 같은 답이 나오게.
+   */
+  const 되살릴것 = 남길것 ?? 이PC남길것(집, env);
+  const 다 = [...이PC.훅들, ...프로젝트.훅들].slice(0, 훅최대).map((h) => ({ ...h, 남길것: 되살릴것 }));
   return {
     훅들: 꺼짐 ? [] : 다,
     켜짐: !꺼짐,
@@ -231,6 +269,45 @@ export function 훅읽기(root, { env = process.env, 집 = homedir(), 켜짐 = n
     안믿음: !믿는가 && 프로젝트.있음,
     넘침: [...이PC.훅들, ...프로젝트.훅들].length > 훅최대,
   };
+}
+
+/** 이 PC 설정 파일에 적힌 `셸환경.남길것`. 이 PC 자리와 같은 규칙(DEEL_HOME 먼저)으로 찾는다. */
+function 이PC남길것(집, env) {
+  const 살림 = env.DEEL_HOME ? resolve(env.DEEL_HOME) : join(집, '.deel');
+  try { return 남길것읽기(JSON.parse(BOM떼기(readFileSync(join(살림, 'config.json'), 'utf8')))); } catch { return []; }
+}
+
+/**
+ * Claude Code 모양의 JSON 판정을 읽는다. 막으라는 판정이면 `{까닭}`, 아니면 null.
+ *
+ * 이 파일은 Claude Code 훅 설정을 그대로 붙여 쓰라고 받는다(자리표 머리말). 그쪽 훅은
+ * 0 으로 끝나며 판정을 stdout 에 JSON 으로 뱉는다 —
+ *
+ *   {"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"…"}}
+ *   {"decision":"block","reason":"…"}       (말전·예전 도구전)
+ *   {"continue":false,"stopReason":"…"}
+ *
+ * 그 판정을 안 읽어서, 붙여 넣은 막는 훅이 **조용히 통과**시켰다(2.0.0 4회차 사냥).
+ * 막는 훅이 소리 없이 여는 쪽이 제일 나쁜 고장이라, 막는 판정은 읽는다.
+ *
+ * `ask` 는 막지 않는다. 그건 「사람에게 물어라」 인데, 여기서 막으면 사람이 허락할 길이
+ * 없어지고, 묻는 일은 승인 모드가 이미 한다(훅은 승인을 대신하지 않는다 — agent/loop.js).
+ * 한 줄 JSON 이 아닌 글은 판정이 아니다 — 여느 출력으로 둔다.
+ */
+export function 제이슨판정(글) {
+  const s = String(글 ?? '').trim();
+  if (!s.startsWith('{') || !s.endsWith('}')) return null;
+  let j;
+  try { j = JSON.parse(s); } catch { return null; }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
+  const 속 = j.hookSpecificOutput && typeof j.hookSpecificOutput === 'object' ? j.hookSpecificOutput : {};
+  // 속의 decision 도 바깥과 같이 deny 를 받는다 — 바깥만 받고 속은 block 만 받던 짝짝이였다 (4회차 Gemini 리뷰).
+  const 막음 = 속.permissionDecision === 'deny' || 속.decision === 'block' || 속.decision === 'deny'
+    || j.decision === 'block' || j.decision === 'deny' || j.continue === false;
+  if (!막음) return null;
+  const 까닭 = [속.permissionDecisionReason, 속.reason, j.reason, j.stopReason]
+    .find((x) => typeof x === 'string' && x.trim());
+  return { 까닭: 까닭 ?? '' };
 }
 
 /** 이 자리에 걸린 훅만 고른다. */
@@ -265,12 +342,31 @@ function 셸로(명령) {
  *
  * @returns {Promise<{훅, 코드, 말, 막나, 왜, ms, 잘림}>}
  */
-export async function 훅돌리기(훅, 넣을것, { signal = null, 돌리개 = 돌려보기 } = {}) {
+export async function 훅돌리기(훅, 넣을것, { signal = null, 돌리개 = 돌려보기, 남길것 = 훅?.남길것 ?? [] } = {}) {
   const t0 = Date.now();
   const { file, args, verbatim } = 셸로(훅.명령);
+  /*
+   * ── 자식에게 주는 환경은 Bash 와 같다 (2.0.0 4회차 사냥) ───────────────
+   *
+   * 머리말은 훅을 「Bash 도구로 치는 것과 같은 무게」 라고 적어 두었는데, Bash 는
+   * 셸환경(safety/shellenv.js)으로 `*_API_KEY` · `*_TOKEN` 같은 것을 빼고 띄우고 훅은
+   * process.env 를 통째로 넘겼다. 훅이 뱉은 글은 모델에게 간다 — `env` 한 줄 찍는 훅이
+   * OPENAI_API_KEY 를 대화에 실었다. 같은 무게면 같은 환경이어야 한다.
+   * 필요한 이름은 Bash 와 같은 자리(이 PC 설정 `셸환경.남길것`)에 적으면 넘어간다.
+   */
+  const 셸것 = 셸환경(process.env, { 남길것 });
+  const 뺀말 = 셸것.뺀것.length
+    ? ` · 훅에 안 넘긴 환경변수: ${셸것.뺀것.slice(0, 5).join(', ')}${셸것.뺀것.length > 5 ? ` 외 ${셸것.뺀것.length - 5}개` : ''} (필요하면 이 PC 설정 셸환경.남길것)`
+    : '';
   const r = await 돌리개(file, args, {
     timeout: 훅.제한,
+    /*
+     * 넘치면 **자른다** — 죽이지 않는다. 죽이면 「결과가 너무 많습니다」 오류가 되고, 막는
+     * 자리는 못 돌린 훅을 막힘으로 쳐서 0 으로 끝날 훅이 경고를 길게 뱉는 것만으로 막혔다
+     * (2.0.0 4회차 사냥). 판정은 종료코드가 한다. 글은 아래에서 잘랐다고 적는다.
+     */
     maxBuffer: 글최대,
+    넘치면자르기: true,
     signal,
     /*
      * 자리는 **여기서** 붙인다.
@@ -280,12 +376,12 @@ export async function 훅돌리기(훅, 넣을것, { signal = null, 돌리개 = 
      * 떨어지는데, 그건 훅을 짠 사람도 우리도 못 알아차린다.
      */
     넣을것: `${JSON.stringify({ 자리: 훅.자리, ...(넣을것 ?? {}) })}\n`,
-    덤: { windowsVerbatimArguments: verbatim, windowsHide: true },
+    덤: { windowsVerbatimArguments: verbatim, windowsHide: true, env: 셸것.env },
   });
   const ms = Date.now() - t0;
 
   const 날것 = `${r.stdout ?? ''}${r.stderr ?? ''}`.trim();
-  const 잘림 = 날것.length > 글최대;
+  const 잘림 = !!r.잘림 || 날것.length > 글최대;
   const 말 = 잘림 ? `${날것.slice(0, 글최대)}\n…(훅이 뱉은 글이 길어서 여기까지만 옮겼습니다)` : 날것;
 
   // 못 돌렸다 · 시한을 넘겼다 · 중단됐다. 셋 다 「잰 적이 없다」 는 뜻이다.
@@ -293,10 +389,15 @@ export async function 훅돌리기(훅, 넣을것, { signal = null, 돌리개 = 
     return {
       훅, 코드: null, 말, ms, 잘림,
       막나: 막는자리.includes(훅.자리) && !훅.지나갈까,
-      왜: `훅을 못 돌렸습니다 — ${r.error.message}`,
+      왜: `훅을 못 돌렸습니다 — ${r.error.message}${뺀말}`,
     };
   }
-  if (r.status === 0) return { 훅, 코드: 0, 말, ms, 잘림, 막나: false, 왜: null };
+  if (r.status === 0) {
+    // 0 이어도 JSON 으로 막으라고 했으면 막는다 (제이슨판정 머리말). 판정이지 고장이 아니라 왜 는 비운다.
+    const 판정 = 막는자리.includes(훅.자리) ? 제이슨판정(r.stdout) : null;
+    if (판정) return { 훅, 코드: 0, 말: 판정.까닭 || 말, ms, 잘림, 막나: true, 왜: null };
+    return { 훅, 코드: 0, 말, ms, 잘림, 막나: false, 왜: null };
+  }
   /*
    * 2 는 「막으라」 는 뜻이다 (흔한 규격 그대로).
    *
@@ -308,7 +409,7 @@ export async function 훅돌리기(훅, 넣을것, { signal = null, 돌리개 = 
   return {
     훅, 코드: r.status, 말, ms, 잘림,
     막나: 막는자리.includes(훅.자리) && !훅.지나갈까,
-    왜: `훅이 ${r.status} 로 끝났습니다`,
+    왜: `훅이 ${r.status} 로 끝났습니다${뺀말}`,
   };
 }
 
@@ -346,7 +447,48 @@ export async function 자리돌리기(훅들, 자리, {
     });
     if (r.막나) { 막힘 = r; break; }
   }
-  return { 막힘, 결과들, 말들: 결과들.map((r) => r.말).filter(Boolean) };
+  /*
+   * ── 안 막는 자리에서 훅이 **못 돈 것**은 아무 데도 안 갔다 ─────────────
+   *
+   * 여기는 `r.말`(훅이 뱉은 글)만 모아 올렸다. `r.왜`(못 돌린 까닭)는 위
+   * 훅돌리기() 가 성실하게 지어 두는데, 이 한 줄에서 버려졌다 — 저장소를
+   * 통째로 뒤져도 `왜` 를 읽는 자가 없었다.
+   *
+   * 못 돌린 훅은 `말` 이 빈 글자다. 그래서 `filter(Boolean)` 에 걸려
+   * 사라지고, 화면에는 아무것도 안 뜬다. `deel doctor` 와 `/status` 는
+   * 여전히 「훅 3개 · 도구후 3」 이라고 적는다 — 훅줄들() 은 **파일이
+   * 읽히나**만 보지 돌아가나는 안 보기 때문이다.
+   *
+   * 이 파일 머리말이 적어 둔 그 증상 그대로다 — 「훅 파일에 오타
+   * 하나(`pythno check.py`)가 나는 순간 그 문은 조용히 열린 채로 남는다」.
+   * 고치기는 막는자리에만 했고, 안 막는 자리(도구후·턴끝)는 그대로였다.
+   * 하필 포맷터와 DLP 를 거는 자리가 거기다.
+   *
+   * 그래서 못 돈 것도 말로 올린다. 감사기록에는 `코드: null` 로 이미
+   * 남아 있었지만, 그건 나중에 뒤져 보는 사람의 몫이지 지금 화면이 아니다.
+   */
+  const 말들 = [];
+  for (const r of 결과들) {
+    if (r.말) 말들.push(r.말);
+    // 막은 것의 까닭은 막힘말() 이 따로 적는다. 여기서 또 적으면 두 번 나온다.
+    // 이름 없는 훅은 **명령**이 실리고, 못 띄운 까닭에도 명령 조각이 섞인다 — 둘 다 가린다(아래 훅이름말).
+    if (r.왜 && !r.막나) 말들.push(`${r.훅.자리} 훅 ${훅이름말(r.훅)} — ${가린글(r.왜)}`);
+  }
+  return { 막힘, 결과들, 말들 };
+}
+
+/*
+ * ── 훅 명령·까닭도 가린다 (2.0.0 4회차 Gemini 리뷰) ─────────────────────
+ *
+ * 훅 글(r.말)만 가리고 있었다. 그런데 이름 없는 훅은 막힘말 첫 줄에 **명령 그대로**가 실리고,
+ * 명령에 토큰을 적어 두는 사람이 있다 — `curl -H "Authorization: Bearer …" https://gate`.
+ * 못 띄운 까닭(r.왜)에도 셸이 되뱉은 명령 조각이 섞인다. 둘 다 모델에게 가는 글이다.
+ */
+function 가린글(글, 열쇠들 = null) {
+  return 가리기(String(글 ?? ''), { 열쇠들: (열쇠들 ?? 환경속열쇠들()).filter(Boolean) }).글;
+}
+function 훅이름말(훅, 열쇠들 = null) {
+  return 훅.이름 ?? 가린글(훅.명령, 열쇠들);
 }
 
 /**
@@ -356,10 +498,20 @@ export async function 자리돌리기(훅들, 자리, {
  * 뭉개지는데, 사람이 그 문구를 보고 담당자를 찾아가야 한다. 대신 우리가
  * 무엇을 했는지는 우리가 적는다.
  */
-export function 막힘말(r, { 보인출처 = (h) => h.출처 } = {}) {
-  const 줄 = [`${r.훅.자리} 훅이 막았습니다 (${보인출처(r.훅)}: ${r.훅.이름 ?? r.훅.명령}).`];
-  if (r.왜) 줄.push(`  ${r.왜} — 문지기가 쓰러져 있으면 통과시키지 않습니다.`);
-  if (r.말) { 줄.push(''); 줄.push(r.말); }
+export function 막힘말(r, { 보인출처 = (h) => h.출처, 열쇠들 = null } = {}) {
+  const 줄 = [`${r.훅.자리} 훅이 막았습니다 (${보인출처(r.훅)}: ${훅이름말(r.훅, 열쇠들)}).`];
+  if (r.왜) 줄.push(`  ${가린글(r.왜, 열쇠들)} — 문지기가 쓰러져 있으면 통과시키지 않습니다.`);
+  /*
+   * 싣기 전에 **비밀을 가린다** (2.0.0 4회차 사냥).
+   *
+   * 도구후 훅의 글은 agent/loop.js 가 가리기를 거쳐 싣는데, 이 글은 도구전·말전 두 자리에서
+   * 그대로 실렸다. 막는 훅은 까닭으로 제가 본 줄(설정·diff)을 되뱉기 쉽고, 거기 든 토큰이
+   * 대화로 나간다. 문구는 그대로 두고(위 머리말) 값만 가린다 — 가리기는 비밀 꼴만 바꾼다.
+   */
+  if (r.말) {
+    줄.push('');
+    줄.push(가리기(r.말, { 열쇠들: (열쇠들 ?? 환경속열쇠들()).filter(Boolean) }).글);
+  }
   줄.push('');
   줄.push('같은 것을 다시 부르지 마세요. 다른 길을 찾거나, 왜 필요한지 사용자에게 말하세요.');
   return 줄.join('\n');

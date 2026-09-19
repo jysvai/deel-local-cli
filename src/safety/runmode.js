@@ -100,8 +100,15 @@ export function 지금모드({ online = false, offline = false } = {}) {
  * 아무 데도 안 붙어 있었다. 정책은 켜기만 하므로 여기서는 OR 로 모은다.
  */
 export function 봉인됐나({ 깃발 = undefined, prof = null, cfg = null } = {}) {
-  return 깃발 === true || 깃발 === 'true'
-    || prof?.offline === true || cfg?.offline === true;
+  /*
+   * 글자 `'true'` 도 켠 것으로 친다 — 세 자리 모두.
+   *
+   * 깃발만 글자를 받고 설정은 안 받았다. 그래서 `"offline": "true"` 라고 적은
+   * 사람의 봉인이 `--online` 하나에 풀려 바깥으로 나갔다. 손으로 적는 JSON 에서
+   * 따옴표 한 쌍은 흔한 실수다. 그 실수로 **풀리는** 쪽으로 가면 안 된다.
+   */
+  const 켰나 = (v) => v === true || v === 'true';
+  return 켰나(깃발) || 켰나(prof?.offline) || 켰나(cfg?.offline);
 }
 
 /**

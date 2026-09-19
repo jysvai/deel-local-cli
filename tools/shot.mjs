@@ -449,7 +449,10 @@ try {
         const 줄 = 글.split('\n');
         const 시작 = 줄.findIndex((l) => l.includes('╭'));
         const 끝 = 줄.findIndex((l) => l.includes('╰'));
-        if (시작 >= 0 && 끝 > 시작) {
+        // 우리말 문서는 머리 상자와 대화 줄을 한 장으로 같이 보여 준다(위 shot-chat).
+        // 그래서 이 상자만 따로 뽑는 것은 영어 쪽뿐이다 — 바로 위 머리말이 적은 그대로다.
+        // 안 쓰는 그림을 만들어 두면 `npm run docs` 가 「아무 문서도 안 가리킴」 으로 잡는다.
+        if (말 === 'en' && 시작 >= 0 && 끝 > 시작) {
           내기(`shot-head-${말}`, 줄.slice(시작, 끝 + 1).join('\n'),
             말 === 'en' ? 'deel — where your code can go, in one line' : 'deel — 어디로 나가는지 한 줄로',
             'deel');

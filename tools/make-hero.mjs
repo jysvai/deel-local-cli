@@ -86,12 +86,15 @@ function 그리기(말, 결) {
     .map((r) => `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${p.글[r.단] ?? p.글.at(-1)}"/>`)
     .join('\n  ');
 
+  // 이름표도 `banner.js` 에서 읽어 온다. 여기만 'deel' 로 박아 뒀더니,
+  // 이름이 바뀌면 그린 글자와 이름표가 갈라졌다 — 그 어긋남은 화면을 못
+  // 보는 사람에게만 보이므로 눈으로 보는 사람은 영영 모른다.
   const 글꼴이름 = 말 === 'ko'
     ? "'Pretendard','Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif"
     : "'SF Mono','Cascadia Mono','Segoe UI',system-ui,sans-serif";
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="deel — ${곁말[말]}">
-  <title>deel — ${곁말[말]}</title>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${이름} — ${곁말[말]}">
+  <title>${이름} — ${곁말[말]}</title>
   ${사각}
   <path d="${선}" fill="none" stroke="${p.선}" stroke-width="2.5" stroke-linecap="round"/>
   <text x="${끝 + 18}" y="${선y + 1}" fill="${p.선}" font-family="${글꼴이름}" font-size="17" dominant-baseline="middle">⌂</text>

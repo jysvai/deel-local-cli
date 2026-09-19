@@ -25,7 +25,7 @@
 //
 // 그리고 이건 오류가 아니라서 아무 데도 안 찍힌다. 화면에는 「캐시 표식」 이
 // 그대로 떠 있고, 값은 청구서에만 나타난다.
-import { 메시지표식, 창블록, 닻블록, 닻문턱 } from '../src/backend/cachemark.js';
+import { 메시지표식, 블록에붙이기, 창블록, 닻블록, 닻문턱 } from '../src/backend/cachemark.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -204,6 +204,36 @@ trace('5-빈차례');
     check('★★★ 막힌 자리를 지나고도 창 안이다', 사이블록(ms2, 자리2[0], 자리2[1]) <= 창블록,
       `${사이블록(ms2, 자리2[0], 자리2[1])}블록`);
   }
+}
+
+// ── 6. 꼬리 하나가 창보다 큰 판 · 도구만 부른 차례 · 빈칸 글 (2.0.0 6회차 캐시표식6) ──
+trace('6-캐시표식6');
+{
+  // 병렬 도구 결과 30개가 한 메시지로 오면 닻자리 가 꼬리 자신을 골라 닻이 사라졌다.
+  // 꼬리 표식의 20블록 창은 그 메시지 안에서 끝나 앞 요청의 꼬리에 못 닿는다.
+  const 큰꼬리 = [...바퀴들(12), {
+    role: 'user',
+    content: Array.from({ length: 30 }, (_, k) => ({ type: 'tool_result', tool_use_id: `r${k}`, content: 'ok' })),
+  }];
+  const 자리 = 표식자리(메시지표식(큰꼬리));
+  check('★ 꼬리 한 메시지가 닻블록보다 커도 그 앞에 닻을 박는다', 자리.length === 2 && 자리[0] < 큰꼬리.length - 1, JSON.stringify(자리));
+
+  // OpenAI 꼴의 도구만 부른 차례는 content 가 null 이고 부름은 tool_calls 에 있다. 서버 쪽에서는
+  // 부름 하나하나가 블록이라, 1블록으로 세면 부름이 셋인 대화에서 닻이 창 밖에 박혔다.
+  const 부름셋 = [];
+  for (let k = 0; k < 15; k++) {
+    부름셋.push({ role: 'assistant', content: null, tool_calls: [{ id: `a${k}` }, { id: `b${k}` }, { id: `c${k}` }] });
+    부름셋.push({ role: 'tool', tool_call_id: `a${k}`, content: 'ok' });
+  }
+  const 서버블록 = (m) => (Array.isArray(m?.content) ? m.content.length : (m?.content ? 1 : 0) + (m?.tool_calls?.length ?? 0));
+  const 박힌 = 메시지표식(부름셋);
+  const 자리2 = 박힌.map((m, i) => (JSON.stringify(m).includes('cache_control') ? i : -1)).filter((i) => i >= 0);
+  const 거리 = 자리2.length === 2 ? 부름셋.slice(자리2[0] + 1, 자리2[1] + 1).reduce((n, m) => n + 서버블록(m), 0) : Infinity;
+  check('★ 도구만 부른 차례는 부름 수만큼 블록으로 세어 닻이 창 안에 든다', 거리 <= 창블록, `자리 ${자리2} · 서버 블록 거리 ${거리}`);
+
+  // 빈칸만 든 글 블록은 「빈 글」 이다 — 표식은 그 앞의 성한 블록에.
+  const 빈칸 = 블록에붙이기({ role: 'user', content: [{ type: 'text', text: '앞' }, { type: 'text', text: '  \n ' }] });
+  check('★ 빈칸만 든 글 블록에는 표식을 안 붙인다', !!빈칸.content[0].cache_control && !빈칸.content[1].cache_control, JSON.stringify(빈칸.content));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

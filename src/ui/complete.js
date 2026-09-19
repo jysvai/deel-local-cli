@@ -16,6 +16,21 @@
 // 화면에 한 번에 보여 줄 최대 개수. 더 많으면 목록이 화면을 밀어낸다.
 export const 최대추천 = 6;
 
+/*
+ * 전각 빗금(／, U+FF0F).
+ *
+ * 일본어·중국어 입력기를 켠 채로 `/` 를 치면 이 글자가 나온다. 눈으로는 빗금인데 명령 자리는
+ * `/` 만 봤다 — 추천은 아무것도 안 뜨고, Enter 를 치면 `／help` 가 말로 모델에게 갔다.
+ * 사람은 명령이 없는 줄 안다. 맨 앞 한 글자만 바꾼다(글 가운데의 전각 빗금은 사람 말이다).
+ */
+const 전각빗금 = String.fromCharCode(0xff0f);
+
+/** 맨 앞의 전각 빗금을 `/` 로. 명령을 가르는 자리(commands.js)도 같은 것을 쓴다. */
+export function 빗금펴기(글) {
+  const s = String(글 ?? '');
+  return s.startsWith(전각빗금) ? `/${s.slice(1)}` : s;
+}
+
 /**
  * 지금 치고 있는 글에 맞는 명령들.
  *
@@ -27,7 +42,7 @@ export const 최대추천 = 6;
  * @param {string[]} 보일것       이 수준에서 보여 줄 이름들 (없으면 전부)
  */
 export function 추천(글, 명령표 = {}, 보일것 = null) {
-  const s = String(글 ?? '');
+  const s = 빗금펴기(글);
   const m = /^\/([^\s]*)$/.exec(s);
   if (!m) return [];
 
@@ -37,8 +52,9 @@ export function 추천(글, 명령표 = {}, 보일것 = null) {
   /*
    * 앞에서부터 맞는 것을 먼저, 가운데 맞는 것을 뒤에.
    *
-   * `/mo` 를 치면 mode·model 이 먼저 오고 memory 는 안 온다. 그런데 `/emo` 처럼
-   * 앞을 틀리게 쳤을 때도 memory 가 나오면 고맙다 — 오타는 앞글자에서 제일 많이 난다.
+   * `/mo` 를 치면 mode·model 이 먼저 오고, 가운데가 맞는 memory 가 그 뒤에 붙는다.
+   * 떨구지 않는 것은 `/emo` 처럼 앞을 틀리게 쳤을 때 memory 가 나오면 고맙기 때문이다 —
+   * 오타는 앞글자에서 제일 많이 난다. 순서만으로 충분하고, 지울 이유는 없다.
    */
   const 앞 = [];
   const 안 = [];
@@ -63,7 +79,7 @@ export function 추천(글, 명령표 = {}, 보일것 = null) {
  * 넣어 버리면 사람이 원한 것이 아닐 때 지우는 수고가 더 든다.
  */
 export function 채울글(글, 후보들) {
-  const s = String(글 ?? '');
+  const s = 빗금펴기(글);
   const m = /^\/([^\s]*)$/.exec(s);
   if (!m || !후보들?.length) return '';
   const 친것 = m[1];
@@ -86,4 +102,30 @@ export function 채울글(글, 후보들) {
     같은데까지 = 같은데까지.slice(0, i);
   }
   return 같은데까지.length > 친것.length ? 같은데까지.slice(친것.length) : '';
+}
+
+/**
+ * readline 에 다는 완성기 — 아무것도 채우지 않되, **붙여넣은 조각 끝의 탭은 살린다.**
+ *
+ * 빈 완성기를 달아 두는 까닭은 repl.js 에 적어 뒀다(Tab 이 줄에 박히지 않게, 채우기는 우리가
+ * rl.write 로). 그런데 readline 은 한 조각(data 한 번)의 **마지막 글자**가 탭이면 그것을 Tab 키로
+ * 보고 완성기에 넘긴다. 빈 완성기는 아무것도 안 내놓으니 그 탭이 사라진다 — 엑셀에서 복사한
+ * `이름\t부서` 가 조각 경계에 걸리면 `이름부서` 로 붙어 모델에게 간다. 조각 가운데의 탭은
+ * readline 이 글자로 넣으니 멀쩡해서, 됐다 안 됐다 한다.
+ *
+ * 사람이 Tab 을 누르면 조각이 탭 하나다. 그래서 **탭으로 끝나는데 한 글자보다 긴** 조각이면
+ * 붙여넣기로 보고 탭을 도로 넣는다. Shift+Tab(ESC [ Z)은 탭으로 안 끝나므로 걸리지 않는다.
+ *
+ * @param {import('node:stream').Readable} 입력 readline 이 읽는 입력(대개 process.stdin)
+ * @returns {(줄: string) => [string[], string]}
+ */
+export function 붙임탭완성기(입력) {
+  let 끝이탭 = false;
+  // readline 보다 **먼저** 조각을 봐야 한다 — 완성기는 readline 이 조각을 푸는 도중에 불린다.
+  입력?.prependListener?.('data', (조각) => {
+    const n = 조각?.length ?? 0;
+    const 끝 = typeof 조각 === 'string' ? 조각.charCodeAt(n - 1) : 조각?.[n - 1];
+    끝이탭 = n > 1 && 끝 === 9;
+  });
+  return (줄) => (끝이탭 ? [[`${줄}\t`], 줄] : [[], 줄]);
 }

@@ -10,7 +10,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MODES, ORDER, normalize, get, next, canWrite, allow } from '../src/agent/modes.js';
+import { MODES, ORDER, normalize, get, next, canWrite, allow , 읽는법, 읽는법짧게, 읽는법En, 읽는법짧게En } from '../src/agent/modes.js';
 import { 걸음수 } from '../src/agent/budget.js';
 import { toolSchemas } from '../src/tools/index.js';
 import { TODO_TOOL } from '../src/tools/todo.js';
@@ -82,6 +82,31 @@ for (const 이름 of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwn
       check(`${k}: 짧은 판이 실제로 더 짧다 (영어)`, m.say짧게En.length < m.sayEn.length,
         `${m.say짧게En.length} / ${m.sayEn.length}`);
     }
+  }
+}
+
+/*
+ * ── 8회차 판정 · 짧은 판에서 규칙 한 줄이 영어에서만 빠졌다 ──────────────
+ *
+ * 짧은 판 머리말은 「빠진 규칙은 없고 설득하는 문장만 없다」 고 못 박아 뒀다.
+ * 그런데 영문 짧은 판 몇 군데가 읽는법짧게En 을 손으로 옮겨 적으면서
+ * 「Never whole files.」 를 떨어뜨렸다 — 작은 창에서 영어로 켠 사람만
+ * 「통째로 읽지 마라」 를 한 번도 못 받는다. 같은 창을 한국어로 켜면 받는다.
+ *
+ * 규칙을 하나씩 세는 대신, **한국어 짧은 판이 말하는 것을 영문 짧은 판도
+ * 말하는가**로 잰다. 앞으로 줄이 늘어도 이 검사가 같이 자란다.
+ */
+{
+  for (const [k, m] of Object.entries(MODES)) {
+    if (!m.say짧게 || !m.say짧게En) continue;
+    const 한 = String(m.say짧게);
+    const 영 = String(m.say짧게En);
+    // 읽는 법을 짧은 판에 적은 모드만 본다 — 안 적은 모드는 둘 다 없으면 그만이다.
+    if (!/Outline/.test(한)) continue;
+    check(`★★ ${k}: 영문 짧은 판에도 「통째로 읽지 마라」 가 있다`,
+      /Never whole files|whole files/i.test(영), 영.split(String.fromCharCode(10)).find((l) => /Outline/.test(l)) ?? 영.slice(0, 80));
+    check(`  ${k}: 한국어 짧은 판에도 있다 (짝)`,
+      /통째로 읽지 마라/.test(한), 한.split(String.fromCharCode(10)).find((l) => /Outline/.test(l)) ?? 한.slice(0, 80));
   }
 }
 
@@ -191,6 +216,58 @@ check('묻기 모드에는 TodoWrite 도 없다',
   check('★ 한 줄이라도 바뀌면 평범하게 돌려준다', !/바뀐 것이 없습니다/.test(셋째.content ?? ''),
     셋째.summary ?? '');
   check('무엇이 방금 끝났는지 센다', /방금 1개/.test(셋째.summary ?? ''), 셋째.summary ?? '');
+}
+
+/*
+ * ── todos 가 배열이 아니면 **무엇을 보내야 하는지** 말한다 (사냥5 L4) ────────
+ *
+ * `TodoWrite({todos: "할 일"})` 이 `(items ?? []).entries is not a function` 이라는 날것
+ * TypeError 로 돌아왔다. 모델은 그 말에서 고칠 것을 못 찾고 같은 모양으로 또 보낸다.
+ */
+{
+  for (const 날것 of ['할 일 하나', { text: 'x', state: 'todo' }, 5]) {
+    let r;
+    try { r = TODO_TOOL.run({ todos: 날것 }, {}); } catch (e) { r = { error: `던짐: ${e.message}` }; }
+    check(`★ todos 가 ${typeof 날것} 이면 배열로 보내라고 말한다`,
+      /배열/.test(r.error ?? '') && !/is not a function|던짐/.test(r.error ?? ''), r.error ?? JSON.stringify(r).slice(0, 80));
+  }
+  // 글자로 싸서 보낸 JSON 배열은 풀어서 받는다 — 모델이 흔히 그렇게 보낸다.
+  const 싼것 = TODO_TOOL.run({ todos: JSON.stringify([{ text: '싸서 온 일', state: 'doing' }]) }, {});
+  check('글자로 싼 JSON 배열은 풀어서 받는다', 싼것.todos?.length === 1 && /싸서 온 일/.test(싼것.content ?? ''),
+    싼것.error ?? '');
+  // ★ (6회차 할일6aq-b T2) 칸이 없거나 이름이 틀렸거나 줄에 text 가 없으면 「할 일이 비어 있습니다」 만
+  // 돌아왔다. 위 L4 와 같은 자리다 — 모델은 고칠 곳을 못 찾고 같은 꼴로 또 보낸다.
+  for (const [무엇, 인자, 받은칸] of [
+    ['todos 칸이 없으면', {}, null],
+    ['칸 이름이 틀리면', { tasks: [{ text: '일', state: 'todo' }] }, 'tasks'],
+    ['줄에 text 가 없으면', { todos: [{ title: '일', state: 'todo' }] }, 'title'],
+  ]) {
+    const r = TODO_TOOL.run(인자, {});
+    check(`★ (6회차 T2) ${무엇} 보낼 꼴과 받은 칸을 말한다`,
+      /"text"/.test(r.error ?? '') && (받은칸 == null || (r.error ?? '').includes(받은칸)),
+      r.error ?? JSON.stringify(r).slice(0, 80));
+  }
+  const 빈목록 = TODO_TOOL.run({ todos: [] }, {});
+  check('(T2 짝) 진짜 빈 목록은 여전히 비었다고 말한다', /비어/.test(빈목록.error ?? ''), 빈목록.error ?? '');
+  /*
+   * ── 버린 줄이 있으면 **그 말이 나가야 한다** (8회차 확인) ──────────────────
+   *
+   * text 가 없는 줄은 조용히 버려졌다. 줄 전부가 그러면 위 T2 가 말해 주는데,
+   * **하나라도 성했으면** 성공으로 돌아갔다 — 세 줄을 보냈는데 두 줄짜리 목록이
+   * 아무 말 없이 저장되고, 빠진 할 일은 그대로 사라졌다. 할 일이 사라지는 것을
+   * 막으려고 있는 도구가 할 일을 사라지게 하는 자리다.
+   */
+  const 섞인ctx = {};
+  const 섞임 = TODO_TOOL.run({ todos: [{ text: '첫째', state: 'todo' }, { title: '둘째', state: 'todo' }, { text: '셋째', state: 'todo' }] }, 섞인ctx);
+  check('★ 하나라도 버렸으면 조용히 성공하지 않는다 (8회차 확인)',
+    !섞임.todos && /text/.test(섞임.error ?? ''), 섞임.error ?? JSON.stringify(섞임).slice(0, 120));
+  check('  버린 줄 수와 받은 칸 이름을 말한다',
+    /1/.test(섞임.error ?? '') && (섞임.error ?? '').includes('title'), 섞임.error ?? '');
+  check('  버린 줄이 있으면 반쪽짜리 목록을 저장하지 않는다', 섞인ctx.todos === undefined,
+    JSON.stringify(섞인ctx.todos ?? null));
+  const 성한것 = TODO_TOOL.run({ todos: [{ text: '첫째', state: 'todo' }, { text: '둘째', state: 'done' }] }, {});
+  check('  버린 줄이 없으면 여태처럼 그냥 된다', 성한것.todos?.length === 2 && !성한것.error,
+    성한것.error ?? 성한것.content);
 }
 
 // 없는 것을 만들어 주지는 않는다 — 오프라인이면 웹 도구는 모드와 무관하게 없다
@@ -422,6 +499,33 @@ await new Promise((r) => setImmediate(r));
     check(`${MODES[k].name}: 어느 모드인지도 같이 실린다`, sys.includes(`지금 모드: ${MODES[k].name}`), '');
   }
 
+  // 기본 규칙은 **모든 모드에서** Remember·Verify 를 부르라고 한다. 그 도구가 없는 모드에서는
+  // 없는 도구를 부르라는 말이 되므로, 모드 절에서 부르지 말라고 바로잡는다.
+  {
+    const 묻기 = new Session(conn, { root, work: 'ask' }).systemPrompt();
+    const 코드 = new Session(conn, { root, work: 'code' }).systemPrompt();
+    check('★ 묻기 모드는 Remember·Verify 가 없다고 말해 준다', /Remember·Verify 도구가 없다/.test(묻기), '');
+    check('  다 있는 모드에는 그 말이 안 붙는다', !/도구가 없다\. 위 규칙이/.test(코드), '');
+
+    // 하위 작업은 모드가 아니라 에이전트 정의가 도구를 줄인다(도구제한). 그 자리도 같은 말이
+    // 필요하다 — 모드만 봐서 빠졌다(2.0.0 2차 리뷰).
+    const 줄인 = new Session(conn, { root, work: 'code' });
+    줄인.도구제한 = ['Read', 'Grep'];
+    check('★ 도구제한이 뺀 Remember·Verify 도 없다고 말해 준다', /Remember·Verify 도구가 없다/.test(줄인.systemPrompt()), '');
+    const 다준 = new Session(conn, { root, work: 'code' });
+    다준.도구제한 = ['Read', 'Remember', 'Verify'];
+    check('  도구제한에 둘 다 있으면 안 붙는다', !/도구가 없다\. 위 규칙이/.test(다준.systemPrompt()), '');
+  }
+
+  // /context 는 **실제로 나가는** 도구 목록을 잰다 — 하위 작업의 도구제한이 걸리면 작아져야 한다.
+  {
+    const 다 = new Session(conn, { root, work: 'code' });
+    const 좁힘 = new Session(conn, { root, work: 'code' });
+    좁힘.도구제한 = ['Read'];
+    check('★ /context 는 도구제한이 걸린 목록을 잰다', 좁힘.breakdown().used < 다.breakdown().used,
+      `${좁힘.breakdown().used} / ${다.breakdown().used}`);
+  }
+
   // 모드를 바꾸면 다음 요청부터 바로 달라져야 한다. 세션을 새로 만들 필요가 없다.
   {
     const s = new Session(conn, { root, work: 'code' });
@@ -437,11 +541,45 @@ await new Promise((r) => setImmediate(r));
   check('절차가 지나치게 길지 않다', 가장긴것 < 1500, `가장 긴 것 ${가장긴것}자`);
 }
 
+
+/*
+ * 한국어 판과 영문 판이 **같은 규칙을** 싣고 있나.
+ *
+ * 영문 글은 긴 문자열이라 상수를 펴 넣을 수가 없다 — 손으로 옮겨 적는다.
+ * 옮기면 한 마디씩 떨어지고, 그 손실은 **그 말로 켠 사람에게만** 보인다.
+ * 8회차에 다섯 자리에서 「Never whole files.」 가 이렇게 빠져 있었다.
+ *
+ * 그래서 잣대를 modes.js 에 한 벌 두고 여기서 짝을 맞춘다. 한쪽이 그 규칙을
+ * 실으면 다른 쪽도 실어야 한다 — 어느 쪽이 먼저든.
+ *
+ * 줄바꿈 자리는 말마다 다르니 빈칸을 하나로 눌러 놓고 견준다. 규칙이 들어
+ * 있나만 보지, 어디서 줄을 끊었나는 안 본다.
+ */
+{
+  const 눌러 = (x) => String(Array.isArray(x) ? x.join(String.fromCharCode(32)) : (x ?? ""))
+    .replace(/\s+/g, String.fromCharCode(32)).trim();
+  const 품나 = (글, 규칙) => 규칙.every((r) => 눌러(글).includes(눌러(r)));
+
+  for (const [k, m] of Object.entries(MODES)) {
+    for (const [칸, 영칸, 잣대, 영잣대] of [
+      ["say", "sayEn", 읽는법, 읽는법En],
+      ["say짧게", "say짧게En", 읽는법짧게, 읽는법짧게En],
+    ]) {
+      if (!m[칸] || !m[영칸]) continue;
+      const 한 = 품나(m[칸], 잣대);
+      const 영 = 품나(m[영칸], 영잣대);
+      check(`★★ ${k}.${칸}: 한국어와 영어가 같은 읽는 법을 싣는다`, 한 === 영,
+        `한국어 ${한 ? "실음" : "안 실음"} · 영어 ${영 ? "실음" : "안 실음"}`);
+    }
+  }
+}
+
 rmSync(root, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n작업 모드 검사  ${D}(바꾸면 실제로 달라지는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
+
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 process.exitCode = fail.length ? 1 : 0;

@@ -6,7 +6,7 @@
 //
 // 전부 이 컴퓨터 안(127.0.0.1)에서 돈다. 바깥으로 나가는 연결은 없다.
 import { createServer } from 'node:http';
-import { candidates, detect } from '../src/backend/detect.js';
+import { candidates, detect, 앤트로픽같나, 막은것적기 } from '../src/backend/detect.js';
 import { endpoint, buildBody, extractMessage, assistantMessage, toolMessage } from '../src/backend/adapter.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import { serverMessage, 프록시힌트 } from '../src/backend/http.js';
@@ -146,6 +146,95 @@ async function 띄우기(handler) {
   const r = await detect(`127.0.0.1:${port}`, '');
   check('서버 오류는 규격 오인으로 안 넘긴다', r.kind === 'openai', String(r.kind));
   check('서버가 한 말을 그대로 물고 온다', /모델이 안 올라와/.test(r.warn ?? ''), String(r.warn));
+  srv.close();
+}
+
+/*
+ * ── ★★★ 답을 했다는 것과 이 규격이라는 것은 다른 말이다 ─────────────────
+ *
+ * 사람이 본 것: 설치 화면이 초록색 「연결됨 · 인증 bearer」 로 끝났다. 그 값이
+ * 프로필에 저장되고, 첫 한마디부터 401 이 난다. 열쇠를 새로 받아 넣어도 또
+ * 401 이다 — 화면 어디에도 인증 방식을 **우리가 찍었다**는 말이 없으니 사람은
+ * 열쇠만 의심한다.
+ *
+ * 실제로는 `/models` 가 503 이었다. 5xx·429 는 앞단 프록시도 낸다. 그 한 마디로
+ * 아는 것은 「거기 무언가 있다」 뿐인데, 규격을 openai 로 못 박고 그때 쓰던
+ * 인증 방식(차례상 맨 앞이라 대개 bearer)까지 확정해 적어 뒀다.
+ */
+{
+  const { srv, port } = await 띄우기((url) => (url === '/v1/models'
+    ? { code: 503, body: { error: { message: 'upstream connect error' } } } : null));
+  const r = await detect(`127.0.0.1:${port}`, 'key-1');
+  check('★★★ 5xx 로 정한 것은 짐작이라고 적어 둔다', r.짐작 === true, JSON.stringify(r.짐작));
+  check('★★★ 화면에도 확인 못 했다고 말한다', /확인 못 했습니다/.test(r.warn ?? ''), 짧게(r.warn));
+  check('★★★ 인증 방식이 짐작이라는 것까지 말한다',
+    /인증은 '(bearer|x-api-key|api-key|none)' 로 짐작/.test(r.warn ?? ''), 짧게(r.warn));
+  check('★★ 서버가 한 말은 그대로 남긴다', /upstream connect error/.test(r.warn ?? ''), 짧게(r.warn));
+  srv.close();
+}
+
+{
+  // 429 도 마찬가지다 — 한도에 걸린 앞단은 규격에 대해 아무것도 안 말해 준다.
+  const { srv, port } = await 띄우기((url) => (url === '/v1/models'
+    ? { code: 429, body: { error: { message: 'rate limited' } } } : null));
+  const r = await detect(`127.0.0.1:${port}`, 'key-1');
+  check('★★★ 429 도 짐작이다', r.kind === 'openai' && r.짐작 === true, JSON.stringify({ kind: r.kind, 짐작: r.짐작 }));
+  srv.close();
+}
+
+{
+  /*
+   * ★★ 반대로 넘치면 안 된다. 400·402 처럼 **서버가 요청을 읽고 답한** 것까지
+   * 짐작으로 적으면, 이 표시가 아무 뜻도 없는 표시가 된다.
+   */
+  const { srv, port } = await 띄우기((url) => (url === '/v1/models'
+    ? { code: 402, body: { error: { message: '잔액이 모자랍니다' } } } : null));
+  const r = await detect(`127.0.0.1:${port}`, 'key-1');
+  check('★★ 5xx·429 가 아니면 짐작으로 안 적는다', r.kind === 'openai' && r.짐작 === false,
+    JSON.stringify({ kind: r.kind, 짐작: r.짐작 }));
+  check('★★ 그때는 서버 말만 적는다 — 없는 말을 안 보탠다', r.warn === '잔액이 모자랍니다', 짧게(r.warn));
+  srv.close();
+}
+
+/*
+ * ── ★★★ Azure: 401 을 주소 탓으로 돌리지 않는다 ─────────────────────────
+ *
+ * 사람이 본 것: 포털에서 자원 주소만(배포 이름 없이) 복사해 넣고 열쇠가 틀렸을
+ * 때, 화면은 「배포를 못 찾았습니다 — 주소에 /openai/deployments/<배포이름>
+ * 까지 넣어 보세요」 였다. 시키는 대로 고쳐도 아무것도 안 바뀐다. 서버는 세
+ * 방식 모두에 401 을 냈고, 그건 주소가 아니라 **열쇠** 이야기였다.
+ *
+ * 두드려서 받아 온 상태 코드를 tryAzure 가 통째로 버리고 null 만 돌려줬기
+ * 때문이다. 부르는 쪽은 받은 것이 없으니 제가 아는 짐작 한 줄을 적었다.
+ */
+{
+  const { srv, port } = await 띄우기(() => ({ code: 401, body: { error: { message: '열쇠가 틀렸습니다' } } }));
+  const r = await detect(`http://127.0.0.1:${port}/openai/deployments`, 'bad-key');
+  check('★★★ Azure 401 은 401 이라고 말한다', r.status === 401, JSON.stringify({ status: r.status, why: 짧게(r.why) }));
+  check('★★★ 열쇠를 보라고 한다', /열쇠/.test(r.why ?? ''), 짧게(r.why));
+  check('★★★ 주소를 고치라는 헛말을 안 한다', !/deployments\/<배포이름>/.test(r.why ?? ''), 짧게(r.why));
+  srv.close();
+}
+
+{
+  // 500·502 는 아예 담기지도 않아서 더 나빴다 — 서버가 아픈 것이 주소 탓이 됐다.
+  const { srv, port } = await 띄우기(() => ({ code: 502, body: { error: { message: '앞단이 죽었습니다' } } }));
+  const r = await detect(`http://127.0.0.1:${port}/openai/deployments`, 'key-1');
+  check('★★★ Azure 5xx 도 상태 코드를 들고 나온다', r.status === 502, String(r.status));
+  check('★★★ 서버 쪽 문제라고 말한다', /서버 쪽/.test(r.why ?? ''), 짧게(r.why));
+  check('★★★ 여기서도 주소를 고치라고 안 한다', !/deployments\/<배포이름>/.test(r.why ?? ''), 짧게(r.why));
+  srv.close();
+}
+
+{
+  /*
+   * ★★★ 그 말이 맞는 자리에서는 그대로 해야 한다. 404 는 「그 자리가 없다」 라,
+   * 배포 이름을 넣어 보라는 말이 실제로 듣는 유일한 자리다.
+   */
+  const { srv, port } = await 띄우기(() => ({ code: 404, body: { error: { message: '없습니다' } } }));
+  const r = await detect(`http://127.0.0.1:${port}/openai/deployments`, 'key-1');
+  check('★★★ 404 에는 배포 이름을 넣어 보라고 한다', /deployments\/<배포이름>/.test(r.why ?? ''), 짧게(r.why));
+  check('★★ 404 도 상태 코드를 들고 나온다', r.status === 404, String(r.status));
   srv.close();
 }
 
@@ -383,6 +472,251 @@ trace('5-프록시오류');
   check('짝 안 맞는 글에도 안 터진다',
     프록시힌트("Command '[' returned non-zero exit status 1.") != null
     && 프록시힌트('그냥 오류') === null);
+}
+
+// ── 이 규격이 아닌 서버를 openai 로 굳히지 않는다 (사냥5 B5-08) ──────────
+trace('3.9-이규격아님');
+{
+  /*
+   * 모든 길에 `{"status":"ok"}` 나 `[]` 를 주는 개발 서버, 모든 길을 /login 으로
+   * 되돌리는 관리 화면이 전부 「openai · 인증 none · 모델 0개」 로 붙었다. 사람은
+   * 모델이 안 올라온 줄 알고 엉뚱한 데를 판다. 목록 **모양**이 와야 이 규격이다.
+   */
+  const 띄움 = (손) => new Promise((ok) => { const s = createServer(손); s.listen(0, '127.0.0.1', () => ok(s)); });
+  const 모든길 = (code, body, head) => (q, s) => { q.resume(); s.writeHead(code, head); s.end(body); };
+  const 판들 = [
+    ['모든 길에 {"status":"ok"}', 모든길(200, '{"status":"ok"}', { 'content-type': 'application/json' }), false],
+    ['모든 길에 []', 모든길(200, '[]', { 'content-type': 'application/json' }), false],
+    ['모든 길을 /login 으로 302', 모든길(302, '', { location: '/login' }), false],
+    ['빈 목록 {"object":"list","data":[]}', (q, s) => {
+      q.resume();
+      if (q.url.startsWith('/v1/models')) { s.writeHead(200, { 'content-type': 'application/json' }); return s.end('{"object":"list","data":[]}'); }
+      s.writeHead(404); return s.end();
+    }, true],
+  ];
+  for (const [이름, 손, 붙어야] of 판들) {
+    const s = await 띄움(손);
+    const base = `http://127.0.0.1:${s.address().port}`;
+    allowEndpoint(base);
+    let r;
+    try { r = await detect(base, ''); } catch (e) { r = { 던짐: String(e?.message ?? e) }; }
+    check(`${붙어야 ? '★' : '★★'} ${이름} → ${붙어야 ? 'openai 로 붙는다 (모델이 없는 것도 목록이다)' : 'openai 로 안 굳힌다'}`,
+      붙어야 ? r?.kind === 'openai' : r?.kind !== 'openai',
+      JSON.stringify({ kind: r?.kind, warn: r?.warn, why: r?.why, 던짐: r?.던짐 }).slice(0, 160));
+    s.closeAllConnections?.();
+    s.close();
+  }
+}
+
+// ── 6회차 Gemini 알아내기6 ─────────────────────────────────────────────
+trace('3.95-알아내기6');
+{
+  const 띄움 = (손) => new Promise((ok) => { const s = createServer(손); s.listen(0, '127.0.0.1', () => ok(s)); });
+  const 답 = (s, code, o) => { s.writeHead(code, { 'content-type': 'application/json' }); s.end(JSON.stringify(o)); };
+  const 재기 = async (손, 주소뒤, 열쇠) => {
+    const s = await 띄움(손);
+    const base = `http://127.0.0.1:${s.address().port}`;
+    allowEndpoint(base);
+    let r;
+    try { r = await detect(base + 주소뒤, 열쇠); } catch (e) { r = { 던짐: String(e?.message ?? e) }; }
+    s.closeAllConnections?.(); s.close();
+    return r;
+  };
+  const 보기 = (r) => JSON.stringify({ kind: r?.kind, auth: r?.auth, status: r?.status, why: r?.why, warn: r?.warn, 던짐: r?.던짐 }).slice(0, 180);
+
+  /*
+   * D4 · `/v1/models` 는 404(길 없음), `/models` 는 401(열쇠 틀림). 후보 차례상 404 를 먼저 받는데,
+   * 처음 받은 것만 적어서 화면이 「no route · 404」 — 주소 탓 — 로 끝났다.
+   */
+  const 길없고열쇠틀림 = await 재기((q, s) => {
+    q.resume();
+    if (q.url.startsWith('/v1/')) return 답(s, 404, { error: { message: 'no route' } });
+    if (q.url === '/models') return 답(s, 401, { error: { message: 'invalid api key' } });
+    return 답(s, 404, { error: { message: 'nothing' } });
+  }, '', 'key-1');
+  check('★ 404 를 먼저 받아도 뒤에 온 401 로 말한다 — 주소가 아니라 열쇠', 길없고열쇠틀림.kind === null
+    && 길없고열쇠틀림.status === 401 && 길없고열쇠틀림.why === 'invalid api key', 보기(길없고열쇠틀림));
+  const 열쇠틀리고길없음 = await 재기((q, s) => {
+    q.resume();
+    if (q.url === '/v1/models') return 답(s, 401, { error: { message: 'invalid api key' } });
+    return 답(s, 404, { error: { message: 'no route' } });
+  }, '', 'key-1');
+  check('  401 을 먼저 받으면 뒤의 404 로 안 덮는다', 열쇠틀리고길없음.status === 401 && 열쇠틀리고길없음.why === 'invalid api key',
+    보기(열쇠틀리고길없음));
+  const 방법없고열쇠틀림 = await 재기((q, s) => {
+    q.resume();
+    if (q.url.startsWith('/v1/')) return 답(s, 405, { error: { message: 'Method Not Allowed' } });
+    if (q.url === '/models') return 답(s, 401, { error: { message: 'invalid api key' } });
+    return 답(s, 404, { error: { message: 'nothing' } });
+  }, '', 'key-1');
+  check('  405 도 약한 단서다 — 뒤에 온 401 로 말한다', 방법없고열쇠틀림.status === 401, 보기(방법없고열쇠틀림));
+  const 다없음 = await 재기((q, s) => { q.resume(); 답(s, 404, { error: { message: 'no route' } }); }, '', 'key-1');
+  check('  다 404 면 404 다', 다없음.status === 404, 보기(다없음));
+
+  /*
+   * E1 · LLM 이 아닌 서버가 `/models` 에 405 를 준다. 그 길이 GET 을 안 받는다는 말이라 모델 목록이
+   * 아닌데, 「openai · 인증 bearer」 로 초록색이 됐다. 404 와 같이 「이 길이 아니다」 로 본다.
+   */
+  const 방법안됨 = await 재기((q, s) => { q.resume(); 답(s, 405, { error: { message: 'Method Not Allowed' } }); }, '', 'key-1');
+  check('★ /models 에 405 인 서버를 openai 로 안 굳힌다', 방법안됨.kind === null && 방법안됨.status === 405, 보기(방법안됨));
+
+  /*
+   * E3 · 모든 길에 `{"data":[{"status":"ok"}]}` 를 주는 개발 서버. OpenAI 쪽은 목록 모양으로 거르는데
+   * Anthropic 쪽은 `data` 가 배열이기만 보고 「anthropic · 모델 0개」 로 붙었다.
+   */
+  const 가짜목록 = await 재기((q, s) => { q.resume(); 답(s, 200, { data: [{ status: 'ok' }] }); }, '', 'key-1');
+  check('★ 이름 없는 data 배열을 anthropic 으로 안 굳힌다', 가짜목록.kind !== 'anthropic' && 가짜목록.kind !== 'openai', 보기(가짜목록));
+  const 진짜앤트로픽 = await 재기((q, s) => {
+    q.resume();
+    if (q.url === '/v1/models' && q.headers['anthropic-version']) return 답(s, 200, { data: [{ id: 'claude-x', display_name: 'X' }] });
+    return 답(s, 400, { error: { message: 'anthropic-version header is required' } });
+  }, '', 'key-1');
+  check('  진짜 Anthropic 목록은 그대로 붙는다', 진짜앤트로픽.kind === 'anthropic' && 진짜앤트로픽.models?.[0]?.id === 'claude-x', 보기(진짜앤트로픽));
+
+  /*
+   * D1 · 배포 이름이 든 Azure 주소를 열쇠 없이 넣었고 목록이 401. 주소에 적힌 배포로 붙이는 것은
+   * 그대로 두되(목록 권한이 따로인 테넌트), 화면이 「목록을 못 봤다」 만 말하고 **열쇠가 없다**는 말을
+   * 안 해서 첫 한마디의 401 을 사람이 짐작해야 했다.
+   */
+  const 열쇠없는애저 = await 재기((q, s) => { q.resume(); 답(s, 401, { error: { message: 'missing subscription key' } }); }, '/openai/deployments/dep1', '');
+  check('★ 열쇠 없이 Azure 목록이 401 이면 열쇠를 넣으라고 말한다', 열쇠없는애저.kind === 'openai' && /열쇠/.test(열쇠없는애저.warn ?? ''), 보기(열쇠없는애저));
+
+  /*
+   * D3 · 받기만 하고 영영 답을 안 하는 주소(방화벽이 삼키는 자리 · VPN 이 반쯤 올라온 자리).
+   * 인증 방식마다, 후보 주소마다 12초씩 기다려서 설치 화면이 일반 주소 188초(16번) · Azure 36초(3번)
+   * 멈췄다. 머리 하나 · 길 하나 바꾼다고 안 답하던 곳이 답하지 않는다 — 한 번 시간이 다 되면 거기서 끝.
+   * (allowEndpoint 는 허용 목록을 **바꿔 끼우므로** 두 판을 함께 못 돌린다 — 차례로 잰다.)
+   */
+  const 먹통재기 = async (주소뒤) => {
+    const 받은 = []; const 잡힌 = [];
+    const s = await 띄움((q, res) => { 받은.push(q.url); 잡힌.push(res); });
+    const base = `http://127.0.0.1:${s.address().port}`;
+    allowEndpoint(base);
+    const t0 = Date.now();
+    let r;
+    try { r = await detect(base + 주소뒤, 'key-1'); } catch (e) { r = { 던짐: String(e?.message ?? e) }; }
+    const 초 = Math.round((Date.now() - t0) / 1000);
+    for (const x of 잡힌) x.destroy();
+    s.closeAllConnections?.(); s.close();
+    return { r, 초, 받은 };
+  };
+  const 먹통일반 = await 먹통재기('');
+  const 먹통애저 = await 먹통재기('/openai/deployments/dep1');
+  check('★ 안 답하는 주소에서 한 번 시간이 다 되면 더 안 두드린다 (188초 · 16번이던 것)',
+    먹통일반.r.kind === null && 먹통일반.초 <= 30 && 먹통일반.받은.length <= 2 && /시간 초과/.test(먹통일반.r.why ?? ''),
+    `${먹통일반.초}초 · ${먹통일반.받은.length}번 · ${보기(먹통일반.r)}`);
+  check('★ Azure 도 같다 — 인증 방식을 바꿔 가며 12초씩 더 안 기다린다 (36초 · 3번이던 것)',
+    먹통애저.r.kind === null && 먹통애저.초 <= 20 && 먹통애저.받은.length === 1 && /시간 초과/.test(먹통애저.r.why ?? ''),
+    `${먹통애저.초}초 · ${먹통애저.받은.length}번 · ${보기(먹통애저.r)}`);
+}
+
+// ── 창구 찾기 (8회차 뒷단) ──────────────────────────────────────────────
+trace('3.97-창구찾기');
+{
+  const 띄움 = (손) => new Promise((ok) => { const s = createServer(손); s.listen(0, '127.0.0.1', () => ok(s)); });
+  const 답 = (s, code, o) => { s.writeHead(code, { 'content-type': 'application/json' }); s.end(JSON.stringify(o)); };
+
+  /*
+   * 배포 목록이 404 가 아닌 코드로 막혔을 때.
+   *
+   * 「주소에 /openai/deployments/<배포이름> 까지 넣어 보세요」 는 **404 에서만**
+   * 할 말이다 — 머리말도 그렇게 적어 두었다. 그런데 400·429 에도 같은 말이
+   * 나갔다. 429 는 앞단이 지금 받아 줄 수 없다는 뜻이고 주소는 멀쩡하다.
+   * 시키는 대로 주소를 고쳐 넣어도 아무것도 안 바뀐다.
+   */
+  const 애저막힘재기 = async (code) => {
+    const s = await 띄움((q, res) => { q.resume(); 답(res, code, { error: { message: 'nope' } }); });
+    const base = `http://127.0.0.1:${s.address().port}`;
+    allowEndpoint(base);
+    let r;
+    try { r = await detect(`${base}/openai/deployments`, 'key-1'); } catch (e) { r = { 던짐: String(e?.message ?? e) }; }
+    s.closeAllConnections?.(); s.close();
+    return r;
+  };
+  for (const code of [429, 400]) {
+    const r = await 애저막힘재기(code);
+    check(`★ 배포 목록이 ${code} 면 주소를 고치라고 하지 않는다`,
+      !/deployments\/<배포이름>/.test(r.why ?? '') && new RegExp(String(code)).test(r.why ?? ''), 짧게(r.why));
+  }
+  const 사백사 = await 애저막힘재기(404);
+  check('  404 에서는 예전대로 주소에 배포를 붙여 보라고 한다', /deployments\/<배포이름>/.test(사백사.why ?? ''), 짧게(사백사.why));
+
+  /*
+   * ── 200 으로 답한 자리에 「주소를 고쳐 보세요」 (사냥6 막판-뒷단) ────────
+   *
+   * 사내 SSO·프록시가 배포 목록 요청을 가로채 **200 으로 로그인 페이지**를 준다.
+   * 그건 거절이 아니라서 위 `막힌것` 목록에 안 담긴다(그건 맞다 — 인증 방식 표에
+   * 섞이면 안 된다). 그런데 목록이 비면 tryAzure 가 `null` 을 내고, 부르는 쪽은
+   * 제가 아는 짐작 한 줄 —「주소에 /openai/deployments/<배포이름> 까지 넣어
+   * 보세요」— 를 적었다. 주소에는 이미 그 길이 적혀 있고, 서버는 200 으로
+   * 또박또박 답했다. 시키는 대로 고쳐도 아무것도 안 바뀐다. `status` 도 0 이라
+   * providers 의 막힌까닭 도 아무 말을 못 한다.
+   *
+   * 바로 위 429·400 검사가 막으려던 것과 같은 틀림인데, 그쪽은 거절 코드로 와서
+   * 잡혔고 이쪽은 200 이라 그 그물을 빠져나갔다.
+   */
+  {
+    const s2 = await 띄움((q, res) => {
+      q.resume();
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end('<html><body>Sign in to your account</body></html>');
+    });
+    const base = `http://127.0.0.1:${s2.address().port}`;
+    allowEndpoint(base);
+    let r;
+    try { r = await detect(`${base}/openai/deployments`, 'key-1'); } catch (e) { r = { 던짐: String(e?.message ?? e) }; }
+    s2.closeAllConnections?.(); s2.close();
+    check('★★★ 200 으로 답한 자리에는 주소를 고치라고 하지 않는다',
+      r.kind === null && !/deployments\/<배포이름>/.test(r.why ?? ''), 짧게(r.why));
+    check('★★ 200 인데 JSON 이 아니라는 것을 말해 준다 — 브라우저로 열어 보게',
+      /200/.test(r.why ?? '') && /JSON|로그인|가로/.test(r.why ?? ''), 짧게(r.why));
+  }
+
+  /*
+   * 한 번 선 `먹통` 은 서버가 제 말로 답하면 내려가야 한다.
+   *
+   * 「아무도 답한 적 없는데 시간이 다 됐다」 가 먹통의 뜻이다(시간다됨 머리말).
+   * 그런데 그 뒤에 401 이 와서 status 를 채워도 표시는 그대로 남았다. 남은
+   * 표시 하나로 부르는 쪽은 나머지 후보를 통째로 건너뛴다 — 서버가 거기
+   * 있다고 말한 뒤에 「닿지도 못했다」 로 끝난다.
+   */
+  {
+    const 막힌것 = { status: 0, why: '' };
+    막은것적기(막힌것, { status: 0, code: 'TimeoutError', error: '시간 초과' });
+    check('  시간이 다 되면 먹통이 선다', 막힌것.먹통 === true, JSON.stringify(막힌것));
+    막은것적기(막힌것, { status: 401, json: { error: { message: 'bad key' } } });
+    check('★ 뒤에 서버가 401 로 답하면 먹통이 내려간다', !막힌것.먹통 && 막힌것.status === 401, JSON.stringify(막힌것));
+  }
+
+  /*
+   * 앞뒤 빈칸이 붙은 주소.
+   *
+   * detect 는 origin 만 trim 하고 **원본 input** 은 그대로 넘긴다. 그래서
+   * ` api.anthropic.com ` 을 넣으면 앤트로픽같나 가 false 가 되고, Anthropic
+   * 규격을 먼저 볼 단서를 통째로 잃는다. setup --url 은 trim 을 안 한다.
+   */
+  check('★ 앞뒤 빈칸이 붙어도 Anthropic 주소로 본다', 앤트로픽같나(' api.anthropic.com ', '') === true);
+  check('  빈칸 없는 것은 예전 그대로', 앤트로픽같나('api.anthropic.com', '') === true);
+  check('  남의 도메인은 여전히 아니다', 앤트로픽같나(' api.anthropic.com.evil.example ', '') === false);
+
+  /*
+   * Ollama 로 붙었을 때만 tried 가 빈 배열이었다. 다른 갈래는 다 적는다.
+   * 「어디를 두드렸나」 를 보여 주는 화면이 이 갈래에서만 빈칸이 된다.
+   */
+  {
+    const s = await 띄움((q, res) => {
+      q.resume();
+      if (q.url === '/api/version') return 답(res, 200, { version: '0.5.0' });
+      if (q.url === '/api/tags') return 답(res, 200, { models: [{ name: 'qwen3', size: 5e9 }] });
+      return 답(res, 404, {});
+    });
+    const base = `http://127.0.0.1:${s.address().port}`;
+    allowEndpoint(base);
+    const r = await detect(base, '');
+    s.closeAllConnections?.(); s.close();
+    check('★ Ollama 로 붙어도 두드린 자리를 적는다', r.kind === 'ollama' && (r.tried?.length ?? 0) > 0,
+      `${r.kind} · ${JSON.stringify(r.tried)}`);
+  }
 }
 
 trace('4-치움');

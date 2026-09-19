@@ -12,7 +12,7 @@ import { Session } from '../src/agent/session.js';
 import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, FOLD_AT_캐시, 캐시일때비울몫, 접을이득문턱, 접힘표, 최소이득, 접힌파일열쇠, KEEP_RECENT } from '../src/agent/compact.js';
 import { 파일기억 } from '../src/agent/filemem.js';
 import { assistantMessage, toolMessage } from '../src/backend/adapter.js';
-import { repairToolPairs } from '../src/agent/session.js';
+import { repairToolPairs, 규격맞추기 } from '../src/agent/session.js';
 
 /*
  * ── 아래 검사들은 문턱을 0 으로 두고 부른다 ─────────────────────────────
@@ -43,6 +43,10 @@ const server = createServer((req, res) => {
     const j = JSON.parse(body || '{}');
     받은요약요청 = j;
     res.writeHead(200, { 'Content-Type': 'application/json' });
+    // max_tokens 를 무시하고 접을 대화보다 큰 요약을 보내는 서버 (사냥5 L5-8).
+    if (mode === '큰요약') {
+      return res.end(JSON.stringify({ choices: [{ message: { content: '요약 '.repeat(6000) }, finish_reason: 'stop' }], usage: { prompt_tokens: 800, completion_tokens: 900 } }));
+    }
     res.end(JSON.stringify({
       choices: [{
         message: {
@@ -129,6 +133,47 @@ for (let i = 0; i < s.messages.length; i++) {
 }
 check('도구 호출·결과 짝이 안 깨짐', 짝깨짐 === null, 짝깨짐 ?? '');
 check('요약 요청에 사고를 안 씀', 받은요약요청?.reasoning_effort === 'low', String(받은요약요청?.reasoning_effort));
+
+/*
+ * ── ★★ 도구만 부른 걸음이 요약 대화록에 빈 말을 남기면 안 된다 ──────────
+ *
+ * 도구만 부르고 할 말이 없는 걸음은 `content: null` 로 온다 — OpenAI 규격이
+ * 그렇게 적혀 있고 어댑터도 그대로 싣는다. 그런데 대화록을 만드는 자리가
+ * 문자열이 아니면 `JSON.stringify(m.content ?? '')` 로 넘겼다. null 이 들어오면
+ * 그 값은 빈 글이 아니라 **따옴표 두 개짜리 글자열**이라, 비었는지 보는 문을
+ * 그냥 지나간다. 그래서 걸음마다 `나: ""` 가 한 줄씩 낀다.
+ *
+ * 값이 두 가지로 샌다. 자리를 먹는 것이 하나 — 스무 걸음이면 스무 줄이다.
+ * 더 나쁜 쪽은 모델이 그것을 **읽을 것이 있는 줄**로 본다는 것이다. 요약은
+ * 대화를 대신하게 될 글이라, 여기 낀 잡음이 그대로 대화가 된다.
+ */
+{
+  mode = 'ok';
+  const 도구만 = [{ role: 'user', content: '이 폴더 훑어봐' }];
+  for (let i = 0; i < 12; i++) {
+    // content 를 아예 안 싣는 걸음(규격 그대로)과 null 로 싣는 걸음 둘 다.
+    도구만.push(i % 2
+      ? { role: 'assistant', content: null, tool_calls: [{ id: `n${i}`, type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: `src/g${i}.js` }) } }] }
+      : { role: 'assistant', tool_calls: [{ id: `n${i}`, type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: `src/g${i}.js` }) } }] });
+    도구만.push({ role: 'tool', tool_call_id: `n${i}`, name: 'Read', content: '다'.repeat(600) });
+    도구만.push({ role: 'assistant', content: `${i}번째를 봤습니다. ` + '라'.repeat(200) });
+    도구만.push({ role: 'user', content: '계속' });
+  }
+  const s빈말 = new Session(conn, { root: process.cwd() });
+  s빈말.messages = 도구만;
+  받은요약요청 = null;
+  const r빈말 = await compact(s빈말);
+  check('접기 성공 (빈 말 검사용)', r빈말.ok, r빈말.why ?? '');
+  const 대화록 = String(받은요약요청?.messages?.at(-1)?.content ?? '');
+  check('★★ 도구만 부른 걸음이 `나: ""` 를 남기지 않는다', !/^나: ""$/m.test(대화록),
+    (대화록.match(/^나: ""$/gm) ?? []).length + '줄');
+  check('★ 빈 말이 한 줄도 안 낀다', !/: ""\s*$/m.test(대화록),
+    대화록.split('\n').filter((l) => /: ""$/.test(l)).length + '줄');
+  check('★ 그 걸음이 부른 도구는 그대로 적힌다', /\[도구\] Read\(/.test(대화록),
+    대화록.split('\n').find((l) => l.includes('[도구]')) ?? '없음');
+  check('★ 할 말이 있던 걸음은 그대로 남는다', /번째를 봤습니다/.test(대화록),
+    대화록.slice(0, 120));
+}
 
 // ── 2-1. 이번에 시킨 말은 요약하지 않고 원문 그대로 남긴다 ──────────────
 //
@@ -247,6 +292,55 @@ check('★ 그냥 줄인 뒤에도 파일은 통째로 다시 싣는다 — 가�
   check('할 일이 없으면 할 일 표를 안 붙인다',
     r6.fallback === true && !s6.messages.some((m) => /안 끝난 할 일/.test(String(m.content ?? ''))));
   mode = 'ok';
+}
+
+/*
+ * ── ★★ 4-1b. 접을 대화보다 큰 요약은 받지 않는다 (사냥5 L5-8) ─────────────
+ *
+ * 요약은 max_tokens 1200 으로 부르지만 그 값을 무시하는 서버가 있다. 여태는 잘렸나·
+ * 거절인가만 봐서, 접을 대화보다 **큰** 요약이 와도 ok:true 로 끼워 넣었다. 8k 창에서
+ * 10,762 → 19,935 토큰으로 부풀고 shouldCompact 는 그대로 참이다 — 걸음마다 또 요약을
+ * 부르고 또 부푼다.
+ */
+{
+  mode = '큰요약';
+  const s7 = new Session(conn, { root: process.cwd() });
+  s7.messages = 대화만들기(12);
+  const r7 = await compact(s7);
+  check('★★ 접을 대화보다 큰 요약은 버리고 그냥 줄이기로 물러선다', r7.fallback === true && r7.after < r7.before,
+    JSON.stringify({ ok: r7.ok, fallback: r7.fallback, before: r7.before, after: r7.after }));
+  check('★ 그 요약은 대화에 안 들어간다', !s7.messages.some((m) => String(m.content ?? '').includes('요약 요약 요약')), '');
+  check('왜 버렸는지 말한다', /요약이 .*커/.test(String(r7.why ?? '')), String(r7.why ?? ''));
+  mode = 'ok';
+}
+
+/*
+ * ── ★★ 4-2. 요약 속에 박은 「이번에 시킨 말」 이 /undo 뒤에도 남았다 ─────────
+ *
+ * 턴 머리(첫 걸음)에서 자동 요약이 돌면 그 턴의 시킨 말이 요약 메시지 안에
+ * 「빠짐없이 하세요」 와 함께 박힌다. 요약은 그 턴의 자리표보다 앞에 놓이니,
+ * 그 턴을 되감아도 요약은 남고 — 파일은 되돌아갔는데 다음 턴이 되돌린 일을
+ * 다시 보낸다. 되감은 턴에서 박은 쪽지는 요약에서도 빠져야 한다.
+ */
+{
+  mode = 'ok';
+  const { History } = await import('../src/safety/undo.js');
+  const h7 = new History(mkdtempSync(join(tmpdir(), 'deel-compact-undo-')));
+  const s7 = new Session(conn, { root: process.cwd() });
+  s7.messages = 대화만들기(12);
+  const t7 = h7.nextTurn();
+  s7.턴시작(t7);
+  const 시킨말 = '결제 모듈 payments.js 를 새로 만들어줘';
+  s7.이번요청 = 시킨말;
+  s7.push({ role: 'user', content: 시킨말 });
+  const r7 = await compact(s7);
+  const 요약에박힘 = s7.messages.some((m) => /요약해 접었습니다/.test(String(m.content ?? '')) && String(m.content).includes(시킨말));
+  check('먼저: 턴 머리에서 접혔고, 요약에 시킨 말이 박혔고, 그 턴 자리표가 살아 있다',
+    r7.ok && 요약에박힘 && s7.턴자리().some((x) => x.턴 === t7), `${r7.ok} · ${요약에박힘} · ${JSON.stringify(s7.턴자리())}`);
+  s7.되감기([t7]);
+  const 남은글 = JSON.stringify(s7.messages);
+  check('★★ 그 턴을 되감으면 요약 속 「이번에 시킨 말」 도 같이 빠진다', !남은글.includes(시킨말), 남은글.slice(0, 300));
+  check('요약 글 자체는 남는다', /요약해 접었습니다/.test(남은글) && /로그 형식 통일/.test(남은글), 남은글.slice(0, 160));
 }
 
 // ── 5. 접을 게 없으면 조용히 넘어간다 ───────────────────────────────────
@@ -915,6 +1009,222 @@ await new Promise((r) => setImmediate(r));
   const 오 = foldToolResults({ messages: 이력('openai') }, { 이득문턱: 0 }).접은것;
   const 앤 = foldToolResults({ messages: 이력('anthropic') }, { 이득문턱: 0 }).접은것;
   check('★ 규격이 달라도 접는 개수가 같다', 오 === 앤, `openai ${오} · anthropic ${앤}`);
+}
+
+/*
+ * ── ★★ 짝 없는 결과를 걷다가 **사람이 한 말까지** 같이 걷었다 ─────────────
+ *
+ * Anthropic 꼴에는 도구 차례가 없어서 결과가 사람 차례에 실리고, 끼어든 말이
+ * 같은 메시지에 text 블록으로 붙는다(adapter.js 의 결과들 머리말 「사람이 친 글과
+ * 한 메시지에 같이 있을 수 있으니 블록 종류로 가른다」). repairToolPairs 는
+ * 메시지 단위로 걷어서, 결과가 짝을 잃으면 그 옆의 사람 말도 통째로 없어졌다.
+ * 걷을 것은 결과 블록뿐이다. 남길 결과 메시지에 섞인 짝 없는 결과 블록도 걷는다 —
+ * 남기면 그 블록 하나로 400 이다.
+ */
+{
+  const 사람말있나 = (ms, 글) => JSON.stringify(ms).includes(글);
+  const 짝없는결과 = (ms) => {
+    const 부른id = new Set(ms.flatMap((m) => (Array.isArray(m.content) ? m.content : []).filter((b) => b?.type === 'tool_use').map((b) => b.id)));
+    return ms.flatMap((m) => (Array.isArray(m.content) ? m.content : []).filter((b) => b?.type === 'tool_result' && !부른id.has(b.tool_use_id)));
+  };
+
+  // 1) 맨 앞이 짝 없는 결과 + 사람 말
+  const r1 = repairToolPairs([
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'zz', content: 'a' }, { type: 'text', text: '중요한 사람 말 하나' }] },
+    { role: 'assistant', content: [{ type: 'text', text: '네' }] },
+  ]);
+  check('★★ Anthropic: 짝 없는 결과 옆의 사람 말은 남는다', 사람말있나(r1.messages, '중요한 사람 말 하나') && 짝없는결과(r1.messages).length === 0,
+    JSON.stringify(r1.messages));
+  check('걷은 것은 센다', r1.고친것 >= 1, String(r1.고친것));
+
+  // 2) 부름이 통째로 걷히는데(결과 없음) 그 뒤 결과 메시지가 다른 id + 사람 말
+  const r2 = repairToolPairs([
+    { role: 'user', content: '둘 읽어' },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Read', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: '엉뚱', content: 'x' }, { type: 'text', text: '방향을 틀어 줘' }] },
+  ]);
+  check('★★ Anthropic: 부름과 함께 걷히는 결과 메시지의 사람 말도 남는다', 사람말있나(r2.messages, '방향을 틀어 줘') && 짝없는결과(r2.messages).length === 0
+    && !r2.messages.some((m) => Array.isArray(m.content) && m.content.some((b) => b?.type === 'tool_use')),
+  JSON.stringify(r2.messages));
+
+  // 3) 남길 결과 메시지에 짝 있는 결과 + 짝 없는 결과 + 사람 말이 섞였다
+  const r3 = repairToolPairs([
+    { role: 'user', content: '읽어' },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Read', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }, { type: 'tool_result', tool_use_id: '고아', content: 'x' }, { type: 'text', text: '끼어든 말' }] },
+    { role: 'assistant', content: [{ type: 'text', text: '읽었습니다' }] },
+  ]);
+  check('★★ Anthropic: 남긴 결과 메시지에 섞인 짝 없는 결과 블록은 걷고 사람 말은 남긴다',
+    짝없는결과(r3.messages).length === 0 && 사람말있나(r3.messages, '끼어든 말') && 사람말있나(r3.messages, '"ok"'),
+    JSON.stringify(r3.messages));
+
+  // 4) OpenAI · Ollama: 결과는 글 하나라 사람 말이 섞일 자리가 없다. 뒤따르는 사람 말이 안 딸려 가는지만 본다.
+  const r4 = repairToolPairs([
+    { role: 'tool', tool_call_id: 'zz', content: 'a' },
+    { role: 'user', content: '오픈에이아이 사람 말' },
+    { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: '{}' } }] },
+    { role: 'user', content: '결과 없이 온 사람 말' },
+  ]);
+  check('★ OpenAI: 짝 없는 결과·부름을 걷어도 사람 말은 남는다',
+    사람말있나(r4.messages, '오픈에이아이 사람 말') && 사람말있나(r4.messages, '결과 없이 온 사람 말') && !r4.messages.some((m) => m.role === 'tool' || m.tool_calls),
+    JSON.stringify(r4.messages));
+  const r5 = repairToolPairs([
+    { role: 'assistant', content: '', tool_calls: [{ function: { name: 'Read', arguments: {} } }, { function: { name: 'Grep', arguments: {} } }] },
+    { role: 'tool', tool_name: 'Read', content: 'r' },
+    { role: 'user', content: '올라마 사람 말' },
+  ]);
+  check('★ Ollama: 차례짝이 반만 맞아도 사람 말은 남는다',
+    사람말있나(r5.messages, '올라마 사람 말') && r5.messages[0]?.tool_calls?.length === 1, JSON.stringify(r5.messages));
+
+  /*
+   * 6회차 Gemini 대화고침6a S1 · 같은 id 의 결과가 둘이면 둘 다 남았다(고친것 0). 반쯤 적힌
+   * JSONL 을 이어 열면 생긴다. Anthropic 은 보내기 직전 차례합치기 로 한 사람 차례에 같은
+   * tool_use_id 결과 둘이 실려 거절된다. 먼저 온 것 하나만 남긴다.
+   */
+  const 결과블록수 = (ms, id) => ms.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((b) => b?.type === 'tool_result' && b.tool_use_id === id).length;
+  const s1a = repairToolPairs([
+    { role: 'user', content: 'A' },
+    { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'Read', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 'call_1', content: '먼저 온 결과' },
+    { role: 'tool', tool_call_id: 'call_1', content: '겹친 결과' },
+    { role: 'user', content: 'B' },
+  ]);
+  check('★★ OpenAI: 같은 id 결과가 둘이면 먼저 온 하나만 남긴다 (6회차 대화고침6a S1)',
+    s1a.messages.filter((m) => m.role === 'tool').length === 1 && 사람말있나(s1a.messages, '먼저 온 결과') && !사람말있나(s1a.messages, '겹친 결과') && s1a.고친것 >= 1,
+    JSON.stringify(s1a));
+  const s1b = repairToolPairs([
+    { role: 'user', content: 'A' },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'tu_1', name: 'Read', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'r1' }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'r2' }, { type: 'text', text: '겹친 턴의 사람 말' }] },
+  ]);
+  check('★★ Anthropic: 결과 턴 둘에 같은 id — 결과 블록은 하나, 사람 말은 남긴다',
+    결과블록수(s1b.messages, 'tu_1') === 1 && 사람말있나(s1b.messages, '겹친 턴의 사람 말') && s1b.고친것 >= 1, JSON.stringify(s1b.messages));
+  const s1c = repairToolPairs([
+    { role: 'user', content: 'A' },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'tu_1', name: 'Read', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'r1' }, { type: 'tool_result', tool_use_id: 'tu_1', content: 'r2' }] },
+  ]);
+  check('★★ Anthropic: 한 턴 안에 같은 id 블록 둘 — 하나만', 결과블록수(s1c.messages, 'tu_1') === 1, JSON.stringify(s1c.messages));
+  const 병렬 = [
+    { role: 'user', content: 'A' },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'tu_1', name: 'Read', input: {} }, { type: 'tool_use', id: 'tu_2', name: 'Read', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'r1' }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_2', content: 'r2' }] },
+  ];
+  const s1d = repairToolPairs(병렬);
+  check('  (짝) 다른 id 의 병렬 결과는 둘 다 그대로 — 같은 객체, 고친것 0',
+    s1d.고친것 === 0 && s1d.messages.length === 4 && s1d.messages[2] === 병렬[2] && s1d.messages[3] === 병렬[3], JSON.stringify(s1d));
+
+  /*
+   * 6회차 Gemini 대화고침6b G1·G2 · Anthropic 규격 모양이면 빈 사람 말 `''` 과 빈 블록 답 `[]` 이
+   * 규격맞추기 를 그대로 지나갔다. 같은 함수가 다른 규격에서 온 빈 말은 `(빈 말)` 로 채우면서다.
+   */
+  const g = 규격맞추기([
+    { role: 'user', content: 'A' },
+    { role: 'assistant', content: [] },
+    { role: 'user', content: '' },
+    { role: 'assistant', content: 'ok' },
+    { role: 'user', content: [] },
+  ], 'anthropic');
+  const 빈가 = (m) => (Array.isArray(m?.content) ? !m.content.length || m.content.every((b) => b?.type === 'text' && !String(b.text ?? '').trim()) : !String(m?.content ?? '').trim());
+  check('★ Anthropic: 빈 블록 답 `[]` 을 채운다 (6회차 대화고침6b G2)', !빈가(g.messages[1]) && g.messages[1].role === 'assistant', JSON.stringify(g.messages[1]));
+  check('★ Anthropic: 빈 사람 말 `\'\'` · `[]` 을 채운다 (6회차 대화고침6b G1)',
+    !빈가(g.messages[2]) && !빈가(g.messages[4]) && g.messages[2].role === 'user', `${JSON.stringify(g.messages[2])} · ${JSON.stringify(g.messages[4])}`);
+  const 멀쩡 = [{ role: 'user', content: 'A' }, { role: 'assistant', content: [{ type: 'text', text: '네' }] }, { role: 'user', content: 'B' }];
+  const g짝 = 규격맞추기(멀쩡, 'anthropic');
+  check('  (짝) 이미 맞는 대화는 받은 배열 그대로 — 바꾼것 0', g짝.messages === 멀쩡 && g짝.바꾼것 === 0, JSON.stringify(g짝));
+}
+
+/*
+ * ── 규격에맞나() 가 안 보던 두 칸 (2.0.0 8회차 세션 1·2) ────────────────
+ *
+ * 이 함수는 「그대로 보내도 되나」 를 잰다. 맞다고 하면 그 메시지는 손도 안 대고
+ * 몸통에 실린다 — 그래서 여기서 못 본 칸은 곧장 바깥 규격으로 나간다.
+ *
+ *   1. Anthropic 갈래에 `'thinking' in m` 이 없었다. Ollama 로 하던 대화를
+ *      Anthropic 으로 이어받으면(--resume · /model) 최상위 `thinking` 이 붙은 답이
+ *      「맞는 모양」 으로 통과해 그대로 나간다. 그 규격은 모르는 칸에 400 을 준다.
+ *      OpenAI 갈래는 바로 같은 줄에서 `'thinking' in m` 을 이미 보고 있었다.
+ *   2. OpenAI 갈래의 **사람·시스템** 차례에 `content == null` 검사가 없었다. 바로
+ *      위 답 차례에서는 보는 것이다. `content:null` 인 사람 말은 그 게이트웨이에서 400 이다.
+ */
+{
+  const 올라마이력 = [
+    { role: 'user', content: '안녕' },
+    { role: 'assistant', content: '생각 끝', thinking: '속으로 한 말' },
+  ];
+  const t1 = 규격맞추기(올라마이력, 'anthropic');
+  check('★★ Anthropic: 최상위 thinking 이 붙은 답은 안 실린다 (8회차 세션 1)',
+    !t1.messages.some((m) => m && typeof m === 'object' && 'thinking' in m)
+    && JSON.stringify(t1.messages[1]?.content).includes('생각 끝'), JSON.stringify(t1.messages));
+  check('  옮길 수 없어 뺐다고 센다', t1.뺀것?.생각 === 1, JSON.stringify(t1.뺀것));
+  const t올 = 규격맞추기(올라마이력, 'ollama');
+  check('  (짝) 제 규격(Ollama)으로 가면 그 칸은 그대로 산다',
+    t올.messages === 올라마이력 && t올.messages[1]?.thinking === '속으로 한 말', JSON.stringify(t올.messages[1]));
+
+  const t2 = 규격맞추기([{ role: 'system', content: null }, { role: 'user', content: null }], 'openai');
+  check('★★ OpenAI: 사람·시스템 차례의 content:null 도 거른다 (8회차 세션 2)',
+    t2.messages.every((m) => typeof m.content === 'string') && t2.바꾼것 === 2, JSON.stringify(t2.messages));
+
+  /*
+   * 그리고 **실제로 나가는 몸통**에서 확인한다. 위 둘은 짐작이 아니라 규격 밖으로
+   * 나가는 자리라, 마지막 울타리(session.js 의 wire)를 지난 뒤로 재야 한다.
+   */
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-shape-out-'));
+  const sa = new Session({ ctx: 200000, kind: 'anthropic', model: 'c' }, { root: 방 });
+  sa.messages = 올라마이력;
+  const 앤몸통 = sa.wire().slice(1);
+  check('★★ 그래서 Anthropic 요청 몸통에 thinking 칸이 없다',
+    앤몸통.every((m) => !('thinking' in m)), JSON.stringify(앤몸통));
+  const so = new Session({ ctx: 128000, kind: 'openai', model: 'g' }, { root: 방 });
+  so.messages = [{ role: 'user', content: null }];
+  check('★★ 그리고 OpenAI 요청 몸통에 content:null 이 없다',
+    so.wire().every((m) => typeof m.content === 'string'), JSON.stringify(so.wire().slice(1)));
+  rmSync(방, { recursive: true, force: true });
+}
+
+{
+  /*
+   * ★ id 가 없는 규격(Ollama) — 결과가 부름을 **차례로** 짝짓는다.
+   *
+   * id 로만 찾으면 이 꼴에서는 인자가 늘 비어 경로를 못 뽑는다. 그러면 접힌 파일의
+   * 기억이 안 지워지고, 다시 읽을 때 「앞에서 읽은 그대로입니다」 만 돌아간다.
+   */
+  const ms = [{ role: 'system', content: '시킴' }, { role: 'user', content: '해줘' }];
+  for (let i = 0; i < 25; i++) {
+    ms.push({ role: 'assistant', content: '', tool_calls: [{ function: { name: 'Read', arguments: { file_path: `f${i}.js` } } }] });
+    ms.push({ role: 'tool', tool_name: 'Read', content: 'x'.repeat(2400) });
+  }
+  const f = foldToolResults({ messages: ms }, { 이득문턱: 0 });
+  const 경로 = f.접은것들.map((x) => x.경로);
+  check('★★ id 없는 꼴(Ollama)에서도 접힌 줄이 경로를 안다',
+    경로.length > 0 && 경로.every((v) => typeof v === 'string' && v.endsWith('.js')), JSON.stringify(경로.slice(0, 3)));
+  check('  차례대로 맞춘다 (첫 접힘이 첫 부름)', 경로[0] === 'f0.js', String(경로[0]));
+}
+
+{
+  /*
+   * ★ 한 메시지에 결과가 둘 실리는 꼴(Anthropic) — 경로도 **둘 다** 들고 간다.
+   *
+   * 첫 결과의 인자만 들고 가서 두 번째 파일의 기억이 안 지워졌다. 내용은 접혀 사라졌는데
+   * b.js 를 다시 읽으면 「앞에서 읽은 그대로입니다」 만 돌아갔다(2.0.0 2차 리뷰).
+   */
+  const ms = [{ role: 'system', content: '시킴' }, { role: 'user', content: '해줘' }];
+  for (let i = 0; i < 25; i++) {
+    ms.push({ role: 'assistant', content: [
+      { type: 'tool_use', id: `a${i}`, name: 'Read', input: { file_path: `a${i}.js` } },
+      { type: 'tool_use', id: `b${i}`, name: 'Read', input: { file_path: `b${i}.js` } },
+    ] });
+    ms.push({ role: 'user', content: [
+      { type: 'tool_result', tool_use_id: `a${i}`, content: 'x'.repeat(1200) },
+      { type: 'tool_result', tool_use_id: `b${i}`, content: 'y'.repeat(1200) },
+    ] });
+  }
+  const f = foldToolResults({ messages: ms }, { 이득문턱: 0 });
+  const 모든경로 = f.접은것들.flatMap((x) => x.경로들 ?? [x.경로]);
+  check('★★ 한 메시지에 실린 두 결과의 경로를 다 안다',
+    f.접은것들.length > 0 && 모든경로.includes('a0.js') && 모든경로.includes('b0.js'), JSON.stringify(모든경로.slice(0, 4)));
 }
 
 

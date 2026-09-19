@@ -1,32 +1,44 @@
-[← back to README](../../README.md)
+[← Back to README](../../README.md)
 
 # Release notes
 
-What changed in each version, and why
+What changed in each release
 
-One file per version line — open only the line you need.
+2.0.0 is the large release where the name changed. So **2.0 lives in its own file**,
+and everything before it is **collected into one**.
 
-| Line | Versions | What changed |
+| | Where | What |
 |---|---|---|
-| **[1.20.x](releases/1.20.md)** | [1.20.13](releases/1.20.md#12013) · [1.20.12](releases/1.20.md#12012) · [1.20.11](releases/1.20.md#12011) · [1.20.10](releases/1.20.md#12010) · [1.20.9](releases/1.20.md#1209) · [1.20.8](releases/1.20.md#1208) · [1.20.7](releases/1.20.md#1207) · [1.20.6](releases/1.20.md#1206) · [1.20.5](releases/1.20.md#1205) · [1.20.4](releases/1.20.md#1204) · [1.20.3](releases/1.20.md#1203) · [1.20.2](releases/1.20.md#1202) · [1.20.1](releases/1.20.md#1201) · [1.20.0](releases/1.20.md#1200) | One space hid the whole instruction |
-| **[1.19.x](releases/1.19.md)** | [1.19.5](releases/1.19.md#1195) · [1.19.4](releases/1.19.md#1194) · [1.19.3](releases/1.19.md#1193) · [1.19.2](releases/1.19.md#1192) · [1.19.1](releases/1.19.md#1191) · [1.19.0](releases/1.19.md#1190) | Getting one side right broke the other — thirteen rounds of second review, and the gap left where a fence moved |
-| **[1.18.x](releases/1.18.md)** | [1.18.0](releases/1.18.md#1180) | Having a rule is not the same as the rule firing — what green was not guarding, and a second reviewer |
-| **[1.17.x](releases/1.17.md)** | [1.17.9](releases/1.17.md#1179) · [1.17.8](releases/1.17.md#1178) · [1.17.7](releases/1.17.md#1177) · [1.17.6](releases/1.17.md#1176) · [1.17.5](releases/1.17.md#1175) · [1.17.4](releases/1.17.md#1174) · [1.17.3](releases/1.17.md#1173) · [1.17.2](releases/1.17.md#1172) · [1.17.1](releases/1.17.md#1171) · [1.17.0](releases/1.17.md#1170) | The things that blocked it from getting inside a company — and the company writes what to do |
-| **[1.16.x](releases/1.16.md)** | [1.16.0](releases/1.16.md#1160) | A deep request no longer lands in a shallow mode — and designs and documents open as they are |
-| **[1.15.x](releases/1.15.md)** | [1.15.1](releases/1.15.md#1151) · [1.15.0](releases/1.15.md#1150) | Stop doing the same thing twice — nine quietly expensive places |
-| **[1.14.x](releases/1.14.md)** | [1.14.0](releases/1.14.md#1140) | A machine now checks that what we wrote down is true |
-| **[1.13.x](releases/1.13.md)** | [1.13.1](releases/1.13.md#1131) · [1.13.0](releases/1.13.md#1130) | Every place deel touches someone else's endpoint, re-examined |
-| **[1.12.x](releases/1.12.md)** | [1.12.0](releases/1.12.md#1120) | The same head was going out on every single request |
-| **[1.10.x](releases/1.10.md)** | [1.10.0](releases/1.10.md#1100) | ESC actually stops, and a full context carries on |
-| **[1.9.x](releases/1.9.md)** | [1.9.2](releases/1.9.md#192) · [1.9.1](releases/1.9.md#191) · [1.9.0](releases/1.9.md#190) | The screen reads, and vendor APIs understand what you set |
-| **[1.8.x](releases/1.8.md)** | [1.8.0](releases/1.8.md#180) | A full day against a gateway that hands out one-hour tokens |
-| **[1.7.x](releases/1.7.md)** | [1.7.0](releases/1.7.md#170) | Local stays local; it goes out only when you say so |
-| **[1.6.x](releases/1.6.md)** | [1.6.1](releases/1.6.md#161) · [1.6.0](releases/1.6.md#160) | The places that made a turn spin in circles |
-| **[1.5.x](releases/1.5.md)** | [1.5.8](releases/1.5.md#158) · [1.5.7](releases/1.5.md#157) · [1.5.6](releases/1.5.md#156) · [1.5.5](releases/1.5.md#155) · [1.5.4](releases/1.5.md#154) · [1.5.3](releases/1.5.md#153) · [1.5.2](releases/1.5.md#152) · [1.5.1](releases/1.5.md#151) · [1.5.0](releases/1.5.md#150) | A 5MB document showed 8 lines out of 919 |
-| **[1.4.x](releases/1.4.md)** | [1.4.3](releases/1.4.md#143) · [1.4.2](releases/1.4.md#142) · [1.4.1](releases/1.4.md#141) · [1.4.0](releases/1.4.md#140) | The README explains what's different, and the review report gets its missing line |
-| **[1.3.x](releases/1.3.md)** | [1.3.0](releases/1.3.md#130) | evidence instead of claims, the editor instead of a terminal |
-| **[1.2.x](releases/1.2.md)** | [1.2.0](releases/1.2.md#120) | so the conversation doesn't break |
+| **Current** | **[2.0.x](releases/2.0.md)** | [2.0.0](releases/2.0.md#200) — Every fence we said was there, checked for whether it actually holds |
+| Older | [1.x archive](releases/1.x.md) | 1.2.0 through 1.20.13, one line each |
 
 ---
 
-[← back to README](../../README.md)
+## The 1.x lines at a glance
+
+The per-release lines are in the [1.x archive](releases/1.x.md).
+
+| Line | What changed |
+|---|---|
+| [1.20.x](releases/1.x.md#120x) | One space hid the whole instruction |
+| [1.19.x](releases/1.x.md#119x) | Getting one side right broke the other — thirteen rounds of second review, and the gap left where a fence moved |
+| [1.18.x](releases/1.x.md#118x) | Having a rule is not the same as the rule firing — what green was not guarding, and a second reviewer |
+| [1.17.x](releases/1.x.md#117x) | The things that blocked it from getting inside a company — and the company writes what to do |
+| [1.16.x](releases/1.x.md#116x) | A deep request no longer lands in a shallow mode — and designs and documents open as they are |
+| [1.15.x](releases/1.x.md#115x) | Stop doing the same thing twice — nine quietly expensive places |
+| [1.14.x](releases/1.x.md#114x) | A machine now checks that what we wrote down is true |
+| [1.13.x](releases/1.x.md#113x) | Every place deel touches someone else's endpoint, re-examined |
+| [1.12.x](releases/1.x.md#112x) | The same head was going out on every single request |
+| [1.10.x](releases/1.x.md#110x) | ESC actually stops, and a full context carries on |
+| [1.9.x](releases/1.x.md#19x) | The screen reads, and vendor APIs understand what you set |
+| [1.8.x](releases/1.x.md#18x) | A full day against a gateway that hands out one-hour tokens |
+| [1.7.x](releases/1.x.md#17x) | Local stays local; it goes out only when you say so |
+| [1.6.x](releases/1.x.md#16x) | The places that made a turn spin in circles |
+| [1.5.x](releases/1.x.md#15x) | A 5MB document showed 8 lines out of 919 |
+| [1.4.x](releases/1.x.md#14x) | The README explains what's different, and the review report gets its missing line |
+| [1.3.x](releases/1.x.md#13x) | evidence instead of claims, the editor instead of a terminal |
+| [1.2.x](releases/1.x.md#12x) | so the conversation doesn't break |
+
+---
+
+[← Back to README](../../README.md)

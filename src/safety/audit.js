@@ -1,9 +1,36 @@
 // 감사 로그. 무엇을 언제 어떻게 했는지 전부 남긴다.
 // 자율 실행을 사내에 설득할 때 이 파일이 근거가 된다.
 import { join } from 'node:path';
-import { appendFileSync, mkdirSync, existsSync, readFileSync, chmodSync } from 'node:fs';
+import { appendFileSync, mkdirSync, existsSync, readFileSync, chmodSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { 가리기 } from './secrets.js';
 import { 첫이름 } from '../tools/label.js';
+
+/*
+ * 살림 폴더(.deel · .deel/history)를 만든다. 못 만들면 **사람 말로** 던진다 (6회차 C3).
+ *
+ * 앞서는 mkdirSync 의 원시 오류가 그대로 올라가, 대화 화면·deel -p·에디터 셋 다
+ * 「EEXIST: file already exists, mkdir '…\.deel'」 한 줄만 보였다. 안 죽기는 했지만
+ * 무엇이 막혔고 어떻게 하면 되는지가 없었다. 작업 폴더에 같은 이름의 파일이 있거나
+ * 읽기 전용 자리면 여기서 막힌다.
+ *
+ * 던지는 것은 그대로 둔다 — 감사기록·되돌리기 이력 없이 조용히 켜지면 안 된다.
+ * 되돌리기 이력(undo.js)도 같은 말을 쓰게 여기서 내준다.
+ */
+export function 살림폴더만들기(dir, 덧 = {}) {
+  try {
+    mkdirSync(dir, { recursive: true, ...덧 });
+  } catch (err) {
+    const 까닭 = {
+      EEXIST: '같은 이름의 파일이 있습니다', ENOTDIR: '같은 이름의 파일이 있습니다',
+      EACCES: '쓸 권한이 없습니다', EPERM: '쓸 권한이 없습니다', EROFS: '읽기 전용 자리입니다',
+    }[err?.code] ?? String(err?.message ?? err);
+    const e = new Error(`작업 폴더에 deel 살림 폴더를 만들지 못했습니다 (${dir}) — ${까닭}.`
+      + ' 같은 이름의 파일이면 옮기거나 지우고, 쓸 수 없는 폴더면 쓸 수 있는 곳에서 켜세요.');
+    e.code = err?.code;
+    e.cause = err;
+    throw e;
+  }
+}
 import { 환경속열쇠들 } from '../config.js';
 
 /**
@@ -36,9 +63,19 @@ export class Audit {
    */
   constructor(root, { 열쇠들 = [] } = {}) {
     const dir = join(root, '.deel');
-    mkdirSync(dir, { recursive: true });
+    살림폴더만들기(dir);
     this.file = join(dir, 'audit.jsonl');
-    this.session = `${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}`;
+    /*
+     * 세션 이름은 시각으로 시작하되 그것만으로 끝내지 않는다.
+     *
+     * 초 단위 시각 하나였더니 같은 초에 띄운 창 두 개(또는 한 판 안의 하위 작업)가
+     * 같은 이름을 나눠 가졌다. `deel stats` 는 세션을 이름으로 세고 증거모으기는
+     * 이 이름으로 「이번 세션」 을 가르므로, 남의 기록이 내 것으로 섞였다.
+     * agent/store.js 의 freeId 처럼 밀리초·프로세스 번호·난수를 덧붙인다.
+     */
+    const 지금 = new Date();
+    this.session = `${지금.toISOString().slice(0, 19).replace(/[:T]/g, '')}`
+      + `-${String(지금.getMilliseconds()).padStart(3, '0')}-${process.pid}-${Math.random().toString(36).slice(2, 6)}`;
     /** 적으려다 못 적은 건수와 첫 까닭. 0 이 아니면 이 세션의 기록은 불완전하다. */
     this.못쓴수 = 0;
     this.못쓴까닭 = null;
@@ -78,12 +115,47 @@ export class Audit {
    * 아니라 아예 **안 고친 것처럼** 보고서가 짧아진다.
    * 그래서 못 적은 건수를 세어 두고, 보고서와 화면이 그걸 말하게 한다.
    */
+  /*
+   * ── 반쪽 줄 뒤에 이어 적지 않는다 ─────────────────────────────────────────
+   *
+   * 적는 도중에 죽으면 마지막 줄이 개행 없이 반만 남는다. 다음 판이 그 뒤에 그대로
+   * 이어 적으면 새 기록이 반쪽에 **붙어** 한 줄이 되고, 그 줄은 JSON 이 아니라
+   * recent()·deel stats·증거모으기가 통째로 버린다 — 다음 판이 한 첫 일이, 그것도
+   * 막힌 명령이나 되돌리기 같은 것이 기록에서 사라진다.
+   * agent/store.js 와 같은 방법이다. 이 기록으로 처음 적을 때 한 번만 파일 끝을 보고,
+   * 개행이 아니면 개행부터 붙인다. 줄마다 재지 않는다 — 그 뒤로는 우리가 적은 줄이다.
+   */
+  #줄끝봤나 = false;
+  #줄로끝나나() {
+    let fd = null;
+    try {
+      const 크기 = statSync(this.file).size;
+      if (!크기) return true;
+      fd = openSync(this.file, 'r');
+      const 한바이트 = Buffer.alloc(1);
+      readSync(fd, 한바이트, 0, 1, 크기 - 1);
+      return 한바이트[0] === 0x0a;
+    } catch { return true; }         // 없거나 못 읽으면 붙일 반쪽도 없다
+    finally { if (fd != null) { try { closeSync(fd); } catch { /* 닫다 터져도 적기는 한다 */ } } }
+  }
+
   write(kind, data) {
     const rec = { at: new Date().toISOString(), session: this.session, kind, ...data };
     try {
-      appendFileSync(this.file, JSON.stringify(rec) + '\n', 'utf8');
+      let 줄 = JSON.stringify(rec) + '\n';
+      if (!this.#줄끝봤나) {
+        if (!this.#줄로끝나나()) 줄 = '\n' + 줄;
+        this.#줄끝봤나 = true;
+      }
+      appendFileSync(this.file, 줄, 'utf8');
       this.#잠그기();
     } catch (err) {
+      /*
+       * 막혔으면 끝을 다시 보게 되돌린다 (2.0.0 6회차 · Gemini 감사6aa C2 — agent/store.js 저장6w X1 과
+       * 같은 까닭). 본 표시를 적기 전에 세워서, 첫 적기가 막히면 다음 기록이 반쪽 줄 뒤에 붙었다 —
+       * 못쓴수 에는 막힌 한 건만 오르고, 붙은 기록은 적었다고 친 채 deel audit · 증거모으기에서 사라진다.
+       */
+      this.#줄끝봤나 = false;   // 막혔으니 다음 적기에서 끝을 다시 본다
       this.못쓴수 += 1;
       if (!this.못쓴까닭) this.못쓴까닭 = err?.message ?? String(err);
     }
@@ -108,6 +180,9 @@ export class Audit {
   #잠그기() {
     if (this.#잠갔나) return;
     this.#잠갔나 = true;
+    // 윈도우에서 chmod 는 아무 일도 안 하고 **성공한다.** 그 성공을 적으면 위 머리말이 금지한
+    // 「잠근 척」 이다 — agent/store.js 와 같이 안 걸었다고 적는다.
+    if (process.platform === 'win32') { this.잠금 = { 못함: 'windows' }; return; }
     try { chmodSync(this.file, 0o600); this.잠금 = { 모드: 0o600 }; }
     catch (err) { this.잠금 = { 못함: err?.code ?? String(err) }; }
   }
@@ -129,19 +204,44 @@ export class Audit {
       // 이 빠져 있어서, 웹을 읽은 줄과 스킬을 부른 줄이 감사기록에서만
       // 무엇을 향한 것인지 없이 남았다.
       target: this.#가린것(첫이름(args) ?? args?.command ?? null),
-      ok: !result?.error,
+      // 실패는 error 로만 오지 않는다. Bash 는 종료 코드가 0 이 아니면 `failed: true`(tools/index.js),
+      // Verify 는 탈이 나면 `failed: true` 를 싣고 error 는 비운다. error 만 보면 빨간 검사가
+      // ok 로 남고, 증거(agent/evidence.js)가 그걸 「확인한 것」 으로 내민다 (6회차 근거6at EV4).
+      ok: !result?.error && result?.failed !== true,
       note: this.#가린것(result?.error ?? result?.summary ?? null),
     });
   }
 
-  turn(text) { return this.write('turn', { text: this.#가린것(String(text).slice(0, 500)) }); }
-  blocked(why, what) { return this.write('blocked', { why, what: this.#가린것(String(what).slice(0, 300)) }); }
+  /*
+   * ── 가린 뒤에 자른다 ────────────────────────────────────────────────
+   *
+   * 자르기가 먼저였다. 열쇠가 500자(300자) 선에 걸치면 앞 조각만 남는데, 조각은
+   * 정확히 아는 열쇠라도 **통째가 아니라서** 못 알아본다 — 게이트웨이 열쇠 앞
+   * 스무 글자가 그대로 적혔다. 가리기가 글을 짧게 만들 뿐 길게 만들지는 않으니
+   * 자르는 선은 그대로 지켜진다.
+   *
+   * 막힌 까닭(why)도 가린다. guard.js 가 던지는 말은 막은 명령 앞 120자를 그대로
+   * 담아서, what 은 가렸는데 why 칸에 `Authorization: Bearer …` 가 평문으로 남았다.
+   */
+  turn(text) { return this.write('turn', { text: this.#가린것(String(text)).slice(0, 500) }); }
+  blocked(why, what) {
+    return this.write('blocked', { why: this.#가린것(why), what: this.#가린것(String(what)).slice(0, 300) });
+  }
   undo(info) { return this.write('undo', info); }
 
+  /*
+   * 최근 n 줄. 0 이하는 「내줄 줄이 없다」 는 말이다.
+   *
+   * `slice(-0)` 은 `slice(0)` 이라 **전부** 나왔다. 0 을 넘기는 호출부는 지금 없지만,
+   * 여기서 나온 줄은 `deel audit` 화면·증거모으기·`deel stats` 로 곧장 간다 —
+   * 「최근 0줄만」 이 기록 전체를 읽어 오는 것은 부르는 쪽이 못 알아챈다.
+   */
   recent(n = 20) {
+    const 몇 = Math.floor(Number(n));
+    if (!Number.isFinite(몇) || 몇 <= 0) return [];
     if (!existsSync(this.file)) return [];
     return readFileSync(this.file, 'utf8')
-      .split('\n').filter(Boolean).slice(-n)
+      .split('\n').filter(Boolean).slice(-몇)
       .map((l) => { try { return JSON.parse(l); } catch { return null; } })
       .filter(Boolean);
   }

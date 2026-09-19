@@ -69,3 +69,19 @@ export const 명령들 = {
   exit: { arg: false },
   quit: { arg: false },
 };
+
+/*
+ * 이름표에 없지만 `commands.js` 가 받아 주는 **딴이름**.
+ *
+ * 왜 따로 두나 — 도움말·자동완성에는 정식 이름 하나만 뜨는 게 맞다. 그런데
+ * 「이게 명령 이름인가」 를 묻는 자리(`경로처럼보이나`)가 이 표만 보면,
+ * `plugins/` 나 `serve/` 폴더가 있는 저장소에서 `/plugins` 가 **경로로 읽혀**
+ * 명령이 안 돌고 모델에게 그대로 넘어간다. 딴이름도 이름이다.
+ *
+ * `test/commands.test.js` 가 `commands.js` 의 `case '…'` 이름이 전부
+ * 이 둘 중 한 표에 있는지 본다 — 새 딴이름을 만들고 여기 안 적으면 빨개진다.
+ */
+export const 딴이름들 = {
+  serve: 'preview',
+  plugins: 'plugin',
+};

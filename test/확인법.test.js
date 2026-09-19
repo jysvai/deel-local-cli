@@ -18,7 +18,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { 확인법들, 최대 } from '../src/tools/확인법.js';
+import { 확인법들, 최대 } from '../src/tools/checkmethods.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -188,7 +188,7 @@ trace('8-뒤에붙는이름');
     확인법들(뿌리2).length === 2, JSON.stringify(확인법들(뿌리2).map((x) => x.명령)));
 
   // 망가진 package.json 에서도 파일 쪽은 살아야 한다.
-  // 확인법.js 의 catch 주석이 실제로 약속하는 것이 이것이다.
+  // checkmethods.js 의 catch 주석이 실제로 약속하는 것이 이것이다.
   const 뿌리3 = 판(({ 파일 }) => {
     파일('package.json', '{ this is not json');
     파일('test/approval.test.js', '// ...');
@@ -397,6 +397,55 @@ trace('9-앞뒤관례');
     const 뿌리 = 판(({ 파일 }) => { 파일(`test/roles.spec${끝}`, '// ...'); });
     check(`★★ 무늬가 아는 확장자는 부르는법도 안다 — ${끝}`,
       확인법들(뿌리).length === 1, JSON.stringify(확인법들(뿌리).map((x) => x.명령)));
+  }
+}
+
+// ── 9. 이름을 정하는 것은 우리가 아니다 ─────────────────────────────────
+trace('9-셸에실을길');
+{
+  /*
+   * ★ 여기서 만든 글은 **그대로 셸 명령이 되어** 모델에게 나간다 —
+   * tools/verify.js 가 「이 프로젝트의 확인 방법은 …입니다. 전부 Bash 로 돌려라」
+   * 라고 적어 붙인다. 그런데 파일 이름을 정하는 것은 우리가 아니라 **그 저장소**다.
+   *
+   *   sh scripts/test-a;echo PWNED.sh     ← 명령이 둘이 된다
+   *   sh scripts/qa-b$(id).sh             ← sh 가 뜨기도 전에 돈다
+   *   node test/my unit.test.js           ← 빈칸 하나로 엉뚱한 파일을 찾다 죽는다
+   *
+   * 남의 저장소를 열어 보는 것이 이 프로그램의 일이라, 파일 이름은 믿을 글이
+   * 아니다. 감싸면 안전해지는 것은 감싸고, 감싸도 안 되는 것은 아예 안 알려 준다.
+   */
+  const 뿌리 = 판(({ 파일 }) => {
+    파일('scripts/my unit.test.js', '// 검사');
+    파일('scripts/plain.test.js', '// 검사');
+  });
+  const 것 = 명령들(뿌리);
+  check('★★★ 빈칸이 든 검사 이름은 따옴표로 감싸서 알려 준다',
+    것.includes('node "scripts/my unit.test.js"'), JSON.stringify(것));
+  check('  (짝) 감쌀 것 없는 이름은 그대로 둔다',
+    것.includes('node scripts/plain.test.js'), JSON.stringify(것));
+
+  /*
+   * 한 줄이 셸에 그대로 실려도 **한 낱말로 남나.** 두 갈래만 맞다 —
+   * 감쌀 것이 없는 순한 경로이거나, 겹따옴표로 감쌌는데 그 안에 겹따옴표 안을
+   * 뚫는 글자(" ` $ \)가 없거나.
+   */
+  const 한낱말인가 = (명령) => {
+    const 뒤 = 명령.slice(명령.indexOf(' ') + 1);
+    if (뒤.startsWith('"')) return /^"[^"`$\\\r\n]*"$/.test(뒤);
+    return /^[A-Za-z0-9._\-/¡-￿]+$/.test(뒤);
+  };
+  check('  (짝) 감싼 쪽도 감안한 자 자체가 맞다', 한낱말인가('node "scripts/my unit.test.js"')
+    && !한낱말인가('sh scripts/a;echo x.sh') && !한낱말인가('sh "scripts/a$(id).sh"'));
+
+  for (const 이름 of ['test-a;echo PWNED.sh', 'qa-b$(id).sh', 'test-c`id`.sh', "spec-d'x'.sh"]) {
+    let 뿌리2 = null;
+    try {
+      뿌리2 = 판(({ 파일 }) => { 파일(`scripts/${이름}`, '# 검사'); });
+    } catch { continue; }   // 이 운영체제가 못 만드는 이름이면 재지 않는다
+    const 명 = 명령들(뿌리2);
+    check(`★★★ 셸이 읽어 버리는 이름을 명령으로 안 흘린다 — ${이름}`,
+      명.every(한낱말인가), JSON.stringify(명));
   }
 }
 

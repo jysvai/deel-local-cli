@@ -257,9 +257,26 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
    * 캐시를 지키려고 만든 단계가 안 돈 것이다.
    */
   const 이름표 = new Map();
-  for (const m of ms) {
-    for (const c of 부른것들(m)) if (c.id) 이름표.set(c.id, { name: c.name ?? '도구', args: c.args ?? {} });
-  }
+  /*
+   * id 가 없는 규격(Ollama)은 결과가 부름을 **차례로** 짝짓는다. id 로만 찾으면 그 규격에서는
+   * 인자가 늘 비어서 경로를 못 뽑았다 — 접힌 파일의 기억이 안 지워지고, 다시 읽으면
+   * 「앞에서 읽은 그대로입니다」 만 돌아갔다. 바로 앞 부름들을 차례대로 맞춘다.
+   */
+  const 차례짝 = new Map();   // `${메시지 자리}:${결과 자리}` → 부름
+  let 남은부름 = [];
+  ms.forEach((m, i) => {
+    const 부름 = 부른것들(m);
+    if (부름.length) {
+      for (const c of 부름) if (c.id) 이름표.set(c.id, { name: c.name ?? '도구', args: c.args ?? {} });
+      남은부름 = [...부름];
+      return;
+    }
+    결과들(m).forEach((x, k) => {
+      const j = x?.id ? 남은부름.findIndex((c) => c.id === x.id) : -1;
+      if (j >= 0) { 남은부름.splice(j, 1); return; }
+      if (!x?.id && 남은부름.length) 차례짝.set(`${i}:${k}`, 남은부름.shift());
+    });
+  });
 
   const 자리 = [];
   ms.forEach((m, i) => {
@@ -279,7 +296,7 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
       * 접힌 파일을 다시 읽을 때 「앞에서 읽은 그대로입니다」 만 돌아온다.
       * 같은 것을 두 번 뽑을 까닭이 없다 — 한 번 뽑아서 같이 들고 간다.
       */
-     const 아는것 = 이름표.get(첫?.id) ?? null;
+     const 아는것 = 이름표.get(첫?.id) ?? 차례짝.get(`${i}:0`) ?? null;
      /*
       * 이름은 **한 메시지에 실린 것 전부**를 들고 간다.
       *
@@ -292,11 +309,13 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
       * 아래 머리말이 「접는 순간 남은 항목이 어디에도 없어진다」 고 적어 둔
       * 바로 그 일이, 도구를 둘 같이 부른 판에서만 조용히 일어났다 (35차 리뷰).
       */
-     const 이름들 = 것들.map((x) => 이름표.get(x?.id)?.name ?? x?.name ?? '').filter(Boolean);
+     const 이름들 = 것들.map((x, k) => 이름표.get(x?.id)?.name ?? 차례짝.get(`${i}:${k}`)?.name ?? x?.name ?? '').filter(Boolean);
      자리.push({
        i, 글, 이름들,
        이름: 아는것?.name ?? 첫?.name ?? '',
        args: 아는것?.args ?? {},
+       // 한 메시지에 결과가 여럿이면 인자도 여럿이다 — 경로를 다 뽑아야 파일 기억을 다 지운다.
+       args들: 것들.map((x, k) => (이름표.get(x?.id) ?? 차례짝.get(`${i}:${k}`))?.args).filter(Boolean),
      });
   });
 
@@ -387,7 +406,7 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
   // 사람 화면에는 여기서 돌려주는 목록으로 알려 준다.
   const 접은것들 = [];
 
-  for (const { i, 글, 이름, args } of 접을것) {
+  for (const { i, 글, 이름, args, args들 } of 접을것) {
     const m = ms[i];
     const 도구이름 = 이름 || '도구';
     const 곳 = 어디(args);
@@ -413,10 +432,16 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
      * 긴 경로가 안 맞아서 조용히 안 지워진다 — 그러면 접힌 파일을 다시
      * 읽을 때 「앞에서 읽은 그대로입니다」 만 돌아간다(agent/filemem.js).
      */
-    const 경로 = typeof args?.file_path === 'string'
-      ? args.file_path
-      : (typeof args?.path === 'string' ? args.path : null);
-    접은것들.push({ 도구: 도구이름, 곳, 경로, 줄수, 토큰: Math.max(0, 아낀것) });
+    const 경로뽑기 = (a) => (typeof a?.file_path === 'string'
+      ? a.file_path
+      : (typeof a?.path === 'string' ? a.path : null));
+    const 경로 = 경로뽑기(args);
+    /*
+     * 한 메시지에 결과가 둘 실리면(Anthropic) 첫 결과의 경로만 들고 가서, 두 번째 파일은
+     * 내용이 접혔는데 기억이 남았다 — 다시 읽으면 「앞에서 읽은 그대로입니다」 (2.0.0 2차 리뷰).
+     */
+    const 경로들 = [...new Set([경로, ...(args들 ?? []).map(경로뽑기)].filter(Boolean))];
+    접은것들.push({ 도구: 도구이름, 곳, 경로, 경로들, 줄수, 토큰: Math.max(0, 아낀것) });
   }
 
   /*
@@ -521,9 +546,19 @@ function transcript(msgs) {
      */
     const 결과인가 = 도구결과인가(m);
     const who = 결과인가 ? '도구결과' : (m.role === 'user' ? '사용자' : m.role === 'assistant' ? '나' : '도구결과');
+    /*
+     * 할 말이 없는 걸음은 **빈 말로 둔다.**
+     *
+     * 도구만 부른 걸음은 `content: null` 로 온다(규격 그대로). 그런데
+     * `JSON.stringify(m.content ?? '')` 는 그것을 빈 글이 아니라 따옴표 두
+     * 개짜리 **글자열**로 바꿔서, 아래 비었는지 보는 문을 그냥 지나갔다.
+     * 그래서 걸음마다 `나: ""` 가 한 줄씩 꼈다 — 자리를 먹는 것보다, 모델이
+     * 그것을 읽을 것이 있는 줄로 본다는 쪽이 나쁘다. 요약은 대화를 대신하게
+     * 될 글이라, 여기 낀 잡음이 그대로 대화가 된다.
+     */
     let body = 결과인가
       ? 결과들(m).map((x) => x.글).join('\n')
-      : (typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''));
+      : (typeof m.content === 'string' ? m.content : (m.content == null ? '' : JSON.stringify(m.content)));
     if (결과인가) body = body.slice(0, 400);
     const calls = 부른것들(m).map((t) => `${t.name}(${JSON.stringify(t.args ?? {}).slice(0, 160)})`);
     if (calls.length) out.push(`${who}: [도구] ${calls.join(', ')}`);
@@ -600,6 +635,43 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
     summary = null;
   }
 
+  /*
+   * ── 접을 대화보다 큰 요약은 받지 않는다 (사냥5 L5-8) ─────────────────────
+   *
+   * 요약은 maxTokens 1200 으로 부르지만 그 값을 무시하는 서버가 있다. 위에서는 잘렸나·
+   * 거절인가만 봐서, 접을 대화보다 **큰** 요약도 ok:true 로 끼워 넣었다. 8k 창에서
+   * 10,762 → 19,935 토큰으로 부풀었고, shouldCompact 가 그대로 참이라 다음 걸음에서
+   * 또 요약을 부르고 또 부푼다. 접기는 자리를 내려고 하는 일이다 — 자리를 못 내면
+   * 요약이 아무리 멀쩡해도 실패다.
+   *
+   * 끼워 넣을 모양을 한 번 만들어 재 보고, 줄지 않으면 되돌리고 그냥 줄이기로 물러선다.
+   * 재는 동안만 바꿔 끼운다. breakdown() 은 부를 때마다 messages 에서 새로 세고,
+   * 쪽지 표시(박은쪽지표시)는 받기로 정한 뒤에만 한다.
+   */
+  let 쪽지 = '';
+  let 요약말 = null;
+  if (summary) {
+    쪽지 = 못박을것(session);
+    요약말 = {
+      role: 'user',
+      content: `[앞선 대화 ${parts.fold.length}개를 요약해 접었습니다. 아래가 그 요약입니다.]\n\n${summary}\n\n`
+        + 쪽지
+        + '[요약 끝. 이어서 진행하세요. 파일 내용이 필요하면 다시 읽으세요.]',
+    };
+    const 옛말들 = session.messages;
+    let 접은뒤 = before;
+    try {
+      session.messages = [...parts.head, 요약말, ...parts.tail];
+      접은뒤 = session.breakdown().used;
+    } finally {
+      session.messages = 옛말들;
+    }
+    if (접은뒤 >= before) {
+      못한까닭 = `요약이 접을 대화보다 커서(${before.toLocaleString('en-US')} → ${접은뒤.toLocaleString('en-US')}토큰) 버렸습니다`;
+      summary = null;
+    }
+  }
+
   // 요약을 못 받았으면 옛 방식으로 물러선다. 멈추지는 않는다.
   if (!summary) {
     const folded = session.trim();
@@ -628,16 +700,16 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
     };
   }
 
-  session.messages = [
-    ...parts.head,
-    {
-      role: 'user',
-      content: `[앞선 대화 ${parts.fold.length}개를 요약해 접었습니다. 아래가 그 요약입니다.]\n\n${summary}\n\n`
-        + 못박을것(session)
-        + '[요약 끝. 이어서 진행하세요. 파일 내용이 필요하면 다시 읽으세요.]',
-    },
-    ...parts.tail,
-  ];
+  // 요약말과 쪽지는 위 크기 재기에서 이미 만들었다.
+  /*
+   * 이 요약에 **어느 턴의** 시킨 말을 박았는지 적어 둔다 (session.js 의 박은쪽지표시).
+   *
+   * 요약은 그 턴의 자리표보다 앞에 놓인다. 그래서 그 턴을 /undo 로 되감으면
+   * 자리표부터 뒤만 걷히고, 요약 속 「이번에 시킨 말 — 빠짐없이 하세요」 는
+   * 남아서 다음 턴에 **되돌린 일**을 다시 시켰다. 되감기가 이 표를 보고 그 쪽지만 뺀다.
+   */
+  session.박은쪽지표시?.(요약말, 쪽지);
+  session.messages = [...parts.head, 요약말, ...parts.tail];
   session.filesRead.clear();   // 접힌 뒤에는 읽어 둔 파일도 기억에서 지운다
   /*
    * 들고 있던 파일 내용도 같이 버린다.

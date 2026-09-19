@@ -47,7 +47,33 @@ const server = createServer((req, res) => {
     }
     seenBodies.push(JSON.parse(body || '{}'));
     const step = script[turn++] ?? { text: '(대본 끝)' };
+    // 끊기를 재려고 일부러 늦게 답한다. 그 사이에 끊기면 받을 사람이 없어도 된다.
+    if (step.늦게ms) {
+      const t = setTimeout(() => {
+        if (res.destroyed || res.writableEnded) return;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ choices: [{ message: { content: String(step.text ?? '늦은 답') }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5 } }));
+      }, step.늦게ms);
+      res.on('close', () => clearTimeout(t));
+      return undefined;
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
+    // 한 답에 여럿을 부른다 — 부모가 [Task, Read] 를 같이 부르는 자리를 잰다.
+    if (step.toolCalls) {
+      return res.end(JSON.stringify({
+        choices: [{
+          message: {
+            content: '',
+            tool_calls: step.toolCalls.map((x, i) => ({
+              id: `c${turn}_${i}`, type: 'function',
+              function: { name: x.name, arguments: JSON.stringify(x.args) },
+            })),
+          },
+          finish_reason: 'tool_calls',
+        }],
+        usage: { prompt_tokens: 100, completion_tokens: 20 },
+      }));
+    }
     if (step.toolCall) {
       return res.end(JSON.stringify({
         choices: [{
@@ -122,6 +148,9 @@ const 큰글 = (n) => '가'.repeat(n);
   check('하위 작업이 돌았다', events.some((e) => e.type === 'task_start'));
   check('하위가 끝났다고 알렸다', events.some((e) => e.type === 'task_done'));
   check('부모 루프도 끝까지 갔다', events.at(-1)?.type === 'done', events.at(-1)?.type);
+  // 하위는 같은 ctx 를 받아 제 할일로 ctx.요청 을 덮는다. 부모로 돌아오면 부모의 말이어야 한다 —
+  // 안 그러면 부모의 Ask 관문이 하위가 받은 할일을 「사람이 한 말」 로 본다.
+  check('★★ 하위가 끝나면 부모의 시킨 말로 돌아온다', ctx.요청 === '큰 파일 둘을 훑어봐', String(ctx.요청));
 
   // 파일 두 개 8,000자가 부모 대화에 없다. 요약만 들어 있어야 한다.
   check('하위가 읽은 8,000자가 부모 창에 안 쌓였다', 부모글자 < 3000, `${부모글자}자`);
@@ -405,12 +434,92 @@ const 큰글 = (n) => '가'.repeat(n);
   rmSync(root, { recursive: true, force: true });
 }
 
+// ═══ 7-1. [Task, Read] 를 한 답에 부르고 하위가 도는 중에 끊는다 ═══════
+//
+// 끊기면 부모도 멈춘다. 그런데 Task 결과만 싣고 그 자리에서 나가서, 같은 답의
+// Read 부름은 **결과가 없는 채로** 남았다. 다음 요청이 그 이력을 그대로 보내면
+// 규격 서버가 400 을 준다 — 끊은 한 번이 그 대화를 못 쓰게 만든다.
+// 덩어리 머리가 끊긴 뒤의 부름을 「실행하지 않았습니다」 로 채우는 것과 같아야 한다.
+{
+  const { root, ctx } = 새터();
+  const { writeFileSync: 쓰기 } = await import('node:fs');
+  쓰기(join(root, 'a.txt'), 'hello\n', 'utf8');
+
+  turn = 0;
+  script = [
+    { toolCalls: [{ name: 'Task', args: { purpose: '조사', task: 'a.txt 를 읽고 한 줄로 요약해라' } }, { name: 'Read', args: { file_path: 'a.txt' } }] },
+    { 늦게ms: 3000, text: '하위가 늦게 답합니다' },
+    { text: '다음 턴 답입니다.' },
+  ];
+  const session = new Session(새연결(), { root, mode: 'auto', think: 'off', work: 'code' });
+  const ac = new AbortController();
+  const events = [];
+  for await (const ev of run(session, ctx, '조사하고 읽어줘', { signal: ac.signal })) {
+    events.push(ev);
+    if (ev.type === 'task_start') setTimeout(() => ac.abort(), 300);
+  }
+  const 부름 = session.messages.find((m) => m.tool_calls?.length === 2);
+  const 결과들 = session.messages.filter((m) => m.role === 'tool');
+  const 읽기결과 = 결과들.find((m) => m.tool_call_id === 부름?.tool_calls?.[1]?.id);
+  check('먼저: 부모 턴이 중단으로 끝났다', events.at(-1)?.type === 'aborted', events.map((e) => e.type).join(','));
+  check('★★ 끊겨도 한 답에 부른 것마다 결과 자리가 채워진다',
+    !!부름 && 부름.tool_calls.every((t) => 결과들.some((m) => m.tool_call_id === t.id)),
+    JSON.stringify(결과들.map((m) => m.tool_call_id)));
+  check('★ 안 돌린 Read 는 안 돌렸다고 적힌다', /중단했습니다/.test(String(읽기결과?.content ?? '')), String(읽기결과?.content ?? '(없음)'));
+  check('Task 결과가 Read 결과보다 앞이다 — 부른 차례대로', 결과들[0]?.tool_call_id === 부름?.tool_calls?.[0]?.id,
+    JSON.stringify(결과들.map((m) => m.tool_call_id)));
+
+  turn = 2;
+  seenBodies.length = 0;
+  for await (const _ of run(session, ctx, '다시 해줘')) { /* 끝까지 돌린다 */ }
+  const 몸 = seenBodies.at(-1)?.messages ?? [];
+  const 몸부름 = 몸.find((m) => m.tool_calls?.length === 2);
+  check('★★ 다음 턴 요청에도 짝이 온전하다 — 400 이 안 난다',
+    !!몸부름 && 몸부름.tool_calls.every((t) => 몸.some((m) => m.role === 'tool' && m.tool_call_id === t.id)),
+    JSON.stringify(몸.map((m) => [m.role, m.tool_call_id ?? '', (m.tool_calls ?? []).map((t) => t.id).join('+')])));
+  rmSync(root, { recursive: true, force: true });
+}
+
+// ═══ 7-2. 실제로 띄운 하위도 부모보다 적게 돈다 ═════════════════════════
+//
+// (6회차 예산6as BU3) budget.js 만 부모 모드를 보고, 부르는 자리(loop.js)가 부모 모드를
+// 안 넘기면 여전히 부모만큼 돈다. 그래서 띄운 하위가 받은 걸음 수(task_start.steps)를 본다.
+{
+  const { root, ctx } = 새터();
+  const { 걸음수 } = await import('../src/agent/budget.js');
+  turn = 0;
+  script = [
+    { toolCall: { name: 'Task', args: { 목적: '나눠 맡기기', 할일: '할 일을 나눠 차례를 적어라', 모드: 'orchestrator' } } },
+    { text: '차례를 적었습니다.' },
+    { text: '받았습니다.' },
+  ];
+  const session = new Session(새연결(), { root, mode: 'auto', think: 'off', work: 'code' });
+  const events = [];
+  for await (const ev of run(session, ctx, '나눠서 해줘')) events.push(ev);
+  const 시작 = events.find((e) => e.type === 'task_start');
+  check('먼저: code 부모가 orchestrator 하위를 띄웠다', 시작?.모드 === 'orchestrator', String(시작?.모드));
+  check('★ (6회차 BU3) 띄운 orchestrator 하위가 code 부모보다 적은 걸음을 받는다',
+    typeof 시작?.steps === 'number' && 시작.steps < 걸음수('code', 32768),
+    `${시작?.steps} < ${걸음수('code', 32768)}`);
+  rmSync(root, { recursive: true, force: true });
+}
+
 // ═══ 8. 하위 걸음 수도 모델 창에서 뽑는다 ════════════════════════════
 {
   const { 하위걸음수, 걸음수, 요약길이 } = await import('../src/agent/budget.js');
   check('하위는 부모보다 적게 돈다', 하위걸음수('code', 131072) < 걸음수('code', 131072),
     `${하위걸음수('code', 131072)} < ${걸음수('code', 131072)}`);
   check('작은 모델에서도 8걸음은 준다', 하위걸음수('ask', 8192) >= 8, String(하위걸음수('ask', 8192)));
+  // ★ (6회차 예산6as BU3) 걸음 수가 두 배인 모드를 하위로 고르면 그 절반이 곧 부모 몫이었다.
+  // code 부모가 orchestrator 하위를 띄우면 부모와 같은 걸음 수 — 「부모만큼 주면 창을 나눈 뜻이 없어진다」.
+  for (const ctx of [16384, 32768, 131072]) {
+    check(`★ (6회차 BU3) code 부모가 띄운 orchestrator 하위도 부모보다 적게 돈다 (${ctx})`,
+      하위걸음수('orchestrator', ctx, 'code') < 걸음수('code', ctx),
+      `${하위걸음수('orchestrator', ctx, 'code')} < ${걸음수('code', ctx)}`);
+  }
+  check('(BU3 짝) 부모 모드를 알려도 작은 모델의 8걸음 바닥은 그대로', 하위걸음수('ask', 8192, 'code') >= 8, String(하위걸음수('ask', 8192, 'code')));
+  check('(BU3 짝) 같은 모드 하위는 여태처럼 절반', 하위걸음수('code', 131072, 'code') === Math.round(걸음수('code', 131072) / 2),
+    `${하위걸음수('code', 131072, 'code')} · ${걸음수('code', 131072)}`);
   check('요약 길이가 창을 따라간다', 요약길이(8192) < 요약길이(655360),
     `8k: ${요약길이(8192)}자 · 655k: ${요약길이(655360)}자`);
   check('8k 요약은 창의 5% 를 안 넘는다', 요약길이(8192) <= 8192 * 0.05 + 1, `${요약길이(8192)}자`);

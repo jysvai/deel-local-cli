@@ -141,9 +141,16 @@ export function 한번에낼글자수(ctx) {
  * 아니다. 부모만큼 주면 하위가 부모 일을 통째로 다시 하려 들고, 그러면
  * 창을 나눈 뜻이 없어진다. 대신 너무 적으면 맡긴 덩이도 못 끝내니
  * 8걸음은 무슨 일이 있어도 준다.
+ *
+ * 부모 모드를 알면 하위 모드와 부모 모드 가운데 걸음이 적은 쪽의 절반이다.
+ * 하위 모드만 보면, 걸음이 두 배인 모드(orchestrator)를 하위로 고른 순간
+ * 그 절반이 곧 부모 몫이 되어 「부모보다 적게」 가 깨졌다 — code 부모가
+ * orchestrator 하위를 띄우면 16k 에서 24 대 24. 모드를 부모보다 세게 못
+ * 올리는 것(tools/task.js 하위모드)과 같은 뜻을 걸음 수에도 건다.
  */
-export function 하위걸음수(모드id, ctx) {
-  return Math.max(8, Math.round(걸음수(모드id, ctx) / 2));
+export function 하위걸음수(모드id, ctx, 부모모드id = null) {
+  const 바탕 = 부모모드id == null ? 걸음수(모드id, ctx) : Math.min(걸음수(모드id, ctx), 걸음수(부모모드id, ctx));
+  return Math.max(8, Math.round(바탕 / 2));
 }
 
 /**

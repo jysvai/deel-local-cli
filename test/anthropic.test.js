@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   ANTHROPIC_VERSION, endpoint, 더할머리, buildBody, extractMessage, 생각예산,
-  assistantMessage, toolMessage, 차례합치기, chatStream, 요청주소, 규격이름,
+  assistantMessage, toolMessage, 차례합치기, chatStream, 요청주소, 규격이름, 결과바꾸기,
 } from '../src/backend/adapter.js';
 import { headerLines } from '../src/ui/status.js';
 import { 언어정하기 } from '../src/i18n/index.js';
@@ -427,6 +427,109 @@ trace('6-흘려받기');
 }
 
 /*
+ * ── 흐름 가운데 온 error 사건 ───────────────────────────────────────────
+ *
+ * 이 규격은 200 을 보낸 **뒤에도** 실패를 알린다. 머리말은 이미 나갔으니
+ * 상태 코드로는 못 알리고, `event: error` 사건 하나로 알린다. 문서에 적힌
+ * 대로 과부하(overloaded_error)는 HTTP 529 와 같은 뜻이다.
+ *
+ * 여태 이 사건은 모르는 이름이라 조용히 버려졌다. 글 전에 오면 빈 답이 되고,
+ * 루프는 그 빈 답을 「스트리밍이 안 맞는 서버」 로 읽어 **세션 내내 흘려받기를
+ * 껐다.** 글 뒤에 오면 「말없이끝남」 이 되어 까닭이 사라졌다. 잠깐 붐빈 것
+ * 하나가 둘 다 만든다.
+ */
+{
+  const 시작 = { type: 'message_start', message: { usage: { input_tokens: 3, output_tokens: 1 } } };
+  const 과부하 = { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } };
+  const 글블록 = (글) => [
+    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 글 } },
+  ];
+  const 대본 = [
+    [시작, { type: 'ping' }, 과부하],
+    [시작, ...글블록('됐다'), { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 2 } }, { type: 'message_stop' }],
+    [시작, ...글블록('반쯤 쓴'), 과부하],
+  ];
+  let 몇번 = 0;
+  const srv = createServer((req, res) => {
+    req.on('data', () => {});
+    req.on('end', () => {
+      const 사건들 = 대본[몇번++] ?? [];
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      for (const e of 사건들) res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+      res.end();
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}/v1`;
+  allowEndpoint(base);
+  // 검사가 1초를 기다릴 일은 아니다. 사다리만 짧게 준다 — 모양은 같다.
+  const conn = { kind: 'anthropic', base, auth: 'x-api-key', key: 'k', model: 'claude-x', retry: { base: [1, 1, 1], 흔들림: 0 } };
+  const 부르기 = async () => {
+    const 나온것 = [];
+    let 끝 = null;
+    let 탈 = null;
+    try {
+      for await (const ev of chatStream(conn, { messages: [{ role: 'user', content: '해줘' }], maxTokens: 512 })) {
+        if (ev.type === 'done') 끝 = ev.message; else 나온것.push(ev);
+      }
+    } catch (e) { 탈 = e; }
+    return { 나온것, 끝, 탈 };
+  };
+
+  const 첫 = await 부르기();
+  const 물러섬 = 첫.나온것.find((e) => e.type === 'backoff');
+  check('★★★ 글 전에 온 과부하 사건은 529 처럼 기다렸다 다시 부른다',
+    몇번 === 2 && 첫.끝?.content === '됐다', `${몇번}번 · ${JSON.stringify(첫.끝?.content)} · ${첫.탈?.message ?? ''}`);
+  check('★★ 물러선 까닭을 529 로 적는다', 물러섬?.status === 529, JSON.stringify(물러섬));
+
+  const 둘 = await 부르기();
+  check('★★★ 글 뒤에 온 error 사건은 서버가 한 말로 드러난다 — 「끝났다」 로 안 넘긴다',
+    /Overloaded/.test(둘.탈?.message ?? ''), `${둘.탈?.message ?? '(안 던짐)'} · ${JSON.stringify(둘.끝)}`);
+  check('★★ 글이 이미 흘러갔으면 다시 안 부른다 — 반쯤 온 답을 두 벌 만들지 않는다', 몇번 === 3, `${몇번}번`);
+  check('그 전에 흘러간 글은 화면에 나갔다',
+    둘.나온것.filter((e) => e.type === 'content').map((e) => e.text).join('') === '반쯤 쓴');
+  srv.close();
+}
+
+/*
+ * ── 인자를 content_block_start 에 통째로 싣는 창구 ──────────────────────
+ *
+ * 규격대로면 start 의 input 은 늘 `{}` 이고 알맹이는 input_json_delta 로 온다.
+ * 그런데 한 번에 받은 답을 흘려받기 꼴로 옮겨 주는 게이트웨이는 인자를 start 에
+ * 통째로 싣고 delta 를 안 보낸다. 여태 그 인자를 버려서, 도구가 빈 인자로
+ * 불렸다 — 「경로가 비었습니다」 는 원인과 아무 상관 없는 말이다.
+ */
+{
+  const 사건들 = [
+    { type: 'message_start', message: { usage: { input_tokens: 3, output_tokens: 1 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_s', name: 'Read', input: { p: 'x.txt' } } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 2 } },
+    { type: 'message_stop' },
+  ];
+  const srv = createServer((req, res) => {
+    req.on('data', () => {});
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      for (const e of 사건들) res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+      res.end();
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}/v1`;
+  allowEndpoint(base);
+  let 끝 = null;
+  for await (const ev of chatStream({ kind: 'anthropic', base, auth: 'x-api-key', key: 'k', model: 'claude-x' },
+    { messages: [{ role: 'user', content: '해줘' }], maxTokens: 512 })) {
+    if (ev.type === 'done') 끝 = ev.message;
+  }
+  check('★★ start 에 통째로 실린 인자를 버리지 않는다', 끝?.toolCalls?.[0]?.args?.p === 'x.txt', JSON.stringify(끝?.toolCalls));
+  srv.close();
+}
+
+/*
  * ── 인자 없는 도구를 흘려받을 때 ────────────────────────────────────────
  *
  * 인자가 아예 없는 도구는 흔하다. 한 번에 받는 쪽(normalizeCalls)은 인자를
@@ -482,6 +585,57 @@ trace('6-흘려받기');
   check('★ 깨진 부름의 원문을 남겨 둔다', 깨진것?.rawArgs === '{"p":', JSON.stringify(깨진것?.rawArgs));
 
   srv.close();
+}
+
+{
+  /*
+   * ★ 끝 사건 없이 끊긴 흐름에서도 도구 부름을 묶는다.
+   *
+   * 도구 인자는 content_block_stop·message_stop 에서만 묶였다. 중계가 몸통을 자르면
+   * 그 둘이 안 오고, 모은 조각이 부름이 못 되어 모델이 부른 도구가 통째로 사라졌다.
+   */
+  const 잘린 = [
+    { type: 'message_start', message: { usage: { input_tokens: 10, output_tokens: 1 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_cut', name: 'Read' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"file_path":' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '"a.txt"}' } },
+  ];
+  const srv = createServer((req, res) => {
+    req.on('data', () => {});
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      for (const e of 잘린) res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+      res.end();
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}/v1`;
+  allowEndpoint(base);
+  let 끝 = null;
+  try {
+    for await (const ev of chatStream({ kind: 'anthropic', base, auth: 'x-api-key', key: 'k', model: 'claude-x' },
+      { messages: [{ role: 'user', content: '읽어줘' }], maxTokens: 64 })) {
+      if (ev.type === 'done') 끝 = ev.message;
+    }
+  } catch (err) { 끝 = { 오류: String(err?.message ?? err) }; }
+  srv.close();
+  check('★★ 끝 사건 없이 끊겨도 도구 부름이 안 사라진다',
+    끝?.toolCalls?.[0]?.name === 'Read' && 끝.toolCalls[0].args?.file_path === 'a.txt', JSON.stringify(끝));
+  check('  끊겼다고 적는다', 끝?.stopped === '말없이끝남', String(끝?.stopped));
+}
+
+{
+  // ★ 한 메시지에 실린 결과 여럿을 접을 때 — 짝 번호는 그대로, 둘째부터도 빈 글이 아니다.
+  const m = { role: 'user', content: [
+    { type: 'tool_result', tool_use_id: 't1', content: '긴 글 하나' },
+    { type: 'tool_result', tool_use_id: 't2', content: '긴 글 둘' },
+  ] };
+  const 접은 = 결과바꾸기(m, '⋯ 접힘');
+  check('★ 접어도 짝 번호는 그대로다', 접은.content.map((b) => b.tool_use_id).join() === 't1,t2',
+    JSON.stringify(접은.content));
+  check('  첫 자리에 접힌 글이 간다', 접은.content[0].content === '⋯ 접힘', String(접은.content[0].content));
+  check('★ 둘째 결과도 빈 글로 두지 않는다', 접은.content.every((b) => String(b.content).trim().length > 0),
+    JSON.stringify(접은.content));
 }
 
 trace('7-그림');
@@ -681,7 +835,9 @@ trace('9-2-뭐라고-부르나');
 
   // 갈라 놓은 자리가 또 생기지 않았나. 소스로 잰다.
   const 갈래 = [];
-  for (const f of ['src/setup.js', 'src/commands.js', 'src/report.js', 'src/backend/scanui.js', 'src/ui/status.js']) {
+  for (const f of ['src/setup.js', 'src/commands.js', 'src/commands/common.js', 'src/commands/extend.js',
+    'src/commands/model.js', 'src/commands/view.js', 'src/commands/work.js',
+    'src/report.js', 'src/backend/scanui.js', 'src/ui/status.js']) {
     const t = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
     for (const [i, line] of t.split('\n').entries()) {
       if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;

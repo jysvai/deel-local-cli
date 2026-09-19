@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="795" height="444" viewBox="0 0 795 444" role="img" aria-label="deel — The eight work modes">
+  <title>deel — The eight work modes</title>
+  <desc>Each mode differs in whether it can change files, how hard it thinks, and how many steps it takes in one turn. A read-only mode simply has no file-changing tools on its list.</desc>
+  <rect width="795" height="444" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
+    <text x="36.0" y="36.0" fill="#1f2328" font-size="16" font-weight="600" textLength="192.0" lengthAdjust="spacing" xml:space="preserve">The eight work modes</text>
+    <text x="36.0" y="58.0" fill="#59636e" font-size="11.5" textLength="607.2" lengthAdjust="spacing" xml:space="preserve">What kind of job you are on changes the tools, the thinking and the step ceiling at once</text>
+    <rect x="36.0" y="84.0" width="722.3" height="270.0" rx="9" fill="none" stroke="#d0d7de" stroke-width="1.4"/>
+    <text x="76.9" y="104.0" fill="#59636e" font-size="10.5" textLength="25.2" lengthAdjust="spacing" xml:space="preserve">Mode</text>
+    <text x="177.7" y="104.0" fill="#59636e" font-size="10.5" textLength="31.5" lengthAdjust="spacing" xml:space="preserve">Files</text>
+    <text x="257.8" y="104.0" fill="#59636e" font-size="10.5" textLength="88.2" lengthAdjust="spacing" xml:space="preserve">Think · effort</text>
+    <text x="372.4" y="104.0" fill="#59636e" font-size="10.5" textLength="75.6" lengthAdjust="spacing" xml:space="preserve">Step ceiling</text>
+    <text x="473.2" y="104.0" fill="#59636e" font-size="10.5" textLength="75.6" lengthAdjust="spacing" xml:space="preserve">When you are</text>
+    <line x1="36" y1="114" x2="758.3" y2="114" stroke="#d0d7de" stroke-width="1"/>
+    <text x="52.0" y="133.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◎</text>
+    <text x="76.9" y="133.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">Auto</text>
+    <text x="177.7" y="133.0" fill="#9a6700" font-size="11.5" textLength="34.5" lengthAdjust="spacing" xml:space="preserve">edits</text>
+    <text x="257.8" y="133.0" fill="#1f2328" font-size="11.5" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">—·save</text>
+    <text x="372.4" y="133.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">192</text>
+    <text x="473.2" y="133.0" fill="#59636e" font-size="11.5" textLength="255.3" lengthAdjust="spacing" xml:space="preserve">picks the right mode for what you ask</text>
+    <rect x="37" y="144.0" width="720.3" height="30" fill="#f6f8fa"/>
+    <text x="52.0" y="163.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◆</text>
+    <text x="76.9" y="163.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">Code</text>
+    <text x="177.7" y="163.0" fill="#9a6700" font-size="11.5" textLength="34.5" lengthAdjust="spacing" xml:space="preserve">edits</text>
+    <text x="257.8" y="163.0" fill="#1f2328" font-size="11.5" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">—·save</text>
+    <text x="372.4" y="163.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">192</text>
+    <text x="473.2" y="163.0" fill="#59636e" font-size="11.5" textLength="110.4" lengthAdjust="spacing" xml:space="preserve">edits and builds</text>
+    <text x="52.0" y="193.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">☰</text>
+    <text x="76.9" y="193.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="27.6" lengthAdjust="spacing" xml:space="preserve">Plan</text>
+    <text x="177.7" y="193.0" fill="#1a7f37" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">read-only</text>
+    <text x="257.8" y="193.0" fill="#1f2328" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">high·deep</text>
+    <text x="372.4" y="193.0" fill="#1f2328" font-size="11.5" textLength="13.8" lengthAdjust="spacing" xml:space="preserve">40</text>
+    <text x="473.2" y="193.0" fill="#59636e" font-size="11.5" textLength="234.6" lengthAdjust="spacing" xml:space="preserve">plan first · run it after approval</text>
+    <rect x="37" y="204.0" width="720.3" height="30" fill="#f6f8fa"/>
+    <text x="52.0" y="223.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◈</text>
+    <text x="76.9" y="223.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">Architect</text>
+    <text x="177.7" y="223.0" fill="#1a7f37" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">read-only</text>
+    <text x="257.8" y="223.0" fill="#1f2328" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">high·deep</text>
+    <text x="372.4" y="223.0" fill="#1f2328" font-size="11.5" textLength="13.8" lengthAdjust="spacing" xml:space="preserve">48</text>
+    <text x="473.2" y="223.0" fill="#59636e" font-size="11.5" textLength="269.1" lengthAdjust="spacing" xml:space="preserve">shapes the structure · touches no files</text>
+    <text x="52.0" y="253.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◉</text>
+    <text x="76.9" y="253.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="34.5" lengthAdjust="spacing" xml:space="preserve">Debug</text>
+    <text x="177.7" y="253.0" fill="#9a6700" font-size="11.5" textLength="34.5" lengthAdjust="spacing" xml:space="preserve">edits</text>
+    <text x="257.8" y="253.0" fill="#1f2328" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">high·deep</text>
+    <text x="372.4" y="253.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">250</text>
+    <text x="473.2" y="253.0" fill="#59636e" font-size="11.5" textLength="103.5" lengthAdjust="spacing" xml:space="preserve">finds the cause</text>
+    <rect x="37" y="264.0" width="720.3" height="30" fill="#f6f8fa"/>
+    <text x="52.0" y="283.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◍</text>
+    <text x="76.9" y="283.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="48.3" lengthAdjust="spacing" xml:space="preserve">Inspect</text>
+    <text x="177.7" y="283.0" fill="#1a7f37" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">read-only</text>
+    <text x="257.8" y="283.0" fill="#1f2328" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">high·deep</text>
+    <text x="372.4" y="283.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">120</text>
+    <text x="473.2" y="283.0" fill="#59636e" font-size="11.5" textLength="220.8" lengthAdjust="spacing" xml:space="preserve">finds defects · touches no files</text>
+    <text x="52.0" y="313.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">◇</text>
+    <text x="76.9" y="313.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">Ask</text>
+    <text x="177.7" y="313.0" fill="#1a7f37" font-size="11.5" textLength="62.1" lengthAdjust="spacing" xml:space="preserve">read-only</text>
+    <text x="257.8" y="313.0" fill="#1f2328" font-size="11.5" textLength="55.2" lengthAdjust="spacing" xml:space="preserve">low·even</text>
+    <text x="372.4" y="313.0" fill="#1f2328" font-size="11.5" textLength="13.8" lengthAdjust="spacing" xml:space="preserve">12</text>
+    <text x="473.2" y="313.0" fill="#59636e" font-size="11.5" textLength="213.9" lengthAdjust="spacing" xml:space="preserve">explains only · changes nothing</text>
+    <rect x="37" y="324.0" width="720.3" height="30" fill="#f6f8fa"/>
+    <text x="52.0" y="343.0" fill="#0969da" font-size="11.5" textLength="6.9" lengthAdjust="spacing" xml:space="preserve">❋</text>
+    <text x="76.9" y="343.0" fill="#1f2328" font-size="11.5" font-weight="600" textLength="82.8" lengthAdjust="spacing" xml:space="preserve">Orchestrator</text>
+    <text x="177.7" y="343.0" fill="#9a6700" font-size="11.5" textLength="34.5" lengthAdjust="spacing" xml:space="preserve">edits</text>
+    <text x="257.8" y="343.0" fill="#1f2328" font-size="11.5" textLength="41.4" lengthAdjust="spacing" xml:space="preserve">—·save</text>
+    <text x="372.4" y="343.0" fill="#1f2328" font-size="11.5" textLength="20.7" lengthAdjust="spacing" xml:space="preserve">384</text>
+    <text x="473.2" y="343.0" fill="#59636e" font-size="11.5" textLength="248.4" lengthAdjust="spacing" xml:space="preserve">splits a big job and sees it through</text>
+    <text x="36.0" y="380.0" fill="#59636e" font-size="10.5" textLength="485.1" lengthAdjust="spacing" xml:space="preserve">The step ceiling scales with the model's context window — these are for 128k.</text>
+    <text x="36.0" y="398.0" fill="#59636e" font-size="10.5" textLength="598.5" lengthAdjust="spacing" xml:space="preserve">This is a different axis from the approval policy (/mode — how much it asks). The two multiply.</text>
+    <text x="36.0" y="416.0" fill="#59636e" font-size="10.5" textLength="428.4" lengthAdjust="spacing" xml:space="preserve">The values are read from src/agent/modes.js and src/agent/budget.js.</text>
+  </g>
+</svg>

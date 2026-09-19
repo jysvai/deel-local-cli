@@ -64,6 +64,20 @@ trace('1-프로필찾기');
     프로필찾기('아무거나', { profiles: [] }).why.includes('하나도 없'),
     프로필찾기('아무거나', { profiles: [] }).why);
   check('설정이 이상해도 안 죽는다', 프로필들(null).length === 0 && 프로필들({}).length === 0);
+
+  /*
+   * id 를 안 적은 프로필이 검색어 "undefined" 에 딱 맞았다 (2.0.0 8회차 스키마).
+   * `String(p.id)` 가 없는 id 를 글자 "undefined" 로 만들었다. `/ask ${빈변수} …` 처럼
+   * 빈 값이 이름 자리로 흘러들면, 사람이 고른 적 없는 프로필이 「딱 맞는 것」 으로 뽑혀
+   * 그 모델이 답한다 — 어느 모델이 답했는지 모른 채로 믿게 되는, 바로 위에서 막은 꼴이다.
+   */
+  const id없음 = { profiles: [{ name: '이름만 있는 것', model: 'm-x' }, ...설정.profiles] };
+  check('★ (8회차) id 없는 프로필이 "undefined" 에 안 걸린다', 프로필찾기('undefined', id없음).ok === false,
+    JSON.stringify(프로필찾기('undefined', id없음)));
+  check('  대소문자를 바꿔도 마찬가지다', 프로필찾기('Undefined', id없음).ok === false,
+    JSON.stringify(프로필찾기('Undefined', id없음)));
+  check('짝: id 없는 프로필도 이름·모델로는 찾는다',
+    프로필찾기('이름만 있는 것', id없음).prof?.model === 'm-x' && 프로필찾기('m-x', id없음).prof?.model === 'm-x');
 }
 
 trace('2-연결만들기');
@@ -76,6 +90,30 @@ trace('2-연결만들기');
   check('컨텍스트도', c1.ctx === 32768, String(c1.ctx));
   check('안 적힌 것은 기본값', 연결만들기({ kind: 'openai', baseUrl: 'http://x/v1' }).ctx === CTX_DEFAULT);
   check('직접 준 값이 이긴다', 연결만들기(프로필찾기('small', 설정).prof, { ctx: 8192 }).ctx === 8192);
+
+  /*
+   * (사냥5 L5-6) 0 · 음수 · 숫자 아님은 「안 적은 것」 이다.
+   *
+   * `ctx: 0` 이 그대로 conn 에 실리면 접기·요약이 영영 안 돈다(창 0 에 몇 퍼센트를 쓰나를
+   * 못 잰다). `maxTokens: 0` 은 모든 요청을 512 로 묶는다. 설정 파일 한 칸의 실수가
+   * 「답이 짧다」 · 「창이 넘쳐 400」 으로만 보인다.
+   */
+  for (const 탈값 of [0, -8192, Number.NaN, 'abc', Infinity]) {
+    const c = 연결만들기({ kind: 'openai', baseUrl: 'http://x/v1', ctx: 탈값, maxTokens: 탈값 });
+    check(`★★ ctx·maxTokens 가 ${String(탈값)} 이면 기본값으로 간다`, c.ctx === CTX_DEFAULT && c.maxTokens === null,
+      `ctx=${c.ctx} maxTokens=${c.maxTokens}`);
+  }
+  check('★ 직접 준 0 은 프로필 값을 못 이긴다',
+    연결만들기({ kind: 'openai', baseUrl: 'http://x/v1', ctx: 16384, maxTokens: 2048 }, { ctx: 0, maxTokens: 0 }).ctx === 16384
+    && 연결만들기({ kind: 'openai', baseUrl: 'http://x/v1', ctx: 16384, maxTokens: 2048 }, { ctx: 0, maxTokens: 0 }).maxTokens === 2048);
+  {
+    const 방 = mkdtempSync(join(tmpdir(), 'deel-models-ctx0-'));
+    const s = new Session({ kind: 'openai', base: 'http://127.0.0.1:9/v1', model: 'm', ctx: 0 }, { root: 방 });
+    const b = s.breakdown();
+    check('★★ 창이 0 인 conn 이면 표는 기본 창으로 재고, 잰 값이라 하지 않는다',
+      b.total === CTX_DEFAULT && b.총잰것 === false, `total=${b.total} 총잰것=${b.총잰것}`);
+    rmSync(방, { recursive: true, force: true });
+  }
   check('없는 프로필이면 null', 연결만들기(null) === null);
 
   /*
@@ -158,6 +196,20 @@ trace('5-목록보기');
   check('지금 쓰는 것을 표시한다', 목.find((x) => x.id === 'big').지금 === true);
   check('나머지는 지금이 아니다', 목.filter((x) => x.지금).length === 1);
   check('호스트만 남긴다', 목.find((x) => x.id === 'gw').어디 === 'gw.example.invalid');
+
+  // ★ (6회차 여러모델6aw-b MD3) 문서 예시 꼴처럼 id 없이 이름만 적은 프로필이 둘이면
+  // `지금?.id === p.id` 가 undefined === undefined 로 **둘 다** 지금이라고 그렸다.
+  // load() 는 active 를 null 로 채우므로 붙는 것은 첫 프로필 하나다.
+  const 이름만 = {
+    active: null,
+    profiles: [
+      { name: '첫째', kind: 'openai', baseUrl: 'http://127.0.0.1:11434/v1', auth: 'none', model: 'm-1' },
+      { name: '둘째', kind: 'openai', baseUrl: 'http://127.0.0.1:11434/v1', auth: 'none', model: 'm-2' },
+    ],
+  };
+  const 이름만목록 = 목록보기(이름만);
+  check('★ (6회차 MD3) id 없는 프로필이 여럿이어도 지금은 하나다', 이름만목록.filter((x) => x.지금).length === 1
+    && 이름만목록[0].지금 === true, JSON.stringify(이름만목록.map((x) => [x.name, x.지금])));
 }
 
 trace('6-요약에모델이실리나');

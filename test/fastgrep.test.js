@@ -13,16 +13,17 @@
 //
 // rg·git 이 없는 PC 에서도 이 검사는 통과해야 한다. 그래서 엔진이 있는지
 // 먼저 보고, 없으면 그 자리를 건너뛰되 **건너뛰었다고 화면에 적는다.**
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import {
   엔진찾기, 엔진잊기, 엔진말, 저장소인가, 줄가르기,
-  rg로찾기, git로찾기, 빠르게찾기,
-  안볼확장자, 안볼정규식, 안볼글로브,
+  rg로찾기, rg가못준까닭, rg못푸는파일, git후보파일, git못푸는파일, 꼭있는글자, rg글로브들, 빠르게찾기,
+  안볼확장자, 안볼정규식, 안볼글로브, 안볼폴더글로브,
 } from '../src/tools/fastgrep.js';
 import { TOOLS } from '../src/tools/index.js';
-import { walk, 훑기상한, 기본훑기상한 } from '../src/tools/fsutil.js';
+import { walk, 훑기상한, 기본훑기상한, SKIP_DIRS } from '../src/tools/fsutil.js';
+import { encode } from '../src/tools/encoding.js';
 import { 건너뜀말 } from '../src/tools/ignore.js';
 import { 깃 } from '../src/agent/commit.js';
 import { makeScope } from '../src/safety/guard.js';
@@ -64,6 +65,13 @@ trace('1-줄가르기');
   check('빈칸·한글이 든 경로도 가른다', d?.파일 === 'src/한글 폴더/파일.js' && d?.줄 === 9, JSON.stringify(d));
   check('꼴이 안 맞으면 null — 지어내지 않는다', 줄가르기('그냥 줄글') === null);
   check('빈 줄도 null', 줄가르기('') === null);
+  // 리눅스·맥은 파일 이름에 콜론을 쓸 수 있다. `:숫자:` 가 든 이름을 게으른 정규식이 앞에서 잘랐다
+  // (2.0.0 6회차 Gemini 빠른찾기6). rg 가 `--null` 로 경로 끝에 NUL 을 찍으니 그 자리로 가른다.
+  const NUL = String.fromCharCode(0);
+  const e = 줄가르기(`logs/backup-12:30:45.txt${NUL}7:hello`);
+  check('★ 경로에 :숫자: 가 들어도 NUL 자리에서 가른다 (6회차 빠른찾기6)',
+    e?.파일 === 'logs/backup-12:30:45.txt' && e?.줄 === 7 && e?.내용 === 'hello', JSON.stringify(e));
+  check('  NUL 뒤 꼴이 안 맞으면 null', 줄가르기(`a.js${NUL}줄번호없음`) === null);
 }
 
 // ── 2. 안 볼 확장자 목록은 한 벌뿐이다 ─────────────────────────────────
@@ -78,6 +86,16 @@ trace('2-한벌');
   check('목록의 모든 확장자가 정규식에도 걸린다', 안볼확장자.every((x) => 안볼정규식.test(`파일.${x}`)),
     안볼확장자.filter((x) => !안볼정규식.test(`파일.${x}`)).join(','));
   check('.js · .ts · .md 는 안 걸린다', !['js', 'ts', 'md', 'py', 'json', 'txt'].some((x) => 안볼정규식.test(`파일.${x}`)));
+
+  // 안 볼 **폴더**도 한 벌에서 나와야 한다. 여기가 갈리면 rg 가 깔린 사람만
+  // dist/ 속 번들을 뒤지고, 그건 오류도 안 나고 꼬리말도 안 붙는다.
+  const 폴더글로브 = 안볼폴더글로브();
+  check('안 볼 폴더 목록도 walk 와 같은 한 벌에서 나온다', 폴더글로브.length === SKIP_DIRS.size * 2,
+    `${폴더글로브.length} vs ${SKIP_DIRS.size * 2}`);
+  check('폴더 옵션도 전부 빼기(!)다', 폴더글로브.filter((x) => x !== '--iglob').every((x) => x.startsWith('!') && x.endsWith('/')),
+    폴더글로브.slice(0, 4).join(' '));
+  check('node_modules · dist · .git 이 그 안에 있다',
+    ['!node_modules/', '!dist/', '!.git/'].every((x) => 폴더글로브.includes(x)), 폴더글로브.join(' ').slice(0, 120));
 }
 
 // ── 3. 엔진 고르기 ─────────────────────────────────────────────────────
@@ -107,6 +125,8 @@ if (엔진.rg) {
   check('한글·빈칸이 든 경로도 온전히 온다', 파일들.includes('./src/깊은 폴더/b.js'), 파일들.join(' '));
   check('번들·지도는 안 뒤진다 (안 볼 확장자)', !파일들.some((f) => /min\.js|\.map$/.test(f)), 파일들.join(' '));
   check('한 파일에 두 줄이면 두 줄로 온다', 판.filter((x) => /a\.js$/.test(x.파일)).length === 2, String(판.length));
+  check('★ rg 는 경로 끝을 NUL 로 찍게 부른다 (6회차 빠른찾기6)', r.줄들.length > 0 && r.줄들.every((l) => l.includes(String.fromCharCode(0))),
+    JSON.stringify(r.줄들[0] ?? '').slice(0, 80));
 
   // 못 찾은 것과 못 물어본 것은 다르다.
   const 빈것 = await rg로찾기({ 무늬: '이런글자는없다', 자리: root });
@@ -169,15 +189,52 @@ if (엔진.gitgrep) {
   check('저장소인지 안다', 저장소인가(g저장소) === true);
   check('저장소가 아니면 아니라고 한다', 저장소인가(root) === false, root);
 
-  const r = await git로찾기({ 무늬: '찾을것', 자리: g저장소 });
-  check('git grep 이 찾아 온다', r.ok === true, JSON.stringify(r).slice(0, 120));
-  const 판 = r.줄들.map(줄가르기).filter(Boolean);
-  check('상대경로가 아니라 절대경로로 맞춰 준다', 판.every((x) => /^([A-Za-z]:|\/)/.test(x.파일)), JSON.stringify(판[0]));
-  check('git grep 도 번들은 안 뒤진다', !판.some((x) => /min\.js/.test(x.파일)), 판.map((x) => x.파일).join(' '));
-  const 빈것 = await git로찾기({ 무늬: '이런글자는없다', 자리: g저장소 });
-  check('git grep 도 못 찾은 것은 성공에 빈 목록', 빈것.ok === true && 빈것.줄들.length === 0, JSON.stringify(빈것));
+  // git grep 은 파일만 추린다 — 읽기는 자바스크립트 길과 같은 함수로 (fastgrep.js 의 꼭있는글자 머리말).
+  const r = await git후보파일({ 글자: '찾을것', 자리: g저장소 });
+  check('git grep 이 파일을 추려 온다', r.ok === true && r.파일들.some((f) => /a\.js$/.test(f)), JSON.stringify(r).slice(0, 160));
+  check('상대경로가 아니라 절대경로로 맞춰 준다', r.파일들.every((f) => /^([A-Za-z]:|\/)/.test(f)), JSON.stringify(r.파일들[0]));
+  check('git grep 도 번들은 안 뒤진다', !r.파일들.some((f) => /min\.js/.test(f)), r.파일들.join(' '));
+  const 빈것 = await git후보파일({ 글자: '이런글자는없다', 자리: g저장소 });
+  check('git grep 도 못 찾은 것은 성공에 빈 목록', 빈것.ok === true && 빈것.파일들.length === 0, JSON.stringify(빈것));
+  writeFileSync(join(g저장소, 'k.txt'), encode('결재 요청\n', 'euc-kr').buf);
+  const 못푼 = await git못푸는파일({ 자리: g저장소 });
+  check('★ git 이 UTF-8 로 못 푸는 파일을 로케일과 상관없이 센다', 못푼.ok === true && 못푼.파일들.some((f) => /k\.txt$/.test(f))
+    && !못푼.파일들.some((f) => /a\.js$/.test(f)), JSON.stringify(못푼).slice(0, 200));
 } else {
   건너뜀('git grep', '이 PC 에 git 이 없습니다');
+}
+
+// 맞는 줄이 **반드시** 품는 글자 — 넓게 잡으면 git grep 길이 답을 놓친다.
+{
+  const 표 = [
+    ['결재', {}, '결재'],
+    ['foo\\d+', {}, 'foo'],
+    ['end\\$$', {}, 'end$'],
+    ['a|b', {}, null],
+    ['\\p{Hangul}+', {}, null],
+    ['function\\s+(\\w+)', {}, 'function'],
+    ['colou?r', {}, 'colo'],
+    ['(abcde)?fg', {}, 'fg'],
+    ['(?:xy|zw)zz', {}, 'zz'],
+    ['(?!foofoo)bar', {}, 'bar'],
+    ['\\x41BCD', {}, 'BCD'],
+    ['\\u0041xyz', {}, 'xyz'],
+    ['[abc]def', {}, 'def'],
+    ['ab*', {}, 'a'],
+    ['mask', { 대소문자무시: true }, 'ma'],
+    ['Éclair', { 대소문자무시: true }, 'clair'],
+    ['(unclosed', {}, null],
+  ];
+  const 틀림 = 표.filter(([무늬, 옵, 기대]) => 꼭있는글자(무늬, 옵) !== 기대)
+    .map(([무늬, 옵, 기대]) => `${무늬}${옵.대소문자무시 ? '(i)' : ''} → ${JSON.stringify(꼭있는글자(무늬, 옵))} (기대 ${JSON.stringify(기대)})`);
+  check('★★ 꼭있는글자 — 모르면 끊고, 갈래·없어도 되는 것·앞뒤 보기는 믿지 않는다', 틀림.length === 0, 틀림.join(' | '));
+  const 뜻 = [
+    [rg글로브들('src/*.js', { 자리: '/r/src', 뿌리: '/r' }), ['src/*.js', 'src/src/*.js']],
+    [rg글로브들('*.js', { 자리: '/r/src', 뿌리: '/r' }), ['*.js']],
+    [rg글로브들('!sub/**', { 자리: '/r/src', 뿌리: '/r' }), ['!sub/**', '!src/sub/**']],
+    [rg글로브들('/a/*.js', { 자리: '/r/src', 뿌리: '/r' }), ['/a/*.js']],
+  ].filter(([받은, 기대]) => 받은.join('|') !== 기대.join('|'));
+  check('rg글로브들 — 빗금 든 무늬만 찾는 폴더 기준 무늬를 더한다 (뿌리에 묶인 / 무늬는 안 더한다)', 뜻.length === 0, JSON.stringify(뜻));
 }
 
 // ── 7. 두 길이 같은 답을 낸다 (제일 중요한 것) ─────────────────────────
@@ -197,6 +254,24 @@ trace('7-같은답');
   쓰기2('버릴것.log', 'needle 여섯\n');
   쓰기2('번들.min.js', 'needle 일곱\n');
   쓰기2('사진.png', 'needle 여덟\n');
+  /*
+   * 점 파일과 살림 폴더 — 두 길이 **여기서** 갈렸다.
+   *
+   * rg 는 점으로 시작하는 것을 기본으로 안 보고, 자바스크립트 길에는 그런
+   * 규칙이 아예 없다. 거꾸로 자바스크립트 길은 SKIP_DIRS(dist·venv…)를
+   * 안 훑는데 rg 는 그 목록을 모른다. 그래서 같은 명령이 —
+   *
+   *   rg 가 있는 PC  →  dist/번들.js · venv/lib.js
+   *   rg 가 없는 PC  →  .github/workflows/ci.yml · .env.example
+   *
+   * 겹치는 답이 src/a.js 하나뿐이었다. 「CI 설정 어디서 고쳐」 를 rg 가 깔린
+   * PC 에서 물으면 한 줄도 안 나오고, 모델은 그 침묵을 사실로 받아
+   * 「이 저장소에는 워크플로가 없습니다」 로 답을 맺는다.
+   */
+  쓰기2('.github/workflows/ci.yml', '# needle 아홉\n');
+  쓰기2('.env.example', 'KEY=needle 열\n');
+  쓰기2('dist/번들.js', 'needle 열하나\n');
+  쓰기2('venv/lib.js', 'needle 열둘\n');
   for (let i = 0; i < 200; i++) 쓰기2(`많은것/f${i}.js`, i % 7 === 0 ? 'needle 많음\n' : '아무것도\n');
 
   const ctx = {
@@ -217,6 +292,14 @@ trace('7-같은답');
   check('둘 다 .gitignore 를 지킨다', !A.some((f) => /out\/|\.log/.test(f)) && !B.some((f) => /out\/|\.log/.test(f)), A.join(' '));
   check('둘 다 번들·그림은 안 뒤진다', !A.some((f) => /min\.js|\.png/.test(f)) && !B.some((f) => /min\.js|\.png/.test(f)), A.join(' '));
   check('둘 다 한글 이름을 제대로 낸다', A.some((f) => /한글 이름\.js/.test(f)), A.join(' '));
+  const 점것 = (목록) => 목록.filter((f) => f.startsWith('.')).join(' ') || '(없음)';
+  const 살림것 = (목록) => 목록.filter((f) => /^(dist|venv)\//.test(f)).join(' ') || '(없음)';
+  check('★ 두 길 다 점으로 시작하는 것을 본다 (.github · .env.example)',
+    ['.github/workflows/ci.yml', '.env.example'].every((f) => A.includes(f) && B.includes(f)),
+    `빠른: ${점것(A)} / 예전: ${점것(B)}`);
+  check('★ 두 길 다 살림 폴더(dist · venv)는 안 본다',
+    !A.some((f) => /^(dist|venv)\//.test(f)) && !B.some((f) => /^(dist|venv)\//.test(f)),
+    `빠른: ${살림것(A)} / 예전: ${살림것(B)}`);
 
   // 줄까지 같아야 한다 — 파일만 같고 줄이 다르면 사람이 엉뚱한 데로 간다.
   엔진잊기();
@@ -333,6 +416,272 @@ trace('9-상한');
   엔진잊기();
   check('다 봤으면 군말을 안 붙인다', !/봤습니다|다 못 봄/.test(`${다본것.content}${다본것.summary}`), String(다본것.content));
   check('다 봤으면 실제로 찾아 낸다', /f299\.js/.test(String(다본것.content)), String(다본것.content));
+}
+
+엔진잊기();
+
+// ── 10. rg 가 못 푸는 글 파일도 두 길이 같은 답을 낸다 ─────────────────
+trace('10-옛인코딩');
+{
+  /*
+   * rg 는 UTF-8 과 **표식 있는** UTF-16 만 글자로 푼다. 그래서 같은 폴더에서
+   * 「결재」 를 찾으면 —
+   *
+   *   rg 가 있는 PC  →  src/a.js
+   *   rg 가 없는 PC  →  src/a.js · k949.txt · n16.txt · late.txt
+   *
+   * 사내 CP949 문서, 파워셸이 표식 없이 흘린 UTF-16, 8KB 뒤에 NUL 이 하나
+   * 끼인 로그가 rg 쪽에서만 통째로 사라진다. 오류도 꼬리말도 없으니 사람은
+   * 「그런 문서가 없다」 로 읽는다 — 이 파일 머리말이 막으려던 바로 그 고장이다.
+   *
+   * `\p{Hangul}` 은 거꾸로다. rg 는 알아듣는데 자바스크립트 길은 `u` 없이
+   * 정규식을 만들어서 한 줄도 못 찾았다. glob 의 `[!0-9]` 와 앞머리 `./` 는
+   * 자바스크립트 길(과 Glob 도구)만 못 알아들었다.
+   */
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-fastenc-'));
+  const 넣기 = (rel, 바이트) => { const p = join(방, rel); mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, 바이트); };
+  넣기('k949.txt', encode('결재 요청드립니다 금액 확인\n두 번째 줄 결재\n', 'euc-kr').buf);
+  넣기('n16.txt', Buffer.from('결재 요청 문서 UTF16 without bom\r\n', 'utf16le'));
+  넣기('late.txt', Buffer.concat([Buffer.from('a'.repeat(9000) + '\n'), Buffer.from([0]), Buffer.from('\n결재 늦게 나옴\n')]));
+  넣기('src/a.js', '// 한글 주석 결재\nTODO\n');
+  넣기('진짜.bin2', Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 1, 2, 3, 0]), Buffer.from('결재\n')]));
+  넣기('file1.txt', 'HIT\n');
+  넣기('filea.txt', 'HIT\n');
+  const ctx = { scope: makeScope(방), history: new History(방), audit: new Audit(방), seen: new Set() };
+  const 목록 = (r) => String(r.content ?? r.error ?? '').split('\n\n')[0].split('\n').map((l) => l.trim()).filter(Boolean).sort();
+  const 두길 = async (args) => {
+    엔진잊기();
+    const 빠른 = await TOOLS.Grep.run(args, ctx);
+    process.env.DEEL_GREP = 'js';
+    엔진잊기();
+    const 예전 = await TOOLS.Grep.run(args, ctx);
+    delete process.env.DEEL_GREP;
+    엔진잊기();
+    return { A: 목록(빠른), B: 목록(예전), 빠른, 예전 };
+  };
+  const 둘다 = (x, 이름) => x.A.includes(이름) && x.B.includes(이름);
+  const 보임 = (x) => `빠른(${x.빠른.summary}): ${x.A.join(' ')} / 예전: ${x.B.join(' ')}`;
+
+  const 한글 = await 두길({ pattern: '결재' });
+  check('★★ 두 길 다 CP949 파일에서 찾는다', 둘다(한글, 'k949.txt'), 보임(한글));
+  check('★★ 두 길 다 표식 없는 UTF-16LE 파일에서 찾는다', 둘다(한글, 'n16.txt'), 보임(한글));
+  check('★★ 두 길 다 8KB 뒤에 NUL 이 낀 글 파일에서 찾는다', 둘다(한글, 'late.txt'), 보임(한글));
+  check('★ 진짜 바이너리는 두 길 다 안 본다', !한글.A.includes('진짜.bin2') && !한글.B.includes('진짜.bin2'), 보임(한글));
+  check('★ 파일 목록이 통째로 같다', 한글.A.join('|') === 한글.B.join('|'), 보임(한글));
+
+  const 줄 = await 두길({ pattern: '결재', output_mode: 'content' });
+  check('★ 줄 번호와 내용까지 같다 (옛 인코딩도 글자로 풀어서 보여 준다)', 줄.A.join('|') === 줄.B.join('|'), 보임(줄));
+  check('CP949 파일의 두 번째 줄도 글자로 온다', 줄.A.includes('k949.txt:2: 두 번째 줄 결재'), 줄.A.join(' | '));
+
+  const 갈래 = await 두길({ pattern: '\\p{Hangul}+', output_mode: 'content' });
+  check('★★ \\p{Hangul} 을 두 길 다 알아듣는다', 갈래.A.some((l) => l.startsWith('src/a.js:1:')) && 갈래.B.some((l) => l.startsWith('src/a.js:1:')), 보임(갈래));
+  const 옛문법 = await 두길({ pattern: 'a\\-b|\\p{L}' });
+  check('`u` 로 못 만드는 옛 문법 무늬도 거절하지 않는다', !옛문법.예전.error, String(옛문법.예전.error ?? ''));
+
+  const 빼기 = await 두길({ pattern: 'HIT', glob: 'file[!0-9].txt' });
+  check('★ Grep glob 의 [!0-9] 는 빼기다 — 두 길 다', 빼기.A.join('|') === 'filea.txt' && 빼기.B.join('|') === 'filea.txt', 보임(빼기));
+  // 빗금 든 glob(`src/*.js`)은 rg 가 제 작업 폴더 기준으로 맞춰 따로 갈린다 — 여기서는 `./` 떼기만 잰다.
+  const 점 = await 두길({ pattern: 'HIT', glob: './file[!0-9].txt' });
+  check('★ Grep glob 앞의 ./ 를 떼고 본다 — 두 길 다', 점.A.join('|') === 'filea.txt' && 점.B.join('|') === 'filea.txt', 보임(점));
+
+  const 글로브빼기 = await TOOLS.Glob.run({ pattern: 'file[!0-9].txt' }, ctx);
+  check('★★ Glob 의 [!0-9] 는 빼기다', 목록(글로브빼기).join('|') === 'filea.txt', 목록(글로브빼기).join(' '));
+  const 글로브점 = await TOOLS.Glob.run({ pattern: './src/*.js' }, ctx);
+  check('★★ Glob 앞의 ./ 를 떼고 본다', 목록(글로브점).includes('src/a.js'), 목록(글로브점).join(' '));
+
+  /*
+   * 중괄호 **안의** 별표가 글자로 굳었다.
+   *
+   * 갈래를 escapeLiteral 로만 넘겨서 `{*.js,*.ts}` 가 「`*.js` 라는 이름의 파일」 이
+   * 됐다. 그런 파일은 없으니 늘 0건이다. 밖에 쓴 `*.{js,ts}` 는 되고 안에 쓴 것만
+   * 안 되니, 「찾은 파일 없음」 을 받은 모델은 그 폴더에 그런 파일이 없다고 믿는다 —
+   * 아무 말도 없이 틀린 답을 주는 쪽이라 더 나쁘다.
+   */
+  const 중괄호 = await TOOLS.Glob.run({ pattern: '{file*.txt,src/*.js}' }, ctx);
+  check('★★★ 중괄호 갈래 안의 * 도 무늬로 본다',
+    ['file1.txt', 'filea.txt', 'src/a.js'].every((f) => 목록(중괄호).includes(f)), 목록(중괄호).join(' '));
+  const 중괄호밖 = await TOOLS.Glob.run({ pattern: 'file*.{txt,js}' }, ctx);
+  check('  (짝) 중괄호 밖의 * 는 여태대로', 목록(중괄호밖).join('|') === 'file1.txt|filea.txt', 목록(중괄호밖).join(' '));
+  const 중괄호물음 = await TOOLS.Glob.run({ pattern: '{file?.txt}' }, ctx);
+  check('  (짝) 중괄호 안의 ? 도 한 글자다', 목록(중괄호물음).join('|') === 'file1.txt|filea.txt', 목록(중괄호물음).join(' '));
+}
+
+// ── 11. 빗금 든 glob · 절대경로 무늬 · CRLF 의 $ · git grep 길 ─────────
+trace('11-glob-git');
+{
+  /*
+   * rg 는 `--glob src/*.js` 를 **제 작업 폴더** 기준으로 맞춘다. deel 이 rg 를
+   * 띄울 때 작업 폴더를 안 정해서, 검사처럼 뿌리와 다른 자리에서 돌면 한 줄도
+   * 안 나왔고, path=src 로 좁히면 두 엔진 다 `src/**` 를 못 찾았다. 절대경로로
+   * 적은 무늬는 「없음」 이었고, CRLF 줄의 `$` 는 두 엔진 다 줄 끝을 못 봤다.
+   * git grep 길(rg 없는 저장소)은 옛 인코딩 파일·새 파일·glob·`\d` 를 전부 놓쳤다.
+   */
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-fastglob-'));
+  const 넣기 = (뿌리, rel, 바이트) => { const p = join(뿌리, rel); mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, 바이트); };
+  넣기(방, 'src/a.js', 'TODO a\n');
+  넣기(방, 'src/sub/b.js', 'TODO b\n');
+  넣기(방, 'other/o.js', 'TODO o\n');
+  넣기(방, 'crlf.txt', 'end$\r\nfoo7\r\n');
+  const ctx = { scope: makeScope(방), history: new History(방), audit: new Audit(방), seen: new Set() };
+  const 목록 = (r) => String(r.content ?? r.error ?? '').split('\n\n')[0].split('\n').map((l) => l.trim()).filter(Boolean).sort();
+  const 엔진으로 = async (c, 엔진값, args) => {
+    if (엔진값) process.env.DEEL_GREP = 엔진값; else delete process.env.DEEL_GREP;
+    엔진잊기();
+    try { return await TOOLS.Grep.run(args, c); } finally { delete process.env.DEEL_GREP; 엔진잊기(); }
+  };
+  const 견주기 = async (c, 빠른엔진, args) => {
+    const 빠른 = await 엔진으로(c, 빠른엔진, args);
+    const 예전 = await 엔진으로(c, 'js', args);
+    return { A: 목록(빠른), B: 목록(예전), 빠른, 예전 };
+  };
+  const 같게 = (x, 기대) => x.A.join('|') === 기대.join('|') && x.B.join('|') === 기대.join('|');
+  const 보임 = (x) => `빠른(${x.빠른.summary}): ${x.A.join(' ')} / 예전: ${x.B.join(' ')}`;
+
+  const g1 = await 견주기(ctx, null, { pattern: 'TODO', glob: 'src/*.js' });
+  check('★★ 빗금 든 glob(src/*.js)을 두 길이 같게 본다', 같게(g1, ['src/a.js']), 보임(g1));
+  const g2 = await 견주기(ctx, null, { pattern: 'TODO', path: 'src', glob: 'src/**/*.js' });
+  check('★★ path=src glob=src/**/*.js — 뿌리 기준 glob 을 두 길 다 찾는다', 같게(g2, ['src/a.js', 'src/sub/b.js']), 보임(g2));
+  const g3 = await 견주기(ctx, null, { pattern: 'TODO', path: 'src', glob: 'sub/*.js' });
+  check('★ path=src glob=sub/*.js — 찾을 자리 기준 glob 도 두 길 다 찾는다', 같게(g3, ['src/sub/b.js']), 보임(g3));
+  const g4 = await 견주기(ctx, null, { pattern: 'TODO', glob: '!src/**' });
+  check('★ ! 로 시작하는 glob 은 두 길 다 빼기다', 같게(g4, ['other/o.js']), 보임(g4));
+
+  const 끝달러 = await 견주기(ctx, null, { pattern: 'end\\$$', output_mode: 'content' });
+  check('★★ CRLF 줄의 $ 를 두 길 다 줄 끝으로 본다',
+    끝달러.A.some((l) => l.startsWith('crlf.txt:1:')) && 끝달러.B.some((l) => l.startsWith('crlf.txt:1:')), 보임(끝달러));
+
+  const 절대 = `${방.replace(/\\/g, '/')}/src/*.js`;
+  const 절대글로브 = await TOOLS.Glob.run({ pattern: 절대 }, ctx);
+  check('★★ Glob 에 작업 폴더 안의 절대경로 무늬를 주면 찾는다', 목록(절대글로브).includes('src/a.js'), String(절대글로브.content ?? 절대글로브.error));
+  const 밖글로브 = await TOOLS.Glob.run({ pattern: `${tmpdir().replace(/\\/g, '/')}/*.js` }, ctx);
+  check('★ 작업 폴더 밖 절대경로 무늬는 「없음」 대신 범위 밖이라고 한다', !!밖글로브.error && /범위/.test(밖글로브.error),
+    String(밖글로브.content ?? 밖글로브.error).split('\n')[0]);
+  const 절대그렙 = await 견주기(ctx, null, { pattern: 'TODO', glob: 절대 });
+  check('★ Grep glob 의 절대경로도 두 길 다 뿌리 기준으로 푼다', 같게(절대그렙, ['src/a.js']), 보임(절대그렙));
+
+  if (엔진.gitgrep) {
+    const 곳 = mkdtempSync(join(tmpdir(), 'deel-fastgit2-'));
+    깃(곳, ['init', '-q'], {});
+    깃(곳, ['config', 'user.email', 'a@b.c'], {});
+    깃(곳, ['config', 'user.name', '검사'], {});
+    넣기(곳, 'a.js', 'const foo12 = 1;\n');
+    넣기(곳, 'notes.txt', 'foo 메모\n');
+    넣기(곳, 'k949.txt', encode('결재 요청드립니다\n', 'euc-kr').buf);
+    넣기(곳, 'n16.txt', Buffer.from('결재 요청 문서 without bom\r\n', 'utf16le'));
+    넣기(곳, 'late.txt', Buffer.concat([Buffer.from('a'.repeat(9000) + '\n'), Buffer.from([0]), Buffer.from('\n결재 늦게\n')]));
+    넣기(곳, 'crlf.txt', 'end$\r\n');
+    넣기(곳, 'dist/d.js', 'const foo3 = "결재";\n');
+    깃(곳, ['add', '-A'], {});
+    깃(곳, ['commit', '-q', '-m', '첫 커밋'], {});
+    넣기(곳, '새것.js', '// 결재 foo99 — 커밋 안 한 새 파일\n');
+    const gctx = { scope: makeScope(곳), history: new History(곳), audit: new Audit(곳), seen: new Set() };
+
+    const k = await 견주기(gctx, 'git', { pattern: '결재' });
+    check('★ DEEL_GREP=git 이면 git grep 으로 찾는다', /git grep/.test(String(k.빠른.summary)), String(k.빠른.summary));
+    check('★★ git grep 길도 CP949·표식 없는 UTF-16·늦은 NUL 파일을 찾는다 (JS 와 같은 목록)',
+      k.A.join('|') === k.B.join('|') && ['k949.txt', 'n16.txt', 'late.txt'].every((f) => k.A.includes(f)), 보임(k));
+    check('★★ git grep 길도 커밋 안 한 새 파일을 찾는다', k.A.includes('새것.js'), 보임(k));
+    check('★ git grep 길도 살림 폴더(dist)는 안 본다', !k.A.includes('dist/d.js'), 보임(k));
+    const d = await 견주기(gctx, 'git', { pattern: 'foo\\d+' });
+    check('★★ \\d 같은 무늬를 git grep 길도 자바스크립트와 같게 읽는다', d.A.join('|') === d.B.join('|') && d.A.includes('a.js'), 보임(d));
+    const e = await 견주기(gctx, 'git', { pattern: 'end\\$$' });
+    check('★ git grep 길에서도 CRLF 줄의 $ 가 맞는다', e.A.includes('crlf.txt') && e.B.includes('crlf.txt'), 보임(e));
+    const gl = await 견주기(gctx, 'git', { pattern: 'foo', glob: '*.js' });
+    check('★★ git grep 길도 glob 을 지킨다', gl.A.join('|') === gl.B.join('|') && !gl.A.includes('notes.txt'), 보임(gl));
+  } else {
+    건너뜀('git grep 길 견주기', '이 PC 에 git 이 없습니다');
+  }
+}
+
+// ── 12. rg 가 답을 못 준 것과 「없다」 는 다르다 (2.0.0 8회차 파일훑기) ───
+trace('12-rg끝맺음');
+{
+  /*
+   * rg 의 끝맺음은 셋뿐이다 — 0(찾음) · 1(못 찾음) · 2(무늬·자리가 틀림).
+   * 그런데 판단하는 자리가 `status === 2` 한 줄이었다. 그래서 **신호로 죽은**
+   * rg(status 가 숫자가 아니라 null 이다 — spawn.js 의 'close' 가 코드를 그대로
+   * 준다)가 남긴 반 토막 stdout 이 **성공**으로 올라갔다. 화면에는 「일치 없음」.
+   *
+   * 이 파일 머리말 3번이 「결과가 없는 것이 아니라 우리가 못 물어본 것」 이라고
+   * 적어 둔 바로 그 자리에서, 못 물어본 것이 없는 것으로 나갔다. OOM killer 가
+   * 걷어가거나 사람이 kill 한 자리가 다 이렇다.
+   */
+  check('★★ 신호로 죽으면(status null) 실패로 본다 — 「없다」 가 아니다',
+    !!rg가못준까닭({ error: null, status: null, stdout: '', stderr: '' }),
+    String(rg가못준까닭({ error: null, status: null, stdout: '', stderr: '' })));
+  check('★★ 반 토막 stdout 이 남아 있어도 실패로 본다',
+    !!rg가못준까닭({ error: null, status: null, stdout: 'a.js\x001:x\n', stderr: '' }),
+    String(rg가못준까닭({ error: null, status: null, stdout: 'a.js\x001:x\n', stderr: '' })));
+  check('★ 0·1 말고 다른 숫자로 끝나도 실패로 본다',
+    !!rg가못준까닭({ error: null, status: 137, stdout: '', stderr: '' }),
+    String(rg가못준까닭({ error: null, status: 137, stdout: '', stderr: '' })));
+  check('  찾았으면(0) 실패가 아니다', rg가못준까닭({ error: null, status: 0, stdout: 'x', stderr: '' }) === null);
+  check('  못 찾았으면(1) 그것도 실패가 아니다', rg가못준까닭({ error: null, status: 1, stdout: '', stderr: '' }) === null);
+  check('  무늬를 못 읽으면(2) 여전히 실패다', !!rg가못준까닭({ error: null, status: 2, stdout: '', stderr: 'regex parse error' }));
+  check('  띄우지도 못했으면 그 말을 그대로 쓴다',
+    rg가못준까닭({ error: new Error('spawn rg ENOENT'), status: null, stdout: '', stderr: '' }) === 'spawn rg ENOENT');
+
+  /*
+   * ★★★ 그런데 **못 푸는 파일을 세는 쪽**은 이 자를 안 쓰고 있었다 (막판 훑기).
+   *
+   * 거기는 `error` 와 `status === 2` 두 줄뿐이라, 신호로 죽거나 2 가 아닌 값으로 끝나면
+   * 빈 목록이 `ok:true` 로 올라갔다. 그러면 빠르게찾기 가 「따로 볼 파일 없음」 으로 받아
+   * CP949·Shift_JIS·표식 없는 UTF-16 문서를 **한 개도 되읽지 않는다** — rg 가 그 파일에서
+   * 낸 답은 버려졌는데 다시 읽지도 않으니, 사내 문서가 조용히 「일치 없음」 이 된다.
+   * 그 함수 머리말은 「거르는 규칙은 rg로찾기 와 **같은 것**을 쓴다」 고 적어 두었다.
+   */
+  const 가짜 = (r) => async () => r;
+  for (const [무엇, r] of [
+    ['신호로 죽음', { error: null, status: null, stdout: '', stderr: '' }],
+    ['0·1·2 아닌 종료코드', { error: null, status: 3221225477, stdout: '', stderr: '' }],
+  ]) {
+    const 답 = await rg못푸는파일({ 자리: '.', 부르기: 가짜(r) });
+    check(`★★★ 못 푸는 파일 세기도 실패를 실패로 본다 — ${무엇}`, 답.ok === false, JSON.stringify(답));
+  }
+  const 멀쩡 = await rg못푸는파일({ 자리: '.', 부르기: 가짜({ error: null, status: 0, stdout: 'a.txt\nb.txt\n', stderr: '' }) });
+  check('  (짝) 멀쩡히 끝나면 목록을 그대로 준다',
+    멀쩡.ok === true && 멀쩡.파일들.join(',') === 'a.txt,b.txt', JSON.stringify(멀쩡));
+  const 없음 = await rg못푸는파일({ 자리: '.', 부르기: 가짜({ error: null, status: 1, stdout: '', stderr: '' }) });
+  check('  (짝) 하나도 없으면(1) 빈 목록이 맞다', 없음.ok === true && 없음.파일들.length === 0, JSON.stringify(없음));
+}
+
+// ── 13. .gitignore 의 대소문자도 두 길이 같아야 한다 (2.0.0 8회차 파일훑기) ─
+trace('13-무시규칙대소문자');
+{
+  /*
+   * `--glob-case-insensitive` 는 **`--glob` 으로 준 무늬**에만 먹는다.
+   * `.gitignore` 규칙에는 안 먹는다. 그래서 윈도우에서 `*.tmpx` 를 적어 두면 —
+   *
+   *   rg 가 깔린 PC   →  A.TMPX 가 **검색된다**
+   *   안 깔린 PC      →  A.TMPX 가 안 검색된다
+   *
+   * 자바스크립트 길(tools/ignore.js)은 윈도우에서 규칙을 대소문자 없이 본다
+   * (git 의 core.ignorecase 기본값과 같은 자세). 같은 명령이 PC 마다 다른 답을
+   * 내고, 하필 **가리라고 적은 것을 더 보는 쪽**으로 갈린다. rg 에는 규칙 쪽
+   * 대소문자를 따로 알려 주는 자(`--ignore-file-case-insensitive`)가 있다.
+   */
+  if (엔진.rg) {
+    const 방 = mkdtempSync(join(tmpdir(), 'deel-무시대소문자-'));
+    writeFileSync(join(방, '.gitignore'), '*.tmpx\n', 'utf8');
+    writeFileSync(join(방, 'A.TMPX'), 'const 바늘 = 1;\n', 'utf8');
+    writeFileSync(join(방, 'b.js'), 'const 바늘 = 2;\n', 'utf8');
+    const ctx13 = { scope: makeScope(방), history: new History(방), audit: new Audit(방), seen: new Set() };
+    const 목록13 = (r) => String(r.content ?? r.error ?? '').split('\n\n')[0].split('\n').map((l) => l.trim()).filter(Boolean).sort();
+    const 길 = async (엔진값) => {
+      if (엔진값) process.env.DEEL_GREP = 엔진값; else delete process.env.DEEL_GREP;
+      엔진잊기();
+      try { return 목록13(await TOOLS.Grep.run({ pattern: '바늘' }, ctx13)); } finally { delete process.env.DEEL_GREP; 엔진잊기(); }
+    };
+    const 빠른 = await 길(null);
+    const 예전 = await 길('js');
+    check('★★ .gitignore 의 대소문자를 두 길이 같게 본다',
+      빠른.join('|') === 예전.join('|'), `빠른: ${빠른.join(' ')} / 예전: ${예전.join(' ')}`);
+    check('★ 가리라고 적은 A.TMPX 를 rg 길도 안 본다', !빠른.includes('A.TMPX'), 빠른.join(' '));
+    check('  안 가린 b.js 는 두 길 다 본다', 빠른.includes('b.js') && 예전.includes('b.js'), `${빠른.join(' ')} / ${예전.join(' ')}`);
+    rmSync(방, { recursive: true, force: true });
+  } else {
+    건너뜀('.gitignore 대소문자 두 길 견주기', '이 PC 에 rg 가 없습니다 — 자바스크립트 길만 돕니다');
+  }
 }
 
 엔진잊기();

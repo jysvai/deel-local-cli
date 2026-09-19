@@ -196,6 +196,74 @@ const 정의들 = [
   check('★ 정의가 수십억 개라고 적혀 있으면 안 만들고 멈춘다', 막았나);
 }
 
+// ══ 2b. 깨진 바이트를 받았을 때의 규약 (8회차 · 바깥) ═══════════════════
+//
+// 한 파일 안에 서로 반대인 두 버릇이 같이 있었다.
+//   · 스키마 갈래 바이트가 0·1·2 가 아니면 **조용히 ENUM 으로 바꿔** 계속 읽었다.
+//     그 정의는 그 뒤로 전부 다른 값으로 읽히는데 아무 말도 안 나온다.
+//   · 알맹이에서 모르는 칸 번호를 만나면 **이미 읽은 것까지** 버리고 던졌다.
+// 규약을 하나로 정한다 — **어디까지 읽었는지 말하고 멈춘다.** 지어내지도 않고,
+// 여태 읽은 것을 말없이 버리지도 않는다(오류에 달아 보낸다. 쓸지는 부르는 쪽이 정한다).
+trace('2b-깨진바이트규약');
+{
+  // 갈래 바이트 7 — Kiwi 에 그런 갈래는 없다.
+  const 깨진갈래 = Buffer.from([
+    ...[1], ...[0x58, 0x00], 7, ...[0],   // 정의 1개 · 이름 'X' · 갈래 7 · 칸 0개
+  ]);
+  let 갈래탈 = null;
+  let 갈래값 = null;
+  try { 갈래값 = 스키마읽기(깨진갈래).정의들[0].갈래; } catch (err) { 갈래탈 = err; }
+  check('★★ 모르는 스키마 갈래를 조용히 ENUM 으로 바꾸지 않는다',
+    갈래탈 !== null, `갈래로 ${JSON.stringify(갈래값)} 를 지어냈다`);
+  check('★ 그때 몇 번째 갈래였는지 · 어디까지 읽었는지 말한다',
+    /7/.test(갈래탈?.message ?? '') && Number.isFinite(갈래탈?.자리),
+    `${갈래탈?.message} · 자리 ${갈래탈?.자리}`);
+
+  // 스키마 쪽 개수도 남은 바이트와 대조한다 — 알맹이 쪽만 대조하고 있었다.
+  const 큰정의수 = Buffer.from([...[0xff, 0x7f], 0x58, 0x00, 1, 0]);   // 정의 16383개라고 적어 놓고 여섯 바이트
+  let 정의탈 = null;
+  try { 스키마읽기(큰정의수); } catch (err) { 정의탈 = err; }
+  check('★★ 스키마 정의 개수도 남은 바이트와 대조하고 들어간다',
+    /개수가 남은 바이트보다/.test(정의탈?.message ?? ''), String(정의탈?.message));
+
+  const 큰칸수 = Buffer.from([1, 0x58, 0x00, 2, 0xff, 0x7f]);          // 칸 16383개라고 적어 놓고 끝
+  let 칸탈 = null;
+  try { 스키마읽기(큰칸수); } catch (err) { 칸탈 = err; }
+  check('★★ 칸 개수도 마찬가지다',
+    /개수가 남은 바이트보다/.test(칸탈?.message ?? ''), String(칸탈?.message));
+
+  // 알맹이 — 모르는 칸 번호. 멈추는 것은 그대로, 다만 읽은 것을 말없이 버리지 않는다.
+  const 작은스키마 = 스키마읽기(스키마쓰기([
+    { 이름: 'Message', 갈래: 'MESSAGE', 칸들: [{ 이름: 'name', 형: T.string, 배열: false, 값: 1 }] },
+  ]));
+  const 몸 = new 쓰개();
+  몸.varuint(1).string('여기까지 읽었다').varuint(99).varuint(0);
+  let 칸번호탈 = null;
+  try { 알맹이읽기(작은스키마, 몸.buf(), 'Message'); } catch (err) { 칸번호탈 = err; }
+  check('★★ 모르는 칸 번호를 만나면 짐작으로 계속 읽지 않고 멈춘다 (그대로)',
+    /모르는 칸 번호/.test(칸번호탈?.message ?? ''), String(칸번호탈?.message));
+  check('★★ 그때 이미 읽은 것을 말없이 버리지 않는다',
+    칸번호탈?.읽은것?.name === '여기까지 읽었다', JSON.stringify(칸번호탈?.읽은것 ?? null));
+  check('★ 어디까지 읽었는지(바이트 자리)도 같이 말한다',
+    Number.isFinite(칸번호탈?.자리) && 칸번호탈.자리 > 0, String(칸번호탈?.자리));
+
+  /*
+   * 안 담는 바이트 배열은 세면서 지나가지 않고 자리만 옮긴다. 그 길에도
+   * 개수 상한이 살아 있어야 한다 — 여기 있던 두 번째 대조는 바로 위 `개수()`
+   * 가 이미 걸러서 **어떤 입력에도 안 걸리는** 죽은 조건이었다. 죽은 조건은
+   * 지우고, 그것이 지키는 척하던 것은 이 검사로 못 박는다.
+   */
+  const 바이트스키마 = 스키마읽기(스키마쓰기([
+    { 이름: 'Message', 갈래: 'MESSAGE', 칸들: [{ 이름: 'bytes', 형: T.byte, 배열: true, 값: 1 }] },
+  ]));
+  const 큰몸 = new 쓰개();
+  큰몸.varuint(1).varuint(4000000000);
+  let 바이트탈 = null;
+  try { 알맹이읽기(바이트스키마, 큰몸.buf(), 'Message', () => false); } catch (err) { 바이트탈 = err; }
+  check('★★ 안 담고 지나가는 바이트 배열도 남이 적은 개수를 안 믿는다',
+    /개수가 남은 바이트보다/.test(바이트탈?.message ?? ''), String(바이트탈?.message));
+}
+
 // ══ 3. 알맹이 — 짜임 그대로 나오나 ══════════════════════════════════════
 trace('3-알맹이');
 
@@ -459,6 +527,27 @@ const 시안 = fig만들기('로그인.fig');
     JSON.stringify(잘린것.덩이들?.[2]?.문단들));
   check('★ 상한에 걸렸다는 것도 따로 말한다',
     (잘린것.말 ?? []).some((x) => /거기까지만 폈습니다/.test(x)), JSON.stringify(잘린것.말));
+
+  /*
+   * ── 딱 맞을 때는 잘렸다고 하지 않는다 (6회차 그림6cy-a F1) ────────────
+   *
+   * 상한과 편 도형 수가 같으면 **한 줄도 안 잘렸다.** 그런데도 「거기까지만
+   * 폈습니다 — 뒷부분은 안 실렸습니다」 가 나가면 거짓 경고다. 모델은 안 잘린
+   * 시안을 잘린 것으로 읽고 없는 뒷부분을 찾아다닌다. 이 저장소가 거짓 경고를
+   * 진짜 경고와 같은 무게로 세는 까닭이 그것이다 — 거짓 경고는 진짜 경고를 죽인다.
+   */
+  const 다편것 = readFig(시안);
+  const 편줄수 = (다편것.덩이들 ?? [])
+    .filter((d) => d.이름 !== '개요')
+    .reduce((n, d) => n + d.문단들.filter((l) => /^\s*- /.test(l)).length, 0);
+  check('  견줄 줄 수를 실제로 셌다 (0 이면 아래 검사가 아무것도 안 잰다)', 편줄수 > 0, String(편줄수));
+  const 딱맞는것 = readFig(시안, { 최대노드: 편줄수 });
+  check('★★ 상한과 편 도형 수가 같으면 잘렸다고 안 적는다',
+    !(딱맞는것.말 ?? []).some((x) => /거기까지만 폈습니다/.test(x)),
+    `${편줄수}개 · ${JSON.stringify(딱맞는것.말)}`);
+  check('★ 그래도 한 개 모자라면 잘렸다고 적는다',
+    (readFig(시안, { 최대노드: 편줄수 - 1 }).말 ?? []).some((x) => /거기까지만 폈습니다/.test(x)),
+    JSON.stringify(readFig(시안, { 최대노드: 편줄수 - 1 }).말));
 }
 
 // ══ 6. zstd — 못 풀 때 파일 탓으로 안 돌린다 ════════════════════════════
@@ -532,6 +621,19 @@ trace('7-못읽을때');
   const r2 = readFig(남);
   check('★ .fig 가 아닌 것을 .fig 라고 부른 경우', r2.ok === false, r2.error);
 
+  /*
+   * canvas.fig 가 **있는데 못 푼** 경우 (2.0.0 3회차 사냥). readZip 이 건너뛴 것을 안 보고 「없습니다」
+   * 라고 했다 — 사람은 파일 안을 뒤지다 헛걸음한다. 목록의 푼 크기를 거짓으로 적어 못 풀게 만든다.
+   */
+  const 깨진 = Buffer.from(makeZip([{ name: 'canvas.fig', data: Buffer.alloc(4 * 1024 * 1024) }]));
+  const 목록자리 = 깨진.readUInt32LE(깨진.length - 22 + 16);
+  깨진.writeUInt32LE(1024, 목록자리 + 24);
+  const 깨진자리 = join(root, '못푸는알맹이.fig');
+  writeFileSync(깨진자리, 깨진);
+  const r3 = readFig(깨진자리);
+  check('★★ 있는데 못 푼 canvas.fig 를 「없다」 고 하지 않는다',
+    r3.ok === false && /canvas\.fig/.test(r3.error ?? '') && !/없습니다/.test(r3.error ?? '') && /풀지 못|못 풀/.test(r3.error ?? ''), r3.error);
+
   const 없 = readFig(join(root, '없는파일.fig'));
   check('없는 파일은 못 읽었다고 한다', 없.ok === false && /못 읽었습니다/.test(없.error));
 
@@ -595,6 +697,68 @@ trace('9-Read로');
   const e = await runTool('Edit', { file_path: '로그인.fig', old_string: 'a', new_string: 'b' }, c);
   check('★★ Edit 도 같다', !!e.error && /시안은 이 도구로 고칠 수 없습니다/.test(e.error), e.error);
   check('★ 원본이 그대로 있다', readFig(시안).ok === true);
+}
+
+// ══ 9-2. 긴 시안에서도 **안내가 먼저** 실리나 ═══════════════════════════
+//
+// 머리말이 「무엇을 안 냈는지 **먼저** 말한다」 고 적어 두었는데, 안내를 글
+// **뒤에** 붙이고 있었다. 그러면 창이 좁을 때 clip 이 끝을 잘라 안내가 통째로
+// 사라진다. 남는 것은 짜임 글뿐이라, 모델은 그림·색·글꼴까지 다 봤다고 여기고
+// 답하고, Edit/Write 로 못 고친다는 말도 못 받아 시안을 고치려 든다.
+//
+// 앞에 붙이면 잘려도 안내는 남는다. 잘리는 것은 짜임 글인데, 그건 어차피
+// 「일부만」 이라고 요약이 말해 준다.
+trace('9-2-긴시안');
+{
+  // 글상자를 잔뜩 얹어 clip 이 진짜로 걸리는 시안을 짓는다.
+  const 큰노드들 = [
+    { id: 1, 형: 1, 이름: 'Document' },
+    { id: 2, 부모: 1, 자리: 'a', 형: 2, 이름: 'Page 1' },
+    { id: 3, 부모: 2, 자리: 'a', 형: 3, 이름: '긴 화면', 크기: [375, 812] },
+  ];
+  for (let i = 0; i < 80; i += 1) {
+    큰노드들.push({
+      id: 100 + i, 부모: 3, 자리: `a${i}`, 형: 4,
+      이름: `글상자 ${i}`, 글: `${i} 번째 줄입니다 — 이 글이 창을 넘기려고 일부러 깁니다.`,
+    });
+  }
+  const 큰몸 = (() => {
+    const w = new 쓰개();
+    w.varuint(1).varuint(큰노드들.length);
+    for (const n of 큰노드들) 노드쓰기(w, n);
+    w.varuint(0);
+    return w.buf();
+  })();
+  const 큰자리 = join(root, '긴시안.fig');
+  writeFileSync(큰자리, makeZip([
+    { name: 'canvas.fig', data: 통짜기(눌러(스키마몸), 눌러(큰몸)) },
+    { name: 'meta.json', data: Buffer.from(JSON.stringify({ file_name: '긴 시안', client_meta: {} }), 'utf8') },
+  ]));
+
+  // 8k 창이면 한 번에 실을 수 있는 것이 2,000자다 (agent/budget.js 한번에낼글자수).
+  const c = {
+    scope: makeScope(root),
+    history: { snapshot() {} },
+    audit: { tool() {} },
+    seen: new Set(),
+    모델컨텍스트: 8000,
+  };
+  const r = await runTool('Read', { file_path: '긴시안.fig' }, c);
+  check('준비: 긴 시안은 실제로 잘린다', /자 잘림/.test(r.content ?? ''),
+    `${(r.content ?? '').length}자`);
+  check('★★ 잘려도 「그림·색·글꼴은 안 나옵니다」 안내가 남는다',
+    /그림·색·글꼴은 안 나옵니다/.test(r.content ?? ''), (r.content ?? '').slice(-60));
+  check('★★ 잘려도 「Edit/Write 로 못 고친다」 가 남는다',
+    /Edit\/Write 로 고칠 수 없습니다/.test(r.content ?? ''), (r.content ?? '').slice(-60));
+  check('★ 안내가 글보다 **먼저** 온다', /^\(\.fig 시안을/.test(r.content ?? ''),
+    (r.content ?? '').slice(0, 40));
+
+  // 짧은 시안도 같은 차례여야 한다 — 긴 것만 앞에 붙이면 모양이 둘이 된다.
+  const c2 = { ...c, 모델컨텍스트: 128000, seen: new Set() };
+  const r2 = await runTool('Read', { file_path: '로그인.fig' }, c2);
+  check('  짝: 짧은 시안도 안내가 먼저다', /^\(\.fig 시안을/.test(r2.content ?? ''),
+    (r2.content ?? '').slice(0, 40));
+  check('  짝: 짜임 글은 그대로 실린다', /FRAME · 로그인/.test(r2.content ?? ''), '');
 }
 
 // ── 마무리 ──────────────────────────────────────────────────────────────

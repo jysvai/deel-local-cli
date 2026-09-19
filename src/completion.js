@@ -132,11 +132,21 @@ function bash판({ zsh = false } = {}) {
   const 폴더깃발 = 깃발들.filter((x) => x.값 === '폴더').map((x) => x.이름);
   const 파일깃발 = 깃발들.filter((x) => x.값 === '파일').map((x) => x.이름);
   const 값갈래 = 값깃발.map((x) => `    ${x.이름}) COMPREPLY=( $(compgen -W ${홑따옴표(x.값.join(' '))} -- "$cur") ); return 0 ;;`).join('\n');
+  /*
+   * ── 파일·폴더 후보는 줄 단위로 받는다 (사냥5 H5-11) ──────────────────────
+   *
+   * `COMPREPLY=( $(compgen -f -- "$cur") )` 는 compgen 이 낸 줄을 **빈칸에서도**
+   * 자르고, 자른 조각을 글롭으로 한 번 더 편다. 그래서 `my file.txt` 는 `my` 와
+   * `file.txt` 두 후보가 되어, 탭을 누르면 없는 이름이 들어갔다. 빈칸 든 이름은
+   * 윈도우 사용자 폴더(`Program Files`, `내 문서`)에서 보통이다. 한 줄씩 읽어
+   * 담고, `compopt -o filenames` 로 넣을 때 빈칸을 셸이 씌우게 한다(bash 4+.
+   * 없는 셸에서는 조용히 넘어간다 — 후보는 이미 온전하다).
+   */
   const 폴더갈래 = 폴더깃발.length
-    ? `    ${폴더깃발.join('|')}) COMPREPLY=( $(compgen -d -- "$cur") ); return 0 ;;`
+    ? `    ${폴더깃발.join('|')}) _deel_paths -d; return 0 ;;`
     : '';
   const 파일갈래 = 파일깃발.length
-    ? `    ${파일깃발.join('|')}) COMPREPLY=( $(compgen -f -- "$cur") ); return 0 ;;`
+    ? `    ${파일깃발.join('|')}) _deel_paths -f; return 0 ;;`
     : '';
 
   return `# deel 탭 완성 (${zsh ? 'zsh' : 'bash'})
@@ -145,6 +155,15 @@ function bash판({ zsh = false } = {}) {
 #   deel completion ${zsh ? 'zsh' : 'bash'} > ~/.deel-completion.${zsh ? 'zsh' : 'bash'}
 #   echo 'source ~/.deel-completion.${zsh ? 'zsh' : 'bash'}' >> ~/.${zsh ? 'zshrc' : 'bashrc'}
 ${zsh ? '\nautoload -U +X bashcompinit && bashcompinit\n' : ''}
+# 파일(-f)·폴더(-d) 후보를 한 줄에 하나씩 담는다. 빈칸 든 이름이 조각나지 않게.
+_deel_paths() {
+  COMPREPLY=()
+  local _deel_l
+  while IFS= read -r _deel_l; do COMPREPLY+=("$_deel_l"); done < <(compgen "$1" -- "$cur")
+  compopt -o filenames 2>/dev/null
+  return 0
+}
+
 _deel() {
   local cur prev
   cur="\${COMP_WORDS[COMP_CWORD]}"
@@ -175,7 +194,7 @@ ${파일갈래}
   if [[ -z "$cmd" ]]; then
     COMPREPLY=( $(compgen -W ${홑따옴표(이름만().join(' '))} -- "$cur") )
   else
-    COMPREPLY=( $(compgen -f -- "$cur") )
+    _deel_paths -f
   fi
 }
 complete -F _deel deel
@@ -215,6 +234,16 @@ function 파워셸판() {
     .filter((x) => Array.isArray(x.값))
     .map((x) => `    ${파워셸따옴표(x.이름)} = @(${x.값.map(파워셸따옴표).join(', ')})`)
     .join('\n');
+  /*
+   * ── 경로를 받는 자리에 명령 이름을 냈다 (사냥5 H5-12) ─────────────────────
+   *
+   * 이 판에는 「그 밖이면 명령」 갈래 하나뿐이었다. 그래서 `deel --root <탭>` 에 폴더
+   * 대신 명령 스물두 개가 떴고, `deel sessions <탭>` 처럼 명령을 이미 고른 뒤에도 또
+   * 명령을 냈다. bash 판은 그 두 자리를 셸의 파일 완성에 맡긴다. 파워셸은 완성기가
+   * **아무것도 안 내면** 제 경로 완성으로 돌아간다(빈칸 든 이름에 따옴표도 씌운다)
+   * — 흉내 내지 않고 그걸 쓴다. 경로 깃발 목록은 위 깃발들 에서 뽑는다.
+   */
+  const 경로깃발 = 깃발들.filter((x) => x.값 === '폴더' || x.값 === '파일').map((x) => 파워셸따옴표(x.이름));
 
   // 파워셸은 완성 후보에 설명을 같이 실을 수 있다. 탭을 누르면 뜻이 같이 뜬다.
   return `# deel tab completion (PowerShell)
@@ -264,11 +293,24 @@ ${값목록}
       ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }
   }
 
+  # After a flag that takes a path: return nothing, so PowerShell falls back to
+  # its own path completion (it also quotes names with spaces).
+  $pathFlags = @(${경로깃발.join(', ')})
+  if ($pathFlags -contains $prev) { return }
+
   # Typing a flag: offer flags only.
   if ($wordToComplete -like '-*') {
     return $flags |
       Where-Object { $_.name -like "$wordToComplete*" } |
       ForEach-Object { [System.Management.Automation.CompletionResult]::new($_.name, $_.name, 'ParameterName', $_.help) }
+  }
+
+  # A command was already given: its arguments are files, same as the bash
+  # version. Look only at the words before the one being typed.
+  $before = $words.Count
+  if ($wordToComplete -ne '') { $before = $words.Count - 1 }
+  for ($i = 1; $i -lt $before; $i++) {
+    if (-not $words[$i].StartsWith('-')) { return }
   }
 
   # Otherwise: commands.

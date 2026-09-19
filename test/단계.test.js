@@ -18,7 +18,7 @@
  * 그리고 신호를 **무엇으로 재는지**가 모드마다 다르다는 것도 잰다. 계획
  * 모드에는 파일을 바꾸는 도구가 아예 없으니 「바꿨나」 로는 영영 안 넘어간다.
  */
-import { 다음단계, 도구가늘어나나 } from '../src/agent/단계.js';
+import { 다음단계, 도구가늘어나나 } from '../src/agent/phase.js';
 import { get as getWork } from '../src/agent/modes.js';
 import { toolSchemas } from '../src/tools/index.js';
 import { trace } from './trace.mjs';

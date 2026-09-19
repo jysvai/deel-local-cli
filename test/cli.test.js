@@ -12,9 +12,9 @@
 //   안 나간다. 설정도 임시 폴더(DEEL_HOME)라 사람의 ~/.deel 을 못 건드린다.
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, parse as 경로쪼개기 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trace } from './trace.mjs';
 
@@ -261,6 +261,28 @@ trace('1-도움말');
     ['scan', 'sessions', 'setup', 'status', 'diagnose'].every((x) => r.out.includes('deel ' + x)),
     '');
 
+  /*
+   * ── 「위 전부」 가 위에 없는 것까지 지웠다 (막판-바깥) ──────────────────
+   *
+   * 도움말의 `deel reset all` 줄은 「위 전부 — 플러그인·되돌리기·감사기록은
+   * 빼고」 라고 적는다. 그런데 all 이 지우는 갈래가 하나 더 있다 — reset.js 의
+   * `숨은것` (이름 「증거·내보낸 것·임시」, 자리는 `.deel/증거` · `.deel/export` ·
+   * **`.deel/tmp`** · `.deel/붙인그림`). 따로 고를 수 없는 갈래라 이름을 미리 볼
+   * 자리가 도움말 말고는 없다.
+   *
+   * 이 판을 재던 중에 `deel reset --hard all --yes` 한 줄이 저장소의 `.deel/tmp`
+   * 를 통째로 지웠다. 도움말만 읽은 사람은 그 폴더가 지워진다는 것을 알 길이
+   * 없었다. 지우는 목록과 적는 목록을 여기서 맞대 둔다 — 갈래가 하나 늘면
+   * 도움말을 안 고친 판이 여기서 빨개진다.
+   */
+  {
+    const { 살펴보기 } = await import('../src/reset.js');
+    const 지울것 = 살펴보기({ home, root: work }).항목.filter((x) => x.all).map((x) => x.이름);
+    const 안적힌것 = 지울것.filter((이름) => !r.out.includes(이름));
+    check('★ --help 가 reset all 로 지워지는 갈래를 다 적는다', 안적힌것.length === 0,
+      `안 적힘: ${안적힌것.join(' · ') || '없음'}  (지우는 것: ${지울것.join(' · ')})`);
+  }
+
   const h2 = await 띄우기(['help']);
   check('help 도 --help 와 같다', h2.code === 0 && /사용법/.test(h2.out), `code=${h2.code}`);
 
@@ -290,7 +312,8 @@ trace('1-도움말');
 
 {
   const r = await 띄우기(['그런명령없음']);
-  check('모르는 명령은 1 로 끝난다', r.code === 1, `code=${r.code}`);
+  // 모르는 명령도 인자를 잘못 준 것이다 — 모르는 깃발과 같은 64(사용법 틀림). 1 이면 「돌다가 오류」 와 못 가른다.
+  check('★ 모르는 명령은 64(사용법 틀림)로 끝난다', r.code === 64, `code=${r.code}`);
   check('모르는 명령이라고 말해 준다', /모르는 명령/.test(r.out), '');
   check('그러면서 사용법도 보여 준다', /사용법/.test(r.out), '');
 }
@@ -331,6 +354,41 @@ trace('2-상태와진단');
   check('★ doctor 는 붙기 전 조건을 하나씩 본다',
     !d2.시간초과 && /프로필/.test(d2.out) && /주소/.test(d2.out) && /도달/.test(d2.out),
     `code=${d2.code} ${d2.out.split('\n').filter(Boolean).slice(-3).join(' / ')}`);
+}
+
+/*
+ * ── `deel config explain` 의 끝값 ──────────────────────────────────────
+ *
+ * 찾았나 못 찾았나가 `return r.이긴층 ? 0 : 0` 이었다 — 두 갈래를 적어 놓고 같은
+ * 수를 냈다. 그래서 오타를 친 칸도, 아무 데도 안 적힌 칸도 **성공**으로 끝났다.
+ * 이 명령은 스크립트에서 값의 출처를 캐묻는 데 쓰라고 만든 것이고, 그 길에서
+ * 끝값은 유일한 계약이다. 화면 글자를 grep 하게 만들면 계약이 아니다.
+ *
+ * 끝값은 CLI 로만 잴 수 있다 — 설명() 을 직접 불러서는 안 보인다.
+ */
+{
+  const 있는것 = await 띄우기(['config', 'explain', 'profiles.stub.model']);
+  check('★ 적힌 자리를 찾으면 0 으로 끝난다', 있는것.code === 0 && /스텁모델/.test(있는것.out),
+    `code=${있는것.code}`);
+  const 없는것 = await 띄우기(['config', 'explain', '아무데도없는칸']);
+  check('★★ 아무 데도 안 적힌 칸은 0 으로 끝내지 않는다',
+    없는것.code === 1 && /아무 데도 안 적혀/.test(없는것.out), `code=${없는것.code}`);
+  const 제이슨 = await 띄우기(['config', 'explain', '아무데도없는칸', '--json']);
+  check('★ --json 도 같은 끝값을 낸다 (기계가 읽는 쪽만 다르면 계약이 둘이 된다)',
+    제이슨.code === 1 && /"이긴층":null/.test(제이슨.out.replace(/\s/g, '')), `code=${제이슨.code}`);
+
+  /*
+   * 금지·허락은 **합쳐지는** 칸이라 이긴 층이 없다 (configexplain 의 합치는칸).
+   * 이긴 층만 보고 끝값을 정하면, 분명히 걸려 있는 규칙을 물었는데 「못 찾았다」 가 된다.
+   */
+  const 원래설정 = readFileSync(join(home, 'config.json'), 'utf8');
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    ...JSON.parse(원래설정), permissions: { deny: ['Bash(curl*)'] },
+  }, null, 2), 'utf8');
+  const 합침 = await 띄우기(['config', 'explain', 'permissions.deny']);
+  check('★★ 합쳐져 걸리는 칸은 이긴 층이 없어도 찾은 것이다',
+    합침.code === 0 && /합쳐져 다 걸립니다/.test(합침.out), `code=${합침.code}`);
+  writeFileSync(join(home, 'config.json'), 원래설정, 'utf8');
 }
 
 trace('3-대화화면');
@@ -438,7 +496,9 @@ trace('4-2-대화화면의나머지갈래');
   const 글 = r.out;
   check('모델 오류를 화면에 보여 준다', /오류|일부러 낸 오류|실패/.test(글), 글.slice(-300));
   check('오류가 나도 대화가 안 끝난다', r.code === 0 && !r.시간초과, `code=${r.code}`);
-  check('모델의 생각을 따로 그린다', /속으로 이렇게 생각했다|생각/.test(글), '');
+  // 앞 판의 /생각/ 은 흉내 모델의 **답**(「다 생각했습니다」)에 걸려서, 생각 줄이 안 그려져도 초록이었다.
+  // 도는 동안의 「생각 중…」 줄은 임시라 파이프에서는 안 남는다. 끝나고 남는 「생각 N자」 줄을 본다.
+  check('모델의 생각을 따로 그린다', /생각 [\d,]+자/.test(글), 글.slice(-300));
   check('할 일 목록을 그린다', /첫째 할 일/.test(글) && /둘째 할 일/.test(글), 글.slice(-300));
 }
 
@@ -513,7 +573,11 @@ trace('4-2-대화화면의나머지갈래');
     입력: ['일부러_길게 써줘', '일부러_길게 또 써줘', '일부러_길게 계속', '일부러_길게 더', '/context', '/exit'],
     제한: 90000,
   });
-  check('컨텍스트가 차면 접거나 줄인다', /접|줄|요약|오래된/.test(r.out), r.out.slice(-400));
+  // 앞 판의 /접|줄|요약|오래된/ 은 상태줄·도움말의 「줄」 한 글자에도 걸렸다 — 안 접혀도 초록이었다.
+  // 실제로 접거나 비웠다고 알리는 줄만 받는다.
+  check('컨텍스트가 차면 접거나 줄인다',
+    /오래된 도구 결과 \d+개를 접었습니다|대화 \d+개를 요약으로 접었습니다|옛 대화 \d+개를 잘라 냈습니다|앞선 대화 \d+개를 비우고/.test(r.out),
+    r.out.slice(-400));
   check('접는 중에도 끝까지 돈다', r.code === 0 && !r.시간초과, `code=${r.code}`);
 }
 
@@ -539,6 +603,29 @@ trace('4-2-대화화면의나머지갈래');
   대본초기화();
   const r = await 띄우기([], { 입력: ['/mode strict', '일부러_고쳐 줘', 'y', '/exit'], 제한: 60000 });
   check('예라고 하면 실제로 고친다', existsSync(join(work, '새로쓴것.txt')), '');
+  rmSync(join(work, '새로쓴것.txt'), { force: true });
+}
+
+{
+  /*
+   * ── ★★ 아무도 안 답했는데 저절로 승인되던 자리 (8회차 화면1526) ──────────
+   *
+   * 「실행할까요? (y/n)」 만 `끝나면` 이 없었다. repl 의 ask 는 입력이 **끝난**
+   * 경우(파이프·Ctrl+D)에 `끝나면 ?? def` 를 답으로 삼는데, 여기 def 가 'y' 다.
+   * 그래서 `echo '/mode strict' | deel` 처럼 앞자리에 사람이 없는 판에서,
+   * 물음이 뜨자마자 EOF 로 **승인**이 되고 파일이 고쳐졌다. 같은 파일의
+   * 「띄울까요?」·「나가도 될까요?」 는 이미 `끝나면: 'n'` 이다.
+   *
+   * 여기서는 답을 **한 줄도 안 넣는다.** 물음이 뜬 자리에서 stdin 이 닫힌다.
+   */
+  대본초기화();
+  rmSync(join(work, '새로쓴것.txt'), { force: true });
+  const r = await 띄우기([], { 입력: ['/mode strict', '일부러_고쳐 줘'], 제한: 60000 });
+  check('엄격 모드에서 EOF 로 물음이 끝나도 물어보긴 했다', /실행할까요/.test(r.out), r.out.slice(-300));
+  check('★★ 아무도 안 답하고 입력이 끝나면 실행을 거절한다 — 저절로 승인 안 된다',
+    !existsSync(join(work, '새로쓴것.txt')),
+    existsSync(join(work, '새로쓴것.txt')) ? 'EOF 가 y 로 읽혀 파일이 만들어졌다' : '');
+  check('EOF 로 거절해도 멀쩡히 끝난다', r.code === 0 && !r.시간초과, `code=${r.code}`);
   rmSync(join(work, '새로쓴것.txt'), { force: true });
 }
 
@@ -643,6 +730,22 @@ trace('6-설정이없을때');
   rmSync(빈집, { recursive: true, force: true });
 }
 
+{
+  // 연결이 없어 끝나도 모아 둔 소식은 낸다. 안 믿는 폴더의 설정을 안 읽은 것이 바로
+  // 연결이 없는 까닭일 수 있다 — 소식을 비우는 자리가 이 끝남보다 아래였다.
+  const 빈집 = mkdtempSync(join(tmpdir(), 'deel-cli-empty2-'));
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-cli-empty2-work-'));
+  mkdirSync(join(방, '.deel'), { recursive: true });
+  writeFileSync(join(방, '.deel', 'config.json'),
+    JSON.stringify({ profiles: [{ id: 'r', baseUrl: 'http://127.0.0.1:1', model: 'm' }] }), 'utf8');
+  const r = await 띄우기([], { 폴더: 방, env: { DEEL_HOME: 빈집 }, 제한: 20000 });
+  check('안 믿는 폴더에서도 연결이 없으면 1 로 끝난다', r.code === 1, `code=${r.code}`);
+  check('★★ 연결이 없어도 모아 둔 소식(안 믿는 폴더 설정)을 낸다', /deel trust/.test(`${r.out}${r.err ?? ''}`),
+    `${r.out}${r.err ?? ''}`.replace(/\s+/g, ' ').slice(0, 120));
+  rmSync(빈집, { recursive: true, force: true });
+  rmSync(방, { recursive: true, force: true });
+}
+
 trace('7-반입묶음');
 
 {
@@ -672,7 +775,7 @@ trace('7-반입묶음');
 trace('9-모드오타');
 {
   const 오타 = await 띄우기(['--work', 'architcet', '-p', '안녕'], { 제한: 25000 });
-  check('★ 모드 이름 오타에 멈춘다', 오타.code === 2, `code=${오타.code}`);
+  check('★ 모드 이름 오타에 멈춘다 (사용법 틀림 64)', 오타.code === 64, `code=${오타.code}`);
   check('★ 무엇을 잘못 쳤는지 적는다', /architcet/.test(오타.out + 오타.err), (오타.out + 오타.err).slice(0, 120));
   check('★ 있는 모드를 같이 보여 준다', /설계\(architect\)/.test(오타.out + 오타.err), (오타.out + 오타.err).slice(0, 200));
   check('★ 그냥 켜면 고칠 수 있는 모드라고 알려 준다',
@@ -683,6 +786,193 @@ trace('9-모드오타');
 
   const 맞는것 = await 띄우기(['--work', '설계', '--version'], { 제한: 25000 });
   check('맞는 이름은 그대로 지나간다', 맞는것.code === 0, `code=${맞는것.code}`);
+
+  /*
+   * ── `--days` 만 옛 규칙에 남아 있었다 (막판-바깥) ──────────────────────
+   *
+   * 이 판이 `--ctx` · `--max-tokens` 를 「못 읽는 숫자면 멈춘다」 로 고쳤다.
+   * 같은 줄에 있던 `--days` 는 안 고쳤다 — `parseInt(…) || 30` 이라 `abc` 도
+   * `0` 도 조용히 30일이 된다. 화면은 물어본 적 없는 「최근 30일」 을 찍고
+   * 종료코드는 0 이다. 감사 기간을 인자로 받는 배치가 엉뚱한 기간을 세어 놓고
+   * 초록불로 넘어간다.
+   */
+  const 날수오타 = await 띄우기(['stats', '--days', 'abc'], { 제한: 25000 });
+  check('★ --days 를 못 읽으면 멈춘다 (64)', 날수오타.code === 64,
+    `code=${날수오타.code} · ${(날수오타.out + 날수오타.err).replace(/\s+/g, ' ').slice(0, 120)}`);
+  check('  무엇을 잘못 쳤는지 적는다', /--days/.test(날수오타.out + 날수오타.err) && /abc/.test(날수오타.out + 날수오타.err), '');
+  const 날수영 = await 띄우기(['stats', '--days', '0'], { 제한: 25000 });
+  check('★ --days 0 도 멈춘다 — 조용히 30일로 안 돈다', 날수영.code === 64, `code=${날수영.code}`);
+  const 날수성함 = await 띄우기(['stats', '--days', '7'], { 제한: 25000 });
+  check('  성한 --days 는 그대로 돈다', 날수성함.code === 0 && /최근 7일/.test(날수성함.out),
+    `code=${날수성함.code} · ${(날수성함.out.match(/최근 [^\n]*/) ?? ['(없음)'])[0]}`);
+
+  // `--url=http://x/v1?api-version=2024-10-21` 이 두 번째 `=` 에서 잘렸다. 첫 `=` 에서만 가른다.
+  const 등호 = await 띄우기(['--work=architect=x', '-p', '안녕'], { 제한: 25000 });
+  check('★ --이름=값 은 첫 = 에서만 가른다', 등호.code === 64 && /architect=x/.test(등호.out + 등호.err),
+    `code=${등호.code} · ${(등호.out + 등호.err).replace(/\s+/g, ' ').slice(0, 120)}`);
+}
+
+trace('9b-승인모드-깃발');
+{
+  // 대화 화면도 같은 문을 지난다. 대문자로 적은 이름은 엄격으로 켜지고, 모르는 이름은 멈춘다.
+  const 모름 = await 띄우기(['--mode', '엄격'], { 제한: 20000 });
+  check('★★ 대화 화면도 모르는 승인 모드면 64 로 멈춘다', 모름.code === 64, `code=${모름.code}`);
+  const 대문자 = await 띄우기(['--mode', 'STRICT', '--no-tui'], { 입력: ['/mode', '/exit'], 제한: 40000 });
+  check('★★ --mode STRICT 로 켜면 정말 엄격이다', /● ⏸/.test(대문자.out),
+    (대문자.out.match(/[●○] ⏸[^\n]*/) ?? ['(목록 없음)'])[0]);
+}
+
+trace('9d-설정의-승인모드와-없는-뿌리');
+{
+  // 이 PC 설정에 적은 mode 는 대화 화면도 따른다. run 과 같은 차례다 (깃발 > 이 PC 설정 > auto).
+  const 모드집 = mkdtempSync(join(tmpdir(), 'deel-cli-modehome-'));
+  writeFileSync(join(모드집, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', mode: 'strict',
+    profiles: [{ id: 'stub', name: '스텁 연결', kind: 'openai', baseUrl: base, auth: 'none', model: '스텁모델', ctx: 32768, tools: true }],
+  }), 'utf8');
+  const r = await 띄우기(['--no-tui'], { 입력: ['/mode', '/exit'], env: { DEEL_HOME: 모드집 }, 제한: 40000 });
+  check('★★ 대화 화면도 이 PC 설정의 mode 를 따른다', /● ⏸/.test(r.out),
+    (r.out.match(/● [^\n]*/) ?? ['(목록 없음)'])[0]);
+  rmSync(모드집, { recursive: true, force: true });
+
+  // 없는 --root 를 대화·에디터 문도 run 처럼 거절한다. 만들어 놓고 그 안에서 일하지 않는다.
+  const 없는곳 = join(work, '없는뿌리', '안쪽');
+  const c1 = await 띄우기(['--root', 없는곳], { 제한: 20000 });
+  check('★★ 대화 화면도 없는 --root 는 거절한다', c1.code === 1 && !existsSync(join(work, '없는뿌리')),
+    `code=${c1.code} · ${(c1.out + c1.err).replace(/\s+/g, ' ').slice(0, 120)}`);
+  check('  어느 폴더인지 적는다', (c1.out + c1.err).includes('안쪽'), '');
+  const a1 = await 띄우기(['acp', '--root', 없는곳], { 제한: 20000 });
+  check('★★ acp 도 없는 --root 는 거절한다', a1.code === 1 && !existsSync(join(work, '없는뿌리')),
+    `code=${a1.code} · ${a1.err.replace(/\s+/g, ' ').slice(0, 120)}`);
+  check('  acp 는 표준출력을 안 더럽힌다', !a1.out.trim(), JSON.stringify(a1.out.slice(0, 80)));
+  rmSync(join(work, '없는뿌리'), { recursive: true, force: true });
+}
+
+trace('9e-집-폴더를-믿지-않는다');
+{
+  /*
+   * `deel trust` 는 그 폴더와 **그 아래 전부**를 믿는다. 집 폴더에서 치면 거기 받아 둔
+   * 남의 저장소가 다 믿긴다 — 열쇠받기 명령을 도구 승인보다 앞에서 돌릴 수 있는 그 설정이.
+   */
+  const 살림 = mkdtempSync(join(tmpdir(), 'deel-cli-trust-살림-'));
+  const 목록 = () => (existsSync(join(살림, 'trusted.json')) ? readFileSync(join(살림, 'trusted.json'), 'utf8') : '');
+
+  const 집방 = mkdtempSync(join(tmpdir(), 'deel-cli-trusthome-'));
+  mkdirSync(join(집방, '.deel'), { recursive: true });
+  const t1 = await 띄우기(['trust'], { 폴더: 집방, env: { DEEL_HOME: join(집방, '.deel') } });
+  check('★★ 설정 폴더를 품은 집 폴더에서는 믿기를 거절한다',
+    t1.code === 1 && !existsSync(join(집방, '.deel', 'trusted.json')), `code=${t1.code}`);
+  check('  왜 거절하는지 말한다 — 아래 저장소가 다 믿긴다', /아래/.test(t1.out + t1.err), (t1.out + t1.err).replace(/\s+/g, ' ').slice(0, 160));
+
+  const 가짜집 = mkdtempSync(join(tmpdir(), 'deel-cli-userhome-'));
+  const t2 = await 띄우기(['trust'], { 폴더: 가짜집, env: { DEEL_HOME: 살림, USERPROFILE: 가짜집, HOME: 가짜집 } });
+  check('★★ 사용자 집 폴더에서도 거절한다', t2.code === 1 && !목록().length, `code=${t2.code}`);
+
+  const 뿌리 = 경로쪼개기(tmpdir()).root;
+  const t3 = await 띄우기(['trust'], { 폴더: 뿌리, env: { DEEL_HOME: 살림 } });
+  check('★★ 드라이브 뿌리에서도 거절한다', t3.code === 1 && !목록().length, `code=${t3.code} · ${뿌리}`);
+
+  /*
+   * 집 폴더를 가리키는 정션(심볼릭 링크) 안에서 치면 지나갔다. resolve 는 링크를 안
+   * 따라가서 `…\고리` 는 집 폴더와 다른 글자였다 — 믿긴 것은 그 고리 아래 전부,
+   * 곧 집 폴더 전부다. 고리는 **가짜 집**을 가리킨다. 진짜 집은 안 건드린다.
+   * 치울 때는 고리만 뗀다 — 고리를 통째로 지우면 가리키는 쪽이 지워질 수 있다.
+   */
+  const { symlinkSync, unlinkSync, rmdirSync } = await import('node:fs');
+  const 고리방 = mkdtempSync(join(tmpdir(), 'deel-cli-trustlink-'));
+  const 고리 = join(고리방, '집고리');
+  let 고리됨 = false;
+  try { symlinkSync(가짜집, 고리, 'junction'); 고리됨 = true; } catch (err) { check('  (고리를 못 만들어 건너뜀)', true, String(err?.code)); }
+  if (고리됨) {
+    try {
+      const t5 = await 띄우기(['trust'], { 폴더: 고리, env: { DEEL_HOME: 살림, USERPROFILE: 가짜집, HOME: 가짜집 } });
+      // 거절이 **넓은 자리라서**인지까지 본다 — 믿기() 가 뒤에서 막아 「못 적었습니다」 로
+      // 1 이 나와도 사람은 왜인지, 어디로 가서 쳐야 하는지 모른다.
+      check('★★ 집 폴더를 가리키는 고리 안에서도 거절한다', t5.code === 1 && !목록().length && /믿을 저장소 폴더로 들어가서/.test(t5.out + t5.err),
+        `code=${t5.code} · ${(t5.out + t5.err).replace(/\s+/g, ' ').slice(0, 160)} · ${목록().slice(0, 80)}`);
+    } finally {
+      try { unlinkSync(고리); } catch { try { rmdirSync(고리); } catch { /* 아래에서 확인한다 */ } }
+    }
+    check('  고리만 떼고 가리키던 폴더는 그대로다', !existsSync(고리) && existsSync(가짜집), '');
+  }
+
+  const t4 = await 띄우기(['trust'], { 폴더: work, env: { DEEL_HOME: 살림 } });
+  check('  평범한 작업 폴더는 그대로 믿는다', t4.code === 0 && 목록().length > 0, `code=${t4.code}`);
+
+  for (const x of [살림, 집방, 가짜집, 고리방]) rmSync(x, { recursive: true, force: true });
+}
+
+trace('9f-검사할-폴더를-깃발로-받는가');
+/*
+ * ── `--root` 를 받는 문과 삼키는 문이 갈려 있었다 (막판-바깥) ────────────
+ *
+ * 이 판이 `load({ root })` 를 만들어 run · chat · acp 를 다 고쳤다. doctor ·
+ * stats · config explain · reset 도 `flags.root` 를 본다. 그런데 `rules` 와
+ * `trust` 두 문만 옛 길에 남아 `process.cwd()` 를 박아 놓고 있었다.
+ *
+ * `--root` 는 아는 깃발이라 「모르는 깃발」 문에서도 안 걸린다. 그래서 값은
+ * 받아 놓고 아무 일도 안 한다 — 이번 판이 깃발 읽기를 통째로 다시 짠 까닭이
+ * 바로 「깃발이 조용히 아무 일도 안 하는 것」 을 없애려는 것이었다.
+ *
+ *   deel rules check --root $REPO   ← CI 가 딴 저장소 규칙을 재고 초록을 낸다
+ *   deel trust --root $REPO         ← 믿으려던 곳 말고 켠 자리가 믿는 목록에 적힌다
+ */
+{
+  const 살림 = mkdtempSync(join(tmpdir(), 'deel-cli-root살림-'));
+  const 갑 = mkdtempSync(join(tmpdir(), 'deel-cli-root갑-'));
+  const 을 = mkdtempSync(join(tmpdir(), 'deel-cli-root을-'));
+  mkdirSync(join(갑, '.deel'), { recursive: true });
+  mkdirSync(join(을, '.deel'), { recursive: true });
+  writeFileSync(join(갑, '.deel', 'config.json'), JSON.stringify({ permissions: { deny: ['Bash(갑것*)'] } }), 'utf8');
+  writeFileSync(join(을, '.deel', 'config.json'), JSON.stringify({ permissions: { deny: ['Bash(을것*)'] } }), 'utf8');
+  await 띄우기(['trust'], { 폴더: 갑, env: { DEEL_HOME: 살림 } });
+  await 띄우기(['trust'], { 폴더: 을, env: { DEEL_HOME: 살림 } });
+
+  const r1 = await 띄우기(['rules'], { 폴더: 갑, env: { DEEL_HOME: 살림 } });
+  check('  rules 는 켠 자리의 규칙을 보여 준다', /갑것/.test(r1.out), (r1.out.match(/Bash\([^\n]*/) ?? ['(없음)'])[0]);
+  const r2 = await 띄우기(['rules', '--root', 을], { 폴더: 갑, env: { DEEL_HOME: 살림 } });
+  check('★ rules 가 --root 로 준 폴더의 규칙을 본다', /을것/.test(r2.out) && !/갑것/.test(r2.out),
+    (r2.out.match(/Bash\([^\n]*/) ?? ['(없음)'])[0]);
+
+  const 살림2 = mkdtempSync(join(tmpdir(), 'deel-cli-root살림2-'));
+  const t1 = await 띄우기(['trust', '--root', 을], { 폴더: 갑, env: { DEEL_HOME: 살림2 } });
+  const 적힌것 = await 띄우기(['trust', '--list'], { 폴더: 갑, env: { DEEL_HOME: 살림2 } });
+  check('★ trust 가 --root 로 준 폴더를 믿는다 — 켠 자리가 아니라',
+    t1.code === 0 && 적힌것.out.includes(을) && !적힌것.out.includes(갑),
+    `code=${t1.code} · ${적힌것.out.replace(/\s+/g, ' ').slice(0, 200)}`);
+
+  // 없는 폴더를 믿는 목록에 적지 않는다. 적어 두면 그 이름으로 폴더가 생기는 날 바로 믿긴다.
+  const 없는곳 = join(을, '없는저장소');
+  const t2 = await 띄우기(['trust', '--root', 없는곳], { 폴더: 갑, env: { DEEL_HOME: 살림2 } });
+  const 적힌것2 = await 띄우기(['trust', '--list'], { 폴더: 갑, env: { DEEL_HOME: 살림2 } });
+  check('★ 없는 --root 는 믿는 목록에 안 적는다', t2.code !== 0 && !적힌것2.out.includes('없는저장소'),
+    `code=${t2.code} · ${(t2.out + t2.err).replace(/\s+/g, ' ').slice(0, 140)}`);
+
+  for (const x of [살림, 살림2, 갑, 을]) rmSync(x, { recursive: true, force: true });
+}
+
+trace('9c-설정이-깨졌을때');
+{
+  // doctor 가 깨진 설정을 「✓ 설정 파일」 로 적고 까닭은 한 줄도 안 냈다.
+  const 깨진집 = mkdtempSync(join(tmpdir(), 'deel-cli-broken-'));
+  writeFileSync(join(깨진집, 'config.json'), '{ "profiles": [ ,', 'utf8');
+  const d = await 띄우기(['doctor'], { env: { DEEL_HOME: 깨진집 }, 제한: 20000 });
+  check('★★ doctor 가 깨진 설정을 ✗ 로 적는다', d.code === 1 && /✗ 설정 파일/.test(d.out), d.out.replace(/\s+/g, ' ').slice(0, 200));
+  check('★★ doctor 가 왜 못 읽었는지 적는다', /JSON/.test(d.out), d.out.replace(/\s+/g, ' ').slice(0, 200));
+  check('  ✓ 설정 파일 이라고 하지 않는다', !/✓ 설정 파일/.test(d.out), '');
+  rmSync(깨진집, { recursive: true, force: true });
+
+  // 표준입력이 닫힌 채 setup — 목록 한가운데서 0 으로 끝나고 설정도 없었다.
+  const 빈집 = mkdtempSync(join(tmpdir(), 'deel-cli-setup-'));
+  const s = await 띄우기(['setup'], { env: { DEEL_HOME: 빈집 }, 제한: 20000 });
+  check('★★ 답할 수 없는 setup 은 1 로 끝난다', s.code === 1 && !s.시간초과, `code=${s.code}`);
+  check('  설정을 안 남긴다', !existsSync(join(빈집, 'config.json')), '');
+  check('  왜 끝났는지 적는다', /표준입력/.test(s.out + s.err), (s.out + s.err).replace(/\s+/g, ' ').slice(-160));
+  rmSync(빈집, { recursive: true, force: true });
+
+  // `sbom --only bogus` 는 두 장을 다 내고 0 이었다.
+  const b = await 띄우기(['sbom', '--only', 'bogus'], { 제한: 40000 });
+  check('★ sbom --only 에 모르는 이름이면 64 로 멈춘다', b.code === 64 && !b.out.trim(), `code=${b.code} · ${b.out.slice(0, 60)}`);
 }
 
 trace('8-치움');

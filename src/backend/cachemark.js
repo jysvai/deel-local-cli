@@ -123,7 +123,8 @@ export const 조각표 = Symbol.for('deel.시스템조각');
 const 붙일수있나 = (b) => {
   const t = b?.type;
   if (t === 'thinking' || t === 'redacted_thinking') return false;
-  if (t === 'text') return String(b.text ?? '').length > 0;
+  // 빈칸만 든 글도 빈 글이다 — 서버는 그런 글 블록 자체를 거절한다 (2.0.0 6회차 캐시표식6).
+  if (t === 'text') return String(b.text ?? '').trim().length > 0;
   return t === 'tool_result' || t === 'tool_use' || t === 'image' || t === 'document';
 };
 
@@ -159,8 +160,18 @@ export const 닻블록 = 14;
 /** 대화가 이 블록 수를 넘으면 닻을 하나 더 박는다. 그 아래면 꼬리 하나로 닿는다. */
 export const 닻문턱 = 20;
 
-/** 메시지 하나가 몇 블록인가. 글 한 덩이짜리는 1블록이다. */
-const 블록수 = (m) => (Array.isArray(m?.content) ? m.content.length : 1);
+/**
+ * 메시지 하나가 몇 블록인가. 글 한 덩이짜리는 1블록이다.
+ *
+ * OpenAI 꼴에서 도구를 부른 차례는 부름이 content 가 아니라 `tool_calls` 에 있고, 서버 쪽에서는
+ * 부름 하나하나가 블록이 된다. 1블록으로 세면 부름이 셋인 대화에서 닻→꼬리가 24블록이 되어
+ * 창(20) 밖에 박혔다 (2.0.0 6회차 캐시표식6). 글과 부름을 같이 센다.
+ */
+const 블록수 = (m) => {
+  if (Array.isArray(m?.content)) return m.content.length;
+  const 부름 = Array.isArray(m?.tool_calls) ? m.tool_calls.length : 0;
+  return (m?.content ? 1 : 0) + 부름 || 1;
+};
 
 /** 이 배열이 통틀어 몇 블록인가. */
 const 통블록 = (ms) => ms.reduce((n, m) => n + 블록수(m), 0);
@@ -197,7 +208,16 @@ export function 블록에붙이기(msg, 칸 = 'cache_control') {
  * @param {boolean} 표식쓰나
  */
 export function 시스템블록(조각들, 표식쓰나, 칸 = 'cache_control', { 긴수명 = true } = {}) {
-  const 있는것 = (조각들 ?? []).map((x) => String(x ?? '')).filter((x) => x.length);
+  /*
+   * 빈칸만 든 조각은 **없는 것으로 친다.**
+   *
+   * 잣대가 `x.length` 였다. 그러면 `'   '` · `'\n'` 이 그대로 지나 빈칸만 든 글
+   * 블록이 되는데, Anthropic 은 그것을 400 으로 튕긴다 — 화면에서는 열쇠가 틀린 것과
+   * 구별이 안 되는 400 이다. 조각이 전부 빈칸이면 **그 첫 조각에 캐시 표식까지** 붙어
+   * 나갔다. 조각 안의 빈칸은 안 건드린다 — 글자를 한 자라도 바꾸면 앞머리가 통째로
+   * 새로 엮인다(아래 굳은끝 머리말).
+   */
+  const 있는것 = (조각들 ?? []).map((x) => String(x ?? '')).filter((x) => x.trim().length);
   if (!있는것.length) return null;
   if (!표식쓰나) return 있는것.join('');
   const 굳은끝 = 0;   // 첫 조각이 굳은 부분이다
@@ -281,7 +301,13 @@ function 닻자리(ms, 꼬리) {
   let 센것 = 0;
   for (let i = 꼬리; i >= 0; i--) {
     센것 += 블록수(ms[i]);
-    if (센것 >= 닻블록) return i;
+    /*
+     * 꼬리 **한 메시지**가 벌써 닻블록을 넘으면(병렬 도구 결과 수십 개) 꼬리를 고르면 안 된다 —
+     * 표식은 메시지의 마지막 블록에만 붙으니 그건 꼬리 표식과 같은 자리라 닻이 사라지고, 꼬리의
+     * 20블록 창은 그 메시지 안에서 끝나 앞 요청이 굳힌 자리에 못 닿는다 (2.0.0 6회차 캐시표식6).
+     * 한 칸 앞에 박으면 그 닻이 앞 요청의 꼬리를 읽어 온다.
+     */
+    if (센것 >= 닻블록) return i === 꼬리 ? Math.max(0, i - 1) : i;
   }
   return 0;
 }

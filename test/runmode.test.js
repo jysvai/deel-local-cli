@@ -142,20 +142,21 @@ trace('4-켜는-자리마다-이-문을-지나나');
  * 도중에 갈아타기(commands 의 /model). 하나라도 빠지면 그 길로 그냥 나간다.
  */
 const 소스 = Object.fromEntries(
-  ['src/repl.js', 'src/oneshot.js', 'src/acp/serve.js', 'src/commands.js', 'src/setup.js']
+  ['src/repl.js', 'src/oneshot.js', 'src/acp/serve.js', 'src/commands/model.js', 'src/setup.js']
     .map((f) => [f, readFileSync(new URL(`../${f}`, import.meta.url), 'utf8')]));
 
 {
   for (const f of ['src/repl.js', 'src/oneshot.js', 'src/acp/serve.js']) {
     check(`${f} 가 문을 지난다`, /나갈수있나\(실행모드/.test(소스[f]));
     // 허가를 물어야 하는데 그냥 열어 버리면 문을 지난 것이 아니다.
+    // 에디터는 탭마다 연 주소 전부를 한 번에 연다(acp/serve.js 의 열린주소 · 6회차 N9) — 그 꼴도 「묻고 나서 연다」 다.
     check(`${f} 는 물어야 할 때 안 연다`,
-      /물어볼까[\s\S]{0,700}?allowEndpoint\(conn\.base\)/.test(소스[f])
+      /물어볼까[\s\S]{0,700}?allowEndpoint\((conn\.base|\[\.\.\.열린주소\])\)/.test(소스[f])
       || /if \(!나감\.물어볼까\) allowEndpoint/.test(소스[f]));
   }
-  check('/model 로 갈아탈 때도 지난다', /나가도되나묻기\(session, p\)/.test(소스['src/commands.js']));
+  check('/model 로 갈아탈 때도 지난다', /나가도되나묻기\(session, p\)/.test(소스['src/commands/model.js']));
   check('모델만 바꿀 때도 지난다',
-    (소스['src/commands.js'].match(/if \(!await 나가도되나묻기\(session, p\)\) return;/g) ?? []).length === 2);
+    (소스['src/commands/model.js'].match(/if \(!await 나가도되나묻기\(session, p\)\) return;/g) ?? []).length === 2);
   check('setup 이 「나가도 되나」 를 받아 적는다',
     /바깥인가\(found\.base\)/.test(소스['src/setup.js']) && /online: true/.test(소스['src/setup.js']));
 
@@ -365,6 +366,21 @@ trace('6-깃발이-붙어-있나');
 
   const comp = readFileSync(new URL('../src/completion.js', import.meta.url), 'utf8');
   check('탭 완성에도 있다', /'--online'/.test(comp));
+}
+
+trace('6b-글자로-적은-봉인');
+
+{
+  /*
+   * 깃발은 `'true'` 를 받는데 설정은 안 받았다. 그래서 `"offline": "true"` 라고
+   * 적은 사람의 봉인이 `--online` 하나에 풀려 바깥으로 나갔다. 봉인은 언제나
+   * 이겨야 한다 — 적는 모양 하나로 지는 자물쇠는 자물쇠가 아니다.
+   */
+  check('★★ 설정의 offline:"true" 도 봉인이다', 봉인됐나({ cfg: { offline: 'true' } }) === true);
+  check('★★ 프로필의 offline:"true" 도 봉인이다', 봉인됐나({ prof: { offline: 'true' } }) === true);
+  check('  "false" 는 봉인이 아니다', 봉인됐나({ cfg: { offline: 'false' }, prof: { offline: 'false' } }) === false);
+  check('★ 글자 봉인도 --online 을 이긴다',
+    지금모드({ online: true, offline: 봉인됐나({ cfg: { offline: 'true' } }) }).영 === 'offline');
 }
 
 trace('7-끝');

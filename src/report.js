@@ -1,7 +1,7 @@
 // 진단 결과를 화면에 표로 그리고, "이걸로 돌릴 수 있는지" 판정한다.
 import { c, say, rule, pad, width, mark } from './ui/ansi.js';
 import { 주소가리기 } from './safety/secrets.js';
-import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
+import { 프록시고르기, 프록시설정, 프록시비켜가나 } from './backend/proxy.js';
 import { 규격이름 } from './backend/adapter.js';
 import { 보관방식 } from './safety/keystore.js';
 import { load, activeProfile } from './config.js';
@@ -13,11 +13,12 @@ function 열쇠줄() {
 
 // 이 주소로 갈 때 거칠 프록시를 한 줄로. 안 거치면 null — 그때는 줄 자체를 안 만든다.
 // 적어 놨는데 못 쓰는 것(socks5 등)이면 그 까닭을 적는다 — 진단 보고서에서 제일 먼저 볼 줄이다.
+// 다만 루프백·NO_PROXY 처럼 쓸 만했어도 안 거칠 주소면 적지 않는다 — 상관없는 프록시를 탓하게 된다.
 function 프록시줄(base) {
   const p = 프록시고르기(base);
   if (p) return `${p.url} (${p.출처})`;
   const 탈 = 프록시설정().탈;
-  return 탈 ? `못 씀 — ${탈}` : null;
+  return 탈 && !프록시비켜가나(base) ? `못 씀 — ${탈}` : null;
 }
 
 const ICON = { ok: mark.ok, no: mark.no, warn: mark.warn, skip: c.gray('·') };
@@ -79,7 +80,11 @@ export function verdict(facts, results) {
 
   if (get('json') !== 'ok') notes.push('구조적 출력이 약합니다 — 편집 형식을 프롬프트로 강제하고 검사를 붙입니다.');
   if (get('stream') !== 'ok') notes.push('스트리밍이 없습니다 — 화면은 스피너로 대체하고 기능은 동일하게 갑니다.');
+  // 옆줄(json·stream)과 달리 여기만 `=== 'warn'` 이라, **제일 나쁜 판**(system 을 붙이면
+  // 요청 자체가 실패하는 게이트웨이)에서 판정 글이 한 마디도 안 했다. 표는 길고 판정 글은
+  // 짧아서 사람은 판정 글만 읽는다 — 규칙도 스킬도 안 걸리는 연결이 「준비됨」 으로 나갔다.
   if (get('system') === 'warn') notes.push('시스템 지시를 약하게 따릅니다 — 스킬을 적게, 짧게 올려야 합니다.');
+  else if (get('system') !== 'ok') notes.push('시스템 메시지를 붙이면 요청이 실패합니다 — 규칙·스킬이 하나도 안 걸립니다. 게이트웨이가 system 역할을 받는지 확인이 필요합니다.');
   if (get('think') === 'ok') notes.push('추론 강도가 모델 층에서 적용됩니다 — /think 로 바로 조절됩니다.');
   else notes.push('추론 강도는 루프 층(계획 강제·도구 호출 상한·자기검증 횟수)으로 조절합니다.');
   if (!facts.ctx) notes.push('컨텍스트 길이를 서버가 안 알려줍니다 — 설정에서 직접 넣어야 합니다.');

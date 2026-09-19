@@ -2,13 +2,13 @@
 //
 // 남의 패키지를 붙이지 않는다. 필요한 숫자는 전부 session 이 이미 갖고 있고,
 // 화면 그리기는 ansi.js 만 쓴다. 반입 심사에 새로 설명할 것이 늘지 않게 하려는 뜻이다.
-import { c, 눈금게이지, width, clip, cols, mark } from './ansi.js';
+import { c, 눈금게이지, width, clip, cols, mark, 화면글거르기 } from './ansi.js';
 import { 마지막할당량, 할당량말, 아슬아슬한가 } from '../backend/quota.js';
 import { 세션요금, 돈셈, 돈말 } from '../backend/price.js';
 import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite, 보일이름 } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
-import { 프록시고르기, 프록시설정 } from '../backend/proxy.js';
+import { 프록시고르기, 프록시설정, 프록시비켜가나 } from '../backend/proxy.js';
 import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
 import { 말, 언어 } from '../i18n/index.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
@@ -155,8 +155,10 @@ export const SEGMENTS = {
     },
   },
 
-  // 지금 무슨 일을 하는 중인가. 파일을 못 바꾸는 모드면 자물쇠를 같이 그린다 —
-  // 계획만 세우는 중인지 실제로 고치는 중인지 한눈에 보여야 한다.
+  // 지금 무슨 일을 하는 중인가. 파일을 못 바꾸는 모드면 이름을 초록으로 바꾸고
+  // 뒤에 「읽기만」(영어는 read-only)을 덧붙인다 — 계획만 세우는 중인지 실제로
+  // 고치는 중인지 한눈에 보여야 한다. 자물쇠 같은 기호는 안 쓴다: 터미널마다
+  // 한 칸이 되기도 두 칸이 되기도 해서 상태줄 폭 셈이 어긋난다(ui/motion.js 머리말).
   work: {
     get desc() { return 말('seg.work'); },
     make: (s) => {
@@ -338,6 +340,37 @@ export const SEGMENT_GROUPS = [
 // 옛 이름. 조각 이름을 직접 넘기던 자리(검사·설정)가 그대로 돌게 남긴다.
 export const DEFAULT_SEGMENTS = SEGMENT_GROUPS.flat();
 
+/*
+ * 자리가 모자랄 때 **접는 차례.** 한 칸이 조각 이름 **배열**이고, 그 칸에 적힌
+ * 이름은 다 같이 빠진다(아래 statusLine 의 뺄것). 덩이를 그대로 옮겨 적은 칸도
+ * 있고 덩이의 일부만 적은 칸도 있다 — 마지막 `['work','think']` 이 그렇다.
+ * 첫 이름 하나로 덩이를 가리키는 것이 아니다. 그랬다면 같이 빠져야 할 `verify`·
+ * `undoable` 이 남아, 한 덩이가 반만 접힌 줄(`✓3 ↩2` 만 남은 줄)이 나온다.
+ *
+ * 여태는 차례가 없었다 — 그냥 뒤에서부터 떨궜다. 그런데 덩이 순서는 '읽기
+ * 좋은 순서' 로 정한 것이지 '덜 급한 순서' 가 아니다. 그래서 40~60칸으로
+ * 좁힌 창(screen.js 가 받는 폭이다)에서 이렇게 됐다 —
+ *
+ *   ▏⌂ 내폴더 · 모델 ▏ ▰▰▱▱▱┆▱▱┆▱ 18%
+ *
+ * 컨텍스트 게이지는 남고 `⏵⏵ 자동` 이 사라진다. 그 한 조각이 **내 파일이
+ * 안 물어보고 바뀌는가**를 말하는 자리다. 게이지는 지금 몰라도 되고 아래
+ * contextWarning 이 급해지면 따로 말해 주는데, 승인 방식은 여기 말고 적히는
+ * 데가 없다. 이 파일이 두 군데(seg.mode 머리말·아래 급 접기)에 「둘 중 하나를
+ * 접어야 하면 언제나 이쪽」 이라고 적어 두고, 정작 떨구는 고리만 그 반대였다.
+ *
+ * 그래서 급·게이지가 승인 방식보다 **먼저** 접힌다. 폴더·모델은 늘 남는다.
+ * `mode` 는 이 차례에 아예 없다 — 제 발로는 안 접힌다.
+ */
+export const 접는차례 = [
+  ['tok', 'cost'],
+  ['edits', 'verify', 'undoable'],
+  ['ctx', 'grade'],
+  // 같은 덩이라도 여기까지다. 무슨 판인지·얼마나 생각하는지는 지금 몰라도
+  // 되고, 승인 방식은 이 줄 말고는 적히는 데가 없다.
+  ['work', 'think'],
+];
+
 /**
  * 이 급을 화면에 낼 값어치가 있나.
  *
@@ -376,8 +409,11 @@ function 참값(s) {
 /**
  * 경계 한 글자.
  *
- * 못 읽는 주소면 아무것도 안 그린다. 여기서 애매하면 **초록을 안 쓴다** —
- * 초록은 '안 나간다' 는 약속이고, 확인 못 한 것을 확인한 낯으로 내밀면 안 된다.
+ * 못 읽는 주소면 회색 `?` 를 그린다 — 자리를 비우지는 않는다. 비우면 한 칸이
+ * 사라져 옆 조각이 통째로 밀리고, 무엇보다 '경계를 아직 모른다' 는 말을 할
+ * 자리가 없어진다(창 크기를 모를 때 `32k?` 로 적는 것과 같은 규칙이다).
+ * 여기서 애매하면 **초록을 안 쓴다** — 초록은 '안 나간다' 는 약속이고,
+ * 확인 못 한 것을 확인한 낯으로 내밀면 안 된다.
  */
 function 경계표(s) {
   let 로컬 = null;
@@ -413,7 +449,11 @@ function base(p) {
   return parts[parts.length - 1] ?? '~';
 }
 
-// 12345 → 12.1k.  상태줄은 자리가 없다.
+// 5678 → 5.5k · 12345 → 12k · 131072 → 128k.  상태줄은 자리가 없다.
+//
+// 10k 아래에서만 소수 한 자리를 붙인다. 넷째 자리가 붙는 순간(10240 부터)
+// 소수까지 적으면 다섯 칸이 되고, 좁은 터미널에서 그 한 칸이 승인 방식을
+// 밀어낸다. 그래서 12345 는 '12.1k' 가 아니라 '12k' 다.
 //
 // 1000 이 아니라 1024 로 나눈다. 컨텍스트 길이는 죄다 2의 거듭제곱이라
 // 1000 으로 나누면 131,072 가 '131k' 로 나온다 — 아무도 그렇게 안 부른다.
@@ -446,7 +486,11 @@ export function statusLine(session, { segments = null, max = cols() - 2 } = {}) 
         if (뺄것?.has(k)) return null;
         const seg = SEGMENTS[k];
         if (!seg) return null;
-        return 짧게 && seg.short ? seg.short(session) : seg.make(session);
+        /*
+         * 조각에는 바깥 글자가 실린다 — 서버가 알려 준 모델 이름, 사람이 지은 폴더·갈래 이름. 상태줄은 say 를
+         * 안 지나고 입력 상자가 곧장 그리므로 여기서 뗀다(ansi.js 화면글거르기). 조각마다 떼야 폭을 뗀 뒤로 잰다.
+         */
+        return 화면글거르기(짧게 && seg.short ? seg.short(session) : seg.make(session), { 색남김: true });
       })
       .filter((x) => x != null && x !== '')
       .join(안쪽))
@@ -486,7 +530,23 @@ export function statusLine(session, { segments = null, max = cols() - 2 } = {}) 
    */
   if (!맞나(parts) && !segments) parts = 그리기(true, new Set(['grade']));
 
-  // 여전히 모자라면 뒤에서부터 떨군다. 앞쪽(폴더·모델·컨텍스트)이 마지막까지 남는다.
+  /*
+   * 여전히 모자라면 덩이를 통째로 뺀다. **뺄 차례는 위 접는차례 가 정한다.**
+   *
+   * 여기가 뒤에서부터 떨구던 자리다. 덩이 순서상 `tok/cost` · `edits/…` 다음이
+   * `work/think/mode` 라, 컨텍스트 게이지가 멀쩡히 서 있는 채로 승인 방식이
+   * 먼저 사라졌다 — 바로 위 두 토막이 하지 말라고 적어 둔 바로 그 일이다.
+   */
+  if (!segments) {
+    const 뺄것 = new Set(['grade']);
+    for (const 묶음 of 접는차례) {
+      if (맞나(parts)) break;
+      for (const k of 묶음) 뺄것.add(k);
+      parts = 그리기(true, 뺄것);
+    }
+  }
+
+  // 조각 이름을 직접 준 자리(옛 방식)는 순서를 사람이 정한 것이라 뒤에서 떨군다.
   while (parts.length > 1 && !맞나(parts)) parts.pop();
 
   /*
@@ -571,8 +631,9 @@ export function headerLines(session, found, 상자쓰나 = true) {
     const 프록시 = 프록시고르기(conn.base);
     if (프록시) 목적지 += c.gray(`  ${말('head.viaProxy', { 프록시: `${프록시.host}:${프록시.port}` })}`);
     // 적어 놨는데 못 쓰는 프록시(socks5 등)는 여기서 한 번은 말해야 한다 — 조용히 직접 가면
-    // 사람은 프록시를 탄 줄 알고, 막히면 엉뚱한 데를 고친다.
-    else if (프록시설정().탈) 목적지 += c.yellow(`  ${말('head.proxyBad')}`);
+    // 사람은 프록시를 탄 줄 알고, 막히면 엉뚱한 데를 고친다. 어차피 안 거칠 주소(이 PC · NO_PROXY)면
+    // 말하지 않는다 — 로컬 모델이 안 붙는 까닭을 상관없는 프록시에서 찾게 된다 (2.0.0 6회차 RP1b).
+    else if (프록시설정().탈 && !프록시비켜가나(conn.base)) 목적지 += c.yellow(`  ${말('head.proxyBad')}`);
   } catch { 목적지 = c.gray(String(conn.base)); }
 
   /*
@@ -634,7 +695,14 @@ export function headerLines(session, found, 상자쓰나 = true) {
     lines.push(`${빈자리}${c.gray(말('head.shiftTab'))}${c.gray(말('head.shiftTabHint'))}${c.gray(말('head.tabHint'))}`);
     lines.push(`${빈자리}${c.gray(말('head.newlineHint'))}`);
   }
-  if (found.skills.length || found.commands.length) {
+  /*
+   * 플러그인도 조건에 든다.
+   *
+   * 이 줄이 플러그인 개수를 적는 **유일한 자리**인데, 설 조건에는 스킬·명령만
+   * 있었다. 그래서 스킬도 명령도 없이 플러그인만 깐 사람에게는 깔았다는 사실
+   * 자체가 화면 어디에도 안 나왔다 — 안 읽힌 것인지 없는 것인지 알 길이 없다.
+   */
+  if (found.skills.length || found.commands.length || found.plugins.length) {
     lines.push(`${c.gray(자리(말('head.thisPC')))}${c.white(말('head.skills', { n: found.skills.length }))}${c.gray(' · ')}${c.white(말('head.commands', { n: found.commands.length }))}${c.gray(' · ')}${c.white(말('head.plugins', { n: found.plugins.length }))}`);
   }
   /*

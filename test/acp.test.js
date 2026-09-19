@@ -18,9 +18,9 @@
 //   · 승인을 못 물어봤을 때 마음대로 하지 않는가
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { 줄나누기, 연결, 오류번호, 모르는방법오류 } from '../src/acp/jsonrpc.js';
 import {
@@ -155,6 +155,22 @@ trace('2-JSON-RPC');
     check('그때 id 는 null', 답?.id === null, JSON.stringify(답));
   }
 
+  /*
+   * 묶음(batch) — `[{…}]` 한 줄.
+   *
+   * 배열도 typeof 로는 'object' 라 「객체가 아닙니다」 갈래를 지나쳤고, method 가
+   * 없으니 id 도 없는 것으로 읽혀 **아무 답도 안 나갔다.** 저쪽은 영영 기다린다.
+   * 우리는 묶음을 안 받는다 — 안 받는다고 답한다.
+   */
+  {
+    const { 관, 파싱 } = 만들기(() => ({ ok: 1 }));
+    관.받았다('[{"jsonrpc":"2.0","id":99,"method":"뭐든","params":{}}]');
+    await 잠깐();
+    const 답 = 파싱()[0];
+    check('★★ 묶음 한 줄에도 -32600 으로 답한다', 답?.error?.code === 오류번호.잘못된요청 && 답?.id === null,
+      JSON.stringify(파싱()));
+  }
+
   {
     const { 관, 파싱 } = 만들기(() => { throw new Error('안쪽에서 터졌다'); });
     관.받았다('{"jsonrpc":"2.0","id":2,"method":"뭐든"}');
@@ -189,6 +205,122 @@ trace('2-JSON-RPC');
     let 깨졌나 = false;
     try { await 기다림; } catch { 깨졌나 = true; }
     check('관을 닫으면 기다리던 요청이 깨진다', 깨졌나);
+  }
+
+  /*
+   * ── ★ (사냥5 H5-9) 첫 줄 앞에 BOM 이 붙어 왔다 ──────────────────────────
+   *
+   * .NET 의 `StreamWriter(Encoding.UTF8)` 같은 것은 첫 바이트에 BOM(EF BB BF) 을
+   * 붙인다. 그러면 첫 줄 = initialize 가 JSON 으로 안 풀려 -32700 · id null 로
+   * 답했고, 저쪽은 initialize 의 답을 영영 기다렸다. 붙자마자 멈추는 꼴이다.
+   */
+  {
+    const { 관, 파싱 } = 만들기(() => ({ ok: 1 }));
+    const 먹이기 = 줄나누기((줄) => 관.받았다(줄));
+    const BOM = String.fromCharCode(0xfeff);
+    먹이기(Buffer.from(BOM + '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n', 'utf8'));
+    await 잠깐();
+    check('★ (사냥5 H5-9) 첫 줄 앞에 BOM 이 붙어 와도 그 요청에 답한다',
+      파싱()[0]?.id === 1 && 파싱()[0]?.result?.ok === 1, JSON.stringify(파싱()));
+  }
+
+  /*
+   * ── ★ (사냥5 H5-10) method 가 빈 글인 요청을 「답」 으로 읽었다 ────────────
+   *
+   * `!온것.method` 는 빈 글도 거짓으로 친다. 그래서 `{"id":77,"method":""}` 가
+   * 우리 요청에 대한 답 갈래로 가서 조용히 버려졌고 — 77번에는 아무 답도 안 나갔다.
+   * 같은 번호의 요청을 우리가 기다리고 있었으면 그 요청이 엉뚱하게 풀리기도 한다.
+   */
+  {
+    const { 관, 나간것 } = 만들기(() => ({ ok: 1 }));
+    const 기다림 = 관.요청('저쪽에건것', {});
+    let 풀렸나 = false;
+    기다림.then(() => { 풀렸나 = true; }, () => {});
+    관.받았다('{"jsonrpc":"2.0","id":77,"method":""}');
+    관.받았다('{"jsonrpc":"2.0","id":1,"method":""}');
+    await 잠깐();
+    const 답들 = 나간것.map((s) => JSON.parse(s)).filter((x) => !('method' in x));
+    check('★ (사냥5 H5-10) method 가 빈 글이면 -32600 으로 그 id 에 답한다',
+      답들.some((x) => x.id === 77 && x.error?.code === 오류번호.잘못된요청), JSON.stringify(답들));
+    check('★ (사냥5 H5-10) 빈 method 줄이 기다리던 우리 요청을 풀지 않는다', !풀렸나, JSON.stringify(답들));
+  }
+
+  /*
+   * ── ★ (8회차 ACP-3) method 칸이 **아예 없는** 줄을 답으로 읽었다 ───────────
+   *
+   * 위 H5-10 은 빈 method 만 막았다. 칸째 없으면 `!('method' in 온것)` 이 참이라
+   * 그대로 답 갈래로 갔고, result 칸이 없으니 기다리던 우리 요청이 **undefined 로
+   * 풀렸다.** 승인 묻기가 이 길로 오므로, 답이 아닌 줄 하나가 승인 결과를 「아무것도
+   * 안 고름」 으로 만든다. 그리고 그 id 에는 아무 답도 안 나가 저쪽도 영영 기다린다.
+   * 답인지 아닌지는 result·error 칸이 정한다 (JSON-RPC 2.0).
+   */
+  {
+    const { 관, 나간것 } = 만들기(() => ({ ok: 1 }));
+    let 풀린것 = '아직';
+    관.요청('저쪽에건것', {}).then((v) => { 풀린것 = `풀림:${JSON.stringify(v)}`; }, () => { 풀린것 = '깨짐'; });
+    const 건것 = JSON.parse(나간것[0]);
+    관.받았다(JSON.stringify({ jsonrpc: '2.0', id: 건것.id, params: {} }));
+    await 잠깐();
+    /*
+     * 「안 푼다」 는 **값으로 안 푼다** 는 뜻이다 (사냥6 막판-뒷단).
+     *
+     * 여기가 `=== '아직'` 이라 「깨뜨리지도 마라」 까지 못 박고 있었다 — 그러면 저쪽이
+     * 규격을 어긴 줄 하나를 보냈을 때 우리 기다림이 **영영 안 끝나는 것**이 옳은 것이
+     * 된다. 이 블록 머리말이 하지 말자고 적은 「저쪽도 영영 기다린다」 의 우리 쪽 판이다.
+     */
+    check('★ (8회차 ACP-3) result·error 가 없는 줄은 기다리던 우리 요청을 값으로 안 푼다', !/^풀림/.test(풀린것), 풀린것);
+    check('★★★ (사냥6) 그렇다고 영영 매달려 있지도 않는다 — 까닭을 붙여 깨뜨린다', 풀린것 === '깨짐', 풀린것);
+    const 답들 = 나간것.slice(1).map((s) => JSON.parse(s));
+    check('★ (8회차 ACP-3) method 칸이 없는 요청에는 그 id 로 -32600 을 답한다',
+      답들.some((x) => x.id === 건것.id && x.error?.code === 오류번호.잘못된요청), JSON.stringify(답들));
+  }
+
+  /*
+   * (ACP-3 곁) 빈 method 에 result 가 같이 붙어 온 줄.
+   *
+   * 「id 와 method 가 같이 있으면 요청이다」(H5-10) 와 「result·error 가 있어야 답이다」
+   * (ACP-3)가 부딪치는 유일한 자리다. 앞의 것이 이긴다 — 안 그러면 빈 method 한 글자로
+   * 남이 우리 승인 물음을 제 값으로 풀어 버릴 수 있다.
+   */
+  {
+    const { 관, 나간것 } = 만들기(() => ({ ok: 1 }));
+    let 풀린것 = '아직';
+    관.요청('승인묻기', {}).then((v) => { 풀린것 = `풀림:${JSON.stringify(v)}`; }, () => { 풀린것 = '깨짐'; });
+    const 건것 = JSON.parse(나간것[0]);
+    관.받았다(JSON.stringify({ jsonrpc: '2.0', id: 건것.id, method: '', result: { 훔친것: 1 } }));
+    await 잠깐();
+    check('★ 빈 method 에 result 가 붙어 와도 기다리던 요청을 안 푼다', 풀린것 === '아직', 풀린것);
+    check('  그 줄에는 -32600 으로 답한다',
+      나간것.slice(1).map((s) => JSON.parse(s)).some((x) => x.id === 건것.id && x.error?.code === 오류번호.잘못된요청),
+      JSON.stringify(나간것.slice(1)));
+  }
+
+  // error 로 온 진짜 답은 그대로 그 요청을 깨뜨려야 한다 (위 ACP-3 의 반대쪽).
+  {
+    const { 관, 나간것 } = 만들기(() => ({ ok: 1 }));
+    let 끝난것 = '아직';
+    관.요청('또건것', {}).then(() => { 끝난것 = '풀림'; }, (e) => { 끝난것 = `깨짐:${e.code}`; });
+    관.받았다(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(나간것[0]).id, error: { code: -32601, message: '모름' } }));
+    await 잠깐();
+    check('(ACP-3 짝) error 로 온 답은 그 요청을 깨뜨린다', 끝난것 === '깨짐:-32601', 끝난것);
+  }
+
+  /*
+   * ── ★ (6회차 규약6ai-b J2) id 가 null 인 요청을 알림으로 쳤다 ──────────────
+   *
+   * 알림은 id **칸이 없는** 요청이다(JSON-RPC 2.0). 위 H5-10 머리말도 「id 와 method 가
+   * 같이 있으면 요청이다」 라고 적었다. null 을 알림으로 치면 답이 한 줄도 안 나가
+   * 저쪽이 영영 기다린다.
+   */
+  {
+    const { 관, 나간것 } = 만들기(() => ({ ok: 1 }));
+    관.받았다('{"jsonrpc":"2.0","id":null,"method":"뭐든"}');
+    관.받았다('{"jsonrpc":"2.0","method":"알림이다"}');
+    await 잠깐();
+    const 답들 = 나간것.map((s) => JSON.parse(s));
+    check('★ (6회차 규약6ai-b J2) id 가 null 인 요청에도 id:null 로 답한다',
+      답들.some((x) => x.id === null && x.result?.ok === 1), JSON.stringify(답들));
+    check('(J2 짝) id 칸이 없는 알림에는 여전히 답하지 않는다', 답들.length === 1, JSON.stringify(답들));
   }
 
   // 내보내는 줄에 개행이 섞이면 그 줄이 두 메시지로 읽힌다. 규격이 금지한다.
@@ -364,6 +496,23 @@ trace('3-옮기기');
   check('못 읽는 것은 조용히 버리지 않고 말한다',
     /못 읽/.test(프롬프트글([{ type: 'image', data: 'x', mimeType: 'image/png' }])),
     프롬프트글([{ type: 'image', data: 'x', mimeType: 'image/png' }]));
+  /*
+   * ── ★ (8회차 ACP-2) 빈 파일을 「못 읽었습니다」 라고 적었다 ───────────────
+   *
+   * 빈 글도 **읽은 것**이다. `r.text` 가 '' 면 truthy 검사에서 떨어져 알맹이가
+   * 아예 없는 붙임(그림·바이너리)과 같은 갈래로 가서 「글이 아니라 못 읽었습니다」
+   * 가 붙었다. 모델은 그걸 읽기 실패로 알아듣고 같은 파일을 Read 로 또 연다 —
+   * 그리고 또 빈 파일을 본다. 빈 것과 못 읽은 것은 다음에 할 일이 다르다.
+   */
+  {
+    const 빈것 = 프롬프트글([{ type: 'resource', resource: { uri: 'empty.txt', text: '' } }]);
+    check('★ (8회차 ACP-2) 빈 붙임을 「못 읽었다」 고 적지 않는다', !/못 읽/.test(빈것), JSON.stringify(빈것));
+    check('★ (8회차 ACP-2) 빈 붙임도 어느 파일이 비었는지는 적는다',
+      /empty\.txt/.test(빈것) && /빈/.test(빈것), JSON.stringify(빈것));
+    const 알맹이없음 = 프롬프트글([{ type: 'resource', resource: { uri: 'bin.png', blob: 'AAA' } }]);
+    check('(ACP-2 짝) 글이 아예 안 실려 온 붙임은 그대로 「못 읽었다」 다', /못 읽/.test(알맹이없음), 알맹이없음);
+  }
+
   check('이상한 것이 와도 안 죽는다', 프롬프트글(null) === '' && 프롬프트글([null, 3, 'x']) === '');
 }
 
@@ -430,6 +579,27 @@ trace('3-2-되살리기');
     const t = 끊긴것.find((u) => u.sessionUpdate === 'tool_call');
     check('★ 답이 안 남은 부름은 성공으로 안 그린다', t?.status === 'failed', String(t?.status));
     check('왜 그런지 말해 준다', /끊겼습니다/.test(t?.content?.[0]?.content?.text ?? ''), JSON.stringify(t?.content));
+  }
+
+  /*
+   * ── ★ (8회차 ACP-1) id 있는 부름이 **남의 답을 뺏었다** ───────────────────
+   *
+   * id 로 짝이 안 맞으면 이름 큐에서 한 번 더 찾았다. 그 큐에 든 것은 같은 이름을
+   * 쓰는 **다른 부름의 답**이다. 그래서 제 답이 안 남은 부름이 남의 답을 달고
+   * completed 로 그려졌다 — 바로 위 머리말이 「성공으로 그리면 안 된다」 고 적어 둔
+   * 그 자리다. 파일을 고치다 끊긴 자리가 화면에서는 끝난 일이 되고, 사람은 그 위에서
+   * 다음 일을 시킨다.
+   */
+  {
+    const 뺏김 = 되살린것([
+      { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: '{"file_path":"a.txt"}' } }] },
+      { role: 'tool', tool_name: 'Read', content: '이름으로 짝지을 다른 답' },
+    ]);
+    const t = 뺏김.find((u) => u.sessionUpdate === 'tool_call');
+    check('★ (8회차 ACP-1) id 있는 부름은 제 id 의 답이 없으면 실패로 그린다', t?.status === 'failed',
+      `${t?.status} · ${JSON.stringify(t?.content?.[0]?.content?.text)}`);
+    check('★ (8회차 ACP-1) 이름 큐에서 남의 답을 뺏어 오지 않는다',
+      !/다른 답/.test(t?.content?.[0]?.content?.text ?? ''), JSON.stringify(t?.content));
   }
 
   // ollama 규격은 도구 답에 id 를 안 준다. 이름 차례로 짝을 짓는다.
@@ -542,6 +712,7 @@ let 도구번호 = 1;
 let 읽기한번 = false;
 let 한계알린적 = false;
 let 자리없다한횟수 = 0;
+let 쓸파일이름 = '늦게쓴것.txt';   // 일부러_써 가 Write 로 만들라고 할 파일 (사냥5 H5-3)
 const 받은대화 = [];   // 게이트웨이가 받은 messages 원본 (되살리기를 재려고)
 
 const srv = createServer((req, res) => {
@@ -624,6 +795,20 @@ const srv = createServer((req, res) => {
       if (/일부러_길이잘림/.test(사람말)) {
         return 답({ role: 'assistant', content: '여기까지 쓰다가 끊' }, 'length');
       }
+      // 파일 하나를 쓰게 한다. 이미 도구 결과가 실려 왔으면 끝낸다 (사냥5 H5-3).
+      if (/일부러_써/.test(사람말) && !(json?.messages ?? []).some((m) => m.role === 'tool')) {
+        return 도구답('Write', { file_path: 쓸파일이름, content: '늦게 쓴 글\n' });
+      }
+      // 할 일 목록을 한 번 적게 한다. 이미 도구 결과가 실려 왔으면 끝낸다 — 상태를 안 들고 간다.
+      if (/일부러_할일/.test(사람말) && !(json?.messages ?? []).some((m) => m.role === 'tool')) {
+        return 도구답('TodoWrite', {
+          todos: [
+            { text: '버그 A 고치기', state: 'done' },
+            { text: '버그 B 고치기', state: 'doing' },
+            { text: '버그 C 고치기', state: 'todo' },
+          ],
+        });
+      }
       return 답({ role: 'assistant', content: '(스텁 모델이 답했습니다)' });
     }
     보냄({}, 404);
@@ -681,13 +866,17 @@ function 에디터(더줄인자 = [], 환경덧 = {}) {
     // 에이전트가 우리에게 건 요청 (승인 묻기가 이 길로 온다)
     if ('id' in 온것) {
       const 답하기 = 응답표.get(온것.method);
-      if (답하기) 쓰기({ jsonrpc: '2.0', id: 온것.id, result: 답하기(온것.params) });
-      else 쓰기({ jsonrpc: '2.0', id: 온것.id, error: { code: -32601, message: '이 클라이언트는 그걸 못 합니다' } });
+      if (답하기) {
+        // undefined 를 돌려주면 **안 답하고 들고 있는다** — 사람이 승인 창을 안 누른 채인 판 (사냥5 H5-3).
+        const 결과 = 답하기(온것.params, 온것.id);
+        if (결과 !== undefined) 쓰기({ jsonrpc: '2.0', id: 온것.id, result: 결과 });
+      } else 쓰기({ jsonrpc: '2.0', id: 온것.id, error: { code: -32601, message: '이 클라이언트는 그걸 못 합니다' } });
     }
   }));
 
   return {
     kid, 알림들, 날줄, 응답표,
+    날쓰기: 쓰기,
     표준오류: () => 표준오류,
     요청(방법, 인자) {
       const id = 다음++;   // 0 부터 센다 — 진짜 클라이언트가 그렇게 한다
@@ -798,6 +987,89 @@ trace('5-1-악수');
     check('★ 고른 모드로 진짜 바뀐다', 바뀐줄(),
       (e.표준오류().split('\n').find((l) => /작업 모드를/.test(l)) ?? '그런 줄이 없다').slice(0, 80));
 
+    /*
+     * ── (8회차 ACP-4 판정) 처음 받은 값을 그대로 되보낼 수 있나 ────────────
+     *
+     * 에디터는 session/new 에서 받은 currentModeId 를 그대로 set_mode 로 되보낸다
+     * (모드 단추로 원래 자리에 돌아오기). 그 값이 목록에 없거나 거절당하면 돌아갈
+     * 자리가 없어진다. 8회차에 「종합(auto)이 목록에 없고 거절당한다」 는 지적이
+     * 있었다 — 재 보니 목록에도 있고 받아들여진다. 다시 새지 않게 여기서 못 박는다.
+     */
+    const 되돌림 = await 시간제한(
+      e.요청('session/set_mode', { sessionId: 방.sessionId, modeId: 방?.modes?.currentModeId }), 8000, 'set_mode 처음값');
+    check('★ (8회차 ACP-4) 처음 받은 모드를 그대로 되보내도 받아들인다', JSON.stringify(되돌림) === '{}',
+      `${방?.modes?.currentModeId} → ${JSON.stringify(되돌림)}`);
+
+    /*
+     * ── ★ 없는 모드 이름에 「바꿨다」 고 답했다 ────────────────────────────
+     *
+     * 정리하면 null 이 나오는 이름을 그대로 넣었다. 답은 `{}` (성공), 모드는
+     * null(종합으로 떨어짐), 로그는 「작업 모드를 null 로 바꿨습니다」. 에디터는
+     * 고른 단추가 먹힌 줄 안다. 모르는 이름은 잘못된 인자다.
+     */
+    let 모드오류 = null;
+    try {
+      await 시간제한(e.요청('session/set_mode', { sessionId: 방.sessionId, modeId: 'bogus' }), 8000, 'set_mode bogus');
+    } catch (err) { 모드오류 = err; }
+    check('★ 없는 모드 이름에는 -32602 로 답한다', 모드오류?.code === -32602, `${모드오류?.code} · ${모드오류?.message}`);
+    check('★ 없는 모드로 바꿨다고 적지 않는다', !/작업 모드를 null 로/.test(e.표준오류()),
+      (e.표준오류().split('\n').filter((l) => /작업 모드를/.test(l)).pop() ?? '').slice(0, 80));
+
+    /*
+     * ── ★ 상대 경로·없는 폴더를 작업 폴더로 받았다 ────────────────────────
+     *
+     * 규격은 cwd 를 절대 경로로 주라고 한다. 상대 경로를 받으면 에디터가 연
+     * 프로젝트가 아니라 **에디터를 띄운 자리** 기준으로 풀린다 — 방만들기 머리말이
+     * 「제일 무서운 종류의 실수」 라고 적은 그것이다. 없는 절대 경로는 대화 폴더를
+     * 만들다 그 경로를 통째로 새로 만들었다. 둘 다 잘못된 인자다.
+     */
+    const 상대첫 = `deel-acp-rel-${process.pid}`;
+    const 상대있었나 = existsSync(join(process.cwd(), 상대첫));
+    let 상대오류 = null;
+    try {
+      await 시간제한(e.요청('session/new', { cwd: `${상대첫}/안쪽`, mcpServers: [] }), 20000, 'session/new 상대 cwd');
+    } catch (err) { 상대오류 = err; }
+    check('★ 상대 경로 cwd 는 -32602 로 거절한다', 상대오류?.code === -32602, `${상대오류?.code} · ${상대오류?.message}`);
+    check('★ 띄운 자리에 그 폴더를 만들지 않는다', 상대있었나 || !existsSync(join(process.cwd(), 상대첫)), join(process.cwd(), 상대첫));
+    if (!상대있었나) rmSync(join(process.cwd(), 상대첫), { recursive: true, force: true });
+
+    // **있는** 폴더를 가리키는 상대 경로도 거절한다 — 없는 것만 막으면 「있으면 통과」 가 된다.
+    // 띄운 자리에서 임시 작업 폴더로 가는 상대 경로를 쓴다. 뚫려도 저장소가 아니라 임시 폴더에 적힌다.
+    const 있는상대 = relative(process.cwd(), work);
+    if (!isAbsolute(있는상대)) {
+      let 있는상대오류 = null;
+      try {
+        await 시간제한(e.요청('session/new', { cwd: 있는상대, mcpServers: [] }), 20000, 'session/new 있는 상대 cwd');
+      } catch (err) { 있는상대오류 = err; }
+      check('★ 있는 폴더라도 상대 경로 cwd 는 -32602 로 거절한다', 있는상대오류?.code === -32602,
+        `${있는상대} → ${있는상대오류?.code} · ${있는상대오류?.message}`);
+    }
+
+    const 없는곳 = join(work, `없는폴더-${process.pid}`, '안쪽');
+    let 없음오류 = null;
+    try {
+      await 시간제한(e.요청('session/new', { cwd: 없는곳, mcpServers: [] }), 20000, 'session/new 없는 cwd');
+    } catch (err) { 없음오류 = err; }
+    check('★ 없는 폴더 cwd 는 -32602 로 거절한다', 없음오류?.code === -32602, `${없음오류?.code} · ${없음오류?.message}`);
+    check('★ 없는 폴더를 새로 만들지 않는다', !existsSync(join(work, `없는폴더-${process.pid}`)), 없는곳);
+
+    /*
+     * ── ★★ 대화 이름으로 대화 폴더 밖을 읽고 적었다 ────────────────────────
+     *
+     * session/load 의 sessionId 를 파일 이름에 그대로 이었다. `../../evil/x` 면
+     * 작업 폴더의 `evil/x.jsonl` 을 대화로 읽고, 한 턴 돌면 거기에 대화를 적었다.
+     */
+    mkdirSync(join(work, 'evil'), { recursive: true });
+    writeFileSync(join(work, 'evil', 'x.jsonl'), '', 'utf8');
+    let 이름오류 = null;
+    try {
+      await 시간제한(e.요청('session/load', { sessionId: '../../evil/x', cwd: work, mcpServers: [] }), 20000, 'session/load ../');
+    } catch (err) { 이름오류 = err; }
+    check('★★ 폴더 밖을 가리키는 대화 이름은 -32602 로 거절한다', 이름오류?.code === -32602, `${이름오류?.code} · ${이름오류?.message}`);
+    check('★★ 폴더 밖 파일에는 아무것도 안 적는다', readFileSync(join(work, 'evil', 'x.jsonl'), 'utf8') === '',
+      readFileSync(join(work, 'evil', 'x.jsonl'), 'utf8').slice(0, 80));
+    rmSync(join(work, 'evil'), { recursive: true, force: true });
+
     let 코드 = null;
     try { await e.요청('없는/방법', {}); } catch (err) { 코드 = err.code; }
     check('모르는 방법에는 -32601', 코드 === -32601, String(코드));
@@ -837,6 +1109,43 @@ trace('5-2-한턴');
     check('표준출력이 전부 ACP 줄이다', 성한줄, e.날줄.find((줄) => { try { JSON.parse(줄); return false; } catch { return true; } }) ?? '');
   } catch (err) {
     check('한 턴 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+  }
+}
+
+// ── 모드를 옮겼으면 옮겼다고 말하는가 ───────────────────────────────────
+//
+// ★★★ 대화 화면과 `deel run` 은 어느 모드로 갔는지, 무슨 말 때문인지 찍는다.
+// 여기만 조용히 옮겼다. 모드는 이 턴에 파일이 바뀌는지를 정하는 값이라,
+// 안 말하면 에디터 쪽 사람은 파일을 못 고치는 모드로 바뀐 것을 모른 채
+// 「왜 안 고쳐?」 를 본다.
+//
+// 그리고 겹친 요청을 계획 모드로 보내면 안 된다 — 이어 가는 길이 repl.js
+// 에만 있어서, 에디터에서 제일 자연스러운 승인말(「위 계획대로 진행해줘」)이
+// 되레 또 계획 모드로 간다. 계획을 두 장 받고 파일은 그대로다.
+trace('5-2-5-모드옮긴것을말하나');
+{
+  const e = 에디터();
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    await 시간제한(e.요청('session/prompt', {
+      sessionId: 방.sessionId,
+      prompt: [{ type: 'text', text: '이 폴더 정리해서 만들어줘' }],
+    }), 30000, 'session/prompt');
+
+    const 온글 = e.알림들
+      .filter((u) => u.update?.sessionUpdate === 'agent_message_chunk')
+      .map((u) => u.update.content.text).join('');
+    check('★★★ 어느 모드로 옮겼는지 말한다', /◆\s*코드/.test(온글), 온글.slice(0, 160));
+    check('★★★ 무슨 말 때문인지도 말한다', /말 속에 .* 가 있어서/.test(온글), 온글.slice(0, 160));
+    check('★★★ 계획 모드로 안 보낸다 — 이어 갈 길이 없다',
+      !/◆\s*계획/.test(온글), 온글.slice(0, 160));
+    check('★★★ 계획부터 안 낸다는 것을 말해 준다',
+      /승인받고 이어 갈 길이 없어/.test(온글), 온글.slice(0, 200));
+  } catch (err) {
+    check('모드 안내 — 통째로 실패', false, String(err?.message ?? err));
   } finally {
     await e.끝내기();
   }
@@ -1162,6 +1471,100 @@ trace('5-8-되살리기');
   }
 }
 
+trace('5-8b-할일과시킨말');
+
+/*
+ * ── ★★ 에디터로 연 대화는 남은 할 일과 시킨 말을 파일에 안 적었다 ─────────
+ *
+ * 저장 파일은 이 둘을 따로 한 줄씩 적는다(agent/store.js 의 살림따라가기).
+ * 그런데 그걸 거는 자리가 터미널(agent/threads.js)에만 있었다. store.js 가
+ * 「따로 부르는 자리를 만들면 그 길로 들어온 사람만 이어하기가 반쪽이 된다」
+ * 고 적어 둔 바로 그 모양이다 — 에디터를 닫았다 열면 할 일이 사라진다.
+ */
+{
+  let 이름 = null;
+  const e1 = 에디터();
+  try {
+    await 시간제한(e1.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    const 방 = await 시간제한(e1.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    이름 = 방.sessionId;
+    await 시간제한(e1.요청('session/prompt', {
+      sessionId: 이름, prompt: [{ type: 'text', text: '일부러_할일 — 버그 A B C 를 고쳐줘' }],
+    }), 30000, 'session/prompt 할일');
+    const 줄들 = readFileSync(join(work, '.deel', 'sessions', `${이름}.jsonl`), 'utf8')
+      .split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return {}; } });
+    check('★★ 에디터로 연 대화도 할 일을 파일에 적는다', 줄들.some((j) => j.t === 'todo' && j.목록?.length === 3),
+      줄들.map((j) => j.t).join(','));
+    check('★★ 에디터로 연 대화도 시킨 말 원문을 파일에 적는다', 줄들.some((j) => j.t === 'request' && /버그 A B C/.test(j.글 ?? '')),
+      줄들.map((j) => j.t).join(','));
+  } catch (err) {
+    check('할 일 적기 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e1.끝내기();
+  }
+
+  if (이름) {
+    const e2 = 에디터();
+    try {
+      await 시간제한(e2.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+      await 시간제한(e2.요청('session/load', { sessionId: 이름, cwd: work, mcpServers: [] }), 25000, 'session/load 할일');
+      await 시간제한(e2.요청('session/prompt', { sessionId: 이름, prompt: [{ type: 'text', text: '이어서 해줘' }] }), 30000, '이어서 한 턴');
+      const { Store: 저장 } = await import('../src/agent/store.js');
+      const l = new 저장(work, 이름).load();
+      check('★ 되살린 뒤 한 턴이 돌아도 할 일이 그대로 이어진다', l.할일?.length === 3, JSON.stringify(l.할일));
+      check('★ 되살린 뒤 한 턴의 시킨 말이 새로 적힌다', /이어서 해줘/.test(l.이번요청 ?? ''), JSON.stringify(l.이번요청));
+    } catch (err) {
+      check('할 일 되살리기 — 통째로 실패', false, String(err?.message ?? err));
+    } finally {
+      await e2.끝내기();
+    }
+  }
+}
+
+trace('5-8c-다른규격이어받기');
+
+/*
+ * ── ★ 다른 규격으로 적힌 대화를 에디터로 이어받으면 지금 규격으로 옮겨 적는다 ─
+ *
+ * 저장 파일 머리글에는 규격이 없다. 어제 Anthropic 으로 한 대화를 오늘 이 스텁
+ * (OpenAI 호환) 프로필로 열면 tool_use 블록이 그대로 나가 첫 마디가 400 이었다.
+ * 보내는 사본은 session.js 의 wire() 가 한 번 더 맞추지만, **이력 자체**를 옮겼는지는
+ * 로그로만 보인다 — 이어받기에서 옮겨야 다음 저장·접기가 새 모양으로 돈다.
+ */
+{
+  const 이름 = `20260914-000001-${process.pid}`;
+  mkdirSync(join(work, '.deel', 'sessions'), { recursive: true });
+  writeFileSync(join(work, '.deel', 'sessions', `${이름}.jsonl`), [
+    { t: 'meta', at: new Date().toISOString(), model: 'claude-x', root: work },
+    { t: 'msg', m: { role: 'user', content: '앤트로픽 때 읽어줘' } },
+    { t: 'msg', m: { role: 'assistant', content: [{ type: 'text', text: '읽겠습니다' }, { type: 'tool_use', id: 'toolu_9', name: 'Read', input: { file_path: '읽을것.txt' } }] } },
+    { t: 'msg', m: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_9', content: '한 줄짜리 파일입니다.' }] } },
+    { t: 'msg', m: { role: 'assistant', content: [{ type: 'text', text: '다 읽었습니다' }] } },
+  ].map((x) => JSON.stringify(x)).join('\n') + '\n', 'utf8');
+
+  const e = 에디터();
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    await 시간제한(e.요청('session/load', { sessionId: 이름, cwd: work, mcpServers: [] }), 25000, 'session/load 규격');
+    const 옮긴줄 = () => /다른 규격으로 적힌 메시지 \d+개를 openai 모양으로 옮겨 적었습니다/.test(e.표준오류());
+    await 될때까지(옮긴줄, 8000);
+    check('★ 이어받을 때 다른 규격으로 적힌 이력을 옮겨 적었다고 남긴다', 옮긴줄(),
+      (e.표준오류().split('\n').filter((l) => /이어 받았|옮겨 적/.test(l)).pop() ?? '그런 줄이 없다').slice(0, 100));
+
+    받은대화.length = 0;
+    await 시간제한(e.요청('session/prompt', { sessionId: 이름, prompt: [{ type: 'text', text: '이어서 해줘' }] }), 30000, '규격 이어서');
+    const 나간것 = 받은대화.at(-1) ?? [];
+    const 블록 = 나간것.filter((m) => Array.isArray(m.content) && m.content.some((b) => ['tool_use', 'tool_result'].includes(b?.type)));
+    const 부름 = 나간것.find((m) => m.tool_calls?.length);
+    check('★★ 이어받은 Anthropic 이력이 OpenAI 모양으로 나간다', 블록.length === 0 && 부름?.tool_calls?.[0]?.id === 'toolu_9'
+      && 나간것.some((m) => m.role === 'tool' && m.tool_call_id === 'toolu_9'), JSON.stringify(나간것).slice(0, 300));
+  } catch (err) {
+    check('다른 규격 이어받기 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+  }
+}
+
 trace('5-9-사실대로-말하는가');
 
 /*
@@ -1378,6 +1781,31 @@ trace('5-11-인증방법을-말하는가');
     const 답 = await 시간제한(e.요청('authenticate', { methodId: 터미널?.id }), 10000, 'authenticate');
     check('★ 그 방법으로 authenticate 를 불러도 안 터진다', !!답 && typeof 답 === 'object',
       JSON.stringify(답));
+
+    /*
+     * ── ★ (8회차 ACP-5) 빈 methodId 가 그냥 통과했다 ──────────────────────
+     *
+     * 모르는 방법은 -32602 로 막는데, 그 검사가 `골라온것 &&` 로 시작해서 **빈 글은
+     * 아예 안 봤다.** 그래서 `{"methodId":""}` 와 methodId 를 안 준 요청이 성공으로
+     * 돌아갔다 — 위 H5-10(빈 method) 과 같은 꼴이다. methodId 는 규격이 반드시
+     * 주라고 한 칸이고, 빈 글은 우리가 내놓은 방법 중 어느 것도 아니다. 성공이라
+     * 답하면 에디터는 있지도 않은 방법으로 인증이 끝난 줄 알고 그 뒤를 잇는다.
+     */
+    let 빈방법 = null;
+    try {
+      await 시간제한(e.요청('authenticate', { methodId: '' }), 10000, 'authenticate 빈칸');
+    } catch (err) { 빈방법 = err; }
+    check('★ (8회차 ACP-5) 빈 methodId 는 -32602 로 거절한다', 빈방법?.code === -32602,
+      `${빈방법?.code} · ${빈방법?.message ?? '(통과했다)'}`);
+    check('★ (8회차 ACP-5) 무엇을 보내야 하는지 같이 적는다', /terminal-setup/.test(String(빈방법?.message ?? '')),
+      String(빈방법?.message ?? '').slice(0, 140));
+
+    let 안준것 = null;
+    try {
+      await 시간제한(e.요청('authenticate', {}), 10000, 'authenticate 없음');
+    } catch (err) { 안준것 = err; }
+    check('★ (8회차 ACP-5) methodId 를 아예 안 줘도 거절한다', 안준것?.code === -32602,
+      `${안준것?.code} · ${안준것?.message ?? '(통과했다)'}`);
   } catch (err) {
     check('인증 방법 — 통째로 실패', false, String(err?.message ?? err) + ' | ' + e.표준오류().slice(-400));
   } finally {
@@ -1414,6 +1842,33 @@ trace('5-12-연결이-없으면-인증하라고-하는가');
   } finally {
     await e.끝내기();
     rmSync(빈집, { recursive: true, force: true });
+  }
+}
+
+{
+  // 연결이 없어 인증필요로 끝나도 모아 둔 소식은 로그에 남긴다. 안 믿는 폴더의 설정을
+  // 안 읽은 것이 바로 연결이 없는 까닭일 수 있다 — 소식을 비우는 자리가 그보다 아래였다.
+  const 빈집 = mkdtempSync(join(tmpdir(), 'deel-acp-noconf2-'));
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-acp-noconf2-work-'));
+  mkdirSync(join(방, '.deel'), { recursive: true });
+  writeFileSync(join(방, '.deel', 'config.json'),
+    JSON.stringify({ profiles: [{ id: 'r', baseUrl: 'http://127.0.0.1:1', model: 'm' }] }), 'utf8');
+  const e = 에디터([], { DEEL_HOME: 빈집 });
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    try {
+      await 시간제한(e.요청('session/new', { cwd: 방, mcpServers: [] }), 20000, 'session/new');
+    } catch { /* 인증필요로 오는 것이 맞다 — 위 검사가 잰다 */ }
+    // 로그(표준오류)와 답(표준출력)은 다른 관이라 도착 차례가 안 정해져 있다.
+    for (let i = 0; i < 30 && !/deel trust/.test(e.표준오류()); i++) await new Promise((r) => setTimeout(r, 100));
+    check('★★ 연결이 없어도 모아 둔 소식(안 믿는 폴더 설정)을 로그에 남긴다', /deel trust/.test(e.표준오류()),
+      e.표준오류().replace(/\s+/g, ' ').slice(-160));
+  } catch (err) {
+    check('연결 없음 소식 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+    rmSync(빈집, { recursive: true, force: true });
+    rmSync(방, { recursive: true, force: true });
   }
 }
 
@@ -1494,6 +1949,355 @@ trace('5-10-탭마다-MCP-를-다시-띄우나');
   } finally {
     await e.끝내기();
     rmSync(엠씨피, { recursive: true, force: true });
+  }
+}
+
+const 대화줄들 = (뿌리, 이름) => {
+  try {
+    return readFileSync(join(뿌리, '.deel', 'sessions', `${이름}.jsonl`), 'utf8')
+      .split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  } catch { return []; }
+};
+const 첫인사 = { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } };
+
+trace('사냥5-H5-1-두폴더-같은초');
+/*
+ * ── ★★ (사냥5 H5-1) 폴더가 다른 두 탭이 같은 대화 이름을 받았다 ──────────
+ *
+ * 대화 이름은 초 단위이고, 빈 이름인지는 **그 폴더의 대화 파일**로만 봤다. 한
+ * 프로세스에서 두 프로젝트를 같은 초에 열면 두 방이 같은 sessionId 를 받고, 방들
+ * 에는 뒤엣것만 남는다. A 탭에 한 말이 B 폴더의 대화 파일에 적히고, 모델은 B 를
+ * 작업 폴더로 안다 — 파일을 고치면 **남의 프로젝트**를 고친다.
+ */
+{
+  const 둘째 = mkdtempSync(join(tmpdir(), 'deel-acp-둘째-'));
+  const e = 에디터();
+  try {
+    await 시간제한(e.요청('initialize', 첫인사), 15000, 'initialize');
+    const 이름쌍 = [];
+    for (let n = 0; n < 3; n++) {
+      // 초가 막 바뀐 자리에서 둘을 한꺼번에 연다 — 같은 초에 떨어지게.
+      await new Promise((r) => setTimeout(r, 1000 - (Date.now() % 1000) + 20));
+      const [가, 나] = await 시간제한(Promise.all([
+        e.요청('session/new', { cwd: work, mcpServers: [] }),
+        e.요청('session/new', { cwd: 둘째, mcpServers: [] }),
+      ]), 30000, 'session/new 둘');
+      이름쌍.push([가?.sessionId, 나?.sessionId]);
+    }
+    check('★★ (사냥5 H5-1) 같은 초에 두 폴더를 열어도 대화 이름이 안 겹친다',
+      이름쌍.every(([a, b]) => a && b && a !== b), JSON.stringify(이름쌍));
+
+    const [가이름] = 이름쌍.at(-1);
+    await 시간제한(e.요청('session/prompt', { sessionId: 가이름, prompt: [{ type: 'text', text: '가-폴더에-한-말' }] }), 30000, 'prompt 가');
+    check('★★ (사냥5 H5-1) A 탭에 한 말은 A 폴더의 대화 파일에 적힌다',
+      대화줄들(work, 가이름).some((j) => j.m?.content === '가-폴더에-한-말'), 가이름);
+    const 둘째곳 = join(둘째, '.deel', 'sessions');
+    const 샌것 = existsSync(둘째곳)
+      ? readdirSync(둘째곳).filter((f) => readFileSync(join(둘째곳, f), 'utf8').includes('가-폴더에-한-말')) : [];
+    check('★★ (사냥5 H5-1) B 폴더의 대화 파일에는 A 탭의 말이 안 적힌다', 샌것.length === 0, 샌것.join(' '));
+
+    // B 폴더에도 같은 이름의 대화 파일이 있다. 그걸 B 로 되살리라는데 A 방을 돌려주면 안 된다.
+    mkdirSync(둘째곳, { recursive: true });
+    writeFileSync(join(둘째곳, `${가이름}.jsonl`),
+      JSON.stringify({ t: 'meta', model: '스텁모델' }) + '\n'
+      + JSON.stringify({ t: 'msg', m: { role: 'user', content: '둘째-폴더의-옛-말' } }) + '\n', 'utf8');
+    let 엇갈림 = null;
+    try {
+      await 시간제한(e.요청('session/load', { sessionId: 가이름, cwd: 둘째, mcpServers: [] }), 20000, 'session/load 엇갈림');
+    } catch (err) { 엇갈림 = err; }
+    check('★★ (사냥5 H5-1) 다른 폴더로 이미 열린 대화 이름을 이 폴더로 되살리라면 -32602 로 거절한다',
+      엇갈림?.code === -32602, `${엇갈림?.code} · ${엇갈림?.message}`);
+  } catch (err) {
+    check('사냥5 H5-1 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+    rmSync(둘째, { recursive: true, force: true });
+  }
+}
+
+trace('사냥5-H5-2-이어받은-대화를-정리가-지우나');
+/*
+ * ── ★★ (사냥5 H5-2) 되살리자마자 그 대화 파일을 정리가 지웠다 ─────────────
+ *
+ * prune() 은 파일 시각만 본다. 한 달 넘은 대화를 session/load 로 되살리면 그 파일은
+ * 아직 한 줄도 안 늘어 시각이 옛날 그대로라, 되살리기 바로 뒤의 정리가 그 파일을
+ * 지웠다. 에디터에는 지난 대화가 그려지고, 다음 한 줄은 머리글도 옛 대화도 없는 새
+ * 파일에 적힌다. 같은 폴더에 탭을 하나 더 열어도 그 정리가 또 돈다.
+ */
+{
+  const 옛집 = mkdtempSync(join(tmpdir(), 'deel-acp-정리-'));
+  const 곳 = join(옛집, '.deel', 'sessions');
+  mkdirSync(곳, { recursive: true });
+  const 줄 = (o) => JSON.stringify(o) + '\n';
+  for (let i = 0; i < 31; i++) {
+    writeFileSync(join(곳, `20260901-0000${String(i).padStart(2, '0')}.jsonl`),
+      줄({ t: 'meta', model: '스텁모델' }) + 줄({ t: 'msg', m: { role: 'user', content: `최근 ${i}` } }), 'utf8');
+  }
+  const 옛이름 = '20260101-090000';
+  const 옛파일 = join(곳, `${옛이름}.jsonl`);
+  writeFileSync(옛파일, 줄({ t: 'meta', model: '스텁모델', root: 옛집 })
+    + 줄({ t: 'msg', m: { role: 'user', content: '옛-대화의-물음' } })
+    + 줄({ t: 'msg', m: { role: 'assistant', content: '옛-대화의-답' } }), 'utf8');
+  const 예전 = new Date(Date.now() - 40 * 86400000);
+  utimesSync(옛파일, 예전, 예전);
+  const e = 에디터();
+  try {
+    await 시간제한(e.요청('initialize', 첫인사), 15000, 'initialize');
+    await 시간제한(e.요청('session/load', { sessionId: 옛이름, cwd: 옛집, mcpServers: [] }), 20000, 'session/load 옛');
+    check('★★ (사냥5 H5-2) 되살린 오래된 대화 파일을 정리가 바로 지우지 않는다', existsSync(옛파일), 옛파일);
+    // 같은 폴더에 탭을 하나 더 연다 — 그 탭의 정리도 열려 있는 대화를 지우면 안 된다.
+    await 시간제한(e.요청('session/new', { cwd: 옛집, mcpServers: [] }), 20000, 'session/new 옛집');
+    check('★★ (사냥5 H5-2) 같은 폴더에 탭을 더 열어도 열려 있는 대화를 안 지운다', existsSync(옛파일), 옛파일);
+    await 시간제한(e.요청('session/prompt', { sessionId: 옛이름, prompt: [{ type: 'text', text: '되살린-뒤-한마디' }] }), 30000, 'prompt 옛');
+    const 적힌 = 대화줄들(옛집, 옛이름);
+    check('★★ (사냥5 H5-2) 되살린 뒤 한 말이 머리글·옛 대화와 같은 파일에 이어 적힌다',
+      적힌.some((j) => j.t === 'meta') && 적힌.some((j) => j.m?.content === '옛-대화의-물음')
+        && 적힌.some((j) => j.m?.content === '되살린-뒤-한마디'),
+      적힌.map((j) => j.t + (j.m ? `:${String(j.m.content ?? '').slice(0, 10)}` : '')).join(','));
+  } catch (err) {
+    check('사냥5 H5-2 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+    rmSync(옛집, { recursive: true, force: true });
+  }
+}
+
+trace('사냥5-H5-3-승인-기다리다-취소');
+/*
+ * ── ★★ (사냥5 H5-3) 취소한 턴이 늦게 온 허락으로 파일을 썼다 ───────────────
+ *
+ * 승인 창을 띄워 두고 사람이 안 누른 채 취소했다. 승인 기다림이 턴의 끊기 신호를
+ * 안 봐서 그 턴은 취소된 뒤에도 답을 계속 기다렸고, 에디터가 새 한마디를 보내면
+ * 두 턴이 한 대화를 같이 밟았다. 그러다 옛 창의 「이번만 실행」 이 늦게 닿자
+ * **취소한 턴이 파일을 썼다.** 대화 파일에는 새 턴의 말이 두 번 적히고 도구 결과는
+ * 제 부름에서 떨어진 자리에 적혔다 — 되살리면 규격 서버가 400 을 주는 모양이다.
+ */
+{
+  읽기한번 = false;
+  쓸파일이름 = `늦게쓴것-${process.pid}.txt`;
+  const e = 에디터(['--mode', 'strict']);
+  const 물음들 = [];
+  e.응답표.set('session/request_permission', (인자, id) => { 물음들.push({ id, 인자 }); return undefined; });
+  try {
+    await 시간제한(e.요청('initialize', 첫인사), 15000, 'initialize');
+    const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    let 첫끝 = null;
+    const 첫턴 = e.요청('session/prompt', { sessionId: 방.sessionId, prompt: [{ type: 'text', text: '일부러_써 줘' }] })
+      .then((r) => { 첫끝 = r; }, (err) => { 첫끝 = { 오류: String(err?.message ?? err) }; });
+    const 물었나 = await 될때까지(() => 물음들.length > 0, 15000);
+    check('(사냥5 H5-3) 쓰기 전에 에디터에 승인을 묻는다', 물었나, `${물음들.length}번`);
+    e.알림('session/cancel', { sessionId: 방.sessionId });
+    const 끝났나 = await 될때까지(() => 첫끝 !== null, 5000);
+    check('★★ (사냥5 H5-3) 승인을 기다리는 중에 취소하면 그 턴이 곧 cancelled 로 끝난다',
+      끝났나 && 첫끝?.stopReason === 'cancelled', JSON.stringify(첫끝));
+
+    await 시간제한(e.요청('session/prompt', { sessionId: 방.sessionId, prompt: [{ type: 'text', text: '둘째-턴-한마디' }] }), 30000, '둘째 턴');
+    // 옛 창의 허락이 이제야 닿는다.
+    if (물음들[0]) e.날쓰기({ jsonrpc: '2.0', id: 물음들[0].id, result: { outcome: { outcome: 'selected', optionId: 'allow_once' } } });
+    await 시간제한(첫턴, 15000, '첫 턴');
+    // **안 일어나는 것**을 재므로 될때까지로는 못 잰다 — 늦게 돈다면 돌 만큼만 기다린다.
+    await new Promise((r) => setTimeout(r, 1000));
+    check('★★ (사냥5 H5-3) 취소한 턴은 늦게 온 허락으로 파일을 쓰지 않는다', !existsSync(join(work, 쓸파일이름)), 쓸파일이름);
+
+    const 말들 = 대화줄들(work, 방.sessionId).filter((j) => j.t === 'msg').map((j) => j.m);
+    const 둘째수 = 말들.filter((m) => m.role === 'user' && m.content === '둘째-턴-한마디').length;
+    const 모양 = 말들.map((m) => `${m.role}${m.tool_calls ? '(부름)' : ''}`).join(',');
+    check('★ (사냥5 H5-3) 대화 파일에 둘째 턴의 말이 한 번만 적힌다', 둘째수 === 1, `${둘째수}번 · ${모양}`);
+    check('★ (사냥5 H5-3) 도구 결과가 제 부름 바로 뒤에 적힌다',
+      말들.every((m, i) => m.role !== 'tool' || (말들[i - 1]?.role === 'assistant' && 말들[i - 1]?.tool_calls?.length) || 말들[i - 1]?.role === 'tool'),
+      모양);
+  } catch (err) {
+    check('사냥5 H5-3 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    rmSync(join(work, 쓸파일이름), { force: true });
+    await e.끝내기();
+  }
+}
+
+trace('사냥5-H5-3b-취소없이-새-한마디');
+/*
+ * ── ★★ (사냥5 H5-3) 취소 없이 새 한마디가 끼어들면 두 턴이 한 대화를 같이 밟았다 ──
+ *
+ * 규격은 턴을 겹쳐 보내지 말라지만 안 지키는 클라이언트가 있다. 새 한마디는 앞 턴을
+ * 끊기만 하고 **물러나기를 안 기다렸다.** 앞 턴은 승인 기다림을 거둔 뒤에도 「거부됨」
+ * 도구 결과를 적는 걸음이 남아 있는데, 그 사이 새 턴이 제 말을 먼저 밀어 넣었다.
+ * 그러면 도구 결과가 제 부름에서 떨어져 새 사람 말 뒤에 적히고(되살리면 400),
+ * 앞 턴의 마지막 적기가 새 턴의 말까지 한 번 더 적었다.
+ */
+{
+  읽기한번 = false;
+  쓸파일이름 = `끼어듦-${process.pid}.txt`;
+  const e = 에디터(['--mode', 'strict']);
+  const 물음들 = [];
+  e.응답표.set('session/request_permission', (인자, id) => { 물음들.push({ id, 인자 }); return undefined; });
+  try {
+    await 시간제한(e.요청('initialize', 첫인사), 15000, 'initialize');
+    const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    let 첫끝 = null;
+    const 첫턴 = e.요청('session/prompt', { sessionId: 방.sessionId, prompt: [{ type: 'text', text: '일부러_써 줘' }] })
+      .then((r) => { 첫끝 = r; }, (err) => { 첫끝 = { 오류: String(err?.message ?? err) }; });
+    const 물었나 = await 될때까지(() => 물음들.length > 0, 15000);
+    check('(사냥5 H5-3b) 쓰기 전에 에디터에 승인을 묻는다', 물었나, `${물음들.length}번`);
+    // 취소 없이 곧장 새 한마디.
+    const 둘째 = await 시간제한(e.요청('session/prompt', { sessionId: 방.sessionId, prompt: [{ type: 'text', text: '끼어든-둘째-한마디' }] }), 30000, '끼어든 둘째 턴');
+    await 시간제한(첫턴, 15000, '첫 턴');
+    check('(사냥5 H5-3b) 끼어든 새 한마디는 끝까지 돈다', 둘째?.stopReason === 'end_turn', JSON.stringify(둘째));
+    check('★ (사냥5 H5-3b) 끊긴 앞 턴은 cancelled 로 끝난다', 첫끝?.stopReason === 'cancelled', JSON.stringify(첫끝));
+    check('★★ (사냥5 H5-3b) 끊긴 앞 턴은 파일을 안 쓴다', !existsSync(join(work, 쓸파일이름)), 쓸파일이름);
+
+    const 말들 = 대화줄들(work, 방.sessionId).filter((j) => j.t === 'msg').map((j) => j.m);
+    const 모양 = 말들.map((m) => `${m.role}${m.tool_calls ? '(부름)' : ''}${m.role === 'user' ? `:${String(m.content ?? '').slice(0, 6)}` : ''}`).join(',');
+    const 끼어든수 = 말들.filter((m) => m.role === 'user' && m.content === '끼어든-둘째-한마디').length;
+    check('★★ (사냥5 H5-3b) 끼어든 한마디가 대화 파일에 한 번만 적힌다', 끼어든수 === 1, `${끼어든수}번 · ${모양}`);
+    const 부른자리 = 말들.findIndex((m) => m.role === 'assistant' && m.tool_calls?.length);
+    check('★★ (사냥5 H5-3b) 앞 턴의 도구 결과가 새 한마디보다 먼저, 제 부름 바로 뒤에 적힌다',
+      부른자리 >= 0 && 말들[부른자리 + 1]?.role === 'tool'
+        && 말들.findIndex((m) => m.role === 'user' && m.content === '끼어든-둘째-한마디') > 부른자리 + 1,
+      모양);
+  } catch (err) {
+    check('사냥5 H5-3b — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    rmSync(join(work, 쓸파일이름), { force: true });
+    await e.끝내기();
+  }
+}
+
+trace('사냥5-H5-6-두창이-같은대화');
+/*
+ * ── ★★ (사냥5 H5-6) 다른 창 때문에 못 적은 것을 아무에게도 안 말했다 ────────
+ *
+ * 에디터 창 둘이 같은 대화를 되살리면, 뒤에 적는 쪽은 섞지 않으려고 안 적고 센다
+ * (agent/store.js 의 OTHER_WINDOW). 대화 화면은 그 셈을 한 번 말해 주는데 여기는
+ * store.못쓴것 을 한 번도 안 봤다. 둘째 창에서 한 말은 조용히 버려지고, 사람은
+ * 다음에 되살릴 때에야 그 말이 없다는 것을 안다.
+ */
+{
+  const 두창 = mkdtempSync(join(tmpdir(), 'deel-acp-두창-'));
+  const 곳 = join(두창, '.deel', 'sessions');
+  mkdirSync(곳, { recursive: true });
+  const 이름 = '20260910-101010';
+  writeFileSync(join(곳, `${이름}.jsonl`),
+    JSON.stringify({ t: 'meta', model: '스텁모델' }) + '\n'
+    + JSON.stringify({ t: 'msg', m: { role: 'user', content: '둘이-같이-연-대화' } }) + '\n', 'utf8');
+  const e1 = 에디터();
+  const e2 = 에디터();
+  try {
+    for (const e of [e1, e2]) await 시간제한(e.요청('initialize', 첫인사), 15000, 'initialize');
+    for (const e of [e1, e2]) await 시간제한(e.요청('session/load', { sessionId: 이름, cwd: 두창, mcpServers: [] }), 20000, 'session/load');
+    await 시간제한(e1.요청('session/prompt', { sessionId: 이름, prompt: [{ type: 'text', text: '첫-창-한마디' }] }), 30000, '첫 창');
+    await 시간제한(e2.요청('session/prompt', { sessionId: 이름, prompt: [{ type: 'text', text: '둘째-창-한마디' }] }), 30000, '둘째 창');
+    await 될때까지(() => /OTHER_WINDOW/.test(e2.표준오류()), 5000);
+    check('★★ (사냥5 H5-6) 다른 창이 적고 있어 못 적었으면 로그에 남긴다', /OTHER_WINDOW/.test(e2.표준오류()),
+      e2.표준오류().split('\n').filter(Boolean).slice(-3).join(' | ').slice(0, 200));
+    const 둘째창글 = e2.알림들.map((u) => u.update?.content?.text ?? '').join('');
+    check('★★ (사냥5 H5-6) 에디터 화면에도 안 적히고 있다고 말한다', /OTHER_WINDOW/.test(둘째창글), 둘째창글.slice(-160));
+  } catch (err) {
+    check('사냥5 H5-6 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e1.끝내기();
+    await e2.끝내기();
+    rmSync(두창, { recursive: true, force: true });
+  }
+}
+
+trace('사냥5-H5-8-모델을-기다리다-관이-닫힘');
+/*
+ * ── ★★ (사냥5 H5-8) 에디터를 닫았는데 모델 답을 끝까지 기다렸다 ─────────────
+ *
+ * 관이 닫히면 마무리는 관만 닫고 돌던 턴은 안 끊었다. 그래서 느린 모델을 기다리던
+ * 턴이 **답이 올 때까지** 살아 있었고, 프로세스도 그만큼 안 끝났다. 에디터는 이미
+ * 닫혔는데 그 뒤에 온 답이 대화 파일에 적혔다 — 아무도 못 본 답이다.
+ */
+{
+  느리게 = 6000;
+  const e = 에디터();
+  try {
+    await 시간제한(e.요청('initialize', 첫인사), 15000, 'initialize');
+    const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    const 받은수 = 받은대화.length;
+    e.요청('session/prompt', { sessionId: 방.sessionId, prompt: [{ type: 'text', text: '일부러_느리게 닫힐때까지' }] }).catch(() => {});
+    const 돌기시작 = await 될때까지(() => 받은대화.length > 받은수, 10000);
+    check('(사냥5 H5-8) 관을 닫기 전에 턴이 모델을 기다리고 있다', 돌기시작, `${받은대화.length}`);
+    const 닫힘 = new Promise((r) => e.kid.on('close', () => r(true)));
+    const 처음 = Date.now();
+    e.kid.stdin.end();
+    const 닫혔나 = await Promise.race([닫힘, new Promise((r) => { setTimeout(() => r(false), 4500).unref(); })]);
+    const 걸림 = Date.now() - 처음;
+    check('★★ (사냥5 H5-8) 턴이 모델을 기다리는 중에 관이 닫히면 답을 안 기다리고 곧 끝난다', 닫혔나 === true && 걸림 < 4000, `${걸림}ms`);
+    check('★ (사냥5 H5-8) 닫힌 뒤에 온 답을 대화 파일에 안 적는다',
+      !대화줄들(work, 방.sessionId).some((j) => j.m?.content === '늦게 왔습니다'), 방.sessionId);
+  } catch (err) {
+    check('사냥5 H5-8 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    느리게 = 0;
+    try { e.kid.kill(); } catch { /* 이미 끝났다 */ }
+  }
+}
+
+trace('6회차-N9-두연결-두탭');
+/*
+ * ── ★★ (6회차 N9) 연결이 다른 두 탭 — 둘째를 열면 첫 탭이 막혔다 ─────────────
+ *
+ * 문지기(safety/network.js)의 allowEndpoint 는 「이전에 올린 것은 지운다」 — 부르는
+ * 쪽이 지금 열려 있어야 할 것 **전부**를 한 번에 말하라는 약속이다. 그런데 방마다
+ * 제 주소 하나만 올렸다. 에디터에서 연결이 다른 프로젝트 둘을 열면 둘째 탭을 여는
+ * 순간 첫 탭의 주소가 지워져, 첫 탭의 다음 한마디가 「허용되지 않은 주소입니다」 로
+ * 막혔다.
+ */
+{
+  let 둘째받은수 = 0;
+  const 둘째서버 = createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      const url = req.url.split('?')[0];
+      const 보냄 = (o, code = 200) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (url === '/v1/models') return 보냄({ data: [{ id: '둘째모델', object: 'model' }] });
+      if (url === '/v1/chat/completions') {
+        둘째받은수 += 1;
+        return 보냄({ id: 'y', object: 'chat.completion', model: '둘째모델', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '(둘째 연결이 답했습니다)' } }], usage: { prompt_tokens: 10, completion_tokens: 3 } });
+      }
+      return 보냄({}, 404);
+    });
+  });
+  await new Promise((r) => 둘째서버.listen(0, '127.0.0.1', r));
+  const 둘째base = `http://127.0.0.1:${둘째서버.address().port}/v1`;
+  const 두집 = mkdtempSync(join(tmpdir(), 'deel-acp-두연결-'));
+  const 나폴더 = mkdtempSync(join(tmpdir(), 'deel-acp-나-'));
+  const 틀 = { kind: 'openai', auth: 'none', apiKey: '', ctx: 32768, streaming: false, tools: true, json: true, think: false };
+  writeFileSync(join(두집, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자',
+    profiles: [
+      { id: 'stub', name: '스텁 연결', baseUrl: base, model: '스텁모델', ...틀 },
+      { id: 'stub2', name: '둘째 연결', baseUrl: 둘째base, model: '둘째모델', ...틀 },
+    ],
+  }, null, 2), 'utf8');
+  mkdirSync(join(나폴더, '.deel'), { recursive: true });
+  writeFileSync(join(나폴더, '.deel', 'config.json'), JSON.stringify({ active: 'stub2' }), 'utf8');
+  const { 믿기 } = await import('../src/safety/trust.js');
+  믿기(나폴더, { env: { ...process.env, DEEL_HOME: 두집 } });
+
+  const e = 에디터([], { DEEL_HOME: 두집 });
+  const 탭글 = (sid) => e.알림들.filter((p) => p.sessionId === sid).map((p) => p.update?.content?.text ?? '').join('');
+  try {
+    await 시간제한(e.요청('initialize', 첫인사), 15000, 'initialize');
+    const 가 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new 가');
+    await 시간제한(e.요청('session/prompt', { sessionId: 가.sessionId, prompt: [{ type: 'text', text: '두연결-가-첫말' }] }), 30000, 'prompt 가 첫말');
+    const 나 = await 시간제한(e.요청('session/new', { cwd: 나폴더, mcpServers: [] }), 20000, 'session/new 나');
+    await 시간제한(e.요청('session/prompt', { sessionId: 나.sessionId, prompt: [{ type: 'text', text: '두연결-나-첫말' }] }), 30000, 'prompt 나 첫말');
+    check('(6회차 N9 먼저) 둘째 탭은 둘째 연결로 간다', 둘째받은수 >= 1, `둘째 받은 수 ${둘째받은수} · ${탭글(나.sessionId).slice(-160)}`);
+
+    const 앞수 = 받은대화.length;
+    await 시간제한(e.요청('session/prompt', { sessionId: 가.sessionId, prompt: [{ type: 'text', text: '두연결-가-둘째말' }] }), 30000, 'prompt 가 둘째말');
+    const 가글 = 탭글(가.sessionId);
+    check('★★ (6회차 N9) 둘째 탭을 연 뒤에도 첫 탭의 말이 첫 연결에 닿는다',
+      받은대화.length > 앞수 && !/허용되지 않은 주소/.test(가글), 가글.slice(-240));
+  } catch (err) {
+    check('두 연결 두 탭 — 통째로 실패', false, String(err?.message ?? err) + ' | ' + e.표준오류().slice(-600));
+  } finally {
+    await e.끝내기();
+    둘째서버.close();
+    rmSync(두집, { recursive: true, force: true });
+    rmSync(나폴더, { recursive: true, force: true });
   }
 }
 

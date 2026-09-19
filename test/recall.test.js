@@ -5,10 +5,10 @@
 //   2) 못 찾은 것과 안 찾은 것을 구분하는가 — 이게 섞이면 모델이 "그런 적 없습니다" 라고 단정한다
 //   3) 한 대화가 결과를 독차지하지 않는가  — 열 줄이 몰리면 다른 대화를 못 본다
 //   4) 큰 기록에서 멈추지 않는가          — 몇 주 쓰면 수십 MB 가 된다
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { 찾기, 낱말쪼개기, 토막내기 } from '../src/agent/recall.js';
+import { 찾기, 낱말쪼개기, 낱말묶기, 토막내기 } from '../src/agent/recall.js';
 import { TOOLS } from '../src/tools/index.js';
 import { makeScope } from '../src/safety/guard.js';
 import { Audit } from '../src/safety/audit.js';
@@ -97,6 +97,41 @@ function 대화(id, 메시지들, model = '스텁모델') {
   check('없는 말은 없다고 한다', 찾기(root, '존재하지않는낱말입니다').맞은것.length === 0);
   check('없어도 뒤진 개수는 말한다', 찾기(root, '존재하지않는낱말입니다').본파일 === 3);
   check('한 글자만 치면 안 찾는다', 찾기(root, '가').맞은것.length === 0);
+}
+
+trace('2b-조사는낱말하나');
+
+// ── 조사는 낱말 하나다 ──────────────────────────────────────────────────
+//
+// 「인코딩을 어떻게」 라고 치면 낱말이 셋(인코딩을·인코딩·어떻게)으로 세어져,
+// 본문에 「인코딩 어떻게」 라고 적힌 — 사람이 찾던 바로 그 — 글이 「다 맞음」
+// 12점에 못 들었다. 조사를 똑같이 붙여 적은 글만 위로 올라갔다.
+{
+  const 조사방 = mkdtempSync(join(tmpdir(), 'deel-recall3-'));
+  const d3 = join(조사방, '.deel', 'sessions');
+  mkdirSync(d3, { recursive: true });
+  const 적기 = (id, 글) => writeFileSync(join(d3, `${id}.jsonl`), [
+    JSON.stringify({ t: 'meta', at: new Date().toISOString(), model: 'm' }),
+    JSON.stringify({ role: 'user', content: 글 }),
+  ].join('\n') + '\n', 'utf8');
+  적기('20260901-100000', '인코딩 어떻게 풀었더라');     // 조사 없이 적힌 글
+  적기('20260901-110000', '인코딩을 어떻게 풀었더라');   // 조사를 붙여 적은 글
+
+  const 묶 = 낱말묶기('인코딩을 어떻게');
+  check('조사만 다른 꼴은 한 묶음이다', 묶.length === 2, JSON.stringify(묶));
+  check('긴 꼴이 묶음 앞에 온다', 묶[0][0] === '인코딩을' && 묶[0][1] === '인코딩', JSON.stringify(묶[0]));
+  check('쪼개기는 여전히 낱낱이 준다', 낱말쪼개기('인코딩을 어떻게').length === 3,
+    낱말쪼개기('인코딩을 어떻게').join(' '));
+
+  const r = 찾기(조사방, '인코딩을 어떻게');
+  const 없는쪽 = r.맞은것.find((h) => h.세션 === '20260901-100000');
+  const 붙은쪽 = r.맞은것.find((h) => h.세션 === '20260901-110000');
+  check('둘 다 찾는다', Boolean(없는쪽 && 붙은쪽), r.맞은것.map((h) => h.세션).join(', '));
+  const 벌어짐 = Math.abs((없는쪽?.점수 ?? 0) - (붙은쪽?.점수 ?? 0));
+  check('조사만 다른 글이 같은 점수를 받는다', 벌어짐 <= 0.5,
+    `${없는쪽?.점수?.toFixed(2)} vs ${붙은쪽?.점수?.toFixed(2)} (차 ${벌어짐.toFixed(2)})`);
+  check('조사를 뗀 글도 다 맞음에 든다', (없는쪽?.점수 ?? 0) >= 30, String(없는쪽?.점수?.toFixed(2)));
+  rmSync(조사방, { recursive: true, force: true });
 }
 
 trace('3-쏠림과예산');
@@ -232,6 +267,25 @@ trace('5-옮겨온기록');
   const 찾음3 = 찾기(root, '자모범위').맞은것;
   check('★ 도구 결과까지 안 켜면 결과 알맹이는 안 뒤진다', 찾음3.length === 0,
     `${찾음3.length}건`);
+}
+
+/*
+ * ── 약속한 옵션을 함수가 진짜로 읽는가 (2.0.0 8회차 스키마) ──────────────
+ *
+ * 찾기() 의 JSDoc 이 `지금세션` 을 옵션으로 적어 두고 함수는 한 번도 안 읽었다. 없는 옵션을
+ * 적어 두면 부르는 쪽이 그것을 넘기고, 넘겼으니 걸러진 줄 알고 지낸다 — 조용히 안 되는 자리다.
+ * 여기서는 소스를 읽어 **적어 둔 것과 읽는 것이 같은지**만 본다. 동작으로는 못 잡는 어긋남이다.
+ */
+{
+  const 소스 = readFileSync(new URL('../src/agent/recall.js', import.meta.url), 'utf8');
+  const 머리 = 소스.slice(0, 소스.indexOf('export function 찾기'));
+  const 적은것 = [...머리.matchAll(/@param \{\{([^}]*)\}\} o/g)]
+    .flatMap((m) => m[1].split(',').map((x) => x.split(/[?:]/)[0].trim()))
+    .filter(Boolean);
+  const 몸통 = 소스.slice(소스.indexOf('export function 찾기'));
+  const 안읽는것 = 적은것.filter((이름) => !몸통.includes(`o.${이름}`));
+  check('★★ (8회차) 찾기() 가 JSDoc 에 적은 옵션을 다 읽는다', 적은것.length > 0 && 안읽는것.length === 0,
+    `적은것=${적은것.join(' · ')} · 안읽는것=${안읽는것.join(' · ')}`);
 }
 
 rmSync(root, { recursive: true, force: true });

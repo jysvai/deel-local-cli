@@ -216,7 +216,87 @@ trace('8-저장파일도줄어든다');
   const 다시 = store.load().messages;
   check('저장 파일도 둘로 줄어든다', 다시.length === 2, JSON.stringify(다시.map((m) => m.content)));
   check('남은 것이 첫 턴이다', 다시[0]?.content === '첫', JSON.stringify(다시.map((m) => m.content)));
-  check('파일이 그대로 있다', existsSync(store.file ?? '') || true);
+  // `|| true` 가 붙어 있어 파일이 없어도 초록이었다.
+  check('파일이 그대로 있다', existsSync(store.file ?? ''), String(store.file));
+}
+
+trace('9-박힌시킨말');
+
+/*
+ * ── ★★ 되감은 턴에서 박힌 「이번에 시킨 말」 이 남은 대화에 그대로 있었다 ────
+ *
+ * 턴 머리에서 창이 차면 줄이기(trim)·접기가 앞선 대화 자리에 시킨 말 원문을
+ * 「빠짐없이 하세요」 와 함께 박는다. 그 쪽지는 **그 턴의 자리표보다 앞**에
+ * 놓이므로, 그 턴을 되감아도 자리표부터 뒤만 걷히고 쪽지는 남았다. 다음 턴에
+ * 모델은 방금 되돌린 일을 「빠짐없이」 다시 하러 간다 — 세션의 되감기() 가
+ * 이번요청을 비우며 막겠다고 적어 둔 바로 그 일이다.
+ */
+{
+  const { s, h } = 새것();
+  for (let k = 0; k < 8; k++) 한턴(s, h, `잡담 ${k}`, [{ role: 'assistant', content: `답 ${k}` }]);
+  const t = h.nextTurn();
+  s.턴시작(t);
+  s.이번요청 = '결제 모듈 payments.js 를 새로 만들어줘';
+  s.push({ role: 'user', content: s.이번요청 });
+  s.할일 = [{ text: 'payments.js 뼈대 세우기', state: 'doing' }];
+  const 줄인수 = s.trim();
+  check('먼저: 턴 머리에서 줄였고 그 턴 자리표가 살아 있다', 줄인수 > 0 && s.턴자리().some((x) => x.턴 === t),
+    `${줄인수} · ${JSON.stringify(s.턴자리())}`);
+  s.되감기([t]);
+  const 남은글 = JSON.stringify(s.messages);
+  check('★★ 되감은 턴에서 박은 시킨 말이 줄인 자리에 안 남는다', !남은글.includes('payments.js 를 새로'), 남은글.slice(0, 300));
+  check('★ 되감은 턴의 할 일도 그 자리에 안 남는다', !남은글.includes('payments.js 뼈대'), 남은글.slice(0, 300));
+  check('줄였다는 표 자체는 남는다', 남은글.includes('줄였습니다'), 남은글.slice(0, 120));
+}
+
+// 되감지 **않은** 턴에서 박힌 것은 그대로다 — 이것까지 걷으면 살아 있는 일을 잊는다.
+{
+  const { s, h } = 새것();
+  const t0 = h.nextTurn();
+  s.턴시작(t0);
+  s.이번요청 = '넷을 고쳐: 가 나 다 라';
+  s.push({ role: 'user', content: s.이번요청 });
+  for (let k = 0; k < 8; k++) { s.push({ role: 'assistant', content: `답 ${k}` }); s.push({ role: 'user', content: `더 ${k}` }); }
+  s.trim();
+  const t1 = h.nextTurn();
+  s.턴시작(t1);
+  s.push({ role: 'user', content: '로그도 넣어줘' });
+  s.되감기([t1]);
+  check('★ 되감지 않은 턴에서 박은 시킨 말은 남는다', JSON.stringify(s.messages).includes('넷을 고쳐: 가 나 다 라'),
+    JSON.stringify(s.messages).slice(0, 200));
+}
+
+trace('10-반만되감음');
+
+/*
+ * ── ★ 두 턴 중 하나는 접혀서 못 걷었는데 「대화도 걷었다」 로만 말했다 ───────
+ *
+ * /undo 2 에서 앞 턴은 요약에 접혀 자리표가 없고 뒤 턴만 살아 있으면, 뒤 턴의
+ * 말만 걷힌다. 부르는 쪽(commands.js)이 그걸 알아야 「앞 턴의 말은 남았다」 를
+ * 말할 수 있다. 되감기() 가 **못 걷은 턴**을 돌려준다.
+ */
+{
+  const { s, h } = 새것();
+  한턴(s, h, '턴1: 설명', [{ role: 'assistant', content: '설명함' }]);
+  for (let k = 0; k < 6; k++) { s.push({ role: 'user', content: `잡담 ${k}` }); s.push({ role: 'assistant', content: `답 ${k}` }); }
+  const t2 = 한턴(s, h, '턴2: auth.js 를 지워 줘', [{ role: 'assistant', content: 'auth.js 를 지웠습니다' }]);
+  for (let k = 0; k < 6; k++) { s.push({ role: 'user', content: `잡담2 ${k}` }); s.push({ role: 'assistant', content: `답2 ${k}` }); }
+  const 꼬리 = s.messages.slice(-4);
+  s.messages = [...s.messages.slice(0, 2), { role: 'user', content: '[앞선 대화를 요약해 접었습니다]\n## 한 일\nauth.js 를 지웠다' }, ...꼬리];
+  const t3 = 한턴(s, h, '턴3: 로그 추가', [{ role: 'assistant', content: '로그 넣음' }]);
+  const r = s.되감기([t2, t3]);
+  check('먼저: 뒤 턴만 걷혔다', r.걷은것 === 2 && r.턴.length === 1 && r.턴[0] === t3, JSON.stringify(r));
+  check('★ 접혀서 못 걷은 턴을 돌려준다', Array.isArray(r.못걷은턴) && r.못걷은턴.length === 1 && r.못걷은턴[0] === t2,
+    JSON.stringify(r.못걷은턴));
+
+  // 가장 이른 자리표보다 **뒤**에서 접힌 턴은 그 자리표와 함께 걷힌 것이다 — 못 걷었다고 하면 거짓이다.
+  const b = 새것();
+  const u1 = 한턴(b.s, b.h, '앞 턴', [{ role: 'assistant', content: '앞 답' }]);
+  const u2 = b.h.nextTurn();   // 자리표가 접혀 없는 뒤 턴
+  b.s.push({ role: 'user', content: '[앞선 대화를 요약해 접었습니다]' });
+  const r2 = b.s.되감기([u1, u2]);
+  check('★ 가장 이른 자리표 뒤에서 접힌 턴은 못 걷었다고 안 한다', r2.걷은것 === 3 && (r2.못걷은턴 ?? []).length === 0,
+    JSON.stringify(r2));
 }
 
 rmSync(root, { recursive: true, force: true });

@@ -51,8 +51,24 @@ export const 제공자 = {
   리전들,
 
   주소들: ({ 리전 } = {}) => {
-    const r = String(리전 ?? 'us-east-1').trim();
-    if (!/^[a-z]{2}-[a-z]+-\d$/.test(r)) return [];
+    /*
+     * 리전은 소문자로 받고, 가운데 이름이 여러 칸인 것도 받는다 (사냥5 B5-12).
+     *
+     * `xx-이름-숫자` 한 칸짜리만 받아서 GovCloud(`us-gov-west-1`)와 대문자로 적은
+     * `US-EAST-1` 이 **아무 말 없이** 후보 0개였다 — 화면은 「붙을 곳을 못 찾았다」 로만
+     * 보인다. 모양 검사 자체는 남긴다. 이 값이 주소 한가운데에 들어가므로 점·빗금이
+     * 끼면 남의 집 주소를 지을 수 있다.
+     */
+    /*
+     * 빈 글자도 「안 골랐다」 다.
+     *
+     * `?? 'us-east-1'` 은 null·undefined 만 막는다. 그래서 설치 화면에서 리전을
+     * **엔터로 넘기면**(setup.js 는 trim 만 한다) 빈 글자가 그대로 내려와 아래
+     * 모양 검사에 걸리고 후보가 0개가 됐다 — 화면에는 「붙을 곳을 못 찾았습니다」
+     * 한 줄뿐이라, 엔터 한 번이 원인이라는 것을 알 길이 없다.
+     */
+    const r = String(리전 ?? '').trim().toLowerCase() || 'us-east-1';
+    if (!/^[a-z]{2}(?:-[a-z]+)+-\d{1,2}$/.test(r)) return [];
     return [
       `https://bedrock-runtime.${r}.amazonaws.com/v1`,
       `https://bedrock-runtime.${r}.amazonaws.com/openai/v1`,
@@ -97,6 +113,18 @@ export const 제공자 = {
 
   오류읽기({ status, 서버말 }) {
     /*
+     * **좁은 말이 먼저다.**
+     *
+     * 만료된 단기 키도 AWS 는 403 + `AccessDeniedException` 으로 내놓고, 본문에
+     * 「security token … is expired」 를 같이 적는다. 그런데 아래 넓은
+     * AccessDenied 검사가 이 검사보다 위에 있어서, 열쇠를 새로 받아야 하는
+     * 사람이 「콘솔에서 모델 접근을 신청하세요」 를 봤다 — 신청은 이미 돼
+     * 있으니 콘솔을 아무리 봐도 고칠 것이 없다.
+     */
+    if (status === 403 && /security token|ExpiredToken/i.test(서버말)) {
+      return '열쇠가 만료됐습니다 — Bedrock 콘솔에서 새로 발급받으세요 (단기 키는 만료됩니다).';
+    }
+    /*
      * Bedrock 에서 제일 흔한 첫 실패는 **모델 접근 신청을 안 한 것**이다.
      * 열쇠도 맞고 주소도 맞는데 그 리전의 그 모델을 아직 안 열어 둔 상태다.
      * 이걸 「연결 실패」로 뭉개면 사람은 주소와 열쇠를 몇 번이고 다시 본다 —
@@ -107,9 +135,6 @@ export const 제공자 = {
     }
     if (/ValidationException/i.test(서버말) && /model/i.test(서버말)) {
       return '그 모델 이름을 이 리전에서 못 씁니다 — 리전을 바꾸거나 이름을 다시 보세요.';
-    }
-    if (status === 403 && /security token|ExpiredToken/i.test(서버말)) {
-      return '열쇠가 만료됐습니다 — Bedrock 콘솔에서 새로 발급받으세요 (단기 키는 만료됩니다).';
     }
     if (status === 404 && /^$|Not Found/i.test(서버말)) {
       return '그 리전에 이 창구가 없습니다 — 리전 이름을 다시 보세요.';

@@ -120,6 +120,11 @@ function 판짜기(큰것, 작은것) {
   return 큰 + (Number.isFinite(작은) && 작은 < 10 ? 작은 / 10 : 0);
 }
 
+/** 캐시 표식을 붙일 만한 앞머리의 최소 토큰 수. 5 세대부터 512, 그 앞이나 모르는 판은 1024. */
+function 표식최소(모델) {
+  return (세대(모델) ?? 0) >= 5 ? 512 : 1024;
+}
+
 /** 이 이름이 Claude 갈래로 보이나. */
 export function 클로드인가(모델) {
   return /claude|fable|mythos|opus|sonnet|haiku/i.test(String(모델 ?? ''));
@@ -237,7 +242,13 @@ export function 기본카드(conn) {
      * 여기서는 망설이지 않는다 — 안 붙이면 Anthropic 직통은 캐시가 0 이다.
      */
     카드.캐시 = 'explicit';
-    카드.캐시최소 = 회사 === 'bedrock' ? 4096 : 1024;
+    /*
+     * 표식 최소 크기는 **모델이** 정한다. 주소로 정하고 있었다(Bedrock 4096) — 그러면 같은
+     * 모델도 게이트웨이 뒤에 두면 다른 값이 되고, 5 세대(512)에서는 캐시될 앞머리에 표식을
+     * 안 붙였다. 문턱 아래에 붙인 표식은 오류 없이 캐시만 안 된다(Anthropic 문서의 cache
+     * limitations) — 낮게 잡는 쪽이 잃는 것이 없다. 모르는 판은 1024 로 둔다.
+     */
+    카드.캐시최소 = 표식최소(모델);
     카드.세션자리 = 'metadata';
     /*
      * 4.6 판부터 생각이 adaptive 로 바뀌었다. 그 전 판은 budget_tokens 다.
@@ -299,7 +310,7 @@ export function 기본카드(conn) {
   if (추론형오픈AI(모델)) 카드.출력칸 = '새것';
   if (클로드인가(모델)) {
     카드.캐시 = 'explicit';
-    카드.캐시최소 = 회사 === 'bedrock' ? 4096 : 1024;
+    카드.캐시최소 = 표식최소(모델);   // 모델이 정한다 — 위 anthropic 갈래 머리말
   }
 
   if (회사 === 'openai') {
@@ -466,8 +477,15 @@ export function 배울전선(문구, 규격) {
    * `metadata.user_id`, `messages.0.content`. 그것도 칸 이야기다. 이 갈래를
    * 빼놨다가 「thinking.type 'adaptive' 는 안 된다」 는 정직한 문장을 못 배웠다
    * (죽은규칙 검사가 잡았다 — 안 걸리는 규칙을 재는 판이 제 고침을 잡은 것이다).
+   *
+   * 그런데 그 주석이 보기로 적어 둔 **`messages.0.content` 는 정작 안 걸렸다.**
+   * 토막이 전부 글자로 시작해야 했기 때문이다 — 배열 자리를 숫자로 적어 주는
+   * 창구(Anthropic·pydantic 계열이 그렇게 적는다)에서는 이 갈래가 통째로 죽어
+   * 있었다 (8회차 뒷단-배우기). 첫 토막만 글자·밑줄로 시작하면 되고, 뒤 토막은
+   * 숫자만이어도 칸 경로다. 첫 토막까지 숫자를 받으면 `1.5` 같은 판 번호가
+   * 칸 이야기로 읽힌다 — 거기까지는 안 연다.
    */
-  const 칸경로 = /\b[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\b/i;
+  const 칸경로 = /\b[a-z_][a-z0-9_]*(?:\.[a-z0-9_]+)+/i;
   const 칸이야기 = { test: (글) => 칸낱말.test(글) || 칸경로.test(글) };
 
   /*
@@ -534,8 +552,13 @@ export function 배울전선(문구, 규격) {
   if (목록) {
     // 쉼표로 세는 창구도 있고 띄어쓰기로만 세는 창구도 있다. 둘 다 받는다 —
     // 한쪽만 보면 다른 쪽에서는 이 문장이 아래 「안 받는다」 로 굴러떨어진다.
-    const 값들 = 목록[1]
-      .split(/[,|\s]+/)
+    /*
+     * 따옴표로 센 목록이면 **따옴표 안만** 값이다 (2.0.0 6회차 전선6). 무늬가 줄 끝까지 먹어서
+     * `Supported values are: 'low', 'medium', 'high' for parameter reasoning_effort` 의 뒤 설명
+     * 낱말(for·parameter)이 눈금에 섞였다 — 그 목록을 배우면 다음 판에 `parameter` 를 세기로 보낸다.
+     */
+    const 따옴표값 = [...목록[1].matchAll(/['"`]([a-z]+)['"`]/gi)].map((x) => x[1]);
+    const 값들 = (따옴표값.length >= 2 ? 따옴표값 : 목록[1].split(/[,|\s]+/))
       .map((x) => x.replace(/['\"`.]/g, '').toLowerCase())
       .filter((x) => /^[a-z]+$/.test(x) && x.length <= 12 && x !== 'or' && x !== 'and');
     /*
@@ -646,8 +669,14 @@ export function 배울전선(문구, 규격) {
    * 서버가 쓸 이름을 말해 줬으면 그것을 그대로 따른다. 두 말투를 다 받는다 —
    * `Use 'X' instead` 와 `X must be used instead`.
    */
+  /*
+   * `can`·`should` 뒤의 not 은 **쓰지 말라** 는 뜻이다 (2.0.0 6회차 전선6). 여기가 `cannot` 의 can 에
+   * 걸려 `'max_tokens' cannot be used` 를 「max_tokens 를 써라」 로 읽고 옛것으로 갈아탔다. 서버가 이름을
+   * 대 주는 말투 `Did you mean 'X'?` 도 받는다 — 모르고 지나쳐 아래 갈래에서 반대로 읽혔다.
+   */
   const 쓰라는것 = /\buses?\s+['"`]?(max_completion_tokens|max_tokens)\b/i.exec(s)
-    ?? /['"`]?\b(max_completion_tokens|max_tokens)\b['"`]?\s+(?:must|should|can)[^\n]{0,12}\bused\b/i.exec(s);
+    ?? /\bdid you mean\s+['"`]?(max_completion_tokens|max_tokens)\b/i.exec(s)
+    ?? /['"`]?\b(max_completion_tokens|max_tokens)\b['"`]?\s+(?:must|should|can)(?!not)\s+(?!not\b)[^\n]{0,12}\bused\b/i.exec(s);
   if (쓰라는것 && 거절.test(s)) {
     return { 무엇: '출력칸', 값: 쓰라는것[1].toLowerCase() === 'max_completion_tokens' ? '새것' : '옛것', 왜: 짧게(s) };
   }
@@ -700,9 +729,15 @@ export function 배울전선(문구, 규격) {
      *
      * 규격을 모르면(옛 부름) 바꿔 보는 쪽으로 간다. 그쪽이 여태 하던 일이고,
      * 그 다음 거절에서 어차피 꺼진다.
+     *
+     * 여기가 `규격 === 'anthropic'` 하나로만 갈라져 있었다. 그러면 ollama·gemini
+     * 창구가 「나머지」 로 떨어져 OpenAI 전용 칸을 배우고, 그 값이 **디스크에
+     * 남는다** — 위 610줄이 「아닌 것을 하나 뺀다」 가 아니라 「맞는 것 하나만」
+     * 이어야 한다고 적어 둔 그 틀림이다 (8회차 뒷단-배우기). 바꿔 보는 쪽은
+     * OpenAI 규격과 **규격 모름** 둘뿐이다.
      */
-    if (규격 === 'anthropic') return { 무엇: '캐시', 값: 'none', 왜: 짧게(s) };
-    return { 무엇: '표식칸', 값: 'prompt_cache_breakpoint', 왜: 짧게(s) };
+    if (규격 === 'openai' || !규격) return { 무엇: '표식칸', 값: 'prompt_cache_breakpoint', 왜: 짧게(s) };
+    return { 무엇: '캐시', 값: 'none', 왜: 짧게(s) };
   }
   /*
    * 여기 `cache_creation` 도 적혀 있었다. 지워야 하는 낱말이었다.
@@ -747,13 +782,26 @@ export function 배울전선(문구, 규격) {
   if (/(?:parameter|property|field|argument)[^\n]{0,24}['"`]?(?<!-)\b(?:user|metadata)\b(?!-)['"`]?/i.test(s) && 거절.test(s)) {
     return { 무엇: '세션자리', 값: null, 왜: 짧게(s) };
   }
-  if (/['"`](?:user|metadata)['"`][^\n]{0,40}(?:not supported|unsupported|unknown|unexpected|invalid)/i.test(s)) {
+  // `role 'user'` 는 대화 한 줄의 역할이지 칸이 아니다 (2.0.0 6회차 전선6). `Message with role 'user' is invalid`
+  // (빈 내용 같은 대화 오류)에 걸려 세션자리를 껐고, 그 배움이 디스크에 남았다.
+  if (/['"`](?:user|metadata)['"`][^\n]{0,40}(?:not supported|unsupported|unknown|unexpected|invalid)/i.test(s)
+    && !/\brole\s*[:=]?\s*['"`](?:user|metadata)['"`]/i.test(s)) {
     return { 무엇: '세션자리', 값: null, 왜: 짧게(s) };
   }
 
   // 칸 이름을 점으로 이어 적는 창구. `metadata.user_id: unsupported field` 처럼
   // 이름이 먼저 오고 까닭이 뒤에 온다 — 위 두 무늬는 그 차례를 못 잡는다.
-  if (/\b(?:metadata\.user_id|user_id)\b/i.test(s) && 거절.test(s)) {
+  /*
+   * 여기만 **칸 이야기 울타리가 없었다.** 위 744줄이 「'user' 는 흔한 낱말이라
+   * 칸 이야기일 때만 본다」 고 적어 두고, 769줄에는 실제로 가드가 있는데, 이
+   * 갈래는 낱말 하나와 거절 낱말만 보고 세션자리를 껐다 —
+   *
+   *   Invalid user_id: authentication failed
+   *
+   * 열쇠 이야기다. 그런데 이 한 줄로 멀쩡하던 세션 이름이 그 창구에서 **영영**
+   * 꺼지고, 그 값은 디스크에 남는다 (8회차 뒷단-배우기).
+   */
+  if (/\b(?:metadata\.user_id|user_id)\b/i.test(s) && 거절.test(s) && 칸이야기.test(s)) {
     return { 무엇: '세션자리', 값: null, 왜: 짧게(s) };
   }
 

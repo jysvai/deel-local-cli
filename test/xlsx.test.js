@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { makeZip } from '../src/pack/zip.js';
 import { readZip, looksZip } from '../src/pack/zip.js';
 import { readXlsx, toCsv, cellRef, unescapeXml, looksOle } from '../src/tools/xlsx.js';
+import { 시트모으기, 빈시트답, canUseExcel, 없는엑셀, SCRIPT } from '../src/tools/excel-com.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -296,7 +297,277 @@ trace('9-암호가샐길');
   check('읽기 결과에 암호를 담아 돌려주지 않는다', !/return\s*\{[^}]*password/s.test(xl), '');
 }
 
+trace('9b-터무니없는주소');
+
+// ── 주소 하나로 메모리를 다 먹는 파일 (2.0.0 4회차 사냥) ─────────────────
+//
+// 1KB 도 안 되는 xlsx 에 `<row r="80000000">` 나 `<c r="AAAAAA1">` 한 줄이면
+// 읽개가 그 번호까지 빈 줄·빈 칸을 **실제로 만들어** 채웠다. 힙이 바닥나
+// 프로세스가 죽는다 — 하던 대화까지 같이. 엑셀 파일은 남이 보낸 바이트다.
+//
+// 죽는지를 이 검사 프로세스 안에서 재면 검사가 같이 죽는다. 그래서 힙을 작게
+// 묶은 자식 프로세스에서 연다. 멀쩡한데 커다란 시트(한 칸이 백만째 줄에 있다)는
+// 여기서 바로 잰다 — 고치기 전에도 이 프로세스를 죽이지는 않는 크기다.
+{
+  const { spawnSync } = await import('node:child_process');
+  const 열글자 = (n) => { let s = ''; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; };
+  const 한시트wb = `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="${RNS}"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+  const 한시트rels = `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="x" Target="worksheets/sheet1.xml"/></Relationships>`;
+  const 한시트 = (sheetData) => makeZip([
+    { name: '[Content_Types].xml', data: Buffer.from('<Types/>') },
+    { name: 'xl/workbook.xml', data: Buffer.from(한시트wb) },
+    { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from(한시트rels) },
+    { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(`<?xml version="1.0"?><worksheet xmlns="${NS}"><sheetData>${sheetData}</sheetData></worksheet>`) },
+  ]);
+  const 글칸 = (ref, 값) => `<c r="${ref}" t="inlineStr"><is><t>${값}</t></is></c>`;
+
+  // 자식 프로세스: 힙 64MB · 60초. 죽거나 멈추면 status 가 0 이 아니다.
+  const 자식에서 = (sheetData) => {
+    const 코드 = `
+      import { makeZip } from ${JSON.stringify(new URL('../src/pack/zip.js', import.meta.url).href)};
+      import { readXlsx } from ${JSON.stringify(new URL('../src/tools/xlsx.js', import.meta.url).href)};
+      const b = makeZip([
+        { name: 'xl/workbook.xml', data: Buffer.from(${JSON.stringify(한시트wb)}) },
+        { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from(${JSON.stringify(한시트rels)}) },
+        { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(${JSON.stringify(`<worksheet xmlns="${NS}"><sheetData>${sheetData}</sheetData></worksheet>`)}) },
+      ]);
+      const r = readXlsx(b);
+      const rows = r.sheets[0].rows;
+      console.log(JSON.stringify({ 줄: rows.length, 폭: rows.reduce((m, x) => Math.max(m, x.length), 0), notes: r.notes }));
+    `;
+    const p = spawnSync(process.execPath, ['--max-old-space-size=64', '--input-type=module', '-e', 코드],
+      { encoding: 'utf8', timeout: 60000 });
+    let 결과 = null;
+    try { 결과 = JSON.parse(p.stdout.trim().split('\n').pop()); } catch { /* 죽었으면 낼 것이 없다 */ }
+    return { 살았다: p.status === 0 && 결과 !== null, 결과, 말: `status ${p.status} · ${p.signal ?? ''} · ${(p.stderr ?? '').split('\n').find((l) => /heap|Error/.test(l)) ?? ''}`.slice(0, 160) };
+  };
+
+  const 줄폭탄 = 자식에서(`<row r="80000000">${글칸('A80000000', 'x')}</row>`);
+  check('★★ 줄 번호 하나(80000000)로 프로세스가 죽지 않는다', 줄폭탄.살았다, 줄폭탄.말);
+  check('★ 엑셀 한계 밖 줄은 뺐다고 말한다', /한계/.test((줄폭탄.결과?.notes ?? []).join(' ')), JSON.stringify(줄폭탄.결과));
+  const 열폭탄 = 자식에서(`<row r="1">${글칸('AAAAAA1', 'x')}</row>`);
+  check('★★ 열 주소 하나(AAAAAA1)로 프로세스가 죽지 않는다', 열폭탄.살았다, 열폭탄.말);
+  check('★ 엑셀 한계 밖 열은 뺐다고 말한다', /한계/.test((열폭탄.결과?.notes ?? []).join(' ')), JSON.stringify(열폭탄.결과));
+
+  // 멀쩡한데 멀리 떨어진 칸. 백만 줄을 만들지 않고, 건너뛴 것을 말한다.
+  const 먼줄 = readXlsx(한시트(`<row r="1">${글칸('A1', '처음')}</row><row r="1000000">${글칸('A1000000', '끝')}</row>`));
+  const 먼줄행 = 먼줄.sheets[0].rows;
+  check('★★ 백만째 줄의 한 칸 때문에 빈 줄 백만 개를 만들지 않는다', 먼줄행.length <= 3, `${먼줄행.length}줄`);
+  check('  값은 둘 다 나온다', 먼줄행[0]?.[0] === '처음' && 먼줄행.at(-1)?.[0] === '끝', JSON.stringify(먼줄행.slice(0, 3)));
+  check('★★ 건너뛴 빈 줄을 몇 개·어디부터인지 말한다',
+    먼줄.notes.some((n) => /빈 줄/.test(n) && /999,?998/.test(n) && /1,?000,?000행/.test(n)), 먼줄.notes.join(' / '));
+
+  const 먼열 = readXlsx(한시트(`<row r="1">${글칸('A1', '왼')}${글칸('XFD1', '오른')}</row>${Array.from({ length: 99 }, (_, i) => `<row r="${i + 2}">${글칸(`A${i + 2}`, String(i))}</row>`).join('')}`));
+  const 먼열행 = 먼열.sheets[0].rows;
+  check('★★ XFD 열의 한 칸 때문에 줄마다 빈 칸 16384 개를 만들지 않는다',
+    먼열행.length === 100 && 먼열행.every((r) => r.length === 2), `${먼열행.length}줄 · 폭 ${먼열행[0]?.length}`);
+  check('  오른쪽 끝 값이 제 줄에', 먼열행[0][1] === '오른' && 먼열행[1][0] === '0', JSON.stringify(먼열행[0]).slice(0, 80));
+  check('★★ 건너뛴 빈 열을 말한다', 먼열.notes.some((n) => /빈 열/.test(n) && /16,?382/.test(n)), 먼열.notes.join(' / '));
+
+  // 틈은 좁은데 칸이 많다 — 대각선. 줄 1200 × 열 1200 = 144만 칸.
+  const 대각 = readXlsx(한시트(Array.from({ length: 1200 }, (_, i) => `<row r="${i + 1}">${글칸(`${열글자(i + 1)}${i + 1}`, String(i + 1))}</row>`).join('')));
+  const 대각행 = 대각.sheets[0].rows;
+  const 대각폭 = 대각행.reduce((m, r) => Math.max(m, r.length), 0);
+  check('★★ 펼친 표의 칸 수에 상한이 있다 (100만 칸)', 대각행.length * 대각폭 <= 1_000_000 && 대각행.length > 0,
+    `${대각행.length}줄 × ${대각폭}`);
+  check('  앞쪽 값은 그대로', 대각행[0]?.[0] === '1' && 대각행[1]?.[1] === '2', '');
+  check('★★ 그리고 아래쪽을 몇 줄 뺐는지 말한다', 대각.notes.some((n) => /상한/.test(n) && /줄/.test(n)), 대각.notes.join(' / '));
+
+  /*
+   * 주소(r) 없이 적힌 칸의 열은 **앞 칸 다음**이다 — 값이 있든 없든.
+   *
+   * 다시 짠 뒤로 「앞에서 값이 들어간 마지막 열 + 1」 로 셌다. 그러면 `<c/>` 나 값 없는
+   * `<c s="2"></c>` 가 끼면 그 자리가 안 세어져 뒤 칸이 한 칸씩 왼쪽으로 당겨진다.
+   * 엑셀은 r 을 늘 적지만 다른 도구가 만든 파일은 안 적기도 한다 (4회차 Gemini 리뷰 · 실행 확인).
+   */
+  const r없는칸 = (중간) => readXlsx(한시트(`<row><c t="inlineStr"><is><t>1</t></is></c>${중간}<c t="inlineStr"><is><t>3</t></is></c></row>`)).sheets[0].rows;
+  check('★ r 없는 빈 칸 <c/> 도 한 칸을 차지한다', JSON.stringify(r없는칸('<c/>')) === '[["1","","3"]]', JSON.stringify(r없는칸('<c/>')));
+  check('★ 값 없는 <c s="2"></c> 도 한 칸을 차지한다', JSON.stringify(r없는칸('<c s="2"></c>')) === '[["1","","3"]]', JSON.stringify(r없는칸('<c s="2"></c>')));
+}
+
+trace('엑셀6');
+/*
+ * 2.0.0 6회차 · Gemini 엑셀6 — 작은 xlsx 를 짜서 가린 여섯.
+ *
+ * 값 없는 공용문자열 칸(`<c t="s"></c>`)에 0번 글이 들어갔고, 불리언 `true` 가 FALSE 로 나왔고,
+ * 인라인 문자열의 읽기표(`<rPh>`)가 본문에 붙었고, `x:` 접두사를 붙여 적은 파일은 「읽을 수 있는
+ * 시트가 없습니다」 로 끝났다. `&#X41;` 은 안 풀렸고, 속성 값 속 `>` 에서 태그가 끊겨 날짜 서식을 놓쳤다.
+ */
+{
+  const 짓기6 = (시트, { 공용 = '<sst><si><t>첫공용</t></si></sst>', 서식 = null, p = '' } = {}) => makeZip([
+    { name: 'xl/workbook.xml', data: Buffer.from(`<${p}workbook xmlns:r="r"><${p}sheets><${p}sheet name="S" sheetId="1" r:id="rId1"/></${p}sheets></${p}workbook>`) },
+    { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from('<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>') },
+    { name: 'xl/sharedStrings.xml', data: Buffer.from(공용) },
+    ...(서식 ? [{ name: 'xl/styles.xml', data: Buffer.from(서식) }] : []),
+    { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(시트) },
+  ]);
+  const 줄들6 = (시트, o) => { try { return JSON.stringify(readXlsx(짓기6(시트, o)).sheets[0].rows); } catch (e) { return `던짐 ${e.message}`; } };
+  const 한줄6 = (칸들) => `<worksheet><sheetData><row r="1">${칸들}</row></sheetData></worksheet>`;
+
+  const 빈공용 = 줄들6(한줄6('<c r="A1" t="s"><v>0</v></c><c r="B1" t="s"></c><c r="C1" t="s"><v></v></c><c r="D1"><v>9</v></c>'));
+  check('★ 값 없는 공용문자열 칸은 빈 칸이다 — 0번 글을 끌어오지 않는다 (6회차 엑셀6)', 빈공용 === '[["첫공용","","","9"]]', 빈공용);
+  const 참거짓 = 줄들6(한줄6('<c r="A1" t="b"><v>1</v></c><c r="B1" t="b"><v>true</v></c><c r="C1" t="b"></c><c r="D1" t="b"><v>0</v></c>'));
+  check('★ 불리언 true 는 TRUE, 값 없는 불리언은 빈 칸 (6회차 엑셀6)', 참거짓 === '[["TRUE","TRUE","","FALSE"]]', 참거짓);
+  const 읽기표 = 줄들6(한줄6('<c r="A1" t="inlineStr"><is><t>東京</t><rPh sb="0" eb="2"><t>トウキョウ</t></rPh></is></c>'));
+  check('★ 인라인 문자열의 읽기표(rPh)는 본문에 안 붙인다 (6회차 엑셀6)', 읽기표 === '[["東京"]]', 읽기표);
+  const 접두 = 줄들6('<x:worksheet xmlns:x="m"><x:sheetData><x:row r="1"><x:c r="A1" t="s"><x:v>0</x:v></x:c><x:c r="B1"><x:v>5</x:v></x:c></x:row></x:sheetData></x:worksheet>',
+    { p: 'x:', 공용: '<x:sst xmlns:x="m"><x:si><x:t>첫공용</x:t></x:si></x:sst>' });
+  check('★★ x: 접두사를 붙여 적은 파일도 읽는다 (6회차 엑셀6)', 접두 === '[["첫공용","5"]]', 접두);
+
+  /*
+   * ★★ 그 고침이 **반쪽**이었다 (막판 훑기).
+   *
+   * 태그 이름의 접두사는 떼어 놓고 관계 열쇠는 `r:id` 를 글자 그대로 찾았다. 접두사
+   * 이름은 규격이 정하는 것이 아니라 그 파일이 정하는 별명이라(`xmlns:rel="…"`),
+   * 다른 이름으로 적은 통합문서는 고침 뒤에도 똑같이 「읽을 수 있는 시트가 없습니다」
+   * 로 죽었다. 윈도우 밖에서는 엑셀 COM 대체 길도 없어 그대로 끝난다.
+   */
+  const 관계접두 = (접두) => {
+    const ns = 접두 ? ` xmlns:${접두}="rel"` : '';
+    const 칸 = 접두 ? `${접두}:id` : 'id';
+    const z = makeZip([
+      { name: 'xl/workbook.xml', data: Buffer.from(`<workbook${ns}><sheets><sheet name="S" sheetId="1" ${칸}="rId1"/></sheets></workbook>`) },
+      { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from('<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>') },
+      { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(한줄6('<c r="A1"><v>7</v></c>')) },
+    ]);
+    try { return JSON.stringify(readXlsx(z).sheets[0].rows); } catch (e) { return `던짐 ${e.message}`; }
+  };
+  for (const 접두 of ['r', 'rel', 'r2', null]) {
+    check(`★★★ 관계 열쇠의 접두사가 무엇이든 시트를 찾는다 — ${접두 ?? '접두사 없음'}`,
+      관계접두(접두) === '[["7"]]', 관계접두(접두));
+  }
+  check('★ &#X41; 대문자 X 도 푼다 (6회차 엑셀6)', unescapeXml('&#X41;&#x42;&#67;') === 'ABC', unescapeXml('&#X41;&#x42;&#67;'));
+  const 날짜 = 줄들6(한줄6('<c r="A1" s="1"><v>45000</v></c>'),
+    { 서식: '<styleSheet><numFmts><numFmt numFmtId="164" formatCode="[>0]yyyy-mm-dd"/></numFmts><cellXfs><xf numFmtId="0"/><xf numFmtId="164"/></cellXfs></styleSheet>' });
+  check('★ 속성 값 속 > 에서 태그를 안 끊는다 — 날짜 서식을 알아본다 (6회차 엑셀6)', 날짜 === '[["2023-03-15"]]', 날짜);
+
+  /*
+   * 날짜 서식을 가르는 것은 **따옴표·대괄호를 뺀 뒤 남은 글자**다 (8회차 · 바깥).
+   *
+   * 여기 「그러면서 숫자 서식은 아닌 것」 이라는 조건이 하나 더 붙어 있었는데,
+   * 앞이 참이면 뒤는 **늘** 참이라 어떤 입력에도 안 걸리는 죽은 조건이었다
+   * (무작정 다 돌려 봤다: 앞이 참인 1,560,474건 중 0건). 지키는 척만 하는 줄은
+   * 다음 사람이 그 줄을 믿고 진짜 조건을 빼게 만든다. 죽은 줄을 지우고, 살아
+   * 있는 쪽(글자가 있나)이 정말로 가르는지를 여기서 못 박는다.
+   */
+  const 돈서식 = 줄들6(한줄6('<c r="A1" s="1"><v>45000</v></c>'),
+    { 서식: '<styleSheet><numFmts><numFmt numFmtId="164" formatCode="#,##0.00_);[Red]\\(#,##0.00\\)"/></numFmts><cellXfs><xf numFmtId="0"/><xf numFmtId="164"/></cellXfs></styleSheet>' });
+  check('★ 글자가 없는 숫자 서식은 날짜가 아니다', 돈서식 === '[["45000"]]', 돈서식);
+  const 붙는말 = 줄들6(한줄6('<c r="A1" s="1"><v>45000</v></c>'),
+    { 서식: '<styleSheet><numFmts><numFmt numFmtId="164" formatCode="#,##0&quot;days&quot;"/></numFmts><cellXfs><xf numFmtId="0"/><xf numFmtId="164"/></cellXfs></styleSheet>' });
+  check('★ 따옴표 안의 글자(days)는 붙는 말이라 날짜로 안 본다', 붙는말 === '[["45000"]]', 붙는말);
+  const 시각서식 = 줄들6(한줄6('<c r="A1" s="1"><v>45000</v></c>'),
+    { 서식: '<styleSheet><numFmts><numFmt numFmtId="164" formatCode="[h]:mm:ss"/></numFmts><cellXfs><xf numFmtId="0"/><xf numFmtId="164"/></cellXfs></styleSheet>' });
+  check('★ 대괄호 밖에 글자가 남는 시각 서식은 날짜로 본다', 시각서식 !== '[["45000"]]', 시각서식);
+}
+
+trace('엑셀-셀주소');
+{
+  /*
+   * 주석에 적힌 보기가 틀려 있었다 — 「BC12 → col 54」. BC 는 2×26+3 = 55 이고,
+   * 54 는 BB 다. 코드가 맞고 주석이 틀렸다. 그 보기를 검사로 옮겨 못 박는다.
+   */
+  check('★ BC12 는 55열 12행이다 (BB 가 54)',
+    cellRef('BC12').col === 55 && cellRef('BC12').row === 12 && cellRef('BB12').col === 54,
+    JSON.stringify([cellRef('BC12'), cellRef('BB12')]));
+  check('  A1 은 1열, Z1 은 26열, AA1 은 27열',
+    cellRef('A1').col === 1 && cellRef('Z1').col === 26 && cellRef('AA1').col === 27,
+    JSON.stringify([cellRef('A1').col, cellRef('Z1').col, cellRef('AA1').col]));
+}
+
 trace('10-치움');
+
+trace('6-못읽은시트');
+
+// ── 시트 하나를 못 읽고서 「다 읽었습니다」 라고 하면 안 된다 ────────────
+//
+// 엑셀에게 맡기는 길은 시트를 임시 txt 로 뽑아 하나씩 읽는다. 그중 하나를
+// 못 읽으면 `catch { continue; }` 로 **조용히 건너뛰고** ok 로 돌아갔다.
+// 사람과 모델에게는 시트 하나가 통째로 없는 표가 「다 읽었습니다」 로 간다 —
+// 「그런 시트 없다」 와 구별이 안 되는 고장이다.
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-xlcom-'));
+  writeFileSync(join(방, '1.txt'), '가\t나\n1\t2\n', 'utf8');
+  // 2.txt 는 일부러 안 만든다 — 엑셀이 못 뽑았거나 백신이 지운 판이다.
+  writeFileSync(join(방, '3.txt'), '다\n3\n', 'utf8');
+  const r = 시트모으기(방, [{ i: 1, name: '첫장' }, { i: 2, name: '둘째장' }, { i: 3, name: '셋째장' }]);
+  check('읽은 시트는 그대로 준다', r.sheets.length === 2 && r.sheets[0].name === '첫장', JSON.stringify(r.sheets.map((s) => s.name)));
+  check('★★ 못 읽은 시트를 이름으로 남긴다', r.못읽은.length === 1 && /둘째장/.test(r.못읽은[0]),
+    JSON.stringify(r.못읽은));
+  check('다 읽으면 못 읽은 것이 없다', 시트모으기(방, [{ i: 1, name: '첫장' }]).못읽은.length === 0, '');
+
+  /*
+   * **하나도** 못 읽었을 때가 더 나빴다 (8회차 · 바깥).
+   *
+   * 시트가 다 못 읽힌 판에서 `못읽은` 목록을 통째로 버리고 「뽑아낼 시트가
+   * 없습니다」 로 돌려줬다. 그 말은 **빈 통합문서**라는 뜻이라, 사람은 파일이
+   * 원래 비었다고 믿는다 — 실은 시트 셋을 하나도 못 읽은 것이다. 위에서 이름을
+   * 남기게 고쳐 놓고, 정작 그 이름이 제일 필요한 자리에서 버리고 있었다.
+   */
+  const 빈방 = mkdtempSync(join(tmpdir(), 'deel-xlcom0-'));
+  const 하나도 = 시트모으기(빈방, [{ i: 1, name: '첫장' }, { i: 2, name: '둘째장' }]);
+  const 답 = 빈시트답(하나도.못읽은);
+  check('★★ 하나도 못 읽었으면 「시트가 없다」 고 하지 않는다',
+    !/뽑아낼 시트가 없습니다/.test(답.message ?? ''), String(답.message));
+  check('★★ 못 읽은 시트 이름을 그 말에 담는다',
+    /첫장/.test(답.message ?? '') && /둘째장/.test(답.message ?? '') && 답.못읽은?.length === 2,
+    String(답.message));
+  check('  정말로 시트가 없는 판은 여태 말대로다',
+    빈시트답([]).reason === 'empty' && /뽑아낼 시트가 없습니다/.test(빈시트답([]).message),
+    JSON.stringify(빈시트답([])));
+  rmSync(빈방, { recursive: true, force: true });
+  rmSync(방, { recursive: true, force: true });
+}
+
+trace('6b-엑셀을시킬수있나');
+{
+  /*
+   * `canUseExcel()` 은 **판**을 보는 문지기다 — 윈도우가 아니면 엑셀을 시킬 길이
+   * 아예 없다. 「엑셀이 깔렸나」 를 여기서 답하지는 않는다. 그건 실제로 불러 봐야
+   * 알고(등록만 되고 실행이 안 되는 자리가 흔하다), 그 답은 없는엑셀() 이 COM 번호로
+   * 가려서 사람 말로 돌려준다. 이 검사는 두 문장이 서로 다른 일을 한다는 것을 못 박는다.
+   */
+  check('canUseExcel 은 판만 본다 (win32 인가)',
+    canUseExcel() === (process.platform === 'win32'), `${process.platform} → ${canUseExcel()}`);
+  check('★ 엑셀이 없다는 답은 COM 번호로 가린다 — 말로 안 가린다',
+    없는엑셀('0x80040154 Class not registered') && 없는엑셀('CO_E_SERVER_EXEC_FAILURE')
+    && !없는엑셀('암호가 맞지 않습니다'), '');
+}
+
+// ── 한글 암호가 파워셸까지 **그대로** 닿나 (막판 훑기) ──────────────────
+trace('9-한글암호');
+/*
+ * ★★★ 나가는 쪽(stdout)은 decode() 로 콘솔 인코딩을 제대로 푸는데, **들어가는 쪽**은
+ * UTF-8 로 써 보내고 있었다. `[Console]::In` 은 이 PC 의 콘솔 입력 코드페이지로 읽으므로,
+ * 한글 암호 다섯 글자가 딴 글자 일곱 개가 된다. 엑셀은 당연히 거절하고, 사람은
+ * 「암호가 맞지 않습니다 (2/3)」 를 세 번 본 뒤 제 파일에서 쫓겨난다 — 맞는 암호를
+ * 넣었는데. 한국 회사 문서에서 흔한 자리다.
+ *
+ * 엑셀 없이도 잰다: 스크립트에서 **암호를 읽는 앞부분만** 떼어 파워셸에 그대로 물린다.
+ */
+if (process.platform === 'win32') {
+  const { spawn } = await import('node:child_process');
+  const 앞 = `${SCRIPT.split('$xl = $null')[0]}
+[Console]::Out.Write((($pw.ToCharArray() | ForEach-Object { [int]$_ }) -join ","))
+`;
+  const enc = Buffer.from(앞, 'utf16le').toString('base64');
+  const 받은것 = await new Promise((done) => {
+    const kid = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', enc], {
+      windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'],
+      env: { ...process.env, DEEL_XL_IN: 'a', DEEL_XL_OUT: 'b' },
+    });
+    let 밖 = '';
+    kid.stdout.on('data', (c) => { 밖 += c; });
+    kid.on('error', () => done(null));
+    kid.on('close', () => done(밖.trim()));
+    try { kid.stdin.write('비밀번호1\n', 'utf8'); kid.stdin.end(); } catch { done(null); }
+  });
+  const 바라는것 = [...'비밀번호1'].map((c) => c.codePointAt(0)).join(',');
+  if (받은것 == null) check('(파워셸을 못 불러서 한글 암호 자리는 못 쟀습니다)', true, '');
+  else check('★★★ 한글 암호가 파워셸까지 글자 그대로 닿는다', 받은것 === 바라는것, `${받은것} ≠ ${바라는것}`);
+} else {
+  check('(윈도우가 아니라 한글 암호 자리는 못 쟀습니다)', true, process.platform);
+}
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n엑셀 읽기 검사  ${D}(규격대로 만든 파일로. 진짜 엑셀 출력 대조는 아직)${X}\n`);

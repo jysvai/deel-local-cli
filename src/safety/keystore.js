@@ -30,6 +30,7 @@
 // 못 잠그면 **잠근 척하지 않는다.** 실패를 삼키고 평문으로 두면, 사람은 잠긴
 // 줄 알고 그 파일을 아무 데나 둔다. 그게 안 잠그는 것보다 나쁘다.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
 
@@ -52,8 +53,56 @@ export const 기본키체인이름 = 'deel-gateway-key';
  * 주고 쓰고, 끝나면 제 것만 지운다. 윈도우(DPAPI)는 잠근 덩이가 설정 파일 안에
  * 있어서 이 이름과 상관이 없다.
  */
-export function 키체인이름() {
-  return process.env.DEEL_KEYCHAIN_NAME || 기본키체인이름;
+/*
+ * ── 자리 하나에 프로필 전부를 넣고 있었다 ───────────────────────────────
+ *
+ * 이름이 고정이라 프로필이 둘이면 **뒤엣것이 앞엣것을 덮었다.**
+ * `add-generic-password … -U` 의 `-U` 가 그 뜻이다.
+ *
+ *   deel setup   회사창구 → 키체인 자리 `deel-gateway-key` 에 A 를 넣음
+ *   deel setup   남의창구 → 같은 자리에 B 를 덮어씀
+ *
+ * 그러고 나면 두 프로필의 `apiKey` 가 **글자까지 똑같은** 한 줄이다
+ * (`keychain:deel-gateway-key`). 화면은 둘 다 「맥 키체인에 있습니다」 라고
+ * 적고, 심사서에도 둘 다 잠긴 것으로 나간다. 그런데 회사창구로 부르면
+ * **남의창구의 열쇠**가 실려 나간다 — 잘되면 401 이고, 안되면 남의 창구
+ * 열쇠를 회사 게이트웨이에 보내는 것이다.
+ *
+ * 그래서 프로필마다 제 자리를 쓴다. 이름은 태그에 적히므로(`keychain:<이름>`)
+ * 이미 넣어 둔 열쇠는 옛 이름 그대로 계속 읽힌다 — 아래 풀기() 가 태그에
+ * 적힌 이름을 쓴다.
+ *
+ * DEEL_KEYCHAIN_NAME 은 그대로 이긴다. 검사가 제 이름을 주고 쓰는 자리다.
+ */
+/*
+ * ── 자리를 나눴는데 다시 한 자리로 모였다 ───────────────────────────────
+ *
+ * 이름은 id 를 소문자로 내리고 모르는 글자를 `-` 로 바꿔 지었다. 그래서
+ * `Work` 와 `work` 가 같은 자리였고, `仕事`·`個人`·키릴 글자 id 는 **전부**
+ * `deel-gateway-key--` 하나였다. `-U` 가 덮으니 위 머리말의 사고가 그대로 난다.
+ *
+ * 줄여 쓰다 글자를 잃은 id 에만 원래 id 의 짧은 해시를 붙인다. 이미 성한 id
+ * (`work` · `회사창구` · `gw.prod_2`)는 **이름을 글자 하나 안 바꾼다.** 까닭:
+ *
+ *   · 넣어 둔 열쇠는 태그(`keychain:<이름>`)로 읽고 지우므로, 이름을 바꿔도 읽기는
+ *     안 깨진다. 그래도 다시 잠그는 순간 새 자리로 옮겨 가고 **옛 자리는 키체인에
+ *     남는다.** 옛 자리를 지우면서 옮길 수도 없다 — 글자를 잃은 id 의 옛 자리는
+ *     다른 프로필과 같이 쓰던 자리일 수 있어서, 지우면 남의 열쇠를 지운다.
+ *   · 그러니 옮기는 것은 이미 한 자리에 뭉쳐 있던(그래서 원래 틀려 있던) id 뿐이고,
+ *     평범한 사람의 키체인에는 아무 일도 안 일어난다.
+ *
+ * 해시는 줄이기 **전** 글자로 짓는다 — 줄인 뒤 글자로 지으면 다시 뭉친다.
+ */
+export function 키체인이름(프로필id = null) {
+  const 정한것 = process.env.DEEL_KEYCHAIN_NAME;
+  if (정한것) return 정한것;
+  const 원래 = String(프로필id ?? '');
+  const id = 원래.trim().toLowerCase().replace(/[^a-z0-9가-힣._-]+/g, '-');
+  if (!id) return 기본키체인이름;
+  if (id === 원래) return `${기본키체인이름}-${id}`;
+  const 짧은 = createHash('sha256').update(원래, 'utf8').digest('hex').slice(0, 10);
+  const 뼈 = id.replace(/^-+|-+$/g, '');
+  return `${기본키체인이름}-${뼈 ? `${뼈}-` : ''}${짧은}`;
 }
 
 /** 이 값이 우리가 잠근 것인가. 평문 열쇠와 헷갈리면 안 된다. */
@@ -111,21 +160,21 @@ $u = [Security.Cryptography.ProtectedData]::Unprotect($b, $null, 'CurrentUser')
 `;
 
 /** 맥 키체인. 넣을 때도 명령줄에 안 올린다 — `security -i` 는 명령을 stdin 으로 받는다. */
-function 키체인넣기(글) {
+function 키체인넣기(글, 이름) {
   const 계정 = userInfo().username;
   // 값 자체는 base64 로 넣는다. 키체인 도구가 줄바꿈·따옴표를 만나면 거기서 끊긴다.
   const 값 = Buffer.from(글, 'utf8').toString('base64');
-  const 명령 = `add-generic-password -a ${계정} -s ${키체인이름()} -w ${값} -U\n`;
+  const 명령 = `add-generic-password -a ${계정} -s ${이름} -w ${값} -U\n`;
   마지막인자 = ['security', '-i'];
   const r = spawnSync('security', ['-i'], { input: 명령, encoding: 'utf8', timeout: 20000 });
   if (r.error) return { ok: false, err: r.error.message };
   return { ok: r.status === 0, err: (r.stderr ?? '').trim() };
 }
 
-function 키체인읽기() {
+function 키체인읽기(이름) {
   const 계정 = userInfo().username;
-  마지막인자 = ['security', 'find-generic-password', '-a', 계정, '-s', 키체인이름(), '-w'];
-  const r = spawnSync('security', ['find-generic-password', '-a', 계정, '-s', 키체인이름(), '-w'], {
+  마지막인자 = ['security', 'find-generic-password', '-a', 계정, '-s', 이름, '-w'];
+  const r = spawnSync('security', ['find-generic-password', '-a', 계정, '-s', 이름, '-w'], {
     encoding: 'utf8', timeout: 20000,
   });
   if (r.error) return { ok: false, text: '', err: r.error.message };
@@ -167,22 +216,52 @@ export function 쓸수있나() {
  * @param {string} 글  평문 열쇠
  * @returns {string|null} `dpapi:…` · `keychain:…` 또는 null
  */
-export function 잠그기(글) {
+export function 잠그기(글, { 프로필id = null } = {}) {
   const 값 = String(글 ?? '');
   if (!값) return null;
 
   if (process.platform === 'win32') {
     const r = 파워셸실행(잠그는스크립트, Buffer.from(값, 'utf8').toString('base64'));
     if (r.ok && r.out) return `dpapi:${r.out}`;
-    return null;   // 사유는 어디로도 안 간다 — 잠긴 것인지 아닌지는 보관방식() 이 따로 말한다
+    못잠근까닭 = r.err || '파워셸이 잠그기를 못 마쳤습니다';
+    return null;
   }
   if (process.platform === 'darwin') {
-    const r = 키체인넣기(값);
-    if (r.ok) return `keychain:${키체인이름()}`;
-    return null;   // 사유는 어디로도 안 간다 — 잠긴 것인지 아닌지는 보관방식() 이 따로 말한다
+    const 이름 = 키체인이름(프로필id);
+    const r = 키체인넣기(값, 이름);
+    if (r.ok) return `keychain:${이름}`;
+    못잠근까닭 = r.err || 'security 가 열쇠를 못 넣었습니다';
+    return null;
   }
+  못잠근까닭 = '이 운영체제에는 잠금장치가 없습니다';
   return null;
 }
+
+/*
+ * ── 「잠글 수 있나」 를 두 자가 따로 답하고 있었다 ───────────────────────
+ *
+ * 잠그기() 는 실패를 전부 `null` 하나로 뭉갰고, 그 사유는 어디로도 안 갔다.
+ * 부르는 쪽(config.js)은 `if (잠근것)` 만 보고 조용히 평문을 적었다.
+ *
+ * 그러고 나서 화면에 적을 말은 보관방식() 이 만드는데, 그자는 쓸수있나() 에게
+ * 물어본다. 그런데 쓸수있나() 의 윈도우 검사는 `[Console]::Out.Write("ok")`
+ * 한 줄이다 — **Add-Type 도 DPAPI 도 안 건드린다.** 그래서 제한 언어 모드나
+ * AppLocker 로 `ProtectedData::Protect` 만 막힌 기계에서는 이렇게 된다:
+ *
+ *   잠그기()   실패 → 평문으로 저장
+ *   보관방식() 「파일에 평문 — 다음 저장 때 DPAPI 로 잠급니다」
+ *
+ * 다음 저장에도 안 잠긴다. 영원히 「곧 잠깁니다」 라고 적는다. 이 말은 영어
+ * 심사서(pack/sheet.en.js)와 `deel report` 에도 그대로 실린다.
+ *
+ * 그래서 **실제로 해 본 자의 답을 들고 있는다.** 한 번이라도 잠그다 실패한
+ * 적이 있으면 보관방식() 이 그 사유를 말한다 — 안 해 본 검사가 지어낸
+ * 약속 대신에.
+ */
+let 못잠근까닭 = null;
+
+/** 마지막으로 잠그다 실패한 까닭. 한 번도 실패한 적이 없으면 null. */
+export function 잠그다실패한까닭() { return 못잠근까닭; }
 
 /**
  * 푼다.
@@ -214,7 +293,16 @@ export function 풀기(태그) {
     if (process.platform !== 'darwin') {
       return { ok: false, text: '', why: '이 열쇠는 맥 키체인에 있습니다 — 여기서는 못 읽습니다. deel setup 으로 다시 넣으세요.' };
     }
-    const r = 키체인읽기();
+    /*
+     * 태그에 적힌 이름으로 읽는다.
+     *
+     * 여기는 `값` 을 꺼내 놓고 쓰지 않고 키체인이름() 을 다시 물었다. 그래서
+     * 넣을 때와 읽을 때의 이름이 갈리면 **다른 자리의 열쇠**를 가져왔다 —
+     * 프로필마다 자리를 나눈 지금은 물론이고, DEEL_KEYCHAIN_NAME 을 넣고 뺀
+     * 것만으로도 그랬다. 돌아온 것은 남의 열쇠고, 게이트웨이는 401 을 준다.
+     * 이 함수 머리말이 없애려던 바로 그 401 이다.
+     */
+    const r = 키체인읽기(값 || 키체인이름());
     if (r.ok) return { ok: true, text: r.text, why: '' };
     return { ok: false, text: '', why: `키체인에서 열쇠를 못 읽었습니다 — ${r.err}` };
   }
@@ -243,12 +331,35 @@ export function 보관방식(값 = null, { lang = 'ko' } = {}) {
   if (값) {
     // 평문인데 잠글 수는 있는 상태. 다음 저장에서 잠긴다.
     const 장치 = 쓸수.방식 === 'dpapi' ? 'DPAPI' : (한 ? '키체인' : 'the keychain');
+    /*
+     * ── 윈도우에서 「권한 0600」 은 거짓말이다 ────────────────────────────
+     *
+     * 이 파일 첫 줄부터 적어 둔 사실이다 — `chmod 600` 은 NTFS 에서 **아무 일도
+     * 안 하고 성공한다.** 그런데 여기서는 평문으로 둘 때마다 「파일에 평문 +
+     * 권한 0600」 이라고 적었다. 그 한 줄이 `deel report` · 영어 심사서
+     * (pack/sheet.en.js) · setup 화면에 그대로 실린다. 사내 심사에서 제일 먼저
+     * 묻는 칸에 **안 한 일을 했다고** 적은 것이고, 그건 안 잠그는 것보다 나쁘다 —
+     * 사람은 잠긴 줄 알고 그 파일을 동기화 폴더에 둔다.
+     *
+     * agent/store.js 와 safety/audit.js 는 같은 자리에서 「못함: windows」 로
+     * 적는다. 여기만 말이 달랐다. 윈도우에서는 그 구절을 아예 안 붙인다.
+     */
+    const 권한 = process.platform === 'win32' ? '' : (한 ? ' + 권한 0600' : ', mode 0600');
+    /*
+     * 실제로 해 보고 실패한 적이 있으면 **그 답이 이긴다.** 쓸수있나() 는
+     * 파워셸이 뜨나만 보지 DPAPI 를 안 건드린다(잠그다실패한까닭 머리말).
+     */
+    const 실패 = 잠그다실패한까닭();
+    if (실패) {
+      return 한 ? `파일에 평문${권한} — 잠그려다 실패했습니다: ${실패}`
+        : `Plain text in the file${권한} - sealing was attempted and failed: ${실패}`;
+    }
     if (쓸수.되나) {
       return 한 ? `파일에 평문 — 다음 저장 때 ${장치} 로 잠급니다`
         : `Plain text in the file - it will be sealed with ${장치} on the next save`;
     }
-    return 한 ? `파일에 평문 + 권한 0600 — ${쓸수.왜}`
-      : `Plain text in the file, mode 0600 - ${쓸수.왜영어 ?? 'no OS keystore is available here'}`;
+    return 한 ? `파일에 평문${권한} — ${쓸수.왜}`
+      : `Plain text in the file${권한} - ${쓸수.왜영어 ?? 'no OS keystore is available here'}`;
   }
   if (process.platform === 'win32') {
     return 한 ? 'DPAPI (윈도우) · 저장된 열쇠 없음' : 'DPAPI (Windows) - no key stored';
@@ -284,7 +395,22 @@ export function 보관방식(값 = null, { lang = 'ko' } = {}) {
  * @returns {{지움: boolean, 방식: 'dpapi'|'keychain'|'없음', 왜: string}}
  */
 export function 잠금지우기(값 = null) {
-  const m = 꼴.exec(String(값 ?? ''));
+  const 적힌것 = String(값 ?? '');
+  const m = 꼴.exec(적힌것);
+  /*
+   * ── 평문 열쇠를 넘겼는데 키체인을 지우러 갔다 (2.0.0 8회차) ─────────────
+   *
+   * 적힌 값이 잠긴 것이 아니면 `m` 이 null 이고, 아래 한 줄이 **이 PC 방식으로
+   * 짐작**해서 맥에서는 갈래가 `keychain` 이 됐다. 그러고는 기본 자리를 지우러
+   * 갔다. 잰 것: `["security","delete-generic-password","-a","<계정>","-s","deel-gateway-key"]`.
+   *
+   * 설정에 평문으로 있다는 것은 **잠금장치에 아무것도 안 넣었다**는 뜻이다.
+   * 그 말을 듣고 지운 자리는 남의 것(다른 프로필이 넣어 둔 열쇠)이다.
+   * 적힌 값이 있으면 그 값만 믿는다 — 짐작은 `값` 이 아예 없을 때만 한다.
+   */
+  if (!m && 적힌것.trim()) {
+    return { 지움: false, 방식: '없음', 왜: '설정에 평문으로 있어서 잠금장치에 따로 둔 것이 없습니다' };
+  }
   const 갈래 = m ? m[1] : (process.platform === 'darwin' ? 'keychain' : null);
 
   if (갈래 === 'dpapi' || (!갈래 && process.platform === 'win32')) {
@@ -298,7 +424,10 @@ export function 잠금지우기(값 = null) {
   }
 
   const 계정 = userInfo().username;
-  const 인자 = ['delete-generic-password', '-a', 계정, '-s', 키체인이름()];
+  // 지울 때도 **태그에 적힌 이름**으로 지운다. 여기가 키체인이름() 을 다시
+  // 물으면, 화면에는 「지웠습니다」 가 뜨는데 설정이 가리키던 열쇠는 키체인에
+  // 그대로 남는다 — 이 함수 머리말이 막으려던 그 상태다.
+  const 인자 = ['delete-generic-password', '-a', 계정, '-s', (m ? m[2] : '') || 키체인이름()];
   마지막인자 = ['security', ...인자];
   const r = spawnSync('security', 인자, { encoding: 'utf8', timeout: 20000 });
   if (r.error) return { 지움: false, 방식: 'keychain', 왜: r.error.message };

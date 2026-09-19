@@ -20,8 +20,8 @@ import { allowTemporarily, isOffline } from '../safety/network.js';
 import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴까 } from '../safety/secrets.js';
 import { 바깥인가 } from '../safety/runmode.js';
 import { get as workMode } from './modes.js';
-// 종합 모드에서 단계가 일을 따라간다 (agent/단계.js).
-import { 다음단계 } from './단계.js';
+// 종합 모드에서 단계가 일을 따라간다 (agent/phase.js).
+import { 다음단계 } from './phase.js';
 import { 묻지말라했나, 손대라했나 } from './route.js';
 import { 지시말 } from '../i18n/index.js';
 import { 빠진것, 빠졌다는말 } from './asks.js';
@@ -452,6 +452,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 여전히 설계 모드라고 떠 있는 채로 파일이 바뀐다. task.js 의 하위모드() 가
    * 모드 쪽에서 한 겹 막고, 여기가 도구 쪽에서 한 겹 더 막는다.
    */
+  // /context 가 이 목록과 같은 것을 재도록 세션에 남긴다 (session.js 의 #도구토큰).
+  session.실린에이전트들 = 깊이 + 1 >= 최대깊이 ? null : (ctx.에이전트들 ?? null);
   let tools = toolSchemas(session.도구제한 ?? null, {
     hasSkills: (session.skills?.length ?? 0) > 0,
     web: session.web !== false && !isOffline(),   // 오프라인이면 웹 도구는 아예 안 보여 준다
@@ -479,6 +481,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * ctx.mcp 로 따로 넘어가므로 하위도 그 길로 똑같이 받는다.
    */
   let 내도구 = tools.map((t) => t.function.name).filter((n) => !n.startsWith('mcp__'));
+  // 이번에 실어 보낸 MCP 이름들. 읽기 전용 모드는 안 싣는다(tools/index.js) — 앞거르기가 이걸로 가른다.
+  let 실은mcp = new Set(tools.map((t) => t.function.name).filter((n) => n.startsWith('mcp__')));
   /*
    * 깊이 상한. 부모(0) → 하위(1) → 하위의 하위(2) 까지다.
    *
@@ -532,7 +536,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    */
   let maxSteps = session.stepsSet ? session.maxSteps : 걸음수(모드.id, conn.ctx);
   /*
-   * ── 단계가 일을 따라간다 (agent/단계.js) ────────────────────────────────
+   * ── 단계가 일을 따라간다 (agent/phase.js) ────────────────────────────────
    *
    * 종합 모드는 한마디를 보고 단계를 고르는데, 그 고르기가 **턴이 시작할 때 딱
    * 한 번** 돌았다. 마흔 걸음짜리 턴에서 일의 성격은 몇 번씩 바뀌는데, 시킴말은
@@ -546,7 +550,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   const 이번턴본것 = { 할일: false, 바꿈: false };
   const 묻지말라 = 묻지말라했나(userText);
   // 계획에서 넘어갈 때만 본다. 「묻지 마라」 는 **어떻게**의 말이고,
-  // 「고쳐라」 는 **무엇을**의 말이다. 범위를 정하는 것은 뒤엣것이다(단계.js).
+  // 「고쳐라」 는 **무엇을**의 말이다. 범위를 정하는 것은 뒤엣것이다(phase.js).
   const 손대라 = 손대라했나(userText);
   const 종합인가 = session.work === 'auto';
 
@@ -583,6 +587,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       vision: conn.vision === true,
     });
     내도구 = tools.map((t) => t.function.name).filter((n) => !n.startsWith('mcp__'));
+    실은mcp = new Set(tools.map((t) => t.function.name).filter((n) => n.startsWith('mcp__')));
     자식도구 = 깊이 + 1 >= 최대깊이 ? 내도구.filter((n) => n !== 'Task') : 내도구;
     const 늘어난것 = 내도구.filter((n) => !옛도구.has(n));
 
@@ -706,8 +711,17 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   const 빠뜨린것 = (글) => {
     // 하위 작업은 사람이 시킨 말이 아니다. 거기 할일은 부모가 이미 쪼개 준 것이다.
     if (깊이 || 고쳐쓰기) return [];
+    /*
+     * 대조할 것은 `userText` 가 아니라 **지금까지 사람이 한 말 전부**다 (8회차 판정).
+     *
+     * 턴이 도는 중에 한 마디를 얹는 길이 있다(끼어들기). 그 말은 대화에도 실리고
+     * 시킨 말 원문(`ctx.요청`·`session.이번요청`)에도 덧붙는데, 여기만 턴이 시작할
+     * 때 친 말을 붙들고 있었다. 그래서 **도중에 얹은 요구는 통째로 잊어도** 아무
+     * 데도 안 걸리고 done 으로 끝났다 — 사람 쪽에서 보면 방금 한 말이 제일 잘
+     * 잊히는 꼴이다. `ctx.요청` 은 끼어든 말까지 이어 붙는 그 한 벌이다.
+     */
     return 빠진것({
-      요청: userText,
+      요청: ctx.요청 ?? userText,
       자국: [
         ...(ctx.todos ?? []).map((x) => x.text),
         ...손댄파일,
@@ -759,6 +773,38 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * @returns {boolean} 멈추라는 것이 닿아서 턴을 접어야 하나
    */
   let 접다멈췄나 = false;
+  /*
+   * 턴 안에서 앞선 대화를 비우고 이어 갈 자리를 만든다. 한 턴에 한 번뿐이다(비운적).
+   *
+   * 두 자리가 부른다 — 서버가 「자리가 없다」 고 거절했을 때(아래 부름 오류 갈래)와,
+   * 창이 이미 넘쳤는데 요약할 만큼 쌓이지 않았을 때(자리만들기). 버리는 것은 지나간
+   * 대화뿐이고 시킨 말·남은 할 일·이번 턴에 손댄 파일은 옮긴다. 까닭은 부름 오류 갈래의
+   * 「자리가 다 찼으면」 머리말에 있다.
+   */
+  const 비우기 = () => {
+    비운적 = true;
+    const 지운수 = session.messages.length;
+    const 손댄것 = [...손댄파일];
+    const 남은할일수 = (ctx.todos ?? []).filter((x) => x?.state !== 'done').length;
+    const 쪽지 = 못박을것(session);
+    const 비운말 = {
+      role: 'user',
+      content: `(자리가 모자라 앞선 대화 ${지운수}개를 비웠습니다. 필요한 파일은 다시 읽으세요.)\n`
+        + (손댄것.length ? `이번 턴에 이미 손댄 파일: ${손댄것.join(', ')}\n` : '')
+        + '\n' + 쪽지,
+    };
+    // 어느 턴의 시킨 말을 박았는지 적어 둔다 — 그 턴을 /undo 하면 이 쪽지도 빠져야 한다(session.js 의 박은쪽지표시).
+    session.박은쪽지표시?.(비운말, 쪽지);
+    session.messages = [비운말];
+    // 내용은 없어졌는데 '읽었다' 는 표만 남으면 모델이 다시 안 읽는다.
+    try { session.filesRead?.clear?.(); session.파일기억?.잊기?.(); } catch { /* 없어도 그만 */ }
+    되풀이표잊기();
+    return {
+      type: 'reset',
+      dropped: 지운수,
+      kept: { 요청: !!String(session.이번요청 ?? '').trim(), 할일: 남은할일수, 파일: 손댄것.length },
+    };
+  };
   const 자리만들기 = async function* () {
     접다멈췄나 = false;
     /*
@@ -779,12 +825,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 대화 어디에도 없는 글을 가리키는 쪽지를 받고, 결국 또 읽는다.
          * 같은 파일을 두 번 읽는 자리가 여기였다.
          */
-        for (const x of f.접은것들 ?? []) {
-          if (!x.경로) continue;
+        // 한 자리에 결과가 여럿 실린 규격은 경로도 여럿이다 — 첫 것만 지우면 나머지가 남는다.
+        for (const 경로 of (f.접은것들 ?? []).flatMap((x) => x.경로들 ?? [x.경로])) {
+          if (!경로) continue;
           // 열쇠를 맞춰서 지운다 — 까닭은 agent/compact.js 의 접힌파일열쇠.
-          const 열쇠 = 접힌파일열쇠(x.경로, ctx.scope);
+          const 열쇠 = 접힌파일열쇠(경로, ctx.scope);
           session.파일기억?.잊기(열쇠);
-          if (열쇠 !== x.경로) session.파일기억?.잊기(x.경로);
+          if (열쇠 !== 경로) session.파일기억?.잊기(경로);
         }
         // 접힌 원문을 「앞에서 봤잖아」 로 대신하지 않게 — 까닭은 되풀이표잊기 머리말에.
         되풀이표잊기();
@@ -804,7 +851,19 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       const r = await 편지.부름;
       if (r.aborted) { 접다멈췄나 = true; yield { type: 'aborted', steps, kept: true }; return; }
       if (r.ok) { 되풀이표잊기(); yield { type: 'compacted', ...r }; }
-      else yield { type: 'compact_failed', why: r.why };
+      else {
+        yield { type: 'compact_failed', why: r.why };
+        /*
+         * 요약할 만큼 쌓이지 않았는데 창은 **이미 넘쳤다** — 몇 안 되는 말이 하나하나 크다.
+         *
+         * 여기서 그냥 부르고 있었다. 서버가 거절하면 부름 오류 갈래가 비워 주지만, 로컬
+         * 서버(Ollama)는 거절하지 않고 **말없이 앞을 잘라** 모델이 시킨 말을 못 본 채
+         * 답한다. 화면에는 100% 경고만 걸음마다 뜬다. 넘쳤을 때만, 거절받은 것과 똑같이
+         * 비우고 이어 간다.
+         */
+        const 찬것 = session.breakdown();
+        if (!비운적 && 찬것.total > 0 && 찬것.used >= 찬것.total) yield 비우기();
+      }
     }
   };
 
@@ -850,6 +909,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     const 끼어든말 = (깊이 || steps <= 1) ? null : 끼어들기?.();
     if (끼어든말) {
       session.push({ role: 'user', content: 끼어든말 });
+      /*
+       * 시킨 말 원문에도 덧붙인다. 접힐 때 다시 박히는 것(compact.js 의 못박을것)과
+       * --resume 이 되살리는 것이 이 값이라, 안 붙이면 대화가 접힌 뒤에 방향을 튼
+       * 말이 사라지고 모델은 처음 시킨 쪽으로 돌아간다. Ask 관문(ctx.요청)도 같다.
+       */
+      session.이번요청 = [session.이번요청, `[도중에 덧붙인 말] ${끼어든말}`].filter(Boolean).join('\n');
+      ctx.요청 = [ctx.요청, 끼어든말].filter(Boolean).join('\n');
       ctx.audit.turn(`[도중에 끼어든 말] ${끼어든말}`);
       yield { type: 'steer', text: 끼어든말 };
     }
@@ -939,7 +1005,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 모델이 느린 줄 알지만 실은 429 였다.
          */
         const 편지 = 우편함((onBackoff) => chat(conn, { ...ask(maxTokens, think), onBackoff }));
-        for await (const 알림 of 편지.소식()) { 셈하기(); 미룬셈 = 1; yield 알림; }
+        // 흘려받는 길과 **같은 자로** 센다 (8회차 판정). 맞기 전에 스스로 비킨 것
+        // (backend/adapter.js 의 미리비키기)은 다시 부른 것이 아니다 — 요청은 한 번만
+        // 나갔는데 `/cost` 와 `--json` 의 retries 가 「서버가 막았다」 고 말하게 된다.
+        // 여기만 그 물음이 빠져 있었다.
+        for await (const 알림 of 편지.소식()) {
+          셈하기();
+          if (알림.type === 'backoff' && !알림.미리) 미룬셈 = 1;
+          yield 알림;
+        }
         try { msg = await 편지.부름; } catch (err) { 끝셈(err); throw err; }
         셈하기();
         if (msg.thinking) yield { type: 'thinking', text: msg.thinking };
@@ -1048,13 +1122,24 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 다르다 — 그런데 **낸 토큰은 지워지지 않는다.** 답으로 나온 글이
        * 짧은데 낸 토큰이 상한에 닿았다면, 그 차이가 곧 안 보이는 생각이다.
        */
+      /*
+       * 차례대로 본다. **제일 큰 것이 아니라 제일 믿을 만한 것**을 쓴다 (8회차 판정).
+       *
+       * 여기가 `Math.max` 였다. 그러면 3번(어림)이 1번(서버가 센 값)을 덮는다 —
+       * 어림은 estimateTokens 이라 글자당 토큰이 다른 글(한국어·코드)에서 쉽게 부푼다.
+       * 서버가 「생각에 900 썼다」 고 세어 준 턴에서 부푼 어림값이 이겨 「생각이 자리를
+       * 먹었다」 가 됐고, 상한도 못 올리는 자리에서 **같은 상한으로 한 번 더** 불렀다.
+       * 앞머리 전액이 다시 나가고 같은 자리에서 또 잘린다 — 바로 위 글이 「그건 그냥
+       * 낭비다」 라고 적어 둔 그 일이다.
+       *
+       * 3번은 **위 둘이 다 0일 때만** 쓴다. 그때만 「관측이 없다」 이고, 그 자리를
+       * 메우라고 둔 것이 3번이다.
+       */
       const 낸것 = Number(msg?.usage?.out ?? 0) || 0;
       const 보인글 = estimateTokens(String(msg?.content ?? ''));
-      const 생각몫 = Math.max(
-        Number(msg?.usage?.reasoning ?? 0) || 0,
-        estimateTokens(String(msg?.thinking ?? '')),
-        낸것 > 0 ? 낸것 - 보인글 : 0,
-      );
+      const 잰생각 = Number(msg?.usage?.reasoning ?? 0) || 0;
+      const 흘린생각 = estimateTokens(String(msg?.thinking ?? ''));
+      const 생각몫 = 잰생각 || 흘린생각 || (낸것 > 0 ? Math.max(0, 낸것 - 보인글) : 0);
       /*
        * 그 몫에서 **눈금 한 칸이 실제로 되찾아 줄 자리**가 쓸 만한가.
        *
@@ -1066,9 +1151,23 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       const 생각이자리를먹었나 = 생각몫 * 되찾을몫 >= 쓸모있는자리;
       const 다시부를까 = wasCut(msg) && (full > cap || (낮춘생각 !== level && 생각이자리를먹었나));
       if (다시부를까) {
+        /*
+         * **깎았으면 깎았다고 적는다** (8회차 판정).
+         *
+         * 다시 부를 때는 상한을 올리든 못 올리든 생각 눈금을 한 칸 낮춰 보낸다. 그런데
+         * 상한을 올릴 수 있는 자리에서는 사유가 「대답이 상한에서 잘렸습니다」 하나였다 —
+         * `/think medium` 으로 정해 둔 것이 그 턴에 low 로 내려간 줄을 사람이 알 길이
+         * 없었다. 답이 얕아진 까닭을 모르면 사람은 모델을 의심한다. 화면이 모르는 것을
+         * 아는 척하지 않는 것과 같은 규칙이다 — 한 것을 안 한 척해도 안 된다.
+         */
+        const 눈금깎음 = 낮춘생각 !== level;
         yield {
           type: 'retry',
-          why: full > cap ? '대답이 상한에서 잘렸습니다' : '대답이 잘렸습니다 — 생각을 줄여 자리를 냅니다',
+          why: full > cap
+            ? (눈금깎음
+              ? `대답이 상한에서 잘렸습니다 — 상한을 올리고 생각도 ${level}→${낮춘생각} 로 한 칸 낮춥니다`
+              : '대답이 상한에서 잘렸습니다')
+            : '대답이 잘렸습니다 — 생각을 줄여 자리를 냅니다',
           from: cap, to: full, think: 낮춘생각,
         };
         마지막상한 = full;
@@ -1117,8 +1216,17 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 같으니, 사용자는 프로그램이 고장 난 줄 안다.
        *
        * 스트리밍을 껐다가 한 번 다시 부른다. 원인이 그쪽이면 그 자리에서 낫는다.
+       *
+       * ── 거절은 이 갈래가 받지 않는다 (사냥5 L5-2) ──────────────────────────
+       *
+       * 앞단 필터에 걸린 답(content_filter)은 글도 도구도 없어서 **빈 답과 겉모습이
+       * 같다.** 어댑터는 거절로 적어 두는데 이 갈래가 먼저 받아서, 걸린 말을 스트리밍만
+       * 끄고 한 번 더 보냈고(같은 판정에 같은 요금), refusal 대신 「빈 답」 오류로 끝나
+       * deel run 이 거절 코드가 아닌 1 로 나갔고, 모델 카드에는 엉뚱한 빈답 표가 붙었다.
+       * 거절이면 그대로 지나가 try 밖의 `msg.거절` 갈래가 짝을 맞추고 끝낸다.
+       * 다시 부른 뒤에도 새 답을 다시 본다 — 그래서 조건마다 `msg.거절` 을 새로 묻는다.
        */
-      if (빈답인가(msg) && conn.streaming) {
+      if (!msg?.거절 && 빈답인가(msg) && conn.streaming) {
         yield { type: 'retry', why: '빈 답이 왔습니다 — 스트리밍을 끄고 다시 부릅니다', from: cap, to: cap };
         흘린것 = '';
         yield* askModel(cap, level, { 한번에: true });
@@ -1128,7 +1236,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           yield { type: 'note', text: '이 서버는 스트리밍 응답이 비어서 이번 세션은 꺼 두고 씁니다.' };
         }
       }
-      if (빈답인가(msg)) {
+      if (!msg?.거절 && 빈답인가(msg)) {
         session.본것?.본것('빈답');
         ctx.배움?.모델본것(conn.model, '빈답');
         yield {
@@ -1162,10 +1270,23 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           * 바로 위 주석이 없애겠다고 적어 둔 그 고장이 모양만 바꿔 남아 있었다.
           *
           * 그래서 **실제로 실었는지**를 보고 말한다. 아직 안 실렸으면 여기서 싣는다.
+          *
+          * ── **빈 답은 안 싣는다** (2.0.0 8회차 판정) ─────────────────────────
+          *
+          * `msg` 가 차 있다고 **말이 담긴 것은 아니다.** 빈 답이 와서 스트리밍을 끄고
+          * 다시 부르는 길이 바로 위에 있는데, 그 다시 부름이 터지거나 사람이 그 사이에
+          * 끊으면 `msg` 에는 **앞서 받은 빈 답**이 그대로 들어 있다. 그걸 `if (msg)` 로
+          * 받아 밀면 대화에 빈 assistant 한 줄이 남고, 화면에는 「여기까지는 대화에
+          * 남아 있으니 이어서 말씀하세요」 가 뜬다. 「이어서 해줘」 를 받은 모델이 보는
+          * 것은 제가 아무 말도 안 했다는 사실뿐이다 — 위 머리말이 없애겠다고 적어 둔
+          * 그 고장이 한 겹 더 안쪽에 남아 있었다.
+          *
+          * 이 파일 머리의 「빈 답을 성공으로 넘기지 않는다」 와 같은 규칙이다. 안 실었으면
+          * 안 실었다고 말한다(`kept`). 흘러온 글이 있으면 그것만이라도 남긴다.
           */
          const 남길것 = 흘린것.trim();
          let 실었나 = false;
-         if (msg) { session.push(assistantMessage(conn.kind, msg)); 실었나 = true; }
+         if (msg && !빈답인가(msg)) { session.push(assistantMessage(conn.kind, msg)); 실었나 = true; }
          else if (남길것) { session.push({ role: 'assistant', content: 남길것 }); 실었나 = true; }
          짝맞추기();
          yield { type: 'aborted', steps, kept: 실었나 };
@@ -1183,7 +1304,24 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 배운 값을 conn 에 적고 곧바로 다시 부른다. 사용자는 실패를 안 본다.
        * 한 걸음에 한 번만 배운다 — 배웠는데도 또 거절당하면 다른 문제다.
        */
-      const 배운 = 배울것(err.serverMessage ?? err.message);
+      /*
+       * ── 분당 한도(429)는 한계를 가르쳐 주지 않는다 (사냥5 B5-03) ──────────
+       *
+       * 「Request too large … tokens per min (TPM): Limit 30000, Requested 45000」 은
+       * **분당 한도**의 말이다. 그런데 숫자가 둘이고 「too large」 가 붙어 있어서 아래
+       * 배우기(learn.js 의 마지막 수 — 작은 쪽이 한계)가 창을 30,000 으로 배워 프로필에
+       * 적었고, 또 막히자 아래 「자리가 다 찼다」 갈래가 대화를 통째로 비웠다. 요청은 한
+       * 묶음(4번)이 아니라 세 묶음(12번)이 나갔고, 비울 까닭이 없던 대화가 사라졌다.
+       *
+       * 한도는 창이 새로 열리면 풀린다 — 창 크기도 대화 길이도 탓이 아니다. 그래서 429
+       * 이거나 한도를 말하는 문장이면 배우기·짐작·비우기를 다 건너뛰고 오류로 말한다.
+       * 한도를 400 에 실어 보내는 창구도 있어 문장도 같이 본다. 문장을 고치는 learn.js
+       * 는 이 자리가 아니라서, 부르는 쪽에서 막는다.
+       */
+      const 서버말 = err.serverMessage ?? err.message;
+      const 한도막힘 = err?.status === 429
+        || /rate[ _-]?limit|tokens per min|requests per min|\b(?:TPM|RPM)\b/i.test(String(서버말 ?? ''));
+      const 배운 = 한도막힘 ? null : 배울것(서버말);
       if (배운 && !배운적) {
         배운적 = true;
         if (배운.kind === 'ctx') {
@@ -1200,7 +1338,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       }
 
       // 숫자는 못 뽑았지만 '길어서' 인 것은 알겠으면, 줄여서 한 번 해 본다.
-      if (!배운적 && 길이문제인가(err.serverMessage ?? err.message) && (conn.ctx ?? 0) > 8192) {
+      if (!배운적 && !한도막힘 && 길이문제인가(err.serverMessage ?? err.message) && (conn.ctx ?? 0) > 8192) {
         배운적 = true;
         const 줄인것 = Math.max(8192, Math.floor((conn.ctx ?? 32768) / 2));
         conn.ctx = 줄인것;
@@ -1260,26 +1398,10 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 한 턴에 한 번뿐이다. 비우고도 또 막히면 그건 자리 문제가 아니라
        * 다른 탈이라, 끝없이 비우며 도는 대신 있는 그대로 오류로 말한다.
        */
-      const 자리문제 = 배운?.kind === 'ctx' || 길이문제인가(err.serverMessage ?? err.message);
+      // 분당 한도는 자리 문제가 아니다 — 위 한도막힘 머리말.
+      const 자리문제 = !한도막힘 && (배운?.kind === 'ctx' || 길이문제인가(err.serverMessage ?? err.message));
       if (자리문제 && !비운적) {
-        비운적 = true;
-        const 지운수 = session.messages.length;
-        const 손댄것 = [...손댄파일];
-        const 남은할일수 = (ctx.todos ?? []).filter((x) => x?.state !== 'done').length;
-        session.messages = [{
-          role: 'user',
-          content: `(자리가 모자라 앞선 대화 ${지운수}개를 비웠습니다. 필요한 파일은 다시 읽으세요.)\n`
-            + (손댄것.length ? `이번 턴에 이미 손댄 파일: ${손댄것.join(', ')}\n` : '')
-            + '\n' + 못박을것(session),
-        }];
-        // 내용은 없어졌는데 '읽었다' 는 표만 남으면 모델이 다시 안 읽는다.
-        try { session.filesRead?.clear?.(); session.파일기억?.잊기?.(); } catch { /* 없어도 그만 */ }
-        되풀이표잊기();
-        yield {
-          type: 'reset',
-          dropped: 지운수,
-          kept: { 요청: !!String(session.이번요청 ?? '').trim(), 할일: 남은할일수, 파일: 손댄것.length },
-        };
+        yield 비우기();
         /*
          * 배우기(위)와 달리 여기서는 걸음을 **안 돌려준다.**
          *
@@ -1306,10 +1428,12 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 안 된다. 도구 호출만 있고 결과가 빈 자리도 같이 채운다(짝맞추기).
        * 안 채우면 다음 요청에서 게이트웨이가 통째로 400 을 준다.
        */
-      // 중단 쪽과 같은 규칙이다 — 실었는지를 보고 말한다.
+      // 중단 쪽과 같은 규칙이다 — 실었는지를 보고 말한다. 빈 답을 안 싣는 것도 같다
+      // (위 중단 갈래의 「빈 답은 안 싣는다」 머리말). 빈 답을 다시 부르다 터진 자리가
+      // 바로 여기로 떨어진다 — 그때 `msg` 는 앞서 받은 그 빈 답이다.
       const 오류때남길것 = 흘린것.trim();
       let 오류때실었나 = false;
-      if (msg) { session.push(assistantMessage(conn.kind, msg)); 오류때실었나 = true; }
+      if (msg && !빈답인가(msg)) { session.push(assistantMessage(conn.kind, msg)); 오류때실었나 = true; }
       else if (오류때남길것) { session.push({ role: 'assistant', content: 오류때남길것 }); 오류때실었나 = true; }
       짝맞추기();
       yield { type: 'error', text: err.message, kept: 오류때실었나 };
@@ -1427,7 +1551,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         const 훅 = await 자리돌리기(ctx.훅들, '턴끝', {
           넣을것: { 걸음: steps, 파일: [...손댄파일] }, signal, audit: ctx.audit,
         });
-        for (const 말 of 훅.말들) yield { type: 'hook_note', 자리: '턴끝', 말 };
+        // 턴끝 훅도 명령 출력이다 — 도구후 훅과 같은 자로 가리고 내보낸다
+        // (2.0.0 8회차 판정). 여기는 모델에게 안 가고 화면으로만 가는 자리라,
+        // 안 가리면 가리는 데가 아예 없다.
+        if (훅.말들.length) {
+          const 가린끝 = 가리기(훅.말들.join('\n'), { 열쇠들: [conn.key, ...환경속열쇠들()].filter(Boolean) });
+          for (const 말 of 가린끝.글.split('\n')) yield { type: 'hook_note', 자리: '턴끝', 말 };
+        }
       }
       // 밀고도 그대로면 조용히 넘어가지 않는다. 사람이 알아야 다음을 정한다.
       yield { type: 'done', steps, text: msg.content, files: 마무리(), 빠진 };
@@ -1436,9 +1566,11 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
 
     // 도구를 돌린다. 읽기만 하는 것들이 이어지면 한꺼번에, 나머지는 하나씩.
     lastToolFailed = false;
+    // 결과를 싣는 자리. 덩어리마다 「부른 차례대로」 싣는 것으로 갈아 끼운다(아래 덩어리 머리).
+    let 결과내기 = (call, 메시지) => session.push(메시지);
     const 거절 = (call, note) => {
       lastToolFailed = true;
-      session.push(toolMessage(conn.kind, { callId: call.id, name: call.name, content: note }));
+      결과내기(call, toolMessage(conn.kind, { callId: call.id, name: call.name, content: note }));
     };
 
     /*
@@ -1449,11 +1581,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
      * 결과들이 짝을 잃는다 — 게이트웨이가 통째로 400 을 준다.
      */
     const 붙일그림 = [];
+    // 하위 작업(Task)이 중단으로 끝났나. 그러면 남은 덩어리는 안 돌리고 결과 자리만 채운다(아래 Task 갈래).
+    let 하위끊김 = false;
 
     for (const 덩어리 of 묶기(msg.toolCalls)) {
       // 돌리는 중에 끊었다면, 남은 것은 실행하지 않고 결과 자리만 채운다.
       // 자리를 비우면 짝이 깨져 다음에 이어할 수 없다.
-      if (signal?.aborted) {
+      if (signal?.aborted || 하위끊김) {
         for (const call of 덩어리.calls) {
           session.push(toolMessage(conn.kind, {
             callId: call.id, name: call.name,
@@ -1463,6 +1597,23 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         continue;
       }
 
+      /*
+       * ── 결과는 **부른 차례대로** 싣는다 ──────────────────────────────────
+       *
+       * 아래에서 거른 것(모르는 도구·규칙 금지·거부)은 곧바로 싣고, 통과한 것은 다 돌린
+       * 뒤에 실었다. 모델이 [Read, Grep] 을 불렀는데 Grep 이 막히면 이력에는 [Grep 결과,
+       * Read 결과] 차례로 들어간다. id 로 짝짓는 규격은 괜찮지만 **차례로 짝짓는 규격
+       * (Ollama)** 에서는 Read 의 파일 내용이 Grep 의 결과로 읽힌다. 그래서 모인 것을
+       * 차례가 닿는 만큼씩 민다. 대화 기록(repl.js)도 민 차례대로 적으므로 되살려도 같다.
+       */
+      const 차례 = 덩어리.calls;
+      const 모인것 = new Map();
+      let 다음차례 = 0;
+      결과내기 = (call, 메시지) => {
+        모인것.set(call, 메시지);
+        while (다음차례 < 차례.length && 모인것.has(차례[다음차례])) session.push(모인것.get(차례[다음차례++]));
+      };
+
       // 먼저 하나씩 걸러 낸다 — 물어보는 것도 여기서. 실제 실행은 통과한 것만.
       const 실행할것 = [];
       for (const call of 덩어리.calls) {
@@ -1470,8 +1621,22 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         // 도구는 '경로가 비었다' 같은, 원인과 상관없는 말을 하게 되고
         // 모델은 고칠 게 없다고 보고 똑같이 다시 시도한다. 그래서 끝없이 돈다.
         if (call.argsBroken) {
-          session.본것?.본것('잘린인자');
-          ctx.배움?.모델본것(conn.model, '잘린인자');
+          /*
+           * ── 잘린 것과 **모양만 틀린** 것을 가른다 (사냥5 L5-5) ──────────────
+           *
+           * 가르는 규칙은 backend/adapter.js 의 잘린모양인가 하나다. 여태 둘을 한 갈래로
+           * 받아, 홑따옴표 하나 틀린 Read 에도 「너무 크니 300줄씩 나눠 Append 하라」 고
+           * 했다 — 모델은 고칠 것(따옴표)을 모른 채 같은 부름을 되풀이하다 막혔다.
+           *
+           * 모양만 틀린 것은 「잘린인자」 로 세지 않는다. 그 셈은 모델 카드가 「잘리는
+           * 버릇」 으로 읽고 처음부터 상한을 올려 부르는 근거라(agent/card.js 의
+           * 상한먼저올리기), 크기와 상관없는 탈에 매 걸음 값을 치르게 된다.
+           */
+          const 잘렸나 = call.argsCut !== false;
+          if (잘렸나) {
+            session.본것?.본것('잘린인자');
+            ctx.배움?.모델본것(conn.model, '잘린인자');
+          }
           // ── 버리기 전에, 건질 수 있는지 먼저 본다 ──────────────────────
           //
           // 잘린 JSON 안에는 이미 받아 놓은 내용이 들어 있다. 경로도 대개 온전하다.
@@ -1483,7 +1648,21 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           //
           // Write 만 살린다. Edit 의 old_string 이 반쪽이면 엉뚱한 자리를 고치거나
           // 안 맞아 실패한다. 그건 안 하느니만 못하다.
-          const 건진것 = (call.name === 'Write' || call.name === 'Append') ? 살린쓰기(call.rawArgs) : null;
+          /*
+           * 건져 쓰기도 **모드 관문 뒤**여야 한다 (2.0.0 8회차 판정).
+           *
+           * 그 관문은 아래(`내도구.includes(call.name)`)에 있는데, 이 자리는 그보다
+           * 앞이다. 그래서 묻기·계획 모드에서 인자가 잘린 Write 가 오면 관문에 닿기
+           * 전에 `TOOLS.Write.run` 이 그대로 돌아 **파일이 진짜로 만들어졌다.**
+           * 화면에는 자물쇠(⏸)가 걸려 있고 모드 설명은 「아무것도 바꾸지 않는다」 인
+           * 채로. 멀쩡한 Write 는 막히는데 **잘린 Write 만 통과하는** 꼴이었다.
+           *
+           * 여기서 같은 자를 쓴다 — 이번 걸음에 실제로 실어 보낸 목록. 관문이 아는
+           * 유일한 진실이 그것이라고 아래 머리말이 적어 뒀다.
+           */
+          const 쓸수있나 = 내도구.includes(call.name);
+          const 건진것 = (call.name === 'Write' || call.name === 'Append') && 쓸수있나
+            ? 살린쓰기(call.rawArgs) : null;
           if (건진것) {
             const 도구 = call.name === 'Append' ? TOOLS.Append : TOOLS.Write;
             let r;
@@ -1501,25 +1680,44 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
                *
                * 파일이 지난번보다 커졌을 때만 나아간 것으로 본다.
                */
+              /*
+               * 내용이 **끝까지** 읽혔나 (살린쓰기의 cut, 사냥5 L5-5).
+               *
+               * 인자가 못 읽힌 까닭이 글 속 날줄바꿈 같은 모양 탓이면 내용은 온전하고,
+               * 파일에는 이미 **전부** 들어갔다. 그런데도 「받은 데까지만 썼다 · 이어서
+               * Append 하라」 고 하면 모델은 없는 뒷부분을 지어내 덧붙이거나 같은 Write 를
+               * 되풀이한다. 다 썼으면 다 썼다고 말한다.
+               */
+              const 다왔나 = 건진것.cut === false;
               const 지금크기 = r.changed ? (파일현황(r.changed).bytes ?? 0) : 0;
               const 앞크기 = 살린크기.get(r.changed) ?? -1;
               if (지금크기 > 앞크기) {
                 살린크기.set(r.changed, 지금크기);
                 나아감();
-              } else if (막힘셈(call, '살려 써도 파일이 안 자람')) {
-                멈출까 = '같은 내용이 계속 잘려서 옵니다 — 더 짧게 나눠 보내야 합니다';
+              } else if (막힘셈(call, 다왔나 ? '같은 내용을 또 씀' : '살려 써도 파일이 안 자람')) {
+                멈출까 = 다왔나
+                  ? `${건진것.path} 를 같은 내용으로 계속 다시 쓰고 있습니다`
+                  : '같은 내용이 계속 잘려서 옵니다 — 더 짧게 나눠 보내야 합니다';
               }
-              const note = `인자가 잘려서, **받은 데까지만 파일에 썼습니다.**\n`
-                + `  ${건진것.path} · ${건진것.lines}줄까지 저장됨\n`
-                + `  마지막 줄: ${건진것.lastLine}\n`
-                + `  이어서 Append 로 **그 다음 줄부터** 보내세요. 앞부분은 다시 보내지 마세요 —\n`
-                + `  다시 보내면 또 같은 자리에서 잘립니다. 한 번에 300줄 안쪽으로 끊어 보내세요.`;
-              session.push(toolMessage(conn.kind, { callId: call.id, name: call.name, content: note }));
+              const note = 다왔나
+                ? `인자(JSON)를 그대로는 못 읽었지만 내용은 끝까지 읽혀서 **파일에 다 썼습니다.**\n`
+                  + `  ${건진것.path} · ${건진것.lines}줄 · 마지막 줄: ${건진것.lastLine}\n`
+                  + '  같은 내용을 다시 보내지 마세요. JSON 글 속 줄바꿈은 \\n, 큰따옴표는 \\" 로 적어야 읽힙니다.'
+                : `인자가 잘려서, **받은 데까지만 파일에 썼습니다.**\n`
+                  + `  ${건진것.path} · ${건진것.lines}줄까지 저장됨\n`
+                  + `  마지막 줄: ${건진것.lastLine}\n`
+                  + `  이어서 Append 로 **그 다음 줄부터** 보내세요. 앞부분은 다시 보내지 마세요 —\n`
+                  + `  다시 보내면 또 같은 자리에서 잘립니다. 한 번에 300줄 안쪽으로 끊어 보내세요.`;
+              결과내기(call, toolMessage(conn.kind, { callId: call.id, name: call.name, content: note }));
               if (r.changed) { session.noteChange(r.changed, r.diff); 손댄파일.add(r.changed); }
-              ctx.audit.tool(call.name, { file_path: 건진것.path }, { summary: `잘린 것을 살려 ${건진것.lines}줄 씀` });
+              ctx.audit.tool(call.name, { file_path: 건진것.path }, {
+                summary: 다왔나 ? `못 읽은 인자에서 내용을 끝까지 읽어 ${건진것.lines}줄 씀` : `잘린 것을 살려 ${건진것.lines}줄 씀`,
+              });
               yield {
                 type: 'tool', name: call.name, args: { file_path: 건진것.path },
-                result: { ...r, summary: `${건진것.lines}줄 · 잘린 데까지`, warn: `잘린 데까지만 썼습니다 — ${건진것.lines}줄` },
+                result: 다왔나
+                  ? { ...r, summary: `${건진것.lines}줄`, warn: `인자 JSON 이 규격에 안 맞아 고쳐 읽었습니다 — ${건진것.lines}줄 다 씀` }
+                  : { ...r, summary: `${건진것.lines}줄 · 잘린 데까지`, warn: `잘린 데까지만 썼습니다 — ${건진것.lines}줄` },
                 showLabel: true,
               };
               continue;
@@ -1527,28 +1725,102 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
             // 살려 쓰는 것마저 실패했으면(범위 밖 경로 등) 아래 평범한 거절로 내려간다.
           }
 
-          const note = `${call.name} 의 인자(JSON)가 중간에서 잘려 읽을 수 없습니다.`
-            + ' 한 번에 보내기엔 내용이 너무 큽니다.\n'
-            + '  통째로 다시 보내지 마세요 — 또 같은 자리에서 잘립니다.\n'
-            + '  파일을 만드는 중이라면: Write 로 앞부분만 300줄 안쪽으로 만들고,'
-            + ' 나머지는 Append 를 여러 번 불러 이어 붙이세요.';
+          /*
+           * 지금 모드에 없는 도구면 **그렇다고 말한다** (2.0.0 8회차 판정 뒤).
+           *
+           * 위 건져 쓰기를 모드 관문 뒤로 옮기고 나니 남은 길이 하나 있었다 — 묻기·계획
+           * 모드에서 잘린 Write 가 오면 파일은 안 만들어지는데, 모델에게는 「인자가 너무
+           * 큽니다 · 나눠 보내세요」 가 간다. 크기 탓이 아닌데 크기를 고치라고 하는 셈이라,
+           * 모델은 더 잘게 나눠 같은 Write 를 되풀이하다 걸음 수를 다 쓴다. 아래 모드
+           * 관문(내도구.includes)은 이 `continue` 뒤라 영영 안 닿는다.
+           */
+          if (!쓸수있나 && !call.name.startsWith('mcp__')) {
+            거절(call, `${call.name} 은 지금 모드에서 쓸 수 없습니다.`
+              + ` 인자가 잘린 것과는 상관없습니다 — 크기를 줄여도 못 씁니다.`
+              + ` 이번에 쓸 수 있는 것: ${내도구.join(', ')}`);
+            ctx.audit.blocked('모드에 없는 도구', call.name);
+            if (막힘셈(call, '모드에 없는 도구')) 멈출까 = `${call.name} 은 지금 모드에 없는데 계속 부르고 있습니다`;
+            yield {
+              type: 'tool', name: call.name, args: {},
+              result: { error: `지금 모드에서는 ${call.name} 을 못 씁니다` }, showLabel: true,
+            };
+            continue;
+          }
+
+          // 모양만 틀린 것에 「너무 크다 · 나눠 보내라」 는 틀린 처방이다 — 위 잘렸나 머리말.
+          const note = 잘렸나
+            ? `${call.name} 의 인자(JSON)가 중간에서 잘려 읽을 수 없습니다.`
+              + ' 한 번에 보내기엔 내용이 너무 큽니다.\n'
+              + '  통째로 다시 보내지 마세요 — 또 같은 자리에서 잘립니다.\n'
+              + '  파일을 만드는 중이라면: Write 로 앞부분만 300줄 안쪽으로 만들고,'
+              + ' 나머지는 Append 를 여러 번 불러 이어 붙이세요.'
+            : `${call.name} 의 인자(JSON)를 읽을 수 없습니다. 끝까지 오긴 했는데 **JSON 모양이 틀렸습니다** — 크기 탓이 아닙니다.\n`
+              + '  JSON 은 큰따옴표만 씁니다(홑따옴표 안 됨). 마지막 칸 뒤에 쉼표를 두지 않습니다.\n'
+              + '  글 속 줄바꿈은 \\n 으로 적습니다. 모양을 고쳐 같은 부름을 다시 보내세요.';
           거절(call, note);
           // 감사기록에 남긴다. 자율 실행을 사내에 설득할 때 근거가 되는 파일이라,
           // '스스로 안 한 일' 도 남아야 한다.
-          ctx.audit.blocked('인자가 잘려 실행하지 않음', `${call.name} · ${String(call.rawArgs ?? '').length}자`);
-          if (막힘셈(call, '인자잘림')) 멈출까 = '같은 도구 호출이 계속 잘립니다';
-          yield { type: 'tool', name: call.name, args: {}, result: { error: '인자가 잘렸습니다 — 한 번에 보내기엔 너무 큽니다' }, showLabel: true };
+          ctx.audit.blocked(잘렸나 ? '인자가 잘려 실행하지 않음' : '인자 JSON 모양이 틀려 실행하지 않음',
+            `${call.name} · ${String(call.rawArgs ?? '').length}자`);
+          if (막힘셈(call, 잘렸나 ? '인자잘림' : '인자모양틀림')) {
+            멈출까 = 잘렸나 ? '같은 도구 호출이 계속 잘립니다' : '같은 도구 호출의 인자 JSON 이 계속 틀린 모양으로 옵니다';
+          }
+          yield {
+            type: 'tool', name: call.name, args: {},
+            result: { error: 잘렸나 ? '인자가 잘렸습니다 — 한 번에 보내기엔 너무 큽니다' : '인자 JSON 모양이 틀렸습니다 — 따옴표·쉼표·줄바꿈을 보세요' },
+            showLabel: true,
+          };
           continue;
         }
 
         // 물려받은 이름(`constructor` 등)이면 여기가 참이 되어 「모르는 도구」
         // 관문을 그냥 통과했다. hasOwn 으로만 묻는다 (tools/index.js 도 같다).
-        if (!Object.hasOwn(TOOLS, call.name)) {
+        // MCP 이름은 이 표에 없다. 여기서 거르면 붙은 서버의 도구가 늘 「모르는 도구」 였다(2.0.0).
+        // 그래서 **실어 보낸 MCP 이름**은 통과시킨다. 지어낸 이름(`mcp__서버__없는것`)은 여기서 모르는
+        // 도구로 세야 헛돌기 셈에 든다 — 그냥 넘기면 서버가 「없다」 고 답할 때마다 셈을 비켜 계속 부른다(3회차).
+        // MCP 를 하나도 안 실은 걸음(읽기 전용 모드)은 아래 모드 관문이 「모드에서 못 쓴다」 로 거절한다.
+        if (!Object.hasOwn(TOOLS, call.name)
+          && !(call.name.startsWith('mcp__') && (!실은mcp.size || 실은mcp.has(call.name)))) {
           거절(call, `모르는 도구입니다. 쓸 수 있는 것: ${Object.keys(TOOLS).join(', ')}`);
           // 이것도 세야 한다. 없는 이름을 계속 부르며 걸음 수를 다 쓰는 길이 있었다 —
           // 71초 증상과 겉모습이 똑같은데 문만 다르다. 아래 거부·중복도 마찬가지다.
           if (막힘셈(call, '모르는 도구')) 멈출까 = `${call.name} 은 없는 도구인데 계속 부르고 있습니다`;
           yield { type: 'tool', name: call.name, args: call.args, result: { error: '모르는 도구' }, showLabel: true };
+          continue;
+        }
+
+        /*
+         * ── 「안 주면 안 부른다」 는 약속에 관문이 없었다 ─────────────────
+         *
+         * modes.js 머리말이 설계를 이렇게 적어 뒀다 — 「목록에서 빼면 잊을
+         * 것이 없다」. 읽기 전용 모드(묻기·계획 …)는 그래서 Write·Edit 를
+         * 아예 안 실어 보낸다. 그런데 **안 실어 보낸 도구를 모델이 이름으로
+         * 부르면 그냥 돌았다.** 이 앞거르기에도, runTool 에도 모드를 묻는
+         * 자리가 없다. 화면에는 자물쇠(`⏸`)가 걸려 있고 모드 설명은
+         * 「아무것도 바꾸지 않는다」 라고 적혀 있는 채로.
+         *
+         * 가정이 깨지는 길이 둘 있다. 하나는 우리가 스스로 만든 것이다 —
+         * session.js 의 BASE_RULES 는 **모든 모드에서** 「Remember 로 한 줄
+         * 남긴다」 · 「끝내기 전에 Verify 로 확인한다」 를 시킨다. 묻기 모드는
+         * 그 둘을 안 준다. 시스템 프롬프트가 없는 도구를 부르라고 시키는
+         * 꼴이다. 다른 하나는 턴 도중에 `/work 묻기` 로 바꾸는 것 — 앞 턴에
+         * 실려 나간 목록에는 아직 Write 가 있다.
+         *
+         * 그래서 **이번 걸음에 실제로 실어 보낸 목록**과 맞춰 본다. 그
+         * 목록(`내도구`)이 이 자리가 아는 유일한 진실이다. MCP 도구는
+         * 이름으로 가른다 — 그쪽은 붙은 서버에 따라 달라져서 이 목록에 없다.
+         * 다만 **이번에 MCP 를 실어 보냈을 때만** 통과시킨다. 이름을 통째로 봐줬더니
+         * MCP 를 안 싣는 읽기 전용 모드에서도 이름으로 부르면 돌았다(2.0.0).
+         */
+        if (call.name.startsWith('mcp__') ? !실은mcp.size : !내도구.includes(call.name)) {
+          거절(call, `${call.name} 은 지금 모드에서 쓸 수 없습니다.`
+            + ` 이번에 쓸 수 있는 것: ${내도구.join(', ')}`);
+          ctx.audit.blocked('모드에 없는 도구', call.name);
+          if (막힘셈(call, '모드에 없는 도구')) 멈출까 = `${call.name} 은 지금 모드에 없는데 계속 부르고 있습니다`;
+          yield {
+            type: 'tool', name: call.name, args: call.args,
+            result: { error: `지금 모드에서는 ${call.name} 을 못 씁니다` }, showLabel: true,
+          };
           continue;
         }
 
@@ -1576,7 +1848,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 막았으면 **어디에 적힌 규칙인지까지** 말한다. 그 말이 없으면 사람은
          * 제 설정을 고칠 수도, 관리자에게 무엇을 풀어 달라고 할 수도 없다.
          */
-        const 판정 = 어떻게할까(ctx.규칙들, call.name, call.args);
+        // 뿌리를 넘긴다 — 모델이 절대경로로 부른 파일도 `Read(.env)` 같은 경로 규칙에 걸려야 한다.
+        const 판정 = 어떻게할까(ctx.규칙들, call.name, call.args, { 뿌리: ctx.scope?.root ?? null });
         if (판정.답 === 'deny') {
           ctx.audit?.blocked?.('규칙으로 금지됨', `${판정.출처}: ${판정.규칙}`);
           거절(call, `${판정.출처}에 적힌 규칙 ${판정.규칙} 으로 막혀 있습니다.`
@@ -1769,7 +2042,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
             ? Math.max(4, Math.floor(session.maxSteps / 2))
             // 걸음 수는 **하위가 쓸 창**으로 잰다. 부모 창으로 재면, 작은 모델에게
             // 떼어 준 일이 제 창보다 큰 걸음 수를 받아 중간에 창이 찬 채로 돈다.
-            : 하위걸음수(자식모드, 자식conn.ctx)),
+            // 부모 모드도 넘긴다 — 걸음이 두 배인 모드를 하위로 골라 부모만큼 받지 않게.
+            : 하위걸음수(자식모드, 자식conn.ctx, 모드.id)),
         });
         // 스킬·명령·기억은 부모가 켤 때 한 번 찾아 든 것이다. 하위도 같은 것을 본다.
         자식.skills = session.skills;
@@ -1823,6 +2097,12 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           { summary: `하위 작업 시작 (${깊이 + 1}겹)${모델알림 ? ` · ${모델알림.말}` : ''}` });
 
         let 끝 = null;
+        /*
+         * 하위는 같은 ctx 를 받아 run 머리에서 ctx.요청·물은것을 제 할일로 덮고, TodoWrite 로
+         * ctx.todos 도 덮는다. 부모 턴으로 돌아올 때 되돌린다 — 안 그러면 부모의 Ask 관문이
+         * 하위가 받은 할일을 「사람이 한 말」 로 보고, 턴 끝 되밀기가 하위의 할 일 목록을 센다.
+         */
+        const 부모것 = { 요청: ctx.요청, 물은것: ctx.물은것, todos: ctx.todos };
         try {
           /*
            * ctx 를 **그대로** 넘긴다. 새로 만들면 안 된다.
@@ -1848,6 +2128,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           // 잠깐 열어 둔 자리는 무슨 일이 있어도 닫는다. 안 닫으면 그 세션이
           // 끝날 때까지 그 주소가 열린 채로 남는다 — '한 자리만 연다' 가 깨진다.
           try { 자리닫기?.(); } catch { /* 닫다 터져도 이번 턴은 이어간다 */ }
+          ctx.요청 = 부모것.요청;
+          ctx.물은것 = 부모것.물은것;
+          ctx.todos = 부모것.todos;
         }
 
         /*
@@ -1888,9 +2171,18 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         ctx.audit.tool('Task', { 목적 }, { summary: 글.slice(0, 300) });
         yield { type: 'task_done', 목적, 모드: 자식모드, 끝, 모델: 모델알림?.말 ?? null, 에이전트: 정의?.이름 ?? null };
 
-        // 사용자가 중단했으면 부모도 여기서 멈춘다. 하위만 끊고 이어가면
-        // 무엇이 중단된 것인지 알 수 없는 화면이 된다.
-        if (끝?.type === 'aborted') { yield { type: 'aborted', steps, kept: true }; return; }
+        /*
+         * 사용자가 중단했으면 부모도 멈춘다. 하위만 끊고 이어가면
+         * 무엇이 중단된 것인지 알 수 없는 화면이 된다.
+         *
+         * 다만 **여기서 바로 나가면 안 된다.** 모델이 [Task, Read] 를 한 답에
+         * 불렀으면 Task 결과만 실린 채 Read 부름이 결과 없이 남는다 — 다음 요청이
+         * 그 이력을 그대로 보내 400 이다. 끊은 한 번이 대화를 못 쓰게 만든다.
+         * 그래서 표만 세우고 다음 덩어리로 넘긴다. 덩어리 머리가 남은 부름을
+         * 「실행하지 않았습니다」 로 채우고, 덩어리를 다 돈 뒤의 중단 자리에서 나간다.
+         * 하위의 끝이 늘 signal 에서 오리라고 기대지 않으려고 표를 따로 둔다.
+         */
+        if (끝?.type === 'aborted') { 하위끊김 = true; continue; }
         if (끝?.type !== 'done') {
           lastToolFailed = true;
           // 하위가 계속 못 끝내면 부모가 같은 덩이를 또 떼어 준다. 그건 헛도는 것이다.
@@ -1901,9 +2193,16 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         continue;
       }
 
-      // 여럿을 같이 돌릴 때는 '시작' 을 따로 알리지 않는다.
-      // 화면에서 이름 셋이 먼저 뜨고 결과 셋이 뒤에 몰려 붙으면, 어느 결과가
-      // 어느 파일 것인지 읽을 수 없다. 그럴 때는 끝난 것부터 이름과 결과를 함께 그린다.
+      /*
+       * 여럿을 같이 돌릴 때는 **하나씩** 알리지 않는다 — 한 줄로 몇 개인지만 알린다.
+       *
+       * 이름 셋을 각각 띄워 놓고 결과 셋이 뒤에 몰려 붙으면, 어느 결과가 어느 파일
+       * 것인지 읽을 수 없다. 그래서 이름과 결과는 끝난 것부터 함께 그리고, 시작은
+       * `tools_start` 한 번으로 「N개를 함께 돌립니다」 만 말한다. 화면은 그 `count` 로
+       * 동시에 도는 자리 수를 채우고(repl.js 의 함께갱신), ACP 는 이름마다 도구 자리를
+       * 연다(acp/serve.js). 주석이 「'시작' 을 따로 알리지 않는다」 라고 적혀 있었는데
+       * 화면 둘이 다 이 이벤트를 받아 쓰고 있었다 — 말이 옛말이었다 (8회차 판정).
+       */
       const 함께 = 실행할것.length > 1;
       if (!함께) yield { type: 'tool_start', name: 실행할것[0].name, args: 실행할것[0].args };
       else yield { type: 'tools_start', names: 실행할것.map((x) => x.name), count: 실행할것.length };
@@ -1973,7 +2272,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         // 실제로 파일이 바뀐 것만 적는다. 턴 끝에 이 목록을 디스크와 견준다.
         if (result.changed) 손댄파일.add(result.changed);
         /*
-         * 단계도 이걸 본다 (agent/단계.js).
+         * 단계도 이걸 본다 (agent/phase.js).
          *
          * 「바꾸기 시작했다」 는 조사가 끝났다는 뜻이다. 손댄파일 로 재도
          * 되지만 그 집합은 하위 작업이 바꾼 것까지 담으므로, 이 턴에서
@@ -2022,7 +2321,16 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
             const 가린 = 가리기(훅.말들.join('\n'), { 열쇠들: [conn.key, ...환경속열쇠들()].filter(Boolean) });
             const 글 = 가린.글 + (가린.가린것.length ? 가렸다는말(가린.가린것) : '');
             훅덧말 = `\n\n[도구후 훅]\n${글}`;
-            for (const 말 of 훅.말들) yield { type: 'hook_note', 자리: '도구후', 도구: call.name, 말 };
+            /*
+             * 화면에도 **가린 글**을 보낸다 (2.0.0 8회차 판정).
+             *
+             * 여기가 `말` 이었다 — 날것이다. 바로 위에서 모델용으로는 가려 놓고
+             * 화면으로는 열쇠가 그대로 나갔다. 잰 것: 화면 `열쇠는 sk-ant-api03-…`,
+             * 모델 `열쇠는 «가림:anthropic» 입니다`. 화면은 대화 기록으로 남고
+             * 어깨 너머로도 보이는 자리라, 둘 중 더 새면 안 되는 쪽이다.
+             * 한 번 가린 것을 두 번 쓰면 되는 일이었다.
+             */
+            for (const 말 of 가린.글.split('\n')) yield { type: 'hook_note', 자리: '도구후', 도구: call.name, 말 };
           }
         }
 
@@ -2109,6 +2417,19 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
               + ' 같은 것을 또 부르지 말고 다음 일로 넘어가세요.';
             if (n + 1 >= MAX_SAME) 멈출까 = `${call.name} 을 같은 인자로 계속 부르고 있습니다 — 결과가 매번 같습니다`;
           } else {
+            /*
+             * 결과가 달라졌으면 **처음부터 다시 센다** (8회차 판정).
+             *
+             * 여기가 부른것 표만 갈아 끼우고 `반복|서명` 셈은 그대로 뒀다. 그래서 앞서
+             * 한 번 되풀이한 적이 있는 부름은, 그 사이에 결과가 바뀌어 일이 나아갔는데도
+             * **되풀이 한 번만에** 「같은 자리에서 헛돌고 있어 멈췄습니다」 가 됐다.
+             * 파일을 지켜보며 같은 자리를 다시 읽는 일(빌드 로그·검사 결과·긴 명령의
+             * 출력)이 딱 그 모양이라, 잘 되고 있는 긴 작업이 여기서 죽었다.
+             *
+             * 바로 위 「그 사이에 파일이 진짜로 바뀌었으면 처음부터 다시 센다」 와 같은
+             * 규칙이다 — 결과가 달라졌다는 것도 무슨 일이 있었다는 뜻이다.
+             */
+            막힘.delete(`반복|${서명}`);
             부른것.set(서명, 같은꼴);
             반복진척.set(서명, 손댄파일.size);
           }
@@ -2160,8 +2481,10 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
             비밀 = 가린.가린것;
             실을것 = 가린.글 + 가렸다는말(가린.가린것);
           }
-        } else if (result.content) {
+        } else if (실을것) {
           // 안 고치고 보기만 한다. 사람이 알아야 손을 쓸 수 있다.
+          // content 가 아니라 **실을 글**을 본다 — content 없이 summary 만 돌려주는 도구는
+          // 그 글이 그대로 모델에게 가는데, content 만 보면 훑지도 않았다.
           비밀 = 훑기(실을것, { 열쇠들: 아는열쇠들 });
         }
         if (비밀.length) {
@@ -2173,7 +2496,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           });
         }
 
-        session.push(toolMessage(conn.kind, {
+        결과내기(call, toolMessage(conn.kind, {
           callId: call.id,
           name: call.name,
           content: 실을것,
@@ -2189,6 +2512,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           ...(비밀.length ? { 비밀: { 가렸나: 이번엔가릴까, 말: 봤다는말(비밀) } } : {}),
         };
       }
+      // 짝이 안 채워진 자리가 있어도 모인 것은 마저 싣는다 — 안 실으면 그 부름이 결과 없이 남는다.
+      for (const 남은 of 차례.slice(다음차례)) if (모인것.has(남은)) session.push(모인것.get(남은));
+      결과내기 = (call, 메시지) => session.push(메시지);
     }
 
     // 연 그림들을 사람 말 자리로 붙인다 (backend/vision.js).
@@ -2203,7 +2529,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     }
 
     // 도구를 돌리다 끕어졌어도 모델이 한 말은 이미 대화에 들어가 있다. 그건 남는다.
-    if (signal?.aborted) { yield { type: 'aborted', steps, kept: true }; return; }
+    // 하위 작업이 중단으로 끝난 것도 여기서 나간다 — 남은 부름의 결과 자리는 위에서 다 채웠다.
+    if (signal?.aborted || 하위끊김) { yield { type: 'aborted', steps, kept: true }; return; }
 
     // 헛돌고 있으면 여기서 끊는다. 걸음 수가 남았다고 계속 두면
     // 컨텍스트만 채우고 사람은 기다리기만 한다.

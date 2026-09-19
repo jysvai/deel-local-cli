@@ -23,9 +23,11 @@ import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
 import { run } from '../src/agent/loop.js';
-import { chat } from '../src/backend/adapter.js';
+import { chat, chatStream } from '../src/backend/adapter.js';
 import { allowEndpoint } from '../src/safety/network.js';
-import { 다시부를까, 기다릴시간, 기다리기, 기본정책, 다시부를지 } from '../src/backend/retry.js';
+import {
+  다시부를까, 기다릴시간, 기다리기, 기본정책, 다시부를지, 못부른까닭, 못부른말,
+} from '../src/backend/retry.js';
 import { 할당량잊기 } from '../src/backend/quota.js';
 import { trace } from './trace.mjs';
 
@@ -145,6 +147,22 @@ const server = createServer((req, res) => {
       res.writeHead(step.status, h);
       return res.end(JSON.stringify({ error: { message: step.message ?? `가짜 오류 ${step.status}` } }));
     }
+    // 사내 프록시가 로그인 페이지를 200 으로 준다. 흘려받든 한 번에 받든 똑같이 준다.
+    if (step.html) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      return res.end(step.html);
+    }
+    // 200 으로 받아 놓고 흐름 **안에서** 오류 조각 하나를 준다 (LiteLLM·OpenRouter 꼴).
+    if (step.흐름오류) {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write(`data: ${JSON.stringify(step.흐름오류)}\n\n`);
+      return res.end('data: [DONE]\n\n');
+    }
+    // 한 번에 받는 길에서 200 몸에 error 만 싣는 게이트웨이.
+    if (step.몸오류) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify(step.몸오류));
+    }
     if (step.reset) return req.socket.destroy();
     if (step.resetAfter) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -154,7 +172,10 @@ const server = createServer((req, res) => {
     if (!스트림) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({
-        choices: [{ message: { role: 'assistant', content: String(step.text) }, finish_reason: 'stop' }],
+        choices: [{
+          message: { role: 'assistant', content: String(step.text), ...(step.생각 ? { reasoning: step.생각 } : {}) },
+          finish_reason: 'stop',
+        }],
         usage: { prompt_tokens: 100, completion_tokens: 10 },
       }));
     }
@@ -204,12 +225,16 @@ async function 돌리기(대본, { conn = 새연결(), signal = null, 중간에 
   할당량잊기();
   const session = new Session(conn, { root, mode: 'auto', think: 'off' });
   const events = [];
-  const t0 = Date.now();
+  /*
+   * 걸린 시간은 **멎지 않는 시계**(performance.now)로 잰다. 벽시계(Date.now)는 시각
+   * 맞추기가 끼면 앞뒤로 뛰어서, 부하가 걸린 날 「1초를 안 기다렸다」 를 거짓으로 만든다.
+   */
+  const t0 = performance.now();
   for await (const ev of run(session, ctx, '안녕', { signal })) {
     events.push(ev);
     중간에?.(ev);
   }
-  return { events, session, ms: Date.now() - t0, kinds: events.map((e) => e.type) };
+  return { events, session, ms: performance.now() - t0, kinds: events.map((e) => e.type) };
 }
 
 // ── 1. 429 한 번 → 이어서 된다 ───────────────────────────────────────────
@@ -316,7 +341,7 @@ trace('8-비스트리밍');
   const 때 = {};
   const r = await 돌리기([{ status: 429, retryAfter: 1 }, { text: '됐습니다' }], {
     conn: 새연결({ streaming: false }),
-    중간에: (ev) => { 때[ev.type] ??= Date.now(); },
+    중간에: (ev) => { 때[ev.type] ??= performance.now(); },
   });
   check('스트리밍 없이도 다시 불러 끝까지 간다', r.kinds.includes('done'), r.kinds.join(','));
   check('두 번 불렀다', hits.length === 2, `${hits.length}번`);
@@ -346,6 +371,116 @@ trace('9-400');
   check('400 은 다시 안 부른다', hits.length === 1, `${hits.length}번`);
   check('서버가 한 말이 그대로 나온다', /잘못된 요청/.test(r.events.find((e) => e.type === 'error')?.text ?? ''));
   check('알림이 없다', !r.kinds.includes('backoff'));
+}
+
+// ── 9. 200 으로 받아 놓고 흐름 **안에서** 온 오류 ───────────────────────
+trace('10-흐름속오류');
+{
+  /*
+   * 게이트웨이(LiteLLM·OpenRouter)는 머리말을 200 으로 내보낸 뒤에 위층이
+   * 막히면, 그 사실을 **흐름 안의 조각 하나**로 알린다 — `{"error":{...}}`.
+   *
+   * 여태 이 조각은 choices 가 없어서 조용히 버려졌다. 답이 비었으니 루프는
+   * 「스트리밍이 안 맞는 서버」 로 읽고 **세션 내내 흘려받기를 껐다.** 서버가
+   * 한 말(429 · 예산 초과)은 어디에도 안 남았다. 잠깐 막힌 것 하나로 그 뒤
+   * 모든 턴이 한 번에 받기로 떨어지고, 사람은 끝내 까닭을 못 본다.
+   */
+  const conn = 새연결();
+  const r = await 돌리기([
+    { 흐름오류: { error: { message: 'litellm.RateLimitError: upstream 429', code: '429' }, choices: [{ index: 0, delta: {}, finish_reason: 'error' }] } },
+    { text: '됐습니다' },
+  ], { conn });
+  check('★★★ 흐름 속 429 조각은 HTTP 429 처럼 기다렸다 다시 부른다',
+    hits.length === 2 && r.kinds.includes('done'), `${hits.length}번 · ${r.kinds.join(',')}`);
+  const b = r.events.find((e) => e.type === 'backoff');
+  check('★★ 알림에 서버가 말한 상태가 적힌다', b?.status === 429, JSON.stringify(b));
+  check('★★★ 그 한 번으로 세션의 흘려받기를 끄지 않는다', conn.streaming === true, String(conn.streaming));
+  check('★★ 「스트리밍이 비어서」 라는 거짓 까닭을 안 적는다',
+    !r.events.some((e) => /스트리밍/.test(String(e.text ?? e.why ?? ''))),
+    JSON.stringify(r.events.filter((e) => e.type === 'note' || e.type === 'retry')));
+
+  // 상태를 모르는 것 — 다시 불러 봐야 같다. 서버가 한 말을 그대로 보여 준다.
+  const conn2 = 새연결();
+  const r2 = await 돌리기([
+    { 흐름오류: { error: { message: 'Budget has been exceeded for key' } } },
+    { text: '여기까지 오면 안 된다' },
+  ], { conn: conn2 });
+  const 오류 = r2.events.find((e) => e.type === 'error');
+  check('★★★ 상태를 모르는 흐름 속 오류는 서버 말 그대로 오류가 된다',
+    /Budget has been exceeded/.test(오류?.text ?? ''), `${오류?.text} · ${r2.kinds.join(',')}`);
+  check('★★ 그런 것은 다시 안 부른다', hits.length === 1, `${hits.length}번`);
+  check('★★ 그래도 흘려받기는 켜 둔다', conn2.streaming === true, String(conn2.streaming));
+
+  /*
+   * 한 번에 받는 길도 같다. 200 몸에 `{"error":{...}}` 만 온 것을 extractMessage
+   * 가 빈 답으로 읽고 있었다 — 「서버가 빈 답을 보냈습니다」 가 뜨고 예산이
+   * 떨어졌다는 한 줄은 사라졌다.
+   */
+  script = [{ 몸오류: { error: { message: 'Budget exceeded for key', type: 'budget_exceeded' } } }]; turn = 0; hits.length = 0;
+  let 던진 = null;
+  let 받은 = null;
+  try { 받은 = await chat(새연결(), { messages: [{ role: 'user', content: '안녕' }] }); } catch (e) { 던진 = e; }
+  check('★★★ 한 번에 받는 길도 200 몸의 error 를 빈 답으로 삼키지 않는다',
+    /Budget exceeded for key/.test(던진?.message ?? ''), JSON.stringify({ 받은, 말: 던진?.message }));
+  check('★ 서버 말이 원문 그대로 달린다', 던진?.serverMessage === 'Budget exceeded for key', String(던진?.serverMessage));
+
+  script = [{ 몸오류: { error: { message: 'Overloaded', type: 'overloaded_error' } } }, { text: '됐습니다' }]; turn = 0; hits.length = 0;
+  할당량잊기();
+  let 받은2 = null;
+  try { 받은2 = await chat(새연결(), { messages: [{ role: 'user', content: '안녕' }] }); } catch (e) { 받은2 = { 탈: e.message }; }
+  check('★★ 200 몸의 과부하도 529 처럼 다시 부른다',
+    hits.length === 2 && 받은2?.content === '됐습니다', `${hits.length}번 · ${JSON.stringify(받은2)}`);
+
+  /*
+   * 까닭을 `message` 가 아니라 `detail` 에 싣는 창구 (FastAPI 로 앞을 세운 게이트웨이의
+   * 기본 모양이다). 글을 읽는 자리는 진작 `detail` 을 보는데, **실패인지 가르는** 자리에
+   * 그 이름이 없어서 그 몸이 통째로 「뜻 없는 error」 로 버려졌다 — 답이 비고, 서버가
+   * 적어 준 한 줄은 어디에도 안 남는다. 빈 답은 이 파일에서 제일 비싼 고장이다.
+   */
+  script = [{ 몸오류: { error: { detail: 'upstream refused: deployment not found' } } }]; turn = 0; hits.length = 0;
+  할당량잊기();
+  let 디테일탈 = null;
+  let 받은3 = null;
+  try { 받은3 = await chat(새연결(), { messages: [{ role: 'user', content: '안녕' }] }); } catch (e) { 디테일탈 = e; }
+  check('★★★ 200 몸의 error.detail 도 빈 답으로 삼키지 않는다',
+    /deployment not found/.test(디테일탈?.message ?? ''), JSON.stringify({ 받은3, 말: 디테일탈?.message }));
+}
+
+// ── 10. 생각 글 칸 이름이 `reasoning` 인 창구 ────────────────────────────
+trace('11-reasoning');
+{
+  /*
+   * OpenRouter · Ollama 의 /v1 · vLLM 새 판은 생각 글을 `reasoning` 에 싣는다.
+   * 여태 `reasoning_content` 만 읽어서 한 번에 받는 길에서 생각이 통째로 사라졌다.
+   */
+  script = [{ text: '답', 생각: '생각글' }]; turn = 0; hits.length = 0;
+  const 것 = await chat(새연결(), { messages: [{ role: 'user', content: '안녕' }] });
+  check('★★ 한 번에 받는 길이 message.reasoning 을 생각으로 읽는다', 것.thinking === '생각글', JSON.stringify(것.thinking));
+}
+
+// ── 11. 200 으로 HTML 페이지를 주는 프록시 ──────────────────────────────
+trace('12-HTML200');
+{
+  /*
+   * 사내 프록시는 로그인 페이지를 **200 으로** 준다. 흘려받기로 읽으면 JSON 이 한
+   * 줄도 없어 빈 답이다. 루프는 이 자리를 이미 받는다 — 스트리밍을 끄고 한 번 더
+   * 부르고, 그래도 비면 「서버가 빈 답을 보냈습니다」 와 짚을 자리(프록시)를 적는다.
+   *
+   * 흘려읽기가 몸 속 오류를 읽고 SSE 를 규격대로 읽게 되면서 이 길이 **안 바뀌었는지**
+   * 못 박는다. HTML 은 오류 조각이 아니라서 빈 답 길로 가야 한다. 그리고 한 번에
+   * 받기로도 안 됐으면 흘려받기를 끄지 않는다 — 탓이 흘려받기가 아니었다.
+   */
+  const 페이지 = '<!doctype html>\n<html><body>\n<h1>Sign in to corp proxy</h1>\n</body></html>\n';
+  const conn = 새연결();
+  const r = await 돌리기([{ html: 페이지 }, { html: 페이지 }, { text: '여기까지 오면 안 된다' }], { conn });
+  check('★★ HTML 200 이 빈 답이면 스트리밍을 끄고 한 번 더 부른다',
+    hits.length === 2 && r.events.some((e) => e.type === 'retry' && /스트리밍을 끄고/.test(e.why ?? '')),
+    `${hits.length}번 · ${JSON.stringify(r.events.filter((e) => e.type === 'retry'))}`);
+  const 오류 = r.events.find((e) => e.type === 'error');
+  check('★★ 그래도 비면 빈 답이라고 말하고 프록시를 짚는다',
+    /빈 답/.test(오류?.text ?? '') && /프록시/.test(오류?.text ?? ''), String(오류?.text));
+  check('★ 빈 답을 끝난 답으로 넘기지 않는다', !r.kinds.includes('done'), r.kinds.join(','));
+  check('★ 한 번에 받기로도 안 됐으면 흘려받기를 끄지 않는다', conn.streaming === true, String(conn.streaming));
 }
 
 /*
@@ -397,6 +532,107 @@ trace('9-400');
   // 적는데 실제로는 여덟 번 참는다면, 그 화면은 거짓말이다.
   const 알림 = 다시부를지({ status: 429 }, 1, 참는정책, 0);
   check('★ 화면에 적히는 횟수도 429 것을 쓴다', 알림?.max === 8, String(알림?.max));
+
+  /*
+   * ── ★★★ 안 부르는 까닭이 둘인데 화면은 한 가지로 말했다 ────────────────
+   *
+   * 사람이 본 것: `retry.막힘최대` 를 8 로 올려 뒀는데 화면은 여전히
+   * 「5번 불렀지만 계속 막혔습니다 (HTTP 429)」 에서 멎었다. 자기가 올린
+   * 값이 아무 일도 안 하는 것처럼 보인다.
+   *
+   * 실제로는 여덟 번을 채우기 전에 **우리 쪽 시간 울타리**(총상한)가 먼저
+   * 닫힌 것이다. `Retry-After` 가 실려 오면 한 번에 60초까지 기다리니
+   * 대여섯 번이면 5분이 찬다.
+   *
+   * 그런데 이 함수는 「다시 부를 것이 아니다」 와 「우리 예산을 다 썼다」 에
+   * 똑같이 null 을 돌려줬다. 부르는 쪽은 가를 길이 없어 둘 다 서버 탓으로
+   * 적었다 — 앞은 서버를 볼 일이고 뒤는 우리 설정을 올리면 되는 일인데도.
+   */
+  const 예산끝 = {};
+  check('★★★ 총상한에 걸린 것은 「예산」 이라고 적어 준다',
+    다시부를지({ status: 429 }, 2, 짧은정책, 2000, 예산끝) === null && 예산끝.까닭 === 못부른까닭.예산,
+    JSON.stringify(예산끝));
+  check('★★ 얼마짜리 울타리였는지도 적어 준다',
+    예산끝.총상한 === 2500 && 예산끝.쌓인 === 2000 && 예산끝.다음대기 === 1000,
+    JSON.stringify(예산끝));
+
+  const 안될것 = {};
+  check('★★★ 다시 불러 봐야 같은 것은 다른 까닭이다',
+    다시부를지({ status: 400 }, 1, 짧은정책, 0, 안될것) === null && 안될것.까닭 === 못부른까닭.안될것,
+    JSON.stringify(안될것));
+  const 횟수끝 = {};
+  다시부를지({ status: 429 }, 9, 짧은정책, 0, 횟수끝);
+  check('★★★ 횟수를 다 쓴 것도 예산 탓이 아니다', 횟수끝.까닭 === 못부른까닭.안될것,
+    JSON.stringify(횟수끝));
+
+  check('★★★ 예산이면 사람이 올릴 설정 이름을 말해 준다',
+    /retry\.총상한/.test(못부른말(예산끝) ?? ''), String(못부른말(예산끝)));
+  check('★★★ 그리고 서버가 막은 것이 아니라고 못 박는다',
+    /여기서 그만둔 것/.test(못부른말(예산끝) ?? ''), String(못부른말(예산끝)));
+  check('★★ 예산이 아닌 것에는 그 말을 안 붙인다 — 있는 말만 한다',
+    못부른말(안될것) === null && 못부른말(null) === null, String(못부른말(안될것)));
+
+  // 적을 자리를 안 줘도 여태와 똑같이 돈다. 부르는 데가 여럿이라 모양을 안 바꾼다.
+  check('★★ 자리를 안 주면 여태 그대로다',
+    다시부를지({ status: 429 }, 1, 짧은정책, 0) !== null
+    && 다시부를지({ status: 429 }, 2, 짧은정책, 2000) === null, '');
+}
+
+/*
+ * ── ★★★ 그 까닭이 **화면까지** 와야 한다 ──────────────────────────────
+ *
+ * 위 칸은 retry.js 가 까닭을 적어 준다는 것만 잰다. 그런데 그 새 자리를
+ * 어댑터가 한 군데도 안 썼다 — 두 부르는 자리가 `적을곳` 을 안 넘겼다.
+ * 그래서 `retry.막힘최대` 를 8 로 올려 둔 사람이 보는 글은 여전히
+ * 「n번 불렀지만 계속 막혔습니다 (HTTP 429)」 다. 고친 쪽은 아무도 안 쓰고
+ * 사람 이야기는 그대로 남아 있는, 반쪽만 한 고침이다.
+ *
+ * 재는 것: 우리 예산이 먼저 닫혔으면 **우리 설정 이름**을 말하고, 서버가
+ * 계속 막았다는 말은 **안 한다.** 두 길(한 번에 받기·흘려 받기)이 같아야 한다.
+ */
+trace('11-예산이끝난것을화면까지');
+{
+  // 흔들림을 끄고 사다리를 짧게 줘서 몇 번째에 울타리가 닫히는지 딱 떨어지게 한다.
+  const 울타리 = { 막힘최대: 8, 최대: 8, 흔들림: 0, base: [40, 80, 160], 막힘base: [40, 80, 160], 총상한: 100 };
+  const 막힘 = { status: 429, message: '할당량을 넘었습니다' };
+  const 재기 = async (흘려) => {
+    script = [막힘, 막힘, 막힘, 막힘, 막힘, 막힘, 막힘, 막힘, 막힘]; turn = 0; hits.length = 0;
+    할당량잊기();
+    const conn = 새연결({ retry: 울타리 });
+    let 탈 = null;
+    try {
+      if (흘려) { for await (const _ of chatStream(conn, { messages: [{ role: 'user', content: '안녕' }] })) { /* 알림만 흘러온다 */ } }
+      else await chat(conn, { messages: [{ role: 'user', content: '안녕' }] });
+    } catch (e) { 탈 = e; }
+    return { 글: 탈?.message ?? '', 부름: hits.length };
+  };
+
+  for (const [이름, 흘려] of [['한 번에 받는 길', false], ['흘려 받는 길', true]]) {
+    const r = await 재기(흘려);
+    check(`★★★ ${이름}: 예산이 먼저 닫히면 올릴 설정 이름(retry.총상한)을 말한다`,
+      /retry.총상한/.test(r.글), r.글);
+    check(`★★★ ${이름}: 그때 「계속 막혔습니다」 라고 서버 탓을 하지 않는다`,
+      !/계속 막혔습니다/.test(r.글), r.글);
+    check(`★★ ${이름}: 서버가 한 말은 그대로 남는다`,
+      /할당량을 넘었습니다/.test(r.글), r.글);
+    check(`★★ ${이름}: 막힘최대(8)를 다 쓰기 전에 멎은 것이 맞다`,
+      r.부름 > 1 && r.부름 < 8, `${r.부름}번`);
+  }
+
+  /*
+   * 반대쪽. 예산이 아니라 **횟수**를 다 썼으면 여태 하던 말이 맞는 말이다 —
+   * 새 말이 옛 말을 밀어내면 그건 고친 게 아니라 자리만 바꾼 것이다.
+   */
+  script = [막힘, 막힘, 막힘, 막힘]; turn = 0; hits.length = 0;
+  할당량잊기();
+  let 횟수탈 = null;
+  try {
+    await chat(새연결({ retry: { 흔들림: 0, base: [10, 10, 10], 막힘base: [10, 10, 10] } }),
+      { messages: [{ role: 'user', content: '안녕' }] });
+  } catch (e) { 횟수탈 = e; }
+  check('★★★ 횟수를 다 쓴 것에는 여태 하던 말 그대로다',
+    /계속 막혔습니다/.test(횟수탈?.message ?? '') && !/retry.총상한/.test(횟수탈?.message ?? ''),
+    횟수탈?.message);
 }
 
 // ── 결과 ────────────────────────────────────────────────────────────────

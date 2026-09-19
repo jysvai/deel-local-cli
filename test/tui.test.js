@@ -100,6 +100,26 @@ trace('1-켤지말지');
   check('줄화면은 언제나 만들어진다', new LineScreen().kind === 'line');
 }
 
+trace('1.5-생각-곁정보');
+
+/*
+ * ── '생각 중…' 곁에 붙는 것은 **숫자뿐이다** ────────────────────────────
+ *
+ * 상자는 왼쪽에 문구('생각하는 중…')를, 오른쪽 곁에 걸린 시간·곁정보를 찍는다. 곁정보에
+ * 「생각 1,234자」 를 넣으면 한 줄에 「생각」 이 두 번 나온다 — screen.js 주석이 「숫자만 떼어
+ * 곁정보로 붙인다」 라고 적어 둔 그대로여야 한다 (2.0.0 6회차 화면6cl-c SCR1).
+ */
+{
+  const 본것 = [];
+  const 가짜 = { 일바꿈(갈래, 곁정보) { 본것.push([갈래, 곁정보]); } };
+  const 화면 = new BoxScreen(가짜);
+  화면.생각('첫 판단·medium 생각 중… 1,234자');
+  check('생각 곁정보는 숫자만 붙인다', 본것.at(-1)?.[1] === '1,234자', JSON.stringify(본것.at(-1)));
+  check('갈래는 생각이다', 본것.at(-1)?.[0] === '생각', JSON.stringify(본것.at(-1)));
+  화면.생각('숫자가 없는 말');
+  check('숫자가 없으면 곁정보를 지운다', 본것.at(-1)?.[1] === null, JSON.stringify(본것.at(-1)));
+}
+
 trace('2-접어쓰기');
 
 const { 접어쓰기 } = await import('../src/ui/wrap.js');
@@ -126,6 +146,24 @@ const { 접어쓰기 } = await import('../src/ui/wrap.js');
   const 들여 = 접어쓰기('    └ ' + '나'.repeat(40), 24);
   check('접힌 줄이 앞 들여쓰기를 물려받는다', 들여.length > 1 && 들여[1].startsWith('    '),
     JSON.stringify(들여[1]?.slice(0, 8)));
+
+  /*
+   * 들여쓰기는 글 맨 앞의 빈칸을 세어 잰다. 그 자를 맨 앞에 색 코드가 오면 거기서 막혀 0 을
+   * 잰다. 화면에 보이는 모양은 똑같이 네 칸 들여쓴 줄인데 접힌 줄만 왼쪽 끝에서 시작한다 —
+   * 세로줄이 끊겨 보이고 도구 결과가 무엇에 딸린 글인지 알 수 없게 된다. 줄 전체에 색을 씌우는
+   * 자리가 하나만 생기면 바로 드러나는, 지금은 잠복인 자리다 (2.0.0 8회차 uimisc WR2).
+   */
+  const 색들여 = 접어쓰기('\x1b[90m' + '    └ ' + '나'.repeat(40) + '\x1b[0m', 24);
+  check('★ 맨 앞 색 코드가 있어도 들여쓰기를 물려받는다',
+    색들여.length > 1 && 색들여[1].replace(/\x1b\[[0-9;]*m/g, '').startsWith('    '),
+    JSON.stringify(색들여[1]?.slice(0, 16)));
+  check('색이 앞에 붙어도 줄 수가 같다', 색들여.length === 들여.length, `색 ${색들여.length} · 민 ${들여.length}`);
+
+  // 끝의 빈칸만 넘친 줄은 색이 켜져 있어도 버린다 — 색 코드가 붙어 있다고 보이는 것 없는 줄이
+  // 한 줄 더 생기면 안 된다. 색 없는 글과 줄 수가 같아야 한다 (2.0.0 6회차 WR1).
+  const 색빈칸 = 접어쓰기('\x1b[31m가나다  ', 6);
+  check('색 켜진 글의 끝 빈칸이 넘쳐도 빈 줄이 안 생긴다', 색빈칸.length === 접어쓰기('가나다  ', 6).length && 색빈칸.length === 1, JSON.stringify(색빈칸));
+  check('입력 상자(빈칸줄남김)는 색이 있어도 빈칸 줄을 남긴다', 접어쓰기('\x1b[31m가나다  ', 6, { 빈칸줄남김: true }).length === 2);
 }
 
 trace('3-상자그리기');
@@ -157,6 +195,68 @@ const { 프레임, 안쪽최대 } = await import('../src/ui/inputbox.js');
   check('상태줄·경고·곁말이 다 들어간다', 다있음.줄들.length === 6, String(다있음.줄들.length));
   check('상태줄이 상자 위에 온다', /폴더/.test(벗기기(다있음.줄들[0])), 벗기기(다있음.줄들[0]));
   check('곁말이 상자 아래에 온다', /help/.test(벗기기(다있음.줄들.at(-1))), 벗기기(다있음.줄들.at(-1)));
+}
+
+/*
+ * ── 상자에 실려 오는 **남의 글**에 든 제어 순서 (2.0.0 10회차 막판-화면 IB1) ──
+ *
+ * 상자가 그리는 것이 전부 우리 글은 아니다. 일감의 곁정보에는 모델이 적은 글이 실린다 —
+ * `repl.js` 가 `화면.일바꿈('하위', clip(ev.목적, 24))` 로 넣는 그 값은 모델이 Task 를 부를 때
+ * 적은 `purpose` 다. 같은 글이 say() 로 나갈 때는 걸러지는데(ansi.js 화면글거르기), 상자는
+ * say 를 안 지나고 stdout 에 곧장 쓴다. 그래서 한쪽만 막혀 있었다.
+ *
+ * 새면 무슨 일이 나나 — OSC 52 는 클립보드를 바꾼다(붙여넣은 명령이 다른 명령이 된다).
+ * `ESC [1A ESC [2K` 는 윗줄을 덮어써서 「✗ 실패」 를 「✓ 통과」 로 만든다. 모델이 시키는 대로
+ * 화면이 거짓말을 하게 되는 자리라, 폭이 어긋나는 것보다 무겁다.
+ *
+ * 우리 색(SGR)은 남는다 — 상자 테두리와 글자 색이 그것으로 그려진다.
+ */
+{
+  const ESC = String.fromCharCode(27);
+  const BEL = String.fromCharCode(7);
+  const 우리것아닌순서 = (줄들) => 줄들.join('\n').replace(/\x1b\[[0-9;]*m/g, '').match(/[\x1b\x07\x9b]/g) ?? [];
+
+  const 클립보드 = 프레임({ 폭: 100, 일감: { 돌림: '⠋', 말: '하위 작업 도는 중', 곁: `12초 · ${ESC}]52;c;bWFsaWNl${BEL}` } });
+  check('★★ 일감 곁정보에 든 클립보드 바꾸기가 상자에 안 실린다',
+    우리것아닌순서(클립보드.줄들).length === 0, JSON.stringify(클립보드.줄들.find((l) => /\x1b\]|\x07/.test(l)) ?? ''));
+
+  const 덮어쓰기 = 프레임({ 폭: 100, 일감: { 돌림: '⠋', 말: `${ESC}[1A${ESC}[2K통과`, 곁: '12초' } });
+  check('★★ 일감 말에 든 커서 옮기기가 상자에 안 실린다',
+    우리것아닌순서(덮어쓰기.줄들).length === 0, JSON.stringify(덮어쓰기.줄들.find((l) => /\x1b\[[0-9;]*[AK]/.test(l)) ?? ''));
+
+  // 걸러도 보이는 글자는 남는다 — 무엇을 하는 중인지가 사라지면 안 된다.
+  check('거른 뒤에도 하던 일의 글자는 남는다', /통과/.test(벗기기(덮어쓰기.줄들.join(''))),
+    벗기기(덮어쓰기.줄들.join('')).slice(0, 60));
+
+  /*
+   * 줄바꿈·탭도 같이 뗀다 — 이쪽은 **줄 수를 어긋내서** 대화를 지운다.
+   *
+   * 상자는 `줄들.length` 만큼만 커서를 올려 제자리에 다시 그린다. 한 줄 안에 \n 이 들어오면
+   * 터미널은 두 줄에 그리는데 상자는 한 줄로 세니, 그 뒤 판마다 한 줄씩 엇나간 자리에 덮어써
+   * 위쪽 대화가 갉여 나간다. 탭은 터미널이 다음 탭 자리까지 밀어 그려서 몇 칸인지 아무도
+   * 모르게 만든다 — 사람이 친 글은 이미 빈칸 넷으로 펴는데(접기), 일감 글만 날것이었다.
+   */
+  for (const [이름, 섞인것] of [['줄바꿈', '로그 고치기\n두번째 줄'], ['탭', `로그${String.fromCharCode(9)}고치기`]]) {
+    const r = 프레임({ 폭: 80, 일감: { 돌림: '⠋', 말: '하위 작업 도는 중', 곁: 섞인것 } });
+    const 실제줄 = r.줄들.join('\n').split('\n').length;
+    check(`★★ 일감 곁정보의 ${이름}이 상자 줄 셈을 안 어긋낸다`,
+      실제줄 === r.줄들.length && !/[\n\t]/.test(r.줄들.join('')),
+      `줄들 ${r.줄들.length} · 실제 ${실제줄}`);
+    // 테두리는 그대로 한 벌이어야 한다 — 탭이 남으면 오른쪽 세로줄이 밀린다.
+    const 폭들 = [...new Set(r.줄들.map((l) => width(벗기기(l))))];
+    check(`  ${이름}이 섞여도 테두리 폭이 한 벌이다`, 폭들.length === 1, 폭들.join(','));
+  }
+  {
+    const r = 프레임({ 폭: 80, 일감: { 돌림: '⠋', 말: '하위\n작업', 곁: '12초' } });
+    check('★★ 일감 말의 줄바꿈도 상자 줄 셈을 안 어긋낸다',
+      r.줄들.join('\n').split('\n').length === r.줄들.length, JSON.stringify(r.줄들[1] ?? ''));
+  }
+
+  // 색(SGR)은 그대로다. 같이 떼면 테두리 색과 경계 표시가 통째로 사라진다.
+  // 검사는 파이프로 돌아 c.* 가 색을 안 입히므로, 색 코드를 직접 넣어서 살아남는지 본다.
+  const 색있음 = 프레임({ 폭: 100, 일감: { 돌림: '⠋', 말: `${ESC}[32m생각 중${ESC}[0m`, 곁: '12초' } });
+  check('색(SGR)은 그대로 남는다', 색있음.줄들.join('').includes(`${ESC}[32m`),
+    JSON.stringify(색있음.줄들[1] ?? '').slice(0, 60));
 }
 
 trace('4-접히는입력');
@@ -225,6 +325,104 @@ trace('5-커서자리');
   // 커서가 테두리 밖으로 나가면 안 된다.
   const 꽉참 = 프레임({ 글: 'a'.repeat(200), 폭: 60 });
   check('커서가 테두리를 안 넘는다', 꽉참.커서.열 <= 59, String(꽉참.커서.열));
+}
+
+trace('5.5-폭-어긋남');
+
+// ── 줄이 창보다 넓어지는 자리들 ─────────────────────────────────────────
+//
+// 상자는 줄 수로 커서를 되짚는다. 한 줄이라도 창보다 넓으면 터미널이 두 줄로 접고 상자는 한 줄로
+// 세서, 키를 칠 때마다 위쪽 대화가 갉여 나간다. 여기서는 width() 와 **따로 만든 자**로 잰다 —
+// 같은 자로 재면 자가 틀린 것을 못 본다.
+{
+  const ESC = String.fromCharCode(27);
+  const 글자 = (...cps) => String.fromCodePoint(...cps);
+  const 마디 = new Intl.Segmenter('en', { granularity: 'grapheme' });
+  const 진짜칸 = (s) => {
+    let n = 0;
+    for (const { segment: g } of 마디.segment(벗기기(s))) {
+      const cp = g.codePointAt(0);
+      const 넓음 = /\p{Emoji_Presentation}/u.test(g) || (cp >= 0xac00 && cp <= 0xd7a3) || (cp >= 0x2e80 && cp <= 0xa4cf)
+        || (cp >= 0xff00 && cp <= 0xff60) || cp >= 0x20000;
+      n += 넓음 ? 2 : 1;
+    }
+    return n;
+  };
+
+  for (const [이름, 글] of [['✅ 마흔 개', 글자(0x2705).repeat(40)], ['U+1FAE0 서른 개', 글자(0x1fae0).repeat(30)]]) {
+    const f = 프레임({ 글, 폭: 80 });
+    const 넓은 = Math.max(...f.줄들.map(진짜칸));
+    check(`★ ${이름}를 쳐도 줄이 80칸을 안 넘는다`, 넓은 <= 80, `${넓은} / 80`);
+  }
+  // 엑셀에서 한 줄을 붙이면 탭이 섞여 온다. 탭은 터미널이 다음 탭 자리까지 밀어 그리므로
+  // 날것으로 내보내면 몇 칸인지 아무도 모른다.
+  const 엑셀 = 프레임({ 글: ['이름', '부서', '직급', '입사일', '연락처', '메일', '비고', '상태', '메모', '끝'].join('\t'), 폭: 80 });
+  check('★ 입력에 든 탭을 날것으로 그리지 않는다', !엑셀.줄들.some((l) => l.includes('\t')), JSON.stringify(엑셀.줄들.find((l) => l.includes('\t'))?.slice(0, 30)));
+
+  // 좁은 창. 칸을 20 으로 올려 잡아 10칸 창에 20칸 줄을 냈다.
+  for (const 칸 of [10, 19]) {
+    const f = 프레임({ 글: 'hi', 폭: 칸, 상태: ' ▏폴더 ▏ auto', 곁말: '/help 명령 목록', 추천: [{ 이름: 'help', 설명: '명령 목록' }] });
+    const 넓은 = Math.max(...f.줄들.map(width));
+    check(`★ ${칸}칸 창에서도 어느 줄도 창보다 안 넓다`, 넓은 <= 칸, `${넓은} / ${칸}`);
+    check(`${칸}칸 창에서 커서가 창 안이다`, f.커서.열 <= 칸, String(f.커서.열));
+    const 일 = 프레임({ 폭: 칸, 일감: { 돌림: '*', 말: 'working hard', 곁: '3s', 대기: 'abc' } });
+    const 일넓은 = Math.max(...일.줄들.map(width));
+    check(`★ ${칸}칸 창에서 일하는 중 상자도 창보다 안 넓다`, 일넓은 <= 칸, `${일넓은} / ${칸}`);
+  }
+
+  // 끝의 빈칸이 접히는 자리를 넘으면 터미널은 커서를 다음 줄에 둔다. 빈칸뿐인 줄을 버리면
+  // 상자는 한 줄로 세고 커서를 윗줄 끝에 세운다 — 친 빈칸이 안 들어간 것처럼 보인다.
+  const 빈칸끝 = `${'a'.repeat(73)}   `;
+  const 끝 = 프레임({ 글: 빈칸끝, 커서: 빈칸끝.length, 폭: 80 });
+  check('★ 끝의 빈칸이 접히면 그 줄도 상자에 있고 커서가 거기 선다',
+    끝.줄들.length === 4 && 끝.커서.위 === 1 && 끝.커서.열 === 9, `줄 ${끝.줄들.length} · 커서 ${JSON.stringify(끝.커서)}`);
+
+  // 붙여넣은 조각이 탭으로 끝나면 readline 이 그 탭을 Tab 키로 보고 완성기에 넘겨 삼켰다.
+  const { createInterface } = await import('node:readline');
+  const { PassThrough } = await import('node:stream');
+  const 완성 = await import('../src/ui/complete.js');
+  const 쳐보기 = async (조각들) => {
+    const 입력 = new PassThrough(); 입력.isTTY = true; 입력.setRawMode = () => 입력;
+    const 출력 = new PassThrough(); 출력.isTTY = true; 출력.columns = 80; 출력.rows = 30; 출력.on('data', () => {});
+    const 완성기 = 완성.붙임탭완성기 ? 완성.붙임탭완성기(입력) : (line) => [[], line];
+    const rl = createInterface({ input: 입력, output: 출력, terminal: true, historySize: 0, completer: 완성기 });
+    for (const 조각 of 조각들) { 입력.write(조각); await new Promise((r) => setImmediate(r)); }
+    const v = rl.line; rl.close(); return v;
+  };
+  const 탭끝 = await 쳐보기(['a\t', 'b']);
+  check('★ 붙여넣은 조각이 탭으로 끝나도 탭을 안 삼킨다', 탭끝 === 'a\tb', JSON.stringify(탭끝));
+  const 한탭 = await 쳐보기(['a', '\t']);
+  check('Tab 을 따로 누르면 여태처럼 줄을 안 건드린다 (채우기는 repl 이 한다)', 한탭 === 'a', JSON.stringify(한탭));
+  const 시프트탭 = await 쳐보기(['a', `${ESC}[Z`]);
+  check('Shift+Tab 은 줄을 안 건드린다', 시프트탭 === 'a', JSON.stringify(시프트탭));
+  const 안탭 = await 쳐보기(['a\tb\tc']);
+  check('한 조각 가운데 탭은 여태처럼 그대로다', 안탭 === 'a\tb\tc', JSON.stringify(안탭));
+
+  // 일본어·중국어 입력기는 전각 슬래시를 낸다. 추천이 아무것도 안 뜨면 명령이 없는 줄 안다.
+  const 표 = { help: { desc: 'h' }, model: { desc: 'm', arg: '<x>' }, mode: { desc: 'm', arg: '<x>' } };
+  const 전각 = `${글자(0xff0f)}he`;
+  check('★ 전각 슬래시로 쳐도 명령을 추천한다', 추천(전각, 표).map((x) => x.이름).join() === 'help', JSON.stringify(추천(전각, 표)));
+  check('★ 전각 슬래시로 쳐도 Tab 이 채운다', 채울글(전각, 추천(전각, 표)) === 'lp', JSON.stringify(채울글(전각, 추천(전각, 표))));
+
+  // 상자에 박힌 한국어. 영어로 켠 사람도 이 줄은 한글로 봤다.
+  const { 언어, 언어정하기 } = await import('../src/i18n/index.js');
+  const 본말 = 언어();
+  언어정하기('en');
+  try {
+    const 넘침 = 프레임({ 글: '/', 폭: 80, 추천: Array.from({ length: 9 }, (_, i) => ({ 이름: `c${i}`, 설명: 'd' })) });
+    check('★ 영어 화면에서 「그 밖에 N개 더」 가 한국어로 안 나온다', !/[가-힣]/.test(벗기기(넘침.줄들.at(-1))) && /3/.test(벗기기(넘침.줄들.at(-1))),
+      벗기기(넘침.줄들.at(-1)));
+    const 대기 = 프레임({ 폭: 80, 일감: { 돌림: '*', 말: 'working', 곁: 'x', 대기: 'queued text' } });
+    check('★ 영어 화면에서 미리 치는 안내가 한국어로 안 나온다', !/[가-힣]/.test(벗기기(대기.줄들.at(-1))), 벗기기(대기.줄들.at(-1)));
+    const { InputBox } = await import('../src/ui/inputbox.js');
+    const 상자 = new InputBox();
+    let 찍힌 = '';
+    const 진짜 = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (s) => { 찍힌 += s; return true; };
+    try { 상자.일시작(null); 상자.대기갱신('x', 2); 상자.일끝(); } finally { process.stdout.write = 진짜; }
+    check('★ 영어 화면에서 「N건 예약됨」 · 「ESC 중단」 이 한국어로 안 나온다', !/예약됨|ESC 중단/.test(찍힌) && /ESC/.test(찍힌),
+      JSON.stringify(벗기기(찍힌).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').slice(-120)));
+  } finally { 언어정하기(본말); }
 }
 
 trace('6-상자화면');

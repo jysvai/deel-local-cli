@@ -13,7 +13,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeScope, checkCommand, isMutating } from '../src/safety/guard.js';
+import { makeScope, checkCommand, isMutating, 셸이파일에쓰나 } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
@@ -379,6 +379,34 @@ trace('5-과잉차단');
   check('node scripts/copy.js 는 변경성이 아니다', !isMutating('node scripts/copy.js'), '');
   check('cp a b 는 변경성이다', isMutating('cp a b'), '');
   check('git commit 은 변경성이다', isMutating('git commit -m "x"'), '');
+
+  /*
+   * 지우기·옮기기 무리는 셸이 달라도 같은 잣대다 (6회차 Gemini 쓰나6n O1·O2).
+   *
+   * confirm 모드는 `Bash && isMutating` 일 때만 묻고(agent/loop.js), 같은 명령 재실행 거부도 이 값을 본다.
+   * rm · del · move 는 걸리는데 PowerShell 의 Remove-Item · cmd 의 rmdir · ren · git rm · git clean 은 안 걸려서
+   * 셸로 PowerShell 이 골라진 판에서는 지우기가 **안 묻고** 돌았다.
+   */
+  for (const c of ['Remove-Item a.txt', 'ri a.txt', 'Move-Item a b', 'Copy-Item a b', 'Rename-Item a b', 'rmdir /s /q build', 'rd build',
+    'ren a.txt b.txt', 'erase a.txt', 'unlink f.txt', 'shred -u f.txt', 'git rm a.js', 'git mv a.js b.js', 'git clean -fd',
+    "find . -name '*.log' -delete", 'cd sub && Remove-Item x']) {
+    check(`★ 지우기·옮기기 무리는 변경성이다: ${c}`, isMutating(c), '');
+  }
+  for (const c of ['node scripts/rename.js', 'grep -rn "Remove-Item" docs', 'echo ren', 'git log --grep=clean', 'find . -name x', 'npm run rd', 'git status']) {
+    check(`  짝: 이름만 스친 것은 변경성이 아니다: ${c}`, !isMutating(c), '');
+  }
+
+  /*
+   * 스냅샷 전용 무늬 (6회차 — Claude 가 읽다 찾음 · Gemini 쓰나6n O3).
+   *
+   * `git checkout --` 뒤의 `\b` 는 `-` 와 공백 사이라 경계가 안 생겨서 `git checkout -- f.js` 가 **절대** 안 걸렸다 —
+   * 머리말이 잡겠다고 적어 둔 바로 그 꼴이다. prettier 는 `--write` 만 보고 줄임꼴 `-w` 를 놓쳤다.
+   */
+  check('★ git checkout -- 파일 은 파일을 바꾸는 꼴이다', 셸이파일에쓰나('git checkout -- f.js'), '');
+  check('★ prettier -w 는 파일을 바꾸는 꼴이다', 셸이파일에쓰나('npx prettier -w a.js'), '');
+  check('  짝: git restore 는 그대로 걸린다', 셸이파일에쓰나('git restore f.js'), '');
+  check('  짝: git checkout --help 는 아니다', !셸이파일에쓰나('git checkout --help'), '');
+  check('  짝: prettier --check 는 아니다', !셸이파일에쓰나('npx prettier --check a.js'), '');
 }
 
 trace('6-Glob이잘랐다고말하는가');

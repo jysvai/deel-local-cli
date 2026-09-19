@@ -21,6 +21,7 @@ import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
+import { 규칙모으기 } from '../src/safety/policy.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -99,6 +100,46 @@ trace('1-실려나간다');
   const 사람말 = session.messages.filter((m) => m.role === 'user').map((m) => String(m.content ?? ''));
   check('★ 대화에 사람 말로 남는다', 사람말.some((t) => /로그부터/.test(t)), JSON.stringify(사람말));
   check('원래 시킨 말도 그대로 남는다', 사람말.some((t) => /이 파일 고쳐줘/.test(t)), JSON.stringify(사람말));
+  // 접힐 때 다시 박히고 --resume 이 되살리는 원문(이번요청)에도 들어가야 한다.
+  check('★ 시킨 말 원문에도 낀 말이 붙는다',
+    /이 파일 고쳐줘/.test(session.이번요청) && /로그부터/.test(session.이번요청), String(session.이번요청));
+}
+
+// ── 1-b. ★ 한 걸음에 부른 것들의 결과는 부른 차례대로 실린다 ─────────────
+//
+// (낀 말과 같은 자리 — 걸음 사이에 이력이 어떤 모양으로 쌓이나 — 라 여기서 잰다.)
+// 걸러 막은 부름의 결과를 곧바로 싣고 통과한 것을 뒤에 실었다. id 로 짝짓는 규격은
+// 괜찮지만 차례로 짝짓는 규격(Ollama)에서는 결과가 엉뚱한 부름에 붙는다.
+trace('1b-결과차례');
+{
+  let 몇번 = 0;
+  const base = await 띄우기((q, res) => {
+    q.on('data', () => {});
+    q.on('end', () => {
+      몇번 += 1;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        choices: [{
+          message: 몇번 === 1
+            ? { content: '', tool_calls: [
+              { id: 'c1', type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: 'a.txt' }) } },
+              { id: 'c2', type: 'function', function: { name: 'Grep', arguments: JSON.stringify({ pattern: 'x' }) } },
+            ] }
+            : { content: '끝냈습니다.' },
+          finish_reason: 몇번 === 1 ? 'tool_calls' : 'stop',
+        }],
+        usage: { prompt_tokens: 5, completion_tokens: 5 },
+      }));
+    });
+  });
+  resetNet(); allowEndpoint(base);
+  const { session, ctx } = 판깔기(base);
+  ctx.규칙들 = 규칙모으기({ permissions: { deny: ['Grep'] } }, { env: {} });
+  for await (const ev of run(session, ctx, '찾아줘', { 끼어들기: () => null })) void ev;
+  const 차례 = session.messages.filter((m) => m.role === 'tool').map((m) => m.tool_call_id);
+  check('★★ 막힌 부름이 섞여도 결과는 부른 차례대로 실린다', 차례.join() === 'c1,c2', JSON.stringify(차례));
+  check('  막힌 쪽 결과가 막혔다고 말한다',
+    /막혀/.test(String(session.messages.find((m) => m.tool_call_id === 'c2')?.content ?? '')), '');
 }
 
 // ── 2. 안 쳤으면 아무 일도 없다 ───────────────────────────────────────

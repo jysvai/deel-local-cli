@@ -115,6 +115,64 @@ trace('4-돌렸는데실패했으면');
   check('글에서도 실패가 보인다', /실패|✗/.test(증거글(e)));
 }
 
+trace('6회차-EV4-진짜실패모양');
+
+// ── 진짜 Bash·Verify 는 실패를 error 가 아니라 failed 로 돌려준다 ─────────────
+//
+// ★ (6회차 근거6at EV4) 위 검사는 실패를 `{ error }` 로 적었다. 그런데 실제 Bash 는 종료
+// 코드가 0 이 아니면 `{ failed: true, exitCode }` 를(tools/index.js), Verify 는 `{ failed }` 를
+// 돌려주고 error 는 안 싣는다. 감사기록이 error 만 보고 ok 를 적어, 빨간 npm test 가
+// 「확인한 것」 칸에 올랐다 — 이 파일 머리말이 제일 나쁘다고 한 거짓 증거다.
+{
+  const { s, a } = 새것();
+  s.noteChange('src/runner.js', { added: 12, removed: 3 });
+  a.tool('Bash', { command: 'npm test' }, { content: '3 failing', summary: '종료 코드 1', failed: true, exitCode: 1 });
+  const e = 증거모으기(s, { audit: a });
+  check('★ (6회차 EV4) 종료 코드로 실패한 검사는 증명이 아니다', e.증명안된것.length === 1 && !e.바꾼것[0]?.증명,
+    JSON.stringify(e.바꾼것[0]));
+  check('★ (6회차 EV4) 감사기록에도 실패로 남는다', a.recent(5).at(-1)?.ok === false, JSON.stringify(a.recent(5).at(-1)));
+
+  const { s: s2, a: a2 } = 새것();
+  s2.noteChange('src/runner.js', { added: 1, removed: 0 });
+  a2.tool('Verify', {}, { content: '탈 1', summary: '탈 1', failed: true });
+  const e2 = 증거모으기(s2, { audit: a2 });
+  check('★ (6회차 EV4) 탈난 Verify 도 증명이 아니다', e2.증명안된것.length === 1 && e2.돌린것[0]?.됐나 === false,
+    JSON.stringify(e2.돌린것[0]));
+}
+
+trace('6회차-EV3-인자없는Verify');
+
+// ★ (6회차 근거6at EV3) Verify 는 인자 없이 부르는 것이 보통이다(required: []). 그러면 감사기록의
+// target 이 비고, 통과했는데도 「확인한 것: 없음 · 확인되지 않았습니다」 로 나왔다.
+{
+  const { s, a } = 새것();
+  s.noteChange('src/runner.js', { added: 1, removed: 0 });
+  a.tool('Verify', {}, { content: '다 됨', summary: '확인 3' });
+  const e = 증거모으기(s, { audit: a });
+  check('★ (6회차 EV3) 인자 없이 돌린 Verify 가 통과하면 증명이다',
+    e.증명안된것.length === 0 && /Verify/.test(e.바꾼것[0]?.증명 ?? ''), JSON.stringify(e.바꾼것[0]));
+}
+
+trace('6회차-EV2-읽기명령');
+
+// ★ (6회차 근거6at EV2) 검사 이름이 **인자에** 든 명령은 검사가 아니다. `cat eslint.config.js` 는
+// 파일을 읽었을 뿐인데 「확인한 것」 칸에 올랐다 — 읽은 것은 아무것도 증명하지 않는다.
+{
+  const 확인인가 = (명령) => {
+    const { s, a } = 새것();
+    s.noteChange('src/runner.js', { added: 1, removed: 0 });
+    a.tool('Bash', { command: 명령 }, { summary: '끝' });
+    return 증거모으기(s, { audit: a }).돌린것[0]?.확인인가 === true;
+  };
+  for (const 명령 of ['cat eslint.config.js', 'grep jest package.json', 'cat pytest.ini', 'git log --grep tsc', 'echo npm test']) {
+    check(`★ (6회차 EV2) 「${명령}」 은 검사가 아니다`, !확인인가(명령));
+  }
+  for (const 명령 of ['npm test', 'cd app && npm test', 'npm run test:unit 2>&1 | tail -20', 'npx jest', 'pnpm exec tsc --noEmit',
+    'python -m pytest -q', 'CI=1 npm test', 'go test ./...', 'eslint .', 'bash -c "npm test"']) {
+    check(`(EV2 짝) 「${명령}」 은 검사다`, 확인인가(명령));
+  }
+}
+
 trace('4-1-나중에깨지면');
 
 // ── 나중에 깨진 것이 앞의 성공을 덮는다 ─────────────────────────────────
@@ -229,6 +287,99 @@ trace('8-기록이샐때');
     e.돌린것.length === 0 && e.바꾼것.length === 1, `돌린것 ${e.돌린것.length} · 바꾼것 ${e.바꾼것.length}`);
 
   rmSync(원래, { recursive: true, force: true });
+}
+
+/*
+ * ── 8회차 판정 · 증거가 세 가지로 거짓말했다 ───────────────────────────
+ *
+ * 이 파일 머리말은 「고치기 전에 돌린 검사는 … 셋 다 여기서 걸러진다」 고
+ * 적어 뒀다. 실제로는 세 자리가 다 새고 있었다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-증거8-'));
+  const conn0 = { kind: 'openai', base: 'http://127.0.0.1:1/v1', auth: 'none', key: '', model: 'm', ctx: 8000 };
+  const 감사 = new Audit(방);
+
+  /*
+   * 1) **고치기 전**에 돌린 검사가 증거로 채택됐다.
+   *
+   * 거르는 자는 있었다 — `바꾼때`. 그런데 부르는 자리 셋(commit·work·export)이
+   * 하나도 그걸 안 넘겼다. 아무도 안 넘기는 인자는 없는 것과 같다.
+   * 파일마다 마지막으로 고친 때를 세션이 들고 있으면 부르는 쪽이 아무것도
+   * 안 넘겨도 순서를 가릴 수 있다.
+   */
+  const s = new Session(conn0, { root: 방 });
+  감사.tool('Bash', { command: 'npm test' }, { summary: '통과' });
+  await new Promise((r) => setTimeout(r, 12));
+  s.noteChange(join(방, 'a.js'), { added: 3, removed: 1 });
+  const e1 = 증거모으기(s, { audit: 감사 });
+  check('★★★ 고치기 전에 돌린 검사는 증거가 안 된다',
+    e1.바꾼것[0]?.증명 == null, JSON.stringify(e1.바꾼것[0]));
+  check('  그래서 증명 안 된 것으로 올라간다',
+    e1.증명안된것.length === 1, JSON.stringify(e1.증명안된것));
+
+  /*
+   * 2) 파일 A 뒤에 돈 검사가 파일 B 의 증명으로 **복제**됐다.
+   *
+   * `언제고쳤나` 가 파일별이 아니라 하나뿐이라, 늦게 고친 파일에는 그 뒤에
+   * 돌린 검사가 없는데도 앞 파일의 초록이 그대로 붙었다.
+   */
+  const s2 = new Session(conn0, { root: 방 });
+  const 감사2 = new Audit(방);
+  s2.noteChange(join(방, 'A.js'), { added: 1, removed: 0 });
+  await new Promise((r) => setTimeout(r, 12));
+  감사2.tool('Bash', { command: 'npm test' }, { summary: '통과' });
+  await new Promise((r) => setTimeout(r, 12));
+  s2.noteChange(join(방, 'B.js'), { added: 1, removed: 0 });   // 검사 **뒤에** 고침
+  const e2 = 증거모으기(s2, { audit: 감사2 });
+  const A = e2.바꾼것.find((x) => x.파일.endsWith('A.js'));
+  const B = e2.바꾼것.find((x) => x.파일.endsWith('B.js'));
+  check('★★★ 검사 앞에 고친 파일만 증명된다 — 뒤에 고친 파일에 복제되지 않는다',
+    !!A?.증명 && B?.증명 == null, JSON.stringify({ A: A?.증명, B: B?.증명 }));
+
+  /*
+   * 3) `pnpm check`·`yarn lint` 처럼 `run` 없이 쓰는 꼴이 확인으로 안 잡혔다.
+   *
+   * npm 은 스크립트에 `run` 이 있어야 하지만 pnpm·yarn·bun 은 없어도 된다.
+   * 사내에서 pnpm 을 쓰는 쪽은 확인을 아무리 돌려도 늘 「증명 안 됨」 이었다.
+   */
+  for (const 명령 of ['pnpm check', 'pnpm lint', 'pnpm build', 'yarn check', 'bun lint', 'yarn test']) {
+    const s3 = new Session(conn0, { root: 방 });
+    const 감사3 = new Audit(방);
+    s3.noteChange(join(방, 'c.js'), { added: 1, removed: 0 });
+    await new Promise((r) => setTimeout(r, 6));
+    감사3.tool('Bash', { command: 명령 }, { summary: '통과' });
+    const e3 = 증거모으기(s3, { audit: 감사3 });
+    check(`★★ 「${명령}」 도 확인으로 친다`, e3.바꾼것[0]?.증명 === 명령, JSON.stringify(e3.바꾼것[0]?.증명));
+  }
+  // 반대쪽 — 확인이 아닌 것은 여전히 아니다.
+  {
+    const s4 = new Session(conn0, { root: 방 });
+    const 감사4 = new Audit(방);
+    s4.noteChange(join(방, 'd.js'), { added: 1, removed: 0 });
+    await new Promise((r) => setTimeout(r, 6));
+    감사4.tool('Bash', { command: 'pnpm install' }, { summary: '됨' });
+    const e4 = 증거모으기(s4, { audit: 감사4 });
+    check('★ 「pnpm install」 은 확인이 아니다', e4.바꾼것[0]?.증명 == null, JSON.stringify(e4.바꾼것[0]?.증명));
+  }
+
+  /*
+   * 4) 기록이 새고 있는데 보고서가 그 말을 한 글자도 안 했다.
+   *
+   * 137줄이 「짧은 채로 내보내면 안 된다」 고 적어 두고 `기록못씀` 을 모아만 뒀다.
+   * 화면(work.js)은 말해 주는데 **글로 내보내는 쪽**은 말이 없었다 — 남는 것은 글이다.
+   */
+  {
+    const s5 = new Session(conn0, { root: 방 });
+    s5.noteChange(join(방, 'e.js'), { added: 1, removed: 0 });
+    const 새는감사 = { recent: () => [], 못쓴것: () => ({ 수: 7, 까닭: 'ENOSPC' }) };
+    const e5 = 증거모으기(s5, { audit: 새는감사 });
+    const 글 = 증거글(e5);
+    check('★★★ 기록이 샜으면 보고서가 그렇다고 적는다',
+      /기록|ENOSPC|7/.test(String(글)), String(글).slice(0, 160));
+  }
+
+  rmSync(방, { recursive: true, force: true });
 }
 
 rmSync(root, { recursive: true, force: true });

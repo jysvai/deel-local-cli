@@ -1,21 +1,13 @@
 // 슬래시 명령. 이름은 Claude Code / Codex 관례에 맞춘다.
-import { writeFileSync, existsSync, statSync } from 'node:fs';
-import { 볼것, 리뷰받기 } from './agent/review.js';
+import { writeFileSync, existsSync } from 'node:fs';
 import { 마지막할당량, 할당량말, 아슬아슬한가 } from './backend/quota.js';
 import { 세션요금, 돈셈, 돈말, 어디서온값, 요금적는법 } from './backend/price.js';
 import { join } from 'node:path';
-import { c, say, rule, pad, bar, mark, width, clip } from './ui/ansi.js';
+import { c, say, rule, pad, mark, width, clip } from './ui/ansi.js';
 import { compact } from './agent/compact.js';
-import { 증거모으기, 증거적기 } from './agent/evidence.js';
-import { 커밋준비, 커밋실행 } from './agent/commit.js';
-import { allowEndpoint } from './safety/network.js';
-import { 지금모드, 바깥인가, 나갈수있나 } from './safety/runmode.js';
-import { 주소가리기 } from './safety/secrets.js';
-import { pick, confirm } from './ui/prompt.js';
-import { load, 저장시도, resolveKey, upsert, 열쇠보관, configPath } from './config.js';
-import { 지금상태 as 지금열쇠상태, 받기설정, 잊기 as 받은열쇠잊기 } from './safety/authcmd.js';
-// 열쇠받기 명령을 정책이 못박아 뒀을 수 있다 — 받기설정 이 그 값을 같이 본다.
-import { 정책읽기 } from './safety/policy.js';
+import { 바깥인가 } from './safety/runmode.js';
+import { load, upsert, 열쇠보관, configPath } from './config.js';
+import { 지금상태 as 지금열쇠상태 } from './safety/authcmd.js';
 import { 걸음수 } from './agent/budget.js';
 import { 제공자고르기 } from './providers/index.js';
 import { 종, 알릴만한초 } from './ui/notify.js';
@@ -29,19 +21,18 @@ import { 종, 알릴만한초 } from './ui/notify.js';
 import { 말, 말 as 옮긴말, 언어, 언어들, 언어정하기, 언어고르기, 옮긴만큼, 지시말, 지시말정하기, 지시말따로정했나 } from './i18n/index.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './agent/models.js';
 import { allowTemporarily } from './safety/network.js';
-import { chat, 규격이름, 더할머리, 나가는눈금 } from './backend/adapter.js';
-import { 잠잠기본, 무소식기본 } from './backend/http.js';
-import { 인증서설정, 인증서말 } from './backend/clientcert.js';
+import { chat, 규격이름 } from './backend/adapter.js';
+import { 인증서말 } from './backend/clientcert.js';
 import { 알림채움, 알림말 } from './backend/retry.js';
-import { 프록시고르기, 프록시설정 } from './backend/proxy.js';
+import { 프록시고르기, 프록시설정, 프록시비켜가나 } from './backend/proxy.js';
 import { 정한셸 } from './tools/shell.js';
 import { TOOLS, 영어설명 } from './tools/index.js';
 import { 둘러보기, 프로젝트갈래 } from './lsp/servers.js';
 import { 지금것들 } from './lsp/client.js';
 import { 보고서적기 } from './ui/export.js';
-import { loadCommand, discover } from './skills/discover.js';
-import { install, list, remove, pack } from './plugins/manage.js';
+import { loadCommand } from './skills/discover.js';
 import { spin } from './ui/spinner.js';
+import { 빗금펴기 } from './ui/complete.js';
 import { 그림고르기설정, 끔설정, 환경그림, 환경으로껐나 } from './ui/motion.js';
 import { 사무실설정, 최소높이, 최소폭 } from './ui/office.js';
 
@@ -85,35 +76,24 @@ function 환경이하는말() {
   if (환경으로껐나()) 말들.push(c.gray(말('motion.envOff')));
   return 말들;
 }
-import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile, table as effortTable, 가벼운강도, shiftLevel } from './agent/effort.js';
+import { PROFILES, LEVELS as THINK_LEVELS, normalizeProfile } from './agent/effort.js';
 import { 전선붙이기, 전선말 } from './backend/wire.js';
 import { scanLocal, toProfiles } from './backend/scan.js';
 import { list as listSessions } from './agent/store.js';
-import { MODES as WORK_MODES, ORDER as WORK_ORDER, DEFAULT as WORK_DEFAULT, normalize as normWork, get as getWork, canWrite, 보일이름, 보일한줄 } from './agent/modes.js';
-import { LEVELS, ORDER as LEVEL_ORDER, DEFAULT as LEVEL_DEFAULT, normalize as normLevel, shows as levelShows } from './ui/level.js';
-import { diffLines, renderDiff, shortStat } from './ui/diff.js';
-import { readTextFull } from './tools/fsutil.js';
-import { 띄우기, 브라우저로 } from './preview/serve.js';
-import { 클립보드그림, 그림앉히기 } from './tools/clipboard.js';
-import { 크기말 } from './backend/vision.js';
-import { 명령들 } from './cmdnames.js';
+import { MODES as WORK_MODES, ORDER as WORK_ORDER, normalize as normWork, get as getWork, canWrite, 보일이름, 보일한줄 } from './agent/modes.js';
+import { COMMANDS, 설정남기기 } from './commands/common.js';
+import { 딴이름들 } from './cmdnames.js';
+import { doPlugin, 미리보기, showSkills, 미리보기끄기 } from './commands/extend.js';
+import { help, showLevel, 강조, showThink, showContext, showWork } from './commands/view.js';
+import { 갈래명령, 증거명령, 붙여넣기명령, 리뷰명령, 커밋명령, 카드명령, 못박기명령, 배움명령, 바뀐것보기 } from './commands/work.js';
+import { 출력상한, 모델급, ctxLength, switchModel } from './commands/model.js';
+// 나눠 옮긴 조각의 이름 중 바깥이 이 파일에서 찾는 것 — repl.js 와 검사들이 여기서 가져간다.
+export { COMMANDS, 미리보기끄기, 붙여넣기명령 };
 const MODES = {
   auto: '자율 — 전부 알아서. 되돌리기가 안전망',
   confirm: '확인 — 되돌릴 수 없는 것만 물어봄',
   strict: '엄격 — 파일 변경·명령 전부 물어봄',
 };
-
-
-/**
- * 화면에 낼 명령표. desc·arg 는 볼 때마다 지금 언어로 읽는다.
- *
- * @type {Record<string, {desc: string, arg?: string}>}
- */
-export const COMMANDS = Object.fromEntries(Object.entries(명령들).map(([이름, 꼴]) => {
-  const 것 = { get desc() { return 말(`cmd.${이름}.desc`); } };
-  if (꼴.arg) Object.defineProperty(것, 'arg', { get: () => 말(`cmd.${이름}.arg`), enumerable: true });
-  return [이름, 것];
-}));
 
 
 /**
@@ -131,7 +111,10 @@ function 경로처럼보이나(line) {
   const 첫낱말 = line.slice(1).split(/\s+/)[0] ?? '';
   if (첫낱말.includes('/') || 첫낱말.includes('\\')) return true;
   // `/tmp` 처럼 슬래시가 하나뿐이어도, 실제로 있는 자리면 경로로 본다.
-  if (첫낱말 && !COMMANDS[첫낱말.toLowerCase()]) {
+  // 딴이름(`/serve` · `/plugins`)도 이름이다. 이 줄이 표 하나만 보던 동안에는
+  // `plugins/` 폴더가 있는 저장소에서 `/plugins` 가 경로로 읽혀 명령이 안 돌고
+  // 모델에게 그대로 넘어갔다.
+  if (첫낱말 && !COMMANDS[첫낱말.toLowerCase()] && !딴이름들[첫낱말.toLowerCase()]) {
     /*
      * **적힌 그대로**도 보고, 앞 슬래시를 뗀 것도 본다.
      *
@@ -146,45 +129,6 @@ function 경로처럼보이나(line) {
 }
 
 // 반환: { handled, exit? }  handled=false 면 모델에게 보낸다.
-
-/**
- * 설정을 남기고, 못 남겼으면 화면에 한 줄 (config.js 의 저장시도).
- *
- * 여태 아홉 자리가 전부 `try { save(cfg) } catch {}` 였다. 못 남겨도 이번 판에는
- * 먹으니 대화는 계속되는데, 바로 다음 줄에서 화면은 `✓ 바꿨습니다` 를 찍는다.
- * 사람은 정해진 줄 알고 창을 닫았다가 다음에 옛 값을 보고, 그때는 무엇 때문인지
- * 알 길이 없다 — 홈이 읽기 전용인지, 디스크가 찼는지.
- *
- * @returns {boolean} 남겼나
- */
-function 설정남기기(cfg, 옵션 = {}) {
-  const r = 저장시도(cfg, 옵션);
-  if (!r.ok) say(`  ${mark.warn} ${c.yellow(말('common.cfgSaveFailed', { 왜: clip(r.왜, 70) }))}`);
-  return r.ok;
-}
-
-/**
- * **지금 이 연결이 온 프로필**을 찾는다. 못 찾으면 null 이다.
- *
- * 여태 `cfg.profiles.find(p => p.id === cfg.active) ?? cfg.profiles[0]` 였다.
- * 그 뒤 갈래가 「못 찾았으면 첫 번째에 쓴다」 라, active 가 어긋나 있으면
- * `/ctx 655360` 이 **엉뚱한 연결**에 박히고 화면에는 「프로필에 저장했습니다」
- * 가 뜬다. 8k 서버 프로필에 655,360 이 적히면 다음에 켤 때 그 서버를
- * 655,360 으로 믿고 시작한다 — 긴 대화에서 서버가 거절하고, 그 까닭을
- * 짚을 자리가 화면에 하나도 없다.
- *
- * 그래서 두 번 본다. active 로 찾고, 없으면 **지금 붙어 있는 주소·모델**로
- * 찾는다. 그래도 없으면 못 찾았다고 하고 아무 데도 안 적는다 (repl.js 의
- * 길이 되살리기가 이미 그렇게 한다).
- */
-function 이연결의프로필(cfg, session) {
-  const 있는것 = Array.isArray(cfg?.profiles) ? cfg.profiles : [];
-  const 딱 = 있는것.find((p) => p.id === cfg.active);
-  if (딱) return 딱;
-  const base = session?.conn?.base;
-  const model = session?.conn?.model;
-  return 있는것.find((p) => p.baseUrl === base && p.model === model) ?? null;
-}
 
 /** /mode 아래에 규칙을 늘어놓는다. 아무것도 안 걸려 있으면 아무 말도 안 한다. */
 function 규칙보이기(규칙들) {
@@ -201,7 +145,75 @@ function 규칙보이기(규칙들) {
   if (규칙들.탈) say(`    ${mark.warn} ${c.yellow(규칙들.탈)}`);
 }
 
+/*
+ * ── 오타에 「혹시 이것」 ─────────────────────────────────────────────────
+ *
+ * `/hepl` · `/modle` 에는 「모르는 명령」 만 나왔다. 비슷한 것은 이 PC 에서 찾은 명령(스킬·플러그인)
+ * 에서만 찾았고 **내장 명령은 안 봤다** — 제일 흔한 오타는 내장 명령에서 난다.
+ *
+ * 넣기·빼기·바꾸기와 **이웃 두 글자 뒤바꾸기**를 한 번으로 친다. 손가락이 틀리는 모양이 대개
+ * 그 넷이다(hepl · modle). 짧은 이름은 한 번까지만 봐준다 — 넷 글자에 두 번을 봐주면 아무
+ * 명령이나 비슷해진다.
+ */
+function 오타거리(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const 다름 = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + 다름);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+function 비슷한이름(친것, 이름들) {
+  if (!친것) return [];
+  const 한도 = 친것.length <= 4 ? 1 : 2;
+  return 이름들.map((n) => [n, 오타거리(친것, n.toLowerCase())])
+    .filter(([, 거리]) => 거리 <= 한도)
+    .sort((x, y) => x[1] - y[1] || x[0].localeCompare(y[0]))
+    .map(([n]) => n);
+}
+
+/** `ext:ReviewCode` 의 꼬리 — 언제나 낮춰서 돌려준다. 찾기와 「비슷한 것」 이 같은 잣대를 쓰게 한다. */
+const 꼬리이름 = (이름) => String(이름 ?? '').split(':').pop().toLowerCase();
+
+/*
+ * ── 이 PC 에서 찾은 슬래시 명령을 이름으로 찾는다 ───────────────────────
+ *
+ * 대화 화면(아래 default 갈래)과 배치(oneshot.js)가 **같은 규칙**을 써야 한다. 같은 글자를
+ * 쳤는데 창에 따라 되고 안 되면 사람은 어느 쪽을 믿을지 정할 수 없다. 그래서 두 벌로 적지
+ * 않고 여기 한 군데에 둔다.
+ *
+ * 찾는 차례는 셋이다 — 적은 그대로 · 대소문자 무시 · 꼬리 이름.
+ * 마지막 칸이 `x.name.split(':').pop() === 낮춘` 이었다 (8회차 그밖 명령2). 왼쪽은 파일에
+ * 적힌 그대로고 오른쪽은 낮춘 말이라 둘이 만날 수가 없다. `ext:ReviewCode` 는 `/ReviewCode`
+ * 로도 `/reviewcode` 로도 「모르는 명령」 이었고, 「비슷한 것」 에도 안 떴다 — 깔려 있는
+ * 명령이 어느 길로도 안 보이는 자리다. 배치에서는 그대로 1 로 선다.
+ */
+export function 슬래시명령찾기(목록, 부른이름) {
+  const 것들 = 목록 ?? [];
+  const 낮춘 = String(부른이름 ?? '').toLowerCase();
+  return 것들.find((x) => x.name === 부른이름)
+    ?? 것들.find((x) => x.name.toLowerCase() === 낮춘)
+    ?? 것들.find((x) => 꼬리이름(x.name) === 낮춘)
+    ?? null;
+}
+
+/** 못 찾았을 때 「비슷한 것」 으로 늘어놓을 것. 찾기와 같은 잣대(낮춘 꼬리)를 쓴다. */
+export function 비슷한슬래시명령(목록, 부른이름, 몇 = 5) {
+  const 낮춘 = String(부른이름 ?? '').toLowerCase();
+  if (!낮춘) return [];
+  return (목록 ?? [])
+    .filter((x) => x.name.toLowerCase().includes(낮춘) || 낮춘.includes(꼬리이름(x.name)))
+    .slice(0, 몇);
+}
+
 export async function handle(line, session, ctx) {
+  // 일본어·중국어 입력기의 전각 빗금(／help). 그대로 두면 명령이 말이 되어 모델에게 간다(ui/complete.js).
+  line = 빗금펴기(line);
   if (!line.startsWith('/')) return { handled: false };
   if (경로처럼보이나(line)) return { handled: false };
   const [raw, ...rest] = line.slice(1).trim().split(/\s+/);
@@ -210,6 +222,8 @@ export async function handle(line, session, ctx) {
 
   switch (name) {
     case 'help': return help(session), { handled: true };
+    // 슬래시만 치고 Enter. 「모르는 명령 /」 은 무엇을 모르는지 알 수 없는 말이다 — 목록을 보인다.
+    case '': return help(session), { handled: true };
     case 'level': return showLevel(session, arg), { handled: true };
 
     /*
@@ -476,7 +490,10 @@ export async function handle(line, session, ctx) {
       // 못 남긴 까닭을 받아 온다 — 디스크가 찼는지, 폴더가 읽기 전용인지는
       // 화면에 적혀야 손을 쓸 수 있다.
       const 탈 = {};
-      const 자리 = 보고서적기(ctx.scope.root, session, { scope: ctx.scope, audit: ctx.audit }, 탈);
+      // 도움말이 `[파일이름]` 이라고 적어 둔 그 인자. 여기서 안 넘기던 동안에는
+      // 무엇을 적어 주든 늘 시각으로 지은 이름이 됐다.
+      const 자리 = 보고서적기(ctx.scope.root, session,
+        { scope: ctx.scope, audit: ctx.audit, 이름: arg }, 탈);
       say('');
       if (자리) {
         say(`  ${mark.ok} ${말('export.saved')} ${c.white(ctx.scope.show(자리))}`);
@@ -724,9 +741,12 @@ export async function handle(line, session, ctx) {
         return { handled: true };
       }
       const 줄인 = r.before - r.after;
-      s.stop(`  ${mark.ok} 대화 ${r.folded}개를 요약으로 접었습니다.`);
+      // 요약을 못 받고 잘라 낸 것을 「✓ 요약으로 접었습니다」 로 먼저 적지 않는다 (repl.js 의 compacted).
+      s.stop(r.fallback
+        ? `  ${mark.warn} 요약을 못 받아 옛 대화 ${r.folded}개를 잘라 냈습니다.`
+        : `  ${mark.ok} 대화 ${r.folded}개를 요약으로 접었습니다.`);
       say(`     ${c.gray(r.before.toLocaleString())} ${c.gray('→')} ${c.white(r.after.toLocaleString())} ${c.gray('토큰')}  ${c.green(`${Math.round((줄인 / Math.max(1, r.before)) * 100)}% 줄어듦`)}`);
-      if (r.fallback) say(`     ${c.yellow('요약을 못 받아 그냥 줄였습니다.')}`);
+      if (r.fallback) say(`     ${c.yellow(clip(String(r.why ?? '요약을 못 받아 그냥 줄였습니다.'), 100))}`);
       else if (r.summary) {
         say('');
         for (const line of r.summary.split('\n').slice(0, 14)) say(`     ${c.gray(clip(line, 76))}`);
@@ -852,7 +872,9 @@ export async function handle(line, session, ctx) {
        * (agent/loop.js 의 needsOk). 화면에는 `엄격 → undefined` 가 찍힌다.
        * `--work` 오타가 가장 센 모드로 돌던 것과 같은 자리다.
        */
-      if (!Object.hasOwn(MODES, arg)) {
+      // 대소문자는 안 가린다. `/mode AUTO` 가 목록만 보이고 안 바뀌면 사람은 먹은 줄 안다.
+      const 승인이름 = arg.trim().toLowerCase();
+      if (!Object.hasOwn(MODES, 승인이름)) {
         rule('승인 방식 — 무엇을 물어볼까', 70);
         for (const k of 승인차례) {
           const 지금 = k === session.mode;
@@ -876,14 +898,14 @@ export async function handle(line, session, ctx) {
         return { handled: true };
       }
       const 앞 = session.mode;
-      session.mode = arg;
-      const m = 승인[arg];
+      session.mode = 승인이름;
+      const m = 승인[승인이름];
       say('');
-      say(`  ${mark.ok} ${승인표시(앞)} ${c.gray('→')} ${승인표시(arg)}`);
+      say(`  ${mark.ok} ${승인표시(앞)} ${c.gray('→')} ${승인표시(승인이름)}`);
       say(`     ${c.gray(m.한줄)}`);
       // 안 묻는 쪽으로 옮길 때만 안전망을 짚어 준다. 반대로 갈 때는 안 짚는다 —
       // 조심하는 쪽으로 가는 사람에게 경고를 붙일 이유가 없다.
-      if (arg === 'auto' && 앞 !== 'auto') {
+      if (승인이름 === 'auto' && 앞 !== 'auto') {
         say(`     ${c.gray('되돌리려면')} ${c.cyan('/undo')}${c.gray(', 무엇이 바뀌었는지는')} ${c.cyan('/diff')}`);
       }
       say('');
@@ -912,10 +934,21 @@ export async function handle(line, session, ctx) {
        * 도는 값이 다른 명령보다 비싸다. /work 가 오타를 먼저 말하는 것과
        * 같은 잣대다.
        */
-      const 준말 = String(arg ?? '').trim();
+      // 전각 숫자(３)는 보통 숫자로 편다 — 일본어·중국어 입력기는 번호를 이렇게 낸다. 목록 번호(pick)는
+      // 이미 펴서 읽는데 여기만 「숫자로 적어 주세요」 로 돌려보냈다(4회차 이월).
+      const 준말 = String(arg ?? '').trim().replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xfee0));
       if (준말 && !/^[0-9]+$/.test(준말)) {
         say(`  ${mark.no} ${c.gray('몇 턴을 되돌릴지 숫자로 적어 주세요.')} ${c.cyan('/undo 3')}`);
         say(`  ${c.gray('그냥')} ${c.cyan('/undo')} ${c.gray('만 치면 한 턴을 되돌립니다.')}`);
+        say('');
+        return { handled: true };
+      }
+      /*
+       * `/undo 0` 은 되돌릴 것이 없다는 말이다. 여태 아래 `|| 1` 에 걸려 **한 턴을 말없이 되돌렸다** —
+       * 파일을 실제로 되돌리는 명령이라, 친 수보다 많이 도는 것이 가장 비싸다(위 머리말과 같은 잣대).
+       */
+      if (준말 && parseInt(준말, 10) === 0) {
+        say(`  ${c.gray('0 턴이라 아무것도 되돌리지 않았습니다.')} ${c.cyan('/undo 1')} ${c.gray('처럼 1 이상을 적어 주세요.')}`);
         say('');
         return { handled: true };
       }
@@ -940,8 +973,36 @@ export async function handle(line, session, ctx) {
        * 파일 목록을 성공 목록처럼 늘어놓았다.
        */
       if (!되돌린수) {
-        say(`  ${c.gray(말('undo.nothing'))}`);
+        /*
+         * ── 턴이 있었는데 **하나도 안 돌아간** 것과 되돌릴 턴이 없는 것은 다른 말이다 (6회차 Gemini 되돌림명령6q R2·R3) ──
+         *
+         * 여기는 「되돌릴 것이 없습니다.」 한 줄과 실패 수만 찍고 돌아갔다. 옮긴 그림만 있던 턴처럼 기록은 있었는데
+         * 전부 그대로 두었거나 실패한 판에서, 사람은 턴이 없었던 줄 알았고 왜 안 돌아왔는지(그대로 둔 까닭 · 실패 까닭)도
+         * 못 봤다. 아래 이력 줄임 경고도 이 갈래를 못 지나갔다.
+         */
+        const 남긴것 = r.restored ?? [];
+        if (!r.turns) say(`  ${c.gray(말('undo.nothing'))}`);
+        else if (!남긴것.length) {
+          /*
+           * ── 턴을 **먹고도** 「되돌릴 것이 없습니다」 라고 하지 않는다 (8회차 그밖 한번더) ──
+           *
+           * 만들어 둔 파일을 사람이 손으로 지운 턴이 이 자리로 온다. undo() 는 되돌릴 것을
+           * 하나도 못 찾지만 그 턴을 **이력에서는 지운다.** 그런데 화면은 턴이 아예 없을 때와
+           * 똑같이 「되돌릴 것이 없습니다.」 한 줄이었다. 사람은 아무 일도 안 난 줄 알고 /undo
+           * 를 한 번 더 치고, 그러면 그 **앞 턴**이 되돌아간다 — 두 번 쳐서 한 턴만 돌아가고
+           * 사이의 턴은 말없이 사라진 것이다. 재 보니 그대로였다(첫 /undo 뒤 turns 가 둘에서
+           * 하나로 줄고, 둘째 /undo 가 그 앞 턴의 파일을 되돌렸다).
+           */
+          say(`  ${mark.warn} ${c.gray(`${r.turns}개 턴을 봤지만 되돌릴 것이 하나도 없었습니다.`)}`);
+          if (r.이력줄임?.ok !== false) {
+            say(`    ${c.gray('그 턴은 되돌리기 기록에서 빠졌습니다 — 여기서')} ${c.cyan('/undo')} ${c.gray('를 또 치면 그 앞 턴이 되돌아갑니다.')}`);
+          }
+        } else {
+          say(`  ${mark.warn} ${c.gray(`${r.turns}개 턴을 봤지만 되돌아간 파일은 없습니다 — 아래는 그대로 두었거나 못 되돌린 것입니다.`)}`);
+          for (const f of 남긴것) say(`    ${c.gray(ctx.scope.show(f.path))}  ${c.gray(f.how)}`);
+        }
         if (r.못한것?.length) say(`  ${mark.warn} ${말('undo.failed', { n: r.못한것.length })}`);
+        if (r.이력줄임 && r.이력줄임.ok === false) say(`  ${mark.warn} ${c.gray('되돌리기 기록을 못 지웠습니다')} ${c.gray(`— ${r.이력줄임.왜}`)}`);
         say('');
         return { handled: true };
       }
@@ -1001,11 +1062,30 @@ export async function handle(line, session, ctx) {
           const 한줄 = 되감음.사람말.replace(/\s+/g, ' ').trim();
           say(`    ${c.gray(말('undo.saidWas'))} ${c.cyan(한줄.length > 60 ? `${한줄.slice(0, 60)}…` : 한줄)}`);
         }
+        /*
+         * ── 걷은 턴과 **못 걷은** 턴이 섞이면 둘 다 말한다 ──────────────────
+         *
+         * `/undo 2` 에서 앞 턴은 요약에 접혀 자리표가 없고 뒤 턴만 살아 있으면,
+         * 파일은 둘 다 되돌아가도 말은 뒤 턴 것만 걷힌다. 여태 이 갈래는
+         * 「대화도 걷어냈습니다」 만 적어서, 사람은 앞 턴 이야기도 없어진 줄
+         * 알았다 — 아래 else 갈래가 통째로 못 걷었을 때 하는 말을 반만 못
+         * 걷었을 때는 안 했다. session.js 의 되감기() 머리말대로 「못 찾으면
+         * 그 턴은 되감을 수 없다고 정직하게 말한다」.
+         */
+        if (되감음.못걷은턴?.length) {
+          say(`    ${c.gray(말('undo.talkPartial', { n: 되감음.못걷은턴.length }))}`);
+          say(`    ${c.gray(말('undo.talkKeptWhy'))}`);
+        }
       } else {
         // 접기·요약이 그 자리를 이미 가져갔을 때다. 파일은 되돌아갔지만 대화는
         // 못 걷었다는 것을 숨기지 않는다 — 숨기면 위의 사고가 그대로 난다.
         say(`    ${c.gray(말('undo.talkKept'))}`);
         say(`    ${c.gray(말('undo.talkKeptWhy'))}`);
+        /*
+         * 대화는 못 걷었어도 **그 턴이 박은 쪽지**는 뺐다(session.js 의 되감기).
+         * 뺀 것을 안 말하면 「그대로 둡니다」 가 반만 맞는 말이 된다.
+         */
+        if (되감음.뺀쪽지) say(`    ${c.gray(말('undo.notesDropped', { n: 되감음.뺀쪽지 }))}`);
       }
       say('');
       return { handled: true };
@@ -1176,7 +1256,8 @@ export async function handle(line, session, ctx) {
       // 적어 놨는데 못 쓰는 것(socks5 등)이면 그 까닭을 — 조용히 직접 가면 사람은 프록시를 탄 줄 안다.
       const 프록시 = 프록시고르기(k.base);
       if (프록시) say(`  ${c.gray(pad(말('status.proxy'), 10))} ${프록시.url} ${c.gray(`(${프록시.출처})`)}`);
-      else if (프록시설정().탈) say(`  ${c.gray(pad(말('status.proxy'), 10))} ${c.yellow(말('status.proxyOff'))} ${c.gray(`— ${프록시설정().탈}`)}`);
+      // 어차피 안 거칠 주소(이 PC · NO_PROXY)면 그 줄도 없다 — 상관없는 프록시를 탓하게 된다 (2.0.0 6회차 RP1b).
+      else if (프록시설정().탈 && !프록시비켜가나(k.base)) say(`  ${c.gray(pad(말('status.proxy'), 10))} ${c.yellow(말('status.proxyOff'))} ${c.gray(`— ${프록시설정().탈}`)}`);
       say(`  ${c.gray(pad(말('status.model'), 10))} ${k.model}`);
       /*
        * 이 모델이 이 주소에서 **실제로 받는 것** (backend/wire.js).
@@ -1396,7 +1477,14 @@ export async function handle(line, session, ctx) {
       const M = await import('./agent/memory.js');
       const 말 = String(arg ?? '').trim();
 
-      if (/^(비우기|clear|지우기전부)$/.test(말)) {
+      /*
+       * 무늬 둘에 `i` 가 빠져 있었다 (8회차 그밖 명령1). 아래 「번호를 적어 주세요」 쪽만
+       * `i` 가 붙어 있어서, `/memory RM 1` 은 안 지우고 `/memory CLEAR` 는 어느 무늬에도
+       * 안 걸린 채 맨 아래 「이걸 기억해라」 로 떨어졌다 — **지우려던 낱말이 기억으로 적혔다.**
+       * 그 줄은 그 뒤로 매 요청마다 모델에게 같이 나간다. 아래 주석이 막으려던 바로 그 결말이,
+       * 대문자로 친 사람에게만 그대로 일어나고 있었다.
+       */
+      if (/^(비우기|clear|지우기전부)$/i.test(말)) {
         M.비우기(session.root);
         session.memory = M.프롬프트토막(session.root);
         say(`  ${mark.ok} 기억을 비웠습니다.`);
@@ -1404,7 +1492,7 @@ export async function handle(line, session, ctx) {
         return { handled: true };
       }
 
-      const 지움 = /^(지우기|잊어|forget|rm)\s+(\d+)$/.exec(말);
+      const 지움 = /^(지우기|잊어|forget|rm)\s+(\d+)$/i.exec(말);
       if (지움) {
         const r = M.지우기(session.root, 지움[2]);
         if (!r.ok) say(`  ${mark.no} ${r.why}`);
@@ -1451,6 +1539,11 @@ export async function handle(line, session, ctx) {
           session.memory = M.프롬프트토막(session.root);
           say(`  ${mark.ok} 기억했습니다 ${c.gray(`(${r.줄수}줄)`)}`);
           if (r.넘침) say(`     ${c.gray('자리가 차서 오래된 것을 뺐습니다.')}`);
+          // 적기는 했지만 안 실리는 판을 말한다 (6회차 Gemini 기억6z-b Z2′). 여태 memory.js 가
+          // 돌려주는 안실림 을 아무도 안 읽어, 「기억했습니다」 뒤로 한 번도 안 실렸다.
+          if (r.안실림) {
+            say(`     ${c.yellow('적었지만 다음 요청부터 안 실립니다')} ${c.gray('— 믿는 폴더가 아니고, 이 PC 가 적지 않은 줄이 섞여 있습니다. 실으려면')} ${c.cyan('deel trust')}${c.gray(', 남의 줄을 빼려면')} ${c.cyan('/memory 지우기 N')}`);
+          }
         }
         say('');
         return { handled: true };
@@ -1722,18 +1815,19 @@ export async function handle(line, session, ctx) {
 
     default: {
       // 이 PC 에서 찾은 슬래시 명령인지 본다. 있으면 그 내용을 모델에게 보낸다.
-      const found = (session.commands ?? []).find((x) => x.name === raw)
-        ?? (session.commands ?? []).find((x) => x.name.toLowerCase() === name)
-        ?? (session.commands ?? []).find((x) => x.name.split(':').pop() === name);
+      // 찾는 규칙은 배치(oneshot.js)와 한 군데에서 같이 쓴다 — 위 슬래시명령찾기.
+      const found = 슬래시명령찾기(session.commands, raw);
       if (found) {
         const { text, error } = loadCommand(found, arg);
         if (error) { say(`  ${c.red('명령을 읽지 못했습니다')} ${error}`); say(''); return { handled: true }; }
         say(`  ${c.cyan('⌘')} ${found.name} ${c.gray(found.source)}`);
         return { handled: false, text };
       }
-      const near = (session.commands ?? [])
-        .filter((x) => x.name.includes(name) || name.includes(x.name.split(':').pop()))
-        .slice(0, 5).map((x) => '/' + x.name);
+      // 내장 명령의 오타가 먼저, 이 PC 에서 찾은 명령이 그 뒤다(위 비슷한이름 머리말).
+      const near = [...new Set([
+        ...비슷한이름(name, Object.keys(COMMANDS)).map((x) => '/' + x),
+        ...비슷한슬래시명령(session.commands, raw).map((x) => '/' + x.name),
+      ])].slice(0, 5);
       say(`  ${c.red('모르는 명령')} /${name}`);
       if (near.length) say(`  ${c.gray('비슷한 것:')} ${near.join('  ')}`);
       say(`  ${c.gray('/help 로 목록을,  /skills 로 스킬을 봅니다.')}`);
@@ -1741,1956 +1835,6 @@ export async function handle(line, session, ctx) {
       return { handled: true };
     }
   }
-}
-
-async function doPlugin(session, arg) {
-  const [sub = '', ...rest] = arg.trim().split(/\s+/);
-  const param = rest.join(' ').trim();
-
-  // 설치·삭제 뒤에는 다시 훑어 이번 대화에 바로 반영한다.
-  const rescan = () => {
-    const f = discover(session.root);
-    session.skills = f.skills;
-    session.commands = f.commands;
-    session.plugins = f.plugins;
-    return f;
-  };
-
-  if (sub === 'install' || sub === 'add') {
-    if (!param) {
-      say(`  ${c.gray('예')} /plugin install affaan-m/ECC`);
-      say(`  ${c.gray('  ')} /plugin install owner/repo#가지이름`);
-      say('');
-      return;
-    }
-    say('');
-    const s = spin(`${param} 받는 중...`);
-    const r = await install(param, { onStep: (m) => {} });
-    if (r.error) {
-      s.stop(`  ${mark.no} ${c.red(r.error.split('\n')[0])}`);
-      for (const line of r.error.split('\n').slice(1)) say(`     ${c.gray(line.trim())}`);
-      say(`     ${c.gray('오프라인이면 zip 을 ~/.deel/plugins/ 에 직접 풀면 됩니다.')}`);
-      say('');
-      return;
-    }
-    s.stop(`  ${mark.ok} ${c.bold(r.name)}${r.version ? ' ' + c.gray(r.version) : ''} ${c.gray(`(${r.license ?? '라이선스 미상'})`)}`);
-    say(`     ${c.gray('스킬')} ${r.skills}개  ${c.gray('명령')} ${r.commands}개  ${c.gray(`· ${r.how} 로 받음`)}`);
-    if (r.hooks) say(`     ${mark.warn} ${c.yellow(`실행 스크립트 ${r.hooks}개는 쓰지 않습니다`)} ${c.gray('(hook 미지원 · 반입 심사 대상)')}`);
-    const f = rescan();
-    say(`     ${c.gray(`이제 스킬 ${f.skills.length}개 · 명령 ${f.commands.length}개`)}`);
-    say('');
-    return;
-  }
-
-  if (sub === 'remove' || sub === 'rm' || sub === 'uninstall') {
-    if (!param) { say(`  ${c.gray('예')} /plugin remove ecc`); say(''); return; }
-    const r = remove(param);
-    if (r.error) { say(`  ${mark.no} ${c.red(r.error)}`); say(''); return; }
-    const f = rescan();
-    say(`  ${mark.ok} ${c.bold(r.removed)} 지웠습니다. ${c.gray(`이제 스킬 ${f.skills.length}개`)}`);
-    say('');
-    return;
-  }
-
-  if (sub === 'pack') {
-    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const out = param || join(session.root, `deel-plugins-${stamp}.zip`);
-    const r = pack(out, { only: null });
-    if (r.error) { say(`  ${mark.no} ${c.red(r.error)}`); say(''); return; }
-    say('');
-    say(`  ${mark.ok} ${c.cyan(r.out)}`);
-    say(`     ${c.gray('플러그인')} ${r.plugins.length}개 ${c.gray('· 파일')} ${r.files}개 ${c.gray('·')} ${(r.bytes / 1024).toFixed(0)}KB`);
-    if (r.skipped) say(`     ${c.gray(`실행 스크립트 ${r.skipped}개는 뺐습니다`)}`);
-    say('');
-    rule('담긴 것', 74);
-    for (const p of r.plugins) {
-      say(`  ${c.cyan(pad(p.name, 22))} ${c.gray(pad(p.version || '-', 9))} ${c.gray(pad(p.license || '미상', 14))} ${c.gray(`스킬 ${p.skills} · 명령 ${p.commands}`)}`);
-    }
-    say('');
-    say(`  ${c.gray('오프라인 기기의')} ~/.deel/plugins/ ${c.gray('에 풀면 바로 인식됩니다. 설치 명령은 필요 없습니다.')}`);
-    say(`  ${c.gray('묶음 안에 라이선스 표가 담긴 사용안내.txt 가 함께 들어 있습니다.')}`);
-    say('');
-    return;
-  }
-
-  // 인자 없으면 목록
-  const items = list();
-  if (!items.length) {
-    say('');
-    say(`  ${c.gray('설치된 플러그인이 없습니다.')}`);
-    say(`  ${c.gray('받기')}  /plugin install owner/repo`);
-    say(`  ${c.gray('직접')}  ~/.deel/plugins/ 에 폴더를 풀어 넣어도 됩니다`);
-    say('');
-    return;
-  }
-  say('');
-  rule('플러그인', 74);
-  for (const p of items) {
-    say(`  ${c.cyan(pad(p.name, 22))} ${c.gray(pad(p.version || '-', 9))} ${c.gray(pad(p.license || '미상', 14))} ${c.gray(`스킬 ${p.skills} · 명령 ${p.commands}`)}`);
-    say(`    ${c.gray(p.from)}`);
-  }
-  say('');
-  say(`  ${c.gray('/plugin install <owner/repo>   /plugin remove <이름>   /plugin pack [파일]')}`);
-  say('');
-}
-
-/*
- * 만든 웹을 그 자리에서 띄운다.
- *
- * 여기 있는 것은 화면과 말뿐이고, 서버는 preview/serve.js 가 한다.
- * 한 번에 하나만 띄운다 — 여러 개를 띄워 놓으면 어느 주소가 무엇인지
- * 아무도 못 외우고, 끌 때도 뭘 껐는지 모른다.
- */
-let 미리보기중 = null;
-
-/** 켜져 있으면 끈다. 프로그램을 끝낼 때도 이걸 부른다. */
-export async function 미리보기끄기() {
-  if (!미리보기중) return null;
-  const 끈것 = 미리보기중;
-  미리보기중 = null;
-  try { await 끈것.서버.닫기(); } catch { /* 이미 닫혔다 */ }
-  return 끈것;
-}
-
-/** 지금 띄워 둔 것. 상태줄·검사에서 본다. */
-async function 미리보기(session, ctx, arg) {
-  const 말 = String(arg ?? '').trim();
-
-  if (/^(off|끄기|중지|stop)$/i.test(말)) {
-    const 끈것 = await 미리보기끄기();
-    say('');
-    say(끈것 ? `  ${mark.ok} 미리보기를 껐습니다. ${c.gray(끈것.서버.url)}`
-      : `  ${c.gray('띄워 둔 것이 없습니다.')}`);
-    say('');
-    return;
-  }
-
-  // 이미 떠 있는데 또 치면, 주소를 다시 알려 주고 브라우저만 연다.
-  // 여기서 조용히 하나 더 띄우면 포트가 둘이 되고 어느 쪽이 진짜인지 모르게 된다.
-  if (미리보기중 && !말) {
-    say('');
-    say(`  ${c.hgreen('▶')} 이미 띄워 뒀습니다  ${c.cyan(미리보기중.서버.url)} ${c.gray(미리보기중.보인이름)}`);
-    브라우저로(미리보기중.서버.url);
-    say(`  ${c.gray('끄려면')} ${c.cyan('/preview off')}`);
-    say('');
-    return;
-  }
-  // 다른 폴더를 주면 앞엣것은 끄고 새로 띄운다.
-  if (미리보기중) await 미리보기끄기();
-
-  let 뿌리;
-  try {
-    뿌리 = ctx.scope.resolve(말 || '.');
-  } catch (err) {
-    say('');
-    say(`  ${c.red('띄울 수 없습니다')} ${c.gray(err.message)}`);
-    say('');
-    return;
-  }
-
-  if (!existsSync(뿌리)) {
-    say('');
-    say(`  ${c.red('그런 폴더가 없습니다')} ${c.gray(ctx.scope.show(뿌리))}`);
-    say('');
-    return;
-  }
-  // 파일 하나를 줬으면 그 파일이 든 폴더를 띄우고, 브라우저는 그 파일로 연다.
-  let 첫주소 = '';
-  if (!statSync(뿌리).isDirectory()) {
-    첫주소 = encodeURIComponent(뿌리.split(/[\\/]/).pop());
-    뿌리 = join(뿌리, '..');
-    뿌리 = ctx.scope.resolve(뿌리);
-  }
-
-  let 서버;
-  try {
-    서버 = await 띄우기({ 뿌리, scope: ctx.scope });
-  } catch (err) {
-    say('');
-    say(`  ${c.red('못 띄웠습니다')} ${c.gray(err.message)}`);
-    say('');
-    return;
-  }
-  미리보기중 = { 서버, 보인이름: ctx.scope.show(뿌리) };
-
-  const url = 서버.url + 첫주소;
-  say('');
-  say(`  ${c.hgreen('▶')} ${c.bold('띄웠습니다')}  ${c.cyan(url)}`);
-  say(`  ${c.gray('보여 주는 것')} ${c.white(미리보기중.보인이름)}`);
-  say(서버.되살아나나
-    ? `  ${c.gray('파일을 고치면 화면이 저절로 새로 뜹니다.')}`
-    : `  ${c.yellow('⚠')} ${c.gray('이 자리에서는 파일 변화를 못 봅니다 — 브라우저를 손으로 새로 고치세요.')}`);
-  // 어디까지 열리는지 반드시 말한다. '서버를 띄웠다' 는 말은 사람마다 다르게 읽힌다.
-  say(`  ${c.gray('이 컴퓨터에서만 열립니다(127.0.0.1). 다른 PC 에서는 안 보입니다.')}`);
-  say(`  ${c.gray('끄려면')} ${c.cyan('/preview off')}${c.gray('  · deel 을 끝내면 같이 꺼집니다.')}`);
-  브라우저로(url);
-  say('');
-}
-
-function showSkills(session, arg) {
-  const all = session.skills ?? [];
-  if (!all.length) {
-    say('');
-    say(`  ${c.gray('이 PC 에서 찾은 스킬이 없습니다.')}`);
-    say(`  ${c.gray('찾는 자리: ./.deel/skills  ./.claude/skills  ~/.claude/skills  ~/.claude/plugins')}`);
-    say('');
-    return;
-  }
-
-  // 스킬은 남의 폴더·플러그인에서 온다. 앞머리(frontmatter)가 빠진 파일이 섞이면
-  // 이름이나 설명이 없다. 그걸 그대로 만지면 목록 하나 보려다 대화가 끝난다.
-  const 낮게 = (v) => String(v ?? '').toLowerCase();
-
-  const q = arg.trim();
-  if (q === 'all') {
-    all.forEach((s) => { s.enabled = true; });
-    session.maxSkillsListed = Math.min(all.length, 200);
-    say(`  ${mark.ok} 전부 올립니다 (${session.listedSkills().length}개). ${c.yellow('컨텍스트를 많이 차지합니다 — /context 로 확인하세요.')}`);
-    say('');
-    return;
-  }
-  if (q === 'off') {
-    all.forEach((s) => { s.enabled = false; });
-    say(`  ${mark.ok} 스킬을 모두 내렸습니다.`);
-    say('');
-    return;
-  }
-  if (q.startsWith('on ')) {
-    const term = q.slice(3).trim().toLowerCase();
-    const 걸린것 = all.filter((s) => 낮게(s.name).includes(term) || 낮게(s.description).includes(term));
-    /*
-     * 한 개도 안 걸리면 **아무것도 안 건드린다.**
-     *
-     * 앞서는 걸림 여부를 그대로 enabled 에 넣었다. 그래서 오타 하나면 전부
-     * false 가 되고, 화면에는 `✓ "리뷰" 에 걸리는 0개만 올립니다` 가 떴다.
-     * 올리려고 친 명령이 가지고 있던 것까지 다 내려 버리는데, 표시는 ✓ 다.
-     * 그다음 모델이 스킬을 못 쓰는 것을 보고 사람은 스킬이 깨진 줄 안다.
-     */
-    if (!걸린것.length) {
-      say(`  ${mark.no} "${term}" 에 걸리는 스킬이 없습니다 ${c.gray('— 올라간 것은 그대로 둡니다.')}`);
-      say(`  ${c.gray('무엇이 있는지 보려면')} ${c.cyan('/skills')}`);
-      say('');
-      return;
-    }
-    for (const s of all) s.enabled = 걸린것.includes(s);
-    say(`  ${mark.ok} "${term}" 에 걸리는 ${걸린것.length}개만 올립니다.`);
-    say('');
-    return;
-  }
-
-  const hits = q
-    ? all.filter((s) => 낮게(s.name).includes(q.toLowerCase()) || 낮게(s.description).includes(q.toLowerCase()))
-    : session.listedSkills();
-
-  say('');
-  rule(q ? `스킬 검색: ${q}` : '지금 올라간 스킬', 74);
-  for (const s of hits.slice(0, 30)) {
-    const tag = s.enabled ? c.green('●') : c.gray('○');
-    // 설명이 없을 수 있다. 스킬은 남의 폴더·플러그인에서 오는 것이라
-    // 앞머리(frontmatter)가 빠진 파일이 섞인다. 여기서 터지면 목록 하나 보려다
-    // 대화가 통째로 끝난다 — 화면 그리기는 무슨 일이 있어도 안 죽어야 한다.
-    say(`  ${tag} ${c.cyan(pad(s.name, 32))} ${c.gray(String(s.description ?? '').slice(0, 60))}`);
-  }
-  if (hits.length > 30) say(`  ${c.gray(`… 그 밖에 ${hits.length - 30}개`)}`);
-  say('');
-
-  const bySource = { project: 0, user: 0, plugin: 0, builtin: 0 };
-  for (const s of all) bySource[s.source] = (bySource[s.source] ?? 0) + 1;
-  say(`  ${c.gray('전체')} ${all.length}개  ${c.gray('(프로젝트')} ${bySource.project} ${c.gray('· 사용자')} ${bySource.user} ${c.gray('· 플러그인')} ${bySource.plugin} ${c.gray('· 품고 다니는 것')} ${bySource.builtin}${c.gray(')')}`);
-  say(`  ${c.gray('프롬프트에 올라간 것')} ${session.listedSkills().length}개 ${c.gray(`(상한 ${session.maxSkillsListed})`)}`);
-  if ((session.plugins ?? []).length) {
-    say(`  ${c.gray('플러그인')} ${session.plugins.filter((p) => p.skills > 0).map((p) => p.name).slice(0, 8).join(', ')}`);
-  }
-  say('');
-  say(`  ${c.gray('/skills <검색어>     찾아보기')}`);
-  say(`  ${c.gray('/skills on <검색어>  걸리는 것만 올리기')}`);
-  say(`  ${c.gray('/skills all | off    전부 올리기 | 내리기')}`);
-  say('');
-}
-
-function help(session) {
-  const level = session?.level ?? LEVEL_DEFAULT;
-  const 쉬움 = !levelShows(level, '__전부__');   // 개발자면 show 가 null 이라 전부 참
-  say('');
-  rule(말(쉬움 ? 'help.titleCommon' : 'help.title'), 70);
-  let 감춘수 = 0;
-  for (const [n, m] of Object.entries(COMMANDS)) {
-    if (n === 'quit') continue;
-    if (!levelShows(level, n)) { 감춘수++; continue; }
-    say(`  ${c.cyan(pad('/' + n + (m.arg ? ' ' + m.arg : ''), 22))} ${c.gray(m.desc)}`);
-  }
-  say('');
-  // 감춘 것은 '못 쓰는 것' 이 아니다. 그 말을 분명히 해 둔다.
-  if (감춘수) {
-    say(`  ${c.gray(말('help.moreHidden', { n: 감춘수 }))}`);
-    say(`  ${c.gray(말('help.showAll'))} ${c.cyan('/level developer')}`);
-    say('');
-  }
-  say(`  ${c.gray(말('help.restGoesToModel'))}`);
-  say('');
-}
-
-// /level — 수준 보기·바꾸기. 설정 파일에 남겨 다음에도 그대로 쓴다.
-function showLevel(session, arg) {
-  if (!arg) {
-    rule('사용자 수준', 70);
-    for (const k of LEVEL_ORDER) {
-      const lv = LEVELS[k];
-      const 지금 = k === (normLevel(session.level) ?? LEVEL_DEFAULT);
-      say(`  ${지금 ? c.hgreen('●') : c.gray('·')} ${지금 ? c.bold(c.white(pad(lv.name, 10))) : c.gray(pad(lv.name, 10))}${c.gray(lv.hint)}`);
-    }
-    say('');
-    say(`  ${c.gray('안전 장치는 두 수준이 똑같습니다 — 되돌리기·작업 범위·위험 명령 차단.')}`);
-    say(`  ${c.gray('수준은 무엇을 보여줄지만 정합니다.')}`);
-    say('');
-    say(`  ${c.gray('바꾸려면')} ${c.cyan('/level 쉬움')} ${c.gray('또는')} ${c.cyan('/level 개발자')}`);
-    say('');
-    return;
-  }
-  const 골라진 = normLevel(arg);
-  if (!골라진) {
-    say(`  ${mark.warn} 그런 수준은 없습니다: ${c.white(arg)}  ${c.gray('(쉬움 · 개발자)')}`);
-    say('');
-    return;
-  }
-  session.level = 골라진;
-  /*
-   * 못 남기면 말한다. 바로 아래가 `✓ 개발자` 를 찍는데, 못 남긴 판에서는
-   * 그 말이 이번 판에서만 참이다 — 설정남기기() 가 아홉 자리에서 없앤 그
-   * 꼴인데 이 자리만 옛 모양으로 남아 있었다.
-   */
-  try {
-    const cfg = load();
-    cfg.level = 골라진;
-    설정남기기(cfg);
-  } catch (e) {
-    /*
-     * 설정 파일 자체를 못 읽는 경우다(JSON 이 깨졌다). 바로 위 머리글이
-     * 「못 남기면 말한다」 라고 적어 놓고 여기만 통째로 삼키고 있었다.
-     * 켤 때는 repl 이 말해 주지만 **대화 도중에 깨진 경우는 아무도 안 말한다** —
-     * 화면은 `✓ 개발자` 를 찍고 다음에 켜면 그대로 쉬움이다.
-     */
-    say(`  ${mark.warn} ${c.yellow(말('common.cfgSaveFailed', { 왜: clip(String(e?.message ?? e), 70) }))}`);
-  }
-  const lv = LEVELS[골라진];
-  say('');
-  say(`  ${mark.ok} ${c.bold(lv.name)} ${c.gray('— ' + lv.hint)}`);
-  say(`  ${c.gray('안전 장치는 그대로입니다.')}`);
-  say('');
-}
-
-/**
- * 찾은 낱말에 색을 입힌다.
- *
- * 토막만 보여 주면 **왜 이게 걸렸는지** 안 보인다. 특히 조사를 떼고 찾기
- * 때문에("인코딩을" 로 "인코딩" 을 찾는다) 눈으로는 안 맞는 것처럼 보이는
- * 경우가 있다. 맞은 자리를 칠해 주면 그 의심이 사라진다.
- */
-function 강조(글, 낱말들) {
-  let 조각 = [{ 글, 맞음: false }];
-  for (const w of 낱말들) {
-    const 다음 = [];
-    for (const p of 조각) {
-      if (p.맞음) { 다음.push(p); continue; }
-      const 낮은 = p.글.toLowerCase();
-      let i = 0;
-      let 자리 = 낮은.indexOf(w);
-      while (자리 >= 0) {
-        if (자리 > i) 다음.push({ 글: p.글.slice(i, 자리), 맞음: false });
-        다음.push({ 글: p.글.slice(자리, 자리 + w.length), 맞음: true });
-        i = 자리 + w.length;
-        자리 = 낮은.indexOf(w, i);
-      }
-      if (i < p.글.length) 다음.push({ 글: p.글.slice(i), 맞음: false });
-    }
-    조각 = 다음;
-  }
-  return 조각.map((p) => (p.맞음 ? c.hyellow(p.글) : c.gray(p.글))).join('');
-}
-
-// 추론 강도는 값 하나가 아니라 '단계별 배분' 이다. 그 배분을 눈에 보이게 그린다.
-/**
- * 지금 추론 강도가 어떻게 되어 있는지.
- *
- * 기본은 **한 줄**이다. 사람이 알고 싶은 것은 '지금 얼마나 생각하나' 이지
- * 단계별 표가 아니다. 표는 /think 자세히 로 뺐다.
- *
- * 쉬움 수준에서는 배분 이야기를 아예 안 꺼낸다 — 고를 일이 없는 사람에게
- * 고르는 법을 보여 주면 그것부터 걱정하게 된다.
- */
-function showThink(session, { 자세히 = false } = {}) {
-  const b = session.breakdown();
-  const 아는상한 = session.conn.maxTokens ?? session.conn.maxOut ?? null;
-  const t = effortTable(session.think, session.effort, { ctx: b.total, used: b.used, max: 아는상한 });
-  const 개발자 = session.level === '개발자';
-  const 단계 = t.rows.map((r) => `${r.label} ${r.level}`).join(c.gray(' · '));
-
-  /*
-   * 이 화면은 여태 통째로 한국어였다.
-   *
-   * `/lang en` 으로 켠 사람에게 「추론 강도 medium (첫 판단 medium · …)」 이
-   * 뜨면 아무것도 안 읽힌다. 명령 이름만 영어고 화면이 한국어인 자리는
-   * 「덜 옮겨졌다」 가 아니라 「고장 났다」 로 읽힌다 — i18n/index.js 머리말.
-   *
-   * 예로 드는 명령도 말을 따라간다. `/think 배분 절약` 은 영어로 켠 사람이
-   * 칠 수 없는 글자다. 두 이름 다 진짜로 받는다(위 배분말·자세히 갈래).
-   */
-  const 한국어 = 언어() === 'ko';
-  const 배분예 = 한국어 ? '/think 배분 절약' : '/think profile save';
-  const 자세히예 = 한국어 ? '/think 자세히' : '/think detail';
-  say('');
-  say(`  ${c.gray(말('think.effort'))}  ${c.bold(session.think)}   ${c.gray(`(${단계})`)}`);
-  /*
-   * ── 정한 값과 **실제로 나가는 값**을 같이 보여 준다 ──────────────────
-   *
-   * 여기가 여태 비어 있던 자리다. `/think max` 를 쳐도 전선이 max 를 안
-   * 받으면 high 가 나갔고, 화면에는 그 사실이 어디에도 없었다. 사람은
-   * 세게 생각하라고 시켰다고 믿는다.
-   *
-   * 자동 조절도 같이 적는다. 정한 값이 천장이 되므로, 「max 라고 했는데 왜
-   * medium 인가」 에 답할 수 있어야 한다.
-   */
-  /*
-   * 자동 조절이 **실제로 무언가를 바꿀 때만** 적는다.
-   *
-   * `/think low` 로 정해 둔 사람에게 「가벼운 말은 low 까지 낮춰 씁니다」 는
-   * 아무 말도 아니다 — 이미 low 다. 아무 일도 안 하는 줄을 화면에 남기면
-   * 사람은 그 줄을 읽는 데 시간을 쓰고 아무것도 얻지 못한다.
-   */
-  if (session.autoThink !== false) {
-    const 가장낮게 = 가벼운강도(session.think);
-    if (가장낮게 !== session.think) {
-      say(`  ${c.gray(pad(말('think.auto'), 한국어 ? 8 : 10))}${c.gray(말('think.autoNote', { 천장: session.think, 지금: 가장낮게 }))}`);
-    }
-  }
-  if (session.conn?.전선) {
-    const 카드 = session.conn.전선;
-    /*
-     * **정말로 나가는 것만** 적는다.
-     *
-     * 여태 여기서 `눈금맞추기()` 를 직접 불렀다. 그 함수는 카드가 아는 눈금으로
-     * 낮추는 일만 하고 그 눈금이 실릴 칸이 있는지는 모른다 — 그래서 눈금이
-     * 아예 안 나가는 전선(budget·boolean·none)에서도 「지금 나가는 값 high」
-     * 가 떴다. 몸을 만드는 자리와 같은 함수를 쓴다(backend/adapter.js).
-     */
-    const 나가는것 = 나가는눈금(session.conn.kind, 카드, session.think);
-    /*
-     * ── 「끈다」 가 정말로 꺼지는 창구인가 ────────────────────────────
-     *
-     * off 인데 나갈 말이 없으면 두 가지 중 하나다.
-     *
-     *   a. 이 규격에서는 **칸을 안 싣는 것이 곧 끄는 것**이다.
-     *      anthropic 은 thinking 을 빼면 안 생각하고, ollama 는 think:false
-     *      를 싣는다. 이쪽은 아무 말도 안 해도 된다.
-     *   b. 이 규격에서는 칸을 안 실으면 **서버 기본값**으로 돈다. openai 꼴의
-     *      추론 모델이 그렇다 — reasoning_effort 를 빼면 서버가 제 기본값
-     *      (보통 medium)으로 생각한다. 여기서 아무 말도 안 하면 화면은 off
-     *      라고 적어 두고 실제로는 생각이 도는 셈이 된다.
-     *
-     * b 를 잠자코 두면 화면이 거짓말을 한다. 창구가 끄는 말을 알려 준 적이
-     * 없으면 우리는 못 끈다 — 못 끄면 못 끈다고 적는다.
-     */
-    const 못끄나 = session.think === 'off' && !나가는것 && 카드.생각형식 === 'effort';
-    say(`  ${c.gray(pad(말('think.wire'), 한국어 ? 8 : 10))}${c.gray(전선말(카드))}`
-      + (나가는것 ? `   ${c.gray(말('think.wireSends', { 값: 나가는것 }))}` : '')
-      + (못끄나 ? `   ${c.yellow(말('think.wireNoOff'))}` : ''));
-  }
-  if (개발자 || 자세히) say(`  ${c.gray(pad(말('think.profile'), 한국어 ? 8 : 10))}${c.bold(t.name)}   ${c.gray(t.desc)}`);
-
-  if (자세히) {
-    say('');
-    say(`  ${c.gray(pad(말('think.col.stage'), 12) + pad(말('think.col.level'), 10) + pad(말('think.col.cap'), 10) + 말('think.col.when'))}`);
-    for (const r of t.rows) {
-      const 화살 = r.moved > 0 ? c.yellow('↑') : r.moved < 0 ? c.cyan('↓') : c.gray('·');
-      say(`  ${pad(r.label, 12)}${화살} ${pad(r.level, 8)}${pad(r.cap.toLocaleString(), 10, 'right')}  ${c.gray(r.why)}`);
-    }
-    say('');
-    // 상한이 어디서 왔는지 밝힌다. 세 줄이 같은 값일 때 그게 고장인지 아닌지
-    // 이 한 줄로 갈린다 — 아는 상한이 낮으면 셋이 같아지는 것이 맞다.
-    const 어디서 = session.conn.maxTokens ? 말('think.cap.you')
-      : session.conn.maxOut ? 말('think.cap.server') : 말('think.cap.guess');
-    say(`  ${c.gray(말('think.cap.head'))} ${c.white((아는상한 ?? 16384).toLocaleString())} ${c.gray(어디서)}${c.gray(말('think.cap.tail'))} ${c.cyan('/out')}`);
-    say(`  ${c.gray(말('think.ctx'))} ${c.white(t.ctx.toLocaleString())}${c.gray(말('think.ctx.used'))}${c.white(t.used.toLocaleString())}`);
-    say('');
-    say(`  ${c.gray(말('think.effort'))}  ${THINK_LEVELS.join(' · ')}   ${c.gray(말('think.eg'))} ${c.cyan('/think high')}`);
-    say(`  ${c.gray(말('think.profile'))}  ${Object.entries(PROFILES).map(([k, v]) => { const n = 한국어 ? v.name : (v.en ?? v.name); return n === k ? k : `${k}(${n})`; }).join(' · ')}   ${c.gray(말('think.eg'))} ${c.cyan(배분예)}`);
-  } else if (개발자) {
-    say(`  ${c.gray(말('think.effort'))} ${c.cyan('/think high')}   ${c.gray(말('think.profile'))} ${c.cyan(배분예)}   ${c.gray(말('think.detail'))} ${c.cyan(자세히예)}`);
-  } else {
-    /*
-     * 다음 칸을 **지금 값에서** 셈한다.
-     *
-     * 여태 이 두 자리는 high · low 로 박혀 있었다. 눈금이 넷일 때는 그럭저럭
-     * 맞았는데 xhigh 가 늘면서 티가 났다 — max 로 쓰고 있는 사람에게
-     * 「더 세게 → /think high」 라고 적어 준다. high 는 지금보다 **약하다.**
-     *
-     * 끝에 서 있으면 그쪽은 아예 안 적는다. 갈 데가 없는 길을 적어 주는 것은
-     * 없는 기능을 알려 주는 것과 같다.
-     */
-    const 위 = shiftLevel(session.think, 1);
-    const 아래 = shiftLevel(session.think, -1);
-    const 조각 = [];
-    if (위 !== session.think) 조각.push(`${c.gray(말('think.harder'))} ${c.cyan(`/think ${위}`)}`);
-    if (아래 !== session.think && 아래 !== 'off') 조각.push(`${c.gray(말('think.faster'))} ${c.cyan(`/think ${아래}`)}`);
-    if (조각.length) say(`  ${조각.join('   ')}`);
-  }
-
-  if (!session.conn.think && session.think !== 'off') {
-    say(`  ${c.yellow(말('think.nomodel'))} ${c.gray(말('think.nomodel.note'))}`);
-  }
-  say('');
-}
-
-/**
- * 대화 갈래.
- *
- * 여기서 하는 일은 화면과 말뿐이다. 갈래를 들고 있는 것은 agent/threads.js 다.
- */
-function 갈래명령(session, ctx, arg = '') {
-  const 갈래 = ctx?.갈래;
-  say('');
-  if (!갈래) {
-    // 한 번 돌리고 끝내는 자리(-p)에는 갈래가 없다. 없는 것을 있는 척하지 않는다.
-    say(`  ${c.gray('이 자리에서는 갈래를 못 씁니다 — 대화 화면에서만 됩니다.')}`);
-    say('');
-    return;
-  }
-
-  const 말 = String(arg ?? '').trim();
-  const [머리, ...나머지] = 말.split(/\s+/);
-  const 뒷말 = 나머지.join(' ');
-  const 알림 = (g) => {
-    say(`  ${c.hcyan('⑂')} ${c.bold(g.이름)} ${c.gray('갈래로 왔습니다.')} `
-      + c.gray(session.messages.length ? `오간 말 ${session.messages.length}개` : '빈 대화입니다'));
-  };
-
-  if (/^(new|새|새로)$/i.test(머리 ?? '')) {
-    알림(갈래.새로(뒷말));
-    say(`  ${c.gray('본줄기로 돌아가려면')} ${c.cyan('/thread 1')}`);
-    say('');
-    return;
-  }
-
-  if (/^(fork|갈라|분기)$/i.test(머리 ?? '')) {
-    const g = 갈래.갈라내기(뒷말);
-    say(`  ${c.hcyan('⑂')} ${c.bold(g.이름)} ${c.gray('로 갈라 나왔습니다.')} `
-      + c.gray(`여기까지 오간 말 ${session.messages.length}개를 그대로 물려받았습니다.`));
-    say(`  ${c.gray('여기서 무엇을 하든 본줄기는 그대로입니다.')}`);
-    say('');
-    return;
-  }
-
-  if (/^(close|닫기|끝)$/i.test(머리 ?? '')) {
-    const r = 갈래.닫기(뒷말);
-    if (!r.ok) say(`  ${c.red('못 닫았습니다')} ${c.gray(r.why)}`);
-    else {
-      say(`  ${mark.ok} ${c.gray(`${r.닫은것.이름} 갈래를 닫았습니다. 적어 둔 것은 남아 있습니다 —`)} ${c.cyan('/sessions')}`);
-      알림(r.지금);
-    }
-    say('');
-    return;
-  }
-
-  if (말) {
-    const g = 갈래.옮기기(말);
-    if (!g) {
-      say(`  ${c.red('그런 갈래가 없습니다')} ${c.gray(말)}`);
-      say(`  ${c.gray('/thread 만 치면 목록이 나옵니다.')}`);
-    } else 알림(g);
-    say('');
-    return;
-  }
-
-  // 그냥 /thread — 목록.
-  rule('대화 갈래', 70);
-  for (const r of 갈래.목록()) {
-    const 표 = r.지금 ? c.hcyan('▶') : c.gray(' ');
-    const 이름 = r.지금 ? c.white(r.이름) : c.gray(r.이름);
-    say(`  ${표} ${c.gray(String(r.번호))} ${pad(이름, 24)} ${c.gray(`말 ${String(r.말수).padStart(3)}개`)}`
-      + (r.id ? `  ${c.gray(r.id)}` : ''));
-  }
-  say('');
-  say(`  ${c.gray('/thread new [이름]')}   ${c.gray('빈 갈래로 나간다 — 곁가지 질문을 여기서')}`);
-  say(`  ${c.gray('/thread fork [이름]')}  ${c.gray('지금까지를 물려받아 갈라 나간다')}`);
-  say(`  ${c.gray('/thread <번호>')}       ${c.gray('그 갈래로 옮긴다')}`);
-  say(`  ${c.gray('/thread close')}       ${c.gray('지금 갈래를 닫는다')}`);
-  say('');
-  say(`  ${c.gray('연결·모델·도구·되돌리기는 갈래끼리 같이 씁니다. 오간 말과 토큰만 따로입니다.')}`);
-  say('');
-}
-
-/**
- * 쓰면서 저절로 알게 된 것.
- *
- * 보여 주는 것이 중요하다. 프롬프트에 몰래 들어가는 글이 있으면 사람은
- * 모델이 왜 그렇게 답했는지 알 수 없게 된다 — 여기서 통째로 볼 수 있어야
- * '자동으로 쌓인다' 가 무섭지 않은 말이 된다. 지우는 길도 같이 둔다.
- */
-/**
- * 증거 — 「다 됐습니다」 대신 검토할 수 있는 것.
- *
- * 화면에서 제일 중요한 것은 맨 아래 '증명 안 된 것' 이다. 바꾼 것을 늘어놓는
- * 일은 /diff 도 한다. 안 한 것을 말하는 자리는 여기뿐이다.
- */
-function 증거명령(session, ctx, arg = '') {
-  const e = 증거모으기(session, { audit: ctx?.audit });
-  const 말 = String(arg ?? '').trim();
-  say('');
-  rule('작업 증거', 70);
-
-  /*
-   * 기록이 새고 있으면 **목록보다 먼저** 말한다.
-   *
-   * 이 화면은 감사기록을 읽어서 만든다. 기록이 안 적히면 목록이 짧아지는
-   * 게 아니라 「아무것도 안 했다」로 보인다 — 아래 이른 반환이 그 자리다.
-   * 안 한 것을 말하라고 만든 화면이 안 한 것처럼 보이게 하면 안 된다.
-   */
-  if (e.기록못씀) {
-    say(`  ${mark.warn} ${c.yellow(`감사기록 ${e.기록못씀.수}건이 안 적혔습니다`)} ${c.gray(`— ${clip(e.기록못씀.까닭, 60)}`)}`);
-    say(`  ${c.gray('아래는 실제로 한 것보다 짧습니다.')}`);
-    say('');
-  }
-
-  if (!e.바꾼것.length && !e.돌린것.length) {
-    say(`  ${c.gray('이번 대화에서 아직 바꾸거나 돌린 것이 없습니다.')}`);
-    say('');
-    return;
-  }
-
-  if (e.바꾼것.length) {
-    say(`  ${c.bold('바꾼 것')} ${c.gray(`— 파일 ${e.셈.파일}개 · +${e.셈.더한줄} / -${e.셈.뺀줄}`)}`);
-    for (const x of e.바꾼것.slice(0, 12)) {
-      const 표 = x.증명 ? c.green('✓') : c.yellow('?');
-      const 뒤 = x.증명 ? c.gray(`← ${x.증명}`) : c.yellow('확인 안 됨');
-      say(`    ${표} ${pad(x.파일, 34)} ${c.gray(`+${x.더한줄} -${x.뺀줄}`)}  ${뒤}`);
-    }
-    if (e.바꾼것.length > 12) say(`    ${c.gray(`… 그 밖에 ${e.바꾼것.length - 12}개`)}`);
-    say('');
-  }
-
-  if (e.돌린것.length) {
-    say(`  ${c.bold('돌린 것')} ${c.gray(`— ${e.셈.돌린것}개${e.셈.실패한것 ? `, 그중 ${e.셈.실패한것}개 실패` : ''}`)}`);
-    for (const x of e.돌린것.slice(-10)) {
-      const 표 = x.됐나 ? c.green('✓') : c.red('✗');
-      say(`    ${표} ${clip(x.무엇 || x.도구, 44)} ${c.gray(clip(x.남긴말 ?? '', 24))}`);
-    }
-    say('');
-  }
-
-  // 여기가 요점이다.
-  if (e.증명안된것.length) {
-    say(`  ${c.yellow('증명 안 된 것')} ${c.gray(`— ${e.증명안된것.length}개`)}`);
-    for (const x of e.증명안된것.slice(0, 8)) {
-      say(`    ${c.yellow('·')} ${c.bold(x.파일)}`);
-      say(`      ${c.gray(x.왜)}`);
-    }
-    say('');
-    say(`  ${c.gray('돌려 볼 것이 있으면 지금 돌리고 다시 보세요.')}`);
-  } else {
-    say(`  ${c.green('증명 안 된 것 없음')} ${c.gray('— 바꾼 것마다 그 뒤에 돌린 확인이 있습니다.')}`);
-  }
-  say('');
-
-  if (/^(파일|file|저장|save)$/i.test(말)) {
-    const 이름 = `${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}`;
-    const 탈 = {};
-    const 자리 = 증거적기(session.root, e, 이름, 탈);
-    if (자리) say(`  ${mark.ok} ${c.gray('남겼습니다 —')} ${c.cyan(자리)}`);
-    else {
-      say(`  ${c.gray('파일로 못 남겼습니다. 화면 것만 쓰세요.')}`);
-      if (탈.왜) say(`  ${c.gray(clip(탈.왜, 90))}`);
-    }
-    say('');
-  } else {
-    say(`  ${c.gray('파일로 남기려면')} ${c.cyan('/evidence 파일')}`);
-    say('');
-  }
-}
-
-/**
- * /commit — 이번 대화가 바꾼 것을 커밋한다.
- *
- * 화면에서 지키는 것 두 가지.
- *
- *   1) **찍기 전에 다 보여 준다.** 메시지 전문과 `git status --short` 를
- *      먼저 낸다. 커밋은 남는 것이고, 남을 것을 안 보여 주고 남기면 사람은
- *      나중에 `git log` 에서 처음 읽게 된다. 그때는 이미 늦다.
- *   2) **놀랄 자리를 미리 말한다.** 남이 먼저 담아 둔 것(index)이 있으면
- *      그것도 같이 실린다고 적는다. 우리가 말없이 풀어 버리면 남의 준비가
- *      사라지고, 말없이 실으면 남의 변경이 이 커밋에 묻어 들어간다.
- *      둘 다 나쁘니 풀지 않고 알린다.
- *
- * push 는 안 한다. 그건 되돌릴 수 없는 자리라 사람이 직접 할 일이다.
- */
-/*
- * `/paste` — 클립보드에 든 화면 캡처를 붙인다 (tools/clipboard.js).
- *
- * 돌려주는 것은 `@경로` 한 줄이다. 그러면 바깥(repl.js)의 @-붙이기가 평소대로
- * 그림을 실어 보낸다 — 예산 셈도, 눈 없는 모델일 때의 처리도 그쪽에 이미
- * 있으니 두 벌로 만들지 않는다.
- *
- * 세 가지를 갈라 말한다. 「그림이 없다」(사람이 캡처를 다시 하면 된다),
- * 「못 꺼냈다」(까닭과 길을 준다), 「눈이 없는 모델이다」(붙여도 못 본다).
- * 셋을 뭉뚱그려 「안 됩니다」로 내면 사람은 무엇을 고쳐야 할지 모른다.
- */
-export function 붙여넣기명령(session, ctx, { 꺼내기 = 클립보드그림 } = {}) {
-  // 꺼내기를 갈아 끼울 수 있게 열어 둔다 — 검사가 **사람의 진짜 클립보드를
-  // 건드리지 않고** 세 갈래(그림 있음·없음·못 꺼냄)를 다 재려면 이 자리가 필요하다.
-  const r = 꺼내기();
-  if (!r.ok) {
-    if (r.없음) {
-      say(`  ${mark.warn} ${c.gray('클립보드에 그림이 없습니다. 화면을 캡처한 뒤 다시 /paste 하세요.')}`);
-      say(`  ${c.gray('(윈도우: Win+Shift+S · 맥: Cmd+Ctrl+Shift+4)')}`);
-    } else {
-      for (const 줄 of String(r.왜).split('\n')) say(`  ${mark.warn} ${c.gray(줄)}`);
-    }
-    return { handled: true };
-  }
-
-  let 앉힌것;
-  try {
-    앉힌것 = 그림앉히기(r.buf, join(ctx?.scope?.root ?? session.root, '.deel'));
-  } catch (err) {
-    say(`  ${mark.warn} ${c.gray(`그림을 저장 못 했습니다: ${err.message}`)}`);
-    return { handled: true };
-  }
-
-  const 보일 = ctx?.scope?.show ? ctx.scope.show(앉힌것.자리) : 앉힌것.자리;
-  say(`  ${c.blue('◧')} ${c.gray('클립보드에서 가져와 앉혔습니다')} ${c.white(보일)} ${c.gray(`(${크기말(앉힌것.바이트)})`)}`);
-
-  // 눈이 없는 모델이면 붙여도 못 본다. 보내기 전에 말한다 — 보내고 나서
-  // "그림이 안 보인다" 는 답을 받으면 사람은 이 기능이 고장 난 줄 안다.
-  if (!session.conn?.vision) {
-    say(`  ${mark.warn} ${c.gray('지금 모델은 그림을 못 봅니다 — 파일은 남았지만 글로만 나갑니다.')}`);
-  }
-  return { handled: false, text: `@${보일}` };
-}
-
-/*
- * `/review` — 이번에 바꾼 것을 새 창에서 한 번 더 본다 (agent/review.js).
- *
- * 여기서는 **아무것도 안 고친다.** 찾은 것을 늘어놓고 끝이다. 고칠지 말지는
- * 사람이 정한다. 리뷰가 제 손으로 고치기 시작하면 사람이 무엇을 승인한 것인지
- * 흐려진다.
- */
-async function 리뷰명령(session, ctx) {
-  const 것 = 볼것(session, ctx);
-  if (!것.ok) {
-    say('');
-    say(`  ${c.gray(것.왜)}`);
-    say('');
-    return;
-  }
-
-  rule(`리뷰 — ${것.어디}`, 70);
-  say(`  ${c.gray(것.통계.split(/\r?\n/).pop()?.trim() || `${것.파일들.length}개 파일`)}`);
-  say(`  ${c.gray('지금 대화는 안 보냅니다 — 바뀐 코드만 새 창에서 봅니다.')}`);
-  say('');
-
-  const s = spin('보는 중...');
-  const r = await 리뷰받기(session, 것, {
-    signal: ctx.signal ?? null,
-    onBackoff: (다시) => s.set?.(`서버가 잠깐 막아 ${Math.round((다시.wait ?? 0) / 1000)}초 기다리는 중...`),
-  });
-  s.stop('');
-
-  if (!r.ok) {
-    say(`  ${mark.no} ${c.red('못 봤습니다')} ${c.gray(`— ${r.왜}`)}`);
-    say('');
-    return;
-  }
-
-  /*
-   * 가른 것이 없으면 **원문을 그대로** 보여 준다.
-   *
-   * 모델이 형식을 안 지켰다고 아무것도 안 보여 주면, 사람은 리뷰가 아무것도
-   * 못 찾은 줄 안다. 우리가 못 읽은 것이지 모델이 침묵한 것이 아니다.
-   */
-  if (!r.찾은것.length) {
-    for (const 줄 of r.글.split(/\r?\n/)) say(`  ${줄}`);
-    say('');
-    return;
-  }
-
-  const 색 = { 심각: c.red, 보통: c.yellow, 사소: c.gray };
-  for (const f of r.찾은것) {
-    const 칠 = 색[f.급] ?? c.white;
-    say(`  ${칠(f.머리)}`);
-    for (const 줄 of f.몸) if (줄.trim()) say(`    ${c.gray(줄.trim())}`);
-    say('');
-  }
-  const 셈 = ['심각', '보통', '사소'].map((g) => [g, r.찾은것.filter((x) => x.급 === g).length]).filter(([, n]) => n);
-  say(`  ${c.gray(셈.map(([g, n]) => `${g} ${n}`).join(' · '))}`);
-  // 자리를 못 짚은 지적은 몇 개인지 적는다. 찾아갈 수 없는 지적은 값이 다르다.
-  const 자리없음 = r.찾은것.filter((x) => !x.자리).length;
-  if (자리없음) say(`  ${c.gray(`${자리없음}개는 파일:줄 을 안 짚었습니다 — 그만큼 확인하기 어렵습니다.`)}`);
-  say(`  ${c.gray('아무것도 안 고쳤습니다. 고칠 것을 골라 시키세요.')}`);
-  say('');
-}
-
-async function 커밋명령(session, ctx, arg = '') {
-  const 말한것 = String(arg ?? '').trim();
-  /*
-   * `전부` 뒤에 제목을 같이 적을 수 있다.
-   *
-   * 앞서는 `^(전부|all)$` 라 `/commit 전부 버그 수정` 이 **둘 다** 어긋났다 —
-   * 전부가 거짓이 되어 폴더째 바뀐 파일이 빠지고, `전부 버그 수정` 이 통째로
-   * 커밋 제목이 됐다. 어느 쪽도 화면에 안 적힌다.
-   */
-  const 전부친것 = /^(전부|all)(\s+|$)/i.exec(말한것);
-  const 전부 = !!전부친것;
-  const 남은말 = 전부 ? 말한것.slice(전부친것[0].length).trim() : 말한것;
-  const 미리보기 = /^(미리보기|preview|dry|--dry-run)$/i.test(남은말);
-  const 준제목 = 미리보기 ? null : (남은말 || null);
-
-  say('');
-  rule('커밋', 70);
-
-  const 도는말 = '메시지를 짓는 중…';
-  let 돌림 = spin(도는말);
-  const r = await 커밋준비(session, ctx, {
-    전부,
-    제목: 준제목,
-    onBackoff: (알림) => {
-      돌림.stop((알림.미리
-              ? `  ${c.yellow('⏸')} ${c.gray(말(알림말(알림), { 초: 알림채움(알림).초 }))}`
-              : `  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`));
-      돌림 = spin(도는말);
-    },
-  });
-
-  if (!r.ok) {
-    돌림.stop(`  ${c.gray(r.why)}`);
-    say('');
-    return;
-  }
-  돌림.stop(`  ${c.bold('담은 것')} ${c.gray(`— 파일 ${r.파일들.length}개`)}`);
-
-  for (const f of r.파일들.slice(0, 12)) say(`    ${c.gray('·')} ${c.white(f)}`);
-  if (r.파일들.length > 12) say(`    ${c.gray(`… 그 밖에 ${r.파일들.length - 12}개`)}`);
-  if (r.살림뺌) {
-    say(`    ${c.gray('· .deel/ 은 안 담았습니다 — 열쇠와 감사기록이 든 곳입니다')}`);
-  }
-  if (r.폴더통째?.length) {
-    say('');
-    say(`  ${c.yellow('폴더째 바뀐 자리는 안 담았습니다')} ${c.gray(`— ${r.폴더통째.slice(0, 4).join(', ')}`)}`);
-    say(`  ${c.gray('그 안에는 남이 고치던 파일도 있습니다. 통째로 담으려면')} ${c.cyan('/commit 전부')}`);
-  }
-  if (r.남의것.length) {
-    say('');
-    say(`  ${c.yellow('먼저 담겨 있던 것도 같이 실립니다')} ${c.gray(`— ${r.남의것.slice(0, 6).join(', ')}`)}`);
-    say(`  ${c.gray('빼려면 `git restore --staged <파일>` 뒤에 다시 부르세요.')}`);
-  }
-
-  say('');
-  say(`  ${c.bold('메시지')}`);
-  for (const line of r.메시지.trimEnd().split('\n')) {
-    say(`    ${line.trim() ? c.white(clip(line, 76)) : ''}`);
-  }
-  if (r.사실로만) {
-    say('');
-    say(`  ${c.yellow('모델이 메시지를 못 만들어 바뀐 것만 적었습니다.')}`);
-  }
-  /*
-   * diff 를 못 읽고 지은 메시지라면 그렇다고 적는다.
-   *
-   * 담긴 것이 64MB 를 넘으면 git 이 몸통을 못 뱉는다. 파일 목록은 멀쩡해서
-   * 커밋은 그대로 이어지는데, 그때 메시지는 **내용을 한 줄도 안 보고** 지은
-   * 것이다. 그 사실이 화면에 없으면 사람은 여느 메시지와 똑같이 믿는다.
-   */
-  if (r.diff못읽음) {
-    say('');
-    say(`  ${c.yellow('내용(diff)을 못 읽고 지은 메시지입니다')} ${c.gray(`— ${clip(r.diff못읽음, 60)}`)}`);
-    say(`  ${c.gray('파일 이름과 줄 수만 보고 썼습니다. 찍기 전에 한 번 읽어 주세요.')}`);
-  }
-
-  const 상태줄 = r.상태 ? r.상태.split('\n') : [];
-  if (상태줄.length) {
-    say('');
-    say(`  ${c.bold('git status --short')}`);
-    for (const line of 상태줄.slice(0, 10)) say(`    ${c.gray(clip(line, 76))}`);
-    if (상태줄.length > 10) say(`    ${c.gray(`… 그 밖에 ${상태줄.length - 10}줄`)}`);
-  }
-  say('');
-
-  if (미리보기) {
-    say(`  ${c.gray('미리보기입니다 — 찍지 않았습니다. 그대로 찍으려면')} ${c.cyan('/commit')}`);
-    say('');
-    return;
-  }
-
-  // 엄격 모드에서만 묻는다. 여기서 무르면 담은 것은 그대로 둔다 —
-  // 사람이 메시지만 다시 받고 싶을 수도 있는데, 담은 것까지 풀면 처음부터다.
-  if (session.mode === 'strict') {
-    const 예 = await confirm('이대로 커밋할까요?', true);
-    if (!예) {
-      say(`  ${c.gray('안 찍었습니다. 담은 것은 그대로 둡니다.')}`);
-      say('');
-      return;
-    }
-    // 묻는 사이에 담긴 것이 바뀌었을 수 있다(다른 창·다른 도구). 보여 준 것과
-    // 다른 것을 찍으면, 승인을 받은 의미가 없어진다.
-    const 지금 = r.다시확인();
-    if (JSON.stringify(지금) !== JSON.stringify(r.파일들)) {
-      say(`  ${c.yellow('묻는 사이에 담긴 것이 바뀌었습니다')} ${c.gray(`— 보여 준 ${r.파일들.length}개 → 지금 ${지금.length}개`)}`);
-      say(`  ${c.gray('안 찍었습니다. 다시')} ${c.cyan('/commit')} ${c.gray('으로 확인하세요.')}`);
-      say('');
-      return;
-    }
-  }
-
-  const 찍음 = 커밋실행(r.뿌리, r.메시지, { audit: ctx?.audit, 파일들: r.파일들, 제목: r.제목 });
-  if (!찍음.ok) {
-    say(`  ${c.red('✗')} ${c.gray(clip(찍음.why, 90))}`);
-    say('');
-    return;
-  }
-  say(`  ${mark.ok} ${c.green(찍음.hash)} ${c.white(clip(r.제목, 60))}`);
-  if (r.미확인 > 0) say(`     ${c.yellow(`검증: ${r.확인}건 확인 · ${r.미확인}건 미확인`)} ${c.gray('— 메시지에도 적었습니다')}`);
-  say(`     ${c.gray('push 는 안 했습니다. 되돌리려면')} ${c.cyan('git reset --soft HEAD~1')}`);
-  say('');
-}
-
-/**
- * 모델 카드 — 겪어 본 버릇과, 그 때문에 deel 이 바꾼 것.
- *
- * 여기서 중요한 것은 아래쪽 '그래서 바꾼 것' 이다. 위쪽 숫자만 보여 주면
- * 그냥 통계지만, 무엇이 달라졌는지까지 보여야 사람이 판단할 수 있다 —
- * "이 모델을 계속 쓸까, 다른 걸 받을까" 가 실제로 묻는 것이다.
- */
-function 카드명령(session, ctx) {
-  const 장 = ctx?.카드다시?.() ?? ctx?.카드 ?? null;
-  say('');
-  if (!장) {
-    say(`  ${c.gray('이 자리에서는 못 봅니다 — 대화 화면에서만 됩니다.')}`);
-    say('');
-    return;
-  }
-
-  rule('모델 카드', 70);
-  say(`  ${c.bold(장.모델 || '(이름 없음)')}  ${c.gray(`· 같이 걸어 본 걸음 ${장.걸음}`)}`);
-  /*
-   * 미리 아는 모델이면 이름표 한 줄 (agent/preset.js). 겪어서 안 것이 아니라
-   * 공개 문서로 아는 것이라, '겪어 본 버릇' 과 섞이지 않게 따로 선다.
-   */
-  if (장.내장) {
-    const 표지 = 언어() === 'en' ? 'known model' : '아는 모델';
-    say(`  ${c.hcyan('◆')} ${c.bold(장.내장.이름)} ${c.gray(`· ${표지}`)}`);
-    if (장.내장.한줄) say(`    ${c.gray(장.내장.한줄)}`);
-  }
-  say('');
-
-  const 줄 = (이름, v) => {
-    if (!v?.n) return;
-    const 센가 = v.율 >= 0.15;
-    const 표 = 센가 ? c.yellow('●') : c.gray('○');
-    say(`    ${표} ${pad(이름, 18)} ${pad(String(v.n), 5, 'right')} ${c.gray(`(${Math.round(v.율 * 100)}%)`)}`);
-  };
-  say(`  ${c.bold('겪어 본 버릇')}`);
-  줄('인자가 잘림', 장.버릇.잘린인자);
-  줄('빈 답', 장.버릇.빈답);
-  줄('편집이 빗나감', 장.버릇.편집실패);
-  줄('같은 것 되풀이', 장.버릇.되풀이);
-  if (!Object.values(장.버릇).some((v) => v.n)) say(`    ${c.gray('아직 걸린 것이 없습니다.')}`);
-  if (장.보정 && Math.abs(장.보정 - 1) > 0.01) {
-    say(`    ${c.gray(pad('토큰 추정 보정', 18))} ${pad(`×${장.보정.toFixed(2)}`, 5, 'right')}`);
-  }
-  say('');
-
-  say(`  ${c.bold('그래서 바꾼 것')}`);
-  if (장.아직모름) {
-    say(`    ${c.gray('아직 판단하지 않습니다 — 몇 걸음 안 걸어 보고 바꾸면 멀쩡한 모델을 붙들어 맵니다.')}`);
-  } else if (!장.왜.length) {
-    say(`    ${c.gray('바꾼 것 없음. 이 모델은 그대로 두어도 괜찮습니다.')}`);
-  } else {
-    for (const w of 장.왜) say(`    ${c.hcyan('→')} ${w}`);
-  }
-  say('');
-  say(`  ${c.gray('이 카드는 프롬프트에 안 실립니다 — deel 이 제 행동을 바꾸는 것이라 모델에게 말할 필요가 없습니다.')}`);
-  say('');
-}
-
-/**
- * 못 박기.
- *
- * 여기서 하는 일은 화면과 말뿐이다. 들고 있는 것은 agent/pins.js 이고,
- * 그것이 session 에 붙어 있어서 접기·요약이 닿지 못한다.
- */
-function 못박기명령(session, ctx, arg = '') {
-  const 못 = session?.못박은것;
-  say('');
-  if (!못) {
-    say(`  ${c.gray('이 자리에서는 못 씁니다 — 대화 화면에서만 됩니다.')}`);
-    say('');
-    return;
-  }
-
-  const 적어두기 = () => { try { ctx?.갈래?.현재store?.()?.못박기목록(못.직렬화()); } catch { /* 못 적어도 대화는 계속된다 */ } };
-  const 말 = String(arg ?? '').trim();
-  const [머리, ...나머지] = 말.split(/\s+/);
-
-  if (/^(지우기|빼기|clear|rm|remove)$/i.test(머리 ?? '')) {
-    const r = 못.지우기(나머지.join(' ') || '전부');
-    if (!r.ok) say(`  ${c.red(r.why)}`);
-    else if (typeof r.뺀것 === 'number') say(`  ${mark.ok} ${c.gray(`못 박아 둔 것 ${r.뺀것}개를 뺐습니다.`)}`);
-    else say(`  ${mark.ok} ${c.gray('뺐습니다 —')} ${r.뺀것}`);
-    적어두기();
-    say('');
-    return;
-  }
-
-  if (말) {
-    const r = 못.더하기(말);
-    if (!r.ok) {
-      say(`  ${c.red(r.why)}`);
-      say('');
-      return;
-    }
-    적어두기();
-    say(`  ${c.hcyan('📌')} ${c.bold(`${r.번호}.`)} ${말}`);
-    say(`  ${c.gray('접거나 요약해도 안 지워집니다. 빼려면')} ${c.cyan(`/pin 지우기 ${r.번호}`)}`);
-    say('');
-    return;
-  }
-
-  const 목록 = 못.목록();
-  rule('못 박은 것', 70);
-  if (!목록.length) {
-    say(`  ${c.gray('아직 없습니다. 대화 내내 지켜야 할 말을 박아 두세요.')}`);
-    say(`  ${c.gray('예:')} ${c.cyan('/pin 운영 DB 는 건드리지 마라')}`);
-    say('');
-    return;
-  }
-  for (const x of 목록) say(`  ${c.hcyan(`${x.번호}.`)} ${x.말}`);
-  say('');
-  const 실린것 = 못.실린것();
-  say(`  ${c.gray(`매 턴 프롬프트에 실립니다 — 지금 ${실린것.개수}개, ${실린것.토큰}토큰.`)}`);
-  if (!실린것.다실렸나) {
-    say(`  ${c.yellow(`자리가 모자라 뒤의 ${목록.length - 실린것.개수}개는 안 실립니다.`)} ${c.gray('짧게 줄이거나 빼세요.')}`);
-  }
-  say('');
-}
-
-function 배움명령(session, ctx, arg = '') {
-  const 배움 = ctx?.배움;
-  say('');
-  if (!배움) {
-    say(`  ${c.gray('이 자리에서는 못 봅니다 — 대화 화면에서만 됩니다.')}`);
-    say('');
-    return;
-  }
-
-  /*
-   * ── 전선만 지우는 길 ────────────────────────────────────────────────────
-   *
-   * 전선 모양은 틀리게 배울 수 있는 유일한 것이고(backend/wire.js), 틀리면
-   * 멀쩡한 기능이 꺼진 채 굳는다. 그런데 되돌릴 길이 「전부 비우기」 하나라,
-   * 몇 주 쌓은 명령 겪음까지 같이 날아갔다 — 그게 아까워서 사람은 안 비우고,
-   * 안 비우니 꺼진 기능을 그냥 안고 쓴다. 전선만 지우면 잃을 것이 없다.
-   */
-  /*
-   * 지우는 말은 **반드시 적어야** 한다.
-   *
-   * 앞서는 `\s*(…)?` 라 `/learned 전선` 만 쳐도 곧바로 지웠다. 화면이 알려
-   * 주는 명령은 `/learned 전선 지우기` 라 그 짧은 꼴은 어디에도 안 적혀
-   * 있는데, 「전선에서 뭘 배웠나 보자」 는 마음으로 치면 그것이 지우는
-   * 명령이 됐다. 지우는 명령은 지우겠다고 적었을 때만 지운다.
-   */
-  if (/^(전선|wire)$/i.test(String(arg).trim())) {
-    say(`  ${c.gray('전선에서 배운 것만 비우려면')} ${c.cyan('/learned 전선 지우기')}`);
-    say(`  ${c.gray('쌓인 것을 보려면')} ${c.cyan('/learned')}`);
-    say('');
-    return;
-  }
-  if (/^(전선|wire)\s+(지우기|clear|forget|비우기)$/i.test(String(arg).trim())) {
-    배움.지우기('전선');
-    if (session.conn) 전선붙이기(session.conn, 배움);
-    say(`  ${mark.ok} ${c.gray('전선에서 배운 것만 비웠습니다 — 다음 요청부터 짐작으로 다시 시작합니다.')}`);
-    say(`  ${c.gray('겪어 본 명령과 토큰 보정은 그대로 둡니다.')}`);
-    say('');
-    return;
-  }
-
-  if (/^(지우기|clear|forget|비우기)$/i.test(String(arg).trim())) {
-    배움.지우기('전부');
-    session.배움요약 = null;
-    say(`  ${mark.ok} ${c.gray('쌓아 둔 것을 비웠습니다. 다시 겪으면서 새로 쌓습니다.')}`);
-    say('');
-    return;
-  }
-
-  const { 명령, 모델, 모델이름 } = 배움.현황(session.conn.model);
-  rule('겪어 본 것', 70);
-
-  if (!명령.length && !모델) {
-    say(`  ${c.gray('아직 쌓인 것이 없습니다. 명령을 돌리고 대화를 나눌수록 여기가 찹니다.')}`);
-    say('');
-    return;
-  }
-
-  if (명령.length) {
-    say(`  ${c.bold('이 폴더에서 돌려 본 명령')}`);
-    for (const r of 명령.slice(0, 12)) {
-      const 표 = r.no === 0 ? c.green('✓') : r.ok === 0 ? c.red('✗') : c.yellow('~');
-      /*
-       * 언제 겪었는지와 **지금 실리는지**를 같이 적는다.
-       *
-       * 셈은 삭는다 (agent/신뢰도.js). 그래서 「됨 3 · 안 됨 0」 두 줄이 화면에
-       * 똑같이 보여도 한 줄은 프롬프트에 실리고 다른 줄은 안 실릴 수 있다.
-       * 특히 「안 된다」 는 스스로를 봉인하던 자리라, 그것이 지금 입을 다물고
-       * 있다는 사실이야말로 사람이 봐야 하는 것이다.
-       *
-       * 판정은 배움이 낸 것을 그대로 받는다 — 여기서 다시 계산하면 언젠가
-       * 한쪽만 고쳐지고, 그때부터 화면이 실제와 다른 말을 한다.
-       */
-      const 셈 = (n) => (Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '?');
-      const 날 = Number.isFinite(r.나이) ? `${Math.floor(r.나이)}일 전` : '언제인지 모름';
-      const 말 = r.판정 === '모름' ? `${날} — 아직 안 싣습니다` : `${날} · 프롬프트에 실림`;
-      say(`    ${표} ${pad(r.이름, 24)} ${c.gray(`됨 ${셈(r.ok)} · 안 됨 ${셈(r.no)}`)}`
-        + `  ${c.gray(말)}`);
-    }
-    say('');
-  }
-
-  if (모델) {
-    say(`  ${c.bold('이 모델에 대해')} ${c.gray(모델이름)}`);
-    const 걸음 = 모델.걸음 ?? 0;
-    const 줄 = (이름, n) => {
-      if (!n) return;
-      const 비율 = 걸음 ? Math.round((n / 걸음) * 100) : 0;
-      say(`    ${c.gray(pad(이름, 24))} ${pad(String(n), 5, 'right')} ${c.gray(걸음 ? `(${비율}%)` : '')}`);
-    };
-    say(`    ${c.gray(pad('같이 걸어 본 걸음', 24))} ${pad(String(걸음), 5, 'right')}`);
-    줄('인자가 잘림', 모델.잘린인자);
-    줄('빈 답', 모델.빈답);
-    줄('편집이 빗나감', 모델.편집실패);
-    if (모델.보정) say(`    ${c.gray(pad('토큰 추정 보정', 24))} ${pad(`×${모델.보정.toFixed(2)}`, 5, 'right')}`);
-    say('');
-  }
-
-  const 실린것 = 배움.요약(session.conn.model);
-  if (실린것) {
-    say(`  ${c.bold('이 중 프롬프트에 실리는 것')}`);
-    for (const l of 실린것.split('\n').slice(1)) say(`  ${c.gray(l)}`);
-  } else {
-    say(`  ${c.gray('아직 프롬프트에 실을 만큼 확실한 것은 없습니다 — 두 번 이상 겪어야 싣습니다.')}`);
-  }
-  /*
-   * ── 전선에서 배운 것도 여기 보인다 ──────────────────────────────────────
-   *
-   * 쌓인 것 중 **제일 크게 작용하는 것**이 전선 모양인데(무엇을 실어 보낼지
-   * 가 여기서 갈린다) 이 화면에 아예 안 떴다. 그래서 잘못 배운 판에서 사람이
-   * 「배운 것을 보자」 고 여기를 열면, 정작 문제인 줄만 안 보였다.
-   */
-  const 전선 = session.conn?.전선;
-  if (전선) {
-    const 배운칸 = 전선.배운칸 ?? [];
-    say(`  ${c.bold('이 창구에 실어 보내는 모양')}`);
-    say(`    ${c.gray(전선말(전선))}`);
-    if (배운칸.length) {
-      say(`    ${c.gray('「배움」 은 짐작이 아니라 서버가 거절해서 고친 자리입니다 — 틀릴 수도 있습니다.')}`);
-    }
-    say('');
-  }
-
-  say('');
-  say(`  ${c.gray('지우려면')} ${c.cyan('/learned 지우기')}`);
-  if (전선?.배운칸?.length) {
-    say(`  ${c.gray('전선에서 배운 것만 되돌리려면')} ${c.cyan('/learned 전선 지우기')}`);
-  }
-  say('');
-}
-
-function showContext(session) {
-  const b = session.breakdown();
-  say('');
-  rule(말('scr.context'), 70);
-  say(`  ${c.bold(session.conn.model)} ${c.gray('·')} ${말('unit.tokens', { n: b.total.toLocaleString() })}`);
-  say('');
-  say(`  ${bar(b.used, b.total, 32)}  ${b.used.toLocaleString()} / ${b.total.toLocaleString()}  ${c.gray(`${Math.round((b.used / b.total) * 100)}%`)}`);
-  say('');
-  for (const r of b.rows) {
-    if (!r.n) continue;
-    say(`  ${c.gray(pad(r.label, 26))} ${pad(r.n.toLocaleString(), 8, 'right')}`);
-  }
-  say(`  ${c.gray('─'.repeat(35))}`);
-  say(`  ${c.gray(pad(말('ctx.left'), 26))} ${pad(b.left.toLocaleString(), 8, 'right')}`);
-  say('');
-  say(`  ${c.gray(`/compact ${말('ctx.compactHint')}   /clear ${말('ctx.clearHint')}`)}`);
-  /*
-   * 추정이라고만 적어 두면 사람은 얼마나 믿어야 할지 모른다. 서버가 알려 준
-   * 실제값에 맞춰 가고 있으면 그 사실을 적는다 — '추정' 과 '맞춰 본 추정' 은
-   * 믿을 만한 정도가 다르다.
-   */
-  if (b.보정잰것 > 0) {
-    const 차이 = Math.round((b.보정 - 1) * 100);
-    say(`  ${c.gray(말('ctx.calibrated', { 부호: 차이 >= 0 ? '+' : '', 퍼센트: 차이, 번: b.보정잰것 }))}`);
-  } else {
-    say(`  ${c.gray(말('ctx.estimate'))}`);
-  }
-  /*
-   * 재 봤는데 **못 믿어서 안 쓴** 것도 말한다.
-   *
-   * session.배운다() 는 서버가 알려 준 값이 우리 추정의 절반 아래거나 두 배
-   * 위면 표본을 버린다. 튄 값 하나에 게이지가 휘둘리면 안 되니 버리는 것은
-   * 맞다. 그런데 버린 것을 아무 데도 안 남기면, 「아직 한 번도 못 재 봤다」 와
-   * 「재 봤는데 세 배가 나와서 못 믿었다」 가 화면에서 똑같아진다.
-   *
-   * 뒤엣것은 우리 추정이 크게 틀렸다는 단서다. 그 말을 안 하면 게이지는 영영
-   * 짐작인 채로 도는데 사람은 그저 「추정입니다」 만 읽는다.
-   */
-  if (session?.보정버림 > 0) {
-    const 배 = session.보정마지막버린비율;
-    say(`  ${c.gray(`서버가 알려 준 값이 우리 추정과 너무 달라 ${session.보정버림}번은 안 썼습니다`
-      + (배 ? ` (마지막에 잰 것은 추정의 ${배.toFixed(1)}배)` : ''))}`);
-    say(`  ${c.gray('이 창구에서는 위 숫자가 실제와 크게 다를 수 있습니다.')}`);
-  }
-  say('');
-}
-
-/**
- * 이번 대화에서 무엇이 바뀌었는지 보여 준다.
- *
- *   /diff           바뀐 파일 목록과 늘고 준 줄 수
- *   /diff src/a.js  그 파일이 처음과 지금 사이에 어떻게 달라졌는지
- *
- * 파일 하나를 볼 때는 이번 대화의 '맨 처음' 모습과 견준다. 세 번 고쳤어도
- * 사람이 알고 싶은 것은 '내가 시키기 전과 지금이 뭐가 다른가' 이지
- * 마지막 한 번이 아니다. 되돌리기 이력이 그 맨 처음 모습을 들고 있다.
- */
-function 바뀐것보기(session, ctx, arg = '') {
-  const 말 = String(arg ?? '').trim();
-  say('');
-
-  if (!말) {
-    const 목록 = [...session.changes.entries()];
-    if (!목록.length) {
-      say(`  ${c.gray('이번 대화에서 바뀐 파일이 없습니다.')}`);
-      say(`  ${c.gray('파일을 고치고 나면 여기에 무엇이 얼마나 바뀌었는지 모입니다.')}`);
-      say('');
-      return;
-    }
-    rule('이번 대화에서 바뀐 파일', 70);
-    let a = 0;
-    let r = 0;
-    for (const [p, v] of 목록) {
-      a += v.added;
-      r += v.removed;
-      const 몇번 = v.times > 1 ? c.gray(`  ${v.times}번`) : '';
-      say(`  ${pad(clip(ctx.scope.show(p), 46), 46)} ${c.hgreen(pad(`+${v.added}`, 6, 'right'))} ${c.hred(pad(`−${v.removed}`, 6, 'right'))}${몇번}`);
-    }
-    say(`  ${c.gray('─'.repeat(60))}`);
-    say(`  ${pad(`${목록.length}개 파일`, 46)} ${c.hgreen(pad(`+${a}`, 6, 'right'))} ${c.hred(pad(`−${r}`, 6, 'right'))}`);
-    say('');
-    say(`  ${c.gray('한 파일을 자세히 보려면')} ${c.cyan('/diff <파일>')}${c.gray(', 되돌리려면')} ${c.cyan('/undo')}`);
-    say('');
-    return;
-  }
-
-  let abs;
-  try { abs = ctx.scope.resolve(말); }
-  catch (err) { say(`  ${mark.warn} ${err.message}`); say(''); return; }
-
-  // 이번 대화에서 이 파일을 처음 건드리기 직전의 모습.
-  const 처음 = ctx.history.all().find((x) => x.path === abs);
-  if (!처음) {
-    say(`  ${c.gray('이번 대화에서 안 바꾼 파일입니다:')} ${ctx.scope.show(abs)}`);
-    say(`  ${c.gray('바뀐 것들을 보려면')} ${c.cyan('/diff')}`);
-    say('');
-    return;
-  }
-
-  const 옛것 = 처음.before === null ? null
-    : (처음.enc === 'b64' ? Buffer.from(처음.before, 'base64').toString('utf8') : 처음.before);
-  let 지금 = null;
-  if (existsSync(abs)) {
-    try { 지금 = readTextFull(abs).text; }
-    catch (err) { say(`  ${mark.warn} 지금 내용을 못 읽습니다: ${err.message}`); say(''); return; }
-  }
-
-  const d = diffLines(옛것, 지금);
-  rule(ctx.scope.show(abs), 70);
-  if (!d.changed) {
-    say(`  ${c.gray('고쳤다가 되돌아와서, 처음과 지금이 같습니다.')}`);
-    say('');
-    return;
-  }
-  if (d.isNew) say(`  ${c.gray('이번 대화에서 새로 만든 파일입니다.')}`);
-  if (d.isGone) say(`  ${c.gray('이번 대화에서 없어진 파일입니다.')}`);
-  say(`  ${shortStat(d)}`);
-  say('');
-  for (const l of renderDiff(d, { maxLines: session.level === '개발자' ? 200 : 60 })) say(l);
-  say('');
-  say(`  ${c.gray('되돌리려면')} ${c.cyan('/undo')}`);
-  say('');
-}
-
-/**
- * 한 번에 받을 답 길이 상한.
- *
- *   /out            지금 값과 어디서 나온 값인지
- *   /out 32k        직접 지정
- *   /out auto       모른다고 두고 안전한 기본값으로 (16,384)
- *
- * 왜 따로 있나:
- *   컨텍스트(/ctx)와 다른 축이다. 컨텍스트가 655k 여도 '한 번에 뱉을 수 있는 답'
- *   은 대개 훨씬 작다. 그 두 값이 하나인 줄 알면 큰 파일이 왜 안 만들어지는지
- *   영영 알 수 없다 — 컨텍스트는 넉넉한데 답이 잘리기 때문이다.
- *
- *   전에는 이 기능이 /ctx out 안에 숨어 있었고, 게다가 **먹지도 않았다**
- *   (effort.js 의 클램프가 다시 조였다). 있는데 안 먹는 것이 가장 나쁘다 —
- *   문서에 적혀 있으니 사람이 그걸 믿고 쓴다.
- */
-async function 출력상한(session, arg = '') {
-  const { parseSize } = await import('./backend/ctxsize.js');
-  const 말 = String(arg ?? '').trim().toLowerCase();
-  const cfg = load();
-  const prof = 이연결의프로필(cfg, session);
-  const 알아낸것 = session.conn.maxOut ?? null;
-
-  if (말 === 'auto' || 말 === '자동') {
-    session.conn.maxTokens = null;
-    const 지웠나 = prof ? (delete prof.maxTokens, 설정남기기(cfg)) : false;
-    say(`  ${mark.ok} 직접 정한 값을 지웠습니다. ${c.gray('이번 대화에 바로 먹습니다.')}`);
-    // 프로필을 못 찾으면 다음에 켤 때 그 값이 되살아난다. 숨기면 안 된다.
-    if (!지웠나) say(`     ${mark.warn} ${c.yellow('설정에서 이 연결을 못 찾아 파일에는 못 남겼습니다 — 다음에 켜면 옛 값입니다.')}`);
-    say(`     ${c.gray(알아낸것 ? `서버에서 알아낸 ${알아낸것.toLocaleString()} 토큰을 씁니다.` : '모르는 값이라 16,384 토큰으로 갑니다.')}`);
-    say('');
-    return;
-  }
-
-  if (말) {
-    const 값 = parseSize(말);
-    if (!값) {
-      say(`  ${mark.no} 숫자를 못 읽었습니다: ${c.white(arg)}`);
-      say(`     ${c.gray('이렇게 쓰세요 —')} ${c.cyan('/out 32k')}  ${c.cyan('/out 65536')}  ${c.cyan('/out auto')}`);
-      say('');
-      return;
-    }
-    session.conn.maxTokens = 값;
-    if (prof) { prof.maxTokens = 값; 설정남기기(cfg); }
-    say(`  ${mark.ok} 답 길이 상한 ${c.bold(값.toLocaleString())} 토큰`);
-    say(`     ${c.gray('모델이 못 내는 값을 넣으면 서버가 거절합니다. 거절당하면')} ${c.cyan('/out auto')} ${c.gray('로 되돌리세요.')}`);
-    say('');
-    return;
-  }
-
-  const 쓰는값 = session.conn.maxTokens ?? 알아낸것 ?? 16384;
-  const 어디서 = session.conn.maxTokens ? '직접 정하신 값'
-    : 알아낸것 ? '서버에서 알아낸 값'
-      : '모르는 값이라 안전한 기본값';
-  say('');
-  rule('한 번에 받을 답 길이', 70);
-  say(`  ${c.gray('지금 상한')}     ${c.white(쓰는값.toLocaleString())} ${c.gray(`토큰 — ${어디서}`)}`);
-  say(`  ${c.gray('컨텍스트')}      ${c.white((session.conn.ctx ?? 0).toLocaleString())} ${c.gray('토큰')} ${c.gray('(다른 축입니다 — /ctx)')}`);
-  say('');
-  say(`  ${c.gray('이 값이 한 번에 만들 수 있는 파일 크기를 정합니다.')}`);
-  say(`  ${c.gray('1,000줄짜리 HTML 이 대략 12,000~18,000 토큰입니다.')}`);
-  say(`  ${c.gray('여기서 잘려도 받은 데까지는 파일에 쓰고 이어 붙입니다 — 다만 몇 번 더 오갑니다.')}`);
-  say('');
-  say(`  ${c.cyan('/out 32k')}      ${c.gray('직접 지정 (k 는 1024)')}`);
-  say(`  ${c.cyan('/out auto')}     ${c.gray('직접 정한 값을 지우고 알아낸 값/기본값으로')}`);
-  say('');
-}
-
-/**
- * /grade — 모델 급.
- *
- * `/ctx` 와는 **다른 축**이다. 헷갈리기 쉬워서 화면에서도 나란히 보여 준다.
- *   /ctx    얼마나 담나        (창 크기)
- *   /grade  얼마나 알아서 하나 (능력)
- *
- * 창이 128k 인 3B 모델이 있고, 창이 32k 인 아주 좋은 모델도 있다. 둘을 같은
- * 값으로 다루면 하나는 붙들려 있고 하나는 놓쳐진다.
- *
- * 평소에는 안 건드려도 된다 — 이름으로 짐작하고, 대화가 돌수록 실제로 본 것
- * (인자 잘림·빈 답·편집 실패·되풀이)으로 고쳐 잡는다. 여기서 정하면 그것이
- * 이기고, `auto` 로 되돌리면 다시 스스로 잡는다.
- */
-function 모델급(session, arg = '') {
-  const 값 = String(arg ?? '').trim().toLowerCase();
-  const 별명 = {
-    '작음': '작음', 'small': '작음', 's': '작음', '작': '작음',
-    '보통': '보통', 'medium': '보통', 'm': '보통', '중': '보통',
-    '큼': '큼', 'large': '큼', 'l': '큼', 'big': '큼', '대': '큼',
-  };
-
-  if (값 === 'auto' || 값 === '자동') {
-    session.급정한것 = null;
-    // 급은 턴마다 한 번만 맨다(session.js 의 급 머리말). 사람이 여기서 정한
-    // 것은 다음 턴이 아니라 **지금** 먹어야 하니 빗장을 풀어 준다.
-    session.급다시재기?.();
-    const g = session.급();
-    say('');
-    say(`  ${c.cyan('◈')} 모델 급을 다시 ${c.bold('스스로 잡게')} 했습니다 — 지금은 ${c.white(g.급)}`);
-    say(`     ${c.gray(g.왜)}`);
-    return;
-  }
-
-  if (값 && Object.hasOwn(별명, 값)) {
-    session.급정한것 = 별명[값];
-    session.급다시재기?.();
-    const v = session.급값();
-    say('');
-    say(`  ${c.cyan('◈')} 모델 급을 ${c.bold(별명[값])} 으로 정했습니다.`);
-    say(`     ${c.gray(`한 번에 만들 파일 ${v.한번에쓸파일}개 · ${v.나눠쓰기줄}줄 넘으면 나눠 쓰기`)}`);
-    say(`     ${c.gray('/grade auto 로 되돌리면 다시 스스로 잡습니다.')}`);
-    return;
-  }
-
-  /*
-   * 못 알아들은 값은 **못 알아들었다고 말한다.**
-   *
-   * 앞서는 `/grade 크게` 같은 오타가 오류 한 줄 없이 지금 상태 표로
-   * 떨어졌다. 사람은 정해진 줄로 읽고 그대로 쓴다. 바로 옆 `/work` 는
-   * 「그런 모드는 없습니다」 를 먼저 말한다 — 잣대를 같게 맞춘다.
-   */
-  if (값) {
-    say('');
-    say(`  ${mark.no} ${c.gray('그런 급은 없습니다:')} ${c.white(값)}`);
-    say(`  ${c.gray('고를 수 있는 것:')} ${c.cyan('작음')} ${c.gray('·')} ${c.cyan('보통')} ${c.gray('·')} ${c.cyan('큼')} ${c.gray('·')} ${c.cyan('auto')}`);
-  }
-
-  // 인자가 없으면 지금 상태를 보여 준다.
-  const g = session.급();
-  const v = session.급값();
-  const 본 = session.본것;
-  say('');
-  say(`  ${c.bold('모델 급')}  ${c.hcyan(g.급)}${g.짐작 ? c.gray('  (짐작)') : ''}`);
-  say(`     ${c.gray(g.왜)}`);
-  say('');
-  say(`  ${c.gray('이 급에서 쓰는 값')}`);
-  say(`     ${c.gray('한 번에 만들 파일')}   ${c.white(String(v.한번에쓸파일))}개`);
-  say(`     ${c.gray('나눠 쓰기 기준')}     ${c.white(String(v.나눠쓰기줄))}줄`);
-  say(`     ${c.gray('절차를 못 박나')}     ${v.절차를못박나 ? c.white('예') : c.gray('아니오 — 목표만 준다')}`);
-  say(`     ${c.gray('하위 작업 권함')}     ${v.하위작업권함 ? c.white('예') : c.gray('아니오')}`);
-  if (본 && 본.걸음) {
-    say('');
-    say(`  ${c.gray('이번 대화에서 실제로 본 것')} ${c.gray(`(${본.걸음}걸음)`)}`);
-    const 줄 = [
-      ['인자 잘림', 본.잘린인자], ['빈 답', 본.빈답],
-      ['편집 실패', 본.편집실패], ['되풀이', 본.되풀이], ['도구 성공', 본.도구성공],
-    ];
-    say('     ' + 줄.map(([이름, n]) => `${c.gray(이름)} ${n ? c.white(String(n)) : c.gray('0')}`).join(c.gray('  ·  ')));
-  }
-  say('');
-  say(`  ${c.gray('/ctx 와는 다른 축입니다 — /ctx 는 얼마나 담나, /grade 는 얼마나 알아서 하나.')}`);
-  say(`  ${c.gray('직접 정하려면 /grade 작음|보통|큼 · 되돌리려면 /grade auto')}`);
-}
-
-/**
- * 컨텍스트 길이를 보고·다시 재고·직접 지정한다.
- *
- *   /ctx            지금 값과 어디서 나온 값인지
- *   /ctx auto       서버에 다시 물어 모델에 맞춘다
- *   /ctx 655360     직접 지정 (640k · 128k · 1m 도 받는다 — k 는 1024)
- *
- * 왜 필요한가: 이 숫자 하나가 프로그램 전체 크기를 정한다. 서버가 안 알려주면
- * 32,768 로 깔고 앉는데, 요즘 로컬 모델은 262,144 · 655,360 이 흔하다.
- * 그 상태로 쓰면 모델이 가진 것의 5% 만 쓰는 셈이다.
- *
- * 고른 값은 프로필에 남긴다 — 다음에 켤 때도 그대로여야 한다.
- */
-async function ctxLength(session, arg = '') {
-  const { probeCtx, parseSize, fmtSize } = await import('./backend/ctxsize.js');
-  const 말 = String(arg ?? '').trim().toLowerCase();
-  const 지금 = session.conn.ctx ?? 0;
-
-  const 남기기 = (값, 어디서) => {
-    session.conn.ctx = 값;
-    const cfg = load();
-    const prof = 이연결의프로필(cfg, session);
-    // 못 남기면 아래 「프로필에 저장했습니다」 가 거짓말이 된다. 살아있는지 들고 간다.
-    const 남김 = prof ? (prof.ctx = 값, 설정남기기(cfg)) : false;
-    const b = session.breakdown();
-    say(`  ${mark.ok} 컨텍스트 ${c.bold(값.toLocaleString())} 토큰 ${c.gray(`(${fmtSize(값)}) — ${어디서}`)}`);
-    say(`     ${c.gray('지금 찬 양')} ${c.white(b.used.toLocaleString())} ${c.gray('· 남음')} ${c.white(b.left.toLocaleString())}`);
-    if (남김) say(`     ${c.gray('프로필에 저장했습니다. 다음에 켤 때도 이 값입니다.')}`);
-    // 못 남긴 까닭이 '설정을 못 찾음' 이면 설정남기기() 가 아무 말도 안 한다.
-    else if (!prof) say(`     ${mark.warn} ${c.yellow('설정에서 이 연결을 못 찾아 파일에는 못 남겼습니다 — 다음에 켜면 옛 값입니다.')}`);
-    say('');
-  };
-
-  // 0) 답 길이 상한 — 이제 /out 이 본자리다. 여기서는 그리로 넘긴다.
-  //    \b 가 아니라 공백·줄 끝으로 끊는다. 한글은 \w 가 아니라서
-  //    `/^답\b/` 는 '답 32k' 에도 '답' 에도 안 맞는다(위 '배분' 과 같은 함정).
-  if (/^(out|답|출력)(\s|$)/.test(말)) return await 출력상한(session, 말.replace(/^(out|답|출력)\s*/, ''));
-
-  // 1) 직접 지정
-  if (말 && !['auto', '자동', '다시', '자세히', 'detail', '-v'].includes(말)) {
-    const 값 = parseSize(말);
-    if (!값) {
-      say(`  ${mark.no} 숫자를 못 읽었습니다: ${c.white(arg)}`);
-      say(`     ${c.gray('이렇게 쓰세요 —')} ${c.cyan('/ctx 655360')}  ${c.cyan('/ctx 640k')}  ${c.cyan('/ctx 128k')}  ${c.cyan('/ctx auto')}`);
-      say(`     ${c.gray('k 는 1024 입니다. 655,360 은 640k 이지 655k 가 아닙니다 — 헷갈리면 그냥 숫자로 쓰세요.')}`);
-      say('');
-      return;
-    }
-    남기기(값, '직접 지정');
-    say(`  ${c.gray('서버가 실제로 올려 둔 길이보다 크게 잡으면 긴 대화에서 거절당합니다.')}`);
-    say(`  ${c.gray('서버 쪽에서 올린 다음 맞추는 게 안전합니다 —')} ${c.cyan('/ctx auto')} ${c.gray('로 다시 잽니다.')}`);
-    say('');
-    return;
-  }
-
-  // 2) 다시 재기 (auto · 다시 · 자세히)
-  if (말) {
-    const 자세히 = /자세히|detail|-v/.test(말);
-    const s = spin('모델에 걸린 길이를 서버에 묻는 중…');
-    let r;
-    try { r = await probeCtx(session.conn); }
-    catch (err) { s.stop(`  ${mark.no} 못 물어봤습니다 — ${c.gray(String(err?.message ?? err))}`); say(''); return; }
-    s.stop('');
-
-    // 어디를 두드렸고 무엇이 나왔는지. 값이 이상할 때 사람이 원인을 짚을 수 있어야 한다.
-    if (자세히) {
-      say('');
-      say(`  ${c.gray('두드린 자리')}`);
-      for (const t of r.tried) {
-        const 표 = t.ok ? c.green('응답함') : c.gray(`${t.status || '연결 실패'}`);
-        say(`     ${c.gray(pad(t.label, 20))} ${표}  ${c.gray(clip(t.url, 60))}`);
-      }
-      say('');
-      say(`  ${c.gray('읽어 낸 값')}`);
-      say(`     ${c.gray(pad('모델 최대', 20))} ${r.max ? c.white(r.max.toLocaleString()) : c.gray('못 찾음')}`
-        + (r.maxKey ? c.gray(`  ← ${r.maxKey}`) : ''));
-      say(`     ${c.gray(pad('지금 올린 길이', 20))} ${r.loaded ? c.white(r.loaded.toLocaleString()) : c.gray('못 찾음')}`
-        + (r.loadedKey ? c.gray(`  ← ${r.loadedKey}`) : ''));
-      say(`     ${c.gray(pad('답 길이 상한', 20))} ${r.out ? c.white(r.out.toLocaleString()) : c.gray('못 찾음')}`
-        + (r.outSource ? c.gray(`  ← ${r.outSource}`) : ''));
-      say('');
-    }
-
-    // 답 길이 상한도 같이 알아냈으면 받아 둔다. 사람이 정한 값은 안 덮는다.
-    if (r.out) session.conn.maxOut = r.out;
-
-    if (!r.value) {
-      // 못 알아낸 것을 아는 척하지 않는다. 조용히 32,768 로 깔고 앉으면
-      // 655k 모델을 5% 만 쓰거나, 8k 서버에 128k 를 보내 조용히 잘린다.
-      say(`  ${mark.warn} 서버가 컨텍스트 길이를 안 알려줍니다. ${c.gray(r.why ?? '')}`);
-      if (!자세히) for (const t of r.tried) say(`     ${c.gray(pad(t.label, 20))} ${c.gray(t.ok ? '응답함(값 없음)' : `${t.status || '연결 실패'}`)}`);
-      say(`     ${c.gray(`지금은 ${(session.conn.ctx ?? 0).toLocaleString()} 으로 잡혀 있습니다 — 이건 알아낸 값이 아니라 기본값입니다.`)}`);
-      say(`     ${c.gray('직접 넣어 주세요 —')} ${c.cyan('/ctx 655360')}   ${c.gray('어디를 두드렸는지 보려면')} ${c.cyan('/ctx 자세히')}`);
-      say('');
-      return;
-    }
-    남기기(r.value, `${r.source ?? '서버'}에서 읽음`);
-    if (r.max && r.loaded && r.max > r.loaded) {
-      say(`  ${c.yellow('이 모델은')} ${c.bold(r.max.toLocaleString())} ${c.yellow('까지 되는데 지금')} ${c.bold(r.loaded.toLocaleString())} ${c.yellow('로 올려 두셨습니다.')}`);
-      say(`     ${c.gray('서버(LM Studio 등)에서 컨텍스트를 더 올려 다시 올린 뒤')} ${c.cyan('/ctx auto')} ${c.gray('를 하시면 그만큼 씁니다.')}`);
-      say('');
-    }
-    return;
-  }
-
-  // 3) 그냥 보기
-  const b = session.breakdown();
-  say('');
-  rule('컨텍스트 길이', 70);
-  say(`  ${c.bold(session.conn.model)}`);
-  say(`  ${c.gray('지금 잡은 길이')}   ${c.white(지금.toLocaleString())} ${c.gray('토큰 (' + fmtSize(지금) + ')')}`);
-  say(`  ${c.gray('찬 양')}           ${c.white(b.used.toLocaleString())} ${c.gray('· 남음 ' + b.left.toLocaleString())}`);
-  say('');
-  say(`  ${c.gray('이 값 하나가 프로그램 전체 크기를 정합니다 — 한 번에 읽힐 수 있는 파일 수,')}`);
-  say(`  ${c.gray('대화가 접히는 시점, 한 번에 쓸 수 있는 답 길이가 모두 여기서 나옵니다.')}`);
-  say('');
-  say(`  ${c.cyan('/ctx auto')}      ${c.gray('서버에 다시 물어 모델에 맞춥니다')}`);
-  say(`  ${c.cyan('/ctx 655360')}    ${c.gray('직접 지정 (640k · 128k · 1m 도 됩니다 — k 는 1024)')}`);
-  say(`  ${c.cyan('/out 32k')}      ${c.gray('한 번에 받을 답 길이 상한 (지금 ' + (session.conn.maxTokens ?? session.conn.maxOut ?? 16384).toLocaleString() + ') — 다른 축입니다')}`);
-  say('');
-}
-
-/** 지금 연결을 이 프로필로 갈아끼운다. 대화는 그대로 둔다. */
-function 연결적용(session, p, ctx = null) {
-  Object.assign(session.conn, {
-    kind: p.kind, base: p.baseUrl, auth: p.auth, key: resolveKey(p), model: p.model,
-    ctx: p.ctx, maxTokens: p.maxTokens ?? null,
-    streaming: p.streaming, tools: p.tools, json: p.json, think: p.think,
-    // 프로필마다 다를 수 있다 — 사내 게이트웨이는 잠잠 상한이 크고 로컬은 작다.
-    잠잠: p.잠잠 ?? p.streamIdleMs ?? 잠잠기본,
-    // 바이트는 오는데 내용이 안 올 때의 전체 상한 (backend/http.js 의 무소식기본).
-    무소식: p.무소식 ?? p.streamNoNewsMs ?? 무소식기본,
-    // 프로필마다 인증서가 다르다. 안 갈아 끼우면 옛 프로필의 신원으로 붙는다.
-    인증서: 인증서설정(p),
-    /*
-     * ── 이 두 줄이 없어서 회사 토큰이 남의 창구로 나갔다 ────────────────
-     *
-     * conn 을 짓는 자리는 넷이다 — repl.js · oneshot.js · acp/serve.js, 그리고
-     * 여기. 앞의 셋은 이 둘을 넣는데 여기만 빠져 있었다. 그래서 `/model` 로
-     * 갈아타면 **옛 프로필의 것이 그대로 남았다.**
-     *
-     *   회사 프로필(열쇠받기로 SSO 토큰을 받아 온다) → /model 남의창구
-     *     · 살아 있는 회사 토큰이 `Authorization` 에 실려 남의 host 로 간다
-     *     · 새 프로필의 제 열쇠(conn.key)는 **쓰이지도 않는다** —
-     *       adapter.js 의 머리말짓기 는 열쇠받기가 있으면 그쪽을 쓴다
-     *     · 남의 창구는 그 토큰을 모르니 401, 그러면 로그인 명령을 다시 돌린다
-     *
-     * 반대쪽도 같다. 맨 프로필에서 회사 프로필로 옮기면 열쇠받기가 null 로
-     * 남아 401 뒤에 열쇠를 다시 받는 길이 잠긴다(adapter.js 의 열쇠다시받을까).
-     *
-     * vision 도 같은 값이다 — 안 옮기면 그림을 못 보는 모델에 그림을 보낸다.
-     */
-    열쇠받기: 받기설정(p, { 정책값: 정책읽기().값 }),
-    vision: p.vision ?? false,
-  });
-  /*
-   * 들고 있던 토큰도 버린다.
-   *
-   * 열쇠받기 설정을 새것으로 갈아도, authcmd.js 가 **모듈 전역 하나**에
-   * 받은 토큰을 들고 있다(받은것). 어느 프로필 것인지는 안 적혀 있다. 그래서
-   * 안 버리면 새 창구의 첫 요청에 옛 회사 토큰이 그대로 실려 나간다 — 위에서
-   * 고친 것을 캐시가 도로 되돌리는 셈이다.
-   *
-   * 이 함수의 머리말이 「검사와 `/model` 갈아타기가 부른다」 라고 적혀 있었는데
-   * 부르는 곳이 검사밖에 없었다. 이제 적힌 대로가 된다.
-   */
-  받은열쇠잊기();
-  /*
-   * 급도 다시 맨다.
-   *
-   * 급은 conn 을 보고 매긴다(agent/grade.js 의 매김). 모델을 갈아탔는데 앞
-   * 모델로 매긴 급을 턴 끝까지 들고 있으면, 화면에 적힌 급과 프롬프트에 실린
-   * 급이 서로 다른 모델 이야기가 된다.
-   */
-  session.급다시재기?.();
-  // 자물쇠도 같이 옮긴다. 이걸 빼먹으면 옛 주소가 열린 채로 남고 새 주소는 막혀
-  // 다음 한마디에서 바로 "허용되지 않은 주소" 가 난다.
-  allowEndpoint(p.baseUrl);
-  // 어디 것인지도 같이 옮긴다. 요금표 주소 같은 안내가 옛 회사 것으로 남으면
-  // 사람이 엉뚱한 요금표를 보러 간다.
-  session.제공자 = p.제공자 ?? null;
-
-  /*
-   * 전선 카드도 **다시 달아 준다** (backend/wire.js).
-   *
-   * 안 다시 달면 옛 창구의 카드가 그대로 붙어 있다. 그것만으로 이런 일이
-   * 난다 — Anthropic 으로 옮겼는데 카드는 `생각형식:'effort'` 라 생각이 안
-   * 켜지고, `캐시:'열쇠'` 라 **캐시 표식이 한 자리도 안 붙는다.** 반대로
-   * OpenAI 호환으로 옮기면 `스트림usage:false` 가 남아 usage 가 영영 안 와서
-   * 상태줄의 ↑↓ 가 멈춰 선다. 그러면서 `/status` 는 옛 카드를 그대로 적는다 —
-   * 화면과 전선이 어긋나는 것, 이 모듈이 없애겠다고 만든 바로 그 고장이다.
-   *
-   * 지우고 새로 단다. 안 지우면 `배운칸` 이 따라붙어서, 옛 창구가 거절한
-   * 칸이 새 창구에서 「배운 것」 으로 남는다.
-   */
-  session.conn.전선 = null;
-  전선붙이기(session.conn, ctx?.배움 ?? null);
-}
-
-/**
- * 지금 붙어 있는 서버가 내주는 모델 목록.
- *
- * 저장된 프로필에는 등록할 때 고른 모델 하나만 있다. 그런데 서버 한 대가
- * 모델을 여럿 내주는 경우가 대부분이다 — 특히 프록시나 게이트웨이가 그렇다.
- * 그래서 서버에 직접 물어본다. 자리를 새로 여는 게 아니라 이미 열린 자리다.
- */
-async function 서버모델들(conn) {
-  const { req, headersFor } = await import('./backend/http.js');
-  if (conn.kind === 'ollama') {
-    const r = await req(`${conn.base.replace(/\/v1\/?$/, '')}/api/tags`, { timeout: 4000 });
-    /*
-     * **못 받은 것**과 **안 내주는 것**은 다르다.
-     *
-     * req 는 통신 실패에 안 던지고 `{ok:false, status, error}` 를 준다. 여기만
-     * 그 ok 를 안 보고 빈 배열을 돌려줘서, 404·500·시간초과·프록시 거절이
-     * 전부 「이 서버는 모델 목록을 내주지 않습니다」 가 됐다. 다른 갈래는
-     * 아래처럼 null 을 준다 — 같은 함수가 갈래마다 다른 약속을 하고 있었다.
-     */
-    if (!r.ok) return null;
-    return (r.json?.models ?? []).map((m) => m.name ?? m.model).filter(Boolean);
-  }
-  /*
-   * Azure 는 모델 목록이 `/models` 가 아니라 `/openai/deployments` 에 있다.
-   * 여기를 안 고쳐 두면 `/model` 로 배포를 바꾸려는 순간
-   * `.../deployments/gpt-4o?api-version=2024-10-21/models` 를 두드리고 404 다 —
-   * 붙는 길만 고치고 바꾸는 길을 안 고치면 반쪽이다.
-   */
-  const { 애저인가, 애저풀기, 배포목록 } = await import('./backend/azure.js');
-  if (애저인가(conn.base)) {
-    const 푼것 = 애저풀기(conn.base);
-    const a = await req(푼것.목록주소,
-      { headers: headersFor(conn.auth ?? 'none', conn.key, 더할머리(conn.kind)), timeout: 4000 });
-    if (!a.ok) return null;
-    return 배포목록(a.json).map((m) => m.id);
-  }
-  /*
-   * 판 머리를 같이 얹는다 (adapter.js 의 더할머리).
-   *
-   * Anthropic 은 `anthropic-version` 이 없으면 400 이다. 이 자리가 그것을
-   * 빠뜨리고 있어서, 그 창구에서는 `/model` 이 목록을 못 받아 왔다 — 그리고
-   * 목록을 못 받으면 화면은 「모델이 없습니다」 라고 적는다. 있는데.
-   */
-  const r = await req(`${conn.base.replace(/\/$/, '')}/models`, {
-    headers: headersFor(conn.auth ?? 'none', conn.key, 더할머리(conn.kind)), timeout: 4000,
-  });
-  if (!r.ok) return null;
-  const list = r.json?.data ?? r.json?.models ?? [];
-  return Array.isArray(list)
-    ? list.map((m) => (typeof m === 'string' ? m : m.id ?? m.name ?? m.model)).filter(Boolean)
-    : null;
-}
-
-/**
- * /model — 연결·모델 바꾸기.
- *
- *   /model            골라 바꾸기 (연결 목록 + '이 서버의 다른 모델')
- *   /model <이름>     바로 바꾸기. 연결 이름이든 모델 이름이든 일부만 쳐도 된다
- *   /model list       무엇이 등록돼 있는지만 보기
- *   /model models     지금 서버가 내주는 모델을 물어보기
- */
-async function switchModel(session, ctx, arg = '') {
-  const cfg = load();
-  if (!cfg.profiles.length) {
-    say(`  ${c.gray('저장된 연결이 없습니다.')} ${c.cyan('deel setup')} ${c.gray('또는')} ${c.cyan('deel scan --save')}`);
-    say('');
-    return;
-  }
-  const 말 = arg.trim();
-
-  if (말 === 'list' || 말 === '목록') return 연결목록(cfg, session);
-  if (말 === 'models' || 말 === '모델') return await 서버모델고르기(session, ctx, cfg);
-
-  // 이름으로 바로 바꾸기 — 메뉴를 안 거친다.
-  if (말) {
-    const 찾은 = 이름으로찾기(cfg.profiles, 말);
-    if (찾은.length === 1) return await 골라적용(session, cfg, 찾은[0], ctx);
-    if (찾은.length > 1) {
-      say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 것이 여럿입니다.')}`);
-      for (const p of 찾은.slice(0, 12)) say(`    ${c.cyan(p.name)}  ${c.gray(p.model)}`);
-      say('');
-      return;
-    }
-    // 등록된 것에 없으면, 지금 서버가 내주는 모델 중에 있는지 본다.
-    const 있는것 = await 서버모델들(session.conn);
-    const 맞는것 = (있는것 ?? []).filter((m) => m.toLowerCase().includes(말.toLowerCase()));
-    if (맞는것.length === 1) return await 모델만바꾸기(session, cfg, 맞는것[0], ctx);
-    if (맞는것.length > 1) {
-      say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 모델이 여럿입니다.')}`);
-      for (const m of 맞는것.slice(0, 12)) say(`    ${c.cyan(m)}`);
-      say('');
-      return;
-    }
-    // 목록을 **못 받은** 것을 「없다」 로 적으면, 사람은 있는 모델을 찾아 헤맨다.
-    if (있는것 == null) {
-      say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 연결이 없고, 서버에는 물어봤지만 목록을 못 받았습니다.')}`);
-    } else {
-      say(`  ${mark.warn} ${c.white(말)} ${c.gray('에 맞는 연결도 모델도 없습니다.')}`);
-    }
-    say(`  ${c.gray('무엇이 있는지 보려면')} ${c.cyan('/model list')}${c.gray(', 서버에 물어보려면')} ${c.cyan('/model models')}`);
-    say('');
-    return;
-  }
-
-  // 인자 없이 — 골라 바꾸기. 물어볼 수 없는 자리면 목록만 보여준다.
-  if (!ctx?.ask) return 연결목록(cfg, session);
-
-  const items = cfg.profiles.map((p) => ({
-    label: `${pad(p.name, 22)} ${c.gray(p.model)}`,
-    note: p.id === cfg.active ? '지금' : '',
-  }));
-  items.push({ label: c.cyan('이 서버의 다른 모델 고르기'), note: '서버에 물어봅니다' });
-
-  const i = await pick('연결·모델 고르기', items, {
-    def: Math.max(0, cfg.profiles.findIndex((p) => p.id === cfg.active)),
-    ask: ctx?.ask,
-  });
-  if (i === cfg.profiles.length) return await 서버모델고르기(session, ctx, cfg);
-  return await 골라적용(session, cfg, cfg.profiles[i], ctx);
-}
-
-function 이름으로찾기(profiles, 말) {
-  const q = 말.toLowerCase();
-  const 정확 = profiles.filter((p) => p.name.toLowerCase() === q || p.model.toLowerCase() === q || p.id.toLowerCase() === q);
-  if (정확.length) return 정확;
-  return profiles.filter((p) => `${p.name} ${p.model} ${p.id}`.toLowerCase().includes(q));
-}
-
-/*
- * 이 프로필로 갈아타면 바깥으로 나가는가. 나가면 한 번 묻는다.
- *
- * 켤 때 지나는 문(repl.js)과 **같은 문**이다. 여기를 안 지키면 자물쇠가
- * 반쪽이 된다 — 로컬로 켜서 물음을 지나친 다음, /model 로 바깥 프로필에
- * 갈아타는 순간 아무것도 안 묻고 나간다. 실제로 그렇게 쓴다: 한 시간쯤
- * 로컬로 하다가 「이건 큰 모델이 낫겠다」 하고 옮긴다.
- *
- * 허락은 프로필에 적힌다. 갈아탈 때마다 묻지 않는다.
- */
-async function 나가도되나묻기(session, p) {
-  const 모드 = session.실행모드 ?? 지금모드({});
-  const 나감 = 나갈수있나(모드, { 바깥: 바깥인가(p.baseUrl), 허가: p.online === true });
-  if (나감.되나) return true;
-
-  const 어디 = 주소가리기((() => { try { return new URL(p.baseUrl).host; } catch { return String(p.baseUrl); } })());
-  if (!나감.물어볼까) {
-    // 봉인이다. 여기서 바꿔 주면 다음 한마디에서 막히는데, 그 화면만 보고는
-    // 왜 막혔는지 알 수 없다 — 바꾸기 전에 말하는 편이 언제나 낫다.
-    say(`  ${mark.warn} ${c.gray(`${어디} 는 이 컴퓨터 밖입니다. 지금은`)} ${c.white('봉인(--offline)')} ${c.gray('이라 안 바꿉니다.')}`);
-    say('');
-    return false;
-  }
-  say('');
-  say(`  ${c.yellow('↗')} ${c.bold(어디)} ${c.gray('는 이 컴퓨터 밖입니다.')}`);
-  say(`     ${c.gray('바꾸면 시킨 말과, 모델이 읽은 파일의 내용이 그리로 갑니다.')}`);
-  const 예 = await confirm('나가도 될까요? (한 번 허락하면 이 연결은 다음부터 안 묻습니다)', true);
-  if (!예) {
-    say(`  ${c.gray('안 바꿨습니다. 아무것도 안 보냈습니다.')}`);
-    say('');
-    return false;
-  }
-  p.online = true;
-  return true;
-}
-
-async function 골라적용(session, cfg, p, ctx = null) {
-  if (!await 나가도되나묻기(session, p)) return;
-  cfg.active = p.id;
-  설정남기기(cfg);
-  연결적용(session, p, ctx);
-  say(`  ${mark.ok} ${c.bold(p.name)} ${c.gray(p.model)} 로 바꿨습니다. 대화는 이어집니다.`);
-  say('');
-}
-
-/**
- * 같은 서버에서 모델만 바꾼다.
- *
- * 등록된 연결이 아니어도 된다 — 서버가 내준다면 쓸 수 있어야 한다.
- * 다음에도 쓰도록 프로필로 남겨 둔다. 그래야 /model 목록에서 다시 보인다.
- */
-async function 모델만바꾸기(session, cfg, 모델, ctx = null) {
-  const 지금 = cfg.profiles.find((p) => p.id === cfg.active) ?? cfg.profiles[0];
-  const 이미 = cfg.profiles.find((p) => p.baseUrl === session.conn.base && p.model === 모델);
-  const p = 이미 ?? {
-    ...지금,
-    id: `${(지금?.id ?? 'conn').replace(/-[^-]*$/, '')}-${String(모델).replace(/[^a-zA-Z0-9._-]+/g, '-')}`.slice(0, 60).toLowerCase(),
-    name: `${(지금?.name ?? '연결').split(' · ')[0]} · ${모델}`,
-    baseUrl: session.conn.base,
-    model: 모델,
-    // 컨텍스트 길이는 물려받지 않는다. 모델마다 다르다 —
-    // 32k 짜리에서 655k 짜리로 옮겼는데 32k 로 깔고 앉으면 새 모델의 5% 만 쓴다.
-    // 반대로 큰 데서 작은 데로 옮기면 긴 대화에서 서버가 거절한다. 아래에서 다시 잰다.
-    ctx: null,
-  };
-  // 서버는 그대로지만 문은 같이 지난다. 등록 안 된 서버로 옮겨 가는 길도
-  // 여기라서, 여기를 열어 두면 자물쇠에 구멍이 하나 남는다.
-  if (!await 나가도되나묻기(session, p)) return;
-  /*
-   * 새로 만든 프로필도 **지금 쓰는 것**으로 못 박는다.
-   *
-   * upsert 는 active 가 비어 있을 때만 채운다. 여기서는 이미 차 있으므로,
-   * 새 프로필을 넣기만 하고 active 는 옛 모델에 그대로 남았다 — 화면에는
-   * 「모델을 X 로 바꿨습니다」 라고 적히고, 다음에 켜면 옛 모델로 돌아온다.
-   * 이미 있는 프로필로 갈아탈 때(아래 갈래)는 제대로 하고 있었다.
-   */
-  if (!이미) upsert(cfg, p);
-  cfg.active = p.id;
-  설정남기기(cfg);
-  연결적용(session, p, ctx);
-  say(`  ${mark.ok} 모델을 ${c.bold(모델)} 로 바꿨습니다. ${c.gray('서버는 그대로입니다.')}`);
-  await 길이맞추기(session, cfg, p);
-  say('');
-}
-
-/**
- * 바뀐 모델에 맞춰 컨텍스트 길이를 다시 잰다.
- *
- * 모델을 바꾸는 순간은 이미 서버와 이야기하는 중이라 한 번 더 물어봐도 티가 안 난다.
- * 여기서 안 재면 새 모델을 옛 모델의 길이로 쓰게 된다 — 화면에는 아무 표시도 안 나고
- * 그냥 조용히 작아진다. 그런 고장이 가장 늦게 발견된다.
- */
-async function 길이맞추기(session, cfg, prof) {
-  const { probeCtx, fmtSize, 기본값 } = await import('./backend/ctxsize.js');
-  let r = null;
-  // 물어보다 **터진 것**과 서버가 값을 **안 준 것**은 다르다. 아래에서 갈라 적는다.
-  let 못물어본까닭 = null;
-  try { r = await probeCtx(session.conn, { timeout: 8000 }); }
-  catch (e) { 못물어본까닭 = String(e?.message ?? e); }
-  const 값 = r?.value ?? prof.ctx ?? 기본값;
-  session.conn.ctx = 값;
-  if (prof) {
-    prof.ctx = 값;
-    설정남기기(cfg);
-  }
-  /*
-   * 어디서 온 값인지 **세 가지를 갈라** 적는다.
-   *
-   * 앞서는 물어보다 터진 것도, 서버가 안 준 것도, 프로필에 적혀 있던 값을
-   * 물려받은 것도 전부 「서버가 안 알려줘 기본값」 이었다. 값이 655,360 인데
-   * 출처는 「기본값」 이라고 적히는 판이 실제로 난다 — /ctx 화면은 출처를
-   * 정성껏 가르는데 이 줄만 뭉갰다.
-   */
-  const 어디서 = r?.source ? r.source + '에서 읽음'
-    : 못물어본까닭 ? '못 물어봤습니다 — ' + clip(못물어본까닭, 50)
-      : r?.value == null && prof?.ctx ? '이 프로필에 적혀 있던 값'
-        : '서버가 안 알려줘 기본값';
-  say(`     ${c.gray('컨텍스트')} ${c.white(값.toLocaleString())} ${c.gray('토큰 (' + fmtSize(값) + ') — ' + 어디서)}`);
-  if (r?.max && r?.loaded && r.max > r.loaded) {
-    say(`     ${c.yellow('이 모델은 ' + r.max.toLocaleString() + ' 까지 됩니다.')} ${c.gray('서버에서 더 올린 뒤')} ${c.cyan('/ctx auto')}`);
-  } else if (!r?.value) {
-    say(`     ${c.gray('맞지 않으면')} ${c.cyan('/ctx 655360')} ${c.gray('처럼 직접 지정하세요.')}`);
-  }
-}
-
-function 연결목록(cfg, session) {
-  rule('등록된 연결', 70);
-  for (const p of cfg.profiles) {
-    const 지금 = p.id === cfg.active;
-    say(`  ${지금 ? c.hgreen('●') : c.gray('·')} ${지금 ? c.bold(c.white(pad(p.name, 26))) : pad(p.name, 26)}${c.gray(p.model)}`);
-    say(`      ${c.gray(p.baseUrl)}`);
-  }
-  say('');
-  say(`  ${c.gray('바꾸려면')} ${c.cyan('/model <이름 일부>')}${c.gray(' — 연결 이름이든 모델 이름이든 됩니다.')}`);
-  say(`  ${c.gray('이 서버가 내주는 다른 모델을 보려면')} ${c.cyan('/model models')}`);
-  say('');
-}
-
-async function 서버모델고르기(session, ctx, cfg) {
-  const s = spin('서버에 모델 목록을 물어보는 중…');
-  let 있는것;
-  /*
-   * 무엇 때문에 못 받았는지를 **버리지 않는다.**
-   *
-   * 여기 catch 는 오프라인 잠금(NetBlocked)까지 삼켰다. 그러면 자물쇠가 막은
-   * 것을 「이 서버는 목록을 안 내줍니다」 라고 서버 탓으로 돌리게 된다 —
-   * 잠금이 화면에서 사라지는 것은 이 저장소가 여러 군데서 막으려던 그 꼴이다.
-   */
-  let 못받은까닭 = null;
-  try { 있는것 = await 서버모델들(session.conn); }
-  catch (e) { 있는것 = null; 못받은까닭 = String(e?.message ?? e); }
-  s.stop('');
-  if (!있는것 || !있는것.length) {
-    if (못받은까닭) say(`  ${mark.warn} 모델 목록을 못 받았습니다 ${c.gray('— ' + clip(못받은까닭, 70))}`);
-    else if (있는것 == null) say(`  ${mark.warn} 모델 목록을 못 받았습니다 ${c.gray('— 서버가 답을 안 주거나 주소·열쇠가 안 맞습니다.')}`);
-    else say(`  ${mark.warn} 이 서버는 모델 목록을 내주지 않습니다.`);
-    say(`  ${c.gray('목록이 없는 게이트웨이도 있습니다. 그때는')} ${c.cyan('deel setup')} ${c.gray('에서 모델 이름을 직접 넣으세요.')}`);
-    say('');
-    return;
-  }
-  // 물어볼 수 없는 자리면 목록만 보여주고 끝낸다.
-  //
-  // 여기서 그냥 pick 을 부르면 표준입력을 붙잡고 영영 안 끝난다.
-  // 파이프로 넣거나 검사에서 돌릴 때가 그렇다 — 멈춘 것처럼 보이고 끊는 수밖에 없다.
-  if (!ctx?.ask) {
-    rule(`이 서버의 모델 (${있는것.length}개)`, 70);
-    for (const m of 있는것) say(`  ${m === session.conn.model ? c.hgreen('●') : c.gray('·')} ${m === session.conn.model ? c.bold(m) : m}`);
-    say('');
-    say(`  ${c.gray('바꾸려면')} ${c.cyan('/model <이름 일부>')}`);
-    say('');
-    return;
-  }
-
-  const i = await pick(`이 서버의 모델 (${있는것.length}개)`, 있는것.map((m) => ({
-    label: m, note: m === session.conn.model ? '지금' : '',
-  })), {
-    def: Math.max(0, 있는것.indexOf(session.conn.model)),
-    ask: ctx.ask,
-  });
-  const 고른것 = 있는것[i];
-  if (고른것 === session.conn.model) {
-    say(`  ${c.gray('그대로 둡니다.')}`);
-    say('');
-    return;
-  }
-  await 모델만바꾸기(session, cfg, 고른것, ctx);
 }
 
 const INIT_TEMPLATE = `# DEEL.md
@@ -3712,36 +1856,3 @@ const INIT_TEMPLATE = `# DEEL.md
 - 고치기 전에 관련 파일을 먼저 읽는다
 - (프로젝트에 맞는 규칙을 적으세요)
 `;
-
-// /work 를 인자 없이 부르면 지금 모드와 고를 수 있는 것들을 보여 준다.
-function showWork(session) {
-  rule(말('work.title'), 70);
-  /*
-   * 이름 칸을 **제일 긴 이름에 맞춰** 잡는다.
-   *
-   * 8칸으로 못 박아 뒀더니 Orchestrator(12자)가 칸을 넘어 다음 칸을 밀었다.
-   * 화면에 `OrchestratorOrchestrator` 라고 붙어 나왔다 — 사진을 찍어 보고서야
-   * 알았다. 목록의 값은 칸이 맞아야 목록이다.
-   */
-  const 이름들 = WORK_ORDER.map((k) => 보일이름(WORK_MODES[k].id));
-  const 칸너비 = Math.max(...이름들.map((n) => width(n))) + 2;
-  // 영어 화면에서는 이름과 영문 이름이 같은 글자다. 같은 것을 두 번 적지 않는다.
-  const 영문칸 = 언어() === 'en' ? 0 : 14;
-
-  for (const k of WORK_ORDER) {
-    const w = WORK_MODES[k];
-    const 지금 = k === (normWork(session.work) ?? WORK_DEFAULT);
-    const 표 = 지금 ? c.hgreen('●') : c.gray('·');
-    const 보임 = pad(보일이름(w.id), 칸너비);
-    const 이름 = 지금 ? c.bold(c.white(보임)) : c.gray(보임);
-    say(`  ${표} ${c.hcyan(w.glyph)} ${이름}${영문칸 ? c.gray(pad(w.en, 영문칸)) : ''}${c.gray(보일한줄(w.id))}`);
-    const 강도 = `${w.think ?? '—'}·${w.effort}`;
-    const 걸음 = 말('work.steps', { n: 걸음수(k, session.conn?.ctx) });
-    say(`        ${canWrite(k) ? c.gray(말('work.canEdit')) : c.green(말('work.readOnly'))}`
-      + `${c.gray(`  ·  ${말('work.think')} ${강도}  ·  ${걸음}`)}`);
-  }
-  say('');
-  say(`  ${c.gray(말('work.howTo', { a: c.cyan('/plan'), b: c.cyan('/code'), c: c.cyan('/debug'), 키: c.cyan('Ctrl+O') }))}`);
-  say(`  ${c.gray(말('work.axis', { 명령: c.cyan('/mode') }))}`);
-  say('');
-}

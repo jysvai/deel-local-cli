@@ -94,7 +94,7 @@ deel 쪽 탐지 경로는 「서버 50개 기준선 → 아직 안 재 본 클�
 못 본 검사는 안 돌고, 안 돈 검사는 회귀를 못 잡습니다.
 
 **1.17.7 에서 고쳤습니다** — `Verify` 가 이제 확인 방법을 **전부** 찾아
-알려 줍니다(`src/tools/확인법.js`). npm 스크립트의 `test`·`lint`·`typecheck`·
+알려 줍니다(`src/tools/checkmethods.js`). npm 스크립트의 `test`·`lint`·`typecheck`·
 `e2e` 칸, `scripts/`·`test/`·`tools/` 밑의 독립 검사 파일, 그리고 표식이 실재할
 때의 `cargo test`·`go test`·`pytest`·`make test` 까지 봅니다.
 

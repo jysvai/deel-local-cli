@@ -32,6 +32,28 @@ const euckr한글 = Buffer.from([
 ]);
 
 const 받은요청 = [];
+/*
+ * 아주 큰 몸을 흘려 보낸다. **실제로 내보낸 바이트**를 센다.
+ *
+ * 받는 쪽이 흐름을 끊으면 쓰기가 막히고(drain 이 안 온다) 소켓이 닫힌다 — 그러면
+ * 여기서 멈춘다. 다 받아서 버리는 쪽이면 끝까지 다 나간다. 그 차이를 잰다.
+ */
+const 큰몸 = 96 * 1024 * 1024;
+const 보낸양 = {};
+function 붓기(res, 열쇠) {
+  const 조각 = Buffer.alloc(1024 * 1024, 0x41);
+  보낸양[열쇠] = 0;
+  let 닫힘 = false;
+  res.on('close', () => { 닫힘 = true; });
+  const 쓰기 = () => {
+    while (!닫힘 && 보낸양[열쇠] < 큰몸) {
+      보낸양[열쇠] += 조각.length;
+      if (!res.write(조각)) { res.once('drain', 쓰기); return; }
+    }
+    if (!닫힘) res.end();
+  };
+  쓰기();
+}
 const server = createServer((req, res) => {
   let body = '';
   req.on('data', (d) => (body += d));
@@ -82,6 +104,17 @@ const server = createServer((req, res) => {
         euckr한글,
         Buffer.from('</p></body></html>', 'latin1'),
       ]));
+    }
+    /*
+     * 서버 기본값이 **한 바이트짜리** 인코딩인 판 (막판 훑기).
+     *
+     * 옛 아파치·IIS 가 `charset=iso-8859-1` 을 기본으로 붙인다. 그런데 한 바이트
+     * 인코딩은 모든 바이트에 글자가 있어서 아무리 엉뚱하게 읽어도 � 가 0 이다 —
+     * 그래서 「깨진 글자를 세어 되읽는다」 는 문이 이 판에서만 한 번도 안 열렸다.
+     */
+    if (req.url === '/latin1header') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=iso-8859-1' });
+      return res.end(Buffer.from('<html><head><meta charset="utf-8"></head><body><p>한글이 그대로 보입니다</p></body></html>', 'utf8'));
     }
     // 머리글은 utf-8, 알맹이는 Shift_JIS, meta 에만 진짜가 적힌 일본어 페이지.
     // 내용만 보고 짐작하는 쪽(encoding.js)은 우리말 쪽으로 기울어 있어 여기서 깨진다.
@@ -144,6 +177,64 @@ const server = createServer((req, res) => {
       return res.end(JSON.stringify(것, null, 2));
     }
 
+    // ── 버릴 몸이 아주 큰 답들 (사냥4 W2) ──────────────────────────────
+    // 되돌림·그림·404 의 몸은 안 읽고 버리는 것인데, 버리는 방법이 「다 받아서
+    // 버리기」 였다. 몇백 MB 를 흘려 보내며 **실제로 얼마나 보냈나** 를 센다.
+    if (req.url === '/redirect-big') { res.writeHead(302, { Location: '/page', 'Content-Type': 'text/plain' }); return 붓기(res, req.url); }
+    if (req.url === '/png-big') { res.writeHead(200, { 'Content-Type': 'image/png' }); return 붓기(res, req.url); }
+    if (req.url === '/404-big') { res.writeHead(404, { 'Content-Type': 'text/plain' }); return 붓기(res, req.url); }
+    // charset=utf-8 이라고 적었고 알맹이도 UTF-8 인데, 한 바이트만 어긋난 페이지 (W4).
+    if (req.url === '/utf8-stray') {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end(Buffer.concat([Buffer.from('안녕하세요 한글 문서입니다. '.repeat(20), 'utf8'), Buffer.from([0xff]), Buffer.from(' 끝', 'utf8')]));
+    }
+    // 머리글은 utf-8, 알맹이는 EUC-KR, meta 도 없다 — 내용으로 짐작하는 길이 살아 있어야 한다.
+    if (req.url === '/euckr-nometa') {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end(euckr한글);
+    }
+    // Content-Type 이 아예 없는 200 (W18). 글이면 읽고, 바이너리면 거절해야 한다.
+    if (req.url === '/notype') { res.writeHead(200); return res.end('<html><body><p>갈래 없는 글입니다</p></body></html>'); }
+    if (req.url === '/notype-bin') { res.writeHead(200); return res.end(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48])); }
+    // 숫자로 적은 제어 문자·방향 뒤집기·외톨이 대리쌍, 그리고 흔한 이름 꼴 (W16).
+    if (req.url === '/entities') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end('<p>c1=[&#x9b;31m] bidi=[&#x202e;] iso=[&#x2066;] lone=[&#xD800;] del=[&#127;] mid=[&middot;] hell=[&hellip;] copy=[&copy;]</p>');
+    }
+    // 이름 자리에 **Object.prototype 의 이름**을 적어 보내는 페이지 (8회차 · 바깥).
+    // 엔티티 이름을 객체 열쇠로 그냥 찾으면 여기서 함수가 나오고, 그걸 글자 번호로
+    // 쓰려다 RangeError 가 나서 **페이지 전체가 오류 한 줄로 바뀐다.**
+    if (req.url === '/proto-entities') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end('<p>a=[&toString;] b=[&constructor;] c=[&valueOf;] d=[&middot;] 본문은 남아야 한다</p>');
+    }
+    // 갈래는 JSON 인데 머리글 파라미터에 html 이라는 글자가 든 답 (8회차 · 바깥).
+    // 파라미터까지 묶어서 갈래로 보면 JSON 본문의 `<b>` 가 태그로 지워진다.
+    if (req.url === '/json-name-html') {
+      res.writeHead(200, { 'Content-Type': 'application/json; name="index.html"' });
+      return res.end('{"본문":"<b>굵게</b>","식":"1 < 5"}');
+    }
+    // 첫 회차만 딴 곳으로 되돌리고, 그 뒤로는 되돌림 없이 503 (8회차 · 바깥).
+    // 회차마다 「닿은 곳」 을 안 되돌리면 되돌림이 없던 회차도 앞 회차 주소로 적힌다.
+    if (req.url === '/once-redirect') {
+      몇번되돌림 += 1;
+      if (몇번되돌림 === 1) { res.writeHead(302, { Location: '/redirected-503' }); return res.end(''); }
+      res.writeHead(503, { 'Content-Type': 'text/plain', 'Retry-After': '0' });
+      return res.end('down');
+    }
+    if (req.url === '/redirected-503') {
+      res.writeHead(503, { 'Content-Type': 'text/plain', 'Retry-After': '0' });
+      return res.end('down');
+    }
+    // 잘리는 자리에 대리쌍이 걸치는 글 (W17). 999자 뒤에 네 바이트짜리 글자 하나.
+    if (req.url === '/surrogate') {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end('a'.repeat(999) + String.fromCodePoint(0x1f600) + 'b'.repeat(50));
+    }
+    // 되돌림 고리와 읽을 수 없는 Location (W19).
+    if (req.url === '/loop') { res.writeHead(302, { Location: '/loop' }); return res.end(); }
+    if (req.url === '/badloc') { res.writeHead(302, { Location: 'http://[::1' }); return res.end(); }
+
     // 같은 집에 동시에 몇 번 두드려졌나.
     if (req.url.startsWith('/slow')) {
       동시++; 최대동시 = Math.max(최대동시, 동시);
@@ -159,6 +250,7 @@ const server = createServer((req, res) => {
   });
 });
 let 몇번429 = 2;
+let 몇번되돌림 = 0;
 let 동시 = 0;
 let 최대동시 = 0;
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -393,6 +485,16 @@ check('다녀온 곳이 기록에 남음', 방문기록.length > 0, `${방문기
     /한글이 그대로 보입니다/.test(틀린머리글.content ?? ''),
     JSON.stringify((틀린머리글.content ?? 틀린머리글.error ?? '').slice(-40)));
 
+  /*
+   * ★★ 서버 기본값이 한 바이트짜리 인코딩이면 � 수가 아무것도 안 말해 준다 (막판 훑기).
+   * iso-8859-1 · windows-1252 는 모든 바이트에 글자가 있어 � 가 0 이고, 그래서 되읽기
+   * 문이 정작 이 판에서만 한 번도 안 열렸다. 깨진 글이 소리 없이 모델에게 갔다.
+   */
+  const 라틴머리글 = await webFetch({ url: `http://127.0.0.1:${port}/latin1header` }, { allowPrivate: true });
+  check('★★ 머리글이 iso-8859-1 이어도 meta 의 utf-8 을 보고 되읽는다',
+    /한글이 그대로 보입니다/.test(라틴머리글.content ?? ''),
+    JSON.stringify((라틴머리글.content ?? 라틴머리글.error ?? '').slice(-60)));
+
   const 일본 = await webFetch({ url: `http://127.0.0.1:${port}/sjis` }, { allowPrivate: true });
   check('★★ 머리글이 틀린 일본어 페이지도 안 깨진다',
     /日本語のページです/.test(일본.content ?? ''),
@@ -440,8 +542,10 @@ check('다녀온 곳이 기록에 남음', 방문기록.length > 0, `${방문기
 {
   // 안내에 적힌 상한이 실제와 달랐다 — 모델이 그 수를 믿고 max_chars 를 정한다.
   const 글 = JSON.stringify(toolSchemas().find((t) => t.function?.name === 'WebFetch') ?? {});
+  // 앞 판은 「옛 수가 없거나 새 수가 있으면」 이라 **설명에 수가 아예 없어도** 초록이었다.
+  // 모델은 그 수를 믿고 max_chars 를 정하므로, 실제 상한(120000)이 적혀 있고 옛 수는 없어야 한다.
   check('★ 도구 설명의 상한과 실제 상한이 같다',
-    !/100,000|100000/.test(글) || /120000/.test(글), '');
+    /120,?000/.test(글) && !/100,?000/.test(글), 글.match(/최대[^"]{0,20}|max[^"]{0,20}/i)?.[0] ?? '(수가 안 적혀 있다)');
 }
 
 // ── 멈춤과 줄 서기 ──────────────────────────────────────────────────────
@@ -483,6 +587,204 @@ check('다녀온 곳이 기록에 남음', 방문기록.length > 0, `${방문기
   }
   const 혼자 = Math.min(...혼자잰것);
   check('★ 줄이 비면 다음 사람이 안 기다린다', 혼자 < 200, `${혼자}ms · ${혼자잰것.join('/')}ms`);
+}
+
+// ── 사냥4: 버리는 몸 · 인코딩 · 글자 · 갈래 · 되돌림 말 ────────────────────
+{
+  /*
+   * W2 — 안 읽을 몸은 **안 받는다.**
+   *
+   * 되돌림(302)·그림·404 의 몸은 버리는 것인데, 버리기가 `arrayBuffer()` 였다.
+   * 버리려고 끝까지 받아서 메모리에 올렸다 — 300MB 짜리 302 하나에 900MB.
+   */
+  const 잴것 = [['/redirect-big', '되돌림(302)'], ['/png-big', '글이 아닌 것'], ['/404-big', '404']];
+  for (const [길, 이름] of 잴것) {
+    const r = await webFetch({ url: `http://127.0.0.1:${port}${길}` }, { allowPrivate: true });
+    await new Promise((x) => setTimeout(x, 150));
+    check(`★★ ${이름} 의 큰 몸은 끝까지 안 받고 끊는다`, (보낸양[길] ?? 0) < 큰몸 / 2,
+      `보낸 것 ${Math.round((보낸양[길] ?? 0) / 1048576)}MB / ${큰몸 / 1048576}MB · ${JSON.stringify((r.error ?? r.summary ?? '').slice(0, 40))}`);
+  }
+
+  /*
+   * W4 — charset=utf-8 이라고 적은 UTF-8 페이지는 한 바이트가 어긋나도 UTF-8 이다.
+   * 여태는 그 한 바이트 때문에 내용 짐작으로 넘어가 통째로 windows-1252 로 읽혔다.
+   */
+  const 어긋 = await webFetch({ url: `http://127.0.0.1:${port}/utf8-stray` }, { allowPrivate: true });
+  check('★★ utf-8 이라 적은 페이지는 바이트 하나가 어긋나도 한글로 읽는다',
+    /안녕하세요 한글 문서입니다/.test(어긋.content ?? ''), JSON.stringify((어긋.content ?? 어긋.error ?? '').slice(62, 110)));
+  const 옛것 = await webFetch({ url: `http://127.0.0.1:${port}/euckr-nometa` }, { allowPrivate: true });
+  check('  머리글만 utf-8 이고 알맹이가 EUC-KR 이면 여전히 내용으로 짐작한다',
+    /한글이 그대로 보입니다/.test(옛것.content ?? ''), JSON.stringify((옛것.content ?? 옛것.error ?? '').slice(-30)));
+
+  /*
+   * W16 — 숫자로 적은 글자 중 모델에게 가면 안 되는 것 · 흔한 이름 꼴.
+   * 번호 < 32 만 막았다. C1 제어(0x80–0x9F)·DEL·방향 뒤집기·외톨이 대리쌍이 그대로 갔다.
+   */
+  const 엔 = await webFetch({ url: `http://127.0.0.1:${port}/entities` }, { allowPrivate: true });
+  const 엔글 = (엔.content ?? '').split('\n').slice(2).join('\n');
+  const 나쁜글자 = [...엔글].filter((ch) => {
+    const n = ch.codePointAt(0);
+    return (n >= 0x7f && n <= 0x9f) || (n >= 0x202a && n <= 0x202e) || (n >= 0x2066 && n <= 0x2069) || (n >= 0xd800 && n <= 0xdfff);
+  }).map((ch) => ch.codePointAt(0).toString(16));
+  check('★★ 숫자 꼴로 적은 제어·방향 뒤집기·외톨이 대리쌍을 모델에게 안 넘긴다', !!엔글 && 나쁜글자.length === 0,
+    `${나쁜글자.join(',')} · ${JSON.stringify(엔글)}`);
+  check('★ 흔한 이름 꼴(&middot; &hellip; &copy;)도 푼다',
+    [0xb7, 0x2026, 0xa9].every((n) => 엔글.includes(String.fromCharCode(n))) && !/&middot;|&hellip;|&copy;/.test(엔글), JSON.stringify(엔글));
+
+  /*
+   * W17 — max_chars 로 자르는 자리가 대리쌍 한가운데면 외톨이 반쪽이 모델에게 간다.
+   */
+  const 대리 = await webFetch({ url: `http://127.0.0.1:${port}/surrogate`, max_chars: 1000 }, { allowPrivate: true });
+  const 대리본문 = (대리.content ?? '').split('\n').slice(2).join('\n');
+  const 잘린끝 = 대리본문.split('\n\n(')[0];
+  const 끝글자 = 잘린끝.charCodeAt(잘린끝.length - 1);
+  check('★ 자르는 자리가 대리쌍을 반으로 가르지 않는다', !!잘린끝 && !(끝글자 >= 0xd800 && 끝글자 <= 0xdbff),
+    `끝 0x${끝글자.toString(16)} · ${대리.summary}`);
+
+  /*
+   * W18 — Content-Type 이 없는 200. 여태는 「글이 아닌 내용 (알 수 없음)」 으로 거절했다.
+   * 머리글이 없으면 알맹이를 보고 가른다.
+   */
+  const 무갈래 = await webFetch({ url: `http://127.0.0.1:${port}/notype` }, { allowPrivate: true });
+  check('★ Content-Type 이 없어도 글이면 읽는다', /갈래 없는 글입니다/.test(무갈래.content ?? '') && !/<p>/.test(무갈래.content ?? ''),
+    JSON.stringify((무갈래.error ?? 무갈래.content ?? '').slice(0, 80)));
+  const 무갈래bin = await webFetch({ url: `http://127.0.0.1:${port}/notype-bin` }, { allowPrivate: true });
+  check('★ Content-Type 이 없어도 바이너리면 거절한다', /글이 아닌 내용/.test(무갈래bin.error ?? ''),
+    JSON.stringify((무갈래bin.error ?? 무갈래bin.content ?? '').slice(0, 80)));
+
+  /*
+   * W19 — 되돌림이 제자리를 돌거나 Location 을 못 읽으면 「HTTP 302 — 주소」 한 줄뿐이었다.
+   */
+  const 고리 = await webFetch({ url: `http://127.0.0.1:${port}/loop` }, { allowPrivate: true });
+  check('★ 되돌림이 제자리를 돌면 그렇다고 말한다', /고리|제자리/.test(고리.error ?? ''), JSON.stringify(고리.error ?? 고리.summary));
+  const 못읽음 = await webFetch({ url: `http://127.0.0.1:${port}/badloc` }, { allowPrivate: true });
+  check('★ Location 을 못 읽으면 그렇다고 말한다', /Location/.test(못읽음.error ?? ''), JSON.stringify(못읽음.error ?? 못읽음.summary));
+
+  /*
+   * W9 — 알리바바 클라우드 메타데이터(100.100.100.200, 100.64/10)와 옛 사이트로컬
+   * (fec0::/10)은 사내·안쪽인데 「바깥」 으로 읽혀 되돌림이 그리로 따라갔다.
+   */
+  const 던지나2 = (다음) => { try { 웹되돌림(new URL(다음)); return false; } catch { return true; } };
+  check('★★ 100.100.100.200(클라우드 메타데이터)으로 되돌리면 안 따라간다', 던지나2('http://100.100.100.200/latest/meta-data/'));
+  check('★ fec0::/10 으로 되돌려도 안 따라간다', 던지나2('http://[fec0::1]/'));
+  check('★ NAT64 에 싼 메타데이터 주소도 안 따라간다', 던지나2('http://[64:ff9b::a9fe:a9fe]/'));
+  // 진짜로 나가면 안 된다 — 부르자마자 멈춘다. 막는 검사는 첫 await 앞에서 끝나므로,
+  // 막으면 「사내망」 말이 오고, 안 막으면 멈춤(중단했습니다)이 온다. 어느 쪽이든 안 나간다.
+  const 멈춤 = new AbortController();
+  const 직접메타약속 = webFetch({ url: 'http://100.100.100.200/latest/meta-data/' }, { signal: 멈춤.signal });
+  멈춤.abort();
+  const 직접메타 = await 직접메타약속;
+  check('★★ 100.100.100.200 을 직접 읽으라고 해도 거절한다', /사내망|사내·로컬/.test(직접메타.error ?? ''), JSON.stringify(직접메타.error ?? 직접메타.summary));
+}
+
+/*
+ * ── ★★ (6회차 Gemini 웹받기 W3·W4·W5·W9) 태그 벗기기와 알맹이 엿보기 ──────────────
+ *
+ * 태그벗기기 는 script → style → 주석 차례로 따로 지웠다. 그래서 주석 안에 적힌 `<script>` 가
+ * 뒤에 오는 진짜 `</script>` 까지 본문을 통째로 먹고 `<!--` 만 남겼다. 안 닫힌 `<script>`(상한에서
+ * 잘린 페이지가 흔히 그렇다)는 본문 코드가 그대로 모델에게 갔고, `1 < 5 && 10 > 2` 같은 글은
+ * `<…>` 를 태그로 보고 지웠다 — HTML 은 `<` 뒤가 글자가 아니면 글이다.
+ * Content-Type 이 없는 답은 `<html`·`<head`·`<body`·doctype 으로 시작할 때만 HTML 로 봐서,
+ * 주석이나 `<div>` 로 시작하는 옛 페이지는 태그·스크립트째 글로 넘어갔다.
+ */
+{
+  const 쪽들 = {
+    '/w9-comment': [null, '<!-- 머리 주석 -->\n<div>본문 W9</div><script>var 비밀스크립트=1;</script>'],
+    '/w9-div': [null, '<div>본문 둘</div><script>var 비밀둘=2;</script>'],
+    '/w9-plain': [null, 'x < y 는 그냥 글입니다\n<오> 도 글'],
+    '/w3': ['text/html; charset=utf-8', '<p>앞 본문</p><script>var 안닫힌스크립트=1; alert(1);'],
+    '/w4': ['text/html; charset=utf-8', '<!-- <script> --><p>중요 본문 W4</p><script>evil()</script><p>끝줄</p>'],
+    '/w5': ['text/html; charset=utf-8', '<p>식: 1 < 5 && 10 > 2 이면 참</p>'],
+  };
+  const 작은 = createServer((req, res) => {
+    const 쪽 = 쪽들[req.url];
+    if (!쪽) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, 쪽[0] ? { 'content-type': 쪽[0] } : {});
+    res.end(Buffer.from(쪽[1], 'utf8'));
+  });
+  await new Promise((r) => 작은.listen(0, '127.0.0.1', r));
+  const 받기 = async (p) => {
+    const r = await webFetch({ url: `http://127.0.0.1:${작은.address().port}${p}` }, { allowPrivate: true });
+    return String(r.content ?? r.error ?? '');
+  };
+  const 주석먼저 = await 받기('/w9-comment');
+  check('★★ (6회차 W9) 머리글 없이 주석으로 시작하는 HTML 도 태그·스크립트를 벗긴다',
+    /본문 W9/.test(주석먼저) && !/<div>|비밀스크립트/.test(주석먼저), 주석먼저.slice(-80));
+  const div먼저 = await 받기('/w9-div');
+  check('★★ (6회차 W9) 머리글 없이 <div> 로 시작하는 HTML 도 벗긴다',
+    /본문 둘/.test(div먼저) && !/<div>|비밀둘/.test(div먼저), div먼저.slice(-80));
+  const 맨글 = await 받기('/w9-plain');
+  check('★ (6회차 W9) 머리글 없는 맨 글은 그대로 글이다 (< 가 있어도)',
+    /x < y 는 그냥 글입니다/.test(맨글) && /<오> 도 글/.test(맨글), 맨글.slice(-80));
+  const 안닫힘 = await 받기('/w3');
+  check('★★ (6회차 W3) 안 닫힌 <script> 의 본문을 모델에게 넘기지 않는다',
+    /앞 본문/.test(안닫힘) && !/안닫힌스크립트|alert/.test(안닫힘), 안닫힘.slice(-80));
+  const 주석속 = await 받기('/w4');
+  check('★★ (6회차 W4) 주석 안의 <script> 가 뒤 본문을 먹지 않는다',
+    /중요 본문 W4/.test(주석속) && /끝줄/.test(주석속) && !/evil|<!--/.test(주석속), 주석속.slice(-80));
+  const 부등호 = await 받기('/w5');
+  check('★★ (6회차 W5) 글 속 부등호(1 < 5 && 10 > 2)를 태그로 보고 지우지 않는다',
+    /1 < 5 && 10 > 2 이면 참/.test(부등호), 부등호.slice(-80));
+  작은.closeAllConnections?.();
+  작은.close();
+}
+
+// ── 8회차 · 바깥: 남이 적어 보낸 글 한 조각이 도구 전체를 못 넘어뜨린다 ──
+{
+  /*
+   * `&toString;` 은 남의 페이지에 얼마든지 적힐 수 있는 글자다. 엔티티 이름을
+   * 객체 열쇠로 곧장 찾으면 Object.prototype 의 함수가 나오고, 그걸 글자 번호로
+   * 쓰려다 `RangeError: Invalid code point NaN` 이 난다. 그 예외는 태그벗기기
+   * 밖으로 그대로 새서 **페이지 전체가 오류 한 줄**이 됐다 — 모르는 이름은
+   * 손대지 않는다는 이 파일의 규칙이 프로토타입 이름에만 안 지켜졌다.
+   */
+  const r = await webFetch({ url: `http://127.0.0.1:${port}/proto-entities` }, { allowPrivate: true });
+  check('★★ 프로토타입 이름을 엔티티로 적어 보내도 도구가 안 터진다',
+    !r.error && /본문은 남아야 한다/.test(r.content ?? ''), r.error ?? (r.content ?? '').slice(-60));
+  check('★ 모르는 이름(&toString;)은 원문 그대로 둔다',
+    /&toString;/.test(r.content ?? '') && /&constructor;/.test(r.content ?? ''),
+    (r.content ?? '').slice(-70));
+  check('  아는 이름은 그 판에서도 그대로 풀린다', /·/.test(r.content ?? ''), (r.content ?? '').slice(-70));
+
+  /*
+   * 갈래는 머리글의 **낱말**이지 원문 전체가 아니다. `application/json;
+   * name="index.html"` 을 통째로 보면 'html' 이 걸려서 JSON 본문의 `<b>` 가
+   * 태그로 지워진다 — 모델이 받는 것은 값이 깎인 JSON 이고, 깎였다는 말은 없다.
+   */
+  const j = await webFetch({ url: `http://127.0.0.1:${port}/json-name-html` }, { allowPrivate: true });
+  check('★★ 머리글 파라미터의 html 때문에 JSON 본문의 태그를 벗기지 않는다',
+    /<b>굵게<\/b>/.test(j.content ?? ''), j.error ?? (j.content ?? '').slice(-60));
+  check('  그 JSON 은 그대로 읽힌다',
+    (() => { try { return JSON.parse((j.content ?? '').split('\n').slice(2).join('\n')).본문 === '<b>굵게</b>'; } catch { return false; } })(),
+    (j.content ?? '').slice(-60));
+
+  /*
+   * 되돌림은 **회차마다** 다시 일어난다. 「닿은 곳」 을 회차 앞에서 안 되돌리면
+   * 되돌림이 없던 회차도 앞 회차의 주소로 기록·보고된다 — 심사서의 「어디로
+   * 나갔나」 가 거짓말을 한다.
+   */
+  const 앞기록 = 방문기록.length;
+  await webFetch({ url: `http://127.0.0.1:${port}/once-redirect` }, { allowPrivate: true });
+  const 적힌것 = 방문기록.slice(앞기록).filter((x) => /once-redirect/.test(x.url));
+  check('★★ 되돌림이 없던 회차는 앞 회차 주소를 닿은 곳으로 안 적는다',
+    적힌것.length >= 2 && 적힌것.slice(1).every((x) => x.닿은곳 === undefined),
+    JSON.stringify(적힌것.map((x) => x.닿은곳 ?? null)));
+  check('  되돌림을 탄 첫 회차는 그대로 닿은 곳이 적힌다',
+    /redirected-503/.test(적힌것[0]?.닿은곳 ?? ''), String(적힌것[0]?.닿은곳));
+
+  /*
+   * fetch 가 넘어지는 까닭은 `err.cause` 에 있다. 겉 message 만 보면 무엇이
+   * 잘못됐든 「fetch failed」 한 줄이라, 모델은 주소가 틀렸는지 문이 닫혔는지
+   * 모른 채 같은 주소를 또 부른다. 바깥을 안 두드리려고 **이 컴퓨터의 닫힌
+   * 문**으로 잰다 — DNS 실패와 같은 자리다.
+   */
+  const 빈서버 = createServer(() => {});
+  await new Promise((r) => 빈서버.listen(0, '127.0.0.1', r));
+  const 닫힌포트 = 빈서버.address().port;
+  await new Promise((r) => 빈서버.close(r));
+  const 못붙음 = await webFetch({ url: `http://127.0.0.1:${닫힌포트}/없는집` }, { allowPrivate: true });
+  check('★★ 「fetch failed」 한 줄로 끝내지 않고 진짜 까닭을 말한다',
+    !!못붙음.error && /ECONNREFUSED|연결/i.test(못붙음.error), String(못붙음.error));
 }
 
 server.closeAllConnections?.();

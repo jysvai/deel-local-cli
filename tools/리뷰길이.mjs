@@ -264,8 +264,14 @@ const 길이초과 = /output token limit|exceeded\s+(?:the\s+)?output|\b(?:outpu
  * `까닭칸들` 이 빈 배열이 돼서 다시 묻지도 않고 끝났다(26차 리뷰).
  * `status: ERROR` 처럼 뜻 없는 값은 어느 무늬에도 안 걸리므로 해롭지 않다.
  */
+/*
+ * `샌것` 은 표준오류다. 눈금이 `{...끝맺음, 샌것}` 으로 실어 보내면서도
+ * 여기 없어서 **읽는 쪽이 통째로 버렸다** — agy 가 못 뜬 판은 끝맺음 자체가
+ * 없고 까닭이 거기에만 있으므로, 망이 끊긴 판도 길이가 넘친 판도 전부
+ * 「그밖에」 한 칸으로 뭉쳤다. 왜 잃었는지를 못 보면 그 눈금은 못 쓴다.
+ */
 const 까닭자리 = ['status', 'error', 'reason', 'finishReason', 'finish_reason',
-  'doneReason', 'done_reason', 'stopReason', 'stop_reason'];
+  'doneReason', 'done_reason', 'stopReason', 'stop_reason', '샌것'];
 
 export /**
  * 끝맺음에 적힌 까닭을 **칸마다 따로** 낸다. 이어 붙이지 않는다.
@@ -361,7 +367,14 @@ export function 두판돌리기(한판, 알림, 끝판 = 3) {
  * @returns {string[]} 화면에 한 줄씩 찍을 말
  */
 export function 줄일말({ 무엇 = '', 까닭 = '', 부터 = '', 까지 = '' }) {
-  const 넘침 = 길이초과.test(까닭) || /too long/i.test(까닭);
+  /*
+   * **칸을 쪼개 놓고 잰다.** `길이초과` 의 `^자리이름: length` 앵커는 한 칸을
+   * 가리키므로(`까닭칸들`), 이어 붙인 한 줄에 그대로 걸면 칸이 둘만 돼도 안
+   * 맞는다 — `실패갈래` 는 「길이초과」 라는데 화면에는 「쪼개서 보라」 가
+   * 뜬다. 같은 것을 재는 자리 둘이 서로 다른 것을 보고 있었다.
+   */
+  const 칸들 = String(까닭).split(/\n| · /);
+  const 넘침 = 칸들.some((칸) => 길이초과.test(칸.trim())) || /too long/i.test(까닭);
   const 파일하나 = /파일 1개/.test(무엇);
   const 말 = [`다시 해 보려면: node tools/review2.mjs --timeout 90m`];
   if (!넘침) {

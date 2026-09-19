@@ -90,9 +90,117 @@ export const cursor = {
 export const 판시작 = '\x1b[?2026h';
 export const 판끝 = '\x1b[?2026l';
 
+/*
+ * ── 바깥에서 온 글에 섞인 터미널 제어 순서를 뗀다 (2.0.0 3회차 사냥) ─────
+ *
+ * 모델 답은 우리가 쓴 글이 아니다. 모델이 읽은 파일 · 웹 페이지 · 도구 출력에 든 글이 그대로
+ * 되풀려 오기도 한다. 그 안에 ESC 로 시작하는 순서가 있으면 터미널은 **글자가 아니라 명령으로**
+ * 받는다. 마크다운 그리개가 이것을 그대로 흘려보내고 있었다:
+ *
+ *     ESC ]52;c;…BEL      클립보드를 몰래 바꾼다 (붙여넣은 명령이 다른 명령이 된다)
+ *     ESC ]8;;주소 ESC \  보이는 글과 다른 곳으로 가는 링크
+ *     ESC [1A ESC [2K     윗줄 「✗ 실패」 를 「✓ 통과」 로 덮어쓴다
+ *     ESC [2J · \b · \r   화면을 지우거나 이미 찍힌 글을 덮는다
+ *     ESC ]2;…            창 제목
+ *
+ * 줄바꿈과 탭만 남기고 제어 글자(C0 · DEL · C1)와 그 순서를 통째로 뗀다. 순서를 통째로 떼야
+ * `[2J` 같은 찌꺼기가 안 남는다. 토막 사이에서 순서가 끊겨 와도 ESC 와 BEL 자체는 각 토막에서
+ * 빠지므로 터미널에 명령으로 닿지 않는다 — 남는 것은 보이는 글자뿐이다.
+ */
+// 글자가 놓이는 **방향**을 뒤집는 문자(RLO · LRE · 격리 …). 화면에서 `rm txt.exe` 가 다른 이름으로
+// 보이게 만든다(Trojan Source). 이 파일에 보이지 않는 글자를 직접 적지 않으려고 코드값으로 만든다.
+const 방향틀기 = new RegExp(`[${String.fromCharCode(0x202a)}-${String.fromCharCode(0x202e)}${String.fromCharCode(0x2066)}-${String.fromCharCode(0x2069)}]`, 'g');
+
+/*
+ * 순서를 **끝난 것만** 통째로 뗀다 (Gemini 2차 검토). 마침 글자(BEL · ESC \) 가 없는 OSC 를 끝까지 삼키면
+ * 뒤따르는 답과 diff 가 통째로 사라졌다 — 글을 잃는 것이 제일 나쁘다. 끝 안 난 순서는 머리(ESC ])만
+ * 떼면 터미널이 명령으로 못 받고, 몸통은 보이는 글자로 남는다.
+ */
+export function 화면글거르기(글, { 색남김 = false } = {}) {
+  /*
+   * `색남김` — 우리가 입힌 색(SGR `ESC [ … m`)은 두고 **그 사이**만 거른다. say 처럼 우리 색과 바깥 글이
+   * 한 줄에 섞여 나가는 자리에서 쓴다(할 일 목록 · 서버가 준 모델 이름 · 승인 물음). 바깥 글에 든 색 코드도
+   * 남지만 색은 명령이 아니라 모양뿐이다.
+   */
+  if (색남김) {
+    return String(글 ?? '').split(/(\x1b\[[0-9;]*m)/).map((조각, i) => (i % 2 ? 조각 : 화면글거르기(조각))).join('');
+  }
+  return String(글 ?? '')
+    .replace(/\x1b\][^\x07\x1b\n]*(?:\x07|\x1b\\)/g, '')   // OSC — 클립보드 · 링크 · 제목 (끝난 것만)
+    .replace(/\x1b[PX^_][^\x1b\n]*\x1b\\/g, '')            // DCS · SOS · PM · APC (끝난 것만)
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')               // CSI — 커서 · 지우기 · 색
+    .replace(/\x9b[0-?]*[ -/]*[@-~]/g, '')                 // 8비트 CSI
+    .replace(/\x1b[ -/]*[0-~]?/g, '')                      // ESC 두 글자 꼴(ESC 7 · ESC ( 0 · ESC c) · 끝 안 난 순서의 머리 · 홀 ESC
+    .replace(/\r\n/g, '\n')
+    .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '')         // 남은 제어 글자 (\t · \n 빼고)
+    .replace(방향틀기, '');
+}
+
+/*
+ * ── 칸을 안 먹는 글자 · 두 칸 먹는 그림글자 ────────────────────────────
+ *
+ * 입력 상자와 접어쓰기가 이 값으로 **화면 줄 수**를 센다. 한 칸이라도 모자라게 세면 줄이
+ * 터미널보다 넓어져 터미널은 두 줄로 접고 상자는 한 줄로 센다 — 키를 칠 때마다 위쪽 대화가
+ * 갉여 나간다(inputbox.js 머리말). 재 보니 이런 자리가 있었다:
+ *
+ *   ✅ ❌ ⚡ ⭐ ☕       한 칸으로 셌다. 터미널은 두 칸에 그린다(Emoji_Presentation).
+ *   🫠 (U+1FA70~)      그림글자 표를 1F9FF 에서 끊어 한 칸으로 셌다.
+ *   𠀀 (한자 확장 B~)   한 칸으로 셌다.
+ *   ZWSP·ZWJ·결합 부호  한 칸씩 셌다. 터미널은 칸을 안 준다.
+ *   가족 그림(ZWJ 이음) 여덟 칸으로 셌다. 터미널은 두 칸 하나로 겹쳐 그린다.
+ *   풀어 쓴 한글(NFD)   ㅎ+ㅏ+ㄴ 을 네 칸으로 셌다. 가운뎃소리·끝소리는 앞 글자에 붙는다.
+ *
+ * U+2600~27BF 는 섞여 있다. ✅ ⚡ 처럼 그림으로 그리는 것(Emoji_Presentation)만 두 칸이고,
+ * ✓ ✗ ⚠ ★ → 같은 글자 꼴은 한 칸이다. deel 이 화면에 그리는 표시가 바로 그쪽이라, 넓게 잡으면
+ * 상태줄·표가 한 칸씩 밀린다. 그래서 범위가 아니라 속성으로 가른다.
+ */
+const 칸없음 = /^[\p{Mn}\p{Me}\p{Cf}]$/u;
+const 그림으로그림 = /^\p{Emoji_Presentation}$/u;
+const 그림글자 = /^\p{Extended_Pictographic}$/u;
+
+function 넓은가(cp, ch) {
+  return (cp >= 0x1100 && cp <= 0x115f)
+    || (cp >= 0x2e80 && cp <= 0xa4cf)
+    || (cp >= 0xa960 && cp <= 0xa97f)       // 한글 첫소리 확장
+    || (cp >= 0xac00 && cp <= 0xd7a3)
+    || (cp >= 0xf900 && cp <= 0xfaff)
+    || (cp >= 0xfe30 && cp <= 0xfe6f)
+    || (cp >= 0xff00 && cp <= 0xff60)
+    || (cp >= 0xffe0 && cp <= 0xffe6)
+    || (cp >= 0x1f300 && cp <= 0x1f9ff)
+    || (cp >= 0x1fa70 && cp <= 0x1faff)     // 그림글자 확장 A
+    || (cp >= 0x20000 && cp <= 0x3fffd)     // 한자 확장 B 부터
+    || 그림으로그림.test(ch);
+}
+
+/*
+ * ── 한 칸 바탕을 두 칸 그림으로 바꾸는 꼬리 · 국기 짝 (Gemini 화면4) ─────────
+ *
+ * U+FE0F 는 「그림으로 그려라」 는 표시다. 윈도 터미널·iTerm2·kitty 는 하트·경고·체크 뒤에 이것이
+ * 붙으면 **두 칸**에 그린다. 우리는 바탕 한 칸 + 선택자 0칸 = 한 칸으로 셌다 — 모델 답에 흔한
+ * 모양이라 한 줄에 하나만 있어도 입력 상자가 줄 수를 틀려 위쪽 대화가 갉여 나갔다. 키캡(1+FE0F
+ * +20E3)과 한 칸 그림(검지 U+261D)에 붙은 살색 조절도 그랬다.
+ *
+ * 국기는 거꾸로였다. 지역 표시 글자 둘이 두 칸 하나에 겹치는데 둘 다 두 칸으로 세어 넷이 됐다.
+ * 짝을 짓는 것은 앞에서부터 둘씩이다(🇺🇸🇰🇷 는 넷 칸, 홀로 남은 반쪽은 두 칸).
+ *
+ * 선택자가 없는 ⚠ ✔ 는 여전히 한 칸이다 — deel 이 그리는 표시가 그쪽이다(위 머리말). 숫자 뒤
+ * FE0F 만으로는 키캡이 아니고(1+FE0F 는 한 칸), 20E3 이 붙어야 두 칸이다.
+ */
+const 지역표시인가 = (cp) => cp >= 0x1f1e6 && cp <= 0x1f1ff;
+const 키캡바탕인가 = (cp) => (cp >= 0x30 && cp <= 0x39) || cp === 0x23 || cp === 0x2a;
+
 // 한글·한자·가나는 터미널에서 두 칸을 차지한다. 표 정렬이 이걸 모르면 어긋난다.
 export function width(str) {
   let w = 0;
+  // 바로 앞 글자가 ZWJ 였나 · 그림글자였나. 이어붙인 그림은 앞 그림과 한 칸에 겹친다.
+  let 앞이음 = false;
+  let 앞그림 = false;
+  // 바로 앞 바탕 글자와 그 글자에 준 칸 수. 칸 안 먹는 글자(ZWJ·결합 부호)는 이 값을 안 바꾼다.
+  let 바탕 = -1;
+  let 바탕칸 = 0;
+  // 짝을 기다리는 지역 표시 글자가 바로 앞에 있나.
+  let 반쪽국기 = false;
   // 없는 값은 빈 글자로 본다.
   //
   // String(null) 은 'null' 이라 폭이 4 로 나온다. 그러면 상태줄이 네 칸씩
@@ -101,19 +209,83 @@ export function width(str) {
   if (str === null || str === undefined) return 0;
   for (const ch of String(str).replace(/\x1b\[[0-9;]*m/g, '')) {
     const cp = ch.codePointAt(0);
-    if (
-      (cp >= 0x1100 && cp <= 0x115f) ||
-      (cp >= 0x2e80 && cp <= 0xa4cf) ||
-      (cp >= 0xac00 && cp <= 0xd7a3) ||
-      (cp >= 0xf900 && cp <= 0xfaff) ||
-      (cp >= 0xfe30 && cp <= 0xfe6f) ||
-      (cp >= 0xff00 && cp <= 0xff60) ||
-      (cp >= 0xffe0 && cp <= 0xffe6) ||
-      (cp >= 0x1f300 && cp <= 0x1f9ff)
-    ) w += 2;
-    else w += 1;
+    const 이음뒤 = 앞이음;
+    const 그림뒤 = 앞그림;
+    앞이음 = cp === 0x200d;
+    // 거의 다 여기서 끝난다 — 로마자·숫자·기호. 속성 검사는 비싸고 이 함수는 자주 불린다.
+    if (cp < 0x0300) { 앞그림 = false; 반쪽국기 = false; 바탕 = cp; 바탕칸 = 1; w += 1; continue; }
+    // 그림으로 그리라는 선택자 · 키캡 꼬리 — 한 칸 바탕을 두 칸으로 넓힌다 (위 머리말).
+    if (cp === 0xfe0f || cp === 0x20e3) {
+      const 넓힌다 = 바탕칸 === 1
+        && (cp === 0xfe0f ? 그림글자.test(String.fromCodePoint(바탕)) : 키캡바탕인가(바탕));
+      if (넓힌다) { w += 1; 바탕칸 = 2; }
+      앞그림 = cp === 0xfe0f && 그림뒤;
+      continue;
+    }
+    const 그림 = 그림글자.test(ch);
+    const 살색 = cp >= 0x1f3fb && cp <= 0x1f3ff;
+    // 그림 뒤에 붙는 ZWJ · 변형 선택자 · 살색 조절은 「아직 그 그림」 이다.
+    앞그림 = 그림 || (그림뒤 && (cp === 0x200d || (cp >= 0xfe00 && cp <= 0xfe0f) || 살색));
+    if (칸없음.test(ch)) continue;
+    // 풀어 쓴 한글의 가운뎃소리·끝소리는 앞 첫소리 칸에 겹친다.
+    if ((cp >= 0x1160 && cp <= 0x11ff) || (cp >= 0xd7b0 && cp <= 0xd7ff)) continue;
+    // ZWJ 뒤의 그림은 앞 그림과 같은 칸이다.
+    if (이음뒤 && 그림) continue;
+    // 그림 뒤의 살색 조절도 같은 칸이다 — 다만 한 칸 그림이었으면 두 칸으로 넓힌다.
+    if (그림뒤 && 살색) { if (바탕칸 === 1) { w += 1; 바탕칸 = 2; } continue; }
+    // 국기 반쪽 둘은 두 칸 하나다.
+    if (지역표시인가(cp)) {
+      if (반쪽국기) { 반쪽국기 = false; continue; }
+      반쪽국기 = true;
+    } else {
+      반쪽국기 = false;
+    }
+    const 칸 = 넓은가(cp, ch) ? 2 : 1;
+    바탕 = cp;
+    바탕칸 = 칸;
+    w += 칸;
   }
   return w;
+}
+
+/*
+ * i 자리에서 **눈에 보이는 한 덩이**를 통째로 떼어 온다.
+ *
+ * 글자를 s[i] 로 한 칸씩 읽으면 UTF-16 코드 단위로 잘린다. 😀 같은 글자는
+ * 두 칸을 차지하므로 하필 그 사이에서 줄이 접히면 반쪽짜리 서로게이트가
+ * 양쪽 줄에 하나씩 남는다 — 접어쓰기("a😀", 2) 가 ["a\ud83d","\ude00"] 를
+ * 내놨다. 화면에는 물음표 두 개로 찍히고, 폭 계산도 그때부터 어긋난다.
+ *
+ * 그래서 코드 포인트로 읽고, 뒤에 붙는 것들(살색 조절·변형 선택자·결합
+ * 부호·ZWJ 로 이어붙인 다음 글자)까지 한 덩이로 본다. 완전한 문자소 분할은
+ * 아니지만 — 그건 표가 있어야 한다 — 실제로 깨지던 자리는 이걸로 다 막힌다.
+ *
+ * 접어쓰기(wrap.js)에만 있던 것을 여기로 옮겼다. clip 은 코드 포인트 하나씩 잘라서 그림과
+ * 선택자·ZWJ 사이를 끊었다 — 자른 끝에 ZWJ 가 남으면 뒤에 붙는 말줄임표와 겹쳐 그려지고,
+ * 선택자가 떨어지면 두 칸 그림이 한 칸 글 모양으로 바뀐다. 국기 짝도 한 덩이다 — 반쪽 국기
+ * 둘은 글자 두 개로 그려진다(위 width 머리말).
+ */
+export function 한덩이(s, i) {
+  const 첫 = s.codePointAt(i);
+  let 끝 = i + String.fromCodePoint(첫).length;
+  if (지역표시인가(첫) && 끝 < s.length && 지역표시인가(s.codePointAt(끝))) 끝 += 2;
+  for (;;) {
+    if (끝 >= s.length) return s.slice(i, 끝);
+    const cp = s.codePointAt(끝);
+    // ZWJ 는 다음 글자까지 끌고 온다 (가족 그림처럼 이어붙인 그림글자)
+    if (cp === 0x200d) {
+      const 다음 = 끝 + 1;
+      if (다음 >= s.length) return s.slice(i, 끝);
+      끝 = 다음 + String.fromCodePoint(s.codePointAt(다음)).length;
+      continue;
+    }
+    const 딸린것 = (cp >= 0xfe00 && cp <= 0xfe0f)        // 변형 선택자
+      || (cp >= 0x1f3fb && cp <= 0x1f3ff)               // 살색 조절
+      || (cp >= 0x0300 && cp <= 0x036f)                 // 결합 부호
+      || cp === 0x20e3;                                 // 키캡
+    if (!딸린것) return s.slice(i, 끝);
+    끝 += String.fromCodePoint(cp).length;
+  }
 }
 
 export function pad(str, target, align = 'left') {
@@ -140,6 +312,13 @@ export function pad(str, target, align = 'left') {
  */
 export function clip(str, max, tail = '…') {
   if (width(str) <= max) return str;
+  /*
+   * 꼬리보다 좁은 칸 (Gemini 화면5). 남은 예산이 음수여도 꼬리를 붙여서 `clip('테스트', 0)` 이 「…」
+   * 한 칸, 꼬리가 두 칸이면 `max 1` 에 두 칸을 냈다 — 좁은 창에서 줄이 넘친다. 칸이 없으면 빈 글,
+   * 꼬리가 안 들어가면 꼬리 없이 자른다.
+   */
+  if (!(max > 0)) return '';
+  if (width(tail) > max) return clip(str, max, '');
   const budget = max - width(tail);
   let out = '';
   let w = 0;
@@ -153,7 +332,10 @@ export function clip(str, max, tail = '…') {
       색켜짐 = !/^\x1b\[0?m$/.test(조각);
       continue;
     }
-    for (const ch of 조각) {
+    // 코드 포인트가 아니라 보이는 덩이로 자른다 — 그림과 선택자·ZWJ 사이를 안 끊는다 (한덩이 머리말).
+    for (let i = 0; i < 조각.length;) {
+      const ch = 한덩이(조각, i);
+      i += ch.length;
       const cw = width(ch);
       if (w + cw > budget) { 찼다 = true; break; }
       out += ch;
@@ -166,7 +348,9 @@ export function clip(str, max, tail = '…') {
 // 터미널 가로 폭. 파이프로 넘어가면 알 수 없으니 넉넉히 잡는다.
 export const cols = () => process.stdout.columns || 100;
 
-export const say = (s = '') => process.stdout.write(s + '\n');
+// 줄 하나를 낸다. 여기로 바깥 글(할 일 · 모델 이름 · 플러그인 설명 …)이 곧장 오므로 들어온 제어 순서를 뗀다 —
+// 우리 색은 남긴다(화면글거르기 머리말). 커서 옮기기 같은 우리 제어는 이 길을 안 쓴다(cursor · 판시작).
+export const say = (s = '') => process.stdout.write(화면글거르기(s, { 색남김: true }) + '\n');
 
 export function rule(label = '', total = 64) {
   if (!label) return say(c.gray('─'.repeat(total)));
@@ -176,7 +360,11 @@ export function rule(label = '', total = 64) {
 
 // 채움 막대. 반쪽 칸까지 써서 좁은 폭에서도 눈금이 보인다.
 export function bar(used, total, cells = 32) {
-  const ratio = total > 0 ? Math.min(1, used / total) : 0;
+  // 말이 안 되는 셈은 0 으로 본다 — 아래 gauge() 와 같은 까닭이다.
+  // Math.min 은 NaN 을 그대로 흘려 repeat(NaN) 이 빈 글자가 되고(막대가 통째로
+  // 사라진다), 음수는 repeat(-4) 로 **던진다** — 화면 한 칸이 프로그램을 죽인다.
+  const 몫 = Number(used) / Number(total);
+  const ratio = total > 0 && Number.isFinite(몫) ? Math.min(1, Math.max(0, 몫)) : 0;
   const exact = ratio * cells;
   const full = Math.floor(exact);
   const half = exact - full >= 0.5 && full < cells;
@@ -243,7 +431,13 @@ const BOX = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
 export function box(lines, { title = '', pad: gap = 1, tone = c.gray, max = cols() - 4 } = {}) {
   const body = lines.map((l) => clip(l, max - gap * 2 - 2));
   const inner = Math.max(
-    width(title) + 2,
+    // 윗줄은 `╭─ 이름 ` 까지가 다섯 칸이고 오른쪽 모서리가 한 칸이다. 안쪽이
+    // 이름+3 보다 좁으면 윗줄만 길어져 테두리가 한 칸 어긋난다(여백 0 이면 늘 그렇다).
+    //
+    // 이름이 없으면 그 바닥도 없다. 빈 이름에 +3 을 하면 안쪽 폭이 3 아래로 못 내려가
+    // 한 글자짜리 상자가 세 칸으로 그려진다 — 위 JSDoc 이 적은 「가장 긴 줄에 맞춘다」 와
+    // 어긋난다 (8회차 AN1).
+    title ? width(title) + 3 : 0,
     ...body.map((l) => width(l)),
   ) + gap * 2;
   const top = title

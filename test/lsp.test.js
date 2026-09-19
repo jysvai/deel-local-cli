@@ -25,8 +25,11 @@ import { 갈래, 언어아이디, 어디있나, 고르기, 둘러보기, 프로�
 import { 얻기, 지금것들, 모두끄기, 언어서버, 색인중일까, 열쇠주소, 다시보낼까, 아이들데려가기 } from '../src/lsp/client.js';
 import { 편집후진단, 붙이기, 데우기 } from '../src/lsp/diag.js';
 import { toolSchemas, runTool, TOOLS, 언어서버있나 } from '../src/tools/index.js';
+// 모델이 실제로 받는 글. 사람 화면(summary)과 다른 것이 이 파일에서 재는 것 하나다.
+import { 실을글 } from '../src/agent/loop.js';
 import { allow as 모드허용 } from '../src/agent/modes.js';
 import { makeScope } from '../src/safety/guard.js';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -163,6 +166,28 @@ trace('2-찾기');
   mkdirSync(join(가짜, 'gopls'), { recursive: true });
   check('같은 이름의 폴더는 안 센다', 어디있나('gopls', env) === null);
   check('빈 PATH 여도 안 죽는다', 어디있나('gopls', {}) === null);
+  /*
+   * 윈도우: 확장자 없는 sh 스크립트를 「깔려 있다」 로 잡지 않는다 (2.0.0 6회차 Gemini 서버6bo LSV1·LSV2).
+   *
+   * 폴더마다 PATHEXT 를 보고 곧바로 '' 까지 봤다. 그래서 앞 폴더의 sh 가 뒤 폴더의 .cmd 를
+   * 이겼고, sh 만 있으면 그걸 돌려줬다 — 어디있나 머리 주석이 막으려던 「있다고 해 놓고
+   * 안 되는」 꼴 그대로다(도구는 목록에 서고, 부르면 곧바로 「서버가 없습니다」).
+   */
+  if (process.platform === 'win32') {
+    const 앞 = join(가짜, 'front'); const 뒤 = join(가짜, 'back'); const 쉘만 = join(가짜, 'shonly');
+    for (const d of [앞, 뒤, 쉘만]) mkdirSync(d, { recursive: true });
+    writeFileSync(join(앞, 'two-lsp'), '#!/bin/sh\n', 'utf8');
+    writeFileSync(join(뒤, 'two-lsp.cmd'), '@echo off\n', 'utf8');
+    writeFileSync(join(쉘만, 'sh-only-lsp'), '#!/bin/sh\n', 'utf8');
+    const 둘 = { PATH: [앞, 뒤].join(';'), PATHEXT: '.COM;.EXE;.BAT;.CMD' };
+    check('★★ 윈도우: 앞 폴더의 sh 가 뒤 폴더의 .cmd 를 이기지 않는다',
+      /two-lsp\.cmd$/i.test(어디있나('two-lsp', 둘) ?? ''), String(어디있나('two-lsp', 둘)));
+    const 쉘만env = { PATH: 쉘만, PATHEXT: '.COM;.EXE;.BAT;.CMD' };
+    check('★★ 윈도우: 확장자 없는 sh 만 있으면 없는 것이다', 어디있나('sh-only-lsp', 쉘만env) === null,
+      String(어디있나('sh-only-lsp', 쉘만env)));
+    check('  윈도우: 이름에 확장자를 붙여 주면 그대로 찾는다',
+      /two-lsp\.cmd$/i.test(어디있나('two-lsp.cmd', 둘) ?? ''), String(어디있나('two-lsp.cmd', 둘)));
+  }
   rmSync(가짜, { recursive: true, force: true });
 
   const 둘러본것 = 둘러보기({ PATH: '' });
@@ -425,12 +450,98 @@ trace('5-도구');
   const 여럿 = await runTool('Def', { name: 'run' }, ctx);
   check('Def: 같은 이름이 여럿이면 그렇다고 말한다', /여러|2곳|2 곳|같은 이름/.test(여럿.summary ?? ''), 여럿.summary);
   check('Def: 어떻게 좁히는지도 말해 준다', /file_path/.test(여럿.summary ?? ''), 여럿.summary);
+  /*
+   * ── 그 말이 **모델에게** 가나 ─────────────────────────────────────────
+   *
+   * 이 말은 summary 에만 붙어 있었다. 그런데 모델이 받는 글은 content 다 —
+   * loop.js 의 실을글() 은 content 가 비지 않으면 그것만 싣고 summary 는
+   * 버린다. 즉 **줄 자리가 있을 때는 이 말이 한 번도 안 갔다.**
+   *
+   * 사람 화면에는 멀쩡히 찍히니 아무도 눈치를 못 챈다. 모델은 자리 하나만
+   * 받고 그게 유일한 정의인 줄 알고, 남의 파일의 같은 이름을 고친다.
+   */
+  check('★ Def: 여럿이라는 말이 모델이 받는 글에도 있다', /같은 이름이/.test(실을글(여럿)),
+    실을글(여럿).replace(/\n/g, ' | '));
 
   const r = await runTool('Refs', { name: '셈하기' }, ctx);
   check('Refs: 쓰는 자리를 다 준다', r.found === 3, JSON.stringify(r).slice(0, 160));
   check('Refs: 파일별로 묶는다', r.files === 2, String(r.files));
-  check('Refs: 몇 파일인지 먼저 말한다', /파일 2개/.test(r.summary ?? ''), r.summary);
+  check('Refs: 몇 파일인지 먼저 말한다', /2개 파일/.test(r.summary ?? ''), r.summary);
   check('Refs: 줄 번호와 글이 같이 온다', /5: .*셈하기/.test(r.content ?? ''), r.content);
+
+  /*
+   * ── 자른 것을 **모델에게** 자랐다고 말하나 ────────────────────────────
+   *
+   * 참조가 창에 안 들어가면 잘라야 한다. 그건 맞다. 그런데 「70곳은 안
+   * 실었습니다」 가 summary 에만 붙어 있었고, 모델은 content 만 받는다 —
+   * 즉 **자를 것이 있을 때만** 그 말이 빠졌다. 알려야 할 바로 그때.
+   *
+   * 8k 모델의 한도는 50이다(budget.js 의 찾을개수는 거기서 바닥을 친다).
+   * 120곳 중 50곳을 받은 모델은 그 50곳을 고치고 「모든 참조를 고쳤습니다」
+   * 로 답을 맺는다. 남은 70곳은 돌려 본 뒤에야 드러난다.
+   */
+  서버박기('ts', { cmd: process.execPath, args: [흉내, '--manyrefs'], 이름: '참조많음', 경로: process.execPath });
+  await 모두끄기();
+  const 많은것 = await runTool('Refs', { name: 'run' }, 만든ctx({ 모델컨텍스트: 8192 }));
+  await 모두끄기();
+  서버박기('ts', { cmd: process.execPath, args: [흉내], 이름: '흉내서버', 경로: process.execPath });
+
+  check('Refs: 창에 안 들어가면 자른다', 많은것.found === 120 && 많은것.locations?.length === 50 && 많은것.truncated === true,
+    JSON.stringify({ found: 많은것.found, 실은것: 많은것.locations?.length, truncated: 많은것.truncated }));
+  check('★ Refs: 자랐다는 말이 모델이 받는 글에 있다', /70곳은 자리가 모자라 안 실었습니다/.test(실을글(많은것)),
+    실을글(많은것).split('\n').slice(-3).join(' | '));
+  check('★ Refs: 여럿이라는 말도 모델이 받는 글에 있다', /같은 이름이/.test(실을글(많은것)),
+    실을글(많은것).split('\n').slice(-3).join(' | '));
+  check('사람이 보는 요약도 그대로다', /70곳은 자리가 모자라 안 실었습니다/.test(많은것.summary ?? ''), 많은것.summary);
+  check('안 자른 답에는 그 말이 안 붙는다', !/자리가 모자라/.test(실을글(r)), 실을글(r).split('\n').slice(-2).join(' | '));
+
+  /*
+   * ── 이름이 똑같지 않을 때 · 한 파일의 같은 이름 · 어디서 온 자리인지 (2.0.0 6회차 LS1~LS5) ──
+   *
+   * 다섯 자리가 다 같은 약속을 어겼다 — 「하나를 골라 주고 아닌 척하지 않는다」.
+   *   LS1 이름이 똑같은 것이 없으면 아무 부분 일치나(셈 → 셈하기) 짚고 말이 없었다.
+   *   LS2 한 파일 안의 서로 다른 둘(A.go · B.go)은 「여럿」 이라 안 했다.
+   *   LS3 정의를 못 받아 심볼 검색 자리를 줘도 「정의 1곳」 이라고만 했다.
+   *   LS4 자른 뒤 파일 수만 셌다 — 두 파일인데 「파일 1개」.
+   *   LS5 참조가 0곳이면 같은 이름이 여럿이라는 말이 빠져 「지워도 된다」 로 읽혔다.
+   */
+  writeFileSync(join(root, 'src', '같은곳.js'), [
+    'class A { go() {} }', 'class B { go() {} }', 'function 겹(a) {}', 'function 겹(a, b) {}',
+  ].join('\n'), 'utf8');
+  const 한줄로 = (x) => String(x ?? '').replace(/\n/g, ' | ');
+
+  const 부분 = await runTool('Def', { name: '셈' }, ctx);
+  check('★★ Def: 이름이 똑같은 것이 없으면 부분 일치(셈하기)를 짚지 않는다',
+    !!부분.error && /못 찾/.test(부분.error), JSON.stringify(부분).slice(0, 160));
+  const 꾸민 = await runTool('Def', { name: '몫' }, ctx);
+  check('  Def: 서버가 꾸민 이름(셈.몫)은 낱말로 들어 있으니 받는다', 꾸민.found >= 1, JSON.stringify(꾸민).slice(0, 160));
+  check('★ Def: 꾸민 이름을 짚었으면 무엇을 짚었는지 모델에게 말한다', /셈\.몫/.test(실을글(꾸민)), 한줄로(실을글(꾸민)));
+  check('  사람 화면에도 같은 말', /셈\.몫/.test(꾸민.summary ?? ''), 한줄로(꾸민.summary));
+
+  const 한파일 = await runTool('Def', { name: 'go' }, ctx);
+  check('★★ Def: 한 파일 안의 서로 다른 go 둘도 여럿이라고 말한다', /같은 이름이/.test(실을글(한파일)), 한줄로(실을글(한파일)));
+  const 겹침 = await runTool('Def', { name: '겹' }, ctx);
+  check('  Def: 같은 자리의 겹쳐쓰기(컨테이너 같음)는 여럿이라고 떠들지 않는다', !/같은 이름이/.test(실을글(겹침)), 한줄로(실을글(겹침)));
+
+  서버박기('ts', { cmd: process.execPath, args: [흉내, '--nodef'], 이름: '정의없음', 경로: process.execPath });
+  await 모두끄기();
+  const 심볼로 = await runTool('Def', { name: '셈하기' }, ctx);
+  check('★ Def: 정의를 못 받아 심볼 검색 자리를 주면 그렇다고 모델에게 말한다', /심볼 검색/.test(실을글(심볼로)), 한줄로(실을글(심볼로)));
+  check('  사람 화면에도 같은 말', /심볼 검색/.test(심볼로.summary ?? ''), 한줄로(심볼로.summary));
+
+  서버박기('ts', { cmd: process.execPath, args: [흉내, '--norefs'], 이름: '참조없음', 경로: process.execPath });
+  await 모두끄기();
+  const 빈참조 = await runTool('Refs', { name: 'run' }, ctx);
+  check('★★ Refs: 참조가 0곳이어도 같은 이름이 여럿이면 그렇다고 말한다', /같은 이름이/.test(실을글(빈참조)), 한줄로(실을글(빈참조)));
+
+  서버박기('ts', { cmd: process.execPath, args: [흉내, '--refs-onefile'], 이름: '한쪽참조', 경로: process.execPath });
+  await 모두끄기();
+  const 한쪽 = await runTool('Refs', { name: '셈하기' }, 만든ctx({ 모델컨텍스트: 8192 }));
+  await 모두끄기();
+  서버박기('ts', { cmd: process.execPath, args: [흉내], 이름: '흉내서버', 경로: process.execPath });
+  check('★★ Refs: 잘라도 파일 수는 전체로 센다 (보인 것은 a.js 뿐이어도 두 파일)',
+    한쪽.files === 2 && /2개 파일/.test(한쪽.summary ?? ''), JSON.stringify({ files: 한쪽.files, summary: 한쪽.summary }));
+  check('★ Refs: 말이 안 겹친다 — 「파일 2개 파일」 이 아니다', !/파일 \d+개 파일/.test(한쪽.summary ?? ''), 한쪽.summary);
 
   // 파일·줄로 짚어 주는 길. 모델이 Grep 으로 좁혀 온 다음에 오는 자리다.
   const 짚은것 = await runTool('Refs', { name: '셈하기', file_path: 'src/쓰는곳.js', line: 5 }, ctx);
@@ -439,6 +550,24 @@ trace('5-도구');
   // 이름이 그 줄에 없으면 없다고 해야 한다. 엉뚱한 자리를 짚으면 안 된다.
   const 엉뚱 = await runTool('Refs', { name: '셈하기', file_path: 'src/쓰는곳.js', line: 3 }, ctx);
   check('Refs: 그 줄에 없으면 없다고 한다', !!엉뚱.error && /못 찾/.test(엉뚱.error), JSON.stringify(엉뚱));
+
+  /*
+   * 줄 번호가 **따옴표에 싸여** 오는 판 (8회차 · 바깥).
+   *
+   * 스키마에 number 라고 적어 뒀어도 `"line": "3"` 으로 보내는 모델이 있다.
+   * `Number.isFinite('3')` 는 false 라 그 줄이 통째로 버려졌고, 도구는 오류도
+   * 없이 **파일 처음부터** 이름을 찾아 엉뚱한 줄을 짚어 놓고 찾았다고 답했다.
+   * 잘못 짚었다는 신호가 어디에도 없는 것이 이 고장의 값이다.
+   */
+  const 글자줄 = await runTool('Refs', { name: '셈하기', file_path: 'src/쓰는곳.js', line: '3' }, ctx);
+  check('★★ 줄 번호가 문자열로 와도 그 줄을 짚는다 (없으면 없다고 한다)',
+    !!글자줄.error && /못 찾/.test(글자줄.error), JSON.stringify(글자줄).slice(0, 140));
+  const 글자맞는줄 = await runTool('Refs', { name: '셈하기', file_path: 'src/쓰는곳.js', line: '5' }, ctx);
+  check('★ 문자열 줄로도 제대로 짚으면 숫자로 준 것과 같은 답이다',
+    글자맞는줄.found === 짚은것.found, JSON.stringify({ 글자: 글자맞는줄.found, 숫자: 짚은것.found }));
+  const 빈줄 = await runTool('Refs', { name: '셈하기', file_path: 'src/쓰는곳.js', line: '' }, ctx);
+  check('★ 빈 값은 「줄을 안 준 것」 으로 본다 (0번 줄이 아니다)',
+    빈줄.found === 3, JSON.stringify(빈줄).slice(0, 120));
 
   // 낱말 경계. `셈` 으로 `셈하기` 를 짚으면 안 된다.
   const 조각 = await runTool('Def', { name: '몫', file_path: 'src/셈.js', line: 2 }, ctx);
@@ -451,6 +580,43 @@ trace('5-도구');
   check('이름이 비면 그렇다고 한다', !!(await runTool('Def', { name: '  ' }, ctx)).error);
   check('없는 이름은 못 찾았다고 한다',
     !!(await runTool('Def', { name: '이런건없다' }, ctx)).error, '');
+}
+
+// ══ 5b. 참조가 많아도 파일은 파일마다 한 번 (사냥4 W3) ═══════════════════
+//
+// 한줄() 이 **참조 하나마다** 그 파일을 통째로 다시 읽었다. 4만 줄짜리 파일에
+// 참조 5000곳이면 5000번을 읽고, trim() 으로 뗀 줄이 그 큰 글 전체를 붙들어
+// 힙이 넘쳤다. 게다가 창에 안 실을 70곳까지 다 읽었다.
+//
+// 읽은 횟수는 밖에서 안 보인다. node:fs 의 readFileSync 를 잠깐 세는 것으로
+// 갈아 끼우고(syncBuiltinESMExports 가 ESM 이름표까지 갱신한다) 센다.
+trace('5b-참조많을때읽기');
+{
+  서버박기('ts', { cmd: process.execPath, args: [흉내, '--manyrefs'], 이름: '참조많음', 경로: process.execPath });
+  await 모두끄기();
+  const fs모듈 = createRequire(import.meta.url)('node:fs');
+  const 원래 = fs모듈.readFileSync;
+  let 읽은수 = 0;
+  fs모듈.readFileSync = function 세며읽기(...인자) {
+    if (/[\\/]src[\\/][ab]\.js$/.test(String(인자[0]))) 읽은수 += 1;
+    return 원래.apply(this, 인자);
+  };
+  syncBuiltinESMExports();
+  let 결과 = null;
+  try {
+    결과 = await runTool('Refs', { name: 'run', file_path: 'src/a.js', line: 2 }, 만든ctx({ 모델컨텍스트: 8192 }));
+  } finally {
+    fs모듈.readFileSync = 원래;
+    syncBuiltinESMExports();
+  }
+  await 모두끄기();
+  서버박기('ts', { cmd: process.execPath, args: [흉내], 이름: '흉내서버', 경로: process.execPath });
+  // 6절은 서버가 **이미 떠 있다** 는 전제로 첫 편집부터 진단을 받는다. 껐으니 다시 데워 둔다.
+  await 얻기(root, join(root, 'src', '셈.js'));
+  check('  참조 120곳을 받았고 50곳을 실었다', 결과?.found === 120 && 결과?.locations?.length === 50,
+    JSON.stringify({ found: 결과?.found, 실은것: 결과?.locations?.length, error: 결과?.error }));
+  check('★★ 참조가 120곳이어도 파일은 파일마다 한 번만 읽는다', 읽은수 <= 4, `${읽은수}번 읽음`);
+  check('  줄 글은 그대로 붙는다', /run/.test(결과?.content ?? ''), (결과?.content ?? '').slice(0, 80));
 }
 
 // ══ 6. 고친 뒤 진단 ═════════════════════════════════════════════════════
@@ -688,8 +854,256 @@ trace('9-신호');
   try { 아이.kill('SIGKILL'); } catch { /* 이미 죽었다 */ }
 }
 
+// ══ 언어서버6: 되묻기 답 · 끄다 만 물음 · 셸 껍질째 끄기 (2.0.0 6회차 사냥) ═══
+trace('언어서버6');
+{
+  /*
+   * 되물은 설정에는 **항목마다 null** 로 답한다.
+   *
+   * 빈 표 `{}` 는 「설정이 있는데 비었다」 로 읽힌다. 서버는 제 기본값 대신 그 빈 표를
+   * 설정으로 받아 켜 두어야 할 검사를 끈 채로 돈다. 규약도 VS Code 도 「모르면 null」 이다.
+   */
+  const 설정서버 = new 언어서버(root, { cmd: process.execPath, args: [흉내], 이름: '설정답' });
+  await 설정서버.켜기();
+  await new Promise((r) => setTimeout(r, 150));
+  const 받은 = await 설정서버.물어보기('stub/설정답', {});
+  check('★ 되물은 설정에는 항목마다 null 로 답한다',
+    JSON.stringify(받은?.값?.받은것) === '[null]', JSON.stringify(받은));
+  await 설정서버.끄기();
+
+  /*
+   * 끄면 기다리던 물음이 **그 자리에서** 풀린다.
+   *
+   * 끄기는 기다림 표를 비우기만 했다. 부르던 쪽의 약속은 아무도 안 풀어서 제 시한
+   * (길면 수십 초)까지 그대로 멎었다 — 서버는 이미 없는데.
+   */
+  const 끌것 = new 언어서버(root, { cmd: process.execPath, args: [흉내, '--mute'], 이름: '끄다만물음' });
+  await 끌것.켜기();
+  const 잰때 = Date.now();
+  const 물음 = 끌것.물어보기('workspace/symbol', { query: '셈하기' }, 8000);
+  await new Promise((r) => setTimeout(r, 50));
+  await 끌것.끄기();
+  const 풀린것 = await Promise.race([물음, new Promise((r) => { setTimeout(() => r('안 풀림'), 3000); })]);
+  const 걸린 = Date.now() - 잰때;
+  check('★ 끄면 기다리던 물음이 그 자리에서 오류로 풀린다',
+    풀린것 !== '안 풀림' && !!풀린것?.오류 && 걸린 < 2800, `${JSON.stringify(풀린것)} · ${걸린}ms`);
+
+  /*
+   * 윈도우에서 `.cmd` 로 띄운 서버는 **껍질째** 끈다.
+   *
+   * 우리가 쥔 아이는 cmd.exe 다. 그것만 kill() 하면 cmd 는 죽고 그 안에서 뜬 진짜 서버
+   * (node·python)는 부모 없이 남는다 — 끌 때마다 하나씩 쌓인다. mcp.js 의 닫기와 같이
+   * 나무째 거둔다.
+   */
+  if (process.platform === 'win32') {
+    const { readFileSync } = await import('node:fs');
+    const 곳 = mkdtempSync(join(tmpdir(), 'deel-lsp-cmd-'));
+    치울것.push(곳);
+    const 쉼 = join(곳, 'fake-ls.cmd');
+    writeFileSync(쉼, `@echo off\r\n"${process.execPath}" "${흉내}" %*\r\n`);
+    const pid파일 = join(곳, 'pid.txt');
+    const 껍질 = new 언어서버(root, {
+      cmd: 쉼, 경로: 쉼, args: ['--mute', '--sticky', `--pidfile=${pid파일}`], 이름: '셸껍질',
+    });
+    const 켜짐 = await 껍질.켜기();
+    let 속pid = null;
+    for (let i = 0; i < 60 && 속pid === null; i++) {
+      try { 속pid = Number(readFileSync(pid파일, 'utf8')) || null; } catch { /* 아직 안 적었다 */ }
+      if (속pid === null) await new Promise((r) => setTimeout(r, 50));
+    }
+    check('먼저: .cmd 로 띄운 서버가 켜지고 속 pid 를 적었다',
+      켜짐 === true && Number.isInteger(속pid), `${켜짐} · ${속pid} · ${껍질.죽음}`);
+    if (Number.isInteger(속pid)) {
+      await 껍질.끄기();
+      const 살았나 = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+      let 죽었나 = false;
+      for (let i = 0; i < 60 && !죽었나; i++) {
+        죽었나 = !살았나(속pid);
+        if (!죽었나) await new Promise((r) => setTimeout(r, 50));
+      }
+      check('★ (윈도우) .cmd 껍질째 끄면 안의 서버도 같이 죽는다', 죽었나, 죽었나 ? '' : `${속pid} 가 아직 살아 있다`);
+      if (!죽었나) { try { process.kill(속pid); } catch { /* 이미 갔다 */ } }
+    }
+  }
+
+  /*
+   * 남이 SIGINT 를 맡고 있으면 언어 서버도 **안 거둔다.**
+   *
+   * 신호 손은 「남이 맡고 있으면 그쪽 뜻이 먼저다」 라고 적어 두고, 그 갈림보다 **먼저**
+   * 아이들을 거뒀다. 대화 화면의 Ctrl+C 는 턴만 끊고 세션은 사는데, 언어 서버는 전부
+   * 죽고 풀도 비었다 — 다음 편집부터 진단이 조용해진다(조용한 것은 성하다는 뜻이다).
+   */
+  서버박기('ts', { cmd: process.execPath, args: [흉내], 이름: '흉내서버', 경로: process.execPath });
+  const 남을서버 = await 얻기(root, join(root, 'src', '셈.js'));
+  const 남의손 = () => {};
+  process.on('SIGINT', 남의손);
+  try { process.emit('SIGINT', 'SIGINT'); } finally { process.removeListener('SIGINT', 남의손); }
+  check('★ 남이 SIGINT 를 맡고 있으면 언어 서버를 안 거둔다',
+    !!남을서버 && 지금것들().some((x) => x.살았나) && 남을서버.살았나(), JSON.stringify(지금것들()));
+}
+
+// ══ 9. 8회차 · 바깥 — 아직 아무도 안 잰 여덟 ═════════════════════════════
+trace('9-바깥8회차');
+{
+  /*
+   * ── 살았나() 가 **신호로 죽은 것**을 살았다고 한다 ────────────────────
+   *
+   * 신호로 죽으면 node 는 `exitCode` 를 null 로 두고 `signalCode` 에 그 신호를 담는다
+   * (윈도우는 신호를 흉내만 내서 종료 코드 1 이 되므로, 이 PC 에서는 그 모양을 그대로
+   * 만들어 잣대만 잰다). 잣대가 signalCode 를 아예 안 봐서, OOM 킬러나 밖에서 온
+   * taskkill 로 죽은 서버가 **살아 있는 것으로 통과한다** — 물음마다 시한까지 기다렸다
+   * 빈손으로 오고, 다시 켜지지도 않는다.
+   */
+  const 잣대 = new 언어서버(root, { cmd: process.execPath, args: [흉내], 이름: '흉내서버', 경로: process.execPath });
+  잣대.아이 = { exitCode: null, signalCode: 'SIGKILL', killed: false };
+  check('★★ 신호로 죽은 서버를 살았다고 하지 않는다', 잣대.살았나() === false,
+    `살았나() → ${잣대.살았나()}`);
+  잣대.아이 = { exitCode: null, signalCode: null, killed: false };
+  check('  정말 살아 있으면 살았다고 한다', 잣대.살았나() === true, `살았나() → ${잣대.살았나()}`);
+  잣대.아이 = null;
+
+  /*
+   * ── 진단기다리기 가 **방금 온 지금 판** 진단을 지운다 ────────────────
+   *
+   * 기다리기 앞에서 그 파일의 진단을 통째로 지운다. 옛 판 것을 지금 판의 답으로 안
+   * 내주려는 것인데, **판을 보지 않고** 지워서 이미 도착한 지금 판 답까지 버린다.
+   * 그러면 「안 왔다」(=확인 못 했다)로 올라간다 — 서버는 제대로 답했는데도.
+   * 옛 판 거르기는 #받음 의 `p.version < 지금판` 이 이미 하고 있다.
+   */
+  const 진단방 = mkdtempSync(join(tmpdir(), 'deel-lsp9-'));
+  치울것.push(진단방);
+  writeFileSync(join(진단방, 'a.ts'), 'export const x = 1;\n틀린것\n');
+  {
+    const s = new 언어서버(진단방, { cmd: process.execPath, args: [흉내], 이름: '흉내서버', 경로: process.execPath });
+    await s.켜기();
+    const uri = s.보여주기(join(진단방, 'a.ts'));        // didOpen 1판 → 서버가 바로 낸다
+    // 그 진단이 도착할 틈을 준다. 여기까지 오면 표에는 **지금 판** 답이 들어 있다.
+    for (let i = 0; i < 30 && !s.진단.size; i++) await new Promise((r) => setTimeout(r, 30));
+    const 표에든것 = [...s.진단.values()][0] ?? null;
+    check('  (먼저) 지금 판 진단이 표에 들어와 있다', Array.isArray(표에든것) && 표에든것.length === 1,
+      JSON.stringify(표에든것));
+    const 것들 = await s.진단기다리기(uri, 700);
+    check('★★ 이미 와 있는 지금 판 진단을 지우고 「안 왔다」 고 하지 않는다',
+      Array.isArray(것들) && 것들.length === 1, 것들 === null ? 'null — 지워 버렸다' : JSON.stringify(것들));
+    await s.끄기();
+  }
+
+  /*
+   * ── 끄기() 가 놀림 시계를 **다시 걸어 놓고** 끝난다 ──────────────────
+   *
+   * 맨 앞에서 시계를 끄는데, 그 뒤에 나가는 `exit` 알림이 알림() 을 거치면서
+   * #놀림다시 를 불러 **다시 건다.** 껐는데 껐다 살아나는 시계다.
+   *
+   * ── 그리고 진단을 기다리던 셈을 안 접는다 ────────────────────────────
+   *
+   * #무너짐 은 `기다리는진단 = 0` 과 `#놓기()` 를 같이 하는데 끄기() 는 둘 다 안 한다.
+   * 셈이 남아 있으면 #놓기 가 맨 앞에서 되돌아 나가서, 다음에 다시 켠 아이를 아무도
+   * 놓아 주지 않는다 — 할 일이 없는데 프로그램이 안 끝나는 그 자리다.
+   */
+  {
+    const s = new 언어서버(진단방, { cmd: process.execPath, args: [흉내, '--mute'], 이름: '흉내서버', 경로: process.execPath });
+    await s.켜기();
+    const 기다리기 = s.진단기다리기(pathToFileURL(join(진단방, 'a.ts')).href, 4000);
+    for (let i = 0; i < 20 && !s.기다리는진단; i++) await new Promise((r) => setTimeout(r, 20));
+    check('  (먼저) 진단을 기다리는 중이다', s.기다리는진단 === 1, String(s.기다리는진단));
+    await s.끄기();
+    check('★★ 끄고 나면 놀림 시계가 안 남는다', s.놀림시계 === null,
+      s.놀림시계 === null ? '' : '껐는데 다시 걸려 있다');
+    check('★★ 끄고 나면 진단 기다리는 셈도 접는다 (#무너짐 과 같이)',
+      s.기다리는진단 === 0, String(s.기다리는진단));
+    await 기다리기;
+  }
+
+  /*
+   * ── servers.js 넷 ────────────────────────────────────────────────────
+   */
+  // `.c` 를 cpp 로 소개하면 서버가 C 파일에 C++ 규칙을 걸어 없는 오류를 만든다 —
+  // 바로 이 함수 머리말이 `.js` 를 typescript 라고 소개하면 안 되는 까닭으로 적어 둔 그것이다.
+  check('★★ main.c 는 c 로 소개한다 (cpp 가 아니다)', 언어아이디('main.c') === 'c', 언어아이디('main.c'));
+  check('  .cpp · .cc · .hpp 는 그대로 cpp',
+    언어아이디('a.cpp') === 'cpp' && 언어아이디('b.cc') === 'cpp' && 언어아이디('c.hpp') === 'cpp',
+    [언어아이디('a.cpp'), 언어아이디('b.cc'), 언어아이디('c.hpp')].join(' · '));
+  check('  갈래는 그대로다 — 서버는 c 도 cpp 도 clangd 하나다', 갈래('main.c') === 'cpp', String(갈래('main.c')));
+
+  // 이름에 이미 PATHEXT 확장자가 붙어 있으면 윈도우는 **그 이름 그대로** PATH 를 훑는다.
+  // 붙여 보는 쪽을 먼저 돌면, 뒤 폴더의 `tls.cmd.EXE` 가 앞 폴더의 진짜 `tls.cmd` 를 이긴다.
+  {
+    const 길방 = mkdtempSync(join(tmpdir(), 'deel-path9-'));
+    치울것.push(길방);
+    const A = join(길방, 'A');
+    const B = join(길방, 'B');
+    mkdirSync(A); mkdirSync(B);
+    writeFileSync(join(A, 'tls.cmd'), '@echo off\n');
+    writeFileSync(join(B, 'tls.cmd.EXE'), 'x');
+    writeFileSync(join(B, 'tls2.CMD'), '@echo off\n');
+    const env = { PATH: [A, B].join(process.platform === 'win32' ? ';' : ':'), PATHEXT: '.COM;.EXE;.BAT;.CMD' };
+    const 찾음 = 어디있나('tls.cmd', env);
+    check('★★ 확장자가 이미 붙은 이름은 PATH 차례를 지킨다',
+      찾음 === join(A, 'tls.cmd'), String(찾음));
+    check('  확장자 없는 이름은 여태처럼 붙여 찾는다',
+      process.platform === 'win32' ? 어디있나('tls2', env) === join(B, 'tls2.CMD') : true,
+      String(어디있나('tls2', env)));
+  }
+
+  /*
+   * ── PATHEXT 가 비어 있으면 **아무것도 못 찾았다** (사냥6 막판-뒷단) ─────
+   *
+   * 위 고침이 붙여 볼 목록 끝의 `''` 를 뺐다. 그런데 `??` 는 **빈 글을 안 막는다** —
+   * `PATHEXT=` 로 비워 둔 판(또는 `;;` 만 든 판)에서는 그 목록이 통째로 비고, 그러면
+   * 가장 안쪽 되풀이가 **한 번도 안 돌아** 무엇을 물어도 null 이다. `이미붙음` 도 빈
+   * 목록에서는 거짓이라, 윈도우가 그대로 돌릴 수 있는 완전한 이름(`tls.cmd`)조차 못
+   * 찾는다. 화면에는 언어 서버가 통째로 안 깔린 것으로 보인다 — 이 함수 머리말이
+   * 제일 피하려던 「있는데 없다고 하는」 꼴의 반대쪽이다.
+   *
+   * 빈 PATHEXT 는 **안 적은 것과 같이** 본다. 안 적었을 때 쓰는 그 목록으로 간다.
+   */
+  {
+    const 빈방 = mkdtempSync(join(tmpdir(), 'deel-path10-'));
+    치울것.push(빈방);
+    const C = join(빈방, 'C');
+    mkdirSync(C);
+    writeFileSync(join(C, 'tls3.cmd'), 'x');
+    const 윈 = process.platform === 'win32';
+    const 만들기 = (pathext) => ({ PATH: C, PATHEXT: pathext });
+    for (const [이름표, pathext] of [['빈 글', ''], ['세미콜론만', ';;']]) {
+      const env = 만들기(pathext);
+      // 확장자 글자 크기는 PATHEXT 를 따른다(.CMD) — 찾은 파일이 그 파일이기만 하면 된다.
+      const 같나 = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+      check(`★★★ PATHEXT 가 ${이름표}이어도 확장자 붙여 찾는다`,
+        윈 ? 같나(어디있나('tls3', env), join(C, 'tls3.cmd')) : true, String(어디있나('tls3', env)));
+      check(`★★★ PATHEXT 가 ${이름표}이어도 완전한 이름은 그대로 찾는다`,
+        윈 ? 어디있나('tls3.cmd', env) === join(C, 'tls3.cmd') : true, String(어디있나('tls3.cmd', env)));
+    }
+  }
+
+  // 훑기 한도가 **셀 것이 하나도 없는 파일**로 다 나가면, 코드가 가득한 폴더가
+  // 「쓸 수 있는 언어 서버가 없습니다」 가 된다.
+  {
+    const 큰방 = mkdtempSync(join(tmpdir(), 'deel-walk9-'));
+    치울것.push(큰방);
+    mkdirSync(join(큰방, 'aaa_src'));
+    for (let i = 0; i < 20; i++) writeFileSync(join(큰방, 'aaa_src', `코드${i}.ts`), 'export const x = 1;\n');
+    mkdirSync(join(큰방, 'zzz_자료'));
+    for (let i = 0; i < 4200; i++) writeFileSync(join(큰방, 'zzz_자료', `문서${i}.md`), '메모\n');
+    셈지우기();
+    서버박기('ts', { cmd: process.execPath, args: [흉내], 이름: '흉내서버', 경로: process.execPath });
+    const 것 = await 프로젝트갈래(큰방);
+    check('★★ 문서가 앞에 4천 개 있어도 코드 갈래를 찾아낸다',
+      것?.갈래 === 'ts' && 것.개수 === 20, JSON.stringify(것));
+    셈지우기();
+  }
+
+  // 주석은 「열쇠와 다른 것만 적어 둔다」 인데 표에는 같은 것도 다 들어 있다.
+  // 그리고 **들어 있어야 한다** — 빠지면 go·java·php·lua 가 plaintext 로 소개된다.
+  check('★ 열쇠와 같은 이름도 표에 있어야 한다 (빠지면 plaintext 가 된다)',
+    언어아이디('a.go') === 'go' && 언어아이디('b.java') === 'java'
+    && 언어아이디('c.php') === 'php' && 언어아이디('d.lua') === 'lua',
+    [언어아이디('a.go'), 언어아이디('b.java'), 언어아이디('c.php'), 언어아이디('d.lua')].join(' · '));
+}
+
 서버박기('ts', null);
 셈지우기();
+await 모두끄기();
 for (const p of [...치울것, root]) {
   const 됐나 = await 치우기(p);
   if (!됐나) 적어둘것.push(`임시 폴더를 못 지웠습니다: ${p}`);

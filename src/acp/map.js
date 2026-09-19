@@ -313,8 +313,20 @@ export function 되살린것(messages, { 최대내용 = 2000, 뿌리 = null } = 
       const 이름 = String(tc.name ?? '도구');
       const 인자 = 인자풀기(tc.args);
 
+      /*
+       * id 가 붙은 부름은 **id 로만** 찾는다.
+       *
+       * 못 찾으면 이름 큐로 한 번 더 찾았다. 그 큐에 든 것은 id 를 안 주는 규격의
+       * 답이거나 **같은 이름을 쓰는 다른 부름의 답**이다. 그래서 제 답이 안 남은
+       * 부름이 남의 답을 뺏어 달고 completed 로 그려졌다 — 바로 아래 머리말이
+       * 「성공으로 그리면 안 된다」 고 적어 둔 그 자리다. 게다가 뺏긴 쪽은 큐가
+       * 비어 실패로 밀린다. 한 줄 어긋난 것이 아니라 둘 다 틀린 것이다.
+       *
+       * id 를 주는 규격은 답에도 id 를 적는다(adapter.js 의 toolMessage). 이름으로
+       * 짝짓는 것은 id 가 아예 없는 규격(ollama)뿐이고, 그쪽은 부름에도 id 가 없다.
+       */
       let 답;
-      if (tc?.id != null && id로.has(tc.id)) 답 = id로.get(tc.id);
+      if (tc?.id != null) 답 = id로.get(tc.id);
       else {
         const q = 이름으로.get(이름);
         if (q?.length) 답 = q.shift();
@@ -363,8 +375,16 @@ export function 프롬프트글(덩이들) {
         break;
       case 'resource': {
         const r = b.resource ?? {};
-        if (typeof r.text === 'string' && r.text) {
-          조각.push(`--- ${r.uri ?? '붙임'} ---\n${r.text}`);
+        /*
+         * 빈 글도 **읽은 것**이다.
+         *
+         * `&& r.text` 로 보던 때는 빈 파일이 알맹이가 아예 안 실려 온 붙임과 같은
+         * 갈래로 떨어져 「글이 아니라 못 읽었습니다」 가 붙었다. 모델은 그걸 읽기
+         * 실패로 알아듣고 같은 파일을 Read 로 또 연다 — 그리고 또 빈 파일을 본다.
+         * 빈 것과 못 읽은 것은 다음에 할 일이 다르다.
+         */
+        if (typeof r.text === 'string') {
+          조각.push(`--- ${r.uri ?? '붙임'} ---\n${r.text || '(빈 파일입니다)'}`);
         } else if (r.uri) {
           조각.push(`(붙임: ${r.uri} — 글이 아니라 못 읽었습니다)`);
         }

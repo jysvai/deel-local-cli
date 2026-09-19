@@ -37,7 +37,7 @@ export async function readExcel(abs, { askPassword = null, maxTries = 3 } = {}) 
       // zip 이긴 한데 엑셀이 아니거나 모양이 다르다. 엑셀이 있으면 맡겨 본다.
       if (!canUseExcel()) return { ok: false, error: `${err.message}` };
       const r = await excelToTables(abs, { password: '' });
-      if (r.ok) return { ok: true, sheets: r.sheets, notes: [], how: '엑셀에게 맡겼습니다' };
+      if (r.ok) return { ok: true, sheets: r.sheets, notes: 맡긴메모(r), how: '엑셀에게 맡겼습니다' };
       return { ok: false, error: `${err.message} (엑셀에게도 맡겨 봤지만: ${r.message})` };
     }
   }
@@ -56,7 +56,7 @@ export async function readExcel(abs, { askPassword = null, maxTries = 3 } = {}) 
 
   // 암호 없이 먼저 해 본다. 옛 .xls 는 암호가 없는 경우가 대부분이다.
   let r = await excelToTables(abs, { password: '' });
-  if (r.ok) return { ok: true, sheets: r.sheets, notes: [], how: '엑셀에게 맡겼습니다' };
+  if (r.ok) return { ok: true, sheets: r.sheets, notes: 맡긴메모(r), how: '엑셀에게 맡겼습니다' };
 
   if (r.reason !== 'password') {
     return { ok: false, error: 붙임(r) };
@@ -74,17 +74,22 @@ export async function readExcel(abs, { askPassword = null, maxTries = 3 } = {}) 
     const pw = await askPassword(안내);
     if (pw === null || pw === '') return { ok: false, error: '암호를 넣지 않아 열지 않았습니다.' };
     r = await excelToTables(abs, { password: pw });
-    if (r.ok) return { ok: true, sheets: r.sheets, notes: [], how: '엑셀에게 맡겼습니다 (암호 씀)' };
+    if (r.ok) return { ok: true, sheets: r.sheets, notes: 맡긴메모(r), how: '엑셀에게 맡겼습니다 (암호 씀)' };
     if (r.reason !== 'password') return { ok: false, error: 붙임(r) };
   }
   return { ok: false, error: `암호가 ${maxTries}번 다 맞지 않았습니다.` };
 }
 
+// 엑셀에게 맡긴 판에서 **못 읽은 시트**가 있으면 말한다. 안 말하면 시트 하나가
+// 통째로 빠진 표가 「다 읽었습니다」 로 올라간다 (excel-com.js 의 시트모으기).
+const 맡긴메모 = (r) => (r?.못읽은?.length
+  ? [`못 읽은 시트 ${r.못읽은.length}개: ${r.못읽은.join(' · ')}`]
+  : []);
+
 function 붙임(r) {
-  if (r.reason === 'busy') return `${r.message}`;
-  if (r.reason === 'timeout') return `${r.message}`;
-  if (r.reason === 'no-excel') return `${r.message}`;
-  return r.message ?? '엑셀 파일을 읽지 못했습니다';
+  // busy·timeout·no-excel 도 아래 한 줄과 똑같았다. 갈래마다 적어 두면 언젠가
+  // 한쪽만 고쳐지고, 그때 message 가 없는 갈래가 「undefined」 를 화면에 적는다.
+  return r?.message ?? '엑셀 파일을 읽지 못했습니다';
 }
 
 /**

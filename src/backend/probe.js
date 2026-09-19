@@ -5,6 +5,7 @@
 //   warn 되긴 하는데 조건이 붙음
 //   skip 앞 검사가 실패해 확인 불가
 import { req, headersFor, serverMessage } from './http.js';
+import { 언제풀리나 } from './quota.js';
 import { probeCtx } from './ctxsize.js';
 import { 눈검사메시지 } from './vision.js';
 import {
@@ -12,7 +13,7 @@ import {
   assistantMessage, toolMessage,
 } from './adapter.js';
 import { 벤더 } from './toolfit.js';
-import { 세션이름짓기 } from './wire.js';
+import { 세션이름짓기, 기본카드 } from './wire.js';
 import { 말 } from '../i18n/index.js';
 
 const READ_TOOL = {
@@ -53,7 +54,21 @@ const READ_TOOL = {
 
 /** 이 회사가 무엇을 받는지까지 봐야 몸통이 맞다 (toolfit.js 의 벤더). */
 function 몸통(conn, opts) {
-  return buildBody(conn.kind, { model: conn.model, 회사: 벤더(conn), maxTokens: 128, ...opts });
+  /*
+   * 출력 상한의 **이름**만은 카드에서 받는다. 안 주면 buildBody 가 옛 이름·새 이름을 둘 다
+   * 싣는데, 추론 모델(gpt-5·o 계열)은 옛 이름을 튕긴다. 그러면 첫 칸이 400 으로 죽고 나머지가
+   * 「확인 불가」 로 건너뛰어져, setup 이 streaming·tools·json 을 전부 false 로 **저장**했다.
+   *
+   * 그래서 **새 이름만 받는 모델**(카드의 출력칸 '새것')일 때만 카드를 준다. 그 카드는
+   * 추론 눈금 형식(effort)도 같이 들고 있어 짝이 맞는다. 나머지는 여태처럼 카드 없이 —
+   * 카드를 주면 캐시 표식·생각 형식이 얹혀, 진단이 재려는 「맨 몸통에 어떻게 답하나」 가
+   * 우리 짐작이 섞인 몸통의 답이 된다. 조각 카드도 안 된다: 카드가 있으면 눈금을 짐작하지
+   * 않아서(adapter.js 의 나가는눈금) 추론 강도 칸이 통째로 빠진다.
+   */
+  const 카드 = conn.전선 ?? 기본카드(conn);
+  return buildBody(conn.kind, {
+    model: conn.model, 회사: 벤더(conn), maxTokens: 128, 카드: 카드?.출력칸 === '새것' ? 카드 : null, ...opts,
+  });
 }
 
 // 추론 모델일 때 기본 대화 칸에 덧붙일 설명.
@@ -148,13 +163,34 @@ export async function probe(conn, onStep = () => {}) {
   const facts = { shape, base, auth, model };
 
   const add = (r) => { results.push(r); onStep(r); return r; };
-  const call = (opts) => req(url(endpoint(shape)), {
+  /*
+   * ── 잠깐 막힌 것을 「못 한다」 로 저장하지 않는다 ────────────────────────
+   *
+   * 사람이 본 것: 설치하는 순간 게이트웨이가 429 를 한 번 냈다. 화면은 「기본 대화 ✗ Rate limit
+   * reached」 와 여덟 칸의 「확인 불가」 였고, 프로필에는 streaming·tools·json·think·vision 이 전부
+   * false 로 저장됐다(setup.js 가 `facts.x ?? false` 로 적는다). 도구를 아예 안 쓰는 연결이 됐다.
+   *
+   * 실제로 있었던 일: 각 칸이 요청 **한 번**의 성패로 능력을 정했다. 429·502·503·504 는 모델이 무엇을
+   * 할 수 있는지에 대해 아무 말도 안 한다 — 지금 바쁘다는 말이다 (6회차 Gemini 더듬6 P5·B3·B4·B5).
+   *
+   * 이제 지키는 규칙: 그런 답이면 한 번 쉬었다(Retry-After, 없으면 2초 · 10초 넘게는 안 기다림)
+   * 다시 묻는다. 시간 초과는 다시 안 묻는다 — 이미 60~120초를 기다린 뒤라 설치 화면이 곱절로 멈춘다.
+   */
+  const 잠깐막힘 = (r) => [429, 502, 503, 504].includes(r?.status);
+  const 한번부르기 = (opts) => req(url(endpoint(shape)), {
     method: 'POST',
     headers: H(),
     body: 몸통(conn, opts),
     timeout: opts.timeout ?? 60000,
     stream: opts.stream,
   });
+  const call = async (opts) => {
+    const r = await 한번부르기(opts);
+    if (!잠깐막힘(r)) return r;
+    const 초 = 언제풀리나(r.headers?.get?.('retry-after') ?? null);
+    await new Promise((ok) => setTimeout(ok, Math.min(Math.max((초 ?? 2) * 1000, 500), 10000)));
+    return 한번부르기(opts);
+  };
   // 답 읽기도 루프와 같은 함수를 쓴다. 도구 부름은 { id, name, args } 로
   // 고르게 나온다 — 규격마다 다른 자리를 여기서 또 헤아리지 않는다.
   const 읽기 = (r) => extractMessage(shape, r?.json);
@@ -167,6 +203,9 @@ export async function probe(conn, onStep = () => {}) {
   let got = basic.ok ? 읽기(basic) : { content: '', thinking: '' };
   let thinkingModel = false;
   let retried = false;
+  // 사고를 **끌 수 있다고 확인한** 모델인가. 짐작이 아니라 실제로 끄고 본문을 받아 봤을 때만 선다.
+  let 사고끌수있나 = false;
+  let 넉넉 = 256;   // 기본 대화가 본문을 낸 상한 — 추론 모델이면 뒤 칸도 이 아래로 안 준다 (아래 상한)
 
   /*
    * ── 사고를 **글로 안 내주는** 모델도 여기로 온다 ──────────────────────
@@ -187,27 +226,72 @@ export async function probe(conn, onStep = () => {}) {
    */
   const 상한에걸렸나 = (e) => e?.stopped === 'length' || e?.stopped === 'max_tokens';
   const 생각만했나 = (e) => !!e?.thinking || 상한에걸렸나(e) || (e?.usage?.reasoning ?? 0) > 0;
+  /*
+   * ── 본문이 **왔어도** 추론 모델일 수 있다 ──────────────────────────────
+   *
+   * 아래 갈래가 `!got.content` 안에만 있었다. 그런데 1+1 은 쉬운 물음이라,
+   * 256 안에서 생각도 하고 답도 내는 추론 모델이 많다. 그 모델은 여기를 안
+   * 지나가고 **보통 모델로 적혔다.** 그러면 아래 `상한()` 이 아무 일도 안 해서
+   * 뒤 칸을 128·32 로 묻고, 그 상한은 생각에 다 나가 본문이 빈다 —
+   * 시스템·스트리밍·그림이 「못 한다」 로 적히고 프로필에 false 로 남는다.
+   * 이 파일이 아래 248–261줄에서 없애려던 바로 그 고장이다 (8회차 뒷단-배우기).
+   *
+   * 다만 **상한에 걸렸다**는 것만으로는 안 친다. 본문이 온 판에서 그것은 보통
+   * 모델이 길게 답하다 잘린 것과 구별이 안 된다. 본문이 있을 때는 사고 글이나
+   * 생각 토큰 — 즉 **생각했다는 증거**가 있어야 추론 모델로 본다.
+   */
+  const 생각한흔적 = (e) => !!e?.thinking || (e?.usage?.reasoning ?? 0) > 0;
+  if (basic.ok && (생각한흔적(got) || (!got.content && 생각만했나(got)))) thinkingModel = true;
 
   if (basic.ok && !got.content && 생각만했나(got)) {
-    thinkingModel = true;
     retried = true;
     const second = await call({ ...ASK, maxTokens: 1024, think: false, timeout: 90000 });
-    if (second.ok) {
-      const e2 = 읽기(second);
-      if (e2.content) { basic = second; got = e2; }
-      else {
-        // 사고를 못 끄는 서버 — 상한만 크게 올려 한 번 더.
-        const third = await call({ ...ASK, maxTokens: 2048, timeout: 120000 });
-        if (third.ok && 읽기(third).content) { basic = third; got = 읽기(third); }
-      }
+    const e2 = second.ok ? 읽기(second) : null;
+    if (e2?.content) { basic = second; got = e2; 넉넉 = 1024; 사고끌수있나 = true; }
+    else {
+      /*
+       * 사고를 못 끄는 서버 — 상한만 크게 올려 한 번 더.
+       *
+       * 이 걸음이 `if (second.ok)` **안에** 있었다. 그래서 `think:false` 를
+       * 400 으로 **거절하는** 서버는 여기에 영영 못 닿았다 — 상한만 올리면
+       * 답하는 모델인데 기본 대화가 ✗ 로 끝나고 나머지 여덟 칸이 전부
+       * 「확인 불가」 가 됐다. 그 판정이 프로필에 전부 false 로 남는다.
+       * 칸 하나를 거절한 것과 모델이 못 하는 것은 다른 말이다.
+       */
+      const third = await call({ ...ASK, maxTokens: 2048, timeout: 120000 });
+      const e3 = third.ok ? 읽기(third) : null;
+      if (e3?.content) { basic = third; got = e3; 넉넉 = 2048; }
     }
   }
 
   const basicText = got.content;
   const basicOk = basic.ok && !!basicText;
   facts.thinkingModel = thinkingModel;
-  // 사고를 끌 수 있는 모델이면 이후 검사에서 꺼서 토큰과 시간을 아낀다.
-  const quiet = shape === 'ollama' && thinkingModel ? { think: false, maxTokens: 512 } : {};
+  /*
+   * 사고를 끌 수 있는 모델이면 이후 검사에서 꺼서 토큰과 시간을 아낀다.
+   *
+   * 여기가 `thinkingModel` 만 봤다. 그런데 추론 모델이라고 다 끌 수 있는 것은
+   * 아니다 — 위에서 `think:false` 를 **400 으로 거절한** 서버도 추론 모델이다.
+   * 그 창구에 이 칸을 다시 실으면 뒤 여덟 번이 전부 400 이고, 프로필에는
+   * 도구·JSON·스트리밍이 다 false 로 남는다. 서버가 안 받는다고 말한 칸은
+   * 그 뒤로 안 보낸다 — 끌 수 있다고 **확인한** 모델에만 붙인다.
+   */
+  const quiet = shape === 'ollama' && 사고끌수있나 ? { think: false } : {};
+  /*
+   * ── 기본 대화를 넉넉히 받은 모델은 뒤 칸도 그만큼 준다 ───────────────────
+   *
+   * 사람이 본 것: 추론 모델을 붙였더니 기본 대화는 ✓(추론 모델)인데 도구 호출 ✗ 「도구를 안 부르고 글로만
+   * 답합니다」 · 구조적 출력 「스키마를 안 지킴 — 받은 값 ""」 · 스트리밍 「한 번에 옵니다」 였고, 프로필에
+   * tools·json·streaming 이 false 로 저장됐다. 도구를 못 쓰는 에이전트가 됐다.
+   *
+   * 실제로 있었던 일: 기본 대화는 256 → 1024 → 2048 로 올려서야 본문을 받았는데, 뒤 칸들은 다시 128
+   * (시스템·스트리밍) · 256(도구 결과) · 512(도구·JSON) 로 물었다. 사고를 끌 수 있는 Ollama 만 quiet 로
+   * 넉넉히 줬고, 사고를 못 끄는 창구(OpenAI 계열 추론 모델)는 그 상한을 생각에 다 쓰고 빈 본문을 냈다
+   * (6회차 Gemini 더듬6 P2). 모델이 못 한 것이 아니라 우리가 말할 자리를 안 준 것이다.
+   *
+   * 이제 지키는 규칙: 추론 모델이면 뒤 칸의 상한을 **기본 대화가 본문을 낸 상한** 아래로 내리지 않는다.
+   */
+  const 상한 = (n) => (thinkingModel ? Math.max(n, 넉넉) : n);
 
   add({
     id: 'chat',
@@ -236,6 +320,7 @@ export async function probe(conn, onStep = () => {}) {
   // 2. 시스템 메시지 — 규칙과 스킬이 먹느냐가 여기 달렸다.
   const sys = await call({
     ...quiet,
+    maxTokens: 상한(128),
     messages: [
       { role: 'system', content: '너는 무슨 질문을 받든 정확히 DEEL 한 단어만 답한다.' },
       { role: 'user', content: '안녕하세요' },
@@ -256,6 +341,7 @@ export async function probe(conn, onStep = () => {}) {
   const st = await call({
     ...quiet,
     messages: [{ role: 'user', content: '1부터 20까지 세어보세요.' }],
+    maxTokens: 상한(128),
     stream: true,
     timeout: 45000,
   });
@@ -272,8 +358,17 @@ export async function probe(conn, onStep = () => {}) {
         if (done) break;
         const text = dec.decode(value, { stream: true });
         const hits = (text.match(/(^|\n)data:|"done"\s*:/g) ?? []).length;
-        if (hits && !firstMs) firstMs = Date.now() - t0;
-        chunks += hits || (text.trim() ? 1 : 0);
+        /*
+         * 조각으로 셀 것을 먼저 정하고, **그것으로** 첫 응답 시각을 잰다.
+         *
+         * 여기가 `hits` 만 보고 시각을 쟀다. 그런데 바로 아랫줄은 `data:` 도
+         * `"done":` 도 안 쓰는 평문 청크도 조각으로 센다 — 그런 창구에서는
+         * 조각이 다섯인데 첫 응답만 `0ms` 로 나갔다. 잰 값이 아니라 지어낸
+         * 값이고, 사람은 그걸 「번개같이 빠른 창구」 로 읽는다.
+         */
+        const 센것 = hits || (text.trim() ? 1 : 0);
+        if (센것 && !firstMs) firstMs = Date.now() - t0;
+        chunks += 센것;
       }
       reader.cancel().catch(() => {});
     } catch (e) {
@@ -293,21 +388,37 @@ export async function probe(conn, onStep = () => {}) {
   add({
     id: 'stream',
     label: '스트리밍',
-    status: chunks > 2 ? 'ok' : (st.ok && !읽다실패) ? 'warn' : 'no',
+    // 못 읽은 것은 ✗ 가 아니다 — 「안 된다」 가 아니라 「못 쟀다」 다 (아래 머리말, 그림 칸과 같은 자세).
+    status: chunks > 2 ? 'ok' : st.ok ? 'warn' : 'no',
     detail: chunks > 2
       ? `조각 ${chunks}개, 첫 응답 ${firstMs}ms`
-      : 읽다실패 ? `흘러오는 것을 읽지 못했습니다 — ${읽다실패}`
+      : 읽다실패 ? `흘러오는 것을 읽지 못했습니다 — ${읽다실패} (못 쟀습니다 — 켠 채로 둡니다)`
         : st.ok ? '한 번에 옵니다 — 화면은 스피너로 대체합니다' : serverMessage(st),
     ms: st.ms,
   });
-  facts.streaming = chunks > 2;
+  /*
+   * 못 쟀으면 **켠 채로** 둔다 — 되돌아올 수 있는 쪽으로 틀린다 (아래 그림 칸 머리말).
+   *
+   * 여기가 `chunks > 2` 하나였다. 바로 위 catch 는 「우리 잘못이 서버 진단으로 둔갑하는
+   * 것이다 — 사람은 멀쩡한 창구를 스트리밍 안 되는 창구로 알고 쓴다」 고 적어 놓고 화면
+   * 글자만 고쳤고, **프로필에 남는 값**은 옛것 그대로 false 였다 (사냥6 막판-뒷단).
+   * setup.js 가 `facts.streaming ?? false` 로 적으므로 그 false 는 그 연결의 스트리밍을
+   * 영영 끈다 — 화면은 답을 한 번에 통째로 띄우고, 왜 그런지는 어디에도 안 남는다.
+   * 그림 칸·추론 칸은 같은 판에서 이 규칙을 적용했는데 이 칸만 빠져 있었다.
+   */
+  facts.streaming = chunks > 2 || !!읽다실패;
 
   // 4. 도구 호출 — 에이전트의 생사가 걸린 검사.
+  //
+  // 실제로 준 상한을 **한 번만 셈해서** 아래 화면 글에도 그대로 쓴다. 두 자리에
+  // 따로 적어 두면 추론 모델에서 어긋난다 — 1024 로 물어 놓고 화면에는 512 라고
+  // 적었고, 그 줄을 읽은 사람은 엉뚱한 자리를 올린다 (8회차 뒷단-배우기).
+  const 도구상한 = 상한(512);
   const tl = await call({
     ...quiet,
     messages: [{ role: 'user', content: 'config.json 파일을 읽어 주세요.' }],
     tools: [READ_TOOL],
-    maxTokens: 512,
+    maxTokens: 도구상한,
     timeout: 90000,
   });
   const tcalls = tl.ok ? 읽기(tl).toolCalls : [];
@@ -328,14 +439,22 @@ export async function probe(conn, onStep = () => {}) {
    * 잘림을 남의 흠으로 적지 않는다 (34차 리뷰).
    */
   const 잘린인자 = gotCall && tcalls[0]?.argsBroken === true;
-  const 원문에있나 = 잘린인자 && String(tcalls[0]?.rawArgs ?? '').includes('config');
+  /*
+   * argsBroken 은 이제 「잘림」 과 「끝까지 온 틀린 JSON」 둘 다다 — 어댑터가 argsCut 으로 가른다
+   * (사냥5 L5-5 · adapter.js 잘린모양인가). argsCut 이 false 면 우리 상한 탓이 아니다. 여기서 원문에
+   * config 가 있다고 「잘렸을 뿐」 · ok 로 적으면 홑따옴표로 적는 모델을 우리 탓으로 덮고 좋은 모델로
+   * 판정한다 — 위 머리말과 거꾸로 된 틀림이다.
+   */
+  const 모양틀림 = 잘린인자 && tcalls[0]?.argsCut === false;
+  const 원문에있나 = 잘린인자 && !모양틀림 && String(tcalls[0]?.rawArgs ?? '').includes('config');
   add({
     id: 'tools',
     label: '도구 호출',
     status: gotCall ? (argOk || 원문에있나 ? 'ok' : 'warn') : 'no',
     detail: gotCall
       ? `${tcalls[0]?.name} 호출됨${argOk ? ''
-        : 원문에있나 ? ` — 인자가 우리 상한(${512}토큰)에 잘렸을 뿐, 값은 제대로 왔습니다`
+        : 원문에있나 ? ` — 인자가 우리 상한(${도구상한}토큰)에 잘렸을 뿐, 값은 제대로 왔습니다`
+          : 모양틀림 ? ' — 인자 JSON 모양이 틀렸습니다 (홑따옴표·끝 쉼표 같은 것 — 편집 도구가 자주 거절당합니다)'
           : 잘린인자 ? ' — 인자 JSON 이 잘려 왔습니다 (상한을 올려 다시 보세요)'
             : ' — 인자가 부정확, 편집 신뢰성 작업이 더 필요합니다'}`
       : tl.ok ? '도구를 안 부르고 글로만 답합니다' : serverMessage(tl),
@@ -366,7 +485,7 @@ export async function probe(conn, onStep = () => {}) {
         { role: 'user', content: 'port 값이 몇인가요? 숫자만 답하세요.' },
       ],
       tools: [READ_TOOL],
-      maxTokens: 256,
+      maxTokens: 상한(256),
     });
     const said = rt.ok ? 읽기(rt).content : '';
     add({
@@ -389,16 +508,25 @@ export async function probe(conn, onStep = () => {}) {
     required: ['answer'],
     additionalProperties: false,
   };
-  // 한 번은 흔들릴 수 있으므로 실패하면 한 번만 더 본다.
+  /*
+   * 한 번은 흔들릴 수 있으므로 실패하면 한 번만 더 본다.
+   *
+   * 그 「실패」 를 `!parsed` 로 적어 뒀다. 그러면 **스키마를 어겨도 JSON 으로만
+   * 읽히면** 다시 안 물었다 — `{"result":21}` 한 번에 `warn` 이 되고, 그 판정이
+   * 프로필에 `json:false` 로 남는다. 한 번 흔들린 것과 못 하는 것을 가르자고 둔
+   * 되풀이인데, 정작 제일 흔한 흔들림(칸 이름을 한 번 잘못 적는 것)에서 안 돌았다.
+   * 여기서 보려는 것은 「읽히나」 가 아니라 **「스키마를 지키나」** 다.
+   */
+  const 스키마맞나 = (x) => !!(x && 'answer' in x);
   let js = null;
   let parsed = null;
   let raw = '';
-  for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
+  for (let attempt = 0; attempt < 2 && !스키마맞나(parsed); attempt++) {
     js = await call({
       ...quiet,
       messages: [{ role: 'user', content: '3 곱하기 7은?' }],
       json: schema,
-      maxTokens: 512,
+      maxTokens: 상한(512),
       timeout: 90000,
     });
     if (!js.ok) break;
@@ -417,7 +545,7 @@ export async function probe(conn, onStep = () => {}) {
       if (읽힌것 && typeof 읽힌것 === 'object' && !Array.isArray(읽힌것)) parsed = 읽힌것;
     } catch { /* 글로만 답하는 서버 — 아래에서 '스키마를 안 지킴' 으로 적는다 */ }
   }
-  const jsonOk = !!(parsed && 'answer' in parsed);
+  const jsonOk = 스키마맞나(parsed);
   add({
     id: 'json',
     label: '구조적 출력',
@@ -448,7 +576,7 @@ export async function probe(conn, onStep = () => {}) {
   let 눈 = await call({
     ...quiet,
     messages: [눈검사메시지(shape)],
-    maxTokens: 32,
+    maxTokens: 상한(32),
     timeout: 60000,
   });
   /*
@@ -469,7 +597,7 @@ export async function probe(conn, onStep = () => {}) {
   let 눈읽은것 = 읽기(눈);
   if (눈.ok && !눈읽은것.content && 상한에걸렸나(눈읽은것)) {
     const 다시 = await call({
-      ...quiet, messages: [눈검사메시지(shape)], maxTokens: 512, think: false, timeout: 90000,
+      ...quiet, messages: [눈검사메시지(shape)], maxTokens: 상한(512), think: false, timeout: 90000,
     });
     if (다시.ok) { 눈 = 다시; 눈읽은것 = 읽기(다시); }
   }
@@ -538,10 +666,24 @@ export async function probe(conn, onStep = () => {}) {
         capped: 상한에걸렸나(e),
       });
     } else {
-      seen.push({ lv, ms: r.ms, err: serverMessage(r) });
+      seen.push({ lv, ms: r.ms, err: serverMessage(r), status: r.status });
     }
   }
   const bothOk = seen.every((s) => !s.err);
+  /*
+   * ── 거절과 못 잰 것을 가른다 ────────────────────────────────────────────
+   *
+   * 사람이 본 것: 이 칸이 ✗ 「파라미터 거부됨 — Unrecognized request argument supplied: reasoning_effort」
+   * 인데 프로필에는 think: true 가 저장됐다. 그 뒤로 매 요청에 서버가 거절한 그 칸을 실어 보냈다.
+   *
+   * 실제로 있었던 일: 아래 `facts.think = differs || !잴것이있었나` 에서 잴것이있었나 가 bothOk 를 품고
+   * 있어, 요청이 **실패하기만 하면** 「못 쟀다 → 켠 채로」 가 됐다. 서버가 분명히 거절한 것까지 (6회차
+   * Gemini 더듬6 B1).
+   *
+   * 이제 지키는 규칙: 4xx(시간 초과 408·속도 429 빼고)는 서버가 **이 칸을 안 받는다고 말한 것** — false.
+   * 429·5xx·끊김은 아무 말도 안 한 것이라 위 그림 칸 머리말대로 켠 채로 둔다.
+   */
+  const 거절됨 = seen.some((s) => s.err && s.status >= 400 && s.status < 500 && s.status !== 408 && s.status !== 429);
   const capped = bothOk && seen.every((s) => s.capped);
   // 사고 길이가 눈에 띄게 다르거나, 출력량이 20% 넘게 차이나야 "먹는다"고 본다.
   const thoughtGap = bothOk ? Math.abs(seen[0].thought - seen[1].thought) : 0;
@@ -565,21 +707,31 @@ export async function probe(conn, onStep = () => {}) {
   add({
     id: 'think',
     label: '추론 강도 조절',
-    status: !bothOk ? 'no' : capped ? 'warn' : differs ? 'ok' : 'warn',
+    status: !bothOk ? (거절됨 ? 'no' : 'warn') : capped ? 'warn' : differs ? 'ok' : 'warn',
     detail: !bothOk
-      ? `파라미터 거부됨 — ${seen.find((s) => s.err)?.err}`
+      ? 거절됨
+        ? `파라미터 거부됨 — ${seen.find((s) => s.err)?.err}`
+        : `못 쟀습니다 — 서버가 지금 답을 못 했습니다 (${seen.find((s) => s.err)?.err}). 조절은 켠 채로 둡니다.`
       : capped
-        ? `둘 다 토큰 상한(${THINK_CAP})에 걸려 비교 불가 — 루프 층에서 조절합니다`
+        ? `둘 다 토큰 상한(${THINK_CAP})에 걸려 비교 불가 — 못 쟀습니다. 조절은 켠 채로 둡니다.`
         : differs
           ? `${fmt(seen[0])} · ${fmt(seen[1])}`
           : 잴것이있었나
-            ? `차이 없음 (${fmt(seen[0])} · ${fmt(seen[1])}) — 루프 층에서 조절합니다`
+            ? `차이 없음 (${fmt(seen[0])} · ${fmt(seen[1])}) — 강도를 바꿔도 답이 안 바뀝니다`
             : `못 쟀습니다 — 사고도 usage 도 안 주는 창구입니다 (${fmt(seen[0])} · ${fmt(seen[1])}).`
               + ' 조절은 켠 채로 둡니다 — 안 받는 창구면 서버가 거절하면서 말해 주고, 그때 배웁니다.',
     ms: seen.reduce((a, s) => a + (s.ms ?? 0), 0),
   });
-  // 못 쟀으면 켠 채로 둔다 — 되돌아올 수 있는 쪽으로 틀린다 (위 그림 칸 머리말).
-  facts.think = differs || !잴것이있었나;
+  /*
+   * 못 쟀으면 켠 채로 둔다 — 되돌아올 수 있는 쪽으로 틀린다 (위 그림 칸 머리말).
+   *
+   * `capped` 가 이 셈에서 빠져 있었다. 그래서 화면에는 「비교 불가」 라고 적고
+   * 같은 줄에서 조절을 껐다 — **못 쟀는데 안 된다고 적는** 바로 그 자리다
+   * (아래 「잴 칸이 없었던 판」 머리말이 말하는 것과 같은 틀림). 둘 다 상한에
+   * 걸린 것은 이 모델이 강도를 안 받는다는 말이 아니라 우리가 자리를 좁게 준
+   * 것이다 (8회차 뒷단-배우기).
+   */
+  facts.think = differs || (bothOk ? (capped || !잴것이있었나) : !거절됨);
 
   // 8. 컨텍스트 길이 — 파일을 몇 개까지 한 번에 읽힐 수 있느냐.
   //

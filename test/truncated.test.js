@@ -46,6 +46,8 @@ const server = createServer((req, res) => {
     부른횟수++;
     const step = typeof script === 'function' ? script(부른횟수) : (script[차례++] ?? { text: '(대본 끝)' });
     res.writeHead(200, { 'Content-Type': 'application/json' });
+    // 몸을 통째로 적어 준 차례. 부름의 이름 칸처럼 규격을 벗어난 모양을 그대로 낸다.
+    if (step.그대로) return res.end(JSON.stringify(step.그대로));
     if (step.brokenCall) {
       // 인자를 쓰다가 중간에서 끊긴 모양. 실제 잘림이 이렇게 생겼다.
       return res.end(JSON.stringify({
@@ -232,7 +234,8 @@ trace('3-같은실패반복');
   check('같은 실패가 반복되면 멈춘다', 도구횟수 <= 6, `${도구횟수}번 불렀다`);
   check('왜 멈췄는지 말한다', evs.some((e) => e.type === 'stuck' || /같은|반복/.test(String(e.text ?? ''))),
     evs.map((e) => e.type).join(','));
-  check('멈춰도 대화는 성하다', evs.at(-1)?.type !== 'error' || true, '');
+  // `|| true` 가 붙어 있어 무엇이 와도 초록이었다. 마지막 사건이 오류가 아닌지를 정말로 본다.
+  check('멈춰도 대화는 성하다', evs.at(-1)?.type !== 'error', String(evs.at(-1)?.type));
 }
 
 trace('4-원래하던일');
@@ -285,6 +288,101 @@ trace('3b-같은것을또부름');
   check('패턴이 다르면 그대로 다 돈다', evs.filter((e) => e.type === 'tool').length === 3,
     String(evs.filter((e) => e.type === 'tool').length));
   check('다르게 부르면 안 막힌다', evs.some((e) => e.type === 'done'), evs.map((e) => e.type).join(','));
+}
+
+trace('3c-이름없는부름');
+
+// ── ★★ 이름이 없는(또는 글자가 아닌) 부름이 턴을 죽이지 않는다 (사냥5 L5-1) ──
+//
+// 한 번에 받는 길에서 `function.name` 이 빠졌거나 `42` 로 오면, 루프의 「모르는 도구」
+// 관문이 `call.name.startsWith` 에서 TypeError 로 run() 밖으로 튀었다. 그 전에 부름이
+// 든 답은 이미 대화에 실려 있어서, 다음 요청은 결과 없는 tool_calls 를 싣고 나가
+// 까다로운 서버에서 400 이 된다. 흘려받는 길은 이름을 '' 로 채워 멀쩡했다.
+{
+  const { normalizeCalls } = await import('../src/backend/adapter.js');
+  const [이름없음] = normalizeCalls([{ id: 'n1', function: { arguments: '{}' } }]);
+  const [숫자이름] = normalizeCalls([{ id: 'n2', function: { name: 42, arguments: '{}' } }]);
+  check('★ 한 번에 받은 부름의 이름은 늘 글자다', typeof 이름없음.name === 'string' && typeof 숫자이름.name === 'string',
+    JSON.stringify([이름없음.name, 숫자이름.name]));
+
+  for (const [라벨, 이름칸] of [['이름 없음', {}], ['이름이 숫자', { name: 42 }]]) {
+    script = [
+      { 그대로: {
+        choices: [{ index: 0, finish_reason: 'tool_calls', message: { role: 'assistant', content: '', tool_calls: [
+          { id: 'n1', type: 'function', function: { ...이름칸, arguments: '{"file_path":"a.js"}' } },
+        ] } }],
+        usage: { prompt_tokens: 100, completion_tokens: 20 },
+      } },
+      { text: '다른 길로 하겠습니다.' },
+    ];
+    let 던짐 = null;
+    let r = null;
+    try { r = await 돌리기('a.js 읽어줘'); } catch (err) { 던짐 = err; }
+    check(`★★ ${라벨}: 부름이 와도 턴이 안 죽는다`, !던짐, String(던짐?.message ?? ''));
+    const ms = r?.s.messages ?? [];
+    const 부름 = [...ms].reverse().find((m) => m.role === 'assistant' && m.tool_calls?.length);
+    const 뒤결과 = 부름 ? ms.slice(ms.indexOf(부름) + 1).filter((m) => m.role === 'tool').length : 0;
+    check(`★★ ${라벨}: 부른 만큼 결과가 짝지어 남는다`, !!부름 && 뒤결과 === 부름.tool_calls.length,
+      `부름 ${부름?.tool_calls?.length ?? 0} · 결과 ${뒤결과}`);
+    check(`${라벨}: 모르는 도구라고 모델에게 알린다`,
+      (r?.evs ?? []).some((e) => e.type === 'tool' && /모르는 도구/.test(String(e.result?.error ?? ''))),
+      (r?.evs ?? []).map((e) => e.type).join(','));
+  }
+}
+
+trace('3d-모양이틀린인자');
+
+// ── ★★ 모양이 틀린 인자는 「잘렸다」 가 아니다 (사냥5 L5-5) ──────────────────
+//
+// 홑따옴표·끝 쉼표처럼 **끝까지 온** JSON 이 규격에 안 맞으면 JSON.parse 가 실패하고,
+// 그 한 가지로 argsBroken → wasCut 이 참이 됐다. 그러면 걸음마다 상한을 16,384 로 올려
+// 다시 부르고, capped(/out 을 고치라는 말)를 내고, 모델에게는 「너무 크니 300줄씩
+// 나눠 Append 하라」 고 해서 고칠 것(따옴표)과 상관없는 일을 시키다 막혀 끝났다.
+// 글 속 줄바꿈이 날것으로 온 Write 는 더 나빴다 — 파일은 이미 **다** 썼는데 모델에게는
+// 「받은 데까지만 썼다, 이어서 Append 하라」 고 했다.
+{
+  const { normalizeCalls } = await import('../src/backend/adapter.js');
+  const [홑따옴표] = normalizeCalls([{ id: 'm1', function: { name: 'Read', arguments: "{'file_path': 'a.js'}" } }]);
+  check('★★ 끝까지 온 틀린 JSON 은 못 읽었다고 하되 잘렸다고는 안 한다',
+    홑따옴표.argsBroken === true && wasCut({ stopped: 'tool_calls', toolCalls: [홑따옴표] }) === false,
+    JSON.stringify(홑따옴표));
+  const [잘린것] = normalizeCalls([{ id: 'm2', function: { name: 'Write', arguments: 잘린인자 } }]);
+  check('중간에서 끊긴 JSON 은 서버가 stop 이라 해도 여전히 잘린 것이다',
+    wasCut({ stopped: 'stop', toolCalls: [잘린것] }) === true, JSON.stringify(잘린것).slice(0, 80));
+
+  for (const [라벨, raw] of [['홑따옴표', "{'file_path': 'a.js'}"], ['끝 쉼표', '{"file_path": "a.js",}']]) {
+    script = [
+      { brokenCall: { name: 'Read', raw }, stopped: 'tool_calls' },
+      { text: '고쳐서 다시 부르겠습니다.' },
+    ];
+    const { evs, s } = await 돌리기('a.js 읽어줘');
+    const 종류 = evs.map((e) => e.type).join(',');
+    check(`★★ ${라벨}: 상한을 올려 다시 부르지 않는다`, !evs.some((e) => e.type === 'retry'), 종류);
+    check(`★ ${라벨}: /out 을 고치라고 하지 않는다`, !evs.some((e) => e.type === 'capped'), 종류);
+    const 도구답 = s.messages.filter((m) => m.role === 'tool').map((m) => String(m.content)).join('\n');
+    check(`★★ ${라벨}: 「너무 크다·나눠 보내라」 대신 JSON 모양이 틀렸다고 말한다`,
+      !/너무 큽니다|300줄|잘려/.test(도구답) && /JSON/.test(도구답), 도구답.slice(0, 160));
+    // 「잘린인자」 셈은 모델 카드가 처음부터 상한을 올려 부르는 근거다(agent/card.js). 모양 탓은 안 센다.
+    check(`★ ${라벨}: 모델 카드에 「인자 잘림」 으로 안 센다`, s.본것?.잘린인자 === 0, String(s.본것?.잘린인자));
+  }
+
+  const 줄바꿈 = '\n';
+  const 날줄바꿈인자 = `{"file_path": "날줄바꿈.txt", "content": "line1${줄바꿈}line2${줄바꿈}line3${줄바꿈}"}`;
+  script = [
+    { brokenCall: { name: 'Write', raw: 날줄바꿈인자 }, stopped: 'tool_calls' },
+    { text: '다 썼습니다.' },
+  ];
+  const { evs, s } = await 돌리기('파일 하나 써줘');
+  const 만든것 = join(root, '날줄바꿈.txt');
+  check('★ 글 속 줄바꿈이 날것으로 온 Write 도 내용을 다 쓴다',
+    existsSync(만든것) && readFileSync(만든것, 'utf8') === `line1${줄바꿈}line2${줄바꿈}line3${줄바꿈}`,
+    existsSync(만든것) ? JSON.stringify(readFileSync(만든것, 'utf8')) : '없음');
+  check('★★ 그때 상한을 올려 다시 부르지 않는다', !evs.some((e) => e.type === 'retry' || e.type === 'capped'),
+    evs.map((e) => e.type).join(','));
+  const 도구답 = s.messages.filter((m) => m.role === 'tool').map((m) => String(m.content)).join('\n');
+  check('★★ 다 썼는데 「받은 데까지만 썼다·이어서 Append」 라고 하지 않는다',
+    !/받은 데까지만|이어서 Append/.test(도구답) && /다 썼습니다/.test(도구답), 도구답.slice(0, 200));
+  rmSync(만든것, { force: true });
 }
 
 trace('4-내부기록');
@@ -375,6 +473,24 @@ trace('4-내부기록');
   check('비슷한 이름의 내 폴더는 그대로 읽는다', !애먼것.error, JSON.stringify(애먼것).slice(0, 90));
 
   rmSync(방, { recursive: true, force: true });
+}
+
+{
+  /*
+   * Gemini 고리5 — 홑따옴표 JSON 속 큰따옴표·괄호, 대소문자 다른 정지 사유.
+   * 잘린모양인가 가 큰따옴표만 글로 쳐서 `{'desc': 'say "hi'}` 를 「글 속에서 끝났다」 로,
+   * `{'code': 'if (x) {'}` 를 「괄호가 덜 닫혔다」 로 봤다. 끝까지 온 틀린 JSON 인데 잘린 것으로.
+   */
+  const { 잘린모양인가 } = await import('../src/backend/adapter.js');
+  for (const raw of ["{'desc': 'say \"hi'}", "{'code': 'if (x) {'}", "{'a': '[', 'b': 1}", '{"a": "it\'s {", "b": 1,}']) {
+    check(`홑따옴표 속 큰따옴표·괄호는 잘린 것이 아니다 — ${raw}`, 잘린모양인가(raw) === false, String(잘린모양인가(raw)));
+  }
+  for (const raw of ["{'a': 'x", '{"a": "don\'t', '{"a": [1, 2', "{'a': {'b': 1}"]) {
+    check(`앞토막은 여전히 잘린 것 — ${raw}`, 잘린모양인가(raw) === true, String(잘린모양인가(raw)));
+  }
+  for (const s of ['Length', 'LENGTH', 'Max_Tokens', 'max_tokens']) {
+    check(`정지 사유 대소문자가 달라도 잘린 것 — ${s}`, wasCut({ stopped: s }) === true, '');
+  }
 }
 
 trace('5-치움');

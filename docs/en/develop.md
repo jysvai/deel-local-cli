@@ -6,6 +6,13 @@ Running the tests, coverage, the folder layout
 
 ---
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-loop-en-dark.svg">
+    <img alt="How one message travels through deel, animated: what you type, routing, the mode’s tool list, the model, the mode gate and the approval gate, the tool run, Verify, and the answer — each step lights up in turn. With reduced motion it falls back to a still frame" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-loop-en-light.svg" width="760">
+  </picture>
+</p>
+
 ## Development
 
 <sub>Coverage · Layout</sub>
@@ -155,7 +162,12 @@ bin/deel.js              entry point
 src/
   repl.js                the conversation screen — what a person faces
   oneshot.js             run once and exit (-p)
-  commands.js            52 slash commands
+  commands.js            52 slash commands — where a command is dispatched (handle)
+  commands/common.js     the command table · saving config — shared by the pieces below
+  commands/model.js      /model · /ctx · /out · /grade — handling the connection
+  commands/work.js       commit · review · /diff · evidence · branches · pins · learning · paste
+  commands/view.js       /help · /level · /think · /context · the /work list
+  commands/extend.js     /plugins · /skills · /serve
   cmdnames.js            just their names - batch mode reads it too
   setup.js               first-run connection setup
   config.js              reading and writing config

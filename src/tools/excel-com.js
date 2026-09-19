@@ -24,7 +24,12 @@ import { decode } from './encoding.js';
 
 // 엑셀에게 시킬 일. 암호는 여기 없다 — 표준입력으로 들어온다.
 // 경로도 명령줄이 아니라 환경변수로 준다. 따옴표 문제도 없고 남의 눈에도 안 띈다.
-const SCRIPT = `
+//
+// 내보내는 까닭은 **검사 때문**이다(tools/clipboard.js 와 같은 규칙). 암호를 읽는
+// 자리가 틀리면 맞는 암호를 넣은 사람이 제 파일에서 막히는데, 그걸 재려면 엑셀이
+// 깔린 PC 와 암호 걸린 파일이 있어야 한다 — 그러면 그 자리는 영영 안 재진다.
+// 스크립트를 내주면 앞부분(암호 읽기)만 떼어 파워셸로 돌려 볼 수 있다.
+export const SCRIPT = `
 $ErrorActionPreference = 'Stop'
 [System.Threading.Thread]::CurrentThread.CurrentCulture = New-Object System.Globalization.CultureInfo 'en-US'
 
@@ -43,6 +48,11 @@ function Try-Com([scriptblock]$fn, [int]$tries = 12) {
 
 $src = $env:DEEL_XL_IN
 $dst = $env:DEEL_XL_OUT
+# 들어오는 쪽도 UTF-8 로 맞춘다. 안 맞추면 [Console]::In 이 **이 PC 의 콘솔 코드페이지**로
+# 읽어서, 우리가 UTF-8 로 써 보낸 한글 암호가 딴 글자가 된다 — 다섯 글자가 일곱 글자로.
+# 그러면 맞는 암호를 넣은 사람이 「암호가 맞지 않습니다」 를 세 번 받고 끝난다. 나가는 쪽은
+# 이미 decode() 로 콘솔 인코딩을 풀고 있는데(아래 받은글), 들어오는 쪽만 빠져 있었다.
+try { [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
 $pw  = [Console]::In.ReadLine()
 if ($null -eq $pw) { $pw = '' }
 
@@ -90,7 +100,14 @@ finally {
 }
 `;
 
-/** 이 컴퓨터에서 엑셀을 시킬 수 있나. 없으면 그렇다고 말해야 한다. */
+/**
+ * 이 **판**에서 엑셀을 시킬 길이 있나. 윈도우가 아니면 아예 없다.
+ *
+ * 「엑셀이 깔렸나」 를 여기서 답하지 않는다 — 그건 실제로 불러 봐야 안다.
+ * 등록만 되어 있고 실행이 안 되는 자리가 흔해서, 레지스트리를 읽어 봐야
+ * 「있다」 는 말이 거짓이 될 수 있다. 없다는 답은 아래 없는엑셀() 이 COM
+ * 번호(80040154·80080005)로 가려서 사람 말로 돌려준다.
+ */
 export function canUseExcel() {
   return process.platform === 'win32';
 }
@@ -103,7 +120,7 @@ export function canUseExcel() {
  *   80080005 CO_E_SERVER_EXEC_FAILURE — 서버를 띄우지 못했다
  * 이걸 그대로 사용자에게 내보내면 알아볼 수 없는 글자만 남는다.
  */
-function 없는엑셀(s) {
+export function 없는엑셀(s) {
   return /80040154|80080005|REGDB_E_CLASSNOTREG|CO_E_SERVER_EXEC_FAILURE/i.test(String(s ?? ''));
 }
 
@@ -115,6 +132,46 @@ function 없는엑셀(s) {
  *        password 는 메모리에만 있어야 한다. 어디에도 적지 말 것.
  * @returns {Promise<{ ok: boolean, reason?: string, sheets?: Array<{name:string, rows:string[][]}> }>}
  */
+/**
+ * 엑셀이 뽑아 둔 시트 파일들을 읽어 표로 만든다.
+ *
+ * 못 읽은 것을 **조용히 버리지 않는다.** 여기가 `catch { continue; }` 한 줄이라,
+ * 시트 하나가 통째로 빠진 표가 「다 읽었습니다」 로 올라갔다 — 사람에게도 모델에게도
+ * 「그런 시트 없다」 와 구별이 안 되는 고장이다. 이름을 남겨 부르는 쪽이 말하게 한다.
+ */
+/**
+ * 시트를 **하나도** 못 모았을 때의 답.
+ *
+ * 여기가 언제나 「엑셀이 열긴 했는데 뽑아낼 시트가 없습니다」 였다. 그 말은 통합문서가
+ * 원래 비었다는 뜻이라, 시트 셋을 하나도 **못 읽은** 판이 「빈 파일」 로 올라갔다 —
+ * 시트모으기 가 이름을 남기게 고쳐 놓고, 정작 그 이름이 제일 필요한 자리에서 버렸다.
+ * 위와 같은 규칙이다: 못 읽은 것을 조용히 버리지 않는다.
+ */
+export function 빈시트답(못읽은) {
+  if (못읽은?.length) {
+    return {
+      ok: false,
+      reason: 'unreadable',
+      못읽은,
+      message: `엑셀이 열긴 했는데 시트 ${못읽은.length}개를 하나도 못 읽었습니다: ${못읽은.join(' · ')}`,
+    };
+  }
+  return { ok: false, reason: 'empty', message: '엑셀이 열긴 했는데 뽑아낼 시트가 없습니다' };
+}
+
+export function 시트모으기(밖, 시트들) {
+  const sheets = [];
+  const 못읽은 = [];
+  for (const { i, name } of 시트들 ?? []) {
+    let buf;
+    // 엑셀이 UTF-16 으로 썼다. decode 가 앞머리 표식을 보고 알아서 푼다.
+    try { buf = readFileSync(join(밖, `${i}.txt`)); }
+    catch (탈) { 못읽은.push(`${name} (${탈?.code ?? 탈?.message ?? '못 읽음'})`); continue; }
+    sheets.push({ name, rows: tsv(decode(buf).text) });
+  }
+  return { sheets, 못읽은 };
+}
+
 export async function excelToTables(경로, { password = '', timeout = 90000 } = {}) {
   if (!canUseExcel()) {
     return { ok: false, reason: 'no-excel', message: '이 파일은 엑셀이 있어야 읽을 수 있는데, 윈도우가 아닙니다' };
@@ -125,18 +182,9 @@ export async function excelToTables(경로, { password = '', timeout = 90000 } =
     const 결과 = await 돌리기(경로, 밖, password, timeout);
     if (!결과.ok) return 결과;
 
-    const sheets = [];
-    for (const { i, name } of 결과.시트들) {
-      const p = join(밖, `${i}.txt`);
-      let buf;
-      try { buf = readFileSync(p); } catch { continue; }
-      // 엑셀이 UTF-16 으로 썼다. decode 가 앞머리 표식을 보고 알아서 푼다.
-      sheets.push({ name, rows: tsv(decode(buf).text) });
-    }
-    if (!sheets.length) {
-      return { ok: false, reason: 'empty', message: '엑셀이 열긴 했는데 뽑아낼 시트가 없습니다' };
-    }
-    return { ok: true, sheets };
+    const { sheets, 못읽은 } = 시트모으기(밖, 결과.시트들);
+    if (!sheets.length) return 빈시트답(못읽은);
+    return { ok: true, sheets, 못읽은 };
   } finally {
     // 여기 들어 있던 것은 암호를 푼 내용이다. 반드시 지운다.
     try { rmSync(밖, { recursive: true, force: true }); } catch { /* 임시 폴더다 */ }

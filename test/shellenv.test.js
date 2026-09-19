@@ -162,6 +162,47 @@ trace('5-설정읽기');
     r.env.GITHUB_TOKEN === undefined && r.env.NPM_TOKEN === undefined, JSON.stringify(Object.keys(r.env)));
 }
 
+trace('5b-붙여쓴이름');
+
+// ── 밑줄로만 가르면 새는 이름들 (사냥5 M6) ──────────────────────────────
+//
+// 마디를 `_` 로만 갈랐다. 그래서 붙여 쓴 이름(PGPASSWORD · AWS_SECRETACCESSKEY)·붙임표
+// (GITHUB-TOKEN)·낙타 꼴(githubToken · npm_config__authToken)·짧은 이름(MYSQL_PWD · GH_PAT ·
+// CI_JOB_JWT)과 **값에 비밀번호가 든 주소**(DATABASE_URL)가 `env` 한 줄에 그대로 나왔다.
+{
+  const 빼야할것 = [
+    'PGPASSWORD', 'MYSQL_PWD', 'npm_config__authToken', 'GITHUB-TOKEN', 'GH_PAT', 'CI_JOB_JWT',
+    'githubToken', 'AWS_SECRETACCESSKEY', 'PRIVATEKEY', 'apiKey', 'SMBPASSWD', 'CLIENTSECRET',
+    // npm 의 `_auth` 는 base64 사용자:비밀번호다. AUTH 를 통째로 뺀 탓에 `env` 한 줄에 실렸다 (6회차 Gemini 모드6p Q2).
+    'NPM_CONFIG__AUTH', 'npm_config__auth', 'BASIC_AUTH',
+  ];
+  for (const n of 빼야할것) check(`★ 뺀다: ${n}`, 비밀환경인가(n) === true, '');
+  // 넓힌 만큼 멀쩡한 것을 잘못 걸면 안 된다 — 이쪽이 더 어렵다.
+  const 남길것 = [
+    'PWD', 'OLDPWD', 'PATH', 'MONKEY_PATCH', 'KEYBOARD_LAYOUT', 'TURKEY_TZ', 'KEYCLOAK_URL',
+    'GIT_ASKPASS', 'ProgramData', 'CommonProgramW6432', 'PSModulePath', 'LOCALAPPDATA',
+    'NUMBER_OF_PROCESSORS', 'PATHEXT', 'HOTKEY_MODE', 'COMPAT_LAYER', 'SSH_AUTH_SOCK',
+    // AUTH 는 **마지막 마디**일 때만 건다 — 앞에 오는 설정 이름은 그대로 (짝).
+    'AUTH_DOMAIN', 'AUTH',
+  ];
+  for (const n of 남길것) check(`★ 여전히 안 뺀다: ${n}`, 비밀환경인가(n) === false, '');
+
+  const { env, 뺀것 } = 셸환경({
+    DATABASE_URL: 'postgres://u:probe-dburl@h/db',
+    REDIS_URL: 'redis://:only-pass@h:6379',
+    PUBLIC_URL: 'https://example.com/a:b@c',   // 경로에 든 : @ 는 자격이 아니다
+    PLAIN_URL: 'https://example.com:8443/x',
+    PATH: '/usr/bin',
+  });
+  check('★ 값에 사용자:비밀번호@ 가 든 주소는 뺀다', env.DATABASE_URL === undefined && env.REDIS_URL === undefined,
+    JSON.stringify(Object.keys(env)));
+  check('★ 뺀 주소도 이름을 말해 준다', 뺀것.includes('DATABASE_URL') && 뺀것.includes('REDIS_URL'), 뺀것.join(' '));
+  check('자격 없는 주소는 그대로 넘긴다', env.PUBLIC_URL === 'https://example.com/a:b@c' && env.PLAIN_URL === 'https://example.com:8443/x',
+    JSON.stringify(env));
+  check('주소를 뺀 것도 남길것으로 되살린다',
+    셸환경({ DATABASE_URL: 'postgres://u:p@h/db' }, { 남길것: ['DATABASE_URL'] }).env.DATABASE_URL === 'postgres://u:p@h/db', '');
+}
+
 trace('6-이상한값');
 
 // ── 이상한 것에 안 죽는다 ───────────────────────────────────────────────

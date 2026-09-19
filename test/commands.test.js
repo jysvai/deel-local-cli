@@ -8,6 +8,7 @@
 //   그래서 '이 파일은 파싱된다' 가 아니라 '이 명령은 눌리면 끝까지 간다' 를 본다.
 //   case 하나를 새로 넣을 때마다 여기 목록에 한 줄 늘리면 된다.
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { 명령들, 딴이름들 } from '../src/cmdnames.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,9 +19,10 @@ import { join } from 'node:path';
 // import 보다 늦게 정해도 먹는다.
 const 설정집 = mkdtempSync(join(tmpdir(), 'deel-cmd-home-'));
 process.env.DEEL_HOME = 설정집;
-import { handle, COMMANDS } from '../src/commands.js';
+import { handle, COMMANDS, 미리보기끄기 } from '../src/commands.js';
 import { 받기설정, 지금상태 as 지금열쇠상태 } from '../src/safety/authcmd.js';
 import { Session } from '../src/agent/session.js';
+import { 프록시정하기, 프록시지우기 } from '../src/backend/proxy.js';
 import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
@@ -144,6 +146,33 @@ for (const line of 누를것) {
   const r = await 조용히(() => handle('/없는명령', s, ctx));
   check('모르는 명령은 모른다고 말한다', /모르는 명령/.test(r.out), r.out.trim().split('\n')[0] ?? '');
   check('모르는 명령을 모델에게 안 보낸다', r.v?.handled === true && !r.v?.text, JSON.stringify(r.v));
+}
+
+/*
+ * ── 오타에 「혹시 이것」 을 안 알려 줬다 ────────────────────────────────
+ *
+ * `/hepl` · `/modle` 에는 「모르는 명령」 만 나왔다. 비슷한 것은 이 PC 에서 찾은 명령(스킬·플러그인)
+ * 에서만 찾고 **내장 명령은 안 봤다** — 제일 흔한 오타는 내장 명령에서 난다. 슬래시만 치고 Enter
+ * 를 치면 「모르는 명령 /」 이라는, 무엇을 모르는지 알 수 없는 말이 나왔다.
+ */
+{
+  const 벗김 = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, '').trim().split('\n').slice(0, 3).join(' | ');
+  for (const [친것, 있어야] of [['/hepl', '/help'], ['/modle', '/model'], ['/cleer', '/clear']]) {
+    const r = await 조용히(() => handle(친것, 새세션(), ctx));
+    // 「/help 로 목록을」 줄에도 /help 가 있다 — 「비슷한 것」 줄에서 찾아야 권한 것이다.
+    const 비슷줄 = r.out.split('\n').find((l) => l.includes('비슷한 것')) ?? '';
+    check(`★ ${친것} 에 ${있어야} 를 권한다`, 비슷줄.includes(있어야), 벗김(r.out));
+  }
+  const 빈 = await 조용히(() => handle('/', 새세션(), ctx));
+  check('★ 슬래시만 치면 「모르는 명령 /」 이 아니라 목록을 보인다', !빈.out.includes('모르는 명령') && 빈.out.includes('/help'), 벗김(빈.out));
+
+  // 일본어·중국어 입력기는 전각 슬래시(U+FF0F)를 낸다. 그대로 모델에게 가면 명령이 말이 된다.
+  const 전각 = await 조용히(() => handle(`${String.fromCodePoint(0xff0f)}help`, 새세션(), ctx));
+  check('★ 전각 슬래시(／help)도 명령이다', 전각.v?.handled === true, JSON.stringify(전각.v));
+
+  const s = 새세션();
+  await 조용히(() => handle('/mode STRICT', s, ctx));
+  check('★ /mode STRICT 도 바꾼다 — 대문자라고 목록만 보이지 않는다', s.mode === 'strict', s.mode);
 }
 
 trace('3-효과확인');
@@ -400,6 +429,30 @@ trace('3-효과확인');
     ['먼저 Read 로 읽어야 합니다: a.js', /먼저 읽게 되어 있습니다/],
     ['401 Unauthorized', /열쇠|API 키/],
     ['request timeout after 120000ms', /제때 답하지 않았습니다/],
+    /*
+     * Node 가 내는 시간 초과는 「timeout」 이라고 안 적는다. `ETIMEDOUT` 이다 — 그 안에
+     * timeout 이라는 글자가 없어서(TIMEDOUT) 어느 풀이에도 안 걸리고 날것으로 나갔고,
+     * `connect ETIMEDOUT` 은 넓은 `connect` 에 먼저 걸려 「모델이 안 켜져 있다」 는 **틀린**
+     * 풀이가 나갔다. 모델은 떠 있는데 느린 것이라, 그 말대로 하면 고쳐지지 않는다
+     * (2.0.0 8회차 uimisc LV1).
+     */
+    ['read ETIMEDOUT', /제때 답하지 않았습니다/],
+    ['connect ETIMEDOUT 127.0.0.1:11434', /제때 답하지 않았습니다/],
+    /*
+     * LV1 이 반만 고쳐져 있었다 (2.0.0 10회차 막판-화면 LV3).
+     *
+     * `connect` 는 **글자 넉 자**다. 오류 문구에 실리는 것은 대개 경로와 주소인데, 거기에
+     * `connect` 가 들어간 이름은 흔하다 — `connect-api/`, `connector.js`, 사내 게이트웨이
+     * `connect.…`. 그래서 딱 그 말로 적어 둔 좁은 풀이 셋이 넓은 `connect` 아래에 있는 동안,
+     * 범위 밖·막힌 주소·먼저 읽기가 전부 「모델이 안 켜져 있습니다 — LM Studio 를 켜세요」 로
+     * 나갔다. 모델은 켜져 있고, 그 말대로 해도 안 고쳐진다.
+     *
+     * 이 파일이 아니라 level.js 머리말이 이미 규칙을 적어 두었다 — 「좁은 것을 넓은 것 위에」.
+     * ETIMEDOUT 만 위로 올리고 나머지 셋은 그대로 두었던 자리다.
+     */
+    ['작업 범위 밖입니다: C:\\work\\connect-api\\db.js', /시작한 폴더 바깥/],
+    ['허용되지 않은 주소입니다: https://connect.example.com/v1', /막힌 게 정상/],
+    ['먼저 Read 로 읽어야 합니다: src/connector.js', /먼저 읽게 되어 있습니다/],
   ];
   for (const [원래, 기대] of 사례) {
     const r = explain('쉬움', 원래);
@@ -418,6 +471,34 @@ trace('3-효과확인');
     const r = explain('개발자', 원래);
     check(`개발자: ${원래.slice(0, 20)}… 는 그대로`, !r.plain && r.text === 원래, r.text);
   }
+}
+
+/*
+ * ── 감추는 까닭을 적은 숫자가 실제와 맞는가 (2.0.0 8회차 uimisc LV2) ────────
+ *
+ * `src/ui/level.js` 머리말은 「처음 켠 사람에게 명령 열여덟 개를 들이밀면 아무것도 못 고른다」
+ * 라고 적어 두고, 정작 초보 목록이 **정확히 열여덟 개**였다. 머리말이 제 목록을 나무라는 꼴이라,
+ * 읽는 사람은 목록을 줄여야 하는 줄 안다. 파 보면 그 줄을 쓸 때는 명령이 통틀어 열여덟 개였고
+ * (4bc8c1e · 초보 목록은 열두 개) 그 뒤 쉰 개가 넘게 늘도록 숫자만 그대로였다.
+ *
+ * 숫자만 고쳐 두면 또 낡는다. 그래서 「많다」 고 적은 수를 실제와 대 본다 —
+ * 초보 목록보다는 크고(안 그러면 제 목록을 나무란다), 전체 명령 수보다는 크지 않아야 한다.
+ */
+{
+  const 머리말 = readFileSync(new URL('../src/ui/level.js', import.meta.url), 'utf8')
+    .split('\nimport ')[0].replace(/^\s*\/\/ ?/gm, '').replace(/\s+/g, ' ');
+  const 한글수 = { 열둘: 12, 열여덟: 18, 스물: 20, 서른: 30, 마흔: 40, 쉰: 50, 예순: 60, 일흔: 70, 여든: 80, 아흔: 90, 백: 100 };
+  const 전체 = Object.keys(COMMANDS).filter((n) => n !== 'quit').length;
+  const { LEVELS: 수준들 } = await import('../src/ui/level.js');
+  const 초보 = 수준들['쉬움'].show.length;
+  const 든것 = new RegExp(`(${Object.keys(한글수).join('|')}) 개를? (?:통째로 )?들이밀면`).exec(머리말);
+
+  check('머리말이 「몇 개를 들이밀면」 을 적어 둔다', Boolean(든것), 머리말.slice(-140));
+  check('★ 많다고 적은 수가 초보 목록보다 크다', 든것 ? 한글수[든것[1]] > 초보 : false,
+    `머리말 ${든것?.[1] ?? '없음'}(${한글수[든것?.[1]] ?? '?'}) · 초보 목록 ${초보}개`);
+  check('★ 많다고 적은 수가 전체 명령 수를 안 넘는다', 든것 ? 한글수[든것[1]] <= 전체 : false,
+    `머리말 ${한글수[든것?.[1]] ?? '?'} · 전체 ${전체}개`);
+  check('초보 목록은 전체의 절반도 안 된다', 초보 * 2 <= 전체, `초보 ${초보} · 전체 ${전체}`);
 }
 
 // ── /model 로 연결·모델 바꾸기 ──────────────────────────────────────────
@@ -572,6 +653,70 @@ trace('3-효과확인');
     check('/model models 가 서버에 물어본다', /gw-llama-70b/.test(r.out) || /모델 목록을 내주지 않습니다/.test(r.out), r.out.trim().split('\n').slice(0, 3).join(' / '));
   }
 
+  /*
+   * ── ★★ 규격이 다른 창구로 갈아타면 **대화도 그 규격으로** 옮겨 적는다 ──────
+   *
+   * 연결적용() 은 「대화는 그대로 둔다」 였다. 규격이 같을 때는 맞는 말이다.
+   * 다르면 옛 모양이 그대로 나간다 — OpenAI 이력을 Anthropic 창구로 보내면
+   * `role:'tool'`·`content:null` 이, 그 반대면 tool_use·tool_result 블록이,
+   * Ollama 이력을 OpenAI 로 보내면 id 없는 부름이 나가서 첫 마디가 400 이다.
+   * 화면에는 「대화는 이어집니다」 가 적힌 채로.
+   */
+  {
+    const 빼기 = (x) => String(x).replace(/\x1b\[[0-9;]*m/g, '');
+    const 앤 = { ...프로필('anth-c', '앤트로픽 창구', 'claude-x'), kind: 'anthropic', baseUrl: base.replace(/\/v1$/, '') };
+    save({ ...load(), active: 'gw-a', profiles: [프로필('gw-a', '사내 프록시 · gw-qwen-32b', 'gw-qwen-32b'), 앤] });
+
+    const s = 세션();
+    s.messages = [
+      { role: 'user', content: '읽어줘' },
+      { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: '{"file_path":"a.txt"}' } }] },
+      { role: 'tool', tool_call_id: 'c1', content: 'hello' },
+      { role: 'assistant', content: '다 읽었습니다' },
+    ];
+    const r = await 조용히(() => handle('/model 앤트로픽', s, ctx));
+    check('먼저: 앤트로픽 창구로 바뀌었다', s.conn.kind === 'anthropic', s.conn.kind);
+    const 옛모양 = s.messages.filter((m) => !['user', 'assistant'].includes(m.role) || m.content == null || m.tool_calls);
+    check('★★ OpenAI → Anthropic: tool 역할·null content·tool_calls 가 안 남는다', 옛모양.length === 0, JSON.stringify(옛모양).slice(0, 200));
+    const 부름 = s.messages.find((m) => Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_use'));
+    const 결과 = s.messages.find((m) => Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_result'));
+    check('★★ 부름과 결과가 새 규격에서도 짝이다',
+      부름?.content.find((b) => b.type === 'tool_use')?.id === 'c1' && 결과?.content[0]?.tool_use_id === 'c1' && 결과?.content[0]?.content === 'hello',
+      JSON.stringify([부름, 결과]).slice(0, 240));
+    check('★ 옮겨 적었다고 화면에 말한다', /새 규격으로 옮겨 적었습니다/.test(빼기(r.out)), 빼기(r.out).trim().split('\n').slice(0, 3).join(' / '));
+
+    const r2 = await 조용히(() => handle('/model 사내', s, ctx));
+    check('먼저: 다시 OpenAI 호환으로 바뀌었다', s.conn.kind === 'openai', s.conn.kind);
+    const 블록 = s.messages.filter((m) => Array.isArray(m.content));
+    const 부름2 = s.messages.find((m) => m.tool_calls?.length);
+    check('★★ Anthropic → OpenAI: 블록이 안 남고 id·문자열 인자로 돌아온다',
+      블록.length === 0 && 부름2?.tool_calls[0].id === 'c1' && typeof 부름2?.tool_calls[0].function.arguments === 'string'
+      && s.messages.some((m) => m.role === 'tool' && m.tool_call_id === 'c1'),
+      JSON.stringify(s.messages).slice(0, 300));
+    check('같은 말이 두 번 옮겨도 그대로다', s.messages.at(-1)?.content === '다 읽었습니다' && s.messages[0].content === '읽어줘',
+      빼기(r2.out).trim().split('\n')[0]);
+
+    // Ollama 이력은 부름에 id 가 없다. OpenAI 로 가면 id 를 지어 결과와 짝지어야 한다.
+    const s3 = 세션();
+    s3.conn.kind = 'ollama';
+    s3.messages = [
+      { role: 'user', content: '읽어줘' },
+      { role: 'assistant', content: '', tool_calls: [{ function: { name: 'Read', arguments: { file_path: 'a.txt' } } }, { function: { name: 'Grep', arguments: { pattern: 'x' } } }] },
+      { role: 'tool', tool_name: 'Read', content: 'hi' },
+      { role: 'tool', tool_name: 'Grep', content: 'g' },
+    ];
+    await 조용히(() => handle('/model 사내', s3, ctx));
+    const 부름3 = s3.messages.find((m) => m.tool_calls?.length);
+    const 결과3 = s3.messages.filter((m) => m.role === 'tool');
+    check('★★ Ollama → OpenAI: 부름마다 id 가 붙고 결과가 차례대로 그 id 를 가리킨다',
+      부름3?.tool_calls.length === 2 && 부름3.tool_calls.every((t) => t.id && typeof t.function.arguments === 'string')
+      && 결과3.length === 2 && 결과3[0].tool_call_id === 부름3.tool_calls[0].id && 결과3[1].tool_call_id === 부름3.tool_calls[1].id
+      && 결과3[1].content === 'g',
+      JSON.stringify(s3.messages).slice(0, 300));
+
+    save({ ...load(), active: 'gw-a', profiles: [프로필('gw-a', '사내 프록시 · gw-qwen-32b', 'gw-qwen-32b'), 프로필('local-b', '로컬 · small', 'gw-small-3b')] });
+  }
+
   srv.closeAllConnections?.();
   srv.close();
   await new Promise((r) => setImmediate(r));
@@ -673,6 +818,21 @@ trace('3.5-못박기를실제로눌러본다');
   rmSync(막힌방, { recursive: true, force: true });
 }
 
+// ── /status 는 어차피 안 거칠 주소에 못 쓰는 프록시를 말하지 않는다 ─────
+//
+// 루프백 모델에 붙어 있는데 「프록시 못 씀 — socks5…」 가 뜨면, 안 붙는 까닭을 찾는 사람이
+// 상관없는 프록시를 고치러 간다. 바깥 주소에는 그대로 떠야 한다 (2.0.0 6회차 RP1b).
+{
+  const 못쓰는 = { env: { HTTPS_PROXY: 'socks5://127.0.0.1:1080' } };
+  프록시정하기(못쓰는);
+  const 로컬판 = await 조용히(() => handle('/status', new Session({ ...conn, base: 'http://127.0.0.1:11434/v1' }, { root, mode: 'auto', think: 'medium', effort: 'save' }), ctx));
+  프록시정하기(못쓰는);
+  const 바깥판 = await 조용히(() => handle('/status', new Session({ ...conn, base: 'https://gw.example.net/v1' }, { root, mode: 'auto', think: 'medium', effort: 'save' }), ctx));
+  프록시지우기();
+  check('/status 는 루프백 주소에 못 쓰는 프록시 줄을 안 낸다', !/socks5/.test(로컬판.out), 로컬판.out.split('\n').find((l) => /socks5/.test(l)) ?? '');
+  check('/status 는 바깥 주소에는 못 쓰는 프록시 줄을 낸다', /socks5/.test(바깥판.out), 바깥판.ok ? '줄 없음' : String(바깥판.e));
+}
+
 // ── /sessions 는 저장이 새고 있으면 약속을 되풀이하지 않는다 ────────────
 //
 // 이 화면 마지막 줄이 「지금 대화는 나가지 않아도 계속 저장되고 있습니다」 다.
@@ -702,12 +862,210 @@ trace('3.5-못박기를실제로눌러본다');
   check('샐 때는 저장된다는 약속을 되풀이하지 않는다', !샐때.out.includes('계속 저장되고 있습니다'));
 }
 
+trace('3.8-8회차-명령갈래');
+
+// ── /memory 는 **대문자로 쳐도** 같은 일을 해야 한다 (8회차 그밖 명령1) ──
+//
+// 지우는 무늬 둘만 `i` 가 빠져 있었다. 그래서 `/memory RM 1` 은 안 지우고,
+// `/memory CLEAR` 는 **지우려던 말이 기억으로 적혔다.** 목록에 `3 CLEAR` 가
+// 남는다. 지우려던 사람이 쓰레기를 하나 더 심는 꼴이고, 그것도 성공 표시를
+// 보면서 그렇게 된다 — 이 case 가 제일 피하려던 결말 그대로다.
+{
+  const M = await import('../src/agent/memory.js');
+  const s = 새세션();
+  M.비우기(root);
+  M.더하기(root, '가나다');
+  M.더하기(root, '라마바');
+
+  const 큰지움 = await 조용히(() => handle('/memory RM 1', s, ctx));
+  check('★ /memory RM 1 이 소문자와 똑같이 지운다',
+    JSON.stringify(M.읽기(root).줄들) === JSON.stringify(['라마바']),
+    JSON.stringify(M.읽기(root).줄들) + ' · ' + (큰지움.out.trim().split('\n')[0] ?? ''));
+
+  const 큰비움 = await 조용히(() => handle('/memory CLEAR', s, ctx));
+  check('★★ /memory CLEAR 가 기억으로 적히지 않는다',
+    !M.읽기(root).줄들.includes('CLEAR'), JSON.stringify(M.읽기(root).줄들));
+  check('★ /memory CLEAR 가 실제로 비운다', M.읽기(root).줄들.length === 0,
+    JSON.stringify(M.읽기(root).줄들) + ' · ' + (큰비움.out.trim().split('\n')[0] ?? ''));
+
+  M.비우기(root);
+}
+
+// ── 꼬리 이름에 대문자가 들어도 찾아진다 (8회차 그밖 명령2 · oneshot.js:495 와 쌍둥이) ──
+//
+// 찾는 마지막 칸이 `x.name.split(':').pop() === name` 이었다. 왼쪽은 파일에
+// 적힌 그대로고 오른쪽은 낮춘 말이라 둘이 만날 수가 없다. `ext:ReviewCode` 는
+// `/ReviewCode` 로도 `/reviewcode` 로도 「모르는 명령」 이었고, 「비슷한 것」
+// 에도 안 떴다 — 있는 명령을 어디에도 안 보여 주는 자리다.
+{
+  const 명령파일 = join(root, 'ReviewCode.md');
+  writeFileSync(명령파일, '코드를 검토해라.\n', 'utf8');
+  const 목록 = [{ name: 'ext:ReviewCode', description: '', path: 명령파일, source: 'plugin', enabled: true }];
+
+  for (const 친것 of ['/ReviewCode', '/reviewcode']) {
+    const s = 새세션();
+    s.commands = 목록;
+    const r = await 조용히(() => handle(친것, s, ctx));
+    check(`★★ 꼬리에 대문자가 든 명령을 ${친것} 로 편다`,
+      r.v?.handled === false && /코드를 검토해라/.test(r.v?.text ?? ''),
+      `handled=${r.v?.handled} · ${r.out.trim().split('\n')[0] ?? ''}`);
+  }
+
+  // 여태 되던 두 가지는 그대로 돼야 한다.
+  for (const 친것 of ['/ext:ReviewCode', '/ext:reviewcode']) {
+    const s = 새세션();
+    s.commands = 목록;
+    const r = await 조용히(() => handle(친것, s, ctx));
+    check(`${친것} 는 그대로 펴진다`, r.v?.handled === false && /코드를 검토해라/.test(r.v?.text ?? ''),
+      `handled=${r.v?.handled}`);
+  }
+
+  // 붙박이가 먼저다 — 꼬리를 낮춰 견주게 됐다고 `/help` 가 남의 것이 되면 안 된다.
+  {
+    const s = 새세션();
+    s.commands = [{ name: 'ext:HELP', description: '', path: 명령파일, source: 'plugin', enabled: true }];
+    const r = await 조용히(() => handle('/help', s, ctx));
+    check('★ 꼬리가 붙박이 이름과 같아도 붙박이가 이긴다', r.v?.handled === true,
+      `handled=${r.v?.handled}`);
+  }
+}
+
+// ── `/pin 지우기 전에 백업 필수` 는 **규칙**이지 지우기가 아니다 (8회차 그밖 명령5) ──
+//
+// 머리 낱말만 보고 지우기로 샜다. 「지우기」 로 시작하는 규칙은 못이 안 박히고,
+// 화면에는 「번호를 적거나 `전부` 라고 하세요」 가 떴다. 사람은 박힌 줄 알고
+// 넘어가거나, 왜 안 박혔는지 모른 채 다시 친다.
+{
+  const s = 새세션();
+  const r = await 조용히(() => handle('/pin 지우기 전에 백업 필수', s, ctx));
+  check('★★ 「지우기」 로 시작하는 규칙이 못으로 박힌다',
+    s.못박은것.목록().some((x) => x.말 === '지우기 전에 백업 필수'),
+    JSON.stringify(s.못박은것.목록()) + ' · ' + (r.out.trim().split('\n')[0] ?? ''));
+
+  // 진짜 지우기는 그대로 돼야 한다.
+  await 조용히(() => handle('/pin 지우기 1', s, ctx));
+  check('번호를 준 지우기는 그대로 지운다', s.못박은것.개수() === 0, `${s.못박은것.개수()}개`);
+
+  await 조용히(() => handle('/pin 가', s, ctx));
+  await 조용히(() => handle('/pin 나', s, ctx));
+  await 조용히(() => handle('/pin 지우기', s, ctx));
+  check('번호 없는 지우기는 그대로 전부 지운다', s.못박은것.개수() === 0, `${s.못박은것.개수()}개`);
+
+  await 조용히(() => handle('/pin 다', s, ctx));
+  await 조용히(() => handle('/pin 지우기 전부', s, ctx));
+  check('「지우기 전부」 도 그대로 전부 지운다', s.못박은것.개수() === 0, `${s.못박은것.개수()}개`);
+}
+
+// ── 이미 띄운 미리보기를 다시 불러도 **같은 주소**를 준다 (8회차 그밖 명령4) ──
+//
+// 파일 하나를 주고 띄우면 주소 끝에 그 파일이 붙는다. 그런데 그 뒤 `/preview`
+// 를 그냥 치면 파일이 빠진 폴더 주소를 알려 주고 브라우저도 그리로 열었다.
+// 사람은 방금 보던 것을 다시 못 찾는다.
+{
+  const 곳 = mkdtempSync(join(tmpdir(), 'deel-cmd-미리보기-'));
+  writeFileSync(join(곳, '보고서.html'), '<h1>보고서</h1>', 'utf8');
+  const ctx2 = { ...ctx, scope: makeScope(곳) };
+  const s = 새세션();
+
+  const 처음 = await 조용히(() => handle('/preview 보고서.html', s, ctx2));
+  const 첫주소 = (처음.out.match(/http:\/\/127\.0\.0\.1:\d+\/\S*/) ?? [''])[0];
+  check('파일을 주면 그 파일까지 가리키는 주소가 나온다', /%/.test(첫주소), 첫주소 || '(주소 없음)');
+
+  const 다시 = await 조용히(() => handle('/preview', s, ctx2));
+  const 둘째주소 = (다시.out.match(/http:\/\/127\.0\.0\.1:\d+\/\S*/) ?? [''])[0];
+  check('★★ 다시 불러도 같은 주소를 준다', 둘째주소 === 첫주소,
+    `처음 ${첫주소} · 다시 ${둘째주소}`);
+
+  await 미리보기끄기();
+  rmSync(곳, { recursive: true, force: true });
+}
+
+// ── 턴을 **먹고도** 「되돌릴 것이 없습니다」 라고 하지 않는다 (8회차 그밖 한번더) ──
+//
+// 만든 파일을 사람이 손으로 지운 턴은 되돌릴 것이 하나도 없다. 그런데 undo() 는
+// 그 턴을 이력에서 **지운다.** 화면은 「되돌릴 것이 없습니다.」 한 줄이라 사람은
+// 아무 일도 안 난 줄 안다 — 다음 /undo 는 그 앞 턴을 되돌린다. 두 번 쳐서 한 턴만
+// 되돌아간다.
+{
+  const 되돌림뿌리 = mkdtempSync(join(tmpdir(), 'deel-cmd-되돌림-'));
+  const h = new History(되돌림뿌리);
+  const ctx3 = { scope: makeScope(되돌림뿌리), history: h, audit: new Audit(되돌림뿌리), seen: new Set() };
+  const s = 새세션();
+
+  const 가 = join(되돌림뿌리, '가.txt');
+  writeFileSync(가, '처음\n', 'utf8');
+  h.nextTurn();
+  h.snapshot(가, 'Edit');
+  writeFileSync(가, '고쳐짐\n', 'utf8');
+
+  const 나 = join(되돌림뿌리, '나.txt');
+  h.nextTurn();
+  h.없던자리기록(나, 'Write');
+  writeFileSync(나, '새것\n', 'utf8');
+  rmSync(나, { force: true });
+
+  const 첫 = await 조용히(() => handle('/undo', s, ctx3));
+  check('★★ 턴을 봤으면 「되돌릴 것이 없습니다」 라고 하지 않는다',
+    !/되돌릴 것이 없습니다/.test(첫.out), 첫.out.trim().split('\n')[0] ?? '(빈 화면)');
+  check('★ 그 턴이 이력에서 빠졌다고 말한다',
+    /이력|기록/.test(첫.out) && /1개 턴|턴 1개/.test(첫.out), 첫.out.trim().replace(/\s+/g, ' ').slice(0, 140));
+  check('파일은 그대로 둔 채다', readFileSync(가, 'utf8') === '고쳐짐\n', JSON.stringify(readFileSync(가, 'utf8')));
+
+  rmSync(되돌림뿌리, { recursive: true, force: true });
+}
+
 // 모든 명령이 목록에 설명을 갖고 있나 — 새로 넣고 빠뜨리기 쉬운 자리다.
 for (const [n, v] of Object.entries(COMMANDS)) {
   check(`/${n} 에 설명이 있다`, typeof v.desc === 'string' && v.desc.length > 0, JSON.stringify(v));
 }
 
 trace('4-치움');
+trace('딴이름표');
+
+/*
+ * `commands.js` 가 받아 주는 이름이 전부 표에 적혀 있나.
+ *
+ * 「이게 명령 이름인가」 를 묻는 자리(`경로처럼보이나`)는 표만 본다. 표에 없는
+ * 딴이름을 스위치에만 적어 두면, 그 이름과 같은 **폴더가 있는 저장소**에서
+ * 그 명령이 경로로 읽혀 안 돌고 모델에게 그대로 넘어간다. 실제로 `/serve` 와
+ * `/plugins` 가 그랬다.
+ */
+{
+  const 소스 = readFileSync(new URL('../src/commands.js', import.meta.url), 'utf8');
+  const 이름 = [...new Set([...소스.matchAll(/^\s*case '([a-z0-9-]+)':/gm)].map((m) => m[1]))];
+  const 빠진것 = 이름.filter((n) => !명령들[n] && !딴이름들[n]);
+  check('★★★ commands.js 가 받는 이름이 전부 이름표나 딴이름표에 있다',
+    빠진것.length === 0, 빠진것.length ? 빠진것.join(' · ') : `${이름.length}개`);
+
+  // 딴이름은 실제로 있는 정식 이름을 가리켜야 한다 — 오타를 잡는다.
+  const 엉뚱 = Object.entries(딴이름들).filter(([, 정식]) => !명령들[정식]);
+  check('★★ 딴이름이 가리키는 정식 이름이 전부 이름표에 있다',
+    엉뚱.length === 0, 엉뚱.map(([a, b]) => `${a}→${b}`).join(' · '));
+}
+
+/*
+ * 딴이름을 **실제로 눌러** 본다.
+ *
+ * 위 두 검사는 표끼리 맞춰 볼 뿐이라, `경로처럼보이나` 가 딴이름표를 다시
+ * 안 보게 고쳐도 초록으로 남는다. 그래서 같은 이름의 폴더가 있는 자리에서
+ * 눌러 본다 — `plugins/` 를 둔 곳에서 `/plugins` 가 경로로 읽히면 명령이
+ * 안 돌고 모델에게 그대로 넘어간다.
+ */
+{
+  const 딴이름터 = mkdtempSync(join(tmpdir(), 'deel-cmd-딴이름-'));
+  mkdirSync(join(딴이름터, 'plugins'));
+  const 원래폴더 = process.cwd();
+  try {
+    process.chdir(딴이름터);
+    const r = await 조용히(() => handle('/plugins', 새세션(), { ...ctx, scope: makeScope(딴이름터) }));
+    check('★★★ `plugins/` 폴더가 있어도 `/plugins` 는 명령으로 돈다',
+      r.ok && r.v?.handled === true, r.ok ? `handled=${r.v?.handled}` : String(r.e));
+  } finally {
+    process.chdir(원래폴더);
+    rmSync(딴이름터, { recursive: true, force: true });
+  }
+}
+
 rmSync(root, { recursive: true, force: true });
 rmSync(설정집, { recursive: true, force: true });
 

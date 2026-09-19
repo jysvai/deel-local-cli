@@ -9,6 +9,8 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { askHidden, pick } from '../src/ui/prompt.js';
+// 새로 내보내는 것은 통째로 받는다 — 아직 없을 때 파일 전체가 안 죽고 그 검사만 빨개지게.
+import * as 물음 from '../src/ui/prompt.js';
 import { spin } from '../src/ui/spinner.js';
 import { History } from '../src/safety/undo.js';
 import { c, width, clip, pad, bar, gauge, box } from '../src/ui/ansi.js';
@@ -80,6 +82,119 @@ trace('1-암호가림');
   check('앞뒤 공백은 떼어 준다', v2 === '띄어쓰기', JSON.stringify(v2));
 }
 
+{
+  /*
+   * ── 진짜 readline 으로 — 암호가 입력 이력에 남나 ──────────────────────
+   *
+   * readline 은 Enter 친 줄을 이력(historySize 200)에 쌓는다. 암호도 한 줄이라 그대로 쌓였다 —
+   * 엑셀 암호를 넣고 나서 다음 입력칸에서 위 화살표를 누르면 암호가 글자 그대로 되살아난다.
+   * 그리고 암호는 **일하는 도중에** 묻는다. 입력 상자는 그때 rl.line 을 「미리 쳐 둔 글」 로
+   * 그리므로(repl.js 대기갱신) 가리는 중인지 밖에서 알 수 있어야 한다(가림중).
+   */
+  const { createInterface } = await import('node:readline');
+  const { PassThrough } = await import('node:stream');
+  const 입력 = new PassThrough(); 입력.isTTY = true; 입력.setRawMode = () => 입력;
+  const 출력 = new PassThrough(); 출력.isTTY = true; 출력.columns = 80; 출력.on('data', () => {});
+  const rl = createInterface({ input: 입력, output: 출력, terminal: true, historySize: 200 });
+  const 다음줄 = () => new Promise((r) => rl.once('line', r));
+  let 도중가림 = null;
+  const { v } = await 받아적기(async () => {
+    const p = askHidden(rl, '엑셀 암호', 다음줄);
+    도중가림 = 물음.가림중?.(rl) ?? null;
+    입력.write('PW-SECRET-42\r');
+    return await p;
+  });
+  check('진짜 readline 에서도 암호를 받아 온다', v === 'PW-SECRET-42', String(v));
+  check('★★ 암호가 입력 이력에 안 남는다 — 위 화살표로 안 되살아난다', !rl.history.includes('PW-SECRET-42'), JSON.stringify(rl.history));
+  check('★ 묻는 동안은 가림중이다 — 입력 상자가 그 글을 안 그리게', 도중가림 === true, String(도중가림));
+  check('★ 다 받고 나면 가림중이 풀린다', 물음.가림중?.(rl) === false, String(물음.가림중?.(rl)));
+  await 받아적기(async () => { const p = 다음줄(); 입력.write('보통 줄\r'); await p; });
+  check('★ 암호 뒤의 보통 줄은 다시 이력에 쌓인다', rl.history.includes('보통 줄'), JSON.stringify(rl.history));
+  rl.close();
+}
+
+{
+  /*
+   * ── 일하는 도중 미리 쳐 둔 줄을 엑셀 암호 물음이 암호로 가져갔다 (4회차 이월) ──
+   *
+   * repl 의 askPassword 는 nextLine 을 그대로 넘겼다. nextLine 은 큐에 뭐가 있으면 그것부터 준다 —
+   * 「다음은 테스트도 돌려줘」 가 암호로 쓰여 틀린 암호가 되고, 그 지시는 모델에게 영영 안 간다.
+   * 되묻는 ask 는 이미 「물음이 뜨기 전에 쳐 둔 줄은 답이 아니다」 로 빼 뒀다가 되돌린다(repl.js).
+   * 이 자리는 repl 속 닫힌 함수라 모양으로 본다 — 암호 물음도 같은 빼기·되돌리기를 하는가.
+   */
+  const { readFileSync } = await import('node:fs');
+  const 소스 = readFileSync(new URL('../src/repl.js', import.meta.url), 'utf8');
+  const 시작 = 소스.indexOf('askPassword: async');
+  const 몸 = 시작 === -1 ? '' : 소스.slice(시작, 소스.indexOf('\n    },', 시작));
+  check('★ 암호 물음은 미리 쳐 둔 줄을 빼 두고 묻는다', /queue\.splice\(0\)/.test(몸) && /askHidden\(/.test(몸), 몸.slice(0, 120));
+  check('★ 다 묻고 나면 빼 둔 줄을 차례 그대로 되돌린다', /finally[\s\S]*queue\.unshift\(\.\.\./.test(몸), '');
+}
+
+{
+  /*
+   * ── 켤 때의 **차례**. 화면을 세우기 전에 정할 것을 다 정했나 (8회차 화면265·304) ──
+   *
+   * repl 은 스스로 두 가지를 적어 두었다 — 「지난번 그림은 화면을 세우기 **전에**
+   * 되살린다」, 「화면을 세우기 전에 쓰는 자리는 `바로쓰기` 를 쓴다」. 그런데 화면을
+   * 세우는 줄이 둘보다 **위**에 있었다. 그림·사무실·말은 화면이 그릴 때 읽는 값이라,
+   * 정하는 자리가 세우는 자리보다 뒤면 첫 판이 무엇으로 그려질지가 화면 구현에
+   * 딸려 간다. 열쇠탈 경고도 화면을 세운 뒤에 `바로쓰기` 로 나가 그 약속을 깼다.
+   *
+   * 화면이 나오기 전이라 눈으로는 아무 차이가 안 나는 자리다 — 그래서 **차례**를
+   * 그대로 못 박는다. 이 셋의 순서가 뒤집히면 여기서 잡힌다.
+   */
+  const { readFileSync } = await import('node:fs');
+  const 소스 = readFileSync(new URL('../src/repl.js', import.meta.url), 'utf8');
+  const 자리 = (s) => 소스.indexOf(s);
+  const 세움 = 자리('const 화면 = await 화면고르기(');
+  const 그림 = 자리('그림적용(cfg.motion)');
+  const 열쇠 = 자리('\n  열쇠탈보이기();');
+  const 말 = 자리('언어잡기({ cfg })');
+  check('셋 다 repl 안에 있다', 세움 > 0 && 그림 > 0 && 열쇠 > 0 && 말 > 0,
+    `세움=${세움} 그림=${그림} 열쇠=${열쇠} 말=${말}`);
+  check('★★ 지난번 그림은 화면을 세우기 전에 되살린다', 그림 > 0 && 세움 > 그림,
+    세움 > 그림 ? '' : '화면을 먼저 세우고 있다 — 첫 판이 기본 그림으로 그려질 수 있다');
+  check('★★ 열쇠 못 푼 소식은 화면을 세우기 전에 바로쓰기로 나간다', 열쇠 > 0 && 세움 > 열쇠,
+    세움 > 열쇠 ? '' : '화면을 세운 뒤에 바로쓰기로 찍고 있다');
+  check('★ 화면 말도 세우기 전에 정한다', 말 > 0 && 세움 > 말,
+    세움 > 말 ? '' : '화면을 먼저 세우고 있다');
+}
+
+{
+  /*
+   * ── 색 입힌 프롬프트에서 지우개·화살표를 누르면 암호가 그대로 찍혔다 (Gemini 화면4) ──
+   *
+   * readline 은 지우개·화살표에서 줄을 새로 그린다 — 「프롬프트 + 지금까지 친 글」 을 **한 번에**
+   * _writeToOutput 으로 넘긴다. 가로채는 쪽은 첫 글자가 ESC 면 제어 순서로 보고 통째로 흘렸다.
+   * 프롬프트에 색이 입혀져 있으면 그 첫 글자가 ESC 라, 친 암호가 글자 그대로 화면에 찍혔다.
+   * 맨 프롬프트면 거꾸로 프롬프트까지 ● 로 덮였다.
+   */
+  const ESC = String.fromCharCode(27);
+  const { createInterface } = await import('node:readline');
+  const { PassThrough } = await import('node:stream');
+  for (const [이름, 프롬프트] of [['색 프롬프트', `${ESC}[32m›${ESC}[0m `], ['맨 프롬프트', '> ']]) {
+    const 입력 = new PassThrough(); 입력.isTTY = true; 입력.setRawMode = () => 입력;
+    const 출력 = new PassThrough(); 출력.isTTY = true; 출력.columns = 80;
+    let 찍힘 = '';
+    출력.on('data', (d) => { 찍힘 += d; });
+    const rl = createInterface({ input: 입력, output: 출력, terminal: true, historySize: 200 });
+    rl.setPrompt(프롬프트);
+    const 다음줄 = () => new Promise((r) => rl.once('line', r));
+    const { v } = await 받아적기(async () => {
+      const p = askHidden(rl, '엑셀 암호', 다음줄);
+      for (const k of ['s', 'e', 'c', 'r', 'e', 't', 'x', String.fromCharCode(127), `${ESC}[D`, `${ESC}[C`, '\r']) {
+        입력.write(k);
+        await new Promise((r) => setTimeout(r, 2));
+      }
+      return await p;
+    });
+    const 색뺀 = 찍힘.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+    check(`★★ ${이름}에서 지우개·화살표를 눌러도 암호가 화면에 안 찍힌다`, v === 'secret' && !/sec|cre|ret/.test(색뺀), JSON.stringify(색뺀));
+    check(`★ ${이름} 자체는 안 가리고 그대로 보인다`, 색뺀.includes(프롬프트.replace(/\x1b\[[0-9;]*m/g, '').trim()), JSON.stringify(색뺀));
+    rl.close();
+  }
+}
+
 trace('2-목록고르기');
 
 // ── 목록에서 고르기 ─────────────────────────────────────────────────────
@@ -113,6 +228,33 @@ trace('2-목록고르기');
   check('기본값에 표시를 한다', /←기본/.test(out), '');
 }
 
+{
+  /*
+   * ── 없는 번호를 치면 말없이 기본값으로 갔다 ────────────────────────────
+   *
+   * `9` 나 `abc` 를 치면 아무 말 없이 기본값을 골랐다. 사람은 친 번호가 먹은 줄 알고 넘어가고,
+   * 붙는 것은 고른 적 없는 모델이다. 한 번 더 묻는다. 끝내 못 받으면 기본값으로 가되 **그렇게
+   * 했다고 말한다.** 되묻는 횟수에 끝을 둔다 — 같은 틀린 답이 계속 오는 자리(파이프)에서 안 멈추게.
+   */
+  const 목록 = ['가모델', '나모델', '다모델'];
+  const 차례로 = (답들) => {
+    const f = async () => { const a = 답들[f.받은.length] ?? 답들.at(-1); f.받은.push(a); return a; };
+    f.받은 = [];
+    return f;
+  };
+  const 한번틀림 = 차례로(['9', '3']);
+  const { v, out } = await 받아적기(() => pick('모델 고르기', 목록, { def: 0, ask: 한번틀림 }));
+  check('★ 없는 번호를 치면 다시 묻고, 다시 친 것을 고른다', v === 2 && 한번틀림.받은.length === 2,
+    `받은 것 ${v} · 물은 횟수 ${한번틀림.받은.length}`);
+  check('★ 왜 다시 묻는지 말한다 (고를 수 있는 범위)', /1.{0,4}3/.test(색빼기(out).split('다모델').pop()), JSON.stringify(색빼기(out).slice(-80)));
+
+  const 계속틀림 = 차례로(['abc']);
+  const { v: v2, out: out2 } = await 받아적기(() => pick('모델 고르기', 목록, { def: 1, ask: 계속틀림 }));
+  check('★ 계속 틀리면 끝없이 묻지 않고 기본값으로 간다', v2 === 1 && 계속틀림.받은.length <= 3,
+    `받은 것 ${v2} · 물은 횟수 ${계속틀림.받은.length}`);
+  check('★ 기본값으로 갔다고 말한다', /기본값/.test(색빼기(out2)), JSON.stringify(색빼기(out2).slice(-80)));
+}
+
 trace('3-진행표시');
 
 // ── 진행 표시 ───────────────────────────────────────────────────────────
@@ -125,7 +267,16 @@ trace('3-진행표시');
     const s = spin('무언가 하는 중…');
     s.stop('  끝났습니다');
   });
-  check('TTY 가 아니면 한 줄만 남긴다', out.split('\n').filter(Boolean).length === 2, JSON.stringify(out));
+  /*
+   * 머리말은 오래 「조용히 한 줄만」 이라고 적혀 있었는데 첫 판부터 두 줄이었다. 부르는 자리
+   * 열아홉 중 열넷이 끝맺음 글을 준다 — 시작 줄이 없으면 로그에 결과만 남아 무엇을 하다 그리
+   * 됐는지가 사라지고, 끝맺음 줄이 없으면 그 열넷이 통째로 말을 잃는다. 그래서 「안 돌린다」 와
+   * 「두 줄이 순서대로 남는다」 를 잰다 (2.0.0 8회차 uimisc SP1).
+   */
+  const 줄들 = out.split('\n').filter(Boolean);
+  check('TTY 가 아니면 안 돌리고 줄로만 남긴다', 줄들.length === 2, JSON.stringify(out));
+  check('시작 줄이 먼저, 끝맺음 줄이 나중', /무언가 하는 중/.test(줄들[0] ?? '') && /끝났습니다/.test(줄들[1] ?? ''),
+    JSON.stringify(줄들));
   check('스피너 글자가 안 나온다', !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(out), JSON.stringify(out));
   check('무엇을 하는 중인지는 남는다', /무언가 하는 중/.test(out), '');
   check('끝났다는 줄도 남는다', /끝났습니다/.test(out), '');
@@ -209,6 +360,20 @@ trace('4-화면계산');
   const b = bar(50, 100, 20);
   check('막대도 폭이 유지된다', width(b) === 20, String(width(b)));
   check('분모가 0 이어도 안 터진다', width(bar(0, 0, 10)) === 10, String(width(bar(0, 0, 10))));
+  /*
+   * ★ 말이 안 되는 값에도 폭을 지킨다.
+   *
+   * 바로 아래 gauge() 는 이 이야기를 이미 머리말에 적어 두었다 — 「Math.min/max 는
+   * NaN 을 그대로 흘린다. 그러면 repeat(NaN) 이 빈 글자가 되어 막대가 통째로
+   * 사라지고, 그만큼 상태줄이 밀린다. 컨텍스트 총량이 0 일 때 used/total 이
+   * 실제로 NaN 이 된다.」 정작 바로 위 bar() 만 그 울타리가 없어서, NaN 이면
+   * 막대가 사라지고 **음수면 `repeat(-4)` 로 통째로 터졌다.**
+   */
+  check('★ 셈이 NaN 이어도 막대가 안 사라진다', width(bar(NaN, 10, 20)) === 20, String(width(bar(NaN, 10, 20))));
+  check('★ 셈이 음수여도 안 터진다', (() => {
+    try { return width(bar(-1, 10, 20)) === 20; } catch (e) { return `터짐: ${e.message}`; }
+  })() === true, (() => { try { return String(width(bar(-1, 10, 20))); } catch (e) { return e.message; } })());
+  check('넘치게 써도 폭이 유지된다', width(bar(30, 10, 20)) === 20, String(width(bar(30, 10, 20))));
 }
 
 {
@@ -217,6 +382,36 @@ trace('4-화면계산');
   const 폭들 = new Set(줄들.map((l) => width(l)));
   check('상자 테두리가 다 같은 폭이다', 폭들.size === 1, [...폭들].join(','));
   check('상자에 위아래 테두리가 있다', /╭/.test(줄들[0]) && /╰/.test(줄들[줄들.length - 1]), '');
+}
+
+{
+  /*
+   * ★ 이름표를 단 상자도 테두리가 맞아야 한다.
+   *
+   * 윗줄은 `╭─ 이름 ` 까지가 다섯 칸이라 안쪽 폭이 이름+3 보다 좁으면 아랫줄보다
+   * 길어진다. 여백(pad)이 0 이면 언제나 그렇게 된다 — 이름이 있는데 안쪽이
+   * 좁은 상자가 화면에서 한 칸씩 어긋난다.
+   */
+  for (const [이름, 여백] of [['T', 0], ['긴이름표입니다', 0], ['T', 1], ['이름', 2]]) {
+    const 줄들 = box(['a'], { title: 이름, pad: 여백, tone: (x) => x });
+    const 폭들 = new Set(줄들.map((l) => width(l)));
+    check(`★ 이름표 상자도 테두리가 같은 폭이다 (${이름}·여백${여백})`, 폭들.size === 1,
+      `${[...폭들].join(',')} · ${JSON.stringify(줄들[0])}`);
+  }
+
+  /*
+   * 그 이름+3 바닥이 **이름이 없을 때도** 걸렸다. 이름이 빈 글이면 width('')+3 이라 안쪽 폭이
+   * 늘 3 아래로 못 내려가, 「안쪽 폭은 가장 긴 줄에 맞춘다」 는 JSDoc 과 어긋난다. 한 글자짜리
+   * 상자가 세 칸으로 그려져 오른쪽이 텅 빈다 — 테두리는 맞으니 안 터지고 계속 어긋난다
+   * (2.0.0 8회차 uimisc AN1).
+   */
+  for (const [줄, 여백] of [['a', 0], ['가', 0], ['ab', 0], ['a', 1]]) {
+    const 줄들 = box([줄], { pad: 여백, tone: (x) => x });
+    const 폭들 = new Set(줄들.map((l) => width(l)));
+    check(`★ 이름 없는 상자는 가장 긴 줄에 맞춘다 (${줄}·여백${여백})`,
+      폭들.size === 1 && [...폭들][0] === width(줄) + 여백 * 2 + 2,
+      `${[...폭들].join(',')} · 바라는 폭 ${width(줄) + 여백 * 2 + 2} · ${JSON.stringify(줄들[1])}`);
+  }
 }
 
 trace('4.5-상태줄');

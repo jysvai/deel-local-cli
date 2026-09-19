@@ -6,6 +6,13 @@
 
 ---
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-loop-ko-dark.svg">
+    <img alt="한마디가 도는 길 — 움직이는 그림. 사람 말에서 길고르기, 모드의 도구 목록, 모델, 모드 관문과 승인 관문, 도구 실행, 확인(Verify), 답까지 걸음이 하나씩 켜진다. 움직임을 줄이는 설정이면 멈춘 그림으로 바뀐다" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-loop-ko-light.svg" width="760">
+  </picture>
+</p>
+
 ## 개발
 
 <sub>어디를 밟았는지 · 폴더 구조</sub>
@@ -149,7 +156,12 @@ bin/deel.js              진입점
 src/
   repl.js                대화 화면 — 사람이 마주하는 자리
   oneshot.js             한 번 돌리고 끝내기 (-p)
-  commands.js            / 명령 52종
+  commands.js            / 명령 52종 — 명령을 가르는 자리(handle)
+  commands/common.js     명령표 · 설정 남기기 — 아래 조각들이 같이 쓴다
+  commands/model.js      /model · /ctx · /out · /grade — 연결을 다루는 것
+  commands/work.js       /커밋 · /리뷰 · /diff · /증거 · /갈래 · /못박기 · /배움 · /붙여넣기
+  commands/view.js       /help · /level · /think · /context · /work 목록
+  commands/extend.js     /plugins · /skills · /serve
   cmdnames.js            그 이름표만 — 배치 모드도 봐야 해서 따로
   setup.js               처음 켤 때 연결 잡기
   config.js              설정 읽고 쓰기

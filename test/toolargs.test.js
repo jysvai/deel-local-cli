@@ -23,7 +23,7 @@
 //   4. 화면 이름표가 영문 이름으로 와도 안 빈다. ★ 이게 조용히 깨지는 자리다.
 //   5. 영어 화면에서 인자 설명이 빠지지 않는다 — 설명 표가 이름으로 걸린다.
 import { readFileSync } from 'node:fs';
-import { TOOLS } from '../src/tools/index.js';
+import { TOOLS, 영어설명 } from '../src/tools/index.js';
 import { 도구설명EN } from '../src/tools/desc.en.js';
 import { 일감인자 } from '../src/tools/jobs.js';
 import { 이름칸들, 첫이름 } from '../src/tools/label.js';
@@ -216,6 +216,93 @@ trace('5-영어-설명');
   check('★ 없는 인자에 붙은 설명도 없다', 남는것.length === 0, 남는것.join(' '));
   check('영어 설명글도 옛 이름을 안 부른다',
     !/`이해`|into 할일/.test(도구설명EN.Ask.desc + 도구설명EN.Task.desc));
+
+  /*
+   * ★ 도구 설명은 모델이 읽는 **계약**이다 — 두 말이 같은 규칙을 담아야 한다 (8회차).
+   *
+   * desc.en.js 머리말이 「글자 그대로 옮겼다」 고 못 박아 둔 줄 가운데
+   * Append 의 「앞부분을 다시 보내지 마라」 가 한글 description 에도 영문 desc 에도
+   * 없었다. 그 한 줄이 빠지면 모델은 Append 마다 앞부분을 통째로 다시 보낸다 —
+   * 잘려서 다시 쓰던 그 자리로 돌아가고, 토큰은 파일 길이만큼 곱절로 든다.
+   */
+  const 붙이기한 = TOOLS.Append.schema.description;
+  const 붙이기영 = 도구설명EN.Append.desc;
+  check('★★ Append 설명(한)이 앞부분을 다시 보내지 말라고 못 박는다',
+    /다시 보내지 (마|않)/.test(붙이기한), 붙이기한.slice(-70));
+  check('★★ Append 설명(영)에도 같은 규칙이 있다',
+    /resend|send .* again/i.test(붙이기영), 붙이기영.slice(-70));
+
+  /*
+   * ★ 옛 `.xls` 는 **빌려 읽는다** — 영문 설명만 옛 약속을 들고 있었다 (8회차).
+   *
+   * 한글 쪽은 「옛 형식(.xls)은 이 PC 에 엑셀이나 LibreOffice 가 있어야 읽힌다」 로
+   * 고쳐졌는데, 영문은 `.xlsx/.xlsm/.xls` 를 한 묶음으로 「그대로 읽힌다」 고 적고
+   * 있었다. 지시말이 영어인 사람은 LibreOffice 가 없는 PC 에서 **되지도 않는 것을
+   * 된다고** 듣는다 — 모델은 사용자에게 그 .xls 를 달라고 해 놓고 못 읽어서
+   * 걸음 하나를 버린다. 스키마 문장이 곧 약속이라, 두 말이 같은 약속이어야 한다.
+   */
+  const 읽기한 = TOOLS.Read.schema.description;
+  const 읽기영 = 도구설명EN.Read.desc;
+  check('★ 설명(한)이 옛 .xls 는 빌려 읽는 것이라고 적는다 (아래 검사의 전제)',
+    /LibreOffice/.test(읽기한) && /\(\.xlsx\/\.xlsm\)/.test(읽기한), 읽기한.slice(-160));
+  check('★★ 설명(영)도 그대로 읽히는 것에 옛 .xls 를 안 끼워 넣는다',
+    /\(\.xlsx\/\.xlsm\)/.test(읽기영) && !/\.xlsm\/\.xls\b/.test(읽기영), 읽기영.slice(0, 200));
+  check('★★ 설명(영)이 옛 .xls 에는 엑셀이나 LibreOffice 가 있어야 한다고 적는다',
+    /\.xls\b[\s\S]{0,80}LibreOffice/i.test(읽기영), 읽기영.slice(0, 260));
+
+  /*
+   * ★ `.hwpx` 로 **새로 만드는 길**이 영문 설명에서만 통째로 빠져 있었다 (막판 훑기).
+   *
+   * 영어설명() 은 description 을 **통째로 갈아 끼운다**. 그래서 이 표에 없는 줄은
+   * 「아직 안 옮긴 것」 이 아니라 **지워진 것**이다 — 지시말이 ko 가 아닌 사람에게는
+   * Write 로 한글 문서를 만들 수 있다는 사실이 아예 안 나간다. 사내에 낼 보고서를
+   * 달라고 하면 모델은 .md 를 쓰고 끝내고, 사람은 그 길이 있는 줄도 모른다.
+   * 이 판에서 손본 tools/hwpxwrite.js 가 통째로 안 닿는 자리였다.
+   */
+  const 쓰기한 = TOOLS.Write.schema.description;
+  const 쓰기영 = 도구설명EN.Write.desc;
+  check('★ 설명(한)이 .hwpx 로 끝내면 한글 문서를 만든다고 적는다 (아래 검사의 전제)',
+    /hwpx/i.test(쓰기한), 쓰기한.slice(-140));
+  check('★★ 설명(영)에도 .hwpx 로 만드는 길이 있다', /hwpx/i.test(쓰기영), 쓰기영.slice(-140));
+  check('★★ 설명(영)도 새로 만들 때만 된다고 못 박는다',
+    /hwpx[\s\S]{0,300}(only when creating|new file|cannot be edited)/i.test(쓰기영), 쓰기영.slice(-180));
+
+  /*
+   * ★ 배열 **속** 칸에 한국어가 그대로 실려 나갔다 (막판 훑기).
+   *
+   * 영어설명() 은 겉의 properties 만 갈아 끼웠다. 그런데 이 도구들이 제일 세게
+   * 미는 길은 배열 쪽이다 — 「여러 군데는 edits 로 한 번에」 「스무 개를 옮기려고
+   * 스무 번 부르지 마라」. 정작 그 길의 인자 설명이 `old_string: 바꿀 대상` 처럼
+   * 한국어로 나갔다. 영어로 켠 사람에게는 제일 비싼 길의 설명서만 안 읽히는 셈이다.
+   *
+   * 화면이 아니라 **모델에게 나가는 정의**를 잰다 — langleak 은 화면만 본다.
+   */
+  const 한글 = /[가-힣]/;
+  const 샌곳 = [];
+  for (const [n, t] of Object.entries(TOOLS)) {
+    if (!도구설명EN[n]) continue;
+    (function 훑(node, 길) {
+      if (!node || typeof node !== 'object') return;
+      if (typeof node.description === 'string' && 한글.test(node.description)) 샌곳.push(길);
+      for (const [k, v] of Object.entries(node.properties ?? {})) 훑(v, `${길}.${k}`);
+      if (node.items) 훑(node.items, `${길}[]`);
+    })(영어설명(t.schema, n, 'en').parameters ?? {}, n);
+  }
+  check('★★★ 영어 도구 정의에 한국어가 한 줄도 안 남는다', 샌곳.length === 0, 샌곳.join(' '));
+
+  /*
+   * 속 표가 **실재하는 칸**만 가리키나. 겉 표와 같은 이유다 — 이름이 어긋나면
+   * 그 칸만 조용히 한국어로 돌아간다.
+   */
+  const 헛것 = [];
+  for (const [n, en] of Object.entries(도구설명EN)) {
+    for (const [배열, 속 ] of Object.entries(en.items ?? {})) {
+      const 실제 = TOOLS[n]?.schema?.parameters?.properties?.[배열]?.items?.properties;
+      if (!실제) { 헛것.push(`${n}.${배열}[]`); continue; }
+      for (const k of Object.keys(속)) if (!(k in 실제)) 헛것.push(`${n}.${배열}[].${k}`);
+    }
+  }
+  check('★★ 속 표가 없는 칸을 가리키지 않는다', 헛것.length === 0, 헛것.join(' '));
 }
 
 trace('6-끝');

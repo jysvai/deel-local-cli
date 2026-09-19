@@ -24,11 +24,11 @@
 // 그래서 두 가지를 잰다.
 //   1. 갈래마다 자리값이 있다 — `?? 3` 으로 떨어지는 갈래가 없다
 //   2. 남의 것이 아무리 많아도 내장은 목록에 남는다
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Session } from '../src/agent/session.js';
-import { discover, 내장자리 } from '../src/skills/discover.js';
+import { discover, 내장자리, frontmatter } from '../src/skills/discover.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -42,8 +42,15 @@ const 세션만들기 = () => new Session(
 
 // ── 1. 내장 스킬이 실제로 있다 ──────────────────────────────────────────
 trace('1-내장있음');
+/*
+ * 이름은 폴더가 아니라 SKILL.md 의 `name:` 에서 온다(discover.js 의 readSkill).
+ * 2.0.0 에서 배포 파일 이름을 영어로 옮기면서 폴더(test-first)와 스킬 이름
+ * (검사-먼저)이 갈렸다. 폴더 이름을 기대값으로 두면 멀쩡한 프롬프트를 두고 빨개진다.
+ */
 const 내장이름들 = readdirSync(내장자리, { withFileTypes: true })
-  .filter((d) => d.isDirectory()).map((d) => d.name).sort();
+  .filter((d) => d.isDirectory())
+  .map((d) => frontmatter(readFileSync(join(내장자리, d.name, 'SKILL.md'), 'utf8')).data.name || d.name)
+  .sort();
 check('★★ 내장 스킬이 하나 이상 있다', 내장이름들.length > 0, 내장이름들.join(' · '));
 
 // ── 2. discover 가 다는 갈래가 순위표에 전부 있다 ─────────────────

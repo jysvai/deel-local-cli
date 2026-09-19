@@ -5,7 +5,7 @@
 // 안 뜬다 — 그냥 조용히 작아진다. 그래서 서버 종류별로 실제 응답 모양을 만들어
 // 하나씩 확인한다.
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { probeCtx, parseSize, fmtSize, 기본값 } from '../src/backend/ctxsize.js';
@@ -42,10 +42,32 @@ for (const 나쁜것 of ['', 'abc', '0', '12', '-500', '99999999999', 'k', '1.2.
   check(`'${나쁜것}' 은 안 받는다`, parseSize(나쁜것) === null, String(parseSize(나쁜것)));
 }
 
-check('33k 로 줄여 적는다', fmtSize(32768) === '32k', fmtSize(32768));
-check('655k 로 줄여 적는다', fmtSize(655360) === '640k', fmtSize(655360));
+check('32k 로 줄여 적는다', fmtSize(32768) === '32k', fmtSize(32768));
+check('640k 로 줄여 적는다', fmtSize(655360) === '640k', fmtSize(655360));
 check('1.0M 로 줄여 적는다', fmtSize(1048576) === '1.0M', fmtSize(1048576));
 check('기본값은 32768', 기본값 === 32768, String(기본값));
+
+// ── 머리말이 제 코드와 다른 말을 하지 않는가 ────────────────────────────
+//
+// 이 파일의 머리말 두 줄이 코드와 어긋나 있었다. 사람은 코드보다 머리말을 먼저
+// 읽고, 어긋난 머리말은 틀린 문서보다 나쁘다 — 곁에 있어서 맞는 줄 안다.
+{
+  const 소스 = readFileSync(new URL('../src/backend/ctxsize.js', import.meta.url), 'utf8');
+
+  // fmtSize 머리말의 예시는 fmtSize 가 실제로 내는 글자여야 한다.
+  // `33k · 655k` 라고 적혀 있었는데 1024 로 나누므로 실제는 `32k · 640k` 다.
+  const 예시 = /\/\*\* *([^\n*]+?) *— *화면에 넣을 짧은 표기 *\*\//.exec(소스)?.[1] ?? '';
+  const 낼수있는것 = new Set([fmtSize(32768), fmtSize(655360), fmtSize(1048576), fmtSize(999)]);
+  check('★ fmtSize 머리말 예시가 실제로 나오는 글자다',
+    예시.length > 0 && 예시.split('·').every((x) => 낼수있는것.has(x.trim())),
+    `${예시} (실제 ${fmtSize(32768)} · ${fmtSize(655360)} · ${fmtSize(1048576)})`);
+
+  // 기본값 머리말이 「옛날 32768 보다는」 이라고 적어 두고 값이 32768 이었다 —
+  // 제 값과 저를 견주는 말이라 읽는 사람은 값이 바뀐 줄 안다.
+  const 머리 = /\/\*\*?((?:[^*]|\*(?!\/))*)\*\/\s*export const 기본값 = (\d+);/.exec(소스);
+  check('★ 기본값 머리말이 제 값과 저를 견주지 않는다',
+    !!머리 && !new RegExp(`\\b${머리[2]}\\b`).test(머리[1]), 머리?.[1] ?? '(머리말 못 찾음)');
+}
 
 trace('2-서버모양별');
 
@@ -267,6 +289,94 @@ trace('2d-누가-막았나');
     막혔을때.tried.map((t) => `${t.label}:${t.막힘}`).join(' '));
 
   allowEndpoint(base);
+  srv.close();
+}
+
+trace('2e-창구찾기');
+
+// ── 404 로 **답한** 것과 아무 말도 없는 것은 다르다 ─────────────────────
+//
+// 여섯 자리가 전부 HTTP 404 를 돌려줬는데 화면은 「두드린 자리에서 아무 응답도
+// 못 받았습니다」 였다. 사람은 서버가 죽었거나 방화벽이 삼킨 줄 알고 서버를
+// 뒤진다 — 실제로는 서버가 또박또박 「그런 문은 없다」 고 말한 것이다.
+{
+  const { srv, port } = await 띄우기(() => null);   // 전 경로 404
+  const base = `http://127.0.0.1:${port}/v1`;
+  allowEndpoint(base);
+  const r = await probeCtx({ kind: 'openai', base, auth: 'none', key: '', model: 'qwen' }, { timeout: 3000 });
+  check('★ 전부 404 면 「응답을 못 받았다」 고 하지 않는다', !/아무 응답도 못 받았습니다/.test(String(r.why)), String(r.why));
+  check('★ 받은 상태 코드를 말해 준다', /404/.test(String(r.why)), String(r.why));
+  srv.close();
+}
+
+// 진짜로 아무 말도 없는 자리는 예전 그대로 말한다 (되돌아가면 안 되는 자리).
+{
+  const { srv, port } = await 띄우기(() => null);
+  const base = `http://127.0.0.1:${port}/v1`;
+  const 죽은주소 = `http://127.0.0.1:${port + 1}/v1`;   // 아무도 안 듣는 포트
+  allowEndpoint(죽은주소);
+  const r = await probeCtx({ kind: 'openai', base: 죽은주소, auth: 'none', key: '', model: 'qwen' }, { timeout: 3000 });
+  check('닿지도 못했으면 응답을 못 받았다고 한다', /아무 응답도 못 받았습니다/.test(String(r.why)), String(r.why));
+  allowEndpoint(base);
+  srv.close();
+}
+
+// ── source 는 **채택한 값**이 어디서 왔는지여야 한다 ────────────────────
+//
+// 모델 상세가 최대 655,360 을, LM Studio 가 올린 길이 8,192 를 줬다. 쓰는 값은
+// 8,192 인데 화면은 「모델 상세에서 읽음」 이라고 적었다 (repl.js · model.js 가
+// r.source 를 그대로 찍는다). 값이 이상할 때 사람이 엉뚱한 창구를 뒤진다.
+{
+  const { srv, port } = await 띄우기((url) => {
+    if (url === '/v1/models/qwen') return { id: 'qwen', context_window: 655360 };
+    if (url === '/api/v0/models/qwen') return { id: 'qwen', loaded_context_length: 8192 };
+    return null;
+  });
+  const base = `http://127.0.0.1:${port}/v1`;
+  allowEndpoint(base);
+  const r = await probeCtx({ kind: 'openai', base, auth: 'none', key: '', model: 'qwen' }, { timeout: 3000 });
+  check('★ 올린 길이를 쓰면 source 도 그 창구다', r.value === 8192 && r.source === 'LM Studio',
+    `value=${r.value} source=${r.source}`);
+  srv.close();
+}
+
+// 올린 길이가 없으면 예전 그대로 최대를 준 창구를 적는다.
+{
+  const { srv, port } = await 띄우기((url) => (url === '/v1/models/qwen'
+    ? { id: 'qwen', context_window: 655360 } : null));
+  const base = `http://127.0.0.1:${port}/v1`;
+  allowEndpoint(base);
+  const r = await probeCtx({ kind: 'openai', base, auth: 'none', key: '', model: 'qwen' }, { timeout: 3000 });
+  check('최대만 있으면 그 창구를 적는다', r.value === 655360 && r.source === '모델 상세', `source=${r.source}`);
+  srv.close();
+}
+
+// ── 이름 앞에 뭐가 붙어 와도 올린 길이는 올린 길이다 ────────────────────
+//
+// `llm.n_ctx` 는 최대 쪽에서만 걸리고 올린 길이 쪽에서는 안 걸렸다. 그래서
+// 같은 숫자 하나가 「모델 최대 8,192 · 올린 길이 모름」 이 됐고, /ctx 자세히 가
+// 그렇게 찍었다. 객체로 오든 앞에 뭐가 붙든 잣대는 하나여야 한다.
+{
+  const { srv, port } = await 띄우기((url) => (url === '/v1/models/qwen'
+    ? { id: 'qwen', 'llm.n_ctx': 8192 } : null));
+  const base = `http://127.0.0.1:${port}/v1`;
+  allowEndpoint(base);
+  const r = await probeCtx({ kind: 'openai', base, auth: 'none', key: '', model: 'qwen' }, { timeout: 3000 });
+  check('★ 접두사 붙은 n_ctx 도 올린 길이로 본다', r.loaded === 8192 && r.max === 8192,
+    `max=${r.max} loaded=${r.loaded}`);
+  check('어디서 찾았는지도 남긴다', /llm\.n_ctx/.test(String(r.loadedKey)), String(r.loadedKey));
+  srv.close();
+}
+
+// 최대 쪽 이름(…context_length)이 올린 길이로 둔갑하면 안 된다 — 되돌아가면 안 되는 자리.
+{
+  const { srv, port } = await 띄우기((url) => (url === '/v1/models/qwen'
+    ? { id: 'qwen', 'qwen3.context_length': 131072 } : null));
+  const base = `http://127.0.0.1:${port}/v1`;
+  allowEndpoint(base);
+  const r = await probeCtx({ kind: 'openai', base, auth: 'none', key: '', model: 'qwen' }, { timeout: 3000 });
+  check('접두사 붙은 context_length 는 올린 길이가 아니다', r.max === 131072 && r.loaded === null,
+    `max=${r.max} loaded=${r.loaded}`);
   srv.close();
 }
 

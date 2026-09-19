@@ -192,6 +192,9 @@ function jpeg치수(buf) {
   while (i + 9 < buf.length) {
     if (buf[i] !== 0xff) { i += 1; continue; } // 채움 바이트를 건너뛴다
     const 표시 = buf[i + 1];
+    // 표시 앞에는 0xFF 를 여럿 둘 수 있다(채움). 그 FF 를 표시로 읽으면 뒤 두 바이트를 길이로
+    // 먹고 튕겨 null 이 되고, 그러면 픽셀 한도가 안 걸린다. 하나씩 건너뛴다 (6회차 V1).
+    if (표시 === 0xff) { i += 1; continue; }
     if (표시 === 0xd8 || 표시 === 0x01 || (표시 >= 0xd0 && 표시 <= 0xd7)) { i += 2; continue; }
     const 길이 = buf.readUInt16BE(i + 2);
     if (길이 < 2) return null;
@@ -304,8 +307,18 @@ export function 그림메시지(shape, { 글 = '', 그림들 = [] } = {}) {
  *
  * 진짜 그림을 쓰면 안 된다. 어떤 화면이든 그 안에 무엇이 찍혀 있을지 모르고,
  * 확인하자고 사내 화면을 바깥으로 내보낼 수는 없다. 이건 흰 점 하나다.
+ *
+ * ── 적힌 것과 나가는 것이 달랐다 (8회차 뒷단) ───────────────────────────
+ *
+ * 여기 있던 바이트는 **반투명한 빨간 점**(RGBA 255,0,0,127)이었다. 그런데 이것을
+ * 「1×1 흰 점」 이라고 부르는 자리가 네 곳이다 — 바로 위 이 줄, probe.js 의 눈 검사
+ * 두 자리, docs/{ko,en}/interface.md. 밖으로 나가는 유일한 그림 바이트라 문서가
+ * 그것을 콕 집어 적어 두는 자리인데, 적힌 것과 나가는 것이 갈려 있었다.
+ * 반투명은 받는 쪽이 어떤 바탕에 얹느냐에 따라 색까지 달라져서 「무슨 색이냐」 는
+ * 물음에 창구마다 다른 답이 온다. 적힌 대로 불투명한 흰 점으로 맞춘다.
+ * (픽셀은 test/vision.test.js 가 풀어서 잰다 — base64 는 눈으로 못 읽는다.)
  */
-export const 한점PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+export const 한점PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP4////fwAJ+wP99djxmgAAAABJRU5ErkJggg==';
 
 /** 눈 검사에 쓸 메시지. 규격 세 가지 다. */
 export function 눈검사메시지(shape) {

@@ -58,8 +58,19 @@ export function 애저인가(input) {
   if (!s) return false;
   const u = 뜯기(s);
   if (!u) return /\/openai\/deployments(\/|\?|$)/i.test(s);
+  /*
+   * 배포 주소부터 본다 — `/v1` 로 끝나는지보다 **앞**이다.
+   *
+   * 배포 이름이 하필 `v1` 인 자원이 있다. 그 주소
+   * (`…/openai/deployments/v1`)를 `/v1` 로 끝난다는 이유로 OpenAI 규격 창구로
+   * 보고 Azure 에서 빼 버렸다. 길에 `/openai/deployments/` 가 이미 적혀 있으면
+   * 마지막 한 칸은 **배포 이름**이지 판 번호가 아니다 — 애저풀기 는 이 주소에서
+   * 배포 `v1` 을 제대로 뽑는다. 두 함수의 답이 갈리면 한쪽만 맞는 자리가 된다.
+   */
+  const 배포길 = /\/openai\/deployments(\/|$)/i.test(u.pathname);
+  if (배포길) return true;
   if (/\/v\d+\/?$/.test(u.pathname)) return false;
-  return 애저호스트.test(u.hostname) || /\/openai\/deployments(\/|$)/i.test(u.pathname);
+  return 애저호스트.test(u.hostname);
 }
 
 function 뜯기(s) {

@@ -56,6 +56,14 @@ export const 제공자 = {
       return '도구 스키마를 거절했습니다 — Gemini 는 스키마의 일부만 받습니다.'
         + ' deel diagnose 로 어느 도구가 걸리는지 확인하세요.';
     }
+    /*
+     * 모델 이름이 틀리면 404 로 온다(`models/… is not found for API version …`). 여기서 안 받으면
+     * 공통 까닭이 404 를 「주소를 다시 보세요」 로 읽어, 표에 박힌 멀쩡한 주소를 의심하게 했다
+     * (2.0.0 6회차 · Gemini 제공자6). openai.js 의 같은 자리와 같은 말이다.
+     */
+    if (status === 404 && /model/i.test(서버말)) {
+      return '그 모델 이름을 이 열쇠로는 못 씁니다 — 이름이 틀렸거나, 아직 안 열린 모델입니다.';
+    }
     if (status === 403 && /SERVICE_DISABLED|PERMISSION_DENIED/i.test(서버말)) {
       return '이 프로젝트에서 Generative Language API 가 꺼져 있습니다 — 콘솔에서 켜세요.';
     }

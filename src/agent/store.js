@@ -15,8 +15,11 @@
 import {
   existsSync, mkdirSync, readdirSync, readFileSync,
   appendFileSync, writeFileSync, statSync, rmSync, chmodSync, renameSync,
+  openSync, readSync, closeSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { 도구결과인가 } from '../backend/adapter.js';
+import { BOM떼기 } from '../safety/trust.js';
 
 export const sessionsDir = (root) => join(root, '.deel', 'sessions');
 
@@ -34,29 +37,60 @@ export function newId(at = new Date()) {
  * 그러면 서로 다른 두 대화가 한 파일에 섞여 들어가고 되살릴 때 뒤엉킨다.
  * 이미 있는 이름이면 뒤에 번호를 붙여 피한다.
  */
-export function freeId(dir, at = new Date()) {
+export function freeId(dir, at = new Date(), 피할것 = null) {
+  /*
+   * ── 파일이 없다고 빈 이름은 아니다 (사냥5 H5-1) ─────────────────────────
+   *
+   * 여기는 **이 폴더의** 대화 파일만 봤다. 에디터 프로세스 하나가 두 프로젝트를
+   * 같은 초에 열면 두 폴더 다 그 이름의 파일이 없어서 둘 다 같은 이름을 받았고,
+   * ACP 는 그 이름 하나로 방을 찾으므로 A 탭의 말이 B 방으로 갔다. 부르는 쪽이
+   * 「이 프로세스에서 이미 쓴 이름」 을 알려 주면 그것도 피한다.
+   */
+  const 비었나 = (id) => !existsSync(join(dir, `${id}.jsonl`)) && !(typeof 피할것 === 'function' && 피할것(id));
   const base = newId(at);
-  if (!existsSync(join(dir, `${base}.jsonl`))) return base;
+  if (비었나(base)) return base;
   for (let n = 2; n < 1000; n++) {
     const id = `${base}-${n}`;
-    if (!existsSync(join(dir, `${id}.jsonl`))) return id;
+    if (비었나(id)) return id;
   }
   // 여기까지 왔으면 마지막 이름도 비어 있는지 봐야 한다. 안 보고 돌려주면
   // begin() 이 같은 이름으로 쉰 번을 되풀이하다 **아무 파일도 없이** 대화를
   // 시작한다 — 저장한다고 적어 놓고 한 줄도 안 남는 판이 그때 만들어진다.
   for (let n = 0; n < 1000; n++) {
     const id = n ? `${base}-${process.pid}-${n}` : `${base}-${process.pid}`;
-    if (!existsSync(join(dir, `${id}.jsonl`))) return id;
+    if (비었나(id)) return id;
   }
   return `${base}-${process.pid}-${Date.now().toString(36)}`;
 }
 
+/**
+ * 대화 이름으로 쓸 수 있나 — 이름이 곧 `.deel/sessions/<이름>.jsonl` 의 한 조각이다.
+ *
+ * 이름을 경로에 그대로 이어 붙인다. 여태 이름을 본 자리는 remove() 하나였고,
+ * 읽기·적기·갈아 끼우기는 안 봤다. 그래서 에디터가 session/load 로 `../../evil/x`
+ * 를 주면 대화 폴더 **밖**의 `evil/x.jsonl` 을 대화로 읽었고, 한 턴이 돌면 거기에
+ * 대화를 적었다. 이름을 받는 문이 셋(--resume · session/load · /sessions)이라,
+ * 검사는 이름이 경로가 되는 한 자리(Store)와 여기 하나에 둔다.
+ */
+export function 대화이름인가(id) {
+  const s = String(id ?? '');
+  return /^[^\\/:*?"<>|\x00-\x1f]+$/.test(s) && s.trim() === s && !s.includes('..') && !/^\.+$/.test(s);
+}
+
 export class Store {
-  constructor(root, id = null) {
+  /**
+   * @param {string} root
+   * @param {string|null} id  이어 쓸 대화 이름. 안 주면 빈 이름을 지어 새로 연다
+   * @param {object} [o]
+   * @param {(id: string) => boolean} [o.피할것]  이름을 지을 때 파일이 없어도 피할 이름
+   *        (사냥5 H5-1 — 한 프로세스가 여러 폴더의 대화를 열 때. freeId 머리말)
+   */
+  constructor(root, id = null, { 피할것 = null } = {}) {
     this.root = root;
     this.dir = sessionsDir(root);
     this.auto = id == null;      // 우리가 지은 이름인가 (그러면 겹칠 때 바꿔도 된다)
-    this.#use(id ?? freeId(this.dir));
+    this.피할것 = typeof 피할것 === 'function' ? 피할것 : null;
+    this.#use(id ?? freeId(this.dir, new Date(), this.피할것));
     this.opened = false;
     /** 적으려다 못 적은 줄 수와 첫 까닭. 0 이 아니면 이 대화는 반만 남는다. */
     this.못쓴수 = 0;
@@ -71,8 +105,48 @@ export class Store {
 
   #use(id) {
     this.id = id;
-    this.file = join(this.dir, `${id}.jsonl`);
+    /*
+     * 쓸 수 없는 이름이면 **파일 자리를 안 만든다.** 경로를 지어 두면 그 경로를
+     * 쓰는 자리가 하나라도 검사를 빠뜨리는 순간 폴더 밖이 열린다. 없는 자리는
+     * 아무도 못 쓴다 — 읽기·적기·갈아 끼우기가 전부 이름틀림 을 보고 물러선다.
+     */
+    this.이름틀림 = !대화이름인가(id);
+    this.file = this.이름틀림 ? null : join(this.dir, `${id}.jsonl`);
     this.#잠갔나 = false;      // 다른 파일로 옮겨 갔으면 그 파일은 아직 안 잠갔다
+    this.#끝자리 = null;       // 옮겨 간 파일이 어디까지 적혀 있는지는 아직 모른다
+    this.#줄끝봤나 = false;    // 옮겨 간 파일이 줄 끝으로 끝나는지도 아직 안 봤다
+  }
+
+  /*
+   * ── 같은 대화를 창 두 개가 적고 있나 ────────────────────────────────────
+   *
+   * `--continue` 로 창을 둘 여는 것은 이상한 짓이 아니다. 한쪽에서 고치는 동안
+   * 한쪽에서 물어보려고 흔히 그렇게 한다. 그런데 그때 두 대화가 **한 파일에**
+   * 줄줄이 섞여 들어갔다. 섞인 것만도 이어받기가 뒤엉키는데, 한쪽이 접기까지
+   * 하면 replace() 가 파일을 통째로 다시 쓰므로 다른 창의 대화는 그 한 번에
+   * 없어졌다. 없어진 쪽의 `적은할일`·`적은요청` 은 이미 적었다고 들고 있어서,
+   * 남은 할 일과 시킨 말도 두 번 다시 안 적힌다.
+   *
+   * 그동안 화면은 아무 말이 없었다. 쓰기가 실패한 적이 없으니 못쓴수 가 0 이고,
+   * 그래서 「안 적히고 있습니다」 가 한 번도 안 떴다. 사람이 알아차리는 자리는
+   * 또 **다음 날 --resume** 이다 — 이 파일 위쪽이 너무 늦다고 적어 둔 그 자리다.
+   *
+   * 우리가 지은 이름은 freeId 와 'wx' 가 이미 막는다. 사람이 이름을 준 자리
+   * (--resume/--continue)만 여기서 본다. 내가 적어 둔 데까지의 바이트 수를
+   * 들고 있다가, 적기 전에 파일이 그보다 자라 있으면 남이 쓴 것이다.
+   *
+   * 그러면 **안 적고 센다.** 그냥 이어 붙이는 것은 두 대화를 섞어 놓는 일이고,
+   * 섞인 파일은 둘 다 못 쓰게 된다. 대신 잠자코 물러나지는 않는다 — 못쓴 셈에
+   * 올려 두면 화면이 바로 다음 줄에 「이 대화가 파일에 안 적히고 있습니다」 를
+   * 말한다. 창을 닫기 **전에** 알아야 사람이 손을 쓴다.
+   */
+  #끝자리 = null;
+  /** 지금 파일 크기. 못 재면 null — 모르는 것은 모른다고 둔다(헛경보가 더 나쁘다). */
+  #크기() { try { return statSync(this.file).size; } catch { return null; } }
+  #남이썼나() {
+    if (this.auto || this.#끝자리 == null) return false;
+    const 지금 = this.#크기();
+    return 지금 != null && 지금 !== this.#끝자리;
   }
 
   /*
@@ -161,19 +235,27 @@ export class Store {
    * 사용자가 --resume 으로 이름을 준 경우에는 옮기지 않고 그 파일에 이어 쓴다.
    */
   begin(meta) {
+    // 쓸 수 없는 이름이면 머리글도 안 적는다(#use). 저장된다고 말하지 않게 센다.
+    if (this.이름틀림) { this.#못썼다({ code: 'BAD_NAME' }); return this; }
     this.#open();
     const head = JSON.stringify({ t: 'meta', at: new Date().toISOString(), ...meta }) + '\n';
     for (let tries = 0; tries < 50; tries++) {
       try {
         writeFileSync(this.file, head, { encoding: 'utf8', flag: 'wx' });
         this.#잠그기();
+        this.#끝자리 = this.#크기();
         return this;
       } catch (err) {
         // 못 적어도 대화는 계속돼야 한다. 다만 조용히 넘기지는 않는다 —
         // 머리글을 못 적었으면 그 뒤의 줄도 십중팔구 못 적는다.
         if (err?.code !== 'EEXIST') { this.#못썼다(err); return this; }
-        if (!this.auto) return this;               // 이어쓰기 — 이미 있는 게 맞다
-        this.#use(freeId(this.dir));               // 누가 채 갔다. 옆자리로.
+        if (!this.auto) {
+          // 이어쓰기 — 이미 있는 게 맞다. 다만 **지금 어디까지 적혀 있는지**를
+          // 기억해 둔다. 다음에 그보다 자라 있으면 다른 창이 같은 대화를 연 것이다.
+          this.#끝자리 = this.#크기();
+          return this;
+        }
+        this.#use(freeId(this.dir, new Date(), this.피할것));   // 누가 채 갔다. 옆자리로.
       }
     }
     // 쉰 번을 다 써도 자리를 못 잡았다. 여기서 잠자코 돌아가면 화면은
@@ -182,13 +264,57 @@ export class Store {
     return this;
   }
 
+  /*
+   * ── 반쪽 줄 뒤에 이어 적지 않는다 ─────────────────────────────────────────
+   *
+   * 도중에 죽으면 마지막 줄이 개행 없이 반만 남는다. 읽을 때는 건너뛰니 앞부분은
+   * 성하다(이 파일 머리말). 그런데 --resume 으로 그 파일에 이어 적으면 첫 새 줄이
+   * 그 반쪽 **뒤에 그대로 붙어** 한 줄이 되고, 그 줄은 JSON 이 아니라 다음에 읽을 때
+   * 통째로 건너뛴다 — 이어받은 뒤 사람이 처음 한 말이 조용히 없어졌다.
+   * 파일마다 처음 적을 때 한 번, 끝이 개행인지 보고 아니면 개행부터 붙인다.
+   */
+  #줄끝봤나 = false;
+  #줄로끝나나() {
+    let fd = null;
+    try {
+      const 크기 = statSync(this.file).size;
+      if (!크기) return true;
+      fd = openSync(this.file, 'r');
+      const 한바이트 = Buffer.alloc(1);
+      readSync(fd, 한바이트, 0, 1, 크기 - 1);
+      return 한바이트[0] === 0x0a;
+    } catch { return true; }         // 없거나 못 읽으면 붙일 반쪽도 없다
+    finally { if (fd != null) { try { closeSync(fd); } catch { /* 닫다 터져도 적기는 한다 */ } } }
+  }
+
   /** 한 줄 적는다. 적었으면 true. 못 적었으면 false 이고 셈에 오른다. */
   #write(obj) {
+    // 쓸 수 없는 이름이면 파일 자리가 없다(#use). 적은 척하지 않고 센다.
+    if (this.이름틀림) { this.#못썼다({ code: 'BAD_NAME' }); return false; }
+    let 줄 = JSON.stringify(obj) + '\n';
+    // 남이 같은 파일을 적고 있으면 여기서 선다 (위 「같은 대화를 창 두 개가」).
+    if (this.#남이썼나()) { this.#못썼다({ code: 'OTHER_WINDOW' }); return false; }
     try {
-      appendFileSync(this.file, JSON.stringify(obj) + '\n', 'utf8');
+      if (!this.#줄끝봤나) {
+        if (!this.#줄로끝나나()) 줄 = '\n' + 줄;
+        this.#줄끝봤나 = true;
+      }
+      appendFileSync(this.file, 줄, 'utf8');
       this.#잠그기();
+      // 적은 만큼만 더한다. 다시 재지 않는 것은 이게 줄마다 도는 자리여서다.
+      this.#끝자리 = this.#끝자리 == null ? this.#크기() : this.#끝자리 + Buffer.byteLength(줄, 'utf8');
       return true;
-    } catch (err) { this.#못썼다(err); return false; }   // 계속은 하되, 몇 줄을 잃었는지는 센다
+    } catch (err) {
+      /*
+       * 막혔으면 끝을 다시 보게 되돌린다 (2.0.0 6회차 · Gemini 저장6w-a2 X1). 본 표시를
+       * 적기 **전에** 세워서, 첫 적기가 막히면(읽기 전용 · 잠김 · 디스크 가득) 다음 줄이
+       * 반쪽 줄 뒤에 그대로 붙었다 — 그 줄은 적었다고 true 를 돌려주고 셈에도 안 오르는데,
+       * 다시 읽으면 JSON 이 아니라 사라진다. 반쯤 적히고 막힌 경우도 그 반쪽을 다음에 본다.
+       */
+      this.#줄끝봤나 = false;   // 막혔으니 다음 적기에서 끝을 다시 본다
+      this.#못썼다(err);
+      return false;   // 계속은 하되, 몇 줄을 잃었는지는 센다
+    }
   }
 
   // 메시지 하나를 덧붙인다. 대화가 진행되는 대로 즉시 남긴다.
@@ -233,9 +359,23 @@ export class Store {
     // 적힌 것이 없으면 세션이 들고 있던 것을 그대로 둔다. 빈 값으로 덮으면
     // 새 갈래를 열자마자 방금 시킨 말이 사라진다 — 갈래마다 파일이 따로다.
     if (할일) session.할일 = 할일;
-    if (이번요청) session.이번요청 = 이번요청;
-    this.적은할일 = JSON.stringify(session.할일 ?? []);
-    this.적은요청 = String(session.이번요청 ?? '');
+    // `if (이번요청)` 이었다 — 파일에 적힌 **빈 글**(`''`)을 못 되살렸다 (8회차 판정).
+    // 아래 507–508 이 적어 둔 대로 `null` 은 「적힌 적이 없다」 이고 `''` 는 「빈 것으로
+    // 적혔다」 다. 그 둘을 가르기로 해 놓고 여기서만 안 갈랐다.
+    if (이번요청 != null) session.이번요청 = 이번요청;
+    /*
+     * 표식은 **파일에 적힌 것**으로 세운다 (8회차 판정).
+     *
+     * 여기가 `JSON.stringify(session.할일 ?? [])` 였다. 세션 값으로 세우면, 파일에
+     * 한 줄도 안 적고 「여기까지 적었다」 고 표시한 것이 된다. 그러면 뒤이은
+     * `살림적기` 가 「안 바뀜」 으로 보고 **영영 안 적는다** — 그 갈래의 남은 할 일과
+     * 시킨 말이 통째로 사라진다. 바로 아래 살림적기 머리말이 적어 둔 그 길이다.
+     *
+     * 파일이 빈 것과 세션이 빈 것이 같을 때는 아무것도 안 적는다 — 「안 바뀌었으면
+     * 한 줄도 안 늘린다」 는 약속은 그대로 지킨다.
+     */
+    this.적은할일 = JSON.stringify(할일 ?? []);
+    this.적은요청 = String(이번요청 ?? '');
   }
 
   /**
@@ -295,6 +435,13 @@ export class Store {
 
   // 압축이 일어나면 이력이 통째로 바뀐다. 그때는 새로 적는다.
   replace(messages, note = '압축') {
+    /*
+     * 다른 창이 같은 파일을 적고 있으면 **여기가 제일 크게 잃는 자리**다.
+     * 아래는 파일을 통째로 갈아 끼우므로, 그 한 번에 남의 대화가 통째로
+     * 없어진다. 이어 붙이기와 달리 되돌릴 조각조차 안 남는다. 안 쓰고 센다.
+     */
+    if (this.이름틀림) { this.#못썼다({ code: 'BAD_NAME' }); return; }   // 파일 자리가 없다(#use)
+    if (this.#남이썼나()) { this.#못썼다({ code: 'OTHER_WINDOW' }); return; }
     this.#open();
     const meta = this.readMeta() ?? {};
     // 여기가 놓치기 쉬운 자리다. 파일을 새로 쓰면서 못 박은 것을 안 옮기면,
@@ -313,7 +460,8 @@ export class Store {
     lines.push(JSON.stringify({ t: 'note', at: new Date().toISOString(), note }));
     if (못박은것.length) lines.push(JSON.stringify({ t: 'pins', at: new Date().toISOString(), 목록: 못박은것 }));
     if (할일) lines.push(JSON.stringify({ t: 'todo', at: new Date().toISOString(), 목록: 할일 }));
-    if (이번요청) lines.push(JSON.stringify({ t: 'request', at: new Date().toISOString(), 글: 이번요청 }));
+    // `if (이번요청)` 이었다 — 빈 글(`''`)이 옮겨지지 않아 replace() 를 지나면 null 로 변질됐다 (8회차 판정).
+    if (이번요청 != null) lines.push(JSON.stringify({ t: 'request', at: new Date().toISOString(), 글: 이번요청 }));
     for (const m of messages) lines.push(JSON.stringify({ t: 'msg', m }));
     /*
      * 옆에 다 쓰고 나서 **한 번에 갈아 끼운다.**
@@ -334,6 +482,7 @@ export class Store {
       renameSync(옆, this.file);
       this.#잠갔나 = false;
       this.#잠그기();
+      this.#끝자리 = this.#크기();      // 통째로 바뀌었으니 어디까지인지도 다시 잰다
     } catch (err) {
       try { rmSync(옆, { force: true }); } catch { /* 못 치워도 원본은 성하다 */ }
       this.#못썼다(err);
@@ -343,7 +492,8 @@ export class Store {
   readMeta() {
     if (!existsSync(this.file)) return null;
     try {
-      const first = readFileSync(this.file, 'utf8').split('\n', 1)[0];
+      // 머리글 줄도 BOM 을 떼고 본다 — 까닭은 load() 에.
+      const first = BOM떼기(readFileSync(this.file, 'utf8')).split('\n', 1)[0];
       const j = JSON.parse(first);
       return j.t === 'meta' ? j : null;
     } catch { return null; }
@@ -360,7 +510,12 @@ export class Store {
   load() {
     if (!existsSync(this.file)) return { meta: null, messages: [] };
     let 글;
-    try { 글 = readFileSync(this.file, 'utf8'); }
+    /*
+     * BOM 을 떼고 읽는다. 윈도우 메모장이나 파워셸로 대화 파일을 열었다 저장하면 첫 줄 앞에
+     * BOM 이 붙고, 그 줄(머리글)이 JSON 으로 안 풀려 목록의 모델이 `?` 가 됐다. 접을 때
+     * replace() 는 readMeta() 로 머리글을 옮기므로 모델·폴더가 **없는** 머리글을 새로 썼다.
+     */
+    try { 글 = BOM떼기(readFileSync(this.file, 'utf8')); }
     catch (err) { return { meta: null, messages: [], 못읽음: err?.code ?? err?.message ?? String(err) }; }
     let meta = null;
     const messages = [];
@@ -392,7 +547,30 @@ function firstAsk(messages) {
    * 그래서 건너뛰되, 남는 것이 하나도 없으면 첫 마디를 그대로 쓴다.
    * 알아보기 어려운 제목이 「빈 대화」 라는 거짓말보다 낫다.
    */
-  const m = 쓸만한.find((x) => !x.content.trim().startsWith('[')) ?? 쓸만한[0];
+  /*
+   * 건너뛰는 자를 **한 줄 통째**로 좁힌다 (2.0.0 8회차 판정).
+   *
+   * `startsWith('[')` 하나로는 두 가지가 같이 틀렸다.
+   *
+   *   1. 사람이 「[급함] 로그인이 안 됩니다」 로 열고 한 마디를 더 하면, 첫 마디를
+   *      건너뛰고 **둘째 마디**가 제목이 된다 — 처음 물은 것이 목록에서 사라진다.
+   *      위 문단이 「남는 것이 없으면」 만 보았지, 남는 것이 있을 때는 그대로였다.
+   *   2. 남는 것이 없을 때 `?? 쓸만한[0]` 이 **우리가 끼운 글**을 제목으로 골랐다.
+   *      사람이 한 적 없는 말이 그 대화의 이름이 됐다.
+   *
+   * 가르는 자리는 분명하다 — 우리가 끼우는 글은 **첫 줄이 통째로 대괄호**다.
+   * 사람이 적는 「[급함] …」 은 닫는 괄호 뒤에 할 말이 이어진다.
+   */
+  const 통째괄호 = (글) => /^\[[^\]\n]*\]\s*$/.test(String(글).trim().split(String.fromCharCode(10))[0]);
+  /*
+   * 우리가 끼우는 글은 이 둘뿐이다 (compact.js 의 접은 요약 · commands.js 의 딴 모델 답).
+   * 늘리면 여기도 같이 늘린다 — 안 늘리면 그 글이 대화 이름으로 뜬다.
+   */
+  const 우리글 = [/^\[앞선 대화 .*요약해 접었습니다/, /^\[.* 에게 따로 물어본 결과다/];
+  const 우리가끼운것 = (글) => 우리글.some((r) => r.test(String(글).trim()));
+  const m = 쓸만한.find((x) => !통째괄호(x.content))
+    ?? 쓸만한.find((x) => !우리가끼운것(x.content))
+    ?? null;
   return m ? m.content.replace(/\s+/g, ' ').trim() : '(빈 대화)';
 }
 
@@ -461,7 +639,22 @@ function 한줄(root, c) {
   return {
     ...c,
     model: meta?.model ?? '?',
-    turns: messages.filter((m) => m.role === 'user').length,
+    /*
+     * 「몇 번 오갔나」 는 **사람이 몇 번 말을 걸었나** 다.
+     *
+     * 어제 세 가지를 물어본 대화가 목록에 `43번 오감` 으로 떠 있었다. 사람은
+     * 그 숫자로 「어느 것이 그 긴 대화였나」 를 고르는데, 도구를 많이 쓴 짧은
+     * 대화가 언제나 제일 길어 보였다 — 고르라고 적어 둔 숫자가 거꾸로 가리킨 것이다.
+     *
+     * 까닭은 `role` 만 본 것이다. Anthropic 규격에는 도구 차례가 따로 없어서
+     * 결과가 **사람 차례**에 실려 온다(backend/adapter.js 의 toolMessage).
+     * 그래서 도구 결과 한 건이 그대로 사람 한 마디로 세어졌다. 바로 위
+     * firstAsk 는 이미 글인지를 보고 있었는데, 여기만 옛 모양으로 남아 있었다.
+     *
+     * 규격마다 다른 자리를 보는 것은 우리 몫이 아니다 — 그 판단은 adapter.js
+     * 한 곳에만 둔다. session.js·compact.js 가 같은 함정을 같은 함수로 닫았다.
+     */
+    turns: messages.filter((m) => m.role === 'user' && !도구결과인가(m)).length,
     messages: messages.length,
     first: firstAsk(messages),
   };
@@ -496,8 +689,13 @@ export function latest(root) {
    * `list(root, { limit: 20 })` 로 스무 개를 통째로 읽으면 안 된다 — 이 파일이
    * 위에서 경고한 그 자리다. 대화 파일 하나가 수 MB 이고, 이건 켤 때마다 돈다.
    * 보통은 첫 파일 하나만 읽고 끝난다.
+   *
+   * **개수로는 끊지 않는다** (2.0.0 6회차 · Gemini 저장6w-b2 Y4). 20 에서 끊었더니, 터미널을
+   * 켜자마자 · 에디터가 새 대화 창을 열 때마다 적히는 머리글만 있는 파일이 스물 넘게 쌓이면
+   * 어제 대화가 그대로 있는데 --continue 가 「이어갈 대화가 없다」 가 됐다. 그런 파일은
+   * 몇십 바이트라 끝까지 훑어도 싸고, 성한 것을 만나면 거기서 멈춘다.
    */
-  for (const c of list(root, { limit: 20, 속까지: false })) {
+  for (const c of list(root, { limit: Infinity, 속까지: false })) {
     const 줄 = 한줄(root, c);
     if (줄 && !줄.못읽음) return 줄;
   }
@@ -508,7 +706,7 @@ export function latest(root) {
  * 오래된 것은 정리한다. 안 그러면 폴더가 끝없이 자란다.
  * 최근 keep 개는 무조건 남기고, 그보다 오래되고 days 를 넘긴 것만 지운다.
  */
-export function prune(root, { keep = 30, days = 30 } = {}) {
+export function prune(root, { keep = 30, days = 30, 남길것 = [] } = {}) {
   /*
    * 지울지 말지는 파일 시각만 보면 안다. 내용은 필요 없다 —
    * 여기서 전부 읽던 것이 켤 때 몇 초씩 멈추던 원인이었다.
@@ -517,8 +715,20 @@ export function prune(root, { keep = 30, days = 30 } = {}) {
    * 영영 안 지워진다. 폴더가 끝없이 자라지 말라고 있는 함수가 딱 그 일을
    * 못 하게 된다. 열지도 않고 시각만 보는 목록이라 전부 봐도 싸다.
    */
+  /*
+   * ── 지금 쓰는 대화는 시각과 상관없이 남긴다 (사냥5 H5-2) ─────────────────
+   *
+   * 한 달 넘은 대화를 --resume · session/load 로 이어받으면, 그 파일은 **아직 한 줄도
+   * 안 늘어서** 시각이 한 달 전 그대로다. 그리고 두 문 다 이어받기 바로 뒤에 여기를
+   * 부른다. 그래서 방금 이어받은 파일이 지워졌고, 다음 한 줄은 머리글도 옛 대화도
+   * 없는 새 파일에 적혔다 — 화면에는 「이어 받았습니다」 가 떠 있는데. 부르는 쪽이
+   * 열어 둔 대화 이름을 넘기면 그것은 안 지운다.
+   */
+  const 지킬것 = new Set([...(남길것 ?? [])].map(String));
   const all = list(root, { limit: Infinity, 속까지: false });
-  const 자를것 = all.slice(keep).filter((s) => (Date.now() - s.at.getTime()) > days * 86400000);
+  const 자를것 = all.slice(keep)
+    .filter((s) => !지킬것.has(s.id))
+    .filter((s) => (Date.now() - s.at.getTime()) > days * 86400000);
   // 지웠다고 세는 것은 **정말 지워진 것**만이다.
   let 지운수 = 0;
   for (const s of 자를것) { try { rmSync(s.file, { force: true }); 지운수 += 1; } catch { /* 잡혀 있으면 다음에 */ } }

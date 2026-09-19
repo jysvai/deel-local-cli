@@ -516,6 +516,33 @@ trace('8-손대라는말');
     check(`★★★ 관사가 붙으면 이름씨다 — "${글.slice(0, 34)}…"`,
       겹친요청(글).겹침 === false, 겹친요청(글).why);
   }
+  /*
+   * ★★★ 위 갈래는 **승인 창만** 껐다 — 점수표는 안 봤다.
+   *
+   * 바로 위 머리말이 「또 계획을 내고 승인을 물었다」 를 고쳤다고 적어 뒀는데,
+   * 끈 것은 뒤엣것(겹침)뿐이다. 점수표의 `plan` 5점이 그대로 남아 있어서 그 말은
+   * 여전히 계획 모드로 갔다 — 파일을 바꾸는 도구가 하나도 없는 모드로.
+   *
+   * 겹침을 끈 것이 오히려 더 나쁘게 만들었다. 겹침일 때는 승인 뒤에 code 로 잇는
+   * 길이 있었는데(repl.js 의 이어갈모드), 그 길마저 없어져서 사람은 「이미 승인됐다」
+   * 고 적어 놓고 계획서 한 장을 다시 받고 끝난다. 시킨 일이 통째로 안 된다.
+   *
+   * 잣대는 영어겹침 이 이미 쓰는 것과 같다 — 뒤에 is·was 가 오면 그 낱말은 시킴이
+   * 아니라 **이미 있는 것을 가리키는 말**이다.
+   */
+  for (const 글 of ['Our plan is approved. Open the file and make the change.',
+    'Plan is approved, then implement it',
+    'The roadmap is approved. Build it.',
+    'The plan was rejected. Write a new parser.']) {
+    const m = route(글).mode;
+    check(`★★★ 이미 있는 계획을 가리키는 말은 읽기 전용으로 안 보낸다 — "${글.slice(0, 34)}…"`,
+      m === null || canWrite(m), `${m} · ${route(글).why}`);
+  }
+  for (const 글 of ['Give me a plan for the migration.', 'Write a roadmap for Q3.',
+    'plan the migration', 'Make a plan first.']) {
+    check(`★★ 계획을 달라는 영어 말은 그대로 계획이다 — "${글.slice(0, 30)}"`,
+      route(글).mode === 'plan', String(route(글).mode));
+  }
   check('★★ 맨 and 갈래가 빈칸으로 예순 자 잣대를 못 뚫는다',
     겹친요청(`plan${' '.repeat(300)}and build it`).겹침 === false);
   /*
@@ -563,6 +590,71 @@ trace('8-손대라는말');
     묻지말라했나(진짜지시문) === true
     && 겹친요청('정리해서 만들어줘. 중간에 멈추지 말고 끝까지 해라.').겹침 === false);
   check('안 적은 사람에게는 그대로 겹침이다', 묻지말라했나('정리해서 만들어줘') === false);
+
+  /*
+   * ★★★ 승인받을 사람이 없는 자리에서는 계획부터 내지 않는다.
+   *
+   * 겹침의 값은 「계획을 보여 주고 **승인을 받아** 그대로 잇는다」 다. 그 값은
+   * 승인할 사람이 있어야 생긴다. `deel run` 과 에디터(ACP)에는 승인 창도
+   * 이어 갈 턴도 없어서, 계획 모드로 보내면 계획 한 장을 찍고 끝난다 —
+   * 계획 모드는 파일을 고치는 도구가 없다. 시킨 일의 절반도 못 준다.
+   */
+  for (const 글 of ['정리해서 만들어줘', '결제 모듈 설계하고 만들어줘', '살펴보고 만들어줘']) {
+    const 물음있음 = route(글);
+    const 물음없음 = route(글, { 승인받을수있나: false });
+    check(`★★★ 물어볼 사람이 없으면 계획 모드로 안 간다 — "${글}"`,
+      물음있음.mode === 'plan' && 물음없음.mode !== 'plan' && canWrite(물음없음.mode),
+      `물음○ ${물음있음.mode} · 물음✗ ${물음없음.mode}`);
+    check('  그래도 겹쳤다는 것은 말해 준다', 물음없음.겹침 === true);
+  }
+  /*
+   * ★★ 갈래를 건너뛰는 것만으로는 모자란다.
+   *
+   * 「plan and then build it」 은 점수표의 `plan` 5점이 이겨서 그대로 읽기
+   * 전용 모드로 갔다. 겹쳤는데 승인받을 자리가 없으면 실행하라는 절반이
+   * 분명히 있다는 뜻이니, 읽기 전용 모드는 후보에서 뺀다.
+   */
+  {
+    const r = route('plan and then build it', { 승인받을수있나: false });
+    check('★★★ 점수표가 이겨서 읽기 전용으로 가지도 않는다',
+      canWrite(r.mode), `${r.mode} · ${r.why}`);
+    check('★★ 왜 뺐는지 까닭이 다르다 — 「고치라는 말이라」 가 아니다',
+      /승인받을 자리가 없어서/.test(r.why), r.why);
+  }
+  check('★ 안 겹친 말은 두 갈래가 같다',
+    route('이 파일 고쳐줘').mode === route('이 파일 고쳐줘', { 승인받을수있나: false }).mode);
+
+  /*
+   * ★★★ 「계획대로」 는 계획을 달라는 말이 아니다.
+   *
+   * 계획을 받아 본 사람이 다음에 치는 말이 「위 계획대로 진행해줘」 다.
+   * 그 말에 '계획' 이 들어 있어서 또 계획 모드로 갔다 — 계획을 두 장 받고
+   * 파일은 그대로다. 승인한 값이 통째로 사라진다.
+   */
+  for (const 글 of ['위 계획대로 진행해줘', '계획대로 해줘', '계획대로 진행',
+    '플랜대로 진행해줘', '계획에 따라 구현해줘', '로드맵대로 만들어줘',
+    // '만들어' 가 붙은 것만 재면 헐겁다 — 그건 시킴말이라 어차피 계획이
+    // 후보에서 빠진다. 시킴말이 아닌 '진행' 으로도 재야 이 규칙을 잰다.
+    '로드맵대로 진행해줘', '플랜대로 해줘']) {
+    check(`★★★ 계획을 이으라는 말은 고칠 수 있는 모드로 — "${글}"`,
+      canWrite(route(글).mode), `${route(글).mode}`);
+  }
+  for (const 글 of ['계획 세워줘', '구현 계획 짜 줘', '이 계획 어때?', '이전 계획 정리해 줘']) {
+    check(`★★ 계획을 달라는 말은 그대로 계획이다 — "${글}"`,
+      route(글).mode === 'plan', String(route(글).mode));
+  }
+
+  /*
+   * ★★ 한 사실을 두 줄로 말하지 않는다.
+   *
+   * 겹쳤는데 승인받을 자리가 없으면 `일부러` 와 `겹침` 이 둘 다 참이 된다.
+   * 부르는 쪽이 각각 한 줄씩 찍으면 같은 이야기가 겹쳐 뜬다.
+   */
+  {
+    const r = route('plan and then build it', { 승인받을수있나: false });
+    check('★★ 겹침과 일부러가 같이 참인 자리가 있다 — 부르는 쪽이 하나만 찍어야 한다',
+      r.겹침 === true && r.일부러 === true, `겹침=${r.겹침} 일부러=${r.일부러}`);
+  }
   check('영어로 적어도 알아본다', 묻지말라했나('review and then implement it without asking') === true);
 }
 
@@ -665,6 +757,125 @@ const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1
   check('★★ 공손말을 붙여도 고치라는 말은 묻기가 아니다',
     route('Please rewrite how to build it.').mode !== 'ask',
     String(route('Please rewrite how to build it.').mode));
+}
+/*
+ * ── 8회차 판정에서 「참」 으로 남은 일곱 자리 ───────────────────────────
+ *
+ * 하나같이 **넓힌 자리의 가장자리**다. 규칙을 넓힐 때 보기로 든 말은 다
+ * 걸리는데, 그 옆 한 칸이 안 걸린다 — 토씨 하나, 빈칸 하나, 쉼표 하나,
+ * 물음표 하나 차이다. 사람이 실제로 치는 말은 그 한 칸 쪽이 더 흔하다.
+ */
+{
+  /*
+   * ★★★ 「원인」 만 빼고 「이유」 는 안 뺐다.
+   *
+   * 빼는 자리의 토씨 목록이 `[을이은는]` 이라 「이유를」 「이유가」 가 안
+   * 걸렸다. 고장 난 까닭을 묻는 말이 **파일을 못 고치는** 점검 모드로 간다.
+   */
+  for (const 글 of ['이유를 살펴봐줘', '이 오류 이유를 좀 살펴봐 줘', '까닭를 살펴봐줘',
+    '원인를 좀 살펴봐 줘', '이유를 살펴 보고 알려줘']) {
+    check(`★★★ 고장의 까닭을 묻는 말은 점검이 아니다 — "${글}"`,
+      route(글).mode !== 'inspect', String(route(글).mode));
+  }
+  check('  그래도 맨 「살펴봐 줘」 는 점검이다', route('이 코드 살펴봐 줘').mode === 'inspect',
+    String(route('이 코드 살펴봐 줘').mode));
+
+  /*
+   * ★★★ 물음표를 찍으면 「and fix」 문이 통째로 열렸다.
+   *
+   * 물음표까지 삼키는 갈래가 이기면 뒤를 막는 문이 **삼킨 자리 뒤**에서
+   * 열린다 — 이미 지나온 「and fix」 에 닿을 수가 없다. 마침표로 끝낸
+   * 같은 말은 막히는데 물음표로 끝낸 것만 묻기로 갔다.
+   */
+  for (const 글 of ['What is broken in route.js and fix it?',
+    'What is broken and fix it?', 'How does this work and then rewrite it?',
+    'How do I run this and add a test?']) {
+    check(`★★★ 물음표를 찍어도 이어 붙은 시킴 마디는 묻기가 아니다 — "${글.slice(0, 34)}…"`,
+      route(글).mode !== 'ask', String(route(글).mode));
+  }
+  check('  그래도 맨 물음은 묻기다', route('What is broken in route.js?').mode === 'ask',
+    String(route('What is broken in route.js?').mode));
+  /*
+   * ★★ 뒤에 단 문도 그대로 있어야 한다.
+   *
+   * 낱말 바로 뒤의 문은 **물음표에서 멈춘다** — 물음표 건너편의 시킴 마디는
+   * 물음표까지 삼킨 뒤에 열리는 문만 볼 수 있다. 두 문이 서로 다른 데를
+   * 지키므로, 한쪽만 남기면 다른 쪽이 통째로 열린다.
+   */
+  for (const 글 of ['What about the parser? And rewrite it.', 'How about the cache? And rewrite it.']) {
+    check(`★★ 물음표 건너편의 시킴 마디도 묻기가 아니다 — "${글}"`,
+      route(글).mode !== 'ask', String(route(글).mode));
+  }
+
+  /*
+   * ★★★ 「말해 줘」 갈래의 문만 이름 속 점에서 끊겼다.
+   *
+   * `what`·`how` 쪽은 `route.js` 의 점을 넘어가는데 여기만 `[^.!?\n]*` 라,
+   * 파일 이름이 하나 끼면 뒤의 「and fix」 를 못 본다.
+   */
+  for (const 글 of ['Tell me what is in route.js and fix it.',
+    'Show me the config.json and rename it to settings.json.',
+    'Explain src/agent/route.js and then refactor it.']) {
+    check(`★★★ 이름 속 점 너머의 시킴 마디도 본다 — "${글.slice(0, 34)}…"`,
+      route(글).mode !== 'ask', String(route(글).mode));
+  }
+  check('  그래도 맨 설명 부탁은 묻기다', route('Tell me what is in route.js.').mode === 'ask',
+    String(route('Tell me what is in route.js.').mode));
+
+  /*
+   * ★★★ 「써 줘」 · 「넣어 주세요」 — 맞춤법대로 띄어 쓰면 0점이었다.
+   *
+   * 이 파일 위쪽이 손대라는말 에서 이미 배운 것인데(「수정해 줘」), 점수표는
+   * 그대로 붙여 쓴 꼴만 알고 있었다. 띄어 쓴 사람만 종합에 남았다.
+   */
+  for (const 글 of ['README 에 설치 방법 좀 써 줘', '이 함수에 널 체크 넣어 주세요',
+    '로그 한 줄 넣어 줘', '설정 예시 좀 써 주세요']) {
+    check(`★★★ 띄어 써도 시킴말이다 — "${글}"`, route(글).mode === 'code',
+      `${route(글).mode} (${route(글).점수들?.code ?? 0}점)`);
+  }
+
+  /*
+   * ★★ 차례말 뒤에 쉼표가 붙는다.
+   *
+   * `After approval,` · `Then,` 은 영어에서 더 흔한 꼴인데 쉼표 하나에
+   * 겹침이 아니게 됐다 — 계획을 보여 달라는 절반이 통째로 사라진다.
+   */
+  for (const 글 of ['Plan the migration. After approval, implement it.',
+    'Draft the schema. Then, write the migration.',
+    'Outline the work. After that, build it.']) {
+    check(`★★ 차례말 뒤 쉼표도 넘는다 — "${글.slice(0, 34)}…"`,
+      겹친요청(글).겹침 === true, 겹친요청(글).why);
+  }
+  check('  쉼표가 없던 꼴은 그대로', 겹친요청('Plan the migration, then implement it').겹침 === true);
+
+  /*
+   * ★★★ 부정이 예순 자 밖으로 잘리면 무시됐다.
+   *
+   * 실행말을 예순 자 안에서 찾아 놓고, 그 뒤의 「하지 마」 도 **같은 예순
+   * 자 안에서만** 찾았다. 실행말이 가장자리에 걸리면 부정이 잘려 나가고,
+   * 하지 말라는 것을 할지 묻는 승인 창이 뜬다.
+   */
+  {
+    const 글 = '설계하고 사용자 인증 흐름과 토큰 갱신 경로, 그리고 오류 처리 방식까지 문서에 아주 자세히 정리해 두되 구현은 하지 마';
+    check('★★★ 부정이 예순 자 가장자리에 걸려도 읽는다', 겹친요청(글).겹침 === false,
+      `${겹친요청(글).why} (실행말 ${글.search(/구현/)}자)`);
+  }
+  check('  가까이 붙은 부정은 그대로', 겹친요청('설계하고 구현은 하지 마').겹침 === false);
+  check('  부정이 없으면 그대로 겹침', 겹친요청('설계하고 구현은 해줘').겹침 === true);
+
+  /*
+   * ★★★ 「하지는 마」 · 「하진 마」 · 「하지도 마」.
+   *
+   * 부정 무늬가 `지\s*(?:마|말|않)` 라, '지' 와 '마' 사이에 토씨가 하나
+   * 끼거나 줄어든 꼴이 오면 못 읽었다. 하지 말라는 말이 하라는 말이 된다.
+   */
+  for (const 글 of ['설계하고 구현은 하지는 마', '설계하고 구현 하진 마',
+    '설계하고 구현은 하지도 마', '정리하고 추가하지는 마', '검토하고 작성은 하진 마']) {
+    check(`★★★ 토씨가 껴도 부정이다 — "${글}"`, 겹친요청(글).겹침 === false,
+      겹친요청(글).why);
+  }
+  check('  「하지만」 은 부정이 아니다', 겹친요청('설계하고 구현은 하지만 검토도 해줘').겹침 === true,
+    겹친요청('설계하고 구현은 하지만 검토도 해줘').why);
 }
 
 

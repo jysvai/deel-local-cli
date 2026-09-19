@@ -6,14 +6,17 @@
 //
 // 붙는 곳은 이 컴퓨터 안(127.0.0.1)의 임시 스텁뿐이다. 바깥으로는 안 나간다.
 import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { PassThrough } from 'node:stream';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ask, confirm, pick } from '../src/ui/prompt.js';
 import { runSetup, showStatus, runDiagnose } from '../src/setup.js';
+import { verdict } from '../src/report.js';
 import { load } from '../src/config.js';
-import { resetNet, setOffline, isOffline } from '../src/safety/network.js';
+import { resetNet, setOffline, isOffline, contacted } from '../src/safety/network.js';
 import { 제공자들 } from '../src/providers/index.js';
 import { 리전들 } from '../src/providers/bedrock.js';
 import { trace } from './trace.mjs';
@@ -22,6 +25,7 @@ const pass = [];
 const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
 
+const 진입점 = fileURLToPath(new URL('../bin/deel.js', import.meta.url));
 const home = mkdtempSync(join(tmpdir(), 'deel-setup-home-'));
 process.env.DEEL_HOME = home;
 
@@ -109,6 +113,135 @@ trace('1-한줄받기');
   // 제어문자는 무시한다. 붙여넣기에 섞여 들어온다.
   const { v: v3 } = await 대화(['a\x01b\x1bc'], () => ask('키'));
   check('제어문자는 안 담는다', v3 === 'abc', JSON.stringify(v3));
+}
+
+// 보이지 않는 글자는 코드값으로 만든다 — 이 파일에 날 글자를 적지 않는다.
+const ESC = String.fromCharCode(27);
+
+{
+  /*
+   * ── 한 덩어리에 답이 둘 실려 올 때 ────────────────────────────────────
+   *
+   * `printf '2\nhttp://…\n' | deel setup` 이나 빠른 붙여넣기에서 난다. 엔터 뒤 나머지를 되돌려
+   * 놓는데, 되돌리는 순간 **아직 듣고 있는 첫 물음**에게 곧바로 다시 배달돼 「firstsecond」 가
+   * 되고, 둘째 물음은 영영 답을 못 받았다.
+   */
+  for (const [이름, 덩이] of [['LF', 'first\nsecond\n'], ['CRLF', 'first\r\nsecond\r\n']]) {
+    const 원래 = process.stdout.write.bind(process.stdout);
+    process.stdout.write = () => true;
+    const 입력 = 가짜입력();
+    let a; let b;
+    try {
+      const p = ask('하나');
+      입력.write(덩이);
+      a = await p;
+      b = await Promise.race([ask('둘'), new Promise((r) => setTimeout(() => r('<안 옴>'), 1500))]);
+    } finally { process.stdout.write = 원래; 되돌리기(); }
+    check(`★★ 한 덩어리의 두 답을 두 물음이 나눠 받는다 (${이름})`, a === 'first' && b === 'second', JSON.stringify([a, b]));
+  }
+}
+
+{
+  /*
+   * ── CRLF 가 덩이 사이에서 갈려 올 때 (Gemini 화면4) ─────────────────────
+   *
+   * 윈도에서 CRLF 로 적은 답 파일을 파이프로 흘리면 `ans1\r` | `\nans2\r\n` 로 갈려 올 수 있다.
+   * 첫 물음은 \r 에서 끝나고, 둘째 물음이 맨 앞 \n 을 엔터로 읽어 **빈 답**으로 넘어갔다 —
+   * 그 뒤 답이 한 칸씩 다음 물음으로 밀린다(주소 물음에 모델 이름이 들어간다).
+   */
+  const 원래 = process.stdout.write.bind(process.stdout);
+  process.stdout.write = () => true;
+  const 입력 = 가짜입력();
+  // 파이프다 — 터미널(raw)은 엔터를 \r 하나로만 보내 CRLF 가 갈릴 일이 없다.
+  입력.isTTY = false;
+  const 답들 = [];
+  try {
+    const p1 = ask('하나');
+    입력.write('ans1\r');
+    답들.push(await p1);
+    const p2 = ask('둘');
+    입력.write('\nans2\r\n');
+    답들.push(await Promise.race([p2, new Promise((r) => setTimeout(() => r('<안 옴>'), 1500))]));
+  } finally { process.stdout.write = 원래; 되돌리기(); }
+  check('★ CRLF 가 덩이 사이에서 갈려도 빈 답이 안 끼어든다', 답들[0] === 'ans1' && 답들[1] === 'ans2', JSON.stringify(답들));
+}
+
+{
+  /*
+   * 터미널에서는 삼키지 않는다 (Gemini 화면5). raw 모드의 엔터는 늘 덩이 끝 \r 하나라, 그 뒤 첫 키로
+   * Ctrl+J(\n)를 치면 그 엔터가 먹혀 물음이 안 끝났다. CRLF 가 갈려 오는 것은 파이프뿐이다.
+   */
+  const 원래 = process.stdout.write.bind(process.stdout);
+  process.stdout.write = () => true;
+  const 입력 = 가짜입력();
+  let 둘째;
+  try {
+    const p1 = ask('하나');
+    입력.write('ans1\r');
+    await p1;
+    const p2 = ask('둘', { def: 'D' });
+    입력.write('\n');
+    둘째 = await Promise.race([p2, new Promise((r) => setTimeout(() => r('<안 옴>'), 1500))]);
+  } finally { process.stdout.write = 원래; 되돌리기(); }
+  check('★ 터미널에서 엔터 뒤 Ctrl+J 를 삼키지 않는다', 둘째 === 'D', JSON.stringify(둘째));
+}
+
+{
+  /*
+   * ── ESC 를 누르고 O 를 치고 엔터 ────────────────────────────────────────
+   *
+   * `ESC O` 뒤 한 글자를 무엇이든 SS3 순서의 끝으로 먹었다. 엔터가 그 자리에 오면 엔터가 사라져
+   * 물음이 안 끝난다. SS3 의 끝 글자는 0x40–0x7E 뿐이다 — 아니면 홑 ESC(Alt+O)다.
+   */
+  const 원래 = process.stdout.write.bind(process.stdout);
+  process.stdout.write = () => true;
+  const 입력 = 가짜입력();
+  let v;
+  try {
+    const p = ask('키');
+    입력.write(`ab${String.fromCharCode(27)}O\r`);
+    v = await Promise.race([p, new Promise((r) => setTimeout(() => r('<안 옴>'), 1500))]);
+  } finally { process.stdout.write = 원래; 되돌리기(); }
+  check('★ ESC O 뒤의 엔터를 순서 끝으로 안 먹는다', v === 'abO', JSON.stringify(v));
+}
+
+{
+  /*
+   * ── 화살표·Delete·붙여넣기 표시가 글자로 박혔다 ─────────────────────────
+   *
+   * ESC 만 떼고 뒤따르는 `[D` `[3~` `[200~` 는 글자로 담았다. 가림 입력이면 화면에는 ● 만 보여
+   * 사람은 모른다 — 열쇠가 조용히 틀어져 저장되고, 붙을 때 401 이 난다.
+   */
+  const 경우 = [
+    ['왼쪽 화살표', `http://localhst${ESC}[D${ESC}[Do`, 'http://localhsto', {}],
+    ['Delete', `abc${ESC}[3~`, 'abc', {}],
+    ['Home', `bc${ESC}[Ha`, 'bca', {}],
+    ['SS3 화살표', `ab${ESC}OAc`, 'abc', {}],
+    ['가림 입력에서 화살표', `sk-abc${ESC}[D`, 'sk-abc', { mask: true }],
+    ['붙여넣기 표시', `${ESC}[200~http://x:1${ESC}[201~`, 'http://x:1', {}],
+  ];
+  for (const [이름, 친것, 될것, o] of 경우) {
+    const { v } = await 대화([친것], () => ask('키', o));
+    check(`★ ${이름} 순서를 글자로 안 담는다`, v === 될것, JSON.stringify(v));
+  }
+
+  // 순서가 두 토막에 갈려 와도 (느린 원격 터미널)
+  const 원래 = process.stdout.write.bind(process.stdout);
+  process.stdout.write = () => true;
+  const 입력 = 가짜입력();
+  let v;
+  try {
+    const p = ask('키');
+    입력.write(`ab${ESC}[`);
+    await new Promise((r) => setTimeout(r, 20));
+    입력.write('3~c\r');
+    v = await p;
+  } finally { process.stdout.write = 원래; 되돌리기(); }
+  check('★ 순서가 두 토막에 갈려 와도 글자로 안 담는다', v === 'abc', JSON.stringify(v));
+
+  // 그림글자는 UTF-16 두 토막이다. 한 토막만 지우면 반쪽 글자가 열쇠·이름에 남는다.
+  const { v: 그림 } = await 대화([`a${String.fromCodePoint(0x1f600)}\x7f`], () => ask('키'));
+  check('★ 그림글자 뒤 백스페이스가 반쪽 글자를 안 남긴다', 그림 === 'a', JSON.stringify(그림));
 }
 
 trace('2-예아니오');
@@ -199,6 +332,47 @@ const port = srv.address().port;
   const { v, out } = await 대화(['2', ''], () => runSetup());
   check('주소가 비면 1 로 끝낸다', v === 1, String(v));
   check('주소가 비었다고 말해 준다', /주소가 비었습니다/.test(색빼기(out)), 색빼기(out).slice(-60));
+}
+
+{
+  /*
+   * ── 틀린 주소를 열쇠·이름까지 다 받은 뒤에야 알렸다 ──────────────────
+   *
+   * `http://` · `https://` · `::1` · 빈칸 든 주소를 넣으면 열쇠를 묻고 이름을 묻고, 그 다음에야
+   * 「Invalid URL」 이라는 날것의 말로 실패했다. 열쇠를 찾아 붙여넣은 수고가 버려진다.
+   *
+   * 여기서는 물음이 뜰 때만 답을 넣고, 마법사가 끝나면 더 안 넣는다 — 위 대화() 는 답을 다 쓸
+   * 때까지 물음을 기다려서, 일찍 끝나는 쪽을 재면 한 경우에 몇 초씩 걸린다.
+   */
+  const 끝까지 = async (대답들, fn) => {
+    const 원래 = process.stdout.write.bind(process.stdout);
+    let 모인것 = '';
+    process.stdout.write = (chunk) => { 모인것 += chunk; return true; };
+    const 입력 = 가짜입력();
+    let 끝남 = false;
+    try {
+      const p = Promise.resolve().then(fn).catch((e) => `던짐: ${e?.message}`).finally(() => { 끝남 = true; });
+      for (let i = 0; i < 대답들.length && !끝남; i++) {
+        for (let j = 0; j < 300 && !끝남 && (모인것.match(/›/g) ?? []).length < i + 1; j++) await new Promise((r) => setTimeout(r, 10));
+        if (!끝남) 입력.write(`${대답들[i]}\r`);
+      }
+      const v = await Promise.race([p, new Promise((r) => setTimeout(() => r('<안 끝남>'), 15000))]);
+      return { v, out: 모인것 };
+    } finally { process.stdout.write = 원래; 되돌리기(); }
+  };
+  /*
+   * `http:///v1` · `/v1` 은 슬래시가 셋이라 URL 파서가 **경로를 호스트로 끌어올린다**
+   * (`http://v1/`). 「호스트 이름이 없습니다」 줄이 `!u.hostname` 을 보고 있어서 한 번도
+   * 안 걸렸고 — http/https 는 호스트가 비면 `new URL` 이 먼저 던진다 — 마법사는 열쇠와
+   * 이름까지 다 받은 뒤 `v1` 이라는 엉뚱한 이름을 진짜로 두드렸다. (doctor.js 와 쌍둥이)
+   */
+  for (const 주소 of ['http://', 'https://', '::1', 'http://local host:1/v1', 'http:///v1', '/v1']) {
+    const { v, out } = await 끝까지(['2', 주소, '', ''], () => runSetup());
+    const 글 = 색빼기(out);
+    check(`★ 틀린 주소(${주소})는 받은 자리에서 1 로 끝낸다`, v === 1, String(v));
+    check(`★ 틀린 주소(${주소})면 열쇠를 안 묻는다`, !/API 키/.test(글), 글.slice(-160));
+    check(`틀린 주소(${주소})라고 사람 말로 적는다`, /주소가 올바르지 않습니다/.test(글) && !/Invalid URL/.test(글), 글.slice(-160));
+  }
 }
 
 {
@@ -350,6 +524,255 @@ trace('5-상태와진단');
   } finally { process.stdout.write = 원래; }
   check('주소를 직접 줘도 진단이 돈다', code === 0, String(code));
   check('진단이 판정을 낸다', /판정|준비됨|제한적|막힘/.test(색빼기(글)), 색빼기(글).slice(-120));
+}
+
+trace('5-0-못-붙었을-때-무엇이-막았는지');
+
+{
+  /*
+   * ── 알아낸 쪽이 적어 둔 말이 일반 문구에 덮인다 (막판-바깥) ────────────
+   *
+   * setup.js 의 「연결 실패」 자리는 `막힌까닭()` 을 **먼저** 쓰고, 그게 없을
+   * 때만 `found.why` 로 떨어진다. 그런데 `공통까닭()` 은 401·403·404·429·402
+   * 에 전부 답을 갖고 있다. 그래서 detect.js 의 `애저막힌말()` 이 지어 둔 세
+   * 줄(401·403·404)이 한 번도 화면에 못 간다.
+   *
+   * 404 가 제일 아깝다. 일반 문구는 「주소를 다시 보세요」 로 끝나는데,
+   * Azure 에서 그 404 는 **주소에 배포 이름이 빠진 것**이라 고칠 자리가 딱
+   * 정해져 있다 — 알아낸 쪽은 그 자리를 이미 적어 뒀다.
+   *
+   * 여기서는 404 를 내는 이 컴퓨터 안 스텁을 Azure 배포 주소 꼴로 두드려,
+   * 그 한 줄이 화면까지 오는지만 본다.
+   */
+  const 스텁404 = createServer((req, res) => {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end('{"error":{"code":"DeploymentNotFound"}}');
+  });
+  await new Promise((r) => 스텁404.listen(0, '127.0.0.1', r));
+  const p404 = 스텁404.address().port;
+
+  const 원래 = process.stdout.write.bind(process.stdout);
+  let 글 = '';
+  process.stdout.write = (chunk) => { 글 += chunk; return true; };
+  try {
+    await runDiagnose({ url: `http://127.0.0.1:${p404}/openai/deployments`, key: '가짜열쇠', model: '가모델' });
+  } finally { process.stdout.write = 원래; 스텁404.close(); }
+  const 맨글 = 색빼기(글);
+
+  check('★★ 알아낸 쪽이 적어 둔 까닭이 화면까지 온다 (Azure 404 의 배포 이름 힌트)',
+    맨글.includes('/openai/deployments/<배포이름>'),
+    맨글.split('\n').filter((l) => l.includes('⚠')).join(' / ') || '⚠ 줄 없음');
+  check('★ 일반 문구도 같이 남는다 (아는 것을 빼서 맞추지 않는다)',
+    /이 규격이 없습니다/.test(맨글),
+    맨글.split('\n').filter((l) => l.includes('⚠')).join(' / ') || '⚠ 줄 없음');
+}
+
+{
+  /*
+   * ── 봉인은 `--url` 로 직접 준 주소에도 걸려야 한다 ────────────────────
+   *
+   * 469줄 머리말이 「오히려 그쪽이 더 위험하다 — 설정에 없는 주소를 그 자리에서
+   * 두드리는 길이기 때문이다」 라고 적어 두었다. 그런데 봉인 판정은 runProbe 에
+   * 넘어가고, 그 앞의 connect() 가 먼저 주소를 두드린다. 봉인을 켜 놓은 사람이
+   * 「안 나갔겠지」 하는 동안 실제로는 나간 셈이다.
+   *
+   * 나갔는지는 말이 아니라 자물쇠 기록(contacted)으로 잰다 — 화면 글은 두드린
+   * 뒤에도 「연결 실패」 로 똑같이 찍히기 때문이다.
+   */
+  const 전 = contacted().length;
+  const 원래 = process.stdout.write.bind(process.stdout);
+  let 글 = '';
+  process.stdout.write = (chunk) => { 글 += chunk; return true; };
+  let code;
+  try {
+    code = await runDiagnose({ url: 'https://바깥게이트웨이.invalid', key: 'x', model: '가모델', offline: true });
+  } finally { process.stdout.write = 원래; }
+  check('★ 봉인이면 --url 로 준 바깥 주소를 안 두드린다', contacted().length === 전,
+    `${전} → ${contacted().length}`);
+  check('★ --url 갈래에서도 봉인이라고 말한다', /안 두드립니다|오프라인 모드/.test(색빼기(글)),
+    색빼기(글).trim().split('\n').filter(Boolean).slice(-2).join(' / '));
+  check('봉인에 막히면 1 로 끝난다', code === 1, String(code));
+  check('봉인은 이 안 주소는 안 막는다',
+    await runDiagnose({ url: `127.0.0.1:${port}`, key: '', model: '가모델', offline: true }) === 0);
+}
+
+trace('5-1-진단-끝값');
+
+{
+  /*
+   * ── 진단이 실패해도 0 으로 끝났다 ──────────────────────────────────────
+   *
+   * `deel diagnose` 는 사내에 도구를 넣기 전에 스크립트가 제일 먼저 돌리는 명령이다.
+   * 그 스크립트가 보는 것은 화면 글이 아니라 **끝값**이다. 판정이 「연결실패」 인데도
+   * 0 으로 끝나면 스크립트는 붙은 줄 알고 다음 줄로 간다 — 진단을 돌린 뜻이 사라진다.
+   * 봉인에 막혀 한 줄도 못 재 본 판도 마찬가지였다.
+   *
+   * 끝값은 **CLI 로** 잰다. 함수가 주는 값과 프로세스가 내는 값이 갈리는 자리가
+   * 바로 새는 자리다.
+   */
+  const 진단집 = mkdtempSync(join(tmpdir(), 'deel-diag-끝값-'));
+  /*
+   * 스텁 서버가 **이 프로세스** 안에 떠 있다. spawnSync 로 부르면 이 쪽 이벤트 루프가
+   * 멈춰서 스텁이 영영 답을 못 하고, 아이는 60초 시간 초과로 「연결실패」 를 본다 —
+   * 재려던 것과 다른 것을 재게 된다. 그래서 비동기 spawn 으로 띄운다.
+   */
+  const 돌리기 = (프로필, 덧 = {}) => new Promise((끝) => {
+    writeFileSync(join(진단집, 'config.json'),
+      JSON.stringify({ version: 1, active: 'd', profiles: [프로필], ...덧 }), 'utf8');
+    const 아이 = spawn(process.execPath, [진입점, 'diagnose'], {
+      cwd: 진단집, stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, DEEL_HOME: 진단집, NO_COLOR: '1', FORCE_COLOR: '', DEEL_NO_MOTION: '1' },
+    });
+    let 글 = '';
+    아이.stdout.on('data', (b2) => (글 += b2));
+    아이.stderr.on('data', (b2) => (글 += b2));
+    const 시계 = setTimeout(() => 아이.kill('SIGKILL'), 120000);
+    아이.stdin.end();
+    아이.on('close', (code) => { clearTimeout(시계); 끝({ code, 글: 색빼기(글) }); });
+  });
+  const 바탕 = { id: 'd', name: '검사', kind: 'openai', auth: 'none', model: '가모델' };
+
+  const 됨 = await 돌리기({ ...바탕, baseUrl: `http://127.0.0.1:${port}/v1` });
+  check('진단이 되면 0 으로 끝난다', 됨.code === 0,
+    `code=${됨.code} · ${됨.글.trim().split('\n').filter(Boolean).slice(-1)[0] ?? ''}`);
+
+  const 안됨 = await 돌리기({ ...바탕, baseUrl: 'http://127.0.0.1:1/v1' });
+  check('★★ 연결이 안 되면 0 이 아닌 값으로 끝낸다', 안됨.code !== 0, `code=${안됨.code}`);
+  check('  화면에도 연결실패라고 적는다', /연결실패|연결 자체가 되지 않았습니다/.test(안됨.글),
+    안됨.글.trim().split('\n').filter(Boolean).slice(-1)[0] ?? '');
+
+  // 봉인 판. `.invalid` 는 어떤 DNS 도 답하지 않기로 정해진 이름이라 진짜 바깥에 안 닿는다.
+  const 봉인 = await 돌리기({ ...바탕, baseUrl: 'https://no-such-host-deel-diag.invalid/v1', online: true },
+    { offline: true });
+  check('★★ 봉인에 막혀 한 줄도 못 재 봤으면 0 으로 끝내지 않는다', 봉인.code !== 0, `code=${봉인.code}`);
+  check('  봉인이라고 적는다', /안 두드립니다/.test(봉인.글),
+    봉인.글.trim().split('\n').filter(Boolean).slice(-2).join(' / '));
+  rmSync(진단집, { recursive: true, force: true });
+}
+
+trace('5-2-마법사도-봉인');
+
+{
+  /*
+   * ── `deel setup` 이 봉인을 뚫고 나갔다 ─────────────────────────────────
+   *
+   * runProbe 머리말이 「봉인은 진단에도 걸린다 … 자물쇠가 명령 하나로 열리면
+   * 자물쇠가 아니다」 라고 적어 두었는데, 정작 마법사는 그 말을 한 번도 안 넘겼다.
+   * 관리 정책이나 설정에 offline 을 켜 둔 PC 에서도 후보 주소를 그대로 두드렸다 —
+   * 사람이 방금 적어 넣은 열쇠까지 실려서. `diagnose` 는 같은 판에서 막는다.
+   *
+   * 나갔는지는 말이 아니라 자물쇠 기록(contacted)으로 잰다 — 화면 글은 두드린 뒤에도
+   * 「연결 실패」 로 똑같이 찍히기 때문이다. 주소는 `.invalid` 를 쓴다. 어떤 DNS 도
+   * 답하지 않기로 정해진 이름이라 진짜 바깥에 닿을 일이 없다.
+   */
+  const 봉인집 = mkdtempSync(join(tmpdir(), 'deel-setup-봉인-'));
+  writeFileSync(join(봉인집, 'config.json'),
+    JSON.stringify({ version: 1, offline: true, active: null, profiles: [] }), 'utf8');
+  const 옛집 = process.env.DEEL_HOME;
+  process.env.DEEL_HOME = 봉인집;
+  const 전 = contacted().length;
+  let v; let out;
+  try {
+    ({ v, out } = await 대화(
+      ['2', 'https://no-such-host-deel-setup.invalid/v1', '', '봉인검사'], () => runSetup(),
+    ));
+  } finally { process.env.DEEL_HOME = 옛집; }
+  const 글 = 색빼기(out);
+  check('★★ 봉인이면 deel setup 도 바깥 주소를 안 두드린다', contacted().length === 전,
+    `${전} → ${contacted().length}`);
+  check('★ 마법사도 봉인이라고 말한다', /안 두드립니다/.test(글),
+    글.trim().split('\n').filter(Boolean).slice(-2).join(' / '));
+  check('★ 봉인에 막히면 1 로 끝낸다', v === 1, String(v));
+  check('★ 못 재 본 연결을 저장하지 않는다',
+    !(load().profiles ?? []).some((p) => String(p.baseUrl).includes('no-such-host-deel-setup')),
+    JSON.stringify((load().profiles ?? []).map((p) => p.baseUrl)));
+  rmSync(봉인집, { recursive: true, force: true });
+}
+
+{
+  /*
+   * ── 같은 자물쇠를 **깃발로** 잠갔을 때 (막판-바깥) ────────────────────
+   *
+   * `--help` 는 `--offline` 을 「⛊ 봉인 — 기억해 둔 허가까지 무시하고 막습니다」
+   * 라고 적는다. 그런데 bin/deel.js 는 `runSetup()` 을 **인자 없이** 부르고,
+   * 설정받기() 의 봉인 판정은 `봉인됐나({ cfg })` 라 깃발 칸이 늘 비어 있었다.
+   * 위 블록이 막는 것은 설정·정책에 적힌 봉인뿐이고, 사람이 그 자리에서
+   * `deel setup --offline` 이라고 친 것은 조용히 버려졌다.
+   *
+   * 깃발을 믿고 사내 게이트웨이 주소를 넣은 사람은 방금 적어 넣은 열쇠까지
+   * 실어 보낸 셈이 된다. 설정은 **비워 두고** 깃발만 준다 — 그래야 이 자리가
+   * 실제로 재진다.
+   */
+  const 깃발집 = mkdtempSync(join(tmpdir(), 'deel-setup-깃발봉인-'));
+  writeFileSync(join(깃발집, 'config.json'),
+    JSON.stringify({ version: 1, active: null, profiles: [] }), 'utf8');
+  const 옛집 = process.env.DEEL_HOME;
+  process.env.DEEL_HOME = 깃발집;
+  const 전 = contacted().length;
+  let v; let out;
+  try {
+    ({ v, out } = await 대화(
+      ['2', 'https://no-such-host-deel-flag.invalid/v1', '', '깃발봉인검사'],
+      () => runSetup({ offline: true }),
+    ));
+  } finally { process.env.DEEL_HOME = 옛집; }
+  const 글 = 색빼기(out);
+  check('★★ --offline 깃발만 줘도 deel setup 이 바깥 주소를 안 두드린다',
+    contacted().length === 전, `${전} → ${contacted().length}`);
+  check('★ 깃발 갈래에서도 봉인이라고 말한다', /안 두드립니다/.test(글),
+    글.trim().split('\n').filter(Boolean).slice(-2).join(' / '));
+  check('★ 깃발 봉인에 막히면 1 로 끝낸다', v === 1, String(v));
+  rmSync(깃발집, { recursive: true, force: true });
+}
+
+{
+  // 반대쪽. 봉인을 켜 둬도 이 안(127.0.0.1) 주소는 그대로 붙어야 한다 —
+  // 자물쇠가 너무 세면 사람들은 자물쇠를 끄는 법부터 배운다.
+  const 안집 = mkdtempSync(join(tmpdir(), 'deel-setup-봉인안-'));
+  writeFileSync(join(안집, 'config.json'),
+    JSON.stringify({ version: 1, offline: true, active: null, profiles: [] }), 'utf8');
+  const 옛집 = process.env.DEEL_HOME;
+  process.env.DEEL_HOME = 안집;
+  let v; let out;
+  try {
+    ({ v, out } = await 대화(['2', `127.0.0.1:${port}`, '', '봉인안검사', '1'], () => runSetup()));
+  } finally { process.env.DEEL_HOME = 옛집; }
+  check('★ 봉인은 이 안 주소는 안 막는다 — 마법사가 그대로 끝난다', v === 0,
+    `${v} · ${색빼기(out).trim().split('\n').filter(Boolean).slice(-1)[0] ?? ''}`);
+  rmSync(안집, { recursive: true, force: true });
+}
+
+trace('5-3-판정말');
+
+// ── 진단 판정이 빠뜨리는 칸 ────────────────────────────────────────────
+//
+// 판정(src/report.js 의 verdict)은 사람이 이 화면에서 가져가는 전부다.
+// 한 칸이 「안됨」 인데 판정 글이 그 칸을 한 마디도 안 하면, 사람은 그 줄을
+// 못 보고 지나간다 — 표는 길고 판정 글은 짧아서 다들 판정 글만 읽는다.
+{
+  const 판 = (system) => verdict({ ctx: 131072 }, [
+    ['chat', 'ok'], ['system', system], ['stream', 'ok'],
+    ['tools', 'ok'], ['toolresult', 'ok'], ['json', 'ok'], ['think', 'ok'],
+  ].map(([id, status]) => ({ id, status })));
+
+  const 시스템말 = (v) => v.notes.filter((n) => /시스템/.test(n));
+  check('시스템 지시를 약하게 따르면 그 말을 한다', 시스템말(판('warn')).length === 1,
+    JSON.stringify(시스템말(판('warn'))));
+  /*
+   * ★ `=== 'warn'` 만 보고 있었다.
+   *
+   * 옆줄의 json·stream 은 `!== 'ok'` 로 재는데 이 줄만 warn 하나만 봤다.
+   * 그래서 **제일 나쁜 판**(system 을 붙이면 요청 자체가 실패하는 게이트웨이)에서
+   * 판정 글이 아무 말도 안 했다. 규칙도 스킬도 하나도 안 걸리는 연결인데
+   * 화면은 「준비됨」 이었다.
+   */
+  check('★★ 시스템 지시가 아예 안 통하는 판에도 말을 한다', 시스템말(판('no')).length === 1,
+    JSON.stringify(판('no').notes));
+  check('★ 그때는 「약하게」 가 아니라 아예 안 된다고 적는다',
+    /실패|안 통|안 걸/.test(시스템말(판('no'))[0] ?? '') && !/약하게/.test(시스템말(판('no'))[0] ?? ''),
+    시스템말(판('no'))[0] ?? '(없음)');
+  check('멀쩡하면 시스템 이야기를 안 한다', 시스템말(판('ok')).length === 0,
+    JSON.stringify(시스템말(판('ok'))));
 }
 
 trace('6-치움');

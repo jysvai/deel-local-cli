@@ -14,7 +14,7 @@
 // DEEL_HOME 을 임시 폴더로 주고, 작업 폴더도 임시로 만든다. 이 검사가
 // 사람의 ~/.deel 을 건드리면 그건 검사가 아니라 사고다.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -190,6 +190,32 @@ trace('3b-잠금장치');
     JSON.stringify({ version: 1, profiles: [{ id: 'a', apiKey: '' }] }), 'utf8');
   const r2 = 지우기('model', { home: 맨것.home, root: 맨것.work });
   check('★ 잠긴 열쇠가 없으면 손댔다고 안 한다', r2.열쇠 === null, JSON.stringify(r2.열쇠));
+
+  /*
+   * ── 키체인 열쇠가 둘이면 첫 것만 지웠다 ─────────────────────────────
+   *
+   * 프로필마다 제 자리를 쓰니 잠긴 열쇠가 여럿일 수 있다. 여기가 `열쇠[0]` 하나만
+   * 지워서, 화면은 「초기화했습니다」 인데 두 번째 프로필의 열쇠는 키체인에 남았다.
+   *
+   * 이름은 이 검사만의 것이다 — 맥에서 돌아도 사람의 열쇠를 안 건드린다
+   * (없는 것을 지우면 「이미 없습니다」 로 끝난다). 맥이 아니면 지우러 가지도 않는다.
+   */
+  const 둘 = 차리기();
+  const 이름1 = `deel-검사-reset-${process.pid}-하나`;
+  const 이름2 = `deel-검사-reset-${process.pid}-둘`;
+  writeFileSync(join(둘.home, 'config.json'), JSON.stringify({
+    version: 1,
+    profiles: [{ id: 'a', apiKey: `keychain:${이름1}` }, { id: 'b', apiKey: `keychain:${이름2}` }, { id: 'c', apiKey: `keychain:${이름2}` }],
+  }), 'utf8');
+  const r3 = 지우기('model', { home: 둘.home, root: 둘.work });
+  const 본이름들 = (r3.열쇠들 ?? []).map((x) => x.이름);
+  check('★★ 잠긴 열쇠가 여럿이면 하나하나 다 손댄다', 본이름들.includes(이름1) && 본이름들.includes(이름2),
+    JSON.stringify(r3.열쇠들));
+  check('  같은 자리를 두 번 지우러 가지 않는다', 본이름들.length === 2, JSON.stringify(본이름들));
+  check('  열쇠마다 무엇을 했는지 말한다', (r3.열쇠들 ?? []).every((x) => typeof x.방식 === 'string' && (x.지움 || x.왜.length > 3)),
+    JSON.stringify(r3.열쇠들));
+  check('  모아 본 답도 남는다 — 하나라도 못 지웠으면 다 지웠다고 안 한다',
+    r3.열쇠 !== null && r3.열쇠.지움 === (r3.열쇠들 ?? []).every((x) => x.지움), JSON.stringify(r3.열쇠));
 }
 
 trace('4-무엇을-안-지우나');
@@ -423,6 +449,104 @@ trace('7d-저장소에-손으로-적은-설정');
   check('★ 연결만 적힌 저장소 설정은 지운다', !있나(둘째.일('config.json')));
 }
 
+trace('7f-집-설정에-사람이-적은-칸');
+
+{
+  /*
+   * 집 설정(`~/.deel/config.json`)에도 연결 말고 **사람이 적은 칸**이 산다 —
+   * permissions.deny · offline · shell. 저장소 설정은 그런 칸이 있으면 통째로
+   * 남기는데(7d), 집 설정은 `deel reset model` 한 번에 통째로 지웠다. 사람이 건
+   * 금지와 봉인이 「연결 초기화」 에 딸려 사라졌다 — 이 파일 머리말이 「사람이
+   * 손으로 적은 것은 어떤 길로도 안 지운다」 고 적어 둔 약속이다.
+   */
+  const 사람칸설정 = JSON.stringify({
+    version: 1, active: 'a', offline: true, shell: 'bash',
+    permissions: { deny: ['Bash(curl*)'] },
+    profiles: [{ id: 'a', apiKey: '' }],
+  });
+  const { home, work, 집 } = 차리기();
+  writeFileSync(집('config.json'), 사람칸설정, 'utf8');
+  const r = 지우기('model', { home, root: work });
+  const 남은 = 있나(집('config.json')) ? JSON.parse(readFileSync(집('config.json'), 'utf8')) : null;
+  check('★★ 집 설정에 사람이 적은 칸이 있으면 파일을 남긴다', !!남은, '');
+  check('★★ 금지·봉인·셸은 그대로 남는다',
+    남은?.offline === true && 남은?.shell === 'bash' && (남은?.permissions?.deny ?? []).includes('Bash(curl*)'),
+    JSON.stringify(남은));
+  check('★★ 연결 칸은 걷는다', !!남은 && 남은.profiles === undefined && 남은.active === undefined, JSON.stringify(남은));
+  check('  지웠다고 적는다', r.지운것.some((x) => x.키 === 'model'), JSON.stringify(r.지운것.map((x) => x.키)));
+
+  const 둘째 = 차리기();
+  writeFileSync(둘째.집('config.json'), 사람칸설정, 'utf8');
+  const 화면 = await 띄우기(['reset', 'model', '--yes'], { home: 둘째.home, work: 둘째.work });
+  check('★ 연결 칸만 걷었다고 화면에 적는다', /연결 칸만/.test(화면.out), 한줄(화면.out));
+  check('  CLI 로도 금지가 남는다',
+    있나(둘째.집('config.json')) && readFileSync(둘째.집('config.json'), 'utf8').includes('Bash(curl*)'), '');
+}
+
+{
+  // 안 지우고 남기는 저장소 설정의 프로필까지 세면, 「연결·프로필 3개 → 지웁니다」 라고
+  // 적어 놓고 실제로는 2개만 지운다. 셈과 지우는 것이 같은 목록이어야 한다.
+  const { home, work, 일 } = 차리기();
+  writeFileSync(일('config.json'), JSON.stringify({ mode: 'code', profiles: [{ id: 'repo' }] }), 'utf8');
+  const 몇 = 살펴보기({ home, root: work }).항목.find((x) => x.키 === 'model').몇;
+  check('★★ 안 지우는 저장소 설정의 프로필은 세지 않는다', 몇 === 2, String(몇));
+}
+
+{
+  // Azure 판 번호는 설정에서 `apiVersion` 으로 읽힌다(backend/azure.js). 연결 칸
+  // 목록에 `api-version` 만 있어서 이 칸이 「사람이 적은 다른 것」 으로 잡혔다.
+  const d = mkdtempSync(join(tmpdir(), 'deel-reset-판-'));
+  치울것.push(d);
+  writeFileSync(join(d, 'c.json'), JSON.stringify({ version: 1, apiVersion: '2024-10-21', profiles: [] }), 'utf8');
+  const s = 설정살피기(join(d, 'c.json'));
+  check('★ apiVersion · version 은 사람이 적은 다른 칸으로 안 친다', (s.다른것 ?? []).length === 0, JSON.stringify(s.다른것));
+}
+
+{
+  // DEEL_HOME 이 곧 이 폴더의 .deel 이면(홈 폴더에서 돌린 것과 같다) 두 설정은 **한 파일**이다.
+  // 따로 세면 「연결·프로필 2개」 라고 적어 놓고 1개를 지운다.
+  const d = mkdtempSync(join(tmpdir(), 'deel-reset-한파일-'));
+  치울것.push(d);
+  mkdirSync(join(d, '.deel'), { recursive: true });
+  writeFileSync(join(d, '.deel', 'config.json'), JSON.stringify({ version: 1, active: 'a', profiles: [{ id: 'a' }] }), 'utf8');
+  const 모델 = 살펴보기({ home: join(d, '.deel'), root: d }).항목.find((x) => x.키 === 'model');
+  check('★★ 집과 저장소 설정이 한 파일이면 한 번만 센다', 모델.몇 === 1, String(모델.몇));
+  check('★ 지울 자리도 한 번만 적는다', 모델.자리.length === 1, JSON.stringify(모델.자리));
+}
+
+{
+  // 깨진 저장소 설정은 안 지우고 남긴다(저장소에 딸린 파일이다). 그런데 화면에는
+  // 「연결 말고 다른 것이 적혀 있습니다」 가 떴다 — 읽지도 못한 파일에 대해 한 말이다.
+  const { home, work, 일 } = 차리기();
+  writeFileSync(일('config.json'), '{ "profiles": [ <<<<<<< HEAD', 'utf8');
+  const 남김 = 살펴보기({ home, root: work }).안건드림.filter((x) => x.있나).map((x) => x.이름);
+  const 그줄 = 남김.find((x) => x.startsWith('.deel/config.json')) ?? '';
+  check('★ 깨진 저장소 설정은 읽을 수 없어서 남긴다고 적는다',
+    /읽을 수 없/.test(그줄) && !/다른 것이 적혀/.test(그줄), 그줄 || JSON.stringify(남김));
+}
+
+{
+  // 남기는 저장소 설정에 잠긴 열쇠가 적혀 있으면 잠금장치를 손대지 않는다 —
+  // 파일은 그대로 두고 그 파일이 가리키는 열쇠만 없애게 된다.
+  const { home, work, 집, 일 } = 차리기();
+  writeFileSync(집('config.json'), JSON.stringify({ version: 1, profiles: [{ id: 'a', apiKey: '' }] }), 'utf8');
+  writeFileSync(일('config.json'), JSON.stringify({ mode: 'code', profiles: [{ id: 'r', apiKey: 'keychain:repo-key' }] }), 'utf8');
+  const 모델 = 살펴보기({ home, root: work }).항목.find((x) => x.키 === 'model');
+  check('★★ 남기는 저장소 설정의 잠긴 열쇠는 안 지운다', (모델.열쇠 ?? []).length === 0, JSON.stringify(모델.열쇠));
+}
+
+{
+  // 집 설정에 연결 칸이 하나도 없고 사람이 적은 칸만 있으면 걷을 것이 없다.
+  // 그런데도 파일을 되써 놓고 「연결·프로필 0개 지웠습니다 (연결 칸만)」 이라고 적었다.
+  const { home, work, 집 } = 차리기();
+  const 원래 = JSON.stringify({ permissions: { deny: ['Bash(rm*)'] } }, null, 2);
+  writeFileSync(집('config.json'), 원래, 'utf8');
+  const r = 지우기('model', { home, root: work });
+  const 지금 = 있나(집('config.json')) ? readFileSync(집('config.json'), 'utf8') : '(파일이 지워졌다)';
+  check('★ 연결 칸이 없는 집 설정은 손대지 않는다', 지금 === 원래, 한줄(지금));
+  check('★ 지웠다고 적지 않는다', !r.지운것.some((x) => x.키 === 'model'), JSON.stringify(r.지운것.map((x) => x.키)));
+}
+
 trace('7e-플러그인이-깔리는-자리와-지우는-자리');
 
 {
@@ -483,6 +607,111 @@ trace('9-진짜집');
   const 밖 = [...r.항목, ...r.굳은것].flatMap((x) => x.자리)
     .filter((p) => !resolve(p).startsWith(resolve(home)) && !resolve(p).startsWith(resolve(work)));
   check('★ 목록의 모든 자리가 준 폴더 안이다', 밖.length === 0, 밖.join(', '));
+}
+
+trace('9b-링크너머');
+
+// ── 작업 폴더 .deel 이 링크면 그 너머를 지웠다 (6회차 Gemini 되돌림6ab-b R4) ──────
+//
+// 울타리안인가 가 resolve 만 해서, `.deel` 이 다른 폴더로 가는 링크(리눅스·맥 git 은 받은
+// 저장소의 링크를 그대로 푼다)면 그 너머의 memory.md · tmp · export 가 「작업 폴더 안」 으로
+// 읽혀 통째로 지워졌다. 화면은 작업 폴더 경로만 적어 사람이 못 알아챈다.
+{
+  const { symlinkSync, unlinkSync } = await import('node:fs');
+  const 집곳 = mkdtempSync(join(tmpdir(), 'deel-reset-link-home-'));
+  const 일곳 = mkdtempSync(join(tmpdir(), 'deel-reset-link-work-'));
+  const 남곳 = mkdtempSync(join(tmpdir(), 'deel-reset-link-victim-'));
+  mkdirSync(join(남곳, 'tmp'), { recursive: true });
+  writeFileSync(join(남곳, 'tmp', 'keep.txt'), '남의 파일', 'utf8');
+  writeFileSync(join(남곳, 'memory.md'), '남의 기억', 'utf8');
+  let 링크됨 = false;
+  try { symlinkSync(남곳, join(일곳, '.deel'), 'junction'); 링크됨 = true; } catch { /* 링크를 못 만드는 환경 */ }
+  if (링크됨) {
+    const r = 지우기('all', { home: 집곳, root: 일곳 });
+    check('★ (6회차 R4) 작업 폴더 .deel 이 링크면 그 너머의 파일을 안 지운다',
+      existsSync(join(남곳, 'tmp', 'keep.txt')) && existsSync(join(남곳, 'memory.md')), JSON.stringify(r.지운것.map((x) => x.자리들)));
+    check('  안 건드렸다고 말한다', r.못한것.some((x) => /밖/.test(x.왜)), JSON.stringify(r.못한것).slice(0, 160));
+    unlinkSync(join(일곳, '.deel'));
+  } else {
+    console.log('  (R4 판은 링크를 못 만드는 환경이라 건너뜀)');
+  }
+
+  // 짝: 진짜 .deel 안의 한 자리(tmp)가 링크면 그 링크만 지우고 너머는 그대로 둔다.
+  const 남곳2 = mkdtempSync(join(tmpdir(), 'deel-reset-link-victim2-'));
+  writeFileSync(join(남곳2, 'keep.txt'), '남의 파일 둘', 'utf8');
+  mkdirSync(join(일곳, '.deel'), { recursive: true });
+  writeFileSync(join(일곳, '.deel', 'memory.md'), '- 내 기억\n', 'utf8');
+  let 링크됨2 = false;
+  try { symlinkSync(남곳2, join(일곳, '.deel', 'tmp'), 'junction'); 링크됨2 = true; } catch { /* 링크를 못 만드는 환경 */ }
+  const r2 = 지우기('all', { home: 집곳, root: 일곳 });
+  check('짝: 진짜 .deel 안의 것은 그대로 지운다', !existsSync(join(일곳, '.deel', 'memory.md')), JSON.stringify(r2.못한것).slice(0, 160));
+  if (링크됨2) {
+    check('짝: .deel 안의 링크는 링크만 지우고 너머는 그대로 둔다', existsSync(join(남곳2, 'keep.txt')), JSON.stringify(r2.지운것.map((x) => x.자리들)));
+    if (existsSync(join(일곳, '.deel', 'tmp'))) unlinkSync(join(일곳, '.deel', 'tmp'));
+  }
+  rmSync(집곳, { recursive: true, force: true });
+  rmSync(남곳, { recursive: true, force: true });
+  rmSync(남곳2, { recursive: true, force: true });
+  rmSync(일곳, { recursive: true, force: true });
+}
+
+trace('9c-못지운판');
+
+// ── 못 지운 판에 「이미 비어 있습니다」 를 같이 찍었다 ────────────────────
+//
+// 지운 것이 하나도 없으면 「지울 것이 없었습니다 — 이미 비어 있습니다」 를 찍는데,
+// 그 줄이 **못 지운 것이 있는 판**에서도 그대로 나왔다. 화면에는 두 말이 나란히 붙는다:
+//
+//   ⚠ 지울 것이 없었습니다 — 이미 비어 있습니다.
+//   ✗ 대화 기록 …/.deel/sessions
+//      작업 폴더 밖이라 안 건드렸습니다
+//
+// 앞줄을 믿은 사람은 지워진 줄 알고 그 PC 를 넘긴다 — 지우려던 대화 기록은 그대로다.
+// 「없어서 안 지웠다」 와 「있는데 못 지웠다」 는 사람이 할 일이 정반대인 두 말이다.
+{
+  const { symlinkSync } = await import('node:fs');
+  const 집곳 = mkdtempSync(join(tmpdir(), 'deel-reset-못지움-집-'));
+  const 일곳 = mkdtempSync(join(tmpdir(), 'deel-reset-못지움-일-'));
+  const 남곳 = mkdtempSync(join(tmpdir(), 'deel-reset-못지움-남-'));
+  치울것.push(집곳, 일곳, 남곳);
+  mkdirSync(join(남곳, 'sessions'), { recursive: true });
+  writeFileSync(join(남곳, 'sessions', 's1.jsonl'), '{}\n', 'utf8');
+
+  // 작업 폴더의 `.deel` 이 링크면 그 너머는 「작업 폴더 밖」 이라 안 건드린다 (위 9b).
+  // 그러면 지운 것은 0, 못 지운 것은 1 인 판이 된다 — 이 두 말이 부딪치는 자리다.
+  let 링크됨 = false;
+  try { symlinkSync(남곳, join(일곳, '.deel'), 'junction'); 링크됨 = true; } catch { /* 링크를 못 만드는 환경 */ }
+  if (링크됨) {
+    const r = await 띄우기(['reset', 'sessions', '--yes'], { home: 집곳, work: 일곳 });
+    const 글 = r.out.replace(/\x1b\[[0-9;]*m/g, '');
+    check('★★ 못 지운 것이 있으면 「이미 비어 있습니다」 를 안 찍는다',
+      !/이미 비어 있습니다/.test(글), 한줄(글.split('\n').filter((l) => /비어|안 건드/.test(l)).join(' / ')));
+    check('  못 지웠다는 말은 그대로 찍는다', /안 건드렸습니다/.test(글), 한줄(글.slice(-200)));
+    check('  못 지웠으면 1 로 끝난다', r.code === 1, String(r.code));
+    check('  진짜로 안 지워졌다', existsSync(join(남곳, 'sessions', 's1.jsonl')), 남곳);
+  } else {
+    console.log('  (못 지운 판은 링크를 못 만드는 환경이라 건너뜀)');
+  }
+
+  // 짝: 진짜로 아무것도 없을 때는 여태처럼 「이미 비어 있습니다」 를 말해야 한다.
+  // 「없다」 를 안 말하면 이번에는 반대쪽이 안 보인다.
+  const 빈집 = mkdtempSync(join(tmpdir(), 'deel-reset-진짜빈-집-'));
+  const 빈일 = mkdtempSync(join(tmpdir(), 'deel-reset-진짜빈-일-'));
+  치울것.push(빈집, 빈일);
+  const r2 = await 띄우기(['reset', 'sessions', '--yes'], { home: 빈집, work: 빈일 });
+  check('짝: 진짜로 비었으면 비었다고 말한다', /이미 비어 있습니다/.test(r2.out), 한줄(r2.out.slice(-200)));
+  check('짝: 그때는 0 으로 끝난다', r2.code === 0, String(r2.code));
+}
+
+// ── 홈 폴더에서 켜면 배운 것 한 파일을 「2곳」 으로 셌다 (6회차 Gemini 되돌림6ab-a R2) ──
+{
+  const 일곳 = mkdtempSync(join(tmpdir(), 'deel-reset-samehome-'));
+  const 집곳 = join(일곳, '.deel');
+  mkdirSync(집곳, { recursive: true });
+  writeFileSync(join(집곳, '배운것.json'), '{}', 'utf8');
+  const 배움 = 살펴보기({ home: 집곳, root: 일곳 }).항목.find((x) => x.키 === 'learned');
+  check('★ (6회차 R2) DEEL_HOME 이 곧 이 폴더 .deel 이면 배운 것은 한 곳으로 센다', 배움?.몇 === 1 && 배움?.자리.length === 1, `몇 ${배움?.몇} · 자리 ${배움?.자리.length}`);
+  rmSync(일곳, { recursive: true, force: true });
 }
 
 trace('10-끝');

@@ -54,16 +54,40 @@ const 규칙 = {
     [/^\s*(?:export\s+)?(?:const|let|var)\s+([\p{L}$_][\p{L}\p{N}$_]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[\p{L}$_][\p{L}\p{N}$_]*)\s*=>/u, 'fn'],
     [/^\s*(?:export\s+)?(?:interface|type|enum)\s+([\p{L}$_][\p{L}\p{N}$_]*)/u, 'type'],
     [/^\s*export\s+(?:const|let|var)\s+([\p{L}$_][\p{L}\p{N}$_]*)/u, 'const'],
-    // 클래스 안의 메서드. 들여쓰기가 있고 괄호로 이어지는 이름.
-    [/^\s{2,}(?:static\s+|async\s+|get\s+|set\s+|#)?([\p{L}$_][\p{L}\p{N}$_]*)\s*\([^)]*\)\s*\{/u, 'method'],
+    /*
+     * 클래스 안의 메서드. 들여쓰기가 있고 괄호로 이어지는 이름.
+     *
+     * 수식어는 **여러 개 붙는다.** 여기가 `(?:static\s+|async\s+|…)?` 라 하나까지만
+     * 먹었고, 그래서 `static async 불러오기()` 는 `static ` 을 먹은 뒤 `async` 를
+     * 이름으로 잡으려다 뒤의 `(` 를 못 만나 **아예 안 걸렸다.** 요즘 코드에서 제일
+     * 흔한 조합이 통째로 뼈대에서 빠지고, 모델은 그 메서드가 없는 줄 안다.
+     * 제너레이터의 `*` 와 사사로운 이름의 `#` 도 여기서 같이 받는다.
+     */
+    /*
+     * 들여쓰기를 `\s{2,}` 로 잡던 때, **탭으로 들여쓴 파일은 한 개도 안 걸렸다.**
+     * 탭 들여쓰기는 한 단이 탭 하나라서다. `.editorconfig` 가 `indent_style = tab`
+     * 인 저장소에서는 위 고침이 무엇이든 클래스 메서드가 통째로 빠지고, 클래스
+     * 이름만 달랑 뜬다 — 모델은 그 클래스에 메서드가 없는 줄 안다. 탭 하나 또는
+     * 빈칸 둘로 본다. 들여쓰기가 아예 없는 `이름() {` 은 부름이라 그대로 막힌다.
+     */
+    [/^(?:\t| {2,})\s*(?:(?:static|async|get|set)\s+)*\*?\s*#?([\p{L}$_][\p{L}\p{N}$_]*)\s*\([^)]*\)\s*\{/u, 'method'],
   ],
   py: [
     [/^\s*class\s+([\p{L}_][\p{L}\p{N}_]*)/u, 'class'],
     [/^\s*(?:async\s+)?def\s+([\p{L}_][\p{L}\p{N}_]*)/u, 'fn'],
     [/^([A-Z_][A-Z0-9_]{2,})\s*[:=]/, 'const'],
   ],
+  /*
+   * java 표는 `.kt`·`.kts`·`.scala`·`.groovy` 도 같이 쓴다 — 그리고 설명서(OUTLINE_TOOL)가
+   * 「java/kotlin 을 읽는다」 고 적어 둔다. 그런데 여기 자바 두 줄뿐이던 때,
+   * Kotlin 의 `fun` 과 Scala·Groovy 의 `def` 는 **어느 무늬에도 안 걸렸다.**
+   * `.kt` 파일이 클래스 이름 하나만 달고 떴고, 모델은 그 클래스에 함수가 없는 줄
+   * 안다 — 이 파일 머리말이 「모르는 것은 모른다고 말한다」 고 적어 둔 것과 반대로,
+   * 읽는다고 해 놓고 반만 읽었다. `data class`·`object`·맨 위 `fun` 까지 같이 본다.
+   */
   java: [
-    [/^\s*(?:public|private|protected)?\s*(?:static\s+)?(?:final\s+)?(?:abstract\s+)?(?:class|interface|enum|record)\s+([\p{L}_][\p{L}\p{N}_]*)/u, 'class'],
+    [/^\s*(?:(?:public|private|protected|internal|open|sealed|data|inner|value|annotation|abstract|final|static|case|implicit)\s+)*(?:class|interface|enum|record|object|trait)\s+([\p{L}_][\p{L}\p{N}_]*)/u, 'class'],
+    [/^\s*(?:(?:public|private|protected|internal|open|override|suspend|inline|operator|infix|tailrec|abstract|final|static|implicit)\s+)*(?:fun|def)\s+([\p{L}_][\p{L}\p{N}_]*)/u, 'fn'],
     [/^\s*(?:public|private|protected)\s+(?:static\s+)?(?:final\s+)?[\p{L}\p{N}_<>[\],\s]+\s+([\p{L}_][\p{L}\p{N}_]*)\s*\(/u, 'method'],
   ],
   go: [
@@ -165,8 +189,22 @@ export function 뼈대뽑기(글, 확장) {
 
   const 표 = 규칙[규칙이름] ?? [];
   const 항목 = [];
-  const 본것 = new Set();
-
+  /*
+   * ── 같은 이름을 **지우지 않는다** ────────────────────────────────────
+   *
+   * 여기에 `본것` 이라는 집합이 있었다. 주석은 「같은 이름이 여러 번 걸리는
+   * 규칙이 있다」 — 한 줄이 규칙 여럿에 걸리는 것을 막겠다는 말이었다.
+   * 그건 아래 `break` 가 이미 한다(한 줄은 한 가지로만 센다). 그 집합이 실제로
+   * 한 일은 **파일 전체에서 둘째부터 조용히 지우기**였다:
+   *
+   *     class 앞 { 읽기() {} }   → 남는다
+   *     class 뒤 { 읽기() {} }   → **사라진다**
+   *     ## 보기 … ## 보기        → 뒤엣것이 사라진다
+   *
+   * 뼈대는 「무엇이 **어디에** 있나」 를 보려고 보는 것이다. 이름이 겹친다고
+   * 자리를 지우면, 모델은 그 클래스에 그 메서드가 없는 줄 알고 새로 만들어
+   * 넣는다 — 이 파일 머리말이 없애려던 바로 그 일이다.
+   */
   for (const [i, 한줄] of 줄들.entries()) {
     // 주석 줄은 건너뛴다. 주석 안의 예제 코드가 뼈대로 올라오면 안 된다.
     if (/^\s*(?:\/\/|\/\*|\*|#(?!\s*[#!])|--)/.test(한줄) && 규칙이름 !== 'md') continue;
@@ -178,16 +216,18 @@ export function 뼈대뽑기(글, 확장) {
       let 실갈래 = 갈래;
       if (갈래 === '#' && m[2] !== undefined) {
         const 깊이 = 규칙이름 === 'md' ? m[1].length : Number(m[1]);
-        이름 = `${'  '.repeat(Math.max(0, 깊이 - 1))}${m[2]}`;
+        // `짧게` 는 빈칸을 접고 trim 한다. 들여쓰기를 먼저 붙이면 거기서 지워져 한 번도 안 나갔다 —
+        // 글을 먼저 줄이고 들여쓰기는 뒤에 붙인다 (6회차 뼈대6bc-b OL3).
+        const 글 = 짧게(m[2]);
+        이름 = 글 && `${'  '.repeat(Math.max(0, 깊이 - 1))}${글}`;
         실갈래 = `h${깊이}`;
       } else {
-        이름 = m[1];
+        이름 = 짧게(m[1]);
+        // if·for 거르기는 메서드 규칙이 `if (…) {` 를 잡는 것을 막는 자리다. 헤딩에는 안 건다 —
+        // 걸면 `## class` · `## new` 같은 문서 제목이 뼈대에서 사라졌다 (6회차 뼈대6bc-b OL4).
+        if (이름아님.has(이름)) continue;
       }
-      이름 = 짧게(이름);
-      if (!이름 || 이름아님.has(이름.trim())) continue;
-      const 열쇠 = `${실갈래}|${이름.trim()}`;
-      if (본것.has(열쇠)) continue;       // 같은 이름이 여러 번 걸리는 규칙이 있다
-      본것.add(열쇠);
+      if (!이름) continue;
       항목.push({ 줄: i + 1, 갈래: 실갈래, 이름 });
       break;                              // 한 줄은 한 가지로만 센다
     }

@@ -190,14 +190,54 @@ export function 기다리기(ms, signal = null) {
   });
 }
 
+/*
+ * ── 안 부르는 까닭이 둘인데 화면은 한 가지로 말했다 ──────────────────────
+ *
+ * 사람이 본 것: 사내 게이트웨이에서 429 가 잦아 `retry.막힘최대` 를 8 로
+ * 올려 뒀는데, 화면은 여전히 `5번 불렀지만 계속 막혔습니다 (HTTP 429)` 에서
+ * 멎었다. 여덟 번 참으라고 적어 둔 값이 **아무 일도 안 하는 것처럼** 보였다.
+ *
+ * 실제로 있었던 일: 여덟 번을 채우기 전에 **우리 쪽 시간 울타리**(총상한
+ * 5분)가 먼저 닫혔다. `Retry-After` 가 실려 오면 한 번에 최대 60초까지
+ * 기다리니(기다릴시간 의 상한), 대여섯 번이면 5분이 찬다.
+ *
+ * 왜 몰랐나: 이 함수가 **두 경우에 똑같이 null 을 돌려줬다.** 「다시 부를
+ * 것이 아니다·횟수를 다 썼다」 와 「우리 예산을 다 썼다」 는 사람이 할 일이
+ * 아주 다르다 — 앞은 서버를 봐야 하고, 뒤는 우리 설정을 올리면 되는 일이다.
+ * 부르는 쪽은 그 둘을 가를 길이 없어 서버 탓으로만 적었다.
+ *
+ * 이제 지키는 규칙: 돌려주는 모양은 그대로 두고(부르는 데가 여럿이다),
+ * **까닭을 적어 줄 자리**를 인자로 받는다 — detect.js 의 막은것적기 와 같은
+ * 자세다. 안 주면 여태와 한 글자도 다르지 않게 돈다.
+ */
+/** 왜 안 부르나. 화면 문구가 여기서 갈린다. */
+export const 못부른까닭 = { 안될것: '안될것', 예산: '예산' };
+
+/**
+ * 우리 쪽 기다림 예산을 다 썼다는 말. 서버가 한 말과 **섞이면 안 된다** —
+ * 이 줄에는 사람이 올릴 수 있는 설정 이름이 적혀 있어야 한다.
+ */
+export function 못부른말(적힌것) {
+  if (적힌것?.까닭 !== 못부른까닭.예산) return null;
+  const 초 = Math.round((적힌것.총상한 ?? 0) / 1000);
+  return `우리 쪽 기다림 예산 ${초}초를 다 썼습니다 (retry.총상한)`
+    + ' — 서버가 계속 막은 것이 아니라 여기서 그만둔 것입니다. 더 참게 하려면 그 값을 올리세요.';
+}
+
 /**
  * 실패한 응답 하나를 보고 "기다렸다 다시 부른다" 알림을 만든다. 안 부를 것이면 null.
  * 화면·기록이 이 한 덩이를 그대로 쓴다 — 여기 없는 숫자는 화면에도 없다.
+ *
+ * @param {{까닭?:string}} [적을곳]  안 부를 때 **왜**를 채워 준다 (위 머리말)
  */
-export function 다시부를지(r, attempt, 정책 = 기본정책(), 쌓인 = 0) {
+export function 다시부를지(r, attempt, 정책 = 기본정책(), 쌓인 = 0, 적을곳 = null) {
   const status = r?.status ?? 0;
   const code = r?.code ?? null;
-  if (!다시부를까({ status, code, attempt }, 정책)) return null;
+  const 적기 = (것) => { if (적을곳) Object.assign(적을곳, 것); };
+  if (!다시부를까({ status, code, attempt }, 정책)) {
+    적기({ 까닭: 못부른까닭.안될것, status, code, attempt });
+    return null;
+  }
   const retryAfter = r?.headers?.get?.('retry-after') ?? r?.res?.headers?.get?.('retry-after') ?? null;
   const wait = 기다릴시간({ attempt, retryAfter, status }, 정책);
   /*
@@ -208,7 +248,10 @@ export function 다시부를지(r, attempt, 정책 = 기본정책(), 쌓인 = 0)
    * 둘 다 있어야 한다.
    */
   const 총상한 = 정책.총상한 ?? Infinity;
-  if (Number.isFinite(총상한) && 쌓인 + wait > 총상한) return null;
+  if (Number.isFinite(총상한) && 쌓인 + wait > 총상한) {
+    적기({ 까닭: 못부른까닭.예산, status, code, attempt, 총상한, 쌓인, 다음대기: wait });
+    return null;
+  }
   return {
     type: 'backoff',
     status,

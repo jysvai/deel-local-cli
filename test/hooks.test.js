@@ -19,8 +19,8 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  훅읽기, 훅펴기, 훅돌리기, 자리돌리기, 고를것, 걸리나, 무늬짓기, 막힘말, 훅줄들,
-  자리들, 막는자리, 제한기본, 프로젝트자리, 이PC자리,
+  훅읽기, 훅펴기, 훅돌리기, 자리돌리기, 고를것, 걸리나, 무늬짓기, 막힘말, 훅줄들, 제이슨판정,
+  자리들, 막는자리, 제한기본, 프로젝트자리, 이PC자리, 글최대,
 } from '../src/safety/hooks.js';
 import { 믿기, 안믿기 } from '../src/safety/trust.js';
 import { trace } from './trace.mjs';
@@ -146,6 +146,14 @@ trace('3-믿는폴더');
   check('  왜 꺼졌는지 말한다', 껐을때.왜꺼짐 === 'DEEL_HOOKS=off', String(껐을때.왜꺼짐));
   const 깃발로 = 훅읽기(root, { env: 환경, 집, 켜짐: false });
   check('--no-hooks 로도 끈다', 깃발로.훅들.length === 0 && 깃발로.왜꺼짐 === '--no-hooks', '');
+
+  /*
+   * BOM (2.0.0 3회차). 윈도우 파워셸 5.1 의 `Set-Content -Encoding UTF8` 은 파일 앞에 BOM 을 붙인다.
+   * 떼지 않으면 JSON.parse 가 넘어져 훅 파일이 「못 읽음」 이 되고, 사내 규칙 훅이 통째로 안 돈다.
+   */
+  writeFileSync(이PC자리(집, 환경), String.fromCharCode(0xFEFF) + JSON.stringify({ hooks: [{ 때: '턴끝', 명령: '내명령' }] }), 'utf8');
+  const 봄붙음 = 훅읽기(root, { env: 환경, 집 });
+  check('★★ BOM 붙은 hooks.json 도 읽는다', 봄붙음.훅들.length === 2, String(봄붙음.훅들.length));
 
   지우기(이PC자리(집, 환경));
 }
@@ -308,6 +316,143 @@ trace('8-자리목록');
   check('★ 막는 자리는 전부 아는 자리다', 막는자리.every((z) => 자리들.includes(z)), 막는자리.join(' '));
   check('막는 자리는 도구전·말전 둘', 막는자리.length === 2, String(막는자리.length));
   check('자리는 넷', 자리들.length === 4, 자리들.join(' '));
+}
+
+// ══ 9. 2.0.0 4회차 사냥 ════════════════════════════════════════════════
+trace('9-4회차');
+{
+  /*
+   * 명령은 스크립트 파일로 준다. `node -e "…"` 안에 JSON·중괄호·따옴표를 겹쳐 넣으면
+   * 셸마다 따옴표 규칙이 달라 검사가 셸을 재게 된다.
+   */
+  const 글판 = mkdtempSync(join(tmpdir(), 'deel-hooks-scripts-'));
+  const 스크립트 = (이름, 본문) => {
+    const p = join(글판, 이름).replace(/\\/g, '/');
+    writeFileSync(p, 본문, 'utf8');
+    return `node ${p}`;
+  };
+  const 훅 = (명령, 때 = '도구전', 덤 = {}) => 훅펴기({ hooks: [{ 때, 명령, ...덤 }] }, '검사').훅들[0];
+
+  /*
+   * ── 0 으로 끝났는데 글이 길다고 막았다 ─────────────────────────────────
+   *
+   * 글최대(16KB)를 자식 부르개의 maxBuffer 로 넘겼다. 넘으면 부르개가 자식을 죽이고
+   * 「결과가 너무 많습니다」 오류를 돌려주고, 그건 「못 돌렸다」 로 쳐져 막는 자리에서 막았다.
+   * 사내 린터가 경고를 길게 뱉고 0 으로 끝나는 흔한 모양이 그대로 「막힘」 이 됐다.
+   */
+  const 큰말 = await 훅돌리기(훅(스크립트('big.js', "process.stdout.write('x'.repeat(40000)); process.exit(0)")), {});
+  check('★★★ 0 으로 끝난 훅은 글을 많이 뱉어도 안 막는다', 큰말.막나 === false && 큰말.코드 === 0, `${큰말.코드} ${큰말.왜 ?? ''}`);
+  check('★★ 대신 자르고 잘랐다고 적는다', 큰말.잘림 === true && 큰말.말.length < 글최대 + 200 && /여기까지만/.test(큰말.말),
+    `${큰말.잘림} ${큰말.말.length}`);
+  const 큰막음 = await 훅돌리기(훅(스크립트('bigblock.js', "process.stdout.write('규칙 위반 ' + 'y'.repeat(40000)); process.exit(2)")), {});
+  check('★★ 길게 뱉고 2 로 끝나면 여전히 막는다', 큰막음.막나 === true && 큰막음.코드 === 2, `${큰막음.코드}`);
+
+  /*
+   * ── 훅 자식이 비밀 환경변수를 다 물려받았다 ──────────────────────────
+   *
+   * Bash 도구는 셸환경(safety/shellenv.js)으로 `*_API_KEY` · `*_TOKEN` 같은 것을 빼고
+   * 자식을 띄운다. 훅은 「Bash 와 같은 무게」 라고 머리말에 적어 놓고 process.env 를
+   * 통째로 넘겼다. 훅이 뱉은 글은 모델에게 간다.
+   */
+  const 옛열쇠 = process.env.PROBE_FAKE_API_KEY;
+  process.env.PROBE_FAKE_API_KEY = 'sk-probe-FAKE-0000';
+  const 보는훅 = 스크립트('env.js', "process.stdout.write('KEY=' + (process.env.PROBE_FAKE_API_KEY ?? 'none') + ' PATH=' + (process.env.PATH || process.env.Path ? 'y' : 'n'))");
+  const 환경본것 = await 훅돌리기(훅(보는훅, '도구후'), {});
+  check('★★★ 훅 자식에게 비밀 환경변수를 안 물려준다 (Bash 와 같은 셸환경)',
+    환경본것.말.includes('KEY=none'), 환경본것.말);
+  check('★ PATH 는 그대로 준다', 환경본것.말.includes('PATH=y'), 환경본것.말);
+  const 되살림 = await 훅돌리기(훅(보는훅, '도구후'), {}, { 남길것: ['PROBE_FAKE_API_KEY'] });
+  check('★★ 셸환경.남길것 에 적은 이름은 넘긴다 (Bash 와 같은 되살리기)', 되살림.말.includes('KEY=sk-probe-FAKE-0000'), 되살림.말);
+  if (옛열쇠 === undefined) delete process.env.PROBE_FAKE_API_KEY; else process.env.PROBE_FAKE_API_KEY = 옛열쇠;
+
+  // 이 PC 설정의 셸환경.남길것 을 훅읽기가 읽어 훅에 붙인다 — 프로젝트 설정의 것은 안 받는다.
+  const 남김집 = mkdtempSync(join(tmpdir(), 'deel-hooks-keep-'));
+  적기(join(남김집, 'config.json'), { 셸환경: { 남길것: ['SLACK_TOKEN'] } });
+  적기(join(남김집, 'hooks.json'), { hooks: [{ 때: '턴끝', 명령: 'x' }] });
+  const 남김읽음 = 훅읽기(root, { env: { ...환경, DEEL_HOME: 남김집 }, 집 });
+  check('★★ 이 PC 설정의 셸환경.남길것 을 훅에 붙인다',
+    남김읽음.훅들.length > 0 && 남김읽음.훅들.every((h) => (h.남길것 ?? []).includes('SLACK_TOKEN')),
+    JSON.stringify(남김읽음.훅들.map((h) => h.남길것)));
+  rmSync(남김집, { recursive: true, force: true });
+
+  /*
+   * ── Claude Code 모양의 JSON 판정 ───────────────────────────────────────
+   *
+   * 이 파일은 Claude Code 훅 설정을 그대로 붙여 쓰라고 받는다. 그쪽 훅은 0 으로 끝나며
+   * `{"hookSpecificOutput":{"permissionDecision":"deny"}}` · `{"decision":"block"}` 을
+   * 뱉어 막는다. 그 판정을 안 읽어서, 붙여 넣은 막는 훅이 **조용히 통과**시켰다.
+   */
+  const 거부 = await 훅돌리기(훅(스크립트('deny.js',
+    "console.log(JSON.stringify({hookSpecificOutput:{hookEventName:'PreToolUse',permissionDecision:'deny',permissionDecisionReason:'정책이 막음'}}))")),
+  { 도구: 'Bash' });
+  check('★★★ JSON 으로 deny 하면 0 으로 끝나도 막는다', 거부.막나 === true, `${거부.코드} ${거부.말}`);
+  check('★★ 그 까닭을 들고 온다', 거부.말.includes('정책이 막음'), 거부.말);
+  check('★★ 고장이 아니라 판정이라 「쓰러졌다」 고 안 적는다', !거부.왜, String(거부.왜));
+  const 블록 = await 훅돌리기(훅(스크립트('block.js', "console.log(JSON.stringify({decision:'block',reason:'말에 비밀이 있음'}))"), '말전'), {});
+  check('★★★ decision:block 도 막는다 (말전)', 블록.막나 === true && 블록.말.includes('말에 비밀이 있음'), `${블록.막나} ${블록.말}`);
+  const 멈춤 = await 훅돌리기(훅(스크립트('stop.js', "console.log(JSON.stringify({continue:false,stopReason:'그만'}))")), {});
+  check('★★ continue:false 도 막는다', 멈춤.막나 === true, `${멈춤.막나}`);
+  const 허락 = await 훅돌리기(훅(스크립트('allow.js', "console.log(JSON.stringify({hookSpecificOutput:{permissionDecision:'allow'}}))")), {});
+  check('★ allow 는 지나간다', 허락.막나 === false, `${허락.막나}`);
+  const 뒤거부 = await 훅돌리기(훅(스크립트('deny2.js', "console.log(JSON.stringify({decision:'block',reason:'늦었다'}))"), '도구후'), {});
+  check('★★ 못 막는 자리는 JSON 으로도 못 막는다', 뒤거부.막나 === false, `${뒤거부.막나}`);
+
+  /*
+   * ── matcher 를 배열로 적으면 아무것에도 안 걸렸다 ─────────────────────
+   *
+   * `["Bash","Write"]` 가 글자로 바뀌어 `Bash,Write` 무늬가 됐다 — 아무 도구에도 안 걸리고,
+   * 버렸다는 말도 없이 「훅 1개」 로 세어졌다.
+   */
+  const 배열 = 훅펴기({ hooks: { PreToolUse: [{ matcher: ['Bash', 'Write'], hooks: [{ type: 'command', command: 'z' }] }] } }, '검사');
+  check('★★ matcher 를 배열로 적으면 그 이름들에 걸린다',
+    배열.훅들.length === 1 && 걸리나(배열.훅들[0], 'Bash') && 걸리나(배열.훅들[0], 'Write') && !걸리나(배열.훅들[0], 'Read'),
+    JSON.stringify({ n: 배열.훅들.length, 버린것: 배열.버린것, re: String(배열.훅들[0]?.무늬?.re) }));
+  const 이상무늬 = 훅펴기({ hooks: [{ 때: '도구전', 도구: { Bash: true }, 명령: 'z' }, { 때: '도구전', 도구: [], 명령: 'z' }] }, '검사');
+  check('★★ 글도 이름 목록도 아닌 무늬는 버렸다고 말한다', 이상무늬.훅들.length === 0 && 이상무늬.버린것.length === 2,
+    JSON.stringify(이상무늬));
+
+  /*
+   * ── 집에서 켜면 같은 hooks.json 이 두 번 돌았다 ───────────────────────
+   *
+   * DEEL_HOME 이 없으면 이 PC 자리는 `~/.deel/hooks.json`, 프로젝트 자리는
+   * `<root>/.deel/hooks.json` 이다. root 가 집이면 둘이 같은 파일이라 훅이 두 번 돌았다 —
+   * 포맷터는 두 번 고치고, 감사기록은 두 줄씩 남는다.
+   */
+  const 집만 = mkdtempSync(join(tmpdir(), 'deel-hooks-homeonly-'));
+  mkdirSync(join(집만, '.deel'), { recursive: true });
+  적기(join(집만, '.deel', 'hooks.json'), { hooks: [{ 때: '턴끝', 명령: 'once' }] });
+  const 집없는env = { ...환경, DEEL_TRUST_ALL: '1' };
+  delete 집없는env.DEEL_HOME;
+  /*
+   * ── 막힘말은 가리지 않고 모델에게 갔다 ─────────────────────────────────
+   *
+   * 도구후 훅의 글은 agent/loop.js 가 비밀 가리기를 거쳐 싣는데, 막은 훅의 글(막힘말)은
+   * 도구전·말전 두 자리 다 **그대로** 실렸다. 막는 훅이 까닭으로 제가 본 설정 줄을 되뱉으면
+   * 거기 든 토큰이 대화로 나간다.
+   */
+  const 토큰 = `ghp_${'a1B2'.repeat(9)}`;
+  const 막힌말 = 막힘말({ 훅: { 자리: '도구전', 출처: '검사', 명령: 'gate', 이름: null }, 말: `설정에 토큰이 있음: ${토큰}`, 왜: null });
+  check('★★ 막힘말도 비밀을 가려서 싣는다', !막힌말.includes(토큰) && 막힌말.includes('설정에 토큰이 있음'), 막힌말.slice(0, 120));
+  /*
+   * 이름 없는 훅이면 첫 줄에 **명령**이 실리고, 못 띄운 까닭(왜)도 실린다. 둘 다 모델에게 간다.
+   * 명령에 적은 토큰(`curl -H "Authorization: Bearer …"`)이 그대로 나갔다 (4회차 Gemini 리뷰).
+   */
+  const 명령막힘 = 막힘말({ 훅: { 자리: '도구전', 출처: '검사', 명령: `curl -H "Authorization: Bearer ${토큰}" https://gate.example`, 이름: null }, 말: '', 왜: null });
+  check('★★ 막힘말 첫 줄의 훅 명령도 가린다', !명령막힘.includes(토큰) && 명령막힘.includes('gate.example'), 명령막힘.split('\n')[0].slice(0, 160));
+  const 왜막힘 = 막힘말({ 훅: { 자리: '도구전', 출처: '검사', 명령: 'gate', 이름: 'gate' }, 말: '', 왜: `못 띄웠습니다 — token ${토큰}` });
+  check('★★ 못 띄운 까닭(왜)도 가린다', !왜막힘.includes(토큰) && 왜막힘.includes('못 띄웠습니다'), 왜막힘.slice(0, 160));
+  const 막는말들 = await 자리돌리기([{ 자리: '턴끝', 무늬글: '*', 무늬: { 다냐: true, re: null }, 명령: `curl -H "Authorization: Bearer ${토큰}" x`, 제한: 1000, 지나갈까: true, 출처: '검사', 이름: null }], '턴끝', {
+    넣을것: {}, 돌리개: async () => ({ code: null, stdout: '', stderr: '', error: new Error(`spawn 실패 ${토큰}`) }),
+  }).catch((e) => ({ 말들: [`(던짐) ${e?.message}`] }));
+  check('★ 안 막은 훅 소식줄(말들)에도 명령·까닭의 토큰이 안 실린다',
+    (막는말들.말들 ?? []).length > 0 && !(막는말들.말들 ?? []).join('\n').includes(토큰), (막는말들.말들 ?? []).join(' / ').slice(0, 160));
+  check('★ hookSpecificOutput 안의 decision:"deny" 도 막음으로 읽는다',
+    제이슨판정('{"hookSpecificOutput":{"decision":"deny","reason":"위험"}}')?.까닭 === '위험', JSON.stringify(제이슨판정('{"hookSpecificOutput":{"decision":"deny","reason":"위험"}}')));
+
+  const 한번 = 훅읽기(집만, { env: 집없는env, 집: 집만 });
+  check('★★ 집에서 켜면 같은 hooks.json 을 두 번 안 읽는다', 한번.훅들.length === 1, JSON.stringify(한번.훅들.map((h) => h.출처)));
+  rmSync(집만, { recursive: true, force: true });
+  rmSync(글판, { recursive: true, force: true });
 }
 
 안믿기(root, { env: 환경 });

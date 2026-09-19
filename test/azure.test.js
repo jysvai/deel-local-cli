@@ -476,6 +476,37 @@ trace('16-주소가리기');
   check('경로는 그대로 둔다', 것.includes('/azure-openai/openai/deployments/gpt-4o'), 것);
   check('물음표가 없으면 손 안 댄다', 주소가리기('https://gw.corp/v1') === 'https://gw.corp/v1');
   check('Functions 앞단의 code 도 가린다', !주소가리기('https://f.net/api?code=AAA_BBB').includes('AAA_BBB'));
+  // 주소 **앞머리**에 실린 사람:열쇠도 가린다 — 대화 기록 base·doctor 프록시 줄에 그대로 적혔다 (2.0.0 6회차 · Gemini 비밀6).
+  const 사람열쇠 = 주소가리기('http://user:pw_BBB222@proxy.corp:8080');
+  check('★ 주소 앞머리의 사람:열쇠를 가린다',
+    !사람열쇠.includes('pw_BBB222') && !주소가리기('https://u:tok_AAA111@gw.corp/v1?x=1').includes('tok_AAA111'), 사람열쇠);
+  check('사람:열쇠를 가려도 호스트·포트는 남긴다', 사람열쇠.includes('proxy.corp:8080'), 사람열쇠);
+  // 비밀번호에 `@` 가 날것으로 든 주소 — 주소를 푸는 쪽은 마지막 `@` 를 자격 끝으로 본다 (6회차 Gemini 가림6r T3).
+  const 골뱅이 = 주소가리기('http://user:sk-FAKE@tail77@proxy.corp:8080');
+  check('★ 비밀번호에 @ 가 든 주소도 뒷조각까지 가린다', 골뱅이 === 'http://«가림»@proxy.corp:8080', 골뱅이);
+  const 물음뒤 = 주소가리기('http://gw.corp?next=a@b');
+  check('  짝: 물음표 뒤의 @ 는 자격이 아니다 — 호스트는 그대로', 물음뒤 === 'http://gw.corp?next=«가림»', 물음뒤);
+
+  /*
+   * ★★ 프래그먼트(`#…`)가 통째로 사라졌다 (2.0.0 8회차).
+   *
+   * `#` 뒤를 마지막 칸의 **값**으로 같이 먹어서 `?code=X#section` 이
+   * `?code=«가림»` 이 됐다. 화면·진단 보고서·대화 기록의 주소가 조용히 다른
+   * 주소가 된 것이다 — 사람이 그걸 복사해 붙이면 안 되는 자리로 간다.
+   *
+   * 되살리되 그냥 붙여 놓지는 않는다. OAuth 암묵 흐름은 토큰을 `#access_token=`
+   * 으로 준다 — 물음표 뒤와 똑같이 **값만** 가리고 이름은 남긴다.
+   */
+  const 조각 = 주소가리기('https://gw.corp/v1/chat?code=SECRET123#section');
+  check('★★ 프래그먼트를 안 잃는다', 조각 === 'https://gw.corp/v1/chat?code=«가림»#section', 조각);
+  check('  물음표가 없어도 프래그먼트는 그대로다',
+    주소가리기('https://gw.corp/v1#section') === 'https://gw.corp/v1#section', 주소가리기('https://gw.corp/v1#section'));
+  const 조각열쇠 = 주소가리기('https://gw.corp/cb#access_token=SECRET123&state=ok');
+  check('★★ 프래그먼트에 실린 토큰은 가린다',
+    !조각열쇠.includes('SECRET123') && 조각열쇠.includes('access_token='), 조각열쇠);
+  check('  프래그먼트의 판 번호도 물음표 뒤와 같이 남긴다',
+    주소가리기('https://gw.corp/v1#api-version=2024-10-21') === 'https://gw.corp/v1#api-version=2024-10-21',
+    주소가리기('https://gw.corp/v1#api-version=2024-10-21'));
 }
 
 // ── 17. 망가진 주소를 만나도 안 죽는다 ─────────────────────────────────
@@ -494,6 +525,21 @@ await 재보기('18-v1창구', async () => {
   check('/openai/v1 로 끝나면 Azure 로 안 다룬다', 애저인가('https://a.openai.azure.com/openai/v1') === false);
   check('/v1 로 끝나도 마찬가지', 애저인가('https://a.openai.azure.com/v1') === false);
   check('배포 주소는 그대로 Azure', 애저인가('https://a.openai.azure.com/openai/deployments/x') === true);
+
+  /*
+   * 배포 이름이 하필 `v1` 인 자원.
+   *
+   * `/v1` 로 끝난다는 이유로 「OpenAI 규격 창구」 로 보고 Azure 에서 빼 버렸다.
+   * 그런데 길에 `/openai/deployments/` 가 이미 적혀 있으면 그건 **배포 주소**다 —
+   * 마지막 한 칸은 배포 이름이지 판 번호가 아니다. 애저풀기 는 이 주소에서
+   * 배포 `v1` 을 잘 뽑아낸다. 두 함수의 답이 갈리면 한쪽만 맞는 자리가 된다.
+   */
+  check('★ 배포 이름이 v1 이어도 Azure 다', 애저인가('https://a.openai.azure.com/openai/deployments/v1') === true);
+  check('★ 애저풀기 와 답이 갈리지 않는다',
+    애저인가('https://a.openai.azure.com/openai/deployments/v1')
+      === !!애저풀기('https://a.openai.azure.com/openai/deployments/v1')?.배포);
+  check('★ 앞단에 매단 배포 v1 도 Azure 다', 애저인가('https://gw.사내.local/openai/deployments/v1') === true);
+  check('  /openai/v1 은 배포 주소가 아니라 예전 그대로', 애저인가('https://a.openai.azure.com/openai/v1') === false);
 
   const s5 = await 띄우기((q, res) => {
     const u = new URL(q.url, 'http://127.0.0.1');

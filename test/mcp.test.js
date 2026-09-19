@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   설정읽기, 다붙이기, 이름풀기, 도구정의, 도구최대, 살아있는수, 모두닫기, 깨끗한환경,
-  메모자리, 메모읽기, 메모유효, 지문, 쓸만한메모 } from '../src/backend/mcp.js';
+  메모자리, 메모읽기, 메모쓰기, 메모유효, 지문, 쓸만한메모, MCP서버, 띄울모양 } from '../src/backend/mcp.js';
 import { VERSION } from '../src/version.js';
 import { toolSchemas, runTool } from '../src/tools/index.js';
 import { Audit } from '../src/safety/audit.js';
@@ -59,6 +59,8 @@ if (모드 === 'silent') { setInterval(() => {}, 1000); }
 else if (모드 === 'crash') { process.exit(3); }                 // 뜨자마자 죽음
 else if (모드 === 'garbage') { process.stdout.write('이건 JSON 이 아닙니다\\n'); }
 if (모드 !== 'silent') 듣기();
+let 핑번호 = null;
+let 인사끝 = false;
 function 듣기() {
 let 찌꺼기 = '';
 process.stdin.setEncoding('utf8');
@@ -72,10 +74,39 @@ process.stdin.on('data', (d) => {
     if (j.method === 'initialize') {
       // 우리가 무엇이라고 인사했는지 적어 둔다. 검사가 그걸 읽는다.
       if (인사자리) { try { 적기(인사자리, JSON.stringify(j.params)); } catch {} }
-      답(j.id, {
-        protocolVersion: '2024-11-05', capabilities: { tools: {} },
-        serverInfo: { name: '스텁MCP', version: '9.9.9' },
-      });
+      const 인사답 = () => {
+        답(j.id, {
+          protocolVersion: '2024-11-05', capabilities: { tools: {} },
+          serverInfo: { name: '스텁MCP', version: '9.9.9' },
+        });
+        인사끝 = true;
+      };
+      // 인사에 늦게 답하는 서버 (6회차 MB1). 그사이 온 tools/call 은 규격 위반이라 그렇다고 답한다.
+      if (모드 === 'slowinit') setTimeout(인사답, 700); else 인사답();
+    }
+    // 우리가 서버의 물음(ping)에 준 답. 기다리던 것이면 그제야 진짜 답을 준다 (collide).
+    else if (!j.method && j.id != null) {
+      if (모드 === 'collide' && j.id === 핑번호 && j.result) 답(핑번호, { content: [{ type: 'text', text: '진짜 답 · 핑답받음' }] });
+    }
+    else if (j.method === 'tools/list' && 모드 === 'paged') {
+      // 두 쪽으로 나눠 준다. 뒷쪽을 안 따라가면 둘쪽도구 가 조용히 빠진다.
+      if (!j.params?.cursor) 답(j.id, { tools: [{ name: '첫쪽도구', inputSchema: { type: 'object' } }], nextCursor: '둘째쪽' });
+      else 답(j.id, { tools: [{ name: '둘쪽도구', inputSchema: { type: 'object' } }] });
+    }
+    else if (j.method === 'tools/list' && 모드 === 'pagedstall') {
+      // 첫 쪽은 주고 **뒷쪽은 영영 안 준다.** 쪽을 넘기다 시한이 지나는 서버다.
+      if (!j.params?.cursor) 답(j.id, { tools: [{ name: '첫쪽도구', inputSchema: { type: 'object' } }], nextCursor: '둘째쪽' });
+    }
+    else if (j.method === 'tools/call' && 모드 === 'flood') {
+      // 줄바꿈 없이 끝없이 쏟는다.
+      const 덩이 = 'x'.repeat(1 << 20);
+      const 쏟기 = () => { while (process.stdout.write(덩이)); process.stdout.once('drain', 쏟기); };
+      쏟기();
+    }
+    else if (j.method === 'tools/call' && 모드 === 'collide') {
+      // 서버 쪽 번호는 서버가 따로 센다 — 우리 물음과 **같은 번호로** ping 을 묻는다.
+      핑번호 = j.id;
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: j.id, method: 'ping' }) + '\\n');
     }
     else if (j.method === 'tools/list') {
       const 몇개 = 모드 === 'many' ? 40 : 2;
@@ -88,7 +119,10 @@ process.stdin.on('data', (d) => {
       답(j.id, { tools });
     }
     else if (j.method === 'tools/call') {
-      if (j.params.name === '이슈보기') 답(j.id, { content: [{ type: 'text', text: '그런 이슈 없음' }], isError: true });
+      if (모드 === 'slowinit' && !인사끝) 답(j.id, { content: [{ type: 'text', text: '인사 전에 부름' }] });
+      else if (j.params.name === '이슈보기') 답(j.id, { content: [{ type: 'text', text: '그런 이슈 없음' }], isError: true });
+      else if (j.params.name === '자원보기') 답(j.id, { content: [{ type: 'resource', resource: { uri: 'file:///x.txt', mimeType: 'text/plain', text: '박힌 자원 본문' } }] });
+      else if (j.params.name === '구조만') 답(j.id, { content: [], structuredContent: { answer: 42 } });
       else if (j.params.name === '환경보기') 답(j.id, { content: [{ type: 'text', text: JSON.stringify(process.env) }] });
       else 답(j.id, { content: [{ type: 'text', text: '찾은 것: ' + (j.params.arguments?.q ?? '') + '\\n두 번째 줄' }] });
     }
@@ -163,9 +197,41 @@ trace('2-설정읽기');
     붙임.서버들.map((s) => s.이름).join(','));
   모두닫기();
 
+  /*
+   * ★★ 앞에 BOM 이 붙은 설정도 읽는다.
+   *
+   * 윈도우 파워셸 5.1 의 `Set-Content -Encoding UTF8` 은 파일 앞에 U+FEFF 를 붙인다.
+   * JSON.parse 는 그 한 글자에서 넘어지고, 그러면 적어 둔 서버가 **통째로** 안 뜬다 —
+   * 화면에는 「mcp.json 을 못 읽었습니다」 한 줄뿐이라 사람은 멀쩡한 JSON 을 뒤진다.
+   * 설정·훅·정책은 이미 떼고 있었고(safety/trust.js 의 BOM떼기) 여기만 빠져 있었다.
+   */
+  const BOM = String.fromCharCode(0xfeff);
+  writeFileSync(join(root, '.deel', 'mcp.json'), BOM + JSON.stringify({ mcpServers: { 사내위키: 서버설정() } }), 'utf8');
+  const BOM설정 = 설정읽기(root);
+  check('★★ BOM 이 붙은 mcp.json 도 읽는다', !BOM설정.오류 && BOM설정.서버들[0]?.이름 === '사내위키',
+    BOM설정.오류 ?? JSON.stringify(BOM설정.서버들.map((x) => x.이름)));
+
   writeFileSync(join(root, '.deel', 'mcp.json'), '{ 깨진 JSON', 'utf8');
   check('깨진 설정은 이유를 말한다', !!설정읽기(root).오류, 설정읽기(root).오류 ?? '');
   check('깨진 설정이어도 안 터진다', 설정읽기(root).서버들.length === 0);
+
+  /*
+   * ── ★★ (6회차 Gemini 엠씨피 M5) JSON 으로는 멀쩡한데 표가 아닌 설정 ──────────────
+   *
+   * `null` 은 JSON.parse 를 지나 `null.mcpServers` 에서 TypeError 로 던졌다 — 설정읽기 를 부르는
+   * 자리가 통째로 넘어진다. `"mcpServers": [ … ]` 는 배열 번호 `0` 이 서버 이름이 됐다.
+   * 둘 다 「못 읽었습니다」 로 까닭을 말한다. 빈 표 `{}` 는 여태처럼 「서버 없음」 이다.
+   */
+  for (const [이름, 글] of [['null', 'null'], ['맨 배열', '[1]'], ['mcpServers 배열', '{"mcpServers":[{"command":"x"}]}'], ['mcpServers 글자', '{"mcpServers":"abc"}']]) {
+    writeFileSync(join(root, '.deel', 'mcp.json'), 글, 'utf8');
+    let 읽음 = null; let 던짐 = null;
+    try { 읽음 = 설정읽기(root); } catch (e) { 던짐 = e; }
+    check(`★★ (6회차 M5) mcp.json 이 ${이름} 이어도 안 터지고 까닭을 말한다`,
+      !던짐 && !!읽음?.오류 && 읽음.서버들.length === 0,
+      String(던짐?.message ?? 읽음?.오류 ?? JSON.stringify(읽음?.서버들?.map((x) => x.이름))));
+  }
+  writeFileSync(join(root, '.deel', 'mcp.json'), '{}', 'utf8');
+  check('★ (6회차 M5) 빈 표 {} 는 오류 없이 서버 0개다', !설정읽기(root).오류 && 설정읽기(root).서버들.length === 0, 설정읽기(root).오류 ?? '');
 
   rmSync(join(root, '.deel', 'mcp.json'));
   check('설정이 없으면 없다고 한다', 설정읽기(root).있음 === false);
@@ -366,6 +432,33 @@ trace('6-도구목록에섞기');
   check('죽은 서버를 부르면 바로 오류', /죽었습니다/.test(결과.error ?? ''), JSON.stringify(결과));
 }
 
+// ── Error 가 아닌 것이 올라와도 **실패는 실패로** 적는다 ────────────────
+//
+// `e.message` 만 쓰면 문자열·숫자가 던져질 때 undefined 가 된다. 그러면
+// `{ error: undefined }` 라, 부르는 쪽의 `if (result.error)` 가 거짓이 되어
+// **실패가 성공으로 세어진다.** 남의 프로세스에서 올라오는 것이라 Error 라는
+// 보장이 없다 — JSON-RPC 로 받은 값을 그대로 던지는 서버가 흔하다.
+{
+  const 던지는서버 = (던질것) => ({
+    이름: '막된놈',
+    쓸수있나: () => true,
+    부르기: async () => { throw 던질것; },
+  });
+
+  for (const 던질것 of ['그냥 문자열 탈', 42, { code: -32000, message: null }]) {
+    const ctx = { scope: makeScope(root), audit: new Audit(root), mcp: [던지는서버(던질것)], seen: new Set() };
+    const r = await runTool('mcp__막된놈__아무거나', {}, ctx);
+    check(`★ Error 아닌 것(${typeof 던질것})을 던져도 오류로 남는다`,
+      typeof r.error === 'string' && r.error.length > 0 && r.error !== 'undefined',
+      JSON.stringify(r));
+  }
+
+  // 성한 Error 는 여태처럼 그 말을 그대로 쓴다.
+  const ctx = { scope: makeScope(root), audit: new Audit(root), mcp: [던지는서버(new Error('진짜 탈'))], seen: new Set() };
+  const r = await runTool('mcp__막된놈__아무거나', {}, ctx);
+  check('Error 면 그 말을 그대로 쓴다', r.error === '진짜 탈', JSON.stringify(r));
+}
+
 trace('7-판번호');
 
 // ── 남의 서버에 우리 판 번호를 제대로 대는가 ────────────────────────────
@@ -527,6 +620,19 @@ trace('9-지연로딩');
   check('★★ 결과는 여느 때와 같다', out.text.startsWith('찾은 것: 휴가'), out.text);
   check('  이제는 대기가 아니다', s.대기 === false && s.살아있나() === true, '');
   모두닫기();
+
+  /*
+   * ★★ BOM 이 붙은 메모도 읽는다.
+   *
+   * 메모를 못 읽으면 빈 것으로 본다 — 그러면 **매번 서버를 다시 띄운다.** 오류도
+   * 안 나고 도구도 멀쩡해서, 지연 로딩이 조용히 꺼진 것을 아무도 모른다.
+   * 사람이 메모를 편집기·스크립트로 한 번 만지면 BOM 이 붙는 일은 흔하다.
+   */
+  const 메모원문 = readFileSync(메모자리(root), 'utf8');
+  writeFileSync(메모자리(root), String.fromCharCode(0xfeff) + 메모원문, 'utf8');
+  check('★★ BOM 이 붙은 메모도 읽는다', 메모읽기(root)['사내위키']?.도구?.length === 2,
+    JSON.stringify(Object.keys(메모읽기(root))));
+  writeFileSync(메모자리(root), 메모원문, 'utf8');
 }
 
 trace('10-메모가-어긋날때');
@@ -679,6 +785,27 @@ trace('11-2-메모겹쳐쓰기');
   모두닫기();
   check('★ 설정에서 뺀 서버의 메모는 걷는다', !메모읽기(root)['가'],
     Object.keys(메모읽기(root)).join(','));
+
+  /*
+   * ── 남는 것이 **하나도 없으면** 아예 안 적었다 (8회차 · 뒷단) ────────────
+   *
+   * 「남는 서버가 없으면 쓸 것도 없다」 로 곧장 돌아섰다. 그런데 이 함수가 하는 일은
+   * 두 가지다 — 새로 뜬 것을 적는 것, 그리고 **설정에서 빠진 것을 걷는 것.** 걷고 나서
+   * 아무것도 안 남는 판(설정의 서버를 다 빼거나, 남은 한 대가 도구 0개로 떴을 때)에서는
+   * 걷기가 통째로 취소돼서, 지운 서버의 메모가 파일에 영영 남는다.
+   *
+   * 남은 메모는 그냥 쓰레기가 아니다 — 지연 로딩이 이름으로 찾아 「이미 아는 서버」 로
+   * 세우는 자리라, 설정에서 지운 남의 프로그램의 도구 목록이 계속 살아 있게 된다.
+   */
+  {
+    const 파일 = 메모자리(root);
+    writeFileSync(파일, JSON.stringify({ version: 1, servers: {
+      지운것: { 지문: 'x', 적은때: Date.now(), 도구: [{ name: '옛도구', inputSchema: { type: 'object' } }] },
+    } }, null, 2) + '\n', 'utf8');
+    메모쓰기(root, [], { 남길이름: [] });
+    check('★★ 남는 것이 하나도 없어도 지운 서버의 메모는 걷는다', !메모읽기(root)['지운것'],
+      Object.keys(메모읽기(root)).join(',') || '(빈 것)');
+  }
 }
 
 trace('12-끄기');
@@ -692,6 +819,271 @@ trace('12-끄기');
   const r = await 다붙이기(root, { timeout: 2500, env: { ...믿는env, DEEL_MCP_LAZY: 'off' } });
   check('★★ DEEL_MCP_LAZY=off 면 여느 때처럼 띄운다', 살아있는수() === 1, String(살아있는수()));
   check('  대기가 아니다', r.서버들[0]?.대기 === false, '');
+  모두닫기();
+}
+
+trace('13-사냥4');
+{
+  모두닫기();
+  const 잠깐 = (ms) => new Promise((r) => setTimeout(r, ms));
+  const 한대 = (모드, 더 = {}) => new MCP서버({ 이름: `검사-${모드}`, command: process.execPath, args: [서버파일, 모드], env: null, cwd: root, ...더 });
+  const 끝났나 = async (kid, ms = 4000) => {
+    const 끝 = Date.now() + ms;
+    while (kid && kid.exitCode === null && kid.signalCode === null && Date.now() < 끝) await 잠깐(50);
+    return !kid || kid.exitCode !== null || kid.signalCode !== null;
+  };
+
+  /*
+   * W1 — 줄바꿈 없이 끝없이 쏟는 서버.
+   *
+   * 한도(4MB)를 넘으면 끝냄() 을 불렀지만 **귀는 그대로** 열어 두고 받은 것을 계속
+   * 이어 붙였다. 끝냄() 은 두 번째부터 아무것도 안 하니, 버퍼가 끝없이 자라다
+   * RangeError 로 deel 이 통째로 죽었다. 남의 프로그램 하나 때문에.
+   */
+  {
+    const s = 한대('flood');
+    await s.붙기({ timeout: 2500 });
+    let 탈 = null;
+    try { await s.부르기('아무거나', {}, { timeout: 5000 }); } catch (e) { 탈 = e; }
+    check('★ 줄바꿈 없이 쏟으면 끊고 너무 크다고 말한다', /너무 큽니다/.test(탈?.message ?? ''), 탈?.message ?? '(안 던짐)');
+    await 잠깐(150);
+    const 크기1 = s.찌꺼기.length;
+    await 잠깐(150);
+    const 크기2 = s.찌꺼기.length;
+    check('★★★ 끊은 뒤로는 더 쌓지 않는다', 크기2 <= 크기1 && 크기2 <= 5 * 1024 * 1024,
+      `${Math.round(크기1 / 1048576)}MB → ${Math.round(크기2 / 1048576)}MB`);
+    const kid = s.kid;
+    s.찌꺼기 = '';   // 고치기 전에는 여기서라도 비워 둔다 — 빨간 판이 메모리로 죽지 않게
+    check('★★ 쏟는 서버 프로세스를 거둔다 (닫기 전에)', await 끝났나(kid, 800), `pid ${kid?.pid}`);
+    s.닫기();
+  }
+
+  /*
+   * W5 — 서버가 **우리 물음과 같은 번호로** 묻는 판(ping).
+   *
+   * JSON-RPC 번호는 양쪽이 따로 센다. 번호만 보고 가르면 서버의 ping 이 우리
+   * tools/call 의 답으로 먹혀 빈 결과가 되고, ping 에는 아무도 답을 안 한다.
+   * 언어 서버 쪽(lsp/client.js)은 이미 method 로 가르고 있다.
+   */
+  {
+    const s = 한대('collide');
+    await s.붙기({ timeout: 2500 });
+    let 답 = null;
+    try { 답 = await s.부르기('아무거나', {}, { timeout: 3000 }); } catch (e) { 답 = { text: `(던짐) ${e.message}` }; }
+    check('★★ 서버의 물음(같은 번호)이 우리 답으로 안 먹힌다 · ping 에 답한다', 답?.text === '진짜 답 · 핑답받음', JSON.stringify(답));
+    s.닫기();
+  }
+
+  /*
+   * W10 — tools/list 의 nextCursor. 뒷쪽을 안 따라가면 도구가 **조용히** 빠진다.
+   */
+  {
+    const s = 한대('paged');
+    const ok = await s.붙기({ timeout: 2500 });
+    const 이름들 = s.도구.map((t) => t.name);
+    check('★ 여러 쪽으로 나눈 도구 목록을 끝까지 받는다', ok && 이름들.includes('첫쪽도구') && 이름들.includes('둘쪽도구'), 이름들.join(','));
+    s.닫기();
+  }
+
+  /*
+   * ── 쪽을 넘기다 시한이 지나면 **받아 둔 것까지 버렸다** (8회차 · 뒷단) ─────
+   *
+   * 위 W10 이 붙인 쪽 넘기기가 통째로 하나의 try 안에 있었다. 첫 쪽을 다 받아 놓고도
+   * 둘째 쪽에서 시한이 지나면 그 예외가 바깥 catch 로 가서 `끝냄('도구 목록을 못
+   * 받았습니다')` · `return false` 로 끝난다 — 서버 하나가 통째로 안 붙는다.
+   *
+   * 쪽을 나눠 주는 서버는 대개 도구가 많은 큰 서버다. 뒷쪽 하나가 늦다고 그 서버의
+   * 도구를 **한 개도** 안 쓰는 것은, 이 파일이 내내 지켜 온 「하나가 안 떠도 나머지는
+   * 쓴다」 와 반대다. 받은 데까지 쓰고 뒤에 더 있다고 적으면 된다(잘림).
+   */
+  {
+    const s = 한대('pagedstall');
+    const ok = await s.붙기({ timeout: 1500 });
+    check('★★★ 쪽을 넘기다 시한이 지나도 받아 둔 도구는 안 버린다',
+      ok && s.도구.map((t) => t.name).join(',') === '첫쪽도구', `${ok} · ${s.도구.map((t) => t.name).join(',')} · ${s.죽음 ?? ''}`);
+    check('★★ 그러고 뒤에 더 있다고 적는다 — 「다 받았다」 로 안 보이게', s.잘림 >= 1, String(s.잘림));
+    s.닫기();
+  }
+
+  /*
+   * W11 — 글이 박힌 resource 와 structuredContent 만 있는 답.
+   * 앞엣것은 「[resource]」 한 낱말, 뒤엣것은 빈 글로 모델에게 갔다.
+   */
+  {
+    const s = 한대('normal');
+    await s.붙기({ timeout: 2500 });
+    const 자원 = await s.부르기('자원보기', {});
+    check('★ 박힌 resource 의 글을 싣는다', /박힌 자원 본문/.test(자원.text), JSON.stringify(자원));
+    const 구조 = await s.부르기('구조만', {});
+    check('★ structuredContent 만 있으면 그 JSON 을 싣는다', /"answer"\s*:\s*42/.test(구조.text), JSON.stringify(구조));
+    s.닫기();
+  }
+
+  /*
+   * W12 — 대기 중이던 서버가 initialize 에 끝내 답을 안 하면 깨우기가 실패하는데,
+   * 그 프로세스는 **살려 둔 채** 명부에 남았다. 아무도 안 거둔다.
+   */
+  {
+    const s = 한대('silent');
+    s.메모로세우기({ 도구: [{ name: '위키검색', inputSchema: { type: 'object' } }] }, null);
+    const 앞수 = 살아있는수();
+    const ok = await s.깨우기({ timeout: 600 });
+    check('  답 없는 서버는 못 깨운다', ok === false, String(s.죽음));
+    check('★★ 못 깨운 서버는 명부에 안 남는다', 살아있는수() === 앞수, `${앞수} → ${살아있는수()}`);
+    check('★★ 못 깨운 서버 프로세스를 거둔다', await 끝났나(s.kid, 3000), `pid ${s.kid?.pid}`);
+    s.닫기();
+  }
+
+  /*
+   * ── ★★ (6회차 Gemini 엠씨피 MB1) 깨우는 중에 들어온 두 번째 부름 ─────────────
+   *
+   * 깨우기 는 `살아있나()` 를 `깨우는중` 보다 먼저 봤다. 붙기 첫 줄에서 아이는 이미 떠 있으므로,
+   * 인사(initialize)에 답이 오기 전에 들어온 두 번째 부름이 「살아 있다」 로 곧장 지나가
+   * tools/call 을 **인사보다 먼저** 보냈다 — 규격 위반이라 서버는 거절하거나 엉뚱하게 답한다.
+   * 모델이 도구를 한꺼번에 둘 부르는 것은 흔한 일이다.
+   */
+  {
+    const s = 한대('slowinit');
+    s.메모로세우기({ 도구: [{ name: '위키검색', inputSchema: { type: 'object' } }] }, null);
+    const [가, 나] = await Promise.all([
+      s.부르기('위키검색', { q: '하나' }, { timeout: 5000 }).catch((e) => ({ text: `던짐 ${e.message}` })),
+      s.부르기('위키검색', { q: '둘' }, { timeout: 5000 }).catch((e) => ({ text: `던짐 ${e.message}` })),
+    ]);
+    check('★★ (6회차 MB1) 깨우는 중에 함께 들어온 부름도 인사가 끝난 뒤에 보낸다',
+      /찾은 것: 하나/.test(가.text) && /찾은 것: 둘/.test(나.text), `${가.text} | ${나.text}`);
+    s.닫기();
+  }
+
+  /*
+   * ── ★ (6회차 Gemini 엠씨피 MB2) 시그널로 죽은 서버에 보내기 ──────────────────────
+   *
+   * 보내고기다리기 는 `exitCode` 만 봤다. 시그널로 죽은 아이는 exitCode 가 null 이라 그대로 지나가
+   * 죽은 관에 써 놓고 시한(기본 60초)까지 기다렸다. 끝냄 이 `죽음` 을 이미 적어 뒀는데도.
+   */
+  {
+    const s = 한대('normal');
+    await s.붙기({ timeout: 2500 });
+    s.kid.kill();
+    await 끝났나(s.kid, 3000);
+    await 잠깐(100);
+    const 시작 = Date.now();
+    let 까닭 = '';
+    try { await s.보내고기다리기('tools/list', {}, 4000); } catch (e) { 까닭 = e.message; }
+    const 걸린 = Date.now() - 시작;
+    check('★ (6회차 MB2) 시그널로 죽은 서버에 보내면 기다리지 않고 곧장 실패한다',
+      걸린 < 1500 && !!까닭, `${걸린}ms · ${까닭} · exitCode=${s.kid?.exitCode} signal=${s.kid?.signalCode}`);
+    s.닫기();
+  }
+
+  /*
+   * W13 — 서버 이름에 `__` 가 있거나 `_` 로 시작·끝나면 붙인 이름을 도로 못 푼다.
+   * 목록에는 서고, 모델이 부르면 「my 서버가 붙어 있지 않습니다」 가 돌아왔다.
+   */
+  {
+    설정쓰기({ mcpServers: { my__srv: 서버설정(), srv_: 서버설정(), _srv: 서버설정(), a_b: 서버설정() } });
+    const 설정 = 설정읽기(root);
+    check('★ 못 푸는 이름의 서버는 안 받는다', 설정.서버들.map((x) => x.이름).join(',') === 'a_b', 설정.서버들.map((x) => x.이름).join(','));
+    const 못받은 = 설정.못받은것 ?? [];
+    check('★ 안 받은 까닭을 이름마다 말한다', ['my__srv', 'srv_', '_srv'].every((n) => /_/.test(못받은.find((x) => x.이름 === n)?.왜 ?? '')),
+      JSON.stringify(못받은));
+    check('  받은 이름은 도로 풀린다', 이름풀기(도구정의([{ 이름: 'a_b', 도구: [{ name: 'c__d' }] }])[0].function.name)?.서버 === 'a_b');
+  }
+
+  /*
+   * W7 — 윈도우의 `.cmd` 명령. 노드는 셸 없이 `.cmd` 를 못 띄운다(EINVAL), 그리고
+   * `npx` 처럼 확장자 없이 적으면 PATHEXT 를 안 봐서 못 찾는다(ENOENT). 복사해 붙이는
+   * mcp.json 의 절반이 `"command": "npx"` 다.
+   */
+  if (process.platform === 'win32') {
+    const 폴더 = join(root, '명령 폴더');
+    mkdirSync(폴더, { recursive: true });
+    const cmd파일 = join(폴더, 'stubmcp.cmd');
+    writeFileSync(cmd파일, `@"${process.execPath}" "${서버파일}" %*\r\n`, 'utf8');
+    const 인사자리2 = join(root, '인사 & (둘) 100%.json');
+    const s1 = new MCP서버({ 이름: 'cmd', command: cmd파일, args: ['normal', 인사자리2], env: null, cwd: root });
+    const ok1 = await s1.붙기({ timeout: 6000 });
+    check('★★ (윈도우) .cmd 경로로 적은 서버도 뜬다', ok1, String(s1.죽음));
+    check('★ (윈도우) 빈칸·&·괄호·% 가 든 인자도 그대로 넘어간다', existsSync(인사자리2), 인사자리2);
+    s1.닫기();
+    const s2 = new MCP서버({ 이름: 'pathcmd', command: 'stubmcp', args: ['normal'], env: { PATH: `${폴더};${process.env.PATH ?? ''}` }, cwd: root });
+    const ok2 = await s2.붙기({ timeout: 6000 });
+    check('★★ (윈도우) 이름만 적은 .cmd 도 PATH 에서 찾아 띄운다 (npx 꼴)', ok2 && s2.도구.length === 2, String(s2.죽음));
+    s2.닫기();
+
+    /*
+     * Gemini 웹4 — `%*` 로 넘기는 배치(전역 npx.cmd · npm 전역 쉼)는 받은 줄을 한 번 더 읽는다.
+     * ^ 를 한 겹만 달면 따옴표 든 인자 하나가 cmd 의 따옴표 상태를 뒤집어 **다음 인자의 & 가
+     * 명령으로 돌았다**. 줄바꿈 든 인자는 그 뒤 인자를 통째로 잃었다(cmd 가 거기서 줄을 끊는다).
+     */
+    {
+      const { spawnSync } = await import('node:child_process');
+      const 메아리 = join(폴더, 'echo.js');
+      writeFileSync(메아리, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))', 'utf8');
+      // 배치 글 안에 한글 경로를 적으면 cmd 가 코드 페이지로 읽어 깨진다 — %~dp0 으로 가리킨다.
+      const 별 = join(폴더, 'star.cmd');
+      writeFileSync(별, `@"${process.execPath}" "%~dp0echo.js" %*\r\n`, 'utf8');
+      const 표지 = join(폴더, 'MARK.txt');
+      // 표지 인자를 맨 뒤에 둔다 — 뒤에 인자가 더 오면 cmd 가 그 따옴표까지 파일 이름으로 먹어 표지가 안 생긴다.
+      const 묶음 = ['x^y', '100%', 'a"b', 'p & echo made>MARK.txt'];
+      const 모양 = 띄울모양(별, 묶음, process.env, 폴더);
+      const r = spawnSync(모양.파일, 모양.인자, { ...모양.옵션, cwd: 폴더, encoding: 'utf8', timeout: 10000, windowsHide: true });
+      let 받음 = null;
+      try { 받음 = JSON.parse(r.stdout); } catch { /* 깨졌다 — 아래 검사가 잡는다 */ }
+      check('★★ (윈도우) 따옴표 든 인자 뒤의 & 가 명령으로 안 돈다', !existsSync(표지), 표지);
+      check('★★ (윈도우) %* 로 넘기는 .cmd 에도 인자가 글자 그대로 간다', JSON.stringify(받음) === JSON.stringify(묶음), `${JSON.stringify(받음)} · ${r.stderr}`);
+      let 던짐 = null;
+      try { 띄울모양(별, [`a${String.fromCharCode(10)}b`, 'after'], process.env, 폴더); } catch (e) { 던짐 = e; }
+      check('★ (윈도우) 줄바꿈 든 인자는 잘린 채 띄우지 않고 까닭을 말한다', !!던짐 && /줄바꿈/.test(던짐.message), String(던짐?.message));
+      // %~1 로 받는 배치는 두 겹이면 ^ 가 글자로 남는다 — %* 가 없는 배치는 한 겹 그대로다.
+      const 물결 = join(폴더, 'tilde.bat');
+      writeFileSync(물결, `@"${process.execPath}" "%~dp0echo.js" "%~1" "%~2"\r\n`, 'utf8');
+      const 모양2 = 띄울모양(물결, ['two words', 'a^b'], process.env, 폴더);
+      const r2 = spawnSync(모양2.파일, 모양2.인자, { ...모양2.옵션, cwd: 폴더, encoding: 'utf8', timeout: 10000, windowsHide: true });
+      let 받음2 = null;
+      try { 받음2 = JSON.parse(r2.stdout); } catch { /* 깨졌다 */ }
+      check('(윈도우) %~1 로 받는 배치에는 한 겹 그대로 간다', JSON.stringify(받음2) === JSON.stringify(['two words', 'a^b']), `${JSON.stringify(받음2)} · ${r2.stderr}`);
+      // Gemini 화면5 — 쓰는 법을 적은 REM 줄의 %* 에 속아 %~1 배치에 두 겹을 달았다.
+      const 주석 = join(폴더, 'remtilde.cmd');
+      writeFileSync(주석, `@REM usage: remtilde.cmd %*\r\n:: also %* here\r\n@"${process.execPath}" "%~dp0echo.js" "%~1" "%~2"\r\n`, 'utf8');
+      const 모양3 = 띄울모양(주석, ['two words', 'a^b'], process.env, 폴더);
+      const r3 = spawnSync(모양3.파일, 모양3.인자, { ...모양3.옵션, cwd: 폴더, encoding: 'utf8', timeout: 10000, windowsHide: true });
+      let 받음3 = null;
+      try { 받음3 = JSON.parse(r3.stdout); } catch { /* 깨졌다 */ }
+      check('★ (윈도우) REM·:: 줄의 %* 는 넘기는 줄로 안 친다', JSON.stringify(받음3) === JSON.stringify(['two words', 'a^b']), `${JSON.stringify(받음3)} · ${r3.stderr}`);
+    }
+
+    /*
+     * ── 빈 PATHEXT 는 **안 적은 것과 같이** 본다 (8회차 · 뒷단) ───────────────
+     *
+     * `??` 는 빈 글을 안 막는다. `PATHEXT=` 로 비워 둔 판(또는 `;;` 만 든 판)에서는
+     * 확장자 목록이 통째로 비고, 그러면 붙여 보는 되풀이가 **한 번도 안 돌아** 무엇을
+     * 물어도 null 이었다 — `npx` 는 ENOENT 로 안 뜨고, `stubmcp.cmd` 처럼 확장자까지
+     * 적은 완전한 이름조차 못 찾아 **전체 경로 대신 이름만** cmd.exe 로 넘어간다.
+     * 그러면 이 파일 머리말이 막으려던 자리로 되돌아간다 — cmd.exe 는 PATH 보다
+     * 지금 폴더(남의 저장소일 수 있다)를 먼저 뒤진다.
+     *
+     * 언어 서버 쪽(lsp/servers.js 의 어디있나)이 같은 구멍을 같은 꼴로 이미 막았다.
+     */
+    {
+      // 빈칸·^ 없는 폴더로 잰다 — 전체 경로가 갔는지만 보는 검사라, cmd 감싸기의 ^ 가 섞이면 볼 것이 흐려진다.
+      const 맨폴더 = join(root, 'pathext');
+      mkdirSync(맨폴더, { recursive: true });
+      writeFileSync(join(맨폴더, 'stubmcp.cmd'), `@"${process.execPath}" "${서버파일}" %*\r\n`, 'utf8');
+      const 온전한가 = (명령, v) => {
+        const 모양 = 띄울모양(명령, ['normal'], { PATH: 맨폴더, PATHEXT: v }, root, 'win32');
+        // 기본 목록의 확장자는 대문자(.CMD)라 붙여 찾은 이름도 대문자로 온다 — 윈도우 파일 이름은 대소문자를 안 가린다.
+        return (모양.인자 ?? []).some((a) => a.toLowerCase().includes(join(맨폴더, 'stubmcp.cmd').toLowerCase()));
+      };
+      check('★★★ (윈도우) PATHEXT 가 비어 있어도 이름만 적은 .cmd 를 PATH 에서 찾는다',
+        온전한가('stubmcp', ''), JSON.stringify(띄울모양('stubmcp', [], { PATH: 맨폴더, PATHEXT: '' }, root, 'win32').인자 ?? []));
+      check('★★★ (윈도우) PATHEXT 가 비어 있어도 확장자까지 적은 이름을 전체 경로로 넘긴다',
+        온전한가('stubmcp.cmd', ''), JSON.stringify(띄울모양('stubmcp.cmd', [], { PATH: 맨폴더, PATHEXT: '' }, root, 'win32').인자 ?? []));
+      check('★★ (윈도우) ";;" 만 든 PATHEXT 도 안 적은 것과 같이 본다',
+        온전한가('stubmcp', ';;') && 온전한가('stubmcp.cmd', ';;'), '');
+    }
+  } else {
+    check('(윈도우 아님) .cmd 띄우기는 윈도우에서만 잽니다', true);
+  }
   모두닫기();
 }
 

@@ -79,11 +79,37 @@ export function scanCalls(root = repoRoot(), files = shippedFiles(root)) {
  * 소스에서 불러오는 모듈 이름만 뽑는다.
  *
  * 그냥 정규식으로 import 를 찾으면 화면 문구 안의 "외부 import" 같은 글자까지 잡힌다.
- * 실제로 그렇게 잡혀서 심사서에 없는 의존성이 적혔다. 그래서 두 가지를 함께 본다.
+ * 실제로 그렇게 잡혀서 심사서에 없는 의존성이 적혔다. 그래서 세 가지를 함께 본다.
  *   1) import / require 가 낱말로 서 있을 것
  *   2) 따온 값이 모듈 이름처럼 생겼을 것 (공백·괄호·${ 가 없다)
+ *   3) 그 자리가 **따옴표 밖**일 것
+ *
+ * 셋째가 없던 동안 앞의 둘은 `import 'foo'` 를 안내문에 적어 둔 줄을 못 걸렀다.
+ * 그 줄 하나로 심사서 1절에 없는 남의 코드가 한 줄 늘어난다 — 담당자가 그걸
+ * 찾아보면 아무 데도 없고, 그 순간 나머지 숫자도 다 못 믿을 것이 된다.
  */
 const MODULE_NAME = /^[@\w./:-]+$/;
+
+/**
+ * 줄 처음부터 이 자리까지 걸어와서, 지금 따옴표 **안**인가.
+ *
+ * 한 줄만 본다. 여러 줄 템플릿 안까지 따라가려면 소스를 통째로 읽는 자가
+ * 있어야 하는데, 여기서 막으려는 것은 화면에 찍는 안내문 한 줄이다.
+ * 진짜 import 문은 줄 앞머리에 열린 따옴표가 있을 수 없다.
+ */
+function 따옴표안인가(앞) {
+  let 열린 = null;
+  for (let i = 0; i < 앞.length; i += 1) {
+    const c = 앞[i];
+    if (열린) {
+      if (c === '\\') { i += 1; continue; }   // 이스케이프된 글자는 닫지 못한다
+      if (c === 열린) 열린 = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') 열린 = c;
+  }
+  return 열린 !== null;
+}
 
 export function importSpecs(text) {
   const out = [];
@@ -91,7 +117,10 @@ export function importSpecs(text) {
   const re = /(?:^|[\s;{(])(?:import[^'"()]*from\s*|import\s*\(\s*|import\s*|require\s*\(\s*)(['"])([^'"]+)\1/g;
   for (const m of text.matchAll(re)) {
     const spec = m[2];
-    if (MODULE_NAME.test(spec)) out.push(spec);
+    if (!MODULE_NAME.test(spec)) continue;
+    const 줄머리 = text.lastIndexOf('\n', m.index) + 1;
+    if (따옴표안인가(text.slice(줄머리, m.index))) continue;
+    out.push(spec);
   }
   return out;
 }
@@ -156,7 +185,8 @@ export function reviewSheet(a, at, { lang = 언어() } = {}) {
   L.push(a.lifecycle.length
     ? `   있음: ${a.lifecycle.join(', ')}   ← 심사 필요`
     : '   없음   ← preinstall / install / postinstall / prepare 전부 없습니다');
-  L.push('   압축을 풀고 `node bin/deel.js` 로 바로 씁니다. 설치 절차가 없습니다.');
+  // zip 안에서는 소스가 deel/ 아래에 담긴다(아래 packSelf). 읽어주세요.txt 와 같은 자리를 가리킨다 (6회차 S4).
+  L.push('   압축을 풀고 `node deel/bin/deel.js` 로 바로 씁니다. 설치 절차가 없습니다.');
   L.push('');
 
   L.push('3. 바깥으로 나가는 자리 (소스를 훑어 찾은 전부)');
@@ -202,10 +232,29 @@ export function reviewSheet(a, at, { lang = 언어() } = {}) {
   L.push('   (검증: npm test 안의 network / web / mcp 검사가 이를 확인합니다 — 항목 수는 그 출력에 있습니다)');
   L.push('');
 
+  /*
+   * 여기가 「이 묶음에는 스킬도 플러그인도 들어 있지 않습니다」 였다.
+   *
+   * 사실이 아니다. `src/skills/builtin/` 의 방법론 SKILL.md 는 그대로 실려 나가고,
+   * test/no-bundle.test.js 는 「내 방법론은 제대로 실린다」 고 못 박고 있다 —
+   * 두 자리가 반대 방향으로 초록이었다. 심사자가 zip 을 풀어 SKILL.md 를 찾아내면
+   * 이 종이의 나머지 숫자도 다 못 믿을 것이 된다. 세어서 적는다.
+   */
+  const 방법론 = (a.files ?? [])
+    .map((f) => /^src\/skills\/builtin\/([^/]+)\/SKILL\.md$/.exec(f.path)?.[1])
+    .filter(Boolean)
+    .sort();
   L.push('4. 스킬·플러그인');
   L.push(줄());
-  L.push('   이 묶음에는 스킬도 플러그인도 들어 있지 않습니다.');
-  L.push('   설치된 PC 의 ~/.claude, ~/.deel, 프로젝트 폴더를 읽어서 쓸 뿐입니다.');
+  if (방법론.length) {
+    L.push(`   deel 이 품고 가는 방법론 ${방법론.length}개가 들어 있습니다 (src/skills/builtin).`);
+    L.push(`   ${방법론.join(', ')}`);
+    L.push('   모델에게 읽히는 글일 뿐입니다 — 코드를 돌리지도, 바깥으로 나가지도 않습니다.');
+  } else {
+    L.push('   이 묶음에는 스킬이 들어 있지 않습니다.');
+  }
+  L.push('   남의 스킬·플러그인은 하나도 안 담았습니다. 설치된 PC 의 ~/.claude, ~/.deel,');
+  L.push('   프로젝트 폴더를 읽어서 쓸 뿐입니다.');
   L.push('   (검증: npm test 안의 no-bundle 검사가 이를 확인합니다)');
   L.push('');
 

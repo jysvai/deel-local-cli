@@ -14,32 +14,74 @@ import { homedir } from 'node:os';
 import { homeDir } from '../config.js';
 import { pluginsDir } from '../plugins/manage.js';
 // 저장소에 딸려 온 스킬·명령이 시스템 글에 실리지 않게 한다 (discover 안구절 머리말).
-import { 믿나 } from '../safety/trust.js';
+import { 믿나, BOM떼기 } from '../safety/trust.js';
 
 // 이 파일 옆의 builtin/ — 패키지에 같이 실려 나간다(package.json files: src).
 export const 내장자리 = join(dirname(fileURLToPath(import.meta.url)), 'builtin');
 
 // --- YAML 앞머리 읽기 (name, description 만 쓰므로 최소만 구현) -------------
-export function frontmatter(text) {
-  if (!text.startsWith('---')) return { data: {}, body: text };
-  const nl = text.indexOf('\n');
-  if (nl < 0) return { data: {}, body: text };
-  const end = text.indexOf('\n---', nl);
-  if (end < 0) return { data: {}, body: text };
+/*
+ * ── 금은 **한 줄 통째로** `---` 여야 한다 (2.0.0 4회차 사냥) ───────────────
+ *
+ * 스킬·슬래시 명령·.md 에이전트(agent/agents.js)가 이 함수 하나를 같이 쓴다. 넷이 걸렸다.
+ *
+ *   · 닫는 금을 `\n---` 로 찾았다 — `---extra` · `----` 줄도 금이 됐다.
+ *   · 여는 금만 있고 안 닫힌 파일은 본문 뒤쪽의 `---`(마크다운 가로줄)까지를 앞머리로
+ *     읽어, 본문의 `name: hijack` 줄이 이름을 **덮었다.**
+ *   · 닫는 금이 파일 끝(줄바꿈 없음)이면 본문이 앞머리를 포함한 파일 전체가 됐다.
+ *   · BOM 이 붙으면 `---` 로 시작하지 않는 파일이 되어 이름·설명이 통째로 빠졌다
+ *     (파워셸 5.1 로 저장한 SKILL.md — safety/trust.js 의 BOM떼기).
+ *
+ * 그래서 줄 단위로 걷는다. 금은 `---` 뒤에 빈칸·CR 만 봐준다. 금을 만나기 전에 YAML 에
+ * 설 수 없는 줄(산문)이 나오면 앞머리가 안 닫힌 것으로 치고 **앞머리 없음**으로 돌려준다 —
+ * 본문을 앞머리로 읽는 것보다 앞머리를 잃는 쪽이 덜 나쁘다(이름은 폴더 이름으로 간다).
+ * 앞머리가 몇 백 줄일 까닭은 없어서 찾는 줄 수에도 상한을 둔다. 같은 열쇠가 두 번 오면
+ * 첫 것을 둔다 — 뒤엣것은 대개 본문이 새어 들어온 것이다.
+ */
+export const 앞머리최대줄 = 200;
+const 금인가 = (줄) => /^---[ \t]*\r?$/.test(줄);
+// YAML 앞머리에 설 수 있는 줄 꼴 — 빈 줄 · 들여 쓴 줄 · 주석 · 목록 · `열쇠:` 줄.
+const 앞머리줄인가 = (줄) => {
+  const l = 줄.replace(/\r$/, '');
+  // 콜론 뒤에는 빈칸이나 줄 끝이 와야 열쇠다. YAML 에서 `foo:bar` 는 매핑이 아니라
+  // 글자 하나다 — 그걸 열쇠로 받아 주면 `메모:여기서부터 본문입니다` 같은 산문 한 줄에
+  // 앞머리가 본문 뒤 가로줄까지 늘어나고, 그 사이의 `description:` 이 앞머리로 실린다.
+  return !l.trim() || /^\s/.test(l) || l.startsWith('#') || /^-(\s|$)/.test(l) || /^[^\s#][^:]*:(\s|$)/.test(l);
+};
 
-  // CRLF 로 저장된 파일이 많다. \r 를 남겨 두면 정규식의 . 와 $ 가 그걸 줄 끝으로 보고
-  // 마지막 줄을 통째로 못 읽는다. 먼저 걷어낸다.
-  const head = text.slice(nl + 1, end).replace(/\r/g, '');
-  const body = text.slice(text.indexOf('\n', end + 1) + 1);
+export function frontmatter(text) {
+  const 글 = BOM떼기(text);
+  const 없음 = { data: {}, body: 글 };
+  const 첫끝 = 글.indexOf('\n');
+  if (첫끝 < 0 || !금인가(글.slice(0, 첫끝))) return 없음;
+  const 머리 = [];
+  let 시작 = 첫끝 + 1;
+  for (let n = 0; n < 앞머리최대줄 && 시작 <= 글.length; n++) {
+    const 끝 = 글.indexOf('\n', 시작);
+    const 줄 = 끝 < 0 ? 글.slice(시작) : 글.slice(시작, 끝);
+    if (금인가(줄)) return { data: 머리펴기(머리), body: 끝 < 0 ? '' : 글.slice(끝 + 1) };
+    if (!앞머리줄인가(줄)) return 없음;
+    // CRLF 로 저장된 파일이 많다. \r 를 남겨 두면 정규식의 . 와 $ 가 그걸 줄 끝으로 보고
+    // 마지막 줄을 통째로 못 읽는다. 먼저 걷어낸다.
+    머리.push(줄.replace(/\r/g, ''));
+    if (끝 < 0) break;
+    시작 = 끝 + 1;
+  }
+  return 없음;
+}
+
+function 머리펴기(줄들) {
   const data = {};
   let key = null;
-  for (const line of head.split('\n')) {
+  for (const line of 줄들) {
     if (/^\s/.test(line) && key) {          // 이어지는 줄 (여러 줄 값)
       data[key] = (data[key] ? data[key] + ' ' : '') + line.trim();
       continue;
     }
     const m = /^([A-Za-z0-9_-]+)\s*:\s*(.*)$/.exec(line);
     if (!m) { key = null; continue; }
+    // 같은 열쇠는 첫 것을 둔다(위 머리말). `__proto__` 는 받지 않는다 — 담는 그릇의 틀이 바뀐다.
+    if (Object.hasOwn(data, m[1]) || m[1] === '__proto__') { key = null; continue; }
     key = m[1];
     let v = m[2].trim();
     // YAML 블록 표기( > >- | |- )는 값이 다음 줄부터 온다는 뜻이다. 표시만 지우고 비워 둔다.
@@ -47,7 +89,7 @@ export function frontmatter(text) {
     else if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
     data[key] = v;
   }
-  return { data, body };
+  return data;
 }
 
 const dirs = (p) => {
@@ -111,7 +153,8 @@ function readPlugin(rootDir, skills, commands, caps) {
   const manifest = join(rootDir, '.claude-plugin', 'plugin.json');
   let info = null;
   if (existsSync(manifest)) {
-    try { info = JSON.parse(readFileSync(manifest, 'utf8')); } catch {}
+    // BOM 을 뗀다 — 떼지 않으면 이름이 폴더 이름으로 바뀌어 `/플러그인:스킬` 이 다른 이름이 됐다(2.0.0 3회차).
+    try { info = JSON.parse(BOM떼기(readFileSync(manifest, 'utf8'))); } catch {}
   }
   const ns = info?.name || basename(rootDir);
   let found = 0;
@@ -144,7 +187,7 @@ function findPluginRoots(base, depth = 4) {
 
 function manifestName(rootDir) {
   const f = join(rootDir, '.claude-plugin', 'plugin.json');
-  try { return JSON.parse(readFileSync(f, 'utf8')).name || basename(rootDir); }
+  try { return JSON.parse(BOM떼기(readFileSync(f, 'utf8'))).name || basename(rootDir); }
   catch { return basename(rootDir); }
 }
 
@@ -267,11 +310,49 @@ export function discover(root, opts = {}) {
     try { return readdirSync(p).length > 0; } catch (e) { return e?.code !== 'ENOENT'; }
   });
 
+  /*
+   * ── 다만 안 믿는 폴더의 명령은 **내 명령을 덮지 못한다** (2.0.0 4회차 사냥) ──
+   *
+   * 명령을 그냥 두는 까닭은 「사람이 `/이름` 을 직접 칠 때만 펴진다」 였다. 그런데 사람이
+   * `/review` 를 칠 때 떠올리는 것은 **제가 만든** review 다. 저장소에 같은 이름(대소문자만
+   * 달라도 — commands.js 는 대소문자를 안 가리고 찾는다)을 넣어 두면 dedupe 가 가까운 쪽을
+   * 이기게 해서, 사람은 제 명령을 친 줄 알고 남이 적은 본문을 모델에게 보냈다.
+   *
+   * 그래서 안 믿는 폴더에서는 이미 있는 이름(사용자·플러그인 것, 플러그인은 `:` 뒤 꼬리도)과
+   * 겹치는 저장소 명령을 **빼고**, 뺀 이름을 `안믿은명령` 으로 돌려준다. 안 겹치는 것은
+   * 여전히 그대로 된다 — 위 「명령은 왜 그냥 두나」 의 판단은 그대로다. 집에서 켰으면
+   * 프로젝트 자리가 곧 사용자 자리라 건너뛴다(같은 파일을 「못 덮었다」 고 말하게 된다).
+   */
+  const 안믿은명령 = [];
+  let 있던이름 = null;
+
   // 2) 사용자  3) 프로젝트
   for (const [base, source] of [[home, 'user'], [root, 'project']]) {
     for (const cfgDir of ['.deel', '.claude']) {
       if (source !== 'project' || 믿는가) {
         skillsIn(join(base, cfgDir, 'skills'), source, null, skills, caps.skills);
+      }
+      if (source === 'project' && !믿는가) {
+        if (같은자리(root, home)) continue;
+        있던이름 ??= new Set(commands.flatMap((x) => [x.name.toLowerCase(), x.name.split(':').pop().toLowerCase()]));
+        const 저장소것 = [];
+        commandsIn(join(base, cfgDir, 'commands'), source, null, 저장소것, caps.commands);
+        for (const x of 저장소것) {
+          // 겹침을 **먼저** 본다. 상한을 먼저 보면 상한에 닿는 순간 겹친 이름이
+          // 안믿은명령 에서 빠지고, 화면(repl.js)은 그 목록으로만 말하므로 사람은
+          // 제 명령이 가려졌다는 것도 모른 채 저장소 명령이 안 도는 것만 본다.
+          if (있던이름.has(x.name.toLowerCase())) { 안믿은명령.push(x.name); continue; }
+          /*
+           * 여기가 `break` 였다 (8회차 판정). 차례는 맞게 뒀는데 상한에 닿는
+           * 순간 고리를 통째로 나가서, **그 뒤의 저장소 명령은 겹침 검사를 아예
+           * 못 받았다.** 위 주석이 막으려던 바로 그 실패가 상한 뒤에서 그대로
+           * 일어난다 — 재 보니 상한 뒤에 있던 겹친 이름이 안믿은명령 에서 빠졌다.
+           * `continue` 면 더 넣지는 않으면서 겹침은 끝까지 센다.
+           */
+          if (commands.length >= caps.commands) continue;
+          commands.push(x);
+        }
+        continue;
       }
       commandsIn(join(base, cfgDir, 'commands'), source, null, commands, caps.commands);
     }
@@ -283,13 +364,22 @@ export function discover(root, opts = {}) {
     plugins,
     // 파일은 있는데 폴더를 안 믿어서 안 읽은 경우. 화면이 이걸 말해야 한다.
     안믿음: !믿는가 && 프로젝트것있음,
+    // 안 믿는 폴더의 명령 중 내 명령과 이름이 겹쳐 뺀 것. 화면이 이것도 말한다.
+    안믿은명령,
   };
 }
 
-// 같은 이름이면 나중 것(더 가까운 자리)이 이긴다.
+/*
+ * 같은 이름이면 나중 것(더 가까운 자리)이 이긴다.
+ *
+ * 대소문자만 다른 것도 **같은 이름**이다. 여태 x.name 그대로 열쇠를 삼아,
+ * `review`(집)와 `Review`(저장소)가 둘 다 살아남았다 — 겹침을 재는 바로 윗자리는
+ * 처음부터 toLowerCase() 였고, 윈도·맥에서는 파일 이름부터 같은 것이라 사람은
+ * 둘이 있는 줄도 모른다. 이름 글자는 나중 것의 것을 그대로 쓴다.
+ */
 function dedupe(list) {
   const m = new Map();
-  for (const x of list) m.set(x.name, x);
+  for (const x of list) m.set(x.name.toLowerCase(), x);
   return [...m.values()];
 }
 
@@ -311,9 +401,22 @@ export function loadCommand(cmd, args = '') {
   let text;
   try { text = readFileSync(cmd.path, 'utf8'); } catch (err) { return { error: err.message }; }
   const { body } = frontmatter(text);
+  /*
+   * **한 번에**, **함수로** 바꾼다 (2.0.0 4회차 사냥).
+   *
+   * 글자로 바꾸면 replace 가 준 말 안의 `$'` · `$&` · `` $` `` · `$$` 를 무늬로 풀었다 —
+   * `price is $'` 가 본문 뒤쪽을 통째로 끌어왔다. 그리고 두 번에 나눠 바꾸면 첫 번에 넣은
+   * 사람 말 안의 `$1` 을 둘째 번이 또 바꿨다. 자리 표시(`$1`·`$2`)는 Claude Code 명령 규격
+   * 그대로 두되, 채우는 값은 **사람이 준 말에서만** 온다.
+   *
+   * 자리는 `$1`…`$9` 뿐이다 (SK4 · 8회차). `\d` 로 받던 때는 `$0` 도 자리로 읽혀
+   * `조각[-1]` → 빈 글자가 되었다 — 명령 본문에 적어 둔 `basename $0` 의 `$0` 이
+   * 소리 없이 지워졌다. `$10` 은 열째 인자가 아니라 `$1` 뒤에 글자 `0` 이다.
+   * `\d+` 로 넓히지 않는 이유: `$1` 뒤에 숫자를 적어 둔 기존 명령이 조용히 뜻이 바뀐다.
+   */
+  const 인자 = String(args ?? '');
+  const 조각 = 인자.trim() ? 인자.trim().split(/\s+/) : [];
   return {
-    text: body
-      .replace(/\$ARGUMENTS/g, args)
-      .replace(/\$(\d)/g, (_, n) => args.split(/\s+/)[Number(n) - 1] ?? ''),
+    text: body.replace(/\$ARGUMENTS|\$([1-9])/g, (_, n) => (n === undefined ? 인자 : (조각[Number(n) - 1] ?? ''))),
   };
 }

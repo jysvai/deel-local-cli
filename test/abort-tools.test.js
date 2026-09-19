@@ -147,6 +147,47 @@ trace('2-멈춘뒤');
   rmSync(방, { recursive: true, force: true });
 }
 
+trace('2-2-멈춘뒤-MCP');
+
+// ── 2-2. 멈춘 뒤에는 **남의 서버**도 안 부른다 ─────────────────────────
+//
+// 우리 도구는 위에서 막힌다. 그런데 MCP 이름(`mcp__서버__도구`)은 그 관문
+// **앞에서** 갈라져 나가 곧장 서버로 갔다. 멈추라고 한 뒤에 바깥 프로세스로
+// 요청이 나가는 것이라, 우리 도구보다 더 나쁘다 — 남의 프로그램이 파일을
+// 쓰거나 바깥으로 글을 보내면 되돌릴 길이 없다.
+//
+// 재는 것은 「서버가 불렸나」 하나다. 말만 「중단했습니다」 로 바뀌고 요청은
+// 그대로 나가면 고친 것이 아니다.
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-abort2m-'));
+
+  let 불렸나 = false;
+  const 가짜서버 = {
+    이름: '가짜',
+    쓸수있나: () => true,
+    부르기: async () => { 불렸나 = true; return { text: '서버가 답했다\n' }; },
+  };
+
+  const ac = new AbortController();
+  ac.abort();
+  const ctx = 판(방, { signal: ac.signal, mcp: [가짜서버] });
+
+  const r = await runTool('mcp__가짜__아무거나', { q: 'x' }, ctx);
+  check('★ 멈춘 뒤에는 MCP 서버를 부르지 않는다', 불렸나 === false,
+    불렸나 ? '중단했는데 바깥 서버로 요청이 나갔다' : '');
+  check('★ MCP 도 우리 도구와 같은 말로 막는다',
+    /중단했습니다\. 실행하지 않았습니다\./.test(String(r.error ?? '')), JSON.stringify(r));
+  check('MCP 중단도 끝난 것으로 표시한다', r.끝났다 === true && r.중단됨 === true,
+    `끝났다=${r.끝났다} 중단됨=${r.중단됨}`);
+
+  // 안 멈췄으면 그대로 불려야 한다. 막느라 되는 것까지 막으면 안 된다.
+  const 성한것 = await runTool('mcp__가짜__아무거나', { q: 'x' }, 판(방, { mcp: [가짜서버] }));
+  check('안 멈췄으면 MCP 는 그대로 돈다', 불렸나 === true && /서버가 답했다/.test(성한것.content ?? ''),
+    JSON.stringify(성한것).slice(0, 80));
+
+  rmSync(방, { recursive: true, force: true });
+}
+
 trace('3-도는중');
 
 // ── 3. 도는 중에 멈추면 결과를 안 쓴다 ─────────────────────────────────
@@ -244,6 +285,30 @@ trace('4-2-훑는-도중에');
   rmSync(방, { recursive: true, force: true });
 }
 
+trace('4-3-걸러지는것만');
+
+// ── 4-3. 걸러지는 것만 가득해도 숨을 쉰다 ───────────────────────────────
+//
+// walk() 는 「본 것을 다 센다 — 걸러낸 것도 값을 이미 치렀다」 라고 적어 두고, 정작
+// .gitignore·살림으로 거른 항목은 세기 **앞에서** continue 로 빠져나갔다. 그래서
+// 로그·빌드 찌꺼기가 수만 개 쌓인 폴더에서는 한 번도 숨을 안 쉬고 끝까지 돌았다 —
+// 그동안 누른 ESC 는 그 폴더를 다 돈 뒤에야 들린다.
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-abort43-'));
+  writeFileSync(join(방, '.gitignore'), '*.log\n');
+  const d = join(방, 'logs');
+  mkdirSync(d);
+  for (let j = 0; j < 1500; j++) writeFileSync(join(d, `f${j}.log`), '');
+
+  const ac = new AbortController();
+  setImmediate(() => ac.abort());
+  const 끊긴것 = await walk(방, { signal: ac.signal });
+  check('★ 걸러지는 것만 가득한 폴더에서도 훑는 도중에 누른 것이 들린다', 끊긴것.끊김 === true,
+    `끊김=${끊긴것.끊김} · 건너뜀 ${JSON.stringify(끊긴것.건너뜀)}`);
+
+  rmSync(방, { recursive: true, force: true });
+}
+
 trace('5-비동기');
 
 // ── 5. 오래 걸리는 도구가 귀를 막지 않는다 ─────────────────────────────
@@ -277,6 +342,48 @@ trace('5-비동기');
     `${막힌시간}ms 동안 귀가 막혔다 · 세 번 잼 ${잰것들.join('·')} (Bash 는 원래 비동기다 — 기준선)`);
 
   rmSync(방, { recursive: true, force: true });
+}
+
+trace('5-2-끊긴-명령이-뱉은-말');
+
+/*
+ * ── 5-2. 끊을 때 **파이프를 먼저 끊지 않는다** ──────────────────────────
+ *
+ * ESC 갈래의 죽이기() 가 기본값(파이프끊기: true)을 그대로 쓰고 있었다. 파이프를
+ * 끊으면 아직 안 읽힌 것이 통째로 사라진다 — 하필 그게 제일 중요한 몇 줄이다.
+ * 서버가 뻗으며 남긴 스택 트레이스가 거기 있다.
+ *
+ * 그래 놓고 바로 아래에서 400ms 짜리 그물을 두고 **그 몇 줄을 기다린다.** 기다릴
+ * 것을 스스로 버리고 기다리는 꼴이라, 코드가 제 주석과 어긋나 있었다. 시간 초과
+ * 갈래(아래 뒷북)는 같은 자리에서 이미 `파이프끊기: false` 를 쓴다 — 같은 판단이
+ * 두 벌로 있으면 늘 한쪽만 고쳐진다는 이야기가 이 함수 안에서 또 난 자리다.
+ *
+ * ── 왜 시계로 안 재고 **글자로** 못 박나 ────────────────────────────────
+ *
+ * 재 봤다. 윈도우에서 이 자리는 시계로 가를 수가 없다 —
+ *
+ *   · 셸 하나 뜨는 데 1초 가까이 든다. 그 전에 끊으면 명령이 한 글자도 안 찍는다.
+ *   · 끊는 손(taskkill /T)은 **동기**라 수백 ms 를 붙든다. 그동안 콜백이 못 온다.
+ *   · 그래서 400ms 그물이 콜백보다 먼저 울기도, 늦게 울기도 한다.
+ *     여덟 번 돌려 보니 고치기 전 6/8 · 고친 뒤 4/8 — 고침이 아니라 **그날의
+ *     부하**를 재고 있었다.
+ *
+ * 이런 검사는 느린 날 애먼 빨간불을 켜고, 그러면 사람이 검사를 지운다. 그래서
+ * 여기서는 아래 「모르는 도구 이름」 단이 하는 것과 같이 **글자로** 못 박는다 —
+ * 되돌리는 사람을 막는 것이 목적이다. (파이프를 끊으면 안 읽힌 것이 사라지는 것은
+ * 스트림의 성질이지 이 판의 성질이 아니다 — 잴 것은 그 판단을 쓰는가 하나다.)
+ */
+{
+  const 소스 = readFileSync(new URL('../src/tools/index.js', import.meta.url), 'utf8');
+  const 죽이는말 = [...소스.matchAll(/죽이기\(\{([^}]*)\}\)/g)].map((m) => m[1].trim());
+  check('★ 죽이기를 부르는 자리를 찾았다 (아래 검사의 전제)', 죽이는말.length >= 3,
+    `${죽이는말.length}군데`);
+  check('★★ 끊는 자리도 파이프를 안 끊는다 (죽기 직전에 뱉은 줄을 받으려고)',
+    죽이는말.every((글) => /파이프끊기:\s*false/.test(글)),
+    죽이는말.filter((글) => !/파이프끊기:\s*false/.test(글)).join(' | ') || '(다 false)');
+  // 기본값은 그대로 둔다 — 파이프를 끊는 길 자체를 없애면 다른 부르개가 쓸 수 없다.
+  check('  기본값은 여전히 끊는 쪽이다', /파이프끊기 = true/.test(소스),
+    (소스.match(/파이프끊기 = \w+/) ?? [''])[0]);
 }
 
 trace('6-찾기');
@@ -438,6 +545,81 @@ trace('7-끊겨도-바꾼-것은-말한다');
   const 실패한것 = await runTool('Edit',
     { file_path: 파일('e.js'), old_string: '없는 글', new_string: 'x' }, 끊긴ctx());
   check('바꾸다 실패한 것은 중단으로 끝난다', !!실패한것.error, (실패한것.error ?? '').slice(0, 50));
+
+  /*
+   * ── (5) 바꿔 놓은 것이 없어도 **여태 나온 말은 버리지 않는다** ──────────
+   *
+   * 위 (3)·(4)는 「바꿔 놓은 것이 없으면 중단으로 끝낸다」 를 잰다. 그 갈래가
+   * `{ error: '중단했습니다.' }` 한 줄을 **새로 지어서** 돌려주느라, 도구가
+   * 실어 보낸 `content` 를 통째로 버리고 있었다.
+   *
+   * 여덟 개를 서로 다른 까닭으로 다 실패한 Write 가 그 자리다. 결과에는 줄별
+   * 사유가 여덟 줄 다 적혀 있는데, 그 순간 ESC 가 눌리면 모델은 「중단했습니다」
+   * 한 줄만 받는다. 무엇이 왜 안 됐는지가 한 글자도 안 남으니, 다음 걸음에서
+   * 여덟 개를 그대로 다시 보낸다 — 줄별로 적어 주기로 한 뜻이 사라진다.
+   *
+   * 여기는 시계가 안 든다. 끊긴ctx 는 「다 하고 난 뒤에 눌린 것」 을 그대로 만든다.
+   */
+  const 다실패 = await runTool('Write', {
+    files: [
+      { file_path: '', content: '경로가 없다' },
+      { file_path: 파일('로고.png'), content: '그림은 글로 못 만든다' },
+    ],
+  }, 끊긴ctx());
+  check('★★ 끊겨도 줄별 사유를 버리지 않는다',
+    /file_path 가 없습니다/.test(다실패.content ?? ''),
+    JSON.stringify({ error: 다실패.error ?? null, content: (다실패.content ?? '').slice(0, 60) }));
+  check('  두 줄 다 남는다', (다실패.content ?? '').split('✗').length - 1 === 2,
+    JSON.stringify(다실패.content ?? ''));
+  check('  그래도 중단이라고 말한다', /중단/.test(다실패.error ?? '') && 다실패.중단됨 === true,
+    JSON.stringify({ error: 다실패.error ?? null, 중단됨: 다실패.중단됨 ?? null }));
+  // 멀쩡히 끝난 읽기는 여태처럼 버린다 — (3)이 그 짝이다. 아무 글이나 실어 보내면
+  // 모델이 「중단됐는데 답은 다 받았다」 로 읽는다.
+  check('  짝: 탈 없이 끝난 읽기는 여전히 글을 안 싣는다', !읽은것.content,
+    JSON.stringify((읽은것.content ?? '').slice(0, 40)));
+
+  /*
+   * ── (6) 끊긴 Bash 가 **죽기 직전에 뱉은 줄** ────────────────────────────
+   *
+   * 이게 (5)의 진짜 판이다. `rm -r dist && npm run build` 를 돌리다 ESC 를
+   * 누르면, 그때까지 찍힌 몇 줄이 어디까지 돌았는지를 말해 주는 유일한 자국이다.
+   * 아래층(tools/spawn.js)이 close 를 못 받는 판에서도 그 글을 살려 올려 보내게
+   * 고쳐 놨는데, 이 관문이 그걸 다시 버리고 있었다.
+   * 잰 것: 같은 판을 TOOLS.Bash.run 으로 부르면 글이 오고 runTool 로 부르면 len=0.
+   *
+   * 시계로 경주하지 않는다. **시한**으로 끊긴 결과도 모양이 똑같고(error + content,
+   * 되돌릴것 없음), 신호는 「Bash 가 ESC 를 듣겠다고 귀를 단 바로 그 순간에
+   * 눌린 것」 으로 만든다 — 그러면 명령은 끝까지 돌고 관문만 끊긴 것을 본다.
+   */
+  const 떠드는것 = join(방, 'talker.cjs');
+  writeFileSync(떠드는것, [
+    "process.stdout.write('FIRST-LINE\\n');",
+    'setInterval(() => {}, 1000);',
+  ].join('\n'), 'utf8');
+  const 명령 = { command: `"${process.execPath}" "${떠드는것}"`, timeout: 1000 };
+
+  const 안끊고 = await runTool('Bash', 명령, 성한ctx());
+  check('준비: 시한까지 돈 명령은 그때까지 찍은 것을 싣는다',
+    /FIRST-LINE/.test(안끊고.content ?? ''),
+    JSON.stringify({ error: 안끊고.error ?? null, len: (안끊고.content ?? '').length }));
+
+  const 귀단뒤ctx = () => {
+    let 귀달았나 = false;
+    return 판(방, {
+      seen: 본것,
+      signal: {
+        get aborted() { return 귀달았나; },
+        addEventListener() { 귀달았나 = true; },
+        removeEventListener() {},
+      },
+    });
+  };
+  const 끊고 = await runTool('Bash', 명령, 귀단뒤ctx());
+  check('★★ 끊긴 명령이 죽기 직전에 뱉은 줄을 버리지 않는다',
+    /FIRST-LINE/.test(끊고.content ?? ''),
+    JSON.stringify({ error: 끊고.error ?? null, len: (끊고.content ?? '').length }));
+  check('  그래도 중단이라고 말한다', /중단/.test(끊고.error ?? '') && 끊고.중단됨 === true,
+    JSON.stringify({ error: 끊고.error ?? null, 중단됨: 끊고.중단됨 ?? null }));
 }
 
 trace('8-남을-기다리는-자리');
@@ -578,7 +760,8 @@ trace('9-모델이-지어낸-도구-이름');
   const loop소스 = readFileSync(new URL('../src/agent/loop.js', import.meta.url), 'utf8');
   const repl소스 = readFileSync(new URL('../src/repl.js', import.meta.url), 'utf8');
   check('★ loop 의 모르는 도구 관문도 hasOwn 으로 본다',
-    /if \(!Object\.hasOwn\(TOOLS, call\.name\)\)/.test(loop소스),
+    // MCP 이름은 이 표에 없어 뒤에 MCP 갈래가 붙는다(2.0.0 — mcploop.test.js). 대괄호로 안 여는 것만 본다.
+    /if \(!Object\.hasOwn\(TOOLS, call\.name\)/.test(loop소스) && !/!TOOLS\[call\.name\]/.test(loop소스),
     loop소스.split('\n').find((l) => /TOOLS\[call\.name\]|hasOwn\(TOOLS/.test(l))?.trim() ?? '못 찾음');
   check('★ 도구 줄 글자도 hasOwn 으로 고른다',
     /Object\.hasOwn\(TOOL_GLYPH, name\)/.test(repl소스),

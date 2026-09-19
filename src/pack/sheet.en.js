@@ -62,7 +62,7 @@ export function reviewSheetEn(a, at, probes) {
   L.push(a.lifecycle.length
     ? `   Present: ${a.lifecycle.join(', ')}   <- needs review`
     : '   None   <- no preinstall / install / postinstall / prepare');
-  L.push('   Unzip and run `node bin/deel.js`. There is no install step.');
+  L.push('   Unzip and run `node deel/bin/deel.js`. There is no install step.');
   L.push('');
 
   L.push('3. Every outbound call site (found by scanning the source)');
@@ -109,10 +109,23 @@ export function reviewSheetEn(a, at, probes) {
   L.push('   (Verified by the network / web / mcp checks in npm test; the count is in that output.)');
   L.push('');
 
+  // 한국어 쪽(selfpack.js 의 4절)과 같은 사실을 적는다 — 「스킬이 하나도 없다」 는
+  // 거짓이었다. src/skills/builtin 의 방법론은 실제로 실려 나간다.
+  const builtins = (a.files ?? [])
+    .map((f) => /^src\/skills\/builtin\/([^/]+)\/SKILL\.md$/.exec(f.path)?.[1])
+    .filter(Boolean)
+    .sort();
   L.push('4. Skills and plugins');
   L.push(rule());
-  L.push('   This package contains no skills and no plugins.');
-  L.push('   It only reads ~/.claude, ~/.deel and the project folder on the machine it runs on.');
+  if (builtins.length) {
+    L.push(`   It ships ${builtins.length} built-in methodology skills (src/skills/builtin).`);
+    L.push(`   ${builtins.join(', ')}`);
+    L.push('   They are prose the model reads - they run no code and reach no network.');
+  } else {
+    L.push('   This package contains no skills.');
+  }
+  L.push('   It bundles no other people\'s skills or plugins: it only reads ~/.claude, ~/.deel');
+  L.push('   and the project folder on the machine it runs on.');
   L.push('   (Verified by the no-bundle check in npm test.)');
   L.push('');
 
@@ -223,6 +236,14 @@ export function egressEn(자리, a) {
         what: 'Nothing',
         control: 'Blocked entirely under --offline.',
         source: 자리('net'),
+      },
+      {
+        lane: 'MCP servers',
+        when: 'Only servers you listed in .deel/mcp.json, when a chat starts',
+        where: 'Decided by that server program - a separate child process, so it does not pass our allow-list',
+        what: 'The arguments the model passed to that server\'s tools',
+        control: 'Off by default. Under --offline the servers are not started at all.',
+        source: 자리('exec'),
       },
     ],
     listeningPorts: {

@@ -36,15 +36,16 @@
  *   경로를 넘기면 그 자리에서 뭉개진다 — 이 프로젝트가 여기저기서 겪은
  *   그 문제다. 파일 이름만 영문으로 두고, 안에 적는 말은 한국어로 둔다.
  */
-import { mkdtempSync, rmSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, statSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
-import { TOOLS } from '../src/tools/index.js';
+import { TOOLS, bash제한시간 } from '../src/tools/index.js';
+import { decode as 풀기, consoleCodepage } from '../src/tools/encoding.js';
 import {
-  띄우기, 목록, 하나, 읽기, 끝내기, 모두끝내기, 비우기, 셸명령, 띄우기옵션, 최대일감, 나무끊기, 잘렸나, JOBS_TOOL,
+  띄우기, 목록, 하나, 읽기, 끝내기, 모두끝내기, 비우기, 셸명령, 띄우기옵션, 최대일감, 나무끊기, 잘렸나, JOBS_TOOL, 일감인자, 무리살아있나, 나무죽이기,
 } from '../src/tools/jobs.js';
 import { 정한셸 } from '../src/tools/shell.js';
 import { trace } from './trace.mjs';
@@ -529,6 +530,86 @@ trace('5-1-모르는인자');
   비우기();
 }
 
+trace('5-1b-참거짓을글자로보낸다');
+
+/*
+ * ── `stop: "false"` ─────────────────────────────────────────────────────
+ *
+ * 규격에는 boolean 이라고 적어 뒀지만, 여기 오는 것은 모델이 지어낸 JSON 이다.
+ * 작은 로컬 모델은 참·거짓을 **글자로** 보낸다 — `"false"` · `"no"` · `"0"`.
+ * `!!'false'` 는 참이라, **끄지 말라고 적어 보낸 부름이 도는 서버를 껐다.**
+ * 바로 위 5-1 이 없애겠다고 적어 둔 「시킨 적 없는 일을 조용히 하는」 고장이
+ * 이름이 아니라 **값** 쪽에 그대로 남아 있던 자리다.
+ */
+{
+  const r = await 띄우기(부르기(조용한아이), { cwd: 방, 기다림: 0 });
+  check('계속 도는 아이가 떴다', 하나(r.번호)?.상태 === '도는중', String(하나(r.번호)?.상태));
+
+  const 글자거짓 = await JOBS_TOOL.run({ job: r.번호, stop: 'false' });
+  check('★★★ stop:"false" 로는 안 끈다', 하나(r.번호)?.상태 === '도는중', String(하나(r.번호)?.상태));
+  check('★ 그래도 읽기는 해 준다', !글자거짓.error && /도는중/.test(글자거짓.content ?? ''),
+    (글자거짓.content ?? 글자거짓.error ?? '').slice(0, 120));
+
+  const 글자0 = await JOBS_TOOL.run({ job: r.번호, stop: '0' });
+  check('★★ stop:"0" 으로도 안 끈다', 하나(r.번호)?.상태 === '도는중', String(하나(r.번호)?.상태));
+
+  // 못 알아들은 값으로도 끄지 않는다. 대신 무엇을 받았는지 적는다 —
+  // 뜻이 거기 있었으면 다음 걸음에서 고쳐 부르라고.
+  const 모름 = await JOBS_TOOL.run({ job: r.번호, stop: '아마도' });
+  check('★★★ 모르는 값으로는 안 끈다', 하나(r.번호)?.상태 === '도는중', String(하나(r.번호)?.상태));
+  check('★★ 무엇을 받았는지 적는다', /아마도/.test(모름.content ?? 모름.error ?? ''),
+    (모름.content ?? 모름.error ?? '').slice(0, 160));
+  check('★★ 끄려던 것이면 어떻게 부르는지 알려 준다', /stop: true/.test(모름.content ?? 모름.error ?? ''),
+    (모름.content ?? 모름.error ?? '').slice(0, 160));
+
+  // 참인 글자는 그대로 참이다 — 느슨하게 받는 쪽이 이 도구의 약속이다.
+  const 글자참 = await JOBS_TOOL.run({ job: r.번호, stop: 'true' });
+  check('★★ stop:"true" 는 끈다', await 될때까지(() => 하나(r.번호)?.상태 !== '도는중'),
+    String(하나(r.번호)?.상태) + ' · ' + (글자참.content ?? 글자참.error ?? '').slice(0, 80));
+
+  비우기();
+}
+
+// 값 읽기 자체도 따로 못 박는다 — 위 판은 끄기 하나만 재고, 여기서 꼴을 다 본다.
+{
+  const 참으로 = ['true', 'TRUE', ' yes ', 'y', '1', 'on', '참', true, 1];
+  const 거짓으로 = ['false', 'FALSE', 'no', 'n', '0', 'off', '거짓', '아니오', false, 0, null, undefined, ''];
+  check('★★ 참으로 읽는 꼴', 참으로.every((v) => 일감인자({ job: 1, stop: v }).끝내기 === true),
+    JSON.stringify(참으로.filter((v) => 일감인자({ job: 1, stop: v }).끝내기 !== true)));
+  check('★★ 거짓으로 읽는 꼴', 거짓으로.every((v) => 일감인자({ job: 1, stop: v }).끝내기 === false),
+    JSON.stringify(거짓으로.filter((v) => 일감인자({ job: 1, stop: v }).끝내기 !== false)));
+  check('★★ 모르는 값은 거짓으로 두고 못 읽었다고 적는다',
+    일감인자({ job: 1, stop: '아마도' }).끝내기 === false
+    && (일감인자({ job: 1, stop: '아마도' }).못읽은값 ?? []).some(([칸, 값]) => 칸 === 'stop' && 값 === '아마도'),
+    JSON.stringify(일감인자({ job: 1, stop: '아마도' })));
+  check('★ 처음부터 도 같은 자로 읽는다',
+    일감인자({ job: 1, from_start: 'false' }).처음부터 === false
+    && 일감인자({ job: 1, from_start: 'true' }).처음부터 === true,
+    JSON.stringify([일감인자({ job: 1, from_start: 'false' }), 일감인자({ job: 1, from_start: 'true' })]));
+  // 아는 값만 주면 못읽은값 은 비어 있어야 한다 — 비었을 때 군말이 붙으면 그게 거짓 경고다.
+  check('★ 아는 값에는 군말이 없다', (일감인자({ job: 1, stop: true }).못읽은값 ?? []).length === 0,
+    JSON.stringify(일감인자({ job: 1, stop: true }).못읽은값 ?? null));
+
+  /*
+   * ★★★ 번호 칸만 이 자를 안 거쳤다 (막판 훑기).
+   *
+   * 바로 위 참거짓() 머리말은 「작은 로컬 모델은 값을 글자·엉뚱한 꼴로 보낸다 … 모르는
+   * 값으로 끄는 쪽이 훨씬 나쁘다 — 끈 것은 못 되돌린다」 고 적어 두고 stop·from_start 를
+   * 막았는데, 번호는 날 `Number()` 였다. 자바스크립트가 `true` 를 1 로, `[]` 를 0 으로
+   * 조용히 바꿔서 `Jobs({job:true, stop:true})` 가 **1번 일감을 끈다** — 모델이 가리킨
+   * 적도 없는 서버를. 숫자도 글자도 아닌 것은 숫자로 안 읽고 아래 「번호는 숫자여야
+   * 합니다」 갈래로 보낸다.
+   */
+  for (const 값 of [true, false, [], {}, [3]]) {
+    check(`★★★ 숫자가 아닌 job 은 일감 번호가 되지 않는다 — ${JSON.stringify(값)}`,
+      !Number.isFinite(일감인자({ job: 값 }).번호), String(일감인자({ job: 값 }).번호));
+  }
+  check('  (짝) 숫자와 숫자 글자는 그대로 읽는다',
+    일감인자({ job: 2 }).번호 === 2 && 일감인자({ job: '3' }).번호 === 3
+    && 일감인자({}).번호 === null,
+    JSON.stringify([일감인자({ job: 2 }).번호, 일감인자({ job: '3' }).번호, 일감인자({}).번호]));
+}
+
 trace('5-2-죽는말');
 
 // ── 5-2. 죽는 순간 뱉은 말이 사라지지 않는가 ───────────────────────────
@@ -819,6 +900,22 @@ trace('8-Bash와붙였을때');
   check('범위 밖 경로도 background 로 못 나간다', /막힘/.test(막힘2.error ?? ''), 막힘2.error ?? '');
   check('그것도 일감이 안 생긴다', 목록().length === 0, `${목록().length}개`);
 
+  /*
+   * 6회차 Gemini 도구6c C2 · 뒤로 띄운 명령이 **뜨자마자 죽으면** 결과에 되돌릴것 이 없었다.
+   * 스냅샷은 명령 전에 이미 History 에 들어가 /undo 는 되는데, 화면·모델은 「떠 뒀다」 를 모른다 —
+   * `rm keep.txt && npm run dev` 가 곧장 죽으면 파일은 이미 없다. 끊김·시간 초과 갈래는 싣는다.
+   */
+  {
+    const { writeFileSync: 쓰기 } = await import('node:fs');
+    쓰기(join(방, 'quit3.cjs'), 'process.exit(3)');
+    쓰기(join(방, 'keep6.txt'), 'data');
+    const 곧죽음 = await TOOLS.Bash.run({ command: 'rm keep6.txt && node quit3.cjs', background: true }, ctx);
+    check('★ 뜨자마자 죽어도 떠 둔 것은 결과에 싣는다 (6회차 도구6c C2)',
+      곧죽음.failed === true && Array.isArray(곧죽음.되돌릴것) && 곧죽음.되돌릴것.length >= 1 && !existsSync(join(방, 'keep6.txt')),
+      JSON.stringify({ error: 곧죽음.error?.slice(0, 30), 되돌릴것: 곧죽음.되돌릴것 ?? null }).slice(0, 140));
+    check('  죽었다는 말은 그대로다', /띄우자마자 끝났습니다/.test(곧죽음.error ?? ''), 곧죽음.error ?? '');
+  }
+
   비우기();
 }
 
@@ -953,22 +1050,153 @@ trace('10-셸명령');
   check('입력은 안 물려 준다', o.stdio?.[0] === 'ignore', JSON.stringify(o.stdio));
 }
 
-trace('11-치움');
-모두끝내기();
-/*
- * 치우기 전에 아이들이 실제로 죽기를 기다린다.
- *
- * 윈도우는 **도는 프로세스의 작업 폴더**를 못 지운다. 여기 아이들은 cwd 가
- * 이 폴더라, 죽이라고 말한 그 순간에 지우면 EPERM 이 난다. 죽이라고 말하는
- * 것과 죽는 것 사이에 틈이 있다 — taskkill 이 나무를 훑는 그 틈이다.
- *
- * 못 치워도 검사를 실패로 만들지는 않는다. 남는 것은 임시 폴더 하나뿐이고,
- * 그것 때문에 빨간불이 켜지면 진짜 실패가 묻힌다.
- */
-for (let i = 0; i < 6; i++) {
-  await 쉬기(300);
-  try { rmSync(방, { recursive: true, force: true }); break; } catch { /* 아직 물고 있다 */ }
+trace('10b-사냥5');
+
+// ── 10b. 셸이 끝났는데 파이프가 남은 판 · 넘침 · 입력 · 제한 시간 · 인코딩 (사냥5) ──
+{
+  const ctx = { scope: makeScope(방), history: new History(방), audit: new Audit(방), seen: new Set() };
+  ctx.history.nextTurn();
+  const 살았나 = (pid) => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
+  const 번호읽기 = (이름) => (existsSync(join(방, 이름)) ? Number(readFileSync(join(방, 이름), 'utf8')) : null);
+
+  /*
+   * (M1) Bash 가 자식의 stdin 을 **열린 파이프**로 줬다. 그래서 입력을 끝까지 읽는 명령
+   * (`cat` · `sort` · 입력을 기다리는 스크립트)이 아무것도 안 오는 파이프 앞에서 시간 초과까지
+   * 섰다. Jobs 는 처음부터 'ignore' 였다(jobs.js 띄우기옵션).
+   */
+  {
+    const t0 = Date.now();
+    const r = await TOOLS.Bash.run({
+      command: `node -e "process.stdin.resume();process.stdin.on('end',()=>console.log('GOT-EOF'))"`, timeout: 15000,
+    }, ctx);
+    check('★ 입력을 끝까지 읽는 명령이 시간 초과까지 안 선다 (stdin 을 안 열어 둔다)',
+      /GOT-EOF/.test(r.content ?? '') && !r.error && Date.now() - t0 < 10000, `${Date.now() - t0}ms · ${r.error ?? ''}`);
+  }
+
+  /*
+   * (M8) timeout 을 그대로 setTimeout 에 넣었다. 60(초로 알고 보낸 값)이면 60ms 에 죽고,
+   * 1e10 은 32비트를 넘어 1ms 로, "abc" 는 NaN 이라 1ms 로 바뀌며 Node 경고까지 났다.
+   */
+  {
+    check('제한 시간: 없거나 숫자가 아니거나 0 이하면 기본값',
+      [undefined, null, 0, -1, 'abc', NaN, Infinity].every((x) => bash제한시간(x) === 120000),
+      [undefined, null, 0, -1, 'abc', NaN, Infinity].map((x) => bash제한시간(x)).join(' '));
+    check('★ 제한 시간: 1초 밑으로는 안 내려간다', bash제한시간(60) === 1000 && bash제한시간(700) === 1000, `${bash제한시간(60)}`);
+    check('★ 제한 시간: 너무 크면 상한(10분)에서 멈춘다', bash제한시간(1e10) === 600000, `${bash제한시간(1e10)}`);
+    check('제한 시간: 글자로 온 숫자는 숫자로 읽는다', bash제한시간('5000') === 5000 && bash제한시간(120000) === 120000);
+    const 경고들 = [];
+    const 경고잡이 = (w) => 경고들.push(w.name);
+    process.on('warning', 경고잡이);
+    for (const timeout of [1e10, 'abc']) {
+      const r = await TOOLS.Bash.run({ command: `node -e "console.log('finished')"`, timeout }, ctx);
+      check(`★ timeout ${JSON.stringify(timeout)} 이어도 곧바로 안 죽인다`, /finished/.test(r.content ?? '') && !r.error, r.error ?? '');
+    }
+    await 쉬기(50);
+    process.off('warning', 경고잡이);
+    check('★ 제한 시간 때문에 Node 경고(TimeoutOverflow·TimeoutNaN)가 안 난다', !경고들.some((n) => /Timeout/.test(n)), 경고들.join(' '));
+  }
+
+  /*
+   * (M3) 출력이 8MB 를 넘으면 `kid.kill()` 만 했다 — 셸만 죽고 쏟는 손자는 살아 파이프를 문다.
+   * 그래서 넘친 즉시가 아니라 **시간 초과에** 돌아왔고, 말도 「시간 초과」 였다.
+   */
+  {
+    // 파이프가 끊겨도 안 죽는 손자다. 끊긴 파이프에 저절로 죽는 손자면 셸만 죽여도 멈춰 보여서,
+    // 나무째 끊는지를 못 잰다 (6회차 어긋내기).
+    스크립트('flood.cjs', "require('fs').writeFileSync(process.argv[2], String(process.pid)); process.stdout.on('error', () => {}); setInterval(() => {}, 1000); const b = Buffer.alloc(65536, 97); (function w() { while (process.stdout.write(b)); process.stdout.once('drain', w); })();\n");
+    const t0 = Date.now();
+    const r = await TOOLS.Bash.run({ command: 'cd . && node flood.cjs flood.pid', timeout: 20000 }, ctx);
+    const 걸림 = Date.now() - t0;
+    const 쏟개 = 번호읽기('flood.pid');
+    check('★ 출력이 넘치면 시간 초과까지 안 기다린다', 걸림 < 12000, `${걸림}ms`);
+    check('★ 넘쳤다고 말한다 — 시간 초과라고 하지 않는다',
+      /MB 를 넘어/.test(r.content ?? '') && !/시간 초과/.test(`${r.error ?? ''}${r.content ?? ''}`),
+      r.error ?? String(r.content ?? '').slice(-100));
+    const 멈춤 = await 될때까지(() => !살았나(쏟개), 6000);
+    check('★ 쏟던 손자도 진짜 멈춘다', 멈춤, String(쏟개));
+    if (살았나(쏟개)) { try { process.kill(쏟개); } catch { /* 이미 */ } }
+  }
+
+  /*
+   * (M2) 셸은 끝났는데 뒤로 띄운 손자가 stdout 을 물고 있으면 'close' 가 안 온다. Bash 는
+   * 그걸 기다리다 시간 초과로 돌아왔고, Jobs 는 끝내라고 하면 셸이 이미 없어 나무를 못 찾고도
+   * 「끝냈습니다」 라고 했다. `&` 가 뒤로 띄우기인 셸(bash·sh)에서만 잰다.
+   */
+  const 셸 = 정한셸().id;
+  if (셸 === 'bash' || 셸 === 'sh') {
+    스크립트('gc.cjs', "require('fs').writeFileSync(process.argv[2], String(process.pid)); console.log('gc up'); setInterval(() => {}, 1000);\n");
+    const t0 = Date.now();
+    const r = await TOOLS.Bash.run({ command: 'node gc.cjs gc1.pid & echo shell-done', timeout: 20000 }, ctx);
+    const 걸림 = Date.now() - t0;
+    check('★ 셸이 끝나면 남은 손자가 파이프를 물어도 시간 초과까지 안 기다린다',
+      걸림 < 10000 && !/시간 초과/.test(r.error ?? ''), `${걸림}ms · ${r.error ?? ''}`);
+    check('셸이 낸 말은 그대로 준다', /shell-done/.test(r.content ?? ''), String(r.content ?? '').slice(0, 80));
+    check('★ 뒤에 남은 것이 있었다고 말하고 background 로 띄우라고 알려 준다',
+      /background: true/.test(r.content ?? ''), String(r.content ?? '').slice(-160));
+    await 될때까지(() => 번호읽기('gc1.pid') != null, 3000);
+    const 손자1 = 번호읽기('gc1.pid');
+    if (process.platform !== 'win32') {
+      check('★ (유닉스) 뒤에 남은 손자도 무리째 끝낸다', await 될때까지(() => !살았나(손자1), 5000), String(손자1));
+    } else {
+      check('★ (윈도우) 셸이 먼저 끝나 그 아래를 못 찾으면 못 껐다고 말한다', /못 찾/.test(r.content ?? ''), String(r.content ?? '').slice(-160));
+    }
+    if (살았나(손자1)) { try { process.kill(손자1); } catch { /* 이미 */ } }
+
+    const j = await 띄우기('node gc.cjs gc2.pid & echo shell-done', { cwd: 방, 기다림: 1500 });
+    await 될때까지(() => 번호읽기('gc2.pid') != null, 3000);
+    const 손자2 = 번호읽기('gc2.pid');
+    await 될때까지(() => 하나(j.번호)?.kid?.exitCode != null, 3000);
+    const 줄 = (await JOBS_TOOL.run({})).content ?? '';
+    check('Jobs 목록: 셸은 끝났는데 남은 것이 출력을 물고 있다고 알린다', /셸은 끝남/.test(줄), 줄);
+    const 끝 = await JOBS_TOOL.run({ job: j.번호, stop: true });
+    await 쉬기(300);
+    const 살아있음 = 살았나(손자2);
+    check('★ 남은 손자가 살아 있으면 「끝냈습니다」 라고 안 한다',
+      살아있음 ? (!/끝냈습니다/.test(끝.content ?? '') && !!끝.error) : /끝냈습니다/.test(끝.content ?? ''),
+      `살아있음=${살아있음} · ${JSON.stringify(끝).slice(0, 160)}`);
+    if (process.platform !== 'win32') check('★ (유닉스) Jobs 끝내기가 남은 손자까지 무리째 끝낸다', !살아있음, String(손자2));
+    if (살았나(손자2)) { try { process.kill(손자2); } catch { /* 이미 */ } }
+    비우기();
+  } else {
+    check(`${셸} 에서는 & 가 뒤로 띄우기가 아니라 남은 손자 검사를 건넌다 ⚠`, true, 셸);
+  }
+
+  /*
+   * (L2) 이미 끝난 일감에 stop 을 주면 안 읽은 마지막 출력째 목록에서 지웠다.
+   * 죽기 직전 남긴 한 줄이 제일 중요한데 그걸 버렸다.
+   */
+  {
+    // 표시 글은 **돌 때 만든다**(6*7) — 명령줄에 그대로 적혀 있으면 「이미 끝나 있었습니다: <명령>」
+    // 한 줄에 그 글이 들어 있어 출력을 버려도 초록이 된다(처음 이 검사가 그렇게 헛돌았다).
+    const r = await 띄우기(`node -e "setTimeout(()=>{console.log('LAST-LINE-'+(6*7));process.exit(3)},700)"`, { cwd: 방, 기다림: 100 });
+    await 될때까지(() => 하나(r.번호)?.상태 === '끝남', 8000);
+    const s = await JOBS_TOOL.run({ job: r.번호, stop: true });
+    check('★ 이미 끝난 일감을 끝내라고 해도 안 읽은 마지막 출력을 준다', /LAST-LINE-42/.test(s.content ?? ''), s.content ?? s.error);
+    비우기();
+  }
+
+  /*
+   * (L1) 처음 읽을 때 ASCII 뿐이어도 인코딩을 utf-8 로 못 박았다. 나중에 CP949 한글이
+   * 나오면 처음부터 다시 읽어도 영영 깨졌다. 통째로 새로 푼 것과 같아야 한다.
+   */
+  {
+    스크립트('emit.cjs', [
+      "process.stdout.write('starting server\\n');",
+      'setTimeout(() => { process.stdout.write(Buffer.from([0xC7, 0xD1, 0xB1, 0xDB, 0x20, 0xBF, 0xC0, 0xB7, 0xF9, 0x0A])); }, 1200);',
+      'setTimeout(() => {}, 6000);',
+    ].join('\n'));
+    const e = await 띄우기('node emit.cjs', { cwd: 방, 기다림: 0 });
+    await 될때까지(() => (하나(e.번호)?.바이트 ?? 0) >= 16, 5000);
+    await JOBS_TOOL.run({ job: e.번호 });        // ASCII 만 있을 때 한 번 읽는다 — 옛 코드는 여기서 못 박았다
+    await 될때까지(() => (하나(e.번호)?.바이트 ?? 0) > 16, 6000);
+    const 통째 = await JOBS_TOOL.run({ job: e.번호, from_start: true });
+    const 새로 = 풀기(Buffer.concat(하나(e.번호).조각들), { fallback: consoleCodepage() === 65001 ? 'utf-8' : null }).text;
+    check('★ ASCII 만 나온 뒤 한글 바이트가 와도 통째로 새로 푼 것과 같다',
+      String(통째.content ?? '').includes(새로.trim()), `${JSON.stringify(String(통째.content ?? '').slice(-30))} vs ${JSON.stringify(새로.slice(-12))}`);
+    비우기();
+  }
 }
+
 
 /*
  * ── 「나무를 다 못 끊었다」 를 무엇으로 아나 ─────────────────────────────
@@ -1025,6 +1253,264 @@ trace('12-끊김판별');
     check('★ 윈도우가 아니면 나무끊기 는 늘 참 — 무리째 죽이는 길이 따로 있다',
       나무끊기(1234) === true);
   }
+}
+
+/*
+ * ── 상한에 걸려도 taskkill 은 **끝까지** 나무를 훑어야 한다 (2.0.0 6회차) ─────────
+ *
+ * 상한에 걸리면 execFileSync 가 taskkill 을 죽였다. 바쁜 컴퓨터에서는 그 순간 taskkill 이
+ * 뿌리·가운데 셸만 죽인 반쪽이라, 손자(node · dev 서버)가 부모 없이 남고 다시는 못 가리켰다.
+ * 검사를 돌린 하루 동안 이 파일의 아이 74개가 그렇게 살아 있었다. 코어를 다 쓰는 판에서
+ * 끝내기 4번 중 1번, 모두끝내기 4번 중 1번이 남겼다(수정기록 6회차).
+ *
+ * 바쁜 컴퓨터는 검사에서 못 만드니, 상한을 1ms 로 줘서 「잘린 판」 을 만들고 그 뒤로 아무것도
+ * 안 불러도 나무가 멈추는지 본다. 잘렸다고 돌려주는 것(뿌리를 살려 두는 신호)은 그대로다.
+ */
+trace('13-잘려도끝까지');
+if (process.platform === 'win32') {
+  const 자국 = join(방, 'tick-cut.txt');
+  const r = await 띄우기(부르기(도는아이, 자국), { cwd: 방, 기다림: 0 });
+  const j = 하나(r.번호);
+  await 될때까지(() => existsSync(자국) && statSync(자국).size > 0, 8000);
+  check('  잘라 볼 아이가 떠서 자국을 남긴다 (안 떴으면 아래 둘은 뜻이 없다)', existsSync(자국) && statSync(자국).size > 0 && !!j?.kid?.pid, `pid=${j?.kid?.pid}`);
+  const 잘림 = 나무끊기(j.kid.pid, 1);
+  check('상한 1ms 면 잘렸다고 돌려준다', 잘림 === false, String(잘림));
+  // 아무것도 더 안 부른다. 떼어 띄운 taskkill 이 끝까지 가면 자국이 멈춘다.
+  let 멈춤 = false;
+  for (let i = 0; i < 40 && !멈춤; i++) {
+    await 쉬기(300);
+    const a = existsSync(자국) ? statSync(자국).size : 0;
+    await 쉬기(250);
+    멈춤 = (existsSync(자국) ? statSync(자국).size : 0) === a;
+  }
+  check('★ 상한에 잘려도 taskkill 은 끝까지 가서 손자까지 멈춘다 (6회차)', 멈춤, existsSync(자국) ? `${statSync(자국).size}바이트` : '자국 없음');
+  비우기();
+}
+
+/*
+ * ── 갓 띄운 것을 곧장 끊어도 손자가 안 남는다 (2.0.0 6회차) ─────────────────────
+ *
+ * Git Bash 는 `bin/bash.exe → usr/bin/bash.exe → 명령` 으로 나무를 **나중에** 만든다. 띄우고
+ * 몇 ms 안에 taskkill 을 보내면 그 순간의 나무(발사대뿐)만 죽고, 곧이어 뜬 손자가 부모 없이
+ * 남았다. 옛 코드에서도 0ms 에 4번 중 2번 남았다 — 검사 판마다 이 파일의 아이가 남던 까닭이다.
+ * 한 번으로는 운에 맡겨지니 네 번 잇달아 띄우고 곧장 끊는다.
+ */
+trace('14-갓띄운것끊기');
+{
+  const 자국들 = [];
+  const 떴나들 = [];
+  for (let k = 0; k < 4; k++) {
+    const 자국 = join(방, `tick-young${k}.txt`);
+    자국들.push(자국);
+    const r = await 띄우기(부르기(도는아이, 자국), { cwd: 방, 기다림: 0 });
+    떴나들.push(r.떴나 === true);
+    await 끝내기(r.번호);
+  }
+  // 대조군: 안 끊은 아이는 자국을 늘려야 한다 — 아무것도 안 떠서 「안 남았다」 로 초록이 되는 판을 막는다.
+  const 대조 = join(방, 'tick-young-control.txt');
+  await 띄우기(부르기(도는아이, 대조), { cwd: 방, 기다림: 0 });
+  await 쉬기(1500);
+  const 크기 = () => 자국들.map((f) => (existsSync(f) ? statSync(f).size : 0));
+  const a = 크기();
+  const 대조a = existsSync(대조) ? statSync(대조).size : 0;
+  await 쉬기(600);
+  const b = 크기();
+  const 대조b = existsSync(대조) ? statSync(대조).size : 0;
+  check('  네 번 다 떴고, 안 끊은 대조군은 자국을 늘린다', 떴나들.every(Boolean) && 대조b > 대조a, `떴나 ${떴나들} · 대조 ${대조a} → ${대조b}`);
+  const 도는것 = a.filter((x, i) => x !== b[i]).length;
+  check('★ 갓 띄운 것을 네 번 곧장 끊어도 하나도 안 남는다 (6회차)', 도는것 === 0, `${도는것}개가 아직 자국을 늘린다 · ${a.join('/')} → ${b.join('/')}`);
+  비우기();
+}
+
+/*
+ * ── 기다린다는 것 자체를 잰다 (6회차 전수 어긋내기에서 둘이 샘) ──────────
+ *
+ * 14·15절은 **결과**(고아가 남나)를 잰다. 그런데 고아가 남는지는 그 PC 의 셸이
+ * 나무를 얼마나 느리게 세우느냐에 달렸다 — Git Bash 는 손주가 한 겹 더 생겨 늦고,
+ * cmd 는 바로 선다. 그래서 cmd 로 도는 PC 에서는 **기다림을 통째로 빼도** 14·15절이
+ * 초록이었다(어긋내기 「갓 띄운 일감을 … 곧장 끊는다」 · 「모두끝내기 가 …」 둘 다 샘).
+ * 그 줄을 지우는 사람을 아무도 안 막고 있었다는 뜻이고, 지우면 Git Bash 쓰는 사람만
+ * 고아를 얻는다 — 제일 찾기 어려운 꼴이다.
+ *
+ * 그래서 여기서는 **약속한 동작**을 곧장 잰다: 갓 띄운 것을 끊으면 그 자리에서
+ * 나무설틈 만큼 머문다. 오래된 것에는 안 머문다(늘 기다리는 것과 가르려고 같이 잰다).
+ */
+trace('14b-갓띄운것은기다렸다끊는다');
+{
+  const 갓것 = await 띄우기(부르기(조용한아이), { cwd: 방, 기다림: 0 });
+  const t0 = Date.now();
+  await 끝내기(갓것.번호);
+  const 갓걸림 = Date.now() - t0;
+  check('★★★ 갓 띄운 것을 끊으면 나무 설 틈만큼 머문다', 갓걸림 >= 500, `${갓걸림}ms`);
+
+  const 묵은것 = await 띄우기(부르기(조용한아이), { cwd: 방, 기다림: 0 });
+  await 쉬기(1200);                       // 나무설틈(1000ms)을 넘긴다
+  const t1 = Date.now();
+  await 끝내기(묵은것.번호);
+  const 묵은걸림 = Date.now() - t1;
+  check('★★ 오래된 것에는 안 머문다 (늘 기다리는 것이 아니다)', 묵은걸림 < 400,
+    `${묵은걸림}ms · 갓 ${갓걸림}ms`);
+
+  // 모두끝내기 도 같은 약속이다. 이쪽은 끝나는 길이라 동기로 머문다.
+  await 띄우기(부르기(조용한아이), { cwd: 방, 기다림: 0 });
+  const t2 = Date.now();
+  모두끝내기();
+  const 모두걸림 = Date.now() - t2;
+  check('★★★ 모두끝내기 도 갓 띄운 것이 있으면 머문다', 모두걸림 >= 500, `${모두걸림}ms`);
+
+  await 쉬기(1200);
+  const t3 = Date.now();
+  모두끝내기();
+  const 모두빈걸림 = Date.now() - t3;
+  check('★ 끝낼 것이 없으면 안 머문다', 모두빈걸림 < 400, `${모두빈걸림}ms`);
+  비우기();
+}
+
+/*
+ * 끝낼 때(모두끝내기)도 같다. 프로그램을 닫는 순간 갓 띄운 일감이 있으면, 셸이 나무를 다 세우기 전에
+ * taskkill 이 지나가 손주 node 가 고아로 남는다. 14절은 하나씩 끊는 길(끝내기)만 재서, 모두끝내기 의
+ * 기다림을 빼도 초록이었다 (6회차 어긋내기에서 샘).
+ */
+trace('15-갓띄운것모두끝내기');
+{
+  const 자국들 = [];
+  const 떴나들 = [];
+  for (let k = 0; k < 3; k++) {
+    const 자국 = join(방, `tick-youngall${k}.txt`);
+    자국들.push(자국);
+    const r = await 띄우기(부르기(도는아이, 자국), { cwd: 방, 기다림: 0 });
+    떴나들.push(r.떴나 === true);
+  }
+  모두끝내기();
+  // 대조군은 모두끝내기 **뒤에** 띄운다 — 스크립트가 정말 자국을 늘리는지 본다(11절 치움이 거둔다).
+  const 대조 = join(방, 'tick-youngall-control.txt');
+  await 띄우기(부르기(도는아이, 대조), { cwd: 방, 기다림: 0 });
+  await 쉬기(1500);
+  const 크기 = () => 자국들.map((f) => (existsSync(f) ? statSync(f).size : 0));
+  const a = 크기();
+  const 대조a = existsSync(대조) ? statSync(대조).size : 0;
+  await 쉬기(600);
+  const b = 크기();
+  const 대조b = existsSync(대조) ? statSync(대조).size : 0;
+  check('  셋 다 떴고, 뒤에 띄운 대조군은 자국을 늘린다', 떴나들.every(Boolean) && 대조b > 대조a, `떴나 ${떴나들} · 대조 ${대조a} → ${대조b}`);
+  const 도는것 = a.filter((x, i) => x !== b[i]).length;
+  check('★ 갓 띄운 것을 모두끝내기 로 곧장 끊어도 하나도 안 남는다 (6회차)', 도는것 === 0, `${도는것}개가 아직 자국을 늘린다 · ${a.join('/')} → ${b.join('/')}`);
+}
+
+/*
+ * 치우기는 **맨 끝**에 한다. 12절 뒤에 붙인 절들이 이 폴더의 스크립트로 아이를 띄우는데, 치우기가
+ * 그 앞에 있어서 폴더가 지워진 뒤에 돌았다. 아이가 남아 폴더를 물고 있던 동안에는 지우기가 실패해
+ * 우연히 돌았고, 남는 아이를 없애자 폴더가 지워져 13·14절이 **아무것도 안 띄운 채** 초록이 됐다
+ * (2.0.0 6회차에 잡음 — 13절의 「잘렸다」 가 pid 없음으로 참이 되어 드러났다).
+ */
+trace('11-치움');
+모두끝내기();
+/*
+ * 치우기 전에 아이들이 실제로 죽기를 기다린다.
+ *
+ * 윈도우는 **도는 프로세스의 작업 폴더**를 못 지운다. 여기 아이들은 cwd 가
+ * 이 폴더라, 죽이라고 말한 그 순간에 지우면 EPERM 이 난다. 죽이라고 말하는
+ * 것과 죽는 것 사이에 틈이 있다 — taskkill 이 나무를 훑는 그 틈이다.
+ *
+ * 못 치워도 검사를 실패로 만들지는 않는다. 남는 것은 임시 폴더 하나뿐이고,
+ * 그것 때문에 빨간불이 켜지면 진짜 실패가 묻힌다.
+ */
+for (let i = 0; i < 6; i++) {
+  await 쉬기(300);
+  try { rmSync(방, { recursive: true, force: true }); break; } catch { /* 아직 물고 있다 */ }
+}
+
+trace('16-모르는-것을-죽은-것으로-안-센다');
+
+// ── 권한이 없어 못 물어본 것을 「죽었다」 로 세면 안 된다 ────────────────
+//
+// 무리끊기 의 마지막 머리말이 이미 적어 두었다 — 「그 물음은 틀릴 수 있다 —
+// 권한이 없으면(EPERM) 살아 있는데도 「없다」 가 나오고, 그러면 안 죽이고
+// 지나간다」. 그래서 **마지막 한 방**은 묻지 않고 보내게 고쳤는데, 정작 그 위
+// 지켜보기 고리의 `if (!무리살아있나(pid)) return;` 이 같은 물음에 기대어
+// 첫 바퀴에서 빠져나간다 — SIGKILL 까지 통째로 건너뛴다. 고침이 반만 붙어 있었다.
+//
+// POSIX 에서 EPERM 은 「없다」 가 아니라 **「있는데 못 건드린다」** 이다.
+{
+  const 원래 = process.kill;
+  const 던지기 = (code) => { process.kill = () => { const e = new Error(code); e.code = code; throw e; }; };
+  try {
+    던지기('EPERM');
+    check('★★ 권한이 없으면 살아 있는 것으로 센다', 무리살아있나(999999) === true, '');
+    던지기('ESRCH');
+    check('★ 없는 것은 죽은 것으로 센다', 무리살아있나(999999) === false, '');
+  } finally { process.kill = 원래; }
+  check('살아 있는 것은 살아 있다고 한다', 무리살아있나(process.pid) === true, '');
+}
+
+trace('17-상한이-무리끊기까지-간다');
+
+/*
+ * ── 부르는 쪽이 정한 상한이 **유닉스 갈래에서만 버려졌다** (8회차 파일훑기) ──
+ *
+ * 나무죽이기 의 윈도우 갈래는 `나무끊기(kid.pid, 상한)` 으로 그 값을 그대로
+ * 쓰는데, 유닉스 갈래는 `무리끊기(kid.pid, { 곧장 })` 이라 상한을 안 넘겼다.
+ * 그래서 늘 무리끊기의 기본 800ms 만 기다렸다 — 재 보니 상한 5000 을 줘도
+ * 100 을 줘도 걸린 시간이 똑같았다. 바로 그 위 머리말이 「상한은 부르는 쪽이
+ * 정한다」 고 적어 놓고 한쪽에서만 지키고 있었다.
+ *
+ * 이 PC 는 윈도우라 유닉스 갈래가 안 돈다. 그래서 platform 과 process.kill 을
+ * 잠깐 바꿔 그 갈래를 여기서 돌리고 원래대로 돌려놓는다 — 바로 위 EPERM 단이
+ * 쓰는 것과 같은 수다. 죽지 않는 아이를 흉내 내면(늘 살아 있다고 답하면)
+ * SIGTERM 과 SIGKILL 사이가 곧 상한이라, 시계로 그 값을 읽을 수 있다.
+ */
+{
+  const 원래판 = process.platform;
+  const 원래죽이기 = process.kill;
+  const 받은신호 = [];
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+  // 무엇을 물어도 탈 없이 돌아온다 = 그 무리는 끝까지 살아 있다.
+  process.kill = (pid, 신호) => { 받은신호.push(신호); };
+  const 가짜아이 = { pid: 424242, kill() {}, unref() {} };
+  try {
+    const t0 = Date.now();
+    나무죽이기(가짜아이, { 파이프끊기: false, 상한: 120 });
+    const 걸린 = Date.now() - t0;
+    check('★★ (8회차) 나무죽이기의 상한이 유닉스 갈래에서도 지켜진다', 걸린 < 600, `${걸린}ms (고치기 전 1,250ms)`);
+    check('  그래도 곱게 말한 뒤 끊는다 (SIGTERM → SIGKILL)',
+      받은신호.includes('SIGTERM') && 받은신호.includes('SIGKILL'), [...new Set(받은신호)].join(','));
+  } finally {
+    Object.defineProperty(process, 'platform', { value: 원래판, configurable: true });
+    process.kill = 원래죽이기;
+  }
+}
+
+trace('18-빈-목록에서도-버린-인자를-말한다');
+
+/*
+ * ── 목록이 비면 **하던 말까지 사라졌다** (8회차 파일훑기) ────────────────
+ *
+ * 빈 목록 갈래가 그 자리에서 곧장 돌아서느라 `버린말`·`못읽은말` 이 통째로
+ * 빠졌다. 바로 위(1017-1018 머리말)가 「몇 개만 못 알아들은 판도 말해 준다 —
+ * 오류로 막지는 않되 버린 이름을 적어 보내서 다음 걸음에서 고쳐 부르게 한다」
+ * 고 적어 두었는데, 하필 **일감이 하나도 없을 때**만 그 약속이 안 지켜졌다.
+ *
+ * 값이 큰 자리다. 일감이 없다는 것은 대개 「끄려던 것이 이미 없다」 거나
+ * 「아직 안 띄웠다」 인데, 그때 오타를 알려 주지 않으면 모델은 제 인자가
+ * 맞는 줄 알고 같은 오타로 다시 부른다.
+ */
+{
+  비우기();
+  const 모르는것 = await JOBS_TOOL.run({ from_start: true, 헛것: 1 });
+  check('★★ (8회차) 목록이 비어도 못 알아들어 버린 인자를 말한다',
+    /못 알아들어 버린 인자: 헛것/.test(String(모르는것.content ?? 모르는것.error)),
+    JSON.stringify(모르는것));
+  check('  그래도 목록 갈래는 그대로다 (오류로 막지 않는다)',
+    !모르는것.error && /뒤에서 도는 명령이 없습니다/.test(String(모르는것.content)), JSON.stringify(모르는것));
+
+  const 못읽은것 = await JOBS_TOOL.run({ from_start: '아마도' });
+  check('★★ (8회차) 목록이 비어도 참·거짓으로 못 읽은 값을 말한다',
+    /참·거짓으로 못 읽은 값: from_start="아마도"/.test(String(못읽은것.content ?? 못읽은것.error)),
+    JSON.stringify(못읽은것));
+
+  const 그냥 = await JOBS_TOOL.run({});
+  check('  아무 인자도 없으면 군말이 안 붙는다',
+    String(그냥.content) === '뒤에서 도는 명령이 없습니다.', JSON.stringify(그냥));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

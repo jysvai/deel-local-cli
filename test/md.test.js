@@ -11,7 +11,7 @@ import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { 인라인, 한줄, 마크다운, 그리기, 표그리기 } from '../src/ui/md.js';
-import { c, width } from '../src/ui/ansi.js';
+import { c, width, say, 화면글거르기 } from '../src/ui/ansi.js';
 import { trace } from './trace.mjs';
 
 const 뿌리 = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -502,6 +502,164 @@ trace('12-표의이음매');
     JSON.stringify(줄들.map(벗기기).map((l) => l.slice(0, 30))));
   check('  줄 수도 안 늘어난다', 줄들.length === 2, `${줄들.length}줄`);
   check('  글자는 그대로', 벗기기(줄들.join('\n')).includes('굵게 로 적은'), '');
+}
+
+// ── 모델 답에 섞인 터미널 제어 순서 (2.0.0 3회차 사냥) ─────────────────
+//
+// 모델은 읽은 파일·웹 글을 되풀어 적는다. 그 안의 ESC 순서가 그대로 흐르면 터미널은 글자가 아니라
+// 명령으로 받는다 — 클립보드를 바꾸고(OSC 52), 윗줄 「✗ 실패」 를 「✓ 통과」 로 덮어쓴다.
+// 우리가 입힌 색(SGR)만 남고 **들어온** 제어 글자는 하나도 안 남아야 한다.
+{
+  const ESC = String.fromCharCode(27); const BEL = String.fromCharCode(7); const BS = String.fromCharCode(8);
+  const 들어온제어 = (s) => /[\x00-\x08\x0b-\x1f\x7f-\x9f]/.test(String(s).replace(/\x1b\[[0-9;]*m/g, ''));
+  const 경우 = [
+    ['OSC 52 클립보드', `안녕 ${ESC}]52;c;ZWNobyBoaQ==${BEL} 끝`, '안녕  끝'],
+    ['OSC 8 링크 위장', `${ESC}]8;;https://evil.example${ESC}\\보이는글${ESC}]8;;${ESC}\\`, '보이는글'],
+    ['화면 지우기', `앞${ESC}[2J${ESC}[H뒤`, '앞뒤'],
+    ['윗줄 덮어쓰기', `✓ 통과${ESC}[1A${ESC}[2K✗ 실패`, '✓ 통과✗ 실패'],
+    ['8비트 CSI', `앞${String.fromCharCode(0x9b)}2J뒤`, '앞뒤'],
+    ['백스페이스', `rm -rf /${BS.repeat(8)}ls`, 'rm -rf /ls'],
+    ['홀 CR', `통과\r실패`, '통과실패'],
+  ];
+  for (const [이름, 글, 보일글] of 경우) {
+    const 줄들 = 그리기(글);
+    check(`★★★ 통째로 그릴 때 제어 순서가 안 나간다 — ${이름}`, !줄들.some(들어온제어), JSON.stringify(줄들));
+    check(`  글자는 남는다 — ${이름}`, 벗기기(줄들.join('\n')).includes(보일글), JSON.stringify(줄들.map(벗기기)));
+    // 흘려받을 때는 순서가 토막 사이에서 끊겨 온다. 한 글자씩 넣어도 제어 글자는 하나도 안 나가야 한다.
+    const md = new 마크다운({ 폭: 80 });
+    const 나간것 = [];
+    for (const ch of [...`${글}\n`]) for (const x of md.넣기(ch)) 나간것.push(typeof x === 'string' ? x : x.이어붙임);
+    for (const x of md.끝()) 나간것.push(typeof x === 'string' ? x : x.이어붙임);
+    check(`★★★ 한 글자씩 흘려받아도 제어 글자가 안 나간다 — ${이름}`, !나간것.some(들어온제어), JSON.stringify(나간것));
+    // 토막 사이에서 끊겨도 순서가 통째로 빠져야 한다 — ESC 만 빠지면 `[1A[2K` 가 글자로 남는다.
+    check(`★★ 흘려받아도 찌꺼기 없이 같은 글이 된다 — ${이름}`, 벗기기(나간것.join('')).includes(보일글), JSON.stringify(나간것.map(벗기기).join('')));
+  }
+  // Gemini 2차 검토(3회차): 거르개가 **글을 먹거나** 찌꺼기를 남기는 자리.
+  const RLO = String.fromCharCode(0x202e); const PDF = String.fromCharCode(0x202c);
+  for (const [이름, 글, 보일글, 없어야] of [
+    ['마침 글자 없는 OSC 뒤 글은 산다', `앞 ${ESC}]8;;https://x 뒤에 이어지는 정상 글`, '뒤에 이어지는 정상 글', null],
+    ['마침 글자 없는 DCS 뒤 글도 산다', `앞 ${ESC}P1;2q 이어지는 글`, '이어지는 글', null],
+    ['ESC 7 · ESC 8 찌꺼기 없음', `${ESC}7저장${ESC}8`, '저장', /7저장|저장8/],
+    ['ESC ( 0 문자셋 찌꺼기 없음', `${ESC}(0선${ESC}(B`, '선', /\(0|\(B/],
+    ['ESC c 리셋 찌꺼기 없음', `앞${ESC}c뒤`, '앞뒤', null],
+    ['글자 방향 뒤집기(RLO) 뗌', `rm ${RLO}txt.exe${PDF} 파일`, 'rm txt.exe 파일', null],
+  ]) {
+    const 줄 = 벗기기(그리기(글).join('\n'));
+    check(`★★ ${이름}`, 줄.includes(보일글) && !(없어야 && 없어야.test(줄)) && !/[\x00-\x08\x0b-\x1f\x7f-\x9f]/.test(줄)
+      && !줄.includes(RLO), JSON.stringify(줄));
+  }
+  // 마침 글자(ESC \) 가 토막 사이에서 끊겨도 OSC 몸통이 글자로 새면 안 된다.
+  {
+    const md = new 마크다운({ 폭: 80 });
+    const 나간것 = [];
+    for (const 토막 of [`보기 ${ESC}]8;;https://evil.example`, ESC, `\\링크글${ESC}]8;;${ESC}\\ 끝\n`]) {
+      for (const x of md.넣기(토막)) 나간것.push(typeof x === 'string' ? x : x.이어붙임);
+    }
+    for (const x of md.끝()) 나간것.push(typeof x === 'string' ? x : x.이어붙임);
+    const 줄 = 벗기기(나간것.join(''));
+    check('★★ 마침 글자가 토막 사이에서 끊겨도 OSC 몸통이 안 샌다', !줄.includes('evil.example') && 줄.includes('링크글'), JSON.stringify(줄));
+  }
+
+  // 줄바꿈·탭은 글의 모양이다. 떼면 코드 들여쓰기가 무너진다.
+  const 탭 = 그리기('```\n\tif (x) {\n\t\ty();\n\t}\n```');
+  check('★ 탭과 줄바꿈은 그대로 둔다', 벗기기(탭.join('\n')).includes('y();') && 탭.length >= 3, JSON.stringify(탭.map(벗기기)));
+}
+
+// ── say 로 곧장 나가는 바깥 글 (2.0.0 3회차 사냥) ─────────────────────
+//
+// 마크다운만 거르면 반쪽이다. 할 일 목록(모델이 적은 글) · 서버가 알려 준 모델 이름 · 플러그인·스킬 설명 ·
+// MCP 도구 설명은 그리개를 안 지나고 say 로 바로 나간다. 우리가 입힌 색은 남기고 들어온 제어 순서만 뗀다.
+{
+  const ESC = String.fromCharCode(27); const BEL = String.fromCharCode(7);
+  const 받은 = [];
+  const 원래 = process.stdout.write;
+  process.stdout.write = (x) => { 받은.push(String(x)); return true; };
+  try { say(`  ${c.green('☑')} 할 일 ${ESC}]52;c;ZWNobw==${BEL}${ESC}[2J끝`); } finally { process.stdout.write = 원래; }
+  const 나간 = 받은.join('');
+  check('★★★ say 는 들어온 제어 순서를 뗀다', !나간.includes(`${ESC}]`) && !나간.includes(`${ESC}[2J`) && !나간.includes(BEL), JSON.stringify(나간));
+  check('  글자는 남는다', 나간.includes('할 일') && 나간.includes('끝'), JSON.stringify(나간));
+  check('★★ 색 남기는 거르개 — 색(SGR)은 두고 나머지만 뗀다',
+    화면글거르기(`${ESC}[32m초록${ESC}[0m${ESC}[2J${ESC}]0;제목${BEL}`, { 색남김: true }) === `${ESC}[32m초록${ESC}[0m`,
+    JSON.stringify(화면글거르기(`${ESC}[32m초록${ESC}[0m${ESC}[2J${ESC}]0;제목${BEL}`, { 색남김: true })));
+}
+
+/*
+ * 2.0.0 6회차 · Gemini 마크6 — 표 칸 가르기 둘과 답 끝의 반쪽 제어 순서.
+ *
+ * 칸가르기 는 백틱을 만날 때마다 「코드 안」 을 뒤집어서, 겹백틱 코드 ``` ``a | b`` ``` 안의 `|` 에서
+ * 칸을 갈랐다(2칸 표가 3칸). 줄 끝의 `\|` 는 바깥 세로줄로 보고 떼어 `2 \` 가 남았다.
+ * 끝() 은 끝내 마침 글자가 안 온 순서 앞머리를 「떼고 버린다」 고 적어 두고 거르개에 넣어서 숫자가 샜다.
+ */
+{
+  const ESC = String.fromCharCode(27);
+  const BS = String.fromCharCode(92);
+  const 색뗌 = (s) => String(s).split(new RegExp(`${ESC}\\[[0-9;]*m`)).join('');
+  const 표6 = (줄들) => (표그리기(줄들, 80) ?? []).map(색뗌);
+  const 겹 = 표6(['| x | y |', '|---|---|', '| ``a | b`` | c |']);
+  check('★ 겹백틱 코드 안의 | 로 칸을 가르지 않는다 (6회차 마크6)',
+    겹.length > 0 && 겹.filter((s) => s.includes('│')).every((s) => s.split('│').length === 4) && 겹.some((s) => s.includes('a | b')), JSON.stringify(겹));
+  const 끝막대 = 표6(['| a | b |', '|---|---|', `| 1 | 2 ${BS}|`]);
+  check('★ 줄 끝의 \\| 는 칸 안의 세로줄로 남긴다 (6회차 마크6)', 끝막대.some((s) => s.includes('2 |')), JSON.stringify(끝막대));
+  const md6 = new 마크다운({ 폭: 80 });
+  const 나감 = [...md6.넣기(`hi${ESC}[1`), ...md6.끝()].map((x) => (typeof x === 'string' ? x : x.이어붙임)).map(색뗌).join('');
+  check('★ 답 끝에 끊긴 제어 순서 앞머리는 글자로 안 남긴다 (6회차 마크6)', 나감 === 'hi', JSON.stringify(나감));
+}
+
+trace('13-8회차');
+
+/*
+ * 2.0.0 8회차 판정 — 표 뒤의 산문, 백슬래시로 끝나는 칸, 하이픈 없는 가름줄.
+ *
+ * 끝() 은 「비운 **뒤에** 지운다」 고 적어 뒀는데 #그리기() 는 거꾸로 했다. 그래서 상한에
+ * 끊긴 표 뒤에 산문이 한 줄만 와도 뒷동강이 머리줄과 칸 너비를 잃고 테두리 없이 나갔다.
+ * 칸가르기 는 `\|` 를 칸 안의 세로줄로 보느라, `\\` 로 끝나는 칸의 **바깥** 세로줄까지
+ * 붙들어 `C:\` 가 `C:\|` 로 나갔다. 한줄() 의 가름줄 정규식은 하이픈을 안 요구해서
+ * 빈칸과 세로줄뿐인 데이터 행이 가로선으로 그려졌다.
+ */
+{
+  const BS = String.fromCharCode(92);
+
+  // ① 상한에 끊긴 표 뒤에 산문이 오면. 끝() 으로 끝나는 표는 멀쩡했으므로 산문을 한 줄 붙인다.
+  const 원8 = ['| 번호 | 이름 |', '|---|---|'];
+  for (let i = 0; i < 260; i += 1) 원8.push(`| ${i} | ${i < 199 ? '짧' : '아주긴설명이여기부터들어옵니다'} |`);
+  원8.push('표가 끝나고 오는 산문.');
+  const md8 = new 마크다운({ 폭: 80 });
+  const 나온8 = [];
+  for (const 줄 of 원8) for (const x of md8.넣기(`${줄}\n`)) 나온8.push(typeof x === 'string' ? x : x.이어붙임);
+  for (const x of md8.끝()) 나온8.push(typeof x === 'string' ? x : x.이어붙임);
+  const 표줄8 = 나온8.map(벗기기).filter((l) => /^[│┌└├]/.test(l));
+  const 폭들8 = [...new Set(표줄8.map((l) => width(l)))];
+  const 바닥8 = 표줄8.filter((l) => l.startsWith('└')).length;
+  check('★★ 상한에 끊긴 표 뒤에 산문이 와도 뒷동강이 테두리를 지킨다 (8회차)',
+    폭들8.length === 1 && 바닥8 === 2, `${폭들8.length}가지 폭 · 바닥 ${바닥8}개`);
+  check('  뒷동강에도 머리줄이 다시 얹힌다',
+    나온8.filter((l) => 벗기기(l).includes('번호')).length === 2,
+    `머리줄 ${나온8.filter((l) => 벗기기(l).includes('번호')).length}번`);
+  check('  산문은 표 뒤에 그대로 나간다', 벗기기(나온8[나온8.length - 1] ?? '') === '표가 끝나고 오는 산문.',
+    JSON.stringify(벗기기(나온8[나온8.length - 1] ?? '')));
+
+  // ② 칸이 `\\`(백슬래시 한 자) 로 끝나고 바로 바깥 세로줄이 붙어 올 때.
+  const 역칸 = (표그리기(['| 이름 | 길 |', '|---|---|', `| 길 | C:${BS}${BS}|`], 80) ?? []).map(벗기기);
+  // 칸 수까지 본다. 닫는 세로줄을 안 떼면 그것이 칸을 하나 더 갈라서, 두 칸짜리
+  // 표가 빈 칸 하나를 더 달고 나간다 — 글자만 보면 멀쩡해 보이는 자리다.
+  check('★ 백슬래시로 끝나는 칸도 바깥 세로줄을 뗀다 (8회차)',
+    역칸.length === 5
+      && !역칸.some((l) => l.includes(`${BS}|`))
+      && 역칸.filter((l) => l.startsWith('│')).every((l) => l.split('│').length === 4),
+    JSON.stringify(역칸));
+  check('  `\\\\` 는 백슬래시 한 자로 나간다',
+    역칸.some((l) => l.includes(`C:${BS} `)) && !역칸.some((l) => l.includes(`${BS}${BS}`)),
+    JSON.stringify(역칸));
+  const 홑역 = (표그리기(['| a | b |', '|---|---|', `| 1 | 2 ${BS}|`], 80) ?? []).map(벗기기);
+  check('  홑 \\| 는 그대로 칸 안의 세로줄이다', 홑역.some((l) => l.includes('2 |')), JSON.stringify(홑역));
+
+  // ③ 빈칸과 세로줄뿐인 줄은 가름줄이 아니다 — 내용이 빈 데이터 행이다.
+  const 빈행 = 그리기('| 가 | 나 |\n|   |   |\n', 80).map(벗기기);
+  check('★ 내용이 빈 데이터 행을 가로선으로 안 그린다 (8회차)',
+    빈행.length === 2 && !빈행[1].includes('─'), JSON.stringify(빈행));
+  const 홑가름 = 그리기('|---|---|\n', 80).map(벗기기);
+  check('  하이픈이 있는 진짜 가름줄은 그대로 가로선이다',
+    홑가름.length > 0 && 홑가름.every((l) => l.includes('─')), JSON.stringify(홑가름));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

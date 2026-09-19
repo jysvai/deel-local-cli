@@ -35,8 +35,10 @@ export function findMentions(text) {
   for (let i = 0; i < s.length; i++) {
     if (s[i] !== '@') continue;
     // 앞이 글자면 지목이 아니다 — hong@example.com 의 @ 가 여기서 걸러진다.
+    // 감싸는 짝의 여는 쪽(백틱 · 「 · 『)도 받는다. 닫는 쪽은 이미 안다 — 백틱은 아래에서
+    // 경로의 끝이고 」』 는 뒤에붙는것 이 뗀다. 여는 쪽만 몰라서 `@src/a.js` 가 조용히 안 붙었다.
     const 앞 = i > 0 ? s[i - 1] : ' ';
-    if (!/[\s(\[{'"]/.test(앞)) continue;
+    if (!/[\s(\[{'"`「『]/.test(앞)) continue;
 
     // @"띄어쓰기 든 이름.txt" — 따옴표로 묶으면 통째로 하나다.
     if (s[i + 1] === '"' || s[i + 1] === "'") {
@@ -142,6 +144,8 @@ export function expand(text, { scope = null, budget = 기본예산, seen = null,
     const show = scope.show ? scope.show(자리.abs) : 자리.path;
     let 몸통;
     let 통째로 = true;
+    // 내용이 한 자도 안 실린 자리(못 읽은 파일 · 그림 못 보는 모델의 그림). 아래 머리말이 이것을 센다.
+    let 붙음 = true;
 
     try {
       if (statSync(자리.abs).isDirectory()) {
@@ -171,6 +175,7 @@ ${몸통}
           ? `(못 붙였습니다: ${것.왜})`
           : '(그림입니다. 지금 붙어 있는 모델은 그림을 못 봅니다 — 안 붙였습니다.)';
         통째로 = false;
+        붙음 = false;
       } else {
         // 사내 파일은 CP949 가 흔하다. 그냥 읽으면 통째로 깨진다.
         const 읽음 = readTextFull(자리.abs);
@@ -193,18 +198,30 @@ ${몸통}
       // 못 읽는 파일(바이너리 등)은 붙이지 않는다. 그렇다고 말은 해 준다.
       몸통 = `(못 읽었습니다: ${err.message})`;
       통째로 = false;
+      붙음 = false;
     }
 
     const 토막 = `\n\n--- ${show} ---\n${몸통}\n--- ${show} 끝 ---`;
     남은예산 -= estimateTokens(토막);
     붙일것.push(토막);
-    attached.push({ path: 자리.abs, show, full: 통째로 });
+    attached.push({ path: 자리.abs, show, full: 통째로, 붙음 });
     if (남은예산 <= 0) break;
   }
 
   if (!붙일것.length) return { text: 원문, attached, missing, blocked, 그림들 };
-  const 머리 = attached.length === 1
-    ? '아래는 사용자가 @ 로 지목한 파일입니다. 이미 읽은 것으로 치고 답하세요.'
-    : `아래는 사용자가 @ 로 지목한 파일 ${attached.length}개입니다. 이미 읽은 것으로 치고 답하세요.`;
+  /*
+   * 머리말은 **내용이 실제로 실린 것만** 센다 (2.0.0 8회차 스키마).
+   *
+   * 못 읽은 파일과 「그림을 못 보는 모델의 그림」 도 attached 에 세어져, 한 자도 안 실린
+   * 파일에 「이미 읽은 것으로 치고 답하세요」 가 붙었다. 모델에게 그것은 「이 파일은
+   * 이미 봤다」 는 말이라, Read 도 안 부르고 안 본 파일의 내용을 지어낸다 — 이 파일
+   * 머리말이 막으려던 「사람은 자기가 안 보낸 것이 왜 거기 있는지 모른다」 의 반대쪽이다.
+   */
+  const 붙은것 = attached.filter((a) => a.붙음 !== false);
+  const 머리 = 붙은것.length === 0
+    ? '아래는 사용자가 @ 로 지목한 파일인데 내용을 못 붙였습니다. 지어내지 말고, 필요하면 Read 로 읽으세요.'
+    : (붙은것.length === 1
+      ? '아래는 사용자가 @ 로 지목한 파일입니다. 이미 읽은 것으로 치고 답하세요.'
+      : `아래는 사용자가 @ 로 지목한 파일 ${붙은것.length}개입니다. 이미 읽은 것으로 치고 답하세요.`);
   return { text: `${원문}\n\n${머리}${붙일것.join('')}`, attached, missing, blocked, 그림들 };
 }

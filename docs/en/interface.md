@@ -220,7 +220,28 @@ that one step runs to the end — everything after it is steered.
 | You typed it **before** the turn started | It stays the next turn, as always. Steering redirects the road being travelled; it does not pull forward what is waiting in line |
 | Nothing appears on screen | It did not land. Anything accepted always prints the line above — without it people type the same thing again and it gets sent twice |
 
+Discovered skill commands are called as `/<plugin>:<name>`, and their body is substituted.
+**Only two things are substituted: `$ARGUMENTS` and `$1`…`$9`.**
+
+| Written | What it becomes |
+|---|---|
+| `$ARGUMENTS` | Everything typed after the command, verbatim (spacing included) |
+| `$1` … `$9` | The nth whitespace-separated word. A position you did not supply becomes the **empty string** |
+| `$10` | **Not** the tenth argument — it is `$1` followed by the character `0` |
+| `$0`, `${...}`, `$&`, `` $` `` | Not placeholders — they stay **exactly as written** |
+
+Stopping at `$9` is deliberate. Widening it to two digits would silently change the meaning
+of any existing command that wrote a digit right after `$1`. And the filling values come
+**only from what the person typed** — a `$2` inside that text is not expanded again.
+
 ---
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-modes-en-dark.svg">
+    <img alt="All eight work modes on one sheet: each mode’s glyph and name, whether it can change files, its thinking depth and effort, its step ceiling on a 128k model, and what it is for" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-modes-en-light.svg" width="800">
+  </picture>
+</p>
 
 ## Work modes
 

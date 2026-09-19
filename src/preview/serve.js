@@ -17,14 +17,19 @@
  *   1. 127.0.0.1 에만 묶는다. 0.0.0.0 은 아예 못 쓰게 해 뒀다 —
  *      같은 사무실 망에서 아무나 내 소스를 읽게 된다.
  *   2. 포트는 0(커널이 빈 것을 준다). 고정 포트는 남이 쓰던 것을 뺏는다.
- *   3. 경로는 guard 의 scope 로만 푼다. `../`·심볼릭 링크·정션을 이미
- *      거기서 막고 있으므로 여기서 또 짜지 않는다. 두 벌이 되면 한쪽만 고쳐진다.
+ *   3. 경로는 guard 의 scope 로 풀고, **띄운 폴더 밖인지는 여기서 한 번 더 본다.**
+ *      scope 는 작업 범위(프로젝트 전체)까지 열어 주므로 그것만으로는 모자란다 —
+ *      하위 폴더 하나만 띄웠을 때 `/../다른폴더/비밀.env` 가 그대로 나간다.
+ *      두 벌이라 한쪽만 고쳐질 걱정은 남지만, 없으면 진짜로 샌다 — 그 자리
+ *      인라인 주석(`밖인지는 길 조각으로 본다`)이 어떻게 재는지 적어 뒀다.
  *   4. 파일을 **주기만** 한다. PUT·POST·DELETE 는 받지 않는다.
  */
 import { createServer } from 'node:http';
-import { createReadStream, statSync, existsSync, readdirSync, watch, realpathSync } from 'node:fs';
-import { join, extname, relative, sep } from 'node:path';
+import { createReadStream, statSync, existsSync, readdirSync, watch, realpathSync, openSync, readSync, closeSync } from 'node:fs';
+import { join, extname, relative, sep, isAbsolute, basename } from 'node:path';
 import { spawn } from 'node:child_process';
+import { 내부살림 } from '../tools/fsutil.js';
+import { detect } from '../tools/encoding.js';
 
 // 확장자 → 형식. 없는 것은 그냥 내려받게 둔다.
 // glb·gltf·wasm 을 넣어 뒀다 — 형식이 틀리면 Three.js 가 조용히 아무것도 안 그린다.
@@ -48,13 +53,18 @@ const 형식 = {
 //
 // 파일을 고치면 화면이 저절로 새로 뜬다. 이게 없으면 결국 브라우저를 손으로
 // 새로 고치게 되고, 그러면 굳이 여기서 띄울 이유가 절반은 사라진다.
+//
+// 조각에는 **ASCII 만** 싣는다 (2.0.0 6회차 미리보기6). 브라우저는 끼운 조각도 그 페이지의
+// 인코딩으로 읽는다 — EUC-KR·Shift_JIS 페이지에 한글 주석과 한글 통로 이름을 끼웠더니 통로
+// 주소부터 깨졌다. 그래서 통로 이름은 퍼센트로 싣고, 알리는 말은 영어 낱말로 하고, 사람이 읽을
+// 풀이는 조각 바깥(여기)에 둔다. 서버가 꺼지면 EventSource 는 계속 다시 붙으려 하는데 조용히
+// 놔둔다 — deel 을 다시 띄우면 그대로 이어 붙어서 화면을 새로 고치지 않아도 된다.
+const 되살림통로 = '__deel__/살아있나';
 const 되살림 = `
-<script>/* deel 미리보기 — 파일이 바뀌면 새로 뜬다 */
+<script>/* deel preview: reload on change */
 (function(){try{
-  var s=new EventSource('/__deel__/살아있나');
-  s.onmessage=function(e){ if(e.data==='다시')location.reload(); };
-  // 서버가 꺼지면 EventSource 가 계속 다시 붙으려 한다. 조용히 놔둔다 —
-  // deel 을 다시 띄우면 그대로 이어 붙어서 화면을 새로 고치지 않아도 된다.
+  var s=new EventSource('/${되살림통로.split('/').map(encodeURIComponent).join('/')}');
+  s.onmessage=function(e){ if(e.data==='reload')location.reload(); };
 }catch(err){}})();
 </script>`;
 
@@ -68,6 +78,79 @@ const 안전한경로 = (u) => {
   if (p.includes('\0') || p.includes('\\')) return null;
   return p.replace(/^\/+/, '');
 };
+
+/*
+ * ── 우리 이름으로 부른 것만 받는다 (사냥5 H5-7) ─────────────────────────────
+ *
+ * 127.0.0.1 에 묶는 것으로는 **브라우저**를 못 막는다. 사람이 연 아무 웹 페이지가
+ * 제 도메인을 잠깐 127.0.0.1 로 풀리게 바꾸면(DNS 리바인딩) 그 페이지 스크립트가
+ * `http://evil.example:포트/…` 를 **같은 출처**로 읽는다. 연결은 127.0.0.1 로 오니
+ * 묶은 주소로는 못 가르고, 가르는 자리는 Host 머리글 하나다. 실제로 재 보니 Host 를
+ * evil.example 로 줘도 200 이었다. 브라우저가 우리를 부르는 이름은 셋뿐이고 포트까지
+ * 붙는다(기본 포트가 아니므로). 그 밖이면 안 준다.
+ */
+function 우리이름인가(host, port) {
+  const 이름 = String(host ?? '').trim().toLowerCase();
+  return [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`].includes(이름);
+}
+
+/*
+ * ── 살림·비밀 파일은 안 준다 (사냥5 H5-7) ───────────────────────────────────
+ *
+ * 경로가 띄운 폴더 안이면 무엇이든 줬다. 프로젝트 폴더를 그대로 띄우는 일이 흔한데,
+ * 거기에는 `.deel/config.json`(게이트웨이 열쇠)과 `.env` 가 같이 산다 — 위 리바인딩
+ * 한 번이면 둘 다 나간다. 도구가 읽으면 안 되는 살림은 도구 울타리와 **같은 자**
+ * (tools/fsutil.js 의 내부살림)로 가른다. 자를 여기 또 적으면 한쪽만 고쳐진다.
+ * 그 자가 안 보는 비밀은 Vite 개발 서버가 기본으로 거부하는 목록을 따른다 —
+ * `.env`·`.env.*`·`*.pem`·`*.crt`·`.git/` — 미리보기가 그걸 줘야 할 까닭이 없다.
+ *
+ * 거기에 **개인키**를 보탠다 (2.0.0 7회차). Vite 목록에는 증서(`.pem`·`.crt`)만 있는데,
+ * deel 자신이 프로필 `"인증서"` 에 `client.pem`(증서) 곁에 `client.key`(개인키)와
+ * `client.pfx`·`client.p12`(둘 한 덩이)를 두라고 적어 둔다(backend/clientcert.js 머리말).
+ * 그래서 이 프로그램을 쓰는 사람의 폴더에는 그 파일들이 실제로 있다 — 그런데 증서는
+ * 가리고 **새면 안 되는 쪽인 개인키는 그대로 줬다.** 재 보니 `/client.key` 가 200 으로
+ * 내용까지 나갔다. 둘을 갈라 막을 까닭이 없다.
+ *
+ * `.cer` 도 같이 막는다 — 윈도우 「인증서 내보내기」 가 기본으로 내놓는 이름이고 알맹이는
+ * `.crt` 와 같은 것이다. 미리보기가 못 보여 줘서 아쉬울 파일이 아니다. 잘못 막았을 때 드는
+ * 값(파일 하나가 안 보인다)이 잘못 줬을 때 드는 값(개인키가 나간다)보다 훨씬 싸다.
+ */
+function 안줄것인가(abs, 뿌리) {
+  /*
+   * 살림인지는 **띄운 폴더 이름 + 그 안쪽 길**로 본다 (막판 훑기).
+   *
+   * 여태 절대경로를 그대로 넘겼다. 그러면 띄운 폴더가 하필 `.claude/` 나
+   * `.cursor/` **아래**에 있을 때 — 거기에 만든 것을 두는 사람이 실제로 있다 —
+   * 그 폴더의 **모든 파일**이 403 이 된다. 재 보니 `index.html` 도 `a.css` 도
+   * 전부 「살림이나 비밀 파일이라 안 줍니다」 였다. 제가 만든 제 사이트인데.
+   * 거짓 경고도 결함이다.
+   *
+   * 그렇다고 안쪽 길만 보면 `.deel` 을 **통째로** 띄운 사람이 `config.json` 을
+   * 그대로 내주게 된다 — 그때는 안쪽 길이 그냥 `config.json` 이라 아무 데도 안
+   * 걸린다. 그래서 뿌리의 **제 이름 한 칸**을 앞에 붙여서 본다.
+   *
+   *   띄운 곳 `…/.claude/내사이트` · `index.html` → `내사이트/index.html`   준다
+   *   띄운 곳 `…/.claude`          · `history.jsonl` → `.claude/history.jsonl` 안 준다
+   *   띄운 곳 `…/.deel`            · `config.json`   → `.deel/config.json`     안 준다
+   *   띄운 곳 프로젝트             · `.deel/config.json` → `myproj/.deel/…`    안 준다
+   *
+   * 띄운 폴더 **밖**은 위 담장(안쪽 검사 · 이음줄 검사)이 이미 막으므로,
+   * 여기서 위쪽 조각을 안 봐도 새지 않는다.
+   */
+  const 안쪽길 = relative(뿌리, abs);
+  const 볼길 = [basename(뿌리), ...(안쪽길 ? [안쪽길] : [])].join(sep);
+  if (내부살림(볼길)) return true;
+  const 조각 = 안쪽길.split(sep).map((x) => x.toLowerCase());
+  /*
+   * 윈도 NTFS 는 조각 끝의 `:스트림`(`.env::$DATA` · `.git::$INDEX_ALLOCATION`)과 끝 점·빈칸이 **같은
+   * 파일·폴더**를 연다. 아래 이름 견주기는 글자 그대로라, 재 보니 `/.env::$DATA` · `/x.pem::$DATA` ·
+   * `/.git::$INDEX_ALLOCATION/config` 가 200 으로 나갔다 (2.0.0 6회차 · `재현-미리보기6.mjs`). `.deel` 은
+   * 내부살림 이 꼬리를 벗겨 봐서 막혔다. 윈도 파일 이름에는 `:` 가 못 들어가므로 그런 조각은 통째로 안 준다.
+   */
+  if (process.platform === 'win32' && 조각.some((x) => x.includes(':') || /[. ]$/.test(x))) return true;
+  if (조각.some((x) => x === '.git' || x === '.env' || x.startsWith('.env.'))) return true;
+  return /\.(pem|crt|cer|key|pfx|p12)$/.test(조각[조각.length - 1] ?? '');
+}
 
 /** 이용자 파일 이름을 HTML 안에 그대로 꽂기 전에 씌운다 — 파일 이름에
  * `<script>` 가 들어 있어도 태그로 안 읽히게. */
@@ -86,6 +169,15 @@ const html씌우기 = (s) => String(s).replace(/[&<>"']/g, (c) => ({
  */
 export function 띄우기({ 뿌리, scope, 되살리기 = true }) {
   const 듣는이들 = new Set();   // 살아 있는 EventSource 응답들
+  /*
+   * 뿌리의 **진짜** 자리. 이음줄을 따라간 뒤 견주려면 양쪽이 다 진짜여야 한다.
+   *
+   * 맥의 `/tmp` 는 `/private/tmp` 로 가는 이음줄이고, 윈도의 `C:\Users\나\문서` 도
+   * 원드라이브를 켜면 이음줄이 된다. 한쪽만 따라가면 제자리에 있는 파일이 전부
+   * 「폴더 밖」 이 되어 403 을 받는다 — 거짓 경고도 결함이다.
+   */
+  let 뿌리진짜 = 뿌리;
+  try { 뿌리진짜 = realpathSync.native(뿌리); } catch { /* 못 바꾸면 준 대로 */ }
   let 바뀐수 = 0;
   let 감시 = null;
   let 늦추기 = null;
@@ -93,11 +185,16 @@ export function 띄우기({ 뿌리, scope, 되살리기 = true }) {
   const 알리기 = () => {
     바뀐수 += 1;
     for (const res of 듣는이들) {
-      try { res.write('data: 다시\n\n'); } catch { 듣는이들.delete(res); }
+      try { res.write('data: reload\n\n'); } catch { 듣는이들.delete(res); }
     }
   };
 
   const srv = createServer((req, res) => {
+    // 우리 이름으로 부른 것만 받는다 — 되살림 통로도 이 뒤다 (위 우리이름인가 머리말).
+    if (!우리이름인가(req.headers.host, srv.address()?.port)) {
+      res.writeHead(403);
+      return res.end('이 이름으로는 안 받습니다 — 127.0.0.1 이나 localhost 로 여세요');
+    }
     // 주기만 한다. 받는 길은 아예 열지 않는다.
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { allow: 'GET, HEAD' });
@@ -108,12 +205,22 @@ export function 띄우기({ 뿌리, scope, 되살리기 = true }) {
     if (길 === null) { res.writeHead(400); return res.end('주소가 이상합니다'); }
 
     // 되살림 통로. 열어 두고 파일이 바뀔 때마다 한 줄씩 흘린다.
-    if (길 === '__deel__/살아있나') {
+    if (길 === 되살림통로) {
       res.writeHead(200, {
         'content-type': 'text/event-stream; charset=utf-8',
         'cache-control': 'no-cache',
         connection: 'keep-alive',
       });
+      /*
+       * HEAD 는 머리만 주고 끝낸다 (9회차 · 2차 눈).
+       *
+       * 여태 HEAD 도 이 아래로 흘러 몸을 쓰고 **연결을 안 닫은 채** 듣는이
+       * 목록에 들어갔다. HEAD 에 몸을 주는 것은 규격 위반이고(RFC 9110),
+       * 그 연결은 브라우저가 아니라 프록시·검사기가 두드린 것이라 영영 안
+       * 닫힌다 — 재 보니 **응답이 끝나지 않았다.** 그 뒤 파일이 바뀔 때마다
+       * 아무도 안 보는 곳으로 `data: reload` 를 계속 흘린다.
+       */
+      if (req.method === 'HEAD') return res.end();
       res.write(': 붙었습니다\n\n');
       듣는이들.add(res);
       req.on('close', () => 듣는이들.delete(res));
@@ -125,13 +232,50 @@ export function 띄우기({ 뿌리, scope, 되살리기 = true }) {
       abs = scope.resolve(길 ? join(뿌리, 길) : 뿌리);
       // scope 는 작업 범위까지만 본다. 띄운 폴더 밖도 막아야 한다 —
       // 아니면 /../다른폴더/비밀.env 로 프로젝트 전체가 열린다.
+      /*
+       * 밖인지는 **길 조각**으로 본다. 글자로 보면 안 된다 (9회차 · 2차 눈).
+       *
+       * `..config.json` 은 윈도·리눅스 둘 다에서 만들 수 있는 이름이다.
+       * `startsWith('..')` 로 보면 그 진짜 파일이 「띄운 폴더 밖」 이 되어
+       * 403 을 받는다 — 거짓 경고도 결함이다. 그리고 뒤에 있던
+       * `split(sep)[0] === '..'` 는 앞 조건에 통째로 먹혀 **어떤 입력에도
+       * 혼자 걸리지 않았다.** 안 걸리는 규칙은 없느니만 못하다.
+       *
+       * `isAbsolute` 도 같이 본다. 윈도에서 relative 는 드라이브가 다르면
+       * `..` 이 아니라 `D:\…` 를 그대로 돌려준다 — 그것은 `..` 검사에 안 걸린다.
+       */
       const 안쪽 = relative(뿌리, abs);
-      if (안쪽.startsWith('..') || (안쪽 !== '' && 안쪽.split(sep)[0] === '..')) {
+      if (isAbsolute(안쪽) || 안쪽.split(sep)[0] === '..') {
         res.writeHead(403); return res.end('띄운 폴더 밖입니다');
       }
+      /*
+       * 이음줄은 **따라간 뒤에** 한 번 더 본다 (막판 훑기).
+       *
+       * 위 검사는 글자로 짠 길만 본다. `공개/키 → C:\Users\나\.ssh` 같은 이음줄은
+       * 글자로는 `공개/키` 라 떳떳이 안쪽이고, 그대로 열어 준다. 만든 사람이
+       * 일부러 건 것도 있지만 `node_modules/.bin`·pnpm 저장고처럼 도구가 저절로
+       * 거는 것이 훨씬 많다 — 폴더 하나 띄웠다고 홈 전체가 열리면 안 된다.
+       *
+       * 없는 파일은 여기서 안 막는다. realpath 가 던지면 아래 existsSync 가
+       * 404 로 맡는다 — 있는 것에 403, 없는 것에 404 를 주면 있는지가 샌다.
+       */
+      try {
+        const 진짜 = realpathSync.native(abs);
+        if (진짜 !== abs) {
+          const 진짜안쪽 = relative(뿌리진짜, 진짜);
+          if (isAbsolute(진짜안쪽) || 진짜안쪽.split(sep)[0] === '..') {
+            res.writeHead(403); return res.end('띄운 폴더 밖으로 가는 이음줄입니다');
+          }
+        }
+      } catch { /* 없는 것은 아래에서 404 */ }
     } catch {
       res.writeHead(403);
       return res.end('작업 범위 밖입니다');
+    }
+    // 있는지 보기 **전에** 가른다 — 없는 .env 에 404, 있는 .env 에 403 이면 있는지가 샌다.
+    if (안줄것인가(abs, 뿌리)) {
+      res.writeHead(403);
+      return res.end('살림이나 비밀 파일이라 안 줍니다');
     }
 
     if (!existsSync(abs)) {
@@ -172,7 +316,11 @@ export function 띄우기({ 뿌리, scope, 되살리기 = true }) {
         // 헤더는 ASCII 만 실린다. 한글 폴더 이름을 그대로 넣으면 ERR_INVALID_CHAR 로
         // **서버가 죽는다.** 미리보기 하나 켰다가 deel 이 통째로 끝나는 셈이다.
         // 길은 이미 디코드된 값이므로 다시 인코드해서 싣는다.
-        res.writeHead(301, { location: `${encodeURI(`/${길}/`)}${물음표 ?? ''}` });
+        //
+        // 조각마다 encodeURIComponent 로 싣는다 (2.0.0 6회차 미리보기6). encodeURI 는 `#`·`?` 를
+        // 주소의 뼈대로 보고 그대로 둬서, `c#` 폴더로 넘길 때 `location: /c#/` 가 나갔다 — 브라우저는
+        // `#` 뒤를 조각으로 떼고 `/c` 를 다시 불러 같은 넘김을 되풀이했다.
+        res.writeHead(301, { location: `/${길.split('/').map(encodeURIComponent).join('/')}/${물음표 ?? ''}` });
         return res.end();
       }
       const 첫장 = join(abs, 'index.html');
@@ -214,6 +362,12 @@ export function 띄우기({ 뿌리, scope, 되살리기 = true }) {
             // 이 시계가 프로그램을 붙잡고 있으면 안 된다.
             늦추기.unref?.();
           });
+          /*
+           * 도는 중에 오는 감시 오류(지켜보던 폴더가 지워짐·권한이 바뀜)는 위 try 가 못 잡는다.
+           * 'error' 를 받는 이가 없으면 EventEmitter 가 던져 **프로세스가 죽는다** (2.0.0 6회차
+           * 미리보기6 V7). 되살림만 멈추고 파일은 계속 준다.
+           */
+          감시.on('error', () => { try { 감시?.close(); } catch { /* 이미 닫혔다 */ } });
         } catch {
           // 리눅스 옛 커널 등에서 recursive 가 안 될 수 있다. 그때는 되살림만 없다.
           감시 = null;
@@ -240,22 +394,62 @@ export function 띄우기({ 뿌리, scope, 되살리기 = true }) {
   });
 }
 
+/*
+ * 표에 적힌 `charset=utf-8` 을 **파일에 맞춰 고친다** (막판 훑기).
+ *
+ * HTTP 머리에 적은 charset 은 문서 안의 `<meta charset>` 을 **이긴다**(WHATWG).
+ * 그래서 EUC-KR 로 적힌 옛 페이지는 제 입으로 euc-kr 이라 적어 둬도 여기서
+ * utf-8 이라고 우기는 순간 통째로 깨져 보인다. 되살림 조각을 바이트째로 끼운
+ * 것도(위 머리말) 이 한 줄이 도로 무르고 있었다 — 반쪽 고침이었다.
+ *
+ * 건드리는 것은 글 갈래뿐이다. 그림·소리·wasm 에는 charset 이 없다.
+ */
+function 글자맞추기(mime, 머리) {
+  if (!머리 || !mime.includes('charset=utf-8')) return mime;
+  // 잘림:true — 앞부분만 봤으니 끝에서 잘린 글자를 깨진 것으로 세지 말라는 뜻이다.
+  const r = detect(머리, { 잘림: true });
+  return r.id === 'utf-8' ? mime : mime.replace('charset=utf-8', `charset=${r.id}`);
+}
+
+/** 인코딩을 가리려고 앞부분만 읽는다. 다 읽으면 큰 파일에서 흘려보내는 뜻이 없어진다. */
+function 머리읽기(abs, 몇 = 64 * 1024) {
+  let fd = null;
+  try {
+    fd = openSync(abs, 'r');
+    const buf = Buffer.alloc(몇);
+    const 센것 = readSync(fd, buf, 0, 몇, 0);
+    return buf.subarray(0, 센것);
+  } catch { return null; } finally {
+    if (fd !== null) { try { closeSync(fd); } catch { /* 이미 닫혔다 */ } }
+  }
+}
+
 function 파일주기(abs, req, res, 되살리기) {
   const ext = extname(abs).toLowerCase();
-  const mime = 형식[ext] ?? 'application/octet-stream';
+  const 적힌형식 = 형식[ext] ?? 'application/octet-stream';
+  const mime = 적힌형식.includes('charset=utf-8') ? 글자맞추기(적힌형식, 머리읽기(abs)) : 적힌형식;
   let st;
   try { st = statSync(abs); } catch { res.writeHead(404); return res.end(); }
 
   // HTML 에는 되살림 조각을 끼워 넣는다. 길이가 달라지므로 흘려보내지 않고 통째로 읽는다.
   if (되살리기 && (ext === '.html' || ext === '.htm')) {
-    let 글 = '';
-    const s = createReadStream(abs, 'utf8');
-    s.on('data', (d) => { 글 += d; });
+    const 조각들 = [];
+    const s = createReadStream(abs);
+    s.on('data', (d) => { 조각들.push(d); });
     s.on('error', () => { res.writeHead(500); res.end(); });
     s.on('end', () => {
-      // </body> 앞에 넣는 게 정석이지만 없는 문서도 많다. 없으면 그냥 뒤에 붙인다.
-      const 몸 = 글.includes('</body>') ? 글.replace('</body>', `${되살림}\n</body>`) : 글 + 되살림;
-      const buf = Buffer.from(몸, 'utf8');
+      /*
+       * **바이트째로** 끼운다 (2.0.0 6회차 미리보기6). utf8 글로 읽었다가 utf8 로 다시 적었더니
+       * EUC-KR 페이지의 한글이 전부 U+FFFD 로 바뀌어 나갔다 — 되살리기는 기본으로 켜져 있어서
+       * 옛 한글 페이지는 미리보기에서 늘 깨져 보였다. `</body>` 는 그런 인코딩에서도 같은 ASCII
+       * 바이트이고, 끼우는 조각도 ASCII 뿐이라(위 되살림 머리말) 원래 바이트를 한 개도 안 건드린다.
+       * `</body>` 앞에 넣는 게 정석이지만 없는 문서도 많다. 없으면 그냥 뒤에 붙인다.
+       */
+      const 원 = Buffer.concat(조각들);
+      const 자리 = 원.indexOf('</body>');
+      const buf = 자리 >= 0
+        ? Buffer.concat([원.subarray(0, 자리), Buffer.from(`${되살림}\n`), 원.subarray(자리)])
+        : Buffer.concat([원, Buffer.from(되살림)]);
       res.writeHead(200, { 'content-type': mime, 'content-length': buf.length, 'cache-control': 'no-store' });
       res.end(req.method === 'HEAD' ? undefined : buf);
     });
@@ -267,8 +461,14 @@ function 파일주기(abs, req, res, 되살리기) {
    * 이걸 안 받아 주면 <video> 가 아예 안 돈다 — 파일은 멀쩡한데 화면만 검다.
    */
   const range = req.headers.range;
+  /*
+   * `bytes=-` 는 **문법 오류**다 — 시작도 끝도 없다. 규격은 「못 알아들을
+   * Range 는 없는 것처럼 보라」 고 한다(RFC 9110 §14.2). 여태는 정규식에
+   * 걸려 처음=0 · 끝=마지막 으로 채워져 **파일 전체를 206 으로** 줬다.
+   * 받는 쪽은 자기가 청한 조각을 받았다고 믿는다 (9회차 · 2차 눈).
+   */
   const m = range && /^bytes=(\d*)-(\d*)$/.exec(String(range).trim());
-  if (m && st.size > 0) {
+  if (m && st.size > 0 && (m[1] !== '' || m[2] !== '')) {
     let 처음 = m[1] === '' ? null : Number(m[1]);
     let 끝 = m[2] === '' ? null : Number(m[2]);
     if (처음 === null && 끝 !== null) { 처음 = Math.max(0, st.size - 끝); 끝 = st.size - 1; }
@@ -284,7 +484,7 @@ function 파일주기(abs, req, res, 되살리기) {
       'content-length': 끝 - 처음 + 1,
     });
     if (req.method === 'HEAD') return res.end();
-    return createReadStream(abs, { start: 처음, end: 끝 }).pipe(res);
+    return 흘리기(createReadStream(abs, { start: 처음, end: 끝 }), res);
   }
 
   res.writeHead(200, {
@@ -295,13 +495,29 @@ function 파일주기(abs, req, res, 되살리기) {
     'cache-control': 'no-store',
   });
   if (req.method === 'HEAD') return res.end();
-  return createReadStream(abs).pipe(res);
+  return 흘리기(createReadStream(abs), res);
+}
+
+/*
+ * 읽기 흐름을 답에 잇는다 — **흐름의 오류를 받는 자리까지.**
+ *
+ * `pipe` 는 오류를 넘겨 주지 않는다. 다른 프로그램이 파일을 잠가 두면(윈도 EBUSY — 편집기·백신·
+ * 빌드 도구가 흔히 그런다) statSync 는 되고 여는 자리에서 오류가 나는데, 그걸 아무도 안 받아
+ * **deel 프로세스가 통째로 죽었다** (2.0.0 6회차 미리보기6). 머리말(200 · 길이)은 이미 나갔으니
+ * 답을 고칠 수는 없고, 연결을 끊어 받는 쪽이 「덜 받은 답」 으로 알게 한다 — 빈 파일을 성한
+ * 답인 척 끝내지 않는다.
+ */
+function 흘리기(흐름, res) {
+  흐름.on('error', () => res.destroy());
+  return 흐름.pipe(res);
 }
 
 // index.html 이 없는 폴더. 무엇이 있는지라도 보여 준다 — 흰 화면보다 낫다.
 function 목록주기(abs, 뿌리, res) {
   let 것들 = [];
   try { 것들 = readdirSync(abs, { withFileTypes: true }); } catch { /* 못 읽으면 빈 채로 */ }
+  // 눌러도 안 주는 것은 목록에도 안 올린다 — 이름만으로도 무엇이 있는지 샌다 (사냥5 H5-7).
+  것들 = 것들.filter((e) => !안줄것인가(join(abs, e.name), 뿌리));
   const 여기 = relative(뿌리, abs).split(sep).join('/');
   // 파일 이름은 디스크에서 온 것이라 `<script>` 같은 것이 그대로 들어 있을 수
   // 있다 — 씌우지 않고 꽂으면 그 파일이 있는 폴더를 미리보기로 여는 사람 화면에서

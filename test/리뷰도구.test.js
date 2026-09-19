@@ -19,7 +19,7 @@
 // 혹시 새어 나가면 그 자리에서 터지도록, 아이한테는 agy 를 못 찾는 PATH 를
 // 준다 — 이 저장소 규칙상 검사는 밖으로 한 줄도 안 내보낸다.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -955,7 +955,9 @@ trace('9-줄일말');
    */
   {
     const 어긋본문 = readFileSync(new URL('../tools/mutate.mjs', import.meta.url), 'utf8');
-    const 걸러줄 = 어긋본문.split('\n').find((줄) => 줄.startsWith('const 걸러 =')) ?? '';
+    // 조각내기가 붙으면서 `const 걸러 = …` 는 여러 줄이 됐다. 한 줄만 집으면
+    // 뒷줄의 `.replace(…)` 를 못 보고 **빨갛게 거짓말한다** — 쌍반점까지 집는다.
+    const 걸러줄 = (/^const 걸러 =[\s\S]*?;$/m.exec(어긋본문) ?? [''])[0];
     check('★★ 걸러낼 경로의 역슬래시를 슬래시로 맞춘다',
       걸러줄.includes(String.raw`replace(/\\/g, '/')`), 걸러줄);
     check('★★ 골라 돌렸으면 몇 개만 봤는지 화면에 적는다',
@@ -992,6 +994,353 @@ trace('9-줄일말');
   check('★★★ review2 가 줄일말을 부른다',
     /import \{[^}]*줄일말[^}]*\} from '\.\/리뷰길이\.mjs'/.test(본문) && /줄일말\(\{/.test(본문),
     본문.split('\n').find((l) => l.includes('줄일말({'))?.trim() ?? '');
+}
+
+// ── 11. tools/ 아래 연장들이 조용히 딴 것을 하던 자리 ───────────────────
+//
+// 이 폴더의 연장들은 검사가 얇다. 관문이 부르는 것도 있고(`npm run docs`),
+// README 얼굴을 다시 그리는 것도 있다. 그런데 **틀려도 초록으로 보이는**
+// 꼴이 일곱 자리였다(8회차 판정 · 연장 갈래). 연장이 거짓말을 하면 그
+// 연장으로 잰 것이 전부 거짓이 되므로, 여기서 한 자리씩 못박는다.
+trace('11-연장들');
+{
+  const 잠깐집 = mkdtempSync(join(tmpdir(), 'deel-연장-'));
+  const 띄워 = (파일, 자리) => spawnSync(process.execPath, [파일], {
+    cwd: 자리, encoding: 'utf8', timeout: 60000, env: { ...process.env, NO_COLOR: '1' },
+  });
+
+  /*
+   * 1) `check-docs` — 말 폴더 한쪽이 없으면 검사 결과 대신 ENOENT 스택을
+   *    토하고 죽었다. 관문(`npm run docs`)이 부르는 연장이라, 사람은 화면만
+   *    보고 「링크가 끊겼나」 와 「폴더가 없나」 를 못 가른다. 없으면
+   *    **없다고 적고** 종료코드로 말해야 한다.
+   */
+  {
+    const 자리 = join(잠깐집, '문서');
+    mkdirSync(join(자리, 'docs', 'ko'), { recursive: true });
+    writeFileSync(join(자리, 'README.md'), '# a\n', 'utf8');
+    writeFileSync(join(자리, 'README.ko.md'), '# 가\n', 'utf8');
+    writeFileSync(join(자리, 'docs', 'ko', 'a.md'), '# 다\n', 'utf8');
+    const r = 띄워(join(뿌리, 'tools', 'check-docs.mjs'), 자리);
+    const 말 = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+    const 첫줄 = 말.trim().split('\n').filter((l) => l.trim())[0] ?? '';
+    check('★★★ 문서 폴더 한쪽이 없어도 스택을 안 토한다',
+      !/ENOENT|readdirSync/.test(말), 첫줄);
+    check('★★★ 없는 폴더를 이름으로 짚어 준다',
+      /docs\/en/.test(말) && /폴더 없음/.test(말), 첫줄);
+    check('★★★ 그래도 종료코드로 말한다', r.status === 1, `code=${r.status}`);
+  }
+
+  /*
+   * 1-2) 같은 연장 — 머리말은 「그림(`docs/assets/*.svg`)이 있나」 를 본다고
+   *      적어 두고 **한 장도 안 봤다.** README 의 그림은 전부
+   *      `raw.githubusercontent` 절대 주소인데(npm 페이지에서도 보이려면 그래야
+   *      한다) 검사가 `^https?:` 를 만나면 그냥 건너뛰었다. 그래서 그림 이름을
+   *      틀리게 적어도 초록이고, 읽는 사람만 깨진 그림을 본다.
+   *      우리 저장소를 가리키는 주소는 이 PC 파일로 돌려놓고 봐야 한다.
+   */
+  {
+    const 자리 = join(잠깐집, "그림링크");
+    mkdirSync(join(자리, "docs", "ko"), { recursive: true });
+    mkdirSync(join(자리, "docs", "en"), { recursive: true });
+    mkdirSync(join(자리, "docs", "assets"), { recursive: true });
+    writeFileSync(join(자리, "package.json"),
+      JSON.stringify({ repository: { url: "git+https://github.com/jysvai/deel-local-cli.git" } }), "utf8");
+    writeFileSync(join(자리, "docs", "assets", "있는것.svg"), "<svg/>", "utf8");
+    // 그려 놓고 아무 문서에도 안 건 그림. 쌓이면 어느 것이 살아 있는지 못 가른다.
+    writeFileSync(join(자리, "docs", "assets", "외톨이그림.svg"), "<svg/>", "utf8");
+    const 앞 = "https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/";
+    writeFileSync(join(자리, "README.md"),
+      `# a\n<img alt="x" src="${앞}있는것.svg">\n<img alt="y" src="${앞}없는것.svg">\n`, "utf8");
+    writeFileSync(join(자리, "README.ko.md"), "# 가" + String.fromCharCode(10), "utf8");
+    const r = 띄워(join(뿌리, "tools", "check-docs.mjs"), 자리);
+    const 말 = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    const 첫줄 = 말.trim().split(String.fromCharCode(10)).filter((l) => l.trim())[0] ?? "";
+    check("★★★ raw.githubusercontent 로 적은 우리 그림이 없으면 잡는다",
+      /없는것[.]svg/.test(말) && r.status === 1, 첫줄);
+    check("  있는 그림은 안 잡는다", !/있는것[.]svg/.test(말), 첫줄);
+    check("★★ 아무 문서도 안 가리키는 그림도 잡는다",
+      /외톨이그림[.]svg/.test(말), 첫줄);
+  }
+
+  /*
+   * 1-3) 같은 연장 — 「문서는 ko ↔ en 짝으로 둔다」 는 집안 규칙인데 그것을
+   *      지키는 검사가 한 군데도 없었다. 한쪽 말에만 문서를 더해도 관문이
+   *      초록으로 지나가고, 반대말을 읽는 사람만 없는 쪽에 선다.
+   */
+  {
+    const 자리 = join(잠깐집, "짝맞추기");
+    const 줄끝 = String.fromCharCode(10);
+    mkdirSync(join(자리, "docs", "ko"), { recursive: true });
+    mkdirSync(join(자리, "docs", "en"), { recursive: true });
+    writeFileSync(join(자리, "README.md"), "# a" + 줄끝, "utf8");
+    writeFileSync(join(자리, "README.ko.md"), "# 가" + 줄끝, "utf8");
+    writeFileSync(join(자리, "docs", "ko", "a.md"), "# 다" + 줄끝, "utf8");
+    writeFileSync(join(자리, "docs", "en", "a.md"), "# a" + 줄끝, "utf8");
+    writeFileSync(join(자리, "docs", "ko", "혼자.md"), "# 혼자" + 줄끝, "utf8");
+    const r = 띄워(join(뿌리, "tools", "check-docs.mjs"), 자리);
+    const 말 = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    const 첫줄 = 말.trim().split(줄끝).filter((l) => l.trim())[0] ?? "";
+    check("★★★ 한쪽 말에만 있는 문서를 잡는다",
+      /혼자[.]md/.test(말) && r.status === 1, 첫줄);
+    check("  짝이 맞는 문서는 안 잡는다",
+      !/docs.(ko|en).a[.]md/.test(말), 첫줄);
+  }
+
+  /*
+   * 1-4) 같은 연장 — **울타리를 세는 자리가 백틱 넷을 못 읽었다.**
+   *
+   *      마크다운을 마크다운 안에 보이려면 울타리를 백틱 넷으로 연다
+   *      (````). 이 저장소가 실제로 그렇게 적는다 —
+   *      `docs/ko/releases/1.20.md` 452째 줄이 그 자리다. 그런데 울타리빼기()
+   *      는 ``` 로 시작하는 줄이면 무조건 안팎을 뒤집었다. 백틱 넷으로 연
+   *      울타리 **안**의 ```js 한 줄이 울타리를 닫아 버리고, 그 뒤로는
+   *      안과 밖이 통째로 뒤집힌 채 파일 끝까지 간다.
+   *
+   *      뒤집힌 뒤의 글은 전부 「울타리 안」 이라 검사에서 빠진다. 끊긴 링크를
+   *      그 뒤에 적어도 관문은 초록이다 — 검사한다고 적어 놓고 한 줄도 안 보는
+   *      것과 같다. 1.20 은 2,500줄이 넘고 뒤집히는 자리가 그 앞머리다.
+   *
+   *      CommonMark 규칙대로 잰다: **연 울타리보다 짧은 울타리로는 못 닫고,
+   *      닫는 줄에는 다른 글자가 없어야 한다.**
+   */
+  {
+    const 자리 = join(잠깐집, "백틱넷");
+    const 줄끝 = String.fromCharCode(10);
+    const 백틱 = String.fromCharCode(96);
+    mkdirSync(join(자리, "docs", "ko"), { recursive: true });
+    mkdirSync(join(자리, "docs", "en"), { recursive: true });
+    writeFileSync(join(자리, "README.md"), "# a" + 줄끝, "utf8");
+    writeFileSync(join(자리, "README.ko.md"), "# 가" + 줄끝, "utf8");
+    writeFileSync(join(자리, "docs", "en", "a.md"), "# a" + 줄끝, "utf8");
+    writeFileSync(join(자리, "docs", "ko", "a.md"), [
+      "# 다", "",
+      백틱.repeat(4),
+      백틱.repeat(3) + "js console.log(1)" + 백틱.repeat(3),
+      백틱.repeat(4), "",
+      "[끊긴 것](없는파일.md)",
+      "",
+    ].join(줄끝), "utf8");
+    const r = 띄워(join(뿌리, "tools", "check-docs.mjs"), 자리);
+    const 말 = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    const 첫줄 = 말.trim().split(줄끝).filter((l) => l.trim())[0] ?? "";
+    check("★★★ 백틱 넷 울타리 뒤의 링크도 검사한다",
+      /없는파일[.]md/.test(말) && r.status === 1, 첫줄);
+  }
+
+  /*
+   * 1-5) 같은 연장 — **닻을 셀 때는 울타리를 안 벗겼다.**
+   *
+   *      머리말은 「닻이 그 파일의 **제목**에서 나오나」 를 본다고 적어 뒀는데,
+   *      닻들() 은 파일을 통째로 읽어 `#` 로 시작하는 줄을 전부 제목으로 셌다.
+   *      셸 예시 안의 주석 한 줄(`# 설치`)이 제목 행세를 하고, 그 이름을 가리킨
+   *      닻이 초록으로 지나간다. GitHub 에서는 그 자리에 닻이 없으므로 읽는
+   *      사람만 막다른 길에 선다 — 검사가 있는데 반대로 답한 셈이다.
+   */
+  {
+    const 자리 = join(잠깐집, "울타리속제목");
+    const 줄끝 = String.fromCharCode(10);
+    const 백틱 = String.fromCharCode(96);
+    mkdirSync(join(자리, "docs", "ko"), { recursive: true });
+    mkdirSync(join(자리, "docs", "en"), { recursive: true });
+    writeFileSync(join(자리, "README.md"), "# a" + 줄끝, "utf8");
+    writeFileSync(join(자리, "README.ko.md"), "# 가" + 줄끝, "utf8");
+    writeFileSync(join(자리, "docs", "en", "a.md"), "# a" + 줄끝, "utf8");
+    writeFileSync(join(자리, "docs", "ko", "a.md"), [
+      "# 머리", "",
+      백틱.repeat(3) + "bash",
+      "# 설치",
+      "npm i",
+      백틱.repeat(3), "",
+      "[가기](#설치)",
+      "",
+    ].join(줄끝), "utf8");
+    const r = 띄워(join(뿌리, "tools", "check-docs.mjs"), 자리);
+    const 말 = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    const 첫줄 = 말.trim().split(줄끝).filter((l) => l.trim())[0] ?? "";
+    check("★★★ 울타리 안의 주석은 제목으로 안 센다",
+      /닻 없음/.test(말) && r.status === 1, 첫줄);
+  }
+
+  /*
+   * 2) `make-hero` — 그리는 글자는 `banner.js` 의 `이름` 에서 읽어 오면서
+   *    `aria-label` 과 `<title>` 만 'deel' 로 박혀 있었다. 이름이 바뀌면
+   *    그림과 이름표가 갈라지는데, **그 어긋남은 화면을 못 보는 사람에게만
+   *    보인다** — 눈으로 보는 사람은 영영 모른다.
+   *
+   *    이름을 바꿔 놓고 잰다. 글꼴은 진짜 것을 그대로 쓰고 이름만 갈아
+   *    끼운 `banner.js` 를 하나 놓으면, 저장소의 SVG 는 한 장도 안 건드리고
+   *    잴 수 있다 — 이 연장은 `docs/assets` 에 그대로 덮어쓴다.
+   */
+  {
+    const 자리 = join(잠깐집, '그림');
+    mkdirSync(join(자리, 'src', 'ui'), { recursive: true });
+    mkdirSync(join(자리, 'tools'), { recursive: true });
+    const 진짜배너 = JSON.stringify(new URL('../src/ui/banner.js', import.meta.url).href);
+    // 'leed' — 글꼴에 있는 글자만 골라 쓴다. 없는 글자를 쓰면 연장이 아니라
+    // 검사가 죽어서, 무엇이 틀렸는지 못 본다.
+    writeFileSync(join(자리, 'src', 'ui', 'banner.js'),
+      `export { 글꼴 } from ${진짜배너};\nexport const 이름 = 'leed';\n`, 'utf8');
+    writeFileSync(join(자리, 'tools', 'make-hero.mjs'),
+      readFileSync(new URL('../tools/make-hero.mjs', import.meta.url), 'utf8'), 'utf8');
+    const r = 띄워(join(자리, 'tools', 'make-hero.mjs'), 자리);
+    let svg = '';
+    try { svg = readFileSync(join(자리, 'docs', 'assets', 'hero-ko-light.svg'), 'utf8'); } catch { /* 아래에서 빨개진다 */ }
+    check('★★ 머리 그림이 그려지기는 한다', svg.length > 0,
+      `code=${r.status} · ${String(r.stderr ?? '').trim().split('\n')[0] ?? ''}`);
+    check('★★★ 그림 이름표가 배너 이름을 따라간다',
+      /aria-label="leed —/.test(svg), (svg.match(/aria-label="[^"]*"/) ?? ['(없음)'])[0]);
+    check('★★★ <title> 도 같이 따라간다',
+      /<title>leed —/.test(svg), (svg.match(/<title>[^<]*<\/title>/) ?? ['(없음)'])[0]);
+  }
+
+  /*
+   * 3) `split-docs` — `<summary>` 이름표에서 앞머리(`자세히`)를 못 떼면
+   *    README 에 `자세히 — 자세히` 가 적히고, 옮겨 간 쪽에는 `### 자세히`
+   *    라는 아무 뜻 없는 제목이 선다. 이름표에 꼬리말이 없는 덩이가 그렇다.
+   *
+   *    이 연장도 README 와 docs 를 **제자리에서 덮어쓴다.** 그래서 임시
+   *    폴더에 작은 README 두 장을 세워 놓고 거기서 돌린다.
+   */
+  {
+    const 자리 = join(잠깐집, '나누기');
+    mkdirSync(자리, { recursive: true });
+    writeFileSync(join(자리, 'README.ko.md'),
+      '# 가\n\n## 도구\n\n한 줄 요약.\n\n<details>\n<summary><b>자세히</b></summary>\n\n속 글 하나.\n\n</details>\n\n## 끝\n', 'utf8');
+    writeFileSync(join(자리, 'README.md'),
+      '# a\n\n## Tools\n\none line.\n\n<details>\n<summary><b>More</b></summary>\n\ninner text.\n\n</details>\n\n## end\n', 'utf8');
+    띄워(join(뿌리, 'tools', 'split-docs.mjs'), 자리);
+    const 새README = readFileSync(join(자리, 'README.ko.md'), 'utf8');
+    const 새EN = readFileSync(join(자리, 'README.md'), 'utf8');
+    let 새쪽 = '';
+    try { 새쪽 = readFileSync(join(자리, 'docs', 'ko', 'tools.md'), 'utf8'); } catch { /* 아래에서 빨개진다 */ }
+    check('★★★ README 이름표에 「자세히」 가 두 번 안 적힌다',
+      !/자세히\*\* — 자세히/.test(새README),
+      새README.split('\n').find((l) => l.startsWith('> **자세히**')) ?? '(없음)');
+    check('★★★ 영어 쪽도 같다', !/More\*\* — More/.test(새EN),
+      새EN.split('\n').find((l) => l.startsWith('> **More**')) ?? '(없음)');
+    check('★★★ 옮겨 간 쪽에 「자세히」 만 적힌 제목이 안 선다',
+      새쪽 !== '' && !/^#{1,6} 자세히\s*$/m.test(새쪽) && !/<sub>자세히<\/sub>/.test(새쪽),
+      새쪽.split('\n').filter((l) => /자세히/.test(l)).join(' / '));
+    check('★★ 그래도 옮겨 간 쪽으로 가는 링크는 남는다',
+      /\[도구 자세히 읽기 →\]\(docs\/ko\/tools\.md#도구\)/.test(새README));
+  }
+
+  /*
+   * 4) `review2 --since` — git 이 실패해도 **stdout 이 비었다는 것만** 보고
+   *    「바뀐 자리가 없습니다」 로 0 을 냈다. 없는 판 이름을 적은 사람은
+   *    「그 사이에 아무것도 안 바뀌었구나」 로 읽고 넘어간다 — 리뷰를 건너뛴
+   *    것을 리뷰가 끝난 것으로 안다. `--files` 갈래는 이미 status 를 본다.
+   */
+  {
+    const 자리 = join(잠깐집, '저장소');
+    mkdirSync(자리, { recursive: true });
+    const 깃2 = (...args) => spawnSync('git', args, { cwd: 자리, encoding: 'utf8' });
+    깃2('init', '-q');
+    깃2('config', 'user.email', 'a@b.c');
+    깃2('config', 'user.name', '검사');
+    writeFileSync(join(자리, 'a.js'), 'export const a = 1;\n', 'utf8');
+    깃2('add', '-A');
+    깃2('commit', '-q', '-m', 'a');
+    const r = spawnSync(process.execPath, [join(뿌리, 'tools', 'review2.mjs'), '--since', '없는판'], {
+      cwd: 자리, encoding: 'utf8', timeout: 30000,
+      env: { ...process.env, LOCALAPPDATA: 자리, USERPROFILE: 자리, HOME: 자리 },
+    });
+    const 말 = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+    const 첫줄 = 말.trim().split('\n').filter((l) => l.trim())[0] ?? '';
+    check('★★★ git 이 실패한 판을 「안 바뀌었다」 로 안 읽는다',
+      !/볼 것이 없습니다/.test(말), 첫줄);
+    check('★★★ 그 판은 0 으로 안 끝난다', r.status === 2, `code=${r.status}`);
+    check('★★★ git 이 한 말을 그대로 옮긴다',
+      /없는판/.test(말) && /못 읽었습니다/.test(말),
+      말.trim().split('\n').filter((l) => l.trim()).slice(0, 2).join(' / '));
+  }
+
+  rmSync(잠깐집, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+}
+
+/*
+ * 「길어서 잘렸다」 를 재는 자리가 둘인데 **서로 다른 것을 봤다.**
+ *
+ * `실패갈래` 는 까닭을 칸마다 따로 재고(`까닭칸들`), `줄일말` 은 이어 붙인
+ * 한 줄을 잰다. `^자리이름: length` 앵커는 한 칸을 가리키므로 칸이 둘만
+ * 돼도 `줄일말` 쪽에서만 안 맞는다 — 갈래는 「길이초과」 인데 화면에는
+ * 「쪼개서 보라」 가 뜬다. 쪼개는 것은 그 판에서 할 수 있는 일이 아니다.
+ */
+trace('12-잘림말-두칸');
+{
+  const { 줄일말: 말고르기2, 실패갈래: 갈래, 끝난까닭: 까닭글짓기 } = await import('../tools/리뷰길이.mjs');
+  const 끝맺음 = { status: 'ERROR', error: 'length' };
+  const 까닭 = `${까닭글짓기(끝맺음)}\n`;   // review2 가 화면에 넘기는 그 꼴
+  check('★★★ 칸이 둘인 판도 갈래는 길이초과다', 갈래(끝맺음, '') === '길이초과', 갈래(끝맺음, ''));
+  check('★★★ 그때 하는 말도 잘림 쪽이다',
+    /잘렸습니다/.test(말고르기2({ 무엇: '파일 2개', 까닭 }).join(' ')), JSON.stringify(까닭));
+  check('★★★ 칸이 하나면 여태처럼 잡는다',
+    /잘렸습니다/.test(말고르기2({ 무엇: '파일 2개', 까닭: 'error: length' }).join(' ')));
+  check('★★★ 길이 얘기가 아니면 여태처럼 안 잡는다',
+    !/잘렸습니다/.test(말고르기2({ 무엇: '파일 2개', 까닭: 'status: ERROR · error: agy 를 못 띄웠습니다' }).join(' ')));
+}
+
+/*
+ * 눈금이 표준오류를 **까닭 자리로 친다고 적어 놓고** 안 쳤다.
+ *
+ * `{...끝, 샌것}` 으로 실어 보내는데 읽는 쪽(`까닭자리`)에는 `샌것` 이
+ * 없다. agy 가 못 뜬 판은 끝맺음 자체가 없고 까닭이 거기에만 있어서,
+ * 망이 끊긴 판도 길이가 넘친 판도 전부 「그밖에」 한 칸으로 뭉쳤다 —
+ * 눈금을 보고 설정을 고르는 사람이 **왜 잃었는지를 못 본다.**
+ */
+trace('13-눈금-샌것');
+{
+  const { 실패갈래: 갈래2, 끝난까닭: 까닭글짓기2 } = await import('../tools/리뷰길이.mjs');
+  check('★★★ 표준오류에만 적힌 망끊김을 알아본다',
+    갈래2({ 샌것: 'agy: socket hang up' }, '') === '망끊김',
+    갈래2({ 샌것: 'agy: socket hang up' }, ''));
+  check('★★★ 표준오류에만 적힌 길이초과도 알아본다',
+    갈래2({ 샌것: 'exceeded the output token limit' }, '') === '길이초과',
+    갈래2({ 샌것: 'exceeded the output token limit' }, ''));
+  check('★★★ 화면에 적는 까닭에도 그 말이 실린다',
+    /socket hang up/.test(까닭글짓기2({ 샌것: 'agy: socket hang up' })),
+    까닭글짓기2({ 샌것: 'agy: socket hang up' }));
+  /*
+   * `샌것` 이 까닭 자리가 됐으니 `끝난까닭` 이 이미 싣는다. 눈금이 한 번 더
+   * 이어 붙이면 같은 말이 두 번 적혀 200자 칸을 반쯤 잡아먹는다.
+   */
+  const 눈금본문 = readFileSync(new URL('../tools/리뷰눈금.mjs', import.meta.url), 'utf8');
+  check('★★ 눈금이 같은 까닭을 두 번 안 적는다',
+    !/\$\{끝난까닭\(끝맺음\)\} \$\{샌것\}/.test(눈금본문)
+      && /끝난까닭\(끝맺음\)\.trim\(\)/.test(눈금본문),
+    눈금본문.split('\n').find((l) => l.includes('맺음({ 판정, 까닭')) ?? '');
+  check('★★ 답이 왔으면 표준오류가 있어도 성공이다',
+    갈래2({ status: 'SUCCESS', 샌것: 'warning: 어쩌고' }, '무언가') === '성공');
+}
+
+/*
+ * 한 자리만 골라 어긋내는 길에서 `./src/…` 가 한 자리도 안 맞았다.
+ *
+ * 역슬래시는 이미 맞춰 놨는데(29차 리뷰) `./` 앞머리는 안 뗐다. 목록의
+ * `곳` 은 늘 `src/…` 라, 탭 자동완성이나 붙여넣기로 온 `./src/…` 는
+ * **하나도 안 맞고 종료코드 2** 다 — 「잰 줄 알고」 넘어가는 그 자리다.
+ */
+trace('14-어긋-경로');
+{
+  const 어긋본문2 = readFileSync(new URL('../tools/mutate.mjs', import.meta.url), 'utf8');
+  const 걸러줄2 = (/^const 걸러 =[\s\S]*?;$/m.exec(어긋본문2) ?? [''])[0];
+  check('★★ 걸러낼 경로의 `./` 앞머리를 뗀다',
+    걸러줄2.includes(String.raw`replace(/^\.\//, '')`), 걸러줄2);
+  /*
+   * 맞추는 일은 **그 한 줄에서** 끝나야 한다. 뒤에서 한 번 더 손보면 걸러낸
+   * 것과 어긋낼 것이 갈라져, 골라 돌렸는데 딴 자리를 재게 된다.
+   */
+  check('★★ 경로를 맞추는 자리가 그 한 줄뿐이다',
+    (어긋본문2.match(/replace\(\/\^\\\.\\\/\/, ''\)/g) ?? []).length === 1);
+  /*
+   * 목록의 `곳` 이 정말 `./` 없는 꼴인가. 목록 쪽이 언젠가 `./src/…` 로
+   * 바뀌면 이 고침은 반대로 해로우므로, 전제를 같이 못박는다.
+   */
+  const { 어긋들: 모든어긋2 } = JSON.parse(readFileSync(new URL('../test/mutants.json', import.meta.url), 'utf8'));
+  check('★★ 목록의 곳은 `./` 없이 적혀 있다',
+    모든어긋2.length > 0 && 모든어긋2.every((x) => !x.곳.startsWith('./')),
+    `${모든어긋2.length}개 · 보기 ${모든어긋2[0]?.곳 ?? ''}`);
 }
 
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

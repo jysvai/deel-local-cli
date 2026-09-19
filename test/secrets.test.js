@@ -53,6 +53,19 @@ trace('1-새는자리');
     check(`${무엇} 을 가린다`, r.가린것.length > 0 && !r.글.includes(원래값(글)),
       r.글.slice(0, 90));
   }
+
+  /*
+   * 비밀번호에 `@` 가 날것으로 든 주소 (6회차 Gemini 가림6r T3).
+   *
+   * 주소를 푸는 쪽(WHATWG URL · curl)은 **마지막 `@`** 를 자격 끝으로 본다. 첫 `@` 에서 끊어서
+   * `postgres://u:«가림:주소속열쇠»@ss@h/db` 처럼 비밀번호 뒷조각이 대화에 실렸다.
+   */
+  const 골뱅이 = 가리기('DATABASE_URL=postgres://admin:probe-pass@tail99@db.corp:5432/app');
+  check('★ 비밀번호에 @ 가 든 주소도 비밀번호를 끝까지 가린다',
+    !골뱅이.글.includes('tail99') && 골뱅이.글.includes('@db.corp:5432/app'), 골뱅이.글);
+  const 두주소 = 가리기('a http://u:pw_one1@h1/x b http://v:pw_two2@h2/y');
+  check('  짝: 한 줄에 주소가 둘이면 각각 가리고 호스트는 남긴다',
+    !두주소.글.includes('pw_one1') && !두주소.글.includes('pw_two2') && 두주소.글.includes('@h1/x') && 두주소.글.includes('@h2/y'), 두주소.글);
 }
 
 function 원래값(줄) {
@@ -1322,6 +1335,8 @@ trace('6-3-바깥으로-나갈-때는-파일도-가린다');
   // 여기서 기본을 가리는 쪽으로 잡으면, 부르는 데 하나를 빠뜨렸을 때 로컬
   // 사용자의 파일이 조용히 가려진다.
   check('안 주면 여태대로', 가릴까('Read') === false && 가릴까('Bash') === true);
+  // MCP 도구 결과는 남의 프로그램 출력이다. 이 안에서도 명령 출력처럼 가린다.
+  check('★ 이 안: MCP 도구 결과도 가린다', 가릴까('mcp__srv__run', { 바깥: false }) === true);
 
 }
 
@@ -1388,6 +1403,130 @@ trace('6-4-바깥으로나가는루프');
   }
 }
 
+trace('6-2차리뷰');
+
+// ── 2.0.0 2차 리뷰가 짚은 두 자리 ───────────────────────────────────────
+//
+// 1) 머리글 값이 `Bearer "토큰"` 꼴이면 따옴표 앞에서 멈춰 'Bearer ' 만 가리고
+//    토큰은 그대로 남았다. 가렸다고 세기까지 해서 더 나쁘다.
+// 2) 명령 앞 환경변수가 앞머리 없는 `TOKEN=` · `SECRET=` 이면 안 잡혔다.
+//    `.env` 규칙은 17차 리뷰에서 민 이름을 받게 고쳤는데 이쪽은 그대로였다.
+{
+  for (const [글, 사라져야] of [
+    ['Authorization: Bearer "secret1234567"', 'secret1234567'],
+    ["Authorization: Bearer 'secret1234567'", 'secret1234567'],
+    ['curl -H \'Authorization: Token "abcdef123456"\' https://x', 'abcdef123456'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 틀 낱말 뒤 따옴표 값도 가린다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:헤더»'), r.글);
+  }
+  // 따옴표 사이가 토큰이 아니라 코드면 값으로 안 본다 — 뒤의 코드가 사라진다.
+  {
+    const r = 가리기('const h = "Authorization: Bearer " + token, "X-Trace": id');
+    check('★★ 코드 사이 따옴표는 값으로 안 먹는다', r.글.includes(' + token, "X-Trace": id'), r.글);
+  }
+
+  for (const [글, 사라져야, 남아야] of [
+    ['TOKEN=abc12345 npm test', 'abc12345', ' npm test'],
+    ['SECRET=abcdefgh12 node x.js', 'abcdefgh12', ' node x.js'],
+    ['PASSWORD=hunter2hunter2 ./deploy.sh', 'hunter2hunter2', ' ./deploy.sh'],
+    ['DB_PWD=abcdef12 psql', 'abcdef12', ' psql'],
+    ['A_KEY=abcdef12 node x.js', 'abcdef12', ' node x.js'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 명령 앞 민 이름도 가린다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:환경변수»') && r.글.endsWith(남아야), r.글);
+  }
+  // 민 이름에서 빼는 것은 `.env` 규칙과 같다 — 셸의 현재 폴더와 민 KEY.
+  for (const 글 of ['PWD=/work npm test', 'OLDPWD=/work npm test', 'KEY=value12 node x.js']) {
+    check(`★★ 이건 비밀 이름이 아니다 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
+  }
+
+  // 3회차 — 목록에 없는 틀 낱말(ApiKey · SSWS …) 뒤 따옴표 값, 흔한 비밀 이름 `_PASS` · `PASSPHRASE`.
+  for (const [글, 사라져야] of [
+    ['Authorization: ApiKey "my-secret-key-12345"', 'my-secret-key-12345'],
+    ["Authorization: SSWS 'abcdef1234567890'", 'abcdef1234567890'],
+    ['DB_PASS="my-secret-password-1234"', 'my-secret-password-1234'],
+    ['DB_PASS=mysecretpassword1234', 'mysecretpassword1234'],
+    ['DB_PASS=mysecretpassword1234 psql', 'mysecretpassword1234'],
+    ['GPG_PASSPHRASE=correct-horse-battery', 'correct-horse-battery'],
+    ['db_pass: "hunter2hunter2"', 'hunter2hunter2'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 3회차 가린다 — ${글}`, !r.글.includes(사라져야) && r.글.includes('«가림:'), r.글);
+  }
+  for (const 글 of ['BYPASS=true', 'COMPASS_DIR=/opt/compass', 'first_pass = 1', 'isPass = 3']) {
+    check(`★★ 3회차 오탐 없음 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
+  }
+
+  /*
+   * 3회차 실행 사냥 — 이름이 비밀을 말하지 않는 자리. 값의 **꼴**(Stripe) 과
+   * **명령 자리**(curl -u) 로만 알 수 있다.
+   *
+   * ── 가짜 열쇠를 **이어 붙여서** 짓는 까닭 ──────────────────────────────
+   *
+   * 아래 둘은 알파벳을 차례로 적은 가짜다. 그런데 깃허브의 비밀 훑기(push
+   * protection)는 꼴만 보고 **진짜 Stripe 열쇠로 읽어 푸시를 막는다** — 2.0.0
+   * 을 올리다 실제로 막혔다. 우리가 여기서 재려는 것도 정확히 그 「꼴로 안다」
+   * 인지라, 꼴을 무너뜨리면 검사가 재던 것을 못 재게 된다.
+   *
+   * 그래서 **값은 한 글자도 안 바꾸고** 소스에만 나눠 적는다. `가리기()` 가
+   * 받는 글자는 그대로이고, 파일에는 그 꼴이 이어진 자리가 없다.
+   */
+  const 가짜라이브 = `sk_${'live'}_51H0abcdefghijklmnopqrstuvwxyz`;
+  const 가짜테스트 = `rk_${'test'}_51H0abcdefghijklmnop`;
+  for (const [글, 사라져야, 남아야] of [
+    [`stripe.setKey("${가짜라이브}")`, 가짜라이브, 'stripe.setKey('],
+    [`const k = "${가짜테스트}"`, 가짜테스트, 'const k'],
+    ['curl -u admin:SuperSecret123 https://x.io/v1', 'SuperSecret123', 'https://x.io/v1'],
+    ["curl --user 'deploy:p4ssw0rd!!' https://x.io", 'p4ssw0rd!!', 'deploy'],
+    ['curl -s --user=ci:tok_abcdef12 https://x.io', 'tok_abcdef12', 'ci'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★★ 3회차 값 꼴·명령 자리로 가린다 — ${글}`, !r.글.includes(사라져야) && r.글.includes('«가림:') && r.글.includes(남아야), r.글);
+  }
+  for (const 글 of ['curl -u admin https://x.io', 'curl -u "$USER:$TOKEN" https://x.io', 'curl -u %USER%:%PASS% https://x.io', 'curl -u admin:$TOKEN https://x.io', 'const sk_test_mode = 1;', 'git log -u admin:x']) {
+    check(`★★ 3회차 오탐 없음 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
+  }
+
+  /*
+   * 사냥5 R5-M2 · R5-M3 — 같은 한 쌍을 **붙여 적거나 다른 명령으로** 적은 꼴.
+   * `curl -uadmin:암호` 는 `curl -u admin:암호` 와 같은 일인데 빈칸 하나가 없다고 평문으로 나갔고,
+   * `wget --password=` · `mysql -p암호` 는 이름이 붙임표 뒤라 환경변수 갈래의 `(?<!-)` 에 막혀 아무 데도 안 걸렸다.
+   */
+  for (const [글, 사라져야, 남아야] of [
+    ['curl -uadmin:s3cretpass https://x', 's3cretpass', 'https://x'],
+    ['curl -sSuadmin:s3cretpass https://x', 's3cretpass', '-sSuadmin:'],
+    ['curl -U proxyuser:pr0xypass https://x', 'pr0xypass', 'proxyuser'],
+    ['curl --proxy-user=proxyuser:pr0xypass https://x', 'pr0xypass', 'proxyuser'],
+    ['wget --password=s3cretword http://x', 's3cretword', 'http://x'],
+    ['wget --http-password=s3cretword http://x', 's3cretword', '--http-password='],
+    ['wget --ftp-password=s3cretword ftp://x', 's3cretword', 'ftp://x'],
+    ['wget --user=me --password s3cretword http://x', 's3cretword', 'http://x'],
+    ['mysql -h db -pSECRETpw dbname', 'SECRETpw', 'dbname'],
+    ['mysql --password=SECRETpw dbname', 'SECRETpw', 'dbname'],
+    ["mysqldump -uroot -p'SECRETpw' app > a.sql", 'SECRETpw', 'app > a.sql'],
+    ['gpg --batch --passphrase=c0rrecthorse -d x.gpg', 'c0rrecthorse', 'x.gpg'],
+  ]) {
+    const r = 가리기(글);
+    const 두번 = 가리기(r.글);
+    check(`★★★ 사냥5 붙여 적은·다른 명령의 암호를 가린다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:명령속열쇠»') && r.글.includes(남아야) && 두번.글 === r.글, `${r.글} → ${두번.글}`);
+  }
+  // `-p` 는 mysql 에서만 암호다. 맨 `-p` 는 묻겠다는 뜻이고, 자리표는 셸이 채운다.
+  for (const 글 of [
+    'mysql -u root -p dbname', 'mysql -h db -p -P 3306 app', 'mysql --password dbname',
+    'ssh -p 2222 host', 'docker run -p 8080:80 img', 'mkdir -p src/a',
+    // 붙여 적은 `-p값` 도 mysql 계열이 아니면 포트·게시다. 명령 이름 뒤에 빈칸이 와야 명령이다.
+    'ssh -p2222 host', 'docker run -p8080:80 img', 'mysql_host=db ssh -p2222 host',
+    'wget --password=$PASS http://x', 'mysql -p"$DB_PASS" app', 'mysql -p%PW% app',
+    'docker login --password-stdin', 'app --password-file=/run/secrets/pw', 'curl -o out.txt https://x/a:bcdef',
+  ]) {
+    check(`★★ 사냥5 오탐 없음 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
+  }
+}
+
 trace('7-이상한것');
 
 // ── 이상한 것이 와도 안 죽는다 ──────────────────────────────────────────
@@ -1409,6 +1548,98 @@ const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1
 console.log(`\n비밀 가리기 검사  ${D}(열쇠가 모델과 디스크로 새는가 · 파일은 안 건드리는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
+{
+  /*
+   * Gemini 지킴5 — 따옴표로 감싼 빈칸 든 curl 암호, sshpass 의 `-p`.
+   * curl 갈래는 값에 빈칸을 안 받아 `curl -u 'admin:pass word'` 가 통째로 평문이었고,
+   * `-p값` 갈래는 mysql 계열만 봐서 `sshpass -p 암호` 는 아무 데도 안 걸렸다.
+   */
+  /*
+   * 2.0.0 8회차 — 따옴표를 **암호에만** 씌운 꼴. `curl -u 유저:"암호"` 는 손으로 적을 때
+   * 제일 흔한 모양인데(암호에만 특수문자가 있으니 거기만 감싼다), 갈래는 따옴표가 사람 앞에
+   * 올 때만 봤고 맨 값 쪽은 값에 따옴표를 아예 안 받아서 **통째로 평문**이었다.
+   * 잰 것: `curl -u admin:"s3cret password" https://x` → 그대로.
+   */
+  for (const [글, 사라져야, 남아야] of [
+    ['curl -u admin:"s3cret password" https://x', 's3cret password', 'admin:'],
+    ["curl -u admin:'s3cret password' https://x", 's3cret password', 'admin:'],
+    ['curl -u admin:"s3cretpass" https://x', 's3cretpass', 'admin:'],
+    ["curl -u admin:'s3cretpass' https://x", 's3cretpass', 'admin:'],
+    ['curl -sSu admin:"s3cretpass" https://x', 's3cretpass', 'admin:'],
+    ['curl --proxy-user=proxyuser:"pr0xy pass" https://x', 'pr0xy pass', 'proxyuser:'],
+  ]) {
+    const r = 가리기(글);
+    const 두번 = 가리기(r.글);
+    check(`★★★ 8회차 암호에만 따옴표를 씌운 꼴도 가린다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:명령속열쇠»') && r.글.includes(남아야) && 두번.글 === r.글,
+      `${r.글} → ${두번.글}`);
+  }
+  // 자리표는 셸이 채운다. 따옴표를 씌워도 자리표는 자리표다.
+  for (const 글 of ['curl -u admin:"$TOKEN" https://x', "curl -u admin:'$PASS' https://x",
+    'curl -u admin:"%PASS%" https://x', 'curl -u "$USER:$TOKEN" https://x']) {
+    check(`★★ 8회차 오탐 없음 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
+  }
+
+  for (const [글, 사라져야, 남아야] of [
+    ["curl -u 'admin:pass word' https://x", 'pass word', 'admin:'],
+    ['curl -u "admin:pass word" https://x', 'pass word', 'admin:'],
+    ['sshpass -p secret123 ssh user@host', 'secret123', 'ssh user@host'],
+    ['sshpass -psecret123 ssh user@host', 'secret123', 'ssh user@host'],
+    ["sshpass -p 'se cret' ssh user@host", 'se cret', 'ssh user@host'],
+  ]) {
+    const r = 가리기(글);
+    check(`★★ 따옴표 속 빈칸·sshpass 암호를 가린다 — ${글}`,
+      !r.글.includes(사라져야) && r.글.includes('«가림:명령속열쇠»') && r.글.includes(남아야), r.글);
+  }
+  /*
+   * 전수 어긋내기에서 살아남은 #495 (`_PASS` 갈래를 빼도 아무 검사도 안 빨개짐) — 일반 갈래가
+   * `DB_PASS` 를 대신 잡아서다. 그런데 .NET 설정의 두 밑줄 이름(`APP__DB__PASS`)은 일반 갈래가
+   * 못 이어 `_PASS` 갈래만 잡는다. 그 꼴을 못 박는다.
+   */
+  for (const 글 of ['APP__DB__PASS=hunter22', 'ConnectionStrings__DB__PASS=hunter22'.toUpperCase()]) {
+    const r = 가리기(글);
+    check(`★ 두 밑줄로 이은 _PASS 이름도 가린다 — ${글}`, !r.글.includes('hunter22') && r.글.includes('«가림:'), r.글);
+  }
+  for (const 글 of ['sshpass -f pwfile ssh h', 'sshpass -e ssh h', 'curl -u admin https://x', "sshpass -p $PASS ssh h",
+    'sshpass -f pwfile ssh -p 2222 host', 'sshpass -e ssh -p 2222 host', 'ssh -p 2222 host', "curl -u 'admin:$PASS' https://x"]) {
+    check(`오탐 없음 — ${글}`, 가리기(글).글 === 글, 가리기(글).글);
+  }
+}
+
+trace('비밀6-코드를-안-뭉갠다');
+/*
+ * 2.0.0 6회차 · Gemini 비밀6 — 명령 출력(grep·cat)에 실린 **코드**가 뭉개졌다.
+ *
+ *   const headers = { Authorization: "Bearer " + token };   → "«가림:헤더»" + token
+ *   { Authorization: Bearer_token, timeout: 5000 }           → { Authorization: «가림:헤더»   (뒤가 사라짐)
+ *   interface Config { API_KEY: Buffer; }                    → API_KEY: «가림:환경변수»;
+ *
+ * 셋 다 비밀이 없는 자리다. 머리말이 「막으려는 것보다 더 나쁜 고장」 이라고 적어 둔 그 꼴이다.
+ */
+{
+  const 헤더코드 = 'const headers = { Authorization: "Bearer " + token };';
+  check('★ 틀 낱말만 따옴표에 넣어 이어 붙이는 코드는 안 뭉갠다', 가리기(헤더코드).글 === 헤더코드, 가리기(헤더코드).글);
+  const 물건 = '{ Authorization: Bearer_token, timeout: 5000 }';
+  check('★ 따옴표 없는 헤더 값은 쉼표에서 멈춘다 — 뒤 코드가 안 사라진다',
+    가리기(물건).글.endsWith(', timeout: 5000 }'), 가리기(물건).글);
+  for (const 줄 of ['interface Config { API_KEY: Buffer; }', '  API_KEY: Buffer;', 'type T = { apiKey: SecretString; id: number }']) {
+    check(`★ 타입 이름·참조는 안 가린다 — ${줄}`, 가리기(줄).글 === 줄, 가리기(줄).글);
+  }
+  // 좁히다 진짜 값을 놓치면 안 된다.
+  for (const [줄, 값] of [
+    ['Authorization: Bearer Zx9Qw8Er7Ty6Ui5Op4', 'Zx9Qw8Er7Ty6Ui5Op4'],
+    ['curl -H "Authorization: Bearer Zx9Qw8Er7Ty6Ui5Op4" https://x', 'Zx9Qw8Er7Ty6Ui5Op4'],
+    ['{ Authorization: Bearer Zx9Qw8Er7Ty6Ui5Op4, timeout: 5 }', 'Zx9Qw8Er7Ty6Ui5Op4'],
+    ['headers = { "Authorization": "Bearer Zx9Qw8Er7Ty6Ui5Op4" }', 'Zx9Qw8Er7Ty6Ui5Op4'],
+    ['API_KEY=Zx9Qw8Er7Ty6Ui5Op4', 'Zx9Qw8Er7Ty6Ui5Op4'],
+    ['password: Zx9Qw8Er7Ty6Ui5Op4', 'Zx9Qw8Er7Ty6Ui5Op4'],
+    ['PASSWORD=Welcome', 'Welcome'],
+    ['password: Summertime', 'Summertime'],
+  ]) {
+    check(`여전히 가린다 — ${줄}`, !가리기(줄).글.includes(값), 가리기(줄).글);
+  }
+}
+
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;

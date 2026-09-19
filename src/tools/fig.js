@@ -170,7 +170,12 @@ function 열쇠(g) {
   return `${g.sessionID ?? 0}:${g.localID ?? 0}`;
 }
 
-/** 크기를 `375×812` 로. 소수점은 버린다 — 시안 치수는 정수로 읽는 게 맞다. */
+/**
+ * 크기를 `375×812` 로. 소수점은 **반올림**한다 — 시안 치수는 정수로 읽는 게 맞다.
+ *
+ * 버리면 `375.8` 이 375 가 되어, 사람이 Figma 에서 보는 376 과 한 칸 어긋난다.
+ * 시안 치수는 자를 대는 값이라 가까운 쪽으로 붙이는 것이 맞다.
+ */
 function 크기말(size) {
   if (!size || typeof size !== 'object') return '';
   const w = Number(size.x);
@@ -217,9 +222,15 @@ function 나무엮기(노드들) {
   return { 자리표, 자식표, 뿌리들 };
 }
 
-/** 한 갈래를 줄들로 편다. 깊이는 두 칸씩. */
+/**
+ * 한 갈래를 줄들로 편다. 깊이는 두 칸씩.
+ *
+ * 상한에 걸려 **못 편 것이 실제로 있을 때만** `셈.잘림` 을 켠다. 「남은 것이
+ * 0 인가」 로 물으면 상한과 도형 수가 딱 같을 때 — 한 줄도 안 잘린 판에 —
+ * 「뒷부분은 안 실렸습니다」 가 나간다. 거짓 경고는 진짜 경고를 죽인다.
+ */
 function 가지풀기(뿌리, 자식표, 줄들, 깊이, 셈) {
-  if (셈.남은 <= 0) return;
+  if (셈.남은 <= 0) { 셈.잘림 = true; return; }
   const 들여 = '  '.repeat(Math.min(깊이, 12));
   const 갈래 = typeof 뿌리.type === 'string' ? 뿌리.type : String(뿌리.type ?? '?');
   const 이름 = String(뿌리.name ?? '').trim();
@@ -270,6 +281,11 @@ export function readFig(경로또는버퍼, { 최대노드 = 노드최대 } = {}
     const 메타몸 = 꾸러미.files.get('meta.json');
     if (메타몸) { try { 메타 = JSON.parse(메타몸.toString('utf8')); } catch { 메타 = null; } }
     알맹이 = 꾸러미.files.get('canvas.fig');
+    // **있는데 못 푼** 것은 「없다」 가 아니다 — 사람이 파일 안을 뒤지다 헛걸음한다(2.0.0 3회차).
+    const 못푼알맹이 = !알맹이 && 꾸러미.skipped.find((s) => s.name === 'canvas.fig');
+    if (못푼알맹이) {
+      return { ok: false, 끝났다: true, error: `.fig 꾸러미 안의 canvas.fig 를 풀지 못했습니다 — ${못푼알맹이.why}` };
+    }
     if (!알맹이) {
       return {
         ok: false,
@@ -383,7 +399,8 @@ export function readFig(경로또는버퍼, { 최대노드 = 노드최대 } = {}
     덩이들.push({ 이름: '도형', 문단들: 줄들 });
   }
 
-  if (셈.남은 <= 0) {
+  // 못 편 것이 정말 있을 때만 말한다 (가지풀기 머리말).
+  if (셈.잘림) {
     말.push(`도형이 ${상한노드.toLocaleString('en-US')}개를 넘어 거기까지만 폈습니다 — 뒷부분은 안 실렸습니다`);
   }
 

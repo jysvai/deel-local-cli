@@ -18,12 +18,30 @@
 import { 틀, 받개 } from '../src/lsp/rpc.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
+import { writeFileSync } from 'node:fs';
 
 const 몫 = new Set(process.argv.slice(2));
+/*
+ * 제 pid 를 파일에 적는다 — **셸 껍데기 너머의 진짜 서버**가 죽었나를 재려고.
+ *
+ * `.cmd` 로 띄우면 우리가 쥔 pid 는 cmd.exe 것이다. 그것만 보고 「껐다」 고 하면
+ * 안의 서버가 살아 남아도 초록이 뜬다.
+ */
+const pid자리 = [...몫].find((a) => a.startsWith('--pidfile='))?.slice('--pidfile='.length) ?? null;
+if (pid자리) writeFileSync(pid자리, String(process.pid));
+// 우리가 workspace/configuration 에 무엇을 돌려줬는지 적어 둔다 (stub/설정답 으로 꺼내 본다).
+let 설정답;
 const 말안함 = 몫.has('--mute');           // 아무 답도 안 한다 — 시한 시험
 const 늦게 = 몫.has('--slow');             // 아주 늦게 답한다
 const 죽음 = 몫.has('--die');              // initialize 를 받고 바로 죽는다
 const 늦은색인 = 몫.has('--lateindex');    // 처음 두 번은 심볼을 못 찾은 척한다
+/*
+ * 참조를 아주 많이 준다 — **자르는 자리**를 만들려고.
+ *
+ * 진짜 저장소에서 흔한 수다. 이름 하나를 백여 곳에서 쓰는 것은 예사고, 작은
+ * 모델은 그중 쉰 곳밖에 못 받는다. 셋만 주는 흉내로는 그 자리를 영영 못 잰다.
+ */
+const 참조많음 = 몫.has('--manyrefs');
 /*
  * 물음을 받으면 **같은 번호로** 우리 쪽에서도 하나 묻고 나서 답한다.
  *
@@ -85,6 +103,9 @@ process.stdin.on('data', (d) => {
 
 function 다루기(통) {
   const { id, method, params } = 통;
+
+  // 켜자마자 되물은 configuration 의 답. 모르는 물음으로 치고 오류를 되돌리면 안 된다.
+  if (method === undefined && id === 9001) { 설정답 = 통.result; return; }
 
   // 답하기 전에 같은 번호로 되묻는다. 번호로만 가르는 쪽은 여기서 걸린다.
   if (번호겹침 && id !== undefined && method !== 'shutdown') {
@@ -181,17 +202,50 @@ function 다루기(통) {
         { name: 'run', kind: 12, location: 자리('src/b.js', 2, 16) },
       ],
       범위없는것: [{ name: '범위없는것', kind: 12, location: { uri: pathToFileURL(join(뿌리, 'src/셈.js')).href } }],
+      /*
+       * 서버는 대개 부분 일치까지 준다 (2.0.0 6회차 LS1). `셈` 을 물으면 이름이 똑같은 것은
+       * 없고 `셈하기` 만 온다 — 그걸 짚으면 남의 정의를 내 것처럼 준다.
+       * 반대로 `몫` 은 서버가 `셈.몫` 처럼 이름을 꾸며서 준다 — 낱말로 들어 있으니 그 이름이 맞다.
+       */
+      셈: [{ name: '셈하기', kind: 12, location: 자리('src/셈.js', 3, 15) }],
+      몫: [{ name: '셈.몫', kind: 13, location: 자리('src/셈.js', 1, 6) }],
+      // 한 파일 안의 서로 다른 둘(A.go · B.go)과, 같은 자리의 겹쳐쓰기(겹 두 줄) (LS2).
+      go: [
+        { name: 'go', kind: 6, containerName: 'A', location: 자리('src/같은곳.js', 0, 10) },
+        { name: 'go', kind: 6, containerName: 'B', location: 자리('src/같은곳.js', 1, 10) },
+      ],
+      겹: [
+        { name: '겹', kind: 12, location: 자리('src/같은곳.js', 2, 9) },
+        { name: '겹', kind: 12, location: 자리('src/같은곳.js', 3, 9) },
+      ],
     };
     보내기({ jsonrpc: '2.0', id, result: 표[q] ?? [] });
     return;
   }
 
   if (method === 'textDocument/definition') {
-    보내기({ jsonrpc: '2.0', id, result: [자리('src/셈.js', 3, 15)] });
+    // 선언만 있는 자리 등에서 서버가 정의를 못 주는 흉내 (LS3).
+    보내기({ jsonrpc: '2.0', id, result: 몫.has('--nodef') ? [] : [자리('src/셈.js', 3, 15)] });
     return;
   }
 
   if (method === 'textDocument/references') {
+    // 참조 빈손 — 같은 이름이 여럿인 자리에서 「안 쓰는 것」 으로 읽히는지 재려고 (LS5).
+    if (몫.has('--norefs')) { 보내기({ jsonrpc: '2.0', id, result: [] }); return; }
+    // 앞 60곳은 a.js, 뒤 60곳은 b.js — 8k 모델 한도(50)로 자르면 보이는 것은 a.js 뿐이다 (LS4).
+    if (몫.has('--refs-onefile')) {
+      const 한쪽것 = [];
+      for (let i = 0; i < 120; i++) 한쪽것.push(자리(i < 60 ? 'src/a.js' : 'src/b.js', 1, 16));
+      보내기({ jsonrpc: '2.0', id, result: 한쪽것 });
+      return;
+    }
+    if (참조많음) {
+      // 120곳을 두 파일에 흩어 준다. 8k 모델의 한도는 50이라 70곳이 잘린다.
+      const 많은것 = [];
+      for (let i = 0; i < 120; i++) 많은것.push(자리(i % 2 ? 'src/a.js' : 'src/b.js', i % 3, 2));
+      보내기({ jsonrpc: '2.0', id, result: 많은것 });
+      return;
+    }
     보내기({
       jsonrpc: '2.0',
       id,
@@ -203,6 +257,8 @@ function 다루기(통) {
     });
     return;
   }
+
+  if (method === 'stub/설정답') { 보내기({ jsonrpc: '2.0', id, result: { 받은것: 설정답 ?? '안 옴' } }); return; }
 
   if (method === 'shutdown') { 보내기({ jsonrpc: '2.0', id, result: null }); return; }
 

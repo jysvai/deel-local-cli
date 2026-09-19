@@ -73,6 +73,14 @@ if (shipped.length) {
   check('내 방법론은 제대로 실린다', 내장들.length >= 5,
     `${내장들.length}개 · ${내장들.map((p) => p.split('/')[3]).slice(0, 8).join(', ')}`);
 
+  /*
+   * 배포에 실리는 **파일 이름**은 영어로 둔다 (2.0.0 에서 정했다). 소스 안의
+   * 식별자·주석·스킬 이름(`name:`)은 그대로 한국어다 — 바꾸는 것은 경로뿐이다.
+   * 새 파일을 한글 이름으로 만들면 여기서 빨개진다.
+   */
+  const 한글이름 = shipped.filter((p) => /[^\x00-\x7F]/.test(p));
+  check('★ 배포에 실리는 파일 이름에 한글이 없다', 한글이름.length === 0, 한글이름.join(', '));
+
   const 비밀 = shipped.filter((p) => /(^|\/)\.(env|npmrc|credentials)/i.test(p) || /\.deel\//.test(p));
   check('설정·자격 파일 0개', 비밀.length === 0, 비밀.join(', '));
 
@@ -131,6 +139,41 @@ for (const f of srcFiles) {
   }
 }
 check('바깥 패키지 import 0개', 바깥.length === 0, 바깥.slice(0, 5).join(' · '));
+
+/*
+ * 4b) 화면 문구 속의 import 는 의존성이 **아니다**.
+ *
+ * selfpack.js 의 importSpecs 머리말은 「화면 문구는 안 잡는다」 고 적어 두고,
+ * 지키는 것은 낱말 모양과 모듈 이름 모양 둘뿐이었다. 안내문에
+ * `import 'foo'` 라고 적어 두면 그 foo 가 심사서의 **외부 의존성**으로 오른다 —
+ * 없는 남의 코드를 있다고 적는 서류다. 이 저장소 소스에는 아직 그런 줄이
+ * 없어 잠복이었고, 8회차 판정이 그걸 짚었다.
+ *
+ * 반대쪽도 같이 잰다. 헛잡음을 막느라 진짜 import 를 놓치면 이 파일이 파는
+ * 「바깥 패키지 0개」 가 **눈을 감아서 0개**가 된다. 그게 더 나쁘다.
+ */
+{
+  const 문구들 = [
+    `const 안내 = "쓰는 법: import 'foo' 처럼 적으세요";`,
+    `console.log(' 이 자리에서 require("bar") 를 부르지 마세요');`,
+    `const 도움 = '바깥에서 import("baz") 를 부르지 마세요';`,
+  ];
+  const 헛잡은것 = 문구들.flatMap((줄) => importSpecs(줄));
+  check('★★ 화면 문구 속 import 를 의존성으로 세지 않는다', 헛잡은것.length === 0,
+    JSON.stringify(헛잡은것));
+
+  const 진짜소스 = [
+    "import { a } from 'node:fs';",
+    "import b from './b.js';",
+    "const c = await import('node:path');",
+    "const d = require('node:os');",
+    "import 'node:url';",
+  ].join('\n');
+  const 잡힌것 = importSpecs(진짜소스);
+  check('★★ 그러면서 진짜 import 는 하나도 안 놓친다',
+    JSON.stringify(잡힌것) === JSON.stringify(['node:fs', './b.js', 'node:path', 'node:os', 'node:url']),
+    JSON.stringify(잡힌것));
+}
 
 // 5) 아무것도 안 깔린 PC 에서 무엇이 나오나.
 //
@@ -314,14 +357,30 @@ rmSync(빈PC, { recursive: true, force: true });
         }
       }
       if (!/\s/.test(c)) 앞 = c;
-      앞낱말 = /[\w$]/.test(c) ? 앞낱말 + c : '';
+      /*
+       * 빈칸은 낱말을 **안 끊는다.** 끊으면 `return /^"…/` 의 `return` 이
+       * 사라지고, `/` 가 나눗셈으로 읽혀 뒤따르는 `"` 가 문자열을 연다.
+       * 실제로 test/확인법.test.js 435줄이 그랬고 거기서부터 스물여섯 줄이
+       * 통째로 지워져, 452줄에서 멀쩡히 쓰는 `rmSync` 가 '안 쓴다' 로 걸렸다.
+       * 멀쩡한 파일에 없는 탈을 만드는 쪽이라 거짓 경고다.
+       */
+      if (!/\s/.test(c)) 앞낱말 = /[\w$]/.test(c) ? 앞낱말 + c : '';
       i++;
     }
     return 칸.join('');
   };
 
+  /*
+   * 점 뒤에 붙은 이름은 쓰임이 아니다 — `무엇.SKIP_DIRS` 는 남의 속살이고,
+   * 들여온 그 이름이 아니다. 그래서 점 뒤 낱말은 지우고 센다.
+   *
+   * 그런데 펼치기(`...이름`)도 점으로 시작한다. 세 점의 마지막 점이 「속살」 로
+   * 읽혀서 `[...SKIP_DIRS]` 처럼 **펼치기로만 쓰는** 이름이 '안 쓴다' 로 걸렸다.
+   * 멀쩡한 파일에 없는 탈을 만드는 쪽이니, 점 앞에 또 점이 있으면 속살로 보지
+   * 않는다. 이음 물음표(`?.이름`)는 그대로 속살이다.
+   */
   const 낱말 = (s) => new Set(
-    s.replace(/\.[\w$]+/g, '.').split(/[^\w$가-힣]+/).filter(Boolean));
+    s.replace(/(?<!\.)\.[\w$]+/g, '.').split(/[^\w$가-힣]+/).filter(Boolean));
   const 들여오기 = /^import\s+(?:([\w$]+)\s*,\s*)?(?:\{([^}]*)\}|\*\s+as\s+([\w$]+)|([\w$]+))\s+from/gm;
 
   const 훑을것 = [];
@@ -334,6 +393,24 @@ rmSync(빈PC, { recursive: true, force: true });
       }
     };
     재귀(d);
+  }
+
+  /*
+   * 거르개 자신을 먼저 잰다. 이 거르개가 한 줄을 잘못 먹으면 그 아래가 통째로
+   * 지워지고, 멀쩡히 쓰는 이름이 '안 쓴다' 로 걸린다 — 거짓 경고다.
+   * 아래 두 줄은 실제로 그렇게 당한 꼴이다 (test/확인법.test.js 435줄).
+   */
+  {
+    const 본보기 = [
+      'const f = (뒤) => {',
+      '  if (뒤.startsWith(\'"\')) return /^"[^"`$]*"$/.test(뒤);',
+      '  return false;',
+      '};',
+      'rmSync(뿌리);',
+    ].join('\n');
+    const 걸러진 = 코드만(본보기);
+    check('★★★ 거르개가 `return /정규식/` 뒤를 안 먹는다',
+      걸러진.includes('rmSync('), JSON.stringify(걸러진.split('\n').pop()));
   }
 
   const 놀고있는것 = [];

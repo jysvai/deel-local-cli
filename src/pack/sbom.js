@@ -33,16 +33,18 @@ import { specEn, egressEn, keyStorageEn, auditLogEn, specSummaryEn } from './she
  *
  * 1.5 에서 1.7 로 올렸다. 판을 올린 것 자체가 목적이 아니라, CISA 가
  * 2026-07-29 로 「SBOM 최소 요소」 를 새로 냈고(2021년 NTIA 문서를 대체한다)
- * 거기서 더해진 네 가지를 적을 자리가 1.5 에는 없었다.
+ * 거기서 더해진 네 가지 중 **뒤의 둘**은 1.5 에 적을 자리가 아예 없었다.
  *
  *   부품 해시 알고리즘   hashes[].alg      — 1.5 에도 있었고 이미 적고 있었다
  *   부품 라이선스        components[].licenses
  *   만든 도구 이름       metadata.tools.components[]
  *   만든 맥락            metadata.lifecycles[]
  *
- * 앞의 두 개는 자리가 있었고 우리가 안 적었다. 뒤의 두 개는 1.5 의 모양이
- * 다르다 — metadata.tools 가 1.5 에서는 {vendor,name,version} 배열이고
- * 1.6 부터 부품 목록으로 바뀌었으며, lifecycles 는 아예 없다.
+ * 앞의 두 개는 자리가 1.5 에도 있었다. 그중 해시는 이미 적고 있었고, 안 적은
+ * 것은 **부품 라이선스 하나뿐**이다 — 뿌리 부품에만 적고 파일에는 안 적었다.
+ * 뒤의 두 개는 1.5 의 모양이 다르다 — metadata.tools 가 1.5 에서는
+ * {vendor,name,version} 배열이고 1.6 부터 부품 목록으로 바뀌었으며,
+ * lifecycles 는 아예 없다.
  *
  * 판을 안 올리고 필드만 끼워 넣는 길도 있었지만 그러면 규격에 안 맞는
  * SBOM 이 된다. 스캐너가 1.5 로 검사하다 모르는 열쇠에서 멈추면, 담당자
@@ -143,8 +145,17 @@ export function sbom(a, { at = new Date(), serial = null, lang = 언어() } = {}
          *
          * 실제 서명은 npm 배포 때 붙는 SLSA 증명이고, 그건 우리 손을 안 거친다.
          * 확인하는 명령을 적어 두는 편이 서명 한 덩이보다 낫다.
+         *
+         * 이 값도 description 과 같이 말을 따라간다. 스캐너에 먹이는 파일이라도
+         * 속성 칸은 담당자가 눈으로 읽는다 — 영어 서류에 한글이 한 자리 남으면
+         * 그 문서는 통째로 미완성으로 읽힌다.
          */
-        { name: 'deel:provenance', value: `npm audit signatures — ${a.name}@${a.version} (SLSA v1, npm 신뢰 배포)` },
+        {
+          name: 'deel:provenance',
+          value: lang === 'ko'
+            ? `npm audit signatures — ${a.name}@${a.version} (SLSA v1, npm 신뢰 배포)`
+            : `npm audit signatures — ${a.name}@${a.version} (SLSA v1, npm trusted publishing)`,
+        },
       ],
     },
     // 파일마다 하나씩. 담긴 것이 담겨야 할 것과 같은지 여기서 대조한다.
@@ -201,6 +212,18 @@ export function 통신명세(a) {
         무엇이: '아무것도',
         막는법: '--offline 이면 통째로 막힙니다.',
         소스: 자리('net'),
+      },
+      /*
+       * 넷째 길. 심사서 본문(selfpack.js 의 [D])은 네 갈래라고 적는데 이 목록은
+       * 셋이었다 — 담당자가 둘을 나란히 놓으면 제일 못 막는 길이 기계 목록에서만 빠져 있었다.
+       */
+      {
+        갈래: 'MCP 서버',
+        언제: '.deel/mcp.json 에 사람이 적은 서버만, 대화를 켤 때',
+        어디로: '그 서버 프로그램이 정합니다 — 딴 자식 프로세스라 우리 허용 목록을 거치지 않습니다',
+        무엇이: '모델이 그 서버의 도구에 넘긴 인자',
+        막는법: '기본은 꺼져 있습니다. --offline 이면 서버 자체를 띄우지 않습니다.',
+        소스: 자리('exec'),
       },
     ],
     여는포트: {

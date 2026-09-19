@@ -49,6 +49,40 @@ trace('2-작은모델');
 
   // 자리가 아예 없으면 최소값이라도.
   check('자리가 다 찼어도 0 을 주지 않는다', tokensFor('save', 'work', { ctx: 1000, used: 1000 }) === MIN_CAP, '');
+
+  /*
+   * ── ★★ 남은 자리보다 큰 상한을 부르면 안 된다 ────────────────────────
+   *
+   * 마지막 줄이 `Math.min(cap, Math.max(MIN_CAP, room))` 이었다. 울타리
+   * 아래끝(512)을 한 번 더 깔고 있어서, 남은 자리가 100 이어도 512 가 나갔다.
+   * 그런데 바로 그 줄에 붙은 주석은 「남은 자리 자체가 바닥이면 울타리
+   * 아래라도 남은 만큼만 준다」 였다 — 주석만 고쳐진 자리다.
+   *
+   * 남은 자리보다 큰 max_tokens 를 받으면 게이트웨이는 답을 내는 대신
+   * 400 을 낸다. 그러면 「자리가 모자란다」 가 「요청이 틀렸다」 로 보이고,
+   * 접기로 풀 수 있던 자리에서 사람이 설정을 뒤진다.
+   */
+  const 바닥 = tokensFor('save', 'work', { ctx: 1000, used: 900 });
+  check('★★ 남은 자리가 울타리보다 좁으면 남은 만큼만 준다', 바닥 <= 100, `남은 100 → ${바닥}`);
+  check('★ 그래도 0 은 안 준다', 바닥 > 0, String(바닥));
+  const 조금넓음 = tokensFor('save', 'work', { ctx: 1000, used: 700 });
+  check('★ 남은 자리가 300 이면 300 을 안 넘는다', 조금넓음 <= 300, `남은 300 → ${조금넓음}`);
+  // 넉넉한 자리에서는 여태처럼 울타리 아래끝을 지킨다 — 도구 호출 하나는 낼 수 있어야 한다.
+  check('★ 넉넉하면 울타리 아래끝은 지킨다', tokensFor('save', 'work', { ctx: 8000, used: 0 }) >= MIN_CAP,
+    String(tokensFor('save', 'work', { ctx: 8000, used: 0 })));
+
+  /*
+   * ★ 0 이나 숫자 아닌 상한은 「모른다」 로 읽는다 (사냥5 L5-6).
+   *
+   * 설정에서 maxTokens 0 이 흘러오면 여태 `max ?? MAX_CAP` 가 0 을 그대로 받아 상한이
+   * 바닥(MIN_CAP)에 붙었고, NaN 이면 셈 전체가 NaN 이 되어 요청의 max_tokens 가
+   * 비었다. 값을 거르는 것은 설정 쪽 몫이지만, 여기서도 모르는 값으로 물러선다.
+   */
+  const 넉넉 = { ctx: 655360, used: 5000 };
+  check('★ 상한 0 은 안 정한 것과 같다', tokensFor('save', 'work', { ...넉넉, max: 0 }) === tokensFor('save', 'work', 넉넉)
+    && fullCap({ ...넉넉, max: 0 }) === fullCap(넉넉), String(tokensFor('save', 'work', { ...넉넉, max: 0 })));
+  check('★ 숫자 아닌 상한도 안 정한 것과 같다', tokensFor('save', 'work', { ...넉넉, max: Number.NaN }) === tokensFor('save', 'work', 넉넉)
+    && fullCap({ ...넉넉, max: Number.NaN }) === fullCap(넉넉), String(tokensFor('save', 'work', { ...넉넉, max: Number.NaN })));
 }
 
 trace('3-단계별로다른가');
@@ -279,10 +313,143 @@ trace('7-루프가배워서다시부르기');
   resetNet();
 }
 
+/*
+ * ── 「답」 은 응답·답변 안에도 있다 (사냥5 B5-04) ──────────────────────
+ *
+ * 한국어 출력 한계 표가 `답` 한 글자에 걸렸다. 그래서 「답변 생성 실패: 요청 ID
+ * 123456」 에서 출력 상한 123,456 을, 「응답 대기 시간이 초과되었습니다 (60000ms)」
+ * 에서 60,000 을 배웠다. 요청 번호와 밀리초는 한계가 아니다.
+ */
+{
+  const 요청번호 = 배울것('답변 생성 실패: 요청 ID 123456');
+  check('★★ 「답변 … 요청 ID 123456」 에서 출력 한계를 배우지 않는다', 요청번호 === null, JSON.stringify(요청번호));
+  const 밀리초 = 배울것('응답 대기 시간이 초과되었습니다 (60000ms)');
+  check('★★ 「응답 대기 … (60000ms)」 에서 출력 한계를 배우지 않는다', 밀리초 === null, JSON.stringify(밀리초));
+  const 진짜 = 배울것('최대 출력 토큰은 4096 입니다');
+  check('★ 한국어로 적은 진짜 출력 한계는 여전히 배운다', 진짜?.kind === 'out' && 진짜?.limit === 4096, JSON.stringify(진짜));
+  const 답길이 = 배울것('답 길이는 최대 8192 토큰까지입니다');
+  check('  「답 길이」 로 적은 것도 배운다', 답길이?.kind === 'out' && 답길이?.limit === 8192, JSON.stringify(답길이));
+}
+
+/*
+ * ── 분당·하루 한도는 창 크기가 아니다 (사냥5 B5-03) ────────────────────────
+ *
+ * 「Request too large for gpt-4o … on tokens per min (TPM): Limit 30000, Requested 45000」 은
+ * **요청 한 번이 분당 토큰 한도보다 크다**는 말이다. 여기서 숫자 둘을 뽑아 작은 쪽을 창
+ * 크기로 배우면, 128k 창이 30,000 으로 줄고 대화가 까닭 없이 접힌다. 부르는 자리(loop.js)가
+ * 막아도, 배우는 함수 자체가 이 문장을 창 이야기로 읽지 않아야 새 부르는 자리에서도 안전하다.
+ */
+{
+  const 분당 = 'Request too large for gpt-4o in organization org-abc on tokens per min (TPM): Limit 30000, Requested 45000. The input or output tokens must be reduced in order to run successfully.';
+  check('★★ 「tokens per min (TPM): Limit 30000, Requested 45000」 을 창 크기로 배우지 않는다', 배울것(분당) === null, JSON.stringify(배울것(분당)));
+  check('★★ 그 문장을 「창이 길어서」 로 치지 않는다 — 창을 반으로 줄이는 길로 안 보낸다', 길이문제인가(분당) === false, String(길이문제인가(분당)));
+  const 요청수 = 'Rate limit reached for gpt-4o on requests per min (RPM): Limit 500, Used 500, Requested 1. Please try again in 120ms.';
+  check('★ 요청 수 한도(RPM)도 배우지 않는다', 배울것(요청수) === null && 길이문제인가(요청수) === false, JSON.stringify(배울것(요청수)));
+  const 하루 = 'Request too large: tokens per day (TPD): Limit 2000000, Used 1999000, Requested 40960';
+  check('★ 하루 한도(TPD)도 배우지 않는다', 배울것(하루) === null && 길이문제인가(하루) === false, JSON.stringify(배울것(하루)));
+  const 창 = "This model's maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens.";
+  check('  진짜 창 한계는 여전히 배운다', 배울것(창)?.kind === 'ctx' && 배울것(창)?.limit === 128000, JSON.stringify(배울것(창)));
+  const 짐작 = 'input length 41003 exceeds maximum 8192';
+  check('  모르는 서버의 길이 문장도 여전히 짐작해 배운다', 배울것(짐작)?.limit === 8192 && 길이문제인가(짐작) === true, JSON.stringify(배울것(짐작)));
+  // 표에 걸리는 낱말(max_tokens)이 섞여도 속도 한도 문장이면 배우지 않는다 — 표보다 먼저 거른다.
+  const 섞임 = 'rate_limit_error: max_tokens 8192 exceeds your tokens per minute budget';
+  check('★ 속도 한도 문장에 max_tokens 가 섞여도 출력 상한으로 배우지 않는다', 배울것(섞임) === null, JSON.stringify(배울것(섞임)));
+}
+
+// ── 6회차 Gemini 애저배움6 — 숫자를 엉뚱한 자리에서 집던 문장들 ─────────
+trace('8-애저배움6');
+{
+  // L1 · 천 단위 쉼표. 표에 안 걸리고 맨 끝 「작은 쪽」 으로 떨어져 괄호 속 30,000 을 창으로 배웠다.
+  const 쉼표 = "This model's maximum context length is 128,000 tokens, however you requested 130,000 tokens (100,000 in the messages, 30,000 in the completion).";
+  const 쉼표것 = 배울것(쉼표);
+  check('★ 천 단위 쉼표가 든 창 한계도 128000 으로 배운다 (30,000 이 아니라)',
+    쉼표것?.kind === 'ctx' && 쉼표것?.limit === 128000 && 쉼표것?.asked === 130000 && !쉼표것?.짐작, JSON.stringify(쉼표것));
+  check('  화면에 보일 글은 원문 그대로다', String(쉼표것?.text ?? '').includes('128,000'), String(쉼표것?.text));
+
+  // L2 · 「max_tokens N exceeds … limit of M」 — 앞이 요청한 값이다. 이름 뒤 첫 수를 한계로 배우면 같은 값으로 또 거절당한다.
+  const 넘음말 = 'max_tokens 16384 exceeds the model limit of 4096';
+  const 넘음것 = 배울것(넘음말);
+  check('★ 「max_tokens 16384 exceeds the model limit of 4096」 은 4096 을 출력 한계로 배운다',
+    넘음것?.kind === 'out' && 넘음것?.limit === 4096 && 넘음것?.asked === 16384, JSON.stringify(넘음것));
+  const 이하 = 배울것('max_tokens must be less than or equal to 8192');
+  check('  수가 하나뿐인 「less than or equal to 8192」 는 그대로 8192', 이하?.kind === 'out' && 이하?.limit === 8192, JSON.stringify(이하));
+
+  // L5 · 요청 수가 「요청」 앞에 온다. 뒤만 보면 「최대 8192」 를 집어 asked 가 limit 과 같아졌다.
+  const 앞요청 = 배울것('컨텍스트 길이를 초과했습니다: 15000 토큰 요청, 최대 8192 토큰');
+  check('★ 요청 수가 「요청」 앞에 와도 asked 는 15000', 앞요청?.limit === 8192 && 앞요청?.asked === 15000, JSON.stringify(앞요청));
+  const 뒤요청 = 배울것('컨텍스트 길이를 초과했습니다: 요청 15000 토큰, 최대 8192 토큰');
+  check('  「요청 15000 토큰」 꼴도 그대로', 뒤요청?.limit === 8192 && 뒤요청?.asked === 15000, JSON.stringify(뒤요청));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 8회차 뒷단-배우기 — 거절 문장에서 **무엇을** 배우느냐
+trace('9-뒷단배우기');
+{
+  /*
+   * ── 「한도」 가 한계를 가리키는 말이 아닐 때 ──────────────────────────
+   *
+   *   컨텍스트 한도 초과: 요청 15000 토큰, 최대 8192 토큰
+   *
+   * 여기서 「한도」 는 **무엇을 넘겼는지**를 적은 말이고, 그 뒤에 오는 숫자는
+   * 한계가 아니라 우리가 요청한 값이다. 그런데 「최대·한도·한계·제한 뒤 첫
+   * 숫자」 규칙이 그 15000 을 한계로 집었다. 한계를 실제보다 크게 배우면
+   * 줄여서 다시 부르지 않고 **같은 거절을 되풀이한다** — 못 배운 것보다 나쁘다.
+   * 대조군(「길이를 초과했습니다」)은 처음부터 8192 로 옳았다.
+   */
+  for (const 문장 of [
+    '컨텍스트 한도 초과: 요청 15000 토큰, 최대 8192 토큰',
+    '컨텍스트 제한 초과: 요청 15000 토큰, 최대 8192 토큰',
+    '컨텍스트 한계 초과 — 요청 15000 토큰, 최대 8192 토큰',
+  ]) {
+    const r = 배울것(문장);
+    check(`★★ 「${문장.slice(0, 12)}…」 에서 한계는 8192 (요청값 15000 이 아니라)`,
+      r?.kind === 'ctx' && r.limit === 8192 && r.asked === 15000, JSON.stringify(r));
+  }
+  // 대조군 — 「최대·한도」 가 진짜로 한계를 가리키는 자리는 그대로 배운다.
+  for (const [문장, 한계] of [
+    ['컨텍스트 길이를 초과했습니다: 요청 15000 토큰, 최대 8192 토큰', 8192],
+    ['최대 컨텍스트 8192 토큰을 넘었습니다', 8192],
+    ['요청이 최대 컨텍스트 32768 을 넘었습니다', 32768],
+    ['컨텍스트 한도는 8192 토큰입니다', 8192],
+  ]) {
+    const r = 배울것(문장);
+    check(`  대조군 「${문장.slice(0, 14)}…」 → ${한계}`, r?.kind === 'ctx' && r.limit === 한계, JSON.stringify(r));
+  }
+
+  /*
+   * ── llama.cpp 의 `n_predict` 는 **답 길이**다 ─────────────────────────
+   *
+   * out표에 `num_predict`(Ollama)만 있고 `n_predict`(llama.cpp)가 없었다.
+   * 그러면 이 문장이 표를 다 지나쳐 맨 끝 「길이 문제면 작은 쪽이 한계」 로
+   * 떨어지고, 답 길이 한계를 **창 크기**로 배운다 — 멀쩡한 창을 4,096 으로
+   * 줄인다. 219줄의 `길이문제인가` 는 이미 `n_predict` 를 안다.
+   */
+  const np1 = 배울것('n_predict 16384 exceeds maximum allowed 4096');
+  check('★★ 「n_predict 16384 exceeds maximum allowed 4096」 은 출력 한계 4096 으로 배운다',
+    np1?.kind === 'out' && np1.limit === 4096 && np1.asked === 16384, JSON.stringify(np1));
+  const np2 = 배울것('n_predict must be at most 4096');
+  check('★ 수가 하나뿐인 n_predict 문장도 출력 한계로 배운다',
+    np2?.kind === 'out' && np2.limit === 4096, JSON.stringify(np2));
+  const np3 = 배울것('num_predict 4096 is the maximum');
+  check('  Ollama 이름(num_predict)은 하던 그대로', np3?.kind === 'out' && np3.limit === 4096, JSON.stringify(np3));
+  // 창 이야기는 여전히 창이다 — 이름 하나 늘렸다고 갈래가 뒤집히면 안 된다.
+  const nc = 배울것('the number of tokens to keep from the initial prompt is greater than n_ctx (8192)');
+  check('  n_ctx 는 그대로 창 한계', nc?.kind === 'ctx' && nc.limit === 8192, JSON.stringify(nc));
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n출력 상한 검사  ${D}(문서에 적힌 대로 실제로 먹는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
+{
+  // 6회차 Gemini 백엔드5역 — 한국어 문장에 요청 수가 한계보다 먼저 오면 요청 수를 한계로 배웠다.
+  const { 배울것: 배움 } = await import('../src/backend/learn.js');
+  const a = 배움('컨텍스트 길이를 초과했습니다: 요청 15000 토큰, 최대 8192 토큰');
+  check('★ 한국어 — 요청 수가 앞에 와도 한계는 최대 뒤 숫자', a?.kind === 'ctx' && a.limit === 8192 && a.asked === 15000, JSON.stringify(a));
+  const b = 배움('최대 컨텍스트 8192 토큰을 넘었습니다');
+  check('  한국어 옛 꼴은 그대로', b?.kind === 'ctx' && b.limit === 8192, JSON.stringify(b));
+}
+
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;

@@ -6,6 +6,13 @@ Undo, working scope, the audit log, the review package (SBOM, egress list)
 
 ---
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-trust-en-dark.svg">
+    <img alt="Where your text can go: your working folder and .deel/ stay inside this machine, and only four paths cross the line — the model gateway, WebFetch, plugin downloads and MCP servers. The key, the audit log, the undo history and your conversations never cross it, and sealed mode locks the last three" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-trust-en-light.svg" width="900">
+  </picture>
+</p>
+
 ## Safety
 
 <sub>Files removed through Bash come back too · What it will not read</sub>

@@ -32,6 +32,22 @@ const 여기 = dirname(fileURLToPath(import.meta.url));
 const 뿌리 = join(여기, '..');
 const 앞선것 = join(여기, 'tty-preload.mjs');
 
+// 아이가 닫힌 **바로 그 순간** 폴더를 지우면 윈도우가 방금 쓴 기록 파일(.deel/sessions 등)을
+// 아직 붙들고 있어 EPERM 으로 죽는다 — 검사는 다 통과했는데 치우다가 판 전체가 빨개졌다
+// (2.0.0 6회차 게이트 6·7판, 혼자 돌려도 3판 3패). 남은 아이 프로세스는 없었고 1초 안에 한 번에
+// 지워졌다. 치우기는 검사 결과와 상관없으니 잠깐씩 기다렸다 다시 지운다.
+//
+// rmSync 의 maxRetries 로는 안 됐다 — Node 24 에서 10번·200ms 를 줘도 같은 EPERM 을 바로 던졌다.
+// 그래서 여기서 직접 되풀이한다. 부르는 자리가 동기 함수라 Atomics.wait 로 쉰다.
+function 치우기(자리) {
+  for (let k = 0; ; k += 1) {
+    try { rmSync(자리, { recursive: true, force: true }); return; } catch (e) {
+      if (k >= 40) { process.stderr.write(`  (임시 폴더를 못 치웠습니다: ${자리} · ${e.code})\n`); return; }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+    }
+  }
+}
+
 /**
  * 아이에게 넘길 환경. **`CI` 를 뺀다.**
  *
@@ -166,8 +182,8 @@ async function 띄우기(줄들, { 상자 = true } = {}) {
   await Promise.race([닫힘, 자기(3000)]);
   if (!끝남) { kid.kill(); await Promise.race([닫힘, 자기(2000)]); }
 
-  rmSync(root, { recursive: true, force: true });
-  rmSync(home, { recursive: true, force: true });
+  치우기(root);
+  치우기(home);
   // 제어문자를 벗긴 글과 날것을 같이 돌려준다. 둘 다 볼 일이 있다.
   return { 날것: out, 글: out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '') };
 }
@@ -265,8 +281,8 @@ async function 키눌러보기(단계들) {
   if (!끝남) { try { kid.stdin.write('\n/exit\n'); } catch {} }
   await Promise.race([닫힘, 자기(2500)]);
   if (!끝남) { kid.kill(); await Promise.race([닫힘, 자기(1500)]); }
-  rmSync(root, { recursive: true, force: true });
-  rmSync(home, { recursive: true, force: true });
+  치우기(root);
+  치우기(home);
   return 결과;
 }
 
@@ -328,8 +344,8 @@ async function 한턴돌리기() {
   if (!끝남) { kid.kill(); await Promise.race([닫힘, 자기(1500)]); }
   srv.close();
 
-  rmSync(root, { recursive: true, force: true });
-  rmSync(home, { recursive: true, force: true });
+  치우기(root);
+  치우기(home);
   return { 날것: out, 글: out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '') };
 }
 
@@ -391,8 +407,8 @@ async function 흘려보내기(줄들) {
   if (!끝남) { kid.kill(); await Promise.race([닫힘, 자기(1500)]); }
   srv.close();
 
-  rmSync(root, { recursive: true, force: true });
-  rmSync(home, { recursive: true, force: true });
+  치우기(root);
+  치우기(home);
   return { 날것: out, 글: out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '') };
 }
 

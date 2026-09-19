@@ -151,7 +151,8 @@ export function 살린쓰기(raw) {
   if (typeof path !== 'string' || !path.trim()) return null;
   if (typeof body !== 'string' || !body) return null;
   // 경로 자체가 잘렸으면 엉뚱한 자리에 쓴다. 그건 안 건진다.
-  if (r.truncatedKey === 'file_path' || r.truncatedKey === 'path') return null;
+  // 위에서 경로로 받는 이름 셋을 **다** 본다 — filePath 를 빠뜨려 「src/inde」 에 쓸 뻔했다 (6회차 L1).
+  if (r.truncatedKey === 'file_path' || r.truncatedKey === 'path' || r.truncatedKey === 'filePath') return null;
 
   // 내용이 온전히 다 왔는데도 JSON 이 깨진 것이라면(뒤쪽 다른 인자에서 잘림)
   // 마지막 줄을 버릴 이유가 없다.

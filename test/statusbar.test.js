@@ -8,10 +8,11 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
-import { statusLine, SEGMENTS, SEGMENT_GROUPS, headerLines, GITHUB } from '../src/ui/status.js';
+import { statusLine, SEGMENTS, SEGMENT_GROUPS, DEFAULT_SEGMENTS, 접는차례, headerLines, GITHUB } from '../src/ui/status.js';
 import { 눈금게이지, width } from '../src/ui/ansi.js';
 import { 프레임 } from '../src/ui/inputbox.js';
 import { COMPACT_AT, FOLD_AT } from '../src/agent/compact.js';
+import { 프록시정하기, 프록시지우기 } from '../src/backend/proxy.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -169,6 +170,20 @@ trace('3-내폴더에무슨일이');
     민글(statusLine(s, { max: 48 })).trim());
 }
 
+// ── 모델 이름에 섞인 터미널 제어 순서 (2.0.0 3회차 사냥) ─────────────────
+//
+// 모델 이름은 **서버가 알려 준 글자**다(/model 목록에서 고른다). 상태줄은 say 를 안 지나고 입력 상자가
+// 곧장 그리므로, 이름에 든 ESC 순서가 매 줄 그릴 때마다 터미널에 닿았다. 색은 남기고 들어온 것만 뗀다.
+{
+  const ESC = String.fromCharCode(27); const BEL = String.fromCharCode(7);
+  const 악성 = new Session({ ...연결('http://127.0.0.1:11434/v1'), model: `good${ESC}]52;c;ZWNobw==${BEL}${ESC}[2Jmodel` },
+    { root, mode: 'auto', think: 'medium', effort: 'save' });
+  const 줄 = statusLine(악성, { max: 200 });
+  check('★★★ 상태줄은 모델 이름에 든 제어 순서를 안 낸다',
+    !줄.includes(`${ESC}]`) && !줄.includes(`${ESC}[2J`) && !줄.includes(BEL), JSON.stringify(줄));
+  check('  이름 글자는 남는다', 민글(줄).includes('good'), JSON.stringify(민글(줄)));
+}
+
 trace('4-덩이차례');
 
 // ── 덩이 차례 ───────────────────────────────────────────────────────────
@@ -182,6 +197,40 @@ trace('4-덩이차례');
   check('토큰과 돈이 맨 뒤', SEGMENT_GROUPS.at(-1).join() === 'tok,cost', SEGMENT_GROUPS.at(-1).join());
   check('내 폴더 이야기가 토큰보다 앞', SEGMENT_GROUPS.at(-2).includes('edits'),
     SEGMENT_GROUPS.at(-2).join());
+}
+
+/*
+ * ── 접는 차례에 적힌 것은 **조각 이름 배열**이다 ────────────────────────
+ *
+ * 머리말에는 「덩이의 첫 조각 이름으로 가리킨다」 고 적혀 있었지만, 한 칸은
+ * 이름 **배열**이고 그 안에 든 이름이 다 같이 접힌다. 마지막 칸(work·think)은
+ * 덩이의 일부만 적은 것이라 첫 이름 하나로는 가리킬 수도 없다.
+ *
+ * 주석을 믿고 「첫 이름 하나」 로 고치면 ✎ 만 빠지고 ✓·↩ 가 남는 폭이 생긴다 —
+ * 같은 덩이가 반만 접힌 줄이다. 그 폭이 하나도 없어야 한다.
+ */
+{
+  const 평평 = 접는차례.flat();
+  check('접는차례 한 칸은 조각 이름 배열이다',
+    접는차례.every((묶음) => Array.isArray(묶음) && 묶음.length > 0 && 묶음.every((k) => typeof k === 'string')),
+    JSON.stringify(접는차례));
+  check('접는차례에 적힌 이름은 다 있는 조각이다', 평평.every((k) => DEFAULT_SEGMENTS.includes(k)),
+    평평.filter((k) => !DEFAULT_SEGMENTS.includes(k)).join(','));
+  // 덩이를 통째로 가리키는 것도 아니다 — 한 칸은 덩이의 일부일 수 있다.
+  check('한 칸이 덩이의 일부일 수 있다',
+    접는차례.some((묶음) => !SEGMENT_GROUPS.some((g) => g.join() === 묶음.join())), JSON.stringify(접는차례));
+
+  const 접힘 = 새것();
+  접힘.noteChange(join(root, '접기.js'), { added: 1, removed: 0 });
+  접힘.검증 = { 돈횟수: 1, 확인: 3, 탈: 0, 못확인: 0 };
+  접힘.되돌릴턴 = 2;
+  const 반만접힌폭 = [];
+  for (let 폭 = 40; 폭 <= 120; 폭++) {
+    const 줄 = 민글(statusLine(접힘, { max: 폭 }));
+    if (!/✎/.test(줄) && /✓|↩/.test(줄)) 반만접힌폭.push(폭);
+  }
+  check('★ 한 칸에 적힌 이름은 같이 접힌다', 반만접힌폭.length === 0,
+    `✎ 만 빠진 폭: ${반만접힌폭.join(',')}`);
 }
 
 trace('5-테두리가경계선');
@@ -262,6 +311,48 @@ trace('머리말-별부탁');
   const 보냄줄 = 줄들.findIndex((l) => /이 컴퓨터 안|바깥|sends to|this machine/.test(l));
   check('부탁은 「보냄」 줄보다 아래다', 별줄 > 보냄줄 && 보냄줄 >= 0, `별 ${별줄} · 보냄 ${보냄줄}`);
   tty로(원래tty);
+}
+
+/*
+ * ── 플러그인만 깔아도 「이 PC」 줄이 서나 ───────────────────────────────
+ *
+ * 플러그인이 몇 개인지 적는 줄은 머리말의 그 한 줄뿐이다. 그런데 그 줄이 설
+ * 조건에 스킬·명령만 있고 플러그인이 빠져 있었다 — 스킬도 명령도 없이
+ * 플러그인만 깐 사람에게는 **깔았다는 사실 자체가 화면 어디에도 안 나왔다.**
+ * 말(語)에 안 기대려고, 없을 때와 견줘 새로 생긴 줄로 본다.
+ */
+{
+  const 벗기기 = (x) => String(x).replace(/\x1b\[[0-9;]*m/g, '');
+  const s = new Session({ kind: 'openai', base: 'http://127.0.0.1:1/v1', model: 'x', ctx: 32768 }, { root });
+  const 줄들 = (found) => headerLines(s, found, false).map(벗기기);
+  const 아무것도 = 줄들({ skills: [], commands: [], plugins: [] });
+  const 플러그인만 = 줄들({ skills: [], commands: [], plugins: [{ name: 'ㄱ' }, { name: 'ㄴ' }] });
+  const 새로생긴 = 플러그인만.filter((l) => !아무것도.includes(l));
+  check('★ 플러그인만 깔아도 그 줄이 뜬다', 새로생긴.length === 1 && /2\s*$/.test(새로생긴[0]),
+    JSON.stringify(새로생긴));
+  // 아무것도 없으면 그 줄도 없다 — 갓 켠 화면에 `0 · 0 · 0` 이 서면 자리만 먹는다.
+  const 스킬만 = 줄들({ skills: [{ name: 'ㄱ' }], commands: [], plugins: [] });
+  check('아무것도 없으면 그 줄도 없다', 스킬만.filter((l) => !아무것도.includes(l)).length === 1,
+    JSON.stringify(아무것도.length));
+}
+
+// ── 첫 화면은 어차피 안 거칠 주소에 「프록시 못 씀」 을 붙이지 않는다 ────
+//
+// 루프백 모델인데 목적지 줄에 「[프록시 설정을 못 씀]」 이 붙으면 상관없는 프록시를 탓하게 된다.
+// 바깥 주소에는 그대로 붙어야 한다 (2.0.0 6회차 RP1b).
+{
+  const 벗기기 = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, '');
+  const 없는것 = { skills: [], commands: [], plugins: [] };
+  const 머리 = (base) => {
+    프록시정하기({ env: { HTTPS_PROXY: 'socks5://127.0.0.1:1080' } });
+    const s = new Session({ kind: 'openai', base, model: 'x', ctx: 32768 }, { root });
+    return headerLines(s, 없는것, false).map(벗기기).join('\n');
+  };
+  const 로컬판 = 머리('http://127.0.0.1:11434/v1');
+  const 바깥판 = 머리('https://gw.example.net/v1');
+  프록시지우기();
+  check('첫 화면: 루프백 주소에 못 쓰는 프록시 표시가 없다', !/프록시 설정을 못 씀|proxy/i.test(로컬판.split('\n').find((l) => /127\.0\.0\.1/.test(l)) ?? ''), 로컬판.split('\n').find((l) => /127\.0\.0\.1/.test(l)) ?? '');
+  check('첫 화면: 바깥 주소에는 못 쓰는 프록시 표시가 있다', /프록시 설정을 못 씀/.test(바깥판), 바깥판.split('\n').find((l) => /gw\.example/.test(l)) ?? '');
 }
 
 // ── ★ 창 크기를 모르면 모른다고 적나 ──────────────────────────────────

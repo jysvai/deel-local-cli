@@ -97,7 +97,7 @@ standalone files under `scripts/` (`qa-collaboration.js`, `qa-presets.js`,
 run catches no regression.
 
 **Fixed in 1.17.7** — `Verify` now finds **every** way this project checks itself
-(`src/tools/확인법.js`): the `test` / `lint` / `typecheck` / `e2e` npm scripts,
+(`src/tools/checkmethods.js`): the `test` / `lint` / `typecheck` / `e2e` npm scripts,
 standalone check files under `scripts/`, `test/`, `tools/`, and `cargo test`,
 `go test`, `pytest`, `make test` where the marker for them actually exists.
 

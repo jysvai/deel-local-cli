@@ -235,7 +235,8 @@ export function 마지막틀(opts = {}) { return 틀(틀수 - 1, opts); }
  */
 export function 쓸배율(칸) {
   const w = Number.isFinite(칸) ? 칸 : (process.stdout.columns ?? 80);
-  // 들여쓰기 두 칸 + 오른쪽 한 칸 여유.
+  // 들여쓰기 두 칸 + 오른쪽 두 칸. 한 칸만 두면 그림이 창 마지막 칸까지 닿는데,
+  // 마지막 칸에 쓰면 줄을 넘기는 터미널이 있어 그림이 한 줄 아래로 흘러내린다.
   if (w >= 이름폭(2) + 4) return 2;
   if (w >= 이름폭(1) + 4) return 1;
   return 0;

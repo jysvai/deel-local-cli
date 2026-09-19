@@ -75,7 +75,10 @@ export const PROFILES = {
     en: 'deep',
     desc: '전 단계 한 칸씩 위로 — 어려운 일에만',
     descEn: 'Every stage one notch up - for hard work only',
-    shift: { plan: +1, work: 0, fix: +1 },
+    // 「전 단계」 는 이어가기도 뜻한다. 여기만 0 이라 깊게를 골라도 그 단계는
+    // 균일과 똑같이 돌았다 — 그런데 파일을 쓰는 호출은 대개 이어가기에서
+    // 나온다. 어려운 일에만 쓰라고 만든 배분이 정작 일하는 자리에서 안 깊었다.
+    shift: { plan: +1, work: +1, fix: +1 },
     share: { plan: 0.50, work: 0.45, fix: 0.50 },
   },
 };
@@ -126,7 +129,9 @@ export function normalizeProfile(v) {
   const 친것 = String(v ?? '').trim();
   const k = 친것.toLowerCase();
   if (Object.hasOwn(PROFILES, k)) return k;
-  return Object.hasOwn(ALIAS, 친것) ? ALIAS[친것] : null;
+  // 별칭도 **같은 잣대**로 본다. 여기만 친 그대로 봤더니 `DEEP` 은 되는데
+  // `Uniform` 은 「모르는 배분입니다」 였다 — 한 줄 위아래가 서로 달랐다.
+  return Object.hasOwn(ALIAS, k) ? ALIAS[k] : null;
 }
 
 // 기준 강도에서 몇 칸 옮긴다. 끝을 넘지 않는다.
@@ -174,8 +179,15 @@ export function effortFor(base, profileKey, stage, { 고정 = false } = {}) {
 /** 대화가 이만큼 쌓이면 강도를 더 안 움직인다 — 그때부터는 캐시가 더 비싸다. */
 const 유지문턱 = 8;
 
-/** 인사·맞장구. 시킨 일이 없으면 깊이 생각할 것도 없다. */
-export const 인사말 = /^(안녕[가-힣]*|반(가|갑)[가-힣]*|하이|ㅎㅇ+|헬로[우가-힣]*|고마[가-힣]*|감사[가-힣]*|수고[가-힣]*|hi|hello|hey|yo|thanks?|thank you|테스트|test|ok(ay)?|네|응)[\s!.~?ㅎㅋ,]*$/i;
+/*
+ * 인사·맞장구. 시킨 일이 없으면 깊이 생각할 것도 없다.
+ *
+ * `고[마맙]` 인 까닭 — 이 말은 ㅂ 불규칙이라 정중해질수록 어간이 바뀐다.
+ * `고마` 만 잡으면 반말(`고마워`)은 걸리고 존댓말(`고맙습니다`)은 안 걸리는데,
+ * 하필 뒤엣것이 더 흔하다. 안 걸리면 「고맙습니다」 한 마디가 max 로 생각해서
+ * 그 판에서 제일 비싼 토큰이 된다.
+ */
+export const 인사말 = /^(안녕[가-힣]*|반(가|갑)[가-힣]*|하이|ㅎㅇ+|헬로[우가-힣]*|고[마맙][가-힣]*|감사[가-힣]*|수고[가-힣]*|hi|hello|hey|yo|thanks?|thank you|테스트|test|ok(ay)?|네|응)[\s!.~?ㅎㅋ,]*$/i;
 
 export function 인사인가(글) {
   return 인사말.test(String(글 ?? '').trim());
@@ -327,6 +339,18 @@ export function 가벼운강도(천장, { 켜짐 = true } = {}) {
  * @param {number} o.used  지금 쓰고 있는 양 (session.breakdown().used)
  * @param {number} o.max   사용자가 프로필에 직접 적어 둔 상한이 있으면 그것을 넘지 않는다
  */
+/*
+ * 0 · NaN 같은 상한은 「모른다」 로 읽는다 (사냥5 L5-6).
+ *
+ * 설정에서 maxTokens 0 이 흘러오면 `max ?? MAX_CAP` 가 0 을 그대로 받아 상한이 바닥
+ * (MIN_CAP)에 붙었고, NaN 이면 셈 전체가 NaN 이 되어 요청의 max_tokens 가 비었다.
+ * 값을 거르는 것은 설정 쪽 몫이지만, 여기서 받는 쪽도 모르는 값으로 물러선다.
+ */
+const 아는상한 = (max) => {
+  const n = Number(max);
+  return max != null && Number.isFinite(n) && n > 0 ? n : null;
+};
+
 export function tokensFor(profileKey, stage, { ctx = 0, used = 0, max = null } = {}) {
   const p = PROFILES[normalizeProfile(profileKey) ?? 'save'];
   const share = p.share[stage] ?? 0.3;
@@ -338,16 +362,24 @@ export function tokensFor(profileKey, stage, { ctx = 0, used = 0, max = null } =
   // 남은 자리의 절반을 넘겨 주지 않는다. 답이 길어져도 다음 턴이 들어갈 자리는 남겨야 한다.
   cap = Math.min(cap, Math.floor(room / 2));
   // 아는 상한이 있으면 그것을 따른다. 모를 때만 MAX_CAP 에 선다.
-  cap = Math.min(cap, max ?? MAX_CAP);
+  cap = Math.min(cap, 아는상한(max) ?? MAX_CAP);
   cap = Math.max(cap, MIN_CAP);
-  // 남은 자리 자체가 바닥이면 울타리 아래라도 남은 만큼만 준다.
-  return room > 0 ? Math.min(cap, Math.max(MIN_CAP, room)) : MIN_CAP;
+  /*
+   * 남은 자리 자체가 바닥이면 울타리 아래라도 남은 만큼만 준다.
+   *
+   * 여기에 `Math.max(MIN_CAP, room)` 이 한 번 더 깔려 있어서, 남은 자리가
+   * 100 이어도 512 가 나갔다 — 주석만 고쳐진 자리였다. 남은 자리보다 큰
+   * max_tokens 를 받은 게이트웨이는 답 대신 400 을 낸다. 그러면 「자리가
+   * 모자란다」 가 「요청이 틀렸다」 로 보여서, 접기로 풀 수 있던 자리에서
+   * 사람이 설정을 뒤진다.
+   */
+  return room > 0 ? Math.min(cap, room) : MIN_CAP;
 }
 
 /** 잘렸을 때 풀어 줄 최대 상한 — 남은 자리를 거의 다 내준다. */
 export function fullCap({ ctx = 0, used = 0, max = null } = {}) {
   const room = ctx > 0 ? Math.max(0, ctx - used) : 4096;
-  return Math.max(MIN_CAP, Math.min(Math.floor(room * 0.8), max ?? MAX_CAP));
+  return Math.max(MIN_CAP, Math.min(Math.floor(room * 0.8), 아는상한(max) ?? MAX_CAP));
 }
 
 /**
@@ -361,14 +393,46 @@ export function fullCap({ ctx = 0, used = 0, max = null } = {}) {
  * 일부러 만들지 않는다. 그래서 말을 안 해 줘도 이걸 보고 안다.
  */
 export function wasCut(msg) {
-  const s = String(msg?.stopped ?? '');
-  if (s === 'length' || s === 'max_tokens' || s === 'MAX_TOKENS') return true;
-  return (msg?.toolCalls ?? []).some((t) => t?.argsBroken);
+  // 게이트웨이마다 대소문자가 다르다(`Length` · `Max_Tokens`). 소문자로 맞춰 본다 — 6회차 Gemini 고리5.
+  const s = String(msg?.stopped ?? '').toLowerCase();
+  if (s === 'length' || s === 'max_tokens') return true;
+  /*
+   * 다만 **끝까지 온 틀린 JSON** 은 잘린 증거가 아니다 (사냥5 L5-5).
+   *
+   * 모델은 반쪽 JSON 을 일부러 안 만들지만, 홑따옴표·끝 쉼표·글 속 날줄바꿈으로 틀린
+   * JSON 은 곧잘 만든다. 그것까지 잘린 것으로 치면 걸음마다 상한을 올려 다시 부르고
+   * /out 을 고치라고 한다. 어댑터가 괄호·따옴표가 다 닫힌 것에 argsCut:false 를 붙인다
+   * (backend/adapter.js 의 잘린모양인가). 그 표가 없는 부름은 여태처럼 잘린 것으로 본다.
+   */
+  return (msg?.toolCalls ?? []).some((t) => t?.argsBroken && t.argsCut !== false);
 }
 
 // 화면에 보여줄 표. 상한은 지금 붙어 있는 모델 기준으로 계산해서 보여준다 —
 // 모델을 바꾸면 이 숫자도 같이 바뀐다.
-export function table(base, profileKey, room = {}) {
+/*
+ * ── 여기 적히는 두 숫자는 **정말로 나가는 값**이어야 한다 ────────────────
+ *
+ * 이 표가 있는 까닭은 하나다 — 「max 라고 정했는데 왜 medium 인가」 에 답하는 것
+ * (agent/loop.js 가 stage 를 올려 보내는 자리에 그렇게 적혀 있다). 그런데 여태
+ * 이 표는 걸음을 도는 자리와 **따로** 같은 숫자를 한 번 더 셈했고, 둘이 갈렸다.
+ *
+ *   강도: 걸음 쪽은 `{ 고정 }` 을 들고 부른다. 바깥 모델·게이트웨이에 붙으면
+ *         강도가 단계별로 안 움직인다 — 요청마다 눈금이 바뀌면 그것만으로
+ *         60k 짜리 앞머리가 통째로 다시 나가기 때문이다(위 effortFor 머리말).
+ *         여기는 그 뜻을 안 받아서, 바깥 모델에서 화면은 「첫 판단 high ·
+ *         이어가기 medium · 막혔을 때 xhigh」 라고 적는데 세 번 다 high 가 나갔다.
+ *   상한: 인자를 자주 잘라 먹는 모델에는 처음부터 넉넉히 준다(agent/card.js 의
+ *         상한먼저올리기). 그러면 실제 상한은 fullCap 까지 올라가는데, 화면은
+ *         낮은 쪽만 적어서 「이만큼밖에 안 준다」 로 읽혔다.
+ *
+ * 답을 주라고 만든 화면이 틀린 답을 주면 안 보여 주느니만 못하다. 그래서 걸음이
+ * 쓰는 값을 **그대로 받아** 셈한다. 안 주면 여태처럼 군다 — 옛 호출부가 그대로 돈다.
+ *
+ * @param {object} o
+ * @param {boolean} o.고정            단계별로 안 움직이나 (loop.js 의 강도고정)
+ * @param {boolean} o.상한먼저올리기  잘리는 버릇이 재어진 모델인가 (card.js 의 조정)
+ */
+export function table(base, profileKey, room = {}, { 고정 = false, 상한먼저올리기 = false } = {}) {
   const key = normalizeProfile(profileKey) ?? 'save';
   const p = PROFILES[key];
   /*
@@ -387,14 +451,20 @@ export function table(base, profileKey, room = {}) {
     desc: 한국어 ? p.desc : (p.descEn ?? p.desc),
     ctx: room.ctx ?? 0,
     used: room.used ?? 0,
+    // 왜 세 줄이 같은지를 화면이 말할 수 있어야 한다. 값만 같게 고쳐 두면
+    // 「배분을 골라 놨는데 왜 안 먹나」 라는 다음 물음이 그대로 남는다.
+    고정,
+    상한먼저올리기,
     rows: Object.entries(STAGES).map(([stage, s]) => ({
       stage,
       label: 한국어 ? s.label : (s.en ?? s.label),
       why: 한국어 ? s.why : (s.whyEn ?? s.why),
-      level: effortFor(base, key, stage),
-      cap: tokensFor(key, stage, room),
+      level: effortFor(base, key, stage, { 고정 }),
+      cap: 상한먼저올리기
+        ? Math.max(tokensFor(key, stage, room), fullCap(room))
+        : tokensFor(key, stage, room),
       share: p.share[stage],
-      moved: p.shift[stage],
+      moved: 고정 ? 0 : p.shift[stage],
     })),
   };
 }

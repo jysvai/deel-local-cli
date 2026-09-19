@@ -219,7 +219,27 @@ Ctrl+C 는 **지금까지 한 것을 통째로 버립니다.** 그런데 대개 
 
 발견된 스킬의 명령은 `/<플러그인>:<이름>` 으로 부르고 `$ARGUMENTS` 가 치환됩니다.
 
+명령 본문에서 바뀌는 자리는 **`$ARGUMENTS` 와 `$1`…`$9`, 이 둘뿐입니다.**
+
+| 적은 것 | 되는 것 |
+|---|---|
+| `$ARGUMENTS` | 뒤에 친 말 통째로 (빈칸까지 그대로) |
+| `$1` … `$9` | 빈칸으로 나눈 n 번째 낱말. 그 자리에 안 준 낱말은 **빈 글자** 가 됩니다 |
+| `$10` | 열째 인자가 **아닙니다** — `$1` 뒤에 글자 `0` 입니다 |
+| `$0` · `${...}` · `$&` · `` $` `` | 자리 표시가 아니라 **적은 그대로** 남습니다 |
+
+`$1` 부터 `$9` 까지로 끊은 것은 일부러입니다. 열 자리까지 넓히면 이미 `$1` 뒤에 숫자를
+적어 둔 명령이 소리 없이 뜻이 바뀝니다. 그리고 채우는 값은 **사람이 친 말에서만** 옵니다 —
+그 말 안에 `$2` 가 들어 있어도 다시 풀지 않습니다.
+
 ---
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-modes-ko-dark.svg">
+    <img alt="여덟 가지 작업 모드를 한 판에 — 모드마다 표시와 이름, 파일을 바꿀 수 있는지, 생각 강도, 128k 모델에서의 걸음 상한, 무슨 일일 때 쓰는지" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-modes-ko-light.svg" width="760">
+  </picture>
+</p>
 
 ## 작업 모드
 

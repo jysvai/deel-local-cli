@@ -237,12 +237,146 @@ trace('7-파일기억도-갈래마다');
     s.filesRead instanceof Map, String(s.filesRead?.constructor?.name));
 }
 
+/*
+ * ── ★★ 지금 갈래가 **아닌** 것을 닫으면 지금 갈래가 옛 모습으로 돌아갔다 ─────
+ *
+ * 닫기() 가 담아두기를 「지금 갈래를 닫을 때」 만 했다. 다른 갈래를 닫으면
+ * 표에 담긴 **옮겨 올 때의** 모습으로 지금 갈래를 다시 꺼낸다 — 그 뒤에 쌓인
+ * 말·할 일·시킨 말이 통째로 없어지고, 다음에 적을 때 파일에 빈 할 일이 적힌다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-thread-close-'));
+  const s = new Session(conn, { root: 방 });
+  const c = { todos: null };
+  const 첫 = new Store(방, 'close-main');
+  첫.begin({ model: conn.model, root: 방 });
+  const t = new Threads(s, c, () => new Store(방).begin({ model: conn.model, root: 방 }), 첫);
+  s.push({ role: 'user', content: '본줄기 말' });
+
+  t.새로('곁가지');
+  const 곁store = t.현재store();
+  s.이번요청 = '곁가지: 로그인 버그 셋 고쳐';
+  s.push({ role: 'user', content: s.이번요청 });
+  s.할일 = [{ text: '버그1', state: 'done' }, { text: '버그2', state: 'pending' }, { text: '버그3', state: 'pending' }];
+  c.todos = s.할일;
+  // 접기가 하듯 messages 를 통째로 갈아 끼운다 — 표에 담긴 배열과 달라진다.
+  s.messages = [{ role: 'user', content: '[앞선 대화를 요약해 접었습니다]' }];
+  s.push({ role: 'assistant', content: '요약 뒤 답' });
+
+  const r = t.닫기('본줄기');
+  check('먼저: 본줄기가 닫히고 곁가지에 있다', r.ok && t.현재().이름 === '곁가지' && t.개수() === 1, JSON.stringify({ ok: r.ok, 지금: t.현재().이름 }));
+  check('★★ 다른 갈래를 닫아도 지금 갈래의 말이 그대로다',
+    s.messages.length === 2 && s.messages[1]?.content === '요약 뒤 답', JSON.stringify(s.messages));
+  check('★★ 다른 갈래를 닫아도 할 일이 그대로다', s.할일.length === 3 && c.todos?.length === 3,
+    `${s.할일.length} · ${c.todos?.length ?? null}`);
+  check('★★ 다른 갈래를 닫아도 시킨 말이 그대로다', s.이번요청 === '곁가지: 로그인 버그 셋 고쳐', JSON.stringify(s.이번요청));
+  곁store.append({ role: 'user', content: '닫은 뒤 말' });
+  const l = new Store(방, 곁store.id).load();
+  check('★ 닫은 뒤 적는 줄에 빈 할 일이 안 적힌다', (l.할일?.length ?? 0) === 3, JSON.stringify(l.할일));
+  rmSync(방, { recursive: true, force: true });
+}
+
+/*
+ * ── ★★ 다른 규격으로 적힌 대화를 이어받으면 지금 규격으로 옮겨 적는다 ───────
+ *
+ * 저장 파일 머리글에는 규격이 없다. Anthropic 으로 한 대화를 OpenAI 호환 연결로
+ * `--resume` 하면 tool_use·tool_result 블록이 그대로 나가서 첫 마디가 400 이다.
+ * 이어받은 대화가 갈래 표에 들어오는 자리가 여기(첫 한마디 전)라 여기서 옮긴다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-thread-shape-'));
+  const s = new Session({ ...conn, kind: 'openai' }, { root: 방 });
+  s.messages = [
+    { role: 'user', content: '읽어줘' },
+    { role: 'assistant', content: [{ type: 'text', text: '읽겠습니다' }, { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: 'a.txt' } }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'hello' }] },
+    { role: 'assistant', content: [{ type: 'text', text: '다 읽었습니다' }] },
+  ];
+  const 첫 = new Store(방, 'shape-main');
+  첫.begin({ model: conn.model, root: 방 });
+  new Threads(s, { todos: null }, () => new Store(방).begin({ model: conn.model, root: 방 }), 첫);
+  const 블록남음 = s.messages.some((m) => Array.isArray(m.content) && m.content.some((b) => ['tool_use', 'tool_result', 'text'].includes(b?.type)));
+  const 부름 = s.messages.find((m) => m.tool_calls?.length);
+  const 결과 = s.messages.find((m) => m.role === 'tool');
+  check('★★ 이어받은 Anthropic 블록이 OpenAI 모양으로 옮겨진다', !블록남음 && 부름?.tool_calls?.[0]?.id === 'toolu_1'
+    && typeof 부름?.tool_calls?.[0]?.function?.arguments === 'string' && 결과?.tool_call_id === 'toolu_1' && 결과?.content === 'hello',
+  JSON.stringify(s.messages).slice(0, 300));
+  check('★ 한 말은 그대로 남는다', 부름?.content === '읽겠습니다' && s.messages.at(-1)?.content === '다 읽었습니다',
+    JSON.stringify(s.messages.map((m) => m.content)));
+
+  /*
+   * 마지막 울타리 — **보내는 자리**에서도 맞춘다 (session.js 의 wire).
+   *
+   * 옮기는 문(/model · 이어받기)을 하나라도 안 지나고 규격이 바뀌면(연결을 짓는
+   * 자리가 넷이다) 옛 모양이 그대로 나간다. 보낼 사본만 맞추고 이력은 안 건드린다 —
+   * 턴마다 적는 자리(repl 의 saved)가 메시지 수로 세기 때문이다.
+   */
+  const s2 = new Session({ ...conn, kind: 'anthropic' }, { root: 방 });
+  s2.messages = [
+    { role: 'user', content: '읽어줘' },
+    { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: '{"file_path":"a.txt"}' } }] },
+    { role: 'tool', tool_call_id: 'c1', content: 'hello' },
+    { role: 'assistant', content: '다 읽었습니다' },
+  ];
+  const 원래 = s2.messages;
+  const 보낼것 = s2.wire().slice(1);
+  check('★★ 보내는 사본은 지금 규격(Anthropic) 모양이다 — tool 역할·null content 가 안 나간다',
+    보낼것.every((m) => ['user', 'assistant'].includes(m.role) && m.content != null && !m.tool_calls),
+    JSON.stringify(보낼것).slice(0, 300));
+  check('★ 이력 자체는 안 건드린다 — 수가 바뀌면 적는 자리가 어긋난다', s2.messages === 원래 && 원래[2].role === 'tool',
+    JSON.stringify(s2.messages.map((m) => m.role)));
+  rmSync(방, { recursive: true, force: true });
+}
+
+/*
+ * ── 범위 밖 숫자는 번호가 아니라 이름이다 (2.0.0 8회차 스키마) ───────────
+ *
+ * 찾기() 는 숫자뿐인 말을 번호로 먼저 읽는데, 그 번호가 범위 밖이면 거기서 -1 로 끝냈다.
+ * 그래서 `#404` 로 이름이 바뀐 갈래도, 「이슈 404」 처럼 숫자가 든 갈래도 `/thread 404` 로는
+ * 영영 못 갔다 — 화면에는 「그런 갈래가 없습니다」 가 뜨는데 목록에는 그 이름이 보인다.
+ * 범위 안 번호는 그대로 번호가 이긴다 (6회차 스레드6 의 규칙을 안 흔든다).
+ */
+{
+  const s3 = new Session(conn, { root });
+  const 첫3 = new Store(root, 'thr-404');
+  첫3.begin({ model: conn.model, root });
+  const t = new Threads(s3, { todos: null }, () => new Store(root).begin({ model: conn.model, root }), 첫3);
+  const 사백사 = t.새로('404');
+  const 이슈 = t.새로('이슈 404 고치기');
+  check('★★ (8회차) 숫자뿐인 이름으로 바뀐 갈래도 그 숫자로 찾아간다', t.찾기('404') >= 0,
+    `${사백사.이름} · 찾기=${t.찾기('404')}`);
+  check('★ (8회차) 이름에 숫자가 든 갈래도 그 숫자로 찾아간다', t.찾기('404 고치기') === 2,
+    `${이슈.이름} · 찾기=${t.찾기('404 고치기')}`);
+  check('짝: 범위 안 번호는 여전히 번호가 이긴다', t.찾기('2') === 1 && t.찾기('1') === 0, String(t.찾기('2')));
+  check('짝: 아무 데도 없는 숫자는 그대로 못 찾는다', t.찾기('98765') === -1, String(t.찾기('98765')));
+}
+
 rmSync(root, { recursive: true, force: true });
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n대화 갈래 검사  ${D}(한 창에서 여러 갈래를 굴리는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
+{
+  /*
+   * 6회차 Gemini 스레드6 — 숫자뿐인 이름은 찾기가 번호로 먼저 읽어 이름으로는 영영 못 갔고
+   * (`/thread 2` 가 이름 「2」 가 아니라 둘째 갈래로), 같은 이름을 두 번 주면 둘째는 이름으로 못 갔다.
+   */
+  const s2 = new Session(conn, { root });
+  const 첫2 = new Store(root, 'thr-num');
+  첫2.begin({ model: conn.model, root });
+  const t = new Threads(s2, { todos: null }, () => new Store(root).begin({ model: conn.model, root }), 첫2);
+  const 영 = t.새로('0');
+  const 둘 = t.새로('2');
+  const 실1 = t.새로('실험');
+  const 실2 = t.새로('실험');
+  const 이름들 = t.목록().map((g) => g.이름);
+  check('숫자뿐인 갈래 이름은 번호와 안 겹치게 바뀐다', !이름들.slice(1).some((n) => /^\d+$/.test(n)), 이름들.join(' · '));
+  check('숫자 이름으로 만든 갈래도 보인 이름으로 찾아간다', t.찾기(영.이름) === 1 && t.찾기(둘.이름) === 2, `${영.이름} · ${둘.이름}`);
+  check('같은 이름을 또 주면 둘째는 다른 이름을 받는다', 실1.이름 !== 실2.이름 && t.찾기(실1.이름) === 3 && t.찾기(실2.이름) === 4, `${실1.이름} · ${실2.이름}`);
+  check('번호로 찾기는 그대로', t.찾기('2') === 1, String(t.찾기('2')));
+}
+
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;

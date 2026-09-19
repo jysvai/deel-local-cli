@@ -127,8 +127,11 @@ trace('4-파일권한');
 {
   const a = 새기록();
   a.tool('Bash', { command: 'npm test' }, { summary: '다 통과' });
-  // 이 한 줄은 어느 판에서든 잰다 — 걸었다는 사실 자체는 밖에서 보여야 한다.
-  check('★ 감사기록에 0600 을 건다', a.잠금?.모드 === 0o600, JSON.stringify(a.잠금));
+  // 건 결과는 어느 판에서든 밖에서 보여야 한다. 윈도우는 chmod 가 아무 일도 안 하고
+  // 성공하므로 거기서 「걸었다」 가 나오면 잠근 척이다 — 안 걸었다고 적혀야 맞다.
+  check(process.platform === 'win32' ? '★ 윈도우에서는 감사기록을 잠갔다고 적지 않는다' : '★ 감사기록에 0600 을 건다',
+    process.platform === 'win32' ? a.잠금?.못함 === 'windows' && a.잠금?.모드 === undefined : a.잠금?.모드 === 0o600,
+    JSON.stringify(a.잠금));
   check('파일이 실제로 있다 (건 자리가 허공이 아니다)', existsSync(a.file), a.file);
   if (process.platform === 'win32') {
     check('윈도우에서는 모드를 안 잰다 (NTFS 는 ACL 이라 chmod 가 아무 일도 안 한다)',
@@ -141,6 +144,162 @@ trace('4-파일권한');
   a.tool('Bash', { command: 'git status' }, {});
   check('잠근 뒤에도 계속 적힌다', readFileSync(a.file, 'utf8').trim().split('\n').length === 2,
     readFileSync(a.file, 'utf8').trim().split('\n').length + '줄');
+}
+
+trace('5-반쪽줄');
+
+/*
+ * ── 반쪽 줄 뒤에 이어 적으면 다음 기록이 통째로 사라졌다 ─────────────────
+ *
+ * 적는 도중에 죽으면 마지막 줄이 개행 없이 반만 남는다. 다음 판이 그 뒤에
+ * 그대로 이어 적으면 새 기록이 반쪽에 **붙어** 한 줄이 되고, 그 줄은 JSON 이
+ * 아니라 읽을 때 통째로 버려진다 — 다음 판이 한 첫 일이 기록에서 없어진다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-audit-반쪽-'));
+  const a = new Audit(방);
+  a.tool('Bash', { command: 'echo 하나' }, {});
+  const { appendFileSync } = await import('node:fs');
+  appendFileSync(a.file, '{"at":"2026-09-', 'utf8');          // 적다가 죽은 자리
+  const b = new Audit(방);                                     // 다음 판
+  b.tool('Bash', { command: 'echo 둘' }, {});
+  b.tool('Bash', { command: 'echo 셋' }, {});
+  const 본것 = b.recent(10).map((x) => x.target);
+  check('★★ 반쪽 줄 뒤의 첫 기록이 안 사라진다', JSON.stringify(본것) === JSON.stringify(['echo 하나', 'echo 둘', 'echo 셋']),
+    JSON.stringify(본것));
+  // 멀쩡한 파일에는 빈 줄을 끼우지 않는다 — 줄마다 파일 끝을 재지도 않는다.
+  const c = new Audit(방);
+  c.tool('Bash', { command: 'echo 넷' }, {});
+  check('  멀쩡하게 끝난 파일에는 빈 줄을 안 끼운다', !/\n\n/.test(readFileSync(c.file, 'utf8')),
+    JSON.stringify(readFileSync(c.file, 'utf8').slice(-80)));
+}
+
+/*
+ * ── 적기가 한 번 막힌 뒤 반쪽 줄 뒤에 붙였다 (6회차 Gemini 감사6aa C2) ─────
+ *
+ * 끝을 본 표시를 적기 **전에** 세워서, 다음 판의 첫 적기가 막히면(읽기 전용 ·
+ * 잠김 · 디스크 가득) 그다음 기록이 개행 없이 반쪽 줄 뒤에 붙었다. 못쓴수 에는
+ * 막힌 한 건만 오르고, 붙은 기록은 적었다고 친 채 읽을 때 통째로 버려진다.
+ * agent/store.js 의 같은 자리(저장6w X1)와 같은 까닭이다.
+ */
+{
+  const { appendFileSync: 붙이기, chmodSync: 모드 } = await import('node:fs');
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-audit-막힘-'));
+  const a = new Audit(방);
+  a.tool('Bash', { command: 'echo 하나' }, {});
+  붙이기(a.file, '{"at":"2026-09-', 'utf8');
+  const b = new Audit(방);
+  모드(b.file, 0o444);
+  b.tool('Bash', { command: 'echo 막힘' }, {});
+  모드(b.file, 0o644);
+  const 막혔나 = b.못쓴수 === 1;
+  b.tool('Bash', { command: 'echo 둘' }, {});
+  const 본것 = b.recent(10).map((x) => x.target);
+  if (막혔나) {
+    check('★ (6회차 감사6aa C2) 적기가 한 번 막힌 뒤에도 다음 기록을 반쪽 줄 뒤에 붙이지 않는다',
+      본것.includes('echo 하나') && 본것.includes('echo 둘'), JSON.stringify(본것));
+  } else {
+    console.log('  (C2 판은 읽기 전용이 적기를 안 막는 환경이라 건너뜀 — 관리자 권한 등)');
+  }
+}
+
+trace('6-막힌까닭-가리기');
+
+/*
+ * ── 막힌 까닭에 명령줄이 통째로 들어 있었다 ─────────────────────────────
+ *
+ * guard 가 던지는 말은 막은 명령의 앞 120자를 그대로 담는다. what 은 가렸는데
+ * why 는 안 가려서, `Authorization: Bearer ghp_…` 가 까닭 칸에 평문으로 남았다.
+ */
+{
+  const a = 새기록();
+  const 토큰 = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  a.blocked(`되돌릴 수 없는 명령입니다: curl -H "Authorization: Bearer ${토큰}" https://x && rm -rf /`, 'rm -rf /');
+  const 글 = 적힌글(a);
+  check('★★ 막힌 까닭 칸에서도 열쇠를 가린다', !글.includes(토큰), 글.trim().slice(0, 200));
+  check('  막힌 까닭 자체는 읽힌다', /되돌릴 수 없는/.test(글), '');
+  const b = 새기록({ 열쇠들: ['DEELGW-사내-0f9e8d7c6b5a'] });
+  b.blocked('게이트웨이 열쇠 DEELGW-사내-0f9e8d7c6b5a 가 든 명령', 'x');
+  check('★ 설정에 든 열쇠도 까닭 칸에서 가린다', !적힌글(b).includes('DEELGW-사내-0f9e8d7c6b5a'), 적힌글(b).trim().slice(0, 160));
+}
+
+trace('7-자르기전에-가리기');
+
+/*
+ * ── 자른 뒤에 가리면 잘린 꼬리가 새었다 ─────────────────────────────────
+ *
+ * 사람 말은 500자, 막힌 명령은 300자로 자른다. 자르기가 먼저면 열쇠가 그 선에
+ * 걸쳤을 때 앞 조각만 남는다 — 정확히 아는 열쇠라도 **통째가 아니면** 못 알아본다.
+ */
+{
+  const 아는열쇠 = 'gw-live-0123456789abcdef0123456789abcdef';
+  const a = 새기록({ 열쇠들: [아는열쇠] });
+  a.turn('가'.repeat(480) + ' ' + 아는열쇠);
+  a.blocked('규칙', 'y'.repeat(280) + ' ' + 아는열쇠);
+  const 글 = 적힌글(a);
+  const 앞조각 = 아는열쇠.slice(0, 12);
+  check('★★ 사람 말의 자르는 선에 걸친 열쇠도 조각이 안 남는다', !글.split('\n')[0].includes(앞조각), 글.split('\n')[0].slice(-60));
+  check('★★ 막힌 명령의 자르는 선에 걸친 열쇠도 조각이 안 남는다', !글.split('\n')[1].includes(앞조각), 글.split('\n')[1].slice(-60));
+  const 긴말 = JSON.parse(글.split('\n')[0]).text;
+  check('  그래도 500자 선은 지킨다', 긴말.length <= 500, String(긴말.length));
+}
+
+trace('8-세션이름');
+
+/*
+ * 같은 초에 만든 두 기록이 세션 이름을 나눠 가졌다. `deel stats` 는 세션을
+ * 이름으로 세므로, 창 두 개를 한꺼번에 띄우면 한 세션으로 뭉쳐 보였다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-audit-세션-'));
+  const 이름들 = Array.from({ length: 5 }, () => new Audit(방).session);
+  check('★ 같은 순간에 만든 기록끼리 세션 이름이 안 겹친다', new Set(이름들).size === 5, 이름들.join(' · '));
+  check('  세션 이름은 여전히 시각으로 시작한다 (사람이 읽는다)', /^\d{4}-\d{2}-\d{2}\d{6}/.test(이름들[0]), 이름들[0]);
+}
+
+trace('8b-최근0줄');
+
+/*
+ * ★ `recent(0)` 이 **전부** 돌려줬다 (8회차 판정 audit.js:235).
+ *
+ * `slice(-0)` 은 `slice(0)` 이라 통째로 나온다. 0 을 넘기는 호출부는 지금 없지만,
+ * 이 함수가 내주는 줄은 `deel audit` 화면·증거모으기·`deel stats` 로 곧장 간다 —
+ * 「최근 0줄만 보자」 가 32MB 를 통째로 읽어 오는 것은 부르는 쪽이 못 알아챈다.
+ * 음수도 같은 말로 친다. 「몇 줄」 이 0 이하면 내줄 줄이 없다.
+ */
+{
+  const a = 새기록();
+  for (let i = 0; i < 5; i++) a.write('tool', { tool: `t${i}` });
+  check('★★ recent(0) 은 한 줄도 안 돌려준다', a.recent(0).length === 0, `${a.recent(0).length}줄`);
+  check('  음수도 마찬가지다', a.recent(-3).length === 0, `${a.recent(-3).length}줄`);
+  check('  적은 수는 그대로 뒤에서 센다', a.recent(2).map((x) => x.tool).join(',') === 't3,t4', a.recent(2).map((x) => x.tool).join(','));
+  check('  기본값은 그대로 최근 20줄까지다', a.recent().length === 5, `${a.recent().length}줄`);
+}
+
+trace('9-살림폴더못만듦');
+
+/*
+ * ★ (6회차 C3) 작업 폴더에 .deel 을 못 만들면 원시 오류 한 줄만 보였다.
+ *
+ * 같은 이름의 파일이 있거나 읽기 전용 폴더면 감사기록·되돌리기 이력이 생성자에서
+ * 막힌다. 대화 화면·deel -p·에디터 셋 다 안 죽기는 했지만 「EEXIST: file already
+ * exists, mkdir '…\.deel'」 만 떴다 — 무엇이 막혔고 어떻게 하면 되는지가 없었다.
+ * 기록 없이 조용히 켜지면 안 되니 **던지는 것은 그대로** 두고 말만 사람 말로.
+ */
+{
+  const { writeFileSync } = await import('node:fs');
+  const { History } = await import('../src/safety/undo.js');
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-audit-살림파일-'));
+  writeFileSync(join(방, '.deel'), '폴더가 아니라 파일\n', 'utf8');
+  const 던진말 = (만들기) => { try { 만들기(); return '(안 던짐)'; } catch (err) { return String(err?.message ?? err); } };
+  const 감사말 = 던진말(() => new Audit(방));
+  const 이력말 = 던진말(() => new History(방));
+  check('★ (6회차 C3) .deel 을 못 만들면 감사기록이 까닭과 길을 말한다',
+    /살림 폴더를 만들지 못했습니다/.test(감사말) && /같은 이름의 파일/.test(감사말), 감사말);
+  check('★ (6회차 C3) 되돌리기 이력도 같은 말을 한다',
+    /살림 폴더를 만들지 못했습니다/.test(이력말) && /같은 이름의 파일/.test(이력말), 이력말);
+  check('(C3 짝) 여전히 던진다 — 기록 없이 조용히 켜지지 않는다', 감사말 !== '(안 던짐)' && 이력말 !== '(안 던짐)', `${감사말} | ${이력말}`);
+  rmSync(방, { recursive: true, force: true });
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

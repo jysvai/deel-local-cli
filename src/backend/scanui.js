@@ -9,10 +9,26 @@ import { load, save, upsert } from '../config.js';
 // 코딩 에이전트로 쓰려면 도구 호출이 되어야 한다. 진단 전이라 확실히는 모르니,
 // 이름에 드러난 단서로 짐작해서 권한다. 틀릴 수 있다는 것을 문구에 밝힌다.
 const 도구잘함 = /(qwen|llama-?3|llama3|mistral|devstral|hermes|command-?r|firefunction|granite|gpt-?oss|glm|kimi|minimax|seed-?oss)/i;
-const 코딩 = /(cod(e|er|ing)|devstral|starcoder|deepseek|qwen.*cod|granite.*cod)/i;
-const 작음 = /(0\.5b|1\.5b|1b|2b|3b|tiny|mini|small)/i;
+// `deepseek` 도 `qwen`·`granite` 와 같이 `.*cod` 를 요구한다. 통째로 넣어 두었더니
+// `deepseek-r1`(추론)·`deepseek-chat`(대화)에 「코딩용 모델」 이 붙고, 그 3점이
+// 진짜 코딩 모델을 밀어내고 추천 자리를 가져갔다.
+const 코딩 = /(cod(e|er|ing)|devstral|starcoder|deepseek.*cod|qwen.*cod|granite.*cod)/i;
+/*
+ * 크기 토막은 **통째로** 맞아야 한다.
+ *
+ * `3b` 를 글 아무 데서나 찾으면 `codellama:13b`(13B) 가 걸리고 `2b` 는
+ * `qwen2.5-coder:32b`(32B) 가 걸린다 — 이 PC 에서 제일 많이 쓰는 코딩 모델이
+ * 「작은 모델」 로 세어져 점수가 깎이고 「도구 호출이 불안할 수 있습니다」 라는
+ * 거짓 경고가 붙었다. 앞에 숫자·점이 없을 때만 크기로 친다.
+ *
+ * `mini` 도 같은 탈이었다. 글 아무 데서나 찾으니 `minimax-m2`(230B) 와
+ * `gemini` 가 걸렸다 — minimax 는 바로 위 `도구잘함` 이 「도구 호출을 잘하는
+ * 계열」 로 올려 둔 것이라, 한 줄 안에서 추어올리고 깎아내렸다. 앞뒤가 글자가
+ * 아닐 때만 크기 낱말로 친다 (`gpt-4o-mini` · `qwen3-mini` 는 그대로 걸린다).
+ */
+const 작음 = /(?<![\d.])(?:0\.5|1\.5|1|2|3)b(?!\d)|tiny|(?<![a-z])mini(?![a-z])|small/i;
 
-function recommend(found) {
+export function recommend(found) {
   const all = [];
   for (const f of found) for (const m of f.models) all.push({ ...f, model: m.id, note: m.note ?? '' });
   if (!all.length) return null;
@@ -26,7 +42,15 @@ function recommend(found) {
     return s;
   };
   const best = all.map((x) => ({ x, s: 점수(x) })).sort((a, b) => b.s - a.s)[0];
-  if (!best || best.s < 2) return null;
+  if (!best) return null;
+  /*
+   * 이름에 단서가 하나도 없으면 **안 권한다.**
+   *
+   * 비작음(+1)과 ollama(+1)만으로 2점이 차서, 임베딩 전용 모델(nomic-embed-text)
+   * 까지 추천으로 올라왔다. 이유 줄에는 「실제로 되는지는 diagnose 로 확인하세요」
+   * 한 마디만 남는다 — 짐작의 근거가 이름인데 그 이름이 아무 말도 안 하는 판이다.
+   */
+  if (best.s < 2 || (!코딩.test(best.x.model) && !도구잘함.test(best.x.model))) return null;
 
   const 이유 = [];
   if (코딩.test(best.x.model)) 이유.push('코딩용 모델');
@@ -34,6 +58,31 @@ function recommend(found) {
   if (작음.test(best.x.model)) 이유.push(c.yellow('다만 작은 모델이라 도구 호출이 불안할 수 있습니다'));
   이유.push(c.gray('실제로 되는지는 deel diagnose 로 확인하세요'));
   return { ...best.x, why: 이유.join(' · ') };
+}
+
+/**
+ * 고르기 목록의 이 줄이 **권한 그것**인가.
+ *
+ * 표(`추천`)를 붙이는 잣대와 커서 기본값의 잣대가 갈려 있었다 — 표는 포트까지
+ * 보고 기본값은 모델 이름만 봤다. 같은 모델이 두 서버에 떠 있으면 둘째를 권해
+ * 놓고 커서는 첫째에 앉아, 엔터를 치면 권하지 않은 쪽이 등록된다. 잣대를 하나로 둔다.
+ *
+ * 그 잣대가 `baseUrl.includes('80')` 이었다 — 8080·8000·11434 가 전부 80 추천에
+ * 걸린다. 막으려던 사고를 막았다고 적어 놓고 같은 줄에서 되살린 셈이다.
+ * 포트는 글자로 찾지 말고 포트 자리에서 읽는다.
+ */
+const 주소포트 = (u) => {
+  const m = /:(\d+)(?=[/?#]|$)/.exec(String(u ?? ''));
+  return m ? Number(m[1]) : null;
+};
+
+export function 추천인가(p, 추천) {
+  return !!추천 && p?.model === 추천.model && 주소포트(p?.baseUrl) === Number(추천.port);
+}
+
+/** 고르개의 기본 자리. 권한 것이 없으면 첫째. */
+export function 추천자리(profiles, 추천) {
+  return Math.max(0, (profiles ?? []).findIndex((p) => 추천인가(p, 추천)));
 }
 
 export async function runScan(flags = {}) {
@@ -66,7 +115,8 @@ export async function runScan(flags = {}) {
   // ── 찾은 것 표로 ─────────────────────────────────────────────────────
   const wRun = Math.max(10, ...found.map((f) => width(f.runtime)));
   for (const f of found) {
-    const 자리 = `${f.host}:${f.port}`;
+    // IPv6 는 괄호를 씌운다 — `::1:11434` 는 어디까지가 주소인지 안 보인다.
+    const 자리 = `${String(f.host).includes(':') && !String(f.host).startsWith('[') ? `[${f.host}]` : f.host}:${f.port}`;
     const 규격 = 규격이름(f.kind);
     const 표시 = f.guessed ? c.gray(' (추정)') : '';
     say(`  ${c.hcyan('◆')} ${c.bold(pad(f.runtime, wRun))}${표시}  ${c.gray(pad(자리, 22))}${c.gray(pad(규격, 14))}${c.gray(f.ms + 'ms')}`);
@@ -114,10 +164,10 @@ export async function runScan(flags = {}) {
   if (flags.pick && profiles.length > 1) {
     const items = profiles.map((p) => ({
       label: `${pad(clip(p.name, 44), 46)}${c.gray(p.note ?? '')}`,
-      note: 추천 && p.model === 추천.model && p.baseUrl.includes(String(추천.port)) ? '추천' : '',
+      note: 추천인가(p, 추천) ? '추천' : '',
     }));
     const i = await pick('어느 것을 쓰시겠습니까', items, {
-      def: Math.max(0, profiles.findIndex((p) => 추천 && p.model === 추천.model)),
+      def: 추천자리(profiles, 추천),
     });
     profiles = [profiles[i]];
     cfg.active = null;   // 고른 것을 지금 쓰는 것으로

@@ -25,8 +25,9 @@ import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import {
-  바꿔볼까, 변환기찾기, 변환기잊기, 변환기말, 글로바꾸기, 임시자리, 임시치우기,
+  바꿔볼까, 변환기찾기, 변환기잊기, 변환기말, 글로바꾸기, 임시자리, 임시치우기, soffice이름들,
 } from '../src/tools/convert.js';
+import { 돌려보기, 무리로돌리기 } from '../src/tools/spawn.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -44,8 +45,10 @@ const 윈도우 = process.platform === 'win32';
  * @param {string} 방  스크립트를 놓을 폴더
  * @param {object} o
  * @param {boolean} o.아무것도안함  글을 안 뽑는 변환기 (실패하는 길을 재려고)
+ * @param {number}  o.종료코드      이 코드로 끝난다 (0 이 아니면 반쪽만 남기고 죽는 길)
+ * @param {boolean} o.프로필만들기  -env:UserInstallation 자리에 프로필을 판다 (진짜가 하는 짓)
  */
-function 가짜변환기(방, { 아무것도안함 = false } = {}) {
+function 가짜변환기(방, { 아무것도안함 = false, 종료코드 = 0, 프로필만들기 = false } = {}) {
   /*
    * 스크립트를 **줄 배열로** 짓는다. 템플릿 안에 템플릿을 넣으면 역슬래시가
    * 몇 겹인지 사람이 못 센다 — 처음에 그렇게 썼다가 생성된 파일에 진짜 줄바꿈이
@@ -64,10 +67,18 @@ function 가짜변환기(방, { 아무것도안함 = false } = {}) {
     'const outdir = i >= 0 ? argv[i + 1] : null;',
     'const src = argv[argv.length - 1];',
     'if (!outdir || !src) process.exit(1);',
-    ...(아무것도안함 ? ['process.exit(0);'] : [
+    // 진짜 soffice 는 -env:UserInstallation 자리에 제 프로필을 판다. 그 안에 **사람 문서의
+    // 캐시**가 남으므로, 우리가 그것까지 거두는지 재려면 가짜도 똑같이 파야 한다.
+    ...(프로필만들기 ? [
+      "const 프 = argv.find((a) => a.startsWith('-env:UserInstallation='));",
+      "if (프) { const d = 프.slice('-env:UserInstallation=file:///'.length);",
+      "  fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'user.rdb'), '사람 문서 캐시'); }",
+    ] : []),
+    ...(아무것도안함 ? [] : [
       "const 이름 = path.basename(src).replace(/[.][^.]*$/, '') + '.txt';",
       `fs.writeFileSync(path.join(outdir, 이름), ${JSON.stringify(뽑을글)}, 'utf8');`,
     ]),
+    `process.exit(${종료코드});`,
   ].join('\n'), 'utf8');
 
   const 자리 = join(방, 윈도우 ? 'soffice.cmd' : 'soffice');
@@ -182,6 +193,98 @@ trace('4-못뽑았을때');
   rmSync(방, { recursive: true, force: true });
 }
 
+trace('4b-성공실패가르기');
+
+/*
+ * ── 4b. 성공과 실패를 무엇으로 가르나 (8회차) ───────────────────────────
+ *
+ * 규칙은 하나다 — **종료코드 0 과 결과 파일, 둘 다** 있어야 성공이다.
+ * 한쪽만 보던 때 두 자리가 서로 **반대 방향**으로 틀려 있었다.
+ *
+ *   · 종료코드 1 로 죽으면서 반쪽 txt 를 남긴 것을 `ok:true` 로 돌려줬다.
+ *     그 깨진 글이 그대로 모델에게 갔고, 모델은 그것이 문서 전부인 줄 안다.
+ *   · 멀쩡히 끝냈는데 받을곳에 지난번 같은 이름 txt 가 남아 있으면
+ *     「변환기가 글을 못 뽑았습니다」 로 돌려줬다 — 성공을 실패로 뒤집었다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-conv5-'));
+  const 파일 = join(방, '보고서.ppt');
+  writeFileSync(파일, 옛ppt());
+
+  // ① 죽으면서 남긴 반쪽 글을 성공이라 하지 않는다.
+  const 죽는놈 = 가짜변환기(방, { 종료코드: 1 });
+  const 죽음 = await 글로바꾸기(파일, 방, { 찾은것: { soffice: 죽는놈, textutil: false, 왜: null } });
+  check('★★ 종료코드가 0 이 아니면 성공이라 하지 않는다', 죽음.ok === false,
+    JSON.stringify({ ok: 죽음.ok, text: (죽음.text ?? '').slice(0, 30) }));
+  check('★ 몇 번으로 죽었는지 말한다', /종료 1/.test(죽음.왜 ?? ''), 죽음.왜 ?? '');
+  // 반쪽 글도 사람 문서의 조각이다. 실패한 자리에 남기면 그대로 커밋에 딸려 나간다.
+  check('★ 죽으면서 남긴 반쪽 글을 안 남긴다',
+    !readdirSync(임시자리(방)).some((f) => f.toLowerCase().endsWith('.txt')),
+    readdirSync(임시자리(방)).join(','));
+
+  // ② 지난번 사본이 같은 이름으로 남아 있어도 이번 성공은 성공이다.
+  변환기잊기();
+  const 되는놈 = 가짜변환기(방);
+  writeFileSync(join(임시자리(방), '보고서.txt'), '지난번에 못 지운 사본');
+  const 다시 = await 글로바꾸기(파일, 방, { 찾은것: { soffice: 되는놈, textutil: false, 왜: null } });
+  check('★★ 같은 이름 사본이 남아 있어도 성공을 실패로 뒤집지 않는다', 다시.ok === true,
+    JSON.stringify({ ok: 다시.ok, 왜: 다시.왜 }));
+  check('  이번에 뽑은 글이 나온다 (지난번 사본이 아니라)', /분기 실적 보고/.test(다시.text ?? ''),
+    (다시.text ?? '').slice(0, 40));
+
+  /*
+   * ③ ★ 사람 문서 캐시가 든 프로필을 작업 폴더에 남기지 않는다.
+   *
+   * `-env:UserInstallation` 으로 우리 몫의 프로필을 주는데, soffice 는 그 안에
+   * 방금 연 문서의 캐시를 남긴다. txt 만 지우고 프로필을 두면 「읽었으면 곧바로
+   * 지운다」 는 약속이 반만 지켜진 것이고, 남은 절반이 그대로 커밋되거나
+   * 압축되어 나간다. 세션이 죽어도 지켜지려면 여기서 지워야 한다.
+   */
+  const 프로필파는놈 = 가짜변환기(방, { 프로필만들기: true });
+  const 프r = await 글로바꾸기(파일, 방, { 찾은것: { soffice: 프로필파는놈, textutil: false, 왜: null } });
+  check('  프로필을 파는 변환기여도 글은 읽어 온다', 프r.ok === true, JSON.stringify(프r.왜 ?? ''));
+  check('★★ 사람 문서 캐시가 든 프로필을 작업 폴더에 안 남긴다',
+    !existsSync(join(임시자리(방), '.soffice-profile')),
+    readdirSync(임시자리(방)).join(','));
+
+  rmSync(방, { recursive: true, force: true });
+}
+
+trace('4c-윈도우껍데기');
+
+/*
+ * ── 4c. scoop·choco 로 깐 `soffice.cmd` 도 찾는다 (8회차) ───────────────
+ *
+ * 명령짓기 머리말은 그 껍데기를 다룬다고 적어 두었는데, 정작 **찾을 때**는
+ * `soffice` 한 이름만 물어봤다. Node 의 spawn 은 PATHEXT 를 안 보므로
+ * `soffice` 는 ENOENT 고(`soffice.cmd` 를 그냥 부르면 EINVAL), 그래서
+ * 사람이 눈앞에서 쓰고 있는 LibreOffice 를 두고 「없습니다」 라고 했다.
+ */
+{
+  check('★★ 윈도우에서는 껍데기 이름까지 물어본다',
+    soffice이름들('win32').includes('soffice.cmd') && soffice이름들('win32').includes('soffice.bat'),
+    soffice이름들('win32').join(' '));
+  check('  윈도우가 아니면 이름 하나뿐이다 (없는 것을 다섯 번 부르지 않는다)',
+    JSON.stringify(soffice이름들('linux')) === JSON.stringify(['soffice']), soffice이름들('linux').join(' '));
+
+  // 진짜로 PATH 에 껍데기만 놓고 찾아본다. `.cmd` 는 윈도우 것이라 거기서만 잰다.
+  if (윈도우) {
+    const 방 = mkdtempSync(join(tmpdir(), 'deel-conv6-'));
+    가짜변환기(방);   // 윈도우에서는 soffice.cmd 로 떨어진다
+    const 본래PATH = process.env.PATH;
+    process.env.PATH = `${방};${본래PATH}`;
+    try {
+      const 찾은 = 변환기찾기({ 다시: true, env: {}, platform: 'win32' });
+      check('★★ PATH 에 soffice.cmd 만 있어도 찾아낸다', !!찾은.soffice, JSON.stringify(찾은));
+      check('  찾았으면 없다고 말하지 않는다', !/변환기가 없습니다/.test(변환기말(찾은)), 변환기말(찾은));
+    } finally {
+      process.env.PATH = 본래PATH;
+      변환기잊기();
+      rmSync(방, { recursive: true, force: true });
+    }
+  }
+}
+
 trace('5-Read로');
 
 // ── 5. Read 가 실제로 빌려 쓰는가 ──────────────────────────────────────
@@ -217,6 +320,26 @@ trace('5-Read로');
   check('고칠 수 없는 파일이라는 것도 같이 말한다', /Edit\/Write 로 고칠 수 없습니다/.test(있이.content ?? ''), '');
   // 왜 직접 못 읽었는지가 남아야 한다 — 다음에 같은 파일을 만났을 때 판단 근거다.
   check('원래 못 읽은 까닭도 남긴다', /원래 못 읽은 까닭/.test(있이.content ?? ''), '');
+
+  /*
+   * ★★★ ③ 변환기가 **있는데 진** 경우 (막판 훑기).
+   *
+   * 여태 이 자리가 조용했다. 글로바꾸기 는 「변환기가 종료 77 로 끝났습니다
+   * (…)」 까지 적어 돌려주는데 빌려읽기 가 그걸 `null` 로 뭉개서, 화면에는
+   * 「이 PC 의 변환기로 바꿔 봤지만 글이 안 나왔습니다」 한 줄만 남았다.
+   * 자바가 없어 진 것인지 파일이 진짜 깨진 것인지 가릴 길이 없다 —
+   * 사람이 할 일이 정반대인 두 경우가 같은 말로 끝났다.
+   */
+  const 지는것 = 가짜변환기(방, { 아무것도안함: true, 종료코드: 77 });
+  const 졌이 = await TOOLS.Read.run({ file_path: '보고서.pptx' }, 판({ soffice: 지는것, textutil: false, 왜: null }));
+  check('★★★ 변환기가 졌으면 왜 졌는지를 화면에 올린다',
+    /변환기로도 해 봤지만 실패했습니다/.test(졌이.error ?? ''), (졌이.error ?? '').split('\n').pop());
+  check('★★★ 종료코드까지 그대로 싣는다', /종료 77/.test(졌이.error ?? ''), (졌이.error ?? '').split('\n').pop());
+  // 길을 알려 주는 원래 안내는 그대로 남아야 한다 — 까닭만 남고 길이 사라지면 반쪽이다.
+  check('  원래 안내도 그대로 남는다', /옛 Office|해결:/.test(졌이.error ?? ''), (졌이.error ?? '').split('\n')[0]);
+  // (짝) 성공한 판에는 이 말이 안 붙는다 — 거짓 경고도 결함이다.
+  check('  (짝) 빌려 읽은 판에는 안 붙는다',
+    !/변환기로도 해 봤지만/.test(있이.content ?? ''), '');
 
   임시치우기(방);
   rmSync(방, { recursive: true, force: true });
@@ -307,8 +430,287 @@ trace('6-옛확장자');
   check('그래도 변환기가 있으면 빌려는 본다', /분기 실적 보고/.test(깨진빌림.content ?? ''),
     깨진빌림.error ?? '');
 
+  /*
+   * ── 해 보지도 않고 「해 봤다」 고 하지 않는다 (2.0.0 6회차 CV1·CV3·CV4) ─────
+   *
+   * CV1 `.xlt` 는 「직접 못 읽는 갈래」 에는 있고 「바꿔 볼 갈래」 에는 없었다. 엑셀이 없는 PC 에서
+   *     변환기를 부르지도 않고 「이 PC 의 변환기로 바꿔 봤지만 글이 안 나왔습니다」 · 「pdf 나 txt 로
+   *     저장하세요」 · 「다시 Read 하지 마세요」 로 끝냈다.
+   * CV3 `DEEL_CONVERT=off` 로 일부러 껐는데 「LibreOffice 를 설치하면 빌려 씁니다」 라고 했다.
+   * CV4 맥은 textutil 이 늘 있다. textutil 은 doc·rtf·odt·docx 만 받는데, 그것 하나로 「변환기가 있다」
+   *     쳐서 .ppt·.xls·.hwp 에 「바꿔 봤지만」 이라 하고 LibreOffice 안내를 뺐다.
+   */
+  // 엑셀 앞머리(zip·OLE)가 아닌 글자라 엑셀(COM)을 안 부르고 곧장 실패한다 — 이 PC 에 엑셀이 있어도 안 뜬다.
+  writeFileSync(join(방, '서식.xlt'), '엑셀 서식이 아닌 글자');
+  const 서식빌림 = await 읽어보기('서식.xlt', { soffice, textutil: false, 왜: null });
+  check('★★ .xlt 도 변환기가 있으면 빌려 읽는다', /분기 실적 보고/.test(서식빌림.content ?? ''),
+    (서식빌림.error ?? '').split('\n').slice(0, 2).join(' | '));
+  const { 못바꿈말 } = await import('../src/tools/convert.js');
+  check('★ .xlt 는 xlsx 로 저장하라고 한다 (pdf 나 txt 가 아니다)',
+    /xlsx 로 저장/.test(못바꿈말('서식.xlt', '.xlt', { soffice: null, textutil: false, 왜: null })), '');
+  const 끈말 = 못바꿈말('옛발표.ppt', '.ppt', { soffice: null, textutil: false, 왜: 'DEEL_CONVERT=off 로 꺼 두었습니다' });
+  check('★★ DEEL_CONVERT=off 면 꺼 두었다고 말하고 설치하라고 안 한다',
+    /DEEL_CONVERT=off/.test(끈말) && !/설치/.test(끈말), 끈말.split('\n').slice(1, 3).join(' | '));
+  const 맥ppt = 못바꿈말('옛발표.ppt', '.ppt', { soffice: null, textutil: true, 왜: null });
+  check('★★ textutil 만 있는 맥에서 .ppt 를 「바꿔 봤지만」 이라 하지 않는다',
+    !/바꿔 봤지만/.test(맥ppt) && /LibreOffice/.test(맥ppt), 맥ppt.split('\n').slice(1, 3).join(' | '));
+  const 맥doc = 못바꿈말('옛글.doc', '.doc', { soffice: null, textutil: true, 왜: null });
+  check('  textutil 이 받는 .doc 은 정말 해 본 것이라 「바꿔 봤지만」 이 맞다', /바꿔 봤지만/.test(맥doc), 맥doc.split('\n')[1]);
+  const 오피스있음 = 못바꿈말('옛발표.ppt', '.ppt', { soffice: 'C:/어딘가/soffice.exe', textutil: false, 왜: null });
+  check('  soffice 가 있으면 「바꿔 봤지만」 이 맞다', /바꿔 봤지만/.test(오피스있음), 오피스있음.split('\n')[1]);
+
   임시치우기(방);
   rmSync(방, { recursive: true, force: true });
+}
+
+trace('9-stdin-은-늘-닫는다');
+
+// ── 넣을 것이 없어도 stdin 은 닫아야 한다 ───────────────────────────────
+//
+// 돌려보기() 의 머리말이 「안 닫으면 자식이 stdin 을 끝까지 읽는 모양일 때
+// **영영 안 끝난다** — 시한에 걸려 죽을 때까지 기다리게 되고, 사람 눈에는
+// '훅이 느리다' 로 보인다」 라고 적어 두고, 정작 `넣을것 != null` 일 때만
+// 닫았다. 넣을 것이 없는 부름(fastgrep 의 rg · convert 의 soffice)은
+// **열린 파이프**를 물려받는다.
+{
+  const 읽는놈 = ['-e', 'let n=0;process.stdin.on("data",(c)=>{n+=c.length});'
+    + 'process.stdin.on("end",()=>{console.log("읽은바이트 "+n);process.exit(0)});'];
+  const t0 = Date.now();
+  const r = await 돌려보기(process.execPath, 읽는놈, { timeout: 5000 });
+  const 걸린 = Date.now() - t0;
+  check('★★ 넣을 것이 없어도 자식이 EOF 를 받는다', r.status === 0 && !r.error,
+    `${걸린}ms · ${r.error?.message ?? r.stdout.trim()}`);
+  check('★ 시한까지 안 기다린다', 걸린 < 3000, `${걸린}ms`);
+  check('빈 stdin 이라고 알려 준다', /읽은바이트 0/.test(r.stdout), r.stdout.trim());
+
+  // 넣을 것이 있으면 여태처럼 흘려 주고 닫는다.
+  const r2 = await 돌려보기(process.execPath, 읽는놈, { timeout: 5000, 넣을것: '열두글자입니다' });
+  check('넣을 것이 있으면 그대로 흘려 준다', r2.status === 0 && /읽은바이트 (1[0-9]|2[0-9])/.test(r2.stdout),
+    r2.stdout.trim() || String(r2.error?.message));
+}
+
+trace('10-무리로돌리기-탈의-모양');
+
+// ── 머리말이 적어 둔 탈의 모양과 실제가 맞나 ────────────────────────────
+//
+// 부르는 쪽(tools/index.js 의 Bash)이 이 모양을 보고 「시간 초과」 와 「넘침」 과
+// 「시그널로 죽음」 을 가른다. 여기가 어긋나면 모델은 timeout 을 늘려 같은 명령을
+// 다시 부른다 — 사냥5 M3 이 그 자리다.
+{
+  // 1) 넘친 쪽이 stderr 면 stderr 라고 말해야 한다. 여태 늘 stdout 이라고 적었다.
+  const 넘침 = await new Promise((r) => 무리로돌리기(
+    process.execPath, ['-e', 'process.stderr.write("x".repeat(200000))'],
+    { maxBuffer: 1000 }, (탈) => r(탈),
+  ));
+  check('★ 넘친 쪽을 사실대로 적는다', /stderr maxBuffer/.test(넘침?.message ?? ''), 넘침?.message);
+  check('넘침은 코드로도 알린다', 넘침?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', String(넘침?.code));
+
+  const 넘침2 = await new Promise((r) => 무리로돌리기(
+    process.execPath, ['-e', 'process.stdout.write("x".repeat(200000))'],
+    { maxBuffer: 1000 }, (탈) => r(탈),
+  ));
+  check('stdout 이 넘치면 stdout 이라고 적는다', /stdout maxBuffer/.test(넘침2?.message ?? ''), 넘침2?.message);
+
+  // 2) 우리가 죽인 것은 killed 로 말한다 (밖에서 죽인 판은 윈도에서 못 잰다 —
+  //    TerminateProcess 는 신호가 아니라 종료코드 1 로 온다).
+  const 죽임 = await new Promise((r) => {
+    const kid = 무리로돌리기(process.execPath, ['-e', 'setTimeout(() => {}, 9000)'], {}, (탈) => r(탈));
+    setTimeout(() => { try { kid.kill('SIGTERM'); } catch { /* 이미 죽었다 */ } }, 300);
+  });
+  check('★ 시그널로 죽으면 그 신호를 적는다', 죽임?.signal === 'SIGTERM', String(죽임?.signal));
+  check('★ 우리가 죽인 것이면 killed 다', 죽임?.killed === true, String(죽임?.killed));
+  check('시그널 죽음은 시한이 아니다', 죽임?.시한 !== true, String(죽임?.시한));
+
+  /*
+   * ── 3) 넘침은 시한에 **안 덮인다** (8회차 확인) ───────────────────────────
+   *
+   * 269-270 머리말은 「넘침도 시그널 죽음도 전부 시간 초과로 나갔다」 를 고쳤다고 적어
+   * 뒀는데, 시한 타이머는 미리 잡아 둔 탈을 보지도 않고 덮어썼다. 넘쳐서 죽인 자식이
+   * 시한 안에 안 닫히면(끊는 손이 못 끊는 판) 부르는 쪽은 넘침을 시간 초과로 읽고,
+   * timeout 을 늘려 같은 명령을 또 부른다 — 고쳤다던 그 자리로 되돌아간다.
+   */
+  const 넘치고시한 = await new Promise((r) => 무리로돌리기(
+    process.execPath, ['-e', 'process.stdout.write("x".repeat(400000)); setTimeout(() => {}, 5000)'],
+    { maxBuffer: 1000, timeout: 400, 넘치면: () => { /* 못 끊는 판을 흉내 낸다 */ } }, (탈) => r(탈),
+  ));
+  check('★ 먼저 잡은 넘침을 시한이 덮어쓰지 않는다 (8회차 확인)',
+    넘치고시한?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' && 넘치고시한?.시한 !== true,
+    `${넘치고시한?.message} · code=${넘치고시한?.code} · 시한=${넘치고시한?.시한}`);
+
+  // 넘친 적이 없으면 시한은 여태처럼 시한이라고 말한다.
+  const 시한만 = await new Promise((r) => 무리로돌리기(
+    process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], { timeout: 400 }, (탈) => r(탈),
+  ));
+  check('  넘친 적이 없으면 시한은 시한이라고 말한다', 시한만?.시한 === true, `${시한만?.message} · 시한=${시한만?.시한}`);
+}
+
+/*
+ * ── 돌려보기 의 넘침도 **코드로** 말한다 (8회차 확인) ─────────────────────────
+ *
+ * 돌려보기 는 spawnSync 와 돌려주는 모양을 일부러 똑같이 맞춘 것이고(머리말),
+ * spawnSync 는 이 자리에서 `ENOBUFS` 를 냈다. 그런데 여기서 만든 탈에는 code 가
+ * 아예 없어서, 부르는 쪽은 「결과가 너무 많습니다」 라는 우리말 한 줄을 글자로
+ * 맞춰 보는 수밖에 없었다 — 말이 바뀌면 조용히 안 걸린다.
+ */
+{
+  const 넘침3 = await 돌려보기(process.execPath, ['-e', 'process.stdout.write("x".repeat(400000))'],
+    { maxBuffer: 1000, timeout: 5000 });
+  check('★ 돌려보기 의 넘침은 ENOBUFS 로 가른다 (8회차 확인)',
+    넘침3.error?.code === 'ENOBUFS', `${넘침3.error?.message} · code=${넘침3.error?.code}`);
+
+  // 자르기를 켠 부르개는 여전히 탈이 아니라 `잘림` 으로 받는다 — 거기까지 오류로 만들면 훅이 막힌다.
+  const 자름 = await 돌려보기(process.execPath, ['-e', 'process.stdout.write("x".repeat(400000)); process.exit(0)'],
+    { maxBuffer: 1000, timeout: 5000, 넘치면자르기: true });
+  check('  자르기를 켠 쪽은 오류가 아니라 잘림으로 받는다', !자름.error && 자름.잘림 === true && 자름.status === 0,
+    `${자름.error?.message ?? ''} 잘림=${자름.잘림} status=${자름.status}`);
+
+  /*
+   * ★★ 탈 글 쪽은 **소리 없이** 잘리고 있었다 (막판 훑기).
+   *
+   * 나온말은 위처럼 표를 달아 말하는데, 탈 글은 `if (탈.length < 65536) 탈 += 조각` 한 줄이라
+   * 넘는 순간부터 그냥 사라졌다. 종료코드는 0 이고 오류도 없다 — 경고를 stderr 로 쏟는
+   * 훅(린터·형 검사 감싸개)에서 뒤쪽 경고가 통째로 없어지고, 그게 「경고 없음」 으로 올라간다.
+   * 바로 위 머리말이 「조용히 잘라 버리면 … 아무도 눈치 못 챈다」 고 적어 둔 그 자리다.
+   */
+  const 탈넘침 = await 돌려보기(process.execPath,
+    ['-e', 'process.stderr.write("E".repeat(200000)); process.stdout.write("ok"); process.exit(0)'],
+    { maxBuffer: 1000000, timeout: 5000, 넘치면자르기: true });
+  check('★★ 탈 글을 자르면 잘랐다고 글 안에 적는다',
+    /잘렸습니다/.test(String(탈넘침.stderr)), JSON.stringify(String(탈넘침.stderr).slice(-60)));
+  check('  (짝) 짧은 탈 글에는 군말이 안 붙는다',
+    !/잘렸습니다/.test(String((await 돌려보기(process.execPath,
+      ['-e', 'process.stderr.write("작다"); process.exit(0)'], { timeout: 5000 })).stderr)));
+}
+
+trace('11-죽인-자식이-여태-뱉은-말');
+
+/*
+ * ── 죽이라고 하면 **여태 모은 글을 들고 나온다** ────────────────────────
+ *
+ * Bash 도구의 ESC 갈래는 자식을 죽인 뒤 400ms 짜리 그물을 두고 「죽기 직전에
+ * 뱉은 줄」 을 기다린다. 그런데 그 글은 여기(무리로돌리기)의 버퍼에 들어 있고,
+ * 여기는 **'close' 가 와야만** 그것을 넘겨 줬다. 셸이 뒤로 띄운 손자가 파이프를
+ * 물고 있으면 close 는 영영 안 온다 — 그러면 그물이 먼저 울고, 그물 갈래에는
+ * 그 글을 실을 길이 없어서 결과가 통째로 빈 채 나간다. 사람도 모델도
+ * 「사용자가 중단했습니다」 한 줄만 받는다. 제일 중요한 몇 줄이 거기 있는데.
+ *
+ * ── 왜 시계로 안 재나 ───────────────────────────────────────────────────
+ *
+ * 이 판은 시계로 가르면 안 된다(abort-tools 5-2 단 머리말과 같은 이유 — 그 자리는
+ * 여덟 번 재서 6/8·4/8 로 흔들렸다). 여기서 가르는 것은 **몇 ms 인가**가 아니라
+ * 「오나 · 영영 안 오나」 다. 손자에게 파이프를 물려 close 를 아예 못 오게 해 두면,
+ * 안 고친 코드에서는 결과가 **영영** 안 오고 고친 코드에서는 곧 온다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-cut-'));
+  const 손자표 = join(방, 'holder.pid');
+  const 말표 = join(방, 'said.txt');
+  const 무는놈 = join(방, 'holder.cjs');
+  const 뱉는놈 = join(방, 'talker.cjs');
+  writeFileSync(무는놈, [
+    "require('fs').writeFileSync(process.argv[2], String(process.pid));",
+    'setTimeout(() => process.exit(0), 30000);',
+  ].join('\n'));
+  writeFileSync(뱉는놈, [
+    "const fs = require('fs');",
+    "const { spawn } = require('child_process');",
+    // 손자에게 우리 stdout 을 그대로 물린다 — 우리가 죽어도 파이프가 안 닫힌다.
+    "spawn(process.execPath, [process.argv[2], process.argv[3]],",
+    "  { detached: true, stdio: ['ignore', 'inherit', 'inherit'] });",
+    'let n = 0;',
+    "setInterval(() => { n++; console.log('죽기전에한말' + n);",
+    "  fs.appendFileSync(process.argv[4], 'x'); }, 40);",
+    'setTimeout(() => process.exit(0), 30000);',
+  ].join('\n'));
+
+  const 쉬기 = (ms) => new Promise((r) => setTimeout(r, ms));
+  let 온것 = null;
+  const 아이 = 무리로돌리기(process.execPath, [뱉는놈, 무는놈, 손자표, 말표], {},
+    (탈, 밖) => { 온것 = { 탈, 밖: 밖.toString() }; });
+
+  // **시계가 아니라 「뱉었는가」 로** 기다린다. 자식이 아직 한 글자도 안 뱉었으면
+  // 잴 것이 없다 — 빈 결과가 고장인지 아직 아무 말도 안 한 것인지 안 갈린다.
+  let 뱉었나 = false;
+  for (let i = 0; i < 300 && !뱉었나; i++) {
+    뱉었나 = existsSync(말표) && readFileSync(말표, 'utf8').length >= 3;
+    if (!뱉었나) await 쉬기(20);
+  }
+  아이.kill();
+  for (let i = 0; i < 150 && !온것; i++) await 쉬기(20);
+
+  check('★ 자식이 죽기 전에 말을 뱉었다 (아래 검사의 전제)', 뱉었나,
+    `말표=${existsSync(말표)}`);
+  check('★★ 죽이면 결과가 돌아온다 — 손자가 파이프를 물어 close 가 안 와도',
+    !!온것, 온것 ? '왔다' : '3초를 기다려도 안 왔다 (close 만 기다리고 있다)');
+  check('★★ 그 결과에 죽기 전에 뱉은 말이 실려 있다',
+    /죽기전에한말/.test(온것?.밖 ?? ''), JSON.stringify((온것?.밖 ?? '').slice(0, 40)));
+  check('  우리가 죽인 것이라고 탈에 적는다', 온것?.탈?.killed === true,
+    `${온것?.탈?.message ?? '(탈 없음)'} · killed=${온것?.탈?.killed}`);
+
+  // 손자를 남기지 않는다. 살려 두면 이 폴더를 못 지우고, 파이프도 계속 물고 있다.
+  const 손자 = existsSync(손자표) ? Number(readFileSync(손자표, 'utf8')) : null;
+  if (손자) { try { process.kill(손자); } catch { /* 이미 죽었다 */ } }
+  await 쉬기(200);
+  rmSync(방, { recursive: true, force: true });
+}
+
+trace('12-중단해도-받은-글은-준다');
+
+/*
+ * ── 돌려보기 도 중단할 때 **받은 글을 버렸다** ──────────────────────────
+ *
+ * 시한에 걸려 끝날 때는 여태 받은 것을 그대로 실어 준다(stdout: 밖). 그런데 바로
+ * 위 중단 갈래만 `stdout: ''` 였다. 훅(safety/hooks.js)은 못 돌린 판에도 자식이
+ * 뱉은 말을 그대로 보여 주는 자리인데, 중단한 판에서만 그 말이 빈 글이 됐다 —
+ * 어디까지 하다 멈춘 것인지가 아무 데도 안 남는다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-cut2-'));
+  const 표 = join(방, 'said.txt');
+  const 쉬기 = (ms) => new Promise((r) => setTimeout(r, ms));
+  const ac = new AbortController();
+  const 일 = 돌려보기(process.execPath, ['-e',
+    "console.log('중단전에한말');"
+    + " require('fs').writeFileSync(process.argv[1], '1'); setTimeout(() => {}, 9000);", 표],
+  { timeout: 9000, signal: ac.signal });
+  for (let i = 0; i < 300 && !existsSync(표); i++) await 쉬기(20);
+  // 뱉은 것이 우리 손에 들어올 틈. 자식은 stdout 을 **먼저** 쓰고 표를 나중에 쓴다.
+  await 쉬기(50);
+  ac.abort();
+  const 끊긴것 = await 일;
+  check('★★ 중단해도 여태 받은 글을 준다', /중단전에한말/.test(끊긴것.stdout ?? ''),
+    JSON.stringify({ stdout: (끊긴것.stdout ?? '').slice(0, 30), error: 끊긴것.error?.message }));
+  check('  중단이라고 말하는 것은 그대로다', /중단/.test(끊긴것.error?.message ?? ''),
+    끊긴것.error?.message);
+  rmSync(방, { recursive: true, force: true });
+}
+
+trace('거두는자리');
+
+/*
+ * ── 거두는 자를 **부르는 데가 있나** ───────────────────────────────────
+ *
+ * 위 검사들은 임시치우기() 를 직접 불러서 「부르면 거둔다」 만 재고 있었다.
+ * 그런데 저장소에서 그 자를 부르는 곳이 **검사뿐**이었다. convert.js 안의
+ * rmSync 들은 실패할 때마다 「못 지우면 임시치우기가 거둔다」 고 적어 두는데,
+ * 거두는 자를 아무도 안 부르니 그 말이 빈말이었다 — 윈도우에서 soffice 가
+ * 파일을 물고 있으면 사람 문서의 알맹이가 든 `.txt` 가 `.deel/tmp` 에 쌓인다.
+ *
+ * 그래서 「함수가 도나」 가 아니라 **「부르는 자리가 있나」** 를 잰다. 두 모드가
+ * 다 있어야 한다 — 대화(repl)와 배치(oneshot)는 끝맺는 자리가 서로 다르다.
+ */
+{
+  const 뿌리 = new URL('..', import.meta.url);
+  const 볼것 = [['src/repl.js', '대화'], ['src/oneshot.js', '배치']];
+  const 안부르는것 = [];
+  for (const [f, 뭐] of 볼것) {
+    const s = readFileSync(new URL(f, 뿌리), 'utf8');
+    const 들여옴 = /import\s*\{[^}]*임시치우기[^}]*\}\s*from\s*'[^']*convert\.js'/.test(s);
+    const 부름 = /임시치우기\s*\(/.test(s.replace(/^\s*\*.*$/gm, ''));
+    if (!들여옴 || !부름) 안부르는것.push(`${뭐}(${f})`);
+  }
+  check('★★★ 세션 끝에서 임시치우기 를 부르는 자리가 있다',
+    안부르는것.length === 0, 안부르는것.join(' · ') || '대화 · 배치 둘 다');
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

@@ -76,6 +76,7 @@ export class 언어서버 {
     this.받개 = null;
     this.기다림 = new Map();      // id → {풀기, 시계}
     this.진단 = new Map();        // uri → [진단…]
+    this.진단판 = new Map();      // uri → 그 진단이 몇 판 것인가 (진단기다리기 참고)
     this.연것 = new Map();        // uri → 판 번호
     this.준비 = null;             // 켜는 중이면 그 약속
     this.죽음 = null;             // 못 켠 이유. 차 있으면 다시 안 켠다
@@ -84,9 +85,24 @@ export class 언어서버 {
     this.끄는중 = false;
     this.켜진때 = 0;             // 색인이 아직 안 끝났을 만한 때인지 재는 데 쓴다
     this.기다리는진단 = 0;       // 진단을 기다리는 중인 파일 수 (#잡기·#놓기 참고)
+    this.셸로띄움 = false;       // cmd.exe 를 거쳐 띄웠나 — 그러면 나무째 거둔다 (#거두기)
   }
 
-  살았나() { return !!this.아이 && this.아이.exitCode === null && !this.아이.killed; }
+  /**
+   * 이 아이가 아직 살아 있나.
+   *
+   * `signalCode` 도 같이 본다. 신호로 죽으면 node 는 **exitCode 를 null 로 두고**
+   * 신호 이름만 signalCode 에 담는다 — 그러면 종료 코드만 보는 잣대에는 「아직 안
+   * 끝났다」 로 보인다. `killed` 도 소용없다. 그건 우리가 `아이.kill()` 을 불렀을
+   * 때만 서는 깃발이라, 밖에서 온 것(OOM 킬러 · 남이 보낸 taskkill · 부모 셸이
+   * 거둔 것)에는 안 선다.
+   *
+   * 죽은 서버를 살았다고 하면 다시 안 켜고 그대로 물어본다 — 물음마다 시한까지
+   * 기다렸다 빈손으로 오고, 화면에는 「언어 서버가 늦다」 로만 뜬다.
+   */
+  살았나() {
+    return !!this.아이 && this.아이.exitCode === null && this.아이.signalCode == null && !this.아이.killed;
+  }
 
   // ── 켜기 ──────────────────────────────────────────────────────────────
 
@@ -124,6 +140,7 @@ export class 언어서버 {
        * 그래서 한 겹 더 두른다. 바깥 한 쌍을 떼고 나면 원하던 모양이 남는다.
        */
       const 몰아쓰기 = `""${실행}" ${this.서버.args.map((a) => `"${a}"`).join(' ')}"`;
+      this.셸로띄움 = 셸필요;
       this.아이 = 셸필요
         ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 몰아쓰기], {
             cwd: this.뿌리,
@@ -257,7 +274,31 @@ export class 언어서버 {
     this.기다림.clear();
     this.기다리는진단 = 0;
     this.#놓기();
-    try { this.아이?.kill(); } catch { /* 이미 갔다 */ }
+    this.#거두기();
+  }
+
+  /*
+   * 아이를 거둔다 — `.cmd` 로 띄운 것은 **나무째.**
+   *
+   * 윈도우에서 셸이 필요한 서버는 cmd.exe 를 거쳐 뜬다(#켜기실제). 우리가 쥔 pid 는 cmd 의
+   * 것이라 kill() 은 cmd 만 죽이고, 그 안에서 뜬 진짜 서버(node·python)는 부모 없이 남는다.
+   * 놀림시계로 끄고 다시 켤 때마다 하나씩 쌓이고, deel 이 끝날 때까지 작업 관리자에만
+   * 보인다(2.0.0 6회차 사냥). backend/mcp.js 의 닫기와 같이 taskkill /T 로 나무째 거둔다.
+   */
+  #거두기() {
+    const 아이 = this.아이;
+    if (!아이) return;
+    if (this.셸로띄움 && process.platform === 'win32' && 아이.pid && 아이.exitCode === null) {
+      const 뒤에 = () => { try { 아이.kill(); } catch { /* 이미 갔다 */ } };
+      try {
+        const 나무 = spawn('taskkill', ['/pid', String(아이.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+        나무.once('error', 뒤에);
+        나무.once('exit', 뒤에);
+        나무.unref();
+      } catch { 뒤에(); }
+      return;
+    }
+    try { 아이.kill(); } catch { /* 이미 갔다 */ }
   }
 
   // ── 주고받기 ──────────────────────────────────────────────────────────
@@ -277,8 +318,15 @@ export class 언어서버 {
       // 서버가 우리에게 묻는 것. 안 답하면 서버가 거기서 멈춰 버리는 것이 있어서
       // (configuration 이 그렇다) 빈 답이라도 반드시 돌려준다.
       if (통.id !== undefined) {
+        /*
+         * configuration 은 항목마다 **null** 이다 — 「그 설정은 모른다」.
+         *
+         * 빈 표 `{}` 로 답했었다. 그건 「설정이 있는데 비었다」 라서, 서버가 제 기본값 대신
+         * 빈 표를 설정으로 받아 켜 두어야 할 검사를 끈 채로 돌 수 있다(2.0.0 6회차 사냥).
+         * VS Code 도 모르는 칸은 null 로 준다.
+         */
         const 값 = 통.method === 'workspace/configuration'
-          ? (통.params?.items ?? []).map(() => ({}))
+          ? (통.params?.items ?? []).map(() => null)
           : null;
         this.#보내기({ jsonrpc: '2.0', id: 통.id, result: 값 });
         return;
@@ -298,6 +346,10 @@ export class 언어서버 {
         const 지금판 = this.연것.get(열쇠);
         if (typeof p.version === 'number' && typeof 지금판 === 'number' && p.version < 지금판) return;
         this.진단.set(열쇠, Array.isArray(p.diagnostics) ? p.diagnostics : []);
+        // 몇 판 것인지도 적어 둔다. 진단기다리기 가 「이미 온 것이 지금 판 것인가」 를
+        // 이것으로 가른다 — 안 적어 두면 옛 판을 지우려다 방금 온 것까지 지운다.
+        if (typeof p.version === 'number') this.진단판.set(열쇠, p.version);
+        else this.진단판.delete(열쇠);
       }
       return;
     }
@@ -396,10 +448,23 @@ export class 언어서버 {
    */
   async 진단기다리기(uri, 시한 = 2500) {
     const 끝 = Date.now() + 시한;
-    // 진단은 '바뀐 뒤' 것을 봐야 한다. 판을 올린 순간 옛 진단을 지워 두면
-    // 새것이 올 때까지 기다리게 된다.
+    /*
+     * 진단은 '바뀐 뒤' 것을 봐야 한다. 그래서 기다리기에 앞서 옛 진단을 지운다 —
+     * 안 지우면 판을 올려 놓고 **옛 판 답을 지금 판의 답으로** 곧장 내준다.
+     *
+     * 그런데 여기가 판을 안 보고 통째로 지웠다. 서버가 didChange 를 받고 **이미
+     * 답해 놓은** 지금 판 진단까지 같이 버려서, 제대로 온 답이 「안 왔다」(= 확인
+     * 못 했다)로 올라갔다. 재 봤다 — 1판을 열고 진단이 도착한 뒤에 기다리면 null 이다.
+     *
+     * 그래서 **판을 보고** 지운다. 이미 온 것이 지금 판 것이면 그것이 답이다.
+     * 판을 안 주는 서버는 진단판 에 아무것도 안 남으므로 여태처럼 지운다 — 그쪽은
+     * 옛것인지 알 길이 없어서, 새로 받는 편이 맞다.
+     */
     const 열쇠 = 열쇠주소(uri);
-    this.진단.delete(열쇠);
+    const 지금판 = this.연것.get(열쇠);
+    const 온판 = this.진단판.get(열쇠);
+    const 지금판것이와있다 = typeof 지금판 === 'number' && typeof 온판 === 'number' && 온판 >= 지금판;
+    if (!지금판것이와있다) this.진단.delete(열쇠);
     this.기다리는진단++;
     this.#잡기();
     try {
@@ -417,6 +482,14 @@ export class 언어서버 {
   // ── 끄기 ──────────────────────────────────────────────────────────────
 
   #놀림다시() {
+    /*
+     * **끄는 중에는 다시 걸지 않는다.**
+     *
+     * 끄기() 는 맨 앞에서 이 시계를 끄는데, 그 뒤에 나가는 `exit` 알림이 알림() 을
+     * 거치면서 여기를 부른다 — 껐는데 껐다 살아나는 시계다. 그렇게 남은 시계는 다
+     * 끝난 서버를 붙들고 놀림시한 뒤에 끄기() 를 한 번 더 부른다.
+     */
+    if (this.끄는중) return;
     clearTimeout(this.놀림시계);
     this.놀림시계 = setTimeout(() => { this.끄기(); }, 놀림시한);
     this.놀림시계.unref?.();
@@ -424,6 +497,7 @@ export class 언어서버 {
 
   async 끄기() {
     clearTimeout(this.놀림시계);
+    this.놀림시계 = null;
     if (!this.아이) return;
     this.끄는중 = true;
     this.능력.ready = false;
@@ -435,9 +509,31 @@ export class 언어서버 {
       ]);
       void 갔나;
     } catch { /* 끄다 나는 탈은 삼킨다 */ }
-    try { this.아이.kill(); } catch { /* 이미 갔다 */ }
-    this.아이 = null;
+    this.#거두기();
+    /*
+     * 기다리던 물음은 **풀어 주고** 비운다.
+     *
+     * 비우기만 했었다. 그러면 부르던 쪽의 약속은 아무도 안 풀어서 제 시한(길면 수십 초)까지
+     * 그 자리에서 멎는다 — 서버는 이미 없는데(2.0.0 6회차 사냥). #무너짐 과 같이 푼다.
+     */
+    for (const [, 것] of this.기다림) {
+      clearTimeout(것.시계);
+      것.풀기({ 오류: '언어 서버를 껐습니다' });
+    }
     this.기다림.clear();
+    /*
+     * 진단을 기다리던 셈도 여기서 접고 놓아 준다 — #무너짐 이 하는 그대로다.
+     *
+     * 끄기() 만 이 둘을 안 했다. 그러면 기다리던 진단이 있는 채로 끈 뒤에 셈이 1 로
+     * 남고, #놓기 는 맨 앞에서 되돌아 나간다. 다음에 다시 켠 아이를 아무도 놓아 주지
+     * 않으니 `deel run 한마디` 가 답을 다 내놓고도 프롬프트로 안 돌아온다.
+     *
+     * 놓기는 **아이를 지우기 전에** 한다. 지운 뒤에는 놓아 줄 대상이 없다 — 이 줄이
+     * 아래에 있던 때는 불러도 아무 일도 안 했다.
+     */
+    this.기다리는진단 = 0;
+    this.#놓기();
+    this.아이 = null;
     /*
      * 열어 뒀던 것도 같이 잊는다.
      *
@@ -447,6 +543,7 @@ export class 언어서버 {
      */
     this.연것.clear();
     this.진단.clear();
+    this.진단판.clear();
     this.끄는중 = false;
   }
 }
@@ -544,8 +641,13 @@ export function 다시보낼까(신호, 셈 = process.listenerCount(신호)) {
 
 for (const 신호 of ['SIGINT', 'SIGTERM']) {
   const 손 = () => {
-    아이들데려가기();
+    /*
+     * 갈림을 **거두기보다 먼저** 본다. 거두고 나서 갈랐었다 — 그래서 대화 화면의 Ctrl+C 가
+     * 턴만 끊고 세션은 사는데 언어 서버는 전부 죽고 풀도 비었다(2.0.0 6회차 사냥). 남이
+     * 맡은 신호로 결국 끝나면 'exit' 그물(아이들데려가기)이 그때 거둔다.
+     */
     if (!다시보낼까(신호)) return;   // 남이 맡고 있다 — 그쪽 뜻이 먼저다
+    아이들데려가기();
     process.removeListener(신호, 손);
     try { process.kill(process.pid, 신호); } catch { process.exit(신호 === 'SIGINT' ? 130 : 143); }
   };

@@ -48,6 +48,45 @@ trace('1-설정');
   check('pfx 한 덩이만 적어도 읽는다', pfx?.pfx === 'x.pfx');
 
   /*
+   * ── 반쪽만 적은 것 · 틀린 암호 · 인증서를 요구하는 게이트웨이 (사냥5 B5-09) ──
+   *
+   * 셋 다 사람이 본 화면이 틀렸다. 인증서를 요구하는 게이트웨이에 인증서를 안
+   * 내면 「사내 인증서라면 NODE_EXTRA_CA_CERTS 가 필요합니다」 — 서버를 믿는 문제가
+   * 아니라 우리를 보여 주는 문제인데. 개인키만 적으면 조용히 버렸고, 인증서만
+   * 적으면 조용히 붙었다가 같은 엉뚱한 말을 받았다. 암호가 틀리면 「bad decrypt」 였다.
+   */
+  check('★ 개인키만 적어도 없는 것으로 치지 않는다 — 반쪽이라고 말할 자리를 남긴다',
+    인증서설정({ 인증서: { key: 'b.key' } })?.key === 'b.key', JSON.stringify(인증서설정({ 인증서: { key: 'b.key' } })));
+  {
+    const { writeFileSync } = await import('node:fs');
+    const { normalizeError } = await import('../src/backend/http.js');
+    const 반쪽 = join(집, '반쪽.pem');
+    writeFileSync(반쪽, 'x', 'utf8');
+    const 던진것 = (설정) => {
+      인증서잊기();
+      인증서등록('https://반쪽.example', 설정);
+      try { 인증서찾기('https://반쪽.example/v1'); return null; } catch (e) { return e; } finally { 인증서잊기(); }
+    };
+    const 키없음 = 던진것({ cert: 반쪽 });
+    check('★★ 인증서만 있고 개인키가 없으면 그 자리에서 말한다', /개인키/.test(String(키없음?.message ?? '')),
+      String(키없음?.message ?? '(안 던짐)'));
+    const 인증없음 = 던진것({ key: 반쪽 });
+    check('★★ 개인키만 있고 인증서가 없어도 말한다', 인증없음 !== null && /인증서/.test(String(인증없음?.message ?? '')),
+      String(인증없음?.message ?? '(안 던짐)'));
+    check('  그 말이 화면까지 그대로 간다', !!키없음 && normalizeError(키없음) === 키없음.message,
+      키없음 ? normalizeError(키없음) : '(안 던짐)');
+    const 요구 = normalizeError(Object.assign(
+      new Error('C0:error:0A00045C:SSL routines:ssl3_read_bytes:tlsv13 alert certificate required:ssl/record/rec_layer_s3.c:907: SSL alert number 116'),
+      { code: 'ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED' }));
+    check('★★ 게이트웨이가 우리 인증서를 요구하면 NODE_EXTRA_CA_CERTS 라고 하지 않는다',
+      /클라이언트 인증서/.test(요구) && !/NODE_EXTRA_CA_CERTS/.test(요구), 요구);
+    const 암호 = normalizeError(Object.assign(new Error('error:1C800064:Provider routines::bad decrypt'), { code: 'ERR_OSSL_BAD_DECRYPT' }));
+    check('★★ 개인키 암호가 틀리면 암호라고 말한다', /암호/.test(암호) && !/bad decrypt/.test(암호), 암호);
+    const 서버믿기 = normalizeError(Object.assign(new Error('self-signed certificate'), { code: 'DEPTH_ZERO_SELF_SIGNED_CERT' }));
+    check('  서버 인증서를 못 믿는 것은 여전히 NODE_EXTRA_CA_CERTS 로 안내한다', /NODE_EXTRA_CA_CERTS/.test(서버믿기), 서버믿기);
+  }
+
+  /*
    * 화면에 낼 말에 **암호가 들어가면 안 된다.**
    *
    * 이 줄은 `/status` 에 뜨고, 사람들은 그 화면을 그대로 캡처해서 붙인다.

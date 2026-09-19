@@ -203,6 +203,8 @@ export const ko = {
   'undo.failed': '{n}개는 못 되돌렸습니다 — 그 파일은 고쳐진 그대로입니다. 기록을 남겨 뒀으니 /undo 를 다시 해 보세요.',
   'undo.talkKept': '대화는 그대로 둡니다 — 그 턴의 말이 이미 접혀 없어졌습니다.',
   'undo.talkKeptWhy': '모델이 되돌린 것을 아직 있는 줄 알 수 있으니, 이어 시킬 때 한 번 짚어 주세요.',
+  'undo.talkPartial': '그중 {n}개 턴은 말이 이미 요약에 접혀 있어 대화에 그대로 남았습니다.',
+  'undo.notesDropped': '다만 그 턴에서 박아 둔 「이번에 시킨 말」 쪽지 {n}개는 뺐습니다 — 되돌린 일을 다시 시키지 않게.',
 
   // ── 종소리 ────────────────────────────────────────────────────────────
   'bell.stateOn': '켜져',
@@ -288,6 +290,7 @@ export const ko = {
   'export.nothingRan': '돌린 명령이 없습니다.',
   'export.unproven': '증명 안 된 것',
   'export.allProven': '없습니다 — 바꾼 것마다 뒤에 돌린 확인이 있습니다.',
+  'export.evidenceFailed': '증거를 못 모았습니다 ({왜}) — 「모두 증명됨」 이라고 말할 수 없어 이렇게 적습니다.',
   'export.footer': 'deel 이 만든 보고서입니다. 바깥으로 나가는 주소가 없어 어느 망에서든 열립니다.',
   'export.saved': '보고서를 남겼습니다:',
   'export.openHint': '더블클릭으로 열립니다. 그대로 결재·보고에 첨부하면 됩니다.',
@@ -330,6 +333,7 @@ export const ko = {
   'trust.removed': '믿는 목록에서 뺐습니다',
   'trust.notListed': '믿는 목록에 없던 폴더입니다',
   'trust.parentStill': '그래도 위 폴더 때문에 아직 믿습니다',
+  'trust.stillTrustedEnv': "그래도 이 컴퓨터 환경 설정 때문에 아직 믿습니다",
   'stats.title': '이 폴더에서 한 일',
   'stats.none': '아직 기록이 없습니다 — 이 폴더에서 deel 로 무언가 하면 그때부터 남습니다.',
   'stats.period': '기간',
@@ -339,6 +343,7 @@ export const ko = {
   'stats.sessions': '세션 {n}개',
   'stats.tools': '도구',
   'stats.failed': '실패 {n}',
+  'stats.unknown': '됐는지 모름 {n}',
   'stats.blocked': '막힘',
   'stats.undos': '되돌리기',
   'stats.masked': '비밀 가림',
@@ -347,11 +352,22 @@ export const ko = {
   'stats.noCost': '토큰과 요금은 이 기록에 없습니다. 이번 대화에서 쓴 것은 /cost 로 보세요.',
   'trust.listTitle': '믿는 폴더',
   'trust.listNone': '아직 아무 폴더도 안 믿습니다.',
+  'trust.listIgnoredWide': '넓은 자리라 읽을 때 무시됩니다 (그 폴더에서 deel trust --off 로 빼세요)',
   'trust.blockedTitle': '믿어도 프로젝트가 못 정하는 칸',
   'trust.saveFail': '믿는 목록을 못 적었습니다',
+  'trust.refuseWide': '여기는 믿는 폴더로 적지 않습니다',
+  'trust.refuseWideWhy': 'deel trust 는 이 폴더와 그 아래 전부를 믿습니다. 집 폴더·드라이브 뿌리를 믿으면 아래에 받아 둔 남의 저장소 설정까지 다 읽습니다',
+  'trust.refuseWideHow': '믿을 저장소 폴더로 들어가서 deel trust 를 치세요',
   'trust.why.allow': '승인 규칙을 넓히는 칸입니다. 좁히는 deny 는 그대로 읽습니다',
   'trust.why.apiKey': '열쇠가 저장소에 적혀 있으면 설정이 아니라 유출입니다',
   'trust.why.authCmd': '첫 요청 전에 명령이 돕니다 — 도구 승인보다 앞이라 안 걸립니다',
+  'trust.why.connection': '이 PC 프로필의 주소·규격·인증을 바꾸면 이 PC 열쇠가 저장소가 고른 곳으로 갑니다',
+  'trust.why.online': '「바깥으로 나가도 된다」 허가는 사람이 고른 자리에서만 붙습니다',
+  'trust.why.active': '저장소가 더한 프로필로 연결을 돌리는 칸입니다. 이 PC 프로필을 고르는 것은 읽습니다',
+  'trust.why.offline': '봉인을 푸는 쪽입니다. 켜는 것(true)은 그대로 읽습니다',
+  'trust.why.proxy': '모든 요청이 열쇠 머리말째 그 프록시를 지납니다',
+  'trust.why.shellEnv': '명령 창에 비밀 환경변수를 도로 물려주는 칸입니다',
+  'trust.why.profilesNotArray': 'profiles 가 목록([ … ])이 아니라 통째로 안 읽었습니다',
   'level.beginner.name': '쉬움',
   'level.beginner.hint': '권장값으로 바로 시작',
   'level.developer.name': '개발자',
@@ -365,7 +381,7 @@ export const ko = {
    * 사람이 계획을 승인하는 자리에서만 한글을 봤다. 하필 「무엇을 치면
    * 되나」 를 말하는 줄이라, 못 읽으면 그 자리에서 막힌다.
    *
-   * 셋을 한 줄에 보여 준다. ⏎ 하나로 진행되는 것을 맨 앞에 둔다 —
+   * 넷을 한 줄에 보여 준다(⏎ · y · 번호 · n). ⏎ 하나로 진행되는 것을 맨 앞에 둔다 —
    * 그게 열에 아홉이고, 여기서 뭘 더 치게 하면 사람은 애초에 계획
    * 같은 걸 안 보려 든다.
    */
@@ -465,6 +481,7 @@ export const ko = {
   'tier.trail': '줄 끝 공백·줄바꿈 차이 무시',
   'tier.indent': '들여쓰기 차이 무시',
   'tier.space': '모든 공백 차이 무시',
+  'tier.nfc': '유니코드 정규화(NFC·NFD) 차이 무시',
 
   'sum.image': '그림',
   'sum.imageDropped': '그림 {크기} 생략',
@@ -474,7 +491,7 @@ export const ko = {
   'lsp.noDef': '정의를 못 찾았습니다. Grep 으로 찾아보세요.',
   'lsp.defs': '정의 {n}',
   'lsp.noRefs': '쓰는 자리가 없습니다.',
-  'lsp.refs': '쓰는 자리 {자리} · 파일 {파일}',
+  'lsp.refs': '쓰는 자리 {자리} · {파일}',
 
   'sum.nothingToCheck': '확인할 것이 없었습니다',
   'job.no': '{n}번',
@@ -493,6 +510,10 @@ export const ko = {
   'run.hintHelp': '/help 명령 목록',
   'run.hintEsc': 'ESC 중단',
   'run.hintQuit': 'Ctrl+C 중단·끝내기',
+  // 입력 상자(ui/inputbox.js)에 글자 그대로 박혀 있던 말. 영어로 켠 사람도 이 줄은 한글로 봤다.
+  'box.more': '그 밖에 {n}개 더',
+  'box.queuedHint': 'Enter 를 치면 지금 일이 끝난 뒤에 보냅니다',
+  'box.queued': '{n}건 예약됨',
   // 줄 화면에는 상자가 없다. 눌린 것이 닿았다는 신호를 여기 한 줄로 낸다.
   'run.stopping': '멈추는 중…',
   // 탈이 나기 전까지 흘러온 반쪽을 대화에 남겼다. 안 말하면 다시 처음부터 친다.
@@ -544,6 +565,7 @@ export const ko = {
   'paste.pasted': '{n}줄을 붙여넣었습니다 — Enter 로 한 번에 보냅니다',
   'run.thinking': '생각 중…',
   'run.thinkingChars': '생각 중… {n}자',
+  'run.thoughtChars': '생각 {n}자',
   'run.bye': '끝냅니다.',
   'run.byeStats': '모델 호출 {n}회 · 도구 시간 {초}초 · ↑{입력} ↓{출력}',
   'run.notMade': '— 만들어지지 않았습니다',
@@ -610,6 +632,7 @@ export const ko = {
   'loop.limitAhead': '방금 한도에 걸려서 {초}초 띄웠다 보냅니다',
   'net.limit.guardrail': '게이트웨이에 붙은 가드레일 한도입니다 — 모델 토큰 한도가 아닙니다. 재는 것이 초당 훑는 글의 양(text unit, 1 TU 가 1,000자쯤)이라, 대화가 자랄수록 매 요청이 커져 어느 순간부터 계속 걸립니다. 프리픽스 캐시는 여기서 안 듣습니다 — 가드레일은 캐시와 무관하게 매번 전체 글을 훑습니다. 모델의 분당 요청·토큰 한도(RPM·TPM)를 올려도 이건 안 움직입니다: 다른 API 의 다른 할당량입니다. /compact 로 대화를 줄이면 당장 낫고, 근본은 게이트웨이 담당자가 가드레일 할당량을 올리거나 입력에는 안 걸도록 바꾸는 것입니다.',
   'net.limit.perMinute': '분당 한도입니다 — 창이 새로 열리면 저절로 풀립니다. 여기서는 기다리는 것이 맞습니다.',
+  'net.limit.oneTooBig': '요청 한 번이 분당 한도보다 큽니다 — 창이 새로 열려도 이 한 번은 여전히 넘어서 기다려도 안 풀립니다. 시킬 말이나 붙인 파일을 줄이거나(/compact), 답 길이 상한을 낮추거나, 한도를 올려야 풀립니다.',
   'cost.quota': '서버 할당량',
   'cost.quotaAge': '{초}초 전 응답 기준',
 

@@ -9,7 +9,7 @@ import {
 import { 할당량기억, 미리기다릴까, 왜띄우나, 마지막할당량, 할당량자리 } from './quota.js';
 import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
 import { 말 } from '../i18n/index.js';
-import { 다시부를지, 기다리기, 정책고르기 } from './retry.js';
+import { 다시부를지, 기다리기, 정책고르기, 못부른말 } from './retry.js';
 import { 도구맞추기, 이름되돌리기, 벤더 } from './toolfit.js';
 import { 눈금맞추기 } from './wire.js';
 import { 시스템블록, 메시지표식, 잡힐만한가, 조각표 } from './cachemark.js';
@@ -321,8 +321,12 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
  * 안 보내는 것도 적어 둔다. 확인 못 한 것은 안 보낸다는 뜻이지, 없다는 뜻이
  * 아니다 — 짐작으로 보낸 칸 하나가 400 을 만들면 열쇠가 틀린 줄 알게 된다.
  *
- *   · think — 생각 칸의 값 모양을 문서에서 확인하지 못했다.
  *   · json  — 이 규격에는 답 모양을 강제하는 칸이 없다. 도구로 하는 방법뿐이다.
+ *
+ * think 는 **보낸다.** 한동안 이 자리에 「확인 못 했다」 고 적혀 있었는데, 그 사이
+ * 값 모양(`thinking:{type:'enabled',budget_tokens:n}`)을 확인하고 실어 보내게 됐다
+ * (바로 아래 「이 규격의 추론 강도」). 목록만 옛말로 남아 있었다 — 안 보낸다고 적힌
+ * 칸이 실제로는 나가고 있으면, 이 목록을 믿고 읽는 사람이 제일 크게 헛짚는다.
  */
 /*
  * ── 이 규격의 추론 강도 ────────────────────────────────────────────────
@@ -607,6 +611,114 @@ export function 보낸토큰(shape, u) {
   return Math.max(들어온것, 캐시몫);
 }
 
+/*
+ * ── 생각 글은 창구마다 **다른 칸**에 실린다 ─────────────────────────────
+ *
+ *   reasoning_content   DeepSeek · vLLM 옛 판 · 여러 호환 서버
+ *   reasoning           OpenRouter · Ollama 의 /v1 · vLLM 새 판
+ *
+ * 여태 앞엣것만 읽었다. 뒤엣것으로 오면 생각이 화면에 안 나오는 데서 끝나지
+ * 않았다 — 흘려받는 동안 acc 가 한 글자도 안 자라니, 소식 시계(무소식)가
+ * **멀쩡히 생각하는 중인 흐름**을 「내용이 안 온다」 로 보고 끊었다. 오래
+ * 생각하는 모델일수록 확실히 끊겼다.
+ *
+ * 두 칸에 **같은 글을 같이** 싣는 판도 있다. 그래서 둘을 더하지 않고 하나만
+ * 고른다 — 더하면 생각이 두 벌이 된다. 글이 아닌 값(객체로 된 요약 칸 등)은
+ * 생각 글이 아니므로 안 읽는다.
+ */
+function 생각칸(d) {
+  if (typeof d?.reasoning_content === 'string' && d.reasoning_content) return d.reasoning_content;
+  if (typeof d?.reasoning === 'string' && d.reasoning) return d.reasoning;
+  return '';
+}
+
+/*
+ * ── 200 을 받아 놓고 **몸 안에서** 온 실패 ───────────────────────────────
+ *
+ * 머리말이 200 으로 나간 뒤에 위층이 막히면 서버는 상태 코드로 말할 길이
+ * 없다. 그래서 몸 안에 적는다. 모양이 창구마다 다르다.
+ *
+ *   Anthropic        event: error / {"type":"error","error":{"type":"overloaded_error",…}}
+ *   OpenAI 호환      {"error":{"message":…,"code":"429"},"choices":[{"finish_reason":"error"}]}
+ *   Ollama           {"error":"model runner has unexpectedly stopped…"}
+ *   한 번에 받는 길  200 몸이 통째로 {"error":{"message":"Budget exceeded"}}
+ *
+ * 여태 넷 다 조용히 버려졌다. choices 도 content 도 없으니 **빈 답**이 되고,
+ * 루프는 그 빈 답을 「스트리밍이 안 맞는 서버」 로 읽어 세션 내내 흘려받기를
+ * 껐다(agent/loop.js 의 빈답 갈래). 글 뒤에 왔으면 「말없이끝남」 이 되어 까닭이
+ * 사라졌다. 아래 거절읽기 머리말이 말하는 그대로다 — 사용자를 구할 수 있었던
+ * 문장이 그 자리에서 사라졌다.
+ *
+ * 그래서 이것을 **HTTP 거절과 같은 모양**으로 바꾼다. 그러면 거절오류·다시부를지
+ * 가 그대로 받는다 — 과부하는 529 처럼 기다렸다 다시 부르고, 모르는 것은 서버
+ * 말 그대로 오류가 된다. 루프에 새 갈래를 만들지 않는다.
+ *
+ * 상태는 **서버가 적어 준 것**에서만 읽는다. 숫자(status·code)가 있으면 그것,
+ * 없으면 문서에 적힌 오류 이름. 둘 다 없으면 0 이다 — 모르는 것을 429 로
+ * 짐작하면 다시 불러 봐야 같은 것을 세 번 더 두드린다.
+ */
+const 오류이름상태 = {
+  // Anthropic 문서의 오류 이름 (platform.claude.com/docs/en/api/errors)
+  invalid_request_error: 400, authentication_error: 401, billing_error: 402, permission_error: 403,
+  not_found_error: 404, request_too_large: 413, rate_limit_error: 429, api_error: 500,
+  timeout_error: 504, overloaded_error: 529,
+  // OpenAI 호환 창구·게이트웨이가 쓰는 이름
+  rate_limit_exceeded: 429, server_error: 500,
+};
+
+/**
+ * @param {object} obj       받은 JSON 한 덩이
+ * @param {string|null} 사건이름  SSE 의 event: 이름 (없으면 null)
+ * @returns {object|null} 거절읽기 와 같은 모양. 실패가 아니면 null
+ */
+function 몸속오류(obj, 사건이름 = null) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  // `"error": null` · `"error": {}` 를 싣는 창구가 있다. 뜻이 담긴 것만 실패로 친다.
+  // 이 목록은 **아래에서 읽는 이름과 같아야 한다.** `detail` 이 빠져 있어서, 까닭을
+  // 거기에 싣는 창구(FastAPI 로 앞을 세운 게이트웨이의 기본 모양)의 실패가 통째로
+  // 「뜻 없는 error」 로 버려졌다 — 답이 비고, 서버가 적어 준 한 줄은 어디에도 안 남는다.
+  const 뜻있나 = (e) => !!e && typeof e === 'object' && !Array.isArray(e)
+    && ['message', 'detail', 'code', 'type', 'status'].some((k) => e[k] != null && e[k] !== '');
+  let 것 = null;
+  if (typeof obj.error === 'string' && obj.error.trim()) 것 = { message: obj.error };
+  else if (뜻있나(obj.error)) 것 = obj.error;
+  else if (obj.type === 'error' || 사건이름 === 'error') 것 = obj;
+  else if (obj.choices?.[0]?.finish_reason === 'error') 것 = {};
+  if (!것) return null;
+
+  const 글 = [것.message, 것.error?.message, 것.detail].find((v) => typeof v === 'string' && v.trim());
+  const 숫자 = [것.status, 것.status_code, 것.code].map(Number)
+    .find((n) => Number.isInteger(n) && n >= 400 && n <= 599);
+  const 이름 = [것.type, 것.code].find((v) => typeof v === 'string' && Object.hasOwn(오류이름상태, v));
+  const status = 숫자 ?? (이름 ? 오류이름상태[이름] : 0);
+  // 문장을 비워 보내는 창구가 있다. 빈 말은 화면에 빈 줄로 남으니 무엇이 왔는지라도 적는다.
+  const 무엇 = [것.type, 것.code].filter((v) => v != null && v !== '').join(' · ');
+  const 말 = 글 ? 글.trim() : `서버가 답하던 중에 오류를 보냈습니다${무엇 ? ` (${무엇})` : ''}`;
+  return { ok: false, status, error: null, code: null, json: { error: { message: 말 } }, text: 말, headers: null, ms: 0 };
+}
+
+/*
+ * ── usage 숫자를 **숫자로** 읽는다 (사냥5 B5-07) ─────────────────────────
+ *
+ * 규격은 숫자라고 적지만 `"prompt_tokens": "120"` 처럼 글자로 싣는 게이트웨이가
+ * 있다. 그 값을 `?? 0` 으로만 받으면 루프의 `session.usage.in += …` 가 **글자 잇기**가
+ * 되어 deel run --json 의 usage.in 이 "0120" 으로 나갔다 — 그 JSON 을 받아 더하는
+ * 스크립트는 조용히 틀린 합을 낸다.
+ *
+ * 못 읽는 값(NaN · 음수 · 객체)은 null 이다. 0 으로 메우는 것은 부르는 쪽이 하고,
+ * 들어온 것도 나간 것도 못 읽었으면 「안 쟀다」(잰것 false)로 적는다 — 아래 갈래의
+ * 「안 왔다는 0 이 아니다」 규칙과 같은 자리다. 서버가 준 진짜 0 은 읽힌 값이다.
+ */
+function 토큰수(v) {
+  const n = typeof v === 'string' && v.trim() ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null;
+}
+const 잰사용량 = (들어옴, 나감) => ({
+  잰것: 토큰수(들어옴) != null || 토큰수(나감) != null,
+  in: 토큰수(들어옴) ?? 0,
+  out: 토큰수(나감) ?? 0,
+});
+
 export function extractMessage(shape, json) {
   if (shape === 'anthropic') {
     // 답이 블록 배열이다. 글·생각·도구 부름이 한 배열에 섞여 온다.
@@ -653,9 +765,7 @@ export function extractMessage(shape, json) {
          * 그래서 값은 그대로 0 으로 두되(셈하는 쪽이 다 고치지 않아도 되게),
          * **재긴 쟀나**를 따로 남긴다. 화면과 JSON 이 그것으로 가른다.
          */
-        잰것: json?.usage != null,
-        in: json?.usage?.input_tokens ?? 0,
-        out: json?.usage?.output_tokens ?? 0,
+        ...잰사용량(json?.usage?.input_tokens, json?.usage?.output_tokens),
         ...(() => { const c = 캐시읽기(json?.usage); return { cacheRead: c.읽음, cacheWrite: c.씀 }; })(),
       },
       stopped: json?.stop_reason ?? null,
@@ -669,11 +779,7 @@ export function extractMessage(shape, json) {
       content: m.content ?? '',
       thinking: m.thinking ?? '',
       toolCalls: normalizeCalls(m.tool_calls ?? []),
-      usage: {
-      잰것: json?.prompt_eval_count != null || json?.eval_count != null,
-      in: json?.prompt_eval_count ?? 0,
-      out: json?.eval_count ?? 0,
-    },
+      usage: 잰사용량(json?.prompt_eval_count, json?.eval_count),
       stopped: json?.done_reason ?? null,
     };
   }
@@ -681,8 +787,8 @@ export function extractMessage(shape, json) {
   // 생각에 쓴 토큰. 이것도 출력 예산에서 나간다 — 상한이 8,000인데 생각에 6,000을
   // 쓰면 실제로 쓸 수 있는 답은 2,000뿐이다. 잘리는 이유가 여기 있을 때가 많은데,
   // 전에는 이 숫자를 읽지도 않아서 화면에도 셈에도 안 나타났다.
-  const 생각 = json?.usage?.completion_tokens_details?.reasoning_tokens
-    ?? json?.usage?.reasoning_tokens ?? 0;
+  const 생각 = 토큰수(json?.usage?.completion_tokens_details?.reasoning_tokens
+    ?? json?.usage?.reasoning_tokens) ?? 0;
   /*
    * ── 안 하겠다고 한 것인가 ────────────────────────────────────────────
    *
@@ -708,13 +814,11 @@ export function extractMessage(shape, json) {
     // 오히려 흔해서, 그 경우 거절 글이 통째로 사라졌다 — 흘려받기 쪽은
     // `if (!acc.content …)` 로 이미 빈 글자를 챙기고 있었다. 두 길을 맞춘다.
     content: (typeof m.content === 'string' && m.content) ? m.content : (거절글 ?? m.content ?? ''),
-    thinking: m.reasoning_content ?? '',
+    thinking: 생각칸(m),
     toolCalls: normalizeCalls(m.tool_calls ?? []),
     usage: {
-      // 「안 왔다」 와 「0」 을 가른다 (위 anthropic 갈래의 머리말).
-      잰것: json?.usage != null,
-      in: json?.usage?.prompt_tokens ?? 0,
-      out: json?.usage?.completion_tokens ?? 0,
+      // 「안 왔다」 와 「0」 을 가른다 (위 anthropic 갈래의 머리말). 글자 숫자는 토큰수 머리말.
+      ...잰사용량(json?.usage?.prompt_tokens, json?.usage?.completion_tokens),
       reasoning: 생각,
       ...(() => { const c = 캐시읽기(json?.usage); return { cacheRead: c.읽음, cacheWrite: c.씀 }; })(),
     },
@@ -737,6 +841,56 @@ export function extractMessage(shape, json) {
  * 도구를 열세 번 부르고, 컨텍스트가 다 차서 대화를 접었고, 파일은 안 생겼다.
  * 조용히 삼킨 값 하나가 그 전부를 만들었다.
  */
+/*
+ * ── 부름의 이름은 **늘 글자**로 넘긴다 (사냥5 L5-1) ─────────────────────────
+ *
+ * 한 번에 받는 길에서 `function.name` 이 빠졌거나 `42` 로 오면 그 값이 그대로 넘어가,
+ * 루프의 「모르는 도구」 관문이 `call.name.startsWith` 에서 TypeError 로 run() 밖으로
+ * 튀었다. 그 전에 부름이 든 답은 이미 대화에 실려 있어서, 다음 요청은 결과 없는
+ * tool_calls 를 싣고 나가 까다로운 서버에서 400 이 됐다. 흘려받는 길은 이름 칸을 ''
+ * 로 열어 두고 이어 붙이므로 멀쩡했다 — 두 길이 같은 모양을 내게 맞춘다. 글자가 된
+ * 이름은 루프에서 모르는 도구로 걸러지고 결과도 짝지어 실린다.
+ */
+const 이름글 = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
+
+/*
+ * ── 못 읽은 인자가 **잘린** 것인가, **모양이 틀린** 것인가 (사냥5 L5-5) ──────
+ *
+ * 둘 다 JSON.parse 가 실패한다는 겉모습은 같은데 할 일이 정반대다. 잘렸으면 상한을
+ * 올려 다시 부르거나 나눠 보내라고 해야 하고, 모양이 틀렸으면(홑따옴표 · 끝 쉼표 ·
+ * 글 속 날줄바꿈) 크기와는 상관이 없다. 여태는 못 읽으면 늘 잘린 것으로 쳐서, 걸음마다
+ * 16,384 로 다시 부르고 /out 을 고치라 하고 모델에게는 「300줄씩 나눠 Append 하라」 고
+ * 했다 — 따옴표 하나 고치면 될 일을. 날줄바꿈 Write 는 파일을 이미 다 써 놓고도
+ * 「받은 데까지만 썼다」 고 했다.
+ *
+ * 잘린 JSON 은 **끝까지 쓴 JSON 의 앞토막**이다. 그래서 큰따옴표 안에서 끝났거나
+ * 괄호가 덜 닫혔으면 잘린 것이고, 괄호가 다 닫혔는데도 못 읽으면 모양이 틀린 것이다.
+ * 게이트웨이가 잘라 놓고 stop 이라 말하는 판(agent/effort.js 의 wasCut 머리말)은
+ * 앞토막이라 여전히 잘린 것으로 잡힌다.
+ *
+ * 홑따옴표도 글을 연다 (2.0.0 6회차 · Gemini 고리5). 모양이 틀린 JSON 의 첫째가 홑따옴표인데
+ * 큰따옴표만 글로 쳐서, `{'desc': 'say "hi'}` 는 글 속에서 끝났다고, `{'code': 'if (x) {'}` 는
+ * 괄호가 덜 닫혔다고 봤다 — 모양만 틀린 것을 도로 잘린 것으로. 글을 연 따옴표와 같은 것이
+ * 와야 닫힌다. 그래서 큰따옴표 글 속의 `don't` 는 여전히 글자일 뿐이다.
+ */
+export function 잘린모양인가(raw) {
+  const s = String(raw ?? '').trim();
+  let 깊이 = 0;
+  let 연따옴표 = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (연따옴표) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === 연따옴표) 연따옴표 = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") 연따옴표 = ch;
+    else if (ch === '{' || ch === '[') 깊이++;
+    else if (ch === '}' || ch === ']') 깊이--;
+  }
+  return 연따옴표 !== null || 깊이 > 0;
+}
+
 export function normalizeCalls(list) {
   return list.map((tc, i) => {
     const fn = tc.function ?? tc;
@@ -752,8 +906,9 @@ export function normalizeCalls(list) {
         catch { 깨짐 = true; 원문 = args; args = {}; }
       }
     }
-    const call = { id: tc.id ?? `call_${i + 1}`, name: fn.name, args };
-    if (깨짐) { call.argsBroken = true; call.rawArgs = 원문; }
+    const call = { id: tc.id ?? `call_${i + 1}`, name: 이름글(fn.name), args };
+    // argsCut: 잘린 앞토막인가(위 잘린모양인가). false 면 끝까지 온 틀린 JSON 이다.
+    if (깨짐) { call.argsBroken = true; call.rawArgs = 원문; call.argsCut = 잘린모양인가(원문); }
     return call;
   });
 }
@@ -950,10 +1105,14 @@ export function 결과바꾸기(m, 새글) {
   if (Array.isArray(m.content)) {
     let 바꿨나 = false;
     const 새것 = m.content.map((b) => {
-      if (b?.type !== 'tool_result' || 바꿨나) return b;
-      바꿨나 = true;                       // 여럿이면 첫 자리에만 적고 나머지는 비운다
-      return { ...b, content: String(새글) };
-    }).map((b) => (b?.type === 'tool_result' && b.content !== String(새글) ? { ...b, content: '' } : b));
+      if (b?.type !== 'tool_result') return b;
+      if (!바꿨나) { 바꿨나 = true; return { ...b, content: String(새글) }; }
+      /*
+       * 여럿이면 첫 자리에만 적는다. 나머지를 빈 글로 두면 모델은 그 부름이 **아무것도
+       * 안 돌려준 것**으로 읽고 같은 것을 다시 부른다. 함께 접혔다는 짧은 표를 남긴다.
+       */
+      return { ...b, content: '(앞 결과와 함께 접었습니다)' };
+    });
     return 바꿨나 ? { ...m, content: 새것 } : m;
   }
   if (m.role !== 'tool') return m;
@@ -1157,16 +1316,22 @@ export async function chat(conn, opts) {
     // 429 를 맞고 나서야 아는 것과, 맞기 전에 아는 것은 사람이 할 일이 다르다.
     // 막힌 것이면 그 사실도 적는다 — 다음 부름이 이걸 보고 띄운다 (backend/quota.js).
     할당량기억(r.headers, 할당량자리(conn), { 막힘: r.status === 429 });
+    /*
+     * 200 인데 몸에 오류만 실려 온 것은 **거절로 친다** (위 몸속오류).
+     * extractMessage 로 넘기면 빈 답이 되고, 예산이 떨어졌다는 한 줄은 사라진다.
+     */
+    const 몸오류 = r.ok ? 몸속오류(r.json) : null;
     // 다듬느라 이름을 고쳤으면 여기서 되돌린다. 밖에서는 그런 일이 있었는지
     // 모른 채로 원래 이름을 받는다.
-    if (r.ok) {
+    if (r.ok && !몸오류) {
       const 것 = 이름되돌리기(extractMessage(conn.kind, r.json), 맞춘것.되돌림);
       const 자리 = 간자리(r.headers);
       return 자리 ? { ...것, 간자리: 자리 } : 것;
     }
+    const 거절 = 몸오류 ? { ...몸오류, headers: r.headers ?? null, ms: r.ms } : r;
     // 열쇠가 늙어서 막힌 것이면 새로 받고 한 번만 다시. 시도 수는 안 올린다 —
     // 서버가 막은 것이 아니라 우리 열쇠가 낡았던 것이라 물러설 까닭이 없다.
-    if (열쇠다시받을까(conn, r.status, 열쇠다시받음)) {
+    if (열쇠다시받을까(conn, 거절.status, 열쇠다시받음)) {
       열쇠다시받음 = true;
       await 머리말짓기(conn, opts, { 다시: true });
       시도 -= 1;
@@ -1175,8 +1340,9 @@ export async function chat(conn, opts) {
     // 잠깐 막힌 것이면 기다렸다 다시 부른다 (backend/retry.js 머리말).
     // 한 번에 받는 길은 제너레이터가 아니라 화면에 말을 못 걸어서, 부르는 쪽이
     // 준 onBackoff 로 알린다. 안 줬으면 조용히 기다린다.
-    const 다시 = 다시부를지(r, 시도, 정책, 쌓인대기);
-    if (!다시) throw 거절오류(r, 시도);
+    const 못부른것 = {};
+    const 다시 = 다시부를지(거절, 시도, 정책, 쌓인대기, 못부른것);
+    if (!다시) throw 거절오류(거절, 시도, 못부른것);
     opts.onBackoff?.(다시);
     쌓인대기 += 다시.wait;
     await 기다리기(다시.wait, opts.signal ?? null);
@@ -1190,10 +1356,20 @@ export async function chat(conn, opts) {
  * 한 번 막힌 것인지 계속 막히는 것인지 알 수 없고, 그 둘은 사람이 할 일이 다르다 —
  * 앞은 그냥 다시 시키면 되고, 뒤는 할당량을 봐야 한다.
  */
-function 거절오류(r, 시도) {
+function 거절오류(r, 시도, 못부른것 = null) {
   const 원문 = serverMessage(r);
   let 말 = 원문;
-  if (시도 > 1) {
+  /*
+   * 안 부른 까닭이 둘인데 여태 한 가지로 말했다 (retry.js 의 못부른까닭).
+   *
+   * `retry.막힘최대` 를 8 로 올려 둔 사람이 「3번 불렀지만 계속 막혔습니다」 를 보면,
+   * 자기가 올린 값이 아무 일도 안 하는 것으로 읽힌다. 실제로는 여덟 번을 채우기 전에
+   * **우리 쪽 시간 울타리**(retry.총상한)가 먼저 닫힌 것이다. 앞은 서버를 봐야 하는
+   * 일이고 뒤는 우리 설정을 올리면 되는 일이라, 둘에 같은 말을 하면 엉뚱한 데를 판다.
+   */
+  const 우리가그만둠 = 못부른말(못부른것);
+  if (우리가그만둠) 말 += `\n  ${시도}번 부르고 멈췄습니다. ${우리가그만둠}`;
+  else if (시도 > 1) {
     const 무엇 = r.status ? `HTTP ${r.status}` : (r.code ?? '연결 끊김');
     말 += `\n  ${시도}번 불렀지만 계속 막혔습니다 (${무엇}) — 잠시 뒤 다시 시키세요`;
   }
@@ -1236,7 +1412,6 @@ export async function* chatStream(conn, opts) {
   const body = 몸만들기(conn, opts, 맞춘것, { stream: true });
   몸덤프(body);
   const 정책 = 정책고르기(conn, opts);
-  let r;
   let 열쇠다시받음 = false;
   let 쌓인대기 = 0;
   {
@@ -1249,7 +1424,7 @@ export async function* chatStream(conn, opts) {
     }
   }
   for (let 시도 = 1; ; 시도++) {
-    r = await req(요청주소(conn), {
+    const r = await req(요청주소(conn), {
       method: 'POST',
       headers: await 머리말짓기(conn, opts),
       body,
@@ -1266,26 +1441,58 @@ export async function* chatStream(conn, opts) {
       signal: opts.signal ?? null,
     });
     할당량기억(r.headers ?? r.res?.headers, 할당량자리(conn), { 막힘: r.status === 429 });
-    if (r.ok && r.res?.body) break;
-    const 거절 = await 거절읽기(r);
-    // 위 chat() 과 같은 규칙. 몸을 먼저 읽고(거절읽기) 나서 다시 부른다 —
-    // 안 읽은 몸을 두고 다음 요청을 보내면 연결이 남는다.
+    let 거절;
+    if (r.ok && r.res?.body) {
+      const 읽은것 = yield* 흘려읽기(conn, opts, r);
+      if (!읽은것.오류) {
+        yield { type: 'done', message: 이름되돌리기(읽은것.acc, 맞춘것.되돌림) };
+        return;
+      }
+      거절 = 읽은것.오류;
+      /*
+       * 몸 안에서 온 실패(몸속오류)는 **글이 흘러가기 전이면** 머리말에서 막힌
+       * 것과 같다 — 화면에 나간 것이 없으니 다시 불러도 두 벌이 안 된다. 과부하
+       * 사건 하나로 빈 답이 되고 흘려받기가 세션 내내 꺼지던 자리가 여기서 낫는다.
+       *
+       * 글이나 생각이 한 글자라도 흘러갔으면 다시 안 부른다. 반쯤 온 답을 두 벌
+       * 만들면 안 된다(backend/retry.js 머리말). 대신 **서버가 한 말로 던진다** —
+       * 루프는 흘러간 글을 대화에 남기고 그 말을 오류로 적는다. 여태처럼
+       * 「말없이끝남」 으로 넘기면 까닭이 사라진다.
+       */
+      if (읽은것.흘렸나) throw 거절오류(거절, 시도);
+    } else {
+      // 위 chat() 과 같은 규칙. 몸을 먼저 읽고(거절읽기) 나서 다시 부른다 —
+      // 안 읽은 몸을 두고 다음 요청을 보내면 연결이 남는다.
+      거절 = await 거절읽기(r);
+    }
     if (열쇠다시받을까(conn, 거절.status, 열쇠다시받음)) {
       열쇠다시받음 = true;
       await 머리말짓기(conn, opts, { 다시: true });
       시도 -= 1;
       continue;
     }
-    // 잠깐 막힌 것이면 알리고, 기다렸다, 다시 부른다. 머리말도 못 받은 자리라
-    // 화면에 흘러간 글이 없다 — 그래서 여기서만 다시 부르고, 아래 읽기 도중에
-    // 끊긴 것은 다시 안 부른다 (backend/retry.js 머리말).
-    const 다시 = 다시부를지(거절, 시도, 정책, 쌓인대기);
-    if (!다시) throw 거절오류(거절, 시도);
+    // 잠깐 막힌 것이면 알리고, 기다렸다, 다시 부른다. 화면에 흘러간 글이 없는
+    // 자리만 여기 온다 — 읽는 도중에 멎거나 끊긴 것(STALL·소켓)은 흘려읽기가
+    // 받은 것을 살려 주거나 던지고, 다시 안 부른다 (backend/retry.js 머리말).
+    const 못부른것 = {};
+    const 다시 = 다시부를지(거절, 시도, 정책, 쌓인대기, 못부른것);
+    if (!다시) throw 거절오류(거절, 시도, 못부른것);
     yield 다시;
     쌓인대기 += 다시.wait;
     await 기다리기(다시.wait, opts.signal ?? null);
   }
+}
 
+/**
+ * 머리말을 받은 흐름 하나를 끝까지 읽는다.
+ *
+ * chatStream 에서 떼어 낸 까닭은 하나다 — 몸 안에서 온 실패(몸속오류)를 두고
+ * **다시 부르는 자리로 돌아가야** 해서다. 읽기가 부르기 고리 밖에 있으면
+ * 돌아갈 길이 없었고, 그래서 그 실패는 빈 답으로 흘러 나갔다.
+ *
+ * @returns {{acc: object} | {오류: object, 흘렸나: boolean}}
+ */
+async function* 흘려읽기(conn, opts, r) {
   const acc = {
     content: '', thinking: '', toolCalls: [],
     usage: { 잰것: false, in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
@@ -1309,6 +1516,9 @@ export async function* chatStream(conn, opts) {
   const 자란만큼 = () =>
     acc.content.length
     + acc.thinking.length
+    // Ollama 는 도구 부름을 줄마다 통째로 준다 — _raw 가 아니라 여기 바로 쌓인다.
+    // 이것을 안 세면 부름이 줄줄이 오는 멀쩡한 흐름을 「내용이 안 온다」 로 보고 잘랐다.
+    + acc.toolCalls.length
     + (acc.거절글?.length ?? 0)
     + (acc._raw?.reduce(
       (n, c) => n + 1 + (c?.name?.length ?? 0) + (c?.args?.length ?? 0), 0) ?? 0)
@@ -1334,14 +1544,109 @@ export async function* chatStream(conn, opts) {
    * TextDecoder 도 마지막에 flush 해야 한다. 여러 바이트짜리 글자가 마지막
    * 조각에 걸쳐 있으면 그 글자가 사라진다 — 한국어에서 특히 잘 난다.
    */
-  const 한줄 = function* (line) {
-    if (!line) return;
-    const payload = line.startsWith('data:') ? line.slice(5).trim() : line;
-    if (payload === '[DONE]') return;
-    let obj;
-    try { obj = JSON.parse(payload); } catch { return; }
+  /*
+   * 살려서 줄 것이 있나 — 멎었을 때(STALL·NONEWS) 던질지 줄지를 가른다.
+   *
+   * 도구 인자는 **끝에서 한 번** 묶는다(mergeDeltaCalls 머리말). 그러니 흐름
+   * 가운데에는 묶인 부름(acc.toolCalls)이 아직 비어 있다. 그것만 보면 인자를
+   * 다 받아 놓고 핑만 오는 자리에서 받은 것을 버리고 던진다. 모으는 중인
+   * 조각(acc._raw)도 받은 것으로 센다 — 묶는 일은 꼬리의 도구마무리가 한다.
+   *
+   * 거절 글(acc.거절글)도 받은 것이다. 이 규격은 거절을 content 가 아니라 refusal
+   * 로 흘려보내므로 앞의 넷에 안 담긴다 — 거절만 받고 멎으면 그 글을 통째로 버리고
+   * 「내용이 안 왔습니다」 로 던졌다. 사람은 **왜** 거절당했는지 한 글자도 못 보고
+   * 같은 말을 또 친다. 판정은 같으니 또 거절이고 값만 두 배가 된다. 잠잠한지 세는
+   * 자(위 자란만큼)는 진작 이것을 세고 있었다 — 둘이 같은 것을 봐야 한다.
+   */
+  const 받은것있나 = () => !!(acc.content || acc.thinking || acc.toolCalls.length
+    || acc.거절글?.trim() || acc._raw?.some(Boolean));
+
+  /*
+   * ── SSE 를 **규격대로** 읽는다 ──────────────────────────────────────────
+   *
+   * 여태 「\n 으로 자르고 data: 를 떼서 JSON 한 줄로 읽기」 였다. 흔한 서버에는
+   * 그걸로 됐는데, 규격(WHATWG SSE)이 허락하는 두 모양에서 답이 통째로 비었다.
+   *
+   *   · 줄 끝이 \r 하나뿐인 서버. \n 을 영영 못 만나 한 줄도 못 읽는다.
+   *   · 한 사건의 data 를 **여러 줄**에 나눠 싣는 서버. 규격은 그 줄들을 \n 으로
+   *     이어 한 덩이로 읽으라고 한다. 반쪽씩 읽으면 둘 다 JSON 이 아니다.
+   *
+   * 빈 답은 이 파일에서 제일 비싼 고장이다 — 루프가 흘려받기를 세션 내내 끈다.
+   *
+   * 다만 규격만 따르면 **여태 읽던 것을 못 읽는다.** 빈 줄 없이 data 줄마다 JSON
+   * 을 하나씩 싣는 서버가 있고, Ollama 는 data: 도 없는 줄바꿈 JSON 이다. 그래서
+   * data 줄이 올 때마다 **여태 모인 것이 JSON 으로 다 찼나** 를 보고, 찼으면 빈
+   * 줄을 안 기다리고 읽는다. 반쪽은 JSON 으로 안 읽히니 다음 줄을 기다린다.
+   * 이름 없는 줄(맨 JSON)은 여태처럼 그 줄 하나를 읽는다.
+   *
+   * 사건 이름(event:)은 기억해 둔다. `event: error` 로 오는 실패를 알아보려면
+   * 있어야 한다 (위 몸속오류).
+   */
+  let 사건이름 = null;
+  let 자료 = null;
+  let 받은오류 = null;
+
+  const 읽어보기 = (글) => {
+    try { return JSON.parse(글); } catch { return undefined; }
+  };
+  /*
+   * data 줄 여럿을 한 덩이로. 규격대로 \n 으로 먼저 잇는다.
+   *
+   * 그게 안 읽히면 **사이 없이** 한 번 더 이어 본다. 긴 줄을 글자 수로 끊어
+   * data 줄 여럿에 싣는 중계기가 있는데, 그 끊는 자리가 문자열 가운데면 \n 이
+   * 문자열 안에 들어가 JSON 이 아니게 된다. 두 잇기의 차이는 끊은 자리의 \n
+   * 하나뿐이라, 사이 없이 읽혔다면 그 뜻은 하나밖에 없다.
+   */
+  const 이어읽기 = (줄들) => {
+    const 규격대로 = 읽어보기(줄들.join('\n').trim());
+    if (규격대로 !== undefined || 줄들.length < 2) return 규격대로;
+    return 읽어보기(줄들.join('').trim());
+  };
+  // JSON 한 덩이를 받았다. 실패면 적어 두고 멈추고, 아니면 acc 에 쌓는다.
+  const 소화 = function* (obj) {
+    if (!obj || typeof obj !== 'object') return;
+    const 오류 = 몸속오류(obj, 사건이름);
+    if (오류) { 받은오류 = 오류; return; }
     for (const ev of absorb(conn.kind, obj, acc)) yield ev;
   };
+
+  const 한줄 = function* (원래줄) {
+    const line = 원래줄.trim();
+    if (!line) {
+      // 빈 줄 = 사건 하나가 끝났다. 모아 둔 data 가 남아 있으면 마저 읽는다.
+      if (자료 !== null) {
+        const 모인것 = 자료.join('\n').trim();
+        const obj = 이어읽기(자료);
+        자료 = null;
+        if (obj !== undefined) yield* 소화(obj);
+        // 이름이 error 인 사건은 몸이 JSON 이 아니어도 실패다. 그 글을 그대로 말로 쓴다.
+        else if (사건이름 === 'error' && 모인것 && 모인것 !== '[DONE]') 받은오류 = 몸속오류({ error: 모인것 });
+      }
+      사건이름 = null;
+      return;
+    }
+    if (line.startsWith(':')) return;   // 주석 줄 — keep-alive
+    const 칸 = /^(data|event|id|retry)(?::|$)/.exec(line);
+    if (!칸) {
+      // 이름 없는 줄 — 줄바꿈 JSON(Ollama)이나 data: 를 안 붙이는 서버. 여태 읽던 그대로.
+      const obj = 읽어보기(line);
+      if (obj !== undefined) yield* 소화(obj);
+      return;
+    }
+    const 값 = line.slice(칸[0].length).replace(/^ /, '');
+    if (칸[1] === 'event') { 사건이름 = 값.trim(); return; }
+    if (칸[1] !== 'data') return;
+    (자료 ??= []).push(값);
+    if (자료.join('\n').trim() === '[DONE]') { 자료 = null; return; }
+    let obj = 이어읽기(자료);
+    // 앞에 모인 것이 JSON 이 아닌 찌꺼기면(`data: keep-alive` 따위) 이 줄 하나만 본다.
+    // 반쪽 JSON 의 뒷반쪽은 혼자서는 절대 JSON 이 안 되므로 이어 읽기를 해치지 않는다.
+    if (obj === undefined && 자료.length > 1) obj = 읽어보기(값.trim());
+    if (obj === undefined) return;   // 아직 덜 찼다 — 다음 data 줄이나 빈 줄을 기다린다
+    자료 = null;
+    yield* 소화(obj);
+  };
+  const 줄끝 = /\r\n|\r|\n/g;
 
   while (true) {
     // 사용자가 끊었으면 흘러오는 것을 더 받지 않는다. 읽던 연결도 닫는다.
@@ -1365,7 +1670,7 @@ export async function* chatStream(conn, opts) {
        * 다만 한 글자도 못 받았으면 그건 그냥 실패다. 빈 답을 '답' 이라고
        * 부르는 것이 이 파일에서 제일 하면 안 되는 일이다.
        */
-      if (err?.code === 'STALL' && (acc.content || acc.thinking || acc.toolCalls.length)) {
+      if (err?.code === 'STALL' && 받은것있나()) {
         acc.stopped = 흐름멎음;
         acc.멎은초 = 초로(err.잠잠 ?? 잠잠기본);
         break;
@@ -1375,21 +1680,35 @@ export async function* chatStream(conn, opts) {
     // 끝났으면 decoder 에 걸쳐 있던 마지막 글자까지 뱉게 한다(flush).
     buf += done ? dec.decode() : dec.decode(value, { stream: true });
 
-    // OpenAI 는 SSE(data: ...), Ollama 는 줄바꿈 JSON. 둘 다 줄 단위로 처리된다.
-    let nl;
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
+    /*
+     * OpenAI·Anthropic 은 SSE, Ollama 는 줄바꿈 JSON. 둘 다 줄 단위로 처리된다.
+     * 줄 끝은 규격대로 \r\n · \n · \r 셋을 다 받는다(위 한줄 머리말).
+     *
+     * 조각 맨 끝의 \r 은 아직 줄 끝으로 안 친다 — 다음 조각이 \n 으로 시작하면
+     * 둘이 한 줄 끝이다. 먼저 끊으면 없는 빈 줄이 하나 생겨 사건이 반으로 갈린다.
+     * 읽은 자리는 한 번에 떼어 낸다. 줄마다 buf 를 새로 만들면 큰 조각에서 느리다.
+     */
+    let 읽은자리 = 0;
+    for (;;) {
+      줄끝.lastIndex = 읽은자리;
+      const 맞은것 = 줄끝.exec(buf);
+      if (!맞은것) break;
+      if (맞은것[0] === '\r' && 맞은것.index === buf.length - 1 && !done) break;
+      const line = buf.slice(읽은자리, 맞은것.index);
+      읽은자리 = 맞은것.index + 맞은것[0].length;
       yield* 한줄(line);
+      if (받은오류) break;
     }
+    buf = buf.slice(읽은자리);
 
-    if (done) {
-      // 개행 없이 끝난 마지막 한 줄. 있으면 같은 길로 읽고 끝낸다.
-      const 꼬리 = buf.trim();
+    if (done && !받은오류) {
+      // 개행 없이 끝난 마지막 한 줄, 그리고 빈 줄 없이 끝난 마지막 사건. 같은 길로 읽고 끝낸다.
+      const 꼬리 = buf;
       buf = '';
       yield* 한줄(꼬리);
-      break;
+      if (!받은오류) yield* 한줄('');
     }
+    if (done || 받은오류) break;
 
     /*
      * 이번 조각으로 acc 가 자랐나. 자랐으면 시계를 되감고, 안 자랐으면 얼마나
@@ -1405,6 +1724,19 @@ export async function* chatStream(conn, opts) {
       알렸나 = false;
     } else {
       const 흐른 = Date.now() - 마지막소식;
+      /*
+       * 알림이 **먼저**다. 위 머리말이 그렇게 약속해 놓고 코드는 끊기부터 봤다.
+       *
+       * 두 시계 사이에 조각이 하나도 안 들어오면(1초 상한에 1.6초 만에 온 핑 하나)
+       * 한 조각이 두 시계를 한꺼번에 넘긴다. 끊기를 먼저 보면 그대로 잘리고 알림은
+       * **한 번도 못 나온다** — 「원래 이런 게이트웨이」 를 우리가 죽이면서 그 사실을
+       * 아무도 못 보는 자리가 이것이다. 핑이 촘촘한 흐름에서는 알림 시계만 먼저
+       * 넘으니 차례가 어긋나도 티가 안 난다.
+       */
+      if (!알렸나 && 흐른 >= 무소식알림) {
+        알렸나 = true;
+        yield { type: '소식없음', 초: 초로(흐른), 상한초: 무소식 > 0 ? 초로(무소식) : null };
+      }
       if (무소식 > 0 && 흐른 >= 무소식) {
         /*
          * 끊을 때는 **소켓도 같이 닫는다.**
@@ -1423,18 +1755,23 @@ export async function* chatStream(conn, opts) {
          *
          * 한 글자도 못 받았으면 그건 그냥 실패다. 빈 답을 답이라고 부르지 않는다.
          */
-        if (acc.content || acc.thinking || acc.toolCalls.length) {
+        if (받은것있나()) {
           acc.stopped = 흐름멎음;
           acc.멎은초 = 초로(흐른);
           break;
         }
         throw 소식없음오류(무소식);
       }
-      if (!알렸나 && 흐른 >= 무소식알림) {
-        알렸나 = true;
-        yield { type: '소식없음', 초: 초로(흐른), 상한초: 무소식 > 0 ? 초로(무소식) : null };
-      }
     }
+  }
+  if (받은오류) {
+    // 몸 안에서 실패가 왔다. 남은 흐름은 안 읽는다 — 연결도 닫는다(안 닫으면 남는다).
+    try { await reader.cancel(); } catch { /* 이미 닫혔으면 그만 */ }
+    return {
+      오류: { ...받은오류, headers: r.headers ?? r.res?.headers ?? null, ms: r.ms },
+      // 화면에 한 글자라도 나갔나. 나갔으면 다시 부르지 않는다 (chatStream).
+      흘렸나: !!(acc.content || acc.thinking),
+    };
   }
   /*
    * ── 끝을 안 알려 주고 끊긴 것은 '끝난 것' 이 아니다 ──────────────────────
@@ -1454,22 +1791,33 @@ export async function* chatStream(conn, opts) {
    * 사실대로 말할 수 있게 한다. 아무것도 안 온 경우는 여기서 안 다룬다 —
    * 그건 '빈 답' 쪽이 받는다.
    */
-  if (acc.stopped == null && (acc.content || acc.thinking || acc.toolCalls.length)) {
-    acc.stopped = 말없이끝남;
-  }
+  /*
+   * 도구 인자는 **끝났다는 사건에서만** 묶는다(absorb 의 content_block_stop·message_stop).
+   * 그 둘이 안 오고 끊기면 모아 둔 조각이 부름으로 안 묶여, 모델이 부른 도구가 통째로
+   * 사라졌다 — 글만 남고 턴이 「다 했다」 로 끝난다. 끊겼어도 묶는다. 인자가 반쪽이면
+   * 도구마무리가 깨졌다고 표시하고, 루프가 그 까닭을 모델에게 준다.
+   */
+  if (acc._raw) 도구마무리(acc);
   /*
    * 거절 글밖에 안 온 경우, 그 글을 답 자리에 놓는다.
    *
    * 이 규격은 거절을 `content` 가 아니라 `refusal` 로 흘려보낸다. 그대로 두면
    * 화면에는 **아무 글도 안 나오고**, 사람은 답이 비었다고 읽고 같은 말을 또
    * 친다. 판정은 같으니 또 거절이고, 값만 두 배가 된다.
+   *
+   * 이 구제가 바로 아래 「왜 끝났나」 보다 **먼저**여야 한다. 뒤에 두면 그 자리에서는
+   * 답이 아직 비어 있어서, 끝 사건 없이 잘린 거절 답이 `stopped=null`(= 멀쩡히 끝남)로
+   * 나갔다 — 중계 프록시가 몸통을 자른 것과 모델이 할 말을 다 한 것이 화면에서 같아진다.
    */
   if (!acc.content && acc.거절글?.trim()) acc.content = acc.거절글.trim();
   delete acc.거절글;
+  if (acc.stopped == null && (acc.content || acc.thinking || acc.toolCalls.length)) {
+    acc.stopped = 말없이끝남;
+  }
   // 흘려 받는 자리에서도 **어느 자리가 받았는지**를 같이 올린다 (위 간자리).
   const 자리 = 간자리(r.headers ?? r.res?.headers);
   if (자리) acc.간자리 = 자리;
-  yield { type: 'done', message: 이름되돌리기(acc, 맞춘것.되돌림) };
+  return { acc };
 }
 
 /** 서버가 끝난 까닭을 안 주고 흘려보내기를 멈춘 것. 'stop' 과 구별해야 한다. */
@@ -1494,15 +1842,27 @@ function absorb(shape, obj, acc) {
     const m = obj.message ?? {};
     if (m.thinking) { acc.thinking += m.thinking; out.push({ type: 'thinking', text: m.thinking }); }
     if (m.content) { acc.content += m.content; out.push({ type: 'content', text: m.content }); }
-    if (m.tool_calls?.length) acc.toolCalls.push(...normalizeCalls(m.tool_calls));
+    if (m.tool_calls?.length) {
+      /*
+       * 이 규격은 부름에 id 를 안 준다. normalizeCalls 는 **받은 묶음 안에서** 번호를
+       * 매기니, 줄마다 하나씩 온 부름이 모두 call_1 이 됐다 — id 로 짝을 맞추는
+       * 자리에서 결과가 엉뚱한 부름에 붙는다. 여태 모인 수에서 이어 센다.
+       * 서버가 id 를 줬으면 그대로 둔다.
+       */
+      const 앞 = acc.toolCalls.length;
+      acc.toolCalls.push(...normalizeCalls(m.tool_calls)
+        .map((c, i) => (m.tool_calls[i]?.id ? c : { ...c, id: `call_${앞 + i + 1}` })));
+    }
     if (obj.done) {
-      acc.usage = { 잰것: true, in: obj.prompt_eval_count ?? 0, out: obj.eval_count ?? 0 };
+      acc.usage = 잰사용량(obj.prompt_eval_count, obj.eval_count);
       acc.stopped = obj.done_reason ?? 'stop';
     }
     return out;
   }
   const d = obj.choices?.[0]?.delta ?? {};
-  if (d.reasoning_content) { acc.thinking += d.reasoning_content; out.push({ type: 'thinking', text: d.reasoning_content }); }
+  // 생각 글 칸 이름이 창구마다 다르다 (위 생각칸). 하나만 골라 붙인다.
+  const 생각 = 생각칸(d);
+  if (생각) { acc.thinking += 생각; out.push({ type: 'thinking', text: 생각 }); }
   if (d.content) { acc.content += d.content; out.push({ type: 'content', text: d.content }); }
   if (d.tool_calls?.length) mergeDeltaCalls(acc, d.tool_calls);
   /*
@@ -1513,13 +1873,12 @@ function absorb(shape, obj, acc) {
   if (obj.usage) {
     const c = 캐시읽기(obj.usage);
     acc.usage = {
-      잰것: true,
-      in: obj.usage.prompt_tokens ?? 0,
-      out: obj.usage.completion_tokens ?? 0,
+      // 글자로 온 숫자도 숫자로 읽는다 — 까닭은 토큰수 머리말.
+      ...잰사용량(obj.usage.prompt_tokens, obj.usage.completion_tokens),
       // 한 번에 받는 길과 같은 자리를 본다. 여기만 빠지면 흘려받을 때
       // 생각 토큰이 늘 0 으로 보이는데, 그건 「생각을 안 했다」 로 읽힌다.
-      reasoning: obj.usage.completion_tokens_details?.reasoning_tokens
-        ?? obj.usage.reasoning_tokens ?? 0,
+      reasoning: 토큰수(obj.usage.completion_tokens_details?.reasoning_tokens
+        ?? obj.usage.reasoning_tokens) ?? 0,
       cacheRead: c.읽음,
       cacheWrite: c.씀,
     };
@@ -1529,6 +1888,10 @@ function absorb(shape, obj, acc) {
   // 흘려받는 길도 거절을 알아본다. 여기가 빠지면 흘려받기를 켠 사람에게만
   // 예전 그대로 되밀기가 남는다 — 그게 기본값이라 사실상 아무도 안 고쳐진다.
   if (acc.거절글?.trim()) acc.거절 = { type: 'refusal', message: acc.거절글.trim() };
+  // 글 없이 사유만 주는 창구가 있다. Anthropic 갈래는 stop_reason 하나로 거절을 세우는데
+  // (anthropic흡수) 이쪽만 글이 있을 때 세워서, 그런 창구에서는 거절이 「빈 답」 이 됐다 —
+  // 루프는 되밀고, 같은 판정에 같은 요금이 한 번 더 나간다.
+  else if (fin === 'refusal') acc.거절 = { type: 'refusal' };
   else if (fin === 'content_filter') acc.거절 = { type: 'content_filter' };
   return out;
 }
@@ -1564,7 +1927,7 @@ function anthropic흡수(obj, acc, out) {
        * 그걸 「살아 있다」 의 한 표로 세는데, Anthropic 흘려받기에서는 usage 가
        * 제일 먼저 오는 소식이라 하필 그 한 표를 못 셌다.
        */
-      acc.usage = { 잰것: true, in: u.input_tokens ?? 0, out: u.output_tokens ?? 0, cacheRead: c.읽음, cacheWrite: c.씀 };
+      acc.usage = { 잰것: true, in: 토큰수(u.input_tokens) ?? 0, out: 토큰수(u.output_tokens) ?? 0, cacheRead: c.읽음, cacheWrite: c.씀 };
     }
     return out;
   }
@@ -1573,6 +1936,16 @@ function anthropic흡수(obj, acc, out) {
     if (b.type === 'tool_use') {
       acc._raw ??= [];
       acc._raw[번호] = { id: b.id, name: b.name ?? '', args: '' };
+      /*
+       * 규격대로면 여기 input 은 늘 `{}` 이고 알맹이는 input_json_delta 로 온다.
+       * 그런데 한 번에 받은 답을 흘려받기 꼴로 옮겨 주는 게이트웨이는 인자를 여기
+       * **통째로** 싣고 delta 를 안 보낸다. 버리면 도구가 빈 인자로 불리고 「경로가
+       * 비었습니다」 가 뜬다 — 원인과 상관없는 말이다. delta 가 한 조각도 안 왔을
+       * 때만 쓴다 (도구마무리).
+       */
+      if (b.input && typeof b.input === 'object' && !Array.isArray(b.input) && Object.keys(b.input).length) {
+        acc._raw[번호].처음인자 = b.input;
+      }
     } else if (b.type === 'thinking') {
       /*
        * 생각 블록이 열렸다. 여기서는 속이 비어 있고(`thinking:''`,
@@ -1626,8 +1999,9 @@ function anthropic흡수(obj, acc, out) {
      * 왔을 때만 덮는다 — 없는 것을 0 으로 덮으면 message_start 에서 받아 둔
      * 진짜 값이 지워진다.
      */
-    if (obj.usage?.output_tokens != null) acc.usage.out = obj.usage.output_tokens;
-    if (obj.usage?.input_tokens != null) acc.usage.in = obj.usage.input_tokens;
+    // 못 읽는 값(글자가 아닌 것 · NaN)은 받아 둔 값을 덮지 않는다 — 토큰수 머리말.
+    if (토큰수(obj.usage?.output_tokens) != null) acc.usage.out = 토큰수(obj.usage.output_tokens);
+    if (토큰수(obj.usage?.input_tokens) != null) acc.usage.in = 토큰수(obj.usage.input_tokens);
     // 캐시 수치는 대개 message_start 에 실리지만, 여기 싣는 판도 있다.
     const c = 캐시읽기(obj.usage);
     if (c.읽음) acc.usage.cacheRead = c.읽음;
@@ -1640,17 +2014,64 @@ function anthropic흡수(obj, acc, out) {
   return out;
 }
 
-// OpenAI 스트리밍은 도구 호출 인자를 글자 단위로 쪼개 보낸다. 인덱스별로 이어 붙인다.
+/*
+ * OpenAI 스트리밍은 도구 호출 인자를 글자 단위로 쪼개 보낸다. 번호별로 이어 붙인다.
+ *
+ * ── 여기서는 **모으기만** 한다 ───────────────────────────────────────────
+ *
+ * 여태 조각이 올 때마다 도구마무리를 불렀다. 그 자는 **여태 모인 인자 전체**를
+ * 다듬고 JSON.parse 한다 — 조각이 n 개면 n² 만큼 읽는 셈이다. 80KB 인자를 네
+ * 글자씩 받으면 1.6초, 200KB 면 8초 동안 이벤트 루프가 막혔다. 그동안 Ctrl+C 도
+ * 화면도 멈춘다. Anthropic 갈래는 처음부터 끝 사건에서만 묶었다. 이제 둘이 같다 —
+ * 흐름이 끝나면 흘려읽기 꼬리의 `if (acc._raw) 도구마무리(acc)` 가 한 번 묶는다.
+ * 끝 사건 없이 끊긴 것도 그 줄이 받는다.
+ *
+ * ── 창구마다 조각 버릇이 다르다 ─────────────────────────────────────────
+ *
+ *   index 가 없는 창구 (Gemini 의 OpenAI 호환 꼴)
+ *     여태 `index ?? 0` 이라 부름 둘이 한 칸에 섞였다 — 이름은 `ReadGrep`, 인자는
+ *     `{"p":"a"}{"q":"b"}` 로 깨졌다. index 가 없으면 **id** 로 가른다. 처음 보는
+ *     id 면 새 칸이고, id 도 없으면 방금 것의 이음 조각이다.
+ *   이름을 조각마다 되풀이하는 창구
+ *     `Read` 가 조각 수만큼 붙어 `ReadRead` 가 됐다. 여태 모인 이름과 **똑같은**
+ *     조각은 되풀이로 본다. 진짜로 쪼개 보내는 창구(`Re` · `ad`)는 조각이 모인
+ *     이름과 같을 일이 없어서 그대로 이어진다.
+ *   인자를 글이 아니라 객체로 싣는 창구
+ *     글에 객체를 더하면 `[object Object]` 가 되어 깨진 부름이 됐다. 한 번에 받는
+ *     길(normalizeCalls)은 객체를 그대로 받는다. 두 길이 같은 것을 같게 읽는다.
+ */
 function mergeDeltaCalls(acc, deltas) {
   acc._raw ??= [];
   for (const d of deltas) {
-    const i = d.index ?? 0;
+    const i = 도구칸번호(acc._raw, d);
     acc._raw[i] ??= { id: d.id, name: '', args: '' };
-    if (d.id) acc._raw[i].id = d.id;
-    if (d.function?.name) acc._raw[i].name += d.function.name;
-    if (d.function?.arguments) acc._raw[i].args += d.function.arguments;
+    const 칸 = acc._raw[i];
+    if (d.id) 칸.id = d.id;
+    const 이름 = d.function?.name;
+    const 인자 = d.function?.arguments;
+    /*
+     * 되풀이하는 창구는 이름을 **인자 조각에 얹어** 보낸다. 그러니 되풀이로 보려면
+     * 그 조각에 인자도 있어야 한다. 「모인 이름과 같으면 되풀이」 로만 가르면
+     * `s`·`s`·`h` 의 둘째 `s` 가 버려져 `ssh` 가 `sh` 가 된다 — 없는 도구
+     * 이름이라 그 부름은 통째로 죽고, 화면에는 모델이 엉뚱한 도구를 불렀다고 나온다.
+     */
+    if (이름 && !(인자 !== undefined && 칸.name === 이름)) 칸.name += 이름;
+    if (typeof 인자 === 'string') {
+      if (인자) 칸.args = typeof 칸.args === 'string' ? 칸.args + 인자 : 인자;
+    } else if (인자 && typeof 인자 === 'object') {
+      칸.args = 인자;
+    }
   }
-  도구마무리(acc);
+}
+
+/** 이 조각이 몇 번째 부름의 것인가 — index 가 없으면 id 로, id 도 없으면 방금 것. */
+function 도구칸번호(모음, d) {
+  if (d.index != null) return d.index;
+  if (d.id) {
+    const 있던 = 모음.findIndex((c) => c?.id === d.id);
+    return 있던 >= 0 ? 있던 : 모음.length;
+  }
+  return Math.max(0, 모음.length - 1);
 }
 
 // 글자로 쪼개져 온 도구 인자를 하나로 읽는다. 두 규격이 같이 쓴다.
@@ -1659,7 +2080,7 @@ function 도구마무리(acc) {
   // 인자가 안 읽히면 읽혔다고 치지 않는다 — normalizeCalls 머리말 참고.
   // 스트리밍은 마지막 조각이 안 오면 여기서 늘 깨진 채로 끝난다.
   acc.toolCalls = acc._raw.filter(Boolean).map((c, i) => {
-    const call = { id: c.id ?? `call_${i + 1}`, name: c.name, args: {} };
+    const call = { id: c.id ?? `call_${i + 1}`, name: 이름글(c.name), args: {} };
     /*
      * 빈 것은 깨진 것이 아니다 — 인자가 아예 없는 도구가 있다.
      *
@@ -1670,9 +2091,11 @@ function 도구마무리(acc) {
      * 빈 것으로 봐야 한다.
      */
     const 원문 = typeof c.args === 'string' ? c.args.trim() : c.args;
-    if (!원문) return call;
+    if (!원문) return c.처음인자 ? { ...call, args: c.처음인자 } : call;
+    // 객체로 온 인자는 이미 읽힌 것이다 (mergeDeltaCalls 머리말). 글로 바꿔 다시 읽으면 깨진다.
+    if (typeof 원문 !== 'string') { call.args = 원문; return call; }
     try { call.args = JSON.parse(원문); }
-    catch { call.argsBroken = true; call.rawArgs = c.args; }
+    catch { call.argsBroken = true; call.rawArgs = c.args; call.argsCut = 잘린모양인가(원문); }
     return call;
   });
 }

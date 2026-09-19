@@ -125,7 +125,7 @@ const 주소 = `http://127.0.0.1:${srv.address().port}/v1`;
  * deel 을 띄우고 줄을 하나씩 넣는다. 상자는 안 쓴다 — 여기서 보는 것은
  * 테두리가 아니라 흐름이다.
  */
-async function 띄우기(줄들) {
+async function 띄우기(줄들, { 입력끝내기 = false } = {}) {
   도구번호 = 1;
   const root = mkdtempSync(join(tmpdir(), 'deel-plan-'));
   const home = mkdtempSync(join(tmpdir(), 'deel-plan-home-'));
@@ -189,7 +189,9 @@ async function 띄우기(줄들) {
     밀어넣기(l);
   }
   await 받을때까지();
-  밀어넣기('/exit');
+  // 입력이 **끝난** 판(파이프가 닫히거나 Ctrl+D)을 재려면 /exit 를 치지 않고 관을 닫는다.
+  if (입력끝내기) { try { kid.stdin.end(); } catch { /* 이미 닫혔다 */ } }
+  else 밀어넣기('/exit');
   // 안 끝나면 검사가 통째로 매달린다. 반드시 시한을 둔다.
   await Promise.race([닫힘, 자기(6000).then(() => kid.kill())]);
   return { out: 벗기기(out), root, home };
@@ -247,6 +249,34 @@ trace('3-취소');
   check('취소하면 파일을 안 만든다', !existsSync(join(r.root, 만들파일)));
   check('취소했다고 말해 준다', /그만뒀습니다/.test(r.out));
   check('계획은 남아 있다고 알려 준다', /계획은 위에 남아/.test(r.out));
+  rmSync(r.root, { recursive: true, force: true });
+  rmSync(r.home, { recursive: true, force: true });
+}
+
+trace('3b-아무도-답하지-않으면');
+/*
+ * ── 입력이 **끝난 것**은 승인이 아니다 (막판-바깥) ──────────────────────
+ *
+ * 같은 파일 1258행이 이미 적어 뒀다 — 「입력이 끝난 것과 사람이 그냥 Enter 를
+ * 친 것은 다르다. 파이프로 들어왔거나 Ctrl+D 를 누르면 아무도 답하지 않았는데
+ * 기본값이 답으로 잡힌다」. 그래서 `끝나면` 을 만들었고, 1563행의 「실행할까요?」
+ * 는 「같은 파일의 다른 물음들은 처음부터 끝나면:'n' 이었고 여기만 옛 모양으로
+ * 남아 있었다」 고 적으며 고쳤다.
+ *
+ * 그 말이 사실이 아니었다. 계획 승인(`이대로 진행할까요?` · def:'y')은 그대로
+ * 남아 있어서, 관이 닫히면 `끝나면 ?? def` 가 'y' 로 떨어졌다 — **아무도 답하지
+ * 않았는데 계획이 승인되고 파일이 만들어졌다.** 도구 하나 승인받는 자리는 막아
+ * 놓고, 계획 전체를 승인하는 자리는 열려 있었던 셈이다.
+ *
+ * 승인은 답한 사람이 있을 때만 나는 것이다.
+ */
+{
+  const r = await 띄우기(['ax비전 선포 내용들 정리해서 만들어줘'], { 입력끝내기: true });
+  check('진행할지 묻기는 했다 (잴 것이 있다)', /이대로 진행할까요\?/.test(r.out),
+    r.out.split('\n').slice(-6).join(' | ').slice(0, 140));
+  check('★★ 입력이 끝난 것을 승인으로 안 읽는다', !existsSync(join(r.root, 만들파일)),
+    existsSync(join(r.root, 만들파일)) ? '아무도 답 안 했는데 파일이 생겼다' : '');
+  check('  「계획대로 진행합니다」 라고 적지 않는다', !/계획대로 진행합니다/.test(r.out), '');
   rmSync(r.root, { recursive: true, force: true });
   rmSync(r.home, { recursive: true, force: true });
 }

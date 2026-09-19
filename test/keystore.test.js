@@ -146,6 +146,56 @@ trace('4-옮기기');
   }
 }
 
+// ── 4b. 하나라도 못 잠그면 반쯤 잠근 파일을 안 남긴다 ──────────────────
+//
+// config.js 의 잠금옮기기 머리말이 그렇게 적어 뒀다 — 「못 잠그면 파일을 아예
+// 안 건드린다. 반쯤 잠근 파일을 남기면 그 뒤로는 무엇이 잠긴 것이고 무엇이
+// 평문인지 아무도 모른다.」 그런데 코드는 **하나라도 잠갔으면** 파일을 적고
+// 「잠갔습니다」 한 줄을 냈다. 못 잠근 열쇠는 평문 그대로 그 파일에 실려 나갔고,
+// 사람은 잠긴 줄 알고 그 파일을 백업 폴더로·다른 PC 로 옮긴다.
+//
+// 잠금옮기기는 한 판에 한 번만 도는 자다(옮겨봤나). 그래서 딴 판을 띄워서 잰다.
+trace('4b-반쪽잠금');
+if (잠금장치.되나) {
+  const { spawnSync } = await import('node:child_process');
+  const 딴집 = mkdtempSync(join(tmpdir(), 'deel-keystore-반쪽-'));
+  /*
+   * 둘 중 하나만 잠긴다. 못 잠그는 쪽은 잠그기() 가 null 을 주는 값으로 만든다 —
+   * 손으로 고치다 남은 빈 값, 맥에서 키체인이 그 자리 하나를 거부한 경우가 이 꼴이다.
+   * (파워셸이 통째로 막힌 기계는 **다** 실패해서 이 갈래로 안 온다.)
+   */
+  writeFileSync(join(딴집, 'config.json'), JSON.stringify({
+    version: 1, active: 'a',
+    profiles: [
+      { id: 'a', name: 'a', kind: 'openai', baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'sk-잠글수있는것' },
+      { id: 'b', name: 'b', kind: 'openai', baseUrl: 'http://127.0.0.1:2/v1', apiKey: [] },
+    ],
+  }, null, 2), 'utf8');
+  const 딴방 = mkdtempSync(join(tmpdir(), 'deel-keystore-반쪽방-'));
+  const 코드 = `import { load, 잠금소식 } from ${JSON.stringify(new URL('../src/config.js', import.meta.url).href)};\n`
+    + 'load();\n'
+    + 'process.stdout.write(JSON.stringify({ 소식: 잠금소식() }));\n';
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', 코드], {
+    cwd: 딴방, encoding: 'utf8', timeout: 60000,
+    env: { ...process.env, DEEL_HOME: 딴집, NO_COLOR: '1' },
+  });
+  let 소식 = '';
+  try { 소식 = String(JSON.parse(r.stdout).소식 ?? ''); } catch { /* 아래에서 잰다 */ }
+  const 파일 = readFileSync(join(딴집, 'config.json'), 'utf8');
+
+  check('★★ 하나라도 못 잠그면 설정 파일을 안 건드린다 (반쯤 잠근 파일을 안 남긴다)',
+    파일.includes('sk-잠글수있는것') && !/(dpapi|keychain):/.test(파일),
+    파일.replace(/\s+/g, ' ').slice(0, 140));
+  check('★★ 못 잠근 것이 있으면 「잠갔습니다」 로 끝내지 않는다',
+    !!소식 && /평문/.test(소식) && !/^게이트웨이 열쇠[^]*잠갔습니다 \(/.test(소식),
+    `${소식} ${r.status === 0 ? '' : `(자식 EXIT=${r.status} ${String(r.stderr).slice(0, 120)})`}`);
+  check('  못 잠근 개수를 말한다 — 몇 개가 평문인지 모르면 파일을 어떻게 다룰지 정할 수 없다',
+    /1개/.test(소식), 소식);
+
+  rmSync(딴집, { recursive: true, force: true });
+  rmSync(딴방, { recursive: true, force: true });
+}
+
 // ── 5. 환경변수가 파일보다 세다 ────────────────────────────────────────
 trace('5-환경변수');
 {
@@ -220,6 +270,28 @@ trace('잠금지우기');
   const 줄 = (마지막명령줄() ?? []).join(' ');
   check('★ 지울 때도 명령줄에 열쇠가 없다',
     !줄.includes('QUFB') && !줄.includes('sk-평문열쇠'), 줄.slice(0, 90));
+
+  /*
+   * ★★ 평문 열쇠를 넘겼는데 키체인을 지우러 갔다 (2.0.0 8회차).
+   *
+   * 잠긴 값이 아니면 갈래를 **이 PC 방식으로 짐작**했고, 맥에서는 그 길로
+   * `delete-generic-password` 가 진짜로 돌았다. 잰 것:
+   * `["security","delete-generic-password","-a","<계정>","-s","deel-gateway-key"]`.
+   * 설정에 평문으로 있다는 것은 잠금장치에 아무것도 안 넣었다는 뜻인데, 그 말을
+   * 듣고 **다른 프로필의 자리**를 지운 것이다. 짐작은 `값` 이 아예 없을 때만 한다.
+   *
+   * 맥이 아닌 데서도 재려고 platform 을 잠깐 맥으로 돌려놓고 본다 — 지웠는지가
+   * 아니라 **명령을 띄웠는지**를 본다.
+   */
+  const 원래platform = process.platform;
+  Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+  const 전 = JSON.stringify(마지막명령줄() ?? []);
+  const 평문 = 잠금지우기('sk-이건-평문-열쇠다');
+  const 후 = JSON.stringify(마지막명령줄() ?? []);
+  Object.defineProperty(process, 'platform', { value: 원래platform, configurable: true });
+  check('★★ 평문 열쇠를 넘기면 키체인 명령을 아예 안 띄운다', 전 === 후, 후.slice(0, 110));
+  check('★ 평문은 잠금장치에 둔 것이 없다고 말한다',
+    평문.지움 === false && 평문.방식 === '없음', JSON.stringify(평문));
 }
 
 /*
@@ -268,6 +340,82 @@ trace('9-못푼까닭');
   열쇠탈소식();
   resolveKey({ id: '평문', apiKey: 'sk-그냥평문' });
   check('멀쩡한 열쇠에는 아무 말도 안 남긴다', 열쇠탈소식() === null);
+}
+
+trace('10-자리이름');
+
+/*
+ * ── 다른 프로필이 같은 키체인 자리를 썼다 ───────────────────────────────
+ *
+ * 자리 이름은 id 를 소문자로 내리고 모르는 글자를 `-` 로 바꿔 지었다. 그래서
+ * `Work` 와 `work` 가, 한자·키릴 글자 id 는 전부 `deel-gateway-key--` 하나로
+ * 모였다 — `-U` 가 앞엣것을 덮으니 한 프로필이 남의 열쇠를 싣고 나간다.
+ *
+ * 이미 넣어 둔 열쇠는 태그에 적힌 이름으로 읽으므로 이름을 바꿔도 안 잃는다.
+ * 그래도 평범한 id(이미 성한 이름)의 자리는 **글자 하나 안 바꾼다** — 다시 잠글
+ * 때 옛 자리를 버려 두고 새 자리로 옮기면 키체인에 찌꺼기가 남는다.
+ * 이 검사는 이름만 짓는다. 키체인은 안 건드린다.
+ */
+{
+  const 정한이름 = process.env.DEEL_KEYCHAIN_NAME;
+  delete process.env.DEEL_KEYCHAIN_NAME;
+  try {
+    const id들 = ['Work', 'work', 'WORK ', '仕事', '個人', 'личный', 'рабочий', 'a/b', 'a b', 'a-b'];
+    const 이름들 = id들.map((id) => 키체인이름(id));
+    check('★★ 서로 다른 id 는 서로 다른 키체인 자리를 쓴다', new Set(이름들).size === id들.length,
+      JSON.stringify(Object.fromEntries(id들.map((id, i) => [id, 이름들[i]]))));
+    check('★★ 평범한 id 의 자리 이름은 예전 그대로다 (넣어 둔 열쇠의 자리가 안 옮겨 간다)',
+      키체인이름('work') === 'deel-gateway-key-work' && 키체인이름('회사창구') === 'deel-gateway-key-회사창구'
+      && 키체인이름('gw.prod_2') === 'deel-gateway-key-gw.prod_2' && 키체인이름('a-b') === 'deel-gateway-key-a-b',
+      [키체인이름('work'), 키체인이름('회사창구'), 키체인이름('gw.prod_2'), 키체인이름('a-b')].join(' · '));
+    check('★ 같은 id 는 언제 불러도 같은 자리다', 키체인이름('仕事') === 키체인이름('仕事') && 키체인이름('Work') === 키체인이름('Work'),
+      키체인이름('仕事'));
+    check('  이름은 명령줄에 실어도 되는 글자뿐이다 (빈칸·따옴표 없음)', 이름들.every((x) => /^[A-Za-z0-9가-힣._-]+$/.test(x)),
+      이름들.join(' '));
+    check('  id 가 없으면 기본 이름이다', 키체인이름() === 기본키체인이름 && 키체인이름('  ') === 기본키체인이름, 키체인이름());
+  } finally {
+    process.env.DEEL_KEYCHAIN_NAME = 정한이름;
+  }
+}
+
+trace('11-0600-은-윈도우에서-거짓말');
+
+/*
+ * ── 「권한 0600」 이라고 적는데 아무것도 안 잠겨 있었다 (2.0.0 8회차) ────
+ *
+ * 이 파일 머리말이 첫 줄부터 적어 둔 사실이다 — `chmod 600` 은 NTFS 에서
+ * **아무 일도 안 하고 성공한다.** 그런데 보관방식() 은 평문으로 둘 때마다
+ * 「파일에 평문 + 권한 0600」 이라고 답했다. 이 한 줄이 `deel report` ·
+ * 영어 심사서(pack/sheet.en.js) · setup 화면에 그대로 실린다. 사내 심사에서
+ * 제일 먼저 묻는 칸에 **안 한 일을 했다고** 적은 셈이다.
+ *
+ * agent/store.js 와 safety/audit.js 는 같은 자리에서 「못함: windows」 로 적는다.
+ * 여기만 말이 달랐다. 이 검사는 맨 뒤에 둔다 — 잠그다실패한까닭() 이 한 번
+ * 남으면 그 판 내내 살아서 앞의 검사들이 보는 말을 바꾼다.
+ */
+{
+  process.env.DEEL_KEYSTORE = 'off';
+  const 못쓸때 = 보관방식('sk-평문으로둔것');
+  const 못쓸때영 = 보관방식('sk-평문으로둔것', { lang: 'en' });
+
+  // 실제로 잠그다 실패한 적이 있는 상태도 같은 말을 한다 (같은 함수의 다른 갈래).
+  const 원래platform = process.platform;
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+  잠그기('sk-여기서는-못잠근다');
+  Object.defineProperty(process, 'platform', { value: 원래platform, configurable: true });
+  const 실패뒤 = 보관방식('sk-평문으로둔것');
+  const 실패뒤영 = 보관방식('sk-평문으로둔것', { lang: 'en' });
+  delete process.env.DEEL_KEYSTORE;
+
+  const 넷 = [못쓸때, 못쓸때영, 실패뒤, 실패뒤영];
+  if (process.platform === 'win32') {
+    check('★★ 윈도우에서는 권한 0600 이라고 말하지 않는다', 넷.every((x) => !/0600/.test(x)), 넷.join(' / '));
+  } else {
+    check('★ 유닉스에서는 0600 이라고 말한다 (거기서는 진짜로 건다)', 넷.every((x) => /0600/.test(x)), 넷.join(' / '));
+  }
+  check('★ 어느 쪽이든 평문이라는 것과 까닭은 말한다',
+    /평문/.test(못쓸때) && /꺼 두었습니다/.test(못쓸때) && /평문/.test(실패뒤) && /실패했습니다/.test(실패뒤),
+    `${못쓸때} / ${실패뒤}`);
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

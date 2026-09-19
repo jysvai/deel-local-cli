@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // deel 진입점. 외부 의존성 없음 — Node 표준 기능만 씁니다.
-import { join } from 'node:path';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { readFileSync, writeFileSync, statSync } from 'node:fs';
 import { c, say, mark, rule, clip, width } from '../src/ui/ansi.js';
 import { runSetup, runDiagnose, showStatus, banner } from '../src/setup.js';
 import { chatLoop } from '../src/repl.js';
-import { runOnce } from '../src/oneshot.js';
+import { runOnce, EXIT, 실패덩이 } from '../src/oneshot.js';
 import { packSelf, audit, reviewSheet } from '../src/pack/selfpack.js';
 import { sbom, 심사명세, 명세요약 } from '../src/pack/sbom.js';
 import { runScan } from '../src/backend/scanui.js';
@@ -17,8 +17,8 @@ import { runCompletion } from '../src/completion.js';
 import { runReset } from '../src/reset.js';
 import { 마크다운, 읽는갈래 } from '../src/tools/doc2md.js';
 import { 언어잡기, 언어, 말 } from '../src/i18n/index.js';
-import { 믿기, 안믿기, 믿는목록, 프로젝트금지칸 } from '../src/safety/trust.js';
-import { load as 설정읽기 } from '../src/config.js';
+import { 믿기, 안믿기, 믿는목록, 프로젝트금지칸, 너무넓은자리 as 넓은자리 } from '../src/safety/trust.js';
+import { load as 설정읽기, homeDir, 이PC설정값 } from '../src/config.js';
 import { 규칙모으기, 어떻게할까, 확인목록, 확인인자, 확인돌리기 } from '../src/safety/policy.js';
 import { 기록자리, 세기, 도구차례, 막힘차례, 셈JSON } from '../src/stats.js';
 import { 진찰 } from '../src/doctor.js';
@@ -122,7 +122,19 @@ function runConfig(args, flags) {
     return 1;
   }
   const r = 설명(칸, { root: flags.root ? String(flags.root) : process.cwd() });
-  if (flags.json === true) { process.stdout.write(JSON.stringify(r) + '\n'); return 0; }
+  /*
+   * 찾았나 못 찾았나를 **끝값으로도** 말한다.
+   *
+   * 여기가 `return r.이긴층 ? 0 : 0` 이었다 — 두 갈래를 적어 놓고 같은 수를 냈다.
+   * 그래서 칸 이름에 오타를 쳐도, 아무 데도 안 적힌 칸을 물어도 성공으로 끝났다.
+   * 이 명령은 스크립트에서 값의 출처를 캐묻는 길이고, 그 길에서 끝값은 유일한
+   * 계약이다 — 화면 글자를 grep 하게 만들면 계약이 아니다.
+   *
+   * 금지·허락처럼 **합쳐지는** 칸은 이긴 층이 없어도 찾은 것이다 (configexplain
+   * 의 합치는칸). 이긴 층만 보면 분명히 걸려 있는 규칙이 「못 찾았다」 가 된다.
+   */
+  const 찾음 = !!(r.이긴층 || r.합침?.length);
+  if (flags.json === true) { process.stdout.write(JSON.stringify(r) + '\n'); return 찾음 ? 0 : 1; }
 
   const 표 = { 값: c.bold('='), 없음: c.gray('·'), 이김: mark.ok, 아래: c.gray('·'), 안읽음: c.yellow('⚠'), 참고: c.gray('i') };
   say('');
@@ -133,7 +145,7 @@ function runConfig(args, flags) {
     say(`  ${표[줄.갈래] ?? ' '} ${글}${줄.곁 ? `  ${c.gray(줄.곁)}` : ''}`);
   }
   say('');
-  return r.이긴층 ? 0 : 0;
+  return 찾음 ? 0 : 1;
 }
 
 /*
@@ -144,14 +156,23 @@ function runConfig(args, flags) {
  * 것을 모르면 사람은 파일만 백 번 고친다.
  */
 async function runDoctor(flags) {
-  const { load: 읽기, activeProfile: 고른것, resolveKey: 열쇠풀기, configPath: 설정경로 } =
+  const { load: 읽기, activeProfile: 고른것, resolveKey: 열쇠풀기, configPath: 설정경로, 소식줄들 } =
     await import('../src/config.js');
   const { 지금모드, 바깥인가, 나갈수있나, 봉인됐나 } = await import('../src/safety/runmode.js');
   const { allowEndpoint } = await import('../src/safety/network.js');
 
   banner();
   let cfg = null;
-  try { cfg = 읽기(); } catch { /* 설정이 망가져도 아래에서 말한다 */ }
+  /*
+   * 설정이 망가져도 멈추지 않고 아래에서 말한다 — **망가진 까닭까지.**
+   *
+   * 여기가 `catch {}` 였다. 그러면 「아래에서 말한다」 가 거짓말이 된다: 진찰은
+   * 파일이 있으니 ✓설정 파일, 프로필이 안 읽혔으니 ✗프로필 을 찍었고, 쉼표 하나
+   * 틀린 몇째 줄이라는 진짜 까닭은 이 catch 에서 사라졌다.
+   */
+  let 설정탈 = null;
+  try { cfg = 읽기(); }
+  catch (err) { 설정탈 = { 자리: err?.설정자리 ?? null, 까닭: err?.까닭 ?? String(err?.message ?? err) }; }
   const prof = cfg ? 고른것(cfg) : null;
 
   /*
@@ -169,12 +190,19 @@ async function runDoctor(flags) {
     cfg, prof,
     root: flags.root ? String(flags.root) : process.cwd(),
     설정자리: 설정경로(),
+    설정탈,
     열쇠: prof ? 열쇠풀기(prof) : '',
     바깥가도되나: 두드려도되나,
   });
 
   const 표 = { ok: mark.ok, warn: mark.warn, no: c.red('✗'), unknown: c.gray('?') };
   say('');
+  /*
+   * 모아 둔 소식을 여기서 비운다. 안 비우면 「알릴 것이 없다」 와 똑같이
+   * 생긴다 — 정책 파일이 깨져서 관리자가 건 금지가 통째로 안 걸리는
+   * 상태조차 조용하다 (config.js 의 소식줄들 머리말).
+   */
+  for (const 줄 of 소식줄들(cfg)) say(줄);
   for (const x of 줄들) {
     const 이름 = String(x.이름) + ' '.repeat(Math.max(0, 14 - width(String(x.이름))));
     say(`  ${표[x.상태] ?? ' '} ${c.gray(이름)} ${x.값}${x.덧말 ? c.gray(`  — ${x.덧말}`) : ''}`);
@@ -199,6 +227,22 @@ async function runDoctor(flags) {
  * 없었다 (src/stats.js 머리말).
  */
 function runStats(flags) {
+  /*
+   * 못 읽는 `--days` 는 멈춘다.
+   *
+   * 여기가 `parseInt(…) || 30` 이었다. `--days abc` 도 `--days 0` 도 조용히 30일이
+   * 되고, 화면은 물어본 적 없는 「최근 30일」 을 찍고 0 으로 끝났다. 감사 기간을
+   * 인자로 받는 배치는 엉뚱한 기간을 세어 놓고 초록불로 넘어간다.
+   * 이 판이 `--ctx` · `--max-tokens` 를 같은 까닭으로 고쳤는데 이 줄만 남아 있었다.
+   */
+  if (flags.days !== undefined) {
+    const 적은것 = String(flags.days).trim();
+    if (!/^\d+$/.test(적은것) || Number(적은것) < 1) {
+      process.stderr.write(`\n  --days 에는 1 이상 숫자를 주세요: ${String(flags.days)}\n`);
+      process.stderr.write('  기간 없이 전부 보려면 --all 을 쓰세요.\n\n');
+      return EXIT.usage;
+    }
+  }
   const 자리 = 기록자리(flags.root ? String(flags.root) : process.cwd());
   const 전부 = flags.all === true || flags.all === 'true';
   const 날수 = 전부 ? null : Math.max(1, parseInt(String(flags.days ?? '30'), 10) || 30);
@@ -234,14 +278,18 @@ function runStats(flags) {
   const 실패말 = 셈.도구
     ? c.gray(`  · ${말('stats.failed', { n: 셈.도구실패 })} (${((셈.도구실패 / 셈.도구) * 100).toFixed(1)}%)`)
     : '';
-  say(`${칸(말('stats.tools'))} ${셈.도구.toLocaleString()}${실패말}`);
+  // 됐는지 모르는 줄이 있으면 **있다고** 말한다. 안 말하면 위 실패율이
+  // 「다 됐다」 로 읽힌다 — 모르는 것을 좋은 쪽으로 세는 것과 같아진다.
+  const 모름말 = 셈.도구모름 ? c.yellow(`  · ${말('stats.unknown', { n: 셈.도구모름 })}`) : '';
+  say(`${칸(말('stats.tools'))} ${셈.도구.toLocaleString()}${실패말}${모름말}`);
 
   const 표 = 도구차례(셈);
   if (표.length) {
     say('');
     for (const x of 표) {
       const 실패 = x.실패 ? c.yellow(`  ${말('stats.failed', { n: x.실패 })}`) : '';
-      say(`    ${c.white(x.이름.padEnd(12))} ${String(x.수).padStart(6)}${실패}`);
+      const 모름 = x.모름 ? c.yellow(`  ${말('stats.unknown', { n: x.모름 })}`) : '';
+      say(`    ${c.white(x.이름.padEnd(12))} ${String(x.수).padStart(6)}${실패}${모름}`);
     }
   }
 
@@ -283,8 +331,40 @@ function runStats(flags) {
  * 켤 때마다 물어보는 길도 있었지만 그 물음은 맨 앞에 뜨고, 앞에 뜨는 물음은
  * 안 읽힌다 — 사람은 대화를 하러 온 것이지 물음에 답하러 온 것이 아니다.
  */
+/*
+ * ── 믿으면 너무 많은 것이 같이 믿기는 자리 ─────────────────────────────
+ *
+ * 믿기는 **하위 폴더까지** 간다(safety/trust.js 의 믿나). 저장소마다 스무 번 답하지
+ * 않게 하려는 것인데, 그 규칙이 집 폴더에서는 거꾸로 돈다. `~` 에서 `deel trust` 를
+ * 치면 `~/src` 아래 받아 둔 남의 저장소가 **전부** 믿긴다 — 도구 승인보다 앞에서
+ * 명령을 돌리는 설정(열쇠받기는 걷히지만 deny·mode·hooks 는 읽힌다)까지.
+ *
+ * 한동안은 deel 이 집 폴더에서 켤 때마다 「deel trust 를 치라」 고 권하기까지 했다
+ * (config.js 의 집설정파일인가 머리말). 그 권유는 걷었고, 여기서는 치더라도 안 적는다.
+ *
+ * 막는 자리는 셋이다. 사용자 집 폴더와 그 위, deel 설정 폴더를 품은 폴더와 그 위,
+ * 드라이브·파일시스템 뿌리. 뺄 때(--off)는 안 막는다 — 좁히는 쪽은 언제나 된다.
+ */
+/*
+ * 자는 safety/trust.js 에 하나만 둔다. 여기 따로 있을 때는 **적을 때만** 돌아서, 목록 파일에
+ * 이미 적힌 `"C:\\"` 는 믿나() 가 그대로 믿었다. 그리고 resolve 만 써서 집 폴더를 가리키는
+ * 정션 안에서 치면 지나갔다 — 그쪽 자가 링크를 따라가서 잰다.
+ */
+function 너무넓은자리(폴더) {
+  return 넓은자리(폴더);
+}
+
 function runTrust(flags) {
-  const 여기 = process.cwd();
+  /*
+   * `--root` 를 받는다. 안 주면 켠 자리.
+   *
+   * 여기가 `process.cwd()` 로 박혀 있었다. `--root` 는 아는 깃발이라 「모르는 깃발」
+   * 문에서도 안 걸려, `deel trust --root <저장소>` 는 값을 삼키고 **켠 자리**를
+   * 믿는 목록에 적었다. 믿을 자리를 잘못 고르는 것은 조용히 넘어가면 안 되는
+   * 종류다 — 이 판이 깃발 읽기를 다시 짠 까닭이 「깃발이 조용히 아무 일도 안
+   * 하는 것」 을 없애려는 것이었다. rules 도 같은 문에 남아 있었다.
+   */
+  const 여기 = flags.root ? resolve(String(flags.root)) : process.cwd();
 
   if (flags.list === true || flags.list === 'true') {
     const 것들 = 믿는목록();
@@ -292,7 +372,8 @@ function runTrust(flags) {
     say(`  ${c.bold(말('trust.listTitle'))}`);
     say('');
     if (!것들.length) say(`  ${c.gray(말('trust.listNone'))}`);
-    for (const x of 것들) say(`  ${c.gray('·')} ${x}`);
+    // 적힌 넓은 자리는 믿나() 가 읽을 때 버린다. 목록도 그렇다고 말한다 — 안 그러면 믿긴다고 적힌 줄이 거짓이다.
+    for (const x of 것들) say(`  ${c.gray('·')} ${x}${너무넓은자리(x) ? `  ${c.yellow(말('trust.listIgnoredWide'))}` : ''}`);
     say('');
     say(`  ${c.gray(말('trust.blockedTitle'))}`);
     for (const { 칸, 열쇠 } of 프로젝트금지칸) say(`  ${c.gray('·')} ${c.white(칸)}  ${c.gray(말(열쇠))}`);
@@ -307,8 +388,33 @@ function runTrust(flags) {
     say(`  ${mark.ok} ${r.뺐나 ? 말('trust.removed') : 말('trust.notListed')} ${c.gray(여기)}`);
     // 위 폴더 때문에 아직 믿기는 것을 말 안 하면, 「뺐습니다」 가 거짓말이 된다.
     if (r.위폴더) say(`  ${mark.warn} ${말('trust.parentStill')} ${c.gray(r.위폴더)}`);
+    else if (r.아직믿김) say(`  ${mark.warn} ${말('trust.stillTrustedEnv')}`);
     say('');
     return 0;
+  }
+
+  /*
+   * 없는 폴더는 믿는 목록에 안 적는다. 적어 두면 그 이름으로 폴더가 생기는 날
+   * 아무도 안 물어본 채로 믿긴다 — 오타 하나가 미래의 저장소를 미리 믿는 셈이다.
+   * (뺄 때(--off)는 안 본다. 없는 줄을 지우는 것은 언제나 된다.)
+   */
+  let 폴더인가 = false;
+  try { 폴더인가 = statSync(여기).isDirectory(); } catch { 폴더인가 = false; }
+  if (!폴더인가) {
+    say('');
+    say(`  ${mark.warn} 그런 폴더가 없습니다: ${c.gray(여기)}`);
+    say(`  ${c.gray('  없는 자리는 믿는 목록에 안 적습니다 — 나중에 그 이름으로 폴더가 생기면 바로 믿기게 됩니다')}`);
+    say('');
+    return EXIT.error;
+  }
+
+  if (너무넓은자리(여기)) {
+    say('');
+    say(`  ${mark.warn} ${말('trust.refuseWide')} ${c.gray(여기)}`);
+    say(`  ${c.gray('  ' + 말('trust.refuseWideWhy'))}`);
+    say(`  ${c.gray('  ' + 말('trust.refuseWideHow'))}`);
+    say('');
+    return 1;
   }
 
   const r = 믿기(여기);
@@ -333,7 +439,13 @@ function runTrust(flags) {
  * 그래서 이 명령이 있다. 규칙을 적자마자 확인할 수 있어야 한다.
  */
 function runRules(args, flags) {
-  const cfg = 설정읽기();
+  /*
+   * 어느 폴더의 규칙을 재나. `--root` 를 안 봐서 CI 가 거짓 초록을 받았다 —
+   * `deel rules check --root $REPO` 가 켠 자리의 규칙을 재고 「다 적어 둔 대로입니다」
+   * 로 0 을 냈다. 이 판이 load({ root }) 를 만들면서 run · chat · acp 는 고쳤는데
+   * 이 문만 옛 길에 남아 있었다 (trust 도 같았다).
+   */
+  const cfg = 설정읽기({ root: flags.root ? String(flags.root) : process.cwd() });
   const 규칙들 = 규칙모으기(cfg);
   const 어느도구 = flags.tool ? String(flags.tool) : 'Bash';
 
@@ -456,9 +568,20 @@ function runDoc2md(args, flags) {
 }
 
 function runSbom(flags) {
+  const 어느것 = String(flags.only ?? '').toLowerCase();
+  /*
+   * 모르는 `--only` 는 멈춘다.
+   *
+   * 여기가 「sbom 도 명세도 아니면 둘 다」 였다. `--only sbon` 오타 하나에 두 장이
+   * 한 덩이로 나가고 0 으로 끝나니, `deel sbom --only sbon > sbom.cdx.json` 은
+   * CycloneDX 가 아닌 파일을 만들고 스캐너에서야 터진다. 표준출력은 비워 둔다.
+   */
+  if (flags.only !== undefined && !['sbom', '명세', 'spec'].includes(어느것)) {
+    process.stderr.write(`\n  --only 에는 sbom · 명세(spec) 중 하나를 주세요: ${String(flags.only)}\n\n`);
+    return EXIT.usage;
+  }
   const a = audit();
   const at = new Date();
-  const 어느것 = String(flags.only ?? '').toLowerCase();
   const 낼것 = 어느것 === 'sbom' ? sbom(a, { at })
     : 어느것 === '명세' || 어느것 === 'spec' ? 심사명세(a, { at })
       : { sbom: sbom(a, { at }), 심사명세: 심사명세(a, { at }) };
@@ -500,26 +623,152 @@ const BOOL = new Set([
    * 스크립트는 전체 초기화가 된 줄 알고 다음 줄로 넘어간다.
    */
   'hard',
+  // trust --off · --list, scan --save · --pick. 여태 목록에 없어 뒤의 낱말을 삼킬 수 있었다.
+  'off', 'list', 'save', 'pick',
 ]);
+
+/*
+ * ── 값을 받는 깃발 ─────────────────────────────────────────────────────
+ *
+ * 여태는 BOOL 에 없으면 **무엇이든** 값 깃발로 쳤다. 그래서 두 가지가 샜다.
+ *
+ *   · 모르는 깃발이 뒤의 낱말을 값으로 삼켰다. `deel run --jsn 안녕` 은 `jsn=안녕`
+ *     이 되어 시킬 말이 사라졌고, 화면은 「무엇을 시킬지 적어 주세요」 였다 —
+ *     표준입력이 열려 있으면 거기서 서 버렸다. 오타는 한마디도 안 나왔다.
+ *   · 값 깃발이 맨 끝에 값 없이 오면 `true` 가 됐고, 그게 `String(true)` 로
+ *     "true" 라는 값이 됐다. `deel run 안녕 --root` 는 ./true 폴더를 만들어 그
+ *     안에서 일했고, `--work --json` 은 오타 막이를 통째로 건너뛰었다.
+ *
+ * 그래서 받는 이름을 다 적는다. 없는 이름은 멈추고 이름을 말한다. 명령이 깃발을
+ * 하나 더 읽게 되면 여기에도 적어야 한다 — 안 적으면 첫 판에 「모르는 깃발」 로
+ * 튕기므로 조용히 새지는 않는다.
+ */
+const 값깃발 = new Set([
+  'root', 'mode', 'work', 'level', 'ctx', 'max-tokens', 'think', 'effort', 'output-schema',
+  'out', 'only', 'days', 'tool', 'url', 'key', 'model', 'host', 'ports', 'timeout', 'rm', 'delete',
+]);
+// 값을 줘도 되고 안 줘도 되는 깃발. `--resume` 만 치면 이어 할 대화를 고른다.
+const 값골라깃발 = new Set(['resume']);
+
+/*
+ * 모르는 깃발에 **가장 가까운 아는 이름**을 짚는다 (글자 편집 거리).
+ *
+ * 「모르는 깃발입니다: --jsn」 만 적으면 사람은 도움말을 열어 한 줄씩 훑는다. 거의
+ * 언제나 한두 글자 오타다. 너무 먼 것까지 짚으면 엉뚱한 깃발을 권하게 되므로
+ * 두 글자, 그리고 이름 길이의 절반까지만 본다.
+ */
+function 가까운깃발(이름) {
+  const 거리 = (a, b) => {
+    let 앞 = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const 지금 = [i];
+      for (let j = 1; j <= b.length; j++) {
+        지금[j] = Math.min(앞[j] + 1, 지금[j - 1] + 1, 앞[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      앞 = 지금;
+    }
+    return 앞[b.length];
+  };
+  let 고른 = null;
+  let 최소 = Infinity;
+  for (const k of [...BOOL, ...값깃발, ...값골라깃발]) {
+    const n = 거리(String(이름), k);
+    if (n < 최소) { 최소 = n; 고른 = k; }
+  }
+  return 고른 && 최소 <= Math.min(2, Math.floor(String(이름).length / 2)) ? `--${고른}` : null;
+}
 
 function parse(argv) {
   const flags = {};
   const args = [];
+  const 탈 = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    /*
+     * `--` 뒤는 전부 낱말이다 — 유닉스 도구들이 다 그렇게 읽는다.
+     *
+     * 여기가 없어서 `--` 가 이름이 빈 깃발이 되어 뒤의 말을 값으로 삼켰다.
+     * `deel run -- "--json 이 뭐야"` 처럼 대시로 시작하는 말을 넘길 길이 없었다.
+     */
+    if (a === '--') { args.push(...argv.slice(i + 1)); break; }
     if (a === '-h') { flags.help = true; continue; }
     // -v 도 받는다. 판 번호를 묻는 방법이 도구마다 달라서 셋 다 되게 둔다.
     if (a === '-v' || a === '-V') { flags.version = true; continue; }
+    /*
+     * 대시 하나로 시작하는 낱말(`-x` · `-jq`)도 깃발이다 — 모르는 이름이라 멈춘다.
+     *
+     * 여태는 그대로 시킬 말에 섞였다. `deel run -n 5 고쳐` 를 치면 모델은 「-n 5 고쳐」 를
+     * 받고 일을 시작했다 — 긴 깃발의 오타는 멈추게 해 놓고 짧은 쪽은 문이 열려 있었다.
+     * `-p` 는 깃발처럼 생긴 **명령 이름**이라 명령 자리(맨 앞 낱말)에서만 받는다.
+     * 대시 하나(`-`) · 음수(`-1`) · 빈칸 섞인 한 덩이(`"-x 는 뭐야"`)는 낱말이다.
+     */
+    if (/^-[A-Za-z][\w-]*$/.test(a) && !(a === '-p' && !args.length)) { 탈.push({ 갈래: '모름', 깃발: a, 가까운: null }); continue; }
     if (a.startsWith('--')) {
-      const [k, inline] = a.slice(2).split('=');
-      if (inline !== undefined) flags[k] = inline;
-      else if (!BOOL.has(k) && argv[i + 1] && !argv[i + 1].startsWith('-')) flags[k] = argv[++i];
-      else flags[k] = true;
+      /*
+       * 첫 `=` 에서만 가른다.
+       *
+       * `split('=')` 은 둘째 `=` 뒤를 버렸다. 그래서
+       * `--url=https://gw/openai?api-version=2024-10-21` 이 `…?api-version` 으로
+       * 잘려 붙었다 — Azure 주소는 거의 다 이 모양이다.
+       */
+      const 몸 = a.slice(2);
+      const 자리 = 몸.indexOf('=');
+      const k = 자리 >= 0 ? 몸.slice(0, 자리) : 몸;
+      const inline = 자리 >= 0 ? 몸.slice(자리 + 1) : undefined;
+      if (!BOOL.has(k) && !값깃발.has(k) && !값골라깃발.has(k)) { 탈.push({ 갈래: '모름', 깃발: a, 가까운: 가까운깃발(k) }); continue; }
+      if (inline !== undefined) {
+        /*
+         * 켜고 끄는 깃발에 붙은 값은 true · false 만 읽는다.
+         *
+         * 여태는 붙은 글자가 그대로 값이 됐다. 읽는 쪽은 `=== true` 나 `'true'` 로 보니
+         * `--json=yes` · `--json=1` 은 **꺼진 것**으로 돌았다 — 스크립트는 JSON 을 기다리는데
+         * 맨 글이 오고 종료코드는 0 이었다. 반대로 `--json=false` 는 글자 'false' 라 참으로
+         * 읽는 자리가 있었다. 둘 다 여기서 가른다.
+         */
+        if (BOOL.has(k)) {
+          const 뜻 = inline.toLowerCase();
+          if (뜻 === 'true') flags[k] = true;
+          else if (뜻 !== 'false') 탈.push({ 갈래: '켜끄기', 깃발: `--${k}`, 값: inline });
+        } else if (inline === '' && 값깃발.has(k)) 탈.push({ 갈래: '값없음', 깃발: `--${k}` });
+        else flags[k] = inline;
+        continue;
+      }
+      const 다음 = argv[i + 1];
+      if (BOOL.has(k)) flags[k] = true;
+      // `--root ""` 는 `--root=` 와 같다. 빈 값을 받아 두면 읽는 쪽이 「안 줬다」 로 쳐서 조용히 지금 폴더에서 돈다.
+      else if (다음 === '') { i++; if (값골라깃발.has(k)) flags[k] = true; else 탈.push({ 갈래: '값없음', 깃발: `--${k}` }); }
+      else if (다음 !== undefined && !다음.startsWith('-')) flags[k] = argv[++i];
+      else if (값골라깃발.has(k)) flags[k] = true;
+      else 탈.push({ 갈래: '값없음', 깃발: `--${k}` });
     } else args.push(a);
   }
   // 명령은 플래그가 아닌 첫 낱말. 없으면 상태 보기.
-  return { cmd: args[0] ?? '', args: args.slice(1), flags };
+  return { cmd: args[0] ?? '', args: args.slice(1), flags, 탈 };
 }
+
+/*
+ * 인자를 잘못 줘서 **시작도 안 하고** 멈추는 자리. 종료코드는 64(EXIT.usage) 다 —
+ * 2 는 걸음 수 상한이라, 오타 하나를 「일이 커서 멈췄다」 로 읽은 스크립트가 있었다.
+ *
+ * 글은 표준오류로 낸다. `deel run --json` 으로 부른 스크립트는 표준출력을 JSON 으로
+ * 읽는데, 여기 맨 글이 섞이면 파싱에서 죽고 진짜 까닭은 그 파싱 오류에 묻힌다.
+ * 그래서 run 에 --json 이면 표준출력에 실패 한 덩이를 같이 낸다 (oneshot.js 의 못함과 같은 모양).
+ */
+function 인자탈(줄들, { cmd, flags, 코드 = EXIT.usage }) {
+  for (const 줄 of ['', ...줄들, '']) process.stderr.write(`${줄}\n`);
+  const 배치 = cmd === 'run' || cmd === '-p';
+  if (배치 && (flags.json === true || flags.json === 'true')) {
+    // 모양은 한 방 실행의 실패덩이 하나로 짓는다 — 성공과 같은 칸이어야 한다 (사냥5 B5-10).
+    process.stdout.write(JSON.stringify(실패덩이({
+      reason: 코드 === EXIT.usage ? 'usage' : 'config', code: 코드,
+      why: 줄들.map((s) => String(s).trim()).filter(Boolean).join(' '),
+    })) + '\n');
+  }
+  return 코드;
+}
+
+// 마지막 catch 가 `--json` 인지 알려고 들고 있는다. 인자를 두 번 읽으면 두 벌이 된다.
+let 읽은인자 = null;
 
 function help() {
   banner();
@@ -558,6 +807,9 @@ function help() {
   say(`    ${c.gray('deel reset sessions')}   대화 기록`);
   say(`    ${c.gray('deel reset learned')}    배운 것 (이 PC + 이 폴더)`);
   say(`    ${c.gray('deel reset plugins')}    설치한 플러그인`);
+  // all 에만 딸려 가는 갈래 (reset.js 의 숨은것). 따로 고를 수 없어서 이름이 보일 자리가
+  // 여기밖에 없다. 안 적었더니 「위 전부」 를 읽은 사람이 .deel/tmp 가 지워진 것을 나중에 알았다.
+  say(`    ${c.gray('(따로 못 고름)')}        증거·내보낸 것·임시 ${c.gray('(.deel/증거 · export · tmp · 붙인그림)')}`);
   say(`    ${c.gray('deel reset all')}        위 전부 ${c.gray('— 플러그인·되돌리기·감사기록은 빼고')}`);
   say(`    ${c.gray('--hard')}                ${c.yellow('되돌리기 스냅샷·감사기록까지')}. all 에서만 씁니다`);
   say(`    ${c.gray('--yes')}                 안 묻고 지웁니다 (스크립트용)`);
@@ -662,7 +914,7 @@ function help() {
   // 이 줄은 src/oneshot.js 의 EXIT 와 짝이다. test/exitcode.test.js 가 둘이
   // 어긋나면 빨개진다 — 한 판 동안 refusal(6) 이 여기서 빠져 있었고, 그
   // 사실을 말해 주는 자리가 아무 데도 없었다.
-  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단 · 5 말없이끊김 · 6 거절 · 7 모양안맞음')}`);
+  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단 · 5 말없이끊김 · 6 거절 · 7 모양안맞음 · 64 사용법틀림')}`);
   say('');
   say(`  ${c.bold('진단 직접 지정')} ${c.gray('— 설정을 남기지 않고 확인만 할 때')}`);
   say('');
@@ -683,7 +935,9 @@ async function main() {
     process.exit(1);
   }
 
-  const { cmd: 친명령, args, flags } = parse(process.argv.slice(2));
+  const 읽음 = parse(process.argv.slice(2));
+  읽은인자 = 읽음;
+  const { cmd: 친명령, args, flags, 탈: 인자탈들 } = 읽음;
 
   // 서류를 뽑는 명령(audit·sbom·pack)이 어느 말로 나갈지를 여기서 정한다.
   말정하기();
@@ -724,17 +978,114 @@ async function main() {
    *
    * 판 번호·도움말보다 뒤에 둔다 — 그 둘은 무엇을 잘못 쳤든 답해야 한다.
    */
-  if (flags.work !== undefined && flags.work !== true) {
+  // 모르는 깃발·값 없는 깃발. 판 번호·도움말은 위에서 이미 답했다.
+  if (인자탈들.length) {
+    const 줄들 = 인자탈들.map((x) => (x.갈래 === '모름'
+      ? `  모르는 깃발입니다: ${x.깃발}${x.가까운 ? ` — 혹시 ${x.가까운} 인가요?` : ''}`
+      : x.갈래 === '켜끄기'
+        ? `  ${x.깃발} 은 켜고 끄는 깃발입니다 — ${JSON.stringify(x.값)} 는 못 읽습니다 (${x.깃발} 또는 ${x.깃발}=false)`
+        : `  ${x.깃발} 에 값이 없습니다 — ${x.깃발} <값> 또는 ${x.깃발}=<값>`));
+    return 인자탈([...줄들, '  받는 깃발은 deel --help 에 있습니다. 대시로 시작하는 말은 -- 뒤에 두세요.'], { cmd, flags });
+  }
+
+  if (flags.work !== undefined) {
     const { normalize: 모드이름, MODES: 모드들, 보일이름: 모드보임 } = await import('../src/agent/modes.js');
     if (!모드이름(String(flags.work))) {
       const 있는것 = Object.keys(모드들).map((k) => `${모드보임(k)}(${k})`).join(' · ');
-      say('');
-      say(`  그런 작업 모드가 없습니다: ${String(flags.work)}`);
-      say(`  있는 것: ${있는것}`);
-      say('');
-      say('  그냥 켜면 「종합」 으로 돕니다 — 그건 파일을 고칠 수 있는 모드입니다.');
-      say('');
-      return 2;
+      return 인자탈([
+        `  그런 작업 모드가 없습니다: ${String(flags.work)}`,
+        `  있는 것: ${있는것}`,
+        '',
+        '  그냥 켜면 「종합」 으로 돕니다 — 그건 파일을 고칠 수 있는 모드입니다.',
+      ], { cmd, flags });
+    }
+  }
+
+  /*
+   * `--mode` 도 `--work` 와 같은 문을 지난다 — 그리고 이쪽이 더 위험했다.
+   *
+   * 값을 안 보고 그대로 넘겼다. 승인을 묻는 자리는 `session.mode === 'strict'` 로
+   * 보므로, `--mode Strict` · `STRICT` 는 strict 도 confirm 도 아닌 **아무것도 안
+   * 묻는 상태**가 됐다. `deel run --mode Strict` 는 Write 를 묻지 않고 돌려 0 으로
+   * 끝났고, 그 사이 모델에게는 「승인이 필요한 것은 거부된다」 고 거짓말을 했다.
+   * 소문자로 치면 멀쩡하니, 적은 사람은 막힌 줄 안다.
+   *
+   * 대소문자는 안 가린다 — 그건 틀린 것이 아니라 적는 버릇이다. 이름 자체가 다르면
+   * 멈춘다. 대화 중 `/mode` 도 한글 이름(엄격)은 안 받으므로 여기서도 안 받는다.
+   */
+  if (flags.mode !== undefined) {
+    const { 차례: 승인모드들 } = await import('../src/ui/approve.js');
+    const 고른것 = String(flags.mode).trim().toLowerCase();
+    if (!승인모드들.includes(고른것)) {
+      return 인자탈([
+        `  그런 승인 모드가 없습니다: ${String(flags.mode)}`,
+        `  있는 것: ${승인모드들.join(' · ')}`,
+        '',
+        '  모르는 이름으로 켜면 아무것도 안 묻는 상태가 됩니다 — 그래서 켜지 않습니다.',
+      ], { cmd, flags });
+    }
+    flags.mode = 고른것;
+  }
+
+  /*
+   * ── 이 PC 설정의 mode 를 아무 문도 안 읽었다 ──────────────────────────
+   *
+   * `"mode": "strict"` 를 설정에 적어 둔 사람의 `deel run` 이 Write 를 묻지 않고 돌렸다.
+   * 대화 화면도 같았다 — 셋 다 `opts.mode ?? 'auto'` 였다. 적은 사람은 막힌 줄 안다.
+   *
+   * 차례는 깃발 > 이 PC 설정 > auto. **이 PC 설정만** 읽는다. 저장소 설정의 mode 를
+   * 받으면 남의 저장소가 `"mode": "auto"` 한 줄로 이 PC 의 strict 를 푼다.
+   * 모르는 이름이면 멈춘다. 가장 헐거운 auto 로 떨어지는 것이 제일 나쁜 실패다.
+   * 인자를 틀린 것이 아니라 설정이 틀린 것이라 종료코드는 1 이다.
+   */
+  if (flags.mode === undefined && ['run', '-p', '', 'chat', 'acp'].includes(cmd)) {
+    const 설정모드 = 이PC설정값('mode');
+    if (설정모드 !== undefined && 설정모드 !== null) {
+      const { 차례: 승인모드들 } = await import('../src/ui/approve.js');
+      const 설정고른것 = String(설정모드).trim().toLowerCase();
+      if (!승인모드들.includes(설정고른것)) {
+        return 인자탈([
+          `  이 PC 설정의 mode 를 모릅니다: ${String(설정모드)}  (${join(homeDir(), 'config.json')})`,
+          `  있는 것: ${승인모드들.join(' · ')}`,
+          '',
+          '  고칠 때까지 켜지 않습니다 — 모르는 이름으로 켜면 아무것도 안 묻는 상태가 됩니다.',
+        ], { cmd, flags, 코드: EXIT.error });
+      }
+      flags.mode = 설정고른것;
+    }
+  }
+
+  /*
+   * 없는 `--root` 는 대화·에디터 문에서도 거절한다 (run 은 oneshot.js 가 같은 일을 한다).
+   *
+   * 대화 화면은 뿌리를 안 봤다. 기록·되돌리기 자리를 짓는 쪽이 폴더를 통째로 만들어
+   * 주니, 드라이브 글자 하나 틀린 `deel --root` 가 빈 폴더에서 대화를 시작했다 —
+   * 「없는 파일은 만든다」 대로 일하면 진짜 저장소 옆에 가짜 저장소가 자란다.
+   * 글은 표준오류로 낸다. `deel acp` 의 표준출력은 에디터가 읽는 JSON-RPC 관이다.
+   */
+  if (['', 'chat', 'acp'].includes(cmd) && flags.root !== undefined) {
+    let 폴더인가 = false;
+    try { 폴더인가 = statSync(String(flags.root)).isDirectory(); } catch { 폴더인가 = false; }
+    if (!폴더인가) {
+      process.stderr.write(`\n  작업 폴더가 없습니다 (--root): ${String(flags.root)} — 없는 폴더를 만들어 그 안에서 일하지 않습니다\n\n`);
+      return EXIT.error;
+    }
+  }
+
+  /*
+   * `--ctx junk` 는 조용히 버려졌다 — parseSize 가 null 을 주면 「안 준 것」 과 같아져
+   * 서버에 맞춘 길이로 돌았다. 대화 중 `/ctx junk` 는 「숫자를 못 읽었습니다」 로
+   * 거절한다. 같은 값을 문에 따라 다르게 받으면, 깃발로 준 사람만 제 값이 먹는 줄 안다.
+   * `auto` 는 「서버에 맞춤」 이라는 뜻이라 안 준 것으로 받는다.
+   */
+  for (const 이름 of ['ctx', 'max-tokens']) {
+    if (flags[이름] === undefined) continue;
+    if (String(flags[이름]).trim().toLowerCase() === 'auto') { delete flags[이름]; continue; }
+    if (parseSize(String(flags[이름])) == null) {
+      return 인자탈([
+        `  --${이름} 숫자를 못 읽었습니다: ${String(flags[이름])}`,
+        '  이렇게 쓰세요 — 655360 · 640k · 128k (k 는 1024 입니다)',
+      ], { cmd, flags });
     }
   }
 
@@ -809,7 +1160,7 @@ async function main() {
     case 'status':
       return showStatus();
     case 'setup':
-      return runSetup();
+      return runSetup(flags);
     case 'diagnose':
       return runDiagnose(flags);
     /*
@@ -862,7 +1213,8 @@ async function main() {
       say('');
       say(`  ${c.red('모르는 명령')} ${c.bold(cmd)}`);
       help();
-      return 1;
+      // 인자를 잘못 준 것이다 — 모르는 깃발과 같은 64. 1 이면 스크립트가 「돌다가 오류」 와 못 가른다.
+      return EXIT.usage;
   }
 }
 
@@ -887,6 +1239,20 @@ async function 끝내기(code) {
 main()
   .then((code) => 끝내기(code ?? 0))
   .catch(async (err) => {
+    /*
+     * `deel run --json` 이면 표준출력은 JSON 한 덩이여야 한다(도움말의 약속).
+     * 여기는 무엇이 터졌든 표준출력에 맨 글을 찍었고, JSON 을 읽던 스크립트는
+     * 파싱에서 죽었다. 이 문에서는 글을 표준오류로, 실패 한 덩이를 표준출력으로 낸다.
+     */
+    const 배치JSON = !!읽은인자 && (읽은인자.cmd === 'run' || 읽은인자.cmd === '-p')
+      && (읽은인자.flags.json === true || 읽은인자.flags.json === 'true');
+    if (배치JSON) {
+      process.stderr.write(`  ✗ ${err?.message ?? err}\n`);
+      // 인자탈 과 같은 모양 — 성공한 --json 과 칸이 같아야 한다 (사냥5 B5-10).
+      process.stdout.write(JSON.stringify(실패덩이({ reason: 'error', code: 1, why: String(err?.message ?? err) })) + '\n');
+      await 끝내기(1);
+      return;
+    }
     say('');
     say(`  ${c.red('오류')} ${err?.message ?? err}`);
     if (process.env.DEEL_DEBUG) say(c.gray(err?.stack ?? ''));

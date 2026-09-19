@@ -119,6 +119,36 @@ trace('3-모양');
   const 눈검사 = 눈검사메시지('openai');
   check('눈 검사는 1×1 점 하나로', 눈검사.content[1].image_url.url.includes(한점PNG));
   check('눈 검사 그림은 아주 작다', 점.length < 200, `${점.length}바이트`);
+
+  /*
+   * ── 적어 둔 대로 **흰 점**인가 (8회차 뒷단) ────────────────────────────
+   *
+   * 이 바이트는 네 자리가 「1×1 흰 점」 이라고 부른다 — vision.js 머리말,
+   * probe.js 의 눈 검사 두 자리, docs/{ko,en}/interface.md. 그런데 실제 픽셀은
+   * RGBA(255,0,0,127), **반투명 빨간 점**이었다. 밖으로 나가는 유일한 그림
+   * 바이트라 문서가 그것을 콕 집어 적어 두는데, 적힌 것과 나가는 것이 달랐다.
+   * 반투명은 받는 쪽이 무슨 바탕에 얹느냐에 따라 색까지 달라진다.
+   *
+   * 픽셀을 직접 풀어서 잰다 — 글자로 적힌 base64 를 눈으로 봐서는 못 잡는다.
+   */
+  {
+    const z = await import('node:zlib');
+    const 칸 = (이름) => {
+      let off = 8;
+      while (off + 8 <= 점.length) {
+        const len = 점.readUInt32BE(off);
+        if (점.toString('ascii', off + 4, off + 8) === 이름) return 점.subarray(off + 8, off + 8 + len);
+        off += 12 + len;
+      }
+      return null;
+    };
+    const ihdr = 칸('IHDR');
+    const 픽셀 = [...z.inflateSync(칸('IDAT'))];
+    check('★★ 눈 검사 그림은 적어 둔 대로 흰 점이다',
+      JSON.stringify(픽셀) === JSON.stringify([0, 255, 255, 255, 255]), JSON.stringify(픽셀));
+    check('  1×1 · RGBA 그대로', ihdr?.readUInt32BE(0) === 1 && ihdr?.readUInt32BE(4) === 1 && ihdr?.[9] === 6,
+      JSON.stringify([ihdr?.readUInt32BE(0), ihdr?.readUInt32BE(4), ihdr?.[9]]));
+  }
 }
 
 // ── 4. Read 도구 — 눈이 없으면 바이트를 안 만든다 ──────────────────────

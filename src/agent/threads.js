@@ -28,6 +28,7 @@
 
 /** 이름이 없을 때 붙여 줄 이름. 사람이 목록에서 알아볼 수 있으면 된다. */
 import { 파일기억 } from './filemem.js';
+import { 규격맞추기 } from './session.js';
 
 function 기본이름(n) { return `갈래 ${n}`; }
 
@@ -42,6 +43,20 @@ export class Threads {
     this.session = session;
     this.ctx = ctx;
     this.새store = 새store;
+    /*
+     * 이어받은 대화를 **지금 규격으로** 옮겨 적는다 (agent/session.js 의 규격맞추기).
+     *
+     * 저장 파일 머리글에는 규격이 없다. 어제 Anthropic 으로 한 대화를 오늘 OpenAI
+     * 호환 연결로 --resume 하면 tool_use·tool_result 블록이 그대로 나가서 첫 마디가
+     * 400 이었다. 이어받은 대화가 들어오는 자리가 여기(첫 한마디 전, 갈래 표에
+     * 담기 전)다. 턴마다 적는 자리(repl 의 saved)가 메시지 **수**로 세므로, 수가
+     * 바뀔 수 있는 이 손질은 턴이 돌기 전에 끝나야 한다 — 그래서 여기다.
+     * 이미 맞는 대화면 아무것도 안 바뀐다.
+     */
+    const 옮김 = 규격맞추기(session?.messages, session?.conn?.kind);
+    if (옮김.바꾼것) session.messages = 옮김.messages;
+    /** 이어받을 때 옮겨 적은 것. 화면이 말할 수 있게 남긴다. */
+    this.옮긴것 = 옮김.바꾼것 ? { 바꾼것: 옮김.바꾼것, 뺀것: 옮김.뺀것 } : null;
     /*
      * 남은 할 일과 시킨 말 원문을 저장 파일과 묶는다 (agent/store.js 의 살림따라가기).
      *
@@ -171,7 +186,7 @@ export class Threads {
     this.센것++;
     const store = this.새store();
     const g = {
-      이름: String(이름 ?? '').trim() || 기본이름(this.센것),
+      이름: this.#새이름(이름),
       messages: 물려줄것 ? [...물려줄것] : [],
       // session.usage 와 **같은 모양**이어야 한다. 여태 다섯 칸만 있어서
       // 갈래에서는 캐시·생각·못잰것 칸이 아예 없었다. 더하는 자리들이 전부
@@ -199,6 +214,25 @@ export class Threads {
     return this.#꺼내기(this.갈래들.length - 1);
   }
 
+  /*
+   * ── 이름이 번호와도, 다른 갈래 이름과도 안 겹치게 (2.0.0 6회차 · Gemini 스레드6) ──
+   *
+   * 찾기() 는 숫자뿐인 말을 **번호로 먼저** 읽는다. 그래서 「2」 라는 이름의 갈래는 이름으로는
+   * 영영 못 갔고, `/thread 2` 는 둘째 갈래로 갔다. 같은 이름을 두 번 주면 찾기가 늘 첫째를
+   * 집어 둘째는 번호로만 갈 수 있었다. 찾기 규칙을 바꾸면 이미 쓰는 번호 길이 흔들리므로,
+   * 만드는 자리에서 겹치지 않는 이름을 준다 — 숫자뿐이면 앞에 `#`, 겹치면 뒤에 ` (2)`.
+   * 새로() 가 돌려주는 갈래의 이름을 화면이 그대로 보여 주므로 사람은 바뀐 이름을 본다.
+   */
+  #새이름(이름) {
+    let s = String(이름 ?? '').trim() || 기본이름(this.센것);
+    if (/^\d+$/.test(s)) s = `#${s}`;
+    const 겹치나 = (x) => this.갈래들.some((g) => g.이름.toLowerCase() === x.toLowerCase());
+    if (!겹치나(s)) return s;
+    let k = 2;
+    while (겹치나(`${s} (${k})`)) k++;
+    return `${s} (${k})`;
+  }
+
   /** 지금 대화를 그대로 복사해 새 갈래로 나간다. */
   갈라내기(이름 = '') {
     return this.새로(이름, this.session.messages);
@@ -211,9 +245,14 @@ export class Threads {
   찾기(말) {
     const s = String(말 ?? '').trim();
     if (!s) return -1;
+    /*
+     * 범위 밖 숫자는 **번호가 아니라 이름**이다 (2.0.0 8회차 스키마). 여기서 -1 로 끝냈더니
+     * 위 #새이름() 이 `#404` 로 바꿔 준 갈래를, 목록에 보이는 그 숫자로는 영영 못 갔다.
+     * 범위 안 번호는 그대로 번호가 이긴다 — 6회차 스레드6 이 정한 차례를 안 흔든다.
+     */
     if (/^\d+$/.test(s)) {
       const i = Number(s) - 1;
-      return i >= 0 && i < this.갈래들.length ? i : -1;
+      if (i >= 0 && i < this.갈래들.length) return i;
     }
     const 낮 = s.toLowerCase();
     const 딱 = this.갈래들.findIndex((g) => g.이름.toLowerCase() === 낮);
@@ -237,7 +276,17 @@ export class Threads {
     if (this.갈래들.length <= 1) return { ok: false, why: '갈래가 하나뿐입니다.' };
     const i = 말 ? this.찾기(말) : this.자리;
     if (i < 0) return { ok: false, why: '그런 갈래가 없습니다.' };
-    if (i === this.자리) this.#담아두기();
+    /*
+     * **어느 갈래를 닫든** 먼저 담아 둔다.
+     *
+     * 여기가 `if (i === this.자리)` 로 지금 갈래를 닫을 때만 담았다. 다른 갈래를
+     * 닫으면 아래 #꺼내기() 가 지금 갈래를 **표에 담긴 옛 모습**으로 다시 꺼낸다 —
+     * 옮겨 온 뒤에 쌓인 말(접기가 messages 를 갈아 끼웠으면 통째로), 할 일,
+     * 시킨 말이 그 자리에서 없어지고, 다음에 적을 때 파일에 빈 할 일이 적힌다.
+     * #담아두기() 머리말이 「옮기기 전에 반드시 부른다」 인데, 닫기도 옮기기다.
+     */
+    this.#담아두기();   // 닫는 것이 지금 갈래가 아니어도
+
     const [닫은것] = this.갈래들.splice(i, 1);
     // 갈래는 지워도 그 갈래가 낸 돈은 안 지워진다 (생성자의 닫힌셈).
     for (const k of Object.keys(this.닫힌셈)) this.닫힌셈[k] += Number(닫은것.usage?.[k] ?? 0);

@@ -61,6 +61,15 @@ trace('1-살리기');
   const r = 살린쓰기('{"file_path":"src/very/long/pa');
   check('경로가 잘렸으면 안 건진다', r === null, JSON.stringify(r));
 
+  // ★ (6회차 살림6al-b L1) 경로 이름을 filePath 로 보낸 모델도 받는데(149), 잘린 것을 막는
+  // 자리는 file_path · path 만 봤다. 내용이 먼저 오고 경로가 끝에서 잘리면 「src/inde」 에 썼다.
+  for (const 이름 of ['file_path', 'path', 'filePath']) {
+    const 잘림 = 살린쓰기(`{"content":"첫 줄\\n둘째 줄\\n","${이름}":"src/inde`);
+    check(`★ (6회차 L1) 내용 뒤에서 ${이름} 이 잘려도 안 건진다`, 잘림 === null, JSON.stringify(잘림));
+  }
+  const 온경로 = 살린쓰기('{"content":"첫 줄\\n둘째 줄\\n","filePath":"src/index.js","extra":"x');
+  check('(L1 짝) filePath 가 온전하면 건진다', 온경로?.path === 'src/index.js', JSON.stringify(온경로));
+
   // 내용이 아직 안 온 것도 건질 게 없다.
   check('내용이 없으면 안 건진다', 살린쓰기('{"file_path":"a.txt"') === null, '');
 
@@ -117,6 +126,34 @@ trace('2-Append도구');
   const b = readFileSync(bom);
   check('BOM 은 앞에 한 번만 있는다', b.indexOf(Buffer.from([0xEF, 0xBB, 0xBF]), 3) === -1, b.toString('hex').slice(0, 40));
   check('BOM 뒤 내용이 이어진다', b.subarray(3).toString('utf8') === '이름,수량\n볼펜,3\n', JSON.stringify(b.subarray(3).toString('utf8')));
+
+  /*
+   * 6회차 Gemini 도구6b B1 · CRLF 만 쓰는 파일에 모델이 준 `\n` 을 그대로 붙여 줄끝이 섞였다.
+   * Edit 는 「CRLF 만 쓰는 파일이면 넣는 글도 CRLF」 인데(edit-match.js CRLF뿐인가) Append 만 없었다.
+   * `.bat` 를 나눠 쓰면 cmd.exe 가 LF 줄에서 레이블을 헛짚는다.
+   */
+  const 바이트 = (이름) => readFileSync(join(방, 이름));
+  writeFileSync(join(방, 'run.bat'), '@echo off\r\nset A=1\r\n');
+  const 배치 = TOOLS.Append.run({ file_path: 'run.bat', content: 'set B=2\ngoto :end\n' }, ctx);
+  check('★ CRLF 만 쓰는 파일에는 CRLF 로 붙인다 (6회차 도구6b B1)',
+    바이트('run.bat').toString('latin1') === '@echo off\r\nset A=1\r\nset B=2\r\ngoto :end\r\n', JSON.stringify(바이트('run.bat').toString('latin1')));
+  check('  줄 수는 그대로 센다', /\+2줄/.test(배치.content) && /전체 4줄/.test(배치.content), 배치.content);
+  writeFileSync(join(방, '사내crlf.txt'), encode('가나다\r\n', 'euc-kr').buf);
+  TOOLS.Append.run({ file_path: '사내crlf.txt', content: '라마바\n' }, ctx);
+  check('★ CP949 · CRLF 파일에도 CRLF 로', 바이트('사내crlf.txt').equals(encode('가나다\r\n라마바\r\n', 'euc-kr').buf), 바이트('사내crlf.txt').toString('hex'));
+  writeFileSync(join(방, 'u16.txt'), Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from('a\r\n', 'utf16le')]));
+  TOOLS.Append.run({ file_path: 'u16.txt', content: 'b\n' }, ctx);
+  check('★ UTF-16LE(BOM) · CRLF 파일에도 CRLF 로', 바이트('u16.txt').equals(Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from('a\r\nb\r\n', 'utf16le')])), 바이트('u16.txt').toString('hex'));
+  for (const [이름, 처음, 붙일, 기대, 뜻] of [
+    ['lf.txt', 'a\nb\n', 'c\r\nd\n', 'a\nb\nc\r\nd\n', 'LF 파일에는 받은 그대로'],
+    ['섞임.txt', 'a\r\nb\n', 'c\n', 'a\r\nb\nc\n', '이미 섞인 파일은 손대지 않는다'],
+    ['빈것.txt', '', 'x\n', 'x\n', '빈 파일은 줄끝을 모르니 받은 그대로'],
+    ['겹침.txt', 'p\r\n', 'q\r\n', 'p\r\nq\r\n', 'CRLF 로 온 글을 CR 두 번으로 만들지 않는다'],
+  ]) {
+    writeFileSync(join(방, 이름), 처음);
+    TOOLS.Append.run({ file_path: 이름, content: 붙일 }, ctx);
+    check(`  (짝) ${뜻}`, 바이트(이름).toString('latin1') === 기대, JSON.stringify(바이트(이름).toString('latin1')));
+  }
 
   rmSync(방, { recursive: true, force: true });
 }
@@ -430,6 +467,32 @@ trace('9-조각표시');
   const 두번째 = 기억.실을것(p, 잘라읽기.content, { 부분인가: !!잘라읽기.부분인가 });
   check('★ 조각은 두 번 읽어도 「그대로입니다」 라고 안 한다', 두번째.어떻게 === 'full', 두번째.어떻게);
 
+  /*
+   * 6회차 Gemini 도구6e2 E2-1 · 줄 수는 상한 안인데 **줄이 길어** clip 에 걸렸다. 모델에게 가는
+   * 글에는 「… (N자 잘림)」 이 있고 부분인가 도 참인데, 사람이 보는 summary 는 「10줄」 뿐이었다 —
+   * 창이 작아 잘렸을 때 고친 바로 그 함정(「화면에는 1425줄이 찍혔다」)이 줄 길이 쪽에 남아 있었다.
+   */
+  const 긴줄 = join(방, '긴줄.txt');
+  writeFileSync(긴줄, Array.from({ length: 10 }, (_, i) => String(i).repeat(30000)).join('\n') + '\n', 'utf8');
+  const 긴줄읽기 = await TOOLS.Read.run({ file_path: 긴줄 }, { ...ctx, seen: new Set(), 모델컨텍스트: 200000 });
+  check('★ 줄이 길어 잘렸으면 summary 에도 일부만이라고 적는다 (6회차 도구6e2 E2-1)',
+    긴줄읽기.부분인가 === true && /잘림/.test(긴줄읽기.content) && /일부만/.test(긴줄읽기.summary ?? ''), 긴줄읽기.summary ?? '');
+  check('  (짝) 다 준 파일의 summary 에는 일부만이 없다', !/일부만/.test(통째로.summary ?? ''), 통째로.summary ?? '');
+
+  /*
+   * 6회차 Gemini 도구6f2 F2-1 · Grep 에 파일 하나를 콕 집으면 rg 가 있어도 자바스크립트 길로 가고,
+   * 그 길은 파일을 통째로 글로 읽는다. 폴더 훑기의 2MB 상한은 콕 집은 파일에는 안 걸려서, GB 로그를
+   * 콕 집으면 메모리를 다 썼다. 콕 집은 파일은 더 넉넉한 상한까지만 읽고, 넘으면 건너뛰었다고 말한다.
+   */
+  writeFileSync(join(방, 'huge.log'), Buffer.concat([Buffer.alloc(65 * 1024 * 1024, 0x78), Buffer.from('\nneedle here\n')]));
+  const 큰것 = await TOOLS.Grep.run({ pattern: 'needle', path: 'huge.log', output_mode: 'content' }, ctx);
+  check('★ 콕 집은 파일도 상한을 넘으면 통째로 안 읽고 건너뛰었다고 말한다 (6회차 도구6f2 F2-1)',
+    !/needle here/.test(큰것.content ?? '') && /건너뛰었습니다/.test(큰것.content ?? ''), String(큰것.content ?? 큰것.error ?? '').slice(0, 120));
+  rmSync(join(방, 'huge.log'), { force: true });
+  writeFileSync(join(방, 'mid.log'), Buffer.concat([Buffer.alloc(3 * 1024 * 1024, 0x78), Buffer.from('\nneedle here\n')]));
+  const 중간 = await TOOLS.Grep.run({ pattern: 'needle', path: 'mid.log', output_mode: 'content' }, ctx);
+  check('  (짝) 폴더 상한(2MB)보다 큰 3MB 파일도 콕 집으면 여전히 찾는다', /needle here/.test(중간.content ?? ''), String(중간.content ?? 중간.error ?? '').slice(0, 120));
+
   rmSync(방, { recursive: true, force: true });
 }
 
@@ -530,8 +593,16 @@ trace('N-이어붙이는-값');
       === readFileSync(join(뿌리, '큰것.txt'), 'utf8').split('\n').length - 1,
     String(마지막.content ?? 마지막.error).slice(0, 70));
 
+  /*
+   * 절대 울타리는 **그 판의 작은 파일 값**에 맞춰 늘린다 (6회차).
+   *
+   * 60ms 로 못박아 두었더니 다른 짐(동시에 도는 검사·어긋내기)이 있는 판에서
+   * 작은 파일조차 10ms → 44ms 가 되고, 30MB 가 64ms 로 걸려 빨개졌다 — 그때
+   * 배수는 1.5 로 「크기를 안 탄다」 가 그대로 드러나 있었다. 막으려던 것(판마다
+   * 통째로 읽기)은 위 표로 16배라 배수 울타리가 잡는다. 조용한 판에서는 여전히 60ms.
+   */
   check('★★ 30MB 파일에 이어 붙이는 값이 크기를 안 탄다',
-    배수 <= 4 && 큰값 < 60,
+    배수 <= 4 && 큰값 < Math.max(60, 작은값 + 50),
     `작은 파일 ${작은값.toFixed(0)}ms · 30MB ${큰값.toFixed(0)}ms · ${배수.toFixed(1)}배`);
 
   // ── 값을 깎았다고 수가 틀리면 안 된다 ──────────────────────────────────

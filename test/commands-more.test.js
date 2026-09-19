@@ -10,12 +10,13 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { handle } from '../src/commands.js';
+import { 모델이름으로찾기, 길이맞추기, 베낄프로필, switchModel, 출력상한 } from '../src/commands/model.js';
 import { Session } from '../src/agent/session.js';
 import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
-import { save } from '../src/config.js';
+import { save, load } from '../src/config.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -131,6 +132,83 @@ trace('2-되돌리기');
   const r4 = await 조용히(() => handle('/undo 숫자아님', s, ctx));
   check('숫자가 아니어도 안 터진다', r4.v?.handled === true, JSON.stringify(r4.v));
   rmSync(파일, { force: true });
+}
+
+/*
+ * ── ★ /undo 2 에서 한 턴은 접혀 못 걷었는데 「대화도 걷었다」 만 말했다 ───────
+ *
+ * 앞 턴은 요약에 접혀 자리표가 없고 뒤 턴만 살아 있으면, 파일은 둘 다 되돌아가도
+ * 말은 뒤 턴 것만 걷힌다. 화면이 「대화도 걷어냈습니다」 만 적으면 사람은 앞 턴
+ * 이야기도 없어진 줄 안다. 접혀서 남은 것은 남았다고 말해야 한다(session.js 의
+ * 「못 찾으면 그 턴은 되감을 수 없다고 정직하게 말한다」).
+ */
+{
+  const s = 새세션();
+  const ctx = 새ctx();
+  const 가 = join(root, '반턴가.txt');
+  const 나 = join(root, '반턴나.txt');
+  writeFileSync(가, '가 원래\n', 'utf8');
+  writeFileSync(나, '나 원래\n', 'utf8');
+
+  const t2 = ctx.history.nextTurn();
+  ctx.history.snapshot(가);
+  writeFileSync(가, '가 고침\n', 'utf8');
+  s.턴시작(t2);
+  s.push({ role: 'user', content: '턴2: 가를 고쳐' });
+  s.push({ role: 'assistant', content: '가를 고쳤습니다' });
+  // 접기가 그 턴을 요약으로 가져갔다 — 자리표가 사라진다.
+  s.messages = [{ role: 'user', content: '[앞선 대화를 요약해 접었습니다]\n가를 고쳤다' }];
+
+  const t3 = ctx.history.nextTurn();
+  ctx.history.snapshot(나);
+  writeFileSync(나, '나 고침\n', 'utf8');
+  s.턴시작(t3);
+  s.push({ role: 'user', content: '턴3: 나를 고쳐' });
+  s.push({ role: 'assistant', content: '나를 고쳤습니다' });
+
+  const r = await 조용히(() => handle('/undo 2', s, ctx));
+  const 글 = 색빼기(r.out);
+  check('먼저: 두 파일 다 되돌아갔고 뒤 턴 말은 걷혔다',
+    readFileSync(가, 'utf8') === '가 원래\n' && readFileSync(나, 'utf8') === '나 원래\n' && s.messages.length === 1,
+    `${s.messages.length} · ${글.trim().split('\n')[0]}`);
+  check('★ 걷은 것은 걷었다고 말한다', /대화도 2개 걷어냈습니다/.test(글), 글.trim().slice(0, 200));
+  check('★★ 접혀서 못 걷은 턴은 남았다고 말한다', /1개 턴은 말이 이미 요약에 접혀/.test(글), 글.trim().slice(0, 300));
+  check('★ 그럴 때 모델에게 짚어 주라는 말도 붙인다', /한 번 짚어 주세요/.test(글), 글.trim().slice(-160));
+  rmSync(가, { force: true });
+  rmSync(나, { force: true });
+}
+
+/*
+ * ── ★ 자리표가 통째로 없는 턴을 되돌려도 그 턴에서 박은 쪽지는 뺐다고 말한다 ──
+ *
+ * 자리가 차서 턴 안에서 비우면(loop.js 의 비우기) 그 턴의 사람 말까지 비워 자리표가
+ * 없다. 그래서 대화는 못 걷지만, 그 턴이 박은 「이번에 시킨 말 — 빠짐없이 하세요」
+ * 쪽지는 빼야 하고 뺐다고 말해야 한다 — 안 그러면 「대화는 그대로 둡니다」 만 보고
+ * 사람은 되돌린 일이 다시 시켜질 줄 모른다.
+ */
+{
+  const s = 새세션();
+  const ctx = 새ctx();
+  const 다 = join(root, '비운턴다.txt');
+  writeFileSync(다, '다 원래\n', 'utf8');
+  const t = ctx.history.nextTurn();
+  ctx.history.snapshot(다);
+  writeFileSync(다, '다 고침\n', 'utf8');
+  s.턴시작(t);
+  s.이번요청 = '결제 모듈 payments.js 를 새로 만들어줘';
+  s.push({ role: 'user', content: s.이번요청 });
+  const { 못박을것 } = await import('../src/agent/session.js');
+  const 쪽지 = 못박을것(s);
+  const 비운말 = { role: 'user', content: `(자리가 모자라 앞선 대화 1개를 비웠습니다.)\n\n${쪽지}` };
+  s.박은쪽지표시(비운말, 쪽지);
+  s.messages = [비운말, { role: 'assistant', content: '이어서 만들었습니다' }];
+
+  const r = await 조용히(() => handle('/undo', s, ctx));
+  const 글 = 색빼기(r.out);
+  check('먼저: 파일은 되돌아갔고 대화는 못 걷었다고 말한다', readFileSync(다, 'utf8') === '다 원래\n' && /대화는 그대로 둡니다/.test(글), 글.trim().slice(0, 200));
+  check('★★ 자리표가 없어도 그 턴에서 박은 시킨 말 쪽지는 빠진다', !JSON.stringify(s.messages).includes('payments.js 를 새로'), JSON.stringify(s.messages).slice(0, 200));
+  check('★ 쪽지를 뺐다고 화면에 말한다', /쪽지 1개는 뺐습니다/.test(글), 글.trim().slice(0, 300));
+  rmSync(다, { force: true });
 }
 
 trace('3-대화접기');
@@ -543,6 +621,49 @@ trace('13b-지우려다-적고-마는-자리');
   const u2 = await 조용히(() => handle('/undo -2', s, 새ctx()));
   check('★ 음수도 마찬가지다', /숫자/.test(색빼기(u2.out)), 색빼기(u2.out).trim().slice(0, 40));
 
+  /*
+   * 4회차 이월 — 일본어·중국어 입력기는 번호를 전각(３)으로 낸다. 목록 번호(pick)는 펴서 읽는데
+   * /undo 만 「숫자로 적어 주세요」 로 돌려보냈다. 그리고 `/undo 0` 은 `0 || 1` 로 **한 턴을
+   * 말없이 되돌렸다** — 되돌릴 게 없다는 뜻으로 친 수가 파일을 실제로 되돌린다.
+   */
+  const 엿보기 = () => {
+    const c0 = 새ctx();
+    const 원 = c0.history.undo.bind(c0.history);
+    c0.불린수 = null;
+    c0.history.undo = (n) => { c0.불린수 = n; return 원(n); };
+    return c0;
+  };
+  const 전각 = 엿보기();
+  const u3 = await 조용히(() => handle(`/undo ${String.fromCharCode(0xff13)}`, s, 전각));
+  check('★ /undo 전각 ３ 은 3 턴으로 읽는다', 전각.불린수 === 3 && !/숫자로 적어/.test(색빼기(u3.out)),
+    `${전각.불린수} · ${색빼기(u3.out).trim().slice(0, 40)}`);
+  const 영 = 엿보기();
+  const u4 = await 조용히(() => handle('/undo 0', s, 영));
+  check('★★ /undo 0 은 아무것도 안 되돌린다', 영.불린수 === null, String(영.불린수));
+  check('★ /undo 0 이 무엇을 했는지 말한다', /0/.test(색빼기(u4.out)), 색빼기(u4.out).trim().slice(0, 40));
+
+  /*
+   * 되돌린 것이 0개여도 **그대로 둔 것 · 못 되돌린 것의 이름과 까닭**을 보인다 (6회차 Gemini 되돌림명령6q R2·R3).
+   *
+   * 0개 갈래는 「되돌릴 것이 없습니다.」 한 줄과 실패 수만 찍고 돌아갔다. 옮긴 그림만 있던 턴처럼 기록은 있었는데
+   * 전부 그대로 둔 판에서 사람은 턴이 없었던 줄 알았고, 왜 안 돌아왔는지도 못 봤다. 이력을 못 지운 경고도 빠졌다.
+   */
+  const 둔것 = 새ctx();
+  const 못한줄 = { path: join(root, 'locked.txt'), how: '실패: EBUSY', ok: false, 못했나: true };
+  둔것.history.undo = () => ({
+    restored: [{ path: join(root, 'moved.png'), how: '그대로 둠 (바이너리 — 옮겨 온 마지막 한 벌일 수 있어 지우지 않았습니다)', skipped: true }, 못한줄],
+    이력줄임: { ok: false, 왜: 'EACCES' }, 깨진줄: 0, 되돌린수: 0, 못한것: [못한줄], turns: 1, turnIds: [1],
+  });
+  const 글5 = 색빼기((await 조용히(() => handle('/undo', s, 둔것))).out);
+  check('★★ 턴이 있었는데 0개면 「되돌릴 것이 없습니다」 로 끝내지 않는다', !/되돌릴 것이 없습니다/.test(글5), 글5.trim().slice(0, 80));
+  check('★ 그대로 둔 파일의 이름과 까닭이 보인다', /moved\.png/.test(글5) && /마지막 한 벌/.test(글5), 글5.trim().slice(0, 120));
+  check('★ 못 되돌린 파일의 이름과 까닭이 보인다', /locked\.txt/.test(글5) && /EBUSY/.test(글5), '');
+  check('★ 이력을 못 지웠으면 0개여도 말한다', /기록을 못 지웠습니다/.test(글5), '');
+  const 빈것 = 새ctx();
+  빈것.history.undo = () => ({ restored: [], turns: 0, turnIds: [] });
+  const 글6 = 색빼기((await 조용히(() => handle('/undo', s, 빈것))).out);
+  check('  짝: 되돌릴 턴이 없으면 그대로 「되돌릴 것이 없습니다」', /되돌릴 것이 없습니다/.test(글6), 글6.trim().slice(0, 40));
+
   // 3) /skills on <안 걸리는 말> — 가지고 있던 것까지 내리면 안 된다.
   const sk = 새ctx();
   const s2 = 새세션();
@@ -574,6 +695,37 @@ trace('13b-지우려다-적고-마는-자리');
     색빼기(l1.out).trim().slice(0, 70));
   await 조용히(() => handle('/learned 전선 지우기', s, lc));
   check('적어 주면 지운다', 지운것.includes('전선'), 지운것.join(','));
+
+  /*
+   * 5) 화면의 ✓·✗·~ 는 **배움이 낸 판정**을 그대로 따른다 (6회차 일거리6cv-c).
+   *
+   * 화면이 문턱을 제 나름대로 다시 계산하면 언젠가 한쪽만 고쳐지고, 그때부터
+   * 화면이 실제와 다른 말을 한다 — work.js 가 바로 그 자리에 적어 둔 말이다.
+   * 그런데 표는 `r.no === 0` 으로 따로 셈해서, **한 번 돼 본 것**(아직 못 미더워
+   * 프롬프트에 안 싣는 것)에도 초록 ✓ 를 붙였다. 한 줄 안에서 「✓」 와 「아직 안
+   * 싣습니다」 가 같이 보이는 꼴이다. 셈이 삭아 0·0 이 된 것도 ✓ 로 보였다.
+   */
+  const 판정배움 = {
+    지우기: () => {},
+    요약: () => null,
+    현황: () => ({
+      명령: [
+        { 이름: '한번됨', ok: 1, no: 0, 나이: 0, 판정: '모름' },
+        { 이름: '잘됨', ok: 9, no: 0, 나이: 0, 판정: '된다' },
+        { 이름: '못됨', ok: 0, no: 9, 나이: 0, 판정: '안된다' },
+        { 이름: '삭음', ok: 0, no: 0, 나이: 400, 판정: '모름' },
+      ],
+      모델: null,
+      모델이름: '가모델',
+    }),
+  };
+  const r판정 = await 조용히(() => handle('/learned', s, 새ctx({ 배움: 판정배움 })));
+  const 줄찾 = (이름) => (색빼기(r판정.out).split('\n').find((l) => l.includes(이름)) ?? '');
+  check('★★★ 한 번 돼 본 것(아직 안 싣는 것)에 ✓ 를 안 붙인다',
+    !줄찾('한번됨').includes('✓'), 줄찾('한번됨').trim());
+  check('★★ 셈이 삭아 0·0 이 된 것도 ✓ 가 아니다', !줄찾('삭음').includes('✓'), 줄찾('삭음').trim());
+  check('★★ 된다 로 가른 것은 ✓', 줄찾('잘됨').includes('✓'), 줄찾('잘됨').trim());
+  check('★★ 안된다 로 가른 것은 ✗', 줄찾('못됨').includes('✗'), 줄찾('못됨').trim());
 }
 
 trace('13c-오타가-조용히-먹던-자리');
@@ -674,6 +826,17 @@ trace('13f-못한-까닭을-버리지-않나');
     /못 남겼습니다|남겼습니다/.test(글), 글.trim().slice(-60));
   check('★ 화면에도 못 적은 까닭이 뜬다',
     /ENOTDIR|ENOENT|EACCES|EPERM|ENAMETOOLONG/i.test(글), 글.trim().slice(-100));
+  /*
+   * ★ 바꾼 파일이 하나도 없는데 「바꾼 것마다 확인이 있습니다」 라고 하면 안 된다.
+   *
+   * 명령만 돌리고 파일은 안 건드린 판이다(위 감사기록이 바로 그 판이다).
+   * 초록 글씨로 「증명 안 된 것 없음」 이 뜨면, 사람은 자기가 고친 것이
+   * 확인까지 됐다고 읽는다 — 고친 것이 아예 없는데도.
+   */
+  check('★ 바꾼 것이 없으면 「바꾼 것마다」 라고 안 한다',
+    !/바꾼 것마다 그 뒤에 돌린 확인/.test(글), (글.match(/증명 안 된 것[^\n]*/) ?? [''])[0]);
+  check('바꾼 것이 없다고 말한다', /바꾼 파일이 없습니다/.test(글),
+    (글.match(/바꾼[^\n]*/) ?? [''])[0]);
 }
 
 trace('13g-엉뚱한-프로필에-안-적나');
@@ -812,6 +975,26 @@ trace('13h-물려받은-이름을-있는-것으로-읽지-않나');
     `${normalizeProfile('save')} · ${normalizeProfile('절약')}`);
   check('대소문자도 그대로', normalizeProfile('DEEP') === 'deep', String(normalizeProfile('DEEP')));
 
+  /*
+   * ── ★ 별칭도 대소문자를 안 가려야 한다 ────────────────────────────────
+   *
+   * 제 이름(`even`)은 소문자로 맞춰 보고, 별칭(`uniform`)은 **친 그대로** 봤다.
+   * 그래서 `DEEP` 은 되는데 `Uniform` 은 「모르는 배분입니다」 였다 — 한 줄
+   * 위아래가 서로 다른 잣대를 쓴 자리다.
+   *
+   * 사람이 보는 화면에는 별칭도 같이 적혀 있다. 적혀 있는 이름을 문장
+   * 첫 글자로 크게 쳐서 안 먹으면, 사람은 제가 뭘 잘못 쳤는지 알 길이 없다.
+   */
+  check('★ 별칭도 대소문자를 안 가린다', normalizeProfile('Uniform') === 'even',
+    String(normalizeProfile('Uniform')));
+  check('★ 별칭 Thrifty 도 먹는다', normalizeProfile('Thrifty') === 'save',
+    String(normalizeProfile('Thrifty')));
+  check('★ 한글 별칭은 그대로', normalizeProfile('깊게') === 'deep' && normalizeProfile(' 균일 ') === 'even',
+    `${normalizeProfile('깊게')} · ${normalizeProfile(' 균일 ')}`);
+  // 넓혀도 물려받은 이름은 여전히 막혀 있어야 한다.
+  check('★ 넓혀도 constructor 는 막힌다', normalizeProfile('Constructor') === null
+    && normalizeProfile('TOSTRING') === null, String(normalizeProfile('Constructor')));
+
   // 명령까지 와서 무엇이 보이나.
   const s배분 = 새세션();
   const r배분 = await 조용히(() => handle('/think 배분 constructor', s배분, 새ctx()));
@@ -828,6 +1011,280 @@ trace('13h-물려받은-이름을-있는-것으로-읽지-않나');
   const s된것 = 새세션();
   await 조용히(() => handle('/think 배분 깊게', s된것, 새ctx()));
   check('제대로 친 배분은 먹는다', s된것.effort === 'deep', String(s된것.effort));
+}
+
+trace('13b-모델이름은정확한것이먼저');
+
+/*
+ * ── `/model gpt-4o` 가 gpt-4o-mini 때문에 막히면 안 된다 ────────────────
+ *
+ * 프로필 쪽은 처음부터 「정확히 같은 것」 을 먼저 봤는데, **서버가 내주는 모델**
+ * 쪽은 부분 일치만 봤다. 그래서 서버에 `gpt-4o` 와 `gpt-4o-mini` 가 같이 있으면
+ * 사람이 있는 이름을 그대로 적어도 「맞는 모델이 여럿입니다」 로 막히고 아무 일도
+ * 안 일어난다 — 같은 가리킴이 어디에 있느냐에 따라 다르게 굴었다.
+ * (2.0.0 6회차 Gemini 모델고르기6cw-b)
+ */
+{
+  const 서버것 = ['gpt-4o', 'gpt-4o-mini', 'gpt-4o-mini-audio'];
+  check('★★★ 정확히 같은 이름이 있으면 그것 하나다',
+    JSON.stringify(모델이름으로찾기(서버것, 'gpt-4o')) === JSON.stringify(['gpt-4o']),
+    JSON.stringify(모델이름으로찾기(서버것, 'gpt-4o')));
+  check('★★ 대소문자는 안 가린다',
+    JSON.stringify(모델이름으로찾기(서버것, 'GPT-4O')) === JSON.stringify(['gpt-4o']),
+    JSON.stringify(모델이름으로찾기(서버것, 'GPT-4O')));
+  check('★★ 정확한 것이 없으면 여태처럼 부분 일치로 여럿을 준다',
+    모델이름으로찾기(서버것, 'mini').length === 2, JSON.stringify(모델이름으로찾기(서버것, 'mini')));
+  check('★ 하나만 맞으면 하나다',
+    JSON.stringify(모델이름으로찾기(서버것, 'audio')) === JSON.stringify(['gpt-4o-mini-audio']),
+    JSON.stringify(모델이름으로찾기(서버것, 'audio')));
+  check('★ 목록을 못 받았거나 빈 말이면 빈손이다',
+    모델이름으로찾기(null, 'gpt-4o').length === 0 && 모델이름으로찾기(서버것, '  ').length === 0,
+    JSON.stringify([모델이름으로찾기(null, 'gpt-4o'), 모델이름으로찾기(서버것, '  ')]));
+}
+
+trace('13c-컨텍스트길이는어디서온값인지');
+
+// ── 「적혀 있던 값」 과 「기본값」 은 다른 말이다 ────────────────────────
+//
+// 길이맞추기 는 세 가지를 갈라 적겠다고 머리말에 적어 두고, 정작 `prof.ctx` 에
+// 값을 **써 넣은 뒤에** `prof?.ctx` 를 봤다. 그러면 그 칸은 언제나 차 있어서
+// 「서버가 안 알려줘 기본값」 이 영영 안 뜬다 — 갓 만든 프로필(ctx: null)에
+// 서버가 길이를 안 알려 준 판이 「이 프로필에 적혀 있던 값」 으로 적힌다.
+// 적힌 적이 없는 값이다.
+{
+  const 잡기 = async (fn) => {
+    const 원래 = process.stdout.write.bind(process.stdout);
+    let 글 = '';
+    process.stdout.write = (chunk) => { 글 += chunk; return true; };
+    try { await fn(); } finally { process.stdout.write = 원래; }
+    return 글.replace(/\x1b\[[0-9;]*m/g, '');
+  };
+  // 스텁은 컨텍스트 길이를 안 알려 준다 — probeCtx 가 value: null 을 낸다.
+  const 셈 = { conn: { ...conn } };
+
+  const 빈프로필 = { id: '갓만든것', name: '갓만든것', baseUrl: base, model: '가모델', ctx: null };
+  const 글1 = await 잡기(() => 길이맞추기(셈, { profiles: [빈프로필], active: '갓만든것' }, 빈프로필));
+  check('★ 적힌 적 없으면 기본값이라고 말한다', /서버가 안 알려줘 기본값/.test(글1),
+    (글1.match(/컨텍스트[^\n]*/) ?? [''])[0]);
+
+  const 적힌프로필 = { id: '쓰던것', name: '쓰던것', baseUrl: base, model: '가모델', ctx: 128000 };
+  const 글2 = await 잡기(() => 길이맞추기(셈, { profiles: [적힌프로필], active: '쓰던것' }, 적힌프로필));
+  check('★ 적혀 있었으면 그렇다고 말한다', /이 프로필에 적혀 있던 값/.test(글2),
+    (글2.match(/컨텍스트[^\n]*/) ?? [''])[0]);
+  check('적혀 있던 값을 그대로 쓴다', /128,000/.test(글2), (글2.match(/컨텍스트[^\n]*/) ?? [''])[0]);
+  check('둘이 서로 다른 말이다', 글1.includes('기본값') && !글2.includes('기본값'));
+}
+
+trace('13i-남의-열쇠를-베끼지-않나');
+
+// ── 새 프로필을 지을 때 **누구 것을 베끼나** ────────────────────────────
+//
+// `/model <이름>` 으로 같은 서버에서 모델만 바꾸면 프로필을 하나 새로 짓는다.
+// 지을 때 지금 쓰던 프로필을 **통째로** 베낀다 — 열쇠도, 헤더도, 인증서도.
+//
+// 여태 고르는 줄이 `find(p => p.id === cfg.active) ?? cfg.profiles[0]` 였다.
+// 두 갈래 다 「지금 붙어 있는 주소」 를 안 본다. 설정 파일이 대화 도중 밖에서
+// 바뀌어 active 가 **다른 서버**를 가리키게 되면, 그 서버의 열쇠가 지금 주소에
+// 달린 채로 프로필에 적힌다. 다음에 켜면 그 열쇠가 그 주소로 나간다.
+//
+// 베낄 것은 늘 **지금 붙어 있는 그 서버**의 프로필이다.
+{
+  const 남 = { id: '남의서버', name: '남', baseUrl: 'https://남의게이트웨이.example', model: 'm1', apiKey: '남의열쇠' };
+  const 여기 = { id: '여기', name: '여기', baseUrl: base, model: '가모델', apiKey: '내열쇠' };
+
+  // 1) active 가 남의 서버를 가리킨다 (설정이 밖에서 바뀐 자리).
+  const 고른1 = 베낄프로필({ profiles: [남, 여기], active: '남의서버' }, { conn: { base, model: '가모델' } });
+  check('★ active 가 어긋나도 남의 서버 열쇠는 안 베낀다',
+    고른1?.apiKey === '내열쇠', `베낀 것: ${고른1?.id} (${고른1?.apiKey})`);
+
+  // 2) active 가 아예 없는 이름이다 (지운 프로필이 active 로 남은 자리).
+  const 고른2 = 베낄프로필({ profiles: [남, 여기], active: '지워진것' }, { conn: { base, model: '가모델' } });
+  check('★ active 가 없어도 첫 번째를 집어 오지 않는다',
+    고른2?.apiKey === '내열쇠', `베낀 것: ${고른2?.id} (${고른2?.apiKey})`);
+
+  // 3) 이 주소의 프로필이 하나도 없으면 **아무것도 안 베낀다.**
+  //    남의 열쇠를 베끼느니 없는 편이 낫다.
+  const 고른3 = 베낄프로필({ profiles: [남], active: '남의서버' }, { conn: { base, model: '가모델' } });
+  check('★ 이 주소 것이 없으면 null 이다', 고른3 === null, `베낀 것: ${고른3?.id ?? 'null'}`);
+
+  // 4) 평소 자리 — active 가 맞으면 그대로 그것이다.
+  const 고른4 = 베낄프로필({ profiles: [남, 여기], active: '여기' }, { conn: { base, model: '가모델' } });
+  check('평소에는 active 그대로', 고른4?.id === '여기', `베낀 것: ${고른4?.id}`);
+}
+
+trace('13j-베낄-것이-없으면-반쪽-프로필을-짓지-않는다');
+
+/*
+ * ── `{ ...null }` 은 빈 것이다 (막판-바깥) ──────────────────────────────
+ *
+ * 바로 위 검사가 못 박은 대로 `베낄프로필()` 은 이 주소 것이 없으면 null 을
+ * 준다. 그 머리말은 「부르는 쪽이 `지금?.` 으로 받는다」 고 적어 뒀는데, 받는
+ * 자리는 `지금?.id` · `지금?.name` 둘뿐이고 정작 **펼치기는 그대로**였다:
+ *
+ *     const p = 이미 ?? { ...지금, id: …, name: …, baseUrl: …, model: …, ctx: null };
+ *
+ * `{ ...null }` 은 빈 객체다. 그래서 kind · auth · apiKey · streaming · tools ·
+ * json · think · vision 이 **하나도 없는** 프로필이 나왔고, 그것이 upsert 로
+ * 설정에 박히고 active 까지 됐다. 화면에는 초록 한 줄 「모델을 X 로 바꿨습니다.
+ * 서버는 그대로입니다.」 뿐이다.
+ *
+ * 그 뒤가 진짜 값이다 — 규격이 없으니 openai 로 굳고(Anthropic·Ollama 창구면
+ * 다음 한마디부터 400), 열쇠도 없으니 401, 도구·스트림 표시도 꺼진다. 그리고
+ * 그 반쪽이 파일에 남아 **다음에 켤 때도** 그 모양으로 시작한다.
+ *
+ * 베낄 것이 없으면 안 바꾸는 편이 낫다. 남의 열쇠를 안 베끼기로 한 것과 같은
+ * 까닭이다 — 반쪽을 짓느니 아무것도 안 짓는다.
+ */
+{
+  // 이 주소의 프로필이 하나도 없는 설정 (설정이 대화 도중 밖에서 바뀐 자리).
+  save({
+    version: 1, active: '남의서버', level: '개발자',
+    profiles: [{
+      id: '남의서버', name: '남', kind: 'anthropic', baseUrl: 'https://남의게이트웨이.example',
+      auth: 'bearer', apiKey: '남의열쇠', model: 'm1',
+    }],
+  });
+  const s = 새세션();
+  const ctx = 새ctx();
+  const r = await 조용히(() => switchModel(s, ctx, '나모델'));
+  const 글 = 색빼기(r.out);
+  const 적힌것 = load().profiles;
+
+  check('★★ 베낄 것이 없으면 모델을 안 바꾼다', s.conn.model === '가모델',
+    `conn.model=${s.conn.model}`);
+  check('★★ 규격 없는 반쪽 프로필을 설정에 안 적는다',
+    !적힌것.some((p) => p.model === '나모델'),
+    JSON.stringify(적힌것.find((p) => p.model === '나모델') ?? null));
+  check('  왜 안 되는지 말한다', /설정에 없어/.test(글), 글.replace(/\s+/g, ' ').slice(0, 140));
+
+  /*
+   * ── `/out <숫자>` 는 못 남겨도 아무 말이 없었다 (막판-바깥) ────────────
+   *
+   * 같은 파일의 `/ctx` 는 못 남기면 「설정에서 이 연결을 못 찾아 파일에는 못
+   * 남겼습니다 — 다음에 켜면 옛 값입니다」 를 적는다. `/out auto` 도 적는다.
+   * 그런데 `/out 32k` 갈래만 `if (prof) { … }` 라, 프로필을 못 찾으면 초록 한 줄
+   * 「답 길이 상한 32,768 토큰」 만 찍고 끝났다 — 다음에 켜면 조용히 사라진다.
+   * 셋이 같은 것을 말해야 한다.
+   */
+  /*
+   * 그리고 이 자리는 `이연결의프로필()` 도 같이 잰다. 그 자의 머리말은 「지금 이
+   * 연결이 온 프로필을 찾는다 … active 로 찾고, 없으면 지금 붙어 있는 주소·모델로
+   * 찾는다」 인데, 첫 칸이 `p.id === cfg.active` 만 보고 **주소를 안 봤다.**
+   * 그래서 active 가 남의 서버를 가리키는 판(다른 창이 /model 로 갈아탔거나 설정을
+   * 손으로 고친 판)에서 `/out 32k` 가 **남의 서버 프로필**에 박혔다 — 화면에는
+   * 아무 말도 없이. 같은 파일의 `베낄프로필()` 은 처음부터 주소를 보고 있었다.
+   */
+  {
+    const s2 = 새세션();
+    const r2 = await 조용히(() => 출력상한(s2, '32k'));
+    const 글2 = 색빼기(r2.out);
+    const 남의것 = load().profiles.find((p) => p.id === '남의서버');
+    check('이번 대화에는 먹는다', s2.conn.maxTokens === 32768, String(s2.conn.maxTokens));
+    check('★★ active 가 어긋나도 남의 서버 프로필에 안 적는다', 남의것?.maxTokens === undefined,
+      JSON.stringify(남의것));
+    check('★ /out 숫자도 못 남겼으면 말한다', /못 남겼습니다/.test(글2), 글2.replace(/\s+/g, ' ').slice(0, 140));
+  }
+
+  // 뒤 검사가 이 설정을 본다. 원래대로 돌려 둔다.
+  save({
+    version: 1, active: 'p', level: '개발자',
+    profiles: [{ id: 'p', name: '스텁', kind: 'openai', baseUrl: base, auth: 'none', apiKey: '', model: '가모델', ctx: 32768, tools: true }],
+  });
+}
+
+trace('13k-옮겨-적은-것을-파일에-못-적으면-말한다');
+
+/*
+ * ── 조용한 catch 둘 (막판 훑기) ─────────────────────────────────────────
+ *
+ * 규격이 다른 연결로 갈아타면 `대화옮기기` 가 대화를 새 규격으로 옮겨 적고,
+ * **파일도 같이** 갈아 끼운다. 그 자리 주석이 까닭을 적어 뒀다 — 안 갈아
+ * 끼우면 `--resume` 이 옛 모양과 새 모양이 섞인 대화를 열고 서버가 400 을 낸다.
+ *
+ * 그런데 그 두 줄의 catch 가 통째로 비어 있었다(`/* 이번 대화는 이어진다 *\/`).
+ * 이번 대화가 이어지는 것은 맞다. 값을 치르는 것은 **다음에 --resume 하는
+ * 사람**이고, 그때는 오늘 여기서 무슨 일이 있었는지 아무 데도 없다.
+ */
+{
+  save({
+    version: 1, active: 'p', level: '개발자',
+    profiles: [
+      { id: 'p', name: '스텁', kind: 'openai', baseUrl: base, auth: 'none', apiKey: '', model: '가모델', ctx: 32768, tools: true },
+      { id: 'a', name: '앤트', kind: 'anthropic', baseUrl: base, auth: 'none', apiKey: '', model: '나모델', ctx: 32768, tools: true },
+    ],
+  });
+  const s = 새세션();
+  // openai 꼴 도구 부름·결과 — anthropic 으로 가면 반드시 옮겨 적어야 하는 모양이다.
+  s.messages = [
+    { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 'c1', content: '읽은 것' },
+  ];
+  // 파일에 적는 자가 진다 — 디스크가 찼거나 홈이 읽기 전용인 자리다.
+  const 갈래 = {
+    자리: 0,
+    갈래들: [],
+    현재store: () => ({ replace() { throw new Error('EROFS: read-only file system'); } }),
+  };
+  const r = await 조용히(() => switchModel(s, 새ctx({ 갈래 }), '앤트'));
+  const 글 = 색빼기(r.out).replace(/\s+/g, ' ');
+
+  check('★★ 옮겨 적었다는 말은 그대로 나온다', /새 규격으로 옮겨 적었습니다/.test(글), 글.slice(0, 160));
+  check('★★★ 파일에 못 적은 것을 조용히 삼키지 않는다', /파일에 못 적었습니다/.test(글), 글.slice(0, 220));
+  check('★★★ 다음 --resume 이 위험하다는 것까지 말한다', /--resume/.test(글), 글.slice(0, 260));
+  check('★★ 까닭(그 자리 오류)도 그대로 싣는다', /EROFS/.test(글), 글.slice(0, 300));
+
+  /*
+   * (짝) 멀쩡히 적힌 판에는 이 경고가 **안** 나와야 한다. 거짓 경고도 결함이다.
+   */
+  const s2 = 새세션();
+  s2.messages = [
+    { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 'c1', content: '읽은 것' },
+  ];
+  let 적은횟수 = 0;
+  const 되는갈래 = {
+    자리: 0,
+    갈래들: [],
+    현재store: () => ({ replace() { 적은횟수 += 1; } }),
+  };
+  const r2 = await 조용히(() => switchModel(s2, 새ctx({ 갈래: 되는갈래 }), '앤트'));
+  const 글2 = 색빼기(r2.out).replace(/\s+/g, ' ');
+  check('  먼저: 잘 적히는 판에서는 실제로 적는다', 적은횟수 === 1, `${적은횟수}번`);
+  check('  (짝) 잘 적힌 판에는 경고가 안 나온다', !/못 적었습니다/.test(글2), 글2.slice(0, 160));
+
+  /*
+   * ★★★ **곁갈래**에서 진 것도 센다.
+   *
+   * catch 가 둘이다 — 지금 보고 있는 갈래 하나, 나머지 갈래들 하나. 위 판은
+   * 앞의 것만 밟아서, 뒤의 catch 를 도로 비워도 검사가 초록이었다(어긋내기가
+   * 그대로 샜다). 갈래를 여럿 띄워 놓고 /model 을 치는 것이 드문 일도 아니고,
+   * 그때 조용히 옛 모양으로 남는 것은 **지금 안 보고 있는 갈래**라 더 늦게 드러난다.
+   */
+  const s3 = 새세션();
+  const 도구부름 = () => ([
+    { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 'c1', content: '읽은 것' },
+  ]);
+  s3.messages = 도구부름();
+  const 곁갈래 = { messages: 도구부름(), store: { replace() { throw new Error('ENOSPC: no space left'); } } };
+  const 섞인갈래 = {
+    자리: 0,
+    갈래들: [{ messages: s3.messages }, 곁갈래],
+    현재store: () => ({ replace() { /* 이쪽은 잘 적힌다 */ } }),
+  };
+  const r3 = await 조용히(() => switchModel(s3, 새ctx({ 갈래: 섞인갈래 }), '앤트'));
+  const 글3 = 색빼기(r3.out).replace(/\s+/g, ' ');
+  check('★★★ 곁갈래에서 못 적은 것도 말한다', /파일에 못 적었습니다/.test(글3), 글3.slice(0, 220));
+  check('★★ 그 갈래의 까닭을 싣는다', /ENOSPC/.test(글3), 글3.slice(0, 280));
+  check('  곁갈래 대화도 새 규격으로 옮겨 적는다',
+    곁갈래.messages.some((m) => Array.isArray(m?.content) && m.content.some((b) => b?.type === 'tool_use')),
+    JSON.stringify(곁갈래.messages).slice(0, 120));
+
+  // 뒤 검사가 이 설정을 본다. 원래대로 돌려 둔다.
+  save({
+    version: 1, active: 'p', level: '개발자',
+    profiles: [{ id: 'p', name: '스텁', kind: 'openai', baseUrl: base, auth: 'none', apiKey: '', model: '가모델', ctx: 32768, tools: true }],
+  });
 }
 
 trace('14-치움');

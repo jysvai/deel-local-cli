@@ -76,7 +76,13 @@ export function 갈래(경로) {
   return 확장자갈래[extname(경로).toLowerCase()] ?? null;
 }
 
-/** LSP 가 쓰는 languageId. 열쇠와 다른 것만 적어 둔다. */
+/*
+ * LSP 가 쓰는 languageId.
+ *
+ * 「열쇠와 다른 것만 적어 둔다」 고 적혀 있었는데 표에는 같은 것(go·java·cpp·php·lua)도
+ * 다 들어 있다. 그리고 **들어 있어야 한다** — 아래 언어아이디() 가 `아이디[갈래] ?? 'plaintext'`
+ * 라서, 빠진 열쇠는 서버에게 plaintext 로 소개된다. 갈래 전부를 적어 두는 표다.
+ */
 const 아이디 = { ts: 'typescript', py: 'python', go: 'go', rs: 'rust', java: 'java', cs: 'csharp', cpp: 'cpp', rb: 'ruby', php: 'php', lua: 'lua' };
 
 /**
@@ -91,6 +97,16 @@ export function 언어아이디(경로) {
   if (e === '.jsx') return 'javascriptreact';
   if (e === '.tsx') return 'typescriptreact';
   if (e === '.pyi') return 'python';
+  /*
+   * C 는 C++ 가 아니다. 서버는 clangd 하나라 갈래는 같지만(`확장자갈래` 의 cpp),
+   * **소개하는 이름**까지 cpp 로 주면 clangd 가 그 파일에 C++ 규칙을 건다 —
+   * `class` 가 이름으로 쓰인 옛 C 코드, 암시적 형변환, 지정 초기화가 전부 오류로
+   * 뜬다. 바로 위에 `.js` 를 typescript 라고 소개하면 안 되는 까닭으로 적어 둔 그것이다.
+   *
+   * `.h` 는 그대로 cpp 다. C 헤더인지 C++ 헤더인지는 확장자로 못 가른다 —
+   * 편집기들도 여기서는 cpp 쪽으로 둔다.
+   */
+  if (e === '.c') return 'c';
   return 아이디[갈래(경로)] ?? 'plaintext';
 }
 
@@ -119,16 +135,49 @@ export function 어디있나(이름, env = process.env) {
    * 서고, 부르면 6ms 만에 "서버가 없습니다" 가 돌아온다 — 있다고 해 놓고
    * 안 되는, 제일 알아채기 어려운 꼴이다.
    */
-  const 확장 = process.platform === 'win32'
-    ? [...String(env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean), '']
-    : [''];
-  for (const 길 of 길들) {
-    for (const e of 확장) {
-      const p = join(길, 이름 + e);
-      try {
-        // 폴더가 이름만 같은 경우가 있다. 파일인지까지 본다.
-        if (existsSync(p) && statSync(p).isFile()) return p;
-      } catch { /* 못 읽는 자리는 없는 것으로 친다 */ }
+  /*
+   * 그리고 **모든 폴더에서** 확장자 붙은 것을 먼저 본다 (2.0.0 6회차 Gemini 서버6bo LSV1·LSV2).
+   *
+   * 한 폴더 안에서만 먼저 봤더니 앞 폴더의 sh 스크립트가 뒤 폴더의 .cmd 를 이겼고, sh 만
+   * 있으면 그걸 돌려줬다 — 바로 위에서 막으려던 그 꼴이다. 윈도우에서 이름 그대로(`''`)를
+   * 보는 것은 이름에 이미 PATHEXT 확장자가 붙어 있을 때(`tls.cmd`)뿐이다. 확장자 없는
+   * 파일은 윈도우가 못 돌린다. 두 번 도는 사이에도 PATH 차례는 그대로 지킨다.
+   */
+  const 윈도우 = process.platform === 'win32';
+  /*
+   * 빈 PATHEXT 는 **안 적은 것과 같이** 본다 (사냥6 막판-뒷단).
+   *
+   * `??` 는 빈 글을 안 막는다. `PATHEXT=` 로 비워 둔 판(또는 `;;` 만 든 판)에서는 이
+   * 목록이 통째로 비고, 그러면 아래 가장 안쪽 되풀이가 **한 번도 안 돌아** 무엇을 물어도
+   * null 이었다 — 옛 코드는 목록 끝에 `''` 가 늘 있어서 적어도 이름 그대로는 찾았다.
+   * `이미붙음` 도 빈 목록에서는 거짓이라, 윈도우가 그대로 돌릴 수 있는 완전한 이름
+   * (`tls.cmd`)조차 못 찾는다. 화면에는 언어 서버가 통째로 안 깔린 것으로 보인다.
+   */
+  const 기본확장 = '.COM;.EXE;.BAT;.CMD';
+  const 적힌것 = 윈도우 ? String(env.PATHEXT ?? 기본확장).split(';').filter(Boolean) : [''];
+  const 붙일것 = 적힌것.length ? 적힌것 : 기본확장.split(';');
+  /*
+   * 이름에 **이미 PATHEXT 확장자가 붙어 있으면 그 이름 그대로가 먼저**다 (8회차 · 바깥).
+   *
+   * 윈도우도 그렇게 한다 — 확장자가 붙은 이름은 PATHEXT 를 더 붙이지 않고 PATH 를
+   * 그 이름으로 훑는다. 붙여 보는 쪽을 먼저 돌던 때는 **뒤 폴더의 엉뚱한 파일이
+   * 앞 폴더의 진짜 파일을 이겼다** — PATH 를 `A;B` 로 두고 `A\tls.cmd` 와
+   * `B\tls.cmd.EXE` 를 놔두면 `어디있나('tls.cmd')` 가 B 쪽을 줬다. PATH 차례는
+   * 「앞 폴더가 이긴다」 가 전부인 규칙이라, 그게 깨지면 어느 것이 뜰지 알 수 없다.
+   *
+   * 확장자가 없는 이름(`tls`)은 여태처럼 붙여 찾는다 — 확장자 없는 파일은 윈도우가 못 돌린다.
+   */
+  const 이미붙음 = 윈도우 && 붙일것.some((e) => e.toLowerCase() === extname(이름).toLowerCase());
+  const 차례 = 이미붙음 ? [[''], 붙일것] : [붙일것];
+  for (const 확장 of 차례) {
+    for (const 길 of 길들) {
+      for (const e of 확장) {
+        const p = join(길, 이름 + e);
+        try {
+          // 폴더가 이름만 같은 경우가 있다. 파일인지까지 본다.
+          if (existsSync(p) && statSync(p).isFile()) return p;
+        } catch { /* 못 읽는 자리는 없는 것으로 친다 */ }
+      }
     }
   }
   return null;
@@ -201,17 +250,32 @@ export async function 프로젝트갈래(뿌리, env = process.env) {
   const 약속 = (async () => {
   let 답 = null;
   try {
-    const 셈 = new Map();
-    const 첫파일 = new Map();
-    for (const f of await walk(뿌리, { limit: 4000 })) {
-      const g = 갈래(f.path);
-      if (!g) continue;
-      셈.set(g, (셈.get(g) ?? 0) + 1);
-      if (!첫파일.has(g)) 첫파일.set(g, f.path);
-    }
-    const 차례 = [...셈.entries()].sort((a, b) => b[1] - a[1]);
-    for (const [g] of 차례) {
-      if (고르기(g, env)) { 답 = { 갈래: g, 대표파일: 첫파일.get(g), 개수: 셈.get(g) }; break; }
+    /*
+     * 훑기 한도는 **셀 것이 하나도 없는 파일**에도 똑같이 나간다 (8회차 · 바깥).
+     *
+     * 문서·자료가 앞에 잔뜩 있는 저장소가 흔하다. 재 봤다 — `.md` 4,200개 뒤에 `.ts`
+     * 20개를 둔 폴더에서 한도 4,000 이 md 로 다 나가고 프로젝트갈래 가 **null** 이었다.
+     * 그러면 Def·Refs 는 「이 폴더에서 쓸 수 있는 언어 서버가 없습니다」 라고 한다 —
+     * 타입스크립트가 가득한 폴더에서. 없는 것과 못 본 것은 다르다.
+     *
+     * 그래서 **잘렸는데 쓸 만한 갈래를 하나도 못 찾았을 때만** 한 번 더, 더 넓게 훑는다.
+     * 한 번에 넓게 훑지 않는 까닭은 값 때문이다 — 멀쩡한 저장소는 첫 판에서 끝난다.
+     */
+    for (const 한도 of [4000, 60000]) {
+      const 훑은것 = await walk(뿌리, { limit: 한도 });
+      const 셈 = new Map();
+      const 첫파일 = new Map();
+      for (const f of 훑은것) {
+        const g = 갈래(f.path);
+        if (!g) continue;
+        셈.set(g, (셈.get(g) ?? 0) + 1);
+        if (!첫파일.has(g)) 첫파일.set(g, f.path);
+      }
+      const 차례 = [...셈.entries()].sort((a, b) => b[1] - a[1]);
+      for (const [g] of 차례) {
+        if (고르기(g, env)) { 답 = { 갈래: g, 대표파일: 첫파일.get(g), 개수: 셈.get(g) }; break; }
+      }
+      if (답 || !훑은것.잘림) break;
     }
   } catch { 답 = null; }
   return 답;

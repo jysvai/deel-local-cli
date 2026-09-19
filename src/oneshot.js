@@ -10,27 +10,32 @@
 //
 //   그래서 '묻는 자리' 를 전부 없앤 길을 따로 낸다. 에이전트 루프는 그대로 쓴다 —
 //   여기서 루프를 다시 짜면 두 벌이 되고, 언젠가 한쪽만 고쳐진다.
-import { c, mark, clip } from './ui/ansi.js';
+import { statSync } from 'node:fs';
+import { c, mark, clip, 화면글거르기 } from './ui/ansi.js';
 import { 규칙모으기, 정책읽기 } from './safety/policy.js';
 import { 훅읽기 } from './safety/hooks.js';
 import { 에이전트읽기 } from './agent/agents.js';
-import { 프로젝트설정줄들 } from './safety/trust.js';
 import { 스키마읽기, 맞나, 답에서JSON뽑기, 시킬말 as 스키마시킬말 } from './agent/outschema.js';
 import { 남길것읽기 } from './safety/shellenv.js';
 import { 받기설정 } from './safety/authcmd.js';
 import { run } from './agent/loop.js';
-import { Session } from './agent/session.js';
+import { Session, 요청잘리나, 못박을길이 } from './agent/session.js';
+import { 양수크기 } from './agent/models.js';
+import { estimateTokens } from './backend/tokens.js';
 import { makeScope } from './safety/guard.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
+import { 임시치우기 } from './tools/convert.js';
 import { History } from './safety/undo.js';
 import { Audit, 열쇠묻기 } from './safety/audit.js';
-import { activeProfile, load, resolveKey, 잠금소식, 열쇠탈소식, 프로젝트설정소식 } from './config.js';
+import { activeProfile, load, resolveKey, 소식줄들 } from './config.js';
 import { 말 as 옮긴말 } from './i18n/index.js';
 import { 알림채움, 알림말 } from './backend/retry.js';
 import { 전선붙이기, 세션이름짓기 } from './backend/wire.js';
 import { newId } from './agent/store.js';
 import { discover, loadCommand } from './skills/discover.js';
 import { 명령들 } from './cmdnames.js';
+// 슬래시 명령을 찾는 규칙은 대화 화면과 **같은 것 하나**를 쓴다 (commands.js 의 슬래시명령찾기 머리말).
+import { 슬래시명령찾기, 비슷한슬래시명령 } from './commands.js';
 import { allowEndpoint, setOffline } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나, 봉인됐나 } from './safety/runmode.js';
 import { 주소가리기 } from './safety/secrets.js';
@@ -86,7 +91,39 @@ export const EXIT = {
    * 이건 스키마나 시킨 말을 바꾸는 일이다.
    */
   schema: 7,
+  /*
+   * 인자를 잘못 줬다 — 모르는 깃발 · 값 없는 깃발 · 모르는 모드 이름 · 못 읽는 --ctx.
+   *
+   * 여기에 **따로** 둔다. 처음에는 `--work` 오타를 2 로 끝냈는데, 2 는 이 표에서 이미
+   * 「걸음 수 상한」 이다. `deel run --jsn …` 을 CI 에 건 사람은 오타 하나로 「일이 커서
+   * 멈췄다」 를 받고 작업을 쪼개러 간다. 고칠 자리가 스크립트 한 줄인데.
+   *
+   * 64 는 sysexits.h 의 EX_USAGE 다. 1~7 과 안 겹치고, 셸·CI 도구들이 「부른 모양이
+   * 틀렸다」 로 이미 알아듣는 수라 새로 지어내지 않았다. 이 경우는 모델을 한 번도 안 부른다.
+   */
+  usage: 64,
 };
+
+/**
+ * 모델을 부르기 전에 선 실패 한 덩이 (사냥5 B5-10).
+ *
+ * 성공한 `--json` 에는 model 과 usage.prompt·cacheRead·cacheWrite·못잰것 이 있는데, 모델을
+ * 부르기 전에 선 실패(64 · 7 · 시킬 말 없음 · 없는 뿌리 · 연결 없음 · 대화 화면 전용)에는
+ * 그 칸들이 없었다. `jq .usage.prompt` 는 null 을, 모양을 못 박은 파서는 오류를 낸다 —
+ * 실패를 제일 잘 다뤄야 할 자리에서 파서가 먼저 죽는다. 칸은 늘 같게 두고 값만 비운다.
+ *
+ * bin/deel.js 의 인자탈·마지막 catch 도 이걸로 짓는다. 세 벌이면 언젠가 한 벌만 고친다.
+ */
+export function 실패덩이({ reason, code, why = '', model = null }) {
+  return {
+    ok: false, reason, code, text: '',
+    tools: 0, steps: 0,
+    usage: { in: 0, out: 0, prompt: 0, cacheRead: 0, cacheWrite: 0, calls: 0, ms: 0, 못잰것: 0, retries: 0 },
+    model,
+    ms: 0,
+    ...(why ? { why } : {}),
+  };
+}
 
 /**
  * 표준입력에 실려 온 말을 통째로 읽는다.
@@ -146,12 +183,16 @@ export async function runOnce(opts = {}) {
   //   표준출력 — 모델의 마지막 답만. 그래야 > 파일 이나 | grep 이 그대로 먹는다.
   //   표준오류 — 도구가 무엇을 했는지. 사람이 볼 것이지 넘겨줄 것이 아니다.
   // 이걸 섞으면 파이프 뒤에 붙은 명령이 도구 기록까지 받아 먹는다.
-  const 삐끗 = (s = '') => process.stderr.write(s + '\n');
+  // 도구 기록에는 모델이 적은 명령·경로가 실린다. **터미널**이면 들어온 제어 순서를 뗀다(ansi.js 화면글거르기) —
+  // 파일·파이프로 받는 쪽은 적힌 그대로가 필요하므로 건드리지 않는다.
+  const 삐끗 = (s = '') => process.stderr.write((process.stderr.isTTY ? 화면글거르기(s, { 색남김: true }) : s) + '\n');
   const 곁 = (s = '') => { if (!quiet) 삐끗(s); };
 
   // 아래 내놓기 가 이걸 본다 — 그래서 읽기 전에 선언해 둔다. 값은 시킬 말을
   // 정하기 전에 채운다 (모델을 부르기 전에 스키마부터 읽는 자리).
   let 출력스키마 = null;
+  // 실패덩이에 실을 모델 이름 (사냥5 B5-10). 프로필을 찾기 전에 선 실패는 null 이다.
+  let 알려진모델 = null;
 
   const 내놓기 = (r) => {
     /*
@@ -167,6 +208,15 @@ export async function runOnce(opts = {}) {
     // 이건 아무 말 없이 한다 — 사용자가 띄우라고 한 적이 없는 것이라,
     // 껐다는 말부터 하면 "그건 또 뭐냐" 가 된다.
     언어서버다끄기().catch(() => {});
+    /*
+     * 문서를 글로 바꾸며 떨군 임시 파일도 거둔다 (tools/convert.js 의 임시치우기).
+     *
+     * 아래 `root` 를 안 쓰고 같은 식을 다시 쓴다 — 이 자는 설정을 못 읽어 일찍
+     * 끝나는 길에서도 지나가는데, 그때는 `root` 가 아직 안 만들어져 있다.
+     * 그 자리에서 ReferenceError 가 나면 끝맺음 자체가 무너진다.
+     */
+    try { 임시치우기(opts.root ? String(opts.root) : process.cwd()); }
+    catch { /* 못 거둬도 이 잡을 끝내는 데는 지장 없다 */ }
     if (json) process.stdout.write(JSON.stringify(r) + '\n');
     /*
      * 모양을 못 박았으면 표준출력은 **그 JSON 하나**다.
@@ -185,7 +235,12 @@ export async function runOnce(opts = {}) {
      * 무엇이 왔었는지는 표준오류에 이미 적혀 있다.
      */
     else if (출력스키마) { /* 일부러 아무것도 안 낸다 */ }
-    else if (r.text) process.stdout.write(r.text.endsWith('\n') ? r.text : r.text + '\n');
+    else if (r.text) {
+      // 사람 눈 앞의 터미널이면 답에 섞인 제어 순서를 뗀다. 파이프(`| jq` · `> 파일`)는 받은 글 그대로 둔다 —
+      // 거기서는 명령으로 읽힐 터미널이 없고, 바이트를 바꾸면 스크립트가 받은 답이 모델이 낸 답과 달라진다.
+      const 낼글 = process.stdout.isTTY ? 화면글거르기(r.text) : r.text;
+      process.stdout.write(낼글.endsWith('\n') ? 낼글 : 낼글 + '\n');
+    }
     return r.code;
   };
   // 시작도 못 한 실패. --quiet 여도 이유는 반드시 적는다 — 스크립트를 고칠 사람이 볼 유일한 글이다.
@@ -196,8 +251,7 @@ export async function runOnce(opts = {}) {
       // 예전대로 1 이다 — 여기가 EXIT.error 로 못 박혀 있어서, 스키마 파일을
       // 못 읽은 것과 게이트웨이가 없는 것이 같은 1 로 나갔다. 고칠 자리가
       // 서로 완전히 다른 둘이라 스크립트가 갈라 대응할 수 없었다.
-      ok: false, reason, code: EXIT[reason] ?? EXIT.error, text: '', why: message,
-      tools: 0, steps: 0, usage: { in: 0, out: 0, calls: 0, ms: 0, retries: 0 }, ms: 0,
+      ...실패덩이({ reason, code: EXIT[reason] ?? EXIT.error, why: message, model: 알려진모델 }),
     });
   };
 
@@ -218,6 +272,25 @@ export async function runOnce(opts = {}) {
     }
   }
 
+  /*
+   * ── 없는 --root 를 만들어 놓고 그 안에서 일을 했다 ──────────────────
+   *
+   * 뿌리를 안 봤다. 기록·되돌리기 자리를 만드는 쪽이 `mkdir -p` 로 폴더를 통째로
+   * 지어 주니, `deel run --root D:\일감\저장소` 에서 드라이브 글자 하나 틀린 배치가
+   * **빈 폴더를 새로 만들고** 그 안에서 「없는 파일은 만든다」 대로 일을 해 0 으로
+   * 끝났다. 진짜 저장소는 그대로다. 스크립트는 초록불이다.
+   *
+   * 시킬 말을 읽기 **전에** 본다. 표준입력이 열린 채면 거기서 먼저 서 버린다.
+   */
+  if (opts.root != null) {
+    const 뿌리 = String(opts.root);
+    let 폴더인가 = false;
+    try { 폴더인가 = statSync(뿌리).isDirectory(); } catch { 폴더인가 = false; }
+    if (!폴더인가) {
+      return 못함('no-root', `작업 폴더가 없습니다 (--root): ${뿌리} — 없는 폴더를 만들어 그 안에서 일하지 않습니다`);
+    }
+  }
+
   // ── 시킬 말 ───────────────────────────────────────────────────────────
   // 인자로 준 것이 먼저다. 없을 때만 표준입력을 읽는다 —
   // 둘 다 있을 때 무엇이 이기는지가 헷갈리면 스크립트가 조용히 엉뚱한 일을 한다.
@@ -227,28 +300,41 @@ export async function runOnce(opts = {}) {
     return 못함('no-prompt', '무엇을 시킬지 적어 주세요 — deel run "..." 또는 echo "..." | deel run');
   }
 
-  const cfg = load();
-  const prof = activeProfile(cfg);
-  if (!prof) return 못함('no-config', '저장된 연결이 없습니다. deel setup 을 먼저 실행하세요.');
-
-  // 열쇠를 방금 잠갔으면 알린다. 여기서는 stdout 을 안 쓴다 —
-  // 배치로 부르는 쪽이 stdout 을 JSON 으로 읽고 있을 수 있다.
-  const 잠금 = 잠금소식();
-  if (잠금) { try { process.stderr.write(`  ${잠금}\n`); } catch { /* 못 써도 그만 */ } }
-
   /*
-   * 프로젝트 설정을 안 읽었거나 일부를 걷어냈으면 표준오류로 낸다.
+   * 작업 폴더를 **설정보다 먼저** 정한다.
    *
-   * 배치 자리라 더 중요하다 — 사람이 앞에 없으면 「내가 적어 둔 설정이
-   * 안 먹고 있다」 를 알아챌 다른 길이 없다. 표준출력은 JSON 을 읽는
-   * 쪽이 쓰고 있으므로 여기도 섞지 않는다.
+   * 여기는 `load()` 를 뿌리 없이 부르고 뿌리는 스무 줄 아래에서 정했다. 그러면
+   * `deel run --root <폴더>` 에서 설정·신뢰·금지는 켠 자리 것을 보고 도구는 준 폴더를
+   * 고친다 — acp/serve.js 의 방만들기가 이미 고친 바로 그 섞임이다.
    */
-  for (const 줄 of 프로젝트설정줄들(프로젝트설정소식())) {
-    if (!줄) continue;
-    try { process.stderr.write(줄 + String.fromCharCode(10)); } catch { /* 못 써도 그만 */ }
-  }
-
   const root = opts.root ? String(opts.root) : process.cwd();
+  /*
+   * 설정을 못 읽어도 **이 문의 끝맺음으로** 끝낸다.
+   *
+   * 여기서 던지면 bin/deel.js 의 마지막 catch 가 받아 표준출력에 맨 글을 찍었다.
+   * `--json` 으로 부른 스크립트는 JSON 대신 「오류 설정 파일을…」 을 받아 파싱에서
+   * 죽고, 진짜 까닭은 그 파싱 오류에 묻힌다. 도움말은 「답은 표준출력, 기록은
+   * 표준오류」 라고 약속한다 — 못함() 이 그 약속대로 나눠 적는다.
+   */
+  let cfg;
+  try { cfg = load({ root }); }
+  catch (err) { return 못함('config', String(err?.message ?? err)); }
+  // 모아 둔 소식을 표준오류로 비운다 (아래 conn 을 지은 자리의 머리말).
+  const 소식비우기 = () => {
+    for (const 줄 of 소식줄들(cfg)) {
+      if (!줄) continue;
+      try { process.stderr.write(`${줄}\n`); } catch { /* 못 써도 그만 */ }
+    }
+  };
+  const prof = activeProfile(cfg);
+  if (!prof) {
+    // 연결이 없어 여기서 끝나도 소식은 낸다 — 「이 폴더 설정은 안 믿어서 안 읽었다」 가
+    // 바로 연결이 없는 까닭일 수 있다.
+    소식비우기();
+    return 못함('no-config', '저장된 연결이 없습니다. deel setup 을 먼저 실행하세요.');
+  }
+  알려진모델 = prof.model ?? null;
+
   const conn = {
     kind: prof.kind, base: prof.baseUrl, auth: prof.auth,
     key: resolveKey(prof), model: prof.model,
@@ -260,9 +346,11 @@ export async function runOnce(opts = {}) {
      * 그 401 은 화면에서 「열쇠가 틀렸다」 와 구별이 안 된다.
      */
     열쇠받기: 받기설정(prof, { 정책값: 정책읽기().값 }),
-    ctx: opts.ctx ?? prof.ctx ?? CTX_DEFAULT,
+    // 0·음수·숫자 아님은 안 적은 것으로 친다 — 창 0 이면 접기가 영영 안 돈다 (사냥5 L5-6, models.js 의 양수크기).
+    ctx: 양수크기(opts.ctx) ?? 양수크기(prof.ctx) ?? CTX_DEFAULT,
     // 답 길이 상한 — deel --max-tokens 32k 로 높일 수 있다(대화 화면의 /out 과 같은 값).
-    maxTokens: opts.maxTokens ?? prof.maxTokens ?? null,
+    // 0 이면 모든 요청이 바닥값 512 로 묶인다 (사냥5 L5-6).
+    maxTokens: 양수크기(opts.maxTokens) ?? 양수크기(prof.maxTokens) ?? null,
     streaming: prof.streaming ?? false,
     tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
     vision: prof.vision ?? false,
@@ -282,14 +370,14 @@ export async function runOnce(opts = {}) {
   };
 
   /*
-   * 잠근 열쇠를 못 풀었으면 그 까닭을 표준오류로 낸다.
+   * 모아 둔 소식을 **한 자리에서** 표준오류로 비운다 (config.js 의 소식줄들).
    *
-   * 배치로 부르는 쪽은 표준출력을 JSON 으로 읽으므로 거기에 섞으면 안 된다.
-   * 그렇다고 조용히 넘기면 여기가 더 나쁘다 — 아무도 안 보고 있는 자리라
-   * 401 하나 남기고 끝난다. 위 잠금소식 과 같은 자리, 같은 규칙이다.
+   * 여기는 잠금·프로젝트설정·열쇠탈 셋을 따로 당겼고, 관리 정책이 깨졌다는
+   * 넷째는 안 당겼다. 배치는 사람이 안 보는 자리라, 금지가 통째로 안 걸리는
+   * 채로 돌아도 알 길이 없었다. 열쇠탈은 resolveKey 뒤라야 생기므로 conn 을
+   * 지은 여기서 비운다. 표준출력은 JSON 을 읽는 쪽이 쓰므로 섞지 않는다.
    */
-  const 열쇠탈 = 열쇠탈소식();
-  if (열쇠탈) { try { process.stderr.write(`  ${열쇠탈}\n`); } catch { /* 못 써도 그만 */ } }
+  소식비우기();
 
   /*
    * 자물쇠는 대화 화면과 똑같이 건다. 비대화라고 느슨해질 이유가 없다 —
@@ -328,6 +416,36 @@ export async function runOnce(opts = {}) {
   // 지금 어느 실행 모드인가. 화면이 첫 줄에 이걸 그린다(ui/status.js).
   // session 에 실어 두는 까닭은, 대화 도중 /model 로 옮겨도 같은 자리를 보게 하려는 것이다.
   session.실행모드 = 실행모드;
+
+  /*
+   * ── 열쇠를 받아 오는 명령 (safety/authcmd.js) ───────────────────────
+   *
+   * 여기는 두 갈고리를 안 걸었다. backend/adapter.js 는 `물어보기` 가 없으면
+   * **아무 말 없이** 명령을 띄우고, 못 받은 까닭은 `onAuth` 로만 알린다. 그래서
+   * 배치에서는 사내 로그인 명령이 조용히 돌고, 실패하면 401 한 줄만 남았다.
+   *
+   * 물을 사람이 없는 문이라 묻지는 않는다 — 무엇을 띄우는지 **먼저 적고** 띄운다.
+   * 명령은 이 PC 설정이나 관리 정책에서만 온다(저장소 설정의 열쇠받기는 읽을 때
+   * 걷힌다 — safety/trust.js). 적는 곳은 표준오류다.
+   */
+  if (conn.열쇠받기) {
+    const 알림 = (글) => { try { process.stderr.write(`  ${글}\n`); } catch { /* 못 써도 그만 */ } };
+    session.열쇠물어보기 = async (설정) => {
+      알림(`${mark.warn} ${c.gray('열쇠를 받아 오는 명령을 띄웁니다:')} ${clip(String(설정?.명령 ?? ''), 88)}`);
+      return true;
+    };
+    session.onAuth = (것) => {
+      if (것?.type === '시작') return 알림(c.gray(옮긴말('auth.waiting')));
+      if (것?.type === '끝') return undefined;
+      if (것?.ok) {
+        const 분 = 것.만료 ? Math.max(0, Math.round((것.만료 - Date.now()) / 60000)) : '?';
+        return 알림(`${mark.ok} ${c.gray(옮긴말('auth.got', { 분 }))}`);
+      }
+      알림(`${mark.warn} ${c.gray(옮긴말('auth.failed', { 왜: 것?.왜 ?? '?' }))}`);
+      if (것?.보인것) 알림(`  ${c.gray(clip(String(것.보인것), 88))}`);
+      return undefined;
+    };
+  }
 
   /*
    * 전선 카드와 이 실행의 이름 (backend/wire.js).
@@ -370,7 +488,23 @@ export async function runOnce(opts = {}) {
   if (시킬말.startsWith('/')) {
     const [부른이름 = '', ...나머지] = 시킬말.slice(1).trim().split(/\s+/);
     const 경로인가 = 부른이름.includes('/') || 부른이름.includes('\\');
-    if (부른이름 && !경로인가) {
+    /*
+     * ── 홑슬래시 `/` 하나 (8회차 그밖 한번쓰기1) ──────────────────────────
+     *
+     * 이름이 빈 문자열이라 아래 갈래를 통째로 건너뛰었고, `/` 가 **그대로 모델에게**
+     * 갔다 — 위 머리말이 막겠다고 적어 둔 바로 그 결말(슬래시 낱말 하나를 받은 모델이
+     * "무슨 뜻인지 모르겠다" 고 답하고 0 으로 끝남)이 여기서 되살아나 있었다. 재 보니
+     * 모델을 실제로 한 번 부르고 종료코드는 0 이었다.
+     *
+     * 스크립트가 `deel run "/$CMD"` 를 적어 두고 CMD 가 비면 이 자리로 온다. 그때
+     * 초록불이 켜지면 안 돈 일이 돈 것으로 넘어간다. 경로도 아니고 이름도 없으니
+     * 다른 두 실패와 같은 자리에서 끝낸다.
+     */
+    if (!부른이름) {
+      return 못함('no-command', '슬래시 뒤에 명령 이름이 없습니다 — `/이름` 처럼 적으세요'
+        + ' (.claude/commands · .deel/commands 에 적어 둔 것만 됩니다).');
+    }
+    if (!경로인가) {
       const 인자 = 나머지.join(' ');
       const 낮춘 = 부른이름.toLowerCase();
       /*
@@ -383,10 +517,14 @@ export async function runOnce(opts = {}) {
        * 일을 하는 것이 제일 나쁘다. 깔린 것에 따라 뜻이 흔들리면 안 된다.
        */
       const 붙박이 = !!명령들[낮춘];
-      // 찾는 차례는 대화 화면과 같다 — 적은 그대로 · 대소문자 무시 · 꼬리 이름.
-      const 찾은 = 붙박이 ? null : (found.commands.find((x) => x.name === 부른이름)
-        ?? found.commands.find((x) => x.name.toLowerCase() === 낮춘)
-        ?? found.commands.find((x) => x.name.split(':').pop() === 낮춘));
+      /*
+       * 찾는 차례는 대화 화면과 같다 — 적은 그대로 · 대소문자 무시 · 꼬리 이름.
+       *
+       * 그 차례를 여기와 commands.js 에 **두 벌로** 적어 두고 있었고, 둘 다 꼬리를
+       * 낮추지 않아 `ext:ReviewCode` 가 어느 창에서도 안 걸렸다 (8회차 그밖 한번쓰기·명령2).
+       * 두 벌이니 한쪽만 고치면 또 갈린다. 그래서 규칙은 commands.js 한 군데에만 둔다.
+       */
+      const 찾은 = 붙박이 ? null : 슬래시명령찾기(found.commands, 부른이름);
       if (붙박이) {
         return 못함('repl-only', `/${부른이름} 은 대화 화면에서만 도는 명령입니다.`
           + ' 여기서 되는 것은 파일로 적어 둔 슬래시 명령뿐입니다 (.claude/commands · .deel/commands).');
@@ -396,9 +534,7 @@ export async function runOnce(opts = {}) {
         곁(`  ${c.cyan('⌘')} ${찾은.name} ${c.gray(찾은.source)}`);
         시킬말 = text;
       } else {
-        const 비슷 = found.commands
-          .filter((x) => x.name.includes(낮춘) || 낮춘.includes(x.name.split(':').pop()))
-          .slice(0, 5).map((x) => '/' + x.name);
+        const 비슷 = 비슷한슬래시명령(found.commands, 부른이름).map((x) => '/' + x.name);
         return 못함('no-command', `모르는 명령 /${부른이름}`
           + (비슷.length ? ` — 비슷한 것: ${비슷.join('  ')}` : ' — 이 폴더에서 찾은 슬래시 명령이 없습니다.'));
       }
@@ -413,7 +549,6 @@ export async function runOnce(opts = {}) {
   // 승인은 기본이 거부다. 반대로 하면 안 된다 — 아무도 안 보는 자리에서
   // 되돌릴 수 없는 명령이 조용히 돌아가는 것이 이 프로그램이 제일 피하려는 일이다.
   // 정말 맡기고 싶은 사람은 --yes 로 그 뜻을 명시한다.
-  const 승인필요 = session.mode !== 'auto';
   const 자동승인 = opts.yes === true;
   /*
    * 사람이 적어 둔 훅을 읽는다 (safety/hooks.js).
@@ -467,12 +602,20 @@ export async function runOnce(opts = {}) {
     },
   };
 
-  // 거부당할 것을 모델에게 미리 알려 준다.
-  //
-  // 거부만 하고 이유를 안 알리면 모델은 같은 호출을 몇 번이고 다시 한다.
-  // 사람이 '안 돼요' 라고 한 줄 알고, 다시 물어보면 이번엔 된다고 믿는다.
-  // 그러면 걸음 수만 다 쓰고 아무것도 못 한 채 끝난다.
-  const 보낼글바탕 = (승인필요 && !자동승인)
+  /*
+   * 거부당할 것을 모델에게 미리 알려 준다.
+   *
+   * 거부만 하고 이유를 안 알리면 모델은 같은 호출을 몇 번이고 다시 한다.
+   * 사람이 '안 돼요' 라고 한 줄 알고, 다시 물어보면 이번엔 된다고 믿는다.
+   * 그러면 걸음 수만 다 쓰고 아무것도 못 한 채 끝난다.
+   *
+   * 가르는 잣대는 **위 confirm 과 같은 것 하나**여야 한다 (8회차 그밖 한번쓰기2).
+   * 여기는 `승인필요 && !자동승인` 이었고 그 `승인필요` 가 `session.mode !== 'auto'`
+   * 였는데, `deel run` 의 기본 모드가 바로 auto 다 — 그래서 이 안내가 붙는 판이 하나도
+   * 없었다(재 보니 `deel run 아무말` 이 보낸 사람말은 시킨 말 그대로였다). 정작 confirm 은
+   * 모드를 안 보고 --yes 가 아니면 무조건 거부한다. 말과 행동이 갈려 있던 자리다.
+   */
+  const 보낼글바탕 = (!자동승인)
     ? `${시킬말}\n\n(비대화 모드다. 사람이 없어 승인을 물어볼 수 없고, 승인이 필요한 도구 호출은 자동으로 거부된다.`
       + ' 승인 없이 되는 방법을 골라라. 그래도 안 되면 무엇이 막혔는지 말로 알려라.)'
     : 시킬말;
@@ -499,17 +642,58 @@ export async function runOnce(opts = {}) {
     } catch { /* 못 물어보면 설정값 그대로 간다. 여기서 멈출 일은 아니다 */ }
   }
 
+  /*
+   * ── 시킬 말 하나가 창보다 크면 **부르기 전에** 선다 (사냥5 B5-01) ──────────────
+   *
+   * 162k 자를 표준입력으로 먹인 배치가 ok:true · 0 으로 끝났다. 루프는 창이 넘치자 대화를
+   * 비우고 시킨 말을 앞 1,200자만 다시 박았다(session.js 의 못박은요청) — 모델은 그 앞부분만
+   * 보고 「다 했다」 고 답했다. 한 방 실행에는 사람이 보고 나눠서 다시 시킬 다음 턴이 없다.
+   * 시킬 말만으로 창을 넘으면 어떻게 돌려도 모델은 전부를 못 본다. 값을 쓰기 전에 말한다.
+   *
+   * 셈은 짐작(backend/tokens.js)이라 **넘친 게 분명할 때만** 선다. 문턱 근처는 돌려 보고,
+   * 비우느라 시킨 말이 잘리면 아래 reset 갈래가 선다.
+   */
+  const 시킬말토큰 = estimateTokens(보낼글);
+  if (시킬말토큰 > conn.ctx) {
+    return 못함('too-big',
+      `시킬 말이 컨텍스트 창보다 큽니다 — 약 ${시킬말토큰.toLocaleString('en-US')} 토큰 · 창 ${Number(conn.ctx).toLocaleString('en-US')} 토큰.`
+      + ' 모델은 앞부분만 보게 되므로 부르지 않았습니다. 나눠서 시키거나, 창이 더 큰 모델이면 --ctx 로 알려 주세요.');
+  }
+
   // 종합 모드면 이 한마디를 보고 알맞은 작업 모드로 옮긴다. 대화 화면과 같다.
+  //
+  // 딱 한 가지가 다르다 — **여기는 물어볼 사람이 없다.** 대화 화면은 겹친
+  // 요청을 계획 모드로 보내고 턴 끝에 승인 창을 띄우지만, 여기서는 그 창이
+  // 뜰 자리도 이어 갈 턴도 없다. 계획 모드는 파일을 고치는 도구가 없으니
+  // 계획 한 장을 찍고 끝난다 — 시킨 일의 절반도 못 준다.
   session.routed = null;
   if (session.work === 'auto') {
-    const 골라진 = route(시킬말);
+    const 골라진 = route(시킬말, { 승인받을수있나: false });
     if (골라진.mode) {
       session.routed = 골라진.mode;
       const w = getWork(골라진.mode);
       곁(`  ${c.hcyan(w.glyph)} ${c.gray(`${w.name} (${w.en}) — 말 속에 ${골라진.why} 가 있어서`)}`);
-    } else if (골라진.일부러) {
-      // 일부러 안 보낸 자리만 말한다. 대화 화면과 같은 규칙이다 (repl.js 참고).
+    } else if (골라진.일부러 && !골라진.겹침) {
+      /*
+       * 일부러 안 보낸 자리만 말한다. 대화 화면과 같은 규칙이다 (repl.js 참고).
+       *
+       * 겹친 요청일 때는 여기서 안 찍는다 — 바로 아래가 같은 이야기를 더
+       * 온전히 하고 있어서, 둘 다 찍으면 한 사실을 두 줄로 말하게 된다.
+       */
       곁(`  ${c.gray(`◇ 종합 그대로 — ${골라진.why}`)}`);
+    }
+    /*
+     * 겹친 요청이었다는 것은 말해 준다.
+     *
+     * 대화 화면은 「계획부터 냅니다 · 승인하면 그대로 이어서」 라고 적는다.
+     * 여기서는 그 절차가 없으니 **다르게 한다** — 그러면 다르게 한다고
+     * 적어야 한다. 안 적으면 계획을 먼저 볼 줄 알았던 사람이 파일이 이미
+     * 바뀐 것을 나중에 본다.
+     */
+    if (골라진.겹침) {
+      곁(`  ${c.gray('◇ 계획과 실행이 같이 있지만 여기는 승인받을 사람이 없어')}`
+        + ` ${c.white('한 번에 끝까지')} ${c.gray('합니다.')}`
+        + ` ${c.gray('계획을 먼저 보시려면 대화 화면에서 하세요.')}`);
     }
   }
 
@@ -527,6 +711,8 @@ export async function runOnce(opts = {}) {
   let 답 = null;
   // 서버가 끝났다는 말 없이 멈춘 적이 있나. 뒤에 오는 done 이 이걸 못 지운다.
   let 말없이끊겼나 = false;
+  // 비우느라 시킨 말 뒤가 잘렸나 (사냥5 B5-01). 무엇으로 끝났든 이것이 까닭이 된다.
+  let 시킨말잘림 = false;
 
   try {
     // 하위 작업 안쪽에서 온 이벤트는 그 겹만큼 들여 쓴다.
@@ -619,7 +805,7 @@ export async function runOnce(opts = {}) {
           break;
 
         /*
-         * 종합 모드가 턴 도중에 단계를 옮겼다 (agent/단계.js).
+         * 종합 모드가 턴 도중에 단계를 옮겼다 (agent/phase.js).
          *
          * 한 방 실행에서 특히 남겨야 하는 줄이다. `deel -p` 는 잡·CI 에서 돌고
          * 그 기록만 나중에 남는다 — 「계획만 내고 끝날 줄 알았는데 파일이
@@ -648,7 +834,11 @@ export async function runOnce(opts = {}) {
           break;
 
         case 'compacted':
-          곁(`  ${c.cyan('◱')} ${c.gray(`대화 ${ev.folded}개를 요약으로 접었습니다 (${ev.before.toLocaleString()} → ${ev.after.toLocaleString()} 토큰)`)}`);
+          // 요약을 못 받고 잘라 낸 것은 그렇게 적는다 (repl.js 의 compacted 머리말).
+          곁(ev.fallback
+            ? `  ${c.cyan('◱')} ${c.yellow(`요약을 못 받아 옛 대화 ${ev.folded}개를 잘라 냈습니다 (${ev.before.toLocaleString()} → ${ev.after.toLocaleString()} 토큰)`)}`
+              + (ev.why ? ` ${c.gray(`— ${clip(String(ev.why), 100)}`)}` : '')
+            : `  ${c.cyan('◱')} ${c.gray(`대화 ${ev.folded}개를 요약으로 접었습니다 (${ev.before.toLocaleString()} → ${ev.after.toLocaleString()} 토큰)`)}`);
           break;
 
         case 'compact_failed':
@@ -731,6 +921,20 @@ export async function runOnce(opts = {}) {
           곁(`  ${c.cyan('◱')} ${c.gray((ev.kept?.할일 ?? 0)
             ? 옮긴말('ev.reset', { 버린수: ev.dropped, 할일: ev.kept.할일 })
             : 옮긴말('ev.resetBare', { 버린수: ev.dropped }))}`);
+          /*
+           * ── 비우면서 **시킨 말 뒤가 잘렸으면** 여기서 선다 (사냥5 B5-01) ────────────
+           *
+           * 비울 때 시킨 말은 앞 1,200자만 다시 박힌다(session.js 의 못박은요청). 대화
+           * 화면은 사람이 보고 나눠서 다시 시키면 되지만, 여기서는 모델이 앞부분만 받아
+           * 「다 했다」 고 답했고 배치는 ok:true · 0 으로 끝났다 — 시킨 일의 뒷부분은 한 번도
+           * 못 본 채로. 한 방 실행에는 이어 줄 다음 턴이 없다. 잘린 채로 끝까지 가는 것보다
+           * 여기서 서서 「시킬 말이 창보다 크다」 고 말하는 편이 뒤의 스크립트에 정직하다.
+           * 짧은 시킬 말은 비워도 통째로 다시 박히므로 그대로 이어 간다.
+           */
+          if (요청잘리나(session)) {
+            시킨말잘림 = true;
+            끊김();
+          }
           break;
         case 'learned':
           곁(`  ${c.cyan('◎')} ${c.gray(ev.what === 'ctx'
@@ -767,13 +971,23 @@ export async function runOnce(opts = {}) {
   } catch (err) {
     reason = 'error';
     why = String(err?.message ?? err);
-  } finally {
-    process.removeListener('SIGINT', 끊김);
   }
+  // SIGINT 손은 여기서 안 뗀다 — 모양 고치기 되물음까지 끝난 뒤에 뗀다 (사냥5 B5-02, 아래 finally).
 
   // 끝까지 못 갔어도 여기까지 나온 말은 내준다. 빈손으로 돌려보내면
   // 왜 안 됐는지 짐작할 거리조차 없다.
   if (답 == null) 답 = 이번단계글;
+
+  /*
+   * 시킨 말이 창에 다 안 들어가 잘렸으면 무엇으로 끝났든 그것이 까닭이다 (사냥5 B5-01).
+   * 위 reset 갈래가 턴을 끊었으므로 reason 은 aborted 로 와 있다 — 사람이 끊은 것이 아니다.
+   * 모델이 본 것이 앞부분뿐이라고 적고 0 이 아닌 코드로 선다.
+   */
+  if (시킨말잘림) {
+    reason = 'too-big';
+    why = `시킬 말이 컨텍스트 창(${Number(conn.ctx).toLocaleString('en-US')} 토큰)에 다 안 들어가 뒷부분이 잘렸습니다`
+      + ` — 모델은 앞 ${못박을길이.toLocaleString('en-US')}자만 봤습니다. 나눠서 시키거나, 창이 더 큰 모델이면 --ctx 로 알려 주세요.`;
+  }
 
   /*
    * 말없이 끊긴 답은 '다 됐다' 로 안 넘긴다.
@@ -802,10 +1016,23 @@ export async function runOnce(opts = {}) {
   let 스키마값 = null;
   if (출력스키마 && reason === 'done') {
     const 재보기 = (글) => {
-      const 뽑은것 = 답에서JSON뽑기(글);
-      if (!뽑은것.ok) return { ok: false, 탈: [뽑은것.왜] };
-      const r = 맞나(뽑은것.값, 출력스키마);
-      return r.ok ? { ok: true, 값: 뽑은것.값, 군말: 뽑은것.군말 } : r;
+      /*
+       * 재다가 던지면 **스키마 실패로** 받는다 (사냥5 L5-3).
+       *
+       * 여기는 try 바깥이었다. 제자리를 도는 참조 같은 스키마 쪽 탈이 호출 스택을 넘기면
+       * runOnce 가 통째로 던졌고, bin/deel.js 가 표준출력에 맨 글 「오류 Maximum call stack…」
+       * 을 찍었다 — 모양을 못 박아 달라던 파이프에 산문이 흘렀다. 읽는 자리(스키마읽기)가
+       * 고리를 먼저 막지만, 못 막은 탈도 7 이어야 한다.
+       */
+      try {
+        // 스키마를 같이 넘긴다 — 뽑을 것이 여럿이면 스키마에 맞는 쪽을 고른다 (사냥5 B5-06).
+        const 뽑은것 = 답에서JSON뽑기(글, { 스키마: 출력스키마 });
+        if (!뽑은것.ok) return { ok: false, 탈: [뽑은것.왜] };
+        const r = 맞나(뽑은것.값, 출력스키마);
+        return r.ok ? { ok: true, 값: 뽑은것.값, 군말: 뽑은것.군말 } : r;
+      } catch (err) {
+        return { ok: false, 탈: [`스키마로 재다가 멈췄습니다: ${err?.message ?? err}`] };
+      }
     };
 
     let 잰것 = 재보기(답 ?? '');
@@ -822,20 +1049,43 @@ export async function runOnce(opts = {}) {
        * (agent/loop.js 의 고쳐쓰기 설명).
        */
       let 다시글 = '';
+      // 되물음 도중에 끊겼나 (사냥5 B5-02). 끊긴 것은 「모양이 틀렸다」(7) 가 아니라 끊긴 것(4)이다.
+      let 다시끊김 = false;
+      // 되물음이 **터졌나** (8회차 그밖 한번쓰기3). 터진 것도 모양 탈이 아니다 — 아래 갈래에서 갈라 낸다.
+      let 다시터짐 = '';
       try {
         for await (const ev of run(session, ctx, 스키마시킬말(출력스키마, { 다시: 잰것.탈 }), { signal: turn.signal, 고쳐쓰기: true })) {
           if (ev.type === 'content') 다시글 += ev.text;
           else if (ev.type === 'done') 다시글 = ev.text ?? 다시글;
-          else if (ev.type === 'error') { why = String(ev.text ?? why); break; }
+          else if (ev.type === 'aborted') { 다시끊김 = true; break; }
+          else if (ev.type === 'error') { 다시터짐 = String(ev.text ?? why); break; }
         }
-      } catch (err) { why = String(err?.message ?? err); }
+      } catch (err) { 다시터짐 = String(err?.message ?? err); }
 
-      const 두번째 = 재보기(다시글);
-      if (두번째.ok) { 잰것 = 두번째; 답 = 다시글; }
-      else 잰것 = { ok: false, 탈: 두번째.탈 };
+      if (다시끊김 || turn.signal.aborted) {
+        reason = 'aborted';
+        why = '중단했습니다';
+      } else if (다시터짐) {
+        /*
+         * ── 되물음이 **HTTP 오류로** 죽은 자리 (8회차 그밖 한번쓰기3) ──────
+         *
+         * 터진 까닭을 `why` 에만 적고 그대로 아래로 내려보냈다. 그러면 빈 `다시글` 이
+         * 재보기를 못 넘어 `reason='schema'` 가 되고 `why` 는 「답이 스키마에 안 맞습니다
+         * — 답이 비었습니다」 로 **덮인다.** 재 보니 서버가 낸 500 한 줄이 화면에서 통째로
+         * 사라지고 7 만 남았다. 스키마를 아무리 손봐도 안 고쳐지는 자리라, 사람은 엉뚱한
+         * 데를 판다. 끊긴 것을 4 로 갈라 둔 것과 같은 까닭으로 여기도 갈라 둔다.
+         */
+        reason = 'error';
+        why = `모양을 고쳐 달라고 한 번 더 시켰는데 그 요청이 실패했습니다 — ${다시터짐}`;
+      } else {
+        const 두번째 = 재보기(다시글);
+        if (두번째.ok) { 잰것 = 두번째; 답 = 다시글; }
+        else 잰것 = { ok: false, 탈: 두번째.탈 };
+      }
     }
 
-    if (잰것.ok) {
+    if (reason === 'aborted' || reason === 'error') { /* 끊겼거나 터졌으면 모양을 판정하지 않는다 — 그 까닭 그대로 끝낸다 */ }
+    else if (잰것.ok) {
       스키마값 = 잰것.값;
       // 울타리나 인사말을 걷어내고 뽑았으면 그렇게 말한다. 조용히 걷어내면
       // 사람은 모델이 깨끗하게 냈다고 여기고 시킴말을 안 고친다.
@@ -846,6 +1096,16 @@ export async function runOnce(opts = {}) {
         + 잰것.탈.slice(0, 8).map((x) => `  - ${x}`).join('\n');
     }
   }
+
+  /*
+   * SIGINT 손은 **되물음까지 끝난 뒤에** 뗀다 (사냥5 B5-02).
+   *
+   * 여기는 첫 턴이 끝나자마자 손을 뗐다. 그런데 모양 고치기 되물음도 모델을 한 번 더 부르는
+   * 자리다. 그 사이에 Ctrl+C 가 오면 SIGINT 에 남은 손은 언어 서버(lsp/client.js) 것 하나였고,
+   * 그 손은 「마지막 손이면 신호를 되쏜다」 는 규칙대로 프로그램째 죽였다 — 윈도우 1, 유닉스
+   * 130, 표준출력은 빈 채로. 첫 턴에서 끊긴 것은 4 와 JSON 한 덩이인데.
+   */
+  process.removeListener('SIGINT', 끊김);
 
   const code = EXIT[reason] ?? EXIT.error;
   if (why) 삐끗(`  ${reason === 'done' ? c.gray('·') : c.red('✗')} ${why}`);

@@ -42,23 +42,78 @@ const 요청남음 = [
  *
  * 남음과 한도를 **짝으로** 묶어 두고, 남은 것이 가장 적은 짝을 쓴다.
  * 짝으로 안 묶으면 화면이 「출력 0 / 입력 한도 100만」 같은 소리를 한다.
+ *
+ * 셋째 칸은 **그 통이 다시 차는 시계**다. 통마다 시계가 따로라, 바닥난 통의
+ * 시계를 써야 한다 (아래 할당량읽기).
  */
 const 토큰통 = [
-  ['x-ratelimit-remaining-tokens', 'x-ratelimit-limit-tokens'],
-  ['ratelimit-remaining-tokens', 'ratelimit-limit-tokens'],
-  ['anthropic-ratelimit-tokens-remaining', 'anthropic-ratelimit-tokens-limit'],
-  ['anthropic-ratelimit-input-tokens-remaining', 'anthropic-ratelimit-input-tokens-limit'],
-  ['anthropic-ratelimit-output-tokens-remaining', 'anthropic-ratelimit-output-tokens-limit'],
+  ['x-ratelimit-remaining-tokens', 'x-ratelimit-limit-tokens', 'x-ratelimit-reset-tokens'],
+  ['ratelimit-remaining-tokens', 'ratelimit-limit-tokens', 'ratelimit-reset'],
+  ['anthropic-ratelimit-tokens-remaining', 'anthropic-ratelimit-tokens-limit', 'anthropic-ratelimit-tokens-reset'],
+  ['anthropic-ratelimit-input-tokens-remaining', 'anthropic-ratelimit-input-tokens-limit', 'anthropic-ratelimit-input-tokens-reset'],
+  ['anthropic-ratelimit-output-tokens-remaining', 'anthropic-ratelimit-output-tokens-limit', 'anthropic-ratelimit-output-tokens-reset'],
 ];
-const 요청한도 = ['x-ratelimit-limit-requests', 'ratelimit-limit-requests', 'anthropic-ratelimit-requests-limit'];
+/*
+ * 접미사 없는 `x-ratelimit-limit`·`x-ratelimit-reset` 도 같이 읽는다.
+ *
+ * `요청남음` 에는 접미사 없는 `x-ratelimit-remaining` 이 진작 있는데 그 **짝**인 한도와
+ * 시계만 어느 목록에도 없었다. 그 이름으로 주는 게이트웨이(Groq·Together 계열)에서는
+ * 남은 수만 뜨고 한도도 시계도 영영 null 이었다 — 한도를 모르면 10% 검사가 안 돌아
+ * 남은 수 바닥값으로만 떨어지고, 시계를 모르면 화면에 「몇 초 뒤 풀림」 이 안 뜬다.
+ * 아래 하나풀림 의 주석 예시(`x-ratelimit-reset: 1773538800`)가 바로 그 이름이다.
+ */
+const 요청한도 = ['x-ratelimit-limit-requests', 'ratelimit-limit-requests', 'x-ratelimit-limit', 'anthropic-ratelimit-requests-limit'];
+const 요청차는때 = ['x-ratelimit-reset-requests', 'anthropic-ratelimit-requests-reset', 'x-ratelimit-reset', 'ratelimit-reset'];
 /*
  * 풀리는 때. Anthropic 은 초가 아니라 **날짜(RFC 3339)** 로 준다 —
  * `언제풀리나` 가 Date.parse 로 받아 지금과의 차이를 초로 바꾼다.
+ *
+ * ── 「다시 오라」 와 「통이 다시 찬다」 는 다른 말이다 ────────────────────
+ *
+ * 여태 이 둘을 한 목록에 담아 두고 앞에서부터 있는 것 하나를 집었다. 그런데
+ * `Retry-After` 는 **서버가 우리한테 시킨 것**이고, `x-ratelimit-reset-*` 는
+ * 그냥 **통이 언제 다시 차는지 적어 둔 시계**다. 뒤엣것은 막을 때만 오는 것이
+ * 아니라 **잘 된 응답마다** 실려 온다.
+ *
+ * 섞어 두었더니 이런 일이 났다. 429 를 맞았는데 `Retry-After` 는 없고
+ * `x-ratelimit-reset-tokens: 6m0s` 만 있는 자리에서, 미리기다릴까() 가 그 6분을
+ * 서버가 시킨 것으로 읽고 1분(미리기다림상한)을 붙들었다. 화면은 그 1분을
+ * 서버 탓으로 적었는데 서버는 그런 말을 한 적이 없다. 아무 말도 못 들은
+ * 자리의 답은 막힘띄움(5초)인데, reset 머리가 하나라도 있으면 그 갈래에는
+ * 영영 못 들어갔다.
+ *
+ * 그래서 따로 읽는다. **시킨 것만 시킨 것으로 친다.** 시계는 시계로 두고,
+ * 「남은 것이 0」 이라고 서버가 스스로 적어 보냈을 때만 그 시계를 쓴다.
  */
-const 다시언제 = [
-  'retry-after', 'x-ratelimit-reset-requests', 'x-ratelimit-reset-tokens', 'ratelimit-reset',
+const 서버가부른때 = ['retry-after'];
+/*
+ * 통이 **바닥나기 전**에 화면에 적을 시계다. 바닥난 뒤에는 가장빠듯한통 이 그 통의
+ * 시계를 따로 챙기지만(바닥시계), 바닥나기 전 — 경고가 뜨는 바로 그 자리 — 에는 이
+ * 목록에 있는 이름만 읽힌다. 여기에 Anthropic 입력·출력 통의 리셋 이름이 빠져 있어서,
+ * 「토큰 200/100,000」 이라고 적으면서 언제 차는지는 못 적었다. 미리 알려 주자고 만든
+ * 파일인데 미리 볼 때만 시계가 없었던 셈이다 (위 토큰통 의 셋째 칸과 같은 이름들이다).
+ */
+const 통차는때 = [
+  'x-ratelimit-reset-requests', 'x-ratelimit-reset-tokens', 'x-ratelimit-reset', 'ratelimit-reset',
   'anthropic-ratelimit-requests-reset', 'anthropic-ratelimit-tokens-reset',
+  'anthropic-ratelimit-input-tokens-reset', 'anthropic-ratelimit-output-tokens-reset',
 ];
+
+/*
+ * 이름 여럿 중 **늦게 차는 쪽**. 바닥난 통이 없을 때 화면에 적을 시계다.
+ *
+ * `골라` 는 목록에서 처음 있는 것 하나를 집는다. 그런데 진짜 Anthropic 응답은 요청·입력
+ * 토큰·출력 토큰 시계를 **한꺼번에** 실어 보낸다. 그러면 목록 차례상 늘 요청 시계가 집혀,
+ * 화면이 「토큰 200/100,000 · 1초 뒤 풀림」 처럼 **적힌 통과 딴 통의 시계**를 나란히 적었다.
+ * 뒤에 이름을 보태도 앞엣것에 가려 한 번도 안 걸린다.
+ *
+ * 규칙은 바닥시계 와 같게 둔다 — **다 차야 보낼 수 있다.** 이른 쪽을 적으면 「풀렸다」 고
+ * 해 놓고 또 막힌다.
+ */
+function 늦은시계(머리, 이름들) {
+  const 아는것 = 이름들.map((k) => 언제풀리나(골라(머리, [k]))).filter((x) => x !== null);
+  return 아는것.length ? Math.max(...아는것) : null;
+}
 
 function 골라(머리, 이름들) {
   if (!머리) return null;
@@ -78,8 +133,17 @@ function 골라(머리, 이름들) {
  */
 function 숫자(v) {
   if (v === null) return null;
-  const n = Number(String(v).replace(/[,_\s]/g, ''));
-  return Number.isFinite(n) ? n : null;
+  /*
+   * 같은 머리가 두 번 오면 Headers 가 「5, 5」 로 이어 붙인다(노드 http 의 머리 객체도 같다).
+   * 게이트웨이와 윗단이 같은 머리를 둘 다 실으면 생긴다. 쉼표만 지우고 읽었더니 **55** 가 돼서,
+   * 남은 5 가 넉넉한 55 로 읽혀 경고가 안 떴다 (6회차 Gemini 할당6 QA1).
+   *
+   * 이어 붙인 자리에는 쉼표 **뒤에 빈칸**이 온다. 천 단위 쉼표(`12,500`)에는 빈칸이 없다.
+   * 그래서 「쉼표+빈칸」 으로만 가르고, 가른 것 중 **제일 적은 값**을 쓴다 — 두 층이 서로
+   * 다른 수를 말하면 먼저 막히는 쪽이 곧 막히는 쪽이다.
+   */
+  const 낱 = String(v).split(/,\s+/).map((x) => x.replace(/[,_\s]/g, '')).filter(Boolean).map(Number).filter(Number.isFinite);
+  return 낱.length ? Math.min(...낱) : null;
 }
 
 /*
@@ -89,40 +153,112 @@ function 숫자(v) {
 export function 언제풀리나(v) {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
+  // 빈 머리말은 못 읽은 것이다 — Number('') 가 0 이라 「지금 바로 풀림」 이 됐다 (2.0.0 6회차 · Gemini 백엔드5역).
+  if (!s) return null;
+  /*
+   * 같은 머리가 두 번 와 이어 붙은 것(`5, 5` · `20ms, 6m0s`). 통째로 읽으면 `Date.parse('5, 5')` 가
+   * **2001년 날짜**를 내서 「이미 지남 = 0초」 가 됐고, 시계 둘은 아예 못 읽었다 (6회차 Gemini 할당6 QA1).
+   * 하나씩 읽어 **늦은 쪽**을 쓴다 — 둘 다 풀려야 보낼 수 있다.
+   */
+  /*
+   * HTTP 날짜의 요일 뒤 쉼표(`Wed, 21 Oct 2015 …`)도 여기서 갈리는데 그래도 된다 — 요일 조각은 못 읽어
+   * 빠지고, 나머지 `21 Oct 2015 07:28:00 GMT` 는 그대로 날짜로 읽힌다(quota.test 6-할당6 이 잰다).
+   */
+  const 조각 = s.split(/,\s+/);
+  if (조각.length > 1) {
+    const 읽은것 = 조각.map(하나풀림).filter((x) => x !== null);
+    return 읽은것.length ? Math.max(...읽은것) : null;
+  }
+  return 하나풀림(s);
+}
+
+function 하나풀림(s) {
   const n = Number(s);
-  if (Number.isFinite(n)) return Math.max(0, Math.round(n));
+  if (Number.isFinite(n)) {
+    /*
+     * 풀리는 **시각**을 에포크로 주는 게이트웨이가 있다(`x-ratelimit-reset: 1773538800`). 그 수를
+     * 기다릴 초로 읽으면 56년 뒤에 풀린다고 적는다. 10억 초(2001년)를 넘는 수는 기다릴 초일 수가
+     * 없으니 시각으로 보고 지금과의 차이를 낸다. 1조를 넘으면 밀리초 시각이다.
+     */
+    if (n >= 1e12) return Math.max(0, Math.round((n - Date.now()) / 1000));
+    if (n >= 1e9) return Math.max(0, Math.round(n - Date.now() / 1000));
+    return Math.max(0, Math.round(n));
+  }
   const t = Date.parse(s);
   if (Number.isFinite(t)) return Math.max(0, Math.round((t - Date.now()) / 1000));
-  // `1m30s` 같은 꼴을 주는 게이트웨이가 있다.
-  const m = /^(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?$/.exec(s);
-  if (m && (m[1] || m[2])) return Math.round((Number(m[1] ?? 0) * 60) + Number(m[2] ?? 0));
+  /*
+   * `1m30s` 같은 꼴을 주는 게이트웨이가 있다. OpenAI 는 여기에 **시(h)와 밀리초(ms)** 도
+   * 섞어 준다 — `x-ratelimit-reset-requests: 20ms`, `x-ratelimit-reset-tokens: 1h2m`.
+   * 여기가 m·s 만 읽어서 둘 다 null 이었고, 그러면 「남은 것 0」 이라고 적힌 응답에서도
+   * 언제 풀리는지를 몰라 미리 비키지 못하고 429 를 한 번 맞았다 (사냥5 B5-11).
+   *
+   * 차례는 h · m · s · ms 로 고정한다. `m` 은 뒤에 `s` 가 붙지 않을 때만 분이다 —
+   * 안 그러면 `20ms` 가 「20분 + 모르는 s」 로 읽힌다. 1초가 안 되는 것은 반올림한다
+   * (숫자로 준 `0.4` 와 같은 규칙).
+   */
+  const m = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m(?!s))?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?$/.exec(s);
+  if (m && (m[1] || m[2] || m[3] || m[4])) {
+    return Math.round(Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0) + Number(m[4] ?? 0) / 1000);
+  }
   return null;
 }
 
-/** 토큰 통 중 **가장 적게 남은** 짝. 없으면 둘 다 null. */
+/*
+ * 토큰 통 중 **가장 빠듯한** 짝, 그리고 바닥난 통마다 제 시계.
+ *
+ * 수만 견주면 입력 5,000/200,000(2.5%) 과 출력 2,000/4,000(50%) 에서 출력 통을 골라
+ * 「절반 남음」 이라 하고 경고도 안 띄웠다. 곧 막히는 쪽은 입력 통이다 (6회차 Gemini
+ * 할당6 QA3). 둘 다 한도를 알면 **비율**로, 하나라도 모르면 수로 견준다.
+ */
 function 가장빠듯한통(머리) {
   let 고른것 = { 토큰: null, 토큰한도: null };
-  for (const [남음이름, 한도이름] of 토큰통) {
+  const 바닥시계 = [];
+  for (const [남음이름, 한도이름, 시계이름] of 토큰통) {
     const 남 = 숫자(골라(머리, [남음이름]));
     if (남 === null) continue;
-    if (고른것.토큰 === null || 남 < 고른것.토큰) {
-      고른것 = { 토큰: 남, 토큰한도: 숫자(골라(머리, [한도이름])) };
-    }
+    const 한도 = 숫자(골라(머리, [한도이름]));
+    if (남 <= 0) 바닥시계.push(언제풀리나(골라(머리, [시계이름])));
+    const 더빠듯 = 한도 > 0 && 고른것.토큰한도 > 0 ? 남 / 한도 < 고른것.토큰 / 고른것.토큰한도 : 남 < 고른것.토큰;
+    if (고른것.토큰 === null || 더빠듯) 고른것 = { 토큰: 남, 토큰한도: 한도 };
   }
-  return 고른것;
+  return { 고른것, 바닥시계 };
 }
 
 /**
  * 응답 머리에서 할당량을 읽는다.
  *
- * @returns {{요청:number|null, 요청한도:number|null, 토큰:number|null, 토큰한도:number|null, 풀림:number|null, 있나:boolean}}
+ * `서버말` 은 **서버가 「이때 다시 오라」 고 시킨 것**(Retry-After)이고,
+ * `풀림` 은 그 말이 없으면 통이 다시 차는 시계까지 넓혀 본 값이다. 화면은
+ * 넓은 쪽을 쓰고(할당량말), 기다릴지 말지는 시킨 쪽만 보고 정한다.
+ *
+ * @returns {{요청:number|null, 요청한도:number|null, 토큰:number|null, 토큰한도:number|null, 서버말:number|null, 풀림:number|null, 있나:boolean}}
  */
 export function 할당량읽기(머리) {
+  const 서버말 = 언제풀리나(골라(머리, 서버가부른때));
+  const 요청 = 숫자(골라(머리, 요청남음));
+  const { 고른것, 바닥시계 } = 가장빠듯한통(머리);
+  if (요청 !== null && 요청 <= 0) 바닥시계.push(언제풀리나(골라(머리, 요청차는때)));
+  /*
+   * ── 바닥난 통의 시계를 쓴다 ────────────────────────────────────────────
+   *
+   * 사람이 본 것: 요청은 4,999 남고 토큰이 0 인데 보내자마자 429 였다. 기다리지도 않았다.
+   *
+   * 실제로 있었던 일: 시계를 목록 차례로 하나 집었고, 맨 앞이 요청 시계(`20ms`)였다.
+   * 토큰 통은 6분 뒤에야 차는데 「곧 풀림(0초)」 으로 읽고 곧장 보냈다. Anthropic 출력 통이
+   * 바닥났을 때도 요청 시계를 집었다 — 출력 시계 이름은 목록에 아예 없었다
+   * (6회차 Gemini 할당6 QA4).
+   *
+   * 이제 지키는 규칙: 바닥난 통이 있으면 **그 통들의 시계 중 늦은 쪽**(다 차야 보낼 수 있다).
+   * 바닥난 통이 제 시계를 안 실어 보냈거나 바닥난 통이 없으면, 전처럼 있는 시계 하나를 쓴다
+   * — 화면에 적을 값이다.
+   */
+  const 아는시계 = 바닥시계.filter((x) => x !== null);
   const 것 = {
-    요청: 숫자(골라(머리, 요청남음)),
+    요청,
     요청한도: 숫자(골라(머리, 요청한도)),
-    ...가장빠듯한통(머리),
-    풀림: 언제풀리나(골라(머리, 다시언제)),
+    ...고른것,
+    서버말,
+    풀림: 서버말 ?? (아는시계.length ? Math.max(...아는시계) : 늦은시계(머리, 통차는때)),
   };
   것.있나 = 것.요청 !== null || 것.토큰 !== null || 것.풀림 !== null;
   return 것;
@@ -140,7 +276,27 @@ export const 토큰바닥 = 20000;
 
 export function 아슬아슬한가(것) {
   if (!것?.있나) return false;
-  if (것.풀림 !== null && 것.풀림 > 0) return true;
+  /*
+   * ── 이 한 줄이 경고를 **늘 켜 놓고** 있었다 ────────────────────────────
+   *
+   * 사람이 본 것: OpenAI 를 쓰는 내내 상태줄에 「⚠ 서버 할당량 …」 이 떠
+   * 있었다. 요청이 5,000 중 4,999 남았을 때도 떴다. 늘 떠 있으니 아무도 안
+   * 읽었고, 정작 진짜로 바닥난 날에도 안 읽혔다 — 바로 위 머리말이 하지
+   * 말자고 적어 둔 그것이다.
+   *
+   * 실제로 있었던 일: 여기서 보던 `풀림` 은 「막혔다」 는 표시가 아니라
+   * **통이 다시 차는 시계**였고(위 통차는때), OpenAI 는 그 머리를 **성공한
+   * 응답마다** 실어 보낸다. 그래서 조건이 매 턴 참이 됐다.
+   *
+   * 왜 아무도 못 봤나: 아래 10% 검사와 바닥값 검사가 **한 번도 안 돌았다.**
+   * 여기서 이미 true 로 나가 버리니, 그 두 검사가 틀렸어도 알 길이 없었다.
+   * 조용한 채로 죽어 있던 코드다.
+   *
+   * 이제 지키는 규칙: **서버가 우리를 밀어냈을 때만**(Retry-After) 그 한 줄로
+   * 띄운다. 시계는 「얼마나 남았나」 를 말해 주지 않는다 — 남은 양은 아래
+   * 두 검사가 센다.
+   */
+  if (것.서버말 !== null && 것.서버말 > 0) return true;
   if (것.요청 !== null) {
     if (것.요청한도) { if (것.요청 / 것.요청한도 <= 0.1) return true; }
     else if (것.요청 <= 요청바닥) return true;
@@ -324,11 +480,51 @@ export function 미리기다릴까(것, 지금 = Date.now()) {
   if (!(것.때 > 0) || 지금 - 것.때 > 낡은값) return null;
 
   const 바닥난것 = (것.요청 !== null && 것.요청 <= 0) || (것.토큰 !== null && 것.토큰 <= 0);
-  // 서버가 언제 오라고 말해 줬으면 그 말이 먼저다. 바닥났다고 했거나 방금 막혔거나.
-  if ((바닥난것 || 것.막힘) && 것.풀림 > 0) {
-    // 그 응답을 받은 뒤로 흐른 만큼은 빼 준다.
-    const 남은초 = 것.풀림 - Math.floor((지금 - 것.때) / 1000);
-    if (남은초 > 0) return Math.min(남은초 * 1000, 미리기다림상한);
+  /*
+   * ── 서버가 시킨 것과 우리가 읽은 시계를 갈라 본다 ──────────────────────
+   *
+   * 사람이 본 것: 429 한 번에 화면이 「서버가 60초 뒤에 오라고 했습니다」 하고
+   * 1분을 붙들었다. 그런데 그 응답에 `Retry-After` 는 없었다. 서버가 말한 적
+   * 없는 1분을 서버 이름으로 적은 것이다.
+   *
+   * 실제로 있었던 일: `풀림` 이 `x-ratelimit-reset-tokens: 6m0s` 에서 온
+   * 값이었다. 6분을 상한에서 잘라 1분이 됐다. 「아무 말도 못 들었을 때는 5초만
+   * 띄운다」 는 아래 갈래는, reset 머리를 주는 서버에서는 **닿을 수가 없었다.**
+   *
+   * 이제 지키는 규칙:
+   *   · **시킨 것**(서버말 = Retry-After) 은 언제나 이긴다. 바닥났다고 했든
+   *     방금 막혔든 그 말을 지킨다.
+   *   · **시계**(풀림) 는 서버가 「남은 것이 0」 이라고 스스로 적어 보냈을
+   *     때만 쓴다. 그때는 짐작이 아니다 — 그 0 이 언제 0 이 아니게 되는지를
+   *     같은 응답이 적어 준 것이다.
+   *   · 429 만 맞고 남은 수도 Retry-After 도 못 받은 자리는 시계를 안 본다.
+   *     거기서 우리가 아는 것은 「방금 막혔다」 하나뿐이고, 그 답은 아래
+   *     막힘띄움이다.
+   */
+  /*
+   * 시킨 것은 **0 초라도, 이미 지났어도** 시킨 것이다. 여태 `서버말 > 0` 만 시킨 것으로 쳐서
+   * `Retry-After: 0` 과 「1초라더니 1.5초가 지남」 이 둘 다 아래 막힘띄움(5초)으로 떨어졌다 —
+   * 서버가 곧장 오라고 한 자리를 우리가 3.5~5초 붙든 것이다 (6회차 Gemini 할당6 QA5·QB1).
+   */
+  const 시킨때 = Number.isFinite(것.서버말) ? 것.서버말 : null;
+  const 볼것 = 시킨때 ?? (바닥난것 && 것.풀림 > 0 ? 것.풀림 : null);
+  if ((바닥난것 || 것.막힘) && 볼것 !== null) {
+    /*
+     * 그 응답을 받은 뒤로 흐른 만큼은 빼 준다 — **밀리초로.** 초로 버려 빼면 1초 시계를
+     * 900ms 뒤에 물어도 1초를 통째로 더 기다렸다 (QB3).
+     */
+    const 남은 = 볼것 * 1000 - (지금 - 것.때);
+    if (남은 > 0) return Math.min(남은, 미리기다림상한);
+    /*
+     * 그 때가 **이미 지났으면 기다릴 것이 없다** — 시킨 것이든 서버가 적어 준 시계든.
+     *
+     * 여기가 `시킨때 !== null` 일 때만 끝냈다. 그래서 「남은 것 0 · 1초 뒤 참」 이라고
+     * 적어 보낸 응답을 1.5초 뒤에 물으면, 서버가 이미 「찼다」 고 말해 준 자리에서
+     * 아래 막힘띄움(5초)으로 떨어져 3.5초를 더 붙들었다. 같은 응답인데 Retry-After 가
+     * 있고 없고에 따라 0초와 3.5초로 갈렸다 — 아래 갈래는 **아무 말도 못 들은** 자리의
+     * 답이지, 들은 말이 지난 자리의 답이 아니다.
+     */
+    return null;
   }
 
   /*

@@ -1,16 +1,17 @@
 // 도구. 이름과 인자를 Claude Code 와 같게 맞춘다 —
 // 그래야 그 관례로 쓰인 스킬·명령이 그대로 먹는다.
-import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, renameSync, cpSync, rmSync,
+import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, lstatSync, renameSync, cpSync, rmSync,
   openSync, readSync, closeSync } from 'node:fs';
-import { dirname, extname, join, relative, sep } from 'node:path';
+import { dirname, extname, isAbsolute, join, relative, sep } from 'node:path';
+import { createHash } from 'node:crypto';
 import { 무리로돌리기 } from './spawn.js';
-import { globToRegex, walk, readText, readTextFull, 내부살림 } from './fsutil.js';
+import { walk, readText, readTextFull, 내부살림, glob거르개 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
-import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary } from './encoding.js';
+import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary, 바꾼데만쓰기 } from './encoding.js';
 import { checkCommand, checkPaths, isMutating, 셸이파일에쓰나 } from '../safety/guard.js';
-import { 띄우기, 나무끊기, 무리끊기, JOBS_TOOL } from './jobs.js';
+import { 띄우기, 나무끊기, 무리끊기, 남은무리끊기, JOBS_TOOL } from './jobs.js';
 import { 셸명령 } from './shell.js';
-import { findMatch, applySpans, reindent, TIER_LABELS } from './edit-match.js';
+import { findMatch, applySpans, reindent, TIER_LABELS, CRLF뿐인가, CRLF로, 꼴맞추기 } from './edit-match.js';
 import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
 import { TODO_TOOL } from './todo.js';
@@ -71,6 +72,12 @@ const MAX_OUT = 30000;
 // Grep 이 열어 볼 파일 크기 상한. 이보다 크면 글 파일이라도 안 본다 —
 // 한 파일에서 몇십 초를 쓰면 그동안 화면이 멈춘 것처럼 보인다.
 const GREP_MAX_FILE = 2 * 1024 * 1024;
+/*
+ * 콕 집은 파일 하나는 더 넉넉히 본다 — 「이 로그에서 찾아」 는 폴더를 훑는 것과 달리 사람이
+ * 그 파일을 골랐다는 뜻이다. 그래도 끝은 있다. 이 길은 파일을 통째로 글로 읽어서, GB 로그를
+ * 콕 집으면 메모리를 다 썼다(rg 가 있어도 파일 하나면 이 길로 온다). (6회차 Gemini 도구6f2 F2-1)
+ */
+const GREP_MAX_ONE = 64 * 1024 * 1024;
 // 정규식으로 찾을 것이 없는 파일들. 열어 봐야 시간만 든다.
 // 목록은 tools/fastgrep.js 에 한 벌만 둔다 — rg 도 같은 목록으로 걸러야
 // 엔진이 달라도 같은 파일을 본다.
@@ -267,6 +274,126 @@ function 파일크기(abs) {
   try { return statSync(abs).size; } catch { return -1; }
 }
 
+/*
+ * ── 크기만으로는 「그 파일 그대로」 를 모른다 ─────────────────────────────
+ *
+ * Append 의 두 기억(인코딩 · 줄 수)이 「크기가 같으면 남이 안 건드렸다」 로
+ * 캐시를 믿었다. 그런데 편집기의 「다른 이름으로 저장 → 바꿔치기」 나
+ * `iconv … > tmp && mv tmp 원래` 는 **같은 크기**로 끝나는 일이 흔하다
+ * (CP949 두 바이트 글자가 다른 두 바이트 글자로 바뀌는 식). 그러면 UTF-8 로
+ * 바뀐 파일 꼬리에 CP949 바이트가 붙고, 결과에는 `· CP949` 가 사실처럼 떴다.
+ *
+ * 줄 수는 크기 · 고친 시각(나노초) · 번호(ino)를 같이 본다 — 통째로 다시 세는
+ * 값이 커서 그 이상은 못 본다. 파일 시스템의 시각 눈금 안(윈도우 약 16ms,
+ * FAT 2초)에 같은 번호로 같은 크기를 덮어쓰면 이 표로는 못 가른다. 그때 틀리는
+ * 것은 화면의 줄 수 하나다.
+ *
+ * 인코딩은 틀리면 파일이 깨지므로 그 틈도 안 둔다 — 아래 표본지문.
+ */
+function 파일표(abs) {
+  try {
+    const s = statSync(abs, { bigint: true });
+    return `${s.size}:${s.mtimeNs}:${s.ino}`;
+  } catch { return null; }
+}
+
+/**
+ * 인코딩을 잴 때 보는 앞머리 바이트(재는인코딩)의 지문.
+ *
+ * 재는인코딩 은 이 바이트만 보고 답을 낸다. 그러니 지문이 같으면 다시 재도
+ * 같은 답이다 — 시각 눈금이나 번호에 기대지 않고 캐시를 믿을 수 있다.
+ * 64KB 를 읽는 값은 붙이기 한 번에 비해 작고, 비싼 것(후보마다 풀어 점수 매기기)은 건너뛴다.
+ */
+function 표본지문(buf) {
+  return buf ? createHash('sha1').update(buf).digest('base64') : null;
+}
+
+/** 쓰기가 깨진 까닭을 사람 말로. 날 오류 코드만 주면 모델은 같은 쓰기를 되풀이한다. */
+function 쓰기실패말(err) {
+  const code = err?.code;
+  if (code === 'EPERM' || code === 'EACCES') return `쓸 권한이 없습니다 — 읽기 전용 파일이거나 권한이 없는 자리입니다 (${code})`;
+  if (code === 'EBUSY') return `다른 프로그램이 이 파일을 잡고 있습니다 — 엑셀·한글 같은 데서 열려 있으면 닫고 다시 하세요 (${code})`;
+  if (code === 'ENOSPC') return `디스크 자리가 모자랍니다 (${code})`;
+  if (code === 'EROFS') return `읽기 전용 드라이브입니다 (${code})`;
+  return err?.message ?? String(err);
+}
+
+/*
+ * ── 떠 놓고 **쓰다 깨지면** 방금 뜬 기록을 거둔다 ────────────────────────
+ *
+ * 스냅샷은 정말 쓰기 직전에 뜬다(한파일쓰기 머리말). 그런데 그 쓰기 자체가
+ * 깨지는 판이 남아 있었다 — 읽기 전용 파일(EPERM·EACCES), 엑셀이 잡고 있는
+ * 파일(EBUSY). 두 가지가 같이 샜다:
+ *
+ *   · 날 오류가 도구 밖으로 던져졌다 (`EPERM: operation not permitted, open …`)
+ *   · 파일은 한 글자도 안 바뀌었는데 이력에 그 턴이 남았다 — /undo 한 번이
+ *     그 헛턴에 먹히고, 사람이 되돌리려던 앞 턴의 진짜 변경은 그대로 남는다.
+ *
+ * 거두는 것은 **이번에 새로 뜬 기록**이고 **파일이 정말 그대로일 때**뿐이다.
+ * 같은 턴에 앞서 성공한 고치기의 기록은 턴 처음 모습이라 남겨야 하고,
+ * 쓰다 반쯤 깨진 파일은 기록이 있어야 /undo 로 되돌린다. 그대로인지는 쓰는
+ * 쪽이 가장 잘 안다(읽은 바이트 · 붙이기 전 크기) — 그래서 함수로 받는다.
+ *
+ * @returns {null | {error:string}}  null 이면 썼다.
+ */
+function 떠놓고쓰기(ctx, abs, label, 쓰기, 그대로인가) {
+  const 이력 = ctx.history;
+  const 새로뜸 = typeof 이력?.떴나 === 'function' && !이력.떴나(abs);
+  이력.snapshot(abs, label);
+  try {
+    쓰기();
+    return null;
+  } catch (err) {
+    let 그대로 = false;
+    try { 그대로 = !!그대로인가(); } catch { 그대로 = false; }
+    const 거둠 = 새로뜸 && 그대로 && 이력.버리기?.(abs) === true;
+    return {
+      error: `못 썼습니다: ${ctx.scope.show(abs)} — ${쓰기실패말(err)}\n`
+        + (그대로
+          ? `  (파일은 한 글자도 안 바뀌었습니다${거둠 ? ' — 되돌리기 이력에도 안 남겼습니다' : ''})`
+          : '  (쓰다가 깨져 파일이 반쯤 바뀌었을 수 있습니다 — /undo 로 이 턴 전으로 되돌릴 수 있습니다)'),
+    };
+  }
+}
+
+/*
+ * ── 절대경로로 적은 glob 무늬 ───────────────────────────────────────────
+ *
+ * Glob·Grep 은 무늬를 **상대경로**(`src/a.js`)와 견준다. 그래서 모델이 Read 에서
+ * 본 그대로 `C:/work/proj/src/*.js` · `/home/me/proj/src/*.ts` 로 적으면 한
+ * 파일에도 안 맞아 「찾은 파일 없음」 이 떴다 — 파일이 있는데. 작업 폴더 밖을
+ * 적어도 똑같이 「없음」 이라, 모델은 그 폴더가 비었다고 믿었다.
+ *
+ * 글로브 글자가 없는 앞머리를 떼어 경로로 풀고(범위 검사가 여기서 된다), 작업
+ * 폴더 기준 무늬로 바꾼다. 작업 폴더 자신이면 앞에 `/` 를 붙여 뿌리에 묶는다
+ * (fsutil.js 의 glob거르개 · rg 모두 `/` 로 시작하는 무늬를 뿌리에 묶어 읽는다).
+ */
+function 절대무늬풀기(무늬, 기준, ctx) {
+  const 글 = String(무늬).replace(/\\/g, '/');
+  const 빼기 = 글.startsWith('!');
+  const 몸 = 빼기 ? 글.slice(1) : 글;
+  if (!isAbsolute(몸)) return { 무늬: 글 };
+  const 조각 = 몸.split('/');
+  let n = 조각.findIndex((x) => /[*?[{]/.test(x));
+  if (n < 0) n = 조각.length - 1;   // 글로브 글자가 없으면 마지막 조각이 파일 이름이다
+  const 앞머리 = 조각.slice(0, n).join('/') || '/';
+  const 나머지 = 조각.slice(n).join('/');
+  let 자리;
+  try { 자리 = ctx.scope.resolve(앞머리); } catch (err) {
+    return {
+      error: `${String(err?.message ?? err).split('\n')[0]}\n`
+        + `  무늬 ${무늬} 는 작업 범위 밖을 가리킵니다 — 「없음」 이 아니라 안 찾아본 것입니다.`
+        + ' 작업 폴더 안의 경로로 적거나 src/**/*.js 처럼 상대 무늬로 주세요.',
+    };
+  }
+  const rel = relative(기준, 자리);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    return { error: `무늬의 자리(${ctx.scope.show(자리)})가 찾는 폴더(${ctx.scope.show(기준)}) 밖입니다: ${무늬}\n  path 를 빼거나 그 폴더 안의 무늬로 주세요.` };
+  }
+  const 앞 = ctx.scope.show(자리);
+  return { 무늬: `${빼기 ? '!' : ''}${앞 === '.' ? '' : 앞}/${나머지}` };
+}
+
 function 바이너리인가(abs) {
   if (!existsSync(abs)) return null;
   const buf = 앞머리(abs, 냄새맡을바이트);
@@ -323,11 +450,29 @@ function 글자경계까지(buf, 잘렸나) {
   return buf;
 }
 
-function 재는인코딩(abs) {
+/*
+ * ── 위 자는 **UTF-8 경계만** 안다 ─────────────────────────────────────────
+ *
+ * CP949·Shift_JIS·GBK·Big5 는 한 글자가 두 바이트고, 64KB 에서 자르면 앞
+ * 바이트 하나가 외톨이로 남는 일이 절반이다. 위 자는 그 바이트를 UTF-8 의
+ * 앞 바이트로 읽어 **한 바이트를 더 깎기도** 했다. 엄격하게 푸는 CP949
+ * 후보는 그 외톨이 하나에 통째로 떨어지고, 남는 것은 아무 바이트나 받는
+ * CP1252 였다:
+ *
+ *   64KB 넘는 사내 CP949 로그에 「추가 줄입니다」 Append
+ *     → 「이 파일은 CP1252 로 되어 있는데, 그 인코딩에 없는 글자」   (거절)
+ *   같은 파일에 「Total · 100」 Append
+ *     → 이어 붙임 · CP1252  — `·` 가 B7 한 바이트로 붙는다      (조용히 깨짐)
+ *
+ * 그래서 판정기에 **잘라 온 표본**이라고 알린다(encoding.js 의 guess). 끝의
+ * 반쪽 글자는 탈로 치지 않고, 한가운데의 없는 조합은 여전히 거른다.
+ */
+function 재는인코딩(abs, 읽어둔것 = null) {
   try {
-    const buf = 앞머리(abs, 인코딩볼바이트);
+    const buf = 읽어둔것 ?? 앞머리(abs, 인코딩볼바이트);
     if (!buf) return 'utf-8';
-    return decodeBytes(글자경계까지(buf, buf.length >= 인코딩볼바이트)).encoding;
+    const 잘렸나 = buf.length >= 인코딩볼바이트;
+    return decodeBytes(글자경계까지(buf, 잘렸나), { 잘림: 잘렸나 }).encoding;
   } catch { return 'utf-8'; }
 }
 
@@ -380,6 +525,37 @@ function 뜰만한낱말(cmd) {
   return out;
 }
 
+/*
+ * ── `cd 하위 && rm x` — cd 한 자리 기준으로도 푼다 (6회차 직접 사냥 M2 · Gemini 셸뜨기6m N2) ──────
+ *
+ * 낱말을 작업 폴더 기준으로만 풀어서, 모델이 아주 흔히 쓰는 `cd sub && rm x.txt` 에서 sub/x.txt 를 못 떴다.
+ * 뜬 것이 0이라 되돌린다는 말도 없었지만 /undo 뒤에도 안 돌아왔다. `cd sub && echo hi > new.txt` 로 만든 파일도
+ * 루트의 new.txt 로 떠져 sub/new.txt 는 /undo 뒤에 남았다.
+ *
+ * cd 뒤의 낱말은 **두 자리 다** 낸다 — 작업 폴더 기준과 cd 한 자리 기준. 어느 쪽이 맞는지는 명령줄만 보고는
+ * 모른다(`cd sub; cd ..` · 서브셸 괄호). 헛다리를 짚어도 없는 자리는 넘어가므로(위 머리말) 손해가 없다.
+ * cd 가 가리키는 것이 작업 폴더 안의 **있는 폴더**일 때만 기준을 옮긴다. cmd 의 `cd /d` 같은 스위치는 건너뛴다.
+ */
+function 풀낱말들(cmd, ctx) {
+  const out = [];
+  let cd자리 = null;
+  let cd다음 = false;
+  for (const t of 뜰만한낱말(cmd)) {
+    if (cd다음) {
+      if (/^\/[a-z]$/i.test(t)) continue;
+      cd다음 = false;
+      const 갈곳 = isAbsolute(t) || !cd자리 ? t : join(cd자리, t);
+      let 폴더인가 = false;
+      try { const a = ctx.scope.resolve(갈곳); 폴더인가 = existsSync(a) && statSync(a).isDirectory(); } catch { /* 밖이면 기준을 안 옮긴다 */ }
+      if (폴더인가) { cd자리 = 갈곳; continue; }
+    }
+    if (t === 'cd' || t === 'pushd') { cd다음 = true; continue; }
+    out.push(t);
+    if (cd자리 && !isAbsolute(t)) out.push(join(cd자리, t));
+  }
+  return out;
+}
+
 /**
  * 파일을 바꾸는 Bash 명령이면, 손대기 전 내용을 떠 둔다.
  *
@@ -414,19 +590,30 @@ function 바꾸기전스냅샷(cmd, ctx) {
    * (safety/guard.js).
    */
   const 셸쓰기 = 셸이파일에쓰나(cmd);
-  if (!isMutating(cmd) && !셸쓰기) return { 뜬것: [], 못뜬것: [], 상한걸림: false };
+  if (!isMutating(cmd) && !셸쓰기) return { 뜬것: [], 못뜬것: [], 상한걸림: false, 나중볼것: [] };
   const 뜬것 = [];
   const 못뜬것 = [];
   let 넘쳤나 = false;
-  for (const t of 뜰만한낱말(cmd)) {
-    if (뜬것.length + 못뜬것.length >= 스냅샷상한) { 넘쳤나 = true; break; }
+  // 명령 **뒤에** 볼 자리 — 지금 없는 이름과, 폴더 안으로 옮기거나 복사할 때의 새 이름 (나중에생긴것적기).
+  const 나중볼것 = [];
+  const 폴더들 = [];
+  const 있던파일 = [];
+  // 쓰는 꼴이라 **지금 없는 이름**을 미리 떠 둔 자리 — 명령 뒤에 정말 생긴 것만 화면 목록에 올린다 (나중에생긴것적기).
+  const 없던채뜬것 = [];
+  const 센것 = () => 뜬것.length + 못뜬것.length + 없던채뜬것.length;
+  // cd 기준으로 한 번 더 풀면 같은 자리가 두 번 나올 수 있다 — 한 번만 뜨고 한 번만 말한다.
+  const 본자리 = new Set();
+  for (const t of 풀낱말들(cmd, ctx)) {
+    if (센것() >= 스냅샷상한) { 넘쳤나 = true; break; }
     let abs;
     // 범위 밖은 어차피 checkPaths 가 이미 막았다. 여기서 터지면 안 된다 —
     // 뜨는 데 실패했다고 명령 자체를 막으면 안 되는 명령까지 막힌다.
     try { abs = ctx.scope.resolve(t); } catch { continue; }
+    if (본자리.has(abs)) continue;
+    본자리.add(abs);
     try {
       const 있나 = existsSync(abs);
-      if (있나 && statSync(abs).isDirectory()) continue;
+      if (있나 && statSync(abs).isDirectory()) { 폴더들.push(abs); continue; }
       /*
        * 쓰는 꼴이면 **없는 파일도** 떠 둔다.
        *
@@ -436,8 +623,12 @@ function 바꾸기전스냅샷(cmd, ctx) {
        *
        * 옮기기·지우기(isMutating)는 반대다. 없는 파일을 떠 두면 `rm *.tmp`
        * 한 번에 이력이 쓰레기로 찬다. 그래서 이 갈래는 쓰는 꼴에만 연다.
+       *
+       * 다만 `cp a b` · `mv a b` 의 새 이름(b)은 명령이 **만든다.** 안 뜨면 /undo 뒤에 사본이
+       * 남고 mv 는 두 벌이 됐다(6회차). 미리 뜨지 않고 명령 뒤에 **정말 생겼을 때만** 없던
+       * 자리로 적는다 — 헛기록은 안 쌓이고 새 이름은 되돌아간다.
        */
-      if (!있나 && !셸쓰기) continue;
+      if (!있나 && !셸쓰기) { 나중볼것.push(abs); continue; }
       /*
        * ── 뜬 것과 **못 뜬 것**을 갈라 담는다 ──────────────────────────
        *
@@ -452,7 +643,10 @@ function 바꾸기전스냅샷(cmd, ctx) {
        * **안전망이 있다고 말하는데 없는 것**이다.
        */
       const rec = ctx.history.snapshot(abs, 'Bash');
+      if (있나) 있던파일.push(abs);
       if (rec?.skipped) 못뜬것.push(`${ctx.scope.show(abs)} (${rec.skipped})`);
+      // 지금 없는 이름(쓰는 꼴)은 명령 뒤에 정말 생겼을 때만 목록에 올린다 — `echo` · `new` 같은 낱말까지 「떠 뒀습니다」 로 찍혔다 (6회차 직접 사냥 M1).
+      else if (!있나) 없던채뜬것.push(abs);
       else 뜬것.push(ctx.scope.show(abs));
     } catch { /* 못 뜨면 그냥 넘어간다. 명령은 돌아야 한다 */ }
   }
@@ -464,7 +658,60 @@ function 바꾸기전스냅샷(cmd, ctx) {
    * 마흔 개가 다 되돌아갈 줄 안다. Move 가 같은 자리에서 이미 말해 준다
    * (되돌리기반쪽) — 여기만 안 말하고 있었다.
    */
-  return { 뜬것, 못뜬것, 상한걸림: 넘쳤나 };
+  // 폴더 안으로 옮기거나 복사하면(`mv a.txt sub`) 새 이름은 `sub/a.txt` 다.
+  for (const 폴더 of 폴더들) {
+    for (const 파일 of 있던파일) {
+      const 새자리 = join(폴더, relative(dirname(파일), 파일));
+      /*
+       * 폴더 안에 **같은 이름이 이미 있으면** 지금 뜬다 (6회차 Gemini 셸뜨기6m N1).
+       *
+       * 무조건 명령 뒤로 미뤘더니 `cp a.txt sub` 가 덮어쓴 sub/a.txt 를 명령 뒤에 「원래 없던 자리」 로 적어, /undo 가
+       * 옛 내용으로 되돌리기는커녕 **지웠다**(mv 도). 없을 때만 명령 뒤에 본다. 있는데 못 뜨면(상한 · 못 읽음)
+       * 명령 뒤로 미루지 않는다 — 있던 파일을 없던 자리로 적는 것이 이 자리에서 제일 나쁜 꼴이다.
+       */
+      if (본자리.has(새자리)) continue;
+      본자리.add(새자리);
+      let 있음 = true;
+      try { 있음 = existsSync(새자리); } catch { /* 모르면 있다고 본다 */ }
+      if (!있음) { 나중볼것.push(새자리); continue; }
+      if (센것() >= 스냅샷상한) { 넘쳤나 = true; continue; }
+      try {
+        if (statSync(새자리).isDirectory()) continue;
+        const rec = ctx.history.snapshot(새자리, 'Bash');
+        if (rec?.skipped) 못뜬것.push(`${ctx.scope.show(새자리)} (${rec.skipped})`);
+        else 뜬것.push(ctx.scope.show(새자리));
+      } catch { /* 못 뜨면 넘어간다 — 명령은 돌아야 한다 */ }
+    }
+  }
+  /*
+   * 명령 **뒤에** 볼 자리도 상한에 걸리면 걸렸다고 말한다.
+   *
+   * 아래 slice 가 뒤엣것을 말없이 잘라 내고 있었다. 잘린 이름은 나중에생긴것적기()
+   * 가 아예 안 보므로, `mv a.txt n00.txt … n29.txt` 처럼 새 이름이 많으면 그중
+   * 몇 개는 정말 생겨도 되돌리기에 안 올라간다. 그래 놓고 상한걸림 은 false 였다 —
+   * 위 @returns 가 「대상이 너무 많아 뒤엣것은 보지도 못했다」 로 약속한 바로 그 값이
+   * 앞 갈래(뜬 개수)에서만 참이 됐다. 같은 성격의 누락이라 같이 말한다.
+   */
+  if (나중볼것.length > 스냅샷상한) 넘쳤나 = true;
+  return { 뜬것, 못뜬것, 상한걸림: 넘쳤나, 나중볼것: 나중볼것.slice(0, 스냅샷상한), 없던채뜬것 };
+}
+
+/**
+ * 명령이 끝난 뒤, 앞서 없던 이름 가운데 **새로 생긴 파일**을 되돌릴 거리로 적는다 (safety/undo.js 없던자리기록).
+ * 뜬것 목록에도 넣어 화면이 「되돌릴 수 있다」 를 사실대로 말하게 한다. 폴더는 안 적는다 — 위 머리말과 같다.
+ */
+function 나중에생긴것적기(떠본것, ctx) {
+  for (const abs of 떠본것?.나중볼것 ?? []) {
+    try {
+      if (!existsSync(abs) || statSync(abs).isDirectory()) continue;
+      const rec = ctx.history.없던자리기록?.(abs, 'Bash');
+      if (rec) 떠본것.뜬것.push(ctx.scope.show(abs));
+    } catch { /* 못 적으면 넘어간다 — 명령은 이미 돌았다 */ }
+  }
+  // 쓰는 꼴이라 미리 떠 둔 없는 이름 — 명령 뒤에 정말 생겼으면 그때 목록에 올린다 (바꾸기전스냅샷 · 6회차 직접 사냥 M1).
+  for (const abs of 떠본것?.없던채뜬것 ?? []) {
+    try { if (existsSync(abs) && !statSync(abs).isDirectory()) 떠본것.뜬것.push(ctx.scope.show(abs)); } catch { /* 넘어간다 */ }
+  }
 }
 
 /** 지금 파일이 몇 줄인가. 붙인 뒤 '얼마나 찼는지' 를 사실로 말해 주려고 센다. */
@@ -562,9 +809,10 @@ async function 엑셀읽기(abs, args, ctx) {
      * 아무것도 못 읽는 것보다 낫다.
      */
     const 빌린것 = await 빌려읽기(abs, ctx, r.error);
-    if (빌린것) return 빌린것;
-    if (직접못읽나(abs)) return { error: 못바꿈말(ctx.scope.show(abs), extname(abs)), 끝났다: true };
-    return { error: r.error };
+    if (빌린것?.content) return 빌린것;
+    const 덧 = 빌린덧말(빌린것);
+    if (직접못읽나(abs)) return { error: 못바꿈말(ctx.scope.show(abs), extname(abs)) + 덧, 끝났다: true };
+    return { error: r.error + 덧 };
   }
 
   const { text, 잘림 } = excelText(r.sheets);
@@ -599,7 +847,17 @@ async function 엑셀읽기(abs, args, ctx) {
  * 그 프로그램이다. 그런데 모델은 그걸 부를 수도 없었고(울타리에 막혔다),
  * 있는지 볼 수도 없었다.
  *
- * @returns {object|null} 읽어냈으면 도구 결과. 못 하면 null (부르는 쪽이 원래 오류를 낸다)
+ * ── 못 했으면 **왜** 못 했는지 같이 돌려준다 (막판 훑기) ─────────────────
+ *
+ * 여태 실패를 전부 `null` 로 뭉쳤다. 그러면 부르는 쪽은 제 원래 오류만 내고,
+ * `글로바꾸기` 가 애써 적어 둔 까닭 — 「변환기가 종료 77 로 끝났습니다
+ * (javaldx failed…)」, 「바꿔 놓을 자리를 못 만들었습니다: EACCES」 — 이
+ * 아무 데도 안 남았다. 화면에는 「deel 이 직접 못 읽습니다」 한 줄뿐이라,
+ * LibreOffice 가 깔려 있는데 자바가 없어서 진 것인지 파일이 진짜 깨진 것인지
+ * 가릴 길이 없다. 사람이 할 일이 완전히 다른 두 경우가 같은 말로 끝났다.
+ *
+ * @returns {{content:string,summary:string}|{왜:string}|null}
+ *   읽어냈으면 도구 결과. **불렀는데** 실패했으면 `{왜}`. 아예 안 불렀으면 null.
  */
 async function 빌려읽기(abs, ctx, 원래오류) {
   if (!바꿔볼까(abs)) return null;
@@ -614,7 +872,13 @@ async function 빌려읽기(abs, ctx, 원래오류) {
   // signal 을 같이 넘긴다. 멈추라고 하면 soffice 를 죽여야 한다 — 안 그러면
   // ESC 를 듣고도 남은 90초를 그대로 기다린다.
   const r = await 글로바꾸기(abs, root, { 찾은것: 있는것, signal: ctx.signal ?? null });
-  if (!r.ok || !r.text.trim()) return null;
+  if (!r.ok || !r.text.trim()) {
+    // `없음:true` 는 「이 갈래를 받는 변환기가 없다」 는 뜻이라 못바꿈말 이 이미
+    // 제 말로 설명한다. 여기서 또 얹으면 같은 말이 두 번 나간다.
+    if (r.없음) return null;
+    const 왜 = r.ok ? '변환기가 빈 글을 돌려줬습니다' : String(r.왜 ?? '').trim();
+    return 왜 ? { 왜 } : null;
+  }
 
   const 줄수 = r.text.split('\n').length;
   return {
@@ -629,6 +893,16 @@ async function 빌려읽기(abs, ctx, 원래오류) {
 }
 
 /**
+ * 빌려읽기 가 돌려준 실패 까닭을 오류 뒤에 붙일 한 줄로.
+ *
+ * 붙이는 자리가 넷이라 여기 한 번만 적는다 — 따로 적으면 한쪽만 고쳐진다.
+ * 읽어냈거나 아예 안 불렀으면 빈 글자다(붙일 것이 없다).
+ */
+function 빌린덧말(빌린것) {
+  return 빌린것?.왜 ? `\n(이 PC 의 변환기로도 해 봤지만 실패했습니다: ${빌린것.왜})` : '';
+}
+
+/**
  * Figma 시안을 글로 읽어 돌려준다.
  *
  * 문서·PDF 와 같은 규칙이다. 다른 점은 **무엇을 안 냈는지 먼저 말한다**는
@@ -638,15 +912,23 @@ function fig읽기(abs, ctx) {
   const r = readFig(abs);
   if (!r.ok) return { error: r.error, ...(r.끝났다 ? { 끝났다: true } : {}) };
   const { text, 잘림 } = docText(r.덩이들);
+  /*
+   * 안내를 **앞에** 붙인다 — 머리말이 적어 둔 그대로.
+   *
+   * 여태 글 뒤에 붙였다. 그러면 창이 좁을 때 clip 이 끝을 잘라 안내가 통째로
+   * 사라진다. 긴 시안 하나를 8k 창에서 열어 보니 남은 것은 짜임 글뿐이었다 —
+   * 「그림·색·글꼴은 안 나옵니다」 도, 「Edit/Write 로 못 고칩니다」 도 한 글자도
+   * 안 실렸다. 모델은 색까지 다 봤다고 여기고 답하고, 못 고치는 파일을 고치려 든다.
+   *
+   * 앞에 두면 잘리는 것은 짜임 글이고, 그건 요약이 「일부만」 으로 말해 준다.
+   * 잘라 낼 몫도 안내 길이를 뺀 나머지로 잡는다 — 안 그러면 안내를 붙인 만큼
+   * 실을만큼() 을 넘겨 버린다.
+   */
+  const 안내 = '(.fig 시안을 짜임과 글로 바꿔서 보여준 것입니다. 그림·색·글꼴은 안 나옵니다.\n'
+    + ' 이 파일은 Edit/Write 로 고칠 수 없습니다.)'
+    + ([...(r.말 ?? []), ...잘림].length ? `\n(${[...(r.말 ?? []), ...잘림].join(' · ')})` : '');
   return {
-    content: clip(
-      `${text}
-
-(.fig 시안을 짜임과 글로 바꿔서 보여준 것입니다. 그림·색·글꼴은 안 나옵니다.
- 이 파일은 Edit/Write 로 고칠 수 없습니다.)`
-      + ([...(r.말 ?? []), ...잘림].length ? `\n(${[...(r.말 ?? []), ...잘림].join(' · ')})` : ''),
-      실을만큼(ctx),
-    ),
+    content: `${안내}\n\n${clip(text, Math.max(200, 실을만큼(ctx) - 안내.length - 2))}`,
     summary: figSummary(r) + (잘림.length ? ' · 일부만' : ''),
   };
 }
@@ -656,10 +938,10 @@ async function 문서읽기(abs, ctx) {
   if (!r.ok) {
     // 우리가 못 읽는다고 끝이 아니다. 이 PC 에 변환기가 있으면 빌려 본다.
     const 빌린것 = await 빌려읽기(abs, ctx, r.error);
-    if (빌린것) return 빌린것;
+    if (빌린것?.content) return 빌린것;
     // 끝났다 를 그대로 넘긴다. 여기서 떨구면 docs.js 가 「다시 열어도 같다」고
     // 판정해 놓은 것이 루프까지 못 가서, 되풀이 억제가 안 걸린다.
-    return { error: r.error, ...(r.끝났다 ? { 끝났다: true } : {}) };
+    return { error: r.error + 빌린덧말(빌린것), ...(r.끝났다 ? { 끝났다: true } : {}) };
   }
   const { text, 잘림 } = docText(r.덩이들);
   return {
@@ -781,24 +1063,107 @@ async function 한개옮기기({ from, to, overwrite = false }, ctx) {
   // 읽기만 막고 옮기기를 열어 두면 .deel/config.json 을 옮겨 연결을 끊을 수 있다.
   for (const p of [앞, 뒤]) { const 왜 = 내부살림(p); if (왜) return { error: 왜 }; }
 
+  /*
+   * ── 링크(정션·심볼릭 링크) **자체**는 옮기지 않는다 ─────────────────────
+   *
+   * 폴더 링크를 옮기면 아래 walk 가 링크 너머의 진짜 파일을 짝지어 뜬다.
+   * 옮기는 것은 링크 하나인데, /undo 는 「새 자리의 x.txt 는 원래 없던 것」
+   * 이라며 지운다 — 새 자리는 여전히 진짜 폴더를 가리키므로 **진짜 파일이
+   * 지워진다.** 헌 자리에는 링크 대신 사본 폴더가 생긴다. 안전망이 파일을
+   * 지우는 꼴이라, 되돌리기(safety/undo.js)가 링크를 모르는 한 여기서 막는다.
+   */
+  const 링크인가 = (p) => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
+  if (링크인가(앞) || 링크인가(뒤)) {
+    const 어느것 = 링크인가(앞) ? from : to;
+    return {
+      error: `${어느것} 는 링크(정션·심볼릭 링크)라 옮기지 않습니다 — 되돌리기가 링크를 따라가 진짜 파일을 지울 수 있습니다.\n`
+        + '  링크가 가리키는 폴더 안의 파일을 옮기거나, 링크를 옮겨야 하면 사용자에게 직접 해 달라고 하세요.',
+    };
+  }
+
   const 폴더인가 = statSync(앞).isDirectory();
+  /*
+   * ── 대소문자만 다른 **같은 파일** (윈도우·맥) ──────────────────────────
+   *
+   * 이 파일 시스템들은 `a.txt` 와 `A.txt` 를 한 파일로 친다. 글자로만 견주면
+   * 두 가지가 틀어졌다 —
+   *
+   *   Move a.txt → A.txt     「이미 있습니다」     (자기 자신과 겹친다고 했다)
+   *   Move src → SRC/inner   EINVAL 날 오류       (제 안인 것을 못 알아봤다)
+   *
+   * 글자가 대소문자만 다를 때 **디스크의 같은 물건인지**를 번호(dev·ino)로 본다.
+   * 리눅스처럼 가리는 판에서는 서로 다른 파일이라 이 갈래에 안 들어온다.
+   */
+  const 같은물건 = (p, q) => {
+    try {
+      const a = statSync(p, { bigint: true });
+      const b = statSync(q, { bigint: true });
+      return a.ino !== 0n && a.ino === b.ino && a.dev === b.dev;
+    } catch { return false; }
+  };
+  const 이름만바꿈 = 앞.toLowerCase() === 뒤.toLowerCase() && 같은물건(앞, 뒤);
   /*
    * 폴더를 **제 안으로** 옮기면 그 폴더가 통째로 사라진다 (`mv a a/b`).
    * 셸에서도 잘 나는 사고라 여기서 막는다.
    */
-  if (폴더인가 && (뒤 + sep).startsWith(앞 + sep)) {
+  const 제안인가 = (뒤 + sep).startsWith(앞 + sep)
+    || ((뒤.toLowerCase() + sep).startsWith(앞.toLowerCase() + sep) && 같은물건(앞, 뒤.slice(0, 앞.length)));
+  if (폴더인가 && 제안인가 && !이름만바꿈) {
     return { error: `폴더를 제 안으로 옮길 수 없습니다: ${from} → ${to}` };
   }
 
   /*
-   * 닿을 자리에 이미 있으면 **기본값은 거절**이다.
+   * ── 옮기다 깨질 것이 뻔한 것은 **뜨기 전에** 거절한다 ────────────────────
+   *
+   * 아래에서 스냅샷을 뜬 다음 renameSync·mkdirSync 가 깨지면, 파일은 한
+   * 글자도 안 움직였는데 되돌리기 이력에 그 턴이 남는다. /undo 는 그 헛턴을
+   * 되돌리고 「되돌린수=1」 을 찍고, 사람이 되돌리려던 **앞 턴**의 진짜
+   * 변경은 그대로 남는다. 한파일쓰기 가 「스냅샷은 정말 쓰기 직전에」 로
+   * 막아 둔 그 꼴이 옮기기에서만 살아 있었다.
+   *
+   *   폴더 → 이미 있는 폴더 (overwrite)   윈도우 EPERM · 리눅스 ENOTEMPTY
+   *   파일 → 이미 있는 폴더 (overwrite)   EISDIR (스냅샷이 폴더를 읽다 날 오류로 던졌다)
+   *   폴더 → 이미 있는 파일 (overwrite)   EPERM · ENOTDIR
+   *   길 중간이 파일 (f.txt/b.txt)         mkdir EEXIST · ENOTDIR (날 오류로 던졌다)
+   *
+   * 폴더를 폴더 위에 덮어쓰는 것은 되돌리기로도 못 지킨다 — 닿을 자리에 있던
+   * 파일들은 뜨지도 않는다. 막는 편이 맞다.
+   *
+   * ── 이 관문이 **overwrite 안내보다 먼저**여야 하는 이유 ──────────────────
+   *
+   * 아래 「덮어쓰려면 overwrite: true 를 주세요」 가 먼저 있었다. 그래서 있는
+   * 폴더 위로 옮기면 두 말이 서로 어긋났다 —
+   *
+   *   Move(a, b)                 → 덮어쓰려면 overwrite: true 를 주세요
+   *   Move(a, b, overwrite:true) → b 는 이미 있는 폴더라 덮어쓸 수 없습니다
+   *
+   * 시킨 대로 했는데 거절이다. 모델은 그 한 걸음을 반드시 밟으므로 걸음이
+   * 통째로 버려지고, 작은 모델은 같은 자리를 맴돈다. 「폴더는 못 덮어쓴다」
+   * 가 규칙이면 **첫 안내**가 그 말을 해야 한다 — 그리고 되는 길(이름까지
+   * 적어서 그 안으로 넣기)을 같이 준다.
+   */
+  if (existsSync(뒤) && !이름만바꿈) {
+    if (statSync(뒤).isDirectory()) {
+      return { error: `${to} 는 이미 있는 폴더라 덮어쓸 수 없습니다 — 그 안으로 옮기려면 to 에 ${to}/${from.split(/[\\/]/).filter(Boolean).pop()} 처럼 이름까지 적어 주세요.` };
+    }
+    if (폴더인가) {
+      return { error: `${to} 는 이미 있는 파일이라 폴더로 덮어쓸 수 없습니다 — 다른 이름을 주세요.` };
+    }
+  }
+  /*
+   * 닿을 자리에 이미 **파일**이 있으면 기본값은 거절이다.
    *
    * 조용히 덮어쓰면 그 파일 내용이 그 자리에서 없어진다. 구조를 바꾸는 일은
    * 파일을 스무 개씩 옮기는 일이라, 이름이 겹치는 것이 드물지 않다.
-   * 겹쳤다고 알려 주면 모델이 이름을 고쳐서 다시 부른다.
+   * 겹쳤다고 알려 주면 모델이 이름을 고쳐서 다시 부른다. 여기까지 왔으면
+   * 파일 → 파일 뿐이라, overwrite: true 는 **정말 되는 길**이다.
    */
-  if (existsSync(뒤) && !overwrite) {
+  if (existsSync(뒤) && !overwrite && !이름만바꿈) {
     return { error: `${말('err.alreadyThere', { 경로: to })}\n  ${말('err.overwriteHint')}` };
+  }
+  try { mkdirSync(dirname(뒤), { recursive: true }); }
+  catch (err) {
+    return { error: `못 옮겼습니다: ${to} 로 가는 길에 폴더를 만들 수 없습니다 — 길 중간에 같은 이름의 파일이 있는지 보세요 (${err.code ?? err.message})` };
   }
 
   /*
@@ -821,7 +1186,8 @@ async function 한개옮기기({ from, to, overwrite = false }, ctx) {
    * 뜨는 것은 여기서 훑은 것뿐이라, 2만 개가 넘는 폴더를 옮기면 `/undo` 가
    * 앞의 2만 개만 되돌린다. 그걸 말 안 하면 사람은 되돌렸다고 믿고 넘어간다.
    */
-  const 되돌리기반쪽 = !!훑은것?.잘림;
+  // 대소문자만 바꾸는 것은 이름 하나로 되돌린다 — 훑은 수와 상관없다 (아래 이름바꿈기록).
+  const 되돌리기반쪽 = !!훑은것?.잘림 && !이름만바꿈;
   /*
    * ── 살림 폴더는 **옮겨지는데 세지도 뜨지도 않는다** ────────────────
    *
@@ -838,23 +1204,70 @@ async function 한개옮기기({ from, to, overwrite = false }, ctx) {
    * 나쁘다. 대신 **말은 한다.** 바로 아래 되돌리기반쪽 이 같은 성격의
    * 누락을 이미 말해 주고 있어서, 한쪽만 말하는 것이 그 자체로 어긋남이다.
    */
-  const 안뜬살림 = 폴더인가 ? (훑은것?.건너뛴살림 ?? []) : [];
-  for (const [a, b] of 짝들) {
-    ctx.history.snapshot(a, 'Move');
-    ctx.history.snapshot(b, 'Move');
+  const 안뜬살림 = 폴더인가 && !이름만바꿈 ? (훑은것?.건너뛴살림 ?? []) : [];
+  let 이름못되돌림 = false;
+  // 옮기기가 깨지면 **이번에 새로 뜬 기록만** 거둔다 (떠놓고쓰기 머리말).
+  const 이번에뜬것 = [];
+  let 이름기록 = null;
+  if (!이름만바꿈) {
+    for (const [a, b] of 짝들) {
+      for (const p of [a, b]) {
+        if (typeof ctx.history.떴나 === 'function' && !ctx.history.떴나(p)) 이번에뜬것.push(p);
+        ctx.history.snapshot(p, 'Move');
+      }
+    }
+  } else if (typeof ctx.history.이름바꿈기록 === 'function') {
+    /*
+     * ── 대소문자만 바꿀 때는 **이름 바꾸기 자체**를 적는다 ──────────────
+     *
+     * 예전에는 뜨는 순서로 이름을 되돌렸다 — [A.txt: 없던 파일] 을 먼저,
+     * [a.txt: 내용] 을 뒤에 남겨 /undo 가 지우고 다시 만들게. 그러려고 파일을
+     * 잠깐 비켜 두기까지 했다. 세 곳에서 샜다:
+     *
+     *   · 이 턴에 이미 손댄 파일 — 앞 기록이 먼저라 순서를 못 바꿔 「이름은 못
+     *     되돌린다」 고만 했다
+     *   · 폴더 — 안의 파일만 떠서 /undo 뒤에도 폴더 이름은 DIR 로 남았다
+     *   · 그림처럼 내용을 못 뜨는 파일 — 지우지도 다시 만들지도 못해 이름이 남았다
+     *
+     * 이름 바꾸기는 내용을 안 바꾼다. 되돌릴 것은 이름 하나라 그걸 그대로
+     * 적는다. /undo 는 내용을 다 되돌린 **뒤에** 이름을 되돌린다
+     * (safety/undo.js 의 이름바꿈기록). 같은 턴의 앞 기록과 순서가 안 얽힌다.
+     */
+    이름기록 = ctx.history.이름바꿈기록(앞, 뒤, 'Move');
+  } else {
+    // 이름 바꾸기를 적을 줄 모르는 이력이다(검사의 대역 등). 내용은 안 바뀌니 잃을 것은 없다.
+    이름못되돌림 = true;
   }
 
-  mkdirSync(dirname(뒤), { recursive: true });
   let 원본남음 = null;
+  /*
+   * 옮기는 함수는 갈아 끼울 수 있게 둔다. rename 이 EBUSY 로 깨지는 판(다른
+   * 프로그램이 잡고 있는 파일)은 검사에서 파일 시스템으로 못 만든다
+   * (test/undo.test.js 의 쓰기-실패-턴).
+   */
+  const 이름바꾸기 = ctx.옮기기fs?.renameSync ?? renameSync;
   try {
-    renameSync(앞, 뒤);
+    이름바꾸기(앞, 뒤);
   } catch (err) {
+    if (err.code !== 'EXDEV') {
+      /*
+       * rename 은 되거나 안 되거나다 — 여기 오면 한 바이트도 안 움직였다.
+       * 방금 남긴 기록을 두면 /undo 한 번이 이 헛턴에 먹히고 앞 턴의 진짜
+       * 변경은 그대로 남는다(위 「뜨기 전에 거절한다」 머리말의 그 꼴). 거둔다.
+       */
+      let 거둠 = false;
+      if (이름기록) 거둠 = ctx.history.버리기?.(뒤, 이름기록) === true;
+      for (const p of 이번에뜬것) 거둠 = (ctx.history.버리기?.(p) === true) || 거둠;
+      return {
+        error: `못 옮겼습니다: ${from} → ${to} — ${쓰기실패말(err)}\n`
+          + `  (아무것도 안 옮겨졌습니다${거둠 ? ' — 되돌리기 이력에도 안 남겼습니다' : ''})`,
+      };
+    }
     /*
      * 드라이브가 다르면 rename 이 안 된다 (윈도우 C: → D:, 리눅스 마운트 경계).
      * 그때만 복사해서 옮긴다. 늘 복사하지 않는 것은 큰 폴더에서 값이 크고,
      * 복사 도중에 끊기면 양쪽에 반씩 남기 때문이다.
      */
-    if (err.code !== 'EXDEV') return { error: `못 옮겼습니다: ${err.message}` };
     const 벌어진일 = 복사해옮기기(앞, 뒤);
     if (벌어진일.복사깨짐) {
       // 닿은 자리를 여기서 지우지 않는다 — 이미 있던 폴더로 옮기는 중이었으면
@@ -877,6 +1290,9 @@ async function 한개옮기기({ from, to, overwrite = false }, ctx) {
     : '')
     + (원본남음
       ? `\n(닿은 자리에는 다 옮겼는데 원본을 못 지웠습니다 — 지금 ${ctx.scope.show(앞)} 에도 그대로 있습니다: ${원본남음})`
+      : '')
+    + (이름못되돌림
+      ? '\n(이 되돌리기 이력은 이름 바꾸기를 적을 줄 몰라 /undo 가 이름의 대소문자는 못 되돌립니다 — 내용은 바뀌지 않았습니다)'
       : '');
   return {
     content: `옮김: ${ctx.scope.show(앞)} → ${ctx.scope.show(뒤)}${무엇 ? ` (${무엇})` : ''}${경고}`,
@@ -885,10 +1301,14 @@ async function 한개옮기기({ from, to, overwrite = false }, ctx) {
     /*
      * 폴더를 옮겼으면 **옮겨진 파일 하나하나**를 적어 준다.
      *
-     * 닿은 자리가 이미 있던 폴더면(`Move('새것', 'src')`) 그 폴더에는 남이
-     * 고치던 파일도 산다. 「이 폴더가 바뀌었다」 로만 적어 두면 나중에
-     * /commit 이 그 폴더를 통째로 담고, 남의 변경이 이 커밋에 실린다.
+     * 바로 위 changed 는 **폴더** 자리 하나다. 그런데 이걸 받는 쪽은 전부
+     * 파일을 받는 자리다 — loop.js 의 손댄파일(턴 끝에 디스크와 견준다),
+     * repl.js 의 noteChange, 거기서 이어지는 /diff 와 /commit. 폴더 이름
+     * 하나만 적어 두면 파일 몇백 개가 움직였다는 사실이 아무 데도 안 남는다.
      * 무엇이 실제로 움직였는지는 지금 이 자리만 안다.
+     *
+     * (닿은 자리가 이미 있던 폴더인 경우는 여기 못 온다 — 위 「옮기다 깨질
+     * 것이 뻔한 것은 뜨기 전에 거절한다」 가 그 앞에서 막는다.)
      */
     바뀐것들: 폴더인가 ? 짝들.map(([, b]) => b) : null,
   };
@@ -963,9 +1383,11 @@ const isHwpxPath = (p) => /\.hwpx$/i.test(String(p ?? ''));
  */
 function hwpx새로만들기(args, ctx, abs) {
   const 만듦 = hwpx만들기(args.content, { 제목: null });
-  ctx.history.snapshot(abs, 'Write');
-  mkdirSync(dirname(abs), { recursive: true });
-  writeFileSync(abs, 만듦.buf);
+  const 못씀 = 떠놓고쓰기(ctx, abs, 'Write', () => {
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, 만듦.buf);
+  }, () => !existsSync(abs));
+  if (못씀) return 못씀;
   /*
    * `seen` 에 안 올린다.
    *
@@ -1092,7 +1514,6 @@ function 한파일쓰기(args, ctx) {
     if (existed) { try { 읽음 = readTextFull(abs); } catch { 읽음 = null; } }
     // 덮어쓰기 전 내용. 바뀐 자리를 보여주려면 지금 떠 놔야 한다.
     const 이전 = 읽음?.text ?? null;
-    mkdirSync(dirname(abs), { recursive: true });
 
     /*
      * 원래 있던 파일이면 그 파일이 **지금** 쓰는 인코딩으로 되돌려 쓴다.
@@ -1114,7 +1535,15 @@ function 한파일쓰기(args, ctx) {
      * 되돌려 쓰는 쪽이 읽는 쪽보다 위험한데 말은 더 단정했다.
      */
     const 짐작이다 = !!(읽음 && 읽음.sure === false);
-    const 만든것 = encode(args.content, 원래);
+    // 안 바뀐 앞뒤는 읽은 바이트 그대로 둔다 (encoding.js 의 바꾼데만쓰기 머리말).
+    const 만든것 = 읽음 ? 바꾼데만쓰기(읽음.buf, 읽음.text, args.content, 원래) : encode(args.content, 원래);
+    // 인코더를 못 만들면 조용히 UTF-8 이 된다. `lost` 는 비어 있다 — 따로 본다.
+    if (만든것.fellBack) {
+      return {
+        error: `이 파일은 ${encLabel(원래)} 로 되어 있는데, 이 Node 가 그 인코딩으로 되돌려 쓸 줄 모릅니다.\n`
+             + '  그대로 쓰면 파일 전체가 UTF-8 로 바뀝니다. 안 쓰고 멈췄습니다.',
+      };
+    }
     if (만든것.lost.length) {
       return {
         error: `이 파일은 ${encLabel(원래)} 로 되어 있는데, 그 인코딩에 없는 글자가 있습니다: `
@@ -1122,8 +1551,12 @@ function 한파일쓰기(args, ctx) {
              + `  그대로 쓰면 그 글자들이 뭉개집니다. 해당 글자를 빼거나, 파일을 UTF-8 로 바꿔도 되는지 사용자에게 물어보세요.`,
       };
     }
-    ctx.history.snapshot(abs, 'Write');
-    writeFileSync(abs, 만든것.buf);
+    // 폴더 만들기도 쓰기 안에 둔다 — 길 중간이 파일이라 깨지면 그것도 못 쓴 것이다 (떠놓고쓰기).
+    const 못씀 = 떠놓고쓰기(ctx, abs, 'Write', () => {
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, 만든것.buf);
+    }, () => (existed ? !!읽음 && readFileSync(abs).equals(읽음.buf) : !existsSync(abs)));
+    if (못씀) return 못씀;
     ctx.seen.add(abs);
     const n = args.content.split('\n').length;
     const 표기 = 원래 !== 'utf-8' ? ` · ${encLabel(원래)}${짐작이다 ? ' (짐작)' : ''}` : '';
@@ -1149,7 +1582,10 @@ function 여러파일쓰기(목록, ctx) {
   const 결과 = [];
   for (const x of 목록) {
     if (typeof x.file_path !== 'string' || !x.file_path) {
-      결과.push({ path: null, ok: false, error: 'file_path 가 없습니다' });
+      // 보인이름 을 빼면 실패 줄이 `✗ undefined — file_path 가 없습니다` 로
+      // 모델에게 나간다. 작은 모델은 그걸 파일 이름으로 읽고 `undefined` 라는
+      // 이름으로 다시 보낸다. 여러군데고치기() 가 같은 자리에 쓰는 말을 그대로 쓴다.
+      결과.push({ path: null, 보인이름: '(경로 없음)', ok: false, error: 'file_path 가 없습니다' });
       continue;
     }
     let r;
@@ -1195,6 +1631,27 @@ function 여러파일쓰기(목록, ctx) {
  * loop.js 의 잘린 인자 살려쓰기, repl.js 의 바뀐 자리 그리기, 되돌리기 스냅샷.
  */
 function 한군데고치기(args, ctx) {
+  /*
+   * ── 글이 아닌 old_string·new_string 은 **받지 않는다** ──────────────────
+   *
+   * 여기서 인자 꼴을 안 봤다. 그래서 모델이 new_string 을 빠뜨리면(지우려는
+   * 뜻일 때 흔하다) 아래 applySpans 가 `undefined` 를 글자로 이어 붙였다:
+   *
+   *   Edit({old_string:'world'})           → 고침: a.txt (1군데)
+   *   파일                                 → hello undefined
+   *
+   * null 이면 `null`, 숫자면 그 숫자가 들어갔다. old_string 이 숫자면
+   * indexOf 가 글로 바꿔 찾아 엉뚱한 자리가 고쳐졌다(`v456v123`). 오류가
+   * 없으니 모델은 「고침」 을 믿고 넘어가고, 사람은 커밋에서야 본다.
+   * edits 배열도 이 함수를 지나므로 같이 막힌다.
+   */
+  if (typeof args.old_string !== 'string') {
+    return { error: 'old_string 이 없거나 글이 아닙니다 — 파일에서 찾을 글을 그대로 주세요.' };
+  }
+  if (typeof args.new_string !== 'string') {
+    return { error: 'new_string 이 없거나 글이 아닙니다 — 바꿀 내용을 글로 주세요.'
+      + ' 그 자리를 지우려는 것이면 new_string 에 빈 글("")을 주세요.' };
+  }
   const abs = ctx.scope.resolve(args.file_path);
   if (!existsSync(abs)) return { error: 말('err.noSuchFile', { 경로: args.file_path }) };
   const 못고치는이유 = 내부살림(abs);
@@ -1234,11 +1691,28 @@ function 한군데고치기(args, ctx) {
     return { error: `찾지 못했습니다.${hint}` };
   }
 
-  const next = applySpans(text, m.spans, (matched) =>
-    m.tier === 'exact' ? args.new_string : reindent(args.new_string, matched, args.old_string));
+  // CRLF 만 쓰는 파일이면 넣는 글도 CRLF 로 (edit-match.js 의 CRLF뿐인가 머리말).
+  const 줄끝맞춤 = CRLF뿐인가(text) ? CRLF로 : (s) => s;
+  const next = applySpans(text, m.spans, (matched) => 줄끝맞춤(
+    m.tier === 'exact' ? args.new_string
+      // 정규화로 찾았으면 넣는 글도 파일의 꼴(NFC·NFD)로 (edit-match.js 의 꼴맞추기).
+      : m.tier === 'nfc' ? 꼴맞추기(args.new_string, matched)
+        : reindent(args.new_string, matched, args.old_string)));
 
-  // 읽은 그 인코딩으로 되돌려 쓴다.
-  const 만든것 = encode(next, 읽음.encoding);
+  // 읽은 그 인코딩으로 되돌려 쓴다. 안 바뀐 앞뒤는 읽은 바이트 그대로 (encoding.js 의 바꾼데만쓰기).
+  const 만든것 = 바꾼데만쓰기(읽음.buf, text, next, 읽음.encoding);
+  /*
+   * 인코더를 못 만들면 encode() 는 **조용히 UTF-8 바이트**를 돌려준다.
+   * 그 값을 그냥 쓰면 한 줄 고쳤을 뿐인데 파일 전체가 UTF-8 로 바뀐다 —
+   * 이 저장소가 encoding.js 맨 위에 「제일 위험한 자리」 라고 적어 둔 그것이다.
+   * `lost` 는 비어 있어서 위의 검사로는 안 걸린다. 따로 본다.
+   */
+  if (만든것.fellBack) {
+    return {
+      error: `이 파일은 ${encLabel(읽음.encoding)} 로 되어 있는데, 이 Node 가 그 인코딩으로 되돌려 쓸 줄 모릅니다.\n`
+           + '  그대로 쓰면 파일 전체가 UTF-8 로 바뀝니다. 안 고치고 멈췄습니다.',
+    };
+  }
   if (만든것.lost.length) {
     return {
       error: `이 파일은 ${encLabel(읽음.encoding)} 로 되어 있는데, 그 인코딩에 없는 글자를 넣으려 합니다: `
@@ -1248,9 +1722,9 @@ function 한군데고치기(args, ctx) {
   }
   // 스냅샷은 **정말 쓰기 직전**에 뜬다 (한파일쓰기 의 같은 자리 머리말).
   // 위 인코딩 거절로 끝나는 길에서 뜨면, 아무것도 안 바꾼 턴이 이력에 남아
-  // /undo 한 번을 통째로 먹는다.
-  ctx.history.snapshot(abs, 'Edit');
-  writeFileSync(abs, 만든것.buf);
+  // /undo 한 번을 통째로 먹는다. 쓰기 자체가 깨지는 것은 떠놓고쓰기 머리말.
+  const 못씀 = 떠놓고쓰기(ctx, abs, 'Edit', () => writeFileSync(abs, 만든것.buf), () => readFileSync(abs).equals(읽음.buf));
+  if (못씀) return 못씀;
 
   const n = m.spans.length;
   const how = m.tier === 'exact' ? '' : ` · ${TIER_LABELS[m.tier]}`;
@@ -1411,6 +1885,52 @@ function 그림보기(abs, ctx) {
  * rg 길도 못 막는다 — 없는 자리면 rg 가 죽고 빠르게찾기() 가 null 을
  * 돌려주며 그대로 이 아래 자바스크립트 길로 내려온다.
  */
+/*
+ * ── 파일 하나를 자바스크립트로 찾는다 ────────────────────────────────────
+ *
+ * 예전 길(rg 없는 PC)과 「rg 가 글자로 못 푼 파일」 이 **같은 함수**를 쓴다.
+ * 따로 적어 두면 두 자리의 규칙(바이너리 판정·인코딩 풀기·줄 가르기)이
+ * 언젠가 갈리고, 그날 같은 파일이 엔진에 따라 다른 답을 낸다 — fastgrep.js
+ * 머리말이 막으려는 바로 그 고장이다.
+ *
+ * @returns {boolean} 열어 읽었나. 바이너리이거나 못 연 파일이면 false.
+ */
+function 한파일에서찾기(path, re, 맞음) {
+  let text;
+  try { text = readText(path); } catch { return false; }
+  const ls = text.split('\n');
+  /*
+   * 줄 끝의 `\r` 은 줄 내용이 아니다.
+   *
+   * CRLF 파일을 `\n` 으로 가르면 줄마다 `\r` 이 남아 `end$` 가 한 줄도 안
+   * 맞았다(`$` 앞에 `\r` 이 있다). rg 도 `--crlf` 없이는 똑같아서 두 길 다
+   * 윈도우 파일에서 「일치 없음」 이었다. 이제 두 길 다 `\r\n` 을 줄 끝으로 본다.
+   */
+  for (let i = 0; i < ls.length; i++) {
+    const 줄 = ls[i].endsWith('\r') ? ls[i].slice(0, -1) : ls[i];
+    if (re.test(줄)) 맞음(i, 줄);
+  }
+  return true;
+}
+
+/*
+ * rg(Rust) 식 `\p{이름}` 을 자바스크립트가 받는 꼴로.
+ *
+ * Rust 는 `\p{Hangul}` · `\p{Greek}` 처럼 글자 체계 이름만 적어도 받는다.
+ * 자바스크립트는 일반 갈래(`\p{L}`)만 이름으로 받고 글자 체계는
+ * `\p{Script_Extensions=Hangul}` 로 적어야 한다. 이름 그대로 되는 것은 그대로
+ * 두고, 안 되는 것만 글자 체계로 바꿔 본다. 그래도 안 되면 손대지 않는다.
+ * 앞에 빗금이 짝수로 붙은(`\\p{…}` — 글자 그대로의 빗금) 것은 건드리지 않는다.
+ */
+function 갈래이름풀기(무늬) {
+  const 된다 = (x) => { try { new RegExp(x, 'u'); return true; } catch { return false; } };
+  return String(무늬).replace(/(?<!\\)((?:\\\\)*)\\([pP])\{(\w+)\}/g, (온것, 빗금들, p, 이름) => {
+    if (된다(`\\${p}{${이름}}`)) return 온것;
+    const 체계 = `\\${p}{Script_Extensions=${이름}}`;
+    return 된다(체계) ? `${빗금들}${체계}` : 온것;
+  });
+}
+
 function 찾을자리없나(root, 준것, ctx, { 폴더여야 = false } = {}) {
   const 보인이름 = 준것 ?? ctx.scope.show(root);
   if (!existsSync(root)) {
@@ -1431,12 +1951,38 @@ function 찾을자리없나(root, 준것, ctx, { 폴더여야 = false } = {}) {
   return null;
 }
 
+/*
+ * ── Bash 제한 시간을 **쓸 수 있는 값**으로 맞춘다 (사냥5 M8) ─────────────────
+ *
+ * 받은 timeout 을 그대로 setTimeout 에 넣었다. 그래서 —
+ *
+ *   60 (초로 알고 보낸 값)   60ms 에 죽는다 — 셸이 뜨기도 전이다
+ *   0 · -1                   곧바로 죽는다
+ *   1e10                     32비트를 넘어 Node 가 1ms 로 바꾸고 TimeoutOverflowWarning
+ *   "abc"                    NaN 이라 1ms 로 바꾸고 TimeoutNaNWarning
+ *
+ * 설명서는 ms 라고 적어 두었으니 단위는 그대로 ms 로 읽는다. 다만 1초 밑은 올린다 —
+ * 윈도우에서 셸 하나 뜨는 데 수백 ms 가 들어, 그보다 짧은 제한은 명령을 한 줄도 못 돌리고
+ * 「시간 초과」 만 남긴다. 위로는 10분에서 멈춘다 — 그 너머는 턴이 통째로 서는 것이고
+ * 끝나지 않는 것은 background 로 띄우라고 설명서가 이미 말한다. 못 읽는 값은 기본값이다.
+ */
+export function bash제한시간(값) {
+  const n = Number(값);
+  if (값 == null || 값 === '' || !Number.isFinite(n) || n <= 0) return 120000;
+  return Math.min(600000, Math.max(1000, Math.round(n)));
+}
+
 export const TOOLS = {
   Read: {
     schema: {
       name: 'Read',
       description: '파일 하나를 읽는다. 줄 번호가 붙어 돌아온다. 고치기 전에는 반드시 먼저 읽어야 한다.'
-        + ' 엑셀 파일(.xlsx/.xlsm/.xls)도 그대로 읽을 수 있다 — 시트별 CSV 로 바꿔서 돌려준다.'
+        // 스키마 문장이 곧 약속이다. 옛 .xls(OLE)는 우리가 직접 못 읽어서
+        // 이 PC 에 엑셀이나 LibreOffice 가 있어야 빌려 읽는다(tools/convert.js).
+        // 「그대로 읽을 수 있다」 에 같이 적어 두면, 없는 PC 에서는 모델이
+        // 사용자에게 그 파일을 달라고 해 놓고 못 읽어 걸음 하나를 버린다.
+        + ' 엑셀 파일(.xlsx/.xlsm)도 그대로 읽을 수 있다 — 시트별 CSV 로 바꿔서 돌려준다.'
+        + ' 옛 형식(.xls)은 이 PC 에 엑셀이나 LibreOffice 가 있어야 읽힌다 — 없으면 못 읽는다고 말해 준다.'
         + ' 한글·워드·파워포인트 문서(.hwpx/.docx/.pptx)도 그대로 읽는다 — 글로 바꿔서 돌려준다.'
         + ' 사용자에게 다른 형식으로 내보내 달라고 할 필요가 없다. 다만 이런 파일들은 읽기만 되고 고칠 수는 없다.',
       parameters: {
@@ -1481,7 +2027,9 @@ export const TOOLS = {
             const 안내 = 옛hwp안내(ctx.scope.show(abs));
             // 괄호가 있어야 한다. await 를 빼면 `??` 가 **약속(Promise)** 을
             // 보고 "값이 있다" 고 판단해서, 안내문이 영영 안 나간다.
-            return (await 빌려읽기(abs, ctx, 안내)) ?? { error: 안내 };
+            const 빌린것 = await 빌려읽기(abs, ctx, 안내);
+            if (빌린것?.content) return 빌린것;
+            return { error: 안내 + 빌린덧말(빌린것) };
           }
         } catch { /* 아래 일반 읽기가 제 오류를 낸다 */ }
       }
@@ -1500,8 +2048,41 @@ export const TOOLS = {
       if (직접못읽나(abs)) {
         const 보인이름 = ctx.scope.show(abs);
         const 빌린것 = await 빌려읽기(abs, ctx, `${보인이름} 을 deel 이 직접 못 읽습니다.`);
-        if (빌린것) return 빌린것;
-        return { error: 못바꿈말(보인이름, extname(abs)), 끝났다: true };
+        if (빌린것?.content) return 빌린것;
+        return { error: 못바꿈말(보인이름, extname(abs)) + 빌린덧말(빌린것), 끝났다: true };
+      }
+
+      /*
+       * ── offset·limit 은 **숫자로** 받는다. 못 받으면 그렇다고 말한다 ─────
+       *
+       * 여태 받은 값을 그대로 셈에 넣었다. 그래서 —
+       *
+       *   offset:'abc'  → NaN → 본문은 빈 글인데 요약은 「11줄」
+       *   offset:1.5    → 줄 번호가 `1.5 · 2.5 · 3.5`, 꼬리는 「2.5줄까지」
+       *   offset:99     → 빈 본문, 아무 말 없음
+       *
+       * 첫째와 셋째는 모델에게 「이 파일은 비었다」 로 읽힌다. 틀린 값을 조용히
+       * 넘기느니 한 줄로 거절하는 편이 낫다 — 모델은 그 말을 보고 바로 고쳐 부른다.
+       * 숫자로 적힌 글("3")은 여태처럼 받는다. 소수는 내려서 줄 번호로 쓴다.
+       */
+      const 줄번호로 = (값, 이름) => {
+        if (값 == null || 값 === '') return { 값: null };
+        const n = typeof 값 === 'number' || typeof 값 === 'string' ? Number(값) : NaN;
+        if (!Number.isFinite(n)) {
+          return { error: `${이름} 이 숫자가 아닙니다: ${JSON.stringify(값)} — ${이름 === 'offset' ? '1부터 세는 시작 줄 번호' : '읽을 줄 수'}를 숫자로 주세요.` };
+        }
+        return { 값: Math.floor(n) };
+      };
+      const 시작값 = 줄번호로(args.offset, 'offset');
+      if (시작값.error) return { error: 시작값.error };
+      const 몇줄값 = 줄번호로(args.limit, 'limit');
+      if (몇줄값.error) return { error: 몇줄값.error };
+      /*
+       * limit 이 0 이하면 읽을 줄이 없다 — 그걸 그대로 셈에 넣어 「전체 3줄 중 -3줄까지」 라는
+       * 있을 수 없는 꼬리를 지어냈다(사냥6 낮음). 모델은 파일이 비었거나 잘렸다고 읽는다.
+       */
+      if (몇줄값.값 != null && 몇줄값.값 < 1) {
+        return { error: `limit 은 1 이상이어야 합니다 (받은 것: ${JSON.stringify(args.limit)}) — 읽을 줄 수를 주거나, 빼면 읽을 수 있는 만큼 읽습니다.` };
       }
 
       const 읽음 = readTextFull(abs);
@@ -1510,13 +2091,34 @@ export const TOOLS = {
       ctx.enc = ctx.enc ?? new Map();
       ctx.enc.set(abs, 읽음.encoding);
       const text = 읽음.text;
-      const lines = text.split('\n');
-      const start = Math.max(0, (args.offset ?? 1) - 1);
+      /*
+       * 0바이트 파일은 **0줄**이다 — 줄재기 머리말과 같은 규칙.
+       *
+       * `''.split('\n')` 은 빈 줄 하나짜리 배열이라, 빈 파일을 열면 요약에
+       * 「1줄」 이 뜨고 본문에 있지도 않은 `     1\t` 이 실렸다.
+       */
+      const lines = text === '' ? [] : text.split('\n');
+      /*
+       * 끝의 줄바꿈은 마지막 줄을 **닫는** 것이지 새 줄을 여는 것이 아니다.
+       *
+       * 위와 같은 까닭으로 `'L1\n…L10\n'.split('\n')` 은 끝에 빈 조각이 하나 더
+       * 붙는다. 그래서 10줄 파일이 요약에 「11줄」 로 뜨고 본문 끝에 있지도 않은
+       * `    11\t` 이 실렸다. 모델은 그 빈 11번 줄 뒤에 붙이려 하고, Append 가
+       * 세는 줄 수(줄재기 — 끝 줄바꿈을 닫는 것으로 센다)와도 하나씩 어긋났다.
+       * 줄바꿈 하나뿐인 파일은 빈 줄 한 줄이다(`['', '']` → `['']`).
+       */
+      if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+      const start = Math.max(0, (시작값.값 ?? 1) - 1);
       const 줄상한 = 읽을줄수(ctx.모델컨텍스트);
-      const count = Math.min(args.limit ?? 줄상한, 줄상한);
+      const count = Math.min(몇줄값.값 ?? 줄상한, 줄상한);
       const slice = lines.slice(start, start + count);
       const 줄인것 = 붙박이그림줄이기(slice);
-      const body = 줄인것.줄들.map((l, i) => `${String(start + i + 1).padStart(6)}\t${l}`).join('\n');
+      const body = 줄인것.줄들.map((l, i) => `${String(start + i + 1).padStart(6)}\t${l}`).join('\n')
+        + (lines.length === 0 ? '(빈 파일입니다 — 0줄)' : '')
+        + (lines.length > 0 && start >= lines.length
+          ? `(파일 끝을 지났습니다 — 이 파일은 전체 ${lines.length}줄인데 ${start + 1}번째 줄부터 달라고 했습니다.`
+            + ` offset 을 ${lines.length} 이하로 주세요.)`
+          : '');
       const more = lines.length > start + count ? `\n… 전체 ${lines.length}줄 중 ${start + count}줄까지` : '';
       ctx.seen.add(abs);
       const 별난인코딩 = 읽음.encoding !== 'utf-8';
@@ -1552,7 +2154,11 @@ export const TOOLS = {
         summary: 이어(
           다못줌
             ? `${말('sum.linesOf', { 준: 준줄수, 전체: lines.length })} (${말('sum.partial')})`
-            : 세말('lines', lines.length),
+            // 줄 수는 다 줬어도 **줄이 길어** clip 에 걸렸으면 사람에게도 일부만이라고 적는다.
+            // 모델 글에는 「… (N자 잘림)」 이 있는데 화면에는 「10줄」 뿐이었다 (6회차 Gemini 도구6e2 E2-1).
+            : 실린것.length < 통째로.length
+              ? `${세말('lines', lines.length)} (${말('sum.partial')})`
+              : 세말('lines', lines.length),
           줄인것.줄인바이트 ? 말('sum.imageDropped', { 크기: 몇KB(줄인것.줄인바이트) }) : '',
           /*
            * 짐작한 인코딩은 짐작이라고 적는다.
@@ -1633,6 +2239,7 @@ export const TOOLS = {
       description: '파일 끝에 이어 붙인다. 큰 파일은 이렇게 나눠서 만든다.'
         + ' 처음에는 Write 로 앞부분을 만들고, 그 뒤부터는 Append 를 여러 번 불러 끝까지 채운다.'
         + ' 한 번에 다 담으려다 잘리는 것보다 나눠서 확실히 남기는 편이 낫다.'
+        + ' 이미 쓴 앞부분은 다시 보내지 마라 — 이어질 부분만 보낸다.'
         + ' Read 로 먼저 읽지 않아도 된다 — 끝에 붙이는 것뿐이라 읽을 이유가 없다.',
       parameters: {
         type: 'object',
@@ -1679,10 +2286,6 @@ export const TOOLS = {
       const 표막기 = 가린표되돌리나(ctx.scope.show(abs), args.content);
       if (표막기) return { error: 표막기 };
 
-      // Append 는 한 턴에 여러 번 불리는 것이 정상이다. 그래도 되돌리기 이력에
-      // 사본이 쌓이지 않는다 — History.snapshot 이 턴마다 한 번만 뜬다(undo.js).
-      ctx.history.snapshot(abs, 'Append');
-
       // 원래 있던 파일이면 그 파일이 쓰던 인코딩 그대로 이어 붙인다.
       // 이어 붙이는 조각에는 앞머리 표식(BOM)이 들어가면 안 된다 — 파일 한가운데에
       // BOM 이 박히면 그 자리가 이상한 글자로 보인다. 그래서 표식 없는 이름으로 바꾼다.
@@ -1700,22 +2303,72 @@ export const TOOLS = {
        * 오류는 안 난다. 파일 뒤쪽만 깨지고, 결과에는 `이어 붙임 · CP949`
        * 가 사실처럼 뜬다.
        *
-       * 그렇다고 붙일 때마다 통째로 다시 읽지도 않는다. 파일 크기가
-       * 그대로면 남이 안 건드린 것이라 캐시를 그대로 쓴다 — 줄기억 이
-       * 같은 잣대를 이미 쓰고 있다.
+       * 그렇다고 붙일 때마다 후보를 다 풀어 점수를 다시 매기지는 않는다.
+       * 잴 때 보는 앞머리 바이트가 그대로면 다시 재도 같은 답이라 캐시를
+       * 쓴다. 전에는 「크기가 그대로면」 이었는데, 같은 크기로 갈아엎은
+       * 파일에서 낡은 인코딩을 댔다 (파일표 머리말).
        */
       const 잰것캐시 = ctx.enc재기 ?? (ctx.enc재기 = new Map());
       const 지금크기 = existed ? 파일크기(abs) : -1;
+      const 앞표본 = existed ? 앞머리(abs, 인코딩볼바이트) : null;
+      const 앞지문 = 표본지문(앞표본);
       const 든것 = 잰것캐시.get(abs);
       const 원래 = !existed ? 'utf-8'
-        : (든것 && 든것.바이트 === 지금크기) ? 든것.인코딩
-          : 재는인코딩(abs);
+        : (든것 && 앞지문 !== null && 든것.지문 === 앞지문) ? 든것.인코딩
+          : 재는인코딩(abs, 앞표본);
       // 여기서 넣어 두면 **다음 번에 반드시 빗나간다** — 붙이고 나면 크기가
       // 달라지기 때문이다. 넣는 자리는 붙인 **뒤**다 (아래 참고).
       // Read·Write 가 보는 표에도 맞춰 둔다. 안 맞추면 두 표가 서로 다른 답을 낸다.
       ctx.enc?.set?.(abs, 원래);
-      const 조각인코딩 = 원래 === 'utf-8-bom' ? 'utf-8' : 원래;
-      const 만든것 = encode(args.content, 조각인코딩);
+      /*
+       * ── 표식을 벗기는 자가 **UTF-8 만** 알고 있었다 ──────────────────
+       *
+       * 바로 위 머리말이 규칙을 적어 뒀다 — 「이어 붙이는 조각에는 앞머리
+       * 표식(BOM)이 들어가면 안 된다」. 그런데 벗기는 줄은 `utf-8-bom` 한
+       * 이름만 봤다. 그 사이에 UTF-16 도 표식 유무를 이름에 담게 됐고
+       * (encoding.js 의 decode 머리말), `looksBinary` 도 UTF-16 을 글로
+       * 치게 됐다. 그래서 이런 파일에 닿는다:
+       *
+       *   파워셸 `... > out.txt` · 메모장 '유니코드' 저장 · .reg 내보내기
+       *
+       * 전부 UTF-16LE(BOM) 이다. 거기에 한 줄 붙이면 `encode('utf-16le-bom')`
+       * 이 조각 앞에도 `FF FE` 를 붙여, **파일 한가운데에** 표식이 박힌다.
+       * 결과 줄에는 `이어 붙임 … · UTF-16LE(BOM)` 이 멀쩡히 뜬다. 편집기는
+       * 대개 그대로 열리고, csv·.reg·로그를 먹는 쪽이 그 바이트에서 깨진다.
+       *
+       * 이름 끝의 `-bom` 을 벗긴다. 어느 인코딩이든 같은 규칙이다.
+       */
+      const 조각인코딩 = String(원래).endsWith('-bom') ? String(원래).slice(0, -4) : 원래;
+      /*
+       * ── 줄끝도 **파일의 줄끝**을 따른다 ────────────────────────────────
+       *
+       * 모델은 줄바꿈을 늘 `\n` 으로 적는다. Edit 는 「CRLF 만 쓰는 파일이면 넣는 글도
+       * CRLF」 로 맞추는데(edit-match.js 의 CRLF뿐인가 머리말) 여기만 없어서, `.bat` 를
+       * 나눠 쓰면 앞은 CRLF · 붙인 꼬리는 LF 인 파일이 됐다. 판단은 인코딩을 잴 때 이미
+       * 읽어 둔 앞머리로 한다. 이미 섞였거나 빈 파일이면 어느 쪽인지 모르니 손대지 않는다.
+       * (6회차 Gemini 도구6b B1)
+       */
+      const 앞글 = existed && 앞표본?.length ? decodeBytes(앞표본, { fallback: 원래, 잘림: true }).text : '';
+      const 붙일글 = CRLF뿐인가(앞글) ? CRLF로(args.content) : args.content;
+      const 만든것 = encode(붙일글, 조각인코딩);
+      /*
+       * ── Write·Edit 에는 있는 방벽이 여기만 없었다 ────────────────────
+       *
+       * `encode()` 는 되돌릴 인코더를 못 만들면 **UTF-8 바이트를 그대로**
+       * 돌려주고 `lost` 는 빈 배열로 둔다(fellBack). 그래서 `lost.length`
+       * 만 보는 이 자리는 절대 안 걸린다. 작은 ICU 로 빌드한 Node —
+       * 오프라인 사내 설치에 흔하다 — 에서 CP949 파일에 한 줄 붙이면,
+       * 앞부분은 CP949 고 꼬리 40줄만 UTF-8 인 파일이 된다.
+       *
+       * 화면에는 `이어 붙임: 사내로그.txt (+40줄, 지금 전체 812줄 · CP949)`
+       * 가 뜬다. `· CP949` 는 방금 쓴 바이트에 대한 **거짓 주장**이다.
+       */
+      if (만든것.fellBack) {
+        return {
+          error: `이 파일은 ${encLabel(원래)} 로 되어 있는데, 이 Node 가 그 인코딩으로 되돌려 쓸 줄 모릅니다.\n`
+               + '  그대로 붙이면 붙인 자리부터 UTF-8 이 됩니다. 안 쓰고 멈췄습니다.',
+        };
+      }
       if (만든것.lost.length) {
         return {
           error: `이 파일은 ${encLabel(원래)} 로 되어 있는데, 그 인코딩에 없는 글자가 있습니다: `
@@ -1733,24 +2386,31 @@ export const TOOLS = {
       const 앞것 = !existed
         ? { 줄: 0, 끝줄바꿈: true }
         : (() => {
-          const 크기 = 파일크기(abs);
           const 든것 = 줄기억.get(abs);
-          if (든것 && 든것.바이트 === 크기) return 든것;
-          const 잰것 = 줄재기(abs, 원래);
-          return { 바이트: 크기, ...잰것 };
+          if (든것 && 든것.표 === 파일표(abs)) return 든것;
+          return 줄재기(abs, 원래);
         })();
 
-      mkdirSync(dirname(abs), { recursive: true });
-      if (existed) appendFileSync(abs, 만든것.buf);
-      else writeFileSync(abs, 만든것.buf);
-      // 붙인 **뒤** 크기로 적어 둔다. 다음 Append 는 이 크기와 맞으면 그대로
-      // 쓰고, 그 사이 남이 파일을 건드렸으면 크기가 어긋나 다시 잰다.
-      잰것캐시.set(abs, { 바이트: 파일크기(abs), 인코딩: 원래 });
+      // Append 는 한 턴에 여러 번 불리는 것이 정상이다. 그래도 되돌리기 이력에
+      // 사본이 쌓이지 않는다 — History.snapshot 이 턴마다 한 번만 뜬다(undo.js).
+      // 뜨는 자리는 인코딩 거절을 **다 지난 여기**다. 위에서 뜨고 거절하면
+      // 아무것도 안 붙인 턴이 이력에 남아 /undo 한 번을 먹는다 (한파일쓰기 머리말).
+      const 못씀 = 떠놓고쓰기(ctx, abs, 'Append', () => {
+        mkdirSync(dirname(abs), { recursive: true });
+        if (existed) appendFileSync(abs, 만든것.buf);
+        else writeFileSync(abs, 만든것.buf);
+      }, () => (existed ? 파일크기(abs) === 지금크기 : !existsSync(abs)));
+      if (못씀) return 못씀;
+      // 붙인 **뒤** 앞머리로 적어 둔다. 64KB 보다 작던 파일은 붙인 조각이 앞머리에 든다.
+      잰것캐시.set(abs, {
+        지문: 지금크기 >= 인코딩볼바이트 ? 앞지문 : 표본지문(앞머리(abs, 인코딩볼바이트)),
+        인코딩: 원래,
+      });
       ctx.seen.add(abs);
 
       const 붙인줄 = args.content.split('\n').length - (args.content.endsWith('\n') ? 1 : 0);
       const 전체줄 = 앞것 ? 앞것.줄 + 붙인줄 - (앞것.끝줄바꿈 ? 0 : 1) : 줄수(abs, 원래);
-      줄기억넣기(abs, { 바이트: 파일크기(abs), 줄: 전체줄, 끝줄바꿈: args.content.endsWith('\n') });
+      줄기억넣기(abs, { 표: 파일표(abs), 줄: 전체줄, 끝줄바꿈: args.content.endsWith('\n') });
       const 표기 = 원래 !== 'utf-8' ? ` · ${encLabel(원래)}` : '';
       return {
         content: `${existed ? '이어 붙임' : '새로 만듦'}: ${ctx.scope.show(abs)}`
@@ -1885,16 +2545,23 @@ export const TOOLS = {
     },
     async run(args, ctx) {
       const root = args.path ? ctx.scope.resolve(args.path) : ctx.scope.root;
+      // 살림 자리는 목록도 안 낸다 — Read 가 막는 것을 이름 목록으로 흘리지 않게 (Grep 머리말 · 사냥6 F6-1).
+      const 살림이유 = 내부살림(root);
+      if (살림이유) return { error: 살림이유, 끝났다: true };
       const 없나 = 찾을자리없나(root, args.path, ctx, { 폴더여야: true });
       if (없나) return 없나;
-      const re = globToRegex(args.pattern);
+      // 절대경로 무늬는 작업 폴더 기준으로 푼다 (절대무늬풀기 머리말).
+      const 풀린 = 절대무늬풀기(args.pattern, root, ctx);
+      if (풀린.error) return { error: 풀린.error };
+      // 빗금 든 무늬는 찾는 폴더 기준으로도, 작업 폴더 기준으로도 본다 — Grep 의 glob 과 같은 자 (fsutil.js 의 glob거르개).
+      const 맞나 = glob거르개(풀린.무늬, { 뿌리: ctx.scope.root, 자리: root });
       const 전부 = await walk(root, { signal: ctx.signal });
       // 훑다 말고 나왔으면 그렇다고 말한다. 조용히 적게 주면 「그런 파일이 없다」가 된다.
       if (전부.끊김) return { error: '중단했습니다. 폴더를 끝까지 안 훑었습니다.', 끝났다: true, 중단됨: true };
       // .gitignore 로 건너뛴 것은 수를 말한다 — 조용히 빼면 '그 파일이 없다' 로 읽힌다 (tools/ignore.js).
       const 건너뜀 = 건너뜀말(전부.건너뜀, 전부.잘림, 전부.상한);
       const 맞는것 = 전부
-        .filter((f) => re.test(f.rel) || re.test(f.rel.split('/').pop()))
+        .filter((f) => 맞나(f.path))
         .sort((a, b) => b.mtime - a.mtime);
       const files = 맞는것.slice(0, 찾을개수(ctx.모델컨텍스트));
       // 훑기 상한에서 멈췄으면 '없다' 가 아니라 '본 데까지는 없다' 다.
@@ -1911,9 +2578,10 @@ export const TOOLS = {
         : '';
       return {
         content: files.map((f) => ctx.scope.show(f.path)).join('\n') + 잘림 + 건너뜀,
-        summary: 맞는것.length > files.length
+        // 훑기 상한에 걸렸으면 찾은 것이 있어도 요약에 그렇다고 단다 — 글 끝의 건너뜀말만으로는 화면 한 줄이 다 본 것처럼 찍혔다 (6회차 도구6i I1).
+        summary: (맞는것.length > files.length
           ? 말('sum.countOf', { n: files.length, 전체: 맞는것.length })
-          : 세말('count', files.length),
+          : 세말('count', files.length)) + (전부.잘림 ? ` (${말('sum.notAllSeen')})` : ''),
       };
     },
   },
@@ -1940,12 +2608,57 @@ export const TOOLS = {
     // 큰 저장소에서 20초를 도는 동안에도 ESC 가 들려야 하기 때문이다.
     async run(args, ctx) {
       let re;
-      try { re = new RegExp(args.pattern, args['-i'] ? 'i' : ''); }
-      catch (err) { return { error: `정규식이 잘못됐습니다: ${err.message}` }; }
-
+      /*
+       * ── `u` 를 먼저 켜 본다 ────────────────────────────────────────────
+       *
+       * `u` 없이 만든 정규식은 `\p{Hangul}` 을 「p{Hangul}」 이라는 글자로
+       * 읽는다. rg 는 유니코드 갈래로 알아듣는다. 그래서 같은 무늬가 rg 가
+       * 깔린 PC 에서는 한글 줄을 다 찾고, 없는 PC 에서는 한 줄도 못 찾았다 —
+       * 오류도 안 나고 「일치 없음」 만 뜬다.
+       *
+       * 게다가 `u` 를 켜도 `\p{Hangul}` 은 **자바스크립트에서는 틀린 문법**이다.
+       * 자바스크립트는 글자 체계를 `\p{Script_Extensions=Hangul}` 로만 받고, rg 는
+       * 이름만 적어도 받는다. 그래서 `u` 로 안 만들어지면 그 이름을 한 번 풀어
+       * 다시 만들어 본다(갈래이름풀기).
+       *
+       * 그렇다고 `u` 만 쓰면 `a\-b` 처럼 옛 문법으로 멀쩡하던 무늬가 거절된다.
+       * 그것도 안 되면 여태처럼 `u` 없이 만든다. 셋 다 안 되면 그때 거절한다.
+       */
+      const 깃발 = args['-i'] ? 'i' : '';
+      try { re = new RegExp(args.pattern, `${깃발}u`); }
+      catch {
+        try { re = new RegExp(갈래이름풀기(args.pattern), `${깃발}u`); }
+        catch {
+          try { re = new RegExp(args.pattern, 깃발); }
+          catch (err) { return { error: `정규식이 잘못됐습니다: ${err.message}` }; }
+        }
+      }
       const root = args.path ? ctx.scope.resolve(args.path) : ctx.scope.root;
+      /*
+       * ── 살림 자리는 **찾지도 않는다** (사냥6 F6-1) ──────────────────────────
+       *
+       * Read 는 `.deel/config.json` 을 내부살림() 으로 막는데 여기에는 그 막이 없었다.
+       * 그래서 `Grep {pattern:'apiKey', path:'.deel', output_mode:'content'}` 한 번이면 게이트웨이
+       * 열쇠·MCP 토큰·남의 도구 기록이 **줄째로** 도구 결과에 실렸다 — rg 도 자바스크립트 길도.
+       * 이름을 대고 들어오는 문(path)은 여기서 닫고, 그 밖으로 흘러 들어오는 파일은 아래에서
+       * 한 파일씩 거른다(rg 결과) · walk 가 거른다(자바스크립트 길 · Glob · Outline).
+       */
+      const 살림이유 = 내부살림(root);
+      if (살림이유) return { error: 살림이유, 끝났다: true };
       const 없나 = 찾을자리없나(root, args.path, ctx);
       if (없나) return 없나;
+
+      /*
+       * glob 앞의 `./` 는 뗀다 — 두 엔진 다 `src/a.js` 꼴로 맞춰 보므로 붙어 있으면 한 파일도 안 맞는다.
+       * 절대경로로 적었으면 작업 폴더 기준으로 푼다 (절대무늬풀기). 빗금 든 glob 을 어느 폴더
+       * 기준으로 보나 · `!` 빼기는 fsutil.js 의 glob거르개 와 fastgrep.js 의 rg글로브들 머리말.
+       */
+      let glob = null;
+      if (typeof args.glob === 'string' && args.glob) {
+        const 풀린 = 절대무늬풀기(args.glob.replace(/^(!?)(?:\.\/)+/, '$1'), root, ctx);
+        if (풀린.error) return { error: 풀린.error };
+        glob = 풀린.무늬;
+      }
       const isFile = statSync(root).isFile();
 
       const mode = args.output_mode ?? 'files_with_matches';
@@ -1966,7 +2679,9 @@ export const TOOLS = {
       const 빠른것 = isFile ? null : await 빠르게찾기({
         무늬: args.pattern,
         자리: root,
-        glob: args.glob ?? null,
+        // rg 는 glob 을 제 작업 폴더 기준으로 맞춘다 — 그 폴더를 작업 폴더로 띄운다 (fastgrep.js).
+        뿌리: ctx.scope.root,
+        glob,
         대소문자무시: !!args['-i'],
         무시파일: existsSync(무시파일) ? 무시파일 : null,
         최대: Math.max(limit * 4, 2000),
@@ -1976,6 +2691,8 @@ export const TOOLS = {
       if (빠른것) {
         const 파일별 = new Map();
         for (const x of 빠른것.줄들) {
+          // 살림 파일이 섞여 오면 버린다 — rg 는 우리 막을 모른다 (위 「살림 자리는 찾지도 않는다」).
+          if (내부살림(x.파일)) continue;
           // 우리 규칙(글 아닌 것·큰 파일)은 rg 쪽 옵션으로 이미 걸었다. 여기서는 세기만.
           const rel = ctx.scope.show(x.파일);
           파일별.set(rel, (파일별.get(rel) ?? 0) + 1);
@@ -1984,6 +2701,27 @@ export const TOOLS = {
             const num = args['-n'] === false ? '' : `:${x.줄}`;
             lines.push(`${rel}${num}: ${x.내용.trim().slice(0, 200)}`);
           }
+        }
+        /*
+         * rg 가 글자로 못 푼 파일(CP949 · 표식 없는 UTF-16 · 8KB 뒤 NUL)은
+         * 예전 길과 **같은 함수**로 다시 읽는다 (fastgrep.js 의 rg못푸는파일 머리말).
+         * 그 파일에서 rg 가 낸 줄은 빠르게찾기 가 이미 버렸다.
+         */
+        let 직접본것 = 0;
+        for (const 파일 of 빠른것.따로볼파일 ?? []) {
+          if (ctx.signal?.aborted) break;
+          if (내부살림(파일)) continue;
+          const rel = ctx.scope.show(파일);
+          let n = 0;
+          const 열었나 = 한파일에서찾기(파일, re, (i, 줄글) => {
+            n += 1; total += 1;
+            if (mode === 'content' && lines.length < limit) {
+              const num = args['-n'] === false ? '' : `:${i + 1}`;
+              lines.push(`${rel}${num}: ${줄글.trim().slice(0, 200)}`);
+            }
+          });
+          if (열었나) 직접본것 += 1;
+          if (n) 파일별.set(rel, (파일별.get(rel) ?? 0) + n);
         }
         for (const [rel, n] of 파일별) hitFiles.push({ rel, n });
         /*
@@ -2012,6 +2750,11 @@ export const TOOLS = {
           파일잘림 ? `(맞은 파일 ${hitFiles.length}개 중 앞 ${limit}개만 적었습니다)` : '',
           줄잘림 ? `(맞은 줄 ${total}개 중 앞 ${lines.length}개만 적었습니다)` : '',
           엔진말(빠른것.엔진),
+          직접본것
+            ? (빠른것.따로볼까닭 === '추림'
+              ? `(git grep 으로 추린 파일 ${직접본것}개를 직접 열어 찾았습니다)`
+              : `(rg 가 글자로 못 푸는 파일 ${직접본것}개는 직접 열어 읽었습니다)`)
+            : '',
           '(.gitignore·.deelignore 는 지켰습니다. 건너뛴 수는 안 셌습니다)',
         ].filter(Boolean).join(' ');
         const 붙이기2 = (t) => (꼬리2 ? [t, '', 꼬리2].join('\n') : t);
@@ -2037,15 +2780,15 @@ export const TOOLS = {
        * 그러면 rg 를 빌려 쓰고도 제일 오래 걸리는 일을 그대로 한 셈이 된다.
        */
       let files = isFile
-        ? [{ path: root, rel: ctx.scope.show(root) }]
+        ? [{ path: root, rel: ctx.scope.show(root), size: 파일크기(root), 콕집음: true }]
         : await walk(root, { signal: ctx.signal });
       if (files.끊김) return { error: '중단했습니다. 폴더를 끝까지 안 훑었습니다.', 끝났다: true, 중단됨: true };
       const 안본것 = isFile ? '' : 건너뜀말(files.건너뜀, files.잘림, files.상한).trim();   // .gitignore 로 건너뛴 수 — 꼬리에 적는다
       // 훑기 상한에 걸렸으면 "일치 없음" 이라고 잘라 말하면 안 된다. 안 본 것이다.
       const 다못봄 = !isFile && !!files.잘림;
-      if (args.glob) {
-        const g = globToRegex(args.glob);
-        files = files.filter((f) => g.test(f.rel) || g.test(f.rel.split('/').pop()));
+      if (glob) {
+        const 맞나 = glob거르개(glob, { 뿌리: ctx.scope.root, 자리: root });
+        files = files.filter((f) => 맞나(f.path));
       }
 
       /*
@@ -2088,20 +2831,17 @@ export const TOOLS = {
           // 자리를 내준 사이에 눌렸을 수 있다. 내주고 나면 다시 본다.
           if (ctx.signal?.aborted) { 멈춤 = '중단'; break; }
         }
-        if ((f.size ?? 0) > GREP_MAX_FILE) { 건너뛴것++; continue; }
+        if ((f.size ?? 0) > (f.콕집음 ? GREP_MAX_ONE : GREP_MAX_FILE)) { 건너뛴것++; continue; }
         if (안읽을확장자.test(f.rel)) { 건너뛴것++; continue; }
-        let text;
-        try { text = readText(f.path); } catch { 건너뛴것++; continue; }
-        const ls = text.split('\n');
         let n = 0;
-        for (let i = 0; i < ls.length; i++) {
-          if (!re.test(ls[i])) continue;
+        const 열었나 = 한파일에서찾기(f.path, re, (i, 줄글) => {
           n++; total++;
           if (mode === 'content' && lines.length < limit) {
             const num = args['-n'] === false ? '' : `:${i + 1}`;
-            lines.push(`${ctx.scope.show(f.path)}${num}: ${ls[i].trim().slice(0, 200)}`);
+            lines.push(`${ctx.scope.show(f.path)}${num}: ${줄글.trim().slice(0, 200)}`);
           }
-        }
+        });
+        if (!열었나) { 건너뛴것++; continue; }
         if (n) hitFiles.push({ rel: ctx.scope.show(f.path), n });
         if (mode !== 'content' && hitFiles.length >= limit) { 멈춤 = '상한'; break; }
       }
@@ -2151,7 +2891,9 @@ export const TOOLS = {
 
       const hit = list.find((s) => s.name === want)
         ?? list.find((s) => s.name.toLowerCase() === want.toLowerCase())
-        ?? list.find((s) => s.name.split(':').pop() === want);
+        ?? list.find((s) => s.name.split(':').pop() === want)
+        // 꼬리도 대소문자를 안 가린다 — 온이름만 안 가려서 `project:mySkill` 을 `myskill` 로 부르면 못 찾았다 (6회차 Gemini 솜씨6o P2).
+        ?? list.find((s) => s.name.split(':').pop().toLowerCase() === want.toLowerCase());
       if (!hit) {
         const near = list.filter((s) => s.name.includes(want) || want.includes(s.name.split(':').pop()))
           .slice(0, 5).map((s) => s.name);
@@ -2226,7 +2968,12 @@ export const TOOLS = {
           설명: args.description ?? null,
           남길것: ctx.셸남길것 ?? [],
         });
-        if (r.error) return { error: r.error };
+        /*
+         * 실패로 돌아가도 **떠 둔 것은 싣는다** (아래 끊김·시간 초과 갈래와 같은 까닭).
+         * `rm keep.txt && npm run dev` 가 곧장 죽으면 파일은 이미 없는데, 되돌릴것 을 빼면
+         * 화면에도 모델에도 「떠 뒀다」 가 한 글자도 안 남았다. (6회차 Gemini 도구6c C2)
+         */
+        if (r.error) return { error: r.error, 되돌릴것: 뜬것, 못뜬것, 스냅샷상한걸림 };
         if (!r.떴나) {
           // 지켜보는 사이에 죽었다. 포트가 물려 있거나 명령이 틀린 경우다.
           // 이걸 '띄웠습니다' 로 넘기면 모델은 다음 단계로 가고, 사람은 안 뜬
@@ -2235,7 +2982,7 @@ export const TOOLS = {
             error: `띄우자마자 끝났습니다 (${r.시그널 ? `${r.시그널} 시그널` : `종료코드 ${r.종료코드}`}).`
               + ' 뒤에서 돌 명령이 아니거나, 뜨자마자 탈이 난 것입니다.'
               + (r.출력?.trim() ? `\n\n나온 말:\n${clip(r.출력, 4000)}` : ''),
-            failed: true,
+            failed: true, 되돌릴것: 뜬것, 못뜬것, 스냅샷상한걸림,
           };
         }
         return {
@@ -2258,7 +3005,7 @@ export const TOOLS = {
       // (윈도우 cmd 의 따옴표 문제와 그 해법도 거기 적혀 있다.)
       const shell = 셸명령(cmd);
 
-      const 제한 = args.timeout ?? 120000;
+      const 제한 = bash제한시간(args.timeout);
       // 무엇을 빼고 넘길지 여기서 한 번 정한다. 뺀 이름은 아래에서 명령이
       // 실패했을 때만 쓴다 — 잘 돌 때마다 적으면 매 부름에 군말이 붙는다.
       const 셸것 = 셸환경(process.env, { 남길것: ctx.셸남길것 ?? [] });
@@ -2316,9 +3063,24 @@ export const TOOLS = {
           detached: process.platform !== 'win32',
           windowsVerbatimArguments: shell.verbatim === true,
           encoding: 'buffer',
-        }, (err, stdoutBuf, stderrBuf) => {
+          /*
+           * 넘치면 **셸이 살아 있을 때 나무째** 끊는다 (사냥5 M3 · tools/spawn.js 넘치면 머리말).
+           * 셸만 죽이면 쏟던 손자가 파이프를 물고 살아, 넘친 즉시가 아니라 시간 초과에 돌아왔다.
+           * 파이프는 안 끊는다 — 손자가 죽으면 곧 close 가 와서 넘친 말과 함께 끝맺는다.
+           */
+          넘치면: () => 죽이기({ 파이프끊기: false, 더줄까: 1500 }),
+          /*
+           * 셸이 끝났는데 파이프가 안 닫히면 1초만 더 기다린다 (사냥5 M2). `node x & echo done`
+           * 처럼 셸이 뒤로 띄운 것이 물고 있는 판이다. 남은 것은 끊으러 가고(유닉스는 무리째),
+           * 못 끊으면 못 껐다고 아래에서 적는다.
+           */
+          뿌리끝나면기다림: 1000,
+          남은것끊기: (아이) => 남은무리끊기(아이),
+        }, (err, stdoutBuf, stderrBuf, 덤 = {}) => {
           clearTimeout(뒷북);
           ctx.signal?.removeEventListener?.('abort', 끊기);
+          // 명령 뒤에 새로 생긴 파일(cp·mv 의 새 이름)을 없던 자리로 적는다 — 끊겼든 넘쳤든 생긴 것은 생긴 것이다.
+          나중에생긴것적기(떠본것, ctx);
           const 콘솔 = consoleCodepage() === 65001 ? 'utf-8' : null;
           const 풀기 = (b) => {
             if (!b || !b.length) return '';
@@ -2343,7 +3105,14 @@ export const TOOLS = {
               되돌릴것: 뜬것, 못뜬것, 스냅샷상한걸림,
             });
           }
-          if (시간초과 || (err && err.killed)) {
+          /*
+           * 시간 초과는 **시간 초과일 때만** 적는다 (사냥5 M3).
+           *
+           * 여기는 `err.killed` 로 갈랐다. 그런데 출력이 넘쳐 끊은 것도, 시그널로 죽은 것도
+           * killed 가 참이라 전부 「시간 초과로 중단됨」 이 됐다 — 모델은 timeout 을 늘려
+           * 같은 명령을 다시 부른다. 넘침·시그널은 아래에서 제 말로 적는다.
+           */
+          if (시간초과 || err?.시한 === true) {
             return done({
               error: `시간 초과로 중단됨 (${제한}ms)`, content: clip(out, 실을만큼(ctx)),
               되돌릴것: 뜬것, 못뜬것, 스냅샷상한걸림,
@@ -2405,8 +3174,18 @@ export const TOOLS = {
               + `${셸것.뺀것.length > 8 ? ' …' : ''}.`
               + ' 이 명령에 필요하면 설정에 "셸환경": { "남길것": ["이름"] } 을 적으세요]'
             : '';
+          /*
+           * 셸은 끝났는데 셸이 뒤로 띄운 것이 파이프를 물고 있어 더 안 기다린 판 (사냥5 M2).
+           * 사실대로 적는다 — 무엇이 남았는지, 껐는지, 다음엔 어떻게 띄워야 하는지.
+           */
+          const 남은말 = !덤.파이프남음 ? ''
+            : `\n\n[셸은 끝났는데 셸이 뒤로 띄운 프로세스가 출력을 물고 있어 더 기다리지 않았습니다 — `
+              + (덤.남은것끊음
+                ? '그 프로세스 무리를 끝냈습니다.'
+                : '윈도우에서는 셸이 먼저 끝나면 그 아래를 못 찾아 끄지 못했습니다(작업 관리자에서 찾아 끄세요).')
+              + ' 끝나지 않는 것은 background: true 로 띄우고 Jobs 로 읽으세요]';
           done({
-            content: clip(out || '(출력 없음)', 실을만큼(ctx)) + 꼬리 + 뺀말,
+            content: clip(out || '(출력 없음)', 실을만큼(ctx)) + 꼬리 + 남은말 + 뺀말,
             summary: 잘됨 ? 말('sum.ok')
               : 시그널 ? 말('sum.killedBy', { 시그널 })
                 : 넘침 ? 말('sum.tooMuchOut')
@@ -2502,8 +3281,19 @@ export const TOOLS = {
         };
         const 끊기 = () => {
           끊겼나 = true;
-          // Ctrl+C 는 짧게 — 사람이 지금 돌려받으려고 누른 것이다.
-          죽이기({ 더줄까: 1200 });
+          /*
+           * Ctrl+C 는 짧게 — 사람이 지금 돌려받으려고 누른 것이다.
+           *
+           * 다만 **파이프는 안 끊는다.** 여기가 기본값(파이프끊기: true)을 그대로
+           * 쓰고 있었는데, 파이프를 끊으면 아직 안 읽힌 것이 통째로 사라진다.
+           * 재 보니 몇 줄이 아니라 전부였다 — 200ms 동안 찍은 것이 한 글자도 안
+           * 오고 content 가 빈 글이었다. 사람도 모델도 어디까지 됐는지 모른 채
+           * 「사용자가 중단했습니다」 한 줄만 받는다.
+           *
+           * 바로 아래 시간 초과 갈래는 이미 파이프끊기: false 로 그 몇 줄을
+           * 받는다. 아래 그물(400ms)이 이 자리를 오래 안 붙든다.
+           */
+          죽이기({ 파이프끊기: false, 더줄까: 1200 });
           clearTimeout(뒷북);
           /*
            * ── 곧장 끝맺으면 **나온 말이 통째로 버려진다** ────────────────
@@ -2550,7 +3340,8 @@ export const TOOLS = {
           시간초과 = true;
           죽이기({ 파이프끊기: false, 더줄까: 4000 });
           const 그물 = setTimeout(() => {
-            done({ error: `시간 초과로 중단됨 (${제한}ms) — 자식 프로세스가 안 끝나 강제로 끝냈습니다` });
+            // 여기서 끝맺어도 떠 둔 것은 싣는다 — 콜백의 시간 초과 갈래·중단 그물과 같다 (6회차 Gemini 도구6d D2).
+            done({ error: `시간 초과로 중단됨 (${제한}ms) — 자식 프로세스가 안 끝나 강제로 끝냈습니다`, 되돌릴것: 뜬것, 못뜬것, 스냅샷상한걸림 });
           }, 1000);
           그물.unref?.();
         }, 제한);
@@ -2832,7 +3623,11 @@ export const TOOLS = {
         line: r.줄,
         // 화면에 무엇을 적었는지 보여 주려고 같이 넘긴다. 사람이 못 보면
         // 틀린 기억이 조용히 쌓인다 — 그게 제일 나쁘다.
-        content: r.줄,
+        // 적었지만 안 실리면 모델에게도 그렇게 말한다 (6회차 Gemini 기억6z-b Z2′) — 안 그러면
+        // 다음 요청부터 그 말이 지켜진다고 믿고 사람에게도 그렇게 말한다.
+        content: r.안실림
+          ? `${r.줄}\n(적었지만 다음 요청부터 안 실립니다 — 믿는 폴더가 아니고 이 PC 가 적지 않은 줄이 이 기억 파일에 섞여 있습니다. 사람에게 그대로 알리세요.)`
+          : r.줄,
       };
     },
   },
@@ -2882,8 +3677,17 @@ export function 설명줄이기(schema, 한도) {
   const 자르기 = (글, 몫) => {
     const s = String(글 ?? '');
     if (s.length <= 몫) return s;
-    // 한국어 문장은 '다.' 로 끝난다. 영문 마침표도 같이 본다.
-    const 조각 = s.split(/(?<=다\.|[.!?])\s+/);
+    /*
+     * 문장 끝(`.` · `!` · `?`) **뒤의 공백**에서만 가른다.
+     *
+     * 여기가 `(?<=다\.|[.!?])` 였다. 앞 갈래는 한 번도 혼자 걸리지 않는다 —
+     * `다.` 의 마침표를 뒤 갈래가 이미 먹기 때문이다. 도구 설명 전부와 인자
+     * 설명 전부를 두 가르개로 갈라 견줘 보니 **다른 자리가 한 군데도 없었다.**
+     * 마침표 없는 「…한다 …한다」 를 가르려던 뜻이었다면 그것도 안 됐다
+     * (`다.` 는 마침표를 요구한다). 안 걸리는 갈래를 「한국어를 본다」 고
+     * 적어 두면 다음 사람이 그 말을 믿고 한국어를 더 안 챙긴다.
+     */
+    const 조각 = s.split(/(?<=[.!?])\s+/);
     let 모은것 = 조각[0] ?? s;
     for (const 다음 of 조각.slice(1)) {
       if ((모은것 + ' ' + 다음).length > 몫) break;
@@ -2956,14 +3760,41 @@ export function 설명줄이기(schema, 한도) {
  */
 function 눈붙이기(fn, 이름, vision) {
   if (이름 !== 'Read' || !vision) return fn;
-  // 화면 말을 그대로 본다. 설명 글자를 보고 짐작하면 안 된다 — 줄이기가 문장
-  // 한복판을 자르므로 마지막 글자가 무엇일지 정해져 있지 않다.
+  // 지시말() 을 그대로 본다 — 화면 말이 아니다. 이 덧말은 **모델이 읽는 글**에
+  // 붙는 것이라, '한국어 화면 + 영어 지시' 를 고른 사람에게도 영어로 가야 한다.
+  //
+  // 설명 글자를 보고 짐작하면 안 된다. 줄이기는 늘 문장째로 끝나므로 마지막
+  // 글자는 언제나 문장 끝이고, 그것만 봐서는 이 설명이 어느 말로 나갔는지
+  // 가릴 수 없다 — 영어설명() 이 이미 통째로 갈아 끼웠을 수도 있다.
+  //
   // 위 영어설명() 과 같은 갈림이어야 한다. 여기만 'en' 을 보면, 일본어로
   // 켠 사람은 영어 설명 뒤에 한국어 한 문장이 붙은 것을 받는다.
   const 덧말 = 지시말() !== 'ko'
     ? ' Screenshots and images (.png/.jpg/.gif/.webp) can be opened too — this model can see them.'
     : ' 화면 사진·그림(.png/.jpg/.gif/.webp)도 그대로 열 수 있다 — 지금 붙어 있는 모델은 그림을 본다.';
   return { ...fn, description: String(fn.description ?? '') + 덧말 };
+}
+
+/*
+ * 배열 **속** 칸도 갈아 끼운다.
+ *
+ * 겉의 칸만 갈던 때, 영어로 켠 사람의 도구 정의에 `edits[].old_string: 바꿀 대상`
+ * 같은 한국어가 아홉 군데 그대로 실렸다. 하필 이 도구들이 제일 세게 미는 길이
+ * 배열 쪽이다 — 「여러 군데는 edits 로 한 번에」 「스무 개를 옮기려고 스무 번
+ * 부르지 마라」. 제일 비싼 길의 설명서만 안 읽히고 있었던 셈이다.
+ *
+ * 겉의 말을 그대로 물려주지 않는다. 겉은 `(single file)` 처럼 **한 개짜리 길**을
+ * 가리키는 말이라 배열 안에서는 틀린 말이 된다 — 그래서 속은 따로 적는다
+ * (tools/desc.en.js 의 items). 속 표가 없는 도구는 여태처럼 군다.
+ */
+function 속칸갈기(값, 속표) {
+  if (!속표 || !값?.items?.properties) return 값;
+  const 새칸 = {};
+  for (const [칸, v] of Object.entries(값.items.properties)) {
+    const 글 = 속표[칸];
+    새칸[칸] = 글 ? { ...v, description: 글 } : v;
+  }
+  return { ...값, items: { ...값.items, properties: 새칸 } };
 }
 
 /*
@@ -2987,7 +3818,7 @@ export function 영어설명(schema, 이름, 쓸말 = 지시말()) {
   const 새속성 = {};
   for (const [인자, 값] of Object.entries(p.properties ?? {})) {
     const 글 = 것.params?.[인자];
-    새속성[인자] = 글 ? { ...값, description: 글 } : 값;
+    새속성[인자] = 속칸갈기(글 ? { ...값, description: 글 } : 값, 것.items?.[인자]);
   }
   return {
     ...schema,
@@ -3028,7 +3859,12 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
    */
   const 한도 = 설명길이(ctx);
   /*
-   * 화면 말이 영어면 도구 설명도 영어로 갈아 끼운다 (tools/desc.en.js).
+   * **지시말**이 영어면 도구 설명도 영어로 갈아 끼운다 (tools/desc.en.js).
+   *
+   * 화면 말(언어())이 아니다. 여기서 만드는 것은 모델에게 주는 목록이라
+   * 지시말() 을 따른다 — `/tools` 로 사람이 보는 화면만 언어() 를 따로 본다
+   * (영어설명 의 쓸말 인자). 한국어 화면 + 영어 지시를 고른 사람에게는
+   * 화면은 한국어인데 이 목록은 영어로 나간다.
    *
    * 줄이기 **전에** 갈아 끼운다. 순서가 반대면 한글 설명을 한도에 맞춰 자른
    * 다음 영어로 통째로 바꾸는 셈이라, 자른 것이 아무 뜻이 없어지고 영어 글은
@@ -3136,6 +3972,29 @@ export async function 언어서버있나(뿌리) {
 }
 
 export async function runTool(name, args, ctx) {
+  /*
+   * ── 멈추라고 했으면 시작도 안 한다 ──────────────────────────────────
+   *
+   * 여럿을 함께 돌릴 때(loop.js 의 Promise.all) 앞엣것이 도는 사이 사람이
+   * ESC 를 누르면, 뒤엣것들은 **아직 아무 일도 안 했는데** 그대로 돌았다.
+   * 여기서 한 번 보면 그 자리가 막힌다.
+   *
+   * 중단은 **실패가 아니다.** 그래서 중단됨 을 따로 단다 — 이걸 실패로
+   * 세면 되풀이 감지가 엉뚱하게 걸려서, 다음에 같은 도구를 부르는 것까지
+   * "또 그러네" 로 막아 버린다. 사람이 멈춘 것은 도구 잘못이 아니다.
+   *
+   * ── 이 관문이 **제일 앞**에 있어야 하는 이유 ─────────────────────────
+   *
+   * 여태 바로 아래 MCP 갈래 **뒤에** 있었다. 그래서 `mcp__…` 이름은 이
+   * 관문을 못 보고 곧장 서버로 갔다 — 사람이 ESC 를 누른 뒤에 **바깥
+   * 프로세스로 요청이 나갔다.** 우리 도구가 멈추는 것보다 더 지켜야 할
+   * 자리다. 남의 프로그램이 파일을 쓰거나 밖으로 글을 보내면 우리가
+   * 되돌릴 길이 없다. 멈춤은 도구 갈래를 가리지 않는다.
+   */
+  if (ctx.signal?.aborted) {
+    return { error: '중단했습니다. 실행하지 않았습니다.', 끝났다: true, 중단됨: true };
+  }
+
   // 밖에서 붙인 도구(MCP)는 이름 앞머리로 갈린다.
   //
   // 여기서 먼저 갈라야 하는 이유: MCP 서버는 우리 scope 를 안 지킨다.
@@ -3155,21 +4014,6 @@ export async function runTool(name, args, ctx) {
    */
   const t = Object.hasOwn(TOOLS, name) ? TOOLS[name] : null;
   if (!t) return { error: `모르는 도구: ${name}` };
-
-  /*
-   * ── 멈추라고 했으면 시작도 안 한다 ──────────────────────────────────
-   *
-   * 여럿을 함께 돌릴 때(loop.js 의 Promise.all) 앞엣것이 도는 사이 사람이
-   * ESC 를 누르면, 뒤엣것들은 **아직 아무 일도 안 했는데** 그대로 돌았다.
-   * 여기서 한 번 보면 그 자리가 막힌다.
-   *
-   * 중단은 **실패가 아니다.** 그래서 중단됨 을 따로 단다 — 이걸 실패로
-   * 세면 되풀이 감지가 엉뚱하게 걸려서, 다음에 같은 도구를 부르는 것까지
-   * "또 그러네" 로 막아 버린다. 사람이 멈춘 것은 도구 잘못이 아니다.
-   */
-  if (ctx.signal?.aborted) {
-    return { error: '중단했습니다. 실행하지 않았습니다.', 끝났다: true, 중단됨: true };
-  }
 
   try {
     const r = await t.run(args ?? {}, ctx);
@@ -3221,7 +4065,36 @@ export async function runTool(name, args, ctx) {
        * 이미 손댄 것은 손댄 대로 넘긴다 — 둘은 같이 참일 수 있다.
        */
       if (!바꿔놨나) {
-        return { error: '중단했습니다.', 끝났다: true, 중단됨: true };
+        /*
+         * ── 바꿔 놓은 것이 없어도 **여태 나온 말은 버리지 않는다** ────────
+         *
+         * 여기가 `{ error: '중단했습니다.' }` 한 줄을 **새로 지어서** 돌려주는
+         * 자리다. 그러면서 도구가 실어 보낸 content 를 통째로 버리고 있었다.
+         * 잰 것: 끊긴 Bash 를 `TOOLS.Bash.run` 으로 부르면 죽기 직전에 찍은
+         * 몇백 자가 오는데, 같은 판을 `runTool` 로 부르면 `len=0` 이다.
+         * 아래층(tools/spawn.js)이 close 를 못 받는 판에서도 그 글을 살려
+         * 올려 보내게 해 놨는데, 그 애쓴 것이 이 줄에서 사라졌다.
+         *
+         * 그 몇 줄이 대개 제일 중요한 줄이다 — 어디까지 돌았는지, 무엇이
+         * 뻗었는지가 거기 있다. 여덟 개를 서로 다른 까닭으로 다 실패한
+         * Write·Edit 의 줄별 사유도 같은 자리에서 사라졌다(실을글 머리말).
+         *
+         * 싣는 것은 **도구가 스스로 탈을 달고 온 판**뿐이다. 탈이 있다는 것은
+         * 「일하다 끊겼다」 는 뜻이라, 그 글은 무슨 일이 있었는지의 자국이다.
+         * 탈 없이 멀쩡히 끝난 읽기는 여태처럼 버린다 — 바로 위 머리말이 적어
+         * 둔 대로 버려도 잃을 것이 없고, 실어 보내면 모델이 「중단됐는데 답은
+         * 다 받았다」 로 읽는다.
+         *
+         * 말은 바꿔 놓은 갈래(바로 아래)와 어긋나지 않는다. 거기도 오류와 글을
+         * 같이 넘긴다 — 둘은 같이 참일 수 있다.
+         */
+        const 나온말 = (r.error && typeof r.content === 'string' && r.content.trim()) ? r.content : null;
+        return {
+          error: '중단했습니다.',
+          ...(나온말 ? { content: 나온말 } : {}),
+          끝났다: true,
+          중단됨: true,
+        };
       }
       return { ...r, 중단됨: true, 중단전에끝남: true };
     }
@@ -3270,7 +4143,18 @@ async function runMcpTool(name, args, ctx) {
         content: clip(글, 실을만큼(ctx)),
       };
     } catch (e) {
-      return { error: e.message };
+      /*
+       * `e.message` 만 쓰면 **실패가 성공으로 읽힌다.**
+       *
+       * 남의 프로세스에서 올라오는 것이라 Error 라는 보장이 없다 — JSON-RPC 로
+       * 받은 값을 그대로 던지는 서버가 흔하고, 그러면 `{ error: undefined }` 가
+       * 되어 부르는 쪽의 `if (result.error)` 가 거짓이 된다. 도구가 아무것도
+       * 못 했는데 모델은 됐다고 여기고 다음 걸음으로 간다.
+       *
+       * 같은 파일의 형제 자리(runTool 의 catch)와 loop.js 는 이미
+       * String(e?.message ?? e) 를 쓴다. 여기만 달랐다.
+       */
+      return { error: String(e?.message ?? e) };
     }
   })();
   ctx.audit.tool(name, args, r);

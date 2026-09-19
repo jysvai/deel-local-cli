@@ -86,7 +86,7 @@ const 문들 = [
   conn열쇠(src('repl.js'), 'src/repl.js'),
   conn열쇠(src('oneshot.js'), 'src/oneshot.js'),
   conn열쇠(src('acp/serve.js'), 'src/acp/serve.js'),
-  conn열쇠(src('commands.js'), 'src/commands.js (/model)', 'Object.assign(session.conn, {'),
+  conn열쇠(src('commands/model.js'), 'src/commands/model.js (/model)', 'Object.assign(session.conn, {'),
 ].filter(Boolean);
 
 check('★ 네 문에서 conn 짓는 자리를 다 찾았다', 문들.length === 4,
@@ -148,6 +148,44 @@ for (const [이름, 무늬] of 안전자리) {
     if (!무늬.test(글)) 없는곳.push(파일);
   }
   check(`★ ${이름} 를 세 문 다 root 로 짓는다`, 없는곳.length === 0, 없는곳.join(', '));
+}
+
+trace('3-열쇠받기를-세-문이-다-건다');
+
+/*
+ * ── conn 에 싣는 것까지만 맞춰 두고 그 뒤를 안 봤다 ─────────────────────
+ *
+ * 1절은 `열쇠받기` 가 네 문의 conn 에 다 있는지 잰다. 그런데 그 명령은 도구
+ * 승인보다 **앞에서** 돈다. 대화 화면(repl.js)은 띄우기 전에 무엇을 띄우는지
+ * 말하고(열쇠물어보기), 받는 중·못 받은 까닭을 적는다(onAuth).
+ *
+ * 한 방 실행과 에디터는 둘 다 안 걸었다. backend/adapter.js 는 `물어보기` 가
+ * 없으면 **묻지 않고 띄운다** — 명령이 아무 말 없이 돌고, 못 받은 까닭도 사라져
+ * 401 한 줄만 남았다.
+ */
+for (const [파일, 글] of [
+  ['src/repl.js', src('repl.js')],
+  ['src/oneshot.js', src('oneshot.js')],
+  ['src/acp/serve.js', src('acp/serve.js')],
+]) {
+  check(`★★ ${파일} 가 열쇠받기 명령을 띄우기 전에 건다 (열쇠물어보기)`, /session\.열쇠물어보기\s*=/.test(글), '');
+  check(`★★ ${파일} 가 받는 중·못 받은 까닭을 건다 (onAuth)`, /session\.onAuth\s*=/.test(글), '');
+}
+
+/*
+ * 모아 둔 소식(config.js 의 소식줄들)은 **당겨 가야** 나온다. 안 당기는 문에서는
+ * 관리 정책 파일이 깨져 금지가 통째로 안 걸려도 한 줄도 안 나온다. 문마다 따로
+ * 넷을 당기면 하나씩 빠진다 — 실제로 한 방 실행은 셋만 당겼다.
+ */
+for (const [파일, 글] of [
+  ['src/repl.js', src('repl.js')],
+  ['src/oneshot.js', src('oneshot.js')],
+  ['src/acp/serve.js', src('acp/serve.js')],
+  ['src/setup.js', src('setup.js')],
+  ['src/reset.js', src('reset.js')],
+  ['bin/deel.js (doctor)', readFileSync(join(here, '..', 'bin', 'deel.js'), 'utf8')],
+]) {
+  check(`★ ${파일} 가 모아 둔 소식을 한 자리에서 비운다 (소식줄들)`, /소식줄들\(/.test(글), '');
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

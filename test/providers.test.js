@@ -87,7 +87,7 @@ trace('2-주소를-지어내지-않는가');
   check('Bedrock 후보를 여럿 준다 — 어느 것이 되는지는 물어본다', 서울.length >= 2, String(서울.length));
   check('문서에 있는 창구가 첫 후보다',
     서울[0] === 'https://bedrock-runtime.ap-northeast-2.amazonaws.com/v1', 서울[0]);
-  for (const 이상한리전 of ['서울', 'seoul', '', 'us-east', '../../etc', 'ap-northeast-2 ; rm']) {
+  for (const 이상한리전 of ['서울', 'seoul', 'us-east', '../../etc', 'ap-northeast-2 ; rm']) {
     check(`★ 이상한 리전으로는 주소를 안 만든다: ${JSON.stringify(이상한리전)}`,
       주소후보(제공자고르기('bedrock'), { 리전: 이상한리전 }).length === 0);
   }
@@ -96,6 +96,17 @@ trace('2-주소를-지어내지-않는가');
   check('리전에 null 을 줘도 안 고른 것으로 본다',
     주소후보(제공자고르기('bedrock'), { 리전: null })[0]?.includes('us-east-1') === true,
     주소후보(제공자고르기('bedrock'), { 리전: null })[0] ?? '(없음)');
+  /*
+   * 빈 글자도 「안 골랐다」 다 — 설치 화면에서 리전을 엔터로 넘긴 것이다.
+   * `?? 'us-east-1'` 은 null·undefined 만 막아서, 빈 글자는 그대로 내려가
+   * 모양 검사에 걸려 **후보 0개**가 됐다. 화면에는 「붙을 곳을 못 찾았습니다」
+   * 한 줄뿐이라, 엔터 한 번이 원인이라는 것을 알 길이 없다 (setup.js 는 trim 만 한다).
+   */
+  for (const 빈것 of ['', '   ', '\t']) {
+    check(`★ 리전을 엔터로 넘겨도 기본 리전으로: ${JSON.stringify(빈것)}`,
+      주소후보(제공자고르기('bedrock'), { 리전: 빈것 })[0]?.includes('us-east-1') === true,
+      주소후보(제공자고르기('bedrock'), { 리전: 빈것 })[0] ?? '(없음)');
+  }
 
   /*
    * 「주소를 직접」 은 주소도 규격도 인증도 안 적는다.
@@ -155,6 +166,17 @@ trace('4-막힌-까닭을-읽는가');
     막힌까닭(P('bedrock'), { status: 403, 서버말: 'AccessDeniedException' }) ?? '');
   check('Bedrock 이 리전을 짚어 준다',
     /리전/.test(막힌까닭(P('bedrock'), { status: 400, 서버말: 'ValidationException: model not found' }) ?? ''));
+  /*
+   * 만료된 단기 키. AWS 는 이것도 403 + `AccessDeniedException` 으로 내놓고,
+   * 본문에 「security token … is expired」 를 같이 적는다. 넓은 AccessDenied
+   * 검사가 만료 검사보다 **위**에 있어서, 키를 새로 받아야 하는 사람에게
+   * 「콘솔에서 모델 접근을 신청하세요」 라고 말했다 — 신청은 이미 돼 있다.
+   * 좁은 말이 먼저다.
+   */
+  const 만료 = 막힌까닭(P('bedrock'), { status: 403, 서버말: 'AccessDeniedException: The security token included in the request is expired' }) ?? '';
+  check('★ 만료된 단기 키에 「모델 접근 신청」 이라고 하지 않는다', /만료/.test(만료) && !/모델 접근/.test(만료), 만료);
+  check('  만료 말이 없는 AccessDenied 는 예전 그대로 모델 접근',
+    /모델 접근/.test(막힌까닭(P('bedrock'), { status: 403, 서버말: 'AccessDeniedException: You do not have access to the model' }) ?? ''));
 
   // 사내에서 흔한 두 가지. 둘 다 「연결 실패」로 보이지만 고칠 자리가 다르다.
   check('사내 인증서를 짚어 준다',
@@ -213,6 +235,18 @@ trace('5-데이터-위생');
     리전들.some((r) => r.id === 'ap-northeast-2'));
 
   /*
+   * (사냥5 B5-12) 리전 모양을 `xx-이름-숫자` 한 칸짜리로만 받아서, GovCloud
+   * (`us-gov-west-1`)와 대문자로 적은 `US-EAST-1` 이 **아무 말 없이 후보 0개** 였다.
+   */
+  const 베드락 = 제공자고르기('bedrock');
+  const 정부 = 주소후보(베드락, { 리전: 'us-gov-west-1' });
+  check('★ GovCloud 리전도 주소 후보를 낸다', 정부.length > 0 && 정부.every((u) => u.includes('us-gov-west-1')), 정부.join(' '));
+  const 대문자 = 주소후보(베드락, { 리전: 'US-EAST-1' });
+  check('★ 대문자로 적은 리전은 소문자로 받는다', 대문자.length > 0 && 대문자.every((u) => u.includes('.us-east-1.')), 대문자.join(' '));
+  check('★★ 리전 자리에 주소를 끼워 넣으면 여전히 안 받는다',
+    주소후보(베드락, { 리전: 'evil.example/x' }).length === 0 && 주소후보(베드락, { 리전: 'us-east-1.evil.example' }).length === 0);
+
+  /*
    * 파일이 제공자마다 하나씩이다. 늘리는 일이 「파일 하나 + 줄 하나」 여야
    * 남이 PR 하기도, 회사가 제 것을 보태기도 쉽다.
    */
@@ -229,6 +263,24 @@ const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1
 console.log(`\n붙일 곳 검사  ${D}(열쇠를 뿌리지 않는가 · 없는 것을 지어내지 않는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
+{
+  /*
+   * 6회차 Gemini 제공자6 — ① `.env` 에서 따옴표째 복사한 열쇠는 어디 것인지도 못 알아보고, 따옴표째
+   * 저장돼 401 이 났다. ② Gemini 는 모델 이름이 틀리면 404 를 주는데 공통 까닭이 「주소를 다시 보세요」 라고 했다.
+   */
+  const { 열쇠다듬기 } = await import('../src/providers/index.js');
+  for (const [넣은, 기대] of [['"sk-ant-api03-abcdefgh"', 'sk-ant-api03-abcdefgh'], ["'AIzaSyAbc123'", 'AIzaSyAbc123'], ['  "sk-proj-xyz"  ', 'sk-proj-xyz'], ['sk-"mid"', 'sk-"mid"'], ['"한쪽만', '"한쪽만'], ['"섞임\'', '"섞임\'']]) {
+    check(`열쇠다듬기 — ${넣은}`, typeof 열쇠다듬기 === 'function' && 열쇠다듬기(넣은) === 기대, String(열쇠다듬기?.(넣은)));
+  }
+  check('따옴표째 붙인 Anthropic 열쇠도 알아본다', 어디것일까('"sk-ant-api03-abcdefgh"')?.제공자?.id === 'anthropic', '');
+  const 셋업 = readFileSync(new URL('../src/setup.js', import.meta.url), 'utf8');
+  check('setup 의 열쇠 받는 두 자리가 다 따옴표를 뗀다', (셋업.match(/열쇠다듬기\(await ask\('API 키'/g) ?? []).length === 2, '');
+  const 말 = String(막힌까닭(제공자고르기('gemini'), { status: 404, 서버말: 'models/gemini-9 is not found for API version v1beta, or is not supported for generateContent.' }));
+  check('Gemini 모델 이름 404 는 주소 탓이 아니라 모델 이름이라고 말한다', /모델/.test(말) && !/주소를 다시/.test(말), 말);
+  const 길말 = String(막힌까닭(제공자고르기('gemini'), { status: 404, 서버말: 'Not Found' }));
+  check('모델 말이 없는 404 는 여전히 주소를 보라고 한다', /주소/.test(길말), 길말);
+}
+
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;

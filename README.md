@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-10%2C215%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-13%2C900%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -106,6 +106,14 @@ deel                       # start working in the current folder
 No account, no sign-up, no telemetry. If you already run Ollama or LM Studio,
 `deel setup` finds it — `deel scan` lists every local runtime and model on the machine.
 
+Routing picks the mode, the mode decides which tools the model is even shown, and every
+tool call has to pass the mode gate and the approval gate before anything happens:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-flow-en-dark.svg">
+  <img alt="How one message travels through deel: what you type, routing, the mode's tool list, the model, then the mode gate and the approval gate, the tool run, Verify, and the answer — with results looping back to the model up to the step ceiling" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-flow-en-light.svg" width="760">
+</picture>
+
 ---
 
 <details>
@@ -155,7 +163,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
-| [Release notes](docs/en/releases.md) | [1.16.x](docs/en/releases/1.16.md) · [1.15.x](docs/en/releases/1.15.md) · [1.14.x](docs/en/releases/1.14.md) · [1.13.x](docs/en/releases/1.13.md) · [1.12.x](docs/en/releases/1.12.md) · [1.10.x](docs/en/releases/1.10.md) · [1.9.x](docs/en/releases/1.9.md) · [older](docs/en/releases.md) |
+| [Release notes](docs/en/releases.md) | [1.16.x](docs/en/releases/1.x.md#116x) · [1.15.x](docs/en/releases/1.x.md#115x) · [1.14.x](docs/en/releases/1.x.md#114x) · [1.13.x](docs/en/releases/1.x.md#113x) · [1.12.x](docs/en/releases/1.x.md#112x) · [1.10.x](docs/en/releases/1.x.md#110x) · [1.9.x](docs/en/releases/1.x.md#19x) · [older](docs/en/releases.md) |
 
 ---
 
@@ -272,8 +280,10 @@ What you see on screen does not have to. Four screen languages ship: **한국어
 > strings that made it *into* the table, and for a long time the tool result summaries and the
 > thinking indicator never did. So a test starts deel in each language and reads the screen:
 > `test/langleak.test.js` starts deel on ten screens — six inside the chat REPL and four that
-> argv reaches on its own (`--help`, `status`, `sessions`, `reset`) — and fails if a Korean
-> character shows up on an English one. It also fails on `1 files`, and on a stray `·` left dangling at the end of a line.
+> argv reaches on its own (`--help`, `status`, `sessions`, `reset`). On the six chat screens a
+> single Korean character fails the test. The four outside the chat still have Korean left, so
+> they are pinned to a number that may only go down — 95 lines today, and `--help` is 73 of them.
+> It also fails on `1 files`, and on a stray `·` left dangling at the end of a line.
 
 ```bash
 DEEL_LANG=en deel        # this run only  (also ja, zh)
@@ -346,6 +356,11 @@ A coding agent ships your whole source to a model. **The address is everything.*
 Rather than promising in prose, the code enforces it: `src/safety/network.js` checks every request
 and never builds one for an address that is not on the allow-list.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-trust-en-dark.svg">
+  <img alt="Where your text can go: your working folder and .deel/ stay inside this machine, and only four paths cross the line — the model gateway, WebFetch, plugin downloads and MCP servers. The key, the audit log, the undo history and your conversations never cross it, and sealed mode locks the last three" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-trust-en-light.svg" width="900">
+</picture>
+
 ```
  [A] Model gateway ────── the only path your source travels
      One address, set in `setup`. Switching models closes the previous one.
@@ -374,7 +389,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 1.20.13  ⌂ inside
+ deel 2.0.0  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -400,7 +415,7 @@ leaves the company."
 Nothing is collected or transmitted. No telemetry, no usage stats, no crash reporting.
 Conversation history, undo snapshots and config live only in `.deel/` inside your working folder.
 
-> Verified by 186 checks in `npm test` (network + web + mcp), including bringing up a real
+> Verified by 350 checks in `npm test` (network + web + mcp), including bringing up a real
 > server and confirming that **not a single request reaches it** when it is not allow-listed,
 > and that an MCP server **never starts** under `--offline`.
 
@@ -441,7 +456,7 @@ So an unrecognized key is never guessed at; you are asked.
 
 Bedrock asks for a region — five including Seoul (`ap-northeast-2`), plus
 "enter it yourself." Claude has a different wire shape, absorbed in six places
-([1.7.0 release notes](docs/en/releases/1.7.md#170)).
+([1.7.0 release notes](docs/en/releases/1.x.md#170)).
 
 ### Going outside masks secrets in file contents too
 
@@ -539,6 +554,7 @@ $ deel scan
 | `deel scan --save` | Register everything found |
 | `deel scan --ports 9000,9100` | Extra ports to probe |
 | `deel scan --host <addr>` | Defaults to `127.0.0.1` |
+| `deel scan --key <key>` | For a local server that wants a key |
 
 Switch with `/model` mid-conversation — **the conversation carries over.**
 
@@ -655,6 +671,11 @@ Hand a small model 400 steps and it just runs on past the point where its window
 
 In read-only modes, `Write`, `Edit` and `Bash` are **never sent to the model at all.**
 It is not asked politely not to edit — models forget requests. A tool that isn't there can't be used.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-modes-en-dark.svg">
+  <img alt="All eight work modes on one sheet: each mode's glyph and name, whether it can change files, its thinking depth and effort, its step ceiling on a 128k model, and what it is for" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-modes-en-light.svg" width="800">
+</picture>
 
 Don't confuse this with `/mode`. They are separate axes:
 
@@ -835,10 +856,28 @@ Starting a server means opening your disk to somebody else.
 
 ## Skills and plugins
 
-**deel does not carry skills with it.** On startup it scans the machine it is running on and uses
-whatever is there. On a clean PC: zero. On a PC with skills installed: those skills.
+**deel does not carry anybody else's skills.** On startup it scans the machine it is running on
+and uses whatever is there.
+
+**It does carry seven ways of working.** A freshly issued corporate PC has no
+`~/.claude/skills` and no plugins. With zero methodology there the model made its own up every
+time, and that is where the thin, did-only-what-was-asked answers came from.
+
+| Skill | When |
+|---|---|
+| `깊이있게-만들기` (build deep) | Hardening, a report, an announcement — so it does not stop at the minimum |
+| `끝까지-하기` (finish all) | When the task is several pieces. What was skipped gets said |
+| `차근차근-디버깅` (debug step by step) | Reproduce → narrow → cause → fix → prove |
+| `검사-먼저` (test first) | A failing test before the fix |
+| `찔러보기` (spike) | When it is unclear whether something works: timebox a small probe, then throw it away |
+| `코드-줄이기` (simplify code) | Same behaviour, easier to read |
+| `스스로-검토` (self review) | Before saying it is done. What could not be measured gets said too |
+
+The list costs 404 tokens on every request (5% of an 8k window). Bodies go out only when `Skill`
+asks for one. Write your own under the same name and yours wins — what is carried sits lowest.
 
 ```
+carried  (inside the package)                             ← lowest
 project  ./.deel/skills   ./.claude/skills   ./.deel/commands   ./.claude/commands
 user     ~/.deel/skills   ~/.claude/skills   ~/.claude/commands
 plugins  ~/.claude/plugins/**   ~/.deel/plugins/**
@@ -1219,12 +1258,12 @@ deel pack --out deel-import.zip
 
 ```
   ✓ deel-import.zip
-     94 files · 509.6KB
+     175 files · 1605.9KB
 
   Dependencies      0
   Install scripts   none
   External imports  0
-  Network calls     3 sites (configured address only)
+  Network calls     8 sites (configured address only)
   Ports opened      1 site (/preview only)
 ```
 
@@ -1234,7 +1273,7 @@ audit-log spec to write SIEM ingestion rules.
 
 | File | What |
 |---|---|
-| `import-review.txt` | Dependencies · install scripts · **every network and process-spawn call site found by scanning the source** (file:line) · the three outbound lanes · SHA-256 per file |
+| `import-review.txt` | Dependencies · install scripts · **every network and process-spawn call site found by scanning the source** (file:line) · the four outbound lanes · SHA-256 per file |
 | `sbom.cdx.json` | **SBOM (CycloneDX 1.7).** Feed it straight to a scanner. One component per file with SHA-256 and a license; dependencies stated as an **explicit empty array** — "not declared" and "none" are different claims. All four CISA 2026 minimum elements (hash algorithm, component license, generating tool, generation context) are filled in |
 | `audit-spec.json` | Egress list (per lane: when, where, what, how it's stopped, and the source location) · **audit-log spec** (field names and meanings, plus what is never recorded) · file hashes |
 
@@ -1295,12 +1334,13 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (8,140 checks; a few are TTY-dependent)
+npm test          Full suite (13,900 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
 npm run demo      See what the UI actually looks like
-npm run check     Syntax check every file
+npm run check     Syntax check every file · line endings in the published package
+npm run mutate    Whether the tests actually guard (break a line on purpose)
 ```
 
 Tests run against a **fake gateway**, so the loop, streaming, tool execution, undo and compaction
@@ -1315,30 +1355,30 @@ so one run tells you everything.
 
 | Suite | Checks | Covers |
 |---|---|---|
-| `smoke` | 24 | Tools, scope, undo, audit log |
-| `loop` | 28 | Agent loop, streaming, tool calls |
-| `guard` | 113 | **What it refuses to do** — denied edits, unknown tools, repeated mutations, out-of-scope writes, the `.deel` fence |
-| `network` | 70 | Nothing escapes the configured address |
-| `web` | 56 | Web reads stay read-only |
-| `abort` · `steer` | 22 · 15 | Ctrl+C leaves the conversation valid · a line typed mid-turn rides the next call |
-| `parallel` | 23 | Read-only tools run together; checklists |
-| `cli` · `oneshot` | 84 · 82 | **Spawns the real `deel`** and drives it to completion · batch mode and exit codes |
-| `setup` | 60 | First-run wizard, driven through a fake TTY |
-| `detect` | 85 | Identifying shape and auth from one address |
-| `modes` · `route` | 120 · 72 | Work modes; auto-switching from Auto |
-| `ctxsize` | 56 | Reading context length off the model |
-| `commands` · `commands-more` | 221 · 93 | Every slash command |
-| `ui` · `ui2` | 89 · 40 | Password masking, CJK width, status line, session list, Excel→text |
-| `encoding` · `xlsx` | 77 · 72 | Legacy-encoding detection; Excel reading |
-| `compact` | 101 | Summary folding, pairing intact, graceful fallback |
-| `stuck` · `undo` | 48 · 58 | Telling spinning apart from real progress · shell-written files are undoable too |
-| `store` | 75 | Session persistence, resume, crash recovery |
-| `scan` | 30 | Distinguishing multiple runtimes |
-| `plugins` | 79 | Plugin fetch/pack, ZIP/TAR |
-| `exitcode` · `doorparity` | 7 · 7 | The printed exit-code table is real · all **four** doors hand out the same thing |
-| `no-bundle` | 21 | Nothing foreign in the published package; test-file hygiene |
-| `edit-bench` | 20 cases | Edit success rate |
-| `mutate` | 12 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
+| `smoke` | 25 | Tools, scope, undo, audit log |
+| `loop` | 85 | Agent loop, streaming, tool calls |
+| `guard` | 323 | **What it refuses to do** — denied edits, unknown tools, repeated mutations, out-of-scope writes, the `.deel` fence |
+| `network` | 110 | Nothing escapes the configured address |
+| `web` | 99 | Web reads stay read-only |
+| `abort` · `steer` | 22 · 18 | Ctrl+C leaves the conversation valid · a line typed mid-turn rides the next call |
+| `parallel` | 41 | Read-only tools run together; checklists |
+| `cli` · `oneshot` | 124 · 220 | **Spawns the real `deel`** and drives it to completion · batch mode and exit codes |
+| `setup` | 109 | First-run wizard, driven through a fake TTY |
+| `detect` | 123 | Identifying shape and auth from one address |
+| `modes` · `route` | 207 · 221 | Work modes; auto-switching from Auto |
+| `ctxsize` | 71 | Reading context length off the model |
+| `commands` · `commands-more` | 274 · 195 | Every slash command |
+| `ui` · `ui2` | 126 · 40 | Password masking, CJK width, status line, session list, Excel→text |
+| `encoding` · `xlsx` | 159 · 106 | Legacy-encoding detection; Excel reading |
+| `compact` | 153 | Summary folding, pairing intact, graceful fallback |
+| `stuck` · `undo` | 76 · 138 | Telling spinning apart from real progress · shell-written files are undoable too |
+| `store` | 135 | Session persistence, resume, crash recovery |
+| `scan` | 66 | Distinguishing multiple runtimes |
+| `plugins` | 197 | Plugin fetch/pack, ZIP/TAR |
+| `exitcode` · `doorparity` | 7 · 19 | The printed exit-code table is real · all **four** doors hand out the same thing |
+| `no-bundle` | 28 | Nothing foreign in the published package; test-file hygiene |
+| `edit-bench` | 15 cases | Edit success rate |
+| `mutate` | 1,650 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
 
 > **More** — Coverage · Layout
 >
@@ -1350,49 +1390,47 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| [1.20.13](docs/en/releases/1.20.md#12013) | One space hid the whole instruction |
-| [1.20.12](docs/en/releases/1.20.md#12012) | The lock we said was on was not attached to anything |
-| [1.20.11](docs/en/releases/1.20.md#12011) | The safety net said it was there when it wasn't |
-| [1.20.10](docs/en/releases/1.20.md#12010) | Nobody answered, yet an answer had been given |
-| [1.20.9](docs/en/releases/1.20.md#1209) | Nothing was missing from the screen — something else was on it |
-| [1.20.8](docs/en/releases/1.20.md#1208) | We were writing down "can't" where the truth was "couldn't measure" |
-| [1.20.7](docs/en/releases/1.20.md#1207) | We were learning the opposite of what the server said |
-| [1.20.6](docs/en/releases/1.20.md#1206) | The second review was losing rounds silently |
-| [1.20.5](docs/en/releases/1.20.md#1205) | `aws_access_token` was not being caught |
-| [1.20.4](docs/en/releases/1.20.md#1204) | Only one hyphen segment was being counted |
-| [1.20.3](docs/en/releases/1.20.md#1203) | How far a moved fence shook is now visible in one run |
-| [1.20.2](docs/en/releases/1.20.md#1202) | The previous release was blocking the very thing it meant to allow |
-| [1.20.1](docs/en/releases/1.20.md#1201) | `PASSWORD=` was never once caught |
-| [1.20.0](docs/en/releases/1.20.md#1200) | A key not written in capitals was going out as it was |
-| [1.19.5](docs/en/releases/1.19.md#1195) | On Windows line endings the previous release's fix did nothing at all |
-| [1.19.4](docs/en/releases/1.19.md#1194) | Secrets leaked again wherever a comment was written |
-| [1.19.3](docs/en/releases/1.19.md#1193) | Secrets written in YAML were going out in plaintext |
-| [1.19.2](docs/en/releases/1.19.md#1192) | A gap appeared where the fence was moved — closing the hole 1.19.1 opened |
-| [1.19.1](docs/en/releases/1.19.md#1191) | What the twelfth pair of eyes found, and the fourteen false alarms — 13 of 27 findings survived |
-| [1.19.0](docs/en/releases/1.19.md#1190) | Getting one side right broke the other — 9,093 checks that measure both sides |
-| [1.18.0](docs/en/releases/1.18.md#1180) | Having a rule is not the same as the rule firing — what was open while 8,404 checks stayed green |
-| [1.17.9](docs/en/releases/1.17.md#1179) | Rate-limited, and knocking again one second later |
-| [1.17.8](docs/en/releases/1.17.md#1178) | A long brief got the opposite of what it asked for — and one network blip threw the turn away |
-| [1.17.7](docs/en/releases/1.17.md#1177) | We measured it side by side, and fixed the row we lost |
-| [1.17.6](docs/en/releases/1.17.md#1176) | Only keep-alive and no content used to mean waiting forever |
-| [1.17.5](docs/en/releases/1.17.md#1175) | The phase now follows the work inside a turn — and four read tools had been queueing up |
-| [1.17.4](docs/en/releases/1.17.md#1174) | The places that sent the same request twice — and where what it learned sealed itself in |
-| [1.17.3](docs/en/releases/1.17.md#1173) | No standard name for "same conversation" — it sends every name it knows |
-| [1.17.2](docs/en/releases/1.17.md#1172) | A second pair of eyes — an hwpx Hancom cannot open · two requests going out unnamed |
-| [1.17.1](docs/en/releases/1.17.md#1171) | Two things only green on one machine — writing into a deleted directory · raw NUL in the source |
-| **[1.17.0](docs/en/releases/1.17.md#1170)** | What blocked it from getting inside a company · trusted folders · mTLS · `doctor` · hooks · subagents · writing hwpx |
-| **[1.16.0](docs/en/releases/1.16.md#1160)** | A deep request no longer lands in a shallow mode · gateway cache · `doc2md` · Figma `.fig` |
-| **[1.15.1](docs/en/releases/1.15.md#1151)** | Telling the editor how we get authenticated — ACP Registry listing requirement |
-| **[1.15.0](docs/en/releases/1.15.md#1150)** | Stop doing the same thing twice — nine quietly expensive places that broke the prefix cache |
-| **[1.14.0](docs/en/releases/1.14.md#1140)** | A machine now checks that what we wrote down is true — green does not mean guarded |
-| [1.13.1](docs/en/releases/1.13.md#1131) | What shipped was not what the source said — 47 of 148 files went out with CRLF line endings |
-| **[1.13.0](docs/en/releases/1.13.md#1130)** | Every place deel touches someone else's endpoint, re-examined — three independent reviewers, four findings they shared |
-| **[1.12.0](docs/en/releases/1.12.md#1120)** | The same prefix was being sent again on every step |
-| **[1.10.0](docs/en/releases/1.10.md#1100)** | ESC actually stops · a full context carries on inside the same turn · every vendor endpoint measured |
-| [1.9.2](docs/en/releases/1.9.md#192) | Guards that said they were blocking were not blocking · folding lost the request and the outstanding work |
-| **[1.9.0](docs/en/releases/1.9.md#190)** | Tables are drawn as tables · reasoning effort reaches Claude and Bedrock · tool schemas shaped per vendor · only the changed part of a file is re-sent |
+| **[2.0.0](docs/en/releases/2.0.md#200)** | Every fence we said was there, checked for whether it actually holds — everything that changed, where and how it was fixed, and how it was found (CHA) |
 
-The five most recent are listed here. Every version, and why each thing changed, is in the **[release notes](docs/en/releases.md)**.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-cha-en-dark.svg">
+    <img alt="The nine steps of one CHA round, animated: hunt, brief, second eyes, adjudicate, red test first, fix, mutate, gate, record — a marker walks them one at a time and step 9 returns to step 1. Three models stand at step 3: Claude writes, Gemini and codex only read. With reduced motion it falls back to a still frame" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-cha-en-light.svg" width="860">
+  </picture>
+</p>
+
+The 2.0.0 fixes did not come from reading the code. They came from repeating one
+procedure — **CHA, Cyclic Hostile Harnessing** — fifteen times. One lap of this ring
+is one round, and three models take turns at step 3.
+
+2.0.0 is the large release where the name changed. Everything before it — 1.2.0 through 1.20.13 —
+is in the **[1.x archive](docs/en/releases/1.x.md)**, one line per release.
+
+<details>
+<summary>The 1.x lines at a glance (18 lines)</summary>
+
+| Line | What changed |
+|---|---|
+| [1.20.x](docs/en/releases/1.x.md#120x) | One space hid the whole instruction |
+| [1.19.x](docs/en/releases/1.x.md#119x) | Getting one side right broke the other — thirteen rounds of second review, and the gap left where a fence moved |
+| [1.18.x](docs/en/releases/1.x.md#118x) | Having a rule is not the same as the rule firing — what green was not guarding, and a second reviewer |
+| [1.17.x](docs/en/releases/1.x.md#117x) | The things that blocked it from getting inside a company — and the company writes what to do |
+| [1.16.x](docs/en/releases/1.x.md#116x) | A deep request no longer lands in a shallow mode — and designs and documents open as they are |
+| [1.15.x](docs/en/releases/1.x.md#115x) | Stop doing the same thing twice — nine quietly expensive places |
+| [1.14.x](docs/en/releases/1.x.md#114x) | A machine now checks that what we wrote down is true |
+| [1.13.x](docs/en/releases/1.x.md#113x) | Every place deel touches someone else's endpoint, re-examined |
+| [1.12.x](docs/en/releases/1.x.md#112x) | The same head was going out on every single request |
+| [1.10.x](docs/en/releases/1.x.md#110x) | ESC actually stops, and a full context carries on |
+| [1.9.x](docs/en/releases/1.x.md#19x) | The screen reads, and vendor APIs understand what you set |
+| [1.8.x](docs/en/releases/1.x.md#18x) | A full day against a gateway that hands out one-hour tokens |
+| [1.7.x](docs/en/releases/1.x.md#17x) | Local stays local; it goes out only when you say so |
+| [1.6.x](docs/en/releases/1.x.md#16x) | The places that made a turn spin in circles |
+| [1.5.x](docs/en/releases/1.x.md#15x) | A 5MB document showed 8 lines out of 919 |
+| [1.4.x](docs/en/releases/1.x.md#14x) | The README explains what's different, and the review report gets its missing line |
+| [1.3.x](docs/en/releases/1.x.md#13x) | evidence instead of claims, the editor instead of a terminal |
+| [1.2.x](docs/en/releases/1.x.md#12x) | so the conversation doesn't break |
+
+</details>
 
 ---
 

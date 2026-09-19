@@ -336,6 +336,20 @@ trace('9-도구에붙었나');
   rmSync(root, { recursive: true, force: true });
 }
 
+// ── 파일 줄에 섞인 터미널 제어 순서 (2.0.0 3회차 사냥) ─────────────────
+//
+// 고친 자리 그림은 **파일 내용**을 그대로 화면에 낸다. 남의 저장소 파일에 ESC 순서가 들어 있으면
+// Edit 한 번에 클립보드가 바뀌거나 화면이 지워진다. 우리가 입힌 색만 남아야 한다.
+{
+  const ESC = String.fromCharCode(27);
+  const 전 = ['a', 'b'].join('\n');
+  const 후 = ['a', `b ${ESC}]52;c;ZWNobw==${String.fromCharCode(7)} ${ESC}[2J${String.fromCharCode(8)}끝`].join('\n');
+  const 줄들 = renderDiff(diffLines(전, 후));
+  const 남음 = 줄들.some((l) => /[\x00-\x08\x0b-\x1f\x7f-\x9f]/.test(String(l).replace(/\x1b\[[0-9;]*m/g, '')));
+  check('★★★ 고친 줄에 든 터미널 제어 순서는 화면에 안 나간다', !남음, JSON.stringify(줄들));
+  check('  글자는 남는다', 줄들.map(색빼기).join('\n').includes('끝'), JSON.stringify(줄들.map(색빼기)));
+}
+
 trace('11-끝');
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

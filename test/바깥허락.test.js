@@ -46,7 +46,7 @@ const 바깥주소 = 'https://api.example.invalid/v1';
 trace('1-띄우기');
 
 /** deel 을 파이프로 띄우고, 끝난 뒤 화면과 설정 파일을 함께 돌려준다. */
-async function 띄우기(넣을말, { 허락해둘까 = false, 더줄인자 = [], 터미널인척 = false } = {}) {
+async function 띄우기(넣을말, { 허락해둘까 = false, 더줄인자 = [], 터미널인척 = false, 모델 = '가짜모델' } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'deel-out-'));
   const home = mkdtempSync(join(tmpdir(), 'deel-out-home-'));
   const 설정자리 = join(home, 'config.json');
@@ -56,7 +56,7 @@ async function 띄우기(넣을말, { 허락해둘까 = false, 더줄인자 = []
     level: '개발자',
     profiles: [{
       id: '바깥', name: '바깥 게이트웨이', kind: 'openai', baseUrl: 바깥주소,
-      auth: 'none', apiKey: '', model: '가짜모델', ctx: 8192, streaming: false, tools: true,
+      auth: 'none', apiKey: '', model: 모델, ctx: 8192, streaming: false, tools: true,
       ...(허락해둘까 ? { online: true } : {}),
     }],
   }), 'utf8');
@@ -195,6 +195,31 @@ trace('4c-못-물어본-판에서-옛-값을-쓴다고-말한다');
     r.글.split('\n').filter((l) => /프로필에 적힌/.test(l)).join(' | ').slice(0, 140));
   check('★ 고치는 길을 알려 준다', /\/ctx auto/.test(r.글), '');
   check('서버 탓으로 안 돌린다', !/서버가 안 알려줍니다/.test(r.글), '');
+}
+
+trace('4d-두드리다-던지면-그것도-말한다');
+
+// ── ★★ probeCtx 가 **던지면** 경고가 한 줄도 안 나가던 자리 (8회차 화면1618) ──
+//
+// repl 은 `try { r = await probeCtx(…) } catch { /* 못 물어보면 아래에서 처리 */ }`
+// 였다. 그런데 던지면 r 이 null 이라, 아래 「못 물어봤습니다」 갈래가 보는
+// `r?.why` 가 통째로 안 걸린다 — 주석은 아래에서 처리한다고 적어 놓고 아무 데서도
+// 처리를 안 했다. 프로필에 ctx 가 적혀 있으면 화면은 **아무 말도 안 하고**, 저장된
+// 숫자가 방금 서버에서 확인한 값처럼 머리말에 뜬다.
+//
+// 어떻게 던지게 하나: probeCtx 는 두드릴 자리를 지을 때 `encodeURIComponent(model)`
+// 을 try 밖에서 부른다. 모델 이름에 짝 없는 서러게이트가 한 자 들어 있으면 그 자리가
+// URIError 로 던진다 — 설정 파일이 다른 인코딩을 거쳐 왔을 때 실제로 나는 꼴이다.
+{
+  const r = await 띄우기('', { 허락해둘까: true, 모델: '가짜\uD800모델' });
+  check('끝난다', r.끝났나 === true, '');
+  check('★★ 두드리다 던져도 못 물어봤다고 말한다', /못 물어봤습니다|못 알아냈습니다/.test(r.글),
+    r.글.split('\n').filter((l) => /컨텍스트/.test(l)).join(' | ').slice(0, 160) || '(컨텍스트 줄이 한 줄도 없다)');
+  check('★ 무슨 값을 쓰는지도 같이 적는다', /프로필에 적힌 8,192 을 그대로 씁니다/.test(r.글),
+    r.글.split('\n').filter((l) => /프로필에 적힌/.test(l)).join(' | ').slice(0, 140));
+  check('★ 까닭을 삼키지 않는다 (던진 말이 화면에 남는다)', /\(까닭 모름\)/.test(r.글) === false && /\(.+\)/.test(
+    r.글.split('\n').filter((l) => /못 물어봤습니다|못 알아냈습니다/.test(l)).join(' ')),
+  r.글.split('\n').filter((l) => /못 물어봤습니다|못 알아냈습니다/.test(l)).join(' | ').slice(0, 160));
 }
 
 trace('5-끝');

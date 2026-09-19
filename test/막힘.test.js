@@ -29,9 +29,11 @@ import {
   기다릴시간, 다시부를지, 다시부를까, 기본정책, 정책고르기,
 } from '../src/backend/retry.js';
 import {
-  할당량기억, 마지막할당량, 할당량잊기, 미리기다릴까, 막힘띄움, 낡은값, 미리기다림상한,
+  할당량기억, 마지막할당량, 할당량잊기, 미리기다릴까, 막힘띄움, 낡은값, 미리기다림상한, 할당량읽기,
 } from '../src/backend/quota.js';
-import { serverMessage, 막힘힌트 } from '../src/backend/http.js';
+import { serverMessage, 막힘힌트, req } from '../src/backend/http.js';
+import { createServer } from 'node:http';
+import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -129,12 +131,54 @@ trace('4-다음부름');
   check('★★★ 띄울 만큼 띄웠으면 그만 띄운다',
     미리기다릴까(아무말없이막힘, 지금 + 막힘띄움 + 1) === null, '');
 
-  const 말해준막힘 = { 있나: true, 막힘: true, 요청: null, 토큰: null, 풀림: 30, 때: 지금 };
+  /*
+   * 「서버가 30초라고 했다」 는 **Retry-After 를 받았다**는 뜻이다. 그 자리를
+   * `서버말` 이 맡는다 — `풀림` 은 그 말이 없을 때 통이 차는 시계까지 넓혀
+   * 본 값이라, 둘을 한 칸에 두면 아래 검사와 구별이 안 된다.
+   */
+  const 말해준막힘 = { 있나: true, 막힘: true, 요청: null, 토큰: null, 서버말: 30, 풀림: 30, 때: 지금 };
   check('★★★ 서버가 30초라고 하면 30초다 (바닥값이 아니라)',
     미리기다릴까(말해준막힘, 지금) === 30000, '');
-  const 아주긴것 = { 있나: true, 막힘: true, 요청: null, 토큰: null, 풀림: 3600, 때: 지금 };
+  const 아주긴것 = { 있나: true, 막힘: true, 요청: null, 토큰: null, 서버말: 3600, 풀림: 3600, 때: 지금 };
   check('★★★ 한 시간이라고 해도 상한에서 자른다 — 사람이 정할 일이다',
     미리기다릴까(아주긴것, 지금) === 미리기다림상한, '');
+
+  /*
+   * ★★★ 시킨 적 없는 시간을 서버 탓으로 적지 않는다.
+   *
+   * 실제로 온 429 에는 `Retry-After` 가 없고 `x-ratelimit-reset-tokens: 6m0s`
+   * 만 있었다. 그 6분은 「이때 다시 오라」 가 아니라 **통이 다시 차는 시계**다.
+   * 그걸 시킨 말로 읽고 1분(상한)을 붙들면, 화면은 서버가 안 한 말을 서버
+   * 이름으로 적는 셈이다. 아무 말도 못 들은 자리의 답은 막힘띄움이다.
+   */
+  const 시계만있는막힘 = 할당량읽기({ 'x-ratelimit-reset-tokens': '6m0s' });
+  시계만있는막힘.막힘 = true; 시계만있는막힘.때 = 지금;
+  check('★★★ 429 인데 Retry-After 가 없으면 reset 시계를 서버 말로 안 읽는다',
+    미리기다릴까(시계만있는막힘, 지금) === 막힘띄움,
+    `${미리기다릴까(시계만있는막힘, 지금)}ms · 풀림 ${시계만있는막힘.풀림}`);
+  check('★★ 그 시계 자체는 읽어 둔다 — 화면에 적을 값이다',
+    시계만있는막힘.풀림 === 360 && 시계만있는막힘.서버말 === null,
+    JSON.stringify({ 풀림: 시계만있는막힘.풀림, 서버말: 시계만있는막힘.서버말 }));
+
+  /*
+   * ★★★ 반대로 `Retry-After` 가 오면 그 말은 그대로 지킨다. reset 시계가 같이
+   * 와도 시킨 말이 이긴다 — 그것이 「서버가 말해 줬다」 의 뜻이다.
+   */
+  const 시킨막힘 = 할당량읽기({ 'retry-after': '12', 'x-ratelimit-reset-tokens': '6m0s' });
+  시킨막힘.막힘 = true; 시킨막힘.때 = 지금;
+  check('★★★ Retry-After 를 받으면 그 말을 지킨다', 미리기다릴까(시킨막힘, 지금) === 12000,
+    String(미리기다릴까(시킨막힘, 지금)));
+
+  /*
+   * ★★★ 「남은 것이 0」 이라고 서버가 스스로 적어 보냈으면 그때는 시계를 쓴다.
+   * 그 0 이 언제 0 이 아니게 되는지를 같은 응답이 적어 준 것이라, 짐작이 아니다.
+   */
+  const 바닥났다고말함 = 할당량읽기({
+    'x-ratelimit-remaining-requests': '0', 'x-ratelimit-reset-requests': '20s',
+  });
+  바닥났다고말함.막힘 = false; 바닥났다고말함.때 = 지금;
+  check('★★★ 바닥났다고 말해 준 자리는 시계만으로도 비킨다',
+    미리기다릴까(바닥났다고말함, 지금) === 20000, String(미리기다릴까(바닥났다고말함, 지금)));
 }
 
 // ── 5. 안 띄우는 쪽 ─────────────────────────────────────────────────────
@@ -239,6 +283,26 @@ trace('8-무슨한도');
     /분당 한도/.test(분당) && !/가드레일/.test(분당), 분당.slice(0, 40));
 
   /*
+   * (사냥5 B5-03) 「요청 한 번이 분당 한도보다 크다」 는 **기다려도 안 풀린다.** 창이 새로 열려도
+   * 그 한 번은 여전히 한도보다 크다 — 줄여야 풀린다. 「기다리는 것이 맞습니다」 를 붙이면 사람은
+   * 1분을 기다리고, 같은 거절을 또 받고, 다시 기다린다. 서버 원문이 이미 「줄이라」 고 말한다.
+   */
+  const 한번이큼 = serverMessage({ status: 429, json: { error: { message: 'Request too large for gpt-4o in organization org-abc on tokens per min (TPM): Limit 30000, Requested 45000. The input or output tokens must be reduced in order to run successfully.' } } });
+  check('★★★ 요청 한 번이 분당 한도보다 크면 「기다리면 풀린다」 고 하지 않는다',
+    !/저절로 풀립니다|기다리는 것이 맞습니다/.test(한번이큼) && /must be reduced/.test(한번이큼), 한번이큼.slice(0, 80));
+  check('  막힘힌트 는 그 문장에 분당 한도 힌트를 안 붙인다',
+    !/저절로 풀립니다/.test(막힘힌트('Request too large for gpt-4o on tokens per min (TPM): Limit 30000, Requested 45000') ?? ''), '');
+  /*
+   * 맞는 안내는 말 표에 열쇠가 없어 원문만 두었다(5회차 남은 일). 원문은 영어라, 한국어 화면에서
+   * 사람은 「무엇을 줄이라는 건지」 를 원문에서 뽑아 읽어야 했다. 열쇠를 만들어 「줄여야 풀린다」 를 말한다.
+   */
+  const 큰한번 = 막힘힌트('Request too large for gpt-4o on tokens per min (TPM): Limit 30000, Requested 45000') ?? '';
+  check('★★ (6회차) 요청 한 번이 분당 한도보다 크면 「줄여야 풀린다」 고 말한다',
+    /기다려도 안 풀립니다/.test(큰한번) && /줄이/.test(큰한번), 큰한번.slice(0, 60));
+  check('★★ (6회차) 그때도 서버 원문은 그대로 보인다',
+    /must be reduced/.test(한번이큼) && /기다려도 안 풀립니다/.test(한번이큼), 한번이큼.slice(0, 80));
+
+  /*
    * 안 하는 쪽. 모르는 것에 아는 척하면 그 화면은 그때부터 못 믿는다.
    */
   check('★★★ 알아볼 수 없으면 원문 그대로 준다',
@@ -247,6 +311,56 @@ trace('8-무슨한도');
     serverMessage({ status: 400, json: { error: { message: 'guardrail text units' } } }) === 'guardrail text units', '');
   check('★★ 막힘힌트 는 못 알아보면 null 이다',
     막힘힌트('아무 말') === null && 막힘힌트(null) === null && 막힘힌트(undefined) === null, '');
+}
+
+// ── 9. 흘려 받다 막히면 Retry-After 를 읽을 자리가 있나 ─────────────────
+trace('9-흘려받다막힘');
+{
+  /*
+   * ── `req(stream:true)` 가 머리말을 버렸다 (사냥6 막판-뒷단) ─────────────
+   *
+   * 이 파일 전체가 「서버가 말해 주면 그 말이 이긴다」 를 재는데, **흘려 받는 부름에서는
+   * 그 말을 읽을 자리 자체가 없었다.** `req` 가 `stream` 일 때 `{ ok, status, res, ms }`
+   * 만 돌려주고 `headers` 를 뺐기 때문이다. 대화 흐름은 429 도 흘려 받기로 부른다.
+   *
+   * 그래서 진단(backend/probe.js)이 `r.headers?.get('retry-after')` 를 늘 null 로 읽고 —
+   * `?.` 덕에 터지지도 않는다 — 서버가 37초 뒤에 오라고 적어 보낸 자리에서 2초만 쉬고
+   * 다시 쐈다. 빨리 두드릴수록 구덩이가 깊어진다는 것이 이 파일 맨 위 머리말이다.
+   * (retry.js 의 다시부를지 는 `r.res.headers` 로도 한 번 더 보게 돼 있어 살아남았다 —
+   * 그 뒷길이 있어서 이 구멍이 여태 안 보였다.)
+   *
+   * 재는 것은 **읽을 자리가 있나** 이지 몇 초를 쉬었나가 아니다 — 시계로 재면 느린
+   * 기계에서 흔들린다.
+   */
+  const srv = createServer((q, s2) => {
+    q.resume();
+    q.on('end', () => {
+      s2.writeHead(429, { 'content-type': 'application/json', 'retry-after': '37' });
+      s2.end(JSON.stringify({ error: { message: 'Rate limit reached' } }));
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  resetNet();
+  allowEndpoint(base);
+
+  const 재기 = async (stream) => {
+    const r = await req(`${base}/v1/chat/completions`, { method: 'POST', body: {}, timeout: 5000, stream });
+    const 읽은 = r.headers?.get?.('retry-after') ?? null;
+    await r.버리기?.();
+    return { status: r.status, 읽은 };
+  };
+  const 통째 = await 재기(false);
+  const 흘려 = await 재기(true);
+
+  check('통째로 받는 부름은 Retry-After 를 준다',
+    통째.status === 429 && 통째.읽은 === '37', JSON.stringify(통째));
+  check('★★★ 흘려 받는 부름도 Retry-After 를 준다 — 서버가 한 말을 부르는 쪽이 읽을 수 있어야 한다',
+    흘려.status === 429 && 흘려.읽은 === '37', JSON.stringify(흘려));
+
+  srv.closeAllConnections?.();
+  srv.close();
+  resetNet();
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

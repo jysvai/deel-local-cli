@@ -33,6 +33,23 @@ export function 기록자리(root = process.cwd()) {
   return join(root, '.deel', 'audit.jsonl');
 }
 
+/** 하루. 이 PC 와 기록을 적은 PC 의 시계가 조금 어긋나는 것까지는 받는다. */
+const 시계어긋남 = 86400000;
+
+/**
+ * 감사기록의 시각이 우리가 적은 꼴인가. 맞으면 견줄 수 있게 ISO 글자로, 아니면 null.
+ *
+ * 글자가 아니면(숫자·없음) 버린다. `Date.parse` 는 `"5"` 도 날짜로 읽으므로 앞머리가
+ * `YYYY-MM-DDT` 인지도 본다. **이제보다 하루 넘게 뒤**인 것도 버린다 — 9999년 한 줄이
+ * 「마지막으로 쓴 날」 을 영영 차지한다.
+ */
+function 성한시각(값, 이제) {
+  if (typeof 값 !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(값)) return null;
+  const t = Date.parse(값);
+  if (!Number.isFinite(t) || t > 이제.getTime() + 시계어긋남) return null;
+  return new Date(t).toISOString();
+}
+
 /**
  * 감사기록을 읽어 센다.
  *
@@ -71,7 +88,9 @@ export function 세기(자리, { 날수 = 30, 이제 = new Date() } = {}) {
     대화: 0,
     도구: 0,
     도구실패: 0,
-    도구별: new Map(),    // 이름 → { 수, 실패 }
+    // 됐는지 **모르는** 것. 성공에도 실패에도 안 넣는다 (아래 tool 갈래).
+    도구모름: 0,
+    도구별: new Map(),    // 이름 → { 수, 실패, 모름 }
     막힘: 0,
     막힌까닭: new Map(),  // 까닭 → 수
     되돌림: 0,
@@ -83,33 +102,54 @@ export function 세기(자리, { 날수 = 30, 이제 = new Date() } = {}) {
     셈.줄 += 1;
     let r;
     try { r = JSON.parse(줄); } catch { 셈.깨진줄 += 1; continue; }
-    if (!r || typeof r !== 'object') { 셈.깨진줄 += 1; continue; }
-    const at = typeof r.at === 'string' ? r.at : null;
-    if (자름 && at && at < 자름) { 셈.지난줄 += 1; continue; }
+    if (!r || typeof r !== 'object' || Array.isArray(r)) { 셈.깨진줄 += 1; continue; }
+    /*
+     * ── 우리가 적은 꼴이 아닌 줄은 못 읽은 줄이다 ──────────────────────
+     *
+     * 시각이 없는 줄은 기간 자르기(`at && at < 자름`)를 그냥 지나 「최근 30일」
+     * 안으로 들어왔고, 숫자 시각도 그랬고, 9999년 줄은 「마지막」 을 9999-12-31
+     * 로 만들었다. 도구 이름이 객체면 「[object Object]」 라는 도구로 셌고, 이름이
+     * 아예 없으면 「?」 라는 도구를 지어내 그 이름으로 셌다.
+     * 감사기록(safety/audit.js)은 언제나 ISO 시각 글자와 도구 이름 글자를 적는다.
+     * 그 꼴이 아니면 손으로 고쳤거나 다른 것이 섞인 줄이다 — 셈에 넣으면 숫자가
+     * 조용히 틀리고, 버리기만 하면 몇 줄을 못 읽었는지가 사라진다. 그래서 센다.
+     */
+    const at = 성한시각(r.at, 이제);
+    if (!at) { 셈.깨진줄 += 1; continue; }
+    // 도구 이름은 **있어야** 한다. 없는 줄을 `?` 라는 도구로 세면 쓴 적 없는 도구가 화면에 생긴다.
+    if (r.kind === 'tool' && (typeof r.tool !== 'string' || !r.tool)) { 셈.깨진줄 += 1; continue; }
+    if (자름 && at < 자름) { 셈.지난줄 += 1; continue; }
 
-    if (at) {
-      if (!셈.처음 || at < 셈.처음) 셈.처음 = at;
-      if (!셈.마지막 || at > 셈.마지막) 셈.마지막 = at;
-      셈.날.add(at.slice(0, 10));
-    }
-    if (r.session) 셈.세션.add(String(r.session));
+    if (!셈.처음 || at < 셈.처음) 셈.처음 = at;
+    if (!셈.마지막 || at > 셈.마지막) 셈.마지막 = at;
+    셈.날.add(at.slice(0, 10));
+    if (typeof r.session === 'string' && r.session) 셈.세션.add(r.session);
 
     switch (r.kind) {
       case 'turn': 셈.대화 += 1; break;
       case 'tool': {
         셈.도구 += 1;
-        const 이름 = String(r.tool ?? '?');
-        const 것 = 셈.도구별.get(이름) ?? { 수: 0, 실패: 0 };
+        const 이름 = r.tool;   // 위에서 빈 이름을 이미 걸렀다 — 여기서 지어내지 않는다
+        const 것 = 셈.도구별.get(이름) ?? { 수: 0, 실패: 0, 모름: 0 };
         것.수 += 1;
-        // ok 가 아예 없는 옛 줄은 성공으로 안 친다 — 모르는 것을 좋은 쪽으로
-        // 세면 실패율이 늘 실제보다 낮게 나온다.
+        /*
+         * ok 가 없는 줄은 **모른다.** 성공도 실패도 아니다.
+         *
+         * 바로 위 주석이 「모르는 것을 좋은 쪽으로 세면 실패율이 늘 실제보다
+         * 낮게 나온다」 라고 적어 두고, 정작 `ok === false` 만 세어서 ok 없는
+         * 줄이 분모에만 들어갔다 — 그게 곧 성공으로 세는 것이다. 감사기록은
+         * 언제나 ok 를 적으므로(safety/audit.js), 없는 줄은 옛 기록이거나 손으로
+         * 고친 줄이다. 실패로 미는 것도 지어내는 것이라 **따로 세어 말한다.**
+         */
         if (r.ok === false) { 것.실패 += 1; 셈.도구실패 += 1; }
+        else if (r.ok !== true) { 것.모름 += 1; 셈.도구모름 += 1; }
         셈.도구별.set(이름, 것);
         break;
       }
       case 'blocked': {
         셈.막힘 += 1;
-        const 왜 = String(r.why ?? '(까닭 없음)');
+        // 글자가 아닌 까닭은 「[object Object]」 로 모이지 않게 없는 것으로 친다.
+        const 왜 = typeof r.why === 'string' && r.why ? r.why : '(까닭 없음)';
         셈.막힌까닭.set(왜, (셈.막힌까닭.get(왜) ?? 0) + 1);
         break;
       }
@@ -153,7 +193,8 @@ export function 셈JSON(셈) {
     turns: 셈.대화,
     tools: 셈.도구,
     toolFailures: 셈.도구실패,
-    byTool: 도구차례(셈, 100).map((x) => ({ name: x.이름, calls: x.수, failures: x.실패 })),
+    toolUnknown: 셈.도구모름,
+    byTool: 도구차례(셈, 100).map((x) => ({ name: x.이름, calls: x.수, failures: x.실패, unknown: x.모름 })),
     blocked: 셈.막힘,
     blockedBy: 막힘차례(셈, 100).map((x) => ({ why: x.왜, count: x.수 })),
     undos: 셈.되돌림,

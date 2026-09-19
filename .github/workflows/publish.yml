@@ -128,16 +128,18 @@ jobs:
       # 액션도 판이 있다. v4 는 Node 20 위에서 도는데 러너가 그걸 이제 안 쓴다
       # ("forced to run on Node.js 24"). 매 판 경고가 붙고, 언젠가는 경고가
       # 아니라 고장이 된다. 그리고 믿는 발행자(OIDC)는 새 판에서만 된다.
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           # 믿는 발행자는 npm 11.5.1 · Node 22.14 위를 요구한다. 24 로 두면
           # 둘 다 넉넉히 넘는다. 검사는 test.yml 이 20·22·24 에서 따로 돈다 —
           # 여기서 고른 판은 **올리는 데 쓰는 판**이지 재는 판이 아니다.
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
-          # 캐시는 안 건다 (기본값이 그렇다). 캐시에서 나온 것이 소스에서 나온
-          # 것과 같다는 보장이 없고, 이 판이 파는 것이 바로 그 보장이다.
+          # 캐시는 안 건다. 기본값이 그렇지만 **적어 둔다** — 캐시에서 나온 것이
+          # 소스에서 나온 것과 같다는 보장이 없고, 이 판이 파는 것이 바로 그
+          # 보장이다. npm 문서도 릴리스 빌드에서는 끄라고 적는다.
+          package-manager-cache: false
 
       # 태그와 package.json 이 어긋난 채로 올라가면 되돌릴 수가 없다
       # (npm 은 같은 판을 다시 못 올린다). 그래서 여기서 먼저 막는다.
@@ -230,6 +232,24 @@ jobs:
           # 믿는 발행자를 **먼저** 본다. 이 저장소가 쓰는 길이 그쪽이다.
           if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
             echo "믿는 발행자(OIDC)로 올립니다."
+            # npm 판을 여기서 못 박는다. 믿는 발행자는 npm 11.5.1 위에서만 돈다.
+            # 그 아래면 npm 은 OIDC 를 **아예 안 쳐다보고** 토큰을 찾다가 마지막
+            # 줄에서 ENEEDAUTH·403 으로 끝난다 — 그 글자만 봐서는 판이 낮다는 것을
+            # 알 길이 없다. setup-node 가 고르는 Node 24 의 번들 npm 은 판마다
+            # 다르므로(24.0 은 11.3.0 이었다) 있는 것을 재서 말한다.
+            npmv=$(npm --version)
+            # 낮은 쪽이 11.5.1 이면 지금 npm 이 그보다 높거나 같다는 뜻이다.
+            # `sort -V -C` 로 하면 **같을 때** 낮은 쪽으로 떨어진다 — 딱 11.5.1 인
+            # 러너가 「모릅니다」 를 받는다. 거짓 경고도 결함이다.
+            if [ "$(printf '%s\n' "$npmv" 11.5.1 | sort -V | head -1)" = "11.5.1" ]; then
+              echo "  npm $npmv 로 올립니다 (11.5.1 위)."
+            else
+              echo "" >&2
+              echo "npm $npmv 는 믿는 발행자를 모릅니다 (11.5.1 위여야 합니다)." >&2
+              echo "이 워크플로의 setup-node 아래 node-version 을 올리거나," >&2
+              echo "그 뒤에 npm install -g npm@latest 를 한 줄 넣으세요." >&2
+              exit 1
+            fi
             if [ -n "$NPM_TOKEN" ]; then
               echo "" >&2
               echo "다만 NPM_TOKEN 이 같이 들어 있습니다. setup-node 가 그걸" >&2
@@ -262,6 +282,11 @@ jobs:
       - name: test
         if: steps.onnpm.outputs.found == 'no'
         run: npm test
+      # 문서 링크도 관문이다. 끊긴 링크는 올라간 뒤에야 보이고, 그때는
+      # 같은 판을 다시 못 올린다 — npm 은 덮어쓰기를 막는다.
+      - name: docs links
+        if: steps.onnpm.outputs.found == 'no'
+        run: npm run docs
 
       # NODE_AUTH_TOKEN 은 **안 넘긴다.** 빈 값이라도 넘기면 setup-node 가
       # .npmrc 에 적어 둔 자리와 엮여서, 어느 길로 갔는지가 흐려진다.

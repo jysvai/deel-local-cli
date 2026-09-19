@@ -14,7 +14,7 @@
 // **사람의 진짜 클립보드는 안 건드린다.** 검사가 남의 복사해 둔 것을 지우면
 // 안 된다. 그래서 꺼내기를 갈아 끼워 세 갈래를 재고, 진짜 클립보드는 읽기만
 // 한 번 해 본다(읽는 것은 아무것도 안 바꾼다).
-import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { 클립보드그림, 그림앉히기, 그림한도 } from '../src/tools/clipboard.js';
@@ -208,6 +208,113 @@ trace('6-갈래별');
 
   // 낯선 OS 는 2번 절에서 이미 쟀다. 여기서는 그 답도 같은 계약인지만 본다.
   check('낯선 OS 의 답도 같은 계약이다', 계약지킴(클립보드그림({ platform: 'sunos' })) === true);
+}
+
+// ── 7. 갈래 속 — 부르기를 갈아 끼워 그림을 넘기는 자리까지 ─────────────
+trace('7-갈래속');
+{
+  /*
+   * 6번 절은 계약 모양만 잰다. 이 PC 에 없는 명령은 곧장 「못 불렀다」 로
+   * 끝나서, 그림을 받아 넘기는 속 갈래는 검사판에서 한 번도 안 돈다. 실제로
+   * 그 자리에 세 구멍이 있었다 — 한글 든 임시 경로(윈도우) · 1MB 넘는 캡처(맥) ·
+   * 그림을 봤는데 못 꺼낸 것을 「없음」 으로 말하기(리눅스).
+   *
+   * 그래서 운영체제 명령을 흉내 내는 부르기를 넘긴다. 진짜 클립보드는 안 건드린다.
+   */
+  const 없는명령 = (이름) => ({ error: Object.assign(new Error(`spawnSync ${이름} ENOENT`), { code: 'ENOENT' }) });
+
+  // ① 윈도우 — 임시 폴더 경로에 한글이 있어도 그 자리에 저장돼야 한다.
+  const 한글임시 = mkdtempSync(join(tmpdir(), 'deel-임시폴더-'));
+  let 받은스크립트 = null;
+  const 윈도우흉내 = (그림있나) => (이름, 인자) => {
+    if (이름 !== 'powershell') return 없는명령(이름);
+    const 자리 = 인자.indexOf('-File');
+    받은스크립트 = readFileSync(인자[자리 + 1]);
+    if (!그림있나) return { status: 0, stdout: 'NOIMAGE\r\n', stderr: '' };
+    // PowerShell 5.1 이 BOM 없는 .ps1 을 읽듯 바이트 하나를 글자 하나로 읽는다.
+    const 글 = 받은스크립트.toString('latin1');
+    let 낼곳 = null;
+    if (/param\s*\(/i.test(글)) 낼곳 = 인자[자리 + 2];
+    else { const m = /\.Save\(("(?:[^"\\]|\\.)*")/.exec(글); if (m) 낼곳 = JSON.parse(m[1]); }
+    try { writeFileSync(낼곳, 작은PNG); } catch { return { status: 1, stdout: '', stderr: 'Exception calling "Save"' }; }
+    return { status: 0, stdout: 'OK\r\n', stderr: '' };
+  };
+  const 옛환경 = { TEMP: process.env.TEMP, TMP: process.env.TMP, TMPDIR: process.env.TMPDIR };
+  let 윈 = null;
+  let 윈없음 = null;
+  try {
+    process.env.TEMP = 한글임시; process.env.TMP = 한글임시; process.env.TMPDIR = 한글임시;
+    윈 = 클립보드그림({ platform: 'win32', 부르기: 윈도우흉내(true) });
+    윈없음 = 클립보드그림({ platform: 'win32', 부르기: 윈도우흉내(false) });
+  } finally {
+    for (const [k, v] of Object.entries(옛환경)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+  check('★ (K1) 임시 폴더 경로에 한글이 있어도 윈도우 갈래가 그림을 가져온다',
+    윈?.ok === true && Buffer.isBuffer(윈.buf) && 윈.buf.equals(작은PNG), JSON.stringify(윈?.ok ? { ok: true } : 윈));
+  check('★ (K1) 파워셸 스크립트는 ASCII 바이트뿐이다 (경로가 스크립트 글에 안 섞인다)',
+    !!받은스크립트 && [...받은스크립트].every((b) => b < 0x80), 받은스크립트 ? String(받은스크립트.length) : '(안 불림)');
+  check('(K1 짝) 윈도우에서 그림이 없으면 여전히 「없음」', 윈없음?.ok === false && 윈없음.없음 === true, JSON.stringify(윈없음));
+
+  // ② 맥 — osascript 는 16진수로 내니 PNG 512KB 만 넘어도 1MB 를 넘긴다.
+  const 큰PNG = Buffer.concat([작은PNG, Buffer.alloc(700 * 1024)]);
+  let 맥설정 = null;
+  const 맥흉내 = (이름, 인자, 설정 = {}) => {
+    if (이름 !== 'osascript') return 없는명령(이름);
+    맥설정 = 설정;
+    const 낸말 = `«data PNGf${큰PNG.toString('hex')}»\n`;
+    if (Buffer.byteLength(낸말) > (설정.maxBuffer ?? 1024 * 1024)) {
+      return { error: Object.assign(new Error('spawnSync osascript ENOBUFS'), { code: 'ENOBUFS' }), stdout: 낸말.slice(0, 1024 * 1024) };
+    }
+    return { status: 0, stdout: 낸말, stderr: '' };
+  };
+  const 맥 = 클립보드그림({ platform: 'darwin', 부르기: 맥흉내 });
+  check('★ (K2) 맥에서 1MB 넘게 나오는 캡처도 받는다',
+    맥.ok === true && 맥.buf.equals(큰PNG), JSON.stringify(맥.ok ? { ok: true, n: 맥.buf.length } : 맥));
+  check('★ (K2) 받을 자리가 그림 한도의 16진수 길이를 담는다',
+    (맥설정?.maxBuffer ?? 0) >= 그림한도 * 2, String(맥설정?.maxBuffer));
+
+  /*
+   * ★ 맥에서도 「그림이 없다」 와 「못 꺼냈다」 를 가른다 (8회차).
+   *
+   * 머리말이 못 박은 규칙이다 — 앞의 것은 사람이 캡처를 다시 하면 되고, 뒤의
+   * 것은 우리 탓이다. 그런데 맥 갈래는 두 갈래를 써 놓고 **글자까지 같은 말**을
+   * 돌려줬다. osascript 가 0 으로 끝났는데 PNG 가 안 나온 것은 그림이 없는 것이
+   * 아니라 우리가 못 읽은 것이다. 「없음」 으로 덮으면 사람은 같은 캡처를
+   * 되풀이하고, 될 리가 없다.
+   */
+  const 맥성공했는데없음 = 클립보드그림({
+    platform: 'darwin',
+    부르기: (이름) => (이름 === 'osascript'
+      ? { status: 0, stdout: '«class PNGf» 가 아닌 무언가', stderr: '' }
+      : 없는명령(이름)),
+  });
+  check('★★ 맥에서 osascript 가 0 으로 끝났는데 PNG 를 못 읽으면 「없음」 이 아니다',
+    맥성공했는데없음.ok === false && 맥성공했는데없음.없음 !== true && !!맥성공했는데없음.왜,
+    JSON.stringify(맥성공했는데없음));
+  const 맥진짜없음 = 클립보드그림({
+    platform: 'darwin',
+    부르기: (이름) => (이름 === 'osascript'
+      ? { status: 1, stdout: '', stderr: 'execution error: 클립보드에 그림이 없습니다' }
+      : 없는명령(이름)),
+  });
+  check('(짝) 오류로 끝나면 여태처럼 「없음」 이다 (사람이 다시 캡처하면 된다)',
+    맥진짜없음.ok === false && 맥진짜없음.없음 === true, JSON.stringify(맥진짜없음));
+
+  // ③ 리눅스 — 종류 목록에 image/png 가 있는데 꺼내기가 막히면 그건 「없음」 이 아니다.
+  const 리눅스흉내 = (꺼냄) => (이름, 인자) => {
+    if (이름 !== 'wl-paste') return 없는명령(이름);
+    if (인자.includes('--version')) return { status: 0, stdout: 'wl-clipboard 2.2.1\n', stderr: '' };
+    if (인자.includes('--list-types')) return { status: 0, stdout: 꺼냄 === '글만' ? 'text/plain\n' : 'image/png\ntext/html\n', stderr: '' };
+    if (꺼냄 === '막힘') return { error: Object.assign(new Error('spawnSync wl-paste ETIMEDOUT'), { code: 'ETIMEDOUT' }), status: null, stdout: Buffer.alloc(0) };
+    return { status: 0, stdout: 작은PNG, stderr: Buffer.alloc(0) };
+  };
+  const 리막힘 = 클립보드그림({ platform: 'linux', 부르기: 리눅스흉내('막힘') });
+  check('★ (K3) 리눅스에서 그림은 있는데 못 꺼냈으면 「없음」 이 아니라 까닭을 말한다',
+    리막힘.ok === false && 리막힘.없음 !== true && /wl-paste/.test(리막힘.왜 ?? ''), JSON.stringify(리막힘));
+  const 리됨 = 클립보드그림({ platform: 'linux', 부르기: 리눅스흉내('됨') });
+  check('(K3 짝) 꺼내기가 되면 그림을 준다', 리됨.ok === true && 리됨.buf.equals(작은PNG), JSON.stringify(리됨.ok ? { ok: true } : 리됨));
+  const 리글만 = 클립보드그림({ platform: 'linux', 부르기: 리눅스흉내('글만') });
+  check('(K3 짝) 그림이 목록에 없으면 여전히 「없음」', 리글만.ok === false && 리글만.없음 === true, JSON.stringify(리글만));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

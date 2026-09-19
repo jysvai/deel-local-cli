@@ -6,6 +6,13 @@
 
 ---
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-trust-ko-dark.svg">
+    <img alt="글이 갈 수 있는 자리 — 작업 폴더와 .deel/ 은 이 컴퓨터 안에 있고 선을 넘는 길은 모델 게이트웨이·WebFetch·플러그인 받기·MCP 서버 넷뿐이다. 열쇠와 감사 기록·되돌리기·대화는 선을 안 넘고, 봉인은 뒤의 셋을 잠근다" src="https://raw.githubusercontent.com/jysvai/deel-local-cli/main/docs/assets/fig-trust-ko-light.svg" width="900">
+  </picture>
+</p>
+
 ## 안전망
 
 <sub>Bash 로 사라진 것도 되돌아갑니다 · 안 읽는 자리</sub>

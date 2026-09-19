@@ -34,8 +34,8 @@ import { 치수읽기, 픽셀한도 } from '../backend/vision.js';
 /** 이보다 큰 그림은 안 받는다. 화면 캡처 한 장은 보통 1MB 안쪽이다. */
 export const 그림한도 = 12 * 1024 * 1024;
 
-const 있나 = (이름, 인자) => {
-  const r = spawnSync(이름, 인자, { encoding: 'utf8', timeout: 5000, windowsHide: true });
+const 있나 = (부르기, 이름, 인자) => {
+  const r = 부르기(이름, 인자, { encoding: 'utf8', timeout: 5000, windowsHide: true });
   return !r.error && r.status === 0;
 };
 
@@ -46,24 +46,31 @@ const 있나 = (이름, 인자) => {
  * 셸을 두 번 거치면서 깨지고, 그 깨짐이 PC 마다 다르게 나타난다. 스크립트는
  * ASCII 로만 쓴다 — Windows PowerShell 5.1 은 BOM 없는 .ps1 을 그 PC 의 옛
  * 코드페이지로 읽어서, 한글이 섞이면 문법이 무너진다(src/completion.js 참고).
+ *
+ * 그래서 **저장할 경로는 스크립트 글에 넣지 않고 인자로 넘긴다.** 앞서는
+ * 경로를 글에 박아 넣었는데, 임시 폴더는 사용자 폴더 아래라 계정 이름이
+ * 한글인 PC 에서는 그 경로가 latin1 로 적히며 깨졌다 — 그림이 엉뚱한 자리로
+ * 저장되고 사람은 「클립보드를 못 읽었습니다」 만 봤다. 인자는 운영체제가
+ * 유니코드 그대로 넘겨 주니 경로가 무엇이든 안 깨진다.
  */
-function 윈도우에서(방) {
+function 윈도우에서(방, 부르기) {
   const 낼곳 = join(방, 'clip.png');
   const 스크립트 = join(방, 'grab.ps1');
   const 글 = [
+    'param([string]$Out)',
     '$ErrorActionPreference = "Stop"',
     'Add-Type -AssemblyName System.Windows.Forms',
     'Add-Type -AssemblyName System.Drawing',
     '$img = [System.Windows.Forms.Clipboard]::GetImage()',
     'if ($img -eq $null) { Write-Output "NOIMAGE"; exit 0 }',
-    `$img.Save(${JSON.stringify(낼곳)}, [System.Drawing.Imaging.ImageFormat]::Png)`,
+    '$img.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)',
     'Write-Output "OK"',
   ].join('\n');
-  // Buffer 로 적어서 인코딩이 끼어들 자리를 없앤다.
+  // Buffer 로 적어서 인코딩이 끼어들 자리를 없앤다. 글은 ASCII 뿐이다 — 경로는 param 으로만 들어온다.
   writeFileSync(스크립트, Buffer.from(글, 'latin1'));
 
-  const r = spawnSync('powershell', [
-    '-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', 스크립트,
+  const r = 부르기('powershell', [
+    '-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', 스크립트, 낼곳,
   ], { encoding: 'utf8', timeout: 20000, windowsHide: true });
 
   if (r.error) return { ok: false, 왜: `파워셸을 못 불렀습니다: ${r.error.message}` };
@@ -81,10 +88,14 @@ function 윈도우에서(방) {
  *
  * osascript 로 PNG 를 꺼내면 «data PNGf89504e47…» 꼴의 16진수 글이 나온다.
  * 그림이 없으면 오류를 내므로, 그것으로 「없음」을 가른다.
+ *
+ * 16진수는 바이트의 두 배다. 받을 자리(maxBuffer)를 기본값 1MB 로 두었더니
+ * PNG 512KB 만 넘어도 ENOBUFS 로 끊겼다 — 레티나 화면 캡처는 대개 그보다 커서
+ * 맥에서는 보통 캡처가 안 붙었다. 그림 한도의 두 배에 여유를 더해 잡는다.
  */
-function 맥에서() {
-  const r = spawnSync('osascript', ['-e', 'the clipboard as «class PNGf»'], {
-    encoding: 'utf8', timeout: 20000,
+function 맥에서(부르기) {
+  const r = 부르기('osascript', ['-e', 'the clipboard as «class PNGf»'], {
+    encoding: 'utf8', timeout: 20000, maxBuffer: 그림한도 * 2 + 1024 * 1024,
   });
   if (r.error) return { ok: false, 왜: `osascript 를 못 불렀습니다: ${r.error.message}` };
   const 낸말 = String(r.stdout ?? '');
@@ -92,7 +103,17 @@ function 맥에서() {
   if (!m) {
     // 그림이 아니면 osascript 가 오류를 낸다. 그건 「없음」이지 고장이 아니다.
     if (r.status !== 0) return { ok: false, 없음: true };
-    return { ok: false, 없음: true };
+    /*
+     * 0 으로 끝났는데 PNG 가 안 나온 것은 **우리 탓**이다 (머리말 「둘을 갈라
+     * 말한다」). 여태 두 갈래를 써 놓고 글자까지 같은 말을 돌려줬다 — 「없음」
+     * 으로 덮이면 사람은 같은 캡처를 되풀이하고, 될 리가 없다.
+     */
+    const 탈 = String(r.stderr ?? '').split('\n').find((l) => l.trim())?.trim() ?? '';
+    return {
+      ok: false,
+      왜: `클립보드에서 그림을 못 꺼냈습니다${탈 ? ` (${탈})` : ''}`
+        + ' — 캡처를 파일로 저장한 뒤 @경로 로 붙이세요.',
+    };
   }
   return { ok: true, buf: Buffer.from(m[1], 'hex'), mime: 'image/png' };
 }
@@ -103,12 +124,12 @@ function 맥에서() {
  * 웨이랜드면 wl-paste, X11 이면 xclip. 배포판이 기본으로 안 깔아 주는 것이라
  * 없을 수 있고, 그때는 **무엇을 깔면 되는지** 알려 준다.
  */
-function 리눅스에서() {
+function 리눅스에서(부르기) {
   const 후보 = [
     { 이름: 'wl-paste', 볼것: ['--list-types'], 꺼내기: ['--type', 'image/png'] },
     { 이름: 'xclip', 볼것: ['-selection', 'clipboard', '-t', 'TARGETS', '-o'], 꺼내기: ['-selection', 'clipboard', '-t', 'image/png', '-o'] },
   ];
-  const 있는것 = 후보.filter((x) => 있나(x.이름, ['--version']) || 있나(x.이름, ['-version']));
+  const 있는것 = 후보.filter((x) => 있나(부르기, x.이름, ['--version']) || 있나(부르기, x.이름, ['-version']));
   if (!있는것.length) {
     return {
       ok: false,
@@ -118,13 +139,25 @@ function 리눅스에서() {
         + '  둘 다 안 되면 캡처를 파일로 저장한 뒤 @경로 로 붙이세요.',
     };
   }
+  /*
+   * 그림이 있다고 본 뒤 꺼내기가 막힌 것(시간 초과 · 너무 큼 · 도구 오류)은
+   * 「없음」 이 아니다. 앞서는 그것도 끝의 「없음」 으로 흘러서 사람은 캡처만
+   * 되풀이했다 — 다시 찍어도 같은 자리에서 또 막히는데. 다음 도구로 한 번 더
+   * 해 보고, 끝내 못 꺼냈으면 그 까닭을 말한다.
+   */
+  let 못꺼냄 = null;
   for (const x of 있는것) {
-    const 종류 = spawnSync(x.이름, x.볼것, { encoding: 'utf8', timeout: 10000 });
+    const 종류 = 부르기(x.이름, x.볼것, { encoding: 'utf8', timeout: 10000 });
     if (!/image\/png/i.test(String(종류.stdout ?? ''))) continue;
-    const r = spawnSync(x.이름, x.꺼내기, { timeout: 20000, maxBuffer: 64 * 1024 * 1024 });
-    if (r.error || !r.stdout?.length) continue;
+    const r = 부르기(x.이름, x.꺼내기, { timeout: 20000, maxBuffer: 64 * 1024 * 1024 });
+    if (r.error || !r.stdout?.length) {
+      const 탈 = r.error?.message || String(r.stderr ?? '').split('\n').find((l) => l.trim())?.trim() || '빈 응답';
+      못꺼냄 ??= `${x.이름}: ${탈}`;
+      continue;
+    }
     return { ok: true, buf: Buffer.from(r.stdout), mime: 'image/png' };
   }
+  if (못꺼냄) return { ok: false, 왜: `클립보드에 그림은 있는데 꺼내지 못했습니다 (${못꺼냄}) — 캡처를 파일로 저장한 뒤 @경로 로 붙이세요.` };
   return { ok: false, 없음: true };
 }
 
@@ -135,16 +168,16 @@ function 리눅스에서() {
  *          | {ok:false, 없음:true}          그림이 없다 (사람이 다시 캡처하면 된다)
  *          | {ok:false, 왜:string}}         못 꺼냈다 (까닭과 길을 같이 준다)
  */
-export function 클립보드그림({ platform = process.platform } = {}) {
+export function 클립보드그림({ platform = process.platform, 부르기 = spawnSync } = {}) {
   let 방 = null;
   try {
     if (platform === 'win32') {
       방 = mkdtempSync(join(tmpdir(), 'deel-clip-'));
-      const r = 윈도우에서(방);
+      const r = 윈도우에서(방, 부르기);
       return 잰다(r);
     }
-    if (platform === 'darwin') return 잰다(맥에서());
-    if (platform === 'linux') return 잰다(리눅스에서());
+    if (platform === 'darwin') return 잰다(맥에서(부르기));
+    if (platform === 'linux') return 잰다(리눅스에서(부르기));
     return { ok: false, 왜: `${platform} 에서는 아직 클립보드 그림을 못 꺼냅니다 — 파일로 저장한 뒤 @경로 로 붙이세요.` };
   } catch (err) {
     return { ok: false, 왜: `클립보드를 읽다 막혔습니다: ${err.message}` };

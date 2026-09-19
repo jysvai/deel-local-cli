@@ -29,6 +29,8 @@ const 진입점 = join(here, '..', 'bin', 'deel.js');
 const 일터 = mkdtempSync(join(tmpdir(), 'deel-stats-'));
 mkdirSync(join(일터, '.deel'), { recursive: true });
 
+const 모름집 = mkdtempSync(join(tmpdir(), 'deel-stats-모름-'));
+mkdirSync(join(모름집, '.deel'), { recursive: true });
 const 이제 = new Date('2026-09-07T12:00:00.000Z');
 const 날 = (며칠전) => new Date(이제.getTime() - 며칠전 * 86400000).toISOString();
 
@@ -108,6 +110,34 @@ trace('3-없음');
   rmSync(빈곳, { recursive: true, force: true });
 }
 
+// ── 3-1. ok 가 없는 줄을 성공으로 세지 않는다 ──────────────────────────
+//
+// 세기() 안의 주석이 「ok 가 아예 없는 옛 줄은 성공으로 안 친다 — 모르는 것을
+// 좋은 쪽으로 세면 실패율이 늘 실제보다 낮게 나온다」 라고 적어 두고, 정작
+// `if (r.ok === false)` 한 줄이라 ok 없는 줄은 **분모에만** 들어갔다. 쓴 것이
+// 성공했는지 모르는 줄이 그대로 성공률을 올린다 — 이 화면 하나 보고 「잘 도네」
+// 라고 판단하는 자리다.
+trace('3-1-됐는지모르는줄');
+{
+  const 자리 = join(모름집, '.deel', 'audit.jsonl');
+  writeFileSync(자리, [
+    { at: 날(1), session: 'M', kind: 'tool', tool: 'Bash', target: 'npm test', ok: true },
+    { at: 날(1), session: 'M', kind: 'tool', tool: 'Bash', target: 'npm run x' },   // 옛 줄 — ok 가 없다
+    { at: 날(1), session: 'M', kind: 'tool', tool: 'Edit', target: 'a.js', ok: false },
+  ].map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8');
+  const 셈 = 세기(자리, { 날수: 30, 이제 });
+  check('★★ ok 없는 줄을 성공으로 안 친다', 셈.도구모름 === 1, String(셈.도구모름));
+  check('실패는 실패대로 따로 센다', 셈.도구실패 === 1, String(셈.도구실패));
+  check('모름과 실패를 겹쳐 세지 않는다', 셈.도구 === 3 && 셈.도구모름 + 셈.도구실패 === 2,
+    `${셈.도구} · 모름 ${셈.도구모름} · 실패 ${셈.도구실패}`);
+  const 표 = 도구차례(셈);
+  check('★ 도구별로도 모름을 따로 센다', 표.find((x) => x.이름 === 'Bash')?.모름 === 1,
+    JSON.stringify(표.find((x) => x.이름 === 'Bash')));
+  const j = 셈JSON(셈);
+  check('★ 기계가 읽는 모양에도 모름이 있다', j.toolUnknown === 1
+    && j.byTool.find((x) => x.name === 'Bash')?.unknown === 1, JSON.stringify(j.byTool));
+}
+
 // ── 4. 진짜로 띄워 본다 ────────────────────────────────────────────────
 trace('4-진짜-띄우기');
 {
@@ -153,9 +183,68 @@ trace('4-진짜-띄우기');
   rmSync(빈곳, { recursive: true, force: true });
 }
 
+// ── 5. 우리가 안 적은 꼴의 줄 ─────────────────────────────────────────
+trace('5-이상한꼴');
+{
+  /*
+   * 시각이 없거나 숫자이거나 9999년인 줄, 도구 이름이 객체인 줄.
+   *
+   * 시각이 없는 줄은 기간 자르기를 그냥 지나 「최근 30일」 안에 들어갔고,
+   * 9999년 줄은 「마지막」 을 9999-12-31 로 만들었고, 객체 도구는
+   * 「[object Object]」 라는 도구로 셌다. 셈이 조용히 틀린다.
+   */
+  const 자리 = join(일터, 'odd.jsonl');
+  const L = (o) => JSON.stringify(o);
+  writeFileSync(자리, [
+    L({ at: 날(1), session: 's1', kind: 'tool', tool: 'Read', ok: true }),
+    L({ session: 's-시각없음', kind: 'tool', tool: 'Bash', ok: false }),
+    L({ at: 1600000000000, session: 's-숫자시각', kind: 'blocked', why: 'x' }),
+    L({ at: '9999-12-31T00:00:00.000Z', session: 's-미래', kind: 'turn' }),
+    L({ at: '아무말', session: 's-엉터리', kind: 'turn' }),
+    L({ at: 날(1), session: 's1', kind: 'tool', tool: { name: '객체' }, ok: true }),
+  ].join('\n') + '\n', 'utf8');
+  const 셈 = 세기(자리, { 날수: 30, 이제 });
+  const j = 셈JSON(셈);
+  check('★★ 시각이 없거나 못 읽는 줄은 기간 안으로 세지 않는다', 셈.도구실패 === 0 && 셈.막힘 === 0 && 셈.대화 === 0,
+    JSON.stringify({ 실패: 셈.도구실패, 막힘: 셈.막힘, 대화: 셈.대화 }));
+  check('★★ 먼 미래 시각이 「마지막」 이 되지 않는다', !String(j.to).startsWith('9999'), String(j.to));
+  check('★ 도구 이름이 [object Object] 로 안 나온다', !j.byTool.some((x) => /object Object/.test(x.name)), JSON.stringify(j.byTool));
+  check('★★ 그런 줄은 버리되 못 읽은 줄로 센다', 셈.깨진줄 === 5, String(셈.깨진줄));
+  check('  세션도 성한 줄 것만 센다', 셈.세션.size === 1, String(셈.세션.size));
+}
+
+// ── 5-1. 도구 이름이 없는 줄 ──────────────────────────────────────────
+trace('5-1-도구이름없음');
+{
+  /*
+   * `kind:'tool'` 인데 `tool` 칸이 없거나 null·빈 글자인 줄.
+   *
+   * 걸러내는 줄이 「글자가 **아닌** 것」 만 봐서, 칸이 아예 없는 줄은 그냥 지나갔다.
+   * 그러면 셈하는 쪽의 `r.tool || '?'` 가 **`?` 라는 도구**를 지어낸다. 화면에는 쓴 적도
+   * 없는 도구가 3회로 뜨고, 그 줄들은 깨진 줄로도 안 세어져 「다 읽었다」 가 된다.
+   * 지어낸 숫자는 없는 것보다 나쁘다 — 감사기록(safety/audit.js)은 언제나 도구 이름을
+   * 적으므로, 이름이 없는 줄은 못 읽은 줄이다.
+   */
+  const 자리 = join(일터, '이름없는도구.jsonl');
+  const L = (o) => JSON.stringify(o);
+  writeFileSync(자리, [
+    L({ at: 날(1), session: 's1', kind: 'tool', tool: 'Read', ok: true }),
+    L({ at: 날(1), session: 's1', kind: 'tool', ok: true }),                 // 칸이 아예 없다
+    L({ at: 날(1), session: 's1', kind: 'tool', tool: null, ok: true }),     // null
+    L({ at: 날(1), session: 's1', kind: 'tool', tool: '', ok: true }),       // 빈 글자
+  ].join('\n') + '\n', 'utf8');
+  const 셈 = 세기(자리, { 날수: 30, 이제 });
+  const j = 셈JSON(셈);
+  check('★★ 도구 이름이 없는 줄을 「?」 라는 도구로 안 센다',
+    !셈.도구별.has('?') && !j.byTool.some((x) => x.name === '?'), JSON.stringify(j.byTool));
+  check('★★ 그런 줄은 못 읽은 줄로 센다', 셈.깨진줄 === 3, String(셈.깨진줄));
+  check('★ 성한 줄 하나만 도구로 센다', 셈.도구 === 1, String(셈.도구));
+  check('  줄 수는 그대로 넷이다 — 버린 것도 셈에는 남는다', 셈.줄 === 4, String(셈.줄));
+}
+
 rmSync(일터, { recursive: true, force: true });
 
-const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
+const G ='\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n한 일 요약  ${D}(감사기록을 읽어 주는 자리)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);

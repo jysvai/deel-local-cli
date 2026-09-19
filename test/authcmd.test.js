@@ -175,6 +175,32 @@ trace('3-나온것-읽기');
 
   check('JSON 인데 token 이 없으면 거절', !읽기('{"hello":1}').ok, 읽기('{"hello":1}').왜);
   check('망가진 JSON 도 안 죽는다', !읽기('{ oops').ok, 읽기('{ oops').왜);
+
+  /*
+   * ★ az 의 **기본** 출력을 읽는다 (2.0.0 8회차).
+   *
+   * 이 파일 머리말이 권하는 명령은 `--query accessToken -o tsv` 라 한 줄이 나온다.
+   * 그런데 그걸 빠뜨리면 az 는 `{"accessToken": "...", "expiresOn": ...}` 를 뱉는다.
+   * 그 칸 이름을 안 봐서 「token 이 없습니다」 로 거절했고, 거절하면서 **토큰이 든
+   * 첫 줄을 그대로** 보여 줬다. 제일 흔한 실수 하나가 열쇠를 화면에 꺼내 놓았다.
+   */
+  const az = 읽기('{"accessToken":"abcdefghijklmnopqrst","expiresOn":"2026-01-01 12:00:00.000000","tokenType":"Bearer"}');
+  check('★★ accessToken 이라고 적어도 읽는다', az.ok && az.token === 'abcdefghijklmnopqrst', JSON.stringify(az).slice(0, 120));
+
+  /*
+   * ★ 거절하면서 보여 주는 첫 줄도 가린다 (2.0.0 8회차).
+   *
+   * 같은 파일의 stderr 자리(한번받기)는 `가리기` 를 거치는데 여기만 안 거쳤다.
+   * 이 값은 `repl.js` · `oneshot.js` · `acp/serve.js` 가 그대로 찍는다 —
+   * 화면 사진과 로그와 심사서에 토큰이 통째로 남는다.
+   */
+  const 샌것 = 읽기('Logged in as kim, token sk-ant-AAAAAAAAAAAAAAAAAAAA\nabcdefghijklmnop');
+  check('★★ 보여 주는 첫 줄에서 열쇠를 가린다',
+    !샌것.ok && !/sk-ant-AAAAAAAAAAAAAAAAAAAA/.test(샌것.보인것 ?? ''), 샌것.보인것 ?? '');
+  check('★ 가려도 무엇이 왔는지는 보인다', /Logged in as/.test(샌것.보인것 ?? ''), 샌것.보인것 ?? '');
+  const 샌JSON = 읽기('{"id_token":"sk-ant-BBBBBBBBBBBBBBBBBBBB"}');
+  check('★ JSON 을 거절할 때도 가린다',
+    !샌JSON.ok && !/sk-ant-BBBBBBBBBBBBBBBBBBBB/.test(샌JSON.보인것 ?? ''), 샌JSON.보인것 ?? '');
 }
 
 trace('4-띄워서-받기');
@@ -240,14 +266,16 @@ trace('5-들고있기와-묻기');
   const 설정 = 받기설정({ 열쇠받기: { 명령: `"${process.execPath}" "${세는도구}"`, 수명: 600 } });
   const 셈 = () => Number(readFileSync(셈파일, 'utf8'));
 
-  const a = await 열쇠(설정);
-  const b = await 열쇠(설정);
+  // 첫 부름에서 한 번 승인해 둔다. 승인 없이 도는 자리는 5b 가 따로 본다.
+  const 예 = async () => true;
+  const a = await 열쇠(설정, { 물어보기: 예 });
+  const b = await 열쇠(설정, { 물어보기: 예 });
   띄운횟수 = 셈();
   check('★ 살아 있는 동안은 다시 안 받는다', a.token === b.token && 띄운횟수 === 1,
     `${a.token} / ${b.token} / ${띄운횟수}번`);
   check('두 번째는 들고 있던 것이라고 말한다', b.그대로 === true);
 
-  const c = await 열쇠(설정, { 다시: true });
+  const c = await 열쇠(설정, { 다시: true, 물어보기: 예 });
   check('★ 다시 받으라면 다시 받는다', c.token !== a.token && 셈() === 2, `${c.token} / ${셈()}번`);
 
   const 상 = 지금상태();
@@ -296,6 +324,55 @@ trace('5-들고있기와-묻기');
   check('★ 받은 열쇠를 화면 글에서 지운다', !/tok0*1/.test(글), 글);
 }
 
+trace('5b-물을-자리가-없으면');
+
+/*
+ * ★ 물을 자리가 없으면 안 띄운다 (2.0.0 8회차).
+ *
+ * 세 문(repl · oneshot · acp)은 다 **켤 때** `if (conn.열쇠받기)` 로만 갈고리를
+ * 단다. 그래서 열쇠받기 없는 프로필로 켠 뒤 `/model` 로 회사 프로필에 갈아타면
+ * `session.열쇠물어보기` 가 영영 안 붙고, 그 뒤로 남이 적어 준 로그인 명령이
+ * **승인 한 번 없이** 돈다. 잰 것: `ok=true · 물음 없이 명령이 돌았나: true`.
+ *
+ * 물을 자리가 없는 것은 「안 물어도 된다」 가 아니라 「승인을 못 받았다」 다.
+ */
+{
+  잊기();
+  const 셈파일 = join(방, 'noask.txt');
+  const 도 = join(방, 'noask.mjs');
+  writeFileSync(셈파일, '0', 'utf8');
+  writeFileSync(도,
+    "import {readFileSync,writeFileSync} from 'node:fs';\n"
+    + `const p=${JSON.stringify(셈파일)};\n`
+    + "writeFileSync(p,String(Number(readFileSync(p,'utf8'))+1));\n"
+    + "process.stdout.write('tokNOASKAAAAAAAA');\n", 'utf8');
+  const 설정 = 받기설정({ 열쇠받기: { 명령: `"${process.execPath}" "${도}"`, 수명: 600 } });
+  const 몇번 = () => readFileSync(셈파일, 'utf8');
+
+  const r = await 열쇠(설정, { 물어보기: null });
+  check('★★ 물어볼 자리가 없으면 명령을 안 띄운다', !r.ok && 몇번() === '0', `ok=${r.ok} · ${몇번()}번`);
+  check('★ 왜 안 띄웠는지 말한다', /승인|물어볼/.test(r.왜 ?? ''), r.왜 ?? '');
+
+  // 정책이 준 명령은 여기서도 그대로 돈다 — 애초에 물을 것이 없는 자리다.
+  잊기();
+  writeFileSync(셈파일, '0', 'utf8');
+  const 정책것 = 받기설정({}, { 정책값: { 열쇠받기: { 명령: `"${process.execPath}" "${도}"`, 수명: 600 } } });
+  const p = await 열쇠(정책것, { 물어보기: null });
+  check('★ 정책이 준 명령은 물을 자리가 없어도 돈다', p.ok === true && 몇번() === '1', `ok=${p.ok} · ${몇번()}번`);
+
+  /*
+   * 한 번 받아 둔 승인은 그 판 내내 산다. 갈고리를 안 넘기는 뒷일(요약·되돌아보기)이
+   * 같은 판에서 열쇠를 다시 받는 자리가 실제로 있다 — 거기서까지 막으면 사람이
+   * 승인을 했는데도 열쇠가 안 붙는다.
+   */
+  잊기();
+  writeFileSync(셈파일, '0', 'utf8');
+  await 열쇠(설정, { 물어보기: async () => true });
+  const 뒤 = await 열쇠(설정, { 물어보기: null, 다시: true });
+  check('★ 이 판에서 이미 승인했으면 갈고리 없이도 받는다', 뒤.ok === true && 몇번() === '2',
+    `ok=${뒤.ok} · ${몇번()}번`);
+}
+
 trace('6-401-이면-새로-받는다');
 
 // ── 401 을 맞으면 새 열쇠로 한 번만 다시 ────────────────────────────────
@@ -338,7 +415,8 @@ trace('6-401-이면-새로-받는다');
   allowEndpoint(conn.base);
 
   const 소식 = [];
-  const msg = await chat(conn, { messages: [{ role: 'user', content: '해줘' }], maxTokens: 50, onAuth: (것) => 소식.push(것) });
+  const 예 = async () => true;
+  const msg = await chat(conn, { messages: [{ role: 'user', content: '해줘' }], maxTokens: 50, 열쇠물어보기: 예, onAuth: (것) => 소식.push(것) });
   check('★ 401 을 맞으면 새 열쇠로 다시 불러 통한다', msg?.content === '됐다', JSON.stringify(msg));
   check('★ 두 번 불렀고 열쇠가 서로 달랐다',
     본머리.length === 2 && 본머리[0] !== 본머리[1], `${본머리.length}번 · ${본머리[0] === 본머리[1] ? '같음' : '다름'}`);
@@ -355,7 +433,7 @@ trace('6-401-이면-새로-받는다');
   writeFileSync(join(방, 'n.txt'), '100', 'utf8');   // 절대 통과 못 하는 열쇠만 나온다
   let 탈 = null;
   try {
-    await chat(conn, { messages: [{ role: 'user', content: '해줘' }], maxTokens: 50 });
+    await chat(conn, { messages: [{ role: 'user', content: '해줘' }], maxTokens: 50, 열쇠물어보기: 예 });
   } catch (err) { 탈 = err; }
   check('★ 두 번째 401 에서는 멈춘다', !!탈 && 탈.status === 401, 탈 ? `${탈.status}` : '안 던짐');
   check('★ 딱 두 번만 불렀다 (무한히 안 돈다)', 본머리.length === 2, `${본머리.length}번`);
@@ -421,7 +499,7 @@ trace('8-파일에-안-적는다');
   잊기();
   const 집 = mkdtempSync(join(tmpdir(), 'deel-auth-home-'));
   const 설정 = 받기설정({ 열쇠받기: { 명령: 도구("process.stdout.write('tokZZZZZZZZZZZZZZ')"), 수명: 600 } });
-  await 열쇠(설정);
+  await 열쇠(설정, { 물어보기: async () => true });
 
   const 훑기 = (뿌리) => {
     const 것들 = [];
@@ -464,11 +542,41 @@ trace('9-미리-받는다');
     + "process.stdout.write('tokSOON'+String(n).padStart(10,'0'));\n", 'utf8');
   // 수명을 미리(60초)보다 짧게 준다 — 받자마자 '곧 만료' 인 상태가 된다.
   const 설정 = 받기설정({ 열쇠받기: { 명령: `"${process.execPath}" "${도}"`, 수명: Math.floor(미리 / 1000) - 10 } });
-  const a = await 열쇠(설정);
-  const b = await 열쇠(설정);
+  const 예 = async () => true;
+  const a = await 열쇠(설정, { 물어보기: 예 });
+  const b = await 열쇠(설정, { 물어보기: 예 });
   check('★ 곧 만료될 것은 들고 있지 않고 다시 받는다',
     a.token !== b.token && Number(readFileSync(join(방, 'soon.txt'), 'utf8')) === 2,
     `${a.token} / ${b.token}`);
+}
+
+trace('10-너무많이뱉는다');
+
+/*
+ * ★ 명령이 끝없이 뱉어도 deel 이 안 죽는다 (사냥5 M7).
+ *
+ * `나온것 += b` 에 뚜껑이 없었다. 망가진 로그인 도구가 700MB 를 뱉으면 문자열 상한에 걸려
+ * data 처리기 안에서 RangeError 가 나고, 그건 잡을 자리가 없어 프로세스가 통째로 죽었다.
+ */
+{
+  잊기();
+  const 뱉개 = 도구([
+    "const b = Buffer.alloc(1 << 20, 97);",
+    "let n = 0;",
+    "function w() { while (n < 64) { n++; if (!process.stdout.write(b)) return process.stdout.once('drain', w); } }",
+    "w();",
+  ].join('\n'));
+  let 던짐 = null;
+  const t0 = Date.now();
+  let r = null;
+  const 잡이 = (e) => { 던짐 = e; };
+  process.on('uncaughtException', 잡이);
+  try { r = await 한번받기({ 명령: 뱉개, 수명: 60 }, { 기다림: 60000 }); } catch (e) { 던짐 = e; }
+  await new Promise((res) => setTimeout(res, 50));
+  process.off('uncaughtException', 잡이);
+  check('★ 너무 많이 뱉으면 실패로 돌려준다 (안 죽는다)', !던짐 && r && r.ok === false, 던짐 ? String(던짐.message) : JSON.stringify(r?.왜));
+  check('★ 왜 실패인지 말한다 — 너무 많이 나왔다', /너무 많/.test(r?.왜 ?? ''), r?.왜 ?? '');
+  check('★ 끝까지 안 기다리고 곧 끊는다', Date.now() - t0 < 20000, `${Date.now() - t0}ms`);
 }
 
 잊기();

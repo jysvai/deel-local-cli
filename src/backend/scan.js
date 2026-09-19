@@ -8,6 +8,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { req, headersFor } from './http.js';
+import { 모델목록모양 } from './detect.js';
 import { allowTemporarily } from '../safety/network.js';
 
 // 포트는 겹칠 수 있다(llama.cpp 와 LocalAI 가 둘 다 8080). 그래서 포트로 단정하지 않고
@@ -117,18 +118,43 @@ async function probeOllama(origin, timeout) {
 // 죽은 포트에서는 첫 요청이 바로 실패하므로 훑는 시간에는 거의 영향이 없다.
 const BASES = ['/v1', '', '/api/v1', '/openai/v1', '/api', '/llm/v1', '/proxy/v1'];
 
+/*
+ * 열쇠를 달라는 **OpenAI 식** 거절인가 (사냥5 B5-08).
+ *
+ * 몸에 `error` 칸이 있거나(OpenAI · LiteLLM · vLLM · llama.cpp 가 다 이 모양이다)
+ * `WWW-Authenticate: Bearer` 로 열쇠를 달라고 할 때만 그렇다고 본다. `Basic realm=…` 에
+ * 글자 「Unauthorized」 는 공유기·NAS 관리 화면의 말투다.
+ */
+function 열쇠달라는거절(r) {
+  const h = r.headers;
+  const 머리 = String((typeof h?.get === 'function' ? h.get('www-authenticate') : h?.['www-authenticate']) ?? '');
+  if (/^\s*bearer\b/i.test(머리)) return true;
+  const j = r.json;
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return false;
+  return typeof j.error === 'string' ? j.error.length > 0 : (!!j.error && typeof j.error === 'object');
+}
+
 async function probeOpenAI(origin, timeout, key) {
   for (const base of BASES.map((b) => `${origin}${b}`)) {
     const r = await req(`${base}/models`, { headers: headersFor(key ? 'bearer' : 'none', key), timeout });
-    if (!r.ok || !r.json) {
-      // 규격은 맞는데 키가 없어 막힌 경우 — 서버가 있다는 사실은 알려 준다.
-      if (r.status === 401 || r.status === 403) {
+    if (!r.ok) {
+      /*
+       * 규격은 맞는데 키가 없어 막힌 경우 — 서버가 있다는 사실은 알려 준다.
+       *
+       * 다만 **401 한 줄만으로는 이 규격이라고 못 한다** (사냥5 B5-08). 공유기·NAS 관리
+       * 화면은 모든 길에 401 을 준다. 그걸 「잠김 — deel scan --key <키>」 로 올리면 남의
+       * 프로그램에 우리 열쇠를 보내라고 권하는 셈이다. 그래서 거절 모양이 OpenAI 식일
+       * 때만 센다. 놓치는 쪽으로 틀린다 — 못 찾은 서버는 주소를 직접 적으면 붙지만,
+       * 보낸 열쇠는 못 돌려받는다.
+       */
+      if ((r.status === 401 || r.status === 403) && 열쇠달라는거절(r)) {
         return { kind: 'openai', runtime: null, base, auth: null, models: [], locked: true, ms: r.ms };
       }
       continue;
     }
-    const list = r.json.data ?? r.json.models ?? [];
-    if (!Array.isArray(list)) continue;
+    // 목록 모양이 아니면 이 규격이 아니다 — 설치(detect.js)와 같은 잣대.
+    const list = 모델목록모양(r.json);
+    if (!list) continue;
     return {
       kind: 'openai',
       runtime: null,
@@ -171,7 +197,10 @@ export async function scanLocal({ host = '127.0.0.1', ports = [], timeout = 1200
   // 직접 세운 프록시는 알려진 자리에 없기 때문이다. 이 PC 안에서만 한다 —
   // 남의 컴퓨터 포트를 훑는 것은 이 도구가 할 일이 아니다.
   const 잘린것 = [];
-  if (listening && (host === '127.0.0.1' || host === 'localhost' || host === '::1')) {
+  // IPv6 주소는 괄호를 씌워야 주소가 된다. 안 씌우면 `http://::1:11434` 가 Invalid URL 로
+  // **훑기 전체를** 던졌다 — `deel scan --host ::1` 한 줄로 (2.0.0 6회차 Gemini 훑기6bf).
+  const 주소host = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+  if (listening && (host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]')) {
     const 열린것 = listeningPorts().filter((p) => !list.some((x) => x.port === p));
     const 볼것 = 열린것.slice(0, maxListening);
     if (열린것.length > 볼것.length) 잘린것.push(...열린것.slice(maxListening));
@@ -181,7 +210,7 @@ export async function scanLocal({ host = '127.0.0.1', ports = [], timeout = 1200
   }
 
   const jobs = list.map(async ({ port, hint }) => {
-    const origin = `http://${host}:${port}`;
+    const origin = `http://${주소host}:${port}`;
     // 훑는 동안만 그 자리를 연다. 끝나면 바로 닫아서 자물쇠를 원래대로 둔다.
     const close = allowTemporarily(origin);
     let hit;
@@ -228,8 +257,8 @@ export async function scanLocal({ host = '127.0.0.1', ports = [], timeout = 1200
 export function toProfiles(found, existing = []) {
   const out = [];
   for (const f of found) {
-    for (const m of f.models.length ? f.models : [{ id: null }]) {
-      if (!m.id) continue;
+    for (const m of f.models) {
+      if (!m.id) continue;   // 이름 없는 것은 프로필이 못 된다 (모델 0대인 서버도 여기서 끝)
       const id = `${slugRuntime(f.runtime)}-${String(m.id).replace(/[^a-zA-Z0-9._-]+/g, '-')}`.slice(0, 60).toLowerCase();
       const prev = existing.find((p) => p.baseUrl === f.base && p.model === m.id);
       out.push({
@@ -237,7 +266,15 @@ export function toProfiles(found, existing = []) {
         name: `${f.runtime} · ${m.id}`,
         kind: f.kind,
         baseUrl: f.base,
-        auth: f.auth ?? 'none',
+        /*
+         * 잠금 방식은 **열쇠와 같이 움직인다.**
+         *
+         * 아래에서 `apiKey` 를 되쓰면서 여기만 훑은 값으로 덮고 있었다. 훑기는
+         * 열쇠 없이 두드리므로 열쇠를 받는 서버도 `auth:'none'` 으로 보인다 —
+         * 그래서 열쇠는 그대로 남고 방식만 none 이 되어, 쓰던 프로필이 열쇠를
+         * 안 싣고 나가 조용히 401 로 돌아선다. 되쓰는 자리는 되쓴다.
+         */
+        auth: prev?.auth ?? f.auth ?? 'none',
         model: m.id,
         apiKey: prev?.apiKey ?? '',
         ctx: prev?.ctx ?? null,

@@ -44,10 +44,10 @@ const 한글줄 = (s) => String(s ?? '').split('\n').filter((l) => 한글있나(
 /**
  * 서류가 **제 말로 하는 부분**만 남긴다.
  *
- * 실린 파일 목록과 소스 자리는 저장소에서 그대로 떠온 것이다. 이 저장소에는
- * `src/skills/builtin/검사-먼저/SKILL.md` 처럼 이름이 한글인 파일이 있고,
- * 그 이름을 영어로 적으면 **그 경로로는 파일을 못 찾는다.** 서류가 거짓이
- * 되는 자리라, 여기서는 세지 않는다.
+ * 실린 파일 목록과 소스 자리는 저장소에서 그대로 떠온 것이다. 배포에 실리는
+ * 파일 이름은 2.0.0 부터 영어지만, 소스 자리 줄에는 한글 식별자가 그대로 실리고
+ * 앞으로 한글 이름 파일이 다시 들어올 수도 있다. 떠온 것을 옮기면 **그 경로로는
+ * 파일을 못 찾는다.** 서류가 거짓이 되는 자리라, 여기서는 세지 않는다.
  */
 function 제말만(명세) {
   const 벗기기 = (v) => {
@@ -136,6 +136,23 @@ trace('2-영어로-켜면-서류도-영어');
   check('SBOM 설명도 영어', !한글있나(sbom(a, { at }).metadata.component.description));
 
   /*
+   * ★ SBOM 은 **설명 한 칸만** 옮기면 되는 문서가 아니다.
+   *
+   * 스캐너에 먹이는 파일이라도 담당자는 metadata 의 속성 칸을 눈으로 읽는다.
+   * 여태 영어로 뽑은 SBOM 에 한글이 정확히 한 자리 남아 있었다 —
+   * deel:provenance 의 「npm 신뢰 배포」. 설명만 갈라 둔 탓에 아무 검사도
+   * 그 자리를 안 봤다 (8회차 판정).
+   *
+   * 부품 목록(components)은 저장소에서 떠온 파일 이름·해시라 뺀다. 떠온 것을
+   * 옮기면 그 경로로는 파일을 못 찾는다 — 제말만() 과 같은 규칙이다.
+   */
+  const SBOM제말 = (b) => JSON.stringify({ ...b, components: undefined });
+  const 영어SBOM = SBOM제말(sbom(a, { at }));
+  check('★ 영어 SBOM 값 어디에도 한글이 없다', !한글있나(영어SBOM),
+    (영어SBOM.match(/[^"]*[가-힣][^"]*/) ?? [''])[0].slice(0, 60));
+  check('★ 한국어 SBOM 은 그대로 한국어', 한글있나(SBOM제말(sbom(a, { at, lang: 'ko' }))));
+
+  /*
    * ★ 요약은 **명세를 보고** 말을 고른다.
    *
    * 여기서 언어() 를 또 물으면, 명세를 만든 뒤 말이 바뀐 자리에서 요약만
@@ -177,6 +194,50 @@ trace('3-두-판의-사실이-같다');
     `${해시줄(koL)} · ${해시줄(enL)} · ${a.files.length}`);
   check('★ 절 수가 같다',
     koL.filter((l) => /^\d\. /.test(l)).length === enL.filter((l) => /^\d\. /.test(l)).length);
+
+  // ★ (6회차 자기묶음6am-b S4) 심사서의 실행 안내가 zip 모양과 맞아야 한다. packSelf 는 소스를
+  // deel/ 아래에 담는데 심사서는 「압축을 풀고 node bin/deel.js」 라 적어, 담당자가 안내대로 치면
+  // 파일이 없었다. 같은 zip 의 읽어주세요.txt 는 node deel/bin/deel.js 로 맞게 적는다.
+  for (const [말, L] of [['ko', koL], ['en', enL]]) {
+    const 실행줄 = L.filter((l) => /node \S*bin\/deel\.js/.test(l));
+    check(`★ (6회차 S4) ${말}: 심사서의 실행 안내가 zip 안 자리(deel/bin/deel.js)를 가리킨다`,
+      실행줄.length > 0 && 실행줄.every((l) => /node deel\/bin\/deel\.js/.test(l)), 실행줄.join(' | '));
+  }
+}
+
+trace('3b-심사서가-담긴것을-사실대로-적나');
+
+/*
+ * ── 심사서 4절이 거짓말을 하고 있었다 (막판-바깥) ────────────────────────
+ *
+ * 「이 묶음에는 스킬도 플러그인도 들어 있지 않습니다.」 / "This package contains
+ * no skills and no plugins." 라고 적는데, `src/skills/builtin/` 의 방법론
+ * SKILL.md 가 그대로 실려 나간다 — test/no-bundle.test.js 가 「내 방법론은 제대로
+ * 실린다」 고 **못 박고 있는** 바로 그 파일들이다. 두 검사가 반대 방향으로 초록이었다.
+ *
+ * 이 종이는 보안 심사에 그대로 내는 것이라, 틀린 한 줄이 문서 오류가 아니라 심사
+ * 자료 오류다. 심사자가 zip 을 풀어 SKILL.md 를 발견하면 나머지 숫자도 다 못 믿을
+ * 것이 된다 — 이 파일 머리말이 「손으로 적은 값이 아닙니다」 로 파는 그 믿음이다.
+ *
+ * 담긴 것과 적힌 것을 여기서 맞대 둔다. 방법론이 하나 늘거나 줄면 여기가 빨개진다.
+ */
+{
+  const 실린방법론 = a.files.filter((f) => /^src\/skills\/builtin\/.+\/SKILL\.md$/.test(f.path));
+  check('잴 것이 있다 — 묶음에 방법론이 실제로 실린다', 실린방법론.length > 0, `${실린방법론.length}개`);
+
+  const ko심사서 = reviewSheet(a, stamp, { lang: 'ko' });
+  const en심사서 = reviewSheet(a, stamp, { lang: 'en' });
+  check('★ ko: 「스킬이 안 들어 있다」 고 하지 않는다',
+    !/스킬도 플러그인도 들어 있지 않습니다/.test(ko심사서), '');
+  check('★ en: same claim is gone',
+    !/contains no skills/i.test(en심사서), '');
+  check('★ ko: 실린 방법론 수를 적는다', new RegExp(`방법론 ${실린방법론.length}개`).test(ko심사서),
+    (ko심사서.split('\n').find((l) => /방법론/.test(l)) ?? '(없음)').trim());
+  check('★ en: says how many are inside', new RegExp(`${실린방법론.length} built-in`).test(en심사서),
+    (en심사서.split('\n').find((l) => /built-in/.test(l)) ?? '(none)').trim());
+  // 「남의 스킬·플러그인은 안 담는다」 는 그대로 참이다 — 그 말까지 지우면 이번엔 덜 말하게 된다.
+  check('  남의 것은 안 담는다는 말은 남아 있다 (ko)', /남의 스킬|~\/\.claude/.test(ko심사서), '');
+  check('  same for en', /other people|~\/\.claude/i.test(en심사서), '');
 }
 
 trace('4-묶음-안의-이름도-같이-옮긴다');
