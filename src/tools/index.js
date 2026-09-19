@@ -1,11 +1,11 @@
 // 도구. 이름과 인자를 Claude Code 와 같게 맞춘다 —
 // 그래야 그 관례로 쓰인 스킬·명령이 그대로 먹는다.
-import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, lstatSync, renameSync, cpSync, rmSync,
+import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, lstatSync, renameSync, copyFileSync, rmSync,
   openSync, readSync, closeSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { 무리로돌리기 } from './spawn.js';
-import { walk, readText, readTextFull, 내부살림, glob거르개 } from './fsutil.js';
+import { walk, readText, readTextFull, 내부살림, glob거르개, copyDir } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary, 바꾼데만쓰기 } from './encoding.js';
 import { checkCommand, checkPaths, isMutating, 셸이파일에쓰나 } from '../safety/guard.js';
@@ -1034,14 +1034,58 @@ function pdf읽기(abs, ctx) {
  *   { 복사깨짐: 까닭 }   닿은 자리가 반쯤 됐다 — 실패다
  *   { 원본남음: 까닭 }   닿은 자리는 다 됐고 원본이 남았다 — 실패가 아니다
  *
+ * 안 베낀 것이 있으면 `건너뜀` 이 같이 온다. 그때는 언제나 `원본남음` 과 함께다
+ * (바로 아래 머리말).
+ *
  * fs 를 밖에서 넣을 수 있게 해 둔 것은 검사 때문이다. 진짜 EXDEV 와 진짜
  * '지우기만 깨짐' 은 어느 PC 에서나 똑같이 만들어 낼 수 없다.
  */
-export function 복사해옮기기(앞, 뒤, { 복사 = cpSync, 지우기 = rmSync } = {}) {
+/*
+ * ── cpSync 는 윈도우에서 프로세스를 **통째로** 죽인다 ─────────────────────
+ *
+ * Node 22 + 윈도우에서 경로에 한글이 들어 있으면 cpSync 가 0xC0000409 로
+ * 프로세스를 끝낸다. try 로 못 잡는다 — 예외가 아니라 네이티브 크래시다.
+ * 아래 `복사깨짐` 갈래는 아예 돌지 못하고, 옮기던 사람은 아무 말도 못 듣는다.
+ * 한국어로 쓰는 도구라 폴더 이름에 한글은 늘 있다.
+ *
+ * fsutil.js 의 copyDir 이 **이미 같은 까닭으로** 있었다 — 거기 머리말에
+ * 0xC0000409 까지 적혀 있다. 그런데 옮기기만 cpSync 로 남아 있었다.
+ * 한 자리를 고칠 때 같은 병이 다른 자리에도 있나를 안 물었던 것이다.
+ *
+ * copyDir 은 링크를 안 따라가고 건너뛴 것을 돌려준다. 그 편이 맞다 —
+ * 따라가면 링크 너머의 진짜 파일이 사본이 되고, 원본을 지울 때 링크만
+ * 사라진다. 건너뛴 것은 아래에서 사람에게 그대로 말한다.
+ */
+function 안전복사(앞, 뒤) {
+  if (statSync(앞).isDirectory()) return copyDir(앞, 뒤);
+  mkdirSync(dirname(뒤), { recursive: true });
+  copyFileSync(앞, 뒤);
+  return { skipped: [] };
+}
+
+export function 복사해옮기기(앞, 뒤, { 복사 = 안전복사, 지우기 = rmSync } = {}) {
+  let 건너뜀 = [];
   try {
-    복사(앞, 뒤, { recursive: true });
+    건너뜀 = 복사(앞, 뒤, { recursive: true })?.skipped ?? [];
   } catch (err) {
     return { 복사깨짐: err.message };
+  }
+  /*
+   * ── 안 베낀 것이 있으면 원본을 **안 지운다** (2차 눈) ────────────────
+   *
+   * copyDir 은 링크를 안 따라가고 건너뛴다. 그런데 그 뒤에서 원본 폴더를
+   * 통째로 지우면 **베끼지도 않은 링크가 영영 없어진다.** 옮긴 자리에도
+   * 없고 헌 자리에도 없다 — 재어 봤더니 실제로 그렇게 사라졌다.
+   *
+   * 게다가 화면은 「링크는 안 옮겼습니다」 라고 말할 참이었다. 안 옮긴 것이
+   * 아니라 **지운** 것인데. 옮기기가 파일을 없애는 꼴이라 여기서 멈춘다.
+   *
+   * 못 옮긴 것이 하나라도 있으면 원본을 그대로 둔다. 무엇이 남았는지 말하고
+   * 사람이 고르게 한다 — 안전망(/undo)도 못 되살리는 것을 조용히 지우는
+   * 것보다 낫다.
+   */
+  if (건너뜀.length) {
+    return { 건너뜀, 원본남음: `링크 ${건너뜀.length}개를 안 베껴, 지우면 없어지므로 원본을 그대로 뒀습니다` };
   }
   try {
     지우기(앞, { recursive: true, force: true });
@@ -1240,6 +1284,8 @@ async function 한개옮기기({ from, to, overwrite = false }, ctx) {
   }
 
   let 원본남음 = null;
+  /** 드라이브를 넘는 복사에서 안 따라간 링크. 옮겼다는 말과 같이 적어 준다. */
+  let 건너뛴링크 = [];
   /*
    * 옮기는 함수는 갈아 끼울 수 있게 둔다. rename 이 EBUSY 로 깨지는 판(다른
    * 프로그램이 잡고 있는 파일)은 검사에서 파일 시스템으로 못 만든다
@@ -1269,6 +1315,7 @@ async function 한개옮기기({ from, to, overwrite = false }, ctx) {
      * 복사 도중에 끊기면 양쪽에 반씩 남기 때문이다.
      */
     const 벌어진일 = 복사해옮기기(앞, 뒤);
+    건너뛴링크 = 벌어진일.건너뜀 ?? [];
     if (벌어진일.복사깨짐) {
       // 닿은 자리를 여기서 지우지 않는다 — 이미 있던 폴더로 옮기는 중이었으면
       // 남의 파일까지 지운다. 어디에 반쯤 남았는지만 정확히 말한다.
@@ -1288,7 +1335,11 @@ async function 한개옮기기({ from, to, overwrite = false }, ctx) {
     + (되돌리기반쪽
     ? `\n(파일이 ${훑은것.상한.toLocaleString('en-US')}개를 넘어 되돌리기에는 앞부분만 떴습니다 — 옮기기는 전부 됐지만 /undo 는 다 못 되돌립니다)`
     : '')
-    + (원본남음
+    + (건너뛴링크.length
+      ? `\n(링크 ${건너뛴링크.length}개는 안 옮겼습니다 — 드라이브를 넘는 복사라 링크는 따라가지 않습니다:`
+        + ` ${건너뛴링크.slice(0, 3).map((p) => ctx.scope.show(p)).join(' · ')}${건너뛴링크.length > 3 ? ' 외' : ''}).`
+        + `\n 그래서 원본도 안 지웠습니다 — ${ctx.scope.show(앞)} 에 그대로 있습니다.`
+      : 원본남음
       ? `\n(닿은 자리에는 다 옮겼는데 원본을 못 지웠습니다 — 지금 ${ctx.scope.show(앞)} 에도 그대로 있습니다: ${원본남음})`
       : '')
     + (이름못되돌림

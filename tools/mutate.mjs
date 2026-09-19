@@ -39,11 +39,12 @@
 //
 //   node tools/mutate.mjs           사람이 읽는 표
 //   node tools/mutate.mjs --json    기계가 읽는 한 덩이
-import { cpSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { copyDir } from '../src/tools/fsutil.js';
 
 const 뿌리 = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const 인자 = process.argv.slice(2);
@@ -142,10 +143,14 @@ if (인자.includes('--세어만')) {
 }
 
 // ── 일할 폴더 한 벌 ─────────────────────────────────────────────────────
+//
+// cpSync 를 안 쓴다 — 윈도우 + Node 22 에서 경로에 한글이 있으면 0xC0000409 로
+// 프로세스가 통째로 죽는다(src/tools/index.js 의 안전복사 머리말). 어긋내기는
+// 임시 폴더에서 도는데 그 위 경로에 한글이 있는 사람이 있다.
 const 일터 = mkdtempSync(join(tmpdir(), 'deel-mutate-'));
-for (const 것 of ['src', 'test', 'bin', 'docs', 'tools']) cpSync(join(뿌리, 것), join(일터, 것), { recursive: true });
+for (const 것 of ['src', 'test', 'bin', 'docs', 'tools']) copyDir(join(뿌리, 것), join(일터, 것));
 for (const 것 of ['package.json', 'README.md', 'README.ko.md', 'LICENSE']) {
-  try { cpSync(join(뿌리, 것), join(일터, 것)); } catch { /* 없으면 그냥 안 베낀다 */ }
+  try { copyFileSync(join(뿌리, 것), join(일터, 것)); } catch { /* 없으면 그냥 안 베낀다 */ }
 }
 
 /** 검사 하나를 돌리고 종료코드를 돌려준다. 화면 글은 안 흘린다. */

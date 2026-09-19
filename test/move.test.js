@@ -22,8 +22,7 @@
 //   4. 작업 폴더 밖으로 못 나가는가.
 import { mkdtempSync, writeFileSync, existsSync, readFileSync, mkdirSync, rmSync, readdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { TOOLS, 복사해옮기기 } from '../src/tools/index.js';
 import { allow, MODES, canWrite } from '../src/agent/modes.js';
 import { History } from '../src/safety/undo.js';
@@ -32,7 +31,6 @@ import { trace } from './trace.mjs';
 const pass = [];
 const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
-const 뿌리 = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /*
  * 진짜 폴더에서 진짜로 옮긴다. 흉내로는 이 검사가 뜻이 없다 — 잡으려는 결함이
@@ -313,6 +311,82 @@ trace('9-드라이브가다를때');
   check('★ 원본만 못 지운 것은 실패로 안 친다', 원본남음.복사깨짐 === undefined, JSON.stringify(원본남음));
   check('★ 그래도 원본이 남았다고는 말한다', 원본남음.원본남음 === 'EBUSY: resource busy or locked',
     JSON.stringify(원본남음));
+
+  rmSync(방, { recursive: true, force: true });
+}
+
+trace('9-1-드라이브를-넘는-복사를-진짜로-돌린다');
+
+/*
+ * ── ★★ 넣어 준 복사기만 재면 **진짜 복사기**는 한 번도 안 돌아 본다 ───────
+ *
+ * 위 세 갈래는 `복사` 를 밖에서 넣어 만든 것이다. 그래서 기본 복사기(fs.cpSync
+ * 였다)는 이 검사 파일에서 **단 한 번도 안 돌았다.** 그 사이 그것은 윈도우 +
+ * Node 22 에서 경로에 한글이 있으면 0xC0000409 로 **프로세스를 통째로 죽이고**
+ * 있었다. 예외가 아니라 네이티브 크래시라 위 `복사깨짐` 갈래는 서지도 못한다.
+ *
+ * 한국어로 쓰는 도구다. 폴더 이름에 한글은 늘 있다. 그러니 여기서 재는 것은
+ * 하나다 — **기본 복사기로 한글 자리를 진짜 옮겨 보고, 살아서 돌아오는가.**
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-복사-한글-'));
+  const 앞 = join(방, '보고서 모음');
+  const 뒤 = join(방, '옮긴 자리');
+  mkdirSync(join(앞, '하위 폴더'), { recursive: true });
+  writeFileSync(join(앞, '일지.txt'), '한글 내용', 'utf8');
+  writeFileSync(join(앞, '하위 폴더', '메모.txt'), '아래 것', 'utf8');
+
+  // 넣어 주는 것이 없다 — 제품이 진짜로 쓰는 복사기가 돈다.
+  const 벌어진일 = 복사해옮기기(앞, 뒤);
+
+  check('★★ 한글 경로를 옮기고도 살아 있다 (cpSync 는 여기서 프로세스째 죽었다)',
+    !벌어진일.복사깨짐, JSON.stringify(벌어진일));
+  check('★★ 옮긴 자리에 내용이 그대로 있다',
+    readFileSync(join(뒤, '일지.txt'), 'utf8') === '한글 내용',
+    (() => { try { return readFileSync(join(뒤, '일지.txt'), 'utf8'); } catch (e) { return e.code; } })());
+  check('★ 하위 폴더까지 따라온다',
+    readFileSync(join(뒤, '하위 폴더', '메모.txt'), 'utf8') === '아래 것');
+  check('★ 원본은 지워진다', !existsSync(앞));
+
+  /*
+   * ── ★★★ 안 베낀 것이 있는데 원본을 지우면 **없애는 것**이다 ──────────
+   *
+   * copyDir 은 링크를 안 따라가고 건너뛴다. 그 뒤에서 원본을 통째로 지우면
+   * 베끼지도 않은 링크가 옮긴 자리에도, 헌 자리에도 없다 — 옮기기가 파일을
+   * 없앤다. 게다가 화면은 「링크는 안 옮겼습니다」 라고 말할 참이었다.
+   * 안 옮긴 것이 아니라 **지운** 것인데(2차 눈이 재현해 줬다).
+   */
+  {
+    const 링크방 = join(방, '링크판');
+    const 링크앞 = join(링크방, '앞');
+    const 링크바깥 = join(링크방, '바깥');
+    mkdirSync(링크앞, { recursive: true });
+    mkdirSync(링크바깥, { recursive: true });
+    writeFileSync(join(링크바깥, '진짜.txt'), '진짜', 'utf8');
+    writeFileSync(join(링크앞, '보통.txt'), '보통', 'utf8');
+    let 링크됨 = false;
+    try { symlinkSync(링크바깥, join(링크앞, '고리'), 'junction'); 링크됨 = true; }
+    catch (err) { check('  (고리를 못 만들어 건너뜀)', true, String(err?.code)); }
+    if (링크됨) {
+      const r = 복사해옮기기(링크앞, join(링크방, '뒤'));
+      check('★★★ 못 베낀 링크가 있으면 원본을 안 지운다 (지우면 그 링크가 없어진다)',
+        existsSync(join(링크앞, '고리')), JSON.stringify(r));
+      check('★★ 그리고 무엇 때문에 남겼는지 말한다',
+        String(r.원본남음 ?? '').includes('링크'), JSON.stringify(r.원본남음));
+      check('★ 링크 말고는 다 옮겨져 있다',
+        existsSync(join(링크방, '뒤', '보통.txt')), '');
+      check('★ 링크가 가리키던 진짜 파일은 그대로다',
+        readFileSync(join(링크바깥, '진짜.txt'), 'utf8') === '진짜', '');
+    }
+  }
+
+  // 파일 하나만 옮기는 길도 같은 복사기를 탄다.
+  const 홑앞 = join(방, '혼자.txt');
+  const 홑뒤 = join(방, '새 자리', '혼자.txt');
+  writeFileSync(홑앞, '홑글', 'utf8');
+  const 홑 = 복사해옮기기(홑앞, 홑뒤);
+  check('★ 파일 하나도 옮겨진다 (없던 위 폴더까지 만든다)',
+    !홑.복사깨짐 && readFileSync(홑뒤, 'utf8') === '홑글', JSON.stringify(홑));
 
   rmSync(방, { recursive: true, force: true });
 }
