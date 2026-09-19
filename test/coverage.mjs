@@ -52,14 +52,45 @@ const b = (s) => (C ? `\x1b[1m${s}\x1b[0m` : s);
 // ── 1. 커버리지를 켜고 검사를 돌린다 ────────────────────────────────────
 const 자리 = mkdtempSync(join(tmpdir(), 'deel-cov-'));
 
+/*
+ * ── 빨개진 까닭을 안 말하는 관문이었다 ──────────────────────────────────
+ *
+ * 여기는 검사의 표준출력을 `ignore` 로 버렸다. 표가 13,900줄 앞에 묻히지
+ * 말라고 그랬던 것인데, 검사가 **깨졌을 때도** 그대로 버렸다. CI 에서 이
+ * 관문이 빨개지면 화면에 남는 것은 `검사 종료코드 1` 한 줄뿐이다 —
+ * 무엇이 깨졌는지, 어느 파일인지, 왜인지가 하나도 없다.
+ *
+ * 실제로 2.0.0 을 막고 있던 빨강 하나가 이 자리에서 이유를 못 밝혔다.
+ * 관문은 막는 것으로 끝이 아니라 **다음 사람이 고칠 수 있게** 해야 한다.
+ *
+ * 그래서 모아 두었다가 **깨졌을 때만** 꼬리를 찍는다. 모으는 것은 뒤쪽
+ * 64KB 뿐이라 13,900줄짜리 판에서도 메모리가 안 는다 — run.mjs 가 실패
+ * 요약을 맨 끝에 찍으니 필요한 것은 언제나 꼬리다.
+ */
+const 남길바이트 = 64 * 1024;
+
 async function 검사돌리기() {
   return new Promise((done) => {
     const kid = spawn(process.execPath, [join(here, 'run.mjs')], {
-      stdio: JSON출력 ? ['ignore', 'ignore', 'ignore'] : ['ignore', 'ignore', 'inherit'],
+      stdio: JSON출력 ? ['ignore', 'ignore', 'ignore'] : ['ignore', 'pipe', 'inherit'],
       env: { ...process.env, NODE_V8_COVERAGE: 자리, FORCE_COLOR: C ? '1' : '' },
     });
-    kid.on('close', (code) => done(code ?? 1));
+    let 꼬리 = Buffer.alloc(0);
+    kid.stdout?.on('data', (덩이) => {
+      꼬리 = Buffer.concat([꼬리, 덩이]);
+      if (꼬리.length > 남길바이트) 꼬리 = 꼬리.subarray(꼬리.length - 남길바이트);
+    });
+    kid.on('close', (code) => done({ code: code ?? 1, 꼬리: 꼬리.toString('utf8') }));
   });
+}
+
+/** 검사가 깨졌을 때만 부른다. 마지막 줄들만 보여 준다. */
+function 깨진자리보이기(글) {
+  const 줄 = 글.split('\n');
+  const 보일것 = 줄.slice(-40).join('\n').trimEnd();
+  if (!보일것) return;
+  console.log(`\n${b('검사가 깨졌습니다')} ${d('(끝 40줄 — 전체는 node test/run.mjs)')}\n`);
+  console.log(보일것);
 }
 
 // ── 2. 떨어진 JSON 을 모은다 ────────────────────────────────────────────
@@ -291,7 +322,8 @@ function 막대(비율, 폭 = 12) {
   return 색('▰'.repeat(n)) + d('▱'.repeat(폭 - n));
 }
 
-const code = await 검사돌리기();
+const { code, 꼬리: 검사글 } = await 검사돌리기();
+if (code !== 0 && !JSON출력) 깨진자리보이기(검사글);
 const 모음 = 모으기();
 
 // 한 번도 안 실린 파일도 0% 로 잡아야 한다.
