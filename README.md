@@ -389,7 +389,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.0.0  ⌂ inside
+ deel 2.0.1  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1334,7 +1334,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (13,933 checks; a few are TTY-dependent)
+npm test          Full suite (13,940 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1378,7 +1378,7 @@ so one run tells you everything.
 | `exitcode` · `doorparity` | 7 · 19 | The printed exit-code table is real · all **four** doors hand out the same thing |
 | `no-bundle` | 28 | Nothing foreign in the published package; test-file hygiene |
 | `edit-bench` | 15 cases | Edit success rate |
-| `mutate` | 1,656 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
+| `mutate` | 1,661 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
 
 > **More** — Coverage · Layout
 >
@@ -1390,7 +1390,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.0.0](docs/en/releases/2.0.md#200)** | Every fence we said was there, checked for whether it actually holds — everything that changed, where and how it was fixed, and how it was found (CHA) |
+| **[2.0.1](docs/en/releases/2.0.md#201)** | One fence in 2.0.0 did not hold — `sudo -u root bash` walked through the `curl … \| bash` guard — and four gates could not go red |
+| [2.0.0](docs/en/releases/2.0.md#200) | Every fence we said was there, checked for whether it actually holds — everything that changed, where and how it was fixed, and how it was found (CHA) |
 
 <p align="center">
   <picture>
