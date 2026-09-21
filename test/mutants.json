@@ -3549,10 +3549,7 @@
       "그러면": "rg 가 깔린 PC 에서만 CP949·표식 없는 UTF-16·8KB 뒤 NUL 파일이 Grep 결과에서 사라진다",
       "찾을것": "        따로볼파일: 못푼것.파일들,",
       "바꿀것": "        따로볼파일: [],",
-      "검사": "test/fastgrep.test.js",
-      "잴곳": [
-        "win32"
-      ]
+      "검사": "test/fastgrep.test.js"
     },
     {
       "곳": "src/tools/index.js",
@@ -4342,10 +4339,7 @@
       "그러면": "glob=src/*.js 가 rg 의 작업 폴더 기준으로 읽혀 rg 가 깔린 PC 에서만 「일치 없음」 이 된다",
       "찾을것": "  return 뿌리 && (glob || 무시파일) ? { cwd: 뿌리 } : {};",
       "바꿀것": "  return {};",
-      "검사": "test/fastgrep.test.js",
-      "잴곳": [
-        "win32"
-      ]
+      "검사": "test/fastgrep.test.js"
     },
     {
       "곳": "src/tools/fastgrep.js",
@@ -4538,10 +4532,7 @@
       "그러면": "rg 가 깔린 PC 에서 end$ 가 윈도우 파일에 한 줄도 안 맞는다",
       "찾을것": "    '--crlf',",
       "바꿀것": "    '--no-crlf',",
-      "검사": "test/fastgrep.test.js",
-      "잴곳": [
-        "win32"
-      ]
+      "검사": "test/fastgrep.test.js"
     },
     {
       "곳": "src/tools/encoding.js",
@@ -7802,10 +7793,7 @@
       "그러면": "리눅스·맥에서 :숫자: 든 파일 이름이 잘못 갈린다",
       "찾을것": "    '--null',",
       "바꿀것": "    // 콜론으로 찍음",
-      "검사": "test/fastgrep.test.js",
-      "잴곳": [
-        "win32"
-      ]
+      "검사": "test/fastgrep.test.js"
     },
     {
       "곳": "src/tools/fastgrep.js",
@@ -11817,10 +11805,7 @@
       "그러면": "윈도우에서 .gitignore 에 *.tmpx 를 적어 두면 rg 가 깔린 PC 만 A.TMPX 를 검색한다. 같은 명령이 PC 마다 다른 답을 내고, 하필 가리라고 적은 것을 더 보는 쪽으로 갈린다",
       "찾을것": "    ...(process.platform === 'win32' ? ['--glob-case-insensitive', '--ignore-file-case-insensitive'] : []),",
       "바꿀것": "    ...(process.platform === 'win32' ? ['--glob-case-insensitive'] : []),",
-      "검사": "test/fastgrep.test.js",
-      "잴곳": [
-        "win32"
-      ]
+      "검사": "test/fastgrep.test.js"
     },
     {
       "곳": "src/tools/outline.js",
@@ -11844,10 +11829,7 @@
       "그러면": "부르는 쪽이 정한 상한을 버리고 늘 무리끊기의 기본 800ms 만 기다린다. 사람이 「끝내」 라고 시킨 자리(6초를 준 자리)에서 SIGTERM 을 안 듣는 dev 서버가 800ms 만에 SIGKILL 을 맞거나, 반대로 끝나는 길에서 필요 이상으로 붙든다",
       "찾을것": "    무리끊기(kid.pid, { 곧장, 늦게: 상한 });",
       "바꿀것": "    무리끊기(kid.pid, { 곧장 });",
-      "검사": "test/jobs.test.js",
-      "잴곳": [
-        "win32"
-      ]
+      "검사": "test/jobs.test.js"
     },
     {
       "곳": "src/commands.js",
