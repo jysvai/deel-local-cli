@@ -1334,7 +1334,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (13,932 checks; a few are TTY-dependent)
+npm test          Full suite (13,933 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate

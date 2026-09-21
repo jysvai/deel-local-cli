@@ -147,5 +147,12 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
+      # 리눅스 쪽과 같은 까닭이다 (위 mutants job 의 ripgrep 단).
+      # `잴곳: win32` 인 어긋 하나가 fastgrep 검사에 묶여 있는데, rg 가 없으면
+      # 그 검사는 그 단을 건너뛴다. 그러면 **맨 검사는 초록인 채로 어긋만 샌다** —
+      # 리눅스에서는 「맨 검사가 빨갛다」 로 드러났지만 여기서는 조용했다.
+      # 못 재는 것을 못 잰다고 말해 주지도 않는 모양이라 더 나쁘다.
+      - name: ripgrep
+        run: choco install ripgrep -y --no-progress
       - name: mutants (win32 에서만 재지는 것)
         run: node tools/mutate.mjs --이곳만
