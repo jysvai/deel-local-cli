@@ -11,7 +11,13 @@
     "프롬프트 캐시가 통째로 깨져 요금만 열 배로 나가거나, 복사해 붙이라고 적어 둔 설정이 없는 꾸러미를 가리킨다.",
     "",
     "새 어긋을 넣을 때: 검사 하나만 짝지어라. 여럿을 걸면 무엇이 잡았는지",
-    "모르고, 느린 검사를 걸면 이 판이 통째로 느려진다 (tools/mutate.mjs 참고)."
+    "모르고, 느린 검사를 걸면 이 판이 통째로 느려진다 (tools/mutate.mjs 참고).",
+    "",
+    "`잴곳` 은 그 어긋이 **재지는 운영체제**다. 안 적으면 어디서나 잰다는 뜻이고,",
+    "적으면 딴 곳에서는 건너뛴다 — 그 운영체제에서만 도는 줄(cmd.exe 감싸기,",
+    "PATHEXT, 대소문자 안 가리는 이름, 엑셀 COM, taskkill)은 딴 데서 어긋내도",
+    "검사가 그 자리를 건너뛰어 늘 초록이라, 「샜음」 으로 세면 못 고치는 빨강이 된다.",
+    "적은 곳마다 그것을 도는 job 이 관문에 있어야 한다 (죽은규칙.test.js 가 본다)."
   ],
   "어긋들": [
     {
@@ -1220,7 +1226,10 @@
       "그러면": "`/tmp` 가 지금 폴더의 `tmp` 를 찾다 못 찾아, 있는 경로가 명령으로 오해된다",
       "찾을것": "    try { if (existsSync(통째) || existsSync(통째.slice(1))) return true; } catch { /* 못 보면 아닌 걸로 */ }",
       "바꿀것": "    try { if (existsSync(통째.slice(1))) return true; } catch { /* 못 보면 아닌 걸로 */ }",
-      "검사": "test/commands-more.test.js"
+      "검사": "test/commands-more.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/commands/common.js",
@@ -3540,7 +3549,10 @@
       "그러면": "rg 가 깔린 PC 에서만 CP949·표식 없는 UTF-16·8KB 뒤 NUL 파일이 Grep 결과에서 사라진다",
       "찾을것": "        따로볼파일: 못푼것.파일들,",
       "바꿀것": "        따로볼파일: [],",
-      "검사": "test/fastgrep.test.js"
+      "검사": "test/fastgrep.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/index.js",
@@ -3636,7 +3648,10 @@
       "그러면": "윈도우·맥에서 a.txt → A.txt 이름 바꾸기가 「이미 있습니다: A.txt」 로 거절된다",
       "찾을것": "  if (existsSync(뒤) && !overwrite && !이름만바꿈) {",
       "바꿀것": "  if (existsSync(뒤) && !overwrite) {",
-      "검사": "test/move.test.js"
+      "검사": "test/move.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/index.js",
@@ -4068,7 +4083,10 @@
       "그러면": "`docker run -v ./x:/app img` 가 범위 밖으로 막힌다",
       "찾을것": "      if (볼륨 && !/^[\\\\/]{2}[?.][\\\\/][A-Za-z]$/.test(볼륨[1])) t = 볼륨[1];",
       "바꿀것": "      if (false && !/^[\\\\/]{2}[?.][\\\\/][A-Za-z]$/.test(볼륨[1])) t = 볼륨[1];",
-      "검사": "test/guard.test.js"
+      "검사": "test/guard.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/safety/secrets.js",
@@ -4324,7 +4342,10 @@
       "그러면": "glob=src/*.js 가 rg 의 작업 폴더 기준으로 읽혀 rg 가 깔린 PC 에서만 「일치 없음」 이 된다",
       "찾을것": "  return 뿌리 && (glob || 무시파일) ? { cwd: 뿌리 } : {};",
       "바꿀것": "  return {};",
-      "검사": "test/fastgrep.test.js"
+      "검사": "test/fastgrep.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/fastgrep.js",
@@ -4420,7 +4441,10 @@
       "그러면": "a.txt → A.txt 를 /undo 해도 A.txt 로 남는다",
       "찾을것": "    이름기록 = ctx.history.이름바꿈기록(앞, 뒤, 'Move');",
       "바꿀것": "    이름기록 = null;",
-      "검사": "test/move.test.js"
+      "검사": "test/move.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/safety/undo.js",
@@ -4428,7 +4452,10 @@
       "그러면": "같은 턴에 고친 파일·폴더의 대소문자 이름 바꾸기가 /undo 뒤에도 바뀐 이름으로 남는다",
       "찾을것": "        renameSync(rec.path, rec.이름되돌림);",
       "바꿀것": "        void 0;",
-      "검사": "test/move.test.js"
+      "검사": "test/move.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/safety/undo.js",
@@ -4436,7 +4463,10 @@
       "그러면": "한 턴에 note.txt · NOTE.txt 로 두 번 고치면 /undo 가 턴 처음이 아니라 중간 내용으로 되돌린다",
       "찾을것": "    const 이미 = this.#이번턴.get(absPath) ?? this.#같은파일기록(absPath);",
       "바꿀것": "    const 이미 = this.#이번턴.get(absPath);",
-      "검사": "test/undo.test.js"
+      "검사": "test/undo.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/edit-match.js",
@@ -4508,7 +4538,10 @@
       "그러면": "rg 가 깔린 PC 에서 end$ 가 윈도우 파일에 한 줄도 안 맞는다",
       "찾을것": "    '--crlf',",
       "바꿀것": "    '--no-crlf',",
-      "검사": "test/fastgrep.test.js"
+      "검사": "test/fastgrep.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/encoding.js",
@@ -4844,7 +4877,10 @@
       "그러면": ".cmd 경로로 적은 MCP 서버가 spawn EINVAL 로 안 뜬다 (윈도우에서만 빨개진다)",
       "찾을것": "  if (!/\\.(cmd|bat)$/i.test(찾은것)) return { 파일: 찾은것, 인자, 옵션: {}, 셸: false };",
       "바꿀것": "  return { 파일: 찾은것, 인자, 옵션: {}, 셸: false };",
-      "검사": "test/mcp.test.js"
+      "검사": "test/mcp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/backend/mcp.js",
@@ -4852,7 +4888,10 @@
       "그러면": "\"command\": \"npx\" 꼴이 spawn ENOENT 로 안 뜬다 (윈도우에서만 빨개진다)",
       "찾을것": "  const 찾은것 = 윈도우명령찾기(String(command), env ?? {}, cwd) ?? String(command);",
       "바꿀것": "  const 찾은것 = String(command);",
-      "검사": "test/mcp.test.js"
+      "검사": "test/mcp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/backend/http.js",
@@ -5484,7 +5523,10 @@
       "그러면": "전역 npx.cmd 처럼 %* 로 넘기는 배치에서 따옴표 든 인자 뒤의 & 가 명령으로 돌고 ^ 가 사라진다",
       "찾을것": "const 두겹 = 배치가다시읽나(찾은것);",
       "바꿀것": "const 두겹 = false;",
-      "검사": "test/mcp.test.js"
+      "검사": "test/mcp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/backend/mcp.js",
@@ -5492,7 +5534,10 @@
       "그러면": "node_modules 밖의 %* 쉼에 한 겹만 달려 인자가 틀리게 간다",
       "찾을것": "줄.includes('%*'));",
       "바꿀것": "false);",
-      "검사": "test/mcp.test.js"
+      "검사": "test/mcp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/backend/mcp.js",
@@ -5500,7 +5545,10 @@
       "그러면": "%~1 로 받는 배치에 ^ 가 글자로 남아 인자가 전부 틀린다",
       "찾을것": "if (/node_modules[\\\\/]\\.bin[\\\\/][^\\\\/]+\\.cmd$/i.test(파일)) return true;",
       "바꿀것": "return true;",
-      "검사": "test/mcp.test.js"
+      "검사": "test/mcp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/backend/mcp.js",
@@ -5508,7 +5556,10 @@
       "그러면": "cmd.exe 가 줄바꿈에서 명령줄을 끊어 뒤 인자가 말없이 사라진 채 서버가 뜬다",
       "찾을것": "if (줄바꿈자리 !== -1) {",
       "바꿀것": "if (false) {",
-      "검사": "test/mcp.test.js"
+      "검사": "test/mcp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/safety/guard.js",
@@ -5828,7 +5879,10 @@
       "그러면": "쓰는 법 주석의 %* 에 속아 %~1 배치에 ^ 를 두 겹 달아 인자가 전부 틀린다",
       "찾을것": "!/^\\s*@?\\s*(?:rem(?:\\s|$)|::)/i.test(줄) && ",
       "바꿀것": "",
-      "검사": "test/mcp.test.js"
+      "검사": "test/mcp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/safety/secrets.js",
@@ -6108,7 +6162,10 @@
       "그러면": "deel --root <탭> · --output-schema <탭> 에 폴더·파일 대신 명령 스물두 개가 뜬다 (사냥5 H5-12)",
       "찾을것": "if ($pathFlags -contains $prev) { return }",
       "바꿀것": "if ($false) { return }",
-      "검사": "test/completion.test.js"
+      "검사": "test/completion.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/completion.js",
@@ -6116,7 +6173,10 @@
       "그러면": "deel sessions <탭> 에 파일 대신 명령 목록이 또 뜬다 (사냥5 H5-12)",
       "찾을것": "if (-not $words[$i].StartsWith('-')) { return }",
       "바꿀것": "if ($false) { return }",
-      "검사": "test/completion.test.js"
+      "검사": "test/completion.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/backend/learn.js",
@@ -6444,7 +6504,10 @@
       "그러면": "셸이 뒤로 띄운 손자가 살아 있는데 「끝냈습니다」 라고 하고 목록에서 지운다",
       "찾을것": "  const 죽었나 = j.닫힘 === true || (!아직사나(j.kid) && !j.kid?.stdout?.readable && !j.kid?.stderr?.readable);",
       "바꿀것": "  const 죽었나 = !아직사나(j.kid);",
-      "검사": "test/jobs.test.js"
+      "검사": "test/jobs.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/index.js",
@@ -6796,7 +6859,10 @@
       "그러면": "`/.env::$DATA` · `/.git::$INDEX_ALLOCATION/config` · `/x.pem::$DATA` 가 200 으로 비밀을 준다",
       "찾을것": "  if (process.platform === 'win32' && 조각.some((x) => x.includes(':') || /[. ]$/.test(x))) return true;",
       "바꿀것": "  // 스트림 봐줌",
-      "검사": "test/preview.test.js"
+      "검사": "test/preview.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/config.js",
@@ -7204,7 +7270,10 @@
       "그러면": ".cmd 로 띄운 언어 서버를 끌 때마다 안의 진짜 서버가 부모 없이 남는다",
       "찾을것": "      this.셸로띄움 = 셸필요;",
       "바꿀것": "      // 셸로띄움 안 적음",
-      "검사": "test/lsp.test.js"
+      "검사": "test/lsp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/lsp/client.js",
@@ -7228,7 +7297,10 @@
       "그러면": "플러그인 자리를 품은 폴더를 넣으면 끝없이 제 안으로 복사해 디스크를 채운다",
       "찾을것": "  if (곳 === 원 || 곳.startsWith(원끝)) {",
       "바꿀것": "  if (곳 === 원) {",
-      "검사": "test/plugins.test.js"
+      "검사": "test/plugins.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/fsutil.js",
@@ -7268,7 +7340,10 @@
       "그러면": "윈도우에서 Read(.env) 금지를 .ENV 로 비켜 읽는다",
       "찾을것": "        .some((꼴) => [규칙.무늬, 경로무늬].some((무) => 무늬맞나(무, 꼴, { 대소문자무시: 윈도우 })));",
       "바꿀것": "        .some((꼴) => [규칙.무늬, 경로무늬].some((무) => 무늬맞나(무, 꼴, { 대소문자무시: false })));",
-      "검사": "test/policy.test.js"
+      "검사": "test/policy.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/safety/policy.js",
@@ -7388,7 +7463,10 @@
       "그러면": "윈도에서 다른 프로그램이 잠근 파일을 부르면 EBUSY 로 deel 프로세스가 죽는다",
       "찾을것": "  흐름.on('error', () => res.destroy());",
       "바꿀것": "  // 오류 손 없음",
-      "검사": "test/preview.test.js"
+      "검사": "test/preview.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/preview/serve.js",
@@ -7724,7 +7802,10 @@
       "그러면": "리눅스·맥에서 :숫자: 든 파일 이름이 잘못 갈린다",
       "찾을것": "    '--null',",
       "바꿀것": "    // 콜론으로 찍음",
-      "검사": "test/fastgrep.test.js"
+      "검사": "test/fastgrep.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/fastgrep.js",
@@ -7964,7 +8045,10 @@
       "그러면": "taskkill 이 걸리면 부르는 쪽이 같이 선다",
       "찾을것": "    if (Date.now() >= 끝) return false;",
       "바꿀것": "    // 상한 없음",
-      "검사": "test/jobs.test.js"
+      "검사": "test/jobs.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/jobs.js",
@@ -9052,7 +9136,10 @@
       "그러면": "윈도우에서 앞 폴더의 sh 가 뒤 폴더의 .cmd 를 이기고 sh 만 있어도 깔렸다고 한다",
       "찾을것": "  const 차례 = 이미붙음 ? [[''], 붙일것] : [붙일것];",
       "바꿀것": "  const 차례 = [윈도우 ? [...붙일것, ''] : 붙일것];",
-      "검사": "test/lsp.test.js"
+      "검사": "test/lsp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/convert.js",
@@ -10964,7 +11051,10 @@
       "그러면": "못 잠근 열쇠가 평문 그대로 파일에 실려 나가는데 화면에는 「잠갔습니다」 만 뜬다 — 사람은 잠긴 줄 알고 그 파일을 백업 폴더·다른 PC 로 옮긴다",
       "찾을것": "  if (옮김 < 평문.length) {\n    const 못한것 = 평문.length - 옮김;",
       "바꿀것": "  if (false) {\n    const 못한것 = 평문.length - 옮김;",
-      "검사": "test/keystore.test.js"
+      "검사": "test/keystore.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/config.js",
@@ -11084,7 +11174,10 @@
       "그러면": ".deel/tmp/.soffice-profile 이 작업 폴더에 남아 그대로 커밋·압축되어 나갈 수 있다",
       "찾을것": "    try { rmSync(프로필, { recursive: true, force: true }); } catch { /* 못 지우면 임시치우기가 거둔다 */ }",
       "바꿀것": "    // 프로필은 임시치우기가 나중에 거둔다",
-      "검사": "test/convert.test.js"
+      "검사": "test/convert.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/docs.js",
@@ -11724,7 +11817,10 @@
       "그러면": "윈도우에서 .gitignore 에 *.tmpx 를 적어 두면 rg 가 깔린 PC 만 A.TMPX 를 검색한다. 같은 명령이 PC 마다 다른 답을 내고, 하필 가리라고 적은 것을 더 보는 쪽으로 갈린다",
       "찾을것": "    ...(process.platform === 'win32' ? ['--glob-case-insensitive', '--ignore-file-case-insensitive'] : []),",
       "바꿀것": "    ...(process.platform === 'win32' ? ['--glob-case-insensitive'] : []),",
-      "검사": "test/fastgrep.test.js"
+      "검사": "test/fastgrep.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/outline.js",
@@ -11748,7 +11844,10 @@
       "그러면": "부르는 쪽이 정한 상한을 버리고 늘 무리끊기의 기본 800ms 만 기다린다. 사람이 「끝내」 라고 시킨 자리(6초를 준 자리)에서 SIGTERM 을 안 듣는 dev 서버가 800ms 만에 SIGKILL 을 맞거나, 반대로 끝나는 길에서 필요 이상으로 붙든다",
       "찾을것": "    무리끊기(kid.pid, { 곧장, 늦게: 상한 });",
       "바꿀것": "    무리끊기(kid.pid, { 곧장 });",
-      "검사": "test/jobs.test.js"
+      "검사": "test/jobs.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/commands.js",
@@ -11916,7 +12015,10 @@
       "그러면": "뒤 폴더의 `tls.cmd.EXE` 가 앞 폴더의 진짜 `tls.cmd` 를 이긴다 — PATH 는 앞 폴더가 이긴다는 것이 규칙의 전부다",
       "찾을것": "  const 차례 = 이미붙음 ? [[''], 붙일것] : [붙일것];",
       "바꿀것": "  const 차례 = 이미붙음 ? [붙일것, ['']] : [붙일것];",
-      "검사": "test/lsp.test.js"
+      "검사": "test/lsp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/lsp/servers.js",
@@ -12060,7 +12162,10 @@
       "그러면": "NTFS 에서 chmod 는 아무 일도 안 하는데 deel report·영어 심사서·setup 화면이 잠갔다고 적어, 사람이 잠긴 줄 알고 그 파일을 동기화 폴더에 둔다",
       "찾을것": "const 권한 = process.platform === 'win32' ? '' : (한 ? ' + 권한 0600' : ', mode 0600');",
       "바꿀것": "const 권한 = 한 ? ' + 권한 0600' : ', mode 0600';",
-      "검사": "test/keystore.test.js"
+      "검사": "test/keystore.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/safety/keystore.js",
@@ -12500,7 +12605,10 @@
       "그러면": "PATHEXT 가 빈 글이거나 ;; 뿐인 판에서 붙여 볼 목록이 통째로 비어, 가장 안쪽 되풀이가 한 번도 안 돌고 무엇을 물어도 null 이다. 완전한 이름(tls.cmd)조차 못 찾아 언어 서버가 통째로 안 깔린 것으로 보인다",
       "찾을것": "  const 붙일것 = 적힌것.length ? 적힌것 : 기본확장.split(';');",
       "바꿀것": "  const 붙일것 = 적힌것;",
-      "검사": "test/lsp.test.js"
+      "검사": "test/lsp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/acp/jsonrpc.js",
@@ -12764,7 +12872,10 @@
       "그러면": "한글 암호를 넣은 사람이 콘솔 코드페이지 때문에 딴 글자를 보내게 되어, 맞는 암호를 넣고도 「암호가 맞지 않습니다」 를 세 번 받고 끝난다",
       "찾을것": "try { [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }",
       "바꿀것": "# (들어오는 쪽 인코딩을 안 맞춘다)",
-      "검사": "test/xlsx.test.js"
+      "검사": "test/xlsx.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/index.js",
@@ -12932,7 +13043,10 @@
       "그러면": "PATHEXT= 로 비워 둔 판에서 npx 를 못 찾고, 확장자까지 적은 이름조차 전체 경로 대신 이름만 cmd.exe 로 간다",
       "찾을것": "  const 기본확장 = '.COM;.EXE;.BAT;.CMD';\n  const 적힌것 = String(env.PATHEXT ?? process.env.PATHEXT ?? 기본확장).split(';').filter(Boolean);\n  const 확장들 = 적힌것.length ? 적힌것 : 기본확장.split(';');",
       "바꿀것": "  const 확장들 = String(env.PATHEXT ?? process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);",
-      "검사": "test/mcp.test.js"
+      "검사": "test/mcp.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/backend/vision.js",

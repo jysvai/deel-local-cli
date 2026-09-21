@@ -82,7 +82,23 @@ that copy is mutated, so a crash mid-run cannot leave a mangled working tree.
 Each paired test is run **unmutated first** — a test that was already red
 would look like it caught everything.
 
-CI runs one pass after `npm test`. A single survivor fails the run.
+Some mutants are **only measurable on one OS** — wrapping `.cmd` in cmd.exe,
+PATHEXT, case-insensitive filenames, PowerShell completion, Excel COM, NTFS
+streams, taskkill. Anywhere else that line never runs and the paired test skips
+that assertion, so breaking it leaves the test green. Mark those with `잴곳`
+(where it can be measured): `"잴곳": ["win32"]`. Elsewhere the runner **skips it
+and says so on screen**. Leave it out and the mutant is measured everywhere.
+
+```bash
+node tools/mutate.mjs --이곳만            only what this OS can measure
+```
+
+Skipping quietly is not allowed. Every OS named in a `잴곳` must have **a job in
+CI that runs it**, or `test/죽은규칙.test.js` goes red — a check that runs
+nowhere while the gate stays green is the longest-running fault in this repo.
+
+CI runs one pass after `npm test`: Linux takes eight shards, and `mutants-win`
+takes what only Windows can measure. A single survivor fails the run.
 
 ### Second review — by a different model than the one that wrote it
 

@@ -358,6 +358,63 @@ trace('7-조각나눔');
   }
 }
 
+// ── 8. 어느 관문에서도 안 도는 어긋 ─────────────────────────────────
+trace('8-잴곳');
+
+/*
+ * 어긋 중에는 **한 운영체제에서만 재지는 것**이 있다 — cmd.exe 감싸기,
+ * PATHEXT, 대소문자를 안 가리는 이름, 엑셀 COM, taskkill. 리눅스에서는 그
+ * 줄이 안 돌고 짝지은 검사도 그 자리를 건너뛰니, 어긋내도 늘 초록이다.
+ * 그래서 `잴곳` 을 적어 딴 곳에서는 건너뛴다 (tools/mutate.mjs).
+ *
+ * 그런데 건너뛰기만 하고 **그것을 도는 job 이 관문에 없으면**, 그 어긋은
+ * 아무 데서도 안 도는데 관문은 초록이다. 이 파일이 내내 쫓던 바로 그 모양 —
+ * 있는 것과 걸리는 것은 다르다 — 이 어긋 목록 자신에게 생기는 셈이다.
+ *
+ * 그래서 `잴곳` 에 적힌 운영체제마다 그 러너에서 `--이곳만` 을 돌리는 job 이
+ * 워크플로에 있는지 본다.
+ */
+{
+  const 워크8 = join(뿌리, '.github', 'workflows', 'test.yml');
+  const 글8 = existsSync(워크8) ? readFileSync(워크8, 'utf8') : '';
+  const 전체8 = JSON.parse(readFileSync(join(뿌리, 'test', 'mutants.json'), 'utf8')).어긋들;
+
+  // 운영체제 이름(process.platform) → 그 러너를 가리키는 말
+  const 러너말 = { win32: 'windows', linux: 'ubuntu', darwin: 'macos' };
+
+  const 적힌곳 = new Set();
+  const 모르는곳 = [];
+  for (const x of 전체8) {
+    if (x.잴곳 == null) continue;
+    for (const p of Array.isArray(x.잴곳) ? x.잴곳 : [x.잴곳]) {
+      적힌곳.add(p);
+      if (!러너말[p]) 모르는곳.push(`${x.곳}|${x.무엇} → ${p}`);
+    }
+  }
+  check('★★ 잴곳이 아는 운영체제 이름이다', 모르는곳.length === 0,
+    모르는곳.length ? 모르는곳.slice(0, 3).join(' · ') : `${적힌곳.size}곳`);
+
+  /*
+   * job 덩이로 쪼개 본다. `--이곳만` 이 워크플로 어딘가에 있기만 한 것으로는
+   * 모자란다 — 리눅스 job 에 적혀 있으면 win32 어긋은 여전히 아무 데서도
+   * 안 돈다. 그 job 의 `runs-on` 이 그 운영체제여야 한다.
+   */
+  const 덩이들 = 글8.split(/\n {2}(?=[A-Za-z][\w-]*:\n)/);
+  // 러너 이름만 뽑아 견준다. 정규식을 글로 지어 붙이면 템플릿 문자열이
+  // 역슬래시를 한 겹 먹어 `\s` 가 `s` 가 되고, 그러면 **아무 job 에도 안
+  // 맞으면서 빨갛다** — 검사가 제 손으로 거짓 빨강을 내는 자리였다.
+  const 러너들 = (덩이) => (덩이.match(/runs-on:\s*(\S+)/g) || []).join(' ');
+  const 안도는곳 = [];
+  for (const p of 적힌곳) {
+    const 돈다 = 덩이들.some((덩이) => 덩이.includes('--이곳만') && 러너들(덩이).includes(러너말[p]));
+    if (!돈다) 안도는곳.push(`${p} (러너 ${러너말[p]})`);
+  }
+  check('★★★ 잴곳마다 그것을 도는 job 이 관문에 있다', 적힌곳.size > 0 && 안도는곳.length === 0,
+    안도는곳.length
+      ? `아무 데서도 안 도는 곳: ${안도는곳.join(' · ')}`
+      : `${적힌곳.size}곳 · ${전체8.filter((x) => x.잴곳).length}개`);
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n죽은 규칙 검사  ${D}(있는 것과 걸리는 것은 다르다)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
