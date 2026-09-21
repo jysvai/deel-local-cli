@@ -1334,7 +1334,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (13,940 checks; a few are TTY-dependent)
+npm test          Full suite (13,941 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1378,7 +1378,7 @@ so one run tells you everything.
 | `exitcode` · `doorparity` | 7 · 19 | The printed exit-code table is real · all **four** doors hand out the same thing |
 | `no-bundle` | 28 | Nothing foreign in the published package; test-file hygiene |
 | `edit-bench` | 15 cases | Edit success rate |
-| `mutate` | 1,661 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
+| `mutate` | 1,662 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
 
 > **More** — Coverage · Layout
 >
