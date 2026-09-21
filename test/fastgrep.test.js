@@ -676,7 +676,25 @@ trace('13-무시규칙대소문자');
     const 예전 = await 길('js');
     check('★★ .gitignore 의 대소문자를 두 길이 같게 본다',
       빠른.join('|') === 예전.join('|'), `빠른: ${빠른.join(' ')} / 예전: ${예전.join(' ')}`);
-    check('★ 가리라고 적은 A.TMPX 를 rg 길도 안 본다', !빠른.includes('A.TMPX'), 빠른.join(' '));
+    /*
+     * 가리느냐 마느냐는 **운영체제가 정한다.** ignore.js 는 무늬를 윈도우에서만
+     * `i` 로 컴파일하고(ignore.js:64), fastgrep 은 윈도우에서만 rg 에
+     * `--ignore-file-case-insensitive` 를 넘긴다(fastgrep.js:361) — git 의
+     * core.ignorecase 기본값과 같은 자세다. 리눅스에서 `*.tmpx` 가 `A.TMPX` 를
+     * **안 가리는 것이 맞다.**
+     *
+     * 여기가 「안 본다」 를 무조건 박고 있었다. 그래서 리눅스에서는 빨갛다 —
+     * 그런데 관문에 rg 가 없어 이 단 전체가 건너뛰어졌고, 그동안 아무도 몰랐다.
+     * rg 를 깔자마자 드러났다.
+     *
+     * 지켜야 할 약속은 바로 위 ★★ — **두 길이 같은 답을 낸다** — 이고 그것은
+     * 어느 운영체제에서나 참이어야 한다. 여기서는 그 답이 이 운영체제의 자세와
+     * 맞는지를 본다.
+     */
+    const 가려야하나 = process.platform === 'win32';
+    check('★ 가리라고 적은 A.TMPX 를 rg 길도 이 운영체제의 자세대로 본다',
+      빠른.includes('A.TMPX') === !가려야하나,
+      `${process.platform} · 가려야 하나 ${가려야하나} · 빠른: ${빠른.join(' ')}`);
     check('  안 가린 b.js 는 두 길 다 본다', 빠른.includes('b.js') && 예전.includes('b.js'), `${빠른.join(' ')} / ${예전.join(' ')}`);
     rmSync(방, { recursive: true, force: true });
   } else {

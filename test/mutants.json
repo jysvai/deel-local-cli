@@ -11805,7 +11805,10 @@
       "그러면": "윈도우에서 .gitignore 에 *.tmpx 를 적어 두면 rg 가 깔린 PC 만 A.TMPX 를 검색한다. 같은 명령이 PC 마다 다른 답을 내고, 하필 가리라고 적은 것을 더 보는 쪽으로 갈린다",
       "찾을것": "    ...(process.platform === 'win32' ? ['--glob-case-insensitive', '--ignore-file-case-insensitive'] : []),",
       "바꿀것": "    ...(process.platform === 'win32' ? ['--glob-case-insensitive'] : []),",
-      "검사": "test/fastgrep.test.js"
+      "검사": "test/fastgrep.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/tools/outline.js",
