@@ -3,7 +3,14 @@ name: test
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+  # 전부 쓸기는 밤마다 한 번 돈다 (UTC 18:00 = 한국 새벽 3시).
+  # 푸시마다 도는 것은 바뀐 자리뿐이라, 이 판이 「그 줄 말고 딴 데서 온 변화」
+  # 를 잡는 그물이다. 없으면 지름길만 남는다.
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
 
 jobs:
   test:
@@ -78,8 +85,19 @@ jobs:
       # 그래서 **낮은 쪽에서 내림하고 한 점 더 뺀다** — 88. 판마다 몇 줄씩
       # 흔들리는 값이라 딱 붙여 놓으면 관문이 아니라 제비뽑기가 된다.
       # 올리려면 리눅스에서 먼저 재고 올린다.
+      #
+      # ── 푸시마다 안 돌린다 (2.0.1) ──────────────────────────────────────
+      #
+      # test/coverage.mjs 는 `run.mjs` 를 **통째로 다시 띄운다**(coverage.mjs:74).
+      # 즉 이 갈래는 전체 검사를 두 번 돈다 — 재 보니 10.1분이 20.5분이 됐고,
+      # 그 10분이 푸시마다 그대로 중복이었다.
+      #
+      # 덮개를 켜면 잰 값이 달라지는 자리가 있어(bigfile 의 이어 붙이기 관문)
+      # 맨 판을 대신할 수는 없다. 그러니 **덜 자주** 돌린다. 커버리지가 내려간
+      # 것은 틀린 것이 아니라 덜 지켜진 것이고, 하루 안에 알면 된다.
+      # 어긋내기 전부 쓸기와 같은 방아쇠에 태운다.
       - name: coverage floor
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22 && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
         run: node test/coverage.mjs --min 88
 
   # ── 검사가 정말 무언가를 지키는지 되잰다 ──────────────────────────────
@@ -95,23 +113,99 @@ jobs:
   #
   # 2.0.0 에서 어긋이 300개에서 1,641개로 늘었다. 한 줄로 돌리면 몇 시간이고,
   # 그만큼 기다리는 관문은 결국 꺼진다 — 그러면 이 판이 있으나 없으나 같다.
-  # `--조각 3/8` 은 검사 파일 덩이째 여덟으로 나눈 것 중 하나만 돈다.
-  # 조각마다 200개 남짓이고, 하나라도 빨가면 이 job 이 빨갛다.
+  # `--조각 3/8` 은 여덟으로 나눈 것 중 하나만 돈다. 개수가 아니라 **걸리는
+  # 시간**으로 고르게 나눈다(test/검사시간.json) — 조각마다 21분 남짓이고,
+  # 하나라도 빨가면 이 job 이 빨갛다.
   #
   # test job 과 따로 둔다. 어긋내기는 리눅스에서 한 판만 돌면 되는데,
   # matrix 안에 두면 os·node 조합마다 `if` 로 걸러야 하고 그 `if` 가
   # 조용히 틀리면 **한 번도 안 도는 채로 초록**이 된다.
   #
-  # ── 리눅스가 못 재는 자리는 아래 mutants-win 이 맡는다 ──────────────
+  # ── 리눅스가 못 재는 자리는 아래 -win job 들이 맡는다 ───────────────
   #
-  # 어긋 중 서른여섯은 윈도에서만 재진다 (cmd.exe 감싸기 · PATHEXT ·
+  # 어긋 중 서른하나는 윈도에서만 재진다 (cmd.exe 감싸기 · PATHEXT ·
   # 대소문자 안 가리는 이름 · 파워셸 자동완성 · 엑셀 COM · NTFS 스트림 ·
   # taskkill). 리눅스에서는 그 줄이 안 돌고 짝지은 검사도 그 자리를
-  # 건너뛰어, 어긋내도 늘 초록이다 — 2.0.0 내내 그 서른여섯을 「샜음」 으로
+  # 건너뛰어, 어긋내도 늘 초록이다 — 2.0.0 내내 이런 것 서른여섯을 「샜음」 으로
   # 세어 이 관문이 고칠 수 없는 빨강이었다. 이제 test/mutants.json 의
-  # `잴곳` 을 보고 여기서는 건너뛰고, 아래 job 이 그것만 돌린다.
-  mutants:
-    needs: test
+  # `잴곳` 을 보고 여기서는 건너뛰고, 아래 -win job 이 그것만 돌린다.
+  #
+  # ── 푸시마다 1,656개를 다 돌리지 않는다 (2.0.1) ───────────────────────
+  #
+  # 조각을 여덟으로 나눠도 제일 긴 조각이 81분이었다. 푸시마다 그걸 기다리면
+  # **관문을 끄게 된다** — 조각내기를 만든 까닭과 같은 자리로 다시 온다.
+  #
+  # 어긋은 소스 줄 하나에 묶여 있고 짝지은 검사도 하나다. 그래서 푸시·PR 에서는
+  # 그 판에서 손댄 파일에 걸리는 것만 돈다(`--바뀐것`). guard.js 한 파일을
+  # 고친 판으로 재 보니 1,656개 중 46개 · **53초**였다. 어긋 목록이 바뀐 판은
+  # 새로 들거나 고친 항목만 고른다 — 고칠 때마다 어긋을 더하는 저장소라,
+  # 목록이 바뀌면 전부 돌게 두면 거의 모든 푸시가 전부 쓸기가 된다.
+  #
+  # 그 대신 **전부 쓸기가 반드시 따로 돌아야 한다** — 아래 mutants-full 이
+  # 밤마다·손으로·태그에 돈다. 지름길만 남고 전부 쓸기가 사라지면 관문은
+  # 빠르고 조용해지므로, test/죽은규칙.test.js 가 그 job 이 있는지 본다.
+  #
+  # ── `needs: test` 를 안 건다 ──────────────────────────────────────────
+  #
+  # 어긋내기는 시작할 때 짝지은 검사를 **맨 상태로 먼저 돌려** 초록인지 제
+  # 손으로 확인한다(mutate.mjs 의 「맨」). test job 이 끝나기를 20분 기다릴
+  # 까닭이 없다. 나란히 돌리면 벽시계가 그만큼 준다.
+  #
+  # ── 푸시 job 도 여덟 조각으로 나눈다 ──────────────────────────────────
+  #
+  # 대개는 수십 개라 조각 몇은 「딴 조각이 맡았습니다」 로 바로 끝난다. 그래도
+  # 나누는 까닭은 **전부 도는 날**이다 — 재는 판(mutate.mjs)을 고쳤거나 견줄
+  # 곳을 못 읽으면 1,600여 개를 다 돈다. 조각 없이 한 job 이면 세 시간 가까이다.
+  mutants-changed:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      # 견줄 자리를 찾으려면 이력이 있어야 한다. 얕게 받으면 git diff 가
+      # 실패하고, 그러면 mutate.mjs 가 **전부** 돈다 — 느려질 뿐 안 틀린다.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: ripgrep
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+      - name: mutants (바뀐 것만) ${{ matrix.shard }}/8
+        run: node tools/mutate.mjs --바뀐것 "${{ github.event.pull_request.base.sha || github.event.before }}" --조각 ${{ matrix.shard }}/8
+
+  mutants-changed-win:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: ripgrep
+        run: choco install ripgrep -y --no-progress
+      # `--이곳만` 과 `--바뀐것` 을 같이 준다 — win32 에서만 재지는 것 가운데
+      # 이 판에서 손댄 자리에 걸리는 것만. 둘 다 안 걸리면 잴 것이 없다고
+      # 적고 0 으로 끝난다 (빈 채로 조용히 끝나지 않는다).
+      - name: mutants (win32 · 바뀐 것만)
+        run: node tools/mutate.mjs --이곳만 --바뀐것 "${{ github.event.pull_request.base.sha || github.event.before }}"
+
+  # ── 전부 쓸기 ─────────────────────────────────────────────────────────
+  #
+  # 위 지름길은 「그 줄도 그 검사도 안 바뀌었으면 답도 안 바뀐다」 에 기댄다.
+  # 대개 맞지만 **늘 맞지는 않는다** — 딴 파일의 변화가 그 줄의 동작을 건드릴
+  # 수 있다. 그래서 전부를 재는 판이 반드시 따로 있어야 하고, 그게 여기다.
+  #
+  # 조각은 `개수 × 그 검사의 실제 시간` 으로 나눈다(test/검사시간.json).
+  # 개수로 나눴을 때는 207개씩 똑같이 나뉘고도 조각 1 이 81분, 조각 4 가
+  # 1.6분이었다 — 값이 500배 차이 나는 것을 1대1로 세고 있었다.
+  mutants-full:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -139,15 +233,15 @@ jobs:
   #
   # 어긋이 하나도 안 걸리면 mutate.mjs 가 종료코드 2 로 죽는다 — 그래야
   # `잴곳` 을 다 떼어 낸 날 이 job 이 **빈 채로 초록**이 되지 않는다.
-  mutants-win:
-    needs: test
+  mutants-full-win:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      # 리눅스 쪽과 같은 까닭이다 (위 mutants job 의 ripgrep 단).
+      # 리눅스 쪽과 같은 까닭이다 (위 mutants-full job 의 ripgrep 단).
       # `잴곳: win32` 인 어긋 하나가 fastgrep 검사에 묶여 있는데, rg 가 없으면
       # 그 검사는 그 단을 건너뛴다. 그러면 **맨 검사는 초록인 채로 어긋만 샌다** —
       # 리눅스에서는 「맨 검사가 빨갛다」 로 드러났지만 여기서는 조용했다.

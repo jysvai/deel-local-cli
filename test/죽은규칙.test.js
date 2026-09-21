@@ -325,18 +325,35 @@ trace('7-조각나눔');
 {
   const 워크 = join(뿌리, '.github', 'workflows', 'test.yml');
   const 글 = existsSync(워크) ? readFileSync(워크, 'utf8') : '';
-  const m = /--조각 \$\{\{ matrix\.shard \}\}\/(\d+)/.exec(글);
-  const 조각목록 = /shard:\s*\[([^\]]*)\]/.exec(글);
-  check('★★ 관문이 어긋내기를 조각내어 돌린다', !!m && !!조각목록,
-    m ? '' : '`--조각 ${{ matrix.shard }}/N` 을 못 찾음');
+  /*
+   * **job 마다** 본다. 조각내는 job 이 둘이다 — 푸시의 `mutants-changed` 와
+   * 전부 쓸기의 `mutants-full`. 처음에는 파일에서 **첫 것**만 찾았는데, 푸시
+   * job 이 위에 오자 전부 쓸기 job 의 목록이 어긋나도 아무도 안 보게 됐다.
+   */
+  const 조각job = 글.split(/\n {2}(?=[A-Za-z][\w-]*:\n)/)
+    .map((덩이) => 덩이.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n'))
+    .map((덩이) => ({
+      이름: 덩이.split('\n')[0].trim(),
+      m: /--조각 \$\{\{ matrix\.shard \}\}\/(\d+)/.exec(덩이),
+      목록: /shard:\s*\[([^\]]*)\]/.exec(덩이),
+    }))
+    .filter((j) => j.m);
+  check('★★ 관문이 어긋내기를 조각내어 돌린다', 조각job.length > 0 && 조각job.every((j) => j.목록),
+    조각job.length ? 조각job.map((j) => `${j.이름}${j.목록 ? '' : ' (조각 목록 없음)'}`).join(' · ') : '`--조각 ${{ matrix.shard }}/N` 을 못 찾음');
 
-  if (m && 조각목록) {
-    const 몇 = Number(m[1]);
-    const 적힌것 = 조각목록[1].split(',').map((x) => Number(x.trim())).filter((x) => Number.isFinite(x));
-    check('★★ 워크플로의 조각 목록과 나눈 수가 맞는다',
-      적힌것.length === 몇 && 적힌것.every((x, i) => x === i + 1),
-      `목록 [${적힌것.join(',')}] · 나눔 ${몇}`);
+  const 나눈수들 = new Set();
+  const 어긋난job = [];
+  for (const j of 조각job) {
+    const 몇 = Number(j.m[1]);
+    나눈수들.add(몇);
+    const 적힌것 = j.목록 ? j.목록[1].split(',').map((x) => Number(x.trim())).filter((x) => Number.isFinite(x)) : [];
+    if (!(적힌것.length === 몇 && 적힌것.every((x, i) => x === i + 1))) 어긋난job.push(`${j.이름} 목록 [${적힌것.join(',')}] · 나눔 ${몇}`);
+  }
+  check('★★ 워크플로의 조각 목록과 나눈 수가 job 마다 맞는다',
+    조각job.length > 0 && 어긋난job.length === 0,
+    어긋난job.length ? 어긋난job.join(' · ') : 조각job.map((j) => `${j.이름} ${j.m[1]}`).join(' · '));
 
+  for (const 몇 of 나눈수들) {
     const 전체 = JSON.parse(readFileSync(join(뿌리, 'test', 'mutants.json'), 'utf8')).어긋들;
     const 본것 = new Set();
     let 합 = 0;
@@ -354,7 +371,7 @@ trace('7-조각나눔');
     }
     check('★★★ 조각을 다 합치면 어긋내기 전부를 덮는다',
       !탈 && 합 === 전체.length && 본것.size === 전체.length,
-      탈 ?? `합 ${합} · 고유 ${본것.size} · 전체 ${전체.length}`);
+      탈 ?? `${몇}조각 · 합 ${합} · 고유 ${본것.size} · 전체 ${전체.length}`);
   }
 }
 
@@ -441,6 +458,36 @@ trace('8-잴곳');
     .map((덩이) => 덩이.split('\n')[0].trim());
   check('★★★ 어긋내는 job 마다 ripgrep 을 깐다', 어긋도는덩이.length > 0 && 연장없는것.length === 0,
     연장없는것.length ? `연장 없이 도는 job: ${연장없는것.join(' · ')}` : `${어긋도는덩이.length}개 job`);
+
+  /*
+   * ── 지름길만 남고 전부 쓸기가 사라지면 안 된다 (2.0.1) ────────────────
+   *
+   * 푸시에서는 그 판에서 손댄 자리에 걸리는 어긋만 돈다(`--바뀐것`). 81분이
+   * 53초가 되는 대신, 「그 줄도 그 검사도 안 바뀌었으면 답도 안 바뀐다」 에
+   * 기댄다. 대개 맞지만 **늘 맞지는 않는다** — 딴 파일의 변화가 그 줄의 동작을
+   * 건드릴 수 있다.
+   *
+   * 그래서 전부를 재는 판이 반드시 따로 있어야 한다. 그 job 이 사라지거나
+   * 밤마다 도는 방아쇠가 빠지면, 관문은 **빨라지고 조용해진다** — 이 파일이
+   * 내내 쫓던 바로 그 모양이다. 셋을 같이 본다: 지름길이 있나, 전부 쓸기가
+   * 있나, 전부 쓸기를 **깨우는 것**이 있나.
+   */
+  const 지름길 = 어긋도는덩이.filter((덩이) => /--바뀐것/.test(주석뺀것(덩이)));
+  // 푸시 job 도 조각을 나누므로 `--조각` 만으로는 전부 쓸기인지 모른다 —
+  // `--바뀐것` 이 **없어야** 전부 쓸기다. 안 그러면 전부 쓸기 job 을 지워도
+  // 푸시 job 을 보고 초록이다.
+  const 전부쓸기 = 어긋도는덩이.filter((덩이) => /--조각/.test(주석뺀것(덩이)) && !/--바뀐것/.test(주석뺀것(덩이)));
+  check('★★ 푸시에서는 바뀐 자리만 도는 job 이 있다', 지름길.length > 0, `${지름길.length}개 job`);
+  check('★★★ 전부 쓸기 job 이 그대로 있다', 전부쓸기.length > 0,
+    전부쓸기.length ? 전부쓸기.map((덩이) => 덩이.split('\n')[0].trim()).join(' · ') : '`--바뀐것` 없이 조각내는 job 이 없음');
+
+  // 방아쇠는 job 덩이가 아니라 맨 위 `on:` 에 있다. 주석에 `schedule` 이라고
+  // 적어 둔 것으로는 안 된다 — 위 ripgrep 검사에서 똑같이 당했다.
+  const 켜는곳 = 주석뺀것(글8.split(/\njobs:/)[0] ?? '');
+  const 언제 = /cron:\s*'([^']+)'/.exec(켜는곳);
+  check('★★★ 전부 쓸기를 밤마다 깨우는 방아쇠가 있다',
+    /schedule:/.test(켜는곳) && !!언제,
+    언제 ? `cron ${언제[1]}` : (켜는곳.includes('schedule:') ? 'schedule 은 있는데 cron 이 없음' : 'schedule 이 없음'));
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

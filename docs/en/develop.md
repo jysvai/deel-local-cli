@@ -97,8 +97,40 @@ Skipping quietly is not allowed. Every OS named in a `잴곳` must have **a job 
 CI that runs it**, or `test/죽은규칙.test.js` goes red — a check that runs
 nowhere while the gate stays green is the longest-running fault in this repo.
 
-CI runs one pass after `npm test`: Linux takes eight shards, and `mutants-win`
-takes what only Windows can measure. A single survivor fails the run.
+CI runs it in two modes. A single survivor fails the run.
+
+- **On every push and PR** — only the mutants tied to files changed in that push
+  (`--바뀐것`, "what changed"). A mutant runs if a changed file is its `곳` or its
+  `검사`, or if its entry in `test/mutants.json` is new or edited. If the runner
+  itself (`tools/mutate.mjs`) changed, or the base cannot be read, everything
+  runs. `mutants-changed` (Linux, eight shards — for the days everything runs)
+  and `mutants-changed-win` start alongside `npm test` instead of waiting for it.
+- **Nightly, by hand, and on tags** — the full sweep. Linux splits it into eight
+  shards (`mutants-full`), and `mutants-full-win` takes what only Windows can
+  measure. The coverage floor is measured only here too.
+
+The changed-only pass is a shortcut. A change in another file can alter what a
+mutated line does — rarely, but not never — so the full sweep must not be turned
+off. `test/죽은규칙.test.js` checks that the job and the trigger that wakes it
+both exist.
+
+```bash
+node tools/mutate.mjs --바뀐것 origin/main   only what is tied to files changed since
+node tools/mutate.mjs --조각 3/8 --세어만     just list what shard 3 owns (JSON)
+```
+
+Shards are split by **expected time, not by count**. A mutant costs as much as
+its paired test, and tests differ by up to 500× — split by count, one shard took
+81 minutes and another 1.6. Per-test timings live in `test/검사시간.json` and are
+regenerated from a Linux CI log:
+
+```bash
+gh run view --log --job <id> > log.txt
+node tools/검사시간.mjs log.txt
+```
+
+A stale table cannot make a result wrong; the shards just come out less even. So
+there is no gate on it.
 
 ### Second review — by a different model than the one that wrote it
 
