@@ -13,7 +13,7 @@
 //
 // rg·git 이 없는 PC 에서도 이 검사는 통과해야 한다. 그래서 엔진이 있는지
 // 먼저 보고, 없으면 그 자리를 건너뛰되 **건너뛰었다고 화면에 적는다.**
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, symlinkSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import {
@@ -30,6 +30,7 @@ import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { trace } from './trace.mjs';
+import { 돌려보기 } from '../src/tools/spawn.js';
 
 const pass = [];
 const fail = [];
@@ -699,6 +700,62 @@ trace('13-무시규칙대소문자');
     rmSync(방, { recursive: true, force: true });
   } else {
     건너뜀('.gitignore 대소문자 두 길 견주기', '이 PC 에 rg 가 없습니다 — 자바스크립트 길만 돕니다');
+  }
+}
+
+// ── 14. 심이 작업 폴더를 다른 꼴로 바꿔 띄워도 glob 이 맞아야 한다 (2.0.1) ─
+trace('14-심작업폴더');
+{
+  /*
+   * 윈도우 CI 러너에서 choco 로 rg 를 깔자 빗금 든 glob 검사 다섯이 빨개졌다.
+   * 까닭은 둘이 **겹칠 때만** 생긴다:
+   *
+   *   os.tmpdir()  →  C:\Users\RUNNER~1\...     (8.3 짧은 이름)
+   *   choco 심     →  진짜 rg 를 긴 이름 작업 폴더(C:\Users\runneradmin\...)로 띄움
+   *
+   * 찾을 자리를 짧은 이름 **절대경로**로 넘기면 rg 눈에는 그 자리가 작업 폴더
+   * 밑이 아니라서, `src/*.js` 가 한 파일에도 안 맞는다 — 오류 없이 「일치 없음」.
+   *
+   * 여기서는 그 겹침을 어느 운영체제에서나 만든다. 이름 꼴이 두 가지인 폴더는
+   * 링크(윈도는 junction)로 만들고, 심은 **작업 폴더를 실제 경로로 풀어 띄우는
+   * 부르기**로 흉내 낸다. 심이 하는 일이 정확히 그것이다.
+   */
+  if (엔진.rg) {
+    const 진짜 = mkdtempSync(join(tmpdir(), 'deel-심진짜-'));
+    const 링크 = `${진짜}-링크`;
+    let 링크됨 = false;
+    try { symlinkSync(진짜, 링크, 'junction'); 링크됨 = true; } catch { /* 링크를 못 만드는 PC */ }
+    if (링크됨 && realpathSync.native(링크) !== 링크) {
+      mkdirSync(join(진짜, 'src'), { recursive: true });
+      mkdirSync(join(진짜, 'other'), { recursive: true });
+      writeFileSync(join(진짜, 'src', 'a.js'), 'TODO a\n');
+      writeFileSync(join(진짜, 'other', 'o.js'), 'TODO o\n');
+      writeFileSync(join(진짜, 'src', 'k949.txt'), encode('결재 요청드립니다\n', 'euc-kr').buf);
+      const 심 = (cmd, args, 덤들 = {}) => 돌려보기(cmd, args, {
+        ...덤들,
+        덤: 덤들.덤?.cwd ? { ...덤들.덤, cwd: realpathSync.native(덤들.덤.cwd) } : 덤들.덤,
+      });
+      const 파일만 = (r) => (r.ok ? [...new Set(r.줄들.map(줄가르기).filter(Boolean).map((x) => x.파일))].sort() : [`넘어짐: ${r.왜}`]);
+
+      const 넣기 = await rg로찾기({ 무늬: 'TODO', 자리: 링크, 뿌리: 링크, glob: 'src/*.js', 부르기: 심 });
+      check('★★★ 심이 작업 폴더를 다른 꼴로 띄워도 빗금 든 glob 이 맞는다',
+        파일만(넣기).join('|') === join(링크, 'src', 'a.js'), 파일만(넣기).join(' '));
+      const 빼기 = await rg로찾기({ 무늬: 'TODO', 자리: 링크, 뿌리: 링크, glob: '!src/**', 부르기: 심 });
+      check('★★ 같은 자리에서 ! 빼기도 먹는다',
+        파일만(빼기).join('|') === join(링크, 'other', 'o.js'), 파일만(빼기).join(' '));
+      const 밑 = await rg로찾기({ 무늬: 'TODO', 자리: join(링크, 'src'), 뿌리: 링크, glob: 'src/*.js', 부르기: 심 });
+      check('★ 뿌리 밑 폴더를 찾아도 경로는 부른 쪽이 준 꼴로 돌아온다',
+        파일만(밑).join('|') === join(링크, 'src', 'a.js'), 파일만(밑).join(' '));
+      const 못푼것 = await rg못푸는파일({ 자리: 링크, 뿌리: 링크, glob: 'src/*', 부르기: 심 });
+      check('★★ 못 푸는 파일 세기도 같은 자리에서 glob 이 맞고, 경로를 뿌리에 되붙인다',
+        못푼것.ok && 못푼것.파일들.join('|') === join(링크, 'src', 'k949.txt'), JSON.stringify(못푼것));
+    } else {
+      건너뜀('심 작업 폴더 흉내', '이 PC 에서는 이름 꼴이 두 가지인 폴더(링크)를 못 만듭니다');
+    }
+    if (링크됨) rmSync(링크, { force: true });
+    rmSync(진짜, { recursive: true, force: true });
+  } else {
+    건너뜀('심 작업 폴더 흉내', '이 PC 에 rg 가 없습니다');
   }
 }
 

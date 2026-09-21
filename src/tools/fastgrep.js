@@ -142,7 +142,7 @@ export function 저장소인가(폴더) {
  *
  * @returns {{ok:true, 줄들:string[], 잘림:boolean} | {ok:false, 왜:string}}
  */
-export async function rg로찾기({ 무늬, 자리, 뿌리 = null, glob = null, 대소문자무시 = false, 무시파일 = null, 최대 = 5000, timeout = 20000, signal = null }) {
+export async function rg로찾기({ 무늬, 자리, 뿌리 = null, glob = null, 대소문자무시 = false, 무시파일 = null, 최대 = 5000, timeout = 20000, signal = null, 부르기 = 돌려보기 }) {
   const 인자 = [
     '--line-number',
     '--no-heading',
@@ -162,12 +162,18 @@ export async function rg로찾기({ 무늬, 자리, 뿌리 = null, glob = null, 
   ];
   if (대소문자무시) 인자.push('--ignore-case');
   // `--` 뒤로 넘겨서 무늬가 옵션으로 안 읽히게 한다. `-foo` 같은 무늬가 실제로 있다.
-  인자.push('--regexp', 무늬, '--', 자리);
+  const 덤 = rg작업폴더(뿌리, { glob, 무시파일 });
+  const { 찾을, 되붙이기 } = rg찾을자리(뿌리, 자리, 덤);
+  인자.push('--regexp', 무늬, '--', 찾을);
 
-  const r = await 돌려보기('rg', 인자, { timeout, signal, 덤: rg작업폴더(뿌리, { glob, 무시파일 }) });
+  const r = await 부르기('rg', 인자, { timeout, signal, 덤 });
   const 못준까닭 = rg가못준까닭(r);
   if (못준까닭) return { ok: false, 왜: 못준까닭 };
-  const 줄들 = String(r.stdout ?? '').split('\n').filter(Boolean);
+  // 경로는 첫 NUL 앞이다(--null). 그 앞만 원래 뿌리에 되붙인다.
+  const 줄들 = String(r.stdout ?? '').split('\n').filter(Boolean).map((줄) => {
+    const 경로끝 = 줄.indexOf('\0');
+    return 경로끝 < 0 ? 줄 : 되붙이기(줄.slice(0, 경로끝)) + 줄.slice(경로끝);
+  });
   return { ok: true, 줄들: 줄들.slice(0, 최대), 잘림: 줄들.length > 최대 };
 }
 
@@ -258,9 +264,11 @@ export async function rg못푸는파일({ 자리, 뿌리 = null, glob = null, �
     // NUL 이 든 파일도 끝까지 본다. 안 그러면 rg 가 그 파일을 버려서 이름도 안 나온다.
     '--text',
     ...rg거르는인자({ glob, 무시파일, 자리, 뿌리 }),
-    '--regexp', 못푸는바이트무늬, '--', 자리,
   ];
-  const r = await 부르기('rg', 인자, { timeout, signal, 덤: rg작업폴더(뿌리, { glob, 무시파일 }) });
+  const 덤 = rg작업폴더(뿌리, { glob, 무시파일 });
+  const { 찾을, 되붙이기 } = rg찾을자리(뿌리, 자리, 덤);
+  인자.push('--regexp', 못푸는바이트무늬, '--', 찾을);
+  const r = await 부르기('rg', 인자, { timeout, signal, 덤 });
   /*
    * 실패는 **rg가못준까닭 한 자로** 가른다. 여기는 `error` 와 `status === 2` 두 줄뿐이라,
    * 신호로 죽거나(`status === null`) 2 가 아닌 값으로 끝나면 **빈 목록이 `ok:true`** 로
@@ -271,7 +279,7 @@ export async function rg못푸는파일({ 자리, 뿌리 = null, glob = null, �
    */
   const 못준까닭 = rg가못준까닭(r);
   if (못준까닭) return { ok: false, 왜: 못준까닭 };
-  const 파일들 = String(r.stdout ?? '').split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean);
+  const 파일들 = String(r.stdout ?? '').split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean).map(되붙이기);
   return { ok: true, 파일들 };
 }
 
@@ -298,6 +306,46 @@ export async function rg못푸는파일({ 자리, 뿌리 = null, glob = null, �
  */
 function rg작업폴더(뿌리, { glob = null, 무시파일 = null } = {}) {
   return 뿌리 && (glob || 무시파일) ? { cwd: 뿌리 } : {};
+}
+
+/*
+ * ── 작업 폴더를 정했으면 찾을 자리도 **그 기준 상대경로로** 넘긴다 (2.0.1) ──
+ *
+ * rg 는 glob 을 작업 폴더 기준으로 맞춘다. 그러려면 찾을 자리가 작업 폴더
+ * **밑으로 보여야** 한다 — 그 판단은 글자로 한다. 그런데 윈도우에서는 같은
+ * 폴더를 두 가지로 적을 수 있다:
+ *
+ *   C:\Users\RUNNER~1\AppData\Local\Temp       (8.3 짧은 이름 — os.tmpdir() 가 준다)
+ *   C:\Users\runneradmin\AppData\Local\Temp    (긴 이름 — 같은 폴더)
+ *
+ * Chocolatey·Scoop 은 rg 를 **심(shim)** 으로 깐다. 재 보니 심을 거치면 작업
+ * 폴더가 긴 이름으로 바뀌어 진짜 rg 가 뜬다. 우리는 찾을 자리를 짧은 이름으로
+ * 넘겼으니 rg 눈에는 그 자리가 작업 폴더 밑이 아니고, 빗금 든 glob 이 한 파일에도
+ * 안 맞았다 — 오류 없이 「일치 없음」, `!` 빼기는 아무것도 안 뺐다.
+ *
+ * 둘 중 하나만 있어서는 안 깨진다(윈도 러너에서 갈라 봤다):
+ *
+ *   심 + 짧은 이름     → 5개 빨강
+ *   진짜 rg.exe + 짧은 이름 → 121 통과
+ *   심 + 긴 이름       → 121 통과
+ *
+ * 윈도우에서 rg 는 대개 choco·scoop 으로 깔고, 짧은 이름은 사용자 이름이 여덟
+ * 글자를 넘거나 빈칸이 들면 %TEMP% 에 그대로 온다. 흔한 짝이다.
+ *
+ * 그래서 이름 적는 방식에 기대지 않는다. 찾을 자리를 **뿌리 기준 상대경로**로
+ * 넘기면 rg 는 제 작업 폴더에서부터 걸어 들어가고, 작업 폴더를 어떻게 적었든
+ * 상관이 없다. 나온 경로는 **원래 뿌리에 되붙여** 돌려준다 — 아래로 흐르는
+ * 경로 꼴은 예전과 똑같다.
+ *
+ * 작업 폴더를 안 정하는 판(glob·무시파일 없음)과, 찾을 자리가 뿌리 밖인 판은
+ * 예전대로 절대경로를 넘긴다.
+ */
+function rg찾을자리(뿌리, 자리, 덤) {
+  const 그대로 = { 찾을: 자리, 되붙이기: (f) => f };
+  if (!덤?.cwd || !뿌리 || !자리) return 그대로;
+  const 상대 = relative(뿌리, 자리);
+  if (isAbsolute(상대) || 상대 === '..' || 상대.startsWith(`..${sep}`)) return 그대로;
+  return { 찾을: 상대 || '.', 되붙이기: (f) => (isAbsolute(f) ? f : join(뿌리, f)) };
 }
 
 /*

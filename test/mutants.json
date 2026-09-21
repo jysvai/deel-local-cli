@@ -12831,8 +12831,8 @@
       "곳": "src/tools/fastgrep.js",
       "무엇": "rg못푸는파일 이 rg 의 넘어짐을 error·status 2 두 줄로만 가른다",
       "그러면": "신호로 죽은 rg 가 빈 목록을 ok:true 로 올려, CP949·Shift_JIS·표식 없는 UTF-16 파일을 한 개도 안 되읽는다. 결과가 조용히 「일치 없음」 이 된다",
-      "찾을것": "  const 못준까닭 = rg가못준까닭(r);\n  if (못준까닭) return { ok: false, 왜: 못준까닭 };\n  const 파일들 = String(r.stdout ?? '').split('\\n').map((l) => l.replace(/\\r$/, '')).filter(Boolean);",
-      "바꿀것": "  const 못준까닭 = (r.error || r.status === 2) ? rg가못준까닭(r) : null;\n  if (못준까닭) return { ok: false, 왜: 못준까닭 };\n  const 파일들 = String(r.stdout ?? '').split('\\n').map((l) => l.replace(/\\r$/, '')).filter(Boolean);",
+      "찾을것": "  const 못준까닭 = rg가못준까닭(r);\n  if (못준까닭) return { ok: false, 왜: 못준까닭 };\n  const 파일들 = String(r.stdout ?? '').split('\\n').map((l) => l.replace(/\\r$/, '')).filter(Boolean).map(되붙이기);",
+      "바꿀것": "  const 못준까닭 = (r.error || r.status === 2) ? rg가못준까닭(r) : null;\n  if (못준까닭) return { ok: false, 왜: 못준까닭 };\n  const 파일들 = String(r.stdout ?? '').split('\\n').map((l) => l.replace(/\\r$/, '')).filter(Boolean).map(되붙이기);",
       "검사": "test/fastgrep.test.js"
     },
     {
@@ -13360,6 +13360,46 @@
       "찾을것": "  const 아이 = spawn(파일, 인자, {",
       "바꿀것": "  { const 끝날때 = Date.now() + 400; while (Date.now() < 끝날때) { /* 어긋: 띄우기 전에 귀를 막는다 */ } }\n  const 아이 = spawn(파일, 인자, {",
       "검사": "test/abort-tools.test.js"
+    },
+    {
+      "곳": "src/tools/fastgrep.js",
+      "무엇": "rg로찾기 가 작업 폴더를 정하고도 찾을 자리를 절대경로로 넘긴다 (2.0.1)",
+      "그러면": "Chocolatey·Scoop 심으로 깐 rg 가 작업 폴더를 긴 이름으로 바꿔 뜨면, 8.3 짧은 이름으로 적은 자리가 작업 폴더 밑으로 안 보여 빗금 든 glob 이 한 파일에도 안 맞는다. 오류 없이 「일치 없음」, `!` 빼기는 아무것도 안 뺀다",
+      "찾을것": "  인자.push('--regexp', 무늬, '--', 찾을);",
+      "바꿀것": "  인자.push('--regexp', 무늬, '--', 자리);",
+      "검사": "test/fastgrep.test.js"
+    },
+    {
+      "곳": "src/tools/fastgrep.js",
+      "무엇": "rg못푸는파일 이 작업 폴더를 정하고도 찾을 자리를 절대경로로 넘긴다 (2.0.1)",
+      "그러면": "심으로 깐 rg 와 짧은 이름 자리에서 glob 을 준 찾기가 못 푸는 파일을 한 개도 못 센다. CP949·Shift_JIS 파일이 되읽히지 않고 조용히 빠진다",
+      "찾을것": "  인자.push('--regexp', 못푸는바이트무늬, '--', 찾을);",
+      "바꿀것": "  인자.push('--regexp', 못푸는바이트무늬, '--', 자리);",
+      "검사": "test/fastgrep.test.js"
+    },
+    {
+      "곳": "src/tools/fastgrep.js",
+      "무엇": "rg로찾기 가 상대로 받은 경로를 뿌리에 안 되붙인다 (2.0.1)",
+      "그러면": "glob 을 준 찾기만 결과 경로가 상대경로로 나온다. 못 푼 파일 목록(절대경로)과 안 맞아 걸러야 할 반쪽 줄이 그대로 남고, 부르는 쪽이 경로를 엉뚱한 폴더 기준으로 연다",
+      "찾을것": "return 경로끝 < 0 ? 줄 : 되붙이기(줄.slice(0, 경로끝)) + 줄.slice(경로끝);",
+      "바꿀것": "return 줄;",
+      "검사": "test/fastgrep.test.js"
+    },
+    {
+      "곳": "src/tools/fastgrep.js",
+      "무엇": "rg못푸는파일 이 상대로 받은 경로를 뿌리에 안 되붙인다 (2.0.1)",
+      "그러면": "glob 을 준 찾기에서 못 푼 파일 이름이 상대경로로 나와 rg 결과(절대경로)와 안 맞는다. 반쪽 줄을 못 거르고, 되읽을 파일을 엉뚱한 자리에서 연다",
+      "찾을것": ".filter(Boolean).map(되붙이기);",
+      "바꿀것": ".filter(Boolean);",
+      "검사": "test/fastgrep.test.js"
+    },
+    {
+      "곳": "src/tools/fastgrep.js",
+      "무엇": "rg찾을자리 가 뿌리 자체를 빈 글자로 넘긴다 (2.0.1)",
+      "그러면": "뿌리에서 glob 으로 찾으면 rg 에 빈 경로가 가서 넘어지거나 엉뚱한 곳을 본다",
+      "찾을것": "return { 찾을: 상대 || '.', 되붙이기:",
+      "바꿀것": "return { 찾을: 상대, 되붙이기:",
+      "검사": "test/fastgrep.test.js"
     }
   ]
 }
