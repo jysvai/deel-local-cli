@@ -14,7 +14,7 @@
 //   그러고 /undo 를 누르면 멀쩡한 파일이 지워졌다.
 //
 // 그래서 여기서 재는 것은 하나다 — **되돌리기가 파일을 없애지 않는가.**
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, statSync, chmodSync, appendFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, statSync, chmodSync, appendFileSync, readdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { History } from '../src/safety/undo.js';
@@ -1060,6 +1060,81 @@ trace('반쪽줄');
   check('★★ 반쪽 줄 뒤에 적은 이번 판의 턴을 되돌린다', readFileSync(f2, 'utf8') === 'TWO-V1', JSON.stringify(readFileSync(f2, 'utf8')));
   check('★★ 시키지 않은 앞 판의 턴은 안 건드린다', readFileSync(f1, 'utf8') === 'ONE-V2', JSON.stringify(readFileSync(f1, 'utf8')));
   check('  반쪽 줄은 못 읽은 줄로 센다', r.깨진줄 === 1, String(r.깨진줄));
+  rmSync(방, { recursive: true, force: true });
+}
+
+// ── 이번에 새로 생긴 폴더는 비면 거둔다 · 원래 있던 빈 폴더는 둔다 (2.0.2 · B3) ──
+trace('새폴더-거두기');
+{
+  /*
+   * 폴더를 통째로 옮긴 판을 되돌리면 파일은 돌아오는데 **빈 옮긴 자리 폴더**가 남았다
+   * (2.0.0 6회차 B3 — 「참·낮음 · 남김」). 되돌린 뒤의 폴더가 되돌리기 전과 달랐다.
+   * 가르는 잣대는 「비었나」 가 아니라 「이번에 생겼나」 다 — 원래 있던 빈 폴더에 파일을
+   * 만든 판을 되돌리면 그 빈 폴더는 남아야 한다.
+   */
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-새폴더-'));
+  const 새ctx = () => {
+    const h = new History(방);
+    h.nextTurn();
+    return { h, ctx: { scope: makeScope(방), history: h, audit: new Audit(방), seen: new Set() } };
+  };
+  const 목록 = () => (existsSync(방) ? readdirSync(방).filter((x) => x !== '.deel').sort().join(',') : '');
+
+  // ① 폴더째 옮기기
+  mkdirSync(join(방, 'dirA'));
+  writeFileSync(join(방, 'dirA', 'f.txt'), 'ORIGINAL\n');
+  {
+    const { h, ctx } = 새ctx();
+    await TOOLS.Read.run({ file_path: 'dirA/f.txt' }, ctx);
+    await TOOLS.Edit.run({ file_path: 'dirA/f.txt', old_string: 'ORIGINAL', new_string: 'CHANGED' }, ctx);
+    await TOOLS.Move.run({ from: 'dirA', to: 'dirB' }, ctx);
+    const r = h.undo(1);
+    check('★★ 폴더째 옮긴 판을 되돌리면 옮긴 자리 폴더가 안 남는다', 목록() === 'dirA', 목록());
+    check('  원래 폴더의 파일은 원래 내용이다', readFileSync(join(방, 'dirA', 'f.txt'), 'utf8') === 'ORIGINAL\n');
+    check('  지운 폴더는 되돌린 파일 수에 안 센다', r.되돌린수 === 2 && r.restored.some((x) => x.폴더), `되돌린수 ${r.되돌린수} · ${r.restored.map((x) => x.how).join(' / ')}`);
+  }
+  // ② 원래 있던 빈 폴더에 만든 파일
+  mkdirSync(join(방, 'logs'));
+  {
+    const { h, ctx } = 새ctx();
+    await TOOLS.Write.run({ file_path: 'logs/a.txt', content: 'x\n' }, ctx);
+    h.undo(1);
+    check('★★★ 원래 있던 빈 폴더는 되돌려도 남는다', existsSync(join(방, 'logs')) && !existsSync(join(방, 'logs', 'a.txt')), 목록());
+  }
+  // ③ 두 겹 새 폴더
+  {
+    const { h, ctx } = 새ctx();
+    await TOOLS.Write.run({ file_path: 'new1/new2/b.txt', content: 'x\n' }, ctx);
+    h.undo(1);
+    check('★ 두 겹으로 새로 생긴 폴더도 다 거둔다', !existsSync(join(방, 'new1')), 목록());
+  }
+  // ④ 새 폴더에 그 뒤 사람이 넣은 파일
+  {
+    const { h, ctx } = 새ctx();
+    await TOOLS.Write.run({ file_path: 'fresh/c.txt', content: 'x\n' }, ctx);
+    writeFileSync(join(방, 'fresh', '사람이넣은것.txt'), 'keep\n');
+    h.undo(1);
+    check('★★★ 새 폴더라도 딴 것이 들었으면 안 지운다', existsSync(join(방, 'fresh', '사람이넣은것.txt')) && !existsSync(join(방, 'fresh', 'c.txt')), 목록());
+  }
+  // ⑤ 꾸민 이력 — 이력은 저장소에 딸려 올 수 있다(undo.js 머리말). 「새폴더」 칸으로 밖의 빈 폴더를 못 지운다.
+  {
+    const 밖 = mkdtempSync(join(tmpdir(), 'deel-새폴더밖-'));
+    mkdirSync(join(밖, 'empty'));
+    mkdirSync(join(밖, 'empty2'));
+    let 링크됨 = false;
+    try { symlinkSync(밖, join(방, 'lnk'), 'junction'); 링크됨 = true; } catch { /* 링크를 못 만드는 PC */ }
+    const h = new History(방);
+    writeFileSync(join(방, 'x.txt'), 'made\n');
+    const 줄 = { turn: 9e15, at: new Date().toISOString(), path: join(방, 'x.txt'), rel: 'x.txt', before: null, 없던: true, label: 'Write',
+      새폴더: [...(링크됨 ? ['lnk/empty'] : []), `../${밖.split(/[\\/]/).at(-1)}/empty2`] };
+    appendFileSync(join(방, '.deel', 'history', 'edits.jsonl'), `${JSON.stringify(줄)}\n`);
+    h.undo(1);
+    check('  (꾸민 이력) 파일 자체는 안이라 지운다', !existsSync(join(방, 'x.txt')));
+    if (링크됨) check('★★★ (꾸민 이력) 링크 너머 밖의 빈 폴더를 안 지운다', existsSync(join(밖, 'empty')));
+    check('★★★ (꾸민 이력) ../ 로 적은 밖의 빈 폴더를 안 지운다', existsSync(join(밖, 'empty2')));
+    if (링크됨) rmSync(join(방, 'lnk'), { force: true });
+    rmSync(밖, { recursive: true, force: true });
+  }
   rmSync(방, { recursive: true, force: true });
 }
 

@@ -1,7 +1,7 @@
 // 되돌리기. 승인 프롬프트를 안 쓰는 대신 이게 안전망이다.
 // 파일을 고치기 전에 항상 이전 내용을 떠 놓고, /undo 로 턴 단위로 되돌린다.
 import { join, dirname, basename, resolve, relative, isAbsolute, sep } from 'node:path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, statSync, chmodSync, renameSync, realpathSync, openSync, readSync, closeSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, rmdirSync, appendFileSync, statSync, chmodSync, renameSync, realpathSync, openSync, readSync, closeSync } from 'node:fs';
 import { looksBinary } from '../tools/encoding.js';
 import { 살림폴더만들기 } from './audit.js';
 import { 말 } from '../i18n/index.js';
@@ -84,6 +84,19 @@ export class History {
     this.turn = 0;
     /** 잠근 결과. 밖에서 볼 수 있어야 「잠갔다」 는 말이 뜻을 갖는다. */
     this.잠금 = null;
+  }
+
+  /** 이 경로의 조상 가운데 **아직 없는** 폴더들(뿌리 기준 상대 경로, 깊은 것부터). 뿌리 밖으로는 안 올라간다. */
+  #없는폴더들(abs) {
+    const 들 = [];
+    let d = dirname(resolve(String(abs)));
+    for (let i = 0; i < 64 && !existsSync(d); i++) {
+      const 상대 = this.#상대(d);
+      if (상대 === null) break;
+      들.push(상대);
+      d = dirname(d);
+    }
+    return 들;
   }
 
   /** 새 기록에 적을 상대 경로. 뿌리 밖이면 null — 그런 기록은 되돌릴 때 안 받는다. */
@@ -236,6 +249,22 @@ export class History {
      * 그림·문서가 /undo 뒤에도 남았다. 이 표가 있으면 정말 없던 자리라 바이너리여도 지운다.
      */
     if (없던) rec.없던 = true;
+    /*
+     * ── 이 파일과 **같이 생길 폴더**도 적는다 (2.0.2 · B3) ─────────────────────
+     *
+     * 폴더를 통째로 옮긴 판(`dirA` → `dirB`)을 되돌리면 파일은 `dirA` 로 돌아오고
+     * `dirB/f.txt` 는 「원래 없던 파일」 로 지워지는데, **빈 `dirB` 가 남았다.** 되돌린
+     * 뒤의 폴더가 되돌리기 전과 다르다. 그 폴더가 이번에 생겼다는 것을 아무 데도
+     * 안 적어서 지울 근거가 없었다.
+     *
+     * 원래 있던 빈 폴더에 파일을 만든 판과 가르려면 **뜰 때** 봐야 한다 — 되돌릴 때는
+     * 둘 다 「빈 폴더」 라 구별이 안 된다. 그래서 여기서 아직 없는 조상 폴더를 깊은
+     * 것부터 적어 두고, 되돌릴 때 그 폴더가 **비었을 때만** 지운다.
+     */
+    if (없던) {
+      const 새폴더 = this.#없는폴더들(absPath);
+      if (새폴더.length) rec.새폴더 = 새폴더;
+    }
     // 작업 폴더 기준 자리. 폴더를 옮기거나 복사해도 이 이력은 **그 폴더**를 되돌린다 (위 머리말).
     const 상대 = this.#상대(absPath);
     if (상대 !== null) rec.rel = 상대;
@@ -618,6 +647,16 @@ export class History {
           }
           rmSync(path, { force: true });
           restored.push({ path, how: 말('undo.wayDeleted'), ok: true });
+          // 그 파일과 같이 생긴 폴더가 이제 비었으면 거둔다 (snapshot 의 새폴더 머리말). rmdirSync 는 **빈
+          // 폴더만** 지운다 — 그 뒤에 누가 넣은 것이 있으면 ENOTEMPTY 로 멈추고, 폴더가 아니면 ENOTDIR 다.
+          // 이력은 저장소에 딸려 올 수 있으니(파일 머리말) 폴더 자리도 밖·링크 너머면 안 건드린다.
+          // 파일이 아니라서 되돌린 수에는 안 센다.
+          for (const 상대 of rec.새폴더 ?? []) {
+            const d = this.#자리풀기(null, 상대);
+            if (!d || 링크밖(d)) break;
+            try { rmdirSync(d); } catch { break; }
+            restored.push({ path: d, how: '빈 폴더 지움 (이번에 새로 생긴 폴더)', ok: true, 폴더: true });
+          }
         } else {
           /*
            * 담고 있던 폴더가 없어졌을 수 있다 — Move 로 폴더째 옮긴 경우다.
@@ -710,7 +749,7 @@ export class History {
       // 이력에서 못 읽은 줄 수. 그만큼은 되돌릴 길이 애초에 없었다.
       깨진줄: this.깨진줄,
       // 화면·감사기록이 쓰는 수. **진짜로 되돌아간 것만** 센다.
-      되돌린수: restored.filter((x) => x.ok === true).length,
+      되돌린수: restored.filter((x) => x.ok === true && !x.폴더).length,
       못한것: restored.filter((x) => x.ok === false),
       turns: turns.length,
       turnIds: turns.slice(),
