@@ -30,9 +30,13 @@ import { join, normalize, isAbsolute, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 // 남의 저장소에 딸려 온 mcp.json 으로 남의 프로그램을 띄우지 않는다 (다붙이기 머리말).
 import { 믿나, BOM떼기 } from '../safety/trust.js';
+// 신호로 끝날 때도 띄운 서버를 거둔다 — 손은 한 자리에만 단다 (reap.js 머리말).
+import { 신호에거두기 } from '../reap.js';
 
 // 붙는 데 이만큼 넘게 걸리면 포기한다. 시작이 느려지면 안 쓰게 된다.
 export const 붙기제한 = 8000;
+// 쓰던 서버가 저 혼자 죽으면 한 세션에 이만큼까지 다시 띄운다 (MCP서버.깨우기 머리말).
+export const 되살리기최대 = 2;
 // 도구 하나 부르고 이만큼 기다린다.
 export const 부르기제한 = 60000;
 // 한 서버에서 받을 도구 수. 스키마가 통째로 매 요청에 실리므로 무한정 받으면
@@ -277,6 +281,22 @@ export function 모두닫기() {
  * 검사가 밖에서 확인할 길이 없다. 걷어내도 아무도 모르는 그물은 없는 것과 같다.
  */
 process.once('exit', 모두닫기);
+신호에거두기(모두닫기);
+
+/**
+ * 약속을 기다리되 신호가 오면 **기다리기만** 그만둔다. 약속 자체는 안 끊는다 (부르기 · MB4).
+ */
+function 끊기며기다리기(약속, signal) {
+  if (!signal) return 약속;
+  if (signal.aborted) return Promise.reject(new Error('중단했습니다'));
+  let 떼기 = () => {};
+  const 끊김 = new Promise((_, 실패) => {
+    const 손 = () => 실패(new Error('중단했습니다'));
+    signal.addEventListener?.('abort', 손, { once: true });
+    떼기 = () => signal.removeEventListener?.('abort', 손);
+  });
+  return Promise.race([약속, 끊김]).finally(() => 떼기());
+}
 
 /**
  * 서버 하나와의 연결.
@@ -316,11 +336,20 @@ export class MCP서버 {
      * 폴더 뿌리가 아니고, 그러면 남의 폴더에 메모를 적는다.
      */
     this.뿌리 = null;
+    /** 저 혼자 죽어 다시 띄운 수. 되살리기최대 를 넘으면 더 안 띄운다. */
+    this.되살린수 = 0;
+    /** 우리가 닫았나(닫기). 닫은 것은 되살리지 않는다. */
+    this.닫음 = false;
   }
 
   살아있나() { return !!this.kid && this.kid.exitCode === null && !this.죽음; }
-  /** 지금 도구를 부를 수 있나. 대기 중이면 부르는 순간 뜬다. */
-  쓸수있나() { return this.살아있나() || (this.대기 && !this.죽음); }
+  /** 지금 도구를 부를 수 있나. 대기 중이면 부르는 순간 뜬다. 저 혼자 죽은 것도 되살린다. */
+  쓸수있나() { return this.살아있나() || (this.대기 && !this.죽음) || this.되살릴수있나(); }
+  /**
+   * 죽었지만 다음 부름에 다시 띄울 것인가 (깨우기 머리말).
+   * 우리가 닫은 것(닫음)과 한 세션에 되살리기최대 번을 넘긴 것은 안 띄운다.
+   */
+  되살릴수있나() { return !!this.죽음 && !this.닫음 && !this.대기 && this.되살린수 < 되살리기최대; }
 
   /**
    * 적어 둔 목록으로 세워 둔다. **안 띄운다.**
@@ -354,12 +383,32 @@ export class MCP서버 {
      */
     if (this.깨우는중) return this.깨우는중;
     if (this.살아있나()) return true;
-    if (this.죽음) return false;
+    /*
+     * ── 쓰던 서버가 죽으면 **다음 부름에 다시 띄운다** (2.0.2 · M1 · MB3) ─────────
+     *
+     * 여기서 `죽음` 이면 곧장 false 였다. 그래서 아래 「죽음 을 지우고 다시 붙는다」 는 한 번도
+     * 닿지 않는 줄이었고, 도중에 한 번 넘어진 서버(메모리 부족 · 제 오류로 끝남)는 세션 내내
+     * 「죽었습니다」 였다 — 도구가 통째로 사라진 채 대화를 이어 가야 했다.
+     *
+     * 떠서 쓰던 서버가 **저 혼자** 죽었으면 되살린다. 한 세션에 되살리기최대 번까지만 —
+     * 뜨자마자 죽는 서버를 부를 때마다 띄우면 부름마다 붙기제한만큼 멈춘다. 우리가 닫은 것
+     * (넘침 · 깨우다 실패 · 끝날 때)은 안 되살린다(되살릴수있나).
+     */
+    if (this.죽음 && !this.되살릴수있나()) return false;
+    const 되살림 = !!this.죽음;
     const 적어둔것 = this.도구.map((t) => t.name).join('\0');
     // 속까지 견주려면 정의를 그대로 들고 있어야 한다 (아래 바뀐것).
     const 적어둔도구 = this.도구;
     this.깨우는중 = (async () => {
-      // 죽음 은 붙기() 가 실패하며 남긴다. 다시 붙으려면 지워 두고 시작한다.
+      if (되살림) {
+        this.되살린수++;
+        // 옛 아이를 명부에서 빼고, 받다 만 조각은 버린다 — 새 아이의 첫 줄에 붙으면 안 된다.
+        띄운것들.delete(this);
+        try { this.kid?.kill(); } catch { /* 이미 죽었다 */ }
+        this.찌꺼기 = '';
+        this.마지막말 = undefined;
+      }
+      // 죽음 은 끝냄() 이 남긴다. 다시 붙으려면 지워 두고 시작한다.
       this.죽음 = null;
       const ok = await this.붙기({ timeout });
       this.대기 = false;
@@ -438,14 +487,21 @@ export class MCP서버 {
     // 떠 있으므로, 여기서 안 적으면 그 아이는 아무도 안 거두는 아이가 된다.
     띄운것들.add(this);
 
-    this.kid.on('error', (e) => this.끝냄(`오류: ${e.message}`));
-    this.kid.on('exit', (code, sig) => this.끝냄(`끝났습니다 (코드 ${code ?? sig})`));
-    this.kid.stdout.setEncoding('utf8');
-    this.kid.stdout.on('data', (d) => this.받음(d));
+    /*
+     * **이 아이의** 소리만 듣는다 (2.0.2 · M1). 되살리면 한 서버에 아이가 둘 거쳐 간다 —
+     * 옛 아이의 늦은 'exit' 이 새 아이를 죽음 으로 적거나, 옛 아이의 마지막 조각이 새 아이의
+     * 첫 줄에 붙으면 안 된다.
+     */
+    const 아이 = this.kid;
+    const 지금아이 = () => this.kid === 아이;
+    아이.on('error', (e) => { if (지금아이()) this.끝냄(`오류: ${e.message}`); });
+    아이.on('exit', (code, sig) => { if (지금아이()) this.끝냄(`끝났습니다 (코드 ${code ?? sig})`); });
+    아이.stdout.setEncoding('utf8');
+    아이.stdout.on('data', (d) => { if (지금아이()) this.받음(d); });
     // 서버가 stderr 에 로그를 쏟는 일이 흔하다. 화면에 흘리면 대화가 뒤덮인다.
     // 마지막 것만 들고 있다가 죽었을 때 원인으로 보여 준다.
-    this.kid.stderr.setEncoding('utf8');
-    this.kid.stderr.on('data', (d) => { this.마지막말 = String(d).trim().slice(-400); });
+    아이.stderr.setEncoding('utf8');
+    아이.stderr.on('data', (d) => { if (지금아이()) this.마지막말 = String(d).trim().slice(-400); });
 
     try {
       const r = await this.보내고기다리기('initialize', {
@@ -643,14 +699,27 @@ export class MCP서버 {
   }
 
   async 부르기(도구이름, args, { timeout = 부르기제한, signal = null } = {}) {
+    // 이미 멈췄으면 깨우지도 않는다 — 안 쓸 서버를 띄워 두는 것이다.
+    if (signal?.aborted) throw new Error('중단했습니다');
     /*
      * 대기 중이면 **여기서** 띄운다. 이게 지연 로딩의 전부다.
      *
      * 첫 부름 하나만 붙는 시간을 치르고, 그 뒤로는 여느 때와 똑같다. 켤 때
      * 다 띄우던 값을 「그 도구를 실제로 쓰는 사람」 에게만 물리는 셈이다.
      */
-    if (this.대기) {
-      const ok = await this.깨우기();
+    if (this.대기 || this.되살릴수있나()) {
+      /*
+       * ── 깨우는 동안에도 ESC 가 먹는다 (2.0.2 · MB4) ──────────────────────────
+       *
+       * 깨우기에는 신호를 안 넘겼다. 그래서 붙는 동안(붙기제한 8초까지) ESC 가 아무것도 안
+       * 했다. 신호를 깨우기에 넘기면 안 된다 — 깨우는 약속은 **같이 부른 도구들이 나눠
+       * 기다린다**(MB1). 한 사람의 ESC 가 그 약속을 끊으면 같이 기다리던 부름까지 끊기고,
+       * 반쯤 붙은 서버가 죽음 으로 남아 세션 내내 못 쓴다.
+       *
+       * 그래서 **이 부름만** 기다리기를 그만둔다. 깨우기는 뒤에서 제 길을 가고, 다 뜨면
+       * 다음 부름이 곧장 쓴다.
+       */
+      const ok = await 끊기며기다리기(this.깨우기(), signal);
       if (!ok) throw new Error(this.죽음 ?? '띄우지 못했습니다');
       /*
        * 띄우고 보니 그 도구가 없어졌으면 **그렇다고 말한다.**
@@ -703,6 +772,7 @@ export class MCP서버 {
   }
 
   닫기() {
+    this.닫음 = true;
     this.끝냄('닫았습니다');
     띄운것들.delete(this);
     try {
@@ -894,7 +964,15 @@ export async function 다붙이기(root, { offline = false, timeout = 붙기제�
   if (설정.오류) return { 서버들: [], 못한것: [{ 이름: '(설정)', 왜: 설정.오류 }], 설정 };
   // 규격 때문에 안 받은 것은 어느 길로 끝나든 같이 내놓는다 (설정읽기 머리말).
   const 안받은것 = 설정.못받은것 ?? [];
-  if (!설정.서버들.length) return { 서버들: [], 못한것: [...안받은것], 설정 };
+  /*
+   * 서버를 다 빼면 적어 둔 목록도 걷는다 (2.0.2 · M4). 여기서 곧장 돌아서서, 다 뺀 판에는
+   * 메모쓰기 의 걷기(남길이름)가 한 번도 안 돌았다 — 지운 서버들의 도구 목록이 파일에 그대로
+   * 남는다. 설정에 없는 이름은 안 읽으니 해는 없지만, 남은 파일은 「아직 쓰는 서버」 로 읽힌다.
+   */
+  if (!설정.서버들.length) {
+    메모쓰기(root, [], { 남길이름: [] });
+    return { 서버들: [], 못한것: [...안받은것], 설정 };
+  }
 
   /*
    * ── 믿는 폴더에서만 띄운다 ──────────────────────────────────────────
@@ -984,10 +1062,13 @@ export async function 다붙이기(root, { offline = false, timeout = 붙기제�
    * 매번 새로 찍혀서 「일주일이면 다시 확인한다」 가 영영 안 온다. 그건 세 겹
    * 그물 중 하나를 우리 손으로 걷는 것이다.
    */
-  if (게으르게 && 새로띄운게있나) {
+  // 다 대기로 섰어도 설정에서 빠진 서버의 메모는 걷는다 (2.0.2 · M4 — 안 걷으면 새로 띄울 때까지 남는다).
+  const 이름들 = 설정.서버들.map((s) => s.이름);
+  const 걷을것 = Object.keys(메모들).some((n) => !이름들.includes(n));
+  if (게으르게 && (새로띄운게있나 || 걷을것)) {
     // 대기 중인 것은 안 넘긴다(적은때를 새로 찍으면 안 된다). 그래도 그 메모는
     // 안 지워진다 — 메모쓰기 가 겹쳐 쓴다(그 머리말).
-    메모쓰기(root, 붙은것.filter((s) => !s.대기), { 남길이름: 설정.서버들.map((s) => s.이름) });
+    메모쓰기(root, 붙은것.filter((s) => !s.대기), { 남길이름: 이름들 });
   }
   return { 서버들: 붙은것, 못한것, 설정, 게으르게 };
 }

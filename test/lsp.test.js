@@ -23,6 +23,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { 틀, 받개 } from '../src/lsp/rpc.js';
 import { 갈래, 언어아이디, 어디있나, 고르기, 둘러보기, 프로젝트갈래, 서버박기, 셈지우기 } from '../src/lsp/servers.js';
 import { 얻기, 지금것들, 모두끄기, 언어서버, 색인중일까, 열쇠주소, 다시보낼까, 아이들데려가기 } from '../src/lsp/client.js';
+import { 거둘것에있나 } from '../src/reap.js';
 import { 편집후진단, 붙이기, 데우기 } from '../src/lsp/diag.js';
 import { toolSchemas, runTool, TOOLS, 언어서버있나 } from '../src/tools/index.js';
 // 모델이 실제로 받는 글. 사람 화면(summary)과 다른 것이 이 파일에서 재는 것 하나다.
@@ -767,6 +768,8 @@ trace('9-신호');
   // 이걸 못 가린다 — OS 가 프로세스 나무를 통째로 거두기 때문이다.
   check('★ 끝나는 길에 아이들 거두는 그물이 걸려 있다',
     process.listeners('exit').includes(아이들데려가기));
+  // 신호 손은 reap.js 하나뿐이다 — 언어 서버는 거기에 적혀 있어야 신호로 끝날 때 거둬진다 (2.0.2 · M3).
+  check('★ 신호로 끝날 때 거둘 것에 언어 서버가 적혀 있다', 거둘것에있나(아이들데려가기));
 }
 
 {

@@ -13,10 +13,12 @@
 //   5) 도구가 우리 것과 안 섞이는가
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   설정읽기, 다붙이기, 이름풀기, 도구정의, 도구최대, 살아있는수, 모두닫기, 깨끗한환경,
-  메모자리, 메모읽기, 메모쓰기, 메모유효, 지문, 쓸만한메모, MCP서버, 띄울모양 } from '../src/backend/mcp.js';
+  메모자리, 메모읽기, 메모쓰기, 메모유효, 지문, 쓸만한메모, MCP서버, 띄울모양, 되살리기최대 } from '../src/backend/mcp.js';
+import { 거둘것에있나 } from '../src/reap.js';
 import { VERSION } from '../src/version.js';
 import { toolSchemas, runTool } from '../src/tools/index.js';
 import { Audit } from '../src/safety/audit.js';
@@ -28,6 +30,7 @@ const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
 
 const root = mkdtempSync(join(tmpdir(), 'deel-mcp-'));
+const 여기 = dirname(fileURLToPath(import.meta.url));
 /*
  * 이 검사 폴더는 **믿는 폴더로 친다.**
  *
@@ -57,6 +60,7 @@ const 인사자리 = process.argv[3] ?? null;
 // 아래 stdin 처리까지 흘러가면 멀쩡히 답해 버린다.
 if (모드 === 'silent') { setInterval(() => {}, 1000); }
 else if (모드 === 'crash') { process.exit(3); }                 // 뜨자마자 죽음
+else if (모드 === 'sticky') { setInterval(() => {}, 1000); }     // 입력이 닫혀도 안 죽음 (2.0.2 · M3)
 else if (모드 === 'garbage') { process.stdout.write('이건 JSON 이 아닙니다\\n'); }
 if (모드 !== 'silent') 듣기();
 let 핑번호 = null;
@@ -1086,6 +1090,136 @@ trace('13-사냥4');
   }
   모두닫기();
 }
+
+trace('14-202');
+/*
+ * ── 2.0.2 · 남겨 뒀던 MCP 자리 (M1 · MB3 · MB4 · M3 · M4) ─────────────────────
+ */
+{
+  모두닫기();
+  const 잠깐 = (ms) => new Promise((r) => setTimeout(r, ms));
+  const 한대 = (모드) => new MCP서버({ 이름: `검사-${모드}`, command: process.execPath, args: [서버파일, 모드], env: null, cwd: root });
+  const 끝났나 = async (kid, ms = 4000) => {
+    const 끝 = Date.now() + ms;
+    while (kid && kid.exitCode === null && kid.signalCode === null && Date.now() < 끝) await 잠깐(50);
+    return !kid || kid.exitCode !== null || kid.signalCode !== null;
+  };
+  const 죽이고기다리기 = async (s) => { const k = s.kid; k.kill(); await 끝났나(k, 3000); await 잠깐(80); };
+  const 답글 = (약속) => 약속.then((r) => r.text, (e) => `던짐 ${e.message}`);
+
+  // M1 · MB3 — 쓰던 서버가 저 혼자 죽으면 다음 부름에 되살린다. 한 세션에 되살리기최대 번까지.
+  {
+    const s = 한대('normal');
+    await s.붙기({ timeout: 4000 });
+    const 첫아이 = s.kid.pid;
+    await 죽이고기다리기(s);
+    check('M1 준비: 저 혼자 죽었다', !!s.죽음 && !s.살아있나(), String(s.죽음));
+    check('★★ M1 저 혼자 죽은 서버는 쓸 수 있는 것으로 본다 (다음 부름에 되살린다)', s.쓸수있나() && s.되살릴수있나(), `되살린수 ${s.되살린수}`);
+    const 하나 = await 답글(s.부르기('위키검색', { q: '되살림' }, { timeout: 5000 }));
+    check('★★★ M1 죽은 서버를 다음 부름에 되살려 답을 받는다',
+      /찾은 것: 되살림/.test(하나) && s.kid?.pid !== 첫아이 && s.되살린수 === 1 && s.살아있나(), `${하나} · 되살린수 ${s.되살린수}`);
+    await 죽이고기다리기(s);
+    const 둘 = await 답글(s.부르기('위키검색', { q: '또' }, { timeout: 5000 }));
+    check('  두 번째도 되살린다', /찾은 것: 또/.test(둘) && s.되살린수 === 2, `${둘} · 되살린수 ${s.되살린수}`);
+    await 죽이고기다리기(s);
+    const 셋 = await 답글(s.부르기('위키검색', { q: '셋' }, { timeout: 3000 }));
+    check('★★ M1 한 세션에 되살리기최대 번을 넘기면 더 안 띄운다',
+      s.되살린수 === 되살리기최대 && !s.쓸수있나() && /던짐 .*끝났습니다/.test(셋), `${셋} · 되살린수 ${s.되살린수}`);
+    s.닫기();
+  }
+  {
+    const s = 한대('normal');
+    await s.붙기({ timeout: 4000 });
+    const k = s.kid;
+    s.닫기();
+    await 끝났나(k, 3000);
+    check('★ M1 우리가 닫은 서버는 되살리지 않는다', !s.쓸수있나() && !s.되살릴수있나(), String(s.죽음));
+  }
+
+  // MB4 — 깨우는 동안 누른 ESC 는 그 부름만 곧장 끊는다. 같이 기다리던 부름과 서버는 그대로다.
+  {
+    const s = 한대('slowinit');
+    s.메모로세우기({ 도구: [{ name: '위키검색', inputSchema: { type: 'object' } }] }, null);
+    const 끊개 = new AbortController();
+    const 시작 = Date.now();
+    let 가걸린 = -1;
+    const 가약속 = 답글(s.부르기('위키검색', { q: '끊을것' }, { timeout: 5000, signal: 끊개.signal })).then((t) => { 가걸린 = Date.now() - 시작; return t; });
+    const 나약속 = 답글(s.부르기('위키검색', { q: '남은것' }, { timeout: 5000 }));
+    setTimeout(() => 끊개.abort(), 100);
+    const 가 = await 가약속;
+    const 나 = await 나약속;
+    check('★★ MB4 깨우는 동안 누른 ESC 가 그 부름을 곧장 끊는다 (인사 700ms 를 안 기다린다)',
+      /중단했습니다/.test(가) && 가걸린 >= 0 && 가걸린 < 600, `${가걸린}ms · ${가}`);
+    check('★★ MB4 같이 기다리던 다른 부름은 안 끊긴다', /찾은 것: 남은것/.test(나), 나);
+    check('  서버는 죽음 으로 안 남는다', s.살아있나() && !s.죽음, String(s.죽음));
+    const 미리 = new AbortController();
+    미리.abort();
+    const t = 한대('normal');
+    t.메모로세우기({ 도구: [{ name: '위키검색', inputSchema: { type: 'object' } }] }, null);
+    const 셋 = await 답글(t.부르기('위키검색', { q: 'x' }, { signal: 미리.signal }));
+    check('  이미 멈춘 부름은 서버를 깨우지도 않는다', /중단했습니다/.test(셋) && !t.kid && t.대기, 셋);
+    s.닫기();
+    t.닫기();
+  }
+
+  // M3 — 신호로 끝날 때 거둘 그물에 MCP 서버가 적혀 있다(윈도우에서도 재는 값).
+  check('★★ M3 신호로 끝날 때 거둘 것에 MCP 서버 닫기가 적혀 있다', 거둘것에있나(모두닫기));
+  check('  끝나는 길(exit)의 그물도 그대로다', process.listeners('exit').includes(모두닫기));
+
+  // M3 — 진짜로 SIGTERM 을 보내 본다. 윈도우는 신호를 보내면 손이 돌기도 전에 Node 가 죽인다.
+  if (process.platform !== 'win32') {
+    const { spawn } = await import('node:child_process');
+    const 아이 = spawn(process.execPath, [join(여기, 'mcp-signal-child.mjs'), 서버파일], { cwd: resolve(여기, '..'), stdio: ['pipe', 'pipe', 'pipe'] });
+    let 나온글 = '';
+    아이.stdout.setEncoding('utf8');
+    아이.stdout.on('data', (d) => { 나온글 += d; });
+    아이.stderr.setEncoding('utf8');
+    아이.stderr.on('data', (d) => { 나온글 += d; });
+    let 끝난것 = null;
+    const 닫힘 = new Promise((r) => 아이.on('close', (code, sig) => { 끝난것 = { code, sig }; r(); }));
+    let 손자 = null;
+    for (let i = 0; i < 300 && 손자 === null; i++) {
+      const m = /손자 (\d+)/.exec(나온글);
+      if (m) 손자 = Number(m[1]); else await 잠깐(50);
+    }
+    const 살았나 = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    check('M3 준비: 손자(MCP 서버)가 떴다', Number.isInteger(손자) && 살았나(손자), 나온글.trim().slice(0, 120) || '아무 말도 안 했다');
+    if (손자 !== null) {
+      아이.kill('SIGTERM');
+      await Promise.race([닫힘, 잠깐(12_000)]);
+      let 죽었나 = false;
+      for (let i = 0; i < 60 && !죽었나; i++) { 죽었나 = !살았나(손자); if (!죽었나) await 잠깐(50); }
+      check('★★★ M3 SIGTERM 으로 끝나도 MCP 서버를 거둔다', 죽었나, `손자 ${손자}`);
+      check('★★ M3 그리고 deel 은 그 신호로 끝난다 (삼키지 않는다)', 끝난것?.sig === 'SIGTERM', JSON.stringify(끝난것));
+      if (!죽었나) { try { process.kill(손자, 'SIGKILL'); } catch { /* 이미 갔다 */ } }
+    }
+    if (!끝난것) 아이.kill('SIGKILL');
+  } else {
+    check('(윈도우) SIGTERM 으로 끝내 보기는 유닉스에서 잽니다 — 윈도우는 손이 돌기 전에 죽인다', true);
+  }
+
+  // M4 — 설정에서 서버를 빼면 적어 둔 목록도 걷는다. 다 대기로 섰어도, 다 뺐어도.
+  {
+    const 방 = mkdtempSync(join(tmpdir(), 'deel-mcp-m4-'));
+    mkdirSync(join(방, '.deel'), { recursive: true });
+    const 적기 = (표) => writeFileSync(join(방, '.deel', 'mcp.json'), JSON.stringify(표), 'utf8');
+    const 적힌이름 = () => Object.keys(메모읽기(방)).sort().join(',');
+    적기({ mcpServers: { 가: 서버설정('normal'), 나: 서버설정('normal') } });
+    await 다붙이기(방, { env: 믿는env, timeout: 4000 });
+    모두닫기();
+    check('M4 준비: 둘 다 적혔다', 적힌이름() === '가,나', 적힌이름());
+    적기({ mcpServers: { 가: 서버설정('normal') } });
+    const r = await 다붙이기(방, { env: 믿는env, timeout: 4000 });
+    check('★ M4 다 대기로 서도 설정에서 빠진 서버의 메모는 걷는다', r.서버들[0]?.대기 === true && 적힌이름() === '가', `${r.서버들[0]?.대기} · ${적힌이름()}`);
+    모두닫기();
+    적기({ mcpServers: {} });
+    await 다붙이기(방, { env: 믿는env, timeout: 4000 });
+    check('★ M4 서버를 다 빼면 적어 둔 목록도 걷는다', 적힌이름() === '' && existsSync(메모자리(방)), 적힌이름() || '(비었다)');
+    try { rmSync(방, { recursive: true, force: true }); } catch { /* 자식이 아직 놓지 않았다 */ }
+  }
+  모두닫기();
+}
+
 
 // 쓴 자리를 이제 치운다.
 //

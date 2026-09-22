@@ -28,6 +28,7 @@ import { decode as decodeBytes, consoleCodepage } from './encoding.js';
 import { 셸명령 } from './shell.js';
 import { 셸환경 } from '../safety/shellenv.js';
 import { 말, 세말 } from '../i18n/index.js';
+import { 신호에거두기 } from '../reap.js';
 
 /* 결과 한 줄을 잇는다 — 빈 조각은 버린다(tools/index.js 의 이어 와 같은 것). */
 const 이어 = (...조각들) => 조각들.filter((x) => x != null && String(x) !== '').join(' · ');
@@ -918,6 +919,8 @@ export function 비우기() { 모두끝내기(); 다음번호 = 1; 치운것 = 0
 
 // 어떤 길로 끝나든 남기지 않는다. repl·oneshot 이 부르는 것과 겹쳐도 무해하다.
 process.once('exit', () => { try { 모두끝내기(); } catch { /* 끝나는 중이라 할 수 있는 게 없다 */ } });
+// 신호(SIGINT·SIGTERM)로 끝나면 'exit' 이 안 돈다 — 그 길도 거둔다 (reap.js 머리말 · 2.0.2 M3).
+신호에거두기(모두끝내기);
 
 /*
  * ── 도구 ──────────────────────────────────────────────────────────────

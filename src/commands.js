@@ -1572,7 +1572,7 @@ export async function handle(line, session, ctx) {
     }
 
     case 'mcp': {
-      const { 설정읽기, 설정자리, 도구최대 } = await import('./backend/mcp.js');
+      const { 설정읽기, 설정자리, 도구최대, 되살리기최대 } = await import('./backend/mcp.js');
       const 붙은것 = session.mcp ?? [];
       rule('밖에서 붙인 도구 (MCP)', 70);
 
@@ -1602,7 +1602,7 @@ export async function handle(line, session, ctx) {
          *
          *   ● 떠 있다      지금 프로세스가 돌고 있다
          *   ◐ 대기         적어 둔 목록으로 서 있다 — 그 도구를 부르면 뜬다
-         *   ○ 죽었다       띄웠는데 안 됐거나 도중에 죽었다
+         *   ○ 죽었다       띄웠는데 안 됐거나 도중에 죽었다 (도중에 저 혼자 죽은 것은 다음 부름에 되살린다)
          *
          * 대기를 죽음으로 뭉개면 사람은 없는 탈을 고치러 간다. 반대로 대기를
          * 초록으로 적으면 「띄워 봤다」 는 말이 거짓이 된다.
@@ -1621,6 +1621,8 @@ export async function handle(line, session, ctx) {
           say(`      ${mark.warn} ${c.gray(`띄워 보니 목록이 달랐습니다 — ${것}`)}`);
         }
         if (!s.살아있나() && !s.대기) say(`      ${c.red(s.죽음 ?? '죽었습니다')}`);
+        // 저 혼자 죽은 것은 다음 부름에 되살린다(backend/mcp.js 깨우기 · 2.0.2 M1). 안 말하면 사람은 세션을 다시 켠다.
+        if (s.되살릴수있나?.()) say(`      ${c.gray(`다음에 이 서버 도구를 부르면 다시 띄웁니다 — 이번 세션에 ${되살리기최대 - s.되살린수}번 남았습니다.`)}`);
       }
       say('');
       say(`  ${c.gray('모델에게는')} ${c.white('mcp__<서버>__<도구>')} ${c.gray('라는 이름으로 보입니다.')}`);
