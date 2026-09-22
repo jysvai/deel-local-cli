@@ -320,7 +320,7 @@ export function 무리끊기(pid, { 곧장 = false, 늦게 = 800 } = {}) {
 export const 못재고기다릴최대 = 400;
 
 /** 무리끊기 의 **기다릴 수 있는** 판. 까닭은 바로 위 머리말에. */
-export async function 무리끊기기다려(pid, { 곧장 = false, 늦게 = 800 } = {}) {
+async function 무리끊기기다려(pid, { 곧장 = false, 늦게 = 800 } = {}) {
   if (process.platform === 'win32' || !pid) return;
   if (곧장) { 신호주기(pid, 'SIGKILL'); return; }
   신호주기(pid, 'SIGTERM');

@@ -51,7 +51,7 @@ export function 다시보낼까(신호, 셈 = process.listenerCount(신호)) {
 }
 
 /** 적힌 것을 다 부른다. 하나가 던져도 나머지는 부른다 — 끝나는 길이다. */
-export function 모두거두기() {
+function 모두거두기() {
   for (const 손 of 거둘것) { try { 손(); } catch { /* 끝나는 중이라 할 수 있는 게 없다 */ } }
 }
 

@@ -210,7 +210,7 @@ function 제자리참조찾기(뿌리) {
 }
 
 /** 같은 파일 안(`#`으로 시작)이 아닌 `$ref` 를 다 찾는다. */
-export function 바깥ref찾기(스키마, 본것 = new Set()) {
+function 바깥ref찾기(스키마, 본것 = new Set()) {
   const out = [];
   const 훑기 = (s) => {
     if (!s || typeof s !== 'object' || 본것.has(s)) return;

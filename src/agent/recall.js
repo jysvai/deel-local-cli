@@ -23,7 +23,7 @@ import { sessionsDir } from './store.js';
 import { 부른것들, 결과들, 도구결과인가, 본문글 } from '../backend/adapter.js';
 
 // 한 번 찾을 때 읽을 최대 바이트. 넘으면 거기서 멈추고 **멈췄다고 말한다.**
-export const 읽기예산 = 64 * 1024 * 1024;
+const 읽기예산 = 64 * 1024 * 1024;
 // 한 메시지에서 볼 최대 길이. 파일을 통째로 붙인 도구 결과가 수 MB 씩 있다.
 const 메시지최대 = 200 * 1024;
 

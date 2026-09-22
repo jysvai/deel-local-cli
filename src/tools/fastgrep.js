@@ -235,7 +235,7 @@ export function rg가못준까닭(r) {
  */
 const 이음 = '[\\x80-\\xBF]';
 const 이음아님 = '(?:[^\\x80-\\xBF]|$)';
-export const 못푸는바이트무늬 = '(?-u:'
+const 못푸는바이트무늬 = '(?-u:'
   + [
     '\\x00',
     '[\\xC0\\xC1\\xF5-\\xFF]',

@@ -34,7 +34,7 @@ import { 믿나, BOM떼기 } from '../safety/trust.js';
 import { 신호에거두기 } from '../reap.js';
 
 // 붙는 데 이만큼 넘게 걸리면 포기한다. 시작이 느려지면 안 쓰게 된다.
-export const 붙기제한 = 8000;
+const 붙기제한 = 8000;
 // 쓰던 서버가 저 혼자 죽으면 한 세션에 이만큼까지 다시 띄운다 (MCP서버.깨우기 머리말).
 export const 되살리기최대 = 2;
 // 도구 하나 부르고 이만큼 기다린다.

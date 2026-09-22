@@ -38,7 +38,7 @@ export const 내장자리 = join(dirname(fileURLToPath(import.meta.url)), 'built
  * 앞머리가 몇 백 줄일 까닭은 없어서 찾는 줄 수에도 상한을 둔다. 같은 열쇠가 두 번 오면
  * 첫 것을 둔다 — 뒤엣것은 대개 본문이 새어 들어온 것이다.
  */
-export const 앞머리최대줄 = 200;
+const 앞머리최대줄 = 200;
 const 금인가 = (줄) => /^---[ \t]*\r?$/.test(줄);
 // YAML 앞머리에 설 수 있는 줄 꼴 — 빈 줄 · 들여 쓴 줄 · 주석 · 목록 · `열쇠:` 줄.
 const 앞머리줄인가 = (줄) => {

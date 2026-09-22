@@ -116,7 +116,7 @@ function 이름마디들(이름) {
 const 자격든주소 = /^[a-z][a-z0-9+.-]*:\/\/[^\s/?#@:]*:[^\s/?#@]+@/i;
 
 /** 이 값이 자격이 든 주소인가. 이름으로는 못 거르는 DATABASE_URL 같은 것을 거른다. */
-export function 비밀값인가(값) {
+function 비밀값인가(값) {
   return typeof 값 === 'string' && 자격든주소.test(값.trim());
 }
 

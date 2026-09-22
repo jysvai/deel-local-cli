@@ -224,7 +224,7 @@ export function findMatch(text, needle, { replaceAll = false } = {}) {
 }
 
 // 못 찾았을 때, 모델이 스스로 고칠 수 있게 "가장 비슷한 줄"을 알려준다.
-export function nearest(text, needle) {
+function nearest(text, needle) {
   const key = String(needle).split(/\r?\n/).find((l) => l.trim()) ?? '';
   const probe = key.trim().replace(/\s+/g, ' ');
   if (probe.length < 4) return null;

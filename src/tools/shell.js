@@ -112,7 +112,7 @@ export function 셸지우기() { 지금 = null; }
  * 재 보니 이 PC 에서 명령에 쓸 수 있는 것은 8,152자였다(cmd 자리 27자 + 앞뒤 붙이는 것). 그래서 cmd 자리와
  * 붙이는 글자만큼 빼고 잰다. 붙이는 것은 ` /d /s /c ` 10자 · 명령을 싸는 따옴표 2자에 2자를 더 둔다.
  */
-export const cmd한줄최대 = 8191;
+const cmd한줄최대 = 8191;
 
 /** 이 cmd 로 명령에 쓸 수 있는 글자 수. */
 export function cmd명령최대(file = 'cmd.exe') { return cmd한줄최대 - (String(file).length + 14); }

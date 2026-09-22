@@ -271,8 +271,8 @@ export function 할당량읽기(머리) {
  * 그때는 남은 수 자체로 본다 — 요청 20회 아래, 토큰 20,000 아래.
  * 넉넉할 때 자꾸 띄우면 사람이 그 줄을 안 읽게 된다.
  */
-export const 요청바닥 = 20;
-export const 토큰바닥 = 20000;
+const 요청바닥 = 20;
+const 토큰바닥 = 20000;
 
 export function 아슬아슬한가(것) {
   if (!것?.있나) return false;

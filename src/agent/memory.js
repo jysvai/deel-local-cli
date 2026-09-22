@@ -71,7 +71,7 @@ const 머리말 = `# 기억
  * 남의 줄이 든 파일에 한 줄 **더해서** 쓸 때는 지문을 안 적는다. 적으면 남의
  * 줄이 내 줄 틈에 끼어 「이 PC 가 적은 것」 으로 세탁된다.
  */
-export const 내것표자리 = (env = process.env) => join(dirname(신뢰자리(env)), 'memory-own.json');
+const 내것표자리 = (env = process.env) => join(dirname(신뢰자리(env)), 'memory-own.json');
 /** 지문을 들고 있는 폴더 수. 넘으면 오래 안 쓴 것부터 뺀다 — 빠진 폴더는 믿기 전까지 안 실릴 뿐이다. */
 const 내것표최대 = 200;
 /*

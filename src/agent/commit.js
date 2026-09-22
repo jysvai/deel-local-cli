@@ -299,7 +299,7 @@ export function 담기(뿌리, 경로들, { 전부 = false, 안쪽 = '' } = {}) 
  *
  * @returns {{샌것: string[], 못뺀것: string[]}}
  */
-export function 살림도로빼기(뿌리, 파일들) {
+function 살림도로빼기(뿌리, 파일들) {
   const 샌것 = 파일들.filter((f) => 살림에닿나(join(뿌리, f)));
   if (!샌것.length) return { 샌것, 못뺀것: [] };
   // 첫 커밋 전이면 HEAD 가 없어 restore 가 안 된다. 그때는 index 에서 지운다.
@@ -458,7 +458,7 @@ export function 답가르기(글) {
  * 글자를 감춘다), 그렇게 적힌 것은 이력에 영영 남아 남의 터미널에서 다시 돈다.
  * 줄바꿈과 탭만 남긴다.
  */
-export function 제어글자빼기(글) {
+function 제어글자빼기(글) {
   let 남길것 = '';
   for (const 글자 of String(글 ?? '')) {
     const 값 = 글자.codePointAt(0);

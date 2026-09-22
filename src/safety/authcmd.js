@@ -49,7 +49,7 @@ import { isOffline } from './network.js';
 import { 가리기 } from './secrets.js';
 
 /** 기다려 주는 시간. 사내 로그인은 브라우저를 열고 사람을 기다린다. */
-export const 기본기다림 = 180000;
+const 기본기다림 = 180000;
 
 /** 수명을 안 알려 줄 때 몇 초짜리로 볼까. 짧게 잡는다 — 늦게 아는 것보다 낫다. */
 export const 기본수명 = 3300;

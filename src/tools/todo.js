@@ -13,7 +13,7 @@ import { 말 } from '../i18n/index.js';
 
 /* 결과 한 줄을 잇는다 — 빈 조각은 버린다(tools/index.js 의 이어 와 같은 것). */
 const 이어 = (...조각들) => 조각들.filter((x) => x != null && String(x) !== '').join(' · ');
-export const STATES = ['todo', 'doing', 'done'];
+const STATES = ['todo', 'doing', 'done'];
 
 const 표시 = { todo: '☐', doing: '▶', done: '☑' };
 

@@ -95,7 +95,7 @@ const 들여 = '  ';
 const 채움 = '█';
 
 /** 글자 하나가 몇 칸인가 (한 배 기준). */
-export const 글자폭 = (ch) => (글꼴[ch]?.[0]?.length ?? 0);
+const 글자폭 = (ch) => (글꼴[ch]?.[0]?.length ?? 0);
 
 /** 이름 전체가 몇 칸인가. @param 배 가로 배율(1 또는 2) */
 export function 이름폭(배 = 1, 글자수 = 이름.length) {

@@ -109,7 +109,7 @@ const VERDICT_STYLE = {
 };
 
 /** 판정을 사람 말로. 모르는 값이면 그대로 돌려준다 — 지어내지 않는다. */
-export function verdictName(level) {
+function verdictName(level) {
   return VERDICT_NAME[level] ?? String(level ?? '');
 }
 

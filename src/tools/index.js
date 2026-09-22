@@ -187,7 +187,7 @@ export function 붙박이그림줄이기(줄들) {
  * 줄을 통째로 지워 버리는 경우가 더 흔하고, 그때는 표시도 같이 사라진다.
  * 그래서 **개수를 견준다** — 있던 것보다 줄었으면 잃은 것이다.
  */
-export function 박힌그림수(글) {
+function 박힌그림수(글) {
   return (String(글 ?? '').match(그림자리) ?? []).length;
 }
 

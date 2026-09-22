@@ -303,7 +303,7 @@ export function 웹되돌림(다음, { allowPrivate = false } = {}) {
  * 첫 주소만 이름을 풀어 보면 소용이 없다. 공개 주소로 시작해 302 한 번으로
  * 사내로 들어가는 것이 가장 흔한 길이라, 홉마다 같은 것을 물어야 한다.
  */
-export async function 웹되돌림검사(다음, { allowPrivate = false } = {}) {
+async function 웹되돌림검사(다음, { allowPrivate = false } = {}) {
   웹되돌림(다음, { allowPrivate });
   if (allowPrivate) return;
   const 푼것 = await 사설로풀리나(다음.hostname);

@@ -84,7 +84,7 @@ const 서명들 = [
 ];
 
 /** 앞 몇 바이트로 정체를 짚는다. 모르면 null. */
-export function 속내용(buf) {
+function 속내용(buf) {
   if (!Buffer.isBuffer(buf) || buf.length < 2) return null;
   for (const s of 서명들) {
     if (s.바이트.every((b, i) => buf[i] === b)) return s.이름;
@@ -103,7 +103,7 @@ export function 속내용(buf) {
  * @param {string} 갈래  겉으로 본 갈래 (pptx · docx · hwpx)
  * @param {string|null} 속  속내용() 이 짚은 것
  */
-export function 겉속다름말(갈래, 속) {
+function 겉속다름말(갈래, 속) {
   const 머리 = `겉은 ${갈래} 인데 속이 다릅니다`;
   if (!속) {
     return `${머리} — 무엇인지 알아보지 못했습니다 (zip 꾸러미가 아닙니다).\n`
@@ -182,7 +182,7 @@ const 끝이름 = (name) => {
  *   (tools/doc2md.js) — 마크다운 표는 칸이 몇 개인지 알아야 그릴 수 있고,
  *   이어 붙인 한 줄에서 그걸 되짚으면 글에 든 | 하나에 표가 어긋난다.
  */
-export function 문단뽑기(xml, 갈래, { 표를따로 = false } = {}) {
+function 문단뽑기(xml, 갈래, { 표를따로 = false } = {}) {
   const 표기 = 이름표[갈래];
   const 문단들 = [];
 

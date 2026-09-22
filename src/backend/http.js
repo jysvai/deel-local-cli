@@ -304,7 +304,7 @@ function 신호(timeout, signal) {
  */
 export const 잠잠기본 = 60000;
 
-export function 멎음오류(잠잠) {
+function 멎음오류(잠잠) {
   return Object.assign(
     new Error(`${초로(잠잠)}초 동안 아무것도 안 왔습니다 — 흐름이 멎었습니다`),
     { name: 'StallError', code: 'STALL', 잠잠 },

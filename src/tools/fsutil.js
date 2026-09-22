@@ -409,7 +409,7 @@ export function 훑기상한(env = process.env) {
  * 자주 쉬면 훑기 자체가 느려지고, 드물게 쉬면 그만큼 귀를 닫는다. 200개면
  * 사내망 드라이브에서도 한 숨 사이가 10ms 언저리다.
  */
-export const 숨쉴간격 = 200;
+const 숨쉴간격 = 200;
 const 한숨 = () => new Promise((풀기) => setImmediate(풀기));
 
 /**

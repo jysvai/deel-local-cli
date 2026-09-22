@@ -97,7 +97,7 @@ function 성한수(v) {
  *
  * llama.cpp 의 /props 나 일부 게이트웨이의 설명 필드도 같은 모양이다.
  */
-export function 글에서찾기(s, 이름들) {
+function 글에서찾기(s, 이름들) {
   const 글 = String(s ?? '');
   if (!글 || 글.length > 200000) return null;
   for (const 이름 of 이름들) {
@@ -122,7 +122,7 @@ export function 글에서찾기(s, 이름들) {
  * 어느 이름에서 찾았는지도 같이 돌려준다 — 값이 이상할 때 사람이 원인을
  * 짚을 수 있어야 한다. /ctx 자세히 가 이걸 보여 준다.
  */
-export function 파보기(obj, 이름들, { 글도 = true, depth = 0 } = {}) {
+function 파보기(obj, 이름들, { 글도 = true, depth = 0 } = {}) {
   if (!obj || typeof obj !== 'object' || depth > 5) return null;
   for (const key of 이름들) {
     const v = 성한수(obj[key]);

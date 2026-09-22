@@ -80,7 +80,7 @@ export function 프록시읽기(값) {
 }
 
 /** NO_PROXY 한 줄을 항목 배열로. */
-export function 우회목록(값) {
+function 우회목록(값) {
   return String(값 ?? '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
 }
 

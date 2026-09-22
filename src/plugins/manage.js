@@ -277,7 +277,7 @@ export function 이름한칸(이름) {
  * 자르는 자가 언젠가 틀릴 수 있다. 그때 마지막으로 서는 그물이다. 지우고
  * 쓰는 자리라 두 겹으로 막는다.
  */
-export function 플러그인자리인가(base, dest) {
+function 플러그인자리인가(base, dest) {
   const 뿌리 = resolve(base);
   const 갈곳 = resolve(dest);
   return 갈곳 !== 뿌리 && 갈곳.startsWith(뿌리 + sep);

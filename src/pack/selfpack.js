@@ -34,7 +34,7 @@ function walk(dir, base, out) {
   return out;
 }
 
-export function shippedFiles(root = repoRoot()) {
+function shippedFiles(root = repoRoot()) {
   const out = [];
   for (const d of SHIP) if (existsSync(join(root, d))) walk(join(root, d), root, out);
   for (const f of SHIP_FILES) if (existsSync(join(root, f))) out.push(f);
@@ -59,7 +59,7 @@ const PROBES = [
     note: '없어야 정상입니다' },
 ];
 
-export function scanCalls(root = repoRoot(), files = shippedFiles(root)) {
+function scanCalls(root = repoRoot(), files = shippedFiles(root)) {
   const found = Object.fromEntries(PROBES.map((p) => [p.id, []]));
   for (const f of files) {
     if (!f.endsWith('.js')) continue;

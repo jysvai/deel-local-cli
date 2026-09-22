@@ -581,7 +581,7 @@ export function detect(buf, { fallback = null, system = null, 잘림 = false } =
 
 // 이 컴퓨터가 쓰는 옛 인코딩. 콘솔 코드페이지를 물어봐서 정한다.
 let _sys = null;
-export function systemLegacy() {
+function systemLegacy() {
   if (_sys) return _sys;
   const cp = consoleCodepage();
   _sys = LEGACY.find((x) => x.cp === cp)?.id ?? 'windows-1252';

@@ -195,7 +195,7 @@ export function 알릴말(지금conn, 새conn) {
 /**
  * 지금 붙어 있는 프로필. `/ask` 가 '나 자신에게 묻기' 를 걸러낼 때 쓴다.
  */
-export function 지금프로필(cfg = load()) {
+function 지금프로필(cfg = load()) {
   return activeProfile(cfg);
 }
 

@@ -3083,8 +3083,8 @@
       "곳": "src/config.js",
       "무엇": "정책의 offline:\"true\" 를 봉인으로 안 친다",
       "그러면": "관리자가 따옴표를 붙여 적은 봉인이 안 걸린다. 사람은 봉인된 줄 알고 바깥 주소를 쓴다",
-      "찾을것": "  if (정책.offline === true || 정책.offline === 'true') cfg.offline = true;",
-      "바꿀것": "  if (정책.offline === true) cfg.offline = true;",
+      "찾을것": "  if (정책.offline === true || 정책.offline === 'true') {",
+      "바꿀것": "  if (정책.offline === true) {",
       "검사": "test/policy.test.js"
     },
     {
@@ -3227,7 +3227,7 @@
       "곳": "src/acp/serve.js",
       "무엇": "cwd 가 절대 경로인지 보지 않는다.",
       "그러면": "있는 폴더를 가리키는 상대 경로가 띄운 자리 기준으로 풀려 세션이 열린다.",
-      "찾을것": "      if (!isAbsolute(준자리)) throw 잘못된인자오류(`cwd 는 절대 경로여야 합니다: ${준자리}`);",
+      "찾을것": "      if (!isAbsolute(준자리)) throw 잘못된인자오류(`cwd 는 절대 경로여야 합니다: ${준자리 || '(빈 글)'}`);",
       "바꿀것": "      // (어긋냄) 절대 경로 검사 뺌",
       "검사": "test/acp.test.js"
     },
@@ -5572,7 +5572,7 @@
       "곳": "src/safety/guard.js",
       "무엇": "자리표풀기 가 `~이름` 을 안 푼다 (사냥5 R5-M1)",
       "그러면": "`cat ~admin/.ssh/id_rsa` 가 작업 폴더 아래 `./~admin/…` 로 읽혀 범위 안이라며 남의 열쇠를 읽는다",
-      "찾을것": "(전체, 이름) => resolve(dirname(homedir()), 이름))",
+      "찾을것": "(전체, 이름) => 남의집(이름))",
       "바꿀것": "(전체) => 전체)",
       "검사": "test/guard.test.js"
     },
@@ -5999,7 +5999,7 @@
       "곳": "src/acp/serve.js",
       "무엇": "session/load 가 폴더를 안 보고 이름만으로 열린 방을 돌려준다",
       "그러면": "B 폴더의 대화를 되살리라는데 같은 이름의 A 폴더 방이 나가, 그 뒤 한 말이 A 에 적히고 A 를 고친다 (사냥5 H5-1)",
-      "찾을것": "const 방 = 있던방 && 같은자리(있던방.root, 바란자리) ? 있던방 : await 방만들기(인자, { 아이디 });",
+      "찾을것": "const 방 = 있던방 && 바란자리 && 같은자리(있던방.root, 바란자리) ? 있던방 : await 방만들기(인자, { 아이디 });",
       "바꿀것": "const 방 = 있던방 ?? await 방만들기(인자, { 아이디 });",
       "검사": "test/acp.test.js"
     },
@@ -6143,8 +6143,8 @@
       "곳": "src/completion.js",
       "무엇": "_deel_paths 가 줄 단위로 안 읽고 단어로 쪼개 담는다",
       "그러면": "빈칸 든 파일·폴더 이름이 조각난 후보로 나온다 (사냥5 H5-11)",
-      "찾을것": "while IFS= read -r _deel_l; do COMPREPLY+=(\"$_deel_l\"); done < <(compgen \"$1\" -- \"$cur\")",
-      "바꿀것": "COMPREPLY=( $(compgen \"$1\" -- \"$cur\") )",
+      "찾을것": "while IFS= read -r _deel_l; do COMPREPLY+=(\"$_deel_l\"); done < <(compgen \"$1\" -- \"$_deel_c\")",
+      "바꿀것": "COMPREPLY=( $(compgen \"$1\" -- \"$_deel_c\") )",
       "검사": "test/completion.test.js"
     },
     {
@@ -6672,9 +6672,12 @@
       "곳": "src/tools/fsutil.js",
       "무엇": "내부살림 이 `:스트림` 꼬리를 안 벗긴다",
       "그러면": "`.deel/config.json::$DATA` 로 Read 가 열쇠를 읽고 Write 가 설정 본체를 덮는다",
-      "찾을것": "  const 조각 = 편.split('/').map((x, 몇째) => (몇째 === 0 && /^[A-Za-z]:$/.test(x) ? x : x.replace(/:.*$/s, '')));",
+      "찾을것": "  const 조각 = 편.split('/').map((x, 몇째) => (!스트림꼴 || (몇째 === 0 && /^[A-Za-z]:$/.test(x)) ? x : x.replace(/:.*$/s, '')));",
       "바꿀것": "  const 조각 = 편.split('/');",
-      "검사": "test/도구정직.test.js"
+      "검사": "test/도구정직.test.js",
+      "잴곳": [
+        "win32"
+      ]
     },
     {
       "곳": "src/safety/guard.js",
@@ -10989,8 +10992,8 @@
       "곳": "src/agent/project.js",
       "무엇": "떨어져 나온 머리를 주석과 다른 말로 적는다",
       "그러면": "135-136 주석이 「가지 없음 이라고 말한다」 고 적어 둔 것과 코드가 어긋나, 그 말을 찾는 쪽이 못 찾는다",
-      "찾을것": "export const 떨어진머리 = '가지 없음 (detached)';",
-      "바꿀것": "export const 떨어진머리 = '가지에 안 붙어 있음 (detached)';",
+      "찾을것": "const 떨어진머리 = '가지 없음 (detached)';",
+      "바꿀것": "const 떨어진머리 = '가지에 안 붙어 있음 (detached)';",
       "검사": "test/project.test.js"
     },
     {

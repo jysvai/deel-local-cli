@@ -14,8 +14,8 @@ import { 그림장수, 글만 } from '../backend/vision.js';
 
 // 몇 %에서 접기 시작할지. 접고 나서 다시 금방 차면 아무 소용이 없으니 넉넉히 비운다.
 export const COMPACT_AT = 0.8;
-export const KEEP_TAIL_RATIO = 0.3;   // 최근 대화 중 남길 비율
-export const KEEP_HEAD = 2;           // 맨 처음 요청은 언제나 남긴다 (목표가 거기 있다)
+const KEEP_TAIL_RATIO = 0.3;   // 최근 대화 중 남길 비율
+const KEEP_HEAD = 2;           // 맨 처음 요청은 언제나 남긴다 (목표가 거기 있다)
 
 /*
  * ── 그 전에, 도구 결과부터 접는다 ──────────────────────────────────────
@@ -37,7 +37,7 @@ export const KEEP_HEAD = 2;           // 맨 처음 요청은 언제나 남긴�
  */
 export const FOLD_AT = 0.55;      // 이 아래로는 접을 이유가 없다
 export const KEEP_RECENT = 4;     // 최근 도구 결과 이만큼은 원문 그대로 둔다
-export const FOLD_MIN = 300;      // 이보다 작으면 접어도 자리가 안 준다 (글자 수)
+const FOLD_MIN = 300;      // 이보다 작으면 접어도 자리가 안 준다 (글자 수)
 export const 접힘표 = '(접힘)';
 
 /*
@@ -109,7 +109,7 @@ export const 캐시일때비울몫 = 0.10;
  * (여기가 「두 번 넘게」 라고 적혀 있었다. 아래 셈은 두 번째에 이미 단정한다 —
  * 한 번의 차이지만, 적힌 것과 하는 것이 다르면 다음 사람이 그 값을 못 믿는다.)
  */
-export const 재볼기회 = 2;
+const 재볼기회 = 2;
 
 export function 캐시가도나(session) {
   const u = session?.usage ?? {};
