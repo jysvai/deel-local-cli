@@ -275,6 +275,19 @@ function 파일크기(abs) {
 }
 
 /*
+ * 쓴 자리에 **파일이 생겼나** (2.0.2 · 379). 안 생겼으면 그 말을 돌려준다.
+ *
+ * 윈도 10 까지는 `NUL`·`CON`·`aux.txt` 같은 이름이 파일이 아니라 장치다 — 쓰기는 성공하고
+ * 아무것도 안 남는다. 그런데 화면은 `새로 만듦: NUL (1줄)` 이었다. 윈도 11 은 진짜 파일을
+ * 만들어서 판마다 다르다 — 이름을 외우지 않고 **쓴 결과**를 본다. Write·Append·한글 문서가
+ * 같이 쓴다.
+ */
+export function 파일안생김(ctx, abs) {
+  try { if (statSync(abs).isFile()) return null; } catch { /* 없다 — 아래 말 */ }
+  return { error: `${ctx.scope.show(abs)} 에 썼는데 파일이 안 생겼습니다 — 윈도가 이 이름(NUL·CON·AUX·COM1 따위)을 장치로 읽습니다. 다른 이름을 쓰세요.` };
+}
+
+/*
  * ── 크기만으로는 「그 파일 그대로」 를 모른다 ─────────────────────────────
  *
  * Append 의 두 기억(인코딩 · 줄 수)이 「크기가 같으면 남이 안 건드렸다」 로
@@ -1439,6 +1452,7 @@ function hwpx새로만들기(args, ctx, abs) {
     writeFileSync(abs, 만듦.buf);
   }, () => !existsSync(abs));
   if (못씀) return 못씀;
+  { const 탈 = 파일안생김(ctx, abs); if (탈) return 탈; }
   /*
    * `seen` 에 안 올린다.
    *
@@ -1608,6 +1622,7 @@ function 한파일쓰기(args, ctx) {
       writeFileSync(abs, 만든것.buf);
     }, () => (existed ? !!읽음 && readFileSync(abs).equals(읽음.buf) : !existsSync(abs)));
     if (못씀) return 못씀;
+    { const 탈 = 파일안생김(ctx, abs); if (탈) return 탈; }
     ctx.seen.add(abs);
     const n = args.content.split('\n').length;
     const 표기 = 원래 !== 'utf-8' ? ` · ${encLabel(원래)}${짐작이다 ? ' (짐작)' : ''}` : '';
@@ -2452,6 +2467,7 @@ export const TOOLS = {
         else writeFileSync(abs, 만든것.buf);
       }, () => (existed ? 파일크기(abs) === 지금크기 : !existsSync(abs)));
       if (못씀) return 못씀;
+      { const 탈 = 파일안생김(ctx, abs); if (탈) return 탈; }
       // 붙인 **뒤** 앞머리로 적어 둔다. 64KB 보다 작던 파일은 붙인 조각이 앞머리에 든다.
       잰것캐시.set(abs, {
         지문: 지금크기 >= 인코딩볼바이트 ? 앞지문 : 표본지문(앞머리(abs, 인코딩볼바이트)),

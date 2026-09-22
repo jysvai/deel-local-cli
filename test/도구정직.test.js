@@ -20,11 +20,11 @@
 //
 // 그래서 여기서는 화면 문구가 아니라 **도구가 돌려준 것**을 잰다. 화면은
 // 그 값을 그리는 것뿐이라, 값이 틀리면 화면도 반드시 틀린다.
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync, chmodSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { trace } from './trace.mjs';
-import { TOOLS, runTool } from '../src/tools/index.js';
+import { TOOLS, runTool, 파일안생김 } from '../src/tools/index.js';
 import { History } from '../src/safety/undo.js';
 import { makeScope } from '../src/safety/guard.js';
 import { 실을글 } from '../src/agent/loop.js';
@@ -713,6 +713,34 @@ trace('10-스키마-약속');
   // 여태 참이던 약속은 그대로여야 한다 — 없앤 것이 아니라 사실대로 고치는 것이다.
   check('  짝: .xlsx 는 여전히 그대로 읽는다고 말한다', /\.xlsx/.test(설명), 설명);
   check('  짝: 한글·워드·파워포인트 이야기는 그대로 있다', /\.hwpx/.test(설명), 설명);
+}
+
+trace('20-장치이름');
+/*
+ * ── `NUL`·`aux.txt` 에 쓰고 「새로 만듦」 이라 하지 않는다 (2.0.2 · 379) ─────────
+ *
+ * 윈도 10 까지는 그 이름이 장치라 쓰기는 되고 아무것도 안 남는다. 윈도 11 은 진짜 파일을
+ * 만든다 — 그래서 **말과 디스크가 같은가**만 본다(어느 판이든 참이어야 한다). 판정 자체는
+ * 폴더(파일이 아닌 것)로 잰다.
+ */
+{
+  const { root, ctx } = 판만들기();
+  mkdirSync(join(root, '폴더'));
+  writeFileSync(join(root, '글.txt'), 'x');
+  const 폴더답 = 파일안생김(ctx, join(root, '폴더'));
+  check('★★ 379 쓴 자리가 파일이 아니면 「안 생겼다」 고 말한다', /파일이 안 생겼습니다/.test(폴더답?.error ?? ''), JSON.stringify(폴더답));
+  check('  파일이면 아무 말 없다', 파일안생김(ctx, join(root, '글.txt')) === null);
+  check('  아예 없으면 「안 생겼다」', /안 생겼습니다/.test(파일안생김(ctx, join(root, '없음.txt'))?.error ?? ''));
+  if (process.platform === 'win32') {
+    for (const 이름 of ['NUL', 'aux.txt', 'CON']) {
+      ctx.history.nextTurn();
+      const r = await runTool('Write', { file_path: 이름, content: 'x' }, ctx);
+      const 생김 = existsSync(join(root, 이름)) && statSync(join(root, 이름)).isFile();
+      check(`★ 379 Write ${이름} — 말과 디스크가 같다`,
+        생김 ? /새로 만듦/.test(r.content ?? '') : /안 생겼습니다/.test(r.error ?? ''),
+        `${생김 ? '파일 생김' : '안 생김'} · ${r.content ?? r.error}`);
+    }
+  }
 }
 
 trace('10-끝');

@@ -13808,6 +13808,14 @@
       "찾을것": "    if (이유) throw new BlockedError(`${이유}\\n  이 명령 안에 있습니다: ${cmd.slice(0, 120)}`);",
       "바꿀것": "    if (이유) throw new Error(`${이유}\\n  이 명령 안에 있습니다: ${cmd.slice(0, 120)}`);",
       "검사": "test/smoke.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "쓴 뒤 그 자리가 파일인지 안 본다 (2.0.2 · 379)",
+      "그러면": "윈도 10 에서 `NUL`·`aux.txt` 에 쓰면 아무것도 안 남는데 「새로 만듦: NUL (1줄)」 이라 한다",
+      "찾을것": "  try { if (statSync(abs).isFile()) return null; } catch { /* 없다 — 아래 말 */ }",
+      "바꿀것": "  try { if (statSync(abs)) return null; } catch { /* 없다 — 아래 말 */ }",
+      "검사": "test/도구정직.test.js"
     }
   ]
 }
