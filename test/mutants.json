@@ -13750,7 +13750,7 @@
       "무엇": "남의집 이 넘겨받은 판이 아니라 이 PC 의 판으로 경로를 센다 (2.0.2 · 388)",
       "그러면": "리눅스에서 윈도 판을 물으면 C:\\Users\\me 가 상대경로로 읽혀 남의 집이 작업 폴더 밑이 된다 — 판을 넘기는 검사가 엉뚱한 자리를 잰다",
       "찾을것": "  const 길 = platform === 'win32' ? win32 : posix;",
-      "바꿀것": "  const 길 = { dirname, resolve, parse, join };",
+      "바꿀것": "  const 길 = process.platform === 'win32' ? win32 : posix;",
       "검사": "test/guard.test.js",
       "잴곳": [
         "linux"

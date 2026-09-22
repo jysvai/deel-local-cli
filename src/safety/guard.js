@@ -1,7 +1,7 @@
 // 자율 실행의 울타리.
 // 승인 프롬프트를 안 쓰는 대신 (1) 작업 범위 밖은 못 건드리고
 // (2) 되돌릴 수 없는 명령만 막는다. 나머지는 전부 통과시킨다.
-import { resolve, relative, isAbsolute, sep, dirname, basename, parse, join, win32, posix } from 'node:path';
+import { resolve, relative, isAbsolute, sep, dirname, basename, win32, posix } from 'node:path';
 import { realpathSync, existsSync, readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { 내부살림 } from '../tools/fsutil.js';
