@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-13%2C900%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-14%2C089%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -316,7 +316,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 2.0.1  ⌂ 이 안
+ deel 2.0.2  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -1240,7 +1240,7 @@ deel stats                    # 이 폴더에서 실제로 무엇을 했나 (.de
 ## 개발
 
 ```bash
-npm test          전체 검증 (13,941항목 — 몇몇은 터미널에 따라 갈립니다)
+npm test          전체 검증 (14,089항목 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -1297,7 +1297,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 | `exitcode` · `doorparity` | 7 · 19 | 화면에 적은 종료코드 표가 진짜인가 · 문 **네 개**가 같은 것을 주는가 |
 | `no-bundle` | 28 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
 | `edit-bench` | 15건 | 편집 성공률 |
-| `mutate` | 어긋 1,662개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
+| `mutate` | 어긋 1,723개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
 
 > **자세히** — 어디를 밟았는지 · 폴더 구조
 >
@@ -1309,7 +1309,8 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[2.0.1](docs/ko/releases/2.0.md#201)** | 울타리 하나가 안 걸렸습니다 — `sudo -u root bash` 가 `curl … \| bash` 막이를 지나갔습니다 — 그리고 관문 넷이 빨개질 수 없었습니다 |
+| **[2.0.2](docs/ko/releases/2.0.md#202)** | 2.0.1 까지 넘겨 둔 것을 다 잡았습니다 — `deel run` 에만 없던 MCP 도구, 끝난 명령의 번호로 가던 `taskkill`, 한 번 넘어지면 세션 내내 못 쓰던 MCP 서버 |
+| [2.0.1](docs/ko/releases/2.0.md#201) | 울타리 하나가 안 걸렸습니다 — `sudo -u root bash` 가 `curl … \| bash` 막이를 지나갔습니다 — 그리고 관문 넷이 빨개질 수 없었습니다 |
 | [2.0.0](docs/ko/releases/2.0.md#200) | 있다고 적힌 울타리마다 실제로 걸리는지 다시 봤습니다 — 바뀐 것 전부·어디를 어떻게 고쳤나·어떻게 찾았나(CHA) |
 
 <p align="center">

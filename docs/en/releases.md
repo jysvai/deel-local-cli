@@ -9,7 +9,8 @@ and everything before it is **collected into one**.
 
 | | Where | What |
 |---|---|---|
-| **Current** | **[2.0.x](releases/2.0.md)** | [2.0.1](releases/2.0.md#201) — One fence in 2.0.0 did not hold, and four gates were guarding nothing |
+| **Current** | **[2.0.x](releases/2.0.md)** | [2.0.2](releases/2.0.md#202) — Everything 2.0.1 left as low, deferred or unmeasured, closed |
+| | | [2.0.1](releases/2.0.md#201) — One fence in 2.0.0 did not hold, and four gates were guarding nothing |
 | | | [2.0.0](releases/2.0.md#200) — Every fence we said was there, checked for whether it actually holds |
 | Older | [1.x archive](releases/1.x.md) | 1.2.0 through 1.20.13, one line each |
 

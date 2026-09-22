@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-13%2C900%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-14%2C089%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -389,7 +389,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.0.1  ⌂ inside
+ deel 2.0.2  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1334,7 +1334,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (13,941 checks; a few are TTY-dependent)
+npm test          Full suite (14,089 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1378,7 +1378,7 @@ so one run tells you everything.
 | `exitcode` · `doorparity` | 7 · 19 | The printed exit-code table is real · all **four** doors hand out the same thing |
 | `no-bundle` | 28 | Nothing foreign in the published package; test-file hygiene |
 | `edit-bench` | 15 cases | Edit success rate |
-| `mutate` | 1,662 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
+| `mutate` | 1,723 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
 
 > **More** — Coverage · Layout
 >
@@ -1390,7 +1390,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.0.1](docs/en/releases/2.0.md#201)** | One fence in 2.0.0 did not hold — `sudo -u root bash` walked through the `curl … \| bash` guard — and four gates could not go red |
+| **[2.0.2](docs/en/releases/2.0.md#202)** | Everything 2.0.1 left open, closed — MCP tools missing only from `deel run`, `taskkill` sent to an exited command's pid, MCP servers that stayed down for the session after one crash |
+| [2.0.1](docs/en/releases/2.0.md#201) | One fence in 2.0.0 did not hold — `sudo -u root bash` walked through the `curl … \| bash` guard — and four gates could not go red |
 | [2.0.0](docs/en/releases/2.0.md#200) | Every fence we said was there, checked for whether it actually holds — everything that changed, where and how it was fixed, and how it was found (CHA) |
 
 <p align="center">
