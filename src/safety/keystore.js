@@ -222,7 +222,7 @@ export function 잠그기(글, { 프로필id = null } = {}) {
 
   if (process.platform === 'win32') {
     const r = 파워셸실행(잠그는스크립트, Buffer.from(값, 'utf8').toString('base64'));
-    if (r.ok && r.out) return `dpapi:${r.out}`;
+    if (r.ok && r.out) return 됐다(`dpapi:${r.out}`);
     못잠근까닭 = r.err || '파워셸이 잠그기를 못 마쳤습니다';
     해보고졌나 = true;
     return null;
@@ -230,7 +230,7 @@ export function 잠그기(글, { 프로필id = null } = {}) {
   if (process.platform === 'darwin') {
     const 이름 = 키체인이름(프로필id);
     const r = 키체인넣기(값, 이름);
-    if (r.ok) return `keychain:${이름}`;
+    if (r.ok) return 됐다(`keychain:${이름}`);
     못잠근까닭 = r.err || 'security 가 열쇠를 못 넣었습니다';
     해보고졌나 = true;
     return null;
@@ -282,7 +282,22 @@ let 못잠근까닭 = null;
  */
 let 해보고졌나 = false;
 
-/** 마지막으로 잠그다 실패한 까닭. 한 번도 실패한 적이 없으면 null. */
+/*
+ * ── 되고 나면 옛 실패를 **내려놓는다** (2.0.2 · 530) ──────────────────────
+ *
+ * 잠그기가 한 번 지면 그 까닭이 프로세스 내내 남았다. 뒤에 같은 판에서 잠그기가 되어도
+ * (파워셸이 잠깐 막혔다 풀림 · 키체인이 잠겼다 열림) 보관방식() 은 평문 값을 보면 여전히
+ * 「잠그려다 실패했습니다」 라고 적었다 — 지금은 되는 장치를 안 된다고 말하는 것이다.
+ * 되면 지운다. config.js 가 「몇 개를 왜 못 잠갔나」 에 쓰는 까닭은 그쪽이 **진 순간에**
+ * 받아 둔다(잠금옮기기).
+ */
+function 됐다(값) {
+  못잠근까닭 = null;
+  해보고졌나 = false;
+  return 값;
+}
+
+/** 마지막으로 잠그다 실패한 까닭. 한 번도 실패한 적이 없으면(또는 그 뒤로 됐으면) null. */
 export function 잠그다실패한까닭() { return 못잠근까닭; }
 
 /** 사람이 스스로 껐나. 껐으면 이 판에서는 **아무것도 안 해 본다.** */

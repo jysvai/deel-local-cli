@@ -18,7 +18,7 @@
 //   · 승인을 못 물어봤을 때 마음대로 하지 않는가
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -1052,6 +1052,12 @@ trace('5-1-악수');
     } catch (err) { 없음오류 = err; }
     check('★ 없는 폴더 cwd 는 -32602 로 거절한다', 없음오류?.code === -32602, `${없음오류?.code} · ${없음오류?.message}`);
     check('★ 없는 폴더를 새로 만들지 않는다', !existsSync(join(work, `없는폴더-${process.pid}`)), 없는곳);
+    // 빈 글 cwd 는 준 것이다 — 안 준 것으로 쳐서 --root 로 바꿔 열지 않는다 (2.0.2 · 508).
+    let 빈오류 = null;
+    try {
+      await 시간제한(e.요청('session/new', { cwd: '', mcpServers: [] }), 20000, 'session/new 빈 cwd');
+    } catch (err) { 빈오류 = err; }
+    check('★ 508 빈 글 cwd 도 -32602 로 거절한다', 빈오류?.code === -32602, `${빈오류?.code} · ${빈오류?.message}`);
 
     /*
      * ── ★★ 대화 이름으로 대화 폴더 밖을 읽고 적었다 ────────────────────────
@@ -2304,6 +2310,37 @@ trace('6회차-N9-두연결-두탭');
 srv.close();
 rmSync(home, { recursive: true, force: true });
 rmSync(work, { recursive: true, force: true });
+
+trace('20-자리열쇠');
+/*
+ * ── 한 폴더를 두 벌로 세지 않는다 (2.0.2 · 508) ──────────────────────────────
+ *
+ * 폴더를 글자로 견줬다(윈도에서만 소문자로). 정션·심링크로 들어온 길, 맥의 대소문자만 다른 길이
+ * 다른 폴더로 셌다 — MCP 서버를 한 벌 더 띄우고, 같은 대화를 「다른 폴더로 열려 있다」 며 거절했다.
+ */
+{
+  const { 자리열쇠 } = await import('../src/acp/serve.js');
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-acp-자리-'));
+  const 진짜 = join(방, 'Proj');
+  mkdirSync(진짜);
+  const 링크 = join(방, '다른길');
+  let 링크됨 = true;
+  try { symlinkSync(진짜, 링크, 'junction'); } catch { 링크됨 = false; }
+  check('★★ 508 정션·심링크로 들어온 길도 같은 자리로 본다', 링크됨 && 자리열쇠(링크) === 자리열쇠(진짜),
+    링크됨 ? `${자리열쇠(링크)} · ${자리열쇠(진짜)}` : '(링크를 못 만들었다)');
+  if (process.platform === 'win32') {
+    const 앞 = 진짜[0];
+    const 바꾼 = (앞 === 앞.toUpperCase() ? 앞.toLowerCase() : 앞.toUpperCase()) + 진짜.slice(1);
+    check('★ 508 (윈도) 드라이브 글자 대소문자만 다르면 같은 자리', 자리열쇠(바꾼) === 자리열쇠(진짜), `${바꾼} · ${진짜}`);
+  }
+  // 대소문자를 안 가리는 파일 시스템(윈도·맥 기본)에서만 이 길이 있다.
+  const 큰 = join(방, 'PROJ');
+  if (existsSync(큰)) check('★★ 508 대소문자를 안 가리는 폴더면 대소문자만 다른 길도 같은 자리', 자리열쇠(큰) === 자리열쇠(진짜), `${자리열쇠(큰)} · ${자리열쇠(진짜)}`);
+  check('  다른 폴더는 다른 자리', 자리열쇠(방) !== 자리열쇠(진짜));
+  check('  없는 자리도 글자로는 견준다', 자리열쇠(join(방, '없음')) === 자리열쇠(join(방, '.', '없음')));
+  try { rmSync(방, { recursive: true, force: true }); } catch { /* 링크가 남아도 임시 폴더다 */ }
+}
+
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\nACP 검사  ${D}(에디터 안에서 deel 이 도는가)${X}\n`);

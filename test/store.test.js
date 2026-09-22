@@ -990,6 +990,28 @@ rmSync(빈폴더, { recursive: true, force: true });
   check("★★★ 그래서 다음 되감기가 실제로 걷는다", 뒤것.걷은것 > 0, JSON.stringify(뒤것));
 }
 
+/*
+ * ── 새로 연 창(우리가 지은 이름)도 남이 적는지 본다 (2.0.2 · 527) ──────────────
+ *
+ * 다른 창이 `--continue` 로 이 대화를 집어 오면, 뒤에 연 창만 멈추고 먼저 연 창은 그 창의
+ * 줄 사이에 제 줄을 섞었다. 접으면 그 창의 줄을 통째로 지웠다. 먼저 적은 쪽이 이어 간다.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-store-527-'));
+  const 가 = new Store(방).begin({ model: '검사용', root: 방 });   // 새로 연 창 — 이름은 우리가 지었다
+  const 나 = new Store(방, 가.id).begin({ model: '검사용', root: 방 });   // 다른 창이 --continue 로 같은 대화를 연다
+  나.append({ role: 'user', content: '나 창이 먼저 적는다' });
+  가.append({ role: 'user', content: '가 창이 섞어 적는다' });
+  const 글 = readFileSync(가.file, 'utf8');
+  check('★★ 527 지은 이름의 창도 남이 적은 뒤에는 섞어 적지 않는다',
+    가.auto && !글.includes('가 창이 섞어 적는다') && 가.못쓴것()?.까닭 === 'OTHER_WINDOW', JSON.stringify(가.못쓴것()));
+  가.replace([{ role: 'user', content: '가 창의 요약' }], '압축');
+  check('★★ 527 그리고 접기로 남의 줄을 지우지 않는다', readFileSync(가.file, 'utf8').includes('나 창이 먼저 적는다'));
+  나.append({ role: 'user', content: '나 창이 이어 적는다' });
+  check('  먼저 적은 쪽은 그대로 이어 적는다', readFileSync(가.file, 'utf8').includes('나 창이 이어 적는다') && !나.못쓴것(), JSON.stringify(나.못쓴것()));
+  rmSync(방, { recursive: true, force: true });
+}
+
 rmSync(root, { recursive: true, force: true });
 
 const G ='\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

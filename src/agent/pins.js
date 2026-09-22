@@ -43,9 +43,14 @@ export class 못박기 {
     this.것들 = this.것들.slice(0, 최대개수);
   }
 
+  /*
+   * 견줄 때는 NFC 로 맞춘다 (2.0.2 · 429). 맥에서 친 한글은 자모로 풀린 꼴(NFD)로 오기도 해서,
+   * 같은 「운영 DB 는 건드리지 마라」 가 두 번 박혔다 — 매 턴 실리는 자리를 같은 말이 둘 먹는다.
+   */
   #이미있나(말) {
-    const 낮 = 말.toLowerCase();
-    return this.것들.some((x) => x.toLowerCase() === 낮);
+    const 열쇠 = (x) => x.normalize('NFC').toLowerCase();
+    const 낮 = 열쇠(말);
+    return this.것들.some((x) => 열쇠(x) === 낮);
   }
 
   /**

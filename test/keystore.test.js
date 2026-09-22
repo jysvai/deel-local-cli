@@ -453,6 +453,32 @@ trace('11-0600-은-윈도우에서-거짓말');
     typeof 잠그다실패한까닭() === 'string' && 잠그다실패한까닭().length > 0, String(잠그다실패한까닭()));
 }
 
+/*
+ * ── 잠그기가 **나중에 되면** 옛 실패를 내려놓는다 (2.0.2 · 530) ──────────────
+ *
+ * 한 번 진 까닭이 프로세스 내내 남아서, 뒤에 잠그기가 되어도 보관방식() 이 평문 값에
+ * 「잠그려다 실패했습니다」 라고 적었다. 앞 절처럼 **이 판에 없는 쪽** 장치로 몰아 먼저 지게
+ * 하고, 진짜 장치로 한 번 잠가 본다. 잠금장치가 없는 판(리눅스)은 될 길이 없어 못 잰다.
+ */
+{
+  const 원래 = process.platform;
+  const 없는쪽 = 원래 === 'darwin' ? 'win32' : 'darwin';
+  Object.defineProperty(process, 'platform', { value: 없는쪽, configurable: true });
+  잠그기('sk-먼저-진다');
+  Object.defineProperty(process, 'platform', { value: 원래, configurable: true });
+  const 앞 = 잠그다실패한까닭();
+  if (잠금장치.되나 && (원래 === 'win32' || 원래 === 'darwin')) {
+    const 됨 = 잠그기('sk-이번에는-된다');
+    const 뒤 = 보관방식('sk-평문으로둔것');
+    check('★★ 530 잠그기가 되고 나면 옛 실패 까닭을 안 들고 있다',
+      !!앞 && !!됨 && 잠그다실패한까닭() === null && !/잠그려다 실패/.test(뒤),
+      `${앞} → ${잠그다실패한까닭()} · ${뒤}`);
+    if (원래 === 'darwin' && 됨) { try { 잠금지우기(됨); } catch { /* 이미 없다 */ } }
+  } else {
+    check('(잠금장치 없음) 진 뒤에 되는 판은 윈도우·맥에서 잽니다', !!앞, String(앞));
+  }
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log('\n열쇠 보관 검사\n');
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? D + '  ' + p.note + X : ''}`);

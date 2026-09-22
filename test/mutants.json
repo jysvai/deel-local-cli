@@ -13625,6 +13625,49 @@
       "찾을것": "  if (게으르게 && (새로띄운게있나 || 걷을것)) {",
       "바꿀것": "  if (게으르게 && 새로띄운게있나) {",
       "검사": "test/mcp.test.js"
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "잠그기가 되어도 옛 실패 까닭을 안 내려놓는다 (2.0.2 · 530)",
+      "그러면": "한 번 막혔다 풀린 뒤에도 보관방식() 이 평문 값에 「잠그려다 실패했습니다」 라고 적는다 — deel report · 심사서에 그대로 실린다",
+      "찾을것": "function 됐다(값) {\n  못잠근까닭 = null;\n  해보고졌나 = false;",
+      "바꿀것": "function 됐다(값) {",
+      "검사": "test/keystore.test.js",
+      "잴곳": [
+        "win32"
+      ]
+    },
+    {
+      "곳": "src/agent/pins.js",
+      "무엇": "핀 중복을 NFC 로 안 맞춰 본다 (2.0.2 · 429)",
+      "그러면": "맥에서 친 같은 한글 핀이 두 번 박혀 매 턴 실리는 자리를 둘 먹는다",
+      "찾을것": "    const 열쇠 = (x) => x.normalize('NFC').toLowerCase();",
+      "바꿀것": "    const 열쇠 = (x) => x.toLowerCase();",
+      "검사": "test/pins.test.js"
+    },
+    {
+      "곳": "src/agent/store.js",
+      "무엇": "우리가 지은 이름의 창은 남이 적는지 안 본다 (2.0.2 · 527)",
+      "그러면": "다른 창이 --continue 로 이 대화를 열면 두 대화가 한 파일에 섞이고, 접으면 그 창의 줄이 통째로 지워진다",
+      "찾을것": "    if (this.#끝자리 == null) return false;",
+      "바꿀것": "    if (this.auto || this.#끝자리 == null) return false;",
+      "검사": "test/store.test.js"
+    },
+    {
+      "곳": "src/acp/serve.js",
+      "무엇": "폴더를 실제 자리로 안 펴고 글자로 견준다 (2.0.2 · 508)",
+      "그러면": "정션·심링크·맥의 대소문자만 다른 길로 연 같은 폴더에 MCP 서버를 한 벌 더 띄우고, 같은 대화를 다른 폴더라며 거절한다",
+      "찾을것": "  try { r = realpathSync.native(r); } catch { /* 없거나 못 읽는 자리 — 글자로 견준다 */ }",
+      "바꿀것": "",
+      "검사": "test/acp.test.js"
+    },
+    {
+      "곳": "src/acp/serve.js",
+      "무엇": "빈 글 cwd 를 안 준 것으로 친다 (2.0.2 · 508)",
+      "그러면": "에디터가 cwd 를 못 채워 보내면 --root(없으면 띄운 자리)를 작업 폴더로 조용히 연다",
+      "찾을것": "    const 준자리 = typeof 요청?.cwd === 'string' ? 요청.cwd : null;",
+      "바꿀것": "    const 준자리 = typeof 요청?.cwd === 'string' && 요청.cwd ? 요청.cwd : null;",
+      "검사": "test/acp.test.js"
     }
   ]
 }

@@ -27,7 +27,7 @@
 // 그래서 여기서 process.stdout.write 를 통째로 바꿔 끼운다. 부르는 자리를
 // 하나하나 찾아 막는 방법도 있지만, 그건 앞으로 새로 쓰는 코드까지 계속
 // 조심해야 한다는 뜻이다 — 언젠가 반드시 한 군데를 빠뜨린다.
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, statSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import { 규칙모으기, 늘허락, 정책읽기 } from '../safety/policy.js';
@@ -74,6 +74,22 @@ export const 규격판 = 1;
  *
  * @returns {(줄: string) => void} 진짜 표준출력으로 쓰는 함수. ACP 만 이걸 쓴다
  */
+/**
+ * 두 폴더 글이 **같은 자리**인가를 가르는 열쇠 (2.0.2 · 508).
+ *
+ * 글자로 견줬다(윈도에서만 소문자로). 그래서 한 폴더가 두 벌로 셌다 —
+ * 맥(대소문자를 안 가리는 APFS)의 `/Users/me/Proj` 와 `/users/me/proj`, 정션·심링크로 들어온 길,
+ * 8.3 짧은 이름. 같은 폴더인데 MCP 서버를 한 벌 더 띄우고, 같은 대화를 「다른 폴더로 열려
+ * 있다」 며 거절했다. 실제 자리(realpath)로 편 뒤에 견준다 — 맥·윈도의 realpath 는 디스크에
+ * 적힌 대소문자로 돌려준다. 윈도는 드라이브 글자(`C:` · `c:`)까지 맞추려고 소문자로 한 번 더 편다.
+ * 없는 자리면 글자 그대로 편다(견줄 것은 견준다).
+ */
+export function 자리열쇠(p) {
+  let r = resolve(String(p ?? ''));
+  try { r = realpathSync.native(r); } catch { /* 없거나 못 읽는 자리 — 글자로 견준다 */ }
+  return process.platform === 'win32' ? r.toLowerCase() : r;
+}
+
 export function 표준출력잠그기() {
   const 진짜 = process.stdout.write.bind(process.stdout);
   process.stdout.write = function (덩이, enc, cb) {
@@ -156,10 +172,7 @@ export async function acp(opts = {}) {
    * 겹쳐 온 session/new 둘을 가르려면 이름을 짓는 그 자리에서 바로 적어 둬야 한다.
    */
   const 열린자리 = new Map();
-  const 같은자리 = (가, 나) => {
-    const 편 = (p) => { const r = resolve(String(p)); return process.platform === 'win32' ? r.toLowerCase() : r; };
-    return 편(가) === 편(나);
-  };
+  const 같은자리 = (가, 나) => 자리열쇠(가) === 자리열쇠(나);
 
   /*
    * 폴더 → MCP 붙임. **폴더 하나에 한 벌**이다.
@@ -194,7 +207,24 @@ export async function acp(opts = {}) {
    * @param {object} o
    * @param {string|null} o.아이디  이어할 대화 이름. 주면 그 파일에 이어 쓴다
    */
-  async function 방만들기(요청, { 아이디 = null } = {}) {
+  /*
+   * 방을 짓다 넘어지면 **잡아 둔 이름을 푼다** (2.0.2 · 508).
+   *
+   * 이름은 짓자마자 열린자리 에 적는다(겹쳐 온 session/new 가 피하게). 그런데 그 뒤에서
+   * 넘어지면(훅·에이전트·감사기록을 여는 자리) 방은 없는데 이름만 남아, 이 창이 끝날 때까지
+   * 그 이름을 「다른 폴더로 열려 있다」 며 되살리기를 거절하고 정리(prune)에서도 뺐다.
+   */
+  async function 방만들기(요청, 옵션 = {}) {
+    const 잡은이름 = [];
+    try {
+      return await 방짓기(요청, 옵션, 잡은이름);
+    } catch (err) {
+      for (const id of 잡은이름) if (!방들.has(id)) 열린자리.delete(id);
+      throw err;
+    }
+  }
+
+  async function 방짓기(요청, { 아이디 = null } = {}, 잡은이름 = []) {
     /*
      * 작업 폴더를 **설정보다 먼저** 정한다.
      *
@@ -212,9 +242,13 @@ export async function acp(opts = {}) {
      * 그 경로를 통째로 새로 만들었다. 둘 다 에디터가 잘못 준 것이니 잘못된 인자로 답한다.
      * 안 주면 예전처럼 --root(없으면 띄운 자리)를 쓴다 — 그건 사람이 띄울 때 정한 것이다.
      */
-    const 준자리 = typeof 요청?.cwd === 'string' && 요청.cwd ? 요청.cwd : null;
+    /*
+     * **빈 글도 준 것이다** (2.0.2 · 508). 빈 글을 안 준 것으로 쳐서 --root 로 갔다 — 규격 위반 입력을
+     * 사람이 띄울 때 정한 자리로 조용히 바꿔 여는 것이다. 에디터가 cwd 를 못 채웠다는 뜻이니 거절한다.
+     */
+    const 준자리 = typeof 요청?.cwd === 'string' ? 요청.cwd : null;
     if (준자리 != null) {
-      if (!isAbsolute(준자리)) throw 잘못된인자오류(`cwd 는 절대 경로여야 합니다: ${준자리}`);
+      if (!isAbsolute(준자리)) throw 잘못된인자오류(`cwd 는 절대 경로여야 합니다: ${준자리 || '(빈 글)'}`);
       let 폴더인가 = false;
       try { 폴더인가 = statSync(준자리).isDirectory(); } catch { /* 없다 */ }
       if (!폴더인가) throw 잘못된인자오류(`cwd 가 있는 폴더가 아닙니다: ${준자리}`);
@@ -428,6 +462,7 @@ export async function acp(opts = {}) {
     // begin() 이 이름을 옮겼을 수 있으니 그 뒤에 적는다. Store 를 지은 자리부터 여기까지
     // 기다림이 없어서, 겹쳐 온 session/new 도 이 적힌 것을 보고 이름을 피한다.
     열린자리.set(store.id, root);
+    잡은이름.push(store.id);
     /*
      * 남은 할 일과 시킨 말 원문도 이 파일과 묶는다 (agent/store.js 의 살림따라가기).
      *
@@ -459,7 +494,8 @@ export async function acp(opts = {}) {
      * 그래서 deel 은 늘 제 폴더의 .deel/mcp.json 만 본다. 사람이 직접 적은 것만
      * 띄운다는 규칙이 대화 화면과 여기서 똑같이 유지된다.
      */
-    const 캐시열쇠 = resolve(root);
+    // 같은 폴더면 한 벌 — 글자가 달라도 (자리열쇠 머리말 · 2.0.2 · 508). `C:` · `c:` 로 두 벌 띄웠었다.
+    const 캐시열쇠 = 자리열쇠(root);
     if (!mcp캐시.has(캐시열쇠)) {
       mcp캐시.set(캐시열쇠, 다붙이기(root, {
         // 봉인은 MCP 를 붙이는 자리에도 그대로 걸린다 (safety/runmode.js 의 봉인됐나).
@@ -1134,8 +1170,9 @@ export async function acp(opts = {}) {
         // 이름 대화를 되살리라는데 A 폴더 방이 나가서, 그 뒤 한 말이 A 에 적히고 A 를
         // 고친다. 폴더가 다르면 방만들기 로 보내고, 거기서 또렷하게 거절한다.
         const 있던방 = 방들.get(아이디);
-        const 바란자리 = typeof 인자?.cwd === 'string' && 인자.cwd ? 인자.cwd : (opts.root ?? process.cwd());
-        const 방 = 있던방 && 같은자리(있던방.root, 바란자리) ? 있던방 : await 방만들기(인자, { 아이디 });
+        // 빈 cwd 는 방만들기 가 거절한다 — 여기서 --root 로 바꿔 있던 방을 내주지 않는다 (2.0.2 · 508).
+        const 바란자리 = typeof 인자?.cwd === 'string' ? 인자.cwd : (opts.root ?? process.cwd());
+        const 방 = 있던방 && 바란자리 && 같은자리(있던방.root, 바란자리) ? 있던방 : await 방만들기(인자, { 아이디 });
 
         /*
          * 화면에 그릴 것과 모델에게 줄 것이 다르다.
