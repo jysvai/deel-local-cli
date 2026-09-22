@@ -1628,6 +1628,27 @@ trace('18-빈-목록에서도-버린-인자를-말한다');
     String(그냥.content) === '뒤에서 도는 명령이 없습니다.', JSON.stringify(그냥));
 }
 
+trace('20-끝난아이에게-taskkill-안-보냄');
+/*
+ * ── 끝난 것으로 본 아이의 번호로 taskkill 을 안 보낸다 (2.0.2 · 28회차 flake) ─────────
+ *
+ * Node 가 끝났다고 본 아이는 손잡이가 닫혀, 윈도가 그 번호를 딴 프로세스에게 곧바로 준다.
+ * 그 번호로 `taskkill /t` 가 가면 남의 나무가 죽는다. 번호가 되쓰인 판을 그대로 만든다 —
+ * 살아 있는 딴 프로세스의 번호를 든 「끝난 아이」 를 넘기고, 그 프로세스가 살아남는지 본다.
+ */
+if (process.platform === 'win32') {
+  const { spawn } = await import('node:child_process');
+  const 남 = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  await new Promise((ok) => setTimeout(ok, 300));
+  const 끝난것 = { pid: 남.pid, exitCode: 0, signalCode: null, kill() {}, unref() {} };
+  나무죽이기(끝난것, { 상한: 3000 });
+  await new Promise((ok) => setTimeout(ok, 700));
+  const 살았나 = 남.exitCode === null && 남.signalCode === null;
+  check('★★ 28회차 끝난 아이의 번호를 새로 받은 남의 프로세스를 안 끊는다', 살았나,
+    `exit=${남.exitCode} signal=${남.signalCode}`);
+  try { 남.kill(); } catch { /* 이미 갔다 */ }
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n뒤에서 도는 명령 검사  ${D}(안 뜬 것을 떴다고 안 하는가 · 띄운 것을 거두는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
