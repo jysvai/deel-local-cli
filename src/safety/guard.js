@@ -110,8 +110,28 @@ export function makeScope(root) {
       // Git Bash 꼴 절대 경로(/c/Users/…)는 윈도우에서 C:\Users\… 다. 안 풀면 지금
       // 드라이브 밑의 \c\Users\… 로 읽혀, 안에 있는 파일이 '범위 밖' 으로 막힌다.
       const 경로 = MSYS풀기(p);
-      const abs = isAbsolute(경로) ? resolve(경로) : resolve(base, 경로);
-      if (밖(base, abs)) throw new ScopeError(`작업 범위 밖입니다: ${p}\n  범위: ${base}`);
+      let abs = isAbsolute(경로) ? resolve(경로) : resolve(base, 경로);
+      /*
+       * ── 글자로는 밖인데 **같은 자리를 다르게 적은 것** (2.0.2 · A5) ──────────────
+       *
+       * 윈도우는 한 폴더를 두 이름으로 적는다 — `C:\Users\RUNNER~1\…`(8.3) 와
+       * `C:\Users\runneradmin\…`. 뿌리를 짧은 이름으로 들고 있는데 모델이 긴 이름
+       * 절대경로를 주면(셸의 pwd · 오류 글 · 딴 도구의 답에서 베낀 것), 여기가 글자로만
+       * 견줘 **같은 폴더의 파일을 「작업 범위 밖」 으로** 막았다. 재 봤다 —
+       * `DEEL_A~1` 뿌리에서 `deel_a5_longfoldername_…\b.txt` 쓰기가 막혔다.
+       *
+       * 그래서 글자로 밖이면 한 번 더 **실제 자리끼리** 견준다. 실제로도 밖이면 그대로
+       * 막는다. 실제로는 안이면 받아 들이되, 돌려주는 경로는 **뿌리가 적힌 꼴로** 다시
+       * 붙인다 — 되돌리기 기록(rel)·화면 경로(show)·커밋이 다 뿌리의 꼴로 견주기 때문이다.
+       * 긴 이름 그대로 넘기면 여기만 지나고 아래에서 같은 병이 다시 난다.
+       */
+      if (밖(base, abs)) {
+        const 실제 = 진짜자리(abs);
+        const 뿌리실제 = 진짜뿌리();
+        if (밖(뿌리실제, 실제)) throw new ScopeError(`작업 범위 밖입니다: ${p}\n  범위: ${base}`);
+        const 안쪽 = relative(같은꼴(뿌리실제), 같은꼴(실제));
+        abs = 안쪽 ? resolve(base, 안쪽) : base;
+      }
       // 글자로는 안인데 링크를 따라가면 밖인 자리. 정션 하나로 울타리가 열린다.
       //
       // 여기 견주기도 한 모양으로 맞춘다. 맥에서 realpathSync 는 디스크에 있는

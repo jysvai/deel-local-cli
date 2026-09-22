@@ -7,7 +7,8 @@
 // 이 자리들의 공통점: 실패해도 대화가 이어져야 한다. 도구 결과 자리를 비우면
 // 짝이 깨져서 다음 턴에 게이트웨이가 통째로 거절한다.
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSync, realpathSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { makeScope, checkPaths, checkCommand, 경로낱말, 봐주는자리, isMutating, 셸이파일에쓰나, 코드조각인가 } from '../src/safety/guard.js';
@@ -1307,6 +1308,71 @@ trace('5f-사냥8-안전울타리');
   check('★★ 그렇다고 뿌리가 열리지는 않는다', 봐주는자리('/몰래.txt') === null, String(봐주는자리('/몰래.txt')));
 
   rmSync(방8, { recursive: true, force: true });
+}
+
+// ── 11. 같은 폴더를 다른 이름으로 적어도 같은 자리다 (2.0.2 · A5) ─────────────
+trace('11-이름꼴둘');
+{
+  /*
+   * 윈도우는 한 폴더를 두 이름으로 적는다 — 8.3 짧은 이름(`RUNNER~1`)과 긴 이름. 뿌리를 한
+   * 꼴로 들고 있는데 다른 꼴의 절대경로가 오면, 범위 판정이 **글자로만** 견줘 같은 폴더의
+   * 파일을 「작업 범위 밖」 으로 막았다. 되돌리기 기록도 그 꼴 차이로 rel 이 빠질 뻔했다
+   * (2.0.0 6회차 A5 — 그때는 짧은 이름을 못 뽑아 「못 잼」 으로 남겼다).
+   *
+   * 이름 꼴이 둘인 폴더는 링크(윈도는 junction)로 어느 운영체제에서나 만든다. 8.3 이름을
+   * 뽑을 수 있는 윈도에서는 그 꼴로도 한 번 더 잰다.
+   */
+  const 진짜 = mkdtempSync(join(tmpdir(), 'deel-꼴둘-'));
+  const 링크 = `${진짜}-링크`;
+  let 링크됨 = false;
+  try { symlinkSync(진짜, 링크, 'junction'); 링크됨 = true; } catch { /* 링크를 못 만드는 PC */ }
+  const 쌍들 = [];
+  if (링크됨 && realpathSync.native(링크) !== 링크) 쌍들.push(['링크', 링크, 진짜]);
+  if (process.platform === 'win32') {
+    try {
+      const 짧은 = execFileSync('powershell', ['-NoProfile', '-Command',
+        `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${진짜}').ShortPath`], { encoding: 'utf8', timeout: 20000 }).trim();
+      if (짧은 && 짧은.toLowerCase() !== 진짜.toLowerCase()) 쌍들.push(['8.3', 짧은, 진짜]);
+    } catch { /* 짧은 이름을 못 뽑는 판 */ }
+  }
+  if (!쌍들.length) 건너뜀.push('이름 꼴이 둘인 폴더를 이 PC 에서 못 만들어 11단을 건너뜀');
+  for (const [무엇, 다른꼴, 긴꼴] of 쌍들) {
+    for (const [뿌리, 준꼴] of [[다른꼴, 긴꼴], [긴꼴, 다른꼴]]) {
+      const 이름 = 뿌리 === 다른꼴 ? `뿌리 ${무엇} · 긴 꼴 경로` : `뿌리 긴 꼴 · ${무엇} 경로`;
+      const sc = makeScope(뿌리);
+      let 받은 = null; let 탈 = null;
+      try { 받은 = sc.resolve(join(준꼴, 'a.txt')); } catch (e) { 탈 = e.message.split('\n')[0]; }
+      check(`★★ ${이름} — 같은 폴더의 파일을 범위 밖으로 안 막는다`, !탈, 탈 ?? 받은);
+      check(`  ${이름} — 돌려주는 경로는 뿌리가 적힌 꼴이다`, 받은 === join(뿌리, 'a.txt'), String(받은));
+      let 셸탈 = null;
+      try { checkPaths(`cat "${join(준꼴, 'a.txt')}"`, sc); } catch (e) { 셸탈 = e.message.split('\n')[0]; }
+      check(`  ${이름} — 셸 명령 속 경로도 같다`, !셸탈, 셸탈 ?? '통과');
+    }
+    // 진짜 밖은 그대로 밖이다 — 풀어 본 뒤에도.
+    let 밖탈 = null;
+    try { makeScope(다른꼴).resolve(join(tmpdir(), 'deel-꼴둘-밖.txt')); } catch (e) { 밖탈 = e.message.split('\n')[0]; }
+    check(`★★★ ${무엇} — 풀어 봐도 진짜 밖은 여전히 막는다`, !!밖탈 && /범위 밖/.test(밖탈), 밖탈 ?? '안 막힘');
+  }
+  // 되돌리기까지 — 다른 꼴 절대경로로 쓴 파일이 기록에 rel 을 갖고, /undo 로 지워진다.
+  if (쌍들.length) {
+    const [무엇, 다른꼴, 긴꼴] = 쌍들.at(-1);
+    const h = new History(다른꼴);
+    const ctx = { scope: makeScope(다른꼴), history: h, audit: new Audit(다른꼴), seen: new Set() };
+    h.turn = 1;
+    const { TOOLS } = await import('../src/tools/index.js');
+    // 막히면 run 이 던진다(runTool 이 오류로 바꾸는 자리). 여기서 받아 **이 줄이** 빨개지게 한다 —
+    // 안 받으면 검사 파일이 통째로 넘어져 무엇이 틀렸는지 안 남는다.
+    let 쓴것;
+    try { 쓴것 = await TOOLS.Write.run({ file_path: join(긴꼴, '되돌릴것.txt'), content: '새 파일\n' }, ctx); }
+    catch (e) { 쓴것 = { error: e.message.split('\n')[0] }; }
+    const 기록 = join(다른꼴, '.deel', 'history', 'edits.jsonl');
+    const 줄 = existsSync(기록) ? JSON.parse(readFileSync(기록, 'utf8').trim().split('\n').at(-1) || '{}') : {};
+    check(`★★ ${무엇} — 다른 꼴로 쓴 파일도 되돌리기 기록에 rel 이 있다`, !쓴것.error && 줄.rel === '되돌릴것.txt', `${쓴것.error ?? 'ok'} · rel ${줄.rel}`);
+    const 되돌림 = await h.undo(1);
+    check(`★★ ${무엇} — /undo 가 그 파일을 지운다`, 되돌림.되돌린수 === 1 && !existsSync(join(긴꼴, '되돌릴것.txt')), JSON.stringify(되돌림.restored?.[0] ?? 되돌림).slice(0, 120));
+  }
+  if (링크됨) rmSync(링크, { force: true });
+  rmSync(진짜, { recursive: true, force: true });
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
