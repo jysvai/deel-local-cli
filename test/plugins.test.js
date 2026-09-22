@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { untargz, stripTop, 안쪽인가, 밖을가리키는것, 푼것상한 } from '../src/pack/tar.js';
-import { makeZip, readZip, crc32 } from '../src/pack/zip.js';
-import { parseSpec, install, list, remove, pack, pluginsDir, 묶음풀기 } from '../src/plugins/manage.js';
+import { makeZip, readZip, crc32, zip한도 } from '../src/pack/zip.js';
+import { parseSpec, install, list, remove, pack, pluginsDir, 묶음풀기, 받을주소들 } from '../src/plugins/manage.js';
 import { discover, frontmatter, loadCommand } from '../src/skills/discover.js';
 import { TOOLS } from '../src/tools/index.js';
 import { copyDir } from '../src/tools/fsutil.js';
@@ -1207,6 +1207,105 @@ description: ${설명}
     본것.commands.length <= 5, `${본것.commands.length}개`);
   rmSync(집, { recursive: true, force: true });
   rmSync(방, { recursive: true, force: true });
+}
+
+
+trace('20-202플러그인');
+/*
+ * ── 2.0.2 · 남겨 뒀던 플러그인 자리 넷 (P3 · P1 · T4 · P5 · P7 · Z5) ──────────
+ */
+{
+  const 풀곳 = join(sand, '202', '풀곳');
+  mkdirSync(풀곳, { recursive: true });
+  writeFileSync(join(풀곳, '깔려있던.md'), '옛것', 'utf8');
+
+  // P3 — 윈도에서 만든 묶음의 역슬래시 이름은 **폴더**로 풀린다 (리눅스·맥에서 갈리는 자리).
+  const 역 = 묶음풀기(풀곳, [{ name: 'skills\\품의서\\SKILL.md', data: Buffer.from('본문') }]);
+  check('★★ P3 역슬래시 이름은 폴더 안으로 풀린다',
+    !역.error && existsSync(join(풀곳, 'skills', '품의서', 'SKILL.md')) && readdirSync(풀곳).join(',') === 'skills',
+    역.error ?? readdirSync(풀곳).join(' · '));
+
+  // P1 — 맥에서 한 파일인 NFC·NFD 두 이름은 묶음째 거절하고, 깔린 것을 안 지운다.
+  const nfc = 'skills/한글/SKILL.md'.normalize('NFC');
+  const nfd = 'skills/한글/SKILL.md'.normalize('NFD');
+  let 겹 = null;
+  try { 겹 = 묶음풀기(풀곳, [{ name: nfc, data: Buffer.from('하나') }, { name: nfd, data: Buffer.from('둘') }]); } catch (e) { 겹 = { 던짐: e.message }; }
+  check('★★ P1 한글 자모 꼴만 다른 두 이름은 거절한다', nfc !== nfd && !!겹?.error && !겹.던짐, JSON.stringify(겹));
+  check('  그리고 깔린 것을 안 지운다', existsSync(join(풀곳, 'skills', '품의서', 'SKILL.md')));
+
+  // T4 — 이름 `.` 하나(풀 자리 그 자체)도 쓰기 전에 거절한다.
+  let 점 = null;
+  try { 점 = 묶음풀기(풀곳, [{ name: '.', data: Buffer.from('자리 그 자체') }]); } catch (e) { 점 = { 던짐: e.message }; }
+  check('★ T4 이름 `.` 은 거절한다 (EISDIR 로 넘어지지 않는다)', !!점?.error && !점.던짐, JSON.stringify(점));
+  check('  그리고 깔린 것을 안 지운다', existsSync(join(풀곳, 'skills', '품의서', 'SKILL.md')));
+}
+
+{
+  // P5 — git 이 없을 때 `#v1.0.0` 은 가지를 묻고 없으면 태그를 묻는다.
+  const 적은 = 받을주소들({ owner: 'o', repo: 'r', ref: 'v1.0.0' });
+  const 주소 = 적은.map((x) => x.url);
+  check('★★ P5 적은 이름은 가지 다음 태그로 묻는다',
+    주소.length === 2 && 주소[0].endsWith('/refs/heads/v1.0.0') && 주소[1].endsWith('/refs/tags/v1.0.0')
+    && 주소.every((u) => u.startsWith('https://codeload.github.com/o/r/tar.gz/')),
+    주소.join(' · '));
+  const 안적은 = 받을주소들({ owner: 'o', repo: 'r', ref: null }).map((x) => x.url);
+  check('  안 적으면 main · master 가지만', 안적은.length === 2 && /heads\/main$/.test(안적은[0]) && /heads\/master$/.test(안적은[1]), 안적은.join(' · '));
+}
+
+{
+  // P7 — 다시 설치하다 베끼기가 넘어져도 쓰던 플러그인은 그대로 남는다.
+  const 원본 = join(sand, '202', '원본');
+  mkdirSync(join(원본, '.claude-plugin'), { recursive: true });
+  writeFileSync(join(원본, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'sabun-kit', version: '2.1.0' }), 'utf8');
+  mkdirSync(join(원본, 'skills', '품의서'), { recursive: true });
+  writeFileSync(join(원본, 'skills', '품의서', 'SKILL.md'), '---\nname: 품의서\ndescription: 품의서 쓰기\n---\n본문\n', 'utf8');
+  writeFileSync(join(원본, 'VERSION'), 'v1', 'utf8');
+  const 집 = join(sand, '202', 'home');
+  const 첫 = await install(원본, { home: 집 });
+  const 자리 = join(pluginsDir(집), 'sabun-kit');
+  const 찌꺼기 = () => (existsSync(pluginsDir(집)) ? readdirSync(pluginsDir(집)).filter((n) => n.startsWith('.')) : []);
+  check('P7 준비: 처음 설치', !첫.error && readFileSync(join(자리, 'VERSION'), 'utf8') === 'v1', 첫.error ?? '');
+
+  writeFileSync(join(원본, 'VERSION'), 'v2', 'utf8');
+  const 꽉참 = (from, to) => {
+    mkdirSync(to, { recursive: true });
+    writeFileSync(join(to, '반쪽.txt'), '베끼다 만 것', 'utf8');
+    throw Object.assign(new Error('디스크가 꽉 찼습니다'), { code: 'ENOSPC' });
+  };
+  let 둘 = null;
+  try { 둘 = await install(원본, { home: 집, 복사: 꽉참 }); } catch (e) { 둘 = { 던짐: e.message }; }
+  check('★★★ P7 베끼기가 넘어지면 오류로 말한다', !!둘?.error && !둘.던짐 && /ENOSPC/.test(둘.error), JSON.stringify(둘));
+  check('★★★ P7 그리고 쓰던 플러그인이 그대로 있다',
+    existsSync(join(자리, 'VERSION')) && readFileSync(join(자리, 'VERSION'), 'utf8') === 'v1'
+    && existsSync(join(자리, 'skills', '품의서', 'SKILL.md')) && !existsSync(join(자리, '반쪽.txt')),
+    existsSync(자리) ? readdirSync(자리).join(' · ') : '(폴더가 없다)');
+  check('  비켜 둔 것·임시 폴더가 안 남는다', 찌꺼기().length === 0, 찌꺼기().join(' · '));
+
+  const 셋 = await install(원본, { home: 집 });
+  check('★★ P7 다시 하면 새것으로 바뀌고 비켜 둔 것은 버린다',
+    !셋.error && readFileSync(join(자리, 'VERSION'), 'utf8') === 'v2' && 찌꺼기().length === 0,
+    셋.error ?? 찌꺼기().join(' · '));
+
+  // 처음 설치에서 넘어지면 반쪽이 안 남는다.
+  const 새집 = join(sand, '202', 'home2');
+  const 넷 = await install(원본, { home: 새집, 복사: 꽉참 });
+  check('  처음 설치가 넘어지면 반쪽 폴더가 안 남는다',
+    !!넷.error && !existsSync(join(pluginsDir(새집), 'sabun-kit')), 넷.error ?? '(설치됐다)');
+}
+
+{
+  // Z5 — zip64 없이 담는 끝을 넘으면 넘는 순간 사람 말로 멈춘다. 끝을 좁혀서 잰다.
+  const 셋 = [0, 1, 2].map((i) => ({ name: `f${i}.txt`, data: Buffer.from(`내용 ${i}`) }));
+  const 던진것 = (f) => { try { f(); return null; } catch (e) { return e; } };
+  const 수 = 던진것(() => makeZip(셋, { ...zip한도, 개수: 2 }));
+  check('★ Z5 파일 수가 끝을 넘으면 사람 말로 멈춘다', !!수 && /3개입니다/.test(수.message) && !(수 instanceof RangeError), 수?.message ?? '(그냥 만들었다)');
+  check('  끝과 같으면 만든다', 던진것(() => makeZip(셋, { ...zip한도, 개수: 3 })) === null);
+  const 크기 = 던진것(() => makeZip(셋, { ...zip한도, 크기: 60 }));
+  check('★ Z5 크기가 끝을 넘으면 넘은 자리를 대며 멈춘다', !!크기 && /zip64/.test(크기.message) && /f1\.txt/.test(크기.message), 크기?.message ?? '(그냥 만들었다)');
+  const 이름 = 던진것(() => makeZip(셋, { ...zip한도, 이름: 5 }));
+  check('★ Z5 이름이 끝을 넘으면 멈춘다', !!이름 && /이름이 너무 깁니다/.test(이름.message), 이름?.message ?? '(그냥 만들었다)');
+  const 보통 = readZip(makeZip(셋));
+  check('  한도를 안 넘으면 여태와 같다', 보통.files.size === 3 && 보통.files.get('f2.txt')?.toString() === '내용 2');
 }
 
 

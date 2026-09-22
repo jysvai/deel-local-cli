@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { homeDir } from '../config.js';
 import { join, dirname, basename, resolve, relative, sep } from 'node:path';
 import {
-  existsSync, mkdirSync, writeFileSync, readFileSync, rmSync,
+  existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, renameSync,
   readdirSync, statSync,
 } from 'node:fs';
 import { untargz, stripTop, 밖을가리키는것 } from '../pack/tar.js';
@@ -107,13 +107,26 @@ export function 묶음풀기(dest, files) {
    * 고 하고 하나만 남겼다. 쓰기 전에 전부 재 보고 사람 말로 거절한다.
    */
   const 뿌리 = resolve(dest);
-  const 자리들 = new Map();                 // 소문자 상대 자리 → 적힌 이름
+  /*
+   * ── 쓸 이름도 **잰 이름과 같게** (2.0.2 · P3 · P1) ──────────────────────────
+   *
+   * 아래 재기는 역슬래시를 빗금으로 보고 쟀는데, 쓸 때는 적힌 이름 그대로 `join` 했다.
+   * 윈도에서는 둘이 같지만 리눅스·맥에서는 역슬래시가 **이름 글자**라, 윈도에서 만든
+   * 묶음의 `sub\file.txt` 가 `sub` 폴더 안이 아니라 뿌리에 한 파일로 풀렸다 — 스킬이
+   * 제자리를 못 찾는다. 이름을 한 번 빗금으로 편 것을 재기와 쓰기가 같이 쓴다.
+   *
+   * 같은 자리 견주기에는 NFC 도 맞춘다. 맥은 `한글`(NFC)과 `한글`(NFD)을 한 파일로
+   * 보므로, 두 꼴이 같이 든 묶음은 맥에서 하나가 말없이 사라진다. 대소문자만 다른
+   * 이름과 같은 대접으로 묶음째 거절한다.
+   */
+  const 편이름 = (f) => String(f.name ?? '').replace(/\\/g, '/');
+  const 자리들 = new Map();                 // 소문자·NFC 상대 자리 → 적힌 이름
   for (const f of files) {
-    const 상대 = relative(뿌리, resolve(뿌리, String(f.name ?? '').replace(/\\/g, '/'))).replace(/\\/g, '/');
+    const 상대 = relative(뿌리, resolve(뿌리, 편이름(f))).replace(/\\/g, '/');
     if (!상대) return { error: `묶음 안에 풀 폴더 그 자체를 가리키는 파일이 있습니다 — 풀지 않았습니다: ${f.name}` };
-    const 열쇠 = 상대.toLowerCase();
+    const 열쇠 = 상대.normalize('NFC').toLowerCase();
     if (자리들.has(열쇠)) {
-      return { error: `묶음 안에 같은 자리를 가리키는 이름이 둘 있습니다(대소문자만 다를 수 있음) — 풀지 않았습니다: ${자리들.get(열쇠)} · ${f.name}` };
+      return { error: `묶음 안에 같은 자리를 가리키는 이름이 둘 있습니다(대소문자나 한글 자모 꼴만 다를 수 있음) — 풀지 않았습니다: ${자리들.get(열쇠)} · ${f.name}` };
     }
     자리들.set(열쇠, f.name);
   }
@@ -126,11 +139,30 @@ export function 묶음풀기(dest, files) {
   }
   rmSync(dest, { recursive: true, force: true });
   for (const f of files) {
-    const p = join(dest, f.name);
+    const p = join(dest, 편이름(f));
     mkdirSync(dirname(p), { recursive: true });
     writeFileSync(p, f.data);
   }
   return { 푼것: files.length };
+}
+
+/*
+ * ── git 없이 받을 주소들 (2.0.2 · P5) ─────────────────────────────────────────
+ *
+ * `#v1.0.0` 처럼 **태그**를 적어도 `refs/heads/` 만 물어서, git 이 없는 PC 에서는 늘
+ * 「받지 못했습니다 — 가지 이름을 확인하세요」 였다. git 이 있으면 `clone --branch` 가
+ * 태그도 받으니, 같은 명령이 git 유무에 따라 되고 안 됐다. 가지를 먼저 묻고 없으면
+ * 태그를 묻는다(같은 이름이면 git 도 가지를 먼저 고른다).
+ */
+export function 받을주소들(spec) {
+  const 뿌리 = `https://codeload.github.com/${spec.owner}/${spec.repo}/tar.gz`;
+  if (spec.ref) {
+    return [
+      { branch: spec.ref, url: `${뿌리}/refs/heads/${spec.ref}` },
+      { branch: spec.ref, url: `${뿌리}/refs/tags/${spec.ref}` },
+    ];
+  }
+  return ['main', 'master'].map((b) => ({ branch: b, url: `${뿌리}/refs/heads/${b}` }));
 }
 
 // 받는 방법 두 가지. git 이 있으면 clone, 없으면 tarball 을 내려받아 푼다.
@@ -150,8 +182,7 @@ async function fetchInto(spec, dest, onStep) {
 
   onStep?.('tarball 내려받기');
   if (isOffline()) return { error: '오프라인 모드입니다 — 받아 올 수 없습니다. 풀어 놓은 폴더 경로를 주세요.' };
-  for (const branch of spec.ref ? [spec.ref] : ['main', 'master']) {
-    const url = `https://codeload.github.com/${spec.owner}/${spec.repo}/tar.gz/refs/heads/${branch}`;
+  for (const { branch, url } of 받을주소들(spec)) {
     // 사용자가 이 명령을 친 동안만 github 를 연다. 끝나면 바로 닫는다.
     const close = allowTemporarily(url);
     let gz;
@@ -183,7 +214,7 @@ async function fetchInto(spec, dest, onStep) {
     if (푼것.error) return { error: 푼것.error };
     return { how: 'tarball', branch };
   }
-  return { error: '받지 못했습니다 — 저장소 주소나 가지 이름을 확인하세요' };
+  return { error: '받지 못했습니다 — 저장소 주소나 가지·태그 이름을 확인하세요' };
 }
 
 /**
@@ -312,7 +343,7 @@ export async function install(spec, 옵션 = {}) {
   }
 }
 
-async function 설치하기(spec, { home = homeDir(), onStep } = {}, 치울것 = []) {
+async function 설치하기(spec, { home = homeDir(), onStep, 복사 = copyDir } = {}, 치울것 = []) {
   const base = pluginsDir(home);
 
   // 이미 풀어 놓은 폴더를 그대로 넣는 길. 오프라인 기기에서 이쪽을 쓴다.
@@ -383,9 +414,43 @@ async function 설치하기(spec, { home = homeDir(), onStep } = {}, 치울것 =
     return { error: `스킬도 명령도 없습니다. 플러그인이 맞는지 확인하세요 (${isLocal ? asPath : parsed.owner + '/' + parsed.repo})` };
   }
 
-  rmSync(dest, { recursive: true, force: true });
+  /*
+   * ── 옛것을 **먼저 지우지 않는다** (2.0.2 · P7) ──────────────────────────────
+   *
+   * 다시 설치(업데이트)는 옛 폴더를 지우고 새것을 베꼈다. 베끼다 넘어지면(디스크가
+   * 꽉 참 · 잠긴 파일 · 긴 경로) **둘 다 잃었다** — 옛것은 지웠고 새것은 반쪽이다.
+   * 업데이트 한 번에 쓰던 플러그인이 사라지는 것이다.
+   *
+   * 옛것을 점 이름(`.old-…` — list() 가 안 보는 이름)으로 비켜 두고 베낀다. 다 베끼면
+   * 비켜 둔 것을 버리고, 넘어지면 반쪽을 치우고 비켜 둔 것을 제자리로 되돌린다.
+   * 비키기(rename)부터 안 되면(윈도에서 그 폴더의 파일을 연 프로그램이 있으면 흔하다)
+   * 아무것도 안 건드리고 그렇다고 말한다.
+   */
   mkdirSync(dirname(dest), { recursive: true });
-  copyDir(tmp, dest, { skipped: 건너뛴것 });
+  const 옛것있나 = existsSync(dest);
+  const 비켜둘곳 = join(base, `.old-${name}-${process.pid}-${Date.now()}`);
+  if (옛것있나) {
+    try { renameSync(dest, 비켜둘곳); }
+    catch (err) {
+      rmSync(tmp, { recursive: true, force: true });
+      return { error: `깔려 있던 ${name} 을 비키지 못해 다시 설치하지 않았습니다 — 쓰던 것은 그대로입니다 (${err?.code ?? err?.message ?? err}). 그 폴더의 파일을 연 프로그램을 닫고 다시 하세요.` };
+    }
+  }
+  try {
+    복사(tmp, dest, { skipped: 건너뛴것 });
+  } catch (err) {
+    try { rmSync(dest, { recursive: true, force: true }); } catch { /* 반쪽을 못 치우면 아래 되돌리기가 넘어진다 — 그 말도 한다 */ }
+    let 되돌림 = '쓰던 것은 그대로입니다';
+    if (옛것있나) {
+      try { renameSync(비켜둘곳, dest); }
+      catch { 되돌림 = `쓰던 것은 ${비켜둘곳} 에 남아 있습니다 — 폴더 이름을 ${name} 으로 되돌리면 됩니다`; }
+    } else {
+      되돌림 = '반쪽은 치웠습니다';
+    }
+    rmSync(tmp, { recursive: true, force: true });
+    return { error: `${name} 을 베끼지 못해 설치하지 않았습니다 — ${되돌림} (${err?.code ?? err?.message ?? err})` };
+  }
+  if (옛것있나) { try { rmSync(비켜둘곳, { recursive: true, force: true }); } catch { /* 못 버려도 list() 는 점 이름을 안 본다 */ } }
   rmSync(tmp, { recursive: true, force: true });
   // 개수는 **깔린 자리**에서 다시 센다. 복사하다 빠진 것이 여기서 빠진다.
   const counts = countIn(dest);
@@ -569,7 +634,9 @@ export function pack(outFile, { home = homeDir(), only = null } = {}) {
   ].join('\n');
   entries.unshift({ name: '사용안내.txt', data: Buffer.from(manifest, 'utf8') });
 
-  const zip = makeZip(entries);
+  // 한도(파일 65,535개 · 4GB)를 넘으면 makeZip 이 사람 말로 던진다 — 명령째 죽지 않게 받아 올린다 (2.0.2 · Z5).
+  let zip;
+  try { zip = makeZip(entries); } catch (err) { return { error: String(err?.message ?? err) }; }
   mkdirSync(dirname(outFile), { recursive: true });
   writeFileSync(outFile, zip);
   return { out: outFile, plugins: included, files: entries.length, skipped, bytes: zip.length, manifest };

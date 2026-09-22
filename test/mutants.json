@@ -13408,6 +13408,113 @@
       "찾을것": "const 한판시간 = (검사) => Math.max(0.1, Number.isFinite(검사시간[검사]) ? 검사시간[검사] : 기본시간);",
       "바꿀것": "const 한판시간 = (검사) => (Number.isFinite(검사시간[검사]) ? 검사시간[검사] : 기본시간);",
       "검사": "test/죽은규칙.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "글자로 밖이면 실제 자리를 안 풀어 보고 막는다 (2.0.2 · A5)",
+      "그러면": "뿌리를 8.3 짧은 이름으로 들고 있으면 같은 폴더를 긴 이름으로 적은 파일이 「작업 범위 밖」 으로 막힌다. 되돌리기 기록도 그 꼴 차이로 rel 이 빠진다",
+      "찾을것": "      if (밖(base, abs)) {\n        const 실제 = 진짜자리(abs);",
+      "바꿀것": "      if (밖(base, abs)) {\n        const 실제 = abs;",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "실제로 안인 다른 꼴 경로를 뿌리의 꼴로 다시 안 붙인다 (2.0.2 · A5)",
+      "그러면": "범위는 지나가는데 긴 이름 경로가 그대로 아래로 흘러, 되돌리기 기록·화면 경로·커밋이 뿌리의 꼴과 안 맞는다",
+      "찾을것": "        abs = 안쪽 ? resolve(base, 안쪽) : base;",
+      "바꿀것": "        abs = 실제;",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/undo.js",
+      "무엇": "없던 파일과 같이 생길 폴더를 안 적는다 (2.0.2 · B3)",
+      "그러면": "폴더째 옮긴 판을 되돌리면 파일은 돌아오는데 빈 옮긴 자리 폴더가 남는다. 되돌린 뒤의 폴더가 되돌리기 전과 다르다",
+      "찾을것": "      if (새폴더.length) rec.새폴더 = 새폴더;",
+      "바꿀것": "      if (false) rec.새폴더 = 새폴더;",
+      "검사": "test/undo.test.js"
+    },
+    {
+      "곳": "src/safety/undo.js",
+      "무엇": "새로 생긴 폴더를 거둘 때 링크 너머인지 안 본다 (2.0.2 · B3)",
+      "그러면": "저장소에 딸려 온 꾸민 이력의 새폴더 칸 하나로 링크 너머 작업 폴더 밖의 빈 폴더가 지워진다",
+      "찾을것": "            if (!d || 링크밖(d)) break;\n            try { rmdirSync(d); } catch { break; }",
+      "바꿀것": "            if (!d) break;\n            try { rmdirSync(d); } catch { break; }",
+      "검사": "test/undo.test.js"
+    },
+    {
+      "곳": "src/safety/undo.js",
+      "무엇": "지운 빈 폴더를 되돌린 파일 수에 센다 (2.0.2 · B3)",
+      "그러면": "「파일 N개를 되돌렸습니다」 가 폴더까지 세어 부풀려진다. 감사기록에도 그 수가 남는다",
+      "찾을것": "      되돌린수: restored.filter((x) => x.ok === true && !x.폴더).length,",
+      "바꿀것": "      되돌린수: restored.filter((x) => x.ok === true).length,",
+      "검사": "test/undo.test.js"
+    },
+    {
+      "곳": "src/plugins/manage.js",
+      "무엇": "묶음을 풀 때 적힌 이름을 그대로 쓴다 (2.0.2 · P3)",
+      "그러면": "윈도에서 만든 묶음의 역슬래시 이름이 리눅스·맥에서 폴더가 아니라 뿌리에 한 파일로 풀린다 — 스킬이 제자리를 못 찾는다",
+      "찾을것": "    const p = join(dest, 편이름(f));",
+      "바꿀것": "    const p = join(dest, f.name);",
+      "검사": "test/plugins.test.js",
+      "잴곳": [
+        "linux"
+      ]
+    },
+    {
+      "곳": "src/plugins/manage.js",
+      "무엇": "같은 자리 견주기에서 NFC 를 안 맞춘다 (2.0.2 · P1)",
+      "그러면": "한글 자모 꼴만 다른 두 이름이 든 묶음이 그냥 풀리고, 맥에서는 하나가 말없이 사라진다",
+      "찾을것": "    const 열쇠 = 상대.normalize('NFC').toLowerCase();",
+      "바꿀것": "    const 열쇠 = 상대.toLowerCase();",
+      "검사": "test/plugins.test.js"
+    },
+    {
+      "곳": "src/plugins/manage.js",
+      "무엇": "git 없이 받을 때 태그를 안 묻는다 (2.0.2 · P5)",
+      "그러면": "git 이 없는 PC 에서 `owner/repo#v1.0.0` 이 늘 「받지 못했습니다」 로 끝난다 — git 이 있으면 되는 명령이다",
+      "찾을것": "      { branch: spec.ref, url: `${뿌리}/refs/tags/${spec.ref}` },",
+      "바꿀것": "",
+      "검사": "test/plugins.test.js"
+    },
+    {
+      "곳": "src/plugins/manage.js",
+      "무엇": "다시 설치할 때 옛것을 비켜 두지 않고 지운다 (2.0.2 · P7)",
+      "그러면": "새것을 베끼다 넘어지면(디스크 꽉 참 · 잠긴 파일) 옛것도 새것도 없다 — 업데이트 한 번에 쓰던 플러그인이 사라진다",
+      "찾을것": "    try { renameSync(dest, 비켜둘곳); }",
+      "바꿀것": "    try { rmSync(dest, { recursive: true, force: true }); }",
+      "검사": "test/plugins.test.js"
+    },
+    {
+      "곳": "src/plugins/manage.js",
+      "무엇": "베끼기가 넘어졌을 때 비켜 둔 옛것을 안 되돌린다 (2.0.2 · P7)",
+      "그러면": "쓰던 플러그인이 `.old-…` 점 폴더에 숨고 목록에서 사라진다 — 오류 글은 「그대로입니다」 라고 한다",
+      "찾을것": "      try { renameSync(비켜둘곳, dest); }",
+      "바꿀것": "      try {  }",
+      "검사": "test/plugins.test.js"
+    },
+    {
+      "곳": "src/plugins/manage.js",
+      "무엇": "다 베낀 뒤 비켜 둔 옛것을 안 버린다 (2.0.2 · P7)",
+      "그러면": "업데이트마다 플러그인 한 벌씩 `.old-…` 로 쌓여 디스크를 먹는다",
+      "찾을것": "  if (옛것있나) { try { rmSync(비켜둘곳, { recursive: true, force: true }); } catch { /* 못 버려도 list() 는 점 이름을 안 본다 */ } }",
+      "바꿀것": "  if (false) { try { rmSync(비켜둘곳, { recursive: true, force: true }); } catch { /* 못 버려도 list() 는 점 이름을 안 본다 */ } }",
+      "검사": "test/plugins.test.js"
+    },
+    {
+      "곳": "src/pack/zip.js",
+      "무엇": "담을 파일 수가 zip 끝을 넘어도 안 멈춘다 (2.0.2 · Z5)",
+      "그러면": "65,536개째부터 다 눌러 담은 뒤 날것 RangeError 로 넘어진다 — 무엇이 넘었는지 말이 없다",
+      "찾을것": "  if (entries.length > 한도.개수) {",
+      "바꿀것": "  if (false) {",
+      "검사": "test/plugins.test.js"
+    },
+    {
+      "곳": "src/pack/zip.js",
+      "무엇": "zip 크기가 32비트 끝을 넘어도 안 멈춘다 (2.0.2 · Z5)",
+      "그러면": "4GB 를 넘는 묶음이 날것 RangeError 로 넘어진다 — 넘은 파일이 무엇인지 말이 없다",
+      "찾을것": "    if (raw.length > 한도.크기 || offset + 30 + nameBuf.length + body.length > 한도.크기) {",
+      "바꿀것": "    if (false) {",
+      "검사": "test/plugins.test.js"
     }
   ]
 }

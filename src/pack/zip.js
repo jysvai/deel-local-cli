@@ -56,13 +56,26 @@ const UTF8_NAMES = 0x0800;   // 플래그 11번 비트 — 이름이 UTF-8 이�
  */
 export const 풀기총상한 = 256 * 1024 * 1024;
 
+/*
+ * ── zip64 없이 담을 수 있는 끝 (2.0.2 · Z5) ───────────────────────────────────
+ *
+ * 이 zip 은 zip64 를 안 쓴다. 항목 수·이름 길이는 16비트, 크기·자리는 32비트 칸이다.
+ * 넘으면 `writeUInt16LE` 가 날것 RangeError(「must be >= 0 and <= 65535」)를 던졌다 —
+ * 그것도 파일 수만 개를 **다 눌러 담은 뒤** 맨 끝 표식을 쓰다가. 무엇이 넘었는지 사람
+ * 말로, 넘는 순간에 멈춘다. 검사에서 끝을 좁혀 잴 수 있게 한도는 넘겨받는다.
+ */
+export const zip한도 = { 개수: 0xffff, 이름: 0xffff, 크기: 0xffffffff };
+
 /**
  * @param {Array<{name:string, data:Buffer, mtime?:Date, mode?:number}>} entries
  *        name 은 zip 안에서의 경로. 구분자는 항상 '/'.
  *        mode 는 유닉스 권한(예: 0o755). 실행 파일에 필요하다.
  * @returns {Buffer}
  */
-export function makeZip(entries) {
+export function makeZip(entries, 한도 = zip한도) {
+  if (entries.length > 한도.개수) {
+    throw new Error(`zip 에 담을 파일이 ${entries.length.toLocaleString('en-US')}개입니다 — 한 묶음에 ${한도.개수.toLocaleString('en-US')}개까지 담습니다 (zip64 는 만들지 않습니다). 나눠서 묶으세요.`);
+  }
   const locals = [];
   const central = [];
   let offset = 0;
@@ -77,6 +90,10 @@ export function makeZip(entries) {
     const useDeflate = packed.length < raw.length;
     const body = useDeflate ? packed : raw;
     const method = useDeflate ? 8 : 0;
+    if (nameBuf.length > 한도.이름) throw new Error(`zip 에 담을 이름이 너무 깁니다 (${nameBuf.length}바이트) — ${한도.이름}바이트까지: ${e.name.slice(0, 80)}…`);
+    if (raw.length > 한도.크기 || offset + 30 + nameBuf.length + body.length > 한도.크기) {
+      throw new Error(`zip 이 zip64 없이 담는 크기(${한도.크기.toLocaleString('en-US')}바이트 · 약 4GB)를 넘습니다 — 나눠서 묶으세요 (넘은 자리: ${e.name})`);
+    }
 
     const when = 담을시각(e.mtime ?? new Date());
     const time = dosTime(when);
