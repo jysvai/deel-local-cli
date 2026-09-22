@@ -1,7 +1,8 @@
 // 되돌리기. 승인 프롬프트를 안 쓰는 대신 이게 안전망이다.
 // 파일을 고치기 전에 항상 이전 내용을 떠 놓고, /undo 로 턴 단위로 되돌린다.
 import { join, dirname, basename, resolve, relative, isAbsolute, sep } from 'node:path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, rmdirSync, appendFileSync, statSync, chmodSync, renameSync, realpathSync, openSync, readSync, closeSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, rmdirSync, appendFileSync, statSync, renameSync, realpathSync } from 'node:fs';
+import { 줄로끝나나, 본인만잠그기 } from '../jsonl.js';
 import { looksBinary } from '../tools/encoding.js';
 import { 살림폴더만들기 } from './audit.js';
 import { 말 } from '../i18n/index.js';
@@ -133,23 +134,11 @@ export class History {
    * 개행으로 끝내므로 한 번 본 것이 계속 맞다.
    */
   #줄끝봤나 = false;
-  #줄로끝나나() {
-    let fd = null;
-    try {
-      const 크기 = statSync(this.file).size;
-      if (!크기) return true;
-      fd = openSync(this.file, 'r');
-      const 한바이트 = Buffer.alloc(1);
-      readSync(fd, 한바이트, 0, 1, 크기 - 1);
-      return 한바이트[0] === 0x0a;
-    } catch { return true; }         // 없거나 못 읽으면 붙일 반쪽도 없다
-    finally { if (fd != null) { try { closeSync(fd); } catch { /* 닫다 터져도 적기는 한다 */ } } }
-  }
 
   #덧붙이기(rec) {
     let 줄 = 적을줄(rec) + '\n';
     if (!this.#줄끝봤나) {
-      if (!this.#줄로끝나나()) 줄 = '\n' + 줄;
+      if (!줄로끝나나(this.file)) 줄 = '\n' + 줄;
       this.#줄끝봤나 = true;
     }
     appendFileSync(this.file, 줄, 'utf8');
@@ -179,11 +168,7 @@ export class History {
   #잠그기() {
     if (this.#잠갔나) return;
     this.#잠갔나 = true;
-    // 윈도우에서 chmod 는 아무 일도 안 하고 **성공한다.** 그 성공을 적으면 위 머리말이 금지한
-    // 「잠근 척」 이다 — agent/store.js 와 같이 안 걸었다고 적는다.
-    if (process.platform === 'win32') { this.잠금 = { 못함: 'windows' }; return; }
-    try { chmodSync(this.file, 0o600); this.잠금 = { 모드: 0o600 }; }
-    catch (err) { this.잠금 = { 못함: err?.code ?? String(err) }; }
+    this.잠금 = 본인만잠그기(this.file);
   }
 
   /**

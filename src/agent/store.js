@@ -15,8 +15,8 @@
 import {
   existsSync, mkdirSync, readdirSync, readFileSync,
   appendFileSync, writeFileSync, statSync, rmSync, chmodSync, renameSync,
-  openSync, readSync, closeSync,
 } from 'node:fs';
+import { 줄로끝나나, 본인만잠그기 } from '../jsonl.js';
 import { join } from 'node:path';
 import { 도구결과인가 } from '../backend/adapter.js';
 import { BOM떼기 } from '../safety/trust.js';
@@ -173,14 +173,7 @@ export class Store {
   #잠그기() {
     if (this.#잠갔나) return;
     this.#잠갔나 = true;
-    /*
-     * 윈도우에서 chmod 는 **아무 일도 안 하고 성공한다.** 그 성공을 그대로
-     * 적으면 바로 위 머리말이 스스로 금지한 「잠근 척」 이 된다 — 같은 PC 를
-     * 여럿이 쓰는 사람이 화면만 보고 안심한다. 안 걸었으면 안 걸었다고 적는다.
-     */
-    if (process.platform === 'win32') { this.잠금 = { 못함: 'windows' }; return; }
-    try { chmodSync(this.file, 0o600); this.잠금 = { 모드: 0o600 }; }
-    catch (err) { this.잠금 = { 못함: err?.code ?? String(err) }; }
+    this.잠금 = 본인만잠그기(this.file);
   }
 
   #open() {
@@ -280,18 +273,6 @@ export class Store {
    * 파일마다 처음 적을 때 한 번, 끝이 개행인지 보고 아니면 개행부터 붙인다.
    */
   #줄끝봤나 = false;
-  #줄로끝나나() {
-    let fd = null;
-    try {
-      const 크기 = statSync(this.file).size;
-      if (!크기) return true;
-      fd = openSync(this.file, 'r');
-      const 한바이트 = Buffer.alloc(1);
-      readSync(fd, 한바이트, 0, 1, 크기 - 1);
-      return 한바이트[0] === 0x0a;
-    } catch { return true; }         // 없거나 못 읽으면 붙일 반쪽도 없다
-    finally { if (fd != null) { try { closeSync(fd); } catch { /* 닫다 터져도 적기는 한다 */ } } }
-  }
 
   /** 한 줄 적는다. 적었으면 true. 못 적었으면 false 이고 셈에 오른다. */
   #write(obj) {
@@ -302,7 +283,7 @@ export class Store {
     if (this.#남이썼나()) { this.#못썼다({ code: 'OTHER_WINDOW' }); return false; }
     try {
       if (!this.#줄끝봤나) {
-        if (!this.#줄로끝나나()) 줄 = '\n' + 줄;
+        if (!줄로끝나나(this.file)) 줄 = '\n' + 줄;
         this.#줄끝봤나 = true;
       }
       appendFileSync(this.file, 줄, 'utf8');
