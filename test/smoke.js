@@ -4,7 +4,7 @@
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeScope, checkCommand, ScopeError } from '../src/safety/guard.js';
+import { makeScope, checkCommand, checkPaths, ScopeError, BlockedError } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { runTool } from '../src/tools/index.js';
@@ -33,6 +33,17 @@ const T = (name, args) => runTool(name, args, ctx);
 let scoped = null;
 try { ctx.scope.resolve('../../etc/passwd'); } catch (e) { scoped = e; }
 check('범위 밖 경로 차단', scoped instanceof ScopeError);
+
+/*
+ * 막힌 명령은 **BlockedError** 로 온다 (2.0.2). ScopeError 는 여기서 instanceof 로 가르는데 형제
+ * BlockedError 는 세 자리에서 던지면서 아무도 안 들여와 가를 길이 없었다 — 부르는 쪽이 「범위 밖」 과
+ * 「막힌 명령」 을 글자 맞추기로만 갈랐다. 셋 다 그 꼴로 온다는 것을 못 박는다.
+ */
+const 던진것 = (f) => { try { f(); return null; } catch (e) { return e; } };
+check('막힌 명령은 BlockedError', 던진것(() => checkCommand('rm -rf /')) instanceof BlockedError);
+check('살림 파일을 건드리는 명령도 BlockedError', 던진것(() => checkPaths('cat .deel/config.json', ctx.scope)) instanceof BlockedError);
+check('살림 폴더로 들어가는 명령도 BlockedError', 던진것(() => checkPaths('cd .deel && type config.json', ctx.scope)) instanceof BlockedError);
+check('  BlockedError 는 ScopeError 가 아니다 (둘을 가를 수 있다)', !(던진것(() => checkCommand('rm -rf /')) instanceof ScopeError));
 
 // 2. Read
 const r1 = await T('Read', { file_path: 'src/a.js' });

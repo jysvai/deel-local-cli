@@ -53,6 +53,10 @@ $dst = $env:DEEL_XL_OUT
 # 그러면 맞는 암호를 넣은 사람이 「암호가 맞지 않습니다」 를 세 번 받고 끝난다. 나가는 쪽은
 # 이미 decode() 로 콘솔 인코딩을 풀고 있는데(아래 받은글), 들어오는 쪽만 빠져 있었다.
 try { [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+# 나가는 쪽도 UTF-8 로 (2.0.2 · XL3). 콘솔 코드페이지로 두면 그 판에 없는 글자(일본어 엑셀의 「パスワード」,
+# 중국어 엑셀의 「密码」, 한글 판에 없는 시트 이름)가 「?」 가 되고, 받는 쪽 decode() 가 인코딩을 잘못 짚어
+# 한 줄이 통째로 딴 글자가 됐다 — 그러면 암호를 틀렸다는 말도 못 알아본다.
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
 $pw  = [Console]::In.ReadLine()
 if ($null -eq $pw) { $pw = '' }
 
@@ -89,8 +93,8 @@ try {
 catch {
   $m = $_.Exception.Message
   # 작은따옴표는 PowerShell 에서 이스케이프를 안 푼다. 탭을 넣으려면 큰따옴표여야 한다.
-  if ($m -match 'password|암호|protected') { Write-Output "ERR\`tPASSWORD" }
-  elseif ($m -eq 'BUSY') { Write-Output "ERR\`tBUSY" }
+  # 「암호가 틀렸다」 는 말은 이 PC 언어로 온다 — 가르는 일은 JS 쪽 암호탓인가 가 한다 (2.0.2 · XL3).
+  if ($m -eq 'BUSY') { Write-Output "ERR\`tBUSY" }
   elseif ($m -eq 'OPENFAIL') { Write-Output "ERR\`tPASSWORD" }
   else { Write-Output ("ERR\`tOTHER\`t" + $m) }
 }
@@ -191,6 +195,53 @@ export async function excelToTables(경로, { password = '', timeout = 90000 } =
   }
 }
 
+/**
+ * 엑셀이 「암호가 틀렸다」 고 한 말인가 (2.0.2 · XL3).
+ *
+ * 그 말은 **이 컴퓨터 언어로** 온다. 여기가 파워셸 안의 `'password|암호|protected'` 였는데,
+ * 일본어 엑셀은 「パスワード」, 중국어는 「密码」, 독일어는 「Kennwort」 라고 말한다 — 그러면 암호를
+ * 틀린 사람이 「암호가 맞지 않습니다」 대신 「엑셀이 열지 못했습니다: …」 를 받고, 모델은 암호를
+ * 다시 물을 줄 모른다. 판정은 이쪽에서 한 번만 한다 — 엑셀 없는 판에서도 잴 수 있게.
+ */
+const 암호말 = /password|protected|암호|パスワード|密码|密碼|kennwort|mot de passe|contraseña|senha|palavra-passe|пароль|wachtwoord|hasło|parola|lösenord|adgangskode|passord|salasana|jelszó|heslo|mật khẩu/i;
+export function 암호탓인가(말) {
+  return 암호말.test(String(말 ?? ''));
+}
+
+/**
+ * 파워셸이 뱉은 글(이미 푼 것)을 답으로 (2.0.2 · XL3).
+ *
+ * 돌리기 의 close 안에 있던 것을 떼어 냈다. 그 자리는 엑셀이 깔린 PC 에서만 닿아서,
+ * 여기 갈래가 틀려도 잴 길이 없었다.
+ */
+export function 엑셀답읽기(out, err = '') {
+  const 줄들 = String(out ?? '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const 오류 = 줄들.find((l) => l.startsWith('ERR\t'));
+  if (오류) {
+    const [, 갈래, 말] = 오류.split('\t');
+    if (갈래 === 'PASSWORD' || 암호탓인가(말)) return { ok: false, reason: 'password', message: '암호가 맞지 않거나, 이 파일에는 암호가 필요합니다' };
+    if (갈래 === 'BUSY') return { ok: false, reason: 'busy', message: '엑셀이 계속 바쁘다고 합니다 — 열려 있는 엑셀 창을 닫고 다시 해보세요' };
+    // COM 클래스를 못 찾는다 = 이 컴퓨터에 엑셀이 없다.
+    // 이걸 그대로 내보내면 사용자는 알아볼 수 없는 오류 코드만 받는다.
+    if (없는엑셀(말)) {
+      return { ok: false, reason: 'no-excel', message: '이 컴퓨터에 엑셀이 설치되어 있지 않습니다 — 암호가 걸린 파일과 옛 .xls 는 엑셀이 있어야 읽을 수 있습니다' };
+    }
+    return { ok: false, reason: 'other', message: `엑셀이 열지 못했습니다: ${말 ?? ''}`.trim() };
+  }
+  if (!줄들.includes('OK')) {
+    const 첫줄 = String(err ?? '').split('\n')[0] ?? '';
+    if (없는엑셀(err)) {
+      return { ok: false, reason: 'no-excel', message: '이 컴퓨터에 엑셀이 설치되어 있지 않습니다' };
+    }
+    return { ok: false, reason: 'other', message: `엑셀이 끝내지 못했습니다${첫줄 ? ` — ${첫줄}` : ''}` };
+  }
+  const 시트들 = 줄들.filter((l) => l.startsWith('SHEET\t')).map((l) => {
+    const [, i, ...name] = l.split('\t');
+    return { i: Number(i), name: name.join('\t') || `시트${i}` };
+  });
+  return { ok: true, 시트들 };
+}
+
 function 돌리기(경로, 밖, password, timeout) {
   return new Promise((done) => {
     // 스크립트는 -EncodedCommand 로 넘긴다. 임시 .ps1 파일을 안 만들려는 것이다 —
@@ -202,7 +253,8 @@ function 돌리기(경로, 밖, password, timeout) {
       env: { ...process.env, DEEL_XL_IN: 경로, DEEL_XL_OUT: 밖 },
     });
 
-    // PowerShell 은 UTF-8 이 아니라 이 컴퓨터 콘솔 인코딩으로 뱉는다.
+    // PowerShell 은 UTF-8 이 아니라 이 컴퓨터 콘솔 인코딩으로 뱉는다(스크립트가 UTF-8 로 돌려
+    // 놓지만, 그게 안 먹는 판도 있다).
     // utf8 이라고 하고 받으면 오류 메시지가 통째로 깨져서, 무엇이 잘못됐는지
     // 알아볼 수 없는 글자가 사용자에게 그대로 간다. 바이트로 모아 뒤에 푼다.
     const 밖조각 = [];
@@ -232,33 +284,7 @@ function 돌리기(경로, 밖, password, timeout) {
       if (끝남) return;
       끝남 = true;
       clearTimeout(시계);
-      const out = 풀기(밖조각);
-      const err = 풀기(오류조각);
-      const 줄들 = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-      const 오류 = 줄들.find((l) => l.startsWith('ERR\t'));
-      if (오류) {
-        const [, 갈래, 말] = 오류.split('\t');
-        if (갈래 === 'PASSWORD') return done({ ok: false, reason: 'password', message: '암호가 맞지 않거나, 이 파일에는 암호가 필요합니다' });
-        if (갈래 === 'BUSY') return done({ ok: false, reason: 'busy', message: '엑셀이 계속 바쁘다고 합니다 — 열려 있는 엑셀 창을 닫고 다시 해보세요' });
-        // COM 클래스를 못 찾는다 = 이 컴퓨터에 엑셀이 없다.
-        // 이걸 그대로 내보내면 사용자는 알아볼 수 없는 오류 코드만 받는다.
-        if (없는엑셀(말)) {
-          return done({ ok: false, reason: 'no-excel', message: '이 컴퓨터에 엑셀이 설치되어 있지 않습니다 — 암호가 걸린 파일과 옛 .xls 는 엑셀이 있어야 읽을 수 있습니다' });
-        }
-        return done({ ok: false, reason: 'other', message: `엑셀이 열지 못했습니다: ${말 ?? ''}`.trim() });
-      }
-      if (!줄들.includes('OK')) {
-        const 첫줄 = err.split('\n')[0] ?? '';
-        if (없는엑셀(err)) {
-          return done({ ok: false, reason: 'no-excel', message: '이 컴퓨터에 엑셀이 설치되어 있지 않습니다' });
-        }
-        return done({ ok: false, reason: 'other', message: `엑셀이 끝내지 못했습니다${첫줄 ? ` — ${첫줄}` : ''}` });
-      }
-      const 시트들 = 줄들.filter((l) => l.startsWith('SHEET\t')).map((l) => {
-        const [, i, ...name] = l.split('\t');
-        return { i: Number(i), name: name.join('\t') || `시트${i}` };
-      });
-      done({ ok: true, 시트들 });
+      done(엑셀답읽기(풀기(밖조각), 풀기(오류조각)));
     });
 
     // 암호는 여기로만 나간다. 줄바꿈까지 보내고 바로 닫는다.

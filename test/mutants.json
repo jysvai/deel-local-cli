@@ -13757,6 +13757,57 @@
       "찾을것": "  if type compopt >/dev/null 2>&1; then",
       "바꿀것": "  if true; then",
       "검사": "test/completion.test.js"
+    },
+    {
+      "곳": "src/tools/excel-com.js",
+      "무엇": "엑셀이 제 나라 말로 한 「암호가 틀렸다」 를 JS 가 안 가른다 (2.0.2 · XL3)",
+      "그러면": "일본어·중국어·독일어 엑셀에서 암호를 틀린 사람이 「엑셀이 열지 못했습니다: …」 를 받고, 모델은 암호를 다시 물을 줄 모른다",
+      "찾을것": "    if (갈래 === 'PASSWORD' || 암호탓인가(말)) return { ok: false, reason: 'password', message: '암호가 맞지 않거나, 이 파일에는 암호가 필요합니다' };",
+      "바꿀것": "    if (갈래 === 'PASSWORD') return { ok: false, reason: 'password', message: '암호가 맞지 않거나, 이 파일에는 암호가 필요합니다' };",
+      "검사": "test/xlsx.test.js"
+    },
+    {
+      "곳": "src/tools/excel-com.js",
+      "무엇": "암호 낱말 목록이 일본어 「パスワード」 를 모른다 (2.0.2 · XL3)",
+      "그러면": "일본어 엑셀에서 암호를 틀리면 reason 이 other 가 된다",
+      "찾을것": "const 암호말 = /password|protected|암호|パスワード|密码|密碼|kennwort|mot de passe|contraseña|senha|palavra-passe|пароль|wachtwoord|hasło|parola|lösenord|adgangskode|passord|salasana|jelszó|heslo|mật khẩu/i;",
+      "바꿀것": "const 암호말 = /password|protected|암호|密码|密碼|kennwort|mot de passe|contraseña|senha|palavra-passe|пароль|wachtwoord|hasło|parola|lösenord|adgangskode|passord|salasana|jelszó|heslo|mật khẩu/i;",
+      "검사": "test/xlsx.test.js"
+    },
+    {
+      "곳": "src/tools/excel-com.js",
+      "무엇": "엑셀 스크립트가 나가는 글을 콘솔 코드페이지로 둔다 (2.0.2 · XL3)",
+      "그러면": "그 판에 없는 글자(パスワード·密码·시트 이름)가 「?」 가 되고 받는 쪽이 인코딩을 잘못 짚어 한 줄이 통째로 딴 글자가 된다",
+      "찾을것": "try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }",
+      "바꿀것": "",
+      "검사": "test/xlsx.test.js",
+      "잴곳": [
+        "win32"
+      ]
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "위험 명령 금지를 BlockedError 가 아닌 오류로 던진다 (2.0.2 · 436)",
+      "그러면": "부르는 쪽이 「막힘」 과 「고장」 을 못 가려, 모델에게 막힌 까닭 대신 도구 오류를 준다",
+      "찾을것": "      if (b.re.test(하나)) throw new BlockedError(`${b.why}\\n  막힌 명령: ${s.slice(0, 120)}`);",
+      "바꿀것": "      if (b.re.test(하나)) throw new Error(`${b.why}\\n  막힌 명령: ${s.slice(0, 120)}`);",
+      "검사": "test/smoke.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "살림 파일 금지를 BlockedError 가 아닌 오류로 던진다 (2.0.2 · 436)",
+      "그러면": "`.deel/config.json` 을 읽는 명령이 막힘이 아니라 도구 고장으로 올라간다",
+      "찾을것": "    if (이유) throw new BlockedError(`${이유}\\n  이 명령 안에 있습니다: ${String(cmd).slice(0, 120)}`);",
+      "바꿀것": "    if (이유) throw new Error(`${이유}\\n  이 명령 안에 있습니다: ${String(cmd).slice(0, 120)}`);",
+      "검사": "test/smoke.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "폴더 옮겨 살림 읽기 금지를 BlockedError 가 아닌 오류로 던진다 (2.0.2 · 436)",
+      "그러면": "`cd .deel && type config.json` 이 막힘이 아니라 도구 고장으로 올라간다",
+      "찾을것": "    if (이유) throw new BlockedError(`${이유}\\n  이 명령 안에 있습니다: ${cmd.slice(0, 120)}`);",
+      "바꿀것": "    if (이유) throw new Error(`${이유}\\n  이 명령 안에 있습니다: ${cmd.slice(0, 120)}`);",
+      "검사": "test/smoke.js"
     }
   ]
 }

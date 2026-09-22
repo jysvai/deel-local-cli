@@ -13,7 +13,8 @@ import { join } from 'node:path';
 import { makeZip } from '../src/pack/zip.js';
 import { readZip, looksZip } from '../src/pack/zip.js';
 import { readXlsx, toCsv, cellRef, unescapeXml, looksOle } from '../src/tools/xlsx.js';
-import { 시트모으기, 빈시트답, canUseExcel, 없는엑셀, SCRIPT } from '../src/tools/excel-com.js';
+import { decode } from '../src/tools/encoding.js';
+import { 시트모으기, 빈시트답, canUseExcel, 없는엑셀, SCRIPT, 엑셀답읽기, 암호탓인가 } from '../src/tools/excel-com.js';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -567,6 +568,53 @@ if (process.platform === 'win32') {
   else check('★★★ 한글 암호가 파워셸까지 글자 그대로 닿는다', 받은것 === 바라는것, `${받은것} ≠ ${바라는것}`);
 } else {
   check('(윈도우가 아니라 한글 암호 자리는 못 쟀습니다)', true, process.platform);
+}
+
+// ── 엑셀이 제 나라 말로 「암호가 틀렸다」 고 해도 알아듣나 (2.0.2 · XL3) ──────────
+trace('20-XL3');
+/*
+ * 판정이 파워셸 안의 `'password|암호|protected'` 였다 — 일본어·중국어·독일어 엑셀이 한 말은
+ * 「엑셀이 열지 못했습니다」 로 떨어졌다. 그리고 파워셸이 콘솔 코드페이지로 뱉어서 그 판에 없는
+ * 글자는 `?` 가 되고, 받는 쪽이 인코딩을 잘못 짚어 한 줄이 통째로 딴 글자가 됐다. 판정은 떼어 낸
+ * 엑셀답읽기 로, 인코딩은 스크립트 앞부분을 진짜 파워셸에 물려 잰다(엑셀 없이).
+ */
+{
+  for (const 말 of [
+    'Exception calling "Open" with "7" argument(s): "The password you supplied is not correct."',
+    '입력한 암호가 잘못되었습니다.',
+    '入力したパスワードが間違っています。',
+    '您提供的密码不正确。',
+    'Das angegebene Kennwort ist nicht korrekt.',
+    'Le mot de passe fourni n’est pas correct.',
+  ]) {
+    const 답 = 엑셀답읽기(`ERR\tOTHER\t${말}\r\n`);
+    check(`★★ XL3 「${말.slice(0, 14)}…」 는 암호 탓으로 읽는다`, 답.reason === 'password', JSON.stringify(답));
+  }
+  const 딴탈 = 엑셀답읽기('ERR\tOTHER\tMicrosoft Excel cannot access the file.\r\n');
+  check('  암호와 무관한 말은 other 로 남는다', 딴탈.reason === 'other' && /cannot access/.test(딴탈.message), JSON.stringify(딴탈));
+  check('  엑셀 없음 번호는 no-excel', 엑셀답읽기('ERR\tOTHER\t80040154 Class not registered\r\n').reason === 'no-excel');
+  check('  OPENFAIL(PASSWORD 갈래)은 그대로 암호', 엑셀답읽기('ERR\tPASSWORD\r\n').reason === 'password');
+  const 됨 = 엑셀답읽기('SHEET\t1\t매출\r\nSHEET\t2\t\r\nOK\r\n');
+  check('  OK 면 시트 목록 (이름 없는 시트는 시트2)', 됨.ok && 됨.시트들.map((x) => `${x.i}:${x.name}`).join(',') === '1:매출,2:시트2', JSON.stringify(됨));
+  check('  OK 가 없으면 stderr 첫 줄을 붙여 other', 엑셀답읽기('', '뭔가 터짐\n둘째 줄').message.endsWith('뭔가 터짐'));
+  check('  암호탓인가 는 빈 값에 거짓', !암호탓인가(undefined) && !암호탓인가(''));
+}
+if (process.platform === 'win32') {
+  const { spawnSync } = await import('node:child_process');
+  // 스크립트 앞부분(인코딩을 맞추는 곳까지) 뒤에 catch 가 내는 꼴 그대로 — 일본어 엑셀이 한 말과 이 판에 없는 시트 이름.
+  const 앞 = `${SCRIPT.split('$xl = $null')[0]}
+Write-Output ("SHEET\`t1\`t" + '売上📈')
+Write-Output ("ERR\`tOTHER\`t" + '入力したパスワードが間違っています。')
+`;
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(앞, 'utf16le').toString('base64')], {
+    windowsHide: true, input: '\n', env: { ...process.env, DEEL_XL_IN: 'a', DEEL_XL_OUT: 'b' },
+  });
+  if (r.error || r.status !== 0) check('(파워셸을 못 불러서 나가는 인코딩은 못 쟀습니다)', true, String(r.error ?? r.status));
+  else {
+    const 글 = decode(r.stdout).text;
+    check('★★ XL3 파워셸이 이 판에 없는 글자도 그대로 뱉는다 (UTF-8)', 글.includes('売上📈') && 글.includes('パスワード'), JSON.stringify(글));
+    check('★★ XL3 그 줄을 암호 탓으로 읽는다', 엑셀답읽기(글).reason === 'password', JSON.stringify(엑셀답읽기(글)));
+  }
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
