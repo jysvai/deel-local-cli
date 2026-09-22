@@ -372,7 +372,9 @@ function 돌리기(검사) {
     cwd: 일터,
     encoding: 'utf8',
     // 검사가 사람을 기다리는 일이 없어야 한다. 서면 여기서 끊고 그대로 말한다.
-    timeout: 180000,
+    // 300초: 제일 긴 test/oneshot.test.js 가 `deel run` 을 백 번 넘게 띄워 느린 윈도 PC 에서 186초다.
+    // 180초일 때는 그 파일의 어긋 55개가 「어긋내기 전부터 빨갛다」 로 통째로 못 잼이 됐다 (2.0.2).
+    timeout: 300000,
     env: { ...process.env, NO_COLOR: '1' },
   });
   return { code: r.status, 걸린: Date.now() - t0, 섰나: r.error?.code === 'ETIMEDOUT' };
