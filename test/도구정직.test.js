@@ -567,8 +567,14 @@ trace('11-살림-우회');
   check('★★ Read 에 ::$DATA 를 붙여도 열쇠를 안 읽는다', !샜나(읽음) && !!읽음.error, JSON.stringify(읽음).slice(0, 100));
   ctx.history.nextTurn();
   const 씀 = await runTool('Write', { file_path: '.deel/config.json::$DATA', content: 'PWNED' }, ctx);
+  /*
+   * 윈도에서 `::$DATA` 는 본체 그 자체라 막혀야 한다. 유닉스에서는 콜론 든 **딴 파일**이다
+   * (2.0.2 · 480 — 스트림 꼬리는 윈도에서만 벗긴다). 거기서 지킬 약속은 「본체를 안 덮는다」 하나다 —
+   * 막히라고 하면 480 이 고친 「딴 파일을 살림으로 막음」 을 다시 요구하는 셈이다.
+   */
   check('★★ Write 에 ::$DATA 를 붙여도 설정 본체를 안 덮는다',
-    readFileSync(join(root, '.deel', 'config.json'), 'utf8') === 열쇠글 && !!씀.error, JSON.stringify(씀).slice(0, 100));
+    readFileSync(join(root, '.deel', 'config.json'), 'utf8') === 열쇠글 && (process.platform !== 'win32' || !!씀.error),
+    JSON.stringify(씀).slice(0, 100));
   const 고침 = await runTool('Edit', { file_path: '.deel/config.json::$DATA', old_string: 'sk-SECRET', new_string: 'sk-PWNED' }, ctx);
   check('★ Edit 에 ::$DATA 를 붙여도 설정을 안 고친다',
     readFileSync(join(root, '.deel', 'config.json'), 'utf8') === 열쇠글 && !!고침.error, JSON.stringify(고침).slice(0, 100));

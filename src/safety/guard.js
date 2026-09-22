@@ -1,7 +1,7 @@
 // 자율 실행의 울타리.
 // 승인 프롬프트를 안 쓰는 대신 (1) 작업 범위 밖은 못 건드리고
 // (2) 되돌릴 수 없는 명령만 막는다. 나머지는 전부 통과시킨다.
-import { resolve, relative, isAbsolute, sep, dirname, basename, parse, join } from 'node:path';
+import { resolve, relative, isAbsolute, sep, dirname, basename, parse, join, win32, posix } from 'node:path';
 import { realpathSync, existsSync, readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { 내부살림 } from '../tools/fsutil.js';
@@ -603,8 +603,11 @@ export function 남의집(이름, { 집 = homedir(), 나 = null, passwd = null, 
       if (칸[0] === 이름 && 칸[5]) return 칸[5];
     }
   }
-  const 옆 = dirname(집);
-  return resolve(옆 === parse(옆).root ? join(옆, 'home') : 옆, 이름);
+  // 판을 넘겨받았으면 경로 셈도 그 판으로 한다. 리눅스에서 윈도 판을 물으면 `C:\Users\me` 가
+  // 상대경로로 읽혀 작업 폴더 밑이 됐다(검사만 그 판을 만든다 — 실제로는 늘 이 PC 의 판이다).
+  const 길 = platform === 'win32' ? win32 : posix;
+  const 옆 = 길.dirname(집);
+  return 길.resolve(옆 === 길.parse(옆).root ? 길.join(옆, 'home') : 옆, 이름);
 }
 
 // 셸이 알아서 풀어 주는 자리표. 우리도 같이 풀어야 실제로 닿는 곳을 본다.
