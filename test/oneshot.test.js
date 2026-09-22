@@ -798,6 +798,49 @@ trace('8.7-MCP-도-붙는다');
   for (let n = 0; 남음 && n < 30; n++) { await new Promise((ok) => setTimeout(ok, 100)); 남음 = 살았나(서버번호); }
   check('★★ 끝날 때 붙인 MCP 서버를 닫는다 (남의 프로그램이 안 남는다)', 서버번호 != null && !남음, `pid=${서버번호} 남음=${남음}`);
   if (남음) { try { process.kill(서버번호); } catch { /* 이미 갔다 */ } }
+
+  /*
+   * 위의 「안 남는다」 는 **runOnce 가 닫아서인지** 못 가른다 — 프로그램이 끝날 때 mcp.js 의
+   * 'exit' 그물(모두닫기)이 어차피 다 닫는다. 그래서 내놓기 의 닫는 줄을 지워도 위는 초록이었다
+   * (어긋내기가 잡음). 띄운 쪽이 제 손으로 거두는지는 **프로세스가 끝나기 전에** 봐야 갈린다 —
+   * 한 프로세스 안에서 runOnce 를 부르고, 돌아온 바로 그 자리에서 서버가 살아 있는지 본다.
+   */
+  const 자식 = join(방, '안에서-부르기.mjs');
+  writeFileSync(자식, [
+    "import { readFileSync, existsSync } from 'node:fs';",
+    `const { runOnce } = await import(${JSON.stringify(new URL('../src/oneshot.js', import.meta.url).href)});`,
+    `const { 살아있는수 } = await import(${JSON.stringify(new URL('../src/backend/mcp.js', import.meta.url).href)});`,
+    `const 번호파일 = ${JSON.stringify(번호파일)};`,
+    `const code = await runOnce({ prompt: '일부러_MCP 위키에서 찾아 줘', json: true, quiet: true, root: ${JSON.stringify(방)} });`,
+    'const 붙은수 = 살아있는수();',
+    "const pid = existsSync(번호파일) ? Number(readFileSync(번호파일, 'utf8')) : null;",
+    'const 살았나 = () => { try { process.kill(pid, 0); return true; } catch { return false; } };',
+    'let 남음 = pid != null && 살았나();',
+    'for (let n = 0; 남음 && n < 30; n++) { await new Promise((ok) => setTimeout(ok, 100)); 남음 = 살았나(); }',
+    "process.stdout.write('\\n표시 ' + JSON.stringify({ code, 붙은수, pid, 남음 }) + '\\n');",
+    'if (남음) { try { process.kill(pid); } catch {} }',
+    'process.exit(0);',
+  ].join('\n'), 'utf8');
+  rmSync(번호파일, { force: true });
+  대본초기화();
+  const 안 = await new Promise((done) => {
+    const kid = spawn(process.execPath, [자식], {
+      cwd: 방,
+      env: { ...process.env, DEEL_HOME: home, NO_COLOR: '1', DEEL_TRUST_ALL: '1', DEEL_MCP_LAZY: 'off' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = ''; let err = '';
+    kid.stdout.on('data', (b) => { out += b; });
+    kid.stderr.on('data', (b) => { err += b; });
+    const 시계 = setTimeout(() => kid.kill('SIGKILL'), 30000);
+    kid.on('close', (code) => { clearTimeout(시계); done({ code, out, err }); });
+  });
+  let 표시 = null;
+  try { 표시 = JSON.parse(/^표시 (.+)$/m.exec(안.out)?.[1] ?? 'null'); } catch { /* 아래가 말한다 */ }
+  check('  안에서 부른 runOnce 도 MCP 서버를 띄웠다 (재는 판이 맞다)', 표시?.pid != null && 표시?.code === 0,
+    JSON.stringify(표시) ?? `${안.out.slice(-160)} ${안.err.slice(-160)}`);
+  check('★★ runOnce 가 돌아온 자리에서 붙인 MCP 서버가 이미 닫혀 있다 (프로그램이 끝나기 전에)',
+    표시?.붙은수 === 0 && 표시?.남음 === false, JSON.stringify(표시));
   try { rmSync(방, { recursive: true, force: true }); } catch { /* 윈도우가 잠깐 쥐고 있을 수 있다 */ }
 }
 
