@@ -29,6 +29,32 @@ const 성한수 = (v) => {
   return Number.isFinite(n) && n >= 최소 && n <= 최대허용 ? n : null;
 };
 
+/*
+ * 창 한계 문장에서 **우리가 보낸 크기**를 뽑는다 (2.0.2 · 488).
+ *
+ * 한계 뒤 `requested N` 만 봤다. 요즘 vLLM 은 이렇게 말한다 —
+ *
+ *   However, your request has 40000 input tokens.                              → 못 뽑음 (null)
+ *   However, you requested 1024 output tokens and your prompt contains at least
+ *   7169 input tokens, for a total of at least 8193 tokens.                    → 1024 로 뽑음
+ *
+ * 뒤엣것은 틀린 수다 — 화면이 「(1,024 을 보냈었습니다)」 라고, 8,192 창에 1,024 를 보내 거절당한
+ * 것처럼 말한다. 합이 있으면 합, 없으면 답 길이가 아닌 `requested N`, 그다음 입력 크기 순으로 본다.
+ */
+function 보낸크기(s) {
+  const 차례 = [
+    /for a total of\s+(?:at least\s+)?(\d+)/i,
+    /requested\s+(\d+)(?!\d)(?!\s*(?:output|completion|new)\b)/i,
+    /requested tokens\s*\(\s*(\d+)\s*\)/i,
+    /(?:request has|prompt contains|input (?:has|contains))\s+(?:at least\s+)?(\d+)/i,
+  ];
+  for (const re of 차례) {
+    const n = 성한수(re.exec(s)?.[1]);
+    if (n) return n;
+  }
+  return null;
+}
+
 /**
  * 거절 문장에서 배울 것이 있나.
  *
@@ -107,7 +133,7 @@ export function 배울것(message) {
     if (!m) continue;
     const limit = 성한수(m[1]);
     if (!limit) continue;
-    return { kind: 'ctx', limit, asked: 성한수(m[2]) ?? null, text: 짧게(원문) };
+    return { kind: 'ctx', limit, asked: 보낸크기(s), text: 짧게(원문) };
   }
 
   // ── 2) 답 길이 한계 ───────────────────────────────────────────────────

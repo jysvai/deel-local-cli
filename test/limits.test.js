@@ -198,6 +198,23 @@ trace('6-서버에게배우기');
     check(`배운다: ${문장.slice(0, 46)}…`, 맞나, JSON.stringify(r));
   }
 
+  /*
+   * ── 요즘 vLLM 이 말하는 보낸 크기 (2.0.2 · 488) ─────────────────────────
+   *
+   * 한계 뒤 `requested N` 만 봐서 입력 크기만 말하는 문장은 null, 답 길이와 입력을 나눠 말하는
+   * 문장은 **답 길이(1024)** 를 보낸 크기로 뽑았다 — 화면이 「(1,024 을 보냈었습니다)」.
+   */
+  for (const [문장, 보낸것] of [
+    ["This model's maximum context length is 32768 tokens. However, your request has 40000 input tokens. Please reduce the length of the input messages.", 40000],
+    ["This model's maximum context length is 8192 tokens. However, you requested 1024 output tokens and your prompt contains at least 7169 input tokens, for a total of at least 8193 tokens. Please reduce the length of the input prompt or the number of requested output tokens.", 8193],
+    ["This model's maximum context length is 8192 tokens. However, you requested 1024 output tokens.", null],
+    ['Requested tokens (41003) exceed context window of 8192', 41003],
+  ]) {
+    const r = 배울것(문장);
+    check(`★★ 488 보낸 크기를 바로 뽑는다 (${보낸것 ?? '모름'}): ${문장.slice(48, 90)}…`,
+      r?.kind === 'ctx' && r.asked === 보낸것, JSON.stringify(r));
+  }
+
   // 엉뚱한 오류에서 숫자를 지어내면 안 된다. 그게 더 나쁘다.
   for (const 아닌것 of [
     'Invalid API key provided',

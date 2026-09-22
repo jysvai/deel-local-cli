@@ -13840,6 +13840,30 @@
       "찾을것": "    const 남길것 = cfg.permissions.deny.filter((x) => !덮기전.더한deny.includes(x));",
       "바꿀것": "    const 남길것 = (덮기전.deny ?? []);",
       "검사": "test/policy.test.js"
+    },
+    {
+      "곳": "src/backend/learn.js",
+      "무엇": "창 한계 문장의 「for a total of N」 을 안 본다 (2.0.2 · 488)",
+      "그러면": "vLLM 이 답 길이·입력을 나눠 말하면 보낸 크기를 모르거나 입력 한쪽만 보냈다고 말한다",
+      "찾을것": "    /for a total of\\s+(?:at least\\s+)?(\\d+)/i,",
+      "바꿀것": "",
+      "검사": "test/limits.test.js"
+    },
+    {
+      "곳": "src/backend/learn.js",
+      "무엇": "`requested N output tokens` 의 답 길이를 보낸 크기로 뽑는다 (2.0.2 · 488)",
+      "그러면": "8,192 창에 거절당하고 「(1,024 을 보냈었습니다)」 라고 말한다",
+      "찾을것": "    /requested\\s+(\\d+)(?!\\d)(?!\\s*(?:output|completion|new)\\b)/i,",
+      "바꿀것": "    /requested\\s+(\\d+)(?!\\d)(?!\\s*(?:zzz)\\b)/i,",
+      "검사": "test/limits.test.js"
+    },
+    {
+      "곳": "src/backend/learn.js",
+      "무엇": "`your request has N input tokens` 를 안 읽는다 (2.0.2 · 488)",
+      "그러면": "요즘 vLLM 의 창 넘침에서 보낸 크기가 늘 빈칸이다",
+      "찾을것": "    /(?:request has|prompt contains|input (?:has|contains))\\s+(?:at least\\s+)?(\\d+)/i,",
+      "바꿀것": "    /(?:prompt contains|input (?:has|contains))\\s+(?:at least\\s+)?(\\d+)/i,",
+      "검사": "test/limits.test.js"
     }
   ]
 }
