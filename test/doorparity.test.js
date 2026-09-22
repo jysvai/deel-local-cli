@@ -188,6 +188,65 @@ for (const [파일, 글] of [
   check(`★ ${파일} 가 모아 둔 소식을 한 자리에서 비운다 (소식줄들)`, /소식줄들\(/.test(글), '');
 }
 
+trace('4-도구-그릇-ctx');
+
+/*
+ * ── 도구에 넘기는 그릇(ctx)도 세 벌이다 (2.0.2) ─────────────────────────────
+ *
+ * 세 문이 ctx 를 **주석까지 글자 그대로** 따로 짓는다. 모아 한 벌로 만들지 않는 까닭이
+ * 있다 — `모델컨텍스트`·`눈있나` 게터는 문마다 **살아 있는 conn 변수**를 봐야 한다. 채팅은
+ * /model 로 conn 을 통째로 갈아 끼우는데, 한 벌짜리 함수로 빼면 게터가 그 함수가 받은 옛
+ * conn 을 붙들어 조용히 옛 연결의 창 크기를 말한다.
+ *
+ * 그 대신 칸을 맞춘다. 실제로 `deel run` 에만 `mcp` 가 없어서 `.deel/mcp.json` 에 적은
+ * 도구가 대화 화면에서는 되고 한 번 실행에서는 **말없이 없었다.**
+ *
+ * 맨 윗단 칸만 센다 — 들여쓰기가 여는 줄보다 한 단 깊은 줄이다. 글을 풀어 읽으면 몸통 안의
+ * 따옴표·정규식에 걸려 칸을 놓친다(재 보니 채팅의 confirm 을 놓쳤다).
+ */
+function 그릇칸(글, 머리) {
+  const 줄들 = 글.split('\n');
+  const i = 줄들.findIndex((l) => l.trimEnd().endsWith(머리));
+  if (i < 0) return null;
+  const 들여 = /^ */.exec(줄들[i])[0].length + 2;
+  const 칸 = new Set();
+  for (let j = i + 1; j < 줄들.length; j++) {
+    const l = 줄들[j];
+    if (new RegExp(`^ {${들여 - 2}}\\};?\\s*$`).test(l)) break;
+    const m = new RegExp(`^ {${들여}}(?:get |async )?([A-Za-z0-9_$가-힣]+)\\s*[:(,]`).exec(l);
+    if (m) 칸.add(m[1]);
+  }
+  return 칸;
+}
+const 그릇들 = [
+  ['src/repl.js', 그릇칸(src('repl.js'), 'const ctx = {')],
+  ['src/oneshot.js', 그릇칸(src('oneshot.js'), 'const ctx = {')],
+  ['src/acp/serve.js', 그릇칸(src('acp/serve.js'), '방.ctx = {')],
+];
+check('★ 세 문에서 ctx 그릇을 다 찾았다', 그릇들.every(([, k]) => k?.size > 10),
+  그릇들.map(([f, k]) => `${f} ${k?.size ?? '없음'}`).join(' · '));
+// 문마다 달라도 되는 칸. 까닭 없이 넣지 않는다.
+const 봐주는칸 = new Map([
+  ['종알림', '채팅에만 있는 종 (/bell)'],
+  ['키확인', '채팅에만 있는 키 입력 확인'],
+  ['ask물음', '채팅에만 있는 고르기 물음 — 다른 문은 ask 가 기본값을 바로 돌려준다'],
+  ['lsp', '에디터는 제 언어 서버가 있다 — 끄는 자리를 갖춘 채팅·한 번 실행만 켠다 (tools/index.js 고친뒤진단)'],
+]);
+if (그릇들.every(([, k]) => k)) {
+  const 모든칸 = new Set(그릇들.flatMap(([, k]) => [...k]));
+  const 어긋남 = [];
+  for (const k of 모든칸) {
+    if (봐주는칸.has(k)) continue;
+    const 없는곳 = 그릇들.filter(([, s]) => !s.has(k)).map(([f]) => f);
+    if (없는곳.length) 어긋남.push(`${k} → ${없는곳.join(', ')} 에 없음`);
+  }
+  check('★★ 한 문에만 있는 ctx 칸이 없다', 어긋남.length === 0, 어긋남.join(' | '));
+  for (const k of ['mcp', '규칙들', '훅들', '셸남길것', 'confirm']) {
+    const 없는곳 = 그릇들.filter(([, s]) => !s.has(k)).map(([f]) => f);
+    check(`★★ ctx.${k} 가 세 문에 다 있다`, 없는곳.length === 0, 없는곳.join(', '));
+  }
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log('\n세 문이 같은 것을 짓는가\n');
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

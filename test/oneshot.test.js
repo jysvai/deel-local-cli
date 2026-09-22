@@ -14,7 +14,7 @@
 //   안 나간다. 설정도 임시 폴더(DEEL_HOME)라 사람의 ~/.deel 을 못 건드린다.
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -111,6 +111,17 @@ const srv = createServer((req, res) => {
        * 특히 첫째 것은 **종료코드까지** 0 이었다 — 반쪽짜리 답이 파이프
        * 뒤 스크립트로 온전한 답인 척 넘어갔다.
        */
+      /*
+       * `deel run` 에도 MCP 도구가 실리나 (2.0.2 · 문 맞춤). 목록에 붙은 서버의 도구가 있으면
+       * 부르고, 결과가 오면 그 글을 그대로 답한다 — 검사가 서버의 답이 모델까지 갔는지 본다.
+       */
+      if (/일부러_MCP/.test(사람말)) {
+        const 결과 = (json?.messages ?? []).find((m) => m.role === 'tool');
+        if (결과) return 답({ role: 'assistant', content: `MCP답: ${String(결과.content ?? '').split('\n')[0]}` });
+        const 있나 = (json?.tools ?? []).some((t) => t.function?.name === 'mcp__사내위키__위키검색');
+        if (있나) return 도구답('mcp__사내위키__위키검색', { q: '인코딩' });
+        return 답({ role: 'assistant', content: 'MCP 도구가 목록에 없습니다' });
+      }
       // 알맹이는 주고 끝났다는 조각은 한 번도 안 준 채 곱게 닫는다.
       if (/일부러_말없이끊김/.test(사람말)) {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -746,6 +757,50 @@ trace('8.5-사실대로-말하는가');
     r.err.split('\n').find((l) => /비우고 이어갑니다/.test(l))?.trim().slice(0, 90) ?? '그런 줄이 없다');
   check('오류라고는 안 한다', !/^\s*✗/m.test(r.err) && r.code === 0, `code=${r.code}`);
 }
+trace('8.7-MCP-도-붙는다');
+/*
+ * ── `deel run` 에도 MCP 도구가 붙는다 (2.0.2 · 문 맞춤) ──────────────────────
+ *
+ * 한 번 실행만 MCP 를 안 붙였다. `.deel/mcp.json` 에 적은 도구가 대화 화면에서는 되고 여기서는
+ * **말없이 없었다.** 가짜 서버를 믿는 폴더에 적어 두고, 모델(스텁)이 그 도구를 받아 불렀는지,
+ * 서버의 답이 모델까지 갔는지를 본다. 끝난 뒤 서버가 남지 않는지도.
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-one-mcp-'));
+  mkdirSync(join(방, '.deel'), { recursive: true });
+  const 서버파일 = join(방, 'stub-mcp.mjs');
+  const 번호파일 = join(방, 'mcp.pid');
+  // 입력이 닫혀도 안 죽는 서버다 — 우리가 닫지 않으면 잡이 끝난 뒤에도 남는다. 그걸 잰다.
+  writeFileSync(서버파일, [
+    "import { writeFileSync } from 'node:fs'; writeFileSync(process.argv[2], String(process.pid)); setInterval(() => {}, 1000);",
+    "let 찌 = ''; process.stdin.setEncoding('utf8');",
+    "const 답 = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n');",
+    "process.stdin.on('data', (d) => { 찌 += d; let i; while ((i = 찌.indexOf('\\n')) >= 0) {",
+    "  const 줄 = 찌.slice(0, i); 찌 = 찌.slice(i + 1); let j; try { j = JSON.parse(줄); } catch { continue; }",
+    "  if (j.method === 'initialize') 답(j.id, { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: '스텁', version: '1' } });",
+    "  else if (j.method === 'tools/list') 답(j.id, { tools: [{ name: '위키검색', description: '사내 위키', inputSchema: { type: 'object', properties: { q: { type: 'string' } } } }] });",
+    "  else if (j.method === 'tools/call') 답(j.id, { content: [{ type: 'text', text: '찾은 것: ' + (j.params?.arguments?.q ?? '') }] });",
+    "  else if (j.id != null) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: j.id, error: { code: -32601, message: 'x' } }) + '\\n');",
+    '} });',
+  ].join('\n'), 'utf8');
+  writeFileSync(join(방, '.deel', 'mcp.json'), JSON.stringify({ mcpServers: { 사내위키: { command: process.execPath, args: [서버파일, 번호파일] } } }), 'utf8');
+  대본초기화();
+  const r = await 띄우기(['run', '--json', '일부러_MCP 위키에서 찾아 줘'], { 폴더: 방, env: { DEEL_TRUST_ALL: '1', DEEL_MCP_LAZY: 'off' } });
+  let 답 = null; try { 답 = JSON.parse(r.out.trim().split('\n').pop()); } catch { /* 아래가 말한다 */ }
+  const 첫요청 = 받은요청.find((x) => x.url === '/v1/chat/completions');
+  const 실린것 = (첫요청?.json?.tools ?? []).map((t) => t.function?.name);
+  check('★★ deel run 도 .deel/mcp.json 의 도구를 모델에게 싣는다', 실린것.includes('mcp__사내위키__위키검색'), 실린것.filter((n) => /mcp/.test(n)).join(',') || `(없음) ${r.err.slice(-200)}`);
+  check('★★ 모델이 부른 MCP 도구의 답이 모델까지 간다', /MCP답: 찾은 것: 인코딩/.test(String(답?.text ?? '')), JSON.stringify(답)?.slice(0, 200) ?? r.out.slice(-200));
+  check('  시간 안에 끝난다', !r.시간초과 && r.code === 0, `code=${r.code} 시간초과=${r.시간초과}`);
+  const 서버번호 = existsSync(번호파일) ? Number(readFileSync(번호파일, 'utf8')) : null;
+  const 살았나 = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  let 남음 = 서버번호 != null && 살았나(서버번호);
+  for (let n = 0; 남음 && n < 30; n++) { await new Promise((ok) => setTimeout(ok, 100)); 남음 = 살았나(서버번호); }
+  check('★★ 끝날 때 붙인 MCP 서버를 닫는다 (남의 프로그램이 안 남는다)', 서버번호 != null && !남음, `pid=${서버번호} 남음=${남음}`);
+  if (남음) { try { process.kill(서버번호); } catch { /* 이미 갔다 */ } }
+  try { rmSync(방, { recursive: true, force: true }); } catch { /* 윈도우가 잠깐 쥐고 있을 수 있다 */ }
+}
+
 trace('8.8-슬래시-명령을-배치에서도');
 
 /*

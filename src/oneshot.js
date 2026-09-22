@@ -33,6 +33,7 @@ import { 알림채움, 알림말 } from './backend/retry.js';
 import { 전선붙이기, 세션이름짓기 } from './backend/wire.js';
 import { newId } from './agent/store.js';
 import { discover, loadCommand } from './skills/discover.js';
+import { 다붙이기 } from './backend/mcp.js';
 import { 명령들 } from './cmdnames.js';
 // 슬래시 명령을 찾는 규칙은 대화 화면과 **같은 것 하나**를 쓴다 (commands.js 의 슬래시명령찾기 머리말).
 import { 슬래시명령찾기, 비슷한슬래시명령 } from './commands.js';
@@ -193,6 +194,8 @@ export async function runOnce(opts = {}) {
   let 출력스키마 = null;
   // 실패덩이에 실을 모델 이름 (사냥5 B5-10). 프로필을 찾기 전에 선 실패는 null 이다.
   let 알려진모델 = null;
+  // 붙인 MCP 서버. 아래 내놓기 가 닫는다 — 그래서 여기서 선언한다 (2.0.2 · 문 맞춤).
+  let mcp서버들 = [];
 
   const 내놓기 = (r) => {
     /*
@@ -208,6 +211,8 @@ export async function runOnce(opts = {}) {
     // 이건 아무 말 없이 한다 — 사용자가 띄우라고 한 적이 없는 것이라,
     // 껐다는 말부터 하면 "그건 또 뭐냐" 가 된다.
     언어서버다끄기().catch(() => {});
+    // 붙인 MCP 서버도 거둔다. 안 닫으면 잡이 끝난 뒤에도 남의 프로그램이 폴더를 물고 남는다.
+    for (const 서버 of mcp서버들) { try { 서버.닫기(); } catch { /* 닫다 터져도 끝맺음은 간다 */ } }
     /*
      * 문서를 글로 바꾸며 떨군 임시 파일도 거둔다 (tools/convert.js 의 임시치우기).
      *
@@ -461,6 +466,21 @@ export async function runOnce(opts = {}) {
 
   const found = discover(root);
   session.skills = found.skills;
+  /*
+   * 밖에서 붙인 도구(MCP) — 대화 화면·에디터와 **같은 규칙으로** 붙인다 (2.0.2 · 문 맞춤).
+   *
+   * 한 번 실행만 이 자리가 없었다. `.deel/mcp.json` 에 적어 둔 도구가 대화 화면에서는 되고
+   * `deel run` 에서는 **말없이 없었다** — 모델은 없는 도구 대신 셸로 돌아가고, 왜 없는지는
+   * 어디에도 안 남았다. 기본은 꺼져 있고(사람이 직접 적어야 뜬다) 봉인이면 안 띄우는 것도 같다.
+   * 못 붙은 것은 표준오류에 적는다 — 표준출력은 답 자리다.
+   */
+  const mcp붙임 = await 다붙이기(root, {
+    offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),
+    audit: new Audit(root, { 열쇠들: 열쇠묻기(conn) }),
+  }).catch((err) => ({ 서버들: [], 못한것: [{ 이름: '(전부)', 왜: String(err?.message ?? err) }] }));
+  mcp서버들 = mcp붙임.서버들;
+  session.mcp = mcp붙임.서버들;
+  for (const m of mcp붙임.못한것 ?? []) 곁(`  ${mark.warn} ${c.yellow(`MCP ${m.이름} 을 못 붙였습니다 — ${m.왜}`)}`);
   session.commands = found.commands;
   session.plugins = found.plugins;
 
@@ -581,6 +601,8 @@ export async function runOnce(opts = {}) {
     history: new History(root),
     audit: new Audit(root, { 열쇠들: 열쇠묻기(conn) }),
     seen: new Set(),
+    // 붙은 MCP 서버. 도구를 부를 때 여기서 찾는다.
+    mcp: mcp붙임.서버들,
     skills: found.skills,
     loadedSkills: new Set(),
     // 고친 뒤 진단을 볼지 (lsp/diag.js). 아래 내놓기() 에서 반드시 거둔다 —
