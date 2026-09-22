@@ -100,6 +100,33 @@ export function 정한셸() {
 /** 검사용 — 다음 정한셸() 이 다시 고르게. */
 export function 셸지우기() { 지금 = null; }
 
+/*
+ * ── cmd.exe 는 한 줄에 8,191자까지다 (2.0.2 · S6) ─────────────────────────────
+ *
+ * cmd 자체의 한계라 우리가 늘릴 수 없다. 넘기면 cmd 가 「The command line is too long.」 한 줄을
+ * 내고 **아무것도 안 돌린다** — 그런데 한국어 윈도에서는 그 줄이 코드페이지째 깨져 오고, 모델은
+ * 제 명령이 왜 안 돌았는지 모른 채 같은 긴 명령을 또 낸다. 넘길 것이면 넘기기 전에 사람 말로
+ * 멈추고, 어떻게 하면 되는지(파일로 써서 돌리기)를 같이 말한다. Git Bash·파워셸은 이 한계가 없다.
+ *
+ * 8,191자는 명령만이 아니라 **cmd 가 받은 한 줄 전체**다 — `"C:\WINDOWS\system32\cmd.exe" /d /s /c "…"`.
+ * 재 보니 이 PC 에서 명령에 쓸 수 있는 것은 8,152자였다(cmd 자리 27자 + 앞뒤 붙이는 것). 그래서 cmd 자리와
+ * 붙이는 글자만큼 빼고 잰다. 붙이는 것은 ` /d /s /c ` 10자 · 명령을 싸는 따옴표 2자에 2자를 더 둔다.
+ */
+export const cmd한줄최대 = 8191;
+
+/** 이 cmd 로 명령에 쓸 수 있는 글자 수. */
+export function cmd명령최대(file = 'cmd.exe') { return cmd한줄최대 - (String(file).length + 14); }
+
+/** cmd 로 넘기면 한 줄 한계를 넘나. 넘으면 모델에게 줄 말, 아니면 null. */
+export function 셸한계넘나(cmd, { id, file } = 정한셸()) {
+  if (id !== 'cmd') return null;
+  const n = String(cmd ?? '').length;
+  const 최대 = cmd명령최대(file);
+  if (n <= 최대) return null;
+  return `명령이 ${n.toLocaleString('en-US')}자입니다 — cmd.exe 는 한 줄에 ${cmd한줄최대.toLocaleString('en-US')}자까지만 받습니다(cmd 자리를 빼면 명령에는 ${최대.toLocaleString('en-US')}자 · cmd 자체 한계라 돌리지 않았습니다).`
+    + ' 긴 내용은 Write 로 파일(.bat · .ps1 · .js 등)에 쓰고 그 파일을 돌리세요. Git Bash 를 깔면 이 한계가 없습니다.';
+}
+
 /** 명령 하나를 셸에 넘길 모양. Bash 도구와 Jobs 가 둘 다 이걸 쓴다. */
 export function 셸명령(cmd) {
   const s = 정한셸();

@@ -30,11 +30,31 @@ export function 규칙읽기(text, 기준 = '') {
   return out;
 }
 
+/*
+ * ── 끝 빈칸 떼기는 git 과 **똑같이** (2.0.2 · G4) ─────────────────────────────
+ *
+ * 「역슬래시 바로 뒤 빈칸은 살린다」 로 쟀더니 `foo\\ ` 가 틀렸다. 앞의 `\\` 는 역슬래시 **글자**
+ * 하나이고 빈칸은 안 살린 것이라 git 은 `foo\` 로 읽는데, 우리는 빈칸까지 남겨 `foo\ ` 를 찾았다.
+ * git(dir.c 의 trim_trailing_spaces)을 그대로 옮긴다 — 역슬래시는 다음 글자 하나를 먹고, 떼는 것은
+ * 끝에 이어진 **빈칸**(' ')뿐이다. 탭은 git 도 안 뗀다.
+ */
+export function 끝빈칸떼기(줄) {
+  const p = String(줄 ?? '');
+  let 빈칸자리 = -1;
+  for (let i = 0; i < p.length; i++) {
+    const ch = p[i];
+    if (ch === ' ') { if (빈칸자리 < 0) 빈칸자리 = i; continue; }
+    if (ch === '\\') { i++; if (i >= p.length) return p; }
+    빈칸자리 = -1;
+  }
+  return 빈칸자리 >= 0 ? p.slice(0, 빈칸자리) : p;
+}
+
 /** 줄 하나 → 규칙. 빈 줄·주석이면 null. */
 export function 패턴규칙(줄, 기준 = '') {
   let p = String(줄 ?? '');
   // 끝의 빈칸은 뗀다 — 역슬래시로 살린 것만 남긴다.
-  p = p.replace(/(?<!\\)\s+$/, '');
+  p = 끝빈칸떼기(p);
   if (!p || p.startsWith('#')) return null;
   let 부정 = false;
   if (p.startsWith('!')) { 부정 = true; p = p.slice(1); }

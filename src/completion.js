@@ -156,11 +156,21 @@ function bash판({ zsh = false } = {}) {
 #   echo 'source ~/.deel-completion.${zsh ? 'zsh' : 'bash'}' >> ~/.${zsh ? 'zshrc' : 'bashrc'}
 ${zsh ? '\nautoload -U +X bashcompinit && bashcompinit\n' : ''}
 # 파일(-f)·폴더(-d) 후보를 한 줄에 하나씩 담는다. 빈칸 든 이름이 조각나지 않게.
+# 여는 따옴표를 친 채 누르면 cur 에 따옴표가 붙어 온다 — 떼고 찾는다.
+# bash 3.2(맥 기본)에는 compopt 가 없다 — 그때는 빈칸 든 이름을 우리가 막아 넣는다.
 _deel_paths() {
   COMPREPLY=()
-  local _deel_l
-  while IFS= read -r _deel_l; do COMPREPLY+=("$_deel_l"); done < <(compgen "$1" -- "$cur")
-  compopt -o filenames 2>/dev/null
+  local _deel_l _deel_c="$cur" _deel_q=""
+  case "$_deel_c" in
+    [\\"\\']*) _deel_q="\${_deel_c:0:1}"; _deel_c="\${_deel_c:1}" ;;
+  esac
+  while IFS= read -r _deel_l; do COMPREPLY+=("$_deel_l"); done < <(compgen "$1" -- "$_deel_c")
+  if type compopt >/dev/null 2>&1; then
+    compopt -o filenames 2>/dev/null
+  elif [[ -z "$_deel_q" ]]; then
+    local _deel_i
+    for _deel_i in "\${!COMPREPLY[@]}"; do COMPREPLY[$_deel_i]=$(printf '%q' "\${COMPREPLY[$_deel_i]}"); done
+  fi
   return 0
 }
 

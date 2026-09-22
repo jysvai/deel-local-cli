@@ -1,9 +1,9 @@
 // 자율 실행의 울타리.
 // 승인 프롬프트를 안 쓰는 대신 (1) 작업 범위 밖은 못 건드리고
 // (2) 되돌릴 수 없는 명령만 막는다. 나머지는 전부 통과시킨다.
-import { resolve, relative, isAbsolute, sep, dirname, basename } from 'node:path';
-import { realpathSync, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { resolve, relative, isAbsolute, sep, dirname, basename, parse, join } from 'node:path';
+import { realpathSync, existsSync, readFileSync } from 'node:fs';
+import { homedir, userInfo } from 'node:os';
 import { 내부살림 } from '../tools/fsutil.js';
 
 export class ScopeError extends Error {}
@@ -580,6 +580,33 @@ export function checkPaths(cmd, scope) {
   return true;
 }
 
+/*
+ * ── `~이름` 이 가리키는 집 (2.0.2 · 388) ────────────────────────────────────
+ *
+ * 「내 집 옆자리」 로만 풀었다. 그런데 root 로 돌면 내 집이 `/root` 라 옆자리가 **뿌리**다 —
+ * `~admin` 이 `/admin` 이 됐다. 셸은 passwd 의 `/home/admin` 으로 가는데. 작업 폴더가 마침
+ * `/admin` 이면 남의 집을 「범위 안」 으로 읽는다.
+ *
+ * 유닉스에서는 passwd 에 적힌 집을 먼저 본다(셸이 보는 그 자리). 없으면(맥의 디렉터리 서비스 ·
+ * 윈도) 예전처럼 내 집 옆자리로 풀되, 그 옆자리가 뿌리면 관례 자리(`/home`)로 간다. 내 이름이면
+ * 내 집이다.
+ */
+export function 남의집(이름, { 집 = homedir(), 나 = null, passwd = null, platform = process.platform } = {}) {
+  let 내이름 = 나;
+  if (내이름 == null) { try { 내이름 = userInfo().username; } catch { 내이름 = ''; } }
+  if (이름 === 내이름) return 집;
+  if (platform !== 'win32') {
+    let 글 = passwd;
+    if (글 == null) { try { 글 = readFileSync('/etc/passwd', 'utf8'); } catch { 글 = ''; } }
+    for (const 줄 of String(글).split('\n')) {
+      const 칸 = 줄.split(':');
+      if (칸[0] === 이름 && 칸[5]) return 칸[5];
+    }
+  }
+  const 옆 = dirname(집);
+  return resolve(옆 === parse(옆).root ? join(옆, 'home') : 옆, 이름);
+}
+
 // 셸이 알아서 풀어 주는 자리표. 우리도 같이 풀어야 실제로 닿는 곳을 본다.
 function 자리표풀기(s) {
   return s
@@ -602,7 +629,7 @@ function 자리표풀기(s) {
      * 남의 집은 어느 쪽으로 풀든 내 작업 폴더 밖이다. 이름은 글자·밑줄로 시작할 때만 받는다
      * (`~1` · `~+` 은 셸의 다른 뜻). 가운데 물결(`./~backup` · `PROGRA~1`)은 `^` 에 안 닿는다.
      */
-    .replace(/^~([A-Za-z_][\w.-]*)(?=[/\\]|$)/, (전체, 이름) => resolve(dirname(homedir()), 이름))
+    .replace(/^~([A-Za-z_][\w.-]*)(?=[/\\]|$)/, (전체, 이름) => 남의집(이름))
     /*
      * 파워셸은 `$env:이름` 으로 적는다.
      *

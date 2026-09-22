@@ -13668,6 +13668,95 @@
       "찾을것": "    const 준자리 = typeof 요청?.cwd === 'string' ? 요청.cwd : null;",
       "바꿀것": "    const 준자리 = typeof 요청?.cwd === 'string' && 요청.cwd ? 요청.cwd : null;",
       "검사": "test/acp.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Bash 가 cmd 한 줄 한계를 안 본다 (2.0.2 · S6)",
+      "그러면": "8,191자를 넘는 명령이 cmd 에서 「명령줄이 너무 깁니다」(코드페이지째 깨진 한 줄)로 안 돌고, 모델은 까닭을 모른 채 같은 명령을 또 낸다",
+      "찾을것": "      const 한계 = 셸한계넘나(cmd, shell);\n      if (한계) return { error: 한계 };",
+      "바꿀것": "      const 한계 = 셸한계넘나(cmd, shell);\n",
+      "검사": "test/shell.test.js",
+      "잴곳": [
+        "win32"
+      ]
+    },
+    {
+      "곳": "src/tools/jobs.js",
+      "무엇": "Jobs 가 cmd 한 줄 한계를 안 본다 (2.0.2 · S6)",
+      "그러면": "뒤에서 돌린 긴 명령이 뜨자마자 죽고 「명령줄이 너무 깁니다」 만 남는다",
+      "찾을것": "  const 한계 = 셸한계넘나(명령, shell);\n  if (한계) return { error: 한계 };",
+      "바꿀것": "  const 한계 = 셸한계넘나(명령, shell);\n",
+      "검사": "test/shell.test.js",
+      "잴곳": [
+        "win32"
+      ]
+    },
+    {
+      "곳": "src/tools/shell.js",
+      "무엇": "cmd 한계를 명령 글자 수만으로 잰다 (2.0.2 · S6)",
+      "그러면": "8,152~8,191자 명령이 「돌린다」 판정을 받고 cmd 에서 너무 길다며 안 돈다 — 한계는 cmd 자리까지 친 한 줄이다",
+      "찾을것": "  if (n <= 최대) return null;",
+      "바꿀것": "  if (n <= cmd한줄최대) return null;",
+      "검사": "test/shell.test.js"
+    },
+    {
+      "곳": "src/tools/fsutil.js",
+      "무엇": "스트림 꼬리를 윈도 밖에서도 벗긴다 (2.0.2 · 480)",
+      "그러면": "리눅스·맥에서 `.deel/config.json:v2` 같은 딴 파일을 살림으로 잘못 알고 막는다",
+      "찾을것": "  const 스트림꼴 = process.platform === 'win32';",
+      "바꿀것": "  const 스트림꼴 = true;",
+      "검사": "test/guard.test.js",
+      "잴곳": [
+        "linux"
+      ]
+    },
+    {
+      "곳": "src/tools/ignore.js",
+      "무엇": "무시 규칙 끝 빈칸을 「역슬래시 바로 뒤면 살린다」 로 뗀다 (2.0.2 · G4)",
+      "그러면": "`foo\\\\ ` 가 역슬래시 글자로 끝나는 `foo\\` 대신 빈칸 붙은 이름을 찾는다 — git 과 다른 파일을 숨긴다",
+      "찾을것": "  p = 끝빈칸떼기(p);",
+      "바꿀것": "  p = p.replace(/(?<!\\\\)\\s+$/, '');",
+      "검사": "test/ignore.test.js"
+    },
+    {
+      "곳": "src/tools/ignore.js",
+      "무엇": "끝 빈칸을 뗄 때 역슬래시가 다음 글자를 먹는 것을 안 본다 (2.0.2 · G4)",
+      "그러면": "`foo\\ `(살린 빈칸)의 빈칸까지 떼어 `foo\\` 를 찾는다",
+      "찾을것": "    if (ch === '\\\\') { i++; if (i >= p.length) return p; }",
+      "바꿀것": "",
+      "검사": "test/ignore.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "`~이름` 을 풀 때 passwd 를 안 본다 (2.0.2 · 388)",
+      "그러면": "root 로 돌면 `~admin` 이 셸이 가는 `/home/admin` 이 아니라 `/admin` 으로 읽힌다",
+      "찾을것": "      if (칸[0] === 이름 && 칸[5]) return 칸[5];",
+      "바꿀것": "",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "내 집 옆자리가 뿌리여도 그대로 쓴다 (2.0.2 · 388)",
+      "그러면": "passwd 에 없는 이름을 root 로 풀면 뿌리 바로 밑(`/admin`)이 되어 그 폴더에서 연 작업을 남의 집으로 착각한다",
+      "찾을것": "  return resolve(옆 === parse(옆).root ? join(옆, 'home') : 옆, 이름);",
+      "바꿀것": "  return resolve(옆, 이름);",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/completion.js",
+      "무엇": "파일 후보를 찾을 때 여는 따옴표를 안 뗀다 (2.0.2 · 510)",
+      "그러면": "`deel run \"my<TAB>` 이 cur 에 붙은 따옴표째 찾아 아무 후보도 못 낸다",
+      "찾을것": "    [\\\\\"\\\\']*) _deel_q=\"\\${_deel_c:0:1}\"; _deel_c=\"\\${_deel_c:1}\" ;;",
+      "바꿀것": "",
+      "검사": "test/completion.test.js"
+    },
+    {
+      "곳": "src/completion.js",
+      "무엇": "compopt 가 없는 bash 를 모른다 (2.0.2 · 510)",
+      "그러면": "맥 기본 bash 3.2 에서 빈칸 든 이름이 막히지 않고 들어가 두 낱말이 된다",
+      "찾을것": "  if type compopt >/dev/null 2>&1; then",
+      "바꿀것": "  if true; then",
+      "검사": "test/completion.test.js"
     }
   ]
 }

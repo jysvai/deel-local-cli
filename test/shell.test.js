@@ -19,7 +19,7 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { 셸고르기, 배시후보, 셸정하기, 정한셸, 셸명령, 셸안내, 셸지우기 } from '../src/tools/shell.js';
+import { 셸고르기, 배시후보, 셸정하기, 정한셸, 셸명령, 셸안내, 셸지우기, 셸한계넘나, cmd명령최대 } from '../src/tools/shell.js';
 import { 셸명령 as 일감셸명령, 띄우기, 끝내기 } from '../src/tools/jobs.js';
 import { TOOLS } from '../src/tools/index.js';
 import { makeScope, checkCommand, MSYS풀기 } from '../src/safety/guard.js';
@@ -144,6 +144,16 @@ if (윈도우) {
   check('DEEL_SHELL=cmd 면 cmd 에서 돈다', !c1.error && /cmd\.exe/i.test(맨글(c1)), 결과글(c1));
   const c2 = await TOOLS.Bash.run({ command: 'node -e "console.log(1+2)"' }, ctx);
   check('cmd 에서도 따옴표 든 명령이 그대로 (회귀)', !c2.failed && /^3\b/m.test(맨글(c2)), 결과글(c2));
+  // cmd 는 한 줄에 8,191자까지다 — 넘길 것이면 돌리기 전에 사람 말로 멈춘다 (2.0.2 · S6).
+  const 긴것 = await TOOLS.Bash.run({ command: `echo ${'x'.repeat(8300)}` }, ctx);
+  check('★★ S6 cmd 의 한 줄 한계를 넘는 명령은 돌리기 전에 까닭을 말한다',
+    !!긴것.error && /8,191자/.test(긴것.error) && /Write/.test(긴것.error), 결과글(긴것));
+  const 긴일 = await 띄우기(`echo ${'x'.repeat(8300)}`, { cwd: root, 기다림: 0 });
+  check('★ S6 뒤에서 돌리기(Jobs)도 같다', !!긴일.error && /8,191자/.test(긴일.error), JSON.stringify(긴일).slice(0, 120));
+  // 끝을 너무 좁게 잡지도 않았나 — 셀 수 있는 만큼 꽉 채운 명령은 진짜 cmd 에서 돈다.
+  const 꽉 = cmd명령최대(정한셸().file);
+  const 꽉찬것 = await TOOLS.Bash.run({ command: `echo ${'y'.repeat(꽉 - 5)}` }, ctx);
+  check('★ S6 한계 안쪽 끝까지 채운 명령은 진짜 cmd 에서 돈다', !꽉찬것.error && !꽉찬것.failed && /yyyy/.test(맨글(꽉찬것)), 결과글(꽉찬것));
 
   셸정하기({ env: { ...process.env, DEEL_SHELL: 'powershell' } });
   const p1 = await TOOLS.Bash.run({ command: '$PSVersionTable.PSVersion.Major', timeout: 60000 }, ctx);
@@ -302,6 +312,20 @@ trace('7-경로');
   check('rm -rf / 는 여전히 막힌다', /뿌리/.test(막히나('rm -rf /') ?? ''));
   check('rm -rf /c/proj/tmp 는 명령 검사에서는 통과 (범위 검사가 따로 본다)', 막히나('rm -rf /c/proj/tmp') === null, 막히나('rm -rf /c/proj/tmp'));
 }
+
+trace('20-cmd한계');
+// cmd 의 한 줄 한계는 값으로도 잰다 — 어느 판에서든 (2.0.2 · S6).
+{
+  const cmd = { id: 'cmd', file: 'C:\\WINDOWS\\system32\\cmd.exe' };
+  const 최대 = cmd명령최대(cmd.file);
+  check('★ S6 명령에 쓸 수 있는 것은 cmd 자리와 붙이는 글자만큼 뺀 것이다', 최대 === 8191 - (cmd.file.length + 14), String(최대));
+  check('★ S6 그것을 넘으면 말한다', /8,191자/.test(셸한계넘나('x'.repeat(최대 + 1), cmd) ?? ''));
+  check('  그만큼은 넘긴다', 셸한계넘나('x'.repeat(최대), cmd) === null);
+  check('  bash · 파워셸 · sh 에는 이 한계가 없다',
+    ['bash', 'powershell', 'sh'].every((id) => 셸한계넘나('x'.repeat(9000), { id, file: 'x' }) === null));
+}
+
+
 
 // ── 결과 ────────────────────────────────────────────────────────────────
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

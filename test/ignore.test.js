@@ -18,7 +18,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, chmodSync, 
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { 규칙읽기, 무시하나, 걸리나, 건너뜀말, 패턴규칙, 뿌리규칙읽기 } from '../src/tools/ignore.js';
+import { 규칙읽기, 무시하나, 걸리나, 건너뜀말, 패턴규칙, 뿌리규칙읽기, 끝빈칸떼기 } from '../src/tools/ignore.js';
 import { walk } from '../src/tools/fsutil.js';
 import { 엔진잊기 } from '../src/tools/fastgrep.js';
 import { TOOLS } from '../src/tools/index.js';
@@ -517,6 +517,24 @@ trace('7-글자묶음');
   check('  [!]a] 는 ] · a 말고 다른 글자를 건다', 무시하나('b', false, 한줄('[!]a]')) === true && 무시하나(']', false, 한줄('[!]a]')) === false);
   check('  *.[!o] 는 여전히 d/m.c 를 걸고 m.o 는 안 건다', 무시하나('d/m.c', false, 한줄('*.[!o]')) === true && 무시하나('m.o', false, 한줄('*.[!o]')) === false);
 }
+
+trace('20-끝빈칸');
+/*
+ * ── 끝 빈칸 떼기를 git 과 똑같이 (2.0.2 · G4) ─────────────────────────────────
+ *
+ * `foo\\ ` 의 `\\` 는 역슬래시 글자 하나이고 끝 빈칸은 안 살린 것이다 — git 은 `foo\` 로 읽는다.
+ * 윈도에서는 역슬래시 든 파일 이름을 못 만들어 디스크로는 못 재니, 규칙이 무엇을 찾는지를 잰다.
+ */
+{
+  check('★ G4 `foo\\\\ ` 는 역슬래시 글자로 끝난다 (빈칸은 뗀다)', 끝빈칸떼기('foo\\\\ ') === 'foo\\\\', JSON.stringify(끝빈칸떼기('foo\\\\ ')));
+  const r = 패턴규칙('foo\\\\ ');
+  check('★ G4 그 규칙은 `foo\\` 를 찾고 `foo\\ ` 는 안 찾는다', !!r && r.re.test('foo\\') && !r.re.test('foo\\ '), r ? String(r.re) : '(규칙 없음)');
+  check('  살린 빈칸 하나는 남긴다', 끝빈칸떼기('foo\\ ') === 'foo\\ ' && 끝빈칸떼기('foo\\  ') === 'foo\\ ');
+  check('  그냥 끝 빈칸은 다 뗀다', 끝빈칸떼기('build/   ') === 'build/');
+  check('  탭은 git 처럼 안 뗀다', 끝빈칸떼기('x\t') === 'x\t');
+  check('  역슬래시로 끝나면 그대로', 끝빈칸떼기('x\\') === 'x\\');
+}
+
 
 // ── 결과 ────────────────────────────────────────────────────────────────
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

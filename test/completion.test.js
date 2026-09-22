@@ -176,8 +176,8 @@ if (있나('bash', ['-c', 'echo ok'])) {
     const 놀이터 = mkdtempSync(join(tmpdir(), 'deel-comp-sp-'));
     writeFileSync(join(놀이터, 'my file.txt'), '', 'utf8');
     mkdirSync(join(놀이터, 'my dir'));
-    const 낱낱이 = (낱말들, 자리) => {
-      const 셸 = `source '${파일}'\n`
+    const 낱낱이 = (낱말들, 자리, 앞말 = '') => {
+      const 셸 = `${앞말}source '${파일}'\n`
         + `COMP_WORDS=(${낱말들.map((w) => `'${w}'`).join(' ')})\n`
         + `COMP_CWORD=${자리}\n`
         + '_deel\n'
@@ -191,6 +191,22 @@ if (있나('bash', ['-c', 'echo ok'])) {
     const 폴더후보 = 낱낱이(['deel', '--root', 'my'], 2);
     check('★★ (사냥5 H5-11) bash: --root 다음 폴더 이름도 통째로 낸다',
       JSON.stringify(폴더후보) === JSON.stringify(['[my dir]']), 폴더후보.join(' '));
+    /*
+     * ── 여는 따옴표 뒤 · compopt 없는 bash (2.0.2 · 510) ───────────────────────
+     *
+     * `deel run "my<TAB>` 은 cur 에 따옴표가 붙어 와서 아무것도 못 찾았다. 그리고 맥 기본 bash 3.2 에는
+     * compopt 가 없어 빈칸 든 이름이 막히지 않고 들어갔다(`my dir` → 두 낱말). 3.2 는 compopt 를
+     * 꺼서(enable -n) 흉내 낸다.
+     */
+    const 따옴표후보 = 낱낱이(['deel', 'run', '"my'], 2);
+    check('★★ 510 여는 따옴표 뒤에서 눌러도 파일 이름을 찾는다',
+      JSON.stringify(따옴표후보) === JSON.stringify(['[my dir]', '[my file.txt]']), 따옴표후보.join(' '));
+    const 옛bash = 낱낱이(['deel', 'run', 'my'], 2, 'enable -n compopt\n');
+    check('★★ 510 compopt 가 없는 bash(3.2)에서는 빈칸을 막아 넣는다',
+      JSON.stringify(옛bash) === JSON.stringify(['[my\\ dir]', '[my\\ file.txt]']), 옛bash.join(' '));
+    const 옛bash따옴표 = 낱낱이(['deel', 'run', '"my'], 2, 'enable -n compopt\n');
+    check('  따옴표를 연 채면 막지 않는다 (따옴표가 이미 막는다)',
+      JSON.stringify(옛bash따옴표) === JSON.stringify(['[my dir]', '[my file.txt]']), 옛bash따옴표.join(' '));
     rmSync(놀이터, { recursive: true, force: true });
   }
 } else {

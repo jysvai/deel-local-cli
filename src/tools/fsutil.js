@@ -109,10 +109,14 @@ export function 내부살림(abs) {
    *     Write .deel/config.json::$DATA     **설정 본체를 덮어썼다**
    *     cat   .deel/audit.jsonl::$DATA     checkPaths 통과
    *
-   * 드라이브 조각(`C:`)만 빼고 첫 `:` 뒤를 버린다. 유닉스에서 `:` 는 그냥 글자라 막는 쪽으로
-   * 넓어질 뿐이다(`history:x` 라는 살림 이름을 따로 쓸 까닭이 없다).
+   * 드라이브 조각(`C:`)만 빼고 첫 `:` 뒤를 버린다.
+   *
+   * **윈도에서만** 그렇게 한다 (2.0.2 · 480). 유닉스·맥에서 `:` 는 그냥 글자이고 스트림이 없다 —
+   * `.deel/config.json:v2` 는 설정 파일이 아니라 딴 파일이다. 모든 판에서 벗겼더니 리눅스에서 그런
+   * 이름을 살림으로 잘못 알고 막았다(안전 쪽이지만 까닭 없는 막힘이다).
    */
-  const 조각 = 편.split('/').map((x, 몇째) => (몇째 === 0 && /^[A-Za-z]:$/.test(x) ? x : x.replace(/:.*$/s, '')));
+  const 스트림꼴 = process.platform === 'win32';
+  const 조각 = 편.split('/').map((x, 몇째) => (!스트림꼴 || (몇째 === 0 && /^[A-Za-z]:$/.test(x)) ? x : x.replace(/:.*$/s, '')));
   const 이름 = (조각[조각.length - 1] ?? '').toLowerCase();
   /*
    * 살림 자리를 `.deel` 이라는 **글자**로 찾고 있었다.

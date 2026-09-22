@@ -10,7 +10,7 @@ import { 건너뜀말 } from './ignore.js';
 import { encode, label as encLabel, decode as decodeBytes, consoleCodepage, looksBinary, 바꾼데만쓰기 } from './encoding.js';
 import { checkCommand, checkPaths, isMutating, 셸이파일에쓰나 } from '../safety/guard.js';
 import { 띄우기, 나무끊기, 무리끊기, 남은무리끊기, JOBS_TOOL } from './jobs.js';
-import { 셸명령 } from './shell.js';
+import { 셸명령, 셸한계넘나 } from './shell.js';
 import { findMatch, applySpans, reindent, TIER_LABELS, CRLF뿐인가, CRLF로, 꼴맞추기 } from './edit-match.js';
 import { loadSkill } from '../skills/discover.js';
 import { WEB_FETCH_TOOL } from './webfetch.js';
@@ -3055,6 +3055,9 @@ export const TOOLS = {
       // 어느 셸로 넘기나 — tools/shell.js 가 정한다. Jobs 와 같은 답이어야 하므로 한 군데다.
       // (윈도우 cmd 의 따옴표 문제와 그 해법도 거기 적혀 있다.)
       const shell = 셸명령(cmd);
+      // cmd 의 한 줄 한계를 넘으면 돌리기 전에 말한다 (tools/shell.js 셸한계넘나 · 2.0.2 S6).
+      const 한계 = 셸한계넘나(cmd, shell);
+      if (한계) return { error: 한계 };
 
       const 제한 = bash제한시간(args.timeout);
       // 무엇을 빼고 넘길지 여기서 한 번 정한다. 뺀 이름은 아래에서 명령이

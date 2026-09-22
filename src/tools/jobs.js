@@ -25,7 +25,7 @@
  */
 import { spawn } from 'node:child_process';
 import { decode as decodeBytes, consoleCodepage } from './encoding.js';
-import { 셸명령 } from './shell.js';
+import { 셸명령, 셸한계넘나 } from './shell.js';
 import { 셸환경 } from '../safety/shellenv.js';
 import { 말, 세말 } from '../i18n/index.js';
 import { 신호에거두기 } from '../reap.js';
@@ -676,8 +676,11 @@ export async function 띄우기(명령, { cwd, 설명 = null, 기다림 = 1500, 
     return { error: `뒤에서 도는 명령이 이미 ${도는것.length}개입니다. Jobs 로 안 쓰는 것을 끝내고 다시 하세요.` };
   }
 
-  const j = new 일감(다음번호++, 명령, 설명);
   const shell = 셸명령(명령);
+  // cmd 의 한 줄 한계를 넘으면 띄우기 전에 말한다 (tools/shell.js 셸한계넘나 · 2.0.2 S6). 번호를 받기 전이다.
+  const 한계 = 셸한계넘나(명령, shell);
+  if (한계) return { error: 한계 };
+  const j = new 일감(다음번호++, 명령, 설명);
   let kid;
   try {
     kid = spawn(shell.file, shell.args, {

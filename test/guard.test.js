@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSyn
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { makeScope, checkPaths, checkCommand, 경로낱말, 봐주는자리, isMutating, 셸이파일에쓰나, 코드조각인가 } from '../src/safety/guard.js';
+import { makeScope, checkPaths, checkCommand, 경로낱말, 봐주는자리, isMutating, 셸이파일에쓰나, 코드조각인가, 남의집 } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
@@ -706,9 +706,14 @@ trace('9-살림폴더-통째로');
     'cat .deel/mcp.json:secret',
     'cat .claude:x/history.jsonl',
   ]) {
-    check(`★ 스트림 꼬리를 붙여도 막는다: ${cmd}`, 막히나(cmd), '통과해 버림');
+    // 스트림은 윈도(NTFS)에만 있다 — 딴 판에서는 그 이름이 딴 파일이라 이 줄을 안 잰다 (2.0.2 · 480).
+    if (process.platform === 'win32') check(`★ 스트림 꼬리를 붙여도 막는다: ${cmd}`, 막히나(cmd), '통과해 버림');
   }
   check('살림이 아닌 파일의 스트림 꼴은 안 막는다', !막히나('cat notes/a.txt::$DATA'));
+  if (process.platform !== 'win32') {
+    // 유닉스에서 `:` 는 그냥 글자다 — `.deel/config.json:v2` 는 설정 파일이 아니다.
+    check('★ 480 (유닉스) 콜론 든 이름은 딴 파일이다 — 살림으로 잘못 알고 막지 않는다', !막히나('cat .deel/config.json:v2'));
+  }
 
   /*
    * ── `~-` 는 셸의 **이전 폴더**(OLDPWD)다 (사냥5 지킴 Gemini) ─────────────
@@ -1374,6 +1379,26 @@ trace('11-이름꼴둘');
   if (링크됨) rmSync(링크, { force: true });
   rmSync(진짜, { recursive: true, force: true });
 }
+
+trace('20-남의집');
+/*
+ * ── `~이름` 을 셸이 가는 집으로 푼다 (2.0.2 · 388) ────────────────────────────
+ *
+ * root 로 돌면 내 집이 `/root` 라 「내 집 옆자리」 가 뿌리였다 — `~admin` 이 `/admin` 이 됐다.
+ * 값으로 잰다: 집·passwd·판을 넘겨 준다(이 PC 가 root 가 아니어도 그 판을 만든다).
+ */
+{
+  const passwd = 'root:x:0:0:root:/root:/bin/bash\nadmin:x:1000:1000:Admin:/srv/admin-home:/bin/sh\n';
+  check('★★ 388 유닉스에서는 passwd 에 적힌 집으로 푼다',
+    남의집('admin', { 집: '/root', 나: 'root', passwd, platform: 'linux' }).replace(/\\/g, '/').endsWith('/srv/admin-home'),
+    남의집('admin', { 집: '/root', 나: 'root', passwd, platform: 'linux' }));
+  const 뿌리밑 = 남의집('nobody2', { 집: '/root', 나: 'root', passwd, platform: 'linux' }).replace(/\\/g, '/');
+  check('★★ 388 passwd 에 없고 내 집이 뿌리 바로 밑이면 뿌리가 아니라 /home 옆자리로', /\/home\/nobody2$/.test(뿌리밑) && !/^([A-Za-z]:)?\/nobody2$/.test(뿌리밑), 뿌리밑);
+  check('  내 이름이면 내 집', 남의집('me', { 집: '/home/me', 나: 'me', passwd: '', platform: 'linux' }) === '/home/me');
+  const 옆자리 = 남의집('admin', { 집: 'C:\\Users\\me', 나: 'me', passwd: '', platform: 'win32' }).replace(/\\/g, '/');
+  check('  윈도는 예전처럼 내 집 옆자리 (C:\\Users\\admin)', /\/Users\/admin$/.test(옆자리), 옆자리);
+}
+
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n안 하는 자리 검사  ${D}(못 하는 것보다 하지 말아야 할 것을 하는 게 무섭다)${X}\n`);
