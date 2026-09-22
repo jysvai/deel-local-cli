@@ -156,8 +156,14 @@ jobs:
   # 대개는 수십 개라 조각 몇은 「딴 조각이 맡았습니다」 로 바로 끝난다. 그래도
   # 나누는 까닭은 **전부 도는 날**이다 — 재는 판(mutate.mjs)을 고쳤거나 견줄
   # 곳을 못 읽으면 1,600여 개를 다 돈다. 조각 없이 한 job 이면 세 시간 가까이다.
+  #
+  # ── 태그에서는 안 돈다 ────────────────────────────────────────────────
+  #
+  # 태그 푸시도 `push` 다. 새 ref 라 `github.event.before` 가 0 뿐이어서 견줄 곳이
+  # 없고, 그러면 전부 돈다 — 아래 mutants-full 이 태그에서 **똑같은 일을** 한다.
+  # 2.0.1 태그에서 러너 여덟 대가 30분씩 두 벌 돌았다.
   mutants-changed:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -178,7 +184,7 @@ jobs:
         run: node tools/mutate.mjs --바뀐것 "${{ github.event.pull_request.base.sha || github.event.before }}" --조각 ${{ matrix.shard }}/8
 
   mutants-changed-win:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) || github.event_name == 'pull_request'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
