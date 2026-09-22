@@ -1859,8 +1859,8 @@
       "곳": "src/oneshot.js",
       "무엇": "deel run 에서 정책·설정에 적은 봉인을 안 읽는다",
       "그러면": "스크립트·배치가 봉인된 PC 에서 그대로 바깥으로 나간다. 사람이 안 보는 자리라 더 오래 안 들킨다",
-      "찾을것": "    offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),",
-      "바꿀것": "    offline: !!(opts.offline ?? prof.offline ?? cfg?.offline),",
+      "찾을것": "    // 셋 중 하나라도 켜져 있으면 켜진 것이다 (safety/runmode.js 의 봉인됐나).\n    offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),",
+      "바꿀것": "    // 셋 중 하나라도 켜져 있으면 켜진 것이다 (safety/runmode.js 의 봉인됐나).\n    offline: !!(opts.offline ?? prof.offline ?? cfg?.offline),",
       "검사": "test/runmode.test.js"
     },
     {
@@ -13912,6 +13912,14 @@
       "그러면": "배치 잡이 끝난 뒤에도 입력을 무시하는 MCP 서버가 부모 없이 남아 폴더를 문다",
       "찾을것": "    for (const 서버 of mcp서버들) { try { 서버.닫기(); } catch { /* 닫다 터져도 끝맺음은 간다 */ } }",
       "바꿀것": "",
+      "검사": "test/oneshot.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "한 번 실행이 봉인됐어도 MCP 서버를 띄운다 (2.0.2 · 문 맞춤)",
+      "그러면": "--offline 이나 정책으로 봉인한 PC 에서 스크립트·배치가 남의 프로그램을 띄운다 — 그 안에서 무슨 소켓을 여는지 우리는 못 본다",
+      "찾을것": "  const mcp붙임 = await 다붙이기(root, {\n    offline: 봉인됐나({ 깃발: opts.offline, prof, cfg }),",
+      "바꿀것": "  const mcp붙임 = await 다붙이기(root, {\n    offline: false,",
       "검사": "test/oneshot.test.js"
     },
     {

@@ -841,6 +841,22 @@ trace('8.7-MCP-도-붙는다');
     JSON.stringify(표시) ?? `${안.out.slice(-160)} ${안.err.slice(-160)}`);
   check('★★ runOnce 가 돌아온 자리에서 붙인 MCP 서버가 이미 닫혀 있다 (프로그램이 끝나기 전에)',
     표시?.붙은수 === 0 && 표시?.남음 === false, JSON.stringify(표시));
+
+  /*
+   * 봉인이면 **띄우지도 않는다** — 대화 화면·에디터와 같은 규칙이다(README 「[D] MCP 서버」:
+   * 안에서 무슨 소켓을 여는지 못 보므로 거르는 대신 안 띄운다). 스텁 게이트웨이는 이 컴퓨터
+   * 안이라 --offline 이어도 모델은 돈다. 서버는 뜨는 순간 번호를 적으므로, 번호 파일이 없으면
+   * 안 뜬 것이다.
+   */
+  rmSync(번호파일, { force: true });
+  대본초기화();
+  const 봉 = await 띄우기(['run', '--offline', '--json', '일부러_MCP 위키에서 찾아 줘'], { 폴더: 방, env: { DEEL_TRUST_ALL: '1', DEEL_MCP_LAZY: 'off' } });
+  const 봉요청 = 받은요청.find((x) => x.url === '/v1/chat/completions');
+  const 봉실린것 = (봉요청?.json?.tools ?? []).map((t) => t.function?.name).filter((n) => /mcp/.test(n));
+  check('  봉인 판도 모델은 돈다 (재는 판이 맞다)', 봉.code === 0 && !!봉요청, `code=${봉.code} ${봉.err.slice(-160)}`);
+  check('★★ 봉인(--offline)이면 deel run 도 MCP 서버를 안 띄운다', !existsSync(번호파일) && 봉실린것.length === 0,
+    `번호파일=${existsSync(번호파일)} 실린것=${봉실린것.join(',') || '(없음)'}`);
+  if (existsSync(번호파일)) { try { process.kill(Number(readFileSync(번호파일, 'utf8'))); } catch { /* 이미 갔다 */ } }
   try { rmSync(방, { recursive: true, force: true }); } catch { /* 윈도우가 잠깐 쥐고 있을 수 있다 */ }
 }
 
