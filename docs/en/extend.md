@@ -293,6 +293,33 @@ other way round.
 
 ## Putting deel in a pipeline
 
+### Why it ended — exit codes and `reason`
+
+`deel run` reports why it ended as an **exit code**. With `--json`, the same reason goes into the
+`reason` field of the result by name. A script can branch on either — reasons that need different
+fixes get different codes and names.
+
+| `reason` | Exit code | Meaning · what to do |
+|---|---|---|
+| `done` | 0 | Answered to the end |
+| `error` | 1 | The model or gateway ended in an error. The cause is on standard error and in `why` |
+| `limit` | 2 | Hit the tool-call step limit — too big for one go. Split the task |
+| `stuck` | 3 | Went round in the same place and stopped itself |
+| `aborted` | 4 | Interrupted (Ctrl+C · a signal) |
+| `cutoff` | 5 | The server stopped answering without saying it was done. The answer is **partial** |
+| `refusal` | 6 | The model refused on safety grounds. Not pushed back |
+| `schema` | 7 | Did not match `--output-schema` — or the schema file could not be read (then the model is not called) |
+| `too-big` | 1 | The prompt is bigger than the context window. The model would only see the start, so it was **not called** |
+| `needs-online` | 1 | An outside gateway without permission. Nobody to ask, so it stops — `--online` |
+| `no-config` · `config` | 1 | No saved connection / the config file could not be read |
+| `no-prompt` | 1 | Nothing to do was given |
+| `no-root` | 1 | The folder given with `--root` does not exist. deel does not create it and work inside |
+| `no-command` · `command-read` · `repl-only` | 1 | `deel run /name` — unknown command / command file unreadable / a chat-only command |
+| `usage` | 64 | The command line was wrong |
+
+The last line of `deel run --help` is the same table. A test goes red if this table and the code
+drift apart (`test/exitcode.test.js`).
+
 ### Pin the answer's shape — `deel run --output-schema`
 
 `deel run` produces prose. That is fine for a person to read, but the moment

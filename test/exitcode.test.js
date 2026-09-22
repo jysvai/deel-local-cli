@@ -68,6 +68,40 @@ check('★ 나머지는 전부 0 이 아니다',
   Object.entries(EXIT).filter(([k]) => k !== 'done').every(([, v]) => v !== 0),
   Object.entries(EXIT).map(([k, v]) => `${k}=${v}`).join(' · '));
 
+trace('3-문서의-reason-표');
+
+/*
+ * ── 문서의 reason 표가 코드와 같은가 (2.0.2) ─────────────────────────────────
+ *
+ * `deel run --json` 의 `reason` 은 스크립트가 가르는 자리인데, 그 이름을 적어 둔 곳이 문서
+ * 어디에도 없었다(refusal 한 줄뿐). 표를 만들면서 이 검사를 같이 둔다 — 까닭이 하나 늘거나
+ * 코드가 바뀌면 여기서 빨개진다. 코드 쪽 이름은 src/oneshot.js 의 `못함('…')` 과 EXIT 에서 모은다.
+ */
+{
+  const 원문 = readFileSync(join(here, '..', 'src', 'oneshot.js'), 'utf8');
+  const 코드까닭 = new Set([...Object.keys(EXIT), ...[...원문.matchAll(/못함\(\s*'([a-z-]+)'/g)].map((x) => x[1])]);
+  for (const [말, 파일, 머리] of [['ko', 'docs/ko/extend.md', '### 끝난 까닭'], ['en', 'docs/en/extend.md', '### Why it ended']]) {
+    const 글 = readFileSync(join(here, '..', 파일), 'utf8');
+    const i = 글.indexOf(머리);
+    check(`★ ${말} 문서에 reason 표가 있다`, i >= 0, 파일);
+    if (i < 0) continue;
+    const 끝 = 글.indexOf('\n### ', i + 1);
+    const 절 = 글.slice(i, 끝 < 0 ? undefined : 끝);
+    const 적힌 = new Map();
+    for (const 줄 of 절.split('\n').filter((l) => l.startsWith('| `'))) {
+      const [, 이름칸, 수칸] = 줄.split('|').map((x) => x.trim());
+      if (!/^\d+$/.test(수칸)) continue;   // 머리 줄
+      for (const m of 이름칸.matchAll(/`([a-z-]+)`/g)) 적힌.set(m[1], Number(수칸));
+    }
+    const 빠진 = [...코드까닭].filter((k) => !적힌.has(k));
+    check(`★★ ${말} 표에 코드의 까닭이 다 있다`, 빠진.length === 0, 빠진.join(', ') || `${적힌.size}개`);
+    const 없는 = [...적힌.keys()].filter((k) => !코드까닭.has(k));
+    check(`  ${말} 표에 코드에 없는 까닭이 없다`, 없는.length === 0, 없는.join(', '));
+    const 틀린수 = [...적힌].filter(([k, n]) => n !== (EXIT[k] ?? EXIT.error)).map(([k, n]) => `${k} ${n}≠${EXIT[k] ?? EXIT.error}`);
+    check(`★★ ${말} 표의 종료코드가 코드와 같다`, 틀린수.length === 0, 틀린수.join(', '));
+  }
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log('\n종료코드 표 검사\n');
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
