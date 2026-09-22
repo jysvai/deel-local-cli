@@ -420,6 +420,47 @@ trace('6-덮기');
   check('  다른 칸은 그대로 적힌다', 적힌것.profiles[0].model === 'm' && 적힌것.active === 'a',
     JSON.stringify({ m: 적힌것.profiles[0].model, a: 적힌것.active }));
 
+  /*
+   * ── 벗기는 것은 정책이 얹은 그 값뿐이다 (2.0.2 · 524) ──────────────────────
+   *
+   * 벗기기가 load 때 떠 둔 값으로 칸을 통째로 되돌렸다 — load 뒤에 더한 금지, 새로 적은
+   * 주소가 저장에서 사라졌다. 그리고 짝을 프로필 **객체**로 찾아서, upsert 가 갈아 끼운
+   * 프로필은 못 알아보고 정책 주소가 사람 파일에 박혔다.
+   */
+  {
+    const { upsert } = await import('../src/config.js');
+    const 저장해읽기 = (c) => {
+      const 앞 = process.env.DEEL_KEYSTORE;
+      process.env.DEEL_KEYSTORE = 'off';
+      save(c);
+      if (앞 === undefined) delete process.env.DEEL_KEYSTORE; else process.env.DEEL_KEYSTORE = 앞;
+      return JSON.parse(readFileSync(join(집, 'config.json'), 'utf8'));
+    };
+    정책잊기();
+    const 갈아끼움 = load();
+    upsert(갈아끼움, { id: 'a', model: 'm2' });
+    const 적힘1 = 저장해읽기(갈아끼움);
+    check('★★ 524 upsert 가 프로필을 갈아 끼워도 정책 주소가 내 파일에 안 박힌다',
+      적힘1.profiles[0].baseUrl === 'https://사용자가적은곳.example/v1' && 적힘1.profiles[0].model === 'm2',
+      JSON.stringify(적힘1.profiles[0]));
+    정책잊기();
+    const 더함 = load();
+    더함.permissions.deny.push('Bash(rm -rf*)');
+    더함.profiles[0].baseUrl = 'https://새로적은곳.example/v1';
+    const 적힘2 = 저장해읽기(더함);
+    check('★★ 524 load 뒤에 더한 금지는 저장된다 (정책 금지만 빠진다)',
+      적힘2.permissions.deny.includes('Bash(rm -rf*)') && 적힘2.permissions.deny.includes('WebFetch')
+        && !적힘2.permissions.deny.includes('Bash(curl*)'), JSON.stringify(적힘2.permissions.deny));
+    check('★★ 524 load 뒤에 새로 적은 주소는 저장된다',
+      적힘2.profiles[0].baseUrl === 'https://새로적은곳.example/v1', 적힘2.profiles[0].baseUrl);
+    check('  정책이 켠 봉인은 여전히 안 박힌다', 적힘2.offline === false, JSON.stringify(적힘2.offline));
+    // 다음 검사를 위해 내 주소로 되돌려 둔다.
+    const 되돌림 = JSON.parse(readFileSync(join(집, 'config.json'), 'utf8'));
+    되돌림.profiles[0].baseUrl = 'https://사용자가적은곳.example/v1';
+    writeFileSync(join(집, 'config.json'), JSON.stringify(되돌림), 'utf8');
+    정책잊기();
+  }
+
   // 정책은 넓히지 못한다 — offline 을 끄지도, 사용자 금지를 지우지도 못한다.
   writeFileSync(정책파일, JSON.stringify({ offline: false }), 'utf8');
   writeFileSync(join(집, 'config.json'), JSON.stringify({

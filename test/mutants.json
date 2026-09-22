@@ -13816,6 +13816,30 @@
       "찾을것": "  try { if (statSync(abs).isFile()) return null; } catch { /* 없다 — 아래 말 */ }",
       "바꿀것": "  try { if (statSync(abs)) return null; } catch { /* 없다 — 아래 말 */ }",
       "검사": "test/도구정직.test.js"
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "정책 주소 짝을 프로필 객체로만 찾는다 (2.0.2 · 524)",
+      "그러면": "upsert 가 프로필을 새 객체로 갈아 끼우면 정책 주소가 사람 설정 파일에 박힌다 — 정책을 걷어도 남는다",
+      "찾을것": "const 프로필열쇠 = (p) => (p && p.id != null ? `id:${p.id}` : p);",
+      "바꿀것": "const 프로필열쇠 = (p) => p;",
+      "검사": "test/policy.test.js"
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "정책 주소가 아직 그대로인지 안 보고 벗긴다 (2.0.2 · 524)",
+      "그러면": "load 뒤에 사람이 새로 적은 주소가 저장할 때 옛 주소로 되돌아간다",
+      "찾을것": "    if (!덮기전.주소.has(열쇠) || p.baseUrl !== cfg.정책주소) return p;",
+      "바꿀것": "    if (!덮기전.주소.has(열쇠)) return p;",
+      "검사": "test/policy.test.js"
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "금지 목록을 load 때 것으로 통째 되돌린다 (2.0.2 · 524)",
+      "그러면": "load 뒤에 더한 금지 규칙이 저장에서 사라진다",
+      "찾을것": "    const 남길것 = cfg.permissions.deny.filter((x) => !덮기전.더한deny.includes(x));",
+      "바꿀것": "    const 남길것 = (덮기전.deny ?? []);",
+      "검사": "test/policy.test.js"
     }
   ]
 }

@@ -227,24 +227,33 @@ export function load({ root = process.cwd() } = {}) {
  */
 const 정책흔적 = Symbol('정책이덮은것');
 
+// 프로필 짝을 무엇으로 찾나. id 가 있으면 id — upsert 가 프로필을 **새 객체로 갈아 끼운다**
+// (`cfg.profiles[i] = { ...옛것, ...새것 }`). 객체로만 찾으면 갈아 끼운 프로필을 못 알아보고
+// 정책 주소가 그대로 사람 파일에 적혔다 (2.0.2 · 524).
+const 프로필열쇠 = (p) => (p && p.id != null ? `id:${p.id}` : p);
+
 function 정책덮기(cfg) {
   const 정책 = 정책읽기().값;
   if (!정책 || typeof 정책 !== 'object') return cfg;
 
-  const 덮기전 = { 주소: new Map(), offline: cfg.offline, deny: cfg.permissions?.deny };
+  const 덮기전 = { 주소: new Map(), 켠offline: false, offline: cfg.offline, 더한deny: [], deny: cfg.permissions?.deny };
 
   if (typeof 정책.baseUrl === 'string' && 정책.baseUrl.trim()) {
     for (const 프로필 of cfg.profiles ?? []) {
-      덮기전.주소.set(프로필, 프로필.baseUrl);
+      덮기전.주소.set(프로필열쇠(프로필), 프로필.baseUrl);
       프로필.baseUrl = 정책.baseUrl.trim();
     }
     cfg.정책주소 = 정책.baseUrl.trim();
   }
   // 끄지는 못한다 — 켜기만. 글자 'true' 도 켠 것이다 (safety/runmode.js 의 봉인됐나).
-  if (정책.offline === true || 정책.offline === 'true') cfg.offline = true;
+  if (정책.offline === true || 정책.offline === 'true') {
+    덮기전.켠offline = cfg.offline !== true;
+    cfg.offline = true;
+  }
   if (Array.isArray(정책.permissions?.deny)) {
     cfg.permissions = cfg.permissions ?? {};
     const 있던것 = Array.isArray(cfg.permissions.deny) ? cfg.permissions.deny : [];
+    덮기전.더한deny = 정책.permissions.deny.filter((x) => !있던것.includes(x));
     cfg.permissions.deny = [...new Set([...있던것, ...정책.permissions.deny])];
   }
   cfg[정책흔적] = 덮기전;
@@ -259,6 +268,13 @@ function 정책덮기(cfg) {
  * 그러면 사람이 적어 둔 주소는 사라지고 정책 주소가 제 파일에 박힌다.
  * 관리자가 나중에 정책을 걷어도 그 값은 남고, 그때 `deel config explain` 은
  * 「이 PC 설정 = …」 이라며 **사람 본인을 범인으로 가리킨다.**
+ *
+ * ── 벗기는 것은 **정책이 얹은 그 값**뿐이다 (2.0.2 · 524) ──────────────────
+ *
+ * 여기가 load 때 떠 둔 값으로 칸을 통째로 되돌렸다. 그러면 load 뒤에 바뀐 것까지
+ * 같이 사라진다 — 그 사이 더한 금지 규칙, 새로 적은 주소. 그래서 칸마다 「정책이
+ * 얹은 것이 **아직 그대로** 있나」 를 보고 그것만 뗀다: 주소는 정책 주소 그대로일
+ * 때만, 금지는 정책이 더한 줄만, offline 은 정책이 켠 판에만.
  */
 function 정책벗기기(cfg) {
   const 덮기전 = cfg?.[정책흔적];
@@ -266,17 +282,21 @@ function 정책벗기기(cfg) {
   const 사본 = { ...cfg };
   delete 사본.정책주소;
   사본.profiles = (cfg.profiles ?? []).map((p) => {
-    if (!덮기전.주소.has(p)) return p;
+    const 열쇠 = 프로필열쇠(p);
+    if (!덮기전.주소.has(열쇠) || p.baseUrl !== cfg.정책주소) return p;
     const q = { ...p };
-    const 원래 = 덮기전.주소.get(p);
+    const 원래 = 덮기전.주소.get(열쇠);
     if (원래 === undefined) delete q.baseUrl; else q.baseUrl = 원래;
     return q;
   });
-  if (덮기전.offline === undefined) delete 사본.offline; else 사본.offline = 덮기전.offline;
-  if (cfg.permissions) {
+  if (덮기전.켠offline && cfg.offline === true) {
+    if (덮기전.offline === undefined) delete 사본.offline; else 사본.offline = 덮기전.offline;
+  }
+  if (cfg.permissions && 덮기전.더한deny.length && Array.isArray(cfg.permissions.deny)) {
     사본.permissions = { ...cfg.permissions };
-    if (덮기전.deny === undefined) delete 사본.permissions.deny;
-    else 사본.permissions.deny = 덮기전.deny;
+    const 남길것 = cfg.permissions.deny.filter((x) => !덮기전.더한deny.includes(x));
+    if (!남길것.length && 덮기전.deny === undefined) delete 사본.permissions.deny;
+    else 사본.permissions.deny = 남길것;
     if (!Object.keys(사본.permissions).length) delete 사본.permissions;
   }
   return 사본;
