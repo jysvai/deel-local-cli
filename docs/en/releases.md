@@ -4,12 +4,13 @@
 
 What changed in each release
 
-2.0.0 is the large release where the name changed. So **2.0 lives in its own file**,
+2.0.0 is the large release where the name changed. So **from 2.0 on, each line has its own file**,
 and everything before it is **collected into one**.
 
 | | Where | What |
 |---|---|---|
-| **Current** | **[2.0.x](releases/2.0.md)** | [2.0.3](releases/2.0.md#203) — 2.0.2 never reached npm — two checks that were wrong only on Linux |
+| **Current** | **[2.1.x](releases/2.1.md)** | [2.1.0](releases/2.1.md#210) — Hand it off and it keeps going; make it ask and it shows the diff — and a check decides when it is done |
+| Previous | [2.0.x](releases/2.0.md) | [2.0.3](releases/2.0.md#203) — 2.0.2 never reached npm — GitHub releases now appear only after npm has the version |
 | | | [2.0.2](releases/2.0.md#202) — Everything 2.0.1 left as low, deferred or unmeasured, closed |
 | | | [2.0.1](releases/2.0.md#201) — One fence in 2.0.0 did not hold, and four gates were guarding nothing |
 | | | [2.0.0](releases/2.0.md#200) — Every fence we said was there, checked for whether it actually holds |

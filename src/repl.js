@@ -1,6 +1,8 @@
 // 대화 화면. 루프가 보내는 이벤트를 Claude Code 풍으로 그린다.
 import { createInterface, emitKeypressEvents } from 'node:readline';
-import { 규칙모으기, 정책읽기 } from './safety/policy.js';
+import { 규칙모으기, 정책읽기, 승인바닥 } from './safety/policy.js';
+import { 검사설정 } from './agent/donecheck.js';
+import { 자율대기 } from './ui/approve.js';
 import { 훅읽기 } from './safety/hooks.js';
 import { 에이전트읽기 } from './agent/agents.js';
 import { 받기설정 } from './safety/authcmd.js';
@@ -41,7 +43,7 @@ import { 배움 } from './agent/evolve.js';
 import { 마크다운 } from './ui/md.js';
 import { askHidden, 가림중 } from './ui/prompt.js';
 import { explain, shows as levelShows } from './ui/level.js';
-import { 고르기 as 승인고르기, 다음 as 승인다음 } from './ui/approve.js';
+import { 고르기 as 승인고르기, 다음 as 승인다음, 미리보기줄들 } from './ui/approve.js';
 import { 추천, 채울글, 붙임탭완성기 } from './ui/complete.js';
 import { 접어쓰기 } from './ui/wrap.js';
 import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들, 남길글, 안쪽최대 as 붙임안쪽최대 } from './ui/pastechip.js';
@@ -166,6 +168,8 @@ export const 이어쓰기표시 = (l) =>
 
 export async function chatLoop(opts = {}) {
   const cfg = load();
+  // 자율(auto) 모드에서 되묻기·계획 승인을 몇 초 기다리나 (ui/approve.js 의 자율대기). 설정의 askWait.
+  const 자율대기초 = 자율대기(cfg);
   // 모아 둔 소식을 비운다 (아래 「한 자리에서 비운다」 머리말).
   const 소식쓰기 = () => { for (const 줄 of 소식줄들(cfg)) 바로쓰기(줄); };
   const prof = activeProfile(cfg);
@@ -1042,11 +1046,14 @@ export async function chatLoop(opts = {}) {
       // Shift+Tab — 승인 방식 (자동 → 위험만 → 모두)
       if (key && key.name === 'tab' && key.shift) {
         const 앞 = 승인고르기(session.mode);
-        session.mode = 승인다음(session.mode);
+        // 관리 정책의 바닥 위에서만 돈다 (ui/approve.js 의 다음).
+        const 바닥 = 승인바닥();
+        session.mode = 승인다음(session.mode, 바닥.바닥);
         const 뒤 = 승인고르기(session.mode);
         화면.입력지움();
         say(`  ${뒤.색(뒤.글자)} ${c.bold(뒤.색(뒤.이름))}  ${c.gray(뒤.한줄)}`);
         say(`  ${c.gray(`${앞.이름} → ${뒤.이름} · Shift+Tab 으로 계속 바꿉니다`)}`);
+        if (바닥.바닥 !== 'auto') say(`  ${c.gray(옮긴말('approve.locked', { 바닥: 승인고르기(바닥.바닥).이름, 곳: 바닥.곳 ?? '' }))}`);
         prompt();
         return;
       }
@@ -1264,9 +1271,29 @@ export async function chatLoop(opts = {}) {
      * 있을 때만 「먼저 친 줄은 답이 아니다」 가 참이다.
      */
     const 미리쳐둔 = process.stdin.isTTY ? queue.splice(0) : [];
-    const 멈춤 = o.signal ?? turn?.signal ?? null;
+    /*
+     * 시한 (자율 모드 · ui/approve.js 의 자율대기). 주면 그 초가 지나 손을 뗀다 — ESC 와 같은 길이되,
+     * 무엇으로 답한 셈 칠지는 따로 받는다(`시간끝`). ESC 는 여전히 ESC 로 읽힌다.
+     */
+    const 턴멈춤 = o.signal ?? turn?.signal ?? null;
+    let 시간지남 = false;
+    let 시계 = null;
+    let 멈춤 = 턴멈춤;
+    const 이어멈춤 = () => 시계줄?.abort();
+    const 시계줄 = o.기다림초 > 0 ? new AbortController() : null;
+    if (시계줄) {
+      멈춤 = 시계줄.signal;
+      if (턴멈춤?.aborted) 시계줄.abort();
+      else 턴멈춤?.addEventListener('abort', 이어멈춤, { once: true });
+      시계 = setTimeout(() => { 시간지남 = true; 시계줄.abort(); }, o.기다림초 * 1000);
+    }
     try {
       const a = await nextLine(멈춤);
+      if (시간지남) {
+        say('');
+        say(`  ${c.gray(o.시간끝말 ?? 옮긴말('ask.timedOut', { 초: o.기다림초 }))}`);
+        return o.시간끝 ?? o.멈추면 ?? '';
+      }
       if (멈춤?.aborted) {
         // 물음이 화면에 걸린 채로 남으면 안 된다. 줄을 끊고 멈췄다고 적는다.
         say('');
@@ -1284,6 +1311,8 @@ export async function chatLoop(opts = {}) {
       if (a === null) return o.끝나면 ?? o.def ?? '';
       return a.trim() || o.def || '';
     } finally {
+      clearTimeout(시계);
+      턴멈춤?.removeEventListener?.('abort', 이어멈춤);
       묻는중 = null;
       // 빼 뒀던 것을 앞에 되돌린다. 차례가 바뀌면 안 된다.
       if (미리쳐둔.length) queue.unshift(...미리쳐둔);
@@ -1369,6 +1398,8 @@ export async function chatLoop(opts = {}) {
     get 눈있나() { return !!conn.vision; },
     // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
     규칙들: 규칙모으기(cfg),
+    // 모델이 끝내려는 자리에서 돌릴 검사 (agent/donecheck.js). 설정에 check 가 없으면 null — 안 돈다.
+    완료검사: 검사설정(cfg),
     // 사람이 적어 둔 훅 (safety/hooks.js). 프로젝트 파일은 믿는 폴더에서만 읽는다.
     훅들: 훅정보.훅들,
     // 이름 붙인 하위 작업. 목록은 Task 스키마에, 지침은 고른 뒤에만 실린다.
@@ -1506,6 +1537,16 @@ export async function chatLoop(opts = {}) {
      */
     ask물음: async (물음, 고를것 = [], 이해 = '') => {
       if (closed) return null;
+      /*
+       * 자율(auto) 모드는 맡긴 모드다 — 사람 답을 끝없이 기다리지 않는다 (ui/approve.js 의 자율대기).
+       * 0 이면 묻지 않고 넘긴다. 도구는 null 을 받으면 「스스로 판단해 이어가라」 고 모델에게 말한다.
+       */
+      const 대기 = session.mode === 'auto' ? 자율대기초 : 0;
+      if (session.mode === 'auto' && 대기 === 0) {
+        say('');
+        say(`  ${c.gray(옮긴말('ask.autoSkip', { 물음: clip(String(물음 ?? ''), 80) }))}`);
+        return null;
+      }
       const 폭 = Math.max(40, Math.min(88, (process.stdout.columns || 80) - 6)) - 4;
       say('');
       say(`  ${c.hcyan('┌')} ${c.bold(옮긴말('ask.title'))}`);
@@ -1543,8 +1584,10 @@ export async function chatLoop(opts = {}) {
        * 아무도 안 고른 판에서 1번을 「사람이 골랐다」 로 모델에게 실어 보낸다.
        */
       const 답 = String(await ask(
-        고를것.length ? 옮긴말('ask.pickPrompt', { 끝: 고를것.length }) : 옮긴말('ask.freePrompt'),
-        { def: 고를것.length ? '1' : '', 끝나면: '' },
+        (고를것.length ? 옮긴말('ask.pickPrompt', { 끝: 고를것.length }) : 옮긴말('ask.freePrompt'))
+          + (대기 ? ` ${c.gray(`(${옮긴말('ask.autoWait', { 초: 대기 })})`)}` : ''),
+        // 시한이 지나면 안 고른 것이다 — def 인 '1' 로 떨어지면 아무도 안 고른 1번이 사람의 답이 된다.
+        { def: 고를것.length ? '1' : '', 끝나면: '', 기다림초: 대기, 시간끝: '' },
       )).trim();
       창제목(제목글('도는중', { 폴더: 알림.폴더 }));
 
@@ -1568,9 +1611,11 @@ export async function chatLoop(opts = {}) {
       say('');
       return 고른것;
     },
-    confirm: async (name, args) => {
+    confirm: async (name, args, { 미리보기 } = {}) => {
       say('');
       say(`  ${c.yellow('?')} ${toolLabel(name, args)}`);
+      // 무엇이 바뀌는지 먼저 보여 주고 묻는다 (ui/approve.js 의 미리보기줄들).
+      for (const l of 미리보기줄들(미리보기, { 줄수: DIFF_LINES[session.level] ?? 40 })) say(l);
       /*
        * 여기서 종을 울린다. 끝난 것은 늦게 알아도 되지만 **막혀 있는 것은**
        * 기다린 만큼 그대로 손해다 — 다른 창에 가 있는 사이 3분째 이 줄에서
@@ -3006,6 +3051,26 @@ export async function chatLoop(opts = {}) {
               : `  ${c.gray('↺ 읽기만 하고 끝내려고 해서 한 번 되밀었습니다')}`);
             break;
 
+          // 완료 검사 (agent/donecheck.js) — 모델이 끝내려 하자 deel 이 정해 둔 검사를 돌린다.
+          case 'check_start':
+            clearThinking();
+            if (streamed) { 답비우기(); say(''); streamed = false; }
+            say('');
+            say(`  ${c.cyan('⧗')} ${c.gray(옮긴말('check.start', { 판: ev.판, 최대: ev.최대, 명령: ev.명령 }))}`);
+            break;
+
+          case 'check':
+            clearThinking();
+            if (ev.ok === true) say(`  ${mark.ok} ${c.gray(옮긴말('check.pass', { 명령: ev.명령 }))}`);
+            else if (ev.ok === false) {
+              say(`  ${c.red('✗')} ${c.white(옮긴말('check.fail', { 판: ev.판, 최대: ev.최대, 요약: ev.요약 }))}`);
+              for (const 한줄 of String(ev.꼬리 ?? '').trim().split('\n').filter((l) => l.trim()).slice(-6)) {
+                say(`     ${c.gray(clip(한줄, 100))}`);
+              }
+              say(`     ${c.gray(ev.판 < ev.최대 ? 옮긴말('check.retry') : 옮긴말('check.gaveUp', { 판: ev.판 }))}`);
+            } else say(`  ${c.yellow('⊘')} ${c.gray(옮긴말('check.skipped', { 까닭: ev.까닭 }))}`);
+            break;
+
           /*
            * 모델이 안 하겠다고 했다 (agent/loop.js 의 거절).
            *
@@ -3231,10 +3296,19 @@ export async function chatLoop(opts = {}) {
        * 승인받는 자리는 막아 놓고 계획 **전체**를 승인하는 자리가 열려 있었다.
        * 재 보니 아무도 답하지 않은 판에서 계획이 승인되고 파일이 만들어졌다.
        */
-      const 답 = String(await ask(
-        `${옮긴말('plan.ask')} ${c.gray(옮긴말('plan.hint'))}`,
-        { def: 'y', 끝나면: 'n', 멈추면: 'n' },
-      )).trim();
+      /*
+       * 자율(auto) 모드면 시한을 둔다 (ui/approve.js 의 자율대기). 지나면 **그대로 진행**이다 —
+       * 이 상자는 안전 관문이 아니라 「계획부터 보여 준다」 는 자리이고, auto 를 고른 사람은
+       * 맡긴 사람이다. 입력이 끝난 것(파이프·Ctrl+D)은 여전히 승인이 아니다(`끝나면: 'n'`).
+       */
+      const 계획대기 = session.mode === 'auto' ? 자율대기초 : 0;
+      const 답 = session.mode === 'auto' && 계획대기 === 0
+        ? (say(`  ${c.gray(옮긴말('plan.autoGo'))}`), 'y')
+        : String(await ask(
+          `${옮긴말('plan.ask')} ${c.gray(옮긴말('plan.hint'))}`
+            + (계획대기 ? ` ${c.gray(`(${옮긴말('ask.autoWait', { 초: 계획대기 })})`)}` : ''),
+          { def: 'y', 끝나면: 'n', 멈추면: 'n', 기다림초: 계획대기, 시간끝: 'y', 시간끝말: 옮긴말('plan.timedOut', { 초: 계획대기 }) },
+        )).trim();
       /*
        * ── 골라진 것 + 하고 싶은 말 ────────────────────────────────────
        *

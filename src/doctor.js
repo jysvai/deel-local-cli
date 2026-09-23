@@ -32,7 +32,7 @@ import { 에이전트읽기, 에이전트줄들 } from './agent/agents.js';
 import { headersFor } from './backend/http.js';
 import { 열쇠출처, 집설정파일인가 } from './config.js';
 import { 받기설정, 쓸수있나 as 받기쓸수있나 } from './safety/authcmd.js';
-import { 정책읽기 } from './safety/policy.js';
+import { 정책읽기, 승인바닥 } from './safety/policy.js';
 import { 설정읽기 as MCP설정읽기 } from './backend/mcp.js';
 
 /** 한 줄. `상태` 는 ok · warn · no · unknown 넷뿐이다. */
@@ -100,6 +100,16 @@ export async function 진찰(o = {}) {
     줄들.push(줄('no', '설정 파일', 설정탈.자리 ?? 설정자리 ?? '(어느 파일인지 모름)',
       `못 읽었습니다 — ${String(설정탈.까닭 ?? '').replace(/\s+/g, ' ').trim()}`));
   } else if (설정자리) 줄들.push(줄(existsSync(설정자리) ? 'ok' : 'warn', '설정 파일', 설정자리));
+  /*
+   * 관리 정책이 승인 바닥을 걸었나 (safety/policy.js 의 승인바닥). 걸렸으면 적는다 — 사람은
+   * `/mode auto` 가 왜 안 먹는지를 여기서 찾는다. 모르는 값이면 strict 로 친다는 것도 적는다.
+   */
+  {
+    const 바닥 = 승인바닥();
+    if (바닥.탈) 줄들.push(줄('warn', '승인 바닥', 'strict', `정책 파일을 못 읽어 제일 좁게 칩니다 — ${바닥.곳} · ${바닥.탈}`));
+    else if (바닥.모름) 줄들.push(줄('warn', '승인 바닥', 'strict', `정책의 approval "${바닥.모름}" 을 몰라 제일 좁게 칩니다 — ${바닥.곳}`));
+    else if (바닥.바닥 !== 'auto') 줄들.push(줄('ok', '승인 바닥', 바닥.바닥, `관리 정책이 걸었습니다 — ${바닥.곳}`));
+  }
   const 프로젝트설정 = join(root, '.deel', 'config.json');
   // 집 폴더에서 켜면 이 파일이 곧 이 PC 설정이다. 두 번 적으면 제 설정에 「deel trust」 를 권한다.
   if (existsSync(프로젝트설정) && !집설정파일인가(프로젝트설정)) {

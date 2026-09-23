@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-14%2C151%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-14%2C322%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -127,6 +127,7 @@
 | [늘려 쓰기](docs/ko/extend.md) | 스킬 · 플러그인 · MCP · 에이전트 · 훅 · ACP |
 | [속도와 씀씀이](docs/ko/tuning.md) | 단계별 추론 강도 · 프리픽스 캐시 · 컨텍스트 길이 |
 | [안전망과 사내 반입](docs/ko/safety.md) | 되돌리기 · 작업 범위 · 감사기록 · 심사 서류 |
+| [사내 배포 안내](docs/ko/company.md) | 처음 쓰는 사람 · 관리 정책 한 장 · 어디로 나가나 · 막는 것의 한계 |
 | [설정](docs/ko/config.md) · [개발](docs/ko/develop.md) | 환경변수 · 실행 옵션 · 검사 돌리기 · 폴더 구조 |
 | [릴리스 노트](docs/ko/releases.md) | [1.16.x](docs/ko/releases/1.x.md#116x) · [1.15.x](docs/ko/releases/1.x.md#115x) · [1.14.x](docs/ko/releases/1.x.md#114x) · [1.13.x](docs/ko/releases/1.x.md#113x) · [1.12.x](docs/ko/releases/1.x.md#112x) · [1.10.x](docs/ko/releases/1.x.md#110x) · [1.9.x](docs/ko/releases/1.x.md#19x) · [그 앞](docs/ko/releases.md) |
 
@@ -322,7 +323,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 2.0.3  ⌂ 이 안
+ deel 2.1.0  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -1140,9 +1141,26 @@ AWS 키 · Google 키 · JWT · 주소에 박힌 열쇠 · `Authorization` 계�
 
 | 모드 | 언제 물어보나 |
 |---|---|
-| `auto` (기본) | 안 물어봄. 되돌리기가 안전망 |
+| `auto` (기본) | 안 물어봄 — **맡기는 모드**. 되돌리기가 안전망. 모델이 되묻거나 계획부터 내도 60초 안에 답이 없으면 알아서 진행(`askWait`) |
 | `confirm` | 되돌릴 수 없는 명령만 |
-| `strict` | 파일 변경·명령 전부 |
+| `strict` | 파일 변경·명령 전부. **바뀔 내용(diff)을 먼저 보여 주고** 묻습니다 |
+
+회사에서 「바꾸기 전에 늘 사람이 본다」 를 정해야 하면 관리 정책에 `"approval": "strict"` 한 줄을
+적습니다. 그러면 `/mode` · Shift+Tab · `--yes` · 「앞으로 묻지 않기」 어느 것으로도 그 아래로 못
+내립니다 — [사내 배포 안내](docs/ko/company.md).
+
+**「다 됐다」 는 검사가 정합니다.** 설정에 `"check": "npm test"` 를 적거나 `deel run --check` 로 주면,
+모델이 무엇을 바꾸고 끝내려 할 때 deel 이 그 검사를 **직접** 돌립니다. 실패하면 출력을 돌려주고 이어서
+고치게 하고(기본 3판), 끝내 실패면 실패로 끝냅니다 — `deel run` 은 종료코드 8. 검사 명령도 모델의
+명령과 같은 관문(규칙·훅·승인·위험 명령 차단)을 지납니다 — [완료 검사](docs/ko/company.md#완료-검사).
+
+**얼마나 해내나는 골든셋으로 잽니다.** `deel eval --init` 이 예제 과제 다섯을 만들고, `deel eval` 이
+과제마다 임시 폴더에서 deel 을 돌린 뒤 **모델이 못 본** 정답 검사로 채점합니다. 결과를 남겨 두고
+지난번보다 나빠진 과제를 짚습니다 — [골든셋](docs/ko/company.md#골든셋).
+
+위험 명령 차단은 **금지 목록 방식**입니다. 목록에 없는 꼴은 새어 나갈 수 있고, 실제로 그렇게
+찾아 막아 온 기록이 릴리스 노트에 있습니다. 그래서 하나에 기대지 않고 겹쳐 씁니다 — 작업 범위,
+정책 금지 규칙, 승인, 되돌리기, 감사 로그.
 
 되돌리기 이력은 파일 내용을 통째로 담기 때문에 큰 파일을 여러 번 고치면 금방 커집니다.
 32MB 를 넘으면 **최근 50턴만 남기고** 오래된 것을 버립니다. 방금 한 일은 언제나
@@ -1246,7 +1264,7 @@ deel stats                    # 이 폴더에서 실제로 무엇을 했나 (.de
 ## 개발
 
 ```bash
-npm test          전체 검증 (14,151항목 — 몇몇은 터미널에 따라 갈립니다)
+npm test          전체 검증 (14,322항목 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -1303,7 +1321,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 | `exitcode` · `doorparity` | 7 · 19 | 화면에 적은 종료코드 표가 진짜인가 · 문 **네 개**가 같은 것을 주는가 |
 | `no-bundle` | 28 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
 | `edit-bench` | 15건 | 편집 성공률 |
-| `mutate` | 어긋 1,733개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
+| `mutate` | 어긋 1,785개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
 
 > **자세히** — 어디를 밟았는지 · 폴더 구조
 >
@@ -1315,7 +1333,8 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[2.0.3](docs/ko/releases/2.0.md#203)** | 2.0.2 는 npm 에 못 나갔습니다 — 리눅스에서만 틀리는 검사 둘을 고쳐 2.0.2 를 그대로 냅니다 |
+| **[2.1.0](docs/ko/releases/2.1.md#210)** | 맡기면 멈추지 않고, 묻게 하면 diff 를 보여 줍니다 — 「다 됐다」 는 검사가 정합니다(`check`) · 얼마나 해내나는 골든셋으로 잽니다(`deel eval`) · 관리 정책 `"approval"` 로 회사가 승인 바닥을 겁니다 |
+| [2.0.3](docs/ko/releases/2.0.md#203) | 2.0.2 는 npm 에 못 나갔습니다 — 이제 GitHub 릴리스는 npm 에 올라간 뒤에만 생깁니다 |
 | [2.0.2](docs/ko/releases/2.0.md#202) | 2.0.1 까지 넘겨 둔 것을 다 잡았습니다 — `deel run` 에만 없던 MCP 도구, 끝난 명령의 번호로 가던 `taskkill`, 한 번 넘어지면 세션 내내 못 쓰던 MCP 서버 |
 | [2.0.1](docs/ko/releases/2.0.md#201) | 울타리 하나가 안 걸렸습니다 — `sudo -u root bash` 가 `curl … \| bash` 막이를 지나갔습니다 — 그리고 관문 넷이 빨개질 수 없었습니다 |
 | [2.0.0](docs/ko/releases/2.0.md#200) | 있다고 적힌 울타리마다 실제로 걸리는지 다시 봤습니다 — 바뀐 것 전부·어디를 어떻게 고쳤나·어떻게 찾았나(CHA) |

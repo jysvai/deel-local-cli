@@ -12,7 +12,7 @@
 //   여기서 루프를 다시 짜면 두 벌이 되고, 언젠가 한쪽만 고쳐진다.
 import { statSync } from 'node:fs';
 import { c, mark, clip, 화면글거르기 } from './ui/ansi.js';
-import { 규칙모으기, 정책읽기 } from './safety/policy.js';
+import { 규칙모으기, 정책읽기, 승인바닥 } from './safety/policy.js';
 import { 훅읽기 } from './safety/hooks.js';
 import { 에이전트읽기 } from './agent/agents.js';
 import { 스키마읽기, 맞나, 답에서JSON뽑기, 시킬말 as 스키마시킬말 } from './agent/outschema.js';
@@ -47,6 +47,7 @@ import { route } from './agent/route.js';
 import { get as getWork, 보일이름 } from './agent/modes.js';
 import { 모두끝내기 as 일감모두끝내기, 일감인자 } from './tools/jobs.js';
 import { 첫이름 } from './tools/label.js';
+import { 검사설정 } from './agent/donecheck.js';
 
 /**
  * 종료코드.
@@ -93,13 +94,23 @@ export const EXIT = {
    */
   schema: 7,
   /*
+   * 완료 검사가 통과하지 않은 채 끝났다 (agent/donecheck.js · 2.1.0).
+   *
+   * 모델은 「다 됐습니다」 라고 했는데 사람이 정해 둔 검사(`--check` · 설정의 `check`)가
+   * 정해 둔 판수를 다 돌고도 빨갛거나, 관문에 막혀 아예 못 돌았다. 0 으로 끝내면 야간
+   * 배치가 빨간 검사 위에 초록불을 켠다 — 이 기능이 없애려던 바로 그 결말이다.
+   *
+   * 오류(1)와 가른다. 고칠 자리가 다르다 — 연결이 아니라 코드나 검사 쪽이다.
+   */
+  check: 8,
+  /*
    * 인자를 잘못 줬다 — 모르는 깃발 · 값 없는 깃발 · 모르는 모드 이름 · 못 읽는 --ctx.
    *
    * 여기에 **따로** 둔다. 처음에는 `--work` 오타를 2 로 끝냈는데, 2 는 이 표에서 이미
    * 「걸음 수 상한」 이다. `deel run --jsn …` 을 CI 에 건 사람은 오타 하나로 「일이 커서
    * 멈췄다」 를 받고 작업을 쪼개러 간다. 고칠 자리가 스크립트 한 줄인데.
    *
-   * 64 는 sysexits.h 의 EX_USAGE 다. 1~7 과 안 겹치고, 셸·CI 도구들이 「부른 모양이
+   * 64 는 sysexits.h 의 EX_USAGE 다. 1~8 과 안 겹치고, 셸·CI 도구들이 「부른 모양이
    * 틀렸다」 로 이미 알아듣는 수라 새로 지어내지 않았다. 이 경우는 모델을 한 번도 안 부른다.
    */
   usage: 64,
@@ -569,7 +580,16 @@ export async function runOnce(opts = {}) {
   // 승인은 기본이 거부다. 반대로 하면 안 된다 — 아무도 안 보는 자리에서
   // 되돌릴 수 없는 명령이 조용히 돌아가는 것이 이 프로그램이 제일 피하려는 일이다.
   // 정말 맡기고 싶은 사람은 --yes 로 그 뜻을 명시한다.
-  const 자동승인 = opts.yes === true;
+  /*
+   * 관리 정책이 승인 바닥을 걸었으면 --yes 는 안 먹는다 (safety/policy.js 의 승인바닥).
+   * 바닥은 「바꾸기 전에 사람이 본다」 는 약속인데, --yes 는 바로 그 사람을 빼는 깃발이다.
+   * 둘이 같이 오면 정책이 이긴다 — 조용히 무시하지 않고 왜 안 먹는지 적는다.
+   */
+  const 바닥 = 승인바닥();
+  const 자동승인 = opts.yes === true && 바닥.바닥 === 'auto';
+  if (opts.yes === true && !자동승인) {
+    곁(`  ${c.yellow('⊘')} ${c.gray(`--yes 를 안 씁니다 — ${옮긴말('approve.locked', { 바닥: 바닥.바닥, 곳: 바닥.곳 ?? '' })}`)}`);
+  }
   /*
    * 사람이 적어 둔 훅을 읽는다 (safety/hooks.js).
    *
@@ -608,6 +628,8 @@ export async function runOnce(opts = {}) {
     // 고친 뒤 진단을 볼지 (lsp/diag.js). 아래 내놓기() 에서 반드시 거둔다 —
     // 안 거두면 배치가 끝나고도 언어 서버가 폴더를 물고 남는다.
     lsp: { 켬: true },
+    // 끝내려는 자리에서 돌릴 검사 (agent/donecheck.js). `--check` 가 설정의 check 를 이긴다.
+    완료검사: 검사설정(cfg, opts.check),
     // 되물을 사람이 없으니 기본값을 그대로 돌려준다.
     ask: async (_label, o = {}) => o?.def ?? '',
     // 엑셀 암호를 여기서 기다리면 그대로 선다. 없다고 바로 답한다 —
@@ -731,6 +753,8 @@ export async function runOnce(opts = {}) {
   let steps = 0;
   let 이번단계글 = '';   // 지금 단계에서 모델이 흘린 글. 단계가 바뀌면 비운다
   let 답 = null;
+  // 완료 검사의 마지막 결과 (agent/donecheck.js). 안 돌았으면 null 이다.
+  let 검사결과 = null;
   // 서버가 끝났다는 말 없이 멈춘 적이 있나. 뒤에 오는 done 이 이걸 못 지운다.
   let 말없이끊겼나 = false;
   // 비우느라 시킨 말 뒤가 잘렸나 (사냥5 B5-01). 무엇으로 끝났든 이것이 까닭이 된다.
@@ -903,6 +927,20 @@ export async function runOnce(opts = {}) {
           곁(`  ${c.yellow('✗')} ${c.gray(옮긴말('ev.hookBlock'))}`);
           break;
 
+        case 'check_start':
+          곁(`  ${c.cyan('⧗')} ${c.gray(옮긴말('check.start', { 판: ev.판, 최대: ev.최대, 명령: ev.명령 }))}`);
+          break;
+
+        case 'check':
+          if (ev.ok === true) 곁(`  ${mark.ok} ${c.gray(옮긴말('check.pass', { 명령: ev.명령 }))}`);
+          else if (ev.ok === false) {
+            곁(`  ${c.red('✗')} ${c.gray(옮긴말('check.fail', { 판: ev.판, 최대: ev.최대, 요약: ev.요약 }))}`);
+            // 실패 출력의 끝 몇 줄 — 배치 로그를 보는 사람이 무엇이 틀렸는지 여기서 안다.
+            for (const 줄 of String(ev.꼬리 ?? '').trim().split('\n').slice(-8)) if (줄.trim()) 곁(`     ${c.gray(줄)}`);
+            곁(`     ${c.gray(ev.판 < ev.최대 ? 옮긴말('check.retry') : 옮긴말('check.gaveUp', { 판: ev.판 }))}`);
+          } else 곁(`  ${c.yellow('⊘')} ${c.gray(옮긴말('check.skipped', { 까닭: ev.까닭 }))}`);
+          break;
+
         case 'nudge':
           곁(`  ${c.gray(`↺ ${ev.why === '요청누락'
             ? 옮긴말('ev.nudgeMissed', { n: ev.빠진?.length ?? 0 })
@@ -987,6 +1025,7 @@ export async function runOnce(opts = {}) {
         case 'done':
           reason = 'done';
           답 = ev.text ?? 이번단계글;
+          검사결과 = ev.검사 ?? null;
           break;
       }
     }
@@ -1120,6 +1159,19 @@ export async function runOnce(opts = {}) {
   }
 
   /*
+   * 모델은 끝났다고 했는데 완료 검사가 통과하지 않았다 — 종료코드 8 (위 EXIT.check).
+   *
+   * 모양 판정(7)보다 **뒤에** 본다. 모양도 틀렸으면 그쪽을 먼저 고쳐야 답을 읽을 수 있다.
+   * 아무것도 안 바꾼 턴은 검사가 안 돌아 검사결과가 null 이다 — 그건 실패가 아니다.
+   */
+  if (reason === 'done' && 검사결과 && 검사결과.ok !== true) {
+    reason = 'check';
+    why = 검사결과.ok === false
+      ? 옮긴말('check.gaveUp', { 판: 검사결과.판 }) + ` — ${검사결과.명령}`
+      : 옮긴말('check.skipped', { 까닭: 검사결과.까닭 });
+  }
+
+  /*
    * SIGINT 손은 **되물음까지 끝난 뒤에** 뗀다 (사냥5 B5-02).
    *
    * 여기는 첫 턴이 끝나자마자 손을 뗐다. 그런데 모양 고치기 되물음도 모델을 한 번 더 부르는
@@ -1165,6 +1217,14 @@ export async function runOnce(opts = {}) {
     // 모양을 못 박았을 때만 실린다. --json 으로 받는 쪽은 text 를 다시 파싱할
     // 필요 없이 이 칸을 그대로 쓰면 된다.
     ...(스키마값 !== null ? { schema: 스키마값 } : {}),
+    // 완료 검사를 돌렸을 때만 실린다. ok 가 null 이면 못 돌린 것이다(why 에 까닭).
+    ...(검사결과 ? {
+      check: {
+        ok: 검사결과.ok, command: 검사결과.명령, rounds: 검사결과.판, max: 검사결과.최대,
+        ...(검사결과.요약 ? { summary: 검사결과.요약 } : {}),
+        ...(검사결과.까닭 ? { why: 검사결과.까닭 } : {}),
+      },
+    } : {}),
     ms: Date.now() - t0,
     ...(why ? { why } : {}),
   });

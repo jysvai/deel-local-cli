@@ -20,7 +20,7 @@ Vendor APIs connect too — **only when you say so**
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-14%2C151%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
+[![tests](https://img.shields.io/badge/tests-14%2C322%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/en/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -162,6 +162,7 @@ This page is the **summary**. Each section links to the detail behind it.
 | [Extending](docs/en/extend.md) | Skills · plugins · MCP · subagents · hooks · ACP |
 | [Speed and spend](docs/en/tuning.md) | Per-stage effort · the prefix cache · context length |
 | [Safety and corporate review](docs/en/safety.md) | Undo · working scope · audit log · the review package |
+| [Rolling it out at work](docs/en/company.md) | First-time users · one policy file · where requests go · what the guards cannot do |
 | [Configuration](docs/en/config.md) · [Development](docs/en/develop.md) | Env vars · run flags · running the tests · folder layout |
 | [Release notes](docs/en/releases.md) | [1.16.x](docs/en/releases/1.x.md#116x) · [1.15.x](docs/en/releases/1.x.md#115x) · [1.14.x](docs/en/releases/1.x.md#114x) · [1.13.x](docs/en/releases/1.x.md#113x) · [1.12.x](docs/en/releases/1.x.md#112x) · [1.10.x](docs/en/releases/1.x.md#110x) · [1.9.x](docs/en/releases/1.x.md#19x) · [older](docs/en/releases.md) |
 
@@ -395,7 +396,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.0.3  ⌂ inside
+ deel 2.1.0  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1242,9 +1243,27 @@ does not ask.
 
 | Mode | Asks when |
 |---|---|
-| `auto` (default) | Never — undo is the safety net |
+| `auto` (default) | Never — **the hand-off mode**; undo is the safety net. If the model asks a question or offers a plan first, it carries on by itself after 60 seconds with no answer (`askWait`) |
 | `confirm` | Irreversible commands only |
-| `strict` | All file changes and commands |
+| `strict` | All file changes and commands. **Shows the change (a diff) first**, then asks |
+
+If your organisation needs "a person sees every change before it lands", put `"approval": "strict"`
+in the managed policy. Then `/mode`, Shift+Tab, `--yes` and "don't ask again" all stop at that
+floor — see [Rolling it out at work](docs/en/company.md).
+
+**A check, not the model, says when it is done.** Put `"check": "npm test"` in the config or pass
+`deel run --check`, and when the model has changed something and tries to finish, deel runs that check
+**itself**. A failure goes back to the model to keep fixing (3 rounds by default); still failing ends as
+failed — `deel run` exits with 8. The check goes through the same gates as the model's own commands
+(rules, hooks, approval, the dangerous-command guard) — see [Completion check](docs/en/company.md#completion-check).
+
+**How much it gets done is measured with a golden set.** `deel eval --init` creates five example tasks,
+and `deel eval` runs deel on each one in a temp folder, then grades it with checks **the model never saw**.
+Results are kept, and tasks that got worse since last time are pointed out — see [Golden set](docs/en/company.md#golden-set).
+
+Blocked commands are a **deny list**. Shapes the list does not know can get through, and the
+release notes record the ones found and closed so far. So no single layer is relied on: working
+scope, policy deny rules, approval, undo and the audit log are stacked.
 
 Undo history stores whole file contents, so repeated edits to large files add up. Past 32MB
 it keeps the **most recent 50 turns** and drops the rest. What you just did is always
@@ -1340,7 +1359,7 @@ Stored in `~/.deel/config.json`. A `.deel/config.json` in the project folder tak
 ## Development
 
 ```bash
-npm test          Full suite (14,151 checks; a few are TTY-dependent)
+npm test          Full suite (14,322 checks; a few are TTY-dependent)
 npm run coverage  Which lines the tests actually execute
 npm run verify    Import + network checks only
 npm run bench     Edit success rate
@@ -1384,7 +1403,7 @@ so one run tells you everything.
 | `exitcode` · `doorparity` | 7 · 19 | The printed exit-code table is real · all **four** doors hand out the same thing |
 | `no-bundle` | 28 | Nothing foreign in the published package; test-file hygiene |
 | `edit-bench` | 15 cases | Edit success rate |
-| `mutate` | 1,733 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
+| `mutate` | 1,785 mutants | **Whether the tests actually guard** — break the line on purpose, check it turns red |
 
 > **More** — Coverage · Layout
 >
@@ -1396,7 +1415,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.0.3](docs/en/releases/2.0.md#203)** | 2.0.2 never reached npm — two checks that were wrong only on Linux, fixed; otherwise 2.0.2 as is |
+| **[2.1.0](docs/en/releases/2.1.md#210)** | Hand it off and it keeps going; make it ask and it shows the diff — a check decides when it is done (`check`), a golden set measures how much gets done (`deel eval`), and `"approval"` in the managed policy lets a company set an approval floor |
+| [2.0.3](docs/en/releases/2.0.md#203) | 2.0.2 never reached npm — GitHub releases now appear only after npm has the version |
 | [2.0.2](docs/en/releases/2.0.md#202) | Everything 2.0.1 left open, closed — MCP tools missing only from `deel run`, `taskkill` sent to an exited command's pid, MCP servers that stayed down for the session after one crash |
 | [2.0.1](docs/en/releases/2.0.md#201) | One fence in 2.0.0 did not hold — `sudo -u root bash` walked through the `curl … \| bash` guard — and four gates could not go red |
 | [2.0.0](docs/en/releases/2.0.md#200) | Every fence we said was there, checked for whether it actually holds — everything that changed, where and how it was fixed, and how it was found (CHA) |

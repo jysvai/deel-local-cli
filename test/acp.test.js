@@ -2307,6 +2307,61 @@ trace('6회차-N9-두연결-두탭');
   }
 }
 
+trace('2.1.0-승인창-diff-정책바닥');
+/*
+ * ── (2.1.0) 승인 창에 무엇이 바뀌는지를 싣는가 · 관리 정책의 승인 바닥이 에디터에도 걸리는가 ──
+ *
+ * 사내 검토의 물음: 「고치기 전에 미리보기를 보여 주고 사람이 확인하는가」. 여태 승인 요청은 제목
+ * 한 줄과 날것 인자만 보내서, 사람은 JSON 을 읽고 허락해야 했다. 이제 ACP 의 diff 로 싣는다.
+ *
+ * 그리고 관리 정책이 `approval: strict` 를 걸면 에디터를 auto 로 띄워도 묻고, 「앞으로 묻지 않기」
+ * 는 창에 안 나온다 — 버튼 한 번으로 그 바닥을 빼는 길이 되면 안 된다.
+ */
+for (const 판 of [
+  { 이름: 'strict 로 띄움 · 정책 없음', 인자: ['--mode', 'strict'], 정책: null },
+  { 이름: 'auto 로 띄움 · 정책 approval strict', 인자: ['--mode', 'auto'], 정책: { approval: 'strict' } },
+]) {
+  읽기한번 = false;
+  쓸파일이름 = `승인창-${process.pid}.txt`;
+  let 정책길 = null;
+  if (판.정책) {
+    정책길 = join(home, `policy-${process.pid}.json`);
+    writeFileSync(정책길, JSON.stringify(판.정책));
+  }
+  const e = 에디터(판.인자, 정책길 ? { DEEL_POLICY: 정책길 } : {});
+  const 물음들 = [];
+  // 거절로 답한다 — 파일이 안 생겨야 다음 판이 깨끗하다.
+  e.응답표.set('session/request_permission', (인자) => {
+    물음들.push(인자);
+    return { outcome: { outcome: 'selected', optionId: 'reject_once' } };
+  });
+  try {
+    await 시간제한(e.요청('initialize', 첫인사), 15000, 'initialize');
+    const 방 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new');
+    await 시간제한(e.요청('session/prompt', { sessionId: 방.sessionId, prompt: [{ type: 'text', text: '일부러_써 줘' }] }), 30000, '한 턴');
+    const 첫 = 물음들[0];
+    check(`★★ (2.1.0 ${판.이름}) 쓰기 전에 승인을 묻는다`, !!첫, `${물음들.length}번`);
+    const 내용 = 첫?.toolCall?.content ?? [];
+    const d = 내용.find((x) => x?.type === 'diff');
+    check(`★★★ (2.1.0 ${판.이름}) 승인 창에 무엇이 바뀌는지 diff 로 싣는다`,
+      !!d && d.newText === '늦게 쓴 글\n' && d.oldText === null && String(d.path).endsWith(쓸파일이름),
+      JSON.stringify(내용).slice(0, 300));
+    const 고를것 = (첫?.options ?? []).map((o) => o.kind);
+    if (판.정책) {
+      check('★★★ (2.1.0) 정책이 승인 바닥을 걸면 「앞으로 묻지 않기」 가 창에 없다', !!첫 && !고를것.includes('allow_always'), 고를것.join(','));
+    } else {
+      check('  (2.1.0) 정책이 없으면 「앞으로 묻지 않기」 는 그대로 있다', 고를것.includes('allow_always'), 고를것.join(','));
+    }
+    check(`  (2.1.0 ${판.이름}) 거절하면 파일을 안 쓴다`, !existsSync(join(work, 쓸파일이름)), 쓸파일이름);
+  } catch (err) {
+    check(`2.1.0 승인창 (${판.이름}) — 통째로 실패`, false, String(err?.message ?? err) + ' | ' + e.표준오류().slice(-400));
+  } finally {
+    rmSync(join(work, 쓸파일이름), { force: true });
+    if (정책길) rmSync(정책길, { force: true });
+    await e.끝내기();
+  }
+}
+
 srv.close();
 rmSync(home, { recursive: true, force: true });
 rmSync(work, { recursive: true, force: true });

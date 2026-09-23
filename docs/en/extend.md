@@ -309,6 +309,7 @@ fixes get different codes and names.
 | `cutoff` | 5 | The server stopped answering without saying it was done. The answer is **partial** |
 | `refusal` | 6 | The model refused on safety grounds. Not pushed back |
 | `schema` | 7 | Did not match `--output-schema` — or the schema file could not be read (then the model is not called) |
+| `check` | 8 | The completion check (`--check`, or `check` in the config) still failed after all its rounds, or a rule, hook or approval kept it from running. Details in the `check` field of `--json` |
 | `too-big` | 1 | The prompt is bigger than the context window. The model would only see the start, so it was **not called** |
 | `needs-online` | 1 | An outside gateway without permission. Nobody to ask, so it stops — `--online` |
 | `no-config` · `config` | 1 | No saved connection / the config file could not be read |

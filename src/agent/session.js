@@ -7,6 +7,7 @@ import { 조각표 } from '../backend/cachemark.js';
 import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './modes.js';
 import { toolSchemas } from '../tools/index.js';
 import { isOffline } from '../safety/network.js';
+import { 승인바닥, 더센승인 } from '../safety/policy.js';
 import { normalize as normLevel, DEFAULT as LEVEL_DEFAULT } from '../ui/level.js';
 import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
 import { 지문 } from './project.js';
@@ -218,6 +219,20 @@ function 기본규칙(ctx) {
 const 규칙최대 = 20000;
 
 export class Session {
+  #승인 = 'auto';
+
+  /*
+   * 승인 모드는 관리 정책의 바닥 아래로 못 내려간다 (safety/policy.js 의 승인바닥).
+   *
+   * 읽는 자리에서 덮는다. `/mode` · Shift+Tab · 편집기 · `deel run` · 하위 작업이 제각각
+   * session.mode 를 쓰는데, 자리마다 바닥을 걸면 하나를 빠뜨린 자리가 곧 구멍이다.
+   * 여기 한 곳에서 걸면 누가 무엇을 적든 관문(agent/loop.js)이 읽는 값은 바닥 위다.
+   */
+  get mode() { return 더센승인(this.#승인, 승인바닥().바닥); }
+  set mode(v) { this.#승인 = v; }
+  /** 사람이 고른 그대로 — 바닥이 덮었는지를 화면이 말할 때 쓴다. */
+  get 고른승인() { return this.#승인; }
+
   constructor(conn, { root, mode = 'auto', work = null, level = null, think = 'medium', effort = 'save', web = true, maxSteps = null } = {}) {
     this.conn = conn;
     this.root = root;

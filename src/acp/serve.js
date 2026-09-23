@@ -30,7 +30,8 @@
 import { existsSync, statSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
-import { 규칙모으기, 늘허락, 정책읽기 } from '../safety/policy.js';
+import { 규칙모으기, 늘허락, 정책읽기, 승인바닥 } from '../safety/policy.js';
+import { 검사설정 } from '../agent/donecheck.js';
 import { 훅읽기 } from '../safety/hooks.js';
 import { 에이전트읽기 } from '../agent/agents.js';
 import { 남길것읽기 } from '../safety/shellenv.js';
@@ -546,6 +547,8 @@ export async function acp(opts = {}) {
       get 눈있나() { return !!conn.vision; },
       // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
       규칙들: 규칙모으기(cfg),
+      // 끝내려는 자리에서 돌릴 검사 (agent/donecheck.js). 터미널과 같은 설정을 읽는다.
+      완료검사: 검사설정(cfg),
       // 사람이 적어 둔 훅 (safety/hooks.js). 에디터 안에서도 같은 것이 돌아야 한다 —
       // 여기만 빠지면 「터미널에서는 막히고 에디터에서는 안 막힌다」 가 된다.
       훅들: 훅정보.훅들,
@@ -569,7 +572,7 @@ export async function acp(opts = {}) {
        */
       ask: async (_라벨, o = {}) => o?.def ?? '',
       askPassword: async () => null,
-      confirm: (이름, 인자) => 승인묻기(방, 이름, 인자),
+      confirm: (이름, 인자, 곁것 = {}) => 승인묻기(방, 이름, 인자, 곁것?.미리보기),
     };
 
     방.ctx.배움 = new 배움(root, homeDir());
@@ -616,7 +619,7 @@ export async function acp(opts = {}) {
   // deel 의 안전장치를 에디터의 승인 창으로 그대로 내보낸다. 이게 붙는 것과
   // 안 붙는 것의 차이가 크다 — 안 붙으면 위험한 명령을 물어볼 데가 없어서
   // 무조건 거부하게 되고, 그러면 에디터 안에서는 아무 일도 못 하는 도구가 된다.
-  async function 승인묻기(방, 이름, 인자) {
+  async function 승인묻기(방, 이름, 인자, 미리보기 = []) {
     /*
      * ── 끊긴 턴의 승인은 없다 (사냥5 H5-3) ─────────────────────────────────
      *
@@ -631,7 +634,13 @@ export async function acp(opts = {}) {
      */
     const 신호 = 방.도는신호 ?? null;
     if (신호?.aborted) return false;
-    if (방.늘허락.has(이름)) return true;
+    /*
+     * 관리 정책이 승인 바닥을 걸었으면 「앞으로 묻지 않기」 는 없다 (safety/policy.js 의 승인바닥).
+     * 바닥은 바꾸기 전에 사람이 본다는 약속이라, 버튼 한 번으로 그 사람을 빼는 길을 주면
+     * 안 된다. 전에 눌러 둔 늘 허락도 이 판에서는 안 먹는다.
+     */
+    const 바닥걸림 = 승인바닥().바닥 !== 'auto';
+    if (방.늘허락.has(이름) && !바닥걸림) return true;
 
     const 아이디 = `t${++방.도구번호}`;
     try {
@@ -644,10 +653,18 @@ export async function acp(opts = {}) {
           status: 'pending',
           locations: 도구자리(이름, 인자, null, { 뿌리: 방.root }),
           rawInput: 인자 ?? {},
+          /*
+           * 무엇이 바뀌는지를 같이 보낸다 (tools/index.js 의 바뀔내용). 편집기는 이걸 승인 창에
+           * diff 로 그린다. 여태는 제목 한 줄과 날것 인자만 보내서, 사람은 old_string·new_string
+           * JSON 을 읽고 허락해야 했다. 새 파일이면 oldText 가 null 이다 (ACP 의 Diff 꼴).
+           */
+          ...(Array.isArray(미리보기) && 미리보기.length
+            ? { content: 미리보기.map((것) => ({ type: 'diff', path: 것.경로, oldText: 것.전, newText: 것.후 })) }
+            : {}),
         },
         options: [
           { optionId: 'allow_once', name: '이번만 실행', kind: 'allow_once' },
-          { optionId: 'allow_always', name: `${이름} 은 앞으로 묻지 않기`, kind: 'allow_always' },
+          ...(바닥걸림 ? [] : [{ optionId: 'allow_always', name: `${이름} 은 앞으로 묻지 않기`, kind: 'allow_always' }]),
           { optionId: 'reject_once', name: '하지 않기', kind: 'reject_once' },
         ],
       }, { signal: 신호 });
@@ -656,6 +673,7 @@ export async function acp(opts = {}) {
       if (신호?.aborted) return false;
       const 결과 = 답?.outcome ?? {};
       if (결과.outcome !== 'selected') return false;   // cancelled 도 여기로 온다
+      if (결과.optionId === 'allow_always' && 바닥걸림) return true;
       if (결과.optionId === 'allow_always') {
         방.늘허락.add(이름);
         /*
@@ -880,6 +898,17 @@ export async function acp(opts = {}) {
 
           case 'hook_block':
             말하기(`\n\n_(${옮긴말('ev.hookBlock')})_\n\n`);
+            break;
+
+          // 완료 검사 (agent/donecheck.js). 에디터에도 무엇을 돌렸고 어떻게 됐는지 적는다.
+          case 'check_start':
+            말하기(`\n\n_(${옮긴말('check.start', { 판: ev.판, 최대: ev.최대, 명령: ev.명령 })})_\n\n`);
+            break;
+
+          case 'check':
+            말하기(`\n\n_(${ev.ok === true ? 옮긴말('check.pass', { 명령: ev.명령 })
+              : ev.ok === false ? `${옮긴말('check.fail', { 판: ev.판, 최대: ev.최대, 요약: ev.요약 })} — ${ev.판 < ev.최대 ? 옮긴말('check.retry') : 옮긴말('check.gaveUp', { 판: ev.판 })}`
+                : 옮긴말('check.skipped', { 까닭: ev.까닭 })})_\n\n`);
             break;
 
           case 'nudge':

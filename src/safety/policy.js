@@ -91,6 +91,44 @@ export function 정책읽기({ env = process.env, platform = process.platform, �
 export function 정책잊기() { 읽은정책 = null; }
 
 /*
+ * ── 승인 바닥 (2.1.0) ──────────────────────────────────────────────────
+ *
+ * 사내 검토에서 나온 물음: 「파일을 고치거나 지우기 전에 미리보기를 보여 주고
+ * 사람이 한 번 확인하는 절차가 **기본으로** 도는가.」
+ *
+ * 승인 모드는 쓰는 사람이 고른다(`/mode` · Shift+Tab). 기본은 auto 다 — 이 도구의
+ * 속도가 거기서 나온다. 그런데 관리자가 「이 PC 에서는 바꾸기 전에 늘 묻는다」 를
+ * 정할 자리가 없었다. 정책은 주소·봉인·금지만 받았다.
+ *
+ *     { "approval": "strict" }
+ *
+ * 정책의 approval 은 **바닥**이다. 사람은 그보다 더 조일 수는 있어도 아래로는 못
+ * 내린다 — 정책이 넓히지 못하는 것과 같은 자세다. 모르는 값이면 제일 좁은
+ * strict 로 친다. 관리자가 오타를 냈다고 바닥이 통째로 빠지면, 관리자는 걸린 줄
+ * 알고 사람은 안 걸린 채로 쓴다.
+ */
+export const 승인차례 = ['auto', 'confirm', 'strict'];
+
+export function 승인바닥(읽은 = 정책읽기()) {
+  /*
+   * 파일이 있는데 **못 읽었으면**(쉼표 하나 틀린 JSON) 바닥도 strict 다. 위의 「모르는 값」 과
+   * 같은 까닭이다 — 관리자는 `"approval": "strict",` 를 적어 두었고 걸린 줄 안다. 못 읽었다고
+   * auto 로 풀면 오타 하나로 바닥이 통째로 빠진다 (2차 눈 판정). 파일이 없는 PC 는 그대로 auto.
+   */
+  if (읽은?.탈) return { 바닥: 'strict', 곳: 읽은.곳 ?? null, 모름: null, 탈: 읽은.탈 };
+  const v = 읽은?.값?.approval;
+  if (v === undefined || v === null || v === '') return { 바닥: 'auto', 곳: null, 모름: null };
+  const s = String(v).trim().toLowerCase();
+  if (승인차례.includes(s)) return { 바닥: s, 곳: 읽은.곳, 모름: null };
+  return { 바닥: 'strict', 곳: 읽은.곳, 모름: String(v) };
+}
+
+/** 둘 중 더 많이 묻는 쪽. 모르는 이름은 auto 로 친다 — 바닥 쪽이 따로 막는다. */
+export function 더센승인(a, b) {
+  return 승인차례[Math.max(0, 승인차례.indexOf(a), 승인차례.indexOf(b))];
+}
+
+/*
  * `Tool(무늬)` 를 읽는다.
  *
  *   Bash            — Bash 는 전부

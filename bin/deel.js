@@ -23,6 +23,7 @@ import { 규칙모으기, 어떻게할까, 확인목록, 확인인자, 확인돌
 import { 기록자리, 세기, 도구차례, 막힘차례, 셈JSON } from '../src/stats.js';
 import { 진찰 } from '../src/doctor.js';
 import { 설명, 설명줄들 } from '../src/configexplain.js';
+import { runEval } from '../src/eval/run.js';
 
 const MIN_NODE = 20;
 
@@ -625,6 +626,8 @@ const BOOL = new Set([
   'hard',
   // trust --off · --list, scan --save · --pick. 여태 목록에 없어 뒤의 낱말을 삼킬 수 있었다.
   'off', 'list', 'save', 'pick',
+  // eval --init · --keep (src/eval/run.js).
+  'init', 'keep',
 ]);
 
 /*
@@ -646,6 +649,8 @@ const BOOL = new Set([
 const 값깃발 = new Set([
   'root', 'mode', 'work', 'level', 'ctx', 'max-tokens', 'think', 'effort', 'output-schema',
   'out', 'only', 'days', 'tool', 'url', 'key', 'model', 'host', 'ports', 'timeout', 'rm', 'delete',
+  // run --check <명령> (agent/donecheck.js) · eval --repeat <수> (src/eval/run.js).
+  'check', 'repeat',
 ]);
 // 값을 줘도 되고 안 줘도 되는 깃발. `--resume` 만 치면 이어 할 대화를 고른다.
 const 값골라깃발 = new Set(['resume']);
@@ -902,6 +907,8 @@ function help() {
   say(`    ${c.gray('--json')}             결과를 JSON 한 덩이로 (답·도구 횟수·토큰·끝난 까닭)`);
   say(`    ${c.gray('--quiet')}            도구가 무엇을 했는지 안 적음 (오류는 그래도 적음)`);
   say(`    ${c.gray('--yes')}              승인이 필요한 것도 그냥 실행. ${c.yellow('기본은 거부입니다')}`);
+  // 새로 넣는 도움말 줄은 말() 로 적는다 — 영어로 켠 사람에게 한국어 줄을 더 새게 하지 않는다(test/langleak.test.js 의 래칫).
+  say(`    ${c.gray('--check <cmd>')}       ${말('cli.checkFlag')}`);
   /*
    * 답의 모양을 못 박는 자리 (src/agent/outschema.js).
    *
@@ -914,7 +921,13 @@ function help() {
   // 이 줄은 src/oneshot.js 의 EXIT 와 짝이다. test/exitcode.test.js 가 둘이
   // 어긋나면 빨개진다 — 한 판 동안 refusal(6) 이 여기서 빠져 있었고, 그
   // 사실을 말해 주는 자리가 아무 데도 없었다.
-  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단 · 5 말없이끊김 · 6 거절 · 7 모양안맞음 · 64 사용법틀림')}`);
+  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단 · 5 말없이끊김 · 6 거절 · 7 모양안맞음 · 8 검사실패 · 64 사용법틀림')}`);
+  say('');
+  say(`  ${c.bold(말('cli.evalTitle'))} ${c.gray(말('cli.evalWhy'))}`);
+  say('');
+  say(`    ${c.cyan('deel eval --init')}            ${말('cli.evalInit')}`);
+  say(`    ${c.cyan('deel eval [dir]')}             ${말('cli.evalRun')}`);
+  say(`    ${c.gray('--repeat <n> · --only <name> · --keep · --json')}`);
   say('');
   say(`  ${c.bold('진단 직접 지정')} ${c.gray('— 설정을 남기지 않고 확인만 할 때')}`);
   say('');
@@ -1113,6 +1126,8 @@ async function main() {
         quiet: flags.quiet === true || flags.quiet === 'true',
         // 답의 모양을 못 박는다. 이게 있으면 표준출력은 그 JSON 하나다.
         outputSchema: flags['output-schema'] ? String(flags['output-schema']) : undefined,
+        // 끝내려는 자리에서 돌릴 검사 (agent/donecheck.js). 설정의 check 를 이긴다.
+        check: flags.check !== undefined ? String(flags.check) : undefined,
       });
     case '':
     case 'chat':
@@ -1186,6 +1201,24 @@ async function main() {
       return runRules(args, flags);
     case 'doc2md':
       return runDoc2md(args, flags);
+    // 과제 모음(골든셋)을 실제 모델로 돌려 성공률을 잰다 (src/eval/run.js).
+    case 'eval':
+      return runEval({
+        폴더: args[0] ?? null,
+        init: flags.init === true || flags.init === 'true',
+        repeat: flags.repeat ?? 1,
+        keep: flags.keep === true || flags.keep === 'true',
+        json: flags.json === true || flags.json === 'true',
+        only: flags.only !== undefined ? String(flags.only) : null,
+        시간초: flags.timeout !== undefined ? Number(flags.timeout) : null,
+        // 과제마다 띄우는 `deel run` 에 그대로 넘길 것 — 바깥 게이트웨이면 --online 이 있어야 돈다.
+        깃발들: [
+          ...(flags.online === true || flags.online === 'true' ? ['--online'] : []),
+          ...(flags.offline === true || flags.offline === 'true' ? ['--offline'] : []),
+          ...(flags.think ? ['--think', String(flags.think)] : []),
+          ...(flags.effort ? ['--effort', String(flags.effort)] : []),
+        ],
+      });
     case 'sbom':
       return runSbom(flags);
     case 'scan':

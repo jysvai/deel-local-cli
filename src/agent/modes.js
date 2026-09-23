@@ -36,6 +36,9 @@ const 계획 = ['TodoWrite', 'Remember'];
 // Move 는 구조를 바꾸는 유일한 길이다. 이게 없으면 "폴더를 역할대로 나눠 줘"
 // 에 남는 길이 Bash mv 뿐인데, 그건 매번 승인을 묻고 되돌리기에 안 잡힌다.
 const 쓰기 = ['Write', 'Append', 'Edit', 'Move', 'Bash', 'Jobs'];
+// strict 승인이 묻는 도구도 이 목록이다 (agent/loop.js). 따로 적어 두면 여기 도구가
+// 늘 때 관문 쪽 목록이 뒤에 남는다 — Append·Move·Jobs 가 실제로 그렇게 빠져 있었다.
+export const 바꾸는도구 = Object.freeze([...쓰기]);
 // 만든 것을 확인하는 도구. 아무것도 안 바꾸지만 **쓰는 모드에만** 준다 —
 // 안 만든 모드에서 확인할 것이 없고, 도구 정의로 나가는 자리만 먹는다.
 const 확인 = ['Verify'];

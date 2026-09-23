@@ -605,6 +605,27 @@ trace('5-물어볼사람이없을때');
 
 {
   /*
+   * ── (2.1.0) 관리 정책이 승인 바닥을 걸면 --yes 는 안 먹는다 ──
+   *
+   * 바닥은 「바꾸기 전에 사람이 본다」 는 약속인데 --yes 는 바로 그 사람을 빼는 깃발이다.
+   * auto 로 띄워도 바닥이 strict 로 올리고, 물을 사람이 없으니 거절한다. 왜 --yes 가 안
+   * 먹었는지도 적어야 한다 — 말없이 무시하면 스크립트를 짠 사람은 고장으로 읽는다.
+   */
+  대본초기화();
+  rmSync(join(work, '한번만쓴것.txt'), { force: true });
+  const 정책길 = join(home, `policy-${process.pid}.json`);
+  writeFileSync(정책길, JSON.stringify({ approval: 'strict' }));
+  const r = await 띄우기(['run', '--mode', 'auto', '--yes', '일부러_고쳐 줘'], { 제한: 25000, env: { DEEL_POLICY: 정책길 } });
+  check('★★★ (2.1.0) 정책이 승인 바닥을 걸면 --yes 로도 묻지 않고 실행하지 않는다',
+    !existsSync(join(work, '한번만쓴것.txt')), `code=${r.code} ${r.err.slice(-200)}`);
+  check('★★ (2.1.0) --yes 가 왜 안 먹었는지 적는다', /--yes 를 안 씁니다/.test(r.err), r.err.slice(0, 300));
+  check('  (2.1.0) 그래도 턴은 정상으로 끝난다', r.code === 0 && !r.시간초과, `code=${r.code}`);
+  rmSync(정책길, { force: true });
+  rmSync(join(work, '한번만쓴것.txt'), { force: true });
+}
+
+{
+  /*
    * ── 거부 안내는 **기본 모드에서도** 붙어야 한다 (8회차 그밖 한번쓰기2) ──
    *
    * 안내를 붙일지를 `session.mode !== 'auto'` 로 골랐는데 `deel run` 의 기본

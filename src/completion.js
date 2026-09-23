@@ -39,6 +39,7 @@ export const 명령들 = [
   { 이름: 'doctor', 뜻: 'diagnose 와 같다', en: 'same as diagnose' },
   { 이름: 'pack', 뜻: '오프라인 반입용으로 묶는다', en: 'bundle for offline transfer' },
   { 이름: 'audit', 뜻: '무엇을 했는지 기록을 본다', en: 'show the record of what it did' },
+  { 이름: 'eval', 뜻: '과제 모음(골든셋)을 실제 모델로 돌려 성공률을 잰다', en: 'run a task set (golden set) on the real model and measure the pass rate' },
   { 이름: 'doc2md', 뜻: '문서·시안을 마크다운으로 (hwpx·docx·pptx·xlsx·pdf·fig)', en: 'document or design to Markdown (hwpx/docx/pptx/xlsx/pdf/fig)' },
   { 이름: 'sbom', 뜻: '무엇이 들었는지 목록을 낸다', en: 'list what is inside (SBOM)' },
   { 이름: 'trust', 뜻: '이 폴더의 프로젝트 설정을 읽게 한다', en: "read this folder's project config" },
@@ -89,6 +90,8 @@ export const 깃발들 = [
   { 이름: '--yes', 뜻: '물어보지 않고 진행', en: 'do not ask, just proceed', 값: false },
   { 이름: '--hard', 뜻: 'reset all 에서 되돌리기·감사기록까지', en: 'with reset all: undo snapshots and the audit log too', 값: false },
   { 이름: '--json', 뜻: '결과를 JSON 으로', en: 'output JSON', 값: false },
+  { 이름: '--check', 뜻: 'run: 끝내기 전에 돌릴 검사 명령', en: 'run: check command to pass before finishing', 값: null },
+  { 이름: '--repeat', 뜻: 'eval: 과제마다 몇 번 돌릴까', en: 'eval: runs per task', 값: null },
   { 이름: '--days', 뜻: 'stats 에서 볼 기간(일)', en: 'stats: how many days back', 값: null },
   { 이름: '--all', 뜻: 'stats 에서 기간을 안 자름', en: 'stats: no time window', 값: false },
   // 값이 파일이라 셸이 파일을 완성해 줘야 한다. 목록으로 못 준다 —

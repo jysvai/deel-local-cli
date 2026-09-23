@@ -3806,8 +3806,8 @@
       "곳": "bin/deel.js",
       "무엇": "도움말 종료코드 표에서 64 가 빠진다",
       "그러면": "`deel --help` 만 보고 스크립트를 짠 사람이 64 를 「알 수 없는 실패」 로 처리한다. 계약을 적어 둔 유일한 자리가 계약과 다르다",
-      "찾을것": "  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단 · 5 말없이끊김 · 6 거절 · 7 모양안맞음 · 64 사용법틀림')}`);",
-      "바꿀것": "  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단 · 5 말없이끊김 · 6 거절 · 7 모양안맞음')}`);",
+      "찾을것": "  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단 · 5 말없이끊김 · 6 거절 · 7 모양안맞음 · 8 검사실패 · 64 사용법틀림')}`);",
+      "바꿀것": "  say(`    ${c.gray('끝난 까닭이 종료코드에 담깁니다:')} ${c.gray('0 끝냄 · 1 오류 · 2 걸음수상한 · 3 헛돎 · 4 중단 · 5 말없이끊김 · 6 거절 · 7 모양안맞음 · 8 검사실패')}`);",
       "검사": "test/exitcode.test.js"
     },
     {
@@ -12706,8 +12706,8 @@
       "곳": "src/repl.js",
       "무엇": "계획 승인에서 「입력이 끝난 것」 을 승인으로 읽는다",
       "그러면": "파이프·Ctrl+D 로 관이 닫힌 판에서 아무도 답하지 않았는데 계획 전체가 승인되고 파일이 만들어진다. 도구 하나 승인받는 자리는 막아 놓고 계획 전체를 승인하는 자리가 열린다",
-      "찾을것": "        `${옮긴말('plan.ask')} ${c.gray(옮긴말('plan.hint'))}`,\n        { def: 'y', 끝나면: 'n', 멈추면: 'n' },\n",
-      "바꿀것": "        `${옮긴말('plan.ask')} ${c.gray(옮긴말('plan.hint'))}`,\n        { def: 'y' },\n",
+      "찾을것": "{ def: 'y', 끝나면: 'n', 멈추면: 'n', 기다림초: 계획대기,",
+      "바꿀것": "{ def: 'y', 기다림초: 계획대기,",
       "검사": "test/planapprove.test.js"
     },
     {
@@ -14015,6 +14015,422 @@
       "찾을것": "(i % 2 ? 조각 : 한조각풀기(조각, 자리))",
       "바꿀것": "(한조각풀기(조각, 자리))",
       "검사": "test/release-notes.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "strict 가 옛 목록(Write·Edit·Bash)만 묻는다 (2.1.0)",
+      "그러면": "strict 에서도 Append·Move 는 안 묻고 파일을 바꾼다 — 사람은 「파일 변경 전부를 묻는다」 고 알고 있다",
+      "찾을것": "        const 바꾸는것 = (call.name === 'Jobs' ? !!call.args?.stop : 바꾸는도구.includes(call.name))",
+      "바꿀것": "        const 바꾸는것 = (call.name === 'Jobs' ? !!call.args?.stop : ['Write', 'Edit', 'Bash'].includes(call.name))",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "strict 가 MCP 도구를 안 묻는다 (2.1.0)",
+      "그러면": "붙여 둔 남의 프로그램이 무엇을 지우든 물음 없이 돈다",
+      "찾을것": "          || call.name.startsWith('mcp__');\n        const needsOk",
+      "바꿀것": ";\n        const needsOk",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "물어볼 사람(confirm)이 없으면 묻지 않고 실행한다 (2.1.0)",
+      "그러면": "strict 가 「물을 곳이 있으면 묻는다」 가 된다 — confirm 을 안 단 부르는 쪽에서는 그대로 파일을 쓴다",
+      "찾을것": "const ok = ctx.confirm ? await ctx.confirm(call.name, call.args, { 미리보기 }) : false;",
+      "바꿀것": "const ok = ctx.confirm ? await ctx.confirm(call.name, call.args, { 미리보기 }) : true;",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "정책 바닥이 있어도 설정의 allow 가 물음을 건너뛴다 (2.1.0)",
+      "그러면": "관리자가 「바꾸기 전에 늘 묻는다」 를 걸어도 사람이 설정에 `\"allow\": [\"Write\"]` 한 줄을 적으면 풀린다",
+      "찾을것": "const needsOk = (판정.답 === 'allow' && !정책이묻게함) ? false",
+      "바꿀것": "const needsOk = (판정.답 === 'allow') ? false",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "세션의 승인 모드가 정책 바닥을 안 본다 (2.1.0)",
+      "그러면": "/mode · Shift+Tab · 편집기 · deel run 이 적어 넣은 auto 가 그대로 관문까지 간다 — 바닥이 장식이 된다",
+      "찾을것": "  get mode() { return 더센승인(this.#승인, 승인바닥().바닥); }",
+      "바꿀것": "  get mode() { return this.#승인; }",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/safety/policy.js",
+      "무엇": "정책의 approval 이 모르는 값이면 바닥을 안 건다 (2.1.0)",
+      "그러면": "관리자가 \"Strict!\" 처럼 오타를 내면 바닥이 통째로 빠진다 — 관리자는 걸린 줄 알고 사람은 안 걸린 채로 쓴다",
+      "찾을것": "  return { 바닥: 'strict', 곳: 읽은.곳, 모름: String(v) };",
+      "바꿀것": "  return { 바닥: 'auto', 곳: 읽은.곳, 모름: String(v) };",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "/mode 가 정책 바닥 아래로 내리려 할 때 말없이 받는다 (2.1.0)",
+      "그러면": "화면에 「→ auto」 가 찍히고 실제로는 strict 로 돈다 — 사람은 제 손으로 바꾼 줄 안다",
+      "찾을것": "      if (더센승인(승인이름, 바닥.바닥) !== 승인이름) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/ui/approve.js",
+      "무엇": "Shift+Tab 이 정책 바닥 아래 칸까지 돈다 (2.1.0)",
+      "그러면": "바닥 아래 칸에 들어갔다가 다시 끌어올려져 눌러도 안 바뀐 것처럼 보인다",
+      "찾을것": "  const 돌칸 = 차례.slice(Math.max(0, 차례.indexOf(바닥)));",
+      "바꿀것": "  const 돌칸 = 차례;",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "여러 군데 고치기 미리보기가 앞 고침 위에 뒤 고침을 안 얹는다 (2.1.0)",
+      "그러면": "승인 창에서 본 것과 실제로 쓰인 것이 갈린다 — 이어서 고친 자리가 미리보기에서만 빠진다",
+      "찾을것": "        const { m, next } = 새글만들기(판.후, x);",
+      "바꿀것": "        const { m, next } = 새글만들기(판.전, x);",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/repl.js",
+      "무엇": "대화창 승인 물음이 바뀔 내용을 안 그린다 (2.1.0)",
+      "그러면": "승인 창이 `Write 새로쓴것.txt` 한 줄로 돌아간다 — 무엇이 들어가는지 모르고 y 를 친다",
+      "찾을것": "      for (const l of 미리보기줄들(미리보기, { 줄수: DIFF_LINES[session.level] ?? 40 })) say(l);\n",
+      "바꿀것": "",
+      "검사": "test/cli.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "정책 바닥이 있어도 deel run --yes 가 묻지 않고 실행한다 (2.1.0)",
+      "그러면": "「바꾸기 전에 사람이 본다」 를 건 PC 에서 스크립트가 --yes 한 줄로 사람을 뺀다",
+      "찾을것": "  const 자동승인 = opts.yes === true && 바닥.바닥 === 'auto';",
+      "바꿀것": "  const 자동승인 = opts.yes === true;",
+      "검사": "test/oneshot.test.js"
+    },
+    {
+      "곳": "src/acp/serve.js",
+      "무엇": "정책 바닥이 있어도 편집기 승인 창에 「앞으로 묻지 않기」 를 띄운다 (2.1.0)",
+      "그러면": "버튼 한 번으로 그 도구의 물음이 영영 사라진다 — 바닥을 사람이 스스로 뺀다",
+      "찾을것": "          ...(바닥걸림 ? [] : [{ optionId: 'allow_always',",
+      "바꿀것": "          ...(false ? [] : [{ optionId: 'allow_always',",
+      "검사": "test/acp.test.js"
+    },
+    {
+      "곳": "src/acp/serve.js",
+      "무엇": "편집기 승인 요청에 바뀔 내용(diff)을 안 싣는다 (2.1.0)",
+      "그러면": "사람은 old_string·new_string JSON 을 읽고 허락해야 한다",
+      "찾을것": "      confirm: (이름, 인자, 곁것 = {}) => 승인묻기(방, 이름, 인자, 곁것?.미리보기),",
+      "바꿀것": "      confirm: (이름, 인자) => 승인묻기(방, 이름, 인자),",
+      "검사": "test/acp.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "승인 미리보기가 deel 자신의 살림(설정·열쇠)도 읽는다 (2.1.0)",
+      "그러면": "모델이 .deel/config.json 을 고치겠다고 부르면, 도구는 거절하는데 승인 창과 편집기에 열쇠가 「지금 내용」 으로 찍힌다",
+      "찾을것": " || isFigPath(abs) || 내부살림(abs));",
+      "바꿀것": " || isFigPath(abs));",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "승인 미리보기가 아직 안 읽은 파일도 읽어 보여 준다 (2.1.0)",
+      "그러면": "실제 Edit 은 「먼저 Read 로」 거절하는데 승인 창에는 모델이 안 본 파일의 내용이 먼저 뜬다",
+      "찾을것": "        if (!글파일인가(abs) || !ctx.seen?.has(abs)) continue;",
+      "바꿀것": "        if (!글파일인가(abs)) continue;",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "완료 검사가 지난 검사 뒤로 바뀐 것이 있는지 안 본다 (2.1.0 완료 검사)",
+      "그러면": "물어본 것에 답만 한 턴에도 테스트가 돌고, 실패를 받고 아무것도 안 바꾼 채 끝내도 같은 검사를 또 기다린다",
+      "찾을것": "      if (완료검사 && 바뀜수 > 검사때바뀜수 && 검사판 < 완료검사.판수) {",
+      "바꿀것": "      if (완료검사 && 검사판 < 완료검사.판수) {",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "완료 검사가 실패해도 모델에게 되돌리지 않는다 (2.1.0 완료 검사)",
+      "그러면": "검사는 빨간데 턴은 그대로 끝난다 — 고치게 하는 고리가 없는 「돌려 보기만 하는」 검사가 된다",
+      "찾을것": "        if (검사상태.ok === false && 검사판 < 완료검사.판수) {",
+      "바꿀것": "        if (false) {",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "strict 에서 완료 검사 명령은 안 묻는다 (2.1.0 완료 검사)",
+      "그러면": "설정 한 줄(`\"check\": \"…\"`)이 strict 의 「명령 전부 물어봄」 을 뚫는다 — 저장소가 정한 명령이 사람 허락 없이 돈다",
+      "찾을것": "        : session.mode === 'strict' ? true",
+      "바꿀것": "        : session.mode === 'strict' ? false",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "완료 검사가 종료코드를 안 보고 늘 통과로 친다 (2.1.0 완료 검사)",
+      "그러면": "빨간 테스트 위에 「완료 검사 통과」 가 찍히고 deel run 은 0 으로 끝난다",
+      "찾을것": "          ok: 통과했나(result), 명령, 판, 최대, 출력,",
+      "바꿀것": "          ok: true, 명령, 판, 최대, 출력,",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/donecheck.js",
+      "무엇": "--check 로 준 명령보다 설정의 check 가 이긴다 (2.1.0 완료 검사)",
+      "그러면": "CI 에서 이번만 다른 검사를 돌리려고 --check 를 줘도 설정에 적힌 옛 명령이 돈다",
+      "찾을것": "  const 날것 = 덮을명령 !== undefined && 덮을명령 !== null ? 덮을명령 : cfg?.check;",
+      "바꿀것": "  const 날것 = cfg?.check ?? 덮을명령;",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/donecheck.js",
+      "무엇": "종료코드가 0 이 아닌 것(failed)도 통과로 친다 (2.1.0 완료 검사)",
+      "그러면": "Bash 도구는 실패를 error 가 아니라 failed 로 준다 — 실패한 테스트가 전부 통과가 된다",
+      "찾을것": "  return !!result && !result.error && result.failed !== true;",
+      "바꿀것": "  return !!result && !result.error;",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/donecheck.js",
+      "무엇": "실패 출력의 앞을 남기고 뒤를 버린다 (2.1.0 완료 검사)",
+      "그러면": "모델은 「테스트 시작」 줄만 받고 무엇이 틀렸는지 모른 채 고치러 간다",
+      "찾을것": "  return `…(앞 ${s.length - 한도}자 줄임)\\n${s.slice(s.length - 한도)}`;",
+      "바꿀것": "  return `${s.slice(0, 한도)}…`;",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "완료 검사가 끝내 실패해도 deel run 이 0 으로 끝난다 (2.1.0 완료 검사)",
+      "그러면": "야간 배치가 빨간 검사 위에 초록불을 켠다 — 종료코드 8 이 있는 까닭 그 자체",
+      "찾을것": "  if (reason === 'done' && 검사결과 && 검사결과.ok !== true) {",
+      "바꿀것": "  if (false) {",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "골든셋 정답 파일을 일하기 전에 깐다 (2.1.0 골든셋)",
+      "그러면": "모델이 정답 검사를 읽고 거기 맞춰 쓴다 — 「검사를 통과하게 검사를 보는」 길이 열려 성공률이 부풀려진다",
+      "찾을것": "    폴더복사(join(과제.자리, 'start'), 작업);",
+      "바꿀것": "    폴더복사(join(과제.자리, 'start'), 작업); 폴더복사(join(과제.자리, 'golden'), 작업);",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "골든셋이 정답 검사의 종료코드를 안 본다 (2.1.0 골든셋)",
+      "그러면": "정답 검사가 떨어져도 돌기만 하면 통과 — 성공률이 늘 100% 로 나온다",
+      "찾을것": "    const 통과 = !검사.error && 검사.status === 0;",
+      "바꿀것": "    const 통과 = !검사.error;",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "골든셋이 모양이 틀린 과제를 조용히 뺀다 (2.1.0 골든셋)",
+      "그러면": "task.json 하나가 깨지면 스무 개 중 열아홉만 돌고 「다 통과」 가 된다",
+      "찾을것": "        결과들.push({ 과제: 과제.이름, 판, 통과: false, 초: 0, 과제탈: 과제.탈 });",
+      "바꿀것": "",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "deel eval --init 이 있는 과제를 덮어쓴다 (2.1.0 골든셋)",
+      "그러면": "사람이 사내 과제로 고쳐 둔 폴더가 예제로 돌아간다 — 쌓아 온 골든셋이 한 줄로 지워진다",
+      "찾을것": "    if (existsSync(자리)) { 건너뜀.push(이름); continue; }",
+      "바꿀것": "",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "골든셋이 지난번보다 나빠진 과제를 못 짚는다 (2.1.0 골든셋)",
+      "그러면": "모델을 바꾼 뒤 한 과제가 떨어져도 화면은 조용하다 — 견주려고 남긴 결과가 쓸모가 없다",
+      "찾을것": "    if (비율(x) < 비율(전)) 나빠짐.push(x.과제);",
+      "바꿀것": "    if (false) 나빠짐.push(x.과제);",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "deel eval 이 실패가 있어도 0 으로 끝난다 (2.1.0 골든셋)",
+      "그러면": "CI 에 걸어 둔 골든셋이 떨어져도 초록이다",
+      "찾을것": "  return 통과수 === 판수 ? 0 : 1;",
+      "바꿀것": "  return 0;",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/repl.js",
+      "무엇": "되묻기 시한이 auto 가 아닌 모드에도 걸린다 (2.1.0 자율 대기)",
+      "그러면": "strict 를 고른 사람 — 답을 기다리라고 고른 사람 — 의 물음이 60초 뒤 멋대로 넘어간다",
+      "찾을것": "      const 대기 = session.mode === 'auto' ? 자율대기초 : 0;",
+      "바꿀것": "      const 대기 = 자율대기초;",
+      "검사": "test/autowait.test.js"
+    },
+    {
+      "곳": "src/repl.js",
+      "무엇": "auto 에서 되묻기가 시한 없이 기다린다 (2.1.0 자율 대기)",
+      "그러면": "맡겨 두고 자리를 뜬 사람이 돌아와 보면 첫 물음에서 멈춰 있다",
+      "찾을것": "      시계 = setTimeout(() => { 시간지남 = true; 시계줄.abort(); }, o.기다림초 * 1000);",
+      "바꿀것": "",
+      "검사": "test/autowait.test.js"
+    },
+    {
+      "곳": "src/repl.js",
+      "무엇": "auto 에서 계획 승인이 시한 없이 기다린다 (2.1.0 자율 대기)",
+      "그러면": "「설계하고 만들어줘」 가 계획만 내고 선다 — 만들기는 사람이 돌아와 ⏎ 를 칠 때까지 안 한다",
+      "찾을것": "      const 계획대기 = session.mode === 'auto' ? 자율대기초 : 0;",
+      "바꿀것": "      const 계획대기 = -1;",
+      "검사": "test/autowait.test.js"
+    },
+    {
+      "곳": "src/ui/approve.js",
+      "무엇": "askWait 를 안 읽는다 (2.1.0 자율 대기)",
+      "그러면": "「묻지 말고 가라」(0) 를 적어도 60초씩 선다",
+      "찾을것": "  return Math.min(3600, Math.floor(n));",
+      "바꿀것": "  return 자율대기기본;",
+      "검사": "test/autowait.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "Bash 도구의 위험 명령 막이에 걸린 완료 검사를 「실패」 로 친다 (2.1.0 2차 눈 판정)",
+      "그러면": "모델이 고칠 수 없는 막힘을 「검사를 통과시키라」 고 되밀어 판만 쓰고 같은 자리에서 또 막힌다",
+      "찾을것": "      else if (/^막힘 — /.test(String(result.error ?? ''))) 결판 = 못돌림(String(result.error));",
+      "바꿀것": "      else if (false) 결판 = null;",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "완료 검사 실패말에 명령 줄을 가리지 않고 싣는다 (2.1.0 2차 눈 판정)",
+      "그러면": "출력은 가렸는데 `--token=…` 이 든 검사 명령이 게이트웨이로 날것으로 나간다",
+      "찾을것": "            content: 검사실패말({ 명령: 명령줄, 출력: 검사상태.출력,",
+      "바꿀것": "            content: 검사실패말({ 명령: 검사상태.명령, 출력: 검사상태.출력,",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "완료 검사가 도구후 훅을 안 지난다 (2.1.0 2차 눈 판정)",
+      "그러면": "도구전 훅에는 검사 명령이 찍히는데 도구후 훅에는 안 찍혀, 감사 기록이 반쪽이 된다",
+      "찾을것": "      if (ctx.훅들?.length && !result.중단됨) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "스크립트 파일 돌리기(`python fix.py`)를 「바꾼 것」 으로 안 센다 (2.1.0 2차 눈 판정)",
+      "그러면": "스크립트로만 고친 턴은 「아무것도 안 바꿨다」 로 읽혀 완료 검사가 아예 안 돈다",
+      "찾을것": "(isMutating(셸명령) || 셸이파일에쓰나(셸명령) || 스크립트돌림.test(셸명령))",
+      "바꿀것": "(isMutating(셸명령) || 셸이파일에쓰나(셸명령))",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "검사가 한 번 돈 뒤의 셸 호출을 「바꿨을 수 있다」 로 안 센다 (2.1.0 2차 눈 판정)",
+      "그러면": "실패를 받고 목록에 없는 꼴(`make` · `npx codemod`)로 고치면 검사가 다시 안 돌아, 고쳐 놓고도 실패로 끝난다",
+      "찾을것": "          || (검사판 > 0 && (셸명령 !== null || call.name.startsWith('mcp__'))))) 바뀜수++;",
+      "바꿀것": "          )) 바뀜수++;",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "모양 틀린 과제를 --repeat 에서 한 판으로만 센다 (2.1.0 2차 눈 판정)",
+      "그러면": "분모가 줄어 통과율이 부푼다 — 멀쩡한 과제 5/5 와 깨진 과제 하나가 50% 가 아니라 83% 가 된다",
+      "찾을것": "        if (판 === 1) 말하기(`  ${c.yellow('⊘')} ${과제.이름}  ${c.gray(과제.탈)}`);\n        continue;",
+      "바꿀것": "        if (판 === 1) 말하기(`  ${c.yellow('⊘')} ${과제.이름}  ${c.gray(과제.탈)}`);\n        break;",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "task.json 이 없는 과제 폴더(start/·golden/ 있음)를 조용히 뺀다 (2.1.0 2차 눈 판정)",
+      "그러면": "`Task.json` 으로 잘못 적은 과제가 소리 없이 빠져 스무 개 중 열아홉만 돌고 「다 통과」 가 된다",
+      "찾을것": "      if (existsSync(join(자리, 'start')) || existsSync(join(자리, 'golden'))) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "정답을 넣을 때 모델이 만든 다른 꼴(파일↔폴더)을 안 걷는다 (2.1.0 2차 눈 판정)",
+      "그러면": "모델이 `sub` 를 파일로 만들어 두면 정답의 `sub/` 복사가 터져 평가 전체가 죽는다",
+      "찾을것": "      if (있는것 && 있는것.isDirectory() !== 폴더다) rmSync(나, { recursive: true, force: true, maxRetries: 3 });",
+      "바꿀것": "      if (false) rmSync(나);",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "과제별이 없는 결과 파일(`{}`)도 지난번으로 친다 (2.1.0 2차 눈 판정)",
+      "그러면": "견줄 것이 없는데 「지난번과 같습니다」 가 나온다",
+      "찾을것": "      if (Array.isArray(값?.과제별)) return { 파일: f, 값 };",
+      "바꿀것": "      return { 파일: f, 값 };",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "결과 파일 이름을 지역 시각으로 적는다 (2.1.0 2차 눈 판정)",
+      "그러면": "시차가 다른 PC 의 결과가 한 폴더에 섞이면 이름 순서가 시각 순서와 어긋나 엉뚱한 「지난번」 과 견준다",
+      "찾을것": "  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}-${p(d.getUTCHours())}",
+      "바꿀것": "  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "--json 인데 사용법 오류를 색 입힌 글로 낸다 (2.1.0 2차 눈 판정)",
+      "그러면": "`deel eval --json` 을 받는 CI 스크립트의 JSON.parse 가 깨진다",
+      "찾을것": "    if (json) process.stdout.write(JSON.stringify({ ok: false, code: 코드, error: 오류 }) + '\\n');\n    else {",
+      "바꿀것": "    {",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/ui/approve.js",
+      "무엇": "askWait 를 Number() 로 통째로 읽는다 (2.1.0 2차 눈 판정)",
+      "그러면": "`\"askWait\": true` 가 1초, false 와 빈칸이 0(안 묻고 간다)이 된다",
+      "찾을것": "  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;",
+      "바꿀것": "  const n = Number(v);",
+      "검사": "test/autowait.test.js"
+    },
+    {
+      "곳": "src/safety/policy.js",
+      "무엇": "정책 파일을 못 읽으면 승인 바닥을 푼다 (2.1.0 2차 눈 판정)",
+      "그러면": "`\"approval\": \"strict\",` 처럼 쉼표 하나 틀린 정책이면 관리자는 걸린 줄 아는데 바닥은 auto 로 빠진다",
+      "찾을것": "  if (읽은?.탈) return { 바닥: 'strict', 곳: 읽은.곳 ?? null, 모름: null, 탈: 읽은.탈 };",
+      "바꿀것": "",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Append 미리보기가 CRLF 파일에 LF 로 붙인다 (2.1.0 2차 눈 판정)",
+      "그러면": "승인 창에 본 줄끝과 실제로 쓰인 줄끝이 다르다 — 「본 것이 쓰인 것」 약속이 깨진다",
+      "찾을것": "      const 붙일글 = 이름 === 'Append' && 전 !== null && CRLF뿐인가(전.slice(0, 인코딩볼바이트)) ? CRLF로(a.content) : a.content;",
+      "바꿀것": "      const 붙일글 = a.content;",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "여러 파일 Edit 미리보기에서 너무 큰 파일만 빼고 나머지를 그린다 (2.1.0 2차 눈 판정)",
+      "그러면": "사람은 작은 파일만 바뀌는 줄 알고 허락하는데 큰 파일도 바뀐다",
+      "찾을것": "          if (글.length > 미리보기상한) return [];",
+      "바꿀것": "          if (글.length > 미리보기상한) continue;",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Edit 미리보기가 고친 뒤의 크기를 안 잰다 (2.1.0 2차 눈 판정)",
+      "그러면": "replace_all 한 번에 수십 MB 가 동기 diff 로 넘어가 승인 창이 한참 안 뜬다",
+      "찾을것": "        if (판.후.length > 미리보기상한) return [];",
+      "바꿀것": "",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "미리보기가 가린 표를 되돌리는 쓰기를 「바뀔 내용」 으로 그린다 (2.1.0 2차 눈 판정)",
+      "그러면": "사람이 허락한 변경을 실제 도구가 거절한다 — 본 것과 된 것이 다르다",
+      "찾을것": "      if (!글파일인가(abs) || 표몇군데(a.content)) return [];",
+      "바꿀것": "      if (!글파일인가(abs)) return [];",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/ui/approve.js",
+      "무엇": "파일이 많아도 미리보기에 파일마다 최소 여섯 줄을 준다 (2.1.0 2차 눈 판정)",
+      "그러면": "파일 50개면 400줄이 나와 승인 물음이 화면 밖으로 밀린다",
+      "찾을것": "    if (d && 몫 >= 3) out.push(...renderDiff(d, { maxLines: 몫, indent: '      ' }));",
+      "바꿀것": "    if (d) out.push(...renderDiff(d, { maxLines: Math.max(6, 몫), indent: '      ' }));",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Edit 미리보기가 가린 표를 되돌리는 고침을 그린다 (2.1.0 2차 눈 판정)",
+      "그러면": "실제 Edit 이 거절할 한 군데가 승인 창에는 바뀌는 것으로 뜬다",
+      "찾을것": "        if (표몇군데(x.new_string)) continue;",
+      "바꿀것": "",
+      "검사": "test/approval.test.js"
     }
   ]
 }

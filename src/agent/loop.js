@@ -2,10 +2,10 @@
 // 화면에 그릴 것은 이벤트로 흘려보낸다 — 화면 코드와 섞지 않는다.
 import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남, 흐름멎음, 보낸토큰, 부른것들, 도구결과인가 } from '../backend/adapter.js';
 import { 그림메시지 } from '../backend/vision.js';
-import { 어떻게할까 } from '../safety/policy.js';
+import { 어떻게할까, 승인바닥 } from '../safety/policy.js';
 import { 자리돌리기, 막힘말 } from '../safety/hooks.js';
-import { toolSchemas, runTool, TOOLS, 파일현황 } from '../tools/index.js';
-import { isMutating } from '../safety/guard.js';
+import { toolSchemas, runTool, TOOLS, 파일현황, 바뀔내용 } from '../tools/index.js';
+import { isMutating, 셸이파일에쓰나 } from '../safety/guard.js';
 import { effortFor, tokensFor, fullCap, wasCut, shiftLevel, 자동강도, 천장고르기, 인사인가 as 인사말인가 } from './effort.js';
 import { 배울전선, 카드고치기, 카드저장꼴, 전선붙이기 } from '../backend/wire.js';
 import { 살린쓰기 } from './salvage.js';
@@ -19,13 +19,14 @@ import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기
 import { allowTemporarily, isOffline } from '../safety/network.js';
 import { 가리기, 훑기, 가렸다는말, 봤다는말, 가릴까 } from '../safety/secrets.js';
 import { 바깥인가 } from '../safety/runmode.js';
-import { get as workMode } from './modes.js';
+import { get as workMode, 바꾸는도구 } from './modes.js';
 // 종합 모드에서 단계가 일을 따라간다 (agent/phase.js).
 import { 다음단계 } from './phase.js';
 import { 묻지말라했나, 손대라했나 } from './route.js';
 import { 지시말 } from '../i18n/index.js';
 import { 빠진것, 빠졌다는말 } from './asks.js';
 import { 환경속열쇠들 } from '../config.js';
+import { 통과했나, 실패말 as 검사실패말, 출력꼬리 } from './donecheck.js';
 
 /*
  * 콜백으로만 소식을 주는 부름을, 제너레이터가 중간에 내보낼 수 있는 모양으로 바꾼다.
@@ -147,6 +148,13 @@ function thinkFor(conn, level) {
  * 읽기 전용인 것은 맞지만 **사람의 차례를 쓰는 도구**라 줄을 세워야 한다.
  */
 const 읽기전용 = new Set(['Read', 'Outline', 'Glob', 'Grep', 'Def', 'Refs', 'Recall', 'Skill', 'WebFetch']);
+
+/*
+ * 스크립트 **파일**을 돌리는 꼴 — `python fix.py` · `node update.mjs` · `sh gen.sh`.
+ * 완료 검사가 「이번 턴에 무엇을 바꿨나」 를 셀 때만 쓴다. 스크립트 안에서 무엇을 쓰는지는
+ * 명령줄로 모르니 **바꿨을 수 있다**로 친다. 잘못 걸리면 검사가 한 번 더 돌 뿐이다.
+ */
+const 스크립트돌림 = /\b(?:node|python[\d.]*|py|ruby|perl|php|deno|bun|bash|sh|pwsh|powershell)(?:\.exe)?\s+(?:-\S+\s+)*[^\s|;&]+\.(?:[cm]?js|ts|py|rb|pl|php|sh|ps1)\b/i;
 
 /*
  * 잘린 답을 「생각을 줄여」 다시 부를 때 쓰는 두 값.
@@ -337,6 +345,99 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    */
   const 손댄파일 = new Set();
   const 마무리 = () => [...손댄파일].map(파일현황);
+  /*
+   * 완료 검사 (agent/donecheck.js). 사람이 검사 명령을 정해 뒀으면 모델이 끝내려는 자리에서
+   * 그걸 돌린다. 하위 작업은 안 돈다 — 한 번 시킨 일에 검사가 하위 수만큼 돈다.
+   *
+   * 「고친 뒤에 다시 돌릴까」 는 바뀐 **횟수**로 가른다. 손댄파일 은 이름 모음이라 같은
+   * 파일을 다시 고치면 안 늘어난다 — 실패를 받고 같은 파일을 고친 판이 「안 바꿨다」 로
+   * 읽혀 검사가 다시 안 돈다.
+   */
+  const 완료검사 = 깊이 ? null : (ctx.완료검사 ?? null);
+  let 바뀜수 = 0;
+  let 검사때바뀜수 = 0;
+  let 검사판 = 0;
+  let 검사상태 = null;
+
+  /**
+   * 완료 검사를 한 번 돌린다. 모델이 부른 Bash 와 **같은 관문**을 지난다 — 적어 둔 규칙,
+   * 사람이 건 훅, 승인 모드, 그리고 Bash 도구 안의 위험 명령 막이·열쇠 뺀 환경.
+   * 설정에 적힌 명령이라고 건너뛰면 저장소 설정 한 줄이 strict 를 뚫는다.
+   *
+   * @returns {{ok: boolean|null, 명령, 판, 최대, 요약?, 까닭?, 출력?}}  ok 가 null 이면 못 돌렸다
+   */
+  async function* 완료검사돌리기(판) {
+    const 명령 = 완료검사.명령;
+    const 최대 = 완료검사.판수;
+    const args = { command: 명령, description: '완료 검사', timeout: 완료검사.시간 };
+    yield { type: 'check_start', 명령, 판, 최대 };
+    const 못돌림 = (까닭) => ({ ok: null, 명령, 판, 최대, 까닭 });
+
+    let 결판 = null;
+    const 판정 = 어떻게할까(ctx.규칙들, 'Bash', args, { 뿌리: ctx.scope?.root ?? null });
+    if (판정.답 === 'deny') {
+      ctx.audit?.blocked?.('규칙으로 금지됨', `${판정.출처}: ${판정.규칙}`);
+      결판 = 못돌림(`${판정.출처}에 적힌 규칙 ${판정.규칙} 으로 막혀 있습니다`);
+    }
+    if (!결판 && ctx.훅들?.length) {
+      const 훅 = await 자리돌리기(ctx.훅들, '도구전', {
+        도구: 'Bash', 넣을것: { 인자: args }, signal, audit: ctx.audit,
+      });
+      if (훅.막힘) {
+        ctx.audit?.blocked?.('도구전 훅이 막음', `Bash · ${훅.막힘.훅.명령}`);
+        결판 = 못돌림(막힘말(훅.막힘));
+      }
+    }
+    if (!결판) {
+      // 아래 도구 관문의 needsOk 와 같은 잣대다. 검사 명령은 대개 안 바꾸는 명령이라 confirm 은 안 묻는다.
+      const 정책이묻게함 = 승인바닥().바닥 !== 'auto';
+      const 물어야 = (판정.답 === 'allow' && !정책이묻게함) ? false
+        : session.mode === 'strict' ? true
+          : session.mode === 'confirm' ? isMutating(명령) : false;
+      if (물어야) {
+        const ok = ctx.confirm ? await ctx.confirm('Bash', args, { 미리보기: [] }) : false;
+        if (!ok) 결판 = 못돌림(ctx.confirm ? '사람이 거절했습니다' : '승인이 필요한데 물어볼 사람이 없습니다');
+      }
+    }
+    if (!결판) {
+      let result;
+      try { result = await runTool('Bash', args, ctx); }
+      catch (err) { result = { error: String(err?.message ?? err) }; }
+      const 아는열쇠들 = [conn.key, ...환경속열쇠들()].filter(Boolean);
+      if (result.중단됨) 결판 = 못돌림('중단했습니다');
+      /*
+       * Bash 도구 안의 위험 명령 막이·경로 막이에 걸렸다(`막힘 — …`). 이것도 **못 돌린** 것이다.
+       * 실패로 치면 모델에게 「검사를 통과시키라」 고 되미는데, 막힌 것은 모델이 고칠 수 있는 일이
+       * 아니다 — 판만 쓰고 같은 자리에서 또 막힌다 (2차 눈 판정).
+       */
+      else if (/^막힘 — /.test(String(result.error ?? ''))) 결판 = 못돌림(String(result.error));
+      else {
+        let 출력 = String(result.content ?? result.error ?? '');
+        // 모델에게 돌려줄 글이다 — 도구 결과와 같은 자로 가린다 (아래 도구 결과 싣는 자리).
+        if (가릴까('Bash', { 바깥: 바깥으로나감 })) {
+          const 가린 = 가리기(출력, { 열쇠들: 아는열쇠들 });
+          if (가린.가린것.length) 출력 = 가린.글 + 가렸다는말(가린.가린것);
+        }
+        결판 = {
+          ok: 통과했나(result), 명령, 판, 최대, 출력,
+          요약: String(result.summary ?? result.error ?? '').split('\n')[0],
+        };
+      }
+      // 도구전 훅을 지났으면 도구후 훅도 지난다 — 감사 훅이 앞만 보고 뒤를 못 보면 반쪽 기록이다.
+      if (ctx.훅들?.length && !result.중단됨) {
+        const 훅 = await 자리돌리기(ctx.훅들, '도구후', {
+          도구: 'Bash', 넣을것: { 인자: args, 실패: 결판.ok !== true, 바뀐것: null }, signal, audit: ctx.audit,
+        });
+        if (훅.말들.length) {
+          const 가린 = 가리기(훅.말들.join('\n'), { 열쇠들: 아는열쇠들 });
+          for (const 말 of 가린.글.split('\n')) yield { type: 'hook_note', 자리: '도구후', 도구: 'Bash', 말 };
+        }
+      }
+    }
+    const { 출력: _뺌, ...보일것 } = 결판;
+    yield { type: 'check', ...보일것, 꼬리: 결판.출력 ? 출력꼬리(결판.출력, 1200) : '' };
+    return 결판;
+  }
 
   // 살려 쓴 파일이 지난번보다 실제로 커졌는지 보려고 크기를 기억해 둔다.
   const 살린크기 = new Map();
@@ -1537,6 +1638,30 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         continue;
       }
       /*
+       * ── 완료 검사 (agent/donecheck.js) ────────────────────────────────
+       *
+       * 모델은 「다 됐습니다」 라고 했다. 사람이 검사 명령을 정해 뒀고 이번 턴에 무엇을
+       * 바꿨으면, 그 말을 믿기 전에 검사를 돌린다. 실패하면 출력을 돌려주고 이어서
+       * 고치게 한다 — 정해 둔 판수까지. 다 쓰고도 실패면 **실패로** 끝낸다(done 의 검사).
+       *
+       * 지난 검사 뒤로 바뀐 것이 없으면 다시 안 돌린다. 같은 결과를 또 기다리게 할 뿐이다.
+       * 못 돌린 것(규칙 금지·훅·승인 거절)은 되밀지 않는다 — 모델이 고칠 수 있는 일이 아니다.
+       */
+      if (완료검사 && 바뀜수 > 검사때바뀜수 && 검사판 < 완료검사.판수) {
+        검사판++;
+        검사때바뀜수 = 바뀜수;
+        검사상태 = yield* 완료검사돌리기(검사판);
+        if (검사상태.ok === false && 검사판 < 완료검사.판수) {
+          // 명령 줄도 모델에게 가는 글이다. 출력만 가리고 `--token=…` 을 날것으로 싣으면 반쪽이다.
+          const 명령줄 = 가리기(검사상태.명령, { 열쇠들: [conn.key, ...환경속열쇠들()].filter(Boolean) }).글;
+          session.push({
+            role: 'user',
+            content: 검사실패말({ 명령: 명령줄, 출력: 검사상태.출력, 판: 검사판, 최대: 완료검사.판수 }, { 영어: 지시말() === 'en' }),
+          });
+          continue;
+        }
+      }
+      /*
        * ── 턴이 끝나는 자리 (safety/hooks.js) ────────────────────────────
        *
        * 여기도 못 막는다 — 일은 이미 다 끝났다. 여기 훅을 거는 사람이 하려는
@@ -1560,7 +1685,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         }
       }
       // 밀고도 그대로면 조용히 넘어가지 않는다. 사람이 알아야 다음을 정한다.
-      yield { type: 'done', steps, text: msg.content, files: 마무리(), 빠진 };
+      // 완료 검사를 돌렸으면 그 결과도 싣는다 — `deel run` 이 종료코드를, 화면이 끝맺음 줄을 여기서 정한다.
+      const 검사 = 검사상태 && (({ 출력: _뺌, ...나머지 }) => 나머지)(검사상태);
+      yield { type: 'done', steps, text: msg.content, files: 마무리(), 빠진, 검사 };
       return;
     }
 
@@ -1894,16 +2021,40 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           for (const 말 of 훅.말들) yield { type: 'hook_note', 자리: '도구전', 도구: call.name, 말 };
         }
 
-        // 모드에 따라 물어본다. 기본(auto)은 안 묻고 되돌리기로 대응한다.
-        const needsOk = 판정.답 === 'allow' ? false : session.mode === 'strict'
-          ? ['Write', 'Edit', 'Bash'].includes(call.name)
+        /*
+         * 모드에 따라 물어본다. 기본(auto)은 안 묻고 되돌리기로 대응한다.
+         *
+         * strict 는 **바꾸는 도구를 다** 묻는다. 여태 여기는 Write·Edit·Bash 셋만 적혀 있어서
+         * Append·Move·Jobs 는 strict 에서도 안 묻고 돌았다 — modes.js 가 바꾸는 도구를 여섯으로
+         * 적어 두고, 이 자리만 옛 목록에 남아 있었다. MCP 도구는 남의 프로그램이라 무엇을 바꾸는지
+         * 우리가 모른다. 모를 때는 묻는다.
+         *
+         * 관리 정책이 승인 바닥을 걸었으면(policy.js 의 승인바닥) 사람이 설정에 적어 둔 「늘 허락」
+         * 도 묻기를 못 건너뛴다. 정책은 설정을 이긴다 — 관리자가 「바꾸기 전에 늘 묻는다」 를
+         * 걸었는데 `"allow": ["Edit"]` 한 줄로 풀리면 그 바닥은 장식이다.
+         */
+        const 정책이묻게함 = 승인바닥().바닥 !== 'auto';
+        // Jobs 는 대개 뒤에서 도는 명령의 출력을 **읽는** 호출이다. 끝내기(stop)만 바꾸는 것으로
+        // 친다 — 읽을 때마다 물으면 사람은 y 만 치다가 정작 물어야 할 것도 그렇게 넘긴다.
+        const 바꾸는것 = (call.name === 'Jobs' ? !!call.args?.stop : 바꾸는도구.includes(call.name))
+          || call.name.startsWith('mcp__');
+        const needsOk = (판정.답 === 'allow' && !정책이묻게함) ? false : session.mode === 'strict'
+          ? 바꾸는것
           : session.mode === 'confirm'
             ? (call.name === 'Bash' && isMutating(call.args?.command))
             : false;
-        if (needsOk && ctx.confirm) {
-          const ok = await ctx.confirm(call.name, call.args);
+        if (needsOk) {
+          /*
+           * 물어볼 사람이 없으면 **거절**이다. 여태 `needsOk && ctx.confirm` 이라, confirm 을 안 단
+           * 부르는 쪽에서는 strict 가 물음 없이 그대로 실행했다 — 「묻는다」 가 「물을 곳이 있으면
+           * 묻는다」 였다. 승인은 답한 사람이 있을 때만 난다 (repl.js 의 confirm 머리말과 같은 자세).
+           */
+          const 미리보기 = 바뀔내용(call.name, call.args, ctx);
+          const ok = ctx.confirm ? await ctx.confirm(call.name, call.args, { 미리보기 }) : false;
           if (!ok) {
-            거절(call, '사용자가 거부했습니다. 다른 방법을 찾거나 이유를 물어보세요.');
+            거절(call, ctx.confirm
+              ? '사용자가 거부했습니다. 다른 방법을 찾거나 이유를 물어보세요.'
+              : '승인이 필요한데 물어볼 사람이 없어 하지 않았습니다. 승인 없이 되는 방법을 고르세요.');
             // 거부를 못 알아듣고 같은 것을 계속 물으면 사람만 계속 n 을 치게 된다.
             if (막힘셈(call, '사용자 거부')) 멈출까 = '거부하셨는데도 같은 것을 계속 물어보고 있습니다';
             yield { type: 'tool', name: call.name, args: call.args, result: { error: '거부됨' }, showLabel: true };
@@ -2141,6 +2292,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 여기서 또 합치면 같은 변경이 두 번 세어진다.
          */
         for (const f of 끝?.files ?? []) if (f?.path) 손댄파일.add(f.path);
+        if (끝?.files?.length) 바뀜수++;
         // 하위가 쓴 토큰·시간도 이번 턴의 셈에 들어가야 한다. 안 그러면 /context 가 거짓말을 한다.
         session.usage.in += 자식.usage.in;
         session.usage.out += 자식.usage.out;
@@ -2282,6 +2434,17 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         if (result.changed || result.여럿?.some((f) => f.ok) || result.바뀐것들?.length) {
           이번턴본것.바꿈 = true;
         }
+        /*
+         * 완료 검사가 「고친 뒤에 다시 돌릴까」 를 이걸로 가른다. 셸로 바꾼 것(sed -i · mv ·
+         * `> 파일` · 스크립트 파일 돌리기)도 센다 — 실패를 받고 셸로만 고친 판에서 검사가 다시
+         * 안 돌면 고쳐 놓고도 실패로 끝난다. **검사가 한 번 돈 뒤에는** 셸·MCP 호출을 무엇이든
+         * 센다(2차 눈 판정: `make` · `npx codemod` 는 어느 목록에도 없다). 고치는 중이라
+         * 헛짚어도 검사가 한 번 더 돌 뿐이고, 판수가 끝을 막는다.
+         */
+        const 셸명령 = call.name === 'Bash' ? String(call.args?.command ?? '') : null;
+        if (!result.error && (result.changed || result.여럿?.some((f) => f.ok) || result.바뀐것들?.length
+          || (셸명령 !== null && (isMutating(셸명령) || 셸이파일에쓰나(셸명령) || 스크립트돌림.test(셸명령)))
+          || (검사판 > 0 && (셸명령 !== null || call.name.startsWith('mcp__'))))) 바뀜수++;
         if (call.name === 'TodoWrite' && !result.error) 이번턴본것.할일 = true;
         // 한 번에 여러 개를 쓴 경우. changed 하나만 보면 나머지가 조용히 빠져서,
         // 턴 끝에 "만들어졌다" 고 확인해 주는 파일이 넷 중 하나만 나온다.

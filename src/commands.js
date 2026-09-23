@@ -885,6 +885,12 @@ export async function handle(line, session, ctx) {
         say('');
         say(`  ${c.gray('지금은')} ${승인표시(session.mode)} ${c.gray('입니다. 상태줄 오른쪽에도 늘 떠 있습니다.')}`);
         say(`  ${c.gray('치지 않고 바꾸려면')} ${c.cyan('Shift+Tab')} ${c.gray('— 누를 때마다 차례로 돕니다.')}`);
+        {
+          const { 승인바닥 } = await import('./safety/policy.js');
+          const 바닥 = 승인바닥();
+          if (바닥.모름) say(`  ${mark.warn} ${c.gray(말('approve.lockedUnknown', { 값: 바닥.모름, 곳: 바닥.곳 ?? '' }))}`);
+          else if (바닥.바닥 !== 'auto') say(`  ${mark.warn} ${c.gray(말('approve.locked', { 바닥: 승인표시(바닥.바닥), 곳: 바닥.곳 ?? '' }))}`);
+        }
         /*
          * 적어 둔 규칙은 모드보다 세다. 그러니 모드만 보여 주고 규칙을 안 보여
          * 주면 화면이 거짓말을 하는 셈이다 — "안 묻습니다" 라고 적힌 모드에서
@@ -898,6 +904,20 @@ export async function handle(line, session, ctx) {
         return { handled: true };
       }
       const 앞 = session.mode;
+      /*
+       * 관리 정책의 바닥 아래로는 못 내린다 (safety/policy.js 의 승인바닥). Session 이 읽는
+       * 자리에서 어차피 덮지만, 여기서 말없이 받으면 화면에 「→ auto」 가 찍히고 실제로는
+       * strict 로 돈다 — 사람은 제 손으로 바꾼 줄 안다. 막고, 누가 막았는지 적는다.
+       */
+      const { 승인바닥, 더센승인 } = await import('./safety/policy.js');
+      const 바닥 = 승인바닥();
+      if (더센승인(승인이름, 바닥.바닥) !== 승인이름) {
+        say('');
+        say(`  ${mark.warn} ${c.gray(말('approve.locked', { 바닥: 승인표시(바닥.바닥), 곳: 바닥.곳 ?? '' }))}`);
+        say(`     ${c.gray('지금은')} ${승인표시(앞)} ${c.gray('입니다.')}`);
+        say('');
+        return { handled: true };
+      }
       session.mode = 승인이름;
       const m = 승인[승인이름];
       say('');

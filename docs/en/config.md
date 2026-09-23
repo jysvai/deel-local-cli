@@ -323,9 +323,22 @@ wrong place for "for this rollout, only this gateway". That goes somewhere the u
 {
   "baseUrl": "https://ai-gw.example.corp/v1",
   "offline": false,
+  "approval": "strict",
   "permissions": { "deny": ["Bash(curl*)", "WebFetch"] }
 }
 ```
+
+| Field | What it does |
+|---|---|
+| `baseUrl` | Connect to this address only |
+| `offline` | `true` seals it — nothing leaves the company (the intranet still works) |
+| `approval` | The **floor** for the approval mode — `confirm` or `strict`. People can only tighten it, never go below. `/mode`, Shift+Tab, `deel run --yes`, the editor's "don't ask again" and `allow` rules in the config all stop at the floor. An unknown value, or a policy file that cannot be read (a JSON typo), counts as `strict`, the narrowest. `deel doctor` shows it as the approval floor |
+| `permissions.deny` | Adds deny rules |
+
+`strict` asks **before** file-changing tools (Write, Append, Edit, Move), commands (Bash), stopping a
+background command, and MCP tools. For file changes it draws what will change (a diff) under the
+question first; in an editor (ACP) the diff goes into the approval dialog. Where there is nobody to
+ask (`deel run`) it **refuses** instead of asking.
 
 Policy **beats** config. Offline, once on, holds in all four places — the chat, `deel run`,
 the editor (ACP) and `deel diagnose`; no single command unlocks it. But policy cannot **loosen**:
@@ -333,6 +346,42 @@ it can turn offline on but not off, and add denials but not remove the user's ow
 policy file must never widen what the tool may do. What policy imposes is never written back into
 the user's own config file — lift the policy and the values the person wrote come straight back. A corrupt policy file is treated as absent — but `/mode` says it could not be read, because
 silence would leave the administrator believing it applies and the user running without it.
+
+### Deciding "done" with a check — `check`
+
+Stops a turn from ending just because the model said it was done.
+
+```json
+{ "check": "npm test", "checkRounds": 3, "checkTimeout": 600 }
+```
+
+| Key | What it does |
+|---|---|
+| `check` | When the model has changed something this turn and tries to finish, deel runs this command **itself**. Exit code 0 passes |
+| `checkRounds` | On failure the output goes back to the model to keep fixing — this many times (1 to 10, default 3) |
+| `checkTimeout` | Time limit for one run of the check (seconds; default and maximum 600) |
+
+- Still failing at the end means the turn ends as failed. `deel run` exits with **8**, and `--json`
+  carries a `check` field. For a different command just this once, `deel run --check "<cmd>"` — it wins over the config
+- The check goes through **the same gates** as the model's own commands. A deny rule stops it, `strict`
+  asks, and the dangerous-command guard still applies. If it could not run, that is what it says — it is never counted as a pass
+- A turn that changed nothing does not run it. Finishing after a failure without changing anything does not
+  rerun it; the turn ends as failed
+- It can go in the repository's `.deel/config.json` (read only in a trusted folder) — a project knows its own checks best
+
+### How long auto mode waits — `askWait`
+
+`auto` is the hand-off mode. Even there, when the model asks a question (Ask) or answers "design it and
+build it" with a plan first, it waits for a person — and after this long it **carries on by itself**: the
+question becomes "use your own judgement", and the plan goes ahead.
+
+```json
+{ "askWait": 60 }
+```
+
+In seconds; default 60, maximum 3600. `0` means it never asks. `confirm` and `strict` ignore it — those
+are the modes you pick in order to wait for an answer, so they wait with no limit. If a managed policy sets
+an approval floor, the mode is not `auto`, so this does not apply either.
 
 ### When the gateway asks for our certificate (mTLS)
 

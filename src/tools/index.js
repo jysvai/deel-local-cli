@@ -1696,6 +1696,106 @@ function 여러파일쓰기(목록, ctx) {
  * 결과 모양을 바꾸면 안 된다. changed·diff·tier 를 보고 있는 자리가 셋이다:
  * loop.js 의 잘린 인자 살려쓰기, repl.js 의 바뀐 자리 그리기, 되돌리기 스냅샷.
  */
+/*
+ * old_string 을 찾아 new_string 으로 바꾼 **글**만 만든다. 파일은 안 건드린다.
+ *
+ * 고치기(한군데고치기)와 승인 미리보기(바뀔내용)가 이 셈 하나를 같이 쓴다. 둘이 따로
+ * 셈하면 사람이 승인 창에서 본 것과 실제로 쓰인 것이 갈린다 — 들여쓰기를 맞춘 자리,
+ * CRLF 로 바꾼 자리가 미리보기에만 없으면 「본 대로 허락했다」 가 거짓이 된다.
+ */
+function 새글만들기(text, args) {
+  const m = findMatch(text, args.old_string, { replaceAll: !!args.replace_all });
+  if (!m.ok) return { m, next: null };
+  // CRLF 만 쓰는 파일이면 넣는 글도 CRLF 로 (edit-match.js 의 CRLF뿐인가 머리말).
+  const 줄끝맞춤 = CRLF뿐인가(text) ? CRLF로 : (s) => s;
+  const next = applySpans(text, m.spans, (matched) => 줄끝맞춤(
+    m.tier === 'exact' ? args.new_string
+      // 정규화로 찾았으면 넣는 글도 파일의 꼴(NFC·NFD)로 (edit-match.js 의 꼴맞추기).
+      : m.tier === 'nfc' ? 꼴맞추기(args.new_string, matched)
+        : reindent(args.new_string, matched, args.old_string)));
+  return { m, next };
+}
+
+// 미리보기에 실을 만큼. 넘는 파일은 한 줄 물음으로 물러선다 — 승인 창에 몇 MB 를
+// 그리거나 편집기로 보내는 동안 사람은 멈춘 화면만 본다.
+const 미리보기상한 = 2_000_000;
+
+/**
+ * 이 도구 호출이 **실행되면** 무엇이 어떻게 바뀌는가. 승인을 묻기 전에 보여 줄 거리다.
+ *
+ * 사내 검토에서 나온 물음이 이것이었다 — 「고치기 전에 미리보기를 보여 주고 사람이
+ * 확인하는가」. 여태 승인 창은 `Edit src/a.js` 한 줄만 보여 줬다. 무엇이 바뀌는지
+ * 모르고 누르는 y 는 확인이 아니라 습관이다.
+ *
+ * 파일은 **읽기만** 한다. 못 만들면(경로 밖·없는 파일·못 찾는 old_string·문서 파일)
+ * 빈 배열이다 — 그 경우 도구가 어차피 실패로 끝나거나, 물음은 예전처럼 한 줄로 뜬다.
+ *
+ * @returns {Array<{경로:string, 보일경로:string, 전:string|null, 후:string}>}
+ */
+export function 바뀔내용(이름, 인자, ctx) {
+  const a = 인자 ?? {};
+  /*
+   * 실제 도구가 거절하는 자리는 미리보기도 안 읽는다. deel 자신의 살림(기록·설정·열쇠)은 Write·Edit 이
+   * 먼저 거절하는데(내부살림), 미리보기가 그걸 모르고 읽으면 승인 창에 「지금 내용」 으로 열쇠가 찍히고
+   * 편집기로까지 간다 — 도구는 안 돌았는데 읽기는 일어난 셈이다. 문서 파일은 글로 못 보인다.
+   */
+  const 글파일인가 = (abs) => !(isExcelPath(abs) || isDocPath(abs) || isPdfPath(abs) || isFigPath(abs) || 내부살림(abs));
+  const 읽기 = (abs) => (existsSync(abs) ? readTextFull(abs).text : null);
+  const 담기 = (abs, 전, 후) => ({ 경로: abs, 보일경로: ctx.scope.show(abs), 전, 후 });
+  try {
+    if (이름 === 'Write' || 이름 === 'Append') {
+      if (typeof a.file_path !== 'string' || typeof a.content !== 'string') return [];
+      const abs = ctx.scope.resolve(a.file_path);
+      // 실제 도구는 «가림:…» 표를 파일로 되돌리는 쓰기를 거절한다 — 안 일어날 변경은 안 그린다.
+      if (!글파일인가(abs) || 표몇군데(a.content)) return [];
+      const 전 = 읽기(abs);
+      /*
+       * Append 는 CRLF 만 쓰는 파일에 붙일 때 조각도 CRLF 로 바꿔 쓴다. 그 판정도 실제처럼
+       * **앞머리**로 한다(아래 Append 의 앞글). LF 로 이어 붙여 그리면 본 것과 쓰인 것이 다르다.
+       */
+      const 붙일글 = 이름 === 'Append' && 전 !== null && CRLF뿐인가(전.slice(0, 인코딩볼바이트)) ? CRLF로(a.content) : a.content;
+      const 후 = 이름 === 'Append' ? (전 ?? '') + 붙일글 : a.content;
+      if ((전?.length ?? 0) + 후.length > 미리보기상한) return [];
+      return [담기(abs, 전, 후)];
+    }
+    if (이름 === 'Edit') {
+      // 여러 군데면 실제 고치기처럼 적은 순서대로 차례로 대 보고, 못 찾은 것은 건너뛴다
+      // (여러군데고치기 가 그렇게 한다 — 된 것만 쓰고 안 된 것은 실패로 알린다).
+      const 목록 = Array.isArray(a.edits) ? a.edits.filter((x) => x && typeof x === 'object') : [a];
+      const 파일들 = new Map();
+      for (const x of 목록) {
+        if (typeof x.file_path !== 'string' || typeof x.old_string !== 'string' || typeof x.new_string !== 'string') continue;
+        if (x.old_string === x.new_string) continue;
+        let abs;
+        try { abs = ctx.scope.resolve(x.file_path); } catch { continue; }
+        // 아직 안 읽은 파일은 실제 Edit 이 거절한다(「먼저 Read 로」). 미리보기가 대신 읽어 보여 주면
+        // 모델이 안 본 파일의 내용이 승인 창에 먼저 뜬다 — 그 호출은 어차피 실패로 끝난다.
+        if (!글파일인가(abs) || !ctx.seen?.has(abs)) continue;
+        // 가린 표를 되돌리는 고침은 실제 Edit 이 거절한다(한군데고치기) — 그 한 군데는 안 일어난다.
+        if (표몇군데(x.new_string)) continue;
+        if (!파일들.has(abs)) {
+          const 글 = 읽기(abs);
+          if (글 === null) continue;
+          /*
+           * 너무 커서 못 그리는 파일이 **하나라도** 있으면 미리보기를 통째로 안 낸다. 그 파일만 빼고
+           * 그리면 사람은 작은 파일만 바뀌는 줄 알고 허락한다 — 반쪽 미리보기는 없는 것보다 나쁘다.
+           * 물음은 예전처럼 한 줄로 뜬다 (2차 눈 판정).
+           */
+          if (글.length > 미리보기상한) return [];
+          파일들.set(abs, { 전: 글, 후: 글 });
+        }
+        const 판 = 파일들.get(abs);
+        const { m, next } = 새글만들기(판.후, x);
+        if (m.ok) 판.후 = next;
+        // 고친 **뒤**도 잰다 — replace_all 한 번에 수십 MB 가 되면 동기 diff 가 승인 창을 붙잡는다.
+        if (판.후.length > 미리보기상한) return [];
+      }
+      return [...파일들].filter(([, 판]) => 판.후 !== 판.전).map(([abs, 판]) => 담기(abs, 판.전, 판.후));
+    }
+  } catch { /* 미리보기는 거드는 것이다 — 못 만들면 물음은 한 줄로 뜬다 */ }
+  return [];
+}
+
 function 한군데고치기(args, ctx) {
   /*
    * ── 글이 아닌 old_string·new_string 은 **받지 않는다** ──────────────────
@@ -1737,7 +1837,7 @@ function 한군데고치기(args, ctx) {
 
   const 읽음 = readTextFull(abs);
   const text = 읽음.text;
-  const m = findMatch(text, args.old_string, { replaceAll: !!args.replace_all });
+  const { m, next } = 새글만들기(text, args);
 
   if (!m.ok) {
     if (m.reason === 'ambiguous') {
@@ -1756,14 +1856,6 @@ function 한군데고치기(args, ctx) {
       : '\n  Read 로 다시 읽어 실제 내용을 확인하세요.';
     return { error: `찾지 못했습니다.${hint}` };
   }
-
-  // CRLF 만 쓰는 파일이면 넣는 글도 CRLF 로 (edit-match.js 의 CRLF뿐인가 머리말).
-  const 줄끝맞춤 = CRLF뿐인가(text) ? CRLF로 : (s) => s;
-  const next = applySpans(text, m.spans, (matched) => 줄끝맞춤(
-    m.tier === 'exact' ? args.new_string
-      // 정규화로 찾았으면 넣는 글도 파일의 꼴(NFC·NFD)로 (edit-match.js 의 꼴맞추기).
-      : m.tier === 'nfc' ? 꼴맞추기(args.new_string, matched)
-        : reindent(args.new_string, matched, args.old_string)));
 
   // 읽은 그 인코딩으로 되돌려 쓴다. 안 바뀐 앞뒤는 읽은 바이트 그대로 (encoding.js 의 바꾼데만쓰기).
   const 만든것 = 바꾼데만쓰기(읽음.buf, text, next, 읽음.encoding);
