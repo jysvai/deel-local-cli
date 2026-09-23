@@ -128,7 +128,11 @@ trace('3-조각');
 }
 {
   // 2차 눈(Gemini) 판정: 파일 이름이 지역 시각이라 시차가 다른 PC 의 결과가 섞이면 순서가 뒤집혔다.
+  // 러너의 시간대가 UTC 면 지역 시각과 UTC 가 같아 이 검사가 갈리지 않는다 — UTC 가 아닌 곳으로 잠깐 옮겨 잰다.
+  const 원래TZ = process.env.TZ;
+  process.env.TZ = 'Etc/GMT-9';
   const 이름 = 시각이름(new Date(Date.UTC(2026, 0, 2, 3, 4, 5)));
+  if (원래TZ === undefined) delete process.env.TZ; else process.env.TZ = 원래TZ;
   check('★ 결과 파일 이름은 UTC 다 (시차가 달라도 이름 순서 = 시각 순서)', 이름 === '20260102-030405Z', 이름);
 }
 
