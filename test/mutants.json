@@ -13943,6 +13943,78 @@
       "잴곳": [
         "win32"
       ]
+    },
+    {
+      "곳": ".github/workflows/publish.yml",
+      "무엇": "GitHub 릴리스가 npm 발행을 안 기다린다 (2.0.3)",
+      "그러면": "발행 검사가 빨개져 npm 에 안 올라가도 릴리스는 생긴다 — 2.0.2 처럼 GitHub 은 새 판을 「Latest」 라 하고 npm i -g 는 한 판 전을 준다",
+      "찾을것": "  release:\n    needs: publish\n",
+      "바꿀것": "  release:\n",
+      "검사": "test/release-notes.test.js"
+    },
+    {
+      "곳": ".github/workflows/publish.yml",
+      "무엇": "release 의 checkout 이 쓰기 열쇠를 .git 에 남긴다 (2.0.3)",
+      "그러면": "릴리스 job 에서 도는 것이 무엇이든 그 열쇠로 태그와 브랜치를 옮길 수 있다",
+      "찾을것": "      - uses: actions/checkout@v6\n        with:\n          persist-credentials: false\n",
+      "바꿀것": "      - uses: actions/checkout@v6\n",
+      "검사": "test/release-notes.test.js"
+    },
+    {
+      "곳": "tools/release-notes.mjs",
+      "무엇": "같은 문서 안 앵커(#202)를 절대 주소로 안 바꾼다 (2.0.3)",
+      "그러면": "릴리스 화면의 「무엇이 바뀌었는지는 2.0.2 에」 링크가 문서가 아닌 엉뚱한 경로로 간다",
+      "찾을것": "    if (곳.startsWith('#')) 길 = 문서길 + 곳;\n    else if",
+      "바꿀것": "    if",
+      "검사": "test/release-notes.test.js"
+    },
+    {
+      "곳": "tools/release-notes.mjs",
+      "무엇": "Latest 판정을 수가 아니라 글자로 견준다 (2.0.3)",
+      "그러면": "1.9.x 를 뒤늦게 밀면 1.10.x 보다 크다고 보고 Latest 를 가져간다 — GitHub 첫 화면이 옛 판을 최신이라고 말한다",
+      "찾을것": "  const 수 = (v) => v.replace(/^v/, '').split('.').map(Number);",
+      "바꿀것": "  const 수 = (v) => v.replace(/^v/, '').split('.').map(String);",
+      "검사": "test/release-notes.test.js"
+    },
+    {
+      "곳": ".github/workflows/publish.yml",
+      "무엇": "지금 Latest 를 묻다 난 오류를 「릴리스 없음」 으로 삼킨다 (2.0.3)",
+      "그러면": "API 가 잠깐 넘어진 사이 옛 태그를 밀면 빈 값을 받아 옛 판이 Latest 를 가져간다",
+      "찾을것": "          else echo \"$cur\" >&2; exit 1; fi\n",
+      "바꿀것": "          else cur=''; fi\n",
+      "검사": "test/release-notes.test.js"
+    },
+    {
+      "곳": "tools/release-notes.mjs",
+      "무엇": "판이 아닌 `## ` 머리(`## 1부`)에서도 본문을 끊는다 (2.0.3)",
+      "그러면": "2.0.0 처럼 판 안에 `## 1부` 를 둔 노트가 앞머리만 릴리스에 실린다 — 말없이 절반이 빠진다",
+      "찾을것": "const 판머리 = /^## v?(\\d+\\.\\d+\\.\\d+)(?:\\s|$)/;",
+      "바꿀것": "const 판머리 = /^## v?(\\d+\\.\\d+\\.\\d+|\\S+)/;",
+      "검사": "test/release-notes.test.js"
+    },
+    {
+      "곳": "tools/release-notes.mjs",
+      "무엇": "코드 울타리 안의 `## 1.0.0` 보기 글을 다음 판 머리로 본다 (2.0.3)",
+      "그러면": "노트에 머리 보기를 코드로 적은 판은 그 자리에서 릴리스 본문이 잘린다",
+      "찾을것": "    if (!울안[i] && 머리판(줄[i]) !== null) { 끝 = i; break; }",
+      "바꿀것": "    if (머리판(줄[i]) !== null) { 끝 = i; break; }",
+      "검사": "test/release-notes.test.js"
+    },
+    {
+      "곳": "tools/release-notes.mjs",
+      "무엇": "그림도 blob 주소로 건다 (2.0.3)",
+      "그러면": "blob 은 그림을 둘러싼 HTML 쪽이라 릴리스 화면에 깨진 그림이 뜬다",
+      "찾을것": "    const 바탕 = `${저장소}/${느낌표 ? 'raw' : 'blob'}/v${판}/`;",
+      "바꿀것": "    const 바탕 = `${저장소}/blob/v${판}/`;",
+      "검사": "test/release-notes.test.js"
+    },
+    {
+      "곳": "tools/release-notes.mjs",
+      "무엇": "한 줄 코드 안에 보기로 적은 링크 문법까지 바꾼다 (2.0.3)",
+      "그러면": "「이렇게 적으세요」 로 보여 준 `[설정](config.md)` 가 릴리스 화면에서는 긴 주소로 바뀌어 보기가 틀린다",
+      "찾을것": "(i % 2 ? 조각 : 한조각풀기(조각, 자리))",
+      "바꿀것": "(한조각풀기(조각, 자리))",
+      "검사": "test/release-notes.test.js"
     }
   ]
 }

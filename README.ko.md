@@ -20,7 +20,7 @@
 
 [![Node.js CI](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/test.yml?branch=main&logo=github&logoColor=white&label=Node.js%20CI)](https://github.com/jysvai/deel-local-cli/actions/workflows/test.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/jysvai/deel-local-cli/codeql.yml?branch=main&logo=github&logoColor=white&label=CodeQL)](https://github.com/jysvai/deel-local-cli/actions/workflows/codeql.yml)
-[![tests](https://img.shields.io/badge/tests-14%2C089%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
+[![tests](https://img.shields.io/badge/tests-14%2C151%20passing-1a7f37?logo=checkmarx&logoColor=white)](docs/ko/develop.md)
 
 [![dependencies](https://img.shields.io/badge/dependencies-0-1a7f37)](https://www.npmjs.com/package/deel-local-cli?activeTab=dependencies)
 [![ESM](https://img.shields.io/badge/ESM-Node%2020%2B-5FA04E?logo=javascript&logoColor=white)](package.json)
@@ -242,6 +242,12 @@ Model Context Protocol 과 Agent Client Protocol 은 둘 다 표준입출력으�
 ```bash
 npm install -g deel-local-cli
 ```
+
+이 명령은 옛 판이 깔려 있어도 늘 npm 의 최신 판을 받습니다. `npx` 로 쓸 때는 `@latest` 를 붙이세요 —
+전에 깔아 둔 deel 이 있으면 `npx deel-local-cli` 는 새로 받지 않고 **그걸** 실행합니다.
+`npx deel-local-cli@latest` 는 늘 최신을 받습니다. 지금 도는 판은 `deel --version` 으로 봅니다.
+`npm i -g` 로도 옛 판이 오면 `npm view deel-local-cli version` 을 보세요 — 사내 npm 미러는
+npmjs.org 보다 늦을 수 있습니다.
 
 설치가 싫으면 소스를 받아 그대로 쓰셔도 됩니다. `npm install` 이 필요 없습니다.
 
@@ -1240,7 +1246,7 @@ deel stats                    # 이 폴더에서 실제로 무엇을 했나 (.de
 ## 개발
 
 ```bash
-npm test          전체 검증 (14,089항목 — 몇몇은 터미널에 따라 갈립니다)
+npm test          전체 검증 (14,151항목 — 몇몇은 터미널에 따라 갈립니다)
 npm run coverage  검사가 소스의 어디를 밟았는지
 npm run verify    반입·통신 검증만
 npm run bench     편집 성공률 측정
@@ -1297,7 +1303,7 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 | `exitcode` · `doorparity` | 7 · 19 | 화면에 적은 종료코드 표가 진짜인가 · 문 **네 개**가 같은 것을 주는가 |
 | `no-bundle` | 28 | 배포 묶음에 남의 것이 안 섞였는가 · 검사 파일 위생 |
 | `edit-bench` | 15건 | 편집 성공률 |
-| `mutate` | 어긋 1,724개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
+| `mutate` | 어긋 1,733개 | **검사가 정말 지키는가** — 지켜야 할 줄을 일부러 어긋내고 빨개지는지 본다 |
 
 > **자세히** — 어디를 밟았는지 · 폴더 구조
 >

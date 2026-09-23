@@ -21,6 +21,9 @@ name: publish
 #   태그를 밀면 검사가 다 돌고, 통과해야 올라간다. **넣어 둘 열쇠는 없다** —
 #   아래 「믿는 발행자」 를 보라.
 #
+#   GitHub 릴리스도 손으로 만들지 않는다. npm 에 올라간 **뒤에** 맨 아래
+#   release 가 만든다 (그 머리말에 2.0.2 이야기가 있다).
+#
 # ── 열두 판 동안 한 번도 성공한 적이 없었다 (v1.13.1 에 고쳤다) ─────────
 #
 # v1.5.8 부터 v1.12.0 까지 열두 판이 전부 빨갛게 끝났다. 그런데 npm 에는 그
@@ -294,3 +297,57 @@ jobs:
       - name: publish
         if: steps.onnpm.outputs.found == 'no'
         run: npm publish --provenance --access public
+
+  # ── GitHub 릴리스는 npm 에 올라간 **뒤에** 만든다 ──────────────────────
+  #
+  # 2.0.2 는 GitHub 에 「Latest」 로 떠 있는데 npm 에는 없었다. 태그를 민 직후
+  # 손으로 릴리스를 만들었고, 그 뒤 위 검사가 리눅스에서 빨개져 발행이 멈췄다.
+  # 릴리스를 보고 온 사람이 `npm i -g` 로 받은 것은 한 판 전이었다.
+  #
+  # `needs: publish` 가 그 순서를 못 박는다. 위 job 이 초록으로 끝나야 — 올렸거나
+  # 이미 있어야 — 여기가 돈다. 발행이 멈추면 릴리스도 안 생긴다.
+  #
+  # 쓰기 권한은 이 job 에만 준다. 위 job 은 저장소 코드와 검사 1만여 개를 돌리는
+  # 자리라 거기에 쓰기 열쇠를 두면 검사 하나가 태그를 옮길 수 있다. 여기서는
+  # 노트를 뽑고 릴리스를 만드는 것밖에 안 돌고, checkout 도 열쇠를 안 남긴다.
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ver=$(node -p "require('./package.json').version")
+          tag="v$ver"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag 릴리스가 이미 있습니다 — 그대로 둡니다."
+            exit 0
+          fi
+          title=$(node tools/release-notes.mjs "$ver" --title)
+          node tools/release-notes.mjs "$ver" > "$RUNNER_TEMP/notes.md"
+
+          # 옛 태그를 뒤늦게 밀어도 이 길을 지난다. 그대로 만들면 옛 판이
+          # Latest 를 가져간다 (1.18.0 이 실제로 그랬다). 지금 Latest 보다
+          # 높을 때만 Latest 로 건다 — 견주기는 도구가 하고 검사가 직접 부른다.
+          #
+          # 「릴리스가 하나도 없다」 만 빈 값으로 받는다. 그 밖의 오류(API 장애
+          # 따위)를 빈 값으로 삼키면 옛 판이 Latest 를 가져간다 — 멈추는 편이 낫다.
+          if cur=$(gh release view --json tagName -q .tagName 2>&1); then :
+          elif printf '%s' "$cur" | grep -qi 'release not found'; then cur=''
+          else echo "$cur" >&2; exit 1; fi
+          latest=$(node tools/release-notes.mjs "$ver" --latest-flag "$cur")
+
+          gh release create "$tag" --verify-tag --title "$title" --notes-file "$RUNNER_TEMP/notes.md" "$latest"
+          echo "$tag 릴리스를 만들었습니다 ($latest)."
