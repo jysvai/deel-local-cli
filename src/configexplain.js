@@ -25,6 +25,7 @@ import { homeDir, 집설정파일인가, 열쇠환경이름 } from './config.js'
 import { 믿나, 프로젝트거르기, BOM떼기, 연결칸 } from './safety/trust.js';
 import { 정책읽기, 정책자리 } from './safety/policy.js';
 import { 받기설정 } from './safety/authcmd.js';
+import { 주소가리기 } from './safety/secrets.js';
 
 /*
  * 이 PC 프로필에 겹치는 저장소 프로필에서 연결 칸(baseUrl·kind·auth·제공자)을 걷는다.
@@ -78,7 +79,23 @@ const 환경변수 = {
  * 하는 것이 이런 자리에서 제일 흔한 사고다.
  */
 const 비밀표시 = '(적혀 있음 — 값은 안 보여 줍니다)';
-const 지운값 = (칸, v) => (v !== undefined && 가릴칸.has(칸) ? 비밀표시 : v);
+/*
+ * **끝 칸 이름만** 보면 안 된다. `profiles.사내` 처럼 한 칸 위에서 멈추면 값이 객체이고,
+ * 그 안의 apiKey · 인증서 passphrase 가 통째로 그려졌다. 그래서 객체·배열은 안으로 파고들어
+ * 칸마다 같은 자로 본다.
+ *
+ * 주소 꼴의 글(`http://사람:암호@프록시:8080`)은 doctor 와 같은 자(주소가리기)로 가린다 —
+ * 호스트·포트는 남는다. 어디로 가는지는 사람이 봐야 한다.
+ */
+const 주소꼴 = /^[a-z][a-z0-9+.-]*:\/\//i;
+const 지운값 = (칸, v) => {
+  if (v === undefined) return v;
+  if (가릴칸.has(칸)) return 비밀표시;
+  if (typeof v === 'string') return 주소꼴.test(v.trim()) ? 주소가리기(v) : v;
+  if (Array.isArray(v)) return v.map((x) => 지운값('', x));
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, 지운값(k, x)]));
+  return v;
+};
 
 const 값보이기 = (칸, v) => {
   if (v === undefined) return null;

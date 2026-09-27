@@ -20,7 +20,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trace } from './trace.mjs';
 
-const { 설정탈, 과제읽기, 예제만들기, 폴더복사, 결과덩이, 과제별, 견주기, 지난결과, 시각이름 } = await import('../src/eval/run.js');
+const { 설정탈, 과제읽기, 예제만들기, 폴더복사, 결과덩이, 과제별, 견주기, 지난결과, 시각이름, 과제고르기, 판돌리기 } = await import('../src/eval/run.js');
 const { 예제과제 } = await import('../src/eval/starter.js');
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -85,6 +85,28 @@ const 모음 = 임시('모음');
     check(`★★ ${이름}: 맞게 고친 폴더는 통과한다`, 채점(고친것[이름]) === 0);
     check(`  ${이름}: 정답 검사 명령은 한 명령이다 (PowerShell 5.1 에서도 돈다)`, !/&&|\|\|/.test(과제.task.check), 과제.task.check);
   }
+  {
+    // 모델이 고치다 src/ 밑에 폴더(백업 따위)를 만들면 03 의 정답 검사가 readFileSync 에서 EISDIR 로 터졌다 —
+    // 맞게 고쳐 놓고 떨어진다 (2.1.1 검수).
+    const d = 임시('채점폴더');
+    폴더복사(join(모음, '03-이름바꾸기', 'start'), d);
+    고친것['03-이름바꾸기'](d);
+    mkdirSync(join(d, 'src', 'backup'), { recursive: true });
+    폴더복사(join(모음, '03-이름바꾸기', 'golden'), d);
+    const r = spawnSync(process.execPath, [join(d, 'golden-check.mjs')], { cwd: d, encoding: 'utf8' });
+    지우기(d);
+    check('★ 03: src 밑에 폴더가 생겨도 맞게 고친 것은 통과한다', r.status === 0, r.stderr.slice(-200));
+    // 거꾸로 — 하위 폴더에 옛 이름이 남았으면 떨어져야 한다. 맨 위만 보면 src/lib/ 의 getUser 를 못 본다 (2.1.1 2차 눈).
+    const e = 임시('채점하위');
+    폴더복사(join(모음, '03-이름바꾸기', 'start'), e);
+    고친것['03-이름바꾸기'](e);
+    mkdirSync(join(e, 'src', 'lib'), { recursive: true });
+    writeFileSync(join(e, 'src', 'lib', 'old.js'), "export { getUser } from '../user.js';\n");
+    폴더복사(join(모음, '03-이름바꾸기', 'golden'), e);
+    const r2 = spawnSync(process.execPath, [join(e, 'golden-check.mjs')], { cwd: e, encoding: 'utf8' });
+    지우기(e);
+    check('★ 03: 하위 폴더에 옛 이름이 남으면 떨어진다', r2.status !== 0, `status=${r2.status}`);
+  }
   // 예제의 CRLF 가 실제 파일에 CRLF 로 남았나 — 글로 들고 있다가 LF 로 바뀌면 과제가 무의미하다.
   check('★ 05 의 시작 파일은 실제로 CRLF 다', readFileSync(join(모음, '05-CRLF파일', 'start', 'config.ini'), 'utf8').includes('\r\n'));
 }
@@ -125,6 +147,56 @@ trace('3-조각');
   const 지난 = 지난결과(d);
   check('★ 과제별이 없는 결과 파일은 지난번으로 안 친다', 지난?.파일 === '20260101-000000Z.json', JSON.stringify(지난));
   지우기(d);
+}
+{
+  /*
+   * ── --only 로 일부만 돌린 결과가 다음 전체 판의 「지난번」 이 됐다 (2.1.1 검수) ──
+   *
+   * 제일 새 파일을 그대로 집어서, `--only a` 한 번 뒤의 전체 판은 과제 a 하나만 견줬다. 나머지
+   * 열아홉이 떨어져도 「지난번과 같습니다」 가 나왔다. 전체 판은 전체 판과 견준다.
+   */
+  const d = 임시('부분');
+  mkdirSync(join(d, '.results'), { recursive: true });
+  writeFileSync(join(d, '.results', '20260101-000000Z.json'), JSON.stringify({ 과제별: [{ 과제: 'a', 판: 1, 통과: 1 }, { 과제: 'b', 판: 1, 통과: 1 }] }));
+  writeFileSync(join(d, '.results', '20260102-000000Z.json'), JSON.stringify({ only: 'a', 과제별: [{ 과제: 'a', 판: 1, 통과: 1 }] }));
+  check('★★ 전체 판은 --only 로 돈 결과를 지난번으로 안 친다', 지난결과(d, { 전체만: true })?.파일 === '20260101-000000Z.json', JSON.stringify(지난결과(d, { 전체만: true })));
+  check('  일부만 도는 판은 제일 새 것과 견준다 (그 과제들만 견준다)', 지난결과(d)?.파일 === '20260102-000000Z.json');
+  // 일부만 도는 판끼리 겹치는 과제가 없으면(`--only a` 뒤 `--only b`) 견줄 것이 없는데 「지난번과 같습니다」 가 나왔다 (2.1.1 2차 눈).
+  check('★ 일부만 도는 판은 지금 과제가 든 결과까지 거슬러 찾는다', 지난결과(d, { 이름들: ['b'] })?.파일 === '20260101-000000Z.json',
+    JSON.stringify(지난결과(d, { 이름들: ['b'] })));
+  check('  지금 과제가 든 결과가 하나도 없으면 null', 지난결과(d, { 이름들: ['없는과제'] }) === null);
+  const 안겹침 = 견주기([{ 과제: 'a', 판: 1, 통과: 1 }], [{ 과제: 'b', 판: 1, 통과: 1 }]);
+  check('★ 견주기가 몇 과제를 견줬는지 센다 (0 이면 「같습니다」 라 말할 근거가 없다)', 안겹침.견준 === 0
+    && 견주기([{ 과제: 'a', 판: 1, 통과: 1 }], [{ 과제: 'a', 판: 1, 통과: 1 }]).견준 === 1, JSON.stringify(안겹침));
+  지우기(d);
+  // .results 가 폴더가 아니라 파일이면(손으로 만든 것) 지난번을 찾다 죽지 않는다.
+  const e = 임시('파일');
+  writeFileSync(join(e, '.results'), 'x');
+  let 터짐 = null;
+  try { 지난결과(e); } catch (err) { 터짐 = err.code ?? String(err); }
+  check('★ .results 가 파일이어도 안 터진다', 터짐 === null, String(터짐));
+  지우기(e);
+}
+{
+  // --only 는 이름이 딱 맞는 것이 있으면 그것만 고른다. `task-1` 이 `task-10` 까지 부르면 안 된다.
+  const 목록 = ['task-1', 'task-10', 'task-2', '03-이름바꾸기'].map((이름) => ({ 이름 }));
+  const 이름들 = (only) => 과제고르기(목록, only).map((x) => x.이름).join(',');
+  check('★ --only 는 딱 맞는 이름이 있으면 그것만', 이름들('task-1') === 'task-1', 이름들('task-1'));
+  check('  딱 맞는 것이 없으면 이름 일부로 고른다 (예전처럼)', 이름들('task') === 'task-1,task-10,task-2' && 이름들('이름') === '03-이름바꾸기', 이름들('task'));
+  check('  쉼표로 여럿 — 딱 맞는 것과 일부 맞는 것을 섞어도 된다', 이름들('task-1, 03') === 'task-1,03-이름바꾸기', 이름들('task-1, 03'));
+}
+{
+  /*
+   * ── 과제 하나에서 터지면 평가 전체가 죽었다 (2.1.1 검수) ─────────────
+   *
+   * 한번돌리기 에 finally 만 있고 catch 가 없어서, 정답 복사가 권한·자리 부족으로 터지면 그
+   * 예외가 runEval 까지 올라가 남은 과제를 다 버리고 결과 파일도 안 남겼다. 그 과제만 실패로 센다.
+   */
+  const r = await 판돌리기({ 이름: 'x' }, { 판: 2 }, { 돌리개: async () => { throw Object.assign(new Error('EACCES 흉내'), { code: 'EACCES' }); } });
+  check('★★ 과제 하나가 터지면 그 과제만 실패로 센다', r.통과 === false && r.과제 === 'x' && r.판 === 2, JSON.stringify(r));
+  check('★ 무엇이 터졌는지 적는다', /EACCES 흉내/.test(r.검사?.꼬리 ?? '') && r.deel?.reason === 'error', JSON.stringify(r));
+  const 멀쩡 = await 판돌리기({ 이름: 'y' }, {}, { 돌리개: async () => ({ 과제: 'y', 통과: true }) });
+  check('  안 터지면 결과를 그대로 준다', 멀쩡.통과 === true && 멀쩡.과제 === 'y');
 }
 {
   // 2차 눈(Gemini) 판정: 파일 이름이 지역 시각이라 시차가 다른 PC 의 결과가 섞이면 순서가 뒤집혔다.
@@ -236,12 +308,16 @@ writeFileSync(join(일터, 'golden', 'c-모양틀림', 'task.json'), '{ "prompt"
   check('★★ task.json 이 없는 과제 폴더(start/·golden/ 이 있음)는 빼지 않고 실패로 센다', /task\.json/.test(JSON.stringify(j?.결과?.find((x) => x.과제 === 'd-task없음')?.과제탈 ?? '')),
     JSON.stringify(j?.과제별));
   check('  start/·golden/ 도 task.json 도 없는 폴더는 과제가 아니다 (도우미 폴더)', !j?.과제별?.some((x) => x.과제 === 'e-과제아님'));
+  check('★ 일부만 돈 결과에는 무엇을 골랐는지 적는다 (다음 전체 판이 이걸 지난번으로 안 치게)', j?.only === 'a-,c-,d-,e-', JSON.stringify(j?.only));
   지우기(join(일터, 'golden', 'd-task없음'));
   지우기(join(일터, 'golden', 'e-과제아님'));
 }
 {
   const r = await 띄우기(['eval', '--repeat', '0'], 일터);
   check('★ --repeat 0 은 사용법 틀림(64)', r.code === 64, `code=${r.code}`);
+  // 2차 눈이 「값 없는 --only 가 글자 'true' 로 넘어간다」 고 짚었다 — 깃발 풀이가 이미 64 로 막고 있었다. 그 막을 지킨다.
+  const 빈only = await 띄우기(['eval', '--only'], 일터);
+  check('  값 없는 --only 는 사용법 틀림(64)', 빈only.code === 64 && /--only/.test(빈only.err), `code=${빈only.code} ${빈only.err.slice(-160)}`);
   // 2차 눈(Gemini) 판정: --json 인데 오류는 색 입힌 글로 표준출력에 나가 받는 쪽의 JSON.parse 가 깨졌다.
   const rj = await 띄우기(['eval', '--json', '--repeat', '0'], 일터);
   const jj = (() => { try { return JSON.parse(rj.out.trim()); } catch { return null; } })();
@@ -252,6 +328,14 @@ writeFileSync(join(일터, 'golden', 'c-모양틀림', 'task.json'), '{ "prompt"
   const r3 = await 띄우기(['eval', '--init'], 빈);
   check('★ deel eval --init 이 golden/ 에 예제를 만든다', r3.code === 0 && readdirSync(join(빈, 'golden')).length === 5, r3.out.slice(-200));
   지우기(빈);
+}
+{
+  // 결과 파일을 못 남기면 말한다 — 조용히 삼키면 사람은 다음 판에 견줄 것이 있는 줄 안다 (2.1.1 검수).
+  지우기(join(일터, 'golden', '.results'));
+  writeFileSync(join(일터, 'golden', '.results'), '폴더가 아니라 파일');
+  const r = await 띄우기(['eval', '--only', 'a-'], 일터);
+  check('★ 결과 파일을 못 남기면 그렇다고 말한다', /못 남겼습니다/.test(r.out), r.out.slice(-300));
+  check('  그래도 채점은 끝까지 한다 (종료코드는 통과 여부 그대로)', r.code === 0, `code=${r.code}`);
 }
 
 서버.close();

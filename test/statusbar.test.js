@@ -336,6 +336,28 @@ trace('머리말-별부탁');
     JSON.stringify(아무것도.length));
 }
 
+// ── 상태줄이 그릴 때마다 대화 전체를 다시 세지 않는다 (2.1.1 검수) ──────
+//
+// 일하는 동안 상태줄은 90ms 마다 그려지고, 그때마다 breakdown() 이 메시지를 하나하나 글자로 셌다.
+// 64만 토큰 창이면 초당 스무 번 넘게 대화 전체를 훑는다. 메시지는 제자리에서 안 고치고 새 것으로
+// 갈아 끼우므로, 한 번 센 메시지는 다시 안 센다.
+{
+  const s = new Session({ kind: 'openai', base: 'http://127.0.0.1:1/v1', model: 'x', ctx: 32768 }, { root });
+  let 읽음 = 0;
+  const 본문 = 'x'.repeat(3600);
+  s.messages = [{ role: 'user', get content() { 읽음++; return 본문; } }];
+  const 처음 = s.breakdown();
+  const 처음읽음 = 읽음;
+  const 둘째 = s.breakdown();
+  check('★ 두 번째 셈에서는 이미 센 메시지의 본문을 다시 안 읽는다', 처음읽음 > 0 && 읽음 === 처음읽음, `처음 ${처음읽음} · 뒤 ${읽음}`);
+  check('  셈 값은 그대로다', 둘째.used === 처음.used && 처음.used >= 1000, `${처음.used} / ${둘째.used}`);
+  s.messages = [{ role: 'user', content: 'y'.repeat(7200) }];
+  check('★ 갈아 끼운 메시지는 새로 센다', s.breakdown().used >= 처음.used + 900, `${처음.used} → ${s.breakdown().used}`);
+  s.messages = [{ role: 'tool', tool_call_id: 't1', content: 'z'.repeat(3600) }];
+  const 도구칸 = s.breakdown().rows.find((r) => /도구 결과|tool results/i.test(r.label));
+  check('  도구 결과는 여전히 도구 결과 칸으로 간다', (도구칸?.n ?? 0) >= 1000, JSON.stringify(도구칸));
+}
+
 // ── 첫 화면은 어차피 안 거칠 주소에 「프록시 못 씀」 을 붙이지 않는다 ────
 //
 // 루프백 모델인데 목적지 줄에 「[프록시 설정을 못 씀]」 이 붙으면 상관없는 프록시를 탓하게 된다.

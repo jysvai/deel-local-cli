@@ -23,11 +23,20 @@
  * 그대로 보여 주고 고르게 한다 — 하나를 골라 주고 아닌 척하지 않는다.
  */
 import { readFileSync } from 'node:fs';
+import { decode } from './encoding.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { 얻기, 색인중일까 } from '../lsp/client.js';
 import { 갈래, 프로젝트갈래 } from '../lsp/servers.js';
 import { 찾을개수 } from '../agent/budget.js';
 import { 말, 세말 } from '../i18n/index.js';
+
+/*
+ * 소스를 읽는다 — Read·Edit 와 같은 자(encoding.js)로.
+ *
+ * 날 UTF-8 로 읽으면 EUC-KR·CP949 소스의 한글 이름이 깨진 글자(U+FFFD)가 되어 「그 줄에
+ * 없다」 로 실패하고, 서버에 보여 주는 내용(didOpen)도 깨진 글이 된다 (2.1.1 검수).
+ */
+const 소스읽기 = (abs) => decode(readFileSync(abs)).text;
 
 /**
  * 한 자리를 사람이 읽을 한 줄로. 그 줄의 글까지 붙여야 열어 보지 않고도 안다.
@@ -51,7 +60,7 @@ function 한줄(scope, uri, 범위, 줄표 = new Map()) {
   // 윈도우는 서버가 드라이브 글자를 소문자로 적어 온다(c%3A) — 같은 파일을 두 번 읽지 않게.
   const 열쇠 = process.platform === 'win32' ? abs.toLowerCase() : abs;
   if (!줄표.has(열쇠)) {
-    try { 줄표.set(열쇠, readFileSync(abs, 'utf8').split(/\r?\n/)); } catch { 줄표.set(열쇠, null); /* 못 읽으면 자리만 준다 */ }
+    try { 줄표.set(열쇠, 소스읽기(abs).split(/\r?\n/)); } catch { 줄표.set(열쇠, null); /* 못 읽으면 자리만 준다 */ }
   }
   let 글 = (줄표.get(열쇠)?.[줄번호 - 1] ?? '').trim();
   if (글.length > 160) 글 = 글.slice(0, 160) + '…';
@@ -105,7 +114,7 @@ async function 자리잡기(서버, scope, { 이름, 파일, 줄 }) {
     let abs;
     try { abs = scope.resolve(파일); } catch (e) { return { 오류: e.message }; }
     let 줄들;
-    try { 줄들 = readFileSync(abs, 'utf8').split(/\r?\n/); } catch { return { 오류: `못 읽었습니다: ${파일}` }; }
+    try { 줄들 = 소스읽기(abs).split(/\r?\n/); } catch { return { 오류: `못 읽었습니다: ${파일}` }; }
     서버.보여주기(abs, 줄들.join('\n'));
 
     const 볼줄 = Number.isFinite(줄) && 줄 > 0 ? [줄 - 1] : 줄들.map((_, i) => i);
@@ -168,7 +177,7 @@ async function 자리잡기(서버, scope, { 이름, 파일, 줄 }) {
   if (!position) {
     try {
       const abs = fileURLToPath(첫.uri);
-      const 줄들 = readFileSync(abs, 'utf8').split(/\r?\n/);
+      const 줄들 = 소스읽기(abs).split(/\r?\n/);
       for (let i = 0; i < 줄들.length; i++) {
         const 칸 = 칸찾기(줄들[i], 이름);
         if (칸 >= 0) { position = { line: i, character: 칸 }; break; }
@@ -181,7 +190,7 @@ async function 자리잡기(서버, scope, { 이름, 파일, 줄 }) {
   // 서버가 아무것도 못 준다.
   try {
     const abs = fileURLToPath(첫.uri);
-    const 줄글 = readFileSync(abs, 'utf8').split(/\r?\n/)[position.line] ?? '';
+    const 줄글 = 소스읽기(abs).split(/\r?\n/)[position.line] ?? '';
     const 칸 = 칸찾기(줄글, 이름);
     if (칸 >= 0) position = { line: position.line, character: 칸 };
     서버.보여주기(abs);

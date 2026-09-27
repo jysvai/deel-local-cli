@@ -929,6 +929,7 @@ export async function runOnce(opts = {}) {
 
         case 'check_start':
           곁(`  ${c.cyan('⧗')} ${c.gray(옮긴말('check.start', { 판: ev.판, 최대: ev.최대, 명령: ev.명령 }))}`);
+          for (const 줄 of ev.줄임 ?? []) 곁(`     ${c.yellow('⚠')} ${c.gray(옮긴말('check.clamped', 줄))}`);
           break;
 
         case 'check':
@@ -936,7 +937,8 @@ export async function runOnce(opts = {}) {
           else if (ev.ok === false) {
             곁(`  ${c.red('✗')} ${c.gray(옮긴말('check.fail', { 판: ev.판, 최대: ev.최대, 요약: ev.요약 }))}`);
             // 실패 출력의 끝 몇 줄 — 배치 로그를 보는 사람이 무엇이 틀렸는지 여기서 안다.
-            for (const 줄 of String(ev.꼬리 ?? '').trim().split('\n').slice(-8)) if (줄.trim()) 곁(`     ${c.gray(줄)}`);
+            // 빈 줄을 **먼저** 거르고 자른다 — 거꾸로 하면 원인 뒤 빈 줄 여럿이 8칸을 다 먹는다 (repl.js 와 같은 차례).
+            for (const 줄 of String(ev.꼬리 ?? '').trim().split('\n').filter((l) => l.trim()).slice(-8)) 곁(`     ${c.gray(줄)}`);
             곁(`     ${c.gray(ev.판 < ev.최대 ? 옮긴말('check.retry') : 옮긴말('check.gaveUp', { 판: ev.판 }))}`);
           } else 곁(`  ${c.yellow('⊘')} ${c.gray(옮긴말('check.skipped', { 까닭: ev.까닭 }))}`);
           break;

@@ -111,7 +111,9 @@ export function 미리보기줄들(미리보기, { 줄수 = 40 } = {}) {
     let d = null;
     try { d = diffLines(것.전, 것.후); } catch { d = null; }
     const 셈 = d ? shortStat(d) : '';
-    out.push(`    ${c.white(것.보일경로)}${것.전 === null ? c.gray(` (${말('approve.newFile')})`) : ''}${셈 ? `  ${셈}` : ''}`);
+    // 같은 내용으로 다시 쓰는 부름이면 그렇다고 적는다 — 이름 한 줄만 뜨면 사람은 무언가 바뀌는 줄 안다.
+    const 딸린말 = 것.전 === null ? ` (${말('approve.newFile')})` : 것.전 === 것.후 ? ` (${말('approve.noChange')})` : '';
+    out.push(`    ${c.white(것.보일경로)}${딸린말 ? c.gray(딸린말) : ''}${셈 ? `  ${셈}` : ''}`);
     if (d && 몫 >= 3) out.push(...renderDiff(d, { maxLines: 몫, indent: '      ' }));
   }
   return out;

@@ -14,6 +14,7 @@ import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박
 import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
 import { Session, estimateTokens } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
+import { 일감인자 } from '../tools/jobs.js';
 import { 찾기 as 에이전트찾기, 할일합치기, 도구줄이기 } from './agents.js';
 import { 프로필찾기, 쓸수있나, 연결만들기, 알릴말, 목록보기 } from './models.js';
 import { allowTemporarily, isOffline } from '../safety/network.js';
@@ -370,7 +371,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     const 명령 = 완료검사.명령;
     const 최대 = 완료검사.판수;
     const args = { command: 명령, description: '완료 검사', timeout: 완료검사.시간 };
-    yield { type: 'check_start', 명령, 판, 최대 };
+    // 상한에 걸려 줄인 설정은 첫 판에만 싣는다 — 판마다 같은 말을 되풀이하면 소음이다.
+    yield { type: 'check_start', 명령, 판, 최대, ...(판 === 1 && 완료검사.줄임?.length ? { 줄임: 완료검사.줄임 } : {}) };
     const 못돌림 = (까닭) => ({ ok: null, 명령, 판, 최대, 까닭 });
 
     let 결판 = null;
@@ -532,10 +534,22 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     if (!부른것.length) return;
     // 결과가 어느 role 에 실리는지도 규격마다 다르다. `role === 'tool'` 로
     // 세면 Anthropic 꼴에서 언제나 0 이라, 지어낸 번호가 전부 겹친다.
-    const 이미 = session.messages.filter(도구결과인가).length;
+    /*
+     * 지어낸 번호는 부름마다 새로 짓고, **이미 쓰인 번호는 건너뛴다.** 한 번만 세면 id 없는 부름 여럿이
+     * 같은 번호를 받고, 결과 수로만 세면 모델이 준 `call_1` 이나 접기 뒤 남은 옛 번호와 겹쳐 또 400 이다
+     * (2.1.1 검수 · 2차 눈). 빈 글 id 도 없는 것으로 친다.
+     */
+    const 쓴번호 = new Set(session.messages.flatMap((m) => 부른것들(m).map((t) => t.id)).filter(Boolean));
+    let 이미 = session.messages.filter(도구결과인가).length;
+    const 새번호 = () => {
+      let id;
+      do { id = `call_${++이미}`; } while (쓴번호.has(id));
+      쓴번호.add(id);
+      return id;
+    };
     for (const t of 부른것) {
       session.push(toolMessage(conn.kind, {
-        callId: t.id ?? `call_${이미 + 1}`,
+        callId: t.id || 새번호(),
         name: t.name ?? '?',
         content: 왜,
       }));
@@ -2036,7 +2050,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         const 정책이묻게함 = 승인바닥().바닥 !== 'auto';
         // Jobs 는 대개 뒤에서 도는 명령의 출력을 **읽는** 호출이다. 끝내기(stop)만 바꾸는 것으로
         // 친다 — 읽을 때마다 물으면 사람은 y 만 치다가 정작 물어야 할 것도 그렇게 넘긴다.
-        const 바꾸는것 = (call.name === 'Jobs' ? !!call.args?.stop : 바꾸는도구.includes(call.name))
+        // 끄는가는 **도구가 읽는 자**(일감인자)로 가른다. `stop` 칸만 보면 작은 모델이 보내는
+        // `kill` · `끝내기` 가 안 묻고 서버를 끄고, `stop:"false"` 는 `!!` 로 참이 되어 헛물음이 난다.
+        const 바꾸는것 = (call.name === 'Jobs' ? 일감인자(call.args).끝내기 === true : 바꾸는도구.includes(call.name))
           || call.name.startsWith('mcp__');
         const needsOk = (판정.답 === 'allow' && !정책이묻게함) ? false : session.mode === 'strict'
           ? 바꾸는것

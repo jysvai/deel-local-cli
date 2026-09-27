@@ -55,6 +55,9 @@ trace('1-안갈림');
     명령들.filter((x) => !x.en || !/^[ -~]+$/.test(x.en)).map((x) => x.이름).join(' '));
   check('★ 깃발마다 영문 뜻도 적혀 있다', 깃발들.every((x) => x.en && /^[ -~]+$/.test(x.en)),
     깃발들.filter((x) => !x.en || !/^[ -~]+$/.test(x.en)).map((x) => x.이름).join(' '));
+  // deel eval 이 받는 깃발 — --repeat 만 적혀 있고 도움말이 먼저 권하는 --init 은 빠져 있었다 (2.1.1 검수).
+  const 없는eval깃발 = ['--init', '--repeat', '--only', '--keep', '--timeout'].filter((n) => !깃발들.some((x) => x.이름 === n));
+  check('★ deel eval 의 깃발을 다 완성한다', 없는eval깃발.length === 0, 없는eval깃발.join(' '));
 
   // 값 목록도 코드에서 온 것이어야 한다. 손으로 베끼면 언젠가 갈린다.
   const 값찾기 = (이름) => 깃발들.find((x) => x.이름 === 이름)?.값;

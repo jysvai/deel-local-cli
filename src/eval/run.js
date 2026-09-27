@@ -257,27 +257,74 @@ export function 견주기(지난것, 지금것) {
   const 지난표 = new Map((지난것 ?? []).map((x) => [x.과제, x]));
   const 나빠짐 = [];
   const 나아짐 = [];
+  // 몇 과제를 견줬나 — 0 이면 「지난번과 같습니다」 라 말할 근거가 없다.
+  let 견준 = 0;
   for (const x of 지금것) {
     const 전 = 지난표.get(x.과제);
     if (!전) continue;
+    견준 += 1;
     if (비율(x) < 비율(전)) 나빠짐.push(x.과제);
     else if (비율(x) > 비율(전)) 나아짐.push(x.과제);
   }
-  return { 나빠짐, 나아짐 };
+  return { 나빠짐, 나아짐, 견준 };
 }
 
-/** 제일 새 결과 파일. 깨졌거나 과제별이 없는 것(손으로 적은 `{}` 따위)은 건너뛴다 — 견줄 것이 없다. */
-export function 지난결과(폴더) {
+/**
+ * 제일 새 결과 파일. 깨졌거나 과제별이 없는 것(손으로 적은 `{}` 따위)은 건너뛴다 — 견줄 것이 없다.
+ *
+ * `전체만` 이면 `--only` 로 일부만 돈 결과(`only` 칸이 있는 것)도 건너뛴다. 안 그러면 `--only a`
+ * 한 번 뒤의 전체 판이 과제 a 하나만 견주고, 나머지가 떨어져도 「지난번과 같습니다」 가 나온다
+ * (2.1.1 검수). 일부만 도는 판은 아무것과 견줘도 된다 — 견주기 가 지금 돈 과제만 본다.
+ */
+export function 지난결과(폴더, { 전체만 = false, 이름들 = null } = {}) {
   const 자리 = join(폴더, 결과폴더);
-  if (!existsSync(자리)) return null;
-  const 파일들 = readdirSync(자리).filter((f) => /^\d{8}-\d{6}.*\.json$/.test(f)).sort();
+  let 파일들;
+  // 손으로 만든 `.results` **파일**이면 readdirSync 가 던진다 — 견줄 것이 없을 뿐이다.
+  try { 파일들 = readdirSync(자리).filter((f) => /^\d{8}-\d{6}.*\.json$/.test(f)).sort(); } catch { return null; }
   for (const f of 파일들.reverse()) {
     try {
       const 값 = JSON.parse(readFileSync(join(자리, f), 'utf8'));
-      if (Array.isArray(값?.과제별)) return { 파일: f, 값 };
+      if (!Array.isArray(값?.과제별)) continue;
+      if (전체만 && 값.only) continue;
+      // 일부만 도는 판은 **지금 과제가 든** 결과까지 거슬러 찾는다 — `--only a` 뒤의 `--only b` 가 a 만 든 판과
+      // 견주면 겹치는 과제가 없는데도 「지난번과 같습니다」 가 나온다 (2.1.1 2차 눈).
+      if (이름들 && !값.과제별.some((x) => 이름들.includes(x?.과제))) continue;
+      return { 파일: f, 값 };
     } catch { /* 깨진 것은 건너뛴다 */ }
   }
   return null;
+}
+
+/**
+ * `--only` 로 과제를 고른다. 쉼표로 여럿.
+ *
+ * 이름이 **딱 맞는** 것이 있으면 그것만 고른다 — 이름 일부로만 고르면 `task-1` 이 `task-10` ·
+ * `task-11` 까지 불러 엉뚱한 과제에 시간을 쓴다 (2.1.1 검수). 딱 맞는 것이 없으면 예전처럼
+ * 이름 일부로 고른다(`--only 03` · `--only a-`).
+ */
+export function 과제고르기(과제들, only) {
+  const 고를것 = String(only ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  return 과제들.filter((x) => 고를것.some((k) => (과제들.some((y) => y.이름 === k) ? x.이름 === k : x.이름.includes(k))));
+}
+
+/**
+ * 과제 한 판을 돌리되 **터져도 그 과제만** 실패로 센다.
+ *
+ * 한번돌리기 는 임시 폴더를 치우는 finally 만 있고 catch 가 없다. 정답 복사가 권한·자리 부족으로
+ * 터지면 그 예외가 runEval 까지 올라가 남은 과제를 다 버리고 결과 파일도 안 남겼다 (2.1.1 검수).
+ * `돌리개` 는 검사가 터지는 판을 만들려고 갈아 끼우는 자리다.
+ */
+export async function 판돌리기(과제, 옵션 = {}, { 돌리개 = 한번돌리기 } = {}) {
+  try {
+    return await 돌리개(과제, 옵션);
+  } catch (err) {
+    const 까닭 = String(err?.message ?? err);
+    return {
+      과제: 과제.이름, 판: 옵션.판 ?? 1, 통과: false, 초: 0,
+      deel: { code: null, reason: 'error', steps: 0, tools: 0, usage: { in: 0, out: 0 }, model: null },
+      검사: { code: null, 꼬리: 글(`평가 도중 터졌습니다: ${까닭}`, `The run itself failed: ${까닭}`) },
+    };
+  }
 }
 
 /**
@@ -336,10 +383,7 @@ export async function runEval({ 폴더 = null, init = false, repeat = 1, keep = 
   }
 
   let 과제들 = 과제읽기(고른폴더);
-  if (only) {
-    const 고를것 = String(only).split(',').map((s) => s.trim()).filter(Boolean);
-    과제들 = 과제들.filter((x) => 고를것.some((k) => x.이름.includes(k)));
-  }
+  if (only) 과제들 = 과제고르기(과제들, only);
   if (!과제들.length) {
     return 못돌림(1, 글(`돌릴 과제가 없습니다 — ${보일} 밑에 task.json 이 든 폴더가 없습니다`, `Nothing to run — no folder with a task.json under ${보일}`));
   }
@@ -373,7 +417,7 @@ export async function runEval({ 폴더 = null, init = false, repeat = 1, keep = 
         if (판 === 1) 말하기(`  ${c.yellow('⊘')} ${과제.이름}  ${c.gray(과제.탈)}`);
         continue;
       }
-      const r = await 한번돌리기(과제, { 판, 깃발들, 남김: keep, 시간초 });
+      const r = await 판돌리기(과제, { 판, 깃발들, 남김: keep, 시간초 });
       결과들.push(r);
       const 옆 = [`${r.초}${글('초', 's')}`];
       if (r.deel.tools) 옆.push(글(`도구 ${r.deel.tools}회`, `${r.deel.tools} tool calls`));
@@ -391,7 +435,7 @@ export async function runEval({ 폴더 = null, init = false, repeat = 1, keep = 
   const 판수 = 결과들.length;
   const 통과수 = 결과들.filter((r) => r.통과).length;
   const 모델 = 결과들.find((r) => r.deel?.model)?.deel.model ?? null;
-  const 지난 = 지난결과(고른폴더);
+  const 지난 = 지난결과(고른폴더, { 전체만: !only, 이름들: only ? 과제들.map((x) => x.이름) : null });
   const 견줌 = 견주기(지난?.값?.과제별, 묶음);
   const 초 = Math.round((Date.now() - t0) / 1000);
   const 토큰 = 결과들.reduce((a, r) => ({ in: a.in + (r.deel?.usage?.in ?? 0), out: a.out + (r.deel?.usage?.out ?? 0) }), { in: 0, out: 0 });
@@ -401,6 +445,8 @@ export async function runEval({ 폴더 = null, init = false, repeat = 1, keep = 
     model: 모델,
     folder: 고른폴더,
     repeat: 되풀이,
+    // 일부만 돈 판이라는 표시 — 다음 전체 판이 이것을 「지난번」 으로 안 친다 (지난결과 의 전체만).
+    ...(only ? { only: String(only) } : {}),
     passed: 통과수,
     runs: 판수,
     rate: 판수 ? Math.round((통과수 / 판수) * 1000) / 10 : 0,
@@ -411,11 +457,16 @@ export async function runEval({ 폴더 = null, init = false, repeat = 1, keep = 
     ...(지난 ? { 견줌: { 지난파일: 지난.파일, ...견줌 } } : {}),
   };
   let 남긴곳 = null;
+  let 못남긴까닭 = null;
   try {
     mkdirSync(join(고른폴더, 결과폴더), { recursive: true });
     남긴곳 = join(고른폴더, 결과폴더, `${시각이름()}.json`);
     writeFileSync(남긴곳, JSON.stringify(기록, null, 2) + '\n');
-  } catch { 남긴곳 = null; }
+  } catch (err) {
+    // 조용히 삼키면 사람은 다음 판에 견줄 것이 있는 줄 안다. 채점은 그대로 끝낸다.
+    남긴곳 = null;
+    못남긴까닭 = String(err?.code ?? err?.message ?? err);
+  }
 
   if (json) process.stdout.write(JSON.stringify(기록) + '\n');
   말하기('');
@@ -424,9 +475,15 @@ export async function runEval({ 폴더 = null, init = false, repeat = 1, keep = 
   if (지난) {
     if (견줌.나빠짐.length) 말하기(`  ${c.red('▼')} ${글('지난번보다 나빠짐:', 'Worse than last time:')} ${견줌.나빠짐.join(' · ')}`);
     if (견줌.나아짐.length) 말하기(`  ${c.green('▲')} ${글('지난번보다 나아짐:', 'Better than last time:')} ${견줌.나아짐.join(' · ')}`);
-    if (!견줌.나빠짐.length && !견줌.나아짐.length) 말하기(`  ${c.gray(글(`지난번(${지난.파일})과 같습니다`, `Same as last time (${지난.파일})`))}`);
+    if (견줌.견준 && !견줌.나빠짐.length && !견줌.나아짐.length) 말하기(`  ${c.gray(글(`지난번(${지난.파일})과 같습니다`, `Same as last time (${지난.파일})`))}`);
   }
   if (남긴곳) 말하기(`  ${c.gray(글(`결과: ${relative(뿌리, 남긴곳)}`, `Results: ${relative(뿌리, 남긴곳)}`))}`);
+  else if (못남긴까닭) {
+    const 알림 = 글(`결과 파일을 못 남겼습니다 (${못남긴까닭}) — 다음 판은 이번 것과 못 견줍니다`,
+      `Could not save the results file (${못남긴까닭}) — the next run cannot compare with this one`);
+    if (json) process.stderr.write(`${알림}\n`);
+    else 말하기(`  ${c.yellow('⚠')} ${알림}`);
+  }
   말하기('');
   return 통과수 === 판수 ? 0 : 1;
 }

@@ -49,6 +49,15 @@ trace('1-설정');
     && 검사설정({ check: 'x', checkRounds: 2 }).판수 === 2);
   check('  시간은 초로 받아 1초 ~ 10분에 가둔다', 검사설정({ check: 'x', checkTimeout: 30 }).시간 === 30_000
     && 검사설정({ check: 'x', checkTimeout: 99999 }).시간 === 기본시간 && 검사설정({ check: 'x', checkTimeout: 0.1 }).시간 === 1000);
+  /*
+   * 상한에 걸려 줄인 것은 **말한다** (2.1.1 검수). 느린 통합 검사라 checkTimeout 을 1200 으로 적어도
+   * 600초에서 잘려 「시간 초과」 실패로 판수를 다 쓰는데, 왜 잘렸는지 어디에도 안 나왔다.
+   */
+  const 줄인 = 검사설정({ check: 'x', checkTimeout: 1200, checkRounds: 50 });
+  check('★ 상한을 넘겨 줄인 칸을 적어 둔다', 줄인.줄임?.some((x) => x.칸 === 'checkTimeout' && x.준값 === 1200 && x.쓴값 === 600)
+    && 줄인.줄임?.some((x) => x.칸 === 'checkRounds' && x.준값 === 50 && x.쓴값 === 최대판수), JSON.stringify(줄인.줄임));
+  check('  안 줄였으면 비어 있다', 검사설정({ check: 'x', checkTimeout: 30, checkRounds: 2 }).줄임.length === 0
+    && 검사설정({ check: 'x' }).줄임.length === 0);
   check('★★ --check 로 준 명령이 설정을 이긴다', 검사설정({ check: 'a' }, 'b').명령 === 'b');
   check('  --check 에 빈 글을 주면 안 돈다 (설정으로 되돌아가지 않는다)', 검사설정({ check: 'a' }, '') === null);
 
@@ -140,6 +149,11 @@ trace('3-고리');
   check('★★ 통과면 그대로 끝나고 done 에 통과가 실린다', r.done?.검사?.ok === true && r.done.검사.판 === 1, JSON.stringify(r.done?.검사));
   check('  시작 · 결과 사건이 둘 다 나온다', r.것들.some((e) => e.type === 'check_start') && r.검사들[0]?.ok === true);
   check('  done 의 검사에는 모델에게 줄 긴 출력이 안 실린다', r.done?.검사 && !('출력' in r.done.검사));
+}
+{
+  const r = await 돌리기('일부러_바로맞음 고쳐 줘', { 설정: { check: 'node check.cjs', checkTimeout: 5000 } });
+  const 시작 = r.것들.find((e) => e.type === 'check_start');
+  check('★ 줄인 설정은 첫 검사 시작 사건에 실어 화면이 말하게 한다', 시작?.줄임?.[0]?.칸 === 'checkTimeout', JSON.stringify(시작));
 }
 {
   const r = await 돌리기('일부러_고침 고쳐 줘');
@@ -260,6 +274,15 @@ const 한폴더 = () => { const d = mkdtempSync(join(tmpdir(), 'deel-donecheck-r
     `code=${r.code} · ${JSON.stringify(j)?.slice(0, 300)}`);
   check('★ 판수를 다 썼다 (기본 3)', j?.check?.rounds === 3 && readFileSync(join(d, 'runs.log'), 'utf8').length === 3);
   check('  화면(표준오류)에 무엇이 틀렸는지 남는다', /기대 good · 실제 bad/.test(r.err), r.err.slice(-300));
+  rmSync(d, { recursive: true, force: true, maxRetries: 3 });
+}
+{
+  // 원인 줄 뒤에 빈 줄이 여럿 오면(테스트 도구가 흔히 그렇게 찍는다) 끝 8줄을 **먼저** 잘라 빈 줄만
+  // 남기고 거르는 바람에 원인이 화면에서 사라졌다. 대화 화면(repl)은 거르고 자른다 — 같은 차례로 (2.1.1 검수).
+  const d = 한폴더();
+  writeFileSync(join(d, 'check2.cjs'), "console.log('원인은 여기');console.log('\\n'.repeat(9));console.log('끝줄');process.exit(1)");
+  const r = await 띄우기(['run', '--json', '--yes', '--check', 'node check2.cjs', '일부러_계속틀림 고쳐 줘'], d);
+  check('★ 빈 줄에 밀려 실패 원인 줄이 사라지지 않는다', /원인은 여기/.test(r.err), r.err.slice(-400));
   rmSync(d, { recursive: true, force: true, maxRetries: 3 });
 }
 {

@@ -218,6 +218,9 @@ function 기본규칙(ctx) {
  */
 const 규칙최대 = 20000;
 
+/** 메시지 하나를 센 값 — 메시지 객체가 열쇠다(breakdown 의 「한 번 센 메시지」). 갈아 끼우면 저절로 빠진다. */
+const 메시지셈 = new WeakMap();
+
 export class Session {
   #승인 = 'auto';
 
@@ -1155,6 +1158,18 @@ export class Session {
     let 도구결과수 = 0;
     for (const m of this.messages) {
       /*
+       * 한 번 센 메시지는 다시 안 센다 (2.1.1 검수).
+       *
+       * 상태줄은 일하는 동안 90ms 마다 그려지고 그때마다 여기를 부른다. 64만 토큰 창이면 초당
+       * 스무 번 넘게 대화 전체를 글자 단위로 훑었다. 메시지는 제자리에서 안 고치고 **새 것으로
+       * 갈아 끼우므로**(접기·요약·짝맞추기 다 그렇다) 메시지 자체를 열쇠로 잡아도 낡지 않는다.
+       */
+      const 센것 = m && typeof m === 'object' ? 메시지셈.get(m) : undefined;
+      if (센것) {
+        if (센것.결과) { files += 센것.t; 도구결과수 += 1; } else history += 센것.t;
+        continue;
+      }
+      /*
        * 그림은 글자 수로 세지 않는다.
        *
        * 그림은 base64 로 실려 있어서 글로 세면 4MB 짜리 한 장이 150만 토큰으로
@@ -1170,7 +1185,9 @@ export class Session {
       // 도구 결과는 규격마다 다른 자리에 온다. `role` 만 보면 Anthropic 에서는
       // 도구 결과가 통째로 '대화' 로 세어져서, /context 가 「도구 결과 0 토큰」
       // 이라고 적는다 — 무엇을 접어야 할지 보라고 만든 표가 거꾸로 가리킨다.
-      if (도구결과인가(m)) { files += t; 도구결과수 += 1; } else history += t;
+      const 결과 = 도구결과인가(m);
+      if (m && typeof m === 'object') 메시지셈.set(m, { t, 결과 });
+      if (결과) { files += t; 도구결과수 += 1; } else history += t;
     }
 
     // 도구 정의도 매 요청에 실려 나간다. 세는 값이라기보다 '이미 나간 값' 이다.

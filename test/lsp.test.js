@@ -578,6 +578,21 @@ trace('5-도구');
   const 밖 = await runTool('Def', { name: '셈하기', file_path: '../../밖에것.js' }, ctx);
   check('폴더 밖은 막는다', !!밖.error && /범위/.test(밖.error), JSON.stringify(밖));
 
+  /*
+   * ── 옛 인코딩(EUC-KR) 파일 (2.1.1 검수) ───────────────────────────
+   *
+   * Read·Edit·Grep 은 encoding.js 로 CP949 를 알아보고 읽는데 Def·Refs 만 날 UTF-8 로 읽었다.
+   * 그 줄의 한글 이름이 깨진 글자(U+FFFD)가 되어 「그 줄에 없다」 로 실패했고, 서버에 보여 준
+   * 내용(didOpen)도 깨진 글이었다. 사내 옛 소스는 아직 EUC-KR 이 흔하다.
+   */
+  {
+    const { encode } = await import('../src/tools/encoding.js');
+    writeFileSync(join(root, 'src', '옛글.js'), encode('// 옛 글\nexport function 결제처리(금액) { return 금액; }\n', 'euc-kr').buf);
+    const 옛것 = await runTool('Def', { name: '결제처리', file_path: 'src/옛글.js', line: 2 }, ctx);
+    check('★★ EUC-KR 파일의 한글 이름도 그 줄에서 짚는다', !옛것.error, JSON.stringify(옛것).slice(0, 160));
+    rmSync(join(root, 'src', '옛글.js'), { force: true });
+  }
+
   check('이름이 비면 그렇다고 한다', !!(await runTool('Def', { name: '  ' }, ctx)).error);
   check('없는 이름은 못 찾았다고 한다',
     !!(await runTool('Def', { name: '이런건없다' }, ctx)).error, '');

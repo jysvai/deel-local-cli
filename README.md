@@ -396,7 +396,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.1.0  ⌂ inside
+ deel 2.1.1  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -660,7 +660,7 @@ Korean IME composition, paste, `Ctrl+A/E` and backspace all keep working.
 </picture>
 
 What you are working on changes **which tools the model is given and how hard it thinks.**
-Cycle with `Shift+Tab`, or type the name.
+Cycle with `Ctrl+O`, or type the name. (`Shift+Tab` cycles the approval policy.)
 
 | Mode | For | Can edit files | Reasoning |
 |---|---|---|---|
@@ -1415,7 +1415,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.1.0](docs/en/releases/2.1.md#210)** | Hand it off and it keeps going; make it ask and it shows the diff — a check decides when it is done (`check`), a golden set measures how much gets done (`deel eval`), and `"approval"` in the managed policy lets a company set an approval floor |
+| **[2.1.1](docs/en/releases/2.1.md#211)** | From a full review — `config explain` one level up showed keys, webhook URLs and Sentry DSNs passed both the shell-env filter and masking, `kill` stopped a Jobs server past strict, Def/Refs could not read EUC-KR, and `deel eval` fixes |
+| [2.1.0](docs/en/releases/2.1.md#210) | Hand it off and it keeps going; make it ask and it shows the diff — a check decides when it is done (`check`), a golden set measures how much gets done (`deel eval`), and `"approval"` in the managed policy lets a company set an approval floor |
 | [2.0.3](docs/en/releases/2.0.md#203) | 2.0.2 never reached npm — GitHub releases now appear only after npm has the version |
 | [2.0.2](docs/en/releases/2.0.md#202) | Everything 2.0.1 left open, closed — MCP tools missing only from `deel run`, `taskkill` sent to an exited command's pid, MCP servers that stayed down for the session after one crash |
 | [2.0.1](docs/en/releases/2.0.md#201) | One fence in 2.0.0 did not hold — `sudo -u root bash` walked through the `curl … \| bash` guard — and four gates could not go red |

@@ -28,6 +28,7 @@
 import { spawn } from 'node:child_process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
+import { decode } from '../tools/encoding.js';
 import { 갈래, 고르기, 언어아이디 } from './servers.js';
 import { 틀, 받개 } from './rpc.js';
 import { 신호에거두기, 다시보낼까 } from '../reap.js';
@@ -419,7 +420,8 @@ export class 언어서버 {
     const uri = pathToFileURL(abs).href;
     let 내용 = 글;
     if (내용 == null) {
-      try { 내용 = readFileSync(abs, 'utf8'); } catch { return null; }
+      // 도구(tools/lsp.js)와 같은 자로 읽는다 — EUC-KR 소스를 날 UTF-8 로 보여 주면 서버가 깨진 글을 색인한다.
+      try { 내용 = decode(readFileSync(abs)).text; } catch { return null; }
     }
     // 판 번호는 **경로**로 센다. 서버가 주소를 다르게 적어 돌려주므로
     // (pyright 의 `file:///c%3A/…`), 글자 그대로 열쇠를 삼으면 진단이 왔을 때

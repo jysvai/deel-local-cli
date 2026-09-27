@@ -192,6 +192,10 @@ const 뿌리 = mkdtempSync(join(tmpdir(), 'deel-approval-work-'));
   const 새줄 = 미리보기줄들(새).join('\n').replace(/\x1b\[[0-9;]*m/g, '');
   check('★ 새 파일이면 새 파일이라고 적는다', /새 파일|new file/.test(새줄), 새줄);
   check('★ 미리보기가 없으면 아무것도 안 그린다', 미리보기줄들([]).length === 0 && 미리보기줄들(undefined).length === 0);
+  // 같은 내용으로 다시 Write 하면 이름 한 줄만 떠서, 사람은 무언가 바뀌는 줄 알고 허락했다 (2.1.1 검수).
+  const 같은줄 = 미리보기줄들([{ 경로: 'a.txt', 보일경로: 'a.txt', 전: '하나\n', 후: '하나\n' }]).join('\n').replace(/\x1b\[[0-9;]*m/g, '');
+  check('★ 내용이 같으면 바뀌는 것이 없다고 적는다', /바뀌는 것 없음|no change/.test(같은줄), 같은줄);
+  check('  바뀌는 파일에는 그 말을 안 붙인다', !/바뀌는 것 없음|no change/.test(줄), 줄);
 
   // ── 2차 눈(Gemini) 판정 ──
   // Append 는 CRLF 파일에 붙일 때 조각도 CRLF 로 바꿔 쓴다. 미리보기만 LF 로 이어 붙여 「본 것 ≠ 쓰인 것」 이었다.
@@ -279,6 +283,18 @@ async function 돌리기(부름, { mode = 'strict', 답 = false, confirm없음 =
   check('★★ Jobs 로 출력을 읽는 것은 안 묻는다 (읽을 때마다 물으면 y 만 치게 된다)', !읽기.물음.length, JSON.stringify(읽기.물음.map((x) => x.이름)));
   const 끝냄 = await 돌리기({ 이름: 'Jobs', 인자: { job: 1, stop: true } });
   check('★★ Jobs 로 뒤에서 도는 명령을 끝내는 것은 묻는다', 끝냄.물음.some((x) => x.이름 === 'Jobs'), JSON.stringify(끝냄.물음.map((x) => x.이름)));
+  /*
+   * 관문이 `stop` 칸만 봤다. Jobs 도구는 작은 모델이 보내는 `kill` · `끝내기` 도 끄는 뜻으로
+   * 받는다(jobs.js 의 일감인자). 그래서 `{kill:true}` 는 strict 에서도 안 묻고 서버를 껐다.
+   * 반대로 `stop:"false"` 는 `!!` 로 참이 되어 안 끄는 부름을 물었다. 도구가 읽는 자로 가른다.
+   */
+  for (const [칸, 값] of [['kill', true], ['끝내기', true], ['stop', 'true']]) {
+    const 별칭 = await 돌리기({ 이름: 'Jobs', 인자: { job: 1, [칸]: 값 } });
+    check(`★★★ Jobs 를 ${칸}:${JSON.stringify(값)} 로 끝내도 묻는다 (도구가 끄는 뜻으로 받는 꼴)`,
+      별칭.물음.some((x) => x.이름 === 'Jobs'), JSON.stringify(별칭.물음.map((x) => x.이름)));
+  }
+  const 안끔 = await 돌리기({ 이름: 'Jobs', 인자: { job: 1, stop: 'false' } });
+  check('★ stop:"false" 는 끄는 부름이 아니라 안 묻는다', !안끔.물음.length, JSON.stringify(안끔.물음.map((x) => x.이름)));
 
   // 붙은 MCP 서버가 있어야 그 도구가 이번 목록에 실린다 (loop.js 의 실은mcp). 거절하니 실제로는 안 부른다.
   const 남의것 = await 돌리기({ 이름: 'mcp__srv__delete_all', 인자: {} },

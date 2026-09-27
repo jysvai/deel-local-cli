@@ -14020,8 +14020,8 @@
       "곳": "src/agent/loop.js",
       "무엇": "strict 가 옛 목록(Write·Edit·Bash)만 묻는다 (2.1.0)",
       "그러면": "strict 에서도 Append·Move 는 안 묻고 파일을 바꾼다 — 사람은 「파일 변경 전부를 묻는다」 고 알고 있다",
-      "찾을것": "        const 바꾸는것 = (call.name === 'Jobs' ? !!call.args?.stop : 바꾸는도구.includes(call.name))",
-      "바꿀것": "        const 바꾸는것 = (call.name === 'Jobs' ? !!call.args?.stop : ['Write', 'Edit', 'Bash'].includes(call.name))",
+      "찾을것": "        const 바꾸는것 = (call.name === 'Jobs' ? 일감인자(call.args).끝내기 === true : 바꾸는도구.includes(call.name))",
+      "바꿀것": "        const 바꾸는것 = (call.name === 'Jobs' ? 일감인자(call.args).끝내기 === true : ['Write', 'Edit', 'Bash'].includes(call.name))",
       "검사": "test/approval.test.js"
     },
     {
@@ -14348,8 +14348,8 @@
       "곳": "src/eval/run.js",
       "무엇": "과제별이 없는 결과 파일(`{}`)도 지난번으로 친다 (2.1.0 2차 눈 판정)",
       "그러면": "견줄 것이 없는데 「지난번과 같습니다」 가 나온다",
-      "찾을것": "      if (Array.isArray(값?.과제별)) return { 파일: f, 값 };",
-      "바꿀것": "      return { 파일: f, 값 };",
+      "찾을것": "      if (!Array.isArray(값?.과제별)) continue;",
+      "바꿀것": "",
       "검사": "test/eval.test.js"
     },
     {
@@ -14431,6 +14431,206 @@
       "찾을것": "        if (표몇군데(x.new_string)) continue;",
       "바꿀것": "",
       "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/configexplain.js",
+      "무엇": "config explain 이 객체 값 안의 비밀 칸을 파고들어 가린다 (2.1.1 검수)",
+      "그러면": "`profiles.사내` 처럼 한 칸 위를 물으면 apiKey·passphrase 가 평문으로 나온다",
+      "찾을것": "  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, 지운값(k, x)]));",
+      "바꿀것": "  if (v && typeof v === 'object') return v;",
+      "검사": "test/doctor.test.js"
+    },
+    {
+      "곳": "src/configexplain.js",
+      "무엇": "config explain 이 배열 값 안도 가린다 (2.1.1 검수)",
+      "그러면": "`profiles` 를 통째로 물으면 모든 프로필의 열쇠가 나온다",
+      "찾을것": "  if (Array.isArray(v)) return v.map((x) => 지운값('', x));",
+      "바꿀것": "  if (Array.isArray(v)) return v;",
+      "검사": "test/doctor.test.js"
+    },
+    {
+      "곳": "src/configexplain.js",
+      "무엇": "config explain 이 주소의 사람:암호@ 를 가린다 (2.1.1 검수)",
+      "그러면": "`deel config explain proxy` 가 사내 프록시 암호를 그대로 그린다",
+      "찾을것": "  if (typeof v === 'string') return 주소꼴.test(v.trim()) ? 주소가리기(v) : v;",
+      "바꿀것": "  if (typeof v === 'string') return v;",
+      "검사": "test/doctor.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "strict 의 Jobs 끄기 판정이 도구와 같은 자(일감인자)로 본다 (2.1.1 검수)",
+      "그러면": "`{kill:true}` · `{끝내기:true}` 로 뒤에서 도는 서버를 묻지 않고 끈다",
+      "찾을것": "        const 바꾸는것 = (call.name === 'Jobs' ? 일감인자(call.args).끝내기 === true : 바꾸는도구.includes(call.name))",
+      "바꿀것": "        const 바꾸는것 = (call.name === 'Jobs' ? !!call.args?.stop : 바꾸는도구.includes(call.name))",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/safety/secrets.js",
+      "무엇": "가리기가 Slack 웹훅 주소를 안다 (2.1.1 검수)",
+      "그러면": "`env` 한 줄에 사내 슬랙 채널에 아무나 글을 올릴 주소가 실려 나간다",
+      "찾을것": "  String.raw`\\bhttps:\\/\\/hooks\\.slack\\.com\\/(?:services|workflows|triggers)\\/`,",
+      "바꿀것": "",
+      "검사": "test/secrets.test.js"
+    },
+    {
+      "곳": "src/safety/secrets.js",
+      "무엇": "가리기가 Sentry DSN 의 공개 열쇠를 안다 (2.1.1 검수)",
+      "그러면": "DSN 이 도구 결과에 그대로 실린다",
+      "찾을것": "    re: /(\\bhttps?:\\/\\/)[0-9a-f]{32}(?::[0-9a-f]{32})?@/gi,",
+      "바꿀것": "    re: /(\\bhttps?:\\/\\/)[0-9a-f]{64}(?::[0-9a-f]{32})?@/gi,",
+      "검사": "test/secrets.test.js"
+    },
+    {
+      "곳": "src/safety/shellenv.js",
+      "무엇": "셸 환경이 웹훅 주소·DSN 값을 거른다 (2.1.1 검수)",
+      "그러면": "SLACK_WEBHOOK_URL · TEAMS_URL · SENTRY_DSN 이 자식 셸에 그대로 넘어간다",
+      "찾을것": "  return typeof 값 === 'string' && (자격든주소.test(값.trim()) || 웹훅주소인가(값));",
+      "바꿀것": "  return typeof 값 === 'string' && 자격든주소.test(값.trim());",
+      "검사": "test/shellenv.test.js"
+    },
+    {
+      "곳": "src/tools/lsp.js",
+      "무엇": "Def·Refs 가 소스를 encoding.js 로 읽는다 (2.1.1 검수)",
+      "그러면": "EUC-KR 소스의 한글 이름을 「그 줄에 없다」 로 못 찾는다",
+      "찾을것": "const 소스읽기 = (abs) => decode(readFileSync(abs)).text;",
+      "바꿀것": "const 소스읽기 = (abs) => readFileSync(abs, 'utf8');",
+      "검사": "test/lsp.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "전체 판은 --only 로 돈 결과를 지난번으로 안 친다 (2.1.1 검수)",
+      "그러면": "`--only a` 한 번 뒤의 전체 판이 과제 하나만 견주고 「지난번과 같습니다」 라 한다",
+      "찾을것": "      if (전체만 && 값.only) continue;",
+      "바꿀것": "",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "--only 는 딱 맞는 이름이 있으면 그것만 고른다 (2.1.1 검수)",
+      "그러면": "`--only task-1` 이 task-10 까지 돌린다",
+      "찾을것": "  return 과제들.filter((x) => 고를것.some((k) => (과제들.some((y) => y.이름 === k) ? x.이름 === k : x.이름.includes(k))));",
+      "바꿀것": "  return 과제들.filter((x) => 고를것.some((k) => x.이름.includes(k)));",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "과제 하나가 터져도 그 과제만 실패로 센다 (2.1.1 검수)",
+      "그러면": "정답 복사가 터지면 남은 과제를 다 버리고 결과 파일도 안 남긴다",
+      "찾을것": "    return await 돌리개(과제, 옵션);",
+      "바꿀것": "    return 돌리개(과제, 옵션);",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "일부만 돈 결과에 무엇을 골랐는지 적는다 (2.1.1 검수)",
+      "그러면": "다음 전체 판이 부분 결과를 지난번으로 집는다",
+      "찾을것": "    ...(only ? { only: String(only) } : {}),",
+      "바꿀것": "",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "결과 파일을 못 남기면 말한다 (2.1.1 검수)",
+      "그러면": "사람은 다음 판에 견줄 것이 있는 줄 안다",
+      "찾을것": "    else 말하기(`  ${c.yellow('⚠')} ${알림}`);",
+      "바꿀것": "    else 말하기('');",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/starter.js",
+      "무엇": "예제 03 의 정답 검사가 폴더를 건너뛴다 (2.1.1 검수)",
+      "그러면": "모델이 src/ 밑에 백업 폴더를 만들면 맞게 고쳐도 EISDIR 로 떨어진다",
+      "찾을것": "      'golden-check.mjs': \"import assert from 'node:assert/strict';\\nimport { readdirSync, readFileSync } from 'node:fs';\\nimport { fetchUser } from './src/user.js';\\nimport { profileName } from './src/profile.js';\\nimport { isAdmin } from './src/admin.js';\\n\\nassert.deepEqual(fetchUser(3), { id: 3, name: 'user3' });\\nassert.equal(profileName(3), 'user3');\\nassert.equal(isAdmin(0), true);\\nassert.equal(isAdmin(1), false);\\nconst 파일들 = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? 파일들(d + '/' + e.name) : e.isFile() ? [d + '/' + e.name] : []));\\nconst 남은 = 파일들('src').filter((f) => readFileSync(f, 'utf8').includes('getUser'));\\nassert.deepEqual(남은, [], '옛 이름이 남은 파일: ' + 남은.join(', '));\\nconsole.log('ok');\\n\",",
+      "바꿀것": "      'golden-check.mjs': \"import assert from 'node:assert/strict';\\nimport { readdirSync, readFileSync } from 'node:fs';\\nimport { fetchUser } from './src/user.js';\\nimport { profileName } from './src/profile.js';\\nimport { isAdmin } from './src/admin.js';\\n\\nassert.deepEqual(fetchUser(3), { id: 3, name: 'user3' });\\nassert.equal(profileName(3), 'user3');\\nassert.equal(isAdmin(0), true);\\nassert.equal(isAdmin(1), false);\\nconst 파일들 = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => [d + '/' + e.name]);\\nconst 남은 = 파일들('src').filter((f) => readFileSync(f, 'utf8').includes('getUser'));\\nassert.deepEqual(남은, [], '옛 이름이 남은 파일: ' + 남은.join(', '));\\nconsole.log('ok');\\n\",",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/agent/donecheck.js",
+      "무엇": "완료 검사 시간이 상한에 걸려 줄면 적어 둔다 (2.1.1 검수)",
+      "그러면": "checkTimeout 1200 이 말없이 600초로 잘려 「시간 초과」 실패로 판수를 다 쓴다",
+      "찾을것": "  if (Number.isFinite(초) && 초 * 1000 > 기본시간) 줄임.push({ 칸: 'checkTimeout', 준값: 초, 쓴값: 기본시간 / 1000 });",
+      "바꿀것": "",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "줄인 완료 검사 설정을 첫 시작 사건에 싣는다 (2.1.1 검수)",
+      "그러면": "적어 둔 줄임이 화면까지 안 간다",
+      "찾을것": "    yield { type: 'check_start', 명령, 판, 최대, ...(판 === 1 && 완료검사.줄임?.length ? { 줄임: 완료검사.줄임 } : {}) };",
+      "바꿀것": "    yield { type: 'check_start', 명령, 판, 최대 };",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "deel run 의 검사 실패 꼬리는 빈 줄을 거르고 자른다 (2.1.1 검수)",
+      "그러면": "원인 줄 뒤에 빈 줄이 여럿이면 원인이 화면에서 사라진다",
+      "찾을것": "            for (const 줄 of String(ev.꼬리 ?? '').trim().split('\\n').filter((l) => l.trim()).slice(-8)) 곁(`     ${c.gray(줄)}`);",
+      "바꿀것": "            for (const 줄 of String(ev.꼬리 ?? '').trim().split('\\n').slice(-8)) if (줄.trim()) 곁(`     ${c.gray(줄)}`);",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/ui/approve.js",
+      "무엇": "내용이 같은 쓰기는 미리보기에 「바뀌는 것 없음」 을 적는다 (2.1.1 검수)",
+      "그러면": "이름 한 줄만 떠서 사람은 무언가 바뀌는 줄 알고 허락한다",
+      "찾을것": "    const 딸린말 = 것.전 === null ? ` (${말('approve.newFile')})` : 것.전 === 것.후 ? ` (${말('approve.noChange')})` : '';",
+      "바꿀것": "    const 딸린말 = 것.전 === null ? ` (${말('approve.newFile')})` : '';",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/plugins/manage.js",
+      "무엇": "점으로 시작하는 플러그인 이름을 안 쓴다 (2.1.1 검수)",
+      "그러면": "`.hidden` 으로 깔려 목록에서 영영 안 보인다",
+      "찾을것": "  if (!점허용 && 한칸.startsWith('.')) return null;",
+      "바꿀것": "",
+      "검사": "test/plugins.test.js"
+    },
+    {
+      "곳": "src/plugins/manage.js",
+      "무엇": "지우기는 점 이름을 받는다 (2.1.1 검수)",
+      "그러면": "점 이름을 막기 전에 깔린 것을 지울 길이 없다",
+      "찾을것": "  const 한칸 = 이름한칸(name, { 점허용: true });",
+      "바꿀것": "  const 한칸 = 이름한칸(name);",
+      "검사": "test/plugins.test.js"
+    },
+    {
+      "곳": "src/completion.js",
+      "무엇": "deel eval --init 을 완성한다 (2.1.1 검수)",
+      "그러면": "도움말이 먼저 권하는 깃발이 탭에 안 뜬다",
+      "찾을것": "  { 이름: '--init', 뜻: 'eval: 예제 과제를 만든다', en: 'eval: write the example tasks', 값: false },",
+      "바꿀것": "",
+      "검사": "test/completion.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "상태줄 셈은 한 번 센 메시지를 다시 안 센다 (2.1.1 검수)",
+      "그러면": "일하는 동안 90ms 마다 대화 전체를 글자 단위로 다시 훑는다",
+      "찾을것": "      if (m && typeof m === 'object') 메시지셈.set(m, { t, 결과 });",
+      "바꿀것": "",
+      "검사": "test/statusbar.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "일부만 도는 판은 지금 과제가 든 결과까지 거슬러 찾는다 (2.1.1 2차 눈)",
+      "그러면": "`--only a` 뒤의 `--only b` 가 a 만 든 판을 집어 겹치는 과제 없이 「지난번과 같습니다」 라 한다",
+      "찾을것": "      if (이름들 && !값.과제별.some((x) => 이름들.includes(x?.과제))) continue;",
+      "바꿀것": "",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "견주기가 몇 과제를 견줬는지 센다 (2.1.1 2차 눈)",
+      "그러면": "견준 과제가 없어도 「지난번과 같습니다」 라 한다",
+      "찾을것": "    견준 += 1;",
+      "바꿀것": "",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/starter.js",
+      "무엇": "예제 03 의 정답 검사가 하위 폴더까지 본다 (2.1.1 2차 눈)",
+      "그러면": "src/lib/ 에 옛 이름이 남아도 통과한다",
+      "찾을것": "      'golden-check.mjs': \"import assert from 'node:assert/strict';\\nimport { readdirSync, readFileSync } from 'node:fs';\\nimport { fetchUser } from './src/user.js';\\nimport { profileName } from './src/profile.js';\\nimport { isAdmin } from './src/admin.js';\\n\\nassert.deepEqual(fetchUser(3), { id: 3, name: 'user3' });\\nassert.equal(profileName(3), 'user3');\\nassert.equal(isAdmin(0), true);\\nassert.equal(isAdmin(1), false);\\nconst 파일들 = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? 파일들(d + '/' + e.name) : e.isFile() ? [d + '/' + e.name] : []));\\nconst 남은 = 파일들('src').filter((f) => readFileSync(f, 'utf8').includes('getUser'));\\nassert.deepEqual(남은, [], '옛 이름이 남은 파일: ' + 남은.join(', '));\\nconsole.log('ok');\\n\",",
+      "바꿀것": "      'golden-check.mjs': \"import assert from 'node:assert/strict';\\nimport { readdirSync, readFileSync } from 'node:fs';\\nimport { fetchUser } from './src/user.js';\\nimport { profileName } from './src/profile.js';\\nimport { isAdmin } from './src/admin.js';\\n\\nassert.deepEqual(fetchUser(3), { id: 3, name: 'user3' });\\nassert.equal(profileName(3), 'user3');\\nassert.equal(isAdmin(0), true);\\nassert.equal(isAdmin(1), false);\\nconst 파일들 = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? [] : e.isFile() ? [d + '/' + e.name] : []));\\nconst 남은 = 파일들('src').filter((f) => readFileSync(f, 'utf8').includes('getUser'));\\nassert.deepEqual(남은, [], '옛 이름이 남은 파일: ' + 남은.join(', '));\\nconsole.log('ok');\\n\",",
+      "검사": "test/eval.test.js"
     }
   ]
 }

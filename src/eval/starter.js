@@ -58,7 +58,7 @@ export const 예제과제 = {
       'src/admin.js': "import { getUser } from './user.js';\n\nexport function isAdmin(id) {\n  return getUser(id).id === 0;\n}\n",
     },
     golden: {
-      'golden-check.mjs': "import assert from 'node:assert/strict';\nimport { readdirSync, readFileSync } from 'node:fs';\nimport { fetchUser } from './src/user.js';\nimport { profileName } from './src/profile.js';\nimport { isAdmin } from './src/admin.js';\n\nassert.deepEqual(fetchUser(3), { id: 3, name: 'user3' });\nassert.equal(profileName(3), 'user3');\nassert.equal(isAdmin(0), true);\nassert.equal(isAdmin(1), false);\nconst 남은 = readdirSync('src').filter((f) => readFileSync('src/' + f, 'utf8').includes('getUser'));\nassert.deepEqual(남은, [], '옛 이름이 남은 파일: ' + 남은.join(', '));\nconsole.log('ok');\n",
+      'golden-check.mjs': "import assert from 'node:assert/strict';\nimport { readdirSync, readFileSync } from 'node:fs';\nimport { fetchUser } from './src/user.js';\nimport { profileName } from './src/profile.js';\nimport { isAdmin } from './src/admin.js';\n\nassert.deepEqual(fetchUser(3), { id: 3, name: 'user3' });\nassert.equal(profileName(3), 'user3');\nassert.equal(isAdmin(0), true);\nassert.equal(isAdmin(1), false);\nconst 파일들 = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? 파일들(d + '/' + e.name) : e.isFile() ? [d + '/' + e.name] : []));\nconst 남은 = 파일들('src').filter((f) => readFileSync(f, 'utf8').includes('getUser'));\nassert.deepEqual(남은, [], '옛 이름이 남은 파일: ' + 남은.join(', '));\nconsole.log('ok');\n",
     },
   },
   '04-빨간검사고치기': {

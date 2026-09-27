@@ -203,6 +203,28 @@ trace('5b-붙여쓴이름');
     셸환경({ DATABASE_URL: 'postgres://u:p@h/db' }, { 남길것: ['DATABASE_URL'] }).env.DATABASE_URL === 'postgres://u:p@h/db', '');
 }
 
+// ── 웹훅 · DSN — 주소 자체가 열쇠 (2.1.1 검수) ──────────────────────────
+//
+// 이름에 KEY·TOKEN 이 없고 값에 사람:암호@ 도 없어서 셋 다 자식 셸에 그대로 넘어갔다.
+// 모델이 `env` 한 줄만 쳐도 사내 슬랙 채널에 아무나 글을 올릴 주소가 대화로 나간다.
+// 가짜 값은 소스에서만 나눠 적는다 — GitHub 푸시 보호가 꼴만 보고 진짜 웹훅으로 읽어 막는다.
+{
+  const { env, 뺀것 } = 셸환경({
+    SLACK_WEBHOOK_URL: `https://hooks.${'slack'}.com/services/T0/B0/xxxxxxxxxxxxxxxx`,
+    DISCORD_WEBHOOK: `https://discord.com/api/${'webhooks'}/1/abcdefgh`,
+    TEAMS_URL: `https://contoso.${'webhook'}.office.com/webhookb2/aaaa/IncomingWebhook/bbbb/cccc`,
+    SENTRY_DSN: `https://0123456789abcdef0123456789abcdef@o1.${'ingest'}.sentry.io/42`,
+    slackWebhookUrl: `https://hooks.${'slack'}.com/services/T1/B1/yyyyyyyyyyyyyyyy`,
+    WEBHOOK_TIMEOUT_MS: '5000',
+    PUBLIC_URL: 'https://example.com',
+  });
+  for (const 이름 of ['SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK', 'TEAMS_URL', 'SENTRY_DSN', 'slackWebhookUrl']) {
+    check(`★★ ${이름} 은 넘기지 않는다`, env[이름] === undefined && 뺀것.includes(이름), JSON.stringify(Object.keys(env)));
+  }
+  check('  웹훅 주소가 아닌 값은 이름에 WEBHOOK 이 있어도 넘긴다 (설정값이다)', env.WEBHOOK_TIMEOUT_MS === '5000', JSON.stringify(env));
+  check('  평범한 주소는 그대로', env.PUBLIC_URL === 'https://example.com', JSON.stringify(env));
+}
+
 trace('6-이상한값');
 
 // ── 이상한 것에 안 죽는다 ───────────────────────────────────────────────

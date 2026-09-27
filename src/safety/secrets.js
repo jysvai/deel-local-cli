@@ -34,6 +34,26 @@
 /** 가려진 자리에 남는 표. 종류를 같이 적어 무엇이 가려졌는지 알 수 있게 한다. */
 const 표 = (종류) => `«가림:${종류}»`;
 
+/*
+ * 웹훅 주소의 머리 — 여기까지는 누구 것이든 같고, 뒤가 열쇠다.
+ * 가리기(아래 갈래 의 웹훅)와 셸 환경 거르기(shellenv.js)가 이 한 벌을 같이 쓴다. 두 벌이면
+ * 한쪽에만 새 서비스를 더하고 다른 쪽은 새는 날이 반드시 온다.
+ */
+const 웹훅머리 = [
+  String.raw`\bhttps:\/\/hooks\.slack\.com\/(?:services|workflows|triggers)\/`,
+  String.raw`\bhttps:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/`,
+  String.raw`\bhttps:\/\/[\w-]+\.webhook\.office\.com\/webhookb2\/`,
+  String.raw`\bhttps:\/\/outlook\.office(?:365)?\.com\/webhook\/`,
+].join('|');
+const 웹훅주소무늬 = new RegExp(`^(?:${웹훅머리})[^\\s"'<>]{6,}`, 'i');
+const 센트리무늬 = /^https?:\/\/[0-9a-f]{32}(?::[0-9a-f]{32})?@/i;
+
+/** 값이 웹훅 주소나 Sentry DSN 인가 — 이름으로는 못 거르는 비밀. shellenv.js 가 쓴다. */
+export function 웹훅주소인가(값) {
+  const s = typeof 값 === 'string' ? 값.trim() : '';
+  return 웹훅주소무늬.test(s) || 센트리무늬.test(s);
+}
+
 /**
  * 찾는 것들.
  *
@@ -207,6 +227,23 @@ export const 갈래 = [
   { id: 'openai', re: /\bsk-[A-Za-z0-9_-]{20,}/g },
   { id: 'github', re: /\b(?:gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,})\b/g },
   { id: 'slack', re: /\bxox[baprs]-[A-Za-z0-9-]{10,}/g },
+  {
+    /*
+     * 웹훅 주소 — 주소 **자체가** 열쇠다. 아는 사람은 누구나 그 채널에 글을 올린다.
+     * 이름(SLACK_WEBHOOK_URL)도 값의 꼴(사람:암호@)도 비밀이라고 말하지 않아서 `env` 한 줄에
+     * 그대로 실렸다 (2.1.1 검수). 호스트와 갈래(services/…)는 남긴다 — 어디로 가는 주소인지는
+     * 사람이 봐야 한다. 셸 환경(shellenv.js)도 같은 자(웹훅주소)로 값을 거른다.
+     */
+    id: '웹훅',
+    re: new RegExp(`(${웹훅머리})[^\\s"'<>]{6,}`, 'gi'),
+    바꾸기: (m, 앞) => `${앞}${표('웹훅')}`,
+  },
+  {
+    // Sentry DSN — `https://<공개열쇠 32자>@o1.ingest.sentry.io/42`. 비밀번호 칸이 없어 주소속열쇠 에 안 걸린다.
+    id: 'sentry',
+    re: /(\bhttps?:\/\/)[0-9a-f]{32}(?::[0-9a-f]{32})?@/gi,
+    바꾸기: (m, 앞) => `${앞}${표('sentry')}@`,
+  },
   { id: 'aws', re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
   { id: 'google', re: /\bAIza[0-9A-Za-z_-]{35}\b/g },
   // `stripe.setKey("sk_live_…")` 처럼 이름이 비밀을 말하지 않는 자리는 값의 꼴로만 안다(2.0.0 3회차 사냥).

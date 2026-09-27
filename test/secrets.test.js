@@ -1640,6 +1640,32 @@ trace('비밀6-코드를-안-뭉갠다');
   }
 }
 
+// ── 웹훅 주소 · Sentry DSN (2.1.1 검수) ─────────────────────────────────
+//
+// 주소 **자체가** 열쇠다 — 아는 사람은 누구나 그 채널에 글을 올린다. 이름(SLACK_WEBHOOK_URL)도
+// 값의 꼴(사람:암호@)도 비밀이라 말하지 않아서, `env` 한 줄·설정 파일 읽기에 그대로 실렸다.
+// 가짜 값은 소스에서만 나눠 적는다 — GitHub 푸시 보호가 꼴만 보고 진짜 웹훅으로 읽어 막는다(위 가짜라이브 와 같은 까닭).
+{
+  const 웹훅들 = [
+    [`https://hooks.${'slack'}.com/services/T0AAAAAAA/B0BBBBBBB/abcdefghijklmnopqrstuvwx`, 'abcdefghijklmnopqrstuvwx', 'hooks.slack.com'],
+    [`https://hooks.${'slack'}.com/workflows/T0AAAAAAA/A0CCCCCCC/123456789/zyxwvutsrqpo`, 'zyxwvutsrqpo', 'hooks.slack.com'],
+    [`https://discord.com/api/${'webhooks'}/123456789012345678/Abc-Def_ghiJKLmnoPQR`, 'Abc-Def_ghiJKLmnoPQR', 'discord.com'],
+    [`https://discordapp.com/api/${'webhooks'}/123456789012345678/Abc-Def_ghiJKLmnoPQR`, 'Abc-Def_ghiJKLmnoPQR', 'discordapp.com'],
+    [`https://contoso.${'webhook'}.office.com/webhookb2/aaaa-bbbb@cccc/IncomingWebhook/dddd/eeee`, 'IncomingWebhook/dddd', 'webhook.office.com'],
+    [`SENTRY_DSN=https://0123456789abcdef0123456789abcdef@o12345.${'ingest'}.sentry.io/42`, '0123456789abcdef0123456789abcdef', 'ingest.sentry.io'],
+  ];
+  for (const [줄, 비밀, 호스트] of 웹훅들) {
+    const r = 가리기(줄);
+    check(`★★ 웹훅·DSN 을 가린다 — ${호스트}`, !r.글.includes(비밀) && r.가린것.length > 0, r.글);
+    check(`  호스트는 남긴다 — ${호스트}`, r.글.includes(호스트), r.글);
+  }
+  // 웹훅이 아닌 같은 호스트의 주소는 안 건드린다 — 문서 링크를 가리면 모델이 헛짚는다.
+  for (const 줄 of ['https://api.slack.com/messaging/webhooks', 'https://discord.com/developers/docs/resources/webhook',
+    'https://docs.sentry.io/platforms/javascript/', 'https://github.com/org/repo/blob/main/README.md']) {
+    check(`  웹훅 아닌 주소는 그대로 — ${줄}`, 가리기(줄).글 === 줄, 가리기(줄).글);
+  }
+}
+
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;

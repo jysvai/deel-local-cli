@@ -92,6 +92,10 @@ export const 깃발들 = [
   { 이름: '--json', 뜻: '결과를 JSON 으로', en: 'output JSON', 값: false },
   { 이름: '--check', 뜻: 'run: 끝내기 전에 돌릴 검사 명령', en: 'run: check command to pass before finishing', 값: null },
   { 이름: '--repeat', 뜻: 'eval: 과제마다 몇 번 돌릴까', en: 'eval: runs per task', 값: null },
+  { 이름: '--init', 뜻: 'eval: 예제 과제를 만든다', en: 'eval: write the example tasks', 값: false },
+  { 이름: '--only', 뜻: 'eval: 고른 과제만 (쉼표) · sbom: 한 가지만', en: 'eval: only these tasks (comma); sbom: only one part', 값: null },
+  { 이름: '--keep', 뜻: 'eval: 작업 폴더를 남긴다', en: 'eval: keep the work folders', 값: false },
+  { 이름: '--timeout', 뜻: 'eval: 과제 하나의 제한 시간(초)', en: 'eval: time limit per task (seconds)', 값: null },
   { 이름: '--days', 뜻: 'stats 에서 볼 기간(일)', en: 'stats: how many days back', 값: null },
   { 이름: '--all', 뜻: 'stats 에서 기간을 안 자름', en: 'stats: no time window', 값: false },
   // 값이 파일이라 셸이 파일을 완성해 줘야 한다. 목록으로 못 준다 —

@@ -903,6 +903,7 @@ export async function acp(opts = {}) {
           // 완료 검사 (agent/donecheck.js). 에디터에도 무엇을 돌렸고 어떻게 됐는지 적는다.
           case 'check_start':
             말하기(`\n\n_(${옮긴말('check.start', { 판: ev.판, 최대: ev.최대, 명령: ev.명령 })})_\n\n`);
+            for (const 줄 of ev.줄임 ?? []) 말하기(`_(${옮긴말('check.clamped', 줄)})_\n\n`);
             break;
 
           case 'check':

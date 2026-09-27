@@ -247,7 +247,7 @@ async function fetchInto(spec, dest, onStep) {
  * 이 함수가 없으면 tar 엔트리 이름을 아무리 잘 막아도 소용이 없다. 묶음이
  * **제 이름으로** 나가기 때문이다.
  */
-export function 이름한칸(이름) {
+export function 이름한칸(이름, { 점허용 = false } = {}) {
   const 글 = String(이름 ?? '').replace(/\\/g, '/').trim();
   if (!글) return null;
   // 마지막 칸만 쓴다. `a/b/../c` 같은 것도 여기서 한 칸이 된다.
@@ -266,6 +266,12 @@ export function 이름한칸(이름) {
    */
   if (/[<>"|?*]/.test(한칸) || [...한칸].some((ch) => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127)) return null;
   if (/[. ]$/.test(한칸)) return null;
+  /*
+   * 점으로 **시작**하는 이름도 안 된다. 깔리기는 하는데 list()·이름으로찾기() 가 점 이름을 숨겨서
+   * (`.tmp-*`·`.old-*` 를 가리려고 둔 규칙) 영영 안 보이고, 스킬 찾기도 점 폴더를 안 내려간다 (2.1.1 검수).
+   * 지우는 자리(remove)만 `점허용` 으로 받는다 — 이 막이 전에 깔린 것을 폴더 이름으로 지울 길은 남긴다.
+   */
+  if (!점허용 && 한칸.startsWith('.')) return null;
   if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i.test(한칸)) return null;
   if (한칸.length > 100) return null;
   return 한칸;
@@ -515,7 +521,7 @@ export function remove(name, { home = homeDir() } = {}) {
    * 설치 때 막아도 이미 깔려 있던 것에는 못 쓴 이름이 남아 있을 수 있다.
    */
   const base = pluginsDir(home);
-  const 한칸 = 이름한칸(name);
+  const 한칸 = 이름한칸(name, { 점허용: true });
   const 찾는이름 = String(name ?? '').trim();
   /*
    * 폴더 이름으로 못 찾으면 **매니페스트 이름**으로 찾는다. 목록(list)은 매니페스트

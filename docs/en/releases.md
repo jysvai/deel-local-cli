@@ -9,7 +9,8 @@ and everything before it is **collected into one**.
 
 | | Where | What |
 |---|---|---|
-| **Current** | **[2.1.x](releases/2.1.md)** | [2.1.0](releases/2.1.md#210) — Hand it off and it keeps going; make it ask and it shows the diff — and a check decides when it is done |
+| **Current** | **[2.1.x](releases/2.1.md)** | [2.1.1](releases/2.1.md#211) — From a full review — ask one level up and the key showed, and webhook URLs went out as they were |
+| | | [2.1.0](releases/2.1.md#210) — Hand it off and it keeps going; make it ask and it shows the diff — and a check decides when it is done |
 | Previous | [2.0.x](releases/2.0.md) | [2.0.3](releases/2.0.md#203) — 2.0.2 never reached npm — GitHub releases now appear only after npm has the version |
 | | | [2.0.2](releases/2.0.md#202) — Everything 2.0.1 left as low, deferred or unmeasured, closed |
 | | | [2.0.1](releases/2.0.md#201) — One fence in 2.0.0 did not hold, and four gates were guarding nothing |

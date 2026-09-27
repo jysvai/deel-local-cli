@@ -993,7 +993,9 @@ trace('8-플러그인이름');
     mkdirSync(join(폴더, 'skills', 's1'), { recursive: true });
     writeFileSync(join(폴더, 'skills', 's1', 'SKILL.md'), '---\nname: s1\ndescription: d\n---\nbody', 'utf8');
   };
-  const 나쁜것들 = ['a*b', 'a?b', `x${String.fromCharCode(0)}y`, 'a<b', 'a|b', 'a"b', 'CON', 'nul.txt', 'COM1', 'keep.', 'x'.repeat(300)];
+  // `.hidden` — 점으로 시작하면 깔리기는 하는데 list()·이름으로찾기() 가 점 이름을 안 봐서 영영 안 보였다
+  // (`.tmp-*`·`.old-*` 를 숨기려고 둔 규칙이다). 스킬 찾기도 점 폴더를 안 내려간다 (2.1.1 검수).
+  const 나쁜것들 = ['a*b', 'a?b', `x${String.fromCharCode(0)}y`, 'a<b', 'a|b', 'a"b', 'CON', 'nul.txt', 'COM1', 'keep.', 'x'.repeat(300), '.hidden'];
   for (const [i, 나쁜] of 나쁜것들.entries()) {
     const 폴더 = join(이름집, `src${i}`);
     만들기(폴더, 나쁜);
@@ -1018,6 +1020,11 @@ trace('8-플러그인이름');
   const 점목록 = list({ home: 살림 }).find((p) => p.path === 점점);
   check('★★ 폴더 이름으로 못 쓸 매니페스트 이름은 목록에 폴더 이름으로 보인다', 점목록?.name === 'dotdot', JSON.stringify(점목록?.name));
   check('★★ 그리고 그 이름으로 지운다', !remove(점목록?.name ?? '', { home: 살림 }).error && !existsSync(점점), '');
+  // 점 이름을 막기 전에 깔린 `.hidden` 폴더는 폴더 이름으로 지울 길이 남아 있어야 한다.
+  const 옛점 = join(pluginsDir(살림), '.hidden-old');
+  만들기(옛점, '.hidden-old');
+  check('★ 점 이름을 막기 전에 깔린 것은 폴더 이름으로 지운다', !remove('.hidden-old', { home: 살림 }).error && !existsSync(옛점),
+    existsSync(옛점) ? '남음' : '');
   for (const 둘 of ['twin-a', 'twin-b']) 만들기(join(pluginsDir(살림), 둘), 'twin');
   const 둘지움 = remove('twin', { home: 살림 });
   check('★★ 매니페스트 이름이 둘이면 아무것도 안 지우고 폴더 이름을 대라고 한다',

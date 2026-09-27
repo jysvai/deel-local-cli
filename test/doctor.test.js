@@ -360,6 +360,42 @@ trace('7-설명');
 
   {
     /*
+     * ── 한 칸 위를 물으면 통째로 나왔다 ──────────────────────────────
+     *
+     * 가리기가 **끝 칸 이름**만 봤다. `profiles.사내` 처럼 한 칸 위에서 멈추면 값이 객체라
+     * 끝 칸이 `사내` 이고, 그 객체를 JSON 으로 그대로 그렸다 — 안에 든 apiKey 와 인증서
+     * passphrase 가 화면과 `--json` 에 평문으로 실렸다. 도움말 예시가 `profiles.사내.model`
+     * 이라 한 칸 앞에서 멈추는 것은 흔한 실수다.
+     *
+     * 프록시·주소에 적힌 `사람:암호@` 도 같다. doctor 는 주소가리기 로 가리는데 이 화면만
+     * 날것을 냈다.
+     */
+    writeFileSync(join(집, 'config.json'), JSON.stringify({
+      proxy: 'http://u:프록시암호@proxy.local:8080',
+      profiles: [{ name: '사내', model: 'm', apiKey: 'sk-통째로-5678', 인증서: { passphrase: '인증서암호-9' } }],
+    }), 'utf8');
+    const 통 = 설명('profiles.사내', { root: 방, env: process.env });
+    const 통글 = JSON.stringify(통) + JSON.stringify(설명줄들(통));
+    check('★★ 객체째 물어도 안에 든 열쇠는 안 실린다', !통글.includes('sk-통째로'), 통글.slice(0, 300));
+    check('★★ 객체 안 깊이 든 passphrase 도 안 실린다', !통글.includes('인증서암호'), 통글.slice(0, 300));
+    check('★ 비밀 아닌 칸은 그대로 보인다 (통째로 가리면 이 화면이 쓸모없다)', 통글.includes('"model":"m"'), 통글.slice(0, 300));
+    const 모두 = 설명('profiles', { root: 방, env: process.env });
+    check('★★ 목록째 물어도 안 실린다', !JSON.stringify(모두).includes('sk-통째로'), JSON.stringify(모두.이긴층?.값));
+    const 프록시 = 설명('proxy', { root: 방, env: process.env });
+    const 프록시글 = JSON.stringify(프록시) + JSON.stringify(설명줄들(프록시));
+    check('★★ 프록시 주소의 사람:암호 는 가린다', !프록시글.includes('프록시암호'), 프록시글.slice(0, 300));
+    check('★ 프록시 호스트·포트는 남긴다 (어디로 가는지는 봐야 한다)', 프록시글.includes('proxy.local:8080'), 프록시글.slice(0, 300));
+    process.env.HTTPS_PROXY = 'http://u:환경암호@p.local:3128';
+    try {
+      const 환경 = 설명('proxy', { root: 방, env: process.env });
+      check('★★ 환경변수로 받은 프록시 암호도 가린다', !JSON.stringify(환경).includes('환경암호'), JSON.stringify(환경.이긴층));
+    } finally {
+      delete process.env.HTTPS_PROXY;
+    }
+  }
+
+  {
+    /*
      * ── 지금 이기고 있는 `DEEL_KEY_<ID>` 를 아예 안 그렸다 ────────────
      *
      * 환경변수 표에 적힌 이름이 `DEEL_KEY_<프로필ID>` 라는 **틀**이라, `<` 가 든

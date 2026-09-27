@@ -59,7 +59,15 @@ export function 검사설정(cfg = {}, 덮을명령 = undefined) {
   const 판수 = Number.isInteger(n) && n >= 1 ? Math.min(n, 최대판수) : 기본판수;
   const 초 = Number(cfg?.checkTimeout);
   const 시간 = Number.isFinite(초) && 초 > 0 ? Math.min(기본시간, Math.max(최소시간, Math.round(초 * 1000))) : 기본시간;
-  return { 명령, 판수, 시간 };
+  /*
+   * 상한을 넘겨 **줄인 것**은 적어 둔다 — 첫 검사 시작 사건에 실려 화면이 말한다.
+   * 느린 통합 검사라 1200초를 적었는데 600초에서 잘려 「시간 초과」 로 판수를 다 쓰면, 사람은
+   * 검사가 진짜로 안 되는 줄 안다 (2.1.1 검수).
+   */
+  const 줄임 = [];
+  if (Number.isInteger(n) && n > 최대판수) 줄임.push({ 칸: 'checkRounds', 준값: n, 쓴값: 최대판수 });
+  if (Number.isFinite(초) && 초 * 1000 > 기본시간) 줄임.push({ 칸: 'checkTimeout', 준값: 초, 쓴값: 기본시간 / 1000 });
+  return { 명령, 판수, 시간, 줄임 };
 }
 
 /**
