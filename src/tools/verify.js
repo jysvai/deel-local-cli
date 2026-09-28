@@ -420,7 +420,9 @@ export async function 한파일문법(abs, { 뿌리 = null, env = process.env, �
      * 탈 글에 **이 파일 이름이 없으면** 이 파일의 문법 탈이 아니다 — 곁의 package.json 이 깨졌으면 node 는
      * 그것을 읽다 넘어진 글을 낸다. 그걸 이 파일에 붙이면 멀쩡한 파일을 고치러 간다. 못 본 것으로 둔다.
      */
-    if (!r.ok && !r.탈.includes(basename(abs))) return null;
+    // node 20 은 그 글에 「… while importing <이 파일>」 로 이 파일 이름까지 적는다 — 이름으로만 가르면 남의 탈이
+    // 붙는다(리눅스 CI 가 잡음). 꾸러미 설정 탈은 node 의 오류 번호로 먼저 가른다.
+    if (!r.ok && (/ERR_INVALID_PACKAGE_CONFIG|Invalid package config/.test(r.탈) || !r.탈.includes(basename(abs)))) return null;
     return r.ok ? { 오류: 0, 경고: 0, 글: '', 출처: 만들기.어떻게 } : 탈하나(r.탈, 만들기.어떻게);
   } catch {
     return null;   // 보다가 터져서 편집이 실패로 보이는 일은 없어야 한다
