@@ -9,6 +9,7 @@ import { isMutating, 셸이파일에쓰나 } from '../safety/guard.js';
 import { effortFor, tokensFor, fullCap, wasCut, shiftLevel, 자동강도, 천장고르기, 인사인가 as 인사말인가 } from './effort.js';
 import { 배울전선, 카드고치기, 카드저장꼴, 전선붙이기 } from '../backend/wire.js';
 import { 읽기만하나 } from '../backend/mcp.js';
+import { 글속부름 } from '../backend/textcalls.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
 import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박을것, 접힌파일열쇠 } from './compact.js';
@@ -1084,6 +1085,11 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     });
 
     let msg;
+    /*
+     * 생성 속도를 잰다 (2.1.3 · session.js 의 생성속도). 흘려받는 부름만 — 첫 글자(생각 포함)부터 끝까지.
+     * 요청을 보낸 때부터 재면 앞머리 읽기(prefill)가 섞여, 대화가 길수록 모델이 느려진 것처럼 보인다.
+     */
+    let 생성잰것 = null;
     // 흘러온 글을 우리도 모아 둔다. 중간에 끊기면 이것만이 남는 전부다 —
     // chatStream 은 끝까지 가야 message 를 주므로, 끊긴 순간에는 msg 가 비어 있다.
     let 흘린것 = '';
@@ -1096,12 +1102,17 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     const 셈하기 = () => { session.usage.retries = (session.usage.retries ?? 0) + 미룬셈; 미룬셈 = 0; };
     const 끝셈 = (err) => { if (err?.name === 'Aborted') 미룬셈 = 0; else 셈하기(); };
     const askModel = async function* (maxTokens, think, { 한번에 = false } = {}) {
+      생성잰것 = null;
       if (conn.streaming && !한번에) {
+        let 첫글때 = 0;
         try {
           for await (const ev of chatStream(conn, ask(maxTokens, think))) {
             셈하기();   // 무슨 소식이든 왔다는 것은 앞의 다시 부름이 실제로 있었다는 뜻
-            if (ev.type === 'done') msg = ev.message;
-            else {
+            if (ev.type === 'done') {
+              msg = ev.message;
+              if (첫글때) 생성잰것 = { ms: Date.now() - 첫글때 };
+            } else {
+              if (!첫글때 && (ev.type === 'content' || ev.type === 'thinking') && ev.text) 첫글때 = Date.now();
               if (ev.type === 'content') 흘린것 += ev.text ?? '';
               // 맞기 전에 비켜 준 것은 **다시 부른 것이 아니다.** 요청은 한 번만
               // 나갔다. 이걸 같이 세면 `/cost` 의 「다시 부른 횟수」 와 `--json` 의
@@ -1566,6 +1577,11 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     if (msg.usage?.잰것 === false) session.usage.못잰것 = (session.usage.못잰것 ?? 0) + 1;
     session.usage.in += msg.usage?.in ?? 0;
     session.usage.out += msg.usage?.out ?? 0;
+    // 한 번에 받았거나 글이 하나도 안 흘렀으면 안 센다 — 느린 값을 지어내지 않는다 (위 생성잰것).
+    if (생성잰것?.ms > 0 && (msg.usage?.out ?? 0) > 0) {
+      session.usage.genMs = (session.usage.genMs ?? 0) + 생성잰것.ms;
+      session.usage.genOut = (session.usage.genOut ?? 0) + msg.usage.out;
+    }
     // 캐시가 얼마나 맞았나. 읽기와 쓰기를 따로 센다 — 「매번 쓰기만 하고 한
     // 번도 못 읽는」 것과 「잘 읽고 있는」 것은 완전히 다른 상태다.
     session.usage.cacheRead = (session.usage.cacheRead ?? 0) + (msg.usage?.cacheRead ?? 0);
@@ -1595,6 +1611,24 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     const 새보정 = session.배운다?.(보낸것);
     // 배운 배수를 디스크에도 남긴다. 다음에 켤 때 이 값으로 시작한다.
     if (새보정) ctx.배움?.보정본것(conn.model, 새보정);
+
+    /*
+     * ── 글로 적은 도구 부름을 건진다 (2.1.3 · backend/textcalls.js) ──────────
+     *
+     * 서버가 모델의 부름 꼴을 모르면 `tool_calls` 는 비어 오고 답 글에 `<tool_call>{…}` 이 실린다.
+     * 여태는 「말로만 답했다」 로 읽고 턴을 끝냈다. 이번 걸음에 **내준 도구 이름**으로 적힌 것만
+     * 건져 진짜 부름으로 바꾼다 — 이력에도 제 꼴(tool_calls · tool 결과)로 실려, 다음 요청은
+     * 네이티브 부름과 똑같이 나간다. 건진 부름도 아래 관문(모드 · 승인 · 정책 바닥)을 그대로 지난다.
+     * 거절 답은 안 건진다 — 안 하겠다는 말 속 예시를 부르면 안 된다.
+     */
+    if (!msg.toolCalls?.length && !msg.거절 && typeof msg.content === 'string' && tools.length) {
+      const 건짐 = 글속부름(msg.content, tools.map((t) => t.function.name));
+      if (건짐) {
+        msg.toolCalls = 건짐.부름.map((x, i) => ({ id: `text_${steps}_${i + 1}`, name: x.name, args: x.args }));
+        msg.content = 건짐.남은글;
+        yield { type: 'textcalls', names: msg.toolCalls.map((x) => x.name), count: msg.toolCalls.length };
+      }
+    }
 
     session.push(assistantMessage(conn.kind, msg));
 
@@ -2316,6 +2350,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         // 하위가 쓴 토큰·시간도 이번 턴의 셈에 들어가야 한다. 안 그러면 /context 가 거짓말을 한다.
         session.usage.in += 자식.usage.in;
         session.usage.out += 자식.usage.out;
+        session.usage.genMs = (session.usage.genMs ?? 0) + (자식.usage.genMs ?? 0);
+        session.usage.genOut = (session.usage.genOut ?? 0) + (자식.usage.genOut ?? 0);
         /*
          * 새로 생긴 네 칸도 같이 더한다.
          *

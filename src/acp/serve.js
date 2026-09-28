@@ -994,6 +994,10 @@ export async function acp(opts = {}) {
                 : 옮긴말('check.skipped', { 까닭: ev.까닭 })})_\n\n`);
             break;
 
+          case 'textcalls':
+            말하기(`\n\n_(${옮긴말('ev.textCalls', { n: ev.count, 이름: ev.names.join(', ') })})_\n\n`);
+            break;
+
           case 'nudge':
             말하기(`\n\n_(${ev.why === '요청누락'
               ? 옮긴말('ev.nudgeMissed', { n: ev.빠진?.length ?? 0 })

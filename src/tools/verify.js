@@ -31,12 +31,13 @@
 import { existsSync, statSync, readFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { extname, dirname, resolve, join, delimiter, isAbsolute, relative, basename, sep } from 'node:path';
+import { extname, dirname, resolve, join, isAbsolute, relative, basename, sep } from 'node:path';
 import { walk, SKIP_DIRS, 내부살림 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
 import { 확인법들 } from './checkmethods.js';
 import { decode, looksBinary } from './encoding.js';
 import { 셸환경 } from '../safety/shellenv.js';
+import { 경로에서찾기 } from '../safety/which.js';
 import { 말 } from '../i18n/index.js';
 
 /* 결과 한 줄을 잇는다 — 빈 조각은 버린다(tools/index.js 의 이어 와 같은 것). */
@@ -271,9 +272,9 @@ export function json보기(글) {
  * 안 그러면 `-m py_compile` 이 작업 폴더를 sys.path 앞에 넣어 저장소의 `py_compile.py` 를
  * 가져와 돌린다(같은 구멍의 파이썬 쪽).
  */
-function 명령돌리기(파일, 인자, { cwd, 제한 = 60000, env } = {}) {
+function 명령돌리기(파일, 인자, { cwd, 제한 = 60000, env, 입력 = null } = {}) {
   return new Promise((끝) => {
-    execFile(파일, 인자, {
+    const 아이 = execFile(파일, 인자, {
       cwd, env, timeout: 제한, maxBuffer: 4 * 1024 * 1024,
       windowsHide: true, encoding: 'buffer',
     }, (err, so, se) => {
@@ -283,38 +284,13 @@ function 명령돌리기(파일, 인자, { cwd, 제한 = 60000, env } = {}) {
       const code = 시그널 ? null : (err?.code ?? 0);
       끝({ ok: !시그널 && code === 0, code, 시그널, out, 없음: err?.code === 'ENOENT' });
     });
+    // 표준입력으로 줄 글 (아래 ESM 다시 보기). 안 주면 바로 닫는다 — 열어 두면 읽는 쪽이 기다린다.
+    아이.stdin?.on('error', () => {});
+    아이.stdin?.end(입력 ?? undefined);
   });
 }
 
-/**
- * 이름으로 실행 파일을 PATH 에서 찾는다 — 셸이 찾게 두지 않는다 (위 머리말).
- *
- * 지금 폴더를 뜻하는 칸(빈 칸·`.`·상대 경로)과 작업 폴더 안의 칸은 건너뛴다. 그 자리의
- * 파일은 저장소가 심을 수 있다. 윈도우에서는 `.exe` 만 본다 — `.cmd`·`.bat` 은 결국
- * cmd.exe 를 부르는 것이라 셸을 안 거친다는 뜻이 없어진다.
- *
- * @returns {string|null} 절대 경로. 못 찾으면 null — 그러면 「도구가 없다」 로 말한다.
- */
-function 경로에서찾기(이름들, { env = process.env, 뿌리 = null } = {}) {
-  const 윈 = process.platform === 'win32';
-  // 윈도우 환경 이름은 대소문자를 안 가린다(Path · PATH). 거른 환경 객체는 평범한 객체라 직접 찾는다.
-  const 칸 = Object.keys(env ?? {}).find((k) => (윈 ? k.toUpperCase() === 'PATH' : k === 'PATH'));
-  const 목록 = String((칸 && env[칸]) ?? '').split(delimiter);
-  const 뿌리abs = 뿌리 ? resolve(뿌리) : null;
-  for (const 이름 of 이름들) {
-    for (const 날것 of 목록) {
-      const 폴더 = 날것.trim().replace(/^"(.*)"$/, '$1');
-      if (!폴더 || !isAbsolute(폴더)) continue;
-      if (뿌리abs) {
-        const rel = relative(뿌리abs, resolve(폴더));
-        if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) continue;
-      }
-      const 후보 = join(폴더, 윈 ? `${이름}.exe` : 이름);
-      try { if (statSync(후보).isFile()) return 후보; } catch { /* 여기엔 없다 */ }
-    }
-  }
-  return null;
-}
+// 이름으로 실행 파일을 PATH 에서 찾는 자는 safety/which.js 로 옮겼다 (2.1.3) — 되돌리기의 git 뜨기도 같은 자를 쓴다.
 
 /**
  * 폴더를 통째로 볼 때 한 번에 보는 파일 수.
@@ -341,7 +317,8 @@ const 볼만한것인가 = (p) => 볼만한확장.has(extname(p).toLowerCase());
 function 돌릴명령(확장, { 뿌리 = null, env = process.env } = {}) {
   switch (확장) {
     case '.js': case '.mjs': case '.cjs':
-      return { 파일: process.execPath, 인자: (p) => ['--check', p], 어떻게: 'node --check' };
+      // `.js` 만 모듈로 한 번 더 본다 — .mjs · .cjs 는 node 가 확장자로 정해 제대로 본다 (돌려보기 머리말).
+      return { 파일: process.execPath, 인자: (p) => ['--check', p], 어떻게: 'node --check', 모듈도볼까: 확장 === '.js' };
     case '.py':
       return {
         파일: 경로에서찾기(process.platform === 'win32' ? ['python', 'python3'] : ['python3', 'python'], { env, 뿌리 }),
@@ -362,6 +339,93 @@ const 짧게 = (s, n = 300) => {
   const t = String(s ?? '').trim();
   return t.length > n ? `${t.slice(0, n)}…` : t;
 };
+
+/**
+ * 고른 명령으로 파일 하나를 돌려 본다. Verify 와 고친 직후 문법 검사(한파일문법)가 같이 쓴다.
+ *
+ * @returns {{ok:true} | {탈:string} | {못함:true}}  못함 — 이 컴퓨터에 그 도구가 없다
+ */
+async function 돌려보기(만들기, abs, { 뿌리, env, 제한 }) {
+  const r = await 명령돌리기(만들기.파일, 만들기.인자(abs), { cwd: 뿌리, 제한, env });
+  // 도구 자체가 이 컴퓨터에 없으면 '틀렸다' 가 아니라 '못 봤다' 이다.
+  // 파이썬이 안 깔린 PC 에서 py 파일을 전부 빨갛게 칠하면 아무도 안 믿는다.
+  // (윈도우 스토어 자리표시 python.exe 는 「was not found」 를, 옛 python2 는 -I 에 「Unknown option」 을 낸다.)
+  // 그 말들은 **이 파일 이름이 안 나오는** 글에서만 믿는다 (2.0.0 6회차 검증6). 문법 오류 글에는 파일
+  // 경로와 원문 한 줄이 따라 나오는데, 원문에 `was not found` 가 있으면 깨진 파일이 「도구가 없다」 로 넘어갔다.
+  const 도구없다는말 = !r.out.includes(basename(abs))
+    && /not recognized|command not found|찾을 수 없|No such file|was not found|Unknown option/i.test(r.out);
+  if (!r.ok && (r.없음 || 도구없다는말)) return { 못함: true };
+  if (!r.ok) return { 탈: 짧게(r.out) || `종료코드 ${r.code}`, 끊김: !!r.시그널 };
+  /*
+   * ── `.js` 인데 import · export 가 있으면 모듈로 한 번 더 본다 (2.1.3) ─────────────
+   *
+   * package.json 에 "type" 이 없는 자리의 `.js` 는 node 가 CommonJS 로 읽어 보다가 ESM 꼴이면 모듈로
+   * 넘기는데(모듈 꼴 알아보기), `--check` 는 그 넘기는 자리에서 **괄호가 안 닫혀 있어도 0 으로 끝난다.**
+   * 재 보니 `export const a = 1;\nfunction f() {` 가 node 24 에서 초록이었다 — Verify 가 깨진 파일에
+   * 「✓ node --check」 를 적어 왔다. 표준입력으로 `--input-type=module` 을 주면 제대로 본다.
+   * 동적 `import(` · `import.meta` 는 CommonJS 에도 있어 안 센다 — 정적 import · export 꼴만.
+   *
+   * 꼴 찾기는 넉넉히 한다(줄 가운데 `; export { a }` · `export /* … *\/` 도). 넉넉해서 CommonJS 파일이 걸려도
+   * 탈을 붙이지 않는다 — 모듈로 틀렸으면 CommonJS 로 한 번 더 보고, 그쪽으로 맞으면 CommonJS 파일이다
+   * (틀 문자열 · 주석 속 import 줄. `const package = …` 는 모듈에서만 틀린다). 2차 눈이 짚은 셋이다.
+   */
+  if (만들기.모듈도볼까) {
+    let 글 = '';
+    try { 글 = decode(readFileSync(abs)).text; } catch { return { ok: true }; }
+    if (/\bexport(?:\s*[{*]|\s*\/\*|\s+(?:default|const|let|var|function|async|class)\b)|\bimport(?:\s*[{*'"]|\s*\/\*|\s+[\w$]+\s*(?:,|from\b))/.test(글)) {
+      const 넣어보기 = (꼴) => 명령돌리기(만들기.파일, [`--input-type=${꼴}`, '--check'], { cwd: 뿌리, 제한, env, 입력: 글 });
+      const m = await 넣어보기('module');
+      // 시간이 다 돼 끊긴 것은 본 것이 아니다 — 첫 검사가 끊겼을 때와 같이 적는다.
+      if (m.시그널) return { 탈: `모듈 검사가 ${Math.round(제한 / 1000)}초 안에 안 끝났습니다`, 끊김: true };
+      if (!m.ok && !m.없음 && !(await 넣어보기('commonjs')).ok) {
+        // 되받이 글($& 따위)로 읽히지 않게 함수로 바꾼다 — 경로에 $& 가 있으면 경로가 깨져 탈을 놓쳤다.
+        return { 탈: 짧게(m.out.replaceAll('[stdin]', () => abs)) || `종료코드 ${m.code}` };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+/*
+ * ── 고친 직후 파일 하나의 문법 (2.1.3) ────────────────────────────────
+ *
+ * 고친 뒤 진단(lsp/diag.js)은 **이미 떠 있는 언어 서버**가 있을 때만 말한다. 로컬 모델을 쓰는 PC 대부분은
+ * 언어 서버가 없고, 있어도 첫 파일은 못 받는다. 그 자리에서 괄호 하나가 빠지면 아무 말이 없었다 — 모델은
+ * 고친 것으로 치고 다음 파일로 가고, 탈은 몇 걸음 뒤 돌려 볼 때에야 나왔다.
+ *
+ * 그래서 언어 서버가 말을 못 줬을 때 **싸게 볼 수 있는 것만** 본다. Verify 와 같은 명령 · 같은 거른 환경 ·
+ * 같은 셸 없는 길이다(명령돌리기 머리말). HTML 은 안 본다 — 빠진 참조를 찾느라 폴더를 뒤지고, 나눠 쓰는
+ * 중간(아직 안 쓴 짝)을 탈로 읽기 쉽다. 그건 일을 다 한 뒤 Verify 의 몫이다.
+ *
+ * @returns {Promise<{오류:number, 경고:number, 글:string, 출처:string}|null>}  못 봤으면 null — 「성하다」 가 아니다
+ */
+export async function 한파일문법(abs, { 뿌리 = null, env = process.env, 제한 = 8000 } = {}) {
+  try {
+    const 확장 = extname(abs).toLowerCase();
+    const 탈하나 = (탈, 출처) => ({ 오류: 1, 경고: 0, 글: String(탈).split('\n').slice(0, 6).map((l) => `  ${l}`).join('\n'), 출처 });
+    const 읽는것 = { '.json': ['JSON 파싱', json보기], '.css': ['중괄호 짝', css보기], '.scss': ['중괄호 짝', css보기], '.less': ['중괄호 짝', css보기] }[확장];
+    if (읽는것) {
+      let buf;
+      try { buf = readFileSync(abs); } catch { return null; }
+      if (looksBinary(buf)) return null;
+      const 탈 = 읽는것[1](decode(buf).text);
+      return 탈.length ? 탈하나(탈.join('\n'), 읽는것[0]) : { 오류: 0, 경고: 0, 글: '', 출처: 읽는것[0] };
+    }
+    const 만들기 = 돌릴명령(확장, { 뿌리, env });
+    if (!만들기?.파일 || !existsSync(abs)) return null;
+    const r = await 돌려보기(만들기, abs, { 뿌리: 뿌리 ?? dirname(abs), env, 제한 });
+    // 없는 도구 · 시간이 다 돼 끊긴 것은 「틀렸다」 가 아니라 못 본 것이다. 고칠 때마다 붙는 자리라 짧게 기다린다.
+    if (r.못함 || r.끊김) return null;
+    /*
+     * 탈 글에 **이 파일 이름이 없으면** 이 파일의 문법 탈이 아니다 — 곁의 package.json 이 깨졌으면 node 는
+     * 그것을 읽다 넘어진 글을 낸다. 그걸 이 파일에 붙이면 멀쩡한 파일을 고치러 간다. 못 본 것으로 둔다.
+     */
+    if (!r.ok && !r.탈.includes(basename(abs))) return null;
+    return r.ok ? { 오류: 0, 경고: 0, 글: '', 출처: 만들기.어떻게 } : 탈하나(r.탈, 만들기.어떻게);
+  } catch {
+    return null;   // 보다가 터져서 편집이 실패로 보이는 일은 없어야 한다
+  }
+}
 
 export const VERIFY_TOOL = {
   schema: {
@@ -496,18 +560,10 @@ export const VERIFY_TOOL = {
       const 만들기 = 고른명령[확장];
       if (만들기) {
         if (!만들기.파일) { 못한것.push({ 이름, 왜: `${확장} 을 확인할 도구가 이 컴퓨터에 없습니다` }); continue; }
-        const r = await 명령돌리기(만들기.파일, 만들기.인자(abs), { cwd: 뿌리, 제한: 30000, env: 자식환경 });
-        // 도구 자체가 이 컴퓨터에 없으면 '틀렸다' 가 아니라 '못 봤다' 이다.
-        // 파이썬이 안 깔린 PC 에서 py 파일을 전부 빨갛게 칠하면 아무도 안 믿는다.
-        // (윈도우 스토어 자리표시 python.exe 는 「was not found」 를, 옛 python2 는 -I 에 「Unknown option」 을 낸다.)
-        // 그 말들은 **이 파일 이름이 안 나오는** 글에서만 믿는다 (2.0.0 6회차 검증6). 문법 오류 글에는 파일
-        // 경로와 원문 한 줄이 따라 나오는데, 원문에 `was not found` 가 있으면 깨진 파일이 「도구가 없다」 로 넘어갔다.
-        const 도구없다는말 = !r.out.includes(basename(abs))
-          && /not recognized|command not found|찾을 수 없|No such file|was not found|Unknown option/i.test(r.out);
-        if (!r.ok && (r.없음 || 도구없다는말)) {
-          못한것.push({ 이름, 왜: `${확장} 을 확인할 도구가 이 컴퓨터에 없습니다` });
-        } else if (r.ok) 된것.push({ 이름, 어떻게: 만들기.어떻게 });
-        else 탈난것.push({ 이름, 탈: [짧게(r.out) || `종료코드 ${r.code}`] });
+        const r = await 돌려보기(만들기, abs, { 뿌리, env: 자식환경, 제한: 30000 });
+        if (r.못함) 못한것.push({ 이름, 왜: `${확장} 을 확인할 도구가 이 컴퓨터에 없습니다` });
+        else if (r.ok) 된것.push({ 이름, 어떻게: 만들기.어떻게 });
+        else 탈난것.push({ 이름, 탈: [r.탈] });
         continue;
       }
 

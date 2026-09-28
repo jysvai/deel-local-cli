@@ -69,14 +69,29 @@ let 마지막명령줄 = null;
  */
 export function 마지막명령() { return 마지막명령줄; }
 
-let 받은것 = null;      // { token, headers, 만료, 언제 } — 메모리에만. 파일로 안 나간다.
-let 물어본것 = null;    // 이번 판에 사람이 뭐라고 답했나 (true/false)
+/*
+ * ── 받아 둔 것과 승인은 **명령마다** 따로 든다 (2.1.3) ───────────────────────
+ *
+ * 둘 다 모듈에 하나뿐이었다. 한 판에 연결이 하나면 그래도 맞다 — 그런데 `/consult` 와 모델을 고른
+ * Task 는 **다른 프로필의 연결**을 연다(agent/models.js). 그 연결이 제 명령으로 열쇠를 청하면 들고
+ * 있던 앞 프로필의 토큰이 먼저 돌아와, A 게이트웨이의 토큰이 B 게이트웨이로 나갔다. B 의 명령은
+ * 묻는 자리에 닿지도 않았고, 닿았어도 A 를 허락한 답이 B 의 답으로 읽혔다.
+ *
+ * 열쇠는 명령줄로 가른다 — 같은 명령이면 같은 열쇠다(받기설정 이 정책·설정 어느 쪽이든 명령을 준다).
+ */
+const 받은것들 = new Map();    // 명령 → { token, headers, 만료, 언제 } — 메모리에만. 파일로 안 나간다.
+const 물어본것들 = new Map();  // 명령 → 이번 판에 사람이 뭐라고 답했나 (true/false)
+let 마지막받은 = null;        // 화면이 연결을 안 줄 때 보여 줄 것
 
 /** 검사와 `/model` 갈아타기가 부른다. */
-export function 잊기() { 받은것 = null; 물어본것 = null; 마지막명령줄 = null; }
+export function 잊기() { 받은것들.clear(); 물어본것들.clear(); 마지막받은 = null; 마지막명령줄 = null; }
 
-/** 지금 들고 있는 것. 없으면 null. 화면·심사서가 **토큰 없이** 상태만 볼 때. */
-export function 지금상태() {
+/**
+ * 지금 들고 있는 것. 없으면 null. 화면·심사서가 **토큰 없이** 상태만 볼 때.
+ * @param {object} [설정] 받기설정() 이 준 것 — 주면 그 명령의 것을, 안 주면 마지막에 받은 것을.
+ */
+export function 지금상태(설정 = null) {
+  const 받은것 = 설정 ? 받은것들.get(설정.명령) : 마지막받은;
   if (!받은것) return null;
   return { 있음: true, 만료: 받은것.만료, 남은초: Math.max(0, Math.round((받은것.만료 - Date.now()) / 1000)) };
 }
@@ -256,11 +271,31 @@ export async function 한번받기(설정, { 기다림 = 기본기다림, signal
       return done({ ok: false, 왜: `명령을 못 띄웠습니다 (${err.message})`, 보인것: '' });
     }
     const 마치기 = (것) => { if (!끝났나) { 끝났나 = true; clearTimeout(시계); 끊기해제(); done(것); } };
+    /*
+     * ── 끊을 때는 **나무째** 거두고 우리 파이프를 놓는다 (2.1.3) ────────────────
+     *
+     * 명령은 셸을 거쳐 뜬다(tools/shell.js 의 셸명령). kill 은 셸만 죽이고, 윈도우에서는 그 밑의 진짜
+     * 로그인 도구(손자)가 살아 stdout 을 물고 있었다. 그러면 「못 받았습니다」 뒤에도 그 파이프가 deel 을
+     * 붙들어, 할 일을 다 마친 `deel run` 이 손자가 끝날 때까지 안 끝났다. 윈도우는 셸이 살아 있을 때
+     * taskkill /T 로 나무를 따라가야 하므로 kill 은 그 뒤에 한다(backend/mcp.js 닫기 와 같은 차례).
+     */
+    const 거두기 = () => {
+      const 죽이기 = () => { try { kid.kill('SIGKILL'); } catch { /* 이미 죽었으면 그만 */ } };
+      if (process.platform === 'win32' && kid.pid && kid.exitCode === null) {
+        try {
+          const 나무 = spawn('taskkill', ['/pid', String(kid.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+          나무.once('error', 죽이기);
+          나무.once('exit', 죽이기);
+          나무.unref();
+        } catch { 죽이기(); }
+      } else 죽이기();
+      try { kid.stdout?.destroy(); kid.stderr?.destroy(); } catch { /* 이미 닫힘 */ }
+    };
     const 시계 = setTimeout(() => {
-      try { kid.kill('SIGKILL'); } catch { /* 이미 죽었으면 그만 */ }
+      거두기();
       마치기({ ok: false, 왜: `${Math.round(기다림 / 1000)}초를 기다렸는데 안 끝났습니다`, 보인것: '' });
     }, 기다림);
-    const 끊기 = () => { try { kid.kill('SIGKILL'); } catch { /* 그만 */ } 마치기({ ok: false, 왜: '중단했습니다', 보인것: '' }); };
+    const 끊기 = () => { 거두기(); 마치기({ ok: false, 왜: '중단했습니다', 보인것: '' }); };
     const 끊기해제 = () => signal?.removeEventListener?.('abort', 끊기);
     if (signal?.aborted) return 끊기();
     signal?.addEventListener?.('abort', 끊기, { once: true });
@@ -280,8 +315,8 @@ export async function 한번받기(설정, { 기다림 = 기본기다림, signal
     kid.stdout.on('data', (b) => {
       if (끝났나) return;
       if (나온것.length + b.length > 받을상한) {
-        try { kid.kill('SIGKILL'); } catch { /* 이미 죽었으면 그만 */ }
-        try { kid.stdout.destroy(); kid.stderr.destroy(); } catch { /* 이미 닫힘 */ }
+        // 나무째 거두고 파이프를 놓는다 (위 거두기) — 셸 아래 손자가 계속 쓰고 있어도 EPIPE 를 맞고 멈춘다.
+        거두기();
         // 먼저 자르고 가린다 — 1MB 짜리 한 줄을 통째로 가리기 에 넣으면 그 무늬들이
         // 몇 분을 돈다(처음 고칠 때 검사가 여기서 멈춰 섰다).
         const 첫줄 = 가리기(나온것.slice(0, 400).trim().split('\n')[0] ?? '', {}).글.slice(0, 120);
@@ -324,7 +359,8 @@ export async function 한번받기(설정, { 기다림 = 기본기다림, signal
 export async function 열쇠(설정, { 다시 = false, 물어보기 = null, signal = null, 알림 = null, 기다림 = 기본기다림 } = {}) {
   if (!설정) return { ok: false, 왜: '열쇠받기가 설정되어 있지 않습니다' };
 
-  if (다시) 받은것 = null;
+  if (다시) 받은것들.delete(설정.명령);
+  const 받은것 = 받은것들.get(설정.명령);
   if (받은것 && 받은것.만료 - 미리 > Date.now()) {
     return { ok: true, token: 받은것.token, headers: 받은것.headers, 만료: 받은것.만료, 그대로: true };
   }
@@ -356,19 +392,22 @@ export async function 열쇠(설정, { 다시 = false, 물어보기 = null, sign
    * 거기서까지 막으면 사람이 승인을 했는데도 열쇠가 안 붙는다.
    */
   if (설정.곳 !== '정책') {
-    if (물어본것 === false) return { ok: false, 왜: '이 판에서는 안 부르기로 했습니다' };
-    if (물어본것 === null) {
+    const 답 = 물어본것들.get(설정.명령);
+    if (답 === false) return { ok: false, 왜: '이 판에서는 안 부르기로 했습니다' };
+    if (답 === undefined) {
       if (typeof 물어보기 !== 'function') {
         return { ok: false, 왜: '이 명령을 띄워도 되는지 물어볼 자리가 없습니다 — 승인 없이는 안 띄웁니다' };
       }
-      물어본것 = !!(await 물어보기(설정));
-      if (!물어본것) return { ok: false, 왜: '이 판에서는 안 부르기로 했습니다' };
+      const 허락 = !!(await 물어보기(설정));
+      물어본것들.set(설정.명령, 허락);
+      if (!허락) return { ok: false, 왜: '이 판에서는 안 부르기로 했습니다' };
     }
   }
 
   const r = await 한번받기(설정, { signal, 알림, 기다림 });
   if (!r.ok) return r;
-  받은것 = { token: r.token, headers: r.headers, 만료: r.만료, 언제: Date.now() };
+  마지막받은 = { token: r.token, headers: r.headers, 만료: r.만료, 언제: Date.now() };
+  받은것들.set(설정.명령, 마지막받은);
   return { ok: true, token: r.token, headers: r.headers, 만료: r.만료, ms: r.ms, 그대로: false };
 }
 
@@ -380,7 +419,10 @@ export async function 열쇠(설정, { 다시 = false, 물어보기 = null, sign
  */
 export function 가림(글) {
   const 것들 = [];
-  if (받은것?.token) 것들.push(받은것.token);
-  for (const v of Object.values(받은것?.headers ?? {})) if (v) 것들.push(String(v));
+  // 들고 있는 것 **전부**를 가린다 — 명령마다 따로 들게 된 뒤로(위 받은것들) 하나만 가리면 다른 연결의 토큰이 샌다.
+  for (const 받은것 of 받은것들.values()) {
+    if (받은것?.token) 것들.push(받은것.token);
+    for (const v of Object.values(받은것?.headers ?? {})) if (v) 것들.push(String(v));
+  }
   return 가리기(String(글 ?? ''), { 열쇠들: 것들 }).글;
 }

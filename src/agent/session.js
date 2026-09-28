@@ -348,7 +348,7 @@ export class Session {
       * 유료로 불렀고, 쓴 것을 우리가 모를 뿐이다. 「0 원 썼다」 와 「얼마
       * 썼는지 모른다」 는 사람이 하는 판단이 다르다 — 그래서 세어 둔다.
       */
-     this.usage = { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, 못잰것: 0 };
+     this.usage = { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, 못잰것: 0, genMs: 0, genOut: 0 };
     /*
      * 이 대화의 이름. 게이트웨이에 「같은 대화다」 라고 알려 줄 때 쓴다.
      *
@@ -1423,6 +1423,18 @@ export class Session {
  * 접기와 줄이기가 **같은 것**을 박아야 하고, 한쪽만 고치면 물러서는 순간
  * 대화가 어긋난다.
  */
+/**
+ * 생성 속도(토큰/초, 소수 한 자리). 흘려받은 부름의 첫 글자부터 끝까지만 잰 값이다 (agent/loop.js 의
+ * 생성잰것). 잰 것이 없으면 null — 한 번에 받은 부름은 앞머리 읽기와 생성을 못 갈라 안 잰다. 0 을 적으면
+ * 「멈춰 있었다」 로 읽힌다.
+ */
+export function 생성속도(usage) {
+  const ms = Number(usage?.genMs ?? 0);
+  const 토큰 = Number(usage?.genOut ?? 0);
+  if (!(ms > 0) || !(토큰 > 0)) return null;
+  return Math.round((토큰 / ms) * 10000) / 10;
+}
+
 export const 못박을길이 = 1200;
 
 /** 박아 넣으면서 시킨 말 뒤가 잘리나. oneshot.js 가 「잘린 채로 끝까지 했다」 를 막는 데 쓴다. */

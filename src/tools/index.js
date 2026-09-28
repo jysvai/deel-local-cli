@@ -18,13 +18,14 @@ import { TODO_TOOL } from './todo.js';
 import { TASK_TOOL } from './task.js';
 import { 고를말 } from '../agent/agents.js';
 import { OUTLINE_TOOL } from './outline.js';
-import { VERIFY_TOOL } from './verify.js';
+import { VERIFY_TOOL, 한파일문법 } from './verify.js';
 import { DEF_TOOL, REFS_TOOL } from './lsp.js';
 import { 편집후진단, 붙이기 as 진단붙이기, 데우기 } from '../lsp/diag.js';
 import { 프로젝트갈래 } from '../lsp/servers.js';
 import { allow as allowedIn } from '../agent/modes.js';
 import { 도구정의, 이름풀기 } from '../backend/mcp.js';
 import { 셸환경 } from '../safety/shellenv.js';
+import { 깃앞보기, 깃뒤적기 } from '../safety/gitsnap.js';
 import { isExcelPath, readExcel, toText as excelText, summarize as excelSummary } from './excel.js';
 import { isDocPath, readDoc, toText as docText, summarize as docSummary, looksOldHwp, 옛hwp안내, 문서는못고침 } from './docs.js';
 import { hwpx만들기, 만든말 } from './hwpxwrite.js';
@@ -724,6 +725,12 @@ function 나중에생긴것적기(떠본것, ctx) {
   // 쓰는 꼴이라 미리 떠 둔 없는 이름 — 명령 뒤에 정말 생겼으면 그때 목록에 올린다 (바꾸기전스냅샷 · 6회차 직접 사냥 M1).
   for (const abs of 떠본것?.없던채뜬것 ?? []) {
     try { if (existsSync(abs) && !statSync(abs).isDirectory()) 떠본것.뜬것.push(ctx.scope.show(abs)); } catch { /* 넘어간다 */ }
+  }
+  // 낱말로 못 짚은 것 — git 으로 견줘 안 것 (2.1.3 · safety/gitsnap.js). 이번 턴에 이미 뜬 것은 거기서 거른다.
+  if (떠본것?.깃앞) {
+    const 깃것 = 깃뒤적기(떠본것.깃앞, { history: ctx.history });
+    for (const abs of 깃것.뜬것) 떠본것.뜬것.push(ctx.scope.show(abs));
+    for (const x of 깃것.못뜬것) 떠본것.못뜬것.push(`${ctx.scope.show(x.abs)} (${x.왜})`);
   }
 }
 
@@ -3109,6 +3116,12 @@ export const TOOLS = {
        * 그래도 손으로 옮기고 지우는 흔한 자리는 이걸로 덮인다.
        */
       const 떠본것 = 바꾸기전스냅샷(cmd, ctx);
+      /*
+       * git 저장소면 명령 앞 모습도 떠 둔다 (2.1.3 · safety/gitsnap.js). 낱말로는 못 짚는 자리 — 와일드카드 ·
+       * 스크립트 · 포매터가 바꾼 파일 — 를 명령 뒤에 견줘 되돌리기에 올린다. 뒤에서 도는 명령은 언제 끝날지
+       * 몰라 견줄 자리가 없으니 안 뜬다.
+       */
+      if (args.background !== true && ctx.history?.뒤늦은기록) 떠본것.깃앞 = 깃앞보기(ctx.scope.root);
       const 뜬것 = 떠본것.뜬것;
       /*
        * 못 뜬 것과 상한에 걸린 것은 **결과에 실어 보낸다.**
@@ -4118,6 +4131,16 @@ async function 고친뒤진단(name, r, ctx) {
     데우기(뿌리, 볼것[0]);
 
     const 것들 = await Promise.all(볼것.map((abs) => 편집후진단(뿌리, abs)));
+    /*
+     * 언어 서버가 말을 못 줬으면(없거나 · 아직 데우는 중) 문법만이라도 본다 (2.1.3 · verify.js 의 한파일문법).
+     * 서버가 답했으면 안 본다 — 오류 0개도 답이다. 두 번 보면 같은 탈을 두 줄로 적는다.
+     */
+    if (것들.some((d) => d === null)) {
+      const env = 셸환경(process.env, { 남길것: ctx.셸남길것 ?? [] }).env;
+      await Promise.all(볼것.map(async (abs, i) => {
+        if (것들[i] === null) 것들[i] = await 한파일문법(abs, { 뿌리, env });
+      }));
+    }
     let 답 = r;
     for (let i = 0; i < 볼것.length; i++) {
       답 = 진단붙이기(답, 것들[i], ctx.scope.show(볼것[i]));

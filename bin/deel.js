@@ -655,6 +655,8 @@ const 값깃발 = new Set([
   'check', 'repeat',
   // run --check-rounds <수> · --check-timeout <초> — 설정의 checkRounds · checkTimeout 을 이 실행에서만 덮는다 (2.1.2).
   'check-rounds', 'check-timeout',
+  // run --events <파일> — 사건을 한 줄에 하나씩 JSON 으로 흘린다 (2.1.3 · src/runlog.js).
+  'events',
 ]);
 // 값을 줘도 되고 안 줘도 되는 깃발. `--resume` 만 치면 이어 할 대화를 고른다.
 const 값골라깃발 = new Set(['resume']);
@@ -914,6 +916,8 @@ function help() {
   // 새로 넣는 도움말 줄은 말() 로 적는다 — 영어로 켠 사람에게 한국어 줄을 더 새게 하지 않는다(test/langleak.test.js 의 래칫).
   say(`    ${c.gray('--check <cmd>')}       ${말('cli.checkFlag')}`);
   say(`    ${c.gray('--check-rounds <n> · --check-timeout <s>')}  ${말('cli.checkRoundsFlag')}`);
+  say(`    ${c.gray('--continue · --resume <id>')}  ${말('cli.runResumeFlag')}`);
+  say(`    ${c.gray('--events <file>')}     ${말('cli.eventsFlag')}`);
   /*
    * 답의 모양을 못 박는 자리 (src/agent/outschema.js).
    *
@@ -1141,6 +1145,10 @@ async function main() {
         check: flags.check !== undefined ? String(flags.check) : undefined,
         checkRounds: flags['check-rounds'] !== undefined ? String(flags['check-rounds']) : undefined,
         checkTimeout: flags['check-timeout'] !== undefined ? String(flags['check-timeout']) : undefined,
+        // 대화를 잇는다 (2.1.3). 값 없는 --resume 은 true 로 넘어가 runOnce 가 64 로 세운다 — 여기는 고를 사람이 없다.
+        continue: flags.continue === true,
+        resume: flags.resume,
+        events: flags.events !== undefined ? String(flags.events) : undefined,
       });
     case '':
     case 'chat':

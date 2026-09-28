@@ -1,5 +1,5 @@
 /**
- * MCP(Model Context Protocol) 서버 붙이기 — stdio 규격.
+ * MCP(Model Context Protocol) 서버 붙이기 — stdio 규격, 그리고 streamable HTTP (2.1.3).
  *
  * 무엇인가:
  *   도구를 **코드를 안 고치고** 밖에서 붙이는 규격이다. 사내 위키 검색기,
@@ -22,6 +22,21 @@
  *   3) **감사기록에 남긴다.** 무엇을 띄웠고 무엇을 불렀는지.
  *   4) **작업 범위 밖이다.** MCP 서버는 우리 scope 를 안 지킨다 —
  *      제 마음대로 파일을 읽고 쓸 수 있다. /mcp 화면에서 그렇다고 말한다.
+ *
+ * ── HTTP 로 붙는 서버 (2.1.3) ─────────────────────────────────────────
+ *
+ * 사내 MCP 서버는 점점 **주소 하나**로 온다 — 팀마다 띄워 둔 위키·이슈 서버에 `url` 로
+ * 붙는다. 그런 줄을 「url 로 붙는 서버는 아직 못 붙입니다」 로 돌려보냈다.
+ *
+ * 이제 붙는다. 다만 새 문을 내지 않는다 — 요청은 전부 backend/http.js 의 원시요청 으로
+ * 나가고, 그러니 **문지기(safety/network.js)를 한 홉마다 지난다.** 적어 둔 그 집만 요청하는
+ * 동안 잠깐 열고(allowTemporarily) 닫는다. 그래서 stdio 와 달리 오프라인 잠금 중에도
+ * 막을 수 있다 — 이 컴퓨터 안(사내망 포함, 문지기와 같은 잣대)이면 붙고, 밖이면 안 붙는다.
+ * 프록시 · 우리 인증서(mTLS) · 되돌림 검사도 모델 창구와 같은 길을 탄다.
+ *
+ * 규격은 initialize 로 인사하는 streamable HTTP(2025-03-26 ~ 2025-11-25)다. 인사 없이
+ * 부르는 새 규격(2026-07-28)만 받는 서버는 인사에 받는 규격을 적어 돌려주고, 그 말을 그대로
+ * 보여 준다. 옛 HTTP+SSE 규격(`"type": "sse"`)은 받지 않는다.
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
@@ -32,6 +47,9 @@ import { VERSION } from '../version.js';
 import { 믿나, BOM떼기 } from '../safety/trust.js';
 // 신호로 끝날 때도 띄운 서버를 거둔다 — 손은 한 자리에만 단다 (reap.js 머리말).
 import { 신호에거두기 } from '../reap.js';
+// HTTP 로 붙는 서버도 나가는 문은 하나다 (위 머리말).
+import { 원시요청, 몸읽기 } from './http.js';
+import { allowTemporarily, isLocalHost } from '../safety/network.js';
 
 // 붙는 데 이만큼 넘게 걸리면 포기한다. 시작이 느려지면 안 쓰게 된다.
 const 붙기제한 = 8000;
@@ -46,6 +64,25 @@ export const 도구최대 = 24;
 const 줄최대 = 4 * 1024 * 1024;
 // tools/list 를 몇 쪽까지 따라갈까. 끝없이 다음 쪽을 주는 서버에 붙들리지 않게.
 const 목록쪽최대 = 10;
+// 서버가 낸 프롬프트를 이만큼까지 받는다 (2.1.3). 슬래시 명령으로 서므로 끝없으면 /mcp 가 덮인다.
+export const 프롬프트최대 = 50;
+// 자료(resource) 목록을 이만큼까지 모델에게 싣는다.
+const 자료최대 = 200;
+/*
+ * 서버가 자료(resources)를 낸다고 하면 붙이는 **우리** 도구의 이름 (2.1.3).
+ *
+ * MCP 의 자료는 도구가 아니라 읽을거리다 — 문서 서버가 제 문서를 `docs://…` 로 내놓는 식이다.
+ * 도구로만 부를 수 있는 모델에게 그 길을 하나 낸다. 서버에 같은 이름의 제 도구가 있으면 그쪽이 이긴다.
+ */
+export const 자료도구이름 = 'read_resource';
+const 자료도구정의 = () => ({
+  name: 자료도구이름,
+  description: 'Read a resource this MCP server exposes (documents, files, records). Call without uri to list what is available.',
+  inputSchema: { type: 'object', properties: { uri: { type: 'string', description: 'URI of the resource to read. Omit to list resources.' } } },
+  // 읽기만 한다 — confirm 이 안 묻는다(읽기만하나). 우리가 붙인 것이라는 표는 x-deel 이다.
+  annotations: { readOnlyHint: true },
+  'x-deel': 'resources',
+});
 
 export const 설정자리 = (root) => join(root, '.deel', 'mcp.json');
 
@@ -77,7 +114,8 @@ export const 메모유효 = 7 * 24 * 60 * 60 * 1000;
 
 /** 이 서버가 「같은 서버」 인가를 가르는 값. */
 export function 지문(설정) {
-  const 재료 = JSON.stringify([
+  // HTTP 로 붙는 서버는 주소와 머리말이 곧 그 서버다. stdio 의 재료는 그대로 둔다 — 바꾸면 적어 둔 메모가 다 헌것이 된다.
+  const 재료 = 설정.방식 === 'http' ? JSON.stringify(['http', 설정.url, Object.entries(설정.headers ?? {}).sort(([a], [b]) => a.localeCompare(b))]) : JSON.stringify([
     설정.command, 설정.args ?? [], 설정.cwd ?? '',
     Object.entries(설정.env ?? {}).sort(([a], [b]) => a.localeCompare(b)),
   ]);
@@ -134,6 +172,8 @@ export function 메모쓰기(root, 서버들, { 남길이름 = null } = {}) {
       정보: s.정보 ?? null,
       잘림: s.잘림 ?? 0,
       도구: s.도구,
+      // 프롬프트는 슬래시 명령으로 선다 — 대기 중에도 /mcp 와 /mcp__… 가 알아야 한다 (2.1.3).
+      프롬프트: s.프롬프트 ?? [],
     };
   }
   /*
@@ -165,7 +205,7 @@ export function 쓸만한메모(메모, 설정, 이제 = Date.now()) {
  * 설정을 읽는다. Claude Code 의 `mcpServers` 모양을 그대로 받는다 —
  * 이미 쓰던 설정을 복사해 붙일 수 있어야 한다.
  */
-export function 설정읽기(root) {
+export function 설정읽기(root, { env = process.env } = {}) {
   const p = 설정자리(root);
   if (!existsSync(p)) return { 서버들: [], 자리: p, 있음: false };
   let j;
@@ -206,18 +246,31 @@ export function 설정읽기(root) {
   const 못받은것 = [];
   for (const [이름, v] of Object.entries(표)) {
     if (v?.disabled === true) continue;
-    // stdio 만 받는다. http/sse 규격은 바깥으로 나가는 것이라 자물쇠와 부딪힌다.
-    if (v?.type && v.type !== 'stdio') {
-      못받은것.push({ 이름, 왜: `"${v.type}" 규격은 아직 못 붙입니다 — stdio(command 로 띄우는 서버)만 받습니다` });
+    /*
+     * ── 무엇으로 붙나 (2.1.3) ─────────────────────────────────────────────
+     *
+     * stdio(command) 와 streamable HTTP(url) 를 받는다. HTTP 는 나가는 문 하나(backend/http.js)로
+     * 나가서 자물쇠가 한 홉마다 본다(파일 머리말). `type` 을 안 적고 `url` 만 적은 것도 HTTP 로
+     * 본다 — 다른 도구의 설정은 흔히 그렇게 적는다. 다만 주소가 `/sse` 로 끝나면 옛 HTTP+SSE
+     * 규격의 창구라, 붙여 보고 알 수 없는 탈을 내느니 여기서 까닭을 말한다(type 을 적으면 믿는다).
+     */
+    const 갈래 = typeof v?.type === 'string' ? v.type.trim().toLowerCase() : '';
+    const 주소 = v?.url ?? v?.serverUrl;
+    const 웹 = /^(?:http|streamable-?http|streamablehttp)$/.test(갈래) || (!갈래 && !v?.command && !!주소);
+    if (갈래 === 'sse') {
+      못받은것.push({ 이름, 왜: '옛 "sse" 규격(HTTP+SSE)은 못 붙입니다 — stdio(command)와 streamable HTTP("type": "http")를 받습니다' });
       continue;
     }
-    if (!v?.command) {
-      못받은것.push({
-        이름,
-        왜: v?.url
-          ? 'url 로 붙는 서버는 아직 못 붙입니다 — command 로 띄우는 stdio 서버만 받습니다'
-          : 'command 가 없습니다 — 무엇을 띄울지 적어야 합니다',
-      });
+    if (갈래 && 갈래 !== 'stdio' && !웹) {
+      못받은것.push({ 이름, 왜: `"${v.type}" 규격은 못 붙입니다 — stdio(command)와 streamable HTTP("type": "http", url)를 받습니다` });
+      continue;
+    }
+    if (웹 && !갈래 && /\/sse\/?(?:[?#].*)?$/i.test(String(주소))) {
+      못받은것.push({ 이름, 왜: '주소(url)가 /sse 로 끝납니다 — 옛 HTTP+SSE 규격의 창구로 보입니다. 서버가 streamable HTTP 도 내면 보통 /mcp 입니다 — 그 주소를 적거나 "type": "http" 를 적어 주세요' });
+      continue;
+    }
+    if (!웹 && !v?.command) {
+      못받은것.push({ 이름, 왜: 'command 가 없습니다 — 무엇을 띄울지(command) 나 어디에 붙을지(url) 적어야 합니다' });
       continue;
     }
     /*
@@ -233,6 +286,47 @@ export function 설정읽기(root) {
      */
     if (!/^[^_]+(?:_[^_]+)*$/.test(이름)) {
       못받은것.push({ 이름, 왜: '서버 이름에 `__` 가 들었거나 `_` 로 시작·끝납니다 — 모델에게 보이는 mcp__<서버>__<도구> 를 도로 가를 수 없어 부를 수 없습니다. 이름을 바꿔 주세요' });
+      continue;
+    }
+    if (웹) {
+      /*
+       * `${이름}` 은 환경변수로 편다 — 열쇠를 저장소에 적어 두지 않게 (Claude Code 와 같은 꼴,
+       * `${이름:-기본}` 도). 주소와 머리말에서만 편다. 없는 변수를 빈 글로 펴서 보내면 열쇠 없는
+       * 요청이 401 로 돌아오고, 사람은 서버를 의심한다 — 없으면 없다고 여기서 말한다.
+       */
+      const 없는것 = new Set();
+      const 펴기 = (글) => String(글).replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (_, 변수, 기본) => {
+        const 값 = env?.[변수];
+        if (값 != null && 값 !== '') return 값;
+        if (기본 !== undefined) return 기본;
+        없는것.add(변수);
+        return '';
+      });
+      const url = 펴기(주소);
+      const headers = {};
+      if (v.headers && typeof v.headers === 'object' && !Array.isArray(v.headers)) {
+        for (const [k, 값] of Object.entries(v.headers)) if (값 != null) headers[k] = 펴기(값);
+      }
+      if (없는것.size) {
+        못받은것.push({ 이름, 왜: `환경변수 ${[...없는것].join(' · ')} 가 없습니다 — mcp.json 의 \${…} 를 채울 수 없어 붙지 않습니다` });
+        continue;
+      }
+      /*
+       * HTTP 머리말에 못 싣는 것은 여기서 말한다. 한글 이름·값을 그대로 두면 붙을 때 「Cannot convert
+       * argument to a ByteString」 한 줄로 넘어진다 — 무엇이 틀렸는지 사람이 읽을 수 없는 말이다.
+       */
+      const 틀린머리 = Object.entries(headers).find(([k, 값]) => !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(k) || /[^\t\x20-\x7e\x80-\xff]/.test(값));
+      if (틀린머리) {
+        못받은것.push({ 이름, 왜: `머리말 ${틀린머리[0]} 는 HTTP 머리말에 실을 수 없습니다 — 이름은 영문·숫자·-, 값은 영문 글자만 됩니다(한글·줄바꿈 안 됨)` });
+        continue;
+      }
+      let 읽은주소 = null;
+      try { 읽은주소 = new URL(url); } catch { /* 아래에서 말한다 */ }
+      if (!읽은주소 || !/^https?:$/.test(읽은주소.protocol)) {
+        못받은것.push({ 이름, 왜: `url 이 http(s) 주소가 아닙니다: ${url.slice(0, 120)}` });
+        continue;
+      }
+      서버들.push({ 이름, 방식: 'http', url: 읽은주소.href, headers });
       continue;
     }
     서버들.push({
@@ -340,7 +434,17 @@ export class MCP서버 {
     this.되살린수 = 0;
     /** 우리가 닫았나(닫기). 닫은 것은 되살리지 않는다. */
     this.닫음 = false;
+    /** 인사에서 서버가 고른 규격 판 · 서버가 낸다고 한 것(capabilities) · 서버의 프롬프트 (2.1.3). */
+    this.규격 = null;
+    this.능력 = {};
+    this.프롬프트 = [];
   }
+
+  /** 인사에서 청할 규격 판. stdio 는 예전 그대로 둔다 — 바꾸면 이미 쓰던 서버의 대답 꼴이 달라질 수 있다. */
+  get 청할규격() { return '2024-11-05'; }
+
+  /** 서버가 자료를 내서 우리가 read_resource 를 붙였나 (자료도구이름 머리말). */
+  get 자료도구붙임() { return this.도구.some((t) => t?.['x-deel'] === 'resources'); }
 
   살아있나() { return !!this.kid && this.kid.exitCode === null && !this.죽음; }
   /** 지금 도구를 부를 수 있나. 대기 중이면 부르는 순간 뜬다. 저 혼자 죽은 것도 되살린다. */
@@ -362,6 +466,7 @@ export class MCP서버 {
     this.도구 = 메모.도구 ?? [];
     this.정보 = 메모.정보 ?? null;
     this.잘림 = 메모.잘림 ?? 0;
+    this.프롬프트 = Array.isArray(메모.프롬프트) ? 메모.프롬프트 : [];
     this.대기 = true;
     return this;
   }
@@ -463,7 +568,11 @@ export class MCP서버 {
     return this.깨우는중;
   }
 
-  async 붙기({ timeout = 붙기제한 } = {}) {
+  /**
+   * 길을 연다 — stdio 는 여기서 아이를 띄운다. HTTP 는 열 것이 없다(MCP웹서버 가 갈음한다).
+   * @returns {boolean} 못 열었으면 false (까닭은 죽음 에)
+   */
+  길열기() {
     try {
       // 설정에 적힌 env 만 얹는다. 우리 환경변수를 통째로 넘기면
       // 게이트웨이 열쇠(DEEL_*)까지 남의 프로세스로 넘어간다.
@@ -502,15 +611,20 @@ export class MCP서버 {
     // 마지막 것만 들고 있다가 죽었을 때 원인으로 보여 준다.
     아이.stderr.setEncoding('utf8');
     아이.stderr.on('data', (d) => { if (지금아이()) this.마지막말 = String(d).trim().slice(-400); });
+    return true;
+  }
+
+  async 붙기({ timeout = 붙기제한 } = {}) {
+    if (!this.길열기()) return false;
+    const 전체마감 = Date.now() + timeout;
 
     try {
-      const r = await this.보내고기다리기('initialize', {
-        protocolVersion: '2024-11-05',
-        capabilities: { tools: {} },
-        clientInfo: { name: 'deel', version: VERSION },
-      }, timeout);
+      const r = await this.보내고기다리기('initialize', this.인사말(), timeout);
       this.정보 = r?.serverInfo ?? null;
-      this.알림('notifications/initialized', {});
+      this.규격 = typeof r?.protocolVersion === 'string' ? r.protocolVersion : null;
+      this.능력 = r?.capabilities && typeof r.capabilities === 'object' ? r.capabilities : {};
+      // HTTP 는 이 알림이 닿은 뒤에 다음 물음을 보내야 한다 — 먼저 도착하면 받지 않는 서버가 있다.
+      await this.알림('notifications/initialized', {});
     } catch (e) {
       this.끝냄(`규격 인사에 실패했습니다: ${e.message}`);
       return false;
@@ -560,10 +674,126 @@ export class MCP서버 {
       this.도구 = 다.slice(0, 도구최대);
       this.잘림 = Math.max(0, 다.length - this.도구.length) + (덜받음 ? 1 : 0);
     } catch (e) {
-      this.끝냄(`도구 목록을 못 받았습니다: ${e.message}`);
-      return false;
+      /*
+       * 도구 없이 자료·프롬프트만 내는 서버는 tools/list 를 모를 수 있다 (2.1.3) — 도구를 낸다고
+       * 안 했으면 목록을 못 받은 것이 탈이 아니다. 낸다고 해 놓고 못 주면 여느 때처럼 실패다.
+       */
+      if (this.능력?.tools || !(this.능력?.resources || this.능력?.prompts)) {
+        this.끝냄(`도구 목록을 못 받았습니다: ${e.message}`);
+        return false;
+      }
+      this.도구 = [];
+      this.잘림 = 0;
+    }
+
+    /*
+     * ── 자료와 프롬프트 (2.1.3) ──────────────────────────────────────────
+     *
+     * 도구만 받고 나머지는 버렸다. 문서 서버는 제 문서를 자료(resources)로, 팀이 다듬은 지시문은
+     * 프롬프트로 낸다 — 둘 다 모델도 사람도 닿을 길이 없었다.
+     *
+     *   자료      read_resource 도구 하나를 붙인다(자료도구이름). 목록은 부를 때 받는다 — 붙을 때
+     *             받으면 자료가 수천 개인 서버에서 켤 때마다 기다린다.
+     *   프롬프트  목록을 받아 둔다. 사람이 `/mcp__<서버>__<이름>` 으로 부른다(commands.js).
+     *
+     * 못 받아도 서버는 붙는다 — 곁가지 하나 때문에 도구까지 못 쓰면 안 된다.
+     */
+    if (this.능력?.resources && !this.도구.some((t) => t?.name === 자료도구이름)) this.도구 = [...this.도구, 자료도구정의()];
+    if (this.능력?.prompts) {
+      try {
+        const { 다 } = await this.목록모으기('prompts/list', 'prompts', 전체마감, 프롬프트최대);
+        this.프롬프트 = 다.filter((p) => typeof p?.name === 'string' && /^\S+$/.test(p.name)).slice(0, 프롬프트최대).map((p) => ({
+          name: p.name,
+          description: typeof p.description === 'string' ? p.description.slice(0, 300) : '',
+          arguments: (Array.isArray(p.arguments) ? p.arguments : [])
+            .filter((a) => typeof a?.name === 'string' && a.name)
+            .map((a) => ({ name: a.name, description: typeof a.description === 'string' ? a.description.slice(0, 200) : '', required: a.required === true })),
+        }));
+      } catch { this.프롬프트 = []; }
     }
     return true;
+  }
+
+  /**
+   * 쪽으로 오는 목록을 끝까지 모은다 — tools/list 와 같은 그물(쪽 수 · 같은 커서 · 시한)을 건다.
+   * 첫 쪽부터 못 받으면 던진다. 뒷쪽에서 넘어지면 받은 데까지 주고 덜받음 을 세운다.
+   */
+  async 목록모으기(method, 열쇠, 마감, 상한 = Infinity, signal = null) {
+    const 다 = [];
+    const 본커서 = new Set();
+    let 커서 = null;
+    let 덜받음 = false;
+    for (let 쪽 = 0; ; 쪽++) {
+      let r;
+      try {
+        r = await this.보내고기다리기(method, 커서 ? { cursor: 커서 } : {}, Math.max(1000, 마감 - Date.now()), signal);
+      } catch (e) {
+        if (!다.length) throw e;
+        덜받음 = true;
+        break;
+      }
+      if (Array.isArray(r?.[열쇠])) 다.push(...r[열쇠]);
+      const 다음 = typeof r?.nextCursor === 'string' && r.nextCursor ? r.nextCursor : null;
+      if (!다음 || 본커서.has(다음)) break;
+      if (쪽 + 1 >= 목록쪽최대 || 다.length >= 상한) { 덜받음 = true; break; }
+      본커서.add(다음);
+      커서 = 다음;
+    }
+    return { 다, 덜받음 };
+  }
+
+  /** read_resource — uri 가 없으면 목록, 있으면 그 자료의 글 (자료도구이름 머리말). */
+  async 자료읽기(args, { timeout = 부르기제한, signal = null } = {}) {
+    const uri = typeof args?.uri === 'string' ? args.uri.trim() : '';
+    if (!uri) {
+      const 마감 = Date.now() + timeout;
+      const { 다, 덜받음 } = await this.목록모으기('resources/list', 'resources', 마감, 자료최대, signal);
+      // 틀(templates)은 안 내는 서버가 흔하다 — 못 받아도 목록은 준다.
+      let 틀 = [];
+      try { ({ 다: 틀 } = await this.목록모으기('resources/templates/list', 'resourceTemplates', 마감, 50, signal)); } catch { /* 틀이 없다 */ }
+      const 짧게 = (글, n) => { const s = String(글 ?? '').replace(/\s+/g, ' ').trim(); return s.length > n ? `${s.slice(0, n)}…` : s; };
+      const 줄 = 다.slice(0, 자료최대).filter((r) => typeof r?.uri === 'string').map((r) => [
+        r.uri,
+        r.name && r.name !== r.uri ? ` — ${짧게(r.name, 80)}` : '',
+        r.mimeType ? ` (${r.mimeType})` : '',
+        r.description ? `: ${짧게(r.description, 160)}` : '',
+      ].join(''));
+      const 틀줄 = 틀.slice(0, 50).filter((t) => typeof t?.uriTemplate === 'string')
+        .map((t) => `${t.uriTemplate}${t.name ? ` — ${짧게(t.name, 80)}` : ''}${t.description ? `: ${짧게(t.description, 160)}` : ''}`);
+      return {
+        text: [
+          줄.length ? 줄.join('\n') : '(이 서버가 내놓은 자료가 없습니다)',
+          덜받음 || 다.length > 자료최대 ? `… 더 있습니다 — ${자료최대}개까지만 적었습니다` : '',
+          틀줄.length ? `\n틀 — {…} 를 채운 uri 로 읽습니다:\n${틀줄.join('\n')}` : '',
+        ].filter(Boolean).join('\n'),
+        isError: false,
+      };
+    }
+    const r = await this.보내고기다리기('resources/read', { uri }, timeout, signal);
+    const 글 = (Array.isArray(r?.contents) ? r.contents : []).map((c) => {
+      if (typeof c?.text === 'string') return c.text;
+      // 바이너리는 싣지 않는다 — base64 는 글자 수만 먹고 모델은 못 읽는다. 있다는 것만 말한다.
+      if (typeof c?.blob === 'string') return `[${c.mimeType ?? 'binary'} · ${Math.floor(c.blob.length * 3 / 4).toLocaleString()}바이트 — 글이 아니라 싣지 않습니다: ${c.uri ?? uri}]`;
+      return '';
+    }).filter(Boolean).join('\n');
+    return { text: 글, isError: false };
+  }
+
+  /**
+   * 프롬프트를 받아 한 덩이 글로 편다 — 사람이 `/mcp__<서버>__<이름>` 으로 부른다 (2.1.3).
+   * 대기 중이면 여기서 깨운다(부르기 와 같은 길).
+   */
+  async 프롬프트받기(이름, 인자 = {}, { timeout = 부르기제한, signal = null } = {}) {
+    if (signal?.aborted) throw new Error('중단했습니다');
+    if (this.대기 || this.되살릴수있나()) {
+      const ok = await 끊기며기다리기(this.깨우기(), signal);
+      if (!ok) throw new Error(this.죽음 ?? '띄우지 못했습니다');
+    }
+    const r = await this.보내고기다리기('prompts/get', { name: 이름, arguments: 인자 ?? {} }, timeout, signal);
+    const 조각들 = (Array.isArray(r?.messages) ? r.messages : []).flatMap((m) => (Array.isArray(m?.content) ? m.content : [m?.content]));
+    return 조각들
+      .map((p) => (p?.type === 'text' ? p.text : p?.type === 'resource' && typeof p.resource?.text === 'string' ? p.resource.text : ''))
+      .filter((t) => typeof t === 'string' && t).join('\n\n');
   }
 
   받음(덩이) {
@@ -692,10 +922,12 @@ export class MCP서버 {
    * roots·sampling 같은 능력을 안 댔으니(initialize 의 capabilities) 규격대로 -32601 이다.
    */
   물음에답(j) {
-    const 답 = j.method === 'ping'
-      ? { jsonrpc: '2.0', id: j.id, result: {} }
-      : { jsonrpc: '2.0', id: j.id, error: { code: -32601, message: `deel 은 ${String(j.method).slice(0, 80)} 을(를) 받지 않습니다` } };
-    try { this.kid?.stdin?.write(JSON.stringify(답) + '\n'); } catch { /* 죽었으면 어차피 끝이다 */ }
+    try { this.kid?.stdin?.write(JSON.stringify(물음답(j)) + '\n'); } catch { /* 죽었으면 어차피 끝이다 */ }
+  }
+
+  /** 인사말 — 처음 붙을 때와 HTTP 세션이 끝나 다시 인사할 때 같은 것을 보낸다. */
+  인사말() {
+    return { protocolVersion: this.청할규격, capabilities: { tools: {} }, clientInfo: { name: 'deel', version: VERSION } };
   }
 
   async 부르기(도구이름, args, { timeout = 부르기제한, signal = null } = {}) {
@@ -733,6 +965,8 @@ export class MCP서버 {
           + ` — 적어 둔 목록이 옛것이었습니다. 지금 있는 것: ${this.도구.map((t) => t.name).join(' · ') || '(없음)'}`);
       }
     }
+    // 우리가 붙인 read_resource 는 서버의 도구가 아니다 — tools/call 이 아니라 resources/* 로 간다.
+    if (도구이름 === 자료도구이름 && this.자료도구붙임) return await this.자료읽기(args, { timeout, signal });
     const r = await this.보내고기다리기('tools/call', { name: 도구이름, arguments: args ?? {} }, timeout, signal);
     // 규격상 결과는 content 배열이다. 글만 뽑아 모델에게 넘긴다.
     const 조각 = Array.isArray(r?.content) ? r.content : [];
@@ -797,6 +1031,299 @@ export class MCP서버 {
       // 자식이 살아 있으면 우리 프로그램이 안 끝난다.
       this.kid?.unref?.();
     } catch { /* 이미 죽었다 */ }
+  }
+}
+
+/**
+ * 서버가 우리에게 물은 것의 답. ping 은 받고, 나머지는 「안 받습니다」 로 (MCP서버.물음에답 머리말).
+ */
+function 물음답(j) {
+  return j.method === 'ping'
+    ? { jsonrpc: '2.0', id: j.id, result: {} }
+    : { jsonrpc: '2.0', id: j.id, error: { code: -32601, message: `deel 은 ${String(j.method).slice(0, 80)} 을(를) 받지 않습니다` } };
+}
+
+/** JSON-RPC 오류를 사람 말로. 규격 판이 안 맞으면 서버가 받는 판을 같이 적는다 (파일 머리말의 2026-07-28). */
+function 답탈글(error) {
+  const 받는것 = Array.isArray(error?.data?.supported) ? error.data.supported.filter((x) => typeof x === 'string').slice(0, 8) : [];
+  const 말 = String(error?.message ?? '알 수 없는 오류').slice(0, 300);
+  return 받는것.length ? `${말} (서버가 받는 규격: ${받는것.join(', ')} — deel 은 인사로 붙는 규격 2025-11-25 까지 압니다)` : 말;
+}
+
+/** HTTP 로 거절당한 까닭을 한 줄로. 흔한 둘(열쇠 · 주소)은 무엇을 볼지까지 말한다. */
+function 웹탈글(status, 글, method) {
+  const 날글 = String(글 ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  let 말 = '';
+  try {
+    const j = JSON.parse(글);
+    // JSON-RPC 오류({error: {message}})만 오지 않는다 — 앞단 게이트웨이는 OAuth 꼴({error: "invalid_token",
+    // error_description}) · {message} 로 거절한다. 그 말을 버리면 「알 수 없는 오류」 만 남는다.
+    const e = j?.error;
+    말 = e && typeof e === 'object' ? 답탈글(e)
+      : [e, j?.error_description, j?.message].filter((x) => typeof x === 'string' && x.trim()).join(' — ').slice(0, 200) || 날글;
+  } catch {
+    말 = 날글;
+  }
+  const 볼것 = status === 401 || status === 403
+    ? ' — 열쇠(mcp.json 의 headers)를 확인하세요'
+    : (status === 404 || status === 405) && method === 'initialize'
+      ? ' — 이 주소가 MCP 창구가 아니거나, 옛 HTTP+SSE 규격 서버일 수 있습니다'
+      : '';
+  return `HTTP ${status}${말 ? ` · ${말}` : ''}${볼것}`;
+}
+
+/**
+ * SSE 글을 사건별 data 로 가른다. 아직 안 끝난 뒷부분은 남은것 으로 돌려준다.
+ *
+ * 줄 끝은 셋 다 받는다(\r\n · \n · \r). 조각이 \r 에서 끊기면 다음 조각의 \n 과 한 줄 끝인지
+ * 아직 모르므로 붙들어 둔다 — 안 그러면 빈 줄로 읽혀 사건이 반쪽에서 잘린다.
+ */
+export function SSE가르기(찌꺼기) {
+  let 붙들 = '';
+  let 글 = String(찌꺼기 ?? '');
+  // 줄 끝 바로 뒤의 \r 은 붙들지 않는다 — 뒤에 \n 이 오든 말든 빈 줄이 이미 섰다(사건 끝). 붙들면 \r 만 쓰는
+  // 서버의 마지막 답이 다음 조각이 올 때까지 갇힌다.
+  if (글.endsWith('\r') && !/[\r\n]\r$/.test(글)) { 붙들 = '\r'; 글 = 글.slice(0, -1); }
+  const 덩이 = 글.replace(/\r\n?/g, '\n').split('\n\n');
+  const 남은것 = 덩이.pop() + 붙들;
+  const 사건들 = [];
+  for (const d of 덩이) {
+    const data = d.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).replace(/^ /, ''));
+    if (data.length) 사건들.push(data.join('\n'));
+  }
+  return { 사건들, 남은것 };
+}
+
+/*
+ * ── HTTP 로 붙는 서버 (2.1.3 · streamable HTTP) ─────────────────────────
+ *
+ * 물음 하나가 POST 하나다. 답은 두 꼴로 온다 — JSON 한 통, 또는 SSE 흐름(그 안에 서버가 우리에게
+ * 묻는 것이 먼저 섞여 올 수 있다). 둘 다 받는다. 인사의 답에 Mcp-Session-Id 가 오면 그 뒤로 늘
+ * 싣고, 서버가 그 세션을 버려 404 를 주면 새로 인사하고 **한 번만** 다시 보낸다(규격대로).
+ *
+ * 아이(프로세스)가 없으니 「살아 있나」 는 길을 열어 두었나다. 물음 하나가 끊기거나 5xx 가 와도
+ * 서버를 죽음 으로 적지 않는다 — 그 물음만 실패다. 네트워크가 한 번 흔들린 것으로 세션 내내 도구를
+ * 잃으면 안 된다. 죽음 은 인사에 실패했을 때와 우리가 닫았을 때만 선다.
+ */
+export class MCP웹서버 extends MCP서버 {
+  constructor(설정) {
+    super(설정);
+    this.열림 = false;
+    this.세션 = null;
+    /** 도는 요청들의 끊개. 닫기 가 한꺼번에 끊는다. */
+    this.도는것 = new Set();
+    /** 세션이 끝나 다시 인사하는 중인 약속 — 여럿이 한꺼번에 404 를 받아도 인사는 한 번. */
+    this.다시인사중 = null;
+  }
+
+  get 청할규격() { return '2025-11-25'; }
+
+  살아있나() { return this.열림 && !this.죽음; }
+
+  길열기() {
+    this.열림 = true;
+    this.세션 = null;
+    this.규격 = null;
+    // 프로세스는 없지만 명부에 든다 — 끝날 때 모두닫기 가 도는 요청을 끊고 세션을 닫게.
+    띄운것들.add(this);
+    return true;
+  }
+
+  /** 싣는 머리말. 적어 둔 것 위에 규격이 정한 것을 얹는다 — 적어 둔 것이 규격 머리말을 덮지 못한다. */
+  머리말() {
+    const h = { ...(this.설정.headers ?? {}) };
+    for (const k of Object.keys(h)) if (/^(?:content-type|accept|mcp-session-id|mcp-protocol-version)$/i.test(k)) delete h[k];
+    h['Content-Type'] = 'application/json';
+    h.Accept = 'application/json, text/event-stream';
+    if (this.세션) h['Mcp-Session-Id'] = this.세션;
+    if (this.규격) h['MCP-Protocol-Version'] = this.규격;
+    return h;
+  }
+
+  async 보내고기다리기(method, params, timeout = 부르기제한, signal = null) {
+    if (!this.열림 || this.죽음) throw new Error(this.죽음 ?? '연결이 없습니다');
+    if (signal?.aborted) throw new Error('중단했습니다');
+    // 다시 인사하는 중이면 끝나기를 기다린다 — 세션 없이 나간 물음은 서버가 거절한다.
+    if (this.다시인사중 && method !== 'initialize') await 끊기며기다리기(this.다시인사중, signal);
+    try {
+      return await this.보내기({ jsonrpc: '2.0', id: this.다음번호++, method, params }, { timeout, signal });
+    } catch (e) {
+      if (!e?.세션끝남 || method === 'initialize') throw e;
+      await this.다시인사(timeout, signal, e.세션);
+      return await this.보내기({ jsonrpc: '2.0', id: this.다음번호++, method, params }, { timeout, signal });
+    }
+  }
+
+  /**
+   * 서버가 세션을 버렸다 — 세션 없이 initialize 부터 다시 한다 (규격).
+   *
+   * 끝난세션 은 404 를 받은 물음이 싣고 간 세션이다. 같이 나간 물음들의 404 는 저마다 다른 때에 닿는다 —
+   * 이미 다른 물음이 새 세션을 받아 왔으면 또 인사하지 않는다(받아 온 세션을 버리게 된다).
+   */
+  다시인사(timeout, signal, 끝난세션 = this.세션) {
+    if (!this.다시인사중 && this.세션 && this.세션 !== 끝난세션) return Promise.resolve();
+    if (!this.다시인사중) {
+      this.세션 = null;
+      this.규격 = null;
+      this.다시인사중 = (async () => {
+        const r = await this.보내기({ jsonrpc: '2.0', id: this.다음번호++, method: 'initialize', params: this.인사말() }, { timeout });
+        this.규격 = typeof r?.protocolVersion === 'string' ? r.protocolVersion : null;
+        await this.알림('notifications/initialized', {});
+      })().finally(() => { this.다시인사중 = null; });
+    }
+    return 끊기며기다리기(this.다시인사중, signal);
+  }
+
+  /**
+   * 한 통을 POST 로 보낸다. 물음이면 답을 기다려 result 를 돌려주고, 알림·답이면 받았다(202)는 것만 본다.
+   */
+  async 보내기(통, { timeout = 부르기제한, signal = null } = {}) {
+    // 닫은 뒤에 늦게 온 알림 · 답(다시 인사의 initialized 따위)이 새 연결을 열지 않게.
+    if (!this.열림) throw new Error(this.죽음 ?? '닫았습니다');
+    const 물음 = 통.method !== undefined && 통.id != null;
+    const url = this.설정.url;
+    const 머리 = this.머리말();
+    const 실은세션 = this.세션;
+    const 손 = new AbortController();
+    let 까닭 = null;
+    const 끊기 = (왜) => { if (!까닭) 까닭 = 왜; try { 손.abort(); } catch { /* 이미 끊겼다 */ } };
+    const 시계 = setTimeout(() => 끊기('시간'), timeout);
+    시계.unref?.();
+    const 사람 = () => 끊기('사람');
+    if (signal?.aborted) 끊기('사람');
+    else signal?.addEventListener?.('abort', 사람, { once: true });
+    const 칸 = { 끊기 };
+    this.도는것.add(칸);
+    // 적어 둔 그 집만, 이 물음이 도는 동안만 연다. 오프라인 잠금이면 문지기가 그래도 막는다.
+    const 닫기문 = allowTemporarily(url);
+    try {
+      const r = await 원시요청(url, {
+        method: 'POST', headers: 머리, body: JSON.stringify(통),
+        timeout, 잠잠: timeout, stream: true, signal: 손.signal,
+        // 다른 집으로 되돌리면 안 따라간다 — 열쇠 머리말이 실린 물음이다.
+        되돌림: (다음) => {
+          if (다음.origin !== new URL(url).origin) throw new Error(`MCP 서버가 다른 곳(${다음.origin})으로 되돌립니다 — 따라가지 않습니다`);
+        },
+      });
+      if (r.error) throw new Error(r.error);
+      if (r.되돌림탈) throw new Error(r.되돌림탈);
+      if (통.method === 'initialize') {
+        const 세션 = r.headers?.get?.('mcp-session-id');
+        if (세션) this.세션 = 세션;
+      }
+      if (!r.ok) {
+        const 글 = await Promise.resolve(r.res?.text?.()).catch(() => '');
+        // 판정은 이 물음이 **싣고 간** 세션으로 한다 — 지금 세션은 그새 다시 인사한 다른 물음이 비웠거나 바꿨다.
+        if (r.status === 404 && 실은세션 && 통.method !== 'initialize') {
+          throw Object.assign(new Error('서버가 세션을 끝냈습니다'), { 세션끝남: true, 세션: 실은세션 });
+        }
+        throw new Error(웹탈글(r.status, 글 ?? '', 통.method));
+      }
+      if (!물음) { await r.버리기?.(); return null; }
+      if (!r.res?.body) throw new Error(`답이 비었습니다 (HTTP ${r.status})`);
+      const 갈래 = String(r.headers?.get?.('content-type') ?? '');
+      if (/text\/event-stream/i.test(갈래)) return await this.흐름에서답(r.res.body, 통.id);
+      const 몸 = await 몸읽기(r.res.body, 줄최대);
+      if (몸 == null) throw new Error('한 통이 너무 큽니다 — 규격에 안 맞는 서버입니다');
+      let j;
+      try { j = JSON.parse(몸.toString('utf8')); } catch {
+        throw new Error(`답이 JSON 이 아닙니다 (HTTP ${r.status}${갈래 ? ` · ${갈래}` : ''})`);
+      }
+      const 답 = this.통보기(Array.isArray(j) ? j : [j], 통.id);
+      if (!답) throw new Error('답에 우리 물음의 번호가 없습니다 — 규격에 안 맞는 서버입니다');
+      if (답.error) throw new Error(답탈글(답.error));
+      return 답.result;
+    } catch (e) {
+      if (까닭 === '시간') throw new Error(`${Math.round(timeout / 1000)}초 안에 답이 없습니다`);
+      if (까닭 === '사람') throw new Error('중단했습니다');
+      if (까닭 === '닫음') throw new Error(this.죽음 ?? '닫았습니다');
+      throw e;
+    } finally {
+      clearTimeout(시계);
+      signal?.removeEventListener?.('abort', 사람);
+      this.도는것.delete(칸);
+      닫기문();
+    }
+  }
+
+  /**
+   * 받은 통들에서 우리 답을 고르고, 서버가 우리에게 물은 것에는 답한다 (한통 과 같은 잣대 — method 로 가른다).
+   *
+   * 번호 없는(id: null) 오류는 우리 물음을 못 읽은 서버의 답이다(JSON-RPC 규격 — 번호를 못 읽었으니 null).
+   * 이 POST 에 실린 물음은 하나뿐이라 그 오류가 곧 우리 답이다. 「번호가 없다」 로 덮으면 서버가 한 말을 잃는다.
+   */
+  통보기(통들, id) {
+    let 찾음 = null;
+    let 번호없는탈 = null;
+    for (const j of 통들) {
+      if (!j || typeof j !== 'object') continue;
+      if (j.method !== undefined) {
+        if (j.id != null) this.물음에답(j);
+        continue;
+      }
+      if (j.id === id && !찾음) 찾음 = j;
+      else if (j.id === null && j.error && !번호없는탈) 번호없는탈 = j;
+    }
+    return 찾음 ?? 번호없는탈;
+  }
+
+  /** SSE 로 오는 답. 우리 답이 오면 그 자리에서 흐름을 끊는다. */
+  async 흐름에서답(몸, id) {
+    const 읽개 = 몸.getReader();
+    const 풀개 = new TextDecoder();
+    let 찌꺼기 = '';
+    let 끝 = false;
+    try {
+      for (;;) {
+        const { done, value } = await 읽개.read();
+        // 끝났으면 빈 줄을 하나 보태 마지막 사건까지 가른다 — 빈 줄 없이 닫는 서버가 있다.
+        if (done) { 끝 = true; 찌꺼기 += `${풀개.decode()}\n\n`; } else 찌꺼기 += 풀개.decode(value, { stream: true });
+        const { 사건들, 남은것 } = SSE가르기(찌꺼기);
+        찌꺼기 = 남은것;
+        for (const 글 of 사건들) {
+          let j;
+          try { j = JSON.parse(글); } catch { continue; }   // 규격 밖의 잡소리는 버린다
+          const 답 = this.통보기(Array.isArray(j) ? j : [j], id);
+          if (!답) continue;
+          if (답.error) throw new Error(답탈글(답.error));
+          return 답.result;
+        }
+        // 줄바꿈 없이 끝없이 붓는 서버에 메모리가 튀지 않게 (stdio 의 넘침 과 같은 상한).
+        if (찌꺼기.length > 줄최대) throw new Error('한 통이 너무 큽니다 — 규격에 안 맞는 서버입니다');
+        if (끝) throw new Error('답을 주기 전에 서버가 흐름을 닫았습니다');
+      }
+    } finally {
+      if (!끝) { try { await 읽개.cancel(); } catch { /* 이미 닫혔다 */ } }
+    }
+  }
+
+  알림(method, params) {
+    return this.보내기({ jsonrpc: '2.0', method, params }, { timeout: 붙기제한 }).catch(() => { /* 알림은 답이 없다 — 못 닿아도 다음 물음이 말한다 */ });
+  }
+
+  물음에답(j) {
+    this.보내기(물음답(j), { timeout: 붙기제한 }).catch(() => { /* 못 닿으면 서버가 제 시한에 그만둔다 */ });
+  }
+
+  닫기() {
+    this.닫음 = true;
+    this.끝냄('닫았습니다');
+    띄운것들.delete(this);
+    this.열림 = false;
+    for (const 칸 of this.도는것) 칸.끊기('닫음');
+    this.도는것.clear();
+    const 세션 = this.세션;
+    this.세션 = null;
+    if (!세션) return;
+    // 세션을 끝낸다고 알린다(규격의 DELETE). 기다리지 않는다 — 못 알려도 서버가 제 시한에 치운다.
+    const url = this.설정.url;
+    let 닫기문 = null;
+    try {
+      닫기문 = allowTemporarily(url);
+      원시요청(url, { method: 'DELETE', headers: { ...this.머리말(), 'Mcp-Session-Id': 세션 }, timeout: 2000 })
+        .then(() => {}, () => {})
+        .finally(() => 닫기문?.());
+    } catch { 닫기문?.(); }
   }
 }
 
@@ -975,7 +1502,7 @@ export function 읽기만하나(서버들, 전체) {
  * 영영 알 수 없다.
  */
 export async function 다붙이기(root, { offline = false, timeout = 붙기제한, audit = null, env = process.env } = {}) {
-  const 설정 = 설정읽기(root);
+  const 설정 = 설정읽기(root, { env });
   if (설정.오류) return { 서버들: [], 못한것: [{ 이름: '(설정)', 왜: 설정.오류 }], 설정 };
   // 규격 때문에 안 받은 것은 어느 길로 끝나든 같이 내놓는다 (설정읽기 머리말).
   const 안받은것 = 설정.못받은것 ?? [];
@@ -1023,15 +1550,26 @@ export async function 다붙이기(root, { offline = false, timeout = 붙기제�
     };
   }
 
-  // 자물쇠가 걸려 있으면 아예 안 띄운다. 자식 프로세스가 어디로 나가는지
-  // 우리는 못 막는다 — 막을 수 없는 것을 막았다고 말하지 않는다.
+  /*
+   * 자물쇠가 걸려 있으면 띄우는 서버(stdio)는 안 띄운다. 자식 프로세스가 어디로 나가는지
+   * 우리는 못 막는다 — 막을 수 없는 것을 막았다고 말하지 않는다.
+   *
+   * HTTP 로 붙는 서버는 **막을 수 있다** (2.1.3) — 물음마다 문지기를 지난다(파일 머리말). 그래서
+   * 문지기와 같은 잣대(isLocalHost · 사내망 포함)로 이 컴퓨터 안이면 붙이고, 밖이면 여기서 까닭을 말한다.
+   * 붙여 놓고 부를 때마다 「허용되지 않은 주소」 를 보게 하느니 처음부터 안 붙인다.
+   */
+  let 붙일것 = 설정.서버들;
+  const 잠겨못한것 = [];
   if (offline) {
-    return {
-      서버들: [],
-      못한것: [...안받은것, ...설정.서버들.map((s) => ({ 이름: s.이름, 왜: '오프라인 잠금 중에는 안 띄웁니다' }))],
-      설정,
-      잠김: true,
-    };
+    붙일것 = 설정.서버들.filter((s) => s.방식 === 'http' && isLocalHost(new URL(s.url).hostname));
+    for (const s of 설정.서버들) {
+      if (붙일것.includes(s)) continue;
+      잠겨못한것.push({
+        이름: s.이름,
+        왜: s.방식 === 'http' ? `오프라인 잠금 중에는 이 컴퓨터 밖(${new URL(s.url).host})으로 붙지 않습니다` : '오프라인 잠금 중에는 안 띄웁니다',
+      });
+    }
+    if (!붙일것.length) return { 서버들: [], 못한것: [...안받은것, ...잠겨못한것], 설정, 잠김: true };
   }
 
   /*
@@ -1049,21 +1587,23 @@ export async function 다붙이기(root, { offline = false, timeout = 붙기제�
   const 메모들 = 게으르게 ? 메모읽기(root) : {};
 
   const 붙은것 = [];
-  const 못한것 = [...안받은것];
+  const 못한것 = [...안받은것, ...잠겨못한것];
   let 새로띄운게있나 = false;
-  await Promise.all(설정.서버들.map(async (s) => {
-    const 서버 = new MCP서버(s);
+  await Promise.all(붙일것.map(async (s) => {
+    const 서버 = s.방식 === 'http' ? new MCP웹서버(s) : new MCP서버(s);
+    // 감사기록에는 무엇에 붙었나만 — 주소의 이름·비밀번호·물음표 뒤(열쇠가 실리는 자리)는 안 적는다.
+    const 무엇 = s.방식 === 'http' ? { url: 적을주소(s.url) } : { command: s.command };
     const 메모 = 쓸만한메모(메모들[s.이름], s);
     if (메모) {
       붙은것.push(서버.메모로세우기(메모, root));
-      audit?.write?.('mcp', { 이름: s.이름, command: s.command, 도구: 서버.도구.length, 대기: true });
+      audit?.write?.('mcp', { 이름: s.이름, ...무엇, 도구: 서버.도구.length, 대기: true });
       return;
     }
     const ok = await 서버.붙기({ timeout });
     if (ok) {
       새로띄운게있나 = true;
       붙은것.push(서버);
-      audit?.write?.('mcp', { 이름: s.이름, command: s.command, 도구: 서버.도구.length });
+      audit?.write?.('mcp', { 이름: s.이름, ...무엇, 도구: 서버.도구.length });
     } else {
       못한것.push({ 이름: s.이름, 왜: 서버.죽음 ?? '알 수 없는 이유' });
       서버.닫기();
@@ -1085,7 +1625,12 @@ export async function 다붙이기(root, { offline = false, timeout = 붙기제�
     // 안 지워진다 — 메모쓰기 가 겹쳐 쓴다(그 머리말).
     메모쓰기(root, 붙은것.filter((s) => !s.대기), { 남길이름: 이름들 });
   }
-  return { 서버들: 붙은것, 못한것, 설정, 게으르게 };
+  return { 서버들: 붙은것, 못한것, 설정, 게으르게, ...(offline ? { 잠김: true } : {}) };
+}
+
+/** 사람 눈과 감사기록에 보일 주소 — 이름·비밀번호·물음표 뒤를 뗀다. */
+export function 적을주소(url) {
+  try { const u = new URL(url); return `${u.origin}${u.pathname}`; } catch { return '(읽을 수 없는 주소)'; }
 }
 
 /** 모델에게 넘길 도구 정의로 바꾼다. */

@@ -11,6 +11,7 @@
 //   그래서 '묻는 자리' 를 전부 없앤 길을 따로 낸다. 에이전트 루프는 그대로 쓴다 —
 //   여기서 루프를 다시 짜면 두 벌이 되고, 언젠가 한쪽만 고쳐진다.
 import { statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { c, mark, clip, 화면글거르기 } from './ui/ansi.js';
 import { 규칙모으기, 정책읽기, 승인바닥 } from './safety/policy.js';
 import { 훅읽기 } from './safety/hooks.js';
@@ -19,7 +20,7 @@ import { 스키마읽기, 맞나, 답에서JSON뽑기, 시킬말 as 스키마시
 import { 남길것읽기 } from './safety/shellenv.js';
 import { 받기설정 } from './safety/authcmd.js';
 import { run } from './agent/loop.js';
-import { Session, 요청잘리나, 못박을길이 } from './agent/session.js';
+import { Session, 요청잘리나, 못박을길이, 생성속도, repairToolPairs } from './agent/session.js';
 import { 양수크기 } from './agent/models.js';
 import { estimateTokens } from './backend/tokens.js';
 import { makeScope } from './safety/guard.js';
@@ -31,12 +32,14 @@ import { activeProfile, load, resolveKey, 소식줄들 } from './config.js';
 import { 말 as 옮긴말 } from './i18n/index.js';
 import { 알림채움, 알림말 } from './backend/retry.js';
 import { 전선붙이기, 세션이름짓기 } from './backend/wire.js';
-import { newId } from './agent/store.js';
+import { newId, Store, latest, prune } from './agent/store.js';
+import { 못박기 } from './agent/pins.js';
+import { 바뀐파일모음, 사건적기열기 } from './runlog.js';
 import { discover, loadCommand } from './skills/discover.js';
 import { 다붙이기 } from './backend/mcp.js';
 import { 명령들 } from './cmdnames.js';
-// 슬래시 명령을 찾는 규칙은 대화 화면과 **같은 것 하나**를 쓴다 (commands.js 의 슬래시명령찾기 머리말).
-import { 슬래시명령찾기, 비슷한슬래시명령 } from './commands.js';
+// 슬래시 명령을 찾는 규칙은 대화 화면과 **같은 것 하나**를 쓴다 (slash.js 의 슬래시명령찾기 머리말).
+import { 슬래시명령찾기, 비슷한슬래시명령, MCP프롬프트펴기 } from './slash.js';
 import { allowEndpoint, setOffline } from './safety/network.js';
 import { 지금모드, 바깥인가, 나갈수있나, 봉인됐나 } from './safety/runmode.js';
 import { 주소가리기 } from './safety/secrets.js';
@@ -124,8 +127,12 @@ export async function runOnce(opts = {}) {
   let 알려진모델 = null;
   // 붙인 MCP 서버. 아래 내놓기 가 닫는다 — 그래서 여기서 선언한다 (2.0.2 · 문 맞춤).
   let mcp서버들 = [];
+  // --events 로 연 사건 파일 (runlog.js). 아래 내놓기 가 결과 줄을 적고 닫는다 (2.1.3).
+  let 사건 = null;
 
   const 내놓기 = (r) => {
+    // 사건 파일의 마지막 줄은 --json 과 같은 결과 한 덩이다. 어느 끝맺음이든 여기를 지난다.
+    if (사건) { 사건.결과(r); 사건.닫기(); }
     /*
      * 뒤에서 돌던 명령을 반드시 거둔다.
      *
@@ -234,6 +241,30 @@ export async function runOnce(opts = {}) {
   if (opts.checkTimeout !== undefined && !(Number.isFinite(Number(opts.checkTimeout)) && Number(opts.checkTimeout) > 0)) {
     return 못함('usage', `--check-timeout 은 0 보다 큰 초여야 합니다: ${opts.checkTimeout}`);
   }
+  /*
+   * 값 없는 --resume (2.1.3). 대화 화면은 목록을 띄워 고르게 하지만 여기는 고를 사람이 없다 —
+   * 아무거나 집어 이으면 스크립트는 제가 무엇을 이었는지 모른다. 치는 자리에서 고칠 것이라 64 다.
+   */
+  if (opts.resume === true) {
+    return 못함('usage', '--resume 에 이어 할 대화 이름을 주세요 (deel sessions 로 확인) — 가장 최근 것이면 --continue');
+  }
+
+  /*
+   * ── 사건 흐름 (--events <파일>) · 2.1.3 ──────────────────────────────
+   *
+   * 일을 시작하기 **전에** 연다. 다 돌고 나서 못 열었다고 하면 지켜보려던 사람은 아무것도 못 봤다.
+   * 경로는 --output-schema 처럼 부른 자리 기준이다.
+   */
+  if (opts.events != null) {
+    const 경로 = resolve(String(opts.events));
+    try {
+      사건 = 사건적기열기(경로, {
+        알림: (왜) => 삐끗(`  ${mark.warn} ${c.yellow(`사건 파일에 더 못 적습니다 (${왜}) — 일은 계속합니다`)}`),
+      });
+    } catch (err) {
+      return 못함('events', `사건 파일을 못 열었습니다 (--events): ${경로} — ${err?.code ?? err?.message ?? err}`);
+    }
+  }
 
   // ── 시킬 말 ───────────────────────────────────────────────────────────
   // 인자로 준 것이 먼저다. 없을 때만 표준입력을 읽는다 —
@@ -252,6 +283,41 @@ export async function runOnce(opts = {}) {
    * 고친다 — acp/serve.js 의 방만들기가 이미 고친 바로 그 섞임이다.
    */
   const root = opts.root ? String(opts.root) : process.cwd();
+
+  /*
+   * ── 이어 할 대화 (--continue · --resume <이름>) · 2.1.3 ────────────────
+   *
+   * 여태 `deel run` 은 오간 말을 어디에도 안 남겼다. 스크립트가 「방금 그 일에 이어서 테스트도 고쳐」 를
+   * 시킬 길이 없어 매번 처음부터 설명했고, 모델은 방금 읽은 파일을 다시 읽었다. 이제 대화 화면과 같은
+   * 자리(.deel/sessions)에 적고, 같은 두 깃발로 잇는다 — 대화 화면에서 한 대화를 배치가 이어도 된다.
+   *
+   * 설정을 읽기 **전에** 찾는다. 없는 이름이면 모델을 부르기 전에 서야 한다. 대화 화면은 못 찾으면
+   * 새로 시작하지만 여기서는 선다 — 이름을 집어 준 스크립트는 그 대화에 이어진다고 믿고 「아까 그것」 을
+   * 시킨다. 처음 보는 모델이 그 말을 받으면 짐작으로 일을 하고 0 으로 끝난다. `--continue` 는 다르다 —
+   * 「있으면 잇고 없으면 새로」 가 스크립트의 첫 판이 기대하는 뜻이다.
+   */
+  let 이어받은것 = null;
+  {
+    const 이을이름 = typeof opts.resume === 'string' ? opts.resume
+      : (opts.continue === true ? (latest(root)?.id ?? null) : null);
+    if (opts.continue === true && typeof opts.resume !== 'string' && !이을이름) {
+      곁(`  ${c.gray('· 이어 할 대화가 없어 새로 시작합니다.')}`);
+    }
+    if (이을이름) {
+      const 곳 = new Store(root, 이을이름);
+      const { messages: 적힌것, 못읽음 } = 곳.이름틀림 ? { messages: [] } : 곳.load();
+      // 도구가 도는 중에 죽은 대화는 호출만 있고 결과가 없다 — 그대로 보내면 서버가 400 을 낸다 (repl.js 와 같다).
+      const { messages, 고친것 } = repairToolPairs(적힌것);
+      if (!messages.length) {
+        return 못함('no-session', 곳.이름틀림
+          ? `대화 이름이 아닙니다 (--resume): ${이을이름}`
+          : 못읽음
+            ? `그 대화를 못 읽었습니다 (--resume): ${이을이름} — ${못읽음}`
+            : `그런 대화가 없거나 비어 있습니다 (--resume): ${이을이름} — deel sessions 로 이름을 확인하세요`);
+      }
+      이어받은것 = { 곳, messages, 고친것 };
+    }
+  }
   /*
    * 설정을 못 읽어도 **이 문의 끝맺음으로** 끝낸다.
    *
@@ -360,6 +426,20 @@ export async function runOnce(opts = {}) {
   // 지금 어느 실행 모드인가. 화면이 첫 줄에 이걸 그린다(ui/status.js).
   // session 에 실어 두는 까닭은, 대화 도중 /model 로 옮겨도 같은 자리를 보게 하려는 것이다.
   session.실행모드 = 실행모드;
+
+  /*
+   * 찾아 둔 대화를 싣는다 (위 「이어 할 대화」). 못 박은 것 · 남은 할 일 · 시킨 말 원문도 같이 —
+   * 오간 말만 돌아오고 그 셋이 빠지면 대화 화면에서 막아 둔 「껐다 켜면 까먹는다」 가 여기서 되살아난다.
+   * 적는 자리(store)는 아래 턴 바로 앞에서 연다 — 그 사이에 선 실패가 빈 대화 파일을 남기지 않게.
+   */
+  if (이어받은것) {
+    session.messages = 이어받은것.messages;
+    const 박힌것 = 이어받은것.곳.못박은것읽기();
+    if (박힌것.length) session.못박은것 = new 못박기(박힌것);
+    이어받은것.곳.살림따라가기(session);
+    곁(`  ${mark.ok} ${c.gray(`${이어받은것.곳.id} — 메시지 ${이어받은것.messages.length}개를 이어 받았습니다.`)}`
+      + (이어받은것.고친것 ? ` ${c.gray(`(중단된 도구 호출 ${이어받은것.고친것}개는 걷어냈습니다)`)}` : ''));
+  }
 
   /*
    * ── 열쇠를 받아 오는 명령 (safety/authcmd.js) ───────────────────────
@@ -484,7 +564,13 @@ export async function runOnce(opts = {}) {
        * 두 벌이니 한쪽만 고치면 또 갈린다. 그래서 규칙은 commands.js 한 군데에만 둔다.
        */
       const 찾은 = 붙박이 ? null : 슬래시명령찾기(found.commands, 부른이름);
-      if (붙박이) {
+      // MCP 서버가 낸 프롬프트도 대화 화면과 같이 부른다 (2.1.3 · commands.js 의 MCP프롬프트펴기).
+      const 프롬프트 = 붙박이 || 찾은 ? null : await MCP프롬프트펴기(mcp서버들, 부른이름, 인자);
+      if (프롬프트?.탈) return 못함('command-read', `/${부른이름} — ${프롬프트.탈}`);
+      if (프롬프트) {
+        곁(`  ${c.cyan('⌘')} ${부른이름} ${c.gray(`MCP 프롬프트 · ${프롬프트.서버이름}`)}`);
+        시킬말 = 프롬프트.text;
+      } else if (붙박이) {
         return 못함('repl-only', `/${부른이름} 은 대화 화면에서만 도는 명령입니다.`
           + ' 여기서 되는 것은 파일로 적어 둔 슬래시 명령뿐입니다 (.claude/commands · .deel/commands).');
       } else if (찾은) {
@@ -673,6 +759,28 @@ export async function runOnce(opts = {}) {
     }
   }
 
+  /*
+   * ── 오간 말을 남긴다 (2.1.3) ─────────────────────────────────────────
+   *
+   * 대화 화면처럼 걸음마다 적는다. 끝에 한 번에 적으면 걸음 수 상한이나 Ctrl+C 로 선 잡의 대화가
+   * 통째로 없다 — 이어서 시킬 일이 제일 많은 게 바로 그 잡이다. 여기까지 온 뒤에 연다 — 위에서 선
+   * 실패(없는 명령 · 너무 큰 말)가 머리글만 있는 빈 대화를 남기지 않게.
+   */
+  const store = 이어받은것?.곳 ?? new Store(root);
+  store.begin({ model: conn.model, base: 주소가리기(conn.base), root });
+  if (!이어받은것) store.살림따라가기(session);
+  // 지금 이어 쓰는 대화는 정리에서 뺀다 — 한 달 넘은 대화를 이으면 바로 여기서 지워졌다 (store.js 의 prune 머리말).
+  try { prune(root, { 남길것: [store.id] }); } catch { /* 못 치워도 이 잡은 돈다 — 다음 판이 다시 해 본다 */ }
+  let 적은데까지 = session.messages.length;   // 이어 받은 말은 이미 그 파일에 있다
+  const 적기 = () => {
+    // 접기 · 비우기가 이력을 통째로 바꿨는데 그 사건을 못 봤으면(모양 되물음 도중) 덧붙이지 말고 새로 적는다.
+    if (session.messages.length < 적은데까지) store.replace(session.messages, '압축');
+    else for (const m of session.messages.slice(적은데까지)) store.append(m);
+    적은데까지 = session.messages.length;
+  };
+  // 무엇이 바뀌었나 — --json 의 files (runlog.js).
+  const 바뀐 = 바뀐파일모음(root);
+
   // ── 한 턴 ─────────────────────────────────────────────────────────────
   const turn = new AbortController();
   const 끊김 = () => { if (!turn.signal.aborted) turn.abort(); };
@@ -697,10 +805,13 @@ export async function runOnce(opts = {}) {
     const 안쪽 = (ev) => (ev.depth ? '  '.repeat(ev.depth) : '');
 
     for await (const ev of run(session, ctx, 보낼글, { signal: turn.signal })) {
+      사건?.적기(ev);   // 지켜보는 쪽에 먼저 흘린다 (--events)
+      바뀐.사건(ev);
       switch (ev.type) {
         case 'stage':
           steps = ev.step;
           이번단계글 = '';
+          적기();   // 걸음마다 적어 둔다 — 도중에 죽어도 여기까지는 남는다
           break;
 
         // 중간 단계의 말은 표준출력에 안 싣는다. "이제 파일을 읽어보겠습니다" 까지
@@ -711,6 +822,7 @@ export async function runOnce(opts = {}) {
 
         case 'tool': {
           tools++;
+          적기();
           /*
            * 실패는 실패로 보여야 한다.
            *
@@ -817,6 +929,9 @@ export async function runOnce(opts = {}) {
             ? `  ${c.cyan('◱')} ${c.yellow(`요약을 못 받아 옛 대화 ${ev.folded}개를 잘라 냈습니다 (${ev.before.toLocaleString()} → ${ev.after.toLocaleString()} 토큰)`)}`
               + (ev.why ? ` ${c.gray(`— ${clip(String(ev.why), 100)}`)}` : '')
             : `  ${c.cyan('◱')} ${c.gray(`대화 ${ev.folded}개를 요약으로 접었습니다 (${ev.before.toLocaleString()} → ${ev.after.toLocaleString()} 토큰)`)}`);
+          // 접히면 이력이 통째로 바뀐다. 덧붙이면 접히기 전과 뒤가 겹쳐 남으니 새로 적는다 (repl.js 와 같다).
+          store.replace(session.messages, ev.fallback ? `압축 못 함 — 옛 대화 ${ev.folded}개를 잘라 냄` : `압축 — ${ev.folded}개를 요약으로`);
+          적은데까지 = session.messages.length;
           break;
 
         case 'compact_failed':
@@ -875,6 +990,10 @@ export async function runOnce(opts = {}) {
           } else 곁(`  ${c.yellow('⊘')} ${c.gray(옮긴말('check.skipped', { 까닭: ev.까닭 }))}`);
           break;
 
+        case 'textcalls':
+          곁(`  ${c.gray(`↳ ${옮긴말('ev.textCalls', { n: ev.count, 이름: ev.names.join(', ') })}`)}`);
+          break;
+
         case 'nudge':
           곁(`  ${c.gray(`↺ ${ev.why === '요청누락'
             ? 옮긴말('ev.nudgeMissed', { n: ev.빠진?.length ?? 0 })
@@ -915,6 +1034,8 @@ export async function runOnce(opts = {}) {
           곁(`  ${c.cyan('◱')} ${c.gray((ev.kept?.할일 ?? 0)
             ? 옮긴말('ev.reset', { 버린수: ev.dropped, 할일: ev.kept.할일 })
             : 옮긴말('ev.resetBare', { 버린수: ev.dropped }))}`);
+          store.replace(session.messages, `자리부족 — 앞선 대화 ${ev.dropped}개를 비움`);
+          적은데까지 = session.messages.length;
           /*
            * ── 비우면서 **시킨 말 뒤가 잘렸으면** 여기서 선다 (사냥5 B5-01) ────────────
            *
@@ -1050,6 +1171,7 @@ export async function runOnce(opts = {}) {
       let 다시터짐 = '';
       try {
         for await (const ev of run(session, ctx, 스키마시킬말(출력스키마, { 다시: 잰것.탈 }), { signal: turn.signal, 고쳐쓰기: true })) {
+          사건?.적기(ev);
           if (ev.type === 'content') 다시글 += ev.text;
           else if (ev.type === 'done') 다시글 = ev.text ?? 다시글;
           else if (ev.type === 'aborted') { 다시끊김 = true; break; }
@@ -1115,12 +1237,22 @@ export async function runOnce(opts = {}) {
    */
   process.removeListener('SIGINT', 끊김);
 
+  /*
+   * 남은 말을 다 적고, 못 적은 것이 있으면 **말한다.** 이어 하려던 스크립트가 다음 판에서야
+   * 「그 대화가 반쪽이다」 를 알면 늦다 — 그래서 못 적은 판은 --json 의 session 을 비운다.
+   */
+  try { 적기(); } catch { /* 셈은 store 가 한다 — 아래에서 본다 */ }
+  const 저장탈 = store.처음못쓴것();
+  if (저장탈) 삐끗(`  ${mark.warn} ${c.yellow(옮긴말('run.notSaving', { n: 저장탈.수, 까닭: 저장탈.까닭 }))}`);
+  const 대화이름 = store.이름틀림 || store.못쓴것() ? null : store.id;
+
   const code = EXIT[reason] ?? EXIT.error;
   if (why) 삐끗(`  ${reason === 'done' ? c.gray('·') : c.red('✗')} ${why}`);
   if (!json && !quiet) {
     const 조각 = [`${((Date.now() - t0) / 1000).toFixed(1)}초`];
     if (tools) 조각.push(`도구 ${tools}회`);
     조각.push(`↑${(session.usage.prompt || session.usage.in).toLocaleString()} ↓${session.usage.out.toLocaleString()}`);
+    if (생성속도(session.usage) !== null) 조각.push(`${생성속도(session.usage)} tok/s`);
     곁(`  ${c.gray('── ' + 조각.join(' · '))}`);
   }
 
@@ -1146,8 +1278,14 @@ export async function runOnce(opts = {}) {
       // 이 칸이 없으면 받는 쪽이 0 을 실측으로 읽는다 (backend/adapter.js 의 잰것).
       못잰것: session.usage.못잰것 ?? 0,
       retries: session.usage.retries ?? 0,
+      // 생성 속도 (2.1.3). 흘려받은 부름만 잰다 — 못 쟀으면 null (session.js 의 생성속도).
+      genMs: session.usage.genMs ?? 0,
+      tokPerSec: 생성속도(session.usage),
     },
     model: conn.model,
+    // 바뀐 파일 (작업 폴더 기준 · 슬래시) 과 이 대화의 이름 — `--resume <이름>` 으로 잇는다 (2.1.3).
+    files: 바뀐.목록(),
+    session: 대화이름,
     // 모양을 못 박았을 때만 실린다. --json 으로 받는 쪽은 text 를 다시 파싱할
     // 필요 없이 이 칸을 그대로 쓰면 된다.
     ...(스키마값 !== null ? { schema: 스키마값 } : {}),

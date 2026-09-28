@@ -37,6 +37,19 @@ parser (zero dependencies). So it **says what it could not read** — dropping t
 silently makes the model believe the file does not exist, and rebuild config that is
 already there.
 
+**What goes first (2.1.3).** When it does not all fit, the tail is cut. It used to put the most
+recently touched files first, so the **core modules** nobody had touched in a while — the ones
+dozens of files import — were the first to be cut in a large repository. Now:
+
+1. the files being worked on right now (changed in the last 30 minutes) keep the first few slots — unless almost everything is that recent, as in a fresh clone
+2. the rest go **most-imported first** (counting `import`, `require`, `from … import`)
+
+```
+src/core/store.js  (240 lines · imported by 48)
+```
+
+Package names (`react`) are not files in this folder and are not counted. The count only decides what to show first.
+
 ### Checking what was built — `Verify`
 
 The end of a turn used to say:
@@ -554,6 +567,35 @@ tracing back costs more than the fix.
 When everything is fine it **says nothing.** A line of "0 errors" after every edit fills the
 window. And not receiving diagnostics is not the same as having none — when nothing came
 back, it says nothing rather than inventing an answer.
+
+**No language server? It still checks syntax (2.1.3).** Most PCs running local models have no
+language server, and even when there is one the first file arrives while it is still warming up.
+A missing bracket there went unmentioned. Now, when the language server gives nothing, deel runs
+**only the cheap checks** — the same commands `Verify` uses.
+
+| File | How |
+|---|---|
+| `.js` · `.mjs` · `.cjs` | `node --check` (once more as a module if a `.js` has import/export) |
+| `.json` | parse it |
+| `.css` · `.scss` · `.less` | brace pairs |
+| `.py` | `py_compile`, if Python is there |
+
+```
+⏺ Edit(src/app.js)
+  1 place
+  syntax check(node --check) — src/app.js: 1 error
+    src/app.js:12
+    SyntaxError: Unexpected end of input
+```
+
+The header says **syntax check** so it is not mistaken for a language server that understands
+meaning. HTML is not checked (an unclosed pair halfway through a split write reads as an error —
+that is `Verify`'s job once the work is done). `/lsp off` turns this off too.
+
+**A hole in `Verify` is closed at the same time.** For a `.js` file with `export` in a folder whose
+`package.json` has no `"type"`, node's module detection makes `--check` exit 0 **even with an
+unclosed bracket** (measured on node 24). Broken files got "✓ node --check". Such files are now
+checked once more as a module.
 
 ### It installs nothing
 

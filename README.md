@@ -396,7 +396,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.1.2  ⌂ inside
+ deel 2.1.3  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1415,7 +1415,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.1.2](docs/en/releases/2.1.md#212)** | Policy, small gaps and speed — confirm asks before MCP tools that are not read-only, editor (ACP) sessions past 16 are let go and brought back on the next message, `--check-rounds`/`--check-timeout` and per-task check settings in `deel eval`, and startup reads 18 files instead of 164 |
+| **[2.1.3](docs/en/releases/2.1.md#213)** | Product features — models that write tool calls as text are understood, `deel run --continue`/`--resume`/`--events` and changed `files` in the result, `/undo` brings back what a script changed in a git repository, a syntax check without a language server, Outline loads the most imported files first, and MCP attaches by URL with resources and prompts |
+| [2.1.2](docs/en/releases/2.1.md#212) | Policy, small gaps and speed — confirm asks before MCP tools that are not read-only, editor (ACP) sessions past 16 are let go and brought back on the next message, `--check-rounds`/`--check-timeout` and per-task check settings in `deel eval`, and startup reads 18 files instead of 164 |
 | [2.1.1](docs/en/releases/2.1.md#211) | From a full review — `config explain` one level up showed keys, webhook URLs and Sentry DSNs passed both the shell-env filter and masking, `kill` stopped a Jobs server past strict, Def/Refs could not read EUC-KR, and `deel eval` fixes |
 | [2.1.0](docs/en/releases/2.1.md#210) | Hand it off and it keeps going; make it ask and it shows the diff — a check decides when it is done (`check`), a golden set measures how much gets done (`deel eval`), and `"approval"` in the managed policy lets a company set an approval floor |
 | [2.0.3](docs/en/releases/2.0.md#203) | 2.0.2 never reached npm — GitHub releases now appear only after npm has the version |

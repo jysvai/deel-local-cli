@@ -22,7 +22,7 @@ import { handle, COMMANDS, 미리보기끄기, 적용하기 as 그림적용 } fr
 import { next as nextWork, get as getWork, canWrite, 보일이름, 보일한줄 } from './agent/modes.js';
 import { route } from './agent/route.js';
 import { run } from './agent/loop.js';
-import { Session, repairToolPairs } from './agent/session.js';
+import { Session, repairToolPairs, 생성속도 } from './agent/session.js';
 import { makeScope } from './safety/guard.js';
 import { 언어서버있나 } from './tools/index.js';
 import { 모두끄기 as 언어서버다끄기 } from './lsp/client.js';
@@ -2224,6 +2224,8 @@ export async function chatLoop(opts = {}) {
       // 캐시가 걸린 턴일수록 실제보다 비싸게 뜬다.
       cacheRead: session.usage.cacheRead ?? 0,
       cacheWrite: session.usage.cacheWrite ?? 0,
+      genMs: session.usage.genMs ?? 0,
+      genOut: session.usage.genOut ?? 0,
     };
 
     /*
@@ -3042,6 +3044,13 @@ export async function chatLoop(opts = {}) {
             }
             break;
 
+          // 글로 적은 도구 부름을 건졌다 (backend/textcalls.js) — 흘러 나온 표 글 뒤에 무엇을 했는지 한 줄.
+          case 'textcalls':
+            clearThinking();
+            if (streamed) { 답비우기(); say(''); streamed = false; }
+            say(`  ${c.gray(`↳ ${옮긴말('ev.textCalls', { n: ev.count, 이름: ev.names.join(', ') })}`)}`);
+            break;
+
           case 'nudge':
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }
@@ -3216,6 +3225,9 @@ export async function chatLoop(opts = {}) {
     const d읽음 = (session.usage.cacheRead ?? 0) - before.cacheRead;
     const d씀 = (session.usage.cacheWrite ?? 0) - before.cacheWrite;
     if (dIn || dOut) bits.push(`↑${dIn.toLocaleString()} ↓${dOut.toLocaleString()}`);
+    // 이번 턴의 생성 속도 — 흘려받은 부름만 잰다(session.js 의 생성속도). 못 쟀으면 안 적는다.
+    const 이번속도 = 생성속도({ genMs: (session.usage.genMs ?? 0) - before.genMs, genOut: (session.usage.genOut ?? 0) - before.genOut });
+    if (이번속도 !== null) bits.push(`${이번속도} tok/s`);
     /*
      * ── ↑ 안을 가른다 ────────────────────────────────────────────────────
      *

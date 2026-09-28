@@ -72,8 +72,8 @@
       "곳": "src/oneshot.js",
       "무엇": "대화 화면 전용 이름을 먼저 거르는 자리를 끈다",
       "그러면": "deel run /help 가 이 PC 에 깔린 플러그인 명령을 대신 부른다 — 같은 글자가 기계마다 다른 일을 한다",
-      "찾을것": "      if (붙박이) {",
-      "바꿀것": "      if (false) {",
+      "찾을것": "      } else if (붙박이) {",
+      "바꿀것": "      } else if (false) {",
       "검사": "test/oneshot.test.js"
     },
     {
@@ -728,7 +728,7 @@
       "곳": "src/backend/mcp.js",
       "무엇": "안 받은 서버를 말없이 버린다",
       "그러면": "적어 둔 서버가 화면 어디에도 안 나온다 — 목록이 완전해 보여서 「왜 그 도구가 없지」 를 영영 알 수 없다",
-      "찾을것": "      못받은것.push({ 이름, 왜: `\"${v.type}\" 규격은 아직 못 붙입니다 — stdio(command 로 띄우는 서버)만 받습니다` });\n      continue;",
+      "찾을것": "      못받은것.push({ 이름, 왜: '옛 \"sse\" 규격(HTTP+SSE)은 못 붙입니다 — stdio(command)와 streamable HTTP(\"type\": \"http\")를 받습니다' });\n      continue;",
       "바꿀것": "      continue;",
       "검사": "test/mcp.test.js"
     },
@@ -736,8 +736,8 @@
       "곳": "src/backend/mcp.js",
       "무엇": "안 받은 것을 붙이는 자리까지 안 실어 보낸다",
       "그러면": "설정읽기 는 알려 주는데 화면이 못 받는다 — 경고가 한 줄도 안 뜬다",
-      "찾을것": "  const 못한것 = [...안받은것];",
-      "바꿀것": "  const 못한것 = [];",
+      "찾을것": "  const 못한것 = [...안받은것, ...잠겨못한것];",
+      "바꿀것": "  const 못한것 = [...잠겨못한것];",
       "검사": "test/mcp.test.js"
     },
     {
@@ -6285,8 +6285,8 @@
       "곳": "src/exit.js",
       "무엇": "실패 덩이의 usage 칸을 옛 모양으로 줄인다",
       "그러면": "모델을 부르기 전에 선 실패의 --json 이 성공과 칸이 달라 파서가 먼저 죽는다",
-      "찾을것": "usage: { in: 0, out: 0, prompt: 0, cacheRead: 0, cacheWrite: 0, calls: 0, ms: 0, 못잰것: 0, retries: 0 },",
-      "바꿀것": "usage: { in: 0, out: 0, calls: 0, ms: 0, retries: 0 },",
+      "찾을것": "    usage: { in: 0, out: 0, prompt: 0, cacheRead: 0, cacheWrite: 0, calls: 0, ms: 0, 못잰것: 0, retries: 0, genMs: 0, tokPerSec: null },",
+      "바꿀것": "    usage: { in: 0, out: 0, calls: 0, ms: 0, retries: 0 },",
       "검사": "test/oneshot.test.js"
     },
     {
@@ -6445,8 +6445,8 @@
       "곳": "src/tools/verify.js",
       "무엇": "Verify 가 node 를 셸(cmd.exe)에 이름으로 찾게 되돌린다",
       "그러면": "저장소 뿌리에 심은 node.cmd 가 승인 없이 돈다",
-      "찾을것": "      return { 파일: process.execPath, 인자: (p) => ['--check', p], 어떻게: 'node --check' };",
-      "바꿀것": "      return { 파일: process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe', 인자: (p) => ['/d', '/s', '/c', 'node', '--check', p], 어떻게: 'node --check' };",
+      "찾을것": "      return { 파일: process.execPath, 인자: (p) => ['--check', p], 어떻게: 'node --check', 모듈도볼까: 확장 === '.js' };",
+      "바꿀것": "      return { 파일: process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe', 인자: (p) => ['/d', '/s', '/c', 'node', '--check', p], 어떻게: 'node --check', 모듈도볼까: 확장 === '.js' };",
       "검사": "test/outline.test.js"
     },
     {
@@ -7490,8 +7490,8 @@
       "곳": "src/tools/verify.js",
       "무엇": "도구 없다는 말을 파일 이름이 나오는 글에서도 믿는다 (6회차 검증6 VB4)",
       "그러면": "원문에 was not found 가 든 깨진 JS 가 도구 없음으로 통과한다",
-      "찾을것": "        const 도구없다는말 = !r.out.includes(basename(abs))",
-      "바꿀것": "        const 도구없다는말 = true",
+      "찾을것": "  const 도구없다는말 = !r.out.includes(basename(abs))",
+      "바꿀것": "  const 도구없다는말 = true",
       "검사": "test/outline.test.js"
     },
     {
@@ -8221,8 +8221,8 @@
       "곳": "src/agent/route.js",
       "무엇": "반말 시킴(「정리해」 「고쳐」)을 손대라는 말로 안 본다 (6회차 길고르기6 6d2-1)",
       "그러면": "「리뷰 결과 반영해서 정리해」 가 읽기 전용 inspect 로 간다",
-      "찾을것": "  return 손대라는말.test(s) || 반말시킴.test(s) || 영어손대라.test(s);",
-      "바꿀것": "  return 손대라는말.test(s) || 영어손대라.test(s);",
+      "찾을것": "  return 손대라는말.test(s) || 반말시킴.test(s) || 영어손대라.test(s) || 일본어시킴말.test(s) || 중국어시킴말.test(s);",
+      "바꿀것": "  return 손대라는말.test(s) || 영어손대라.test(s) || 일본어시킴말.test(s) || 중국어시킴말.test(s);",
       "검사": "test/자동모드.test.js"
     },
     {
@@ -11643,7 +11643,7 @@
       "검사": "test/commands.test.js"
     },
     {
-      "곳": "src/commands.js",
+      "곳": "src/slash.js",
       "무엇": "슬래시 명령 꼬리를 낮추지 않고 견준다",
       "그러면": "꼬리에 대문자가 든 명령(ext:ReviewCode)이 /ReviewCode 로도 /reviewcode 로도 안 걸린다 — 깔려 있는 명령이 어느 길로도 안 보이고, 배치에서는 1 로 선다",
       "찾을것": "    ?? 것들.find((x) => 꼬리이름(x.name) === 낮춘)",
@@ -12124,8 +12124,8 @@
       "곳": "src/safety/authcmd.js",
       "무엇": "열쇠받기 명령이 승인 한 번 없이 돈다",
       "그러면": "세 문이 다 켤 때만 갈고리를 달아서 /model 로 갈아탄 뒤에는 session.열쇠물어보기 가 없는데, 물어보기가 없으면 승인 블록을 통째로 건너뛰어 남이 적어 준 로그인 명령이 승인 없이 돈다",
-      "찾을것": "  if (설정.곳 !== '정책') {\n    if (물어본것 === false) return { ok: false, 왜: '이 판에서는 안 부르기로 했습니다' };\n    if (물어본것 === null) {\n      if (typeof 물어보기 !== 'function') {\n        return { ok: false, 왜: '이 명령을 띄워도 되는지 물어볼 자리가 없습니다 — 승인 없이는 안 띄웁니다' };\n      }\n",
-      "바꿀것": "  if (설정.곳 !== '정책' && 물어보기) {\n    if (물어본것 === false) return { ok: false, 왜: '이 판에서는 안 부르기로 했습니다' };\n    if (물어본것 === null) {\n      if (false) {\n        return { ok: false, 왜: '이 명령을 띄워도 되는지 물어볼 자리가 없습니다 — 승인 없이는 안 띄웁니다' };\n      }\n",
+      "찾을것": "  if (설정.곳 !== '정책') {\n    const 답 = 물어본것들.get(설정.명령);\n    if (답 === false) return { ok: false, 왜: '이 판에서는 안 부르기로 했습니다' };\n    if (답 === undefined) {\n      if (typeof 물어보기 !== 'function') {\n        return { ok: false, 왜: '이 명령을 띄워도 되는지 물어볼 자리가 없습니다 — 승인 없이는 안 띄웁니다' };\n      }",
+      "바꿀것": "  if (설정.곳 !== '정책' && 물어보기) {\n    const 답 = 물어본것들.get(설정.명령);\n    if (답 === false) return { ok: false, 왜: '이 판에서는 안 부르기로 했습니다' };\n    if (답 === undefined) {\n      if (false) {\n        return { ok: false, 왜: '이 명령을 띄워도 되는지 물어볼 자리가 없습니다 — 승인 없이는 안 띄웁니다' };\n      }",
       "검사": "test/authcmd.test.js"
     },
     {
@@ -13547,16 +13547,16 @@
       "곳": "src/backend/mcp.js",
       "무엇": "부르기가 대기 중일 때만 깨운다 (2.0.2 · M1)",
       "그러면": "되살릴 수 있다고 해 놓고 부르면 죽은 관에 보내 곧장 실패한다",
-      "찾을것": "    if (this.대기 || this.되살릴수있나()) {",
-      "바꿀것": "    if (this.대기) {",
+      "찾을것": "    if (this.대기 || this.되살릴수있나()) {\n      /*\n       * ── 깨우는 동안에도 ESC",
+      "바꿀것": "    if (this.대기) {\n      /*\n       * ── 깨우는 동안에도 ESC",
       "검사": "test/mcp.test.js"
     },
     {
       "곳": "src/backend/mcp.js",
       "무엇": "깨우는 동안 ESC 를 안 듣는다 (2.0.2 · MB4)",
       "그러면": "대기 중인 서버를 부르고 ESC 를 눌러도 붙기제한(8초)까지 멈춘 채 기다린다",
-      "찾을것": "      const ok = await 끊기며기다리기(this.깨우기(), signal);",
-      "바꿀것": "      const ok = await this.깨우기();",
+      "찾을것": "      const ok = await 끊기며기다리기(this.깨우기(), signal);\n      if (!ok) throw new Error(this.죽음 ?? '띄우지 못했습니다');\n      /*",
+      "바꿀것": "      const ok = await this.깨우기();\n      if (!ok) throw new Error(this.죽음 ?? '띄우지 못했습니다');\n      /*",
       "검사": "test/mcp.test.js"
     },
     {
@@ -14895,6 +14895,977 @@
       "찾을것": "  return 일부만 || 견줌.사라짐.length || 견줌.새것.length ? '견준만큼' : '전부';",
       "바꿀것": "  return 견줌.사라짐.length || 견줌.새것.length ? '견준만큼' : '전부';",
       "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/backend/loosejson.js",
+      "무엇": "느슨한 JSON 이 안 닫힌 글을 받아 준다 (2.1.3)",
+      "그러면": "잘린 Write 인자가 반쪽 내용 그대로 파일에 쓰이고 모델은 다 쓴 줄 안다",
+      "찾을것": "    return 틀림('글이 안 닫혔습니다');",
+      "바꿀것": "    return out;",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/loosejson.js",
+      "무엇": "느슨한 JSON 이 뒤에 남은 글을 버린다 (2.1.3)",
+      "그러면": "JSON 뒤에 이어 적은 말이 조용히 사라지고 앞토막만 인자로 간다",
+      "찾을것": "  if (i < s.length) 틀림('뒤에 남은 것이 있습니다');",
+      "바꿀것": "",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/loosejson.js",
+      "무엇": "파이썬 꼴 True 를 못 읽는다 (2.1.3)",
+      "그러면": "작은 모델이 흔히 쓰는 True/False/None 인자가 또 깨진 부름으로 돌아간다",
+      "찾을것": "    if (말 === 'true' || 말 === 'True') return true;",
+      "바꿀것": "    if (말 === 'true') return true;",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "울타리 속 예시 표를 부름으로 건진다 (2.1.3)",
+      "그러면": "형식을 설명하며 적은 rm -rf 예시가 auto 에서 묻지 않고 돈다",
+      "찾을것": "    if (!몸.trim() || 울안(m.index)) continue;",
+      "바꿀것": "    if (!몸.trim()) continue;",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "내준 적 없는 이름도 건진다 (2.1.3)",
+      "그러면": "글 속 예시의 search · rm_all 같은 이름이 부름이 되어 「모르는 도구」 헛돌기가 난다",
+      "찾을것": "      if (!이름) return false;",
+      "바꿀것": "      if (!이름) { 맞춘.push({ name: x.이름, args: x.인자 }); continue; }",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "울타리 곁 글이 길어도 건진다 (2.1.3)",
+      "그러면": "긴 설명 속 예시 한 덩이가 부름이 된다",
+      "찾을것": "    if (목록 && 곁글.length <= 곁글한도 && 담기(목록, u.index, u.index + u[0].length)) return 마무리(s, 부름, 뗄곳);",
+      "바꿀것": "    if (목록 && true && 담기(목록, u.index, u.index + u[0].length)) return 마무리(s, 부름, 뗄곳);",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "울타리가 여럿이어도 첫 것을 건진다 (2.1.3)",
+      "그러면": "읽기·쓰기 예시를 늘어놓은 답에서 첫 예시가 돈다",
+      "찾을것": "  if (울타리들.length === 1) {",
+      "바꿀것": "  if (울타리들.length >= 1) {",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "Qwen3-Coder 의 칸 값을 늘 글로 둔다 (2.1.3)",
+      "그러면": "offset · limit 같은 수 칸이 글로 가서 도구가 「수가 아닙니다」 로 거절한다",
+      "찾을것": "    인자[m[1]] = 읽은 === undefined ? 날것 : 읽은;",
+      "바꿀것": "    인자[m[1]] = 날것;",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "글로 적은 부름을 안 건진다 (2.1.3)",
+      "그러면": "tool_calls 가 비어 오는 서버에서 작은 모델이 부른 도구가 안 돌고 턴이 끝난다",
+      "찾을것": "      if (건짐) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "건진 부름 글을 답에 남긴다 (2.1.3)",
+      "그러면": "다음 요청에 같은 부름이 글과 tool_calls 로 두 번 실려 모델이 또 부른다",
+      "찾을것": "        msg.content = 건짐.남은글;",
+      "바꿀것": "",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "모양만 틀린 인자를 느슨하게 안 읽는다 (2.1.3)",
+      "그러면": "홑따옴표 · 끝 쉼표 인자가 또 깨진 부름으로 돌아가 작은 모델이 같은 꼴을 되풀이한다",
+      "찾을것": "    const v = 느슨한JSON(원문);",
+      "바꿀것": "    const v = JSON.parse(원문);",
+      "검사": "test/truncated.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "고쳐 읽었다는 표시를 안 단다 (2.1.3)",
+      "그러면": "진단이 규격 밖 JSON 을 쓰는 모델을 멀쩡한 모델로 적는다",
+      "찾을것": "    if (고침) call.argsRepaired = true;",
+      "바꿀것": "",
+      "검사": "test/truncated.test.js"
+    },
+    {
+      "곳": "src/backend/probe.js",
+      "무엇": "글로 부르는 모델을 「글로만 답한다」 로 적는다 (2.1.3)",
+      "그러면": "deel 이 알아듣는 모델이 진단에서 도구를 못 쓰는 모델로 보인다",
+      "찾을것": "    status: gotCall ? (고쳐읽음 ? 'warn' : argOk || 원문에있나 ? 'ok' : 'warn') : 글로부름 ? 'warn' : 'no',",
+      "바꿀것": "    status: gotCall ? (고쳐읽음 ? 'warn' : argOk || 원문에있나 ? 'ok' : 'warn') : 'no',",
+      "검사": "test/vendors.test.js"
+    },
+    {
+      "곳": "src/agent/route.js",
+      "무엇": "일본어 · 중국어 규칙을 점수표에 안 넣는다 (2.1.3)",
+      "그러면": "일본어 · 중국어로 시킨 말은 무엇이든 종합에 남는다",
+      "찾을것": "for (const [mode, 규칙들] of Object.entries(다른말규칙)) 표[mode].push(...규칙들);",
+      "바꿀것": "",
+      "검사": "test/route.test.js"
+    },
+    {
+      "곳": "src/agent/route.js",
+      "무엇": "일본어 · 중국어의 고치라는 말을 모른다 (2.1.3)",
+      "그러면": "「説明して、直して」 가 설명 모드로 가서 파일을 못 고친다",
+      "찾을것": "  return 손대라는말.test(s) || 반말시킴.test(s) || 영어손대라.test(s) || 일본어시킴말.test(s) || 중국어시킴말.test(s);",
+      "바꿀것": "  return 손대라는말.test(s) || 반말시킴.test(s) || 영어손대라.test(s);",
+      "검사": "test/route.test.js"
+    },
+    {
+      "곳": "src/agent/route.js",
+      "무엇": "「計画を作って」 를 고치라는 말로 읽는다 (2.1.3)",
+      "그러면": "계획을 달라는 말에서 계획 모드가 빠져 곧장 파일을 고친다",
+      "찾을것": "const 일본어시킴말 = /(?:(?<!(?:計画|プラン|方針|段取り)を?)作(?:って|成して)|実装して|追加して|書いて|直して|修正して|変更して|削除して|消して|置き換えて|書き換えて|リファクタ(?:リング)?して|移動して|リネームして)(?!い[るまた]|な[いく])/;",
+      "바꿀것": "const 일본어시킴말 = /(?:作(?:って|成して)|実装して|追加して|書いて|直して|修正して|変更して|削除して|消して|置き換えて|書き換えて|リファクタ(?:リング)?して|移動して|リネームして)(?!い[るまた]|な[いく])/;",
+      "검사": "test/route.test.js"
+    },
+    {
+      "곳": "src/agent/route.js",
+      "무엇": "「写一个计划」 를 고치라는 말로 읽는다 (2.1.3)",
+      "그러면": "계획을 써 달라는 말에서 계획 모드가 빠져 곧장 파일을 고친다",
+      "찾을것": "const 중국어시킴말 = /(?<!不要|别|不用|无需|不需要|不必|请勿|勿)(?:(?:请|帮我|给我|麻烦你?|帮忙)\\s*(?:把[^。！？!?\\n]{0,30}?)?(?:实现|添加|增加|新增|编写|写|创建|修复|修改|改|删除|删掉|去掉|重构|重命名|替换|更新)|(?:^|[。！？!?\\n；;，,]\\s*)(?:实现|添加|增加|新增|编写|创建|修复|修改|删除|删掉|重构|重命名)(?![的了吗呢]))(?!(?:一个|一份|个|份)?(?:计划|方案|规划))/;",
+      "바꿀것": "const 중국어시킴말 = /(?<!不要|别|不用|无需|不需要|不必|请勿|勿)(?:(?:请|帮我|给我|麻烦你?|帮忙)\\s*(?:把[^。！？!?\\n]{0,30}?)?(?:实现|添加|增加|新增|编写|写|创建|修复|修改|改|删除|删掉|去掉|重构|重命名|替换|更新)|(?:^|[。！？!?\\n；;，,]\\s*)(?:实现|添加|增加|新增|编写|创建|修复|修改|删除|删掉|重构|重命名)(?![的了吗呢]))/;",
+      "검사": "test/route.test.js"
+    },
+    {
+      "곳": "src/agent/route.js",
+      "무엇": "중국어의 하지 말라는 말을 시킴말로 읽는다 (2.1.3)",
+      "그러면": "「不要帮我修改」 이 고치라는 말이 되어 읽기 전용 모드가 빠진다",
+      "찾을것": "const 중국어시킴말 = /(?<!不要|别|不用|无需|不需要|不必|请勿|勿)(?:(?:请|帮我|给我|麻烦你?|帮忙)\\s*(?:把[^。！？!?\\n]{0,30}?)?(?:实现|添加|增加|新增|编写|写|创建|修复|修改|改|删除|删掉|去掉|重构|重命名|替换|更新)|(?:^|[。！？!?\\n；;，,]\\s*)(?:实现|添加|增加|新增|编写|创建|修复|修改|删除|删掉|重构|重命名)(?![的了吗呢]))(?!(?:一个|一份|个|份)?(?:计划|方案|规划))/;",
+      "바꿀것": "const 중국어시킴말 = /(?:(?:请|帮我|给我|麻烦你?|帮忙)\\s*(?:把[^。！？!?\\n]{0,30}?)?(?:实现|添加|增加|新增|编写|写|创建|修复|修改|改|删除|删掉|去掉|重构|重命名|替换|更新)|(?:^|[。！？!?\\n；;，,]\\s*)(?:实现|添加|增加|新增|编写|创建|修复|修改|删除|删掉|重构|重命名)(?![的了吗呢]))(?!(?:一个|一份|个|份)?(?:计划|方案|规划))/;",
+      "검사": "test/route.test.js"
+    },
+    {
+      "곳": "src/agent/route.js",
+      "무엇": "일본어 진행형을 시킴말로 읽는다 (2.1.3)",
+      "그러면": "「どうやって追加しているの？」 같은 물음이 고치라는 말이 된다",
+      "찾을것": "const 일본어시킴말 = /(?:(?<!(?:計画|プラン|方針|段取り)を?)作(?:って|成して)|実装して|追加して|書いて|直して|修正して|変更して|削除して|消して|置き換えて|書き換えて|リファクタ(?:リング)?して|移動して|リネームして)(?!い[るまた]|な[いく])/;",
+      "바꿀것": "const 일본어시킴말 = /(?:(?<!(?:計画|プラン|方針|段取り)を?)作(?:って|成して)|実装して|追加して|書いて|直して|修正して|変更して|削除して|消して|置き換えて|書き換えて|リファクタ(?:リング)?して|移動して|リネームして)/;",
+      "검사": "test/route.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "생성 시간을 요청을 보낸 때부터 잰다 (2.1.3)",
+      "그러면": "앞머리 읽기가 섞여 대화가 길수록 모델이 느려진 것처럼 적힌다",
+      "찾을것": "        let 첫글때 = 0;",
+      "바꿀것": "        let 첫글때 = Date.now();",
+      "검사": "test/speed.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "생성 토큰을 안 더한다 (2.1.3)",
+      "그러면": "잰 시간만 늘고 토큰은 0 이라 속도가 영영 안 나온다",
+      "찾을것": "      session.usage.genOut = (session.usage.genOut ?? 0) + msg.usage.out;",
+      "바꿀것": "",
+      "검사": "test/speed.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "못 잰 속도를 0 · NaN 으로 낸다 (2.1.3)",
+      "그러면": "한 번에 받는 연결에서 /cost 가 「0 tok/s」 · 「NaN tok/s」 를 적는다",
+      "찾을것": "  if (!(ms > 0) || !(토큰 > 0)) return null;",
+      "바꿀것": "",
+      "검사": "test/speed.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "/cost 에 생성 속도를 안 적는다 (2.1.3)",
+      "그러면": "잰 속도가 어디에도 안 보인다",
+      "찾을것": "      if (속도 !== null) say(`  ${c.gray(pad(말('cost.speed'), 14))} ${속도} tok/s`);",
+      "바꿀것": "      if (false) say(`  ${c.gray(pad(말('cost.speed'), 14))} ${속도} tok/s`);",
+      "검사": "test/speed.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "deel run --json 에 생성 속도를 안 싣는다 (2.1.3)",
+      "그러면": "CI 가 모델 · 기계를 견줄 값이 없다",
+      "찾을것": "      tokPerSec: 생성속도(session.usage),",
+      "바꿀것": "      tokPerSec: null,",
+      "검사": "test/speed.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "값 없는 --resume 을 안 막는다 (2.1.3)",
+      "그러면": "deel run --resume 이 무엇을 이을지 모른 채 새 대화로 돌고 0 으로 끝난다",
+      "찾을것": "  if (opts.resume === true) {",
+      "바꿀것": "  if (false) {",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "없는 대화를 --resume 해도 새로 시작한다 (2.1.3)",
+      "그러면": "이름을 집어 준 스크립트는 이어진 줄 알고 「아까 그것」 을 시키는데 모델은 처음 보는 대화다",
+      "찾을것": "      if (!messages.length) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "--continue 가 최근 대화를 안 찾는다 (2.1.3)",
+      "그러면": "--continue 가 매번 새 대화로 돈다",
+      "찾을것": "      : (opts.continue === true ? (latest(root)?.id ?? null) : null);",
+      "바꿀것": "      : (false ? (latest(root)?.id ?? null) : null);",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "찾은 대화를 세션에 안 싣는다 (2.1.3)",
+      "그러면": "이어 받았다고 적어 놓고 모델은 앞선 말을 하나도 못 받는다",
+      "찾을것": "    session.messages = 이어받은것.messages;",
+      "바꿀것": "",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "이은 대화의 못 박은 것을 안 되살린다 (2.1.3)",
+      "그러면": "껐다 켜면 까먹는다 가 deel run 에서 되살아난다",
+      "찾을것": "    if (박힌것.length) session.못박은것 = new 못박기(박힌것);",
+      "바꿀것": "",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "이은 대화도 새 파일에 적는다 (2.1.3)",
+      "그러면": "잇는 판마다 대화가 둘로 갈라져 다음 --resume 은 반쪽을 받는다",
+      "찾을것": "  const store = 이어받은것?.곳 ?? new Store(root);",
+      "바꿀것": "  const store = new Store(root);",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "끝에 남은 말을 안 적는다 (2.1.3)",
+      "그러면": "마지막 답이 대화 파일에 없어 이어 한 모델이 제가 뭐라고 답했는지 모른다",
+      "찾을것": "  try { 적기(); } catch { /* 셈은 store 가 한다 — 아래에서 본다 */ }",
+      "바꿀것": "",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "못 적은 대화의 이름을 그대로 내준다 (2.1.3)",
+      "그러면": "스크립트가 반쪽 대화를 --resume 하고 이어진 줄 안다",
+      "찾을것": "  const 대화이름 = store.이름틀림 || store.못쓴것() ? null : store.id;",
+      "바꿀것": "  const 대화이름 = store.id;",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "바뀐 파일을 안 모은다 (2.1.3)",
+      "그러면": "--json 의 files 가 늘 비어 스크립트가 git status 로 짐작한다",
+      "찾을것": "      바뀐.사건(ev);",
+      "바꿀것": "",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "사건을 사건 파일에 안 흘린다 (2.1.3)",
+      "그러면": "--events 파일에 결과 한 줄만 남아 오래 도는 잡을 지켜볼 수 없다",
+      "찾을것": "      사건?.적기(ev);   // 지켜보는 쪽에 먼저 흘린다 (--events)",
+      "바꿀것": "",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "사건 파일에 결과 줄을 안 적는다 (2.1.3)",
+      "그러면": "사건 파일만 보는 쪽은 잡이 어떻게 끝났는지 모른다",
+      "찾을것": "    if (사건) { 사건.결과(r); 사건.닫기(); }",
+      "바꿀것": "    if (사건) { 사건.닫기(); }",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/runlog.js",
+      "무엇": "바뀐 파일을 절대 경로·운영체제 구분자로 낸다 (2.1.3)",
+      "그러면": "jq -r '.files[]' | xargs git add 한 줄이 운영체제마다 달라진다",
+      "찾을것": "    모음.add((밖인가 ? 온경로 : 상대).split(sep).join('/'));",
+      "바꿀것": "    모음.add(온경로);",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/runlog.js",
+      "무엇": "글자 조각도 사건 파일에 싣는다 (2.1.3)",
+      "그러면": "흘려받는 서버면 한 턴에 수천 줄이 된다",
+      "찾을것": "      if (!ev || 안싣는것.has(ev.type)) return;",
+      "바꿀것": "      if (!ev) return;",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/runlog.js",
+      "무엇": "긴 글을 안 자르고 싣는다 (2.1.3)",
+      "그러면": "사건 파일이 읽은 파일들의 사본이 된다",
+      "찾을것": "  const 자르기 = (_k, v) => (typeof v === 'string' && v.length > 사건글한도",
+      "바꿀것": "  const 자르기 = (_k, v) => (typeof v === 'string' && false",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/exit.js",
+      "무엇": "시작도 못 한 실패에 files · session 칸이 없다 (2.1.3)",
+      "그러면": "jq .files 가 실패에서만 null 이 되고 모양을 못 박은 파서가 죽는다",
+      "찾을것": "    files: [], session: null,",
+      "바꿀것": "",
+      "검사": "test/oneshot.test.js"
+    },
+    {
+      "곳": "src/tools/verify.js",
+      "무엇": "export 가 있는 .js 를 모듈로 다시 안 본다 (2.1.3)",
+      "그러면": "package.json 에 type 이 없는 자리의 깨진 ESM .js 가 node --check 를 0 으로 지나 Verify 가 ✓ 를 적는다",
+      "찾을것": "    if (/\\bexport(?:\\s*[{*]|\\s*\\/\\*|\\s+(?:default|const|let|var|function|async|class)\\b)|\\bimport(?:\\s*[{*'\"]|\\s*\\/\\*|\\s+[\\w$]+\\s*(?:,|from\\b))/.test(글)) {",
+      "바꿀것": "    if (false) {",
+      "검사": "test/editcheck.test.js"
+    },
+    {
+      "곳": "src/tools/verify.js",
+      "무엇": "모듈로 다시 볼 때 글을 안 넘긴다 (2.1.3)",
+      "그러면": "빈 입력을 재고 늘 초록이라 다시 보는 자리가 있으나 마나다",
+      "찾을것": "    아이.stdin?.end(입력 ?? undefined);",
+      "바꿀것": "    아이.stdin?.end();",
+      "검사": "test/editcheck.test.js"
+    },
+    {
+      "곳": "src/tools/verify.js",
+      "무엇": "모듈로 다시 본 탈 글에 파일 이름을 안 넣는다 (2.1.3)",
+      "그러면": "[stdin] 만 적혀 어느 파일인지 모르고, 고친 직후 검사는 남의 탈로 보고 버린다",
+      "찾을것": "        return { 탈: 짧게(m.out.replaceAll('[stdin]', () => abs)) || `종료코드 ${m.code}` };",
+      "바꿀것": "        return { 탈: 짧게(m.out) || `종료코드 ${m.code}` };",
+      "검사": "test/editcheck.test.js"
+    },
+    {
+      "곳": "src/tools/verify.js",
+      "무엇": "곁의 package.json 탈을 이 파일에 붙인다 (2.1.3)",
+      "그러면": "멀쩡한 파일에 오류 1개가 붙어 모델이 그 파일을 고치러 간다",
+      "찾을것": "    if (!r.ok && !r.탈.includes(basename(abs))) return null;",
+      "바꿀것": "",
+      "검사": "test/editcheck.test.js"
+    },
+    {
+      "곳": "src/tools/verify.js",
+      "무엇": "고친 직후 JSON 을 안 읽어 본다 (2.1.3)",
+      "그러면": "깨진 package.json 을 쓰고도 아무 말이 없다",
+      "찾을것": "    const 읽는것 = { '.json': ['JSON 파싱', json보기], '.css': ['중괄호 짝', css보기], '.scss': ['중괄호 짝', css보기], '.less': ['중괄호 짝', css보기] }[확장];",
+      "바꿀것": "    const 읽는것 = { '.css': ['중괄호 짝', css보기], '.scss': ['중괄호 짝', css보기], '.less': ['중괄호 짝', css보기] }[확장];",
+      "검사": "test/editcheck.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "언어 서버가 말을 못 줘도 문법을 안 본다 (2.1.3)",
+      "그러면": "언어 서버가 없는 PC 에서 괄호 하나가 빠져도 몇 걸음 뒤에야 안다",
+      "찾을것": "    if (것들.some((d) => d === null)) {",
+      "바꿀것": "    if (false) {",
+      "검사": "test/editcheck.test.js"
+    },
+    {
+      "곳": "src/lsp/diag.js",
+      "무엇": "문법만 본 것을 언어 서버가 본 것처럼 적는다 (2.1.3)",
+      "그러면": "뜻까지 본 줄 알고 없는 이름 · 틀린 인자도 걸러진 줄 믿는다",
+      "찾을것": "  const 머리 = `${진단.출처 ? `문법 검사(${진단.출처})` : '언어 서버'} — ${보일이름}: `",
+      "바꿀것": "  const 머리 = `언어 서버 — ${보일이름}: `",
+      "검사": "test/editcheck.test.js"
+    },
+    {
+      "곳": "src/tools/index.js",
+      "무엇": "Bash 앞에 git 으로 앞 모습을 안 뜬다 (2.1.3)",
+      "그러면": "스크립트 · 와일드카드 · 포매터가 바꾼 파일이 /undo 뒤에도 그대로다",
+      "찾을것": "      if (args.background !== true && ctx.history?.뒤늦은기록) 떠본것.깃앞 = 깃앞보기(ctx.scope.root);",
+      "바꿀것": "",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/gitsnap.js",
+      "무엇": "고치던 파일을 커밋본으로 되돌린다 (2.1.3)",
+      "그러면": "명령 전에 사람이 고치던 것이 /undo 한 번에 사라진다",
+      "찾을것": "      if (앞.표.has(경로)) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/gitsnap.js",
+      "무엇": "안 바뀐 고치던 파일도 적는다 (2.1.3)",
+      "그러면": "아무것도 안 바꾼 명령이 헛턴을 남겨 /undo 한 번이 거기 먹힌다",
+      "찾을것": "          앞모습 = 지금것 && 지금것.equals(떠둔것.buf) ? undefined : 떠둔것.buf;",
+      "바꿀것": "          앞모습 = 떠둔것.buf;",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/gitsnap.js",
+      "무엇": "커밋된 파일의 앞 모습을 못 찾은 것으로 친다 (2.1.3)",
+      "그러면": "스크립트가 고친 커밋된 파일을 없던 자리로 적어 /undo 가 그 파일을 지운다",
+      "찾을것": "    표.set(p, Buffer.from(몸.subarray(머리끝 + 1, 끝)));",
+      "바꿀것": "    표.set(p, null);",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/gitsnap.js",
+      "무엇": "작업 폴더 앞머리를 안 뗀다 (2.1.3)",
+      "그러면": "하위 폴더에서 연 대화는 바뀐 파일을 하나도 못 짚는다",
+      "찾을것": "  const rel = 경로.slice(앞머리.length);",
+      "바꿀것": "  const rel = 경로;",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/gitsnap.js",
+      "무엇": "deel 제 살림(.deel)도 되돌리기에 적는다 (2.1.3)",
+      "그러면": "/undo 가 되돌리기 이력 · 감사 기록을 옛 모습으로 덮는다",
+      "찾을것": "  if (!rel || 살림꼴.test(rel)) return null;",
+      "바꿀것": "  if (!rel) return null;",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/undo.js",
+      "무엇": "뒤늦은 기록이 이번 턴에 뜬 자리를 안 본다 (2.1.3)",
+      "그러면": "같은 파일이 한 턴에 두 번 적혀 되돌리기가 중간 모습으로 간다",
+      "찾을것": "    if (this.떴나(absPath)) return null;   // 이번 턴 처음 모습이 이미 있다",
+      "바꿀것": "",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/tools/outline.js",
+      "무엇": "Outline 이 많이 불리는 파일을 앞에 안 둔다 (2.1.3)",
+      "그러면": "오래 안 건드린 핵심 모듈이 큰 저장소에서 제일 먼저 잘려 모델이 이미 있는 것을 새로 만든다",
+      "찾을것": "    파일들 = [...앞자리, ...파일들.filter((f) => !앞.has(f)).sort((a, b) => 불림(b) - 불림(a) || (b.mtime ?? 0) - (a.mtime ?? 0))];",
+      "바꿀것": "    파일들 = [...앞자리, ...파일들.filter((f) => !앞.has(f)).sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0))];",
+      "검사": "test/repomap.test.js"
+    },
+    {
+      "곳": "src/tools/outline.js",
+      "무엇": "Outline 이 지금 손대는 파일의 앞자리를 안 지킨다 (2.1.3)",
+      "그러면": "방금 고친 파일이 핵심 모듈들 뒤로 밀려 잘린다",
+      "찾을것": "    const 앞자리 = 지금것.length * 2 > 파일들.length ? [] : 지금것.slice(0, Math.max(2, Math.floor(파일상한 / 8)));",
+      "바꿀것": "    const 앞자리 = [];",
+      "검사": "test/repomap.test.js"
+    },
+    {
+      "곳": "src/tools/outline.js",
+      "무엇": "Outline 머리줄에 몇 곳에서 불러 쓰는지 안 적는다 (2.1.3)",
+      "그러면": "왜 이 파일이 앞에 섰는지 모델이 모른다",
+      "찾을것": "      줄들.push(`${보인이름}  (${줄수}줄${불림(f) ? ` · ${불림(f)}곳에서 불러 씀` : ''})`);",
+      "바꿀것": "      줄들.push(`${보인이름}  (${줄수}줄)`);",
+      "검사": "test/repomap.test.js"
+    },
+    {
+      "곳": "src/tools/importgraph.js",
+      "무엇": "require 로 불러 쓰는 것을 안 센다 (2.1.3)",
+      "그러면": "CommonJS 저장소에서 핵심 모듈이 한 곳에서도 안 불리는 것으로 셈된다",
+      "찾을것": "const js무늬 = /(?:\\bfrom\\s*|\\bimport\\s*\\(\\s*|\\brequire\\s*\\(\\s*|^\\s*import\\s+)(['\"])(\\.{1,2}\\/[^'\"\\n]*|\\.{1,2})\\1/gm;",
+      "바꿀것": "const js무늬 = /(?:\\bfrom\\s*|\\bimport\\s*\\(\\s*|^\\s*import\\s+)(['\"])(\\.{1,2}\\/[^'\"\\n]*|\\.{1,2})\\1/gm;",
+      "검사": "test/repomap.test.js"
+    },
+    {
+      "곳": "src/tools/importgraph.js",
+      "무엇": "폴더로 불러 쓰는 것(index)을 안 짚는다 (2.1.3)",
+      "그러면": "import from './core' 가 core/index.js 로 안 이어진다",
+      "찾을것": "    const 후보 = [t, ...js확장.map((e) => t + e), ...js확장.map((e) => join(t, `index${e}`))];",
+      "바꿀것": "    const 후보 = [t, ...js확장.map((e) => t + e)];",
+      "검사": "test/repomap.test.js"
+    },
+    {
+      "곳": "src/tools/importgraph.js",
+      "무엇": "파이썬 상대 가져오기를 작업 폴더에서 찾는다 (2.1.3)",
+      "그러면": "from .util import x 가 같은 꾸러미의 util.py 로 안 이어진다",
+      "찾을것": "        if (점) { 기준 = dirname(나); for (let i = 1; i < 점; i++) 기준 = dirname(기준); }",
+      "바꿀것": "",
+      "검사": "test/repomap.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "오프라인 잠금에도 바깥 HTTP MCP 서버에 붙으려 한다 (2.1.3)",
+      "그러면": "봉인 중에 이 컴퓨터 밖의 서버를 붙였다고 목록에 올리고, 까닭 대신 알 수 없는 탈을 낸다",
+      "찾을것": "    붙일것 = 설정.서버들.filter((s) => s.방식 === 'http' && isLocalHost(new URL(s.url).hostname));",
+      "바꿀것": "    붙일것 = 설정.서버들.filter((s) => s.방식 === 'http');",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 물음이 끝나도 잠깐 연 문을 안 닫는다 (2.1.3)",
+      "그러면": "적어 둔 MCP 주소가 세션 내내 허용 목록에 남아 다른 길(WebFetch 등)도 그리로 나갈 수 있다",
+      "찾을것": "      닫기문();",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 가 다른 집으로 되돌리는 것을 따라가려 한다 (2.1.3)",
+      "그러면": "열쇠 머리말이 실린 물음이 되돌림을 따라 남의 집으로 간다",
+      "찾을것": "          if (다음.origin !== new URL(url).origin) throw new Error(`MCP 서버가 다른 곳(${다음.origin})으로 되돌립니다 — 따라가지 않습니다`);",
+      "바꿀것": "          if (false) throw new Error(`MCP 서버가 다른 곳(${다음.origin})으로 되돌립니다 — 따라가지 않습니다`);",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 물음에 세션 번호를 안 싣는다 (2.1.3)",
+      "그러면": "세션을 쓰는 서버가 인사 뒤의 모든 물음을 400 으로 거절한다",
+      "찾을것": "    if (this.세션) h['Mcp-Session-Id'] = this.세션;",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 물음에 고른 규격 판을 안 싣는다 (2.1.3)",
+      "그러면": "2025-06-18 부터 이 머리말을 요구하는 서버가 물음을 거절한다",
+      "찾을것": "    if (this.규격) h['MCP-Protocol-Version'] = this.규격;",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "적어 둔 머리말이 규격 머리말을 덮게 둔다 (2.1.3)",
+      "그러면": "accept 를 소문자로 적은 설정이 SSE 를 못 받는다고 알려 서버가 답을 거절한다",
+      "찾을것": "    for (const k of Object.keys(h)) if (/^(?:content-type|accept|mcp-session-id|mcp-protocol-version)$/i.test(k)) delete h[k];",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 서버가 세션을 버려도 다시 인사하지 않는다 (2.1.3)",
+      "그러면": "서버가 재시작하거나 세션을 치우면 그 뒤로 모든 도구가 404 로 실패한다",
+      "찾을것": "        if (r.status === 404 && 실은세션 && 통.method !== 'initialize') {",
+      "바꿀것": "        if (false && 실은세션 && 통.method !== 'initialize') {",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 의 SSE 답을 안 읽는다 (2.1.3)",
+      "그러면": "text/event-stream 으로 답하는 서버의 모든 물음이 「JSON 이 아닙니다」 로 실패한다",
+      "찾을것": "      if (/text\\/event-stream/i.test(갈래)) return await this.흐름에서답(r.res.body, 통.id);",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "SSE 흐름 도중 서버가 물은 것에 답하지 않는다 (2.1.3)",
+      "그러면": "ping 에 답을 기다리는 서버가 우리 물음의 답을 늦추거나 끝내 안 준다",
+      "찾을것": "        if (j.id != null) this.물음에답(j);",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "SSE 조각이 \\r 에서 끊기면 붙들지 않는다 (2.1.3)",
+      "그러면": "CRLF 가 두 조각에 걸치면 빈 줄로 읽혀 사건이 반쪽에서 잘린다",
+      "찾을것": "  if (글.endsWith('\\r') && !/[\\r\\n]\\r$/.test(글)) { 붙들 = '\\r'; 글 = 글.slice(0, -1); }",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "mcp.json 의 ${변수} 를 환경변수로 안 편다 (2.1.3)",
+      "그러면": "열쇠를 저장소에 적지 않으려고 ${TOKEN} 으로 적은 설정이 늘 401 이다",
+      "찾을것": "        if (값 != null && 값 !== '') return 값;",
+      "바꿀것": "        if (false) return 값;",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "없는 환경변수를 빈 글로 펴서 그냥 붙는다 (2.1.3)",
+      "그러면": "열쇠 없는 요청이 401 로 돌아오고 사람은 서버를 의심한다",
+      "찾을것": "      if (없는것.size) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP 머리말에 못 싣는 글자를 미리 안 거른다 (2.1.3)",
+      "그러면": "한글 머리말이 붙을 때 「Cannot convert argument to a ByteString」 한 줄로 넘어진다",
+      "찾을것": "      if (틀린머리) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "/sse 로 끝나는 주소를 streamable HTTP 로 붙이려 한다 (2.1.3)",
+      "그러면": "옛 HTTP+SSE 서버에 붙다가 알 수 없는 탈을 낸다 — 무엇을 고칠지 모른다",
+      "찾을것": "    if (웹 && !갈래 && /\\/sse\\/?(?:[?#].*)?$/i.test(String(주소))) {",
+      "바꿀것": "    if (false && /\\/sse\\/?(?:[?#].*)?$/i.test(String(주소))) {",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "type 없이 url 만 적은 MCP 서버를 안 받는다 (2.1.3)",
+      "그러면": "다른 도구에서 붙여 넣은 설정이 「command 가 없습니다」 로 돌아간다",
+      "찾을것": "    const 웹 = /^(?:http|streamable-?http|streamablehttp)$/.test(갈래) || (!갈래 && !v?.command && !!주소);",
+      "바꿀것": "    const 웹 = /^(?:http|streamable-?http|streamablehttp)$/.test(갈래);",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "자료를 내는 MCP 서버에 read_resource 를 안 붙인다 (2.1.3)",
+      "그러면": "문서 서버가 내놓은 자료에 모델이 닿을 길이 없다",
+      "찾을것": "    if (this.능력?.resources && !this.도구.some((t) => t?.name === 자료도구이름)) this.도구 = [...this.도구, 자료도구정의()];",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "read_resource 를 서버의 도구로 부른다 (2.1.3)",
+      "그러면": "tools/call 로 가서 서버가 「모르는 도구」 로 답한다",
+      "찾을것": "    if (도구이름 === 자료도구이름 && this.자료도구붙임) return await this.자료읽기(args, { timeout, signal });",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "자료 목록의 다음 쪽을 커서 없이 청한다 (2.1.3)",
+      "그러면": "쪽으로 나눠 주는 서버의 뒷쪽 자료가 조용히 빠진다",
+      "찾을것": "        r = await this.보내고기다리기(method, 커서 ? { cursor: 커서 } : {}, Math.max(1000, 마감 - Date.now()), signal);",
+      "바꿀것": "        r = await this.보내고기다리기(method, {}, Math.max(1000, 마감 - Date.now()), signal);",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "빈칸 든 프롬프트 이름도 받는다 (2.1.3)",
+      "그러면": "슬래시로 부를 수 없는 이름이 목록에 서서 부르면 늘 모르는 명령이다",
+      "찾을것": "        this.프롬프트 = 다.filter((p) => typeof p?.name === 'string' && /^\\S+$/.test(p.name)).slice(0, 프롬프트최대).map((p) => ({",
+      "바꿀것": "        this.프롬프트 = 다.filter((p) => typeof p?.name === 'string').slice(0, 프롬프트최대).map((p) => ({",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "MCP 메모에 프롬프트를 안 적는다 (2.1.3)",
+      "그러면": "대기 중인 서버의 프롬프트가 슬래시 명령으로 안 선다 — 서버를 한 번 부르기 전까지",
+      "찾을것": "      프롬프트: s.프롬프트 ?? [],",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "메모로 세울 때 프롬프트를 안 되살린다 (2.1.3)",
+      "그러면": "대기 중인 서버의 프롬프트가 슬래시 명령으로 안 선다",
+      "찾을것": "    this.프롬프트 = Array.isArray(메모.프롬프트) ? 메모.프롬프트 : [];",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "도구 없이 자료만 내는 서버를 tools/list 탈로 버린다 (2.1.3)",
+      "그러면": "문서만 내는 서버가 「도구 목록을 못 받았습니다」 로 안 붙는다",
+      "찾을것": "      if (this.능력?.tools || !(this.능력?.resources || this.능력?.prompts)) {",
+      "바꿀것": "      if (true) {",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "감사기록에 MCP 주소를 통째로 적는다 (2.1.3)",
+      "그러면": "주소에 실린 비밀번호 · ?key= 열쇠가 audit.jsonl 과 /mcp 화면에 남는다",
+      "찾을것": "  try { const u = new URL(url); return `${u.origin}${u.pathname}`; } catch { return '(읽을 수 없는 주소)'; }",
+      "바꿀것": "  try { const u = new URL(url); return u.href; } catch { return '(읽을 수 없는 주소)'; }",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP 로 적은 서버를 stdio 로 띄우려 한다 (2.1.3)",
+      "그러면": "url 로 적은 서버가 「띄우지 못했습니다」 로 하나도 안 붙는다",
+      "찾을것": "    const 서버 = s.방식 === 'http' ? new MCP웹서버(s) : new MCP서버(s);",
+      "바꿀것": "    const 서버 = new MCP서버(s);",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 를 닫을 때 세션을 끝낸다고 안 알린다 (2.1.3)",
+      "그러면": "서버에 우리 세션이 시한까지 쌓인다",
+      "찾을것": "      원시요청(url, { method: 'DELETE', headers: { ...this.머리말(), 'Mcp-Session-Id': 세션 }, timeout: 2000 })",
+      "바꿀것": "      원시요청(url, { method: 'GET', headers: { ...this.머리말(), 'Mcp-Session-Id': 세션 }, timeout: 2000 })",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 를 닫아도 도는 물음을 안 끊는다 (2.1.3)",
+      "그러면": "끝낼 때 · 끌 때 도는 물음이 시한(60초)까지 붙들고 있다",
+      "찾을것": "    for (const 칸 of this.도는것) 칸.끊기('닫음');",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/slash.js",
+      "무엇": "MCP 프롬프트의 마지막 인자가 나머지를 안 받는다 (2.1.3)",
+      "그러면": "/mcp__위키__review a.js 오류 처리 의 「처리」 가 말없이 사라진다",
+      "찾을것": "    if (k === 몇 - 1) {",
+      "바꿀것": "    if (false) {",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/slash.js",
+      "무엇": "MCP 프롬프트의 꼭 필요한 인자가 빠져도 부른다 (2.1.3)",
+      "그러면": "서버가 undefined 를 채운 엉뚱한 지시문을 주고 모델은 그것을 한다",
+      "찾을것": "  if (빠진것.length) {",
+      "바꿀것": "  if (false) {",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "대화 화면에서 /mcp__… 프롬프트를 안 찾는다 (2.1.3)",
+      "그러면": "서버가 낸 프롬프트를 치면 「모르는 명령」 이다",
+      "찾을것": "      const 프롬프트 = await MCP프롬프트펴기(session.mcp, raw, arg);",
+      "바꿀것": "      const 프롬프트 = null;",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "deel run 에서 /mcp__… 프롬프트를 안 찾는다 (2.1.3)",
+      "그러면": "배치에서 서버의 프롬프트를 부르면 「모르는 명령」 으로 1 이다",
+      "찾을것": "      const 프롬프트 = 붙박이 || 찾은 ? null : await MCP프롬프트펴기(mcp서버들, 부른이름, 인자);",
+      "바꿀것": "      const 프롬프트 = null;",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "deel run 이 슬래시 찾기를 commands.js 에서 불러온다 (2.1.3)",
+      "그러면": "배치 한 번에 대화 화면 명령 전부(화면 · 설정 · 플러그인 · 스캔)를 읽는다 — 파일 28개",
+      "찾을것": "import { 슬래시명령찾기, 비슷한슬래시명령, MCP프롬프트펴기 } from './slash.js';",
+      "바꿀것": "import { 슬래시명령찾기, 비슷한슬래시명령, MCP프롬프트펴기 } from './commands.js';",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/safety/authcmd.js",
+      "무엇": "받아 둔 열쇠를 명령과 상관없이 돌려준다 (2.1.3)",
+      "그러면": "/consult · 모델을 고른 Task 의 다른 게이트웨이로 앞 프로필의 토큰이 나간다",
+      "찾을것": "  const 받은것 = 받은것들.get(설정.명령);",
+      "바꿀것": "  const 받은것 = 마지막받은;",
+      "검사": "test/authcmd.test.js"
+    },
+    {
+      "곳": "src/safety/authcmd.js",
+      "무엇": "열쇠받기 승인을 명령과 상관없이 하나로 든다 (2.1.3)",
+      "그러면": "A 명령을 허락하면 B 명령도 묻지 않고 띄운다",
+      "찾을것": "    const 답 = 물어본것들.get(설정.명령);",
+      "바꿀것": "    const 답 = [...물어본것들.values()][0];",
+      "검사": "test/authcmd.test.js"
+    },
+    {
+      "곳": "src/safety/authcmd.js",
+      "무엇": "화면 글에서 마지막 열쇠만 가린다 (2.1.3)",
+      "그러면": "다른 연결이 받아 둔 토큰이 화면 · 심사서에 그대로 남는다",
+      "찾을것": "  for (const 받은것 of 받은것들.values()) {",
+      "바꿀것": "  for (const 받은것 of [마지막받은]) {",
+      "검사": "test/authcmd.test.js"
+    },
+    {
+      "곳": "src/safety/authcmd.js",
+      "무엇": "열쇠받기 명령을 끊을 때 셸만 죽인다 (2.1.3)",
+      "그러면": "윈도우에서 셸 아래 로그인 도구가 살아 파이프를 물고, 할 일을 마친 deel 이 그것이 끝날 때까지 안 끝난다",
+      "찾을것": "      if (process.platform === 'win32' && kid.pid && kid.exitCode === null) {",
+      "바꿀것": "      if (false) {",
+      "검사": "test/authcmd.test.js",
+      "잴곳": [
+        "win32"
+      ]
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "칸 값의 수를 글자 그대로 되돌아오는지 안 보고 읽는다 (2.1.3 · 2차 눈)",
+      "그러면": "번호 01234 가 1234 로, 판 1.50 이 1.5 로 바뀌어 도구로 간다",
+      "찾을것": "    else if (/^-?\\d/.test(t) && String(Number(t)) === t) 읽은 = Number(t);",
+      "바꿀것": "    else if (/^-?\\d/.test(t) ) 읽은 = Number(t);",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "칸 값의 파이썬 꼴 True · None 을 안 읽는다 (2.1.3 · 2차 눈)",
+      "그러면": "참 · 없음 칸이 'True' · 'None' 글자로 도구에 간다",
+      "찾을것": "    if (/^[[{\"]|^(?:true|false|null|True|False|None)$/.test(t)) 읽은 = 읽어보기(t);",
+      "바꿀것": "    if (/^[[{\"]|^(?:true|false|null)$/.test(t)) 읽은 = 읽어보기(t);",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "<function=…> 덩이를 다음 <function= 앞에서 안 끊는다 (2.1.3 · 2차 눈)",
+      "그러면": "한 <tool_call> 의 부름 둘이 뒤 것 인자로 부름 하나가 된다",
+      "찾을것": "  const 무늬 = /<function=([^>\\s]+)>\\s*([\\s\\S]*?)\\s*(?:<\\/function>|(?=<function=)|$)/g;",
+      "바꿀것": "  const 무늬 = /<function=([^>\\s]+)>\\s*([\\s\\S]*?)\\s*(?:<\\/function>)?\\s*$/g;",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "안 닫힌 울타리를 울타리로 안 본다 (2.1.3 · 2차 눈)",
+      "그러면": "길이 제한으로 잘린 답의 예시 속 표가 진짜 부름으로 돈다",
+      "찾을것": "  const 울타리자리 = [...s.matchAll(/```[\\s\\S]*?(?:```|$)/g)].map((u) => [u.index, u.index + u[0].length]);",
+      "바꿀것": "  const 울타리자리 = [...s.matchAll(/```[\\s\\S]*?```/g)].map((u) => [u.index, u.index + u[0].length]);",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "<tool_call> 몸이 다음 <tool_call> 을 넘는다 (2.1.3 · 2차 눈)",
+      "그러면": "말로 꺼낸 표 하나가 뒤따르는 진짜 부름까지 삼켜 부름을 잃는다",
+      "찾을것": "  const 표무늬 = /<tool_call>\\s*((?:(?!<tool_call>)[\\s\\S])*?)\\s*(?:<\\/tool_call>|(?=<tool_call>)|$)/g;",
+      "바꿀것": "  const 표무늬 = /<tool_call>\\s*([\\s\\S]*?)\\s*(?:<\\/tool_call>|$)/g;",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "Mistral 배열의 끝을 글 끝으로만 본다 (2.1.3 · 2차 눈)",
+      "그러면": "부름 뒤에 말이 붙으면 부름을 못 건지고 턴이 끝난다",
+      "찾을것": "    for (let 끝 = s.lastIndexOf(']'), 번 = 0; 끝 > 시작 && 번 < 20; 끝 = s.lastIndexOf(']', 끝 - 1), 번++) {",
+      "바꿀것": "    for (let 끝 = s.lastIndexOf(']'), 번 = 0; 끝 > 시작 && 번 < 1; 끝 = s.lastIndexOf(']', 끝 - 1), 번++) {",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/backend/textcalls.js",
+      "무엇": "울타리 이름을 대소문자 가려 본다 (2.1.3 · 2차 눈)",
+      "그러면": "```JSON 울타리의 부름을 못 건진다",
+      "찾을것": "  const 울타리무늬 = /```(?:json|tool_call|tool|function)?\\s*\\n?([\\s\\S]*?)\\n?```/gi;",
+      "바꿀것": "  const 울타리무늬 = /```(?:json|tool_call|tool|function)?\\s*\\n?([\\s\\S]*?)\\n?```/g;",
+      "검사": "test/textcalls.test.js"
+    },
+    {
+      "곳": "src/slash.js",
+      "무엇": "프롬프트의 꼭 필요한 인자를 in 으로 찾는다 (2.1.3 · 2차 눈)",
+      "그러면": "인자 이름이 constructor · toString 이면 비워도 있다고 보고 빈 인자로 부른다",
+      "찾을것": "  const 빠진것 = (프롬프트.arguments ?? []).filter((a) => a.required && !Object.hasOwn(인자, a.name)).map((a) => a.name);",
+      "바꿀것": "  const 빠진것 = (프롬프트.arguments ?? []).filter((a) => a.required && !(a.name in 인자)).map((a) => a.name);",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/slash.js",
+      "무엇": "프롬프트 인자의 따옴표 묶음을 안 본다 (2.1.3 · 2차 눈)",
+      "그러면": "빈칸 든 파일 이름이 두 인자로 쪼개져 뒤 인자로 밀린다",
+      "찾을것": "    if (끝 > i) { 값들.push(s.slice(i + 1, 끝)); i = 끝 + 1; continue; }",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/slash.js",
+      "무엇": "마지막 프롬프트 인자를 빈칸으로 다시 잇는다 (2.1.3 · 2차 눈)",
+      "그러면": "여러 줄 코드를 넘기면 줄바꿈 · 들여쓰기가 한 줄로 뭉개진다",
+      "찾을것": "      const 남은 = s.slice(i).trimEnd();",
+      "바꿀것": "      const 남은 = s.slice(i).trim().split(/\\s+/).join(' ');",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/slash.js",
+      "무엇": "마지막 프롬프트 인자의 통째 따옴표를 안 벗긴다 (2.1.3 · 2차 눈)",
+      "그러면": "'오류 처리' 가 따옴표째 서버로 간다",
+      "찾을것": "      값들.push(묶음 ? 묶음[2] : 남은);",
+      "바꿀것": "      값들.push(남은);",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "SSE 가르기가 줄 끝 뒤의 \\r 까지 붙든다 (2.1.3 · 2차 눈)",
+      "그러면": "\\r 만 쓰는 서버의 마지막 답이 다음 조각이 올 때까지 갇혀 시한까지 기다린다",
+      "찾을것": "  if (글.endsWith('\\r') && !/[\\r\\n]\\r$/.test(글)) { 붙들 = '\\r'; 글 = 글.slice(0, -1); }",
+      "바꿀것": "  if (글.endsWith('\\r')) { 붙들 = '\\r'; 글 = 글.slice(0, -1); }",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 가 다시 인사하는 동안에도 물음을 세션 없이 보낸다 (2.1.3 · 2차 눈)",
+      "그러면": "세션이 끝난 직후 같이 나간 물음 하나가 거절당해 도구가 실패한다",
+      "찾을것": "    if (this.다시인사중 && method !== 'initialize') await 끊기며기다리기(this.다시인사중, signal);",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 가 404 를 지금 세션으로 가른다 (2.1.3 · 2차 눈)",
+      "그러면": "다시 인사하는 사이에 닿은 404 가 「세션 끝남」 이 아닌 탈이 되어 물음이 실패한다",
+      "찾을것": "        if (r.status === 404 && 실은세션 && 통.method !== 'initialize') {",
+      "바꿀것": "        if (r.status === 404 && this.세션 && 통.method !== 'initialize') {",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 가 늦게 온 404 에 또 인사한다 (2.1.3 · 2차 눈)",
+      "그러면": "다른 물음이 받아 온 새 세션을 버리고 인사를 되풀이한다",
+      "찾을것": "    if (!this.다시인사중 && this.세션 && this.세션 !== 끝난세션) return Promise.resolve();",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 가 닫은 뒤에도 보낸다 (2.1.3 · 2차 눈)",
+      "그러면": "닫은 서버로 늦은 알림 · 답이 새 연결을 연다",
+      "찾을것": "    if (!this.열림) throw new Error(this.죽음 ?? '닫았습니다');",
+      "바꿀것": "",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP MCP 가 번호 없는 오류 답을 버린다 (2.1.3 · 2차 눈)",
+      "그러면": "서버가 한 말 대신 「번호가 없다」 만 남아 무엇이 틀렸는지 모른다",
+      "찾을것": "    return 찾음 ?? 번호없는탈;",
+      "바꿀것": "    return 찾음;",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "HTTP 거절의 JSON-RPC 아닌 JSON 말을 버린다 (2.1.3 · 2차 눈)",
+      "그러면": "OAuth 꼴 거절이 「알 수 없는 오류」 로만 보여 열쇠가 만료된 줄 모른다",
+      "찾을것": "      : [e, j?.error_description, j?.message].filter((x) => typeof x === 'string' && x.trim()).join(' — ').slice(0, 200) || 날글;",
+      "바꿀것": "      : '';",
+      "검사": "test/mcphttp.test.js"
+    },
+    {
+      "곳": "src/runlog.js",
+      "무엇": "사건 파일의 결과 줄도 한도에서 자른다 (2.1.3 · 2차 눈)",
+      "그러면": "긴 답이 마지막 줄에서 잘려 스크립트가 반쪽 답을 받는다",
+      "찾을것": "    결과(r) { 한줄(사건줄({ type: 'result', ...r }, Date.now() - 시작, { 통째: true })); },",
+      "바꿀것": "    결과(r) { 한줄(사건줄({ type: 'result', ...r }, Date.now() - 시작)); },",
+      "검사": "test/runsession.test.js"
+    },
+    {
+      "곳": "src/tools/verify.js",
+      "무엇": "모듈로 틀린 .js 를 CommonJS 로 다시 안 본다 (2.1.3 · 2차 눈)",
+      "그러면": "틀 문자열에 import 줄이 든 멀쩡한 CommonJS 파일에 탈이 붙어 모델이 고치러 간다",
+      "찾을것": "      if (!m.ok && !m.없음 && !(await 넣어보기('commonjs')).ok) {",
+      "바꿀것": "      if (!m.ok && !m.없음) {",
+      "검사": "test/editcheck.test.js"
+    },
+    {
+      "곳": "src/tools/verify.js",
+      "무엇": "모듈 꼴을 줄 머리의 import · export 로만 찾는다 (2.1.3 · 2차 눈)",
+      "그러면": "줄 가운데 export · 주석 붙은 export 가 있는 깨진 파일에 ✓ 가 붙는다",
+      "찾을것": "    if (/\\bexport(?:\\s*[{*]|\\s*\\/\\*|\\s+(?:default|const|let|var|function|async|class)\\b)|\\bimport(?:\\s*[{*'\"]|\\s*\\/\\*|\\s+[\\w$]+\\s*(?:,|from\\b))/.test(글)) {",
+      "바꿀것": "    if (/^\\s*(?:import\\s*[\\w{*'\"]|export\\s+[\\w{*])/m.test(글)) {",
+      "검사": "test/editcheck.test.js"
+    },
+    {
+      "곳": "src/tools/verify.js",
+      "무엇": "모듈 검사 탈 글의 [stdin] 을 되받이 글로 바꾼다 (2.1.3 · 2차 눈)",
+      "그러면": "경로에 $& 가 든 파일의 탈 글 경로가 깨져 고친 직후 탈을 놓친다",
+      "찾을것": "        return { 탈: 짧게(m.out.replaceAll('[stdin]', () => abs)) || `종료코드 ${m.code}` };",
+      "바꿀것": "        return { 탈: 짧게(m.out.replaceAll('[stdin]', abs)) || `종료코드 ${m.code}` };",
+      "검사": "test/editcheck.test.js"
+    },
+    {
+      "곳": "src/safety/gitsnap.js",
+      "무엇": "HEAD 에서 꺼낼 때 작업 폴더 변환(--filters)을 안 태운다 (2.1.3 · 2차 눈)",
+      "그러면": "core.autocrlf 저장소에서 /undo 가 CRLF 파일을 LF 로 되돌린다",
+      "찾을것": "  const 내용 = 깃(뿌리, ['cat-file', '--batch', '--filters'], {",
+      "바꿀것": "  const 내용 = 깃(뿌리, ['cat-file', '--batch'], {",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/gitsnap.js",
+      "무엇": "HEAD 에 물어보지 않고 ?? 상태면 없던 파일로 본다 (2.1.3 · 2차 눈)",
+      "그러면": "git rm --cached 로 추적만 뗀 파일을 /undo 가 지운다",
+      "찾을것": "        앞모습 = 앞.머리 ? '헤드' : null;",
+      "바꿀것": "        앞모습 = 앞.머리 && 뒤.표.get(경로) !== '??' ? '헤드' : null;",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/gitsnap.js",
+      "무엇": "git 에서 못 꺼낸 앞 모습을 없던 파일로 적는다 (2.1.3 · 2차 눈)",
+      "그러면": "HEAD 를 못 읽거나 시간이 다 되면 /undo 가 멀쩡한 파일을 지운다",
+      "찾을것": "        if (앞모습 === undefined) { 못뜬것.push({ abs, 왜: 'git 에서 앞 모습을 못 꺼냈습니다' }); continue; }",
+      "바꿀것": "        if (앞모습 === undefined) 앞모습 = null;",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/gitsnap.js",
+      "무엇": "HEAD 부터 못 읽어도 경로들을 없던 것으로 본다 (2.1.3 · 2차 눈)",
+      "그러면": "HEAD 가 틀린 채로 물으면 모든 경로가 missing 이라 /undo 가 바뀐 커밋 파일을 지운다",
+      "찾을것": "  if (!/^[0-9a-f]+ commit \\d+$/.test(줄들[0] ?? '')) return null;",
+      "바꿀것": "",
+      "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/gitsnap.js",
+      "무엇": "뜬 때와 가까운 수정 시각도 믿는다 (2.1.3 · 2차 눈)",
+      "그러면": "시각이 굵은 파일 시스템에서 한 틈에 두 번 쓴 파일의 바뀜을 놓쳐 /undo 가 못 되돌린다",
+      "찾을것": "        else if (지금.크기 === 떠둔것.크기 && 지금.시각 === 떠둔것.시각 && (시각믿음 || !떠둔것.buf)) 앞모습 = undefined;",
+      "바꿀것": "        else if (지금.크기 === 떠둔것.크기 && 지금.시각 === 떠둔것.시각) 앞모습 = undefined;",
+      "검사": "test/gitsnap.test.js"
     }
   ]
 }

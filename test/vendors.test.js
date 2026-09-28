@@ -1596,7 +1596,36 @@ trace('9-2-2-못잰것');
   const 도구칸4 = r4.results.find((x) => x.id === 'tools');
   check('★★ 끝까지 온 틀린 JSON 을 「상한에 잘렸을 뿐」 으로 덮지 않는다', !/잘렸을 뿐|잘려 왔습니다/.test(도구칸4?.detail ?? ''), 도구칸4?.detail);
   check('★ 모양이 틀렸다고 적고 경고로 둔다', /모양/.test(도구칸4?.detail ?? '') && 도구칸4?.status === 'warn', `${도구칸4?.status} · ${도구칸4?.detail}`);
+  // 2.1.3: 모양만 틀린 인자는 deel 이 느슨하게 읽는다 — 「거절당한다」 가 아니라 「읽었다」 고 적는다.
+  check('★ 느슨하게 읽었다고 적는다 (거절당한다고 하지 않는다)', /느슨하게 읽었/.test(도구칸4?.detail ?? '') && !/거절/.test(도구칸4?.detail ?? ''),
+    도구칸4?.detail);
   srv4.close();
+
+  /*
+   * 5. 도구를 **글로** 부르는 모델 (2.1.3 · backend/textcalls.js). 서버가 부름 꼴을 몰라 tool_calls 는 비고
+   * 답 글에 <tool_call> 이 실린다. 「글로만 답합니다」 · no 로 적으면 도구를 못 쓰는 모델로 보인다.
+   */
+  const srv5 = createServer((r, res) => {
+    let 글 = '';
+    r.on('data', (c) => (글 += c));
+    r.on('end', () => {
+      const 보내기 = (코드, 것) => { res.writeHead(코드, { 'content-type': 'application/json' }); res.end(JSON.stringify(것)); };
+      if (r.method === 'GET') return 보내기(200, { data: [{ id: 'm-1', context_length: 200000 }] });
+      let 몸 = null;
+      try { 몸 = JSON.parse(글 || '{}'); } catch { 몸 = null; }
+      const 글답 = 몸?.tools?.length ? '<tool_call>\n{"name": "read_file", "arguments": {"path": "config.json"}}\n</tool_call>' : '2';
+      보내기(200, { choices: [{ message: { role: 'assistant', content: 글답 }, finish_reason: 'stop' }], usage: { prompt_tokens: 20, completion_tokens: 12 } });
+    });
+  });
+  await new Promise((r) => srv5.listen(0, '127.0.0.1', r));
+  const base5 = `http://127.0.0.1:${srv5.address().port}/v1`;
+  allowEndpoint(base5);
+  const r5 = await probe({ kind: 'openai', base: base5, auth: 'none', key: '', model: 'm-1' });
+  const 도구칸5 = r5.results.find((x) => x.id === 'tools');
+  check('★★ 글로 부르는 모델은 「글로만 답한다」 가 아니라 글로 부른다고 적고 경고로 둔다', /글로 부릅니다/.test(도구칸5?.detail ?? '') && 도구칸5?.status === 'warn',
+    `${도구칸5?.status} · ${도구칸5?.detail}`);
+  check('  서버가 부름을 못 돌려준 것은 그대로 적는다 (네이티브 도구 호출은 아니다)', r5.facts.tools === false, String(r5.facts.tools));
+  srv5.close();
 }
 
 // ═══════════════════════════════════════════════════════════════════════

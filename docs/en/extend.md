@@ -59,7 +59,7 @@ tear down that line with our own hands. So:
 | | |
 |---|---|
 | **Off by default** | Nothing runs unless it is in `.deel/mcp.json` |
-| **Never under `--offline`** | We cannot police where a child process connects. **We do not claim to block what we cannot block** |
+| **Never under `--offline`** | We cannot police where a child process connects. **We do not claim to block what we cannot block**. Servers reached by URL can be policed, so those on this machine (intranet included) still attach — see below |
 | **Outside the working scope** | MCP servers do not honour our fence. The `/mcp` screen says so |
 | **Audited** | What was launched and what was called, in `.deel/audit.jsonl` |
 | **No key passthrough** | Our environment is not forwarded wholesale — a `DEEL_*` gateway key in someone else's process goes somewhere we cannot see |
@@ -94,6 +94,61 @@ Three things keep the written list from drifting away from reality:
 `DEEL_MCP_LAZY=off` turns it off. Somewhere there is a review that needs to see every
 server come up at startup, and if there is no way to ask for that, this feature becomes
 the obstacle.
+
+### Servers reached by URL (streamable HTTP · 2.1.3)
+
+Team-run wiki and issue servers increasingly arrive as **a single URL**. Writing a `url` used
+to get "servers reached by url cannot be attached yet". They attach now.
+
+```json
+{
+  "mcpServers": {
+    "issues": {
+      "type": "http",
+      "url": "https://mcp.corp.example/mcp",
+      "headers": { "Authorization": "Bearer ${ISSUE_TOKEN}" }
+    }
+  }
+}
+```
+
+| | |
+|---|---|
+| **Still one way out** | Requests leave through the same `backend/http.js` as the model endpoint and pass the gatekeeper every time. The configured address is opened **only while a request is in flight** and closed again — it does not stay on the allow list |
+| **Under `--offline`** | A server on this machine (intranet included — the same rule as the model endpoint) attaches; one outside does not, and the reason is given. Unlike stdio this path **can** be policed, so it is |
+| **Redirects to another host** | Not followed. These requests carry key headers |
+| **Proxy · client certificate (mTLS)** | Same path as the model endpoint |
+| **`${NAME}`** | Expanded from the environment in `url` and `headers` (`${NAME:-default}` too), so keys stay out of the repository. A missing variable is **reported**, not sent as an empty string |
+| **Audit log · `/mcp`** | The address is written without user, password, or anything after `?`. Headers are not written |
+
+A `url` with no `type` is taken as HTTP — configs pasted from other tools often look like that.
+The old HTTP+SSE transport (`"type": "sse"`, or a URL ending in `/sse`) is not accepted, and the
+reason is given. A server that also speaks streamable HTTP usually lives at `/mcp`.
+
+The protocol is the handshake-based revision (2025-03-26 through 2025-11-25). A session id is
+carried on every request once issued; if the server drops the session and returns 404, deel
+handshakes again and retries **once**. Replies are accepted as a single JSON body or as an SSE
+stream, and a ping the server asks mid-stream is answered. One request timing out or getting a
+5xx does not mark the server dead — only that request fails.
+
+A server that accepts **only** the handshake-free revision (2026-07-28) names the versions it
+accepts; the startup warning shows that list next to the versions deel knows.
+
+### Resources and prompts (2.1.3)
+
+Only tools were taken; the rest was thrown away. A docs server exposes its documents as
+**resources**, and a team's polished instructions come as **prompts** — neither was reachable.
+
+| | How |
+|---|---|
+| **Resources** | If the server offers them, one tool `mcp__<server>__read_resource` is added. Without `uri` it lists (following pages, up to 200, templates included); with `uri` it returns the text. Binary content is not inlined — only its presence is reported. It is read-only, so `confirm` does not ask |
+| **Prompts** | Call `/mcp__<server>__<name> args…` — the text that comes back goes to the model as is. Arguments are split on spaces in order (quote one that has spaces in it), and the last one takes the rest as is, line breaks included. A missing required argument stops the call and names what is missing. `deel run /mcp__…` works too |
+
+For example `/mcp__wiki__review src/app.js error handling` fills `file` with `src/app.js` and
+`focus` with `error handling`.
+
+`/mcp` lists each server's prompt names. A waiting server knows them from the written list too.
+Servers that offer only resources or prompts, with no tools, attach as well.
 
 ---
 
@@ -315,6 +370,8 @@ fixes get different codes and names.
 | `no-config` · `config` | 1 | No saved connection / the config file could not be read |
 | `no-prompt` | 1 | Nothing to do was given |
 | `no-root` | 1 | The folder given with `--root` does not exist. deel does not create it and work inside |
+| `no-session` | 1 | The conversation given with `--resume <name>` does not exist, is empty or could not be read. It does not start fresh and **does not call the model** |
+| `events` | 1 | The file given with `--events` could not be opened. It stops before doing any work |
 | `no-command` · `command-read` · `repl-only` | 1 | `deel run /name` — unknown command / command file unreadable / a chat-only command |
 | `usage` | 64 | The command line was wrong |
 
@@ -359,6 +416,56 @@ stripping it silently would take away your chance to fix the prompt.
 
 With `--json`, the validated value also arrives in the result's `schema` field,
 so you never have to re-parse `text`.
+
+### Continue where it left off — `--continue` · `--resume`
+
+`deel run` now keeps the conversation in the same place chat does (`.deel/sessions/`). The
+`session` field of `--json` is its name.
+
+```bash
+id=$(deel run --json "add a confirm-password field to the login form" | jq -r .session)
+deel run --resume "$id" "now add tests for the field you just added"
+deel run --continue "and one line in the README"     # the latest conversation in this folder
+```
+
+| | |
+|---|---|
+| **The model gets what came before** | Files it just read, what it did, pins and the remaining todo list all come back. Explaining from scratch every time makes the model re-read files it just read |
+| **An unknown name stops with 1** (`no-session`) | Chat starts fresh when it cannot find one; this stops. A script that passed a name believes it is continuing and says "that thing from before" — a model seeing it for the first time guesses, works, and exits 0 |
+| **`--continue` starts fresh if there is none** | "continue if there is one, start if not" is what a script's first run expects |
+| **`--resume` without a name is 64** | Chat shows a picker; here there is nobody to pick |
+| **`session` is `null` if it could not be written** | Disk full or permission denied: the work still runs, the name is left empty and stderr says why — continuing half a conversation while believing it is whole is the worst outcome |
+
+A batch run can be picked up in chat (`deel --resume <name>`), and the other way round.
+
+### What changed — `files`
+
+The `files` field of `--json` lists the files this run changed, relative to the work folder, with
+forward slashes — so the line is the same on every OS. A run that was cut off or failed still lists
+what it had changed up to then.
+
+```bash
+deel run --json "…" | jq -r '.files[]' | xargs git add
+```
+
+### Watch it while it runs — `--events <file>`
+
+One result at the end means a long job cannot be watched. `--events` streams events one JSON per
+line — follow it with `tail -f`, sift it with `jq` afterwards.
+
+```
+{"type":"stage","step":1,…,"elapsed":12}
+{"type":"tool_start","name":"Read",…,"elapsed":840}
+{"type":"tool","name":"Read","args":{…},"result":{…},"elapsed":851}
+{"type":"done",…,"elapsed":2104}
+{"type":"result","ok":true,"reason":"done","code":0,…,"session":"20260928-115407","elapsed":2110}
+```
+
+- The last line is always `type: "result"` — the same object `--json` prints.
+- Text fragments (`content`, `thinking`) are left out. A streaming server makes thousands of them per turn, and the answer is in the last line already.
+- Long strings are cut at 4,000 characters. Otherwise one read of a large file copies the file into the event log.
+- `type` is the contract. Other fields may grow between releases — they carry what the screen draws.
+- If the file cannot be opened it stops before any work (`events`). If writing fails midway it says so once and keeps working.
 
 ### What is not checked says so
 

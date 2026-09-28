@@ -2,6 +2,7 @@
 import { writeFileSync, existsSync } from 'node:fs';
 import { 마지막할당량, 할당량말, 아슬아슬한가 } from './backend/quota.js';
 import { 세션요금, 돈셈, 돈말, 어디서온값, 요금적는법 } from './backend/price.js';
+import { 생성속도 } from './agent/session.js';
 import { join } from 'node:path';
 import { c, say, rule, pad, mark, width, clip } from './ui/ansi.js';
 import { compact } from './agent/compact.js';
@@ -83,6 +84,8 @@ import { list as listSessions } from './agent/store.js';
 import { MODES as WORK_MODES, ORDER as WORK_ORDER, normalize as normWork, get as getWork, canWrite, 보일이름, 보일한줄 } from './agent/modes.js';
 import { COMMANDS, 설정남기기 } from './commands/common.js';
 import { 딴이름들 } from './cmdnames.js';
+// 슬래시 명령 찾기는 src/slash.js 에 있다 — deel run 이 이 파일 전체를 안 읽게 (2.1.3).
+import { 슬래시명령찾기, 비슷한슬래시명령, MCP프롬프트펴기 } from './slash.js';
 import { doPlugin, 미리보기, showSkills, 미리보기끄기 } from './commands/extend.js';
 import { help, showLevel, 강조, showThink, showContext, showWork } from './commands/view.js';
 import { 갈래명령, 증거명령, 붙여넣기명령, 리뷰명령, 커밋명령, 카드명령, 못박기명령, 배움명령, 바뀐것보기 } from './commands/work.js';
@@ -177,39 +180,8 @@ function 비슷한이름(친것, 이름들) {
     .map(([n]) => n);
 }
 
-/** `ext:ReviewCode` 의 꼬리 — 언제나 낮춰서 돌려준다. 찾기와 「비슷한 것」 이 같은 잣대를 쓰게 한다. */
-const 꼬리이름 = (이름) => String(이름 ?? '').split(':').pop().toLowerCase();
-
-/*
- * ── 이 PC 에서 찾은 슬래시 명령을 이름으로 찾는다 ───────────────────────
- *
- * 대화 화면(아래 default 갈래)과 배치(oneshot.js)가 **같은 규칙**을 써야 한다. 같은 글자를
- * 쳤는데 창에 따라 되고 안 되면 사람은 어느 쪽을 믿을지 정할 수 없다. 그래서 두 벌로 적지
- * 않고 여기 한 군데에 둔다.
- *
- * 찾는 차례는 셋이다 — 적은 그대로 · 대소문자 무시 · 꼬리 이름.
- * 마지막 칸이 `x.name.split(':').pop() === 낮춘` 이었다 (8회차 그밖 명령2). 왼쪽은 파일에
- * 적힌 그대로고 오른쪽은 낮춘 말이라 둘이 만날 수가 없다. `ext:ReviewCode` 는 `/ReviewCode`
- * 로도 `/reviewcode` 로도 「모르는 명령」 이었고, 「비슷한 것」 에도 안 떴다 — 깔려 있는
- * 명령이 어느 길로도 안 보이는 자리다. 배치에서는 그대로 1 로 선다.
- */
-export function 슬래시명령찾기(목록, 부른이름) {
-  const 것들 = 목록 ?? [];
-  const 낮춘 = String(부른이름 ?? '').toLowerCase();
-  return 것들.find((x) => x.name === 부른이름)
-    ?? 것들.find((x) => x.name.toLowerCase() === 낮춘)
-    ?? 것들.find((x) => 꼬리이름(x.name) === 낮춘)
-    ?? null;
-}
-
-/** 못 찾았을 때 「비슷한 것」 으로 늘어놓을 것. 찾기와 같은 잣대(낮춘 꼬리)를 쓴다. */
-export function 비슷한슬래시명령(목록, 부른이름, 몇 = 5) {
-  const 낮춘 = String(부른이름 ?? '').toLowerCase();
-  if (!낮춘) return [];
-  return (목록 ?? [])
-    .filter((x) => x.name.toLowerCase().includes(낮춘) || 낮춘.includes(꼬리이름(x.name)))
-    .slice(0, 몇);
-}
+// 부르던 자리(검사 · 다른 모듈)가 그대로 쓰게 여기서도 내보낸다.
+export { 슬래시명령찾기, 비슷한슬래시명령, MCP프롬프트펴기 };
 
 export async function handle(line, session, ctx) {
   // 일본어·중국어 입력기의 전각 빗금(／help). 그대로 두면 명령이 말이 되어 모델에게 간다(ui/complete.js).
@@ -1192,6 +1164,9 @@ export async function handle(line, session, ctx) {
         })}`);
       }
       say(`  ${c.gray(pad(말('cost.toolMs'), 14))} ${말('unit.sec', { n: (session.usage.ms / 1000).toFixed(1) })}`);
+      // 생성 속도 — 흘려받은 부름만 잰다. 못 쟀으면 줄을 안 적는다 (session.js 의 생성속도).
+      const 속도 = 생성속도(session.usage);
+      if (속도 !== null) say(`  ${c.gray(pad(말('cost.speed'), 14))} ${속도} tok/s`);
       // 서버가 잠깐 막아 다시 부른 횟수. 0 이면 안 적는다 — 없는 일을 줄로 남기면 표만 길어진다.
       if (session.usage.retries) say(`  ${c.gray(pad(말('cost.retries'), 14))} ${말('unit.calls', { n: session.usage.retries })}`);
       say(`  ${c.gray(pad(말('cost.elapsed'), 14))} ${말('unit.min', { n: mins })}`);
@@ -1300,7 +1275,7 @@ export async function handle(line, session, ctx) {
        * 있는 그대로 적는다 (safety/authcmd.js).
        */
       if (session.conn.열쇠받기) {
-        const 상태 = 지금열쇠상태();
+        const 상태 = 지금열쇠상태(session.conn.열쇠받기);
         const 남은말 = 상태
           ? 말('auth.leftMin', { 분: Math.round(상태.남은초 / 60) })
           : 말('auth.notYet');
@@ -1592,7 +1567,7 @@ export async function handle(line, session, ctx) {
     }
 
     case 'mcp': {
-      const { 설정읽기, 설정자리, 도구최대, 되살리기최대 } = await import('./backend/mcp.js');
+      const { 설정읽기, 설정자리, 도구최대, 되살리기최대, 적을주소 } = await import('./backend/mcp.js');
       const 붙은것 = session.mcp ?? [];
       rule('밖에서 붙인 도구 (MCP)', 70);
 
@@ -1610,6 +1585,8 @@ export async function handle(line, session, ctx) {
         say('');
         say(`  ${c.gray('붙이려면')} ${c.white('.deel/mcp.json')} ${c.gray('에 이렇게 적습니다 —')}`);
         say(`  ${c.gray('{ "mcpServers": { "사내위키": { "command": "node", "args": ["wiki-mcp.js"] } } }')}`);
+        // 주소로 붙는 서버도 받는다 (2.1.3) — 열쇠는 ${환경변수} 로 적어 저장소에 안 남긴다.
+        say(`  ${c.gray('{ "mcpServers": { "이슈": { "type": "http", "url": "https://mcp.사내.example/mcp", "headers": { "Authorization": "Bearer ${ISSUE_TOKEN}" } } } }')}`);
         say('');
         say(`  ${c.yellow('※')} ${c.gray('MCP 서버는 남의 프로그램입니다. 사내 반입 심사를 따로 받으셔야 합니다.')}`);
         say('');
@@ -1629,8 +1606,12 @@ export async function handle(line, session, ctx) {
          */
         const 상태 = s.살아있나() ? c.green('●') : (s.대기 ? c.yellow('◐') : c.red('○'));
         const 이름들 = s.도구.map((t) => t.name);
-        say(`  ${상태} ${c.bold(s.이름)}  ${c.gray(s.정보?.name ? `${s.정보.name} ${s.정보.version ?? ''}` : s.설정.command)}`);
+        // HTTP 로 붙은 것은 주소를 적는다 — 이름·비밀번호·물음표 뒤는 떼고 (적을주소).
+        const 어디 = s.설정.url ? 적을주소(s.설정.url) : s.설정.command;
+        say(`  ${상태} ${c.bold(s.이름)}  ${c.gray(s.정보?.name ? `${s.정보.name} ${s.정보.version ?? ''}` : 어디)}${s.설정.url && s.정보?.name ? c.gray(` · ${어디}`) : ''}`);
         say(`      ${c.gray('도구 ' + s.도구.length + '개')}  ${c.gray(clip(이름들.join(' · '), 60))}`);
+        // 서버가 낸 프롬프트는 슬래시 명령으로 선다 (2.1.3 · 아래 default 갈래).
+        if (s.프롬프트?.length) say(`      ${c.gray('프롬프트 ' + s.프롬프트.length + '개')}  ${c.gray(clip(s.프롬프트.map((p) => `/mcp__${s.이름}__${p.name}`).join(' · '), 60))}`);
         if (s.대기) say(`      ${c.gray('아직 안 띄웠습니다 — 적어 둔 목록입니다. 이 도구를 부르면 그때 뜹니다.')}`);
         if (s.잘림) say(`      ${mark.warn} ${c.gray(`${s.잘림}개는 뺐습니다 — 한 서버에 ${도구최대}개까지만 받습니다(컨텍스트가 줄어듭니다)`)}`);
         if (s.달라짐) {
@@ -1836,8 +1817,16 @@ export async function handle(line, session, ctx) {
     case 'plugins': return await doPlugin(session, arg), { handled: true };
 
     default: {
+      // MCP 서버가 낸 프롬프트인가 (2.1.3 · src/slash.js 의 MCP프롬프트펴기). 받은 글을 모델에게 보낸다.
+      const 프롬프트 = await MCP프롬프트펴기(session.mcp, raw, arg);
+      if (프롬프트?.탈) { say(`  ${c.red(프롬프트.탈)}`); say(''); return { handled: true }; }
+      if (프롬프트) {
+        ctx?.audit?.write?.('mcp', { 이름: 프롬프트.서버이름, 프롬프트: 프롬프트.이름 });
+        say(`  ${c.cyan('⌘')} ${raw} ${c.gray(`MCP 프롬프트 · ${프롬프트.서버이름}`)}`);
+        return { handled: false, text: 프롬프트.text };
+      }
       // 이 PC 에서 찾은 슬래시 명령인지 본다. 있으면 그 내용을 모델에게 보낸다.
-      // 찾는 규칙은 배치(oneshot.js)와 한 군데에서 같이 쓴다 — 위 슬래시명령찾기.
+      // 찾는 규칙은 배치(oneshot.js)와 한 군데에서 같이 쓴다 — src/slash.js 의 슬래시명령찾기.
       const found = 슬래시명령찾기(session.commands, raw);
       if (found) {
         const { text, error } = loadCommand(found, arg);

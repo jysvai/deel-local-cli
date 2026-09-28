@@ -13,6 +13,7 @@ import {
   assistantMessage, toolMessage,
 } from './adapter.js';
 import { 벤더 } from './toolfit.js';
+import { 글속부름 } from './textcalls.js';
 import { 세션이름짓기, 기본카드 } from './wire.js';
 import { 말 } from '../i18n/index.js';
 
@@ -446,18 +447,31 @@ export async function probe(conn, onStep = () => {}) {
    * 판정한다 — 위 머리말과 거꾸로 된 틀림이다.
    */
   const 모양틀림 = 잘린인자 && tcalls[0]?.argsCut === false;
+  /*
+   * 모양만 틀린 인자는 이제 deel 이 느슨하게 읽는다 (2.1.3 · adapter.js 인자읽기). 읽혔으니 「거절당한다」
+   * 는 아니지만, 이 모델이 규격 밖 JSON 을 쓴다는 것은 남긴다 — 다른 도구는 그걸 거절한다.
+   */
+  const 고쳐읽음 = gotCall && tcalls[0]?.argsRepaired === true;
+  /*
+   * 도구를 **글로** 부르는 모델 (2.1.3 · backend/textcalls.js). 서버가 그 모델의 부름 꼴을 몰라
+   * tool_calls 는 비었는데 답 글에 <tool_call> 이 실렸다. 여태는 「글로만 답합니다」 로 적어 도구를
+   * 못 쓰는 모델처럼 보였다. deel 은 그 글을 알아듣는다 — 경고로 두고, 서버의 도구 틀을 켜라고 적는다.
+   */
+  const 글로부름 = !gotCall && tl.ok ? 글속부름(읽기(tl).content, [READ_TOOL.function.name]) : null;
   const 원문에있나 = 잘린인자 && !모양틀림 && String(tcalls[0]?.rawArgs ?? '').includes('config');
   add({
     id: 'tools',
     label: '도구 호출',
-    status: gotCall ? (argOk || 원문에있나 ? 'ok' : 'warn') : 'no',
+    status: gotCall ? (고쳐읽음 ? 'warn' : argOk || 원문에있나 ? 'ok' : 'warn') : 글로부름 ? 'warn' : 'no',
     detail: gotCall
-      ? `${tcalls[0]?.name} 호출됨${argOk ? ''
+      ? `${tcalls[0]?.name} 호출됨${고쳐읽음 ? ' — 인자 JSON 모양이 틀려(홑따옴표·끝 쉼표 같은 것) deel 이 느슨하게 읽었습니다'
+        : argOk ? ''
         : 원문에있나 ? ` — 인자가 우리 상한(${도구상한}토큰)에 잘렸을 뿐, 값은 제대로 왔습니다`
           : 모양틀림 ? ' — 인자 JSON 모양이 틀렸습니다 (홑따옴표·끝 쉼표 같은 것 — 편집 도구가 자주 거절당합니다)'
           : 잘린인자 ? ' — 인자 JSON 이 잘려 왔습니다 (상한을 올려 다시 보세요)'
             : ' — 인자가 부정확, 편집 신뢰성 작업이 더 필요합니다'}`
-      : tl.ok ? '도구를 안 부르고 글로만 답합니다' : serverMessage(tl),
+      : 글로부름 ? '도구를 글로 부릅니다(<tool_call> 같은 꼴) — deel 이 알아듣지만, 서버의 도구 틀(채팅 템플릿)을 켜면 더 낫습니다'
+        : tl.ok ? '도구를 안 부르고 글로만 답합니다' : serverMessage(tl),
     ms: tl.ms,
   });
   facts.tools = gotCall;

@@ -243,6 +243,20 @@ trace('4-띄워서-받기');
   // 안 끝나는 명령을 영영 기다리지 않는다.
   const 늦 = await 한번받기(받기설정({ 열쇠받기: { 명령: 도구('setTimeout(() => {}, 60000)') } }), { 기다림: 700 });
   check('★ 안 끝나면 기다리다 끊는다', !늦.ok && /기다렸는데/.test(늦.왜), 늦.왜);
+  /*
+   * 끊을 때 **셸 아래 손자까지** 거둔다 (2.1.3). 윈도우에서 명령은 셸(cmd · PowerShell · Git Bash)을
+   * 거쳐 뜨는데, 셸만 죽이면 진짜 로그인 도구(손자)가 살아 우리 파이프를 물고 있었다. 그러면 「못
+   * 받았습니다」 뒤에도 deel 이 끝나지 못하고 그 손자가 끝날 때까지 섰다 — 이 검사 파일이 5초에 할 일을
+   * 마치고 61초에 끝나던 까닭이 그것이었다.
+   */
+  const 번호자리 = join(방, 'grandchild.pid');
+  await 한번받기(받기설정({ 열쇠받기: { 명령: 도구(`(await import('node:fs')).writeFileSync(${JSON.stringify(번호자리)}, String(process.pid)); setTimeout(() => {}, 60000)`) } }), { 기다림: 1500 });
+  const 손자 = existsSync(번호자리) ? Number(readFileSync(번호자리, 'utf8')) : null;
+  const 살았나 = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  let 죽었나 = false;
+  for (let i = 0; i < 40 && 손자 && !죽었나; i++) { 죽었나 = !살았나(손자); if (!죽었나) await new Promise((r) => setTimeout(r, 100)); }
+  check('★★ 기다리다 끊으면 셸 아래 진짜 명령(손자)까지 거둔다', Number.isInteger(손자) && 죽었나, `손자 ${손자} · 죽었나 ${죽었나}`);
+  if (손자 && !죽었나) { try { process.kill(손자); } catch { /* 이미 갔다 */ } }
 
   // 없는 명령도 안 죽는다.
   const 없 = await 한번받기(받기설정({ 열쇠받기: { 명령: 'deel-there-is-no-such-command-xyz' } }), { 기다림: 8000 });
@@ -438,6 +452,8 @@ trace('6-401-이면-새로-받는다');
   check('★ 두 번째 401 에서는 멈춘다', !!탈 && 탈.status === 401, 탈 ? `${탈.status}` : '안 던짐');
   check('★ 딱 두 번만 불렀다 (무한히 안 돈다)', 본머리.length === 2, `${본머리.length}번`);
 
+  // 살려 둔 연결까지 닫는다 — 안 닫으면 검사는 5초에 끝나고도 서버의 머리말 시한(60초)까지 프로세스가 남았다.
+  srv.closeAllConnections?.();
   srv.close();
   resetNet();
 }
@@ -577,6 +593,40 @@ trace('10-너무많이뱉는다');
   check('★ 너무 많이 뱉으면 실패로 돌려준다 (안 죽는다)', !던짐 && r && r.ok === false, 던짐 ? String(던짐.message) : JSON.stringify(r?.왜));
   check('★ 왜 실패인지 말한다 — 너무 많이 나왔다', /너무 많/.test(r?.왜 ?? ''), r?.왜 ?? '');
   check('★ 끝까지 안 기다리고 곧 끊는다', Date.now() - t0 < 20000, `${Date.now() - t0}ms`);
+}
+
+trace('11-명령마다-따로');
+/*
+ * ── 받아 둔 열쇠와 승인은 **명령마다** 따로다 (2.1.3) ─────────────────────
+ *
+ * 들고 있는 열쇠가 모듈에 하나뿐이었다. 그래서 다른 프로필 — `/consult` 나 모델을 고른 Task 가
+ * 여는 연결(agent/models.js) — 이 제 열쇠받기 명령으로 열쇠를 청하면 **앞 프로필의 토큰**이
+ * 그대로 돌아왔다. A 게이트웨이의 토큰이 B 게이트웨이로 나가고, B 의 명령은 승인도 없이 넘어간다
+ * (들고 있는 것이 먼저라 묻는 자리에 닿지도 않는다). 승인도 하나라 A 를 허락하면 B 도 허락한 셈이었다.
+ */
+{
+  잊기();
+  const 가 = 받기설정({ 열쇠받기: { 명령: 도구("process.stdout.write('tokA0000000000000')"), 수명: 600 } });
+  const 나 = 받기설정({ 열쇠받기: { 명령: 도구("process.stdout.write('tokB0000000000000')"), 수명: 600 } });
+  const 가것 = await 열쇠(가, { 물어보기: async () => true });
+  let 나물음 = 0;
+  const 나것 = await 열쇠(나, { 물어보기: async () => { 나물음 += 1; return true; } });
+  check('★★★ 다른 명령의 열쇠를 청하면 앞 명령의 토큰을 주지 않는다', 가것.token === 'tokA0000000000000' && 나것.token === 'tokB0000000000000',
+    `${가것.token} / ${나것.token}`);
+  check('★★★ 다른 명령은 따로 묻는다 — 앞 명령의 승인이 넘어가지 않는다', 나물음 === 1, `물음 ${나물음}`);
+  const 다시가 = await 열쇠(가, { 물어보기: async () => false });
+  check('★★ 앞 명령의 열쇠는 그대로 들고 있다 (갈아탔다 돌아와도 다시 안 받는다)', 다시가.그대로 === true && 다시가.token === 'tokA0000000000000', JSON.stringify(다시가).slice(0, 120));
+  잊기();
+  let 거절물음 = 0;
+  const 거절 = await 열쇠(가, { 물어보기: async () => { 거절물음 += 1; return false; } });
+  const 다른것 = await 열쇠(나, { 물어보기: async () => true });
+  check('★★ 한 명령을 거절해도 다른 명령은 제 물음을 받는다', !거절.ok && 다른것.ok && 다른것.token === 'tokB0000000000000', `${거절.왜} · ${다른것.token}`);
+  check('  화면의 상태는 그 연결의 것을 본다', 지금상태(나)?.있음 === true && 지금상태(가) === null, JSON.stringify([지금상태(가), 지금상태(나)]));
+  잊기();
+  await 열쇠(가, { 물어보기: async () => true });
+  await 열쇠(나, { 물어보기: async () => true });
+  const 가린글 = 가림('A=tokA0000000000000 B=tokB0000000000000');
+  check('★★ 화면에 낼 글에서는 들고 있는 열쇠를 **전부** 가린다', !/tokA0|tokB0/.test(가린글), 가린글);
 }
 
 잊기();

@@ -84,8 +84,10 @@ export function 실패덩이({ reason, code, why = '', model = null }) {
   return {
     ok: false, reason, code, text: '',
     tools: 0, steps: 0,
-    usage: { in: 0, out: 0, prompt: 0, cacheRead: 0, cacheWrite: 0, calls: 0, ms: 0, 못잰것: 0, retries: 0 },
+    usage: { in: 0, out: 0, prompt: 0, cacheRead: 0, cacheWrite: 0, calls: 0, ms: 0, 못잰것: 0, retries: 0, genMs: 0, tokPerSec: null },
     model,
+    // 바뀐 파일과 대화 이름 (2.1.3) — 시작도 못 했으니 비었다. 칸은 성공과 같게 둔다.
+    files: [], session: null,
     ms: 0,
     ...(why ? { why } : {}),
   };

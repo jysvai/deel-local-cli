@@ -93,6 +93,7 @@ export const 깃발들 = [
   { 이름: '--check', 뜻: 'run: 끝내기 전에 돌릴 검사 명령', en: 'run: check command to pass before finishing', 값: null },
   { 이름: '--check-rounds', 뜻: 'run: 검사를 몇 번까지 돌리나 (1~10)', en: 'run: how many times the check runs (1-10)', 값: null },
   { 이름: '--check-timeout', 뜻: 'run: 검사 한 번의 제한 시간(초)', en: 'run: time limit per check run (seconds)', 값: null },
+  { 이름: '--events', 뜻: 'run: 사건을 이 파일에 JSONL 로', en: 'run: stream events to this file as JSONL', 값: '파일' },
   { 이름: '--repeat', 뜻: 'eval: 과제마다 몇 번 돌릴까', en: 'eval: runs per task', 값: null },
   { 이름: '--init', 뜻: 'eval: 예제 과제를 만든다', en: 'eval: write the example tasks', 값: false },
   { 이름: '--only', 뜻: 'eval: 고른 과제만 (쉼표) · sbom: 한 가지만', en: 'eval: only these tasks (comma); sbom: only one part', 값: null },

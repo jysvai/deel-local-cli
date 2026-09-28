@@ -13,6 +13,7 @@ import { 다시부를지, 기다리기, 정책고르기, 못부른말 } from './
 import { 도구맞추기, 이름되돌리기, 벤더 } from './toolfit.js';
 import { 눈금맞추기 } from './wire.js';
 import { 시스템블록, 메시지표식, 잡힐만한가, 조각표 } from './cachemark.js';
+import { 느슨한JSON } from './loosejson.js';
 
 /*
  * Anthropic 규격의 판 이름.
@@ -891,22 +892,42 @@ export function 잘린모양인가(raw) {
   return 연따옴표 !== null || 깊이 > 0;
 }
 
+/*
+ * 인자 글을 읽는다. 곧이곧대로 못 읽으면, **잘린 앞토막이 아닐 때만** 느슨하게 읽는다 (2.1.3).
+ *
+ * 홑따옴표 · 끝 쉼표 · 따옴표 없는 열쇠 · 글 속 날 줄바꿈은 끝까지 온 틀린 JSON 이다. 여태는 깨진
+ * 부름으로 돌려보내 「고쳐 다시 보내라」 했고, 작은 모델은 같은 꼴을 되풀이하며 걸음을 썼다. 뜻이
+ * 하나로 읽히면 여기서 읽고 `argsRepaired` 를 단다. 잘린 것은 닫아 읽지 않는다 — 반쪽 내용이
+ * 온전한 척 도구로 간다(backend/loosejson.js 머리말). 객체가 아닌 것도 안 받는다.
+ */
+function 인자읽기(원문) {
+  try { return { args: JSON.parse(원문) }; } catch { /* 아래 */ }
+  if (잘린모양인가(원문)) return null;
+  try {
+    const v = 느슨한JSON(원문);
+    if (v && typeof v === 'object' && !Array.isArray(v)) return { args: v, 고침: true };
+  } catch { /* 못 읽는다 */ }
+  return null;
+}
+
 export function normalizeCalls(list) {
   return list.map((tc, i) => {
     const fn = tc.function ?? tc;
     let args = fn.arguments ?? fn.args ?? {};
     let 깨짐 = false;
+    let 고침 = false;
     let 원문 = null;
     if (typeof args === 'string') {
       const s = args.trim();
       // 인자가 아예 없는 도구도 있다. 빈 것은 깨진 것이 아니다.
       if (!s) args = {};
       else {
-        try { args = JSON.parse(s); }
-        catch { 깨짐 = true; 원문 = args; args = {}; }
+        const 읽음 = 인자읽기(s);
+        if (읽음) { args = 읽음.args; 고침 = !!읽음.고침; } else { 깨짐 = true; 원문 = args; args = {}; }
       }
     }
     const call = { id: tc.id ?? `call_${i + 1}`, name: 이름글(fn.name), args };
+    if (고침) call.argsRepaired = true;
     // argsCut: 잘린 앞토막인가(위 잘린모양인가). false 면 끝까지 온 틀린 JSON 이다.
     if (깨짐) { call.argsBroken = true; call.rawArgs = 원문; call.argsCut = 잘린모양인가(원문); }
     return call;
@@ -2094,8 +2115,9 @@ function 도구마무리(acc) {
     if (!원문) return c.처음인자 ? { ...call, args: c.처음인자 } : call;
     // 객체로 온 인자는 이미 읽힌 것이다 (mergeDeltaCalls 머리말). 글로 바꿔 다시 읽으면 깨진다.
     if (typeof 원문 !== 'string') { call.args = 원문; return call; }
-    try { call.args = JSON.parse(원문); }
-    catch { call.argsBroken = true; call.rawArgs = c.args; call.argsCut = 잘린모양인가(원문); }
+    const 읽음 = 인자읽기(원문);
+    if (읽음) { call.args = 읽음.args; if (읽음.고침) call.argsRepaired = true; }
+    else { call.argsBroken = true; call.rawArgs = c.args; call.argsCut = 잘린모양인가(원문); }
     return call;
   });
 }

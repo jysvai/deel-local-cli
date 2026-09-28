@@ -327,6 +327,31 @@ export class History {
     return rec;
   }
 
+  /**
+   * 명령이 **이미 바꾼** 파일의 앞 모습을 적는다 (2.1.3 · safety/gitsnap.js).
+   *
+   * 앞 모습은 부르는 쪽이 준다 — git 이 들고 있던 것이나 명령 전에 떠 둔 사본. `앞` 이 Buffer 면 그 내용,
+   * null 이면 「원래 없던 자리」(되돌리면 지운다). 바이너리는 snapshot 과 같이 못 뜬 것으로 적고 크기를 남긴다.
+   * 이번 턴에 이미 뜬 자리면 안 적는다 — 그 기록이 턴 처음 모습이다.
+   */
+  뒤늦은기록(absPath, 앞, label) {
+    if (this.떴나(absPath)) return null;   // 이번 턴 처음 모습이 이미 있다
+    if (앞 === null) return this.없던자리기록(absPath, label);
+    const 뜬것 = 뜨기(Buffer.from(앞));
+    const rec = { turn: this.turn, at: new Date().toISOString(), path: absPath, before: 뜬것.before, label };
+    const 상대 = this.#상대(absPath);
+    if (상대 !== null) rec.rel = 상대;
+    if (뜬것.enc) rec.enc = 뜬것.enc;
+    if (뜬것.skipped) { rec.skipped = 뜬것.skipped; rec.크기 = 앞.length; }
+    this.#덧붙이기(rec);
+    this.#잠그기();
+    this.#이번턴.set(absPath, rec);
+    const 낮춘 = absPath.toLowerCase();
+    this.#낮춘이름.set(낮춘, [...(this.#낮춘이름.get(낮춘) ?? []), absPath]);
+    this.#maybePrune();
+    return rec;
+  }
+
   /*
    * ── 떠 놓고 **못 쓴** 기록을 거둔다 ───────────────────────────────────
    *
@@ -841,7 +866,11 @@ function 같은물건(p, q) {
 }
 
 function safeRead(p) {
-  const buf = readFileSync(p);
+  return 뜨기(readFileSync(p));
+}
+
+/** 바이트를 이력에 적을 모양으로 (safeRead 와 gitsnap 의 앞 모습이 같이 쓴다). */
+function 뜨기(buf) {
   // 바이너리는 내용을 담지 않는다. '없던 파일' 과는 다른 값으로 알린다 —
   // 이 둘을 같은 null 로 뭉쳐 놨던 것이 /undo 가 파일을 지우던 원인이다.
   if (looksBinary(buf)) return { before: null, skipped: '바이너리' };

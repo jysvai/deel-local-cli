@@ -48,6 +48,34 @@ but `del target.txt`, with no slash, is the most common form there is. This is a
 site rather than a blocking one, so it scans broadly and saves a file only when one is
 actually there. A wrong guess costs nothing. Up to 24 per command.
 
+### In a git repository, what a script changed comes back too (2.1.3)
+
+The word-based snapshot above only sees files **named** on the command line. The way a model
+changes files most is the opposite — `npm run format`, `npx prettier --write .`,
+`node fix.js`, `rm *.tmp`. No names on the command line, so nothing was saved and `/undo` left
+them as they were.
+
+When the work folder is a git repository, deel compares `git status` **before and after** the
+command and knows exactly what changed.
+
+| Before the command the file was | Its earlier content comes from | Undo puts back |
+|---|---|---|
+| as committed | the commit before the command (HEAD) | that |
+| being edited, or untracked | a copy taken just before the command (usually a handful) | the state **just before the command** — not the committed one |
+| absent | — | deletes it |
+
+```
+  ▶ Bash(npm run format)
+    └ success
+      ↩ src/app.js · src/util.js · test/app.test.js saved — /undo brings them back
+```
+
+- **Nothing is written to `.git`.** Only read-only `git status` and `git cat-file`, and status is called so it does not touch the index.
+- **Ignored files (`.gitignore`) are not seen.** Git does not look there, so deel does not claim to restore them.
+- **The git index and commits are not undone.** What is restored is the files in the work folder.
+- It starts git a few times per command (about 0.2 s before and after together on this repository). A repository where one pass takes over 3 s turns it off for the session.
+- Outside a repository only the word-based snapshot runs. It does not claim a safety net that is not there.
+
 ### What it will not read
 
 Walking a folder turns up things that are not project files: the private stores other coding

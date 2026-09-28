@@ -35,6 +35,7 @@ import { walk, SKIP_DIRS, globToRegex, 내부살림 } from './fsutil.js';
 import { 건너뜀말 } from './ignore.js';
 import { decode, looksBinary } from './encoding.js';
 import { 찾을개수, 뼈대줄수 } from '../agent/budget.js';
+import { 들여옴세기 } from './importgraph.js';
 import { 말, 세말 } from '../i18n/index.js';
 
 /* 결과 한 줄을 잇는다 — 빈 조각은 버린다(tools/index.js 의 이어 와 같은 것). */
@@ -289,10 +290,26 @@ export const OUTLINE_TOOL = {
 
     if (!파일들.length) return { content: '볼 파일이 없습니다.', summary: 세말('count', 0) };
 
-    // 최근에 손댄 것부터. 지금 하는 일과 가까울 가능성이 높다.
-    파일들.sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
-
     const 파일상한 = 찾을개수(ctx.모델컨텍스트);
+    /*
+     * ── 싣는 차례 (2.1.3) ────────────────────────────────────────────────
+     *
+     * 여태는 최근에 손댄 것부터였다. 그러면 오래 안 건드린 **핵심 모듈** — 파일 수십 개가 불러 쓰는 것 —
+     * 이 큰 저장소에서 제일 먼저 잘렸다(tools/importgraph.js 머리말). 이제 둘을 섞는다.
+     *
+     *   1. 지금 손대는 파일 — 30분 안에 바뀐 것, 몇 자리만. 지금 하는 일과 제일 가깝다.
+     *      다만 폴더의 절반 넘게가 30분 안이면 막 받아 온(clone) 저장소라 시각이 뜻이 없다 — 이 자리를 안 둔다.
+     *   2. 나머지는 많이 불리는 것부터, 같으면 최근 것부터.
+     */
+    const 셈 = 하나인가 ? new Map() : 들여옴세기(ctx.scope.root, 파일들.map((f) => f.path));
+    const 불림 = (f) => 셈.get(f.path) ?? 0;
+    파일들.sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
+    const 제일늦은 = 파일들[0]?.mtime ?? 0;
+    const 지금것 = 파일들.filter((f) => (f.mtime ?? 0) >= 제일늦은 - 30 * 60 * 1000);
+    const 앞자리 = 지금것.length * 2 > 파일들.length ? [] : 지금것.slice(0, Math.max(2, Math.floor(파일상한 / 8)));
+    const 앞 = new Set(앞자리);
+    파일들 = [...앞자리, ...파일들.filter((f) => !앞.has(f)).sort((a, b) => 불림(b) - 불림(a) || (b.mtime ?? 0) - (a.mtime ?? 0))];
+
     const 줄상한 = 뼈대줄수(ctx.모델컨텍스트);
     const 볼것 = 파일들.slice(0, 파일상한);
 
@@ -328,7 +345,8 @@ export const OUTLINE_TOOL = {
       }
 
       뼈대있는파일++;
-      줄들.push(`${보인이름}  (${줄수}줄)`);
+      // 몇 곳에서 불러 쓰나 — 모델이 「여기가 중심이구나」 를 이름만 보고 안다 (2.1.3).
+      줄들.push(`${보인이름}  (${줄수}줄${불림(f) ? ` · ${불림(f)}곳에서 불러 씀` : ''})`);
       쓴줄++;
       // 파일 하나가 목록을 통째로 먹지 않게 한다. 500개짜리 파일 하나가
       // 나머지 마흔 개를 밀어내면 '구조를 본다' 는 뜻이 없어진다.

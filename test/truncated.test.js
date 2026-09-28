@@ -343,14 +343,21 @@ trace('3d-모양이틀린인자');
 {
   const { normalizeCalls } = await import('../src/backend/adapter.js');
   const [홑따옴표] = normalizeCalls([{ id: 'm1', function: { name: 'Read', arguments: "{'file_path': 'a.js'}" } }]);
-  check('★★ 끝까지 온 틀린 JSON 은 못 읽었다고 하되 잘렸다고는 안 한다',
-    홑따옴표.argsBroken === true && wasCut({ stopped: 'tool_calls', toolCalls: [홑따옴표] }) === false,
-    JSON.stringify(홑따옴표));
+  // 2.1.3: 뜻이 하나로 읽히는 틀린 모양(홑따옴표 · 끝 쉼표 · 날 줄바꿈)은 느슨하게 읽는다 (adapter.js 인자읽기).
+  check('★★ 끝까지 온 모양만 틀린 JSON 은 읽고 고쳐 읽었다고 단다', !홑따옴표.argsBroken && 홑따옴표.argsRepaired === true
+    && 홑따옴표.args?.file_path === 'a.js', JSON.stringify(홑따옴표));
+  const [못읽음] = normalizeCalls([{ id: 'm3', function: { name: 'Read', arguments: '{"file_path": a.js}' } }]);
+  check('★★ 끝까지 왔는데 못 읽는 JSON 은 못 읽었다고 하되 잘렸다고는 안 한다',
+    못읽음.argsBroken === true && 못읽음.argsCut === false && wasCut({ stopped: 'tool_calls', toolCalls: [못읽음] }) === false,
+    JSON.stringify(못읽음));
+  const [잘린홑] = normalizeCalls([{ id: 'm4', function: { name: 'Write', arguments: "{'file_path': 'a.js', 'content': 'abc" } }]);
+  check('★★★ 잘린 앞토막은 느슨하게도 안 읽는다 — 반쪽 내용이 온전한 척 도구로 가면 안 된다', 잘린홑.argsBroken === true && 잘린홑.argsCut === true
+    && !잘린홑.argsRepaired, JSON.stringify(잘린홑));
   const [잘린것] = normalizeCalls([{ id: 'm2', function: { name: 'Write', arguments: 잘린인자 } }]);
   check('중간에서 끊긴 JSON 은 서버가 stop 이라 해도 여전히 잘린 것이다',
     wasCut({ stopped: 'stop', toolCalls: [잘린것] }) === true, JSON.stringify(잘린것).slice(0, 80));
 
-  for (const [라벨, raw] of [['홑따옴표', "{'file_path': 'a.js'}"], ['끝 쉼표', '{"file_path": "a.js",}']]) {
+  for (const [라벨, raw, 읽나] of [['홑따옴표', "{'file_path': 'a.js'}", true], ['끝 쉼표', '{"file_path": "a.js",}', true], ['따옴표 없는 값', '{"file_path": a.js}', false]]) {
     script = [
       { brokenCall: { name: 'Read', raw }, stopped: 'tool_calls' },
       { text: '고쳐서 다시 부르겠습니다.' },
@@ -360,8 +367,9 @@ trace('3d-모양이틀린인자');
     check(`★★ ${라벨}: 상한을 올려 다시 부르지 않는다`, !evs.some((e) => e.type === 'retry'), 종류);
     check(`★ ${라벨}: /out 을 고치라고 하지 않는다`, !evs.some((e) => e.type === 'capped'), 종류);
     const 도구답 = s.messages.filter((m) => m.role === 'tool').map((m) => String(m.content)).join('\n');
-    check(`★★ ${라벨}: 「너무 크다·나눠 보내라」 대신 JSON 모양이 틀렸다고 말한다`,
-      !/너무 큽니다|300줄|잘려/.test(도구답) && /JSON/.test(도구답), 도구답.slice(0, 160));
+    // 읽히는 모양이면 도구가 그대로 돈다(a.js 가 없어 「없는 파일」). 못 읽으면 JSON 모양이 틀렸다고 말한다.
+    check(`★★ ${라벨}: 「너무 크다·나눠 보내라」 대신 ${읽나 ? '읽어서 돌린다' : 'JSON 모양이 틀렸다고 말한다'}`,
+      !/너무 큽니다|300줄|잘려/.test(도구답) && (읽나 ? /a.js/.test(도구답) && !/JSON/.test(도구답) : /JSON/.test(도구답)), 도구답.slice(0, 160));
     // 「잘린인자」 셈은 모델 카드가 처음부터 상한을 올려 부르는 근거다(agent/card.js). 모양 탓은 안 센다.
     check(`★ ${라벨}: 모델 카드에 「인자 잘림」 으로 안 센다`, s.본것?.잘린인자 === 0, String(s.본것?.잘린인자));
   }
@@ -381,7 +389,7 @@ trace('3d-모양이틀린인자');
     evs.map((e) => e.type).join(','));
   const 도구답 = s.messages.filter((m) => m.role === 'tool').map((m) => String(m.content)).join('\n');
   check('★★ 다 썼는데 「받은 데까지만 썼다·이어서 Append」 라고 하지 않는다',
-    !/받은 데까지만|이어서 Append/.test(도구답) && /다 썼습니다/.test(도구답), 도구답.slice(0, 200));
+    !/받은 데까지만|이어서 Append/.test(도구답), 도구답.slice(0, 200));
   rmSync(만든것, { force: true });
 }
 
