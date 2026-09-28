@@ -9,7 +9,8 @@ and everything before it is **collected into one**.
 
 | | Where | What |
 |---|---|---|
-| **Current** | **[2.1.x](releases/2.1.md)** | [2.1.1](releases/2.1.md#211) — From a full review — ask one level up and the key showed, and webhook URLs went out as they were |
+| **Current** | **[2.1.x](releases/2.1.md)** | [2.1.2](releases/2.1.md#212) — confirm asks before MCP tools, editor sessions no longer pile up, and `deel --version` no longer loads the whole program |
+| | | [2.1.1](releases/2.1.md#211) — From a full review — ask one level up and the key showed, and webhook URLs went out as they were |
 | | | [2.1.0](releases/2.1.md#210) — Hand it off and it keeps going; make it ask and it shows the diff — and a check decides when it is done |
 | Previous | [2.0.x](releases/2.0.md) | [2.0.3](releases/2.0.md#203) — 2.0.2 never reached npm — GitHub releases now appear only after npm has the version |
 | | | [2.0.2](releases/2.0.md#202) — Everything 2.0.1 left as low, deferred or unmeasured, closed |

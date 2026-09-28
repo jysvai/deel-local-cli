@@ -1351,6 +1351,62 @@ trace('5-7-없는세션');
   }
 }
 
+trace('5-7b-방상한');
+
+// ── 열어 둔 세션이 쌓이기만 했다 (2.1.2) ────────────────────────────────
+//
+// 에디터는 대화마다 session/new 를 부르고, 이 프로세스는 에디터가 켜져 있는 동안 산다. 방은
+// 지우는 자리가 없어 하루 종일 연 대화가 전부 메모리에 남았다(대화 전체 · 기록 · 감사기록).
+// 상한을 넘으면 제일 오래 안 쓴 **쉬는** 방을 내려놓고, 그 이름으로 다시 말이 오면 파일에서
+// 되살려 잇는다 — 에디터 탭은 닫힌 적이 없으니 「그런 세션이 없습니다」 로 답하면 안 된다.
+{
+  const e = 에디터([], { DEEL_ACP_MAX_SESSIONS: '2' });
+  try {
+    await 시간제한(e.요청('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'x', version: '1' } }), 15000, 'initialize');
+    // 가 · 나 를 열어 한마디씩 한다. 나 는 모드를 바꾼다. 그 뒤 **가 에 또 말해** 가 를 최근으로 만든다 —
+    // 그러면 내려놓을 것은 먼저 연 가 가 아니라 오래 안 쓴 나 다.
+    const 말 = (방, 글, 무엇) => 시간제한(e.요청('session/prompt', { sessionId: 방.sessionId, prompt: [{ type: 'text', text: 글 }] }), 30000, 무엇);
+    const 가 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new 가');
+    await 말(가, '첫마디_가방', '가 첫 턴');
+    const 나 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new 나');
+    await 말(나, '첫마디_나방', '나 첫 턴');
+    await 시간제한(e.요청('session/set_mode', { sessionId: 나.sessionId, modeId: 'plan' }), 10000, '나 모드');
+    await 말(가, '가_또', '가 둘째 턴');
+    const 다 = await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new 다');
+    check('★ 방 이름은 셋 다 다르다', new Set([가.sessionId, 나.sessionId, 다.sessionId]).size === 3);
+    const 내려놓음 = await 될때까지(() => e.표준오류().includes(`${나.sessionId} — 오래 안 쓴 세션을 내려놓았습니다`), 5000);
+    check('★★ 상한(2)을 넘으면 제일 오래 **안 쓴** 방을 내려놓는다 — 먼저 연 방이 아니라', 내려놓음,
+      e.표준오류().split('\n').filter((l) => /내려놓/.test(l)).join(' | ').slice(0, 200));
+    check('  최근에 쓴 방은 안 내려놓는다', !e.표준오류().includes(`${가.sessionId} — 오래 안 쓴`) && !e.표준오류().includes(`${다.sessionId} — 오래 안 쓴`));
+
+    const 받은수 = 받은대화.length;
+    const 끝 = await 말(나, '둘째마디', '나 둘째 턴');
+    check('★★★ 내려놓은 방에 다시 말하면 되살려 잇는다 (없는 세션이라 답하지 않는다)', 끝?.stopReason === 'end_turn', JSON.stringify(끝));
+    const 보낸것 = JSON.stringify(받은대화.slice(받은수));
+    check('★★ 되살린 방은 앞서 오간 말을 그대로 들고 있다 (남의 방 말은 안 섞인다)',
+      보낸것.includes('첫마디_나방') && 보낸것.includes('둘째마디') && !보낸것.includes('첫마디_가방'), 보낸것.slice(0, 200));
+    check('★ 에디터가 고른 작업 모드(plan)로 되살렸다고 로그에 적는다', e.표준오류().includes(`${나.sessionId} — 내려놓았던 세션을 다시 열었습니다 (plan)`),
+      e.표준오류().split('\n').filter((l) => /다시 열었/.test(l)).join(' | '));
+
+    /*
+     * 2차 눈(Gemini): 내려놓은 방을 에디터가 **session/load** 로 다시 열면 방만들기 가 내려놓은 표만 지우고
+     * 작업 모드 · 「앞으로 묻지 않기」 는 안 돌려줬다 — 에디터 단추는 plan 인데 방은 기본 모드로 돈다.
+     * 다 에 말해 나 를 제일 오래 안 쓴 방으로 만들고, 라 를 열어 나 를 다시 내려놓은 뒤 session/load 로 연다.
+     */
+    await 말(다, '다_말', '다 첫 턴');
+    await 시간제한(e.요청('session/new', { cwd: work, mcpServers: [] }), 20000, 'session/new 라');
+    const 또내려놓음 = await 될때까지(() => e.표준오류().split(`${나.sessionId} — 오래 안 쓴 세션을 내려놓았습니다`).length === 3, 5000);
+    check('  (준비) 나 를 다시 내려놓았다', 또내려놓음, e.표준오류().split('\n').filter((l) => /내려놓/.test(l)).join(' | ').slice(0, 300));
+    const 불러옴 = await 시간제한(e.요청('session/load', { sessionId: 나.sessionId, cwd: work, mcpServers: [] }), 20000, 'session/load 나');
+    check('★★ 내려놓은 방을 session/load 로 열어도 에디터가 고른 작업 모드(plan)를 돌려준다', 불러옴?.modes?.currentModeId === 'plan',
+      JSON.stringify(불러옴?.modes?.currentModeId));
+  } catch (err) {
+    check('방 상한 — 통째로 실패', false, String(err?.message ?? err));
+  } finally {
+    await e.끝내기();
+  }
+}
+
 trace('5-8-되살리기');
 
 // ── 껐다 켜도 지난 대화가 그대로 있는가 ─────────────────────────────────

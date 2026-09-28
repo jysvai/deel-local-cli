@@ -656,7 +656,7 @@ readable at a glance. It sits on the right of the status line at all times.
 | Indicator | Command | What it asks about |
 |---|---|---|
 | `⏵⏵ 자동 승인` (auto) | `/mode auto` | Nothing is asked. `/undo` is the safety net |
-| `⏵ 위험만 확인` (risky only) | `/mode confirm` | Only irreversible commands. Files change unasked |
+| `⏵ 위험만 확인` (risky only) | `/mode confirm` | Irreversible commands, and MCP tools unless the server marks a tool read-only. Files change unasked |
 | `⏸ 모두 확인` (everything) | `/mode strict` | Every file change and every command is confirmed first |
 
 `/mode` on its own lists all three and marks the current one with ●. The startup header
@@ -666,7 +666,7 @@ spells it out in a sentence, so the glyph is enough from then on.
 saying where it went. Whatever you were typing stays put.
 
 ```
-  ⏵ 위험만 확인  되돌릴 수 없는 명령만 물어봅니다. 파일은 안 묻고 고칩니다
+  ⏵ 위험만 확인  되돌릴 수 없는 명령·MCP 도구만 물어봅니다. 파일은 안 묻고 고칩니다
   자동 승인 → 위험만 확인 · Shift+Tab 으로 계속 바꿉니다
 ```
 

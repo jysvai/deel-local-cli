@@ -25,7 +25,7 @@ There are only three switches. You can ignore the rest.
 
 | Switch | What it decides | How to change it |
 |---|---|---|
-| **Approval** | How much it asks before changing things — `auto` (hand-off: never asks; undo is the safety net) · `confirm` (irreversible commands only) · `strict` (every file change and command, **showing the change first**) | Shift+Tab · `/mode` |
+| **Approval** | How much it asks before changing things — `auto` (hand-off: never asks; undo is the safety net) · `confirm` (irreversible commands, and MCP tools unless the server marks a tool read-only) · `strict` (every file change and command, **showing the change first**) | Shift+Tab · `/mode` |
 | **Work mode** | What kind of job it is doing — the default, `종합` (auto), picks one from the request | `/work` |
 | **Reach** | `이 안` (inside, the default) · `바깥` (online) · `봉인` (sealed — nothing leaves the company) | `--offline` · managed policy |
 
@@ -85,7 +85,7 @@ You can stop taking the model's "done" at its word. Put one check command in the
 ```
 
 When the model has changed something and tries to finish, deel runs that command **itself**. If it fails,
-the output goes back to the model to keep fixing (3 rounds by default). If it still fails, the turn ends as
+the output goes back to the model to keep fixing (the check runs up to 3 times by default, so 2 more tries). If it still fails, the turn ends as
 failed — `deel run` exits with **8**, so CI goes red. To use a different check just this once:
 `deel run --check "npm run lint"`.
 
@@ -109,12 +109,13 @@ One task is one folder.
 
 | Where | What |
 |---|---|
-| `task.json` | `prompt` · `check` (the grading command) · optionally `doneCheck` (the completion check above) · `timeout` (seconds) |
+| `task.json` | `prompt` · `check` (the grading command) · optionally `doneCheck` (the completion check above) with `doneCheckRounds` · `doneCheckTimeout`, and `timeout` (seconds) |
 | `start/` | Starting files. Copied to a temp folder, and deel works there |
 | `golden/` | Grading files. Added **after** deel has finished — the model never sees them |
 
 Grading is the exit code of the check and nothing else. Results are kept in `golden/.results/`, and each
-run is compared with the last one to point out **tasks that got worse**. Run it after switching models or
+run is compared with the last one to point out **tasks that got worse**, tasks that are missing now, and tasks measured for the first
+time. A task's own `timeout` wins over `--timeout`, which is the default for tasks that set none. Run it after switching models or
 upgrading deel. Add `--online` for an outside gateway. `check` is a command a person wrote, so it runs
 without the gates — read a task set someone else gave you before running it.
 

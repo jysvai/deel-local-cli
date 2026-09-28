@@ -17,7 +17,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   설정읽기, 다붙이기, 이름풀기, 도구정의, 도구최대, 살아있는수, 모두닫기, 깨끗한환경,
-  메모자리, 메모읽기, 메모쓰기, 메모유효, 지문, 쓸만한메모, MCP서버, 띄울모양, 되살리기최대 } from '../src/backend/mcp.js';
+  메모자리, 메모읽기, 메모쓰기, 메모유효, 지문, 쓸만한메모, MCP서버, 띄울모양, 되살리기최대, 읽기만하나 } from '../src/backend/mcp.js';
 import { 거둘것에있나 } from '../src/reap.js';
 import { VERSION } from '../src/version.js';
 import { toolSchemas, runTool } from '../src/tools/index.js';
@@ -258,6 +258,24 @@ trace('3-붙기');
   check('붙인 이름을 도로 풀 수 있다',
     이름풀기('mcp__사내위키__위키검색')?.도구 === '위키검색', JSON.stringify(이름풀기('mcp__사내위키__위키검색')));
   check('우리 도구 이름은 안 풀린다', 이름풀기('Read') === null);
+
+  // confirm 이 MCP 도구를 안 물을지 가르는 말 (2.1.2). 서버가 적은 annotations 를 좁게 믿는다.
+  {
+    const 서버들 = [{ 이름: 'a_b', 도구: [
+      { name: 'find', annotations: { readOnlyHint: true } },
+      { name: 'send', annotations: { readOnlyHint: false } },
+      { name: 'bare' },
+      { name: 'odd', annotations: { readOnlyHint: true, destructiveHint: true } },
+    ] }];
+    check('★ 읽기만 한다고 적은 도구', 읽기만하나(서버들, 'mcp__a_b__find') === true);
+    check('★ 안 적었거나 false 면 아니다', 읽기만하나(서버들, 'mcp__a_b__send') === false && 읽기만하나(서버들, 'mcp__a_b__bare') === false);
+    check('★ 지운다고도 적었으면 아니다', 읽기만하나(서버들, 'mcp__a_b__odd') === false);
+    check('  모르는 서버·도구·우리 도구는 아니다', !읽기만하나(서버들, 'mcp__x__find') && !읽기만하나(서버들, 'mcp__a_b__none')
+      && !읽기만하나(서버들, 'Read') && !읽기만하나(null, 'mcp__a_b__find'));
+    // 대기 중인 서버는 적어 둔 목록(.deel/mcp-tools.json)으로 선다 — 그 목록에도 annotations 가 남아야 한다.
+    const 대기 = new MCP서버({ 이름: 'a_b', command: 'x', args: [], env: null, cwd: null }).메모로세우기({ 도구: [{ name: 'find', annotations: { readOnlyHint: true } }] }, null);
+    check('★ 적어 둔 목록으로 세운 서버도 읽기만 한다는 말을 들고 있다', 읽기만하나([대기], 'mcp__a_b__find') === true);
+  }
   check('설명에 어느 서버인지 적는다', /^\[사내위키\]/.test(정의[0].function.description), 정의[0].function.description);
   check('인자 스키마를 그대로 넘긴다', 정의[0].function.parameters?.properties?.q?.type === 'string');
 

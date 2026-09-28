@@ -49,93 +49,10 @@ import { 모두끝내기 as 일감모두끝내기, 일감인자 } from './tools/
 import { 첫이름 } from './tools/label.js';
 import { 검사설정 } from './agent/donecheck.js';
 
-/**
- * 종료코드.
- *
- * 스크립트는 화면 글이 아니라 이 숫자만 본다. 그래서 '끝났다' 와 '끝난 척했다'
- * 를 반드시 갈라 놔야 한다 — 걸음 수 상한에 걸려 멈춘 것을 0 으로 돌려주면
- * 야간 배치가 아무 일도 안 하고 초록불을 켠다. 그게 제일 나쁜 결말이다.
- */
-export const EXIT = {
-  done: 0,      // 끝까지 답했다
-  error: 1,     // 오류로 끝났다 (연결 없음 · 시킬 말 없음 · 모델 오류)
-  limit: 2,     // 도구 호출 걸음 수 상한에 닿았다
-  stuck: 3,     // 같은 자리에서 헛돌아 스스로 멈췄다
-  aborted: 4,   // 도중에 끊겼다 (Ctrl+C)
-  /*
-   * 서버가 끝났다는 말을 한 번도 안 주고 답을 멈췄다.
-   *
-   * 여기에 자기 코드가 있어야 한다. 전에는 이걸 아예 안 보고 `done`(0) 으로
-   * 끝냈다. `deel -p` 는 잡·CI 에서 돌고 그 뒤에 스크립트가 붙는데, 반쪽짜리
-   * 답이 0 으로 넘어가면 그 스크립트는 온전한 답으로 알고 그대로 쓴다.
-   * 사람이 나중에 결과를 보고 왜 반쪽인지 되짚을 방법이 없다.
-   */
-  cutoff: 5,
-  /*
-   * 모델이 안 하겠다고 했다 (안전 판정).
-   *
-   * 이것도 자기 코드가 있어야 한다. 거절한 답은 **아무 일도 안 한 답**인데,
-   * 도구 호출이 없다는 것 말고는 짧은 답과 겉모습이 같다. 0 으로 끝내면
-   * 뒤에 붙은 스크립트는 일이 된 줄 알고 그 다음 단계로 넘어간다.
-   *
-   * 오류(1)와도 갈라 둔다. 고칠 자리가 다르기 때문이다 — 오류는 연결이나
-   * 열쇠를 보는 일이고, 거절은 **시킨 말을 바꾸는 일**이다.
-   */
-  refusal: 6,
-  /*
-   * 답이 --output-schema 에 안 맞았다.
-   *
-   * 여기에도 자기 코드가 있어야 한다. 「모양을 못 박아 달라」 고 한 사람에게
-   * 모양이 안 맞는 것을 0 으로 넘기면, 파이프 뒤 스크립트가 그걸 온전한
-   * 것으로 받아 쓴다 — 그게 이 기능이 없애려던 바로 그 상황이다.
-   *
-   * 오류(1)와도 가른다. 고칠 자리가 다르다 — 오류는 연결을 보는 일이고,
-   * 이건 스키마나 시킨 말을 바꾸는 일이다.
-   */
-  schema: 7,
-  /*
-   * 완료 검사가 통과하지 않은 채 끝났다 (agent/donecheck.js · 2.1.0).
-   *
-   * 모델은 「다 됐습니다」 라고 했는데 사람이 정해 둔 검사(`--check` · 설정의 `check`)가
-   * 정해 둔 판수를 다 돌고도 빨갛거나, 관문에 막혀 아예 못 돌았다. 0 으로 끝내면 야간
-   * 배치가 빨간 검사 위에 초록불을 켠다 — 이 기능이 없애려던 바로 그 결말이다.
-   *
-   * 오류(1)와 가른다. 고칠 자리가 다르다 — 연결이 아니라 코드나 검사 쪽이다.
-   */
-  check: 8,
-  /*
-   * 인자를 잘못 줬다 — 모르는 깃발 · 값 없는 깃발 · 모르는 모드 이름 · 못 읽는 --ctx.
-   *
-   * 여기에 **따로** 둔다. 처음에는 `--work` 오타를 2 로 끝냈는데, 2 는 이 표에서 이미
-   * 「걸음 수 상한」 이다. `deel run --jsn …` 을 CI 에 건 사람은 오타 하나로 「일이 커서
-   * 멈췄다」 를 받고 작업을 쪼개러 간다. 고칠 자리가 스크립트 한 줄인데.
-   *
-   * 64 는 sysexits.h 의 EX_USAGE 다. 1~8 과 안 겹치고, 셸·CI 도구들이 「부른 모양이
-   * 틀렸다」 로 이미 알아듣는 수라 새로 지어내지 않았다. 이 경우는 모델을 한 번도 안 부른다.
-   */
-  usage: 64,
-};
+// 종료코드 표와 실패덩이는 src/exit.js 에 있다 — 진입점이 이 파일 없이 쓰게 (2.1.2).
+export { EXIT, 실패덩이 } from './exit.js';
+import { EXIT, 실패덩이 } from './exit.js';
 
-/**
- * 모델을 부르기 전에 선 실패 한 덩이 (사냥5 B5-10).
- *
- * 성공한 `--json` 에는 model 과 usage.prompt·cacheRead·cacheWrite·못잰것 이 있는데, 모델을
- * 부르기 전에 선 실패(64 · 7 · 시킬 말 없음 · 없는 뿌리 · 연결 없음 · 대화 화면 전용)에는
- * 그 칸들이 없었다. `jq .usage.prompt` 는 null 을, 모양을 못 박은 파서는 오류를 낸다 —
- * 실패를 제일 잘 다뤄야 할 자리에서 파서가 먼저 죽는다. 칸은 늘 같게 두고 값만 비운다.
- *
- * bin/deel.js 의 인자탈·마지막 catch 도 이걸로 짓는다. 세 벌이면 언젠가 한 벌만 고친다.
- */
-export function 실패덩이({ reason, code, why = '', model = null }) {
-  return {
-    ok: false, reason, code, text: '',
-    tools: 0, steps: 0,
-    usage: { in: 0, out: 0, prompt: 0, cacheRead: 0, cacheWrite: 0, calls: 0, ms: 0, 못잰것: 0, retries: 0 },
-    model,
-    ms: 0,
-    ...(why ? { why } : {}),
-  };
-}
 
 /**
  * 표준입력에 실려 온 말을 통째로 읽는다.
@@ -305,6 +222,17 @@ export async function runOnce(opts = {}) {
     if (!폴더인가) {
       return 못함('no-root', `작업 폴더가 없습니다 (--root): ${뿌리} — 없는 폴더를 만들어 그 안에서 일하지 않습니다`);
     }
+  }
+
+  /*
+   * --check-rounds · --check-timeout (2.1.2). 치는 자리에서 바로 고칠 수 있으니 틀린 값은 사용법 틀림(64)이다 —
+   * 설정 파일에 적힌 틀린 값은 기본값을 쓰고 화면에 말하는 것(donecheck.js 의 줄임)과 다르다.
+   */
+  if (opts.checkRounds !== undefined && !(Number.isInteger(Number(opts.checkRounds)) && Number(opts.checkRounds) >= 1)) {
+    return 못함('usage', `--check-rounds 는 1 이상의 정수여야 합니다: ${opts.checkRounds}`);
+  }
+  if (opts.checkTimeout !== undefined && !(Number.isFinite(Number(opts.checkTimeout)) && Number(opts.checkTimeout) > 0)) {
+    return 못함('usage', `--check-timeout 은 0 보다 큰 초여야 합니다: ${opts.checkTimeout}`);
   }
 
   // ── 시킬 말 ───────────────────────────────────────────────────────────
@@ -629,7 +557,11 @@ export async function runOnce(opts = {}) {
     // 안 거두면 배치가 끝나고도 언어 서버가 폴더를 물고 남는다.
     lsp: { 켬: true },
     // 끝내려는 자리에서 돌릴 검사 (agent/donecheck.js). `--check` 가 설정의 check 를 이긴다.
-    완료검사: 검사설정(cfg, opts.check),
+    완료검사: 검사설정({
+      ...cfg,
+      ...(opts.checkRounds !== undefined ? { checkRounds: Number(opts.checkRounds) } : {}),
+      ...(opts.checkTimeout !== undefined ? { checkTimeout: Number(opts.checkTimeout) } : {}),
+    }, opts.check),
     // 되물을 사람이 없으니 기본값을 그대로 돌려준다.
     ask: async (_label, o = {}) => o?.def ?? '',
     // 엑셀 암호를 여기서 기다리면 그대로 선다. 없다고 바로 답한다 —
@@ -929,7 +861,7 @@ export async function runOnce(opts = {}) {
 
         case 'check_start':
           곁(`  ${c.cyan('⧗')} ${c.gray(옮긴말('check.start', { 판: ev.판, 최대: ev.최대, 명령: ev.명령 }))}`);
-          for (const 줄 of ev.줄임 ?? []) 곁(`     ${c.yellow('⚠')} ${c.gray(옮긴말('check.clamped', 줄))}`);
+          for (const 줄 of ev.줄임 ?? []) 곁(`     ${c.yellow('⚠')} ${c.gray(옮긴말(줄.틀림 ? 'check.invalid' : 'check.clamped', 줄))}`);
           break;
 
         case 'check':

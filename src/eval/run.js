@@ -97,18 +97,46 @@ export function 과제읽기(폴더) {
   return 과제들;
 }
 
+// 수 칸은 수나 수를 적은 글만 읽는다. Number(true) = 1 · Number(null) = 0 이라 참/거짓이 수로 통과했다 (2.1.2 2차 눈).
+const 수로 = (v) => (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN);
+
 /** task.json 이 쓸 수 있는 모양인가. 쓸 수 있으면 null, 아니면 까닭. */
 export function 설정탈(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return 'task.json 이 객체가 아닙니다';
   if (typeof v.prompt !== 'string' || !v.prompt.trim()) return 'prompt(시킬 말)가 없습니다';
   if (typeof v.check !== 'string' || !v.check.trim()) return 'check(정답 검사 명령)가 없습니다';
   for (const 칸 of ['timeout', 'checkTimeout']) {
-    if (v[칸] !== undefined && !(Number.isFinite(Number(v[칸])) && Number(v[칸]) > 0)) return `${칸} 은 0 보다 큰 초여야 합니다`;
+    if (v[칸] !== undefined && !(Number.isFinite(수로(v[칸])) && 수로(v[칸]) > 0)) return `${칸} 은 0 보다 큰 초여야 합니다`;
   }
   for (const 칸 of ['doneCheck', 'work']) {
     if (v[칸] !== undefined && typeof v[칸] !== 'string') return `${칸} 은 글이어야 합니다`;
   }
+  // 과제마다 완료 검사를 몇 번·얼마나 돌리나 (2.1.2) — deel run 의 --check-rounds · --check-timeout 으로 넘긴다.
+  if (v.doneCheckRounds !== undefined && !(Number.isInteger(수로(v.doneCheckRounds)) && 수로(v.doneCheckRounds) >= 1)) {
+    return 'doneCheckRounds 는 1 이상의 정수여야 합니다';
+  }
+  if (v.doneCheckTimeout !== undefined && !(Number.isFinite(수로(v.doneCheckTimeout)) && 수로(v.doneCheckTimeout) > 0)) {
+    return 'doneCheckTimeout 은 0 보다 큰 초여야 합니다';
+  }
+  if ((v.doneCheckRounds !== undefined || v.doneCheckTimeout !== undefined) && !v.doneCheck) {
+    return 'doneCheckRounds · doneCheckTimeout 은 doneCheck(완료 검사 명령)와 같이 적어야 합니다';
+  }
   return null;
+}
+
+/**
+ * 과제 하나에 띄울 `deel run` 의 인자. 시킬 말은 `--` 뒤 맨 끝이다 — 대시로 시작해도 깃발로 안 읽힌다.
+ */
+export function 실행인자(설정, 작업, 깃발들 = []) {
+  return [
+    진입점, 'run', '--json', '--yes', '--root', 작업,
+    ...(설정.work ? ['--work', 설정.work] : []),
+    ...(설정.doneCheck ? ['--check', 설정.doneCheck] : []),
+    ...(설정.doneCheck && 설정.doneCheckRounds !== undefined ? ['--check-rounds', String(설정.doneCheckRounds)] : []),
+    ...(설정.doneCheck && 설정.doneCheckTimeout !== undefined ? ['--check-timeout', String(설정.doneCheckTimeout)] : []),
+    ...깃발들,
+    '--', 설정.prompt,
+  ];
 }
 
 /**
@@ -189,15 +217,8 @@ export async function 한번돌리기(과제, { 판 = 1, 깃발들 = [], 남김 
   const 작업 = mkdtempSync(join(tmpdir(), 'deel-eval-'));
   try {
     폴더복사(join(과제.자리, 'start'), 작업);
-    const 제한초 = Number(설정.timeout ?? 시간초 ?? 기본시간초);
-    const 인자 = [
-      진입점, 'run', '--json', '--yes', '--root', 작업,
-      ...(설정.work ? ['--work', 설정.work] : []),
-      ...(설정.doneCheck ? ['--check', 설정.doneCheck] : []),
-      ...깃발들,
-      // `--` 뒤는 낱말이다 — 시킬 말이 대시로 시작해도 깃발로 안 읽힌다.
-      '--', 설정.prompt,
-    ];
+    const 제한초 = 제한초고르기(설정, 시간초);
+    const 인자 = 실행인자(설정, 작업, 깃발들);
     const 돌림 = await 돌려보기(process.execPath, 인자, {
       timeout: 제한초 * 1000, maxBuffer: 64 * 1024 * 1024,
       덤: { cwd: 작업, env: { ...process.env, NO_COLOR: '1' } },
@@ -251,8 +272,12 @@ export function 과제별(결과들) {
 /**
  * 지난 결과와 견준다. 다 통과하던 과제가 하나라도 떨어졌으면 나빠짐, 못 하던 과제를 다 해내면 나아짐.
  * 되풀이 수가 다르면 비율로 본다.
+ *
+ * 지난번에 있던 과제가 이번에 없으면 **사라짐**, 처음 재는 과제는 **새것** 으로 적는다 (2.1.2). 여태
+ * 사라진 과제는 말없이 빠져, 떨어지던 과제 폴더를 지우고 돌려도 남은 과제끼리 「지난번과 같습니다」 가
+ * 나왔다. `일부만`(--only)이면 안 고른 과제가 다 사라짐이 되므로 사라짐은 안 센다.
  */
-export function 견주기(지난것, 지금것) {
+export function 견주기(지난것, 지금것, { 일부만 = false } = {}) {
   const 비율 = (x) => (x.판 ? x.통과 / x.판 : 0);
   const 지난표 = new Map((지난것 ?? []).map((x) => [x.과제, x]));
   const 나빠짐 = [];
@@ -266,8 +291,27 @@ export function 견주기(지난것, 지금것) {
     if (비율(x) < 비율(전)) 나빠짐.push(x.과제);
     else if (비율(x) > 비율(전)) 나아짐.push(x.과제);
   }
-  return { 나빠짐, 나아짐, 견준 };
+  const 지금이름 = new Set(지금것.map((x) => x.과제));
+  const 사라짐 = 일부만 ? [] : [...지난표.keys()].filter((이름) => !지금이름.has(이름));
+  const 새것 = 지금것.filter((x) => !지난표.has(x.과제)).map((x) => x.과제);
+  return { 나빠짐, 나아짐, 견준, 사라짐, 새것 };
 }
+
+/**
+ * 「지난번과 같습니다」 를 어디까지 말할 수 있나. 달라진 과제가 있거나 견준 것이 없으면 null.
+ * 견주지 않은 과제(사라짐 · 새것 · --only 로 안 고른 것)가 있으면 '견준만큼' — 처음 재는 과제가 떨어져도
+ * 견준 과제끼리 같으면 「같습니다」 가 나와 그 실패가 묻혔다 (2.1.2 2차 눈).
+ */
+export function 같음범위(견줌, { 일부만 = false } = {}) {
+  if (!견줌?.견준 || 견줌.나빠짐.length || 견줌.나아짐.length) return null;
+  return 일부만 || 견줌.사라짐.length || 견줌.새것.length ? '견준만큼' : '전부';
+}
+
+/**
+ * 과제 하나의 제한 시간(초). task.json 에 적힌 것이 `--timeout` 을 이긴다 — pytest-timeout 의 표시나
+ * jest 의 과제별 시간과 같은 차례다. `--timeout` 은 제 시간을 안 적은 과제의 기본값이다.
+ */
+export const 제한초고르기 = (설정, 시간초) => Number(설정?.timeout ?? 시간초 ?? 기본시간초);
 
 /**
  * 제일 새 결과 파일. 깨졌거나 과제별이 없는 것(손으로 적은 `{}` 따위)은 건너뛴다 — 견줄 것이 없다.
@@ -377,6 +421,10 @@ export async function runEval({ 폴더 = null, init = false, repeat = 1, keep = 
   if (!Number.isInteger(되풀이) || 되풀이 < 1 || 되풀이 > 최대되풀이) {
     return 못돌림(64, 글(`--repeat 는 1 ~ ${최대되풀이} 사이의 정수여야 합니다: ${repeat}`, `--repeat must be a whole number from 1 to ${최대되풀이}: ${repeat}`));
   }
+  // 0 · 글 · 음수가 그대로 넘어가면 setTimeout(0) · NaN 이 되어 과제마다 deel 을 곧바로 죽인다 — 전부 「시간 초과」 실패.
+  if (시간초 !== null && !(Number.isFinite(Number(시간초)) && Number(시간초) > 0)) {
+    return 못돌림(64, 글(`--timeout 은 0 보다 큰 초여야 합니다: ${시간초}`, `--timeout must be a number of seconds above 0: ${시간초}`));
+  }
   if (!existsSync(고른폴더)) {
     return 못돌림(1, 글(`과제 모음이 없습니다 — ${보일}`, `No task folder — ${보일}`),
       `${c.gray(글('예제부터 만들려면:', 'To start from examples:'))} ${c.cyan('deel eval --init')}`);
@@ -390,6 +438,9 @@ export async function runEval({ 폴더 = null, init = false, repeat = 1, keep = 
 
   말하기('');
   말하기(`  ${c.bold(글('골든셋', 'Golden set'))} ${c.gray(`— ${보일} · ${글(`과제 ${과제들.length}개 · 과제마다 ${되풀이}번`, `${과제들.length} tasks · ${되풀이} run(s) each`)}`)}`);
+  // --timeout 을 줬는데 제 시간을 적은 과제가 있으면 그 과제는 적힌 값을 쓴다고 미리 말한다 (제한초고르기).
+  const 제시간 = 시간초 !== null ? 과제들.filter((x) => x.설정?.timeout !== undefined).length : 0;
+  if (제시간) 말하기(`  ${c.gray(글(`task.json 에 timeout 을 적은 과제 ${제시간}개는 --timeout 대신 그 값을 씁니다`, `${제시간} task(s) set their own timeout in task.json and use it instead of --timeout`))}`);
   말하기('');
 
   /*
@@ -436,7 +487,7 @@ export async function runEval({ 폴더 = null, init = false, repeat = 1, keep = 
   const 통과수 = 결과들.filter((r) => r.통과).length;
   const 모델 = 결과들.find((r) => r.deel?.model)?.deel.model ?? null;
   const 지난 = 지난결과(고른폴더, { 전체만: !only, 이름들: only ? 과제들.map((x) => x.이름) : null });
-  const 견줌 = 견주기(지난?.값?.과제별, 묶음);
+  const 견줌 = 견주기(지난?.값?.과제별, 묶음, { 일부만: !!only });
   const 초 = Math.round((Date.now() - t0) / 1000);
   const 토큰 = 결과들.reduce((a, r) => ({ in: a.in + (r.deel?.usage?.in ?? 0), out: a.out + (r.deel?.usage?.out ?? 0) }), { in: 0, out: 0 });
 
@@ -475,7 +526,15 @@ export async function runEval({ 폴더 = null, init = false, repeat = 1, keep = 
   if (지난) {
     if (견줌.나빠짐.length) 말하기(`  ${c.red('▼')} ${글('지난번보다 나빠짐:', 'Worse than last time:')} ${견줌.나빠짐.join(' · ')}`);
     if (견줌.나아짐.length) 말하기(`  ${c.green('▲')} ${글('지난번보다 나아짐:', 'Better than last time:')} ${견줌.나아짐.join(' · ')}`);
-    if (견줌.견준 && !견줌.나빠짐.length && !견줌.나아짐.length) 말하기(`  ${c.gray(글(`지난번(${지난.파일})과 같습니다`, `Same as last time (${지난.파일})`))}`);
+    if (견줌.사라짐.length) 말하기(`  ${c.yellow('⚠')} ${글('지난번에 있던 과제가 이번엔 없습니다:', 'Tasks from last time are missing now:')} ${견줌.사라짐.join(' · ')}`);
+    if (견줌.새것.length) 말하기(`  ${c.gray(글(`처음 재는 과제: ${견줌.새것.join(' · ')}`, `Measured for the first time: ${견줌.새것.join(' · ')}`))}`);
+    // 견주지 않은 과제가 있으면 「같다」 는 견준 과제끼리의 말이다 — 그렇게 적는다.
+    const 같음 = 같음범위(견줌, { 일부만: !!only });
+    if (같음) {
+      말하기(`  ${c.gray(같음 === '견준만큼'
+        ? 글(`견준 과제 ${견줌.견준}개는 지난번(${지난.파일})과 같습니다`, `The ${견줌.견준} task(s) compared are the same as last time (${지난.파일})`)
+        : 글(`지난번(${지난.파일})과 같습니다`, `Same as last time (${지난.파일})`))}`);
+    }
   }
   if (남긴곳) 말하기(`  ${c.gray(글(`결과: ${relative(뿌리, 남긴곳)}`, `Results: ${relative(뿌리, 남긴곳)}`))}`);
   else if (못남긴까닭) {

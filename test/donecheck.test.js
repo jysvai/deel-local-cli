@@ -58,6 +58,20 @@ trace('1-설정');
     && 줄인.줄임?.some((x) => x.칸 === 'checkRounds' && x.준값 === 50 && x.쓴값 === 최대판수), JSON.stringify(줄인.줄임));
   check('  안 줄였으면 비어 있다', 검사설정({ check: 'x', checkTimeout: 30, checkRounds: 2 }).줄임.length === 0
     && 검사설정({ check: 'x' }).줄임.length === 0);
+  /*
+   * 못 쓰는 값(0 · 음수 · 소수 · 참거짓 · 글)은 말없이 기본값 3 이 됐다 (2.1.2). 0 을 「끈다」 로 적은 사람은 왜
+   * 세 번 도는지 모르고, true 는 Number(true) = 1 로 읽혀 고칠 기회 없이 한 번에 끝났다. 쓴 값을 말한다.
+   */
+  for (const 값 of [0, -1, 1.5, true, 'abc']) {
+    const r = 검사설정({ check: 'x', checkRounds: 값 });
+    check(`★★ checkRounds ${JSON.stringify(값)} 은 기본 ${기본판수} 로 쓰고 그렇다고 적는다`, r.판수 === 기본판수
+      && r.줄임.some((x) => x.칸 === 'checkRounds' && x.틀림 === true && x.쓴값 === 기본판수), JSON.stringify(r));
+  }
+  check('★ 글로 적은 수("5")는 받는다', 검사설정({ check: 'x', checkRounds: '5' }).판수 === 5 && 검사설정({ check: 'x', checkRounds: '5' }).줄임.length === 0);
+  const 틀린시간 = 검사설정({ check: 'x', checkTimeout: 'soon' });
+  check('★ checkTimeout 이 못 쓰는 값이면 기본 600초를 쓰고 그렇다고 적는다', 틀린시간.시간 === 600_000
+    && 틀린시간.줄임.some((x) => x.칸 === 'checkTimeout' && x.틀림 === true && x.쓴값 === 600), JSON.stringify(틀린시간));
+  check('  null 은 안 적은 것으로 본다 (말 없음)', 검사설정({ check: 'x', checkRounds: null, checkTimeout: null }).줄임.length === 0);
   check('★★ --check 로 준 명령이 설정을 이긴다', 검사설정({ check: 'a' }, 'b').명령 === 'b');
   check('  --check 에 빈 글을 주면 안 돈다 (설정으로 되돌아가지 않는다)', 검사설정({ check: 'a' }, '') === null);
 

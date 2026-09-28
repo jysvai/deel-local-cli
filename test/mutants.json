@@ -1531,7 +1531,7 @@
       "곳": "src/agent/session.js",
       "무엇": "시스템 칸을 조각 나열로 다시 센다",
       "그러면": "셸 안내·급말·못 박은 글이 안 세어져 남은 자리가 뻥튀기된다. effort.js 가 그 값으로 출력 상한을 잡으므로 답이 조용히 잘리기 시작한다",
-      "찾을것": "    const sys = Math.max(0, estimateTokens(this.systemPrompt()) - (rules + 기억 + 배움 + skills));",
+      "찾을것": "    const sys = Math.max(0, this.#셈('시스템', this.systemPrompt()) - (rules + 기억 + 배움 + skills));",
       "바꿀것": "    const sys = estimateTokens(기본규칙(this.conn?.ctx)) + estimateTokens(`작업 폴더: ${this.root}`);",
       "검사": "test/대화셈.test.js"
     },
@@ -3779,7 +3779,7 @@
       "검사": "test/retry.test.js"
     },
     {
-      "곳": "src/oneshot.js",
+      "곳": "src/exit.js",
       "무엇": "사용법 틀림을 걸음 수 상한과 같은 수로 끝낸다",
       "그러면": "`deel run --jsn …` 오타 하나를 CI 가 「일이 커서 멈췄다(2)」 로 받고 작업을 쪼개러 간다. 고칠 자리는 스크립트 한 줄인데",
       "찾을것": "  usage: 64,",
@@ -6282,7 +6282,7 @@
       "검사": "test/oneshot.test.js"
     },
     {
-      "곳": "src/oneshot.js",
+      "곳": "src/exit.js",
       "무엇": "실패 덩이의 usage 칸을 옛 모양으로 줄인다",
       "그러면": "모델을 부르기 전에 선 실패의 --json 이 성공과 칸이 달라 파서가 먼저 죽는다",
       "찾을것": "usage: { in: 0, out: 0, prompt: 0, cacheRead: 0, cacheWrite: 0, calls: 0, ms: 0, 못잰것: 0, retries: 0 },",
@@ -14028,8 +14028,8 @@
       "곳": "src/agent/loop.js",
       "무엇": "strict 가 MCP 도구를 안 묻는다 (2.1.0)",
       "그러면": "붙여 둔 남의 프로그램이 무엇을 지우든 물음 없이 돈다",
-      "찾을것": "          || call.name.startsWith('mcp__');\n        const needsOk",
-      "바꿀것": ";\n        const needsOk",
+      "찾을것": "\n          || 남의도구;\n        // confirm 은",
+      "바꿀것": ";\n        // confirm 은",
       "검사": "test/approval.test.js"
     },
     {
@@ -14630,6 +14630,270 @@
       "그러면": "src/lib/ 에 옛 이름이 남아도 통과한다",
       "찾을것": "      'golden-check.mjs': \"import assert from 'node:assert/strict';\\nimport { readdirSync, readFileSync } from 'node:fs';\\nimport { fetchUser } from './src/user.js';\\nimport { profileName } from './src/profile.js';\\nimport { isAdmin } from './src/admin.js';\\n\\nassert.deepEqual(fetchUser(3), { id: 3, name: 'user3' });\\nassert.equal(profileName(3), 'user3');\\nassert.equal(isAdmin(0), true);\\nassert.equal(isAdmin(1), false);\\nconst 파일들 = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? 파일들(d + '/' + e.name) : e.isFile() ? [d + '/' + e.name] : []));\\nconst 남은 = 파일들('src').filter((f) => readFileSync(f, 'utf8').includes('getUser'));\\nassert.deepEqual(남은, [], '옛 이름이 남은 파일: ' + 남은.join(', '));\\nconsole.log('ok');\\n\",",
       "바꿀것": "      'golden-check.mjs': \"import assert from 'node:assert/strict';\\nimport { readdirSync, readFileSync } from 'node:fs';\\nimport { fetchUser } from './src/user.js';\\nimport { profileName } from './src/profile.js';\\nimport { isAdmin } from './src/admin.js';\\n\\nassert.deepEqual(fetchUser(3), { id: 3, name: 'user3' });\\nassert.equal(profileName(3), 'user3');\\nassert.equal(isAdmin(0), true);\\nassert.equal(isAdmin(1), false);\\nconst 파일들 = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? [] : e.isFile() ? [d + '/' + e.name] : []));\\nconst 남은 = 파일들('src').filter((f) => readFileSync(f, 'utf8').includes('getUser'));\\nassert.deepEqual(남은, [], '옛 이름이 남은 파일: ' + 남은.join(', '));\\nconsole.log('ok');\\n\",",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "confirm 이 MCP 도구를 묻는다 (2.1.2)",
+      "그러면": "confirm 에서 메일 보내기·이슈 닫기 같은 남의 도구가 안 묻고 돈다",
+      "찾을것": "            ? (call.name === 'Bash' && isMutating(call.args?.command)) || (남의도구 && !읽기만하나(ctx.mcp, call.name))",
+      "바꿀것": "            ? (call.name === 'Bash' && isMutating(call.args?.command))",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "confirm 은 읽기만 하는 MCP 도구를 안 묻는다 (2.1.2)",
+      "그러면": "검색 한 번마다 승인 창이 떠서 사람은 y 만 치게 된다",
+      "찾을것": "            ? (call.name === 'Bash' && isMutating(call.args?.command)) || (남의도구 && !읽기만하나(ctx.mcp, call.name))",
+      "바꿀것": "            ? (call.name === 'Bash' && isMutating(call.args?.command)) || (남의도구 && true)",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "readOnlyHint 는 참일 때만 믿는다 (2.1.2)",
+      "그러면": "글 \"true\" 나 1 을 적은 서버의 도구가 confirm 에서 안 묻고 돈다",
+      "찾을것": "  return 적힌것?.readOnlyHint === true && 적힌것?.destructiveHint !== true;",
+      "바꿀것": "  return !!적힌것?.readOnlyHint && 적힌것?.destructiveHint !== true;",
+      "검사": "test/approval.test.js"
+    },
+    {
+      "곳": "src/backend/mcp.js",
+      "무엇": "읽기만 한다면서 지운다고도 적으면 안 믿는다 (2.1.2)",
+      "그러면": "destructiveHint 를 같이 적은 도구가 confirm 에서 안 묻고 돈다",
+      "찾을것": "  return 적힌것?.readOnlyHint === true && 적힌것?.destructiveHint !== true;",
+      "바꿀것": "  return 적힌것?.readOnlyHint === true;",
+      "검사": "test/mcp.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "--timeout 이 0 보다 큰 초인지 본다 (2.1.2)",
+      "그러면": "--timeout 0 · abc 가 과제마다 deel 을 곧바로 죽여 전부 시간 초과 실패",
+      "찾을것": "  if (시간초 !== null && !(Number.isFinite(Number(시간초)) && Number(시간초) > 0)) {",
+      "바꿀것": "  if (false && !(Number.isFinite(Number(시간초)) && Number(시간초) > 0)) {",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "task.json 의 timeout 이 --timeout 을 이긴다 (2.1.2)",
+      "그러면": "긴 과제에 적어 둔 시간이 --timeout 한 줄에 덮여 잘린다",
+      "찾을것": "export const 제한초고르기 = (설정, 시간초) => Number(설정?.timeout ?? 시간초 ?? 기본시간초);",
+      "바꿀것": "export const 제한초고르기 = (설정, 시간초) => Number(시간초 ?? 설정?.timeout ?? 기본시간초);",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "지난번에 있던 과제가 없으면 사라짐으로 적는다 (2.1.2)",
+      "그러면": "떨어지던 과제를 지우고 돌려도 「지난번과 같습니다」",
+      "찾을것": "  const 사라짐 = 일부만 ? [] : [...지난표.keys()].filter((이름) => !지금이름.has(이름));",
+      "바꿀것": "  const 사라짐 = 일부만 ? [] : [...지난표.keys()].filter((이름) => false);",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "--only 판은 안 고른 과제를 사라짐으로 안 친다 (2.1.2)",
+      "그러면": "일부만 돌리면 나머지 과제가 전부 「없어졌다」 로 뜬다",
+      "찾을것": "  const 사라짐 = 일부만 ? [] : [...지난표.keys()].filter((이름) => !지금이름.has(이름));",
+      "바꿀것": "  const 사라짐 = [...지난표.keys()].filter((이름) => !지금이름.has(이름));",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "처음 재는 과제를 새것으로 적는다 (2.1.2)",
+      "그러면": "새 과제가 견줌에서 안 보인다",
+      "찾을것": "  const 새것 = 지금것.filter((x) => !지난표.has(x.과제)).map((x) => x.과제);",
+      "바꿀것": "  const 새것 = 지금것.filter((x) => false).map((x) => x.과제);",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/agent/donecheck.js",
+      "무엇": "checkRounds 는 수와 수로 된 글만 수로 읽는다 (2.1.2)",
+      "그러면": "checkRounds: true 가 1 이 되어 고칠 기회 없이 한 번에 끝난다",
+      "찾을것": "  const 수로 = (v) => (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN);",
+      "바꿀것": "  const 수로 = (v) => Number(v);",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/donecheck.js",
+      "무엇": "못 쓰는 checkRounds 는 기본값을 썼다고 적는다 (2.1.2)",
+      "그러면": "checkRounds 0 을 끈다로 적은 사람이 왜 세 번 도는지 모른다",
+      "찾을것": "  if (적었나(cfg?.checkRounds) && !(Number.isInteger(n) && n >= 1)) {",
+      "바꿀것": "  if (false && !(Number.isInteger(n) && n >= 1)) {",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/agent/donecheck.js",
+      "무엇": "못 쓰는 checkTimeout 은 기본값을 썼다고 적는다 (2.1.2)",
+      "그러면": "checkTimeout 'soon' 이 말없이 600초가 된다",
+      "찾을것": "  if (적었나(cfg?.checkTimeout) && !(Number.isFinite(초) && 초 > 0)) {",
+      "바꿀것": "  if (false && !(Number.isFinite(초) && 초 > 0)) {",
+      "검사": "test/donecheck.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "못 쓰는 값은 다른 말로 알린다 (2.1.2)",
+      "그러면": "checkRounds 0 이 「상한을 넘어 줄였습니다」 로 뜬다",
+      "찾을것": "          for (const 줄 of ev.줄임 ?? []) 곁(`     ${c.yellow('⚠')} ${c.gray(옮긴말(줄.틀림 ? 'check.invalid' : 'check.clamped', 줄))}`);",
+      "바꿀것": "          for (const 줄 of ev.줄임 ?? []) 곁(`     ${c.yellow('⚠')} ${c.gray(옮긴말('check.clamped', 줄))}`);",
+      "검사": "test/oneshot.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "--check-rounds 가 틀린 값이면 64 (2.1.2)",
+      "그러면": "--check-rounds 0 이 말없이 기본 3 판이 된다",
+      "찾을것": "  if (opts.checkRounds !== undefined && !(Number.isInteger(Number(opts.checkRounds)) && Number(opts.checkRounds) >= 1)) {",
+      "바꿀것": "  if (false && !(Number.isInteger(Number(opts.checkRounds)) && Number(opts.checkRounds) >= 1)) {",
+      "검사": "test/oneshot.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "--check-timeout 이 틀린 값이면 64 (2.1.2)",
+      "그러면": "--check-timeout soon 이 말없이 600초가 된다",
+      "찾을것": "  if (opts.checkTimeout !== undefined && !(Number.isFinite(Number(opts.checkTimeout)) && Number(opts.checkTimeout) > 0)) {",
+      "바꿀것": "  if (false && !(Number.isFinite(Number(opts.checkTimeout)) && Number(opts.checkTimeout) > 0)) {",
+      "검사": "test/oneshot.test.js"
+    },
+    {
+      "곳": "src/oneshot.js",
+      "무엇": "--check-rounds 가 설정의 checkRounds 를 덮는다 (2.1.2)",
+      "그러면": "배치에서 판수를 고를 길이 없다 — eval 과제의 doneCheckRounds 가 안 먹는다",
+      "찾을것": "      ...(opts.checkRounds !== undefined ? { checkRounds: Number(opts.checkRounds) } : {}),",
+      "바꿀것": "      ...(false ? { checkRounds: Number(opts.checkRounds) } : {}),",
+      "검사": "test/oneshot.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "과제의 doneCheckRounds 를 deel run 에 넘긴다 (2.1.2)",
+      "그러면": "task.json 에 적은 판수가 안 먹는다",
+      "찾을것": "    ...(설정.doneCheck && 설정.doneCheckRounds !== undefined ? ['--check-rounds', String(설정.doneCheckRounds)] : []),",
+      "바꿀것": "    ...(false ? ['--check-rounds', String(설정.doneCheckRounds)] : []),",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "과제의 doneCheckTimeout 을 deel run 에 넘긴다 (2.1.2)",
+      "그러면": "task.json 에 적은 검사 시간이 안 먹는다",
+      "찾을것": "    ...(설정.doneCheck && 설정.doneCheckTimeout !== undefined ? ['--check-timeout', String(설정.doneCheckTimeout)] : []),",
+      "바꿀것": "    ...(false ? ['--check-timeout', String(설정.doneCheckTimeout)] : []),",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "doneCheckRounds 는 1 이상의 정수 (2.1.2)",
+      "그러면": "doneCheckRounds 0 인 과제가 판마다 64 로 죽어 실패로 세어진다",
+      "찾을것": "  if (v.doneCheckRounds !== undefined && !(Number.isInteger(수로(v.doneCheckRounds)) && 수로(v.doneCheckRounds) >= 1)) {",
+      "바꿀것": "  if (false && !(Number.isInteger(수로(v.doneCheckRounds)) && 수로(v.doneCheckRounds) >= 1)) {",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/acp/serve.js",
+      "무엇": "열어 두는 방에 상한이 있다 (2.1.2)",
+      "그러면": "에디터를 하루 켜 두면 연 대화가 전부 메모리에 쌓인다",
+      "찾을것": "    방솎기(방);",
+      "바꿀것": "    ",
+      "검사": "test/acp.test.js"
+    },
+    {
+      "곳": "src/acp/serve.js",
+      "무엇": "내려놓을 방은 마지막으로 쓴 때로 고른다 (2.1.2)",
+      "그러면": "지금 쓰고 있는 첫 탭이 먼저 열었다는 까닭으로 내려놓인다",
+      "찾을것": "    방.쓴때 = ++쓴셈;   // 내려놓을 차례는 연 때가 아니라 마지막으로 쓴 때로 정한다",
+      "바꿀것": "       // 내려놓을 차례는 연 때가 아니라 마지막으로 쓴 때로 정한다",
+      "검사": "test/acp.test.js"
+    },
+    {
+      "곳": "src/acp/serve.js",
+      "무엇": "내려놓은 방에 말이 오면 되살린다 (2.1.2)",
+      "그러면": "탭은 열려 있는데 「그런 세션이 없습니다」 로 답한다",
+      "찾을것": "        const 방 = await 방되찾기(인자?.sessionId);   // 내려놓은 방이면 파일에서 되살려 잇는다",
+      "바꿀것": "        const 방 = 방찾기(인자?.sessionId);   // 내려놓은 방이면 파일에서 되살려 잇는다",
+      "검사": "test/acp.test.js"
+    },
+    {
+      "곳": "src/acp/serve.js",
+      "무엇": "되살린 방은 에디터가 고른 작업 모드를 이어 받는다 (2.1.2)",
+      "그러면": "에디터는 plan 으로 칠해 두었는데 되살린 방(다시 온 말 · session/load)은 기본 모드로 파일을 고친다",
+      "찾을것": "      if (치운것.work) 방.session.work = 치운것.work;",
+      "바꿀것": "      if (false) 방.session.work = 치운것.work;",
+      "검사": "test/acp.test.js"
+    },
+    {
+      "곳": "src/safety/undo.js",
+      "무엇": "이력을 다시 쓴 것을 알아보고 처음부터 센다 (2.1.2)",
+      "그러면": "다른 탭이 되돌린 뒤에도 옛 턴 수를 내놓아 /undo 가 없는 턴을 센다",
+      "찾을것": "    if (다시썼나) 표 = { 크기: 0, 시각: 0, 머리: Buffer.alloc(0), 끝: Buffer.alloc(0), 턴들: [], 본턴: new Set(), 깨진: 0 };",
+      "바꿀것": "    if (!표) 표 = { 크기: 0, 시각: 0, 머리: Buffer.alloc(0), 끝: Buffer.alloc(0), 턴들: [], 본턴: new Set(), 깨진: 0 };",
+      "검사": "test/undo.test.js"
+    },
+    {
+      "곳": "src/safety/undo.js",
+      "무엇": "턴 수는 센 자리 뒤만 읽는다 (2.1.2)",
+      "그러면": "턴마다 32MB 이력을 처음부터 다시 읽는다",
+      "찾을것": "    const 새것 = 판.size > 표.크기 ? this.#바이트(표.크기, 판.size) : Buffer.alloc(0);",
+      "바꿀것": "    const 새것 = 판.size > 표.크기 ? (표.턴들.length = 0, 표.본턴.clear(), 표.깨진 = 0, this.#바이트(0, 판.size)) : Buffer.alloc(0);",
+      "검사": "test/undo.test.js"
+    },
+    {
+      "곳": "src/safety/undo.js",
+      "무엇": "개행 없는 반쪽 줄은 이번 셈에만 넣는다 (2.1.2)",
+      "그러면": "적는 중인 줄을 깨진 줄로 굳혀 두고, 다 적힌 뒤에는 그 턴을 영영 못 센다",
+      "찾을것": "    History.#줄셈(이번, 꼬리.toString('utf8'));",
+      "바꿀것": "    ",
+      "검사": "test/undo.test.js"
+    },
+    {
+      "곳": "bin/deel.js",
+      "무엇": "판 번호는 설정을 읽기 전에 답한다 (2.1.2)",
+      "그러면": "deel --version 한 줄이 평문 열쇠를 잠그러 옮기며 설정 파일을 고쳐 쓴다",
+      "찾을것": "  if (flags.version || 친명령 === 'version') { say(판번호()); return 0; }",
+      "바꿀것": "  if (flags.version || 친명령 === 'version') { 말정하기(); say(판번호()); return 0; }",
+      "검사": "test/cli.test.js"
+    },
+    {
+      "곳": "bin/deel.js",
+      "무엇": "진입점 맨 위에는 가벼운 것만 둔다 (2.1.2)",
+      "그러면": "deel --version 이 대화 화면·도구·게이트웨이까지 파일 164개를 읽는다",
+      "찾을것": "import { banner } from '../src/ui/banner.js';",
+      "바꿀것": "import { banner } from '../src/setup.js';",
+      "검사": "test/cli.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "시스템 글이 같으면 센 값을 쓴다 (2.1.2)",
+      "그러면": "상태줄이 그릴 때마다 수만 자 시스템 글을 글자 하나씩 다시 센다",
+      "찾을것": "    if (있던 && 있던.글 === 글) return 있던.t;",
+      "바꿀것": "    if (false) return 있던.t;",
+      "검사": "test/statusbar.test.js"
+    },
+    {
+      "곳": "src/agent/session.js",
+      "무엇": "시스템 글이 바뀌면 새로 센다 (2.1.2)",
+      "그러면": "기억·규칙을 더해도 상태줄의 토큰 수가 그대로다",
+      "찾을것": "    if (있던 && 있던.글 === 글) return 있던.t;",
+      "바꿀것": "    if (있던) return 있던.t;",
+      "검사": "test/statusbar.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "task.json 의 수 칸이 참/거짓을 수로 읽는다 (2.1.2)",
+      "그러면": "timeout: true 가 1초가 되어 과제가 곧바로 죽고, doneCheckRounds: true 는 `--check-rounds true` 로 넘어가 deel run 이 사용법 틀림으로 끝난다",
+      "찾을것": "const 수로 = (v) => (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN);",
+      "바꿀것": "const 수로 = (v) => Number(v);",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "처음 재는 과제가 있어도 「지난번과 같습니다」 라 한다 (2.1.2)",
+      "그러면": "새로 넣은 과제가 떨어져도 견준 과제끼리 같으면 전부 같다는 말에 그 실패가 묻힌다",
+      "찾을것": "  return 일부만 || 견줌.사라짐.length || 견줌.새것.length ? '견준만큼' : '전부';",
+      "바꿀것": "  return 일부만 || 견줌.사라짐.length ? '견준만큼' : '전부';",
+      "검사": "test/eval.test.js"
+    },
+    {
+      "곳": "src/eval/run.js",
+      "무엇": "--only 판도 「지난번과 같습니다」 라 한다 (2.1.2)",
+      "그러면": "고른 과제 하나만 견줬는데 전체가 같다는 말로 읽힌다",
+      "찾을것": "  return 일부만 || 견줌.사라짐.length || 견줌.새것.length ? '견준만큼' : '전부';",
+      "바꿀것": "  return 견줌.사라짐.length || 견줌.새것.length ? '견준만큼' : '전부';",
       "검사": "test/eval.test.js"
     }
   ]

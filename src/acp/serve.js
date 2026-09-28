@@ -194,6 +194,29 @@ export async function acp(opts = {}) {
    * 폴더가 다르면 따로 띄운다. 옆 프로젝트의 도구가 딸려 오면 안 된다.
    */
   const mcp캐시 = new Map();
+
+  /*
+   * ── 방은 쌓이기만 했다 (2.1.2) ────────────────────────────────────────────
+   *
+   * 에디터는 대화마다 session/new 를 부르고, 이 프로세스는 에디터가 켜져 있는 동안 산다. 방을
+   * 지우는 자리가 없어 하루 종일 연 대화가 전부 메모리에 남았다 — 대화 전체 · 되돌리기 기록 ·
+   * 감사기록 · 그 폴더의 MCP 서버까지.
+   *
+   * 상한을 넘으면 제일 오래 안 쓴 **쉬는** 방을 내려놓는다(도는 턴·차례를 기다리는 턴이 있으면
+   * 안 건드린다). 대화 파일은 폴더에 남아 있으므로 그 이름으로 다시 말이 오면 되살려 잇는다
+   * (방되찾기) — 에디터 탭은 닫힌 적이 없으니 「그런 세션이 없습니다」 로 답하면 안 된다. 에디터가
+   * 고른 작업 모드와 「앞으로 묻지 않기」 도 같이 들고 있다가 돌려준다. 그 폴더의 마지막 방이면
+   * MCP 서버도 닫는다.
+   */
+  const 최대방 = (() => {
+    const n = Number(process.env.DEEL_ACP_MAX_SESSIONS);
+    return Number.isInteger(n) && n >= 1 ? n : 16;
+  })();
+  const 치운방 = new Map();     // 아이디 → { root, work, 늘허락 }
+  const 되찾는중 = new Map();    // 아이디 → 되살리는 약속 (겹쳐 온 말이 둘을 짓지 않게)
+  // 마지막으로 쓴 차례. 시각(Date.now)으로 적으면 한 밀리초 안에 쓴 두 방이 같은 값이 되어, 오래 안 쓴
+  // 방 대신 먼저 연 방이 내려놓였다 — 늘 커지는 번호로 적는다.
+  let 쓴셈 = 0;
   let 클라이언트 = null;      // initialize 로 받은 저쪽 소개
   let 시작했나 = false;
 
@@ -528,6 +551,8 @@ export async function acp(opts = {}) {
     const 방 = {
       id: store.id,
       root, conn, session, store,
+      캐시열쇠,
+      쓴때: ++쓴셈,
       턴: null,
       늘허락: new Set(),        // 이 세션에서 "앞으로 묻지 않기" 를 고른 도구들
       mcp: mcp붙임.서버들,
@@ -604,13 +629,70 @@ export async function acp(opts = {}) {
       } catch { /* 설정값 그대로 간다 */ }
     }
 
+    /*
+     * 내려놓았던 방이면(방되찾기 · session/load) 에디터가 고른 작업 모드와 「앞으로 묻지 않기」 를
+     * 돌려준다. **방들 에 넣기 전에** 채운다 — session/load 로 연 방은 이것을 잃었고(2.1.2 2차 눈),
+     * 넣은 뒤에 채우면 그 사이 온 말이 빈 채인 방을 받는다.
+     */
+    const 치운것 = 치운방.get(방.id);
+    if (치운것) {
+      if (치운것.work) 방.session.work = 치운것.work;
+      for (const 이름 of 치운것.늘허락 ?? []) 방.늘허락.add(이름);
+    }
     방들.set(방.id, 방);
+    치운방.delete(방.id);   // 되살아났으면 내려놓은 표는 지운다
+    방솎기(방);
     return 방;
+  }
+
+  /** 상한을 넘었으면 제일 오래 안 쓴 쉬는 방부터 내려놓는다 (위 최대방 머리말). */
+  function 방솎기(새방) {
+    while (방들.size > 최대방) {
+      let 고른 = null;
+      for (const 방 of 방들.values()) {
+        if (방 === 새방 || 방.턴 || 방.턴끝) continue;
+        if (!고른 || 방.쓴때 < 고른.쓴때) 고른 = 방;
+      }
+      if (!고른) return;   // 다 돌고 있으면 넘긴 채 둔다 — 도는 턴을 끊지 않는다
+      방들.delete(고른.id);
+      치운방.set(고른.id, { root: 고른.root, work: 고른.session.work, 늘허락: 고른.늘허락 });
+      로그(`${고른.id} — 오래 안 쓴 세션을 내려놓았습니다 (열어 두는 세션 ${최대방}개 상한). 다시 말하면 이어서 엽니다.`);
+      /*
+       * 그 폴더의 MCP 서버는 **쓰는 방이 하나도 없을 때만** 닫는다. 짓는 중인 방(열린자리 에는 있고
+       * 방들 에는 아직 없는 것)도 쓰는 방이다 — 붙임 약속을 이미 받아 갔다.
+       */
+      const 아직씀 = [...열린자리].some(([id, 자리]) => !치운방.has(id) && 자리열쇠(자리) === 고른.캐시열쇠);
+      if (!아직씀 && mcp캐시.has(고른.캐시열쇠)) {
+        const 붙임 = mcp캐시.get(고른.캐시열쇠);
+        mcp캐시.delete(고른.캐시열쇠);
+        Promise.resolve(붙임).then((b) => {
+          for (const 서버 of b?.서버들 ?? []) { try { 서버.닫기(); } catch { /* 닫다 터져도 방은 내려놓는다 */ } }
+        }).catch(() => {});
+      }
+    }
   }
 
   function 방찾기(id) {
     const 방 = 방들.get(String(id ?? ''));
     if (!방) throw 잘못된인자오류(`그런 세션이 없습니다: ${id}`);
+    방.쓴때 = ++쓴셈;   // 내려놓을 차례는 연 때가 아니라 마지막으로 쓴 때로 정한다
+    return 방;
+  }
+
+  /** 내려놓은 방이면 파일에서 되살린다. 아니면 방찾기 와 같다. */
+  async function 방되찾기(id) {
+    const 아이디 = String(id ?? '');
+    if (방들.has(아이디) || !치운방.has(아이디)) return 방찾기(아이디);
+    if (!되찾는중.has(아이디)) {
+      const 적힌것 = 치운방.get(아이디);
+      되찾는중.set(아이디, (async () => {
+        const 방 = await 방만들기({ cwd: 적힌것.root }, { 아이디 });   // 모드 · 늘허락 은 방짓기 가 돌려준다
+        로그(`${아이디} — 내려놓았던 세션을 다시 열었습니다 (${방.session.work})`);
+        return 방;
+      })().finally(() => 되찾는중.delete(아이디)));
+    }
+    const 방 = await 되찾는중.get(아이디);
+    방.쓴때 = ++쓴셈;
     return 방;
   }
 
@@ -903,7 +985,7 @@ export async function acp(opts = {}) {
           // 완료 검사 (agent/donecheck.js). 에디터에도 무엇을 돌렸고 어떻게 됐는지 적는다.
           case 'check_start':
             말하기(`\n\n_(${옮긴말('check.start', { 판: ev.판, 최대: ev.최대, 명령: ev.명령 })})_\n\n`);
-            for (const 줄 of ev.줄임 ?? []) 말하기(`_(${옮긴말('check.clamped', 줄)})_\n\n`);
+            for (const 줄 of ev.줄임 ?? []) 말하기(`_(${옮긴말(줄.틀림 ? 'check.invalid' : 'check.clamped', 줄)})_\n\n`);
             break;
 
           case 'check':
@@ -1231,7 +1313,7 @@ export async function acp(opts = {}) {
       }
 
       case 'session/prompt': {
-        const 방 = 방찾기(인자?.sessionId);
+        const 방 = await 방되찾기(인자?.sessionId);   // 내려놓은 방이면 파일에서 되살려 잇는다
         return await 한턴(방, 인자?.prompt);
       }
 
@@ -1243,7 +1325,7 @@ export async function acp(opts = {}) {
       }
 
       case 'session/set_mode': {
-        const 방 = 방찾기(인자?.sessionId);
+        const 방 = await 방되찾기(인자?.sessionId);
         const 준것 = String(인자?.modeId ?? '');
         const 고른것 = 모드정리(준것);
         /*

@@ -39,7 +39,14 @@
  * 조각으로 남는다. 여기 쓰는 것들은 입력 상자가 이미 쓰고 있는 것이라
  * 이 프로그램이 도는 자리에서는 이미 한 번 검증된 셈이다.
  */
-import { c, 번호색, 색256가능, width } from './ansi.js';
+import { c, say, 번호색, 색256가능, width } from './ansi.js';
+
+/** 도움말·설정·진단 맨 위의 한 줄. */
+export function banner() {
+  say('');
+  say(`  ${c.cyan('deel')} ${c.gray('— 로컬 모델 코딩 에이전트')}`);
+  say('');
+}
 
 /*
  * 글꼴. 한 글자가 일곱 줄이다.

@@ -302,6 +302,34 @@ async function 돌리기(부름, { mode = 'strict', 답 = false, confirm없음 =
   check('★★ strict 는 MCP 도구를 묻는다 (무엇을 바꾸는지 우리가 모른다)', 남의것.물음.some((x) => x.이름 === 'mcp__srv__delete_all'),
     JSON.stringify(남의것.물음.map((x) => x.이름)));
 
+  /*
+   * confirm 은 「되돌릴 수 없는 것만 묻는다」 인데 MCP 도구는 한 번도 안 물었다 (2.1.2).
+   * 남의 프로그램이 한 일(메일 보내기 · 이슈 닫기 · 표 지우기)은 /undo 가 못 되돌린다 — 우리 쪽에서
+   * 보면 전부 되돌릴 수 없는 것이다. 서버가 「읽기만 한다」(annotations.readOnlyHint) 고 적은 것만 안 묻는다.
+   */
+  const 부른것 = [];
+  const 가짜서버 = (도구들) => [{ 이름: 'srv', 도구: 도구들, 쓸수있나: () => true,
+    부르기: async (이름) => { 부른것.push(이름); return { text: 'ok' }; } }];
+  const 확인 = await 돌리기({ 이름: 'mcp__srv__delete_all', 인자: {} }, { mode: 'confirm', mcp: 가짜서버([{ name: 'delete_all' }]) });
+  check('★★★ confirm 도 MCP 도구를 묻는다 (남의 프로그램이 한 일은 되돌릴 수 없다)', 확인.물음.some((x) => x.이름 === 'mcp__srv__delete_all'),
+    JSON.stringify(확인.물음.map((x) => x.이름)));
+  check('★★ 거절하면 실제로 안 부른다', !부른것.includes('delete_all'), 부른것.join(','));
+  const 읽기만 = await 돌리기({ 이름: 'mcp__srv__search', 인자: {} },
+    { mode: 'confirm', mcp: 가짜서버([{ name: 'search', annotations: { readOnlyHint: true } }]) });
+  check('★★ 서버가 읽기만 한다고 적은 도구는 confirm 에서 안 묻고 부른다', !읽기만.물음.length && 부른것.includes('search'),
+    `${JSON.stringify(읽기만.물음.map((x) => x.이름))} · ${부른것.join(',')}`);
+  const 글참 = await 돌리기({ 이름: 'mcp__srv__look', 인자: {} },
+    { mode: 'confirm', mcp: 가짜서버([{ name: 'look', annotations: { readOnlyHint: 'true' } }]) });
+  check('★ readOnlyHint 는 참(true)일 때만 믿는다 — 글 "true" 는 묻는다', 글참.물음.some((x) => x.이름 === 'mcp__srv__look'));
+  const 파괴 = await 돌리기({ 이름: 'mcp__srv__drop', 인자: {} },
+    { mode: 'confirm', mcp: 가짜서버([{ name: 'drop', annotations: { readOnlyHint: true, destructiveHint: true } }]) });
+  check('★ 읽기만 한다면서 지운다고도 적었으면 묻는다 (앞뒤가 안 맞으면 좁은 쪽)', 파괴.물음.some((x) => x.이름 === 'mcp__srv__drop'));
+  const 엄격읽기 = await 돌리기({ 이름: 'mcp__srv__search', 인자: {} },
+    { mode: 'strict', mcp: 가짜서버([{ name: 'search', annotations: { readOnlyHint: true } }]) });
+  check('★★ strict 는 읽기만 한다는 MCP 도구도 묻는다 — 적힌 말은 남의 서버가 한 말이다', 엄격읽기.물음.some((x) => x.이름 === 'mcp__srv__search'));
+  const 자동mcp = await 돌리기({ 이름: 'mcp__srv__delete_all', 인자: {} }, { mode: 'auto', mcp: 가짜서버([{ name: 'delete_all' }]) });
+  check('  auto 는 MCP 도구도 예전처럼 안 묻는다', !자동mcp.물음.length);
+
   const 사람없음 = await 돌리기({ 이름: 'Write', 인자: { file_path: 'c.txt', content: '써짐\n' } }, { confirm없음: true });
   check('★★★ 물어볼 사람이 없으면 strict 는 실행하지 않는다 (여태 그대로 썼다)', !existsSync(join(뿌리, 'c.txt')));
   check('★ 왜 안 했는지 모델에게 말한다', /물어볼 사람이 없/.test(사람없음.도구말), 사람없음.도구말.slice(0, 200));

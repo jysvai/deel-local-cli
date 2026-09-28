@@ -1757,6 +1757,40 @@ trace('9.7-인자와-설정의-끝자락');
   }
 }
 
+trace('9.8-완료검사-판수');
+/*
+ * 완료 검사를 몇 번 돌릴지 배치에서 고를 길이 없었다 (2.1.2). 설정의 checkRounds 뿐이라, 과제마다 다른
+ * 판수가 필요한 deel eval 은 과제 폴더(task.json)에 적을 자리가 없었다. --check-rounds · --check-timeout.
+ * 못 쓰는 값이 말없이 기본값 3 이 되던 것도 여기서 화면까지 잰다.
+ */
+{
+  writeFileSync(join(work, '늘실패.cjs'), 'process.exit(1);\n');
+  대본초기화();
+  const 한판 = await 띄우기(['run', '--json', '--check', 'node 늘실패.cjs', '--check-rounds', '1', '일부러_고쳐']);
+  const 몸 = (() => { try { return JSON.parse(한판.out); } catch { return null; } })();
+  check('★★ --check-rounds 1 이면 검사를 한 번만 돌리고 실패로 끝낸다 (8)', 한판.code === 8 && 몸?.check?.max === 1 && 몸?.check?.rounds === 1,
+    `code=${한판.code} ${JSON.stringify(몸?.check)}`);
+  for (const [깃발, 값] of [['--check-rounds', '0'], ['--check-rounds', 'abc'], ['--check-timeout', '0'], ['--check-timeout', 'soon']]) {
+    대본초기화();
+    const r = await 띄우기(['run', '--check', 'node 늘실패.cjs', 깃발, 값, '일부러_고쳐']);
+    // 「모르는 깃발」 로 튕긴 64 는 안 친다 — 깃발을 받고 값을 보고 거절해야 한다.
+    check(`★ ${깃발} ${값} 은 사용법 틀림(64)`, r.code === 64 && r.err.includes(`${깃발} `) && r.err.includes(값) && !/모르는 깃발/.test(r.err),
+      `code=${r.code} ${r.err.slice(-160)}`);
+  }
+  // 설정 파일에 적힌 못 쓰는 값은 막지 않고 기본값을 쓰되, 그렇다고 **화면에** 말한다.
+  const 틀린집 = mkdtempSync(join(tmpdir(), 'deel-one-rounds-'));
+  writeFileSync(join(틀린집, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자', check: 'node 늘실패.cjs', checkRounds: 0,
+    profiles: [{ id: 'stub', name: '스텁 연결', kind: 'openai', baseUrl: base, auth: 'none', apiKey: '', model: '스텁모델',
+      ctx: 32768, streaming: false, tools: true, json: true, think: false }],
+  }, null, 2), 'utf8');
+  대본초기화();
+  const 틀림 = await 띄우기(['run', '일부러_고쳐'], { env: { DEEL_HOME: 틀린집 } });
+  check('★★ 설정의 checkRounds 0 은 기본 3 으로 쓰고 그렇다고 화면에 말한다', 틀림.code === 8 && /checkRounds 0 은 쓸 수 없는 값이라 기본값 3/.test(틀림.err),
+    `code=${틀림.code} ${(틀림.err.split('\n').find((l) => /checkRounds/.test(l)) ?? '그런 줄 없음').trim()}`);
+  rmSync(틀린집, { recursive: true, force: true });
+}
+
 trace('9-치움');
 srv.close();
 rmSync(home, { recursive: true, force: true });

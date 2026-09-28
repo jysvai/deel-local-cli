@@ -20,7 +20,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trace } from './trace.mjs';
 
-const { 설정탈, 과제읽기, 예제만들기, 폴더복사, 결과덩이, 과제별, 견주기, 지난결과, 시각이름, 과제고르기, 판돌리기 } = await import('../src/eval/run.js');
+const { 설정탈, 과제읽기, 예제만들기, 폴더복사, 결과덩이, 과제별, 견주기, 지난결과, 시각이름, 과제고르기, 판돌리기, 제한초고르기, 실행인자, 같음범위 } = await import('../src/eval/run.js');
 const { 예제과제 } = await import('../src/eval/starter.js');
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,6 +41,27 @@ trace('1-모양');
   check('  시간은 0 보다 큰 수', /timeout/.test(설정탈({ prompt: 'x', check: 'y', timeout: -1 }) ?? '') && 설정탈({ prompt: 'x', check: 'y', timeout: 30 }) === null);
   check('  doneCheck 는 글', /doneCheck/.test(설정탈({ prompt: 'x', check: 'y', doneCheck: 3 }) ?? ''));
   check('  배열·null 은 탈', !!설정탈([]) && !!설정탈(null));
+  /*
+   * 과제마다 완료 검사 판수·시간을 적을 자리가 없었다 (2.1.2). deel run 의 --check-rounds · --check-timeout 으로 넘긴다.
+   * 판수는 1 ~ 10 의 정수, 시간은 0 보다 큰 초.
+   */
+  check('★ doneCheckRounds 는 1 이상의 정수', /doneCheckRounds/.test(설정탈({ prompt: 'x', check: 'y', doneCheck: 'z', doneCheckRounds: 0 }) ?? '')
+    && /doneCheckRounds/.test(설정탈({ prompt: 'x', check: 'y', doneCheck: 'z', doneCheckRounds: 1.5 }) ?? '')
+    && 설정탈({ prompt: 'x', check: 'y', doneCheck: 'z', doneCheckRounds: 2 }) === null);
+  check('★ doneCheckTimeout 은 0 보다 큰 초', /doneCheckTimeout/.test(설정탈({ prompt: 'x', check: 'y', doneCheck: 'z', doneCheckTimeout: 'soon' }) ?? '')
+    && 설정탈({ prompt: 'x', check: 'y', doneCheck: 'z', doneCheckTimeout: 90 }) === null);
+  check('★ doneCheck 없이 판수·시간만 적으면 탈 — 돌 검사가 없다', /doneCheck/.test(설정탈({ prompt: 'x', check: 'y', doneCheckRounds: 2 }) ?? ''));
+  // 2차 눈(Gemini): `true` 는 Number(true) = 1 이라 수 칸을 다 통과했다 — timeout 1초 · `--check-rounds true` 로 과제가 죽는다.
+  for (const 칸 of ['timeout', 'checkTimeout', 'doneCheckRounds', 'doneCheckTimeout']) {
+    check(`★ ${칸}: true 는 수가 아니다`, new RegExp(칸).test(설정탈({ prompt: 'x', check: 'y', doneCheck: 'z', [칸]: true }) ?? ''));
+  }
+  check('  글로 적은 수는 읽는다', 설정탈({ prompt: 'x', check: 'y', doneCheck: 'z', timeout: '30', doneCheckRounds: '2' }) === null);
+  const 인자 = 실행인자({ prompt: '고쳐', check: 'c', doneCheck: 'npm test', doneCheckRounds: 5, doneCheckTimeout: 90 }, '/w', ['--online']);
+  const 뒤 = (깃발) => 인자[인자.indexOf(깃발) + 1];
+  check('★★ 과제의 판수·시간이 deel run 깃발로 넘어간다', 뒤('--check') === 'npm test' && 뒤('--check-rounds') === '5' && 뒤('--check-timeout') === '90',
+    JSON.stringify(인자));
+  check('  시킬 말은 -- 뒤 맨 끝이다 (깃발로 안 읽힌다)', 인자.at(-2) === '--' && 인자.at(-1) === '고쳐' && 인자.includes('--online'));
+  check('  안 적었으면 안 넘긴다', !실행인자({ prompt: 'p', check: 'c', doneCheck: 'npm test' }, '/w').includes('--check-rounds'));
 }
 
 // ── 2. 예제 과제의 채점이 맞게 가르나 ───────────────────────────────────
@@ -122,6 +143,37 @@ trace('3-조각');
     [{ 과제: 'a', 판: 1, 통과: 0 }, { 과제: 'b', 판: 1, 통과: 1 }, { 과제: 'c', 판: 1, 통과: 1 }, { 과제: '새것', 판: 1, 통과: 0 }]);
   check('★★ 지난번과 견줘 나빠진 것 · 나아진 것을 가른다', 견줌.나빠짐.join() === 'a' && 견줌.나아짐.join() === 'b', JSON.stringify(견줌));
   check('  지난번에 없던 과제는 견주지 않는다', !견줌.나빠짐.includes('새것'));
+  /*
+   * 지난번에 있던 과제가 이번에 없으면 말없이 넘어갔다 (2.1.2). 과제 폴더를 지웠거나 이름을 바꿨는데
+   * 남은 과제끼리만 견줘 「지난번과 같습니다」 가 나왔다 — 떨어지던 과제를 지워 통과율을 올려도 모른다.
+   */
+  const 빠짐 = 견주기([{ 과제: 'a', 판: 1, 통과: 1 }, { 과제: '지운것', 판: 1, 통과: 0 }], [{ 과제: 'a', 판: 1, 통과: 1 }, { 과제: '새것', 판: 1, 통과: 1 }]);
+  check('★★ 지난번에 있던 과제가 이번에 없으면 사라짐으로 적는다', 빠짐.사라짐?.join() === '지운것', JSON.stringify(빠짐));
+  check('★ 처음 재는 과제는 새것으로 적는다', 빠짐.새것?.join() === '새것', JSON.stringify(빠짐));
+  const 일부 = 견주기([{ 과제: 'a', 판: 1, 통과: 1 }, { 과제: 'b', 판: 1, 통과: 1 }], [{ 과제: 'a', 판: 1, 통과: 1 }], { 일부만: true });
+  check('  --only 로 일부만 돈 판은 안 고른 과제를 사라짐으로 안 친다', 일부.사라짐.length === 0, JSON.stringify(일부));
+  /*
+   * 2차 눈(Gemini): 처음 재는 과제가 떨어져도 견준 과제끼리 같으면 「지난번과 같습니다」 가 나왔다 — 새 과제의
+   * 실패가 그 말에 묻힌다. --only 판도 고른 과제만 견줬는데 전체가 같다는 말로 읽혔다. 견주지 않은 과제가
+   * 있으면 「견준 과제 N개는 같습니다」 로 적는다.
+   */
+  const 같음 = (지난것, 지금것, 일부만 = false) => 같음범위(견주기(지난것, 지금것, { 일부만 }), { 일부만 });
+  const 하나 = [{ 과제: 'a', 판: 1, 통과: 1 }];
+  check('★ 다 견줬고 다 같으면 전부 같다', 같음(하나, 하나) === '전부');
+  check('★★ 처음 재는 과제가 있으면 견준 만큼만 같다', 같음(하나, [...하나, { 과제: '새것', 판: 1, 통과: 0 }]) === '견준만큼');
+  check('★ 사라진 과제가 있으면 견준 만큼만 같다', 같음([...하나, { 과제: '지운것', 판: 1, 통과: 1 }], 하나) === '견준만큼');
+  check('★ --only 판은 견준 만큼만 같다', 같음([...하나, { 과제: 'b', 판: 1, 통과: 1 }], 하나, true) === '견준만큼');
+  check('  달라진 것이 있으면 같다고 안 한다', 같음(하나, [{ 과제: 'a', 판: 1, 통과: 0 }]) === null);
+  check('  견준 것이 없으면 같다고 안 한다', 같음(하나, [{ 과제: 'b', 판: 1, 통과: 1 }]) === null);
+}
+{
+  /*
+   * 과제의 제한 시간 — task.json 에 적힌 것이 --timeout 을 이긴다 (pytest-timeout 의 표시·jest 의 과제별 시간과
+   * 같은 차례). --timeout 은 제 시간을 안 적은 과제의 기본값이다. 여태 이 차례가 어디에도 안 적혀 있었다.
+   */
+  check('★ task.json 의 timeout 이 --timeout 을 이긴다', 제한초고르기({ timeout: 30 }, 900) === 30);
+  check('★ 안 적은 과제는 --timeout 을 쓴다', 제한초고르기({}, 900) === 900);
+  check('  둘 다 없으면 600초', 제한초고르기({}, null) === 600);
 }
 {
   // 2차 눈(Gemini) 판정: 모델이 `sub` 를 파일로 만들었는데 정답에 `sub/` 폴더가 있으면 복사가 터져 평가 전체가 죽었다.
@@ -315,6 +367,11 @@ writeFileSync(join(일터, 'golden', 'c-모양틀림', 'task.json'), '{ "prompt"
 {
   const r = await 띄우기(['eval', '--repeat', '0'], 일터);
   check('★ --repeat 0 은 사용법 틀림(64)', r.code === 64, `code=${r.code}`);
+  // --timeout 0 · abc 가 그대로 넘어가 setTimeout(0) · NaN 으로 과제마다 deel 을 곧바로 죽였다 — 전부 「시간 초과」 실패 (2.1.2).
+  for (const 값 of ['0', 'abc', '-5']) {
+    const t = await 띄우기(['eval', '--timeout', 값], 일터);
+    check(`★★ --timeout ${값} 은 사용법 틀림(64) — 과제를 곧바로 죽이지 않는다`, t.code === 64 && /--timeout/.test(t.out + t.err), `code=${t.code} ${(t.out + t.err).slice(-160)}`);
+  }
   // 2차 눈이 「값 없는 --only 가 글자 'true' 로 넘어간다」 고 짚었다 — 깃발 풀이가 이미 64 로 막고 있었다. 그 막을 지킨다.
   const 빈only = await 띄우기(['eval', '--only'], 일터);
   check('  값 없는 --only 는 사용법 틀림(64)', 빈only.code === 64 && /--only/.test(빈only.err), `code=${빈only.code} ${빈only.err.slice(-160)}`);

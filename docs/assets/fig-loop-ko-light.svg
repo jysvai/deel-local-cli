@@ -49,7 +49,7 @@
     <text x="372.4" y="477.0" fill="#cf222e" font-size="11" textLength="39.6" lengthAdjust="spacing" xml:space="preserve">✕ 멈춤</text>
     <line x1="234.0" y1="494.0" x2="234.0" y2="500.0" stroke="#59636e" stroke-width="1.5" stroke-linecap="round"/><path d="M234.0 509.0 L229.6 500.0 L238.4 500.0 Z" fill="#59636e"/>
     <text x="456.0" y="468.0" fill="#59636e" font-size="11" textLength="310.2" lengthAdjust="spacing" xml:space="preserve">auto 는 안 묻고(되돌리기가 안전망) · confirm 은</text>
-    <text x="456.0" y="483.0" fill="#59636e" font-size="11" textLength="356.4" lengthAdjust="spacing" xml:space="preserve">되돌릴 수 없는 명령만 · strict 는 파일 변경·명령 전부.</text>
+    <text x="456.0" y="483.0" fill="#59636e" font-size="11" textLength="369.6" lengthAdjust="spacing" xml:space="preserve">되돌릴 수 없는 명령·MCP 도구 · strict 는 변경·명령 전부.</text>
     <text x="456.0" y="498.0" fill="#59636e" font-size="11" textLength="270.6" lengthAdjust="spacing" xml:space="preserve">금지(deny) 규칙은 물어보지도 않고 막는다.</text>
     <rect x="44.0" y="512.0" width="380.0" height="56.0" rx="9" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.4"/>
     <text x="58.0" y="546.0" fill="#8250df" font-size="15" font-weight="600" textLength="9.0" lengthAdjust="spacing" xml:space="preserve">▣</text>

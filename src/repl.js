@@ -3057,7 +3057,7 @@ export async function chatLoop(opts = {}) {
             if (streamed) { 답비우기(); say(''); streamed = false; }
             say('');
             say(`  ${c.cyan('⧗')} ${c.gray(옮긴말('check.start', { 판: ev.판, 최대: ev.최대, 명령: ev.명령 }))}`);
-            for (const 줄 of ev.줄임 ?? []) say(`     ${c.yellow('⚠')} ${c.gray(옮긴말('check.clamped', 줄))}`);
+            for (const 줄 of ev.줄임 ?? []) say(`     ${c.yellow('⚠')} ${c.gray(옮긴말(줄.틀림 ? 'check.invalid' : 'check.clamped', 줄))}`);
             break;
 
           case 'check':

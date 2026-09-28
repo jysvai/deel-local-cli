@@ -953,6 +953,21 @@ export function 이름풀기(전체) {
 }
 
 /**
+ * 서버가 이 도구를 **읽기만 한다** 고 적었나 (MCP `annotations.readOnlyHint`).
+ *
+ * confirm 이 MCP 도구를 안 물을지 정하는 데만 쓴다 (loop.js 의 관문). 적힌 말은 남의 서버가 한
+ * 말이라 좁게 믿는다 — 참(`true`)일 때만, 그리고 「지운다」(destructiveHint) 를 같이 적었으면
+ * 앞뒤가 안 맞으니 안 믿는다. strict 는 이 말을 아예 안 본다.
+ */
+export function 읽기만하나(서버들, 전체) {
+  const 갈린것 = 이름풀기(전체);
+  if (!갈린것) return false;
+  const 서버 = (서버들 ?? []).find((s) => s?.이름 === 갈린것.서버);
+  const 적힌것 = (서버?.도구 ?? []).find((t) => t?.name === 갈린것.도구)?.annotations;
+  return 적힌것?.readOnlyHint === true && 적힌것?.destructiveHint !== true;
+}
+
+/**
  * 설정에 적힌 서버를 전부 띄운다.
  *
  * 하나가 안 떠도 나머지는 쓴다 — 서버 하나 때문에 프로그램이 못 뜨면 안 된다.

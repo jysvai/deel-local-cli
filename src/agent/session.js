@@ -1111,16 +1111,33 @@ export class Session {
     return this.보정;
   }
 
+  /*
+   * 글이 같으면 센 값을 쓴다 (2.1.2).
+   *
+   * 상태줄은 일하는 동안 90ms 마다 그리고 한 번 그릴 때 여기를 여러 번 부른다. 대화는 2.1.1 에서
+   * 메시지마다 한 번만 세게 했는데, 시스템 글(규칙 파일·기억·스킬 목록까지 수만 자)은 그때마다
+   * 새로 짓고 **글자 하나씩** 다시 셌다 — 그것이 한 번 그리는 값의 대부분이었다. 칸마다 지난 글과
+   * 센 값을 들고 있다가 글이 같으면(같은 글인지 보는 것은 글자 훑기보다 훨씬 싸다) 그 값을 쓴다.
+   */
+  #셈기억 = new Map();
+  #셈(칸, 글) {
+    const 있던 = this.#셈기억.get(칸);
+    if (있던 && 있던.글 === 글) return 있던.t;
+    const t = estimateTokens(글);
+    this.#셈기억.set(칸, { 글, t });
+    return t;
+  }
+
   /** 보정을 안 먹인 날 추정. 배운다() 가 견주는 값이다. */
   #원추정() {
-    const rules = this.rules ? estimateTokens(this.rules.text) : 0;
+    const rules = this.rules ? this.#셈('규칙', String(this.rules.text ?? '')) : 0;
     const listed = this.listedSkills();
     const skills = listed.length
-      ? estimateTokens(listed.map((s) => `${s.name}: ${String(s.description ?? '').slice(0, this.maxSkillDesc)}`).join('\n'))
+      ? this.#셈('스킬', listed.map((s) => `${s.name}: ${String(s.description ?? '').slice(0, this.maxSkillDesc)}`).join('\n'))
       : 0;
-    const 배움 = this.배움요약 ? estimateTokens(this.배움요약) : 0;
+    const 배움 = this.배움요약 ? this.#셈('배움', String(this.배움요약)) : 0;
     // 기억도 매 요청에 통째로 나간다 — 아래 시스템 칸에서 빼려면 여기서 먼저 잰다.
-    const 기억 = this.memory ? estimateTokens(this.memory) : 0;
+    const 기억 = this.memory ? this.#셈('기억', String(this.memory)) : 0;
     const 기억줄 = this.memory ? this.memory.split('\n').filter((l) => l.startsWith('- ')).length : 0;
 
     /*
@@ -1139,7 +1156,7 @@ export class Session {
      * 따로 줄을 갖는 것들(규칙·기억·배움·스킬)을 빼면 남는 것이 시스템
      * 칸이다. 앞으로 무엇이 더 붙어도 저절로 세어진다.
      */
-    const sys = Math.max(0, estimateTokens(this.systemPrompt()) - (rules + 기억 + 배움 + skills));
+    const sys = Math.max(0, this.#셈('시스템', this.systemPrompt()) - (rules + 기억 + 배움 + skills));
 
     let history = 0;
     let files = 0;

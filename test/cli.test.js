@@ -318,6 +318,39 @@ trace('1-도움말');
     v1.out.trim());
   check('--version 이 연결 없다는 말을 먼저 내지 않는다', !/저장된 연결이 없습니다/.test(v1.out),
     v1.out.trim().slice(0, 60));
+
+  /*
+   * ── 판 번호 한 줄에 프로그램 전체를 읽었다 (2.1.2) ─────────────────────
+   *
+   * 진입점이 대화 화면(repl.js)·한 번 돌리기·에디터 서버·평가·반입 묶음을 전부 맨 위에서 불러와,
+   * `deel --version` 도 `deel trust` 도 파일 164개(4.4MB)를 읽고 나서야 첫 줄을 냈다. 무거운 것은
+   * 그 명령을 칠 때 불러온다. 여기서는 진입점의 **정적** import 가 닿는 파일을 세어 못 박는다 —
+   * 누가 맨 위에 무거운 import 를 한 줄 되살리면 곧장 빨개진다.
+   */
+  const 닿는것 = (() => {
+    const 본것 = new Set();
+    const 쌓기 = [진입점];
+    const 무늬 = /^\s*(?:import|export)\s+(?:[^'"`;]*?\s+from\s+)?['"](\.[^'"]+)['"]/gm;
+    while (쌓기.length) {
+      const f = 쌓기.pop();
+      if (본것.has(f)) continue;
+      본것.add(f);
+      for (const m of readFileSync(f, 'utf8').matchAll(무늬)) 쌓기.push(join(dirname(f), m[1]));
+    }
+    return [...본것].map((f) => f.replace(/\\/g, '/'));
+  })();
+  const 무거운것 = ['src/repl.js', 'src/oneshot.js', 'src/acp/serve.js', 'src/tools/index.js', 'src/agent/loop.js', 'src/eval/run.js', 'src/pack/selfpack.js', 'src/doctor.js'];
+  check('★★ 진입점이 맨 위에서 대화 화면·도구·에디터 서버를 안 불러온다', !무거운것.some((m) => 닿는것.some((f) => f.endsWith(m))),
+    무거운것.filter((m) => 닿는것.some((f) => f.endsWith(m))).join(' · '));
+  check('★ 진입점이 맨 위에서 닿는 파일은 30개 안쪽이다', 닿는것.length <= 30, `${닿는것.length}개`);
+
+  // 판 번호는 설정을 안 읽는다 — 평문 열쇠가 든 설정이 있어도 --version 한 줄에 그 파일을 고쳐 쓰지 않는다.
+  const 열쇠집 = mkdtempSync(join(tmpdir(), 'deel-cli-ver-'));
+  const 설정글 = JSON.stringify({ version: 1, active: 'p', profiles: [{ id: 'p', name: 'p', kind: 'openai', baseUrl: 'http://127.0.0.1:9/v1', auth: 'bearer', apiKey: 'sk-평문열쇠', model: 'm' }] }, null, 2);
+  writeFileSync(join(열쇠집, 'config.json'), 설정글);
+  const v2 = await 띄우기(['--version'], { env: { DEEL_HOME: 열쇠집 } });
+  check('★ --version 은 설정 파일을 안 건드린다 (열쇠 잠그기 옮김도 안 돈다)', v2.code === 0 && readFileSync(join(열쇠집, 'config.json'), 'utf8') === 설정글);
+  rmSync(열쇠집, { recursive: true, force: true });
 }
 
 {

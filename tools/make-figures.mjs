@@ -185,7 +185,7 @@ const 흐름말 = {
       },
       {
         갈래: '관문', 표: '②', 이름: '승인 관문 · auto · confirm · strict', 막힘: '✕ 멈춤',
-        노트: ['auto 는 안 묻고(되돌리기가 안전망) · confirm 은', '되돌릴 수 없는 명령만 · strict 는 파일 변경·명령 전부.',
+        노트: ['auto 는 안 묻고(되돌리기가 안전망) · confirm 은', '되돌릴 수 없는 명령·MCP 도구 · strict 는 변경·명령 전부.',
           '금지(deny) 규칙은 물어보지도 않고 막는다.'],
       },
       {
@@ -231,7 +231,7 @@ const 흐름말 = {
       {
         갈래: '관문', 표: '②', 이름: 'Approval gate · auto·confirm·strict', 막힘: '✕ stopped',
         노트: ['auto never asks (undo is the net) · confirm asks for',
-          'irreversible commands · strict for every change and command.',
+          'irreversible commands and MCP tools · strict for everything.',
           'Deny rules block without asking at all.'],
       },
       {

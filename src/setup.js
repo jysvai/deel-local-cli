@@ -16,11 +16,9 @@ import { 바깥인가, 봉인됐나 } from './safety/runmode.js';
 import { 제공자들, 제공자고르기, 어디것일까, 주소후보, 막힌까닭, 열쇠다듬기 } from './providers/index.js';
 import { writeFileSync } from 'node:fs';
 
-export function banner() {
-  say('');
-  say(`  ${c.cyan('deel')} ${c.gray('— 로컬 모델 코딩 에이전트')}`);
-  say('');
-}
+// 머리 한 줄은 ui/banner.js 에 있다 — 진입점이 이 파일(40개를 끌고 온다) 없이 쓰게 (2.1.2).
+export { banner } from './ui/banner.js';
+import { banner } from './ui/banner.js';
 
 /**
  * 사람이 친 주소가 주소 꼴인가. 틀렸으면 까닭(사람 말), 멀쩡하면 null.

@@ -3,27 +3,22 @@
 import { join, resolve } from 'node:path';
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
 import { c, say, mark, rule, clip, width } from '../src/ui/ansi.js';
-import { runSetup, runDiagnose, showStatus, banner } from '../src/setup.js';
-import { chatLoop } from '../src/repl.js';
-import { runOnce, EXIT, 실패덩이 } from '../src/oneshot.js';
-import { packSelf, audit, reviewSheet } from '../src/pack/selfpack.js';
-import { sbom, 심사명세, 명세요약 } from '../src/pack/sbom.js';
-import { runScan } from '../src/backend/scanui.js';
-import { closeConnections } from '../src/backend/http.js';
-import { parseSize } from '../src/backend/ctxsize.js';
-import { runSessions } from '../src/agent/sessionui.js';
-import { acp } from '../src/acp/serve.js';
-import { runCompletion } from '../src/completion.js';
-import { runReset } from '../src/reset.js';
-import { 마크다운, 읽는갈래 } from '../src/tools/doc2md.js';
+import { banner } from '../src/ui/banner.js';
+import { EXIT, 실패덩이, closeConnections } from '../src/exit.js';
 import { 언어잡기, 언어, 말 } from '../src/i18n/index.js';
 import { 믿기, 안믿기, 믿는목록, 프로젝트금지칸, 너무넓은자리 as 넓은자리 } from '../src/safety/trust.js';
 import { load as 설정읽기, homeDir, 이PC설정값 } from '../src/config.js';
 import { 규칙모으기, 어떻게할까, 확인목록, 확인인자, 확인돌리기 } from '../src/safety/policy.js';
 import { 기록자리, 세기, 도구차례, 막힘차례, 셈JSON } from '../src/stats.js';
-import { 진찰 } from '../src/doctor.js';
-import { 설명, 설명줄들 } from '../src/configexplain.js';
-import { runEval } from '../src/eval/run.js';
+
+/*
+ * ── 무거운 것은 그 명령을 칠 때 불러온다 (2.1.2) ─────────────────────────
+ *
+ * 여기 맨 위에서 대화 화면·한 번 돌리기·에디터 서버·평가·반입 묶음을 다 불러와, `deel --version`
+ * 도 `deel trust` 도 파일 164개(4.4MB)를 읽고 나서야 첫 줄을 냈다. 맨 위에는 모든 명령이 쓰는
+ * 가벼운 것(화면 글·말·설정·신뢰·규칙)만 두고, 나머지는 쓰는 자리에서 `await import()` 한다.
+ * test/cli.test.js 가 맨 위에서 닿는 파일 수를 못 박는다.
+ */
 
 const MIN_NODE = 20;
 
@@ -60,7 +55,8 @@ function 말정하기() {
 }
 
 // 사내 반입용 묶음 만들기.
-function runPack(flags) {
+async function runPack(flags) {
+  const { packSelf } = await import('../src/pack/selfpack.js');
   const 한국어 = 언어() === 'ko';
   const out = flags.out ? String(flags.out) : join(process.cwd(), 한국어 ? 'deel-반입.zip' : 'deel-import.zip');
   const r = packSelf(out);
@@ -112,7 +108,7 @@ function runPack(flags) {
  * 적어 놨는데 안 먹는다」 가 흔하다. 그때 사람은 그 파일만 고치다가 설정이라는
  * 것을 안 믿게 된다. 층을 열어 보여 주면 5초에 끝나는 일이다.
  */
-function runConfig(args, flags) {
+async function runConfig(args, flags) {
   const 무엇 = String(args[0] ?? '');
   const 칸 = String(args[1] ?? '');
   if (무엇 !== 'explain' || !칸) {
@@ -122,6 +118,7 @@ function runConfig(args, flags) {
     say('');
     return 1;
   }
+  const { 설명, 설명줄들 } = await import('../src/configexplain.js');
   const r = 설명(칸, { root: flags.root ? String(flags.root) : process.cwd() });
   /*
    * 찾았나 못 찾았나를 **끝값으로도** 말한다.
@@ -161,6 +158,7 @@ async function runDoctor(flags) {
     await import('../src/config.js');
   const { 지금모드, 바깥인가, 나갈수있나, 봉인됐나 } = await import('../src/safety/runmode.js');
   const { allowEndpoint } = await import('../src/safety/network.js');
+  const { 진찰 } = await import('../src/doctor.js');
 
   banner();
   let cfg = null;
@@ -514,7 +512,8 @@ function runRules(args, flags) {
 }
 
 // 묶지 않고 심사 내용만 보기.
-function runAudit() {
+async function runAudit() {
+  const { audit, reviewSheet } = await import('../src/pack/selfpack.js');
   say('');
   say(reviewSheet(audit(), new Date().toISOString().replace('T', ' ').slice(0, 19)));
   return 0;
@@ -536,7 +535,8 @@ function runAudit() {
  * `--out` 이 없으면 표준출력으로 낸다. 파이프에 바로 물리는 자리라
  * 여기서는 say() 를 안 쓴다 (completion 과 같은 규칙이다).
  */
-function runDoc2md(args, flags) {
+async function runDoc2md(args, flags) {
+  const { 마크다운, 읽는갈래 } = await import('../src/tools/doc2md.js');
   const 파일 = args[0];
   if (!파일) {
     say(`  ${mark.warn} 바꿀 파일을 주세요: ${c.white('deel doc2md 보고서.pptx')}`);
@@ -568,7 +568,7 @@ function runDoc2md(args, flags) {
   return 0;
 }
 
-function runSbom(flags) {
+async function runSbom(flags) {
   const 어느것 = String(flags.only ?? '').toLowerCase();
   /*
    * 모르는 `--only` 는 멈춘다.
@@ -581,6 +581,8 @@ function runSbom(flags) {
     process.stderr.write(`\n  --only 에는 sbom · 명세(spec) 중 하나를 주세요: ${String(flags.only)}\n\n`);
     return EXIT.usage;
   }
+  const { audit } = await import('../src/pack/selfpack.js');
+  const { sbom, 심사명세, 명세요약 } = await import('../src/pack/sbom.js');
   const a = audit();
   const at = new Date();
   const 낼것 = 어느것 === 'sbom' ? sbom(a, { at })
@@ -651,6 +653,8 @@ const 값깃발 = new Set([
   'out', 'only', 'days', 'tool', 'url', 'key', 'model', 'host', 'ports', 'timeout', 'rm', 'delete',
   // run --check <명령> (agent/donecheck.js) · eval --repeat <수> (src/eval/run.js).
   'check', 'repeat',
+  // run --check-rounds <수> · --check-timeout <초> — 설정의 checkRounds · checkTimeout 을 이 실행에서만 덮는다 (2.1.2).
+  'check-rounds', 'check-timeout',
 ]);
 // 값을 줘도 되고 안 줘도 되는 깃발. `--resume` 만 치면 이어 할 대화를 고른다.
 const 값골라깃발 = new Set(['resume']);
@@ -909,6 +913,7 @@ function help() {
   say(`    ${c.gray('--yes')}              승인이 필요한 것도 그냥 실행. ${c.yellow('기본은 거부입니다')}`);
   // 새로 넣는 도움말 줄은 말() 로 적는다 — 영어로 켠 사람에게 한국어 줄을 더 새게 하지 않는다(test/langleak.test.js 의 래칫).
   say(`    ${c.gray('--check <cmd>')}       ${말('cli.checkFlag')}`);
+  say(`    ${c.gray('--check-rounds <n> · --check-timeout <s>')}  ${말('cli.checkRoundsFlag')}`);
   /*
    * 답의 모양을 못 박는 자리 (src/agent/outschema.js).
    *
@@ -952,6 +957,19 @@ async function main() {
   읽은인자 = 읽음;
   const { cmd: 친명령, args, flags, 탈: 인자탈들 } = 읽음;
 
+  /*
+   * 판 번호.
+   *
+   * 연결이 없어도 답해야 한다. `deel --version` 은 "이게 깔려 있나, 무슨 판인가"
+   * 를 묻는 것이지 일을 시키는 것이 아닌데, 전에는 설정이 없다는 말이 먼저 나와서
+   * 깔린 것 자체가 아닌 줄 알았다. 사내에 반입한 판을 확인할 때 제일 먼저 치는
+   * 명령이기도 하다.
+   *
+   * 그리고 **설정을 읽기 전에** 답한다 (2.1.2). 설정 읽기는 평문 열쇠를 잠그러 옮기며
+   * PowerShell 을 띄우고 설정 파일을 고쳐 쓸 수 있다 — 「무슨 판인가」 를 물은 한 줄이 할 일이 아니다.
+   */
+  if (flags.version || 친명령 === 'version') { say(판번호()); return 0; }
+
   // 서류를 뽑는 명령(audit·sbom·pack)이 어느 말로 나갈지를 여기서 정한다.
   말정하기();
 
@@ -965,16 +983,6 @@ async function main() {
   const cmd = (친명령 === 'online' || 친명령 === 'offline')
     ? (flags[친명령] = true, '')
     : 친명령;
-
-  /*
-   * 판 번호.
-   *
-   * 연결이 없어도 답해야 한다. `deel --version` 은 "이게 깔려 있나, 무슨 판인가"
-   * 를 묻는 것이지 일을 시키는 것이 아닌데, 전에는 설정이 없다는 말이 먼저 나와서
-   * 깔린 것 자체가 아닌 줄 알았다. 사내에 반입한 판을 확인할 때 제일 먼저 치는
-   * 명령이기도 하다.
-   */
-  if (flags.version || cmd === 'version') { say(판번호()); return 0; }
 
   if (flags.help || cmd === 'help') { help(); return 0; }
 
@@ -1091,6 +1099,9 @@ async function main() {
    * 거절한다. 같은 값을 문에 따라 다르게 받으면, 깃발로 준 사람만 제 값이 먹는 줄 안다.
    * `auto` 는 「서버에 맞춤」 이라는 뜻이라 안 준 것으로 받는다.
    */
+  const parseSize = flags.ctx !== undefined || flags['max-tokens'] !== undefined
+    ? (await import('../src/backend/ctxsize.js')).parseSize
+    : () => null;
   for (const 이름 of ['ctx', 'max-tokens']) {
     if (flags[이름] === undefined) continue;
     if (String(flags[이름]).trim().toLowerCase() === 'auto') { delete flags[이름]; continue; }
@@ -1109,7 +1120,7 @@ async function main() {
     // deel -p "..." 처럼 치면 그대로 여기로 온다.
     case 'run':
     case '-p':
-      return runOnce({
+      return (await import('../src/oneshot.js')).runOnce({
         prompt: args.join(' '),
         root: flags.root ? String(flags.root) : undefined,
         mode: flags.mode ? String(flags.mode) : undefined,
@@ -1128,10 +1139,12 @@ async function main() {
         outputSchema: flags['output-schema'] ? String(flags['output-schema']) : undefined,
         // 끝내려는 자리에서 돌릴 검사 (agent/donecheck.js). 설정의 check 를 이긴다.
         check: flags.check !== undefined ? String(flags.check) : undefined,
+        checkRounds: flags['check-rounds'] !== undefined ? String(flags['check-rounds']) : undefined,
+        checkTimeout: flags['check-timeout'] !== undefined ? String(flags['check-timeout']) : undefined,
       });
     case '':
     case 'chat':
-      return chatLoop({
+      return (await import('../src/repl.js')).chatLoop({
         root: flags.root ? String(flags.root) : undefined,
         mode: flags.mode ? String(flags.mode) : undefined,
         work: flags.work ? String(flags.work) : undefined,
@@ -1160,7 +1173,7 @@ async function main() {
      * 왜 아무 반응이 없는지는 표준오류에 적어 둔다.
      */
     case 'acp':
-      return acp({
+      return (await import('../src/acp/serve.js')).acp({
         root: flags.root ? String(flags.root) : undefined,
         mode: flags.mode ? String(flags.mode) : undefined,
         work: flags.work ? String(flags.work) : undefined,
@@ -1173,11 +1186,11 @@ async function main() {
         online: flags.online === true || flags.online === 'true',
       });
     case 'status':
-      return showStatus();
+      return (await import('../src/setup.js')).showStatus();
     case 'setup':
-      return runSetup(flags);
+      return (await import('../src/setup.js')).runSetup(flags);
     case 'diagnose':
-      return runDiagnose(flags);
+      return (await import('../src/setup.js')).runDiagnose(flags);
     /*
      * doctor 는 diagnose 의 **앞자락**이다.
      *
@@ -1203,14 +1216,14 @@ async function main() {
       return runDoc2md(args, flags);
     // 과제 모음(골든셋)을 실제 모델로 돌려 성공률을 잰다 (src/eval/run.js).
     case 'eval':
-      return runEval({
+      return (await import('../src/eval/run.js')).runEval({
         폴더: args[0] ?? null,
         init: flags.init === true || flags.init === 'true',
         repeat: flags.repeat ?? 1,
         keep: flags.keep === true || flags.keep === 'true',
         json: flags.json === true || flags.json === 'true',
         only: flags.only !== undefined ? String(flags.only) : null,
-        시간초: flags.timeout !== undefined ? Number(flags.timeout) : null,
+        시간초: flags.timeout !== undefined ? flags.timeout : null,
         // 과제마다 띄우는 `deel run` 에 그대로 넘길 것 — 바깥 게이트웨이면 --online 이 있어야 돈다.
         깃발들: [
           ...(flags.online === true || flags.online === 'true' ? ['--online'] : []),
@@ -1222,10 +1235,10 @@ async function main() {
     case 'sbom':
       return runSbom(flags);
     case 'scan':
-      return runScan(flags);
+      return (await import('../src/backend/scanui.js')).runScan(flags);
     case 'sessions':
     case 'ls':
-      return runSessions(flags);
+      return (await import('../src/agent/sessionui.js')).runSessions(flags);
     /*
      * 초기화.
      *
@@ -1233,7 +1246,7 @@ async function main() {
      * 깨져서인데, 읽고 시작하면 그 자리에서 못 넘어간다.
      */
     case 'reset':
-      return runReset(args, flags);
+      return (await import('../src/reset.js')).runReset(args, flags);
     /*
      * 탭 완성 스크립트를 낸다 (src/completion.js).
      *
@@ -1241,7 +1254,7 @@ async function main() {
      * 처럼 바로 파이프에 물릴 수 있어야 한다. 그래서 여기서는 say() 를 안 쓴다.
      */
     case 'completion':
-      return runCompletion(args);
+      return (await import('../src/completion.js')).runCompletion(args);
     default:
       say('');
       say(`  ${c.red('모르는 명령')} ${c.bold(cmd)}`);

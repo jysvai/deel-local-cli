@@ -8,6 +8,7 @@ import { toolSchemas, runTool, TOOLS, 파일현황, 바뀔내용 } from '../tool
 import { isMutating, 셸이파일에쓰나 } from '../safety/guard.js';
 import { effortFor, tokensFor, fullCap, wasCut, shiftLevel, 자동강도, 천장고르기, 인사인가 as 인사말인가 } from './effort.js';
 import { 배울전선, 카드고치기, 카드저장꼴, 전선붙이기 } from '../backend/wire.js';
+import { 읽기만하나 } from '../backend/mcp.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
 import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박을것, 접힌파일열쇠 } from './compact.js';
@@ -2052,12 +2053,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         // 친다 — 읽을 때마다 물으면 사람은 y 만 치다가 정작 물어야 할 것도 그렇게 넘긴다.
         // 끄는가는 **도구가 읽는 자**(일감인자)로 가른다. `stop` 칸만 보면 작은 모델이 보내는
         // `kill` · `끝내기` 가 안 묻고 서버를 끄고, `stop:"false"` 는 `!!` 로 참이 되어 헛물음이 난다.
+        const 남의도구 = call.name.startsWith('mcp__');
         const 바꾸는것 = (call.name === 'Jobs' ? 일감인자(call.args).끝내기 === true : 바꾸는도구.includes(call.name))
-          || call.name.startsWith('mcp__');
+          || 남의도구;
+        // confirm 은 「되돌릴 수 없는 것만」 묻는다. 남의 프로그램이 한 일은 /undo 가 못 되돌리므로
+        // MCP 도구도 묻는다 — 서버가 읽기만 한다고 적은 것만 빼고 (backend/mcp.js 의 읽기만하나).
         const needsOk = (판정.답 === 'allow' && !정책이묻게함) ? false : session.mode === 'strict'
           ? 바꾸는것
           : session.mode === 'confirm'
-            ? (call.name === 'Bash' && isMutating(call.args?.command))
+            ? (call.name === 'Bash' && isMutating(call.args?.command)) || (남의도구 && !읽기만하나(ctx.mcp, call.name))
             : false;
         if (needsOk) {
           /*

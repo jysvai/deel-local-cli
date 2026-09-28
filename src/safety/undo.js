@@ -1,7 +1,7 @@
 // 되돌리기. 승인 프롬프트를 안 쓰는 대신 이게 안전망이다.
 // 파일을 고치기 전에 항상 이전 내용을 떠 놓고, /undo 로 턴 단위로 되돌린다.
 import { join, dirname, basename, resolve, relative, isAbsolute, sep } from 'node:path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, rmdirSync, appendFileSync, statSync, renameSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, rmdirSync, appendFileSync, statSync, renameSync, realpathSync, openSync, readSync, closeSync } from 'node:fs';
 import { 줄로끝나나, 본인만잠그기 } from '../jsonl.js';
 import { looksBinary } from '../tools/encoding.js';
 import { 살림폴더만들기 } from './audit.js';
@@ -357,7 +357,7 @@ export class History {
     if (남길것.length !== recs.length) {
       try {
         writeFileSync(this.file, 남길것.map(적을줄).join('\n') + (남길것.length ? '\n' : ''), 'utf8');
-        this.#잠갔나 = false; this.#잠그기();
+        this.#잠갔나 = false; this.#잠그기(); this.#턴표 = null;
       } catch { return false; }
     }
     if (this.#이번턴.get(rec.path) === rec) {
@@ -473,7 +473,7 @@ export class History {
     try {
       writeFileSync(this.file, 남길것.map(적을줄).join('\n') + (남길것.length ? '\n' : ''), 'utf8');
       // 통째로 다시 쓰면 새 파일일 수 있다 — 빗장을 다시 건다 (agent/store.js 도 같다).
-      this.#잠갔나 = false; this.#잠그기();
+      this.#잠갔나 = false; this.#잠그기(); this.#턴표 = null;
       this.줄이기못함 = null;
     } catch (err) {
       /*
@@ -540,10 +540,80 @@ export class History {
     return 것들;
   }
 
+  /*
+   * ── 턴 수는 덧붙인 만큼만 읽는다 (2.1.2) ────────────────────────────────
+   *
+   * 대화 화면은 턴이 끝날 때마다 여기로 되돌릴 턴 수를 센다(repl.js). 여태 all() 을 불러 이력
+   * 파일을 **매번 처음부터** 읽고 줄마다 JSON.parse 했다 — 이 파일은 고치기 전 원문을 통째로
+   * 담아 32MB 까지 자란다. 이력은 거의 늘 덧붙이기라, 지난번에 센 자리 뒤만 읽으면 된다.
+   *
+   * 센 자리는 **온전한 줄의 끝**(개행 뒤)에만 둔다. 뒤에 개행 없는 반쪽 줄이 있으면 적는 중일 수
+   * 있으니 이번 셈에만 넣고 자리는 안 옮긴다. 다른 쪽(다른 탭·다른 deel)이 파일을 통째로 다시
+   * 썼으면 처음부터 다시 센다 — 줄었거나, 크기가 같은데 시각이 바뀌었거나, 센 자리 앞뒤 조각이
+   * 달라졌으면 다시 쓴 것으로 본다. 이 이력이 제 손으로 다시 쓰는 자리(prune·undo·버리기)는
+   * 표를 버린다.
+   */
+  #턴표 = null;
+
+  /** [시작, 끝) 바이트를 읽는다. 끝이 파일보다 크면 있는 만큼. */
+  #바이트(시작, 끝) {
+    const 길이 = Math.max(0, 끝 - 시작);
+    const buf = Buffer.alloc(길이);
+    if (!길이) return buf;
+    const fd = openSync(this.file, 'r');
+    try {
+      let 읽음 = 0;
+      while (읽음 < 길이) {
+        const n = readSync(fd, buf, 읽음, 길이 - 읽음, 시작 + 읽음);
+        if (!n) break;
+        읽음 += n;
+      }
+      return buf.subarray(0, 읽음);
+    } finally { closeSync(fd); }
+  }
+
+  /** 한 줄을 표에 센다. all() 과 같은 자로 — 깨졌거나 기록 꼴이 아니면 깨진 줄이다. */
+  static #줄셈(표, 줄) {
+    if (!줄) return;
+    let r;
+    try { r = JSON.parse(줄); } catch { 표.깨진 += 1; return; }
+    if (!r || typeof r !== 'object' || Array.isArray(r)) { 표.깨진 += 1; return; }
+    if (!표.본턴.has(r.turn)) { 표.본턴.add(r.turn); 표.턴들.push(r.turn); }
+  }
+
   turns() {
-    const seen = [];
-    for (const r of this.all()) if (!seen.includes(r.turn)) seen.push(r.turn);
-    return seen;
+    let 판;
+    try { 판 = statSync(this.file); } catch { this.#턴표 = null; this.깨진줄 = 0; return []; }
+    const 조각 = 64;
+    let 표 = this.#턴표;
+    const 다시썼나 = !표
+      || 판.size < 표.크기
+      || (판.size === 표.크기 && 판.mtimeMs !== 표.시각)
+      || (표.크기 > 0 && !this.#바이트(0, Math.min(조각, 표.크기)).equals(표.머리))
+      || (표.크기 > 0 && !this.#바이트(Math.max(0, 표.크기 - 조각), 표.크기).equals(표.끝));
+    if (다시썼나) 표 = { 크기: 0, 시각: 0, 머리: Buffer.alloc(0), 끝: Buffer.alloc(0), 턴들: [], 본턴: new Set(), 깨진: 0 };
+
+    // 센 자리 뒤를 읽는다. 온전한 줄까지만 표에 넣고, 반쪽 줄은 이번 셈에만.
+    const 새것 = 판.size > 표.크기 ? this.#바이트(표.크기, 판.size) : Buffer.alloc(0);
+    const 마지막개행 = 새것.lastIndexOf(0x0a);
+    if (마지막개행 >= 0) {
+      for (const 줄 of 새것.subarray(0, 마지막개행 + 1).toString('utf8').split('\n')) History.#줄셈(표, 줄);
+      표.크기 += 마지막개행 + 1;
+      표.머리 = this.#바이트(0, Math.min(조각, 표.크기));
+      표.끝 = this.#바이트(Math.max(0, 표.크기 - 조각), 표.크기);
+    }
+    표.시각 = 판.mtimeMs;
+    this.#턴표 = 표;
+
+    const 꼬리 = 마지막개행 >= 0 ? 새것.subarray(마지막개행 + 1) : 새것;
+    if (!꼬리.length) {
+      this.깨진줄 = 표.깨진;
+      return [...표.턴들];
+    }
+    const 이번 = { 턴들: [...표.턴들], 본턴: new Set(표.본턴), 깨진: 표.깨진 };
+    History.#줄셈(이번, 꼬리.toString('utf8'));
+    this.깨진줄 = 이번.깨진;
+    return 이번.턴들;
   }
 
   /**
@@ -723,7 +793,7 @@ export class History {
     let 이력줄임 = { ok: true };
     try {
       writeFileSync(this.file, keep.map(적을줄).join('\n') + (keep.length ? '\n' : ''), 'utf8');
-      this.#잠갔나 = false; this.#잠그기();
+      this.#잠갔나 = false; this.#잠그기(); this.#턴표 = null;
     } catch (err) {
       이력줄임 = { ok: false, 왜: err?.message ?? String(err) };
     }

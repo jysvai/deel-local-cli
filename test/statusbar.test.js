@@ -356,6 +356,26 @@ trace('머리말-별부탁');
   s.messages = [{ role: 'tool', tool_call_id: 't1', content: 'z'.repeat(3600) }];
   const 도구칸 = s.breakdown().rows.find((r) => /도구 결과|tool results/i.test(r.label));
   check('  도구 결과는 여전히 도구 결과 칸으로 간다', (도구칸?.n ?? 0) >= 1000, JSON.stringify(도구칸));
+
+  /*
+   * 시스템 글도 같다 (2.1.2). 그릴 때마다 시스템 글(규칙 파일·기억·스킬 목록까지 수만 자)을 새로 짓고
+   * **글자 하나씩** 다시 셌다 — 대화를 안 세게 한 뒤로는 이것이 한 번 그리는 값의 대부분이었다.
+   * 글이 같으면 센 값을 쓴다. 긴 글을 글자 단위로 훑은 횟수를 직접 센다.
+   */
+  const 규칙세션 = new Session({ kind: 'openai', base: 'http://127.0.0.1:1/v1', model: 'x', ctx: 131072 }, { root });
+  규칙세션.rules = { text: '- 이 저장소의 규칙이다. 길게 적혀 있다.\n'.repeat(600), file: 'AGENTS.md' };
+  규칙세션.memory = '- 기억 한 줄\n'.repeat(300);
+  규칙세션.breakdown();
+  const 원래훑기 = String.prototype[Symbol.iterator];
+  let 긴글훑음 = 0;
+  String.prototype[Symbol.iterator] = function 훑기() { if (this.length > 2000) 긴글훑음 += 1; return 원래훑기.call(this); };
+  let 다시;
+  try { 다시 = [규칙세션.breakdown(), 규칙세션.breakdown(), 규칙세션.breakdown()]; } finally { String.prototype[Symbol.iterator] = 원래훑기; }
+  check('★★ 시스템 글이 그대로면 다시 그릴 때 긴 글을 글자 단위로 안 훑는다', 긴글훑음 === 0, `긴 글 훑음 ${긴글훑음}번`);
+  check('  셈 값은 그대로다', 다시.every((x) => x.used === 다시[0].used) && 다시[0].used > 5000, 다시.map((x) => x.used).join(' · '));
+  const 앞 = 규칙세션.breakdown().used;
+  규칙세션.memory += '- 새로 적은 기억\n'.repeat(400);
+  check('★ 시스템 글이 바뀌면 새로 센다', 규칙세션.breakdown().used > 앞 + 500, `${앞} → ${규칙세션.breakdown().used}`);
 }
 
 // ── 첫 화면은 어차피 안 거칠 주소에 「프록시 못 씀」 을 붙이지 않는다 ────

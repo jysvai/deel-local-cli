@@ -1138,6 +1138,53 @@ trace('새폴더-거두기');
   rmSync(방, { recursive: true, force: true });
 }
 
+trace('9-턴수는-덧붙인만큼만-읽는다');
+/*
+ * 대화 화면은 턴이 끝날 때마다 turns() 로 되돌릴 턴 수를 센다 (repl.js). 그런데 turns() 는 all() 을 불러
+ * 이력 파일(최대 32MB — 고치기 전 파일 원문이 통째로 든다)을 **매번 처음부터** 읽고 줄마다 JSON.parse 했다.
+ * 이력은 거의 늘 덧붙이기라, 지난번에 센 자리 뒤만 읽으면 된다 (2.1.2).
+ */
+{
+  const 방 = mkdtempSync(join(tmpdir(), 'deel-undo-turns-'));
+  const h = new History(방);
+  const 쓰기 = (턴, 이름) => { h.turn = 턴; writeFileSync(join(방, 이름), 'x'.repeat(1000)); h.snapshot(join(방, 이름), 'Write'); };
+  쓰기(1, 'a.txt'); 쓰기(1, 'b.txt'); 쓰기(2, 'c.txt');
+  check('★ 처음 세면 턴이 맞다', JSON.stringify(h.turns()) === '[1,2]', JSON.stringify(h.turns()));
+  const 원래 = JSON.parse;
+  let 푼수 = 0;
+  JSON.parse = (...a) => { 푼수 += 1; return 원래(...a); };
+  let 두번째;
+  try { 쓰기(3, 'd.txt'); 두번째 = h.turns(); } finally { JSON.parse = 원래; }
+  check('★★ 덧붙인 뒤에는 새 줄만 푼다 (이력 전체를 다시 안 읽는다)', 푼수 === 1 && JSON.stringify(두번째) === '[1,2,3]', `푼 줄 ${푼수} · ${JSON.stringify(두번째)}`);
+  푼수 = 0;
+  JSON.parse = (...a) => { 푼수 += 1; return 원래(...a); };
+  try { h.turns(); } finally { JSON.parse = 원래; }
+  check('★ 안 바뀌었으면 하나도 안 푼다', 푼수 === 0, `푼 줄 ${푼수}`);
+
+  // 다른 History(다른 탭·다른 프로세스)가 파일을 통째로 다시 쓰면 처음부터 다시 센다.
+  const 옆 = new History(방);
+  옆.undo(1);
+  check('★★ 다른 쪽이 되돌려 파일을 다시 썼으면 새로 센다', JSON.stringify(h.turns()) === '[1,2]', JSON.stringify(h.turns()));
+  h.undo(1);
+  check('★ 제가 되돌린 뒤에도 맞다', JSON.stringify(h.turns()) === '[1]', JSON.stringify(h.turns()));
+  // 크기가 같게 바꿔 써도(끝 조각이 다르면) 새로 센다 — 길이만 보면 속는다.
+  const 글 = readFileSync(h.file, 'utf8');
+  writeFileSync(h.file, 글.replaceAll('"turn":1', '"turn":7'));
+  check('★ 같은 길이로 바꿔 써도 새로 센다', JSON.stringify(h.turns()) === '[7]', JSON.stringify(h.turns()));
+  // 깨진 줄 수도 그대로 센다 (대화 화면이 「몇 줄을 못 읽었습니다」 를 여기서 읽는다).
+  appendFileSync(h.file, '{깨진 줄\n');
+  h.turns();
+  check('★ 덧붙은 깨진 줄도 센다', h.깨진줄 === 1, String(h.깨진줄));
+  // 적는 중인 반쪽 줄(개행 없음)은 이번 셈에만 깨진 줄로 넣고 굳히지 않는다 — 다 적히면 그 턴을 센다.
+  appendFileSync(h.file, '{"turn":9');
+  const 반쪽때 = h.turns();
+  check('★ 반쪽 줄은 이번엔 깨진 줄로 센다 (all() 과 같은 자)', h.깨진줄 === 2 && !반쪽때.includes(9), `${h.깨진줄} · ${JSON.stringify(반쪽때)}`);
+  appendFileSync(h.file, ',"at":1}\n');
+  const 다적힌때 = h.turns();
+  check('★★ 다 적힌 뒤에는 그 턴을 센다 (반쪽을 굳혀 두지 않았다)', 다적힌때.includes(9) && h.깨진줄 === 1, `${h.깨진줄} · ${JSON.stringify(다적힌때)}`);
+  rmSync(방, { recursive: true, force: true });
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n되돌리기 검사  ${D}(안전망이 파일을 지우지 않는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

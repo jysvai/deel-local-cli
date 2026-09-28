@@ -32,7 +32,10 @@
 // 고친 뒤 실패를 받고 **다시 아무것도 안 바꾼 채** 끝내려 하면 다시 돌리지 않는다 —
 // 같은 결과가 나올 것을 또 기다리게 하지 않고, 실패로 끝낸다.
 
-/** 한 턴에 몇 번까지 「고치고 → 다시 검사」 를 돌까. 기본과 상한. */
+/**
+ * 한 턴에 검사를 **몇 번 돌리나**(checkRounds). 기본과 상한. 실패하면 마지막 판을 빼고 출력을 모델에게
+ * 돌려주므로 고칠 기회는 판수 − 1 이다 — 3 이면 처음 검사 뒤 두 번 더 고쳐 본다.
+ */
 export const 기본판수 = 3;
 export const 최대판수 = 10;
 /** 검사 한 번의 제한 시간(ms). Bash 도구의 상한(10분)과 같다 — 넘겨 봐야 거기서 잘린다. */
@@ -53,11 +56,16 @@ export function 검사설정(cfg = {}, 덮을명령 = undefined) {
   if (!명령) return null;
   /*
    * 판수는 1 ~ 10 에서만 받는다. 0 이나 음수를 「끈다」 로 읽으면 명령을 적어 둔 사람이
-   * 왜 안 도는지 모른다. 끄려면 check 를 지운다. 숫자가 아니면 기본값이다.
+   * 왜 안 도는지 모른다. 끄려면 check 를 지운다. 못 쓰는 값이면 기본값이다.
+   *
+   * 수와 수로 된 글("5")만 수로 읽는다. 여태 Number() 를 그대로 써서 true 가 1 이 되어 고칠 기회
+   * 없이 한 번에 끝났다. 못 쓰는 값은 **기본값을 썼다고 적는다** (아래 줄임 · 2.1.2).
    */
-  const n = Number(cfg?.checkRounds);
+  const 수로 = (v) => (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN);
+  const 적었나 = (v) => v !== undefined && v !== null;
+  const n = 수로(cfg?.checkRounds);
   const 판수 = Number.isInteger(n) && n >= 1 ? Math.min(n, 최대판수) : 기본판수;
-  const 초 = Number(cfg?.checkTimeout);
+  const 초 = 수로(cfg?.checkTimeout);
   const 시간 = Number.isFinite(초) && 초 > 0 ? Math.min(기본시간, Math.max(최소시간, Math.round(초 * 1000))) : 기본시간;
   /*
    * 상한을 넘겨 **줄인 것**은 적어 둔다 — 첫 검사 시작 사건에 실려 화면이 말한다.
@@ -67,6 +75,13 @@ export function 검사설정(cfg = {}, 덮을명령 = undefined) {
   const 줄임 = [];
   if (Number.isInteger(n) && n > 최대판수) 줄임.push({ 칸: 'checkRounds', 준값: n, 쓴값: 최대판수 });
   if (Number.isFinite(초) && 초 * 1000 > 기본시간) 줄임.push({ 칸: 'checkTimeout', 준값: 초, 쓴값: 기본시간 / 1000 });
+  // 못 쓰는 값 — 상한과 같은 자리로 말하되 「넘었다」 가 아니라 「못 쓴다」 로 (틀림).
+  if (적었나(cfg?.checkRounds) && !(Number.isInteger(n) && n >= 1)) {
+    줄임.push({ 칸: 'checkRounds', 준값: JSON.stringify(cfg.checkRounds), 쓴값: 기본판수, 틀림: true });
+  }
+  if (적었나(cfg?.checkTimeout) && !(Number.isFinite(초) && 초 > 0)) {
+    줄임.push({ 칸: 'checkTimeout', 준값: JSON.stringify(cfg.checkTimeout), 쓴값: 기본시간 / 1000, 틀림: true });
+  }
   return { 명령, 판수, 시간, 줄임 };
 }
 

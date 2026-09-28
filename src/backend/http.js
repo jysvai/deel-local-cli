@@ -36,29 +36,8 @@ export const AUTH_STYLES = [
   { id: 'none', label: '인증 없음', apply: () => {} },
 ];
 
-/**
- * 열어 둔 연결을 닫는다. 프로그램을 끝내기 직전에 부른다.
- *
- * fetch 는 연결을 재사용하려고 소켓을 살려 둔다(keep-alive). 그래서 할 일이
- * 끝나도 프로세스가 저절로 안 끝난다. 예전에는 그걸 process.exit() 으로
- * 잘라 냈는데, 윈도우에서 닫는 중인 핸들을 두고 끊으면 libuv 가 abort 한다.
- *
- *   Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), src\win\async.c
- *
- * 실제로 `deel scan` 이 결과를 다 찍고 나서 이렇게 죽었다. 화면에는 정상으로
- * 보이는데 종료코드는 3221226505(0xC0000409) 였다.
- *
- * 그래서 잘라 내는 대신 닫는다. 이 자리는 Node 내부 이름이라 없을 수도 있으므로,
- * 없으면 조용히 넘어간다 — 그때는 부르는 쪽의 시간제한이 받아 준다.
- * 프록시 길은 요청마다 소켓을 새로 열고 끝나면 닫으므로(Connection: close) 여기 안 온다.
- */
-export function closeConnections() {
-  try {
-    const d = globalThis[Symbol.for('undici.globalDispatcher.1')];
-    if (d && typeof d.close === 'function') return d.close().catch(() => {});
-  } catch { /* 없으면 그만 */ }
-  return Promise.resolve();
-}
+// 살려 둔 연결 닫기는 src/exit.js 에 있다 — 진입점이 이 파일 없이 끝맺게 (2.1.2).
+export { closeConnections } from '../exit.js';
 
 export function headersFor(authStyle, key, extra = {}) {
   const h = { 'Content-Type': 'application/json', Accept: 'application/json', ...extra };

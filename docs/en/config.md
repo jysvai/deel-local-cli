@@ -358,11 +358,12 @@ Stops a turn from ending just because the model said it was done.
 | Key | What it does |
 |---|---|
 | `check` | When the model has changed something this turn and tries to finish, deel runs this command **itself**. Exit code 0 passes |
-| `checkRounds` | On failure the output goes back to the model to keep fixing — this many times (1 to 10, default 3) |
+| `checkRounds` | How many times the check runs in one turn (1 to 10, default 3). After each failure but the last, the output goes back to the model to keep fixing — so 3 means two more tries. A value that cannot be used (0, text) falls back to 3 and the screen says so |
 | `checkTimeout` | Time limit for one run of the check (seconds; default and maximum 600) |
 
 - Still failing at the end means the turn ends as failed. `deel run` exits with **8**, and `--json`
-  carries a `check` field. For a different command just this once, `deel run --check "<cmd>"` — it wins over the config
+  carries a `check` field. For a different command just this once, `deel run --check "<cmd>"` — it wins over the config.
+  `--check-rounds <n>` and `--check-timeout <s>` do the same for the other two
 - The check goes through **the same gates** as the model's own commands. A deny rule stops it, `strict`
   asks, and the dangerous-command guard still applies. If it could not run, that is what it says — it is never counted as a pass
 - A turn that changed nothing does not run it. Finishing after a failure without changing anything does not
@@ -650,6 +651,7 @@ they are in the policy file — the evidence you take to an administrator must n
 | `DEEL_SHELL` | Which shell the `Bash` tool uses on Windows — `auto` (default: bash if Git Bash is installed, else cmd) · `bash` · `cmd` · `powershell`. `"shell"` in the config file works too. The pick shows in `/status` and in the `Shell:` line the model is given |
 | `DEEL_KEYSTORE=off` | Keep the key in the file instead of handing it to the machine keystore (Windows DPAPI · macOS keychain). For places where policy blocks PowerShell — whatever it ends up doing is printed verbatim in the `열쇠 보관` line of `/status` |
 | `DEEL_DEBUG=1` | Verbose errors |
+| `DEEL_ACP_MAX_SESSIONS` | How many editor sessions `deel acp` keeps open in memory (default 16). Past that, the one unused the longest is put down; a new message to it reopens it from its file with the mode the editor picked |
 | `NO_COLOR` | Disable colour |
 | `DEEL_NO_MOTION=1` | Turn off the working animation (falls back to a one-cell spinner). `0`, `false`, `off`, `no` and an empty value read as "don't" |
 | `DEEL_MOTION` | Change that animation — `knight` · `animal`. For this run only; `/motion` is better for keeping it. [See](interface.md#changing-the-drawing) |
