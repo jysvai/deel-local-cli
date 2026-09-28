@@ -1569,6 +1569,7 @@ trace('9-2-2-못잰것');
    * 보고 원문에 config 가 있으면 「우리 상한에 잘렸을 뿐」 · ok 로 적었다 — 홑따옴표로 적는 모델을
    * 우리 탓으로 덮고 좋은 모델로 판정한다. 그건 모델 쪽 흠이다.
    */
+  let srv4인자 = "{'path': 'config.json'}";
   const srv4 = createServer((r, res) => {
     let 글 = '';
     r.on('data', (c) => (글 += c));
@@ -1580,7 +1581,7 @@ trace('9-2-2-못잰것');
       if (몸?.tools?.length) {
         return 보내기(200, {
           choices: [{
-            message: { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: "{'path': 'config.json'}" } }] },
+            message: { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: srv4인자 } }] },
             finish_reason: 'tool_calls',
           }],
           usage: { prompt_tokens: 20, completion_tokens: 12 },
@@ -1599,6 +1600,12 @@ trace('9-2-2-못잰것');
   // 2.1.3: 모양만 틀린 인자는 deel 이 느슨하게 읽는다 — 「거절당한다」 가 아니라 「읽었다」 고 적는다.
   check('★ 느슨하게 읽었다고 적는다 (거절당한다고 하지 않는다)', /느슨하게 읽었/.test(도구칸4?.detail ?? '') && !/거절/.test(도구칸4?.detail ?? ''),
     도구칸4?.detail);
+  // 느슨하게도 못 읽는 것(따옴표 없는 값)은 여전히 모양이 틀렸다고 적는다 — 원문에 config 가 있어도 「잘렸을 뿐」 이 아니다.
+  srv4인자 = '{"path": config.json}';
+  const r4b = await probe({ kind: 'openai', base: base4, auth: 'none', key: '', model: 'm-1' });
+  const 도구칸4b = r4b.results.find((x) => x.id === 'tools');
+  check('★★ 느슨하게도 못 읽는 끝까지 온 JSON 을 「상한에 잘렸을 뿐」 · ok 로 덮지 않는다', !/잘렸을 뿐/.test(도구칸4b?.detail ?? '') && /모양이 틀렸/.test(도구칸4b?.detail ?? '') && 도구칸4b?.status === 'warn',
+    `${도구칸4b?.status} · ${도구칸4b?.detail}`);
   srv4.close();
 
   /*

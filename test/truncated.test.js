@@ -391,6 +391,25 @@ trace('3d-모양이틀린인자');
   check('★★ 다 썼는데 「받은 데까지만 썼다·이어서 Append」 라고 하지 않는다',
     !/받은 데까지만|이어서 Append/.test(도구답), 도구답.slice(0, 200));
   rmSync(만든것, { force: true });
+
+  /*
+   * 2.1.3 부터 날 줄바꿈 같은 모양 탓은 느슨하게 읽어 여느 Write 로 간다 — 위 경우는 살려 쓰기에 안 닿는다.
+   * 살려 쓰기가 「내용은 끝까지 왔다」 를 보는 자리는 이제 **내용 뒤의 다른 인자가 잘린** 경우다.
+   */
+  const 뒤잘린인자 = '{"file_path":"뒤잘림.txt","content":"line1\\nline2\\n","overwrite":tr';
+  script = [
+    { brokenCall: { name: 'Write', raw: 뒤잘린인자 } },
+    { brokenCall: { name: 'Write', raw: 뒤잘린인자 } },
+    { text: '다 썼습니다.' },
+  ];
+  const 뒤 = await 돌리기('파일 하나 써줘');
+  const 뒤파일 = join(root, '뒤잘림.txt');
+  check('★ 내용 뒤의 인자가 잘린 Write 는 내용을 다 쓴다', existsSync(뒤파일) && readFileSync(뒤파일, 'utf8') === 'line1\nline2\n',
+    existsSync(뒤파일) ? JSON.stringify(readFileSync(뒤파일, 'utf8')) : '없음');
+  const 뒤도구답 = 뒤.s.messages.filter((m) => m.role === 'tool').map((m) => String(m.content)).join('\n');
+  check('★★ 그때도 「받은 데까지만 썼다·이어서 Append」 라고 하지 않고 다 썼다고 한다',
+    !/받은 데까지만|이어서 Append/.test(뒤도구답) && /다 썼습니다/.test(뒤도구답), 뒤도구답.slice(0, 200));
+  rmSync(뒤파일, { force: true });
 }
 
 trace('4-내부기록');
