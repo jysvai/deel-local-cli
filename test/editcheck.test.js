@@ -110,10 +110,12 @@ trace('4-꺼짐');
 
 trace('5-한파일문법');
 {
-  // 뿌리의 package.json 은 2절에서 일부러 깨 두었다. node 는 이 파일이 아니라 그것을 읽다 넘어진다 —
-  // 그 글을 이 파일에 붙이면 멀쩡한 파일을 고치러 간다. 못 본 것(null)이어야 한다.
-  writeFileSync(join(root, '곁이깨짐.js'), 'let a = ;\n', 'utf8');
-  check('★★ 곁의 package.json 이 깨졌으면 그 탈을 이 파일에 안 붙인다', (await 한파일문법(join(root, '곁이깨짐.js'), { 뿌리: root })) === null);
+  // 뿌리의 package.json 은 2절에서 일부러 깨 두었다. node 22 · 24 는 **멀쩡한** 파일도 그것을 읽다 넘어진다 —
+  // 그 글을 이 파일에 붙이면 멀쩡한 파일을 고치러 간다. 못 본 것(null)이어야 한다. node 20 은 --check 에서
+  // package.json 을 안 읽어 그냥 성하다고 본다(오류 0). 둘 다 맞다 — 틀린 것은 남의 탈을 붙이는 것 하나다.
+  writeFileSync(join(root, '곁이깨짐.js'), 'let a = 1;\n', 'utf8');
+  const 곁 = await 한파일문법(join(root, '곁이깨짐.js'), { 뿌리: root });
+  check('★★ 곁의 package.json 이 깨졌으면 그 탈을 이 파일에 안 붙인다', 곁 === null || 곁.오류 === 0, JSON.stringify(곁)?.slice(0, 200));
   mkdirSync(join(root, '깨끗'), { recursive: true });
   writeFileSync(join(root, '깨끗', 'package.json'), '{}\n', 'utf8');
   writeFileSync(join(root, '깨끗', '직접.js'), 'let a = ;\n', 'utf8');
