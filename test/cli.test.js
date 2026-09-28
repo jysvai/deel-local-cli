@@ -350,6 +350,25 @@ trace('1-도움말');
   writeFileSync(join(열쇠집, 'config.json'), 설정글);
   const v2 = await 띄우기(['--version'], { env: { DEEL_HOME: 열쇠집 } });
   check('★ --version 은 설정 파일을 안 건드린다 (열쇠 잠그기 옮김도 안 돈다)', v2.code === 0 && readFileSync(join(열쇠집, 'config.json'), 'utf8') === 설정글);
+  /*
+   * 위 검사는 열쇠를 잠글 수 있는 곳(윈도 DPAPI · 맥 키체인)에서만 파일이 바뀐다 — 리눅스 CI 에서는 설정을
+   * 읽어도 그대로라 「설정을 읽기 전에 답한다」 어긋내기가 샜다. 그래서 **읽었는지**를 직접 본다: 미리 싣는
+   * 모듈이 fs.readFileSync 를 감싸 config.json 을 읽으면 표를 남긴다. --help 는 말을 정하려고 설정을 읽으므로
+   * 표가 남아야 한다(이 감시가 살아 있다는 짝).
+   */
+  const 감시 = join(열쇠집, '설정감시.cjs');
+  writeFileSync(join(열쇠집, '설정감시.cjs'), [
+    "const fs = require('fs');",
+    'const 원래 = fs.readFileSync;',
+    "fs.readFileSync = function (p, ...r) { if (/[\\\\/]config\\.json$/.test(String(p))) process.stderr.write('[설정을-읽음]\\n'); return 원래.call(this, p, ...r); };",
+    "require('module').syncBuiltinESMExports();",
+  ].join('\n'));
+  // NODE_OPTIONS 는 따옴표 안의 역슬래시를 되받이로 먹는다 — 윈도 경로는 빗금으로 넘긴다.
+  const 감시켬 = { DEEL_HOME: 열쇠집, NODE_OPTIONS: `--require "${감시.replace(/\\/g, '/')}"` };
+  const 판 = await 띄우기(['--version'], { env: 감시켬 });
+  const 도움 = await 띄우기(['--help'], { env: 감시켬 });
+  check('★★ --version 은 설정 파일을 읽지도 않는다 (운영체제와 상관없이)', 판.code === 0 && !판.err.includes('[설정을-읽음]') && 도움.err.includes('[설정을-읽음]'),
+    `version: ${판.err.includes('[설정을-읽음]')} · help: ${도움.err.includes('[설정을-읽음]')}`);
   rmSync(열쇠집, { recursive: true, force: true });
 }
 
