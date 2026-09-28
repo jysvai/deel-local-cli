@@ -5,7 +5,8 @@
 // 그래서 표준입력을 가짜 TTY 로 갈아끼워 사람이 치는 것처럼 넣는다.
 //
 // 붙는 곳은 이 컴퓨터 안(127.0.0.1)의 임시 스텁뿐이다. 바깥으로는 안 나간다.
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { PassThrough } from 'node:stream';
@@ -15,7 +16,7 @@ import { join } from 'node:path';
 import { ask, confirm, pick } from '../src/ui/prompt.js';
 import { runSetup, showStatus, runDiagnose } from '../src/setup.js';
 import { verdict } from '../src/report.js';
-import { load } from '../src/config.js';
+import { load, resolveKey } from '../src/config.js';
 import { resetNet, setOffline, isOffline, contacted } from '../src/safety/network.js';
 import { 제공자들 } from '../src/providers/index.js';
 import { 리전들 } from '../src/providers/bedrock.js';
@@ -69,7 +70,13 @@ async function 대화(대답들, fn) {
       await 기다리기(i + 1);       // i+1 번째 물음이 뜰 때까지
       입력.write(대답들[i] + '\r');
     }
-    const v = await p;
+    /*
+     * 답이 모자라 물음이 안 끝나면 여기서 영영 섰다 — 메뉴 번호가 하나 밀린 판에서 검사가 돌리개의
+     * 시한(300초)까지 서 있었다(2.1.4). 끝나지 않으면 「안 끝남」 으로 받고 넘어간다.
+     */
+    let 시한 = null;
+    const v = await Promise.race([p, new Promise((r) => { 시한 = setTimeout(() => r('<안 끝남>'), 30000); })]);
+    clearTimeout(시한);
     return { v, out: 모인것 };
   } finally {
     process.stdout.write = 원래;
@@ -416,8 +423,9 @@ check('★ 이 절은 봉인되어 있다 — 번호를 잘못 세도 바깥에 
 const 메뉴번호 = (id) => {
   if (id === '열쇠먼저') return '1';
   if (id === 'custom') return '2';
+  if (id === '링크로그인') return '3';
   const 벤더 = 제공자들.filter((p) => p.id !== 'custom').map((p) => p.id);
-  return String(3 + 벤더.indexOf(id));
+  return String(4 + 벤더.indexOf(id));
 };
 
 /*
@@ -496,6 +504,231 @@ const 메뉴번호 = (id) => {
     직접자리 >= 0 && 벤더자리 >= 0 && 직접자리 < 벤더자리, `직접@${직접자리} 벤더@${벤더자리}`);
   check('빈칸이 몇 개인지 미리 알려 준다', /빈칸 \d개/.test(글), (글.match(/빈칸 \d개[^\n]*/) ?? [''])[0]);
   check('빈칸 0개짜리 길(deel scan)을 먼저 알려 준다', /deel scan --save/.test(글), '');
+}
+
+trace('4-3-브라우저로-로그인');
+
+/*
+ * ── 열쇠를 안 넣고 계정으로 붙는다 (2.1.4) ─────────────────────────────
+ *
+ * 「API 키 말고 링크 타고 로그인해서 바로 쓰게」 가 사람이 오래 바란 것이다. 메뉴 3번이 그 길이고,
+ * 받은 열쇠는 사람이 붙여 넣은 열쇠와 **똑같은 문**(detect → 모델 → 진단 → 잠가 저장)으로 간다.
+ *
+ * 진짜 openrouter.ai 에는 안 간다. 로그인 창구를 이 컴퓨터 안의 가짜로 바꾼 제공자를 목록 맨 앞에
+ * 잠깐 끼운다 — 메뉴 3번은 「링크로 로그인하는 첫 제공자」 를 고른다. 봉인도 그대로 켜져 있다.
+ */
+{
+  // 머리말에 실려 가므로 ASCII 여야 한다. 비밀꼴 검사에 안 걸리게 나눠 적는다.
+  const 열쇠 = ['sk-or-v1', 'wizard-key-0123'].join('-');
+  let 도전 = null;
+  const 받은인증 = [];
+  const 모델들 = [...Array.from({ length: 44 }, (_, i) => ({ id: `vendor/m-${String(i + 1).padStart(2, '0')}` })), { id: 'anthropic/claude-가' }];
+  const 로그인srv = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const url = decodeURIComponent(req.url.split('?')[0]);
+      const 보냄 = (o, code = 200) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (url === '/api/v1/auth/keys' && req.method === 'POST') {
+        let j = null;
+        try { j = JSON.parse(body); } catch {}
+        const 셈 = createHash('sha256').update(String(j?.code_verifier ?? '')).digest('base64url');
+        return 도전 && 셈 === 도전 && j?.code_challenge_method === 'S256'
+          ? 보냄({ key: 열쇠 })
+          : 보냄({ error: { message: 'Invalid code or code_verifier' } }, 403);
+      }
+      받은인증.push(req.headers.authorization ?? '');
+      if (url === '/api/v1/models') return 보냄({ data: 모델들 });
+      if (url === '/api/v1/chat/completions') {
+        let j = null;
+        try { j = JSON.parse(body); } catch {}
+        const 도구요청 = Array.isArray(j?.tools) && j.tools.length;
+        return 보냄({
+          choices: [{
+            finish_reason: 도구요청 ? 'tool_calls' : 'stop',
+            message: 도구요청
+              ? { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a"}' } }] }
+              : { role: 'assistant', content: '네' },
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 3 },
+        });
+      }
+      보냄({}, 404);
+    });
+  });
+  await new Promise((r) => 로그인srv.listen(0, '127.0.0.1', r));
+  const lp = 로그인srv.address().port;
+  const 진짜 = 제공자들.find((p) => p.id === 'openrouter');
+  const 가짜 = {
+    ...진짜,
+    id: '가짜로그인',
+    이름: '가짜 로그인곳',
+    주소들: () => [`http://127.0.0.1:${lp}/api/v1`],
+    링크로그인: { 여는곳: `http://127.0.0.1:${lp}/auth`, 바꾸는곳: `http://127.0.0.1:${lp}/api/v1/auth/keys`, 열쇠이름: 'deel' },
+  };
+
+  // 물음이 뜰 때 답을 **그때** 짓는다(화면에 찍힌 링크를 읽어야 하는 답이 있다). 곁일은 물음 없이
+  // 도는 일 — 브라우저가 콜백을 부르는 흉내 — 을 나란히 돌린다.
+  const 흐름대화 = async (대답들, fn, 곁일 = null) => {
+    const 원래 = process.stdout.write.bind(process.stdout);
+    let 모인것 = '';
+    process.stdout.write = (chunk) => { 모인것 += chunk; return true; };
+    const 입력 = 가짜입력();
+    let 끝남 = false;
+    try {
+      const p = Promise.resolve().then(fn).catch((e) => `던짐: ${e?.message}`).finally(() => { 끝남 = true; });
+      const 곁 = 곁일 ? 곁일(() => 색빼기(모인것), () => 끝남) : null;
+      for (let i = 0; i < 대답들.length && !끝남; i++) {
+        for (let j = 0; j < 1000 && !끝남 && (모인것.match(/›/g) ?? []).length < i + 1; j++) await new Promise((r) => setTimeout(r, 10));
+        if (끝남) break;
+        const 답 = typeof 대답들[i] === 'function' ? await 대답들[i](색빼기(모인것)) : 대답들[i];
+        입력.write(`${답}\r`);
+      }
+      const v = await Promise.race([p, new Promise((r) => setTimeout(() => r('<안 끝남>'), 20000))]);
+      await 곁;
+      return { v, out: 색빼기(모인것) };
+    } finally { process.stdout.write = 원래; 되돌리기(); }
+  };
+  const 링크읽기 = (글) => {
+    const 걸림 = new RegExp(`(http://127\\.0\\.0\\.1:${lp}/auth\\?\\S+)`).exec(글);
+    return 걸림 ? new URL(걸림[1]) : null;
+  };
+  const 새집 = (이름) => {
+    const 집 = mkdtempSync(join(tmpdir(), `deel-setup-${이름}-`));
+    writeFileSync(join(집, 'config.json'), JSON.stringify({ version: 1, active: null, profiles: [] }), 'utf8');
+    return 집;
+  };
+
+  // ── 메뉴 ───────────────────────────────────────────────────────────
+  {
+    const { out } = await 대화([메뉴번호('custom'), ''], () => runSetup());
+    const 셋째 = (/^\s*3\s+(.*)$/m.exec(out.replace(/\x1b\[[0-9;]*m/g, '')) ?? [])[1] ?? '';
+    check('★ 메뉴 3번이 「브라우저로 로그인」', /브라우저로 로그인/.test(셋째) && /OpenRouter/.test(셋째), 셋째);
+    check('빈칸이 없다고 미리 말한다', /빈칸 0개/.test(셋째), 셋째);
+    check('「직접 넣기」 는 여전히 2번', /^\s*2\s+주소를 직접 넣기/m.test(색빼기(out)));
+  }
+
+  // ── 봉인이면 로그인하러 안 나간다 (진짜 OpenRouter 그대로) ──────────────
+  {
+    const 집 = 새집('로그인봉인');
+    const 옛집 = process.env.DEEL_HOME;
+    process.env.DEEL_HOME = 집;
+    const 전 = contacted().length;
+    let r;
+    try { r = await 흐름대화([메뉴번호('링크로그인'), 'x', 'x'], () => runSetup({ offline: true })); }
+    finally { process.env.DEEL_HOME = 옛집; }
+    check('★★ 봉인이면 로그인 링크를 안 낸다', !/openrouter\.ai\/auth/.test(r.out), r.out.split('\n').filter(Boolean).slice(-3).join(' / '));
+    check('★ 봉인이라고 말한다', /봉인/.test(r.out));
+    check('★ 봉인에 막히면 1', r.v === 1, String(r.v));
+    check('★ 아무 데도 안 닿는다', contacted().length === 전, `${전} → ${contacted().length}`);
+    rmSync(집, { recursive: true, force: true });
+  }
+
+  // ── 벤더 목록에서 OpenRouter 를 고르면 열쇠를 비워도 된다고 알려 준다 ──
+  {
+    const 집 = 새집('로그인빈열쇠');
+    const 옛집 = process.env.DEEL_HOME;
+    process.env.DEEL_HOME = 집;
+    let r;
+    try { r = await 흐름대화([메뉴번호('openrouter'), ''], () => runSetup({ offline: true })); }
+    finally { process.env.DEEL_HOME = 옛집; }
+    check('★ OpenRouter 열쇠 물음이 「비우면 브라우저로 로그인」 을 알린다', /API 키[^\n]*비우면 브라우저로 로그인/.test(r.out),
+      (r.out.match(/API 키[^\n]*/) ?? [''])[0]);
+    check('★ 비우고 엔터 → 로그인 길 (봉인이라 여기서 멈춘다)', r.v === 1 && /봉인/.test(r.out) && !/openrouter\.ai\/auth/.test(r.out),
+      r.out.split('\n').filter(Boolean).slice(-2).join(' / '));
+    rmSync(집, { recursive: true, force: true });
+  }
+
+  제공자들.unshift(가짜);
+  const 원래환경 = { DISPLAY: process.env.DISPLAY, SSH_CONNECTION: process.env.SSH_CONNECTION, SSH_CLIENT: process.env.SSH_CLIENT, SSH_TTY: process.env.SSH_TTY };
+  try {
+    // ── 붙여넣기 길 (--no-browser) · 모델 찾기가 하나도 안 맞을 때 ──────────
+    {
+      const 집 = 새집('로그인붙여넣기');
+      const 옛집 = process.env.DEEL_HOME;
+      process.env.DEEL_HOME = 집;
+      받은인증.length = 0;
+      도전 = null;
+      let r;
+      let 저장 = null;
+      try {
+        r = await 흐름대화([
+          메뉴번호('링크로그인'),
+          (글) => { 도전 = 링크읽기(글)?.searchParams.get('code_challenge') ?? null; return `http://localhost:1/x?code=붙인코드`; },
+          '',                      // 이름 — 기본값
+          '없는이름zz',            // 찾을 이름 — 하나도 안 맞는다
+          (글) => String((/^\s*(\d+)\s+직접 입력/m.exec(글) ?? [])[1] ?? '0'),
+          'anthropic/claude-가',   // 직접 입력한 모델 이름
+        ], () => runSetup({ 'no-browser': true }));
+        저장 = load();
+      } finally { process.env.DEEL_HOME = 옛집; }
+      const 링크 = 링크읽기(r.out);
+      check('★ 붙여넣기 길: 링크를 찍는다', !!링크, r.out.slice(0, 300));
+      check('★ 붙여넣기 길의 링크에는 콜백이 없다', 링크 && !링크.searchParams.has('callback_url'), String(링크));
+      check('★ 붙여넣기 길로 끝까지 가서 0', r.v === 0, `${r.v} · ${r.out.split('\n').filter(Boolean).slice(-2).join(' / ')}`);
+      check('★ 찾는 이름이 없으면 없다고 말한다', /맞는 모델이 없습니다/.test(r.out), '');
+      const 붙은것 = 저장.profiles?.find((p) => p.id === 저장.active);
+      check('★ 받은 열쇠로 붙는다 — 모델 창구가 그 열쇠를 받았다', 받은인증.includes(`Bearer ${열쇠}`), JSON.stringify([...new Set(받은인증)]));
+      check('★ 받은 열쇠를 저장한다', !!붙은것 && resolveKey(붙은것) === 열쇠, 붙은것 ? String(resolveKey(붙은것)).slice(0, 12) : '(없음)');
+      check('어디 것인지 적어 둔다', 붙은것?.제공자 === '가짜로그인', String(붙은것?.제공자));
+      check('직접 넣은 모델 이름이 저장된다', 붙은것?.model === 'anthropic/claude-가', String(붙은것?.model));
+      check('★★ 열쇠를 화면에 안 찍는다', !r.out.includes(열쇠));
+      rmSync(집, { recursive: true, force: true });
+    }
+
+    // ── 콜백 길 — 브라우저가 이 PC 에 있을 때 ───────────────────────────
+    {
+      if (process.platform === 'linux') process.env.DISPLAY = ':0';
+      delete process.env.SSH_CONNECTION; delete process.env.SSH_CLIENT; delete process.env.SSH_TTY;
+      const 집 = 새집('로그인콜백');
+      const 옛집 = process.env.DEEL_HOME;
+      process.env.DEEL_HOME = 집;
+      받은인증.length = 0;
+      도전 = null;
+      let 콜백답 = null;
+      let r;
+      let 저장 = null;
+      try {
+        r = await 흐름대화([
+          메뉴번호('링크로그인'),
+          '',                      // 이름 — 로그인이 끝나야 뜬다
+          'claude',                // 찾을 이름
+          '1',
+        ], () => runSetup(), async (글읽기, 끝났나) => {
+          for (let i = 0; i < 1000 && !끝났나(); i++) {
+            const 링크 = 링크읽기(글읽기());
+            const 콜백 = 링크?.searchParams.get('callback_url');
+            if (콜백) {
+              도전 = 링크.searchParams.get('code_challenge');
+              const u = new URL(콜백);
+              콜백답 = await new Promise((풀기) => {
+                const q = httpRequest({ hostname: u.hostname, port: u.port, path: `${u.pathname}?code=${encodeURIComponent('콜백코드')}`, autoSelectFamily: true }, (res) => { res.resume(); res.on('end', () => 풀기(res.statusCode)); });
+                q.on('error', (e) => 풀기(String(e?.code ?? e)));
+                q.end();
+              });
+              return;
+            }
+            await new Promise((풀기) => setTimeout(풀기, 10));
+          }
+        });
+        저장 = load();
+      } finally { process.env.DEEL_HOME = 옛집; }
+      check('★ 콜백 길: 브라우저가 돌아오면 200', 콜백답 === 200, String(콜백답));
+      check('★ 콜백 길로 끝까지 가서 0', r.v === 0, `${r.v} · ${r.out.split('\n').filter(Boolean).slice(-2).join(' / ')}`);
+      check('★ 모델이 많으면 이름으로 좁혀 고른다', /anthropic\/claude-가/.test(r.out) && !/vendor\/m-01/.test(r.out.slice(r.out.lastIndexOf('찾을 이름'))),
+        '');
+      const 붙은것 = 저장.profiles?.find((p) => p.id === 저장.active);
+      check('★ 콜백 길도 받은 열쇠를 저장한다', !!붙은것 && resolveKey(붙은것) === 열쇠);
+      check('좁혀 고른 모델이 저장된다', 붙은것?.model === 'anthropic/claude-가', String(붙은것?.model));
+      check('★★ 콜백 길도 열쇠를 화면에 안 찍는다', !r.out.includes(열쇠));
+      check('다른 기기 브라우저면 빠져나갈 길을 알려 준다', /--no-browser/.test(r.out));
+      rmSync(집, { recursive: true, force: true });
+    }
+  } finally {
+    제공자들.splice(제공자들.indexOf(가짜), 1);
+    for (const [k, v] of Object.entries(원래환경)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    로그인srv.close();
+  }
 }
 
 // 봉인을 푼다. 아래는 다시 이 컴퓨터 안의 스텁에 붙는다.
@@ -787,3 +1020,5 @@ for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);
 trace('끝-정상종료');
 process.exitCode = fail.length ? 1 : 0;
+// 빨간 판에서는 안 닫힌 문(콜백 서버 따위)이 프로세스를 붙잡아 돌리개의 시한까지 선다. 결과는 위에 다 적었다.
+if (fail.length) setTimeout(() => process.exit(1), 2000).unref();

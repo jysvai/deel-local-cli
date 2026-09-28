@@ -108,6 +108,7 @@ export const 깃발들 = [
   { 이름: '--tui', 뜻: '입력 상자를 켠다', en: 'force the input box on', 값: false },
   { 이름: '--no-tui', 뜻: '입력 상자 없이 줄 화면으로', en: 'plain line output, no input box', 값: false },
   { 이름: '--no-hooks', 뜻: '이번 판만 훅을 끄고 돌린다', en: 'run this once with hooks off', 값: false },
+  { 이름: '--no-browser', 뜻: 'setup: 로그인 코드를 붙여 넣는다 (SSH)', en: 'setup: paste the login code instead (SSH)', 값: false },
   { 이름: '--continue', 뜻: '지난 대화 이어서', en: 'continue the last conversation', 값: null },
   { 이름: '--resume', 뜻: '고른 대화 이어서', en: 'resume a chosen conversation', 값: null },
   { 이름: '--version', 뜻: '판 번호', en: 'version number', 값: false },

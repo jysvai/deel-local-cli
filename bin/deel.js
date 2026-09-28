@@ -619,6 +619,8 @@ async function runSbom(flags) {
 const BOOL = new Set([
   'help', 'version', 'offline', 'online', 'continue', 'json', 'quiet', 'yes',
   'no-tui', 'tui', 'all', 'no-hooks',
+  // setup --no-browser — 브라우저로 로그인할 때 콜백 대신 코드를 붙여 넣는다 (2.1.4 · providers/login.js).
+  'no-browser',
   /*
    * `hard` 가 여기 빠져 있었다. 그래서 `deel reset --hard all --yes` 는
    * `--hard` 가 뒤의 `all` 을 제 값으로 삼켰다 — 지울 갈래가 사라지니 화면은
@@ -789,7 +791,11 @@ function help() {
   say(`    ${c.cyan('deel run "<시킬 말>"')}        한 번만 돌고 끝내기 (스크립트·배치용)`);
   say(`    ${c.cyan('deel scan')}                   이 PC 에 떠 있는 로컬 서버 전부 찾기`);
   say(`    ${c.cyan('deel sessions')}               이 폴더에 남아 있는 대화 목록`);
-  say(`    ${c.cyan('deel setup')}                  연결 설정 (주소·키·모델)`);
+  say(`    ${c.cyan('deel setup')}                  연결 설정 (주소·키·모델 · 브라우저로 로그인)`);
+  // 새 줄은 두 말로 적는다 — 영어 도움말에 한국어 줄을 더 늘리지 않는다 (아래 영어 대목 머리말).
+  say(언어() === 'ko'
+    ? `    ${c.cyan('deel setup --no-browser')}     로그인 코드를 붙여 넣기 ${c.gray('(SSH · 브라우저가 다른 기기에 있을 때)')}`
+    : `    ${c.cyan('deel setup --no-browser')}     Paste the login code instead ${c.gray('(SSH · browser on another machine)')}`);
   say(`    ${c.cyan('deel status')}                 연결 상태 보기`);
   say(`    ${c.cyan('deel diagnose')}               저장된 연결로 진단 다시 돌리기`);
   say(`    ${c.cyan('deel reset')}                  설정·기억·기록 지우기 ${c.gray('(그냥 치면 보여만 줍니다)')}`);

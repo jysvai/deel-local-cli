@@ -14,6 +14,7 @@ import { allowEndpoint } from './safety/network.js';
 import { 인증서설정, 인증서등록 } from './backend/clientcert.js';
 import { 바깥인가, 봉인됐나 } from './safety/runmode.js';
 import { 제공자들, 제공자고르기, 어디것일까, 주소후보, 막힌까닭, 열쇠다듬기 } from './providers/index.js';
+import { 링크로그인, 원격인가 } from './login.js';
 import { writeFileSync } from 'node:fs';
 
 // 머리 한 줄은 ui/banner.js 에 있다 — 진입점이 이 파일(40개를 끌고 온다) 없이 쓰게 (2.1.2).
@@ -126,14 +127,38 @@ async function connect(url, key, { 조용히 = false, 제공자: 어디 = null }
   return found;
 }
 
+// 한 화면에 보이는 모델 수. 넘으면 이름으로 좁히고, 목록 끝에 「직접 입력」 을 둔다.
+const 모델한화면 = 40;
+
 async function chooseModel(found) {
   if (!found.models.length) {
     say('');
     say(`  ${mark.warn} ${c.yellow('모델 목록을 못 받았습니다.')} ${c.gray('이름을 직접 넣어 주세요.')}`);
     return (await ask('모델 이름')).trim();
   }
-  const items = found.models.slice(0, 40).map((m) => ({ label: m.id, note: m.note ?? '' }));
+  /*
+   * ── 목록이 길면 이름으로 좁힌다 (2.1.4) ─────────────────────────────────
+   *
+   * 앞 40개만 보여 주고 끝이었다. 사내 게이트웨이는 그걸로 됐는데 OpenRouter 는 모델이 수백 개라,
+   * 쓰려는 모델이 41번째 뒤에 있으면 **고를 길이 없었다.** 이름 일부로 좁히고, 그래도 없으면
+   * 목록 끝의 「직접 입력」 으로 빠진다 — 목록은 낡고, 빠져나갈 구멍은 늘 둔다(리전 고르기와 같다).
+   */
+  let 후보 = found.models;
+  const 길다 = 후보.length > 모델한화면;
+  if (길다) {
+    say('');
+    say(`  ${c.gray(`모델이 ${후보.length}개입니다. 이름 일부로 좁힙니다 (예: claude · gpt · llama). 비우면 앞 ${모델한화면}개.`)}`);
+    const 찾을말 = (await ask('찾을 이름')).trim().toLowerCase();
+    if (찾을말) {
+      const 걸린것 = 후보.filter((m) => String(m.id).toLowerCase().includes(찾을말));
+      if (걸린것.length) 후보 = 걸린것;
+      else say(`  ${mark.warn} ${c.yellow(`「${찾을말}」 이 든 모델 이름이 없습니다 — 맞는 모델이 없습니다.`)} ${c.gray(`앞 ${모델한화면}개를 보여 드립니다.`)}`);
+    }
+  }
+  const items = 후보.slice(0, 모델한화면).map((m) => ({ label: m.id, note: m.note ?? '' }));
+  if (길다) items.push({ label: '직접 입력', note: '목록에 없는 이름', 직접: true });
   const i = await pick('사용할 모델', items);
+  if (items[i].직접) return (await ask('모델 이름')).trim();
   return items[i].label;
 }
 
@@ -181,12 +206,20 @@ export async function runProbe(conn, { out = null, 봉인 = false } = {}) {
  * 「직접 넣기」 를 목록 위쪽에 둔다. 목록이 지원 명단처럼 보이면, 거기 없는
  * 회사는 안 되는 줄 알고 돌아선다 (providers/index.js 머리말).
  *
+ * 넷째 갈래 — **브라우저로 로그인** (2.1.4). 빈칸 0개다. 열쇠를 안 넣고 계정으로 받아 온다
+ * (src/login.js). 번호는 셋째에 둔다: 1·2 는 손에 익은 번호라 안 옮긴다.
+ *
+ * @param o.봉인  offline 이 켜져 있나 — 로그인은 여기서 바깥으로 나가므로 여기서 거른다
+ * @param o.원격  브라우저를 이 PC 에서 못 여나 (`--no-browser` · SSH)
  * @returns {{제공자, 주소들: string[], 열쇠: string, 이름: string} | null}
  */
-async function 붙일곳고르기() {
+async function 붙일곳고르기({ 봉인 = false, 원격 = false } = {}) {
+  // 링크로 로그인하는 첫 제공자. 데이터에 그 칸이 있는 곳이면 누구든 같은 흐름을 탄다.
+  const 로그인곳 = 제공자들.find((p) => p.링크로그인);
   const 목록 = [
     { id: '열쇠먼저', label: '열쇠만 있습니다 — 어디 것인지 알아봐 주세요', note: '빈칸 1개' },
     { id: 'custom', label: '주소를 직접 넣기', note: '사내 게이트웨이 · 목록에 없는 곳' },
+    ...(로그인곳 ? [{ id: '링크로그인', label: `브라우저로 로그인 — ${로그인곳.이름}`, note: '빈칸 0개 · 열쇠를 안 넣습니다' }] : []),
     ...제공자들.filter((p) => p.id !== 'custom').map((p) => ({
       id: p.id,
       label: p.이름,
@@ -217,6 +250,8 @@ async function 붙일곳고르기() {
       const 나머지 = 제공자들.map((p) => ({ label: p.이름, note: p.한줄 }));
       제공자 = 제공자들[await pick('어디 열쇠인가요?', 나머지, { def: 0 })];
     }
+  } else if (고른.id === '링크로그인') {
+    제공자 = 로그인곳;
   } else {
     제공자 = 제공자고르기(고른.id);
   }
@@ -281,9 +316,23 @@ async function 붙일곳고르기() {
   }
 
   // ── 열쇠 ─────────────────────────────────────────────────────────────
-  if (!열쇠) {
+  //
+  // 로그인이 되는 곳은 열쇠를 비워 두면 로그인으로 간다 — 벤더 목록에서 골랐어도 같다.
+  if (!열쇠 && 고른.id !== '링크로그인') {
     if (제공자.열쇠받는곳) say(`  ${c.gray('열쇠 받는 곳')} ${c.cyan(제공자.열쇠받는곳)}`);
-    열쇠 = 열쇠다듬기(await ask('API 키', { mask: true }));
+    열쇠 = 열쇠다듬기(await ask('API 키' + (제공자.링크로그인 ? ' (비우면 브라우저로 로그인)' : ''), { mask: true }));
+  }
+  if (!열쇠 && 제공자.링크로그인) {
+    const 받은것 = await 링크로그인(제공자, { 봉인, 원격 });
+    if (!받은것.ok) {
+      say('');
+      say(`  ${mark.no} ${c.yellow(받은것.까닭)}`);
+      say('');
+      return null;
+    }
+    열쇠 = 받은것.열쇠;
+    // 받은 열쇠는 화면에 안 적는다. 어디에 어떻게 잠갔는지는 저장한 뒤에 말한다.
+    say(`  ${mark.ok} ${c.green('로그인했습니다 — 열쇠를 받았습니다.')} ${c.gray('화면에 안 적고, 저장할 때 잠가 둡니다.')}`);
   }
 
   const 기본이름 = 제공자.id === 'custom' ? '사내게이트웨이' : 제공자.이름;
@@ -343,7 +392,14 @@ async function 설정받기(flags = {}) {
   // 주소를 손으로 치게 만드는 것은 우리 잘못이다.
   say(`  ${c.gray('이 PC 에 로컬 모델이 떠 있다면')} ${c.cyan('deel scan --save')} ${c.gray('가 빈칸 없이 찾아 줍니다.')}`);
 
-  const 고른것 = await 붙일곳고르기();
+  /*
+   * 봉인 판정은 **붙일 곳을 고르기 전에** 한다 (2.1.4). 브라우저로 로그인하는 갈래는 고르는
+   * 자리 안에서 바깥으로 나가기 때문이다 — 뒤에서 재면 이미 나간 뒤다. 판정은 깃발과 처음 읽은
+   * 설정만 보므로 앞으로 옮겨도 값이 같다.
+   */
+  const 봉인 = 봉인됐나({ 깃발: flags?.offline, prof: null, cfg: 첫설정 });
+
+  const 고른것 = await 붙일곳고르기({ 봉인, 원격: flags?.['no-browser'] === true || 원격인가() });
   if (!고른것) return 1;
   const { 제공자: 붙일곳, 주소들, 열쇠: key, 이름: name } = 고른것;
 
@@ -363,7 +419,7 @@ async function 설정받기(flags = {}) {
   // 적어 둔 봉인만 걸리고, 사람이 그 자리에서 친 `deel setup --offline` 은 안 걸렸다.
   // 깃발을 믿고 사내 게이트웨이 주소를 넣은 사람은 방금 적은 열쇠까지 실어 보낸 셈이 된다.
   // (diagnose 는 같은 판에서 `깃발: flags.offline` 을 넘긴다 — 두 문이 갈려 있었다.)
-  const 봉인 = 봉인됐나({ 깃발: flags?.offline, prof: null, cfg: 첫설정 });
+  // 판정 자체는 위에서 했다 — 로그인 갈래가 고르는 자리에서 나가기 때문이다.
   const 두드릴것 = 봉인
     ? 주소들.filter((u) => !바깥인가(/^https?:\/\//i.test(u) ? u : `http://${u}`))
     : 주소들;

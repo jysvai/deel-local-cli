@@ -27,7 +27,6 @@
 import { createServer } from 'node:http';
 import { createReadStream, statSync, existsSync, readdirSync, watch, realpathSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, extname, relative, sep, isAbsolute, basename } from 'node:path';
-import { spawn } from 'node:child_process';
 import { 내부살림 } from '../tools/fsutil.js';
 import { detect } from '../tools/encoding.js';
 
@@ -541,33 +540,5 @@ function 목록주기(abs, 뿌리, res) {
   res.end(buf);
 }
 
-/**
- * 기본 브라우저로 연다.
- *
- * 실패해도 조용히 넘어간다 — 주소는 이미 화면에 찍혀 있으므로 손으로 열면 된다.
- * 여기서 오류를 띄우면 '띄우기는 됐는데 실패한 것처럼' 보인다.
- */
-export function 브라우저로(url) {
-  /*
-   * 열면 안 되는 자리가 있다.
-   *
-   * 검사가 돌 때마다 진짜 브라우저 창이 뜨면 사람 화면이 난장판이 된다.
-   * 파이프로 넘길 때(로그·캡처)도 열 이유가 없다 — 볼 사람이 없다.
-   * 상자 검사는 isTTY 를 거짓말하게 만들어 자식을 띄우므로, TTY 만 봐서는
-   * 못 막는다. 그래서 env 로도 막을 수 있게 뒀고 검사 돌리개가 그걸 켠다.
-   */
-  if (process.env.DEEL_NO_OPEN) return false;
-  if (!process.stdout.isTTY) return false;
-  try {
-    const [cmd, args] = process.platform === 'win32'
-      // start 는 cmd 안엣말이다. 첫 따옴표 한 쌍은 창 제목 자리라 비워 둬야 한다.
-      ? ['cmd', ['/d', '/s', '/c', 'start', '', url]]
-      : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
-    const kid = spawn(cmd, args, { stdio: 'ignore', detached: process.platform !== 'win32', windowsHide: true });
-    kid.on('error', () => { /* 없으면 그만 */ });
-    kid.unref();
-    return true;
-  } catch {
-    return false;
-  }
-}
+// 기본 브라우저로 여는 것은 ui/browser.js 로 옮겼다 — 로그인(2.1.4)도 같은 문을 쓴다.
+export { 브라우저로 } from '../ui/browser.js';

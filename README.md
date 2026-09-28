@@ -396,7 +396,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.1.3  ⌂ inside
+ deel 2.1.4  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -443,10 +443,12 @@ Instead of asking for a URL, it asks **where you're connecting**.
 ```
 1. I only have a key — I'll figure out where it goes    1 blank
 2. Enter an address (corporate gateway · local)          2 blanks
-3. OpenAI (GPT)                                          1 blank
-4. Anthropic (Claude)                                    1 blank
-5. Google (Gemini)                                       1 blank
-6. AWS Bedrock                                           2 blanks
+3. Log in with a browser — OpenRouter                    0 blanks
+4. OpenAI (GPT)                                          1 blank
+5. Anthropic (Claude)                                    1 blank
+6. Google (Gemini)                                       1 blank
+7. OpenRouter (Claude · GPT · Grok · Kimi …)             1 blank
+8. AWS Bedrock                                           2 blanks
 ```
 
 Option 1 is the point — the key prefix decides which single vendor is asked.
@@ -460,6 +462,13 @@ Option 1 is the point — the key prefix decides which single vendor is asked.
 Probing vendors one by one would send an Anthropic key to OpenAI's server and
 then to Google's. You get a 401 and stop — but **the key has already left.**
 So an unrecognized key is never guessed at; you are asked.
+
+**Option 3 takes no key at all** (2.1.4). A browser opens; log in to OpenRouter and a key named
+`deel` is created on that account, which deel receives and locks away. One key covers Claude, GPT,
+Grok and Kimi, billed to that account as you use it. If the browser is on another machine (SSH),
+use `deel setup --no-browser` — open the link anywhere and paste the code it shows. deel does not
+borrow a Claude or Codex subscription login: those belong to the vendors' own tools, and a
+third-party tool riding on them gets cut off one day.
 
 Bedrock asks for a region — five including Seoul (`ap-northeast-2`), plus
 "enter it yourself." Claude has a different wire shape, absorbed in six places
@@ -1415,7 +1424,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.1.3](docs/en/releases/2.1.md#213)** | Product features — models that write tool calls as text are understood, `deel run --continue`/`--resume`/`--events` and changed `files` in the result, `/undo` brings back what a script changed in a git repository, a syntax check without a language server, Outline loads the most imported files first, and MCP attaches by URL with resources and prompts |
+| **[2.1.4](docs/en/releases/2.1.md#214)** | Log in with a browser — `deel setup` option 3 connects to OpenRouter by logging in (OAuth PKCE), no key to paste; one key for Claude, GPT, Grok and Kimi. `--no-browser` for SSH, `sk-or-` keys recognized, and long model lists narrow by name |
+| [2.1.3](docs/en/releases/2.1.md#213) | Product features — models that write tool calls as text are understood, `deel run --continue`/`--resume`/`--events` and changed `files` in the result, `/undo` brings back what a script changed in a git repository, a syntax check without a language server, Outline loads the most imported files first, and MCP attaches by URL with resources and prompts |
 | [2.1.2](docs/en/releases/2.1.md#212) | Policy, small gaps and speed — confirm asks before MCP tools that are not read-only, editor (ACP) sessions past 16 are let go and brought back on the next message, `--check-rounds`/`--check-timeout` and per-task check settings in `deel eval`, and startup reads 18 files instead of 164 |
 | [2.1.1](docs/en/releases/2.1.md#211) | From a full review — `config explain` one level up showed keys, webhook URLs and Sentry DSNs passed both the shell-env filter and masking, `kill` stopped a Jobs server past strict, Def/Refs could not read EUC-KR, and `deel eval` fixes |
 | [2.1.0](docs/en/releases/2.1.md#210) | Hand it off and it keeps going; make it ask and it shows the diff — a check decides when it is done (`check`), a golden set measures how much gets done (`deel eval`), and `"approval"` in the managed policy lets a company set an approval floor |

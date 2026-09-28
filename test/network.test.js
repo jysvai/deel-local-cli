@@ -272,12 +272,23 @@ for (const f of 갈아타는곳) {
 check('연결을 바꾸면 자물쇠도 옮김', 안옮김.length === 0, 안옮김.join(', '));
 
 // ── 8. 몰래 보내는 코드가 없나 ──────────────────────────────────────────
-// 소켓을 직접 만지는 곳은 둘뿐이다 — http.js(프록시 터널: http · https · tls)와
-// preview/serve.js(이 컴퓨터 안에서 여는 미리보기 서버: http). 그 밖에서 나오면 새는 것이다.
+// 소켓을 직접 만지는 곳은 셋뿐이다 — http.js(프록시 터널: http · https · tls)와
+// preview/serve.js(이 컴퓨터 안에서 여는 미리보기 서버: http), login.js(브라우저 로그인이
+// 돌아올 콜백 문: http · 2.1.4). 뒤의 둘은 **듣기만** 한다 — 나가는 것은 여전히 http.js 하나다.
+// 그 밖에서 나오면 새는 것이다.
 const 소켓허용 = {
   'src/backend/http.js': ['node:http', 'node:https', 'node:tls'],
   'src/preview/serve.js': ['node:http'],
+  'src/login.js': ['node:http'],
 };
+{
+  // 콜백 문은 이 컴퓨터 안(루프백)에만 연다. 모든 곳(0.0.0.0 · ::)에 열면 같은 망의 남이 코드를 넣으러 온다.
+  const 글 = readFileSync(join(repo, 'src/login.js'), 'utf8');
+  const 호스트들 = [...글.matchAll(/듣기\([^,]+,\s*[^,]+,\s*'([^']*)'\)/g)].map((m) => m[1]);
+  check('★ 로그인 콜백 문은 루프백에만 연다', 호스트들.length >= 2 && 호스트들.every((h) => h === '127.0.0.1' || h === '::1'),
+    호스트들.join(' · '));
+  check('로그인은 제 요청을 http.js 로 낸다 (fetch 없음)', !/\bfetch\s*\(/.test(글) && /from '\.\/backend\/http\.js'/.test(글));
+}
 const 의심 = [];
 for (const f of SRC) {
   const text = readFileSync(join(repo, f), 'utf8');

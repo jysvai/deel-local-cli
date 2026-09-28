@@ -28,11 +28,36 @@ Azure front end wrapped in Entra ID answers 401 to `api-key` and accepts `Bearer
 
 ### OpenRouter
 
-One address and one key. At the setup screen choose **Enter an address directly**, paste
-`https://openrouter.ai/api/v1`, then the key from your OpenRouter dashboard. Auth is
-`Authorization: Bearer`, the model list comes from `/models`, and the context length is read
-from that list — there is nothing else to line up. The key stays on this machine, and once
-connected that address is the only host deel talks to.
+**Connect by logging in, no key needed** (2.1.4). In `deel setup` choose **3. Log in with a
+browser**; a browser opens and you log in to OpenRouter. A key named `deel` is created on that
+account, and deel receives it and locks it away exactly like a pasted key (Windows DPAPI · macOS
+Keychain). One key covers Claude, GPT, Grok and Kimi, billed to that account's credits as you use
+it. The key shows up at [openrouter.ai/keys](https://openrouter.ai/keys), where you can delete it.
+
+- **How it is received** — OAuth PKCE. deel makes a random verifier and puts only its hash in the
+  login link. After you log in, the browser hands a code back to `localhost` on this PC, and deel
+  sends code + verifier once to `https://openrouter.ai/api/v1/auth/keys` to trade it for the key.
+  The verifier never travels through the browser or the callback — it goes only in that exchange —
+  so an intercepted code is worthless. The callback path is
+  freshly random on every run.
+- **If the browser is on another machine** (SSH · containers) use `deel setup --no-browser`. Open
+  the link anywhere, log in, and a code appears on screen — paste it (or the whole address with
+  `code=` in it). An SSH session, or Linux with no display, takes this path on its own.
+- You have **5 minutes**. Close the window and walk away, and the wait still ends and the callback
+  port is closed.
+- **Under seal (`--offline`)** it does not go out to log in — it does not even open the browser.
+- With hundreds of models, model selection **narrows by part of the name** (`claude` · `grok` ·
+  `kimi`). "Enter it yourself" at the end of the list takes any name. No credits yet? Pick a model
+  ending in `:free`.
+
+Already have a key? Choose **7. OpenRouter** and paste it (leave it empty and press Enter to log in
+instead), or put it into **1. I only have a key** — the `sk-or-` prefix is recognized. Auth is
+`Authorization: Bearer`, the model list comes from `/models`, and the context length is read from
+that list. Once connected, that address is the only host deel talks to.
+
+deel does not borrow a Claude or Codex **subscription** login. Those belong to the vendors' own
+tools; a third-party tool riding on them breaks their terms or gets cut off one day, and you are
+left unable to work without knowing why.
 
 ### Azure OpenAI
 

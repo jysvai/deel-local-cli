@@ -323,7 +323,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 2.1.3  ⌂ 이 안
+ deel 2.1.4  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -369,10 +369,12 @@ deel setup
 ```
 1. 열쇠만 있습니다 — 어디 것인지 찾아 드립니다   빈칸 1개
 2. 주소를 직접 넣기 (사내 게이트웨이 · 로컬)      빈칸 2개
-3. OpenAI (GPT)                                  빈칸 1개
-4. Anthropic (Claude)                            빈칸 1개
-5. Google (Gemini)                               빈칸 1개
-6. AWS Bedrock                                   빈칸 2개
+3. 브라우저로 로그인 — OpenRouter                 빈칸 0개
+4. OpenAI (GPT)                                  빈칸 1개
+5. Anthropic (Claude)                            빈칸 1개
+6. Google (Gemini)                               빈칸 1개
+7. OpenRouter (Claude · GPT · Grok · Kimi …)     빈칸 1개
+8. AWS Bedrock                                   빈칸 2개
 ```
 
 1번이 핵심입니다. 열쇠 앞머리로 어디 것인지 짚어서 **한 곳만** 묻습니다.
@@ -386,6 +388,12 @@ deel setup
 벤더마다 찔러 보는 식으로 만들면 Anthropic 열쇠가 OpenAI 서버로, 다시 Google
 서버로 갑니다. 401 이 오고 끝이지만 **열쇠는 이미 갔습니다.** 그래서 모르는
 열쇠는 짐작하지 않고 사람에게 묻습니다.
+
+**3번은 열쇠를 안 넣습니다** (2.1.4). 브라우저가 열리고 OpenRouter 에 로그인하면 그 계정에
+`deel` 이름의 열쇠가 생기고, deel 이 그것을 받아 잠가 둡니다. 열쇠 하나로 Claude · GPT · Grok · Kimi
+를 다 쓰고 쓴 만큼 그 계정에서 빠집니다. SSH 처럼 브라우저가 다른 기기에 있으면
+`deel setup --no-browser` — 링크를 아무 기기에서 열고 뜬 코드를 붙여 넣습니다. Claude · Codex 구독
+로그인을 빌려 쓰지는 않습니다 — 그 로그인은 그 회사 도구용이라 남의 도구가 쓰면 어느 날 막힙니다.
 
 Bedrock 은 리전을 고릅니다 — 서울(`ap-northeast-2`) 포함 다섯 곳과 「직접 입력」.
 Claude 는 몸통 규격이 달라서 여섯 자리를 따로 흡수했습니다
@@ -1333,7 +1341,8 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[2.1.3](docs/ko/releases/2.1.md#213)** | 제품 기능 — 도구를 글로 부르는 모델도 알아듣고, `deel run --continue`·`--resume`·`--events` 와 결과의 바뀐 파일(`files`)이 생겼고, git 저장소면 스크립트가 바꾼 것도 `/undo` 로 돌아가고, 언어 서버 없이도 문법을 보고, Outline 이 많이 불리는 파일부터 싣고, MCP 가 주소로 붙어 자료 · 프롬프트까지 씁니다 |
+| **[2.1.4](docs/ko/releases/2.1.md#214)** | 브라우저로 로그인 — `deel setup` 3번이 열쇠 없이 OpenRouter 계정 로그인(OAuth PKCE)으로 붙습니다. 열쇠 하나로 Claude · GPT · Grok · Kimi. SSH 는 `--no-browser`, `sk-or-` 열쇠를 알아보고, 긴 모델 목록은 이름으로 좁힙니다 |
+| [2.1.3](docs/ko/releases/2.1.md#213) | 제품 기능 — 도구를 글로 부르는 모델도 알아듣고, `deel run --continue`·`--resume`·`--events` 와 결과의 바뀐 파일(`files`)이 생겼고, git 저장소면 스크립트가 바꾼 것도 `/undo` 로 돌아가고, 언어 서버 없이도 문법을 보고, Outline 이 많이 불리는 파일부터 싣고, MCP 가 주소로 붙어 자료 · 프롬프트까지 씁니다 |
 | [2.1.2](docs/ko/releases/2.1.md#212) | 정책 · 작은 공백 · 속도 — confirm 이 읽기만 하지 않는 MCP 도구를 묻고, 에디터(ACP) 세션은 16개를 넘으면 내려놓았다가 다음 말에 되살리고, `--check-rounds`·`--check-timeout` 과 과제별 검사 설정이 `deel eval` 에 생겼고, 시작 때 읽는 파일이 164개에서 18개로 줄었습니다 |
 | [2.1.1](docs/ko/releases/2.1.md#211) | 전체 검수에서 나온 것 — 한 칸 위를 물으면 `config explain` 이 열쇠를 보였고, 웹훅 주소·Sentry DSN 이 셸 환경 거르기와 가리기를 둘 다 지났고, `kill` 로 strict 를 지나 Jobs 서버를 껐고, Def·Refs 가 EUC-KR 을 못 읽었습니다 · `deel eval` 고침 |
 | [2.1.0](docs/ko/releases/2.1.md#210) | 맡기면 멈추지 않고, 묻게 하면 diff 를 보여 줍니다 — 「다 됐다」 는 검사가 정합니다(`check`) · 얼마나 해내나는 골든셋으로 잽니다(`deel eval`) · 관리 정책 `"approval"` 로 회사가 승인 바닥을 겁니다 |

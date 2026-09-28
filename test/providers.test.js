@@ -47,6 +47,11 @@ trace('1-열쇠를-뿌리지-않는가');
   check('★ sk-ant- 를 sk- 가 먼저 집지 않는다',
     어디것일까('sk-ant-api03-abcdefghij')?.제공자.id === 'anthropic',
     어디것일까('sk-ant-api03-abcdefghij')?.제공자.id ?? '(모름)');
+  // OpenRouter 열쇠도 sk- 로 시작한다. 짧은 쪽이 집으면 OpenRouter 열쇠가 api.openai.com 으로 간다 (2.1.4).
+  for (const 열쇠 of ['sk-or-v1-0123456789abcdef', 'sk-or-abcdefghij']) {
+    check(`★ ${열쇠.slice(0, 9)}… 를 sk- 가 먼저 집지 않는다 — OpenRouter`, 어디것일까(열쇠)?.제공자.id === 'openrouter',
+      어디것일까(열쇠)?.제공자.id ?? '(모름)');
+  }
 
   /*
    * 모르는 열쇠는 **모른다고 한다.** 여기서 아무 데나 골라 주면, 그 순간

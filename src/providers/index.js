@@ -39,11 +39,12 @@
 import { 제공자 as openai } from './openai.js';
 import { 제공자 as anthropic } from './anthropic.js';
 import { 제공자 as gemini } from './gemini.js';
+import { 제공자 as openrouter } from './openrouter.js';
 import { 제공자 as bedrock } from './bedrock.js';
 import { 제공자 as 직접 } from './custom.js';
 
 /** 화면에 보일 차례. 「직접 넣기」 는 언제나 목록에 있고, 화면에서는 위에 둔다. */
-export const 제공자들 = [openai, anthropic, gemini, bedrock, 직접];
+export const 제공자들 = [openai, anthropic, gemini, openrouter, bedrock, 직접];
 
 /** id 로 하나 집는다. 모르면 null — 지어내지 않는다. */
 export function 제공자고르기(id) {

@@ -34,6 +34,7 @@ const FILES = [
   'gitsnap.test.js',
   'repomap.test.js',
   'mcphttp.test.js',
+  'login.test.js',
   'retry.test.js',
   'proxy.test.js',
   'shell.test.js',
