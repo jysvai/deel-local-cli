@@ -15866,6 +15866,17 @@
       "찾을것": "        else if (지금.크기 === 떠둔것.크기 && 지금.시각 === 떠둔것.시각 && (시각믿음 || !떠둔것.buf)) 앞모습 = undefined;",
       "바꿀것": "        else if (지금.크기 === 떠둔것.크기 && 지금.시각 === 떠둔것.시각) 앞모습 = undefined;",
       "검사": "test/gitsnap.test.js"
+    },
+    {
+      "곳": "src/safety/authcmd.js",
+      "무엇": "유닉스에서 열쇠받기 명령을 끊을 때 셸만 죽인다 (2.1.3)",
+      "그러면": "셸 밑의 로그인 도구(손자)가 파이프를 물고 남아 deel 이 안 끝난다",
+      "찾을것": "          try { process.kill(-kid.pid, 'SIGKILL'); return; } catch { /* 무리가 없다 — 셸만 */ }",
+      "바꿀것": "",
+      "검사": "test/authcmd.test.js",
+      "잴곳": [
+        "linux"
+      ]
     }
   ]
 }

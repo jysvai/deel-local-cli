@@ -266,6 +266,9 @@ export async function 한번받기(설정, { 기다림 = 기본기다림, signal
         // 잘못된 것이고, 열어 두면 그 자리에서 영영 멈춘다.
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
+        // 유닉스는 셸을 새 무리의 머리로 띄운다 — 끊을 때 무리째 거두게(거두기). 윈도우에서 detached 는 새 콘솔
+        // 창이라 안 쓴다(그쪽은 taskkill /T 가 나무를 따라간다). tools/index.js 의 Bash 와 같은 짝이다.
+        detached: process.platform !== 'win32',
       });
     } catch (err) {
       return done({ ok: false, 왜: `명령을 못 띄웠습니다 (${err.message})`, 보인것: '' });
@@ -278,9 +281,15 @@ export async function 한번받기(설정, { 기다림 = 기본기다림, signal
      * 로그인 도구(손자)가 살아 stdout 을 물고 있었다. 그러면 「못 받았습니다」 뒤에도 그 파이프가 deel 을
      * 붙들어, 할 일을 다 마친 `deel run` 이 손자가 끝날 때까지 안 끝났다. 윈도우는 셸이 살아 있을 때
      * taskkill /T 로 나무를 따라가야 하므로 kill 은 그 뒤에 한다(backend/mcp.js 닫기 와 같은 차례).
+     * 유닉스도 같았다 — 셸만 죽고 손자가 남았다(리눅스 CI 가 잡음). 무리(-pid)째 끊는다.
      */
     const 거두기 = () => {
-      const 죽이기 = () => { try { kid.kill('SIGKILL'); } catch { /* 이미 죽었으면 그만 */ } };
+      const 죽이기 = () => {
+        if (process.platform !== 'win32' && kid.pid) {
+          try { process.kill(-kid.pid, 'SIGKILL'); return; } catch { /* 무리가 없다 — 셸만 */ }
+        }
+        try { kid.kill('SIGKILL'); } catch { /* 이미 죽었으면 그만 */ }
+      };
       if (process.platform === 'win32' && kid.pid && kid.exitCode === null) {
         try {
           const 나무 = spawn('taskkill', ['/pid', String(kid.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
