@@ -97,7 +97,7 @@ try {
     const { History } = await import('../src/safety/undo.js');
     const { Audit } = await import('../src/safety/audit.js');
     const { TOOLS } = await import('../src/tools/index.js');
-    for (const cmd of ['find .. -delete', 'rm -rf $PWD/../옆', 'cd - && rm -rf *', 'rm -rf $OLDPWD/x', 'git -C .. clean -fdx', 'cd src && cd .. && ls', 'ls .']) {
+    for (const cmd of ['find .. -delete', 'rm -rf $PWD/../옆', 'cd - && rm -rf *', 'rm -rf $OLDPWD/x', 'git -C .. clean -fdx', 'cat "$(pwd -P)/../지킬것.txt"', 'cd ~-/sub && rm -rf *', 'cd src && cd.. && find .. -delete', 'cd src && cd .. && ls', 'ls .']) {
       const 바깥 = mkdtempSync(join(tmpdir(), 'deel-mac-부모-'));
       const 방 = join(바깥, 'proj');
       mkdirSync(join(방, 'src'), { recursive: true });

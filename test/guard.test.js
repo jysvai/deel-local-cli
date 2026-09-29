@@ -1448,6 +1448,8 @@ trace('21-부모폴더');
     'git --git-dir=.. log',
     "find .'.' -delete",                  // 가운데만 두른 따옴표도 셸에서는 `..` 다
     'cd src; cd ..; find .. -delete',     // 앞 cd 의 `..` 가 뒤 `..` 를 비켜 주면 안 된다
+    'cd src && cd.. && find .. -delete',  // 붙여 쓴 `cd..` 도 뒤 `..` 를 비켜 주면 안 된다 (Gemini 리뷰)
+    'cd src && cd.. && rd /s /q ..',
   ]) check(`★★★ 부모 폴더를 못 건드린다: ${cmd}`, /범위 밖/.test(막히나(cmd) ?? ''), 막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
 
   // 값을 아는 자리표 — 셸은 작업 폴더에서 뜬다.
@@ -1460,8 +1462,14 @@ trace('21-부모폴더');
     'rd /s /q %CD%\\..',
     'type %cd%\\..\\지킬것.txt',
     'Remove-Item -Recurse $pwd.Path\\..\\옆프로젝트',
+    'Remove-Item -Recurse $PWD.ProviderPath/..',        // 아래 넷은 Gemini 리뷰
+    'cat "$(pwd -P)/../지킬것.txt"',
+    'cat "`pwd`/../지킬것.txt"',
+    'cat `pwd`/../지킬것.txt',
     'rm -rf $OLDPWD',
     'cat "${OLDPWD}/x"',
+    'cd ~-/sub && rm -rf *',                              // 이전 폴더 **아래** (Gemini 리뷰)
+    'cd $OLDPWD/sub && rm -rf *',
   ]) check(`★★★ 값을 아는 자리표로도 못 나간다: ${cmd}`, /범위 밖|이전 폴더/.test(막히나(cmd) ?? ''), 막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
 
   // 드라이브의 지금 폴더 기준 꼴은 윈도에만 있다 — 딴 판에서 `C:..` 는 그냥 이름이다.
@@ -1486,6 +1494,10 @@ trace('21-부모폴더');
     'cat $PWD_BAK/x',                     // $PWD 로 시작하는 딴 이름
     'git -C . status',
     'cd src && cd .. && npm test',
+    'cd src && cd.. && ls',
+    'cd src && cd ~-/src && ls',                          // 이전 폴더(뿌리) 아래 src
+    'cat "$(pwd -P)/a.txt"',
+    'cat $PWD.ProviderPath/a.txt',
     `cd ${방} && ls`,
   ]) check(`안에서 도는 것은 그대로다: ${cmd}`, 막히나(cmd) === null, 막히나(cmd)?.split('\n')[0] ?? '');
 
