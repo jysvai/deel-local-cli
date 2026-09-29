@@ -13824,6 +13824,81 @@
       "검사": "test/smoke.js"
     },
     {
+      "곳": "src/safety/guard.js",
+      "무엇": "빗금 없는 `..` 를 자리로 안 친다 (2.1.5)",
+      "그러면": "`find .. -delete` · `rd /s /q ..` 가 울타리를 지나 작업 폴더의 부모를 통째로 지운다",
+      "찾을것": "  return s.includes('/') || s.includes('\\\\') || s === '..' || /^[a-zA-Z]:(?:\\.{1,2})?$/.test(s);",
+      "바꿀것": "  return s.includes('/') || s.includes('\\\\') || /^[a-zA-Z]:(?:\\.{1,2})?$/.test(s);",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "드라이브 기준 꼴(`C:..`)을 자리로 안 친다 (2.1.5)",
+      "그러면": "`rd /s /q C:..` 가 작업 폴더의 부모를 지운다",
+      "찾을것": "  return s.includes('/') || s.includes('\\\\') || s === '..' || /^[a-zA-Z]:(?:\\.{1,2})?$/.test(s);",
+      "바꿀것": "  return s.includes('/') || s.includes('\\\\') || s === '..' || /^[a-zA-Z]:$/.test(s);",
+      "검사": "test/guard.test.js",
+      "잴곳": [
+        "win32"
+      ]
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "`$PWD` · `%CD%` 를 지금 폴더로 안 푼다 (2.1.5)",
+      "그러면": "`rm -rf $PWD/../옆프로젝트` 가 「못 푼 자리표」 로 검사를 건너뛰어 옆 프로젝트를 지운다",
+      "찾을것": "    .replace(/^(?:\\$\\{PWD\\}|\\$PWD(?:\\.Path)?|%CD%|\\$\\(pwd\\))(?=[/\\\\]|$)/i, '.')",
+      "바꿀것": "    .replace(/^(?!)/, '.')",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "`$OLDPWD` 를 `~-` 로 안 바꾼다 (2.1.5)",
+      "그러면": "`rm -rf $OLDPWD` 가 어디인지 모르는 이전 폴더를 지운다",
+      "찾을것": "    .replace(/^(?:\\$\\{OLDPWD\\}|\\$OLDPWD)(?=[/\\\\]|$)/i, '~-')",
+      "바꿀것": "    .replace(/^(?!)/, '~-')",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "따옴표 뗀 꼴에서 `..` 를 자리로 안 친다 (2.1.5)",
+      "그러면": "`find .'.' -delete` 가 셸에서는 `..` 인데 지나간다",
+      "찾을것": "    if (!자리꼴인가(뗀것)) continue;",
+      "바꿀것": "    if (!뗀것.includes('/') && !뗀것.includes('\\\\')) continue;",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "cd 목적지를 본 횟수가 아니라 글자로 비킨다 (2.1.5)",
+      "그러면": "`cd src; cd ..; find .. -delete` 의 뒤 `..` 가 앞 cd 덕에 검사를 비켜 부모를 지운다",
+      "찾을것": "    if (남은번 > 0) { 옮긴자리.set(t, 남은번 - 1); continue; }",
+      "바꿀것": "    if (남은번 > 0) continue;",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "먼저 옮긴 적 없는 `cd -` 를 그냥 둔다 (2.1.5)",
+      "그러면": "`cd - && rm -rf *` 가 물려받은 OLDPWD(모르는 자리)에서 통째로 지운다",
+      "찾을것": "      if (이전 == null) { 모르는자리 = 목적; continue; }",
+      "바꿀것": "      if (이전 == null) continue;",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "`cd -` 의 `-` 를 옵션으로 건너뛴다 (2.1.5)",
+      "그러면": "`cd -` 가 목적지 없는 cd 로 읽혀 `cd - && rm -rf *` 가 지나간다",
+      "찾을것": "    if (w.글.startsWith('-') && w.글 !== '-') continue;",
+      "바꿀것": "    if (w.글.startsWith('-')) continue;",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "파워셸 다른 이름(ri · rd · del …)을 Remove-Item 규칙에서 뺀다 (2.1.5)",
+      "그러면": "`ri -Recurse -Force C:\\` 가 금지 목록을 지나간다 — checkPaths 한 겹만 남는다",
+      "찾을것": "(?:Remove-Item|ri|rd|rmdir|del|erase)",
+      "바꿀것": "(?:Remove-Item)",
+      "검사": "test/guard.test.js"
+    },
+    {
       "곳": "src/tools/index.js",
       "무엇": "쓴 뒤 그 자리가 파일인지 안 본다 (2.0.2 · 379)",
       "그러면": "윈도 10 에서 `NUL`·`aux.txt` 에 쓰면 아무것도 안 남는데 「새로 만듦: NUL (1줄)」 이라 한다",

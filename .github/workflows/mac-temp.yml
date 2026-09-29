@@ -1,0 +1,38 @@
+# 임시 — tmp/mac-check 가지에만 있다. 윈도 PC 에서 못 잰 맥 자리를 진짜 맥에서 잰다. main 에는 안 들어간다.
+name: mac-temp
+
+on:
+  push:
+    branches: ['tmp/mac-check']
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: mac probe (keychain 531 + guard 2.1.5)
+        env:
+          DEEL_NO_OPEN: '1'
+        run: node tools/mac-probe.mjs
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+      - name: syntax
+        run: npm run check
+      - name: test
+        run: npm test

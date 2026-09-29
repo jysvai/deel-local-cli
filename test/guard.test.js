@@ -7,7 +7,7 @@
 // 이 자리들의 공통점: 실패해도 대화가 이어져야 한다. 도구 결과 자리를 비우면
 // 짝이 깨져서 다음 턴에 게이트웨이가 통째로 거절한다.
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSync, realpathSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSync, realpathSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -485,6 +485,15 @@ trace('5c-cd로우회');
     ['남의 폴더', 'cd /etc && cat passwd'],
     ['집 폴더', 'cd ~/.ssh && cat id_rsa'],
     ['절대경로로 밖', `cd ${join(tmpdir(), '남의방')} && ls`],
+    /*
+     * 2.1.5 — 먼저 옮긴 적 없는 `cd -` 는 셸이 물려받은 OLDPWD 로 간다. deel 은 명령마다 셸을 새로
+     * 띄우므로 그 자리는 우리가 모르는 곳이다(`rm -rf ~-` 를 막는 것과 같은 까닭). 여태 「직전 자리」 라며
+     * 그대로 돌렸는데, 그 뒤 명령은 어디서 도는지 모른다.
+     */
+    ['먼저 옮긴 적 없는 cd - 뒤의 명령', 'cd - && npm test'],
+    ['cd ~- 도 같다', 'cd ~- && rm -rf *'],
+    ['cd $OLDPWD 도 같다', 'cd $OLDPWD; rm -rf *'],
+    ['셸을 한 겹 씌워도', 'sh -c "cd - && rm -rf *"'],
   ];
   for (const [뭐, cmd] of 나가는것) {
     check(`★ 밖으로 나가는 cd 는 막힌다 (${뭐})`, /범위 밖/.test(막히나(cmd) ?? ''),
@@ -502,7 +511,10 @@ trace('5c-cd로우회');
     ['들어갔다 나오면 제자리다', 'cd src && cd .. && npm test'],
     ['pushd 로 들어갔다 popd 로 나오기', 'pushd src && npm test && popd && npm run build'],
     ['인자 없는 cd', 'cd'],
-    ['cd - (직전 자리)', 'cd - && npm test'],
+    ['cd - 하나만 (옮기고 끝)', 'cd -'],
+    ['cd - 는 이 명령 안에서 떠나온 자리다', 'cd src && make && cd - && npm test'],
+    ['cd - 를 두 번 하면 다시 그 자리', 'cd src && cd - && cd - && cat x.js'],
+    ['popd 뒤 cd - 는 popd 전 자리', 'pushd src && popd && cd - && ls'],
     ['cd . 은 제자리다', 'cd . && node src/cli.js'],
     ['윈도우 드라이브 스위치가 있어도 안 죽는다', `cd /d ${root} && npm test`],
     ['자리표가 남아 있으면 어디로 갈지 모르니 안 막는다', 'cd $BUILD_DIR && make'],
@@ -1397,6 +1409,108 @@ trace('20-남의집');
   check('  내 이름이면 내 집', 남의집('me', { 집: '/home/me', 나: 'me', passwd: '', platform: 'linux' }) === '/home/me');
   const 옆자리 = 남의집('admin', { 집: 'C:\\Users\\me', 나: 'me', passwd: '', platform: 'win32' }).replace(/\\/g, '/');
   check('  윈도는 예전처럼 내 집 옆자리 (C:\\Users\\admin)', /\/Users\/admin$/.test(옆자리), 옆자리);
+}
+
+trace('21-부모폴더');
+/*
+ * ── 빗금 없는 `..` · `$PWD` · `%CD%` · `$OLDPWD` 로 작업 폴더 밖이 열렸다 (2.1.5) ──────────────
+ *
+ * 기본(auto) 모드는 셸 명령을 안 묻는다 — 이 울타리가 마지막 문이다. 그런데 자리로 치는 것이 「빗금이
+ * 든 낱말」 뿐이라 **부모 폴더 그 자체**(`..`)가 후보에도 못 들었고, 값을 아는 자리표(`$PWD` · `%CD%`)도
+ * 「못 푼 것」 으로 건너뛰었다. `find .. -delete` 한 줄에 작업 폴더의 부모가 통째로 비었다(재 봤다).
+ *
+ * 부모를 진짜로 하나 둔다 — 울타리가 새면 이 검사가 지우는 것은 제가 만든 `바깥` 폴더뿐이다.
+ */
+{
+  const 바깥 = mkdtempSync(join(tmpdir(), 'deel-부모-'));
+  const 방 = join(바깥, 'proj');
+  const 옆 = join(바깥, '옆프로젝트');
+  for (const d of [join(방, 'src'), 옆]) mkdirSync(d, { recursive: true });
+  writeFileSync(join(바깥, '지킬것.txt'), '부모 폴더의 파일\n', 'utf8');
+  writeFileSync(join(옆, 'a.js'), '옆 프로젝트\n', 'utf8');
+  writeFileSync(join(방, 'a.txt'), '안\n', 'utf8');
+  const 범위 = makeScope(방);
+  const 막히나 = (cmd) => {
+    try { checkCommand(cmd); checkPaths(cmd, 범위); return null; } catch (e) { return e.message; }
+  };
+
+  // 부모 그 자체 — 지우기 · 읽기 · 묶어 가져오기 · 남의 도구로.
+  for (const cmd of [
+    'find .. -delete',
+    'find .. -type f -delete',
+    'rd /s /q ..',
+    'Remove-Item -Recurse -Force ..',
+    'ri -r -fo ..',
+    'git -C .. clean -fdx',
+    'rsync -a --delete empty/ ..',
+    'tar czf o.tgz ..',
+    'ls ..',
+    'git --git-dir=.. log',
+    "find .'.' -delete",                  // 가운데만 두른 따옴표도 셸에서는 `..` 다
+    'cd src; cd ..; find .. -delete',     // 앞 cd 의 `..` 가 뒤 `..` 를 비켜 주면 안 된다
+  ]) check(`★★★ 부모 폴더를 못 건드린다: ${cmd}`, /범위 밖/.test(막히나(cmd) ?? ''), 막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
+
+  // 값을 아는 자리표 — 셸은 작업 폴더에서 뜬다.
+  for (const cmd of [
+    'rm -rf $PWD/../옆프로젝트',
+    'rm -rf "$PWD/../옆프로젝트"',
+    'rm -rf ${PWD}/../옆프로젝트',
+    'find $PWD/.. -delete',
+    'cat "$(pwd)/../지킬것.txt"',
+    'rd /s /q %CD%\\..',
+    'type %cd%\\..\\지킬것.txt',
+    'Remove-Item -Recurse $pwd.Path\\..\\옆프로젝트',
+    'rm -rf $OLDPWD',
+    'cat "${OLDPWD}/x"',
+  ]) check(`★★★ 값을 아는 자리표로도 못 나간다: ${cmd}`, /범위 밖|이전 폴더/.test(막히나(cmd) ?? ''), 막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
+
+  // 드라이브의 지금 폴더 기준 꼴은 윈도에만 있다 — 딴 판에서 `C:..` 는 그냥 이름이다.
+  if (process.platform === 'win32') {
+    const 드 = 방.slice(0, 2);
+    for (const cmd of [`rd /s /q ${드}..`, `ri -r -fo ${드}..`]) {
+      check(`★★ 드라이브 기준 꼴로도 못 나간다: ${cmd}`, /범위 밖/.test(막히나(cmd) ?? ''), 막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
+    }
+  }
+
+  // 반대쪽 — 안에서 도는 것 · `..` 가 가운데 든 것 · 모르는 변수는 그대로다.
+  for (const cmd of [
+    'git diff HEAD..main',
+    'git log origin/main..HEAD',
+    'echo {1..5}',
+    'ls .',
+    'cat src/../a.txt',
+    'cat $PWD/a.txt',
+    'rm -rf $PWD/build',
+    'cat "$(pwd)/a.txt"',
+    'ls ${PWD}',
+    'cat $PWD_BAK/x',                     // $PWD 로 시작하는 딴 이름
+    'git -C . status',
+    'cd src && cd .. && npm test',
+    `cd ${방} && ls`,
+  ]) check(`안에서 도는 것은 그대로다: ${cmd}`, 막히나(cmd) === null, 막히나(cmd)?.split('\n')[0] ?? '');
+
+  // checkCommand 목록 — 파워셸의 다른 이름도 Remove-Item 이다. checkPaths 와 따로 서는 겹이라 따로 잰다.
+  const 목록이막나 = (cmd) => { try { checkCommand(cmd); return false; } catch { return true; } };
+  for (const 이름 of ['ri', 'rd', 'rmdir', 'del', 'erase']) {
+    for (const cmd of [`${이름} -Recurse -Force C:\\`, `${이름} C:\\ -Recurse`, `${이름} -r ~`]) {
+      check(`★★ 파워셸 다른 이름으로 드라이브 · 집을 통째로: ${cmd}`, 목록이막나(cmd));
+    }
+  }
+  check('  폴더 하나 지우는 ri 는 목록이 안 막는다', !목록이막나('ri -Recurse -Force build'));
+  check('  이름에 ri 가 든 딴 명령은 안 걸린다', !목록이막나('npm run pri -r C:\\x'));
+
+  /*
+   * 진짜 Bash 도구로 한 번 — 판정만 보지 않는다. 막히면 부모의 파일이 그대로여야 한다.
+   * (울타리가 새면 이 줄이 지우는 것은 위에서 만든 `바깥` 뿐이다.)
+   */
+  const { TOOLS } = await import('../src/tools/index.js');
+  const ctx = { scope: 범위, history: new History(방), audit: new Audit(방), seen: new Set() };
+  ctx.history.turn = 1;
+  let 답;
+  try { 답 = await TOOLS.Bash.run({ command: 'find .. -delete' }, ctx); } catch (e) { 답 = { error: e.message }; }
+  check('★★★ Bash 도구가 find .. -delete 를 안 돌린다', /막힘/.test(String(답?.error ?? '')), JSON.stringify(답).slice(0, 160));
+  check('★★★ 부모 폴더의 파일이 그대로 있다', existsSync(join(바깥, '지킬것.txt')) && existsSync(join(옆, 'a.js')));
+  rmSync(바깥, { recursive: true, force: true });
 }
 
 

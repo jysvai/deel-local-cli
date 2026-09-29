@@ -351,7 +351,13 @@ const BLOCKED = [
      * 우리는 「빗금으로 **끝나는** 것」 만 뿌리로 봤다. 위 rm 규칙은 이미
      * 뿌리목표 로 별을 받고 있었다. 한쪽만 받으면 그건 규칙이 아니라 우연이다.
      */
-    re: new RegExp(String.raw`Remove-Item\b(?=[^|;&]*\s-r[a-z]*\b)[^|;&]*\s${윈뿌리목표}(?=\s|$)`, 'i'),
+    /*
+     * 파워셸의 **다른 이름**도 같은 명령이다 (2.1.5 · 2.0.0 울타리 역공격에서 남김).
+     * `ri` · `rd` · `rmdir` · `del` · `erase` 는 파워셸에서 전부 Remove-Item 이다. 위 rd · del 규칙은
+     * cmd 의 `/s` · `/q` 만 보고, 여기는 긴 이름만 봐서 `ri -Recurse -Force C:\` 가 이 목록을 지나갔다
+     * (checkPaths 가 범위 밖으로 막아 줘서 여태 새지는 않았다 — 이 목록은 그와 따로 서는 겹이다).
+     */
+    re: new RegExp(String.raw`(?<![\w-])(?:Remove-Item|ri|rd|rmdir|del|erase)\b(?=[^|;&]*\s-r[a-z]*\b)[^|;&]*\s${윈뿌리목표}(?=\s|$)`, 'i'),
     why: '드라이브나 집 폴더를 통째로 지웁니다',
   },
   /*
@@ -560,7 +566,11 @@ export function checkPaths(cmd, scope) {
     if (봐주는자리(t)) continue;
     // cd 가 가리킨 자리는 위에서 **옮겨 간 자리 기준**으로 이미 봤다. 여기서
     // 또 보면 뿌리 기준으로 풀려서 `cd src/a && cd ../..` 가 밖으로 읽힌다.
-    if (옮긴자리.has(t)) continue;
+    //
+    // 본 **횟수만큼만** 건너뛴다 (2.1.5). 글자로 건너뛰었더니, 빗금 없는 `..` 를 자리로 치자마자
+    // `cd src; cd ..; find .. -delete` 의 뒤 `..` 가 앞 cd 의 `..` 덕에 검사를 비켰다.
+    const 남은번 = 옮긴자리.get(t) ?? 0;
+    if (남은번 > 0) { 옮긴자리.set(t, 남은번 - 1); continue; }
     // 어디인지 모르는 이전 폴더는 밖으로 본다 (경로낱말 의 `~-` 머리말).
     if (/^~-(?=[/\\]|$)/.test(t)) {
       throw new ScopeError(`\`~-\` 는 셸의 이전 폴더(OLDPWD)라 어디인지 알 수 없어 작업 범위 밖으로 봅니다: ${t}`
@@ -620,6 +630,24 @@ function 자리표풀기(s) {
      * 따로 본다 — 어디인지 모르는 자리라 풀 값이 없다.)
      */
     .replace(/^~\+(?=[/\\]|$)/, '.')
+    /*
+     * `$PWD` · `%CD%` 도 **지금 폴더**다 — `~+` 와 같은 대접 (2.1.5).
+     *
+     * 자리표가 든 낱말은 아래 경로낱말() 이 「못 푼 것」 으로 보고 자리 검사를 건너뛴다. 이 둘은
+     * 값을 아는데도(셸은 작업 폴더에서 뜬다) 모르는 것으로 쳐서 그대로 새었다 —
+     *
+     *     rm -rf ../옆프로젝트          막힘
+     *     rm -rf $PWD/../옆프로젝트     통과 ←  같은 폴더
+     *     rd /s /q %CD%\..             통과 ←  작업 폴더의 부모 통째로
+     *
+     * 파워셸은 이름의 크기를 안 가려서(`$pwd`) 크기를 안 본다. 따옴표에 싼 `$(pwd)` 도 같은 값이다
+     * (안 싼 것은 괄호에서 잘려 `/../x` 가 절대경로로 걸린다). 파워셸의 `$pwd.Path` 도 같은 글이다.
+     */
+    .replace(/^(?:\$\{PWD\}|\$PWD(?:\.Path)?|%CD%|\$\(pwd\))(?=[/\\]|$)/i, '.')
+    /*
+     * `$OLDPWD` 는 `~-` 와 같은 자리(이전 폴더)다 — 어디인지 모르니 `~-` 로 바꿔 같은 길로 막는다.
+     */
+    .replace(/^(?:\$\{OLDPWD\}|\$OLDPWD)(?=[/\\]|$)/i, '~-')
     /*
      * `~이름` 은 **그 사람의 집**이다 (사냥5 R5-M1).
      *
@@ -938,6 +966,29 @@ export function 봐주는자리(경로) {
 // (`git commit --message=../notes` · `git log --format=%h/%s`). curl 의 `--data=@파일` 은 파일을 읽으니 안 뺀다.
 const 글받는옵션 = /^(?:message|format|pretty|title|body|subject|description|grep|author|committer|label|comment|notes?)$/i;
 
+/*
+ * ── 빗금 없는 `..` 도 자리다 (2.1.5) ────────────────────────────────────
+ *
+ * 자리로 치는 것은 빗금이 든 낱말과 드라이브 한 칸(`C:`)뿐이었다. 그래서 **부모 폴더 그 자체**가
+ * 후보에도 못 들었다. 기본(auto) 모드에서는 셸 명령을 안 묻고 이 울타리가 마지막 문인데 —
+ *
+ *     rm -rf ../*                 막힘
+ *     find .. -delete             통과 ←  작업 폴더의 부모가 통째로 비었다 (재 봤다)
+ *     rd /s /q ..                 통과 ←  cmd
+ *     Remove-Item -Recurse ..     통과 ←  파워셸
+ *     git -C .. clean -fdx        통과 ←
+ *     tar czf o.tgz ..            통과 ←  작업 폴더가 집 바로 밑이면 ~/.ssh 까지 묶여 읽힌다
+ *
+ * GNU rm 은 `..` 를 스스로 거절해서(`rm -rf ..`) 여태 안 보였을 뿐이다. find · cmd · 파워셸 · git 은
+ * 안 거절한다. 드라이브의 **지금 폴더 기준** 꼴(`C:..` · `C:.`)도 같다 — 윈도에서 `C:..` 는 그
+ * 드라이브의 지금 폴더의 부모다.
+ *
+ * `..` 가 **가운데** 든 것(`HEAD..main` · `{1..5}`)은 부모가 아니다. 낱말 **전체**가 `..` 일 때만.
+ */
+function 자리꼴인가(s) {
+  return s.includes('/') || s.includes('\\') || s === '..' || /^[a-zA-Z]:(?:\.{1,2})?$/.test(s);
+}
+
 /** 명령줄에서 경로처럼 보이는 낱말만 골라낸다. */
 export function 경로낱말(cmd) {
   const out = [];
@@ -1034,7 +1085,7 @@ export function 경로낱말(cmd) {
      */
     if (/^~-(?=[/\\]|$)/.test(풀린)) { out.push(풀린); continue; }
     const 살림이름 = 풀린 === '.deel' || 풀린.toLowerCase() === '.deel';
-    const 경로같나 = 풀린.includes('/') || 풀린.includes('\\') || /^[a-zA-Z]:$/.test(풀린) || 살림이름;
+    const 경로같나 = 자리꼴인가(풀린) || 살림이름;
     if (!경로같나) continue;
     /*
      * 남은 자리표가 있으면(우리가 못 푼 것) **어디로 갈지 모른다.** 울타리
@@ -1083,7 +1134,7 @@ export function 경로낱말(cmd) {
     if (!/["'`]/.test(날것)) continue;                     // 따옴표가 없으면 위에서 이미 봤다
     const 뗀것 = 자리표풀기(날것.replace(/["'`]/g, ''));
     if (!뗀것 || 뗀것.startsWith('-')) continue;
-    if (!뗀것.includes('/') && !뗀것.includes('\\')) continue;
+    if (!자리꼴인가(뗀것)) continue;
     if (/[$%]/.test(뗀것)) { if (내부살림(뗀것)) out.push(뗀것); continue; }
     if (코드조각인가(뗀것)) continue;
     if (!out.includes(뗀것)) out.push(뗀것);
@@ -1159,7 +1210,8 @@ function 낱말들(마디) {
 function 갈자리(뒤) {
   for (const w of 뒤) {
     if (!w.글) continue;
-    if (w.글.startsWith('-')) continue;
+    // `-` 하나는 옵션이 아니라 이전 폴더다 (2.1.5). 옵션으로 건너뛰어 `cd - && rm -rf *` 가 안 보였다.
+    if (w.글.startsWith('-') && w.글 !== '-') continue;
     if (/^\/d$/i.test(w.글)) continue;
     return w.글;
   }
@@ -1169,15 +1221,23 @@ function 갈자리(뒤) {
 /**
  * 폴더를 옮기는 명령을 따라가며, 옮겨 간 자리가 울타리 안인지 본다.
  *
- * @returns {Set<string>} 여기서 이미 본 cd 목적지들. 부르는 쪽은 이걸 두 번
- *   보지 않는다 — 뿌리 기준으로 다시 풀면 `cd src/a && cd ../..` 가 밖이 된다.
+ * @returns {Map<string, number>} 여기서 이미 본 cd 목적지와 그 횟수. 부르는 쪽은 그만큼은
+ *   두 번 보지 않는다 — 뿌리 기준으로 다시 풀면 `cd src/a && cd ../..` 가 밖이 된다.
  */
-function 폴더옮김검사(cmd, scope, 시작 = null, 깊이 = 0, 본것 = new Set()) {
+function 폴더옮김검사(cmd, scope, 시작 = null, 깊이 = 0, 본것 = new Map()) {
   let 여기 = 시작 ?? scope.root;
   const 쌓은것 = [];
+  // 이 명령 안에서 cd 로 떠나온 자리. `cd -` 가 가는 곳이다 — 없으면 셸이 물려받은 OLDPWD 라 모른다.
+  let 이전 = null;
+  // 어디인지 모르는 자리로 옮겼으면 그 적은 글자(`-` · `~-` · `$OLDPWD`). 뒤에 명령이 오면 막는다.
+  let 모르는자리 = null;
   for (const 마디 of 마디들(cmd)) {
     const 낱말 = 낱말들(마디);
     if (!낱말.length) continue;
+    if (모르는자리 != null) {
+      throw new ScopeError(`\`cd ${모르는자리}\` 는 셸의 이전 폴더(OLDPWD)로 가는데 어디인지 알 수 없어, 그 뒤 명령을 작업 범위 밖에서 도는 것으로 봅니다`
+        + `\n  이 명령 안에 있습니다: ${cmd.slice(0, 120)}`);
+    }
     /*
      * ── cmd 에서 `cd..` 는 `cd ..` 다 (사냥8) ────────────────────────────
      *
@@ -1214,25 +1274,44 @@ function 폴더옮김검사(cmd, scope, 시작 = null, 깊이 = 0, 본것 = new 
       for (const w of 낱말.slice(1)) if (w.쌌나) 폴더옮김검사(w.글, scope, 여기, 깊이 + 1, 본것);
       continue;
     }
-    if (되돌리기.test(첫)) { 여기 = 쌓은것.pop() ?? 여기; continue; }
+    if (되돌리기.test(첫)) {
+      const 꺼낸 = 쌓은것.pop();
+      if (꺼낸 != null) { 이전 = 여기; 여기 = 꺼낸; }
+      continue;
+    }
     if (!폴더옮김.test(첫)) continue;
 
     const 목적 = 붙은목적 ?? 갈자리(낱말.slice(1));
-    // 인자 없는 cd(집으로) · `cd -`(직전 자리) 는 어디로 가는지 여기서 모른다.
-    // 모르는 것을 막으면 멀쩡한 명령이 죽는다.
-    if (목적 == null || 목적 === '-') continue;
+    // 인자 없는 cd 는 셸마다 뜻이 다르다(bash 는 집 · cmd 는 지금 자리를 찍기만). 모르는 것을
+    // 막으면 멀쩡한 명령이 죽는다.
+    if (목적 == null) continue;
     const 풀린 = 자리표풀기(목적);
+    /*
+     * ── `cd -` · `cd ~-` · `cd $OLDPWD` 는 이전 폴더로 간다 (2.1.5) ─────────────
+     *
+     * 이 명령 안에서 먼저 옮겼으면 그 떠나온 자리다 — `cd src && make && cd -` 는 뿌리로 돌아온다.
+     * 먼저 옮긴 적이 없으면 셸이 물려받은 OLDPWD 라 어디인지 모른다. 여태 `cd -` 를 건너뛰어
+     * `cd - && rm -rf *` 가 그냥 지나갔다. 그 **뒤에 오는 명령**을 밖에서 도는 것으로 본다 —
+     * `cd -` 하나만 있는 것은 옮기고 끝이라 그대로 둔다(아래 모르는자리).
+     */
+    if (목적 === '-' || /^~-$/.test(풀린)) {
+      // 경로낱말 은 `~-`(· `$OLDPWD`)를 밖으로 올린다. 여기서 풀어 준 것은 checkPaths 가 한 번 비킨다.
+      본것.set(풀린, (본것.get(풀린) ?? 0) + 1);
+      if (이전 == null) { 모르는자리 = 목적; continue; }
+      [여기, 이전] = [이전, 여기];
+      continue;
+    }
     // 못 푼 자리표가 남아 있으면(`$BUILD_DIR`) 역시 어디로 갈지 모른다.
     if (/[$%]/.test(풀린)) continue;
 
     const 열린 = MSYS풀기(풀린);
     const abs = isAbsolute(열린) ? resolve(열린) : resolve(여기, 열린);
-    본것.add(풀린);
+    본것.set(풀린, (본것.get(풀린) ?? 0) + 1);
 
     // 프로그램이 있는 자리로 들어가는 것은 자료를 만지는 일이 아니다.
     // 푼 값이 아니라 **적힌 글자**로 본다 — 윈도우에서 resolve('/usr/bin') 은
     // `C:\usr\bin` 이 되어 목록에 안 걸린다 (checkPaths 도 낱말로 본다).
-    if (봐주는자리(풀린)) { 여기 = abs; continue; }
+    if (봐주는자리(풀린)) { 이전 = 여기; 여기 = abs; continue; }
     try { scope.resolve(abs); }
     catch (e) {
       if (e instanceof ScopeError) {
@@ -1251,6 +1330,7 @@ function 폴더옮김검사(cmd, scope, 시작 = null, 깊이 = 0, 본것 = new 
     if (이유) throw new BlockedError(`${이유}\n  이 명령 안에 있습니다: ${cmd.slice(0, 120)}`);
 
     if (/^(pushd|push-location)$/i.test(첫)) 쌓은것.push(여기);
+    이전 = 여기;
     여기 = abs;
   }
   return 본것;
