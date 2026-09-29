@@ -160,7 +160,7 @@
       "곳": "src/safety/guard.js",
       "무엇": "Remove-Item 규칙을 우리가 적어 둔 어순·철자만 보게 되돌린다",
       "그러면": "파워셸의 흔한 어순(`Remove-Item C:\\ -Recurse -Force`)·빗금(`C:/`)·줄임꼴(`-rec`)·드라이브 없는 뿌리(`/`)가 전부 그대로 나간다 — 드라이브를 통째로 민다",
-      "찾을것": "    re: new RegExp(String.raw`Remove-Item\\b(?=[^|;&]*\\s-r[a-z]*\\b)[^|;&]*\\s${윈뿌리목표}(?=\\s|$)`, 'i'),",
+      "찾을것": "    re: new RegExp(String.raw`(?<![\\w-])(?:Remove-Item|ri|rd|rmdir|del|erase)\\b(?=[^|;&]*\\s-r[a-z]*\\b)[^|;&]*\\s${윈뿌리목표}(?=\\s|$)`, 'i'),",
       "바꿀것": "    re: /Remove-Item\\b[^|;&]*\\s-(Recurse|r)\\b[^|;&]*\\s(?:-?[a-z]+\\s+)*([a-z]:\\\\?|~|\\$HOME|\\$env:USERPROFILE)\\s*$/i,",
       "검사": "test/guard.test.js"
     },

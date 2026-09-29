@@ -2,7 +2,7 @@
 // 2.1.5 울타리를 진짜 맥에서 잰다. 고치지 않는다 — 잰 것을 표로 남긴다. main 에는 안 들어간다.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, appendFileSync } from 'node:fs';
-import { tmpdir, userInfo, homedir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 

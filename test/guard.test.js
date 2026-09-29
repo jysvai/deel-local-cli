@@ -1459,9 +1459,6 @@ trace('21-부모폴더');
     'rm -rf ${PWD}/../옆프로젝트',
     'find $PWD/.. -delete',
     'cat "$(pwd)/../지킬것.txt"',
-    'rd /s /q %CD%\\..',
-    'type %cd%\\..\\지킬것.txt',
-    'Remove-Item -Recurse $pwd.Path\\..\\옆프로젝트',
     'Remove-Item -Recurse $PWD.ProviderPath/..',        // 아래 넷은 Gemini 리뷰
     'cat "$(pwd -P)/../지킬것.txt"',
     'cat "`pwd`/../지킬것.txt"',
@@ -1472,11 +1469,21 @@ trace('21-부모폴더');
     'cd $OLDPWD/sub && rm -rf *',
   ]) check(`★★★ 값을 아는 자리표로도 못 나간다: ${cmd}`, /범위 밖|이전 폴더/.test(막히나(cmd) ?? ''), 막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
 
-  // 드라이브의 지금 폴더 기준 꼴은 윈도에만 있다 — 딴 판에서 `C:..` 는 그냥 이름이다.
+  /*
+   * cmd · 파워셸 꼴(역빗금 칸막이 · 드라이브의 지금 폴더 기준)은 윈도에만 있다. 맥·리눅스 bash 에서 `%CD%\..` 는
+   * `%CD%..` 라는 **이름**이고 `C:..` 도 이름이라 작업 폴더 안이다 — 거기서 막히길 바라면 거짓 막힘을 바라는 셈이다
+   * (맥 실측에서 이 셋이 「통과」 로 빨개져서 옮겼다).
+   */
   if (process.platform === 'win32') {
     const 드 = 방.slice(0, 2);
-    for (const cmd of [`rd /s /q ${드}..`, `ri -r -fo ${드}..`]) {
-      check(`★★ 드라이브 기준 꼴로도 못 나간다: ${cmd}`, /범위 밖/.test(막히나(cmd) ?? ''), 막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
+    for (const cmd of [
+      'rd /s /q %CD%\\..',
+      'type %cd%\\..\\지킬것.txt',
+      'Remove-Item -Recurse $pwd.Path\\..\\옆프로젝트',
+      `rd /s /q ${드}..`,
+      `ri -r -fo ${드}..`,
+    ]) {
+      check(`★★ cmd · 파워셸 꼴로도 못 나간다: ${cmd}`, /범위 밖/.test(막히나(cmd) ?? ''), 막히나(cmd)?.split('\n')[0] ?? '(통과했습니다)');
     }
   }
 
