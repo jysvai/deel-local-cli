@@ -396,7 +396,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.1.4  ⌂ inside
+ deel 2.1.5  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1424,7 +1424,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.1.4](docs/en/releases/2.1.md#214)** | Log in with a browser — `deel setup` option 3 connects to OpenRouter by logging in (OAuth PKCE), no key to paste; one key for Claude, GPT, Grok and Kimi. `--no-browser` for SSH, `sk-or-` keys recognized, and long model lists narrow by name |
+| **[2.1.5](docs/en/releases/2.1.md#215)** | Urgent security fix — shell commands could reach outside the working folder. Now blocked: a bare `..` (`find .. -delete`, `rd /s /q ..`), `$PWD`, `%CD%`, `$OLDPWD`, a `cd -` with no earlier move, `C:..`, and PowerShell aliases (`ri`, `del` …) |
+| [2.1.4](docs/en/releases/2.1.md#214) | Log in with a browser — `deel setup` option 3 connects to OpenRouter by logging in (OAuth PKCE), no key to paste; one key for Claude, GPT, Grok and Kimi. `--no-browser` for SSH, `sk-or-` keys recognized, and long model lists narrow by name |
 | [2.1.3](docs/en/releases/2.1.md#213) | Product features — models that write tool calls as text are understood, `deel run --continue`/`--resume`/`--events` and changed `files` in the result, `/undo` brings back what a script changed in a git repository, a syntax check without a language server, Outline loads the most imported files first, and MCP attaches by URL with resources and prompts |
 | [2.1.2](docs/en/releases/2.1.md#212) | Policy, small gaps and speed — confirm asks before MCP tools that are not read-only, editor (ACP) sessions past 16 are let go and brought back on the next message, `--check-rounds`/`--check-timeout` and per-task check settings in `deel eval`, and startup reads 18 files instead of 164 |
 | [2.1.1](docs/en/releases/2.1.md#211) | From a full review — `config explain` one level up showed keys, webhook URLs and Sentry DSNs passed both the shell-env filter and masking, `kill` stopped a Jobs server past strict, Def/Refs could not read EUC-KR, and `deel eval` fixes |

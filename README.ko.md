@@ -323,7 +323,7 @@ deel --offline
 무엇이 어디로 갈 수 있는지는 켤 때 화면 맨 위에 늘 적혀 있습니다.
 
 ```
- deel 2.1.4  ⌂ 이 안
+ deel 2.1.5  ⌂ 이 안
  보냄    이 컴퓨터 안 127.0.0.1:11434  ← 여기 말고는 어디로도 안 갑니다
 ```
 
@@ -1341,7 +1341,8 @@ zip 은 진짜 `unzip` 으로, tar 는 진짜 `tar` 가 만든 것을 읽혀 교
 
 | 판 | 무엇이 바뀌었나 |
 |---|---|
-| **[2.1.4](docs/ko/releases/2.1.md#214)** | 브라우저로 로그인 — `deel setup` 3번이 열쇠 없이 OpenRouter 계정 로그인(OAuth PKCE)으로 붙습니다. 열쇠 하나로 Claude · GPT · Grok · Kimi. SSH 는 `--no-browser`, `sk-or-` 열쇠를 알아보고, 긴 모델 목록은 이름으로 좁힙니다 |
+| **[2.1.5](docs/ko/releases/2.1.md#215)** | 급한 보안 수정 — 셸 명령이 작업 폴더 밖으로 새던 자리를 막았습니다. 빗금 없는 `..`(`find .. -delete` · `rd /s /q ..`) · `$PWD` · `%CD%` · `$OLDPWD` · 먼저 옮긴 적 없는 `cd -` · `C:..` · 파워셸의 다른 이름(`ri` · `del` …) |
+| [2.1.4](docs/ko/releases/2.1.md#214) | 브라우저로 로그인 — `deel setup` 3번이 열쇠 없이 OpenRouter 계정 로그인(OAuth PKCE)으로 붙습니다. 열쇠 하나로 Claude · GPT · Grok · Kimi. SSH 는 `--no-browser`, `sk-or-` 열쇠를 알아보고, 긴 모델 목록은 이름으로 좁힙니다 |
 | [2.1.3](docs/ko/releases/2.1.md#213) | 제품 기능 — 도구를 글로 부르는 모델도 알아듣고, `deel run --continue`·`--resume`·`--events` 와 결과의 바뀐 파일(`files`)이 생겼고, git 저장소면 스크립트가 바꾼 것도 `/undo` 로 돌아가고, 언어 서버 없이도 문법을 보고, Outline 이 많이 불리는 파일부터 싣고, MCP 가 주소로 붙어 자료 · 프롬프트까지 씁니다 |
 | [2.1.2](docs/ko/releases/2.1.md#212) | 정책 · 작은 공백 · 속도 — confirm 이 읽기만 하지 않는 MCP 도구를 묻고, 에디터(ACP) 세션은 16개를 넘으면 내려놓았다가 다음 말에 되살리고, `--check-rounds`·`--check-timeout` 과 과제별 검사 설정이 `deel eval` 에 생겼고, 시작 때 읽는 파일이 164개에서 18개로 줄었습니다 |
 | [2.1.1](docs/ko/releases/2.1.md#211) | 전체 검수에서 나온 것 — 한 칸 위를 물으면 `config explain` 이 열쇠를 보였고, 웹훅 주소·Sentry DSN 이 셸 환경 거르기와 가리기를 둘 다 지났고, `kill` 로 strict 를 지나 Jobs 서버를 껐고, Def·Refs 가 EUC-KR 을 못 읽었습니다 · `deel eval` 고침 |
