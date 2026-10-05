@@ -396,7 +396,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.1.6  ⌂ inside
+ deel 2.1.7  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1424,7 +1424,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.1.6](docs/en/releases/2.1.md#216)** | Works properly on macOS — long or hand-edited keychain keys, a locked keychain, folders under `/tmp` · `/var` (links to `/private`) recognized as trusted, and output over 64 KB no longer cut off when a pipe reads slowly (macOS and Linux). macOS joins the gate CI |
+| **[2.1.7](docs/en/releases/2.1.md#217)** | Tab completion for file names works in zsh, the default shell on macOS (it printed `bad substitution`); a clipboard image over 12 MB says it is too big instead of blaming osascript; a decomposed (NFD) Korean profile name no longer leaves orphaned keychain items |
+| [2.1.6](docs/en/releases/2.1.md#216) | Works properly on macOS — long or hand-edited keychain keys, a locked keychain, folders under `/tmp` · `/var` (links to `/private`) recognized as trusted, and output over 64 KB no longer cut off when a pipe reads slowly (macOS and Linux). macOS joins the gate CI |
 | [2.1.5](docs/en/releases/2.1.md#215) | Urgent security fix — shell commands could reach outside the working folder. Now blocked: a bare `..` (`find .. -delete`, `rd /s /q ..`), `$PWD`, `%CD%`, `$OLDPWD`, a `cd -` with no earlier move, `C:..`, and PowerShell aliases (`ri`, `del` …) |
 | [2.1.4](docs/en/releases/2.1.md#214) | Log in with a browser — `deel setup` option 3 connects to OpenRouter by logging in (OAuth PKCE), no key to paste; one key for Claude, GPT, Grok and Kimi. `--no-browser` for SSH, `sk-or-` keys recognized, and long model lists narrow by name |
 | [2.1.3](docs/en/releases/2.1.md#213) | Product features — models that write tool calls as text are understood, `deel run --continue`/`--resume`/`--events` and changed `files` in the result, `/undo` brings back what a script changed in a git repository, a syntax check without a language server, Outline loads the most imported files first, and MCP attaches by URL with resources and prompts |
