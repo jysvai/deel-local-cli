@@ -146,6 +146,7 @@ const FILES = [
   'docs.test.js',
   'hwpxwrite.test.js',
   'completion.test.js',
+  'pty.test.js',
   'clipboard.test.js',
   'steer.test.js',
   'pdf.test.js',

@@ -16391,6 +16391,17 @@
       "찾을것": "    if (넘쳤나(r)) return { ok: false, 왜: 너무큰그림말() };\n    if (r.error || !r.stdout?.length) {",
       "바꿀것": "    if (r.error || !r.stdout?.length) {",
       "검사": "test/clipboard.test.js"
+    },
+    {
+      "곳": "src/repl.js",
+      "무엇": "붙여넣기 시작 표지(\\x1b[200~)를 못 알아본다",
+      "그러면": "여러 줄을 붙이면 줄마다 따로 보내져 요청이 줄 수만큼 나간다",
+      "찾을것": "      if (key?.sequence === '\\x1b[200~') {",
+      "바꿀것": "      if (key?.sequence === '\\x1b[200~어긋') {",
+      "검사": "test/pty.test.js",
+      "잴곳": [
+        "linux"
+      ]
     }
   ]
 }
