@@ -13,7 +13,7 @@
 //   Ctrl+D · 그리고 판마다 **끝난 뒤 터미널이 원래대로**(icanon · echo) 돌아왔나.
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { trace } from './trace.mjs';
@@ -85,7 +85,7 @@ try:
     os.kill(pid, signal.SIGKILL)
 except Exception:
     pass
-print(json.dumps({'results': results, 'tail': buf[-8000:].decode('utf-8', 'replace')}, ensure_ascii=False))
+print(json.dumps({'results': results, 'tail': buf[-8000:].decode('utf-8', 'replace'), 'all': buf.decode('utf-8', 'replace')}, ensure_ascii=False))
 `;
 
 const python있나 = process.platform !== 'win32'
@@ -138,21 +138,21 @@ if (!python있나) {
   writeFileSync(모는파일, 모는것, 'utf8');
 
   /** 한 판 — bash 안에서 deel 을 띄우고 걸음들을 친 뒤, 끝난 종료코드와 stty 를 읽는다. */
-  const 판 = async (걸음들) => {
+  const 판 = async (걸음들, { 인자 = '', 설정 = true, 켜짐 = 'fake-7b', 환경 = '' } = {}) => {
     받은말 = [];
     const 일터 = mkdtempSync(join(tmpdir(), 'deel-pty-'));
     const 집 = join(일터, 'home');
     mkdirSync(집, { recursive: true });
-    writeFileSync(join(집, 'config.json'), JSON.stringify({
+    if (설정) writeFileSync(join(집, 'config.json'), JSON.stringify({
       version: 1, active: 'gw',
       profiles: [{ id: 'gw', name: '가짜', kind: 'openai', baseUrl: `http://127.0.0.1:${포트}/v1`, auth: 'bearer', apiKey: 'k', model: 'fake-7b', ctx: 32000, streaming: true, tools: false }],
     }));
-    const 명령 = `cd '${일터}' && DEEL_HOME='${집}' DEEL_NET_ALLOW='http://127.0.0.1:${포트}/v1' DEEL_NO_OPEN=1 '${process.execPath}' '${진입점}'; `
+    const 명령 = `cd '${일터}' && DEEL_HOME='${집}' DEEL_NET_ALLOW='http://127.0.0.1:${포트}/v1' DEEL_NO_OPEN=1 ${환경} '${process.execPath}' '${진입점}' ${인자}; `
       + `echo "EXIT=$?"; stty -a | tr '\\n' ' '; echo; echo END-OF-RUN\r`;
     const 걸음표 = join(일터, 'spec.json');
     writeFileSync(걸음표, JSON.stringify({
       steps: [
-        { send: 명령, mark: true, wait: 'fake-7b', timeout: 30, name: '켜짐' }, { sleep: 1.5 },
+        { send: 명령, mark: true, wait: 켜짐, timeout: 30, name: '켜짐' }, { sleep: 1.5 },
         ...걸음들,
         { wait: 'END-OF-RUN', timeout: 25, name: '끝까지' },
       ],
@@ -168,6 +168,8 @@ if (!python있나) {
         try { done(JSON.parse(o)); } catch { done({ results: [], tail: `모는 쪽 탈: ${e.slice(0, 300)} ${o.slice(0, 300)}` }); }
       });
     });
+    let 저장된 = null;
+    try { 저장된 = JSON.parse(readFileSync(join(집, 'config.json'), 'utf8')); } catch { /* 없음 */ }
     rmSync(일터, { recursive: true, force: true });
     const 꼬리 = 결과.tail.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
     const stty = /(-?icanon)\b.*?\s(-?echo)\s/.exec(꼬리) ?? [];
@@ -178,6 +180,8 @@ if (!python있나) {
       stty: `${stty[1] ?? '?'} ${stty[2] ?? '?'}`,
       받은말: [...받은말],
       꼬리: 꼬리.slice(-500),
+      화면: String(결과.all ?? 결과.tail),
+      저장된: 설정 ? null : 저장된,
     };
   };
   const 덧 = (r) => `켜짐=${r.걸음.켜짐} · ${JSON.stringify(r.받은말)} · EXIT=${r.종료} · ${r.stty} · ${JSON.stringify(r.꼬리.slice(-200))}`;
@@ -236,6 +240,48 @@ if (!python있나) {
   {
     const r = await 판([{ send: '\x04', sleep: 1.5 }]);
     check('★ 진짜 pty: 빈 입력에서 Ctrl+D 는 나가고 터미널을 돌려놓는다', r.종료 !== undefined && r.복구됨, 덧(r));
+  }
+
+  /*
+   * ── deel setup — 물음은 readline 이 아니라 날것 모드를 **직접** 켜고 끈다(ui/prompt.js) ──────
+   *
+   * 그래서 중간에 Ctrl+C 로 나가면 터미널이 날것인 채로 남을 위험이 대화 화면보다 크다. 열쇠 물음은
+   * ● 로 가리므로 화면에 열쇠가 비치면 안 되고, 화살표(무시)·한글·지우기가 섞여도 친 그대로 저장돼야
+   * 한다. 열쇠 보관은 꺼서(DEEL_KEYSTORE=off) 설정 파일에 남은 값으로 잰다 — 여기서 보는 것은 입력이다.
+   */
+  const 주소 = `http://127.0.0.1:${포트}/v1`;
+  const 셋업 = { 인자: 'setup', 설정: false, 켜짐: '어디에 붙일까요', 환경: 'DEEL_KEYSTORE=off' };
+
+  trace('7-setup-번호에서-Ctrl+C');
+  {
+    const r = await 판([{ send: '\x03', sleep: 1 }], 셋업);
+    check('★★ 진짜 pty: setup 첫 물음에서 Ctrl+C 는 130 으로 나가고 터미널을 돌려놓는다', r.종료 === '130' && r.복구됨 && !r.저장된, 덧(r));
+  }
+
+  trace('8-setup-열쇠-치다가-Ctrl+C');
+  {
+    const r = await 판([
+      { type: '2\r', wait: '주소', name: '주소 물음' },
+      { send: `${주소}\r`, wait: 'API 키', name: '열쇠 물음' },
+      { type: 'sk-abc' }, { send: '\x03', sleep: 1 },
+    ], 셋업);
+    check('★★ 진짜 pty: 열쇠를 치다 Ctrl+C — 130 · 터미널 복구 · 아무것도 안 저장', r.종료 === '130' && r.복구됨 && !r.저장된, 덧(r));
+    check('★★ 진짜 pty: 친 열쇠가 화면에 한 글자도 안 비친다 (● 로 가림)', !r.화면.includes('sk-abc') && r.화면.includes('●'), JSON.stringify(r.화면.slice(-300)));
+  }
+
+  trace('9-setup-끝까지');
+  {
+    const r = await 판([
+      { type: '2\r', wait: '주소', name: '주소 물음' },
+      { send: `${주소}\r`, wait: 'API 키', name: '열쇠 물음' },
+      { type: 'sk-pty-' }, { send: '\x1b[D', sleep: 0.2 }, { type: '열쇠' }, { send: '\x7f', sleep: 0.2 }, { type: '쇠\r', wait: '이름', name: '이름 물음' },
+      { type: '\r', wait: '사용할 모델', timeout: 30, name: '모델 물음' },
+      { type: '\r', wait: '저장됨', timeout: 30, name: '저장' },
+    ], 셋업);
+    const 열쇠 = r.저장된?.profiles?.[0]?.apiKey;
+    check('★★ 진짜 pty: setup 을 끝까지 — 화살표는 무시하고 한글 지우기까지 친 그대로 저장한다',
+      r.걸음.저장 && 열쇠 === 'sk-pty-열쇠' && r.종료 === '0' && r.복구됨, `열쇠=${JSON.stringify(열쇠)} · ${덧(r)}`);
+    check('  끝까지 가도 열쇠가 화면에 안 비친다', !r.화면.includes('sk-pty'), '');
   }
 
   서버.close();

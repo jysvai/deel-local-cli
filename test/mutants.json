@@ -16402,6 +16402,28 @@
       "잴곳": [
         "linux"
       ]
+    },
+    {
+      "곳": "src/ui/prompt.js",
+      "무엇": "setup 열쇠 물음이 친 글자를 가리지 않는다",
+      "그러면": "진짜 터미널에서 API 키가 화면에 그대로 찍힌다 — 옆 사람 · 화면 공유 · 터미널 기록에 남는다",
+      "찾을것": "      process.stdout.write(mask ? c.gray('●') : ch1);",
+      "바꿀것": "      process.stdout.write(ch1);",
+      "검사": "test/pty.test.js",
+      "잴곳": [
+        "linux"
+      ]
+    },
+    {
+      "곳": "src/ui/prompt.js",
+      "무엇": "setup 물음에서 Ctrl+C 를 성공(0)으로 끝낸다",
+      "그러면": "중간에 그만둔 setup 을 부른 스크립트가 다 된 줄 안다",
+      "찾을것": "      if (code === 3) { say(''); process.exit(130); }            // Ctrl+C",
+      "바꿀것": "      if (code === 3) { say(''); process.exit(0); }            // Ctrl+C",
+      "검사": "test/pty.test.js",
+      "잴곳": [
+        "linux"
+      ]
     }
   ]
 }
