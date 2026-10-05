@@ -138,7 +138,7 @@ if (!python있나) {
   writeFileSync(모는파일, 모는것, 'utf8');
 
   /** 한 판 — bash 안에서 deel 을 띄우고 걸음들을 친 뒤, 끝난 종료코드와 stty 를 읽는다. */
-  const 판 = async (걸음들, { 인자 = '', 설정 = true, 켜짐 = 'fake-7b', 환경 = '' } = {}) => {
+  const 판 = async (걸음들, { 인자 = '', 설정 = true, 켜짐 = 'fake-7b', 환경 = '', 상자 = false } = {}) => {
     받은말 = [];
     const 일터 = mkdtempSync(join(tmpdir(), 'deel-pty-'));
     const 집 = join(일터, 'home');
@@ -147,7 +147,7 @@ if (!python있나) {
       version: 1, active: 'gw',
       profiles: [{ id: 'gw', name: '가짜', kind: 'openai', baseUrl: `http://127.0.0.1:${포트}/v1`, auth: 'bearer', apiKey: 'k', model: 'fake-7b', ctx: 32000, streaming: true, tools: false }],
     }));
-    const 명령 = `cd '${일터}' && DEEL_HOME='${집}' DEEL_NET_ALLOW='http://127.0.0.1:${포트}/v1' DEEL_NO_OPEN=1 ${환경} '${process.execPath}' '${진입점}' ${인자}; `
+    const 명령 = `${상자 ? 'unset CI GITHUB_ACTIONS; ' : 'export CI=1; '}cd '${일터}' && DEEL_HOME='${집}' DEEL_NET_ALLOW='http://127.0.0.1:${포트}/v1' DEEL_NO_OPEN=1 ${환경} '${process.execPath}' '${진입점}' ${인자}; `
       + `echo "EXIT=$?"; stty -a | tr '\\n' ' '; echo; echo END-OF-RUN\r`;
     const 걸음표 = join(일터, 'spec.json');
     writeFileSync(걸음표, JSON.stringify({
@@ -181,65 +181,79 @@ if (!python있나) {
       받은말: [...받은말],
       꼬리: 꼬리.slice(-500),
       화면: String(결과.all ?? 결과.tail),
+      화면글: String(결과.all ?? 결과.tail).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ''),
       저장된: 설정 ? null : 저장된,
     };
   };
   const 덧 = (r) => `켜짐=${r.걸음.켜짐} · ${JSON.stringify(r.받은말)} · EXIT=${r.종료} · ${r.stty} · ${JSON.stringify(r.꼬리.slice(-200))}`;
 
-  trace('1-기본');
-  {
-    const r = await 판([{ type: '안녕하세요\r', wait: '받았습니다:5자', name: '답' }, { type: '/exit\r' }]);
-    check('★★ 진짜 pty: 말하면 답이 오고 /exit 는 0 으로 끝난다', r.걸음.답 && r.종료 === '0' && r.받은말[0] === '안녕하세요', 덧(r));
-    check('★★ 진짜 pty: 끝난 뒤 터미널이 원래대로다 (icanon · echo)', r.복구됨, 덧(r));
-  }
+  /*
+   * ── 줄 화면과 상자 화면, 둘 다 ──────────────────────────────────────────
+   *
+   * CI 환경변수가 있으면 deel 은 일부러 상자를 끄고 줄 화면으로 뜬다(ui/screen.js 의 상자쓸까). GitHub
+   * 러너는 CI 를 갖고 있어서, 처음 넣은 이 검사는 **사람들이 실제로 보는 상자 입력칸을 한 번도 안 밟았다.**
+   * 그래서 같은 판을 두 화면으로 돌린다 — 줄 화면은 CI=1 로 못 박고, 상자 화면은 CI 를 지운다.
+   */
+  for (const 상자 of [false, true]) {
+    const 이름 = 상자 ? '상자 화면' : '줄 화면';
+    const 판에 = (걸음들) => 판(걸음들, { 상자 });
 
-  trace('2-한글-지우기');
-  {
-    const r = await 판([
-      { type: '가나다' }, { send: '\x7f', sleep: 0.2 }, { send: '\x7f', sleep: 0.2 },
-      { type: '라\r', wait: '받았습니다:2자', name: '답' }, { type: '/exit\r' },
-    ]);
-    check('★ 진짜 pty: 「가나다」 ⌫⌫ 「라」 는 「가라」 로 간다 (한글 한 글자씩 지운다)', r.받은말[0] === '가라' && r.복구됨, 덧(r));
-  }
+    trace(`1-기본 (${이름})`);
+    {
+      const r = await 판에([{ type: '안녕하세요\r', wait: '받았습니다:5자', name: '답' }, { type: '/exit\r' }]);
+      check(`★★ 진짜 pty (${이름}): 말하면 답이 오고 /exit 는 0 으로 끝난다`, r.걸음.답 && r.종료 === '0' && r.받은말[0] === '안녕하세요', 덧(r));
+      check(`★★ 진짜 pty (${이름}): 끝난 뒤 터미널이 원래대로다 (icanon · echo)`, r.복구됨, 덧(r));
+      check(`  진짜 pty (${이름}): ${상자 ? '상자 입력칸이 켜졌다 (│ ❯)' : '상자 없이 줄로 흐른다'}`, 상자 === r.화면글.includes('│ ❯ '), JSON.stringify(r.화면글.slice(-200)));
+    }
 
-  trace('3-붙여넣기');
-  {
-    const r = await 판([
-      { send: '\x1b[200~줄하나\n줄둘\x1b[201~', sleep: 0.5 },
-      { type: '\r', wait: '받았습니다:', name: '답' }, { type: '/exit\r' },
-    ]);
-    check('★★ 진짜 pty: 여러 줄 붙여넣기는 한 말로 간다 (줄마다 따로 안 보낸다)',
-      r.받은말.length === 1 && r.받은말[0] === '줄하나\n줄둘' && r.복구됨, 덧(r));
-  }
+    trace(`2-한글-지우기 (${이름})`);
+    {
+      const r = await 판에([
+        { type: '가나다' }, { send: '\x7f', sleep: 0.2 }, { send: '\x7f', sleep: 0.2 },
+        { type: '라\r', wait: '받았습니다:2자', name: '답' }, { type: '/exit\r' },
+      ]);
+      check(`★ 진짜 pty (${이름}): 「가나다」 ⌫⌫ 「라」 는 「가라」 로 간다 (한글 한 글자씩 지운다)`, r.받은말[0] === '가라' && r.복구됨, 덧(r));
+    }
 
-  trace('4-창-크기');
-  {
-    const r = await 판([
-      { type: '첫말\r', wait: '받았습니다:2자', name: '첫 답' },
-      { winsize: [12, 30], sleep: 0.8 },
-      { type: '둘째말\r', wait: '받았습니다:3자', name: '좁힌 뒤' },
-      { winsize: [50, 200], sleep: 0.8 },
-      { type: '셋째말이다\r', wait: '받았습니다:5자', name: '넓힌 뒤' },
-      { type: '/exit\r' },
-    ]);
-    check('★ 진짜 pty: 창을 좁혔다 넓혀도 말이 다 가고 0 으로 끝난다',
-      r.받은말.length === 3 && r.종료 === '0' && r.복구됨, 덧(r));
-  }
+    trace(`3-붙여넣기 (${이름})`);
+    {
+      const r = await 판에([
+        { send: '\x1b[200~줄하나\n줄둘\x1b[201~', sleep: 0.5 },
+        { type: '\r', wait: '받았습니다:', name: '답' }, { type: '/exit\r' },
+      ]);
+      check(`★★ 진짜 pty (${이름}): 여러 줄 붙여넣기는 한 말로 간다 (줄마다 따로 안 보낸다)`,
+        r.받은말.length === 1 && r.받은말[0] === '줄하나\n줄둘' && r.복구됨, 덧(r));
+    }
 
-  trace('5-흐르는-중-Ctrl+C');
-  {
-    const r = await 판([
-      { type: '느리게 말해줘\r', sleep: 1.5 }, { send: '\x03', sleep: 1.5 },
-      { type: '다음말\r', wait: '받았습니다:3자', name: '다음 답' }, { type: '/exit\r' },
-    ]);
-    check('★★ 진짜 pty: 답이 흐르는 중 Ctrl+C 는 그 답만 끊고, 다음 말을 받는다',
-      r.받은말.includes('다음말') && r.종료 === '0' && r.복구됨, 덧(r));
-  }
+    trace(`4-창-크기 (${이름})`);
+    {
+      const r = await 판에([
+        { type: '첫말\r', wait: '받았습니다:2자', name: '첫 답' },
+        { winsize: [12, 30], sleep: 0.8 },
+        { type: '둘째말\r', wait: '받았습니다:3자', name: '좁힌 뒤' },
+        { winsize: [50, 200], sleep: 0.8 },
+        { type: '셋째말이다\r', wait: '받았습니다:5자', name: '넓힌 뒤' },
+        { type: '/exit\r' },
+      ]);
+      check(`★ 진짜 pty (${이름}): 창을 좁혔다 넓혀도 말이 다 가고 0 으로 끝난다`,
+        r.받은말.length === 3 && r.종료 === '0' && r.복구됨, 덧(r));
+    }
 
-  trace('6-Ctrl+D');
-  {
-    const r = await 판([{ send: '\x04', sleep: 1.5 }]);
-    check('★ 진짜 pty: 빈 입력에서 Ctrl+D 는 나가고 터미널을 돌려놓는다', r.종료 !== undefined && r.복구됨, 덧(r));
+    trace(`5-흐르는-중-Ctrl+C (${이름})`);
+    {
+      const r = await 판에([
+        { type: '느리게 말해줘\r', sleep: 1.5 }, { send: '\x03', sleep: 1.5 },
+        { type: '다음말\r', wait: '받았습니다:3자', name: '다음 답' }, { type: '/exit\r' },
+      ]);
+      check(`★★ 진짜 pty (${이름}): 답이 흐르는 중 Ctrl+C 는 그 답만 끊고, 다음 말을 받는다`,
+        r.받은말.includes('다음말') && r.종료 === '0' && r.복구됨, 덧(r));
+    }
+
+    trace(`6-Ctrl+D (${이름})`);
+    {
+      const r = await 판에([{ send: '\x04', sleep: 1.5 }]);
+      check(`★ 진짜 pty (${이름}): 빈 입력에서 Ctrl+D 는 나가고 터미널을 돌려놓는다`, r.종료 !== undefined && r.복구됨, 덧(r));
+    }
   }
 
   /*
