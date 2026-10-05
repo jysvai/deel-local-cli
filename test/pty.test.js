@@ -10,10 +10,13 @@
 //   그 안에서 deel 을 키 입력으로 몬다. 윈도우나 python3 가 없는 곳에서는 건너뛴다.
 //
 //   무엇을 보나: 한글 지우기 · 여러 줄 붙여넣기가 한 말로 · 창 크기 바꾸기 · 답이 흐르는 중 Ctrl+C ·
-//   Ctrl+D · 그리고 판마다 **끝난 뒤 터미널이 원래대로**(icanon · echo) 돌아왔나.
+//   Ctrl+D · 도구 승인 물음(y · ㅇ · n · ESC · Ctrl+C) — 줄 화면과 상자 화면 둘 다 — 그리고 deel setup
+//   (Ctrl+C · 가린 열쇠). 판마다 **끝난 뒤 터미널이 원래대로**(icanon · echo) 돌아왔나.
+//
+//   한 판이 리눅스에서 2분 반쯤이다 — test/검사시간.json 에 적어 둬야 어긋내기 조각이 고르게 나뉜다.
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { trace } from './trace.mjs';
@@ -100,6 +103,7 @@ if (!python있나) {
    * 천천히 흘린다(그 사이에 Ctrl+C). 대화가 아닌 요청(켤 때의 모델 정보 묻기)은 404 로 돌려보낸다.
    */
   let 받은말 = [];
+  let 도구결과 = [];
   const 서버 = createServer((req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; });
@@ -110,11 +114,33 @@ if (!python있나) {
       }
       if (!req.url.includes('chat/completions')) { res.writeHead(404); return res.end(); }
       let 말 = '';
+      let 끝 = null;
       try {
-        const u = [...(JSON.parse(body).messages ?? [])].reverse().find((m) => m.role === 'user');
+        const 말들 = JSON.parse(body).messages ?? [];
+        끝 = 말들[말들.length - 1];
+        const u = [...말들].reverse().find((m) => m.role === 'user');
         말 = typeof u?.content === 'string' ? u.content : JSON.stringify(u?.content ?? '');
       } catch { /* 아래에서 빈 말로 잰다 */ }
+      const 보내기 = (delta, 끝남 = null) => res.write(`data: ${JSON.stringify({ choices: [{ delta, finish_reason: 끝남 }] })}\n\n`);
+      /*
+       * 승인 물음을 띄우려면 모델이 도구를 불러야 한다. 도구 결과가 돌아오면 그 글을 적어 두고(거부됐나 ·
+       * 만들었나) 짧게 답한다. 「파일써줘」 에는 Write 한 번을 낸다 — 승인 방식이 엄격이면 물음이 뜬다.
+       */
+      if (끝?.role === 'tool') {
+        도구결과.push(String(끝.content ?? '').slice(0, 120));
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        보내기({ content: '도구결과받음' }); 보내기({}, 'stop');
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
       받은말.push(말);
+      if (말.includes('파일써줘')) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        보내기({ tool_calls: [{ index: 0, id: `call_${받은말.length}`, type: 'function', function: { name: 'Write', arguments: JSON.stringify({ file_path: '승인.txt', content: '써짐' }) } }] });
+        보내기({}, 'tool_calls');
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
       const 답 = `받았습니다:${[...말].length}자`;
       const 느림 = 말.includes('느리게');
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -138,14 +164,15 @@ if (!python있나) {
   writeFileSync(모는파일, 모는것, 'utf8');
 
   /** 한 판 — bash 안에서 deel 을 띄우고 걸음들을 친 뒤, 끝난 종료코드와 stty 를 읽는다. */
-  const 판 = async (걸음들, { 인자 = '', 설정 = true, 켜짐 = 'fake-7b', 환경 = '', 상자 = false } = {}) => {
+  const 판 = async (걸음들, { 인자 = '', 설정 = true, 켜짐 = 'fake-7b', 환경 = '', 상자 = false, 도구 = false } = {}) => {
     받은말 = [];
+    도구결과 = [];
     const 일터 = mkdtempSync(join(tmpdir(), 'deel-pty-'));
     const 집 = join(일터, 'home');
     mkdirSync(집, { recursive: true });
     if (설정) writeFileSync(join(집, 'config.json'), JSON.stringify({
       version: 1, active: 'gw',
-      profiles: [{ id: 'gw', name: '가짜', kind: 'openai', baseUrl: `http://127.0.0.1:${포트}/v1`, auth: 'bearer', apiKey: 'k', model: 'fake-7b', ctx: 32000, streaming: true, tools: false }],
+      profiles: [{ id: 'gw', name: '가짜', kind: 'openai', baseUrl: `http://127.0.0.1:${포트}/v1`, auth: 'bearer', apiKey: 'k', model: 'fake-7b', ctx: 32000, streaming: true, tools: 도구 }],
     }));
     const 명령 = `${상자 ? 'unset CI GITHUB_ACTIONS; ' : 'export CI=1; '}cd '${일터}' && DEEL_HOME='${집}' DEEL_NET_ALLOW='http://127.0.0.1:${포트}/v1' DEEL_NO_OPEN=1 ${환경} '${process.execPath}' '${진입점}' ${인자}; `
       + `echo "EXIT=$?"; stty -a | tr '\\n' ' '; echo; echo END-OF-RUN\r`;
@@ -170,6 +197,7 @@ if (!python있나) {
     });
     let 저장된 = null;
     try { 저장된 = JSON.parse(readFileSync(join(집, 'config.json'), 'utf8')); } catch { /* 없음 */ }
+    const 썼나 = existsSync(join(일터, '승인.txt'));
     rmSync(일터, { recursive: true, force: true });
     const 꼬리 = 결과.tail.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
     const stty = /(-?icanon)\b.*?\s(-?echo)\s/.exec(꼬리) ?? [];
@@ -179,6 +207,8 @@ if (!python있나) {
       복구됨: stty[1] === 'icanon' && stty[2] === 'echo',
       stty: `${stty[1] ?? '?'} ${stty[2] ?? '?'}`,
       받은말: [...받은말],
+      도구결과: [...도구결과],
+      썼나,
       꼬리: 꼬리.slice(-500),
       화면: String(결과.all ?? 결과.tail),
       화면글: String(결과.all ?? 결과.tail).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ''),
@@ -253,6 +283,38 @@ if (!python있나) {
     {
       const r = await 판에([{ send: '\x04', sleep: 1.5 }]);
       check(`★ 진짜 pty (${이름}): 빈 입력에서 Ctrl+D 는 나가고 터미널을 돌려놓는다`, r.종료 !== undefined && r.복구됨, 덧(r));
+    }
+
+    /*
+     * ── 승인 물음 (엄격) ─────────────────────────────────────────────────
+     *
+     * 「실행할까요? (y/n)」 은 내 파일이 바뀌기 직전에 서는 유일한 문이다. 진짜 터미널에서 친 키가 그대로
+     * 답이 되는지, ESC · Ctrl+C 가 승인으로 새지 않는지, 친 답이 **다음 입력칸으로 흘러들지 않는지**를 본다.
+     */
+    const 승인판 = (답걸음) => 판([
+      { type: '/mode strict\r', wait: '모두 확인', name: '엄격' },
+      { type: '파일써줘\r', wait: '실행할까요', name: '물음' },
+      ...답걸음,
+      { type: '다음말\r', wait: '받았습니다:3자', timeout: 20, name: '다음 답' },
+      { type: '/exit\r' },
+    ], { 상자, 도구: true });
+    const 승인덧 = (r) => `썼나=${r.썼나} · 걸음=${JSON.stringify(r.걸음)} · 도구결과=${JSON.stringify(r.도구결과)} · ${덧(r)}`;
+
+    for (const [답, 키, 됨] of [['y', 'y\r', true], ['ㅇ', 'ㅇ\r', true], ['n', 'n\r', false]]) {
+      trace(`7-승인-${답} (${이름})`);
+      const r = await 승인판([{ type: 키, wait: '도구결과받음', name: '답한 뒤' }]);
+      check(`★★ 진짜 pty (${이름}): 승인 물음에 「${답}」 — ${됨 ? '파일을 쓴다' : '안 쓰고 거부로 돌려준다'}`,
+        r.걸음.물음 && r.썼나 === 됨 && (됨 ? /만듦/.test(r.도구결과[0] ?? '') : /거부/.test(r.도구결과[0] ?? '')), 승인덧(r));
+      check(`  진짜 pty (${이름}): 「${답}」 이 다음 입력칸으로 안 흘러든다 — 다음 말은 「다음말」 그대로`,
+        r.받은말.at(-1) === '다음말' && r.종료 === '0' && r.복구됨, 승인덧(r));
+    }
+
+    for (const [이름키, 키] of [['ESC', '\x1b'], ['Ctrl+C', '\x03']]) {
+      trace(`7-승인-${이름키} (${이름})`);
+      const r = await 승인판([{ send: 키, sleep: 1.5 }]);
+      check(`★★ 진짜 pty (${이름}): 승인 물음에서 ${이름키} 는 승인이 아니다 — 파일을 안 쓴다`, r.걸음.물음 && !r.썼나, 승인덧(r));
+      check(`  진짜 pty (${이름}): ${이름키} 뒤에도 다음 말을 받고 0 으로 끝난다`,
+        r.받은말.at(-1) === '다음말' && r.종료 === '0' && r.복구됨, 승인덧(r));
     }
   }
 
