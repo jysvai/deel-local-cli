@@ -11,7 +11,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readdirSync,
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { makeScope, checkPaths, checkCommand, 경로낱말, 봐주는자리, isMutating, 셸이파일에쓰나, 코드조각인가, 남의집 } from '../src/safety/guard.js';
+import { makeScope, checkPaths, checkCommand, 경로낱말, 봐주는자리, isMutating, 셸이파일에쓰나, 코드조각인가, 남의집, 놓였나 } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
@@ -1017,6 +1017,27 @@ trace('10-뒤에한마디');
   }
   check('★★ 없는 한 마디는 코드 조각으로 넘긴다 (</div> 같은 것)',
     코드조각인가('/없는최상위-9f3c1d') === true, '');
+  /*
+   * 맥 뿌리의 `/.VolumeIcon.icns` 는 가리키는 곳이 없는 링크라, existsSync 가 「없다」 고 해서
+   * 위 「있는 한 마디」 가 맥에서만 빨갰다(40회차). 「있다」 는 그 이름에 무엇이 놓였나로 잰다.
+   * 뿌리에는 못 만드니 놓였나() 를 임시 폴더에서 잰다 — 윈도는 관리자 없이 되는 정션으로.
+   */
+  {
+    const 링크방 = mkdtempSync(join(tmpdir(), 'deel-guard-빈링크-'));
+    const 빈링크 = join(링크방, '빈링크');
+    let 지었나 = true;
+    try { symlinkSync(join(링크방, '없는곳'), 빈링크, 'junction'); } catch { 지었나 = false; }
+    if (지었나) {
+      check('★★ 가리키는 곳이 없는 링크도 놓인 것으로 본다 (맥 /.VolumeIcon.icns · 40회차)',
+        놓였나(빈링크) === true && existsSync(빈링크) === false, `놓였나=${놓였나(빈링크)} existsSync=${existsSync(빈링크)}`);
+    } else {
+      건너뜀.push('빈 링크를 못 만들어 「놓였나」 를 못 쟀다');
+    }
+    check('없는 이름은 안 놓였다', 놓였나(join(링크방, '없음')) === false);
+    check('없는 폴더 밑 이름도 안 놓였다 (ENOENT 만이 아니라 ENOTDIR 도)',
+      (writeFileSync(join(링크방, '파일'), 'x'), 놓였나(join(링크방, '파일', '밑'))) === false);
+    rmSync(링크방, { recursive: true, force: true });
+  }
 
   rmSync(방3, { recursive: true, force: true });
 }

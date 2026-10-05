@@ -572,8 +572,10 @@ trace('10-무리로돌리기-탈의-모양');
    * 훅(린터·형 검사 감싸개)에서 뒤쪽 경고가 통째로 없어지고, 그게 「경고 없음」 으로 올라간다.
    * 바로 위 머리말이 「조용히 잘라 버리면 … 아무도 눈치 못 챈다」 고 적어 둔 그 자리다.
    */
+  // 자식은 process.exit 을 안 부르고 저절로 끝난다 — 맥·리눅스 파이프는 쓰기가 비동기라 exit 이
+  // 덜 나간 탈 글을 버려, 맥에서는 64KB 를 못 넘기고 「잘림」 이 안 났다(40회차 맥 실측).
   const 탈넘침 = await 돌려보기(process.execPath,
-    ['-e', 'process.stderr.write("E".repeat(200000)); process.stdout.write("ok"); process.exit(0)'],
+    ['-e', 'process.stderr.write("E".repeat(200000)); process.stdout.write("ok");'],
     { maxBuffer: 1000000, timeout: 5000, 넘치면자르기: true });
   check('★★ 탈 글을 자르면 잘랐다고 글 안에 적는다',
     /잘렸습니다/.test(String(탈넘침.stderr)), JSON.stringify(String(탈넘침.stderr).slice(-60)));

@@ -9,7 +9,8 @@ and everything before it is **collected into one**.
 
 | | Where | What |
 |---|---|---|
-| **Current** | **[2.1.x](releases/2.1.md)** | [2.1.5](releases/2.1.md#215) — shell commands could reach outside the working folder; one `find .. -delete` emptied the parent. Now blocked |
+| **Current** | **[2.1.x](releases/2.1.md)** | [2.1.6](releases/2.1.md#216) — works properly on macOS: keychain keys, trusted folders under `/tmp`, long output through a slow pipe. macOS joins the gate CI |
+| | | [2.1.5](releases/2.1.md#215) — shell commands could reach outside the working folder; one `find .. -delete` emptied the parent. Now blocked |
 | | | [2.1.4](releases/2.1.md#214) — connect by logging in with a browser, no key to paste — one OpenRouter login for Claude, GPT, Grok and Kimi |
 | | | [2.1.3](releases/2.1.md#213) — models that write tool calls as text still get work done, `deel run` picks up where it left off, what a script changed comes back with `/undo`, and MCP attaches by URL |
 | | | [2.1.2](releases/2.1.md#212) — confirm asks before MCP tools, editor sessions no longer pile up, and `deel --version` no longer loads the whole program |

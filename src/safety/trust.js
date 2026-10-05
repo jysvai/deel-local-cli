@@ -44,7 +44,7 @@
 // `~/.deel/trusted.json` — 사용자 자리다. 프로젝트 안에 두면 저장소가 제
 // 신뢰를 제가 적는 셈이라 아무 뜻이 없다.
 import { homedir } from 'node:os';
-import { join, resolve, dirname, isAbsolute, parse as 경로쪼개기 } from 'node:path';
+import { join, resolve, dirname, basename, isAbsolute, parse as 경로쪼개기 } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, rmSync, openSync, closeSync, statSync, realpathSync } from 'node:fs';
 import { c, mark } from '../ui/ansi.js';
 import { 말 } from '../i18n/index.js';
@@ -146,8 +146,21 @@ export function 믿는목록({ env = process.env } = {}) {
  */
 function 실제자리들(p) {
   const 풀린 = resolve(p);
+  /*
+   * 없는 자리는 **있는 데까지 올라가** 푼 뒤 나머지 이름을 붙인다. 통째로 글자만 쓰면, 맥에서
+   * `/private/tmp/repo` 로 믿어 둔 폴더를 지운 뒤 `/tmp/repo` 로 빼려 할 때 두 글자가 안 맞아
+   * 못 뺐다(40회차 2차 눈). reset.js 의 윗자리풀기와 같은 풀기다.
+   */
   let 진짜 = 풀린;
-  try { 진짜 = realpathSync.native(풀린); } catch { /* 없는 자리 — 글자 그대로 잰다 */ }
+  const 꼬리 = [];
+  for (let 위 = 풀린; ;) {
+    try { 진짜 = join(realpathSync.native(위), ...꼬리); break; } catch {
+      const 더위 = dirname(위);
+      if (더위 === 위) break;
+      꼬리.unshift(basename(위));
+      위 = 더위;
+    }
+  }
   return 진짜 === 풀린 ? [풀린] : [풀린, 진짜];
 }
 
@@ -175,15 +188,37 @@ export function 너무넓은자리(폴더, { env = process.env, platform = proce
  */
 export function 믿나(폴더, { env = process.env, platform = process.platform } = {}) {
   if (env.DEEL_TRUST_ALL === '1') return true;   // 검사·컨테이너용. 문서에 안 적는다.
-  const 나 = 고른경로(폴더, platform);
+  const 나들 = 견줄꼴들(폴더, platform);
   for (const 것 of 목록읽기(env)) {
     // 목록에 적힌 넓은 자리는 읽을 때도 안 믿는다 (위 너무넓은자리 머리말).
     // 파일은 안 고친다 — 적힌 것을 조용히 지우면 무엇이 왜 빠졌는지가 안 남는다.
     if (너무넓은자리(것, { env, platform })) continue;
-    const 그것 = 고른경로(것, platform);
-    if (나 === 그것 || 나.startsWith(그것 + '/')) return true;
+    const 그것들 = 견줄꼴들(것, platform);
+    if (나들.some((나) => 그것들.some((그것) => 나 === 그것 || 나.startsWith(그것 + '/')))) return true;
   }
   return false;
+}
+
+/*
+ * ── 같은 폴더를 두 글자로 부른다 (40회차 맥 실측) ──────────────────────
+ *
+ * 믿나() 는 적힌 글자로만 견줬다. 맥은 `/var` · `/tmp` 가 `/private/…` 을 가리키는
+ * 링크라, `/var/…/proj` 를 믿어 놓고 그 안에서 켜면 `process.cwd()` 가 링크를 따라간
+ * `/private/var/…/proj` 를 준다 — 같은 폴더를 두고 「안 믿는 폴더」 라며 프로젝트 설정을
+ * 통째로 버렸다. `--root /tmp/proj` 로 켜는 사람이 그대로 겪는다.
+ *
+ * 그래서 적힌 글자와 실제 자리(realpath)를 **양쪽 다** 견준다. 하위 폴더 규칙(`/` 붙여
+ * 견주기)은 그대로다 — 링크를 따라가 같은 파일이 나오는 자리만 같은 자리로 친다.
+ * 믿기·안믿기의 「이미 있나」·「뺄 줄」 도 같은 자로 잰다. 다른 자를 쓰면 믿긴 폴더를
+ * 못 빼거나, 이미 있는 줄을 또 적는다.
+ */
+function 견줄꼴들(p, platform) {
+  return [...new Set(실제자리들(String(p ?? '')).map((x) => 고른경로(x, platform)))];
+}
+
+function 같은자리인가(가, 나, platform) {
+  const 나들 = 견줄꼴들(나, platform);
+  return 견줄꼴들(가, platform).some((x) => 나들.includes(x));
 }
 
 /** 목록 파일의 글을 목록으로. 못 풀면 던진다 — 던진 것을 어떻게 칠지는 부르는 쪽이 정한다. */
@@ -285,13 +320,12 @@ export function 믿기(폴더, { env = process.env, platform = process.platform,
   if (너무넓은자리(resolve(String(폴더 ?? '')), { env, platform })) {
     return { ok: false, 넓음: true, 왜: 말('trust.refuseWide') };
   }
-  const 나 = 고른경로(폴더, platform);
   try {
     // 받아 놓고 안 넘기면 기본값(5초)을 기다린다. 짧게 기다려 보려고 준 수가 아무 일도 안 하면,
     // 그 수를 준 쪽(검사·배치)은 잠금을 지키는지 재고 있다고 믿으면서 5초를 서 있는다.
     return 잠그고(env, () => {
       const 것들 = 쓸목록읽기(env);
-      if (것들.some((x) => 고른경로(x, platform) === 나)) return { ok: true, 이미: true, 자리: 신뢰자리(env) };
+      if (것들.some((x) => 같은자리인가(x, 폴더, platform))) return { ok: true, 이미: true, 자리: 신뢰자리(env) };
       것들.push(resolve(String(폴더)));
       return { ok: true, 이미: false, 자리: 쓰기(것들, env) };
     }, 기다림);
@@ -312,7 +346,6 @@ export function 믿기(폴더, { env = process.env, platform = process.platform,
  * 두 자리가 다른 자를 쓰면 어느 쪽이든 거짓말이 된다.
  */
 export function 안믿기(폴더, { env = process.env, platform = process.platform } = {}) {
-  const 나 = 고른경로(폴더, platform);
   let 남길것;
   let 뺐나 = false;
   let 자리 = 신뢰자리(env);
@@ -320,12 +353,14 @@ export function 안믿기(폴더, { env = process.env, platform = process.platfo
   try {
     잠그고(env, () => {
       const 것들 = 쓸목록읽기(env);
-      남길것 = 것들.filter((x) => 고른경로(x, platform) !== 나);
+      남길것 = 것들.filter((x) => !같은자리인가(x, 폴더, platform));
       뺐나 = 남길것.length !== 것들.length;
       if (뺐나) 자리 = 쓰기(남길것, env);
     });
   } catch (err) { return { ok: false, 왜: err?.message ?? String(err) }; }
-  const 위 = 남길것.find((x) => !너무넓은자리(x, { env, platform }) && 나.startsWith(고른경로(x, platform) + '/')) ?? null;
+  const 나들 = 견줄꼴들(폴더, platform);
+  const 위 = 남길것.find((x) => !너무넓은자리(x, { env, platform })
+    && 견줄꼴들(x, platform).some((그것) => 나들.some((나) => 나.startsWith(그것 + '/')))) ?? null;
   return { ok: true, 뺐나, 자리, 위폴더: 위, 아직믿김: 믿나(폴더, { env, platform }) };
 }
 

@@ -37,10 +37,11 @@ delete process.env.DEEL_KEYSTORE;
  * 그래서 검사는 제 이름을 주고 쓴다. 기본 이름은 **한 번도 안 건드린다.**
  * (윈도우 DPAPI 는 잠근 덩이가 설정 파일 안에 있어서 이 이름과 상관없다.)
  */
-process.env.DEEL_KEYCHAIN_NAME = `deel-검사-${process.pid}-${Date.now()}`;
+const 키체인이름검사용 = `deel-검사-${process.pid}-${Date.now()}`;
+process.env.DEEL_KEYCHAIN_NAME = 키체인이름검사용;
 
-const { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식, 마지막명령줄, 잠금지우기, 키체인이름, 기본키체인이름, 잠그다실패한까닭 } = await import('../src/safety/keystore.js');
-const { load, save, resolveKey, 잠금소식, 열쇠탈소식, 열쇠보관, configPath } = await import('../src/config.js');
+const { 잠그기, 풀기, 잠긴것인가, 쓸수있나, 보관방식, 마지막명령줄, 잠금지우기, 키체인이름, 기본키체인이름, 잠그다실패한까닭, 키체인넣을줄, 키체인줄한도, 키체인값풀기, 키체인오류말 } = await import('../src/safety/keystore.js');
+const { load, save, resolveKey, 잠금소식, 열쇠탈소식, 열쇠보관, configPath, 푼것담나, 잠긴열쇠쓰기 } = await import('../src/config.js');
 const { 열쇠명세 } = await import('../src/pack/sbom.js');
 
 const pass = [];
@@ -96,7 +97,16 @@ if (!잠금장치.되나) {
   // 둘 다 느리면 여전히 빨갛다.
   check(`잠그기 ${잠근시간}ms(처음) · ${또시간}ms(두 번째) · 풀기 ${푼시간}ms — 한 판에 한 번이면 참을 만하다`,
     Math.min(잠근시간, 또시간) < 5000 && 푼시간 < 5000, `${잠근시간}/${또시간}/${푼시간}ms`);
-  check('두 번 잠근 값이 서로 다르다 (같은 글자여도)', 또 !== 잠근것 && 풀기(또).text === 열쇠);
+  /*
+   * DPAPI 는 잠근 덩이가 곧 값이라 같은 글자도 매번 다른 값이 된다. 키체인 값은 자리의
+   * 이름표라 같은 프로필이면 같은 자리를 덮어 쓰고 이름표도 같다 — 맥에서 이 단언이
+   * DPAPI 기준으로만 적혀 있어 빨갰다(39회차 맥 실측). 두 방식의 사실을 따로 잰다.
+   */
+  if (잠금장치.방식 === 'keychain') {
+    check('키체인은 같은 프로필이면 같은 자리를 덮어 쓴다 (이름표가 같다)', 또 === 잠근것 && 풀기(또).text === 열쇠, `${잠근것} · ${또}`);
+  } else {
+    check('두 번 잠근 값이 서로 다르다 (같은 글자여도)', 또 !== 잠근것 && 풀기(또).text === 열쇠);
+  }
 
   const 망친것 = 풀기('dpapi:AAAAnot-a-real-blob');
   check('못 푸는 값에는 사람이 읽을 까닭을 준다', !망친것.ok && /다시 넣으세요|못 풉니다|못 읽/.test(망친것.why), 망친것.why);
@@ -239,6 +249,118 @@ trace('7-심사서');
   check('안 쓰는 길(환경변수)도 적는다', /DEEL_API_KEY/.test(명세.안쓰려면));
   check('이 PC 에서 실제로 무엇인지도 적는다', typeof 명세.이PC에서 === 'string' && 명세.이PC에서.length > 3, 명세.이PC에서);
   check('설정 자리를 엉뚱한 데로 옮기지 않았다', configPath().startsWith(집), configPath());
+}
+
+// ── 8. 맥 키체인 한 줄 (531 · 2026-09-29 맥 실측) ─────────────────────
+//
+// `security -i` 는 한 줄을 정해진 버퍼로 읽고, 넘친 뒤 토막을 딴 명령으로 읽는다.
+// 이름·계정의 빈칸·줄바꿈은 낱말과 줄을 가른다. 키체인에 우리 꼴이 아닌 값이 있으면
+// 깨진 글자를 ok:true 로 줬다. 잠긴 키체인은 20초 뒤 node 오류 이름만 남겼다.
+// 줄을 짓고 푸는 판단은 맥 없이 잰다 — 진짜 키체인 왕복은 맥 러너에서 2·9 절이 잰다.
+trace('8-키체인한줄');
+{
+  const 줄 = 키체인넣을줄('sk-x', 'deel-a', 'runner');
+  check('평범한 열쇠는 한 줄로 짓는다 (값은 base64 · 끝에 줄바꿈 하나)',
+    줄.ok && 줄.줄 === 'add-generic-password -a runner -s deel-a -w c2steA== -U\n', JSON.stringify(줄));
+  check('지은 줄에 열쇠 글자가 그대로 안 남는다', 줄.ok && !줄.줄.includes('sk-x'));
+
+  // 한도 **바로 그 값**과 한 바이트 넘는 값 — 경계 양쪽을 다 잰다. base64 는 4글자씩
+  // 늘어서, 이름 길이로 나머지를 맞춰 줄이 한도와 꼭 같게 한다.
+  const 뼈길이 = Buffer.byteLength('add-generic-password -a runner -s deel-a -w  -U\n');
+  const 딱이름 = `deel-a${'b'.repeat((키체인줄한도 - 뼈길이) % 4)}`;
+  const 딱맞는값 = 'a'.repeat(((키체인줄한도 - 뼈길이 - ((키체인줄한도 - 뼈길이) % 4)) / 4) * 3);
+  const 딱 = 키체인넣을줄(딱맞는값, 딱이름, 'runner');
+  check(`★ 한 줄이 한도(${키체인줄한도}바이트)와 꼭 같으면 짓는다`, 딱.ok && Buffer.byteLength(딱.줄) === 키체인줄한도,
+    딱.ok ? `${Buffer.byteLength(딱.줄)}바이트` : 딱.왜);
+  const 넘침 = 키체인넣을줄(딱맞는값, `${딱이름}c`, 'runner');
+  check('★ 한도를 한 바이트라도 넘으면 안 짓고 까닭을 준다 (뒤 토막이 딴 명령으로 읽히지 않게)',
+    !넘침.ok && /너무 길어/.test(넘침.왜) && new RegExp(`${키체인줄한도 + 1}바이트`).test(넘침.왜), JSON.stringify(넘침).slice(0, 160));
+  const 사천 = 키체인넣을줄('x'.repeat(4000), 'deel-a', 'runner');
+  check('맥에서 못 잠갔던 4000자 열쇠는 넣기 전에 거른다', !사천.ok, JSON.stringify(사천).slice(0, 120));
+  // 글자 수로는 한도 안인데 바이트로는 넘치는 줄 — 한글 스무 자 이름은 25글자 · 65바이트다.
+  const 긴한글이름 = `deel-${'가'.repeat(20)}`;
+  const 한글뼈 = `add-generic-password -a runner -s ${긴한글이름} -w  -U\n`;
+  const 글자로맞춘값 = 'a'.repeat(Math.floor((키체인줄한도 - 한글뼈.length) / 4) * 3);
+  const 글자로는맞음 = 한글뼈.length + (글자로맞춘값.length / 3) * 4 <= 키체인줄한도;
+  const 바이트로넘침 = 키체인넣을줄(글자로맞춘값, 긴한글이름, 'runner');
+  check('한도는 글자 수가 아니라 바이트로 잰다 (한글 이름은 한 글자에 3바이트)',
+    글자로는맞음 && !바이트로넘침.ok, JSON.stringify(바이트로넘침).slice(0, 120));
+
+  for (const [무엇, 이름, 계정] of [
+    ['이름에 빈칸', 'deel probe spaced', 'runner'],
+    ['이름에 줄바꿈', 'deel\nprobe', 'runner'],
+    ['이름에 탭', 'deel\tprobe', 'runner'],
+    ['이름에 따옴표', 'deel"probe', 'runner'],
+    ['이름에 역빗금', 'deel\\probe', 'runner'],
+    ['이름에 제어 문자(ESC)', 'deel\x1bprobe', 'runner'],
+    ['이름이 빈칸뿐', ' ', 'runner'],
+    ['이름이 비었음', '', 'runner'],
+    ['계정에 빈칸', 'deel-a', 'run ner'],
+    ['계정에 줄바꿈', 'deel-a', 'run\nner'],
+  ]) {
+    const r = 키체인넣을줄('sk-x', 이름, 계정);
+    check(`★ ${무엇}이면 안 짓고 까닭을 준다`, !r.ok && r.왜.length > 5, JSON.stringify(r).slice(0, 120));
+  }
+  const 빈열쇠 = 키체인넣을줄('', 'deel-a', 'runner');
+  check('★ 빈 열쇠는 안 짓는다 (`-w  -U` 가 되어 -U 를 열쇠로 읽는다 · 2차 눈)', !빈열쇠.ok && /비어/.test(빈열쇠.왜), JSON.stringify(빈열쇠));
+  const 대시 = 키체인넣을줄('sk-x', '-deel-probe-dash', 'runner');
+  check('`-` 로 시작하는 이름은 된다 (맥에서 잠기고 풀렸다)', 대시.ok, JSON.stringify(대시).slice(0, 80));
+  const 한글 = 키체인넣을줄('sk-x', 'deel-gateway-key-회사창구', 'runner');
+  check('한글 이름은 된다', 한글.ok, JSON.stringify(한글).slice(0, 80));
+  process.env.DEEL_KEYCHAIN_NAME = 'deel 검사 빈칸';
+  check('DEEL_KEYCHAIN_NAME 에서 왔으면 그 이름을 짚는다', /DEEL_KEYCHAIN_NAME/.test(키체인넣을줄('sk-x', 키체인이름(), 'runner').왜 ?? ''));
+  process.env.DEEL_KEYCHAIN_NAME = 키체인이름검사용;
+
+  const 왕복 = 키체인값풀기(Buffer.from(열쇠, 'utf8').toString('base64'));
+  check('우리가 넣은 꼴은 그대로 푼다', 왕복.ok && 왕복.text === 열쇠, JSON.stringify(왕복).slice(0, 80));
+  check('끝 줄바꿈은 떼고 푼다 (find-generic-password -w 는 줄바꿈을 붙여 찍는다)', 키체인값풀기('c2steA==\n').text === 'sk-x');
+  for (const [무엇, 값] of [
+    ['base64 가 아닌 글', 'sk-plain-not-base64!'],
+    ['빈 값', ''],
+    ['채움(=)이 빠진 꼴', 'c2steA'],
+    ['풀면 UTF-8 이 아닌 바이트', '/w=='],
+    ['가운데 빈칸', 'c2st eA=='],
+  ]) {
+    const r = 키체인값풀기(값);
+    check(`★ ${무엇}은 풀었다고 안 한다`, !r.ok && r.text === '' && /deel setup/.test(r.왜), JSON.stringify(r).slice(0, 120));
+  }
+
+  const 시한말 = 키체인오류말(Object.assign(new Error('spawnSync security ETIMEDOUT'), { code: 'ETIMEDOUT' }));
+  check('★ 키체인이 시한에 걸리면 잠겼을 수 있다고 사람 말로 준다', /잠겨/.test(시한말) && /unlock-keychain/.test(시한말) && !/ETIMEDOUT/.test(시한말), 시한말);
+  check('다른 오류는 그대로 옮긴다', 키체인오류말(new Error('spawnSync security ENOENT')) === 'spawnSync security ENOENT');
+}
+
+// ── 9. 같은 프로필에 열쇠를 다시 넣으면 떠 있는 판도 새 열쇠를 쓴다 ────────
+//
+// config.js 의 `푼것` 은 잠긴 값을 열쇠로 담아 둔다. DPAPI 는 열쇠가 바뀌면 잠긴 값도
+// 바뀌지만, 키체인 값은 자리의 이름표라 그대로다 — 떠 있는 REPL·ACP 가 옛 열쇠를 보냈다.
+trace('9-다시넣기');
+{
+  check('★ DPAPI 값은 담아 둔다 (값이 곧 잠근 덩이다)', 푼것담나('dpapi:QUFB') === true);
+  check('★ 키체인 값은 담아 두지 않는다 (이름표라 새 열쇠를 넣어도 안 바뀐다)', 푼것담나('keychain:deel-gateway-key') === false);
+
+  // 키체인이 없는 PC 에서도 잰다 — 푸는 자를 바꿔 끼워, 같은 이름표에서 열쇠가 바뀐 것을 흉내 낸다.
+  const 차례 = (...글들) => { let i = 0; return () => ({ ok: true, text: 글들[Math.min(i++, 글들.length - 1)], why: '' }); };
+  const 이름표 = `keychain:deel-검사-다시넣기-${process.pid}`;
+  const 키체인풀개 = 차례('sk-앞', 'sk-뒤');
+  잠긴열쇠쓰기(이름표, { 풀개: 키체인풀개 });
+  check('★★ 키체인 이름표는 다시 물으면 새로 읽는다 (옛 열쇠를 안 꺼낸다)',
+    잠긴열쇠쓰기(이름표, { 풀개: 키체인풀개 }) === 'sk-뒤');
+  const 덩이 = `dpapi:검사-${process.pid}`;
+  let 푼횟수 = 0;
+  const 셈풀개 = () => { 푼횟수++; return { ok: true, text: 'sk-덩이', why: '' }; };
+  잠긴열쇠쓰기(덩이, { 풀개: 셈풀개 });
+  잠긴열쇠쓰기(덩이, { 풀개: 셈풀개 });
+  check('★ DPAPI 덩이는 한 판에 한 번만 푼다 (파워셸 0.2초를 한마디마다 안 낸다)', 푼횟수 === 1, `${푼횟수}번`);
+  if (잠금장치.되나) {
+    const 앞 = 잠그기('sk-앞에넣은열쇠', { 프로필id: '다시넣기' });
+    check('처음 넣은 열쇠가 나온다', resolveKey({ id: '다시넣기', apiKey: 앞 }) === 'sk-앞에넣은열쇠');
+    const 뒤 = 잠그기('sk-뒤에넣은열쇠', { 프로필id: '다시넣기' });
+    const 나온것 = resolveKey({ id: '다시넣기', apiKey: 뒤 });
+    check('★★ 같은 프로필에 다시 넣으면 이 판에서도 새 열쇠가 나온다 (옛 열쇠를 안 보낸다)',
+      나온것 === 'sk-뒤에넣은열쇠', `${String(앞).slice(0, 30)} → ${String(뒤).slice(0, 30)} : ${나온것.slice(0, 16)}`);
+    if (process.platform === 'darwin') { try { 잠금지우기(뒤); } catch { /* 이미 없다 */ } }
+  }
 }
 
 trace('잠금지우기');

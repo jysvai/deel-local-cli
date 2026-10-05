@@ -24,9 +24,9 @@
 // 읽을 때 이 PC 설정이 **안 사라져야** 한다. 예전에는 사라졌다.
 //
 // 검사는 진짜 설정을 안 건드린다. DEEL_HOME 을 임시 폴더로 돌려놓고 시작한다.
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync, symlinkSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, dirname, sep } from 'node:path';
+import { join, resolve, dirname, basename, sep } from 'node:path';
 import { trace } from './trace.mjs';
 
 const pass = [];
@@ -176,8 +176,11 @@ trace('3-믿는폴더');
   check('이 PC 의 허락은 그대로 산다',
     (cfg.permissions?.allow ?? []).includes('Bash(npm test*)'), JSON.stringify(cfg.permissions?.allow));
 
+  // 글자가 아니라 **실제 자리**로 견준다 — 맥은 process.cwd() 가 `/var` 링크를 따라간 `/private/var/…`
+  // 를 줘서, 같은 파일인데 글자로는 달랐다(40회차 맥 실측).
+  const 실자리 = (p) => { try { return join(realpathSync(dirname(p)), basename(p)); } catch { return p; } };
   check('믿는 폴더에서는 프로젝트 파일에 쓴다',
-    configPath() === join(우리방, '.deel', 'config.json'), configPath());
+    실자리(configPath()) === 실자리(join(우리방, '.deel', 'config.json')), configPath());
   check('걸러낼 것이 없으면 아무 말도 안 한다', 프로젝트설정소식() === null, '');
 
   // 하위 폴더도 믿는다 — 저장소마다 스무 번 답하게 만들면 안 된다.
@@ -562,6 +565,57 @@ trace('5-거르기자체');
     }
     return true;
   })(), '');
+}
+
+trace('6a-링크로-부른-같은-폴더');
+
+// ── 같은 폴더를 두 글자로 부른다 (40회차 맥 실측) ───────────────────────
+//
+// 맥은 `/var` · `/tmp` 가 `/private/…` 을 가리키는 링크라, `/var/…` 로 믿어 놓고 그 안에서
+// 켜면 process.cwd() 가 `/private/var/…` 를 준다. 믿나() 가 글자로만 견줘서 이 파일의
+// 4b 절이 맥에서만 통째로 죽었다(믿은 폴더의 설정을 안 읽음). 링크는 어디서나 만들 수
+// 있으니(윈도는 관리자 없이 되는 정션) 그 꼴을 여기서 짓는다.
+{
+  const 바깥 = mkdtempSync(join(tmpdir(), 'deel-trust-링크-'));
+  const 진짜 = join(바깥, '진짜');
+  const 링크 = join(바깥, '링크');
+  const 옆 = join(바깥, '진짜옆');
+  mkdirSync(join(진짜, '안쪽'), { recursive: true });
+  mkdirSync(옆, { recursive: true });
+  let 지었나 = true;
+  try { symlinkSync(진짜, 링크, 'junction'); } catch { 지었나 = false; }
+  // 앞 절들이 믿어 둔 줄이 목록에 남아 있다. 이 절이 넣은 줄만 센다.
+  const 여기줄 = () => 믿는목록().filter((x) => 고른경로(x).startsWith(고른경로(바깥) + '/'));
+  if (!지었나) {
+    check('  (링크를 못 만들어 건너뜀)', true);
+  } else {
+    믿기(링크);
+    check('★★ 링크로 믿은 폴더를 실제 자리로 불러도 믿는다 (맥 /var → /private/var)', 믿나(진짜) === true, JSON.stringify(여기줄()));
+    check('★★ 그 아래 폴더도 실제 자리로 믿는다', 믿나(join(진짜, '안쪽')) === true);
+    check('★★ 이름이 이어지는 옆 폴더로는 안 샌다', 믿나(옆) === false);
+    check('  같은 폴더를 실제 자리로 다시 믿어도 한 줄이다', 믿기(진짜).이미 === true && 여기줄().length === 1, JSON.stringify(여기줄()));
+    const 뺌 = 안믿기(진짜);
+    check('★★ 실제 자리로 빼도 링크로 적힌 줄이 빠진다', 뺌.뺐나 === true && 여기줄().length === 0 && 믿나(링크) === false,
+      JSON.stringify({ 뺐나: 뺌.뺐나, 목록: 여기줄() }));
+
+    믿기(진짜);
+    check('★★ 실제 자리로 믿은 폴더를 링크로 불러도 믿는다', 믿나(링크) === true && 믿나(join(링크, '안쪽')) === true);
+    안믿기(링크);
+    check('  링크로 빼도 실제 자리로 적힌 줄이 빠진다', 여기줄().length === 0, JSON.stringify(여기줄()));
+
+    /*
+     * 지운 폴더 — 맥에서 `/private/tmp/repo` 로 믿어 둔 폴더를 지운 뒤 `/tmp/repo` 로 빼면, 둘 다
+     * realpath 가 안 풀려 글자가 안 맞았다(40회차 2차 눈). 있는 윗자리까지 풀어 견준다.
+     */
+    const 저장소 = join(진짜, '지울저장소');
+    mkdirSync(저장소);
+    믿기(저장소);
+    rmSync(저장소, { recursive: true, force: true });
+    const 지운뒤 = 안믿기(join(링크, '지울저장소'));
+    check('★ 지운 폴더도 링크 쪽 이름으로 뺄 수 있다 (있는 윗자리까지 풀어 견줌)',
+      지운뒤.뺐나 === true && 여기줄().length === 0, JSON.stringify({ 뺐나: 지운뒤.뺐나, 목록: 여기줄() }));
+  }
+  rmSync(바깥, { recursive: true, force: true });
 }
 
 trace('6-안믿기');

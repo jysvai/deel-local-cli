@@ -188,12 +188,19 @@ if (있나('bash', ['-c', 'echo ok'])) {
       const r = spawnSync('bash', ['-c', 셸], { cwd: 놀이터, encoding: 'utf8', timeout: 15000, windowsHide: true });
       return (r.stdout ?? '').split(/\r?\n/).filter(Boolean).sort();
     };
+    /*
+     * 맥 기본 bash 는 3.2 라 compopt 가 없고, 그때 우리는 빈칸을 막아 넣는다(아래 510 이 재는 그 길).
+     * 여기 기대값을 bash 4+ 꼴로만 적어 둬서 맥에서 빨갰다(40회차 맥 실측). 이 bash 에 맞춰 고른다 —
+     * 어느 쪽이든 한 이름이 **한 후보**인 것은 같다.
+     */
+    const compopt있나 = spawnSync('bash', ['-c', 'type compopt >/dev/null 2>&1'], { timeout: 15000, windowsHide: true }).status === 0;
+    const 이bash꼴 = (xs) => (compopt있나 ? xs : xs.map((x) => x.replace(/ /g, '\\ ')));
     const 파일후보 = 낱낱이(['deel', 'run', 'my'], 2);
     check('★★ (사냥5 H5-11) bash: 빈칸이 든 파일·폴더 이름을 통째로 낸다',
-      JSON.stringify(파일후보) === JSON.stringify(['[my dir]', '[my file.txt]']), 파일후보.join(' '));
+      JSON.stringify(파일후보) === JSON.stringify(이bash꼴(['[my dir]', '[my file.txt]'])), 파일후보.join(' '));
     const 폴더후보 = 낱낱이(['deel', '--root', 'my'], 2);
     check('★★ (사냥5 H5-11) bash: --root 다음 폴더 이름도 통째로 낸다',
-      JSON.stringify(폴더후보) === JSON.stringify(['[my dir]']), 폴더후보.join(' '));
+      JSON.stringify(폴더후보) === JSON.stringify(이bash꼴(['[my dir]'])), 폴더후보.join(' '));
     /*
      * ── 여는 따옴표 뒤 · compopt 없는 bash (2.0.2 · 510) ───────────────────────
      *

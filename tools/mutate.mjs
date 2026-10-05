@@ -321,14 +321,23 @@ const 어긋들 = 조각내기(고른것, 조각번호, 조각수);
  * (test/죽은규칙.test.js 의 「조각나눔」). 그 검사가 몇 시간짜리 주행을
  * 하지 않고 이걸 물어볼 수 있게 여기서 멈춘다.
  */
+/*
+ * 다 내보낸 뒤 끝낸다. 맥·리눅스에서 파이프 쓰기는 비동기라(Node 문서 「A note on process I/O」)
+ * console.log 바로 뒤의 process.exit 이 덜 나간 글을 버린다. 맥에서 「세어만」 JSON 이 잘려
+ * 죽은규칙 검사가 「조각 1/8 의 답을 못 읽음」 으로 빨갰다(40회차 맥 실측).
+ */
+const 내고끝내기 = async (글, 코드 = 0) => {
+  await new Promise((된) => process.stdout.write(글, () => 된()));
+  process.exit(코드);
+};
+
 if (인자.includes('--세어만')) {
-  console.log(JSON.stringify({
+  await 내고끝내기(`${JSON.stringify({
     조각: `${조각번호}/${조각수}`,
     전체: 모든어긋.length,
     맡은것: 어긋들.length,
     이름들: 어긋들.map((x) => `${x.곳}|${x.무엇}`),
-  }));
-  process.exit(0);
+  })}\n`);
 }
 
 /*
@@ -350,8 +359,7 @@ if (견줄곳 && 어긋들.length === 0) {
     : `고른 ${고른것.length}개는 딴 조각이 맡았습니다 (이 조각 ${조각번호}/${조각수}).`)}`);
   말(`  ${색(D, '전부 쓸기는 mutants-full 이 따로 돕니다 (밤마다 · 손으로 · 태그).')}`);
   말('');
-  if (json) console.log(JSON.stringify({ 잡음: 0, 샜음: 0, 못잼: 0, 건너뜀: 0, 결과: [], 까닭: 바뀜메모 }, null, 2));
-  process.exit(0);
+  await 내고끝내기(json ? `${JSON.stringify({ 잡음: 0, 샜음: 0, 못잼: 0, 건너뜀: 0, 결과: [], 까닭: 바뀜메모 }, null, 2)}\n` : '');
 }
 
 // ── 일할 폴더 한 벌 ─────────────────────────────────────────────────────

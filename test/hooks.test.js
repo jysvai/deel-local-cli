@@ -340,11 +340,13 @@ trace('9-4회차');
    * 「결과가 너무 많습니다」 오류를 돌려주고, 그건 「못 돌렸다」 로 쳐져 막는 자리에서 막았다.
    * 사내 린터가 경고를 길게 뱉고 0 으로 끝나는 흔한 모양이 그대로 「막힘」 이 됐다.
    */
-  const 큰말 = await 훅돌리기(훅(스크립트('big.js', "process.stdout.write('x'.repeat(40000)); process.exit(0)")), {});
+  // 큰 글을 쓰고 process.exit 을 바로 부르지 않는다 — 맥·리눅스 파이프는 쓰기가 비동기라 덜 나간 글을
+  // 버린다(Node 문서 「A note on process I/O」). 맥에서 8192 자만 와서 「잘림」 이 안 났다(40회차 맥 실측).
+  const 큰말 = await 훅돌리기(훅(스크립트('big.js', "process.stdout.write('x'.repeat(40000));")), {});
   check('★★★ 0 으로 끝난 훅은 글을 많이 뱉어도 안 막는다', 큰말.막나 === false && 큰말.코드 === 0, `${큰말.코드} ${큰말.왜 ?? ''}`);
   check('★★ 대신 자르고 잘랐다고 적는다', 큰말.잘림 === true && 큰말.말.length < 글최대 + 200 && /여기까지만/.test(큰말.말),
     `${큰말.잘림} ${큰말.말.length}`);
-  const 큰막음 = await 훅돌리기(훅(스크립트('bigblock.js', "process.stdout.write('규칙 위반 ' + 'y'.repeat(40000)); process.exit(2)")), {});
+  const 큰막음 = await 훅돌리기(훅(스크립트('bigblock.js', "process.stdout.write('규칙 위반 ' + 'y'.repeat(40000)); process.exitCode = 2;")), {});
   check('★★ 길게 뱉고 2 로 끝나면 여전히 막는다', 큰막음.막나 === true && 큰막음.코드 === 2, `${큰막음.코드}`);
 
   /*

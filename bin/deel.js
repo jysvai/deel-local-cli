@@ -1292,8 +1292,31 @@ async function main() {
 async function 끝내기(code) {
   process.exitCode = code;
   await closeConnections();
+  await 다나가기(5000);
   const 마지막수단 = setTimeout(() => process.exit(code), 400);
   마지막수단.unref();
+}
+
+/*
+ * ── 마지막수단이 덜 나간 출력을 버렸다 (40회차 · 맥) ─────────────────────
+ *
+ * 맥·리눅스에서 파이프 쓰기는 비동기다(Node 문서 「A note on process I/O」). 받는 쪽이 늦게
+ * 읽으면 글이 이벤트 루프에 남아 루프가 안 비고, 400ms 뒤 위 마지막수단의 process.exit 이
+ * **남은 글을 버린다** — `deel sbom | 느린것` · `deel run --json | ssh …` 이 반쪽 JSON 을 받는다.
+ * 같은 꼴의 고장이 맥 검사에서 셋(convert · hooks · mutate) 나왔다.
+ *
+ * 그래서 표준출력·표준오류가 **다 나간 뒤에** 마지막수단을 건다. 끝없이 기다리지는 않는다 —
+ * 받는 쪽이 아예 안 읽으면 정한 시간 뒤 예전대로 간다. 빈 글 쓰기의 콜백은 앞의 글이 다
+ * 나간 뒤에 불린다(쓰기는 차례대로 나간다). 닫힌 파이프(EPIPE)면 콜백이 오류와 함께 곧 온다.
+ */
+function 다나가기(최대) {
+  const 하나 = (흐름) => new Promise((된) => {
+    try { 흐름.write('', () => 된()); } catch { 된(); }
+  });
+  return Promise.race([
+    Promise.all([하나(process.stdout), 하나(process.stderr)]),
+    new Promise((된) => setTimeout(된, 최대).unref()),
+  ]);
 }
 
 main()

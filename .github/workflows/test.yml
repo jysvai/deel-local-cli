@@ -16,8 +16,11 @@ jobs:
   test:
     strategy:
       fail-fast: false
+      # 맥은 2.1.6 부터 — 그 전엔 한 번도 안 재서, 처음 잰 날(9/29) 맥에서만 빨간 검사가
+      # 열하나 · 진짜 흠(키체인 넷 · /var 링크 · 파이프 출력 잘림)이 나왔다. 재지 않는 OS 는
+      # 「돈다」 고 적을 근거가 없다.
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         node: [20, 22, 24]
     runs-on: ${{ matrix.os }}
     steps:
