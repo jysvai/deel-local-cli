@@ -9,7 +9,7 @@ and everything before it is **collected into one**.
 
 | | Where | What |
 |---|---|---|
-| **Current** | **[2.1.x](releases/2.1.md)** | [2.1.7](releases/2.1.md#217) — Tab completion for file names no longer errors in zsh, the default shell on macOS |
+| **Current** | **[2.1.x](releases/2.1.md)** | [2.1.8](releases/2.1.md#218) — Suspending with Ctrl+Z and resuming with `fg` no longer makes deel quit |
 | | | [2.1.6](releases/2.1.md#216) — works properly on macOS: keychain keys, trusted folders under `/tmp`, long output through a slow pipe. macOS joins the gate CI |
 | | | [2.1.5](releases/2.1.md#215) — shell commands could reach outside the working folder; one `find .. -delete` emptied the parent. Now blocked |
 | | | [2.1.4](releases/2.1.md#214) — connect by logging in with a browser, no key to paste — one OpenRouter login for Claude, GPT, Grok and Kimi |

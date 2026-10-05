@@ -10,10 +10,11 @@
 //   그 안에서 deel 을 키 입력으로 몬다. 윈도우나 python3 가 없는 곳에서는 건너뛴다.
 //
 //   무엇을 보나: 한글 지우기 · 여러 줄 붙여넣기가 한 말로 · 창 크기 바꾸기 · 답이 흐르는 중 Ctrl+C ·
-//   Ctrl+D · 도구 승인 물음(y · ㅇ · n · ESC · Ctrl+C) — 줄 화면과 상자 화면 둘 다 — 그리고 deel setup
-//   (Ctrl+C · 가린 열쇠). 판마다 **끝난 뒤 터미널이 원래대로**(icanon · echo) 돌아왔나.
+//   Ctrl+D · 도구 승인 물음(y · ㅇ · n · ESC · Ctrl+C) · Ctrl+Z 로 재웠다 fg 로 깨우기(입력칸 · 흐르는 중 ·
+//   승인 물음 중 · 고아 그룹) — 줄 화면과 상자 화면 둘 다 — 그리고 deel setup(Ctrl+C · 가린 열쇠).
+//   판마다 **끝난 뒤 터미널이 원래대로**(icanon · echo) 돌아왔나.
 //
-//   한 판이 리눅스에서 2분 반쯤이다 — test/검사시간.json 에 적어 둬야 어긋내기 조각이 고르게 나뉜다.
+//   한 판이 리눅스에서 3분 반쯤이다 — test/검사시간.json 에 적어 둬야 어긋내기 조각이 고르게 나뉜다.
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
@@ -83,6 +84,9 @@ for st in spec['steps']:
     if 'wait' in st:
         ok = wait(st['wait'], st.get('timeout', 20))
         results.append({'name': st.get('name', st['wait']), 'ok': ok})
+    if 'tty' in st:
+        a = termios.tcgetattr(fd)
+        results.append({'name': st['tty'], 'ok': True, 'mode': ('icanon' if a[3] & termios.ICANON else '-icanon') + ' ' + ('echo' if a[3] & termios.ECHO else '-echo')})
 pump(1.0)
 try:
     os.kill(pid, signal.SIGKILL)
@@ -164,7 +168,7 @@ if (!python있나) {
   writeFileSync(모는파일, 모는것, 'utf8');
 
   /** 한 판 — bash 안에서 deel 을 띄우고 걸음들을 친 뒤, 끝난 종료코드와 stty 를 읽는다. */
-  const 판 = async (걸음들, { 인자 = '', 설정 = true, 켜짐 = 'fake-7b', 환경 = '', 상자 = false, 도구 = false } = {}) => {
+  const 판 = async (걸음들, { 인자 = '', 설정 = true, 켜짐 = 'fake-7b', 환경 = '', 상자 = false, 도구 = false, 끝 = true, exec = false } = {}) => {
     받은말 = [];
     도구결과 = [];
     const 일터 = mkdtempSync(join(tmpdir(), 'deel-pty-'));
@@ -174,14 +178,14 @@ if (!python있나) {
       version: 1, active: 'gw',
       profiles: [{ id: 'gw', name: '가짜', kind: 'openai', baseUrl: `http://127.0.0.1:${포트}/v1`, auth: 'bearer', apiKey: 'k', model: 'fake-7b', ctx: 32000, streaming: true, tools: 도구 }],
     }));
-    const 명령 = `${상자 ? 'unset CI GITHUB_ACTIONS; ' : 'export CI=1; '}cd '${일터}' && DEEL_HOME='${집}' DEEL_NET_ALLOW='http://127.0.0.1:${포트}/v1' DEEL_NO_OPEN=1 ${환경} '${process.execPath}' '${진입점}' ${인자}; `
-      + `echo "EXIT=$?"; stty -a | tr '\\n' ' '; echo; echo END-OF-RUN\r`;
+    const 명령 = `${상자 ? 'unset CI GITHUB_ACTIONS; ' : 'export CI=1; '}cd '${일터}' && DEEL_HOME='${집}' DEEL_NET_ALLOW='http://127.0.0.1:${포트}/v1' DEEL_NO_OPEN=1 ${환경} ${exec ? 'exec ' : ''}'${process.execPath}' '${진입점}' ${인자}; `
+      + `echo "EXIT=$?"; stty -a | tr '\\n' ' '; echo; echo END-OF-"RUN"\r`;
     const 걸음표 = join(일터, 'spec.json');
     writeFileSync(걸음표, JSON.stringify({
       steps: [
         { send: 명령, mark: true, wait: 켜짐, timeout: 30, name: '켜짐' }, { sleep: 1.5 },
         ...걸음들,
-        { wait: 'END-OF-RUN', timeout: 25, name: '끝까지' },
+        ...(끝 ? [{ wait: 'END-OF-RUN', timeout: 25, name: '끝까지' }] : []),
       ],
     }));
     const 결과 = await new Promise((done) => {
@@ -203,6 +207,7 @@ if (!python있나) {
     const stty = /(-?icanon)\b.*?\s(-?echo)\s/.exec(꼬리) ?? [];
     return {
       걸음: Object.fromEntries(결과.results.map((r) => [r.name, r.ok])),
+      모드: Object.fromEntries(결과.results.filter((r) => r.mode).map((r) => [r.name, r.mode])),
       종료: /EXIT=(\d+)/.exec(꼬리)?.[1],
       복구됨: stty[1] === 'icanon' && stty[2] === 'echo',
       stty: `${stty[1] ?? '?'} ${stty[2] ?? '?'}`,
@@ -283,6 +288,106 @@ if (!python있나) {
     {
       const r = await 판에([{ send: '\x04', sleep: 1.5 }]);
       check(`★ 진짜 pty (${이름}): 빈 입력에서 Ctrl+D 는 나가고 터미널을 돌려놓는다`, r.종료 !== undefined && r.복구됨, 덧(r));
+    }
+
+    /*
+     * ── Ctrl+Z 로 재웠다가 fg 로 깨우기 ─────────────────────────────────
+     *
+     * 셸이 프로세스를 재우면 날것 모드가 풀린 채 셸로 돌아가야 하고, fg 로 깨우면 다시 날것 모드로 들어가
+     * 입력칸을 다시 그려야 한다. 그 순간의 모드를 pty 에서 직접 읽는다. 처음 재 보니 fg 하자마자 deel 이
+     * **조용히 끝났다** — 이어 친 글을 셸이 명령으로 받았다(repl.js 의 SIGTSTP 머리말).
+     *
+     * 재우면 bash 는 명령줄의 나머지(EXIT · stty · END-OF-RUN)를 곧바로 돌린다. 그래서 이 판은 그 값을
+     * 안 읽고, fg 가 끝난 뒤 deel 의 종료코드와 터미널 모드를 따로 찍게 한다.
+     */
+    const fg끝 = { send: 'echo "FG=$?"; stty -a | tr \'\\n\' \' \'; echo; echo END-OF-"FG"\r', wait: 'END-OF-FG', timeout: 15, name: 'fg 끝' };
+    const fg읽기 = (r) => {
+      const 끝 = /FG=(\d+)[\s\S]*?(-?icanon)\b[\s\S]*?\s(-?echo)\s/.exec(r.화면글) ?? [];
+      const 재운앞 = r.화면.slice(0, Math.max(0, r.화면.search(/Stopped|Suspended/)));
+      const 나중 = (켬, 끔) => 재운앞.lastIndexOf(끔) >= 재운앞.lastIndexOf(켬);
+      return {
+        종료: 끝[1],
+        복구됨: 끝[2] === 'icanon' && 끝[3] === 'echo',
+        // 잠들기 직전에 deel 이 마지막으로 보낸 것이 「끔」 이어야 셸이 그걸 안 물려받는다.
+        붙여넣기껐나: 재운앞.includes('\x1b[?2004h') && 나중('\x1b[?2004h', '\x1b[?2004l'),
+        커서보이나: 나중('\x1b[?25l', '\x1b[?25h'),
+      };
+    };
+
+    trace(`7-Ctrl+Z-fg (${이름})`);
+    {
+      const r = await 판([
+        { tty: '켠 뒤' },
+        { send: '\x1a', wait: 'Stopped|Suspended', timeout: 10, name: '재움' },
+        { send: 'fg\r', mark: true, sleep: 2 },
+        { tty: 'fg 뒤' },
+        // 모는 쪽은 날것 바이트에서 찾는다 — 상자의 │ 와 ❯ 사이에는 색 바꿈이 끼므로 건너뛰게 둔다.
+        // 키를 치기 **전**이라 여기서 보이는 상자는 깨어난 자리에서 새로 그린 것뿐이다.
+        ...(상자 ? [{ wait: String.raw`│(?:\x1b\[[0-9;]*m)* (?:\x1b\[[0-9;]*m)*❯`, timeout: 5, name: '상자 다시' }] : []),
+        { type: '가나다' }, { send: '\x7f', sleep: 0.2 }, { send: '\x7f', sleep: 0.2 },
+        { type: '라\r', wait: '받았습니다:2자', name: '깨운 뒤 답' }, { type: '/exit\r', sleep: 1.5 }, fg끝,
+      ], { 상자, 끝: false });
+      const f = fg읽기(r);
+      const 재움덧 = `모드=${JSON.stringify(r.모드)} · 걸음=${JSON.stringify(r.걸음)} · fg=${JSON.stringify(f)} · ${JSON.stringify(r.받은말)} · ${JSON.stringify(r.화면글.slice(-300))}`;
+      check(`★★ 진짜 pty (${이름}): Ctrl+Z 로 재우면 셸로 돌아간다`, r.걸음.재움 && r.모드['켠 뒤'] === '-icanon -echo', 재움덧);
+      check(`★ 진짜 pty (${이름}): 잠들기 전에 붙여넣기 표지를 끄고 커서를 보이게 둔다 — 셸이 물려받지 않게`, f.붙여넣기껐나 && f.커서보이나, 재움덧);
+      check(`★★ 진짜 pty (${이름}): fg 로 깨우면 다시 날것 모드다 — 한글 지우기까지 그대로 받는다`,
+        r.모드['fg 뒤'] === '-icanon -echo' && r.받은말.at(-1) === '가라', 재움덧);
+      check(`★★ 진짜 pty (${이름}): 깨운 뒤 /exit 는 0 으로 끝나고 터미널이 원래대로다`, r.걸음['fg 끝'] && f.종료 === '0' && f.복구됨, 재움덧);
+      if (상자) check(`  진짜 pty (${이름}): 깨우면 상자 입력칸을 다시 그린다`, r.걸음['상자 다시'], 재움덧);
+    }
+
+    trace(`7-흐르는-중-Ctrl+Z (${이름})`);
+    {
+      const r = await 판([
+        { type: '느리게 말해줘\r', sleep: 1 },
+        { send: '\x1a', wait: 'Stopped|Suspended', timeout: 10, name: '재움' },
+        { sleep: 1 }, { send: 'fg\r', mark: true },
+        { wait: '받았습니다:7자', timeout: 20, name: '흐르던 답 끝' },
+        { type: '다음말\r', wait: '받았습니다:3자', name: '다음 답' }, { type: '/exit\r', sleep: 1.5 }, fg끝,
+      ], { 상자, 끝: false });
+      const f = fg읽기(r);
+      check(`★ 진짜 pty (${이름}): 답이 흐르는 중 재웠다 깨워도 답을 끝까지 받고 다음 말로 간다`,
+        r.걸음.재움 && r.걸음['흐르던 답 끝'] && r.받은말.at(-1) === '다음말' && f.종료 === '0' && f.복구됨 && f.커서보이나,
+        `걸음=${JSON.stringify(r.걸음)} · fg=${JSON.stringify(f)} · ${JSON.stringify(r.받은말)} · ${JSON.stringify(r.화면글.slice(-300))}`);
+    }
+
+    trace(`7-승인-물음-중-Ctrl+Z (${이름})`);
+    {
+      // 물음은 readline 이 아니라 우리가 찍은 글이다 — 깨울 때 우리가 안 되찍으면 줄 화면에서 물음이 사라진다.
+      const r = await 판([
+        { type: '/mode strict\r', wait: '모두 확인', name: '엄격' },
+        { type: '파일써줘\r', wait: '실행할까요', name: '물음' },
+        { send: '\x1a', wait: 'Stopped|Suspended', timeout: 10, name: '재움' },
+        { send: 'fg\r', mark: true },
+        { wait: '실행할까요', timeout: 5, name: '물음 다시' },
+        { type: 'n\r', wait: '도구결과받음', name: '답한 뒤' },
+        { type: '/exit\r', sleep: 1.5 }, fg끝,
+      ], { 상자, 도구: true, 끝: false });
+      const f = fg읽기(r);
+      check(`★ 진짜 pty (${이름}): 승인 물음 중에 재웠다 깨우면 물음을 다시 찍고, n 은 여전히 거부다`,
+        r.걸음['물음 다시'] && !r.썼나 && /거부/.test(r.도구결과[0] ?? '') && f.종료 === '0' && f.복구됨,
+        `걸음=${JSON.stringify(r.걸음)} · fg=${JSON.stringify(f)} · 도구결과=${JSON.stringify(r.도구결과)} · ${JSON.stringify(r.화면글.slice(-300))}`);
+    }
+
+    trace(`7-고아-그룹-Ctrl+Z (${이름})`);
+    {
+      /*
+       * `exec deel` 로 띄우면 deel 이 세션의 맨 앞이 되고 부모(python)는 다른 세션이라 프로세스 그룹이 고아다.
+       * 그러면 커널은 SIGTSTP 를 그냥 버린다 — 안 잠든다. `ssh -t 호스트 deel` · `docker run -it` 이 이 꼴이다.
+       * 그때도 날것 모드가 돌아와 있어야 한다(SIGCONT 는 영영 안 온다).
+       */
+      const r = await 판([
+        { tty: '켠 뒤' },
+        { send: '\x1a', sleep: 1.5 },
+        { tty: 'Ctrl+Z 뒤' },
+        { type: '가나다' }, { send: '\x7f', sleep: 0.2 }, { send: '\x7f', sleep: 0.2 },
+        { type: '라\r', wait: '받았습니다:2자', name: '답' },
+        { type: '/exit\r', sleep: 1.5 },
+      ], { 상자, 끝: false, exec: true });
+      check(`★★ 진짜 pty (${이름}): 고아 그룹이라 Ctrl+Z 가 버려져도 날것 모드로 돌아와 키를 그대로 받는다`,
+        r.모드['켠 뒤'] === '-icanon -echo' && r.모드['Ctrl+Z 뒤'] === '-icanon -echo' && r.받은말.at(-1) === '가라' && !/Stopped|Suspended/.test(r.화면글),
+        `모드=${JSON.stringify(r.모드)} · 걸음=${JSON.stringify(r.걸음)} · ${JSON.stringify(r.받은말)} · ${JSON.stringify(r.화면글.slice(-300))}`);
     }
 
     /*

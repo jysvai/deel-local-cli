@@ -587,6 +587,8 @@ export async function chatLoop(opts = {}) {
   let 입력기다림 = false;
   // 되묻는 중이면 그 앞머리. 상자 대신 한 줄로 되비춘다.
   let 묻는중 = null;
+  // 되묻는 중이면 그 앞머리 — 화면을 안 가린다(줄 화면에서도 든다). Ctrl+Z 로 재웠다 깨울 때 물음째 되찍는 데 쓴다.
+  let 물음앞 = null;
   // 이번 틱에 다시 그리기로 이미 잡아 뒀나 (붙여넣기로 키가 쏟아질 때)
   let 그릴예정 = false;
   const 먹통 = { write() { return true; }, end() {}, on() {}, once() {}, emit() {}, removeListener() {} };
@@ -932,6 +934,71 @@ export async function chatLoop(opts = {}) {
     process.stdout.write('\x1b[?2004h');
     process.on('exit', () => { try { process.stdout.write('\x1b[?2004l'); } catch { /* 이미 닫혔다 */ } });
 
+    /*
+     * ── Ctrl+Z 로 재웠다가 fg 로 깨우기 ──────────────────────────────────
+     *
+     * readline 은 Ctrl+Z 를 받으면 날것 모드를 풀고 스스로 잠든다. 그런데 깨울 때는 날것 모드만 되돌리고
+     * 입력을 **멈춰 둔 채** 'SIGCONT' 를 낸다 — 그걸 받아 다시 여는 쪽이 있어야 한다는 뜻이다(Node 문서도
+     * `rl.on('SIGCONT', () => rl.prompt())` 를 짝으로 든다). 여기는 아무도 안 받았다. 그러면 붙든 것이
+     * 하나도 없어진 node 가 fg 하자마자 **조용히 끝난다** — 말 한마디 없이 셸로 떨어지고, 이어서 친 글은
+     * 셸이 명령으로 받는다(「bash: 가라: command not found」). 맥·리눅스 × node 20·22 진짜 pty 에서 넷 다
+     * 그랬고, 답이 흐르는 중에 재워도 답이 끝나는 순간 같은 자리에서 끝났다(47회차 뒤 사냥).
+     *
+     * 잠드는 일을 readline 에게 안 맡기고 여기서 한다('SIGTSTP' 를 들으면 readline 은 스스로 안 잔다).
+     * 그래야 잠들기 **전에** 우리가 켠 것을 끌 수 있다 — 붙여넣기 표지(위)와 돌림표가 숨긴 커서. 안 끄면
+     * 재워 둔 동안 셸이 그걸 물려받는다. 깨면 날것 모드 · 붙여넣기 표지를 되돌리고 입력칸을 새로 그린다.
+     * 그 사이 셸이 찍은 줄들 때문에 그려 둔 상자 자리는 이미 틀어졌다 — 잊고 지금 자리에 그린다.
+     * (윈도에는 Ctrl+Z 로 재우는 일이 없다 — readline 이 이 이벤트를 아예 안 낸다.)
+     */
+    rl.on('SIGTSTP', () => {
+      try { process.stdout.write('\x1b[?2004l\x1b[?25h'); } catch { /* 이미 닫혔다 */ }
+      try { process.stdin.setRawMode?.(false); } catch { /* 터미널이 없어졌다 */ }
+      /*
+       * 깨우기는 **한 번만**, 그리고 두 길로 부른다.
+       *
+       * SIGCONT 만 기다리면 안 오는 판이 있다 — 고아 프로세스 그룹(`ssh -t 호스트 deel` · `docker run -it` ·
+       * `exec deel`)에서는 커널이 SIGTSTP 를 그냥 버린다. 그러면 안 잠들었는데 날것 모드만 꺼진 채 남아,
+       * 키가 엔터 전까지 안 오고 화살표·한글 지우기가 터미널 몫이 된다(readline 이 스스로 잘 때도 같았다).
+       * 자기에게 보낸 신호는 kill() 이 돌아오기 **전에** 닿는다(POSIX) — 그러니 kill 다음 차례에 오는
+       * setImmediate 는 「깨어난 뒤」 이거나 「안 잠든 것」 둘 중 하나다. 어느 쪽이든 되돌리는 것이 맞다.
+       */
+      let 깸 = false;
+      const 깨우기 = () => {
+        if (깸) return;
+        깸 = true;
+        process.off('SIGCONT', 깨우기);
+        if (closed) return;
+        try { process.stdin.setRawMode?.(true); } catch { /* 터미널이 없어졌다 */ }
+        try { process.stdout.write('\x1b[?2004h'); } catch { /* 이미 닫혔다 */ }
+        화면.깨어남?.();
+        /*
+         * 셸이 그 사이 제 글을 찍었으니 입력칸·물음을 지금 줄에 새로 찍는다. 커서는 글 끝에 둔다 — 중간에
+         * 두려면 왼쪽으로 몇 칸을 가야 하는데, 긴 글이 접혀 여러 줄이 되면 그 셈이 줄을 못 넘는다.
+         * readline 의 커서도 끝으로 맞춘다. 화면과 어긋나면 다음에 친 글자가 엉뚱한 자리에 끼어든다.
+         */
+        if (물음앞 !== null) {
+          // 승인 물음 — 줄 화면에서도 되찍는다(물음은 readline 이 아니라 우리가 찍은 글이라 readline 이 모른다).
+          rl.cursor = (rl.line ?? '').length;
+          process.stdout.write(`\r\x1b[2K${물음앞}${상자쓰나 ? c.white(펴기(rl.line)) : (rl.line ?? '')}`);
+        } else if (입력기다림) {
+          if (상자쓰나) {
+            // Ctrl+Z 키는 readline 다음에 우리 keypress 처리로도 가서 상자를 한 번 더 그린다. 여기서 먼저 그리는
+            // 것은 그 순서(듣개를 단 차례)에 기대지 않으려는 것이다 — 그래서 이 줄을 빼는 어긋은 지금은 안 잡힌다.
+            화면.입력갱신(session, 펴기(rl.line), rl.cursor ?? 0, 지금추천(펴기(rl.line)));
+          } else {
+            // 줄화면의 「❯」 도 readline 이 아니라 우리가 찍는다(screen.js 입력자리).
+            rl.cursor = (rl.line ?? '').length;
+            process.stdout.write(`\r\x1b[2K ${c.hcyan('❯')} ${rl.line ?? ''}`);
+          }
+        }
+        // 일하는 중이면 그리지 않는다 — 상자 화면은 다음 틱의 일그리기가 잊은 자리에 새로 그리고,
+        // 줄 화면은 흘러가는 글이라 다시 그릴 것이 없다(돌림표의 커서만 깨어남 이 다시 숨긴다).
+      };
+      process.once('SIGCONT', 깨우기);
+      process.kill(process.pid, 'SIGTSTP');
+      setImmediate(깨우기);
+    });
+
     process.stdin.on('keypress', (_ch, key) => {
       if (key?.sequence === '\x1b[200~') {
         붙여넣는중 = true;
@@ -1235,6 +1302,7 @@ export async function chatLoop(opts = {}) {
      * y 를 쳐도 화면에 아무것도 안 나타난다 — 먹은 건지 안 먹은 건지 모른다.
      */
     묻는중 = 상자쓰나 ? 앞 : null;
+    물음앞 = 앞;
     /*
      * 쌓아 둔 이어쓰기를 버릴 때는 **말한다.**
      *
@@ -1314,6 +1382,7 @@ export async function chatLoop(opts = {}) {
       clearTimeout(시계);
       턴멈춤?.removeEventListener?.('abort', 이어멈춤);
       묻는중 = null;
+      물음앞 = null;
       // 빼 뒀던 것을 앞에 되돌린다. 차례가 바뀌면 안 된다.
       if (미리쳐둔.length) queue.unshift(...미리쳐둔);
     }

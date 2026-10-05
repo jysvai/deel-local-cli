@@ -236,6 +236,12 @@ export class LineScreen {
   /** 사람이 치는 중인 글이 바뀌었다. 줄화면은 readline 이 알아서 되비춘다. */
   입력갱신() { }
 
+  /**
+   * Ctrl+Z 로 재웠다 깨어났다 (repl.js). 줄화면은 들고 있는 자리가 없다.
+   * 다만 돌림표가 도는 중이면 커서를 다시 숨긴다 — 잠들기 전에 셸 몫으로 보이게 돌려놨다.
+   */
+  깨어남() { if (this.돌림) cursor.hide(); }
+
   /** 일하는 중 미리 치는 글. 줄화면은 상자가 없어 보여 줄 자리가 없다. */
   대기갱신() { }
 
@@ -392,6 +398,9 @@ export class BoxScreen extends LineScreen {
   입력갱신(session, 글, 커서, 추천 = []) { this.상자.그리기(session, 글, 커서, null, 추천); }
 
   입력지움() { this.상자.지우기(); }
+
+  /** Ctrl+Z 로 재웠다 깨어났다 — 셸이 그 사이 글을 찍었으니 그려 둔 자리를 잊는다 (inputbox.js 의 잊기). */
+  깨어남() { super.깨어남(); this.상자.잊기(); }
 
   close() {
     this.상자.지우기();
