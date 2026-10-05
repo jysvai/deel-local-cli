@@ -28,8 +28,7 @@ import { trace } from './trace.mjs';
 function 치우기(자리) {
   for (let k = 0; ; k += 1) {
     try { rmSync(자리, { recursive: true, force: true }); return; } catch (e) {
-      if (k >= 40) { process.stderr.write(`  (임시 폴더를 못 치웠습니다: ${자리} · ${e.code})
-`); return; }
+      if (k >= 40) { process.stderr.write(`  (임시 폴더를 못 치웠습니다: ${자리} · ${e.code})\n`); return; }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
     }
   }
