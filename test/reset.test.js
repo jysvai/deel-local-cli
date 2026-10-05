@@ -535,6 +535,26 @@ trace('7f-집-설정에-사람이-적은-칸');
     } finally {
       if (이전집 === undefined) delete process.env.DEEL_HOME; else process.env.DEEL_HOME = 이전집;
     }
+
+    /*
+     * 집 설정 파일이 **아직 없을 때**(처음 setup) — 파일을 끝까지 풀 수 없으니 폴더를 풀어 견줘야 한다.
+     * 파일이 있을 때는 끝까지 풀기가 폴더 링크도 같이 풀어, 폴더 풀기를 빼도 위 검사가 못 느꼈다(리눅스 어긋).
+     */
+    const 빈집 = mkdtempSync(join(tmpdir(), 'deel-reset-빈집-'));
+    mkdirSync(join(빈집, '.deel'));
+    const 빈집링크 = `${빈집}-링크`;
+    let 빈집지었나 = true;
+    try { symlinkSync(빈집, 빈집링크, 'junction'); } catch { 빈집지었나 = false; }
+    치울것.push(빈집, ...(빈집지었나 ? [빈집링크] : []));
+    if (빈집지었나) {
+      process.env.DEEL_HOME = join(빈집링크, '.deel');
+      try {
+        check('★ 집 설정이 아직 없어도 링크 너머 같은 자리를 이 PC 설정 파일로 알아본다',
+          집설정파일인가(join(빈집, '.deel', 'config.json')) === true);
+      } finally {
+        if (이전집 === undefined) delete process.env.DEEL_HOME; else process.env.DEEL_HOME = 이전집;
+      }
+    }
   }
 
   /*

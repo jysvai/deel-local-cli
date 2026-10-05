@@ -1087,23 +1087,43 @@ trace('9g-느리게-읽어도-다-받는다');
  * 맥·리눅스는 파이프 쓰기가 비동기라, 다 못 나간 글이 남은 채 400ms 마지막수단의 process.exit 이
  * 돌면 그 글이 사라진다. `deel sbom` 은 표준출력으로 150KB 쯤을 낸다 — 1.5초 동안 안 읽다가
  * 읽어서 JSON 이 통째로 오는지 본다. 윈도우는 파이프 쓰기가 동기라 이 꼴이 안 난다(그래도 돈다).
+ *
+ * 받는 쪽은 **따로 뜬 프로세스**다. 처음엔 이 검사가 제 흐름을 pause() 해서 늦게 읽었는데, 부모가
+ * node 20 이면 멈춘 흐름도 계속 받아 두었다가 자식이 끝날 때 듣는 이 없이 resume 해 흘려 버려 0바이트가
+ * 됐다(리눅스·윈도 node 20 CI). deel 은 다 보냈는데 검사가 버린 것 — 부모 node 판에 따라 결과가 달랐다.
  */
 {
   const 받은것 = await new Promise((done) => {
+    const 받는쪽 = spawn(process.execPath, ['-e', [
+      'setTimeout(() => {',
+      '  const c = [];',
+      "  process.stdin.on('data', (b) => c.push(b)).on('end', () => {",
+      "    const s = Buffer.concat(c).toString('utf8'); let 풀림 = false;",
+      '    try { JSON.parse(s); 풀림 = true; } catch { /* 반쪽 */ }',
+      '    process.stdout.write(JSON.stringify({ 길이: s.length, 풀림 }));',
+      '  });',
+      '}, 1500);',
+    ].join('\n')], { stdio: ['pipe', 'pipe', 'ignore'] });
     const kid = spawn(process.execPath, [진입점, 'sbom'], {
-      cwd: work, env: { ...process.env, DEEL_HOME: home, NO_COLOR: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: work, env: { ...process.env, DEEL_HOME: home, NO_COLOR: '1' }, stdio: ['ignore', 받는쪽.stdin, 'pipe'],
     });
-    const 조각들 = [];
-    kid.stdout.pause();
-    setTimeout(() => { kid.stdout.on('data', (b) => 조각들.push(b)); kid.stdout.resume(); }, 1500);
+    받는쪽.stdin.destroy(); // 쓰는 끝은 deel 만 쥔다 — 그래야 deel 이 끝날 때 받는 쪽이 끝을 본다
     kid.stderr.resume();
-    const 시계 = setTimeout(() => kid.kill('SIGKILL'), 40000);
-    kid.on('close', (code) => { clearTimeout(시계); done({ code, 글: Buffer.concat(조각들).toString('utf8') }); });
+    let code = null;
+    kid.on('exit', (c) => { code = c; });
+    let 답 = '';
+    받는쪽.stdout.on('data', (b) => { 답 += b; });
+    const 시계 = setTimeout(() => { kid.kill('SIGKILL'); 받는쪽.kill('SIGKILL'); }, 40000);
+    받는쪽.on('close', () => {
+      clearTimeout(시계);
+      let 잰것 = { 길이: 0, 풀림: false };
+      try { 잰것 = JSON.parse(답); } catch { /* 받는 쪽이 못 끝냄 */ }
+      const 끝 = () => done({ code, ...잰것 });
+      if (code === null) kid.on('exit', 끝); else 끝();
+    });
   });
-  let 풀림 = false;
-  try { JSON.parse(받은것.글); 풀림 = true; } catch { /* 아래에서 잰다 */ }
   check('★★ 받는 쪽이 늦게 읽어도 sbom JSON 을 끝까지 받는다 (맥 · 리눅스 파이프)',
-    받은것.code === 0 && 풀림 && 받은것.글.length > 65536, `code=${받은것.code} · ${받은것.글.length}바이트 · 풀림=${풀림}`);
+    받은것.code === 0 && 받은것.풀림 && 받은것.길이 > 65536, `code=${받은것.code} · ${받은것.길이}바이트 · 풀림=${받은것.풀림}`);
 }
 
 trace('8-치움');
