@@ -20,6 +20,21 @@ import { 띄우기 } from '../src/preview/serve.js';
 import { makeScope } from '../src/safety/guard.js';
 import { trace } from './trace.mjs';
 
+/*
+ * 서버를 닫은 **바로 그 순간** 폴더를 지우면 윈도우가 방금 내준 파일을 아직 붙들고 있어 ENOTEMPTY · EPERM 으로
+ * 죽는다 — 검사는 다 통과했는데 치우다가 판이 빨개졌다(2026-10-05 윈도 node 20 관문, preview 7절).
+ * box.test.js 와 같은 까닭 · 같은 처방 — 잠깐씩 쉬며 다시 지운다(rmSync 의 maxRetries 로는 안 됐다).
+ */
+function 치우기(자리) {
+  for (let k = 0; ; k += 1) {
+    try { rmSync(자리, { recursive: true, force: true }); return; } catch (e) {
+      if (k >= 40) { process.stderr.write(`  (임시 폴더를 못 치웠습니다: ${자리} · ${e.code})
+`); return; }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+    }
+  }
+}
+
 const pass = [];
 const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
@@ -340,7 +355,7 @@ trace('6-끄기');
   check('끄면 더는 안 붙는다', !아직도나);
 }
 
-rmSync(모래밭, { recursive: true, force: true });
+치우기(모래밭);
 
 trace('7-사냥5-이름과-살림');
 /*
@@ -439,7 +454,7 @@ trace('7-사냥5-이름과-살림');
       목록.code === 200 && 목록.글.includes('보임.txt') && !목록.글.includes('.env'), `${목록.code} ${목록.글.slice(-160)}`);
   } finally {
     await s.닫기();
-    rmSync(곳, { recursive: true, force: true });
+    치우기(곳);
   }
 }
 
@@ -495,7 +510,7 @@ trace('7b-살림은-안쪽-길로-본다');
     check('★★★ `.deel` 을 통째로 띄워도 열쇠는 안 나간다',
       살림째.code !== 200 && !살림째.몸.includes('살림째-띄워도-새면-안됨'), `${살림째.code}`);
   } finally {
-    rmSync(밭, { recursive: true, force: true });
+    치우기(밭);
   }
 }
 
@@ -585,7 +600,7 @@ trace('미리보기6');
     }
   } finally {
     await s6.닫기();
-    rmSync(곳, { recursive: true, force: true });
+    치우기(곳);
   }
 }
 
@@ -667,7 +682,7 @@ trace('미리보기6');
     check('  뒤에서 100바이트도 그대로 206', 뒤범위.code === 206, String(뒤범위.code));
   } finally {
     await s9.닫기();
-    rmSync(곳, { recursive: true, force: true });
+    치우기(곳);
   }
 }
 
