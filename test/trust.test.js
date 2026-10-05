@@ -1144,6 +1144,27 @@ trace('9-저장소가-경계를-넘는-네-자리');
   rmSync(방, { recursive: true, force: true });
 }
 
+trace('10-대소문자만-다른-같은-폴더');
+/*
+ * 맥(APFS 기본)과 윈도는 폴더 이름의 대소문자를 안 가린다. `MyProj` 를 믿고 `myproj` 로 열면 같은 폴더다
+ * (41회차 맥 실측 — 윈도는 고른경로 가 소문자로 내리고, 맥은 realpath 가 디스크의 글자로 되돌린다).
+ * 대소문자를 가리는 볼륨(리눅스 기본)에서는 두 이름이 딴 폴더라 건너뛴다.
+ */
+{
+  const 바깥 = mkdtempSync(join(tmpdir(), 'deel-trust-대소문자-'));
+  const 방 = join(바깥, 'MyProj');
+  mkdirSync(방);
+  const 딴꼴 = join(바깥, 'myproj');
+  if (existsSync(딴꼴)) {
+    믿기(방);
+    check('★ 대소문자만 다른 이름으로 열어도 믿은 폴더다 (맥 · 윈도)', 믿나(딴꼴) === true, 딴꼴);
+    mkdirSync(join(바깥, 'MyProjX'));
+    check('  이름이 이어지는 옆 폴더로는 안 샌다', 믿나(join(바깥, 'MyProjX')) === false);
+    check('  대소문자만 다른 이름으로 빼도 빠진다', 안믿기(딴꼴).뺐나 === true && 믿나(방) === false);
+  }
+  rmSync(바깥, { recursive: true, force: true });
+}
+
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log('\n프로젝트 설정 신뢰 검사\n');
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? D + '  ' + p.note + X : ''}`);

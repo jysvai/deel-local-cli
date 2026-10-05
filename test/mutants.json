@@ -16356,6 +16356,14 @@
       "잴곳": [
         "linux"
       ]
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "키체인이름 이 글자 모양(NFC)을 안 맞춘다",
+      "그러면": "맥에서 자모로 풀린(NFD) 같은 id 가 딴 키체인 자리로 가 다시 잠글 때마다 옛 자리가 주인 없이 남는다",
+      "찾을것": "  const 원래 = String(프로필id ?? '').normalize('NFC');",
+      "바꿀것": "  const 원래 = String(프로필id ?? '');",
+      "검사": "test/keystore.test.js"
     }
   ]
 }

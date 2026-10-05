@@ -500,6 +500,9 @@ trace('10-자리이름');
       키체인이름('仕事'));
     check('  이름은 명령줄에 실어도 되는 글자뿐이다 (빈칸·따옴표 없음)', 이름들.every((x) => /^[A-Za-z0-9가-힣._-]+$/.test(x)),
       이름들.join(' '));
+    check('★ 눈에 같은 id 는 글자 모양(NFC · NFD)이 달라도 한 자리다 (맥 39회차)',
+      키체인이름('회사창구'.normalize('NFD')) === 'deel-gateway-key-회사창구' && 키체인이름('café'.normalize('NFD')) === 키체인이름('café'.normalize('NFC')),
+      `${키체인이름('회사창구'.normalize('NFD'))} · ${키체인이름('café'.normalize('NFD'))} · ${키체인이름('café'.normalize('NFC'))}`);
     check('  id 가 없으면 기본 이름이다', 키체인이름() === 기본키체인이름 && 키체인이름('  ') === 기본키체인이름, 키체인이름());
   } finally {
     process.env.DEEL_KEYCHAIN_NAME = 정한이름;

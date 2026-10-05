@@ -96,7 +96,12 @@ export const 기본키체인이름 = 'deel-gateway-key';
 export function 키체인이름(프로필id = null) {
   const 정한것 = process.env.DEEL_KEYCHAIN_NAME;
   if (정한것) return 정한것;
-  const 원래 = String(프로필id ?? '');
+  /*
+   * 글자 모양을 NFC 로 맞춘다. 맥은 파일 이름 따위에서 한글을 자모로 푼 꼴(NFD)로 주기도 해서, 눈에는 같은
+   * `회사` 가 한 번은 `deel-gateway-key-회사`, 한 번은 해시 붙은 딴 자리로 갔다 — 다시 잠그면 옛 자리가
+   * 주인 없이 남았다(39회차 맥 실측). 읽기는 설정에 적힌 이름표로 하므로 이미 넣어 둔 열쇠는 그대로 풀린다.
+   */
+  const 원래 = String(프로필id ?? '').normalize('NFC');
   const id = 원래.trim().toLowerCase().replace(/[^a-z0-9가-힣._-]+/g, '-');
   if (!id) return 기본키체인이름;
   if (id === 원래) return `${기본키체인이름}-${id}`;
