@@ -1,0 +1,49 @@
+# 임시 — tmp/mac-* 가지에만 있다. 윈도 PC 에서 못 잰 맥 자리를 진짜 맥에서 잰다. main 에는 안 들어간다.
+name: mac-temp
+
+on:
+  push:
+    branches: ['tmp/mac-*']
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: mac probe (40회차 — 키체인 · 푼것 · 놓였나 · /var · 끝내기 · 울타리)
+        env:
+          DEEL_NO_OPEN: '1'
+        run: node tools/mac-probe.mjs
+
+  exit-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: 끝내기 출력 잘림 (리눅스에서도 나나)
+        run: node tools/mac-probe.mjs --끝내기만
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+      - name: syntax
+        run: npm run check
+      - name: test
+        run: npm test

@@ -2,7 +2,7 @@
 // 승인 프롬프트를 안 쓰는 대신 (1) 작업 범위 밖은 못 건드리고
 // (2) 되돌릴 수 없는 명령만 막는다. 나머지는 전부 통과시킨다.
 import { resolve, relative, isAbsolute, sep, dirname, basename, win32, posix } from 'node:path';
-import { realpathSync, existsSync, readFileSync } from 'node:fs';
+import { realpathSync, readFileSync, lstatSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { 내부살림 } from '../tools/fsutil.js';
 
@@ -727,6 +727,11 @@ function 자리표풀기(s) {
  * 글로브(`*` `?`)는 일부러 안 넘긴다. `rm /Users/남/*` 은 진짜 경로이고,
  * 그건 계속 걸려야 한다.
  */
+/** 그 이름에 무엇이 놓였나. 가리키는 곳이 없는 링크도 놓인 것이다. 못 물어보면 놓였다고 친다. */
+export function 놓였나(경로) {
+  try { lstatSync(경로); return true; } catch (e) { return !(e?.code === 'ENOENT' || e?.code === 'ENOTDIR'); }
+}
+
 export function 코드조각인가(낱말) {
   // 따옴표가 낱말 **안**에 섞였다 = 코드를 가운데서 자른 것이다.
   // 파일 이름에 따옴표를 쓰는 사람은 없다시피 하고, 있어도 셸에서 못 쓴다.
@@ -775,8 +780,14 @@ export function 코드조각인가(낱말) {
      * 한 번 막히고, 사람이 보고 다시 친다. 경로를 코드 조각으로 잘못 보면
      * 울타리가 없는 것과 같고, 그건 아무 표시도 안 난다. 모를 때는 좁은
      * 쪽으로 간다.
+     *
+     * 「있다」 는 **그 이름에 무엇이 놓였나**로 잰다(lstat). existsSync 는 링크를
+     * 따라가서, 가리키는 곳이 없는 링크를 「없다」 고 했다. 맥 뿌리의
+     * `/.VolumeIcon.icns` 가 그 꼴이라 readdir 에는 나오는데 코드 조각으로 넘어갔다
+     * (40회차 맥 실측). 없다는 답(ENOENT·ENOTDIR)만 「없다」 고, 못 물어본 것은 위
+     * 까닭대로 경로로 친다.
      */
-    try { return !existsSync(낱말); } catch { return false; }
+    return !놓였나(낱말);
   }
   return false;
 }

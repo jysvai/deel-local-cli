@@ -5304,8 +5304,8 @@
       "곳": "src/safety/trust.js",
       "무엇": "넓은 자리를 잴 때 링크를 안 따라간다",
       "그러면": "집 폴더를 가리키는 정션을 믿으면 집 폴더 전부가 믿긴다",
-      "찾을것": "  try { 진짜 = realpathSync.native(풀린); } catch { /* 없는 자리 — 글자 그대로 잰다 */ }",
-      "바꿀것": "",
+      "찾을것": "    try { 진짜 = join(realpathSync.native(위), ...꼬리); break; } catch {",
+      "바꿀것": "    try { 진짜 = 풀린; break; } catch {",
       "검사": "test/trust.test.js"
     },
     {
@@ -12191,8 +12191,8 @@
       "곳": "src/safety/trust.js",
       "무엇": "안믿기 가 읽을 때 버려지는 넓은 자리를 위 폴더라고 한다",
       "그러면": "deel trust --off 를 친 사람이 아무것도 안 믿기는 폴더를 두고 「위 폴더 때문에 아직 믿습니다」 를 보고, 닫히지 않은 줄 알고 찾아다닌다 (믿나() 는 그 줄을 읽을 때 버린다)",
-      "찾을것": "  const 위 = 남길것.find((x) => !너무넓은자리(x, { env, platform }) && 나.startsWith(고른경로(x, platform) + '/')) ?? null;",
-      "바꿀것": "  const 위 = 남길것.find((x) => 나.startsWith(고른경로(x, platform) + '/')) ?? null;",
+      "찾을것": "  const 위 = 남길것.find((x) => !너무넓은자리(x, { env, platform })\n    && 견줄꼴들(x, platform)",
+      "바꿀것": "  const 위 = 남길것.find((x) => true\n    && 견줄꼴들(x, platform)",
       "검사": "test/trust.test.js"
     },
     {
@@ -16168,6 +16168,183 @@
       "찾을것": "  return /^[^\\s/:?&#]+$/.test(s) ? s : null;",
       "바꿀것": "  return /^[^\\s/:?&#=]+$/.test(s) ? s : null;",
       "검사": "test/login.test.js"
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "키체인 한 줄 한도 경계를 > 에서 >= 로",
+      "그러면": "한도와 꼭 같은 줄(맥에서 들어가는 줄)도 못 잠근다고 거절한다",
+      "찾을것": "if (크기 > 키체인줄한도) {",
+      "바꿀것": "if (크기 >= 키체인줄한도) {",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "키체인 한 줄 길이를 안 잰다",
+      "그러면": "넘친 줄을 security -i 에 넣어 뒤 토막이 딴 명령으로 읽힌다",
+      "찾을것": "if (크기 > 키체인줄한도) {",
+      "바꿀것": "if (false) {",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "키체인 이름·계정의 빈칸을 안 거른다",
+      "그러면": "빈칸 든 이름이 낱말로 갈려 usage 오류로 못 잠근다",
+      "찾을것": "const 줄을가르는글자 = /[\\s\"'\\\\\\p{Cc}]/u;",
+      "바꿀것": "const 줄을가르는글자 = /[\"'\\\\\\p{Cc}]/u;",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "키체인 이름·계정의 제어 문자를 안 거른다",
+      "그러면": "ESC 같은 제어 문자가 security -i 한 줄에 그대로 실린다",
+      "찾을것": "const 줄을가르는글자 = /[\\s\"'\\\\\\p{Cc}]/u;",
+      "바꿀것": "const 줄을가르는글자 = /[\\s\"'\\\\]/u;",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "키체인 값을 다시 지어 견주지 않는다",
+      "그러면": "채움이 빠진 꼴 같은 남의 값을 우리 것으로 풀어 준다",
+      "찾을것": "if (바이트.toString('base64') !== s) return 아님;",
+      "바꿀것": "if (false) return 아님;",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "풀린 바이트가 UTF-8 인지 안 본다",
+      "그러면": "깨진 글자를 ok:true 로 게이트웨이에 보낸다",
+      "찾을것": "new TextDecoder('utf-8', { fatal: true })",
+      "바꿀것": "new TextDecoder('utf-8', { fatal: false })",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "빈 키체인 값을 받아들인다",
+      "그러면": "빈 열쇠를 ok:true 로 풀었다고 한다",
+      "찾을것": "if (!/^[A-Za-z0-9+/]+={0,2}$/.test(s)) return 아님;",
+      "바꿀것": "if (!/^[A-Za-z0-9+/]*={0,2}$/.test(s)) return 아님;",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "키체인 시한을 사람 말로 안 바꾼다",
+      "그러면": "잠긴 키체인에서 spawnSync security ETIMEDOUT 한 줄만 남는다",
+      "찾을것": "if (err?.code === 'ETIMEDOUT') {",
+      "바꿀것": "if (false) {",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "키체인 이름표도 푼것에 담는다",
+      "그러면": "같은 프로필에 열쇠를 다시 넣어도 떠 있는 판이 옛 열쇠를 보낸다",
+      "찾을것": "if (푼것담나(값)) 푼것.set(값, r.text);",
+      "바꿀것": "푼것.set(값, r.text);",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "푼것담나 가 늘 참",
+      "그러면": "키체인 이름표를 담아 두어 옛 열쇠를 보낸다",
+      "찾을것": "export function 푼것담나(값) { return String(값 ?? '').startsWith('dpapi:'); }",
+      "바꿀것": "export function 푼것담나(값) { return true; }",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "DPAPI 덩이를 담아 둔 것을 안 꺼낸다",
+      "그러면": "연결을 지을 때마다 파워셸을 다시 띄운다",
+      "찾을것": "  if (푼것.has(값)) return 푼것.get(값);\n  const r = 풀개(값);",
+      "바꿀것": "  const r = 풀개(값);",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/safety/keystore.js",
+      "무엇": "빈 열쇠로도 키체인 한 줄을 짓는다",
+      "그러면": "`-w  -U` 가 되어 -U 를 열쇠로 넣는다",
+      "찾을것": "if (!String(글 ?? '')) return { ok: false, 왜: '넣을 열쇠가 비어 있습니다' };",
+      "바꿀것": "if (false) return { ok: false, 왜: '넣을 열쇠가 비어 있습니다' };",
+      "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "놓였나 가 링크를 따라가서 잰다",
+      "그러면": "가리키는 곳이 없는 링크(맥 /.VolumeIcon.icns)를 없는 것으로 쳐 코드 조각으로 넘긴다",
+      "찾을것": "try { lstatSync(경로); return true; }",
+      "바꿀것": "try { realpathSync(경로); return true; }",
+      "검사": "test/guard.test.js"
+    },
+    {
+      "곳": "src/safety/guard.js",
+      "무엇": "놓였나 가 ENOTDIR 을 못 물어본 것으로 친다",
+      "그러면": "파일 밑 이름 같은 없는 자리를 놓였다고 한다",
+      "찾을것": "return !(e?.code === 'ENOENT' || e?.code === 'ENOTDIR');",
+      "바꿀것": "return !(e?.code === 'ENOENT');",
+      "검사": "test/guard.test.js",
+      "잴곳": [
+        "linux"
+      ]
+    },
+    {
+      "곳": "src/safety/trust.js",
+      "무엇": "믿는 폴더를 글자로만 견준다",
+      "그러면": "맥에서 /var 로 믿은 폴더를 /private/var 로 켜면 안 믿는다고 프로젝트 설정을 버린다",
+      "찾을것": "  return [...new Set(실제자리들(String(p ?? '')).map((x) => 고른경로(x, platform)))];",
+      "바꿀것": "  return [고른경로(p, platform)];",
+      "검사": "test/trust.test.js"
+    },
+    {
+      "곳": "src/reset.js",
+      "무엇": "같은자리 를 글자로만 견준다",
+      "그러면": "맥에서 홈 폴더의 한 설정 파일을 둘로 세고 두 번 지우러 간다",
+      "찾을것": "[resolve(p), 윗자리풀기(p), 실경로(p)]",
+      "바꿀것": "[resolve(p)]",
+      "검사": "test/reset.test.js"
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "집설정파일인가 가 링크를 안 푼다",
+      "그러면": "맥에서 집 폴더에서 켜면 제 설정을 안 믿는 프로젝트 설정이라며 deel trust 를 권한다",
+      "찾을것": "try { 진짜 = join(realpathSync.native(dirname(r)), basename(r)); } catch { /* 폴더가 없으면 글자로만 */ }",
+      "바꿀것": "/* 안 푼다 */",
+      "검사": "test/reset.test.js"
+    },
+    {
+      "곳": "src/pack/zip.js",
+      "무엇": "ZIP 이름에 UTF-8 표시를 안 단다",
+      "그러면": "한글 파일·폴더 이름이 푸는 쪽(탐색기·unzip)에서 깨진 이름으로 풀린다",
+      "찾을것": "const UTF8_NAMES = 0x0800;",
+      "바꿀것": "const UTF8_NAMES = 0x0000;",
+      "검사": "test/plugins.test.js"
+    },
+    {
+      "곳": "src/safety/trust.js",
+      "무엇": "실제자리들 이 없는 자리를 윗자리까지 안 푼다",
+      "그러면": "맥에서 /private/tmp/repo 로 믿은 폴더를 지운 뒤 /tmp/repo 로 못 뺀다",
+      "찾을것": "      꼬리.unshift(basename(위));\n      위 = 더위;",
+      "바꿀것": "      break;",
+      "검사": "test/trust.test.js"
+    },
+    {
+      "곳": "src/reset.js",
+      "무엇": "같은자리 가 파일 자체의 링크를 안 푼다",
+      "그러면": "저장소 설정이 집 설정을 가리키는 파일 링크면 한 파일을 둘로 센다",
+      "찾을것": "[resolve(p), 윗자리풀기(p), 실경로(p)]",
+      "바꿀것": "[resolve(p), 윗자리풀기(p)]",
+      "검사": "test/reset.test.js",
+      "잴곳": [
+        "linux"
+      ]
+    },
+    {
+      "곳": "src/config.js",
+      "무엇": "집설정파일인가 가 파일 자체의 링크를 안 푼다",
+      "그러면": "저장소 설정이 집 설정을 가리키는 파일 링크면 제 설정을 안 믿는 프로젝트 설정이라 한다",
+      "찾을것": "    try { 끝까지 = realpathSync.native(r); } catch { /* 파일이 없으면 폴더까지만 */ }",
+      "바꿀것": "    /* 안 푼다 */",
+      "검사": "test/reset.test.js",
+      "잴곳": [
+        "linux"
+      ]
     }
   ]
 }

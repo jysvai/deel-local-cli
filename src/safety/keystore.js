@@ -159,15 +159,100 @@ $u = [Security.Cryptography.ProtectedData]::Unprotect($b, $null, 'CurrentUser')
 [Console]::Out.Write([Convert]::ToBase64String($u))
 `;
 
+/*
+ * ── `security -i` 한 줄에는 끝이 있다 (531 · 2026-09-29 맥 실측) ─────────
+ *
+ * 열쇠를 명령줄에 안 올리려고 `security -i` 의 stdin 으로 한 줄을 넣는다. 그런데
+ * 그 도구는 한 줄을 정해진 크기의 버퍼로 읽고, 넘치면 **앞 토막을 한 명령으로,
+ * 뒤 토막을 또 한 명령으로** 읽는다. 잰 것: 2000자 열쇠는 잠기고 풀렸고, 4000자
+ * 열쇠는 `unknown command "xFaT…"` 로 못 잠갔다 — 뒤 토막이 딴 명령이 됐다.
+ * 앞 토막은 잘린 열쇠를 달고 그대로 돌았을 수 있다.
+ *
+ * 그래서 줄을 **넣기 전에** 잰다. 넘치면 넣지 않고 못 잠갔다고 말한다 — 이 파일
+ * 머리말대로 잠근 척하지 않는다. 한도는 바이트로 잰다(버퍼가 바이트다 · 한글
+ * 프로필 이름은 한 글자가 3바이트).
+ *
+ * 이름·계정도 같은 줄에 들어간다. 빈칸이 있으면 낱말이 갈리고(usage 오류로 못 잠금),
+ * 줄바꿈이 있으면 다음 줄이 딴 명령으로 읽힌다 — DEEL_KEYCHAIN_NAME 에 실제로 넣어
+ * 쟀다. 따옴표·역빗금은 이 도구가 어떻게 읽는지 우리가 장담 못 하니 같이 거절한다.
+ * 조용히 기본 이름으로 바꾸지 않는다 — DEEL_KEYCHAIN_NAME 은 검사가 사람의 진짜
+ * 열쇠를 안 덮으려고 주는 자리라, 바꿔 넣으면 그 자리를 덮는다(키체인이름 머리말).
+ */
+export const 키체인줄한도 = 4000;
+const 키체인시한 = 20000;
+const 줄을가르는글자 = /[\s"'\\\p{Cc}]/u;
+
+/**
+ * `security -i` 에 넣을 한 줄을 짓는다. 넣을 수 없으면 왜인지 준다.
+ *
+ * 짓기만 하고 안 돌린다 — 맥이 없는 자리에서도 검사가 이 판단을 잴 수 있게.
+ *
+ * @returns {{ok: true, 줄: string} | {ok: false, 왜: string}}
+ */
+export function 키체인넣을줄(글, 이름, 계정) {
+  // 빈 열쇠는 `-w  -U` 가 되어 `-U` 를 열쇠로 읽는다(2차 눈). 잠그기() 가 먼저 거르지만 여기서도 안 짓는다.
+  if (!String(글 ?? '')) return { ok: false, 왜: '넣을 열쇠가 비어 있습니다' };
+  for (const [무엇, 값] of [['키체인 이름', 이름], ['계정 이름', 계정]]) {
+    const s = String(값 ?? '');
+    if (!s) return { ok: false, 왜: `${무엇}이 비어 있습니다` };
+    if (줄을가르는글자.test(s)) {
+      const 어디서 = 무엇 === '키체인 이름' && process.env.DEEL_KEYCHAIN_NAME ? ' (DEEL_KEYCHAIN_NAME)' : '';
+      return { ok: false, 왜: `${무엇} ${JSON.stringify(s)}${어디서} 에 빈칸·줄바꿈·따옴표를 쓸 수 없습니다 — security -i 가 그 자리에서 줄을 가릅니다` };
+    }
+  }
+  // 값 자체는 base64 로 넣는다. 키체인 도구가 줄바꿈·따옴표를 만나면 거기서 끊긴다.
+  const 값 = Buffer.from(String(글 ?? ''), 'utf8').toString('base64');
+  const 줄 = `add-generic-password -a ${계정} -s ${이름} -w ${값} -U\n`;
+  const 크기 = Buffer.byteLength(줄, 'utf8');
+  if (크기 > 키체인줄한도) {
+    return { ok: false, 왜: `열쇠가 너무 길어 키체인에 못 넣습니다 (명령 한 줄 ${크기}바이트 · 한도 ${키체인줄한도}) — security -i 는 넘친 뒤 토막을 딴 명령으로 읽습니다` };
+  }
+  return { ok: true, 줄 };
+}
+
+/*
+ * ── 키체인에 든 것이 우리 꼴이 아니어도 「풀었다」 고 했다 (531 실측) ────
+ *
+ * `Buffer.from(x, 'base64')` 는 base64 가 아닌 글자를 **던지지 않고 건너뛴다.**
+ * 그래서 여기 있던 catch 는 한 번도 안 걸렸고, 사람이 키체인 앱에서 값을 손으로
+ * 바꿨거나 같은 이름에 다른 프로그램이 넣은 값이면 ok:true 와 함께 깨진 글자가
+ * 나갔다. 그 글자가 게이트웨이로 가고 사람은 401 만 본다 — 풀기() 머리말이 막으려던
+ * 바로 그 401 이다.
+ *
+ * 우리가 넣는 꼴은 하나다: UTF-8 글을 표준 base64 로. 다시 지었을 때 글자 하나
+ * 안 다르고, 풀린 바이트가 온전한 UTF-8 일 때만 우리 것으로 친다.
+ */
+export function 키체인값풀기(찍힌것) {
+  const s = String(찍힌것 ?? '').trim();
+  const 아님 = { ok: false, text: '', 왜: '키체인의 값이 deel 이 넣은 꼴(base64)이 아닙니다 — 키체인 앱에서 손으로 바꿨다면 deel setup 으로 다시 넣으세요' };
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(s)) return 아님;
+  const 바이트 = Buffer.from(s, 'base64');
+  if (바이트.toString('base64') !== s) return 아님;
+  try { return { ok: true, text: new TextDecoder('utf-8', { fatal: true }).decode(바이트), 왜: '' }; }
+  catch { return 아님; }
+}
+
+/*
+ * ── 잠긴 키체인은 20초 서 있다가 `spawnSync security ETIMEDOUT` 한 줄 (531 실측) ──
+ *
+ * SSH 로 들어온 맥처럼 창을 띄울 데가 없는 자리에서 로그인 키체인이 잠겨 있으면,
+ * security 는 풀어 달라는 창을 못 띄우고 그대로 기다린다. 우리 시한에 잘리고 사람에게는
+ * node 의 오류 이름만 갔다. 무엇이 왜 서 있었는지와 무엇을 하면 되는지를 준다.
+ */
+export function 키체인오류말(err) {
+  if (err?.code === 'ETIMEDOUT') {
+    return `키체인이 ${키체인시한 / 1000}초 안에 답하지 않았습니다 — 잠겨 있을 수 있습니다(SSH 로 들어온 맥에서 흔합니다). security unlock-keychain 으로 연 뒤 다시 하세요`;
+  }
+  return err?.message ?? String(err);
+}
+
 /** 맥 키체인. 넣을 때도 명령줄에 안 올린다 — `security -i` 는 명령을 stdin 으로 받는다. */
 function 키체인넣기(글, 이름) {
-  const 계정 = userInfo().username;
-  // 값 자체는 base64 로 넣는다. 키체인 도구가 줄바꿈·따옴표를 만나면 거기서 끊긴다.
-  const 값 = Buffer.from(글, 'utf8').toString('base64');
-  const 명령 = `add-generic-password -a ${계정} -s ${이름} -w ${값} -U\n`;
+  const 지은것 = 키체인넣을줄(글, 이름, userInfo().username);
+  if (!지은것.ok) return { ok: false, err: 지은것.왜 };
   마지막인자 = ['security', '-i'];
-  const r = spawnSync('security', ['-i'], { input: 명령, encoding: 'utf8', timeout: 20000 });
-  if (r.error) return { ok: false, err: r.error.message };
+  const r = spawnSync('security', ['-i'], { input: 지은것.줄, encoding: 'utf8', timeout: 키체인시한 });
+  if (r.error) return { ok: false, err: 키체인오류말(r.error) };
   return { ok: r.status === 0, err: (r.stderr ?? '').trim() };
 }
 
@@ -175,15 +260,12 @@ function 키체인읽기(이름) {
   const 계정 = userInfo().username;
   마지막인자 = ['security', 'find-generic-password', '-a', 계정, '-s', 이름, '-w'];
   const r = spawnSync('security', ['find-generic-password', '-a', 계정, '-s', 이름, '-w'], {
-    encoding: 'utf8', timeout: 20000,
+    encoding: 'utf8', timeout: 키체인시한,
   });
-  if (r.error) return { ok: false, text: '', err: r.error.message };
+  if (r.error) return { ok: false, text: '', err: 키체인오류말(r.error) };
   if (r.status !== 0) return { ok: false, text: '', err: (r.stderr ?? '').trim() || '키체인에 없습니다' };
-  try {
-    return { ok: true, text: Buffer.from((r.stdout ?? '').trim(), 'base64').toString('utf8') };
-  } catch (err) {
-    return { ok: false, text: '', err: err.message };
-  }
+  const 풀림 = 키체인값풀기(r.stdout);
+  return 풀림.ok ? { ok: true, text: 풀림.text } : { ok: false, text: '', err: 풀림.왜 };
 }
 
 /**
@@ -475,8 +557,8 @@ export function 잠금지우기(값 = null) {
   // 그대로 남는다 — 이 함수 머리말이 막으려던 그 상태다.
   const 인자 = ['delete-generic-password', '-a', 계정, '-s', (m ? m[2] : '') || 키체인이름()];
   마지막인자 = ['security', ...인자];
-  const r = spawnSync('security', 인자, { encoding: 'utf8', timeout: 20000 });
-  if (r.error) return { 지움: false, 방식: 'keychain', 왜: r.error.message };
+  const r = spawnSync('security', 인자, { encoding: 'utf8', timeout: 키체인시한 });
+  if (r.error) return { 지움: false, 방식: 'keychain', 왜: 키체인오류말(r.error) };
   // 없는 것을 지우라고 해도 실패로 온다. 그건 탈이 아니라 이미 없는 것이다.
   if (r.status !== 0) {
     const 말 = (r.stderr ?? '').trim();

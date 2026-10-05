@@ -14,12 +14,13 @@
 // DEEL_HOME 을 임시 폴더로 주고, 작업 폴더도 임시로 만든다. 이 검사가
 // 사람의 ~/.deel 을 건드리면 그건 검사가 아니라 사고다.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { 살펴보기, 지우기, 울타리안인가, 설정살피기, 갈래들 } from '../src/reset.js';
 import { pluginsDir } from '../src/plugins/manage.js';
+import { 집설정파일인가 } from '../src/config.js';
 import { trace } from './trace.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -512,6 +513,52 @@ trace('7f-집-설정에-사람이-적은-칸');
   const 모델 = 살펴보기({ home: join(d, '.deel'), root: d }).항목.find((x) => x.키 === 'model');
   check('★★ 집과 저장소 설정이 한 파일이면 한 번만 센다', 모델.몇 === 1, String(모델.몇));
   check('★ 지울 자리도 한 번만 적는다', 모델.자리.length === 1, JSON.stringify(모델.자리));
+
+  /*
+   * 같은 폴더를 링크로 부르면(맥 `/var` → `/private/var`) 글자가 달라져 두 파일로 셌다
+   * (40회차 맥 실측). 집은 링크 글자로, 작업 폴더는 실제 글자로 준다 — 맥에서 홈 폴더에서
+   * 켜면 DEEL_HOME 은 적힌 글자 그대로, process.cwd() 는 링크를 따라간 글자로 오는 그 꼴이다.
+   */
+  const 링크 = `${d}-링크`;
+  let 지었나 = true;
+  try { symlinkSync(d, 링크, 'junction'); 치울것.push(링크); } catch { 지었나 = false; }
+  if (지었나) {
+    const 링크모델 = 살펴보기({ home: join(링크, '.deel'), root: d }).항목.find((x) => x.키 === 'model');
+    check('★★ 집을 링크 글자로 불러도 한 파일이면 한 번만 센다 (맥 /var → /private/var)', 링크모델.몇 === 1, String(링크모델.몇));
+    check('★ 링크로 불러도 지울 자리는 한 번만 적는다', 링크모델.자리.length === 1, JSON.stringify(링크모델.자리));
+    const 이전집 = process.env.DEEL_HOME;
+    process.env.DEEL_HOME = join(링크, '.deel');
+    try {
+      check('★★ 링크 너머 같은 파일을 이 PC 설정 파일로 알아본다 (집설정파일인가)',
+        집설정파일인가(join(d, '.deel', 'config.json')) === true);
+      check('  다른 폴더의 설정은 이 PC 설정 파일이 아니다', 집설정파일인가(join(tmpdir(), 'deel-없는-옆자리', '.deel', 'config.json')) === false);
+    } finally {
+      if (이전집 === undefined) delete process.env.DEEL_HOME; else process.env.DEEL_HOME = 이전집;
+    }
+  }
+
+  /*
+   * 저장소 설정 파일 **자체**가 집 설정을 가리키는 링크면 같은 파일이다(40회차 2차 눈). 부모 폴더만
+   * 풀면 다른 파일로 보아 두 번 센다. 파일 링크는 윈도에서 권한이 있어야 만들어져, 못 만들면 건너뛴다.
+   */
+  const 집2 = mkdtempSync(join(tmpdir(), 'deel-reset-파일링크집-'));
+  const 방2 = mkdtempSync(join(tmpdir(), 'deel-reset-파일링크방-'));
+  치울것.push(집2, 방2);
+  writeFileSync(join(집2, 'config.json'), JSON.stringify({ version: 1, active: 'a', profiles: [{ id: 'a' }] }), 'utf8');
+  mkdirSync(join(방2, '.deel'));
+  let 파일링크 = true;
+  try { symlinkSync(join(집2, 'config.json'), join(방2, '.deel', 'config.json'), 'file'); } catch { 파일링크 = false; }
+  if (파일링크) {
+    const 링크파일모델 = 살펴보기({ home: 집2, root: 방2 }).항목.find((x) => x.키 === 'model');
+    check('★ 저장소 설정이 집 설정을 가리키는 파일 링크면 한 번만 센다', 링크파일모델.몇 === 1, String(링크파일모델.몇));
+    const 이전집2 = process.env.DEEL_HOME;
+    process.env.DEEL_HOME = 집2;
+    try {
+      check('★ 파일 링크 너머 집 설정을 이 PC 설정 파일로 알아본다 (집설정파일인가)', 집설정파일인가(join(방2, '.deel', 'config.json')) === true);
+    } finally {
+      if (이전집2 === undefined) delete process.env.DEEL_HOME; else process.env.DEEL_HOME = 이전집2;
+    }
+  }
 }
 
 {

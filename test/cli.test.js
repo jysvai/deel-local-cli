@@ -1080,6 +1080,32 @@ trace('9c-설정이-깨졌을때');
   check('★ sbom --only 에 모르는 이름이면 64 로 멈춘다', b.code === 64 && !b.out.trim(), `code=${b.code} · ${b.out.slice(0, 60)}`);
 }
 
+trace('9g-느리게-읽어도-다-받는다');
+/*
+ * ── 받는 쪽이 늦게 읽으면 끝내기의 마지막수단이 출력을 버렸다 (40회차 · 맥) ──
+ *
+ * 맥·리눅스는 파이프 쓰기가 비동기라, 다 못 나간 글이 남은 채 400ms 마지막수단의 process.exit 이
+ * 돌면 그 글이 사라진다. `deel sbom` 은 표준출력으로 150KB 쯤을 낸다 — 1.5초 동안 안 읽다가
+ * 읽어서 JSON 이 통째로 오는지 본다. 윈도우는 파이프 쓰기가 동기라 이 꼴이 안 난다(그래도 돈다).
+ */
+{
+  const 받은것 = await new Promise((done) => {
+    const kid = spawn(process.execPath, [진입점, 'sbom'], {
+      cwd: work, env: { ...process.env, DEEL_HOME: home, NO_COLOR: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const 조각들 = [];
+    kid.stdout.pause();
+    setTimeout(() => { kid.stdout.on('data', (b) => 조각들.push(b)); kid.stdout.resume(); }, 1500);
+    kid.stderr.resume();
+    const 시계 = setTimeout(() => kid.kill('SIGKILL'), 40000);
+    kid.on('close', (code) => { clearTimeout(시계); done({ code, 글: Buffer.concat(조각들).toString('utf8') }); });
+  });
+  let 풀림 = false;
+  try { JSON.parse(받은것.글); 풀림 = true; } catch { /* 아래에서 잰다 */ }
+  check('★★ 받는 쪽이 늦게 읽어도 sbom JSON 을 끝까지 받는다 (맥 · 리눅스 파이프)',
+    받은것.code === 0 && 풀림 && 받은것.글.length > 65536, `code=${받은것.code} · ${받은것.글.length}바이트 · 풀림=${풀림}`);
+}
+
 trace('8-치움');
 srv.close();
 rmSync(home, { recursive: true, force: true });

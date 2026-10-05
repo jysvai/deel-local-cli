@@ -1,8 +1,8 @@
 // 연결 프로필 저장/읽기.  ~/.deel/config.json 위에 프로젝트의 .deel/config.json 을 겹친다
 // (믿는 폴더일 때만 — safety/trust.js).
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, renameSync, rmSync } from 'node:fs';
+import { join, resolve, dirname, basename } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, renameSync, rmSync, realpathSync } from 'node:fs';
 import { 프록시정하기 } from './backend/proxy.js';
 import { 셸정하기 } from './tools/shell.js';
 import { 애저정하기 } from './backend/azure.js';
@@ -87,11 +87,24 @@ export function configPath(root = process.cwd()) {
  *   · 믿고 나면 제 설정의 permissions.allow 를 「저장소가 적은 것이라 걷어냈다」 고
  *     거짓말했다. 실제로는 이 PC 파일로 읽혀 그대로 걸려 있었다.
  *
- * reset.js 의 같은자리와 같은 기준이다 — 윈도우는 대소문자를 안 가린다.
+ * reset.js 의 같은자리와 같은 기준이다 — 윈도우는 대소문자를 안 가린다. 그리고 글자 말고
+ * **폴더를 링크 너머 실제 자리로 푼 꼴**로도 견준다. 맥은 `/var` · `/tmp` 가 `/private/…` 을
+ * 가리키는 링크라, 집 폴더에서 켜도 DEEL_HOME 과 작업 폴더가 다른 글자로 와서 위 세 가지가
+ * 맥에서만 그대로 났다(40회차 맥 실측).
  */
 export function 집설정파일인가(파일) {
-  const [x, y] = [resolve(String(파일 ?? '')), resolve(join(userDir(), 'config.json'))];
-  return process.platform === 'win32' ? x.toLowerCase() === y.toLowerCase() : x === y;
+  const 고름 = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+  const 꼴들 = (p) => {
+    const r = resolve(String(p ?? ''));
+    let 진짜 = r;
+    try { 진짜 = join(realpathSync.native(dirname(r)), basename(r)); } catch { /* 폴더가 없으면 글자로만 */ }
+    // 파일 자체가 집 설정을 가리키는 링크여도 같은 파일이다 (40회차 2차 눈).
+    let 끝까지 = 진짜;
+    try { 끝까지 = realpathSync.native(r); } catch { /* 파일이 없으면 폴더까지만 */ }
+    return [r, 진짜, 끝까지].map(고름);
+  };
+  const 집것 = 꼴들(join(userDir(), 'config.json'));
+  return 꼴들(파일).some((x) => 집것.includes(x));
 }
 
 /**
@@ -803,10 +816,18 @@ export function resolveKey(profile) {
   const 전체열쇠 = profile?.출처 === '저장소' ? '' : process.env.DEEL_API_KEY;
   const 값 = byName || 전체열쇠 || profile?.apiKey || '';
   if (!잠긴것인가(값)) return 값;
+  return 잠긴열쇠쓰기(값);
+}
+
+/**
+ * 잠긴 값을 풀어 쓴다. `풀개` 는 검사가 바꿔 끼우는 자리다 — 키체인이 없는 PC 에서도
+ * 「같은 이름표에서 다른 열쇠가 나오면 새 것을 쓴다」 를 잴 수 있게.
+ */
+export function 잠긴열쇠쓰기(값, { 풀개 = 풀기 } = {}) {
   // 푸는 데 파워셸을 한 번 부른다(0.2초쯤). 한마디마다 부르면 그게 다 사람이
   // 기다리는 시간이라, 판에 한 번만 풀고 들고 있는다.
   if (푼것.has(값)) return 푼것.get(값);
-  const r = 풀기(값);
+  const r = 풀개(값);
   if (!r.ok) {
     /*
      * **실패는 안 담아 둔다.**
@@ -818,9 +839,23 @@ export function resolveKey(profile) {
     열쇠탈 = r.why || '잠근 열쇠를 못 풀었습니다';
     return '';
   }
-  푼것.set(값, r.text);
+  if (푼것담나(값)) 푼것.set(값, r.text);
   return r.text;
 }
+
+/*
+ * ── 키체인 이름표는 담아 두면 안 된다 (맥 실측 · 39회차) ──────────────────
+ *
+ * 담아 두기는 「같은 잠긴 값이면 같은 열쇠」 일 때만 맞다. DPAPI 값은 잠근 덩이
+ * **그 자체**라 열쇠가 바뀌면 값도 바뀌고, 새 값은 저절로 새로 푼다. 그런데 키체인
+ * 값 `keychain:<이름>` 은 자리의 **이름표**다. `deel setup` 으로 같은 프로필에 새
+ * 열쇠를 넣으면 `-U` 가 같은 자리를 덮고 이름표는 글자 하나 안 바뀐다. 그래서 떠 있는
+ * REPL·ACP 가 /model 이나 새 대화로 연결을 다시 지어도 **옛 열쇠**를 꺼내 보냈다 —
+ * 401 이고, 껐다 켜기 전에는 안 풀렸다.
+ *
+ * 키체인은 그때그때 읽는다. resolveKey 는 연결을 지을 때만 불린다(한마디마다가 아니다).
+ */
+export function 푼것담나(값) { return String(값 ?? '').startsWith('dpapi:'); }
 
 export function upsert(cfg, profile) {
   const i = cfg.profiles.findIndex((x) => x.id === profile.id);

@@ -403,17 +403,35 @@ const zipBuf = makeZip([
 const zipPath = join(sand, 'out.zip');
 writeFileSync(zipPath, zipBuf);
 
+/*
+ * UTF-8 표시는 머리글 비트로 직접 잰다. Info-ZIP unzip 은 표시가 없어도 이름 바이트를 그대로 써서
+ * 한글이 멀쩡히 풀린다 — 풀어 보기·목록 보기로는 이 표시를 한 번도 못 쟀다(40회차 어긋으로 확인).
+ * 표시가 없으면 탐색기(.NET ZipFile)가 시스템 코드 페이지로 읽어 이름이 깨진다.
+ */
+{
+  const 중앙 = zipBuf.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  check('★ ZIP 이름에 UTF-8 표시를 단다 (지역 머리 · 중앙 목록 둘 다)',
+    (zipBuf.readUInt16LE(6) & 0x0800) !== 0 && 중앙 > 0 && (zipBuf.readUInt16LE(중앙 + 8) & 0x0800) !== 0,
+    `지역 ${zipBuf.readUInt16LE(6).toString(16)} · 중앙 ${중앙 > 0 ? zipBuf.readUInt16LE(중앙 + 8).toString(16) : '없음'}`);
+}
+
 const 열개 = zip열개(zipPath);
 if (!열개) 건너뜀.push('unzip 도 .NET ZipFile 도 없어 ZIP 교차확인 11건을 못 쟀다');
 
 if (열개) {
   const { 도구, 이름 } = 열개;
   check(`${도구} 가 목록을 읽음`, 이름.length === 3, `${이름.length}개: ${이름.join(', ')}`);
-  check('한글 파일 이름 그대로 (UTF-8 플래그)', 이름.includes('사용안내.txt'));
-  check('한글 폴더 경로도 그대로', 이름.some((n) => n.includes('품의서')));
 
   const 꺼냄 = join(sand, 'unzipped');
   열개.풀기(zipPath, 꺼냄);
+  /*
+   * 한글 이름은 **풀어 낸 디스크의 이름**으로 잰다. 애플 unzip 은 `-l` 목록에서 한글을 `?` 로 찍어
+   * 맥에서만 빨갰다(40회차 맥 실측) — 목록 찍기는 그 도구 사정이고, 풀린 이름은 그대로였다.
+   * UTF-8 플래그가 빠지면 풀린 이름부터 깨지므로 지키는 것은 같고, 더 곧은 증거다.
+   */
+  check('한글 파일 이름 그대로 (UTF-8 플래그)', existsSync(join(꺼냄, '사용안내.txt')),
+    (() => { try { return readdirSync(꺼냄).join(', '); } catch { return '(못 읽음)'; } })());
+  check('한글 폴더 경로도 그대로', existsSync(join(꺼냄, 'sabun', 'skills', '품의서')));
   check('압축된 파일 내용 일치',
     Buffer.compare(readFileSync(join(꺼냄, 'sabun', 'skills', '품의서', 'SKILL.md')), 큰내용) === 0);
   check('압축 안 먹는 파일도 일치',
