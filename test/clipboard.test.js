@@ -300,17 +300,26 @@ trace('7-갈래속');
   check('(짝) 오류로 끝나면 여태처럼 「없음」 이다 (사람이 다시 캡처하면 된다)',
     맥진짜없음.ok === false && 맥진짜없음.없음 === true, JSON.stringify(맥진짜없음));
 
+  // 받을 자리가 넘친 것(ENOBUFS)은 그림이 크다는 뜻이다 — 「osascript 를 못 불렀습니다」 가 아니다 (42회차 맥 실측).
+  const 넘침 = (이름) => ({ error: Object.assign(new Error(`spawnSync ${이름} ENOBUFS`), { code: 'ENOBUFS' }), status: null, stdout: '', stderr: '' });
+  const 맥넘침 = 클립보드그림({ platform: 'darwin', 부르기: (이름) => (이름 === 'osascript' ? 넘침(이름) : 없는명령(이름)) });
+  check('★ 맥에서 받을 자리가 넘치면 「그림이 너무 큽니다」 (osascript 탓이 아니다)',
+    맥넘침.ok === false && /너무 큽니다/.test(맥넘침.왜 ?? '') && !/못 불렀/.test(맥넘침.왜 ?? ''), JSON.stringify(맥넘침));
+
   // ③ 리눅스 — 종류 목록에 image/png 가 있는데 꺼내기가 막히면 그건 「없음」 이 아니다.
   const 리눅스흉내 = (꺼냄) => (이름, 인자) => {
     if (이름 !== 'wl-paste') return 없는명령(이름);
     if (인자.includes('--version')) return { status: 0, stdout: 'wl-clipboard 2.2.1\n', stderr: '' };
     if (인자.includes('--list-types')) return { status: 0, stdout: 꺼냄 === '글만' ? 'text/plain\n' : 'image/png\ntext/html\n', stderr: '' };
+    if (꺼냄 === '넘침' && !인자.includes('--list-types')) return { error: Object.assign(new Error('spawnSync wl-paste ENOBUFS'), { code: 'ENOBUFS' }), status: null, stdout: Buffer.alloc(0) };
     if (꺼냄 === '막힘') return { error: Object.assign(new Error('spawnSync wl-paste ETIMEDOUT'), { code: 'ETIMEDOUT' }), status: null, stdout: Buffer.alloc(0) };
     return { status: 0, stdout: 작은PNG, stderr: Buffer.alloc(0) };
   };
   const 리막힘 = 클립보드그림({ platform: 'linux', 부르기: 리눅스흉내('막힘') });
   check('★ (K3) 리눅스에서 그림은 있는데 못 꺼냈으면 「없음」 이 아니라 까닭을 말한다',
     리막힘.ok === false && 리막힘.없음 !== true && /wl-paste/.test(리막힘.왜 ?? ''), JSON.stringify(리막힘));
+  const 리넘침 = 클립보드그림({ platform: 'linux', 부르기: 리눅스흉내('넘침') });
+  check('★ 리눅스에서 받을 자리가 넘쳐도 「그림이 너무 큽니다」', 리넘침.ok === false && /너무 큽니다/.test(리넘침.왜 ?? ''), JSON.stringify(리넘침));
   const 리됨 = 클립보드그림({ platform: 'linux', 부르기: 리눅스흉내('됨') });
   check('(K3 짝) 꺼내기가 되면 그림을 준다', 리됨.ok === true && 리됨.buf.equals(작은PNG), JSON.stringify(리됨.ok ? { ok: true } : 리됨));
   const 리글만 = 클립보드그림({ platform: 'linux', 부르기: 리눅스흉내('글만') });

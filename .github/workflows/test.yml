@@ -181,8 +181,9 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - name: ripgrep
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+      # zsh 도 같은 까닭이다 — 없으면 completion 검사의 zsh 절(맥 기본 셸)이 건너뛰어 그 어긋이 샌다.
+      - name: ripgrep · zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep zsh
       - name: mutants (바뀐 것만) ${{ matrix.shard }}/8
         run: node tools/mutate.mjs --바뀐것 "${{ github.event.pull_request.base.sha || github.event.before }}" --조각 ${{ matrix.shard }}/8
 
@@ -229,8 +230,9 @@ jobs:
       # (그 파일 머리말: 「없으면 그 자리를 건너뛰되 건너뛰었다고 적는다」).
       # 건너뛴 자리는 어긋내도 초록이라, fastgrep 어긋 다섯이 여기서 내내
       # 샜다. 코드 흠이 아니라 연장이 없던 것이다 — 그래서 깔아 놓고 잰다.
-      - name: ripgrep
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+      # zsh 도 같은 까닭이다 — 없으면 completion 검사의 zsh 절(맥 기본 셸)이 건너뛰어 그 어긋이 샌다.
+      - name: ripgrep · zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep zsh
       - name: mutants ${{ matrix.shard }}/8
         run: node tools/mutate.mjs --조각 ${{ matrix.shard }}/8
 

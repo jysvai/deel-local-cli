@@ -179,8 +179,11 @@ _deel_paths() {
   if type compopt >/dev/null 2>&1; then
     compopt -o filenames 2>/dev/null
   elif [[ -z "$_deel_q" ]]; then
-    local _deel_i
-    for _deel_i in "\${!COMPREPLY[@]}"; do COMPREPLY[$_deel_i]=$(printf '%q' "\${COMPREPLY[$_deel_i]}"); done
+    local _deel_x
+    local -a _deel_t
+    _deel_t=()
+    for _deel_x in "\${COMPREPLY[@]}"; do _deel_t+=("$(printf '%q' "$_deel_x")"); done
+    COMPREPLY=("\${_deel_t[@]}")
   fi
   return 0
 }

@@ -16364,6 +16364,33 @@
       "찾을것": "  const 원래 = String(프로필id ?? '').normalize('NFC');",
       "바꿀것": "  const 원래 = String(프로필id ?? '');",
       "검사": "test/keystore.test.js"
+    },
+    {
+      "곳": "src/completion.js",
+      "무엇": "zsh 자동완성의 빈칸 막기가 bash 전용 ${!배열[@]} 을 쓴다",
+      "그러면": "맥 기본 셸 zsh 에서 파일·폴더 자리에 Tab 을 치면 bad substitution 이 찍히고 후보가 안 나온다",
+      "찾을것": "    for _deel_x in \"\\${COMPREPLY[@]}\"; do _deel_t+=(\"$(printf '%q' \"$_deel_x\")\"); done",
+      "바꿀것": "    for _deel_x in \"\\${!COMPREPLY[@]}\"; do COMPREPLY[$_deel_x]=$(printf '%q' \"\\${COMPREPLY[$_deel_x]}\"); done",
+      "검사": "test/completion.test.js",
+      "잴곳": [
+        "linux"
+      ]
+    },
+    {
+      "곳": "src/tools/clipboard.js",
+      "무엇": "맥 클립보드가 받을 자리 넘침(ENOBUFS)을 「못 불렀다」 로 말한다",
+      "그러면": "한도 넘는 캡처를 붙이면 osascript 가 고장 난 줄 안다",
+      "찾을것": "  if (넘쳤나(r)) return { ok: false, 왜: 너무큰그림말() };\n  if (r.error) return { ok: false, 왜: `osascript 를 못 불렀습니다: ${r.error.message}` };",
+      "바꿀것": "  if (r.error) return { ok: false, 왜: `osascript 를 못 불렀습니다: ${r.error.message}` };",
+      "검사": "test/clipboard.test.js"
+    },
+    {
+      "곳": "src/tools/clipboard.js",
+      "무엇": "리눅스 클립보드가 받을 자리 넘침(ENOBUFS)을 도구 탈로 말한다",
+      "그러면": "한도 넘는 캡처를 붙이면 「꺼내지 못했습니다 (wl-paste: ENOBUFS)」 — 그림이 큰 줄 모른다",
+      "찾을것": "    if (넘쳤나(r)) return { ok: false, 왜: 너무큰그림말() };\n    if (r.error || !r.stdout?.length) {",
+      "바꿀것": "    if (r.error || !r.stdout?.length) {",
+      "검사": "test/clipboard.test.js"
     }
   ]
 }

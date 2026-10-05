@@ -223,6 +223,57 @@ if (있나('bash', ['-c', 'echo ok'])) {
   건너뜀('진짜 bash 에 넣고 눌러 보기', '이 PC 에 bash 가 없습니다');
 }
 
+/*
+ * ── 진짜 zsh (맥 기본 셸) — 42회차 맥 실측 ─────────────────────────────────────
+ *
+ * zsh 판은 bash 판을 bashcompinit 으로 얹은 것이라 같은 함수가 zsh 안에서 돈다. 그런데 빈칸을 막아 넣는
+ * 고리가 `${!COMPREPLY[@]}`(bash 전용 — 배열 칸 번호)를 써서, 맥 zsh 에서 파일·폴더 자리에 Tab 을 치면
+ * `_deel_paths:11: bad substitution` 이 찍히고 후보가 하나도 안 나왔다. bashcompinit 의 compgen 은
+ * `emulate -L sh` 로 우리 함수를 부른다 — 여기서도 그렇게 부른다.
+ *
+ * zsh 의 compgen 은 파일·폴더를 **앞글자로 안 거르고** 다 낸다 — 거르기는 zsh 가 넣기 전에 따로 한다.
+ * 그래서 여기서는 친 앞글자(my)로 시작하는 것만 본다. 맥에서 zpty 로 진짜 Tab 을 쳐 셸이 넘긴 낱말도
+ * 쟀다: `deel --root my⇥` → [--root][my dir] · `deel run my⇥` → [run][my ].
+ */
+const zsh있나 = spawnSync('zsh', ['-f', '-c', 'true'], { timeout: 15000, windowsHide: true }).status === 0;
+if (zsh있나) {
+  const 놀이터 = mkdtempSync(join(tmpdir(), 'deel-comp-zsh-'));
+  const 스크립트방 = mkdtempSync(join(tmpdir(), 'deel-comp-zsh-script-'));
+  const 파일 = join(스크립트방, 'deel.zsh');
+  writeFileSync(파일, 완성스크립트('zsh').글, 'utf8');
+  writeFileSync(join(놀이터, 'my file.txt'), '', 'utf8');
+  mkdirSync(join(놀이터, 'my dir'));
+  const zsh로 = (낱말들, 자리) => {
+    const 셸 = 'autoload -U compinit && compinit -u -D\n'
+      + `source '${파일}' || exit 9\n`
+      + `COMP_WORDS=(${낱말들.map((w) => `'${w}'`).join(' ')})\n`
+      + `COMP_CWORD=${자리}\n`
+      + "emulate sh -c '_deel'\n"
+      + 'for x in "${COMPREPLY[@]}"; do printf "[%s]\\n" "$x"; done\n';
+    const r = spawnSync('zsh', ['-f', '-c', 셸], { cwd: 놀이터, encoding: 'utf8', timeout: 15000, windowsHide: true });
+    const 앞글자 = 낱말들[자리].replace(/^["']/, '');
+    return { 후보: (r.stdout ?? '').split(/\r?\n/).filter((x) => x.startsWith(`[${앞글자}`)).sort(), 탈: (r.stderr ?? '').trim(), code: r.status };
+  };
+  const 읽힘 = spawnSync('zsh', ['-f', '-c', `autoload -U compinit && compinit -u -D; source '${파일}' && echo ok`], { encoding: 'utf8', timeout: 15000, windowsHide: true });
+  check('★ zsh: compinit 뒤에 스크립트를 탈 없이 읽는다', (읽힘.stdout ?? '').trim() === 'ok' && !(읽힘.stderr ?? '').trim(), (읽힘.stderr ?? '').trim());
+  const 명령 = zsh로(['deel', 'se'], 1);
+  check('  zsh: 첫 낱말은 명령 후보', 명령.후보.includes('[setup]') && !명령.탈, `${명령.후보.join(' ')} ${명령.탈}`);
+  const 파일후보 = zsh로(['deel', 'run', 'my'], 2);
+  check('★★ zsh: 파일 자리에서 빈칸 든 이름을 탈 없이 하나씩 낸다 (bad substitution 아님)',
+    JSON.stringify(파일후보.후보) === JSON.stringify(['[my\\ dir]', '[my\\ file.txt]']) && !파일후보.탈,
+    `${파일후보.후보.join(' ')} · ${파일후보.탈}`);
+  const 폴더후보 = zsh로(['deel', '--root', 'my'], 2);
+  check('★★ zsh: --root 다음 폴더도', JSON.stringify(폴더후보.후보) === JSON.stringify(['[my\\ dir]']) && !폴더후보.탈,
+    `${폴더후보.후보.join(' ')} · ${폴더후보.탈}`);
+  const 따옴표 = zsh로(['deel', 'run', '"my'], 2);
+  check('  zsh: 따옴표를 연 채면 막지 않는다', JSON.stringify(따옴표.후보) === JSON.stringify(['[my dir]', '[my file.txt]']) && !따옴표.탈,
+    `${따옴표.후보.join(' ')} · ${따옴표.탈}`);
+  rmSync(놀이터, { recursive: true, force: true });
+  rmSync(스크립트방, { recursive: true, force: true });
+} else {
+  건너뜀('진짜 zsh 에 넣고 눌러 보기', '이 PC 에 zsh 가 없습니다');
+}
+
 // ── 4. ★ 진짜 파워셸에 넣고 눌러 본다 ────────────────────────────────
 trace('4-파워셸');
 if (process.platform === 'win32' && 있나('powershell', ['-NoProfile', '-Command', 'exit 0'])) {

@@ -93,10 +93,21 @@ function 윈도우에서(방, 부르기) {
  * PNG 512KB 만 넘어도 ENOBUFS 로 끊겼다 — 레티나 화면 캡처는 대개 그보다 커서
  * 맥에서는 보통 캡처가 안 붙었다. 그림 한도의 두 배에 여유를 더해 잡는다.
  */
+/*
+ * 받을 자리(maxBuffer)가 넘친 것은 「못 불렀다」 가 아니라 **그림이 크다** 는 뜻이다. 맥에서 12.5MB 캡처를
+ * 붙이면 「osascript 를 못 불렀습니다: spawnSync osascript ENOBUFS」 가 나왔다(42회차 맥 실측) — 사람은
+ * osascript 가 고장 난 줄 안다. 한도 넘침과 같은 말로 맞춘다.
+ */
+function 넘쳤나(r) { return r?.error?.code === 'ENOBUFS'; }
+function 너무큰그림말() {
+  return `그림이 너무 큽니다 (한도 ${그림한도 / 1048576}MB 넘음) — 필요한 부분만 잘라서 다시 찍어 주세요.`;
+}
+
 function 맥에서(부르기) {
   const r = 부르기('osascript', ['-e', 'the clipboard as «class PNGf»'], {
     encoding: 'utf8', timeout: 20000, maxBuffer: 그림한도 * 2 + 1024 * 1024,
   });
+  if (넘쳤나(r)) return { ok: false, 왜: 너무큰그림말() };
   if (r.error) return { ok: false, 왜: `osascript 를 못 불렀습니다: ${r.error.message}` };
   const 낸말 = String(r.stdout ?? '');
   const m = /«data PNGf([0-9A-Fa-f]+)»/.exec(낸말);
@@ -150,6 +161,7 @@ function 리눅스에서(부르기) {
     const 종류 = 부르기(x.이름, x.볼것, { encoding: 'utf8', timeout: 10000 });
     if (!/image\/png/i.test(String(종류.stdout ?? ''))) continue;
     const r = 부르기(x.이름, x.꺼내기, { timeout: 20000, maxBuffer: 64 * 1024 * 1024 });
+    if (넘쳤나(r)) return { ok: false, 왜: 너무큰그림말() };
     if (r.error || !r.stdout?.length) {
       const 탈 = r.error?.message || String(r.stderr ?? '').split('\n').find((l) => l.trim())?.trim() || '빈 응답';
       못꺼냄 ??= `${x.이름}: ${탈}`;
