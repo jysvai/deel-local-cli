@@ -283,6 +283,8 @@ export function 다시부를지(r, attempt, 정책 = 기본정책(), 쌓인 = 0,
  * 언젠가 하나가 빠지고, 빠진 자리는 `(0/0)` 을 찍는다 — 실제로 그랬다.
  */
 export function 알림말(ev) {
+  // 흐름이 멎어 다시 부르는 것은 서버가 막은 것이 아니다 — 「서버가 잠시 막았습니다 (STALL)」 는 거짓말이다.
+  if (ev?.왜 === '멎음') return 'loop.stallRetry';
   if (!ev?.미리) return 'loop.backoff';
   return ev.왜 === '막힘' ? 'loop.limitAhead' : 'loop.quotaAhead';
 }
@@ -294,6 +296,7 @@ export function 알림채움(ev) {
     초: 초 >= 10 ? String(Math.round(초)) : String(Math.round(초 * 10) / 10),
     n: ev?.attempt ?? 1,
     max: ev?.max ?? 기본정책().최대,
+    멎은초: String(ev?.멎은초 ?? ''),
   };
 }
 

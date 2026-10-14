@@ -138,6 +138,14 @@ if (!python있나) {
         return res.end();
       }
       받은말.push(말);
+      // 「물어봐줘」 에는 Ask 를 낸다 — 자율 모드라 시한(askWait)이 걸린 물음이 뜬다.
+      if (말.includes('물어봐줘')) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        보내기({ tool_calls: [{ index: 0, id: `call_${받은말.length}`, type: 'function', function: { name: 'Ask', arguments: JSON.stringify({ understanding: '버튼 자리를 정하는 일', question: '어느 쪽으로 할까요?', options: ['왼쪽', '오른쪽'] }) } }] });
+        보내기({}, 'tool_calls');
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
       if (말.includes('파일써줘')) {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
         보내기({ tool_calls: [{ index: 0, id: `call_${받은말.length}`, type: 'function', function: { name: 'Write', arguments: JSON.stringify({ file_path: '승인.txt', content: '써짐' }) } }] });
@@ -168,14 +176,14 @@ if (!python있나) {
   writeFileSync(모는파일, 모는것, 'utf8');
 
   /** 한 판 — bash 안에서 deel 을 띄우고 걸음들을 친 뒤, 끝난 종료코드와 stty 를 읽는다. */
-  const 판 = async (걸음들, { 인자 = '', 설정 = true, 켜짐 = 'fake-7b', 환경 = '', 상자 = false, 도구 = false, 끝 = true, exec = false } = {}) => {
+  const 판 = async (걸음들, { 인자 = '', 설정 = true, 켜짐 = 'fake-7b', 환경 = '', 상자 = false, 도구 = false, 끝 = true, exec = false, 설정덧 = {} } = {}) => {
     받은말 = [];
     도구결과 = [];
     const 일터 = mkdtempSync(join(tmpdir(), 'deel-pty-'));
     const 집 = join(일터, 'home');
     mkdirSync(집, { recursive: true });
     if (설정) writeFileSync(join(집, 'config.json'), JSON.stringify({
-      version: 1, active: 'gw',
+      version: 1, active: 'gw', ...설정덧,
       profiles: [{ id: 'gw', name: '가짜', kind: 'openai', baseUrl: `http://127.0.0.1:${포트}/v1`, auth: 'bearer', apiKey: 'k', model: 'fake-7b', ctx: 32000, streaming: true, tools: 도구 }],
     }));
     const 명령 = `${상자 ? 'unset CI GITHUB_ACTIONS; ' : 'export CI=1; '}cd '${일터}' && DEEL_HOME='${집}' DEEL_NET_ALLOW='http://127.0.0.1:${포트}/v1' DEEL_NO_OPEN=1 ${환경} ${exec ? 'exec ' : ''}'${process.execPath}' '${진입점}' ${인자}; `
@@ -367,6 +375,27 @@ if (!python있나) {
       const f = fg읽기(r);
       check(`★ 진짜 pty (${이름}): 승인 물음 중에 재웠다 깨우면 물음을 다시 찍고, n 은 여전히 거부다`,
         r.걸음['물음 다시'] && !r.썼나 && /거부/.test(r.도구결과[0] ?? '') && f.종료 === '0' && f.복구됨,
+        `걸음=${JSON.stringify(r.걸음)} · fg=${JSON.stringify(f)} · 도구결과=${JSON.stringify(r.도구결과)} · ${JSON.stringify(r.화면글.slice(-300))}`);
+    }
+
+    trace(`7-되묻기-중-Ctrl+Z (${이름})`);
+    {
+      /*
+       * 자율 모드의 되묻기(Ask)에는 시한이 걸려 있다(askWait). 재워 둔 동안에도 시계는 흐르므로, 시한보다 오래
+       * 재웠다가 깨우면 깨자마자 「답이 없다」 로 닫혔다 — 사람이 아직 한 글자도 못 쳤는데. 깨면 다시 감는다
+       * (repl.js 의 깨우기).
+       */
+      const r = await 판([
+        { type: '물어봐줘\r', wait: '어느 쪽으로 할까요', name: '물음' },
+        { send: '\x1a', wait: 'Stopped|Suspended', timeout: 10, name: '재움' },
+        { sleep: 3.5 },
+        { send: 'fg\r', mark: true, sleep: 0.5 },
+        { type: '내 의견\r', wait: '도구결과받음', timeout: 10, name: '답한 뒤' },
+        { type: '/exit\r', sleep: 1.5 }, fg끝,
+      ], { 상자, 도구: true, 끝: false, 설정덧: { askWait: 2 } });
+      const f = fg읽기(r);
+      check(`★ 진짜 pty (${이름}): 되묻는 중에 시한보다 오래 재웠다 깨워도 안 닫히고, 깬 뒤 친 답이 간다`,
+        r.걸음.물음 && r.걸음.재움 && /사람의 답: 내 의견/.test(r.도구결과[0] ?? '') && f.종료 === '0' && f.복구됨,
         `걸음=${JSON.stringify(r.걸음)} · fg=${JSON.stringify(f)} · 도구결과=${JSON.stringify(r.도구결과)} · ${JSON.stringify(r.화면글.slice(-300))}`);
     }
 

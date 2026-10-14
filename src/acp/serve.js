@@ -1035,7 +1035,7 @@ export async function acp(opts = {}) {
           case 'backoff':
             말하기(`\n\n_(${ev.미리
               ? 옮긴말(알림말(ev), { 초: 알림채움(ev).초 })
-              : 옮긴말('loop.backoff', 알림채움(ev))})_\n\n`);
+              : 옮긴말(알림말(ev), 알림채움(ev))})_\n\n`);
             break;
 
           // 서버가 안 받는 칸이 있어 전선 카드를 고쳤다 (backend/wire.js).

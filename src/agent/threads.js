@@ -93,7 +93,7 @@ export class Threads {
      *
      * 갈래를 지운다고 청구서가 지워지지는 않는다. 그래서 여기에 쌓는다.
      */
-    this.닫힌셈 = { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, 못잰것: 0 };
+    this.닫힌셈 = { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, 못잰것: 0, 추정in: 0, 추정out: 0 };
     this.닫힌수 = 0;
   }
 

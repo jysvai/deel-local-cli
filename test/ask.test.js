@@ -813,9 +813,218 @@ trace('3.95-계획-상자에-한마디-얹기');
   rmSync(home, { recursive: true, force: true });
 }
 
+trace('3.97-의견을-치는-동안-시한이-안-끊는다');
+
+/*
+ * 「그 외 말 입력하고 엔터 누르면 안 넘어가고 60초 지나면 알아서 지나가더라」
+ *
+ * 자율 모드의 시한(askWait)은 물음이 뜬 순간부터 돌았다. 숫자는 2초면 치지만 의견은 그보다 오래
+ * 걸린다 — 치는 도중에 시한이 끝나면 물음은 「답이 없다」 로 닫히고, 마저 친 글은 물음의 답이 아니라
+ * 다음에 보낼 말로 줄을 선다. 고치기 전 코드로 이 판을 돌리면 모델에게 「사람이 답하지 않았습니다」
+ * 가 갔다. 상자 화면(터미널인 척)에서 시한 2초, 한 글자에 0.25초씩 쳐서 잰다.
+ *
+ * 같은 판에서 권장도 잰다. 모델이 recommended 로 고른 줄에 「(권장)」 이 붙고, 빈 Enter 는 1번이
+ * 아니라 그 줄을 고른다.
+ */
+{
+  const 물음들 = [
+    { question: '버튼을 어디에 둘까요?', options: ['위쪽 가운데', '아래쪽 오른쪽', '입력칸 바로 밑'] },
+    { question: '색은 무엇으로 할까요?', options: ['파란색', '회색 (추천)', '초록색'] },
+    { question: '이름은 무엇으로 할까요?', options: ['확인', '보내기'] },
+    { question: '안내 글은 어떻게 쓸까요?', options: ['짧게', '길게'] },
+  ];
+  let 몇번째 = 0;
+  const 받은답들 = [];
+  const srv = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      let json = null;
+      try { json = JSON.parse(body || '{}'); } catch { /* 스텁이라 넘어간다 */ }
+      const 보냄 = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (!String(req.url).includes('/chat/completions')) return 보냄({ data: [{ id: '스텁모델', object: 'model' }] });
+      const 답 = (msg) => 보냄({
+        id: 'x', object: 'chat.completion', model: '스텁모델',
+        choices: [{ index: 0, finish_reason: msg.tool_calls ? 'tool_calls' : 'stop', message: msg }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+      const 메시지들 = json?.messages ?? [];
+      if (메시지들[메시지들.length - 1]?.role === 'tool') {
+        받은답들.push(String(메시지들[메시지들.length - 1].content ?? ''));
+        return 답({ role: 'assistant', content: '알겠습니다.' });
+      }
+      const 이번 = 물음들[Math.min(몇번째, 물음들.length - 1)];
+      몇번째 += 1;
+      return 답({
+        role: 'assistant', content: null,
+        tool_calls: [{
+          id: `r${몇번째}`, type: 'function',
+          function: {
+            name: 'Ask',
+            arguments: JSON.stringify({
+              understanding: '로그인 화면의 버튼 배치와 색을 바꾸는 일로 알아들었습니다',
+              ...이번,
+              // 첫 물음은 칸으로 권하고, 둘째는 글에 「(추천)」 만 붙여 온다(작은 모델이 그렇게 한다).
+              ...(몇번째 === 1 ? { recommended: 2 } : {}),
+            }),
+          },
+        }],
+      });
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const 주소 = `http://127.0.0.1:${srv.address().port}/v1`;
+
+  const root = mkdtempSync(join(tmpdir(), 'deel-askwait-'));
+  const home = mkdtempSync(join(tmpdir(), 'deel-askwait-home-'));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    version: 1, active: 'stub', level: '개발자', askWait: 2,
+    profiles: [{
+      id: 'stub', name: '스텁', kind: 'openai', baseUrl: 주소,
+      auth: 'none', apiKey: '', model: '스텁모델', ctx: 32768, streaming: false, tools: true,
+    }],
+  }), 'utf8');
+
+  // CI 를 빼야 상자 화면이 켜진다(paste.test.js 와 같다).
+  const { CI, GITHUB_ACTIONS, ...환경 } = process.env;
+  const 앞선것 = join(뿌리, 'test', 'tty-preload.mjs').replace(/\\/g, '/');
+  const kid = spawn(process.execPath,
+    ['--import', `file:///${앞선것}`, join(뿌리, 'bin', 'deel.js'), '--root', root, '--offline', '--ctx', '32768'],
+    { cwd: 뿌리, stdio: ['pipe', 'pipe', 'pipe'], env: { ...환경, DEEL_HOME: home } });
+  let out = '';
+  kid.stdout.setEncoding('utf8');
+  kid.stderr.setEncoding('utf8');
+  kid.stdout.on('data', (b) => { out += b; });
+  kid.stderr.on('data', (b) => { out += b; });
+  const 닫힘 = new Promise((r) => kid.on('close', r));
+  const 자기 = (ms) => new Promise((r) => setTimeout(r, ms));
+  const 민화면 = () => out.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+  const 기다리기 = async (될때까지, 최대 = 20000) => {
+    const 끝 = Date.now() + 최대;
+    while (Date.now() < 끝) { if (될때까지()) return true; await 자기(50); }
+    return false;
+  };
+  const 치기 = async (글, 한글자 = 20) => {
+    for (const ch of 글) { kid.stdin.write(ch); await 자기(한글자); }
+    kid.stdin.write('\r');
+  };
+
+  await 기다리기(() => 민화면().includes('❯'));
+  await 자기(1200);
+  await 치기('버튼 고쳐줘');
+  const 첫물음 = await 기다리기(() => 민화면().includes('버튼을 어디에 둘까요'));
+  await 자기(300);
+  const 의견 = '둘 다 아니고 입력칸 오른쪽 옆에 작게';
+  // 한 글자 0.25초 — 다 치는 데 시한(2초)의 두 배가 넘게 걸린다.
+  await 치기(의견, 250);
+  await 기다리기(() => 받은답들.length >= 1, 8000);
+  const 첫화면 = 민화면();
+  await 기다리기(() => /❯/.test(민화면().slice(첫화면.length)), 5000);
+  await 자기(600);
+  await 치기('색도 바꿔줘');
+  const 둘째물음 = await 기다리기(() => 민화면().includes('색은 무엇으로 할까요'));
+  await 자기(300);
+  kid.stdin.write('\r');   // 빈 Enter — 권한 줄을 골라야 한다
+  await 기다리기(() => 받은답들.length >= 2, 8000);
+  // 셋째: 치다가 왼쪽 화살표로 가운데로 가서 고친다 — 고친 자리에 들어가고, 화면 커서도 그 자리로 돌아와야 한다.
+  const 둘째화면 = 민화면();
+  await 기다리기(() => /❯/.test(민화면().slice(둘째화면.length)), 5000);
+  await 자기(600);
+  await 치기('이름도 정해줘');
+  const 셋째물음 = await 기다리기(() => 민화면().includes('이름은 무엇으로 할까요'));
+  await 자기(300);
+  const 셋째앞 = out.length;
+  for (const ch of 'abcdef') { kid.stdin.write(ch); await 자기(30); }
+  for (let i = 0; i < 3; i += 1) { kid.stdin.write('\x1b[D'); await 자기(60); }
+  kid.stdin.write('x'); await 자기(200);
+  const 고친화면 = out.slice(셋째앞);
+  kid.stdin.write('\r');
+  await 기다리기(() => 받은답들.length >= 3, 8000);
+  // 넷째: 여러 줄을 붙여넣고 Enter — 앞줄들도 답이다(다음에 보낼 말로 새지 않는다).
+  const 셋째화면 = 민화면();
+  await 기다리기(() => /❯/.test(민화면().slice(셋째화면.length)), 5000);
+  await 자기(600);
+  await 치기('안내 글도');
+  const 넷째물음 = await 기다리기(() => 민화면().includes('안내 글은 어떻게 쓸까요'));
+  await 자기(300);
+  kid.stdin.write('\x1b[200~첫 줄은 짧게\r둘째 줄은 예시로\x1b[201~');
+  await 자기(300);
+  kid.stdin.write('\r');
+  await 기다리기(() => 받은답들.length >= 4, 8000);
+  await 자기(500);
+  kid.stdin.write('/exit\r');
+  await Promise.race([닫힘, 자기(7000).then(() => kid.kill())]);
+  srv.close();
+
+  const 화면 = 민화면();
+  check('물음이 상자 화면에 뜬다', 첫물음 && 둘째물음, `${첫물음} ${둘째물음}`);
+  check('★ 시한보다 오래 쳐도 친 의견이 그대로 답으로 간다',
+    받은답들[0] === `사람의 답: ${의견}`, (받은답들[0] ?? '(안 옴)').slice(0, 80));
+  check('★ 치는 도중에 「답이 없어 알아서 진행」 으로 안 끊긴다',
+    !/답이 없어 알아서 진행/.test(첫화면), 첫화면.split('\n').find((l) => /답이 없어/.test(l))?.trim() ?? '');
+  check('★ 권한 줄에 (권장) 이 붙는다', /2 아래쪽 오른쪽 \(권장\)/.test(화면),
+    화면.split('\n').find((l) => /아래쪽 오른쪽/.test(l))?.trim() ?? '못 찾음');
+  check('★ 글에 붙여 온 (추천) 은 떼고 (권장) 하나만 붙인다',
+    /2 회색 \(권장\)/.test(화면) && !/\(추천\)/.test(화면),
+    화면.split('\n').find((l) => /회색/.test(l))?.trim() ?? '못 찾음');
+  check('★ 빈 Enter 는 1번이 아니라 권한 줄을 고른다', 받은답들[1] === '사람의 답: 회색', (받은답들[1] ?? '(안 옴)').slice(0, 60));
+  check('입력 줄에 [기본값] 으로 권한 번호가 보인다', /직접 입력 \[2\]/.test(화면),
+    화면.split('\n').find((l) => /직접 입력/.test(l))?.trim().slice(0, 80) ?? '못 찾음');
+  check('시한 안내는 「아무것도 안 치면」 이다 (치는 동안은 안 끊는다는 뜻)', /아무것도 안 치면 알아서 진행/.test(화면),
+    화면.split('\n').find((l) => /알아서 진행/.test(l))?.trim() ?? '못 찾음');
+  /*
+   * 다시 그릴 때는 줄 첫 칸으로 돌아가(\r) 그 밑을 지운다. 여기 줄바꿈이 들어가면 한 글자 칠 때마다 한 줄씩
+   * 내려가며 물음이 쌓인다 — 소스에 \r 대신 날것 줄바꿈이 박혀도 문법은 멀쩡해서 이 바이트로만 잡힌다.
+   */
+  check('★ 물음을 다시 그릴 때 줄을 안 내리고 첫 칸에서 지운다', out.includes('\r\x1b[J') && !out.includes('\n\x1b[J'),
+    JSON.stringify([out.includes('\r\x1b[J'), out.includes('\n\x1b[J')]));
+  check('셋째 물음이 뜬다', 셋째물음 && 넷째물음, `${셋째물음} ${넷째물음}`);
+  check('★ 화살표로 가운데를 고치면 그 자리에 들어간다', 받은답들[2] === '사람의 답: abcxdef', (받은답들[2] ?? '(안 옴)').slice(0, 60));
+  check('★ 가운데를 고치면 화면 커서도 그 자리로 되돌린다 (끝에 두지 않는다)', /\r\x1b\[\d+C(?![\s\S]*\r\x1b\[J)/.test(고친화면),
+    JSON.stringify(고친화면.slice(-60)));
+  check('★ 여러 줄을 붙여넣으면 앞줄들도 답이다', 받은답들[3] === '사람의 답: 첫 줄은 짧게\n둘째 줄은 예시로',
+    JSON.stringify((받은답들[3] ?? '(안 옴)').slice(0, 60)));
+
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+}
+
+trace('3.98-권장을-가리고-접힌-줄을-센다');
+{
+  // 도구가 권장을 어떻게 가리나 — 화면 없이 ask물음 이 무엇을 받는지만 본다.
+  const 받은것 = [];
+  const ctx = {
+    ask물음: async (물음, 고를것, 이해, 덧) => { 받은것.push({ 고를것, 권장: 덧?.권장 ?? null }); return null; },
+    요청: '버튼 배치 바꿔줘',
+  };
+  const 이해 = '버튼 배치를 바꾸는 일로 알아들었습니다';
+  const 묻기 = (args) => TOOLS.Ask.run({ understanding: 이해, ...args }, { ...ctx, 물은것: [] });
+  const r1 = await 묻기({ question: '어디에 둘까요?', options: ['위', '아래'], recommended: 2 });
+  check('칸으로 준 번호를 넘긴다', 받은것[0]?.권장 === 2, JSON.stringify(받은것[0]));
+  check('★ 답이 없으면 권한 쪽으로 이어가라고 한다', /권장한 「아래」/.test(r1.content ?? ''), r1.content ?? r1.error);
+  await 묻기({ question: '무엇으로 할까요?', options: ['파랑', '초록 (Recommended)'] });
+  check('★ 글에 붙인 (Recommended) 를 떼고 번호로 바꾼다',
+    받은것[1]?.권장 === 2 && 받은것[1]?.고를것[1] === '초록', JSON.stringify(받은것[1]));
+  await 묻기({ question: '어느 쪽?', options: ['가', '나'], recommended: 0 });
+  check('0 은 버린다 — 0부터 센 것인지 모른다', 받은것[2]?.권장 === null, JSON.stringify(받은것[2]));
+  await 묻기({ question: '어느 것?', options: ['가', '나'], recommended: 5 });
+  check('목록 밖 번호는 버린다', 받은것[3]?.권장 === null, JSON.stringify(받은것[3]));
+  const r5 = await 묻기({ question: '어느 길로?', options: ['가', '나'] });
+  check('권한 것이 없으면 여태처럼 「스스로 판단」', /스스로 판단해/.test(r5.content ?? ''), r5.content ?? r5.error);
+  check('스키마에 recommended 가 있다', !!TOOLS.Ask.schema.parameters.properties.recommended);
+
+  const { 접힌줄수 } = await import('../src/ui/ansi.js');
+  check('짧은 글은 한 줄', 접힌줄수('abc', 80) === 1);
+  check('끝 칸을 꼭 채운 것은 아직 한 줄 (커서가 끝에 걸려 있다)', 접힌줄수('a'.repeat(80), 80) === 1);
+  check('한 칸 넘치면 두 줄', 접힌줄수('a'.repeat(81), 80) === 2);
+  check('한글은 두 칸으로 센다', 접힌줄수('가'.repeat(41), 80) === 2 && 접힌줄수('가'.repeat(40), 80) === 1);
+  check('두 칸 글자가 끝 칸에 안 들어가면 통째로 넘긴다', 접힌줄수(`${'a'.repeat(79)}가`, 80) === 2);
+  check('색 코드는 칸을 안 먹는다', 접힌줄수(`\x1b[38;5;245m${'a'.repeat(80)}\x1b[0m`, 80) === 1);
+}
+
 trace('4-끝');
 
-const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
+const G ='\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n되묻기 검사  ${D}(물었는데 답이 돌아와 이어지는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);

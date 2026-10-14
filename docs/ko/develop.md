@@ -203,7 +203,7 @@ bin/deel.js              진입점
 src/
   repl.js                대화 화면 — 사람이 마주하는 자리
   oneshot.js             한 번 돌리고 끝내기 (-p)
-  commands.js            / 명령 52종 — 명령을 가르는 자리(handle)
+  commands.js            / 명령 53종 — 명령을 가르는 자리(handle)
   commands/common.js     명령표 · 설정 남기기 — 아래 조각들이 같이 쓴다
   commands/model.js      /model · /ctx · /out · /grade — 연결을 다루는 것
   commands/work.js       /커밋 · /리뷰 · /diff · /증거 · /갈래 · /못박기 · /배움 · /붙여넣기

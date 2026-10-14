@@ -24,7 +24,7 @@
 // **어느 시계로 재는가** 이지 60초라는 숫자가 아니다.
 import { createServer } from 'node:http';
 import { chatStream, 흐름멎음, 말없이끝남 } from '../src/backend/adapter.js';
-import { 잠잠기본 } from '../src/backend/http.js';
+import { 잠잠기본, 첫잠잠기본 } from '../src/backend/http.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import { trace } from './trace.mjs';
 
@@ -40,12 +40,13 @@ const 조각 = (글) => `data: ${JSON.stringify({ choices: [{ delta: { content: 
  * 대본은 [기다릴ms, 보낼것] 의 줄이다. `null` 을 보내라고 하면 **아무것도 안
  * 보내고 소켓을 열어 둔다** — 그것이 '멎음' 이다. 곱게 닫는 것(end)과는 다르다.
  */
-function 스텁(대본) {
+function 스텁(대본, 부른수 = { n: 0 }) {
   return createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', async () => {
       void body;
+      부른수.n += 1;
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
       /*
        * 머리말을 **지금** 내보낸다.
@@ -60,6 +61,13 @@ function 스텁(대본) {
         await new Promise((r) => setTimeout(r, 늦게));
         if (res.destroyed) return;
         if (보낼것 === null) return;              // 여기서 멎는다. 안 닫고 그냥 있는다.
+        if (보낼것 === '머리') {
+          // 내용 없는 첫 조각 — 역할만 알린다. 많은 OpenAI 호환 서버가 생각하기 전에 이것부터 보낸다.
+          res.write(`data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant' } }] })}
+
+`);
+          continue;
+        }
         if (보낼것 === '끝') {
           // 끝난 까닭까지 준다. 안 주면 이 답도 '말없이끝남' 이 되어, 아래
           // 「멀쩡히 끝났다」 를 재는 자리가 사실은 아무것도 못 재게 된다.
@@ -74,17 +82,19 @@ function 스텁(대본) {
 }
 
 async function 세우기(대본) {
-  const srv = 스텁(대본);
+  const 부른수 = { n: 0 };
+  const srv = 스텁(대본, 부른수);
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${srv.address().port}/v1`;
   resetNet();
   allowEndpoint(base);
-  return { srv, base };
+  return { srv, base, 부른수 };
 }
 
 const 부르기 = async (base, 옵션 = {}) => {
   const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 8000, ...(옵션.conn ?? {}) };
   const 글조각 = [];
+  const 알림 = [];
   let 끝 = null;
   let 탈 = null;
   try {
@@ -93,9 +103,10 @@ const 부르기 = async (base, 옵션 = {}) => {
     })) {
       if (ev.type === 'content') 글조각.push(ev.text);
       else if (ev.type === 'done') 끝 = ev.message;
+      else 알림.push(ev);
     }
   } catch (e) { 탈 = e; }
-  return { 글: 글조각.join(''), 끝, 탈 };
+  return { 글: 글조각.join(''), 끝, 탈, 알림 };
 };
 
 // ── 1. 멎으면 끊는다. 다만 받은 것은 살린다 ────────────────────────────
@@ -110,7 +121,8 @@ trace('1-멎음');
    */
   const { srv, base } = await 세우기([[0, '앞'], [10, '뒤'], [10, null]]);
   const t0 = Date.now();
-  const r = await 부르기(base, { conn: { 잠잠: 300 } });
+  // 첫잠잠도 준다 — 안 주면 기본 5분이라, 「첫 내용 뒤에도 긴 시계」 로 어긋냈을 때 이 판이 5분을 기다린다.
+  const r = await 부르기(base, { conn: { 잠잠: 300, 첫잠잠: 5000 } });
   const 걸린 = Date.now() - t0;
 
   check('★★ 멎으면 잠잠 상한에서 끊는다 — 전체 시계를 기다리지 않는다',
@@ -142,12 +154,57 @@ trace('2-빈-채로-멎음');
    * 「답이 비었다」 로 읽고, 사람은 모델이 대답을 안 했다고 생각한다 — 실제로는
    * 연결이 멎은 것이라 고칠 자리가 완전히 다르다.
    */
-  const { srv, base } = await 세우기([[10, null]]);
-  const r = await 부르기(base, { conn: { 잠잠: 300 } });
+  const { srv, base, 부른수 } = await 세우기([[10, null]]);
+  // 첫 내용 전 기다림(첫잠잠)도 짧게 준다 — 기본 5분을 검사가 기다릴 수는 없다.
+  const r = await 부르기(base, { conn: { 잠잠: 300, 첫잠잠: 300 } });
   check('★★ 한 글자도 못 받았으면 오류로 던진다', r.탈 !== null, String(r.탈?.message ?? '(안 던짐)'));
   check('★ 무엇 때문인지 말에 남는다', /멎|안 왔습니다|STALL/i.test(String(r.탈?.message ?? '')),
     String(r.탈?.message ?? ''));
+  /*
+   * 던지기 전에 **한 번은** 다시 부른다 (backend/adapter.js 의 멎어다시). 화면에 흘러간 것이 없으니 두 벌이 될
+   * 것도 없다. 한 번만이다 — 계속 부르면 정말 멎은 창구 앞에서 사람은 기다리기만 한다.
+   */
+  check('★★ 빈 채로 멎으면 한 번 더 부른다 — 그리고 한 번만', 부른수.n === 2, `${부른수.n}번 불렀다`);
+  const 다시알림 = r.알림.filter((e) => e.type === 'backoff' && e.왜 === '멎음');
+  check('★ 다시 부른다고 알린다 (서버가 막았다는 말이 아니라 멎었다는 말로)',
+    다시알림.length === 1 && 다시알림[0].code === 'STALL' && 다시알림[0].attempt === 1 && 다시알림[0].max === 1,
+    JSON.stringify(다시알림));
   srv.close();
+}
+
+trace('2.5-첫-내용-전-침묵은-생각이다');
+{
+  /*
+   * 「60초 동안 아무것도 안 왔습니다 — 흐름이 멎었습니다」
+   *
+   * 추론 모델 앞의 OpenAI 호환 창구는 머리말만 바로 주고 생각이 끝날 때까지 입을 다물기도 한다. 그 침묵을
+   * 흐르는 도중의 잠잠과 같은 자로 재면 생각하는 모델을 우리가 죽인다. 첫 내용 전에는 첫잠잠으로 잰다.
+   */
+  const { srv, base, 부른수 } = await 세우기([[700, '생각끝'], [10, '끝']]);
+  const r = await 부르기(base, { conn: { 잠잠: 300, 첫잠잠: 3000 } });
+  check('★★ 첫 내용 전 침묵은 잠잠보다 길게 기다린다', r.탈 === null && r.글 === '생각끝',
+    `${r.탈?.message ?? ''} ${JSON.stringify(r.글)}`);
+  check('기다리는 동안 다시 부르지 않는다', 부른수.n === 1, `${부른수.n}번`);
+  srv.close();
+
+  /*
+   * 내용 없는 첫 조각(역할만 알리는 delta)은 「내용이 왔다」 가 아니다. 바이트만 보고 짧은 시계로 갈아타면
+   * 그 뒤의 생각하는 침묵에서 또 죽인다.
+   */
+  const 둘 = await 세우기([[0, '머리'], [700, '나중글'], [10, '끝']]);
+  const r2 = await 부르기(둘.base, { conn: { 잠잠: 300, 첫잠잠: 3000 } });
+  check('★★ 역할만 알린 첫 조각 뒤의 침묵도 첫잠잠으로 잰다', r2.탈 === null && r2.글 === '나중글',
+    `${r2.탈?.message ?? ''} ${JSON.stringify(r2.글)}`);
+  둘.srv.close();
+
+  // 한 글자라도 온 뒤로는 여태대로 짧은 잠잠이다 — 흐르다 멎은 것은 거의 늘 끊긴 것이다.
+  const 셋 = await 세우기([[0, '앞'], [10, null]]);
+  const t0 = Date.now();
+  const r3 = await 부르기(셋.base, { conn: { 잠잠: 300, 첫잠잠: 5000 } });
+  const 걸린 = Date.now() - t0;
+  check('★★ 내용이 온 뒤로는 짧은 잠잠으로 끊는다', r3.끝?.stopped === 흐름멎음 && 걸린 < 3000,
+    `${걸린}ms · ${String(r3.끝?.stopped)}`);
+  셋.srv.close();
 }
 
 // ── 3. 느린 것은 멎은 것이 아니다 ──────────────────────────────────────
@@ -362,6 +419,8 @@ trace('5-기본값');
   check('★ 잠잠 기본값이 있다', Number.isFinite(잠잠기본) && 잠잠기본 > 0, String(잠잠기본));
   check('★ 사람이 기다려 줄 만한 값이다 (10초~5분)',
     잠잠기본 >= 10000 && 잠잠기본 <= 300000, `${잠잠기본}ms`);
+  check('★ 첫 내용 전 기다림이 흐를 때보다 길다 (생각하는 모델을 안 죽인다)',
+    Number.isFinite(첫잠잠기본) && 첫잠잠기본 > 잠잠기본 && 첫잠잠기본 <= 600000, `${첫잠잠기본}ms`);
 }
 
 // ── 6. 잠잠을 안 줘도 머리말이 온 뒤에는 전체 시계가 안 끊는다 ──────────

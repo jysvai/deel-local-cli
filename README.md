@@ -396,7 +396,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.1.8  ⌂ inside
+ deel 2.1.9  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -625,6 +625,7 @@ Names follow Claude Code / Codex conventions.
 | `/skills [query\|all\|off]` | Browse, search, load skills |
 | `/plugin [install\|remove\|pack]` | Manage plugins |
 | `/cost` | Session usage |
+| `/report` | Session report — tokens, cost, context, every tool call and changed files on one screen; also saved as Markdown in `.deel/reports/` (and on exit) |
 | `/status` | Connection status |
 | `/scan [save]` | Sweep this machine for local model servers (`save` registers them) |
 | `/sessions` | Past conversations in this folder |
@@ -1424,7 +1425,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.1.8](docs/en/releases/2.1.md#218)** | Ctrl+Z then `fg` no longer makes deel quit silently (macOS, Linux) — it carries on, redraws the input box or the approval question, and restores raw mode even where the kernel drops the suspend (`ssh -t`, `docker run -it`). The gate now drives deel in a real terminal |
+| **[2.1.9](docs/en/releases/2.1.md#219)** | Typing your own answer to a question (instead of a number) and pressing Enter goes through — the clock counts from the last key · the best option is marked (recommended) · in front of reasoning models it waits 5 minutes for the first content, and a stall with no content is called once more · unknown OpenAI-compatible endpoints are asked for token counts, estimated with ≈ when they send none · new `/report` — tokens, cost, context, tool calls and changed files on one screen, also saved as Markdown in `.deel/reports/` |
+| [2.1.8](docs/en/releases/2.1.md#218) | Ctrl+Z then `fg` no longer makes deel quit silently (macOS, Linux) — it carries on, redraws the input box or the approval question, and restores raw mode even where the kernel drops the suspend (`ssh -t`, `docker run -it`). The gate now drives deel in a real terminal |
 | [2.1.7](docs/en/releases/2.1.md#217) | Tab completion for file names works in zsh, the default shell on macOS (it printed `bad substitution`); a clipboard image over 12 MB says it is too big instead of blaming osascript; a decomposed (NFD) Korean profile name no longer leaves orphaned keychain items |
 | [2.1.6](docs/en/releases/2.1.md#216) | Works properly on macOS — long or hand-edited keychain keys, a locked keychain, folders under `/tmp` · `/var` (links to `/private`) recognized as trusted, and output over 64 KB no longer cut off when a pipe reads slowly (macOS and Linux). macOS joins the gate CI |
 | [2.1.5](docs/en/releases/2.1.md#215) | Urgent security fix — shell commands could reach outside the working folder. Now blocked: a bare `..` (`find .. -delete`, `rd /s /q ..`), `$PWD`, `%CD%`, `$OLDPWD`, a `cd -` with no earlier move, `C:..`, and PowerShell aliases (`ri`, `del` …) |

@@ -395,6 +395,21 @@ Stops a turn from ending just because the model said it was done.
   rerun it; the turn ends as failed
 - It can go in the repository's `.deel/config.json` (read only in a trusted folder) — a project knows its own checks best
 
+### Session report on exit — `exitReport`
+
+`/report` puts tokens, cost, context, every tool call and the changed files on one screen, and also
+saves them as `.deel/reports/deel-report-date-time.md`. On exit (`/exit` · Ctrl+D), if the model was
+called at least once, the same file is saved and its path is printed under the goodbye line. To turn
+that off:
+
+```json
+{ "exitReport": false }
+```
+
+Tool targets (paths, commands) written to the file are masked with the same rules as the audit log.
+Calls whose endpoint reported no token counts are estimated from text length and marked `≈`; with no
+price table, cost says "unknown".
+
 ### How long auto mode waits — `askWait`
 
 `auto` is the hand-off mode. Even there, when the model asks a question (Ask) or answers "design it and
@@ -405,7 +420,8 @@ question becomes "use your own judgement", and the plan goes ahead.
 { "askWait": 60 }
 ```
 
-In seconds; default 60, maximum 3600. `0` means it never asks. `confirm` and `strict` ignore it — those
+In seconds; default 60, maximum 3600. The clock counts from the **last key you typed** — it never cuts you off
+while you are typing an answer, only after this long with nothing typed. `0` means it never asks. `confirm` and `strict` ignore it — those
 are the modes you pick in order to wait for an answer, so they wait with no limit. If a managed policy sets
 an approval floor, the mode is not `auto`, so this does not apply either.
 
@@ -463,6 +479,13 @@ been quiet**. Every chunk that arrives rewinds the clock.
 The default is 60 seconds. If not one character arrives for that long, the stream is
 treated as stalled and dropped — what did arrive is **kept and shown**, with a line
 saying why it stopped.
+
+**Before the first content arrives, it waits 5 minutes** instead. Some endpoints in front of
+reasoning models send the headers at once and then nothing at all until the model has finished
+thinking — that silence is thinking, not a stall. Once a single character arrives, the value above
+applies. If `streamIdleMs` is set above 5 minutes, it is used before the first content too. A stream
+that stalls with no content at all is **called once more by itself** ("Nothing came for 60s — calling
+once more (1/1)"); a second stall ends with the error.
 
 This clock starts **after the headers**. An answer that never begins is still handled
 by the overall timeout, or a dead address would hold the terminal for a minute.

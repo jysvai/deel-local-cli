@@ -34,7 +34,7 @@ export const LEVELS = {
       // 가는데, 알림이 있는 줄 모르면 그 몇 분을 화면만 보고 앉아 있게 된다.
       // lang 은 반드시 초보 목록에 있어야 한다. 화면이 온통 못 읽는 말인 사람에게
       // '전부 보려면 /level developer' 라고 적어 봐야 그 줄도 못 읽는다.
-      'model', 'ctx', 'scan', 'diff', 'undo', 'bell', 'lang', 'clear', 'sessions', 'cost', 'level', 'exit',
+      'model', 'ctx', 'scan', 'diff', 'undo', 'bell', 'lang', 'clear', 'sessions', 'cost', 'report', 'level', 'exit',
     ],
     // 첫 실행에서 훑어 추천까지 해 준다
     autoScan: true,

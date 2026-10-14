@@ -12,6 +12,7 @@ import { 프록시고르기, 프록시설정, 프록시비켜가나 } from '../b
 import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
 import { 말, 언어 } from '../i18n/index.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
+import { 토큰셈, 토큰글 } from './tokcount.js';
 import { VERSION } from '../version.js';
 import { 규격이름 } from '../backend/adapter.js';
 
@@ -207,9 +208,13 @@ export const SEGMENTS = {
     // ↑ 는 **보낸 것**이다. 캐시에 맞은 몫도 보낸 것이라 같이 센다.
     // 서버가 새로 읽은 몫만 세면 캐시가 잘 맞을수록 숫자가 줄어서, 대화가
     // 짧아진 것처럼 보인다 (backend/adapter.js 의 보낸토큰).
-    make: (s) => (s.usage.prompt || s.usage.in) || s.usage.out
-      ? c.gray(`↑${short(s.usage.prompt || s.usage.in)} ↓${short(s.usage.out)}`)
-      : null,
+    // 창구가 안 알려 준 몫은 어림으로 채우고 ≈ 를 붙인다 (ui/tokcount.js) — 0 은 「모른다」 를 지어낸 숫자다.
+    make: (s) => {
+      const t = 토큰셈(s.usage);
+      return t.입력 || t.출력
+        ? c.gray(`↑${토큰글(t.입력, t.추정, short)} ↓${토큰글(t.출력, t.추정, short)}`)
+        : null;
+    },
   },
 
   /*

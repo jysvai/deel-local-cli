@@ -347,8 +347,13 @@ export class Session {
       * 0 을 더하면 합계는 그대로라 화면에 아무 표가 안 난다. 그런데 그 판은
       * 유료로 불렀고, 쓴 것을 우리가 모를 뿐이다. 「0 원 썼다」 와 「얼마
       * 썼는지 모른다」 는 사람이 하는 판단이 다르다 — 그래서 세어 둔다.
+      *
+      * `추정in` · `추정out` 은 그 못 잰 부름을 **글자 수로 어림한 것**이다(loop.js 의 어림). 실측 칸(in · out ·
+      * prompt)에는 절대 안 섞는다 — 섞으면 배수 배우기(배운다)와 금액이 지어낸 값 위에 선다. 화면만 「≈」 를
+      * 붙여 따로 보여 준다(ui/tokcount.js). 모델 이름까지 또렷한데 입력 0 · 출력 0 만 보이면 쓴 것을 가늠할
+      * 길이 없다 — 모르는 것을 0 으로 적는 것도, 어림을 실측처럼 적는 것도 둘 다 거짓말이다.
       */
-     this.usage = { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, 못잰것: 0, genMs: 0, genOut: 0 };
+     this.usage = { in: 0, out: 0, prompt: 0, calls: 0, ms: 0, retries: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, 못잰것: 0, genMs: 0, genOut: 0, 추정in: 0, 추정out: 0 };
     /*
      * 이 대화의 이름. 게이트웨이에 「같은 대화다」 라고 알려 줄 때 쓴다.
      *

@@ -9,7 +9,7 @@ import { 받기설정 } from './safety/authcmd.js';
 import { 주소가리기 } from './safety/secrets.js';
 import { homedir } from 'node:os';
 import { resolve, basename } from 'node:path';
-import { c, say as 바로쓰기, mark, clip, 화면글거르기 } from './ui/ansi.js';
+import { c, say as 바로쓰기, mark, clip, 화면글거르기, 접힌줄수, 접힌자리 } from './ui/ansi.js';
 import { headerLines } from './ui/status.js';
 import { 종, 창제목, 제목되돌리기, 알릴까, 제목글 } from './ui/notify.js';
 import { 보이기 as 인트로, 기본곁말 } from './ui/intro.js';
@@ -48,6 +48,8 @@ import { 추천, 채울글, 붙임탭완성기 } from './ui/complete.js';
 import { 접어쓰기 } from './ui/wrap.js';
 import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들, 남길글, 안쪽최대 as 붙임안쪽최대 } from './ui/pastechip.js';
 import { 고른것풀기, 계획답풀기 } from './ui/pick.js';
+import { 토큰셈, 토큰글 } from './ui/tokcount.js';
+import { 도구적기, 세션보고서모으기, 세션보고서md, 세션보고서적기 } from './ui/report.js';
 import { 이력지킴이 } from './ui/histline.js';
 import { probeCtx, 기본값 as CTX_DEFAULT } from './backend/ctxsize.js';
 import { 잠잠기본, 무소식기본 } from './backend/http.js';
@@ -589,6 +591,51 @@ export async function chatLoop(opts = {}) {
   let 묻는중 = null;
   // 되묻는 중이면 그 앞머리 — 화면을 안 가린다(줄 화면에서도 든다). Ctrl+Z 로 재웠다 깨울 때 물음째 되찍는 데 쓴다.
   let 물음앞 = null;
+  /*
+   * 되묻는 줄을 지난번에 그린 뒤 커서가 물음 첫 줄에서 몇째 줄에 있나 · 그때의 폭 · 커서 앞까지 찍은 글 ·
+   * 물음에 시한이 걸려 있으면 그 시계를 다시 감는 손잡이.
+   * 모두 아래 ask() 가 채우고 비운다. 그리는 쪽은 물음그리기(), 감는 쪽은 키 처리 맨 앞이다.
+   */
+  let 물음줄수 = 1;
+  let 물음그린폭 = 0;
+  let 물음커서앞 = '';
+  let 물음손댐 = null;
+  /*
+   * 되묻는 줄을 지우고 다시 찍는다 — **접힌 줄까지** 지운다.
+   *
+   * 여태 `\r\x1b[2K` 로 커서가 있는 한 줄만 지웠다. 물음 줄이 화면 폭을 넘기면(한글 물음은 그것만으로
+   * 95칸이었다) 지운 것은 접힌 끝줄뿐이라, 의견을 한 글자 칠 때마다 물음이 한 줄씩 쌓였다. 지난번에
+   * 찍은 것이 몇 줄이었는지 들고 있다가 그만큼 올라가 화면 끝까지 지우고 찍는다. 물음은 늘 화면 맨
+   * 아래에 있다(붙임 이 상자를 걷었다) — 그 밑을 지워도 지워질 것이 없다.
+   */
+  /*
+   * ── 커서는 고치는 자리에 둔다 · 폭이 바뀌면 덜 올라간다 ─────────────────
+   *
+   * 상자 화면은 readline 의 되비추기를 꺼 놨으니 글 전체를 우리가 찍고, 커서는 찍은 끝에 남는다.
+   * 화살표로 가운데를 고칠 때 커서가 끝에 있으면 고치는 자리가 안 보이고, 한국어 입력기의 조합
+   * 글자도 끝에 뜬다. 그래서 `커서글`(커서 앞까지의 글)을 주면 그 자리로 커서를 되돌린다.
+   * 다음 판은 거기서부터 올라가야 하므로 들고 있는 줄 수도 커서가 있는 줄이다.
+   *
+   * 폭이 바뀌면 터미널이 이미 접힌 줄을 다시 접었을 수도(대부분), 안 접었을 수도 있다. 두 셈 중
+   * **적은 쪽**만 올라간다 — 많이 올라가면 위의 대화를 지우고, 적게 올라가면 물음 한 줄이 남을
+   * 뿐이다(ui/inputbox.js 의 그린폭 머리말과 같은 자리).
+   */
+  const 물음그리기 = (앞, 글, 끝 = '', 커서글 = null) => {
+    const 폭 = process.stdout.columns || 80;
+    const 올라갈 = 물음그린폭 && 폭 !== 물음그린폭 ? Math.min(물음줄수, 접힌자리(물음커서앞, 폭).줄) : 물음줄수;
+    const 위로 = 올라갈 > 1 ? `\x1b[${올라갈 - 1}A` : '';
+    process.stdout.write(`${위로}\r\x1b[J${앞}${글}${끝}`);
+    if (끝) { 물음줄수 = 1; 물음그린폭 = 0; 물음커서앞 = ''; return; }
+    물음그린폭 = 폭;
+    const 다 = 접힌자리(`${앞}${글}`, 폭);
+    if (커서글 == null) { 물음줄수 = 다.줄; 물음커서앞 = `${앞}${글}`; return; }
+    let 곳 = 접힌자리(`${앞}${커서글}`, 폭);
+    // 끝 칸을 꼭 채웠으면 다음 글자는 다음 줄 첫 칸에 선다.
+    if (곳.자리 >= 폭 && 곳.줄 < 다.줄) 곳 = { 줄: 곳.줄 + 1, 자리: 0 };
+    process.stdout.write(`${다.줄 > 곳.줄 ? `\x1b[${다.줄 - 곳.줄}A` : ''}\r${곳.자리 ? `\x1b[${곳.자리}C` : ''}`);
+    물음줄수 = 곳.줄;
+    물음커서앞 = `${앞}${커서글}`;
+  };
   // 이번 틱에 다시 그리기로 이미 잡아 뒀나 (붙여넣기로 키가 쏟아질 때)
   let 그릴예정 = false;
   const 먹통 = { write() { return true; }, end() {}, on() {}, once() {}, emit() {}, removeListener() {} };
@@ -776,8 +823,19 @@ export async function chatLoop(opts = {}) {
     let 보낼것 = l;
     if (상자쓰나) {
       if (묻는중 !== null) {
-        // 되묻는 자리: 답을 그 줄에 남긴 채 줄만 넘긴다.
-        process.stdout.write(`\r\x1b[2K${묻는중}${c.white(l)}\n`);
+        /*
+         * 되묻는 자리에 여러 줄을 붙여넣으면 앞줄들은 이어쓰기줄들 에 쌓이고(붙여넣는중 갈래) 여기 오는 l 은
+         * 끝줄뿐이다. 여태 그 앞줄들은 답에서 빠져 **다음에 보낼 말**로 남았다 — 의견 세 줄을 붙이면 끝줄만
+         * 답이 되고 나머지는 엉뚱하게 모델에게 따로 갔다. 물음이 뜰 때 이어쓰기줄들 을 비웠으니(ask) 여기
+         * 쌓인 것은 이 물음에 친 것뿐이다. 승인 물음은 y · yes · ㅇ 와 **똑같아야** 허락이라, 이어 붙인 답은
+         * 거부로 읽힌다.
+         */
+        if (이어쓰기줄들 !== null) {
+          보낼것 = [...이어쓰기줄들, l].join('\n');
+          이어쓰기줄들 = null; 이어쓴것 = false;
+        }
+        // 답을 그 줄에 남긴 채 줄만 넘긴다. 접힌 줄까지 지우고 찍는다(물음그리기 머리말).
+        물음그리기(묻는중, c.white(보낼것), '\n');
       } else if (입력기다림) {
         // 표시 자체와 그 앞 빈칸은 사람이 친 글이 아니라 문법이다. 같이 뗀다.
         if (이어쓰기표시(l)) {
@@ -979,7 +1037,9 @@ export async function chatLoop(opts = {}) {
         if (물음앞 !== null) {
           // 승인 물음 — 줄 화면에서도 되찍는다(물음은 readline 이 아니라 우리가 찍은 글이라 readline 이 모른다).
           rl.cursor = (rl.line ?? '').length;
-          process.stdout.write(`\r\x1b[2K${물음앞}${상자쓰나 ? c.white(펴기(rl.line)) : (rl.line ?? '')}`);
+          // 지금 줄에 새로 찍으니 앞서 접힌 줄 수는 버린다 — 그 줄들은 셸 글 위로 올라가 있다.
+          물음줄수 = 1;
+          물음그리기(물음앞, 상자쓰나 ? c.white(펴기(rl.line)) : (rl.line ?? ''));
         } else if (입력기다림) {
           if (상자쓰나) {
             // Ctrl+Z 키는 readline 다음에 우리 keypress 처리로도 가서 상자를 한 번 더 그린다. 여기서 먼저 그리는
@@ -1000,6 +1060,15 @@ export async function chatLoop(opts = {}) {
     });
 
     process.stdin.on('keypress', (_ch, key) => {
+      /*
+       * 되묻는 중에 키를 치면 시한을 처음부터 다시 센다 (아래 ask() 의 시한 머리말).
+       * ESC 는 뺀다 — 그건 손을 떼겠다는 키라, 시계를 감을 까닭이 없다.
+       *
+       * Ctrl+Z 도 여기서 감긴다. 그 키는 readline 이 재우기(SIGTSTP)를 처리하고 **깬 뒤에** 여기 닿는다 —
+       * 시한보다 오래 재웠다 fg 해도 깨자마자 닫히지 않는다(pty.test.js 의 되묻기-중-Ctrl+Z). 깨우기 안에서
+       * 따로 감아 봤는데, 어긋내도 진짜 터미널 검사가 그대로 초록이었다 — 이 줄이 이미 그 몫을 한다.
+       */
+      if (물음손댐 && key?.name !== 'escape') 물음손댐();
       if (key?.sequence === '\x1b[200~') {
         붙여넣는중 = true;
         붙임앞줄수 = 이어쓰기줄들?.length ?? 0;
@@ -1191,7 +1260,9 @@ export async function chatLoop(opts = {}) {
         const 앞 = 묻는중;
         setImmediate(() => {
           if (묻는중 === null) return;
-          process.stdout.write(`\r\x1b[2K${앞}${c.white(펴기(rl.line))}`);
+          const 글 = rl.line ?? '';
+          const 자리 = rl.cursor ?? 글.length;
+          물음그리기(앞, c.white(펴기(글)), '', 자리 < 글.length ? 펴기(글.slice(0, 자리)) : null);
         });
         return;
       }
@@ -1303,6 +1374,9 @@ export async function chatLoop(opts = {}) {
      */
     묻는중 = 상자쓰나 ? 앞 : null;
     물음앞 = 앞;
+    물음줄수 = 접힌줄수(앞, process.stdout.columns || 80);
+    물음그린폭 = process.stdout.columns || 80;
+    물음커서앞 = 앞;
     /*
      * 쌓아 둔 이어쓰기를 버릴 때는 **말한다.**
      *
@@ -1342,6 +1416,19 @@ export async function chatLoop(opts = {}) {
     /*
      * 시한 (자율 모드 · ui/approve.js 의 자율대기). 주면 그 초가 지나 손을 뗀다 — ESC 와 같은 길이되,
      * 무엇으로 답한 셈 칠지는 따로 받는다(`시간끝`). ESC 는 여전히 ESC 로 읽힌다.
+     *
+     * ── 시한은 **마지막으로 친 때부터** 센다 ─────────────────────────────
+     *
+     * 「그 외 말 입력하고 엔터 누르면 안 넘어가고 60초 지나면 알아서 지나가더라」
+     *
+     * 여태 시계는 물음이 뜬 순간부터 돌았다. 숫자 하나는 2초면 치지만, 의견을 생각해서 한 줄로 치다
+     * 보면 60초는 금방 간다. 치는 도중에 시한이 끝나면 물음은 「답이 없다」 로 닫히고, 그 뒤에 마저
+     * 친 글과 Enter 는 물음이 아니라 **다음에 보낼 말**로 줄을 선다 — 사람 눈에는 Enter 가 안 먹고
+     * 60초 뒤에 저 혼자 넘어간 것으로 보인다. 숫자는 되고 의견만 안 되는 까닭이 그것이었다.
+     *
+     * 키를 칠 때마다 시계를 처음부터 다시 감는다(키 처리 맨 앞의 물음손댐). 치고 있는 사람은 앞에
+     * 있는 사람이다 — 맡기고 자리를 뜬 사람만 기다리지 않으면 된다. 치다 말고 시한만큼 손을 놓으면
+     * 그때는 여태처럼 닫는다.
      */
     const 턴멈춤 = o.signal ?? turn?.signal ?? null;
     let 시간지남 = false;
@@ -1353,7 +1440,13 @@ export async function chatLoop(opts = {}) {
       멈춤 = 시계줄.signal;
       if (턴멈춤?.aborted) 시계줄.abort();
       else 턴멈춤?.addEventListener('abort', 이어멈춤, { once: true });
-      시계 = setTimeout(() => { 시간지남 = true; 시계줄.abort(); }, o.기다림초 * 1000);
+      const 감기 = () => {
+        clearTimeout(시계);
+        if (시계줄.signal.aborted) return;
+        시계 = setTimeout(() => { 시간지남 = true; 시계줄.abort(); }, o.기다림초 * 1000);
+      };
+      감기();
+      물음손댐 = 감기;
     }
     try {
       const a = await nextLine(멈춤);
@@ -1383,6 +1476,10 @@ export async function chatLoop(opts = {}) {
       턴멈춤?.removeEventListener?.('abort', 이어멈춤);
       묻는중 = null;
       물음앞 = null;
+      물음손댐 = null;
+      물음줄수 = 1;
+      물음그린폭 = 0;
+      물음커서앞 = '';
       // 빼 뒀던 것을 앞에 되돌린다. 차례가 바뀌면 안 된다.
       if (미리쳐둔.length) queue.unshift(...미리쳐둔);
     }
@@ -1603,8 +1700,12 @@ export async function chatLoop(opts = {}) {
      *
      * 자유롭게 쳐도 그대로 간다. 고를 것이 늘 맞지는 않아서, 넷 다 아닐 때
      * 다시 물어보게 하면 그게 제일 답답하다.
+     *
+     * `권장` 은 모델이 스스로 낫다고 본 줄의 번호다(1부터). 그 줄 끝에 「(권장)」 을 달고, 그냥
+     * Enter 를 치면 그 줄이 골라진다 — 여태 Enter 하나는 늘 1번이었다. 1번이 권할 만한 것이라는
+     * 보장은 없으니, 권한 것이 있으면 기본도 그것이어야 맞다.
      */
-    ask물음: async (물음, 고를것 = [], 이해 = '') => {
+    ask물음: async (물음, 고를것 = [], 이해 = '', { 권장 = null } = {}) => {
       if (closed) return null;
       /*
        * 자율(auto) 모드는 맡긴 모드다 — 사람 답을 끝없이 기다리지 않는다 (ui/approve.js 의 자율대기).
@@ -1636,13 +1737,20 @@ export async function chatLoop(opts = {}) {
       for (const 줄 of 접어쓰기(물음, 폭)) {
         say(`  ${c.hcyan('│')} ${c.white(줄)}`);
       }
+      const 권한번호 = Number.isInteger(권장) && 권장 >= 1 && 권장 <= 고를것.length ? 권장 : null;
       if (고를것.length) {
         say(`  ${c.hcyan('│')}`);
         고를것.forEach((것, i) => {
-          say(`  ${c.hcyan('│')} ${c.hcyan(String(i + 1))} ${c.white(것)}`);
+          const 권함 = 권한번호 === i + 1 ? ` ${c.hgreen(`(${옮긴말('ask.recommended')})`)}` : '';
+          say(`  ${c.hcyan('│')} ${c.hcyan(String(i + 1))} ${c.white(것)}${권함}`);
         });
       }
       say(`  ${c.hcyan('└')} ${c.gray(옮긴말(고를것.length ? 'ask.pickHint' : 'ask.freeHint'))}`);
+      /*
+       * 시한 안내는 입력 줄이 아니라 상자 밑에 따로 둔다. 입력 줄에 붙여 두었더니 그 줄이 95칸이 되어
+       * 의견을 몇 글자만 쳐도 접혔다(물음그리기 머리말). 입력 줄은 짧을수록 친 글이 많이 보인다.
+       */
+      if (대기) say(`    ${c.gray(옮긴말('ask.autoWait', { 초: 대기 }))}`);
       say('');
 
       // 막혀 있는 것은 기다린 만큼 그대로 손해다. confirm 과 같은 이유로 알린다.
@@ -1653,10 +1761,9 @@ export async function chatLoop(opts = {}) {
        * 아무도 안 고른 판에서 1번을 「사람이 골랐다」 로 모델에게 실어 보낸다.
        */
       const 답 = String(await ask(
-        (고를것.length ? 옮긴말('ask.pickPrompt', { 끝: 고를것.length }) : 옮긴말('ask.freePrompt'))
-          + (대기 ? ` ${c.gray(`(${옮긴말('ask.autoWait', { 초: 대기 })})`)}` : ''),
-        // 시한이 지나면 안 고른 것이다 — def 인 '1' 로 떨어지면 아무도 안 고른 1번이 사람의 답이 된다.
-        { def: 고를것.length ? '1' : '', 끝나면: '', 기다림초: 대기, 시간끝: '' },
+        고를것.length ? 옮긴말('ask.pickPrompt', { 끝: 고를것.length }) : 옮긴말('ask.freePrompt'),
+        // 시한이 지나면 안 고른 것이다 — def 로 떨어지면 아무도 안 고른 줄이 사람의 답이 된다.
+        { def: 고를것.length ? String(권한번호 ?? 1) : '', 끝나면: '', 기다림초: 대기, 시간끝: '' },
       )).trim();
       창제목(제목글('도는중', { 폴더: 알림.폴더 }));
 
@@ -2450,7 +2557,7 @@ export async function chatLoop(opts = {}) {
             clearThinking();
             say(ev.미리
               ? `  ${c.yellow('⏸')} ${c.gray(옮긴말(알림말(ev), { 초: 알림채움(ev).초 }))}`
-              : `  ${c.yellow('↻')} ${c.gray(옮긴말('loop.backoff', 알림채움(ev)))}`);
+              : `  ${c.yellow('↻')} ${c.gray(옮긴말(알림말(ev), 알림채움(ev)))}`);
             break;
 
           /*
@@ -2533,6 +2640,14 @@ export async function chatLoop(opts = {}) {
 
           case 'tool':
             tools++;
+            // 세션 보고서(/report · 끝낼 때)가 읽는 도구 기록. 대상은 가리지 않고 적어 두고, 디스크에 남길 때 가린다.
+            도구적기(session, {
+              이름: ev.name,
+              대상: 첫이름(ev.args ?? {}) ?? ev.args?.command ?? null,
+              ok: !ev.result?.error && ev.result?.failed !== true,
+              ms: ev.ms ?? 0,
+              오류: ev.result?.error ?? null,
+            });
             // 결과가 오면 그 묶음은 끝난 것이다. 안 지우면 다음 한 개짜리
             // 도구까지 여럿이 도는 것처럼 보인다 — 자리 수가 거짓이 된다.
             화면.함께갱신(0);
@@ -3553,12 +3668,29 @@ export async function chatLoop(opts = {}) {
   // 끝맺음은 화면을 접기 **전에** 그린다. close() 가 상자를 걷어내므로,
   // 그 뒤에 찍으면 걷어낸 자리에 뜬금없이 한 줄이 남는다.
   say('');
+  /*
+   * 끝낼 때 세션 보고서를 남긴다 (ui/report.js · `/report` 와 같은 것). 모델을 한 번도 안 불렀으면 남길 것이
+   * 없다 — 켰다 끈 것마다 파일이 쌓이면 정작 볼 것을 못 찾는다. 설정 `exitReport: false` 로 끈다.
+   * 못 남겨도 끝내는 데는 지장 없다 — 그 까닭만 한 줄 적는다.
+   */
+  let 남긴보고서 = null;
+  if (session.usage.calls > 0 && cfg?.exitReport !== false) {
+    try {
+      const 자 = 세션보고서모으기({ session, ctx, root });
+      남긴보고서 = 세션보고서적기(root, 세션보고서md(자, { 가리개: (s) => ctx?.audit?.가림?.(s) ?? s }), 자.시작);
+    } catch (e) {
+      say(`  ${mark.warn} ${c.gray(옮긴말('report.saveFailed', { 왜: e?.message ?? String(e) }))}`);
+    }
+  }
+  // 창구가 usage 를 안 준 몫은 어림으로 채우고 ≈ 를 붙인다 (ui/tokcount.js).
+  const 끝셈 = 토큰셈(session.usage);
   say(`  ${c.gray(옮긴말('run.bye'))} ${c.gray(옮긴말('run.byeStats', {
     n: session.usage.calls,
     초: (session.usage.ms / 1000).toFixed(1),
-    입력: (session.usage.prompt || session.usage.in).toLocaleString(),
-    출력: session.usage.out.toLocaleString(),
+    입력: 토큰글(끝셈.입력, 끝셈.추정),
+    출력: 토큰글(끝셈.출력, 끝셈.추정),
   }))}`);
+  if (남긴보고서) say(`  ${c.gray(옮긴말('report.savedExit', { 길: ctx?.scope?.show?.(남긴보고서) ?? 남긴보고서 }))}`);
   say('');
   화면.close();
   return 0;

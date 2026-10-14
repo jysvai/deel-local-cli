@@ -332,7 +332,7 @@ export async function 커밋명령(session, ctx, arg = '') {
     onBackoff: (알림) => {
       돌림.stop((알림.미리
               ? `  ${c.yellow('⏸')} ${c.gray(말(알림말(알림), { 초: 알림채움(알림).초 }))}`
-              : `  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`));
+              : `  ${c.yellow('↻')} ${c.gray(말(알림말(알림), 알림채움(알림)))}`));
       돌림 = spin(도는말);
     },
   });

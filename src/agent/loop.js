@@ -1118,6 +1118,10 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
               // 나갔다. 이걸 같이 세면 `/cost` 의 「다시 부른 횟수」 와 `--json` 의
               // retries 가 「서버가 N번 막았다」 고 말하는데, 서버는 안 막았다.
               if (ev.type === 'backoff' && !ev.미리) 미룬셈 = 1;
+              // 흘려받는 길이 스스로 알아낸 전선(짐작으로 실은 칸을 빼니 됐다)도 아래 배울전선 처럼 디스크에 남긴다.
+              if (ev.type === 'wire' && ev.배움) {
+                try { ctx.배움?.전선본것?.(conn.model, conn.base, 카드저장꼴(conn.전선), conn.kind); } catch { /* 못 적어도 이번 대화에는 먹는다 */ }
+              }
               yield ev;
             }
           }
@@ -1574,7 +1578,20 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
      * 유료였고, 쓴 것을 우리가 모를 뿐이다. 「0 원 썼다」 로 적으면 그건
      * 지어낸 값이다 (backend/adapter.js 의 잰것).
      */
-    if (msg.usage?.잰것 === false) session.usage.못잰것 = (session.usage.못잰것 ?? 0) + 1;
+    if (msg.usage?.잰것 === false) {
+      session.usage.못잰것 = (session.usage.못잰것 ?? 0) + 1;
+      /*
+       * 못 잰 부름은 **어림**을 따로 쌓는다 (session.js 의 추정in 머리말). 보낸 것은 방금 보낸 이력 그대로 —
+       * 답을 싣기 전이라 지금 이력이 곧 보낸 프롬프트다. 받은 것은 글 · 생각 · 도구 인자를 다 센다.
+       * 어림이 실패해도 턴은 이어 간다 — 숫자 하나 못 세는 것이 일을 멈출 까닭은 아니다.
+       */
+      try {
+        session.usage.추정in = (session.usage.추정in ?? 0) + (session.breakdown?.().used ?? 0);
+        session.usage.추정out = (session.usage.추정out ?? 0)
+          + estimateTokens(String(msg.content ?? '')) + estimateTokens(String(msg.thinking ?? ''))
+          + (msg.toolCalls ?? []).reduce((n, t) => n + estimateTokens(`${t?.name ?? ''} ${JSON.stringify(t?.args ?? {})}`), 0);
+      } catch { /* 어림을 못 해도 그만이다 */ }
+    }
     session.usage.in += msg.usage?.in ?? 0;
     session.usage.out += msg.usage?.out ?? 0;
     // 한 번에 받았거나 글이 하나도 안 흘렀으면 안 센다 — 느린 값을 지어내지 않는다 (위 생성잰것).
@@ -2369,6 +2386,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         session.usage.ms += 자식.usage.ms;
         session.usage.retries = (session.usage.retries ?? 0) + (자식.usage.retries ?? 0);
         session.usage.못잰것 = (session.usage.못잰것 ?? 0) + (자식.usage.못잰것 ?? 0);
+        session.usage.추정in = (session.usage.추정in ?? 0) + (자식.usage.추정in ?? 0);
+        session.usage.추정out = (session.usage.추정out ?? 0) + (자식.usage.추정out ?? 0);
 
         const 글 = 하위요약({
           목적, 모드: 자식모드, 끝, 모델: 모델알림?.말 ?? null, 에이전트: 정의?.이름 ?? null,

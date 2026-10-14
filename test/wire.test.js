@@ -35,7 +35,7 @@ import {
   카드칸들,
 } from '../src/backend/wire.js';
 import { 조각표, 메시지표식, 시스템블록, 잡힐만한가, 블록에붙이기, 닻문턱, 표식칸들 } from '../src/backend/cachemark.js';
-import { buildBody, 보낸토큰, 더할머리, chat, 나가는눈금 } from '../src/backend/adapter.js';
+import { buildBody, 보낸토큰, 더할머리, chat, chatStream, 나가는눈금 } from '../src/backend/adapter.js';
 import { createServer } from 'node:http';
 import { allowEndpoint } from '../src/safety/network.js';
 import { 자동강도, 인사인가, effortFor, 가벼운강도, 천장고르기, 무거운가 } from '../src/agent/effort.js';
@@ -1659,6 +1659,93 @@ trace('전선6');
   const 갈아탐 = w6.배울전선("Extra inputs are not permitted: 'cache_control'", 'openai');
   check('★★★ 갈아탈 표식칸으로 내놓는 이름도 표식칸들 안이다',
     갈아탐?.무엇 !== '표식칸' || 표식칸들.includes(갈아탐.값), JSON.stringify(갈아탐));
+}
+
+trace('스트림usage-짐작');
+{
+  /*
+   * 「모델도 명확한 모델명이 뜨는데 out / in 토큰값을 못 받는다고 확인 못하는건 좀 문제가 있어보여」
+   *
+   * 모르는 OpenAI 호환 창구(사내 프록시 127.0.0.1/v1)에는 stream_options 를 처음부터 안 보냈다 — 그래서 103번을
+   * 부르고 입력 0 · 출력 0 이었다. 이제 짐작으로 보내고, 칸 이름을 안 밝힌 400 이면 빼고 한 번 더 불러 본다.
+   * 그게 되면 배우고, 빼고도 400 이면 이 칸 탓이 아니었으니 아무것도 안 배운다.
+   */
+  const 모름 = 기본카드({ kind: 'openai', model: 'databricks-gpt-6-1', base: 'http://127.0.0.1:8000/v1' });
+  check('★★ 모르는 OpenAI 호환 창구에도 usage 를 달라고 한다', 모름.스트림usage === true, String(모름.스트림usage));
+  check('그건 짐작이다 — 누구 창구인지 모른다(회사 꼬리표 없음)', 모름.회사 === null, String(모름.회사));
+  const 앎 = 기본카드({ kind: 'openai', model: 'gpt-5', base: 'https://api.openai.com/v1' });
+  check('아는 창구도 보낸다', 앎.스트림usage === true && !!앎.회사, JSON.stringify([앎.스트림usage, 앎.회사]));
+  const 몸 = buildBody('openai', { model: 'm', messages: [{ role: 'user', content: 'x' }], stream: true, 카드: 모름 });
+  check('★ 흘려받는 몸에 include_usage 가 실린다', 몸.stream_options?.include_usage === true, JSON.stringify(몸.stream_options));
+
+  const 세우기 = async (판) => {
+    const 받은 = [];
+    const srv = createServer((req, res) => {
+      let b = '';
+      req.on('data', (c) => { b += c; });
+      req.on('end', () => {
+        let j = {};
+        try { j = JSON.parse(b || '{}'); } catch { /* 스텁 */ }
+        받은.push(j);
+        const 답 = 판(j);
+        if (답.status !== 200) { res.writeHead(답.status, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ error: { message: 답.말 } })); }
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        if (답.몸오류) { res.write(`data: ${JSON.stringify({ error: { message: 답.몸오류 } })}\n\n`); return res.end(); }
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '답' } }] })}\n\n`);
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
+        if (j.stream_options?.include_usage) res.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 120, completion_tokens: 7 } })}\n\n`);
+        res.end('data: [DONE]\n\n');
+      });
+    });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${srv.address().port}/v1`;
+    allowEndpoint(base);
+    const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'gw-model', ctx: 8000 };
+    conn.전선 = 기본카드(conn);
+    const 사건 = [];
+    let 끝 = null;
+    let 탈 = null;
+    try {
+      for await (const ev of chatStream(conn, { messages: [{ role: 'user', content: 'x' }], maxTokens: 10 })) {
+        if (ev.type === 'done') 끝 = ev.message; else 사건.push(ev);
+      }
+    } catch (e) { 탈 = e; }
+    srv.close();
+    return { 받은, 끝, 탈, 사건, conn };
+  };
+
+  // 칸 이름 없이 「Bad Request」 만 주는 창구 — stream_options 가 실리면 튕긴다.
+  const 튕김 = await 세우기((j) => (j.stream_options ? { status: 400, 말: 'Bad Request' } : { status: 200 }));
+  check('★★ 이름 없는 400 이면 stream_options 를 빼고 한 번 더 불러 답을 받는다',
+    튕김.탈 === null && 튕김.끝?.content === '답', `${튕김.탈?.message ?? ''} ${JSON.stringify(튕김.끝?.content)}`);
+  check('첫 부름에는 실렸고 둘째에는 빠졌다', 튕김.받은.length === 2 && !!튕김.받은[0].stream_options && !튕김.받은[1].stream_options,
+    JSON.stringify(튕김.받은.map((j) => !!j.stream_options)));
+  check('★ 되니까 배운다 — 이번 대화의 카드가 끄고, 디스크에 남기라고 알린다',
+    튕김.conn.전선.스트림usage === false && 튕김.사건.some((e) => e.type === 'wire' && e.무엇 === '스트림usage' && e.배움),
+    JSON.stringify([튕김.conn.전선.스트림usage, 튕김.사건.map((e) => e.type)]));
+  check('못 받은 usage 는 못 잰 것으로 남는다 (0 을 지어내지 않는다)', 튕김.끝?.usage?.잰것 === false, JSON.stringify(튕김.끝?.usage));
+
+  // 빼면 머리말 200 은 오는데 몸에서 오류를 내는 창구 — 머리말만 보고 배우면 이 칸 탓이 아닌 실패를 디스크에 남긴다.
+  const 몸에서탈 = await 세우기((j) => (j.stream_options ? { status: 400, 말: 'Bad Request' } : { status: 200, 몸오류: 'model not found' }));
+  check('★★ 빼고 부른 답이 몸에서 탈 나면 안 배운다 — 답을 끝까지 받은 뒤에 배운다',
+    !!몸에서탈.탈 && 몸에서탈.conn.전선.스트림usage === true && !몸에서탈.사건.some((e) => e.type === 'wire'),
+    `${몸에서탈.탈?.message ?? '(안 던짐)'} · ${몸에서탈.conn.전선.스트림usage} · ${JSON.stringify(몸에서탈.사건.map((e) => e.type))}`);
+
+  // 칸과 상관없이 늘 400 인 창구 — 빼고도 400 이면 이 칸 탓이 아니다.
+  const 늘튕김 = await 세우기(() => ({ status: 400, 말: 'Bad Request' }));
+  check('★★ 빼고도 400 이면 아무것도 안 배운다', !!늘튕김.탈 && 늘튕김.conn.전선.스트림usage === true
+    && !늘튕김.사건.some((e) => e.type === 'wire'), `${늘튕김.탈?.message ?? '(안 던짐)'} · ${늘튕김.conn.전선.스트림usage}`);
+  check('한 번만 빼 본다 — 끝없이 부르지 않는다', 늘튕김.받은.length === 2, `${늘튕김.받은.length}번`);
+
+  // 다른 칸을 또렷이 짚은 400 은 루프의 배울전선 몫이다 — 여기서 stream_options 를 빼지 않는다.
+  const 딴칸 = await 세우기(() => ({ status: 400, 말: 'reasoning_effort must be one of: minimal, low, medium, high' }));
+  check('★ 서버가 딴 칸을 짚으면 stream_options 는 그대로 둔다', 딴칸.받은.length === 1 && 딴칸.conn.전선.스트림usage === true,
+    `${딴칸.받은.length}번 · ${딴칸.conn.전선.스트림usage}`);
+
+  // 받는 창구 — usage 가 실제로 온다.
+  const 받음 = await 세우기(() => ({ status: 200 }));
+  check('★★ 받는 창구에서는 토큰 수가 실제로 온다', 받음.끝?.usage?.잰것 === true && 받음.끝?.usage?.in === 120 && 받음.끝?.usage?.out === 7,
+    JSON.stringify(받음.끝?.usage));
 }
 
 console.log('');

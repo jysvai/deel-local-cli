@@ -183,13 +183,15 @@ export const 도구설명EN = {
       + ' Never write "let me know" and stop; asking in prose ends the turn and throws away'
       + ' everything you have looked at. Give 2-4 options and they answer with a single number.'
       + ' **Never ask back something the user already said.** "Tidy up the files" is the answer —'
-      + ' go and do it. Deciding how is your job, not theirs.',
+      + ' go and do it. Deciding how is your job, not theirs.'
+      + ' If one option is better on the merits, put its number in `recommended` — it is shown as (recommended).',
     params: {
       understanding: 'one line: what you understood this request to be. The person reads this line to judge'
         + ' whether you actually read them. "I understand your request" is not an understanding —'
         + ' name the actual work',
       question: 'one sentence. Make it clear what has to be decided',
       options: '2-4 choices, one line each, so the difference is visible',
+      recommended: 'the number (from 1) of the option you judge best. Only when you have a reason — otherwise leave it out',
     },
   },
   Recall: {

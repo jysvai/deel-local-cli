@@ -178,6 +178,7 @@ const FILES = [
   'cacheprefix.test.js',
   'wire.test.js',
   'export.test.js',
+  'report.test.js',
   'preset.test.js',
   'lsp.test.js',
   // 뒤에서 도는 명령. 진짜로 프로세스를 띄우고 죽이므로 다른 것들보다 느리다.

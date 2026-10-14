@@ -3572,7 +3572,8 @@ export const TOOLS = {
         + ' 글로 "알려주세요" 하고 끝내지 마라 — 턴이 끝나서 여태 본 것이 버려진다.'
         + ' options 에 2~4개를 주면 숫자로 답한다.'
         + ' **이미 사용자가 말한 것을 다시 묻지 마라.** "파일 정리해 줘" 라고 했으면'
-        + ' 그게 답이다 — 그대로 하면 된다. 어떻게 할지 정하는 것은 네 일이다.',
+        + ' 그게 답이다 — 그대로 하면 된다. 어떻게 할지 정하는 것은 네 일이다.'
+        + ' 따져 보고 나은 쪽이 있으면 `recommended` 에 그 번호를 적어라 — 사람 화면에 (권장) 으로 붙는다.',
       parameters: {
         type: 'object',
         properties: {
@@ -3600,6 +3601,15 @@ export const TOOLS = {
             items: { type: 'string' },
             description: '고를 것 2~4개. 각각 한 줄로, 무엇이 달라지는지 알 수 있게',
           },
+          /*
+           * 모델이 스스로 낫다고 본 줄. 화면에 「(권장)」 으로 붙고, 사람이 그냥 Enter 를 치면 그 줄이 골라진다.
+           * 고를 것만 내밀면 사람은 넷을 처음부터 다 따져야 한다 — 모델은 이미 따져 본 쪽이다.
+           * `number` 로 둔다(Recall 의 limit 과 같다). `integer` 를 못 받는 창구가 있다.
+           */
+          recommended: {
+            type: 'number',
+            description: '네가 따져 보고 제일 낫다고 보는 options 의 번호(1부터). 까닭이 있을 때만 — 없으면 비워 둔다',
+          },
         },
         required: ['understanding', 'question'],
       },
@@ -3608,8 +3618,21 @@ export const TOOLS = {
       const 물음 = String(args.question ?? '').trim();
       if (!물음) return { error: 'question 이 비었습니다' };
 
-      const 고를것 = (Array.isArray(args.options) ? args.options : [])
+      const 날고를것 = (Array.isArray(args.options) ? args.options : [])
         .map((x) => String(x ?? '').trim()).filter(Boolean).slice(0, 4);
+      /*
+       * 권한 것을 가린다 — 칸으로 준 번호가 먼저고, 없으면 선택지 글에 붙여 온 「(권장)」 을 읽는다.
+       *
+       * 작은 모델은 칸을 두고도 글에다 「(추천)」 「(Recommended)」 를 붙여 온다. 그대로 두면 화면에
+       * 「(권장)」 이 두 번 붙고, 사람이 그 줄을 고르면 모델에게 표까지 답으로 돌아간다. 글에서 떼고
+       * 번호로 바꿔 둔다. 0 을 준 것은 0부터 센 것으로 보지 않는다 — 어느 쪽인지 모르는 번호는 버린다.
+       */
+      const 권장표 = /\s*[(\[（【]\s*(?:권장|추천|recommended|suggested|おすすめ|推奨|推荐|建议)\s*[)\]）】]\s*$/i;
+      const 글에권한 = 날고를것.findIndex((x) => 권장표.test(x));
+      const 고를것 = 날고를것.map((x) => x.replace(권장표, '').trim() || x);
+      const 칸번호 = Number(args.recommended);
+      const 권장 = Number.isInteger(칸번호) && 칸번호 >= 1 && 칸번호 <= 고를것.length ? 칸번호
+        : (글에권한 >= 0 ? 글에권한 + 1 : null);
       // 옛 이름(`이해`)도 받는다. 이름을 바꾼 것은 서버가 검사하기 때문이지
       // 뜻이 달라져서가 아니다 — 옛 이름으로 부르던 자리가 조용히 비면 안 된다.
       const 이해 = String(args.understanding ?? args.이해 ?? '').trim();
@@ -3650,7 +3673,7 @@ export const TOOLS = {
       });
       if (!관문.ok) return { error: 관문.할말, 끝났다: true, 물음막힘: 관문.왜 };
 
-      const 답 = await ctx.ask물음(물음, 고를것, 이해);
+      const 답 = await ctx.ask물음(물음, 고를것, 이해, { 권장 });
 
       /*
        * 물어본 것을 적어 둔다.
@@ -3661,7 +3684,12 @@ export const TOOLS = {
        */
       (ctx.물은것 ??= []).push({ 물음, 고를것, 답: 답 == null ? '' : String(답) });
       if (답 === null || 답 === undefined || String(답).trim() === '') {
-        return { content: '사람이 답하지 않았습니다. 되묻지 말고 스스로 판단해 이어가세요.' };
+        // 권한 것이 있으면 그것으로 가라고 한다 — 「스스로 판단해」 만 주면 따져 본 것을 처음부터 다시 따진다.
+        return {
+          content: 권장
+            ? `사람이 답하지 않았습니다. 되묻지 말고 네가 권장한 「${고를것[권장 - 1]}」 로 이어가세요.`
+            : '사람이 답하지 않았습니다. 되묻지 말고 스스로 판단해 이어가세요.',
+        };
       }
       return { content: `사람의 답: ${String(답)}` };
     },

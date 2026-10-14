@@ -886,7 +886,7 @@ export async function runOnce(opts = {}) {
           // 있지도 않은 429 가 배치 기록에 남는다.
           곁(ev.미리
             ? `  ${c.yellow('⏸')} ${c.gray(옮긴말(알림말(ev), { 초: 알림채움(ev).초 }))}`
-            : `  ${c.yellow('↻')} ${c.gray(옮긴말('loop.backoff', 알림채움(ev)))}`);
+            : `  ${c.yellow('↻')} ${c.gray(옮긴말(알림말(ev), 알림채움(ev)))}`);
           break;
 
         // 서버가 안 받는 칸이 있어 전선 카드를 고쳤다 (backend/wire.js).

@@ -42,6 +42,7 @@ export const 명령들 = {
   skills: { arg: true },
   plugin: { arg: true },
   cost: { arg: false },
+  report: { arg: false },
   status: { arg: false },
   scan: { arg: true },
   thread: { arg: true },

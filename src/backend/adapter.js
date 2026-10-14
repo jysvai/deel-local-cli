@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  req, headersFor, serverMessage, Aborted, 잠잠기본, 연결기본, 초로,
+  req, headersFor, serverMessage, Aborted, 잠잠기본, 첫잠잠기본, 연결기본, 초로,
   무소식기본, 무소식알림기본, 소식없음오류,
 } from './http.js';
 import { 할당량기억, 미리기다릴까, 왜띄우나, 마지막할당량, 할당량자리 } from './quota.js';
@@ -11,7 +11,7 @@ import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js
 import { 말 } from '../i18n/index.js';
 import { 다시부를지, 기다리기, 정책고르기, 못부른말 } from './retry.js';
 import { 도구맞추기, 이름되돌리기, 벤더 } from './toolfit.js';
-import { 눈금맞추기 } from './wire.js';
+import { 눈금맞추기, 배울전선, 카드고치기 } from './wire.js';
 import { 시스템블록, 메시지표식, 잡힐만한가, 조각표 } from './cachemark.js';
 import { 느슨한JSON } from './loosejson.js';
 
@@ -1444,7 +1444,37 @@ export async function* chatStream(conn, opts) {
       쌓인대기 += 미리;
     }
   }
+  /*
+   * 잠잠 시계 둘 — 첫 내용 전에는 길게, 한 글자라도 온 뒤로는 여태대로 (backend/http.js 의 첫잠잠기본).
+   * 0 은 「머리말 상한과 같은 값」 이다(http.js 의 원시요청) — 함수로 넘기면 그 풀이를 안 거치므로 여기서 푼다.
+   */
+  const 머리상한 = opts.timeout ?? 300000;
+  const 잠잠수 = conn.잠잠 ?? 잠잠기본;
+  const 흐를때잠잠 = 잠잠수 > 0 ? 잠잠수 : (머리상한 > 0 ? 머리상한 : 잠잠기본);
+  // 부르는 쪽이 따로 주면 그 값이다 — 검사가 5분을 기다릴 수는 없다(conn.무소식알림 과 같은 자리).
+  const 첫잠잠 = conn.첫잠잠 ?? Math.max(흐를때잠잠, 첫잠잠기본);
+  /*
+   * 내용 한 글자 없이 멎은 것은 **한 번** 다시 부른다.
+   *
+   * 여태는 그대로 턴이 끝났다. 사람은 「왜 멈췄어」 를 치고, 모델은 처음부터 다시 생각한다 — 다시
+   * 부르는 것과 같은 값을 치르면서 사람 손만 한 번 더 거친다. 화면에 흘러간 것이 없으니 두 벌이 될
+   * 것도 없다(위 거절 갈래의 「흘렸나」 와 같은 규칙). 한 번만이다 — 두 번 멎은 창구는 정말 멎은
+   * 것이라, 계속 부르면 사람은 기다리기만 한다.
+   */
+  let 멎어다시 = 0;
+  const 멎음다시최대 = 1;
+  /*
+   * 짐작으로 실은 stream_options 를 빼고 다시 불렀나 — 그랬으면 그 부름이 되는지 보고 배운다.
+   *
+   * 모르는 OpenAI 호환 창구에도 usage 를 달라고 한다(backend/wire.js 의 스트림usage짐작). 대부분은 받거나
+   * 모르는 칸을 그냥 넘긴다. 다만 칸 이름을 안 밝힌 400(「Bad Request」 · 「unrecognized argument」)으로 튕기는
+   * 창구가 있다 — 그 문장으로는 아래 배울전선 이 무엇을 끌지 모른다. 그래서 짐작으로 실은 이 칸 하나를 빼고
+   * 한 번 더 불러 본다. 그게 되면 이 칸 탓이었던 것이고, 그때 배운다(디스크에 남는다). 빼고도 400 이면 이 칸
+   * 탓이 아니었다 — 아무것도 안 배우고 여태 길(오류 · 루프의 배울전선)로 간다.
+   */
+  let usage뺌 = false;
   for (let 시도 = 1; ; 시도++) {
+    const 흐름 = { 받음: false };
     const r = await req(요청주소(conn), {
       method: 'POST',
       headers: await 머리말짓기(conn, opts),
@@ -1454,18 +1484,41 @@ export async function* chatStream(conn, opts) {
        * 시간을 잰다 (backend/http.js 의 잠잠감시). 안 그러면 오래 생각하는
        * 모델의 답이 5분에서 잘리고, 멎어 버린 게이트웨이는 5분을 꽉 채운다.
        */
-      timeout: opts.timeout ?? 300000,
+      timeout: 머리상한,
       // 붙는 데까지만 재는 시계. 못 붙은 것은 다시 부른다 (backend/retry.js).
       연결: conn.연결 ?? 연결기본,
-      잠잠: conn.잠잠 ?? 잠잠기본,
+      잠잠: () => (흐름.받음 ? 흐를때잠잠 : 첫잠잠),
       stream: true,
       signal: opts.signal ?? null,
     });
     할당량기억(r.headers ?? r.res?.headers, 할당량자리(conn), { 막힘: r.status === 429 });
     let 거절;
     if (r.ok && r.res?.body) {
-      const 읽은것 = yield* 흘려읽기(conn, opts, r);
+      let 읽은것;
+      try {
+        읽은것 = yield* 흘려읽기(conn, opts, r, 흐름);
+      } catch (err) {
+        // 받은 것이 있었으면 흘려읽기가 살려서 돌려줬다 — 여기 오는 STALL 은 한 글자도 못 받은 것이다.
+        if (err?.code !== 'STALL' || 멎어다시 >= 멎음다시최대 || opts.signal?.aborted) throw err;
+        멎어다시 += 1;
+        yield {
+          type: 'backoff', status: null, code: 'STALL', 왜: '멎음', wait: 0,
+          attempt: 멎어다시, max: 멎음다시최대, 멎은초: 초로(err.잠잠 ?? 첫잠잠),
+        };
+        시도 -= 1;   // 서버가 막은 것이 아니다 — 막힘 사다리(다시부를지)의 몫을 안 쓴다
+        continue;
+      }
       if (!읽은것.오류) {
+        /*
+         * 빼고 부르니 됐다 — 이 창구는 stream_options 를 안 받는다. 이번 대화에 먹이고, 루프가 디스크에 남긴다.
+         * **답을 끝까지 받은 뒤에** 배운다. 머리말 200 만 보고 배우면, 머리말을 먼저 주고 몸에서 오류를
+         * 내는 창구(몸속오류)에서 이 칸 탓이 아닌 실패를 이 칸 탓으로 디스크에 남긴다.
+         */
+        if (usage뺌 === true) {
+          usage뺌 = '배움';
+          conn.전선 = 카드고치기(conn.전선, { 무엇: '스트림usage', 값: false });
+          yield { type: 'wire', 무엇: '스트림usage', 값: false, from: 'stream_options', 배움: true };
+        }
         yield { type: 'done', message: 이름되돌리기(읽은것.acc, 맞춘것.되돌림) };
         return;
       }
@@ -1492,6 +1545,17 @@ export async function* chatStream(conn, opts) {
       시도 -= 1;
       continue;
     }
+    // 짐작으로 실은 것만 빼 본다 — 아는 창구(회사 꼬리표가 있다)는 이 칸을 받는다고 알고 보낸 것이다.
+    if (거절.status === 400 && body.stream_options && conn.전선 && !conn.전선.회사 && usage뺌 === false) {
+      // 서버가 다른 칸을 또렷이 짚었으면(「reasoning_effort must be one of…」) 그건 루프의 배울전선 몫이다.
+      const 짚은것 = 배울전선(거절.text || 거절.error || '', conn.kind);
+      if (!짚은것 || 짚은것.무엇 === '스트림usage') {
+        usage뺌 = true;
+        delete body.stream_options;
+        시도 -= 1;
+        continue;
+      }
+    }
     // 잠깐 막힌 것이면 알리고, 기다렸다, 다시 부른다. 화면에 흘러간 글이 없는
     // 자리만 여기 온다 — 읽는 도중에 멎거나 끊긴 것(STALL·소켓)은 흘려읽기가
     // 받은 것을 살려 주거나 던지고, 다시 안 부른다 (backend/retry.js 머리말).
@@ -1513,7 +1577,7 @@ export async function* chatStream(conn, opts) {
  *
  * @returns {{acc: object} | {오류: object, 흘렸나: boolean}}
  */
-async function* 흘려읽기(conn, opts, r) {
+async function* 흘려읽기(conn, opts, r, 흐름 = null) {
   const acc = {
     content: '', thinking: '', toolCalls: [],
     usage: { 잰것: false, in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
@@ -1721,6 +1785,8 @@ async function* 흘려읽기(conn, opts, r) {
       if (받은오류) break;
     }
     buf = buf.slice(읽은자리);
+    // 첫 내용이 왔으면 잠잠 시계를 흐를 때 값으로 돌린다 (chatStream 의 첫잠잠).
+    if (흐름 && !흐름.받음 && 받은것있나()) 흐름.받음 = true;
 
     if (done && !받은오류) {
       // 개행 없이 끝난 마지막 한 줄, 그리고 빈 줄 없이 끝난 마지막 사건. 같은 길로 읽고 끝낸다.

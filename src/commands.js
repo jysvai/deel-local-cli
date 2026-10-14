@@ -5,6 +5,7 @@ import { 세션요금, 돈셈, 돈말, 어디서온값, 요금적는법 } from '
 import { 생성속도 } from './agent/session.js';
 import { join } from 'node:path';
 import { c, say, rule, pad, mark, width, clip } from './ui/ansi.js';
+import { 토큰셈, 토큰글 } from './ui/tokcount.js';
 import { compact } from './agent/compact.js';
 import { 바깥인가 } from './safety/runmode.js';
 import { load, upsert, 열쇠보관, configPath } from './config.js';
@@ -31,6 +32,7 @@ import { TOOLS, 영어설명 } from './tools/index.js';
 import { 둘러보기, 프로젝트갈래 } from './lsp/servers.js';
 import { 지금것들 } from './lsp/client.js';
 import { 보고서적기 } from './ui/export.js';
+import { 세션보고서모으기, 세션보고서줄들, 세션보고서md, 세션보고서적기 } from './ui/report.js';
 import { loadCommand } from './skills/discover.js';
 import { spin } from './ui/spinner.js';
 import { 빗금펴기 } from './ui/complete.js';
@@ -318,7 +320,7 @@ export async function handle(line, session, ctx) {
           onBackoff: (알림) => {
             돌림.stop((알림.미리
               ? `  ${c.yellow('⏸')} ${c.gray(말(알림말(알림), { 초: 알림채움(알림).초 }))}`
-              : `  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`));
+              : `  ${c.yellow('↻')} ${c.gray(말(알림말(알림), 알림채움(알림)))}`));
             돌림 = spin(말('consult.asking', { 모델: 새conn.model }));
           },
         });
@@ -703,7 +705,7 @@ export async function handle(line, session, ctx) {
         onBackoff: (알림) => {
           s.stop((알림.미리
               ? `  ${c.yellow('⏸')} ${c.gray(말(알림말(알림), { 초: 알림채움(알림).초 }))}`
-              : `  ${c.yellow('↻')} ${c.gray(말('loop.backoff', 알림채움(알림)))}`));
+              : `  ${c.yellow('↻')} ${c.gray(말(알림말(알림), 알림채움(알림)))}`));
           s = spin('앞선 대화를 요약해 접는 중…');
         },
       });
@@ -1108,6 +1110,28 @@ export async function handle(line, session, ctx) {
       return { handled: true };
     }
 
+    /*
+     * 세션 보고서 — /cost · /context · /diff 에 흩어진 숫자와 도구 호출 기록을 한 자리에 (ui/report.js).
+     * 화면에 보이고, .deel/reports 에 Markdown 으로도 남긴다. 옛 명령은 그대로 둔다 — 하나만 볼 때는 그쪽이 짧다.
+     */
+    case 'report': {
+      const 뿌리 = ctx?.scope?.root ?? session.root;
+      const 자 = 세션보고서모으기({ session, ctx, root: 뿌리 });
+      say('');
+      rule(말('report.title'), 70);
+      for (const 줄 of 세션보고서줄들(자)) say(줄);
+      say('');
+      try {
+        // 디스크에 남는 도구 대상·오류는 감사기록과 같은 자로 가린다 (safety/audit.js 의 가림).
+        const 길 = 세션보고서적기(뿌리, 세션보고서md(자, { 가리개: (s) => ctx?.audit?.가림?.(s) ?? s }), 자.시작);
+        say(`  ${mark.ok} ${c.gray(말('report.saved', { 길: ctx?.scope?.show?.(길) ?? 길 }))}`);
+      } catch (e) {
+        say(`  ${mark.warn} ${c.gray(말('report.saveFailed', { 왜: e?.message ?? String(e) }))}`);
+      }
+      say('');
+      return { handled: true };
+    }
+
     case 'cost': {
       const mins = ((Date.now() - session.startedAt) / 60000).toFixed(1);
       rule(말('scr.session'), 70);
@@ -1126,9 +1150,14 @@ export async function handle(line, session, ctx) {
        * 거짓말하는 것이고, 0 은 「모른다」 를 숫자로 지어낸 것이다.
        */
       const 못잰것 = session.usage.못잰것 ?? 0;
-      const 덧말 = 못잰것 ? c.yellow(`  (${못잰것}번은 창구가 안 알려 줘서 안 들어감)`) : '';
-      say(`  ${c.gray(pad(말('cost.tokIn'), 14))} ${보낸것.toLocaleString()}${덧말}`);
-      say(`  ${c.gray(pad(말('cost.tokOut'), 14))} ${session.usage.out.toLocaleString()}`);
+      /*
+       * 못 잰 몫은 글자 수로 어림해 더하고 ≈ 를 붙인다 (ui/tokcount.js). 0 으로 두면 이름이 또렷한 모델을
+       * 백 번 부르고도 「입력 0」 이 남는다. 어림은 실측과 섞지 않는다 — 금액(아래 돈셈)은 여전히 실측만 본다.
+       */
+      const 셈 = 토큰셈(session.usage);
+      const 덧말 = 못잰것 ? c.yellow(`  (${말('cost.estNote', { n: 못잰것 })})`) : '';
+      say(`  ${c.gray(pad(말('cost.tokIn'), 14))} ${토큰글(보낸것 + 셈.추정입력, 셈.추정)}${덧말}`);
+      say(`  ${c.gray(pad(말('cost.tokOut'), 14))} ${토큰글(session.usage.out + 셈.추정출력, 셈.추정)}`);
       /*
        * ── 캐시가 얼마나 맞았나 ────────────────────────────────────────
        *

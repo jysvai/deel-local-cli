@@ -210,7 +210,7 @@ bin/deel.js              entry point
 src/
   repl.js                the conversation screen — what a person faces
   oneshot.js             run once and exit (-p)
-  commands.js            52 slash commands — where a command is dispatched (handle)
+  commands.js            53 slash commands — where a command is dispatched (handle)
   commands/common.js     the command table · saving config — shared by the pieces below
   commands/model.js      /model · /ctx · /out · /grade — handling the connection
   commands/work.js       commit · review · /diff · evidence · branches · pins · learning · paste
