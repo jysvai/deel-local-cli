@@ -94,12 +94,16 @@ writeFileSync(join(src, 'binary.bin'), 이진);
 // bsdtar 3.8.9) 뒤로 이 묶기에서 0xC0000005 로 **죽는다** — stderr 는 비고 종료코드만
 // 남는다. 바깥 도구가 넘어진 것이라 우리 실패로 칠 일이 아니고, 그렇다고 건너뛰면 윈도우
 // 에서 교차확인 4건이 사라진다. 그래서 Git 이 품은 GNU tar 로 한 번 더 묶는다.
+// 넘어진 것은 판을 안 가린다 — 리눅스·맥에서 시그널로 죽은 것도 같다(다음 후보가 없으면 ⚠).
 // tar 가 돌아서 오류를 말한 것(보통 종료코드)은 여전히 실패다.
-const 넘어짐 = (err) => 윈도우 && err.status >= 0xC0000000; // NTSTATUS — 프로세스가 죽었다
-const 탈말 = (err) => [`종료코드 ${err.status >= 0xC0000000 ? '0x' + err.status.toString(16) : err.status}`,
+const 넘어짐 = (err) => err.signal != null || (윈도우 && err.status >= 0xC0000000); // NTSTATUS
+const 탈말 = (err) => [
+  err.signal != null ? `시그널 ${err.signal}`
+    : `종료코드 ${err.status >= 0xC0000000 ? '0x' + err.status.toString(16) : err.status}`,
   String(err.stderr ?? '').trim().split('\n')[0]].filter(Boolean).join(' · ').slice(0, 120);
-const tar후보 = ['tar', ...(윈도우
-  ? [join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Git', 'usr', 'bin', 'tar.exe')] : [])];
+// 32비트 node 에서는 ProgramFiles 가 (x86) 쪽을 가리킨다. 64비트 Git 은 ProgramW6432 에 있다.
+const tar후보 = ['tar', ...(윈도우 ? [join(process.env.ProgramW6432 ?? process.env.ProgramFiles
+  ?? 'C:\\Program Files', 'Git', 'usr', 'bin', 'tar.exe')] : [])];
 let 쓴tar = null;
 const 넘어진tar = [];
 for (const tar of tar후보) {
@@ -108,7 +112,7 @@ for (const tar of tar후보) {
     쓴tar = tar;
     break;
   } catch (err) {
-    // tar 자체가 없는 것과, tar 가 돌았는데 우리 묶음을 뱉은 것은 전혀 다른 얘기다.
+    // tar 가 없는 것·tar 가 죽은 것과, tar 가 돌았는데 오류를 말한 것은 전혀 다른 얘기다.
     if (없어서(err)) continue;
     if (넘어짐(err)) { 넘어진tar.push(`${tar} ${탈말(err)}`); continue; }
     check('tar 로 묶기', false, `${tar} · ${탈말(err)}`);
