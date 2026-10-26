@@ -89,20 +89,44 @@ writeFileSync(join(src, 'binary.bin'), 이진);
 
 // 윈도우 GNU tar 는 'C:\...' 를 원격 호스트로 오해한다 ("Cannot connect to C:").
 // 그래서 결과 파일 이름은 상대 경로로 주고, 작업 폴더를 옮겨서 부른다.
-let tarOk = true;
-try {
-  sh('tar', ['-czf', 'real.tar.gz', '-C', 'tarsrc', '.'], { cwd: sand });
-} catch (err) {
-  tarOk = false;
-  // tar 자체가 없는 것과, tar 가 돌았는데 우리 묶음을 뱉은 것은 전혀 다른 얘기다.
-  if (없어서(err)) 건너뜀.push('tar 가 없어 TAR 교차확인 4건을 못 쟀다');
-  else check('tar 로 묶기', false, String(err.message).split('\n')[0].slice(0, 70));
+//
+// 윈도우 PATH 의 tar 는 System32 bsdtar 다. 2026-10 러너 갱신(tar.exe 10.0.26100.33648 ·
+// bsdtar 3.8.9) 뒤로 이 묶기에서 0xC0000005 로 **죽는다** — stderr 는 비고 종료코드만
+// 남는다. 바깥 도구가 넘어진 것이라 우리 실패로 칠 일이 아니고, 그렇다고 건너뛰면 윈도우
+// 에서 교차확인 4건이 사라진다. 그래서 Git 이 품은 GNU tar 로 한 번 더 묶는다.
+// tar 가 돌아서 오류를 말한 것(보통 종료코드)은 여전히 실패다.
+const 넘어짐 = (err) => 윈도우 && err.status >= 0xC0000000; // NTSTATUS — 프로세스가 죽었다
+const 탈말 = (err) => [`종료코드 ${err.status >= 0xC0000000 ? '0x' + err.status.toString(16) : err.status}`,
+  String(err.stderr ?? '').trim().split('\n')[0]].filter(Boolean).join(' · ').slice(0, 120);
+const tar후보 = ['tar', ...(윈도우
+  ? [join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Git', 'usr', 'bin', 'tar.exe')] : [])];
+let 쓴tar = null;
+const 넘어진tar = [];
+for (const tar of tar후보) {
+  try {
+    sh(tar, ['-czf', 'real.tar.gz', '-C', 'tarsrc', '.'], { cwd: sand });
+    쓴tar = tar;
+    break;
+  } catch (err) {
+    // tar 자체가 없는 것과, tar 가 돌았는데 우리 묶음을 뱉은 것은 전혀 다른 얘기다.
+    if (없어서(err)) continue;
+    if (넘어짐(err)) { 넘어진tar.push(`${tar} ${탈말(err)}`); continue; }
+    check('tar 로 묶기', false, `${tar} · ${탈말(err)}`);
+    쓴tar = false;
+    break;
+  }
+}
+if (쓴tar === null) {
+  건너뜀.push(넘어진tar.length
+    ? `tar 가 넘어져(${넘어진tar.join(' / ')}) TAR 교차확인 4건을 못 쟀다`
+    : 'tar 가 없어 TAR 교차확인 4건을 못 쟀다');
 }
 
-if (tarOk) {
+if (쓴tar) {
   const files = untargz(readFileSync(join(sand, 'real.tar.gz')));
   const byName = new Map(files.map((f) => [f.name.replace(/^[.][/]/, ''), f.data]));
-  check('진짜 tar 가 만든 묶음을 읽음', files.length >= 3, `파일 ${files.length}개`);
+  check('진짜 tar 가 만든 묶음을 읽음', files.length >= 3,
+    `파일 ${files.length}개 · ${쓴tar}${넘어진tar.length ? ` (넘어진 것: ${넘어진tar.join(' / ')})` : ''}`);
   check('한글 경로 살아남음',
     byName.get('skills/품의서작성/SKILL.md')?.toString('utf8').includes('품의서작성'));
   check('100자 넘는 긴 경로 (GNU/pax 확장)',
