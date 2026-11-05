@@ -108,6 +108,8 @@ if (!python있나) {
    */
   let 받은말 = [];
   let 도구결과 = [];
+  // 미리 읽기(agent/warm.js)로 온 것 — 답을 한 토큰으로 막은 요청. 대화가 아니라 받은말 에는 안 센다.
+  let 미리받은 = [];
   const 서버 = createServer((req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; });
@@ -119,12 +121,20 @@ if (!python있나) {
       if (!req.url.includes('chat/completions')) { res.writeHead(404); return res.end(); }
       let 말 = '';
       let 끝 = null;
+      let 미리 = false;
       try {
-        const 말들 = JSON.parse(body).messages ?? [];
+        const 몸 = JSON.parse(body);
+        const 말들 = 몸.messages ?? [];
         끝 = 말들[말들.length - 1];
         const u = [...말들].reverse().find((m) => m.role === 'user');
         말 = typeof u?.content === 'string' ? u.content : JSON.stringify(u?.content ?? '');
+        미리 = 몸.max_tokens === 1 && 몸.stream !== true;
       } catch { /* 아래에서 빈 말로 잰다 */ }
+      if (미리) {
+        미리받은.push(말);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'length' }], usage: { prompt_tokens: 40, completion_tokens: 1 } }));
+      }
       const 보내기 = (delta, 끝남 = null) => res.write(`data: ${JSON.stringify({ choices: [{ delta, finish_reason: 끝남 }] })}\n\n`);
       /*
        * 승인 물음을 띄우려면 모델이 도구를 불러야 한다. 도구 결과가 돌아오면 그 글을 적어 두고(거부됐나 ·
@@ -179,6 +189,7 @@ if (!python있나) {
   const 판 = async (걸음들, { 인자 = '', 설정 = true, 켜짐 = 'fake-7b', 환경 = '', 상자 = false, 도구 = false, 끝 = true, exec = false, 설정덧 = {} } = {}) => {
     받은말 = [];
     도구결과 = [];
+    미리받은 = [];
     const 일터 = mkdtempSync(join(tmpdir(), 'deel-pty-'));
     const 집 = join(일터, 'home');
     mkdirSync(집, { recursive: true });
@@ -186,7 +197,7 @@ if (!python있나) {
       version: 1, active: 'gw', ...설정덧,
       profiles: [{ id: 'gw', name: '가짜', kind: 'openai', baseUrl: `http://127.0.0.1:${포트}/v1`, auth: 'bearer', apiKey: 'k', model: 'fake-7b', ctx: 32000, streaming: true, tools: 도구 }],
     }));
-    const 명령 = `${상자 ? 'unset CI GITHUB_ACTIONS; ' : 'export CI=1; '}cd '${일터}' && DEEL_HOME='${집}' DEEL_NET_ALLOW='http://127.0.0.1:${포트}/v1' DEEL_NO_OPEN=1 ${환경} ${exec ? 'exec ' : ''}'${process.execPath}' '${진입점}' ${인자}; `
+    const 명령 = `${상자 ? 'unset CI GITHUB_ACTIONS; ' : 'export CI=1; '}cd '${일터}' && DEEL_HOME='${집}' DEEL_NET_ALLOW='http://127.0.0.1:${포트}/v1' DEEL_NO_OPEN=1 DEEL_WARMUP=0 ${환경} ${exec ? 'exec ' : ''}'${process.execPath}' '${진입점}' ${인자}; `
       + `echo "EXIT=$?"; stty -a | tr '\\n' ' '; echo; echo END-OF-"RUN"\r`;
     const 걸음표 = join(일터, 'spec.json');
     writeFileSync(걸음표, JSON.stringify({
@@ -220,6 +231,7 @@ if (!python있나) {
       복구됨: stty[1] === 'icanon' && stty[2] === 'echo',
       stty: `${stty[1] ?? '?'} ${stty[2] ?? '?'}`,
       받은말: [...받은말],
+      미리받은: [...미리받은],
       도구결과: [...도구결과],
       썼나,
       꼬리: 꼬리.slice(-500),
@@ -296,6 +308,23 @@ if (!python있나) {
     {
       const r = await 판에([{ send: '\x04', sleep: 1.5 }]);
       check(`★ 진짜 pty (${이름}): 빈 입력에서 Ctrl+D 는 나가고 터미널을 돌려놓는다`, r.종료 !== undefined && r.복구됨, 덧(r));
+    }
+
+    /*
+     * 미리 읽기 (2.2.0 · agent/warm.js). 검사 판은 다 DEEL_WARMUP=0 으로 끄고 띄우는데(가짜 서버가
+     * 받은 말을 세므로) 이 판만 켠다. 입력칸이 뜨면 한 번(빈 말 — 모델 올리기), 치다 멈추면 그 글로
+     * 한 번 나가야 하고, Enter 뒤의 진짜 요청은 여태 그대로 한 번이어야 한다.
+     */
+    trace(`6b-미리-읽기 (${이름})`);
+    {
+      const r = await 판(
+        [{ type: '고쳐줘', sleep: 1.6 }, { type: '\r', wait: '받았습니다:3자', name: '답' }, { type: '/exit\r' }],
+        { 상자, 환경: 'DEEL_WARMUP=1' },
+      );
+      check(`★★ 진짜 pty (${이름}): 입력칸이 뜨면 빈 말로 한 번, 치다 멈추면 친 글로 한 번 미리 읽힌다`,
+        r.미리받은[0] === '' && r.미리받은.includes('고쳐줘'), `${JSON.stringify(r.미리받은)} · ${덧(r)}`);
+      check(`★★ 진짜 pty (${이름}): 미리 읽어도 Enter 뒤 진짜 요청은 한 번 그대로 간다`,
+        r.받은말.length === 1 && r.받은말[0] === '고쳐줘' && r.종료 === '0' && r.복구됨, 덧(r));
     }
 
     /*

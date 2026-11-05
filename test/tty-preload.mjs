@@ -16,3 +16,9 @@ Object.defineProperty(process.stdout, 'columns', { value: 100, configurable: tru
 Object.defineProperty(process.stdout, 'rows', { value: 30, configurable: true });
 // readline 이 터미널이라 믿고 부른다. 파이프에는 없는 함수라 없으면 터진다.
 process.stdin.setRawMode = () => process.stdin;
+/*
+ * 미리 읽기(2.2.0 · agent/warm.js)는 끄고 띄운다. 터미널인 척하면 그것도 켜지는데, 이 앞선불러오기를
+ * 쓰는 검사들은 가짜 서버가 **받은 요청을 센다** — 사람이 안 보낸 빈 말이 끼면 「한 번만 갔다」 가
+ * 깨진다. 미리 읽기는 test/warm.test.js 와 test/pty.test.js 가 따로 켜서 잰다. 사람이 이미 정했으면 그대로.
+ */
+process.env.DEEL_WARMUP ??= '0';

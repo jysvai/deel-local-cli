@@ -8,7 +8,7 @@ Per-stage effort, the prefix cache, context length, reply-length cap
 
 ## Reasoning effort
 
-<sub>The prefix cache · The wire card · Cache marks · Effort follows the request · Context length is read off the model · /out · Truncated tool calls · When the server pushes back</sub>
+<sub>The prefix cache · Read-ahead while you type · The wire card · Cache marks · Effort follows the request · Context length is read off the model · /out · Truncated tool calls · When the server pushes back</sub>
 
 ### The hidden slowdown on local models — protecting the prefix cache
 
@@ -28,6 +28,45 @@ Ollama also gets `keep_alive: 60m`. At the default five minutes the model unload
 you glance at another window, and the first message after you come back recomputes the
 entire conversation. `DEEL_KEEP_ALIVE` changes it. Running llama.cpp directly, the
 server-side `--cache-reuse 256` does the same job.
+
+### Why the first answer is slow — load early, read while you type
+
+On a local model the wait before the first word is usually **reading, not thinking**. The first
+call is what makes the server load the model from disk (seconds for 7B, tens of seconds for 30B),
+and then it reads the system prompt, the tool schemas and the conversation from scratch —
+thousands of tokens, which on a CPU or a small GPU is tens of seconds again.
+
+Both can happen **before you press Enter**, because almost all of the request is already known.
+So since 2.2.0:
+
+1. When the input box appears, deel sends the conversation as it stands — at startup this loads the
+   model, with the same `num_ctx` it will use, so it never loads short and reloads on the first message
+2. When you pause while typing (0.4 s), it sends again with what you have typed so far
+3. When you press Enter, the real request picks up what was already read and only reads the last
+   few characters
+
+Each of these is the **same body** as the real request, with the answer capped at one token; the
+server's prefix cache (Ollama, llama.cpp, LM Studio and vLLM all have one) does the rest. The body
+is built by the same code as the real turn — including the work mode the words you typed would
+route to — and a test compares the two byte for byte (`test/warm.test.js`). Only one is in flight
+at a time; if one is still running when you press Enter, the first call waits for it (up to 30 s, then
+it is cut off) instead of reading the same prefix twice in a second slot.
+
+It does not draft the answer while you type. That answer would be thrown away with every key,
+it would hold the GPU the reading needs, and an answer here is tool calls — files cannot be
+edited before you finish the sentence. Reading wastes nothing: what you typed first stays reused. Commands (`/…`) and shell lines (`!…`)
+never reach the model, so they are not sent; `@file` expands into the file on Enter, so only what
+comes before it is sent.
+
+| Where | |
+|---|---|
+| This PC · LAN, no price, not `…-cloud` | on by itself |
+| Outside address · priced model · Ollama cloud model | off (`DEEL_WARMUP=1` · `"warmup": true` turns it on) |
+| Pipes · `deel run` · editors (ACP) | off — nobody is typing there |
+
+The status bar shows `↯ reading` while a read is out and `↯ ready` once it is done; `/status`
+says whether it is on and why. A server that refuses it twice in a row turns it off for that
+connection. Turn it off with `DEEL_WARMUP=0` or `"warmup": false`.
 
 ### The wire card — what this model actually accepts at this address
 

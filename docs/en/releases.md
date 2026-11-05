@@ -9,7 +9,8 @@ and everything before it is **collected into one**.
 
 | | Where | What |
 |---|---|---|
-| **Current** | **[2.1.x](releases/2.1.md)** | [2.1.9](releases/2.1.md#219) — typing your own answer to a question goes through, reasoning models are not cut off at 60 seconds, token counts no longer show 0, and there is `/report` |
+| **Current** | **[2.2.x](releases/2.2.md)** | [2.2.0](releases/2.2.md#220) — read-ahead while you type: local models answer the moment you press Enter |
+| Previous | [2.1.x](releases/2.1.md) | [2.1.9](releases/2.1.md#219) — typing your own answer to a question goes through, reasoning models are not cut off at 60 seconds, token counts no longer show 0, and there is `/report` |
 | | | [2.1.8](releases/2.1.md#218) — Suspending with Ctrl+Z and resuming with `fg` no longer makes deel quit |
 | | | [2.1.6](releases/2.1.md#216) — works properly on macOS: keychain keys, trusted folders under `/tmp`, long output through a slow pipe. macOS joins the gate CI |
 | | | [2.1.5](releases/2.1.md#215) — shell commands could reach outside the working folder; one `find .. -delete` emptied the parent. Now blocked |
@@ -18,7 +19,7 @@ and everything before it is **collected into one**.
 | | | [2.1.2](releases/2.1.md#212) — confirm asks before MCP tools, editor sessions no longer pile up, and `deel --version` no longer loads the whole program |
 | | | [2.1.1](releases/2.1.md#211) — From a full review — ask one level up and the key showed, and webhook URLs went out as they were |
 | | | [2.1.0](releases/2.1.md#210) — Hand it off and it keeps going; make it ask and it shows the diff — and a check decides when it is done |
-| Previous | [2.0.x](releases/2.0.md) | [2.0.3](releases/2.0.md#203) — 2.0.2 never reached npm — GitHub releases now appear only after npm has the version |
+| | [2.0.x](releases/2.0.md) | [2.0.3](releases/2.0.md#203) — 2.0.2 never reached npm — GitHub releases now appear only after npm has the version |
 | | | [2.0.2](releases/2.0.md#202) — Everything 2.0.1 left as low, deferred or unmeasured, closed |
 | | | [2.0.1](releases/2.0.md#201) — One fence in 2.0.0 did not hold, and four gates were guarding nothing |
 | | | [2.0.0](releases/2.0.md#200) — Every fence we said was there, checked for whether it actually holds |

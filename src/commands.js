@@ -1291,6 +1291,24 @@ export async function handle(line, session, ctx) {
        * 있어야 한다. 안 보이면 조절이 먹었는지 안 먹었는지 알 길이 없다.
        */
       if (k.전선) say(`  ${c.gray(pad(말('status.wire'), 10))} ${c.gray(전선말(k.전선))}`);
+      /*
+       * 미리 읽기 (agent/warm.js). 켰는지와 **왜** 그런지를 같이 적는다 — 상태줄의 ↯ 하나로는
+       * 「왜 내 화면에는 안 뜨지」 에 답이 안 된다. 바깥 모델이라 일부러 안 켠 것과 서버가
+       * 거절해서 꺼진 것은 사람이 할 일이 다르다.
+       */
+      {
+        const 판 = session.미리읽기?.상태?.() ?? { 켬: false, 왜: '없음' };
+        const 머리 = 판.켬 ? c.hgreen(말('warm.on')) : c.gray(말('warm.off'));
+        say(`  ${c.gray(pad(말('status.warm'), 10))} ${머리} ${c.gray('— ' + 말(`warm.why.${판.왜}`))}`);
+        if (판.횟수) {
+          const 끝 = 판.마지막;
+          const 꼬리 = !끝 ? '' : 끝.ok
+            ? ` · ${말('warm.last', { 초: (끝.ms / 1000).toFixed(1) })}`
+            : ` · ${말('warm.lastFail', { 왜: 끝.왜 })}`;
+          say(`  ${' '.repeat(10)} ${c.gray(말('warm.stats', { 횟수: 판.횟수, 토큰: Number(판.읽은토큰).toLocaleString() }) + 꼬리)}`);
+        }
+        if (판.왜 !== '없음') say(`  ${' '.repeat(10)} ${c.gray(말('warm.howto'))}`);
+      }
       say(`  ${c.gray(pad(말('status.root'), 10))} ${session.root}`);
       // 명령이 어느 셸에서 도는지. "ls 가 왜 안 되지" 의 답이 이 줄에 있다.
       say(`  ${c.gray(pad(말('status.shell'), 10))} ${정한셸().표시}`);

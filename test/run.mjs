@@ -176,6 +176,8 @@ const FILES = [
   'prompt.test.js',
   'cache.test.js',
   'cacheprefix.test.js',
+  // 미리 읽기 (2.2.0) — 미리 보낸 몸이 Enter 뒤 첫 요청과 같은가를 진짜 루프로 견준다.
+  'warm.test.js',
   'wire.test.js',
   'export.test.js',
   'report.test.js',

@@ -410,6 +410,25 @@ Tool targets (paths, commands) written to the file are masked with the same rule
 Calls whose endpoint reported no token counts are estimated from text length and marked `≈`; with no
 price table, cost says "unknown".
 
+### Read-ahead while you type — `warmup`
+
+When the input box appears, deel loads the model; when you pause while typing, it has the server
+read everything up to what you have typed so far. Press Enter and only the last few characters are
+left to read, so the answer starts right away. How it works is in
+[Speed and spend](tuning.md#why-the-first-answer-is-slow--load-early-read-while-you-type).
+
+**It turns itself on only where it is free** — an address on this PC or the LAN, a model with no price
+in the price table, and not an Ollama cloud model (a name with a `cloud` part — `…-cloud`, `…:cloud`). It sends one call each time you pause,
+so it never turns itself on where calls cost money.
+
+```json
+{ "warmup": false }
+```
+
+`false` turns it off; `true` turns it on even for outside addresses. The `DEEL_WARMUP` environment
+variable (`0` · `1`) wins over this value. Whether it is on, and why, is on the `read-ahead` line of
+`/status`; its current state is the `↯` in the status bar.
+
 ### How long auto mode waits — `askWait`
 
 `auto` is the hand-off mode. Even there, when the model asks a question (Ask) or answers "design it and
@@ -699,6 +718,8 @@ they are in the policy file — the evidence you take to an administrator must n
 | `DEEL_SHELL` | Which shell the `Bash` tool uses on Windows — `auto` (default: bash if Git Bash is installed, else cmd) · `bash` · `cmd` · `powershell`. `"shell"` in the config file works too. The pick shows in `/status` and in the `Shell:` line the model is given |
 | `DEEL_KEYSTORE=off` | Keep the key in the file instead of handing it to the machine keystore (Windows DPAPI · macOS keychain). For places where policy blocks PowerShell — whatever it ends up doing is printed verbatim in the `열쇠 보관` line of `/status` |
 | `DEEL_DEBUG=1` | Verbose errors |
+| `DEEL_WARMUP` | Read-ahead while you type — `0` off · `1` on for outside addresses and priced models too (it only runs in the interactive chat screen). Unset, it turns itself on only where it is free (this PC or the LAN, a model with no price). Wins over `"warmup"` in the config file |
+| `DEEL_KEEP_ALIVE` | How long Ollama keeps an idle model loaded — default `60m`, written like `24h` |
 | `DEEL_ACP_MAX_SESSIONS` | How many editor sessions `deel acp` keeps open in memory (default 16). Past that, the one unused the longest is put down; a new message to it reopens it from its file with the mode the editor picked |
 | `NO_COLOR` | Disable colour |
 | `DEEL_NO_MOTION=1` | Turn off the working animation (falls back to a one-cell spinner). `0`, `false`, `off`, `no` and an empty value read as "don't" |

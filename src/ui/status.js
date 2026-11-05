@@ -101,6 +101,29 @@ export const SEGMENTS = {
   },
 
   /*
+   * 미리 읽기 (agent/warm.js) — 모델 바로 옆이다. 「Enter 를 치면 곧장 나오나」 가 이 한 조각이다.
+   *
+   * 꺼져 있으면 아무것도 안 선다. 켜 놨다고 자리를 먹으면 바깥 모델을 쓰는 사람 화면에서
+   * 다른 조각이 밀려난다. 읽는 중은 흐리게, 다 읽었으면 초록으로 — 초록이 뜬 뒤에 Enter 를
+   * 치면 남은 몇 글자만 읽는다.
+   */
+  warm: {
+    get desc() { return 말('seg.warm'); },
+    make: (s) => {
+      const 판 = s.미리읽기?.상태?.();
+      if (!판?.켬) return null;
+      if (판.도는중) return c.gray(`↯ ${말('warm.seg.busy')}`);
+      // 친 글이 아직 안 나갔으면 지난 결과로 초록을 띄우지 않는다 (agent/warm.js 의 대기중).
+      return 판.마지막?.ok && !판.대기중 ? c.green(`↯ ${말('warm.seg.ready')}`) : c.gray('↯');
+    },
+    short: (s) => {
+      const 판 = s.미리읽기?.상태?.();
+      if (!판?.켬) return null;
+      return !판.도는중 && !판.대기중 && 판.마지막?.ok ? c.green('↯') : c.gray('↯');
+    },
+  },
+
+  /*
    * 모델 급 — 얼마나 알아서 하나 (agent/grade.js).
    *
    * 컨텍스트 게이지 바로 옆에 둔다. 그 둘이 다른 축이라는 것이 화면에서
@@ -334,7 +357,7 @@ export const SEGMENTS = {
  * 그러면 눈이 세 번만 멈춘다.
  */
 export const SEGMENT_GROUPS = [
-  ['dir', 'ver', 'thread', 'model'],
+  ['dir', 'ver', 'thread', 'model', 'warm'],
   ['ctx', 'grade'],
   ['work', 'think', 'mode'],
   // 내 폴더에 무슨 일이 있었나. 아무 일도 없으면 이 덩이는 아예 안 선다.

@@ -62,6 +62,7 @@ import { 읽기 as 기억읽기 } from './agent/memory.js';
 import { 갈래고르기 } from './ui/working.js';
 import { 모두끝내기 as 일감모두끝내기, 일감인자 } from './tools/jobs.js';
 import { 첫이름 } from './tools/label.js';
+import { 미리읽기 } from './agent/warm.js';
 
 // 도구마다 눈에 띄는 글자를 다르게 준다. 훑을 때 종류가 먼저 보인다.
 const TOOL_GLYPH = {
@@ -587,6 +588,11 @@ export async function chatLoop(opts = {}) {
   // 사람이 지금 입력을 기다리는 중인가. 도구가 도는 동안 키를 눌러도
   // 상자를 다시 그리면 안 된다 — 그 자리는 이미 대화가 흘러가고 있다.
   let 입력기다림 = false;
+  /*
+   * 치는 동안 앞머리를 미리 읽히는 것 (agent/warm.js). 입력칸이 뜨면 풀고, Enter 면 잠근다.
+   * 대화 화면을 세운 뒤(아래 ctx 다음)에 짓는다 — 키 처리는 그 전에 걸리므로 비어 있을 수 있다.
+   */
+  let 미리읽기판 = null;
   // 되묻는 중이면 그 앞머리. 상자 대신 한 줄로 되비춘다.
   let 묻는중 = null;
   // 되묻는 중이면 그 앞머리 — 화면을 안 가린다(줄 화면에서도 든다). Ctrl+Z 로 재웠다 깨울 때 물음째 되찍는 데 쓴다.
@@ -775,6 +781,12 @@ export async function chatLoop(opts = {}) {
    * 순간을 기억해 두어야만 안다.
    */
   const 붙인것들 = new Map();
+  /*
+   * 접어 둔 표를 원문으로 펴는 **유일한** 자리. 보낼 때('line')와 치는 동안 미리 읽힐 때(keypress)가
+   * 둘 다 이걸 부른다 — 두 군데서 따로 펴면 한쪽을 고칠 때 다른 쪽이 조용히 어긋나고, 미리 읽힌
+   * 앞머리가 Enter 뒤 요청과 달라져 캐시가 거기서 끊긴다(agent/warm.js).
+   */
+  const 보낼글로 = (글) => 붙임펼치기(글, 붙인것들);
   let 붙임번호 = 0;
   let 붙임앞줄수 = 0;
   let 붙임앞입력 = '';
@@ -927,7 +939,7 @@ export async function chatLoop(opts = {}) {
      * 펴는 자리는 여기 한 군데다. 미리 쳐 둔 것이든 기다리다 보낸 것이든
      * 결국 이 줄을 지나가므로, 여기서 펴면 어느 길로 와도 원문이 간다.
      */
-    const 펴진것 = 붙임펼치기(보낼것, 붙인것들);
+    const 펴진것 = 보낼글로(보낼것);
     // 다 쓴 것은 치운다. 안 치우면 대화가 길어질수록 붙인 원문이 계속 쌓인다.
     for (const 번호 of 붙임쓴번호들(보낼것)) 붙인것들.delete(번호);
     if (waiter) { const w = waiter; waiter = null; w(펴진것); }
@@ -1299,6 +1311,12 @@ export async function chatLoop(opts = {}) {
         // 돌려줄 것이 이것이다. readline 이 다 처리한 뒤라야 제 값이 보인다.
         이력지킴.적기(rl.line ?? '', rl.historyIndex ?? -1);
         if (입력기다림) {
+          /*
+           * Enter 때 보낼 글 — 이어 쓰던 줄과 접어 둔 붙여넣기까지 편다(위 'line' 처리와 같은 차례).
+           * 다듬기(trim)와 명령(`/…`) 거르기는 미리읽기 쪽이 한다(agent/warm.js 의 보낼초안).
+           * 그리기 **전에** 알린다 — 그래야 이 판의 상태줄이 지난 결과의 「↯ 미리 읽음」 을 안 띄운다.
+           */
+          미리읽기판?.쳤다(보낼글로(펴기([...(이어쓰기줄들 ?? []), rl.line ?? ''].join('\n'))));
           화면.입력갱신(session, 펴기(rl.line), rl.cursor ?? 0, 지금추천(펴기(rl.line)));
         } else {
           /*
@@ -2250,6 +2268,22 @@ export async function chatLoop(opts = {}) {
     say(`  ${c.hcyan('└')} ${c.gray(`${할일.length}단계 · ${session.root}`)}`);
   };
 
+  /*
+   * ── 치는 동안 미리 읽힌다 (agent/warm.js) ──────────────────────────────
+   *
+   * 손으로 치는 자리에서만 짓는다. 파이프로 넣는 말은 이미 다 와 있어 미리 읽을 틈이
+   * 없고, 그 자리의 서버(검사의 가짜 서버도 그렇다)에 사람이 안 보낸 요청이 끼면 안 된다.
+   * 켤지 말지는 판이 정한다 — 공짜인 자리(이 PC·사내망, 요금이 없는 모델)에서만 저절로 켠다.
+   */
+  if (process.stdin.isTTY) {
+    미리읽기판 = new 미리읽기(session, ctx, {
+      cfg,
+      // 다 읽었으면 상태줄의 ↯ 를 바꿔 그린다. 치는 중이 아니면 안 그린다 — 그 자리는 대화가 흐르는 중이다.
+      바뀜: () => { if (입력기다림) 화면.입력갱신(session, 펴기(rl.line), rl.cursor ?? 0, 지금추천(펴기(rl.line))); },
+    });
+    session.미리읽기 = 미리읽기판;
+  }
+
   for (;;) {
     let text;
     if (이어갈것 !== null) {
@@ -2257,6 +2291,8 @@ export async function chatLoop(opts = {}) {
       text = 이어갈것;
       이어갈것 = null;
     } else {
+      // 일하는 동안 미리 쳐 둔 줄이 있으면 곧장 턴이 시작된다 — 그때 내보내면 첫 부름이 그걸 기다린다.
+      if (!queue.length) 미리읽기판?.풀기();
       prompt();
       입력기다림 = true;
       // 줄이 이미 쌓여 있으면 그건 **일하는 동안 미리 쳐 둔 것**이다.
@@ -2264,6 +2300,7 @@ export async function chatLoop(opts = {}) {
       const 예약이었나 = queue.length > 0;
       const line = await nextLine();
       입력기다림 = false;
+      미리읽기판?.잠그기();
       if (line === null) break;        // 입력이 끝났다 (파이프 종료 / Ctrl+D)
       interrupted = false;
       text = line.trim();
@@ -3632,6 +3669,8 @@ export async function chatLoop(opts = {}) {
   }
 
   rl.close();
+  // 나가 있던 미리 읽기는 끊는다 — 그 답을 기다리느라 꺼지는 것이 늦어지면 안 된다.
+  미리읽기판?.끄기();
   // 남의 터미널을 우리 이름으로 두고 나가지 않는다. 켤 때 있던 제목으로 돌려놓는다.
   제목되돌리기();
   // 띄운 남의 프로세스는 반드시 거둔다. 안 거두면 deel 을 껐는데도

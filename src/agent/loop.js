@@ -190,6 +190,60 @@ export function 묶기(calls) {
 }
 
 /*
+ * ── 이 턴에 실을 도구 목록과 첫 걸음의 생각 강도 ─────────────────────────
+ *
+ * 턴 안에서만 쓰던 셈을 밖으로 낸다. 미리 읽기(agent/warm.js)가 **사람이 Enter 를
+ * 치기 전에** 똑같은 앞머리를 서버에 먼저 보내 계산시켜 두는데, 그 앞머리는 이
+ * 셈과 한 글자도 달라서는 안 된다. 도구 하나·강도 한 칸이 달라도 서버 캐시는
+ * 거기서 끊기고, 미리 한 계산은 통째로 버려진다 — 그것도 아무 데도 안 찍힌다.
+ * 따로 적어 두면 언젠가 한쪽만 고쳐지므로, 셈은 여기 하나만 둔다.
+ */
+export function 턴도구(session, ctx, { 깊이 = 0 } = {}) {
+  const conn = session.conn;
+  return toolSchemas(session.도구제한 ?? null, {
+    hasSkills: (session.skills?.length ?? 0) > 0,
+    web: session.web !== false && !isOffline(),   // 오프라인이면 웹 도구는 아예 안 보여 준다
+    work: session.effectiveWork(),                // 작업 모드가 쓰는 것만 (modes.js)
+    // 밖에서 붙인 도구(MCP). 붙은 것이 없으면 아무것도 안 는다.
+    mcp: ctx?.mcp ?? null,
+    // 이름 붙인 하위 작업 (agent/agents.js). 이름과 한 줄 설명만 실린다.
+    에이전트들: 깊이 + 1 >= 최대깊이 ? null : (ctx?.에이전트들 ?? null),
+    // 이 자리에 언어 서버가 있을 때만 Def·Refs 를 보여 준다 (tools/lsp.js).
+    // 없는 자리에서 목록에 세워 두면 모델이 부르고, 실패를 받고, 또 부른다.
+    lsp: session.lsp === true,
+    // 창이 좁으면 도구 설명을 줄여 싣는다 (budget.js 의 설명길이).
+    // 도구를 빼는 게 아니라 설명만 줄이므로 할 수 있는 일은 안 달라진다.
+    ctx: conn.ctx ?? null,
+    // 그림을 볼 수 있는 모델일 때만 Read 설명에 그림 이야기를 넣는다.
+    // 못 보는데 넣어 두면 모델이 화면 사진을 열려 들고, 그때마다 한 걸음이 헛간다.
+    vision: conn.vision === true,
+  });
+}
+
+/**
+ * 이 턴의 배분(effort) · 천장 · 강도. run() 이 턴 머리에서 이것으로 정한다.
+ * 대화크기 는 **사람 말을 넣은 뒤**의 메시지 수다 — run() 은 넣고 나서 부르므로 기본값이 그것이다.
+ */
+export function 턴강도(session, userText, { 대화크기 = session.messages.length } = {}) {
+  const 모드 = workMode(session.effectiveWork());
+  const effort = session.effortSet ? session.effort : (모드.effort ?? session.effort);
+  const 천장 = session.thinkSet ? session.think : 천장고르기(모드.think, session.think, userText);
+  const think = 자동강도(userText, 천장, { 대화크기, 켜짐: session.autoThink !== false });
+  return { effort, 천장, think };
+}
+
+/**
+ * 이 말로 턴을 열면 첫 걸음에 나갈 생각 강도 — run() 이 첫 부름에 싣는 그 값이다.
+ * 아직 사람 말을 안 넣은 자리(미리 읽기)에서 부르면 대화크기 에 그 한 줄을 더해 넘긴다.
+ * 첫 걸음은 언제나 'plan' 단계다(run 의 stage — 직전에 실패한 도구가 아직 없다).
+ */
+export function 첫걸음강도(session, userText, { 대화크기 = session.messages.length } = {}) {
+  const conn = session.conn;
+  const { effort, think } = 턴강도(session, userText, { 대화크기 });
+  return thinkFor(conn, effortFor(think, effort, 'plan', { 고정: 바깥인가(conn.base) }));
+}
+
+/*
  * `고쳐쓰기` — 방금 낸 답을 **모양에 맞춰 다시 적으라고** 시키는 턴.
  *
  * 새 일이 아니라 같은 일의 뒷정리라, 사람 말로 시작한 턴과 세 가지가 다르다.
@@ -571,24 +625,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    */
   // /context 가 이 목록과 같은 것을 재도록 세션에 남긴다 (session.js 의 #도구토큰).
   session.실린에이전트들 = 깊이 + 1 >= 최대깊이 ? null : (ctx.에이전트들 ?? null);
-  let tools = toolSchemas(session.도구제한 ?? null, {
-    hasSkills: (session.skills?.length ?? 0) > 0,
-    web: session.web !== false && !isOffline(),   // 오프라인이면 웹 도구는 아예 안 보여 준다
-    work: session.effectiveWork(),                // 작업 모드가 쓰는 것만 (modes.js)
-    // 밖에서 붙인 도구(MCP). 붙은 것이 없으면 아무것도 안 는다.
-    mcp: ctx.mcp ?? null,
-    // 이름 붙인 하위 작업 (agent/agents.js). 이름과 한 줄 설명만 실린다.
-    에이전트들: 깊이 + 1 >= 최대깊이 ? null : (ctx.에이전트들 ?? null),
-    // 이 자리에 언어 서버가 있을 때만 Def·Refs 를 보여 준다 (tools/lsp.js).
-    // 없는 자리에서 목록에 세워 두면 모델이 부르고, 실패를 받고, 또 부른다.
-    lsp: session.lsp === true,
-    // 창이 좁으면 도구 설명을 줄여 싣는다 (budget.js 의 설명길이).
-    // 도구를 빼는 게 아니라 설명만 줄이므로 할 수 있는 일은 안 달라진다.
-    ctx: conn.ctx ?? null,
-    // 그림을 볼 수 있는 모델일 때만 Read 설명에 그림 이야기를 넣는다.
-    // 못 보는데 넣어 두면 모델이 화면 사진을 열려 들고, 그때마다 한 걸음이 헛간다.
-    vision: conn.vision === true,
-  });
+  // 셈은 턴도구() 하나에만 있다 — 미리 읽기가 같은 것을 먼저 보낸다 (위 머리말).
+  let tools = 턴도구(session, ctx, { 깊이 });
 
   /*
    * 하위 작업에게 물려줄 도구 이름들.
@@ -609,7 +647,11 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   let 자식도구 = 깊이 + 1 >= 최대깊이 ? 내도구.filter((n) => n !== 'Task') : 내도구;
   // 모드마다 생각의 배분과 걸음 수가 다르다. 사용자가 따로 정했으면 그걸 존중한다.
   let 모드 = workMode(session.effectiveWork());
-  let effort = session.effortSet ? session.effort : (모드.effort ?? session.effort);
+  /*
+   * 배분 · 천장 · 이번 턴 강도는 턴강도() 하나가 정한다 — 미리 읽기가 같은 셈으로 첫 걸음을 짓는다
+   * (위 첫걸음강도). 아래 두 머리말이 그 셈의 까닭이다.
+   */
+  let { effort, 천장, think } = 턴강도(session, userText);
   /*
    * ── 강도는 **천장**이고, 이번 턴 값은 시킨 말이 정한다 (agent/effort.js) ──
    *
@@ -631,11 +673,6 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 그래서 파일 열 개를 읽고 경합 조건을 짚어야 하는 일까지 low 로 돌았다 —
    * 생각 블록이 0자로 나가고, 답이 그만큼 얕았다.
    */
-  let 천장 = session.thinkSet ? session.think : 천장고르기(모드.think, session.think, userText);
-  let think = 자동강도(userText, 천장, {
-    대화크기: session.messages.length,
-    켜짐: session.autoThink !== false,
-  });
   /*
    * 바깥 모델에서는 단계별로도 안 움직인다.
    *
@@ -693,16 +730,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
      * 조용히 하지 않는다 — 화면에 적는다.
      */
     const 옛도구 = new Set(내도구);
-    tools = toolSchemas(session.도구제한 ?? null, {
-      hasSkills: (session.skills?.length ?? 0) > 0,
-      web: session.web !== false && !isOffline(),
-      work: session.effectiveWork(),
-      mcp: ctx.mcp ?? null,
-      에이전트들: 깊이 + 1 >= 최대깊이 ? null : (ctx.에이전트들 ?? null),
-      lsp: session.lsp === true,
-      ctx: conn.ctx ?? null,
-      vision: conn.vision === true,
-    });
+    tools = 턴도구(session, ctx, { 깊이 });
     내도구 = tools.map((t) => t.function.name).filter((n) => !n.startsWith('mcp__'));
     실은mcp = new Set(tools.map((t) => t.function.name).filter((n) => n.startsWith('mcp__')));
     자식도구 = 깊이 + 1 >= 최대깊이 ? 내도구.filter((n) => n !== 'Task') : 내도구;
@@ -1151,6 +1179,16 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         if (msg.content) yield { type: 'content', text: msg.content };
       }
     };
+
+    /*
+     * 미리 읽던 것이 아직 돌고 있으면 **끝나기를 기다렸다가** 부른다 (agent/warm.js).
+     *
+     * 그 요청은 지금 보낼 앞머리를 계산하는 중이다. 기다리지 않고 보내면 서버가 빈 자리
+     * (Ollama 의 OLLAMA_NUM_PARALLEL · llama.cpp 의 -np)로 이 요청을 돌려, 같은 앞머리를
+     * 두 자리에서 **한꺼번에 두 번** 계산한다 — 미리 읽은 보람이 없고 오히려 느려진다.
+     * 기다리는 동안 화면은 이미 「생각 중」 이다. 첫 걸음만 — 그 뒤는 미리 읽은 것이 없다.
+     */
+    if (steps === 1 && !깊이) await session.미리읽기?.기다리기?.(signal);
 
     try {
       yield* askModel(cap, level);

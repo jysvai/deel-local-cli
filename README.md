@@ -229,6 +229,16 @@ locally feels it compound every turn. deel pushes what can change per turn
 so the front stays cached. The ordering is enforced by a test
 (`test/cache.test.js`).
 
+#### Read ahead while you type, answer the moment you press Enter (2.2.0)
+
+On a local model the first answer is usually slow because of reading, not thinking — loading the
+model, then reading the system prompt, tools and conversation from scratch. deel loads the model
+when the input box appears, and when you pause it sends **the same body** as the real request, with
+what you have typed so far, so the server has already read it. After Enter only the last few
+characters are left. It turns itself on only for priceless models on this PC or the LAN. A test
+(`test/warm.test.js`) holds the two bodies byte-identical —
+[how it works](docs/en/tuning.md#why-the-first-answer-is-slow--load-early-read-while-you-type).
+
 #### Edits actually succeed on small models
 
 Small local models often can't reproduce the exact whitespace of the string
@@ -396,7 +406,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.1.9  ⌂ inside
+ deel 2.2.0  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1425,7 +1435,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.1.9](docs/en/releases/2.1.md#219)** | Typing your own answer to a question (instead of a number) and pressing Enter goes through — the clock counts from the last key · the best option is marked (recommended) · in front of reasoning models it waits 5 minutes for the first content, and a stall with no content is called once more · unknown OpenAI-compatible endpoints are asked for token counts, estimated with ≈ when they send none · new `/report` — tokens, cost, context, tool calls and changed files on one screen, also saved as Markdown in `.deel/reports/` |
+| **[2.2.0](docs/en/releases/2.2.md#220)** | Read-ahead while you type — the model loads when the input box appears, and when you pause the server reads everything you have typed so far, so after Enter only the last few characters are left. On by itself only for priceless models on this PC or the LAN (`DEEL_WARMUP` · `"warmup"`); shown as `↯` in the status bar and in `/status` |
+| [2.1.9](docs/en/releases/2.1.md#219) | Typing your own answer to a question (instead of a number) and pressing Enter goes through — the clock counts from the last key · the best option is marked (recommended) · in front of reasoning models it waits 5 minutes for the first content, and a stall with no content is called once more · unknown OpenAI-compatible endpoints are asked for token counts, estimated with ≈ when they send none · new `/report` — tokens, cost, context, tool calls and changed files on one screen, also saved as Markdown in `.deel/reports/` |
 | [2.1.8](docs/en/releases/2.1.md#218) | Ctrl+Z then `fg` no longer makes deel quit silently (macOS, Linux) — it carries on, redraws the input box or the approval question, and restores raw mode even where the kernel drops the suspend (`ssh -t`, `docker run -it`). The gate now drives deel in a real terminal |
 | [2.1.7](docs/en/releases/2.1.md#217) | Tab completion for file names works in zsh, the default shell on macOS (it printed `bad substitution`); a clipboard image over 12 MB says it is too big instead of blaming osascript; a decomposed (NFD) Korean profile name no longer leaves orphaned keychain items |
 | [2.1.6](docs/en/releases/2.1.md#216) | Works properly on macOS — long or hand-edited keychain keys, a locked keychain, folders under `/tmp` · `/var` (links to `/private`) recognized as trusted, and output over 64 KB no longer cut off when a pipe reads slowly (macOS and Linux). macOS joins the gate CI |
