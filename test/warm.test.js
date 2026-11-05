@@ -269,7 +269,8 @@ for (const [이름, o] of [
     const 굳은 = s.시스템조각()[0];
     const 시킴 = (x) => String(x?.몸.messages?.[0]?.content ?? '');
     check(`${이름} · ${갈래}: 빈 말 예열도 시킴말의 굳은 부분은 같다 (켤 때 모델 올리기 + 앞머리)`,
-      !!진짜 && 굳은.length > 1000 && 시킴(미리것[0]).startsWith(굳은) && 시킴(진짜).startsWith(굳은), `굳은 ${굳은.length}자`);
+      // 굳은 부분의 길이는 운영체제마다 다르다(셸·폴더 줄) — 리눅스는 974자였다. 「빈 것이 아니다」 만 본다.
+      !!진짜 && 굳은.length > 500 && 시킴(미리것[0]).startsWith(굳은) && 시킴(진짜).startsWith(굳은), `굳은 ${굳은.length}자`);
     if (o.kind === 'ollama') {
       check(`${이름} · ${갈래}: 미리 올릴 때도 같은 num_ctx·keep_alive (다시 올리지 않게)`,
         미리것[0].몸.options?.num_ctx === 8192 && 미리것[0].몸.keep_alive === 진짜?.몸.keep_alive);
