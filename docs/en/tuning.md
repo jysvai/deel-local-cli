@@ -29,6 +29,14 @@ you glance at another window, and the first message after you come back recomput
 entire conversation. `DEEL_KEEP_ALIVE` changes it. Running llama.cpp directly, the
 server-side `--cache-reuse 256` does the same job.
 
+The thinking level is part of the prefix too. Some templates put the level text at the **very start** of the system
+prompt (Qwen3.8), so changing it diverges from the first character and the whole prompt is read again. Since 2.2.1 the
+level on a local model no longer moves by itself with the step, your words or the work mode. It stays at what
+`/think` set (or the default).
+
+A turn that changes the work mode still re-reads the conversation part, because the mode text comes before the
+conversation. On a slow server with a long conversation, `/work code` pins the mode and that stops. `/auto` undoes it.
+
 ### Why the first answer is slow — load early, read while you type
 
 On a local model the wait before the first word is usually **reading, not thinking**. The first
@@ -39,7 +47,7 @@ thousands of tokens, which on a CPU or a small GPU is tens of seconds again.
 Both can happen **before you press Enter**, because almost all of the request is already known.
 So since 2.2.0:
 
-1. When the input box appears, deel sends the conversation as it stands — at startup this loads the
+1. When the input box first appears, deel sends the conversation as it stands — at startup this loads the
    model, with the same `num_ctx` it will use, so it never loads short and reloads on the first message
 2. When you pause while typing (0.4 s), it sends again with what you have typed so far
 3. When you press Enter, the real request picks up what was already read and only reads the last
@@ -49,8 +57,11 @@ Each of these is the **same body** as the real request, with the answer capped a
 server's prefix cache (Ollama, llama.cpp, LM Studio and vLLM all have one) does the rest. The body
 is built by the same code as the real turn — including the work mode the words you typed would
 route to — and a test compares the two byte for byte (`test/warm.test.js`). Only one is in flight
-at a time; if one is still running when you press Enter, the first call waits for it (up to 30 s, then
-it is cut off) instead of reading the same prefix twice in a second slot.
+at a time; if one is still running when you press Enter, the first call waits briefly (up to 3 s, then
+it is cut off; what was read stays on the server and the real request picks it up). A slow server that takes
+over 5 s to read a typed draft gets no more drafts, only the one read when the input box first appears. After a
+turn nothing is sent, because the server's cache already holds that conversation (it is sent again if the
+conversation shrank or the model changed).
 
 It does not draft the answer while you type. That answer would be thrown away with every key,
 it would hold the GPU the reading needs, and an answer here is tool calls — files cannot be

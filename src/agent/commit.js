@@ -29,6 +29,7 @@ import { 진짜자리 } from '../safety/guard.js';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { chat } from '../backend/adapter.js';
+import { 로컬넉넉 } from '../backend/http.js';
 import { 증거모으기 } from './evidence.js';
 import { VERSION } from '../version.js';
 import { homeDir } from '../config.js';
@@ -604,7 +605,7 @@ export async function 메시지짓기(session, { 뿌리, diff, 통계, 파일들
       json: 제목 ? null : (session.conn.json ? 스키마 : null),
       signal,
       onBackoff,
-      timeout: 60000,
+      timeout: 로컬넉넉(session.conn, 60000),
     });
     const 글 = (r?.content ?? '').trim();
     if (!글) return null;

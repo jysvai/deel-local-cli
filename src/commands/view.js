@@ -127,7 +127,7 @@ export function 강조(글, 낱말들) {
 export function showThink(session, { 자세히 = false } = {}) {
   const b = session.breakdown();
   const 아는상한 = session.conn.maxTokens ?? session.conn.maxOut ?? null;
-  const t = effortTable(session.think, session.effort, { ctx: b.total, used: b.used, max: 아는상한 });
+  const t = effortTable(session.think, session.effort, { ctx: b.total, used: b.used, max: 아는상한 }, { 고정: true });
   const 개발자 = session.level === '개발자';
   const 단계 = t.rows.map((r) => `${r.label} ${r.level}`).join(c.gray(' · '));
 

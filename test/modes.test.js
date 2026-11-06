@@ -15,7 +15,7 @@ import { 걸음수 } from '../src/agent/budget.js';
 import { toolSchemas } from '../src/tools/index.js';
 import { TODO_TOOL } from '../src/tools/todo.js';
 import { Session } from '../src/agent/session.js';
-import { run } from '../src/agent/loop.js';
+import { run, 턴강도 } from '../src/agent/loop.js';
 import { makeScope } from '../src/safety/guard.js';
 import { History } from '../src/safety/undo.js';
 import { Audit } from '../src/safety/audit.js';
@@ -380,19 +380,23 @@ const 기대강도 = (강도, 배분, 단계) => 강도말(effortFor(강도, 배
   s.thinkSet = true;
   받은것.length = 0;
   for await (const _ of run(s, ctx, '해줘')) { /* */ }
-  const 기대 = 기대강도('low', get('plan').effort, 'plan');
+  // 정한 값 그대로다. 단계별로 안 움직인다 — 움직이면 프롬프트 첫 줄이 바뀐다 (llamaslot.test.js).
+  const 기대 = 강도말('low');
   check('사용자가 정한 think 가 이긴다', 보낸강도(받은것[0]) === 기대,
     `보냄 ${보낸강도(받은것[0])} · 기대 ${기대}`);
 }
 
 {
-  // 안 정해 뒀으면 모드가 정한 값이 쓰인다
+  // 로컬은 안 정해 뒀어도 모드가 강도를 안 옮긴다 — 강도 문구가 시킴말 맨 앞에 가는 템플릿이 있다.
   const s = new Session(conn, { root, work: 'plan', think: 'low' });
   받은것.length = 0;
   for await (const _ of run(s, ctx, '해줘')) { /* */ }
-  const 기대 = 기대강도(get('plan').think, get('plan').effort, 'plan');
-  check('안 정했으면 모드 값이 쓰인다', 보낸강도(받은것[0]) === 기대,
+  const 기대 = 강도말('low');
+  check('★ 로컬은 모드가 강도를 안 옮긴다', 보낸강도(받은것[0]) === 기대,
     `보냄 ${보낸강도(받은것[0])} · 기대 ${기대}`);
+  // 바깥은 여태대로 모드 값이 쓰인다.
+  const 바깥 = new Session({ ...conn, base: 'https://api.example.com/v1' }, { root, work: 'plan', think: 'low' });
+  check('바깥은 안 정했으면 모드 값이 쓰인다', 턴강도(바깥, '해줘').천장 === get('plan').think, String(턴강도(바깥, '해줘').천장));
 }
 
 {

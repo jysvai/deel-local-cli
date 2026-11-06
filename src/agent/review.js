@@ -20,6 +20,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { 깃, 저장소뿌리, 이번에바꾼것, 글자그대로, 살림경로인가, 살림에닿나 } from './commit.js';
 import { chat } from '../backend/adapter.js';
+import { 로컬넉넉 } from '../backend/http.js';
 
 /** 모델에게 보여 줄 diff 길이 상한(글자). 넘으면 자르고 잘랐다고 적는다. */
 const DIFF상한 = 60000;
@@ -259,7 +260,7 @@ export async function 리뷰받기(session, 것, { signal = null, onBackoff = nu
       think: session.conn.kind === 'ollama' ? false : 'low',
       signal,
       onBackoff,
-      timeout: 180000,
+      timeout: 로컬넉넉(session.conn, 180000),
     });
     const 글 = (r?.content ?? '').trim();
     if (!글) return { ok: false, 왜: '모델이 빈 답을 줬습니다 — 다시 시켜 보세요.' };

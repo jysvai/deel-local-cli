@@ -4,7 +4,7 @@
 //   no   안 됨 (기능에 직접 영향)
 //   warn 되긴 하는데 조건이 붙음
 //   skip 앞 검사가 실패해 확인 불가
-import { req, headersFor, serverMessage } from './http.js';
+import { req, headersFor, serverMessage, 로컬넉넉 } from './http.js';
 import { 언제풀리나 } from './quota.js';
 import { probeCtx } from './ctxsize.js';
 import { 눈검사메시지 } from './vision.js';
@@ -182,7 +182,8 @@ export async function probe(conn, onStep = () => {}) {
     method: 'POST',
     headers: H(),
     body: 몸통(conn, opts),
-    timeout: opts.timeout ?? 60000,
+    // 느린 로컬 모델은 「1+1」 하나에도 몇 분이 걸린다. 끊으면 멀쩡한 연결이 도구·스트리밍 false 로 저장된다.
+    timeout: 로컬넉넉(conn, opts.timeout ?? 60000),
     stream: opts.stream,
   });
   const call = async (opts) => {

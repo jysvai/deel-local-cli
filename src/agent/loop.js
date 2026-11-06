@@ -227,6 +227,15 @@ export function 턴도구(session, ctx, { 깊이 = 0 } = {}) {
 export function 턴강도(session, userText, { 대화크기 = session.messages.length } = {}) {
   const 모드 = workMode(session.effectiveWork());
   const effort = session.effortSet ? session.effort : (모드.effort ?? session.effort);
+  /*
+   * 로컬에서는 강도가 저절로 안 움직인다 — 사람이 정한 값(`/think`, 없으면 기본)으로 간다.
+   *
+   * 「토큰 값을 안 내니 로컬은 괜찮다」 고 여겨 왔는데 틀렸다. 값은 안 나가도 **시간**이 나간다. 강도
+   * 문구를 시킴말 맨 앞에 넣는 템플릿(Qwen3.8)이 있어서, 강도가 바뀌면 첫 글자부터 갈려 프롬프트 전체를
+   * 다시 읽는다. 24GB 맥에서는 그 한 번이 몇 분이다. 그래서 낱말(「안녕」)이나 모드(디버그)로 고르지
+   * 않는다 — 얕게 생각해서 아끼는 것보다 다시 읽는 값이 훨씬 크다 (test/llamaslot.test.js).
+   */
+  if (!바깥인가(session.conn?.base)) return { effort, 천장: session.think, think: session.think };
   const 천장 = session.thinkSet ? session.think : 천장고르기(모드.think, session.think, userText);
   const think = 자동강도(userText, 천장, { 대화크기, 켜짐: session.autoThink !== false });
   return { effort, 천장, think };
@@ -240,7 +249,7 @@ export function 턴강도(session, userText, { 대화크기 = session.messages.l
 export function 첫걸음강도(session, userText, { 대화크기 = session.messages.length } = {}) {
   const conn = session.conn;
   const { effort, think } = 턴강도(session, userText, { 대화크기 });
-  return thinkFor(conn, effortFor(think, effort, 'plan', { 고정: 바깥인가(conn.base) }));
+  return thinkFor(conn, effortFor(think, effort, 'plan', { 고정: true }));
 }
 
 /*
@@ -674,13 +683,12 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 생각 블록이 0자로 나가고, 답이 그만큼 얕았다.
    */
   /*
-   * 바깥 모델에서는 단계별로도 안 움직인다.
+   * 단계별로 안 움직인다. 그 배분 하나가 걸음마다 요청을 바꿔 놓아 캐시를 깬다.
    *
-   * 로컬은 자기 KV 캐시를 쓰고 토큰 값을 따로 안 내므로 여태처럼 첫 판단만
-   * 세게, 이어가기는 얕게 간다. 바깥은 그 배분 하나가 걸음마다 요청을
-   * 바꿔 놓아 캐시를 깬다.
+   * 로컬은 여태 움직였다 — 첫 판단만 세게, 이어가기는 얕게. 로컬 서버의 캐시도 앞머리가 같아야 산다는
+   * 것을 놓친 것이다. 바깥에서는 돈이 나가고, 로컬에서는 시간이 나간다 (위 턴강도).
    */
-  const 강도고정 = 바깥으로나감;
+  const 강도고정 = true;
   /*
    * 걸음 수 상한은 **모델에 맞춰** 정한다 (budget.js).
    *

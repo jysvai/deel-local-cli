@@ -700,6 +700,7 @@ export const ko = {
   'warm.stats': '{횟수}번 보냄 · 서버가 읽은 {토큰} 토큰',
   'warm.last': '마지막 {초}초',
   'warm.lastFail': '마지막 실패 — {왜}',
+  'warm.slow': '이 서버는 읽는 데 오래 걸려 치는 동안은 안 보냅니다 — 입력칸이 처음 뜰 때만 읽습니다',
   'warm.howto': '끄기 DEEL_WARMUP=0 · 설정 "warmup": false — 켜기 DEEL_WARMUP=1',
   'wire.think': '생각',
   'run.notSaving': '이 실행의 대화를 파일에 다 못 적었습니다 ({까닭}) — {n}줄을 잃었습니다. --json 의 session 을 비웠습니다 — 이 대화는 이어 할 수 없습니다.',

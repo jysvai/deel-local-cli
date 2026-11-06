@@ -33,6 +33,9 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trace } from './trace.mjs';
+import { Session } from '../src/agent/session.js';
+import { 턴강도 } from '../src/agent/loop.js';
+import { route } from '../src/agent/route.js';
 
 const pass = [];
 const fail = [];
@@ -118,6 +121,12 @@ function 띄우기(인자, { 제한 = 40000 } = {}) {
 
 /** 이번에 나간 시킴말. 모드 글이 여기 실린다. */
 const 시킴말 = () => 받은요청[0]?.몸?.messages?.find((m) => m.role === 'system')?.content ?? '';
+/** 바깥 연결이었다면 이 말에 얼마나 깊이 볼까. */
+const 바깥강도 = (글) => {
+  const s = new Session({ kind: 'openai', base: 'https://api.example.com/v1', auth: 'none', model: 'm', streaming: true, tools: true, think: true }, { root: work, work: 'auto' });
+  s.routed = route(글).mode ?? null;
+  return 턴강도(s, 글).think;
+};
 const 도구이름 = () => (받은요청[0]?.몸?.tools ?? []).map((t) => t.function?.name ?? t.name);
 
 // ══ 1. 한 번 친 말이 어느 모드로 도착하나 ═══════════════════════════════
@@ -148,8 +157,11 @@ trace('3-점검실체');
 {
   받은요청.length = 0;
   await 띄우기(['run', '공동작업 쪽에 경합 조건 있는지 훑어봐줘. 근거 있는 것만 찾아줘.']);
-  check('★★ 점검은 얕게 안 본다', 받은요청[0]?.몸?.reasoning_effort === 'high',
+  // 이 검사의 서버는 로컬이다. 로컬은 강도가 저절로 안 옮겨 간다 — 프롬프트 첫 줄이 바뀌면 전체를 다시 읽는다.
+  check('★★ 로컬은 점검이라도 강도를 안 옮긴다', 받은요청[0]?.몸?.reasoning_effort === 'medium',
     String(받은요청[0]?.몸?.reasoning_effort));
+  check('★★ 바깥에서 점검은 얕게 안 본다', 바깥강도('공동작업 쪽에 경합 조건 있는지 훑어봐줘. 근거 있는 것만 찾아줘.') === 'high',
+    바깥강도('공동작업 쪽에 경합 조건 있는지 훑어봐줘. 근거 있는 것만 찾아줘.'));
   const 바꾸는것 = 도구이름().filter((n) => ['Write', 'Edit', 'Bash', 'Move', 'Append'].includes(n));
   check('★★ 점검에는 파일 바꾸는 도구가 몸통에 아예 안 실린다', 바꾸는것.length === 0,
     바꾸는것.join(',') || `실린 것 ${도구이름().length}개`);
@@ -165,13 +177,17 @@ trace('4-강도');
 {
   받은요청.length = 0;
   await 띄우기(['run', 'src/collab.js 가 뭐 하는 파일이야?']);
-  check('★ 한 줄 물음은 여전히 얕게 본다', 받은요청[0]?.몸?.reasoning_effort === 'low',
+  check('★ 로컬은 한 줄 물음이라도 강도를 안 옮긴다', 받은요청[0]?.몸?.reasoning_effort === 'medium',
     String(받은요청[0]?.몸?.reasoning_effort));
+  check('★ 바깥에서 한 줄 물음은 여전히 얕게 본다', 바깥강도('src/collab.js 가 뭐 하는 파일이야?') === 'low',
+    바깥강도('src/collab.js 가 뭐 하는 파일이야?'));
 
   받은요청.length = 0;
   await 띄우기(['run', '이 프로젝트 상태 관리가 뭐 하는 코드인지 설명해줘.\n어디서 어긋날 수 있는지도 같이 짚어줘.\n고치지는 마.']);
   const 강도 = 받은요청[0]?.몸?.reasoning_effort;
   check('★★ 시킨 것이 여럿이면 묻기라도 안 낮춘다', 강도 && 강도 !== 'low', String(강도));
+  const 여럿 = '이 프로젝트 상태 관리가 뭐 하는 코드인지 설명해줘.\n어디서 어긋날 수 있는지도 같이 짚어줘.\n고치지는 말아줘.';
+  check('★★ 바깥에서도 시킨 것이 여럿이면 묻기라도 안 낮춘다', route(여럿).mode === 'ask' && 바깥강도(여럿) !== 'low', `${route(여럿).mode} ${바깥강도(여럿)}`);
 }
 
 // ══ 4. 대화 이름이 머리로, 모든 요청에 같은 값으로 ══════════════════════

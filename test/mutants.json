@@ -16695,7 +16695,7 @@
       "곳": "src/agent/warm.js",
       "무엇": "미리 읽을 때 친 말로 모드를 안 고른다",
       "그러면": "시킴말 꼬리와 도구 목록이 Enter 뒤 요청과 달라져 캐시가 시킴말 끝에서 끊긴다 — 미리 읽은 보람이 없는데 아무 데도 안 찍힌다",
-      "찾을것": "      s.routed = s.work === 'auto' ? (route(초안).mode ?? null) : null;\n",
+      "찾을것": "      if (초안) s.routed = s.work === 'auto' ? (route(초안).mode ?? null) : null;\n",
       "바꿀것": "      s.routed = null;\n",
       "검사": "test/warm.test.js"
     },
@@ -16703,16 +16703,16 @@
       "곳": "src/agent/warm.js",
       "무엇": "기다림 상한에서 미리 읽기를 안 끊는다",
       "그러면": "30초를 넘긴 미리 읽기가 계속 돌고, 진짜 요청이 빈 자리에서 같은 앞머리를 또 읽는다 — 기다린 까닭이 사라진다",
-      "찾을것": "시계 = setTimeout(() => { if (this.멈추개 === 멈추개) 멈추개?.abort(); res(); }, this.기다림);",
-      "바꿀것": "시계 = setTimeout(() => { res(); }, this.기다림);",
+      "찾을것": "          if (this.멈추개 === 멈추개) { 끊었나 = true; 멈추개?.abort(); }\n",
+      "바꿀것": "",
       "검사": "test/warm.test.js"
     },
     {
       "곳": "src/agent/warm.js",
       "무엇": "모델을 갈아타도 셈을 안 비운다",
       "그러면": "앞 모델이 읽은 것이 새 모델의 「↯ 미리 읽음」 과 /status 숫자로 뜬다 — 안 읽힌 것을 읽혔다고 말한다",
-      "찾을것": "    this.셈 = { 횟수: 0, 읽은토큰: 0, 마지막: null };\n  }\n\n  /** 이 세션에서 그만 보낸다. */",
-      "바꿀것": "  }\n\n  /** 이 세션에서 그만 보낸다. */",
+      "찾을것": "    this.셈 = { 횟수: 0, 읽은토큰: 0, 마지막: null };\n    this.느림 = false;\n",
+      "바꿀것": "    this.느림 = false;\n",
       "검사": "test/warm.test.js"
     },
     {
@@ -16720,6 +16720,102 @@
       "무엇": "첫 부름이 나가 있던 미리 읽기를 안 기다린다",
       "그러면": "서버가 빈 자리에서 같은 앞머리를 한 번 더 읽는다 — Enter 직후 두 요청이 GPU 를 나눠 써서 미리 읽기 전보다 느려진다",
       "찾을것": "    if (steps === 1 && !깊이) await session.미리읽기?.기다리기?.(signal);\n",
+      "바꿀것": "",
+      "검사": "test/warm.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "로컬에서 낱말·모드로 생각 강도를 옮긴다",
+      "그러면": "인사 한 마디나 디버그 턴에 프롬프트 첫 줄이 바뀌어 전체를 다시 읽는다 — 24GB 맥에서 몇 분이 오류 없이 사라진다",
+      "찾을것": "  if (!바깥인가(session.conn?.base)) return { effort, 천장: session.think, think: session.think };\n",
+      "바꿀것": "",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "로컬에서 걸음마다 생각 강도를 옮긴다",
+      "그러면": "도구를 부를 때마다 medium → low 로 첫 줄이 바뀌어, 걸음마다 시킴말·도구·대화를 처음부터 다시 읽는다",
+      "찾을것": "  const 강도고정 = true;",
+      "바꿀것": "  const 강도고정 = 바깥으로나감;",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/agent/warm.js",
+      "무엇": "턴이 끝날 때마다 미리 읽기를 또 보낸다",
+      "그러면": "슬롯 하나짜리 서버에서 값 없이 캐시 끝을 흔들고 슬롯을 붙든다 — 다음 말이 그 뒤로 줄을 선다",
+      "찾을것": "    const 이어짐 = this.턴돎 && 대화 === this.지난대화 && 길이 >= this.지난길이;",
+      "바꿀것": "    const 이어짐 = false;",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/agent/warm.js",
+      "무엇": "Enter 뒤에 미리 읽기를 오래 기다린다",
+      "그러면": "느린 서버에서 첫 답이 30초씩 그냥 늦는다 — 빠르게 하려고 넣은 것이 늦춘다",
+      "찾을것": "export const 기다림상한 = 3000;",
+      "바꿀것": "export const 기다림상한 = 30000;",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/agent/warm.js",
+      "무엇": "친 글 읽기가 오래 걸려도 계속 보낸다",
+      "그러면": "손을 뗄 때마다 몇 분짜리 읽기가 슬롯을 붙든다",
+      "찾을것": "        if (초안 && Date.now() - 처음 >= this.느림문턱) this.느림 = true;\n",
+      "바꿀것": "",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/agent/warm.js",
+      "무엇": "모델을 올리는 동안의 503 을 거절로 센다",
+      "그러면": "서버가 뜨는 사이에 두 번 부딪히면 이 연결에서 미리 읽기가 영영 꺼지고 「서버가 거절」 이라고 적힌다",
+      "찾을것": "        if (잠깐막힘(e)) this.실패 = 0;\n",
+      "바꿀것": "",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/agent/warm.js",
+      "무엇": "빈 말을 지을 때 모드를 비운다",
+      "그러면": "입력칸이 뜰 때 읽은 것의 시킴말 꼬리가 달라져 대화 전체가 거기서 갈린다",
+      "찾을것": "      if (초안) s.routed = s.work === 'auto' ? (route(초안).mode ?? null) : null;\n",
+      "바꿀것": "      s.routed = s.work === 'auto' ? (route(초안).mode ?? null) : null;\n",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/backend/http.js",
+      "무엇": "로컬 서버도 바깥과 같은 시계로 끊는다",
+      "그러면": "새 세션의 첫 요청이 몇 분인 모델이 도중에 끊겨 「안 된다」 로 보인다",
+      "찾을것": "  return 바깥인가(conn?.base) ? ms : Math.max(ms, 로컬기다림);",
+      "바꿀것": "  return ms;",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "소식 없음 상한이 로컬을 모른다",
+      "그러면": "프롬프트를 10분 넘게 읽는 동안 핑만 흘러 우리가 끊는다 — 다시 불러도 또 처음부터 기다린다",
+      "찾을것": "  const 무소식 = conn.무소식 ?? 로컬넉넉(conn, 무소식기본);",
+      "바꿀것": "  const 무소식 = conn.무소식 ?? 무소식기본;",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/backend/probe.js",
+      "무엇": "deel setup 진단이 느린 로컬 모델을 끊는다",
+      "그러면": "「1+1」 에 60초를 넘긴 모델이 도구·스트리밍 false 로 저장돼, 붙기는 붙는데 도구를 못 쓰는 연결이 된다",
+      "찾을것": "    timeout: 로컬넉넉(conn, opts.timeout ?? 60000),",
+      "바꿀것": "    timeout: opts.timeout ?? 60000,",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/agent/warm.js",
+      "무엇": "대화를 갈아 끼워도 이어진 것으로 본다",
+      "그러면": "/resume 으로 긴 대화를 불러도 안 읽어 둔다 — 미리 읽기가 제일 값진 자리를 놓친다",
+      "찾을것": "    const 이어짐 = this.턴돎 && 대화 === this.지난대화 && 길이 >= this.지난길이;",
+      "바꿀것": "    const 이어짐 = this.턴돎 && 길이 >= this.지난길이;",
+      "검사": "test/llamaslot.test.js"
+    },
+    {
+      "곳": "src/agent/warm.js",
+      "무엇": "끊고 곧바로 진짜 요청을 보낸다",
+      "그러면": "슬롯이 여럿인 서버에서 진짜 요청이 빈 슬롯으로 가서 읽어 둔 것을 못 잇고 처음부터 읽는다",
+      "찾을것": "    if (끊었나 && !signal?.aborted) await new Promise((res) => { setTimeout(res, this.비킬틈).unref?.(); });\n",
       "바꿀것": "",
       "검사": "test/warm.test.js"
     }

@@ -26,6 +26,7 @@ import { Readable } from 'node:stream';
 import { createUnzip, createBrotliDecompress } from 'node:zlib';
 import { checkUrl, NetBlocked } from '../safety/network.js';
 import { 프록시고르기 } from './proxy.js';
+import { 바깥인가 } from '../safety/runmode.js';
 import { 인증서찾기 } from './clientcert.js';
 import { 말 as 옮긴말 } from '../i18n/index.js';
 
@@ -352,6 +353,24 @@ export const 무소식알림기본 = 90000;
  * 한참 뒤다. 0 으로 두면 이 상한을 안 쓴다(프로필의 `무소식`).
  */
 export const 무소식기본 = 600000;
+
+/*
+ * ── 로컬 서버는 끝까지 기다린다 ──────────────────────────────────────
+ *
+ * 위 시계들은 멎은 게이트웨이를 놓아 주려고 있다. 그런데 이 PC·사내망의 서버는 멎은 것이 아니라 그냥
+ * **느릴** 때가 많다. 24GB 맥에서 큰 모델을 SSD 로 돌리면 새 세션의 첫 프롬프트를 읽는 데만 몇 분이고,
+ * 긴 대화를 다시 읽으면 10분도 넘는다. 그 사이 서버는 핑만 보낸다 — 소식이 없으니 우리가 끊었다.
+ * 끊으면 사람은 「안 된다」 고 보고, 다시 부르면 또 처음부터 기다린다.
+ *
+ * 돈도 안 나가고 ESC 도 있으니 넉넉히 둔다. 사람에게 알리는 시계(무소식알림기본)는 그대로라, 오래
+ * 걸리는 동안 왜 조용한지는 화면이 말한다. 프로필에 직접 적은 값이 있으면 그것이 먼저다.
+ */
+export const 로컬기다림 = 1800000;
+
+/** 이 연결이 이 PC·사내망이면 ms 를 로컬기다림 까지 늘린다. 바깥은 그대로다. */
+export function 로컬넉넉(conn, ms) {
+  return 바깥인가(conn?.base) ? ms : Math.max(ms, 로컬기다림);
+}
 
 /**
  * 소켓을 **얻는 데까지** 줄 시간.

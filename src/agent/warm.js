@@ -42,8 +42,23 @@
  * 나가는 것이라 돈이 드는 곳에서 저절로 켜면 안 된다.
  *   DEEL_WARMUP=0 · 설정 "warmup": false  → 끔
  *   DEEL_WARMUP=1 · 설정 "warmup": true   → 어디서든 켬 (사람이 고른 것)
+ *
+ * ── 슬롯 하나 · 되감지 못하는 서버 (2.2.1) ────────────────────────────
+ *
+ * 슬롯이 하나인 llama-server 에 재귀 상태를 쓰는 모델(Qwen3.8 · -np 1)을 올리면 이 기능이 해가 될 수
+ * 있었다. 슬롯이 하나라 읽는 동안 진짜 요청이 줄을 서고, 되감지 못하니 캐시 끝이 조금만 달라도 체크포인트로
+ * 돌아가며, 그 한 번이 몇 분이다. 그래서 값이 나오는 자리만 남겼다.
+ *
+ *   · 턴 뒤의 입력칸에서는 안 보낸다. 서버 캐시가 방금 그 대화를 들고 있다 — 다시 보내면 값 없이
+ *     캐시 끝만 흔든다. 처음 뜰 때 · 대화가 줄었을 때(/clear · 접기) · 모델이 바뀌었을 때만 보낸다.
+ *   · 빈 말은 지난 턴의 모드로 짓는다. 모드를 비우면 시킴말 꼬리가 달라져 대화 전체가 거기서 갈린다.
+ *   · 친 글을 읽히는 데 오래 걸리는 서버에는 더 안 보낸다(느림기본). 친 글은 몇십 토큰이라 빠른 서버에서나
+ *     값이 있다.
+ *   · Enter 뒤에는 몇 초만 기다리고 끊는다. 끊어도 읽은 데까지는 서버에 남아 진짜 요청이 그대로 잇는다.
+ *   · 모델을 올리는 동안의 503 · 시간 초과는 거절로 안 센다. 끄는 것은 정말 안 받는다고 할 때뿐이다.
  */
 import { chat } from '../backend/adapter.js';
+import { 로컬넉넉 } from '../backend/http.js';
 import { 세션요금 } from '../backend/price.js';
 import { 바깥인가 } from '../safety/runmode.js';
 import { route } from './route.js';
@@ -55,11 +70,17 @@ const 켜는말 = new Set(['1', 'on', 'true', 'yes', '켬']);
 // 손을 떼고 이만큼 조용하면 그때까지 친 것을 보낸다. 짧으면 한 글자마다 나가고,
 // 길면 Enter 를 먼저 쳐 버린다. 사람이 낱말 사이에서 멈추는 길이쯤이다.
 export const 쉼기본 = 400;
-// Enter 뒤에 돌던 것을 기다려 주는 상한. 서버가 멎었으면 진짜 요청도 어차피 멎는다 —
-// 그때는 기다리지 말고 진짜 요청이 제 울타리(무소식)로 말하게 둔다.
-export const 기다림상한 = 30000;
+// Enter 뒤에 돌던 것을 기다려 주는 상한. 거의 다 읽은 것을 끊어 슬롯이 여럿인 서버에서 빈 슬롯으로
+// 새지 않게 잠깐만 준다. 그 안에 안 끝나면 끊는다 — 읽은 데까지는 서버에 남아 진짜 요청이 잇는다.
+export const 기다림상한 = 3000;
+// 친 글 하나를 읽히는 데 이만큼 걸리면 이 연결에는 친 글을 더 안 보낸다.
+export const 느림기본 = 5000;
+// 끊고 나서 서버가 슬롯을 비울 틈. llama-server 는 끊김을 1초마다 본다.
+export const 비킬틈기본 = 1200;
 // 이만큼 잇달아 거절되면 이 세션에서는 그만 보낸다. 안 받는 서버를 쉴 때마다 두드리지 않는다.
 const 연달아한도 = 2;
+// 거절이 아닌 것 — 모델을 올리는 중이거나(503) 못 붙었거나(상태 없음) 시간이 넘은 것. 곧 풀린다.
+const 잠깐막힘 = (e) => !e?.status || [408, 425, 429, 502, 503, 504].includes(e.status);
 
 /**
  * 이 세션에서 미리 읽기를 켤까.
@@ -100,10 +121,10 @@ export class 미리읽기 {
   /**
    * @param {object} session
    * @param {object} ctx      턴 문맥 — MCP·에이전트 목록이 도구에 실린다
-   * @param {{cfg?, env?, 쉼?, 기다림?, 부르기?, 바뀜?: () => void}} o
+   * @param {{cfg?, env?, 쉼?, 기다림?, 비킬틈?, 느림?, 부르기?, 바뀜?: () => void}} o
    *   부르기 · 기다림 은 검사가 갈아 끼운다(기본 chat · 기다림상한). 바뀜 은 상태가 바뀔 때 화면을 다시 그리게 부른다.
    */
-  constructor(session, ctx, { cfg = null, env = process.env, 쉼 = 쉼기본, 기다림 = 기다림상한, 부르기 = chat, 바뀜 = null } = {}) {
+  constructor(session, ctx, { cfg = null, env = process.env, 쉼 = 쉼기본, 기다림 = 기다림상한, 비킬틈 = 비킬틈기본, 느림 = 느림기본, 부르기 = chat, 바뀜 = null } = {}) {
     this.session = session;
     this.ctx = ctx;
     this.cfg = cfg;
@@ -113,6 +134,12 @@ export class 미리읽기 {
     this.#판정보기();
     this.쉼 = 쉼;
     this.기다림 = 기다림;
+    this.비킬틈 = 비킬틈;
+    this.느림문턱 = 느림;
+    this.느림 = false;       // 친 글을 읽히는 데 오래 걸린 서버 — 친 글은 더 안 보낸다
+    this.턴돎 = false;       // 잠근 뒤 처음 풀기 전이다 — 그 사이 서버가 대화를 읽었다
+    this.지난길이 = 0;       // 마지막으로 풀 때의 대화 길이 — 줄었으면 앞머리가 바뀐 것이다
+    this.지난대화 = null;    // 마지막으로 풀 때의 대화 배열 — 갈아 끼웠으면(/resume · /clear · 접기) 서버에 없는 대화다
     this.부르기 = 부르기;
     this.바뀜 = 바뀜;
     this.도는것 = null;      // 지금 나가 있는 요청 (끝나면 null)
@@ -127,16 +154,22 @@ export class 미리읽기 {
 
   get 켬() { return this.판정.켬 === true; }
 
-  /** 입력칸이 떴다. 지금 대화 그대로 한 번 — 켤 때는 이것이 모델을 올린다. */
+  /** 입력칸이 떴다. 처음이거나 앞머리가 바뀌었으면 지금 대화 그대로 한 번 — 켤 때는 이것이 모델을 올린다. */
   풀기() {
     this.잠김 = false;
     this.#판정보기();
-    this.#보내기('');
+    const 대화 = this.session.messages ?? null;
+    const 길이 = 대화?.length ?? 0;
+    const 이어짐 = this.턴돎 && 대화 === this.지난대화 && 길이 >= this.지난길이;
+    this.턴돎 = false;
+    this.지난대화 = 대화;
+    this.지난길이 = 길이;
+    if (!이어짐) this.#보내기('');
   }
 
   /** 키를 쳤다. 손을 떼고 쉼 만큼 조용하면 그때까지 친 글로 보낸다. */
   쳤다(글) {
-    if (!this.켬 || this.잠김) return;
+    if (!this.켬 || this.잠김 || this.느림) return;
     clearTimeout(this.시계);
     this.시계 = setTimeout(() => {
       this.시계 = null;
@@ -150,6 +183,7 @@ export class 미리읽기 {
   /** Enter 를 쳤다. 새로 보내는 것을 멈춘다 — 이미 나간 것은 그대로 둔다(기다리기). */
   잠그기() {
     this.잠김 = true;
+    this.턴돎 = true;
     clearTimeout(this.시계);
     this.시계 = null;
     this.다음 = null;
@@ -158,9 +192,8 @@ export class 미리읽기 {
   /*
    * 나가 있는 것이 있으면 끝나기를 기다린다.
    *
-   * 상한이 먼저 오면 **그것을 끊고** 간다. 30초를 읽고도 안 끝난 것은 서버가 바쁘거나 멎은 것이고,
-   * 그대로 두면 진짜 요청이 빈 자리에서 같은 앞머리를 또 읽는다 — 기다린 까닭이 바로 그걸 막자는
-   * 것이었다. 멈춤 신호(Ctrl+C · ESC)면 끊지 않는다. 턴은 접히지만 읽던 앞머리는 다음 말에 그대로
+   * 상한이 먼저 오면 **그것을 끊고** 간다. 몇 초 안에 안 끝난 것은 느린 서버이고, 슬롯이 하나면 진짜
+   * 요청이 그 뒤로 줄을 선다. 끊어도 읽은 데까지는 서버에 남는다. 멈춤 신호(Ctrl+C · ESC)면 끊지 않는다. 턴은 접히지만 읽던 앞머리는 다음 말에 그대로
    * 쓰이고, 진짜 요청은 어차피 안 나간다(http.js 가 끊긴 신호를 보고 보내기 전에 던진다).
    */
   async 기다리기(signal = null) {
@@ -169,10 +202,14 @@ export class 미리읽기 {
     const 멈추개 = this.멈추개;
     let 시계 = null;
     let 끊기 = null;
+    let 끊었나 = false;
     await Promise.race([
       그것,
       new Promise((res) => {
-        시계 = setTimeout(() => { if (this.멈추개 === 멈추개) 멈추개?.abort(); res(); }, this.기다림);
+        시계 = setTimeout(() => {
+          if (this.멈추개 === 멈추개) { 끊었나 = true; 멈추개?.abort(); }
+          res();
+        }, this.기다림);
         시계.unref?.();
       }),
       new Promise((res) => {
@@ -184,6 +221,11 @@ export class 미리읽기 {
     ]);
     clearTimeout(시계);
     if (끊기) signal.removeEventListener('abort', 끊기);
+    /*
+     * 끊고 곧바로 보내면 서버는 아직 그 슬롯을 쓰는 줄 안다. 슬롯이 여럿이면 진짜 요청이 빈 슬롯으로 가서
+     * 읽은 것을 못 잇고 처음부터 읽는다. 비울 틈을 잠깐 준다 — 슬롯이 하나면 어차피 줄을 서니 손해가 없다.
+     */
+    if (끊었나 && !signal?.aborted) await new Promise((res) => { setTimeout(res, this.비킬틈).unref?.(); });
   }
 
   /*
@@ -204,6 +246,8 @@ export class 미리읽기 {
     this.실패 = 0;
     // 셈도 이 연결의 것만 — 안 비우면 앞 모델이 읽은 것이 새 모델의 「↯ 미리 읽음」 으로 뜬다.
     this.셈 = { 횟수: 0, 읽은토큰: 0, 마지막: null };
+    this.느림 = false;
+    this.턴돎 = false;
   }
 
   /** 이 세션에서 그만 보낸다. */
@@ -220,7 +264,7 @@ export class 미리읽기 {
      * 대기중 — 친 글이 아직 안 나갔다(쉼 시계가 걸렸거나, 도는 것 뒤에 줄 서 있다). 그때 「미리 읽음」
      * 을 띄우면 거짓이다. 다 읽힌 것은 **지난** 글이고, 지금 친 글은 아직 아무도 안 읽었다.
      */
-    return { ...this.판정, 도는중: !!this.도는것, 대기중: !!this.시계 || this.다음 !== null, ...this.셈 };
+    return { ...this.판정, 도는중: !!this.도는것, 대기중: !!this.시계 || this.다음 !== null, 느림: this.느림, ...this.셈 };
   }
 
   /*
@@ -234,7 +278,8 @@ export class 미리읽기 {
     const s = this.session;
     const 옛 = s.routed;
     try {
-      s.routed = s.work === 'auto' ? (route(초안).mode ?? null) : null;
+      // 빈 말은 고를 것이 없다 — 지난 턴의 모드를 둔다. 비우면 시킴말 꼬리가 달라져 대화 전체가 거기서 갈린다.
+      if (초안) s.routed = s.work === 'auto' ? (route(초안).mode ?? null) : null;
       return {
         messages: [...s.wire(), { role: 'user', content: 초안 }],
         tools: 턴도구(s, this.ctx),
@@ -249,6 +294,7 @@ export class 미리읽기 {
     if (!this.켬 || this.잠김) return;
     const 초안 = 보낼초안(글);
     if (초안 === null) return;
+    if (초안 && this.느림) return;
     if (this.도는것) { this.다음 = 초안; return; }
     let 몸;
     try { 몸 = this.#짓기(초안); } catch { return; }   // 못 지으면 진짜 요청이 제 탈을 말한다
@@ -265,7 +311,8 @@ export class 미리읽기 {
         // 다시 부르지 않는다. 막혔으면 다음 쉼에 또 보내면 되고, 그 사이 사다리를 타면 Enter 뒤의
         // 진짜 요청이 그 대기만큼 늦게 출발한다.
         retry: { 최대: 0, 막힘최대: 0 },
-        timeout: 120000,
+        // 끝날 때까지 둔다. Enter 가 끊고, 읽은 데까지는 서버에 남는다 — 여기서 자르면 느린 서버만 손해다.
+        timeout: 로컬넉넉(this.session.conn, 120000),
         signal: 멈추개.signal,
       }))
       .then((r) => {
@@ -285,9 +332,12 @@ export class 미리읽기 {
         if (멈추개.signal.aborted) return;
         this.실패 += 1;
         this.셈.마지막 = { ok: false, ms: Date.now() - 처음, 왜: String(e?.message ?? e).split('\n')[0].slice(0, 120) };
+        if (잠깐막힘(e)) this.실패 = 0;
         if (this.실패 >= 연달아한도) this.끄기('서버거절');
       })
       .finally(() => {
+        // 끊겨서 끝난 것도 센다 — 상한까지 안 끝난 것이 제일 느린 판이다.
+        if (초안 && Date.now() - 처음 >= this.느림문턱) this.느림 = true;
         if (this.멈추개 === 멈추개) this.멈추개 = null;
         this.도는것 = null;
         const 다음 = this.다음;

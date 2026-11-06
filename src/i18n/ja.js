@@ -605,6 +605,7 @@ export const ja = {
   'warm.stats': '{횟수}回送信 · サーバーが読んだ {토큰} トークン',
   'warm.last': '最後 {초}秒',
   'warm.lastFail': '最後は失敗 — {왜}',
+  'warm.slow': 'このサーバーは読み込みに時間がかかるため、入力中は送りません — 入力欄が最初に出たときだけ読みます',
   'warm.howto': 'オフ DEEL_WARMUP=0 · 設定 "warmup": false — オン DEEL_WARMUP=1',
   'wire.think': '思考',
   'run.notSaving': 'この実行の会話をファイルに書き切れませんでした（{까닭}）— {n}行を失いました。--json の session は空です — この会話は続けられません。',

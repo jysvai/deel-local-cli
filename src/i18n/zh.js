@@ -605,6 +605,7 @@ export const zh = {
   'warm.stats': '已发送 {횟수} 次 · 服务器读取 {토큰} 个 token',
   'warm.last': '上次 {초} 秒',
   'warm.lastFail': '上次失败 — {왜}',
+  'warm.slow': '此服务器读取较慢,输入时不再发送 — 仅在输入框首次出现时读取',
   'warm.howto': '关闭 DEEL_WARMUP=0 · 配置 "warmup": false — 开启 DEEL_WARMUP=1',
   'wire.think': '思考',
   'run.notSaving': '本次运行的对话没能全部写入文件（{까닭}）— 丢失 {n} 行。--json 的 session 为空 — 无法继续这段对话。',

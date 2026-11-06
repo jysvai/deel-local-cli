@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   req, headersFor, serverMessage, Aborted, 잠잠기본, 첫잠잠기본, 연결기본, 초로,
-  무소식기본, 무소식알림기본, 소식없음오류,
+  무소식기본, 무소식알림기본, 소식없음오류, 로컬넉넉,
 } from './http.js';
 import { 할당량기억, 미리기다릴까, 왜띄우나, 마지막할당량, 할당량자리 } from './quota.js';
 import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
@@ -1329,7 +1329,7 @@ export async function chat(conn, opts) {
       method: 'POST',
       headers: await 머리말짓기(conn, opts),
       body,
-      timeout: opts.timeout ?? 300000,
+      timeout: opts.timeout ?? 로컬넉넉(conn, 300000),
       연결: conn.연결 ?? 연결기본,
       signal: opts.signal ?? null,
     });
@@ -1448,11 +1448,11 @@ export async function* chatStream(conn, opts) {
    * 잠잠 시계 둘 — 첫 내용 전에는 길게, 한 글자라도 온 뒤로는 여태대로 (backend/http.js 의 첫잠잠기본).
    * 0 은 「머리말 상한과 같은 값」 이다(http.js 의 원시요청) — 함수로 넘기면 그 풀이를 안 거치므로 여기서 푼다.
    */
-  const 머리상한 = opts.timeout ?? 300000;
+  const 머리상한 = opts.timeout ?? 로컬넉넉(conn, 300000);
   const 잠잠수 = conn.잠잠 ?? 잠잠기본;
   const 흐를때잠잠 = 잠잠수 > 0 ? 잠잠수 : (머리상한 > 0 ? 머리상한 : 잠잠기본);
   // 부르는 쪽이 따로 주면 그 값이다 — 검사가 5분을 기다릴 수는 없다(conn.무소식알림 과 같은 자리).
-  const 첫잠잠 = conn.첫잠잠 ?? Math.max(흐를때잠잠, 첫잠잠기본);
+  const 첫잠잠 = conn.첫잠잠 ?? Math.max(흐를때잠잠, 로컬넉넉(conn, 첫잠잠기본));
   /*
    * 내용 한 글자 없이 멎은 것은 **한 번** 다시 부른다.
    *
@@ -1610,7 +1610,7 @@ async function* 흘려읽기(conn, opts, r, 흐름 = null) {
     + (acc.usage?.잰것 ? 1 : 0)
     + (acc.stopped ? 1 : 0);
 
-  const 무소식 = conn.무소식 ?? 무소식기본;
+  const 무소식 = conn.무소식 ?? 로컬넉넉(conn, 무소식기본);
   const 무소식알림 = Math.min(conn.무소식알림 ?? 무소식알림기본, 무소식 > 0 ? 무소식 / 2 : Infinity);
   let 마지막소식 = Date.now();
   let 본만큼 = 자란만큼();

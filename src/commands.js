@@ -1307,6 +1307,7 @@ export async function handle(line, session, ctx) {
             : ` · ${말('warm.lastFail', { 왜: 끝.왜 })}`;
           say(`  ${' '.repeat(10)} ${c.gray(말('warm.stats', { 횟수: 판.횟수, 토큰: Number(판.읽은토큰).toLocaleString() }) + 꼬리)}`);
         }
+        if (판.느림) say(`  ${' '.repeat(10)} ${c.gray(말('warm.slow'))}`);
         if (판.왜 !== '없음') say(`  ${' '.repeat(10)} ${c.gray(말('warm.howto'))}`);
       }
       say(`  ${c.gray(pad(말('status.root'), 10))} ${session.root}`);

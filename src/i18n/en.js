@@ -648,6 +648,7 @@ export const en = {
   'warm.stats': '{횟수} sent · {토큰} tokens read by the server',
   'warm.last': 'last {초}s',
   'warm.lastFail': 'last one failed — {왜}',
+  'warm.slow': 'This server reads slowly, so nothing is sent while you type — it only reads when the input box first appears',
   'warm.howto': 'off: DEEL_WARMUP=0 · config "warmup": false — on: DEEL_WARMUP=1',
   'wire.think': 'thinking',
   'run.notSaving': 'Could not write all of this run to disk ({까닭}) — {n} lines lost. session is empty in --json — this run cannot be resumed.',

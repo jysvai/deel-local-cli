@@ -412,7 +412,7 @@ price table, cost says "unknown".
 
 ### Read-ahead while you type — `warmup`
 
-When the input box appears, deel loads the model; when you pause while typing, it has the server
+When the input box first appears, deel loads the model; when you pause while typing, it has the server
 read everything up to what you have typed so far. Press Enter and only the last few characters are
 left to read, so the answer starts right away. How it works is in
 [Speed and spend](tuning.md#why-the-first-answer-is-slow--load-early-read-while-you-type).

@@ -406,7 +406,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.2.0  ⌂ inside
+ deel 2.2.1  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -946,15 +946,17 @@ not a stage table.
 ```
 $ /think
 
-  Effort  medium   (First call medium · Continue low · Stuck high)
+  Effort  medium   (First call medium · Continue medium · Stuck medium)
   harder /think high   faster /think low
 ```
 
 | Profile | Character |
 |---|---|
-| `even` | Same effort everywhere — predictable, slower |
-| `save` (default) | Hard on the first decision only |
-| `deep` | Everything one notch up — for hard work |
+| `even` | The same output cap at every stage |
+| `save` (default) | Less output cap while continuing, more when stuck |
+| `deep` | A larger output cap at every stage — for hard work |
+
+The level does not move from step to step, because moving it changes the start of the prompt and the server reads the whole thing again. Since 2.2.1 this holds for local models too. What a profile divides is the output cap.
 
 Set the profile with `/think profile save`. **Level and profile are different axes, so the
 commands were split** — `/think high` and `/think save` used to set different things under
@@ -965,13 +967,13 @@ The stage table moved to `/think detail` (the default at developer level).
 ```
 $ /think detail
 
-  Effort  medium   (First call medium · Continue low · Stuck high)
-  Profile   save   Hard on the first call, shallow while continuing - usually the better trade
+  Effort  medium   (First call medium · Continue medium · Stuck medium)
+  Profile   save   Less output cap while continuing, more when stuck - usually the better trade
 
   Stage       Effort    Out cap   When
   First call  · medium      14,069  Deciding what to do
-  Continue    ↓ low         12,310  Reading a tool result, picking the next move
-  Stuck       ↑ high        15,827  The last tool returned an error
+  Continue    · medium      12,310  Reading a tool result, picking the next move
+  Stuck       · medium      15,827  The last tool returned an error
 
   Caps are shared inside 16,384 (unknown, so a default) — /out
   Context 40,960 · used 5,787
@@ -1435,7 +1437,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.2.0](docs/en/releases/2.2.md#220)** | Read-ahead while you type — the model loads when the input box appears, and when you pause the server reads everything you have typed so far, so after Enter only the last few characters are left. On by itself only for priceless models on this PC or the LAN (`DEEL_WARMUP` · `"warmup"`); shown as `↯` in the status bar and in `/status` |
+| **[2.2.1](docs/en/releases/2.2.md#221)** | Slow local models no longer re-read the whole prompt at every step — the thinking level stays put on local models, read-ahead only sends where it pays, and this PC and the LAN wait up to 30 minutes |
+| [2.2.0](docs/en/releases/2.2.md#220) | Read-ahead while you type — the model loads when the input box appears, and when you pause the server reads everything you have typed so far, so after Enter only the last few characters are left. On by itself only for priceless models on this PC or the LAN (`DEEL_WARMUP` · `"warmup"`); shown as `↯` in the status bar and in `/status` |
 | [2.1.9](docs/en/releases/2.1.md#219) | Typing your own answer to a question (instead of a number) and pressing Enter goes through — the clock counts from the last key · the best option is marked (recommended) · in front of reasoning models it waits 5 minutes for the first content, and a stall with no content is called once more · unknown OpenAI-compatible endpoints are asked for token counts, estimated with ≈ when they send none · new `/report` — tokens, cost, context, tool calls and changed files on one screen, also saved as Markdown in `.deel/reports/` |
 | [2.1.8](docs/en/releases/2.1.md#218) | Ctrl+Z then `fg` no longer makes deel quit silently (macOS, Linux) — it carries on, redraws the input box or the approval question, and restores raw mode even where the kernel drops the suspend (`ssh -t`, `docker run -it`). The gate now drives deel in a real terminal |
 | [2.1.7](docs/en/releases/2.1.md#217) | Tab completion for file names works in zsh, the default shell on macOS (it printed `bad substitution`); a clipboard image over 12 MB says it is too big instead of blaming osascript; a decomposed (NFD) Korean profile name no longer leaves orphaned keychain items |

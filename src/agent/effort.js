@@ -57,24 +57,24 @@ export const PROFILES = {
     // 화면 말이 영어일 때 쓰는 이름. modes.js 의 en 과 같은 방식이다 —
     // i18n 표에 같은 말을 또 적어 두면 언젠가 둘이 갈라진다.
     en: 'even',
-    desc: '모든 단계 같은 강도 — 예측 가능한 대신 느립니다',
-    descEn: 'Same effort at every stage - predictable, but slower',
+    desc: '모든 단계에 출력 상한을 같게 나눕니다',
+    descEn: 'The same output cap at every stage',
     shift: { plan: 0, work: 0, fix: 0 },
     share: { plan: 0.40, work: 0.40, fix: 0.40 },
   },
   save: {
     name: '절약',
     en: 'save',
-    desc: '첫 판단만 세게, 이어가기는 얕게 — 대개 이게 낫습니다',
-    descEn: 'Hard on the first call, shallow while continuing - usually the better trade',
+    desc: '이어가기에 덜, 막혔을 때 더 나눕니다 — 대개 이게 낫습니다',
+    descEn: 'Less output cap while continuing, more when stuck - usually the better trade',
     shift: { plan: 0, work: -1, fix: +1 },
     share: { plan: 0.40, work: 0.35, fix: 0.45 },
   },
   deep: {
     name: '깊게',
     en: 'deep',
-    desc: '전 단계 한 칸씩 위로 — 어려운 일에만',
-    descEn: 'Every stage one notch up - for hard work only',
+    desc: '전 단계에 출력 상한을 넉넉히 나눕니다 — 어려운 일에만',
+    descEn: 'A larger output cap at every stage - for hard work',
     // 「전 단계」 는 이어가기도 뜻한다. 여기만 0 이라 깊게를 골라도 그 단계는
     // 균일과 똑같이 돌았다 — 그런데 파일을 쓰는 호출은 대개 이어가기에서
     // 나온다. 어려운 일에만 쓰라고 만든 배분이 정작 일하는 자리에서 안 깊었다.
@@ -145,13 +145,13 @@ export function shiftLevel(level, by) {
  * 이번 호출에 쓸 강도.
  * off 는 사람이 "생각 끄기" 를 고른 것이므로 어떤 단계에서도 켜지 않는다.
  *
- * `고정` 은 **단계별로 안 움직인다** 는 뜻이다. 바깥 모델에 붙었을 때 켠다.
+ * `고정` 은 **단계별로 안 움직인다** 는 뜻이다. 턴을 돌리는 자리는 언제나 켠다 (loop.js 의 강도고정).
  *
  *   왜: 생각 설정이 요청마다 달라지면 그 자체로 캐시가 깨진다. 걸음마다
  *   plan → work → fix 로 눈금을 옮기면, 걸음마다 대화 전체가 다시 나간다.
  *   한 걸음 얕게 생각해서 아끼는 것보다 60k 짜리 앞머리를 다시 보내는 값이
- *   훨씬 크다. 로컬 모델은 자기 KV 캐시를 쓰고 토큰 값을 따로 안 내므로
- *   여태 하던 대로 단계별로 움직인다.
+ *   훨씬 크다. 로컬이라고 다르지 않다 — 강도 문구를 시킴말 맨 앞에 넣는 템플릿이
+ *   있어서, 돈 대신 시간이 나간다. 24GB 맥에서는 그 한 번이 몇 분이다.
  */
 export function effortFor(base, profileKey, stage, { 고정 = false } = {}) {
   if (base === 'off') return 'off';

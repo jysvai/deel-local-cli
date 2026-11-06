@@ -9,7 +9,7 @@ and everything before it is **collected into one**.
 
 | | Where | What |
 |---|---|---|
-| **Current** | **[2.2.x](releases/2.2.md)** | [2.2.0](releases/2.2.md#220) — read-ahead while you type: local models answer the moment you press Enter |
+| **Current** | **[2.2.x](releases/2.2.md)** | [2.2.1](releases/2.2.md#221) — slow local models no longer re-read the whole prompt at every step |
 | Previous | [2.1.x](releases/2.1.md) | [2.1.9](releases/2.1.md#219) — typing your own answer to a question goes through, reasoning models are not cut off at 60 seconds, token counts no longer show 0, and there is `/report` |
 | | | [2.1.8](releases/2.1.md#218) — Suspending with Ctrl+Z and resuming with `fg` no longer makes deel quit |
 | | | [2.1.6](releases/2.1.md#216) — works properly on macOS: keychain keys, trusted folders under `/tmp`, long output through a slow pipe. macOS joins the gate CI |

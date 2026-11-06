@@ -8,6 +8,7 @@
 //   2) 요약도 모델이 만든다. 그 요청이 실패하면 프로그램이 멈추면 안 된다 —
 //      실패하면 옛 방식(그냥 자르기)으로 물러선다.
 import { chat, 부른것들, 결과들, 도구결과인가, 결과바꾸기 } from '../backend/adapter.js';
+import { 로컬넉넉 } from '../backend/http.js';
 import { estimateTokens, safeCut, safeHead, 못박을것 } from './session.js';
 import { wasCut } from './effort.js';
 import { 그림장수, 글만 } from '../backend/vision.js';
@@ -596,7 +597,8 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
       signal,
       onBackoff: (알림) => { 다시 += 1; onBackoff?.(알림); },
       // 요약 하나에 5분을 기다릴 이유가 없다. 그만한 서버면 그냥 줄이는 편이 빠르다.
-      timeout: 60000,
+      // 로컬은 다르다 — 느린 것이 정상이고, 줄여도 앞머리가 바뀌어 어차피 다시 읽는다.
+      timeout: 로컬넉넉(session.conn, 60000),
     });
     셈하기(다시);
     /*
