@@ -34,6 +34,25 @@ prompt (Qwen3.8), so changing it diverges from the first character and the whole
 level on a local model no longer moves by itself with the step, your words or the work mode. It stays at what
 `/think` set (or the default).
 
+Since 2.2.2 a local connection **turns thinking off** unless you set a level with `/think` or `--think`. On a local model
+thinking costs waiting time and fills the window. llama-server gets `chat_template_kwargs: {"enable_thinking": false}` and
+Ollama gets `think: false`. To turn it back on, set a level such as `/think medium`.
+
+### Local models get a short prefix and clear the window early
+
+A bigger window does not read any faster, and a longer context makes each new token cost more. So since 2.2.2 a local
+connection (this PC or the LAN) does the following whatever its window size.
+
+| Part | What it does |
+|---|---|
+| Fixed prompt | Short rules and trimmed tool descriptions. In an empty folder with a 65,536 window: 6,676 → 4,282 tokens. The skill list stops at 12 entries of 80 characters |
+| Folding and summaries | Does not use the window to the end. Even on a large window, summaries start at 40,000 tokens |
+| Automatic clearing | When a summary cannot make room (above about 35,000 tokens on a 65,536 window), or the window fills again after two summaries, earlier conversation is cleared and the turn carries on |
+
+Clearing carries over what you asked, the remaining to-dos, the files touched this turn and the latest summary. File contents are
+read again when needed. The prompt and thresholds of remote connections are unchanged. Clearing when a summary cannot make room
+applies to every connection.
+
 A turn that changes the work mode still re-reads the conversation part, because the mode text comes before the
 conversation. On a slow server with a long conversation, `/work code` pins the mode and that stops. `/auto` undoes it.
 

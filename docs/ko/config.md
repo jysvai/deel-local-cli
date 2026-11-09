@@ -736,7 +736,7 @@ deel --work <모드>       auto(기본·종합) / code / plan / architect / debu
 deel --level <수준>      쉬움 / 개발자
 deel --ctx <길이>        컨텍스트 길이 직접 지정 (655360 · 640k · 128k)
 deel --max-tokens <길이> 한 번에 받을 답 길이 상한 (32k) — /out 과 같은 값
-deel --think <강도>      off / low / medium(기본) / high / xhigh / max
+deel --think <강도>      off / low / medium(기본, 로컬은 off) / high / xhigh / max
 deel --effort <배분>     even / save(기본) / deep
 deel --offline           이 컴퓨터 밖으로 아무것도 안 보냄
 deel --continue          가장 최근 대화 이어하기

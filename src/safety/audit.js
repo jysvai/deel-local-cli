@@ -7,7 +7,7 @@ import { 가리기 } from './secrets.js';
 import { 첫이름 } from '../tools/label.js';
 
 /*
- * 살림 폴더(.deel · .deel/history)를 만든다. 못 만들면 **사람 말로** 던진다 (6회차 C3).
+ * 살림 폴더(.deel · .deel/history)를 만든다. 못 만들면 **사람 말로** 던진다.
  *
  * 앞서는 mkdirSync 의 원시 오류가 그대로 올라가, 대화 화면·deel -p·에디터 셋 다
  * 「EEXIST: file already exists, mkdir '…\.deel'」 한 줄만 보였다. 안 죽기는 했지만
@@ -197,7 +197,7 @@ export class Audit {
       target: this.#가린것(첫이름(args) ?? args?.command ?? null),
       // 실패는 error 로만 오지 않는다. Bash 는 종료 코드가 0 이 아니면 `failed: true`(tools/index.js),
       // Verify 는 탈이 나면 `failed: true` 를 싣고 error 는 비운다. error 만 보면 빨간 검사가
-      // ok 로 남고, 증거(agent/evidence.js)가 그걸 「확인한 것」 으로 내민다 (6회차 근거6at EV4).
+      // ok 로 남고, 증거(agent/evidence.js)가 그걸 「확인한 것」 으로 내민다.
       ok: !result?.error && result?.failed !== true,
       note: this.#가린것(result?.error ?? result?.summary ?? null),
     });

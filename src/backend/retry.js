@@ -135,11 +135,6 @@ export function 다시부를까({ status = 0, code = null, attempt = 1 } = {}, �
   return !!code && (다시부를코드.has(c) || 못붙은코드.has(c));
 }
 
-/** 아직 붙지도 못한 실패인가. 화면이 무슨 말을 할지 여기서 갈린다. */
-export function 못붙은것인가(code) {
-  return 못붙은코드.has(String(code ?? ''));
-}
-
 /**
  * 몇 ms 기다릴까. 서버가 말해 준 것이 있으면 그것, 없으면 사다리.
  * @param {{attempt?: number, retryAfter?: string|number|null}} 자리

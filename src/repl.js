@@ -337,7 +337,7 @@ export async function chatLoop(opts = {}) {
     work: opts.work ?? null,
     // 수준은 설정에 남는다. 한 번 고르면 다음에 켤 때도 그대로다.
     level: opts.level ?? cfg.level ?? null,
-    think: opts.think ?? 'medium',
+    think: opts.think ?? null,         // null 이면 연결을 보고 정한다 (로컬은 끔)
     effort: opts.effort ?? 'save',
     maxSteps: opts.maxSteps ?? null,   // null 이면 작업 모드가 정한다
   });
@@ -466,7 +466,7 @@ export async function chatLoop(opts = {}) {
       if (박힌것.length) {
         session.못박은것 = new 못박기(박힌것);
         /*
-         * 되살린 것이 다 실리는지 본다 (2.0.0 6회차 · Gemini 못박기6u W4). 되살리기는
+         * 되살린 것이 다 실리는지 본다. 되살리기는
          * 더하기 를 안 거쳐 개수·토큰 상한 검사가 안 닿는다 — 1.20.x 에서 박아 둔 긴 핀
          * 14개가 개수 상한에서 12개, 프롬프트에는 3개만 실리는데 화면은 「12개도 그대로
          * 이어 받았습니다」 였다. 사람은 다 지켜진다고 믿고 모델은 9개를 못 받는다.
@@ -1015,7 +1015,7 @@ export async function chatLoop(opts = {}) {
      * `rl.on('SIGCONT', () => rl.prompt())` 를 짝으로 든다). 여기는 아무도 안 받았다. 그러면 붙든 것이
      * 하나도 없어진 node 가 fg 하자마자 **조용히 끝난다** — 말 한마디 없이 셸로 떨어지고, 이어서 친 글은
      * 셸이 명령으로 받는다(「bash: 가라: command not found」). 맥·리눅스 × node 20·22 진짜 pty 에서 넷 다
-     * 그랬고, 답이 흐르는 중에 재워도 답이 끝나는 순간 같은 자리에서 끝났다(47회차 뒤 사냥).
+     * 그랬고, 답이 흐르는 중에 재워도 답이 끝나는 순간 같은 자리에서 끝났다.
      *
      * 잠드는 일을 readline 에게 안 맡기고 여기서 한다('SIGTSTP' 를 들으면 readline 은 스스로 안 잔다).
      * 그래야 잠들기 **전에** 우리가 켠 것을 끌 수 있다 — 붙여넣기 표지(위)와 돌림표가 숨긴 커서. 안 끄면
@@ -1628,7 +1628,7 @@ export async function chatLoop(opts = {}) {
     askPassword: async (label) => {
       if (closed) return null;
       /*
-       * 일하는 도중 미리 쳐 둔 줄은 **암호가 아니다** (4회차 이월).
+       * 일하는 도중 미리 쳐 둔 줄은 **암호가 아니다**.
        *
        * nextLine 은 큐에 뭐가 있으면 그것부터 준다. 그래서 「다음은 테스트도 돌려줘」 가 엑셀 암호로
        * 쓰였다 — 틀린 암호로 한 번을 날리고, 그 지시는 모델에게 영영 안 간다. 위 ask 의 「물음이 뜨기
@@ -1970,7 +1970,7 @@ export async function chatLoop(opts = {}) {
          * 프로필을 못 찾으면 **그것도 못 남긴 것이다.** 처음 고칠 때 `if (t)`
          * 하나로 끝냈더니, 못 찾은 판에서는 아무것도 안 남기고 `남김.ok` 가
          * 처음값 그대로 참이라 경고도 안 나갔다 — 없애려던 그 모양이 한 갈래에
-         * 그대로 남아 있었다(2차 리뷰가 짚었다). 디스크의 설정이 이 판과 어긋난
+         * 그대로 남아 있었다. 디스크의 설정이 이 판과 어긋난
          * 때(다른 창에서 프로필을 지운 뒤)가 그 자리다.
          */
         if (t) { t.ctx = r.value; 남김 = 저장시도(cfg2); }
@@ -2502,7 +2502,6 @@ export async function chatLoop(opts = {}) {
         else 화면.붙임(조각.이어붙임 + (조각.끝났나 ? '\n' : ''));
       }
     };
-    let thinkingShown = false;
     let stage = null;
     // 접는 중 표시. 끝나거나 다른 글을 찍기 전에 반드시 멈춰야 한다.
     let 접는중 = false;
@@ -2516,7 +2515,7 @@ export async function chatLoop(opts = {}) {
      */
     let 생각남긴수 = 0;
     const clearThinking = () => {
-      화면.임시지움(); thinkingShown = false;
+      화면.임시지움();
       if (thinkChars > 생각남긴수) {
         say(`  ${mark.think} ${c.gray(옮긴말('run.thoughtChars', { n: thinkChars.toLocaleString() }))}`);
         생각남긴수 = thinkChars;
@@ -2627,13 +2626,11 @@ export async function chatLoop(opts = {}) {
             // 전에는 이 표시를 안 세웠다. \r 로 커서만 앞으로 보내 놓고 지우지는
             // 않으니, 다음에 오는 짧은 글이 그 줄 위에 겹쳐 찍혔다 —
             //   "이어가기·low 생각 중…  합계를 sum 으로…" 처럼 앞말이 남았다.
-            if (process.stdout.isTTY) thinkingShown = true;
             break;
 
           case 'thinking':
             thinkChars += ev.text.length;
             화면.생각(`${mark.think} ${c.gray(꼬리표(stage))}${c.gray(옮긴말('run.thinkingChars', { n: thinkChars.toLocaleString() }))}`);
-            if (process.stdout.isTTY) thinkingShown = true;
             break;
 
           /*

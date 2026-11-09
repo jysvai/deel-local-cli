@@ -11,7 +11,8 @@ import { chat, 부른것들, 결과들, 도구결과인가, 결과바꾸기 } fr
 import { 로컬넉넉 } from '../backend/http.js';
 import { estimateTokens, safeCut, safeHead, 못박을것 } from './session.js';
 import { wasCut } from './effort.js';
-import { 그림장수, 글만 } from '../backend/vision.js';
+import { 그림장수, 글만, 그림한장토큰 } from '../backend/vision.js';
+import { 바깥인가 } from '../safety/runmode.js';
 
 // 몇 %에서 접기 시작할지. 접고 나서 다시 금방 차면 아무 소용이 없으니 넉넉히 비운다.
 export const COMPACT_AT = 0.8;
@@ -112,7 +113,7 @@ export const 캐시일때비울몫 = 0.10;
  */
 const 재볼기회 = 2;
 
-export function 캐시가도나(session) {
+function 캐시가도나(session) {
   const u = session?.usage ?? {};
   if ((u.cacheRead ?? 0) > 0) return true;
   return (u.calls ?? 0) < 재볼기회;
@@ -158,7 +159,7 @@ function 어디(args) {
  *
  * 사람이 쓴 말은 그대로 둔다 — 빼는 것은 그림 조각뿐이다.
  */
-export const KEEP_IMAGES = 2;
+const KEEP_IMAGES = 2;
 
 /** 오래된 그림을 이름만 남기고 뺀다. @returns {{뺀것:number, 뺀것들:Array}} */
 export function foldImages(session, { keep = KEEP_IMAGES } = {}) {
@@ -217,9 +218,25 @@ ${접힘표} 그림 ${장수}장은 자리를 비우려고 뺐습니다. 필요�
   return { 뺀것: 뺀것들.reduce((a, x) => a + x.장수, 0), 뺀메시지: 뺄것.length, 뺀것들 };
 }
 
+/*
+ * ── 로컬은 창을 끝까지 쓰지 않는다 ──────────────────────────────────────
+ *
+ * 로컬 서버는 문맥이 길수록 생성까지 느려진다. 창 몫(80%)으로만 재면 65k 창은 5만 2천
+ * 토큰까지 차야 접기 시작하고, 그때는 이미 답이 눈에 띄게 느리다. 큰 창의 로컬은 요약을
+ * 4만 토큰에서 시작하도록 접기·요약·비우기 문턱을 같은 배율로 당긴다. 바깥 연결과 작은
+ * 창은 값이 그대로다. 부르는 쪽이 `at` 을 직접 주면 배율을 안 건다.
+ */
+const 로컬요약토큰 = 40000;
+
+export function 문턱배율(session) {
+  if (바깥인가(session?.conn?.base)) return 1;
+  const 요약자리 = (session?.breakdown?.()?.total ?? 0) * COMPACT_AT;
+  return 요약자리 > 로컬요약토큰 ? 로컬요약토큰 / 요약자리 : 1;
+}
+
 export function shouldFold(session, at = null) {
   const b = session.breakdown();
-  const 문턱 = at ?? (캐시가도나(session) ? FOLD_AT_캐시 : FOLD_AT);
+  const 문턱 = at ?? (캐시가도나(session) ? FOLD_AT_캐시 : FOLD_AT) * 문턱배율(session);
   return b.total > 0 && b.used / b.total >= 문턱;
 }
 
@@ -308,7 +325,7 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
       * 그 자리가 접히면서 남은 항목이 어디에도 없어진다.
       *
       * 아래 머리말이 「접는 순간 남은 항목이 어디에도 없어진다」 고 적어 둔
-      * 바로 그 일이, 도구를 둘 같이 부른 판에서만 조용히 일어났다 (35차 리뷰).
+      * 바로 그 일이, 도구를 둘 같이 부른 판에서만 조용히 일어났다.
       */
      const 이름들 = 것들.map((x, k) => 이름표.get(x?.id)?.name ?? 차례짝.get(`${i}:${k}`)?.name ?? x?.name ?? '').filter(Boolean);
      자리.push({
@@ -439,7 +456,7 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
     const 경로 = 경로뽑기(args);
     /*
      * 한 메시지에 결과가 둘 실리면(Anthropic) 첫 결과의 경로만 들고 가서, 두 번째 파일은
-     * 내용이 접혔는데 기억이 남았다 — 다시 읽으면 「앞에서 읽은 그대로입니다」 (2.0.0 2차 리뷰).
+     * 내용이 접혔는데 기억이 남았다 — 다시 읽으면 「앞에서 읽은 그대로입니다」.
      */
     const 경로들 = [...new Set([경로, ...(args들 ?? []).map(경로뽑기)].filter(Boolean))];
     접은것들.push({ 도구: 도구이름, 곳, 경로, 경로들, 줄수, 토큰: Math.max(0, 아낀것) });
@@ -463,7 +480,7 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
      * 라고 겁을 주는데 잃을 캐시가 애초에 없다.
      *
      * 결정은 기울여도 되지만 **화면은 아는 것만 적는다.** 캐시를 정말 읽어
-     * 본 적이 있을 때만 말한다 (35차 리뷰).
+     * 본 적이 있을 때만 말한다.
      */
     캐시다시씀: (session?.usage?.cacheRead ?? 0) > 0,
   };
@@ -522,20 +539,127 @@ export { safeCut, safeHead } from './session.js';
  */
 export { 못박은요청, 못박은할일, 못박을것 } from './session.js';
 
-/** 접을 구간과 남길 구간을 나눈다. */
-export function split(messages, { keepHead = KEEP_HEAD, tailRatio = KEEP_TAIL_RATIO } = {}) {
+/*
+ * ── 남기는 몫은 **크기로도** 잰다 ───────────────────────────────────────
+ *
+ * 꼬리를 메시지 개수로만 정하면, 꼬리에 큰 도구 결과나 큰 Write 가 있을 때 요약을
+ * 하고도 80% 위에 그대로 남는다. 요약 값(로컬이면 수 분)을 치르고 자리는 못 내고,
+ * 다음 걸음에 또 부른다. 창의 네 몫 하나를 꼬리의 끝으로 잡는다.
+ *
+ * 머리도 같다. 「맨 처음 요청은 언제나 남긴다」 는 요청이 짧을 때 맞는 말이고, 큰
+ * 파일을 붙인 요청이면 그 머리가 접기가 못 건드리는 고정 몫이 된다. 넘치는 머리는
+ * 접을 구간으로 넘긴다 — 시킨 말 원문은 못박을것 이 다시 박는다.
+ */
+const 꼬리몫 = 0.25;
+const 머리몫 = 0.10;
+
+/**
+ * 메시지 하나의 토큰. session.js 의 breakdown 과 **같은 자**로 잰다.
+ *
+ * 도구 호출 인자가 여기 들어 있어야 한다 (Write 의 content, Edit 의 old/new).
+ * OpenAI·Ollama 는 `tool_calls` 에, Anthropic 은 `content` 의 tool_use 블록에 실린다.
+ * foldToolResults 가 결과만 접으므로 인자는 끝까지 안 줄어드는 몫이고, 빼고 재면
+ * 꼬리 상한이 거짓말이 된다. 재기만 한다 — 인자를 접힘 표로 바꿔 쓰지 않는다. 약한
+ * 로컬 모델이 그 자국을 흉내 내어 파일에 `(접힘)` 을 써 넣을 수 있다.
+ */
+function 말토큰(m) {
+  const 장수 = 그림장수(m);
+  return estimateTokens(장수 ? 글만(m) : (typeof m?.content === 'string' ? m.content : JSON.stringify(m?.content ?? '')))
+    + 장수 * 그림한장토큰
+    + estimateTokens(JSON.stringify(m?.tool_calls ?? ''));
+}
+
+/**
+ * 꼬리가 상한 안에 드는 가장 앞선 안전한 자리. `바닥`(개수로 정한 자리)보다 앞으로는 안 간다.
+ *
+ * safeCut 은 뒤로만 물러서므로(꼬리가 커진다) 상한을 넘은 뒤에 불러서는 안 된다. 그래서
+ * 뒤에서부터 쌓아 가며 **짝이 온전한 자리만** 적어 둔다. 마지막 교환은 혼자 상한을 넘어도
+ * 남긴다 — 방금 받은 결과까지 없애면 모델이 무엇을 하던 중인지 모른다.
+ */
+function 크기로자른자리(messages, 바닥, 상한) {
+  const n = messages.length;
+  // 글로 끝났으면 그 말을 받아 낸 앞 차례까지가 한 교환이다.
+  let 자리 = safeCut(messages, messages[n - 1]?.role === 'assistant' ? n - 2 : n - 1);
+  let 쌓임 = 0;
+  for (let i = n - 1; i >= 자리; i--) 쌓임 += 말토큰(messages[i]);
+  for (let i = 자리 - 1; i >= 바닥; i--) {
+    쌓임 += 말토큰(messages[i]);
+    if (쌓임 > 상한) break;
+    if (safeCut(messages, i) === i) 자리 = i;
+  }
+  return 자리;
+}
+
+/**
+ * 접을 구간과 남길 구간을 나눈다.
+ * @param {number} [창]  토큰. 주면 꼬리·머리를 크기로도 묶는다. 0 이면 개수로만 정한다.
+ */
+export function split(messages, { keepHead = KEEP_HEAD, tailRatio = KEEP_TAIL_RATIO, 창 = 0 } = {}) {
   const n = messages.length;
   const wantTail = Math.max(4, Math.floor(n * tailRatio));
-  const cut = safeCut(messages, n - wantTail);
-  const head = safeHead(messages, Math.min(keepHead, cut));
+  let cut = safeCut(messages, n - wantTail);
+  if (창 > 0 && n > 0) cut = Math.max(cut, 크기로자른자리(messages, cut, Math.floor(창 * 꼬리몫)));
+  let head = safeHead(messages, Math.min(keepHead, cut));
+  if (창 > 0 && messages.slice(0, head).reduce((a, m) => a + 말토큰(m), 0) > 창 * 머리몫) head = 0;
   if (cut <= head) return null;                    // 접을 것이 없다
   const fold = messages.slice(head, cut);
   if (fold.length < 4) return null;
   return { head: messages.slice(0, head), fold, tail: messages.slice(cut) };
 }
 
+/*
+ * ── 요약 요청도 크기를 묶는다 ───────────────────────────────────────────
+ *
+ * 도구 결과만 400자로 잘랐지 나머지는 다 실렸다. 로컬 서버는 그 글을 전부 읽는 데
+ * 수 분을 쓰고, 슬롯이 하나면 그동안 본 작업은 멈춰 있다. 그래서 로컬은 창의 12% 만
+ * 싣는다. 바깥 연결은 읽는 값이 작으니 절반까지 준다.
+ *
+ * 넘치면 **앞을** 버린다. 이어서 일할 사람에게 필요한 것은 최근 쪽이고, 맨 앞의
+ * 시킨 말은 못박을것 이 원문으로 따로 박는다.
+ */
+const 로컬요약입력몫 = 0.12;
+const 바깥요약입력몫 = 0.5;
+
+/** 이 연결의 요약 요청 상한 (토큰). 창을 모르면 0 — 상한 없음. */
+export function 요약입력상한(conn, 창) {
+  if (!(창 > 0)) return 0;
+  return Math.floor(창 * (바깥인가(conn?.base) ? 바깥요약입력몫 : 로컬요약입력몫));
+}
+
+/** 상한 안에 드는 앞쪽(또는 뒤쪽) 조각. 쪼갠 대리쌍은 떼어 낸다 — 서버가 못 읽는다. */
+function 토큰만큼(글, 상한, { 뒤쪽 = false } = {}) {
+  const 조각 = (n) => (뒤쪽 ? 글.slice(글.length - n) : 글.slice(0, n));
+  let 낮 = 0;
+  let 높 = 글.length;
+  while (낮 < 높) {
+    const 가운데 = Math.ceil((낮 + 높) / 2);
+    if (estimateTokens(조각(가운데)) <= 상한) 낮 = 가운데;
+    else 높 = 가운데 - 1;
+  }
+  return 조각(낮).replace(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/g, '');
+}
+
+/** 대화록 줄들을 상한 안으로. 뒤쪽을 남기고 앞을 생략했다고 한 줄 적는다. */
+function 뒤쪽만(줄들, 상한) {
+  const 전부 = 줄들.join('\n');
+  if (!(상한 > 0) || estimateTokens(전부) <= 상한) return 전부;
+  const 표 = `(앞쪽 대화는 길어서 생략했습니다. 아래는 최근 ${줄들.length}줄 가운데 뒤쪽입니다.)`;
+  const 쓸수 = Math.max(0, 상한 - estimateTokens(표) - 1);
+  const 남길것 = [];
+  let 쌓임 = 0;
+  for (let i = 줄들.length - 1; i >= 0; i--) {
+    const t = estimateTokens(줄들[i]) + 1;     // 줄바꿈 몫
+    if (쌓임 + t > 쓸수) break;
+    쌓임 += t;
+    남길것.unshift(줄들[i]);
+  }
+  // 마지막 줄 하나가 혼자 넘치면 그 줄의 뒤쪽이라도 싣는다. 빈 대화록을 요약시키면 지어낸다.
+  if (!남길것.length) 남길것.push(토큰만큼(줄들.at(-1) ?? '', 쓸수, { 뒤쪽: true }));
+  return `${표}\n${남길것.join('\n')}`;
+}
+
 // 요약에 넣을 글. 도구 결과는 길기만 하고 요약에 도움이 안 되니 앞부분만 준다.
-function transcript(msgs) {
+function transcript(msgs, 상한 = 0) {
   const out = [];
   for (const m of msgs) {
     /*
@@ -565,19 +689,82 @@ function transcript(msgs) {
     if (calls.length) out.push(`${who}: [도구] ${calls.join(', ')}`);
     if (body.trim()) out.push(`${who}: ${body.trim()}`);
   }
-  return out.join('\n');
+  return 뒤쪽만(out, 상한);
 }
+
+/*
+ * ── 요약이 몇 대째인지는 **메시지에서 읽는다** ──────────────────────────
+ *
+ * 압축을 거듭하면 요약과 접힌 자국이 쌓여 창이 그것으로 찬다. 그래서 세 번째부터는
+ * 요약 위에 또 요약을 얹지 않고 비운다(loop.js 의 자리만들기).
+ *
+ * 세대를 세션 칸에 들고 있으면 /clear · --resume · /undo 마다 맞춰 줘야 하고, 한
+ * 자리라도 빠지면 어긋난다. 요약말의 표식에 적어 두고 현재 messages 에서 읽으면
+ * 그 셋이 저절로 맞는다. 비우기 쪽지에는 표식이 없으니 비우면 0 부터 다시 센다.
+ *
+ * 세대 없는 옛 표식(2.2.1 까지 만든 대화를 이어받은 것)은 1대로 친다.
+ */
+const 요약표식 = /^\[앞선 대화 \d+개를 요약해 접었습니다(?: · (\d+)번째)?\. 아래가 그 요약입니다\.\]\n\n/;
+const 요약끝표 = '[요약 끝.';
+const 함께박힌쪽지 = ['\n\n[이번에 시킨 말', '\n\n[아직 안 끝난 할 일'];
+
+// 이만큼 쌓인 뒤의 압축이 「세 번째」 다.
+export const 요약세대상한 = 2;
+
+/** 요약말이면 그 표식, 아니면 null. 사람 말 자리의 맨 앞만 본다 — 인용한 글에 안 속는다. */
+function 요약표식읽기(m) {
+  if (m?.role !== 'user') return null;
+  return 글만(m).match(요약표식);
+}
+
+/** 지금 대화에 쌓인 요약 세대. 요약이 없으면 0. */
+export function 요약세대(messages) {
+  let 큰 = 0;
+  for (const m of messages ?? []) {
+    const 표 = 요약표식읽기(m);
+    if (표) 큰 = Math.max(큰, Number(표[1] ?? 1));
+  }
+  return 큰;
+}
+
+/** messages 에 있는 마지막 요약의 본문. 같이 박힌 쪽지는 뗀다 — 비우기가 지금 것으로 새로 박는다. */
+export function 마지막요약(messages) {
+  for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
+    const 표 = 요약표식읽기(messages[i]);
+    if (!표) continue;
+    let 몸 = 글만(messages[i]).slice(표[0].length);
+    const 끝 = 몸.lastIndexOf(요약끝표);
+    if (끝 >= 0) 몸 = 몸.slice(0, 끝);
+    for (const 머리 of 함께박힌쪽지) {
+      const k = 몸.indexOf(머리);
+      if (k >= 0) 몸 = 몸.slice(0, k);
+    }
+    return 몸.trim() || null;
+  }
+  return null;
+}
+
+const 요약시스템 = '너는 대화를 요약한다. 요약 외에 다른 말을 하지 않는다.';
 
 /**
  * 실제로 접는다.
- * @returns {{ok:boolean, folded:number, before:number, after:number, summary?:string, why?:string}}
+ * @param {Function} [부르기]  모델을 부르는 함수. 검사가 가짜를 넣는 자리다.
+ * @returns {{ok:boolean, folded:number, before:number, after:number, summary?:string, why?:string, 세대?:number}}
  */
-export async function compact(session, { auto = false, signal = null, onBackoff = null } = {}) {
-  const before = session.breakdown().used;
-  const parts = split(session.messages);
+export async function compact(session, { auto = false, signal = null, onBackoff = null, 부르기 = chat } = {}) {
+  const 잰것 = session.breakdown();
+  const before = 잰것.used;
+  const parts = split(session.messages, { 창: 잰것.total });
   if (!parts) return { ok: false, why: '접을 만큼 쌓이지 않았습니다', folded: 0, before, after: before };
 
-  const text = transcript(parts.fold);
+  /*
+   * 창을 **잰 적이 없으면** 상한을 안 둔다 — total 은 그때 짐작값(32k)이다.
+   * 지시문 몫을 빼서 요청 전체가 상한 안에 들게 한다. 작은 창에서 지시문이 몫을 다
+   * 먹으면 대화록이 없어지므로 절반은 대화록 몫으로 지킨다.
+   */
+  const 입력상한 = 요약입력상한(session.conn, 잰것.총잰것 === false ? 0 : 잰것.total);
+  const 지시토큰 = estimateTokens(요약시스템) + estimateTokens(`${요약지시}\n\n----- 대화 -----\n`);
+  const text = transcript(parts.fold, 입력상한 > 0 ? Math.max(Math.floor(입력상한 / 2), 입력상한 - 지시토큰) : 0);
   let summary = null;
   // 왜 못 받았는지. 「못 받았다」 만으로는 사람이 할 수 있는 일이 없다.
   let 못한까닭 = null;
@@ -585,13 +772,14 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
   let 다시 = 0;
   const 셈하기 = (n) => { session.usage.retries = (session.usage.retries ?? 0) + Math.max(0, n); };
   try {
-    const r = await chat(session.conn, {
+    const r = await 부르기(session.conn, {
       messages: [
-        { role: 'system', content: '너는 대화를 요약한다. 요약 외에 다른 말을 하지 않는다.' },
+        { role: 'system', content: 요약시스템 },
         { role: 'user', content: `${요약지시}\n\n----- 대화 -----\n${text}` },
       ],
       maxTokens: 1200,
-      think: session.conn.kind === 'ollama' ? false : 'low',   // 요약에 깊은 사고는 필요 없다
+      // 요약에 깊은 사고는 필요 없다. 로컬은 생각하는 만큼 수 분이 더 들어서 아예 끈다.
+      think: session.conn.kind === 'ollama' ? false : (바깥인가(session.conn.base) ? 'low' : 'off'),
       // 사용자가 Ctrl+C 를 누르면 이것도 멈춰야 한다. 안 받으면 답하는 도중
       // 화면이 멈춰 있고 아무 키도 안 먹는 것처럼 보인다.
       signal,
@@ -638,7 +826,7 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
   }
 
   /*
-   * ── 접을 대화보다 큰 요약은 받지 않는다 (사냥5 L5-8) ─────────────────────
+   * ── 접을 대화보다 큰 요약은 받지 않는다 ─────────────────────
    *
    * 요약은 maxTokens 1200 으로 부르지만 그 값을 무시하는 서버가 있다. 위에서는 잘렸나·
    * 거절인가만 봐서, 접을 대화보다 **큰** 요약도 ok:true 로 끼워 넣었다. 8k 창에서
@@ -652,11 +840,12 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
    */
   let 쪽지 = '';
   let 요약말 = null;
+  const 세대 = 요약세대(session.messages) + 1;
   if (summary) {
     쪽지 = 못박을것(session);
     요약말 = {
       role: 'user',
-      content: `[앞선 대화 ${parts.fold.length}개를 요약해 접었습니다. 아래가 그 요약입니다.]\n\n${summary}\n\n`
+      content: `[앞선 대화 ${parts.fold.length}개를 요약해 접었습니다 · ${세대}번째. 아래가 그 요약입니다.]\n\n${summary}\n\n`
         + 쪽지
         + '[요약 끝. 이어서 진행하세요. 파일 내용이 필요하면 다시 읽으세요.]',
     };
@@ -723,11 +912,60 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
   session.파일기억?.잊기();
 
   const after = session.breakdown().used;
-  return { ok: true, folded: parts.fold.length, before, after, summary, auto };
+  return { ok: true, folded: parts.fold.length, before, after, summary, auto, 세대 };
 }
 
 /** 지금 접어야 하는가. */
-export function shouldCompact(session, at = COMPACT_AT) {
+export function shouldCompact(session, at = null) {
   const b = session.breakdown();
-  return b.total > 0 && b.used / b.total >= at;
+  return b.total > 0 && b.used / b.total >= (at ?? COMPACT_AT * 문턱배율(session));
+}
+
+/*
+ * ── 요약으로 자리가 안 나면 비운다 ───────────────────────────────────────
+ *
+ * compact() 는 1% 만 줄어도 ok 다. 그러면 다음 걸음에 또 80% 를 넘고 또 요약을 부른다.
+ * 로컬에서는 그 한 번이 수 분이다. 요약을 했는데도 70% 위면 요약으로는 안 되는 판이라
+ * 그 자리에서 비우고 이어 간다(loop.js 의 자리만들기).
+ *
+ * 다만 비워서 **실제로 자리가 날 때만**이다. 작은 창에서는 시스템 글과 도구 정의가 대부분을
+ * 먹어서, 대화를 다 버려도 몇 퍼센트 안 빈다. 그때 비우면 하던 일만 잃는다. 비운 뒤의 크기는
+ * 쪽지를 끼워 놓고 재 본다 — 요약이 큰 판이면 쪽지도 크다. 창을 잰 적이 없으면(total 은
+ * 짐작값) 안 비운다. 서버가 거절하면 그때 비우는 길이 따로 있다.
+ */
+const 비우기문턱 = 0.7;
+export const 비워서날몫 = 0.15;
+
+/** 비우면 창의 비워서날몫 이상이 비나. 비울 때 남길 글을 주면 그것까지 재고 본다. */
+export function 비우면빌까(session, 쪽지글 = '') {
+  const b = session.breakdown();
+  if (!(b.total > 0) || b.총잰것 === false) return false;
+  const 옛말들 = session.messages;
+  let 비운뒤 = b.used;
+  try {
+    session.messages = [{ role: 'user', content: 쪽지글 || 못박을것(session) }];
+    비운뒤 = session.breakdown().used;
+  } finally {
+    session.messages = 옛말들;
+  }
+  return b.used - 비운뒤 >= b.total * 비워서날몫;
+}
+
+/** 지금 비워야 하나: 70% 위이고, 비워서 자리가 나는 판. */
+export function 비울까(session, 쪽지글 = '') {
+  const b = session.breakdown();
+  return b.total > 0 && b.used / b.total >= 비우기문턱 * 문턱배율(session) && 비우면빌까(session, 쪽지글);
+}
+
+/**
+ * 비우기 쪽지에 실을 요약. 창의 비워서날몫 안으로 자른다 — 쪽지가 크면 비운 보람이 없다.
+ * 창을 모르면 요약 상한(maxTokens 1200)으로 잰다. 그 값을 무시하는 서버가 있다.
+ */
+export function 실을요약(요약, 창) {
+  const 글 = String(요약 ?? '').trim();
+  if (!글) return '';
+  const 상한 = 창 > 0 ? Math.floor(창 * 비워서날몫) : 1200;
+  if (estimateTokens(글) <= 상한) return 글;
+  const 뒤표 = '\n…(요약 뒷부분 줄임)';
+  return `${토큰만큼(글, Math.max(0, 상한 - estimateTokens(뒤표)))}${뒤표}`;
 }

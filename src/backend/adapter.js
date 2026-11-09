@@ -284,6 +284,14 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
      */
     const 눈금 = 나가는눈금(shape, 카드, think);
     if (눈금) body.reasoning_effort = 눈금;
+    /*
+     * 끄는 말이 없는 창구에 끄라고 왔다 — 로컬 서버뿐이다 (loop.js 의 thinkFor).
+     *
+     * `reasoning_effort` 를 안 실으면 서버 기본값으로 생각하므로 템플릿에 직접 넘긴다.
+     * llama-server·vLLM 이 받는 칸이고 모르는 서버는 대개 무시한다. 거절하는 서버는
+     * 카드가 배워서 다음부터 안 싣는다 (wire.js 의 템플릿끄기).
+     */
+    else if (think === 'off' && 카드?.템플릿끄기 !== false) body.chat_template_kwargs = { enable_thinking: false };
   }
   /*
    * 이 대화가 한 덩어리라고 알려 준다.
@@ -699,7 +707,7 @@ function 몸속오류(obj, 사건이름 = null) {
 }
 
 /*
- * ── usage 숫자를 **숫자로** 읽는다 (사냥5 B5-07) ─────────────────────────
+ * ── usage 숫자를 **숫자로** 읽는다 ─────────────────────────
  *
  * 규격은 숫자라고 적지만 `"prompt_tokens": "120"` 처럼 글자로 싣는 게이트웨이가
  * 있다. 그 값을 `?? 0` 으로만 받으면 루프의 `session.usage.in += …` 가 **글자 잇기**가
@@ -843,7 +851,7 @@ export function extractMessage(shape, json) {
  * 조용히 삼킨 값 하나가 그 전부를 만들었다.
  */
 /*
- * ── 부름의 이름은 **늘 글자**로 넘긴다 (사냥5 L5-1) ─────────────────────────
+ * ── 부름의 이름은 **늘 글자**로 넘긴다 ─────────────────────────
  *
  * 한 번에 받는 길에서 `function.name` 이 빠졌거나 `42` 로 오면 그 값이 그대로 넘어가,
  * 루프의 「모르는 도구」 관문이 `call.name.startsWith` 에서 TypeError 로 run() 밖으로
@@ -855,7 +863,7 @@ export function extractMessage(shape, json) {
 const 이름글 = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v));
 
 /*
- * ── 못 읽은 인자가 **잘린** 것인가, **모양이 틀린** 것인가 (사냥5 L5-5) ──────
+ * ── 못 읽은 인자가 **잘린** 것인가, **모양이 틀린** 것인가 ──────
  *
  * 둘 다 JSON.parse 가 실패한다는 겉모습은 같은데 할 일이 정반대다. 잘렸으면 상한을
  * 올려 다시 부르거나 나눠 보내라고 해야 하고, 모양이 틀렸으면(홑따옴표 · 끝 쉼표 ·
@@ -869,7 +877,7 @@ const 이름글 = (v) => (typeof v === 'string' ? v : v == null ? '' : String(v)
  * 게이트웨이가 잘라 놓고 stop 이라 말하는 판(agent/effort.js 의 wasCut 머리말)은
  * 앞토막이라 여전히 잘린 것으로 잡힌다.
  *
- * 홑따옴표도 글을 연다 (2.0.0 6회차 · Gemini 고리5). 모양이 틀린 JSON 의 첫째가 홑따옴표인데
+ * 홑따옴표도 글을 연다. 모양이 틀린 JSON 의 첫째가 홑따옴표인데
  * 큰따옴표만 글로 쳐서, `{'desc': 'say "hi'}` 는 글 속에서 끝났다고, `{'code': 'if (x) {'}` 는
  * 괄호가 덜 닫혔다고 봤다 — 모양만 틀린 것을 도로 잘린 것으로. 글을 연 따옴표와 같은 것이
  * 와야 닫힌다. 그래서 큰따옴표 글 속의 `don't` 는 여전히 글자일 뿐이다.

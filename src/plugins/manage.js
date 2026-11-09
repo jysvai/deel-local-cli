@@ -95,7 +95,7 @@ export function 묶음풀기(dest, files) {
     return { error: `묶음 안에 플러그인 폴더 밖을 가리키는 이름이 있습니다 — 풀지 않았습니다: ${밖엣것[0].name}` };
   }
   /*
-   * ── 안쪽이어도 **못 쓰는** 이름은 지우기 전에 거른다 (2.0.0 3회차 사냥) ──
+   * ── 안쪽이어도 **못 쓰는** 이름은 지우기 전에 거른다 ──
    *
    * 위는 밖으로 나가는 것만 본다. 안쪽인데 쓰다가 넘어지는 이름이 셋 있었다:
    *
@@ -247,7 +247,7 @@ async function fetchInto(spec, dest, onStep) {
  * 이 함수가 없으면 tar 엔트리 이름을 아무리 잘 막아도 소용이 없다. 묶음이
  * **제 이름으로** 나가기 때문이다.
  */
-export function 이름한칸(이름, { 점허용 = false } = {}) {
+function 이름한칸(이름, { 점허용 = false } = {}) {
   const 글 = String(이름 ?? '').replace(/\\/g, '/').trim();
   if (!글) return null;
   // 마지막 칸만 쓴다. `a/b/../c` 같은 것도 여기서 한 칸이 된다.
@@ -256,7 +256,7 @@ export function 이름한칸(이름, { 점허용 = false } = {}) {
   // 드라이브 글자·칸막이가 남아 있으면 이름이 아니다.
   if (/[/:]/.test(한칸)) return null;
   /*
-   * ── 윈도우가 폴더 이름으로 못 쓰는 것도 이름이 아니다 (2.0.0 4회차 사냥) ──
+   * ── 윈도우가 폴더 이름으로 못 쓰는 것도 이름이 아니다 ──
    *
    * 칸막이만 막았더니 `a*b` · `a?b` · NUL 글자 같은 이름이 통과해 install() 이 mkdir 에서
    * **던지고** `.tmp-*` 를 남겼다. `keep.` 은 윈도우가 끝 점을 떼어 `keep` 자리에 깔려
@@ -292,7 +292,7 @@ function 플러그인자리인가(base, dest) {
 function manifestOf(dir) {
   const f = join(dir, '.claude-plugin', 'plugin.json');
   if (!existsSync(f)) return null;
-  // BOM 을 뗀다 — 윈도우에서 저장한 plugin.json 이 이름·판·라이선스 없이 읽혔다(2.0.0 3회차).
+  // BOM 을 뗀다 — 윈도우에서 저장한 plugin.json 이 이름·판·라이선스 없이 읽혔다.
   try { return JSON.parse(BOM떼기(readFileSync(f, 'utf8'))); } catch { return null; }
 }
 
@@ -337,7 +337,7 @@ function walkCount(dir, match, depth = 5) {
 /*
  * 설치는 **던지지 않는다.** 이름을 걸러도 디스크가 넘어질 자리(권한·꽉 찬 디스크·긴 경로)는
  * 남는다. 던지면 `/plugin install` 이 통째로 죽고 `.tmp-*` 가 남아, 다음 설치가 그 찌꺼기
- * 위에서 돈다(2.0.0 4회차 사냥). 받은 오류는 사람 말로 돌려주고 임시 폴더를 치운다.
+ * 위에서 돈다. 받은 오류는 사람 말로 돌려주고 임시 폴더를 치운다.
  */
 export async function install(spec, 옵션 = {}) {
   const 치울것 = [];
@@ -495,7 +495,7 @@ export function list({ home = homeDir() } = {}) {
     if (existsSync(sf)) { try { src = JSON.parse(BOM떼기(readFileSync(sf, 'utf8'))); } catch {} }
     /*
      * 매니페스트 이름이 폴더 이름으로 못 쓸 것(`..` · `keep.`)이면 **폴더 이름**을 보인다.
-     * 목록이 보여 준 이름으로 remove() 가 못 찾으면 사람은 지울 길이 없다(2.0.0 4회차 사냥).
+     * 목록이 보여 준 이름으로 remove() 가 못 찾으면 사람은 지울 길이 없다.
      * 쓸 수 있는 이름이면 매니페스트 이름 그대로다 — 폴더와 달라도 remove() 가 그 이름으로 찾는다.
      */
     const 적힌 = typeof info?.name === 'string' ? info.name : '';
@@ -540,14 +540,14 @@ export function remove(name, { home = homeDir() } = {}) {
   let dir = 한칸 ? join(base, 한칸) : null;
   if (dir && 플러그인자리인가(base, dir) && existsSync(dir)) {
     /*
-     * ── 폴더로 찾았어도 **목록 이름**과 겹치는지 본다 (6회차 Gemini 플러그인 P6) ──
+     * ── 폴더로 찾았어도 **목록 이름**과 겹치는지 본다 ──
      *
      * 목록은 매니페스트 이름을 보여 준다. 폴더 `foo` 의 이름이 `bar` 이고 딴 폴더
      * `plugin-a` 의 이름이 `foo` 면, 사람이 목록에서 보고 친 `foo` 는 plugin-a 다.
      * 그런데 폴더부터 찾아 **bar 를** 지웠다. 두 가지로 읽히면 아무것도 안 지운다.
      */
     /*
-     * 앞에 `manifestOf(dir)?.name === 찾는이름 ? [] :` 이 붙어 있었다 (8회차 판정).
+     * 앞에 `manifestOf(dir)?.name === 찾는이름 ? [] :` 이 붙어 있었다.
      *
      * 폴더 이름과 그 폴더의 매니페스트 이름이 **같기만 하면** 삼항 앞쪽이 위 검사를
      * 통째로 껐다. 그런데 딴 폴더가 목록에 같은 이름으로 떠 있을 수 있다 —
@@ -599,7 +599,7 @@ export function pack(outFile, { home = homeDir(), only = null } = {}) {
           continue;
         }
         /*
-         * 폴더도 파일도 아닌 것은 담지 않는다 (6회차 Gemini 플러그인 P10).
+         * 폴더도 파일도 아닌 것은 담지 않는다.
          *
          * 폴더를 가리키는 링크(윈도 정션·심볼릭 링크)는 isDirectory() 가 거짓이라 파일로
          * 읽다가 EISDIR 로 던졌다 — /plugin pack 이 통째로 죽었다. 따라가도 안 된다:

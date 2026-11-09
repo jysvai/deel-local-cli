@@ -27,7 +27,10 @@ const 적어둘것 = [];
 
 const 원래 = 언어();
 const root = mkdtempSync(join(tmpdir(), 'deel-prompt-'));
-const conn = (ctx = 32768) => ({ kind: 'openai', base: 'http://127.0.0.1:1/v1', model: '검사용', ctx });
+// 바깥 주소로 둔다 — 이 파일은 창 크기에 따라 긴 판·짧은 판이 갈리는 것을 본다. 로컬은 창이 커도
+// 짧은 판이 나가므로(budget.js 의 프롬프트창) 로컬로 두면 「긴 판」 쪽 기대가 성립하지 않는다.
+// 로컬 쪽은 test/leanprompt.test.js 가 본다. 요청은 안 나간다(글만 짓는다).
+const conn = (ctx = 32768) => ({ kind: 'openai', base: 'https://api.example.com/v1', model: '검사용', ctx });
 const 프롬 = (l, opt = {}) => { 언어정하기(l); return new Session(conn(opt.ctx), { root, work: opt.work ?? 'code' }).systemPrompt(); };
 
 trace('1-말을따라가나');

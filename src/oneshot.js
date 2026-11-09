@@ -123,7 +123,7 @@ export async function runOnce(opts = {}) {
   // 아래 내놓기 가 이걸 본다 — 그래서 읽기 전에 선언해 둔다. 값은 시킬 말을
   // 정하기 전에 채운다 (모델을 부르기 전에 스키마부터 읽는 자리).
   let 출력스키마 = null;
-  // 실패덩이에 실을 모델 이름 (사냥5 B5-10). 프로필을 찾기 전에 선 실패는 null 이다.
+  // 실패덩이에 실을 모델 이름. 프로필을 찾기 전에 선 실패는 null 이다.
   let 알려진모델 = null;
   // 붙인 MCP 서버. 아래 내놓기 가 닫는다 — 그래서 여기서 선언한다 (2.0.2 · 문 맞춤).
   let mcp서버들 = [];
@@ -356,10 +356,10 @@ export async function runOnce(opts = {}) {
      * 그 401 은 화면에서 「열쇠가 틀렸다」 와 구별이 안 된다.
      */
     열쇠받기: 받기설정(prof, { 정책값: 정책읽기().값 }),
-    // 0·음수·숫자 아님은 안 적은 것으로 친다 — 창 0 이면 접기가 영영 안 돈다 (사냥5 L5-6, models.js 의 양수크기).
+    // 0·음수·숫자 아님은 안 적은 것으로 친다 — 창 0 이면 접기가 영영 안 돈다.
     ctx: 양수크기(opts.ctx) ?? 양수크기(prof.ctx) ?? CTX_DEFAULT,
     // 답 길이 상한 — deel --max-tokens 32k 로 높일 수 있다(대화 화면의 /out 과 같은 값).
-    // 0 이면 모든 요청이 바닥값 512 로 묶인다 (사냥5 L5-6).
+    // 0 이면 모든 요청이 바닥값 512 로 묶인다.
     maxTokens: 양수크기(opts.maxTokens) ?? 양수크기(prof.maxTokens) ?? null,
     streaming: prof.streaming ?? false,
     tools: prof.tools ?? false, json: prof.json ?? false, think: prof.think ?? false,
@@ -419,7 +419,7 @@ export async function runOnce(opts = {}) {
     root,
     mode: opts.mode ?? 'auto',
     work: opts.work ?? null,
-    think: opts.think ?? 'medium',
+    think: opts.think ?? null,
     effort: opts.effort ?? 'save',
     maxSteps: opts.maxSteps ?? null,   // null 이면 작업 모드가 정한다
   });
@@ -528,7 +528,7 @@ export async function runOnce(opts = {}) {
     const [부른이름 = '', ...나머지] = 시킬말.slice(1).trim().split(/\s+/);
     const 경로인가 = 부른이름.includes('/') || 부른이름.includes('\\');
     /*
-     * ── 홑슬래시 `/` 하나 (8회차 그밖 한번쓰기1) ──────────────────────────
+     * ── 홑슬래시 `/` 하나 ──────────────────────────
      *
      * 이름이 빈 문자열이라 아래 갈래를 통째로 건너뛰었고, `/` 가 **그대로 모델에게**
      * 갔다 — 위 머리말이 막겠다고 적어 둔 바로 그 결말(슬래시 낱말 하나를 받은 모델이
@@ -560,7 +560,7 @@ export async function runOnce(opts = {}) {
        * 찾는 차례는 대화 화면과 같다 — 적은 그대로 · 대소문자 무시 · 꼬리 이름.
        *
        * 그 차례를 여기와 commands.js 에 **두 벌로** 적어 두고 있었고, 둘 다 꼬리를
-       * 낮추지 않아 `ext:ReviewCode` 가 어느 창에서도 안 걸렸다 (8회차 그밖 한번쓰기·명령2).
+       * 낮추지 않아 `ext:ReviewCode` 가 어느 창에서도 안 걸렸다.
        * 두 벌이니 한쪽만 고치면 또 갈린다. 그래서 규칙은 commands.js 한 군데에만 둔다.
        */
       const 찾은 = 붙박이 ? null : 슬래시명령찾기(found.commands, 부른이름);
@@ -671,7 +671,7 @@ export async function runOnce(opts = {}) {
    * 사람이 '안 돼요' 라고 한 줄 알고, 다시 물어보면 이번엔 된다고 믿는다.
    * 그러면 걸음 수만 다 쓰고 아무것도 못 한 채 끝난다.
    *
-   * 가르는 잣대는 **위 confirm 과 같은 것 하나**여야 한다 (8회차 그밖 한번쓰기2).
+   * 가르는 잣대는 **위 confirm 과 같은 것 하나**여야 한다.
    * 여기는 `승인필요 && !자동승인` 이었고 그 `승인필요` 가 `session.mode !== 'auto'`
    * 였는데, `deel run` 의 기본 모드가 바로 auto 다 — 그래서 이 안내가 붙는 판이 하나도
    * 없었다(재 보니 `deel run 아무말` 이 보낸 사람말은 시킨 말 그대로였다). 정작 confirm 은
@@ -705,7 +705,7 @@ export async function runOnce(opts = {}) {
   }
 
   /*
-   * ── 시킬 말 하나가 창보다 크면 **부르기 전에** 선다 (사냥5 B5-01) ──────────────
+   * ── 시킬 말 하나가 창보다 크면 **부르기 전에** 선다 ──────────────
    *
    * 162k 자를 표준입력으로 먹인 배치가 ok:true · 0 으로 끝났다. 루프는 창이 넘치자 대화를
    * 비우고 시킨 말을 앞 1,200자만 다시 박았다(session.js 의 못박은요청) — 모델은 그 앞부분만
@@ -797,7 +797,7 @@ export async function runOnce(opts = {}) {
   let 검사결과 = null;
   // 서버가 끝났다는 말 없이 멈춘 적이 있나. 뒤에 오는 done 이 이걸 못 지운다.
   let 말없이끊겼나 = false;
-  // 비우느라 시킨 말 뒤가 잘렸나 (사냥5 B5-01). 무엇으로 끝났든 이것이 까닭이 된다.
+  // 비우느라 시킨 말 뒤가 잘렸나. 무엇으로 끝났든 이것이 까닭이 된다.
   let 시킨말잘림 = false;
 
   try {
@@ -1037,7 +1037,7 @@ export async function runOnce(opts = {}) {
           store.replace(session.messages, `자리부족 — 앞선 대화 ${ev.dropped}개를 비움`);
           적은데까지 = session.messages.length;
           /*
-           * ── 비우면서 **시킨 말 뒤가 잘렸으면** 여기서 선다 (사냥5 B5-01) ────────────
+           * ── 비우면서 **시킨 말 뒤가 잘렸으면** 여기서 선다 ────────────
            *
            * 비울 때 시킨 말은 앞 1,200자만 다시 박힌다(session.js 의 못박은요청). 대화
            * 화면은 사람이 보고 나눠서 다시 시키면 되지만, 여기서는 모델이 앞부분만 받아
@@ -1088,14 +1088,14 @@ export async function runOnce(opts = {}) {
     reason = 'error';
     why = String(err?.message ?? err);
   }
-  // SIGINT 손은 여기서 안 뗀다 — 모양 고치기 되물음까지 끝난 뒤에 뗀다 (사냥5 B5-02, 아래 finally).
+  // SIGINT 손은 여기서 안 뗀다 — 모양 고치기 되물음까지 끝난 뒤에 뗀다.
 
   // 끝까지 못 갔어도 여기까지 나온 말은 내준다. 빈손으로 돌려보내면
   // 왜 안 됐는지 짐작할 거리조차 없다.
   if (답 == null) 답 = 이번단계글;
 
   /*
-   * 시킨 말이 창에 다 안 들어가 잘렸으면 무엇으로 끝났든 그것이 까닭이다 (사냥5 B5-01).
+   * 시킨 말이 창에 다 안 들어가 잘렸으면 무엇으로 끝났든 그것이 까닭이다.
    * 위 reset 갈래가 턴을 끊었으므로 reason 은 aborted 로 와 있다 — 사람이 끊은 것이 아니다.
    * 모델이 본 것이 앞부분뿐이라고 적고 0 이 아닌 코드로 선다.
    */
@@ -1133,7 +1133,7 @@ export async function runOnce(opts = {}) {
   if (출력스키마 && reason === 'done') {
     const 재보기 = (글) => {
       /*
-       * 재다가 던지면 **스키마 실패로** 받는다 (사냥5 L5-3).
+       * 재다가 던지면 **스키마 실패로** 받는다.
        *
        * 여기는 try 바깥이었다. 제자리를 도는 참조 같은 스키마 쪽 탈이 호출 스택을 넘기면
        * runOnce 가 통째로 던졌고, bin/deel.js 가 표준출력에 맨 글 「오류 Maximum call stack…」
@@ -1141,7 +1141,7 @@ export async function runOnce(opts = {}) {
        * 고리를 먼저 막지만, 못 막은 탈도 7 이어야 한다.
        */
       try {
-        // 스키마를 같이 넘긴다 — 뽑을 것이 여럿이면 스키마에 맞는 쪽을 고른다 (사냥5 B5-06).
+        // 스키마를 같이 넘긴다 — 뽑을 것이 여럿이면 스키마에 맞는 쪽을 고른다.
         const 뽑은것 = 답에서JSON뽑기(글, { 스키마: 출력스키마 });
         if (!뽑은것.ok) return { ok: false, 탈: [뽑은것.왜] };
         const r = 맞나(뽑은것.값, 출력스키마);
@@ -1165,9 +1165,9 @@ export async function runOnce(opts = {}) {
        * (agent/loop.js 의 고쳐쓰기 설명).
        */
       let 다시글 = '';
-      // 되물음 도중에 끊겼나 (사냥5 B5-02). 끊긴 것은 「모양이 틀렸다」(7) 가 아니라 끊긴 것(4)이다.
+      // 되물음 도중에 끊겼나. 끊긴 것은 「모양이 틀렸다」(7) 가 아니라 끊긴 것(4)이다.
       let 다시끊김 = false;
-      // 되물음이 **터졌나** (8회차 그밖 한번쓰기3). 터진 것도 모양 탈이 아니다 — 아래 갈래에서 갈라 낸다.
+      // 되물음이 **터졌나**. 터진 것도 모양 탈이 아니다 — 아래 갈래에서 갈라 낸다.
       let 다시터짐 = '';
       try {
         for await (const ev of run(session, ctx, 스키마시킬말(출력스키마, { 다시: 잰것.탈 }), { signal: turn.signal, 고쳐쓰기: true })) {
@@ -1184,7 +1184,7 @@ export async function runOnce(opts = {}) {
         why = '중단했습니다';
       } else if (다시터짐) {
         /*
-         * ── 되물음이 **HTTP 오류로** 죽은 자리 (8회차 그밖 한번쓰기3) ──────
+         * ── 되물음이 **HTTP 오류로** 죽은 자리 ──────
          *
          * 터진 까닭을 `why` 에만 적고 그대로 아래로 내려보냈다. 그러면 빈 `다시글` 이
          * 재보기를 못 넘어 `reason='schema'` 가 되고 `why` 는 「답이 스키마에 안 맞습니다
@@ -1228,7 +1228,7 @@ export async function runOnce(opts = {}) {
   }
 
   /*
-   * SIGINT 손은 **되물음까지 끝난 뒤에** 뗀다 (사냥5 B5-02).
+   * SIGINT 손은 **되물음까지 끝난 뒤에** 뗀다.
    *
    * 여기는 첫 턴이 끝나자마자 손을 뗐다. 그런데 모양 고치기 되물음도 모델을 한 번 더 부르는
    * 자리다. 그 사이에 Ctrl+C 가 오면 SIGINT 에 남은 손은 언어 서버(lsp/client.js) 것 하나였고,

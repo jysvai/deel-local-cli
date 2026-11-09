@@ -737,7 +737,7 @@ deel --work <mode>       auto (default) / code / plan / architect / debug / insp
 deel --level <level>     쉬움 (simple) / 개발자 (developer)
 deel --ctx <length>      Set the context length yourself (655360 · 640k · 128k)
 deel --max-tokens <len>  Cap on a single reply (32k) — same value as /out
-deel --think <level>     off / low / medium (default) / high / xhigh / max
+deel --think <level>     off / low / medium (default; off on local) / high / xhigh / max
 deel --effort <profile>  even / save (default) / deep
 deel --offline           Nothing leaves this machine
 deel --continue          Resume the most recent conversation

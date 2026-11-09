@@ -9,7 +9,7 @@ import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite, 보일이름 } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
 import { 프록시고르기, 프록시설정, 프록시비켜가나 } from '../backend/proxy.js';
-import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
+import { COMPACT_AT, FOLD_AT, 문턱배율 } from '../agent/compact.js';
 import { 말, 언어 } from '../i18n/index.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
 import { 토큰셈, 토큰글 } from './tokcount.js';
@@ -165,17 +165,17 @@ export const SEGMENTS = {
   ctx: {
     get desc() { return 말('seg.ctx'); },
     make: (s) => {
-      const { r, pct, tone, b } = 참값(s);
+      const { r, pct, tone, b, 눈금 } = 참값(s);
       // 창 크기를 서버가 안 알려 줬으면 `32k?` 로 적는다 — 바로 옆 모델 급이
       // 짐작일 때 `◈ 보통?` 인 것과 같은 규칙이다. 짐작을 잰 것처럼 적으면,
       // 실제 창이 8k 라서 답이 잘리는 동안에도 게이지는 초록이다.
       const 창말 = short(b.total) + (b.총잰것 === false ? '?' : '');
-      return `${눈금게이지(r, 10, [FOLD_AT, COMPACT_AT])} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + 창말)}`;
+      return `${눈금게이지(r, 10, 눈금)} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + 창말)}`;
     },
     // 자리가 모자라면 정확한 숫자를 접는다. 게이지와 %가 이미 같은 말을 하고 있다.
     short: (s) => {
-      const { r, pct, tone } = 참값(s);
-      return `${눈금게이지(r, 10, [FOLD_AT, COMPACT_AT])} ${tone(pct + '%')}`;
+      const { r, pct, tone, 눈금 } = 참값(s);
+      return `${눈금게이지(r, 10, 눈금)} ${tone(pct + '%')}`;
     },
   },
 
@@ -430,8 +430,11 @@ function 참값(s) {
    * 이제 접기(55%)·요약(80%) 자리에서 같이 바뀐다 — 색이 바뀌는 그 순간이
    * 실제로 무슨 일이 나는 순간이다.
    */
-  const tone = r > COMPACT_AT ? c.hred : r > FOLD_AT ? c.hyellow : c.gray;
-  return { b, r, pct, tone };
+  // 로컬 큰 창은 문턱이 앞으로 당겨진다(compact.js 의 문턱배율). 눈금도 같이 옮겨야 거짓말이 안 된다.
+  const 배 = 문턱배율(s);
+  const 눈금 = [FOLD_AT * 배, COMPACT_AT * 배];
+  const tone = r > 눈금[1] ? c.hred : r > 눈금[0] ? c.hyellow : c.gray;
+  return { b, r, pct, tone, 눈금 };
 }
 
 /**
@@ -660,7 +663,7 @@ export function headerLines(session, found, 상자쓰나 = true) {
     if (프록시) 목적지 += c.gray(`  ${말('head.viaProxy', { 프록시: `${프록시.host}:${프록시.port}` })}`);
     // 적어 놨는데 못 쓰는 프록시(socks5 등)는 여기서 한 번은 말해야 한다 — 조용히 직접 가면
     // 사람은 프록시를 탄 줄 알고, 막히면 엉뚱한 데를 고친다. 어차피 안 거칠 주소(이 PC · NO_PROXY)면
-    // 말하지 않는다 — 로컬 모델이 안 붙는 까닭을 상관없는 프록시에서 찾게 된다 (2.0.0 6회차 RP1b).
+    // 말하지 않는다 — 로컬 모델이 안 붙는 까닭을 상관없는 프록시에서 찾게 된다.
     else if (프록시설정().탈 && !프록시비켜가나(conn.base)) 목적지 += c.yellow(`  ${말('head.proxyBad')}`);
   } catch { 목적지 = c.gray(String(conn.base)); }
 

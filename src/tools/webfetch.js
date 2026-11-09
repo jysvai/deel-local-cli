@@ -31,7 +31,7 @@ function 웹글읽기(buf, 머리글) {
     catch { /* 이 Node 가 모르는 이름이면 아래에서 알아서 본다 */ }
   }
   /*
-   * ── utf-8 이라고 **적어 둔** 페이지 (사냥4 W4) ──────────────────────────
+   * ── utf-8 이라고 **적어 둔** 페이지 ──────────────────────────
    *
    * 여기는 머리글이 utf-8 이면 곧장 내용 짐작(encoding.js)으로 넘겼다. 그런데 짐작은
    * 엄격하다 — UTF-8 로 **한 바이트라도** 어긋나면 UTF-8 이 아니라고 보고 다른
@@ -163,11 +163,11 @@ function 얼마나쉬라나(머리, 회차) {
  * 이름으로 적힌 글자(&middot; 같은 것). 번호로 둔다 — 글자를 소스에 박으면 보이지 않는
  * 글자(nbsp)가 섞여도 눈으로 못 가린다.
  *
- * 여태는 nbsp·amp·lt·gt·quot·apos 여섯만 풀었다(사냥4 W16). 그래서 흔한 `&middot;`
+ * 여태는 nbsp·amp·lt·gt·quot·apos 여섯만 풀었다. 그래서 흔한 `&middot;`
  * `&hellip;` `&copy;` 가 원문 그대로 모델에게 가서, 목록의 가운뎃점·말줄임표 자리가 전부
  * `&middot;` 로 찍혔다. 모르는 이름은 여전히 **손대지 않는다.**
  *
- * 뿌리 없는 객체다(8회차 · 바깥). 보통 객체면 `&toString;` `&constructor;` `&valueOf;`
+ * 뿌리 없는 객체다. 보통 객체면 `&toString;` `&constructor;` `&valueOf;`
  * 같은 이름이 **Object.prototype 의 함수**를 집는다. 그것을 글자 번호로 쓰려다
  * `RangeError: Invalid code point NaN` 이 나고, 그 예외는 태그벗기기 밖으로 새서
  * **페이지 전체가 오류 한 줄**이 됐다 — 남의 페이지에 한 낱말 적혀 있으면 되는 일이다.
@@ -183,7 +183,7 @@ const 이름글자 = Object.assign(Object.create(null), {
 });
 
 /*
- * 번호로 적혀 와도 **모델에게 넘기지 않을** 글자 (사냥4 W16).
+ * 번호로 적혀 와도 **모델에게 넘기지 않을** 글자.
  *
  * 여기는 32 밑만 막았다. 그래서 이런 것이 번호 한 줄로 그대로 풀려 들어갔다:
  *   · C1 제어(0x80–0x9F) · DEL — `&#x9b;31m` 은 터미널에서 CSI 다. 대화 기록을 cat 하면 색이 바뀐다
@@ -207,7 +207,7 @@ function 태그벗기기(html) {
   for (let i = 0; i < 5; i += 1) {
     const 전 = 글;
     /*
-     * 셋을 **한 무늬로, 왼쪽부터** 지운다 (6회차 Gemini 웹받기 W4).
+     * 셋을 **한 무늬로, 왼쪽부터** 지운다.
      *
      * script → style → 주석 차례로 따로 지웠더니, 주석 안에 적힌 `<script>` 가 뒤에 오는
      * 진짜 `</script>` 까지 본문을 통째로 먹고 `<!--` 만 남겼다. 브라우저는 **먼저 열린 쪽**을
@@ -220,7 +220,7 @@ function 태그벗기기(html) {
      * 못 잡고 **스크립트 속이 글로 새어** 모델에게 그대로 간다.
      *
      * 빗금 갈래를 빼먹었더니 아래 「안 닫힌 것은 끝까지」 가 그 뒤를 통째로
-     * 먹어 **본문이 통째로 사라졌다**(2차 눈이 재현해 줬다). 못 걸러 새는
+     * 먹어 **본문이 통째로 사라졌다**. 못 걸러 새는
      * 것만 흠이 아니라, 멀쩡한 글을 지우는 것도 같은 무게의 흠이다.
      */
     글 = 글.replace(/<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script(?:[\s/][^>]*)?>|<style\b[\s\S]*?<\/style(?:[\s/][^>]*)?>/gi, ' ');
@@ -291,7 +291,7 @@ export function 웹되돌림(다음, { allowPrivate = false } = {}) {
   if (다음.protocol !== 'http:' && 다음.protocol !== 'https:') {
     throw new Error(`${다음.protocol} 로 되돌립니다 — 따라가지 않습니다`);
   }
-  // 안쪽주소인가 — 100.100.100.200(알리바바 메타데이터)·fec0::/10 까지 본다 (사냥4 W9).
+  // 안쪽주소인가 — 100.100.100.200(알리바바 메타데이터)·fec0::/10 까지 본다.
   if (안쪽주소인가(다음.hostname) && !allowPrivate) {
     throw new Error(`이 컴퓨터·사내망 주소(${다음.hostname})로 되돌립니다 — 따라가지 않습니다`);
   }
@@ -435,7 +435,7 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
           + `\n  ${다시횟수}번 다시 불러 봤습니다(${쉰시간}초). 잠시 뒤에 다시 해 보세요.` };
       }
       /*
-       * 되돌림을 못 따라간 까닭이 있으면 같이 말한다 (사냥4 W19 · http.js 의 되돌림탈).
+       * 되돌림을 못 따라간 까닭이 있으면 같이 말한다.
        * 「HTTP 302 — 주소」 한 줄로는 제자리를 도는 서버인지, Location 이 깨졌는지 모른다 —
        * 모델은 같은 주소를 또 부른다.
        */
@@ -465,7 +465,7 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
     if (!buf) return { error: `너무 큽니다 (${MAX_BYTES / 1024 / 1024}MB 넘음) — 받다 말았습니다. 범위를 좁힌 주소를 쓰세요.` };
 
     /*
-     * ── Content-Type 이 없는 200 (사냥4 W18) ──────────────────────────────
+     * ── Content-Type 이 없는 200 ──────────────────────────────
      *
      * 여태는 「글이 아닌 내용입니다 (알 수 없음)」 으로 거절했다. 옛 사내 서버·정적 파일
      * 서버·짧은 CGI 가 머리글을 안 붙이는 일이 흔해서, 멀쩡한 글 페이지가 통째로 막혔다.
@@ -474,7 +474,7 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
      * 태그를 벗긴다. 상한(MAX_BYTES)은 위에서 이미 걸렸다 — 보고 나서 버려도 크게 안 받는다.
      */
     /*
-     * 볼갈래도 **낱말**이다 (8회차 · 바깥). 여기에 머리글 원문을 담았더니
+     * 볼갈래도 **낱말**이다. 여기에 머리글 원문을 담았더니
      * `application/json; name="index.html"` 이 아래 `/html/` 에 걸려서 **JSON
      * 본문의 태그를 벗겼다** — `{"a":"<b>굵게</b>"}` 가 `{"a":" 굵게 "}` 가 되고,
      * 값이 깎였다는 말은 어디에도 안 나온다. 위에서 이미 갈래를 낱말로 갈라 뒀다.
@@ -487,7 +487,7 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
       }
       const 머리떼고 = 앞.subarray(앞[0] === 0xef && 앞[1] === 0xbb && 앞[2] === 0xbf ? 3 : 0).toString('latin1');
       /*
-       * 엿보는 목록은 WHATWG MIME Sniffing 표준의 「HTML 서명」 그대로다 (6회차 Gemini 웹받기 W9).
+       * 엿보는 목록은 WHATWG MIME Sniffing 표준의 「HTML 서명」 그대로다.
        * doctype·html·head·body 넷만 봐서, 주석이나 `<div>` 로 시작하는 옛 페이지는 태그·스크립트째
        * 글로 넘어갔다. 표준처럼 이름 뒤에 빈칸이나 `>` 가 와야 한다 — `<a` 가 `<abc` 에 걸리지 않게.
        */
@@ -567,7 +567,7 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
     const cut = 원래길이 > max;
     if (cut) {
       /*
-       * 자르는 자리가 **대리쌍 한가운데**면 한 칸 앞에서 자른다 (사냥4 W17).
+       * 자르는 자리가 **대리쌍 한가운데**면 한 칸 앞에서 자른다.
        * `slice` 는 UTF-16 칸으로 자른다. 이모지·옛 한자처럼 두 칸짜리 글자가 경계에
        * 걸리면 앞 반쪽(D800–DBFF)만 남는데, 그건 글자가 아니다 — JSON 으로 게이트웨이에
        * 실으면 넘어지는 곳이 있고, 화면에는 � 로 찍힌다.
@@ -597,7 +597,7 @@ export async function webFetch(args, { allowPrivate = false, 모델컨텍스트 
     };
   } catch (err) {
     /*
-     * 넘어진 까닭은 **속에** 있다 (8회차 · 바깥).
+     * 넘어진 까닭은 **속에** 있다.
      *
      * fetch 는 무엇이 잘못됐든 겉으로는 `TypeError: fetch failed` 한 줄이고, 진짜
      * 까닭(getaddrinfo ENOTFOUND · connect ECONNREFUSED · 인증서)은 `err.cause` 에

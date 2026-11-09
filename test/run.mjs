@@ -29,6 +29,7 @@ const FILES = [
   'mcploop.test.js',
   'textcalls.test.js',
   'speed.test.js',
+  'thinkoff.test.js',
   'runsession.test.js',
   'editcheck.test.js',
   'gitsnap.test.js',
@@ -152,6 +153,7 @@ const FILES = [
   'pdf.test.js',
   'compact.test.js',
   'ctxfull.test.js',
+  'autoclear.test.js',
   'held.test.js',
   'store.test.js',
   'threads.test.js',
@@ -179,6 +181,7 @@ const FILES = [
   // 미리 읽기 (2.2.0) — 미리 보낸 몸이 Enter 뒤 첫 요청과 같은가를 진짜 루프로 견준다.
   'warm.test.js',
   'llamaslot.test.js',
+  'leanprompt.test.js',
   'wire.test.js',
   'export.test.js',
   'report.test.js',

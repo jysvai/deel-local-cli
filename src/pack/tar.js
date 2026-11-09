@@ -8,7 +8,7 @@ const BLOCK = 512;
 function str(buf, off, len) {
   const end = buf.indexOf(0, off);
   const stop = end >= 0 && end < off + len ? end : off + len;
-  // 깎지 않는다 — 이름 앞뒤 빈칸도 이름이다 (6회차 Gemini 묶음6). 수 칸의 빈칸은 octal 이 걸러 낸다.
+  // 깎지 않는다 — 이름 앞뒤 빈칸도 이름이다. 수 칸의 빈칸은 octal 이 걸러 낸다.
   return buf.toString('utf8', off, stop);
 }
 
@@ -48,7 +48,7 @@ export function untargz(gz, { 상한 = 푼것상한 } = {}) {
     // 조용히 죽는 대신 왜 안 되는지 말한다. 이 말은 install 이 그대로 화면에 올린다.
     if (err?.code === 'ERR_BUFFER_TOO_LARGE') {
       // MB 로만 적으면 작은 상한이 「0MB」 가 된다 — 사람에게 아무 말도 안 하는 숫자다.
-      // KB 도 같다: 1KB 밑을 KB 로 반올림하면 「0KB」 다. 그 밑은 바이트로 적는다 (6회차 Gemini 타르6bg).
+      // KB 도 같다: 1KB 밑을 KB 로 반올림하면 「0KB」 다. 그 밑은 바이트로 적는다.
       const 상한말 = 상한 >= 1024 * 1024 ? `${Math.round(상한 / 1024 / 1024)}MB`
         : 상한 >= 1024 ? `${Math.round(상한 / 1024)}KB` : `${상한}바이트`;
       throw new Error(`푼 크기가 상한(${상한말})을 넘습니다`
@@ -64,7 +64,7 @@ export function untargz(gz, { 상한 = 푼것상한 } = {}) {
     const head = buf.subarray(pos, pos + BLOCK);
     // 빈 머리 블록이면 끝. 규격은 끝에 빈 블록 **두 개**를 두지만 첫 개에서 멈춘다 — 참 머리는
     // 체크섬 칸이 있어 모두 0일 수 없고 알맹이는 크기만큼 건너뛰므로, 머리 자리의 빈 블록은
-    // 끝에서만 나온다. GNU tar 도 `-i` 없이는 여기서 멈춘다 (6회차 Gemini 타르6bg).
+    // 끝에서만 나온다. GNU tar 도 `-i` 없이는 여기서 멈춘다.
     if (head.every((b) => b === 0)) break;
 
     const size = octal(head, 124, 12);
@@ -82,7 +82,7 @@ export function untargz(gz, { 상한 = 푼것상한 } = {}) {
     const type = head[156] === 0 ? '0' : String.fromCharCode(head[156]);
     const mode = octal(head, 100, 8);
     // 345 자리가 이름 앞머리인 것은 POSIX ustar(매직 「ustar」 + NUL)뿐이다. GNU 머리(「ustar」 + 빈칸 둘)는
-    // 거기에 atime 을 적어, 증분 묶음이면 `14325671234/file.txt` 로 풀렸다 (6회차 Gemini 묶음6).
+    // 거기에 atime 을 적어, 증분 묶음이면 `14325671234/file.txt` 로 풀렸다.
     const posix = head[262] === 0 && head.toString('latin1', 257, 262) === 'ustar';
     const prefix = posix ? str(head, 345, 155) : '';
     let name = str(head, 0, 100);
@@ -93,7 +93,7 @@ export function untargz(gz, { 상한 = 푼것상한 } = {}) {
      * ── 머리가 적은 크기만큼 알맹이가 있나 ──────────────────────────────
      *
      * `subarray` 는 끝을 넘으면 **있는 데까지만** 준다. 그래서 머리에 100000
-     * 바이트라고 적힌 파일이 몇 바이트짜리로 조용히 풀렸다 (2.0.0 4회차 사냥).
+     * 바이트라고 적힌 파일이 몇 바이트짜리로 조용히 풀렸다.
      * 스크립트가 반만 깔린 플러그인은 멀쩡해 보이다가 엉뚱한 자리에서 선다.
      * 반쪽을 깔아 두느니 안 까는 편이 낫다 — 던지면 install 이 이 말을 화면에 올린다.
      *
@@ -113,7 +113,7 @@ export function untargz(gz, { 상한 = 푼것상한 } = {}) {
       continue;
     }
     if (type === 'x' || type === 'g') {    // pax 확장 머리 — path 만 본다
-      // 기록의 머리(맨 앞이나 줄바꿈 뒤)에서만 본다. 다른 값 안의 「20 path=…」 를 이름으로 읽었다 (6회차 Gemini 묶음6).
+      // 기록의 머리(맨 앞이나 줄바꿈 뒤)에서만 본다. 다른 값 안의 「20 path=…」 를 이름으로 읽었다.
       const m = /(?:^|\n)\d+ path=([^\n]+)\n/.exec(data.toString('utf8'));
       if (m) longName = m[1];
       continue;

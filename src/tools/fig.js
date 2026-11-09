@@ -281,7 +281,7 @@ export function readFig(경로또는버퍼, { 최대노드 = 노드최대 } = {}
     const 메타몸 = 꾸러미.files.get('meta.json');
     if (메타몸) { try { 메타 = JSON.parse(메타몸.toString('utf8')); } catch { 메타 = null; } }
     알맹이 = 꾸러미.files.get('canvas.fig');
-    // **있는데 못 푼** 것은 「없다」 가 아니다 — 사람이 파일 안을 뒤지다 헛걸음한다(2.0.0 3회차).
+    // **있는데 못 푼** 것은 「없다」 가 아니다 — 사람이 파일 안을 뒤지다 헛걸음한다.
     const 못푼알맹이 = !알맹이 && 꾸러미.skipped.find((s) => s.name === 'canvas.fig');
     if (못푼알맹이) {
       return { ok: false, 끝났다: true, error: `.fig 꾸러미 안의 canvas.fig 를 풀지 못했습니다 — ${못푼알맹이.why}` };

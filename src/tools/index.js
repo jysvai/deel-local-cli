@@ -76,7 +76,7 @@ const GREP_MAX_FILE = 2 * 1024 * 1024;
 /*
  * 콕 집은 파일 하나는 더 넉넉히 본다 — 「이 로그에서 찾아」 는 폴더를 훑는 것과 달리 사람이
  * 그 파일을 골랐다는 뜻이다. 그래도 끝은 있다. 이 길은 파일을 통째로 글로 읽어서, GB 로그를
- * 콕 집으면 메모리를 다 썼다(rg 가 있어도 파일 하나면 이 길로 온다). (6회차 Gemini 도구6f2 F2-1)
+ * 콕 집으면 메모리를 다 썼다(rg 가 있어도 파일 하나면 이 길로 온다).
  */
 const GREP_MAX_ONE = 64 * 1024 * 1024;
 // 정규식으로 찾을 것이 없는 파일들. 열어 봐야 시간만 든다.
@@ -540,7 +540,7 @@ function 뜰만한낱말(cmd) {
 }
 
 /*
- * ── `cd 하위 && rm x` — cd 한 자리 기준으로도 푼다 (6회차 직접 사냥 M2 · Gemini 셸뜨기6m N2) ──────
+ * ── `cd 하위 && rm x` — cd 한 자리 기준으로도 푼다 ──────
  *
  * 낱말을 작업 폴더 기준으로만 풀어서, 모델이 아주 흔히 쓰는 `cd sub && rm x.txt` 에서 sub/x.txt 를 못 떴다.
  * 뜬 것이 0이라 되돌린다는 말도 없었지만 /undo 뒤에도 안 돌아왔다. `cd sub && echo hi > new.txt` 로 만든 파일도
@@ -639,7 +639,7 @@ function 바꾸기전스냅샷(cmd, ctx) {
        * 한 번에 이력이 쓰레기로 찬다. 그래서 이 갈래는 쓰는 꼴에만 연다.
        *
        * 다만 `cp a b` · `mv a b` 의 새 이름(b)은 명령이 **만든다.** 안 뜨면 /undo 뒤에 사본이
-       * 남고 mv 는 두 벌이 됐다(6회차). 미리 뜨지 않고 명령 뒤에 **정말 생겼을 때만** 없던
+       * 남고 mv 는 두 벌이 됐다. 미리 뜨지 않고 명령 뒤에 **정말 생겼을 때만** 없던
        * 자리로 적는다 — 헛기록은 안 쌓이고 새 이름은 되돌아간다.
        */
       if (!있나 && !셸쓰기) { 나중볼것.push(abs); continue; }
@@ -659,7 +659,7 @@ function 바꾸기전스냅샷(cmd, ctx) {
       const rec = ctx.history.snapshot(abs, 'Bash');
       if (있나) 있던파일.push(abs);
       if (rec?.skipped) 못뜬것.push(`${ctx.scope.show(abs)} (${rec.skipped})`);
-      // 지금 없는 이름(쓰는 꼴)은 명령 뒤에 정말 생겼을 때만 목록에 올린다 — `echo` · `new` 같은 낱말까지 「떠 뒀습니다」 로 찍혔다 (6회차 직접 사냥 M1).
+      // 지금 없는 이름(쓰는 꼴)은 명령 뒤에 정말 생겼을 때만 목록에 올린다 — `echo` · `new` 같은 낱말까지 「떠 뒀습니다」 로 찍혔다.
       else if (!있나) 없던채뜬것.push(abs);
       else 뜬것.push(ctx.scope.show(abs));
     } catch { /* 못 뜨면 그냥 넘어간다. 명령은 돌아야 한다 */ }
@@ -677,7 +677,7 @@ function 바꾸기전스냅샷(cmd, ctx) {
     for (const 파일 of 있던파일) {
       const 새자리 = join(폴더, relative(dirname(파일), 파일));
       /*
-       * 폴더 안에 **같은 이름이 이미 있으면** 지금 뜬다 (6회차 Gemini 셸뜨기6m N1).
+       * 폴더 안에 **같은 이름이 이미 있으면** 지금 뜬다.
        *
        * 무조건 명령 뒤로 미뤘더니 `cp a.txt sub` 가 덮어쓴 sub/a.txt 를 명령 뒤에 「원래 없던 자리」 로 적어, /undo 가
        * 옛 내용으로 되돌리기는커녕 **지웠다**(mv 도). 없을 때만 명령 뒤에 본다. 있는데 못 뜨면(상한 · 못 읽음)
@@ -1091,7 +1091,7 @@ export function 복사해옮기기(앞, 뒤, { 복사 = 안전복사, 지우기 
     return { 복사깨짐: err.message };
   }
   /*
-   * ── 안 베낀 것이 있으면 원본을 **안 지운다** (2차 눈) ────────────────
+   * ── 안 베낀 것이 있으면 원본을 **안 지운다** ────────────────
    *
    * copyDir 은 링크를 안 따라가고 건너뛴다. 그런데 그 뒤에서 원본 폴더를
    * 통째로 지우면 **베끼지도 않은 링크가 영영 없어진다.** 옮긴 자리에도
@@ -1786,7 +1786,7 @@ export function 바뀔내용(이름, 인자, ctx) {
           /*
            * 너무 커서 못 그리는 파일이 **하나라도** 있으면 미리보기를 통째로 안 낸다. 그 파일만 빼고
            * 그리면 사람은 작은 파일만 바뀌는 줄 알고 허락한다 — 반쪽 미리보기는 없는 것보다 나쁘다.
-           * 물음은 예전처럼 한 줄로 뜬다 (2차 눈 판정).
+           * 물음은 예전처럼 한 줄로 뜬다.
            */
           if (글.length > 미리보기상한) return [];
           파일들.set(abs, { 전: 글, 후: 글 });
@@ -2117,7 +2117,7 @@ function 찾을자리없나(root, 준것, ctx, { 폴더여야 = false } = {}) {
 }
 
 /*
- * ── Bash 제한 시간을 **쓸 수 있는 값**으로 맞춘다 (사냥5 M8) ─────────────────
+ * ── Bash 제한 시간을 **쓸 수 있는 값**으로 맞춘다 ─────────────────
  *
  * 받은 timeout 을 그대로 setTimeout 에 넣었다. 그래서 —
  *
@@ -2244,7 +2244,7 @@ export const TOOLS = {
       if (몇줄값.error) return { error: 몇줄값.error };
       /*
        * limit 이 0 이하면 읽을 줄이 없다 — 그걸 그대로 셈에 넣어 「전체 3줄 중 -3줄까지」 라는
-       * 있을 수 없는 꼬리를 지어냈다(사냥6 낮음). 모델은 파일이 비었거나 잘렸다고 읽는다.
+       * 있을 수 없는 꼬리를 지어냈다. 모델은 파일이 비었거나 잘렸다고 읽는다.
        */
       if (몇줄값.값 != null && 몇줄값.값 < 1) {
         return { error: `limit 은 1 이상이어야 합니다 (받은 것: ${JSON.stringify(args.limit)}) — 읽을 줄 수를 주거나, 빼면 읽을 수 있는 만큼 읽습니다.` };
@@ -2320,7 +2320,7 @@ export const TOOLS = {
           다못줌
             ? `${말('sum.linesOf', { 준: 준줄수, 전체: lines.length })} (${말('sum.partial')})`
             // 줄 수는 다 줬어도 **줄이 길어** clip 에 걸렸으면 사람에게도 일부만이라고 적는다.
-            // 모델 글에는 「… (N자 잘림)」 이 있는데 화면에는 「10줄」 뿐이었다 (6회차 Gemini 도구6e2 E2-1).
+            // 모델 글에는 「… (N자 잘림)」 이 있는데 화면에는 「10줄」 뿐이었다.
             : 실린것.length < 통째로.length
               ? `${세말('lines', lines.length)} (${말('sum.partial')})`
               : 세말('lines', lines.length),
@@ -2511,7 +2511,7 @@ export const TOOLS = {
        * CRLF」 로 맞추는데(edit-match.js 의 CRLF뿐인가 머리말) 여기만 없어서, `.bat` 를
        * 나눠 쓰면 앞은 CRLF · 붙인 꼬리는 LF 인 파일이 됐다. 판단은 인코딩을 잴 때 이미
        * 읽어 둔 앞머리로 한다. 이미 섞였거나 빈 파일이면 어느 쪽인지 모르니 손대지 않는다.
-       * (6회차 Gemini 도구6b B1)
+       *
        */
       const 앞글 = existed && 앞표본?.length ? decodeBytes(앞표본, { fallback: 원래, 잘림: true }).text : '';
       const 붙일글 = CRLF뿐인가(앞글) ? CRLF로(args.content) : args.content;
@@ -2744,7 +2744,7 @@ export const TOOLS = {
         : '';
       return {
         content: files.map((f) => ctx.scope.show(f.path)).join('\n') + 잘림 + 건너뜀,
-        // 훑기 상한에 걸렸으면 찾은 것이 있어도 요약에 그렇다고 단다 — 글 끝의 건너뜀말만으로는 화면 한 줄이 다 본 것처럼 찍혔다 (6회차 도구6i I1).
+        // 훑기 상한에 걸렸으면 찾은 것이 있어도 요약에 그렇다고 단다 — 글 끝의 건너뜀말만으로는 화면 한 줄이 다 본 것처럼 찍혔다.
         summary: (맞는것.length > files.length
           ? 말('sum.countOf', { n: files.length, 전체: 맞는것.length })
           : 세말('count', files.length)) + (전부.잘림 ? ` (${말('sum.notAllSeen')})` : ''),
@@ -2801,7 +2801,7 @@ export const TOOLS = {
       }
       const root = args.path ? ctx.scope.resolve(args.path) : ctx.scope.root;
       /*
-       * ── 살림 자리는 **찾지도 않는다** (사냥6 F6-1) ──────────────────────────
+       * ── 살림 자리는 **찾지도 않는다** ──────────────────────────
        *
        * Read 는 `.deel/config.json` 을 내부살림() 으로 막는데 여기에는 그 막이 없었다.
        * 그래서 `Grep {pattern:'apiKey', path:'.deel', output_mode:'content'}` 한 번이면 게이트웨이
@@ -3058,7 +3058,7 @@ export const TOOLS = {
       const hit = list.find((s) => s.name === want)
         ?? list.find((s) => s.name.toLowerCase() === want.toLowerCase())
         ?? list.find((s) => s.name.split(':').pop() === want)
-        // 꼬리도 대소문자를 안 가린다 — 온이름만 안 가려서 `project:mySkill` 을 `myskill` 로 부르면 못 찾았다 (6회차 Gemini 솜씨6o P2).
+        // 꼬리도 대소문자를 안 가린다 — 온이름만 안 가려서 `project:mySkill` 을 `myskill` 로 부르면 못 찾았다.
         ?? list.find((s) => s.name.split(':').pop().toLowerCase() === want.toLowerCase());
       if (!hit) {
         const near = list.filter((s) => s.name.includes(want) || want.includes(s.name.split(':').pop()))
@@ -3143,7 +3143,7 @@ export const TOOLS = {
         /*
          * 실패로 돌아가도 **떠 둔 것은 싣는다** (아래 끊김·시간 초과 갈래와 같은 까닭).
          * `rm keep.txt && npm run dev` 가 곧장 죽으면 파일은 이미 없는데, 되돌릴것 을 빼면
-         * 화면에도 모델에도 「떠 뒀다」 가 한 글자도 안 남았다. (6회차 Gemini 도구6c C2)
+         * 화면에도 모델에도 「떠 뒀다」 가 한 글자도 안 남았다.
          */
         if (r.error) return { error: r.error, 되돌릴것: 뜬것, 못뜬것, 스냅샷상한걸림 };
         if (!r.떴나) {
@@ -3245,7 +3245,7 @@ export const TOOLS = {
            */
           넘치면: () => 죽이기({ 파이프끊기: false, 더줄까: 1500 }),
           /*
-           * 셸이 끝났는데 파이프가 안 닫히면 1초만 더 기다린다 (사냥5 M2). `node x & echo done`
+           * 셸이 끝났는데 파이프가 안 닫히면 1초만 더 기다린다. `node x & echo done`
            * 처럼 셸이 뒤로 띄운 것이 물고 있는 판이다. 남은 것은 끊으러 가고(유닉스는 무리째),
            * 못 끊으면 못 껐다고 아래에서 적는다.
            */
@@ -3281,7 +3281,7 @@ export const TOOLS = {
             });
           }
           /*
-           * 시간 초과는 **시간 초과일 때만** 적는다 (사냥5 M3).
+           * 시간 초과는 **시간 초과일 때만** 적는다.
            *
            * 여기는 `err.killed` 로 갈랐다. 그런데 출력이 넘쳐 끊은 것도, 시그널로 죽은 것도
            * killed 가 참이라 전부 「시간 초과로 중단됨」 이 됐다 — 모델은 timeout 을 늘려
@@ -3350,7 +3350,7 @@ export const TOOLS = {
               + ' 이 명령에 필요하면 설정에 "셸환경": { "남길것": ["이름"] } 을 적으세요]'
             : '';
           /*
-           * 셸은 끝났는데 셸이 뒤로 띄운 것이 파이프를 물고 있어 더 안 기다린 판 (사냥5 M2).
+           * 셸은 끝났는데 셸이 뒤로 띄운 것이 파이프를 물고 있어 더 안 기다린 판.
            * 사실대로 적는다 — 무엇이 남았는지, 껐는지, 다음엔 어떻게 띄워야 하는지.
            */
           const 남은말 = !덤.파이프남음 ? ''
@@ -3515,7 +3515,7 @@ export const TOOLS = {
           시간초과 = true;
           죽이기({ 파이프끊기: false, 더줄까: 4000 });
           const 그물 = setTimeout(() => {
-            // 여기서 끝맺어도 떠 둔 것은 싣는다 — 콜백의 시간 초과 갈래·중단 그물과 같다 (6회차 Gemini 도구6d D2).
+            // 여기서 끝맺어도 떠 둔 것은 싣는다 — 콜백의 시간 초과 갈래·중단 그물과 같다.
             done({ error: `시간 초과로 중단됨 (${제한}ms) — 자식 프로세스가 안 끝나 강제로 끝냈습니다`, 되돌릴것: 뜬것, 못뜬것, 스냅샷상한걸림 });
           }, 1000);
           그물.unref?.();
@@ -3826,7 +3826,7 @@ export const TOOLS = {
         line: r.줄,
         // 화면에 무엇을 적었는지 보여 주려고 같이 넘긴다. 사람이 못 보면
         // 틀린 기억이 조용히 쌓인다 — 그게 제일 나쁘다.
-        // 적었지만 안 실리면 모델에게도 그렇게 말한다 (6회차 Gemini 기억6z-b Z2′) — 안 그러면
+        // 적었지만 안 실리면 모델에게도 그렇게 말한다 — 안 그러면
         // 다음 요청부터 그 말이 지켜진다고 믿고 사람에게도 그렇게 말한다.
         content: r.안실림
           ? `${r.줄}\n(적었지만 다음 요청부터 안 실립니다 — 믿는 폴더가 아니고 이 PC 가 적지 않은 줄이 이 기억 파일에 섞여 있습니다. 사람에게 그대로 알리세요.)`
@@ -3874,10 +3874,25 @@ const 뻔한인자 = new Set([
   'file_path', 'content', 'pattern', 'path', 'command', 'text', 'name', 'question', 'from', 'to',
 ]);
 
-export function 설명줄이기(schema, 한도) {
+/*
+ * 줄여도 **첫머리에 남겨야 하는 문장** (핵심남김 일 때만).
+ *
+ * 설명은 앞 문장부터 채워 한도에서 끊는다. 그런데 모델의 **행동을 바꾸는** 문장이 둘째
+ * 자리에 있는 도구가 있다 — Outline 이 그렇다. 「남의 코드를 고치기 전에 이걸 먼저 불러라」
+ * 가 없으면 Outline 은 목록에만 서 있고, 모델은 파일을 통째로 Read 한다. 한국어는 한도 90 에서도
+ * 첫 문장 뒤에 들어가지만 영어는 첫 문장 하나가 한도를 넘어 그 문장이 빠졌다.
+ *
+ * **로컬 프롬프트창(budget.js)을 쓰는 연결에서만** 켠다. 바깥 연결은 줄여도 글자가 여태와 같아야 한다.
+ * 같은 이유로 좁은 창이 배열 속 칸에서 지우던 enum 도 이 판에서는 남긴다(아래).
+ */
+const 핵심문장 = {
+  Outline: /먼저 불러라|Call this before/,
+};
+
+export function 설명줄이기(schema, 한도, { 핵심남김 = false } = {}) {
   if (!Number.isFinite(한도)) return schema;
 
-  const 자르기 = (글, 몫) => {
+  const 자르기 = (글, 몫, 꼭 = null) => {
     const s = String(글 ?? '');
     if (s.length <= 몫) return s;
     /*
@@ -3891,12 +3906,17 @@ export function 설명줄이기(schema, 한도) {
      * 적어 두면 다음 사람이 그 말을 믿고 한국어를 더 안 챙긴다.
      */
     const 조각 = s.split(/(?<=[.!?])\s+/);
-    let 모은것 = 조각[0] ?? s;
-    for (const 다음 of 조각.slice(1)) {
-      if ((모은것 + ' ' + 다음).length > 몫) break;
-      모은것 += ' ' + 다음;
+    // 첫 문장과 (있으면) 핵심 문장은 한도를 넘더라도 남긴다. 나머지는 앞에서부터 채운다.
+    const 남길 = new Set([0]);
+    const 핵심자리 = 꼭 ? 조각.findIndex((x, i) => i > 0 && 꼭.test(x)) : -1;
+    if (핵심자리 > 0) 남길.add(핵심자리);
+    const 잇기 = (자리들) => [...자리들].sort((a, b) => a - b).map((i) => 조각[i]).join(' ');
+    for (let i = 1; i < 조각.length; i++) {
+      if (남길.has(i)) continue;
+      if (잇기([...남길, i]).length > 몫) break;
+      남길.add(i);
     }
-    return 모은것;
+    return 잇기(남길) || s;
   };
 
   const p = schema.parameters ?? {};
@@ -3921,7 +3941,11 @@ export function 설명줄이기(schema, 한도) {
      */
     if (한도 <= 160 && 값?.type === 'array' && 값.items?.properties) {
       const 안쪽 = {};
-      for (const [n, v] of Object.entries(값.items.properties)) 안쪽[n] = { type: v.type };
+      for (const [n, v] of Object.entries(값.items.properties)) {
+        // 고를 수 있는 값(enum)은 설명이 아니라 규격이다 — 빼면 TodoWrite 의 state 가 todo·doing·done 인 줄
+        // 모델이 모른다. 핵심남김(로컬) 판에서만 남긴다: 바깥 연결의 좁은 창은 여태와 글자가 같아야 한다.
+        안쪽[n] = { type: v.type, ...(핵심남김 && v.enum ? { enum: v.enum } : {}) };
+      }
       새속성[이름] = {
         ...값,
         description: 값.description ? 자르기(String(값.description), 인자몫) : undefined,
@@ -3935,7 +3959,7 @@ export function 설명줄이기(schema, 한도) {
   }
   return {
     ...schema,
-    description: 자르기(schema.description, 한도),
+    description: 자르기(schema.description, 한도, 핵심남김 ? (핵심문장[schema.name] ?? null) : null),
     parameters: { ...p, properties: 새속성 },
   };
 }
@@ -4032,7 +4056,7 @@ export function 영어설명(schema, 이름, 쓸말 = 지시말()) {
 
 // 모델에게 넘길 도구 정의 목록.
 // 스킬이 없으면 Skill 도구는 빼서 자리를 아낀다.
-export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null, lsp = false, vision = false, 에이전트들 = null } = {}) {
+export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null, lsp = false, vision = false, 에이전트들 = null, 핵심남김 = false } = {}) {
   let list = names ?? Object.keys(TOOLS).filter((n) => {
     if (n === 'Skill') return hasSkills;
     if (n === 'WebFetch') return web;
@@ -4081,7 +4105,7 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
     type: 'function',
     // 눈 이야기는 줄인 **뒤에** 붙인다. 먼저 붙이면 한도에 걸려 그 한 문장이
     // 그대로 잘려 나간다 — 좁은 창일수록 정작 알려야 할 때 안 실린다.
-    function: 눈붙이기(설명줄이기(영어설명(TOOLS[n].schema, n), 한도), n, vision),
+    function: 눈붙이기(설명줄이기(영어설명(TOOLS[n].schema, n), 한도, { 핵심남김 }), n, vision),
   }));
 
   /*

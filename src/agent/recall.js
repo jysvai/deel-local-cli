@@ -124,7 +124,7 @@ function 때(meta) {
  * @param {string} root 작업 폴더
  * @param {string} 물음
  * 적는 옵션은 **여기서 실제로 읽는 것**만이다. 안 읽는 이름을 적어 두면 부르는 쪽이
- * 그것을 넘기고, 넘겼으니 걸러진 줄 알고 지낸다 — `지금세션` 이 그랬다 (2.0.0 8회차 스키마).
+ * 그것을 넘기고, 넘겼으니 걸러진 줄 알고 지낸다 — `지금세션` 이 그랬다.
  *
  * @param {{limit?: number, 예산?: number, 도구결과까지?: boolean}} o
  * @returns {{맞은것: object[], 본파일: number, 전체파일: number, 읽은바이트: number, 예산초과: boolean, 낱말: string[]}}

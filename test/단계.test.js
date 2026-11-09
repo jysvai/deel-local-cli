@@ -18,7 +18,7 @@
  * 그리고 신호를 **무엇으로 재는지**가 모드마다 다르다는 것도 잰다. 계획
  * 모드에는 파일을 바꾸는 도구가 아예 없으니 「바꿨나」 로는 영영 안 넘어간다.
  */
-import { 다음단계, 도구가늘어나나 } from '../src/agent/phase.js';
+import { 다음단계 } from '../src/agent/phase.js';
 import { get as getWork } from '../src/agent/modes.js';
 import { toolSchemas } from '../src/tools/index.js';
 import { trace } from './trace.mjs';
@@ -207,22 +207,8 @@ const 사람이고름 = (지금, 본것, 묻지말라 = false, 손대라 = 묻�
 }
 
 {
-  /*
-   * ── 도구가 정말 늘어나나 ──────────────────────────────────────────────
-   *
-   * 화면에 「앞머리를 다시 씁니다」 라고 적는 근거다. 규격이 도구 목록을
-   * 앞머리 맨 앞에 렌더하므로 도구가 하나만 늘어도 그 턴의 캐시가 끊긴다.
-   * 그 말을 적으려면 **정말 느는지**가 사실이어야 한다.
-   */
   const 도구들 = (모드) =>
     toolSchemas(null, { work: 모드 }).map((t) => t.function.name);
-
-  check('★★ 계획 → 코드 는 도구가 는다 (캐시가 한 번 끊긴다)',
-    도구가늘어나나('plan', 'code', 도구들) === true, '');
-  check('★★ 디버그 → 코드 는 도구가 안 는다 (조용히 넘어가도 된다)',
-    도구가늘어나나('debug', 'code', 도구들) === false, '');
-  check('★ 같은 모드끼리는 안 는다',
-    도구가늘어나나('code', 'code', 도구들) === false, '');
 
   /*
    * 계획 모드에 파일을 바꾸는 도구가 없다는 것은 이 파일 전체의 전제다.

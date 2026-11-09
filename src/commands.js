@@ -929,7 +929,7 @@ export async function handle(line, session, ctx) {
        * 같은 잣대다.
        */
       // 전각 숫자(３)는 보통 숫자로 편다 — 일본어·중국어 입력기는 번호를 이렇게 낸다. 목록 번호(pick)는
-      // 이미 펴서 읽는데 여기만 「숫자로 적어 주세요」 로 돌려보냈다(4회차 이월).
+      // 이미 펴서 읽는데 여기만 「숫자로 적어 주세요」 로 돌려보냈다.
       const 준말 = String(arg ?? '').trim().replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xfee0));
       if (준말 && !/^[0-9]+$/.test(준말)) {
         say(`  ${mark.no} ${c.gray('몇 턴을 되돌릴지 숫자로 적어 주세요.')} ${c.cyan('/undo 3')}`);
@@ -968,7 +968,7 @@ export async function handle(line, session, ctx) {
        */
       if (!되돌린수) {
         /*
-         * ── 턴이 있었는데 **하나도 안 돌아간** 것과 되돌릴 턴이 없는 것은 다른 말이다 (6회차 Gemini 되돌림명령6q R2·R3) ──
+         * ── 턴이 있었는데 **하나도 안 돌아간** 것과 되돌릴 턴이 없는 것은 다른 말이다 ──
          *
          * 여기는 「되돌릴 것이 없습니다.」 한 줄과 실패 수만 찍고 돌아갔다. 옮긴 그림만 있던 턴처럼 기록은 있었는데
          * 전부 그대로 두었거나 실패한 판에서, 사람은 턴이 없었던 줄 알았고 왜 안 돌아왔는지(그대로 둔 까닭 · 실패 까닭)도
@@ -978,7 +978,7 @@ export async function handle(line, session, ctx) {
         if (!r.turns) say(`  ${c.gray(말('undo.nothing'))}`);
         else if (!남긴것.length) {
           /*
-           * ── 턴을 **먹고도** 「되돌릴 것이 없습니다」 라고 하지 않는다 (8회차 그밖 한번더) ──
+           * ── 턴을 **먹고도** 「되돌릴 것이 없습니다」 라고 하지 않는다 ──
            *
            * 만들어 둔 파일을 사람이 손으로 지운 턴이 이 자리로 온다. undo() 는 되돌릴 것을
            * 하나도 못 찾지만 그 턴을 **이력에서는 지운다.** 그런데 화면은 턴이 아예 없을 때와
@@ -1280,7 +1280,7 @@ export async function handle(line, session, ctx) {
       // 적어 놨는데 못 쓰는 것(socks5 등)이면 그 까닭을 — 조용히 직접 가면 사람은 프록시를 탄 줄 안다.
       const 프록시 = 프록시고르기(k.base);
       if (프록시) say(`  ${c.gray(pad(말('status.proxy'), 10))} ${프록시.url} ${c.gray(`(${프록시.출처})`)}`);
-      // 어차피 안 거칠 주소(이 PC · NO_PROXY)면 그 줄도 없다 — 상관없는 프록시를 탓하게 된다 (2.0.0 6회차 RP1b).
+      // 어차피 안 거칠 주소(이 PC · NO_PROXY)면 그 줄도 없다 — 상관없는 프록시를 탓하게 된다.
       else if (프록시설정().탈 && !프록시비켜가나(k.base)) say(`  ${c.gray(pad(말('status.proxy'), 10))} ${c.yellow(말('status.proxyOff'))} ${c.gray(`— ${프록시설정().탈}`)}`);
       say(`  ${c.gray(pad(말('status.model'), 10))} ${k.model}`);
       /*
@@ -1521,7 +1521,7 @@ export async function handle(line, session, ctx) {
       const 말 = String(arg ?? '').trim();
 
       /*
-       * 무늬 둘에 `i` 가 빠져 있었다 (8회차 그밖 명령1). 아래 「번호를 적어 주세요」 쪽만
+       * 무늬 둘에 `i` 가 빠져 있었다. 아래 「번호를 적어 주세요」 쪽만
        * `i` 가 붙어 있어서, `/memory RM 1` 은 안 지우고 `/memory CLEAR` 는 어느 무늬에도
        * 안 걸린 채 맨 아래 「이걸 기억해라」 로 떨어졌다 — **지우려던 낱말이 기억으로 적혔다.**
        * 그 줄은 그 뒤로 매 요청마다 모델에게 같이 나간다. 아래 주석이 막으려던 바로 그 결말이,
@@ -1582,7 +1582,7 @@ export async function handle(line, session, ctx) {
           session.memory = M.프롬프트토막(session.root);
           say(`  ${mark.ok} 기억했습니다 ${c.gray(`(${r.줄수}줄)`)}`);
           if (r.넘침) say(`     ${c.gray('자리가 차서 오래된 것을 뺐습니다.')}`);
-          // 적기는 했지만 안 실리는 판을 말한다 (6회차 Gemini 기억6z-b Z2′). 여태 memory.js 가
+          // 적기는 했지만 안 실리는 판을 말한다. 여태 memory.js 가
           // 돌려주는 안실림 을 아무도 안 읽어, 「기억했습니다」 뒤로 한 번도 안 실렸다.
           if (r.안실림) {
             say(`     ${c.yellow('적었지만 다음 요청부터 안 실립니다')} ${c.gray('— 믿는 폴더가 아니고, 이 PC 가 적지 않은 줄이 섞여 있습니다. 실으려면')} ${c.cyan('deel trust')}${c.gray(', 남의 줄을 빼려면')} ${c.cyan('/memory 지우기 N')}`);

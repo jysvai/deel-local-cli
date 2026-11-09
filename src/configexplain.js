@@ -232,7 +232,7 @@ export function 설명(칸, { root = process.cwd(), env = process.env } = {}) {
    * config.js 정책덮기(baseUrl·offline·permissions.deny) · policy.js 규칙모으기(permissions) ·
    * authcmd.js 받기설정(열쇠받기). 날값을 그렸더니 정책 `offline:false`(끄지는 못한다) ·
    * 빈 baseUrl · 빈 명령의 열쇠받기 · 아무도 안 읽는 `shell` 이 「관리 정책이 이긴다」 로
-   * 떴다 (2.0.0 6회차 CX5). 관리자에게 따지러 갈 근거가 통째로 거짓이 되는 자리다.
+   * 떴다. 관리자에게 따지러 갈 근거가 통째로 거짓이 되는 자리다.
    *
    * 정책 파일은 JSON 이라 프로토타입을 그대로 물려받는다. 그래서 칸은 hasOwn 으로만 본다.
    */
@@ -273,7 +273,7 @@ export function 설명(칸, { root = process.cwd(), env = process.env } = {}) {
   /*
    * 금지·허락은 이기고 지는 칸이 아니라 **더해지는** 칸이다 — 이 PC·저장소 금지는 겹치기가
    * 합치고(config.js), 정책 금지·허락은 정책덮기·규칙모으기가 더한다(policy.js). 「한 곳이
-   * 이긴다」 로 그리면 사람은 제 금지가 풀린 줄 안다 (2.0.0 6회차 CX5).
+   * 이긴다」 로 그리면 사람은 제 금지가 풀린 줄 안다.
    */
   const 합치는칸 = 조각[0] === 'permissions'
     && (조각.length === 1 || (조각.length === 2 && (조각[1] === 'deny' || 조각[1] === 'allow')));

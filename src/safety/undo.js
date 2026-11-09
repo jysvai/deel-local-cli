@@ -227,7 +227,7 @@ export class History {
     const 뜬것 = 없던 ? { before: null } : safeRead(absPath);
     const rec = { turn: this.turn, at: new Date().toISOString(), path: absPath, before: 뜬것.before, label };
     /*
-     * 「원래 없던 자리」 라는 **표**를 따로 단다 (6회차 Gemini 되돌리기6).
+     * 「원래 없던 자리」 라는 **표**를 따로 단다.
      *
      * before:null 만으로는 옛 이력(skipped 이전)의 「못 뜬 파일」 과 안 갈려서, undo() 는 지금 바이너리면
      * 안 지운다. 그 갈래가 새 기록에도 걸려 `cp img.png copy.png` · hwpx 만들기처럼 이번 턴에 **새로 만든**
@@ -256,7 +256,7 @@ export class History {
     if (뜬것.enc) rec.enc = 뜬것.enc;
     if (뜬것.skipped) rec.skipped = 뜬것.skipped;
     /*
-     * 못 뜬 파일은 **크기**를 적어 둔다 (6회차 Gemini 도구6j).
+     * 못 뜬 파일은 **크기**를 적어 둔다.
      *
      * 옮기기(Move · 셸 mv)는 떠난 자리를 뜨고 닿은 자리를 없던 자리로 뜬다. 그림은 떠난 자리를 못 떠서 되돌릴 수
      * 없는데, undo() 가 없던 자리를 바이너리여도 지우면 그림이 **한 벌도 안 남았다.** 크기가 같은 새 바이너리는
@@ -304,7 +304,7 @@ export class History {
   }
 
   /*
-   * ── **명령 뒤에** 새로 생긴 파일을 「없던 자리」 로 적는다 (6회차 — 셸 cp·mv 의 새 이름) ──────
+   * ── **명령 뒤에** 새로 생긴 파일을 「없던 자리」 로 적는다 ──────
    *
    * `cp a b` · `mv a b` · `mv a sub` 의 새 이름은 명령 **뒤에야** 생긴다. 셸 스냅샷은 지금 있는 이름만
    * 떴다 — 없는 이름을 미리 뜨면 `rm *.tmp` 류에 헛기록이 쌓여서다(tools/index.js 바꾸기전스냅샷).
@@ -683,7 +683,7 @@ export class History {
     const 링크밖 = (p) => !안인가(진짜뿌리, 진짜자리(p));
     const 링크밖이라둠 = (p) => ({ path: p, how: '그대로 둠 (링크를 따라가면 작업 폴더 밖이라 건드리지 않았습니다)', skipped: true, 바깥: true });
     /*
-     * ── 못 뜬 채 **사라진** 파일이 있으면, 크기가 같은 새 바이너리는 지우지 않는다 (6회차 Gemini 도구6j) ──
+     * ── 못 뜬 채 **사라진** 파일이 있으면, 크기가 같은 새 바이너리는 지우지 않는다 ──
      *
      * 옮기기는 떠난 자리를 뜨는데 그림은 못 떠서(skipped) 되돌릴 수 없고, 닿은 자리는 없던 자리라 아래에서 지운다 —
      * 둘이 한 파일이면 그림이 한 벌도 안 남았다(Move · 셸 mv · 폴더째 옮기기 모두). 되돌릴 수 없는 쪽이 사라졌으면

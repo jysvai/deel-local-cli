@@ -340,7 +340,7 @@ export function 가벼운강도(천장, { 켜짐 = true } = {}) {
  * @param {number} o.max   사용자가 프로필에 직접 적어 둔 상한이 있으면 그것을 넘지 않는다
  */
 /*
- * 0 · NaN 같은 상한은 「모른다」 로 읽는다 (사냥5 L5-6).
+ * 0 · NaN 같은 상한은 「모른다」 로 읽는다.
  *
  * 설정에서 maxTokens 0 이 흘러오면 `max ?? MAX_CAP` 가 0 을 그대로 받아 상한이 바닥
  * (MIN_CAP)에 붙었고, NaN 이면 셈 전체가 NaN 이 되어 요청의 max_tokens 가 비었다.
@@ -397,7 +397,7 @@ export function wasCut(msg) {
   const s = String(msg?.stopped ?? '').toLowerCase();
   if (s === 'length' || s === 'max_tokens') return true;
   /*
-   * 다만 **끝까지 온 틀린 JSON** 은 잘린 증거가 아니다 (사냥5 L5-5).
+   * 다만 **끝까지 온 틀린 JSON** 은 잘린 증거가 아니다.
    *
    * 모델은 반쪽 JSON 을 일부러 안 만들지만, 홑따옴표·끝 쉼표·글 속 날줄바꿈으로 틀린
    * JSON 은 곧잘 만든다. 그것까지 잘린 것으로 치면 걸음마다 상한을 올려 다시 부르고

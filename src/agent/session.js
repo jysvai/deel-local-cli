@@ -7,6 +7,7 @@ import { 조각표 } from '../backend/cachemark.js';
 import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './modes.js';
 import { toolSchemas } from '../tools/index.js';
 import { isOffline } from '../safety/network.js';
+import { 바깥인가 } from '../safety/runmode.js';
 import { 승인바닥, 더센승인 } from '../safety/policy.js';
 import { normalize as normLevel, DEFAULT as LEVEL_DEFAULT } from '../ui/level.js';
 import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
@@ -17,6 +18,7 @@ import { 파일기억 } from './filemem.js';
 import { 언어, 지시말, 말 as 옮긴말 } from '../i18n/index.js';
 import { 셸안내 } from '../tools/shell.js';
 import { estimateTokens } from '../backend/tokens.js';
+import { 프롬프트창, 로컬연결인가 } from './budget.js';
 
 /*
  * 토큰 추정 — 자는 backend/tokens.js 에 한 벌만 둔다.
@@ -171,6 +173,9 @@ Finish the job. Do not stop at a plan.
  * 24k 를 경계로 삼는다. 그 아래에서는 긴 판이 창의 10% 를 넘어가기 시작한다 —
  * 도구 정의(budget.js 의 설명길이)가 줄어드는 자리와 같은 경계다. 두 개가
  * 같이 움직여야 '작은 창에서는 고정 몫을 줄인다' 가 한 가지 결정이 된다.
+ *
+ * 받는 값은 실제 창이 아니라 **프롬프트창**(budget.js)이다 — 로컬은 창이 커도 24k 아래로
+ * 쳐서 짧은 판이 나간다. 앞머리를 읽는 시간이 로컬의 값이라서다.
  */
 function 기본규칙(ctx) {
   const 짧게 = Number(ctx) > 0 && Number(ctx) < 24000;
@@ -236,7 +241,26 @@ export class Session {
   /** 사람이 고른 그대로 — 바닥이 덮었는지를 화면이 말할 때 쓴다. */
   get 고른승인() { return this.#승인; }
 
-  constructor(conn, { root, mode = 'auto', work = null, level = null, think = 'medium', effort = 'save', web = true, maxSteps = null } = {}) {
+  /*
+   * ── 로컬은 사람이 안 정했으면 생각을 끈다 ──────────────────────────────
+   *
+   * 로컬에서 생각은 공짜가 아니다. 토큰값은 안 나가도 **시간과 자리**가 나간다. 걸음마다
+   * 수천 토큰을 생각하느라 사람은 기다리고, 그 생각이 창을 채워 접기를 부르고, 접은 뒤
+   * 앞머리를 다시 읽는다. 그래서 기본은 끔이고, 켜는 것은 사람이 `/think`·`--think` 로 한다.
+   *
+   * 값을 넣어 두지 않고 **읽는 자리에서** 정한다. 그래야 /model 로 바깥과 로컬을 갈아탈 때
+   * 저절로 맞고, /think 화면·실제 요청·미리 읽기가 같은 값을 본다. 한 글자라도 다르면
+   * 미리 읽기가 통째로 버려진다 (agent/warm.js).
+   */
+  #생각 = 'medium';
+  생각정함 = false;
+  get think() {
+    if (!this.생각정함 && !바깥인가(this.conn?.base)) return 'off';
+    return this.#생각;
+  }
+  set think(v) { this.#생각 = v; this.생각정함 = true; }
+
+  constructor(conn, { root, mode = 'auto', work = null, level = null, think = null, effort = 'save', web = true, maxSteps = null } = {}) {
     this.conn = conn;
     this.root = root;
     this.mode = mode;        // 승인 정책 — 얼마나 물어보나 (auto/confirm/strict)
@@ -246,7 +270,7 @@ export class Session {
     this.routed = null;
     // 사용자 수준 — 화면에 무엇을 내놓을지만 정한다. 안전 장치는 안 바꾼다 (ui/level.js)
     this.level = normLevel(level) ?? LEVEL_DEFAULT;
-    this.think = think;      // 기준 강도
+    if (think != null) this.think = think;      // 기준 강도 (안 넘기면 위 think 가 연결을 보고 정한다)
     this.effort = effort;    // 그 강도를 단계별로 어떻게 나눌지 (effort.js)
     this.web = web;          // 웹 읽기 도구를 줄지 (오프라인이면 무조건 안 준다)
     /*
@@ -390,7 +414,7 @@ export class Session {
      * 긴 대화에서 수십 번이 되고, 그 사이 사람이 package.json 을 고쳐 놓으면
      * 대화 도중에 프롬프트가 바뀐다. 무엇 때문에 답이 달라졌는지 알 길이 없어진다.
      */
-    this.프로젝트 = 지문(this.root, this.conn?.ctx ?? null);
+    this.프로젝트 = 지문(this.root, 프롬프트창(this.conn));
     /*
      * 지난 대화에서 정한 것도 여기서 읽는다.
      *
@@ -537,7 +561,8 @@ export class Session {
    */
   시스템조각() {
     const 영 = 언어() === 'en';
-    const parts = [기본규칙(this.conn?.ctx)];
+    const 창 = 프롬프트창(this.conn);   // 모양을 고르는 창 — 로컬은 24k 아래로 친다 (budget.js)
+    const parts = [기본규칙(창)];
     // 범위를 못 박는 줄. 이건 모델이 읽는 글이라 화면 말을 따라간다.
     parts.push(영
       ? `\nWorking folder: ${this.root}\nYou can neither read nor write files outside this folder.`
@@ -595,6 +620,7 @@ export class Session {
      */
     if (this.배움요약) parts.push(this.배움요약);
     const listed = this.listedSkills();
+    const 스킬글자 = this.스킬한도().글자;
     if (listed.length) {
       parts.push(
         (영
@@ -603,7 +629,7 @@ export class Session {
         // 설명이 없는 스킬이 섞일 수 있다 — 남의 폴더에서 오는 파일이라
         // 앞머리(frontmatter)가 빠지곤 한다. 여기서 터지면 시스템 프롬프트를
         // 못 만들어 **매 턴** 죽는다. 목록 명령 하나가 아니라 대화 전체가 막힌다.
-        listed.map((s) => `- ${s.name}: ${String(s.description ?? '').slice(0, this.maxSkillDesc)}`).join('\n')
+        listed.map((s) => `- ${s.name}: ${String(s.description ?? '').slice(0, 스킬글자)}`).join('\n')
       );
       const rest = this.skills.filter((s) => s.enabled).length - listed.length;
       if (rest > 0) {
@@ -635,15 +661,15 @@ export class Session {
     const 변함 = [];
     const w = workMode(this.effectiveWork());
     변함.push(영
-      ? `\n--- current mode: ${w.en} ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`
-      : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`);
+      ? `\n--- current mode: ${w.en} ---\n${모드말(this.effectiveWork(), 창)}`
+      : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), 창)}`);
     /*
      * 기본 규칙(BASE_RULES)은 **모든 모드에서** 「Remember 로 남긴다」 · 「끝내기 전에 Verify」
      * 를 시킨다. 그 도구가 없는 모드(묻기·계획 …)에서는 없는 도구를 부르라는 말이 된다 —
      * 부르면 loop.js 가 모드에 없다고 거절하고 한 걸음이 헛간다. 굳은 부분은 모드와 상관없이
      * 캐시되는 자리라 거기서 빼지 않고, 여기 모드 절에서 바로잡는다.
      */
-    // 하위 작업은 모드 말고 에이전트 정의가 도구를 줄인다(도구제한). 그쪽도 같이 본다(2.0.0 2차 리뷰).
+    // 하위 작업은 모드 말고 에이전트 정의가 도구를 줄인다(도구제한). 그쪽도 같이 본다.
     const 도구제한 = this.도구제한 ? [...this.도구제한] : null;
     const 모드가뺐나 = (n) => Array.isArray(w.tools) && !w.tools.includes(n);
     const 없는도구 = ['Remember', 'Verify'].filter((n) => 모드가뺐나(n) || (도구제한 && !도구제한.includes(n)));
@@ -672,6 +698,27 @@ export class Session {
 
   /** 모델이 읽는 시스템 글 전체. 조각을 그대로 이어 붙인 것이다. */
   systemPrompt() { return this.시스템조각().join(''); }
+
+  /*
+   * 스킬 목록의 **상한 두 개**(몇 개 · 설명 몇 글자)를 한 곳에서 정한다.
+   *
+   * 읽는 자리가 셋이다 — listedSkills(몇 개), 시스템조각(설명 글자), #원추정(설명 글자).
+   * 셋이 따로 maxSkillsListed·maxSkillDesc 를 읽으면 한 곳만 고쳐졌을 때 /context 가 재는
+   * 스킬 글과 실제로 나가는 스킬 글이 어긋난다. 그러면 effort.js 가 남은 자리를 잘못 잡는다.
+   *
+   * 로컬은 최대 12개 · 설명 80자다. 스킬 목록은 앞머리에 들어가 매번(캐시가 끊기면 다시) 읽히는
+   * 글인데, 40개 × 140자는 로컬에서 그대로 읽는 **시간**이다. 사용자가 이보다 작게 정해 둔 값은
+   * 그대로 존중하고(작은 쪽을 쓴다), 바깥 연결은 정해 둔 값을 건드리지 않는다.
+   * 내장 몫(상한의 1/4)은 이 상한에서 계산되므로 listedSkills 가 그대로 지킨다.
+   */
+  스킬한도() {
+    if (!로컬연결인가(this.conn)) return { 개수: this.maxSkillsListed, 글자: this.maxSkillDesc };
+    const 설명 = Number(this.maxSkillDesc);
+    return {
+      개수: Math.min(Number(this.maxSkillsListed), 12),
+      글자: 설명 < 80 ? this.maxSkillDesc : 80,
+    };
+  }
 
   /*
    * 프롬프트에 실제로 올릴 스킬: 가까운 자리부터 상한까지.
@@ -725,11 +772,11 @@ export class Session {
     /*
      * 상한을 **먼저 성한 수로 만든다.** 음수가 들어오면 `Math.floor(-1/4)`
      * 이 -1 이고 `slice(0, -1)` 은 「끝 하나만 뺀 전부」 라, 0 개를 실어야 할
-     * 자리에서 넷이 실렸다(8차 리뷰). 음수 상한은 「싣지 마라」 는 뜻이지
+     * 자리에서 넷이 실렸다. 음수 상한은 「싣지 마라」 는 뜻이지
      * 「뒤에서 하나 빼고 다」 가 아니다.
      *
      * 그 울타리를 `Number.isFinite` 로 세웠더니 옮긴 자리에 틈이 났다
-     * (9차 리뷰). 그 함수는 **숫자꼴 글자열과 무한대를 함께 내친다.**
+     *. 그 함수는 **숫자꼴 글자열과 무한대를 함께 내친다.**
      *
      *     maxSkillsListed = '10'        → 0개  (앞 판은 10개)
      *     maxSkillsListed = Infinity    → 0개  (앞 판은 전부)
@@ -741,7 +788,7 @@ export class Session {
      * `Math.floor(Infinity)` 은 Infinity 이고 `slice(0, Infinity)` 는 전부라,
      * 무한대는 저절로 「상한 없음」 이 된다.
      */
-    const 잰값 = Number(this.maxSkillsListed);
+    const 잰값 = Number(this.스킬한도().개수);
     const 상한 = Number.isNaN(잰값) ? 0 : Math.max(0, Math.floor(잰값));
     const 몫 = Math.floor(상한 / 4);
     const 매어둔것 = new Set(줄세운것.filter((s) => s.source === 'builtin').slice(0, 몫));
@@ -926,7 +973,7 @@ export class Session {
     if (!표 || !걷는턴.has(표.턴) || typeof m.content !== 'string' || !m.content.includes(표.쪽지)) return m;
     const 새것 = { ...m, content: m.content.replace(표.쪽지, '') };
     /*
-     * 새 객체를 지었으면 **턴표도 그 객체를 가리키게 옮긴다** (2.0.0 8회차 판정).
+     * 새 객체를 지었으면 **턴표도 그 객체를 가리키게 옮긴다**.
      *
      * 바로 위 머리말이 「새 객체를 지으면 턴표·박은쪽지 표가 그 메시지를 못
      * 알아본다」 고 적어 두고, 박은쪽지 쪽만 챙겼다. 턴표는 안 옮겼다.
@@ -1013,7 +1060,7 @@ export class Session {
     앞.removed += d?.removed ?? 0;
     앞.times += 1;
     /*
-     * **파일마다** 마지막으로 고친 때를 남긴다 (2.0.0 8회차 판정).
+     * **파일마다** 마지막으로 고친 때를 남긴다.
      *
      * 증거 모으기(agent/evidence.js)는 「고친 뒤에 돌린 확인만 증거로 친다」 고
      * 적어 두고, 그 기준 시각을 부르는 쪽이 넘겨 주기를 기다렸다. 부르는 자리
@@ -1138,7 +1185,7 @@ export class Session {
     const rules = this.rules ? this.#셈('규칙', String(this.rules.text ?? '')) : 0;
     const listed = this.listedSkills();
     const skills = listed.length
-      ? this.#셈('스킬', listed.map((s) => `${s.name}: ${String(s.description ?? '').slice(0, this.maxSkillDesc)}`).join('\n'))
+      ? this.#셈('스킬', listed.map((s) => `${s.name}: ${String(s.description ?? '').slice(0, this.스킬한도().글자)}`).join('\n'))
       : 0;
     const 배움 = this.배움요약 ? this.#셈('배움', String(this.배움요약)) : 0;
     // 기억도 매 요청에 통째로 나간다 — 아래 시스템 칸에서 빼려면 여기서 먼저 잰다.
@@ -1247,7 +1294,7 @@ export class Session {
     // 이 자리만 `?.` 가 빠져 있었다 — 다른 다섯 자리는 전부 this.conn?.ctx 다.
     // conn 없이 만든 세션에서 breakdown() 이 TypeError 로 죽는다.
     /*
-     * 0·음수·숫자 아님은 「안 잰 것」 이다 (사냥5 L5-6). 연결을 짓는 자리(models.js 의
+     * 0·음수·숫자 아님은 「안 잰 것」 이다. 연결을 짓는 자리(models.js 의
      * 양수크기)가 거르지만 conn 은 그 밖에서도 지어진다. 창 0 을 그대로 믿으면 표가
      * 「0 토큰 중 22만」 이 되고, 접기·요약은 몇 퍼센트인지 못 재어 영영 안 돈다.
      */
@@ -1299,6 +1346,12 @@ export class Session {
     const mcp수 = (this.mcp ?? []).reduce((n, s) => n + (s.도구?.length ?? 0), 0);
     // 창 크기도 열쇠에 넣는다. 설명을 창에 맞춰 줄여 싣기 때문에(budget.js),
     // /ctx 로 창을 다시 잡으면 이 값도 달라져야 한다. 안 넣으면 옛 값이 남는다.
+    // 넣는 것은 **실제 창이 아니라 모양을 고르는 창**(프롬프트창)이다 — 실제로 나가는 스키마가
+    // 그 값으로 정해지고, /model 로 로컬↔바깥을 갈아타면 같은 창 숫자에서도 값이 달라진다.
+    // 로컬 65k 와 로컬 32k 는 같은 판이 나가므로 같은 열쇠를 쓰는 게 맞다. 핵심 문장을 남기는
+    // 로컬 표시(L)도 같이 넣어, 같은 창 숫자의 로컬·바깥이 한 칸을 나눠 쓰지 않게 한다.
+    const 모양창 = 프롬프트창(this.conn);
+    const 로컬 = 로컬연결인가(this.conn);
     // 눈 유무도 열쇠에 넣는다. 아래에서 vision 을 넘겨 쓰기 때문에 그 값이
     // 바뀌면 스키마 크기도 바뀐다 — 안 넣으면 모델을 갈아 끼워도 옛 값이 남는다.
     /*
@@ -1309,7 +1362,7 @@ export class Session {
     const 웹 = this.web !== false && !isOffline();
     const 에이전트들 = this.실린에이전트들 ?? null;
     /*
-     * 그 셋은 **무엇이 다른지까지** 열쇠에 넣는다 (2.0.0 8회차 판정).
+     * 그 셋은 **무엇이 다른지까지** 열쇠에 넣는다.
      *
      * 이 값은 한 번 재면 열쇠에 굳고 다시 안 잰다. 그래서 열쇠가 못 가르는 차이는
      * 「값이 조금 틀리다」 가 아니라 **남의 값을 그대로 집어 오는 것**이다. 아래 두 자리가
@@ -1326,7 +1379,7 @@ export class Session {
      */
     const 제한열쇠 = this.도구제한 ? [...this.도구제한].join(',') : '*';
     const 에이전트열쇠 = (에이전트들 ?? []).map((a) => `${a?.이름}(${a?.설명})`).join('·');
-    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${웹 ? 'web' : ''}|${this.lsp ? 'lsp' : ''}|mcp${mcp수}|c${this.conn?.ctx ?? 0}|v${this.conn?.vision === true ? 1 : 0}|t${제한열쇠}|a${에이전트열쇠}`;
+    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${웹 ? 'web' : ''}|${this.lsp ? 'lsp' : ''}|mcp${mcp수}|c${모양창 ?? 0}${로컬 ? 'L' : ''}|v${this.conn?.vision === true ? 1 : 0}|t${제한열쇠}|a${에이전트열쇠}`;
     if (this.#도구잰것.has(열쇠)) return this.#도구잰것.get(열쇠);
     let n = 0;
     try {
@@ -1340,7 +1393,8 @@ export class Session {
         // 실제로 나가는 것과 **같은 것**을 재야 한다. 안 넘기면 안 줄인 것을
         // 재게 되고, 그러면 /context 가 실제보다 크게 말한다 — 그 값으로
         // effort.js 가 출력 상한을 잡으므로 답이 이유 없이 짧아진다.
-        ctx: this.conn?.ctx ?? null,
+        ctx: 모양창,
+        핵심남김: 로컬,
         vision: this.conn?.vision === true,
       });
       n = estimateTokens(JSON.stringify(list));
@@ -1451,7 +1505,7 @@ export function 못박은요청(session) {
   const 원문 = String(session?.이번요청 ?? '').trim();
   if (!원문) return '';
   /*
-   * 잘랐으면 머리말부터 **잘랐다고** 말한다 (사냥5 B5-01).
+   * 잘랐으면 머리말부터 **잘랐다고** 말한다.
    *
    * 여기는 앞 1,200자만 싣고도 「요약이 아니라 원문 그대로입니다. 여기 적힌 것을
    * 빠짐없이 하세요」 라고 적었다. 모델은 그 말대로 앞부분을 시킨 일 **전부**로 믿고
@@ -1468,7 +1522,7 @@ export function 못박은요청(session) {
 
 export function 못박은할일(session) {
   /*
-   * 빈 칸은 **거르개에서** 걷는다 (2.0.0 8회차 판정).
+   * 빈 칸은 **거르개에서** 걷는다.
    *
    * 여기는 `x?.state` 로 null 을 조심해 놓고, 바로 아래 map 은 `x.state` 였다. 그래서
    * 목록에 낀 `null` 하나가 거르개를 「안 끝난 것」 으로 통과한 뒤 map 에서 던졌다 —
@@ -1774,7 +1828,7 @@ function 규격에맞나(m, 규격) {
   const 블록 = Array.isArray(m.content) ? m.content : null;
   if (규격 === 'anthropic') {
     /*
-     * `thinking` 칸도 본다 (2.0.0 8회차 판정).
+     * `thinking` 칸도 본다.
      *
      * 최상위 `thinking` 은 Ollama 가 적는 자리다(adapter.js 의 assistantMessage). 이 규격은
      * 생각을 **블록**으로 나르지 최상위 칸으로 안 나른다 — 모르는 칸 하나에 400 을 준다.
@@ -1805,7 +1859,7 @@ function 규격에맞나(m, 규격) {
     return (m.tool_calls ?? []).every((t) => t?.id && typeof t?.function?.arguments === 'string');
   }
   /*
-   * 사람·시스템 차례도 `content == null` 을 본다 (2.0.0 8회차 판정).
+   * 사람·시스템 차례도 `content == null` 을 본다.
    *
    * 바로 위 답 차례는 보고 있었고 여기만 빠져 있었다. 블록이 아니면 `!블록` 이 참이라
    * `content: null` 인 사람 말이 「맞는 모양」 으로 통과해 그대로 나갔다 — 이 규격에서
