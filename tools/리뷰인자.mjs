@@ -95,7 +95,7 @@ export function 값빠진옵션(인자) {
 export function 쓰는법() {
   return [
     '',
-    '2차 리뷰 — 커밋 하나씩 gemini-3.8-flash-high 에게 보여 주고 쪽지를 받는다.',
+    '2차 리뷰 — 커밋 하나씩 gemini-4-argon-medium 에게 보여 주고 쪽지를 받는다.',
     '',
     '  node tools/review2.mjs                     안 올린 판을 본다',
     '  node tools/review2.mjs --since HEAD~3      최근 세 판을 한 판씩',
@@ -106,7 +106,7 @@ export function 쓰는법() {
     '  node tools/review2.mjs --since HEAD~4 --to HEAD~3 --files a.js',
     '                                             그 판에서 그 파일만',
     '',
-    '  --model <이름>    기본 gemini-3.8-flash-high (pro 는 쓰지 않는다)',
+    '  --model <이름>    기본 gemini-4-argon-medium (pro 는 쓰지 않는다)',
     '  --timeout <시간>  한 판 기다리는 시간 — 단위를 붙인다(40m · 90m · 900s)',
     '  --out <파일>      쪽지를 적을 파일 (예: --out 보고.md)',
     '  --quiet           지나가는 말을 안 찍는다',
