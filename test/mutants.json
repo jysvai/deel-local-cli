@@ -16959,7 +16959,7 @@
       "곳": "src/agent/loop.js",
       "무엇": "글로 적은 잘못된 부름을 그냥 답으로 받는다",
       "그러면": "아무것도 안 돌고 턴이 끝난다",
-      "찾을것": "} else if (로컬연결인가(conn) && !글부름민적 && 글부름꼴.test(msg.content)) {",
+      "찾을것": "} else if (로컬연결인가(conn) && !글부름민적 && 글부름꼴.test(코드걷기(msg.content))) {",
       "바꿀것": "} else if (false) {",
       "검사": "test/localstay.test.js"
     },
@@ -17010,6 +17010,14 @@
       "찾을것": "  if (/(?:마치|끝내|알|되|좋|충분하|있|없|감사하|같)겠(?:습니다|어요)/.test(끝문장) || /let me know/i.test(끝문장)) return false;\n",
       "바꿀것": "",
       "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "코드 울타리 속 예시도 잘못된 부름으로 친다",
+      "그러면": "도구 꼴을 설명한 답마다 헛재촉이 나간다",
+      "찾을것": "글부름꼴.test(코드걷기(msg.content))",
+      "바꿀것": "글부름꼴.test(msg.content)",
+      "검사": "test/textcalls.test.js"
     }
   ]
 }

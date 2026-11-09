@@ -193,6 +193,8 @@ const 다짐말 = (말) => {
     || /^(?:(?:ok|okay|now|next|first|sure)[,.]?\s+)*(?:i'll|i will|i'm going to|i am going to|let me)\b/i.test(끝문장);
 };
 const 글부름꼴 = /<tool_call>|<function[=\s]|<\|tool_call|<start_function_call>|```tool_code|\[TOOL_CALLS\]|^\s*\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"(?:arguments|parameters)"\s*:/i;
+// 코드 울타리·코드 조각 속은 예시다. 꼴을 설명하는 답을 잘못된 부름으로 읽지 않는다.
+const 코드걷기 = (글) => 글.replace(/```(?!tool_code)[^\n]*\n[\s\S]*?(?:```|$)/g, '').replace(/`[^`\n]*`/g, '');
 const 글부름재촉말 = (이름들) => (지시말() === 'en'
   ? `[deel] Your last reply wrote a tool call as text, so nothing ran. Call a tool through the tool interface. Available tools: ${이름들.join(', ')}.`
   : `[deel] 방금 답은 도구 부름을 글로 적어서 아무것도 실행되지 않았습니다. 도구 호출로 다시 부르세요. 쓸 수 있는 도구: ${이름들.join(', ')}.`);
@@ -1882,7 +1884,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         msg.toolCalls = 건짐.부름.map((x, i) => ({ id: `text_${steps}_${i + 1}`, name: x.name, args: x.args }));
         msg.content = 건짐.남은글;
         yield { type: 'textcalls', names: msg.toolCalls.map((x) => x.name), count: msg.toolCalls.length };
-      } else if (로컬연결인가(conn) && !글부름민적 && 글부름꼴.test(msg.content)) {
+      } else if (로컬연결인가(conn) && !글부름민적 && 글부름꼴.test(코드걷기(msg.content))) {
         // 내준 적 없는 이름이거나 못 읽는 꼴이다. 아무것도 안 돌았는데 답으로 끝내면 일이 멎으니 쓸 수 있는 이름을 한 번 알려 준다.
         글부름민적 = true;
         session.push({ role: 'user', content: 글부름재촉말(tools.map((t) => t.function.name)) });
