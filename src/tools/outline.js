@@ -284,8 +284,8 @@ export const OUTLINE_TOOL = {
     // 좁히는 방식은 Glob 도구와 **같은 것**을 쓴다. 두 도구가 같은 패턴에
     // 다르게 답하면 모델이 둘 중 어느 것을 믿어야 할지 알 수 없다.
     if (args.pattern && !하나인가) {
-      const re = globToRegex(args.pattern);
-      파일들 = 파일들.filter((f) => re.test(f.rel) || re.test(f.rel.split('/').pop()));
+      const re = globToRegex(args.pattern.normalize('NFC'));
+      파일들 = 파일들.filter((f) => { const 이름 = f.rel.normalize('NFC'); return re.test(이름) || re.test(이름.split('/').pop()); });
     }
 
     if (!파일들.length) return { content: '볼 파일이 없습니다.', summary: 세말('count', 0) };

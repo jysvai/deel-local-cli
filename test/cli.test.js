@@ -71,7 +71,8 @@ const srv = createServer((req, res) => {
 
       // 사람이 처음에 뭐라고 했는지를 보고 대본을 고른다.
       // 이 한 대사가 대화 화면의 어느 갈래를 밟을지 정한다.
-      const 사람말 = String([...(json?.messages ?? [])].reverse().find((m) => m.role === 'user')?.content ?? '');
+      // 로컬로 보낼 때 잇따른 사람 말은 한 덩이로 합쳐 온다. 대본은 마지막 말로 고른다.
+      const 사람말 = String([...(json?.messages ?? [])].reverse().find((m) => m.role === 'user')?.content ?? '').split('\n\n').pop();
 
       if (/일부러_터뜨려/.test(사람말)) return 보냄({ error: { message: '스텁이 일부러 낸 오류입니다' } }, 500);
       if (/일부러_생각/.test(사람말)) return 답({ role: 'assistant', content: '다 생각했습니다', reasoning_content: '속으로 이렇게 생각했다' });

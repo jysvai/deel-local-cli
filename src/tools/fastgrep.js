@@ -368,7 +368,9 @@ export function rg글로브들(glob, { 자리 = null, 뿌리 = null } = {}) {
       무늬들.push(`${앞.split(sep).join('/')}/${몸}`);
     }
   }
-  return 무늬들.map((x) => (빼기 ? `!${x}` : x));
+  // rg 는 이름을 바이트로 견준다. 디스크의 자모 모양을 모르니 두 모양을 다 준다. 대괄호 안은 풀면 범위가 뒤집혀 rg 가 죽으니 바깥만 푼다.
+  const 괄호밖만 = (x, 꼴) => x.replace(/\\.|\[[!^]?\]?(?:\\.|[^\]\\])*\]|[^[\\]+/g, (m) => (m[0] === '[' || m[0] === '\\' ? m : m.normalize(꼴)));
+  return [...new Set(무늬들.flatMap((x) => [x, 괄호밖만(x, 'NFC'), 괄호밖만(x, 'NFD')]))].map((x) => (빼기 ? `!${x}` : x));
 }
 
 function rg거르는인자({ glob = null, 무시파일 = null, 자리 = null, 뿌리 = null } = {}) {

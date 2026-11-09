@@ -683,6 +683,8 @@ export async function handle(line, session, ctx) {
 
     case 'clear':
       session.clear();
+      // 저장 파일도 비운다. 안 비우면 --continue 로 비운 대화가 되살아난다.
+      try { ctx?.갈래?.현재store?.()?.replace(session.messages, '대화 비움'); } catch { /* 못 적어도 대화는 계속 */ }
       say(`  ${mark.ok} 대화를 비웠습니다. 규칙과 연결은 그대로입니다.`);
       say('');
       return { handled: true };
@@ -714,6 +716,8 @@ export async function handle(line, session, ctx) {
         say('');
         return { handled: true };
       }
+      // 접은 모양을 저장 파일에도 쓴다. 안 쓰면 --continue 가 접기 전 대화를 통째로 불러온다.
+      try { ctx?.갈래?.현재store?.()?.replace(session.messages, '수동 압축'); } catch { /* 못 적어도 대화는 계속 */ }
       const 줄인 = r.before - r.after;
       // 요약을 못 받고 잘라 낸 것을 「✓ 요약으로 접었습니다」 로 먼저 적지 않는다 (repl.js 의 compacted).
       s.stop(r.fallback

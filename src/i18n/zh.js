@@ -456,6 +456,7 @@ export const zh = {
   'more.spots': '另外{n}处',
 
   'err.noSuchFile': '没有这个文件: {경로}',
+  'err.sameNameAt': '同名文件在这里: {목록}',
   'err.alreadyThere': '已经存在: {경로}',
   'err.overwriteHint': '要覆盖请传 overwrite: true。',
 

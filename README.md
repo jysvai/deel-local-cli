@@ -406,7 +406,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.2.5  ⌂ inside
+ deel 2.2.6  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1437,6 +1437,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| **[2.2.6](docs/en/releases/2.2.md#226)** | Local work stops getting cut off — whole files in one read, files found however the path was written, Ctrl+V for images, and an input box that no longer piles up |
 | **[2.2.5](docs/en/releases/2.2.md#225)** | Large files read properly — no more 88 lines behind a 357-line label, a map of what comes later, and local read-only loops get stopped |
 | **[2.2.4](docs/en/releases/2.2.md#224)** | The terminal takes work off local models — compaction without a model call, folded originals restored by id, English instructions with answers in your language |
 | **[2.2.3](docs/en/releases/2.2.md#223)** | Local models stop filling up — when summaries cannot make room the earlier conversation is cleared automatically and the turn carries on. Local connections turn thinking off unless you set it, and send a shorter fixed prompt |

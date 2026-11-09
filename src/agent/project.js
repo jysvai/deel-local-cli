@@ -37,7 +37,7 @@
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { 언어 } from '../i18n/index.js';
+import { 지시말 } from '../i18n/index.js';
 
 // 위쪽에 있어도 사람에게 아무 말도 안 해 주는 것들. 적어 봐야 자리만 먹는다.
 const 안적을것 = new Set([
@@ -204,9 +204,9 @@ export function 지문(root, 창 = null) {
   const 이 = 이름(root, 갈래);
   const 가지 = git가지(root);
 
-  // 이 토막은 모델이 읽는 글이라 화면 말을 따라간다 — 머리줄도 마찬가지다.
+  // 이 토막은 모델이 읽는 글이라 지시말을 따라간다 — 머리줄도 마찬가지다.
   // 여태 여기만 한국어가 박혀 있어서 영어 화면에도 「node 프로젝트」 가 나갔다.
-  const 영 = 언어() === 'en';
+  const 영 = 지시말() === 'en';
   const 가지말 = 가지 === 떨어진머리 && 영 ? 'no branch (detached)' : 가지;
   const 머리 = [
     갈래 ? (영 ? `${갈래} project${이 ? ` (${이})` : ''}` : `${갈래} 프로젝트${이 ? ` (${이})` : ''}`) : null,

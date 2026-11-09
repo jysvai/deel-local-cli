@@ -520,6 +520,7 @@ export const ko = {
 
   // ── 도구 오류 ────────────────────────────────────────────────────────
   'err.noSuchFile': '파일이 없습니다: {경로}',
+  'err.sameNameAt': '같은 이름의 파일이 여기 있습니다: {목록}',
   'err.alreadyThere': '이미 있습니다: {경로}',
   'err.overwriteHint': '덮어쓰려면 overwrite: true 를 주세요.',
 

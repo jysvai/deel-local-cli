@@ -351,6 +351,20 @@ if (!python있나) {
       };
     };
 
+    trace(`7-Ctrl+V (${이름})`);
+    {
+      const r = await 판에([{ send: '\x16', wait: '클립보드|xclip|wl-paste', timeout: 10, name: '그림키' }]);
+      check(`★★ 진짜 pty (${이름}): Ctrl+V 가 클립보드 그림을 찾으러 간다`, r.걸음.그림키, JSON.stringify(r.걸음));
+    }
+    if (!상자) {
+      trace(`7-Ctrl+V 접힌 줄 (${이름})`);
+      const r = await 판에([
+        { send: 'a'.repeat(300), wait: 'a{20}', timeout: 10, name: '긴글' },
+        { send: '\x16', wait: '클립보드|xclip|wl-paste', timeout: 10, name: '그림키' },
+      ]);
+      check(`★★ 진짜 pty (${이름}): 접힌 줄에서 Ctrl+V 를 눌러도 윗 칸까지 지운다`, r.걸음.그림키 && /\x1b\[\d+A\r\x1b\[J/.test(r.화면), JSON.stringify(r.걸음));
+    }
+
     trace(`7-Ctrl+Z-fg (${이름})`);
     {
       const r = await 판([

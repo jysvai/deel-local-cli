@@ -150,6 +150,8 @@ const FILES = [
   'completion.test.js',
   'pty.test.js',
   'clipboard.test.js',
+  'pathfix.test.js',
+  'localstay.test.js',
   'steer.test.js',
   'pdf.test.js',
   'compact.test.js',

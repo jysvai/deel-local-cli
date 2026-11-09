@@ -178,12 +178,12 @@ console.log('\n읽기만 이어지면 터미널이 끊는다');
 {
   writeFileSync(join(root, 'b.txt'), Array.from({ length: 300 }, (_, i) => `줄 ${i}`).join('\n'));
   const 조각 = (n) => ({ file_path: 'b.txt', offset: n * 10 });
-  const 돌리기 = async (work, { 도구걸음 = 14, 읽기인자 = 조각, 카드 = null } = {}) => {
+  const 돌리기 = async (work, { 도구걸음 = 14, 읽기인자 = 조각, 카드 = null, 로컬값 = false } = {}) => {
     const 서버 = await 가짜서버({ 도구걸음, 읽기인자 });
     서버.판.비우기();
     const s = new Session(연결(서버.base), { root, work });
     const 사건 = [];
-    for await (const ev of run(s, { ...문맥(), ...(카드 ? { 카드 } : {}) }, 'b.txt 고쳐줘')) 사건.push(ev);
+    for await (const ev of run(s, { ...문맥(), ...(카드 ? { 카드 } : {}), ...(로컬값 ? { 로컬: true } : {}) }, 'b.txt 고쳐줘')) 사건.push(ev);
     await 서버.닫기();
     return { s, 사건, 부름: 서버.판.기록.filter((x) => !x.미리).length };
   };
@@ -197,8 +197,22 @@ console.log('\n읽기만 이어지면 터미널이 끊는다');
   check('★★★ 같은 줄을 세 번 읽어도 안 끊는다', !같은것.사건.some((e) => e.type === 'stuck'), JSON.stringify(같은것.사건.filter((e) => e.type === 'stuck')));
   const 버릇 = await 돌리기('code', { 도구걸음: 2, 읽기인자: null, 카드: { 조정: { 같은것한계: 2 } } });
   check('★★★ 되풀이 버릇이 잡힌 모델도 읽기 한 번 겹쳤다고 안 끊는다', !버릇.사건.some((e) => e.type === 'stuck'), JSON.stringify(버릇.사건.filter((e) => e.type === 'stuck')));
-  const 끝없음 = await 돌리기('code', { 도구걸음: 12, 읽기인자: null });
+  const 끝없음 = await 돌리기('code', { 도구걸음: 16, 읽기인자: null });
   check('★★ 완전히 같은 읽기를 끝없이 하면 그때는 끊는다', 끝없음.사건.some((e) => e.type === 'stuck'));
+  const 도구글 = (r) => r.s.messages.filter((m) => m.role === 'tool').map((m) => String(m.content));
+  const 앞줄 = () => ({ file_path: 'b.txt', offset: 11, limit: 50 });
+  const 세번 = await 돌리기('code', { 도구걸음: 3, 읽기인자: 앞줄, 로컬값: true });
+  check('★★★ 같은 줄을 또 읽으면 어디에 있는지 말하고 안 다시 싣는다', /11~60줄/.test(도구글(세번)[1] ?? ''), (도구글(세번)[1] ?? '').slice(0, 80));
+  check('★★★ 같은 줄 재독이 이어지면 바로 민다', 세번.사건.some((e) => e.why === '읽기반복'), JSON.stringify(세번.사건.filter((e) => e.type === 'nudge')).slice(0, 120));
+  const 안쪽 = await 돌리기('code', { 도구걸음: 2, 읽기인자: (n) => (n === 2 ? { file_path: 'b.txt', offset: 1, limit: 100 } : { file_path: 'b.txt', offset: 10, limit: 20 }), 로컬값: true });
+  check('★★★ 이미 본 구간 안쪽을 다르게 불러도 같은 줄로 본다', /10~29줄/.test(도구글(안쪽)[1] ?? ''), (도구글(안쪽)[1] ?? '').slice(0, 80));
+  const 이어감 = await 돌리기('code', { 도구걸음: 12, 읽기인자: (n) => ({ file_path: 'b.txt', offset: (13 - n) * 20 + 1, limit: 20 }), 로컬값: true });
+  check('★★★ 새 줄을 이어 읽는 것은 몇 번이든 안 끊고 내용을 준다', !이어감.사건.some((e) => e.type === 'stuck') && 도구글(이어감).every((t) => !/다시 싣지 않습니다/.test(t)), 이어감.사건.map((e) => e.type).slice(-3).join());
+  let 번째 = 0;
+  const 섞음 = await 돌리기('code', { 도구걸음: 12, 읽기인자: () => { 번째 += 1; return { file_path: 'b.txt', offset: 번째 % 3 === 0 ? 번째 * 20 : 1, limit: 10 }; }, 로컬값: true });
+  check('★★ 새 줄을 읽으면 같은 줄 셈이 풀린다', !섞음.사건.some((e) => e.type === 'stuck'), 섞음.사건.map((e) => e.type).slice(-3).join());
+  const 끝까지 = await 돌리기('code', { 도구걸음: 16, 읽기인자: 앞줄, 로컬값: true });
+  check('★★★ 새 줄 없이 같은 줄만 열두 번에 두 번 더 일러 보고 끊는다', 끝까지.사건.some((e) => e.type === 'stuck') && 도구글(끝까지).length === 14, `${도구글(끝까지).length}번`);
   const 설명 = await 돌리기('ask');
   check('★★ 고치는 모드가 아니면 읽기만 해도 안 민다', !설명.사건.some((e) => e.why === '읽기반복'));
 }

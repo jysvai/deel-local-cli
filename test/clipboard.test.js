@@ -210,6 +210,36 @@ trace('6-갈래별');
   check('낯선 OS 의 답도 같은 계약이다', 계약지킴(클립보드그림({ platform: 'sunos' })) === true);
 }
 
+// ── 맥: PNG 칸이 없는 그림 ─────────────
+{
+  const PNG바이트 = Buffer.from('89504e470d0a1a0a0000', 'hex');
+  const 흉내 = (꼴, { 변환됨 = true } = {}) => {
+    const 불린것 = [];
+    const 부르기 = (이름, 인자) => {
+      불린것.push(이름);
+      if (이름 === 'osascript') {
+        const 글 = String(인자[1]);
+        if (꼴 && 글.includes(`class ${꼴}`)) return { status: 0, stdout: `«data ${꼴}49492A00»`, stderr: '' };
+        return { status: 1, stdout: '', stderr: 'no' };
+      }
+      if (이름 === 'sips') {
+        if (변환됨) writeFileSync(인자[인자.length - 1], PNG바이트);
+        return { status: 변환됨 ? 0 : 1, stdout: '', stderr: '' };
+      }
+      return { status: 1, error: new Error('없는 명령') };
+    };
+    return { 불린것, r: 클립보드그림({ platform: 'darwin', 부르기 }) };
+  };
+  const 티프 = 흉내('TIFF');
+  check('★★★ 맥: PNG 칸이 없으면 TIFF 를 꺼내 PNG 로 바꾼다', 티프.r.ok === true && 티프.r.mime === 'image/png' && 티프.r.buf.equals(PNG바이트) && 티프.불린것.includes('sips'), JSON.stringify(티프.r));
+  const 제이펙 = 흉내('JPEG');
+  check('★★ 맥: JPEG 칸만 있어도 붙는다', 제이펙.r.ok === true && 제이펙.불린것.includes('sips'), JSON.stringify(제이펙.r));
+  const 없음 = 흉내(null);
+  check('★★★ 맥: 그림이 정말 없으면 없다고 한다', 없음.r.ok === false && 없음.r.없음 === true && !없음.불린것.includes('sips'), JSON.stringify(없음.r));
+  const 못바꿈 = 흉내('TIFF', { 변환됨: false });
+  check('★★ 맥: 못 바꾸면 까닭을 말한다', 못바꿈.r.ok === false && /PNG/.test(못바꿈.r.왜 ?? ''), JSON.stringify(못바꿈.r));
+}
+
 // ── 7. 갈래 속 — 부르기를 갈아 끼워 그림을 넘기는 자리까지 ─────────────
 trace('7-갈래속');
 {

@@ -222,6 +222,20 @@ Object.defineProperty(process.stdout, 'isTTY', { value: 원래.isTTY, configurab
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n크기 바꾸기 검사  ${D}(상자가 쌓이지 않는가)${X}\n`);
+// 어떤 글자를 터미널이 넓게 그려도 줄이 접히면 안 된다. 접히면 다시 그릴 때마다 상자가 쌓인다.
+{
+  const 상자 = new InputBox();
+  크기(100, 30);
+  가로채기();
+  상자.그리기(가짜세션, '안녕', 2);
+  const 찍힘 = 찍힌것;
+  되돌리기();
+  const 끔 = 찍힘.lastIndexOf('\x1b[?7l');
+  const 켬 = 찍힘.lastIndexOf('\x1b[?7h');
+  check('★★★ 상자를 그리는 동안 자동 줄바꿈을 끈다', 끔 >= 0 && 찍힘.indexOf('╭') > 끔, `끔 ${끔}`);
+  check('★★★ 다 그리면 자동 줄바꿈을 돌려놓는다', 켬 > 끔, `켬 ${켬} · 끔 ${끔}`);
+}
+
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);
 for (const f of fail) console.log(`  ${R}✗${X} ${f.name}  ${D}${f.note}${X}`);
 console.log(`\n  ${pass.length}개 통과 · ${fail.length}개 실패\n`);

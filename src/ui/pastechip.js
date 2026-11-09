@@ -26,6 +26,13 @@ import { 안쪽최대 } from './inputbox.js';
 export { 안쪽최대 };
 import { 말, 말모두 } from '../i18n/index.js';
 
+/** 입력칸 커서 자리에 글을 끼운다. 앞 글과 붙지 않게 빈칸을 넣고 뒤에도 하나 둔다. */
+export function 글끼우기(줄, 커서, 넣을글) {
+  const 앞 = 줄.slice(0, 커서);
+  const 끼울 = `${앞 && !/\s$/.test(앞) ? ' ' : ''}${넣을글} `;
+  return { 줄: 앞 + 끼울 + 줄.slice(커서), 커서: 커서 + 끼울.length };
+}
+
 /** 사람이 읽는 크기. 47줄이 몇 KB 인지 알아야 뭘 붙였는지 감이 온다. */
 export function 크기말(바이트) {
   const n = Number(바이트) || 0;

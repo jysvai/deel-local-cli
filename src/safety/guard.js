@@ -2,7 +2,7 @@
 // 승인 프롬프트를 안 쓰는 대신 (1) 작업 범위 밖은 못 건드리고
 // (2) 되돌릴 수 없는 명령만 막는다. 나머지는 전부 통과시킨다.
 import { resolve, relative, isAbsolute, sep, dirname, basename, win32, posix } from 'node:path';
-import { realpathSync, readFileSync, lstatSync } from 'node:fs';
+import { realpathSync, readFileSync, lstatSync, readdirSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { 내부살림 } from '../tools/fsutil.js';
 
@@ -80,6 +80,117 @@ export function MSYS풀기(p) {
   return m ? `${m[1].toUpperCase()}:${p.slice(2) || '/'}` : p;
 }
 
+/*
+ * ── 있는 파일을 없다고 하던 경로 ─────────────────────────────────────────
+ *
+ * 모델은 사람 말에서 경로를 베껴 온다. 그래서 디스크에 있는 파일인데 이렇게 온다.
+ *
+ *   ‘hr_dashboard/js/app.js’               따옴표째
+ *   qwen 프로젝트/hr_dashboard/js/app.js    작업 폴더 이름을 앞에 한 번 더
+ *   /Users/me/qwen\ 프로젝트/a.js           터미널에 끌어다 놓은 모양
+ *   ~/qwen 프로젝트/a.js                    집 폴더 줄임
+ *   한글 폴더/보고서.md                     디스크와 다른 자모 모양
+ *
+ * 글자 그대로의 자리가 **없을 때만** 고친다. 있으면 손대지 않는다 — 이름에 진짜 따옴표가 든
+ * 파일도 있다. 허락·금지 규칙보다 **먼저** 고쳐야 규칙이 고친 경로를 본다(agent/loop.js).
+ * 범위 검사는 고친 뒤에 resolve 가 그대로 한다.
+ */
+const 있나 = (p) => { try { lstatSync(p); return true; } catch { return false; } };
+const 따옴표짝 = [["'", "'"], ['"', '"'], ['`', '`'], ['‘', '’'], ['“', '”'], ['「', '」'], ['『', '』']];
+
+function 껍질벗기(s) {
+  let 글 = String(s).trim();
+  for (let i = 0; i < 3; i++) {
+    const 짝 = 따옴표짝.find(([앞, 뒤]) => 글.length > 2 && 글.startsWith(앞) && 글.endsWith(뒤) && !글.slice(1, -1).includes(뒤));
+    if (!짝) break;
+    글 = 글.slice(1, -1).trim();
+  }
+  return 글;
+}
+
+/** `~/` 를 펴고, 맥·리눅스에서는 셸 모양의 역빗금을 푼다. 윈도우는 역빗금이 구분자라 안 건드린다. */
+function 셸꼴풀기(s) {
+  const 펴진 = s.replace(/^~(?=[/\\]|$)/, () => homedir());
+  return sep === '/' ? 펴진.replace(/\\([ ()&'"[\]])/g, '$1').replace(/\\/g, '/') : 펴진;
+}
+
+/** 뿌리를 다른 모양(NFC·대소문자)으로 적은 경로를 뿌리가 적힌 꼴로. glob 과 rg 는 상대경로를 글자로 잰다. */
+function 뿌리꼴로(abs, base) {
+  if (abs.startsWith(base) || 밖(base, abs)) return abs;
+  const 칸수 = base.split(sep).filter(Boolean).length;
+  return resolve(base, ...abs.split(sep).filter(Boolean).slice(칸수));
+}
+
+/** 자모 모양만 다른 이름을 디스크에 있는 모양으로 한 칸씩 맞춘다. 못 맞추면 받은 그대로. */
+function 디스크꼴로(abs, base) {
+  if (있나(abs) || 밖(base, abs)) return abs;
+  const 칸들 = relative(같은꼴(base), 같은꼴(abs)).split(sep).filter(Boolean);
+  let 지금 = base;
+  let 고침 = false;
+  for (let i = 0; i < 칸들.length; i++) {
+    const 곧장 = resolve(지금, 칸들[i]);
+    if (있나(곧장)) { 지금 = 곧장; continue; }
+    let 이름들 = [];
+    try { 이름들 = readdirSync(지금); } catch { /* 폴더가 아니거나 못 여는 자리 */ }
+    const 찾음 = 이름들.find((x) => 같은꼴(x) === 칸들[i]);
+    if (찾음 === undefined) return 고침 ? resolve(지금, ...칸들.slice(i)) : abs;
+    지금 = resolve(지금, 찾음);
+    고침 = true;
+  }
+  return 지금;
+}
+
+/** 앞머리에 작업 폴더 이름(그 위 폴더까지 포함)을 겹쳐 적은 칸 수. */
+function 겹친칸수(칸들, base) {
+  const 뿌리칸 = base.split(sep).filter(Boolean).map(같은꼴);
+  for (let k = Math.min(칸들.length - 1, 뿌리칸.length); k >= 1; k--) {
+    const 끝칸 = 뿌리칸.slice(-k);
+    if (칸들.slice(0, k).every((x, i) => 같은꼴(x) === 끝칸[i])) return k;
+  }
+  return 0;
+}
+
+/** 모델이 적은 경로 대신 쓸 절대경로. 고칠 것이 없으면 null. */
+function 있는자리찾기(p, base, { 쓰기 = false } = {}) {
+  const 절대 = (x) => (isAbsolute(x) ? resolve(x) : resolve(base, x));
+  const 그대로 = 절대(MSYS풀기(p));
+  if (있나(그대로)) return null;
+  const 벗긴 = MSYS풀기(셸꼴풀기(껍질벗기(p)));
+  if (!벗긴) return null;
+  const 벗긴자리 = 디스크꼴로(절대(벗긴), base);
+  if (있나(벗긴자리)) return 벗긴자리;
+  if (!isAbsolute(벗긴)) {
+    const 칸들 = 벗긴.split(/[\\/]/).filter((x) => x && x !== '.');
+    const k = 칸들.includes('..') ? 0 : 겹친칸수(칸들, base);
+    if (k) {
+      const 뗀자리 = 디스크꼴로(resolve(base, ...칸들.slice(k)), base);
+      const 위 = dirname(뗀자리);
+      // 쓰는 자리는 바로 뿌리 밑으로 안 당긴다 — 프로젝트와 같은 이름의 하위 폴더를 만드는 일은 흔하고(foo/foo/__init__.py), 뿌리의 파일을 덮으면 안 된다.
+      const 폴더있음 = 같은꼴(위) !== 같은꼴(base) && 있나(위);
+      if (폴더있음 || (!쓰기 && 있나(뗀자리))) return 뗀자리;
+    }
+  }
+  // 아무 데도 없으면 새로 만드는 자리다. 껍질을 벗긴 것만 쓴다 — ‘a.js’ 라는 파일이 생기면 안 된다.
+  return 벗긴자리 === 그대로 ? null : 벗긴자리;
+}
+
+const 경로인자칸 = new Set(['file_path', 'path', 'paths', 'from', 'to']);
+const 쓰는칸 = { Write: 'file_path', Append: 'file_path', Move: 'to' };
+
+/** 도구 인자 속 경로와 glob 무늬를 있는 자리로 맞춘다. 묶음 꼴(files·edits)도 따라 들어간다. */
+export function 경로인자맞추기(도구, args, scope) {
+  if (!args || typeof args !== 'object' || Array.isArray(args) || !scope?.바로잡기) return;
+  for (const [칸, 값] of Object.entries(args)) {
+    if (경로인자칸.has(칸) && typeof 값 === 'string') args[칸] = scope.바로잡기(값, { 쓰기: 쓰는칸[도구] === 칸 });
+    else if (경로인자칸.has(칸) && Array.isArray(값)) args[칸] = 값.map((x) => (typeof x === 'string' ? scope.바로잡기(x) : x));
+    else if (Array.isArray(값)) for (const x of 값) 경로인자맞추기(도구, x, scope);
+  }
+  // Grep 의 pattern 은 정규식이라 건드리지 않는다. 무늬는 glob 만.
+  const 무늬칸 = 도구 === 'Grep' ? 'glob' : 도구 === 'Glob' || 도구 === 'Outline' ? 'pattern' : null;
+  // path 를 줬으면 무늬는 그 폴더 기준이라 앞 칸이 작업 폴더 이름과 같아도 우연이다. 껍질만 벗긴다.
+  if (무늬칸 && typeof args[무늬칸] === 'string') args[무늬칸] = scope.무늬바로잡기(args[무늬칸], { 겹침도: !args.path || args.path === '.' || args.path === './' });
+}
+
 // 작업 범위 — deel 를 띄운 폴더. 그 밖은 읽기도 쓰기도 막는다.
 export function makeScope(root) {
   const base = resolve(root);
@@ -111,6 +222,7 @@ export function makeScope(root) {
         const 안쪽 = relative(같은꼴(뿌리실제), 같은꼴(실제));
         abs = 안쪽 ? resolve(base, 안쪽) : base;
       }
+      abs = 뿌리꼴로(abs, base);
       // 글자로는 안인데 링크를 따라가면 밖인 자리. 정션 하나로 울타리가 열린다.
       // 견주기도 한 모양으로 맞춘다 — 맥의 realpathSync 는 자모 분리형을 돌려주므로, 안 맞추면
       // 링크 없는 평범한 한글 폴더가 매번 '링크를 따라간 자리가 다르다' 로 잡힌다.
@@ -119,6 +231,32 @@ export function makeScope(root) {
         throw new ScopeError(`작업 범위 밖입니다 (링크가 밖을 가리킵니다): ${p}\n  실제 자리: ${진짜}\n  범위: ${base}`);
       }
       return abs;
+    },
+    /** 모델이 적은 경로를 디스크에 있는 경로로 맞춘 글. 범위 밖이면 절대경로로 돌려줘 resolve 가 「범위 밖」 이라고 막게 한다. */
+    바로잡기(p, 덤 = {}) {
+      if (typeof p !== 'string' || !p) return p;
+      const 자리 = 있는자리찾기(p, base, 덤);
+      if (!자리) return p;
+      if (밖(base, 자리)) return 자리;
+      return relative(base, 뿌리꼴로(자리, base)).split(sep).join('/') || '.';
+    },
+    /** glob 무늬의 따옴표와 앞에 겹쳐 적은 작업 폴더 이름을 뗀다. */
+    무늬바로잡기(무늬, { 겹침도 = true } = {}) {
+      const 글 = 껍질벗기(무늬);
+      if (!겹침도) return 글;
+      const 빼기 = 글.startsWith('!');
+      const 몸 = 빼기 ? 글.slice(1) : 글;
+      if (isAbsolute(몸)) return 글;
+      // 역빗금이 무늬 글자를 이스케이프하면 경로 구분자가 아니다.
+      const 칸들 = 몸.split(/\/|\\(?![[\]{}()*?!])/).filter((x) => x !== '.');
+      const n = 칸들.findIndex((x) => /[*?[{]/.test(x));
+      const 글자칸 = n < 0 ? 칸들.slice(0, -1) : 칸들.slice(0, n);
+      const k = 칸들.includes('..') ? 0 : 겹친칸수([...글자칸, '*'], base);
+      // 같은 이름의 하위 폴더가 있어도 그 안에 다음 칸이 없으면 겹쳐 적은 것이다.
+      const 다음칸 = 칸들[k];
+      const 진짜자리 = 다음칸 && !/[*?[{]/.test(다음칸) ? resolve(base, ...칸들.slice(0, k + 1)) : resolve(base, 칸들[0]);
+      if (!k || 있나(진짜자리)) return 글;
+      return `${빼기 ? '!' : ''}${칸들.slice(k).join('/')}`;
     },
     show(abs) {
       // 여기도 맞춰야 한다. 안 맞추면 제 폴더 안의 파일이 `../../../Users/me/…` 처럼 보인다.

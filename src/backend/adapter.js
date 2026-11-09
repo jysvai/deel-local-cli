@@ -8,6 +8,7 @@ import {
 } from './http.js';
 import { 할당량기억, 미리기다릴까, 왜띄우나, 마지막할당량, 할당량자리 } from './quota.js';
 import { 열쇠 as 열쇠받아오기, 쓸수있나 } from '../safety/authcmd.js';
+import { 바깥인가 } from '../safety/runmode.js';
 import { 말 } from '../i18n/index.js';
 import { 다시부를지, 기다리기, 정책고르기, 못부른말 } from './retry.js';
 import { 도구맞추기, 이름되돌리기, 벤더 } from './toolfit.js';
@@ -931,7 +932,16 @@ function 인자읽기(원문) {
   return null;
 }
 
+/** 한 응답에 같은 id 가 두 번 오면 결과 짝이 어긋난다. 뒤의 것을 바꾼다. */
+function 겹침없는id(쓴id, 받은id, i) {
+  const 받은 = 받은id ?? `call_${i + 1}`;
+  const id = 쓴id.has(받은) ? `${받은}_${i + 1}` : 받은;
+  쓴id.add(id);
+  return id;
+}
+
 export function normalizeCalls(list) {
+  const 쓴id = new Set();
   return list.map((tc, i) => {
     const fn = tc.function ?? tc;
     let args = fn.arguments ?? fn.args ?? {};
@@ -947,7 +957,7 @@ export function normalizeCalls(list) {
         if (읽음) { args = 읽음.args; 고침 = !!읽음.고침; } else { 깨짐 = true; 원문 = args; args = {}; }
       }
     }
-    const call = { id: tc.id ?? `call_${i + 1}`, name: 이름글(fn.name), args };
+    const call = { id: 겹침없는id(쓴id, tc.id, i), name: 이름글(fn.name), args };
     if (고침) call.argsRepaired = true;
     // argsCut: 잘린 앞토막인가(위 잘린모양인가). false 면 끝까지 온 틀린 JSON 이다.
     if (깨짐) { call.argsBroken = true; call.rawArgs = 원문; call.argsCut = 잘린모양인가(원문); }
@@ -1232,11 +1242,29 @@ function 열쇠다시받을까(conn, status, 이미) {
  * 넘기게 두면 언젠가 한 곳이 빠지고, 그 한 곳만 캐시가 안 걸린다 —
  * 요약을 만드는 부름(agent/compact.js)이 딱 그런 자리다.
  */
+/** 엄격한 챗 템플릿은 user 가 잇따르면 요청을 거절한다. 로컬로 보낼 때만 한 말로 합친다. 저장 이력은 그대로다. */
+export function 잇단사람말합치기(messages) {
+  const 합친 = [];
+  const 조각들 = (c) => (Array.isArray(c) ? c : !c ? [] : typeof c === 'string' ? [{ type: 'text', text: c }] : [c]);
+  for (const m of messages) {
+    const 앞 = 합친[합친.length - 1];
+    const 잇따름 = 앞?.role === 'user' && m.role === 'user';
+    if (잇따름 && typeof 앞.content === 'string' && typeof m.content === 'string') {
+      합친[합친.length - 1] = { ...앞, content: `${앞.content}\n\n${m.content}` };
+    } else if (잇따름 && (Array.isArray(앞.content) || Array.isArray(m.content))) {
+      합친[합친.length - 1] = { ...앞, content: [...조각들(앞.content), ...조각들(m.content)] };
+    } else 합친.push(m);
+  }
+  return 합친;
+}
+
 function 몸만들기(conn, opts, 맞춘것, 더할것 = {}) {
   return buildBody(conn.kind, {
     model: conn.model,
     ctx: conn.ctx ?? null,
     ...opts,
+    // 엄격한 챗 템플릿은 사람 말이 잇따르면 거절한다. 로컬로 보낼 때만 합친다.
+    ...(!바깥인가(conn.base) && Array.isArray(opts.messages) ? { messages: 잇단사람말합치기(opts.messages) } : {}),
     tools: 맞춘것.tools,
     회사: 벤더(conn),
     카드: opts.카드 ?? conn.전선 ?? null,
@@ -1366,6 +1394,7 @@ export async function chat(conn, opts) {
     // 다듬느라 이름을 고쳤으면 여기서 되돌린다. 밖에서는 그런 일이 있었는지
     // 모른 채로 원래 이름을 받는다.
     if (r.ok && !몸오류) {
+      conn.응답받음 = conn.base;
       const 것 = 이름되돌리기(extractMessage(conn.kind, r.json), 맞춘것.되돌림);
       const 자리 = 간자리(r.headers);
       return 자리 ? { ...것, 간자리: 자리 } : 것;
@@ -1470,7 +1499,8 @@ export async function* chatStream(conn, opts) {
    * 0 은 「머리말 상한과 같은 값」 이다(http.js 의 원시요청) — 함수로 넘기면 그 풀이를 안 거치므로 여기서 푼다.
    */
   const 머리상한 = opts.timeout ?? 로컬넉넉(conn, 300000);
-  const 잠잠수 = conn.잠잠 ?? 잠잠기본;
+  // 로컬 서버는 도구 호출을 다 만들 때까지 한 글자도 안 흘리기도 한다. 그 침묵으로 끊으면 받던 것을 잃는다.
+  const 잠잠수 = conn.잠잠 ?? 로컬넉넉(conn, 잠잠기본);
   const 흐를때잠잠 = 잠잠수 > 0 ? 잠잠수 : (머리상한 > 0 ? 머리상한 : 잠잠기본);
   // 부르는 쪽이 따로 주면 그 값이다 — 검사가 5분을 기다릴 수는 없다(conn.무소식알림 과 같은 자리).
   const 첫잠잠 = conn.첫잠잠 ?? Math.max(흐를때잠잠, 로컬넉넉(conn, 첫잠잠기본));
@@ -1743,7 +1773,7 @@ async function* 흘려읽기(conn, opts, r, 흐름 = null) {
     if (칸[1] === 'event') { 사건이름 = 값.trim(); return; }
     if (칸[1] !== 'data') return;
     (자료 ??= []).push(값);
-    if (자료.join('\n').trim() === '[DONE]') { 자료 = null; return; }
+    if (자료.join('\n').trim() === '[DONE]') { 자료 = null; acc.끝받음 = true; return; }
     let obj = 이어읽기(자료);
     // 앞에 모인 것이 JSON 이 아닌 찌꺼기면(`data: keep-alive` 따위) 이 줄 하나만 본다.
     // 반쪽 JSON 의 뒷반쪽은 혼자서는 절대 JSON 이 안 되므로 이어 읽기를 해치지 않는다.
@@ -1925,6 +1955,7 @@ async function* 흘려읽기(conn, opts, r, 흐름 = null) {
   // 흘려 받는 자리에서도 **어느 자리가 받았는지**를 같이 올린다 (위 간자리).
   const 자리 = 간자리(r.headers ?? r.res?.headers);
   if (자리) acc.간자리 = 자리;
+  conn.응답받음 = conn.base;
   return { acc };
 }
 
@@ -2189,8 +2220,9 @@ function 도구마무리(acc) {
   if (!acc._raw) return;
   // 인자가 안 읽히면 읽혔다고 치지 않는다 — normalizeCalls 머리말 참고.
   // 스트리밍은 마지막 조각이 안 오면 여기서 늘 깨진 채로 끝난다.
+  const 쓴id = new Set();
   acc.toolCalls = acc._raw.filter(Boolean).map((c, i) => {
-    const call = { id: c.id ?? `call_${i + 1}`, name: 이름글(c.name), args: {} };
+    const call = { id: 겹침없는id(쓴id, c.id, i), name: 이름글(c.name), args: {} };
     /*
      * 빈 것은 깨진 것이 아니다 — 인자가 아예 없는 도구가 있다.
      *

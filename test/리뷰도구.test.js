@@ -988,7 +988,7 @@ trace('9-줄일말');
     check('★★★ 있는지만 보는데 파일을 통째로 읽지 않는다',
       /existsSync\(p\)/.test(눈금) && !/readFileSync\(p, \{ flag: 'r' \}\)/.test(눈금));
     check('★★★ 눈금은 모델을 하나로 못박는다',
-      /const 모델 = 'gemini-4-argon-medium';/.test(눈금));
+      /const 모델 = 'gemini-4-argon-high';/.test(눈금));
   }
 
   check('★★★ review2 가 줄일말을 부른다',

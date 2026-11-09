@@ -497,6 +497,7 @@ export const en = {
 
   // ── Tool errors ───────────────────────────────────────────────────────
   'err.noSuchFile': 'No such file: {경로}',
+  'err.sameNameAt': 'A file with this name is at: {목록}',
   'err.alreadyThere': 'Already there: {경로}',
   'err.overwriteHint': 'Pass overwrite: true to replace it.',
 

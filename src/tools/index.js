@@ -2,7 +2,8 @@
 // 그래야 그 관례로 쓰인 스킬·명령이 그대로 먹는다.
 import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, statSync, lstatSync, renameSync, copyFileSync, rmSync,
   openSync, readSync, closeSync } from 'node:fs';
-import { dirname, extname, isAbsolute, join, relative, sep } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path';
+import { estimateTokens } from '../backend/tokens.js';
 import { createHash } from 'node:crypto';
 import { 무리로돌리기 } from './spawn.js';
 import { walk, readText, readTextFull, 내부살림, glob거르개, copyDir } from './fsutil.js';
@@ -34,7 +35,7 @@ import { 물음검사 } from '../agent/askcheck.js';
 import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽은말, pdf는못고침, 한쪽도못읽음말 } from './pdf.js';
 import { isFigPath, readFig, summarize as figSummary, fig는못고침 } from './fig.js';
 import { diffLines } from '../ui/diff.js';
-import { 읽을줄수, 읽을글자수, 찾을개수, 찾을줄수, 설명길이, 한번에낼글자수 } from '../agent/budget.js';
+import { 읽을줄수, 읽을글자수, 찾을개수, 찾을줄수, 설명길이, 한번에낼글자수, 로컬낼글자수 } from '../agent/budget.js';
 import { 로컬출력 } from './shrink.js';
 import { 도구설명EN } from './desc.en.js';
 import { 그림인가, 그림읽기, 크기말, 기본한도 } from '../backend/vision.js';
@@ -136,7 +137,9 @@ function 파일지도(글, 경로, 실린끝) {
  * 창에서는 이 함수가 정한다 — 30,000자는 200k 짜리에는 맞고 8k 짜리에는
  * 한 번으로 창을 넘기는 양이다.
  */
-const 실을만큼 = (ctx) => 한번에낼글자수(ctx?.모델컨텍스트);
+const 실을만큼 = (ctx) => (ctx?.로컬 && ctx.낼토큰 != null
+  ? 로컬낼글자수(ctx.모델컨텍스트, ctx.낼토큰)
+  : 한번에낼글자수(ctx?.모델컨텍스트));
 
 const 몇KB = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
 
@@ -428,6 +431,17 @@ function 절대무늬풀기(무늬, 기준, ctx) {
   }
   const 앞 = ctx.scope.show(자리);
   return { 무늬: `${빼기 ? '!' : ''}${앞 === '.' ? '' : 앞}/${나머지}` };
+}
+
+/** 없는 경로를 읽으려 했는데 같은 이름의 파일이 다른 폴더에 있으면 어디 있는지 알려 준다. */
+async function 같은이름안내(경로, ctx) {
+  const 이름 = basename(String(경로).replace(/\\/g, '/')).normalize('NFC');
+  if (!이름 || /[*?]/.test(이름)) return '';
+  const 전부 = await walk(ctx.scope.root, { signal: ctx.signal, ignore: 'deel' });
+  // 빌드 결과물과 깊은 자리는 뒤로. 고칠 파일이 다섯 개 안에서 밀려나지 않게 한다.
+  const 무게 = (f) => { const 자리 = ctx.scope.show(f.path); return (/(^|\/)(dist|build|out|target|coverage|\.next|\.nuxt)\//.test(자리) ? 1000 : 0) + 자리.split('/').length; };
+  const 같은것 = 전부.filter((f) => basename(f.path).normalize('NFC') === 이름).sort((a, b) => 무게(a) - 무게(b)).slice(0, 5);
+  return 같은것.length ? `\n  ${말('err.sameNameAt', { 목록: 같은것.map((f) => ctx.scope.show(f.path)).join(', ') })}` : '';
 }
 
 function 바이너리인가(abs) {
@@ -2184,7 +2198,7 @@ export const TOOLS = {
     },
     async run(args, ctx) {
       const abs = ctx.scope.resolve(args.file_path);
-      if (!existsSync(abs)) return { error: 말('err.noSuchFile', { 경로: args.file_path }) };
+      if (!existsSync(abs)) return { error: 말('err.noSuchFile', { 경로: args.file_path }) + await 같은이름안내(args.file_path, ctx) };
       if (statSync(abs).isDirectory()) return { error: `폴더입니다. Glob 을 쓰세요: ${args.file_path}` };
       // 제 살림·남의 도구 살림은 안 읽는다 — fsutil 의 내부살림() 머리말 참고.
       const 막을이유 = 내부살림(abs);
@@ -2296,9 +2310,14 @@ export const TOOLS = {
        */
       if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
       const start = Math.max(0, (시작값.값 ?? 1) - 1);
-      const 줄상한 = 읽을줄수(ctx.모델컨텍스트);
-      const 글자상한 = ctx.로컬 ? 읽을글자수(ctx.모델컨텍스트) : 실을만큼(ctx);
-      const 줄한도 = Math.min(몇줄값.값 ?? 줄상한, 줄상한);
+      // 로컬은 줄 수로 자르지 않고 남은 창으로만 자른다. 줄 번호 몫까지 넣어 글자당 토큰을 잰다.
+      const 창으로만 = ctx.로컬 && ctx.읽을토큰 != null;
+      const 줄상한 = 창으로만 ? Math.max(lines.length, 1) : 읽을줄수(ctx.모델컨텍스트);
+      const 글자당토큰 = (text.length + lines.length * 8) / Math.max(1, estimateTokens(text) + lines.length * 3);
+      const 글자상한 = ctx.로컬 ? 읽을글자수(ctx.모델컨텍스트, ctx.읽을토큰 ?? null, 글자당토큰) : 실을만큼(ctx);
+      // 처음부터 읽는데 파일 전체가 남은 창에 들어가면 limit 을 안 본다. 조각으로 나눠 읽을 까닭이 없다.
+      const 다들어가나 = 창으로만 && start === 0 && text.length + lines.length * 8 <= 글자상한;
+      const 줄한도 = 다들어가나 ? lines.length : Math.min(몇줄값.값 ?? 줄상한, 줄상한);
       // 박힌 그림은 줄여서 싣는다. 재는 것도 줄인 뒤의 길이로 잰다.
       const count = 글자맞춤(붙박이그림줄이기(lines.slice(start, start + 줄한도)).줄들, 0, 줄한도, 글자상한);
       const slice = lines.slice(start, start + count);
@@ -2345,6 +2364,10 @@ export const TOOLS = {
          * 모델은 안 본 데를 봤다고 여긴다 — 줄이려다 잃는 자리다.
          */
         읽은것: abs,
+        // 어느 줄을 온전히 건넸나. 로컬에서 「같은 줄을 또 읽나」 를 인자가 아니라 줄로 잰다 (agent/loop.js).
+        ...(ctx.로컬 && count > 0 && body.length <= 글자상한
+          ? { 읽은줄: [start + 1, start + count], 파일표: createHash('md5').update(text).digest('hex') }
+          : {}),
         부분인가: 다못줌 || 줄인것.줄인바이트 > 0 || 실린것.length < 통째로.length,
         summary: 이어(
           다못줌
@@ -2762,6 +2785,17 @@ export const TOOLS = {
       const files = 맞는것.slice(0, 찾을개수(ctx.모델컨텍스트));
       // 훑기 상한에서 멈췄으면 '없다' 가 아니라 '본 데까지는 없다' 다.
       if (!files.length) {
+        // .gitignore 에 가려진 것뿐이면 이름은 알려 준다. 「없음」 으로 끝내면 모델은 파일이 없다고 믿고 일을 접는다.
+        const 가려진 = 전부.건너뜀?.폴더 || 전부.건너뜀?.파일
+          ? (await walk(ctx.scope.root, { signal: ctx.signal, ignore: 'deel' }))
+            .filter((f) => { const 칸 = relative(root, f.path); return 맞나(f.path) && 칸 !== '..' && !칸.startsWith(`..${sep}`) && !isAbsolute(칸); }).slice(0, 찾을개수(ctx.모델컨텍스트))
+          : [];
+        if (가려진.length) {
+          return {
+            content: `${가려진.map((f) => ctx.scope.show(f.path)).join('\n')}\n\n(위 파일은 .gitignore 에 가려져 있습니다 — 경로를 그대로 주면 Read 됩니다)`,
+            summary: 세말('count', 가려진.length),
+          };
+        }
         return {
           content: `${전부.잘림 ? '본 데까지는 찾은 파일 없음' : '찾은 파일 없음'}: ${args.pattern}${건너뜀}`,
           summary: 전부.잘림 ? `${세말('count', 0)} (${말('sum.notAllSeen')})` : 세말('count', 0),
@@ -4098,6 +4132,34 @@ export function 영어설명(schema, 이름, 쓸말 = 지시말()) {
 
 // 모델에게 넘길 도구 정의 목록.
 // 스킬이 없으면 Skill 도구는 빼서 자리를 아낀다.
+/** 로컬 모델에게 주는 Read·Outline 설명. 파일을 통째로 읽게 한다 (agent/modes.js 의 로컬읽기로 와 같은 뜻이다). */
+function 로컬설명(정의, 로컬, work) {
+  if (!로컬) return 정의;
+  const 영어 = 지시말() !== 'ko';
+  if (정의.name === 'Verify') {
+    return { ...정의, description: 영어
+      ? 'Check that what you made works. Call it once before you finish if you changed files.'
+      : '파일을 고쳤으면 끝내기 전에 한 번 불러 되는지 확인한다.' };
+  }
+  if (정의.name === 'Task' && work !== 'orchestrator') {
+    return { ...정의, description: 영어
+      ? 'Run a piece of work separately; only a summary comes back. Use it only when the person asks.'
+      : '일 한 덩이를 따로 돌려 요약만 받는다. 사람이 시킬 때만 쓴다.' };
+  }
+  if (정의.name === 'Outline') {
+    return { ...정의, description: 영어
+      ? 'Function, class and heading names with line numbers. Use it only when you do not know which file to read.'
+      : '함수·클래스·헤딩 이름과 줄 번호를 본다. 어느 파일을 읽을지 모를 때만 쓴다.' };
+  }
+  const 칸들 = 정의.parameters?.properties;
+  if (정의.name !== 'Read' || !칸들?.offset || !칸들?.limit) return 정의;
+  return { ...정의, parameters: { ...정의.parameters, properties: {
+    ...칸들,
+    offset: { ...칸들.offset, description: 영어 ? 'Leave out. Only when a result says Next: offset=N.' : '결과에 Next: offset=N 이 있을 때만 쓴다.' },
+    limit: { ...칸들.limit, description: 영어 ? 'Leave out for the whole file.' : '안 주면 파일 전체.' },
+  } } };
+}
+
 export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null, lsp = false, vision = false, 에이전트들 = null, 핵심남김 = false } = {}) {
   let list = names ?? Object.keys(TOOLS).filter((n) => {
     if (n === 'Skill') return hasSkills;
@@ -4147,7 +4209,7 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
     type: 'function',
     // 눈 이야기는 줄인 **뒤에** 붙인다. 먼저 붙이면 한도에 걸려 그 한 문장이
     // 그대로 잘려 나간다 — 좁은 창일수록 정작 알려야 할 때 안 실린다.
-    function: 눈붙이기(설명줄이기(영어설명(TOOLS[n].schema, n), 한도, { 핵심남김 }), n, vision),
+    function: 로컬설명(눈붙이기(설명줄이기(영어설명(TOOLS[n].schema, n), 한도, { 핵심남김 }), n, vision), 핵심남김, work),
   }));
 
   /*

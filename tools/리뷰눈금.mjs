@@ -20,12 +20,12 @@
 //
 // ── 못 박아 두는 것 ─────────────────────────────────────────────────────
 //
-// **모델은 `gemini-4-argon-medium` 하나로 고정이다.** 성공률이 안 나온다고
+// **모델은 `gemini-4-argon-high` 하나로 고정이다.** 성공률이 안 나온다고
 // 모델을 바꾸는 쪽으로 풀지 않는다 — 그러면 재는 자와 재이는 것이 같이
 // 움직여서 아무것도 못 잰다. 바꾸는 것은 옵션·쪽지·범위뿐이고, 그래야 차이가
 // 나면 그 하나 때문이라고 말할 수 있다.
 //
-// 이름 끝 `-medium` 이 추론 세기다. 그래서 `--effort` 를 따로 주면 agy 가
+// 이름 끝 `-high` 이 추론 세기다. 그래서 `--effort` 를 따로 주면 agy 가
 // `conflicts with --effort=low` 로 거절한다. 세기는 이름에만 있다.
 //
 // ── 쓰는 법 ─────────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const 모델 = 'gemini-4-argon-medium';
+const 모델 = 'gemini-4-argon-high';
 
 /** 한꺼번에 띄우는 수. 너무 늘리면 서로 느려져 시간 재기가 뭉개진다. */
 const 한번에 = 3;

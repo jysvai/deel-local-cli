@@ -603,6 +603,41 @@ export function 말(id, ctx) {
   return (좁은가 && m.say짧게) ? m.say짧게 : m.say;
 }
 
+/**
+ * 로컬 모델에게는 파일을 통째로 한 번 읽으라고 시킨다.
+ *
+ * 아래 모드 글은 값을 내는 바깥 모델에 맞춰 「짚은 자리 앞뒤만 읽어라」 라고 적혀 있다. 로컬은 걸음이 공짜이고
+ * Read 가 남은 창만큼 실어 주는데, 이 말을 따르면 큰 파일을 조각조각 되읽느라 고치지를 못한다.
+ */
+export function 로컬읽기로(글, 일 = null) {
+  // 읽기만 하는 모드에 「고쳐라」 를 붙이면 지시가 서로 어긋난다.
+  const 고치나 = !일 || allow(일, ['Edit']).length > 0;
+  const 읽기고침 = 로컬끝맺기(글)
+    .replace(/\s*(?:Never whole files\.|Do not read whole\s+files[\s\S]*?\.(?=\s|$)|Read whole\s+files and the earlier[\s\S]*?\.(?=\s|$))/g, '')
+    .replace(/\s*(?:파일을 )?통째로 읽(?:지 마라|으면)[\s\S]*?\.(?=\s|$|["'])/g, '')
+    .replace(/\*\*only\s+around\s+(?:the\s+lines\s+you\s+found|what\s+you\s+found)\*\*(?:\s*\(offset\/limit\))?\.?/g, `**the whole file at once** (offset only if cut off)${고치나 ? ', then make the change' : ''}.`)
+    .replace(/\*{0,2}짚은 자리 앞뒤만\*{0,2}\s*Read(?: 한다| 해라)?(?:\s*\(offset·limit\))?\.?/g, (고치나 ? '**통째로 한 번** Read 하고 (잘렸을 때만 offset) 바로 고친다.' : '**통째로 한 번** Read 한다 (잘렸을 때만 offset).'))
+    // 걸음 하나가 몇 초씩 든다. 어디 있는지 아는 파일까지 Outline·Grep 을 거치지 않는다.
+    .replace(/Outline\s*→\s*(?:Glob\/)?Grep\s*→\s*/g, '(위치를 모르면 Glob/Grep 으로 찾아) ')
+    .replace(/Outline\s*->\s*(?:Glob\/)?Grep(?:\s+every place it touches)?\s*->\s*/g, 'Find it with Glob/Grep if unknown, then ');
+  // 로컬 서버는 슬롯이 하나라 하위 작업이 부모의 프롬프트 캐시를 밀어낸다. 돌아오면 앞을 처음부터 다시 처리한다.
+  if (일 === 'orchestrator' || !/\bTask\b/.test(읽기고침)) return 읽기고침;
+  return `${읽기고침
+    .replace(/\s*덩이가 여럿이면 Task 로 떼어 준다\./g, '')
+    .replace(/^(\s*\d+)\. 갈래가 여럿이면 Task 로 떼어 준다\.$/gm, '$1. 일은 네가 차례로 끝낸다.')
+    .replace(/\s*Several chunks: hand off with Task\./g, '')
+    .replace(/^(\s*\d+)\. Several strands: hand off with Task\.$/gm, '$1. Do the work yourself, in order.')}\n${지시말() === 'en'
+    ? '- Do the work yourself, in order. Use Task only if the person asks.'
+    : '- 일은 네가 차례로 하고, 사람이 시킬 때만 Task 를 쓴다.'}`;
+}
+
+/** 파일을 안 고친 턴까지 Verify 를 시키지 않는다. 로컬은 부를 때마다 몇 초씩 든다. */
+export function 로컬끝맺기(글) {
+  return String(글)
+    .replace(/(\*\*)?(?:Call )?Verify before you finish\.(\*\*)?/g, '$1If you changed files, call Verify before you finish.$2')
+    .replace(/(\*\*)?끝(?:내기|맺기) 전에 Verify(?: 로 확인한다| 를 불러라| 를 부른다)?\.(\*\*)?/g, '$1파일을 고쳤으면 끝내기 전에 Verify 를 부른다.$2');
+}
+
 /** 화면에 낼 모드 이름·한 줄 설명. 영어 것이 없으면 한국어로 되돌아간다. */
 export function 보일이름(id) {
   const m = get(id);

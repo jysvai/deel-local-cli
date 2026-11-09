@@ -98,6 +98,8 @@ Nothing is installed. Windows uses PowerShell's .NET clipboard, macOS uses `osas
 both ship with the OS. Linux needs `wl-paste` or `xclip`, and if neither is there, it says
 **which one to install**.
 
+In macOS and Linux terminals, **Ctrl+V** in the input box does the same and puts `@path` at the cursor. Windows Terminal takes Ctrl+V for itself, so use `/paste` there.
+
 Three cases are kept apart: "no image on the clipboard" (capture again), "could not fetch
 it" (reason and remedy given), and "this model cannot see images" (said before sending).
 Collapsing them into one "cannot do that" leaves you with nothing to fix.

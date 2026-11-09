@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os';
 import { Session } from '../src/agent/session.js';
 import { compact, shouldFold, 장부요약 } from '../src/agent/compact.js';
 import { makeScope } from '../src/safety/guard.js';
+import { 프레임 } from '../src/ui/inputbox.js';
+import { 글끼우기 } from '../src/ui/pastechip.js';
+import { width as 글폭 } from '../src/ui/ansi.js';
 import { assistantMessage, toolMessage } from '../src/backend/adapter.js';
 import { 출력줄이기, 머리꼬리, 로컬출력 } from '../src/tools/shrink.js';
 import { 언어잡기, 언어정하기, 지시말, 지시말정하기 } from '../src/i18n/index.js';
@@ -134,6 +137,22 @@ console.log('로컬 접기');
   check('★★★ 로컬 자동 압축은 앞머리를 가르는 접기를 안 한다', shouldFold(찬(false)) === false);
   check('★ 모델 요약을 쓰는 연결은 전처럼 접는다', shouldFold(찬(true)) === true);
   check('★ [deel] 재촉은 사람 말로 안 적는다', !/그만 읽어/.test(장부요약([{ role: 'user', content: '고쳐 줘' }, { role: 'user', content: '[deel] 그만 읽어' }])));
+}
+
+console.log('입력 상자');
+{
+  const 글 = '‘/Users/a/프로젝트’ “여기” — 끝…';
+  const 판 = 프레임({ 글, 커서: 글.length, 폭: 60 });
+  check('★★★ 칸이 흔들리는 글자를 상자에 그대로 안 낸다', !판.줄들.some((l) => /[‘’“”—…]/.test(l)), 판.줄들.join('|').slice(0, 120));
+  check('★★★ 상자 줄이 창을 안 넘는다', 판.줄들.every((l) => 글폭(l) <= 60));
+  const 같은 = 프레임({ 글: "'/Users/a/프로젝트' \"여기\" - 끝.", 커서: 글.length, 폭: 60 });
+  check('★★ 커서 자리가 안 틀어진다', 판.커서.열 === 같은.커서.열 && 판.커서.위 === 같은.커서.위, JSON.stringify([판.커서, 같은.커서]));
+  const 빈 = 글끼우기('', 0, '@a.png');
+  check('★★ 빈 입력에 그림을 끼운다', 빈.줄 === '@a.png ' && 빈.커서 === 7, JSON.stringify(빈));
+  const 뒤 = 글끼우기('이거 봐', 4, '@a.png');
+  check('★★ 앞 글과 안 붙는다', 뒤.줄 === '이거 봐 @a.png ' && 뒤.커서 === 뒤.줄.length, JSON.stringify(뒤));
+  const 가운데 = 글끼우기('앞 뒤', 2, '@a.png');
+  check('★ 커서 자리에 끼운다', 가운데.줄 === '앞 @a.png 뒤', JSON.stringify(가운데));
 }
 
 console.log('처음 시킨 말');

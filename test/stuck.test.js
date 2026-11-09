@@ -217,7 +217,7 @@ trace('1.5-읽기-되풀이');
   const 부른수 = evs.filter((e) => e.type === 'tool' && e.name === 'Read').length;
   check('★ 안 바뀐 파일만 되풀이해 읽으면 멈춘다', evs.some((e) => e.type === 'stuck'),
     evs.map((e) => e.type).slice(-3).join(','));
-  check('★ 되풀이를 한 바퀴 늦게 잡지 않는다 (로컬 Read 는 딱 5번)', 부른수 === 5,
+  check('★ 되풀이를 한 바퀴 늦게 잡지 않는다 (로컬 Read 는 12번에 두 번 더 일러 본 뒤)', 부른수 === 14,
     `${부른수}번 읽었다`);
 }
 

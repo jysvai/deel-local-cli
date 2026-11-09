@@ -11,6 +11,7 @@ import { Audit } from '../src/safety/audit.js';
 import { Session } from '../src/agent/session.js';
 import { run } from '../src/agent/loop.js';
 import { allowEndpoint } from '../src/safety/network.js';
+import { 규칙모으기 } from '../src/safety/policy.js';
 
 const pass = [];
 const fail = [];
@@ -819,7 +820,7 @@ check('상한(24회)까지 안 간다', ev4.filter((e) => e.type === 'tool').len
   const 변하는것 = join(root, '변하는것.txt');
   writeFileSync(변하는것, '처음\n', 'utf8');
   turn = 0;
-  script = Array.from({ length: 8 }, () => ({ toolCall: { name: 'Read', args: { file_path: '변하는것.txt' } } }));
+  script = Array.from({ length: 16 }, () => ({ toolCall: { name: 'Read', args: { file_path: '변하는것.txt' } } }));
   let 걸음 = 0;
   const 끼어들기 = () => {
     걸음 += 1;
@@ -833,7 +834,19 @@ check('상한(24회)까지 안 간다', ev4.filter((e) => e.type === 'tool').len
   const 읽은수 = ev되.filter((e) => e.type === 'tool').length;
   check('먼저: 헛돌기로 끊기는 자리까지 갔다 (이 검사의 밑천)',
     ev되.some((e) => e.type === 'stuck'), ev되.map((e) => e.type).join(','));
-  check('★★ 결과가 달라지면 되풀이 셈을 처음부터 다시 센다', 읽은수 === 5, `${읽은수}번 읽고 끊겼다`);
+  check('★★ 결과가 달라지면 되풀이 셈을 처음부터 다시 센다', 읽은수 === 16, `${읽은수}번 읽고 끊겼다`);
+}
+
+// 경로를 고치는 것은 금지 규칙을 보기 **전**이어야 한다. 뒤라면 따옴표 하나로 금지를 비켜 그 파일이 읽힌다.
+{
+  writeFileSync(join(root, '금지.txt'), '비밀내용\n', 'utf8');
+  turn = 0;
+  script = [{ toolCall: { name: 'Read', args: { file_path: '‘금지.txt’' } } }, { text: '끝' }];
+  const 금지ctx = { ...ctx, 규칙들: 규칙모으기({ permissions: { deny: ['Read(금지.txt)'] } }, { env: {} }) };
+  const s금 = new Session(conn, { root, work: 'auto', think: 'off', maxSteps: 4 });
+  for await (const ev of run(s금, 금지ctx, '금지 파일을 읽어줘')) void ev;
+  const 받은글 = JSON.stringify(s금.messages.filter((m) => m.role === 'tool'));
+  check('★★★ 따옴표째 적어도 금지 규칙이 막는다', !받은글.includes('비밀내용'), 받은글.slice(0, 140));
 }
 
 /*

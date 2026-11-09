@@ -80,8 +80,8 @@ if (있나('--help')) {
 }
 const 그레이 = (s) => `\x1b[90m${s}\x1b[0m`;
 
-// 모델은 Gemini 4 Argon (Medium). pro 는 쓰지 않는다.
-const 모델 = 값('--model', 'gemini-4-argon-medium');
+// 모델은 Gemini 4 Argon (High). pro 는 쓰지 않는다.
+const 모델 = 값('--model', 'gemini-4-argon-high');
 const 부터 = 값('--since', null);
 /*
  * ── 커밋한 뒤에는 한 판씩 봐야 한다 ────────────────────────────────────

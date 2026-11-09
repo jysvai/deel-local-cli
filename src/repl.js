@@ -19,6 +19,8 @@ import { 전선붙이기, 세션이름짓기 } from './backend/wire.js';
 import { 화면고르기 } from './ui/screen.js';
 import { STAGES } from './agent/effort.js';
 import { handle, COMMANDS, 미리보기끄기, 적용하기 as 그림적용 } from './commands.js';
+import { 붙여넣기명령 } from './commands/work.js';
+import { 칸고정 } from './ui/inputbox.js';
 import { next as nextWork, get as getWork, canWrite, 보일이름, 보일한줄 } from './agent/modes.js';
 import { route } from './agent/route.js';
 import { run } from './agent/loop.js';
@@ -47,7 +49,7 @@ import { explain, shows as levelShows } from './ui/level.js';
 import { 고르기 as 승인고르기, 다음 as 승인다음, 미리보기줄들 } from './ui/approve.js';
 import { 추천, 채울글, 붙임탭완성기 } from './ui/complete.js';
 import { 접어쓰기 } from './ui/wrap.js';
-import { 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들, 남길글, 안쪽최대 as 붙임안쪽최대 } from './ui/pastechip.js';
+import { 글끼우기, 접을까 as 붙임접을까, 표만들기 as 붙임표, 펼치기 as 붙임펼치기, 쓴번호들 as 붙임쓴번호들, 남길글, 안쪽최대 as 붙임안쪽최대 } from './ui/pastechip.js';
 import { 고른것풀기, 계획답풀기 } from './ui/pick.js';
 import { 토큰셈, 토큰글 } from './ui/tokcount.js';
 import { 도구적기, 세션보고서모으기, 세션보고서md, 세션보고서적기 } from './ui/report.js';
@@ -627,7 +629,9 @@ export async function chatLoop(opts = {}) {
    * **적은 쪽**만 올라간다 — 많이 올라가면 위의 대화를 지우고, 적게 올라가면 물음 한 줄이 남을
    * 뿐이다(ui/inputbox.js 의 그린폭 머리말과 같은 자리).
    */
-  const 물음그리기 = (앞, 글, 끝 = '', 커서글 = null) => {
+  const 물음그리기 = (앞, 날글, 끝 = '', 날커서글 = null) => {
+    const 글 = 칸고정(String(날글));
+    const 커서글 = 날커서글 == null ? null : 칸고정(String(날커서글));
     const 폭 = process.stdout.columns || 80;
     const 올라갈 = 물음그린폭 && 폭 !== 물음그린폭 ? Math.min(물음줄수, 접힌자리(물음커서앞, 폭).줄) : 물음줄수;
     const 위로 = 올라갈 > 1 ? `\x1b[${올라갈 - 1}A` : '';
@@ -1006,7 +1010,7 @@ export async function chatLoop(opts = {}) {
      * 모르는 터미널은 이 글자를 그냥 무시한다 — 그러면 예전 그대로 돈다.
      */
     process.stdout.write('\x1b[?2004h');
-    process.on('exit', () => { try { process.stdout.write('\x1b[?2004l'); } catch { /* 이미 닫혔다 */ } });
+    process.on('exit', () => { try { process.stdout.write('\x1b[?2004l\x1b[?7h'); } catch { /* 이미 닫혔다 */ } });
 
     /*
      * ── Ctrl+Z 로 재웠다가 fg 로 깨우기 ──────────────────────────────────
@@ -1025,7 +1029,7 @@ export async function chatLoop(opts = {}) {
      * (윈도에는 Ctrl+Z 로 재우는 일이 없다 — readline 이 이 이벤트를 아예 안 낸다.)
      */
     rl.on('SIGTSTP', () => {
-      try { process.stdout.write('\x1b[?2004l\x1b[?25h'); } catch { /* 이미 닫혔다 */ }
+      try { process.stdout.write('\x1b[?2004l\x1b[?7h\x1b[?25h'); } catch { /* 이미 닫혔다 */ }
       try { process.stdin.setRawMode?.(false); } catch { /* 터미널이 없어졌다 */ }
       /*
        * 깨우기는 **한 번만**, 그리고 두 길로 부른다.
@@ -1161,6 +1165,29 @@ export async function chatLoop(opts = {}) {
           say(`  ${c.gray(옮긴말('paste.pasted', { n: 이어쓰기줄들.length + 1 }))}`);
         }
         화면.입력갱신?.(session, 펴기(rl.line), rl.cursor ?? 0);
+        return;
+      }
+      // Ctrl+V — 클립보드의 그림을 입력칸에 붙인다. 글 붙여넣기는 터미널이 따로 보내므로 이 키는 비어 있다.
+      if (key?.ctrl && key.name === 'v' && 묻는중 === null && !붙여넣는중) {
+        if (입력기다림 && !상자쓰나) {
+          // 줄 화면은 접힌 윗줄까지 걷는다. 안 그러면 아래 안내가 찍힌 뒤에도 윗 칸에 치던 글이 남는다.
+          const 줄 = 접힌자리(` ${c.hcyan('❯')} ${펴기((rl.line ?? '').slice(0, rl.cursor ?? 0))}`, process.stdout.columns || 80).줄;
+          process.stdout.write(`${줄 > 1 ? `\x1b[${줄 - 1}A` : ''}\r\x1b[J`);
+        } else if (입력기다림) 화면.입력지움();
+        const 받은 = 붙여넣기명령(session, 입력기다림 ? ctx : null);
+        if (받은.text) {
+          const 끼운 = 글끼우기(rl.line ?? '', rl.cursor ?? 0, 받은.text);
+          rl.line = 끼운.줄;
+          rl.cursor = 끼운.커서;
+        }
+        if (입력기다림 && 상자쓰나) 화면.입력갱신(session, 펴기(rl.line), rl.cursor, 지금추천(펴기(rl.line)));
+        else if (입력기다림) {
+          // 줄 화면도 접힘·글자폭·커서는 물음그리기가 맡는다. readline 의 프롬프트는 안 쓴다.
+          const 글 = rl.line ?? '';
+          물음줄수 = 1;
+          물음그리기(` ${c.hcyan('❯')} `, 펴기(글), '', (rl.cursor ?? 0) < 글.length ? 펴기(글.slice(0, rl.cursor)) : null);
+        }
+        else 화면.대기갱신(펴기(rl.line), queue.length);
         return;
       }
       /*

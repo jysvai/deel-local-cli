@@ -103,6 +103,35 @@ function 너무큰그림말() {
   return `그림이 너무 큽니다 (한도 ${그림한도 / 1048576}MB 넘음) — 필요한 부분만 잘라서 다시 찍어 주세요.`;
 }
 
+/*
+ * 브라우저·미리보기에서 복사한 그림은 PNG 칸 없이 TIFF·JPEG 칸만 있기도 하다.
+ * 꺼내서 PNG 로 바꾼다(sips 는 맥에 늘 있다). 없으면 null — 정말 그림이 없는 것이다.
+ */
+function 맥다른꼴에서(부르기) {
+  for (const 꼴 of ['TIFF', 'JPEG']) {
+    const r = 부르기('osascript', ['-e', `the clipboard as «class ${꼴}»`], {
+      encoding: 'utf8', timeout: 20000, maxBuffer: 그림한도 * 8 + 1024 * 1024,
+    });
+    if (넘쳤나(r)) return { ok: false, 왜: 너무큰그림말() };
+    const m = new RegExp(`«data ${꼴}([0-9A-Fa-f]+)»`).exec(String(r.stdout ?? ''));
+    if (!m) continue;
+    const 방 = mkdtempSync(join(tmpdir(), 'deel-clip-'));
+    try {
+      const 들 = join(방, `in.${꼴.toLowerCase()}`);
+      const 날 = join(방, 'out.png');
+      writeFileSync(들, Buffer.from(m[1], 'hex'));
+      const s = 부르기('sips', ['-s', 'format', 'png', 들, '--out', 날], { encoding: 'utf8', timeout: 20000 });
+      if (s.error || s.status !== 0 || !existsSync(날)) {
+        return { ok: false, 왜: '클립보드 그림을 PNG 로 못 바꿨습니다 — 그림을 파일로 저장한 뒤 @경로 로 붙이세요.' };
+      }
+      return { ok: true, buf: readFileSync(날), mime: 'image/png' };
+    } finally {
+      rmSync(방, { recursive: true, force: true });
+    }
+  }
+  return null;
+}
+
 function 맥에서(부르기) {
   const r = 부르기('osascript', ['-e', 'the clipboard as «class PNGf»'], {
     encoding: 'utf8', timeout: 20000, maxBuffer: 그림한도 * 2 + 1024 * 1024,
@@ -113,7 +142,7 @@ function 맥에서(부르기) {
   const m = /«data PNGf([0-9A-Fa-f]+)»/.exec(낸말);
   if (!m) {
     // 그림이 아니면 osascript 가 오류를 낸다. 그건 「없음」이지 고장이 아니다.
-    if (r.status !== 0) return { ok: false, 없음: true };
+    if (r.status !== 0) return 맥다른꼴에서(부르기) ?? { ok: false, 없음: true };
     /*
      * 0 으로 끝났는데 PNG 가 안 나온 것은 **우리 탓**이다 (머리말 「둘을 갈라
      * 말한다」). 여태 두 갈래를 써 놓고 글자까지 같은 말을 돌려줬다 — 「없음」

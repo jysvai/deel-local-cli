@@ -2787,7 +2787,7 @@
       "곳": "src/agent/loop.js",
       "무엇": "요약으로 자리가 안 났는데 비우지 않고 그대로 부른다",
       "그러면": "로컬 서버가 말없이 앞을 잘라 모델이 시킨 말을 못 본 채 답하고, 화면에는 100% 경고만 뜬다",
-      "찾을것": "      if (선제로비워도되나() && (세번째 ? 비우면빌까(session, 쪽지글) : 비울까(session, 쪽지글))) yield 비우기();",
+      "찾을것": "      if (선제로비워도되나() && (세번째 ? 비우면빌까(session, 쪽지글) : 비울까(session, 쪽지글))) yield 비우기({ 안본것남김: true });",
       "바꿀것": "      void 쪽지글;",
       "검사": "test/autoclear.test.js"
     },
@@ -5660,8 +5660,8 @@
       "곳": "src/backend/adapter.js",
       "무엇": "한 번에 받은 부름의 이름을 글자로 맞추지 않는다",
       "그러면": "function.name 이 없거나 42 인 부름에서 루프가 startsWith 로 TypeError 를 던지고, 결과 없는 tool_calls 가 대화에 남아 다음 요청이 400 이 된다",
-      "찾을것": "    const call = { id: tc.id ?? `call_${i + 1}`, name: 이름글(fn.name), args };",
-      "바꿀것": "    const call = { id: tc.id ?? `call_${i + 1}`, name: fn.name, args };",
+      "찾을것": "    const call = { id: 겹침없는id(쓴id, tc.id, i), name: 이름글(fn.name), args };",
+      "바꿀것": "    const call = { id: 겹침없는id(쓴id, tc.id, i), name: fn.name, args };",
       "검사": "test/truncated.test.js"
     },
     {
@@ -6656,8 +6656,8 @@
       "곳": "src/tools/fsutil.js",
       "무엇": "walk 를 살림 폴더 안에서 시작하면 그대로 훑는다",
       "그러면": "Outline·Verify 에 .deel 을 주면 config.json·mcp.json 이 목록과 내용으로 나온다",
-      "찾을것": "  const stack = 내부살림(root) ? [] : [{ dir: root, rel: '', 규칙: ignore ? 뿌리규칙읽기(root) : [] }];",
-      "바꿀것": "  const stack = [{ dir: root, rel: '', 규칙: ignore ? 뿌리규칙읽기(root) : [] }];",
+      "찾을것": "  const stack = 내부살림(root) ? [] : [{ dir: root, rel: '', 규칙: ignore === 'deel' ? 파일규칙읽기(join(root, '.deelignore'), '') : ignore ? 뿌리규칙읽기(root) : [] }];",
+      "바꿀것": "  const stack = [{ dir: root, rel: '', 규칙: ignore === 'deel' ? 파일규칙읽기(join(root, '.deelignore'), '') : ignore ? 뿌리규칙읽기(root) : [] }];",
       "검사": "test/도구정직.test.js"
     },
     {
@@ -9624,7 +9624,7 @@
       "곳": "src/backend/retry.js",
       "무엇": "429 가 제 사다리(막힘base)를 안 쓰고 기본 사다리로 떨어짐",
       "그러면": "할당량이 찬 뒤 1초 만에 다시 두드립니다. 막아서 돌려보낸 요청도 한도에 세는 게이트웨이에서는 구덩이가 더 깊어져, 429 가 풀려야 할 자리에서 안 풀립니다.",
-      "찾을것": "  const 고른것 = 막힘인가 ? (정책.막힘base ?? 정책.base) : 정책.base;",
+      "찾을것": "  const 고른것 = 막힘인가 ? (정책.막힘base ?? 정책.base)\n    : 준비기다림인가(status, code, 정책) ? (정책.준비base ?? 정책.base) : 정책.base;",
       "바꿀것": "  const 고른것 = 정책.base;",
       "검사": "test/막힘.test.js"
     },
@@ -16462,7 +16462,7 @@
       "곳": "src/repl.js",
       "무엇": "Ctrl+Z 로 잠들기 전에 붙여넣기 표지를 안 끈다",
       "그러면": "재워 둔 동안 셸이 붙여넣기 표지를 물려받아, 그걸 모르는 셸에 붙이면 ^[[200~ 가 글에 섞인다",
-      "찾을것": "      try { process.stdout.write('\\x1b[?2004l\\x1b[?25h'); } catch { /* 이미 닫혔다 */ }",
+      "찾을것": "      try { process.stdout.write('\\x1b[?2004l\\x1b[?7h\\x1b[?25h'); } catch { /* 이미 닫혔다 */ }",
       "바꿀것": "      try { process.stdout.write('\\x1b[?25h'); } catch { /* 이미 닫혔다 */ }",
       "검사": "test/pty.test.js",
       "잴곳": [
@@ -16818,6 +16818,198 @@
       "찾을것": "    if (끊었나 && !signal?.aborted) await new Promise((res) => { setTimeout(res, this.비킬틈).unref?.(); });\n",
       "바꿀것": "",
       "검사": "test/warm.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "이미 돌린 변경성 명령을 번갈아 불러도 고친 것으로 친다",
+      "그러면": "A→B→A→B 가 영영 안 막힌다",
+      "찾을것": "if (!attempted.has(key)) 파일바뀐수 += 1;",
+      "바꿀것": "파일바뀐수 += 1;",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/backend/retry.js",
+      "무엇": "한 번도 응답 안 한 주소도 꺼짐을 기다린다",
+      "그러면": "틀린 포트에서 몇 분을 붙든다",
+      "찾을것": "꺼짐기다림: conn.응답받음 === conn.base",
+      "바꿀것": "꺼짐기다림: true",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/backend/retry.js",
+      "무엇": "응답하던 로컬 서버가 꺼져도 안 기다린다",
+      "그러면": "서버를 재시작하면 턴이 죽는다",
+      "찾을것": "꺼짐기다림: conn.응답받음 === conn.base",
+      "바꿀것": "꺼짐기다림: false",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/backend/retry.js",
+      "무엇": "로컬 503 대기를 짧게 되돌린다",
+      "그러면": "큰 모델을 올리는 동안 턴이 죽는다",
+      "찾을것": "준비최대: 20",
+      "바꿀것": "준비최대: 10",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/backend/retry.js",
+      "무엇": "로컬 대기의 총상한을 안 늘린다",
+      "그러면": "횟수를 올려도 5분에 멎는다",
+      "찾을것": ", 총상한: 720000 }",
+      "바꿀것": " }",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/backend/retry.js",
+      "무엇": "꺼진 동안의 대기가 기본 사다리를 쓴다",
+      "그러면": "4초씩 두드리다 금방 포기한다",
+      "찾을것": "기다릴시간({ attempt, retryAfter, status, code }, 정책)",
+      "바꿀것": "기다릴시간({ attempt, retryAfter, status }, 정책)",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/backend/retry.js",
+      "무엇": "재시작 중 소켓 끊김은 짧은 한도로 센다",
+      "그러면": "거부 뒤 끊김 하나에 턴이 죽는다",
+      "찾을것": "(code === 'ECONNREFUSED' || 다시부를코드.has(String(code ?? '')))",
+      "바꿀것": "code === 'ECONNREFUSED'",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "흘려받은 응답을 응답으로 안 적는다",
+      "그러면": "스트리밍에서는 재시작을 못 기다린다",
+      "찾을것": "  conn.응답받음 = conn.base;\n  return { acc };",
+      "바꿀것": "  return { acc };",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "[DONE] 을 끝 표시로 안 본다",
+      "그러면": "멀쩡한 답을 버리고 다시 묻는다",
+      "찾을것": "자료 = null; acc.끝받음 = true; return;",
+      "바꿀것": "자료 = null; return;",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/backend/adapter.js",
+      "무엇": "한 응답의 id 겹침을 그대로 둔다",
+      "그러면": "도구 결과 짝이 어긋난다",
+      "찾을것": "const id = 쓴id.has(받은) ? `${받은}_${i + 1}` : 받은;",
+      "바꿀것": "const id = 받은;",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "곱게 닫는 서버 버릇을 안 배운다",
+      "그러면": "그 서버의 답마다 네 번씩 묻는다",
+      "찾을것": "if (msg?.stopped === 말없이끝남 && 앞도말없이) conn.끝말없음 = true;",
+      "바꿀것": "",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "멎은 답을 몇 번이고 다시 묻는다",
+      "그러면": "계속 멎는 서버에서 안 끝난다",
+      "찾을것": "!끝표시없는서버 && 끊김다시 < 로컬끊김다시) {",
+      "바꿀것": "!끝표시없는서버) {",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "본문에 든 생각을 안 걷는다",
+      "그러면": "안 닫힌 생각이 최종 답이 된다",
+      "찾을것": "if (msg && 로컬연결인가(conn) && !msg.거절) msg.content = 생각걷기(msg.content);",
+      "바꿀것": "",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "다짐만 하고 끝나도 안 민다",
+      "그러면": "일을 안 한 채 턴이 끝난다",
+      "찾을것": "if (로컬연결인가(conn) && 말.length < 120 && 다짐말(말)) return '하겠다고만';",
+      "바꿀것": "",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "성공해도 연속 실패 셈을 안 지운다",
+      "그러면": "정상 작업이 끊긴다",
+      "찾을것": "if (!result.error) 연속실패 = 0;",
+      "바꿀것": "",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "되풀이 셈 되돌리기에 상한이 없다",
+      "그러면": "고치기 되풀이가 영영 안 끝난다",
+      "찾을것": "const 그새한일 = 지금진척 > (반복진척.get(서명) ?? 0) && (!로컬연결인가(conn) || 다시셈 < 로컬되풀이다시셈);",
+      "바꿀것": "const 그새한일 = 지금진척 > (반복진척.get(서명) ?? 0);",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "로컬도 새 파일만 진척으로 친다",
+      "그러면": "같은 파일을 고치며 돌리는 시험이 끊긴다",
+      "찾을것": "const 진척값 = () => (로컬연결인가(conn) ? 파일바뀐수 : 손댄파일.size);",
+      "바꿀것": "const 진척값 = () => 손댄파일.size;",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "글로 적은 잘못된 부름을 그냥 답으로 받는다",
+      "그러면": "아무것도 안 돌고 턴이 끝난다",
+      "찾을것": "} else if (로컬연결인가(conn) && !글부름민적 && 글부름꼴.test(msg.content)) {",
+      "바꿀것": "} else if (false) {",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "하위 작업의 오류를 끝에 안 적는다",
+      "그러면": "부모가 까닭을 모른다",
+      "찾을것": "if (ev.type === 'error') 끝 = { type: 'error', why: String(ev.text ?? ''), steps: ev.steps ?? 0, files: [] };",
+      "바꿀것": "",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/commands.js",
+      "무엇": "/clear 가 저장 파일을 안 비운다",
+      "그러면": "비운 대화가 --continue 로 되살아난다",
+      "찾을것": "try { ctx?.갈래?.현재store?.()?.replace(session.messages, '대화 비움'); } catch { /* 못 적어도 대화는 계속 */ }",
+      "바꿀것": "",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/tools/clipboard.js",
+      "무엇": "맥에서 PNG 칸이 없으면 없다고 한다",
+      "그러면": "브라우저에서 복사한 그림이 안 붙는다",
+      "찾을것": "if (r.status !== 0) return 맥다른꼴에서(부르기) ?? { ok: false, 없음: true };",
+      "바꿀것": "if (r.status !== 0) return { ok: false, 없음: true };",
+      "검사": "test/clipboard.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "실패한 변경성 명령도 다시 못 돌린다",
+      "그러면": "일시적 실패를 재시도하다 막힌다",
+      "찾을것": "if (call.name === 'Bash' && result.exitCode && 로컬연결인가(conn)) attempted.delete(String(call.args?.command ?? '').trim());",
+      "바꿀것": "",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "연속 실패를 멈추지 않는다",
+      "그러면": "대상만 바꾼 실패가 300걸음까지 간다",
+      "찾을것": "    if (로컬연결인가(conn) && 연속실패 >= 로컬연속실패한계) 멈출까 ??=",
+      "바꿀것": "    if (false) 멈출까 ??=",
+      "검사": "test/localstay.test.js"
+    },
+    {
+      "곳": "src/agent/loop.js",
+      "무엇": "맺음말도 다짐으로 친다",
+      "그러면": "끝난 일에 또 재촉한다",
+      "찾을것": "  if (/(?:마치|끝내|알|되|좋|충분하|있|없|감사하|같)겠(?:습니다|어요)/.test(끝문장) || /let me know/i.test(끝문장)) return false;\n",
+      "바꿀것": "",
+      "검사": "test/localstay.test.js"
     }
   ]
 }

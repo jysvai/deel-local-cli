@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { 그림장수, 글만, 그림한장토큰, 그림메시지 } from '../backend/vision.js';
 import { 부른것들, 결과들, 도구결과인가, assistantMessage, toolMessage, 본문글 } from '../backend/adapter.js';
 import { 조각표 } from '../backend/cachemark.js';
-import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './modes.js';
+import { get as workMode, 말 as 모드말, 로컬읽기로, 로컬끝맺기, DEFAULT as WORK_DEFAULT } from './modes.js';
 import { toolSchemas } from '../tools/index.js';
 import { isOffline } from '../safety/network.js';
 import { 바깥인가 } from '../safety/runmode.js';
@@ -19,6 +19,8 @@ import { 언어, 지시말, 말 as 옮긴말, 로컬연결알리기 } from '../i
 import { 셸안내 } from '../tools/shell.js';
 import { estimateTokens } from '../backend/tokens.js';
 import { 프롬프트창, 로컬연결인가 } from './budget.js';
+
+const 모드지시 = (일, 창, conn) => (로컬연결인가(conn) ? 로컬읽기로(모드말(일, 창), 일) : 모드말(일, 창));
 
 /*
  * 토큰 추정 — 자는 backend/tokens.js 에 한 벌만 둔다.
@@ -563,10 +565,11 @@ export class Session {
    * @returns {[string, string]} [굳은 부분, 바뀌는 부분]
    */
   시스템조각() {
-    const 영 = 언어() === 'en';
+    const 영 = 지시말() === 'en';
     const 창 = 프롬프트창(this.conn);   // 모양을 고르는 창 — 로컬은 24k 아래로 친다 (budget.js)
-    const parts = [기본규칙(창)];
-    // 범위를 못 박는 줄. 이건 모델이 읽는 글이라 화면 말을 따라간다.
+    const 로컬 = 로컬연결인가(this.conn);
+    const parts = [로컬 ? 로컬끝맺기(기본규칙(창)) : 기본규칙(창)];
+    // 범위를 못 박는 줄. 이건 모델이 읽는 글이라 지시말을 따라간다.
     parts.push(영
       ? `\nWorking folder: ${this.root}\nYou can neither read nor write files outside this folder.`
       : `\n작업 폴더: ${this.root}\n이 폴더 밖의 파일은 읽지도 쓰지도 못한다.`);
@@ -582,7 +585,7 @@ export class Session {
      * 작은 모델에만, 짧게, 못 박아서 붙는다. 그 급이 못하는 것이 바로
      * '긴 글을 끝까지 따라가기' 라서, 길게 쓰면 오히려 나빠진다.
      */
-    const 급글 = 급말(this.급().급);
+    const 급글 = 로컬 ? 로컬끝맺기(급말(this.급().급)) : 급말(this.급().급);
     if (급글) parts.push(`\n${급글}`);
 
     /*
@@ -664,8 +667,8 @@ export class Session {
     const 변함 = [];
     const w = workMode(this.effectiveWork());
     변함.push(영
-      ? `\n--- current mode: ${w.en} ---\n${모드말(this.effectiveWork(), 창)}`
-      : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), 창)}`);
+      ? `\n--- current mode: ${w.en} ---\n${모드지시(this.effectiveWork(), 창, this.conn)}`
+      : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드지시(this.effectiveWork(), 창, this.conn)}`);
     /*
      * 기본 규칙(BASE_RULES)은 **모든 모드에서** 「Remember 로 남긴다」 · 「끝내기 전에 Verify」
      * 를 시킨다. 그 도구가 없는 모드(묻기·계획 …)에서는 없는 도구를 부르라는 말이 된다 —

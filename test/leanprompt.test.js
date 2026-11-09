@@ -175,11 +175,11 @@ for (const 말 of ['ko', 'en']) {
     }
     check('로컬: 80자 넘는 매개변수 설명이 없다', 긴것.length === 0, 긴것.join(' '));
   }
-  // Outline 을 Read 앞에 쓰게 하는 문장은 두 말 모두 첫머리에 남는다.
+  // 로컬의 Outline 설명은 Read 를 말리지 않고 언제 쓰는지만 적는다. 두 말 모두.
   for (const 말 of ['ko', 'en']) {
     언어정하기(말);
     const o = toolSchemas(null, { work: 'auto', ctx: 프롬프트창(로컬(65536)), 핵심남김: true }).find((x) => 이름(x) === 'Outline');
-    check(`★ ${말}: Outline 의 「고치기 전에 먼저 불러라」 가 로컬에서 안 잘린다`, /먼저 불러라|Call this before/.test(o.function.description), o.function.description);
+    check(`★ ${말}: 로컬의 Outline 설명은 언제 쓰는지를 적는다`, /모를 때만|do not know which file/.test(o.function.description), o.function.description);
     const 바 = toolSchemas(null, { work: 'auto', ctx: 8192 }).find((x) => 이름(x) === 'Outline');
     check(`  ${말}: 그 보강은 로컬 판에서만 — 바깥 8k 는 여태처럼 잘린 채다`, 말 === 'ko' || !/Call this before/.test(바.function.description));
   }

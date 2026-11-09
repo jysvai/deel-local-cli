@@ -21,7 +21,7 @@
 //     열쇠받기(safety/authcmd.js)가 걸려 있으면 **같은 열쇠로 다시 부르는 것이 아니라**
 //     새 열쇠를 받아서 부르는 것이라, 「불러 봐야 같다」 에 해당하지 않는다. 딱 한 번이다.
 //   · ECONNREFUSED 는 서버가 꺼진 것이고, 주소가 틀린 것(ENOTFOUND)은 백 번 물어도
-//     틀리다. 둘 다 안 부른다.
+//     틀리다. 둘 다 안 부른다. 다만 응답하던 로컬 서버가 꺼진 것은 재시작이라 기다린다 (정책고르기).
 //   · **머리말 시계(5분)** 가 끝난 것도 안 부른다. 서버가 받아 놓고 답을 안 한
 //     자리라, 5분을 또 기다릴 일이 아니다.
 //   · 다만 **아직 붙지도 못한 것**은 부른다 (아래 못붙은코드). 연결 시계는 10초라
@@ -33,6 +33,7 @@
 //   일이다). 안 주면 1초 → 2초 → 4초. 여기에 30% 안에서 흔든다 — 같은 게이트웨이를
 //   쓰는 사람 여럿이 같은 박자로 다시 두드리면 그게 또 429 를 만든다.
 import { Aborted } from './http.js';
+import { 바깥인가 } from '../safety/runmode.js';
 
 /**
  * 기본 정책. 검사는 base 를 짧게 바꿔 준다 — 모양은 같고 시간만 다르다.
@@ -48,8 +49,9 @@ import { Aborted } from './http.js';
  */
 export function 기본정책() {
   return {
-    최대: 3, 막힘최대: null, base: [1000, 2000, 4000],
+    최대: 3, 막힘최대: null, 준비최대: null, base: [1000, 2000, 4000],
     막힘base: [5000, 15000, 30000],
+    준비base: null,
     흔들림: 0.3, 상한: 60000, 총상한: 300000,
   };
 }
@@ -128,24 +130,32 @@ const 못붙은코드 = new Set([
 export function 다시부를까({ status = 0, code = null, attempt = 1 } = {}, 정책 = 기본정책()) {
   // 429 는 「틀렸다」 가 아니라 「지금은 안 된다」 다. 참을 횟수를 따로 둘 수 있게
   // 한다 — 안 정했으면 여태와 똑같이 최대 를 쓴다.
-  const 한도 = Number(status) === 429 ? (정책.막힘최대 ?? 정책.최대) : 정책.최대;
+  const 한도 = Number(status) === 429 ? (정책.막힘최대 ?? 정책.최대)
+    : 준비기다림인가(status, code, 정책) ? (정책.준비최대 ?? 정책.최대) : 정책.최대;
   if (attempt > 한도) return false;
   if (status) return 다시부를상태.has(Number(status));
   const c = String(code ?? '');
-  return !!code && (다시부를코드.has(c) || 못붙은코드.has(c));
+  return !!code && (다시부를코드.has(c) || 못붙은코드.has(c) || 준비기다림인가(status, code, 정책));
+}
+
+/** 503, 또는 응답하던 로컬 서버가 꺼진 것. 둘 다 서버가 다시 뜨기를 기다리는 자리다. 재시작 중에는 거부와 소켓 끊김이 섞여 온다. */
+function 준비기다림인가(status, code, 정책) {
+  if (Number(status) === 503) return true;
+  return !status && !!정책.꺼짐기다림 && (code === 'ECONNREFUSED' || 다시부를코드.has(String(code ?? '')));
 }
 
 /**
  * 몇 ms 기다릴까. 서버가 말해 준 것이 있으면 그것, 없으면 사다리.
  * @param {{attempt?: number, retryAfter?: string|number|null}} 자리
  */
-export function 기다릴시간({ attempt = 1, retryAfter = null, status = 0 } = {}, 정책 = 기본정책()) {
+export function 기다릴시간({ attempt = 1, retryAfter = null, status = 0, code = null } = {}, 정책 = 기본정책()) {
   const 서버말 = retryAfter읽기(retryAfter);
   if (서버말 !== null) return Math.min(서버말, 정책.상한);
   // 429 는 제 사다리를 쓴다. 안 정해 뒀으면 기본 사다리로 떨어진다 — 예전
   // 설정을 그대로 쓰는 사람에게 갑자기 다른 박자가 생기지는 않는다.
   const 막힘인가 = Number(status) === 429;
-  const 고른것 = 막힘인가 ? (정책.막힘base ?? 정책.base) : 정책.base;
+  const 고른것 = 막힘인가 ? (정책.막힘base ?? 정책.base)
+    : 준비기다림인가(status, code, 정책) ? (정책.준비base ?? 정책.base) : 정책.base;
   // 사다리가 비었으면(설정이 이상하면) 기본 사다리로 — NaN 초를 기다릴 수는 없다.
   const 사다리 = Array.isArray(고른것) && 고른것.some(Number.isFinite)
     ? 고른것.filter(Number.isFinite)
@@ -234,7 +244,7 @@ export function 다시부를지(r, attempt, 정책 = 기본정책(), 쌓인 = 0,
     return null;
   }
   const retryAfter = r?.headers?.get?.('retry-after') ?? r?.res?.headers?.get?.('retry-after') ?? null;
-  const wait = 기다릴시간({ attempt, retryAfter, status }, 정책);
+  const wait = 기다릴시간({ attempt, retryAfter, status, code }, 정책);
   /*
    * 한 요청에서 기다린 것을 다 더해 울타리를 친다.
    *
@@ -253,7 +263,9 @@ export function 다시부를지(r, attempt, 정책 = 기본정책(), 쌓인 = 0,
     code,
     wait,
     attempt,
-    max: Number(status) === 429 ? (정책.막힘최대 ?? 정책.최대) : 정책.최대,
+    max: Number(status) === 429 ? (정책.막힘최대 ?? 정책.최대)
+      : 준비기다림인가(status, code, 정책) ? (정책.준비최대 ?? 정책.최대)
+        : 정책.최대,
     retryAfter: retryAfter ?? null,
   };
 }
@@ -295,7 +307,18 @@ export function 알림채움(ev) {
   };
 }
 
+// 로컬 서버의 503 은 모델을 올리는 중이거나 슬롯이 찬 것이다. 큰 모델은 몇 분씩 걸린다. 합쳐 8분쯤 기다리고, 그동안 ESC 로 멈출 수 있다.
+const 로컬준비 = { 준비최대: 20, 준비base: [1000, 2000, 4000, 8000, 15000, 30000], 총상한: 720000 };
+
+/** 횟수나 사다리를 직접 정했나. `막힘최대` 하나만 준 설정은 503 대기까지 정한 것이 아니다. */
+export function 재시도정함(자리) {
+  const r = 자리?.retry;
+  return !!r && (r.최대 !== undefined || r.base !== undefined);
+}
+
 /** 부르는 쪽(conn·opts)이 준 것을 기본 위에 얹는다. 검사가 사다리를 짧게 줄 때 쓴다. */
 export function 정책고르기(conn, opts) {
-  return { ...기본정책(), ...(conn?.retry ?? {}), ...(opts?.retry ?? {}) };
+  // 응답하던 서버가 꺼진 것은 재시작이다. 한 번도 응답 안 한 주소는 틀린 포트일 수 있어 바로 말한다.
+  const 로컬몫 = 재시도정함(conn) || 재시도정함(opts) || !conn?.base || 바깥인가(conn.base) ? {} : { ...로컬준비, 꺼짐기다림: conn.응답받음 === conn.base };
+  return { ...기본정책(), ...로컬몫, ...(conn?.retry ?? {}), ...(opts?.retry ?? {}) };
 }

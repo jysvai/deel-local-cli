@@ -478,6 +478,12 @@ trace('9-조각표시');
   check('★ 줄이 길어 잘렸으면 summary 에도 일부만이라고 적는다 (6회차 도구6e2 E2-1)',
     긴줄읽기.부분인가 === true && /잘림/.test(긴줄읽기.content) && /일부만/.test(긴줄읽기.summary ?? ''), 긴줄읽기.summary ?? '');
   check('  (짝) 다 준 파일의 summary 에는 일부만이 없다', !/일부만/.test(통째로.summary ?? ''), 통째로.summary ?? '');
+  // 줄이 여럿이면 줄 수에서 먼저 잘려 앞 갈래로 간다. 줄 수를 다 주고도 clip 에 걸리는 것은 한 줄짜리뿐이다.
+  const 한줄 = join(방, '한줄.txt');
+  writeFileSync(한줄, 'x'.repeat(300000) + '\n', 'utf8');
+  const 한줄읽기 = await TOOLS.Read.run({ file_path: 한줄 }, { ...ctx, seen: new Set(), 모델컨텍스트: 200000 });
+  check('★ 한 줄짜리가 clip 에 걸려도 summary 에 일부만이라고 적는다',
+    한줄읽기.부분인가 === true && /잘림/.test(한줄읽기.content) && /일부만/.test(한줄읽기.summary ?? ''), 한줄읽기.summary ?? '');
 
   /*
    * 6회차 Gemini 도구6f2 F2-1 · Grep 에 파일 하나를 콕 집으면 rg 가 있어도 자바스크립트 길로 가고,

@@ -341,17 +341,18 @@ export function globToRegex(pattern) {
 export function glob거르개(glob, { 뿌리 = null, 자리 = null } = {}) {
   if (!glob) return () => true;
   const 빼기 = glob.startsWith('!');
-  let 몸 = 빼기 ? glob.slice(1) : glob;
+  // 맥이 준 이름과 모델이 쓴 무늬의 자모 모양이 달라도 맞아야 한다 (safety/guard.js 머리말).
+  let 몸 = (빼기 ? glob.slice(1) : glob).normalize('NFC');
   const 뿌리에묶임 = 몸.startsWith('/');
   if (뿌리에묶임) 몸 = 몸.replace(/^\/+/, '');
   const re = globToRegex(몸);
   const 빗금 = 몸.includes('/');
-  const 상대 = (기준, p) => 경로상대(기준, p).split(경로가름).join('/');
+  const 상대 = (기준, p) => 경로상대(기준.normalize('NFC'), p.normalize('NFC')).split(경로가름).join('/');
   return (abs) => {
     let 맞음;
     if (뿌리에묶임) 맞음 = !!뿌리 && re.test(상대(뿌리, abs));
     else {
-      맞음 = re.test(끝이름(abs))
+      맞음 = re.test(끝이름(abs).normalize('NFC'))
         || (!!자리 && re.test(상대(자리, abs)))
         || (빗금 && !!뿌리 && re.test(상대(뿌리, abs)));
     }
@@ -372,6 +373,7 @@ function escapeLiteral(s) {
  * 앞의 둘은 .gitignore 가 빼라고 해서 뺀 수고, 뒤의 둘은 **열려다 실패한** 수다. 부르는 쪽이 그
  * 수를 화면에 적는다 — 조용히 빼면 "그 파일이 없다" 로 읽힌다.
  * 폴더를 통째로 옮기거나 복사할 때는 `ignore: false` 로 — 그때는 다 있어야 한다.
+ * `ignore: 'deel'` 은 .deelignore 만 지킨다 — 가려진 파일의 이름을 알려 줄 때 쓴다(Glob).
  *
  * `잘림` 도 같이 붙는다 — **상한에서 멈췄다는 뜻이다.**
  *
@@ -482,7 +484,7 @@ export async function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS,
    * 근거가 하나도 없어서 `폴더 0개 파일` 이라고 적고 넘어간다. 바로 윗줄이 이 목록의
    * 쓰임을 적어 놓고, 정작 제일 큰 한 덩이에서 비어 있었다.
    */
-  const stack = 내부살림(root) ? [] : [{ dir: root, rel: '', 규칙: ignore ? 뿌리규칙읽기(root) : [] }];
+  const stack = 내부살림(root) ? [] : [{ dir: root, rel: '', 규칙: ignore === 'deel' ? 파일규칙읽기(join(root, '.deelignore'), '') : ignore ? 뿌리규칙읽기(root) : [] }];
   // 시작 자리가 살림이라 담을 것이 없으면 **그 사실도 남긴다** (바로 위 머리말).
   if (!stack.length) 건너뛴살림.push(끝이름(root));
   while (stack.length && out.length < limit) {
@@ -494,7 +496,7 @@ export async function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS,
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { 건너뜀.못연폴더 += 1; continue; }
     // 이 폴더에 .gitignore 가 있으면 그 아래에만 더한다 (뿌리 것은 위에서 읽었다).
     let 여기규칙 = 규칙;
-    if (ignore && rel && entries.some((e) => e.name === '.gitignore' && e.isFile())) {
+    if (ignore === true && rel && entries.some((e) => e.name === '.gitignore' && e.isFile())) {
       const 추가 = 파일규칙읽기(join(dir, '.gitignore'), rel);
       if (추가.length) 여기규칙 = [...규칙, ...추가];
     }

@@ -456,6 +456,7 @@ export const ja = {
   'more.spots': 'ほか{n}箇所',
 
   'err.noSuchFile': 'ファイルがありません: {경로}',
+  'err.sameNameAt': '同じ名前のファイルはここにあります: {목록}',
   'err.alreadyThere': 'すでにあります: {경로}',
   'err.overwriteHint': '上書きするには overwrite: true を指定してください。',
 

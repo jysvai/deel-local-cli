@@ -81,7 +81,8 @@ const srv = createServer((req, res) => {
         tool_calls: [{ id: `c${도구번호++}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
       });
 
-      const 사람말 = String([...(json?.messages ?? [])].reverse().find((m) => m.role === 'user')?.content ?? '');
+      // 끝에 붙는 [deel] 재촉은 사람이 시킨 말이 아니다. 대본은 사람 말로 고른다.
+      const 사람말 = String([...(json?.messages ?? [])].reverse().find((m) => m.role === 'user' && !String(m.content ?? '').startsWith('[deel]'))?.content ?? '');
 
       if (/일부러_터뜨려/.test(사람말)) return 보냄({ error: { message: '스텁이 일부러 낸 오류입니다' } }, 500);
 
@@ -165,9 +166,9 @@ const srv = createServer((req, res) => {
         return 답({ role: 'assistant', content: 답글 });
       }
       // 걸음 수 상한까지 성공하는 도구만 계속 부른다 — 헛도는 것과 구분해야 한다.
-      // 인자를 매번 조금씩 바꾼다. 똑같은 인자로 다시 부르면 루프가 '헛돌고 있다'
-      // 고 보고 먼저 끊는데(그것도 맞다), 그러면 걸음 수 상한 자리를 못 밟는다.
-      if (/일부러_끝없이/.test(사람말)) return 도구답('Read', { file_path: '읽을것.txt', limit: 도구번호 });
+      // 매번 새 줄을 읽는다. 받은 줄을 또 읽으면 루프가 '헛돌고 있다' 고 보고 먼저
+      // 끊는데(그것도 맞다), 그러면 걸음 수 상한 자리를 못 밟는다.
+      if (/일부러_끝없이/.test(사람말)) return 도구답('Read', { file_path: '긴것.txt', offset: 도구번호 + 1, limit: 1 });
       // 같은 이유로 계속 실패한다. 루프가 '헛돌고 있다' 고 판정해야 하는 자리.
       if (/일부러_헛돎/.test(사람말)) return 도구답('Read', { file_path: '없는파일.txt' });
       if (/일부러_고쳐/.test(사람말) && !쓰기한번) {
@@ -253,6 +254,7 @@ const base = `http://127.0.0.1:${port}/v1`;
 const home = mkdtempSync(join(tmpdir(), 'deel-one-home-'));
 const work = mkdtempSync(join(tmpdir(), 'deel-one-work-'));
 writeFileSync(join(work, '읽을것.txt'), '한 줄짜리 파일입니다.\n두 번째 줄.\n', 'utf8');
+writeFileSync(join(work, '긴것.txt'), Array.from({ length: 400 }, (_, i) => `줄 ${i + 1}`).join('\n'), 'utf8');
 
 writeFileSync(join(home, 'config.json'), JSON.stringify({
   version: 1, active: 'stub', level: '개발자',

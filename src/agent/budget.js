@@ -57,6 +57,10 @@ const 걸음규칙 = {
 
 const 사이 = (v, 최소, 최대) => Math.max(최소, Math.min(최대, Math.round(v)));
 
+// 로컬은 걸음에 돈이 안 든다. 헛도는 것은 되풀이·실패 판정이 잡으니 여기는 정말 마지막 울타리만 둔다.
+const 로컬걸음 = { ask: 40, plan: 120, architect: 120 };
+const 로컬기본걸음 = 300;
+
 /** 컨텍스트가 아직 안 잡혔을 때 쓰는 값. 못 알아냈다는 뜻이지 정답이 아니다. */
 const 모를때 = 32768;
 
@@ -67,10 +71,12 @@ const k = (ctx) => (Number(ctx) > 0 ? Number(ctx) : 모를때) / 1024;
  *
  * @param {string} 모드id  auto · code · plan …
  * @param {number} ctx     모델 컨텍스트 길이(토큰)
+ * @param {boolean} 로컬   이 PC·사내망 모델인가
  */
-export function 걸음수(모드id, ctx) {
+export function 걸음수(모드id, ctx, 로컬 = false) {
   const r = 걸음규칙[모드id] ?? 걸음규칙.auto;
-  return 사이(k(ctx) * r.배수, r.최소, r.최대);
+  const 값 = 사이(k(ctx) * r.배수, r.최소, r.최대);
+  return 로컬 ? Math.max(값, 로컬걸음[모드id] ?? 로컬기본걸음) : 값;
 }
 
 /**
@@ -85,7 +91,9 @@ export function 읽을줄수(ctx) {
 }
 
 /** 로컬 Read 가 한 번에 실을 글자 수. 걸음 하나가 비싸서 다른 도구보다 크게 준다. */
-export function 읽을글자수(ctx) {
+export function 읽을글자수(ctx, 자리토큰 = null, 글자당토큰 = 3) {
+  // 남은 창만큼 싣는다. 큰 파일을 조각내 되읽느니 한 번에 다 주는 편이 낫다. 재지 못했으면 창에 견준 값이다.
+  if (자리토큰 != null) return Math.max(4000, Math.round(자리토큰 * 글자당토큰));
   return 사이(k(ctx) * 480, 4000, 30000);
 }
 
@@ -141,6 +149,11 @@ export function 웹글자수(ctx) {
  */
 export function 한번에낼글자수(ctx) {
   return 사이(k(ctx) * 160, 2000, 30000);
+}
+
+/** 로컬의 Bash·Grep 결과 상한. 남은 창을 보되 예전 값 아래로 안 내리고 Read 의 고정 상한을 넘지 않는다. */
+export function 로컬낼글자수(ctx, 자리토큰) {
+  return 사이(자리토큰 * 3, 한번에낼글자수(ctx), 읽을글자수(ctx));
 }
 
 /**

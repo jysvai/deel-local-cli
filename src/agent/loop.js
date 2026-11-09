@@ -3,6 +3,8 @@
 import { chat, chatStream, assistantMessage, toolMessage, 말없이끝남, 흐름멎음, 보낸토큰, 부른것들, 도구결과인가 } from '../backend/adapter.js';
 import { 그림메시지 } from '../backend/vision.js';
 import { 어떻게할까, 승인바닥 } from '../safety/policy.js';
+import { 경로인자맞추기 } from '../safety/guard.js';
+import { 기다리기, 재시도정함 } from '../backend/retry.js';
 import { 자리돌리기, 막힘말 } from '../safety/hooks.js';
 import { toolSchemas, runTool, TOOLS, 파일현황, 바뀔내용 } from '../tools/index.js';
 import { isMutating, 셸이파일에쓰나 } from '../safety/guard.js';
@@ -12,7 +14,7 @@ import { 읽기만하나 } from '../backend/mcp.js';
 import { 글속부름 } from '../backend/textcalls.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
-import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박을것, 접힌파일열쇠, 비울까, 비우면빌까, 실을요약, 요약세대, 요약세대상한, 마지막요약 } from './compact.js';
+import { compact, shouldCompact, 읽을자리, shouldFold, foldToolResults, foldImages, 못박을것, 접힌파일열쇠, 비울까, 비우면빌까, 실을요약, 요약세대, 요약세대상한, 마지막요약 } from './compact.js';
 import { 걸음수, 하위걸음수, 요약길이, 프롬프트창, 로컬연결인가 } from './budget.js';
 import { Session, estimateTokens } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
@@ -161,6 +163,60 @@ function thinkFor(conn, level) {
  */
 const 읽기전용 = new Set(['Read', 'Outline', 'Glob', 'Grep', 'Def', 'Refs', 'Recall', 'Skill', 'WebFetch']);
 const 읽기재촉걸음 = 5;
+const 로컬읽기되풀이한계 = 12;   // 새 줄 없이 같은 줄만 이만큼이면 그때가 진짜 헛도는 것이다
+const 로컬끊김다시 = 3;         // 서버가 답하다 끊겼을 때 다시 묻는 횟수
+const 로컬빈답재촉 = 2;         // 빈 답을 받고 재촉하는 횟수
+const 로컬되살림 = 2;           // 헛돈다고 끊기 전에 말해 보는 횟수. 판정이 틀려도 일이 죽지 않게 한다
+const 로컬편집실패한계 = 10;    // 한 파일에서 다른 글로 고쳐 보다 실패한 횟수
+const 로컬연속실패한계 = 25;    // 성공 한 번 없이 이만큼 실패하면 대상이 달라도 헛도는 것이다
+const 로컬되풀이다시셈 = 10;    // 파일을 고쳐 되풀이 셈을 되돌리는 것은 부름마다 이만큼까지
+// 사람이 재시도를 직접 정해 둔 연결에는 우리가 더 다시 묻지 않는다.
+const 로컬다시묻나 = (conn) => 로컬연결인가(conn) && !재시도정함(conn);
+/** 맨 끝의 도구 결과와 그 부름 — 모델이 아직 못 본 것. 뒤에 붙은 [deel] 재촉까지 같이 낸다. */
+function 안본꼬리(말들, 창) {
+  let 끝 = 말들.length;
+  while (끝 > 0 && 말들[끝 - 1].role === 'user' && /^\[deel\]/.test(String(말들[끝 - 1].content ?? ''))) 끝 -= 1;
+  let i = 끝;
+  while (i > 0 && 말들[i - 1].role === 'tool') i -= 1;
+  if (i === 끝 || i === 0 || !말들[i - 1].tool_calls?.length) return [];
+  const 꼬리 = 말들.slice(i - 1);
+  // 꼬리만으로 창을 거의 채우면 남겨 봐야 못 보낸다. 그때는 비우고 다시 읽게 둔다.
+  return estimateTokens(JSON.stringify(꼬리)) < 창 * 0.7 ? 꼬리 : [];
+}
+const 생각걷기 = (글) => (typeof 글 === 'string' ? 글.replace(/^\s*<(think(?:ing)?)>[\s\S]*?(?:<\/\1>\s*|$)/i, '') : 글);
+/** 아직 안 한 일을 하겠다고만 말한 끝맺음. */
+const 다짐말 = (말) => {
+  const 끝문장 = 말.split(/(?<=[.!?…。])\s+|\n+/).filter(Boolean).pop() ?? '';
+  // 맺음말과 짐작은 다짐이 아니다.
+  if (/(?:마치|끝내|알|되|좋|충분하|있|없|감사하|같)겠(?:습니다|어요)/.test(끝문장) || /let me know/i.test(끝문장)) return false;
+  return /(?:겠습니다|겠어요|할게요|할께요|볼게요|드릴게요)[.!…~\s]*$/.test(끝문장)
+    || /^(?:(?:ok|okay|now|next|first|sure)[,.]?\s+)*(?:i'll|i will|i'm going to|i am going to|let me)\b/i.test(끝문장);
+};
+const 글부름꼴 = /<tool_call>|<function[=\s]|<\|tool_call|<start_function_call>|```tool_code|\[TOOL_CALLS\]|^\s*\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"(?:arguments|parameters)"\s*:/i;
+const 글부름재촉말 = (이름들) => (지시말() === 'en'
+  ? `[deel] Your last reply wrote a tool call as text, so nothing ran. Call a tool through the tool interface. Available tools: ${이름들.join(', ')}.`
+  : `[deel] 방금 답은 도구 부름을 글로 적어서 아무것도 실행되지 않았습니다. 도구 호출로 다시 부르세요. 쓸 수 있는 도구: ${이름들.join(', ')}.`);
+const 끊긴연결 = (err) => /terminated|socket hang up|ECONNRESET|EPIPE|other side closed|premature close|UND_ERR_SOCKET/i
+  .test(`${err?.message ?? ''} ${err?.code ?? ''} ${err?.cause?.code ?? ''} ${err?.cause?.message ?? ''}`);
+const 빈답재촉말 = () => (지시말() === 'en'
+  ? '[deel] Your last reply was empty. Continue the work now: call a tool, or write your answer.'
+  : '[deel] 방금 답이 비어 있었습니다. 지금 일을 이어서 도구를 부르거나 답을 쓰세요.');
+const 막힘재촉말 = (왜) => (지시말() === 'en'
+  ? '[deel] You are repeating the same thing and it is not working. Do something different now, or finish with what you have. If you repeat it again this turn will stop.'
+  : `[deel] 같은 일을 되풀이하고 있습니다: ${왜}. 지금 다른 방법으로 하거나 있는 내용으로 끝내세요. 또 되풀이하면 이 턴은 멈춥니다.`);
+const 같은줄말 = (a, b) => (지시말() === 'en'
+  ? `Lines ${a}~${b} of this file are already above and have not changed, so they are not sent again. Do not read them again. Use what you have: make the change with Edit or Write, or give your answer.`
+  : `이 파일의 ${a}~${b}줄은 위에 이미 있고 바뀌지 않아 다시 싣지 않습니다. 또 읽지 말고 있는 내용으로 Edit 이나 Write 로 고치거나 답을 내세요.`);
+/** [a, b] 줄이 이미 건넨 구간들로 다 덮이나. */
+const 다덮였나 = (구간들, a, b) => {
+  let 다음 = a;
+  for (const [x, y] of [...구간들].sort((p, q) => p[0] - q[0])) {
+    if (x > 다음) return false;
+    if (y >= 다음) 다음 = y + 1;
+    if (다음 > b) return true;
+  }
+  return 다음 > b;
+};
 const 읽기재촉말 = (n) => (지시말() === 'en'
   ? `[deel] ${n} steps of reading and nothing has changed. Stop reading now. Make the change with Edit or Write. If no change is needed, give the answer. If something blocks you, say what.`
   : `[deel] ${n}걸음째 읽기만 했고 바뀐 것이 없습니다. 그만 읽고 지금 Edit 이나 Write 로 고치세요. 고칠 것이 없으면 답을 내고, 막힌 것이 있으면 무엇인지 말하세요.`);
@@ -402,10 +458,18 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     // 고쳐 놓고 '헛돌고 있어 멈췄습니다' 가 되는 것이 그 모습이다.
     const 어디 = call.args?.file_path ?? call.args?.path ?? call.args?.pattern ?? call.args?.command
       ?? call.args?.purpose ?? call.args?.목적 ?? '';
-    const 서명 = `${call.name}|${이유}|${String(어디).slice(0, 200)}`;
+    const 자리서명 = `${call.name}|${이유}|${String(어디).slice(0, 200)}`;
+    // 로컬 Edit 은 old_string 까지 본다. 다른 글로 고쳐 보는 것은 고치는 중이지 헛도는 것이 아니다.
+    const 고쳐봄 = call.name === 'Edit' && 로컬연결인가(conn);
+    const 서명 = 고쳐봄 ? `${자리서명}|${String(call.args?.old_string ?? '')}` : 자리서명;
     // 몫: 도구가 「다시 해도 같다」(끝났다)고 말했으면 한 번을 두 번으로 센다.
     const n = (막힘.get(서명) ?? 0) + 몫;
     막힘.set(서명, n);
+    if (고쳐봄) {
+      const 자리수 = (막힘.get(자리서명) ?? 0) + 몫;
+      막힘.set(자리서명, 자리수);
+      if (자리수 >= 로컬편집실패한계) return true;
+    }
     return n >= MAX_SAME;
   };
 
@@ -418,6 +482,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 그래서 '나아가고 있다' 는 사실이 확인되면 셈을 되돌린다.
    */
   const 나아감 = () => 막힘.clear();
+
+  // 성공 한 번 없이 대상만 바꿔 가며 실패하면 위 표에는 안 걸린다(이름·경로가 매번 다르다). 로컬은 여기서 따로 센다.
+  let 연속실패 = 0;
 
   /**
    * 이번 턴에 손댄 파일들. 턴이 끝날 때 **디스크를 보고** 사실을 말해 준다.
@@ -576,6 +643,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 있는 것이라 되풀이 셈을 처음부터 다시 센다 — 까닭은 세는 자리에.
    */
   const 반복진척 = new Map();
+  const 되풀이다시셈 = new Map();
+  const 진척값 = () => (로컬연결인가(conn) ? 파일바뀐수 : 손댄파일.size);
   /*
    * 자리가 줄어든 걸음에서는 위 두 표를 **통째로 버린다.**
    *
@@ -595,7 +664,17 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 되풀이 셈(막힘의 `반복|…`)도 같이 버린다. 표만 지우고 셈을 남기면, 접힌
    * 뒤 처음 읽은 것이 이미 두 번째로 세어져 한 걸음 일찍 멈춘다.
    */
+  // 이번 턴에 파일별로 온전히 건넨 줄. 접거나 비우면 대화에서 사라지므로 같이 잊는다.
+  const 읽은줄표 = new Map();
+  const 줄기록하기 = ({ 읽은것, 읽은줄: [a, b], 파일표 }) => {
+    const 앞 = 읽은줄표.get(읽은것);
+    const 같은파일 = 앞?.파일표 === 파일표;
+    const 겹침 = 같은파일 && 다덮였나(앞.구간, a, b);
+    읽은줄표.set(읽은것, { 파일표, 구간: [...(같은파일 ? 앞.구간 : []), [a, b]] });
+    return { 겹침, a, b };
+  };
   const 되풀이표잊기 = () => {
+    읽은줄표.clear();
     부른것.clear();
     반복진척.clear();
     for (const k of [...막힘.keys()]) if (k.startsWith('반복|')) 막힘.delete(k);
@@ -724,7 +803,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 없다 — 8k 모델에는 너무 크고, 655k 모델은 여유가 96% 남았는데도 만들다
    * 만 채로 끊겼다. 사람이 직접 준 값이 있으면 그것이 먼저다.
    */
-  let maxSteps = session.stepsSet ? session.maxSteps : 걸음수(모드.id, conn.ctx);
+  let maxSteps = session.stepsSet ? session.maxSteps : 걸음수(모드.id, conn.ctx, 로컬연결인가(conn));
   /*
    * ── 단계가 일을 따라간다 (agent/phase.js) ────────────────────────────────
    *
@@ -788,7 +867,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
      * 들고 가면 만들다 말고 끊긴다. 반대로 줄이면 이미 지난 걸음 수보다 작아져
      * 그 자리에서 턴이 끝나 버릴 수도 있다 — 어느 쪽으로도 줄일 이유가 없다.
      */
-    if (!session.stepsSet) maxSteps = Math.max(maxSteps, 걸음수(모드.id, conn.ctx));
+    if (!session.stepsSet) maxSteps = Math.max(maxSteps, 걸음수(모드.id, conn.ctx, 로컬연결인가(conn)));
 
     return {
       type: '단계옮김',
@@ -802,7 +881,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     };
   };
 
-  const attempted = new Set();   // 같은 변경성 명령을 두 번 실행하지 않기 위한 기록
+  const attempted = new Map();   // 같은 변경성 명령을 두 번 실행하지 않기 위한 기록 (명령 → 그때까지 고친 파일 수)
+  let 파일바뀐수 = 0;
   let steps = 0;
   let lastToolFailed = false;    // 직전 단계에서 도구가 오류를 냈나 → 다음 판단은 세게
 
@@ -860,6 +940,12 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
   const 인사인가 = 인사말인가(userText);
   const 읽기감시 = 로컬연결인가(conn) && !깊이 && !고쳐쓰기 && !인사인가 && 모드.tools.includes('Write');
   let 읽기만걸음 = 0;
+  let 끊김다시 = 0;
+  let 빈답재촉 = 0;
+  let 글부름민적 = false;
+  let 앞도말없이 = false;
+  let 되살림 = 0;
+  let 같은줄재촉 = false;
   const 되묻는말 = /무엇을\s*도와|무엇을\s*해\s*드릴|원하시는\s*(작업|것)|어떤\s*(작업|것)\s*(을|부터)|말씀해\s*주세요|알려\s*주세요|지시해\s*주세요|어떻게\s*할까요|해\s*드릴까요|진행할까요|what would you like|how can i (help|assist)|let me know (what|which|how)|shall i\b|would you like me to/i;
 
   /** 이번 답을 되밀까. 밀 이유를 돌려주고, 아니면 null. */
@@ -870,6 +956,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     if (!모드.tools.includes('Write')) return null;         // 안 바꾸는 모드는 그게 맞다
     const 말 = String(글 ?? '').trim();
     if (되묻는말.test(말)) return '되물음';
+    // 로컬 모델은 「이제 고치겠습니다」 로 손을 놓곤 한다. 아무것도 안 바꾼 채 짧게 다짐만 했으면 민다.
+    if (로컬연결인가(conn) && 말.length < 120 && 다짐말(말)) return '하겠다고만';
     const 남은 = (ctx.todos ?? []).filter((x) => x.state !== 'done');
     // 진짜 보고는 길다. 한 줄로 끝났고 할 일이 남았으면 놓은 것이다.
     if (남은.length && 말.length < 120) return '할일남음';
@@ -964,8 +1052,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 할 일·이번 턴에 손댄 파일·이 턴에 받은 요약은 옮긴다. 까닭은 부름 오류 갈래의
    * 「자리가 다 찼으면」 머리말에 있다.
    */
-  const 비운쪽지 = () => {
-    const 지운수 = session.messages.length;
+  const 비운쪽지 = (남길수 = 0) => {
+    const 지운수 = session.messages.length - 남길수;
     const 손댄것 = [...손댄파일];
     const 쪽지 = 못박을것(session);
     const 요약 = 실을요약(최신요약, session.breakdown().total);
@@ -978,8 +1066,10 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         + 쪽지,
     };
   };
-  const 비우기 = () => {
-    const { 글, 쪽지, 지운수, 손댄것, 요약 } = 비운쪽지();
+  const 비우기 = ({ 안본것남김 = false } = {}) => {
+    // 부르기 전에 비울 때는 모델이 아직 못 본 결과를 남긴다. 지우면 방금 읽은 것을 또 읽는다.
+    const 남길꼬리 = 안본것남김 ? 안본꼬리(session.messages, session.breakdown().total) : [];
+    const { 글, 쪽지, 지운수, 손댄것, 요약 } = 비운쪽지(남길꼬리.length);
     비운걸음 = steps;
     // 비운 뒤의 압축은 새 일이다. 비우기 전 요약을 「방금 요약했다」 로 치지 않는다.
     요약걸음 = null;
@@ -987,7 +1077,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     const 비운말 = { role: 'user', content: 글 };
     // 어느 턴의 시킨 말을 박았는지 적어 둔다 — 그 턴을 /undo 하면 이 쪽지도 빠져야 한다(session.js 의 박은쪽지표시).
     session.박은쪽지표시?.(비운말, 쪽지);
-    session.messages = [비운말];
+    session.messages = [비운말, ...남길꼬리];
     // 내용은 없어졌는데 '읽었다' 는 표만 남으면 모델이 다시 안 읽는다.
     try { session.filesRead?.clear?.(); session.파일기억?.잊기?.(); } catch { /* 없어도 그만 */ }
     되풀이표잊기();
@@ -1044,7 +1134,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        */
       const 막요약함 = 요약걸음 !== null && steps - 요약걸음 <= 요약연달아걸음;
       if (막요약함) {
-        if (선제로비워도되나() && 비울까(session, 비운쪽지().글)) yield 비우기();
+        if (선제로비워도되나() && 비울까(session, 비운쪽지().글)) yield 비우기({ 안본것남김: true });
         return;
       }
       /*
@@ -1074,7 +1164,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * **말없이 앞을 잘라** 모델이 시킨 말을 못 본 채 답하므로, 서버 거절을 기다릴 수도 없다.
        */
       const 쪽지글 = 비운쪽지().글;
-      if (선제로비워도되나() && (세번째 ? 비우면빌까(session, 쪽지글) : 비울까(session, 쪽지글))) yield 비우기();
+      if (선제로비워도되나() && (세번째 ? 비우면빌까(session, 쪽지글) : 비울까(session, 쪽지글))) yield 비우기({ 안본것남김: true });
     }
   };
 
@@ -1439,6 +1529,17 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 기다렸는지가 곧 손댈 자리다 — 게이트웨이가 답을 통째로 모았다가 주는
          * 자리면 잠잠 상한을 올리면 되고, 그걸 모르면 사람은 연결을 의심한다.
          */
+        // 로컬 서버가 답하다 멎으면 일이 끝난 것이 아니다. 반쪽 글은 버리고 다시 묻는다. 다시 물어도 또 말없이 닫히면 이 서버의 버릇이다.
+        if (msg?.stopped === 말없이끝남 && 앞도말없이) conn.끝말없음 = true;
+        const 끝표시없는서버 = msg?.stopped === 말없이끝남 && (msg.끝받음 || conn.끝말없음);
+        앞도말없이 = msg?.stopped === 말없이끝남;
+        if (로컬다시묻나(conn) && !(msg?.toolCalls ?? []).length && !끝표시없는서버 && 끊김다시 < 로컬끊김다시) {
+          끊김다시 += 1;
+          흘린것 = '';
+          yield { type: 'note', text: `답이 도중에 끊겼습니다 — 다시 묻습니다 (${끊김다시}/${로컬끊김다시})` };
+          try { await 기다리기(1000 * 끊김다시, signal); } catch { /* ESC — 다음 걸음이 받는다 */ }
+          continue;
+        }
         yield { type: 'cutoff', 멎은초: msg?.stopped === 흐름멎음 ? (msg.멎은초 ?? null) : null };
       }
 
@@ -1471,9 +1572,17 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           yield { type: 'note', text: '이 서버는 스트리밍 응답이 비어서 이번 세션은 꺼 두고 씁니다.' };
         }
       }
+      // 생각을 본문으로 흘려보내는 서버가 있다. 닫힌 생각은 대화에 안 남기고, 안 닫힌 채 끝난 것은 빈 답으로 친다. 스트리밍 탓이 아니라 위 갈래 뒤에 둔다.
+      if (msg && 로컬연결인가(conn) && !msg.거절) msg.content = 생각걷기(msg.content);
       if (!msg?.거절 && 빈답인가(msg)) {
         session.본것?.본것('빈답');
         ctx.배움?.모델본것(conn.model, '빈답');
+        if (로컬다시묻나(conn) && 빈답재촉 < 로컬빈답재촉) {
+          빈답재촉 += 1;
+          session.push({ role: 'user', content: 빈답재촉말() });
+          yield { type: 'note', text: '빈 답이 왔습니다 — 다시 묻습니다.' };
+          continue;
+        }
         yield {
           type: 'error',
           text: '서버가 빈 답을 보냈습니다.\n'
@@ -1484,6 +1593,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         };
         return;
       }
+      끊김다시 = 0;
+      앞도말없이 = false;
+      빈답재촉 = 0;
     } catch (err) {
       if (err?.name === 'Aborted' || signal?.aborted) {
         /*
@@ -1650,6 +1762,15 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         continue;
       }
 
+      // 로컬 서버는 답하다 끊기기도 한다(메모리 부족·모델 교체·재시작). 받던 것은 버리고 같은 것을 다시 묻는다.
+      if (로컬다시묻나(conn) && !err?.status && 끊긴연결(err) && 끊김다시 < 로컬끊김다시) {
+        끊김다시 += 1;
+        흘린것 = '';
+        yield { type: 'note', text: `서버 연결이 끊겼습니다 — 다시 묻습니다 (${끊김다시}/${로컬끊김다시})` };
+        try { await 기다리기(1000 * 끊김다시, signal); } catch { /* ESC — 다음 걸음이 받는다 */ }
+        continue;
+      }
+
       /*
        * 탈이 나도 **여기까지 흘러온 말은 남긴다.**
        *
@@ -1672,7 +1793,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       if (msg && !빈답인가(msg)) { session.push(assistantMessage(conn.kind, msg)); 오류때실었나 = true; }
       else if (오류때남길것) { session.push({ role: 'assistant', content: 오류때남길것 }); 오류때실었나 = true; }
       짝맞추기();
-      yield { type: 'error', text: err.message, kept: 오류때실었나 };
+      const 창작음 = 로컬연결인가(conn) && (conn.ctx ?? 0) > 0 && conn.ctx <= 8192 && 길이문제인가(err.serverMessage ?? err.message);
+      yield { type: 'error', text: 창작음 ? `${err.message}\n  창이 ${conn.ctx} 토큰이라 작습니다. 모델 서버를 -c 16384 이상으로 띄워 주세요.` : err.message, kept: 오류때실었나 };
       return;
     }
 
@@ -1760,6 +1882,12 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         msg.toolCalls = 건짐.부름.map((x, i) => ({ id: `text_${steps}_${i + 1}`, name: x.name, args: x.args }));
         msg.content = 건짐.남은글;
         yield { type: 'textcalls', names: msg.toolCalls.map((x) => x.name), count: msg.toolCalls.length };
+      } else if (로컬연결인가(conn) && !글부름민적 && 글부름꼴.test(msg.content)) {
+        // 내준 적 없는 이름이거나 못 읽는 꼴이다. 아무것도 안 돌았는데 답으로 끝내면 일이 멎으니 쓸 수 있는 이름을 한 번 알려 준다.
+        글부름민적 = true;
+        session.push({ role: 'user', content: 글부름재촉말(tools.map((t) => t.function.name)) });
+        yield { type: 'note', text: '글로 적은 도구 부름을 실행할 수 없어 다시 묻습니다.' };
+        continue;
       }
     }
 
@@ -2093,6 +2221,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           거절(call, `모르는 도구입니다. 쓸 수 있는 것: ${Object.keys(TOOLS).join(', ')}`);
           // 이것도 세야 한다. 없는 이름을 계속 부르며 걸음 수를 다 쓰는 길이 있었다 —
           // 71초 증상과 겉모습이 똑같은데 문만 다르다. 아래 거부·중복도 마찬가지다.
+          연속실패 += 1;
           if (막힘셈(call, '모르는 도구')) 멈출까 = `${call.name} 은 없는 도구인데 계속 부르고 있습니다`;
           yield { type: 'tool', name: call.name, args: call.args, result: { error: '모르는 도구' }, showLabel: true };
           continue;
@@ -2136,15 +2265,22 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         // 변경성 명령은 실패해도 다시 실행하지 않는다 — 두 번 돌면 사고다.
         if (call.name === 'Bash' && isMutating(call.args?.command)) {
           const key = String(call.args.command).trim();
-          if (attempted.has(key)) {
+          // 로컬: 그 사이 파일을 고쳤으면 다른 일이다. 고친 뒤의 git commit·npm install 까지 막으면 일이 멎는다.
+          const 그새고침 = 로컬연결인가(conn) && attempted.get(key) !== 파일바뀐수;
+          if (attempted.has(key) && !그새고침) {
             const note = '같은 변경성 명령을 다시 실행하지 않습니다. 두 번 실행되면 사고가 납니다.';
             거절(call, note);
             if (막힘셈(call, '두 번째 실행 거부')) 멈출까 = '같은 명령을 계속 다시 부르고 있습니다';
             yield { type: 'tool', name: call.name, args: call.args, result: { error: note }, showLabel: true };
             continue;
           }
-          attempted.add(key);
+          // 셸도 파일을 고친다. 처음 보는 변경성 명령만 그 사이 고친 것으로 친다. 이미 돌린 명령을 번갈아 부르는 것은 일이 나아간 것이 아니다.
+          if (!attempted.has(key)) 파일바뀐수 += 1;
+          attempted.set(key, 파일바뀐수);
         }
+
+        // 모델이 베껴 쓴 경로를 디스크에 있는 경로로 맞춘다. 규칙도 승인 물음도 되풀이 판정도 고친 경로를 본다.
+        if (TOOLS[call.name]) 경로인자맞추기(call.name, call.args, ctx.scope);
 
         /*
          * 적어 둔 규칙이 모드보다 먼저다 (safety/policy.js).
@@ -2458,6 +2594,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
               끝 = ev;
               break;
             }
+            // 오류는 화면에도 올리고, 부모 모델이 까닭을 알게 끝에도 적어 둔다.
+            if (ev.type === 'error') 끝 = { type: 'error', why: String(ev.text ?? ''), steps: ev.steps ?? 0, files: [] };
             yield { ...ev, depth: (ev.depth ?? 0) + 1 };
           }
         } catch (err) {
@@ -2551,6 +2689,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       if (!함께) yield { type: 'tool_start', name: 실행할것[0].name, args: 실행할것[0].args };
       else yield { type: 'tools_start', names: 실행할것.map((x) => x.name), count: 실행할것.length };
 
+      // 같이 읽는 파일들이 남은 창을 나눠 쓴다.
+      const 함께읽기 = 실행할것.filter((x) => x.name === 'Read').length;
+      const 남은자리 = 로컬연결인가(conn) ? 읽을자리(session) : null;
+      ctx.읽을토큰 = 남은자리 != null && 함께읽기 ? Math.floor(남은자리 / 함께읽기) : null;
+      // Read 와 같이 온 결과는 예전 상한을 쓴다. 남은 창은 Read 몫으로 이미 나눴다.
+      ctx.낼토큰 = 남은자리 != null && !함께읽기 && 실행할것.length ? Math.floor(남은자리 / 실행할것.length) : null;
+
       const 한개 = async (call) => {
         const t0 = Date.now();
         let result;
@@ -2589,7 +2734,11 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         if (call.name === 'Edit' && result.error) ctx.배움?.모델본것(conn.model, '편집실패');
         if (['Write', 'Append', 'Edit'].includes(call.name) && !result.error) ctx.배움?.파일본것?.(call.args?.file_path);
 
+        if (!result.error) 연속실패 = 0;
+        // 실패한 변경성 명령은 바뀐 것이 없으니 다시 해 볼 수 있다. 같은 실패의 되풀이는 아래 되풀이 판정이 잡는다.
+        if (call.name === 'Bash' && result.exitCode && 로컬연결인가(conn)) attempted.delete(String(call.args?.command ?? '').trim());
         if (result.error) {
+          연속실패 += 1;
           lastToolFailed = true;
           // 같은 도구가 같은 이유로 계속 실패하면 헛돌고 있는 것이다.
           // 오류의 첫 줄만 본다 — 뒤에 붙는 경로·숫자는 매번 달라도 원인은 같다.
@@ -2625,6 +2774,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 넘어가면, 부모는 아직 조사 중인데 시킴말만 바뀐다.
          */
         if (result.changed || result.여럿?.some((f) => f.ok) || result.바뀐것들?.length) {
+          파일바뀐수 += 1;
           이번턴본것.바꿈 = true;
         }
         /*
@@ -2726,7 +2876,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           }
         }
         if (!result.error) {
-          const 서명 = 서명만들기(call);
+          const 줄기록 = result.읽은줄 && !result.error ? 줄기록하기(result) : null;
+          const 서명 = 줄기록 ? `Read줄|${result.읽은것}` : 서명만들기(call);
           /*
            * 결과도 한 모양으로 맞춰 견준다. 여러 도구가 받은 경로를 답에 그대로
            * 되돌려 쓰므로, 자모가 쪼개진 경로로 부르면 결과까지 달라 보인다.
@@ -2739,7 +2890,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
            */
           const 같은꼴 = 날것.normalize('NFC');
           const 앞것 = 부른것.get(서명);
-          if (앞것 !== undefined && 앞것 === 같은꼴) {
+          if (줄기록 ? 줄기록.겹침 : (앞것 !== undefined && 앞것 === 같은꼴)) {
             session.본것?.본것('되풀이');
             /*
              * ── 되풀이와 「일하면서 장부를 다시 쓴 것」 은 다르다 ──────────
@@ -2765,14 +2916,21 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
              * 매번 새 파일이 움직였다는 뜻이고, 그건 일이 되고 있는 것이다.
              * 그래도 걸음 수 상한이 마지막 울타리로 남아 있다.
              */
-            const 그새한일 = 손댄파일.size > (반복진척.get(서명) ?? 0);
+            // 로컬은 같은 파일을 고쳐도 일한 것으로 친다. 고치고 다시 돌려 보는 것이 고치는 일의 모양이다. 부름마다 상한을 둬 영영 돌지는 않는다.
+            const 지금진척 = 진척값();
+            const 다시셈 = 되풀이다시셈.get(서명) ?? 0;
+            const 그새한일 = 지금진척 > (반복진척.get(서명) ?? 0) && (!로컬연결인가(conn) || 다시셈 < 로컬되풀이다시셈);
+            if (그새한일) 되풀이다시셈.set(서명, 다시셈 + 1);
             const n = 그새한일 ? 1 : (막힘.get(`반복|${서명}`) ?? 0) + 1;
             막힘.set(`반복|${서명}`, n);
-            반복진척.set(서명, 손댄파일.size);
-            실을것 = `앞에서 부른 ${call.name} 과 인자도 결과도 같습니다. 결과는 그대로라 다시 싣지 않습니다.`
-              + ' 같은 것을 또 부르지 말고 다음 일로 넘어가세요.';
-            // 로컬의 읽기는 더 봐 준다. 결과를 다시 안 실어 값이 거의 안 들고, 버릇 판정(2번)으로 끊으면 일이 통째로 죽는다.
-            const 되풀이한계 = 읽기전용.has(call.name) && 로컬연결인가(conn) ? Math.max(MAX_SAME, 5) : MAX_SAME;
+            반복진척.set(서명, 지금진척);
+            실을것 = 줄기록
+              ? 같은줄말(줄기록.a, 줄기록.b)
+              : `앞에서 부른 ${call.name} 과 인자도 결과도 같습니다. 결과는 그대로라 다시 싣지 않습니다.`
+                + ' 같은 것을 또 부르지 말고 다음 일로 넘어가세요.';
+            if (줄기록 && n >= 2) 같은줄재촉 = true;
+            // 로컬의 Read 는 끊는 것이 마지막 수단이다. 결과를 다시 안 실어 값이 거의 안 들고, 끊으면 일이 통째로 죽는다.
+            const 되풀이한계 = call.name === 'Read' && 로컬연결인가(conn) ? Math.max(MAX_SAME, 로컬읽기되풀이한계) : MAX_SAME;
             if (n + 1 >= 되풀이한계) 멈출까 = `${call.name} 을 같은 인자로 계속 부르고 있습니다 — 결과가 매번 같습니다`;
           } else {
             /*
@@ -2789,7 +2947,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
              */
             막힘.delete(`반복|${서명}`);
             부른것.set(서명, 같은꼴);
-            반복진척.set(서명, 손댄파일.size);
+            반복진척.set(서명, 진척값());
           }
         }
 
@@ -2894,14 +3052,25 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     // 읽는 것은 고장이 아니니 턴을 끊지는 않고 민다.
     if (읽기감시 && !손댄파일.size) {
       읽기만걸음 = msg.toolCalls.every((c) => 읽기전용.has(c.name)) ? 읽기만걸음 + 1 : 0;
-      if (읽기만걸음 && 읽기만걸음 % 읽기재촉걸음 === 0 && !멈출까) {
+      if (읽기만걸음 && (읽기만걸음 % 읽기재촉걸음 === 0 || 같은줄재촉) && !멈출까) {
         session.push({ role: 'user', content: 읽기재촉말(읽기만걸음) });
         yield { type: 'nudge', why: '읽기반복', 걸음: 읽기만걸음, text: '' };
       }
     }
 
+    같은줄재촉 = false;
+
     // 헛돌고 있으면 여기서 끊는다. 걸음 수가 남았다고 계속 두면
     // 컨텍스트만 채우고 사람은 기다리기만 한다.
+    if (로컬연결인가(conn) && 연속실패 >= 로컬연속실패한계) 멈출까 ??= `성공한 도구 없이 ${연속실패}번 연달아 실패했습니다`;
+    if (멈출까 && 로컬연결인가(conn) && 되살림 < 로컬되살림) {
+      // 판정이 틀려도 일이 죽지 않게 말을 먼저 해 본다. 세는 표는 안 지우므로 같은 것을 또 하면 곧바로 여기로 온다.
+      되살림 += 1;
+      session.push({ role: 'user', content: 막힘재촉말(멈출까) });
+      yield { type: 'note', text: '같은 일을 되풀이해서 다른 방법을 쓰라고 일렀습니다.' };
+      멈출까 = null;
+      continue;
+    }
     if (멈출까) {
       ctx.audit.blocked('같은 자리를 반복해 스스로 멈춤', 멈출까);
       yield { type: 'stuck', why: 멈출까, steps, files: 마무리(), 빠진: 빠뜨린것(마지막말()) };

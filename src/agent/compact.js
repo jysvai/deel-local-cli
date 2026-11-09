@@ -1025,6 +1025,16 @@ export function 비우면빌까(session, 쪽지글 = '') {
   return b.used - 비운뒤 >= b.total * 비워서날몫;
 }
 
+/** 로컬 Read 가 이번에 실어도 되는 토큰. 압축 문턱을 넘겨 실으면 방금 읽은 것이 다음 걸음에 지워져 또 읽게 된다. */
+export function 읽을자리(session) {
+  const b = session.breakdown();
+  // 창을 잰 적이 없으면 32768 이라는 짐작이라 믿고 크게 실을 수 없다. 창에 견준 옛 상한으로 돌아간다.
+  if (!(b.total > 0) || b.총잰것 === false) return null;
+  const 자리 = Math.floor(b.total * 비우기문턱 * 문턱배율(session) - b.used - 읽은뒤답몫);
+  return Number.isFinite(자리) ? Math.max(0, 자리) : null;
+}
+const 읽은뒤답몫 = 4000;
+
 /** 지금 비워야 하나: 70% 위이고, 비워서 자리가 나는 판. */
 export function 비울까(session, 쪽지글 = '') {
   const b = session.breakdown();
