@@ -238,6 +238,8 @@ export function 문턱배율(session) {
 }
 
 export function shouldFold(session, at = null) {
+  // 로컬 접기는 앞머리를 갈라 그 뒤를 전부 다시 읽게 한다. 장부 압축이 더 싸고 더 크게 줄인다.
+  if (at === null && !바깥인가(session?.conn?.base) && !session?.conn?.모델요약) return false;
   const b = session.breakdown();
   const 문턱 = at ?? (캐시가도나(session) ? FOLD_AT_캐시 : FOLD_AT) * 문턱배율(session);
   return b.total > 0 && b.used / b.total >= 문턱;
@@ -787,7 +789,7 @@ export function 장부요약(말들, 원문번호 = null) {
     const 글 = (글만(m) ?? '').trim();
     if (!글) continue;
     if (요약표식읽기(m)) 앞요약 = 한줄로(글.split('\n').slice(1).join('\n'), 1500);
-    else if (m.role === 'user') 사람말.push(글);
+    else if (m.role === 'user' && !글.startsWith('[deel] ')) 사람말.push(글);
     else if (m.role === 'assistant') 결론.push(한줄로(글, 400));
   }
   const 영어 = 지시말() === 'en';

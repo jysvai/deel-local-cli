@@ -5,13 +5,14 @@
  */
 import { tmpdir } from 'node:os';
 import { Session } from '../src/agent/session.js';
-import { compact, 장부요약 } from '../src/agent/compact.js';
+import { compact, shouldFold, 장부요약 } from '../src/agent/compact.js';
+import { makeScope } from '../src/safety/guard.js';
 import { assistantMessage, toolMessage } from '../src/backend/adapter.js';
 import { 출력줄이기, 머리꼬리, 로컬출력 } from '../src/tools/shrink.js';
 import { 언어잡기, 언어정하기, 지시말, 지시말정하기 } from '../src/i18n/index.js';
 import { 보관, 되찾기 } from '../src/agent/archive.js';
 import { foldToolResults } from '../src/agent/compact.js';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TOOLS } from '../src/tools/index.js';
 
@@ -79,6 +80,60 @@ console.log('한 번에 크게 접기');
   check('★★ 원문을 찾는 길을 알려 준다', /Recall/.test(String(r.summary)), String(r.summary).slice(-80));
   check('★ 막 시킨 말은 남는다', s.messages.at(-1).content === '마지막 요청');
   지시말정하기(null);
+}
+
+console.log('큰 파일 읽기');
+{
+  const 폴더 = mkdtempSync(join(tmpdir(), 'deel-bigread-'));
+  const 앱 = Array.from({ length: 1542 }, (_, n) => (n % 30 === 0 ? `function item${n + 1}(a, b) { // calculation` : `  const value${n + 1} = compute(a, b, ${n + 1}) + offset;`)).join('\n');
+  writeFileSync(join(폴더, 'app.js'), 앱);
+  writeFileSync(join(폴더, 'small.js'), 'const a = 1;\nconst b = 2;\n');
+  const 문맥 = (창, 로컬값 = true) => ({ scope: makeScope(폴더), seen: new Set(), 모델컨텍스트: 창, ...(로컬값 ? { 로컬: true } : {}) });
+  const 읽기 = (인자, 창 = 30464, 로컬값 = true) => TOOLS.Read.run({ file_path: join(폴더, 'app.js'), ...인자 }, 문맥(창, 로컬값));
+  const 번호들 = (글) => [...String(글).matchAll(/^\s*(\d+)\t/gm)].map((m) => Number(m[1]));
+  const 첫 = await 읽기({});
+  const 받은줄 = 번호들(첫.content);
+  check('★★★ 줄 중간에서 안 잘린다', !/자 잘림/.test(첫.content), String(첫.content).slice(-60));
+  check('★★★ 화면 줄 수가 모델이 받은 줄 수와 같다', 첫.summary.startsWith(`${받은줄.length}/1542`), `${첫.summary} · ${받은줄.length}`);
+  check('★★ 예전 88줄보다 훨씬 많이 준다', 받은줄.length > 250, String(받은줄.length));
+  check('★★★ 이어 읽을 자리를 정확히 말한다', Number(/Next: offset=(\d+)/.exec(첫.content)?.[1]) === 받은줄.at(-1) + 1, String(첫.content).slice(-80));
+  check('★★ 뒤쪽에 무엇이 있는지 지도를 준다', /item1501:1501/.test(첫.content), String(첫.content).slice(-120));
+  const 본것 = new Set(); let 자리 = 1; let 판수 = 0;
+  while (자리 && 판수 < 12) {
+    const r = await 읽기({ offset: 자리 });
+    for (const n of 번호들(r.content)) 본것.add(n);
+    자리 = Number(/Next: offset=(\d+)/.exec(r.content)?.[1] ?? 0);
+    판수 += 1;
+  }
+  check('★★★ 안내대로 읽으면 빈 줄 없이 끝까지 간다', 본것.size === 1542, `${본것.size}줄 · ${판수}판`);
+  const 둘째 = await 읽기({ offset: 400 });
+  check('★ 이어 읽을 때는 지도를 또 안 준다', !/Later in this file/.test(둘째.content));
+  const 작은것 = await TOOLS.Read.run({ file_path: join(폴더, 'small.js') }, 문맥(30464));
+  check('★ 다 들어가면 안내를 안 붙인다', !/Next: offset|Later in this file/.test(작은것.content));
+  const 바깥 = await 읽기({}, 30464, false);
+  check('★★ 바깥에는 로컬 안내를 안 붙인다', !/Next: offset|Later in this file/.test(바깥.content));
+  writeFileSync(join(폴더, 'doc.md'), [`![그림](data:image/png;base64,${'A'.repeat(25000)})`, ...Array.from({ length: 99 }, (_, i) => `문단 ${i + 2}`)].join('\n'));
+  const 그림글 = await TOOLS.Read.run({ file_path: join(폴더, 'doc.md') }, 문맥(8000, false));
+  check('★★★ 박힌 그림은 줄인 뒤에 재서 뒷줄을 안 잃는다', 번호들(그림글.content).length === 100, 그림글.summary);
+  writeFileSync(join(폴더, 'min.js'), [`const a = '${'x'.repeat(9000)}';`, ...Array.from({ length: 9 }, (_, i) => `const b${i} = ${i};`)].join('\n'));
+  const 긴줄 = await TOOLS.Read.run({ file_path: join(폴더, 'min.js') }, 문맥(8000));
+  check('★★★ 한 줄이 한도보다 길어도 이어 읽을 자리를 말한다', /Next: offset=2/.test(긴줄.content), String(긴줄.content).slice(-60));
+  const 바깥줄 = 번호들(바깥.content);
+  check('★★★ 바깥도 줄 중간에서 안 잘린다', !/자 잘림/.test(바깥.content), String(바깥.content).slice(-60));
+  check('★★★ 바깥도 화면 줄 수와 어디까지 읽었는지가 맞다', 바깥.summary.startsWith(`${바깥줄.length}/1542`) && String(바깥.content).includes(`전체 1542줄 중 ${바깥줄.at(-1)}줄까지`), `${바깥.summary} · ${String(바깥.content).slice(-30)}`);
+  rmSync(폴더, { recursive: true, force: true, maxRetries: 3 });
+}
+
+console.log('로컬 접기');
+{
+  const 찬 = (모델요약) => {
+    const 세션 = new Session({ ...로컬, ...(모델요약 ? { 모델요약: true } : {}) }, { root: tmpdir(), work: 'code' });
+    세션.messages = [{ role: 'user', content: '가'.repeat(120000) }];
+    return 세션;
+  };
+  check('★★★ 로컬 자동 압축은 앞머리를 가르는 접기를 안 한다', shouldFold(찬(false)) === false);
+  check('★ 모델 요약을 쓰는 연결은 전처럼 접는다', shouldFold(찬(true)) === true);
+  check('★ [deel] 재촉은 사람 말로 안 적는다', !/그만 읽어/.test(장부요약([{ role: 'user', content: '고쳐 줘' }, { role: 'user', content: '[deel] 그만 읽어' }])));
 }
 
 console.log('처음 시킨 말');

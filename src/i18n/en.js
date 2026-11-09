@@ -524,6 +524,7 @@ export const en = {
   'ev.hookNote': 'hook: {말}',
   'ev.hookBlock': 'A hook blocked this',
   'ev.nudgeRead': 'It was about to finish having only read things — pushed back once',
+  'ev.nudgeReadLoop': 'Only reading for {n} steps — told it to make the change now',
   'ev.textCalls': 'The model wrote {n} tool call(s) as text — running them: {이름}',
   'check.start': 'Completion check ({판}/{최대}) — {명령}',
   'check.clamped': '{칸} {준값} is over the limit — using {쓴값}',

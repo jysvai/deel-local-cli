@@ -559,6 +559,7 @@ export const ko = {
   'ev.hookNote': '훅: {말}',
   'ev.hookBlock': '훅이 막았습니다',
   'ev.nudgeRead': '읽기만 하고 끝내려고 해서 한 번 되밀었습니다',
+  'ev.nudgeReadLoop': '읽기만 {n}걸음 이어져서 이제 고치라고 밀었습니다',
   'ev.textCalls': '모델이 글로 적은 도구 부름 {n}개를 알아듣고 돌립니다 — {이름}',
   'check.start': '완료 검사 ({판}/{최대}) — {명령}',
   'check.clamped': '{칸} {준값} 은 상한을 넘어 {쓴값} 으로 줄였습니다',

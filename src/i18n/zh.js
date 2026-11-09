@@ -482,6 +482,7 @@ export const zh = {
   'ev.hookNote': '钩子：{말}',
   'ev.hookBlock': '钩子拦下了这一步',
   'ev.nudgeRead': '只看不动就要收尾，已经推回去一次',
+  'ev.nudgeReadLoop': '连续 {n} 步只在读取，已催促开始修改',
   'ev.textCalls': '模型以文字写出了 {n} 个工具调用，已识别并执行 — {이름}',
   'check.start': '完成检查 ({판}/{최대}) — {명령}',
   'check.clamped': '{칸} {준값} 超过上限，改用 {쓴값}',

@@ -160,6 +160,10 @@ function thinkFor(conn, level) {
  * 읽기 전용인 것은 맞지만 **사람의 차례를 쓰는 도구**라 줄을 세워야 한다.
  */
 const 읽기전용 = new Set(['Read', 'Outline', 'Glob', 'Grep', 'Def', 'Refs', 'Recall', 'Skill', 'WebFetch']);
+const 읽기재촉걸음 = 5;
+const 읽기재촉말 = (n) => (지시말() === 'en'
+  ? `[deel] ${n} steps of reading and nothing has changed. Stop reading now. Make the change with Edit or Write. If no change is needed, give the answer. If something blocks you, say what.`
+  : `[deel] ${n}걸음째 읽기만 했고 바뀐 것이 없습니다. 그만 읽고 지금 Edit 이나 Write 로 고치세요. 고칠 것이 없으면 답을 내고, 막힌 것이 있으면 무엇인지 말하세요.`);
 
 /*
  * 스크립트 **파일**을 돌리는 꼴 — `python fix.py` · `node update.mjs` · `sh gen.sh`.
@@ -854,6 +858,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 화면이 된다.
    */
   const 인사인가 = 인사말인가(userText);
+  const 읽기감시 = 로컬연결인가(conn) && !깊이 && !고쳐쓰기 && !인사인가 && 모드.tools.includes('Write');
+  let 읽기만걸음 = 0;
   const 되묻는말 = /무엇을\s*도와|무엇을\s*해\s*드릴|원하시는\s*(작업|것)|어떤\s*(작업|것)\s*(을|부터)|말씀해\s*주세요|알려\s*주세요|지시해\s*주세요|어떻게\s*할까요|해\s*드릴까요|진행할까요|what would you like|how can i (help|assist)|let me know (what|which|how)|shall i\b|would you like me to/i;
 
   /** 이번 답을 되밀까. 밀 이유를 돌려주고, 아니면 null. */
@@ -2765,7 +2771,9 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
             반복진척.set(서명, 손댄파일.size);
             실을것 = `앞에서 부른 ${call.name} 과 인자도 결과도 같습니다. 결과는 그대로라 다시 싣지 않습니다.`
               + ' 같은 것을 또 부르지 말고 다음 일로 넘어가세요.';
-            if (n + 1 >= MAX_SAME) 멈출까 = `${call.name} 을 같은 인자로 계속 부르고 있습니다 — 결과가 매번 같습니다`;
+            // 로컬의 읽기는 더 봐 준다. 결과를 다시 안 실어 값이 거의 안 들고, 버릇 판정(2번)으로 끊으면 일이 통째로 죽는다.
+            const 되풀이한계 = 읽기전용.has(call.name) && 로컬연결인가(conn) ? Math.max(MAX_SAME, 5) : MAX_SAME;
+            if (n + 1 >= 되풀이한계) 멈출까 = `${call.name} 을 같은 인자로 계속 부르고 있습니다 — 결과가 매번 같습니다`;
           } else {
             /*
              * 결과가 달라졌으면 **처음부터 다시 센다**.
@@ -2881,6 +2889,16 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     // 도구를 돌리다 끕어졌어도 모델이 한 말은 이미 대화에 들어가 있다. 그건 남는다.
     // 하위 작업이 중단으로 끝난 것도 여기서 나간다 — 남은 부름의 결과 자리는 위에서 다 채웠다.
     if (signal?.aborted || 하위끊김) { yield { type: 'aborted', steps, kept: true }; return; }
+
+    // 서로 다른 조각을 읽으면 위 되풀이 표에 안 걸린다. 생각을 끈 로컬 모델은 이러다 고치지 않고 창만 채운다.
+    // 읽는 것은 고장이 아니니 턴을 끊지는 않고 민다.
+    if (읽기감시 && !손댄파일.size) {
+      읽기만걸음 = msg.toolCalls.every((c) => 읽기전용.has(c.name)) ? 읽기만걸음 + 1 : 0;
+      if (읽기만걸음 && 읽기만걸음 % 읽기재촉걸음 === 0 && !멈출까) {
+        session.push({ role: 'user', content: 읽기재촉말(읽기만걸음) });
+        yield { type: 'nudge', why: '읽기반복', 걸음: 읽기만걸음, text: '' };
+      }
+    }
 
     // 헛돌고 있으면 여기서 끊는다. 걸음 수가 남았다고 계속 두면
     // 컨텍스트만 채우고 사람은 기다리기만 한다.

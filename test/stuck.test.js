@@ -217,7 +217,7 @@ trace('1.5-읽기-되풀이');
   const 부른수 = evs.filter((e) => e.type === 'tool' && e.name === 'Read').length;
   check('★ 안 바뀐 파일만 되풀이해 읽으면 멈춘다', evs.some((e) => e.type === 'stuck'),
     evs.map((e) => e.type).slice(-3).join(','));
-  check('★ 되풀이를 한 바퀴 늦게 잡지 않는다 (Read 는 딱 3번)', 부른수 === 3,
+  check('★ 되풀이를 한 바퀴 늦게 잡지 않는다 (로컬 Read 는 딱 5번)', 부른수 === 5,
     `${부른수}번 읽었다`);
 }
 
@@ -255,7 +255,7 @@ trace('1.6-접힌뒤에는-되풀이가-아니다');
   차례 = 0;
   // 창을 24k 로 잡는다. 이 장면은 「읽은 것이 쌓여 접기 문턱을 넘는다」 에 맞춰 재 놓은 것인데, 로컬은 앞머리(고정 몫)가
   // 짧은 판으로 나가 32k 창에서는 같은 분량이 문턱 아래에 남는다(budget.js 의 프롬프트창). 창을 좁혀 같은 장면을 만든다.
-  const s = new Session({ ...conn(), ctx: 24000 }, { root, think: 'off', maxSteps: 24 });
+  const s = new Session({ ...conn(), ctx: 24000, 모델요약: true }, { root, think: 'off', maxSteps: 24 });
   const evs = [];
   // 대화에 **실제로 실린 글**을 걸음마다 붙잡아 둔다. 뒤에서 또 접히면
   // 끝나고 나서 뒤져 봐야 이미 없다.

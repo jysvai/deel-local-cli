@@ -273,7 +273,7 @@ trace('3b-같은것을또부름');
   check('두 번째부터는 같은 것이라고 말해 준다', 되풀이알림 >= 1, JSON.stringify(도구답.slice(0, 3)).slice(0, 180));
 
   // 같은 결과를 컨텍스트에 여러 벌 쌓지 않는다.
-  const 긴답 = 도구답.filter((t) => t.length > 40).length;
+  const 긴답 = 도구답.filter((t) => t.length > 40 && !/앞에서/.test(t)).length;
   check('같은 결과를 여러 벌 안 쌓는다', 긴답 <= 2, `긴 답 ${긴답}개 / 전체 ${도구답.length}개`);
 }
 

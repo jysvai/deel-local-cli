@@ -17,7 +17,7 @@ import { WEB_FETCH_TOOL } from './webfetch.js';
 import { TODO_TOOL } from './todo.js';
 import { TASK_TOOL } from './task.js';
 import { 고를말 } from '../agent/agents.js';
-import { OUTLINE_TOOL } from './outline.js';
+import { OUTLINE_TOOL, 뼈대뽑기 } from './outline.js';
 import { VERIFY_TOOL, 한파일문법 } from './verify.js';
 import { DEF_TOOL, REFS_TOOL } from './lsp.js';
 import { 편집후진단, 붙이기 as 진단붙이기, 데우기 } from '../lsp/diag.js';
@@ -34,7 +34,7 @@ import { 물음검사 } from '../agent/askcheck.js';
 import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽은말, pdf는못고침, 한쪽도못읽음말 } from './pdf.js';
 import { isFigPath, readFig, summarize as figSummary, fig는못고침 } from './fig.js';
 import { diffLines } from '../ui/diff.js';
-import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이, 한번에낼글자수 } from '../agent/budget.js';
+import { 읽을줄수, 읽을글자수, 찾을개수, 찾을줄수, 설명길이, 한번에낼글자수 } from '../agent/budget.js';
 import { 로컬출력 } from './shrink.js';
 import { 도구설명EN } from './desc.en.js';
 import { 그림인가, 그림읽기, 크기말, 기본한도 } from '../backend/vision.js';
@@ -106,6 +106,27 @@ function 바뀐자리(before, after) {
 function clip(s, n = MAX_OUT) {
   const t = String(s);
   return t.length > n ? t.slice(0, n) + `\n… (${t.length - n}자 잘림)` : t;
+}
+
+/*
+ * 글자 상한에 맞춰 줄 단위로 끊는다.
+ *
+ * 줄 상한만 믿고 clip 에 맡기면 줄 중간에서 잘리고 끝의 「어디까지」 안내도 같이 잘린다.
+ * 화면에는 357줄이라 떠도 모델은 88줄만 받고, 어디가 비었는지 몰라 조각조각 더듬었다.
+ */
+function 글자맞춤(lines, start, count, 상한) {
+  let 합 = 0;
+  for (let i = 0; i < count && start + i < lines.length; i += 1) {
+    합 += lines[start + i].length + 8;
+    if (합 > 상한) return Math.max(1, i);
+  }
+  return count;
+}
+
+/** 안 실린 뒤쪽에 무엇이 있는지. 찾아 더듬는 걸음을 줄인다. */
+function 파일지도(글, 경로, 실린끝) {
+  const 뒤 = 뼈대뽑기(글, extname(경로)).항목.filter((x) => x.줄 > 실린끝).slice(0, 60).map((x) => `${x.이름}:${x.줄}`);
+  return 뒤.length ? clip(`\nLater in this file (name:line): ${뒤.join(' ')}`, 1500) : '';
 }
 
 /**
@@ -2276,7 +2297,10 @@ export const TOOLS = {
       if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
       const start = Math.max(0, (시작값.값 ?? 1) - 1);
       const 줄상한 = 읽을줄수(ctx.모델컨텍스트);
-      const count = Math.min(몇줄값.값 ?? 줄상한, 줄상한);
+      const 글자상한 = ctx.로컬 ? 읽을글자수(ctx.모델컨텍스트) : 실을만큼(ctx);
+      const 줄한도 = Math.min(몇줄값.값 ?? 줄상한, 줄상한);
+      // 박힌 그림은 줄여서 싣는다. 재는 것도 줄인 뒤의 길이로 잰다.
+      const count = 글자맞춤(붙박이그림줄이기(lines.slice(start, start + 줄한도)).줄들, 0, 줄한도, 글자상한);
       const slice = lines.slice(start, start + count);
       const 줄인것 = 붙박이그림줄이기(slice);
       const body = 줄인것.줄들.map((l, i) => `${String(start + i + 1).padStart(6)}\t${l}`).join('\n')
@@ -2285,7 +2309,11 @@ export const TOOLS = {
           ? `(파일 끝을 지났습니다 — 이 파일은 전체 ${lines.length}줄인데 ${start + 1}번째 줄부터 달라고 했습니다.`
             + ` offset 을 ${lines.length} 이하로 주세요.)`
           : '');
-      const more = lines.length > start + count ? `\n… 전체 ${lines.length}줄 중 ${start + count}줄까지` : '';
+      const 남았나 = lines.length > start + count;
+      const more = !남았나 ? ''
+        : ctx.로컬
+          ? `\n… ${start + count}/${lines.length} lines. Next: offset=${start + count + 1}${start === 0 ? 파일지도(text, abs, count) : ''}`
+          : `\n… 전체 ${lines.length}줄 중 ${start + count}줄까지`;
       ctx.seen.add(abs);
       const 별난인코딩 = 읽음.encoding !== 'utf-8';
       /*
@@ -2303,7 +2331,8 @@ export const TOOLS = {
       const 준줄수 = slice.length;
       const 다못줌 = start + count < lines.length || start > 0;
       const 통째로 = body + more + 줄인것.알림;
-      const 실린것 = clip(통째로, 실을만큼(ctx));
+      // 안내는 본문 뒤에 따로 붙인다. 한 줄이 한도를 넘어도 이어 읽을 자리는 남아야 한다.
+      const 실린것 = clip(body, 글자상한) + more + 줄인것.알림;
       return {
         content: 실린것,
         /*

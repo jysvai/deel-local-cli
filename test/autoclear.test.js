@@ -542,9 +542,10 @@ trace('12-로컬-문턱');
   check('★★ 로컬 65k 는 39k 에서는 안 한다', !shouldCompact(찬세션(로컬65, 39000)), '');
   check('at 을 직접 주면 배율을 안 건다', !shouldCompact(찬세션(로컬65, 40000), 0.8) && shouldCompact(찬세션(로컬65, 52429), 0.8), '');
 
-  // 접기 문턱. 첫 두 부름 동안은 캐시가 돈다고 치므로 0.72 쪽이다.
-  check('★ 로컬 65k 접기(캐시 돎)는 36k 근처', shouldFold(찬세션(로컬65, 36000)) && !shouldFold(찬세션(로컬65, 35500)), '');
-  const 캐시없음 = (토큰수) => { const s = 찬세션(로컬65, 토큰수); s.usage.calls = 5; s.usage.cacheRead = 0; return s; };
+  // 접기 문턱. 첫 두 부름 동안은 캐시가 돈다고 치므로 0.72 쪽이다. 로컬의 자동 압축은 접지 않으니 모델 요약 쪽으로 잰다.
+  const 요약쪽 = { ...로컬65, 모델요약: true };
+  check('★ 로컬 65k 접기(캐시 돎)는 36k 근처', shouldFold(찬세션(요약쪽, 36000)) && !shouldFold(찬세션(요약쪽, 35500)), '');
+  const 캐시없음 = (토큰수) => { const s = 찬세션(요약쪽, 토큰수); s.usage.calls = 5; s.usage.cacheRead = 0; return s; };
   check('★ 로컬 65k 접기(캐시 안 돎)도 당긴다', shouldFold(캐시없음(27600)) && !shouldFold(캐시없음(27000)), '');
   check('at 을 직접 주면 접기에도 배율을 안 건다', !shouldFold(찬세션(로컬65, 36000), 0.72), '');
 

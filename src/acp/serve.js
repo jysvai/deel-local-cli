@@ -1001,7 +1001,7 @@ export async function acp(opts = {}) {
             break;
 
           case 'nudge':
-            말하기(`\n\n_(${ev.why === '요청누락'
+            말하기(`\n\n_(${ev.why === '읽기반복' ? 옮긴말('ev.nudgeReadLoop', { n: ev.걸음 }) : ev.why === '요청누락'
               ? 옮긴말('ev.nudgeMissed', { n: ev.빠진?.length ?? 0 })
               : 옮긴말('ev.nudgeRead')})_\n\n`);
             break;

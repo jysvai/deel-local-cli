@@ -754,7 +754,7 @@ await new Promise((r) => setImmediate(r));
    */
   {
     const 굴리며세기 = () => {
-      const x = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 16000, kind: 'openai' }, { root: process.cwd() });
+      const x = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 16000, kind: 'openai', 모델요약: true }, { root: process.cwd() });
       /*
        * **캐시가 안 도는 연결**로 못 박는다 (agent/compact.js 의 캐시가도나).
        *
@@ -809,7 +809,7 @@ await new Promise((r) => setImmediate(r));
    * 미루는 동안 대화는 한 글자도 안 잃는다 — 그게 이 숫자의 뜻이다.
    */
   const 굴려보기 = (접나) => {
-    const x = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 16000, kind: 'openai' }, { root: process.cwd() });
+    const x = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 16000, kind: 'openai', 모델요약: true }, { root: process.cwd() });
     x.push({ role: 'user', content: '이 폴더 전체를 훑고 로그 형식을 통일해줘' });
     for (let 턴 = 1; 턴 <= 200; 턴++) {
       x.push(호출(`t${턴}`, `src/파일${턴}.js`));

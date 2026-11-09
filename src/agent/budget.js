@@ -84,6 +84,11 @@ export function 읽을줄수(ctx) {
   return 사이(k(ctx) * 12, 200, 4000);
 }
 
+/** 로컬 Read 가 한 번에 실을 글자 수. 걸음 하나가 비싸서 다른 도구보다 크게 준다. */
+export function 읽을글자수(ctx) {
+  return 사이(k(ctx) * 480, 4000, 30000);
+}
+
 /** Glob 이 돌려줄 파일 개수. 목록은 한 줄에 한 개라 줄 수와 성격이 같다. */
 export function 찾을개수(ctx) {
   return 사이(k(ctx) * 6, 50, 1000);

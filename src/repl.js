@@ -3286,7 +3286,9 @@ export async function chatLoop(opts = {}) {
             clearThinking();
             if (streamed) { 답비우기(); say(''); streamed = false; }
             say('');
-            say(ev.why === '요청누락'
+            say(ev.why === '읽기반복'
+              ? `  ${c.gray(`↺ ${옮긴말('ev.nudgeReadLoop', { n: ev.걸음 })}`)}`
+              : ev.why === '요청누락'
               ? `  ${c.gray(`↺ 시킨 것 ${ev.빠진?.length ?? 0}가지를 빼놓고 끝내려고 해서 되밀었습니다`)}`
               : `  ${c.gray('↺ 읽기만 하고 끝내려고 해서 한 번 되밀었습니다')}`);
             break;

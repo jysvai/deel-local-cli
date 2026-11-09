@@ -63,9 +63,9 @@ function 펼치기(몸) {
 
 const 공통 = (a, b) => { let i = 0; const n = Math.min(a.length, b.length); while (i < n && a[i] === b[i]) i++; return i; };
 
-function 가짜서버({ 묶음ms = 1, 도구걸음 = 0 } = {}) {
+function 가짜서버({ 묶음ms = 1, 도구걸음 = 0, 읽기인자 = null } = {}) {
   const 판 = {
-    캐시: '', 점: [], 줄: [], 기록: [], 묶음ms, 도구걸음, 남은도구: 0, 거절: null,
+    캐시: '', 점: [], 줄: [], 기록: [], 묶음ms, 도구걸음, 남은도구: 0, 거절: null, 읽기인자,
     비우기() { this.캐시 = ''; this.점 = []; this.기록 = []; this.남은도구 = this.도구걸음; },
   };
   const 찍기 = (n) => {
@@ -115,7 +115,7 @@ function 가짜서버({ 묶음ms = 1, 도구걸음 = 0 } = {}) {
       return;
     }
     const 부름 = 판.남은도구 > 0
-      ? [{ index: 0, id: `c${판.남은도구}`, type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: 'a.txt' }) } }]
+      ? [{ index: 0, id: `c${판.남은도구}`, type: 'function', function: { name: 'Read', arguments: JSON.stringify(판.읽기인자?.(판.남은도구) ?? { file_path: 'a.txt' }) } }]
       : null;
     if (부름) 판.남은도구 -= 1;
     // 만든 것이 캐시에 붙는다 — 생각 글이 들어 있어서 다음 프롬프트와는 여기서 갈린다.
@@ -172,6 +172,35 @@ console.log('\n걸음마다 앞머리를 다시 읽지 않는다');
   check('★★★ 뒤 걸음이 다시 읽는 양은 새로 붙은 것 + 묶음 하나 안팎이다',
     뒤걸음.every((x, i) => x.읽음 <= (x.전체 - 걸음[i].전체) + UB + 64), JSON.stringify(뒤걸음.map((x) => x.읽음)));
   await 닫기();
+}
+
+console.log('\n읽기만 이어지면 터미널이 끊는다');
+{
+  writeFileSync(join(root, 'b.txt'), Array.from({ length: 300 }, (_, i) => `줄 ${i}`).join('\n'));
+  const 조각 = (n) => ({ file_path: 'b.txt', offset: n * 10 });
+  const 돌리기 = async (work, { 도구걸음 = 14, 읽기인자 = 조각, 카드 = null } = {}) => {
+    const 서버 = await 가짜서버({ 도구걸음, 읽기인자 });
+    서버.판.비우기();
+    const s = new Session(연결(서버.base), { root, work });
+    const 사건 = [];
+    for await (const ev of run(s, { ...문맥(), ...(카드 ? { 카드 } : {}) }, 'b.txt 고쳐줘')) 사건.push(ev);
+    await 서버.닫기();
+    return { s, 사건, 부름: 서버.판.기록.filter((x) => !x.미리).length };
+  };
+  const 고침 = await 돌리기('code');
+  const 민것 = 고침.사건.find((e) => e.type === 'nudge' && e.why === '읽기반복');
+  check('★★★ 다섯 걸음 읽기만 하면 고치라고 민다', 민것?.걸음 === 5, JSON.stringify(고침.사건.map((e) => e.type).slice(0, 12)));
+  check('★★ 미는 말은 대화 끝에 붙어 앞머리를 안 건드린다', 고침.s.messages.some((m) => m.role === 'user' && String(m.content).startsWith('[deel] ')));
+  check('★★★ 다른 줄을 이어 읽는 것은 고장이 아니다 — 턴을 안 끊는다', !고침.사건.some((e) => e.type === 'stuck') && 고침.부름 === 15, `${고침.부름}번`);
+  check('★★ 계속 읽기만 하면 다섯 걸음마다 다시 민다', 고침.사건.filter((e) => e.why === '읽기반복').map((e) => e.걸음).join() === '5,10');
+  const 같은것 = await 돌리기('code', { 도구걸음: 3, 읽기인자: null });
+  check('★★★ 같은 줄을 세 번 읽어도 안 끊는다', !같은것.사건.some((e) => e.type === 'stuck'), JSON.stringify(같은것.사건.filter((e) => e.type === 'stuck')));
+  const 버릇 = await 돌리기('code', { 도구걸음: 2, 읽기인자: null, 카드: { 조정: { 같은것한계: 2 } } });
+  check('★★★ 되풀이 버릇이 잡힌 모델도 읽기 한 번 겹쳤다고 안 끊는다', !버릇.사건.some((e) => e.type === 'stuck'), JSON.stringify(버릇.사건.filter((e) => e.type === 'stuck')));
+  const 끝없음 = await 돌리기('code', { 도구걸음: 12, 읽기인자: null });
+  check('★★ 완전히 같은 읽기를 끝없이 하면 그때는 끊는다', 끝없음.사건.some((e) => e.type === 'stuck'));
+  const 설명 = await 돌리기('ask');
+  check('★★ 고치는 모드가 아니면 읽기만 해도 안 민다', !설명.사건.some((e) => e.why === '읽기반복'));
 }
 
 console.log('\n턴이 바뀌어도 강도가 안 움직인다');
