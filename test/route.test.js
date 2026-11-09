@@ -177,7 +177,9 @@ trace('4-세션배선');
 
 // ── 골라 넣은 모드가 실제로 쓰이는가 ────────────────────────────────────
 const root = mkdtempSync(join(tmpdir(), 'deel-route-'));
-const conn = { kind: 'openai', base: 'http://127.0.0.1:1/v1', auth: 'none', key: null, model: 'x', ctx: 32768 };
+// 바깥 주소로 둔다 — 이 아래는 모드 글(긴 판)이 시스템 프롬프트에 실리는 것을 본다. 로컬은 창이 커도 짧은 판이
+// 나가므로(budget.js 의 프롬프트창, test/leanprompt.test.js) 로컬로 두면 긴 판의 문구를 못 찾는다. 요청은 안 나간다.
+const conn = { kind: 'openai', base: 'https://api.example.com/v1', auth: 'none', key: null, model: 'x', ctx: 32768 };
 
 {
   const s = new Session(conn, { root });
