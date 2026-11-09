@@ -14,7 +14,7 @@
 //
 // ── 왜 tools/check-docs.mjs 가 아니라 여기인가 ──────────────────────────
 //
-// `package.json` 의 `prepublishOnly` 는 `npm run check && npm test` 다.
+// 발행 작업(publish.yml)은 `npm run check` 뒤에 `npm test` 를 돌린다.
 // `docs` 는 거기 없다. 문서 검사에 넣으면 배포 길에서 안 돌고, 그러면 이
 // 못은 심사서의 「123항목」 이 낡던 것과 똑같은 방식으로 낡는다.
 import { readFileSync } from 'node:fs';

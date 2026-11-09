@@ -13,6 +13,9 @@ import { estimateTokens, safeCut, safeHead, 못박을것 } from './session.js';
 import { wasCut } from './effort.js';
 import { 그림장수, 글만, 그림한장토큰 } from '../backend/vision.js';
 import { 바깥인가 } from '../safety/runmode.js';
+import { 지시말 } from '../i18n/index.js';
+import { 보관 } from './archive.js';
+import { 로컬연결인가 } from './budget.js';
 
 // 몇 %에서 접기 시작할지. 접고 나서 다시 금방 차면 아무 소용이 없으니 넉넉히 비운다.
 export const COMPACT_AT = 0.8;
@@ -430,8 +433,9 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
     const 곳 = 어디(args);
     const 줄수 = 글.split('\n').length;
     const 전 = estimateTokens(글);
+    const 원문번호 = 로컬연결인가(session.conn) ? 보관(session.root, 글) : null;
     const 접은글 = `${접힘표} ${도구이름}${곳 ? `(${곳})` : ''} — ${줄수}줄. `
-      + '자리를 비우려고 내용을 접었습니다. 필요하면 다시 읽으세요.';
+      + (원문번호 !== null ? `Recall id=${원문번호}` : '자리를 비우려고 내용을 접었습니다. 필요하면 다시 읽으세요.');
     /*
      * 글만 갈아 끼운다 — 메시지를 통째로 덮으면 짝이 깨진다.
      *
@@ -594,13 +598,13 @@ function 크기로자른자리(messages, 바닥, 상한) {
  * 접을 구간과 남길 구간을 나눈다.
  * @param {number} [창]  토큰. 주면 꼬리·머리를 크기로도 묶는다. 0 이면 개수로만 정한다.
  */
-export function split(messages, { keepHead = KEEP_HEAD, tailRatio = KEEP_TAIL_RATIO, 창 = 0 } = {}) {
+export function split(messages, { keepHead = KEEP_HEAD, tailRatio = KEEP_TAIL_RATIO, 창 = 0, 꼬리 = 꼬리몫, 머리 = 머리몫 } = {}) {
   const n = messages.length;
   const wantTail = Math.max(4, Math.floor(n * tailRatio));
   let cut = safeCut(messages, n - wantTail);
-  if (창 > 0 && n > 0) cut = Math.max(cut, 크기로자른자리(messages, cut, Math.floor(창 * 꼬리몫)));
+  if (창 > 0 && n > 0) cut = Math.max(cut, 크기로자른자리(messages, cut, Math.floor(창 * 꼬리)));
   let head = safeHead(messages, Math.min(keepHead, cut));
-  if (창 > 0 && messages.slice(0, head).reduce((a, m) => a + 말토큰(m), 0) > 창 * 머리몫) head = 0;
+  if (창 > 0 && messages.slice(0, head).reduce((a, m) => a + 말토큰(m), 0) > 창 * 머리) head = 0;
   if (cut <= head) return null;                    // 접을 것이 없다
   const fold = messages.slice(head, cut);
   if (fold.length < 4) return null;
@@ -746,6 +750,65 @@ export function 마지막요약(messages) {
 
 const 요약시스템 = '너는 대화를 요약한다. 요약 외에 다른 말을 하지 않는다.';
 
+const 한줄로 = (글, 길이) => {
+  const s = String(글 ?? '').replace(/\s+/g, ' ').trim();
+  return s.length > 길이 ? `${s.slice(0, 길이)}…` : s;
+};
+const 오류같다 = /^\s*(오류|실패|error\b|failed\b|✗)|종료\s*코드\s*[1-9]|exit code\s*[1-9]/i;
+
+/**
+ * 모델을 안 부르고 터미널이 만드는 요약 (로컬 자동 압축).
+ *
+ * 로컬에서 요약 한 번은 슬롯의 앞머리를 갈아 끼우고 1,200토큰을 새로 뽑는다 — 5 t/s 면 4분이다.
+ * 접을 대화의 사실(시킨 말 · 읽고 고친 파일 · 돌린 명령 · 오류 · 마지막 결론)은 기록에 이미 있다.
+ * 터미널이 옮겨 적으면 토큰이 0 이고 시스템 프롬프트 몫의 캐시도 안 갈린다.
+ */
+const 원문글 = (말들) => 말들.map((m) => {
+  const 결과 = 도구결과인가(m);
+  const 글 = 결과 ? 결과들(m).map((x) => x.글).join('\n') : (글만(m) ?? '');
+  return [`--- ${결과 ? 'tool' : m.role}`, ...부른것들(m).map((c) => `[${c.name}] ${JSON.stringify(c.args ?? {})}`), 글].filter(Boolean).join('\n');
+}).join('\n');
+
+export function 장부요약(말들, 원문번호 = null) {
+  const 사람말 = []; const 결론 = []; const 명령 = []; const 오류 = [];
+  const 읽은 = new Set(); const 고친 = new Map();
+  let 앞요약 = '';
+  for (const m of 말들) {
+    if (도구결과인가(m)) {
+      for (const x of 결과들(m)) if (오류같다.test(x.글 ?? '')) 오류.push(한줄로(x.글, 160));
+      continue;
+    }
+    for (const c of 부른것들(m)) {
+      const 경로 = c.args?.file_path ?? c.args?.path ?? c.args?.from;
+      if (c.name === 'Read' && 경로) 읽은.add(경로);
+      else if (['Write', 'Append', 'Edit', 'Move'].includes(c.name) && 경로) 고친.set(경로, (고친.get(경로) ?? 0) + 1);
+      else if (c.name === 'Bash' && c.args?.command) 명령.push(한줄로(c.args.command, 120));
+    }
+    const 글 = (글만(m) ?? '').trim();
+    if (!글) continue;
+    if (요약표식읽기(m)) 앞요약 = 한줄로(글.split('\n').slice(1).join('\n'), 1500);
+    else if (m.role === 'user') 사람말.push(한줄로(글, 300));
+    else if (m.role === 'assistant') 결론.push(한줄로(글, 400));
+  }
+  const 영어 = 지시말() === 'en';
+  const 칸 = (제목, 줄들) => (줄들.length ? [`## ${제목}`, ...줄들.map((x) => `- ${x}`)] : []);
+  const 본문 = [
+    ...(앞요약 ? [영어 ? '## Earlier summary' : '## 더 앞의 요약', 앞요약] : []),
+    ...칸(영어 ? 'What the user asked' : '사용자가 시킨 것', 사람말.slice(-8)),
+    ...칸(영어 ? 'Files edited' : '고친 파일', [...고친].slice(-30).map(([p, n]) => `${p} (${n}${영어 ? 'x' : '번'})`)),
+    ...칸(영어 ? 'Files read' : '읽은 파일', [...읽은].slice(-30)),
+    ...칸(영어 ? 'Commands run' : '돌린 명령', 명령.slice(-8)),
+    ...칸(영어 ? 'Errors seen' : '났던 오류', 오류.slice(-5)),
+    ...칸(영어 ? 'Last replies' : '마지막에 한 말', 결론.slice(-3)),
+  ];
+  if (!본문.length) return '';
+  본문.push(원문번호 !== null
+    ? (영어 ? `Full originals, nothing lost: Recall id=${원문번호}` : `원문 전체: Recall id=${원문번호}`)
+    : (영어 ? 'The originals are in the session log. Use Recall with tools:true to get one back.'
+      : '원문은 세션 기록에 있다. 필요하면 Recall 에 tools:true 를 주어 찾는다.'));
+  return 본문.join('\n');
+}
+
 /**
  * 실제로 접는다.
  * @param {Function} [부르기]  모델을 부르는 함수. 검사가 가짜를 넣는 자리다.
@@ -754,7 +817,10 @@ const 요약시스템 = '너는 대화를 요약한다. 요약 외에 다른 말
 export async function compact(session, { auto = false, signal = null, onBackoff = null, 부르기 = chat } = {}) {
   const 잰것 = session.breakdown();
   const before = 잰것.used;
-  const parts = split(session.messages, { 창: 잰것.total });
+  // 사람이 /compact 로 시킨 요약과 바깥 연결은 여태처럼 모델이 쓴다.
+  const 장부로 = auto && !바깥인가(session.conn.base) && !session.conn.모델요약;
+  // 터미널이 쓰는 요약은 크게 한 번에 자른다. 사실은 장부에, 원문은 세션 기록에 남고, 찔끔 자르면 캐시만 깨진다.
+  const parts = split(session.messages, { 창: 잰것.total, ...(장부로 ? { 꼬리: 0.08, 머리: 0.02 } : {}) });
   if (!parts) return { ok: false, why: '접을 만큼 쌓이지 않았습니다', folded: 0, before, after: before };
 
   /*
@@ -771,8 +837,11 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
   // 서버가 잠깐 막아 다시 부른 횟수. 알림은 부르는 쪽(onBackoff)이 화면에 내고, 셈은 여기서 한다.
   let 다시 = 0;
   const 셈하기 = (n) => { session.usage.retries = (session.usage.retries ?? 0) + Math.max(0, n); };
+  const 요약받기 = 장부로
+    ? async () => ({ content: 장부요약(parts.fold, 보관(session.root, 원문글(parts.fold))), finish_reason: 'stop' })
+    : 부르기;
   try {
-    const r = await 부르기(session.conn, {
+    const r = await 요약받기(session.conn, {
       messages: [
         { role: 'system', content: 요약시스템 },
         { role: 'user', content: `${요약지시}\n\n----- 대화 -----\n${text}` },

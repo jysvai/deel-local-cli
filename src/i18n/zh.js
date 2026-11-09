@@ -587,6 +587,8 @@ export const zh = {
   'report.col.times': '次',
   'cost.toolMs': '工具耗时',
   'cost.speed': '生成速度',
+  'cost.serverCache': '缓存复用',
+  'cost.drafts': '推测命中',
   'cost.elapsed': '已用时',
   'cost.money': '费用',
   // ── 缓存 · 线路卡 · 自动强度 ──────────────────────────────────────────

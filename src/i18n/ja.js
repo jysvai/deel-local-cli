@@ -587,6 +587,8 @@ export const ja = {
   'report.col.times': '回',
   'cost.toolMs': 'ツール時間',
   'cost.speed': '生成速度',
+  'cost.serverCache': 'キャッシュ再利用',
+  'cost.drafts': '推測的中',
   'cost.elapsed': '経過',
   'cost.money': '料金',
   // ── キャッシュ・配線カード・自動強度 ──────────────────────────────────

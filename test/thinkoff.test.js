@@ -67,5 +67,28 @@ console.log('거절하는 서버');
   check('배운 카드에는 안 싣는다', !('chat_template_kwargs' in 몸('off', { ...카드, 템플릿끄기: false })));
 }
 
+console.log('한 답에 도구 여럿');
+{
+  const 도구몸 = (카드, tools = [{ type: 'function', function: { name: 'Read', parameters: {} } }]) =>
+    buildBody('openai', { model: 'm', messages: [{ role: 'user', content: 'x' }], tools, stream: true, 카드 });
+  check('★★ 로컬은 parallel_tool_calls 를 켠다', 도구몸(기본카드(로컬)).parallel_tool_calls === true);
+  check('★ 바깥은 안 싣는다', !('parallel_tool_calls' in 도구몸(기본카드(바깥))));
+  check('도구가 없으면 안 싣는다', !('parallel_tool_calls' in 도구몸(기본카드(로컬), [])));
+  const 고침 = 배울전선('Unrecognized request argument supplied: parallel_tool_calls', 'openai');
+  check('거절을 알아듣는다', 고침?.무엇 === '병렬도구' && 고침?.값 === false, JSON.stringify(고침));
+  check('저장되는 칸이다', 카드칸들.includes('병렬도구'));
+  check('배운 카드에는 안 싣는다', !('parallel_tool_calls' in 도구몸({ ...기본카드(로컬), 병렬도구: false })));
+}
+
+console.log('생각을 끈 Qwen 의 샘플링');
+{
+  const qwen = (think, model = 'qwen3.8-flash-next') =>
+    buildBody('openai', { model, messages: [{ role: 'user', content: 'x' }], stream: true, think });
+  check('★★ 끄면 권장값을 싣는다', qwen('off').temperature === 0.7 && qwen('off').top_p === 0.8, JSON.stringify(qwen('off')));
+  check('★ presence_penalty 는 안 싣는다 — 코드는 같은 토큰을 되풀이한다', !('presence_penalty' in qwen('off')));
+  check('★ 켜면 서버 기본값을 그대로 둔다', !('temperature' in qwen('medium')) && !('top_p' in qwen('medium')));
+  check('Qwen 이 아니면 건드리지 않는다', !('temperature' in qwen('off', 'gemma-4')));
+}
+
 console.log(`\n${실패 ? R : G}통과 ${통과} · 실패 ${실패}${X}`);
 process.exitCode = 실패 ? 1 : 0;

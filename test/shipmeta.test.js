@@ -136,9 +136,12 @@ trace('4-담기는것');
   // 검사와 연장은 안 담는다 — 받는 사람에게 필요 없고, 담으면 크기만 는다.
   check('★ 검사·연장은 안 담는다', !files.includes('test') && !files.includes('tools'),
     files.join(', '));
-  check('★ prepublishOnly 가 검사를 돌린다',
-    /npm run check/.test(pkg.scripts?.prepublishOnly ?? '')
-    && /npm test/.test(pkg.scripts?.prepublishOnly ?? ''), pkg.scripts?.prepublishOnly ?? '');
+  // 검사는 발행 작업이 돌린다. prepublishOnly 까지 있으면 배포 한 번에 전체 검사가 두 번 돈다.
+  const 발행 = readFileSync(join(repo, '.github', 'workflows', 'publish.yml'), 'utf8');
+  const 자리 = ['run: npm run check', 'run: npm test', 'run: npm publish'].map((x) => 발행.indexOf(x));
+  check('★ 발행 작업이 문법·전체 검사를 돌린 뒤에 올린다',
+    자리.every((x) => x >= 0) && 자리[0] < 자리[1] && 자리[1] < 자리[2], 자리.join(', '));
+  check('★ 전체 검사를 두 번 돌리지 않는다', !pkg.scripts?.prepublishOnly, pkg.scripts?.prepublishOnly ?? '');
 }
 
 trace('5-에디터-설정-예시');

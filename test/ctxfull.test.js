@@ -128,7 +128,7 @@ trace('1-첫부름전에-접나');
 {
   한계 = 0;
   받은턴요청 = []; 받은요약수 = 0;
-  const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
+  const conn = { kind: 'openai', 모델요약: true, base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
   const s = new Session(conn, { root });
   s.messages = 대화만들기(12);
   const 접기전메시지수 = s.messages.length;
@@ -171,7 +171,7 @@ trace('1.5-접어도-모자라면-요약까지');
 {
   한계 = 0;
   받은턴요청 = []; 받은요약수 = 0;
-  const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
+  const conn = { kind: 'openai', 모델요약: true, base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
   const s = new Session(conn, { root });
   s.messages = [{ role: 'user', content: '이 폴더에서 로그 형식 통일해줘' }];
   for (let i = 0; i < 14; i++) {
@@ -218,7 +218,7 @@ const 할일목록 = [
 /** 접고 요약하면 몇 자가 되는지 미리 재 본다. 이 대화로, 진짜 요약을 불러서. */
 async function 접은뒤크기재기(만들말) {
   한계 = 0;
-  const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 4096, streaming: false, tools: false };
+  const conn = { kind: 'openai', 모델요약: true, base, auth: 'none', key: '', model: 'fake', ctx: 4096, streaming: false, tools: false };
   const s = new Session(conn, { root });
   s.messages = 만들말();
   s.이번요청 = 시킨말;
@@ -246,7 +246,7 @@ const 잰것 = await 접은뒤크기재기(() => 대화만들기(12));
    */
   알릴창 = 8192;
   받은턴요청 = []; 받은요약수 = 0;
-  const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
+  const conn = { kind: 'openai', 모델요약: true, base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
   const s = new Session(conn, { root });
   s.messages = 대화만들기(12);
   s.할일 = 할일목록;
@@ -290,7 +290,7 @@ trace('3-접어도-모자라면-비우고-이어간다');
 {
   한계 = 잰것.접은뒤 - 100;
   받은턴요청 = []; 받은요약수 = 0;
-  const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
+  const conn = { kind: 'openai', 모델요약: true, base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
   const s = new Session(conn, { root });
   s.messages = 대화만들기(12);
   s.할일 = 할일목록;
@@ -340,7 +340,7 @@ trace('4-비우고도-넘치면-사실대로-오류');
 {
   한계 = 1;                       // 무엇을 보내도 거절한다
   받은턴요청 = []; 받은요약수 = 0;
-  const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
+  const conn = { kind: 'openai', 모델요약: true, base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
   const s = new Session(conn, { root });
   s.messages = 대화만들기(12);
   s.할일 = 할일목록;

@@ -630,6 +630,8 @@ export const en = {
   'report.col.times': 'Times',
   'cost.toolMs': 'Time in tools',
   'cost.speed': 'Generation speed',
+  'cost.serverCache': 'Cache reuse',
+  'cost.drafts': 'Draft hits',
   'cost.elapsed': 'Elapsed',
   'cost.money': 'Cost',
   // ── Cache, wire card, automatic effort ────────────────────────────────

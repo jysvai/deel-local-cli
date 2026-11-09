@@ -28,6 +28,7 @@
 // 흔들려 캐시가 매번 새로 엮인다. 배워서 바뀌는 것은 예외다 — 안 그러면 그 턴이 죽는 자리라
 // 한 번 흔들리는 값을 치른다.
 import { 벤더 } from './toolfit.js';
+import { 바깥인가 } from '../safety/runmode.js';
 import { 인증서등록 } from './clientcert.js';
 import { 말 } from '../i18n/index.js';
 
@@ -192,6 +193,8 @@ export function 기본카드(conn) {
     세션자리: null,
     // 흘려받기에서 usage 를 달라고 할까
     스트림usage: false,
+    // 한 답에 도구를 여럿 부르게 할까. 로컬만 켜고, 거절당하면 false 로 배운다.
+    병렬도구: false,
   };
 
   if (규격 === 'ollama') {
@@ -238,6 +241,7 @@ export function 기본카드(conn) {
    * 끈다.
    */
   카드.스트림usage = true;
+  카드.병렬도구 = !바깥인가(conn?.base);
 
   /*
    * ── 몸이 OpenAI 꼴이어도, 캐시를 정하는 것은 **모델**이다 ────────────
@@ -504,6 +508,9 @@ export function 배울전선(문구, 규격) {
   if (/chat_template_kwargs/i.test(s) && 거절.test(s)) {
     return { 무엇: '템플릿끄기', 값: false, 왜: 짧게(s) };
   }
+  if (/parallel_tool_calls/i.test(s) && 거절.test(s)) {
+    return { 무엇: '병렬도구', 값: false, 왜: 짧게(s) };
+  }
   if (/output_config/i.test(s) && 거절.test(s)) {
     return { 무엇: '효력칸', 값: null, 왜: 짧게(s) };
   }
@@ -702,7 +709,7 @@ export function 카드고치기(카드, 고침) {
   return 새;
 }
 
-export const 카드칸들 = ['생각형식', '눈금', '끄는말', '템플릿끄기', '효력칸', '캐시', '표식칸', '긴수명', '출력칸', '세션자리', '스트림usage'];
+export const 카드칸들 = ['생각형식', '눈금', '끄는말', '템플릿끄기', '효력칸', '캐시', '표식칸', '긴수명', '출력칸', '세션자리', '스트림usage', '병렬도구'];
 
 /**
  * 집 파일에 적을 만한 것만. 주소·모델은 부르는 쪽이 열쇠로 쓴다.

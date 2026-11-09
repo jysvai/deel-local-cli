@@ -406,7 +406,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.2.3  ⌂ inside
+ deel 2.2.4  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1437,6 +1437,7 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
+| **[2.2.4](docs/en/releases/2.2.md#224)** | The terminal takes work off local models — compaction without a model call, folded originals restored by id, English instructions with answers in your language |
 | **[2.2.3](docs/en/releases/2.2.md#223)** | Local models stop filling up — when summaries cannot make room the earlier conversation is cleared automatically and the turn carries on. Local connections turn thinking off unless you set it, and send a shorter fixed prompt |
 | [2.2.1](docs/en/releases/2.2.md#221) | Slow local models no longer re-read the whole prompt at every step — the thinking level stays put on local models, read-ahead only sends where it pays, and this PC and the LAN wait up to 30 minutes |
 | [2.2.0](docs/en/releases/2.2.md#220) | Read-ahead while you type — the model loads when the input box appears, and when you pause the server reads everything you have typed so far, so after Enter only the last few characters are left. On by itself only for priceless models on this PC or the LAN (`DEEL_WARMUP` · `"warmup"`); shown as `↯` in the status bar and in `/status` |

@@ -88,7 +88,7 @@ allowEndpoint(base);
 const root = mkdtempSync(join(tmpdir(), 'deel-autoclear-'));
 for (let i = 0; i < 12; i++) writeFileSync(join(root, `a${i}.txt`), `파일 ${i}\n`, 'utf8');
 
-const 연결 = (덧 = {}) => ({ kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, ...덧 });
+const 연결 = (덧 = {}) => ({ kind: 'openai', 모델요약: true, base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, ...덧 });
 const 세션 = (덧 = {}) => new Session(연결(덧), { root, work: 'auto', think: 'off' });
 const 만들기 = () => {
   const c = { scope: makeScope(root), history: new History(root), audit: new Audit(root), seen: new Set() };

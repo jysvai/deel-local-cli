@@ -390,7 +390,7 @@ export async function handle(line, session, ctx) {
         say('');
         say(`  ${c.gray(말('lang.now', { 이름: 이름(언어()) }))}`);
         say(`  ${c.gray(말('lang.promptNow', {
-          이름: 지시말따로정했나() ? 이름(지시말()) : 말('lang.follows'),
+          이름: (지시말따로정했나() || 지시말() !== 언어()) ? 이름(지시말()) : 말('lang.follows'),
         }))}`);
         say(`  ${c.gray(말('lang.progress', { 언어: 언어(), 옮김: p.옮김, 전체: p.전체 }))}`);
         if (p.남음) say(`  ${c.gray(말('lang.partial'))}`);
@@ -1196,6 +1196,10 @@ export async function handle(line, session, ctx) {
       // 생성 속도 — 흘려받은 부름만 잰다. 못 쟀으면 줄을 안 적는다 (session.js 의 생성속도).
       const 속도 = 생성속도(session.usage);
       if (속도 !== null) say(`  ${c.gray(pad(말('cost.speed'), 14))} ${속도} tok/s`);
+      // llama-server 가 잰 값. 캐시가 깨지는지, 추측 디코딩이 맞는지는 여기서만 보인다.
+      const { 서버재사용: 재사용 = 0, 서버읽음: 읽음 = 0, 추측 = 0, 추측맞음 = 0 } = session.usage;
+      if (재사용 + 읽음 > 0) say(`  ${c.gray(pad(말('cost.serverCache'), 14))} ${Math.round((재사용 / (재사용 + 읽음)) * 100)}% (${읽음.toLocaleString('en-US')} tok)`);
+      if (추측 > 0) say(`  ${c.gray(pad(말('cost.drafts'), 14))} ${Math.round((추측맞음 / 추측) * 100)}%`);
       // 서버가 잠깐 막아 다시 부른 횟수. 0 이면 안 적는다 — 없는 일을 줄로 남기면 표만 길어진다.
       if (session.usage.retries) say(`  ${c.gray(pad(말('cost.retries'), 14))} ${말('unit.calls', { n: session.usage.retries })}`);
       say(`  ${c.gray(pad(말('cost.elapsed'), 14))} ${말('unit.min', { n: mins })}`);

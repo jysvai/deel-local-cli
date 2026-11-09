@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session } from '../src/agent/session.js';
-import { compact, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, FOLD_AT_캐시, 캐시일때비울몫, 접을이득문턱, 접힘표, 최소이득, 접힌파일열쇠, KEEP_RECENT } from '../src/agent/compact.js';
+import { compact, 요약세대, shouldCompact, split, safeCut, COMPACT_AT, foldToolResults, shouldFold, FOLD_AT, FOLD_AT_캐시, 캐시일때비울몫, 접을이득문턱, 접힘표, 최소이득, 접힌파일열쇠, KEEP_RECENT } from '../src/agent/compact.js';
 import { 파일기억 } from '../src/agent/filemem.js';
 import { assistantMessage, toolMessage } from '../src/backend/adapter.js';
 import { repairToolPairs, 규격맞추기 } from '../src/agent/session.js';
@@ -75,7 +75,7 @@ allowEndpoint(base);
  * 그 사실 자체는 아래 '고정 몫' 절에서 따로 잰다. 여기서는 접기가 제 일을
  * 하는지만 본다.
  */
-const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false };
+const conn = { kind: 'openai', 모델요약: true, base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false };
 
 // 도구 호출 짝이 들어 있는 긴 대화를 만든다.
 function 대화만들기(turns) {
@@ -1338,6 +1338,51 @@ await new Promise((r) => setImmediate(r));
     foldToolResults(캐시판, { 이득문턱: 0 }).캐시다시씀 === true, '');
   check('★ 캐시가 안 도는 연결에서는 그 말을 안 한다',
     foldToolResults(맨판, { 이득문턱: 0 }).캐시다시씀 === false, '');
+}
+
+// ── 로컬 자동 압축은 터미널이 쓴다 ──────────────────────────────
+{
+  const 대화 = (s) => {
+    s.messages = [];
+    for (let i = 0; i < 8; i += 1) {
+      s.messages.push({ role: 'user', content: `${i}번째 일: 로그 형식을 통일해 줘 ${'가'.repeat(40)}` });
+      s.messages.push(assistantMessage('openai', { content: `${i}번째 결론입니다`, toolCalls: [
+        { id: `r${i}`, name: 'Read', args: { file_path: `src/읽은${i}.js` } },
+        { id: `e${i}`, name: 'Edit', args: { file_path: 'src/고친.js', old_string: 'a', new_string: 'b' } },
+        { id: `b${i}`, name: 'Bash', args: { command: `npm test -- ${i}` } },
+      ] }));
+      s.messages.push(toolMessage('openai', { callId: `r${i}`, name: 'Read', content: `파일 본문 ${i}` }));
+      s.messages.push(toolMessage('openai', { callId: `e${i}`, name: 'Edit', content: '고쳤습니다' }));
+      s.messages.push(toolMessage('openai', { callId: `b${i}`, name: 'Bash', content: i === 3 ? '오류: 검사 3개 실패' : '통과' }));
+    }
+    s.messages.push({ role: 'user', content: '마지막 요청' });
+  };
+  const 로컬세션 = (덧 = {}) => {
+    const s = new Session({ model: 'm', base: 'http://127.0.0.1:1', ctx: 32768, kind: 'openai', ...덧 }, { root: tmpdir() });
+    대화(s);
+    return s;
+  };
+  let 불림 = 0;
+  const 세는부르기 = async () => { 불림 += 1; return { content: '모델이 쓴 요약', finish_reason: 'stop' }; };
+
+  const s = 로컬세션();
+  const r = await compact(s, { auto: true, 부르기: 세는부르기 });
+  check('★★★ 로컬 자동 압축은 모델을 안 부른다', 불림 === 0 && r.ok, `불림 ${불림} · ${JSON.stringify(r).slice(0, 120)}`);
+  const 글 = String(r.summary ?? '');
+  check('★★ 사용자가 시킨 말이 남는다', /로그 형식을 통일/.test(글), 글.slice(0, 200));
+  check('★★ 고친 파일과 횟수가 남는다', /src\/고친\.js \(\d+번\)/.test(글), 글.slice(0, 300));
+  check('★ 읽은 파일 · 돌린 명령이 남는다', /src\/읽은0\.js/.test(글) && /npm test -- 0/.test(글), 글.slice(0, 300));
+  check('★ 오류가 남고 멀쩡한 결과는 안 남는다', /검사 3개 실패/.test(글) && !/파일 본문/.test(글), 글.slice(0, 300));
+  check('★ 다음 압축이 세대를 읽는 표식을 갖는다', 요약세대(s.messages) === 1, String(요약세대(s.messages)));
+
+  불림 = 0;
+  await compact(로컬세션(), { 부르기: 세는부르기 });
+  check('★★ 사람이 시킨 /compact 는 모델이 쓴다', 불림 === 1, `불림 ${불림}`);
+  불림 = 0;
+  const 바깥판 = new Session({ model: 'm', base: 'https://api.example.com/v1', ctx: 32768, kind: 'openai' }, { root: tmpdir() });
+  대화(바깥판);
+  await compact(바깥판, { auto: true, 부르기: 세는부르기 });
+  check('★★ 바깥 연결의 자동 압축은 여태처럼 모델이 쓴다', 불림 === 1, `불림 ${불림}`);
 }
 
 const G = '\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';

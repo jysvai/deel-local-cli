@@ -269,7 +269,12 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
   const body = { model, messages: 대화, stream: !!stream };
   if (새이름도) body.max_completion_tokens = maxTokens;
   if (옛이름도) body.max_tokens = maxTokens;
-  if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
+  if (tools?.length) {
+    body.tools = tools;
+    body.tool_choice = 'auto';
+    // 로컬은 걸음 하나가 비싸다. 파일 셋을 한 답에 부르면 앞머리 읽기와 도구 호출 생성이 한 번으로 끝난다.
+    if (카드?.병렬도구) body.parallel_tool_calls = true;
+  }
   if (json) {
     body.response_format = { type: 'json_schema', json_schema: { name: 'out', schema: json, strict: true } };
   }
@@ -291,7 +296,15 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
      * llama-server·vLLM 이 받는 칸이고 모르는 서버는 대개 무시한다. 거절하는 서버는
      * 카드가 배워서 다음부터 안 싣는다 (wire.js 의 템플릿끄기).
      */
-    else if (think === 'off' && 카드?.템플릿끄기 !== false) body.chat_template_kwargs = { enable_thinking: false };
+    else if (think === 'off' && 카드?.템플릿끄기 !== false) {
+      body.chat_template_kwargs = { enable_thinking: false };
+      /*
+       * 서버 기본 샘플링은 생각 모드 값이다(Qwen 권장 temperature 1.0 · top_p 0.95). 생각을 끄고
+       * 그대로 두면 권장값(0.7 · 0.8)보다 들떠서 답이 흔들리고 추측 디코딩도 덜 맞는다.
+       * 권장표의 presence_penalty 1.5 는 안 싣는다 — 코드와 JSON 은 같은 토큰을 되풀이해야 한다.
+       */
+      if (/qwen3/i.test(String(model))) Object.assign(body, { temperature: 0.7, top_p: 0.8 });
+    }
   }
   /*
    * 이 대화가 한 덩어리라고 알려 준다.
@@ -1978,6 +1991,8 @@ function absorb(shape, obj, acc) {
       cacheWrite: c.씀,
     };
   }
+  // llama-server 가 직접 잰 값. 웹 UI 가 보여 주는 속도와 같은 자다 (loop.js).
+  if (obj.timings) acc.timings = obj.timings;
   const fin = obj.choices?.[0]?.finish_reason;
   if (fin) acc.stopped = fin;
   // 흘려받는 길도 거절을 알아본다. 여기가 빠지면 흘려받기를 켠 사람에게만

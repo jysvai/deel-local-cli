@@ -596,6 +596,25 @@ trace('9-모양이-틀린-파일');
 rmSync(root, { recursive: true, force: true });
 rmSync(home, { recursive: true, force: true });
 
+{
+  const 폴더 = mkdtempSync(join(tmpdir(), 'deel-hot-'));
+  const b = new 배움(폴더, null, '2026-08-26T00:00:00Z');
+  b.파일본것('src/자주.js'); b.파일본것('src/자주.js');
+  check('두 번 고친 파일은 아직 안 싣는다', !/자주 고친 파일/.test(b.요약() ?? ''), b.요약() ?? '없음');
+  b.파일본것('src\\자주.js');
+  check('★★ 세 번 고치면 다음 세션에 알려 준다', /자주 고친 파일: `src\/자주\.js`/.test(b.요약() ?? ''), b.요약() ?? '없음');
+  check('★ 다음에 켜도 남아 있다', /자주\.js/.test(new 배움(폴더, null, '2026-08-26T00:00:00Z').요약() ?? ''));
+  check('★ 한 달 지나면 안 싣는다', !/자주\.js/.test(new 배움(폴더, null, '2026-10-26T00:00:00Z').요약() ?? ''));
+  const 망가진 = mkdtempSync(join(tmpdir(), 'deel-hot2-'));
+  mkdirSync(join(망가진, '.deel'), { recursive: true });
+  writeFileSync(join(망가진, '.deel', '배운것.json'), '{"파일":"망가짐"}');
+  let 터짐 = false;
+  try { new 배움(망가진, null, '2026-08-26T00:00:00Z').파일본것('a.js'); } catch { 터짐 = true; }
+  check('★★ 손으로 망가뜨린 표에도 안 죽는다', !터짐);
+  rmSync(폴더, { recursive: true, force: true, maxRetries: 3 });
+  rmSync(망가진, { recursive: true, force: true, maxRetries: 3 });
+}
+
 const G ='\x1b[32m'; const R = '\x1b[31m'; const D = '\x1b[90m'; const X = '\x1b[0m';
 console.log(`\n겪어 본 것 검사  ${D}(쓸수록 이 PC 에 맞춰 나아지는가)${X}\n`);
 for (const p of pass) console.log(`  ${G}✓${X} ${p.name}${p.note ? `${D}  ${p.note}${X}` : ''}`);

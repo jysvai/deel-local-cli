@@ -81,6 +81,7 @@ export function 언어정하기(값) {
 export function 언어잡기({ env = process.env, cfg = null } = {}) {
   지금 = 언어고르기(env.DEEL_LANG) ?? 언어고르기(cfg?.lang) ?? 기본언어;
   지시 = 언어고르기(env.DEEL_PROMPT_LANG) ?? 언어고르기(cfg?.promptLang) ?? null;
+  로컬영어 = true;
   return 지금;
 }
 
@@ -102,9 +103,19 @@ export function 언어잡기({ env = process.env, cfg = null } = {}) {
  * 여태 쓰던 사람에게 아무것도 안 바뀌게 하려고 그렇게 뒀다.
  */
 let 지시 = null;
+/*
+ * 로컬 연결이면 따로 안 정해도 영어로 시킨다. Qwen 토크나이저로 고정 프롬프트가 3,667 → 2,565토큰이다.
+ * 답은 언어() 그대로라 한국 사람은 한국어로 받는다. 간체는 영어보다 8% 더 줄 뿐이고 답에 중국어가 샌다.
+ * 프로그램을 띄울 때(언어잡기)만 켠다.
+ */
+let 로컬영어 = false;
+let 로컬연결 = false;
 
 /** 모델에게 주는 글의 말. 따로 안 정했으면 화면 말을 따른다. */
-export function 지시말() { return 지시 ?? 지금; }
+export function 지시말() { return 지시 ?? (로컬영어 && 로컬연결 ? 'en' : 지금); }
+
+/** 지금 세션이 로컬 연결인가. 프롬프트를 만드는 자리들이 알려 준다. */
+export function 로컬연결알리기(값) { 로컬연결 = !!값; }
 
 /** 지시말을 따로 정한다. 빈 값·auto 면 다시 화면 말을 따라간다. */
 export function 지시말정하기(값) {

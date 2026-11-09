@@ -15,7 +15,7 @@ import { 지문 } from './project.js';
 import { 프롬프트토막 as 기억토막 } from './memory.js';
 import { 못박기 } from './pins.js';
 import { 파일기억 } from './filemem.js';
-import { 언어, 지시말, 말 as 옮긴말 } from '../i18n/index.js';
+import { 언어, 지시말, 말 as 옮긴말, 로컬연결알리기 } from '../i18n/index.js';
 import { 셸안내 } from '../tools/shell.js';
 import { estimateTokens } from '../backend/tokens.js';
 import { 프롬프트창, 로컬연결인가 } from './budget.js';
@@ -164,7 +164,9 @@ Finish the job. Do not stop at a plan.
 - Edit's old_string must match the file exactly, whitespace included. Include plenty of context.
 - For a long file, Write the first part and Append the rest. Do not resend the earlier part.
 - Do not call the same tool with the same arguments twice. The result will be the same.
-- Answer in English, briefly. Do not paste whole files.
+- Call tools without narrating first.
+- Code comments only when needed, short, in English unless the file already uses another language.
+- Answer briefly. Do not paste whole files.
 - Record rules the user sets with Remember. When they say "last time", search with Recall.`;
 
 /**
@@ -262,6 +264,7 @@ export class Session {
 
   constructor(conn, { root, mode = 'auto', work = null, level = null, think = null, effort = 'save', web = true, maxSteps = null } = {}) {
     this.conn = conn;
+    로컬연결알리기(로컬연결인가(conn));
     this.root = root;
     this.mode = mode;        // 승인 정책 — 얼마나 물어보나 (auto/confirm/strict)
     this.work = work ?? WORK_DEFAULT;   // 작업 모드 — 무슨 일을 하는 중인가 (modes.js)
@@ -1075,6 +1078,7 @@ export class Session {
 
   // 모델에 실제로 보낼 배열.
   wire() {
+    로컬연결알리기(로컬연결인가(this.conn));
     const 조각 = this.시스템조각();
     const 머리 = { role: 'system', content: 조각.join('') };
     /*

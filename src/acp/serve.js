@@ -38,6 +38,7 @@ import { 남길것읽기 } from '../safety/shellenv.js';
 import { 받기설정 } from '../safety/authcmd.js';
 import { run } from '../agent/loop.js';
 import { Session, repairToolPairs, 규격맞추기 } from '../agent/session.js';
+import { 로컬연결인가 } from '../agent/budget.js';
 import { Store, sessionsDir, prune, 대화이름인가 } from '../agent/store.js';
 import { makeScope } from '../safety/guard.js';
 import { History } from '../safety/undo.js';
@@ -568,6 +569,7 @@ export async function acp(opts = {}) {
     방.ctx = {
       scope: makeScope(root),
       get 모델컨텍스트() { return conn.ctx ?? null; },
+      get 로컬() { return 로컬연결인가(conn); },
       // 이 모델이 그림을 볼 수 있나 — Read 가 그림을 만났을 때 무슨 말을 할지가 여기서 갈린다.
       get 눈있나() { return !!conn.vision; },
       // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.

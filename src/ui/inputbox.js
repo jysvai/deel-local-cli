@@ -60,6 +60,8 @@ const 줄끝지움 = '\x1b[K';
 const 위로 = (n) => (n > 0 ? `\x1b[${n}A` : '');
 // 돌아가는 표시를 한 칸 넘기는 주기. 사람 눈에 부드럽고, 다시 그리는 값은 싸다.
 const 돌림주기 = 90;
+// 로컬 모델은 같은 기계의 CPU 코어를 쓴다. 터미널을 덜 깨워 그쪽에 코어를 남긴다.
+const 로컬돌림주기 = 250;
 /*
  * 견주기를 접고 통째로 덮어써서 화면을 되살리는 주기(ms).
  *
@@ -495,7 +497,8 @@ export class InputBox {
     this.틱 = 0;
     this.일그리기();
     if (this.박자) clearInterval(this.박자);
-    this.박자 = setInterval(() => { this.틱 += 1; this.일그리기(); }, 돌림주기);
+    this.주기 = 바깥으로가나(this.session) ? 돌림주기 : 로컬돌림주기;
+    this.박자 = setInterval(() => { this.틱 += 1; this.일그리기(); }, this.주기);
     // 이 시계 때문에 프로그램이 안 끝나면 안 된다. 끝맺음이 걸려 버린다.
     if (typeof this.박자.unref === 'function') this.박자.unref();
   }
@@ -555,7 +558,7 @@ export class InputBox {
      */
     const 멎은지 = Date.now() - (this.일감.바뀐때 ?? this.일감.시작);
     const 갈래 = (!멈추나 && 멎은지 >= 느긋해질때) ? '느긋' : this.일감.갈래;
-    const 회차 = Math.floor((this.틱 * 돌림주기) / 문구주기);
+    const 회차 = Math.floor((this.틱 * (this.주기 ?? 돌림주기)) / 문구주기);
     this.그리기(this.session, '', 0, {
       // 갈래에 맞는 작은 그림. 무엇을 하는 중인지 글자와 그림이 같이 말한다.
       // DEEL_NO_MOTION=1 이면 예전처럼 한 칸짜리 돌림표가 온다.

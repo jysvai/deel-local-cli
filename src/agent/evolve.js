@@ -91,6 +91,7 @@ function 읽기(파일) {
     것.명령 = 거른표(것.명령);
     것.모델 = 칸표(것.모델);
     if (것.전선 !== undefined) 것.전선 = 칸표(것.전선);
+    if (것.파일 !== undefined) 것.파일 = 칸표(것.파일);
     return 것;
   } catch { return 빈것(); }
 }
@@ -187,6 +188,17 @@ export class 배움 {
       this.#명령세기(표, 프로그램, true);
     }
     줄이기(표, 명령최대);
+    this.#저장폴더();
+    return this;
+  }
+
+  /** 이 폴더에서 고친 파일. 어디부터 볼지 알면 Glob·Grep 걸음이 준다. */
+  파일본것(경로) {
+    const 열쇠 = String(경로 ?? '').replace(/\\/g, '/').slice(-120);
+    if (!열쇠) return this;
+    const 표 = (this.폴더.파일 ??= {});
+    표[열쇠] = { n: (표[열쇠]?.n ?? 0) + 1, at: this.지금 };
+    줄이기(표, 40);
     this.#저장폴더();
     return this;
   }
@@ -362,6 +374,12 @@ export class 배움 {
     }
     if (되는것.length) 줄.push(`- 여기서 되는 명령: ${되는것.slice(0, 6).map((x) => `\`${x}\``).join(' · ')}`);
     if (안되는것.length) 줄.push(`- 이 PC 에서 안 되는 명령(다시 부르지 마라): ${안되는것.slice(0, 6).map((x) => `\`${x}\``).join(' · ')}`);
+
+    // 세 번 넘게 고친 파일만, 한 달 안의 것만. 지난 일을 붙들고 있으면 엉뚱한 곳부터 읽는다.
+    const 자주고친 = Object.entries(this.폴더.파일 ?? {})
+      .filter(([, r]) => r.n >= 3 && 며칠됐나(this.지금, r.at) <= 30)
+      .sort((a, b) => b[1].n - a[1].n).slice(0, 5).map(([p]) => `\`${p}\``);
+    if (자주고친.length) 줄.push(`- 자주 고친 파일: ${자주고친.join(' · ')}`);
 
     // 모델 버릇. 걸음이 쌓여야 말이 된다.
     //

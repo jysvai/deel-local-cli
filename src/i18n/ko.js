@@ -682,6 +682,8 @@ export const ko = {
   'report.col.times': '번',
   'cost.toolMs': '도구 시간',
   'cost.speed': '생성 속도',
+  'cost.serverCache': '캐시 재사용',
+  'cost.drafts': '추측 적중',
   'cost.elapsed': '경과',
   'cost.money': '요금',
   // ── 캐시·전선·자동 강도 (backend/wire.js · backend/cachemark.js) ──────

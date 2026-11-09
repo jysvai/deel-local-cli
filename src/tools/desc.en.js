@@ -195,10 +195,12 @@ export const 도구설명EN = {
     },
   },
   Recall: {
-    desc: 'Search past sessions in this folder. When the user points back ("last time"), use this'
-      + ' instead of asking again. This does not search file contents — that is Grep.',
+    desc: 'Search past sessions and restore folded originals. When the user points back ("last time"), use this'
+      + ' instead of asking again. File contents are Grep.',
     params: {
       query: 'what to look for. Two or three words (e.g. "CP949 encoding")',
+      id: 'number of a folded original',
+      offset: 'where to continue reading',
       limit: 'how many to bring back (default 8)',
       tools: 'also dig through tool results (default false)',
     },

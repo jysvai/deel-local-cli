@@ -26,7 +26,7 @@ import { get as workMode, 바꾸는도구 } from './modes.js';
 // 종합 모드에서 단계가 일을 따라간다 (agent/phase.js).
 import { 다음단계 } from './phase.js';
 import { 묻지말라했나, 손대라했나 } from './route.js';
-import { 지시말 } from '../i18n/index.js';
+import { 지시말, 로컬연결알리기 } from '../i18n/index.js';
 import { 빠진것, 빠졌다는말 } from './asks.js';
 import { 환경속열쇠들 } from '../config.js';
 import { 통과했나, 실패말 as 검사실패말, 출력꼬리 } from './donecheck.js';
@@ -209,6 +209,7 @@ export function 묶기(calls) {
  */
 export function 턴도구(session, ctx, { 깊이 = 0 } = {}) {
   const conn = session.conn;
+  로컬연결알리기(로컬연결인가(conn));
   return toolSchemas(session.도구제한 ?? null, {
     hasSkills: (session.skills?.length ?? 0) > 0,
     web: session.web !== false && !isOffline(),   // 오프라인이면 웹 도구는 아예 안 보여 준다
@@ -1693,7 +1694,18 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     session.usage.in += msg.usage?.in ?? 0;
     session.usage.out += msg.usage?.out ?? 0;
     // 한 번에 받았거나 글이 하나도 안 흘렀으면 안 센다 — 느린 값을 지어내지 않는다 (위 생성잰것).
-    if (생성잰것?.ms > 0 && (msg.usage?.out ?? 0) > 0) {
+    if (msg.timings) {
+      const u = session.usage;
+      u.서버재사용 = (u.서버재사용 ?? 0) + (msg.timings.cache_n ?? 0);
+      u.서버읽음 = (u.서버읽음 ?? 0) + (msg.timings.prompt_n ?? 0);
+      u.추측 = (u.추측 ?? 0) + (msg.timings.draft_n ?? 0);
+      u.추측맞음 = (u.추측맞음 ?? 0) + (msg.timings.draft_n_accepted ?? 0);
+    }
+    // 서버가 직접 잰 값이 오면 그것을 쓴다 — 웹 UI 의 숫자와 같은 자이고 도구만 부른 걸음도 잰다.
+    if (msg.timings?.predicted_ms > 0 && msg.timings?.predicted_n > 0) {
+      session.usage.genMs = (session.usage.genMs ?? 0) + msg.timings.predicted_ms;
+      session.usage.genOut = (session.usage.genOut ?? 0) + msg.timings.predicted_n;
+    } else if (생성잰것?.ms > 0 && (msg.usage?.out ?? 0) > 0) {
       session.usage.genMs = (session.usage.genMs ?? 0) + 생성잰것.ms;
       session.usage.genOut = (session.usage.genOut ?? 0) + msg.usage.out;
     }
@@ -2569,6 +2581,10 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           ctx.배움?.명령본것(call.args.command, !result.error, result.error ?? '');
         }
         if (call.name === 'Edit' && result.error) ctx.배움?.모델본것(conn.model, '편집실패');
+        if (['Write', 'Append', 'Edit'].includes(call.name) && !result.error && call.args?.file_path) {
+          const 뿌리 = `${String(ctx.scope?.root ?? '').replace(/\\/g, '/')}/`;
+          ctx.배움?.파일본것?.(String(call.args.file_path).replace(/\\/g, '/').replace(뿌리, ''));
+        }
 
         if (result.error) {
           lastToolFailed = true;

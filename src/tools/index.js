@@ -35,6 +35,7 @@ import { isPdfPath, readPdf, toText as pdfText, summarize as pdfSummary, 못읽�
 import { isFigPath, readFig, summarize as figSummary, fig는못고침 } from './fig.js';
 import { diffLines } from '../ui/diff.js';
 import { 읽을줄수, 찾을개수, 찾을줄수, 설명길이, 한번에낼글자수 } from '../agent/budget.js';
+import { 로컬출력 } from './shrink.js';
 import { 도구설명EN } from './desc.en.js';
 import { 그림인가, 그림읽기, 크기말, 기본한도 } from '../backend/vision.js';
 import { 빠르게찾기, 엔진말, 안볼정규식 } from './fastgrep.js';
@@ -3360,7 +3361,7 @@ export const TOOLS = {
                 : '윈도우에서는 셸이 먼저 끝나면 그 아래를 못 찾아 끄지 못했습니다(작업 관리자에서 찾아 끄세요).')
               + ' 끝나지 않는 것은 background: true 로 띄우고 Jobs 로 읽으세요]';
           done({
-            content: clip(out || '(출력 없음)', 실을만큼(ctx)) + 꼬리 + 남은말 + 뺀말,
+            content: ((ctx.로컬 ? 로컬출력(out, 실을만큼(ctx), ctx.scope.root) : clip(out, 실을만큼(ctx))) || '(출력 없음)') + 꼬리 + 남은말 + 뺀말,
             summary: 잘됨 ? 말('sum.ok')
               : 시그널 ? 말('sum.killedBy', { 시그널 })
                 : 넘침 ? 말('sum.tooMuchOut')
@@ -3698,22 +3699,34 @@ export const TOOLS = {
   Recall: {
     schema: {
       name: 'Recall',
-      description: '이 폴더의 지난 대화에서 찾는다. "저번에" 처럼 앞선 대화를 가리키면 되묻지 말고 이걸 쓴다.'
-        + ' 파일 내용을 찾는 것이 아니다 — 파일은 Grep 이다.',
+      description: '지난 대화와 접힌 원문을 찾는다. "저번에" 라고 하면 되묻지 말고 쓴다. 파일 내용은 Grep.',
       parameters: {
         type: 'object',
         properties: {
           query: { type: 'string', description: '찾을 말. 낱말 두세 개 (예: "CP949 인코딩")' },
+          id: { type: 'number', description: '접힌 원문 번호' },
+          offset: { type: 'number', description: '이어 읽을 자리' },
           limit: { type: 'number', description: '가져올 개수 (기본 8)' },
           tools: { type: 'boolean', description: '도구 결과까지 뒤질지 (기본 false)' },
         },
-        required: ['query'],
       },
     },
     async run(args, ctx) {
+      if (args.id != null) {
+        const { 되찾기 } = await import('../agent/archive.js');
+        const 원문 = 되찾기(ctx.scope.root, args.id);
+        if (원문 === null) return { error: `${args.id}번 원문이 없습니다` };
+        const 시작 = Math.max(0, Math.floor(Number(args.offset) || 0));
+        const 조각 = 원문.slice(시작, 시작 + 실을만큼(ctx));
+        const 끝 = 시작 + 조각.length;
+        return {
+          content: 조각 + (끝 < 원문.length ? `\n… (${원문.length - 끝}자 더 있음 · offset ${끝})` : ''),
+          summary: `원문 #${args.id}`,
+        };
+      }
       const { 찾기 } = await import('../agent/recall.js');
       const q = String(args.query ?? '').trim();
-      if (!q) return { error: 'query 가 비었습니다' };
+      if (!q) return { error: 'query 나 id 를 주세요' };
 
       const r = 찾기(ctx.scope.root, q, {
         limit: Math.min(20, Math.max(1, Number(args.limit) || 8)),

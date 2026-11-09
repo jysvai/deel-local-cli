@@ -38,7 +38,9 @@ const server = createServer((req, res) => {
   let body = '';
   req.on('data', (d) => (body += d));
   req.on('end', async () => {
-    const 흘림 = JSON.parse(body || '{}').stream === true;
+    const 몸 = JSON.parse(body || '{}');
+    const 흘림 = 몸.stream === true;
+    const 서버시간 = 몸.model === '서버잰것' ? { timings: { predicted_n: 20, predicted_ms: 2000, predicted_per_second: 10, cache_n: 90, prompt_n: 10, draft_n: 10, draft_n_accepted: 4 } } : {};
     await 쉬기(앞머리);
     if (!흘림) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -49,7 +51,7 @@ const server = createServer((req, res) => {
       res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: `조각${i} ` } }] })}\n\n`);
       await 쉬기(40);
     }
-    res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 40 } })}\n\n`);
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 40 }, ...서버시간 })}\n\n`);
     res.write('data: [DONE]\n\n');
     res.end();
   });
@@ -57,10 +59,10 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}/v1`;
 
-async function 돌리기(streaming) {
+async function 돌리기(streaming, model = 'fake') {
   resetNet(); allowEndpoint(base);
   const root = mkdtempSync(join(tmpdir(), 'deel-speed-'));
-  const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming };
+  const conn = { kind: 'openai', base, auth: 'none', key: '', model, ctx: 16000, streaming };
   const session = new Session(conn, { root, work: 'code' });
   const ctx = { scope: makeScope(root), history: new History(root), audit: new Audit(root), seen: new Set(), 모드: 'auto' };
   const 시작 = Date.now();
@@ -92,6 +94,18 @@ trace('2-한번에');
   const { session } = await 돌리기(false);
   check('★★ 한 번에 받은 부름은 안 잰다 — 앞머리와 생성을 못 가른다', (session.usage.genMs ?? 0) === 0 && 생성속도(session.usage) === null,
     `genMs=${session.usage.genMs} 속도=${생성속도(session.usage)}`);
+}
+trace('3-서버가-잰-값');
+{
+  const { session } = await 돌리기(true, '서버잰것');
+  check('★★★ 서버가 잰 값이 오면 그것을 쓴다 — 웹 UI 의 숫자와 같은 자다',
+    session.usage.genMs === 2000 && session.usage.genOut === 20 && 생성속도(session.usage) === 10,
+    `genMs=${session.usage.genMs} genOut=${session.usage.genOut} 속도=${생성속도(session.usage)}`);
+  const 원래 = process.stdout.write.bind(process.stdout);
+  let 모인것 = '';
+  process.stdout.write = (chunk) => { 모인것 += chunk; return true; };
+  try { await handle('/cost', session, { history: new History(설정집), seen: new Set() }); } catch { /* 줄만 본다 */ } finally { process.stdout.write = 원래; }
+  check('★★ /cost 에 캐시 재사용과 추측 적중이 뜬다', /90%/.test(모인것) && /40%/.test(모인것), 모인것.slice(-300));
 }
 check('  잰 것이 없으면 null', 생성속도({}) === null && 생성속도(null) === null && 생성속도({ genMs: 0, genOut: 5 }) === null);
 

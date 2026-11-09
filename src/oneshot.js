@@ -21,6 +21,7 @@ import { 남길것읽기 } from './safety/shellenv.js';
 import { 받기설정 } from './safety/authcmd.js';
 import { run } from './agent/loop.js';
 import { Session, 요청잘리나, 못박을길이, 생성속도, repairToolPairs } from './agent/session.js';
+import { 로컬연결인가 } from './agent/budget.js';
 import { 양수크기 } from './agent/models.js';
 import { estimateTokens } from './backend/tokens.js';
 import { makeScope } from './safety/guard.js';
@@ -620,6 +621,7 @@ export async function runOnce(opts = {}) {
     // 도구가 한 번에 돌려줄 양을 이 값에서 뽑는다 (agent/budget.js).
     // /model 로 갈아타면 conn 이 통째로 바뀌므로 그때마다 다시 읽는다.
     get 모델컨텍스트() { return conn.ctx ?? null; },
+    get 로컬() { return 로컬연결인가(conn); },
     // 이 모델이 그림을 볼 수 있나 — Read 가 그림을 만났을 때 무슨 말을 할지가 여기서 갈린다.
     get 눈있나() { return !!conn.vision; },
     // 적어 둔 허락·금지 규칙 (safety/policy.js). 승인 모드보다 먼저 본다.
