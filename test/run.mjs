@@ -152,6 +152,7 @@ const FILES = [
   'pdf.test.js',
   'compact.test.js',
   'ctxfull.test.js',
+  'autoclear.test.js',
   'held.test.js',
   'store.test.js',
   'threads.test.js',
