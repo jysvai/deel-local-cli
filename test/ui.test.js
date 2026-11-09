@@ -467,7 +467,7 @@ trace('4.5-상태줄');
   // 접으면 대개 다시 들어간다.
   {
     // 폴더는 흔한 짧은 이름, 모델은 사내 게이트웨이에서 실제로 쓰는 긴 이름.
-    const 긴모델 = { ...s, root: 'C:/Users/x/Desktop/Local', conn: { ...conn, model: 'databricks-gpt-5-6-luna' } };
+    const 긴모델 = { ...s, think: 'medium', root: 'C:/Users/x/Desktop/Local', conn: { ...conn, model: 'databricks-gpt-5-6-luna' } };
     긴모델.breakdown = () => s.breakdown();
     긴모델.effectiveWork = () => s.work;
     const 좁아도 = 색빼기(statusLine(긴모델, { max: 78 }));

@@ -68,4 +68,4 @@ console.log('거절하는 서버');
 }
 
 console.log(`\n${실패 ? R : G}통과 ${통과} · 실패 ${실패}${X}`);
-process.exit(실패 ? 1 : 0);
+process.exitCode = 실패 ? 1 : 0;

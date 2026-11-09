@@ -34,13 +34,13 @@ prompt (Qwen3.8), so changing it diverges from the first character and the whole
 level on a local model no longer moves by itself with the step, your words or the work mode. It stays at what
 `/think` set (or the default).
 
-Since 2.2.2 a local connection **turns thinking off** unless you set a level with `/think` or `--think`. On a local model
+Since 2.2.3 a local connection **turns thinking off** unless you set a level with `/think` or `--think`. On a local model
 thinking costs waiting time and fills the window. llama-server gets `chat_template_kwargs: {"enable_thinking": false}` and
 Ollama gets `think: false`. To turn it back on, set a level such as `/think medium`.
 
 ### Local models get a short prefix and clear the window early
 
-A bigger window does not read any faster, and a longer context makes each new token cost more. So since 2.2.2 a local
+A bigger window does not read any faster, and a longer context makes each new token cost more. So since 2.2.3 a local
 connection (this PC or the LAN) does the following whatever its window size.
 
 | Part | What it does |
