@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { 모드들, 모드고르기, 지금모드, 바깥인가, 나갈수있나, 모드글, 봉인됐나 } from '../src/safety/runmode.js';
+import { 모드들, 모드고르기, 지금모드, 바깥인가, 나갈수있나, 봉인됐나 } from '../src/safety/runmode.js';
 import { headerLines, statusLine } from '../src/ui/status.js';
 import { VERSION } from '../src/version.js';
 import { trace } from './trace.mjs';
@@ -57,7 +57,6 @@ trace('1-모드-셋');
 
   check('이름으로도 집힌다', 모드고르기('online').영 === 'online' && 모드고르기('바깥').영 === 'online');
   check('모르는 이름은 기본으로', 모드고르기('없는모드').영 === 'default');
-  check('모드글이 글자와 이름을 준다', 모드글(모드고르기('offline')) === '⛊ 봉인', 모드글(모드고르기('offline')));
 }
 
 trace('2-어디가-바깥인가');

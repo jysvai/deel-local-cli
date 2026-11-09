@@ -47,7 +47,7 @@ function 정리(items) {
   return { 목록: out, 버린칸, 버린수 };
 }
 
-export function render(items) {
+function render(items) {
   if (!items.length) return '할 일이 없습니다.';
   const 남은 = items.filter((x) => x.state !== 'done').length;
   const lines = items.map((x) => `${표시[x.state]} ${x.text}`);

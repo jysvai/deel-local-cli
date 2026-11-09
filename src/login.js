@@ -31,7 +31,7 @@ import { ask } from './ui/prompt.js';
 import { say, c, clip } from './ui/ansi.js';
 
 /** 코드는 10분 뒤 만료된다(OpenRouter). 그 절반을 기다린다. */
-export const 기다림기본 = 5 * 60_000;
+const 기다림기본 = 5 * 60_000;
 
 /** PKCE 한 쌍. 검증자는 RFC 7636 글자(base64url) 43자, 도전은 그 sha256 의 base64url. */
 export function PKCE만들기() {

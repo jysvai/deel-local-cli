@@ -113,7 +113,7 @@ export const 캐시일때비울몫 = 0.10;
  */
 const 재볼기회 = 2;
 
-export function 캐시가도나(session) {
+function 캐시가도나(session) {
   const u = session?.usage ?? {};
   if ((u.cacheRead ?? 0) > 0) return true;
   return (u.calls ?? 0) < 재볼기회;
@@ -159,7 +159,7 @@ function 어디(args) {
  *
  * 사람이 쓴 말은 그대로 둔다 — 빼는 것은 그림 조각뿐이다.
  */
-export const KEEP_IMAGES = 2;
+const KEEP_IMAGES = 2;
 
 /** 오래된 그림을 이름만 남기고 뺀다. @returns {{뺀것:number, 뺀것들:Array}} */
 export function foldImages(session, { keep = KEEP_IMAGES } = {}) {
@@ -617,8 +617,8 @@ export function split(messages, { keepHead = KEEP_HEAD, tailRatio = KEEP_TAIL_RA
  * 넘치면 **앞을** 버린다. 이어서 일할 사람에게 필요한 것은 최근 쪽이고, 맨 앞의
  * 시킨 말은 못박을것 이 원문으로 따로 박는다.
  */
-export const 로컬요약입력몫 = 0.12;
-export const 바깥요약입력몫 = 0.5;
+const 로컬요약입력몫 = 0.12;
+const 바깥요약입력몫 = 0.5;
 
 /** 이 연결의 요약 요청 상한 (토큰). 창을 모르면 0 — 상한 없음. */
 export function 요약입력상한(conn, 창) {
@@ -933,7 +933,7 @@ export function shouldCompact(session, at = null) {
  * 쪽지를 끼워 놓고 재 본다 — 요약이 큰 판이면 쪽지도 크다. 창을 잰 적이 없으면(total 은
  * 짐작값) 안 비운다. 서버가 거절하면 그때 비우는 길이 따로 있다.
  */
-export const 비우기문턱 = 0.7;
+const 비우기문턱 = 0.7;
 export const 비워서날몫 = 0.15;
 
 /** 비우면 창의 비워서날몫 이상이 비나. 비울 때 남길 글을 주면 그것까지 재고 본다. */
