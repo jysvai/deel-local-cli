@@ -54,6 +54,7 @@ const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note 
  * 문구를 읽어서 창 크기를 배우는 코드가 물려 있다.
  */
 let 한계 = 0;                 // 0 이면 안 거절한다 (글자 수로 잰다)
+let 알릴창 = 4096;            // 거절하면서 서버가 알려 주는 창 크기
 let 받은턴요청 = [];          // 요약이 아닌 진짜 요청들
 let 받은요약수 = 0;
 const server = createServer((req, res) => {
@@ -79,7 +80,7 @@ const server = createServer((req, res) => {
     if (한계 && 잰것 > 한계) {
       return 보냄({
         error: {
-          message: `This model's maximum context length is 4096 tokens, however you requested ${Math.round(잰것 / 3)} tokens.`,
+          message: `This model's maximum context length is ${알릴창} tokens, however you requested ${Math.round(잰것 / 3)} tokens.`,
           type: 'invalid_request_error',
         },
       }, 400);
@@ -238,6 +239,12 @@ const 잰것 = await 접은뒤크기재기(() => 대화만들기(12));
 
 {
   한계 = Math.floor((잰것.원래 + 잰것.접은뒤) / 2);
+  /*
+   * 서버가 알려 주는 창을 8,192 로 둔다. 4,096 이면 고정 몫이 커서 접은 뒤에도 70% 위에
+   * 남고, 그때는 비우는 것이 맞다(autoclear.test.js). 여기서 재는 것은 「접어서 자리가 나면
+   * 안 비운다」 라서, 접으면 정말 자리가 나는 창이어야 한다.
+   */
+  알릴창 = 8192;
   받은턴요청 = []; 받은요약수 = 0;
   const conn = { kind: 'openai', base, auth: 'none', key: '', model: 'fake', ctx: 16000, streaming: false, tools: false };
   const s = new Session(conn, { root });
@@ -247,8 +254,11 @@ const 잰것 = await 접은뒤크기재기(() => 대화만들기(12));
   const c = 만들기();
   c.todos = 할일목록;
   const 본것 = [];
-  for await (const ev of run(s, c, 시킨말)) 본것.push(ev.type);
+  let 접음 = null;
+  for await (const ev of run(s, c, 시킨말)) { 본것.push(ev.type); if (ev.type === 'compacted') 접음 = ev; }
+  알릴창 = 4096;
 
+  check('먼저: 접으면 70% 아래로 내려가는 창이다', 접음 && 접음.after / 8192 < 0.7, `${접음?.after} / 8192`);
   check('먼저: 접으면 들어가고 안 접으면 안 들어가는 자리다',
     잰것.접은뒤 < 한계 && 한계 < 잰것.원래, `${잰것.접은뒤} < ${한계} < ${잰것.원래}`);
   check('★ 거절당해도 턴이 끝까지 갔다', 본것.includes('done'), 본것.join(','));

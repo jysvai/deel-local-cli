@@ -12,7 +12,7 @@ import { 읽기만하나 } from '../backend/mcp.js';
 import { 글속부름 } from '../backend/textcalls.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
-import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박을것, 접힌파일열쇠 } from './compact.js';
+import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박을것, 접힌파일열쇠, 비울까, 비우면빌까, 실을요약, 요약세대, 요약세대상한, 마지막요약 } from './compact.js';
 import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
 import { Session, estimateTokens } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
@@ -530,9 +530,20 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    * 한 턴에 한 번뿐이다 — 고치고도 또 거절당하면 다른 탈이다.
    */
   let 전선배운적 = false;
-  // 이번 턴에 자리가 없어 기억을 비운 적이 있나. 한 턴에 한 번뿐이다 —
-  // 비우고도 또 막히면 자리 문제가 아니라 다른 탈이다.
-  let 비운적 = false;
+  /*
+   * 이번 턴에 마지막으로 비운 걸음. 긴 턴에서는 두 번째로 찰 수 있어서 횟수가 아니라
+   * **간격**으로 막는다. 비우자마자 또 막히면 자리 문제가 아니라 다른 탈이다.
+   *
+   *   선제(서버가 아직 안 막았다)   3걸음 뒤부터. 비운 뒤 다시 읽어 차는 것까지 또 비우면 일이 안 나아간다.
+   *   서버가 거절                   2걸음 뒤부터. 비운 바로 다음 걸음의 거절은 오류로 끝낸다.
+   */
+  let 비운걸음 = null;
+  const 선제비우기간격 = 3;
+  const 거절비우기간격 = 2;
+  // 이번 턴에 마지막으로 요약을 부른 걸음과 받은 요약. 비우기 쪽지가 요약을 들고 간다.
+  let 요약걸음 = null;
+  let 최신요약 = null;
+  const 요약연달아걸음 = 2;
   const 짧게말 = (s) => String(s ?? '').replace(/\s+/g, ' ').slice(0, 200);
 
   /**
@@ -936,25 +947,34 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
    */
   let 접다멈췄나 = false;
   /*
-   * 턴 안에서 앞선 대화를 비우고 이어 갈 자리를 만든다. 한 턴에 한 번뿐이다(비운적).
+   * 턴 안에서 앞선 대화를 비우고 이어 갈 자리를 만든다. 몇 걸음에 한 번으로 막는다(비운걸음).
    *
    * 두 자리가 부른다 — 서버가 「자리가 없다」 고 거절했을 때(아래 부름 오류 갈래)와,
-   * 창이 이미 넘쳤는데 요약할 만큼 쌓이지 않았을 때(자리만들기). 버리는 것은 지나간
-   * 대화뿐이고 시킨 말·남은 할 일·이번 턴에 손댄 파일은 옮긴다. 까닭은 부름 오류 갈래의
+   * 요약으로 자리가 안 났을 때(자리만들기). 버리는 것은 지나간 대화뿐이고 시킨 말·남은
+   * 할 일·이번 턴에 손댄 파일·이 턴에 받은 요약은 옮긴다. 까닭은 부름 오류 갈래의
    * 「자리가 다 찼으면」 머리말에 있다.
    */
-  const 비우기 = () => {
-    비운적 = true;
+  const 비운쪽지 = () => {
     const 지운수 = session.messages.length;
     const 손댄것 = [...손댄파일];
-    const 남은할일수 = (ctx.todos ?? []).filter((x) => x?.state !== 'done').length;
     const 쪽지 = 못박을것(session);
-    const 비운말 = {
-      role: 'user',
-      content: `(자리가 모자라 앞선 대화 ${지운수}개를 비웠습니다. 필요한 파일은 다시 읽으세요.)\n`
+    const 요약 = 실을요약(최신요약, session.breakdown().total);
+    return {
+      지운수, 손댄것, 쪽지, 요약,
+      글: `(자리가 모자라 앞선 대화 ${지운수}개를 비웠습니다. 필요한 파일은 다시 읽으세요.)\n`
         + (손댄것.length ? `이번 턴에 이미 손댄 파일: ${손댄것.join(', ')}\n` : '')
-        + '\n' + 쪽지,
+        + '\n'
+        + (요약 ? `[이번 턴에 받은 요약 — 비운 대화 대신 이것을 보세요.]\n${요약}\n\n` : '')
+        + 쪽지,
     };
+  };
+  const 비우기 = () => {
+    const { 글, 쪽지, 지운수, 손댄것, 요약 } = 비운쪽지();
+    비운걸음 = steps;
+    // 비운 뒤의 압축은 새 일이다. 비우기 전 요약을 「방금 요약했다」 로 치지 않는다.
+    요약걸음 = null;
+    const 남은할일수 = (ctx.todos ?? []).filter((x) => x?.state !== 'done').length;
+    const 비운말 = { role: 'user', content: 글 };
     // 어느 턴의 시킨 말을 박았는지 적어 둔다 — 그 턴을 /undo 하면 이 쪽지도 빠져야 한다(session.js 의 박은쪽지표시).
     session.박은쪽지표시?.(비운말, 쪽지);
     session.messages = [비운말];
@@ -963,10 +983,12 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     되풀이표잊기();
     return {
       type: 'reset',
+      auto: true,
       dropped: 지운수,
-      kept: { 요청: !!String(session.이번요청 ?? '').trim(), 할일: 남은할일수, 파일: 손댄것.length },
+      kept: { 요청: !!String(session.이번요청 ?? '').trim(), 할일: 남은할일수, 파일: 손댄것.length, 요약: !!요약 },
     };
   };
+  const 선제로비워도되나 = () => 비운걸음 === null || steps - 비운걸음 >= 선제비우기간격;
   const 자리만들기 = async function* () {
     접다멈췄나 = false;
     /*
@@ -1006,26 +1028,43 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
 
     // 컨텍스트가 차오르면 오래된 대화를 '요약해서' 접는다. 그냥 자르면 하던 일을 잊는다.
     if (shouldCompact(session)) {
+      /*
+       * 막 요약했는데 또 찼으면 요약을 또 부르지 않는다. 로컬에서는 그 한 번이 수 분이고,
+       * 방금 요약으로 안 된 판이라 또 불러도 못 낸다. 간격에 걸려 지금 못 비워도 부르지 않는다.
+       */
+      const 막요약함 = 요약걸음 !== null && steps - 요약걸음 <= 요약연달아걸음;
+      if (막요약함 && 비울까(session, 비운쪽지().글)) {
+        if (선제로비워도되나()) yield 비우기();
+        return;
+      }
+      /*
+       * 요약이 이미 두 대 쌓였으면 이번이 세 번째다. 요약 위에 요약을 얹어 봐야 창이 그것으로
+       * 찬다. 이번 요약은 받되 쪽지에 실어 비운다. 요약을 못 받으면 이미 있는 마지막 요약을
+       * 들고 간다 — compact 가 물러서며 지울 수 있으니 부르기 전에 읽어 둔다.
+       */
+      const 세번째 = 요약세대(session.messages) >= 요약세대상한;
+      const 앞선요약 = 세번째 ? 마지막요약(session.messages) : null;
       yield { type: 'compacting' };
       // 요약을 부르다 서버가 막으면 그 알림도 화면으로 — '접는 중' 뒤에 60초를 숨기지 않는다.
       const 편지 = 우편함((onBackoff) => compact(session, { auto: true, signal, onBackoff }));
       for await (const 알림 of 편지.소식()) yield 알림;
       const r = await 편지.부름;
       if (r.aborted) { 접다멈췄나 = true; yield { type: 'aborted', steps, kept: true }; return; }
+      // 물러선 것(fallback)도 요약을 부르긴 한 것이다. 접을 것이 없어 안 부른 것만 빠진다.
+      if (r.ok || r.fallback) 요약걸음 = steps;
+      if (r.summary) 최신요약 = r.summary;
+      else if (앞선요약) 최신요약 = 앞선요약;
       if (r.ok) { 되풀이표잊기(); yield { type: 'compacted', ...r }; }
-      else {
-        yield { type: 'compact_failed', why: r.why };
-        /*
-         * 요약할 만큼 쌓이지 않았는데 창은 **이미 넘쳤다** — 몇 안 되는 말이 하나하나 크다.
-         *
-         * 여기서 그냥 부르고 있었다. 서버가 거절하면 부름 오류 갈래가 비워 주지만, 로컬
-         * 서버(Ollama)는 거절하지 않고 **말없이 앞을 잘라** 모델이 시킨 말을 못 본 채
-         * 답한다. 화면에는 100% 경고만 걸음마다 뜬다. 넘쳤을 때만, 거절받은 것과 똑같이
-         * 비우고 이어 간다.
-         */
-        const 찬것 = session.breakdown();
-        if (!비운적 && 찬것.total > 0 && 찬것.used >= 찬것.total) yield 비우기();
-      }
+      else yield { type: 'compact_failed', why: r.why };
+      /*
+       * 결과가 ok 든 물러섬이든 실패든, 자리가 안 났으면 여기서 비운다.
+       *
+       * 비우기를 「요약 실패 + 창 넘침」 에만 걸어 두었더니, 요약이 1% 라도 줄이면 ok 라
+       * 절대 안 비웠고 걸음마다 요약만 불렀다. 로컬 서버(Ollama)는 넘쳐도 거절하지 않고
+       * **말없이 앞을 잘라** 모델이 시킨 말을 못 본 채 답하므로, 서버 거절을 기다릴 수도 없다.
+       */
+      const 쪽지글 = 비운쪽지().글;
+      if (선제로비워도되나() && (세번째 ? 비우면빌까(session, 쪽지글) : 비울까(session, 쪽지글))) yield 비우기();
     }
   };
 
@@ -1581,12 +1620,13 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 읽었다' 는 표만 남으면, 모델은 다시 안 읽고 기억에 없는 파일을
        * 고치려 든다 — 비운 것보다 나쁘다.
        *
-       * 한 턴에 한 번뿐이다. 비우고도 또 막히면 그건 자리 문제가 아니라
-       * 다른 탈이라, 끝없이 비우며 도는 대신 있는 그대로 오류로 말한다.
+       * 비운 바로 다음 걸음에 또 막히면 그건 자리 문제가 아니라 다른 탈이라,
+       * 끝없이 비우며 도는 대신 있는 그대로 오류로 말한다(거절비우기간격).
+       * 긴 턴에서 한참 뒤에 다시 차는 것은 다시 비운다.
        */
       // 분당 한도는 자리 문제가 아니다 — 위 한도막힘 머리말.
       const 자리문제 = !한도막힘 && (배운?.kind === 'ctx' || 길이문제인가(err.serverMessage ?? err.message));
-      if (자리문제 && !비운적) {
+      if (자리문제 && (비운걸음 === null || steps - 비운걸음 >= 거절비우기간격)) {
         yield 비우기();
         /*
          * 배우기(위)와 달리 여기서는 걸음을 **안 돌려준다.**

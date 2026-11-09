@@ -132,7 +132,8 @@ for (let i = 0; i < s.messages.length; i++) {
   }
 }
 check('도구 호출·결과 짝이 안 깨짐', 짝깨짐 === null, 짝깨짐 ?? '');
-check('요약 요청에 사고를 안 씀', 받은요약요청?.reasoning_effort === 'low', String(받은요약요청?.reasoning_effort));
+// 이 판은 로컬 연결이라 요약을 think 'off' 로 부른다 — 눈금이 아예 안 나간다. 바깥 연결의 'low' 는 autoclear.test.js 사례 6.
+check('요약 요청에 사고를 안 씀', 받은요약요청?.reasoning_effort === undefined, String(받은요약요청?.reasoning_effort));
 
 /*
  * ── ★★ 도구만 부른 걸음이 요약 대화록에 빈 말을 남기면 안 된다 ──────────
