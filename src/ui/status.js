@@ -9,7 +9,7 @@ import { PROFILES } from '../agent/effort.js';
 import { get as workMode, canWrite, 보일이름 } from '../agent/modes.js';
 import { isLocalHost, isOffline } from '../safety/network.js';
 import { 프록시고르기, 프록시설정, 프록시비켜가나 } from '../backend/proxy.js';
-import { COMPACT_AT, FOLD_AT } from '../agent/compact.js';
+import { COMPACT_AT, FOLD_AT, 문턱배율 } from '../agent/compact.js';
 import { 말, 언어 } from '../i18n/index.js';
 import { 표시 as 승인표시, 고르기 as 승인고르기 } from './approve.js';
 import { 토큰셈, 토큰글 } from './tokcount.js';
@@ -165,17 +165,17 @@ export const SEGMENTS = {
   ctx: {
     get desc() { return 말('seg.ctx'); },
     make: (s) => {
-      const { r, pct, tone, b } = 참값(s);
+      const { r, pct, tone, b, 눈금 } = 참값(s);
       // 창 크기를 서버가 안 알려 줬으면 `32k?` 로 적는다 — 바로 옆 모델 급이
       // 짐작일 때 `◈ 보통?` 인 것과 같은 규칙이다. 짐작을 잰 것처럼 적으면,
       // 실제 창이 8k 라서 답이 잘리는 동안에도 게이지는 초록이다.
       const 창말 = short(b.total) + (b.총잰것 === false ? '?' : '');
-      return `${눈금게이지(r, 10, [FOLD_AT, COMPACT_AT])} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + 창말)}`;
+      return `${눈금게이지(r, 10, 눈금)} ${tone(pct + '%')} ${c.gray(short(b.used) + '/' + 창말)}`;
     },
     // 자리가 모자라면 정확한 숫자를 접는다. 게이지와 %가 이미 같은 말을 하고 있다.
     short: (s) => {
-      const { r, pct, tone } = 참값(s);
-      return `${눈금게이지(r, 10, [FOLD_AT, COMPACT_AT])} ${tone(pct + '%')}`;
+      const { r, pct, tone, 눈금 } = 참값(s);
+      return `${눈금게이지(r, 10, 눈금)} ${tone(pct + '%')}`;
     },
   },
 
@@ -430,8 +430,11 @@ function 참값(s) {
    * 이제 접기(55%)·요약(80%) 자리에서 같이 바뀐다 — 색이 바뀌는 그 순간이
    * 실제로 무슨 일이 나는 순간이다.
    */
-  const tone = r > COMPACT_AT ? c.hred : r > FOLD_AT ? c.hyellow : c.gray;
-  return { b, r, pct, tone };
+  // 로컬 큰 창은 문턱이 앞으로 당겨진다(compact.js 의 문턱배율). 눈금도 같이 옮겨야 거짓말이 안 된다.
+  const 배 = 문턱배율(s);
+  const 눈금 = [FOLD_AT * 배, COMPACT_AT * 배];
+  const tone = r > 눈금[1] ? c.hred : r > 눈금[0] ? c.hyellow : c.gray;
+  return { b, r, pct, tone, 눈금 };
 }
 
 /**

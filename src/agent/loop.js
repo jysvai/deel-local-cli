@@ -1033,8 +1033,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 방금 요약으로 안 된 판이라 또 불러도 못 낸다. 간격에 걸려 지금 못 비워도 부르지 않는다.
        */
       const 막요약함 = 요약걸음 !== null && steps - 요약걸음 <= 요약연달아걸음;
-      if (막요약함 && 비울까(session, 비운쪽지().글)) {
-        if (선제로비워도되나()) yield 비우기();
+      if (막요약함) {
+        if (선제로비워도되나() && 비울까(session, 비운쪽지().글)) yield 비우기();
         return;
       }
       /*
