@@ -158,6 +158,8 @@ console.log('\n걸음마다 앞머리를 다시 읽지 않는다');
   const { 판, base, 닫기 } = await 가짜서버({ 도구걸음: 2 });
   판.비우기();
   const s = new Session(연결(base), { root, work: 'auto' });
+  // 기본은 생각 끔이라 강도가 없다. 움직일 강도가 있어야 안 움직이는지 잰다.
+  s.think = 'medium';
   const ctx = 문맥();
   await 턴(s, ctx, 'a.txt 읽고 고쳐줘');
   const 걸음 = 판.기록;
@@ -177,6 +179,8 @@ console.log('\n턴이 바뀌어도 강도가 안 움직인다');
   const { 판, base, 닫기 } = await 가짜서버();
   판.비우기();
   const s = new Session(연결(base), { root, work: 'auto' });
+  // 기본은 생각 끔이라 강도가 없다. 움직일 강도가 있어야 안 움직이는지 잰다.
+  s.think = 'medium';
   const ctx = 문맥();
   for (const 글 of ['안녕', 'a.txt 고쳐줘', '왜 안되는지 봐줘', '설명해줘']) await 턴(s, ctx, 글);
   check('★★★ 인사 · 고치기 · 디버그 · 설명이 같은 강도로 나간다 (첫 줄을 안 건드린다)',

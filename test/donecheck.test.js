@@ -107,7 +107,7 @@ const 서버 = createServer((q, res) => {
     const 끝 = { content: '다 됐습니다.' };
     let 답;
     if (끝말.role === 'tool') 답 = 끝;
-    else if (/완료 검사 `/.test(String(끝말.content ?? ''))) {
+    else if (/완료 검사 `|completion check `/.test(String(끝말.content ?? ''))) {
       답 = /일부러_고침/.test(시킨말) ? 쓰기('good') : /일부러_스크립트/.test(시킨말) ? 셸('node fix') : /일부러_계속틀림/.test(시킨말) ? 쓰기(`bad${받은것.length}`) : 끝;
     } else if (/일부러_답만/.test(시킨말)) 답 = { content: '답만 합니다.' };
     else if (/일부러_스크립트만/.test(시킨말)) 답 = 셸('node fix.cjs');

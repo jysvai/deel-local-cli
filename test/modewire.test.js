@@ -26,6 +26,7 @@
  *
  * 바깥으로 나가는 연결은 없다. 전부 127.0.0.1 이다.
  */
+import { 지시말정하기 } from '../src/i18n/index.js';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
@@ -104,11 +105,11 @@ writeFileSync(join(home, 'config.json'), JSON.stringify({
  * 시간 제한을 반드시 둔다. 여기서 안 끝난다는 것은 어딘가에서 사람을
  * 기다린다는 뜻이고, 그게 바로 이 검사가 잡아야 할 결함이다.
  */
-function 띄우기(인자, { 제한 = 40000 } = {}) {
+function 띄우기(인자, { 제한 = 40000, 영어 = false } = {}) {
   return new Promise((done) => {
     const kid = spawn(process.execPath, [진입점, ...인자], {
       cwd: work,
-      env: { ...process.env, DEEL_HOME: home, NO_COLOR: '1', COLUMNS: '110', DEEL_TRACE: '' },
+      env: { ...process.env, DEEL_HOME: home, NO_COLOR: '1', COLUMNS: '110', DEEL_TRACE: '', ...(영어 ? {} : { DEEL_PROMPT_LANG: 'ko' }) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let out = '';
@@ -158,6 +159,13 @@ trace('2-모드도착');
       시킴말().includes(모드첫줄(모드id)),
       (시킴말().match(/지금 모드: (\S+)/) ?? [])[1] ?? '(모드 줄 없음)');
   }
+  // 로컬의 기본은 영어 지시다. 모드 글도 영어 판이 나가야 한다.
+  받은요청.length = 0;
+  await 띄우기(['run', '보안 취약점 점검해줘'], { 영어: true });
+  지시말정하기('en');
+  const 영어첫줄 = 모드첫줄('inspect');
+  지시말정하기(null);
+  check('★★ 로컬 기본(영어 지시)에서도 그 모드의 글이 전선에 실린다', 시킴말().includes(영어첫줄), 시킴말().slice(0, 80));
 }
 
 // ══ 2. 점검 모드가 실제로 깊게 · 읽기만 ═════════════════════════════════
