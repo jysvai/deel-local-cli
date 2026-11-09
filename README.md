@@ -406,7 +406,7 @@ deel --offline
 The destination is printed at the top of every session:
 
 ```
- deel 2.2.1  ⌂ inside
+ deel 2.2.2  ⌂ inside
  Sends to this machine 127.0.0.1:11434  ← nowhere else
 ```
 
@@ -1437,7 +1437,8 @@ so one run tells you everything.
 
 | Version | What changed |
 |---|---|
-| **[2.2.1](docs/en/releases/2.2.md#221)** | Slow local models no longer re-read the whole prompt at every step — the thinking level stays put on local models, read-ahead only sends where it pays, and this PC and the LAN wait up to 30 minutes |
+| **[2.2.2](docs/en/releases/2.2.md#222)** | Local models stop filling up — when summaries cannot make room the earlier conversation is cleared automatically and the turn carries on. Local connections turn thinking off unless you set it, and send a shorter fixed prompt |
+| [2.2.1](docs/en/releases/2.2.md#221) | Slow local models no longer re-read the whole prompt at every step — the thinking level stays put on local models, read-ahead only sends where it pays, and this PC and the LAN wait up to 30 minutes |
 | [2.2.0](docs/en/releases/2.2.md#220) | Read-ahead while you type — the model loads when the input box appears, and when you pause the server reads everything you have typed so far, so after Enter only the last few characters are left. On by itself only for priceless models on this PC or the LAN (`DEEL_WARMUP` · `"warmup"`); shown as `↯` in the status bar and in `/status` |
 | [2.1.9](docs/en/releases/2.1.md#219) | Typing your own answer to a question (instead of a number) and pressing Enter goes through — the clock counts from the last key · the best option is marked (recommended) · in front of reasoning models it waits 5 minutes for the first content, and a stall with no content is called once more · unknown OpenAI-compatible endpoints are asked for token counts, estimated with ≈ when they send none · new `/report` — tokens, cost, context, tool calls and changed files on one screen, also saved as Markdown in `.deel/reports/` |
 | [2.1.8](docs/en/releases/2.1.md#218) | Ctrl+Z then `fg` no longer makes deel quit silently (macOS, Linux) — it carries on, redraws the input box or the approval question, and restores raw mode even where the kernel drops the suspend (`ssh -t`, `docker run -it`). The gate now drives deel in a real terminal |
