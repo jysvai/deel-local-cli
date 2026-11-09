@@ -412,7 +412,7 @@ export async function acp(opts = {}) {
       // 비대화 모드처럼 무조건 거부할 이유가 없다. 물어볼 데가 있기 때문이다.
       mode: opts.mode ?? 'auto',
       work: opts.work ?? null,
-      think: opts.think ?? 'medium',
+      think: opts.think ?? null,
       effort: opts.effort ?? 'save',
     });
     // 지금 어느 실행 모드인가. 화면이 첫 줄에 이걸 그린다(ui/status.js).

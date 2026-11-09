@@ -419,7 +419,7 @@ export async function runOnce(opts = {}) {
     root,
     mode: opts.mode ?? 'auto',
     work: opts.work ?? null,
-    think: opts.think ?? 'medium',
+    think: opts.think ?? null,
     effort: opts.effort ?? 'save',
     maxSteps: opts.maxSteps ?? null,   // null 이면 작업 모드가 정한다
   });

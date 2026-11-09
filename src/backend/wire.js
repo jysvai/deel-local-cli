@@ -184,6 +184,8 @@ export function 기본카드(conn) {
      */
     눈금: 회사 ? [...(회사눈금[회사] ?? [])] : [],
     끄는말: 회사 ? (끄는말[회사] ?? null) : null,
+    // 로컬 서버에 chat_template_kwargs 로 생각을 끌 수 있나. 거절당하면 false 로 배운다.
+    템플릿끄기: null,
     // 눈금을 어느 칸에 싣나 — adaptive 는 output_config.effort 에 싣는다
     효력칸: null,
     // 캐시 표식을 우리가 붙이나
@@ -645,6 +647,9 @@ export function 배울전선(문구, 규격) {
   if (/reasoning_effort/i.test(s) && 거절.test(s)) {
     return { 무엇: '생각형식', 값: 'none', 왜: 짧게(s) };
   }
+  if (/chat_template_kwargs/i.test(s) && 거절.test(s)) {
+    return { 무엇: '템플릿끄기', 값: false, 왜: 짧게(s) };
+  }
   if (/output_config/i.test(s) && 거절.test(s)) {
     return { 무엇: '효력칸', 값: null, 왜: 짧게(s) };
   }
@@ -929,7 +934,7 @@ export function 카드고치기(카드, 고침) {
   return 새;
 }
 
-export const 카드칸들 = ['생각형식', '눈금', '끄는말', '효력칸', '캐시', '표식칸', '긴수명', '출력칸', '세션자리', '스트림usage'];
+export const 카드칸들 = ['생각형식', '눈금', '끄는말', '템플릿끄기', '효력칸', '캐시', '표식칸', '긴수명', '출력칸', '세션자리', '스트림usage'];
 
 /**
  * 집 파일에 적을 만한 것만. 주소·모델은 부르는 쪽이 열쇠로 쓴다.

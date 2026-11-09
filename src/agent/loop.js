@@ -120,9 +120,18 @@ export function 실을글(result) {
     + ' 없는 것을 있다고 지어내지 말고, 못 얻었다는 것을 그대로 두고 다음으로 넘어가세요.';
 }
 
-// think 값을 규격에 맞게. 'off' 는 사고를 끈다.
+/*
+ * think 값을 규격에 맞게. 'off' 는 사고를 끈다.
+ *
+ * ── 안 싣는 것은 끄는 것이 아니다 ───────────────────────────────────────
+ *
+ * OpenAI 꼴에서 `off` 를 undefined 로 흘리고 있었다. 칸이 없으면 llama-server 는 제 기본값으로
+ * 생각한다 — `/think off` 를 쳐도 화면만 off 고 모델은 그대로 수천 토큰씩 생각했다. 로컬은 그
+ * 생각이 곧 기다리는 시간이고 창을 채우는 몫이다. 그래서 로컬에는 끄라는 말을 그대로 넘기고,
+ * 전선에 어떻게 실을지는 adapter.js 가 정한다. 바깥 게이트웨이는 여태대로 칸을 안 싣는다.
+ */
 function thinkFor(conn, level) {
-  if (level === 'off') return conn.kind === 'ollama' ? false : undefined;
+  if (level === 'off') return conn.kind === 'ollama' ? false : (바깥인가(conn.base) ? undefined : 'off');
   return level;
 }
 
@@ -2302,7 +2311,8 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           mode: session.mode,
           work: 자식모드,
           level: session.level,
-          think: session.think,
+          // 사람이 정한 강도만 물려준다. 안 정했으면 하위가 **제 연결**을 보고 정한다(session.js 의 think).
+          think: session.생각정함 ? session.think : undefined,
           effort: session.effort,
           web: session.web,
           // 부모보다 적게 준다 (budget.js). 정의에 적힌 것 > 사람이 정한 값의 절반 > 모드.

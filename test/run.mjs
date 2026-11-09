@@ -29,6 +29,7 @@ const FILES = [
   'mcploop.test.js',
   'textcalls.test.js',
   'speed.test.js',
+  'thinkoff.test.js',
   'runsession.test.js',
   'editcheck.test.js',
   'gitsnap.test.js',

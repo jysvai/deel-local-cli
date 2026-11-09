@@ -337,7 +337,7 @@ export async function chatLoop(opts = {}) {
     work: opts.work ?? null,
     // 수준은 설정에 남는다. 한 번 고르면 다음에 켤 때도 그대로다.
     level: opts.level ?? cfg.level ?? null,
-    think: opts.think ?? 'medium',
+    think: opts.think ?? null,         // null 이면 연결을 보고 정한다 (로컬은 끔)
     effort: opts.effort ?? 'save',
     maxSteps: opts.maxSteps ?? null,   // null 이면 작업 모드가 정한다
   });

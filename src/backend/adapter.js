@@ -284,6 +284,14 @@ export function buildBody(shape, { model, messages, tools, stream, json, think, 
      */
     const 눈금 = 나가는눈금(shape, 카드, think);
     if (눈금) body.reasoning_effort = 눈금;
+    /*
+     * 끄는 말이 없는 창구에 끄라고 왔다 — 로컬 서버뿐이다 (loop.js 의 thinkFor).
+     *
+     * `reasoning_effort` 를 안 실으면 서버 기본값으로 생각하므로 템플릿에 직접 넘긴다.
+     * llama-server·vLLM 이 받는 칸이고 모르는 서버는 대개 무시한다. 거절하는 서버는
+     * 카드가 배워서 다음부터 안 싣는다 (wire.js 의 템플릿끄기).
+     */
+    else if (think === 'off' && 카드?.템플릿끄기 !== false) body.chat_template_kwargs = { enable_thinking: false };
   }
   /*
    * 이 대화가 한 덩어리라고 알려 준다.

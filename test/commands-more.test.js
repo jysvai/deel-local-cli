@@ -748,10 +748,11 @@ trace('13c-오타가-조용히-먹던-자리');
     색빼기(g1.out).trim().slice(0, 60));
   check('오타로는 급이 안 바뀐다', s.급정한것 == null, String(s.급정한것));
 
+  const 강도전 = s.think;
   const t1 = await 조용히(() => handle('/think hgih', s, ctx));
   check('★ /think 오타를 못 알아들었다고 말한다', /없습니다/.test(색빼기(t1.out)),
     색빼기(t1.out).trim().slice(0, 60));
-  check('오타로는 강도가 안 바뀐다', s.think === 'medium', String(s.think));
+  check('오타로는 강도가 안 바뀐다', s.think === 강도전 && !s.thinkSet, String(s.think));
 
   // /think auto 켬 — /bell 은 받는 말인데 여기만 안 받아서 **꺼졌다.**
   s.autoThink = false;

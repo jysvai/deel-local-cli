@@ -7,6 +7,7 @@ import { 조각표 } from '../backend/cachemark.js';
 import { get as workMode, 말 as 모드말, DEFAULT as WORK_DEFAULT } from './modes.js';
 import { toolSchemas } from '../tools/index.js';
 import { isOffline } from '../safety/network.js';
+import { 바깥인가 } from '../safety/runmode.js';
 import { 승인바닥, 더센승인 } from '../safety/policy.js';
 import { normalize as normLevel, DEFAULT as LEVEL_DEFAULT } from '../ui/level.js';
 import { 매김, 급말, 값 as 급값, 지켜본것 } from './grade.js';
@@ -236,7 +237,26 @@ export class Session {
   /** 사람이 고른 그대로 — 바닥이 덮었는지를 화면이 말할 때 쓴다. */
   get 고른승인() { return this.#승인; }
 
-  constructor(conn, { root, mode = 'auto', work = null, level = null, think = 'medium', effort = 'save', web = true, maxSteps = null } = {}) {
+  /*
+   * ── 로컬은 사람이 안 정했으면 생각을 끈다 ──────────────────────────────
+   *
+   * 로컬에서 생각은 공짜가 아니다. 토큰값은 안 나가도 **시간과 자리**가 나간다. 걸음마다
+   * 수천 토큰을 생각하느라 사람은 기다리고, 그 생각이 창을 채워 접기를 부르고, 접은 뒤
+   * 앞머리를 다시 읽는다. 그래서 기본은 끔이고, 켜는 것은 사람이 `/think`·`--think` 로 한다.
+   *
+   * 값을 넣어 두지 않고 **읽는 자리에서** 정한다. 그래야 /model 로 바깥과 로컬을 갈아탈 때
+   * 저절로 맞고, /think 화면·실제 요청·미리 읽기가 같은 값을 본다. 한 글자라도 다르면
+   * 미리 읽기가 통째로 버려진다 (agent/warm.js).
+   */
+  #생각 = 'medium';
+  생각정함 = false;
+  get think() {
+    if (!this.생각정함 && !바깥인가(this.conn?.base)) return 'off';
+    return this.#생각;
+  }
+  set think(v) { this.#생각 = v; this.생각정함 = true; }
+
+  constructor(conn, { root, mode = 'auto', work = null, level = null, think = null, effort = 'save', web = true, maxSteps = null } = {}) {
     this.conn = conn;
     this.root = root;
     this.mode = mode;        // 승인 정책 — 얼마나 물어보나 (auto/confirm/strict)
@@ -246,7 +266,7 @@ export class Session {
     this.routed = null;
     // 사용자 수준 — 화면에 무엇을 내놓을지만 정한다. 안전 장치는 안 바꾼다 (ui/level.js)
     this.level = normLevel(level) ?? LEVEL_DEFAULT;
-    this.think = think;      // 기준 강도
+    if (think != null) this.think = think;      // 기준 강도 (안 넘기면 위 think 가 연결을 보고 정한다)
     this.effort = effort;    // 그 강도를 단계별로 어떻게 나눌지 (effort.js)
     this.web = web;          // 웹 읽기 도구를 줄지 (오프라인이면 무조건 안 준다)
     /*

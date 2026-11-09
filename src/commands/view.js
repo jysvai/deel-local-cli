@@ -5,6 +5,7 @@ import { load } from '../config.js';
 import { 걸음수 } from '../agent/budget.js';
 import { 말, 언어 } from '../i18n/index.js';
 import { 나가는눈금 } from '../backend/adapter.js';
+import { 바깥인가 } from '../safety/runmode.js';
 import { PROFILES, LEVELS as THINK_LEVELS, table as effortTable, 가벼운강도, shiftLevel } from '../agent/effort.js';
 import { 전선말 } from '../backend/wire.js';
 import { MODES as WORK_MODES, ORDER as WORK_ORDER, DEFAULT as WORK_DEFAULT, normalize as normWork, canWrite, 보일이름, 보일한줄 } from '../agent/modes.js';
@@ -196,7 +197,8 @@ export function showThink(session, { 자세히 = false } = {}) {
      * b 를 잠자코 두면 화면이 거짓말을 한다. 창구가 끄는 말을 알려 준 적이
      * 없으면 우리는 못 끈다 — 못 끄면 못 끈다고 적는다.
      */
-    const 못끄나 = session.think === 'off' && !나가는것 && 카드.생각형식 === 'effort';
+    // 로컬 서버는 끄는 말이 따로 있다 (loop.js 의 thinkFor, adapter.js 의 chat_template_kwargs).
+    const 못끄나 = session.think === 'off' && !나가는것 && 카드.생각형식 === 'effort' && 바깥인가(session.conn.base);
     say(`  ${c.gray(pad(말('think.wire'), 한국어 ? 8 : 10))}${c.gray(전선말(카드))}`
       + (나가는것 ? `   ${c.gray(말('think.wireSends', { 값: 나가는것 }))}` : '')
       + (못끄나 ? `   ${c.yellow(말('think.wireNoOff'))}` : ''));
