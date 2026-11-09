@@ -771,7 +771,7 @@ function 인자탈(줄들, { cmd, flags, 코드 = EXIT.usage }) {
   for (const 줄 of ['', ...줄들, '']) process.stderr.write(`${줄}\n`);
   const 배치 = cmd === 'run' || cmd === '-p';
   if (배치 && (flags.json === true || flags.json === 'true')) {
-    // 모양은 한 방 실행의 실패덩이 하나로 짓는다 — 성공과 같은 칸이어야 한다 (사냥5 B5-10).
+    // 모양은 한 방 실행의 실패덩이 하나로 짓는다 — 성공과 같은 칸이어야 한다.
     process.stdout.write(JSON.stringify(실패덩이({
       reason: 코드 === EXIT.usage ? 'usage' : 'config', code: 코드,
       why: 줄들.map((s) => String(s).trim()).filter(Boolean).join(' '),
@@ -1298,7 +1298,7 @@ async function 끝내기(code) {
 }
 
 /*
- * ── 마지막수단이 덜 나간 출력을 버렸다 (40회차 · 맥) ─────────────────────
+ * ── 마지막수단이 덜 나간 출력을 버렸다 ─────────────────────
  *
  * 맥·리눅스에서 파이프 쓰기는 비동기다(Node 문서 「A note on process I/O」). 받는 쪽이 늦게
  * 읽으면 글이 이벤트 루프에 남아 루프가 안 비고, 400ms 뒤 위 마지막수단의 process.exit 이
@@ -1331,7 +1331,7 @@ main()
       && (읽은인자.flags.json === true || 읽은인자.flags.json === 'true');
     if (배치JSON) {
       process.stderr.write(`  ✗ ${err?.message ?? err}\n`);
-      // 인자탈 과 같은 모양 — 성공한 --json 과 칸이 같아야 한다 (사냥5 B5-10).
+      // 인자탈 과 같은 모양 — 성공한 --json 과 칸이 같아야 한다.
       process.stdout.write(JSON.stringify(실패덩이({ reason: 'error', code: 1, why: String(err?.message ?? err) })) + '\n');
       await 끝내기(1);
       return;
