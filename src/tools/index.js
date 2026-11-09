@@ -3874,10 +3874,25 @@ const 뻔한인자 = new Set([
   'file_path', 'content', 'pattern', 'path', 'command', 'text', 'name', 'question', 'from', 'to',
 ]);
 
-export function 설명줄이기(schema, 한도) {
+/*
+ * 줄여도 **첫머리에 남겨야 하는 문장** (핵심남김 일 때만).
+ *
+ * 설명은 앞 문장부터 채워 한도에서 끊는다. 그런데 모델의 **행동을 바꾸는** 문장이 둘째
+ * 자리에 있는 도구가 있다 — Outline 이 그렇다. 「남의 코드를 고치기 전에 이걸 먼저 불러라」
+ * 가 없으면 Outline 은 목록에만 서 있고, 모델은 파일을 통째로 Read 한다. 한국어는 한도 90 에서도
+ * 첫 문장 뒤에 들어가지만 영어는 첫 문장 하나가 한도를 넘어 그 문장이 빠졌다.
+ *
+ * **로컬 프롬프트창(budget.js)을 쓰는 연결에서만** 켠다. 바깥 연결은 줄여도 글자가 여태와 같아야 한다.
+ * 같은 이유로 좁은 창이 배열 속 칸에서 지우던 enum 도 이 판에서는 남긴다(아래).
+ */
+const 핵심문장 = {
+  Outline: /먼저 불러라|Call this before/,
+};
+
+export function 설명줄이기(schema, 한도, { 핵심남김 = false } = {}) {
   if (!Number.isFinite(한도)) return schema;
 
-  const 자르기 = (글, 몫) => {
+  const 자르기 = (글, 몫, 꼭 = null) => {
     const s = String(글 ?? '');
     if (s.length <= 몫) return s;
     /*
@@ -3891,12 +3906,17 @@ export function 설명줄이기(schema, 한도) {
      * 적어 두면 다음 사람이 그 말을 믿고 한국어를 더 안 챙긴다.
      */
     const 조각 = s.split(/(?<=[.!?])\s+/);
-    let 모은것 = 조각[0] ?? s;
-    for (const 다음 of 조각.slice(1)) {
-      if ((모은것 + ' ' + 다음).length > 몫) break;
-      모은것 += ' ' + 다음;
+    // 첫 문장과 (있으면) 핵심 문장은 한도를 넘더라도 남긴다. 나머지는 앞에서부터 채운다.
+    const 남길 = new Set([0]);
+    const 핵심자리 = 꼭 ? 조각.findIndex((x, i) => i > 0 && 꼭.test(x)) : -1;
+    if (핵심자리 > 0) 남길.add(핵심자리);
+    const 잇기 = (자리들) => [...자리들].sort((a, b) => a - b).map((i) => 조각[i]).join(' ');
+    for (let i = 1; i < 조각.length; i++) {
+      if (남길.has(i)) continue;
+      if (잇기([...남길, i]).length > 몫) break;
+      남길.add(i);
     }
-    return 모은것;
+    return 잇기(남길) || s;
   };
 
   const p = schema.parameters ?? {};
@@ -3921,7 +3941,11 @@ export function 설명줄이기(schema, 한도) {
      */
     if (한도 <= 160 && 값?.type === 'array' && 값.items?.properties) {
       const 안쪽 = {};
-      for (const [n, v] of Object.entries(값.items.properties)) 안쪽[n] = { type: v.type };
+      for (const [n, v] of Object.entries(값.items.properties)) {
+        // 고를 수 있는 값(enum)은 설명이 아니라 규격이다 — 빼면 TodoWrite 의 state 가 todo·doing·done 인 줄
+        // 모델이 모른다. 핵심남김(로컬) 판에서만 남긴다: 바깥 연결의 좁은 창은 여태와 글자가 같아야 한다.
+        안쪽[n] = { type: v.type, ...(핵심남김 && v.enum ? { enum: v.enum } : {}) };
+      }
       새속성[이름] = {
         ...값,
         description: 값.description ? 자르기(String(값.description), 인자몫) : undefined,
@@ -3935,7 +3959,7 @@ export function 설명줄이기(schema, 한도) {
   }
   return {
     ...schema,
-    description: 자르기(schema.description, 한도),
+    description: 자르기(schema.description, 한도, 핵심남김 ? (핵심문장[schema.name] ?? null) : null),
     parameters: { ...p, properties: 새속성 },
   };
 }
@@ -4032,7 +4056,7 @@ export function 영어설명(schema, 이름, 쓸말 = 지시말()) {
 
 // 모델에게 넘길 도구 정의 목록.
 // 스킬이 없으면 Skill 도구는 빼서 자리를 아낀다.
-export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null, lsp = false, vision = false, 에이전트들 = null } = {}) {
+export function toolSchemas(names = null, { hasSkills = false, web = true, work = null, mcp = null, ctx = null, lsp = false, vision = false, 에이전트들 = null, 핵심남김 = false } = {}) {
   let list = names ?? Object.keys(TOOLS).filter((n) => {
     if (n === 'Skill') return hasSkills;
     if (n === 'WebFetch') return web;
@@ -4081,7 +4105,7 @@ export function toolSchemas(names = null, { hasSkills = false, web = true, work 
     type: 'function',
     // 눈 이야기는 줄인 **뒤에** 붙인다. 먼저 붙이면 한도에 걸려 그 한 문장이
     // 그대로 잘려 나간다 — 좁은 창일수록 정작 알려야 할 때 안 실린다.
-    function: 눈붙이기(설명줄이기(영어설명(TOOLS[n].schema, n), 한도), n, vision),
+    function: 눈붙이기(설명줄이기(영어설명(TOOLS[n].schema, n), 한도, { 핵심남김 }), n, vision),
   }));
 
   /*

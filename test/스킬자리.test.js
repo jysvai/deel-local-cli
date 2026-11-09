@@ -35,8 +35,10 @@ const pass = [];
 const fail = [];
 const check = (name, cond, note = '') => (cond ? pass : fail).push({ name, note });
 const 뿌리 = join(dirname(fileURLToPath(import.meta.url)), '..');
+// 바깥 주소로 둔다 — 이 파일은 기본 상한(40개)에서 자리표가 어떻게 줄을 세우는지를 본다. 로컬은 12개 ·
+// 80자로 더 조이므로(session.js 의 스킬한도, test/leanprompt.test.js) 로컬로 두면 상한이 달라진다. 요청은 안 나간다.
 const 세션만들기 = () => new Session(
-  { base: 'http://127.0.0.1:1/v1', model: 'x', ctx: 128000 },
+  { base: 'https://api.example.com/v1', model: 'x', ctx: 128000 },
   { root: 뿌리 },
 );
 

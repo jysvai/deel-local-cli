@@ -36,6 +36,8 @@ import { trace } from './trace.mjs';
 import { Session } from '../src/agent/session.js';
 import { 턴강도 } from '../src/agent/loop.js';
 import { route } from '../src/agent/route.js';
+import { 말 as 모드말 } from '../src/agent/modes.js';
+import { 프롬프트창 } from '../src/agent/budget.js';
 
 const pass = [];
 const fail = [];
@@ -91,7 +93,7 @@ writeFileSync(join(home, 'config.json'), JSON.stringify({
   profiles: [{
     id: 'stub', name: '스텁 연결', kind: 'openai',
     baseUrl: base, auth: 'none', apiKey: '', model: '스텁모델',
-    // 창을 크게 잡는다 — 좁으면 모드 글이 짧은 판으로 갈려서 무엇을 재는지 흐려진다.
+    // 창은 크게 잡아 둔다. 다만 로컬(127.0.0.1)은 창이 커도 모드 글이 짧은 판으로 나간다 — 아래 모드첫줄().
     ctx: 200000, streaming: false, tools: true, json: true, think: 'medium',
   }],
 }, null, 2), 'utf8');
@@ -119,6 +121,14 @@ function 띄우기(인자, { 제한 = 40000 } = {}) {
   });
 }
 
+/**
+ * 이 모드의 글이 **이 연결에 나가는 판으로** 실렸나.
+ *
+ * 이 검사의 스텁은 로컬(127.0.0.1)이라 창을 크게 잡아도 모드 글이 짧은 판으로 나간다(budget.js 의
+ * 프롬프트창). 그래서 「긴 판의 첫 줄」 이 아니라 **그 모드의 글이 나가는 판의 첫 줄**을 찾는다 —
+ * 모드마다 첫 줄이 달라서, 다른 모드가 실렸으면 여전히 빨개진다.
+ */
+const 모드첫줄 = (id) => 모드말(id, 프롬프트창({ base, ctx: 200000 })).split('\n')[0];
 /** 이번에 나간 시킴말. 모드 글이 여기 실린다. */
 const 시킴말 = () => 받은요청[0]?.몸?.messages?.find((m) => m.role === 'system')?.content ?? '';
 /** 바깥 연결이었다면 이 말에 얼마나 깊이 볼까. */
@@ -134,18 +144,18 @@ trace('2-모드도착');
 {
   const 볼것 = [
     // 이 첫 줄이 이 검사가 생긴 까닭이다. 여태 묻기로 갔다.
-    ['공동작업 기능을 분석해서 동시 편집 시 데이터 손실이 날 자리를 찾아줘.\n각 문제마다 파일과 함수를 설명해줘.\n코드는 수정하지 마.\n최대 5개까지만 찾아줘.', '점검'],
-    ['보안 취약점 점검해줘', '점검'],
-    ['src/collab.js 가 뭐 하는 파일이야?', '설명'],
-    ['로그인이 왜 안 되는지 원인 찾아줘', '원인 찾기'],
-    ['이 폴더 구조를 어떻게 나누면 좋을지 설계해줘', '설계'],
+    ['공동작업 기능을 분석해서 동시 편집 시 데이터 손실이 날 자리를 찾아줘.\n각 문제마다 파일과 함수를 설명해줘.\n코드는 수정하지 마.\n최대 5개까지만 찾아줘.', '점검', 'inspect'],
+    ['보안 취약점 점검해줘', '점검', 'inspect'],
+    ['src/collab.js 가 뭐 하는 파일이야?', '설명', 'ask'],
+    ['로그인이 왜 안 되는지 원인 찾아줘', '원인 찾기', 'debug'],
+    ['이 폴더 구조를 어떻게 나누면 좋을지 설계해줘', '설계', 'architect'],
   ];
-  for (const [글, 실릴말] of 볼것) {
+  for (const [글, 실릴말, 모드id] of 볼것) {
     받은요청.length = 0;
     await 띄우기(['run', 글]);
     const 한줄 = 글.split('\n')[0].slice(0, 26);
     check(`★ "${한줄}…" → **${실릴말}** 이 전선에 실린다`,
-      시킴말().includes(`지금 하는 일은 **${실릴말}**`),
+      시킴말().includes(모드첫줄(모드id)),
       (시킴말().match(/지금 모드: (\S+)/) ?? [])[1] ?? '(모드 줄 없음)');
   }
 }
@@ -221,7 +231,7 @@ trace('6-직접고르기');
     받은요청.length = 0;
     const r = await 띄우기(['run', '--work', 이름, '이 폴더 훑어봐']);
     check(`★ --work ${이름} 이 그대로 전선까지 간다`,
-      시킴말().includes('지금 하는 일은 **점검**'),
+      시킴말().includes(모드첫줄('inspect')),
       r.code === 0 ? ((시킴말().match(/지금 모드: (\S+)/) ?? [])[1] ?? '(모드 줄 없음)') : `종료코드 ${r.code}`);
   }
 }

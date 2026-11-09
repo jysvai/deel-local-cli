@@ -13,7 +13,7 @@ import { 글속부름 } from '../backend/textcalls.js';
 import { 살린쓰기 } from './salvage.js';
 import { 배울것, 길이문제인가 } from '../backend/learn.js';
 import { compact, shouldCompact, shouldFold, foldToolResults, foldImages, 못박을것, 접힌파일열쇠 } from './compact.js';
-import { 걸음수, 하위걸음수, 요약길이 } from './budget.js';
+import { 걸음수, 하위걸음수, 요약길이, 프롬프트창, 로컬연결인가 } from './budget.js';
 import { Session, estimateTokens } from './session.js';
 import { 최대깊이, 하위모드, 하위요약 } from '../tools/task.js';
 import { 일감인자 } from '../tools/jobs.js';
@@ -213,7 +213,10 @@ export function 턴도구(session, ctx, { 깊이 = 0 } = {}) {
     lsp: session.lsp === true,
     // 창이 좁으면 도구 설명을 줄여 싣는다 (budget.js 의 설명길이).
     // 도구를 빼는 게 아니라 설명만 줄이므로 할 수 있는 일은 안 달라진다.
-    ctx: conn.ctx ?? null,
+    // 보는 창은 실제 창이 아니라 **모양을 고르는 창**이다 — 로컬은 창이 커도 줄인 판으로 간다.
+    // session.js 의 #도구토큰(/context 가 재는 값)이 같은 두 값을 넘긴다. 한쪽만 고치지 않는다.
+    ctx: 프롬프트창(conn),
+    핵심남김: 로컬연결인가(conn),
     // 그림을 볼 수 있는 모델일 때만 Read 설명에 그림 이야기를 넣는다.
     // 못 보는데 넣어 두면 모델이 화면 사진을 열려 들고, 그때마다 한 걸음이 헛간다.
     vision: conn.vision === true,

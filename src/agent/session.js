@@ -17,6 +17,7 @@ import { 파일기억 } from './filemem.js';
 import { 언어, 지시말, 말 as 옮긴말 } from '../i18n/index.js';
 import { 셸안내 } from '../tools/shell.js';
 import { estimateTokens } from '../backend/tokens.js';
+import { 프롬프트창, 로컬연결인가 } from './budget.js';
 
 /*
  * 토큰 추정 — 자는 backend/tokens.js 에 한 벌만 둔다.
@@ -171,6 +172,9 @@ Finish the job. Do not stop at a plan.
  * 24k 를 경계로 삼는다. 그 아래에서는 긴 판이 창의 10% 를 넘어가기 시작한다 —
  * 도구 정의(budget.js 의 설명길이)가 줄어드는 자리와 같은 경계다. 두 개가
  * 같이 움직여야 '작은 창에서는 고정 몫을 줄인다' 가 한 가지 결정이 된다.
+ *
+ * 받는 값은 실제 창이 아니라 **프롬프트창**(budget.js)이다 — 로컬은 창이 커도 24k 아래로
+ * 쳐서 짧은 판이 나간다. 앞머리를 읽는 시간이 로컬의 값이라서다.
  */
 function 기본규칙(ctx) {
   const 짧게 = Number(ctx) > 0 && Number(ctx) < 24000;
@@ -390,7 +394,7 @@ export class Session {
      * 긴 대화에서 수십 번이 되고, 그 사이 사람이 package.json 을 고쳐 놓으면
      * 대화 도중에 프롬프트가 바뀐다. 무엇 때문에 답이 달라졌는지 알 길이 없어진다.
      */
-    this.프로젝트 = 지문(this.root, this.conn?.ctx ?? null);
+    this.프로젝트 = 지문(this.root, 프롬프트창(this.conn));
     /*
      * 지난 대화에서 정한 것도 여기서 읽는다.
      *
@@ -537,7 +541,8 @@ export class Session {
    */
   시스템조각() {
     const 영 = 언어() === 'en';
-    const parts = [기본규칙(this.conn?.ctx)];
+    const 창 = 프롬프트창(this.conn);   // 모양을 고르는 창 — 로컬은 24k 아래로 친다 (budget.js)
+    const parts = [기본규칙(창)];
     // 범위를 못 박는 줄. 이건 모델이 읽는 글이라 화면 말을 따라간다.
     parts.push(영
       ? `\nWorking folder: ${this.root}\nYou can neither read nor write files outside this folder.`
@@ -595,6 +600,7 @@ export class Session {
      */
     if (this.배움요약) parts.push(this.배움요약);
     const listed = this.listedSkills();
+    const 스킬글자 = this.스킬한도().글자;
     if (listed.length) {
       parts.push(
         (영
@@ -603,7 +609,7 @@ export class Session {
         // 설명이 없는 스킬이 섞일 수 있다 — 남의 폴더에서 오는 파일이라
         // 앞머리(frontmatter)가 빠지곤 한다. 여기서 터지면 시스템 프롬프트를
         // 못 만들어 **매 턴** 죽는다. 목록 명령 하나가 아니라 대화 전체가 막힌다.
-        listed.map((s) => `- ${s.name}: ${String(s.description ?? '').slice(0, this.maxSkillDesc)}`).join('\n')
+        listed.map((s) => `- ${s.name}: ${String(s.description ?? '').slice(0, 스킬글자)}`).join('\n')
       );
       const rest = this.skills.filter((s) => s.enabled).length - listed.length;
       if (rest > 0) {
@@ -635,8 +641,8 @@ export class Session {
     const 변함 = [];
     const w = workMode(this.effectiveWork());
     변함.push(영
-      ? `\n--- current mode: ${w.en} ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`
-      : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), this.conn?.ctx)}`);
+      ? `\n--- current mode: ${w.en} ---\n${모드말(this.effectiveWork(), 창)}`
+      : `\n--- 지금 모드: ${w.name} (${w.en}) ---\n${모드말(this.effectiveWork(), 창)}`);
     /*
      * 기본 규칙(BASE_RULES)은 **모든 모드에서** 「Remember 로 남긴다」 · 「끝내기 전에 Verify」
      * 를 시킨다. 그 도구가 없는 모드(묻기·계획 …)에서는 없는 도구를 부르라는 말이 된다 —
@@ -672,6 +678,27 @@ export class Session {
 
   /** 모델이 읽는 시스템 글 전체. 조각을 그대로 이어 붙인 것이다. */
   systemPrompt() { return this.시스템조각().join(''); }
+
+  /*
+   * 스킬 목록의 **상한 두 개**(몇 개 · 설명 몇 글자)를 한 곳에서 정한다.
+   *
+   * 읽는 자리가 셋이다 — listedSkills(몇 개), 시스템조각(설명 글자), #원추정(설명 글자).
+   * 셋이 따로 maxSkillsListed·maxSkillDesc 를 읽으면 한 곳만 고쳐졌을 때 /context 가 재는
+   * 스킬 글과 실제로 나가는 스킬 글이 어긋난다. 그러면 effort.js 가 남은 자리를 잘못 잡는다.
+   *
+   * 로컬은 최대 12개 · 설명 80자다. 스킬 목록은 앞머리에 들어가 매번(캐시가 끊기면 다시) 읽히는
+   * 글인데, 40개 × 140자는 로컬에서 그대로 읽는 **시간**이다. 사용자가 이보다 작게 정해 둔 값은
+   * 그대로 존중하고(작은 쪽을 쓴다), 바깥 연결은 정해 둔 값을 건드리지 않는다.
+   * 내장 몫(상한의 1/4)은 이 상한에서 계산되므로 listedSkills 가 그대로 지킨다.
+   */
+  스킬한도() {
+    if (!로컬연결인가(this.conn)) return { 개수: this.maxSkillsListed, 글자: this.maxSkillDesc };
+    const 설명 = Number(this.maxSkillDesc);
+    return {
+      개수: Math.min(Number(this.maxSkillsListed), 12),
+      글자: 설명 < 80 ? this.maxSkillDesc : 80,
+    };
+  }
 
   /*
    * 프롬프트에 실제로 올릴 스킬: 가까운 자리부터 상한까지.
@@ -741,7 +768,7 @@ export class Session {
      * `Math.floor(Infinity)` 은 Infinity 이고 `slice(0, Infinity)` 는 전부라,
      * 무한대는 저절로 「상한 없음」 이 된다.
      */
-    const 잰값 = Number(this.maxSkillsListed);
+    const 잰값 = Number(this.스킬한도().개수);
     const 상한 = Number.isNaN(잰값) ? 0 : Math.max(0, Math.floor(잰값));
     const 몫 = Math.floor(상한 / 4);
     const 매어둔것 = new Set(줄세운것.filter((s) => s.source === 'builtin').slice(0, 몫));
@@ -1138,7 +1165,7 @@ export class Session {
     const rules = this.rules ? this.#셈('규칙', String(this.rules.text ?? '')) : 0;
     const listed = this.listedSkills();
     const skills = listed.length
-      ? this.#셈('스킬', listed.map((s) => `${s.name}: ${String(s.description ?? '').slice(0, this.maxSkillDesc)}`).join('\n'))
+      ? this.#셈('스킬', listed.map((s) => `${s.name}: ${String(s.description ?? '').slice(0, this.스킬한도().글자)}`).join('\n'))
       : 0;
     const 배움 = this.배움요약 ? this.#셈('배움', String(this.배움요약)) : 0;
     // 기억도 매 요청에 통째로 나간다 — 아래 시스템 칸에서 빼려면 여기서 먼저 잰다.
@@ -1299,6 +1326,12 @@ export class Session {
     const mcp수 = (this.mcp ?? []).reduce((n, s) => n + (s.도구?.length ?? 0), 0);
     // 창 크기도 열쇠에 넣는다. 설명을 창에 맞춰 줄여 싣기 때문에(budget.js),
     // /ctx 로 창을 다시 잡으면 이 값도 달라져야 한다. 안 넣으면 옛 값이 남는다.
+    // 넣는 것은 **실제 창이 아니라 모양을 고르는 창**(프롬프트창)이다 — 실제로 나가는 스키마가
+    // 그 값으로 정해지고, /model 로 로컬↔바깥을 갈아타면 같은 창 숫자에서도 값이 달라진다.
+    // 로컬 65k 와 로컬 32k 는 같은 판이 나가므로 같은 열쇠를 쓰는 게 맞다. 핵심 문장을 남기는
+    // 로컬 표시(L)도 같이 넣어, 같은 창 숫자의 로컬·바깥이 한 칸을 나눠 쓰지 않게 한다.
+    const 모양창 = 프롬프트창(this.conn);
+    const 로컬 = 로컬연결인가(this.conn);
     // 눈 유무도 열쇠에 넣는다. 아래에서 vision 을 넘겨 쓰기 때문에 그 값이
     // 바뀌면 스키마 크기도 바뀐다 — 안 넣으면 모델을 갈아 끼워도 옛 값이 남는다.
     /*
@@ -1326,7 +1359,7 @@ export class Session {
      */
     const 제한열쇠 = this.도구제한 ? [...this.도구제한].join(',') : '*';
     const 에이전트열쇠 = (에이전트들 ?? []).map((a) => `${a?.이름}(${a?.설명})`).join('·');
-    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${웹 ? 'web' : ''}|${this.lsp ? 'lsp' : ''}|mcp${mcp수}|c${this.conn?.ctx ?? 0}|v${this.conn?.vision === true ? 1 : 0}|t${제한열쇠}|a${에이전트열쇠}`;
+    const 열쇠 = `${this.effectiveWork()}|${this.skills?.length ? 'skill' : ''}|${웹 ? 'web' : ''}|${this.lsp ? 'lsp' : ''}|mcp${mcp수}|c${모양창 ?? 0}${로컬 ? 'L' : ''}|v${this.conn?.vision === true ? 1 : 0}|t${제한열쇠}|a${에이전트열쇠}`;
     if (this.#도구잰것.has(열쇠)) return this.#도구잰것.get(열쇠);
     let n = 0;
     try {
@@ -1340,7 +1373,8 @@ export class Session {
         // 실제로 나가는 것과 **같은 것**을 재야 한다. 안 넘기면 안 줄인 것을
         // 재게 되고, 그러면 /context 가 실제보다 크게 말한다 — 그 값으로
         // effort.js 가 출력 상한을 잡으므로 답이 이유 없이 짧아진다.
-        ctx: this.conn?.ctx ?? null,
+        ctx: 모양창,
+        핵심남김: 로컬,
         vision: this.conn?.vision === true,
       });
       n = estimateTokens(JSON.stringify(list));

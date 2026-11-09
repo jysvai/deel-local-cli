@@ -471,8 +471,13 @@ await new Promise((r) => setImmediate(r));
    * Outline 을 Read 앞에 부르게 만드는 것이 그 두 문장이라, 그게 사라지면
    * 큰 모델이 오히려 예전처럼 파일을 통째로 읽기 시작한다.
    */
-  const 큰창고정 = 잰것(131072).고정;
-  check('큰 창에서는 설명을 안 줄인다', 큰창고정 > 작은것.고정 * 1.4,
+  // 바깥(클라우드) 연결에서 잰다 — 로컬은 창이 커도 줄인 판으로 간다(budget.js 의 프롬프트창, test/leanprompt.test.js).
+  // 「큰 창에서는 안 줄인다」 는 이제 큰 창의 바깥 연결에 대한 말이다.
+  const 큰창고정 = (() => {
+    const s = new Session({ ...conn, base: 'https://api.example.com/v1', ctx: 131072 }, { root: 빈폴더 });
+    return s.breakdown().used;
+  })();
+  check('큰 창(바깥 연결)에서는 설명을 안 줄인다', 큰창고정 > 작은것.고정 * 1.4,
     `8k ${작은것.고정} → 131k ${큰창고정}토큰`);
 
   /*

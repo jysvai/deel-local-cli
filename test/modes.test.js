@@ -494,7 +494,9 @@ await new Promise((r) => setImmediate(r));
 
   // 실제로 시스템 프롬프트에 실리는가 — 여기까지 와야 모델이 본다.
   const { Session } = await import('../src/agent/session.js');
-  const conn = { kind: 'openai', base: 'http://127.0.0.1:1/v1', auth: 'none', key: null, model: 'x', ctx: 32768 };
+  // 바깥 주소로 둔다 — 로컬은 창이 커도 짧은 판이 나가므로(budget.js 의 프롬프트창, test/leanprompt.test.js)
+  // 「긴 모드 글이 실린다」 는 이 검사는 창 크기로 판이 갈리는 바깥 연결에서 본다. 요청은 안 나간다.
+  const conn = { kind: 'openai', base: 'https://api.example.com/v1', auth: 'none', key: null, model: 'x', ctx: 32768 };
   for (const k of ORDER) {
     const s = new Session(conn, { root, work: k });
     const sys = s.systemPrompt();
