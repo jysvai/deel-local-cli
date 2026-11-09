@@ -247,7 +247,7 @@ async function fetchInto(spec, dest, onStep) {
  * 이 함수가 없으면 tar 엔트리 이름을 아무리 잘 막아도 소용이 없다. 묶음이
  * **제 이름으로** 나가기 때문이다.
  */
-export function 이름한칸(이름, { 점허용 = false } = {}) {
+function 이름한칸(이름, { 점허용 = false } = {}) {
   const 글 = String(이름 ?? '').replace(/\\/g, '/').trim();
   if (!글) return null;
   // 마지막 칸만 쓴다. `a/b/../c` 같은 것도 여기서 한 칸이 된다.

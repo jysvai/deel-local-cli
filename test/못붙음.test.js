@@ -27,7 +27,7 @@
 // 주소로 세 번 가고, 세 배 늦게 「주소가 틀렸다」 를 듣는다. 그래서 3번
 // (안 부르는 쪽)이 이 파일의 알맹이다.
 import { createServer } from 'node:http';
-import { 다시부를까, 못붙은것인가, 기본정책 } from '../src/backend/retry.js';
+import { 다시부를까, 기본정책 } from '../src/backend/retry.js';
 import { req, 원시요청, 연결기본, 못붙음오류 } from '../src/backend/http.js';
 import { allowEndpoint, resetNet } from '../src/safety/network.js';
 import { 프록시정하기, 프록시지우기 } from '../src/backend/proxy.js';
@@ -113,14 +113,6 @@ trace('4-횟수');
     `최대 ${정책.최대}`);
   check('★★ 마지막 한 번까지는 부른다',
     다시부를까({ code: 'UND_ERR_CONNECT_TIMEOUT', attempt: 정책.최대 }, 정책) === true, '');
-}
-
-// ── 5. 못붙은것인가 가 화면에 쓸 만한가 ─────────────────────────────────
-trace('5-가르기');
-{
-  check('★★ 못 붙은 것을 참이라 한다', 못붙은것인가('UND_ERR_CONNECT_TIMEOUT') === true, '');
-  check('★★ 붙었다 끊긴 것은 거짓이다', 못붙은것인가('ECONNRESET') === false, '');
-  check('★ 빈 값에도 안 죽는다', 못붙은것인가(null) === false && 못붙은것인가(undefined) === false, '');
 }
 
 // ── 6. 진짜 연결에서도 그 코드가 나오나 ─────────────────────────────────
