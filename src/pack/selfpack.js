@@ -185,7 +185,7 @@ export function reviewSheet(a, at, { lang = 언어() } = {}) {
   L.push(a.lifecycle.length
     ? `   있음: ${a.lifecycle.join(', ')}   ← 심사 필요`
     : '   없음   ← preinstall / install / postinstall / prepare 전부 없습니다');
-  // zip 안에서는 소스가 deel/ 아래에 담긴다(아래 packSelf). 읽어주세요.txt 와 같은 자리를 가리킨다 (6회차 S4).
+  // zip 안에서는 소스가 deel/ 아래에 담긴다(아래 packSelf). 읽어주세요.txt 와 같은 자리를 가리킨다.
   L.push('   압축을 풀고 `node deel/bin/deel.js` 로 바로 씁니다. 설치 절차가 없습니다.');
   L.push('');
 

@@ -108,7 +108,7 @@ function 자리풀기(값) {
  */
 export function 무늬짓기(값) {
   /*
-   * 이름 목록(`["Bash","Write"]`)도 받는다 (2.0.0 4회차 사냥).
+   * 이름 목록(`["Bash","Write"]`)도 받는다.
    *
    * 전에는 String() 이 목록을 `Bash,Write` 로 바꿔 그대로 무늬가 됐다 — 아무 도구에도 안
    * 걸리는데 버렸다는 말도 없이 「훅 1개」 로 세어졌다. 목록의 한 칸은 글 무늬 하나와 같게
@@ -204,7 +204,7 @@ export function 훅펴기(raw, 출처) {
 function 파일하나(경로, 출처) {
   if (!existsSync(경로)) return { 훅들: [], 버린것: [], 있음: false, 자리: 경로 };
   let j;
-  // BOM 을 뗀다 — 파워셸 5.1 로 저장한 훅 파일이 「못 읽음」 으로 떨어져 훅이 통째로 빠졌다(2.0.0 3회차).
+  // BOM 을 뗀다 — 파워셸 5.1 로 저장한 훅 파일이 「못 읽음」 으로 떨어져 훅이 통째로 빠졌다.
   try { j = JSON.parse(BOM떼기(readFileSync(경로, 'utf8'))); } catch (e) {
     return { 훅들: [], 버린것: [], 있음: true, 자리: 경로, 오류: `못 읽었습니다: ${e.message}` };
   }
@@ -227,7 +227,7 @@ export function 훅읽기(root, { env = process.env, 집 = homedir(), 켜짐 = n
   const 이PC파일 = 이PC자리(집, env);
   const 이PC = 파일하나(이PC파일, '이 PC');
   /*
-   * ── 집에서 켜면 두 자리가 **같은 파일**이다 (2.0.0 4회차 사냥) ─────────
+   * ── 집에서 켜면 두 자리가 **같은 파일**이다 ─────────
    *
    * DEEL_HOME 이 없으면 이 PC 자리는 `~/.deel/hooks.json`, 프로젝트 자리는
    * `<root>/.deel/hooks.json` 이라 root 가 집이면 둘이 한 파일이다. 두 번 읽어 훅이 두 번
@@ -287,7 +287,7 @@ function 이PC남길것(집, env) {
  *   {"decision":"block","reason":"…"}       (말전·예전 도구전)
  *   {"continue":false,"stopReason":"…"}
  *
- * 그 판정을 안 읽어서, 붙여 넣은 막는 훅이 **조용히 통과**시켰다(2.0.0 4회차 사냥).
+ * 그 판정을 안 읽어서, 붙여 넣은 막는 훅이 **조용히 통과**시켰다.
  * 막는 훅이 소리 없이 여는 쪽이 제일 나쁜 고장이라, 막는 판정은 읽는다.
  *
  * `ask` 는 막지 않는다. 그건 「사람에게 물어라」 인데, 여기서 막으면 사람이 허락할 길이
@@ -301,7 +301,7 @@ export function 제이슨판정(글) {
   try { j = JSON.parse(s); } catch { return null; }
   if (!j || typeof j !== 'object' || Array.isArray(j)) return null;
   const 속 = j.hookSpecificOutput && typeof j.hookSpecificOutput === 'object' ? j.hookSpecificOutput : {};
-  // 속의 decision 도 바깥과 같이 deny 를 받는다 — 바깥만 받고 속은 block 만 받던 짝짝이였다 (4회차 Gemini 리뷰).
+  // 속의 decision 도 바깥과 같이 deny 를 받는다 — 바깥만 받고 속은 block 만 받던 짝짝이였다.
   const 막음 = 속.permissionDecision === 'deny' || 속.decision === 'block' || 속.decision === 'deny'
     || j.decision === 'block' || j.decision === 'deny' || j.continue === false;
   if (!막음) return null;
@@ -346,7 +346,7 @@ export async function 훅돌리기(훅, 넣을것, { signal = null, 돌리개 = 
   const t0 = Date.now();
   const { file, args, verbatim } = 셸로(훅.명령);
   /*
-   * ── 자식에게 주는 환경은 Bash 와 같다 (2.0.0 4회차 사냥) ───────────────
+   * ── 자식에게 주는 환경은 Bash 와 같다 ───────────────
    *
    * 머리말은 훅을 「Bash 도구로 치는 것과 같은 무게」 라고 적어 두었는데, Bash 는
    * 셸환경(safety/shellenv.js)으로 `*_API_KEY` · `*_TOKEN` 같은 것을 빼고 띄우고 훅은
@@ -363,7 +363,7 @@ export async function 훅돌리기(훅, 넣을것, { signal = null, 돌리개 = 
     /*
      * 넘치면 **자른다** — 죽이지 않는다. 죽이면 「결과가 너무 많습니다」 오류가 되고, 막는
      * 자리는 못 돌린 훅을 막힘으로 쳐서 0 으로 끝날 훅이 경고를 길게 뱉는 것만으로 막혔다
-     * (2.0.0 4회차 사냥). 판정은 종료코드가 한다. 글은 아래에서 잘랐다고 적는다.
+     *. 판정은 종료코드가 한다. 글은 아래에서 잘랐다고 적는다.
      */
     maxBuffer: 글최대,
     넘치면자르기: true,
@@ -478,7 +478,7 @@ export async function 자리돌리기(훅들, 자리, {
 }
 
 /*
- * ── 훅 명령·까닭도 가린다 (2.0.0 4회차 Gemini 리뷰) ─────────────────────
+ * ── 훅 명령·까닭도 가린다 ─────────────────────
  *
  * 훅 글(r.말)만 가리고 있었다. 그런데 이름 없는 훅은 막힘말 첫 줄에 **명령 그대로**가 실리고,
  * 명령에 토큰을 적어 두는 사람이 있다 — `curl -H "Authorization: Bearer …" https://gate`.
@@ -502,7 +502,7 @@ export function 막힘말(r, { 보인출처 = (h) => h.출처, 열쇠들 = null 
   const 줄 = [`${r.훅.자리} 훅이 막았습니다 (${보인출처(r.훅)}: ${훅이름말(r.훅, 열쇠들)}).`];
   if (r.왜) 줄.push(`  ${가린글(r.왜, 열쇠들)} — 문지기가 쓰러져 있으면 통과시키지 않습니다.`);
   /*
-   * 싣기 전에 **비밀을 가린다** (2.0.0 4회차 사냥).
+   * 싣기 전에 **비밀을 가린다**.
    *
    * 도구후 훅의 글은 agent/loop.js 가 가리기를 거쳐 싣는데, 이 글은 도구전·말전 두 자리에서
    * 그대로 실렸다. 막는 훅은 까닭으로 제가 본 줄(설정·diff)을 되뱉기 쉽고, 거기 든 토큰이

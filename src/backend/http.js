@@ -68,7 +68,7 @@ export async function req(url, { method = 'GET', headers = {}, body, timeout = 2
     const r = await 원시요청(url, {
       method, headers, timeout, stream, signal, 잠잠, 연결,
       /*
-       * ── 반쪽 글자는 싣지 않는다 (2.0.0 6회차 직접 사냥) ──────────────────
+       * ── 반쪽 글자는 싣지 않는다 ──────────────────
        *
        * Read · Grep · Bash 가 결과를 상한에서 자를 때 이모지 앞쪽 반이 남는다(홀짝에
        * 따라 — 탐침으로 셋 다 확인). JSON.stringify 는 그것을 `\ud83c` 낱개 이스케이프로
@@ -82,10 +82,10 @@ export async function req(url, { method = 'GET', headers = {}, body, timeout = 2
     // 프록시가 407 로 막은 것은 통신 실패도 서버 답도 아니다. 사람 말 한 줄로 준다.
     if (r.error) return { ok: false, status: r.status, error: r.error, json: r.json ?? null, text: r.text ?? '', headers: r.headers, ms: r.ms };
     // 되돌림을 못 따라간 까닭(고리 · 횟수 · 깨진 Location)도 오류 말로 넘긴다. 여기서 버려서 모델 창구가
-    // 제자리를 돌면 화면에 「HTTP 302」 만 남았다 (2.0.0 6회차 Gemini 전송6). serverMessage 가 error 를 먼저 쓴다.
+    // 제자리를 돌면 화면에 「HTTP 302」 만 남았다. serverMessage 가 error 를 먼저 쓴다.
     if (r.되돌림탈) return { ok: false, status: r.status, error: r.되돌림탈, 되돌림탈: r.되돌림탈, json: r.json ?? null, text: r.text ?? '', headers: r.headers, ms: r.ms };
     /*
-     * 흘려 받아도 **머리말은 같이 준다** (사냥6 막판-뒷단).
+     * 흘려 받아도 **머리말은 같이 준다**.
      *
      * 여기가 `{ ok, status, res, ms }` 였다. 그래서 흘려 받다 429 를 맞은 자리에서 부르는
      * 쪽의 `r.headers.get('retry-after')` 가 늘 null 이었다 — `?.` 로 읽으니 터지지도 않고,
@@ -161,7 +161,7 @@ export async function 원시요청(url, { method = 'GET', headers = {}, body, ti
     const loc = 되돌림상태.has(r.status) ? r.headers?.get?.('location') : null;
     if (loc) {
       /*
-       * ── 못 따라가는 되돌림은 **왜 못 따라가는지** 붙여 돌려준다 (사냥4 W19) ──
+       * ── 못 따라가는 되돌림은 **왜 못 따라가는지** 붙여 돌려준다 ──
        *
        * 여태는 Location 을 못 읽어도, 다섯 번을 넘겨도 3xx 답을 말없이 그대로 돌려줬다.
        * 부르는 쪽(WebFetch)은 그걸 받아 「HTTP 302 — 주소」 한 줄만 적었다. 그 줄로는
@@ -190,7 +190,7 @@ export async function 원시요청(url, { method = 'GET', headers = {}, body, ti
        * fetch 규격대로: 303 은 GET·HEAD 가 아니면 GET 으로, 301·302 는 **POST 만** GET 으로, 307·308 은 그대로.
        *
        * 여기가 「303 은 늘 · 301·302 는 GET·HEAD 가 아니면」 이라 PUT·DELETE 가 몸을 잃고 GET 이 되고
-       * HEAD 도 GET 이 됐다 (2.0.0 6회차 Gemini 전송6). 바꿀 때는 몸을 설명하던 머리말도 뗀다 —
+       * HEAD 도 GET 이 됐다. 바꿀 때는 몸을 설명하던 머리말도 뗀다 —
        * 안 떼면 몸 없는 GET 에 Content-Type 이 따라갔다.
        */
       const 큰방법 = String(방법).toUpperCase();
@@ -475,7 +475,7 @@ async function 직접(url, { method, headers, body, timeout, stream, signal, 잠
   if (stream) return 직접흘려(url, { method, headers, body, timeout, signal, 잠잠 });
   const res = await fetch(url, { method, headers, body, signal: 신호(timeout, signal), redirect: 'manual' });
   /*
-   * 거절 답(2xx 아님)의 몸은 **상한까지만** 읽는다 (4회차 이월 · 사냥5).
+   * 거절 답(2xx 아님)의 몸은 **상한까지만** 읽는다.
    *
    * 프록시 길(노드로)은 사냥4 W2 때 거절몸상한 까지만 읽게 고쳤는데, 곧장 가는 이 길은 그대로
    * 끝까지 받았다. 300MB 짜리 404·500 을 주는 게이트웨이 하나에 메모리가 튀었고, 같은 서버인데
@@ -507,21 +507,21 @@ async function 앞만읽기(흐름, 상한) {
       크기 += value.length;
     }
   } finally {
-    // 다 안 읽었으면 흐름을 끊는다 — 연결째 닫혀 서버가 나머지를 못 붓는다 (사냥4 W2 와 같은 뜻).
+    // 다 안 읽었으면 흐름을 끊는다 — 연결째 닫혀 서버가 나머지를 못 붓는다.
     if (!끝났나) { try { await reader.cancel(); } catch { /* 이미 닫혔으면 그만 */ } }
   }
   return Buffer.concat(조각).subarray(0, 상한);
 }
 
 /*
- * 거절 답의 res 를 감싼다 — `text()` 가 몸을 상한까지만 읽는다 (4회차 이월 · 사냥5).
+ * 거절 답의 res 를 감싼다 — `text()` 가 몸을 상한까지만 읽는다.
  *
  * adapter 의 거절읽기 는 흘려 받던 요청이 거절당하면 `r.res.text()` 로 몸을 읽는다. 곧장 가는
  * 길의 fetch Response 는 그걸 끝까지 받는다. 몸 흐름(body)은 그대로 둔다 — 그걸로 제 상한을
  * 거는 부르는 쪽(몸읽기)이 있다.
  *
  * 이 `text()` 를 읽는 **동안**에도 시계가 돌아야 한다. 그 시계는 여기가 아니라 부르는
- * 쪽이 든다 — 아래 직접흘려 의 머리시계 (사냥6 막판-뒷단).
+ * 쪽이 든다 — 아래 직접흘려 의 머리시계.
  */
 function 거절몸감싸기(res) {
   return {
@@ -559,7 +559,7 @@ async function 직접흘려(url, { method, headers, body, timeout, signal, 잠�
   }
 
   /*
-   * 버린다는 것은 **안 받는다** 는 뜻이다 (사냥4 W2).
+   * 버린다는 것은 **안 받는다** 는 뜻이다.
    *
    * 여기가 `arrayBuffer()` 였다 — 버리려고 끝까지 받아 메모리에 올렸다. 300MB 짜리 302 몸
    * 하나에 900MB, gzip 255KB 짜리 그림 하나가 풀려서 279MB 가 됐다. 되돌림·그림·404 처럼
@@ -577,7 +577,7 @@ async function 직접흘려(url, { method, headers, body, timeout, signal, 잠�
   // 읽으므로, 상한까지만 읽는 res 로 감싸 넘긴다 (거절몸감싸기).
   if (!res.ok || !res.body) {
     /*
-     * ── 거절 몸을 읽는 동안에도 머리시계는 돈다 (사냥6 막판-뒷단) ────────
+     * ── 거절 몸을 읽는 동안에도 머리시계는 돈다 ────────
      *
      * 여기가 머리말이 오자마자 시계를 껐다(예전 `finally`). 그러면 **거절 몸에는 시계가
      * 하나도 안 남는다** — 잠잠감시는 아래 성공 갈래에만 걸린다. 머리말만 주고 몸을 안
@@ -601,7 +601,7 @@ async function 직접흘려(url, { method, headers, body, timeout, signal, 잠�
   return {
     ok: true, status: res.status, headers: res.headers,
     /*
-     * `text` 는 **감시를 건 몸**에서 읽는다 (사냥5 W-text).
+     * `text` 는 **감시를 건 몸**에서 읽는다.
      *
      * 원래 res.text() 를 부르면 「몸을 이미 읽었다」 로 터진다 — 잠잠감시가 만들 때 원래
      * 몸의 읽개를 쥐었기 때문이다. 지금 이걸 부르는 자리는 없다(거절 몸은 위의 !res.ok
@@ -692,7 +692,7 @@ function 노드로(url, { method, headers, body, timeout, stream, signal, 프록
     };
     sig.addEventListener('abort', 끊기, { once: true });
     // 이미 끊긴 신호로 불렸으면 abort 는 다시 안 울린다 — 위 귀도 시계의 손.abort() 도 아무것도 못 깨운다.
-    // 그대로 가면 CONNECT 에 말이 없는 프록시 앞에서 영영 섰다 (2.0.0 6회차 Gemini 전송6). 떠나기 전에 끊는다.
+    // 그대로 가면 CONNECT 에 말이 없는 프록시 앞에서 영영 섰다. 떠나기 전에 끊는다.
     if (sig.aborted) { 끊기(); return; }
 
     const 받기 = (res) => {
@@ -728,7 +728,7 @@ function 노드로(url, { method, headers, body, timeout, stream, signal, 프록
           ok, status: res.statusCode, headers: 머리,
           res: { body, headers: 머리, text: () => 다읽기(몸) },
           /*
-           * 버리기는 **끊기**다 (사냥4 W2). 여기가 `res.resume()` 이었다 — 흘려 버리는
+           * 버리기는 **끊기**다. 여기가 `res.resume()` 이었다 — 흘려 버리는
            * 것이지 안 받는 것이 아니라서, 300MB 짜리 그림을 끝까지 받고 나서야 끝났다.
            */
           버리기: async () => { try { 몸.on('error', 그냥둠); res.on('error', 그냥둠); 몸.destroy(); res.destroy(); } catch { /* 그만 */ } },
@@ -736,7 +736,7 @@ function 노드로(url, { method, headers, body, timeout, stream, signal, 프록
         return;
       }
       /*
-       * ── 거절 답의 몸은 **상한까지만** (사냥4 W2) ─────────────────────────
+       * ── 거절 답의 몸은 **상한까지만** ─────────────────────────
        *
        * 2xx 가 아닌 답(404·500·되돌림)도 여기서 **통째로** 읽고 나서 돌려줬다. 부르는
        * 쪽은 그 몸에서 사람 말 한 줄(serverMessage 의 앞 200자)만 쓰거나 아예 버리는데,
@@ -884,7 +884,7 @@ const 거절몸상한 = 1024 * 1024;
 const 그냥둠 = () => {};
 
 /**
- * 몸을 글로 읽는다. 상한을 넘으면 거기서 **끊는다** — 나머지는 안 받는다 (사냥4 W2).
+ * 몸을 글로 읽는다. 상한을 넘으면 거기서 **끊는다** — 나머지는 안 받는다.
  *
  * @param 원천 끊을 때 같이 닫을 응답. 몸이 압축 풀개면 풀개만 닫아서는 밑의 소켓이
  *   안 닫혀서, 서버는 계속 보내고 소켓은 열린 채 남는다.
@@ -923,7 +923,7 @@ function 다읽기(몸, 상한 = Infinity, 원천 = null) {
 }
 
 /*
- * ── 압축된 몸을 푼다 (사냥4 W8) ────────────────────────────────────────
+ * ── 압축된 몸을 푼다 ────────────────────────────────────────
  *
  * 곧장 가는 길(fetch)은 Content-Encoding 을 보고 **알아서** 푼다. 이 길(node:http)은
  * 안 풀었다. 그래서 청하지 않아도 gzip 으로 주는 서버(CDN·사내 리버스 프록시에 흔하다)를
@@ -1055,7 +1055,7 @@ export function normalizeError(err) {
     // 받아 놓고 끊은 것 — 서버가 꺼진 것과 다르다. "주소를 확인하라" 는 틀린 조언이다.
     if (/ECONNRESET|EPIPE|UND_ERR_SOCKET/.test(코드) || /ECONNRESET|other side closed/i.test(m)) return '서버가 연결을 끊었습니다';
     /*
-     * ── 인증서 탈은 고칠 자리가 저마다 다르다 (사냥5 B5-09) ─────────────────
+     * ── 인증서 탈은 고칠 자리가 저마다 다르다 ─────────────────
      *
      * 맨 아래 한 줄이 전부를 「사내 인증서라면 NODE_EXTRA_CA_CERTS 가 필요합니다」 로 받았다.
      * 그건 **서버를 믿는** 문제의 답이다. 게이트웨이가 **우리 인증서를 요구**하는데 안 낸 것
@@ -1185,7 +1185,7 @@ export function 막힘힌트(글) {
   // 가드레일: 초당 **글의 양**. 기다린다고 안 풀리고, 프롬프트를 줄이거나 한도를 올려야 한다.
   if (/guardrail/i.test(s) && /text\s*units?/i.test(s)) return 옮긴말('net.limit.guardrail');
   /*
-   * 요청 **한 번**이 분당 한도보다 큰 것은 기다려도 안 풀린다 (사냥5 B5-03).
+   * 요청 **한 번**이 분당 한도보다 큰 것은 기다려도 안 풀린다.
    *
    * 「Request too large … tokens per min (TPM): Limit 30000, Requested 45000 … must be reduced」 에
    * 아래 「창이 새로 열리면 저절로 풀립니다 · 기다리는 것이 맞습니다」 를 붙였다. 창이 새로

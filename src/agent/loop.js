@@ -487,7 +487,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       /*
        * Bash 도구 안의 위험 명령 막이·경로 막이에 걸렸다(`막힘 — …`). 이것도 **못 돌린** 것이다.
        * 실패로 치면 모델에게 「검사를 통과시키라」 고 되미는데, 막힌 것은 모델이 고칠 수 있는 일이
-       * 아니다 — 판만 쓰고 같은 자리에서 또 막힌다 (2차 눈 판정).
+       * 아니다 — 판만 쓰고 같은 자리에서 또 막힌다.
        */
       else if (/^막힘 — /.test(String(result.error ?? ''))) 결판 = 못돌림(String(result.error));
       else {
@@ -888,7 +888,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
     // 하위 작업은 사람이 시킨 말이 아니다. 거기 할일은 부모가 이미 쪼개 준 것이다.
     if (깊이 || 고쳐쓰기) return [];
     /*
-     * 대조할 것은 `userText` 가 아니라 **지금까지 사람이 한 말 전부**다 (8회차 판정).
+     * 대조할 것은 `userText` 가 아니라 **지금까지 사람이 한 말 전부**다.
      *
      * 턴이 도는 중에 한 마디를 얹는 길이 있다(끼어들기). 그 말은 대화에도 실리고
      * 시킨 말 원문(`ctx.요청`·`session.이번요청`)에도 덧붙는데, 여기만 턴이 시작할
@@ -1223,7 +1223,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 모델이 느린 줄 알지만 실은 429 였다.
          */
         const 편지 = 우편함((onBackoff) => chat(conn, { ...ask(maxTokens, think), onBackoff }));
-        // 흘려받는 길과 **같은 자로** 센다 (8회차 판정). 맞기 전에 스스로 비킨 것
+        // 흘려받는 길과 **같은 자로** 센다. 맞기 전에 스스로 비킨 것
         // (backend/adapter.js 의 미리비키기)은 다시 부른 것이 아니다 — 요청은 한 번만
         // 나갔는데 `/cost` 와 `--json` 의 retries 가 「서버가 막았다」 고 말하게 된다.
         // 여기만 그 물음이 빠져 있었다.
@@ -1351,7 +1351,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 짧은데 낸 토큰이 상한에 닿았다면, 그 차이가 곧 안 보이는 생각이다.
        */
       /*
-       * 차례대로 본다. **제일 큰 것이 아니라 제일 믿을 만한 것**을 쓴다 (8회차 판정).
+       * 차례대로 본다. **제일 큰 것이 아니라 제일 믿을 만한 것**을 쓴다.
        *
        * 여기가 `Math.max` 였다. 그러면 3번(어림)이 1번(서버가 센 값)을 덮는다 —
        * 어림은 estimateTokens 이라 글자당 토큰이 다른 글(한국어·코드)에서 쉽게 부푼다.
@@ -1380,7 +1380,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
       const 다시부를까 = wasCut(msg) && (full > cap || (낮춘생각 !== level && 생각이자리를먹었나));
       if (다시부를까) {
         /*
-         * **깎았으면 깎았다고 적는다** (8회차 판정).
+         * **깎았으면 깎았다고 적는다**.
          *
          * 다시 부를 때는 상한을 올리든 못 올리든 생각 눈금을 한 칸 낮춰 보낸다. 그런데
          * 상한을 올릴 수 있는 자리에서는 사유가 「대답이 상한에서 잘렸습니다」 하나였다 —
@@ -1445,7 +1445,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        *
        * 스트리밍을 껐다가 한 번 다시 부른다. 원인이 그쪽이면 그 자리에서 낫는다.
        *
-       * ── 거절은 이 갈래가 받지 않는다 (사냥5 L5-2) ──────────────────────────
+       * ── 거절은 이 갈래가 받지 않는다 ──────────────────────────
        *
        * 앞단 필터에 걸린 답(content_filter)은 글도 도구도 없어서 **빈 답과 겉모습이
        * 같다.** 어댑터는 거절로 적어 두는데 이 갈래가 먼저 받아서, 걸린 말을 스트리밍만
@@ -1499,7 +1499,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           *
           * 그래서 **실제로 실었는지**를 보고 말한다. 아직 안 실렸으면 여기서 싣는다.
           *
-          * ── **빈 답은 안 싣는다** (2.0.0 8회차 판정) ─────────────────────────
+          * ── **빈 답은 안 싣는다** ─────────────────────────
           *
           * `msg` 가 차 있다고 **말이 담긴 것은 아니다.** 빈 답이 와서 스트리밍을 끄고
           * 다시 부르는 길이 바로 위에 있는데, 그 다시 부름이 터지거나 사람이 그 사이에
@@ -1533,7 +1533,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * 한 걸음에 한 번만 배운다 — 배웠는데도 또 거절당하면 다른 문제다.
        */
       /*
-       * ── 분당 한도(429)는 한계를 가르쳐 주지 않는다 (사냥5 B5-03) ──────────
+       * ── 분당 한도(429)는 한계를 가르쳐 주지 않는다 ──────────
        *
        * 「Request too large … tokens per min (TPM): Limit 30000, Requested 45000」 은
        * **분당 한도**의 말이다. 그런데 숫자가 둘이고 「too large」 가 붙어 있어서 아래
@@ -1841,7 +1841,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           넣을것: { 걸음: steps, 파일: [...손댄파일] }, signal, audit: ctx.audit,
         });
         // 턴끝 훅도 명령 출력이다 — 도구후 훅과 같은 자로 가리고 내보낸다
-        // (2.0.0 8회차 판정). 여기는 모델에게 안 가고 화면으로만 가는 자리라,
+        //. 여기는 모델에게 안 가고 화면으로만 가는 자리라,
         // 안 가리면 가리는 데가 아예 없다.
         if (훅.말들.length) {
           const 가린끝 = 가리기(훅.말들.join('\n'), { 열쇠들: [conn.key, ...환경속열쇠들()].filter(Boolean) });
@@ -1913,7 +1913,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         // 모델은 고칠 게 없다고 보고 똑같이 다시 시도한다. 그래서 끝없이 돈다.
         if (call.argsBroken) {
           /*
-           * ── 잘린 것과 **모양만 틀린** 것을 가른다 (사냥5 L5-5) ──────────────
+           * ── 잘린 것과 **모양만 틀린** 것을 가른다 ──────────────
            *
            * 가르는 규칙은 backend/adapter.js 의 잘린모양인가 하나다. 여태 둘을 한 갈래로
            * 받아, 홑따옴표 하나 틀린 Read 에도 「너무 크니 300줄씩 나눠 Append 하라」 고
@@ -1940,7 +1940,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           // Write 만 살린다. Edit 의 old_string 이 반쪽이면 엉뚱한 자리를 고치거나
           // 안 맞아 실패한다. 그건 안 하느니만 못하다.
           /*
-           * 건져 쓰기도 **모드 관문 뒤**여야 한다 (2.0.0 8회차 판정).
+           * 건져 쓰기도 **모드 관문 뒤**여야 한다.
            *
            * 그 관문은 아래(`내도구.includes(call.name)`)에 있는데, 이 자리는 그보다
            * 앞이다. 그래서 묻기·계획 모드에서 인자가 잘린 Write 가 오면 관문에 닿기
@@ -2068,7 +2068,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
         // 관문을 그냥 통과했다. hasOwn 으로만 묻는다 (tools/index.js 도 같다).
         // MCP 이름은 이 표에 없다. 여기서 거르면 붙은 서버의 도구가 늘 「모르는 도구」 였다(2.0.0).
         // 그래서 **실어 보낸 MCP 이름**은 통과시킨다. 지어낸 이름(`mcp__서버__없는것`)은 여기서 모르는
-        // 도구로 세야 헛돌기 셈에 든다 — 그냥 넘기면 서버가 「없다」 고 답할 때마다 셈을 비켜 계속 부른다(3회차).
+        // 도구로 세야 헛돌기 셈에 든다 — 그냥 넘기면 서버가 「없다」 고 답할 때마다 셈을 비켜 계속 부른다.
         // MCP 를 하나도 안 실은 걸음(읽기 전용 모드)은 아래 모드 관문이 「모드에서 못 쓴다」 로 거절한다.
         if (!Object.hasOwn(TOOLS, call.name)
           && !(call.name.startsWith('mcp__') && (!실은mcp.size || 실은mcp.has(call.name)))) {
@@ -2527,7 +2527,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
        * `tools_start` 한 번으로 「N개를 함께 돌립니다」 만 말한다. 화면은 그 `count` 로
        * 동시에 도는 자리 수를 채우고(repl.js 의 함께갱신), ACP 는 이름마다 도구 자리를
        * 연다(acp/serve.js). 주석이 「'시작' 을 따로 알리지 않는다」 라고 적혀 있었는데
-       * 화면 둘이 다 이 이벤트를 받아 쓰고 있었다 — 말이 옛말이었다 (8회차 판정).
+       * 화면 둘이 다 이 이벤트를 받아 쓰고 있었다 — 말이 옛말이었다.
        */
       const 함께 = 실행할것.length > 1;
       if (!함께) yield { type: 'tool_start', name: 실행할것[0].name, args: 실행할것[0].args };
@@ -2612,7 +2612,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
          * 완료 검사가 「고친 뒤에 다시 돌릴까」 를 이걸로 가른다. 셸로 바꾼 것(sed -i · mv ·
          * `> 파일` · 스크립트 파일 돌리기)도 센다 — 실패를 받고 셸로만 고친 판에서 검사가 다시
          * 안 돌면 고쳐 놓고도 실패로 끝난다. **검사가 한 번 돈 뒤에는** 셸·MCP 호출을 무엇이든
-         * 센다(2차 눈 판정: `make` · `npx codemod` 는 어느 목록에도 없다). 고치는 중이라
+         * 센다. 고치는 중이라
          * 헛짚어도 검사가 한 번 더 돌 뿐이고, 판수가 끝을 막는다.
          */
         const 셸명령 = call.name === 'Bash' ? String(call.args?.command ?? '') : null;
@@ -2659,7 +2659,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
             const 글 = 가린.글 + (가린.가린것.length ? 가렸다는말(가린.가린것) : '');
             훅덧말 = `\n\n[도구후 훅]\n${글}`;
             /*
-             * 화면에도 **가린 글**을 보낸다 (2.0.0 8회차 판정).
+             * 화면에도 **가린 글**을 보낸다.
              *
              * 여기가 `말` 이었다 — 날것이다. 바로 위에서 모델용으로는 가려 놓고
              * 화면으로는 열쇠가 그대로 나갔다. 잰 것: 화면 `열쇠는 sk-ant-api03-…`,
@@ -2755,7 +2755,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
             if (n + 1 >= MAX_SAME) 멈출까 = `${call.name} 을 같은 인자로 계속 부르고 있습니다 — 결과가 매번 같습니다`;
           } else {
             /*
-             * 결과가 달라졌으면 **처음부터 다시 센다** (8회차 판정).
+             * 결과가 달라졌으면 **처음부터 다시 센다**.
              *
              * 여기가 부른것 표만 갈아 끼우고 `반복|서명` 셈은 그대로 뒀다. 그래서 앞서
              * 한 번 되풀이한 적이 있는 부름은, 그 사이에 결과가 바뀌어 일이 나아갔는데도

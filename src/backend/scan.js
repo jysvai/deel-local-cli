@@ -119,7 +119,7 @@ async function probeOllama(origin, timeout) {
 const BASES = ['/v1', '', '/api/v1', '/openai/v1', '/api', '/llm/v1', '/proxy/v1'];
 
 /*
- * 열쇠를 달라는 **OpenAI 식** 거절인가 (사냥5 B5-08).
+ * 열쇠를 달라는 **OpenAI 식** 거절인가.
  *
  * 몸에 `error` 칸이 있거나(OpenAI · LiteLLM · vLLM · llama.cpp 가 다 이 모양이다)
  * `WWW-Authenticate: Bearer` 로 열쇠를 달라고 할 때만 그렇다고 본다. `Basic realm=…` 에
@@ -141,7 +141,7 @@ async function probeOpenAI(origin, timeout, key) {
       /*
        * 규격은 맞는데 키가 없어 막힌 경우 — 서버가 있다는 사실은 알려 준다.
        *
-       * 다만 **401 한 줄만으로는 이 규격이라고 못 한다** (사냥5 B5-08). 공유기·NAS 관리
+       * 다만 **401 한 줄만으로는 이 규격이라고 못 한다**. 공유기·NAS 관리
        * 화면은 모든 길에 401 을 준다. 그걸 「잠김 — deel scan --key <키>」 로 올리면 남의
        * 프로그램에 우리 열쇠를 보내라고 권하는 셈이다. 그래서 거절 모양이 OpenAI 식일
        * 때만 센다. 놓치는 쪽으로 틀린다 — 못 찾은 서버는 주소를 직접 적으면 붙지만,
@@ -198,7 +198,7 @@ export async function scanLocal({ host = '127.0.0.1', ports = [], timeout = 1200
   // 남의 컴퓨터 포트를 훑는 것은 이 도구가 할 일이 아니다.
   const 잘린것 = [];
   // IPv6 주소는 괄호를 씌워야 주소가 된다. 안 씌우면 `http://::1:11434` 가 Invalid URL 로
-  // **훑기 전체를** 던졌다 — `deel scan --host ::1` 한 줄로 (2.0.0 6회차 Gemini 훑기6bf).
+  // **훑기 전체를** 던졌다 — `deel scan --host ::1` 한 줄로.
   const 주소host = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
   if (listening && (host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]')) {
     const 열린것 = listeningPorts().filter((p) => !list.some((x) => x.port === p));

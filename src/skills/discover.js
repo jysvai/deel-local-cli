@@ -21,7 +21,7 @@ export const 내장자리 = join(dirname(fileURLToPath(import.meta.url)), 'built
 
 // --- YAML 앞머리 읽기 (name, description 만 쓰므로 최소만 구현) -------------
 /*
- * ── 금은 **한 줄 통째로** `---` 여야 한다 (2.0.0 4회차 사냥) ───────────────
+ * ── 금은 **한 줄 통째로** `---` 여야 한다 ───────────────
  *
  * 스킬·슬래시 명령·.md 에이전트(agent/agents.js)가 이 함수 하나를 같이 쓴다. 넷이 걸렸다.
  *
@@ -153,7 +153,7 @@ function readPlugin(rootDir, skills, commands, caps) {
   const manifest = join(rootDir, '.claude-plugin', 'plugin.json');
   let info = null;
   if (existsSync(manifest)) {
-    // BOM 을 뗀다 — 떼지 않으면 이름이 폴더 이름으로 바뀌어 `/플러그인:스킬` 이 다른 이름이 됐다(2.0.0 3회차).
+    // BOM 을 뗀다 — 떼지 않으면 이름이 폴더 이름으로 바뀌어 `/플러그인:스킬` 이 다른 이름이 됐다.
     try { info = JSON.parse(BOM떼기(readFileSync(manifest, 'utf8'))); } catch {}
   }
   const ns = info?.name || basename(rootDir);
@@ -297,7 +297,7 @@ export function discover(root, opts = {}) {
    * 안 읽는다.
    */
   // 견주기 전에 **푼다.** `.` 이나 `..` 로 들어오면 글자로는 절대 안 같아서
-  // 집에서 켠 것을 못 알아본다 (2차 리뷰가 짚었다).
+  // 집에서 켠 것을 못 알아본다.
   const 같은자리 = (a, b) => resolve(String(a)).replace(/[\\/]+$/, '').toLowerCase()
     === resolve(String(b)).replace(/[\\/]+$/, '').toLowerCase();
   const 프로젝트스킬자리 = ['.deel', '.claude'].map((d) => join(root, d, 'skills'));
@@ -311,7 +311,7 @@ export function discover(root, opts = {}) {
   });
 
   /*
-   * ── 다만 안 믿는 폴더의 명령은 **내 명령을 덮지 못한다** (2.0.0 4회차 사냥) ──
+   * ── 다만 안 믿는 폴더의 명령은 **내 명령을 덮지 못한다** ──
    *
    * 명령을 그냥 두는 까닭은 「사람이 `/이름` 을 직접 칠 때만 펴진다」 였다. 그런데 사람이
    * `/review` 를 칠 때 떠올리는 것은 **제가 만든** review 다. 저장소에 같은 이름(대소문자만
@@ -343,7 +343,7 @@ export function discover(root, opts = {}) {
           // 제 명령이 가려졌다는 것도 모른 채 저장소 명령이 안 도는 것만 본다.
           if (있던이름.has(x.name.toLowerCase())) { 안믿은명령.push(x.name); continue; }
           /*
-           * 여기가 `break` 였다 (8회차 판정). 차례는 맞게 뒀는데 상한에 닿는
+           * 여기가 `break` 였다. 차례는 맞게 뒀는데 상한에 닿는
            * 순간 고리를 통째로 나가서, **그 뒤의 저장소 명령은 겹침 검사를 아예
            * 못 받았다.** 위 주석이 막으려던 바로 그 실패가 상한 뒤에서 그대로
            * 일어난다 — 재 보니 상한 뒤에 있던 겹친 이름이 안믿은명령 에서 빠졌다.
@@ -402,7 +402,7 @@ export function loadCommand(cmd, args = '') {
   try { text = readFileSync(cmd.path, 'utf8'); } catch (err) { return { error: err.message }; }
   const { body } = frontmatter(text);
   /*
-   * **한 번에**, **함수로** 바꾼다 (2.0.0 4회차 사냥).
+   * **한 번에**, **함수로** 바꾼다.
    *
    * 글자로 바꾸면 replace 가 준 말 안의 `$'` · `$&` · `` $` `` · `$$` 를 무늬로 풀었다 —
    * `price is $'` 가 본문 뒤쪽을 통째로 끌어왔다. 그리고 두 번에 나눠 바꾸면 첫 번에 넣은

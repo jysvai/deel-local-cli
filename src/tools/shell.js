@@ -31,7 +31,7 @@ export function 배시후보(env = process.env, platform = process.platform) {
   const 구분 = platform === 'win32' ? ';' : ':';
   for (const 칸 of String(env.PATH ?? env.Path ?? '').split(구분)) {
     // PATH 칸은 따옴표로 쌀 수 있다(cmd 가 그렇게 읽는다). 안 벗기면 `.\"C:\…\bin"\bash.exe` 가 되어 Git Bash 를
-    // 놓쳤고, 싼 System32 는 아래 거르기도 비켰다 (6회차 Gemini 셸고르기6).
+    // 놓쳤고, 싼 System32 는 아래 거르기도 비켰다.
     const dir = 칸.trim().replace(/^"(.*)"$/, '$1').trim();
     // 상대 칸(`.` · `bin` · 안 풀린 `%CD%`)은 **지금 폴더**, 곧 받아 온 저장소를 가리킨다.
     // 남겨 두면 후보가 `bash.exe` 라는 맨 이름이 되고, existsSync 가 그것을 작업 폴더에서
@@ -80,7 +80,7 @@ export function 셸고르기({ env = process.env, platform = process.platform, c
    * Node 의 exec() 가 안에서 하는 것과 똑같이 맞춘다. /s 는 그 감싼 따옴표 한 쌍을
    * 벗기라는 뜻이라 짝이 맞는다.
    */
-  // 빈 COMSPEC 은 안 정한 것과 같다 — `??` 는 빈 글을 지나보내 명령마다 ENOENT 였다 (6회차 Gemini 셸고르기6).
+  // 빈 COMSPEC 은 안 정한 것과 같다 — `??` 는 빈 글을 지나보내 명령마다 ENOENT 였다.
   const file = env.COMSPEC || 'cmd.exe';
   return { id: 'cmd', file, 명령: (cmd) => ['/d', '/s', '/c', `"${cmd}"`], verbatim: true, 표시: `cmd.exe · ${file}`, 경고 };
 }

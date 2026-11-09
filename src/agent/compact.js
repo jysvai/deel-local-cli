@@ -325,7 +325,7 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
       * 그 자리가 접히면서 남은 항목이 어디에도 없어진다.
       *
       * 아래 머리말이 「접는 순간 남은 항목이 어디에도 없어진다」 고 적어 둔
-      * 바로 그 일이, 도구를 둘 같이 부른 판에서만 조용히 일어났다 (35차 리뷰).
+      * 바로 그 일이, 도구를 둘 같이 부른 판에서만 조용히 일어났다.
       */
      const 이름들 = 것들.map((x, k) => 이름표.get(x?.id)?.name ?? 차례짝.get(`${i}:${k}`)?.name ?? x?.name ?? '').filter(Boolean);
      자리.push({
@@ -456,7 +456,7 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
     const 경로 = 경로뽑기(args);
     /*
      * 한 메시지에 결과가 둘 실리면(Anthropic) 첫 결과의 경로만 들고 가서, 두 번째 파일은
-     * 내용이 접혔는데 기억이 남았다 — 다시 읽으면 「앞에서 읽은 그대로입니다」 (2.0.0 2차 리뷰).
+     * 내용이 접혔는데 기억이 남았다 — 다시 읽으면 「앞에서 읽은 그대로입니다」.
      */
     const 경로들 = [...new Set([경로, ...(args들 ?? []).map(경로뽑기)].filter(Boolean))];
     접은것들.push({ 도구: 도구이름, 곳, 경로, 경로들, 줄수, 토큰: Math.max(0, 아낀것) });
@@ -480,7 +480,7 @@ export function foldToolResults(session, { keep = KEEP_RECENT, min = FOLD_MIN, �
      * 라고 겁을 주는데 잃을 캐시가 애초에 없다.
      *
      * 결정은 기울여도 되지만 **화면은 아는 것만 적는다.** 캐시를 정말 읽어
-     * 본 적이 있을 때만 말한다 (35차 리뷰).
+     * 본 적이 있을 때만 말한다.
      */
     캐시다시씀: (session?.usage?.cacheRead ?? 0) > 0,
   };
@@ -826,7 +826,7 @@ export async function compact(session, { auto = false, signal = null, onBackoff 
   }
 
   /*
-   * ── 접을 대화보다 큰 요약은 받지 않는다 (사냥5 L5-8) ─────────────────────
+   * ── 접을 대화보다 큰 요약은 받지 않는다 ─────────────────────
    *
    * 요약은 maxTokens 1200 으로 부르지만 그 값을 무시하는 서버가 있다. 위에서는 잘렸나·
    * 거절인가만 봐서, 접을 대화보다 **큰** 요약도 ok:true 로 끼워 넣었다. 8k 창에서

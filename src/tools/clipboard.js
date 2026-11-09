@@ -95,7 +95,7 @@ function 윈도우에서(방, 부르기) {
  */
 /*
  * 받을 자리(maxBuffer)가 넘친 것은 「못 불렀다」 가 아니라 **그림이 크다** 는 뜻이다. 맥에서 12.5MB 캡처를
- * 붙이면 「osascript 를 못 불렀습니다: spawnSync osascript ENOBUFS」 가 나왔다(42회차 맥 실측) — 사람은
+ * 붙이면 「osascript 를 못 불렀습니다: spawnSync osascript ENOBUFS」 가 나왔다 — 사람은
  * osascript 가 고장 난 줄 안다. 한도 넘침과 같은 말로 맞춘다.
  */
 function 넘쳤나(r) { return r?.error?.code === 'ENOBUFS'; }

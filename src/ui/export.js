@@ -120,7 +120,7 @@ export function 보고서짓기(session, { scope = null, audit = null } = {}) {
     .map(([p, v]) => ({ 파일: 보임(p), 더함: v.added ?? 0, 뺌: v.removed ?? 0, 몇번: v.times ?? 1 }));
 
   /*
-   * 못 모은 것과 모을 것이 없는 것은 **다르다** (8회차 판정).
+   * 못 모은 것과 모을 것이 없는 것은 **다르다**.
    *
    * 여기가 `catch { return null; }` 이었다. 그러면 아래에서 `증거?.증명안된것 ?? []`
    * 가 빈 배열이 되고, 바뀐 파일이 있으면 「없습니다 — 바꾼 것마다 뒤에 돌린 확인이
@@ -191,7 +191,7 @@ export function 보고서짓기(session, { scope = null, audit = null } = {}) {
     조각.push(`<p class="none">${글자(말('export.evidenceFailed', { 왜: 증거못모은까닭 }))}</p>`);
   } else if (미증명.length) {
     조각.push('<ul class="unproven">');
-    // 파일 이름은 바뀐것 표와 **같은 자로** 짧게 적는다 (8회차 판정) — 한 보고서
+    // 파일 이름은 바뀐것 표와 **같은 자로** 짧게 적는다 — 한 보고서
     // 안에 짧은 경로와 날 절대경로가 섞여 있으면 같은 파일인지 사람이 못 가른다.
     for (const x of 미증명) 조각.push(`<li><b>${글자(보임(x.파일))}</b> — ${글자(x.왜 ?? '')}</li>`);
     조각.push('</ul>');

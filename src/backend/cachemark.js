@@ -123,7 +123,7 @@ export const 조각표 = Symbol.for('deel.시스템조각');
 const 붙일수있나 = (b) => {
   const t = b?.type;
   if (t === 'thinking' || t === 'redacted_thinking') return false;
-  // 빈칸만 든 글도 빈 글이다 — 서버는 그런 글 블록 자체를 거절한다 (2.0.0 6회차 캐시표식6).
+  // 빈칸만 든 글도 빈 글이다 — 서버는 그런 글 블록 자체를 거절한다.
   if (t === 'text') return String(b.text ?? '').trim().length > 0;
   return t === 'tool_result' || t === 'tool_use' || t === 'image' || t === 'document';
 };
@@ -165,7 +165,7 @@ export const 닻문턱 = 20;
  *
  * OpenAI 꼴에서 도구를 부른 차례는 부름이 content 가 아니라 `tool_calls` 에 있고, 서버 쪽에서는
  * 부름 하나하나가 블록이 된다. 1블록으로 세면 부름이 셋인 대화에서 닻→꼬리가 24블록이 되어
- * 창(20) 밖에 박혔다 (2.0.0 6회차 캐시표식6). 글과 부름을 같이 센다.
+ * 창(20) 밖에 박혔다. 글과 부름을 같이 센다.
  */
 const 블록수 = (m) => {
   if (Array.isArray(m?.content)) return m.content.length;
@@ -304,7 +304,7 @@ function 닻자리(ms, 꼬리) {
     /*
      * 꼬리 **한 메시지**가 벌써 닻블록을 넘으면(병렬 도구 결과 수십 개) 꼬리를 고르면 안 된다 —
      * 표식은 메시지의 마지막 블록에만 붙으니 그건 꼬리 표식과 같은 자리라 닻이 사라지고, 꼬리의
-     * 20블록 창은 그 메시지 안에서 끝나 앞 요청이 굳힌 자리에 못 닿는다 (2.0.0 6회차 캐시표식6).
+     * 20블록 창은 그 메시지 안에서 끝나 앞 요청이 굳힌 자리에 못 닿는다.
      * 한 칸 앞에 박으면 그 닻이 앞 요청의 꼬리를 읽어 온다.
      */
     if (센것 >= 닻블록) return i === 꼬리 ? Math.max(0, i - 1) : i;

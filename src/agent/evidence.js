@@ -35,7 +35,7 @@ import { join } from 'node:path';
 /** 이 명령들은 '확인했다' 로 친다. 돌렸다고 다 증거가 되는 것은 아니다. */
 const 확인하는명령 = /^(npm|pnpm|yarn|bun)\s+(test|run\s+(test|check|lint|build|verify|typecheck))\b|^(pnpm|yarn|bun)\s+(check|lint|build|verify|typecheck)\b|^(pytest|jest|vitest|mocha|go\s+test|cargo\s+test|mvn\s+test|gradle\s+test|dotnet\s+test|tsc|eslint|ruff|mypy)\b/i;
 /*
- * `run` 없이 쓰는 꼴도 잡는다 (2.0.0 8회차 판정).
+ * `run` 없이 쓰는 꼴도 잡는다.
  *
  * npm 만 스크립트에 `run` 이 있어야 하고 pnpm·yarn·bun 은 없어도 된다. 앞은 npm 규약
  * 하나만 알고 있어서 `pnpm check` · `yarn lint` 가 「안 돌린 것」 으로 떨어졌다 — pnpm 을
@@ -43,7 +43,7 @@ const 확인하는명령 = /^(npm|pnpm|yarn|bun)\s+(test|run\s+(test|check|lint|
  * 세 도구에 한해 맨 이름을 받는다. `pnpm install` 처럼 확인이 아닌 것은 여전히 안 잡힌다.
  */
 /*
- * 명령 이름은 **조각 맨 앞**에서만 본다 (6회차 근거6at EV2).
+ * 명령 이름은 **조각 맨 앞**에서만 본다.
  *
  * 앞에 빈칸만 있으면 되던 때는 인자 자리도 잡았다 — `cat eslint.config.js` 는 파일을
  * 읽었을 뿐인데 「확인한 것」 칸에 올랐다. 그래서 `&& || ; | &` 로 조각내고, 앞에 붙는
@@ -99,7 +99,7 @@ export function 증거모으기(session, { audit = null, 최근 = 400, 바꾼때
     돌린것.push({
       도구,
       // target 이 비면 도구 이름으로 적는다. Verify 는 인자 없이 부르는 것이 보통이라(required: [])
-      // 비워 두면 통과한 확인이 「증명 없음」 으로 버려졌다 (6회차 근거6at EV3).
+      // 비워 두면 통과한 확인이 「증명 없음」 으로 버려졌다.
       무엇: String(r.target ?? '') || 도구,
       됐나: r.ok !== false,
       남긴말: r.ok === false ? `실패 — ${String(r.note ?? '').slice(0, 120)}` : String(r.note ?? '').slice(0, 120),
@@ -116,7 +116,7 @@ export function 증거모으기(session, { audit = null, 최근 = 400, 바꾼때
   for (const [파일, d] of session?.changes ?? new Map()) {
     /*
      * 고친 **뒤에** 돌린 확인만 본다 — 그리고 그 「고친 때」 는 **파일마다** 다르다
-     * (2.0.0 8회차 판정).
+     *.
      *
      * 여기는 `언제고쳤나` 하나만 봤다. 그 값은 부르는 쪽이 넘겨 줘야 했는데
      * 세 자리(commit·work·export) 중 아무도 안 넘겼다 — 늘 null 이라 순서를 한 번도
@@ -203,7 +203,7 @@ export function 증거글(증거, { 제목 = '작업 증거' } = {}) {
 
   // 이 절이 이 글의 요점이다. 비어 있으면 비어 있다고 분명히 적는다.
   /*
-   * 기록이 샜으면 **글에도** 적는다 (2.0.0 8회차 판정).
+   * 기록이 샜으면 **글에도** 적는다.
    *
    * 위에서 「짧은 채로 내보내면 안 된다」 고 적어 두고 `기록못씀` 을 모으기만 했다.
    * 화면(work.js)은 말해 줬지만 파일로 남는 것은 이 글이다 — 나중에 이 글만 보는 사람은

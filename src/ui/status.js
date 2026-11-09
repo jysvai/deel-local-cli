@@ -663,7 +663,7 @@ export function headerLines(session, found, 상자쓰나 = true) {
     if (프록시) 목적지 += c.gray(`  ${말('head.viaProxy', { 프록시: `${프록시.host}:${프록시.port}` })}`);
     // 적어 놨는데 못 쓰는 프록시(socks5 등)는 여기서 한 번은 말해야 한다 — 조용히 직접 가면
     // 사람은 프록시를 탄 줄 알고, 막히면 엉뚱한 데를 고친다. 어차피 안 거칠 주소(이 PC · NO_PROXY)면
-    // 말하지 않는다 — 로컬 모델이 안 붙는 까닭을 상관없는 프록시에서 찾게 된다 (2.0.0 6회차 RP1b).
+    // 말하지 않는다 — 로컬 모델이 안 붙는 까닭을 상관없는 프록시에서 찾게 된다.
     else if (프록시설정().탈 && !프록시비켜가나(conn.base)) 목적지 += c.yellow(`  ${말('head.proxyBad')}`);
   } catch { 목적지 = c.gray(String(conn.base)); }
 

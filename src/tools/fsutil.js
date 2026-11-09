@@ -28,7 +28,7 @@ export function copyDir(from, to, { skipped = [] } = {}) {
    * 담을 곳을 먼저 만들고 원본을 훑으니, 담을 곳이 원본 안이면 방금 담은 것을 또 훑어 또
    * 담는다. 끝이 없다. `cd ~` 에서 `/plugin install .` 한 번이면 그렇게 된다 — 임시 자리
    * `~/.deel/plugins/.tmp-local` 이 원본 안이라서다. 재어 보니 2분 만에 3,341단이었고
-   * 디스크가 찰 때까지 안 멈춘다(2.0.0 6회차 사냥). 윈도우는 대소문자를 안 가르므로 낮춰 견준다.
+   * 디스크가 찰 때까지 안 멈춘다. 윈도우는 대소문자를 안 가르므로 낮춰 견준다.
    */
   const 견줄꼴 = (p) => { const r = 경로풀기(p); return process.platform === 'win32' ? r.toLowerCase() : r; };
   const 원 = 견줄꼴(from);
@@ -100,7 +100,7 @@ export const SKIP_DIRS = new Set([
 export function 내부살림(abs) {
   const 편 = String(abs ?? '').replace(/\\/g, '/');
   /*
-   * ── 조각마다 `:스트림` 꼬리를 벗기고 본다 (사냥6 F6-2) ───────────────────
+   * ── 조각마다 `:스트림` 꼬리를 벗기고 본다 ───────────────────
    *
    * 윈도우(NTFS)는 `config.json::$DATA` 를 config.json **본체**로, `config.json:이름` 을 그
    * 파일에 붙은 딴 스트림으로 연다. 이 자는 조각을 글자 그대로 견줘서 그 철자가 전부 비켜 갔다 —
@@ -466,7 +466,7 @@ export async function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS,
   let 끊김 = false;
   let 본것 = 0;
   /*
-   * ── 살림은 **훑다가 흘러 들어와도** 안 내놓는다 (사냥6 F6-1) ──────────────
+   * ── 살림은 **훑다가 흘러 들어와도** 안 내놓는다 ──────────────
    *
    * 살림 폴더는 이름(skipDirs)으로만 건너뛰었다. 그래서 훑기를 `.deel` **안에서** 시작하면
    * (Glob·Grep·Outline 의 path) config.json·mcp.json 이 목록과 내용으로 그대로 나왔고,
@@ -504,7 +504,7 @@ export async function walk(root, { limit = 훑기상한(), skipDirs = SKIP_DIRS,
        *
        * 세기가 이 반복의 맨 끝에 있었다. 그런데 .gitignore·살림으로 거른 항목은 그 앞에서
        * continue 로 빠져나가 한 번도 안 셌다. 그래서 로그·빌드 찌꺼기가 수만 개 쌓인 폴더는
-       * 숨 한 번 안 쉬고 끝까지 돌았고, 그동안 누른 ESC 는 다 돈 뒤에야 들렸다(2.0.0 6회차 사냥).
+       * 숨 한 번 안 쉬고 끝까지 돌았고, 그동안 누른 ESC 는 다 돈 뒤에야 들렸다.
        */
       본것 += 1;
       if (본것 % 숨쉴간격 === 0) {

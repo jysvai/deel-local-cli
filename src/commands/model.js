@@ -588,7 +588,7 @@ function 이름으로찾기(profiles, 말) {
  * 안 봤다. 그래서 서버에 `gpt-4o` 와 `gpt-4o-mini` 가 같이 있으면
  * `/model gpt-4o` 가 「맞는 모델이 여럿입니다」 로 막혔다 — 사람이 있는 이름을
  * 그대로 적었는데 아무 일도 안 일어난다. 같은 자리에서 같은 규칙을 쓴다.
- * (2.0.0 6회차 모델고르기6cw-b)
+ *
  *
  * @param {string[]|null|undefined} 있는것 서버가 내준 이름들
  * @param {string} 말 사람이 적은 것
