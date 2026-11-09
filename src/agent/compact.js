@@ -787,14 +787,17 @@ export function 장부요약(말들, 원문번호 = null) {
     const 글 = (글만(m) ?? '').trim();
     if (!글) continue;
     if (요약표식읽기(m)) 앞요약 = 한줄로(글.split('\n').slice(1).join('\n'), 1500);
-    else if (m.role === 'user') 사람말.push(한줄로(글, 300));
+    else if (m.role === 'user') 사람말.push(글);
     else if (m.role === 'assistant') 결론.push(한줄로(글, 400));
   }
   const 영어 = 지시말() === 'en';
+  // 처음 시킨 말이 요구의 본체인 일이 많다. 몇 턴이 지나도 길게 남긴다.
+  const 시킨말 = (사람말.length > 8 ? [사람말[0], ...사람말.slice(-7)] : 사람말)
+    .map((x, i) => 한줄로(x, i === 0 ? 1500 : 600));
   const 칸 = (제목, 줄들) => (줄들.length ? [`## ${제목}`, ...줄들.map((x) => `- ${x}`)] : []);
   const 본문 = [
     ...(앞요약 ? [영어 ? '## Earlier summary' : '## 더 앞의 요약', 앞요약] : []),
-    ...칸(영어 ? 'What the user asked' : '사용자가 시킨 것', 사람말.slice(-8)),
+    ...칸(영어 ? 'What the user asked' : '사용자가 시킨 것', 시킨말),
     ...칸(영어 ? 'Files edited' : '고친 파일', [...고친].slice(-30).map(([p, n]) => `${p} (${n}${영어 ? 'x' : '번'})`)),
     ...칸(영어 ? 'Files read' : '읽은 파일', [...읽은].slice(-30)),
     ...칸(영어 ? 'Commands run' : '돌린 명령', 명령.slice(-8)),

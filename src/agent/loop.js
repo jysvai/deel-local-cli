@@ -2581,10 +2581,7 @@ export async function* run(session, ctx, userText, { signal = null, 깊이 = 0, 
           ctx.배움?.명령본것(call.args.command, !result.error, result.error ?? '');
         }
         if (call.name === 'Edit' && result.error) ctx.배움?.모델본것(conn.model, '편집실패');
-        if (['Write', 'Append', 'Edit'].includes(call.name) && !result.error && call.args?.file_path) {
-          const 뿌리 = `${String(ctx.scope?.root ?? '').replace(/\\/g, '/')}/`;
-          ctx.배움?.파일본것?.(String(call.args.file_path).replace(/\\/g, '/').replace(뿌리, ''));
-        }
+        if (['Write', 'Append', 'Edit'].includes(call.name) && !result.error) ctx.배움?.파일본것?.(call.args?.file_path);
 
         if (result.error) {
           lastToolFailed = true;

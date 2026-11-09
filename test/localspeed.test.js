@@ -5,7 +5,7 @@
  */
 import { tmpdir } from 'node:os';
 import { Session } from '../src/agent/session.js';
-import { compact } from '../src/agent/compact.js';
+import { compact, 장부요약 } from '../src/agent/compact.js';
 import { assistantMessage, toolMessage } from '../src/backend/adapter.js';
 import { 출력줄이기, 머리꼬리, 로컬출력 } from '../src/tools/shrink.js';
 import { 언어잡기, 언어정하기, 지시말, 지시말정하기 } from '../src/i18n/index.js';
@@ -32,6 +32,11 @@ console.log('명령 출력 줄이기');
   check('★★ 통과 줄이 많으면 뺀다', !/✓ 검사 3/.test(줄) && /통과 줄 30개 뺌/.test(줄), 줄);
   check('★★★ 실패 줄과 결론은 절대 안 뺀다', /✗ 깨진 검사/.test(줄) && /30개 통과 · 1개 실패/.test(줄), 줄);
   check('★ 오류 낌새가 있는 ok 줄은 남긴다', /ok 3 - error handling/.test(출력줄이기([...Array.from({ length: 30 }, (_, i) => `ok ${i}`), 'ok 3 - error handling'].join('\n'))));
+  const 통과25 = Array.from({ length: 25 }, (_, i) => `ok ${i}`);
+  for (const 상태 of ['passed: false', 'ok: false', 'pass: 0, exceptions: 1']) {
+    check(`★★★ 통과처럼 시작해도 실패 상태는 남긴다 — ${상태}`, 출력줄이기([...통과25, 상태].join('\n')).includes(상태));
+  }
+  check('★★★ 진행률에 덮인 오류도 남긴다', /connection failed/.test(출력줄이기('Error: connection failed\r[OK]')));
   check('통과 줄이 적으면 그대로 둔다', 출력줄이기('✓ 하나\n끝') === '✓ 하나\n끝');
   const 긴글 = `${'앞'.repeat(50)}${'중'.repeat(900)}${'끝오류'.repeat(20)}`;
   const 잘림 = 머리꼬리(긴글, 200);
@@ -73,6 +78,17 @@ console.log('한 번에 크게 접기');
   check('★★★ 찔끔이 아니다 — 절반 넘게 줄인다', r.ok && r.after < r.before * 0.5, `${r.before} → ${r.after}`);
   check('★★ 원문을 찾는 길을 알려 준다', /Recall/.test(String(r.summary)), String(r.summary).slice(-80));
   check('★ 막 시킨 말은 남는다', s.messages.at(-1).content === '마지막 요청');
+  지시말정하기(null);
+}
+
+console.log('처음 시킨 말');
+{
+  언어잡기({ env: { DEEL_LANG: 'ko', DEEL_PROMPT_LANG: 'ko' }, cfg: null });
+  const 긴요구 = `${'요구사항 '.repeat(200)}마지막 조건: CP949 로 저장`;
+  const 대화 = [{ role: 'user', content: 긴요구 }, ...Array.from({ length: 12 }, (_, i) => ({ role: 'user', content: `${i}번째` }))];
+  const 장부 = 장부요약(대화);
+  check('★★★ 턴이 많아도 긴 첫 요구의 끝이 남는다', /CP949/.test(장부), 장부.slice(0, 80));
+  check('★ 최근 말도 남는다', /11번째/.test(장부));
   지시말정하기(null);
 }
 

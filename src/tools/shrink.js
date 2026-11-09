@@ -5,13 +5,17 @@
 import { 보관 } from '../agent/archive.js';
 
 const 색깔 = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
-const 통과줄 = /^\s*(✓|✔|√|ok\b|pass(ed)?\b)/i;
-const 오류낌새 = /✗|✘|fail|error|오류|실패/i;
+// `passed: false` 같은 상태 줄이 걸리지 않게 검사 도구의 통과 줄 모양만 본다.
+const 통과줄 = /^\s*(✓|✔|√|ok\s+\d|PASS\s)/;
+const 오류낌새 = /✗|✘|fail|error|오류|실패|false|exception|panic|traceback/i;
 const 통과접는문턱 = 20;
 
 export function 출력줄이기(글) {
-  const 줄들 = String(글 ?? '').replace(색깔, '').split('\n')
-    .map((줄) => { const s = 줄.replace(/\r+$/, ''); return s.slice(s.lastIndexOf('\r') + 1); });
+  // 진행률은 마지막 모습만 남기되, 덮어쓴 자리에 있던 오류는 살린다.
+  const 줄들 = String(글 ?? '').replace(색깔, '').split('\n').flatMap((줄) => {
+    const 조각 = 줄.replace(/\r+$/, '').split('\r');
+    return [...조각.slice(0, -1).filter((x) => 오류낌새.test(x)), 조각.at(-1)];
+  });
   const 빼도될 = (줄) => 통과줄.test(줄) && !오류낌새.test(줄);
   const 통과수 = 줄들.filter(빼도될).length;
   const 접나 = 통과수 > 통과접는문턱;

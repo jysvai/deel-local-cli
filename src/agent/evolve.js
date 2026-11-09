@@ -34,7 +34,7 @@
 // "이 모델은 인자를 잘라 먹는다" 는 모델의 사실이다. 섞어 두면 폴더를 옮길
 // 때마다 모델에 대해 알아낸 것을 통째로 잃는다.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative, resolve } from 'node:path';
 import { estimateTokens } from './session.js';
 /*
  * 「이걸 사실로 말해도 되나」 는 **여기서 안 정한다** (agent/confidence.js).
@@ -83,6 +83,17 @@ function 칸표(표) {
   return out;
 }
 
+// 파일 표의 열쇠도 프롬프트에 실린다. 저장소에 딸려 온 표일 수 있으니 문장이 못 들어오게 빈칸·기호를 막는다.
+const 파일꼴 = /^(?!__proto__$)(?!\.\.?(\/|$))[\p{L}\p{N}_.@+-]+(\/[\p{L}\p{N}_.@+-]+)*$/u;
+const 성한파일인가 = (k) => k.length <= 120 && 파일꼴.test(k) && !k.split('/').includes('..');
+function 파일표(표) {
+  const out = {};
+  for (const [k, v] of Object.entries(칸표(표))) {
+    if (성한파일인가(k) && Number.isInteger(v.n) && v.n > 0 && typeof v.at === 'string') out[k] = v;
+  }
+  return out;
+}
+
 function 읽기(파일) {
   try {
     if (!existsSync(파일)) return 빈것();
@@ -91,7 +102,7 @@ function 읽기(파일) {
     것.명령 = 거른표(것.명령);
     것.모델 = 칸표(것.모델);
     if (것.전선 !== undefined) 것.전선 = 칸표(것.전선);
-    if (것.파일 !== undefined) 것.파일 = 칸표(것.파일);
+    if (것.파일 !== undefined) 것.파일 = 파일표(것.파일);
     return 것;
   } catch { return 빈것(); }
 }
@@ -144,6 +155,7 @@ export class 배움 {
    */
   constructor(root, home, 지금 = new Date().toISOString()) {
     this.지금 = 지금;
+    this.뿌리 = root;
     this.폴더파일 = root ? join(root, '.deel', '배운것.json') : null;
     this.집파일 = home ? join(home, '배운것.json') : null;
     this.폴더 = this.폴더파일 ? 읽기(this.폴더파일) : 빈것();
@@ -194,8 +206,9 @@ export class 배움 {
 
   /** 이 폴더에서 고친 파일. 어디부터 볼지 알면 Glob·Grep 걸음이 준다. */
   파일본것(경로) {
-    const 열쇠 = String(경로 ?? '').replace(/\\/g, '/').slice(-120);
-    if (!열쇠) return this;
+    if (!경로 || !this.뿌리) return this;
+    const 열쇠 = relative(this.뿌리, resolve(this.뿌리, String(경로))).replace(/\\/g, '/');
+    if (!성한파일인가(열쇠)) return this;
     const 표 = (this.폴더.파일 ??= {});
     표[열쇠] = { n: (표[열쇠]?.n ?? 0) + 1, at: this.지금 };
     줄이기(표, 40);
